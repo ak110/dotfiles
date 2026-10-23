@@ -1,4 +1,6 @@
-﻿Set-StrictMode -Version Latest
+﻿param([switch]$BasicsOnly)
+
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # install-claude.ps1 - dotfiles 全体を導入できない環境へ agent-toolkit を導入・更新する。
@@ -23,6 +25,7 @@ $legacyDir = Join-Path $HOME '.claude/rules/agent-basics'
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 $stageRoot = Join-Path $HOME '.claude/rules-stage'
 $codexPluginId = 'agent-toolkit@ak110-dotfiles'
+$basicsPluginId = 'agent-basics@ak110-dotfiles'
 $claudeInstalledPluginsPath = Join-Path $HOME '.claude/plugins/installed_plugins.json'
 $script:codexPluginUpdated = $false
 $script:utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -80,7 +83,18 @@ function Install-AgentToolkitPlugin {
     Write-Output 'Claude Code側のagent-toolkitプラグインを設定しました。'
 }
 
+function Install-AgentBasicsPlugin {
+    Write-Output 'agent-basics プラグインを user scope にインストール・更新します...'
+    & claude plugin marketplace add ak110/dotfiles --scope=user 2>&1 | Out-Null
+    & claude plugin marketplace update ak110-dotfiles 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Claude Codeマーケットプレイスの更新に失敗しました。' }
+    & claude plugin install $basicsPluginId --scope=user 2>&1 | Out-Null
+    & claude plugin update $basicsPluginId --scope=user 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Claude Codeのagent-basicsプラグイン更新に失敗しました。' }
+}
+
 function Get-CodexPluginState {
+    param([string]$pluginId = $codexPluginId)
     $jsonLines = & codex plugin list --json 2>$null
     if ($LASTEXITCODE -ne 0) { return $null }
     try {
@@ -96,7 +110,7 @@ function Get-CodexPluginState {
         if ($null -eq $item -or $item.GetType() -ne [System.Management.Automation.PSCustomObject]) { return $null }
         $pluginIdProperty = $item.PSObject.Properties['pluginId']
         if ($null -eq $pluginIdProperty -or $pluginIdProperty.Value -isnot [string]) { return $null }
-        if ($pluginIdProperty.Value -ne $codexPluginId) { continue }
+        if ($pluginIdProperty.Value -ne $pluginId) { continue }
         $versionProperty = $item.PSObject.Properties['version']
         $enabledProperty = $item.PSObject.Properties['enabled']
         if ($null -eq $versionProperty -or $versionProperty.Value -isnot [string] -or
@@ -119,6 +133,7 @@ function Get-CodexPluginState {
 # dotfilesのpost-applyはローカルの作業ツリーをmarketplaceとして登録し、その版を期待値にする。
 # 単体インストーラーは作業ツリーを前提にできないため、配布元の違いをそのまま残す。
 function Get-CodexExpectedPluginVersion {
+    param([string]$pluginName = 'agent-toolkit')
     $jsonLines = & codex plugin marketplace list --json 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'Codexマーケットプレイス一覧を取得できません。' }
     try {
@@ -133,7 +148,7 @@ function Get-CodexExpectedPluginVersion {
             $rootPath = (Resolve-Path -LiteralPath $marketplace.root -ErrorAction Stop).Path
             $marketplacePath = Join-Path $rootPath '.agents/plugins/marketplace.json'
             $localMarketplace = Get-Content -LiteralPath $marketplacePath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
-            $entry = @($localMarketplace.plugins) | Where-Object { $_.name -eq 'agent-toolkit' } | Select-Object -First 1
+            $entry = @($localMarketplace.plugins) | Where-Object { $_.name -eq $pluginName } | Select-Object -First 1
             if ($null -eq $entry -or $entry.source.source -ne 'local' -or $entry.source.path -isnot [string]) { throw 'invalid source' }
             $pluginRoot = (Resolve-Path -LiteralPath (Join-Path $rootPath $entry.source.path) -ErrorAction Stop).Path
             $relativePluginRoot = [IO.Path]::GetRelativePath($rootPath, $pluginRoot)
@@ -145,6 +160,7 @@ function Get-CodexExpectedPluginVersion {
         } catch {
             throw "$manifestPath からCodex pluginのversionを取得できません。"
         }
+        if ($manifest.name -ne $pluginName) { throw "$manifestPath のnameが期待値と一致しません。" }
         if ($manifest.version -isnot [string]) { throw "$manifestPath のversionが文字列ではありません。" }
         return $manifest.version
     }
@@ -185,18 +201,23 @@ function Restore-CodexPluginCacheSnapshot {
 }
 
 function Install-CodexPlugin {
-    Write-Output 'Codex側のagent-toolkitプラグインを設定します...'
+    param([string]$pluginName = 'agent-toolkit')
+    $codexPluginId = "$pluginName@ak110-dotfiles"
+    $codexPluginCacheRoot = Join-Path $codexHomeDir "plugins/cache/ak110-dotfiles/$pluginName"
+    Write-Output "Codex側の$pluginName プラグインを設定します..."
     & codex plugin marketplace add ak110/dotfiles --json 2>&1 | Out-Null
     Invoke-RequiredNativeCommand codex @('plugin', 'marketplace', 'upgrade', 'ak110-dotfiles', '--json')
-    $expectedVersion = Get-CodexExpectedPluginVersion
-    $beforeState = Get-CodexPluginState
+    $expectedVersion = Get-CodexExpectedPluginVersion $pluginName
+    $beforeState = Get-CodexPluginState $codexPluginId
     if ($null -eq $beforeState) { throw 'Codex plugin更新前の状態を確認できません。' }
+    if ($pluginName -eq 'agent-toolkit') {
     $binDir = Join-Path $HOME '.local/bin'
     New-Item -ItemType Directory -Path $binDir -Force | Out-Null
     $hookWrapper = Join-Path $binDir 'atk-hook.cmd'
     $downloadRoot = $baseUrl -replace '/agent-toolkit/rules/?$', ''
     Invoke-Download "$downloadRoot/agent-toolkit/scripts/atk-hook" (Join-Path $binDir 'atk-hook')
     Invoke-Download "$downloadRoot/agent-toolkit/scripts/atk-hook.cmd" $hookWrapper
+    }
     $savedCacheRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-plugin-cache." + [IO.Path]::GetRandomFileName())
     Copy-CodexPluginCacheSnapshot $savedCacheRoot
     try {
@@ -212,13 +233,20 @@ function Install-CodexPlugin {
         throw $addError
     }
     try {
-        $afterState = Get-CodexPluginState
-        $script:codexPluginUpdated = Test-CodexPluginStateChanged $beforeState $afterState
+        $afterState = Get-CodexPluginState $codexPluginId
+        if ($pluginName -eq 'agent-toolkit') {
+            $script:codexPluginUpdated = Test-CodexPluginStateChanged $beforeState $afterState
+        }
         if ($null -eq $afterState -or -not $afterState.Present -or -not $afterState.Enabled -or $afterState.Version -ne $expectedVersion) {
             throw 'Codex plugin更新後の状態が期待値と一致しません。'
         }
-        if (-not (Test-Path -LiteralPath (Join-Path $codexPluginCacheRoot "$expectedVersion/agent_toolkit/hook.py") -PathType Leaf)) {
+        if ($pluginName -eq 'agent-toolkit' -and -not (Test-Path -LiteralPath (Join-Path $codexPluginCacheRoot "$expectedVersion/agent_toolkit/hook.py") -PathType Leaf)) {
             throw 'Codex plugin更新後のhook実体を確認できません。'
+        }
+        if ($pluginName -eq 'agent-basics') {
+            $skills = @(Get-ChildItem -LiteralPath (Join-Path $codexPluginCacheRoot "$expectedVersion/skills") -Directory -ErrorAction SilentlyContinue |
+                Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'SKILL.md') -PathType Leaf })
+            if ($skills.Count -eq 0) { throw 'Codex plugin更新後のskills実体を確認できません。' }
         }
     } finally {
         try {
@@ -229,7 +257,11 @@ function Install-CodexPlugin {
             throw "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) 退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
         }
     }
-    Write-Output 'Codex側のagent-toolkitプラグインを設定しました。'
+    Write-Output "Codex側の$pluginName プラグインを設定しました。"
+}
+
+function Install-CodexBasicsPlugin {
+    Install-CodexPlugin agent-basics
 }
 
 function Get-ClaudePluginScriptPath {
@@ -273,9 +305,16 @@ function Initialize-AgentsServer {
             continue
         }
         $projectRoot = Split-Path (Split-Path $scriptPath -Parent) -Parent
-        $null | & uv run --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') $scriptPath --check-dependencies *> $null
+        $null | & uv run --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') --prepare $scriptPath > $null
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "agents_serverのuv環境ウォームアップに失敗しました: $scriptPath"
+            Write-Warning '次の操作: install-claude.ps1を再実行してください。'
+            continue
+        }
+        $null | & uv run --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') $scriptPath --check-dependencies > $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "agents_serverの依存検査に失敗しました: $scriptPath"
+            Write-Warning '次の操作: install-claude.ps1を再実行してください。'
         }
     }
 }
@@ -389,10 +428,17 @@ exit /b 1
 }
 
 function Main {
+    param([switch]$BasicsOnly)
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
     Assert-Command claude 'Claude Code' 'https://docs.anthropic.com/ja/docs/claude-code/overview'
     Assert-Command codex 'Codex' 'https://developers.openai.com/codex/cli/'
+    if ($BasicsOnly) {
+        Install-AgentBasicsPlugin
+        Install-CodexBasicsPlugin
+        Write-Output 'Claude Code・Codexのagent-basics設定が完了しました。'
+        return
+    }
     Assert-Command uv 'uv' 'https://docs.astral.sh/uv/getting-started/installation/'
 
     New-Item -ItemType Directory -Path (Split-Path $targetDir -Parent) -Force | Out-Null
@@ -432,11 +478,15 @@ function Main {
             Write-Output "削除（旧ディレクトリ）: $legacyDir"
         }
 
-        Install-AgentToolkitPlugin
-        Install-CodexPlugin
-        Initialize-AgentsServer
-        Move-LegacyCodexMcp
-        Install-AtkWrapper
+        Install-AgentBasicsPlugin
+        Install-CodexBasicsPlugin
+        if (-not $BasicsOnly) {
+            Install-AgentToolkitPlugin
+            Install-CodexPlugin
+            Initialize-AgentsServer
+            Move-LegacyCodexMcp
+            Install-AtkWrapper
+        }
         Write-Output 'Claude Code・Codex、agent-toolkit、atkの設定が完了しました。'
     } finally {
         # 差し替え前にエラー終了した場合、既存環境を復元する。
@@ -462,7 +512,7 @@ function Main {
 
 $exitCode = 0
 try {
-    Main
+    Main -BasicsOnly:$BasicsOnly
 } catch {
     $exitCode = 1
     [Console]::Error.WriteLine($_.Exception.Message)

@@ -12,6 +12,83 @@ import session_review_prepare as prepare
 from agent_toolkit._testing import session_evidence_support as support
 
 
+def test_prepare_mode_costs_keep_observed_usage_and_unmeasured_records_separate(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """mode別の量に実usageを使い、未計測担当と記録されたモデルを別々に残す。"""
+    parent = tmp_path / "parent.jsonl"
+    call = support.claude_call("2026-10-10T00:00:01Z", "read", "Read", {"file_path": "/repo/note.md"})
+    call["effort"] = "medium"
+    call["message"].update(id="usage-1", model="test-model", usage={"input_tokens": 10, "output_tokens": 2})
+    support.write_jsonl(parent, [support.timestamped_entry("2026-10-10T00:00:00Z", "確認する"), call])
+    support.write_subagent(
+        parent.with_suffix("") / "subagents",
+        "agent-child",
+        [support.timestamped_entry("2026-10-10T00:00:02Z", "調査する")],
+        {"agentType": "Explore"},
+    )
+    work = tmp_path / "prepared"
+    work.mkdir()
+    assert prepare.main(["--transcript", str(parent), "--work-dir", str(work)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    stats = [json.loads(line) for line in (work / "bundle/stats.jsonl").read_text(encoding="utf-8").splitlines()]
+    modes = {row["mode"]: row for row in stats if row["kind"] == "stats-mode"}
+    assert modes["main"]["tokens"]["input_tokens"] == 10
+    assert modes["main"]["tokens"]["output_tokens"] == 2
+    assert "test-model" in json.dumps(modes["main"]["observed_identities"])
+    assert modes["Explore"]["tokens"] == {}
+    assert modes["Explore"]["unmeasured_records"] == ["claude:parent/agent-child"]
+    assert "mode別費用" in pathlib.Path(result["stats_path"]).read_text(encoding="utf-8")
+
+
+def test_prepare_exposes_generated_work_and_partial_repetition_without_replaying_body(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """正常なJSON転記を生成量・出所・部分一致から比較でき、数値の異なる文を混同しない。"""
+    source = tmp_path / "parent.jsonl"
+    shared = "確定した監査JSONを生成元で保存し、その絶対パスを受領担当へ渡す。"
+    notice = '<atk-auto source="read-delivery" kind="warn">必要な資料を確認する。</atk-auto>'
+    entries = [support.timestamped_entry("2026-10-10T00:00:00Z", "監査結果を処理する")]
+    for index in range(2):
+        entries.extend(
+            [
+                support.claude_call(
+                    "2026-10-10T00:00:01Z",
+                    f"edit-{index}",
+                    "Write",
+                    {"file_path": f"/tmp/managed-temp/result-{index}.json", "content": f"説明{index}。{shared}件数{index}。"},
+                ),
+                {
+                    "type": "user",
+                    "timestamp": "2026-10-10T00:00:02Z",
+                    "message": {
+                        "role": "user",
+                        "content": [{"type": "tool_result", "tool_use_id": f"edit-{index}", "content": notice}],
+                    },
+                },
+            ]
+        )
+    support.write_jsonl(source, entries)
+    work = tmp_path / "prepared"
+    work.mkdir()
+    assert prepare.main(["--transcript", str(source), "--work-dir", str(work)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    resources = [json.loads(line) for line in (work / "bundle/resource-usage.jsonl").read_text(encoding="utf-8").splitlines()]
+    owner = next(row for row in resources if row["kind"] == "stats-resource-usage")
+    assert owner["generated_input_utf8_bytes"] > 0
+    assert all(row["component"] == "editing" for row in owner["generated_inputs"])
+    assert all(row["managed_temp_paths"] for row in owner["generated_inputs"])
+    repeated = next(row for row in owner["partial_repetitions"] if row["excerpt"] == shared)
+    assert repeated["count"] == 2
+    assert len({row["location"] for row in repeated["locations"]}) == 2
+    assert not any("件数0" in row["excerpt"] or "件数1" in row["excerpt"] for row in owner["partial_repetitions"])
+    assert owner["hook_notices"][0]["source"] == "read-delivery"
+    assert len(owner["hook_notices"][0]["locations"]) == 2
+    stats = pathlib.Path(result["stats_path"]).read_text(encoding="utf-8")
+    assert "生成入力" in stats and "文の部分一致候補" in stats
+    assert "API履歴の再送量" in stats
+
+
 def _read_entries(identity: str, body: str, *, offset: int) -> list[dict[str, Any]]:
     return [
         support.claude_call(

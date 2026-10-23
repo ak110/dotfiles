@@ -201,7 +201,10 @@ def test_commit_and_push_keeps_unrelated_staged_change_out_of_commit(
     staged = git_repository.run_git(repo, "diff", "--cached", "--name-only").stdout.splitlines()
     assert committed == ["target.txt"]
     assert staged == ["unrelated.txt"]
-    assert "未pushのcommit" in capsys.readouterr().err
+    assert _atk_git_sync.pending_commit_count(repo) == 1
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert not captured.err
 
 
 def test_worktree_dirty_can_limit_status_to_target_paths(tmp_path: pathlib.Path) -> None:

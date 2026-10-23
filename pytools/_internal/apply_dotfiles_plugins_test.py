@@ -63,7 +63,7 @@ def _plugin(root: Path, name: str, *, script_code: int = 0) -> Path:
 
 
 def test_applies_plugins_in_order_with_separate_state(plugin_root: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """名前順・上書き・cwd・専用状態と両ストリームの記録が同じ入口で成立する。"""
+    """名前順・上書き・cwd・専用状態と両ストリームの記録が同じ実行関数で成立する。"""
     _plugin(plugin_root, "20-last")
     _plugin(plugin_root, "10-first")
     caplog.set_level(logging.INFO, logger=apply_dotfiles_plugins.__name__)

@@ -313,7 +313,7 @@ async def test_live_launch_waits_for_automatic_resume(
         )
         live_input = BACKGROUND_RESUME_INPUTS[mode]
         if mode == "delegate":
-            await mcp_tools.start(cwd, mode="delegate", prompt=live_input.texts[0], model_type="low_tier")
+            await mcp_tools.start(cwd, mode="delegate", prompt=live_input.texts[0], model_type="chores_fast")
         else:
             await mcp_tools.start(cwd, mode="shell", command="sleep 2", summary_policy=live_input.texts[0])
 
@@ -391,7 +391,7 @@ async def test_live_grandchild_wait_resumes_same_session(
         # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
         isolation.restore_host_environment(monkeypatch)
         monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [candidate])
-        started = await mcp_tools.start(cwd, mode="delegate", prompt=GRANDCHILD_INPUT.texts[0], model_type="high_tier")
+        started = await mcp_tools.start(cwd, mode="delegate", prompt=GRANDCHILD_INPUT.texts[0], model_type="execute")
         session = manager.sessions[started["session_id"]]
 
         result = await _wait_terminal(manager)
@@ -593,7 +593,7 @@ stream_max_retries = 0
                 str(work),
                 mode="delegate",
                 prompt=f"{_SWITCH_TASK_MARKER}: シェルでコマンドを1回実行して結果を報告せよ。",
-                model_type="low_tier",
+                model_type="chores_fast",
             )
             result = await manager.wait()
             # 待機上限へ達した応答は`running`を返すため、終端まで同じ待機を繰り返す。

@@ -12,8 +12,11 @@ import subprocess
 import tempfile
 import threading
 import time
+import tomllib
 from pathlib import Path
 from typing import Any
+
+from agent_toolkit._common import dotfiles_mode
 
 from pytools._internal import (
     codex_processes,
@@ -50,6 +53,7 @@ _CODEX_EXECUTABLE: contextvars.ContextVar[Path] = contextvars.ContextVar("codex_
 
 # Codexでは使用しないため、導入済みなら除去するプラグイン。
 _UNUSED_PLUGINS: tuple[str, ...] = ("compact-plus@compact-plus",)
+_MANAGED_PLUGINS: tuple[str, ...] = ("agent-basics", "agent-toolkit")
 _EXPECTED_HOOK_EVENTS = {
     "sessionStart",
     "subagentStart",
@@ -186,7 +190,7 @@ def _hook_trust_notice_required(result: dict[str, Any] | None) -> bool:
     )
 
 
-def _target(root: Path) -> tuple[str, str, str] | None:
+def _target(root: Path, expected_name: str = "agent-toolkit") -> tuple[str, str, str] | None:
     try:
         marketplace = json.loads((root / ".agents/plugins/marketplace.json").read_text(encoding="utf-8"))
         if not isinstance(marketplace, dict):
@@ -196,7 +200,7 @@ def _target(root: Path) -> tuple[str, str, str] | None:
         if not isinstance(entries, list):
             return None
         entry = next(
-            (item for item in entries if isinstance(item, dict) and item.get("name") == "agent-toolkit"),
+            (item for item in entries if isinstance(item, dict) and item.get("name") == expected_name),
             None,
         )
         source = entry.get("source") if isinstance(entry, dict) else None
@@ -211,7 +215,12 @@ def _target(root: Path) -> tuple[str, str, str] | None:
         version = plugin["version"]
         if not all(isinstance(value, str) for value in (marketplace_name, plugin_name, version)):
             return None
-        if not isinstance(entry, dict) or entry.get("name") != plugin_name or not _valid_version_name(version):
+        if (
+            not isinstance(entry, dict)
+            or entry.get("name") != plugin_name
+            or plugin_name != expected_name
+            or not _valid_version_name(version)
+        ):
             return None
         return marketplace_name, plugin_name, version
     except OSError, json.JSONDecodeError, KeyError, IndexError, StopIteration, TypeError:
@@ -248,10 +257,50 @@ def _plugin_source(root: Path, marketplace_name: str, plugin_name: str) -> Path 
 
 
 def _marketplace_root(data: dict[str, Any], name: str) -> Path | None:
+    """公開されたlocal sourceを登録元とし、Codexが複製した表示用rootと区別する。"""
     for item in data.get("marketplaces", []):
         if item.get("name") == name and isinstance(item.get("root"), str):
+            source = item.get("marketplaceSource")
+            if isinstance(source, dict) and source.get("sourceType") == "local" and isinstance(source.get("source"), str):
+                original = Path(source["source"])
+                if original.is_absolute():
+                    return original.resolve()
             return Path(item["root"]).resolve()
     return None
+
+
+def _migrate_cached_marketplace(root: Path, name: str, registered_root: Path) -> bool:
+    """CodexのGit複製を使う既存登録をlocal配布元へ移し、追加失敗時は元の登録を復元する。"""
+    if not registered_root.is_relative_to((_codex_home() / ".tmp" / "marketplaces").resolve()):
+        return False
+    try:
+        config = tomllib.loads((_codex_home() / "config.toml").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return False
+    original = config.get("marketplaces", {}).get(name)
+    if not isinstance(original, dict) or original.get("source_type") != "git" or not isinstance(original.get("source"), str):
+        return False
+    if set(original) - {"source_type", "source", "ref", "sparse_paths"}:
+        raise RuntimeError("marketplace登録に未対応の設定があるため、元の登録を保持した")
+    restore = ["plugin", "marketplace", "add", original["source"]]
+    if reference := original.get("ref"):
+        if not isinstance(reference, str):
+            raise RuntimeError("marketplaceのrefが文字列ではないため元の登録を保持した")
+        restore.extend(("--ref", reference))
+    sparse_paths = original.get("sparse_paths", [])
+    if not isinstance(sparse_paths, list) or any(not isinstance(path, str) for path in sparse_paths):
+        raise RuntimeError("marketplaceのsparse_pathsが不正なため元の登録を保持した")
+    for path in sparse_paths:
+        restore.extend(("--sparse", path))
+    if not _command(["plugin", "marketplace", "remove", name]):
+        raise RuntimeError("旧Git marketplaceの登録を変更できなかった。元の登録を確認する")
+    if _command(["plugin", "marketplace", "add", str(root)]):
+        return True
+    if _command(restore):
+        raise RuntimeError("local marketplaceの追加に失敗した。元のGit登録とref・sparse_pathsを復元済み")
+    raise RuntimeError(
+        f"local marketplaceの追加と元のGit登録の復元に失敗した。{_codex_home() / 'config.toml'}のmarketplaces.{name}を復旧する"
+    )
 
 
 def _installed(data: dict[str, Any], plugin_id: str) -> tuple[bool, dict[str, Any] | None]:
@@ -356,7 +405,7 @@ def _hook_bin() -> Path:
 
 
 def _install_hook_wrapper(root: Path) -> bool:
-    """plugin有効化前に安定したhook入口をPATH上へ配置する。"""
+    """plugin有効化前に安定したhook起動コマンドをPATH上へ配置する。"""
     changed = False
     for name in ("atk-hook", "atk-hook.cmd") if os.name == "nt" else ("atk-hook",):
         source = root / "agent-toolkit" / "scripts" / name
@@ -432,9 +481,13 @@ def _sync_local_plugin(
     notices: list[post_apply_outcome.PostApplyNotice],
 ) -> tuple[bool, bool]:
     """Local marketplaceのpluginを目標版へ同期し、変更の有無を返す。"""
+    if current is not None and current.get("enabled") is False:
+        # plugin addは有効化を伴うため、明示的に無効なpluginは版更新も保留する。
+        return False, False
     plugin_id = f"{plugin_name}@{marketplace_name}"
-    needs_plugin_add = current is None or current.get("enabled") is not True or current.get("version") != version
-    wrapper_changed = _install_hook_wrapper(root)
+    needs_plugin_add = current is None or current.get("version") != version
+    toolkit_plugin = plugin_name == "agent-toolkit"
+    wrapper_changed = _install_hook_wrapper(root) if toolkit_plugin else False
     if needs_plugin_add:
         cache_root = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name
         saved_root = Path(tempfile.mkdtemp(prefix="codex-plugin-cache-"))
@@ -456,11 +509,14 @@ def _sync_local_plugin(
         try:
             _verify_expected_state(plugin_id, version)
             new_cache = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name / version
-            if not (new_cache / "agent_toolkit" / "hook.py").is_file():
+            if not toolkit_plugin and not any(path.is_file() for path in (new_cache / "skills").glob("*/SKILL.md")):
+                raise RuntimeError("Codex plugin更新後のskills実体を確認できない")
+            if toolkit_plugin and not (new_cache / "agent_toolkit" / "hook.py").is_file():
                 raise RuntimeError("Codex plugin更新後のhook実体を確認できない")
-            if _hook_trust_notice_required(_hooks_list()):
+            if toolkit_plugin and _hook_trust_notice_required(_hooks_list()):
                 notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
-            _restart_daemon_after_plugin_update(notices)
+            if toolkit_plugin:
+                _restart_daemon_after_plugin_update(notices)
         finally:
             try:
                 # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
@@ -472,7 +528,7 @@ def _sync_local_plugin(
                 ) from error
             else:
                 shutil.rmtree(saved_root)
-    removed_legacy_links = _remove_legacy_links(root)
+    removed_legacy_links = _remove_legacy_links(root) if toolkit_plugin else False
     return needs_plugin_add or wrapper_changed or removed_legacy_links, False
 
 
@@ -574,6 +630,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     導入・更新と状態確認の失敗は警告を出力してスキップと数え、配布先ファイルの書き込みの失敗は例外として失敗と数える。
     """
+    if dotfiles_mode.is_minimal():
+        return post_apply_outcome.PostApplyOutcome()
     codex = common.resolve_executable("codex")
     if codex is None:
         logger.info(
@@ -595,8 +653,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             return _outcome(changed, notices, deferred=unused_deferred)
         # dotfilesの作業ツリーをmarketplaceとして登録し、その版を期待値にする。単体インストーラー
         # （`install-claude.sh`・`install-claude.ps1`）は作業ツリーを前提にできないため、GitHubのmarketplaceを使う。
-        target = _target(root)
-        if target is None:
+        targets = tuple(_target(root, name) for name in _MANAGED_PLUGINS)
+        if any(target is None for target in targets):
             logger.warning(
                 log_format.format_status(
                     "codex plugins",
@@ -606,8 +664,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 )
             )
             return _outcome(changed, notices, deferred=unused_deferred)
-        marketplace_name, plugin_name, version = target
-        if _plugin_source(root, marketplace_name, plugin_name) is None:
+        resolved_targets = tuple(target for target in targets if target is not None)
+        marketplace_name = resolved_targets[0][0]
+        if any(_plugin_source(root, name, plugin) is None for name, plugin, _version in resolved_targets):
             logger.warning(
                 log_format.format_status(
                     "codex plugins",
@@ -625,17 +684,19 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 return _outcome(changed, notices, deferred=unused_deferred)
             changed = True
         elif registered_root != root.resolve():
-            logger.error(
-                log_format.format_status(
-                    "codex plugins",
-                    f"marketplace登録先が異なる: {registered_root}。登録先をこの作業ツリーへ変更する場合は"
-                    f'codex plugin marketplace remove "{marketplace_name}"を実行し、'
-                    f'codex plugin marketplace add "{root}"で登録してupdate-dotfilesを再実行してください。',
+            if _migrate_cached_marketplace(root, marketplace_name, registered_root):
+                changed = True
+            else:
+                logger.error(
+                    log_format.format_status(
+                        "codex plugins",
+                        f"marketplace登録先が異なる: {registered_root}。登録先をこの作業ツリーへ変更する場合は"
+                        f'codex plugin marketplace remove "{marketplace_name}"を実行し、'
+                        f'codex plugin marketplace add "{root}"で登録してupdate-dotfilesを再実行してください。',
+                    )
                 )
-            )
-            return _outcome(changed, notices, deferred=unused_deferred)
+                return _outcome(changed, notices, deferred=unused_deferred)
 
-        plugin_id = f"{plugin_name}@{marketplace_name}"
         before = _codex_json(["plugin", "list", "--json"])
         if before is None:
             logger.error(
@@ -646,8 +707,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 )
             )
             return _outcome(changed, notices, deferred=unused_deferred)
-        state_known, current = _installed(before, plugin_id)
-        if not state_known:
+        if not all(_installed(before, f"{plugin}@{marketplace_name}")[0] for _name, plugin, _version in resolved_targets):
             logger.error(
                 log_format.format_status(
                     "codex plugins",
@@ -656,7 +716,13 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 )
             )
             return _outcome(changed, notices, deferred=unused_deferred)
-        local_changed, deferred = _sync_local_plugin(root, marketplace_name, plugin_name, version, current, notices)
+        local_changed = False
+        deferred = False
+        for _name, plugin_name, version in resolved_targets:
+            _known, current = _installed(before, f"{plugin_name}@{marketplace_name}")
+            plugin_changed, plugin_deferred = _sync_local_plugin(root, marketplace_name, plugin_name, version, current, notices)
+            local_changed = local_changed or plugin_changed
+            deferred = deferred or plugin_deferred
         return _outcome(changed or local_changed, notices, deferred=deferred or unused_deferred)
     except RuntimeError as error:
         # 導入・更新とその後の状態確認の失敗。設定ファイルとランチャーの書き込みの失敗（OSError）は失敗として送出する。

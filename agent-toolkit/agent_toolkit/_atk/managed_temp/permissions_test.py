@@ -137,7 +137,7 @@ def test_permission_recovery_changes_only_the_pinned_directory(tmp_path: pathlib
 def test_sweep_detects_new_registration_with_identical_directory_stat(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """rootの時刻とsizeが同じでも、新しい登録集合を掃引ゲートへ反映する。"""
+    """rootの時刻とsizeが同じでも、新しい登録集合を掃引可否の判定へ反映する。"""
     state = registry._state_root()  # pylint: disable=protected-access
     root = registry._temp_root()  # pylint: disable=protected-access
     original_stat = pathlib.Path.stat

@@ -7,7 +7,7 @@ epilogueを個別に持っていた。本スクリプトへ集約し、各モジ
 
 標準入力は各フックに共通する処理で生バイト列として一度だけ読み、UTF-8で厳密にデコードして各モジュールへ渡す。
 標準出力と標準エラーもUTF-8へ統一する。`AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`が非空の場合は、
-環境依存の入力変換をバイト単位で調査できるよう、デコード前の入力を指定ディレクトリへ保存する。
+環境によって異なる入力変換をバイト単位で調査できるよう、デコード前の入力を指定ディレクトリへ保存する。
 
 依存パッケージはplugin rootのuvプロジェクトへ集約する。全サブコマンドが同じvenvを共有し、
 サブコマンド切替時の再解決コストを生じさせない。
@@ -30,12 +30,15 @@ import json
 import os
 import pathlib
 import sys
+import types
 
 # 正常な呼出しで使わない診断とdump用の依存を、必要になるまで読み込まない。
 lazy import datetime
 lazy import traceback
 
 lazy from agent_toolkit._atk import outcome as _outcome
+lazy from agent_toolkit._hooks import agent_id as _agent_id
+lazy from agent_toolkit._hooks import notice as _notice
 lazy from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 _SUBCOMMANDS: frozenset[str] = frozenset(
@@ -52,6 +55,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "rules_context_codex",
         "user_prompt_submit",
         "session_activity",
+        "antigravity",
     }
 )
 
@@ -157,18 +161,12 @@ def main(argv: list[str]) -> int:
     except Exception:  # noqa: BLE001 -- 読込失敗でフック全体を停止させないため広範に捕捉
         traceback.print_exc()
         return 0
+    cycle: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
+    if isinstance(payload, dict) and payload.get("session_id") and argv[0] != "pretooluse":
+        cycle = _notice.notice_cycle(str(payload.get("session_id", "")), argv[0], _agent_id.resolve_hook_agent_id(payload))
     try:
-        if argv[0] in {"stop", "subagent_stop_advisor"}:
-            output = io.StringIO()
-            try:
-                with contextlib.redirect_stdout(output):
-                    result = module.main(payload_text)
-            finally:
-                sys.stdout.write(output.getvalue())
-            response = output.getvalue()
-            _record_activity(payload, output=response, returncode=result)
-            return result
-        return module.main(payload_text)
+        with cycle:
+            return _invoke_module(module, payload_text, payload, argv)
     except Exception as exc:  # noqa: BLE001 -- フックの破損によって編集できなくならないよう広範に捕捉
         tb = traceback.extract_tb(exc.__traceback__)
         frame = tb[-1] if tb else None
@@ -189,6 +187,25 @@ def main(argv: list[str]) -> int:
             if callable(approve):
                 approve()
         return 0
+
+
+def _invoke_module(module: types.ModuleType, payload_text: str, payload: object, argv: list[str]) -> int:
+    """通知の有効期間の内側で、イベント固有の出力と活動記録を処理する。"""
+    if argv[0] == "antigravity":
+        if len(argv) != 2:
+            raise ValueError("antigravityにはイベント名を1個渡す")
+        return module.main(payload_text, event=argv[1])
+    if argv[0] in {"stop", "subagent_stop_advisor"}:
+        output = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(output):
+                result = module.main(payload_text)
+        finally:
+            sys.stdout.write(output.getvalue())
+        response = output.getvalue()
+        _record_activity(payload, output=response, returncode=result)
+        return result
+    return module.main(payload_text)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, cast
 
+from agent_toolkit._common import dotfiles_mode
+
 from pytools._internal import (
     claude_common,
     claude_marketplace,
@@ -29,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # plugin cache の version 直下に揃っている必要があるファイル。
 # いずれかが欠けると `uv run --project <キャッシュ>` がそのディレクトリをプロジェクトとして
-# 解決できず、対象 plugin の入口が import に失敗する。
+# 解決できず、対象 plugin の起動スクリプトが import に失敗する。
 _PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = ("pyproject.toml", "uv.lock", ".claude-plugin/plugin.json")
 
 # インストール済みかつ`enabledPlugins`で`false`にされておらず有効なものを `run()` 中に `claude plugin disable` で無効化する。
@@ -64,6 +66,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     外部marketplaceのpluginの自動無効化（設定の書き換え）の失敗は失敗と数える。
     稼働中の参照を守るためにplugin cacheの修復を延期した場合は延期と数える。
     """
+    if dotfiles_mode.is_minimal():
+        return post_apply_outcome.PostApplyOutcome()
     try:
         changed, recommendations, disable_failed_count, deferred = _install_plugins()
     except RuntimeError as error:

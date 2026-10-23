@@ -131,7 +131,7 @@ def _submissions(root: pathlib.Path) -> dict[str, frozenset[str]]:
 
 def _engine(process: psutil.Process) -> str | None:
     names = {process.name().lower(), pathlib.Path(process.exe()).name.lower()}
-    for engine in ("claude", "codex"):
+    for engine in ("claude", "codex", "agy"):
         if names & {engine, f"{engine}.exe"}:
             return engine
     return None
@@ -149,7 +149,7 @@ def host_process() -> HostProcess | None:
 
 
 def host_processes() -> tuple[HostProcess, ...]:
-    """現在のOSアカウントが動かす両ホストを、名前の完全一致で列挙する。"""
+    """現在のOSアカウントが動かす対応ホストを、名前の完全一致で列挙する。"""
     found: list[HostProcess] = []
     username = psutil.Process().username()
     for process in psutil.process_iter():
@@ -164,7 +164,7 @@ def host_processes() -> tuple[HostProcess, ...]:
             # 名前まで取得できるホストは、実行ファイルを読めなくても未登録候補へ残す。
             with contextlib.suppress(psutil.Error):
                 name = process.name().lower().removesuffix(".exe")
-                if name in {"claude", "codex"}:
+                if name in {"claude", "codex", "agy"}:
                     found.append(HostProcess(name, session_registry.ProcessIdentity(process.pid, process.create_time())))
     return tuple(found)
 
@@ -201,7 +201,7 @@ def _valid_activity_record(record: Mapping[str, Any], session_id: str) -> bool:
         and version == 1
         and record.get("session_id") == session_id
         and isinstance(record.get("engine"), str)
-        and record.get("engine") in {"claude", "codex"}
+        and record.get("engine") in {"claude", "codex", "agy"}
         and isinstance(actors, dict)
         and all(
             session_launchers.valid_launcher(actor) is not None and isinstance(state, str) and state in {"active", "waiting"}
@@ -224,7 +224,7 @@ def _continuing(output: str, returncode: int) -> bool:
         return False
     specific = response.get("hookSpecificOutput")
     context = specific.get("additionalContext") if isinstance(specific, dict) else None
-    return response.get("decision") == "block" or bool(context)
+    return response.get("decision") in {"block", "continue"} or bool(context)
 
 
 def record_activity(
@@ -237,7 +237,7 @@ def record_activity(
 ) -> None:
     """hookの実際の応答を反映して会話の活動を更新する。本文とツール入力は保存しない。
 
-    入力形はClaude CodeとCodexの公式hookの共通フィールドを使う。
+    入力形はClaude CodeとCodexの共通フィールドおよび正規化したagyのhookを使う。
     SubagentStart/Stopのsession_idは親会話で、agent_idはその会話内の主体である。
     """
     session_id = session_launchers.valid_launcher(payload.get("session_id"))
@@ -249,6 +249,8 @@ def record_activity(
         not in {
             "SessionStart",
             "UserPromptSubmit",
+            "PreInvocation",
+            "PostInvocation",
             "PreToolUse",
             "PostToolUse",
             "PostToolUseFailure",
@@ -297,9 +299,16 @@ def record_activity(
             record.update(version=1, session_id=session_id, actors=actors, updated_at=time.time())
             if host is not None:
                 record.update(engine=host.engine, process=dataclasses.asdict(host.identity))
+            if record.get("engine") == "agy":
+                # agyのPLANNER_RESPONSE/DONEはtoolの前にも現れるため、終了判定に使わない。
+                # Stopの継続応答と、その後の入力・tool hookが示す実行状態を保持する。
+                record["agy_turn_state"] = actors.get("main", "active")
             transcript = payload.get("transcript_path")
             if isinstance(transcript, str):
                 record["transcript_path"] = transcript
+            cwd = payload.get("cwd")
+            if isinstance(cwd, str):
+                record["cwd"] = cwd
             parent = delegated_session.owner_session_id(os.environ)
             if parent is not None and parent != session_id:
                 record["parent_session_id"] = parent
@@ -405,7 +414,17 @@ def _native_sessions(process: HostProcess) -> tuple[dict[str, dict[str, Any]], s
         else:
             for item in psutil.Process(process.identity.pid).open_files():
                 path = pathlib.Path(item.path)
-                if path.name.startswith("rollout-") and path.suffix == ".jsonl":
+                if process.engine == "agy":
+                    if (
+                        path.name in {"transcript.jsonl", "transcript_full.jsonl"}
+                        and path.parent.name == "logs"
+                        and path.parent.parent.name == ".system_generated"
+                        and path.parent.parent.parent.parent.name == "brain"
+                    ):
+                        session_id = session_launchers.valid_launcher(path.parent.parent.parent.name)
+                        if session_id is not None:
+                            found[session_id] = {"engine": "agy", "transcript_path": str(path)}
+                elif path.name.startswith("rollout-") and path.suffix == ".jsonl":
                     with path.open(encoding="utf-8") as stream:
                         first = json.loads(stream.readline())
                     payload = first.get("payload", {}) if isinstance(first, dict) else {}
@@ -419,6 +438,9 @@ def _native_sessions(process: HostProcess) -> tuple[dict[str, dict[str, Any]], s
 
 def _turn_state(record: Mapping[str, Any], *, since: float | None = None) -> str | None:
     """セッション記録の末尾から実ターンの終了を読む。見つからない場合は未判定にする。"""
+    if record.get("engine") == "agy":
+        state = record.get("agy_turn_state")
+        return state if isinstance(state, str) and state in {"active", "waiting"} else None
     raw = record.get("transcript_path")
     if not isinstance(raw, str):
         return None

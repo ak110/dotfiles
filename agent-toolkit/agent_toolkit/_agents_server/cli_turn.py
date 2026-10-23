@@ -24,7 +24,7 @@ from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState, initialize_turn, utc_now
 from agent_toolkit._common import delegated_session as _delegated_session
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import process_tree, stream_lines
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.cli-turn")
@@ -363,7 +363,7 @@ class CliTurnManager:
                     await self._attach_session(session, process, turn_seq)
                     if not initialized.done():
                         initialized.set_result(session)
-                async for line in process.stdout:
+                async for line in stream_lines.iter_lines(process.stdout):
                     payload = decode_event(line)
                     if payload is None:
                         continue

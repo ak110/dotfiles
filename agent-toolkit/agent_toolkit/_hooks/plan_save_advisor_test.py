@@ -8,6 +8,8 @@ import subprocess
 import pytest
 
 from agent_toolkit._common import session_state
+from agent_toolkit._hooks import plan_save_advisor
+from agent_toolkit._hooks.notice import notice_cycle
 from agent_toolkit._plan import owner_records as _owner_records
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
@@ -91,6 +93,38 @@ def test_existing_working_plans_notify_once_then_approve(tmp_path: pathlib.Path)
     assert not second_result
 
 
+def test_plan_notice_tracks_target_changes_and_resolution(tmp_path, monkeypatch):
+    """同じ計画の反復を抑え、新しい対象と解消後の再発へ通知する。"""
+    plans = tmp_path / "plans"
+    plans.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(plan_save_advisor, "is_process_loop_session", lambda *_args: False)
+    monkeypatch.setattr(plan_save_advisor, "is_pending_async_work", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(plan_save_advisor, "is_main_agent_context", lambda *_args: True)
+    session_id = "plan-notice-cycle"
+    payload = json.dumps({"session_id": session_id})
+
+    def evaluate():
+        with notice_cycle(session_id, "stop", "main"):
+            return plan_save_advisor.evaluate(payload)
+
+    first = plans / "first.md"
+    first.write_text("# 計画\n", encoding="utf-8")
+    _owner_records.write_owner_record(first, session_id=session_id)
+    assert evaluate()[0] == "notify"
+    assert evaluate() == ("approve", "")
+    second = plans / "second.md"
+    second.write_text("# 次の計画\n", encoding="utf-8")
+    _owner_records.write_owner_record(second, session_id=session_id)
+    assert str(second) in evaluate()[1]
+    assert evaluate() == ("approve", "")
+    first.unlink()
+    second.unlink()
+    assert evaluate() == ("approve", "")
+    first.write_text("# 再開する計画\n", encoding="utf-8")
+    assert evaluate()[0] == "notify"
+
+
 def test_nested_working_plans_are_reported(tmp_path: pathlib.Path) -> None:
     """日付階層へ置かれた計画も通知の対象とする。"""
     home = tmp_path / "home"
@@ -119,7 +153,6 @@ def test_absent_working_root_approves(tmp_path: pathlib.Path) -> None:
 @pytest.mark.parametrize(
     ("state", "payload_extra", "environment"),
     [
-        ({"working_plan_save_notified": True}, {}, {}),
         ({}, {"background_tasks": [{"type": "subagent", "id": "pending"}]}, {}),
         ({}, {}, {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}),
         ({}, {"agent_id": "agent-native"}, {}),

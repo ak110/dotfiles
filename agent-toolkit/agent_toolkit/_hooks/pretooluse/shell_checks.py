@@ -1,4 +1,4 @@
-r"""PreToolUse統合フックのうち、Bashコマンドを遮断する条件の判定。"""
+r"""PreToolUse統合フックのBashコマンドに対する実害保護と手順支援。"""
 
 from __future__ import annotations
 
@@ -41,11 +41,14 @@ _GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
 
 
 def _check_read_predicate_stderr_discard(command: str) -> str | None:
-    """静的に確定する読取述語の標準エラーの破棄を実行前に遮断する。"""
+    """読取の診断破棄を警告する。再取得で診断を復元できるため実行を続ける。"""
     for invocation in extract_bash_invocations(command):
         if is_read_predicate(invocation.segment.tokens) and invocation.outputs[1] == "/dev/null":
-            return _block_notice(
+            return _llm_notice(
                 "読取述語の標準エラーの最終接続先が`/dev/null`であり、入力・パス・権限の異常の診断を失う。",
+                tag=_WARN_TAG,
+                subject=command,
+                removable_cause=True,
                 fix="標準エラーの破棄を外して再実行する。出力量は標準出力の対象限定・保存で抑え、"
                 "標準エラーは呼び出し元へ残すか別ファイルへ保存し、別の呼び出しで読む。",
             )
@@ -230,7 +233,7 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
         parsed_segments = extract_execution_segments(segment)
         if len(parsed_segments) != 1 or tuple(raw_tokens) != parsed_segments[0].tokens:
             return True
-        subcommand = _git_subcommand_tokens(parsed_segments[0])
+        subcommand = git_subcommand_tokens(parsed_segments[0])
         if subcommand is None or subcommand[0] not in {"grep", "log"}:
             return True
         name, arguments = subcommand
@@ -276,7 +279,7 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
     )
 
 
-def _git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
+def git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
     """`git`区間のサブコマンド名と、そのサブコマンド以降の引数を返す。"""
     if not segment.resolved or not segment.tokens:
         return None
@@ -298,6 +301,10 @@ def _git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, .
     return None
 
 
+# 終了証跡など既存の内部importを保持し、新しい消費側は公開名を使う。
+_git_subcommand_tokens = git_subcommand_tokens
+
+
 def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
     """指定内容を確定できる通常commitのメッセージを返す。
 
@@ -311,7 +318,7 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         if not invocation.arguments_known:
             continue
-        parsed = _git_subcommand_tokens(invocation.segment)
+        parsed = git_subcommand_tokens(invocation.segment)
         if parsed is None or parsed[0] != "commit":
             continue
         arguments = parsed[1]
@@ -370,9 +377,21 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
         yield "\n\n".join(messages)
 
 
+_WORK_ITEM_FILENAME_PATTERN = re.compile(r"(?<![0-9A-Za-z_-])\d{8}-\d{6}-\d{3}\.md(?![0-9A-Za-z_.-])")
+
+
 def _git_commit_message_format_error(messages: Iterable[str]) -> str | None:
-    """件名の次に内容が続く通常commitで、2行目の空行欠落を返す。"""
+    """通常commitのWI名記載と件名・本文間の空行欠落を返す。"""
     for message in messages:
+        if match := _WORK_ITEM_FILENAME_PATTERN.search(message):
+            return _block_notice(
+                f"公開するコミットメッセージに作業項目のファイル名（`{match.group()}`）が含まれている。",
+                fix=(
+                    "公開するコミットへ作業項目のファイル名を書かない。実装コミットとAWIの対応は"
+                    "`atk run-script plan-progress`が記録する対応記録ファイル（`<stem>.wi-commits.jsonl`）へ残し、"
+                    "メッセージから作業項目のファイル名を含む行を除いて再実行する。"
+                ),
+            )
         lines = message.splitlines()
         if len(lines) > 1 and lines[1].strip():
             return _block_notice(
@@ -419,7 +438,7 @@ def _commit_heredoc_body(command: str) -> str | None:
             start -= 1
         declaration = masked_lines[start - 1] if start > 0 else ""
         if any(
-            (parsed := _git_subcommand_tokens(item.segment)) is not None and parsed[0] == "commit"
+            (parsed := git_subcommand_tokens(item.segment)) is not None and parsed[0] == "commit"
             for item in extract_bash_invocations(declaration)
         ):
             bodies.append("\n".join(original_lines[start:terminator]))
@@ -491,25 +510,28 @@ def _rev_parse_short_revisions(arguments: Sequence[str]) -> list[str] | None:
 
 
 def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
-    """単一revision検証へ複数revisionを渡す実行を遮断する本文を返す。
+    """単一revision検証へ複数revisionを渡す読取へ警告する。
 
     同コマンドは1回に1つのrevisionだけを受理し、複数を渡すと`fatal: Needed a single revision`で失敗する。
     条文で定めた後も同じ失敗が反復したため、実行の直前に判定する。
-    入力だけで失敗が確定し、個別の取得で是正できるため実行前に遮断する。
+    個別の取得で結果を復元できるため、警告とする。
     """
     for invocation in extract_bash_invocations(command):
         if not invocation.arguments_known:
             continue
         segment = invocation.segment
-        subcommand = _git_subcommand_tokens(segment)
+        subcommand = git_subcommand_tokens(segment)
         if subcommand is None or subcommand[0] != "rev-parse":
             continue
         revisions = _rev_parse_short_revisions(subcommand[1])
         if revisions is not None and len(revisions) >= 2:
-            return _block_notice(
+            return _llm_notice(
                 f"`git rev-parse`の単一リビジョン検証へ{len(revisions)}つのリビジョン（{'、'.join(revisions)}）を渡している。"
                 "`--short`または`--verify`は1回に1つのリビジョンだけを受理し、複数指定は失敗する。"
                 "`--quiet`によって診断と終了コードが変わるため、終了コード128とは限らない。",
+                tag=_WARN_TAG,
+                subject=command,
+                removable_cause=True,
                 fix="元の`--short`・`--short=<長さ>`・`--verify`などのオプションを保ち、リビジョンごとに"
                 "`git rev-parse <元のオプション> <revision>`を個別に実行して入力と出力の対応を保つ。",
             )
@@ -567,14 +589,13 @@ def _pattern_command_slot(arguments: Sequence[str]) -> set[int]:
 
 
 def _check_bash_option_after_terminator(command: str) -> str | None:
-    """オプション終端`--`の後ろへCLI自身のオプションを置いたコマンドを遮断する。
+    """読取コマンドのオプション終端の後ろにあるオプションへ警告する。
 
     `--`の後ろは全てデータとして扱われるため、後ろへ置いた`--glob`などは`rg`・`grep`系・`git grep`では
     存在しないパスとして失敗し、`git log`・`git diff`・`git show`ではエラーを出力せずにパス指定として扱われ、誤った結果を返す。
     条文で配置を定めた後も同じ誤りが反復したため、実行の直前に判定する。
-    遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
+    読取入力を修正して再取得できるため警告し、通常の実行を続ける。
     外側に所属する既知の引数だけを判定し、置換内の語と展開結果が未確定の引数はオプションとして扱わない。
-    遮断で失うのはコマンド1回の発行だけである。
     `rg`・`grep`系と`git grep`では、`-e`・`-f`を`--`より前に置かない場合に`--`の直後を検索パターンとみなして除くため、
     `-`で始まるパターンは遮断しない。`git grep`ではその後ろのrevision・パスの区切り`--`も除く。
     下位コマンドへ`--`の後ろでオプションを渡すCLI（`uv run --`など）は対象コマンドに含めない。
@@ -589,7 +610,7 @@ def _check_bash_option_after_terminator(command: str) -> str | None:
             found = _options_after_terminator(arguments, excluded=_pattern_command_slot(arguments))
             label = name
         else:
-            subcommand = _git_subcommand_tokens(segment)
+            subcommand = git_subcommand_tokens(segment)
             if subcommand is None or subcommand[0] not in _OPTION_TERMINATOR_GIT_SUBCOMMANDS:
                 continue
             arguments = list(strip_redirections(subcommand[1]))
@@ -601,10 +622,13 @@ def _check_bash_option_after_terminator(command: str) -> str | None:
             label = f"git {subcommand[0]}"
         if not found:
             continue
-        return _block_notice(
-            f"blocked: `{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
+        return _llm_notice(
+            f"`{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
             "`--`の後ろは全てデータとして扱われるため、これらはパスとして解釈され、"
             "存在しないパスとして失敗するか、エラーを出力せずに結果を限定する。",
+            tag=_WARN_TAG,
+            subject=command,
+            removable_cause=True,
             fix=(
                 "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"
                 "`-`で始まるパスを渡す場合は`./`を前置する。"
@@ -637,7 +661,7 @@ def _is_atk_resident_display(tokens: tuple[str, ...]) -> bool:
 
 
 def _check_bash_atk_output_loss(command: str) -> str | None:
-    """静的に確定したatkの出力のパイプとリダイレクト、waitの背景化を遮断する。
+    """atkの出力接続とwaitの背景化へ、結果を受領する手段を警告する。
 
     `atk`はエージェント環境で短い出力を直接表示し、長い出力を自ら保存して保存先を示す。
     パイプかリダイレクトを介すと終了コードと警告を同じ呼び出しで観測できず、保存先の行が後段かファイルへ渡り、
@@ -645,6 +669,7 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
     未確定のパスを区別せず、標準出力と標準エラーの最終的な接続先が呼び出し元から引き継いだ1と2から変わったかだけで判定する。
     常駐と追従の表示は保存の対象外のため、リダイレクトの判定から除く。
     引数のリテラルやheredoc本文、未知の実行位置は判定せず、ホストが管理する背景実行は通す。
+    保存結果や状態の再照会で受領を回復できる手順支援のため、警告とする。
     区切り語を引用しないheredocの本文にある置換は、`_check_bash_unquoted_heredoc_substitution`が実行前に遮断する。
     """
     for invocation in extract_bash_invocations(command):
@@ -662,8 +687,11 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
         if not causes:
             continue
         label = "atk agents wait" if is_wait else "atk"
-        return _block_notice(
-            f"blocked: `{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
+        return _llm_notice(
+            f"`{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
+            tag=_WARN_TAG,
+            subject=command,
+            removable_cause=True,
             fix=(
                 "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
                 "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読む。"
@@ -791,9 +819,10 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
     return _llm_notice(
         f"`PATH`へドライブ文字形式の要素（{'、'.join(found)}）を加えている。"
         "`Git Bash`の`PATH`はコロン区切りのため、ドライブ文字形式の要素は`C`と`/...`の2要素に分かれ、"
-        "そのディレクトリは検索されない。コマンドは実行済みであり、`PATH`に依存した結果"
+        "そのディレクトリは検索されない。コマンドは実行済みであり、`PATH`の内容で決まった結果"
         "（`command -v`の出力、実行されたプログラム、計測値）は意図した構成のものではない。",
         tag=_WARN_TAG,
         fix="`/c/Users/...`の形で書くか、`\"$(cygpath -u '<Windows形式のパス>')\"`で変換した値を`PATH`へ加えて再実行する。",
         removable_cause=True,
+        subject=command,
     )

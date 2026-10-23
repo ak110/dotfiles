@@ -1,18 +1,23 @@
 # Claude Code auto modeのカスタムルール
 
-本書はauto modeのカスタムルールを追加・編集する手順を扱う。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/auto-mode.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
+
+以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/auto-mode.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/auto-mode.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+
+## 運用条件
+
 拒否に遭遇したときの行動手順は`agent-toolkit:user-confirmation-and-report`の`references/permission-denial.md`が定める。
-
-カスタムルールは`~/.claude/settings.json`の`autoMode`配下に自然言語で書く。
-`allow`・`soft_deny`・`hard_deny`・`environment`の各配列は設定するとその区分のデフォルト一覧を置き換える。デフォルトを維持して追加するには配列へリテラル文字列`"$defaults"`を含める。
-`allow`の許可指示はデフォルトの`soft_deny`判定を上書きする。設定する区分のキーは公式スキーマ（`$schema`のURL）で実在を確認する。
-
-## ルール区分
-
-- `allow`: 明示的に許可する操作
-- `soft_deny`: 標準では拒否するが、ユーザー指示や文脈で`clears`される操作
-- `hard_deny`: いかなる場合も拒否する操作
-- `environment`: 信頼境界（リポジトリ・ドメイン・バケット・サービス）の定義
 
 ## CLIサブコマンド
 
@@ -31,11 +36,3 @@
 配布元の`autoMode.allow`からラベルごと廃止したルールは、配列のunionマージのためユーザー環境の設定に残る。廃止したラベルの旧文面を除去する処理を配布処理へ登録する。
 
 認証を要するClaude Codeの検証では`CLAUDE_CONFIG_DIR`を既存の値のまま使い、標準の認証解決を保つ。`--settings <file-or-json>`は既存設定への追加読込として扱う。
-
-## カスタムルール記述の注意点
-
-- 適用対象（対象操作・対象コミットの性質・対象パスなど）を文面に明示する
-- 粒度は操作の種別とし、classifierの判別に必要な代表例だけを添える。変化しやすい識別子（サブコマンド名、オプションの完全な綴り、個別ファイルのパス）の列挙は避ける（ユーザー指定）
-- 許可する対象の記述だけで構成し、記述の外の操作は`soft_deny`と`hard_deny`の標準の判定に委ねる（ユーザー指定）。対象は実際に行う操作の範囲で書き、remoteのホスト、由来、所有者とユーザー意図による限定は加えず、ユーザー意図の判定はUser Intent Ruleへ委ねる。対象を狭めると手順どおりの操作が拒否されて工程が止まる
-- 上書きは`soft_deny`までとし、デフォルトの`hard_deny`領域は維持する（auto modeの安全境界を保つため）
-- 信頼対象（個人リポジトリ・信頼ドメインなど）を参照するallowルールは、`autoMode.environment`の信頼境界宣言と整合させる

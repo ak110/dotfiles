@@ -106,7 +106,7 @@ dev = [
 [[tool.agent-toolkit.pick-wi-check.norm-spec]]
 # 規範を変更する項目には、変更の対象ファイルのリポジトリ相対パスを書く。
 name = "規範変更の対象ファイル"
-paths = ["AGENTS.md", "agent-toolkit/rules/", "agent-toolkit/skills/", "agent-toolkit/share/", ".claude/skills/"]
+paths = ["AGENTS.md", "agent-toolkit/rules/", "agent-toolkit/skills/", "agent-toolkit/share/", "agent-basics/skills/", ".claude/skills/"]
 suffixes = [".md"]
 require-paths = true
 
@@ -119,8 +119,9 @@ require-text = ["docs/development/concepts.md", "docs/development/incidents.md",
 [tool.pyfltr]
 preset = "latest"
 python = true
-# Python 3.15のCIテストは約437秒を要し、省略時の600秒では余裕が小さいためCIタイムアウトを延伸する。
 command-timeout = 900
+# 全通常pytestはCIの900秒時点で84%だったため、試験集合を保ってpytestだけに余裕を持たせる。
+pytest-timeout = 1500
 ty = true
 # linked worktreeの祖先にある複製元のprojectが選ばれても、対象版と先頭の探索先をこのcwdへそろえる。
 # CLIスクリプトと、同じスキルのscripts内で共有するモジュールも解決する。
@@ -133,6 +134,7 @@ ty-args = [
     "--extra-search-path", "agent-toolkit/skills/process-wi/scripts",
     "--extra-search-path", "agent-toolkit/skills/review-standards/scripts",
     "--extra-search-path", "agent-toolkit/skills/session-review/scripts",
+    "--extra-search-path", "agent-toolkit/skills/wi-standards/scripts",
 ]
 # pyfltrの設定を変えない場合は`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
 # formatter段は`--no-fix`でも`pyfltr ci`でも対象ファイルを書き換えるため、`--no-fix`だけでは
@@ -165,6 +167,7 @@ require-ps1-bom-subproject-aware = false
 powershell-analyzer-subproject-aware = false
 claude-plugin-validate-subproject-aware = false
 agent-doc-tone-subproject-aware = false
+writing-check-dash-subproject-aware = false
 # rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
 # サブプロジェクト基準で解決できなくなる。判定はリポジトリ全体の履歴を使うため分割を無効にする。
 statusline-version-subproject-aware = false
@@ -190,6 +193,10 @@ colloquial-check-exclude = [
 typos-exclude = [
     # 規範の再構築の判定台帳。条文の先頭40字の抜粋と検索語が語の途中で終わるため対象から外す。
     "docs/development/norm-restructure/*.tsv",
+    # 正式台帳の原文・由来・逆引きを固定引用として保持する。案内文書は通常の検査対象とする。
+    "docs/development/norm-restructure-20261022/ledger.tsv",
+    "docs/development/norm-restructure-20261022/mapping.json",
+    "docs/development/norm-restructure-20261022/reverse-index.tsv",
 ]
 # textlintのキャッシュはルール実装の更新を識別しないため、毎回現在のルールで検査する。
 textlint-args = []
@@ -236,6 +243,11 @@ targets = [
     ".agents/plugins/marketplace.json",
     ".chezmoi-source/dot_codex/AGENTS.md",
     "agent-toolkit/.claude-plugin/plugin.json",
+    "agent-basics/.claude-plugin/plugin.json",
+    "agent-basics/.codex-plugin/plugin.json",
+    "agent-basics/plugin.json",
+    "agent-basics/skills/*/*",
+    "agent-basics/skills/*/*/*",
     "agent-toolkit/.codex-plugin/plugin.json",
     "agent-toolkit/plugin.json",
     "agent-toolkit/.mcp.json",
@@ -317,6 +329,7 @@ path = "uv"
 args = [
     "run", "--frozen", "python", "scripts/check_agent_doc_tone.py",
     "--term-root", "agent-toolkit",
+    "--term-root", "agent-basics",
     "--term-root", ".claude-plugin/marketplace.json",
     "--term-root", "scripts/check_agent_doc_tone.py",
     "--term-root", "scripts/check_agent_doc_tone_test.py",
@@ -331,6 +344,8 @@ targets = [
     "agent-toolkit/share/*.md",
     "agent-toolkit/skills/*/*.md",
     "agent-toolkit/skills/*/*/*.md",
+    "agent-basics/skills/*/*.md",
+    "agent-basics/skills/*/*/*.md",
     # 説明文を置くコードにも、ファイル名を固定せずに到達させる。
     "agent-toolkit/*.py",
     "agent-toolkit/skills/*.py",
@@ -366,6 +381,14 @@ targets = [
     ".agents/skills/*/*.md",
     ".agents/skills/*/*/*.md",
 ]
+fast = true
+
+[tool.pyfltr.custom-commands.writing-check-dash]
+type = "linter"
+path = "uv"
+args = ["run", "--frozen", "python", "agent-toolkit/agent_toolkit/atk.py", "run-script", "writing-check-dash", "--"]
+targets = ["*.md", "*.md.tmpl"]
+error-pattern = '^(?P<file>.+?):(?P<line>\d+):(?P<column>\d+): (?P<severity>error): (?P<message>.+)$'
 fast = true
 
 [tool.pyfltr.custom-commands.statusline-version]

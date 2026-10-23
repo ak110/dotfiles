@@ -52,7 +52,7 @@
   対策: 依存分離と隔離実行のsmoke test
 
 - 2026年8月: 状態フラグがセッション途中で失われ誤警告が13回反復した。
-  直接原因: 状態ファイルの回収がセッション終了理由に依存し、稼働中でも削除された。
+  直接原因: 状態ファイルの回収がセッション終了理由で決まり、稼働中でも削除された。
   対策: 状態ファイルの回収を期限方式へ変更
 
 - 2026年8月: PreToolUseのBashチェックが、検証ツール名・禁止コマンド名を引数として含むだけの
@@ -171,7 +171,7 @@
 - 2026年9月1日: plugin cacheの更新後、長寿命の`agents_server`が保持するCodex App Serverが`thread/start`へ同じJSON-RPC errorを返し続けた。
   error messageは`failed to load configuration: No such file or directory`であり、委譲先を起動できなかった。
   直接原因: 子App Serverの作業ディレクトリをMCPサーバー自身から継承していた。Codexホストではpluginの版数付きcacheディレクトリが作業ディレクトリになる。plugin更新で旧版のディレクトリが消え、生存したままの子プロセスが設定の読込に失敗した。
-  背景原因: 子プロセスの起動条件のうち、親の実行環境に依存し実行中に無効化され得る値を、起動時に確定する対象へ含めていなかった。
+  背景原因: 子プロセスの起動条件のうち、親の実行環境によって値が変わり実行中に無効化され得る値を、起動時に確定する対象へ含めていなかった。
   対策: 子App Serverの作業ディレクトリへ実行主体のホームディレクトリを明示指定する。親の作業ディレクトリを削除した状態で`thread/start`が成功することを近接テストで固定する
 
 - 2026年9月2日: Codexの利用枠が上限に達した状態で、`agents_server`の`start`が返したsessionが直後に失敗し、委譲工程が3件停止した。
@@ -249,7 +249,7 @@
   対策: Codexの失敗の`message`がJSONの`error`オブジェクトを持ち`param`が`model`である場合を、除外理由`modelRejected`の可用性失敗として判定へ加える
 
 - 2026年10月2日: pyfltrの処理で、agents_serverのMCPサーバーが実行中のCodexの委譲session 2件を抱えたまま正常終了した。登録簿は`running`のまま残った。委譲先のturnは終わっていた（`thread/read`で最後のturnが`interrupted`）のに、再起動後の`show`・`send_message`は実行中の可能性として拒否し、起動元rootの`atk agents wait`は待機上限（270秒）ごとの終了を約80分繰り返した。
-  直接原因: マネージャーの停止処理がbackendの停止（Codex App Serverの終了、Claude・Antigravityの所有taskの取消）を呼んだ後、保持中のsessionを終端へ遷移させず、登録簿へ終端を公開する唯一の経路である状態の更新通知を呼ばなかった。再起動後の復元は、終端の公開漏れを前プロセスの実行継続と区別できず、所有者のいない記録を回収する手段を持たなかった。既存テストは実行中sessionを持つマネージャーの停止後の登録簿を確かめていなかった。
+  直接原因: マネージャーの停止処理がbackendの停止（Codex App Serverの終了、Claude・Antigravityの所有taskの取消）を呼んだ後、保持中のsessionを終端へ遷移させず、登録簿へ終端を公開する唯一の手段である状態の更新通知を呼ばなかった。再起動後の復元は、終端の公開の欠落を前プロセスの実行継続と区別できず、所有者のいない記録を回収する手段を持たなかった。既存テストは実行中sessionを持つマネージャーの停止後の登録簿を確かめていなかった。
   対策: マネージャーの停止処理で、backendの停止で終わった未終端のturnを全engine共通に`interrupted`へ遷移させ、登録簿と結果ファイルへ公開する。既に`running`のまま残ったCodexの記録は、生存の印が有効な状態ファイルがそのsessionを載せておらず、`thread/read`が元turnの終端を示す場合だけ、再起動後の`show`・`send_message`の照会で終端として引き継ぐ。元turnと比べられるよう登録簿へCodexのturn識別子を加えた。経過時間による推定と待機側による登録簿の書き換えは行わない。停止後の再開と、引き継ぎの成功・拒否の各条件をテストで確かめる
   再発（2026年10月11日）: 委譲元のClaude Codeの終了後、Claudeの委譲先の登録簿の記録が`running`のまま残った。所有するagents_serverの2プロセスは、停止処理（終端の公開と状態ファイルの削除）を経ずに終了していた。turnを実行するClaude CLIも存在しなかったが、MCPの`show`は別プロセスの実行中と返し、`atk agents show`は`unknown session`を返した。引き継いだCodexのメインはOSのプロセス一覧を別に調べて終了を判断した。直接原因は10月2日の対策が回収の手段を正常な停止での終端公開とCodexの`thread/read`による引き継ぎに限り、登録簿の記録がturnを実行するプロセスの識別を持たなかったことである。engine `claude`は引き継ぎの対象外だった。停止処理を経ずに終了した契機（ホストの終了処理による強制終了か、Ctrl+Cの連打か）は、ログの回転のため判別していない。対策として、登録簿の記録へ所有するagents_serverと委譲先CLIのプロセスの識別（pidと起動時刻）を保存する。`session_registry.resolve`は記録された全プロセスの不在を`interrupted`の終端と解決し、登録簿を書き換えない。MCPの`show`・`send_message`、`atk agents show`・`wait`、自動再開、`atk lane`は同じ解決を使い、照会時の引き継ぎはこの終端をengineを問わず公開する。識別を持たない既存の記録は従来どおり実行中とする。実プロセスを起動・終了させた記録で各照会をテストで確かめる
 
@@ -297,7 +297,7 @@
   対策: 確認できなかったパスを警告として報告し、同じ処理の残りの対象を継続して調べる
 
 - 2026年9月13日: `update-dotfiles`がmarketplaceキャッシュを更新した直後のClaude Codeセッションで、agent-toolkitのスキル、hookおよびMCPが全て読み込まれなかった。別のWindows環境では、未コミット内容の退避時に`atk`を解決できず`FileNotFoundError: [WinError 2]`でstage 1が停止した。
-  直接原因: marketplaceのremove/add前に取得した導入一覧を修復後も再利用し、plugin installの終了コードを導入・有効化実体の代わりに完了根拠とした。Windowsの退避処理は同じ配布物のatkランチャーを絶対解決せず、PATHへ依存した。加えてupdate-dotfilesとpost-applyが永続ログを持たず、過去実行の分岐を再構成できなかった。
+  直接原因: marketplaceのremove/add前に取得した導入一覧を修復後も再利用し、plugin installの終了コードを導入・有効化実体の代わりに完了根拠とした。Windowsの退避処理は同じ配布物のatkランチャーを絶対解決せず、PATHによる名前解決を使った。加えてupdate-dotfilesとpost-applyが永続ログを持たず、過去実行の分岐を再構成できなかった。
   対策: marketplace修復後に導入一覧を再読し、非TTY installと導入・有効化実体の事後検証を完了条件にする。退避はOS別ランチャーを絶対パスで起動し、起動不能を文脈付き非0結果にする。全段とpost-applyステップの開始、終了、所要時間、結果を、機密本文を除外したサイズ制限付き永続ログへ記録する
 
 - 2026年9月26日: euryaleで`atk --help`の起動に約2.9秒かかった。
@@ -325,7 +325,7 @@
   対策: 分類条件を正規の起動手順から導出し、延期と失敗を`update-dotfiles`の最終出力へ表示する
 
 - 2026年10月21日: Codex pluginを2.222.3へ更新した後、実行中セッションが参照する2.222.2のcache rootが消え、PreToolUse hookが全操作を遮断した。
-  直接原因: pre-commitの生成処理が登録済みlocal marketplace sourceを新versionへ更新し、別のCodex App Serverが`plugin/list` RPCで新versionを自動導入して全旧cacheを削除した。この処理は`install_codex_plugins.run`の退避・復旧を通らなかった。
+  直接原因: pre-commitの生成処理が登録済みlocal marketplace sourceを新versionへ更新し、別のCodex App Serverが`plugin/list` RPCで新versionを自動導入して全旧cacheを削除した。この処理は`install_codex_plugins.run`の退避・復旧をしなかった。
   背景原因: （作り込み要因）外部コマンドとApp Serverの副作用を実機で確かめず、提供元Issueと上流実装も調べないまま、cacheを削除する主体を明示的な`plugin add`と更新関数内の後続呼出しへ限定した。（見逃し要因）既存試験は内部`run()`と単体インストーラーへ削除を注入し、`git commit`、生成処理、別App Serverの自動導入、live hook消費を一続きで通さなかった。（根本原因）外部挙動を確認しない設計と内部単位だけの試験を、実用シナリオ全体の保証として受理できた。
   調査の経過: Codex 0.163.0の隔離対照では、新versionに対するApp Serverの`plugin/list` RPCとCLIの`plugin add`が旧cacheを削除した。同versionのRPC、CLIの`plugin list --json`、daemon照会と`codex exec`は旧cacheを保持した。[openai/codex#31383](https://github.com/openai/codex/issues/31383)は0.142.5から0.162.0までの複数環境で同じcache寿命不整合を報告している。
   対策: 更新処理内の全旧version退避・復旧を維持する。dotfiles向けの生成済みhookはcache外の`atk-hook`から起動し、旧`PLUGIN_ROOT`欠落時はClaude Code側の同版cacheを同じ絶対パスへ原子的に復旧する。同版が無い場合はClaude Codeの現行導入版からhookを起動する。commitと`update-dotfiles`の実用シナリオで、外部主体の削除からhook消費までを検証する

@@ -35,6 +35,8 @@ def test_mcp_only_operations_are_actionable_errors(operation: str, capsys: pytes
     assert "MCP専用操作" in captured.err
     assert f"agents_serverの{operation}" in captured.err
     assert "公開説明で引数を確認" in captured.err
+    assert f"tools.mcp__agents_server__{operation}" in captured.err
+    assert "ALL_TOOLS" in captured.err
 
 
 @pytest.mark.parametrize("operation", ["wait", "notify", "list", "show", "logs"])
@@ -490,7 +492,7 @@ def test_summarize_saved_wait_shows_error_and_next_action_for_failed_row(
     body_path = tmp_path / "body.md"
     body_path.write_text("", encoding="utf-8")
     saved = tmp_path / "output.txt"
-    next_action = "利用上限による失敗なら別のmodel_typeでstartし直す（例: model_type=medium_tier）"
+    next_action = "利用上限による失敗なら別のmodel_typeでstartし直す（例: model_type=review）"
     _write_jsonl(
         saved,
         [
@@ -502,7 +504,7 @@ def test_summarize_saved_wait_shows_error_and_next_action_for_failed_row(
                 "engine": "codex",
                 "model": "gpt-5.6-sol",
                 "effort": "medium",
-                "model_type": "high_tier",
+                "model_type": "execute",
                 "error": {
                     "codexErrorInfo": "usageLimitExceeded",
                     "message": "Your workspace is out of credits. Add credits to continue.",
@@ -518,7 +520,7 @@ def test_summarize_saved_wait_shows_error_and_next_action_for_failed_row(
     terminal_line = capsys.readouterr().out.splitlines()[1]
     assert terminal_line == (
         f"終端行: session_id=session-1 label=WI投入 status=failed agent_message_path={body_path}"
-        " engine=codex model=gpt-5.6-sol effort=medium model_type=high_tier"
+        " engine=codex model=gpt-5.6-sol effort=medium model_type=execute"
         ' error={"codexErrorInfo":"usageLimitExceeded","message":"Your workspace is out of credits. Add credits to continue."}'
         f' next_action="{next_action}"'
     )
@@ -649,7 +651,7 @@ async def test_public_show_preserves_latest_speed_in_live_and_retained_results(
         engine=engine,
         model="model",
         effort="medium",
-        model_type="high_tier",
+        model_type="execute",
         fast_mode=fast_mode,
         announced=True,
     )
@@ -1203,7 +1205,20 @@ def test_agents_logs_reads_and_follows_antigravity_events(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     path = shared_layout.session_log_path("root-1", "agy-1", tmp_path)
     path.parent.mkdir(parents=True)
-    path.write_text(json.dumps({"event": "init", "conversation_id": "agy-1"}) + "\n", encoding="utf-8")
+    records = [
+        {"event": "init", "conversation_id": "agy-1"},
+        {
+            "event": "step_update",
+            "step_update": {
+                "conversation_id": "agy-1",
+                "step_index": 1,
+                "step_type": "agent_response",
+                "state": "DONE",
+                "text_delta": "保存済みの応答",
+            },
+        },
+    ]
+    path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
     sleeps = 0
 
     def append_then_stop(_seconds: float) -> None:
@@ -1211,7 +1226,21 @@ def test_agents_logs_reads_and_follows_antigravity_events(
         sleeps += 1
         if sleeps == 1:
             with path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps({"event": "step_update", "step_update": {"text_delta": "調査中"}}) + "\n")
+                stream.write(
+                    json.dumps(
+                        {
+                            "event": "step_update",
+                            "step_update": {
+                                "conversation_id": "agy-1",
+                                "step_index": 2,
+                                "step_type": "agent_response",
+                                "state": "DONE",
+                                "text_delta": "調査中",
+                            },
+                        }
+                    )
+                    + "\n"
+                )
         else:
             raise KeyboardInterrupt
 
@@ -1220,9 +1249,10 @@ def test_agents_logs_reads_and_follows_antigravity_events(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "logs", "agy-1", "--follow"])
 
-    output = capsys.readouterr().out
-    assert "init: agy-1" in output
-    assert "step_update: 調査中" in output
+    captured = capsys.readouterr()
+    assert captured.out == "[-] assistant: 保存済みの応答\n\n[-] assistant: 調査中\n\n"
+    assert not captured.err
+    assert sleeps == 2
 
 
 _LONG_REPLY = "長" * 2100

@@ -78,12 +78,26 @@ class TestPrerequisites:
 
 
 @pytest.fixture(name="disable_file_reads")
-def _disable_file_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+def _disable_file_reads(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """初回はCLIフォールバックを通し、最終検証では導入後の状態を返す。
 
     本フィクスチャは ``is_directory_type_registered`` を False に差し替える (= 旧 GitHub 型残存環境の挙動)。
     directory 型経路を検証したい個別テストが必要に応じて上書きする。
+    cacheの直接読取にも同じ導入後の登録と必須ファイルを渡し、実ホストの登録から隔離する。
     """
+    plugins_root = tmp_path / "plugins"
+    installed_entries: dict[str, list[dict[str, str]]] = {}
+    for name, version in (("agent-toolkit", "0.2.0"), ("sample-plugin", "1.0.0")):
+        cache = plugins_root / "cache" / "ak110-dotfiles" / name / version
+        cache.mkdir(parents=True)
+        (cache / "pyproject.toml").write_text("[project]\nname = 'sample'\n", encoding="utf-8")
+        (cache / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+        (cache / ".claude-plugin").mkdir()
+        (cache / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": name, "version": version}), encoding="utf-8")
+        installed_entries[f"{name}@ak110-dotfiles"] = [{"scope": "user", "version": version, "installPath": str(cache)}]
+    installed_path = plugins_root / "installed_plugins.json"
+    installed_path.write_text(json.dumps({"version": 2, "plugins": installed_entries}), encoding="utf-8")
+    monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", installed_path)
     read_count = 0
 
     def read_installed_plugins() -> list[dict[str, object]] | None:
@@ -332,7 +346,7 @@ class TestRunFlow:
     def test_project_scope_ignored_in_version_check(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """project scope のエントリは install/update 判定に使われず、user scope へ移行される。
 
-        project scope の uninstall は CLI が cwd 依存の判定を行うため、
+        project scope の uninstall は CLI が cwd で結果が変わる判定を行うため、
         エントリの projectPath を cwd にして呼び出す。本テストでは tmp_path を
         projectPath として渡し、uninstall 呼び出し時の cwd が一致することを検証する。
         """
@@ -468,7 +482,7 @@ def _directory_type_env(monkeypatch: pytest.MonkeyPatch) -> None:
 class TestRunFlowDirectoryType:
     """directory 型登録が健全な環境での追加検証。
 
-    この環境では version 乖離に依存せず、毎回 ``plugin install <plugin>@<mp> --scope=user`` を
+    この環境では version 乖離の有無によらず、毎回 ``plugin install <plugin>@<mp> --scope=user`` を
     再実行してキャッシュを最新化する (dotfiles 実体からの同期経路)。
     ``plugin update`` と ``marketplace update`` は version 一致時 no-op になるため呼ばない。
     """

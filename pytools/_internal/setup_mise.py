@@ -15,6 +15,7 @@ import typing
 from pathlib import Path
 
 import platformdirs
+from agent_toolkit._common import dotfiles_mode
 
 # 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
@@ -31,6 +32,9 @@ _MISE_TIMEOUT = 300
 # 複数ツールの一括インストールで時間がかかるため、通常コマンドより長めに取る。
 _MISE_INSTALL_TIMEOUT = 600
 
+# minimalは単独post-applyでも既存のfull用グローバル設定から大型ツールを導入しない。
+_LIGHTWEIGHT_TOOLS = ("chezmoi", "fzf", "gh", "glab", "glow", "jq", "ripgrep")
+
 # 無人セットアップではネットワークの一時的な遅延で版一覧取得が失敗しないよう、
 # miseが設定のない場合に使う値より長い上限を全mise呼び出しへ適用する。
 _MISE_FETCH_REMOTE_VERSIONS_TIMEOUT = "120s"
@@ -39,7 +43,7 @@ _MISE_FETCH_REMOTE_VERSIONS_TIMEOUT = "120s"
 # `%LOCALAPPDATA%\mise\shims` のまま REG_EXPAND_SZ で保持する。
 _WINDOWS_SHIMS_ENTRY = r"%LOCALAPPDATA%\mise\shims"
 
-# Windows PATH のセパレータ。`os.pathsep` は実行ホストに依存するため、Windows 向け
+# Windows PATH のセパレータ。`os.pathsep` は実行ホストで値が変わるため、Windows 向け
 # 処理内では明示的に `;` を使う (Linux 上のテスト実行でも一貫するように)。
 _WINDOWS_PATHSEP = ";"
 
@@ -103,10 +107,12 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         changed |= _ensure_working_tree_trusted(mise_bin)
     except _SettingError as error:
         failures.append(str(error))
-    changed |= _ensure_global_node(mise_bin)
+    if not dotfiles_mode.is_minimal():
+        changed |= _ensure_global_node(mise_bin)
     changed |= _ensure_tools_installed(mise_bin)
     changed |= _ensure_tool_bin_paths_present(mise_bin)
-    changed |= _ensure_orphan_shims_removed(mise_bin)
+    if not dotfiles_mode.is_minimal():
+        changed |= _ensure_orphan_shims_removed(mise_bin)
     if _is_windows():
         try:
             changed |= _ensure_windows_user_path_has_shims()
@@ -256,6 +262,8 @@ def _working_tree_with_config() -> Path | None:
     # `find_dotfiles_root()`を使わず`CHEZMOI_WORKING_TREE`を読む。
     # 値が作業ツリーの位置に加えて「chezmoiから起動された」ことの判定を兼ね、
     # `dotfiles-post-apply`の単独実行では作業ツリーの`mise.toml`を実行位置に使わないためである。
+    if dotfiles_mode.is_minimal():
+        return Path.home()
     working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
     if not working_tree:
         return None
@@ -401,7 +409,7 @@ def _ensure_tools_installed(mise_bin: Path) -> bool:
     """
     result = _run_mise(
         mise_bin,
-        ["install"],
+        ["install", *(_LIGHTWEIGHT_TOOLS if dotfiles_mode.is_minimal() else ())],
         timeout=_MISE_INSTALL_TIMEOUT,
         cwd=_working_tree_with_config(),
         extra_env=_LOCKED_INSTALL_ENV,
@@ -458,6 +466,8 @@ def _ensure_tool_bin_paths_present(mise_bin: Path) -> bool:
     targets: dict[tuple[str, str], list[Path]] = {}
     for directory in missing:
         owner = _owning_tool(directory, installs)
+        if dotfiles_mode.is_minimal() and (owner is None or owner[0] not in _LIGHTWEIGHT_TOOLS):
+            continue
         if owner is None:
             # 共有ランタイムへのリンクで導入されるツール（dotnet-root、~/.cargo/binなど）は再導入で生成されない。
             logger.warning(

@@ -337,7 +337,12 @@ def _table_lock(path: Path) -> Generator[None]:
             _file_lock.release_lock(lock_file)
 
 
-def _locked_update(path: Path, updater: Callable[[list[list[str]]], list[list[str]]]) -> list[list[str]]:
+def _locked_update(
+    path: Path,
+    updater: Callable[[list[list[str]]], list[list[str]]],
+    *,
+    verify: Callable[[list[list[str]], list[list[str]]], None] | None = None,
+) -> list[list[str]]:
     """ロック内で再読込・検証・更新・原子的置換を実行する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     with _table_lock(path):
@@ -346,6 +351,8 @@ def _locked_update(path: Path, updater: Callable[[list[list[str]]], list[list[st
         updated = updater(rows)
         _validate_rows(updated)
         _write_atomic(path, updated)
+        if verify is not None:
+            verify(updated, _read(path))
         return updated
 
 
@@ -364,36 +371,55 @@ def init(path: str | Path) -> int:
 
 def add(path: str | Path, round_value: str, track: str, location: str, issue: str, level: str = "詳細") -> int:
     """レビュー担当の指摘行を追加する。"""
-    target = _path(str(path))
     row = [round_value, _normalize_track(track), location, issue, level, "", ""]
+    return _add_rows(_path(str(path)), [row])
+
+
+def _add_rows(target: Path, additions: list[list[str]]) -> int:
+    """全入力を検証して1回追記し、ロック内で保存した全行を読み戻す。"""
+    _validate_rows(additions)
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
-        if _key(row) in {_key(existing) for existing in rows}:
+        if {_key(row) for row in additions} & {_key(existing) for existing in rows}:
             raise _ActionableError(
                 "先頭4列の複合キーが重複している",
                 next_action="同じ指摘なら追加は不要。別の指摘ならlocationかissueを区別して追加し直す",
             )
-        return [*rows, row]
+        return [*rows, *additions]
 
-    rows = _locked_update(target, updater)
-    saved_rows = [saved_row for saved_row in _read(target) if _key(saved_row) == _key(row)]
-    if len(saved_rows) != 1:
-        raise _ActionableError(
-            f"追加した行を保存済みの表から一意に解決できない: {len(saved_rows)}件", next_action=_SAVED_UNRESOLVED_NEXT_ACTION
-        )
-    saved_row = saved_rows[0]
-    for column, expected, saved in (("location", location, saved_row[2]), ("issue", issue, saved_row[3])):
-        if _body_match.verdict(expected, saved) != "一致":
-            position = _body_match.first_difference(expected, saved)
+    def verify(expected_rows: list[list[str]], saved_rows: list[list[str]]) -> None:
+        by_key: dict[tuple[str, str, str, str], list[list[str]]] = {}
+        for saved in saved_rows:
+            by_key.setdefault(_key(saved), []).append(saved)
+        for row in additions:
+            matches = by_key.get(_key(row), [])
+            if len(matches) != 1:
+                raise _ActionableError(
+                    f"追加した行を保存済みの表から一意に解決できない: {len(matches)}件",
+                    next_action=_SAVED_UNRESOLVED_NEXT_ACTION,
+                )
+            for column in ("location", "issue"):
+                index = COLUMNS.index(column)
+                expected, saved = row[index], matches[0][index]
+                if _body_match.verdict(expected, saved) == "一致":
+                    continue
+                position = _body_match.first_difference(expected, saved)
+                raise _ActionableError(
+                    f"保存本文が送信元本文と一致しない: {target}\n"
+                    f"不一致の列: {column}\n"
+                    f"最初の差異: {position}文字目\n"
+                    f"送信元本文:\n{expected}\n"
+                    f"保存本文:\n{saved}",
+                    next_action=_SAVED_ADD_MISMATCH_NEXT_ACTION,
+                )
+        if expected_rows != saved_rows:
             raise _ActionableError(
-                f"保存本文が送信元本文と一致しない: {target}\n"
-                f"不一致の列: {column}\n"
-                f"最初の差異: {position}文字目\n"
-                f"送信元本文:\n{expected}\n"
-                f"保存本文:\n{saved}",
+                f"保存済みの表の全行が更新内容と一致しない: {target}",
                 next_action=_SAVED_ADD_MISMATCH_NEXT_ACTION,
             )
-    _outcome.report_success(f"指摘行を1件追加した: {target}（{len(rows)}件）")
+
+    rows = _locked_update(target, updater, verify=verify)
+    _outcome.report_success(f"指摘行を{len(additions)}件追加した: {target}（{len(rows)}件）")
     return 0
 
 
@@ -694,6 +720,32 @@ def _required_value(args: argparse.Namespace, option: str) -> str:
     return value
 
 
+def _read_add_items(raw_path: str, round_value: str, track: str) -> list[list[str]]:
+    """UTF-8 JSON配列の指摘本文とレベルを、共通round・trackの行へ変換する。"""
+    guidance = "--items-fileへlocation・issue・levelの文字列3キーを持つ非空JSON配列をUTF-8で保存して指定する"
+    try:
+        items = json.loads(_read_cell_file("--items-file", raw_path))
+    except json.JSONDecodeError as error:
+        raise _ActionableError(f"--items-fileのJSONが不正である: {error}", next_action=guidance) from error
+    if not isinstance(items, list) or not items:
+        raise _ActionableError("--items-fileは非空のJSON配列が必要である", next_action=guidance)
+    rows = []
+    for index, item in enumerate(items, start=1):
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"location", "issue", "level"}
+            or any(not isinstance(value, str) for value in item.values())
+        ):
+            raise _ActionableError(f"--items-fileの項目{index}のキーか値の型が不正である", next_action=guidance)
+        if item["level"] not in LEVEL_VALUES:
+            raise _ActionableError(
+                f"--items-fileの項目{index}のlevelが正規値ではない",
+                next_action=f"levelを{', '.join(LEVEL_VALUES)}のいずれかにして再実行する",
+            )
+        rows.append([round_value, _normalize_track(track), item["location"], item["issue"], item["level"], "", ""])
+    return rows
+
+
 def build_parser(parent: argparse._SubParsersAction) -> None:
     """`review-table`配下のサブコマンドを登録する。"""
     review = _atk_help.add_command(parent, "review-table", **_atk_help.HELP["atk review-table"])
@@ -727,11 +779,17 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         choices=_TRACK_INPUT_VALUES,
         help="指摘を登録するレビューの区分。レビュー工程に対応する正規値から指定する。",
     )
-    add_command_parser.add_argument(
+    add_input = add_command_parser.add_mutually_exclusive_group(required=True)
+    add_input.add_argument(
         "--level",
-        required=True,
         choices=LEVEL_VALUES,
         help="指摘レベル。要件、仕様、詳細または実装を指定する。",
+    )
+    add_input.add_argument(
+        "--items-file",
+        metavar="PATH",
+        help="複数指摘のUTF-8 JSON配列。各要素は文字列location・issue・levelの3必須キー。"
+        "round・trackは全件共通。単数形の--level・--location-file・--issue-fileとは併用できない。",
     )
     for name, description in (
         ("location", "追加する指摘箇所"),
@@ -817,6 +875,14 @@ def dispatch(args: argparse.Namespace) -> int:
         return validate(args.path, require_responses=not args.allow_unanswered)
     if command == "add":
         _require_writable_exec_review(args.path)
+        items_file = getattr(args, "items_file", None)
+        if items_file is not None:
+            if any((args.level is not None, args.location_file is not None, args.issue_file is not None)):
+                raise _ActionableError(
+                    "--items-fileは単数形のlevel・location・issue指定と同時に使えない",
+                    next_action="--items-fileか、--level・--location-file・--issue-fileのどちらか一方を指定する",
+                )
+            return _add_rows(_path(args.path), _read_add_items(items_file, args.round, args.track))
         location = _required_value(args, "location")
         issue = _required_value(args, "issue")
         return add(args.path, args.round, args.track, location, issue, args.level)

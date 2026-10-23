@@ -1,95 +1,39 @@
 # Hookの出力フィールド
 
-本書はhookの出力フィールドの選択方針と、`PermissionRequest`・`UserPromptSubmit`の出力の扱いを定める。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks-output.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
+
+以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-output.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-output.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 
 ## 出力フィールドの使い分け
 
-本節は出力先の選択方針だけを定め、各フィールドのスキーマとイベント別の対応可否は`claude-hooks.md`「hookスクリプトの基本プロトコル」が挙げる公式ドキュメントに従う。
-
 イベントごとの出力契約は`agent-toolkit/agent_toolkit/_testing/hook_output_contract.py`が公式のHooksリファレンスをJSON Schemaで写して定める。`agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が登録済みの全hookの出力がその契約に合うか確かめる。hookを追加または変更する場合は、契約とテストを同じ変更単位で更新する。
 
-Claude Codeの`Stop hook error: JSON validation failed`はプロンプト型hookの評価器がモデルの応答をJSONとして解析できなかった場合だけに出る。`/goal`はセッション限りのプロンプト型Stop hookを登録するため、`/goal`を設定したセッションではコマンド型hookの出力形式と無関係にこの表示が現れる。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日」にある。
-
-PreToolUse・PostToolUse・UserPromptSubmitでエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一の通知手段として使う。各フィールドがターン継続を強制するかは後掲の表に従う。
-stderr出力は`exit 2`のblockと組み合わせる場合に限る。
-`systemMessage`はユーザーの判断・操作に影響する情報通知に限る（失敗しない自動補正の発動など対応を要しない反復事象は対象外）。
-Stop/SubagentStopでターン継続を強制する場合、エラーとしての遮断（振り返り誘導等）は`decision: "block"`＋`reason`、想定内の助言は`hookSpecificOutput.additionalContext`を使う。
 永続ログは`_hooks.stop_session.append_stop_log`等の専用APIに集約する。
 
-| フィールド | 表示先 | 用途 |
-| --- | --- | --- |
-| `hookSpecificOutput.additionalContext` | エージェント | 行動を促す主要な通知手段。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
-| `hookSpecificOutput.updatedToolOutput` | エージェント | PostToolUseでモデルへ渡すツール結果の置き換え。同じイベントの複数のhookは元の出力に並行して動き、最後に返った置き換えが採られる |
-| `reason` | エージェント（`decision: "block"`時のみ） | blockを併用する場合の理由欄 |
-| `permissionDecisionReason` | deny時はエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
-| `systemMessage`・`stopReason` | ユーザーのみ | 情報通知と`continue: false`時の終了メッセージ |
-| `decision.*` | PermissionRequest専用 | 許可・拒否の決定。`hookSpecificOutput`直下に置く |
-
-deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもエージェントに届くため、片方に統一する（努力目標）。
-
-`decision: "block"`の挙動はイベント別に異なる。
-Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
-PreToolUse・PostToolUse・UserPromptSubmitで挙動の強制が不要であれば`additionalContext`単独で出力する。
-
-block・warn・noticeの本文の整形（整形関数、`fix`の要否、種別、反復時の縮約と昇格）は`claude-hooks-messages.md`「通知本文の整形」に従う。
-
-警告専用のPreToolUse出力は`hookSpecificOutput.additionalContext`だけを返し、`permissionDecision`を省略する（通常の権限フローが適用される）。
-
-### 出力上限
-
-[公式HooksリファレンスのJSON output](https://code.claude.com/docs/en/hooks#json-output)は`additionalContext`・`systemMessage`・`initialUserMessage`の各文字列と、通常の標準出力に10,000文字の上限を定める。
-JSONはフィールドの値ごと、通常の標準出力は全体を測り、同じイベントで動く複数hookの値も個別に測る。
-超過するとClaude Codeは全文をセッション内のファイルへ保存し、ファイルパスと最大2,000文字の冒頭プレビューへ置き換える。
-Claude Code自身はモデルにファイルの読取を求めないため、必ず届く必要がある情報は上限内に収める。
-
-公式資料の10,000文字制限は、PreToolUseが終了コード2で返す標準エラーを対象に含めていない。
-標準エラー44,224文字が、接頭辞込み44,346文字のツール結果として全文届いた観測がある。
-この値は一条件の配送量であり、標準エラーの上限を保証する値ではない。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：出力上限：2026年10月20日」にある。
-
-### PermissionRequest
-
-確認ダイアログ表示時に発火し、ユーザーに代わって許可・拒否を決める。PreToolUseと異なり`hookSpecificOutput`直下に`decision`オブジェクトを置き、`hookEventName`は`"PermissionRequest"`とする。
-
-組み込みのdeny / askルールはhookの戻り値に関わらず評価される。`.claude/`配下への書き込み確認等の組み込みaskルールはPreToolUseの`allow`では上書きできず、PermissionRequestの`decision.behavior: "allow"`でダイアログを抑制できる。組み込みdenyルールは`allow`を返しても適用される。
-`updatedInput`は入力値を変えるだけで確認ダイアログは残るため、ダイアログを伴う値を拒否するにはブロックで扱う。
-
-`Read`のdeny規則でディレクトリ指定を欠くglobは、gitignore構文に従って任意の深さで一致するため、ディレクトリを走査する読み取りコマンドを一律に確認ダイアログの対象へ変える。
-このダイアログは本イベントの`allow`でも抑止できないため、保護する対象はそのファイルを持つリポジトリの設定へ、走査対象を巻き込まない具体的なパスで書く。
-
-`matcher`はツール名で評価する（`Bash` / `Edit|Write`等）。入力payloadは`tool_name` / `tool_input`に加え`permission_suggestions`配列を持つ。
-
-### UserPromptSubmit
-
-`hookSpecificOutput.additionalContext`をそのターンの応答生成前にユーザー発話へ前置注入する誘導に使う。
-Claude Codeでは`decision`と独立に注入でき、stdoutのプレーン出力もコンテキストへ加わる。Codexでは`hookSpecificOutput.hookEventName`を`UserPromptSubmit`として`additionalContext`を返す。
+## UserPromptSubmit
 
 Claude CodeのUserPromptSubmit payloadは現在名`session_title`を持つ。
 Pythonのコマンドhookは`hookSpecificOutput.sessionTitle`で名前を設定し、注記を同じオブジェクトの`additionalContext`へ返す。
 現在名が空か前回自動設定した名前と同じ場合だけ更新し、手動で付けた名前を保つ。
 命名用の種別はPostToolUse(Skill)と手動起動時のUserPromptSubmitが通常状態へ記録し、process-loopの環境印と計画名から名前を選ぶ。
-Codexでは名前を設定しない。
+名前の設定はClaude Codeに限る。
 
-応答契約を注入する注記は、本文の種別で頻度を分ける。
-
-- 開始・`clear`・会話圧縮で`agent-toolkit:user-confirmation-and-report`の内容が文脈から失われた後の起動案内は、実ユーザー発話へ同スキルの起動と、不具合の有無・原因・直し方を回答や確認へ含める場合の診断前の`agent-toolkit:bugfix`起動を示す。説明の補足にも同じ起動契機を適用する。Claude Codeは`agent-toolkit:user-confirmation-and-report`の起動で解除するまで、Codexは文脈1つにつき1回だけ返し、機械注入では消費しない
-- エージェント向け文書の読込だけを求める注記は、基準文書の所在だけを示す1文とし、経過時間によらず通常発話ごとに返す（介入のたびに規範の所在を想起させ、文脈へ載る量を一定に保つ）
-- 判定手順を本文へ持つ注記は、直前の通常発話からの経過時間が閾値以上の通常発話にだけ返す。初回の通常発話には返さないが、基準の時刻は初回から毎回更新する
+開始・`clear`・会話圧縮後の最初の実ユーザー発話へ、`agent-toolkit:user-confirmation-and-report`の起動と、不具合の有無・原因・直し方を回答や確認へ含める場合の診断前の`agent-toolkit:bugfix`起動を案内する。両ホストで文脈1つにつき1回配送し、機械注入では配送待ちを消費しない。発話と現物の比較手順は同スキルの「原文の保持と取り込み」と「確認要否の判定」が定める。時間経過による固定手順の再注入は行わない。
 
 対象の通常発話はユーザーが入力したスラッシュコマンドを含み、ハーネスが挿入した通知と機械注入のターンは対象外とする。成立した注記は1つの`additionalContext`へ結合し、Codex payloadでも同じく返す。
 
-ユーザーが書いた文は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）としてPostToolUseにも届く。発話の内容を判定材料とする注記は両hookで同じ定義の本文を使い、`AskUserQuestion`の自由記述へは、1回の質問につき1回しか生じないため閾値を適用せず毎回返す。
+ユーザーが書いた文は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）としてPostToolUseにも届く。発話の内容を判定材料とする注記は両hookで同じ定義の本文を使い、原因・対象・対処の変化に応じた共通の新規性判定で配送する。
 
 ## 組織向け設定
 
-Claude Code 2.1.304以降の`cc-plugin-sec-default`が有効な管理設定・Team・Enterpriseの環境では、ユーザーが入れたプラグインの一部のFunction hooksの実行が省かれる。
-全配布先で必要な処理は、`hooks.json`のコマンドhookか、実行が省かれないFunction hooksのイベントへ置く。
-実行が省かれる対象は次のとおりで、これらへのFunction hooksの登録を避ける。
-
-- `classic.`で始まるイベント
-- `prompt.section`・`prompt.context`・`prompt.attachment`・`prompt.compose`・`skill.prompt`・`attribution.text`・`session.compact`・`settings.read`
-- doorが`attachment`・`hook-context`・`compaction`の`session.append`
-
 利用上限の`rate_limit`はStopFailureのコマンドhookが記録し、`turn.complete`が消費して既存の再開予約へ接続する。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：組織向け設定：2026年10月20日」にある。

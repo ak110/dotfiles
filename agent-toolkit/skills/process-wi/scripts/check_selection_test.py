@@ -149,7 +149,7 @@ def test_structured_records_and_rationale_independence(
     case: str,
     expected: int,
 ) -> None:
-    """3種類の記録を公開入口で検査し、自由記述の置換で終了コードと診断が変わらないことを確かめる。"""
+    """3種類の記録を公開された検査コマンドで検査し、自由記述の置換で終了コードと診断が変わらないことを確かめる。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変更する。")
     item: dict[str, typing.Any] = {"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}
@@ -313,7 +313,7 @@ def test_public_check_initial_lane_limit_boundaries(
     lanes: int,
     expected: int,
 ) -> None:
-    """候補数の十件境界を選定件数から分け、初回の上限を公開入口で判定する。"""
+    """候補数の十件境界を選定件数から分け、初回の上限を公開された検査コマンドで判定する。"""
     repo, notes = env
     decisions = []
     for index in range(lanes):
@@ -1051,7 +1051,7 @@ def test_public_check_overlap_uses_integration_state(
 
 
 def test_public_command_records_integrated_lane(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
-    """統合・終端検収後の記録を同じ公開保存入口へ渡し、反復と再入力も成功する。"""
+    """統合・終端検収後の記録を公開された同じ保存コマンドへ渡し、反復と再入力も成功する。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変える。")
     path = _write_selection(tmp_path / "state.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}])
@@ -1074,7 +1074,7 @@ def test_state_update_preserves_output_on_failure(
 ) -> None:
     """不正な状態・完了履歴の未知参照・未統合の別レーンの違反・残る未統合競合は、既存の保存先を更新しない。
 
-    記録するレーンの項目は作業ツリーに依存する判定から外れるため、本文の違反は未統合の別レーンの項目へ置く。
+    記録するレーンの項目は作業ツリーの状態を前提とする判定から外れるため、本文の違反は未統合の別レーンの項目へ置く。
     """
     repo, notes = env
     decisions = []
@@ -1245,7 +1245,7 @@ def test_integrated_items_tolerate_worktree_changes(
     state: str,
     change: str,
 ) -> None:
-    """作業ツリーに依存する項目ごとの判定は、統合済みの項目へ変化を起こしても違反と入力エラーにならない。
+    """作業ツリーの状態を前提とする項目ごとの判定は、統合済みの項目へ変化を起こしても違反と入力エラーにならない。
 
     同じ変化を未統合の項目へ起こした場合は、従来どおり違反（終了コード1）か入力エラー（終了コード2）になる。
     """
@@ -1426,7 +1426,7 @@ def test_public_check_requires_single_stage_estimate(
 def test_public_check_rejects_invalid_single_stage_estimate(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], value: object
 ) -> None:
-    """比較値の不正型は段階の有無に依存せず入力違反とする。"""
+    """比較値の不正型は段階の有無を問わず入力違反とする。"""
     repo, _notes = env
     path = _write_selection(tmp_path / "selection.yaml", [])
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -1647,7 +1647,7 @@ def test_public_check_rejects_invalid_derived_new_paths(
     assert "次の操作:" in diagnostic
     before = path.read_bytes()
     if code == 1:
-        # 記録するレーンの項目は統合済みとして作業ツリーに依存する判定から外れ、統合状態を保存する。
+        # 記録するレーンの項目は統合済みとして作業ツリーの状態を前提とする判定から外れ、統合状態を保存する。
         assert _dispatch(str(path), "--work-dir", str(repo), "--mark-integrated", "lane-01", "--output", str(path)) == 0
         assert yaml.safe_load(path.read_text(encoding="utf-8"))["選定"][0]["統合状態"] == "統合済み"
         path.write_bytes(before)
@@ -1803,7 +1803,7 @@ def test_public_check_distinguishes_file_references(
     code: bool,
     suffix: str,
 ) -> None:
-    """参照位置と定義名をファイルへ混入せず、元ファイルの被覆不足だけを公開入口から返す。"""
+    """参照位置と定義名をファイルへ混入せず、元ファイルの被覆不足だけを公開された検査コマンドから返す。"""
     repo, notes = env
     reference = "src/model.py" + suffix
     if code:

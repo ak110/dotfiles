@@ -34,19 +34,16 @@ def test_candidate_matrix_by_environment_and_role(
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription" if subscription else "")
     choices = connection.candidates(role)
-    expected = (
-        {
-            ("pay-as-you-go", "orchestrator"): ["api"],
-            ("api-credits", "orchestrator"): ["subscription"],
-            ("pay-as-you-go", "delegate"): ["subscription", "api"],
-            ("api-credits", "delegate"): ["api", "subscription"],
-        }[(mode, role)]
-        if api and subscription
-        else [name for name, present in [("api", api), ("subscription", subscription)] if present]
-    )
+    order = {
+        ("pay-as-you-go", "orchestrator"): ["api"],
+        ("api-credits", "orchestrator"): ["subscription"],
+        ("pay-as-you-go", "delegate"): ["subscription", "api"],
+        ("api-credits", "delegate"): ["api", "subscription"],
+    }[(mode, role)]
+    expected = [name for name in order if {"api": api, "subscription": subscription}[name]]
     assert [item.kind for item in choices.connections] == expected
     if not expected:
-        with pytest.raises(ValueError, match="claude auth login"):
+        with pytest.raises(ValueError, match="Claude接続候補がありません"):
             choices.require_first()
 
 
@@ -81,6 +78,39 @@ def test_invalid_env_file_disables_api_candidate(
         assert "atk config set claude_api_env_file" in choices.diagnostics[0]
 
 
+@pytest.mark.parametrize("orchestrator_api", [True, False])
+@pytest.mark.parametrize("worker_api_first", [True, False])
+def test_role_settings_are_independent(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, orchestrator_api: bool, worker_api_first: bool
+) -> None:
+    """2設定の全組合せでオーケストレーターの固定と委譲先の優先順を独立に解決する。"""
+    path = tmp_path / "api.env"
+    path.write_text("ANTHROPIC_API_KEY=test-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", str(orchestrator_api).lower())
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_API_FIRST", str(worker_api_first).lower())
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription")
+    assert [item.kind for item in connection.candidates("orchestrator").connections] == [
+        "api" if orchestrator_api else "subscription"
+    ]
+    assert [item.kind for item in connection.candidates("delegate").connections] == (
+        ["api", "subscription"] if worker_api_first else ["subscription", "api"]
+    )
+
+
+def test_subscription_only_orchestrator_rejects_api_only_environment(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """明示したサブスク固定はAPIだけ使える環境でも維持する。"""
+    path = tmp_path / "api.env"
+    path.write_text("ANTHROPIC_API_KEY=test-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
+    monkeypatch.setattr(connection, "subscription_available", lambda *_args, **_kwargs: False)
+    with pytest.raises(ValueError, match="claude auth login"):
+        connection.candidates("orchestrator").require_first()
+
+
 @pytest.mark.parametrize("platform", ["linux", "win32", "darwin"])
 def test_subscription_login_without_environment_token(
     tmp_path: pathlib.Path,
@@ -101,7 +131,7 @@ def test_subscription_login_without_environment_token(
         calls.append(argv)
         assert kwargs["env"]["CLAUDE_CONFIG_DIR"] == str(tmp_path)
         assert "CUSTOM_CONNECTION" not in kwargs["env"]
-        assert json.loads(argv[argv.index("--settings") + 1])["env"]["CUSTOM_CONNECTION"] == ""
+        assert "CUSTOM_CONNECTION" not in json.loads(argv[argv.index("--settings") + 1])["env"]
         return subprocess.CompletedProcess(argv, 0, json.dumps({"authMethod": "claude.ai", "loggedIn": True}))
 
     monkeypatch.setattr(subprocess, "run", status)

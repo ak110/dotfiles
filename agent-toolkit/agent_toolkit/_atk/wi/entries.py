@@ -57,7 +57,7 @@ def stamp_result(
     *,
     outcome: str,
     now: datetime.datetime,
-    commit: CommitMetadata | None = None,
+    commit: CommitMetadata | list[CommitMetadata] | None = None,
     note: str | None = None,
 ) -> None:
     """対象ファイル末尾へ`## 処理結果`節を追記する。
@@ -75,11 +75,12 @@ def stamp_result(
         f"- 採否: {outcome}",
         f"- 処理日時: {now.isoformat(timespec='seconds')}",
     ]
-    if commit:
+    commits = [commit] if isinstance(commit, CommitMetadata) else commit or []
+    for item in commits:
         lines.extend(
             (
-                f"- 対応commit: {commit.short_oid}",
-                f"- 対応commit件名: {commit.subject}",
+                f"- 対応commit: {item.short_oid}",
+                f"- 対応commit件名: {item.subject}",
             )
         )
     if note:
@@ -186,13 +187,13 @@ type EntryRecord = tuple[pathlib.Path, str, str, str, str | None]
 
 
 def validate_named_filenames(private_notes: pathlib.Path, filenames: list[str]) -> list[tuple[str, str]]:
-    """全状態から探す明示名を検証し、要求名と正規化した名前を要求順に返す。"""
+    """年月配置から探す明示名を検証し、要求名と正規化した名前を要求順に返す。"""
     for filename in filenames:
         parts = filename.replace("\\", "/").split("/")
         if len(parts) == 2 and parts[0] in WI_STATES and parts[1] not in ("", ".", ".."):
             _outcome.report_failure(
                 f"状態名付きのファイル名は受理しない: {filename}",
-                next_action=f"状態名を除いたファイル名を指定する: {parts[1]}（showは全状態フォルダを探索する）",
+                next_action=f"状態名を除いたファイル名を指定する: {parts[1]}（showは年月配置を探索する）",
             )
             sys.exit(2)
     names = _wi_filenames.dedup_positional_filenames(filenames, "show")

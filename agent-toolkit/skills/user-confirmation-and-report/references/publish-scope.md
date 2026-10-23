@@ -2,6 +2,18 @@
 
 本書は`agent-toolkit:user-confirmation-and-report`の細則として、協調モードで対象リポジトリの変更を伴う依頼へ着手する前に公開範囲を確認する手順を定める。
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/publish.md#「公開範囲」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「公開範囲」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
+
 ## 公開範囲の確認
 
 協調モードで対象リポジトリの変更を伴う依頼では、変更に着手する前に依頼、既回答、恒常的認可と適用中の公開契約を調べ、`SKILL.md`「確認要否の判定」を適用する。同じ操作・対象・影響範囲・成立条件を覆う公開認可があれば再確認せず適用し、不足する認可かユーザーだけの未確定の選好が残る範囲だけを、ほかの確認事項と同じ質問ラウンドで問う。技術選択だけによる公開認可の新設は禁止する。

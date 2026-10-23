@@ -236,6 +236,8 @@ class SessionState:
     # Codex接続先は内部の再開条件だけへ写し、公開状態へ射影しない。
     codex_model_provider: str | None = None
     codex_subscription_provider: str | None = None
+    # 新規開始または状態互換性を確認して確定した生成先。旧版の選択先とは区別する。
+    codex_state_provider: str | None = None
     codex_attempted_provider_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
     codex_provider_resume_pending: bool = False
     claude_api_env_file: str | None = None
@@ -252,7 +254,6 @@ class SessionState:
     launch_kind: LaunchKind = "delegate"
     label: str = ""
     prompt: str = ""
-    usage: str | None = None
     followup_prompts: tuple[str, ...] = ()
     final_responses: tuple[tuple[int, str], ...] = ()
     terminal_error: str | None = None
@@ -344,8 +345,15 @@ class SessionState:
     _progress_text: str = dataclasses.field(default="", repr=False)
     progress_items: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
     compaction_started_at_ms: dict[str, int] = dataclasses.field(default_factory=dict, repr=False)
-    # Codex接続が購読した子孫thread。thread解放だけに使い、状態ファイルや再開記録へ射影しない。
+    # Codex接続が購読した子孫thread。通知の振り分けと解放に使い、状態ファイルや再開記録へ射影しない。
     codex_subagent_thread_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
+    # 親turnの結果を保留する組み込みの子と、再開時に結果の回収を求める終端済みの子。
+    codex_live_subagent_thread_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
+    codex_terminal_subagent_thread_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
+    # item/started・item/completed・turn/completedでの同じ活動の再掲を一度だけ反映する。
+    codex_subagent_activity_ids: set[tuple[str, str, str, str]] = dataclasses.field(default_factory=set, repr=False)
+    codex_self_message_observed: bool = False
+    codex_self_message_repair_consumed: bool = False
     publish_registry: bool = dataclasses.field(default=False, repr=False)
     # sessionを作成した時点の委譲元sessionの識別子。登録簿へ公開し、`atk serve`の一覧が親子付けに使う。
     launcher_session_id: str | None = dataclasses.field(default=None, repr=False)
@@ -457,14 +465,19 @@ class SessionState:
         self.output_updated_at = None
         self.api_error = None
 
-    def record_api_error(self, error_type: str, http_status: int | None) -> None:
+    def record_api_error(
+        self, error_type: str, http_status: int | None, *, retry_at: str | None = None, attempt: int | None = None
+    ) -> None:
         """連続するAPI失敗を記録し、活動時刻を変えずに状態の読者へ通知する。"""
-        if self.api_error is None:
-            self.api_error = {"type": error_type, "http_status": http_status, "first_at": utc_now(), "count": 1}
-        else:
-            self.api_error["type"] = error_type
-            self.api_error["http_status"] = http_status
-            self.api_error["count"] += 1
+        previous = self.api_error or {}
+        self.api_error = {
+            "type": error_type,
+            "http_status": http_status,
+            "first_at": previous.get("first_at", utc_now()),
+            "count": attempt if attempt is not None else previous.get("count", 0) + 1,
+        }
+        if retry_at is not None:
+            self.api_error["retry_at"] = retry_at
         for listener in tuple(_TOUCH_LISTENERS):
             listener()
 
@@ -613,6 +626,7 @@ class SessionState:
             "fast_mode": self.fast_mode,
             "codex_model_provider": self.codex_model_provider,
             "codex_subscription_provider": self.codex_subscription_provider,
+            "codex_state_provider": self.codex_state_provider,
             "claude_api_env_file": self.claude_api_env_file,
             "claude_connection": self.claude_connection,
             "claude_role": self.claude_role,
@@ -676,6 +690,7 @@ class SessionResumeState:
     fast_mode: bool | None = None
     codex_model_provider: str | None = None
     codex_subscription_provider: str | None = None
+    codex_state_provider: str | None = None
     claude_api_env_file: str | None = None
     claude_connection: str | None = None
     claude_role: str | None = None
@@ -684,7 +699,6 @@ class SessionResumeState:
     # `label`・`prompt`・`created_at`は`session_registry.LaunchInfo`の項目であり、再開時はその定義から写す。
     label: str = ""
     prompt: str = ""
-    usage: str | None = None
     followup_prompts: tuple[str, ...] = ()
     final_responses: tuple[tuple[int, str], ...] = ()
     terminal_error: str | None = None
@@ -726,6 +740,7 @@ class SessionResumeState:
             fast_mode=session.fast_mode,
             codex_model_provider=session.codex_model_provider,
             codex_subscription_provider=session.codex_subscription_provider,
+            codex_state_provider=session.codex_state_provider,
             claude_api_env_file=session.claude_api_env_file,
             claude_connection=session.claude_connection,
             claude_role=session.claude_role,
@@ -804,9 +819,11 @@ def initialize_turn(session: SessionState, *, reset_progress: bool = True, prese
     if not preserve_waits:
         session.live_child_session_ids.clear()
         session.terminal_child_session_ids.clear()
+        session.codex_terminal_subagent_thread_ids.clear()
         session.agents_wait_background_outputs.clear()
         session.child_tool_uses.clear()
         session.auto_resume_consumed = False
+    session.codex_self_message_observed = False
     session.pending_tool_uses.clear()
     session.last_action = ""
     session.awaiting_auto_resume = False

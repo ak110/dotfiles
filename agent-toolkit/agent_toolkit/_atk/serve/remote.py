@@ -242,7 +242,7 @@ async def _drain_stderr(stream: asyncio.StreamReader, *, logger: logging.Logger,
             if text:
                 logger.warning("%s stderr host=%s: %s", label, host, text)
     except Exception as error:  # noqa: BLE001
-        # CancelledErrorはBaseException派生のため`Exception`で拾わず、通常どおり再送出される。
+        # CancelledErrorはBaseException派生のため`Exception`で捕捉せず、通常どおり再送出される。
         logger.warning("%sのstderr読取に失敗 host=%s: %s", label, host, error)
 
 

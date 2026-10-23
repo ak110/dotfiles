@@ -10,7 +10,6 @@ import os
 import pathlib
 import re
 import subprocess
-import time
 from collections.abc import Callable
 
 import pytest
@@ -170,15 +169,15 @@ class TestUserConfirmationSkillPrompt:
         return f"次の操作: 応答と作業の着手より前に`{cls._SKILL}`をスキル機能で起動する。" in context
 
     @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
-    def test_claude_repeats_until_skill_invoked(self, source: str, tmp_path: pathlib.Path) -> None:
-        """Claude Codeでは同スキルの起動まで実ユーザー発話ごとに注記を返し、起動後は返さない。"""
+    def test_claude_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
+        """Claude Codeでも文脈ごとに起動案内を一度返し、起動の前後とも同じ案内を繰り返さない。"""
         self._session_start(source, tmp_path)
         context = self._prompt("表示が変わった原因は何か", tmp_path)
         assert self._has_notice(context)
         assert "診断より前に`agent-toolkit:bugfix`を起動する" in context
         assert "説明の補足や委譲・AWIの方針も対象" in context
         assert "「起動契機」から「認可を要する操作」" in context
-        assert self._has_notice(self._prompt("続けて", tmp_path))
+        assert not self._has_notice(self._prompt("続けて", tmp_path))
         self._invoke_skill(tmp_path)
         assert not self._has_notice(self._prompt("次の依頼", tmp_path))
 
@@ -188,6 +187,19 @@ class TestUserConfirmationSkillPrompt:
         self._invoke_skill(tmp_path)
         self._session_start("compact", tmp_path)
         assert self._has_notice(self._prompt("続けて", tmp_path))
+
+    @pytest.mark.parametrize("host", ["claude", "codex"])
+    def test_consumed_notice_is_delivered_once_again_after_compact(self, tmp_path, host):
+        """圧縮した文脈には同じ固定本文を一度再配送し、後続の発話では繰り返さない。"""
+        self._session_start("startup", tmp_path, host=host)
+        first = self._prompt("依頼", tmp_path, host=host)
+        assert self._has_notice(first)
+        assert not self._has_notice(self._prompt("続けて", tmp_path, host=host))
+        self._session_start("compact", tmp_path, host=host)
+        restored = self._prompt("次の依頼", tmp_path, host=host)
+        assert self._has_notice(restored)
+        assert first == restored
+        assert not self._has_notice(self._prompt("続けて", tmp_path, host=host))
 
     @pytest.mark.parametrize("source", ["resume", "fork"])
     def test_resume_and_fork_keep_state(self, source: str, tmp_path: pathlib.Path) -> None:
@@ -316,28 +328,28 @@ class TestMachineInjectedTurn:
 
     @staticmethod
     def test_source_user_keeps_current_behavior(tmp_path: pathlib.Path) -> None:
-        """`source`が`user`の入力は従来どおり注記を返し時刻を記録する。"""
+        """`source`が`user`の入力を実入力として観測し、注記用の時刻は記録しない。"""
         sid = "source-user"
         result = _run({"session_id": sid, "prompt": "通常の入力", "source": "user"}, state_dir=tmp_path)
 
         assert result.returncode == 0
         assert result.stdout == ""
-        assert _read_state(tmp_path, sid).get("last_user_prompt_at") is not None
+        assert _read_state(tmp_path, sid).get("last_user_prompt_at") is None
 
     @staticmethod
-    def test_normal_prompt_after_machine_turn_receives_verification_notice(tmp_path: pathlib.Path) -> None:
-        """機械注入ターンの後でも、直前の通常発話から閾値以上離れた発話は発話の内容を現物で確かめる手順を示す注記を受け取る。"""
+    def test_normal_prompt_after_machine_turn_keeps_context_notice(tmp_path: pathlib.Path) -> None:
+        """機械注入では一度の起動案内を消費せず、その後の実入力へ配送する。"""
         sid = "machine-then-user"
-        _write_state(sid, {"last_user_prompt_at": time.time() - 600.0})
+        _write_state(sid, {user_prompt_submit.USER_CONFIRMATION_PENDING_KEY: True})
         _run(
             {"session_id": sid, "prompt": f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n確認する。"},
             state_dir=tmp_path,
         )
         result = _run({"session_id": sid, "prompt": "実際の依頼"}, state_dir=tmp_path)
-
-        assert result.returncode == 0
-        bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
-        assert _EXPECTED_VERIFICATION_NOTICE_BODY in bodies
+        assert result.returncode == 0, result.stderr
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "スキル機能で起動する" in context
+        assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
 
 
 class TestSlashCommandDetection:
@@ -395,7 +407,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"last_user_prompt_at", "termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
         evidence = state["termination_evidence"]
         assert not evidence["works"]
         assert evidence["inputs"][evidence["last_input"]] == {"text": "通常のユーザー発話です。", "human": True, "offset": 0}
@@ -403,10 +415,10 @@ class TestNonMatchingPrompts:
     @pytest.mark.parametrize(
         ("prompt", "expected_keys"),
         [
-            ("<cross-session-message>継続</cross-session-message>", {"last_user_prompt_at", "work_contract_input_sequence"}),
+            ("<cross-session-message>継続</cross-session-message>", {"work_contract_input_sequence"}),
             (
                 "<automated-prompt>継続</automated-prompt>",
-                {"last_user_prompt_at", "termination_evidence", "work_contract_input_sequence"},
+                {"termination_evidence", "work_contract_input_sequence"},
             ),
         ],
     )
@@ -427,7 +439,6 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         assert set(_read_state(tmp_path, sid)) == {
-            "last_user_prompt_at",
             "termination_evidence",
             "work_contract_input_sequence",
         }
@@ -458,7 +469,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"last_user_prompt_at", "termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
 
     def test_codex_treats_claude_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "codex-slash-command"
@@ -474,7 +485,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"last_user_prompt_at", "termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
 
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
         """空入力・prompt欠落payloadでexit 0、状態不変。"""
@@ -530,20 +541,23 @@ class TestRealignNoticeInjection:
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize("prompt", ["！！直してほしい", "理解が違う！！", "確認\nここです！！"])
-    def test_first_and_repeated_prompts_receive_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
+    def test_same_realign_notice_is_delivered_once(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
         sid = "realign-repeat"
-        for _ in range(3):
+        for index in range(3):
             result = _run({"session_id": sid, "prompt": prompt, **host_fields}, state_dir=tmp_path)
             assert result.returncode == 0
+            if index:
+                assert not result.stdout
+                continue
             output = json.loads(result.stdout)["hookSpecificOutput"]
             bodies = _notice_bodies(output["additionalContext"])
             assert len(bodies) == 1
             assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[0]
             assert "次の操作:" in bodies[0]
             assert set(_read_state(tmp_path, sid)) == {
-                "last_user_prompt_at",
                 "termination_evidence",
                 "work_contract_input_sequence",
+                "notice_fingerprints",
             }
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
@@ -570,18 +584,16 @@ class TestRealignNoticeInjection:
         assert result.returncode == 0
         assert "認識合わせ" not in result.stdout
         assert "この発話は" not in result.stdout
-        assert not _read_state(tmp_path, "realign-machine")
+        assert set(_read_state(tmp_path, "realign-machine")) <= {"notice_fingerprints"}
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
-    def test_verification_and_realign_share_one_json(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
+    def test_realign_does_not_include_timed_procedure(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
         sid = "realign-verification"
-        _write_state(sid, {"last_user_prompt_at": time.time() - 200})
         result = _run({"session_id": sid, "prompt": "理解を確かめて！！", **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0
         bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
-        assert len(bodies) == 2
-        assert bodies[0] == _EXPECTED_VERIFICATION_NOTICE_BODY
-        assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[1]
+        assert len(bodies) == 1
+        assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[0]
 
 
 class TestExampleInvestigationNotice:
@@ -668,192 +680,49 @@ class TestExampleInvestigationNotice:
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_other_notices_share_one_json(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
-        """同じターンで成立した他の3つの注記と1つの`additionalContext`へ結合する。"""
+        """同じターンで成立した他の2つの注記と1つの`additionalContext`へ結合する。"""
         sid = "example-combined"
-        _write_state(sid, {"last_user_prompt_at": time.time() - 600, user_prompt_submit.USER_CONFIRMATION_PENDING_KEY: True})
+        _write_state(sid, {user_prompt_submit.USER_CONFIRMATION_PENDING_KEY: True})
         result = _run({"session_id": sid, "prompt": self._PROMPT + "！！", **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         output = json.loads(result.stdout)
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
-        assert len(bodies) == 4
+        assert len(bodies) == 3
         assert "agent-toolkit:user-confirmation-and-report`をスキル機能で起動する" in bodies[0]
-        assert bodies[1] == _EXPECTED_VERIFICATION_NOTICE_BODY
-        assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[2]
-        assert str(self._UTTERANCE_PATH) in bodies[3]
+        assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[1]
+        assert str(self._UTTERANCE_PATH) in bodies[2]
 
 
-class TestVerificationNoticeInjection:
-    """通常発話へ発話の内容を現物で確かめる手順を示す注記を返す契約を検証する。"""
-
-    def test_injects_notice_after_interval(self, tmp_path: pathlib.Path) -> None:
-        sid = "verification-after-interval"
-        _write_state(sid, {"last_user_prompt_at": time.time() - 200})
-
-        result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
-
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_bodies(context) == [_EXPECTED_VERIFICATION_NOTICE_BODY]
-
-    def test_normal_prompt_does_not_repeat_reference_notice(self, tmp_path: pathlib.Path) -> None:
-        """発話解釈を定める文書を常時読むため、通常発話では参照注記を繰り返さない。"""
-        sid = "reference-every-prompt"
-        contexts = []
-        for _ in range(3):
-            result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
-            assert result.returncode == 0
-            contexts.append(result.stdout)
-
-        assert contexts == [""] * 3
-
-    def test_repeated_notices_do_not_request_cause_removal(self, tmp_path: pathlib.Path) -> None:
-        sid = "verification-repeated"
-        contexts = []
-        for _ in range(3):
-            _write_state(sid, {"last_user_prompt_at": time.time() - 200})
-            result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
-            assert result.returncode == 0
-            contexts.append(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
-
-        assert all("この通知は同一セッションで" not in context for context in contexts)
-
-    @pytest.mark.parametrize(
-        ("session_id", "payload"),
-        [
-            ("verification-claude-dollar", {"prompt": "$PATHを確認する"}),
-            ("verification-codex-slash", {"prompt": "/homeを確認する", "model": "gpt-5"}),
-        ],
-    )
-    def test_nonmatching_host_command_prefix_is_normal_prompt(
-        self,
-        tmp_path: pathlib.Path,
-        session_id: str,
-        payload: dict,
-    ) -> None:
-        previous = time.time() - 200
-        _write_state(session_id, {"last_user_prompt_at": previous})
-
-        result = _run({"session_id": session_id, **payload}, state_dir=tmp_path)
-
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert _notice_bodies(context) == [_EXPECTED_VERIFICATION_NOTICE_BODY]
-        assert _read_state(tmp_path, session_id)["last_user_prompt_at"] > previous
-
-    def test_claims_notice_at_exact_threshold(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        states = {
-            "exact": {"last_user_prompt_at": 20.0},
-            "before": {"last_user_prompt_at": 20.0},
-        }
-
-        def update_state(session_id: str, mutator) -> None:
-            states[session_id] = mutator(states[session_id])
-
-        monkeypatch.setattr(user_prompt_submit, "update_state", update_state)
-
-        assert (
-            user_prompt_submit._claim_verification_notice(  # noqa: SLF001  # pylint: disable=protected-access
-                "exact", 200.0
-            )
-            is True
-        )
-        assert (
-            user_prompt_submit._claim_verification_notice(  # noqa: SLF001  # pylint: disable=protected-access
-                "before", 199.9
-            )
-            is False
-        )
-        assert states["exact"]["last_user_prompt_at"] == 200.0
-        assert states["before"]["last_user_prompt_at"] == 199.9
-
-    def test_does_not_inject_within_interval(self, tmp_path: pathlib.Path) -> None:
-        sid = "verification-within-interval"
-        _write_state(sid, {"last_user_prompt_at": time.time() - 10})
-
-        result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
-
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_does_not_inject_on_first_prompt(self, tmp_path: pathlib.Path) -> None:
-        sid = "verification-first-prompt"
-
-        result = _run({"session_id": sid, "prompt": "最初の通常発話です。"}, state_dir=tmp_path)
-
-        assert result.returncode == 0
-        assert result.stdout == ""
+@pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+@pytest.mark.parametrize("legacy_time", [None, 0.0, 20.0])
+def test_ordinary_prompts_keep_input_observation_without_reinjecting_procedure(tmp_path, host_fields, legacy_time):
+    """旧時刻の有無によらず固定手順を再配送せず、実入力の観測を保つ。"""
+    sid = "no-timed-procedure"
+    if legacy_time is not None:
+        _write_state(sid, {"last_user_prompt_at": legacy_time})
+    for prompt in ("最初の依頼", "同じ条件で続ける", "次の依頼"):
+        result = _run({"session_id": sid, "prompt": prompt, **host_fields}, state_dir=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert not result.stdout
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"last_user_prompt_at", "termination_evidence", "work_contract_input_sequence"}
+        assert state.get("last_user_prompt_at") == legacy_time
+        evidence = state["termination_evidence"]
+        assert evidence["inputs"][evidence["last_input"]]["text"] == prompt
 
-    def test_does_not_inject_for_harness_message(self, tmp_path: pathlib.Path) -> None:
-        sid = "verification-harness-message"
-        previous = time.time() - 200
-        _write_state(sid, {"last_user_prompt_at": previous})
 
-        result = _run({"session_id": sid, "prompt": "<task-notification>完了</task-notification>"}, state_dir=tmp_path)
-
-        assert result.returncode == 0
-        assert "バックグラウンドタスク完了の自動通知" in result.stdout
-        assert "この発話は" not in result.stdout
-        assert _read_state(tmp_path, sid)["last_user_prompt_at"] == previous
-
-    def test_injects_for_slash_command(self, tmp_path: pathlib.Path) -> None:
-        """スラッシュコマンドで始まる発話もユーザー自身の入力として注記の対象にする。"""
-        sid = "verification-slash-command"
-        previous = time.time() - 200
-        _write_state(sid, {"last_user_prompt_at": previous})
-
-        result = _run({"session_id": sid, "prompt": "/plan-mode"}, state_dir=tmp_path)
-
-        assert result.returncode == 0
-        hook_output = json.loads(result.stdout)["hookSpecificOutput"]
-        assert _notice_bodies(hook_output["additionalContext"]) == [
-            _EXPECTED_VERIFICATION_NOTICE_BODY,
-        ]
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_mode_skill_invoked") is None
-        assert state["last_user_prompt_at"] > previous
-
-    def test_codex_payload_receives_same_notice(self, tmp_path: pathlib.Path) -> None:
-        sid = "verification-codex"
-        _write_state(sid, {"last_user_prompt_at": time.time() - 200})
-
-        result = _run(
-            {"session_id": sid, "prompt": "通常のユーザー発話です。", "model": "gpt-5"},
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        hook_output = json.loads(result.stdout)["hookSpecificOutput"]
-        assert hook_output["hookEventName"] == "UserPromptSubmit"
-        assert _notice_bodies(hook_output["additionalContext"]) == [
-            _EXPECTED_VERIFICATION_NOTICE_BODY,
-        ]
-        assert "sessionTitle" not in hook_output
-
-    def test_plan_state_combines_session_title_and_notice(self, tmp_path: pathlib.Path) -> None:
-        sid = "verification-title-and-notice"
-        home = tmp_path / "home"
-        plan = home / ".claude" / "plans" / "current-plan.md"
-        plan.parent.mkdir(parents=True)
-        plan.write_text("# 計画\n", encoding="utf-8")
-        _write_state(
-            sid,
-            {"current_plan_file_path": str(plan), "last_user_prompt_at": time.time() - 200},
-        )
-
-        result = _run(
-            {"session_id": sid, "prompt": "通常のユーザー発話です。"},
-            state_dir=tmp_path,
-            home_dir=home,
-        )
-
-        assert result.returncode == 0
-        hook_output = json.loads(result.stdout)["hookSpecificOutput"]
-        assert hook_output["sessionTitle"] == "current-plan"
-        assert _notice_bodies(hook_output["additionalContext"]) == [
-            _EXPECTED_VERIFICATION_NOTICE_BODY,
-        ]
+def test_plan_state_names_session_without_procedure_injection(tmp_path):
+    """時刻による注記を撤去しても計画名をsessionTitleへ反映する。"""
+    sid = "plan-title-no-procedure"
+    home = tmp_path / "home"
+    plan = home / ".claude" / "plans" / "current-plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# 計画\n", encoding="utf-8")
+    _write_state(sid, {"current_plan_file_path": str(plan)})
+    result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path, home_dir=home)
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["sessionTitle"] == "current-plan"
+    assert "additionalContext" not in output
 
 
 @pytest.mark.parametrize("codex", [False, True])

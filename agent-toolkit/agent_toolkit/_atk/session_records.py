@@ -1,4 +1,4 @@
-"""保存済みセッション記録（Claude Code・Codex）からprocess-wiの起動と終了工程の到達を判定する。
+"""保存済みセッション記録（Claude Code・Codex・Antigravity）からprocess-wiの起動と終了工程の到達を判定する。
 
 記録の形式（保存先の規約、行の解析）は`session_record_format`が解釈し、本モジュールはその上の判定を持つ。
 """
@@ -16,7 +16,8 @@ from typing import Any
 from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._atk.wi.repo import resolve_repo_id
-from agent_toolkit._common import host_homes
+from agent_toolkit._common import host_homes, session_state
+from agent_toolkit._common.agy_records import normalize_entries
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_exit_session_command
 
@@ -40,15 +41,28 @@ _TEXT_EXCERPT_LIMIT = 200
 
 
 def candidate_paths() -> Iterator[tuple[pathlib.Path, str, str]]:
-    """Claude CodeとCodexの本体セッション候補を列挙する。"""
+    """対応ホストの本体セッション候補を列挙する。"""
     for path in session_record_format.claude_session_records(host_homes.claude_config_dir()):
         yield path, "claude", path.stem
     for path in session_record_format.codex_session_records(host_homes.codex_home()):
         yield path, "codex", session_record_format.codex_session_id(path)
+    for path in session_record_format.agy_session_records(pathlib.Path.home() / ".gemini"):
+        yield path, "agy", session_record_format.agy_session_id(path)
 
 
 def session_cwd(path: pathlib.Path, engine: str) -> str | None:
     """本体セッションなら判定に用いるcwdを返す。"""
+    if engine == "agy":
+        try:
+            for record in session_record_format.parsed_records(path):
+                cwd = record.get("cwd")
+                if isinstance(cwd, str) and cwd:
+                    return cwd
+            state = json.loads(session_state.state_path(session_record_format.agy_session_id(path)).read_text(encoding="utf-8"))
+            cwd = state.get("agy_cwd") if isinstance(state, dict) else None
+            return cwd if isinstance(cwd, str) and cwd else None
+        except OSError, ValueError:
+            return None
     try:
         for record in session_record_format.parsed_records(path):
             if engine == "claude" and record.get("type") == "user":
@@ -82,6 +96,11 @@ def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
     Codexでは`_CODEX_PROCESS_WI_PROMPT`の包含で判定する。この定数の説明が持つ
     確定した現象・期待する契約・直接的原因を根拠とする。
     """
+    if engine == "agy":
+        return any(
+            event.kind in {"user", "injected"} and event.text and _CODEX_PROCESS_WI_PROMPT in event.text
+            for event in session_record_format.agy_events([record])
+        )
     if engine == "claude":
         message = record.get("message")
         if record.get("type") != "user" or not isinstance(message, dict):
@@ -147,12 +166,15 @@ def exit_session_reached(path: pathlib.Path, engine: str) -> bool | None:
                 return True
         return False
 
-    if engine not in {"claude", "codex"}:
+    if engine not in {"claude", "codex", "agy"}:
         return None
     try:
         pending: set[str] = set()
-        observed_shape = engine == "claude"
-        for record in session_record_format.parsed_records(path):
+        observed_shape = engine in {"claude", "agy"}
+        entries = list(session_record_format.parsed_records(path))
+        if engine == "agy":
+            entries = normalize_entries(entries)
+        for record in entries:
             if engine == "codex":
                 payload = record.get("payload")
                 if not isinstance(payload, dict):
@@ -182,9 +204,9 @@ def exit_session_reached(path: pathlib.Path, engine: str) -> bool | None:
             for item in content:
                 if not isinstance(item, dict):
                     continue
-                if item.get("type") == "tool_use" and item.get("name") in ATK_SHELL_TOOLS:
+                if item.get("type") == "tool_use" and item.get("name") in {*ATK_SHELL_TOOLS, "run_command"}:
                     tool_input = item.get("input")
-                    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+                    command = tool_input.get("command", tool_input.get("CommandLine")) if isinstance(tool_input, dict) else None
                     tool_id = item.get("id")
                     if _is_exit_command(command) and isinstance(tool_id, str):
                         pending.add(tool_id)
@@ -240,6 +262,15 @@ def _codex_text(record: dict[str, Any], *, role: str, item_type: str) -> str | N
 def first_user_input(path: pathlib.Path, engine: str) -> str:
     """最初のユーザー入力テキストの抜粋を返す。取得できない場合は空文字列。"""
     try:
+        if engine == "agy":
+            return next(
+                (
+                    _excerpt(event.text)
+                    for event in session_record_format.agy_events(session_record_format.parsed_records(path))
+                    if event.kind == "user" and event.text
+                ),
+                "",
+            )
         for record in session_record_format.parsed_records(path):
             text = (
                 _claude_text(record, role_type="user")
@@ -257,6 +288,13 @@ def last_agent_message(path: pathlib.Path, engine: str) -> str:
     """最後のエージェント発言テキストの抜粋を返す。取得できない場合は空文字列。"""
     result = ""
     try:
+        if engine == "agy":
+            messages = [
+                event.text
+                for event in session_record_format.agy_events(session_record_format.parsed_records(path))
+                if event.kind == "assistant" and event.text
+            ]
+            return _excerpt(messages[-1]) if messages else ""
         for record in session_record_format.parsed_records(path):
             text = (
                 _claude_text(record, role_type="assistant")

@@ -121,7 +121,7 @@ def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
     return commit
 
 
-def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> CommitMetadata:
+def resolve_commit(local_worktree: pathlib.Path, revision: str) -> CommitMetadata:
     """作業ツリーでrevisionを解決し、永続記録用の一意な長さの短縮OIDと件名を返す。"""
     commit = _resolve_commit_oid(local_worktree, revision)
     try:
@@ -147,9 +147,9 @@ def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> CommitMetada
 
 def commit_values_by_path(
     paths: list[pathlib.Path],
-    revision: str | None,
+    revision: str | list[str] | None,
     local_worktree: pathlib.Path | None,
-) -> dict[pathlib.Path, CommitMetadata | None]:
+) -> dict[pathlib.Path, CommitMetadata | list[CommitMetadata] | None]:
     """対象ごとに永続記録用のcommit情報を解決する。"""
     if revision is None:
         return {path: None for path in paths}
@@ -163,7 +163,11 @@ def commit_values_by_path(
             next_action="対象リポジトリの作業ツリー内で実行するか、--target-repoへその作業ツリーのパスを指定して再実行する",
         )
         sys.exit(2)
-    resolved = _resolve_commit(local_worktree, revision)
+    resolved = (
+        [resolve_commit(local_worktree, item) for item in dict.fromkeys(revision)]
+        if isinstance(revision, list)
+        else resolve_commit(local_worktree, revision)
+    )
     return dict.fromkeys(paths, resolved)
 
 

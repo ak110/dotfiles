@@ -38,7 +38,7 @@ def _write_uwi_entry(
 def _disable_transition_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """状態遷移テストからprivate-notesのgit操作とカレントディレクトリのリポジトリ解決を除外する。
 
-    `--target-repo`を省略した場合の解決はテスト実行時のカレントディレクトリに依存するため、
+    `--target-repo`を省略した場合の解決はテスト実行時のカレントディレクトリで決まるため、
     対象リポジトリの一致を明示指定だけで判定する状態へそろえる。
     """
     monkeypatch.setattr(repo, "detect_current_repo_id", lambda: None)

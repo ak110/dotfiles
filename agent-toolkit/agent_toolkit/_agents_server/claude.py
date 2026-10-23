@@ -23,8 +23,12 @@ import typing
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
+lazy import psutil
+
 from agent_toolkit._agents_server import (
+    child_environment,
     claude_mcp,
+    claude_retry_record,
     claude_settings,
     context_usage,
     engine_availability,
@@ -43,6 +47,7 @@ from agent_toolkit._agents_server.launch_prompts import (
     CLAUDE_EXPLORE_SYSTEM_PROMPT,
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
+    SUBAGENT_BASE_INSTRUCTIONS,
     cli_runtime_instructions,
     python_runtime_instructions,
 )
@@ -55,6 +60,7 @@ from agent_toolkit._agents_server.state import (
     append_bounded,
     begin_reply,
 )
+from agent_toolkit._atk import claude_connection
 from agent_toolkit._common import claude_connection as connection_settings
 from agent_toolkit._common import claude_usage_limit, plugin_environment, process_tree
 from agent_toolkit._common import delegated_session as _delegated_session
@@ -92,6 +98,7 @@ class _InitializationDiagnostic:
         self.received_message_types: dict[str, int] = {}
         self.received_messages: list[str] = []
         self.child_pid: int | None = None
+        self.child_process: psutil.Process | None = None
         self.debug_file: str | None = None
         self.stderr = ""
         self.exception_type: str | None = None
@@ -106,6 +113,11 @@ class _InitializationDiagnostic:
         process = getattr(transport, "_process", None)
         pid = getattr(process, "pid", None)
         self.child_pid = pid if isinstance(pid, int) else None
+        if self.child_pid is not None:
+            try:
+                self.child_process = psutil.Process(self.child_pid)
+            except psutil.NoSuchProcess:
+                self.child_process = None
 
     def record_message(self, message: Any) -> None:
         name = _message_name(message)
@@ -169,6 +181,18 @@ def _describe_child_processes(pid: int | None) -> list[str]:
         command = " ".join(os.fsdecode(part) for part in cmdline.split(b"\0") if part)
         children.append(f"{child_pid}: {command[:_INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS]}")
     return children
+
+
+def _owned_runtime_processes(root: psutil.Process | None) -> list[psutil.Process]:
+    """SDKが起動したCLIと子孫を、停止前の同一性を持つhandleとして確定する。"""
+    if root is None:
+        return []
+    try:
+        if not root.is_running():
+            return []
+        return [root, *root.children(recursive=True)]
+    except psutil.NoSuchProcess:
+        return []
 
 
 def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
@@ -314,8 +338,9 @@ def _build_options(
     api_env_file: str | None = None,
     connection_kind: str = "inherit",
     isolation_env_file: str | None = None,
+    handoff_prompt: str = "",
 ) -> Any:
-    """Claude Codeが用意するシステム指示と委譲先の印を有効にしたSDKオプションを組む。
+    """起動区分ごとの自前システム指示と委譲先の印を持つSDKオプションを組む。
 
     `ClaudeAgentOptions.env`は継承環境へ後から重なるため、process-loopの印を継承したまま
     委譲先の印を追加する。
@@ -328,7 +353,7 @@ def _build_options(
     起動区分によらず権限モードをbypass系にしない。Claude Codeのセッション間メッセージの受信方針は、
     受信側がbypass系であり送信側が権限モードを申告していない場合にそのメッセージを保留する。
     委譲元は起動直後にメッセージを送るため、bypass系で起動したセッションは保留のまま
-    初期化を完了できない。この保留動作は起動区分に依存しない。
+    初期化を完了できない。この保留動作は起動区分によらず同じである。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
@@ -341,6 +366,7 @@ def _build_options(
         "PATH": cli_env["PATH"],
         plugin_environment.RUNTIME_DATA_ENV: cli_env[plugin_environment.RUNTIME_DATA_ENV],
     }
+    env.update(_delegated_session.handoff_environment(handoff_prompt))
     cli_instructions = cli_runtime_instructions(plugin_root)
     launch_prompt = CLAUDE_EXPLORE_SYSTEM_PROMPT if launch_kind == "explore" else LAUNCH_SYSTEM_PROMPTS[launch_kind]
     # CLIのturn状態の報告（`SystemMessage`のsubtype `session_state_changed`）を受け取る。
@@ -375,11 +401,7 @@ def _build_options(
         "system_prompt": (
             f"{launch_prompt}\n{AUTO_RESUME_NOTICE}\n{python_runtime_instructions()}\n{cli_instructions}"
             if lightweight
-            else {
-                "type": "preset",
-                "preset": "claude_code",
-                "append": f"{CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{AUTO_RESUME_NOTICE}\n{cli_instructions}",
-            }
+            else f"{SUBAGENT_BASE_INSTRUCTIONS}\n{CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{AUTO_RESUME_NOTICE}\n{cli_instructions}"
         ),
     }
     if stderr is not None:
@@ -388,18 +410,12 @@ def _build_options(
         options["extra_args"] = {"debug-file": str(debug_file)}
     if (cli_path := shutil.which("claude")) is not None:
         options["cli_path"] = cli_path
-    # SDKは親環境へoptions.envを重ねるため、親にある接続変数は空値で遮断する。
-    isolate_auth = connection_kind != "inherit" or api_env_file is not None
-    if isolate_auth:
-        env.update(
-            connection_settings.connection_overrides(
-                connection_settings.Connection(
-                    "api" if api_env_file else connection_kind,
-                    api_env_file,
-                    isolation_env_file,
-                )
-            )
-        )
+    # 起動時に継承環境から除いた接続値は、選択した接続へだけ明示的に戻す。
+    connection = connection_settings.Connection("api" if api_env_file else connection_kind, api_env_file, isolation_env_file)
+    isolate_auth = connection.kind != "inherit"
+    selected_environment = connection_settings.connection_environment(child_environment.inherited(), connection)
+    env.update({key: value for key, value in selected_environment.items() if key not in os.environ})
+    env.update(connection_settings.connection_overrides(connection))
     if lightweight:
         options.update(
             skills=[],
@@ -411,11 +427,21 @@ def _build_options(
         # 起動定義はpluginのSSOTを使い、検索を担うpyfltrを軽量起動へ渡す。
         # pyfltrの読取用途はプロンプトが定め、個別ツールの許可リストは設けない。
         mcp_config = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
-        options["mcp_servers"] = {"pyfltr": mcp_config["mcpServers"]["pyfltr"]}
+        pyfltr = mcp_config["mcpServers"]["pyfltr"]
+        pyfltr["args"] = [arg.replace("${CLAUDE_PLUGIN_ROOT}", str(plugin_root)) for arg in pyfltr.get("args", [])]
+        options["mcp_servers"] = {"pyfltr": pyfltr}
         options.setdefault("extra_args", {}).update({"permission-prompts": "none"})
     with contextlib.ExitStack() as settings_owner:
         options["settings"] = claude_settings.merge_settings(
-            _parent_settings(), env, root_session_id, force_file=api_env_file is not None, isolate_auth=isolate_auth
+            _parent_settings(),
+            env,
+            root_session_id,
+            force_file=api_env_file is not None,
+            isolate_auth=isolate_auth,
+            isolation_keys=connection_settings.isolation_keys(connection),
+            cwd=cwd,
+            project_settings=not lightweight,
+            drop_parent_env=frozenset({_delegated_session.HANDOFF_PATH_ENV}),
         )
         if isinstance(options["settings"], claude_settings.SettingsFile):
             settings_owner.enter_context(options["settings"])
@@ -437,6 +463,57 @@ def _message_name(message: Any) -> str:
 def _assistant_text(message: Any) -> str:
     blocks = getattr(message, "content", ())
     return "\n".join(text for block in blocks if (text := getattr(block, "text", None)) is not None and isinstance(text, str))
+
+
+def consume_api_retry(session: SessionState, data: dict[str, Any]) -> None:
+    """CLIのturn内再試行を、活動時刻を保ったまま共通の失敗状態へ写す。"""
+    delay = data.get("retry_delay_ms")
+    retry_at = None
+    if isinstance(delay, (int, float)) and not isinstance(delay, bool):
+        retry_at = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(milliseconds=delay)).isoformat()
+    status = data.get("error_status")
+    status = status if isinstance(status, int) and not isinstance(status, bool) else None
+    attempt = data.get("attempt")
+    attempt = attempt if isinstance(attempt, int) and not isinstance(attempt, bool) else None
+    error = data.get("error")
+    error_type = error.get("type") if isinstance(error, dict) else error
+    limit = session.usage_limit
+    waiting = status == 429 and limit is not None and limit.is_wait_target
+    session.record_api_error(
+        resume_waits.USAGE_LIMIT_ERROR_TYPE if waiting else str(error_type or "api_error"),
+        status,
+        retry_at=retry_at,
+        attempt=attempt,
+    )
+    if waiting:
+        assert limit is not None and session.api_error is not None
+        session.api_error.update(limit_type=limit.limit_type, resets_at=limit.resets_at_iso() or retry_at)
+
+
+def recover_api_retry(session: SessionState, data: dict[str, Any], *, record_notification: bool = True) -> None:
+    """途中通知と終端失敗を同じ接続選択へ渡し、下位CLIの再試行終了への依存を解く。"""
+    if record_notification:
+        consume_api_retry(session, data)
+    elif session.api_error is not None and session.usage_limit is not None and session.usage_limit.is_wait_target:
+        session.api_error.update(
+            type=resume_waits.USAGE_LIMIT_ERROR_TYPE,
+            limit_type=session.usage_limit.limit_type,
+            resets_at=session.usage_limit.resets_at_iso() or session.api_error.get("retry_at"),
+        )
+    if data.get("error_status") != 429 and session.usage_limit_resume_at is not None:
+        resume_waits.clear_usage_limit_wait(session)
+        session.awaiting_auto_resume = False
+        session.pending_result = None
+    if session.interrupt_requested or session.claude_api_resume_pending or session.usage_limit_resume_at is not None:
+        return
+    if session.usage_limit is None or not session.usage_limit.is_wait_target or data.get("error_status") != 429:
+        return
+    failure = {
+        "status": "failed",
+        "agent_message": session.agent_message,
+        "error": {"message": session.usage_limit.describe(), "apiErrorStatus": 429},
+    }
+    resume_waits.begin_usage_limit_wait(session, failure)
 
 
 def consume_assistant_message(session: SessionState, message: Any) -> None:
@@ -464,6 +541,10 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
         session.record_api_error(error_type, status)
         return
     session.api_error = None
+    if session.usage_limit_resume_at is not None:
+        resume_waits.clear_usage_limit_wait(session)
+        session.awaiting_auto_resume = False
+        session.pending_result = None
     session.model_output_observed = True
     # 正常なモデル出力は利用上限で拒否されていない証拠であり、以前の拒否の報告を待機の根拠から外す。
     if session.usage_limit is not None and session.usage_limit.is_wait_target:
@@ -478,14 +559,12 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
 
 def _returns_to_subscription(session: SessionState) -> bool:
     """利用上限でAPIへ移した委譲先が、解除予定時刻を過ぎてサブスクリプションを先頭候補に持つかを返す。"""
-    from agent_toolkit._atk import claude_connection  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
     retry_at = session.claude_subscription_retry_at
     if retry_at is None or session.claude_connection != "api" or session.claude_role != "delegate":
         return False
     if time.time() < retry_at:
         return False
-    connections = claude_connection.candidates("delegate").connections
+    connections = claude_connection.candidates("delegate", env=child_environment.inherited()).connections
     return bool(connections) and connections[0].kind == "subscription"
 
 
@@ -551,6 +630,7 @@ class ClaudeServerManager:
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
         self._channels: dict[str, _CommandChannel] = {}
         self._disconnects: set[asyncio.Task[None]] = set()
+        self._residual_processes: dict[str, list[psutil.Process]] = {}
 
     def _expire_local_session(self, session_id: str) -> None:
         self.sessions.pop(session_id, None)
@@ -572,10 +652,8 @@ class ClaudeServerManager:
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
-        from agent_toolkit._atk import claude_connection
-
         role = "orchestrator" if model_type == "orchestrate" else "delegate"
-        choices = claude_connection.candidates(role)
+        choices = claude_connection.candidates(role, env=child_environment.inherited())
         failures = list(choices.diagnostics)
         for connection in choices.connections:
             _LOG.info("claude_connection_attempt connection=%s role=%s resumed=false", connection.kind, role)
@@ -632,16 +710,30 @@ class ClaudeServerManager:
         connection_kind: str = "inherit",
         existing_session: SessionState | None = None,
         isolation_env_file: str | None = None,
+        handoff_prompt: str = "",
     ) -> SessionState:
         """保存済みClaude sessionを新しい所有タスクで再開する。
 
         `fast_mode`はCodexの速度の指定であり、本backendは受け取って使わない。
         """
         del fast_mode
+        selected_connection = claude_connection.with_current_isolation(
+            connection_settings.Connection(
+                existing_session.claude_connection or "inherit" if existing_session else connection_kind,
+                api_env_file or (existing_session.claude_api_env_file if existing_session else None),
+                isolation_env_file,
+            ),
+            role=(existing_session.claude_role if existing_session else None)
+            or ("orchestrator" if model_type == "orchestrate" else "delegate"),
+            env=child_environment.inherited(),
+        )
+        connection_kind = selected_connection.kind
+        api_env_file = selected_connection.api_env_file
+        isolation_env_file = selected_connection.isolation_env_file
         await self._stop_owned_task(session_id)
         if existing_session is not None:
-            begin_reply(existing_session)
-        selected = existing_session.claude_connection or "inherit" if existing_session else connection_kind
+            begin_reply(existing_session, preserve_waits=True)
+        selected = connection_kind
         role = "orchestrator" if model_type == "orchestrate" else "delegate"
         _LOG.info("claude_connection_attempt connection=%s role=%s resumed=true", selected, role)
         try:
@@ -659,6 +751,7 @@ class ClaudeServerManager:
                 connection_kind=selected,
                 existing_session=existing_session,
                 isolation_env_file=isolation_env_file,
+                handoff_prompt=handoff_prompt,
             )
         except (OSError, ValueError, RuntimeError, SessionInitializationTimeoutError) as error:
             _LOG.info(
@@ -674,10 +767,27 @@ class ClaudeServerManager:
         """同じsession IDを所有する旧タスクを終了し、再開時のキュー競合を防ぐ。"""
         task = next((item for item in self._tasks if self._task_sessions.get(item) == session_id), None)
         if task is None:
+            await self._reclaim_runtime(session_id)
             return
         if not task.done():
             task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        outcomes = await asyncio.gather(task, return_exceptions=True)
+        for outcome in outcomes:
+            if isinstance(outcome, BaseException) and not isinstance(outcome, asyncio.CancelledError):
+                raise outcome
+
+    async def _reclaim_runtime(self, session_id: str) -> None:
+        """未回収の所有資源を再試行し、終了できないhandleを次の停止要求へ保持する。"""
+        targets = self._residual_processes.get(session_id, [])
+        if not targets:
+            return
+        residual = await run_file_operation(process_tree.reclaim_processes, targets)
+        if residual:
+            self._residual_processes[session_id] = residual
+            raise session_errors.DelegateBackendError(
+                "Claude CLIの所有資源を終了できなかった。所有状態を確認して停止を再試行する。"
+            )
+        self._residual_processes.pop(session_id, None)
 
     async def release_session(self, session: SessionState) -> None:
         """sessionを所有するタスクを終了し、SDKクライアントの接続を閉じる。"""
@@ -700,14 +810,15 @@ class ClaudeServerManager:
         connection_kind: str = "inherit",
         existing_session: SessionState | None = None,
         isolation_env_file: str | None = None,
+        handoff_prompt: str = "",
     ) -> SessionState:
         """新規または保存済みsessionを所有する長命タスクを開始する。"""
         diagnostic = _InitializationDiagnostic()
         if connection_kind == "subscription" and isolation_env_file is None:
-            from agent_toolkit._atk import claude_connection
-
             isolation_env_file = claude_connection.with_current_isolation(
-                connection_settings.Connection(connection_kind)
+                connection_settings.Connection(connection_kind),
+                role="orchestrator" if model_type == "orchestrate" else "delegate",
+                env=child_environment.inherited(),
             ).isolation_env_file
         debug_file = await run_file_operation(_prepare_debug_file, launch_kind)
         diagnostic.debug_file = str(debug_file)
@@ -724,6 +835,11 @@ class ClaudeServerManager:
             api_env_file=api_env_file,
             connection_kind=connection_kind,
             isolation_env_file=isolation_env_file,
+            handoff_prompt=existing_session.prompt
+            if existing_session
+            else prompt
+            if isinstance(prompt, str)
+            else handoff_prompt,
         )
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
@@ -795,7 +911,7 @@ class ClaudeServerManager:
     async def _disconnect_client(self, client: Any) -> None:
         """SDKクライアントの切断を、所有タスクの取り消しから切り離して完走させる。
 
-        CLIの子プロセスへ終了を送れるのは切断処理だけである。
+        SDKが所有するCLIへの通常の終了要求は切断処理が担当する。
         取り消された実行では、SDKの切断処理が内部のcheckpointで例外を送出し、
         子プロセスの終了処理へ到達しないまま接続だけを閉じる。
         このため切断は別taskで実行し、待機の側が取り消されてもそのtaskの実行を継続させる。
@@ -819,6 +935,12 @@ class ClaudeServerManager:
         # 通常の追送と、孫sessionの終端・利用上限・過負荷の後の自動再開は、いずれもここで次のturnを始める。
         # 進行中のturnと、CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）では所有タスクを止めない。
         held_without_pending = session.awaiting_auto_resume and not resume_waits.has_pending_auto_resume_targets(session)
+        role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
+        fixed_kind = claude_connection.fixed_kind(role)
+        if (session.terminal or held_without_pending) and fixed_kind and session.claude_connection != fixed_kind:
+            previous = session.previous_result() if session.terminal and not session.awaiting_auto_resume else None
+            await self._resume_next_turn(session, prompt)
+            return {"delivery": "reply_started", "previous_result": previous}
         if (session.terminal or held_without_pending) and _returns_to_subscription(session):
             return await self._return_to_subscription(session, prompt)
         async with session.turn_control_lock:
@@ -846,6 +968,15 @@ class ClaudeServerManager:
         session.claude_subscription_retry_at = None
         session.claude_connection_failures.pop("subscription", None)
         _LOG.info("claude_subscription_return session_id=%s", session.session_id)
+        try:
+            await self._resume_next_turn(session, prompt)
+        except BaseException:
+            session.claude_connection, session.claude_api_env_file, session.claude_subscription_retry_at = saved
+            raise
+        return {"delivery": "reply_started", "previous_result": previous_result}
+
+    async def _resume_next_turn(self, session: SessionState, prompt: str) -> None:
+        """同じ会話IDの所有タスクへ、次のturnの入力を渡す。"""
         resume_prompt = ResumePrompt(prompt)
         try:
             await self.resume(
@@ -860,25 +991,25 @@ class ClaudeServerManager:
                 turn_seq=session.turn_seq,
                 existing_session=session,
             )
-        except BaseException:
-            session.claude_connection, session.claude_api_env_file, session.claude_subscription_retry_at = saved
-            raise
         finally:
             resume_prompt.close()
-        return {"delivery": "reply_started", "previous_result": previous_result}
 
     async def interrupt(self, session: SessionState) -> None:
         """公開killから所有タスクへ中断要求を送り、受理を待つ。"""
         channel = self._channels.get(session.session_id)
-        if channel is None:
+        if channel is None and session.session_id not in self._residual_processes:
             raise SessionOwnerGoneError("the Claude session owner task has ended")
         if session.terminal:
             return
         session.interrupt_requested = True
         session.touch()
         try:
-            future = channel.send("interrupt", "")
-            delivery, _ = await future
+            if channel is None:
+                await self._reclaim_runtime(session.session_id)
+                delivery = "interrupt_accepted"
+            else:
+                future = channel.send("interrupt", "")
+                delivery, _ = await future
         except Exception:
             session.interrupt_requested = False
             session.touch()
@@ -889,6 +1020,14 @@ class ClaudeServerManager:
             session.touch()
             await self._notify_waiters()
             raise session_errors.DelegateBackendError(f"unexpected Claude interrupt delivery: {delivery}")
+        # control要求の受理とCLIの終端は別の事象である。所有タスクの後始末でCLIと子孫を回収してから停止を公開する。
+        await self._stop_owned_task(session.session_id)
+        if session.pending_result is not None:
+            resume_waits.finalize_pending_result(session, touch=False)
+        resume_waits.clear_usage_limit_wait(session)
+        session.claude_api_resume_pending = False
+        session.api_error = None
+        self._finalize_turn(session, {"status": "interrupted", "agent_message": session.agent_message, "error": session.error})
         await self._notify_waiters()
 
     def _forget_task(self, task: asyncio.Task[Any]) -> None:
@@ -927,6 +1066,7 @@ class ClaudeServerManager:
         active_future: asyncio.Future[_DeliveryResult] | None = None
         # `SystemMessage(init)`より前に届いた利用枠の報告。sessionの作成時に引き継ぐ。
         early_usage_limit: claude_usage_limit.UsageLimitState | None = None
+        early_api_retry: dict[str, Any] | None = None
         # 保留中の結果が完了通知による再開turnのものか。`idle`で確定するときに、`ResultMessage`の分岐で
         # 直接確定した場合と同じく`auto_resume_consumed`へ反映する。
         held_from_task_notification = False
@@ -934,6 +1074,61 @@ class ClaudeServerManager:
         # 発行するため、initより先に届き得る。捨てると最初のturnの判定が追跡集合だけの方法へ戻るため、
         # sessionの作成時に引き継ぐ。
         early_cli_turn_state: str | None = None
+        runtime_started_at = shared_state.utc_now()
+
+        async def apply_api_retry(data: dict[str, Any]) -> None:
+            """利用枠がSDK通知に無い場合だけ、会話・試行番号・待機時間が一致する元記録から利用枠を読む。"""
+            assert session is not None
+            if session.usage_limit is None or not session.usage_limit.is_wait_target:
+                limit = await run_file_operation(
+                    claude_retry_record.retry_usage_limit, session.session_id, data, started_at=runtime_started_at
+                )
+                if limit is not None:
+                    session.usage_limit = limit
+            recover_api_retry(session, data)
+
+        async def initialize_session(session_id: str, data: dict[str, Any]) -> None:
+            """initから同じ所有タスクのsessionを登録し、途中失敗時もその状態を保持する。"""
+            nonlocal session
+            await session_identity.validate_identity(self._validate_session_id, session_id, expected_session_id)
+            diagnostic.stage = "initialized"
+            _LOG.info("Claude session初期化完了: diagnostic=%s", await diagnostic.public_async())
+            session = existing_session or SessionState(
+                session_id=session_id,
+                cwd=cwd,
+                model_type=model_type,
+                launch_kind=launch_kind,
+                excluded_candidates=excluded_candidates,
+                model=model,
+                effort=effort,
+                engine="claude",
+                turn_seq=turn_seq,
+                publish_registry=self._publish_registry,
+                claude_api_env_file=api_env_file or None,
+                claude_connection="api" if api_env_file else connection_kind,
+                claude_role="orchestrator" if model_type == "orchestrate" else "delegate",
+            )
+            session.claude_connection = "api" if api_env_file else connection_kind
+            session.claude_api_env_file = api_env_file
+            if connection_kind == "api" and claude_connection.api_only(session.claude_role or "delegate"):
+                session.claude_subscription_retry_at = None
+            self.sessions[session_id] = session
+            session.claude_mcp_diagnostics = ()
+            diagnostic.mcp_recovery_task = asyncio.create_task(self._recover_mcp_connections(client, data, session))
+            await session.attach_executor_async(diagnostic.child_pid)
+            session.usage_limit = early_usage_limit
+            session.cli_turn_state = early_cli_turn_state
+            session.status = "starting" if expected_session_id is None else "running"
+            if early_api_retry is not None:
+                await apply_api_retry(early_api_retry)
+            session.touch()
+            self._channels[session_id] = channel
+            current_task = asyncio.current_task()
+            if current_task is not None:
+                self._task_sessions[current_task] = session_id
+            if not initialized.done():
+                initialized.set_result(session)
+
         try:
             diagnostic.stage = "creating_client"
             client = self._client_factory(options)
@@ -952,7 +1147,8 @@ class ClaudeServerManager:
             while True:
                 loop = asyncio.get_running_loop()
                 now = loop.time()
-                if session is not None and session.auto_resume_deadline is not None and session.auto_resume_deadline <= now:
+                deadline = resume_waits.auto_resume_wait_deadline(session) if session is not None else None
+                if session is not None and deadline is not None and deadline <= now:
                     (await self._finalize_pending_result(session))
                     await self._notify_waiters()
                     continue
@@ -962,8 +1158,8 @@ class ClaudeServerManager:
                     if timeout <= 0:
                         self._expire_session(session.session_id)
                         break
-                if session is not None and session.auto_resume_deadline is not None:
-                    auto_resume_timeout = session.auto_resume_deadline - now
+                if deadline is not None:
+                    auto_resume_timeout = deadline - now
                     timeout = auto_resume_timeout if timeout is None else min(timeout, auto_resume_timeout)
 
                 if iterator is not None and message_task is None:
@@ -995,7 +1191,7 @@ class ClaudeServerManager:
                     raise RuntimeError("Claude session has no message stream or command queue")
                 done, _ = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
                 if not done:
-                    if session is not None and session.auto_resume_deadline is not None:
+                    if session is not None and resume_waits.auto_resume_wait_deadline(session) is not None:
                         (await self._finalize_pending_result(session))
                         await self._notify_waiters()
                         continue
@@ -1062,44 +1258,10 @@ class ClaudeServerManager:
                             # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
                             # turnごとにinitが再送されても再生成しない。
                             if session is None:
-                                await session_identity.validate_identity(
-                                    self._validate_session_id, session_id, expected_session_id
-                                )
-                                diagnostic.stage = "initialized"
-                                _LOG.info("Claude session初期化完了: diagnostic=%s", await diagnostic.public_async())
-                                session = existing_session or SessionState(
-                                    session_id=session_id,
-                                    cwd=cwd,
-                                    model_type=model_type,
-                                    launch_kind=launch_kind,
-                                    excluded_candidates=excluded_candidates,
-                                    model=model,
-                                    effort=effort,
-                                    engine="claude",
-                                    turn_seq=turn_seq,
-                                    publish_registry=self._publish_registry,
-                                    claude_api_env_file=api_env_file or None,
-                                    claude_connection="api" if api_env_file else connection_kind,
-                                    claude_role="orchestrator" if model_type == "orchestrate" else "delegate",
-                                )
-                                self.sessions[session_id] = session
-                                session.claude_mcp_diagnostics = ()
-                                diagnostic.mcp_recovery_task = asyncio.create_task(
-                                    self._recover_mcp_connections(client, data, session)
-                                )
-                                await session.attach_executor_async(diagnostic.child_pid)
-                                session.usage_limit = early_usage_limit
-                                session.cli_turn_state = early_cli_turn_state
-                                session.status = "starting" if expected_session_id is None else "running"
-                                session.touch()
-                                self._channels[session_id] = channel
-                                current_task = asyncio.current_task()
-                                if current_task is not None:
-                                    self._task_sessions[current_task] = session_id
-                                if not initialized.done():
-                                    initialized.set_result(session)
+                                await initialize_session(session_id, data)
                             elif session_id != session.session_id:
                                 raise session_errors.DelegateBackendError("Claude init message reported a different session_id")
+                            assert session is not None
                             usage_observer.request(session)
                         elif (
                             name == "SystemMessage"
@@ -1135,6 +1297,14 @@ class ClaudeServerManager:
                                     session.auto_resume_consumed = True
                                 (await self._finalize_pending_result(session))
                                 await self._notify_waiters()
+                        elif name == "SystemMessage" and getattr(message, "subtype", None) == "api_retry":
+                            data = getattr(message, "data", {})
+                            if isinstance(data, dict):
+                                if session is None:
+                                    early_api_retry = data
+                                else:
+                                    await apply_api_retry(data)
+                                    await self._notify_waiters()
                         elif name == "RateLimitEvent":
                             # 利用枠の報告はモデル活動ではないため活動時刻を進めない。
                             usage_limit = claude_usage_limit.from_event(message)
@@ -1143,6 +1313,9 @@ class ClaudeServerManager:
                                     early_usage_limit = usage_limit
                                 else:
                                     session.usage_limit = usage_limit
+                                    if session.api_error is not None and session.api_error.get("http_status") == 429:
+                                        recover_api_retry(session, {"error_status": 429}, record_notification=False)
+                                        await self._notify_waiters()
                         elif name == "AssistantMessage" and session is not None:
                             # 保留後のモデル出力は次のturnに属する。Stopの処理中に完了通知が先に届いた場合は、
                             # 保留の前に`running`が報告済みで、次のturnの開始が出力でしか観測できない。
@@ -1157,6 +1330,12 @@ class ClaudeServerManager:
                             event = getattr(message, "event", None)
                             if isinstance(event, dict) and event.get("type") == "message_start":
                                 resume_waits.release_auto_resume_hold(session)
+                                session.api_error = None
+                                session.usage_limit = None
+                                if session.usage_limit_resume_at is not None:
+                                    resume_waits.clear_usage_limit_wait(session)
+                                    session.awaiting_auto_resume = False
+                                    session.pending_result = None
                                 session.model_output_observed = True
                                 await self._notify_waiters()
                             elif isinstance(event, dict) and event.get("type") == "message_stop":
@@ -1223,15 +1402,18 @@ class ClaudeServerManager:
                         # 切断より先に子孫を列挙し、親の終了後も所有資源を回収できるようにする。
                         descendants = []
                         try:
-                            descendants = await run_file_operation(process_tree.collect_descendants, diagnostic.child_pid)
+                            descendants = await run_file_operation(_owned_runtime_processes, diagnostic.child_process)
+                            if session is not None and descendants:
+                                self._residual_processes[session.session_id] = descendants
                         finally:
                             try:
                                 await self._disconnect_client(client)
                             finally:
-                                residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
-                                process_tree.log_residual(
-                                    residual, context=f"claude session_id={None if session is None else session.session_id}"
-                                )
+                                if session is not None:
+                                    await self._reclaim_runtime(session.session_id)
+                                else:
+                                    residual = await run_file_operation(process_tree.reclaim_descendants, descendants)
+                                    process_tree.log_residual(residual, context="claude initialization")
 
             async def cleanup() -> None:
                 async with contextlib.AsyncExitStack() as resources:
@@ -1257,6 +1439,22 @@ class ClaudeServerManager:
         """turnの結果を保留または確定し、保留結果がtask完了通知のturnから届いたかを引き継ぐ。"""
         await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
         result = self._result_values(session, message)
+        if session.interrupt_requested:
+            # killの所有者がCLIの終了を確認してから公開する。後着の失敗結果を回復の契機へ戻さない。
+            session.pending_result = {**result, "status": "interrupted"}
+            session.awaiting_auto_resume = True
+            session.auto_resume_deadline = None
+            return held_from_task_notification
+        if session.claude_api_resume_pending:
+            if result["status"] == "completed":
+                session.api_error = None
+            return held_from_task_notification
+        if session.usage_limit_resume_at is not None:
+            if result["status"] != "completed":
+                return held_from_task_notification
+            resume_waits.clear_usage_limit_wait(session)
+            session.api_error = None
+            session.usage_limit = None
         # 対象の利用上限では結果を保留し、MCP層の常駐監視がAPI移行または解除後の継続を進める。
         if resume_waits.begin_usage_limit_wait(session, result):
             return held_from_task_notification
@@ -1309,8 +1507,7 @@ class ClaudeServerManager:
             else:
                 if session.awaiting_auto_resume:
                     # モデルのturnは終わっており、Claude Code CLIはturnの外で受けた中断要求へ`ResultMessage`を返さない。
-                    # 保留した結果をそのまま確定し、以後の再開turnは読まない。
-                    (await self._finalize_pending_result(session))
+                    # 以後の再開turnは読まず、killの所有者が資源を回収してから停止結果を確定する。
                     iterator = None
                 if not future.done():
                     future.set_result(("interrupt_accepted", None))
@@ -1318,7 +1515,7 @@ class ClaudeServerManager:
             return iterator
         if future.cancelled():
             return iterator
-        if session.awaiting_auto_resume and session.auto_resume_deadline is None:
+        if session.awaiting_auto_resume and not resume_waits.is_background_completion_wait(session):
             (await self._finalize_pending_result(session))
         held = resume_waits.HeldTurn.capture(session)
         kind = "reply" if session.terminal or held is not None else "steer"
@@ -1469,6 +1666,8 @@ class ClaudeServerManager:
         disconnects = tuple(self._disconnects)
         if disconnects:
             await asyncio.gather(*disconnects, return_exceptions=True)
+        for session_id in tuple(self._residual_processes):
+            await self._reclaim_runtime(session_id)
         for session in tuple(self.sessions.values()):
             if session.engine == "claude":
                 await session.drain_registration()

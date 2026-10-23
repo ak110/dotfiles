@@ -24,7 +24,7 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import session_registry, task_documents
+from agent_toolkit._common import read_triggers, session_registry, task_documents
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
@@ -39,9 +39,6 @@ _SHARE_DIRECTORY = plugin_root.SERVER_PLUGIN_ROOT / "share"
 
 
 _TASK_MODEL_TYPES = launch_prompts.TASK_MODEL_TYPES
-_TASK_USAGES = launch_prompts.TASK_USAGES
-
-
 _TASK_DOCUMENT_SUFFIX = task_documents.TASK_DOCUMENT_SUFFIX
 
 
@@ -79,10 +76,9 @@ _TASK_DOCUMENT_DEFECT_NEXT_ACTION = (
 
 
 MODEL_TYPE_NEXT_ACTION = (
-    "`model_type`へ段位名（例: `high_tier`）か`<claude|codex|agy>:<model>[/<effort>]`、"
+    "`model_type`へ工程名（例: `execute`）か`<claude|codex|agy>:<model>[/<effort>]`、"
     "`opencode:<provider>/<model>[@<effort>]`の候補列を指定する。"
-    "段位名に対応するモデルは`atk config get <engine>_<段位名>_model`（例: `claude_high_tier_model`）、"
-    "engine順は`atk config show`で確かめる"
+    "工程に対応する候補列は`atk config get <工程>_model`（例: `execute_model`）で確かめる"
 )
 
 
@@ -428,6 +424,33 @@ def continuation_prompt(
             next_action="最小の再実行形: "
             + json.dumps({"instruction": contract.instruction, "extra_params": minimal}, ensure_ascii=False),
         )
+    for name in contract.path_lists:
+        if name not in params:
+            continue
+        value = params[name]
+        try:
+            items = json.loads(value) if value.lstrip().startswith("[") else [value]
+        except json.JSONDecodeError as error:
+            raise ActionableError(
+                f"パス配列入力{name}のJSONを読めません: {value}",
+                next_action="最小の再実行形: " + minimal_form,
+            ) from error
+        if not isinstance(items, list) or not items:
+            raise ActionableError(
+                f"パス配列入力{name}には空でない配列が必要です: {value}",
+                next_action="最小の再実行形: " + minimal_form,
+            )
+        for item in items:
+            if not isinstance(item, str) or not pathlib.Path(item).is_absolute() or not pathlib.Path(item).is_file():
+                corrected = {
+                    **minimal,
+                    name: json.dumps([f"<{name}の実在するファイルの絶対パス>"], ensure_ascii=False),
+                }
+                raise ActionableError(
+                    f"パス配列入力{name}の要素を受理できません: {item!r}",
+                    next_action="実在するファイルの絶対パス1件か、その非空JSON配列を渡す。最小の再実行形: "
+                    + json.dumps({"instruction": contract.instruction, "extra_params": corrected}, ensure_ascii=False),
+                )
     for name in (*contract.paths, *contract.references):
         if name not in params:
             continue
@@ -938,14 +961,16 @@ def whole_contract_reference(
     whole_contract_path: str | None = None,
     launcher_session_id: str | None = None,
 ) -> str:
-    """全体作業契約を解決し、本文を複製せずその参照を配送する本文を返す。"""
+    """解決済みの全体契約の参照と本文を、担当の判断が始まる前に同じ起動本文へ届ける。"""
     path = _resolve_whole_contract(whole_contract_path, launcher_session_id)
     body = (
         f"{_WHOLE_CONTRACT_LINE_PREFIX}{path}\n"
         "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
         "全体記録の更新は委譲元が所有し、委譲先は自身の引き継ぎ記録へ判断を残す。"
     )
-    return auto_message(body, source="agents-server", kind=_WHOLE_CONTRACT_KIND)
+    target = read_triggers.ReadTarget(path)
+    delivered = read_triggers.startup_documents([target], plugin_root.SERVER_PLUGIN_ROOT, {target: {"input:作業契約"}})
+    return auto_message(body, source="agents-server", kind=_WHOLE_CONTRACT_KIND) + "\n\n" + delivered
 
 
 def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
@@ -966,14 +991,13 @@ def task_document_request(
     *,
     whole_contract_path: str | None = None,
     launcher_session_id: str | None = None,
-) -> tuple[str, str | None, str, LaunchKind, pathlib.Path | None]:
-    """`<役割名>.subagent.md`と名前付き入力からmodel種別、用途、委譲プロンプト、`mode:`の値およびサーバーが用意した引き継ぎ記録先を返す。
+) -> tuple[str, str, LaunchKind, pathlib.Path | None]:
+    """役割と名前付き入力からmodel種別、プロンプト、mode、サーバーが用意した引き継ぎ記録先を返す。
 
-    用途は役割に対応する値で、対応が無い場合は`None`（段位ごとの用途を使う）とする。
     `<役割名>.subagent.md`が`引き継ぎ記録先`を必須入力とし、`extra_params`がこれを持たない場合は、
-    拒否せずに`（新規）`の記録先を用意して委譲プロンプトへ加え、その絶対パスを5要素目で返す。
-    宣言しない通常起動にも共通入力として専用の記録先を加え、5要素目で返す。
-    委譲元が値を渡した場合と軽量起動の5要素目は`None`とする。
+    `（新規）`の記録先を用意してプロンプトへ加え、絶対パスを4要素目で返す。
+    宣言しない通常起動にも共通入力として専用の記録先を加える。
+    委譲元が値を渡した場合と軽量起動の4要素目は`None`とする。
     `whole_contract_path`と`launcher_session_id`は通常起動の全体作業契約の解決（`whole_contract_reference`）へ渡す。
     """
     task_document = resolve_task_document_path(subagent_md_path).resolve()
@@ -991,7 +1015,8 @@ def task_document_request(
         raise ActionableError(
             "extra_params contains an invalid input name",
             next_action=(
-                "`extra_params`のキーは`<役割名>.subagent.md`の`## 入力`が宣言した入力名にし、"
+                "呼び元の起動・受領契約から入力名を確定して`extra_params`のキーへ渡す。"
+                "キーには"
                 "空白・バッククォート・読点を含めず、"
                 "先頭と末尾をコロンにしない"
             ),
@@ -1010,15 +1035,13 @@ def task_document_request(
     document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
     declaration = _task_document_declaration(task_document, document_text)
     model_type = declaration.model_type if isinstance(declaration, task_documents.TaskDocumentDeclaration) else None
-    usage = declaration.usage if isinstance(declaration, task_documents.TaskDocumentDeclaration) else None
     # 旧版の文書と保存済みsessionだけは、移行前の役割設定で継続できるようにする。
     if model_type is None:
         model_type = _TASK_MODEL_TYPES.get(task_document.name)
-        usage = _TASK_USAGES.get(task_document.name)
     if model_type is None:
         raise ActionableError(
             f"subagent task has no model_type declaration: {task_document.name}",
-            next_action="役割文書のfrontmatterへmodel_typeとusageを宣言して同じstartを再発行する",
+            next_action="役割文書のfrontmatterへmodel_typeを宣言して同じstartを再発行する",
         )
     launch_kind: LaunchKind = declaration.launch_kind if not isinstance(declaration, str) else "delegate"
     if launch_kind != "delegate" and whole_contract_path is not None:
@@ -1042,7 +1065,15 @@ def task_document_request(
             if handoff_path is not None:
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         _check_declared_inputs(task_document, declaration, extra_params)
+    # 起動時の資料は、受領した役割の判断が始まる前に同じ会話へ届ける。
+    initial_documents = (
+        read_triggers.startup_context(task_document, task_document.parent.parent, dict(extra_params))
+        if launch_kind == "delegate"
+        else ""
+    )
     prompt_lines = [task_documents.task_prompt_header(task_document), document_text]
+    if initial_documents:
+        prompt_lines.append(initial_documents)
     # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
     # 軽量起動のtaskは独自の記録を持たない。
     if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:
@@ -1060,4 +1091,4 @@ def task_document_request(
     if extra_params:
         prompt_lines.append("入力:")
         prompt_lines.extend(named_input_lines(extra_params))
-    return model_type, usage, "\n".join(prompt_lines), launch_kind, handoff_path
+    return model_type, "\n".join(prompt_lines), launch_kind, handoff_path

@@ -1,34 +1,5 @@
 # Svelte／SvelteKit記述スタイル
 
-対象バージョン: Svelte 5系・SvelteKit 2系（参考実利用バージョン: Svelte 5.56・SvelteKit 2.65）。本書は公式ドキュメント（<https://svelte.dev/docs>）のうち、runesモードで判断を誤りやすい箇所を抜粋する。
+<!-- read-source: agent-basics:writing-standards/references/svelte.md -->
 
-## runesの使い分け
-
-- リアクティブな値は`$state`で宣言する（トップレベル`let`の単独宣言はリアクティブにならない）
-- 派生値は`$derived`、副作用は`$effect`へ分け、effectで状態を同期しない。リアクティブ文`$:`はrunesモードで非対応である
-- 外部ライブラリとのDOM同期は`$effect`より`{@attach ...}`を優先する（公式推奨）
-- propsは`$props()`の分割代入で宣言する。`export let`の使用はレガシーモードに限る
-
-## スニペットとコンポーネント分割
-
-- 同じスコープの表示断片はsnippet、独立した状態・ライフサイクル・ファイルを越える再利用はコンポーネントで扱う
-- タグ内に直接書いた内容は暗黙の`children`スニペットとして`$props()`で受け取る。名前付きスニペットは複数の挿入位置が必要な場合だけ追加し、通常のpropには`children`以外の名前を選ぶ
-- スニペットは`{@render name()}`で描画する。通常の値の展開とスニペットの描画は、それぞれの構文で区別する
-
-## SvelteKitのload関数
-
-- DB・ファイルアクセスはserver load（`+page.server.ts`/`+layout.server.ts`）へ置く。universal load（`+page.ts`/`+layout.ts`）はブラウザーでも実行されるため、扱う情報は公開できるものに限る
-- 両者が同一ルートに共存する場合、server loadの戻り値がuniversal loadの`data`引数として渡される
-- フォーム送信・データ変更はform actions（`+page.server.ts`の`actions`）を優先する（プログレッシブエンハンスメントとCSRF対策に標準で対応するため）
-- 秘密情報はサーバー専用モジュール（`+page.server.ts`・`+layout.server.ts`・`+server.ts`・サーバーフック・`$lib/server`配下）でのみ扱う
-
-## SSR前提の実装
-
-- ブラウザー専用APIは`$app/environment`の`browser`定数で判定してから使う。判定はトップレベルスクリプト・`$derived.by`などSSR時にも実行される箇所に限り、サーバーで実行されない`$effect`内はその判定の対象外とする（公式が非推奨）
-
-## セキュリティと状態共有
-
-- `{@html}`はエスケープを回避するため、自身が生成した静的コンテンツやサニタイズ済みの文字列だけを渡す
-- サーバー側のモジュールスコープ変数・グローバル変数へのユーザー固有データの保持と、load関数内でのストア・グローバル状態への書込を禁止する。サーバーは複数ユーザーに共有される長寿命プロセスであり、他ユーザーへ漏洩する
-- ユーザー固有の状態は`cookies`で認証したうえでDBへ永続化する
-- SSRを伴うcontextベースの状態は親から子へ渡し、子から親への伝播に依存しない（SSR中の更新はレンダリング済みの親へ反映されず、hydration時にちらつく）
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/svelte.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。

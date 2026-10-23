@@ -53,12 +53,12 @@ async def test_start_handoff_restores_route_and_excludes_predecessor_after_recor
     record_extractor: pathlib.Path,
     launch_kind: state.LaunchKind,
 ) -> None:
-    """公開start1回から、期限切れの除外記録に依存せず後続候補へ条件と全文を渡す。"""
+    """公開start1回から、期限切れの除外記録を参照せず後続候補へ条件と全文を渡す。"""
     del record_extractor
-    requested: list[tuple[str, str | None]] = []
+    requested: list[str] = []
 
-    def candidates(model_type: str, *, usage: str | None = None, **_kwargs: Any) -> list[state.ModelCandidate]:
-        requested.append((model_type, usage))
+    def candidates(model_type: str, **_kwargs: Any) -> list[state.ModelCandidate]:
+        requested.append(model_type)
         return [("codex", "first", "medium"), ("claude", "second", "medium")]
 
     monkeypatch.setattr(config, "parse_unresolved_model_candidates", candidates)
@@ -67,11 +67,10 @@ async def test_start_handoff_restores_route_and_excludes_predecessor_after_recor
         _install_backend(manager, "claude", second)
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         started = await manager.start(
-            "high_tier",
+            "execute",
             "元の作業",
             str(tmp_path),
             launch_kind=launch_kind,
-            usage="review",
             label="担当",
         )
         predecessor = manager.sessions[started["session_id"]]
@@ -87,8 +86,8 @@ async def test_start_handoff_restores_route_and_excludes_predecessor_after_recor
         assert response["label"] == "担当"
         assert successor.engine == "claude"
         assert successor.launch_kind == launch_kind
-        assert successor.usage == "review"
-        assert requested == [("high_tier", "review")] * 2
+        assert successor.model_type == predecessor.model_type == "execute"
+        assert requested == ["execute"] * 2
         assert len(first.start_calls) == 1
         assert len(second.start_calls) == 1
         assert "追送全文" in successor.prompt
@@ -106,6 +105,31 @@ async def test_public_start_rejects_mixed_handoff_inputs(extra: dict[str, str]) 
 
 
 @pytest.mark.asyncio
+async def test_legacy_codex_disconnect_result_starts_handoff(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path
+) -> None:
+    """旧版の汎用切断結果を回収した呼び出し元も、案内から同じ用途の後任を開始できる。"""
+    del record_extractor
+    monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("codex", "first", "medium")])
+    async with _manager_with_fake("codex") as (manager, _backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await manager.start("execute", "未完了の検証を続ける", str(tmp_path))
+        predecessor = manager.sessions[started["session_id"]]
+        _complete(
+            predecessor,
+            message="編集済みの進捗全文",
+            error={"message": "Codex App Server stopped: connection lost"},
+        )
+        result = await manager.wait()
+        assert "handoff_from" in result["next_action"]
+        response = await mcp_tools.start(handoff_from=predecessor.session_id)
+        successor = manager.sessions[response["session_id"]]
+        assert "編集済みの進捗全文" in successor.prompt
+        assert successor.model_type == predecessor.model_type
+        assert not successor.excluded_candidates
+
+
+@pytest.mark.asyncio
 async def test_start_handoff_rejects_running_predecessor_before_extracting_records(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -113,7 +137,7 @@ async def test_start_handoff_rejects_running_predecessor_before_extracting_recor
     """実行中の前任へは終端待機・killを案内し、後任を生成しない。"""
     monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("codex", "first", "medium")])
     async with _manager_with_fake("codex") as (manager, backend):
-        started = await manager.start("high_tier", "作業", str(tmp_path))
+        started = await manager.start("execute", "作業", str(tmp_path))
         with pytest.raises(ActionableError, match="前任は実行中") as raised:
             await manager.start_handoff(started["session_id"])
         assert "kill" in raised.value.next_action
@@ -137,7 +161,7 @@ async def test_task_handoff_keeps_delivered_role_prompt_and_continues_handoff_re
             str(tmp_path),
             subagent_md_path="exec",
             extra_params=params,
-            model_type="high_tier",
+            model_type="execute",
         )
         predecessor = manager.sessions[started["session_id"]]
         _complete(predecessor, message="計画に基づく進捗全文")
@@ -146,7 +170,7 @@ async def test_task_handoff_keeps_delivered_role_prompt_and_continues_handoff_re
         document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"  # pylint: disable=protected-access
         assert str(document) in successor.prompt
         assert predecessor.prompt in successor.prompt
-        assert successor.usage == predecessor.usage == "execute"
+        assert successor.model_type == predecessor.model_type == "execute"
         assert successor.launch_kind == predecessor.launch_kind
         assert successor.label == predecessor.label
         assert "（継続）" in successor.prompt
@@ -168,7 +192,7 @@ def test_prompt_delivers_full_history_and_record_paths(
         engine=engine,
         launch_kind=launch_kind,
         prompt=f"元の起動本文\n引き継ぎ記録先: {handoff}（新規）",
-        model_type="high_tier",
+        model_type="execute",
         status="failed",
         error={"message": "終端理由"},
         turn_seq=2,
@@ -212,9 +236,8 @@ async def test_turn_history_survives_collection_release_and_registry_restart(tmp
         engine="codex",
         model="model",
         effort="high",
-        model_type="high_tier",
+        model_type="execute",
         prompt="元の起動本文",
-        usage="review",
         followup_prompts=("追送全文",),
         turn_seq=1,
     )
@@ -262,10 +285,12 @@ async def test_turn_history_survives_collection_release_and_registry_restart(tmp
 
 def test_legacy_registry_optional_history_keeps_default_values() -> None:
     """追加項目の無い旧登録簿と不正な任意値は、従来の起動情報を保つ。"""
-    restored = session_registry.LaunchInfo.from_record({"label": "old", "prompt": "元の依頼", "followup_prompts": 3})
+    restored = session_registry.LaunchInfo.from_record(
+        {"label": "old", "prompt": "元の依頼", "usage": "review", "followup_prompts": 3}
+    )
     assert restored.label == "old"
     assert restored.prompt == "元の依頼"
-    assert restored.usage is None
+    assert "usage" not in restored.as_kwargs()
     assert not restored.followup_prompts
     assert not restored.final_responses
 
@@ -304,7 +329,7 @@ def test_handoff_prepares_conversation_through_registered_script(
         identifier,
         str(tmp_path),
         engine=engine,
-        model_type="high_tier",
+        model_type="execute",
         status="interrupted",
         prompt="元の依頼",
     )

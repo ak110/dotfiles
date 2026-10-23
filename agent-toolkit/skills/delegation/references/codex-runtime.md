@@ -1,5 +1,16 @@
 # Codexでの委譲方法
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/delivery-scope.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` |
+
 ## ツール名の読み替え
 
 agent-toolkitの文書に現れるClaude Codeのツール名は、Codexで次の責務へ読み替える。
@@ -27,6 +38,7 @@ forkを選ばない組み込み代替では`fork_turns: "none"`を明示し、�
 ## agents_serverの起動
 
 `agents_server`の`start`（全`mode`）はCodexネイティブ委譲とは別の仕組みで、`model_type`からengine、model、effortを解決する。通常起動（`task`の通常起動と`delegate`）には`_agents_server/launch_prompts.py`が`rules-subagent.md`をsystem promptへ加える。軽量な探索・書込・shell実行へ届く規範は`agent-toolkit:writing-standards`の`references/delivery-scope.md`の配送範囲表が示し、届かない制約は委譲プロンプトが持つ。
+Codexの初回を含む通常起動では、呼出側が保持する全体作業契約の絶対パスを`whole_contract_path`へ渡す。軽量起動と`handoff_from`にはこの引数を混在させない。既存の省略起動は受領済み参照の継承を使える場合に限り互換として扱う。
 起動時の可用性失敗による候補切替はサーバーへ委ね、委譲元は1回の起動応答を受け取る。
 起動後のturnで可用性失敗により終端した場合は、前任の終端と書込所有権の解放を確認し、結果の`next_action`に従って`start`へ`handoff_from`だけを指定して引き継ぎ起動する。
 サーバーが前任の起動条件と記録を後任へ渡し、応答の後任`session_id`を待機対象にする。
@@ -37,7 +49,7 @@ forkを選ばない組み込み代替では`fork_turns: "none"`を明示し、�
 
 ## 後続操作の共通先行条件
 
-元担当は、同じ作業のために既に起動した委譲先を指す。
+元担当は同じ作業のために既に起動した委譲先を指す。
 元担当の無い初回起動は`references/runtime-routing.md`「工程別モデル設定」に従う。client確立中か`thread/start`前に可用性失敗を観測し、状態照会でsession未生成かつ元担当不在を実際に確かめた場合（初回生成前失敗）の代替起動も初回起動として扱う。確かめられない場合と、sessionか元担当が生成された後の代替起動は次の条件に従う。
 
 元担当の回復、置換、再起動、代替起動および`interrupt_agent`による中断は、ユーザーの明示要求、終端か失敗への遷移、タスク契約上のキャンセル指定のいずれかを確認した場合に限る。回復・置換・再起動・代替起動では元担当の終端と書込所有権の解放も確かめる。

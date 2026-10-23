@@ -123,7 +123,7 @@ def _reset_warning_context(request: pytest.FixtureRequest, monkeypatch: pytest.M
 
 @pytest.fixture(autouse=True)
 def _fixed_codex_model_catalog(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Codexの利用可能モデル一覧を固定値へ差し替え、実行環境の`codex` CLIの有無に依存しない結果にする。
+    """Codexの利用可能モデル一覧を固定値へ差し替え、実行環境の`codex` CLIの有無によらず同じ結果にする。
 
     工程別モデル設定で値を省略した場合の候補にはCodexの系列名が含まれ、系列の解決は`codex app-server`を起動して一覧を取得する。
     `codex`を導入していない継続的インテグレーションでは解決が失敗し、設定の解決を経由する
@@ -145,7 +145,7 @@ def _fixed_codex_model_catalog(request: pytest.FixtureRequest, monkeypatch: pyte
 
 @pytest.fixture(autouse=True)
 def _skip_end_turn_wait(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stop判定が通る`transcript_scan.wait_for_end_turn`を、待たずに戻る関数へ差し替える。
+    """Stop判定が終了を許可する`transcript_scan.wait_for_end_turn`を、待たずに戻る関数へ差し替える。
 
     本番の待機はtranscriptの最新のassistantエントリが`stop_reason`の`end_turn`になるまで最大0.3秒ポーリングする。
     テストが組み立てるtranscriptの多くは末尾を`end_turn`で終えないため、待機を検証しないテストでも上限まで待つ。
@@ -159,7 +159,7 @@ def _skip_end_turn_wait(request: pytest.FixtureRequest, monkeypatch: pytest.Monk
 
 @pytest.fixture(autouse=True)
 def _fixed_terminal_size(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`shutil.get_terminal_size`を固定幅へ差し替え、実行環境の端末幅に依存しない結果にする。
+    """`shutil.get_terminal_size`を固定幅へ差し替え、実行環境の端末幅によらず同じ結果にする。
 
     `_atk/wi/listing.py`は`shutil.get_terminal_size()`から表示幅を算出し、
     `atk wi list`の出力を切り詰める。`shutil`モジュール自体を差し替えることで、
@@ -183,7 +183,7 @@ def _resolvable_whole_contract(
 
     通常起動は全体作業契約を解決できなければ起動前に拒否する。隔離下では実行環境の会話の保存領域へ届かないため、
     起動時に保持する会話をテスト用の値へ固定し、その会話の保存領域と契約を最初の参照時に一時領域へ作成する。
-    実行環境の`CLAUDE_CODE_SESSION_ID`などへ結果が依存しないようにする効果もある。
+    実行環境の`CLAUDE_CODE_SESSION_ID`などが結果を変えないようにする効果もある。
     解決順や拒否を検証するテストは、`launch_requests._HANDOFF_SESSION`か保存領域の解決を改めて差し替える。
     """
     if not request.path.is_relative_to(_PACKAGE_ROOT):

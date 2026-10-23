@@ -34,6 +34,8 @@ def test_selected_connection_owns_every_injected_key(tmp_path: pathlib.Path, kin
             overrides,
             None,
             isolate_auth=kind != "inherit",
+            isolation_keys=claude_connection.isolation_keys(connection),
+            cwd=tmp_path,
         )
     )["env"]
     assert environment["UNRELATED"] == merged["UNRELATED"] == "kept"
@@ -44,10 +46,10 @@ def test_selected_connection_owns_every_injected_key(tmp_path: pathlib.Path, kin
     expected = claude_connection.read_api_env_file(str(api)) if kind == "api" else {}
     for key in ("ANTHROPIC_API_KEY", "AWS_PROFILE", "ANTHROPIC_DEFAULT_SONNET_MODEL", "EXTRA_CONNECTION_OPTION"):
         assert environment.get(key) == expected.get(key)
-        assert merged[key] == expected.get(key, "")
+        assert merged.get(key) == expected.get(key)
     if kind == "api":
         assert "CLAUDE_CODE_OAUTH_TOKEN" not in environment
-        assert not merged["CLAUDE_CODE_OAUTH_TOKEN"]
+        assert "CLAUDE_CODE_OAUTH_TOKEN" not in merged
     else:
         assert environment["CLAUDE_CODE_OAUTH_TOKEN"] == merged["CLAUDE_CODE_OAUTH_TOKEN"] == "oauth"
 

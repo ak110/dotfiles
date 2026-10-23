@@ -1,94 +1,26 @@
 # 表記とMarkdownの規則と確認手段
 
-本書は人間向けの文章を書く主体と表記をチェックする主体へ、日本語の表記とMarkdownの書式の規則、表記の一括置換の手順、チェックの対象範囲と口語表現・ダッシュのチェック手段を定める。
-Claude CodeのEditとWriteによる既存ファイルの上書きの前に対象の絶対パスをReadする前提と、その前提を満たさない取得（Bashでの表示・作成・変更、別パスのRead）は、同じディレクトリの`file-editing.md`「ファイル更新時の編集ツールの前提」が定める。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/notation-rules.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
 
-## 日本語の表記ルール
+以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
 
-textlintの`preset-jtf-style`でチェックされる項目は同プリセットに従う。以下は補足規定。
+## 名指し参照の読込方法
 
-- 日本語と全角括弧の境界はスペースなしで続ける。英文脈の半角括弧は英数字との間に半角スペースを1つ置く（例: `Python (CPython 3.12)`）
-- 全角丸括弧の入れ子を避け、内側の括弧は読点による区切りや別文への分割で表現する
-- 括弧による補足は、本文だけでは伝わらない条件や意味を加える場合に使う。同義の言い換えだけを重ねる補足は本文へ統合するか省き、補足には全角丸括弧を使う（努力目標。情報を増やさない補足は読む区切りだけを増やすため）
-- 日本語の地の文や見出しではダッシュ記号（emダッシュ・horizontal bar・2倍ダッシュ）を避け、同格や補足には全角丸括弧を用い、言い換えは文の分割や読点で表現する
-- 技術用語、固有名詞、コード識別子は原典の表記を優先する
-- 「復号」は暗号を解く処理に限定して用いる。バイト列から文字列への変換や、JSON文字列などの符号化表現から値を取り出す処理は「デコード」と書く
-- 地の文は日本語で書く。定着した技術用語や略語、外部技術に由来する語、識別子は原表記を維持する
-- 内部の役割や概念には自然な日本語の名前を優先し、カタカナ名を使う場合は初出で定義する
-- 接続詞は「または」「もしくは」「および」「ならびに」のように、ひらがなで書く
-- 法令文調の指示語や回りくどい言い回しは、語だけを差し替えず、指す対象と条件が分かる平易な文に書き直す
-- 人間向けの文章全体（ドキュメント、コメント、表示文とエージェント向け文書を含む）では、資料が定める内容、指定がない場合に使う値、比べる対象と一致を確かめる条件を文で書く。読み手が省略を一意に補える範囲で簡潔にする。文全体を書き直す方針は`textlint-violations.md`「textlint指摘への修正方針」に従う。検出用データと他者の逐語引用は、その役割を明示して原文を保持する
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
 
-- 人とエージェントを指す呼称は`agent-toolkit/rules/01-agent.md`「役割分担」の定義に従い、要求・指示・回答・合意・承認を与える人は「ユーザー」、作業するコーディングエージェントは「エージェント」と書く。役割の違いはメインエージェント、サブエージェント、委譲先、レーン担当などの具体的な役割名で示す。成果物を使う人は「エンドユーザー」（ユーザーを含む）、特定の成果物を使う人は「dotfilesユーザー」「agent-toolkitユーザー」のように書く。開発者やエージェントが読む新しい説明文では、これらの呼称で範囲を明確にする。成果物を使う人自身が読むガイドの見出しや案内では「利用者向け」も使える。人以外も含む対象は「消費主体」、OS上の権限の主体は「実行中のOSアカウント」、コードやプロセスの利用は「呼び出し元」「消費側」のように実体に合う語で書く。旧形式の読み取り互換、検出用データと他者の逐語引用は、その役割を明示して原文を保持する
-
-## Markdown記述スタイル
-
-Markdown要素は意味的役割に沿って使う。句点位置などの細則はmarkdownlint・textlintで検証する。
-
-- 図にはMermaid記法を推奨する
-- 図が示す関係から型を選ぶ。手順の順序、状態間の遷移、要素間の依存など、異なる関係を一枚へ混ぜず、必要なら図を分ける。図の説明文も同じ関係を指すように書く
-- 相対パスは配置先基準で解決し、`test -e <解決後パス>`で存在を確認する
-- 強調は語句強調にのみ使い、見出しには見出し記法を使う
-- 形容詞・口語表現をかぎ括弧で強調しない
-- インラインコードはコードリテラル・コマンド・ファイルパス・識別子に限る
-- 1文ごとに改行する
-- 箇条書きは1項目1文・1項目1行とし、複数論点は階層化または分割する
-- 長い補足は丸括弧へ追加せず独立した文にする
-
-lint設定の緩和・無効化・除外指定の追加は`lint-relax-criteria.md`に従う。
-
-## 表記の一括置換
-
-候補置換を使う前に、同じディレクトリの`bulk-replacement.md`を全文読む。同書に従って置換し、変更箇所を検収する。
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/notation-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-rules.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/SKILL.md#「pyfltrの起動形」` | 判断 | `section:agent-toolkit:*/skills/check-execution/SKILL.md#「pyfltrの起動形」` |
 
 ## チェックの対象範囲
 
-- 計画ファイルは文章lint、口語表現チェック、ダッシュチェックの必須対象から除く（読み手がその計画を処理するエージェントに限られ、表記の統一が対象の特定と完成条件の判定を変えないため）
 - `atk wi add`・`atk wi edit`の`--body-file`へ渡すWI本文は文章lintの必須対象から除く。口語表現とダッシュは保存前の診断が行番号付き警告で表示し、処置は起草者が判断する（保存の可否は構造エラーの有無で決まる）。計画とWI本文から転記する文面は転記先の基準でチェックする
-- 規範の例は正しい表現と、その成立条件を示す説明で構成し、通常の文章検査へ渡す。例と説明は`tone-examples.md`と`tone-examples-llm-tone.md`を参照する。検出用データ、保存形式の識別子と他者の逐語引用は、自作の例示と役割を区別して保持する
 
-### 逐語引用の検出範囲
+## 文章チェックの一括実行
 
-原文の改変を許さない逐語引用の記法は`writing.md`の「ユーザー入力素材の取扱い」が定める。
-記法の根拠となるチェックごとの検出範囲を次に示す。
+MCPの`run`を利用できない場合だけ、`agent-toolkit:check-execution`の「pyfltrの起動形」で解決したCLIで同じ対象と制約を指定する（外部ファイルでは`--allow-external-paths`を加える）。完了はJSONL最終行の`summary`レコードへ正式な品質資料の全対象被覆の条件を適用して判定する。
 
-| 項目 | 引用ブロックの内側 | フェンス付きコードブロックの内側 |
-| --- | --- | --- |
-| 口語表現チェック | 対象外 | 対象外 |
-| textlint | 対象 | 対象外 |
-| ダッシュチェック | 対象 | 対象外 |
-
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日」にある。
-
-## 口語表現チェック
-
-恒久成果物は、現在のホストに公開されたserver key `pyfltr`の`run`ツールでチェックする（ツールの完全修飾名はClaude CodeとCodexで異なる）。引数は次のとおりとする。
-
-- `paths`: 対象ファイルの絶対パス1件
-- `work_dir`: チェック設定を持つプロジェクトの絶対パス
-- `commands`: Markdownでは`["textlint", "colloquial-check"]`、それ以外の対応拡張子では`["colloquial-check"]`
-- `enable`: `["colloquial-check"]`
-- `no_exclude`と`no_fix`: `true`
-- `allow_external_paths`: 対象ファイルが`work_dir`のプロジェクトの外側にある場合だけ`true`
-
-チェック完了と判定できるのは、応答の`completion`が`completed`、`files_reached`が1、指定した全コマンドが`completed_commands`にあり、`incomplete_commands`が空の場合だけとする。`incomplete`や`not_reached`は完了と扱わず、`incomplete_commands`、`missing_targets`、`fully_excluded_files`、`skipped_reason`、`warnings`から理由を特定して対処する。
-診断件数は完了を確定した後に読み、本文が要る場合は同じ応答の`run_id`をMCPの`show_run_diagnostics`へ渡す。
-
-MCPの`run`を利用できない場合だけ、`agent-toolkit:check-execution`の「pyfltrの起動形」で解決したCLIで同じ対象と制約を指定する（外部ファイルでは`--allow-external-paths`を加える）。完了はJSONL最終行の`summary`レコードの`completion`、`files_reached`、`completed_commands`、`incomplete_commands`でMCPと同じ条件で判定する。
-
-```sh
-<pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --work-dir <チェック設定を持つプロジェクトの絶対パス> <対象ファイルの絶対パス>
-```
-
-検出範囲は`.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`とし、Markdown引用ブロックとフェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象とする。
-辞書の実体は`pyfltr.colloquial.check`の`DENY_PATH`と`ALLOW_PATH`が指す。`site-packages`の絶対パスを規範へ固定せず、`pyfltr`を依存に持つリポジトリでは次のコマンドで、持たない場合は同じ式を`uvx --from pyfltr python -c`へ渡して解決する。
-
-```sh
-uv run --frozen python -c 'print(__import__("pyfltr.colloquial.check", fromlist=["check"]).DENY_PATH, __import__("pyfltr.colloquial.check", fromlist=["check"]).ALLOW_PATH)'
-```
-
-警告を解消するために読者が得る情報を減らす書き換えはしない。他者の原文（記事や発表のタイトル、発言の引用、固有名詞など）にある検出は原文のまま残し、残した検出とその理由を完了報告で示す。
-
-## ダッシュチェック
-
-日本語の地の文・見出しにおけるemダッシュ・horizontal bar・2倍ダッシュは`atk run-script writing-check-dash -- <ファイル>`で検出する。コードブロック・インラインコード・URL内は対象外とし、詳細は`check_dash.py`が定める。
+日本語の地の文・見出しにおけるダッシュは、プロジェクトのpyfltr設定へ`writing-check-dash`として登録し、口語表現やtextlintと同じ`run`の`commands`へ含める。
+登録する実行手段は複数対象を受け取る公開CLIの`atk run-script writing-check-dash -- <ファイル...>`を使う。
+検出範囲は正式な品質資料が定め、実装は`agent-toolkit/skills/writing-standards/scripts/check_dash.py`が持つ。

@@ -1,7 +1,19 @@
 # 履歴書換え
 
 通常commitの検証、stage、messageは親スキルに従う。
-本ファイルはClaude Codeのシステムプロンプト「常に新規コミットを作成する」指示を上書きする。
+ホストが上書きを許す通常動作との衝突は、`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」に従い、本書の履歴統合方針を適用する。
+
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `push-and-ci.md#「pushと監視」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「pushと監視」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md#「レビュー修正の履歴統合」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「レビュー修正の履歴統合」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md` |
 
 ## プッシュ済み判定
 
@@ -11,15 +23,12 @@ amendとfixupの対象はプッシュ未了のコミットに限る。公開済�
 ## 修正方法の選択
 
 通常の実装モードのレビュー修正は実装commitへ統合し、レビュー修正専用のcommitは作成しないこととする。
-レビュー修正担当はレビュー指摘管理表と現行履歴から、採用指摘IDと実装単位commitの短縮OIDの対応を確定してから統合する。統合先は採用指摘に対応する実装単位commitとし、最終単位（HEAD）はamend、過去単位はfixupとautosquashで統合する。
+レビュー修正担当はレビュー指摘管理表と現行履歴から、採用指摘IDと実装単位commitの短縮OIDの対応を確定してから統合する。統合先は採用指摘に対応する実装単位commitとし、統合方法は次の対象集合で選ぶ。
 過去単位へのfixupは、修正が統合先の時点で独立して成立し、変更範囲の検証を再実行できる場合に限る。対象commitの直後から元HEADまでのcommitが同じ箇所を変えていないかを`git diff-tree`と差分で確かめ、中間commitの公開契約を保てるかを変更順と箇所から判定する（同じファイルの変更というだけでは競合と判定しないこと）。
-対応付けできない修正、複数単位へ不可分にまたがる修正、過去単位へ統合すると中間commitの公開契約を保てないか独立して検証できない修正は、そのレビューが対象とする計画の実装commitのうち最も新しいものへ統合する（HEADならamend、そうでなければfixupとautosquash）。統合先がpush済みかOIDが一致しない場合は、履歴と作業ツリーを変えずに続行できない理由を返す。
+対応付けできない修正、複数単位へ不可分にまたがる修正、過去単位へ統合すると中間commitの公開契約を保てないか独立して検証できない修正は、そのレビューが対象とする計画の実装commitのうち最も新しいものへ統合する（統合方法は次の対象集合で選ぶ）。統合先がpush済みかOIDが一致しない場合は、履歴と作業ツリーを変えずに続行できない理由を返す。
 
-- 最終単位だけが対象: 修正・検証・stage後に`amend` phaseでプッシュ済み判定を再実行し、成功した場合だけamendする
-- 過去単位だけが対象: fixupとautosquashだけを行う
-- 両方が対象: 過去単位を先に実装してautosquashし、成功後に同じ実装担当が書換え後HEADへ最終単位の修正だけを実装・検証・stageし、2回目のプッシュ済み判定（対象は書換え後HEAD）の成功後にamendする
-
-過去単位が複数ある場合は、履歴順に1単位ずつその単位の修正だけをstageしてfixupを作成し、作成ごとに対象OIDと件名、作業ツリーのcleanを確かめてから次へ進み、全fixupの作成後に1回だけautosquashする。
+- 最終単位だけが対象: 修正・検証・stage後に`amend` phaseでプッシュ済み判定を再実行し、成功した場合だけamendする。
+- 過去単位を含む場合: 最終単位も含めた全ての統合先について、履歴順に1単位ずつその単位の修正を作成・検証・stageしてfixupを作成する。作成ごとに対象OIDと件名、作業ツリーのcleanを確かめてから次へ進み、全fixupの作成後に1回だけautosquashする。各fixupの作成前の確認は「操作前後の確認」に従う。
 autosquashの単位は、レビュー結果の識別子（レビュー指摘管理表の絶対パスとround値の組）と最古fixup対象の短縮OIDの組とし、同じ組への実行は、受け渡し・照会・工程の再開をまたいでも全fixupの作成後の1回に保つ。再開時は`## 履歴確認の起動形`の`git log`に件名が`fixup!`・`squash!`・`amend!`で始まる行がある場合だけ実行する。
 作成済みfixupを通常commitとして再構成する場合は、元fixupごとに差分・件名・本文を採取して新commitと一対一で比べる（メッセージの取り違えは最終tree一致だけでは検出できないため）。
 autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得し、書換え前後の実装単位を対応付ける。厳密な比較では各短縮OIDを直前に解決する。
@@ -29,7 +38,7 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
 
 工程によらず、同じ実装単位で変更目的が同じ修正は同じ件名のcommitを増やさずに統合する。
 
-- 直前のコミットを完成させる修正は`git commit --amend --no-edit`
+- 統合先が直前のコミットだけの修正は`git commit --amend --no-edit`。通常実装のレビュー修正で過去単位も含む場合は、前段の対象集合の手順に従う
 - それより前の未プッシュコミットを完成させる修正は、メッセージを変えなければ`git commit --fixup=<sha>`、`Co-Authored-By:`などを追加・更新するなら`--fixup=amend:<sha>`、メッセージだけを変えるなら`--fixup=reword:<sha>`。統合先の件名が範囲内で重複する場合は`## fixupの実行上の制約`の完全OIDを件名にしたfixupを使う
 - 独立した変更目的を持つ修正と、統合先に適する未プッシュコミットが無い修正は新規コミットとする（通常の実装モードのレビュー修正には適用せず、前段の統合先へ統合する）。`agent-toolkit/rules/01-agent.md`の付帯作業は関連する開発のcommitへ含めても独立した変更目的として数えない
 
@@ -38,11 +47,16 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
 - 上位リポジトリだけを操作する履歴統合・検証時の切替では、初期化済みサブモジュールごとに操作前後のHEAD・branch・作業内容が一致することを確認する。子の参照を更新する目的の操作は別に扱う。親だけのrebase開始・続行・中止とcheckout・switch・restoreには、その呼び出しごとに`git -c submodule.recurse=false`を使い、環境の再帰設定にかかわらず子の作業状態を保持する
 - fixupとamendは、変更ファイルへの正式formatterの実行、formatterの差分の検収、そのcommitへ帰属する差分だけのstage、`git status --short`で未stageの差分が無いことの確認を終えてからcommitする。pre-commitがcommit時に初めて差分を変えると、stage済みと未stageの差分が併存してcommitが成立しない（その場合は`## 失敗時の扱い`）
 - 操作直前に`## 履歴確認の起動形`の`git log`を単独で実行して対象commitを再特定し、`git blame`か`git log -p -n 20 -- <ファイル>`と`git show --stat <sha>`で統合先を確定する
-- autosquash後は、全fixup作成直後のHEADと`<最古fixup対象>^`を使って次を実行する。同操作が最終tree一致、件数、制御件名の残存0、fixup対象以外のpatch-id不変を検収し、対応表を生成する（`reword:`の対象もfixup対象として扱う）。非0なら`## 失敗時の扱い`に従う
+- autosquash後は、全fixup作成直後のHEADと`<最古fixup対象>^`を使って次を実行する。同操作が最終tree一致、件数、制御件名の残存0、fixup対象以外の変更内容の不変を検収し、対応表を生成する（`reword:`の対象もfixup対象として扱う）。非0なら`## 失敗時の扱い`に従う
 
   ```text
   atk run-script history-compare -- --operation autosquash --work-dir <worktreeの絶対パス> --old-base <保持した親OID> --old-head <autosquash直前HEAD> --new-base <保持した親OID> --new-head <書換え後HEAD> --output <managed-temp内の対応表JSONの絶対パス>
   ```
+
+  変更内容は文脈0行の差分からhunk位置とblobの識別子を除いた値が一致する場合に同じとする。
+  この値が異なる場合も、新commitの親treeを一時indexへ読み込み、旧commitのpatchを`git apply --cached --3way`で適用したtreeが新commitのtreeと一致すれば同じとする。
+  いずれも一致しなければ内容が変わったものとして検収を失敗させる。
+  差分の空白は変更内容に含む
 
 - amend後は、amendの直前に保持したHEADとその親OIDを使って次を実行する。同操作は旧新が同じ親の直上の異なる1commitどうしであることを検収し、旧新HEADの1件の対応を持つ対応表を生成する（amendは内容を変えるため、treeとpatchの一致は検収しない）。非0なら`## 失敗時の扱い`に従う
 
@@ -105,6 +119,8 @@ atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え�
 書換え範囲に属する未指定の記録があれば、書込前に全件を示して拒否する。
 複数の対応表を処理する場合は、`--rewrite-map`を書換え順に反復指定する。
 合成した最終OIDが現在HEADに含まれることを確かめる。
+
+同じ`plan-rewrite`が、渡した記録に対応する`adopted`のAWIの`## 処理結果`も付け替える。対応表の旧OIDに当たる対応commitと件名を更新し、分割ではそのAWIへ割り当てられた全ての新commitを記録する。採否、処理日時、メモ、対応表に無いcommitは保持する。終端AWIはWIの保存処理でprivate-notesへcommit・pushして保存後の本文を更新した本文と比べて一致を確かめ、成功してから計画と引き継ぎ記録へ追記する。保存に失敗した場合は非0で終了するため、同期・保存エラーを解消し、同じ引数で再実行する。更新済みAWIと滞留commitを保持して残りを反映する。
 
 保存済み計画を`atk plans checkout`で取得して履歴へ追随させた担当は、その工程の末尾に更新した全計画バンドル（未終端のWIや延期adoptを持つ計画を含む）を`atk plans commit`で再保存し、終了コードと警告で成功を確かめる。保存先と時点の共通契約は`agent-toolkit:plan-mode`の`references/plan-file-storage.md`に従い、レーン・観測のみ・CIの既存の保存時点を保つ。
 

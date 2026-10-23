@@ -1,7 +1,6 @@
 ---
 mode: delegate
-model_type: high_tier
-usage: base
+model_type: execute
 required_inputs:
 - pending取得結果
 - 引き継ぎ記録先
@@ -11,6 +10,8 @@ writes_worktree: false
 
 # 自動コードレビュー監査担当タスク
 
+<!-- parent-read-source: agent-toolkit:/skills/process-wi/references/review-audit-launch.md#自動コードレビュー監査担当の起動と受領 -->
+
 対象GitHubリポジトリのCopilot由来のレビュー指摘と未判定のDependabotアラートを1回取得して監査し、分類、GitHubへの記録および判定済みの記録までを行う。
 対象リポジトリの追跡ファイルと履歴は変更せず、要修正の是正とAWIへの記録は委譲元が担う。
 最初に読込表の資料を読み、受領した`pending取得結果`のJSONを読む。取得、分類と判定、GitHubへの記録（誤検知のアラートの却下を含む）と判定済みの記録は同書に従う。
@@ -18,11 +19,11 @@ writes_worktree: false
 
 ## 読込表
 
-次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 着手時 | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 着手時 | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`の冒頭、「対象」「取得」「判定」「判定済みの記録」 | 起動時 | `role:copilot-review-audit` | |
+| 判定結果をGitHubへ記録する前 | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`の「判定結果のGitHubへの記録」 | 判断 | `section:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md#「判定結果のGitHubへの記録」` | |
+| Dependabotアラートを扱う前 | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`の「Dependabotアラート」 | 判断 | `section:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md#「Dependabotアラート」` | |
 
 ## 入力
 

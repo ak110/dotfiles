@@ -12,8 +12,10 @@ from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
     _read_session_state,
-    _run,
     _write_session_state,
+)
+from agent_toolkit._testing.pretooluse_support import (
+    run_after_read_delivery as _run,
 )
 
 
@@ -126,13 +128,13 @@ class TestGeneralBehavior:
 @pytest.mark.parametrize(
     ("name", "body", "required"),
     [
-        ("new.ps1", "本文\n", "BOMと改行"),
-        ("uv.lock", "version = 1\n", "依存変更または再生成"),
-        ("pyproject.toml", "dependencies = []\n", "依存変更と`lockfile`の同期"),
+        ("new.ps1", "本文\n", "CRLF"),
+        ("uv.lock", "version = 1\n", "uv add"),
+        ("pyproject.toml", "dependencies = []\n", "uv add"),
     ],
 )
-def test_edit_warning_supports_command_restricted_agent(tmp_path, name, body, required):
-    """編集だけを持つ担当も、対象と必要な処置を返して担当範囲内で引き渡せる。"""
+def test_edit_warning_keeps_specific_recovery(tmp_path, name, body, required):
+    """警告は対象と具体的な修正方法を届ける。"""
     target = tmp_path / name
     result = _run(
         {"tool_name": "Write", "tool_input": {"file_path": str(target), "content": body}, "session_id": "restricted-" + name},
@@ -140,5 +142,6 @@ def test_edit_warning_supports_command_restricted_agent(tmp_path, name, body, re
     )
     assert result.returncode == 0
     notice = _additional_context(result)
-    assert "委譲元へ返す" in notice and "対象パス" in notice
-    assert required in notice and "許可される担当" in notice
+    assert "次の操作:" in notice and required in notice
+    assert "委譲元へ返す" not in notice
+    assert "許可される担当" not in notice

@@ -16,7 +16,7 @@ Codexの全てのエージェントに適用する差分は`rules-common.codex.m
 
 ## ユーザー確認と終端
 
-質問を発行する前に、`agent-toolkit:user-confirmation-and-report`の読込表が定める`references/approval-scope.md`と`references/choice-construction.md`を全文読む。そのうえで同スキル「確認要否の判定」と「確認の選択肢を組む手順」を適用する。目的と認可が確定し、その内側の手段だけが残る事項は自ら確定して報告する。
+質問には共通読込表の確認資料を適用し、`agent-toolkit:user-confirmation-and-report`の「確認要否の判定」と「確認の選択肢を組む手順」を適用する。目的と認可が確定し、その内側の手段だけが残る事項は自ら確定して報告する。
 
 質問には実行環境が公開する構造化質問のうち、公開スキーマ、モード制限、用途制限およびホスト命令へ適合するものを使う。Plan modeで同期型の`request_user_input`を利用できる場合は回答まで待つ。非同期型の`request_user_input_async`だけを利用できる場合は、後続のユーザーメッセージとして届く実際の回答を元の質問へ対応付け、発行の成功と選択肢の初期選択を回答や承認として扱わない。適合する構造化質問が無い場合だけ、同スキルの`references/codex-format.md`を使う。
 

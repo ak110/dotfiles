@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from claude_agent_sdk import ToolResultBlock, UserMessage
 
-from agent_toolkit._agents_server import claude, claude_settings, resume_waits
+from agent_toolkit._agents_server import child_environment, claude, claude_settings, resume_waits
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import ResumePrompt
 from agent_toolkit._common import session_registry
@@ -39,7 +39,7 @@ async def test_subscription_launch_drops_parent_api_auth(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """親環境・親settingsの両経路でAPI認証を遮断し、OAuth接続を保持する。"""
+    """親の環境変数と親settingsにあるAPI認証を遮断し、OAuth接続を保持する。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=configured-key\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
@@ -66,9 +66,92 @@ async def test_subscription_launch_drops_parent_api_auth(
         options = seen[0]
         assert not options.env.get("ANTHROPIC_API_KEY") and not options.env.get("ANTHROPIC_AUTH_TOKEN")
         settings = json.loads(options.settings)
-        assert not settings["env"]["ANTHROPIC_API_KEY"] and not settings["env"]["ANTHROPIC_AUTH_TOKEN"]
+        assert "ANTHROPIC_API_KEY" not in settings["env"] and "ANTHROPIC_AUTH_TOKEN" not in settings["env"]
         assert settings["env"]["CUSTOM"] == "kept"
         assert not settings["apiKeyHelper"]
+
+
+@pytest.mark.asyncio
+async def test_explicit_subscription_orchestrator_without_api_file_isolates_sdk_auth(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """API環境未設定でも、明示したサブスク固定を新規SDK起動の環境とsettingsへ適用する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
+    monkeypatch.setattr(child_environment, "_INHERITED", {})
+    child_environment.prepare(os.environ)
+    monkeypatch.setattr(
+        claude,
+        "_parent_settings",
+        lambda: json.dumps({"apiKeyHelper": "parent-helper", "env": {"ANTHROPIC_AUTH_TOKEN": "parent-token"}}),
+    )
+    seen: list[Any] = []
+    environments: list[dict[str, str]] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        seen.append(options)
+        environments.append({**os.environ, **options.env})
+        return FakeClaudeClient([[SystemMessage("subscription-orchestrator"), AssistantMessage("応答"), ResultMessage("完了")]])
+
+    async with claude.ClaudeServerManager(client_factory=factory) as backend:
+        session = await backend.start("作業", str(tmp_path), model_type="orchestrate")
+        assert session.claude_connection == "subscription"
+        assert environments[0].get("CLAUDE_CODE_OAUTH_TOKEN") == "test-subscription"
+        assert not environments[0].get("ANTHROPIC_API_KEY")
+        selected_settings = json.loads(seen[0].settings)
+        assert not selected_settings["env"].get("ANTHROPIC_AUTH_TOKEN")
+        assert not selected_settings["apiKeyHelper"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("initial", ["inherit", "api"])
+async def test_explicit_subscription_orchestrator_reselects_same_conversation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, initial: str
+) -> None:
+    """明示した固定を既存会話の次turnと冷再開へ適用し、同じSDK会話をサブスクで続ける。"""
+    monkeypatch.setattr(child_environment, "_INHERITED", {})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
+    if initial == "api":
+        path = tmp_path / "api.env"
+        path.write_text("ANTHROPIC_API_KEY=selected-api\n", encoding="utf-8")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "true")
+    child_environment.prepare(os.environ)
+    seen: list[Any] = []
+    environments: list[dict[str, str]] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        seen.append(options)
+        environments.append({**os.environ, **options.env})
+        return FakeClaudeClient([[SystemMessage("fixed-conversation"), AssistantMessage("応答"), ResultMessage("完了")]])
+
+    async with claude.ClaudeServerManager(client_factory=factory) as backend:
+        session = await backend.start("当初の要求", str(tmp_path), model_type="orchestrate")
+        await _until(lambda: session.terminal)
+        assert session.claude_connection == initial
+        assert environments[0].get("ANTHROPIC_API_KEY") == ("selected-api" if initial == "api" else "parent-api")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
+        await backend.send_message(session, "次の作業")
+        await _until(lambda: session.terminal)
+        assert len(seen) == 2
+        assert seen[-1].resume == "fixed-conversation"
+        assert session.claude_connection == "subscription"
+        assert not environments[-1].get("ANTHROPIC_API_KEY")
+        assert environments[-1].get("CLAUDE_CODE_OAUTH_TOKEN") == "test-subscription"
+    async with claude.ClaudeServerManager(client_factory=factory) as backend:
+        with contextlib.closing(ResumePrompt("保存後の作業")) as prompt:
+            restored = await backend.resume(
+                session.session_id, prompt, str(tmp_path), model_type="orchestrate", existing_session=session
+            )
+        assert restored.session_id == session.session_id
+        assert restored.claude_connection == "subscription"
+        assert seen[-1].resume == "fixed-conversation"
+        assert not environments[-1].get("ANTHROPIC_API_KEY")
+        assert environments[-1].get("CLAUDE_CODE_OAUTH_TOKEN") == "test-subscription"
 
 
 @pytest.mark.asyncio
@@ -265,6 +348,7 @@ async def test_api_migration_holds_result_until_old_connection_closes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """常駐監視が旧接続の切断を待つ間も、公開waitへ中断前の失敗を渡さない。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "never")
     env_file = tmp_path / "api.env"
     env_file.write_text("TOKEN=dummy\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(env_file))
@@ -311,6 +395,7 @@ async def test_api_migration_holds_result_until_old_connection_closes(
 
 def _pay_as_you_go_with_clock(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
     """`pay-as-you-go`の両認証環境と、解除予定時刻の判定が読む差し替え可能な時刻を用意する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "never")
     env_file = tmp_path / "api.env"
     env_file.write_text("ANTHROPIC_AUTH_TOKEN=dummy-secret\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(env_file))
@@ -435,7 +520,7 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
         ) as backend:
             install_backend(manager, "claude", backend)
             session_registry.publish("child", terminal=False, cwd=str(tmp_path))
-            # 公開待機に依存せず、上限からのAPI移行と孫sessionの終端による自動再開を常駐監視で進める。
+            # 公開待機が呼ばれるかによらず、上限からのAPI移行と孫sessionの終端による自動再開を常駐監視で進める。
             manager.activate()
             try:
                 await manager.start("claude:sonnet/high", "作業する", str(tmp_path))

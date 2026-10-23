@@ -231,7 +231,7 @@ def _print_json_entries(
     staleness_now: datetime.datetime | None = None,
     local_worktrees: Mapping[str, pathlib.Path] | None = None,
 ) -> None:
-    """選択済みエントリを端末幅に依存しないJSON Linesで出力する。
+    """選択済みエントリを端末幅によらず同じ形のJSON Linesで出力する。
 
     `local_worktrees`はリポジトリ識別子からローカル作業ツリーへの対応で、鮮度の判定に使う。
     """

@@ -45,6 +45,8 @@ class BashInvocation:
     static_tokens: tuple[str, ...] = ()
     static_outputs: tuple[_OutputTarget, _OutputTarget] = (1, 2)
     cwd_scope: tuple[object, ...] = ()
+    inline_input: bool = False
+    """同じコマンドか上流パイプが、heredoc・here-stringを標準入力として持つ。"""
 
     @property
     def output_pipe(self) -> bool:
@@ -351,6 +353,15 @@ def _bash_command_list(
             coprocess=coprocess,
         )
         current = [_inherit_bash_outputs(item, outputs, static_outputs) for item in current]
+        inline_input = False
+        for raw, _operand in redirects:
+            operator = raw.lstrip("0123456789")
+            if operator.startswith("<") and raw[: len(raw) - len(operator)] in {"", "0"}:
+                inline_input = operator in {"<<", "<<-", "<<<"}
+        if pipeline_start < len(result):
+            inline_input |= any(item.inline_input for item in result[pipeline_start:])
+        if inline_input:
+            current = [dataclasses.replace(item, inline_input=True) for item in current]
         if coprocess or separator in PIPE_SEPARATORS or pipeline_start < len(result):
             current = _isolated_cwd_scope(current)
         if coprocess:

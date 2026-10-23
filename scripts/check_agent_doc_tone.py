@@ -46,6 +46,8 @@ _FRONTMATTER_DELIMITER = "---"
 _HTML_COMMENT_PATTERN = re.compile(r"<!--.*?-->", re.DOTALL)
 _INLINE_CODE_PATTERN = re.compile(r"`[^`]*`")
 _INLINE_CODE_PLACEHOLDER = "コード"
+_TERM_EXAMPLE_MASK_START = "<!-- agent-doc-tone: example-mask:start -->"
+_TERM_EXAMPLE_MASK_END = "<!-- agent-doc-tone: example-mask:end -->"
 
 _NEGATIVE_ENDING_PATTERN = re.compile(r"(ない|せず|ず|しません|ません)[。）」]*\s*$")
 _SUBJECT_WORD = "当該"
@@ -62,6 +64,8 @@ _DENIED_PATTERNS = {
     "正本": r"(?<!是)正本|正本(?!文)",
     "既定": r"既定",
     "照合": r"照合",
+    "足すものがない": r"足すものがない",
+    "失効が効く": r"失効が効く",
 }
 # 文脈によって対象と動作が伝わりにくい語。正確な専門語や承認済みの呼称として使う場合もあるため警告に留める。
 _METAPHORICAL = "metaphorical"
@@ -70,6 +74,20 @@ _CONTRAST = "contrast"
 _CAUTION_PATTERNS = {
     "経路": (r"経路", _ABSTRACT),
     "入口": (r"入口", _METAPHORICAL),
+    "受け口": (r"受け口", _METAPHORICAL),
+    "トークンを出す口": (r"トークンを出す口", _METAPHORICAL),
+    "拾う": (r"拾(?:う|わない|わず|います|いました|いません|い、|える|えば|った|って)", _METAPHORICAL),
+    "引く": (
+        r"(?:データ|ファイル|本文|設定|ログ|情報|記録|テーブル|辞書|出力)(?:を|から).{0,12}引(?:く|かない|かず|きます|きました|きません|き、|ける|けば|いた|いて)",
+        _METAPHORICAL,
+    ),
+    "通る": (r"通(?:る|らない|らず|ります|りました|りません|れる|れば|った|って)", _METAPHORICAL),
+    "効く": (r"(?<![有無])効(?:く|かない|かず|かせ|きます|きました|きません|き、|けば|いた|いて)", _METAPHORICAL),
+    "響く": (r"(?<!影)響(?:く|かない|かず|きます|きました|きません|き、|けば|いた|いて)", _METAPHORICAL),
+    "足す": (
+        r"(?:処理|機能|中継).{0,12}(?<![補満不充自])(?<!書き)(?<!付け)足(?:す|さない|さず|します|しました|しません|し、|せる|せば|した|して)",
+        _METAPHORICAL,
+    ),
     "検査": (r"検査", _ABSTRACT),
     "実測": (r"実測", _ABSTRACT),
     "黙って": (r"黙って", _METAPHORICAL),
@@ -342,10 +360,15 @@ def _json_fragments(text: str) -> Iterator[tuple[int, str]]:
         elif isinstance(value, str):
             yield _path_field(key)
 
-    matches = (match for match in re.finditer(r'"(?:[^"\\]|\\.)*"', text) if not text[match.end() :].lstrip().startswith(":"))
+    colon = re.compile(r"\s*:")
+    matches = (match for match in re.finditer(r'"(?:[^"\\]|\\.)*"', text) if colon.match(text, match.end()) is None)
+    line = 1
+    offset = 0
     for match, path_value in zip(matches, values(json.loads(text)), strict=True):
         if not path_value:
-            yield text.count("\n", 0, match.start()) + 1, json.loads(match.group())
+            line += text.count("\n", offset, match.start())
+            offset = match.start()
+            yield line, json.loads(match.group())
 
 
 def _path_field(key: str) -> bool:
@@ -383,8 +406,25 @@ def term_cautions(path: pathlib.Path, text: str) -> list[tuple[int, str]]:
     return _term_matches(path, text, _CAUTION_TERM_PATTERNS)
 
 
+def _mask_term_examples(text: str) -> str:
+    """逐語引用・禁止例として明示した範囲を空白へ置き換え、物理行を保つ。"""
+    masked: list[str] = []
+    active = False
+    for line in text.splitlines(keepends=True):
+        if _TERM_EXAMPLE_MASK_START in line:
+            active = True
+        if active:
+            masked.append(re.sub(r"[^\n]", " ", line))
+        else:
+            masked.append(line)
+        if _TERM_EXAMPLE_MASK_END in line:
+            active = False
+    return "".join(masked)
+
+
 def _term_matches(path: pathlib.Path, text: str, patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> list[tuple[int, str]]:
     """説明文の断片から指定した語に一致する箇所を行番号とともに返す。"""
+    text = _mask_term_examples(text)
     if path.suffix == ".md":
         fragments = _markdown_fragments(text)
     elif path.suffix == ".py":

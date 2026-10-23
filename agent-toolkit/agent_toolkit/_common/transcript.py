@@ -1,4 +1,4 @@
-"""Claude Code agent-toolkit: 実行中のセッションの記録（transcript JSONL）の読み取りと、アシスタント直前ターンの抽出。
+"""Claude Code・Antigravityの実行中の記録の読み取りと、アシスタント直前ターンの抽出。
 
 hookの処理が記録のファイルを開くのは`read_transcript_bytes`だけとし、行・エントリ・バイト位置の各形は
 その結果から組み立てる。読み取りの失敗の扱い（`None`か空）をこの1か所で保つためである。
@@ -9,6 +9,8 @@ import json
 import os
 import pathlib
 import typing
+
+from agent_toolkit._common.agy_records import normalize_entries
 
 _MAX_ENTRIES = 3
 SEND_TO_USER_TOOL_SUFFIX = "__send_to_user"
@@ -111,7 +113,7 @@ def latest_main_assistant_entry(transcript_path: str) -> dict | None:
     `iter_latest_assistant_messages`がmessage dictのみを返すのに対し、本関数は
     `isApiErrorMessage`などエントリのトップレベルのフラグを参照できるようエントリ全体を返す。
     APIエラー停止のassistantエントリ直後にsystemエントリ（turn_duration）が続く配置でも、
-    後方から走査して直近のassistantエントリを拾う。
+    後方から走査して直近のassistantエントリを取得する。
 
     見つからない場合・読み取り失敗時（空文字列パス・存在しないパス・OSエラーを含む）はNoneを返す。
     """
@@ -194,7 +196,21 @@ def read_transcript_lines(transcript_path: str) -> list[str] | None:
     if data is None:
         return None
     try:
-        return data.decode("utf-8").splitlines()
+        lines = data.decode("utf-8").splitlines()
+        entries: list[dict] = []
+        positions: list[int] = []
+        for position, line in enumerate(lines):
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(entry, dict):
+                positions.append(position)
+                entries.append(entry)
+        for position, entry, normalized in zip(positions, entries, normalize_entries(entries, hook_view=True), strict=True):
+            if normalized is not entry:
+                lines[position] = json.dumps(normalized, ensure_ascii=False)
+        return lines
     except UnicodeDecodeError:
         return None
 

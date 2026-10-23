@@ -26,6 +26,7 @@ from agent_toolkit._agents_server import status_file as subject
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import atomic_file, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
+from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 
 
 async def _wait_now(manager: server_manager.AgentsServerManager) -> dict[str, typing.Any]:
@@ -210,7 +211,7 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
         engine="claude",
         model="sonnet[1m]",
         effort="low",
-        model_type="high_tier",
+        model_type="execute",
         launch_kind="delegate",
         label="実装",
         announced=True,
@@ -676,7 +677,7 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
         monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
         writer.activate()
 
-        started = await manager.start("high_tier", "\n  実装を開始\n続き", str(tmp_path))
+        started = await manager.start("execute", "\n  実装を開始\n続き", str(tmp_path))
         await manager.start_explore("調査する", str(tmp_path))
         await manager.start_shell("pytest -q", str(tmp_path), "結果を要約")
         writer.flush()
@@ -713,7 +714,7 @@ async def test_manager_removes_previous_result_when_new_turn_starts(
         _use_candidates(monkeypatch, ("codex", "model", "medium"))
         monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
         writer.activate()
-        started = await manager.start("high_tier", "実装", str(tmp_path))
+        started = await manager.start("execute", "実装", str(tmp_path))
         session = manager.sessions[started["session_id"]]
         session.status = "completed"
         session.agent_message = "前の結果"
@@ -753,7 +754,7 @@ async def test_manager_writes_only_announced_candidate_after_fallback(
         monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
         writer.activate()
 
-        response = await manager.start("high_tier", "実装", str(tmp_path))
+        response = await manager.start("execute", "実装", str(tmp_path))
         writer.flush()
 
         sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
@@ -776,7 +777,7 @@ async def test_manager_writes_only_last_failure_when_all_candidates_are_unavaila
         monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
         writer.activate()
 
-        response = await manager.start("high_tier", "実装", str(tmp_path))
+        response = await manager.start("execute", "実装", str(tmp_path))
         writer.flush()
 
         sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
@@ -799,8 +800,8 @@ async def test_manager_removes_kill_result_but_keeps_uncollected_result(
         _use_candidates(monkeypatch, ("codex", "model", "medium"))
         monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
         writer.activate()
-        killed = await manager.start("high_tier", "kill対象", str(tmp_path))
-        uncollected = await manager.start("high_tier", "未回収", str(tmp_path))
+        killed = await manager.start("execute", "kill対象", str(tmp_path))
+        uncollected = await manager.start("execute", "未回収", str(tmp_path))
         for session_id in (killed["session_id"], uncollected["session_id"]):
             session = manager.sessions[session_id]
             session.status = "completed"
@@ -830,7 +831,7 @@ async def test_manager_without_writer_does_not_create_status_files(
         _use_candidates(monkeypatch, ("codex", "model", "medium"))
         monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
 
-        await manager.start("high_tier", "実装", str(tmp_path))
+        await manager.start("execute", "実装", str(tmp_path))
 
         assert not list(tmp_path.rglob("*.json"))
         await manager.close()
@@ -1007,16 +1008,8 @@ class _ReplaceRefusal:
 def _diagnostic_log(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> typing.Iterator[pathlib.Path]:
     """既存の診断ログ設定を隔離した状態ディレクトリへ向け、試験後に元のhandlerへ戻す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    logger = logging.getLogger("agent-toolkit.agents-server")
-    saved = (list(logger.handlers), logger.propagate, logger.level)
-    log_path = logging_config.configure_logging()
-    yield log_path
-    for handler in tuple(logger.handlers):
-        if handler not in saved[0]:
-            logger.removeHandler(handler)
-            handler.close()
-    logger.handlers[:] = saved[0]
-    logger.propagate, logger.level = saved[1], saved[2]
+    with isolated_agents_server_logging():
+        yield logging_config.configure_logging()
 
 
 async def _until(condition: typing.Callable[[], bool], *, limit: float = 5.0) -> None:

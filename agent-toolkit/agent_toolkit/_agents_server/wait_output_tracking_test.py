@@ -15,12 +15,12 @@ from agent_toolkit._agents_server import responses, resume_waits, state, wait_ou
     ("operation", "arguments"),
     [
         ("start", {"subagent_md_path": "/plugin/share/exec.subagent.md", "extra_params": {}}),
-        ("start", {"mode": "delegate", "prompt": "調査", "model_type": "high_tier"}),
+        ("start", {"mode": "delegate", "prompt": "調査", "model_type": "execute"}),
         ("start", {"mode": "explore", "prompt": "調査"}),
         ("start", {"mode": "write", "prompt": "起草"}),
         ("start", {"mode": "shell", "command": "make test", "summary_policy": "終了状態"}),
         ("start_explore", {"prompt": "調査"}),
-        ("start_custom", {"prompt": "調査", "model_type": "high_tier"}),
+        ("start_custom", {"prompt": "調査", "model_type": "execute"}),
     ],
 )
 def test_child_session_is_tracked_for_every_host_tool_name_form(

@@ -12,11 +12,14 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import pathlib
+import subprocess
 
 import append_progress_log
 
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk.wi.mutations import result_commits
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import private_notes
 from agent_toolkit._plan import commit_mapping, locations
 from agent_toolkit._plan import structure as _plan_format
 
@@ -213,6 +216,25 @@ def main(argv: list[str] | None = None) -> int:
             next_action=" ".join(actions),
         )
         return 1
+    try:
+        names: set[str] = set()
+        for record, _event in planned:
+            content = record.path.read_text(encoding="utf-8")
+            events = commit_mapping.read_events(record.path, content)
+            mapping = commit_mapping.read_mapping(args.worktree, events, _allowed_wis(record, content, events))
+            for assigned in mapping.values():
+                names.update(assigned)
+        updated_wis = result_commits.rewrite_adopted_commits(
+            private_notes.default_private_notes(), worktree=args.worktree, filenames=names, rewrite=rewrite
+        )
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, _next_action.ActionableError) as error:
+        _next_action.report(
+            f"終端AWIの対応commitを保存できません: {error}。計画・引き継ぎ記録への追記は未実施",
+            next_action="private-notesの同期・保存エラーを解消し、同じ引数で再実行する。更新済みAWIは保持して残りを反映する",
+        )
+        return 1
+    for name in updated_wis:
+        print(f"終端AWIの対応commitを更新: {name}")
     for record, event in planned:
         if event is None:
             print(f"変更なし: {record.path}")

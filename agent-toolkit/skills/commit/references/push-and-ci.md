@@ -2,6 +2,21 @@
 
 pushするエージェントがpush先、更新ref、基準情報、CI監視、証拠用一時領域を所有する。通常commit、stage、messageは親スキル、CI失敗の帰属と原因分析は`agent-toolkit:bugfix`に従う。
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/wait-anomalies.md#「ホストによる背景待機の停止後」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/wait-anomalies.md#「ホストによる背景待機の停止後」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/ci-failure-handling.md#「修正commitが必要なCI失敗を修正するエージェント」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md#「修正commitが必要なCI失敗を修正するエージェント」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `history-rewrite.md#「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `publish.md#「公開工程の続行不能からの再開」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「公開工程の続行不能からの再開」` |
+
 ## 公開状態の4項目
 
 ベースbranchの公開を確かめる次の4項目を「公開状態の4項目」と呼ぶ。判定の時点で現在のGit状態から取得し、全て成立した場合だけ公開済みとする。取得には各項目のコマンドを使い、`.git`内部のパス探索と、複数のrefを1回へ渡す`git rev-parse --short`を避ける。

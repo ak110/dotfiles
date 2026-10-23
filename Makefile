@@ -32,18 +32,7 @@ update:
 update-mise-locks:
 	mise upgrade --bump rust
 	mise lock --bump --platform linux-x64,windows-x64
-	MISE_CONFIG_DIR="$(CURDIR)/.chezmoi-source/dot_config/mise" mise upgrade --bump dotnet
-	MISE_CONFIG_DIR="$(CURDIR)/.chezmoi-source/dot_config/mise" mise lock --global --bump --platform linux-x64,windows-x64
-	# miseが生成する`.mise/locks`をchezmoiの`dot_mise/locks`へ移し、配布先の参照先へ届くようにする。
-	rm -rf .chezmoi-source/dot_config/mise/dot_mise/locks
-	mv .chezmoi-source/dot_config/mise/.mise/locks .chezmoi-source/dot_config/mise/dot_mise/locks
-	rmdir .chezmoi-source/dot_config/mise/.mise
-	# 各ツールのロック用ディレクトリへ`exact_`を付け、版の更新で配布元から消えた旧版を配布先からも除く。
-	for dir in .chezmoi-source/dot_config/mise/dot_mise/locks/*/; do \
-		[ -d "$$dir" ] || continue; \
-		name=$$(basename "$$dir"); \
-		mv "$$dir" ".chezmoi-source/dot_config/mise/dot_mise/locks/exact_$$name"; \
-	done
+	uv run --frozen python scripts/update_global_mise.py
 
 # GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
 update-actions:

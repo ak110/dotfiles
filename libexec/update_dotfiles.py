@@ -40,7 +40,7 @@ Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常�
 各段のサブプロセスへ`MISE_AUTO_INSTALL=0`を渡し、miseのshimが呼び出したコマンドと
 無関係なツールを自動導入して更新処理を停止させる経路を抑止する。親プロセスの
 仮想環境は子へ引き継がず、各工程が自身の設定から環境を解決する。
-取得したchezmoi出力は、プラットフォームのロケール設定が決める文字コードに依存せずUTF-8として厳格にデコードする。
+取得したchezmoi出力は、プラットフォームのロケール設定が決める文字コードによらずUTF-8として厳格にデコードする。
 git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定時は600秒、
 `0`は上限なしとし、負数または整数でない値は終了コード2で拒否する。
 
@@ -84,6 +84,9 @@ import psutil
 
 _SOURCE_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_SOURCE_ROOT))
+sys.path.insert(0, str(_SOURCE_ROOT / "agent-toolkit"))
+
+from agent_toolkit._common import dotfiles_mode  # noqa: E402  # pylint: disable=wrong-import-position
 
 from pytools._internal import codex_processes, sync_report  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -166,7 +169,7 @@ def _configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
 def _finish(returncode: int) -> int:
     """実行終了を記録し、失敗時は次の操作と診断ログの位置・表示コマンドを1回だけ案内する。
 
-    同期結果の構造化記録も本関数だけが確定させる。全ての終了経路が本関数を通るため、
+    同期結果の構造化記録も本関数だけが確定させる。全ての終了経路で本関数を実行するため、
     記録の欠落と、成功した段を失敗として残す書き分けの誤りを避けられる。
     """
     if _continued_failures:
@@ -582,7 +585,7 @@ def _skip_git_update(reason: str, operation: str | bool = False) -> int:
 
 @contextlib.contextmanager
 def _git_update_signals() -> Generator[None]:
-    """サービス停止と端末切断を、Git子とindexの回収を通る中断へ変換する。"""
+    """サービス停止と端末切断を、Git子とindexの回収を実行する中断へ変換する。"""
 
     def interrupt(signum: int, _frame: FrameType | None) -> None:
         raise KeyboardInterrupt(f"Git更新をシグナル{signum}で中断しました")
@@ -1042,6 +1045,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     """コマンドライン引数を解析する。"""
     parser = argparse.ArgumentParser(description="dotfilesを取得し、chezmoiで反映する")
     parser.add_argument("command", nargs="?", choices=["logs"], help="logs: 直近1回の更新実行の保存ログを表示する")
+    parser.add_argument("--mode", choices=dotfiles_mode.MODES, help="導入モードを保存して適用する")
+    parser.add_argument("--prune", action="store_true", help="現在のモードで不要なツールとキャッシュを削除する")
     return parser.parse_args([] if argv is None else argv)
 
 
@@ -1113,6 +1118,9 @@ def main(argv: list[str] | None = None) -> int:
             lock_dir.mkdir(parents=True, exist_ok=True)
             try:
                 with filelock.FileLock(str(_LOCK_PATH), timeout=_LOCK_TIMEOUT_SEC):
+                    dotfiles_mode.select(args.mode)
+                    if args.prune:
+                        os.environ["DOTFILES_PRUNE"] = "1"
                     returncode = _update_git_with_recovery(1, total, timeout=git_timeout)
                     if returncode != 0:
                         return _finish(returncode)
@@ -1172,7 +1180,7 @@ def main(argv: list[str] | None = None) -> int:
                             _last_stderr_tail,
                         )
 
-                    daemon_pause = _pause_codex_daemon()
+                    daemon_pause = None if dotfiles_mode.is_minimal() and args.prune else _pause_codex_daemon()
                     try:
                         returncode, _ = _run_step(
                             total,

@@ -59,7 +59,7 @@ async def test_repository_orchestrator_follows_mode(
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", "claude")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", "claude:sonnet/high")
     options_seen: list[Any] = []
 
     def factory(options: Any) -> FakeClaudeClient:
@@ -200,6 +200,7 @@ class _Manager:
 
     def __init__(self, *, fail_repo: str = "") -> None:
         self.started: list[tuple[str, str]] = []
+        self.candidate_inputs: list[list[dict[str, Any]]] = []
         self.pending: list[dict[str, Any]] = []
         self.fail_repo = fail_repo
         self.closed = False
@@ -216,6 +217,8 @@ class _Manager:
         assert self.activated
         assert model_type == "orchestrate" and kwargs["launch_kind"] == "delegate"
         self.started.append((cwd, prompt))
+        payload = json.loads(next(line for line in prompt.splitlines() if line.startswith("{")))
+        self.candidate_inputs.append(json.loads(pathlib.Path(payload["candidate_file"]).read_text(encoding="utf-8")))
         if pathlib.Path(cwd).name == self.fail_repo:
             raise OSError("外部モデルの起動失敗")
         session_id = f"session-{pathlib.Path(cwd).name}"
@@ -333,7 +336,7 @@ def test_repository_delegates(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     assert results[repositories[1].repo_id]["status"] == "completed"
     assert len(manager.started) == 2 and manager.closed
     payloads = [json.loads(next(line for line in prompt.splitlines() if line.startswith("{"))) for _, prompt in manager.started]
-    assert [payload["candidates"][0]["filename"] for payload in payloads] == ["one.md", "two.md"]
+    assert [candidates[0]["filename"] for candidates in manager.candidate_inputs] == ["one.md", "two.md"]
     assert {cwd for cwd, _ in manager.started} == {str(repository.worktree) for repository in repositories[:2]}
     assert len({payload["lane_session_id"] for payload in payloads}) == 2
     assert all(payload["worktree_name"] == "process-loop" for payload in payloads)
@@ -394,8 +397,7 @@ def test_instructions_and_audit(tmp_path: pathlib.Path, monkeypatch: pytest.Monk
     assert sum("次の担当へ" in prompt for _, prompt in manager.started) == 3
     assert not loop_log.read_instructions()
     assert consumed == ["consume"]
-    empty_payload = json.loads(next(line for line in manager.started[2][1].splitlines() if line.startswith("{")))
-    assert not empty_payload["candidates"]
+    assert not manager.candidate_inputs[2]
 
 
 def _loop_args(*, no_update: bool) -> argparse.Namespace:

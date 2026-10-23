@@ -57,7 +57,7 @@ def build_repository_delegate_prompt(
         "ownership_token": ownership.token,
         "lane_session_id": ownership.lane_session_id,
         "lane_limit": snapshot.lane_limit,
-        "candidates": snapshot.candidate_records(),
+        "candidate_file": str(_ownership.save_candidates(ownership, snapshot.candidate_records())),
         "readiness": dataclasses.asdict(snapshot.readiness),
         "previous": ownership.previous,
         "worktree_name": worktree_name,
@@ -96,7 +96,7 @@ def build_process_loop_prompt() -> str:
     スキル側の規範より優先される。
 
     目的文は`/goal`条件としてオーケストレーターへ渡り、ターンを終えるたびにセッション記録の全体を
-    入力とする評価の対象となる。条件が長いほど各評価の入力が増える。この関数へ記述を足す
+    入力とする評価の対象となる。条件が長いほど各評価の入力が増える。この関数へ記述を追加する
     変更は行わない。過去に作業ディレクトリ、対象リポジトリおよび終了手順の指示が順に加わり、
     そのたびに短縮を求める指摘を受領した経緯がある。
 
@@ -185,7 +185,7 @@ def _build_session_argv(
             for diagnostic in choices.warnings:
                 print(diagnostic, file=sys.stderr)
             connection = choices.require_first()
-        connection = _connection.with_current_isolation(connection, env=env)
+        connection = _connection.with_current_isolation(connection, role="orchestrator", env=env)
         prepared = _connection.connection_environment(env, connection)
         # 対話起動は未承認の環境APIキーで確認画面を表示するため、helperから取得する。
         if connection.kind != "inherit":
@@ -194,7 +194,7 @@ def _build_session_argv(
         env.update(prepared)
         overrides = _connection.connection_overrides(connection)
         if connection.kind != "inherit":
-            overrides["ANTHROPIC_API_KEY"] = ""
+            overrides.pop("ANTHROPIC_API_KEY", None)
         hook_debug_log = _pl_env.create_hook_debug_log(env)
         argv = [
             "claude",
@@ -219,6 +219,8 @@ def _build_session_argv(
             force_file=bool(connection.api_env_file),
             key_helper_command=_claude_settings.api_key_helper(connection.api_env_file) if connection.api_env_file else None,
             isolate_auth=connection.kind != "inherit",
+            isolation_keys=_connection.isolation_keys(connection),
+            cwd=cwd,
         )
         with contextlib.ExitStack() as settings_owner:
             if isinstance(settings, _claude_settings.SettingsFile):
@@ -241,6 +243,19 @@ def _build_session_argv(
             result = argv, hook_debug_log
             settings_owner.pop_all()
             return result
+
+    if orchestrator == "agy":
+        argv = ["agy", "--model", model, "--effort", effort, "--mode", "auto"]
+        if resume_pending:
+            if args.resume:
+                argv.extend(("--conversation", args.resume))
+                env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
+            else:
+                argv.append("--continue")
+        else:
+            # /goalはClaude専用のため、境界付き目的文を対話起動へ渡す。
+            argv.extend(("-i", prompt.removeprefix("/goal ")))
+        return argv, None
 
     argv = ["codex"]
     if resume_pending:
@@ -265,16 +280,16 @@ def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "")
         next_action=(
             "オーケストレーターのセッション記録（Claude Codeは`~/.claude/projects`配下、Codexは`~/.codex/sessions`配下）"
             "で原因を確認し、解消してからprocess-loopを再起動する。モデル候補の問題なら"
-            "`atk config set orchestrate_engine <engine順>`か`atk config set <engine>_high_tier_model <モデル>`で候補を変える"
+            "`atk config set orchestrate_engine <engine順>`か`atk config set <engine>_execute_model <モデル>`で候補を変える"
         ),
     )
     sys.exit(returncode)
 
 
 def cleanup_lane_session(lane_session_id: str, *, target_repo: str | None = None) -> dict[str, Any]:
-    """担当の終了を確定した後に、そのレーン所有sessionの資源を`atk lane delete`と同じ条件で回収する。
+    """担当の終了を確定した後に、終端sessionの解放応答を待たず同じ適格判定でレーン資源を回収する。
 
-    単一起動の子終了後と、all-reposで担当の所有を解放した後の両方がこの処理を通る。
+    単一起動の子終了後と、all-reposで担当の所有を解放した後の両方でこの処理を実行する。
     結果はprocess-loopログの`lane_cleanup`へ残し、保持した資源と回収の失敗には同じ所有sessionで
     再回収する操作を示す。回収の失敗は戻り値へ記録して送出せず、呼び出し側の残りの終了処理
     （他担当の終了と回収、再起動判断）を続けさせる。
@@ -283,7 +298,7 @@ def cleanup_lane_session(lane_session_id: str, *, target_repo: str | None = None
     scope = "" if target_repo is None else f"{target_repo}: "
     fields: dict[str, Any] = {} if target_repo is None else {"target_repo": target_repo}
     try:
-        cleanup = _lane.cleanup_session(lane_session_id)
+        cleanup = _lane.cleanup_session(lane_session_id, wait_release=False)
     except Exception as error:
         # 境界層で全例外を捕捉する。回収できなかった資源は登録とともに残り、同じ操作で再回収できる。
         _process_loop_log.append("lane_cleanup", **fields, lane_session_id=lane_session_id, error=str(error))

@@ -14,7 +14,7 @@ import tempfile
 import uuid
 from collections.abc import Mapping
 
-from agent_toolkit._common import host_homes
+from agent_toolkit._common import claude_settings_sources, host_homes
 from agent_toolkit._common.state_paths import state_dir
 
 AUTH_ENV = frozenset(
@@ -99,6 +99,10 @@ def merge_settings(
     force_file: bool = False,
     key_helper_command: str | None = None,
     isolate_auth: bool = True,
+    isolation_keys: frozenset[str] = AUTH_ENV,  # pylint: disable=redefined-outer-name  # 公開キーワード名を保持する。
+    cwd: str | pathlib.Path | None = None,
+    project_settings: bool = True,
+    drop_parent_env: frozenset[str] = frozenset(),
 ) -> str:
     """親のJSONの意味を保ち、委譲先のenvを最後に適用する。
 
@@ -118,10 +122,18 @@ def merge_settings(
     if key_helper_command is not None:
         settings["apiKeyHelper"] = key_helper_command
     settings["env"] = {
-        **(dict.fromkeys(AUTH_ENV, "") if isolate_auth else {}),
         **(
-            {key: value for key, value in inherited.items() if not isolate_auth or key not in AUTH_ENV}
+            {
+                key: value
+                for key, value in inherited.items()
+                if key not in drop_parent_env and (not isolate_auth or key not in isolation_keys)
+            }
             if isinstance(inherited, dict)
+            else {}
+        ),
+        **(
+            dict.fromkeys(isolation_keys & claude_settings_sources.environment_keys(cwd, project=project_settings), "")
+            if isolate_auth
             else {}
         ),
         **env,
@@ -163,7 +175,10 @@ def cleanup_settings(options: object) -> None:
 
 
 def subscription_available(
-    env: Mapping[str, str] | None = None, *, platform: str = sys.platform, isolation_keys: frozenset[str] = AUTH_ENV
+    env: Mapping[str, str] | None = None,
+    *,
+    platform: str = sys.platform,
+    isolation_keys: frozenset[str] = AUTH_ENV,  # pylint: disable=redefined-outer-name  # 公開キーワード名を保持する。
 ) -> bool:
     """OAuth環境またはClaude CodeのOAuth資格情報の存在を値の公開なしに判定する。"""
     environment = os.environ if env is None else env
@@ -174,7 +189,7 @@ def subscription_available(
         # 公開仕様: https://code.claude.com/docs/en/cli-reference#cli-commands
         try:
             result = subprocess.run(
-                ["claude", "--settings", merge_settings(None, dict.fromkeys(isolation_keys, ""), None), "auth", "status"],
+                ["claude", "--settings", merge_settings(None, {}, None, isolation_keys=isolation_keys), "auth", "status"],
                 env=clean_environment(environment, isolation_keys=isolation_keys),
                 capture_output=True,
                 text=True,
@@ -196,33 +211,39 @@ def subscription_available(
     return isinstance(oauth, dict) and bool(oauth.get("accessToken") or oauth.get("refreshToken"))
 
 
-def clean_environment(env: Mapping[str, str], *, isolation_keys: frozenset[str] = AUTH_ENV) -> dict[str, str]:
+def clean_environment(
+    env: Mapping[str, str],
+    *,
+    isolation_keys: frozenset[str] = AUTH_ENV,  # pylint: disable=redefined-outer-name  # 公開キーワード名を保持する。
+) -> dict[str, str]:
     """親のAPI接続変数を除去する。OAuthはサブスクリプションの認証として維持する。"""
     return {key: value for key, value in env.items() if key not in isolation_keys}
 
 
-def connection_overrides(connection: Connection) -> dict[str, str]:
-    """SDKとsettingsの両方へ渡す、選択した接続の環境上書きを返す。"""
+def isolation_keys(connection: Connection) -> frozenset[str]:
+    """選択した接続で親から継承しない変数名を返す。"""
     if connection.kind == "inherit":
-        return {}
+        return frozenset()
     path = connection.isolation_env_file or connection.api_env_file
-    isolated = read_api_env_file(path) if path else {}
-    result = dict.fromkeys(AUTH_ENV | isolated.keys(), "")
+    keys = AUTH_ENV | (read_api_env_file(path).keys() if path else frozenset())
+    if connection.kind == "api":
+        keys |= {"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"}
+    return frozenset(keys)
+
+
+def connection_overrides(connection: Connection) -> dict[str, str]:
+    """選択したAPI接続が明示する値だけを返す。"""
     if connection.kind == "api" and connection.api_env_file:
-        result.update(isolated if connection.api_env_file == path else read_api_env_file(connection.api_env_file))
-        result["CLAUDE_CODE_OAUTH_TOKEN"] = ""
-        result["CLAUDE_CODE_OAUTH_REFRESH_TOKEN"] = ""
-    return result
+        return {
+            key: value
+            for key, value in read_api_env_file(connection.api_env_file).items()
+            if key not in {"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"}
+        }
+    return {}
 
 
 def connection_environment(env: Mapping[str, str], connection: Connection) -> dict[str, str]:
-    """選択したAPIファイルだけを適用する。"""
-    if connection.kind == "inherit":
-        return dict(env)
-    overrides = connection_overrides(connection)
-    result = {key: value for key, value in env.items() if key not in overrides}
-    if connection.kind == "api" and connection.api_env_file:
-        result.update(read_api_env_file(connection.api_env_file))
-        for key in ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"):
-            result.pop(key, None)
+    """親の隔離対象を除去して、選択したAPIファイルだけを適用する。"""
+    result = clean_environment(env, isolation_keys=isolation_keys(connection))
+    result.update(connection_overrides(connection))
     return result

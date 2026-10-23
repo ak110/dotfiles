@@ -102,7 +102,7 @@ def ensure_environment(home: pathlib.Path) -> pathlib.Path:
 
 
 def _has_no_items(root: pathlib.Path) -> bool:
-    """状態ディレクトリにWIの`.md`が無く、`plans/`にも計画ファイルが無いかを返す。"""
+    """年月配置にWIの`.md`が無く、`plans/`にも計画ファイルが無いかを返す。"""
     if next(iter_entry_paths(root), None) is not None:
         return False
     plans = root / "plans"

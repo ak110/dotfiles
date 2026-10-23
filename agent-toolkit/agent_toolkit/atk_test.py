@@ -374,20 +374,24 @@ def _child_config_env() -> dict[str, str]:
     """子の`atk`へ渡す全設定キーの環境変数を、設定の初期値から組み立てる。
 
     `config show`がCodexの系列名を解決するために`codex` CLIを起動しないよう、
-    初期値がCodexの系列名である段位モデルだけを、系列名を含まない値で上書きする。
+    工程別候補のCodex系列名を完全IDで上書きする。
     """
-    codex_tier_keys = {_config.tier_model_key("codex", tier) for tier in ("high", "medium", "low")}
     env: dict[str, str] = {}
     for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
         value = _config.mutable_setting_default(key)
-        if key in codex_tier_keys and value.partition("/")[0] in codex_models.FAMILIES:
-            value = "opus/medium"
+        if key.endswith("_model"):
+            candidates = _config.parse_stage_model_candidates(value)
+            value = ",".join(
+                f"{engine}:{'gpt-6-sol' if engine == 'codex' and model in codex_models.FAMILIES else model}"
+                f"{'@' if engine == 'opencode' else '/'}{effort}"
+                for engine, model, effort in candidates
+            )
         env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = value
     return env
 
 
 def test_child_config_env_derives_values_from_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    """書式の異なる設定キーを加えても、組み立てた全キーの値が設定の検証を通る。
+    """書式の異なる設定キーを加えても、組み立てた全キーの値が設定の検証に合格する。
 
     テストが値の書式を自前で持つと、段位モデルとengine順以外の書式のキーを加えるたびに検証で拒否される。
     加えるキーは候補列の検証（engine接頭辞付き）の対象になり、キー名から書式を推測する値（`opus/medium`）は拒否される。
@@ -407,9 +411,9 @@ def test_child_config_env_derives_values_from_defaults(monkeypatch: pytest.Monke
     for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
         _config.resolve_mutable_setting(key)
     candidates: list[tuple[str, str, str]] = []
-    for tier in ("high", "medium", "low"):
-        model, _, effort = env[f"AGENT_TOOLKIT_CONFIG_{_config.tier_model_key('codex', tier).upper()}"].partition("/")
-        candidates.append(("codex", model, effort))
+    for name, value in env.items():
+        if name.endswith("_MODEL"):
+            candidates.extend(_config.parse_stage_model_candidates(value))
     assert not codex_models.needs_catalog(candidates)
 
 

@@ -246,6 +246,8 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)agent-toolkit/rules/.+\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/references/.+\.md$"),
+    re.compile(r"(^|/)agent-basics/skills/[^/]+/SKILL\.md$"),
+    re.compile(r"(^|/)agent-basics/skills/[^/]+/references/.+\.md$"),
     re.compile(r"(^|/)agent-toolkit/agents/.+\.md$"),
     # chezmoi配布元のテンプレート（`<name>.md.tmpl`）も配布先ではエージェント向け文書として読み込まれるため、
     # `.tmpl`終端を受理する。原本側だけが対象から外れると、テンプレートによる規範の改訂を判定できなくなる。

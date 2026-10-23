@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock
 
 import anyio
 import claude_agent_sdk
+import psutil
 import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
@@ -40,6 +41,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._common import process_tree, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
+from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -235,6 +237,16 @@ _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _LAUNCH_TIMEOUT = 60.0
 
 
+@pytest.fixture(name="launcher_environment")
+def _launcher_environment(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> dict[str, str]:
+    """公開prepareで一時runtimeを準備し、通常起動と旧起動形へ同じ環境を渡す。"""
+    environment = host_environ()
+    environment["AGENT_TOOLKIT_RUNTIME_DATA"] = str(tmp_path / "runtime")
+    environment.pop("UV_FROZEN", None)
+    prepare_plugin_environment(_PLUGIN_ROOT, environment)
+    return environment
+
+
 class _LaunchedServer:
     """起動ランチャーまたは変更前の起動形でagents_serverを起動し、JSON-RPCを1行ずつ送受信する。"""
 
@@ -246,8 +258,7 @@ class _LaunchedServer:
         direct: bool = False,
         arguments: tuple[str, ...] = (),
     ) -> None:
-        # 起動用の依存環境と依存のキャッシュは実行ホストの値を使い、状態ディレクトリと一時領域だけを分離する。
-        # 依存環境を分離すると、作業者ごとに数百MBのコピーを一時領域へ作るためである。
+        # 準備済み依存環境は呼出側の一時runtimeを使い、依存取得のcacheは実行ホストと共有する。
         # `UV_FROZEN`は起動形の`--locked`と重なるとuvが無視する旨の警告を標準エラーへ出力するため、CIのjob環境から引き継がない。
         env = {
             key: value
@@ -384,9 +395,9 @@ class _LaunchedServer:
         return next(event["pid"] for event in self.events() if event["event"] == "started")
 
 
-def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     """親が標準入力を閉じた正常終了を、サーバーとランチャーの双方が時刻付きで記録し、tools/listと終了コード0を保つ。"""
-    with _LaunchedServer(tmp_path, host_environ()) as server:
+    with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
         tools = server.request(2, "tools/list", {})["result"]["tools"]
         assert {tool["name"] for tool in tools} == {"start", "send_message", "kill", "stop", "list", "show"}
@@ -405,13 +416,12 @@ def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, host_environ:
         assert not list(server.temporary.glob("agent-toolkit-agents-server-launch-*"))
 
 
-def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     """起動単位を持たない正常終了は、診断ファイルの所在を受け取れなかった旨を標準エラーへ出力しない。"""
-    # ランチャーは子の標準エラーを中継する。依存環境を初めて作成するuvの進行表示を
-    # 判定対象の標準エラーへ含めないよう、先に作成を済ませる。
-    with _LaunchedServer(tmp_path / "warmup", host_environ(), arguments=("--check-dependencies",)) as warmup:
+    # 依存準備を済ませた通常起動は、初回と再実行の両方で終了0と静かな終了を保つ。
+    with _LaunchedServer(tmp_path / "warmup", launcher_environment, arguments=("--check-dependencies",)) as warmup:
         assert warmup.wait() == 0, warmup.stderr
-        with _LaunchedServer(tmp_path, host_environ(), arguments=("--check-dependencies",)) as server:
+        with _LaunchedServer(tmp_path, launcher_environment, arguments=("--check-dependencies",)) as server:
             assert server.wait() == 0
             assert server.stderr == b"", server.stderr
             assert not list((server.state_dir / logging_config.INSTANCE_DIRECTORY_NAME).glob("*.jsonl"))
@@ -422,7 +432,7 @@ def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, host
 def test_launcher_preserves_signal_exit_status(
     tmp_path: pathlib.Path,
     signum: signal.Signals,
-    host_environ: Callable[[], dict[str, str]],
+    launcher_environment: dict[str, str],
 ) -> None:
     """ランチャーが受けたシグナルを記録し、変更前の起動形と同じ終了状態を呼出元へ返す。
 
@@ -439,8 +449,8 @@ def test_launcher_preserves_signal_exit_status(
 
     # 起動の待ち時間を重ねるため、対照とランチャーを同時に起動する。
     with (
-        _LaunchedServer(tmp_path / "control", host_environ(), direct=True) as control,
-        _LaunchedServer(tmp_path / "launcher", host_environ()) as server,
+        _LaunchedServer(tmp_path / "control", launcher_environment, direct=True) as control,
+        _LaunchedServer(tmp_path / "launcher", launcher_environment) as server,
     ):
         for launched in (control, server):
             launched.initialize()
@@ -457,9 +467,9 @@ def test_launcher_preserves_signal_exit_status(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
-def test_launcher_records_server_kill(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+def test_launcher_records_server_kill(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     """サーバーだけが記録できずに終わった場合も、ランチャーが終了状態と標準エラー末尾を記録する。"""
-    with _LaunchedServer(tmp_path, host_environ()) as server:
+    with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
         os.kill(server.server_pid(), signal.SIGKILL)
         server.wait()
@@ -473,22 +483,23 @@ def test_launcher_records_server_kill(tmp_path: pathlib.Path, host_environ: Call
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
-def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     """ランチャーとサーバーがともに記録できずに終わった診断は`incomplete`として返し、終了状態を補わない。"""
-    with _LaunchedServer(tmp_path, host_environ()) as server:
+    with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
-        server_pid = server.server_pid()
-        # ランチャーを先に止め、サーバーの終了を観測する主体を残さない。サーバーが標準出力を保持するため、両方を止めてから待つ。
+        server_process = psutil.Process(server.server_pid())
+        # ランチャーの死亡を先に確定し、サーバーの終了を観測する主体を残さない。
+        # サーバーが標準出力を保持するため、readerの回収は両方を止めた後に行う。
         server.process.kill()
-        os.kill(server_pid, signal.SIGKILL)
+        assert server.process.wait(timeout=_LAUNCH_TIMEOUT) == -signal.SIGKILL
+        server_process.kill()
         server.wait()
         deadline = time.monotonic() + _LAUNCH_TIMEOUT
-        while time.monotonic() < deadline:
-            try:
-                os.kill(server_pid, 0)
-            except ProcessLookupError:
-                break
-            time.sleep(0.05)
+        # 孤児の回収時機はPID 1に依存する。終了済みzombieは記録を書けず、PIDが残っていても停止済みである。
+        with contextlib.suppress(psutil.NoSuchProcess):
+            while server_process.is_running() and server_process.status() != psutil.STATUS_ZOMBIE:
+                assert time.monotonic() < deadline, "SIGKILLしたサーバーが停止していない"
+                time.sleep(0.05)
 
         names = {event["event"] for event in server.events()}
         assert not names & logging_config.TERMINATION_EVENTS

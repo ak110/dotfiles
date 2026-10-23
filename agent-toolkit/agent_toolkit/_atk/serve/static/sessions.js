@@ -73,7 +73,7 @@ function matchesFilter(entry) {
 }
 
 function treeRows() {
-  // 親と子の実行系（Claude CodeとCodex）は異なり得るため、親は子の実行系を使わずホストとパスで引く。
+  // 親と子の実行系（Claude CodeとCodex）は異なり得るため、親はホストとパスで検索し、子の実行系を検索条件に含めない。
   // 記録のパスはホスト内で一意である。
   const byPath = new Map(sessions.map(entry => [JSON.stringify([entry.host, entry.path]), entry]));
   const children = new Map();

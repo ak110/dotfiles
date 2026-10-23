@@ -74,10 +74,18 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    targets = _expand_paths(args.paths)
     all_violations: list[str] = []
-    for path in targets:
-        all_violations.extend(_check_file(path))
+    try:
+        targets = _expand_paths(args.paths)
+        for path in targets:
+            all_violations.extend(_check_file(path))
+    except OSError as exc:
+        print(f"error: 対象ファイルを読み取れない: {exc}", file=sys.stderr)
+        print(
+            _next_action.next_action_line("対象パスの存在、読取権限とUTF-8の文字コードを確認して再実行する"),
+            file=sys.stderr,
+        )
+        return 2
 
     for line in all_violations:
         print(line, file=sys.stderr)
@@ -116,6 +124,8 @@ def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
                 if not any(name_lower.endswith(ext) for ext in _DEFAULT_EXTENSIONS):
                     continue
                 _add(expanded, seen, sub)
+        else:
+            raise OSError(f"通常ファイルまたはディレクトリを指定する: {p}")
     return expanded
 
 
@@ -129,11 +139,11 @@ def _add(out: list[pathlib.Path], seen: set[pathlib.Path], path: pathlib.Path) -
 
 
 def _check_file(path: pathlib.Path) -> list[str]:
-    """1ファイルに禁止されたダッシュ文字があるか判定し、違反行のメッセージ一覧を返す。読み込み失敗時は空リストを返す。"""
+    """1ファイルに禁止されたダッシュ文字があるか判定し、違反行のメッセージ一覧を返す。"""
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError, UnicodeDecodeError:
-        return []
+    except UnicodeDecodeError as exc:
+        raise OSError(f"{path}: {exc}") from exc
 
     violations: list[str] = []
     inline_blocks = _inline_block_ranges(text)
@@ -148,7 +158,7 @@ def _check_file(path: pathlib.Path) -> list[str]:
             # インラインコードは同一文字数の空白で置換済みのため、除去後オフセット＝元行オフセット。
             col = match.start() + 1
             excerpt = raw if len(raw) <= _EXCERPT_LIMIT else raw[:_EXCERPT_LIMIT] + "…"
-            violations.append(f'{path}:{lineno}:{col}: {kind} "{excerpt}"')
+            violations.append(f'{path}:{lineno}:{col}: error: {kind} "{excerpt}"')
 
     return violations
 

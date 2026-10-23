@@ -12,7 +12,7 @@ from typing import Any
 from agent_toolkit._agents_server import state
 from agent_toolkit._agents_server.result_projection import nonempty_error
 from agent_toolkit._agents_server.state import SessionState, utc_now
-from agent_toolkit._atk import claude_connection
+from agent_toolkit._atk import claude_connection, usage_limit_policy
 from agent_toolkit._common import claude_usage_limit
 
 # Claude CodeのBashツールが背景実行へ許す実行時間の上限（ミリ秒を秒へ換算）。Claude Code 2.1.291の
@@ -22,7 +22,8 @@ from agent_toolkit._common import claude_usage_limit
 CLAUDE_BACKGROUND_BASH_MAX_SECONDS = 7200.0
 
 
-# 待機表明の保留を、完了通知が届かない場合に打ち切る期限。保留が待つバックグラウンドタスクの完了通知は背景実行の上限以内に
+# 終了上限を持つBash背景実行の完了通知が届かない場合に打ち切る期限。対象の寿命は`auto_resume_wait_deadline`で判定する。
+# 保留が待つBashバックグラウンドタスクの完了通知は背景実行の上限以内に
 # 届くため、上限より短い期限は稼働中のバックグラウンドタスクを待つ保留を打ち切ってしまう。完了通知の配送と再開turnの開始に
 # 要する時間の余裕を上限へ加える。結果保持期限とは目的が異なり、値も共有しない。
 AUTO_RESUME_DEADLINE_SECONDS = CLAUDE_BACKGROUND_BASH_MAX_SECONDS + 600.0
@@ -71,13 +72,22 @@ class HeldTurn:
     turn_seq: int
     turn_id: str
     started_at: str
+    codex_self_message_observed: bool
 
     @classmethod
     def capture(cls, session: SessionState) -> HeldTurn | None:
         """保留中だけ復元に必要なturn情報を退避する。"""
-        if not session.awaiting_auto_resume or session.pending_result is None or session.auto_resume_deadline is None:
+        if not is_background_completion_wait(session):
             return None
-        return cls(session.pending_result, session.auto_resume_deadline, session.turn_seq, session.turn_id, session.started_at)
+        assert session.pending_result is not None
+        return cls(
+            session.pending_result,
+            session.auto_resume_deadline,
+            session.turn_seq,
+            session.turn_id,
+            session.started_at,
+            session.codex_self_message_observed,
+        )
 
     def restore(self, session: SessionState) -> None:
         """未受理の追送を取り消し、同じ待機対象の観測を継続できる保留へ戻す。"""
@@ -87,6 +97,7 @@ class HeldTurn:
         session.turn_seq = self.turn_seq
         session.turn_id = self.turn_id
         session.started_at = self.started_at
+        session.codex_self_message_observed = self.codex_self_message_observed
         session.status = "running"
         session.turn_completed = True
         session.turn_start_ambiguous = False
@@ -111,7 +122,7 @@ def cli_turn_may_continue(session: SessionState) -> bool:
 
 
 def has_pending_auto_resume_targets(session: SessionState) -> bool:
-    """自動再開が追跡する子session、Claude taskまたはCLIの次のturnが残るかを返す。
+    """自動再開が追跡する子session、Codexの子thread、Claude taskまたはCLIの次のturnが残るかを返す。
 
     Claude・Codex backendとMCP層は、開始、解除、再開の全条件で本述語だけを使う。
     追跡集合（`live_tasks`・`live_child_session_ids`）だけでは、Stop hookの実行中などturnの最終応答から
@@ -121,7 +132,41 @@ def has_pending_auto_resume_targets(session: SessionState) -> bool:
     観測した版と順序は`docs/development/audit-records.md`
     「agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：2026年10月4日」にある。
     """
-    return bool(session.live_tasks or session.live_child_session_ids) or cli_turn_may_continue(session)
+    return bool(
+        session.live_tasks or session.live_child_session_ids or session.codex_live_subagent_thread_ids
+    ) or cli_turn_may_continue(session)
+
+
+def is_background_completion_wait(session: SessionState) -> bool:
+    """期限の有無から独立して、子と背景処理の完了待ちの保留を識別する。"""
+    return (
+        session.awaiting_auto_resume
+        and session.pending_result is not None
+        and session.usage_limit_resume_at is None
+        and session.overload_resume_at is None
+        and not session.claude_api_resume_pending
+        and not session.codex_provider_resume_pending
+    )
+
+
+def auto_resume_wait_deadline(session: SessionState) -> float | None:
+    """待機対象自身の終了上限を根拠に適用できる通知期限だけを返す。
+
+    子session・Codexの子thread・Claude背景エージェントの寿命にはBashの上限を適用できない。
+    種類が未判明のtaskと、task無しでCLIが継続を報告する間も、終端の観測まで追跡する。
+    上限の無い対象を観測した保留は、その対象の終端後に届く再開turnまで期限無しを維持する。
+    対象の終端通知から次のturnの開始通知までの間にも、古いBash期限を復活させない。
+    """
+    if session.live_child_session_ids or session.codex_live_subagent_thread_ids:
+        session.auto_resume_deadline = None
+        return None
+    if any(task.task_type != "local_bash" for task in session.live_tasks.values()):
+        session.auto_resume_deadline = None
+        return None
+    if not session.live_tasks and cli_turn_may_continue(session):
+        session.auto_resume_deadline = None
+        return None
+    return session.auto_resume_deadline
 
 
 def finalize_pending_result(
@@ -145,7 +190,7 @@ def finalize_pending_result(
     if result is None:
         raise RuntimeError("auto-resume wait has no pending result")
     unfinished_tasks = set(session.live_tasks)
-    unobserved = set(session.live_child_session_ids) | set(unobserved_sessions)
+    unobserved = set(session.live_child_session_ids) | set(session.codex_live_subagent_thread_ids) | set(unobserved_sessions)
     session.overload_resume_at = None
     session.claude_api_resume_pending = False
     session.usage_limit_resume_at = None
@@ -156,6 +201,7 @@ def finalize_pending_result(
     session.auto_resume_deadline = None
     session.pending_result = None
     session.live_child_session_ids.clear()
+    session.codex_live_subagent_thread_ids.clear()
     session.status = result["status"]
     session.agent_message = result["agent_message"]
     session.error = result["error"]
@@ -228,6 +274,8 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     解除待ちでは結果の`error.usageLimit`と`api_error`へ種類と解除予定時刻を記録し、状態の読者へ公開する。
     待機は`auto_resume_deadline`と`retention_deadline`の対象にせず、回数でも打ち切らない。
     """
+    if session.interrupt_requested:
+        return False
     limit = session.usage_limit
     credit_error = session.claude_api_env_file is not None and any(
         marker in str(result.get("error", "")).casefold() + str(result.get("agent_message", "")).casefold()
@@ -256,6 +304,13 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     original_error = result.get("error")
     role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
     current = session.claude_connection or ("api" if session.claude_api_env_file else "inherit")
+    if claude_connection.api_only(role) and current == "api":
+        clear_usage_limit_wait(session)
+        result["error"] = {
+            "message": "API接続が失敗した。claude_api_env_fileの認証・接続先とAPI残高を確認し、同じ会話へ再送する。",
+            "cause": original_error,
+        }
+        return False
     reason = "authentication" if startup_auth_error else "api_credits" if credit_error else "usage_limit"
     _LOG.info(
         "claude_connection_failed session_id=%s connection=%s phase=turn reason=%s",
@@ -263,11 +318,12 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         current,
         reason,
     )
-    if current == "inherit" and startup_auth_error:
+    api_only = claude_connection.api_only(role)
+    if current == "inherit" and startup_auth_error and not api_only:
         return False
     choices = (
         claude_connection.Candidates((claude_connection.Connection("inherit"),))
-        if current == "inherit"
+        if current == "inherit" and not api_only
         else claude_connection.candidates(role)
     )
     session.claude_connection_failures[current] = str(original_error or result.get("agent_message") or "利用不能")
@@ -276,8 +332,18 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     following = tuple(
         choice
         for choice in following
-        if choice.kind != "inherit" and choice.kind not in session.claude_connection_failures and current != "inherit"
+        if choice.kind != "inherit"
+        and choice.kind not in session.claude_connection_failures
+        and (current != "inherit" or api_only)
     )
+    wait_for_subscription = (
+        current == "subscription"
+        and limit is not None
+        and limit.is_wait_target
+        and usage_limit_policy.should_wait("claude", limit.limit_type)
+    )
+    if wait_for_subscription:
+        following = ()
     if role == "delegate" and following:
         selected = following[0]
         if current == "subscription" and selected.kind == "api" and limit is not None and limit.is_wait_target:
@@ -292,7 +358,8 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         session.pending_result = result
         session.awaiting_auto_resume = True
         session.auto_resume_deadline = None
-        session.api_error = None
+        if limit is not None and limit.is_wait_target:
+            _record_usage_limit_error(session, limit, original_error)
         _LOG.info(
             "claude_api_switch session_id=%s previous=%s selected=%s reason=%s limit_type=%s",
             session.session_id,
@@ -308,7 +375,8 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         or not choices.connections
         or credit_error
         and role == "orchestrator"
-        or role == "delegate"
+        or not wait_for_subscription
+        and role == "delegate"
         and len(order) > 1
     ):
         result["error"] = {
@@ -336,26 +404,33 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     session.usage_limit_wait_count += 1
     if session.usage_limit_first_at is None:
         session.usage_limit_first_at = utc_now()
-    http_status = error.get("apiErrorStatus")
-    session.api_error = {
-        "type": USAGE_LIMIT_ERROR_TYPE,
-        "http_status": http_status if isinstance(http_status, int) else None,
-        "first_at": session.usage_limit_first_at,
-        "count": session.usage_limit_wait_count,
-        "limit_type": limit.limit_type,
-        "resets_at": resets_at,
-    }
+    _record_usage_limit_error(session, limit, error)
     state.notify_touch_listeners()
     return True
 
 
-def begin_auto_resume_wait(session: SessionState, result: dict[str, Any]) -> float:
-    """終端結果を保留し、自動再開の待機期限を返す。"""
+def _record_usage_limit_error(session: SessionState, limit: claude_usage_limit.UsageLimitState, error: Any) -> None:
+    """切替待ちと解除待ちへ同じ利用枠の診断を公開する。"""
+    http_status = error.get("apiErrorStatus") if isinstance(error, dict) else None
+    previous = session.api_error or {}
+    session.api_error = {
+        **previous,
+        "type": USAGE_LIMIT_ERROR_TYPE,
+        "http_status": http_status if isinstance(http_status, int) else None,
+        "first_at": previous.get("first_at") or session.usage_limit_first_at or utc_now(),
+        "count": max(1, session.usage_limit_wait_count, previous.get("count", 0)),
+        "limit_type": limit.limit_type,
+        "resets_at": limit.resets_at_iso() or previous.get("retry_at"),
+    }
+
+
+def begin_auto_resume_wait(session: SessionState, result: dict[str, Any]) -> float | None:
+    """終端結果を保留し、対象自身の上限を根拠に適用できる通知期限を返す。"""
     session.pending_result = result
     session.awaiting_auto_resume = True
     deadline = asyncio.get_running_loop().time() + AUTO_RESUME_DEADLINE_SECONDS
     session.auto_resume_deadline = deadline
-    return deadline
+    return auto_resume_wait_deadline(session)
 
 
 def release_auto_resume_hold(session: SessionState) -> bool:
@@ -367,7 +442,7 @@ def release_auto_resume_hold(session: SessionState) -> bool:
     バックグラウンドタスクと孫sessionの追跡、自動再開の消費の記録は、それぞれの寿命に従うため変えない。
     利用上限の解除待ちと過負荷の継続待ちは期限を持たず、MCP層が送る継続の処理で解除するため対象から外す。
     """
-    if not session.awaiting_auto_resume or session.auto_resume_deadline is None:
+    if not is_background_completion_wait(session):
         return False
     session.pending_result = None
     session.awaiting_auto_resume = False

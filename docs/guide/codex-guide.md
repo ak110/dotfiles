@@ -13,7 +13,7 @@ Codex向け`AGENTS.md`、共有ルールの同期、共有スキルのリンク�
 次のコマンドはCodexの対話UIを起動し、対象リポジトリのAWIを継続して処理する。
 
 ```bash
-atk config set orchestrate_engine codex,claude
+atk config set orchestrate_model codex:sol/medium,claude:opus[1m]/medium
 atk wi process-loop
 ```
 
@@ -76,14 +76,15 @@ Windows絶対パスを渡す。Claude、`update-dotfiles`、process-loop外のCo
 
 Codex向けのプラグインは`update-dotfiles`が生成して導入する。生成物の構成は[architecture.md](../development/architecture.md)「agent-toolkitの3形式配布」を参照。
 
-`update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
+`update-dotfiles`は未導入、または有効なpluginのversion不一致の場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
+明示的に無効なpluginは無効状態と現在の版を保持し、再び有効にした後の通常更新で新版へそろえる。
 更新前にagent-toolkitの全通常versionディレクトリを複製する。
 `codex plugin add`が削除した旧versionは、導入後の状態確認とdaemon処理を含む更新関数内のCodex CLI呼出が全て終了した後に同じ絶対パスへ戻すため、保存済みセッションを終了せずに更新できる。
 別のCodex App Serverがlocal marketplaceを自動更新して旧versionを削除した場合、dotfiles向けhookの起動コマンドはClaude Code側に残る同versionを使う。
 削除された旧versionのCodex plugin cache rootと同じ絶対パスへ復旧してからhookを起動する。
 同versionが残っていない場合は、Claude Codeの現行導入版からhookを起動する。
 CLIが導入した目標versionは復元対象から外し、導入後の内容を維持する。
-更新または旧versionの復旧に失敗した場合、`update-dotfiles`は両者を区別して診断する。
+`update-dotfiles`は更新の失敗と旧versionの復旧失敗を区別して診断する。
 Linuxでは、過去の設定で診断ログDBを共有メモリー（`/dev/shm/codex-<UID>-logs_2.sqlite`と、その`-wal`・`-shm`ファイル）へ移していた場合、`update-dotfiles`が通常の保存先`~/.codex/`へ戻す。`<UID>`はOSのユーザーIDを指す。
 同じユーザーのCodexが稼働中なら、対象ファイルを案内して処置を延期する。Codexの終了後の`update-dotfiles`（自動更新タイマーを持つホストではタイマーの再試行）で、共有メモリーのファイルを通常の保存先へコピーし、旧ファイルを指すシンボリックリンクを通常ファイルへ置き換える。タイマーを持たないホストでは、Codexを終了して`update-dotfiles`を再実行する。
 復元後の次の`update-dotfiles`実行では両方の内容が一致することを確認して共有メモリーの旧コピーを削除する。旧ファイルが既に失われたシンボリックリンクは、復元処理の際に削除する。内容の不一致などで延期した場合は、表示された診断に従って復旧する。
@@ -117,7 +118,7 @@ codex app-server daemon start
 
 ### Codexの利用中に更新する場合
 
-Codexのセッションまたは`agents_server`の委譲が残る場合も、agent-toolkitを目標versionへ更新する。
+Codexのセッションまたは`agents_server`の委譲が残る場合も、有効なagent-toolkitを目標versionへ更新する。
 旧versionの複製は元の実体を残したまま行い、`plugin add`の完了後に削除されたversionだけを復旧する。
 更新中に使っていたセッションは旧versionを参照し続け、新しく始めたセッションは目標versionを使う。
 保存済みセッションの旧pathが別processに削除された場合も、次のhookイベントでClaude Code側の同版cacheから復旧する。
@@ -208,7 +209,7 @@ atk config set codex_model_providers 'openai,custom'
 atk config get codex_model_providers
 ```
 
-ChatGPTログインの`openai`を先に使い、確定した利用上限で`custom`へ同じ会話を移す。
+ChatGPTログインの`openai`を先に使い、待機対象外の利用上限で状態の互換性を確認して`custom`へ同じ会話を移す。
 APIだけを使う場合は`atk config set codex_model_providers 'custom'`とする。
 APIを優先して別のAPIへ代替する場合は`'custom,another'`とし、各IDをCodexへ定義する。
 標準OpenAI providerをAPIキー認証で使う場合はCodexの既存の認証選択に従う。
@@ -221,17 +222,24 @@ API会話からChatGPTへは戻さない。API主接続の認証・モデル不�
 
 適用先は`agents_server`がCodexへ解決した全`mode`とその会話の継続である。
 直接Codex、`atk run-skill`、`atk wi process-loop`の起動設定は変えない。
-現在アカウントの確定した利用枠不使用、または終端した利用上限失敗だけでサブスクからAPIへ移す。
+現在アカウントの確定した利用枠不使用、または終端した利用上限失敗を、`codex_usage_limit_wait`の方針と照合してサブスクからAPIへ移す。
+`five-hour`（既定）は5時間枠の解除を待ち、`always`は週次枠なども待ち、`never`は解除を待たない。
 回復後は新規sessionだけが指定列の先頭へ戻り、既存API会話は列変更・設定解除・保持期限・stop・
 サーバー再起動を跨ぐ再開でも選択済みAPIを使う。API料金は接続先の課金規則に従い、継続にも発生する。
 切替の診断は人向けの`agents-server.log`へ記録し、委譲元の応答や継続指示へ加えない。
+接続切替と旧記録の再開では、保存した会話状態の生成元と再開先の互換性を次のturnより前に確認する。
+圧縮・暗号化された状態の生成元が異なる場合や、生成元・記録を確認できない場合は、元の記録と進捗を保持して`threadStateIncompatible`で終端する。
+返された案内に従い、引き継ぎ記録から後任を起動する。
+互換性を確認済みの同じ接続先への通常再開は継続できる。
+旧移行記録では選択先と実際の状態生成元を区別できない場合があり、その会話は引き継ぎで再開する。
 
 ## 利用上限後の再開
 
-`atk run-skill`のCodex実行は、指定スキルの実行中に利用上限で失敗すると解除予定まで待ち、`codex exec resume`で同じ会話を再開する。
+`atk run-skill`のCodex実行は、指定スキルの実行中に待機対象の利用上限で失敗すると解除予定まで待ち、`codex exec resume`で同じ会話を再開する。
+待機対象は`codex_usage_limit_wait`で選び、5時間枠と週次枠は通知の`window_minutes`から判定する。
 待機時間は`--timeout`へ含めない。
 `atk run-skill`と`atk wi process-loop`の候補判定では次の候補を先に試す。
-全候補が失敗し、そのうちに利用上限の失敗がある場合は、最も早い解除予定まで待って先頭から判定し直す。
+全候補が失敗し、そのうちに待機対象の利用上限の失敗がある場合は、最も早い解除予定まで待って先頭から判定し直す。
 解除予定が不明なら300秒後に再確認する。
 
 process-loopが起動したCodexの子は、上限で停止したことを親が検出して終了させ、次の反復の候補判定を経て作業を続ける。
@@ -269,7 +277,11 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 信頼後の`PreToolUse`は`apply_patch`が`uv.lock`などのlockfileを直接編集する場合、
 `uv add`などのパッケージ管理ツールでの更新を促す通知を返す。
 動作を確かめる場合は、`uv.lock`へ1行を加える変更を`apply_patch`で適用し、通知の有無を確認する。
-Stopは`agent-toolkit:completion-report`の呼び忘れだけを判定する。成果作業（WI処理・AWI登録の開始、リポジトリの編集、計画・WIの保存、commit・push）を行ったのに、同じ作業で同スキルの`SKILL.md`を読んだ結果が無い場合に、`decision: "block"`と`reason`で起動と残りの工程への続行を案内する。読取パスの文字列や失敗した読取は起動とみなさない。報告本文は判定せず、起動後の工程の完遂と報告の内容は同スキルの規範に従う。対処と中止・待機の判断の記録は`agent-toolkit:completion-report`に従う。Stopは自動振り返りを起動しない。手動で振り返る場合は`$agent-toolkit:session-review`を実行する。通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
+CodexのStopは説明言語を判定する。
+completion-reportの起動忘れ通知と報告本文の判定は対象外である。
+工程の完遂と報告は`agent-toolkit:completion-report`の規範に従ってエージェントが確かめる。
+手動で振り返る場合は`$agent-toolkit:session-review`を実行する。
+通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
 
 ## Codex CLI本体
 

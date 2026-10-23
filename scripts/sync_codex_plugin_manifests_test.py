@@ -1,7 +1,7 @@
-"""`scripts/sync_codex_plugin_manifests.py`（生成器の入口）のテスト。
+"""`scripts/sync_codex_plugin_manifests.py`（生成器の起動スクリプト）のテスト。
 
 生成と検査の処理は`pytools/_internal/codex_plugin_manifests_test.py`が確かめる。
-本ファイルは入口が持つ引数の解釈と終了コードの契約だけを確かめる。
+本ファイルは起動スクリプトが行う引数の解釈と終了コードの契約だけを確かめる。
 """
 
 from pathlib import Path

@@ -10,9 +10,10 @@ import sys
 import pytest
 
 from agent_toolkit._atk import run_script
-from agent_toolkit._common import next_action
+from agent_toolkit._common import next_action, plugin_environment
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.isolation import restore_host_environment
+from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 
 def test_public_multi_turn_trials_prepares_and_grades_saved_artifacts(
@@ -324,6 +325,8 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
     environment = dict(os.environ)
     environment.pop("PYTHONPATH", None)
     environment.pop("VIRTUAL_ENV", None)
+    environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path / "runtime")
+    prepare_plugin_environment(run_script.PLUGIN_ROOT, environment)
 
     result = subprocess.run(
         [
@@ -365,6 +368,8 @@ def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib
     environment = dict(os.environ)
     environment.pop("PYTHONPATH", None)
     environment.pop("VIRTUAL_ENV", None)
+    environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path / "runtime")
+    prepare_plugin_environment(run_script.PLUGIN_ROOT, environment)
     plan = tmp_path / "plan.md"
     plan.write_text("# 計画\n", encoding="utf-8")
     saved = plan.read_bytes()

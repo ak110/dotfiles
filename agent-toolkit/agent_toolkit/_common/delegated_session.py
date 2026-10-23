@@ -8,6 +8,8 @@ Function hooks moduleはPythonの関数を呼べないため、`agent-toolkit/ho
 起動区分の`LAUNCH_KIND_ENV`はPythonのhookだけが読み、Function hooks moduleには消費者が無いため`register.ts`へ置かない。
 """
 
+import pathlib
+import re
 from collections.abc import Mapping
 
 DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
@@ -44,3 +46,28 @@ def is_lightweight_delegated(environ: Mapping[str, str]) -> bool:
 def owner_session_id(environ: Mapping[str, str]) -> str | None:
     """委譲元（所有する）セッションの識別子を返す。設定されていないか空なら`None`を返す。"""
     return environ.get(OWNER_SESSION_ENV) or None
+
+
+HANDOFF_PATH_ENV = "AGENT_TOOLKIT_HANDOFF_PATH"
+"""委譲先自身が更新する引き継ぎ記録の絶対パス。"""
+
+
+def handoff_path(environ: Mapping[str, str]) -> str | None:
+    """指定された絶対記録パスだけを返す。"""
+    value = environ.get(HANDOFF_PATH_ENV, "")
+    return value if value and pathlib.Path(value).is_absolute() else None
+
+
+def prompt_handoff_path(prompt: str) -> str | None:
+    """起動本文の記録先行から、新規・継続の標示を外す。"""
+    match = re.search(r"^引き継ぎ記録先[:：]\s*(.+)$", prompt, re.MULTILINE)
+    if match is None:
+        return None
+    value = re.sub(r"[（(](?:新規|継続)[）)]\s*$", "", match[1]).strip()
+    return handoff_path({HANDOFF_PATH_ENV: value})
+
+
+def handoff_environment(prompt: str) -> dict[str, str]:
+    """起動本文が記録先を持つ場合だけ、子へ渡す変数を返す。"""
+    path = prompt_handoff_path(prompt)
+    return {HANDOFF_PATH_ENV: path} if path else {}

@@ -7,7 +7,12 @@ import logging
 import pathlib
 from typing import Any
 
-from agent_toolkit._agents_server.result_projection import public_result, with_result_next_action
+from agent_toolkit._agents_server import handoff_next_action
+from agent_toolkit._agents_server.result_projection import (
+    append_result_next_action,
+    public_result,
+    with_result_next_action,
+)
 from agent_toolkit._agents_server.shared_layout import results_directory, valid_session_id
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES
 from agent_toolkit._common.atomic_file import atomic_write
@@ -90,7 +95,11 @@ def take_result(
             label = session.get("label") if isinstance(session, dict) else None
             if isinstance(label, str) and label:
                 payload["label"] = label
-            return with_result_next_action(public_result(payload), label), None
+            result = with_result_next_action(public_result(payload), label)
+            next_action = handoff_next_action.result_next_action(result)
+            if next_action is not None:
+                result = append_result_next_action(result, next_action)
+            return result, None
         finally:
             release_lock(lock_file)
 

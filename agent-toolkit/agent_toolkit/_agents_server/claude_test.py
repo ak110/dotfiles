@@ -32,7 +32,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import claude_connection as claude_settings
-from agent_toolkit._common import plugin_environment, session_registry, state_paths
+from agent_toolkit._common import plugin_environment, process_tree, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
     BlockingContinuationClaudeClient,
@@ -569,6 +569,7 @@ async def test_auto_resume_deadline_is_independent_from_result_retention(monkeyp
         {"status": "completed", "agent_message": "完了", "error": None},
     )
 
+    assert deadline is not None
     assert before + 5.0 <= deadline <= asyncio.get_running_loop().time() + 5.0
     assert session.auto_resume_deadline == deadline
     assert session.awaiting_auto_resume is True
@@ -673,20 +674,17 @@ async def test_claude_timed_out_queued_prompt_is_not_delivered(tmp_path: pathlib
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_owner_session_environment")
-async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Claude Agent SDKへClaude Code presetと設定読込元、解決した所有セッションを渡す。"""
+async def test_claude_options_use_owned_base_instructions(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Claude Agent SDKへ自前の基本指示と設定読込元、解決した所有セッションを渡す。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "owner-session")
     monkeypatch.setenv("PATH", os.defpath)
 
     options = claude._build_options(str(tmp_path), "model", "high", root_session_id="owner-session")
-    assert options.system_prompt == {
-        "type": "preset",
-        "preset": "claude_code",
-        "append": (
-            f"{launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
-            f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
-        ),
-    }
+    assert options.system_prompt == (
+        f"{launch_prompts.SUBAGENT_BASE_INSTRUCTIONS}\n{launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT}\n"
+        f"{launch_prompts.AUTO_RESUME_NOTICE}\n"
+        f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
+    )
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "auto"
     assert options.env == {
@@ -719,7 +717,7 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
 ) -> None:
     """SDKへ届くCLI案内とPATHが同じ配布物を選び、呼び出し元の環境と所有者を保つ。
 
-    SDKの外部モデルは代替し、実ラッパーとscripts/launch.pyを経たuvで引数・環境と終了コードを観測する。
+    SDKの外部モデルは代替し、実ラッパーとscripts/launch.pyを経た準備済みPythonで引数・環境と終了コードを観測する。
     依存導入とWindowsラッパーの実行は、この試験の観測範囲に含めない。
     """
     bash = shutil.which("bash", path=host_environ()["PATH"])
@@ -746,6 +744,13 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
     monkeypatch.setenv("PATH", original_path)
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(data))
     monkeypatch.setattr(claude, "_parent_settings", lambda: None)
+    root = claude.plugin_roots.SERVER_PLUGIN_ROOT
+    prepared = plugin_environment.project_environment(root, os.environ)
+    prepared_python = plugin_environment.python_path(prepared)
+    prepared_python.parent.mkdir(parents=True)
+    prepared_python.write_text(uv.read_text(encoding="utf-8"), encoding="utf-8")
+    prepared_python.chmod(0o755)
+    (prepared / ".agent-toolkit-dependencies-ready").write_text("ready\n", encoding="utf-8")
     options_seen: list[Any] = []
 
     def factory(options: Any) -> FakeClaudeClient:
@@ -756,7 +761,6 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
         await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
         await manager.resume("cli-session", state.ResumePrompt("再開"), str(tmp_path), launch_kind=launch_kind)
     assert len(options_seen) == 2
-    root = claude.plugin_roots.SERVER_PLUGIN_ROOT
     for options in options_seen:
         assert options.resume in {None, "cli-session"}
         assert options.plugins == [{"type": "local", "path": str(root)}]
@@ -782,21 +786,14 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
         )
         assert result.returncode == 7, result.stderr
         observed = json.loads(result.stdout)
-        assert observed["args"] == [
-            "run",
-            "--project",
-            str(root),
-            "--locked",
-            "--no-default-groups",
-            str(root / "agent_toolkit" / "atk.py"),
-            "--help",
-        ]
+        assert observed["args"] == [str(root / "agent_toolkit" / "atk.py"), "--help"]
         assert observed["data"] == str(data)
         selected_environment = pathlib.Path(observed["environment"])
         assert selected_environment.parent == data / "environments"
         assert not selected_environment.is_relative_to(root)
         assert observed["runtime"] == str(selected_environment)
-        assert not selected_environment.exists()
+        assert selected_environment == prepared
+        assert prepared_python.is_file()
         assert observed["path"] == environment["PATH"]
         assert result.stderr == "uv-observed\n"
     assert os.environ["PATH"] == original_path
@@ -824,11 +821,10 @@ def test_explore_options_keep_search_tools_and_mcp_on_resume(tmp_path: pathlib.P
 def test_explore_mcp_uses_plugin_definition_on_start_and_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
     """pyfltrの既存起動定義を使い、個別MCPツールの用途は探索プロンプトへ委ねる。"""
     options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore")
-    assert options.mcp_servers == {
-        "pyfltr": json.loads((claude.plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"][
-            "pyfltr"
-        ]
-    }
+    root = claude.plugin_roots.SERVER_PLUGIN_ROOT
+    definition = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
+    definition["args"] = [arg.replace("${CLAUDE_PLUGIN_ROOT}", str(root)) for arg in definition["args"]]
+    assert options.mcp_servers == {"pyfltr": definition}
     assert "mcp__pyfltr__*" in options.allowed_tools
     assert options.disallowed_tools == ["Skill"]
 
@@ -930,19 +926,27 @@ class _TransportClient(FakeClaudeClient):
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-async def test_claude_start_records_owner_and_cli_processes(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+async def test_claude_start_records_owner_and_cli_processes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
     """登録簿の記録は、所有プロセスとSDKの転送が起動したClaude CLIの識別を持つ。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     owner = session_registry.owner_process()
     assert owner is not None
-    client = _TransportClient([[SystemMessage("claude-recorded"), ResultMessage("完了")]], pid=owner.pid)
     options = SimpleNamespace(system_prompt={"type": "preset", "preset": "claude_code"})
-    async with claude.ClaudeServerManager(client_factory=lambda _options: client, publish_registry=True) as manager:
-        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: options)
-        session = await manager.start("調査", str(tmp_path))
-        record = session_registry.registry_directory() / f"{session.session_id}.json"
-        processes = json.loads(record.read_text(encoding="utf-8"))["processes"]
-    assert processes == [{"pid": owner.pid, "create_time": owner.create_time}] * 2
+    with process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(60)"], env=host_environ()) as process:
+        child = session_registry.ProcessIdentity.of(process.pid)
+        assert child is not None
+        client = _TransportClient([[SystemMessage("claude-recorded"), ResultMessage("完了")]], pid=process.pid)
+        async with claude.ClaudeServerManager(client_factory=lambda _options: client, publish_registry=True) as manager:
+            monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: options)
+            session = await manager.start("調査", str(tmp_path))
+            record = session_registry.registry_directory() / f"{session.session_id}.json"
+            processes = json.loads(record.read_text(encoding="utf-8"))["processes"]
+        assert processes == [
+            {"pid": owner.pid, "create_time": owner.create_time},
+            {"pid": child.pid, "create_time": child.create_time},
+        ]
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1036,7 +1040,7 @@ async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
             response = await manager.kill(start_response["session_id"], timeout=1)
             assert response["status"] == "interrupted"
             assert response["kill_requested"] is True
-            assert response["agent_message"] == "中断結果"
+            assert client.disconnected
             assert client.interrupts == 1
         finally:
             await manager.close()
@@ -1402,7 +1406,7 @@ async def test_send_message_reactivated_child_holds_claude_result_until_terminal
         install_backend(manager, "claude", backend)
         session_registry.publish("child", terminal=False, cwd=str(tmp_path))
         try:
-            started = await manager.start("high_tier", "親の作業", str(tmp_path))
+            started = await manager.start("execute", "親の作業", str(tmp_path))
             session = manager.sessions[started["session_id"]]
             session.terminal_child_session_ids.add("child")
             session.auto_resume_consumed = True

@@ -145,7 +145,7 @@ def _read_file(source_or_rel_b64: str, rel_b64: str | None = None) -> None:
 
 
 def _emit(payload: dict[str, typing.Any]) -> None:
-    # 1行JSONとして出力し、SSH切断時のSIGPIPEを即時に拾えるよう毎回フラッシュする。
+    # 1行JSONとして出力し、SSH切断時のSIGPIPEを即時に検出できるよう毎回フラッシュする。
     line = json.dumps(payload, ensure_ascii=False)
     with _STDOUT_LOCK:
         sys.stdout.write(line + "\n")

@@ -15,6 +15,7 @@ from typing import Any, NamedTuple
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._atk import session_record_format as _session_record_format
+from agent_toolkit._common import agy_records as _agy_records
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import runtime_inserted as _runtime_inserted
 from agent_toolkit._common import transcript as _transcript
@@ -303,7 +304,7 @@ def _question_answers_event(pairs: list[_AnsweredQuestion]) -> dict[str, Any] | 
     """質問側の文面とユーザーが入力した値を由来別に分けたuserイベントへ変換する。
 
     選択肢のlabelと一致しない回答と、自由記述を伴う回答は従来の判断を是正した介入であるため、
-    `answer_intervention`を付けて問題候補の母集団へ残す。Claude CodeとCodexの両方の回答がこの関数を通るため、
+    `answer_intervention`を付けて問題候補の母集団へ残す。Claude CodeとCodexの両方の回答をこの関数が処理するため、
     介入の判定をここへ置き、どちらの回答でも是正を含む回答を同じ条件で候補に残す。
     """
     user_text: list[str] = []
@@ -357,7 +358,7 @@ def _claude_question_options(content: Any) -> dict[str, dict[str, list[_OfferedO
     for block in content:
         if not isinstance(block, dict) or block.get("type") != "tool_use":
             continue
-        if block.get("name") != "AskUserQuestion" or not isinstance(block.get("id"), str):
+        if block.get("name") not in {"AskUserQuestion", "ask_question"} or not isinstance(block.get("id"), str):
             continue
         options[block["id"]] = _claude_offered_options(block.get("input"))
     return options
@@ -387,6 +388,7 @@ def _offered_options(choices: Any) -> list[_OfferedOption]:
     """
     if not isinstance(choices, list):
         return []
+    choices = [{"label": choice} if isinstance(choice, str) else choice for choice in choices]
     return [
         (choice["label"], choice["description"] if isinstance(choice.get("description"), str) else "")
         for choice in choices
@@ -874,15 +876,16 @@ def _codex_entry_events(
 
 
 def _extract_agy(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
-    """Antigravityの委譲先ログを共通イベントへ変換する。
+    """対話トランスクリプトと委譲先ログを、同じ会話・失敗イベントへ変換する。
 
-    ログは時刻を持たないため、各イベントの`timestamp`はnullになる。
-    委譲先がさらに起動した孫（`invoke_subagent`・`call_mcp_tool`など）は、ユーザーが網羅の対象から外したため
-    失敗した場合を除いて事象へ写さず、委譲先の発見元にもしない。
+    時刻・使用量・ツール対応は共通の解析写しを使い、公開ストリーム固有のエラーも残す。
     """
-    events: list[dict[str, Any]] = []
+    events = _extract_claude(_agy_records.normalize_entries(entries), lines)
     for line, entry in zip(lines, entries, strict=True):
-        for event in _agy_entry_events(entry):
+        original = entry.get("_agy_original", entry)
+        for event in _agy_entry_events(original):
+            if event.get("kind") == "assistant":
+                continue
             event.setdefault("line", line)
             _set_entry_timestamp(event, entry)
             events.append(event)
@@ -946,6 +949,9 @@ def _opencode_records(records: list[_Record]) -> list[_Record]:
     """OpenCodeの共通表示イベントを既存の発話・ツール・使用量の抽出契約へ接続する。"""
     converted: list[_Record] = []
     for record in records:
+        if record.entry.get("_opencode_sqlite") is True:
+            converted.append(record)
+            continue
         for index, event in enumerate(_session_record_format.opencode_events([record.entry])):
             entry: dict[str, Any] = {"timestamp": event.timestamp}
             content: list[dict[str, Any]] = []
@@ -1068,6 +1074,7 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
     """
     if not entries:
         return []
+    entries = _agy_records.normalize_entries(entries)
     runtime = _detect_runtime(entries)
     if runtime is None:
         return _fallback()
@@ -1088,6 +1095,11 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
 def _turn_finished(entry: dict[str, Any], runtime: _Runtime) -> bool:
     """既存のホストの終端記録を使い、後続turnの作業を先行返却の分類から切り離す。"""
     if runtime == "opencode":
+        if entry.get("_opencode_sqlite") is True:
+            message = entry.get("message")
+            return (
+                entry.get("_opencode_error") is True or isinstance(message, dict) and message.get("stop_reason") == "end_turn"
+            )
         part = entry.get("part")
         return (
             entry.get("type") == "error"
@@ -1101,7 +1113,7 @@ def _turn_finished(entry: dict[str, Any], runtime: _Runtime) -> bool:
     if runtime == "claude":
         message = entry.get("message")
         return entry.get("type") == "assistant" and isinstance(message, dict) and message.get("stop_reason") == "end_turn"
-    return entry.get("event") == "result"
+    return entry.get("_agy_original", entry).get("event") == "result"
 
 
 def _extract_for_runtime(

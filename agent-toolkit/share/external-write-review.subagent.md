@@ -1,7 +1,6 @@
 ---
 mode: explore
-model_type: low_tier
-usage: chores
+model_type: review_fast
 required_inputs:
 - 文面ファイル
 - 投稿先と目的
@@ -11,6 +10,8 @@ writes_worktree: false
 ---
 
 # 投稿前レビュー担当タスク
+
+<!-- parent-read-source: agent-toolkit:/skills/external-write-review/SKILL.md#投稿前レビュー担当の起動と受領 -->
 
 第三者が読む外部サービスへ投稿する前の文面を、起草者と独立した立場で読み、投稿前に直すべき箇所を返す。
 文面の修正、採否の確定および投稿は担当せず、いずれも委譲元が担う。

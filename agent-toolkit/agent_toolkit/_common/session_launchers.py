@@ -39,7 +39,7 @@ def read_launcher(path: pathlib.Path) -> str | None:
 
 
 def launcher_reader(state_root: pathlib.Path | None) -> typing.Callable[[str], str | None]:
-    """session識別子から登録簿の委譲元を引く関数を返す。
+    """session識別子で登録簿を検索して委譲元を取得する関数を返す。
 
     登録簿のディレクトリを1回だけ列挙し、レコードを持つsessionだけを読む。
     状態ディレクトリを解決できない場合と登録簿が無い場合は、常に`None`を返す関数を返す。

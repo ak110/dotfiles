@@ -102,7 +102,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         self._auto_resume_task = asyncio.create_task(self._monitor_auto_resume())
 
     async def _monitor_auto_resume(self) -> None:
-        """公開待機操作に依存せず、孫session終端後の自動再開を進める。"""
+        """公開待機操作が呼ばれるかによらず、孫session終端後の自動再開を進める。"""
         while True:
             await session_release.process_requests(
                 self.sessions,
@@ -119,7 +119,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
         model_type: str,
         *,
         launch_kind: LaunchKind,
-        usage: str | None = None,
         excluded_candidates: Mapping[ModelCandidate, str] | None = None,
     ) -> tuple[list[ModelCandidate], dict[ModelCandidate, str]]:
         """起動条件を検証し、除外後の候補列を設定順で返す。
@@ -129,7 +128,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         """
         await self._drain_candidate_records()
         try:
-            candidates = await run_file_operation(_atk_config.parse_unresolved_model_candidates, model_type, usage=usage)
+            candidates = await run_file_operation(_atk_config.parse_unresolved_model_candidates, model_type)
         except ValueError as error:
             raise ActionableError(str(error), next_action=MODEL_TYPE_NEXT_ACTION) from error
         if codex_models.needs_catalog(candidates):
@@ -171,13 +170,11 @@ class AgentsServerManager(manager_wait.ManagerWait):
         *,
         launch_kind: LaunchKind = "delegate",
         label: str | None = None,
-        usage: str | None = None,
         excluded_candidates: Mapping[ModelCandidate, str] | None = None,
     ) -> dict[str, Any]:
         """モデル設定の候補を先頭から試し、起動できたturnを返す。
 
-        段位名の`model_type`は`usage`の用途のengine順に段位モデル設定を並べた候補を使う。
-        `usage`の省略時は段位ごとの用途（上位はbase、中位はreview、軽量はchores）を使う。
+        `model_type`は工程別設定または直接指定された候補列を表す。
 
         起動直後にengineの可用性を理由として終端した候補とagyの失敗候補を
         除外集合へ加えて次候補へ進む。Claudeの依存読込失敗も型付きの候補不成立として扱う。
@@ -192,7 +189,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
         candidates, excluded = await self._resolve_start_candidates(
             model_type,
             launch_kind=launch_kind,
-            usage=usage,
             excluded_candidates=excluded_candidates,
         )
         unavailable_response: dict[str, Any] | None = None
@@ -252,7 +248,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 _LOG.warning("cli_start_failed engine=%s model_type=%s model=%s reason=%s", engine, model_type, model, reason)
                 continue
             session.engine = engine
-            session.usage = usage
             # テストや独自のMCPクライアントから起動して親のセッション記録に起動結果が残らない委譲先も、
             # `atk serve`の一覧が親の下へ置けるよう、作成時点の委譲元を登録簿へ記録する。
             if self._status_writer is not None:
@@ -362,7 +357,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
             predecessor.cwd,
             launch_kind=predecessor.launch_kind,
             label=predecessor.label,
-            usage=predecessor.usage,
             excluded_candidates=excluded,
         )
         response["cwd"] = predecessor.cwd
@@ -538,7 +532,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
             prompt,
             cwd,
             launch_kind="explore",
-            usage=tool_names.start_mode_usage("explore", resolved_type),
             label=resolve_display_label(label, "explore"),
         )
 
@@ -559,7 +552,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
             shell_prompt(command, summary_policy),
             cwd,
             launch_kind="shell",
-            usage=tool_names.start_mode_usage("shell", resolved_type),
             label=resolve_display_label(label, shell_default_label(command)),
         )
 
@@ -578,7 +570,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
             prompt,
             cwd,
             launch_kind="write",
-            usage=tool_names.start_mode_usage("write", resolved_type),
             label=resolve_display_label(label, "write"),
         )
 
@@ -620,6 +611,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
             session.touch()
             await session.drain_registration()
         if self._status_writer is not None:
+            if session is not None:
+                # 開始時と同じbest-effort公開で、配送結果と同じsessionの待機登録を保つ。
+                await self._save_started_session(session)
             response = {**response, "root_session_id": self._status_writer.root_session_id}
         return response
 

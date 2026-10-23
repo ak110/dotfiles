@@ -2,48 +2,58 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
-from agent_toolkit._agents_server import context_usage
+from agent_toolkit._agents_server import context_usage, resume_waits
+from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server.cli_turn import CliTurnManager, decode_event, finalize_turn
-from agent_toolkit._agents_server.launch_prompts import LAUNCH_SYSTEM_PROMPTS
+from agent_toolkit._agents_server.launch_prompts import (
+    AUTO_RESUME_NOTICE,
+    LAUNCH_SYSTEM_PROMPTS,
+    LIGHTWEIGHT_LAUNCH_KINDS,
+    cli_runtime_instructions,
+    python_runtime_instructions,
+)
 from agent_toolkit._agents_server.session_errors import SessionOwnerGoneError
 from agent_toolkit._agents_server.state import LaunchKind, SessionState
+from agent_toolkit._common import antigravity_cli, host_homes
+from agent_toolkit._common.antigravity_cli import build_command
+from agent_toolkit._common.message_format import auto_message
 
-_COMMAND = "agy"
-_PRINT_TIMEOUT_SECONDS = 3600
 _MODEL_OUTPUT_STEP_TYPES = frozenset({"agent_response", "tool"})
 
 
 def _system_prompt(launch_kind: LaunchKind) -> str:
-    """起動条件の種別に応じたシステム指示を返す。
-
-    Antigravity CLIの非対話モードはシステム指示の専用オプションを持たないため、
-    システム指示は本文の先頭へ置いて渡す。1つのメッセージへ配送本文と同居するため、
-    委譲先が両者を区別できるよう、システム指示側は`launch_prompts.py`が付ける境界を保ったまま渡す。
-    同じsessionの自動再開はこのbackendで確かめていないため、自動再開の通知（`AUTO_RESUME_NOTICE`）は加えない。
-    """
-    return LAUNCH_SYSTEM_PROMPTS[launch_kind]
-
-
-def build_command(
-    prompt: str,
-    model: str | None,
-    effort: str | None,
-    conversation_id: str | None,
-) -> list[str]:
-    """`agy`の非対話実行のコマンド列を組む。"""
-    command = [_COMMAND, "-p", prompt, "--output-format", "stream-json", "--print-timeout", f"{_PRINT_TIMEOUT_SECONDS}s"]
-    if model is not None:
-        command += ["--model", model]
-    if effort is not None:
-        command += ["--effort", effort]
-    if conversation_id is not None:
-        command += ["--conversation", conversation_id]
-    # 非対話モードは実行中に承認を求められないため、ファイルの書き換えを含む作業を委譲できるようツール実行を事前承認する。
-    command.append("--dangerously-skip-permissions")
-    return command
+    """役割、自動再開、保持配布物と委譲元のユーザー規範を本文先頭へ渡す。"""
+    root = plugin_roots.SERVER_PLUGIN_ROOT
+    parts = [
+        LAUNCH_SYSTEM_PROMPTS[launch_kind],
+        AUTO_RESUME_NOTICE,
+        cli_runtime_instructions(root),
+        f"agent-toolkit plugin root: {root}",
+    ]
+    if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
+        parts.append(python_runtime_instructions())
+    # 常時規範はインストールされたプラグインから受け取り、ホスト固有の規範を補う。
+    config = host_homes.claude_config_dir()
+    candidates = [config / "CLAUDE.md", *sorted((config / "rules").rglob("*.md"))]
+    for path in candidates:
+        if not path.is_file() or path.is_relative_to(config / "rules" / "agent-toolkit"):
+            continue
+        try:
+            body = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            logging.getLogger(__name__).warning(
+                "ユーザー規範を読めません: %s: %s\n"
+                "次の操作: 対象ファイルの読取権限とUTF-8を復旧する。復旧後の追送時に規範を再取得する。",
+                path,
+                error,
+            )
+            continue
+        parts.append(auto_message(body, source="agents-server", kind="user-rules", attributes={"path": str(path)}))
+    return "\n\n".join(parts)
 
 
 def _event_text(payload: dict[str, Any]) -> str:
@@ -80,13 +90,30 @@ class AntigravityManager(CliTurnManager):
     build_command = staticmethod(build_command)
     system_prompt = staticmethod(_system_prompt)
 
+    async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
+        """保留した待機結果を引き継ぎ、同じ会話へ継続を配送する。"""
+        held = resume_waits.HeldTurn.capture(session)
+        if held is not None:
+            resume_waits.finalize_pending_result(session, touch=False)
+        else:
+            session.auto_resume_consumed = False
+        try:
+            return await super().send_message(session, prompt)
+        except BaseException:
+            if held is not None:
+                held.restore(session)
+            raise
+
+    async def _attach_session(self, session: SessionState, process: asyncio.subprocess.Process, turn_seq: int) -> None:
+        """CLIの新turn初期化を越えて、自動再開の一度だけという消費状態を保つ。"""
+        consumed = session.auto_resume_consumed
+        await super()._attach_session(session, process, turn_seq)
+        session.auto_resume_consumed = consumed
+
     @staticmethod
     def event_session_id(payload: dict[str, Any]) -> str | None:
         """initイベントが確定した会話識別子を返す。"""
-        if (payload.get("type") or payload.get("event")) != "init":
-            return None
-        value = payload.get("conversation_id") or payload.get("conversationId")
-        return value if isinstance(value, str) and value else None
+        return antigravity_cli.event_session_id(payload)
 
     async def process_event(self, session: SessionState, payload: dict[str, Any]) -> bool:
         """進捗・使用量・resultを共有状態へ反映する。"""
@@ -112,6 +139,16 @@ class AntigravityManager(CliTurnManager):
                 await self._notify_waiters()
         elif kind == "result":
             finalize_turn(session, result_values(session, body))
+            if resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
+                resume_waits.begin_auto_resume_wait(
+                    session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
+                )
+                session.status = "running"
+                session.touch()
+            elif session.live_child_session_ids:
+                unobserved = set(session.live_child_session_ids)
+                session.live_child_session_ids.clear()
+                resume_waits.record_unobserved_sessions(session, unobserved)
             await self._notify_waiters()
             return True
         return False

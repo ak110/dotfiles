@@ -33,12 +33,12 @@ def _manager(launcher: str | None = None) -> SimpleNamespace:
 def _start_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode: Literal["task", "delegate"]) -> dict[str, Any]:
     """通常起動の公開入力を返す。taskは記録先を宣言しない役割文書を使う。"""
     if mode == "delegate":
-        return {"prompt": "Aを実装・検収する", "model_type": "high_tier"}
+        return {"prompt": "Aを実装・検収する", "model_type": "execute"}
     document = tmp_path / "task.subagent.md"
     document.write_text("# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
-    monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
+    monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
     return {"subagent_md_path": str(document), "extra_params": {"対象": "A全体"}}
 
 
@@ -76,12 +76,12 @@ async def test_public_start_delivers_whole_contract_reference(
         )
         monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
         monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
-        monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
+        monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
         inputs = {"subagent_md_path": str(document), "extra_params": {"対象": "A全体"}}
         if handoff_input in {"新規", "継続"}:
             inputs["extra_params"]["引き継ぎ記録先"] = f"{own}（{handoff_input}）"
     else:
-        inputs = {"prompt": "Aを実装・検収する", "model_type": "high_tier"}
+        inputs = {"prompt": "Aを実装・検収する", "model_type": "execute"}
     before = set(tmp_path.iterdir())
     with pytest.raises(ActionableError) as caught:
         await mcp_tools.start(str(tmp_path), mode=mode, **inputs)
@@ -97,6 +97,9 @@ async def test_public_start_delivers_whole_contract_reference(
     response = await mcp_tools.start(str(tmp_path), mode=mode, **inputs)
     prompt = manager.start.await_args.args[1]
     assert f"全体作業契約: {whole}" in prompt
+    assert "目的: A全体\n保持対象: Aの利点・X・Y・ZZ\n" in prompt
+    assert '"selectors": ["input:作業契約"]' in prompt
+    assert 'kind="startup-document"' in prompt
     explicit = handoff_input in {"新規", "継続"}
     designation = handoff_input if explicit else "新規"
     assert prompt.count(f"引き継ぎ記録先: {own}（{designation}）") == 1
@@ -185,6 +188,28 @@ async def test_explicit_whole_contract_path_is_delivered(
     assert str(other / "work-contract.md") not in prompt
     assert prompt.count(f"引き継ぎ記録先: {own}（新規）") == 1
     assert pathlib.Path(response["handoff_record_path"]) == own != explicit
+
+
+@pytest.mark.parametrize("mode", ["task", "delegate"])
+@pytest.mark.asyncio
+async def test_first_public_start_accepts_documented_whole_contract_path(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: Literal["task", "delegate"],
+) -> None:
+    """公開例どおりの明示入力は自動解決が無い初回起動でも担当へ配送する。"""
+    whole = tmp_path / "work-contract.md"
+    whole.write_text("目的: 初回起動の全体要求\n", encoding="utf-8")
+    monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", (None,))
+    _session_areas(monkeypatch, {})
+    manager = _manager()
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+
+    await mcp_tools.start(
+        str(tmp_path), mode=mode, whole_contract_path=str(whole), **_start_inputs(tmp_path, monkeypatch, mode)
+    )
+
+    assert f"全体作業契約: {whole}" in manager.start.await_args.args[1]
 
 
 @pytest.mark.parametrize("mode", ["task", "delegate"])

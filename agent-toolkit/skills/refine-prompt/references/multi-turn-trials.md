@@ -5,6 +5,15 @@
 最初に固定課題と開示条件を選び、公開素材を準備する。
 批判的通読、単ターンのシナリオ評価、読み取り専用の文書の判定試行も目的に合わせて選べる。
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+
 ## 素材と準備
 
 `atk run-script multi-turn-trials -- --list`で課題名と開示条件を取得する。

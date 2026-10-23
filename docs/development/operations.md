@@ -93,7 +93,7 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
 - 質問（AskUserQuestion）は`PreToolUse`のツール名matcherで表示と同時に確定的に鳴らす。
   許可待ち等は`Notification`の入力待ち系4種別（`permission_prompt`・`elicitation_dialog`・
   `elicitation_url_dialog`・`agent_needs_input`）で鳴らす（許可待ちは約6秒後に発火する）。
-  AskUserQuestionがNotificationを発生させるかは公式資料に記載が無いため、Notificationに依存させない
+  AskUserQuestionがNotificationを発生させるかは公式資料に記載が無いため、Notificationを前提としない
 - アイドル（`idle_prompt`）はベルの対象に含めない。応答終了の約60秒後に発火するため、
   背景のサブエージェント・コマンドの完了を待ってターンを終えた場合も入力待ちと同じ扱いで発火し、
   ユーザーの入力を要さない待機でベルが鳴るためである
@@ -238,6 +238,34 @@ Git管理されていないプラグインはそのまま適用する。
 pullの失敗とタイムアウトでは以後の更新を停止し、プラグイン名と出力を更新ログへ残す。
 待ち時間の上限は本体と同じ`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`を使う。
 
+## 導入モードと明示的なprune
+
+`agent_toolkit._common.dotfiles_mode`が初回導入前から使える標準ライブラリだけの設定取得機能を提供する。
+保存先は`atk config`と同じ`config.json`、キーは`dotfiles_mode`、値は`full`と`minimal`、既定値は`full`である。
+`install.sh --mode`・`install.ps1 -Mode`・`update-dotfiles --mode`・`dotfiles-post-apply --mode`は指定値を保存し、`AGENT_TOOLKIT_CONFIG_DOTFILES_MODE`で後続のテンプレートと後処理へ渡す。
+引数を省略した実行は環境変数、保存値、既定値の順に解決する。
+`atk config get dotfiles_mode`と`atk config set dotfiles_mode <mode>`は共有依存環境の準備前にも使える。
+
+配布用mise設定は`config.toml.tmpl`がモードに応じて生成する。
+actionlint・editorconfig-checker・git-cliff・pinact・shellcheck・shfmt・typosはリポジトリの`mise.toml`と`mise.lock`が保持する。
+`make update-mise-locks`は`update_global_mise.py`でfullの設定を一時展開し、配布用lockとテンプレート内のdotnet版を更新する。
+実行ホストの保存済みモードは変更しない。
+
+`post_apply._StepSpec.full_only`の工程はminimalで実行しない。
+対象には各AI CLI・プラグイン・MCP準備・statuslineと、AI設定・リンクの同期が含まれる。
+mise・シェル基本ツール・tmux・pytools・dotfilesプラグインの反映は維持する。
+minimalのmise操作はホームを実行位置とし、作業ツリーの開発ツールとglobal nodeの追加を省く。
+
+`update-dotfiles --prune`は`DOTFILES_PRUNE=1`を後処理へ渡す。
+`dotfiles-post-apply --prune`も同じ削除工程を、他の全工程が完了した後に実行する。
+対象は現行のmise定義とモードから求める。
+fullでは作業ツリーが引き続き参照する開発ツールを保持する。
+minimalでは大型ランタイム・SDK・AI関連と作業ツリーの全ツールを除去し、`mise prune -y`・`mise reshim --force`・`mise cache clear`・`uv cache prune`を実行する。
+rustup・cargo・dotnet-root・`.dotnet`の共有実体も削除する。
+Claude CodeとCodexの設定・会話履歴は削除対象に含めない。
+Codexの管理daemonは公開CLIで停止し、通常セッションや対象実体を使うプロセスがあれば削除を開始せず、理由と再実行方法を返す。
+モード変更だけでは導入済み実体を削除しない。
+
 ## miseの導入と再評価
 
 ### process-loopの非ログイン再評価
@@ -261,6 +289,7 @@ miseはglab CLIの設定ファイルから取得したトークンを公開API�
 ### `chezmoi apply`の後処理の`mise install`
 
 `chezmoi apply`の後処理も`mise install`を実行する。
+fullでは次の作業ツリーを選択し、minimalではホームからグローバル設定の軽量ツールだけを対象とする。
 miseは実行位置から設定ファイルを探索するため、後処理は`CHEZMOI_WORKING_TREE`に`mise.toml`がある場合だけ
 そこを実行位置として呼び出す。実行位置を指定しないとglobal設定だけが対象となり、
 working treeにだけ定義したツールが更新を繰り返しても未導入のまま残る。
@@ -283,7 +312,7 @@ lockedモードの`install`が失敗しても、lockを書き戻すlockedなし�
 `mise.toml`にあってlockに無いツールによる失敗はlockの更新不足であり、`make update-mise-locks`で解消する。
 `update-dotfiles`はgit pull工程の前にルート`mise.lock`の差分を破棄してHEADの内容へ戻し、それ以外の未コミット差分だけを退避して復元する。
 
-`update-dotfiles`の各段は、後続の段の前提になる段と、失敗しても後続の段の前提を壊さない段に分ける。
+`update-dotfiles`の各段は後続の段の前提になる段と、失敗しても後続の段の前提を壊さない段に分ける。
 前提になる段は、ロックの取得、git timeout設定の検証、dotfiles自身のGit更新、`chezmoi init`、`chezmoi apply`である。
 これらが失敗したときは、ソースの状態が不確定なまま配備しないよう、その時点で止める。
 前提を壊さない段は、過去の退避データの整理、`mise.lock`の差分の破棄、プラグインのpull、`chezmoi status`、`chezmoi diff`、
@@ -403,7 +432,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
   - `~/.local/bin`を先頭へ置き、実体を持つコマンドをmiseのshimより優先する
 - Web UIはサービス専用ランチャー`~/.local/bin/atk-serve`を経由して起動する
   - agent-toolkitプラグインはバージョン付きディレクトリへ展開されるためunitへ絶対パスを固定で書き込めない
-  - ランチャーは`~/dotfiles/agent-toolkit`の`agent_toolkit/atk.py`を絶対パスで直接参照し、プラグインキャッシュの配置に依存しない
+  - ランチャーは`~/dotfiles/agent-toolkit`の`agent_toolkit/atk.py`を絶対パスで直接参照し、プラグインキャッシュの配置を前提としない
   - `uv`はサービス実行環境のPATHに無いため、導入時に解決した絶対パスをランチャーへ埋め込む
     - 解決順序は`~/.local/bin/uv`（公式インストーラーの導入先）、次にPATH探索とし、
       いずれも得られない場合は設定を見送る
@@ -438,6 +467,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 - serviceは`libexec/update_dotfiles_if_upstream_changed.py`を実行する。
   このスクリプトは現在branchが`develop`で、upstreamが`origin/develop`であることを検証する。
   そのうえで`git ls-remote`から得た`origin/develop`のcommit IDをローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
+  - 未コミット変更（stage済み・未stage・未追跡）がある周期は、上流照会前と更新起動直前の読取確認で自動更新を次周期へ延期する。未完了・反映済み・延期の状態記録は維持し、cleanになった周期で既存の再試行を続ける。確認後に編集が始まる競合まで原子的に排除する仕組みではない
   - commit IDが一致し未完了状態も延期記録も無ければ、Codexの完成済み旧パッケージを整理し、`update-dotfiles`を起動せず終了する
   - post-applyは稼働中のCodexやHerdrセッションを理由に延期した工程を、同じ状態ディレクトリの延期記録（`<キー>.deferred`）へ残す。記録がある間は上流に変更が無くても`update-dotfiles`を起動して延期した更新を再試行する。post-applyだけが記録を更新し、延期が解消した実行で記録を削除する。serviceはHerdrセッションの外で動くため、Herdrの自己更新もこの再試行で反映される
   - 上流に変更がある場合と前回の自動更新が未完了の場合は、未完了状態を保存してから`bin/update-dotfiles`を絶対パスかつ引数なしで起動する。終了コード0を観測した場合だけ未完了状態を解除し、それ以外では次回のタイマー起動まで保持する
@@ -460,7 +490,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
   - Git更新区間は対象worktreeの標準`index.lock`を排他的に取得し、取得後にも既存Gitプロセスを確認する。
     `mise.lock`の差分破棄、旧退避の整理、退避、pull、復元と競合回復まで同じロックで保護する。
     更新のGit子プロセスには`GIT_INDEX_FILE`で代替indexを渡し、区間終了時に完了済み操作のindexを反映する。
-    SIGTERMと、対応するOSのSIGHUPによる中断も子プロセスの回収とindexの反映を通り、自身のロックと一時indexを回収する。
+    SIGTERMと、対応するOSのSIGHUPによる中断時も、子プロセスを回収してindexを反映し、自身のロックと一時indexを回収する。
     後続のプラグイン更新とchezmoi処理は通常の環境で実行する
   - Git状態変更のコマンド、終了コード、標準出力と標準エラーは永続ログへ保存する。
     復元失敗の理由、退避refと復旧手順、競合回復の結果も保存し、失敗終了時は同期結果の診断末尾にも残す。

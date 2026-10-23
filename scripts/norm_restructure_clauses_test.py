@@ -76,6 +76,10 @@ def _repo(tmp_path: pathlib.Path) -> pathlib.Path:
     (repo / "agent-toolkit" / "rules" / "01-agent.md").write_text("# 規範\n\n人間が書いた条文である。\n", encoding="utf-8")
     (repo / "docs").mkdir()
     (repo / "docs" / "outside.md").write_text("対象外の文書である。\n", encoding="utf-8")
+    codex = repo / ".chezmoi-source" / "dot_codex"
+    codex.mkdir(parents=True)
+    (codex / "AGENTS.md").write_text("# Codex共通規範\n\nCodexへ配布する条文である。\n", encoding="utf-8")
+    (codex / "outside.md").write_text("同じディレクトリの対象外文書である。\n", encoding="utf-8")
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", message="初版")
     rules = repo / "agent-toolkit" / "rules" / "01-agent.md"
@@ -100,6 +104,7 @@ def test_clause_units_and_keys(repo: pathlib.Path, monkeypatch: pytest.MonkeyPat
     excerpts = {row[0]: row[1] for row in rows[1:]}
     skill = "agent-toolkit/skills/demo/SKILL.md"
     assert keys == [
+        ".chezmoi-source/dot_codex/AGENTS.md#Codex共通規範#1",
         "agent-toolkit/rules/01-agent.md#規範#1",
         "agent-toolkit/rules/01-agent.md#規範#2",
         f"{skill}##1",
@@ -159,6 +164,7 @@ def test_split_dir_and_origin(repo: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     assert sorted(path.name for path in out_dir.iterdir()) == [
         "agent-toolkit__rules__01-agent.md.tsv",
         "agent-toolkit__skills__demo__SKILL.md.tsv",
+        "dot-chezmoi-source__dot_codex__AGENTS.md.tsv",
     ]
     rows = [
         line.split("\t")

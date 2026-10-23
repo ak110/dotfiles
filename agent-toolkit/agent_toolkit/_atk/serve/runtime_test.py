@@ -8,7 +8,49 @@ from typing import Any
 import pytest
 import watchdog.observers.api
 
-from agent_toolkit._atk.serve import plans, sessions, state
+from agent_toolkit._atk.serve import plans, runtime, sessions, state, wi_operations
+
+
+@pytest.mark.asyncio
+async def test_failed_sync_retries_and_clears_error_without_remote_changes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """明示同期の通信失敗を自動で再試行し、差分のない成功でも表示を復旧する。"""
+    operations = wi_operations.Operations(tmp_path)
+    calls: list[str] = []
+    recovered = asyncio.Event()
+    notifications: list[str] = []
+
+    def fail() -> bool:
+        raise OSError("一時的な通信失敗")
+
+    def retry() -> bool:
+        calls.append("retry")
+        if len(calls) == 1:
+            raise OSError("一時的な通信失敗")
+        return False
+
+    def publish(event: str) -> None:
+        notifications.append(event)
+        if event == "sync-ok":
+            recovered.set()
+
+    current_state = state.ServeState(tmp_path)
+    monkeypatch.setattr(current_state, "publish", publish)
+    monkeypatch.setattr(operations, "sync", fail)
+    monkeypatch.setattr(operations, "background_sync", retry)
+    monkeypatch.setattr(runtime, "_SYNC_RETRY_INTERVAL_SECONDS", 0.001)
+    current = runtime.ServeRuntime(operations, runtime.BoundedWorkers(1), current_state)
+    with pytest.raises(OSError, match="通信失敗"):
+        await current.synchronize()
+    task = asyncio.create_task(current.background_sync_loop())
+    try:
+        await asyncio.wait_for(recovered.wait(), timeout=5)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert calls == ["retry", "retry"]
+    assert notifications == ["sync-error", "sync-error", "sync-ok"]
 
 
 @pytest.mark.parametrize("owner", ["wi", "plans", "sessions"])

@@ -15,6 +15,8 @@
 #
 # NOTE: 対応するLinux版 → install.sh
 
+param([ValidateSet('full', 'minimal')][string]$Mode)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -41,6 +43,14 @@ if (-not (Test-Path $dotfilesDir)) {
     git clone https://github.com/ak110/dotfiles.git $dotfilesDir
     if ($LASTEXITCODE -ne 0) { throw "git clone が失敗しました (exit=$LASTEXITCODE)" }
 }
+
+# 初回のテンプレート評価より前にモードを保存する。
+$modeArguments = @()
+if ($Mode) { $modeArguments = @('--mode', $Mode) }
+$modeScript = Join-Path $dotfilesDir 'agent-toolkit/agent_toolkit/_common/dotfiles_mode.py'
+$selectedMode = & uv run --no-project --no-config --python 3.15 python $modeScript @modeArguments
+if ($LASTEXITCODE -ne 0) { throw "モード設定に失敗しました (exit=$LASTEXITCODE)" }
+$env:AGENT_TOOLKIT_CONFIG_DOTFILES_MODE = $selectedMode
 
 # chezmoi 管理対象の既存ファイルをバックアップする。
 $backupDir = Join-Path $env:USERPROFILE (".dotfiles-backup\{0}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))

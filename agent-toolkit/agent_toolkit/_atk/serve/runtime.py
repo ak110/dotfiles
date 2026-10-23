@@ -23,6 +23,8 @@ _BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
 Web UIはエンドユーザーが画面を閲覧する前提のため短く取る。
 """
 
+_SYNC_RETRY_INTERVAL_SECONDS = 5.0
+
 
 SSE_HEARTBEAT_SEC = 15.0
 """3画面のSSEがheartbeatを送る間隔。
@@ -135,6 +137,7 @@ class ServeRuntime:
         self.sync_task: asyncio.Task[bool] | None = None
         self.background_task: asyncio.Task[None] | None = None
         self.remote_stop_task: asyncio.Task[None] | None = None
+        self.sync_requested = asyncio.Event()
 
     async def synchronize(self) -> bool:
         """同時に届いた同期要求へ同じ実行結果を返す。"""
@@ -145,20 +148,33 @@ class ServeRuntime:
             result = await asyncio.shield(current)
             self.state.publish("sync-ok")
             return result
+        except Exception:
+            self.state.publish("sync-error")
+            self.sync_requested.set()
+            raise
         finally:
             if current.done() and self.sync_task is current:
                 self.sync_task = None
 
     async def background_sync_loop(self) -> None:
         """一定間隔でリポジトリを更新し、失敗時は次周期で再試行する。"""
+        interval = _BACKGROUND_SYNC_INTERVAL_SECONDS
+        retry_interval = _SYNC_RETRY_INTERVAL_SECONDS
         while True:
-            await asyncio.sleep(_BACKGROUND_SYNC_INTERVAL_SECONDS)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self.sync_requested.wait(), timeout=interval)
+            self.sync_requested.clear()
             try:
-                if await self.workers.run(self.operations.background_sync):
+                if await self.workers.run(self.operations.background_sync) is not None:
                     self.state.publish("sync-ok")
+                interval = _BACKGROUND_SYNC_INTERVAL_SECONDS
+                retry_interval = _SYNC_RETRY_INTERVAL_SECONDS
             except Exception as error:  # pylint: disable=broad-exception-caught
                 logger.warning("WIの定期Git同期に失敗しました: %s", error)
                 self.state.publish("sync-error")
+                # 一時的な通信失敗から早く復旧し、継続する障害では通常周期まで間隔を戻す。
+                interval = retry_interval
+                retry_interval = min(retry_interval * 2, _BACKGROUND_SYNC_INTERVAL_SECONDS)
 
 
 def register_lifecycle(

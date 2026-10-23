@@ -136,7 +136,7 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
             model="active-model",
             effort="medium",
             engine="codex",
-            model_type="high_tier",
+            model_type="execute",
             label="active",
             started_at="2026-09-06T00:00:02+00:00",
             updated_at="2026-09-06T00:00:05+00:00",
@@ -1460,7 +1460,7 @@ async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_pa
         parent_manager.sessions[parent.session_id] = parent
         await parent_manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
         assert _ORPHANED_SESSION_ID not in parent.live_child_session_ids
-        assert any(f"終端したsession: {_ORPHANED_SESSION_ID}" in prompt for prompt in parent_backend.prompts)
+        assert any(f"終端したsession/thread: {_ORPHANED_SESSION_ID}" in prompt for prompt in parent_backend.prompts)
         await parent_manager.close()
 
         async with server_manager.AgentsServerManager(None) as manager:

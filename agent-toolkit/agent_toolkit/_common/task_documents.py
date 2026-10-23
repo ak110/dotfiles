@@ -4,7 +4,7 @@
 旧版の`## 入力`直後の`text`コードブロックにある宣言行は、保持された役割文書とsessionの読取互換として扱う。
 `agents_server`の`start`、`Agent`ツール・自由本文の起動を確認するPreToolUseフック、`atk lane integrate`の稼働判定が
 同じ宣言を読むため、解析を本モジュールへ集約する。解析が複数箇所へ分かれると、一方だけが新しい行を受理し、
-同じ委譲プロンプトがサーバーでは拒否されフックでは通る（またはその逆の）不一致が生じる。
+同じ委譲プロンプトがサーバーでは拒否されフックでは受理される（またはその逆の）不一致が生じる。
 `atk lane integrate`（`_atk`）からも読むため、共通層へ置く。
 """
 
@@ -35,8 +35,8 @@ TASK_DOCUMENT_SUFFIX = ".subagent.md"
 LaunchKind = typing.Literal["delegate", "explore", "shell", "write"]
 LAUNCH_KINDS: tuple[LaunchKind, ...] = typing.get_args(LaunchKind)
 
-# 委譲プロンプトの中から`<役割名>.subagent.md`の絶対パスを拾う。空白、バッククォートおよび引用符を区切りとし、
-# Windowsの区切り文字を含むパスも拾う。実在とagent-toolkitのshare配下であることは拾った後に確かめる。
+# 委譲プロンプトの中から`<役割名>.subagent.md`の絶対パスを抽出する。空白、バッククォートおよび引用符を区切りとし、
+# Windowsの区切り文字を含むパスも抽出する。実在とagent-toolkitのshare配下であることは抽出した後に確かめる。
 _TASK_DOCUMENT_PATH_PATTERN = re.compile(r"(?:[A-Za-z]:)?[/\\][^\s`'\"<>|（）「」]*?\.subagent\.md")
 
 
@@ -48,6 +48,7 @@ class ContinuationDeclaration:
     required: tuple[str, ...] = ()
     optional: tuple[str, ...] = ()
     paths: tuple[str, ...] = ()
+    path_lists: tuple[str, ...] = ()
     references: tuple[str, ...] = ()
     condition: str = ""
 
@@ -70,7 +71,6 @@ class TaskDocumentDeclaration:
     writes_worktree: bool
     continuations: tuple[ContinuationDeclaration, ...] = ()
     model_type: str | None = None
-    usage: str | None = None
 
     @property
     def accepted(self) -> frozenset[str]:
@@ -156,15 +156,29 @@ def read_declaration_unchecked(
                     or not isinstance(continuation.condition, str)
                     or any(
                         not isinstance(value, (list, tuple))
-                        for value in (continuation.required, continuation.optional, continuation.paths, continuation.references)
+                        for value in (
+                            continuation.required,
+                            continuation.optional,
+                            continuation.paths,
+                            continuation.path_lists,
+                            continuation.references,
+                        )
                     )
                 ):
                     raise ValueError("継続指示・条件は文字列、入力名は配列が必要")
-                names = (*continuation.required, *continuation.optional, *continuation.paths, *continuation.references)
+                names = (
+                    *continuation.required,
+                    *continuation.optional,
+                    *continuation.paths,
+                    *continuation.path_lists,
+                    *continuation.references,
+                )
                 if (
                     not continuation.instruction
                     or any(not INPUT_NAME_PATTERN.fullmatch(name) for name in names)
                     or not set(continuation.paths) <= continuation.accepted
+                    or not set(continuation.path_lists) <= continuation.accepted
+                    or bool(set(continuation.paths) & set(continuation.path_lists))
                     or not set(continuation.references) <= continuation.accepted
                     or any(item.instruction == continuation.instruction for item in continuations)
                 ):
@@ -175,6 +189,7 @@ def read_declaration_unchecked(
                         required=tuple(continuation.required),
                         optional=tuple(continuation.optional),
                         paths=tuple(continuation.paths),
+                        path_lists=tuple(continuation.path_lists),
                         references=tuple(continuation.references),
                     )
                 )
@@ -212,13 +227,13 @@ def _frontmatter_declaration(task_document: pathlib.Path, document_text: str) ->
             launch_kind=mode,
             writes_worktree=writes,
             model_type=values["model_type"],
-            usage=values["usage"],
             continuations=tuple(
                 ContinuationDeclaration(
                     instruction=entry["instruction"],
                     required=tuple(entry.get("required", [])),
                     optional=tuple(entry.get("optional", [])),
                     paths=tuple(entry.get("paths", [])),
+                    path_lists=tuple(entry.get("path_lists", [])),
                     references=tuple(entry.get("references", [])),
                     condition=entry.get("condition", ""),
                 )

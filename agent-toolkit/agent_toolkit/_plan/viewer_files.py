@@ -94,7 +94,7 @@ def _private_notes_result() -> tuple[pathlib.Path | None, str | None]:
     """private-notesリポジトリのrootと、解決できない場合の警告を返す。
 
     `atk config get private_notes`と同じ解決を同一プロセス内で呼ぶ。外部コマンドの起動を経ないため、
-    常駐サービスやSSHの非対話シェルのPATHに依存しない。
+    常駐サービスやSSHの非対話シェルのPATHを前提としない。
     """
     try:
         value = _private_notes.default_private_notes()
@@ -145,7 +145,7 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") 
     読取・検索・変更監視の3つの処理が同一の対象集合を返すよう、この判定を1箇所へ集約する。
     `~/.claude/plans`では現行形式の種別だけを真とし、`private-notes/plans/`と設定で明示したrootでは
     旧形式の付属ファイルも対象に含める。
-    `root`自身がドット配下（`~/.claude/plans`など）でも通るよう、判定は`root`からの相対パスに対して行う。
+    `root`自身がドット配下（`~/.claude/plans`など）でも対象に含めるよう、判定は`root`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`root`外を指すリンクは対象外となる。
     """
     if not _bundle_kinds.is_viewable_name(path.name, current_only=source_id == LEGACY_SOURCE_ID):

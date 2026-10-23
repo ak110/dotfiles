@@ -13,6 +13,7 @@ import pytest
 from agent_toolkit._common import session_state
 from agent_toolkit._testing.pretooluse_support import (
     _EXECUTE_REVIEW_TASK_NAMES,
+    _additional_context,
     _agent_messages,
     _make_plan_file,
     _path_section_build_content,
@@ -23,20 +24,15 @@ from agent_toolkit._testing.pretooluse_support import (
     _run_posttooluse,
     _stage_model_env,
     _write_session_state,
+    run_after_read_delivery,
 )
 
 
 def _run_after_skill_acquisition(
     payload: dict, env_overrides: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """操作前の基準をSkill起動で取得し、agent_checksが判定した再発行の結果を返す。"""
-    result = _run(payload, env_overrides=env_overrides)
-    if result.returncode == 2 and "`agent-toolkit:delegation`の基準を取得する" in result.stderr:
-        skill = {"hook_event_name": "PostToolUse", "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:delegation"}}
-        skill.update({key: payload[key] for key in ("session_id", "agent_id") if key in payload})
-        assert _run_posttooluse(skill, env_overrides or {}).returncode == 0
-        return _run(payload, env_overrides=env_overrides)
-    return result
+    """操作前の基準を共通配送で取得し、agent_checksが判定した再発行の結果を返す。"""
+    return run_after_read_delivery(payload, env_overrides)
 
 
 @pytest.mark.parametrize(
@@ -511,7 +507,7 @@ class TestPlanFileDoesNotRequireSelfPath:
         wrong_path = str(tmp_path / "scratchpad" / "other.md")
         content = _path_section_build_content(wrong_path)
         self._prior_flags(tmp_path, sid, content)
-        result = _run(
+        result = _run_after_skill_acquisition(
             {
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(plan), "content": content},
@@ -531,7 +527,7 @@ class TestPlanFileDoesNotRequireSelfPath:
         sid = "path-match"
         content = _path_section_build_content(str(plan))
         self._prior_flags(tmp_path, sid, content)
-        result = _run(
+        result = _run_after_skill_acquisition(
             {
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(plan), "content": content},
@@ -546,7 +542,7 @@ class TestPlanFileDoesNotRequireSelfPath:
         """plan fileでないパスへ書き込む場合は判定しない。"""
         content = _path_section_build_content("/tmp/x.md")
         self._prior_flags(tmp_path, "path-nonplan", content)
-        result = _run(
+        result = _run_after_skill_acquisition(
             {
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
@@ -565,7 +561,7 @@ class TestPlanFileDoesNotRequireSelfPath:
         sid = "path-placeholder"
         content = _path_section_build_content("plan-path-here")
         self._prior_flags(tmp_path, sid, content)
-        result = _run(
+        result = _run_after_skill_acquisition(
             {
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(plan), "content": content},
@@ -590,7 +586,7 @@ class TestPlanFileDoesNotRequireSelfPath:
             "## 計画ファイル（本ファイル）のパス\n\n\n"
         )
         self._prior_flags(tmp_path, sid, content)
-        result = _run(
+        result = _run_after_skill_acquisition(
             {
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(plan), "content": content},
@@ -604,7 +600,7 @@ class TestPlanFileDoesNotRequireSelfPath:
 
 
 class TestAgentTaskLaunchIndependence:
-    """Agent／Task起動が基準の配送後に通ることを確認する。"""
+    """Agent／Task起動が基準の配送後に許可されることを確認する。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     def test_main_launch_after_delivery_is_allowed(self, tmp_path: pathlib.Path, tool_name: str) -> None:
@@ -669,7 +665,7 @@ class TestWorkflowSkillInvocation:
     )
     def test_no_delegation_notice_for_workflow_skill(self, tmp_path: pathlib.Path, skill_name: str) -> None:
         """`agent-toolkit:delegation`以外のスキルを起動しても委譲に関する追加出力を返さない。"""
-        result = _run(
+        result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
                 "tool_input": {"skill": skill_name},
@@ -678,11 +674,11 @@ class TestWorkflowSkillInvocation:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert "/skills/delegation/SKILL.md" not in _additional_context(result)
 
     def test_no_notice_for_other_skill(self, tmp_path: pathlib.Path) -> None:
-        """委譲工程を定めないスキルも追加出力を返さない。"""
-        result = _run(
+        """品質基準の配送を保ち、委譲に関する追加出力を返さない。"""
+        result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
                 "tool_input": {"skill": "agent-toolkit:writing-standards"},
@@ -692,10 +688,11 @@ class TestWorkflowSkillInvocation:
         )
         assert result.returncode == 0
         assert result.stdout == ""
+        assert "/skills/delegation/SKILL.md" not in _additional_context(result)
 
     def test_no_notice_in_sidechain(self, tmp_path: pathlib.Path) -> None:
         """サイドチェーンでは案内を返さない。"""
-        result = _run(
+        result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
                 "tool_input": {"skill": "agent-toolkit:plan-mode"},
@@ -708,7 +705,7 @@ class TestWorkflowSkillInvocation:
         assert result.stdout == ""
 
     def test_agent_launch_after_workflow_skill_is_allowed(self, tmp_path: pathlib.Path) -> None:
-        """`agent-toolkit:delegation`以外のスキルの起動後のAgent起動も、`agent-toolkit:delegation`の起動状態に依存しない。"""
+        """`agent-toolkit:delegation`以外のスキルの起動後のAgent起動も、`agent-toolkit:delegation`の起動状態を問わない。"""
         env = _plan_file_state_env(tmp_path)
         skill_result = _run_after_skill_acquisition(
             {

@@ -12,6 +12,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from agent_toolkit._common import dotfiles_mode
+
 # 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
@@ -32,6 +34,8 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
 
     取得・導入・更新と確認の失敗は警告を出力してスキップと数え、旧版の撤去と中継の再生成の失敗は失敗と数える。
     """
+    if dotfiles_mode.is_minimal():
+        return post_apply_outcome.PostApplyOutcome()
     if setup_cli_common.is_windows_cli_running("codex", _PACKAGE):
         logger.info(
             log_format.format_status(

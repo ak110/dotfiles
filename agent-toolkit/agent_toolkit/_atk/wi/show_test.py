@@ -69,15 +69,15 @@ class TestShowSingleFile:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "全状態フォルダに存在しない" in captured.err
+        assert "年月配置に存在しない" in captured.err
 
-    def test_target_repo_mismatch_falls_through_and_exits(
+    def test_target_repo_mismatch_reports_both_identifiers(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """FILENAME指定と--target-repo不一致時は次のkindへ進み、全kind該当なしでexit 2となる。"""
+        """実在する項目のリポジトリ不一致は、両識別子と再実行方法を示して終了2になる。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -91,7 +91,11 @@ class TestShowSingleFile:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert captured.out == ""
-        assert "全状態フォルダに存在しない" in captured.err
+        assert "対象リポジトリが一致しない: fb-001.md" in captured.err
+        assert "指定値: github.com/example/bar" in captured.err
+        assert "保存値: github.com/example/foo" in captured.err
+        assert "--target-repoを指定し直す" in captured.err
+        assert "年月配置に存在しない" not in captured.err
 
     def test_filename_lookup_ignores_the_current_repository_default(
         self,
@@ -550,7 +554,7 @@ class TestShowTypeFilter:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "全状態フォルダに存在しない" in captured.err
+        assert "年月配置に存在しない" in captured.err
 
     def test_type_all_searches_awi_then_uwi(
         self,

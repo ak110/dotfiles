@@ -23,8 +23,8 @@ def test_rollout_stop_uses_preceding_limits_and_following_turn(
             "payload": {
                 "type": "token_count",
                 "rate_limits": {
-                    "primary": {"used_percent": 100, "resets_at": reset},
-                    "secondary": {"used_percent": 99, "resets_at": 9999},
+                    "primary": {"used_percent": 100, "window_minutes": 300, "resets_at": reset},
+                    "secondary": {"used_percent": 99, "window_minutes": 10080, "resets_at": 9999},
                 },
             },
         },
@@ -48,6 +48,7 @@ def test_rollout_stop_uses_preceding_limits_and_following_turn(
     else:
         assert state is not None
         assert state.resets_at == reset
+        assert state.limit_type == "five_hour"
         assert state.delay_seconds(1000) == (200 if reset else 300)
         assert state.delay_seconds(1300) == 300
 
@@ -64,8 +65,8 @@ def test_rollout_waits_until_all_exhausted_windows_reset(tmp_path: pathlib.Path)
                     "payload": {
                         "type": "token_count",
                         "rate_limits": {
-                            "primary": {"used_percent": 100, "resets_at": 1200},
-                            "secondary": {"used_percent": 100, "resets_at": 1500},
+                            "primary": {"used_percent": 100, "window_minutes": 300, "resets_at": 1200},
+                            "secondary": {"used_percent": 100, "window_minutes": 10080, "resets_at": 1500},
                         },
                     },
                 },
@@ -84,3 +85,4 @@ def test_rollout_waits_until_all_exhausted_windows_reset(tmp_path: pathlib.Path)
     )
     state = codex_usage_limit.from_rollout(path)
     assert state is not None and state.delay_seconds(1000) == 500
+    assert state.limit_type == "seven_day"

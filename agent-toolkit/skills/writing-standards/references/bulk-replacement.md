@@ -1,10 +1,24 @@
 # 表記の一括置換
 
-多数の箇所で同じ働きの語へ替える場合（1対1の表記統一と、文脈で有限の候補から選べる反復表現）は、候補置換と変更箇所のレビューを組にする。代表例で候補が指示対象、主体、条件、否定と例外を保てるかを試し、保てる部分を一括置換し、候補外と意味を保ちにくい部分だけ個別に書き直す。直接修正の方が低費用で品質を保てる少量の箇所は、QCDに従い担当自身が直す。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/bulk-replacement.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
 
-- 置換前に`git status --porcelain=v1 -- <対象パス>`で対象に未コミットの変更が無いことを確かめる。変更したパスだけを戻す場合も、着手前に自分の未コミット変更が無かった対象に限る
-- 適用直前に`file-editing.md`「ファイル更新時の編集ツールの前提」で対象ごとの読取状態を確かめる
+以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/bulk-replacement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/bulk-replacement.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/textlint-violations.md#「文の書き直しの委譲と検収」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/bulk-replace-review.subagent.md` | 判断 | `read:agent-toolkit:*/share/bulk-replace-review.subagent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+
+## 運用条件
+
 - `git diff --word-diff=plain --word-diff-regex=.`の文字単位差分をmanaged-tempへ保存し、本書「一括置換後レビュー担当の起動と受領」に従って変更箇所を全件レビューさせる。誤置換が広がる場合は候補を狭めて再試行する
+
 - 指摘された文と候補外の文は自分で書き直すか、`textlint-violations.md`「文の書き直しの委譲と検収」に従って委ねて検収し、最後に通常のtextlintと対象のテストを実行する
 
 ## 一括置換後レビュー担当の起動と受領

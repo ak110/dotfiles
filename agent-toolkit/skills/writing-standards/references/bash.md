@@ -1,10 +1,5 @@
 # Bash記述スタイル
 
-本書はBashで書くスクリプト（`sh`・`bash`・`sh.tmpl`）の記述スタイル基準を定める。
+<!-- read-source: agent-basics:writing-standards/references/bash.md -->
 
-- `#!/usr/bin/env bash`と`set -euo pipefail`を基本とし、スクリプト自身の位置は`BASH_SOURCE`から解決する
-- 変数参照とコマンド置換はダブルクォートで囲む
-- 所有する一時資源は`trap`などで終了時に回収する
-- コマンドの終了コードで分岐する場合は、`cmd1 || cmd2`と書く。`exec`が成功するとシェルが置き換わり、そのシェルは終了コードで分岐できなくなる。`exec`の起動失敗を扱う処理は、コマンドの実行後の失敗を扱う処理と区別する
-- 外部入力の扱いの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。Bashでは`eval`と`bash -c`へ外部入力を渡さず、動的な分岐は`case`で固定候補へ振り分ける
-- `rm -rf`は削除範囲を限定できる代替を優先する（空ディレクトリは`rmdir`、git管理下は`git rm -r`）。対象が明確な一時ディレクトリの後始末で使う場合は、変数の空チェックと`trap`を併用する
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/bash.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。

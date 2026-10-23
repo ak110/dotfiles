@@ -377,7 +377,7 @@ async def test_start_resolves_codex_family_from_existing_backend_catalog(
         lambda _model_type, **_kwargs: [("codex", "sol", "medium")],
     )
     async with _manager_with_fake("codex") as (manager, backend):
-        result = await manager.start("high_tier", "調査", str(tmp_path))
+        result = await manager.start("execute", "調査", str(tmp_path))
 
         assert result["status"] == "running"
         assert backend.start_calls == [("gpt-6-sol", "medium", "delegate")]
@@ -494,7 +494,7 @@ async def test_start_rejects_unknown_model_type_before_backend(
             "parse_unresolved_model_candidates",
             lambda model_type, **_kwargs: (
                 [("codex", model_type, "medium")]
-                if model_type in {"plan", "high_tier"}
+                if model_type in {"plan", "execute"}
                 else (_ for _ in ()).throw(ValueError("unknown model_type: unknown (available: plan)"))
             ),
         )
@@ -509,6 +509,7 @@ async def test_start_is_listed_as_starting_until_backend_initialization_finishes
     tmp_path: pathlib.Path,
 ) -> None:
     """session_id確定後はstartの応答前でもlistとshowがstartingを返す。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:gpt-6-sol/medium")
     async with _manager_with_fake("codex") as (manager, backend):
         original_start = backend.start
         registered = asyncio.Event()
@@ -523,7 +524,7 @@ async def test_start_is_listed_as_starting_until_backend_initialization_finishes
             return session
 
         monkeypatch.setattr(backend, "start", blocked_start)
-        start_task = asyncio.create_task(manager.start("high_tier", "調査", str(tmp_path)))
+        start_task = asyncio.create_task(manager.start("execute", "調査", str(tmp_path)))
         await registered.wait()
 
         listed = (await manager.list_sessions())["sessions"]
@@ -772,7 +773,7 @@ async def test_agy_failed_turn_advances_config_candidate(
         agy = UnavailableStartBackend(manager.sessions, "agy", error)
         _install_backend(manager, "agy", agy)
 
-        response = await manager.start("high_tier", "調査", str(tmp_path))
+        response = await manager.start("execute", "調査", str(tmp_path))
 
         assert agy.release_calls == ["agy-session"]
         assert claude.start_calls == [("opus[1m]", "medium", "delegate")]
@@ -1206,7 +1207,7 @@ async def test_start_advances_candidate_when_codex_rejects_model(
         codex = UnavailableStartBackend(manager.sessions, "codex", error=_codex_model_rejected_error())
         _install_backend(manager, "codex", codex)
 
-        response = await manager.start("high_tier", "調査", str(tmp_path))
+        response = await manager.start("execute", "調査", str(tmp_path))
 
         assert claude.start_calls == [("opus[1m]", "medium", "delegate")]
         assert response["engine"] == "claude"
@@ -1238,18 +1239,18 @@ async def test_late_codex_model_rejection_is_carried_over_to_next_start(
         )
         _install_backend(manager, "codex", delayed)
 
-        failed = await manager.start("high_tier", "調査", str(tmp_path))
+        failed = await manager.start("execute", "調査", str(tmp_path))
         failure_release.set()
         await asyncio.gather(*delayed.pending)
         assert failed["status"] == "running"
         assert await manager.stop(failed["session_id"]) == {}
         assert unavailable_candidates.load_unavailable_candidates(
-            "high_tier", "delegate", now=datetime.datetime.now(datetime.UTC)
+            "execute", "delegate", now=datetime.datetime.now(datetime.UTC)
         ) == {("codex", "gpt-6.1-sol", "medium"): "modelRejected"}
         available = FakeBackend(manager.sessions, "codex")
         _install_backend(manager, "codex", available)
 
-        response = await manager.start("high_tier", "再試行", str(tmp_path))
+        response = await manager.start("execute", "再試行", str(tmp_path))
 
         assert response["model"] == "gpt-6-sol"
         assert available.start_calls == [("gpt-6-sol", "medium", "delegate")]
@@ -1357,11 +1358,11 @@ async def test_start_rejects_candidate_independent_input_before_any_backend(
 
 
 @pytest.mark.asyncio
-async def test_start_explore_selects_default_low_tier_route(
+async def test_start_explore_selects_default_chores_fast_route(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """探索起動でモデルを指定しない場合はlow_tier設定を選ぶ。"""
+    """探索起動でモデルを指定しない場合はchores_fast設定を選ぶ。"""
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
@@ -1369,8 +1370,8 @@ async def test_start_explore_selects_default_low_tier_route(
     )
     async with _manager_with_fake("codex") as (manager, backend):
         explored = await manager.start_explore("探索", str(tmp_path))
-        assert explored["model_type"] == "low_tier"
-        assert backend.start_calls[-1] == ("low_tier", "medium", "explore")
+        assert explored["model_type"] == "chores_fast"
+        assert backend.start_calls[-1] == ("chores_fast", "medium", "explore")
 
 
 @pytest.mark.asyncio
@@ -1390,7 +1391,7 @@ async def test_explore_uses_first_available_agy_candidate(tmp_path: pathlib.Path
 
 
 @pytest.mark.asyncio
-async def test_start_shell_runs_command_on_the_low_tier_route(
+async def test_start_shell_runs_command_on_the_chores_fast_route(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
@@ -1402,8 +1403,8 @@ async def test_start_shell_runs_command_on_the_low_tier_route(
     )
     async with _manager_with_fake("codex") as (manager, backend):
         started = await manager.start_shell("make test", str(tmp_path), "終了状態と警告だけ")
-        assert started["model_type"] == "low_tier"
-        assert backend.start_calls[-1] == ("low_tier", "medium", "shell")
+        assert started["model_type"] == "chores_fast"
+        assert backend.start_calls[-1] == ("chores_fast", "medium", "shell")
         session = manager.sessions[started["session_id"]]
         assert session.launch_kind == "shell"
         _complete(session, message="終了コード0")

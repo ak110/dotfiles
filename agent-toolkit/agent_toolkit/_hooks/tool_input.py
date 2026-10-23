@@ -140,7 +140,7 @@ def materialize(operation: EditOperation) -> MaterializedEdit | None:
         return MaterializedEdit(operation, "", operation.whole_after_text or "")
     read_path = operation.source_path if operation.kind == KIND_MOVE else operation.path
     if operation.kind == KIND_WRITE:
-        # Claudeの`Write`は変更後全文が入力で確定するが、変更前像は既存ファイルの読み取りに依存する。
+        # Claudeの`Write`は変更後全文が入力で確定するが、変更前像の確定には既存ファイルの読み取りが必要となる。
         # 対象が存在しないと確定した場合だけ空の変更前像とし、他の読み取り失敗は判定不能として返す。
         before_text, missing = _read_text_for_overwrite(read_path)
         if before_text is None and not missing:

@@ -4,7 +4,8 @@
 各フェンスの内容が出所のいずれかの原文の部分文字列であるかを判定する。
 フェンスが確認回答の記録（行頭`回答: `か`自由記述: `の行を持つ書式）の場合は、ユーザーの値である回答・自由記述と
 記録より前の地の文だけを原文と比べ、エージェントが書いた質問と選択肢は比べない。
-全フェンスが一致した場合は、要求単位ごとの`逐語引用 text[N] 文字A-B`を出力する。
+全フェンスが一致した場合は、対象・出所・要求単位ごとの`逐語引用 text[N] 文字A-B`を出力する。
+原文の再表示には`--detail`を指定する。引用節への正確な保存と不一致の検出は表示指定によらない。
 引用節のtextフェンスの外にある本文の参照も、現在のフェンスの番号と要求単位の開始・終了位置に一致するか確かめる。
 参照がずれている場合は位置の一覧を出力し、該当行と書き換え方法を標準エラーへ示す。
 A-Bはフェンスの内容の先頭を1とし、改行も1文字として数えるUnicodeコードポイントの範囲で、単位の最初の文字から
@@ -169,9 +170,16 @@ def _selected_text(selection: Selection, event: _UserEvent) -> str:
 def _import_quotes(body: str, spec_path: pathlib.Path) -> tuple[str, list[Original]]:
     """全選択を検証し、引用節だけを置換した原稿と比較用原文を返す。"""
     selections = pydantic.TypeAdapter(list[Selection]).validate_json(spec_path.read_bytes())
+    return import_selections(body, selections)
+
+
+def import_selections(
+    body: str, selections: list[Selection], *, source_cache: dict[pathlib.Path, list[_UserEvent]] | None = None
+) -> tuple[str, list[Original]]:
+    """単体・原稿群で同じ選択契約を使い、共通出所の再読を省く。"""
     if not selections:
         raise InputError("--import-specのJSON配列へ1件以上の選択を指定してください")
-    sources: dict[pathlib.Path, list[_UserEvent]] = {}
+    sources = source_cache if source_cache is not None else {}
     blocks: list[str] = []
     originals: list[Original] = []
     for selection in selections:
@@ -332,7 +340,7 @@ def _reference_errors(body: str, spans: list[list[tuple[int, int, str]]]) -> lis
     return errors
 
 
-def check(body: str, originals: list[Original]) -> tuple[list[str], list[str], str]:
+def check(body: str, originals: list[Original], *, detail: bool = False) -> tuple[list[str], list[str], str]:
     """一致と位置の出力行、不一致の診断、次の操作を返す。"""
     output: list[str] = []
     errors: list[str] = []
@@ -354,7 +362,9 @@ def check(body: str, originals: list[Original]) -> tuple[list[str], list[str], s
             continue
         units = [span for part in parts for span in _unit_spans(content, part)]
         spans.append(units)
-        output.extend(f"逐語引用 text[{number}] 文字{start}-{end}: {unit}" for start, end, unit in units)
+        output.extend(
+            f"逐語引用 text[{number}] 文字{start}-{end}" + (f": {unit}" if detail else "") for start, end, unit in units
+        )
     if errors:
         return (
             [],
@@ -374,6 +384,7 @@ def check(body: str, originals: list[Original]) -> tuple[list[str], list[str], s
 def main(argv: list[str] | None = None) -> int:
     """WI本文と出所を受け取り、逐語引用の一致と引用位置を出力する。"""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--detail", action="store_true", help="要求単位の位置に原文も表示する")
     parser.add_argument(
         "body", type=pathlib.Path, metavar="PATH", help="`## ユーザー指摘の逐語引用`を持つWI本文ファイルの絶対パス"
     )
@@ -412,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
             body, originals = _import_quotes(body, args.import_spec)
         else:
             originals = [original for path in args.source for original in _originals(path)]
-        output, errors, next_action = check(body, originals)
+        output, errors, next_action = check(body, originals, detail=args.detail)
         if args.import_spec is not None and not errors:
             atomic_file.atomic_write(args.body, body)
     except (InputError, OSError, UnicodeError, json.JSONDecodeError, pydantic.ValidationError) as error:
@@ -423,6 +434,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     if output:
+        print(f"対象: {args.body}")
         print("\n".join(output))
     if errors:
         for error in errors:

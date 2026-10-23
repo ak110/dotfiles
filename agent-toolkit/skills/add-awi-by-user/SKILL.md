@@ -14,14 +14,31 @@ WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/w
 
 正式な登録には、対象リポジトリと既存キューの読取、`atk`と参照資料が必要である。これらが無い環境では、対話で要求を整理した原稿を返し、登録前の下書きとして扱う。既存項目との比較・保留・投入と保存の検収は、機能を提供するClaude CodeまたはCodexで行う。要求の文は[文章の品質基準](references/quality-standards.md)で確かめる。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/quality-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「成果物の制限」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
+
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 手順2で質問ラウンドを始める前 | `agent-toolkit:user-confirmation-and-report`の`references/grilling.md` |
-| 調査・起草・保存を担当する前 | `agent-toolkit:wi-standards`の`references/drafting-workflow.md` |
-| 文脈を分けるためWI投入担当へ委譲する場合 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` |
-| 完成条件や採否が依存する値を測定する前 | `references/measurement.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 手順2で質問ラウンドを始める前 | `agent-toolkit:user-confirmation-and-report`の`references/grilling.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/grilling.md` | |
+| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表の同じ時点に指定された節 | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
+| 文脈を分けるためWI投入担当へ委譲する場合 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
+| 完成条件や採否を決める値を測定する前 | `references/measurement.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/measurement.md` | |
 
 ## 手順
 
@@ -30,7 +47,7 @@ WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/w
    - 投入先を確定した時点で、全ての投入先を`--target-repo`へ並べて`atk wi submission begin`を実行する。`begin`はこの会話の記録を渡した投入先の集合で置き換えるため、投入先を加えたり変えたりした時点も、WI投入担当の稼働の有無や原稿の返却の有無によらず、保存を終えていない要求の投入先を全て並べて再実行する。この記録がある間、投入先を対象とする`atk wi process-loop`は開始前に投入を待つ。
    - 質問の前に、`atk wi list --status=active --target-repo=<対象リポジトリ> --type=awi --skip-pull --summary-only`と候補の`atk wi show`で既存AWIと比べる。既存本文が覆う要求は確定済みとし、未被覆の要求と既存要件との不一致だけを論点にする。照会先のリポジトリが一意に決まらなければその点だけ先に確認する。
    - 引数の無い起動で、直前の応答が項目ごとの処置を確定した成果物を示している場合は、それを登録対象の入力とし、示された基準でも決まらない項目だけを質問する。
-   - 依頼が範囲語か開放列挙と、例示か理由を併せ持つ場合は、要求単位の確定より前に同スキルの`SKILL.md`「原文の保持と取り込み」の該当項を適用する。調査に依存する問いへの回答は手順3の作成主体が根拠を確定した後に送る。
+   - 依頼が範囲語か開放列挙と、例示か理由を併せ持つ場合は、要求単位の確定より前に同スキルの`SKILL.md`「原文の保持と取り込み」の該当項を適用する。調査結果を要する問いへの回答は手順3の作成主体が根拠を確定した後に送る。
    - ユーザーがモデル、ツール、担当エージェント、操作方法などの手段を指定した場合は、逐語本文から、その指定が`workflow-phases.md`のどの工程（WI作成・計画・実行・実行レビュー）に向けたものかを対応付ける。このセッションへの指定はWI作成工程だけに適用し、後続工程の要件から外す。後続工程への適用範囲が原文から一意に決まらず要件や完成条件が変わる場合は、工程ごとの適用範囲を独立した質問で確認し、その回答だけを根拠にする。
    - 外部資料（論文、ベンチマーク、他プロジェクトの事例など）を根拠とする改善案を提案・確定する前に、`agent-toolkit:review-standards`を起動し、外部資料に基づく改善案の評価として適用する。
    - 対象リポジトリの外へ成果を反映する要求では、反映先ごとの終了状態（commitまでかpushまでか）を`agent-toolkit:wi-standards`の`references/awi-body.md`「完成条件」で判定する。質問ラウンドで確認するのは、反映先の規範と成立済みの認可で定まらずユーザーだけが決める部分に限る。
@@ -38,8 +55,8 @@ WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/w
 3. wi-standardsの要求の同一性で独立要求を分け、件数によらずメイン自身が調査・対策確定・起草・検収・保存まで担当するのを原則とする。
    - 原文・出所・確定要件と技術判断を区別し、取得済み証拠を再利用する。複数要求は混ぜずに扱い、同じ要求の更新は同じ作成主体が現行要件と差分から行う。登録を要する要求が無ければ、再利用・回答による解決・取り下げの結果を集約して手順4へ進む。
    - 本来の作業に付随する別件の投入など、文脈を分ける意味がある場合は`add-wi.parent.md`で委譲を選ぶ。基準付きの大量走査は軽量な読取探索を使え、起草と保存の責務はメインに保つ。
-   - 検収の構成は`references/drafting-workflow.md`「直接起草と独立した検収の選択」に従い、引用・構造の機械チェックと`references/draft-semantic-review.md`の読み直しを保つ。独立検収を要する場合は`share/wi-draft-review.parent.md`を使い、作成主体が指摘の採否を確定して保存する。
-   - ユーザー依存の未確定事項だけ手順2へ戻す。委譲した調査の不足は元担当へ戻す。登録の認可は起動時に成立しており、本文全文の提示と投入可否の一律確認は追加しない。
+   - 検収の構成は`references/drafting-workflow.md`「直接起草と独立した検収の選択」に従い、引用・構造の機械チェックと`references/draft-semantic-review.md`の読み直しを保つ。独立検収を要する場合は、同時に用意済みの原稿と要求・出所・証拠を要求識別子で対応付けて`share/wi-draft-review.parent.md`へまとめて渡し、作成主体が指摘の採否を確定して保存する。
+   - ユーザーだけが決められる未確定事項だけ手順2へ戻す。委譲した調査の不足は元担当へ戻す。登録の認可は起動時に成立しており、本文全文の提示と投入可否の一律確認は追加しない。
 4. `atk wi submission end`で投入作業の記録を削除し、返却された`ファイル名`を含む投入結果を`agent-toolkit:completion-report`へ渡して完了報告を生成する。
 
 ## セッション境界
@@ -49,7 +66,7 @@ WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/w
 追加の発話は、途中・完了報告後を問わず、書き方への注文や振る舞いの是正も含めて要求単位へ分ける。単位ごとに`agent-toolkit:wi-standards`冒頭の要求の同一性によるAWIの粒度で、既存・起草中AWIへの合流か独立した要求かを判定する。同じファイル・節・文の部分重複は書込競合として扱う。一部が更新に当たっても、残りの単位はそれぞれ判定する。独立した要求も手順3の担当選択へ戻す。合流する単位は確定済みの範囲と比べ、発話が範囲の一部だけを名指ししても確定済みの範囲を縮めない。縮小が明示された場合と意図が定まらない場合は、現在の範囲を`共通前提`へ示して確認する。
 依頼の取り下げなどで投入作業を中止した場合も`atk wi submission end`を実行する。完了後の追加の発話で投入を再開する場合は、投入先の確定時に手順2の記録を再び行い、再開した投入の完了時と中止時にも`atk wi submission end`を実行する。
 既存AWIの更新と判断した場合は、調査より先に手順1の保留を適用し、手順3の同じ作成主体が、現行本文、確定した変更内容と逐語本文を対象の`ファイル名`に対応付けて更新する。
-起動後の「反映して」「修正して」、再発防止や完遂の要求はAWI本文への反映として扱う。成果物の制限の例外は、登録用一時入力の作成と`atk managed-temp`による後始末、対象リポジトリの規範が同じ工程で求める追跡先への記載、完成条件や採否が依存する値の測定と測定のための一時的な変更（`references/measurement.md`）とする。
+起動後の「反映して」「修正して」、再発防止や完遂の要求はAWI本文への反映として扱う。成果物の制限の例外は、登録用一時入力の作成と`atk managed-temp`による後始末、対象リポジトリの規範が同じ工程で求める追跡先への記載、完成条件や採否を決める値の測定と測定のための一時的な変更（`references/measurement.md`）とする。
 
 対象リポジトリ外の操作の依頼範囲、認可と確認要否は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」と`agent-toolkit:user-confirmation-and-report`「確認要否の判定」・`references/approval-scope.md`に従う。委譲する場合は、起動スキル、対象リポジトリ内の恒久変更をWIへ限定する範囲と対象外の通常判断、session終端を委譲プロンプトへ含める。
 

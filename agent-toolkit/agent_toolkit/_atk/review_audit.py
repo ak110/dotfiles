@@ -1,7 +1,7 @@
 """自動コードレビュー監査の未判定対象を取得し、判定済みの識別子を記録する。
 
 対象はGitHub Copilot由来のreviewとthread、およびDependabotアラートである。
-Dependabotアラートはprocess-wiの実行ごとの監査で拾うため、`atk wi process-loop`の待機中確認も同じ取得と判定を使う。
+Dependabotアラートはprocess-wiの実行ごとの監査で取得するため、`atk wi process-loop`の待機中確認も同じ取得と判定を使う。
 """
 
 from __future__ import annotations
@@ -379,6 +379,18 @@ def _pending(repository: str) -> int:
     }
     print(json.dumps(result, ensure_ascii=False))
     return 0
+
+
+def summarize_saved_pending(path: Path) -> None:
+    """生成元の保存先を維持し、監査の起動判断に必要な値を表示する。"""
+    result = json.loads(path.read_text(encoding="utf-8"))
+    counts = result["counts"]
+    if any(
+        not isinstance(counts[key], int) or isinstance(counts[key], bool) or counts[key] < 0
+        for key in ("reviews", "threads", "dependabot")
+    ):
+        raise ValueError(f"保存した監査結果の件数が不正: {path}")
+    print(json.dumps({"counts": counts, "dependabot_status": result["dependabot"]["status"]}, ensure_ascii=False))
 
 
 def _mark(repository: str, identifiers: list[str]) -> int:

@@ -24,8 +24,8 @@ _REAL_CODEX_DEFINITION = _PLUGIN_ROOT / ".mcp.codex.json"
 
 
 def _real_pyfltr_arguments() -> list[str]:
-    data = json.loads(_REAL_CLAUDE_DEFINITION.read_text(encoding="utf-8"))
-    return list(data["mcpServers"]["pyfltr"]["args"])
+    # 旧配布版の定義を固定し、起動中の旧uvx環境の準備経路を保つ。
+    return ["--from", "pyfltr>=3.22.0", "--exclude-newer-package", "pyfltr=false", "pyfltr", "mcp"]
 
 
 def _definition(args: list[str], *, command: str = "uvx", stdio: bool = False) -> dict[str, object]:
@@ -53,7 +53,9 @@ class _Env:
             (_REAL_CODEX_DEFINITION, self.codex_definition),
         ):
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(source.read_bytes())
+            data = json.loads(source.read_text(encoding="utf-8"))
+            data["mcpServers"]["pyfltr"] = {"command": "uvx", "args": _real_pyfltr_arguments()}
+            target.write_text(json.dumps(data), encoding="utf-8")
         installed = tmp_path / "installed_plugins.json"
         _write(installed, {"plugins": {_PLUGIN_ID: [{"installPath": str(tmp_path / "claude")}]}})
         monkeypatch.setattr(_warmup, "_INSTALLED_PLUGINS_PATH", installed)
@@ -88,6 +90,13 @@ def test_same_launch_from_both_hosts_runs_once(env: _Env, caplog: pytest.LogCapt
     assert "環境構築を確認 (exit 0、" in caplog.text
     assert ".mcp.json" in caplog.text
     assert ".mcp.codex.json" in caplog.text
+
+
+def test_minimal_mode_skips_before_uvx_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """minimalモードはpyfltrの対象照会とuvx起動を行わない。"""
+    monkeypatch.setattr(_warmup.dotfiles_mode, "is_minimal", lambda: True)
+    monkeypatch.setattr(_common, "resolve_executable", lambda *_args, **_kwargs: pytest.fail("uvxを解決しない"))
+    assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
 
 
 def test_changed_requirement_is_used_for_each_definition(env: _Env) -> None:
@@ -160,3 +169,30 @@ def test_launch_failure_is_skipped(
     with caplog.at_level("WARNING"):
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
     assert message in caplog.text
+
+
+def test_shared_pyfltr_uses_selected_root_and_lock_environment(env: _Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """新しい両ホストの定義は共有launcherへ接続し、独立したuvx環境を作らない。"""
+    calls = []
+    for source, target in (
+        (_REAL_CLAUDE_DEFINITION, env.claude_definition),
+        (_REAL_CODEX_DEFINITION, env.codex_definition),
+    ):
+        target.write_bytes(source.read_bytes())
+        entry = target.parent / "agent_toolkit/_common/pyfltr_entry.py"
+        entry.parent.mkdir(parents=True)
+        entry.write_text("# 配布入口\n")
+
+    def warmup(path, uv, *, tag, arguments):
+        del uv, tag
+        calls.append((path, arguments))
+        return True
+
+    monkeypatch.setattr(_warmup.plugin_warmup, "warmup", warmup)
+    _warmup.run()
+    assert {str(path) for path, arguments in calls} == {
+        str(env.claude_definition.parent / "agent_toolkit/_common/pyfltr_entry.py"),
+        str(env.codex_definition.parent / "agent_toolkit/_common/pyfltr_entry.py"),
+    }
+    assert all(arguments == ("--version",) for path, arguments in calls)
+    assert not env.uvx_calls()

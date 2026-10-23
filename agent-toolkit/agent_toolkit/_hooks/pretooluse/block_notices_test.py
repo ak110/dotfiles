@@ -1,4 +1,4 @@
-"""PreToolUseの全ての遮断が、呼び出し全体を実行していないことを遮断の通知本文の中で伝える。
+"""PreToolUseの遮断が原因と次の操作を伝える。
 
 入力は既存dispatchテストと同じClaude Code・Codexのhook payload形式を用いる。
 Stopの遮断はツールの実行前ではないため、この文を含めない。
@@ -35,10 +35,10 @@ _RESULT = "この呼び出しは全体を実行していない（同じ呼び出
         "large_read",
     ],
 )
-def test_block_notices_describe_entire_unexecuted_call(
+def test_block_notices_preserve_cause_and_next_action(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], codex: bool, case: str
 ) -> None:
-    """原因の後・次の操作の前へ1回だけ結果を出力し、非該当ホストへ遮断を増やさない。"""
+    """遮断理由と復旧操作を保持し、ホストが示す未実行の説明を重ねない。"""
     document = tmp_path / "plugin/share/sample.subagent.md"
     document.parent.mkdir(parents=True)
     manifest = document.parent.parent / ".claude-plugin/plugin.json"
@@ -78,20 +78,26 @@ def test_block_notices_describe_entire_unexecuted_call(
         payload["turn_id"] = "codex-turn"
     code = dispatch.main(json.dumps(payload, ensure_ascii=False))
     captured = capsys.readouterr()
-    if case == "large_read" and not codex:
+    if case in {"large_read", "atk_pipe", "options", "revisions", "free_start", "agent_prompt"}:
         assert code == 0
         assert _RESULT not in captured.err
+        if codex or case != "large_read":
+            message = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+            assert 'kind="warn"' in message
+            assert "次の操作:" in message
         return
     assert code == 2, captured
     blocks = re.findall(r'<atk-auto source="[^"]+" kind="block">\n(.*?)\n</atk-auto>', captured.err, re.DOTALL)
     assert len(blocks) == 1, captured.err
     body = blocks[0]
-    assert body.count(_RESULT) == 1
-    assert 0 < body.index(_RESULT) < body.index("次の操作:")
+    assert _RESULT not in body
+    reason, action = body.split("次の操作:", 1)
+    assert reason.strip()
+    assert action.strip()
 
 
-def test_escalated_warning_has_result_but_stop_block_does_not(capsys: pytest.CaptureFixture[str]) -> None:
-    """昇格による遮断にも結果を添え、Stopの通常整形へ広げない。"""
+def test_repeated_warning_preserves_normal_operation(capsys: pytest.CaptureFixture[str]) -> None:
+    """警告の回数が増えても通常の操作を遮断しない。"""
     notice.set_warning_session_id("escalated-block")
     warning = notice.warning_formatter("pretooluse")
     for _ in range(2):
@@ -103,15 +109,14 @@ def test_escalated_warning_has_result_but_stop_block_does_not(capsys: pytest.Cap
             removable_cause=True,
             escalate_on_repeat=True,
         )
-    assert dispatch.exit_with(0, []) == 2
+    assert dispatch.exit_with(0, []) == 0
     body = capsys.readouterr().err
-    assert body.count(_RESULT) == 1
-    assert body.index("失敗する操作") < body.index(_RESULT) < body.index("次の操作:")
+    assert not body
     assert _RESULT not in notice.block_formatter("stop")("終了工程が残る", fix="工程へ戻る")
 
 
 def test_pretooluse_block_formatter_is_owned_by_notices() -> None:
-    """遮断の通知本文を整形する処理が`notices.py`以外へ加わり、共通の結果文を省く状態を検出する。"""
+    """遮断の原因と解消手段を共通の整形関数へ渡す。"""
     root = pathlib.Path(dispatch.__file__).parent
     owners = []
     for path in root.glob("*.py"):

@@ -1,4 +1,4 @@
-"""人間の発話の後に可視の応答本文が無いStopを遮断する。
+"""人間の発話の後に可視の応答本文が無いStopへ一度通知する。
 
 判定情報はtranscriptの人間入力の印と、textブロックと`send_to_user`の`message`の有無から確定する。
 拡張思考の表示をエージェントから観測できないため、応答はユーザーへ届く本文の有無で判定する。
@@ -11,12 +11,11 @@
 了承の判定は名指しした語の一覧への一致で閉じず、入力の全体をNFKC正規化と`casefold`の後に、了承を表す語、丁寧語・終助詞、
 末尾の記号・絵文字、読点による了承語どうしの連結だけから成るかを構成規則で確かめる。`?`は受理する記号に含めないため、問いは了承に当たらない。
 了承の後にツールを呼んだ場合は、観測した結果を伝える内容として持ち得て、フックはその有無を区別できないため、本文を求める。
-同じターンで可視本文を出力すれば解除できる。通知は伝える予定だった内容の再出力を求める。
-Stopの連続遮断上限は共通のStop処理に任せ、独自の状態や上限を持たない。
+同じターンで可視本文を出力すれば解除できる。通知は伝える予定だった内容の出力を案内する。
+同じ人間入力の不足は共通noticeで反復を抑止し、新しい入力と解消後の再発を区別する。
 
-遮断とする根拠: 発話本文を可視の本文へ置く規範を加えた後も同じ欠落が再発した。
-本文の欠落はエージェントの明らかな行動誤りで、判定はtranscriptから機械的に確定でき、
-遮断で失うのは本文を出力し直す1回の応答だけである。基準は
+通知を置く根拠: 発話本文を可視の本文へ置く規範を加えた後も同じ欠落が再発した。
+本文の有無はtranscriptから機械的に確定でき、本文の出力で回復できるため非遮断の支援とする。基準は
 `agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
 
 委譲先での実行可否: ユーザーへの応答責務を持つメインだけを対象とし、
@@ -29,13 +28,14 @@ import unicodedata
 
 from agent_toolkit._hooks import agent_id, notice
 from agent_toolkit._hooks import stop_session as _stop_session
+from agent_toolkit._hooks.notice import _WARN_TAG
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import message_format as _message_format
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._hooks.host import is_codex_payload
 
-_block_notice = notice.block_formatter("user_response_advisor")
+_notice = notice.formatter("user_response_advisor", default_tag=_WARN_TAG)
 
 # 了承の構成規則。NFKC正規化と`casefold`の後の入力へ適用する。
 # 了承を表す語に丁寧語・終助詞が続く形を1単位とし、読点で単位を連結した入力の全体だけを了承とする。
@@ -79,6 +79,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if resolved is None:
         return "approve", ""
     session_id, payload = resolved
+    notice.set_warning_session_id(session_id)
     if not agent_id.is_main_agent_context(payload):
         return "approve", ""
     path = payload.get("transcript_path")
@@ -89,11 +90,12 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     needs_response = False
+    input_subject = ""
     # 最後の可視本文より後の人間の入力が全て了承か、その後にツールを呼んだか、`…`だけの本文を出力したかを記録する。
     acknowledged_only = False
     called_tool = False
     ellipsis_only = False
-    for line in lines:
+    for index, line in enumerate(lines):
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
@@ -103,6 +105,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         prompt = _input_text(entry)
         if prompt is not None:
             if _is_human_input(entry) and not entry.get("isMeta") and not _is_hook_input(prompt):
+                input_subject = f"{index}|{line}"
                 if not needs_response:
                     acknowledged_only, called_tool, ellipsis_only = True, False, False
                 acknowledged_only = acknowledged_only and _is_acknowledgement(prompt)
@@ -122,12 +125,15 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     if not needs_response or (acknowledged_only and not called_tool and ellipsis_only):
         return "approve", ""
-    _stop_session.append_stop_log(session_id, "block_missing_user_response", {})
+    _stop_session.append_stop_log(session_id, "notify_missing_user_response", {})
     delivery = "応答本文" if is_codex_payload(payload) else "mcp__agent-toolkit__send_to_user（無い環境では応答本文）"
-    return "block", _block_notice(
+    body = _notice(
         "人間の発話の後に、ユーザーへ届いた応答本文が無い。",
         fix=f"伝える予定だった回答・判断・確認結果を{delivery}で届ける。",
+        removable_cause=True,
+        subject=input_subject,
     )
+    return ("notify", body) if body else ("approve", "")
 
 
 def _input_text(entry: dict) -> str | None:

@@ -84,7 +84,7 @@ def test_migration_conflict_preserves_every_source(tmp_path: pathlib.Path) -> No
 
 
 def test_non_git_read_only_queue_migrates_without_git_operations(tmp_path: pathlib.Path) -> None:
-    """版管理しない既存キューも読み取り入口から同じ固定配置へ移行する。"""
+    """版管理しない既存キューも読み取り処理で同じ固定配置へ移行する。"""
     filename = "20261020-120000-001.md"
     source = tmp_path / "inbox" / filename
     source.parent.mkdir()

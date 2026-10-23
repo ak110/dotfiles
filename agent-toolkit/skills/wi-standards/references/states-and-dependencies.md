@@ -2,6 +2,12 @@
 
 本書はWIの状態、状態遷移、依存、冷却時間、保留と終端の契約を定める。各遷移を起こす工程の操作手順は、その工程の文書が定める。
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+<!-- read-table-source: states-and-dependencies-delivery-1.md -->
+
 ## 状態と一覧集合
 
 | 分類 | 値 | 意味 |
@@ -30,14 +36,14 @@
 | `hold`→`inbox` | `atk wi unhold` | 修正した主体が保存本文の一致確認を終えた時点。回答済みUWIが指す元項目は「回答済みUWIの取り込み」に従い、`agent-toolkit:process-wi`の外では回答を反映した後に戻す（`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`「回答後の状態遷移」） |
 | `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のメインが処理対象を確定した直後。是正を求める回答が保存された事後承認型UWIと、元項目での作業を求める回答済みの事前承認型UWIも、作業するレーンの対象として遷移させる |
 | `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のメインが、回答済みで未終端のUWI（是正を求めない事後承認型を含む）をAWIの処理開始前に終端する |
-| `processing`→`adopted` | `atk wi adopt` | メインが回答済みUWIを終端するか、レーンがマージ完了時か実装変更を伴わない充足の確定後にAWIを終端する。adoptのcommit対応付け: 実装commitの短縮OID（完全OIDも受理）を`--commit`へ渡し、`## 処理結果`に短縮OIDと件名が残る。複数commitでは全OIDと要求単位を`--note`か`--note-file`へ書き、実装差分のない充足では`--commit`を省いて根拠を処理結果へ書く |
+| `processing`→`adopted` | `atk wi adopt` | メインが回答済みUWIを終端するか、レーンがマージ完了時か実装変更を伴わない充足の確定後にAWIを終端する。adoptのcommit対応付け: 実装commitの短縮OID（完全OIDも受理）を`--commit`へ渡し、`## 処理結果`に短縮OIDと件名が残る。複数commitでは`--commit <OID>`を反復指定し、各commitの短縮OIDと件名を組で残す。要求単位やcommitの説明などのメモは`--note`か`--note-file`へ書き、実装差分のない充足では`--commit`を省いて根拠を処理結果へ書く |
 | `processing`→`rejected` | `atk wi reject` | レーンが、計画工程で確定した全要求の不採用をメインが確認した後 |
 | `hold`→`adopted`または`rejected` | `atk wi adopt`・`atk wi reject` | 保留中の項目の採否が確定し作業が残らない場合に、採否を確定した主体が`unhold`を経ずに終端する（`unhold`すると終端前に`atk wi process-loop`が取得し得る） |
 | `processing`→`inbox` | `atk wi return-to-inbox` | 上流リポジトリへ投入したAWIの終端を待つ項目を戻す（[cross-repository-submission.md](cross-repository-submission.md)） |
 | `adopted`または`rejected`→`inbox` | `atk wi return-to-inbox --state=<終端状態>` | 誤って終端した項目を、旧処理結果を除いて再処理へ戻す |
 | `adopted`または`rejected`→`hold` | `atk wi hold --state=<終端状態>` | 誤って終端した項目を、旧処理結果を除いて確認や修正の間保留する |
 
-実装commitの対応記録の保存、取得、複数commitのnote、欠落の補完は`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。
+実装commitの対応記録の保存、取得、複数commitの指定、欠落の補完は`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。終端後の履歴書換えは同じ契約の`plan-rewrite`で対応commitと件名を付け替え、採否と処理日時を保持する。
 
 ## 保留と本文修正
 
@@ -55,7 +61,9 @@ AWIを終端する主体は、`adopt`のメモの先頭に、`awi-body.md`「節
 `--commit`を渡す採否操作では、revisionを解決でき、originがWIの対象リポジトリと一致するworktreeの絶対パスを`--target-repo`へ渡す（識別だけを要する操作は保存済みの正規化URLを使える）。解決できない場合は終了コード2で状態変更前に停止する。
 
 `rejected`はエージェント由来だけの全要求を技術的根拠で不採用とした場合か、人間由来要求の全てについてユーザーが不採用を明示承認した場合に使う。技術的な失敗、入力不足、外部条件待ち、計画不備はactiveのまま保持し、未回答の不採用確認は採用済み範囲があっても項目を分割せず全体を`hold`で保持する。その他の要因は「着手不能要因の分類」に従う。
-技術的に解消できない箇所と続行できない理由が確定した要求単位は、activeのまま残さず未達終端として記録する。
+技術的に解消できない箇所と続行できない理由は未達として記録し、状態は「着手不能要因の分類」に従って保持する。
+
+採用済み内容を同じリポジトリの別項目へ統合した元項目は、不採用へ変換せず、統合先を`note`へ記録する。元項目が`rm`の受理する`inbox`か`hold`であり、操作主体の担当範囲と書込所有権の内側にある場合だけ、`rm`で除去する。`processing`や既に`adopted`の項目を、この規定だけを根拠に状態変更・除去しない。検収済みの別リポジトリ移管は、既存の「複数リポジトリへの投入」の元項目の移管手順に従う。
 
 エージェントが自身の誤りで投入した項目は、`atk wi rm`で削除するか`atk wi edit`で正しい要求へ書き直して再利用し、`rejected`は成立する要求の不採用だけに使う。削除はprivate-notesのGit履歴から復旧できるため、確認の対象外とする。
 上流リポジトリの改訂を要する要求は[cross-repository-submission.md](cross-repository-submission.md)に従う。

@@ -33,6 +33,7 @@ from agent_toolkit._common import session_activity, session_registry, state_path
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 from agent_toolkit.atk_test import _setup_notes
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
@@ -81,7 +82,7 @@ def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
     hooks.mkdir()
     (hooks / "__init__.py").write_text("", encoding="utf-8")
     source_hooks = _SCRIPT.parent / "_hooks"
-    for name in ("notice.py", "message_format.py"):
+    for name in ("notice.py", "message_format.py", "agent_id.py"):
         (hooks / name).write_text((source_hooks / name).read_text(encoding="utf-8"), encoding="utf-8")
     return entrypoint
 
@@ -259,8 +260,9 @@ class TestStandardInputAndPayloadDump:
         assert auto_message_opening_attributes(stderr) == {"source": "hook", "kind": "warn"}
         assert "\nhook定義と実装が不整合:" in stderr
         assert "stop_advisor" in stderr
-        # hook.pyが受け付けるサブコマンドは、hook定義（hooks.json・hooks.codex.json）が登録するものと一致する。
-        assert f"現行のサブコマンド: {'|'.join(_SUBCOMMANDS)}。" in stderr
+        # 従来2形式の登録名に、イベント名を別引数で受け取る公開antigravity adapterを加える。
+        public_subcommands = sorted((*_SUBCOMMANDS, "antigravity"))
+        assert f"現行のサブコマンド: {'|'.join(public_subcommands)}。" in stderr
 
     def test_no_subcommand_reports_usage(self) -> None:
         result = subprocess.run(
@@ -590,19 +592,16 @@ class TestLazyDependencyLoading:
 def _call_hook_in_process(
     monkeypatch: pytest.MonkeyPatch, subcommand: str, payload: dict[str, object], expected_code: int = 0
 ) -> str:
-    """公開hookの`main`を同一プロセスで呼び、標準出力を返す。"""
-    output = io.StringIO()
-    errors = io.StringIO()
-    with monkeypatch.context() as context:
-        stdin = io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode("utf-8")), encoding="utf-8")
-        context.setattr(sys, "stdin", stdin)
-        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            assert _hook.main([subcommand]) == expected_code
-    return errors.getvalue() if expected_code == 2 else output.getvalue()
+    """同じプロセス内で公開hookを呼び、対象の出力を返す。"""
+    del monkeypatch
+    result = _run_hook_in_process(subcommand, payload)
+    assert result.returncode == expected_code
+    return result.stderr if expected_code == 2 else result.stdout
 
 
+@pytest.mark.parametrize("codex", [False, True])
 def test_repeated_calls_in_one_process_follow_input_and_session_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, codex: bool
 ) -> None:
     """依存を読み込んだ後の反復呼び出しでも、スキルの取得の判定と未配送通知の判定が入力と状態に従う。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
@@ -622,19 +621,26 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
                 "cwd": str(tmp_path),
                 "tool_name": "Bash",
                 "tool_input": {"command": command},
+                **({"turn_id": "repeat-turn"} if codex else {}),
             },
             expected_code=expected_code,
         )
 
-    # 取得の観測までは同じ操作を止め、Skill起動の観測の後は同じセッションの再発行を通す。別セッションは再び止める。
-    context = pretooluse("repeat-session", "grep -rn needle .", expected_code=2)
-    assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "block"}
-    assert not pretooluse("repeat-session", "ls")
-    assert pretooluse("repeat-session", "grep -rn needle .", expected_code=2) == context
+    # 関係する初回操作に資料または読取の案内を届け、通常の操作を継続する。
+    context = pretooluse("repeat-session", "grep -rn needle .")
+    message = json.loads(context)["hookSpecificOutput"]["additionalContext"]
+    assert 'kind="block"' not in message
+    if codex:
+        assert not pretooluse("repeat-session", "ls")
+        assert not pretooluse("repeat-session", "grep -rn needle .")
+    else:
+        assert not pretooluse("repeat-session", "ls")
+        assert '<atk-auto source="read-delivery" kind="document">' in message
+        assert not pretooluse("repeat-session", "grep -rn needle .")
     skill = {"session_id": "repeat-session", "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:search"}}
     _call_hook_in_process(monkeypatch, "posttooluse", {"hook_event_name": "PostToolUse", **skill})
     assert not pretooluse("repeat-session", "grep -rn needle .")
-    assert pretooluse("other-session", "grep -rn needle .", expected_code=2) == context
+    assert pretooluse("other-session", "grep -rn needle .") == context
 
     # 未配送の完了通知が残るtranscriptでは配送のためにターンを終え、残らないtranscriptでは何も返さない。
     # キューの記録の形は`_hooks/queued_notification_advisor_test.py`の生成と同じとする。

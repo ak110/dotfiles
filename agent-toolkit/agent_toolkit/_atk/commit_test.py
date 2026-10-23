@@ -133,20 +133,20 @@ def test_format_instructions_follow_repository_priority(tmp_path: Path) -> None:
     assert commit._format_instructions(repository) == commit._DEFAULT_FORMAT  # pylint: disable=protected-access
 
 
-def test_default_model_type_reaches_candidate_resolver_with_base_usage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_model_type_reaches_candidate_resolver_as_chores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repository = _repo(tmp_path)
     monkeypatch.chdir(repository)
-    received: list[tuple[str, str | None]] = []
+    received: list[str] = []
 
-    def resolve(model_type: str, *, usage: str | None = None) -> list[tuple[str, str, str]]:
-        received.append((model_type, usage))
+    def resolve(model_type: str) -> list[tuple[str, str, str]]:
+        received.append(model_type)
         return []
 
     monkeypatch.setattr(commit.config, "resolve_model_candidates", resolve)
     with pytest.raises(SystemExit, match="1"):
         atk.main(["commit"])
 
-    assert received == [("medium_tier", "base")]
+    assert received == ["chores"]
 
 
 @pytest.mark.parametrize(
@@ -184,7 +184,7 @@ def test_candidates_skip_only_before_git_state_changes(
         return original_run(command, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(commit.subprocess, "run", run)
-    args = atk._build_parser().parse_args(["commit", "--model-type", "medium_tier"])  # pylint: disable=protected-access
+    args = atk._build_parser().parse_args(["commit", "--model-type", "chores"])  # pylint: disable=protected-access
     assert commit.dispatch(args) == (9 if change_state else 0)
     assert calls == expected_calls
 
@@ -216,6 +216,7 @@ def test_claude_usage_limit_waits_and_resumes_same_conversation(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """stageの後に利用上限で拒否されたClaudeは、解除まで待って同じ会話を続け、Codexを起動せずにcommitを1回だけ作成する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "always")
     repository, sleeps = _claude_then_codex(tmp_path, monkeypatch)
     original_run = subprocess.run
     calls: list[list[str]] = []
@@ -259,12 +260,16 @@ def test_claude_usage_limit_waits_and_resumes_same_conversation(
     assert log.stdout.splitlines() == ["test: 変更を保存する"]
 
 
-def test_claude_overage_rejection_keeps_existing_candidate_switch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """待機の対象外（`overage`）の拒否は待たず、Git状態を変えていなければ従来どおり次の候補へ進む。"""
+@pytest.mark.parametrize("limit_type,policy", [("overage", "always"), ("seven_day", "five-hour"), ("five_hour", "never")])
+def test_claude_nonwaiting_rejection_keeps_candidate_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit_type: str, policy: str
+) -> None:
+    """待機対象外の上限では、Git状態を保持したまま次の候補へ進む。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", policy)
     _repository, sleeps = _claude_then_codex(tmp_path, monkeypatch)
     original_run = subprocess.run
     calls: list[str] = []
-    overage = _stream({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "overage"}})
+    overage = _stream({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": limit_type}})
 
     def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if command[0].startswith("/fake/"):

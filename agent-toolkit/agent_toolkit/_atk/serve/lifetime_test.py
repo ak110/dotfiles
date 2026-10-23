@@ -53,7 +53,7 @@ async def test_serve_state_context_cleans_acquisition_and_body_failure(
 async def test_direct_start_failure_releases_partial_watch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, asynchronous: bool
 ) -> None:
-    """公開start入口自身が、開始途中に得た監視資源を回収する。"""
+    """公開されたstartメソッド自身が、開始途中に得た監視資源を回収する。"""
     observer = _Observer(fail_start=True)
     monkeypatch.setattr(state.watchdog.observers, "Observer", lambda: observer)
     watched = state.ServeState(tmp_path)

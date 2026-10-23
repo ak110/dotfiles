@@ -531,7 +531,7 @@ def test_saved_user_events_rejects_original_record_modes(
 def test_saved_user_events_requires_paired_arguments_and_absolute_path(
     capsys: pytest.CaptureFixture[str], arguments: list[str]
 ) -> None:
-    """入力の組と絶対パスを呼出境界で検査する。"""
+    """入力の組と絶対パスを公開引数で確かめる。"""
     assert evidence.main(arguments) == 2
     events = read_jsonl(capsys, raw=True)
     assert len(events) == 1 and events[0]["kind"] == "error" and events[0]["next_action"]

@@ -1,13 +1,7 @@
-"""操作の直前に、必要なスキルの取得をホスト本来の手段で求める。
+"""操作の静的な判定と、既存の取得記録APIを保持する。
 
-Skill起動も読取も観測されていない主体の最初の操作を止め、必須資料の絶対パスと取得手段、同じ操作の再発行を案内する。
-Claude Codeはツール`Skill`での起動、Codexと`Skill`を使えないサブエージェントは`SKILL.md`の読取を取得手段とする。
-遮断の応答へ本文を載せない。Skill起動が持つ圧縮後の復元や`${CLAUDE_PLUGIN_ROOT}`の展開を代替できないためである。
-取得はPostToolUse（`posttooluse.py`）が観測して記録し、遮断の時点では記録しない。
-agents_serverの軽量委譲先（explore・shell・write）はスキルを使わない前提で起動するため遮断しない。
-
-主体は`agent_id.resolve_hook_agent_id`で区別する。agents_serverの委譲先は独立した会話の状態を使う。
-表へスキルを加える場合は、操作の判定関数と正例・負例のテストを同時に加える。
+取得対象の宣言は読込表と`share/read-trigger-bootstrap.md`、配送と新しい取得観測は
+`read_delivery.py`が所有する。本モジュールは配送処理へ依存せず、操作判定と取得記録を提供する。
 """
 
 from __future__ import annotations
@@ -20,13 +14,12 @@ import re
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from collections.abc import Callable, Sequence
 
-from agent_toolkit._hooks.pretooluse.notices import _block_notice
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
-lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
@@ -34,7 +27,7 @@ lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import rules_context as _rules_context
 lazy from agent_toolkit._hooks import tool_input as _tool_input
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import AGENTS_SERVER_HOOK_TOOL_NAMES
 lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
@@ -109,7 +102,7 @@ def _is_search_segment(segment: _shell_segments.ExecutionSegment) -> bool:
         return True
     if name in _GREP_COMMANDS:
         return _grep_is_recursive(segment.tokens[1:])
-    subcommand = _shell_checks._git_subcommand_tokens(segment)  # pylint: disable=protected-access
+    subcommand = _shell_checks.git_subcommand_tokens(segment)
     return subcommand is not None and subcommand[0] == "grep"
 
 
@@ -432,10 +425,21 @@ def _is_agent_document_writing(tool_name: str, tool_input: dict) -> bool:
 
 
 def _is_body_writing(tool_name: str, tool_input: dict) -> bool:
-    """本文を作成・更新する編集入力と、既存のBash文書編集を判定する。"""
+    """編集入力と、静的に確定した本文書込を同じ基準で判定する。"""
     if tool_name == "Bash":
-        return _is_agent_document_writing(tool_name, tool_input)
+        command = tool_input.get("command")
+        if not isinstance(command, str):
+            return False
+        handoff = _delegated_session.handoff_path(os.environ)
+        paths = _bash_write_paths(command)
+        if handoff and paths and all(path == handoff for path in paths):
+            return False
+        return isinstance(command, str) and (_is_agent_document_writing(tool_name, tool_input) or _bash_body_writing(command))
     operations = _tool_input.parse_operations(tool_name, tool_input, "")
+    handoff = _delegated_session.handoff_path(os.environ)
+    paths = [path for operation in operations or [] for path in operation.display_paths]
+    if handoff and paths and all(path == handoff for path in paths):
+        return False
     return any(
         operation.path
         and operation.kind != _tool_input.KIND_DELETE
@@ -446,6 +450,38 @@ def _is_body_writing(tool_name: str, tool_input: dict) -> bool:
         )
         for operation in operations or []
     )
+
+
+def _bash_body_writing(command: str) -> bool:
+    """本文をコマンド内に持つ書込だけを選び、出力保存と複製を除く。"""
+    for invocation in extract_bash_invocations(command):
+        tokens = invocation.static_tokens
+        name = pathlib.PurePath(tokens[0]).name
+        if name == "sed" and _sed_write_paths(tokens[1:]):
+            return True
+        if name == "perl" and _perl_write_paths(tokens[1:]):
+            return True
+        if name == "gawk" and _gawk_write_paths(tokens[1:]):
+            return True
+        if is_python_token(name) and len(tokens) > 2 and tokens[1] == "-c" and _python_write_paths(tokens[2]):
+            return True
+        if name in {"cat", "tee"} and invocation.inline_input:
+            outputs = [target for target in invocation.static_outputs if isinstance(target, str)]
+            if name == "tee":
+                outputs.extend(_stream_write_paths(tokens[1:]))
+            if any(_static_write_path(path) is not None and path != "-" for path in outputs):
+                return True
+    for body in heredoc_bodies(command):
+        preceding = extract_bash_invocations(command[: body.start])
+        if preceding:
+            tokens = preceding[-1].segment.tokens
+            if (
+                is_python_token(pathlib.PurePath(tokens[0]).name)
+                and tokens[1:] in {(), ("-",)}
+                and _python_write_paths(command[body.start : body.end])
+            ):
+                return True
+    return False
 
 
 def _is_delegation_operation(tool_name: str, _tool_input: dict) -> bool:
@@ -559,7 +595,7 @@ def document_id(entry: OperationSkill, relative_path: str) -> str:
     return entry.skill_name if relative_path == SKILL_DOCUMENT else f"{entry.skill_name}:{relative_path}"
 
 
-def _mark_ready(identifier: str, agent: str) -> Callable[[dict], dict | None]:
+def mark_ready(identifier: str, agent: str) -> Callable[[dict], dict | None]:
     def _mutator(state: dict) -> dict | None:
         recorded = state.get(_rules_context.OPERATION_SKILL_READY_KEY)
         recorded = dict(recorded) if isinstance(recorded, dict) else {}
@@ -590,22 +626,28 @@ def record_skill_ready(session_id: str, skill_name: object, agent: str) -> None:
     entry = _entry(skill_name)
     if entry is None or not session_id:
         return
-    update_state(session_id, _mark_ready(document_id(entry, SKILL_DOCUMENT), agent))
+    update_state(session_id, mark_ready(document_id(entry, SKILL_DOCUMENT), agent))
 
 
 def record_document_read(session_id: str, read: _document_reads.DocumentRead, agent: str) -> None:
     """表のスキルの必須資料の全文の読取を、呼び出し主体の取得として記録する。部分取得は記録しない。"""
     entry = _entry(read.skill)
-    if entry is None or not session_id or read.partial or read.relative_path not in entry.documents:
+    if (
+        entry is None
+        or not session_id
+        or read.partial
+        or read.plugin != "agent-toolkit"
+        or read.relative_path not in entry.documents
+    ):
         return
-    update_state(session_id, _mark_ready(document_id(entry, read.relative_path), agent))
+    update_state(session_id, mark_ready(document_id(entry, read.relative_path), agent))
 
 
 def _subject(payload: dict) -> str:
     """主体の区分を返す。区分ごとの取得手段と記録する観測は`docs/development/design-hooks.md`の該当節が定める。"""
     if _delegated_session.is_lightweight_delegated(os.environ):
         return SUBJECT_LIGHTWEIGHT
-    if is_codex_payload(payload):
+    if is_codex_payload(payload) or is_antigravity_payload(payload):
         return SUBJECT_CODEX
     if _agent_id.resolve_hook_agent_id(payload) != _agent_id.MAIN_AGENT_ID:
         return SUBJECT_SUBAGENT
@@ -638,47 +680,17 @@ def _acquisition_steps(subject: str, entry: OperationSkill, missing: list[str]) 
     return steps
 
 
-def operation_skill_delivery(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[str]:
-    """必須資料を取得していない主体の該当操作を止め、ホスト本来の取得手段と同じ操作の再発行を案内する。
-
-    遮断の応答は資料の本文を含まず、遮断の時点では取得を記録しない。軽量委譲先は遮断しない。
-    """
-    if not session_id:
-        return []
-    subject = _subject(payload)
-    if subject == SUBJECT_LIGHTWEIGHT:
-        return []
-    agent = _agent_id.resolve_hook_agent_id(payload)
-    recorded = read_state(session_id).get(_rules_context.OPERATION_SKILL_READY_KEY)
-    pending = [
-        (entry, missing)
-        for entry in OPERATION_SKILLS
-        if (missing := _missing_documents(recorded, entry, agent)) and entry.matches(tool_name, tool_input)
-    ]
-    if not pending:
-        return []
-    failures = [
-        f"`{path}`（{problem}）"
-        for entry, missing in pending
-        for relative in missing
-        if (problem := _document_problem(path := _plugin_resources.skill_document_path(entry.short_name, relative)))
-    ]
-    if failures:
-        operations = "・".join(entry.operation for entry, _ in pending)
-        return [
-            _block_notice(
-                f"{operations}に必要な資料を取得できず、操作を実行していない。資料: {'、'.join(failures)}",
-                fix="資料の読取失敗を委譲元またはユーザーへ報告し、資料の復旧後に同じ操作を再発行する。",
-            )
-        ]
-    lines = [
-        f"{entry.operation}の実行前に`{entry.skill_name}`の基準を取得する: "
-        + "。".join(_acquisition_steps(subject, entry, missing))
-        for entry, missing in pending
-    ]
-    return [
-        _block_notice(
-            "\n".join(lines),
-            fix="上記の資料を取得し、基準を適用してから同じ操作を再発行する。取得を観測するまで同じ操作は止まる。",
-        )
-    ]
+def operation_matches(operation: str, tool_name: str, tool_input: dict) -> bool | None:
+    """共通語彙の操作を判定し、担当外の語彙はNoneを返す。"""
+    predicates = {
+        "delegation": _is_delegation_operation,
+        "search": _is_search_operation,
+        "root-cause-writing": _is_root_cause_writing,
+        "managed-temp-create": _is_managed_temp_create,
+        "body-writing": _is_body_writing,
+        "verification": _is_verification_operation,
+        "agent-document-writing": _is_agent_document_writing,
+        "confirmation": lambda name, _input: name in {"AskUserQuestion", "request_user_input", "request_user_input_async"},
+    }
+    predicate = predicates.get(operation)
+    return predicate(tool_name, tool_input) if predicate is not None else None

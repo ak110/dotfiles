@@ -11,7 +11,7 @@ from agent_toolkit._agents_server import resume_waits, state
 def test_finalize_pending_result_records_remaining_wait_targets_and_keeps_error(keep_resume_chain: bool) -> None:
     """保留結果の確定は残ったバックグラウンドタスクと孫sessionを既存の`error`へ併合し、継続の連鎖では記録しない。
 
-    全ての確定の契機（期限到来、ストリーム終端、`kill`、`send_message`、孫sessionの監視）がこの共通処理を通る。
+    全ての確定の契機（期限到来、ストリーム終端、`kill`、`send_message`、孫sessionの監視）でこの共通処理を実行する。
     既存の`error`を置き換えると、失敗の内容や先に記録した未観測の孫sessionが失われる。
     継続の連鎖（過負荷と利用上限の待機後の継続）は同じsessionで新しいturnを始めるため、確定した結果を公開しない。
     """

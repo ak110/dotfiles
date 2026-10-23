@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import json
 import pathlib
-import re
 import shlex
 import subprocess
 import sys
-from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import backends, plugin_root, record_paths
+from agent_toolkit._agents_server import backends, handoff_next_action, plugin_root, record_paths
 from agent_toolkit._agents_server.state import SessionResumeState, SessionState
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import delegated_session, process_tree
 from agent_toolkit._common.next_action import ActionableError
+
+result_next_action = handoff_next_action.result_next_action
 
 
 def availability_reason(engine: str, status: str, error: Any) -> str | None:
@@ -24,14 +24,6 @@ def availability_reason(engine: str, status: str, error: Any) -> str | None:
     if backend is None:
         return None
     return backend.unavailable_reason(SessionState(session_id="handoff", cwd="", engine=engine, status=status, error=error))
-
-
-def result_next_action(result: Mapping[str, Any]) -> str | None:
-    """可用性失敗の結果だけに、前任IDを使った明示的な引き継ぎ起動を案内する。"""
-    if availability_reason(str(result.get("engine", "")), str(result.get("status", "")), result.get("error")) is None:
-        return None
-    identifier = json.dumps(result.get("session_id"), ensure_ascii=False)
-    return f'`start`へ`{{"handoff_from": {identifier}}}`だけを渡し、前任の進捗を後任へ引き継ぐ'
 
 
 def predecessor_error(session: SessionState | SessionResumeState) -> Any:
@@ -118,9 +110,8 @@ def compose_prompt(
         "## 前任からの引き継ぎ",
         "上の起動本文は前任へ配送した原文である。以下の引き継ぎ節を現在の開始条件として扱い、既存の記録を読む。",
     ]
-    handoff = re.search(r"^引き継ぎ記録先[:：]\s*(.+)$", session.prompt, re.MULTILINE)
-    if handoff is not None:
-        path = re.sub(r"[（(](?:新規|継続)[）)]\s*$", "", handoff[1]).strip()
+    path = delegated_session.prompt_handoff_path(session.prompt)
+    if path is not None:
         lines += [f"引き継ぎ記録先: {path}（継続）", "この引き継ぎ記録を最初に読み、確定事項と残工程を復元する。"]
     lines += [
         f"前任session: {session.session_id}",

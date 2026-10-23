@@ -68,7 +68,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk commit": {
         "summary": "子エージェントでGitコミットを作成する",
-        "description": "子エージェントでGitコミットを作成する。\n\n目的: 作業ツリーの差分を子エージェントに確認させてGitコミットまで行う。\n利用場面: 変更に対応するコミットメッセージの作成とコミットを任せるとき。\n対象と出力: 現在のGitリポジトリのstage・未stage・未追跡ファイルを調べ、選んだengineの子エージェントへ指示を渡す。dry-runではコミットしない。\n前提: 通常実行では変更があること。model-typeは段位名またはengine:model[/effort]の候補列を受け取る。\n復元・後始末: 作成したコミットはGit履歴で確認し、必要ならGitの通常手段で取り消す。",
+        "description": "子エージェントでGitコミットを作成する。\n\n目的: 作業ツリーの差分を子エージェントに確認させてGitコミットまで行う。\n利用場面: 変更に対応するコミットメッセージの作成とコミットを任せるとき。\n対象と出力: 現在のGitリポジトリのstage・未stage・未追跡ファイルを調べ、選んだengineの子エージェントへ指示を渡す。dry-runではコミットしない。\n前提: 通常実行では変更があること。model-typeは工程名またはengine:model[/effort]の候補列を受け取る。省略時はchores。\n復元・後始末: 作成したコミットはGit履歴で確認し、必要ならGitの通常手段で取り消す。",
         "epilog": "実行例:\n\n  atk commit\n  atk commit --model-type claude:sonnet/high",
     },
     "atk setup-project": {
@@ -88,7 +88,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk run-skill": {
         "summary": "定期実行から任意のスキルを自律モードで1回実行する",
-        "description": "定期実行から任意のスキルを自律モードで1回実行する。\n\n目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_engine`のengine順にengine別のhigh段位モデル設定を並べた候補から可用な候補を選び（Claudeの利用上限は解除まで待つ）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と、`orchestrate_engine`または段位モデルの設定の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 30日を超えたログは各実行の開始時に削除する。ロックは実行の終了時に解放する。",
+        "description": "定期実行から任意のスキルを自律モードで1回実行する。\n\n目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_model`の候補列から可用な候補を選び（利用上限の待機はengine別設定に従う）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と、`orchestrate_model`の設定の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 30日を超えたログは各実行の開始時に削除する。ロックは実行の終了時に解放する。",
         "epilog": "実行例:\n\n  atk run-skill --target-repo /absolute/path/to/repo my-skill\n  atk run-skill --args '対象: web' --timeout 7200 agent-toolkit:process-wi\n\ncronへ登録する例（標準出力を破棄し、失敗行だけをcronのメール通知へ渡す）:\n\n  PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin\n  0 3 */3 * * atk run-skill --target-repo /home/user/repo my-skill >/dev/null",
     },
     "atk wi": {
@@ -108,7 +108,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi show": {
         "summary": "指定エントリまたは全件の本文を表示する",
-        "description": "指定エントリまたは全件の本文を表示する。\n\n目的: ファイル名で指定した項目、または対象範囲の全件の本文をfrontmatterとともに表示する。\n利用場面: 処理を始める前に要求の原文を確認するとき。複数件を1回の実行で取得するとき。\n対象と出力: private-notesを読み取り、標準出力へtarget_repoごとに区切って書く。各項目の見出し行は`### <ファイル名> [<状態>]`とし、`<状態>`へその項目が属する状態ディレクトリ名を書く。UWIでは状態に続けて`/answered`または`/unanswered`を書く。`--summary-only`ではtarget_repoとファイル名・状態の見出しを同じ形式で書き、その次の行へAWIはH1表題、UWIは質問本文の先頭行を省略せずに書き、frontmatterと他の本文を省く。エージェント環境では、FILENAMEを2件以上指定した場合と`--all`を指定した場合は量によらず標準出力を保存して`保存先:`・`行数:`を返す。FILENAMEが1件の場合と`--summary-only`の場合は`atk --help`が示す長さ以下なら直接表示し、超える場合は同じく保存する。長い標準エラーは`標準エラー保存先:`・`標準エラー行数:`で返す。ファイルは変更しない。\n前提: FILENAMEを1件以上指定するか`--all`を指定する。FILENAME指定時は全ての状態ディレクトリを探索し、`--target-repo`を省略した場合は対象リポジトリで限定しない。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "指定エントリまたは全件の本文を表示する。\n\n目的: ファイル名で指定した項目、または対象範囲の全件の本文をfrontmatterとともに表示する。\n利用場面: 処理を始める前に要求の原文を確認するとき。複数件を1回の実行で取得するとき。\n対象と出力: private-notesを読み取り、標準出力へtarget_repoごとに区切って書く。各項目の見出し行は`### <ファイル名> [<状態>]`とし、`<状態>`へfrontmatterのstateを書く。通常配置はYYYY/MMで、旧配置の読取互換も同じ状態値へ正規化する。UWIでは状態に続けて`/answered`または`/unanswered`を書く。`--summary-only`ではtarget_repoとファイル名・状態の見出しを同じ形式で書き、その次の行へAWIはH1表題、UWIは質問本文の先頭行を省略せずに書き、frontmatterと他の本文を省く。エージェント環境では、FILENAMEを2件以上指定した場合と`--all`を指定した場合は量によらず標準出力を保存して`保存先:`・`行数:`を返す。FILENAMEが1件の場合と`--summary-only`の場合は`atk --help`が示す長さ以下なら直接表示し、超える場合は同じく保存する。長い標準エラーは`標準エラー保存先:`・`標準エラー行数:`で返す。ファイルは変更しない。\n前提: FILENAMEを1件以上指定するか`--all`を指定する。FILENAME指定時は共通WI配置の年月ディレクトリと旧配置を探索し、`--target-repo`を省略した場合は対象リポジトリで限定しない。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk wi show 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles --skip-pull",
     },
     "atk wi grep": {
@@ -198,7 +198,29 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop": {
         "summary": "AWIを消化し続けるprocess-loopを開始する",
-        "description": "AWIを消化し続けるprocess-loopを開始する。\n\n目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行するprocess-loopを開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_engineのengine順とengine別のhigh段位モデル設定で決まるオーケストレーターを起動する。待機中はCIの失敗を検出してAWIを投入する。未判定のDependabotアラートがあればAWIを起票せずprocess-wiを1回実行させ、その実行の自動コードレビュー監査が判定する。対象リポジトリの作業ツリーは起動したセッションが変更する。`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、初回のセッション起動をその再開へ差し替える。開始前の待機中は、入力可能な端末でEnterを押すと今回の待機を解除して処理可能なWIを再評価する。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。`--auto-resume`と`--resume`は同時指定できない。\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",
+        "description": "AWIを消化し続けるprocess-loopを開始する。\n\n目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行するprocess-loopを開始する。"
+        "\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。"
+        "\n対象と出力: `atk config`のorchestrate_modelの候補列で指定するオーケストレーターを起動する。"
+        "待機中はCIの失敗を検出してAWIを投入する。未判定のDependabotアラートがあればAWIを起票せずprocess-wiを1回実行させ、"
+        "その実行の自動コードレビュー監査が判定する。対象リポジトリの作業ツリーは起動したセッションが変更する。"
+        "`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、"
+        "初回のセッション起動をその再開へ差し替える。"
+        "子セッションの開始前は、WI投入作業の活動猶予と未回答UWIによる抑止を同時に判定する。"
+        "活動は`atk wi submission begin`で記録した投入先が対象リポジトリ集合と交わる会話とその委譲先に限る。"
+        "同じoriginの別worktreeと別表記URLは同じ投入先とし、同repoの別作業・別repoへの投入・会話の無いプロセスは理由にしない。"
+        "活動猶予は処理可能WIの検出から10分で、共有private-notesへの新規WI到着の検出ごとに10分へ延長する。"
+        "自ループとその子孫・終端session・稼働中の子エージェントを持たずユーザーの応答を待つsessionは活動から除く。"
+        "活動がなくなった時か期限の到来で解除し、既存WIの編集・状態移動では延長しない。"
+        "対象集合に未回答UWIがあれば、保存済みUWIの最終更新から600秒経過するか全件回答されるまで開始を抑止する。"
+        "holdとrun-skill由来のUWIも含み、回答後adoptedへ移ったUWIの更新も最終更新へ反映する。"
+        "両条件の解除後に候補を再評価し、待機理由・期限・延長・開始を端末とログへ示す。"
+        "入力可能な端末のEnterは今回の両待機を解除して候補の再評価へ進める。解除は次回へ持ち越さず、"
+        "非TTY・EOF・バックグラウンドジョブなど入力できない実行では自動の待機を続ける。"
+        "\n前提: 対象リポジトリの現在branchが追跡先を持つこと。"
+        "`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。"
+        "`--auto-resume`と`--resume`は同時指定できない。"
+        "\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。"
+        "作成したworktreeと起動したセッションの成果物は自動では削除しない。",
         "epilog": "実行例:\n\n  atk wi process-loop --worktree",
     },
     "atk wi process-loop abort": {
@@ -260,12 +282,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config": {
         "summary": "XDG関連パスとモデル設定を確認・変更する",
-        "description": "XDG関連パスとモデル設定を確認・変更する。\n\n目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、モデル設定（engine別・段位別のモデルと用途別のengine順）を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`と、プリセット名を指定した`apply-preset`である。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。廃止した旧モデル設定（high_tier_model・medium_tier_model・low_tier_model・orchestrate_model）の保存値は、show・getと設定からの候補解決の初回に新しいキーへ一括移行する。新しいキーで表せない旧値は移行せず、競合と修正する新キーを示して停止するため、示された新キーを`set`で保存してから再実行する。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
+        "description": "XDG関連パスとモデル設定を確認・変更する。\n\n目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、モデル設定（工程別の直接候補列）を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。set・プリセット適用時と、旧設定が残る初回の読取時に設定ファイルを更新する。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。旧段位9キーと用途別engine順5キーは、show・getと設定候補解決の初回に6工程へ一括合成し、廃止キーを除去する。共存する古い工程キーより合成値を優先する。廃止環境変数は対応する工程別環境変数へ置き換える。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。旧設定がある場合はshow・getも移行結果を保存する。",
         "epilog": "実行例:\n\n  atk config show\n  atk config get private_notes",
     },
     "atk config show": {
         "summary": "XDG関連パスとモデル設定を一覧表示する",
-        "description": "XDG関連パスとモデル設定を一覧表示する。\n\n目的: XDG関連パス、モデル設定、Codexの速度と接続先の優先順を`<キー>: <値>`で1キー1行ずつ表示する。モデル設定はClaudeのhigh・medium・low、Codexのhigh・medium・low、base・review・chores・orchestrateのengine順、write_modelの順に並べる。参考一覧外のモデル名・effortは警告する。`codex_fast_mode`の初期値は`false`、`codex_model_providers`の初期値は空である。`claude_api_env_file`が未設定（空文字列）なら親環境とClaude Codeの通常の認証解決を使い、認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替を行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時に通常の認証解決を使う。設定した場合、`claude_api_env_file`はAPI認証環境の所在、`claude_api_mode`は役割別の接続方針を表す。`pay-as-you-go`（未設定時の値）はオーケストレーターをAPIへ固定し、委譲先をサブスクリプション、APIの順にする。`api-credits`はオーケストレーターをサブスクリプションへ固定し、委譲先をAPI、サブスクリプションの順にする。一方だけの認証環境はその接続を使い、空か無効なenvファイルはAPI候補から除く。空文字列の保存でAPI設定を解除する。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧、標準エラーへ警告を書く。設定は変更しない。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "XDG関連パスとモデル設定を一覧表示する。\n\n目的: XDG関連パス、モデル設定、Codexの速度と接続先の優先順を`<キー>: <値>`で1キー1行ずつ表示する。モデル設定はexecute・review・review_fast・chores・chores_fast・orchestrate・writeの7工程の順に並べる。参考一覧外のモデル名・effortも表示する。`codex_fast_mode`の初期値は`false`、`codex_model_providers`の初期値は空である。当該役割の新キーが未指定で、`claude_api_env_file`も未設定（空文字列）なら親環境とClaude Codeの通常の認証解決を使い、認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替を行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後からenvファイルだけを設定しても再開時に通常の認証解決を使う。`claude_api_env_file`はAPI候補の認証環境の所在を表す。新キーをsetまたは対応する環境変数で明示した役割には、envファイルの有無にかかわらず役割別方針を適用する。API固定には有効なAPI環境ファイルを必要とし、サブスクリプション固定では親API認証を隔離してOAuth認証を使う。`claude_orchestrator_api_only`はtrueでオーケストレーターをAPIだけ、falseでサブスクリプションだけに固定する。初期値はtrue。`claude_worker_api_first`はtrueで委譲先をAPI、サブスクリプションの順、falseでサブスクリプション、APIの順にする。初期値はfalse。委譲先は利用可能な候補を指定順に使い、空か無効なenvファイルはAPI候補から除く。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針であり、never（待たない）、five-hour（5時間上限だけ待つ）、always（全ての利用上限で待つ）を受理する。両方の初期値はfive-hour。待機対象外は既存の後続候補を評価し、候補が無ければ失敗理由を返す。旧`claude_api_mode`のget・setと環境変数は受理する。旧入力を保持し、pay-as-you-goはtrue/false、api-creditsはfalse/trueの実効値へ読み替える。getで新キーへ自動保存しない。旧通常2モードだけを指定した役割にも、API環境未設定時の通常認証の互換動作を保つ。旧api-onlyは両役割と既存会話の次の継続をAPIだけに固定する互換入力として保持する。新boolの明示指定は当該役割の旧方針を上書きし、他方の役割の旧API固定を保つ。空文字列の保存はAPI環境ファイルの設定を解除し、明示した役割別方針は維持する。役割の現行固定を明示した場合は、既存会話の次turn・保存後再開にも同じ会話IDで適用する。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧を書く。廃止キーがある場合は移行結果を保存する。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config show",
     },
     "atk config get": {
@@ -275,12 +297,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: engine別・段位別のモデル・推論の深さ、用途別のengine順、日本語文章の起草に使うwrite_model、agents_serverのCodexの速度・接続先の優先順、ClaudeのAPI接続用envファイルを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`claude_api_env_file`はenvファイルのパス1つを受理し、先頭の~を展開する。空文字列は未設定を表し、親環境とClaude Codeの通常の認証解決を維持する。認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替は行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時に通常の認証解決を使う。以下の役割別接続管理はenvファイルを設定した会話に適用する。set時にはファイルの存在・内容を確かめない。`claude_api_mode`は`pay-as-you-go`（未設定時の値）または`api-credits`を受理し、API認証の所在と役割別の接続方針を分ける。前者はオーケストレーターをAPIへ固定し、委譲先をサブスクリプション、APIの順にする。後者はオーケストレーターをサブスクリプションへ固定し、委譲先をAPI、サブスクリプションの順にする。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_model_providers`は空、または主接続先を先頭にしたCodex provider IDのASCIIカンマ区切り列。空ならCodex通常設定に従い代替試行しない。後続は独立したAPI認証を使う接続先を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。`<claude|codex>_<high|medium|low>_tier_model`はengine接頭辞を付けない単一の`<モデル>[/<effort>]`を受理し、effort省略時は`medium`を使う。`opencode_<high|medium|low>_tier_model`は空文字列、または`<provider>/<model>[@<effort>]`を受理する。最初の/でproviderとmodelを分け、末尾の@より後がvariantである。model内の/を保持する。空の段位は候補から外れ、全候補が空ならエラーになる。`<base|execute|review|chores>_engine`は`codex`・`claude`・`opencode`を重複なしで並べたASCIIカンマ区切り列を受理する。`orchestrate_engine`は`codex`と`claude`だけを受理する。`write_model`は`<claude|codex|agy>:<モデル>[/<effort>]`のASCIIカンマ区切り列を受理する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧モデル設定の移行で停止した場合も、示された新キーをこのコマンドで保存して復旧する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列と`claude_api_env_file`は空文字列を設定して解除する。Claude会話は選択済みの接続を再開時にも保持し、新規sessionは役割とモードの先頭候補から評価する。`pay-as-you-go`で利用上限によりAPIへ移った委譲先は、上限の解除予定時刻の後の最初の追送か自動再開からサブスクリプションへ戻る。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
-        "epilog": "実行例:\n\n  atk config set codex_high_tier_model sol/medium\n  atk config set review_engine claude,codex",
+        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 7工程のモデル候補・推論の深さ、agents_serverのCodexの速度・接続先の優先順、ClaudeのAPI接続用envファイルを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`claude_api_env_file`はenvファイルのパス1つを受理し、先頭の~を展開する。空文字列はAPI環境ファイルの未設定を表す。当該役割の新キーが未指定でAPI環境ファイルも未設定なら、親環境とClaude Codeの通常の認証解決を維持する。認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替は行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後からenvファイルだけを設定しても再開時に通常の認証解決を使う。新キーが未指定でも、envファイルを設定した会話には役割別接続管理を適用する。set時にはファイルの存在・内容を確かめない。`claude_api_env_file`はAPI候補の認証環境の所在を表す。新キーをsetまたは対応する環境変数で明示した役割には、envファイルの有無にかかわらず役割別方針を適用する。API固定には有効なAPI環境ファイルを必要とし、サブスクリプション固定では親API認証を隔離してOAuth認証を使う。`claude_orchestrator_api_only`はtrueでオーケストレーターをAPIだけ、falseでサブスクリプションだけに固定する。初期値はtrue。`claude_worker_api_first`はtrueで委譲先をAPI、サブスクリプションの順、falseでサブスクリプション、APIの順にする。初期値はfalse。委譲先は利用可能な候補を指定順に使い、空か無効なenvファイルはAPI候補から除く。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針であり、never（待たない）、five-hour（5時間上限だけ待つ）、always（全ての利用上限で待つ）を受理する。両方の初期値はfive-hour。待機対象外は既存の後続候補を評価し、候補が無ければ失敗理由を返す。旧`claude_api_mode`のget・setと環境変数は受理する。旧入力を保持し、pay-as-you-goはtrue/false、api-creditsはfalse/trueの実効値へ読み替える。getで新キーへ自動保存しない。旧通常2モードだけを指定した役割にも、API環境未設定時の通常認証の互換動作を保つ。旧api-onlyは両役割と既存会話の次の継続をAPIだけに固定する互換入力として保持する。新boolの明示指定は当該役割の旧方針を上書きし、他方の役割の旧API固定を保つ。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_model_providers`は空、または主接続先を先頭にしたCodex provider IDのASCIIカンマ区切り列。空ならCodex通常設定に従い代替試行しない。後続は独立したAPI認証を使う接続先を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。各工程の`*_model`は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`をASCIIカンマで区切る。effort省略時はmedium。model内の/を保持し、OpenCodeのvariantは末尾の@で分ける。orchestrate_modelはopencodeを受理しない。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。廃止環境変数がある場合は対応する工程別環境変数へ置き換える。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列と`claude_api_env_file`は空文字列を設定して解除する。旧api-onlyの方針が残る役割は、新規・既存の会話を次の継続からAPIだけで実行し、API環境が未設定・空・不正なら修正を求め、API失敗でもサブスクリプションへ切り替えない。通常のClaude会話は選択済みの接続を再開時にも保持する。役割の現行固定を明示した場合は、次turn・保存後再開で同じ会話を固定先へ移す。新規sessionは役割別設定の先頭候補から評価する。`claude_worker_api_first=false`で利用上限によりAPIへ移った委譲先は、上限の解除予定時刻の後の最初の追送か自動再開からサブスクリプションへ戻る。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
+        "epilog": "実行例:\n\n  atk config set execute_model codex:sol/medium\n  atk config set review_model claude:sonnet[1m]/medium,codex:terra/medium",
     },
     "atk config apply-preset": {
-        "summary": "用途別engine順をプリセットで確認・一括設定する",
-        "description": "用途別engine順をプリセットで確認・一括設定する。\n\n目的: base・execute・review・chores・orchestrateの用途別engine順の5キーを1回の実行で一括保存する。engine別・段位別のモデル設定とwrite_modelは変更しない。`show`の指定時と引数の省略時は、保存せずに7プリセットの設定値を表示する。\n利用場面: 主に使うengineをcodex・claude・opencodeへ切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ用途別engine順を保存し、保存した各キーと値を標準出力へ表示する。`show`の指定時と引数の省略時は設定ファイルを読み書きせず、opencode用プリセットは空の段位モデルがあれば保存後にキー名と設定方法を警告する。プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-near-primary`、`codex-primary`、`claude-balanced`、`claude-primary`、`opencode-balanced`、`opencode-near-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
+        "summary": "工程別モデル候補列をプリセットで確認・一括設定する",
+        "description": "工程別モデル候補列をプリセットで確認・一括設定する。\n\n目的: execute・review・review_fast・chores・chores_fast・orchestrateの6キーを一括保存し、write_modelと非モデル設定を保持する。`show`の指定時と引数の省略時は、保存せずに5プリセットの設定値を表示する。\n利用場面: 工程ごとのモデル候補列を一括で切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ工程別候補列を保存し、保存した各キーと値を標準出力へ表示する。`show`の指定時と引数の省略時は設定ファイルを読み書きしない。プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-near-primary`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
         "epilog": "実行例:\n\n  atk config apply-preset show\n  atk config apply-preset codex-balanced",
     },
     "atk wait-schedule": {
@@ -349,12 +371,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk lane create": {
         "summary": "レーン専用資源を準備して所有と回収入力を登録する",
-        "description": "レーン専用資源を準備して所有と回収入力を登録する。\n\n目的: レーンの専用worktreeとbranchを作成し、終了時回収の入力を登録する。\n利用場面: 初期レーンを起動する前、統合済みレーンを同じ資源で再開するとき。\n対象と出力: repo・base-branch・lane・selection-fileを受け取り、専用branch・worktreeと所有session、record_pathをJSONで返す。同じ登録の準備済み資源は再利用する。\n前提: --worktreeを省略すると、同じGitリポジトリの主作業ツリーの.claude/worktrees/process-wi-<lane>を作成先とし、linked worktreeから呼んでも同じパスへ解決する。固定作成先を別sessionの登録が保持する場合は、回収条件を満たせば回収してから同じパスへ再作成し、未統合・dirty・稼働中の資源と所有登録の無い資源は変更せず理由と回復操作を返して終了2とする。--commands-fileはcreate・prepare・deleteをキーとするJSON objectで、値はshellを使わないargv配列。各引数の{repo}・{worktree}・{branch}・{lane}を資源の値へ展開し、repoをcwdとして実行する。create手順は指定worktreeをGitへ登録し、prepareは必要な前提ファイルと環境を準備する。--timeoutの正の有限上限（省略600秒）は、固有手順（create・prepare・delete）、hook定義にtimeoutが無いWorktreeCreate・WorktreeRemove hook、atk lane integrateの最終化操作へ適用し、実行記録と両出力を保存する。hook定義のtimeoutとintegrateの検証argvは自身の上限で終わる。--reuse-recordは終端を確認した別sessionの登録を新所有sessionへ移して成果を再利用し、旧配置（個別managed-temp）の登録も同じ作成先のまま引き継ぐ。\n復元・後始末: 失敗時は資源と登録を保持して回復へ使う。統合後に選定の統合状態を保存し、session終了時に回収する。",
+        "description": "レーン専用資源を準備して所有と回収入力を登録する。\n\n目的: レーンの専用worktreeとbranchを作成し、終了時回収の入力を登録する。\n利用場面: 初期レーンを起動する前、統合済みレーンを同じ資源で再開するとき。\n対象と出力: repo・base-branch・lane・selection-fileを受け取り、専用branch・worktreeと所有session、record_pathをJSONで返す。同じ登録の準備済み資源は再利用する。\n前提: --worktreeを省略すると、同じGitリポジトリの主作業ツリーの.claude/worktrees/process-wi-<lane>を作成先とし、linked worktreeから呼んでも同じパスへ解決する。固定作成先を別sessionの登録が保持する場合は、回収条件を満たせば回収してから同じパスへ再作成し、未統合・dirty・稼働中の資源と所有登録の無い資源は変更せず理由と回復操作を返して終了2とする。--commands-fileはcreate・prepare・deleteをキーとするJSON objectで、値はshellを使わないargv配列。各引数の{repo}・{worktree}・{branch}・{lane}を資源の値へ展開し、repoをcwdとして実行する。create手順は指定worktreeをGitへ登録し、prepareは必要な前提ファイルと環境を準備する。--timeoutの正の有限上限（省略600秒）は、固有手順（create・prepare・delete）、hook定義にtimeoutが無いWorktreeCreate・WorktreeRemove hook、atk lane integrateの最終化操作へ適用し、実行記録と両出力を保存する。hook定義のtimeoutとintegrateの検証argvは自身の上限で終わる。--reuse-recordは終端を確認した別sessionの登録を新所有sessionへ移して成果を再利用する。再利用元のworktreeが無い場合は移管せず、`atk lane delete --session-id <再利用元の所有session>`で登録を回収してから作成し直す。旧配置（個別managed-temp）の登録も同じ作成先のまま引き継ぐ。\n復元・後始末: 失敗時は資源と登録を保持して回復へ使う。統合後に選定の統合状態を保存し、session終了時に回収する。",
         "epilog": "実行例:\n\n  atk lane create --repo /absolute/repo --base-branch develop --lane lane-01 --selection-file /absolute/pick-wi.yaml",
     },
     "atk lane delete": {
         "summary": "所有sessionの安全なレーン資源をまとめて回収する",
-        "description": "所有sessionの安全なレーン資源をまとめて回収する。\n\n目的: 記録された所有sessionのレーン資源を安全条件で回収する。\n利用場面: sessionの最後と、終了処理が保持した対象の再回収。\n対象と出力: 全登録を先に判定し、removedとretainedの理由・残る操作、result_pathをJSONで返す。--listでは全sessionの登録と前回結果を読み、--session-idで1所有sessionへ限定できる。読取は作成と削除を行わない。未回収がある場合は終了1、入力不正は2。\n前提: Git登録と所有記録が一致し、担当と外部プロセスが終了し、worktreeがcleanで、branchが統合先へ到達し、選定の統合状態が統合済みであること。終端済み・未解放でcwdが対象worktree配下の委譲sessionは、所有agents_serverへ解放を要求してから使用中を再判定する。実行中・所有側無応答・解放後の残存資源は保持し、session_idと公開stop後の同じlane deleteの再実行を案内する。確認不能は保持する。\n復元・後始末: 固有delete手順、worktree、branch、旧配置の登録が持つ個別managed-tempの順で回収する。部分失敗は登録を保持し、同じ操作で残る処理から続ける。主作業ツリー、他sessionの登録、証拠とsessionのmanaged-tempは削除しない。",
+        "description": "所有sessionの安全なレーン資源をまとめて回収する。\n\n目的: 記録された所有sessionのレーン資源を安全条件で回収する。\n利用場面: sessionの最後と、終了処理が保持した対象の再回収。\n対象と出力: 全登録を先に判定し、removedとretainedの理由・残る操作、実体が無いため登録だけを回収したmissing、result_pathをJSONで返す。--listでは全sessionの登録と前回結果を読み、--session-idで1所有sessionへ限定できる。読取は作成と削除を行わない。未回収がある場合は終了1、入力不正は2。\n前提: 主repoから照会したGit登録と所有記録が一致し、担当と外部プロセスが終了し、存在するworktreeがcleanで、branchが統合先へ到達するか、finalizedの統合入力HEADを保ち、選定の統合状態が統合済みであること。worktreeのパス、Git登録、branchが全て無いと確定した登録は、これらの判定を省いて回収する。worktreeのパスが無くGit登録だけが残る場合はその登録を強制解除し、branchが残る場合は統合済み判定を続ける。終端済み・未解放でcwdが対象worktree配下の委譲sessionは、所有agents_serverへ解放を要求してから使用中を再判定する。実行中・所有側無応答・解放後の残存資源は保持し、session_idと公開stop後の同じlane deleteの再実行を案内する。確認不能は保持する。\n復元・後始末: worktreeのパスが無い登録では固有delete手順を実行せず、警告と最後に記録したHEADを残す。存在する資源は固有delete手順、worktree、branch、旧配置の登録が持つ個別managed-tempの順で回収する。部分失敗は登録を保持し、同じ操作で残る処理から続ける。主作業ツリー、他sessionの登録、証拠とsessionのmanaged-tempは削除しない。",
         "epilog": "実行例:\n\n  atk lane delete --session-id <作成した所有session>",
     },
     "atk lane recover": {
@@ -421,7 +443,18 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table add": {
         "summary": "レビュー担当の指摘を追加する",
-        "description": "レビュー担当の指摘を追加する。\n\n目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、保存済みの表から読み直した指摘箇所と指摘内容が、それぞれ送信した本文と一致するかを確かめる。保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: `--round`、`--track`および`--level`を指定し、指摘箇所と指摘内容を`--location-file`と`--issue-file`で与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
+        "description": "レビュー担当の指摘を追加する。\n\n目的: レビュー担当の指摘を1件または複数件追加する。"
+        "\n利用場面: レビューで実在の指摘を確定したとき。"
+        "\n対象と出力: 全入力を検証した後、指定した表を1回ロックして一括で追記し、1回保存する。"
+        "各セルはJSON文字列として保存し、同じロック内で表の全行を読み戻す。"
+        "指摘箇所と指摘内容を送信元本文と比較し、既存行も含む全行の一致を確かめる。"
+        "保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。"
+        "\n前提: `--round`と`--track`は全件共通。単数形は`--level`・`--location-file`・`--issue-file`を使う。"
+        "複数件は`--items-file`へUTF-8の非空JSON配列を渡す。"
+        "各要素は文字列location・issue・levelの3必須キーだけを持ち、levelは要件・仕様・詳細・実装から選ぶ。"
+        '例: [{"location":"対象の位置","issue":"指摘本文","level":"仕様"}]。'
+        "単数形の3オプションと配列入力は併用できない。不正な入力は表を変更せず終了する。"
+        "\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
         "epilog": "実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --round=1 --track=exec-review --level=詳細 --location-file=/home/aki/.cache/agent-toolkit/tmp/location.txt --issue-file=/home/aki/.cache/agent-toolkit/tmp/issue.md",
     },
     "atk review-table respond": {
@@ -466,7 +499,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-audit pending": {
         "summary": "未処置のCopilot review・未解決threadがあるPRと未判定のDependabotアラートを取得する",
-        "description": "未処置のCopilot review・未解決threadがあるPRと未判定のDependabotアラートを取得する。\n\n目的: GitHub APIから未判定のCopilot由来reviewと未解決のCopilot由来review threadと、openで未判定のDependabotアラートを取得し、監査の起動要否を判定する。\n利用場面: process-wiの監査担当を起動する前、merge-prで対象PRを判定する前、またはatk wi process-loopの待機中確認。\n対象と出力: 未処置対象が0件の場合も含め、標準出力へreviews、threads、dependabot、各件数（counts.reviews・counts.threads・counts.dependabot）を持つJSONを1行で出力する。dependabotはstatus（available・disabled・unauthorized）とalertsを持ち、各アラートは番号、manifest_path、パッケージ、エコシステム、修正版（無い場合はnull）、判定区分categoryを持つ。categoryはマニフェストがGitHub APIの`default_branch`で指定されたbranchに実在しなければinaccurate（誤検知）、実在すればmanifest_presentとする。Dependabotアラート機能が無効なリポジトリはstatus=disabled、権限不足の403はstatus=unauthorizedと応答本文のmessageを出力し、いずれも件数0で終了コード0とする。その他の取得失敗、応答の不正とpagination未終端は非0で終了する。記録と対象リポジトリは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定し、gh認証が有効であること。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "未処置のCopilot review・未解決threadがあるPRと未判定のDependabotアラートを取得する。\n\n目的: GitHub APIから未判定のCopilot由来reviewと未解決のCopilot由来review threadと、openで未判定のDependabotアラートを取得し、監査の起動要否を判定する。\n利用場面: process-wiの監査担当を起動する前、merge-prで対象PRを判定する前、またはatk wi process-loopの待機中確認。\n対象と出力: 未処置対象が0件の場合も含め、標準出力へreviews、threads、dependabot、各件数（counts.reviews・counts.threads・counts.dependabot）を持つJSONを1行で出力する。エージェント環境では量によらず生成元でJSONを保存し、保存先と件数・Dependabotの取得状態を表示する。監査担当にはその保存先を直接渡せる。dependabotはstatus（available・disabled・unauthorized）とalertsを持ち、各アラートは番号、manifest_path、パッケージ、エコシステム、修正版（無い場合はnull）、判定区分categoryを持つ。categoryはマニフェストがGitHub APIの`default_branch`で指定されたbranchに実在しなければinaccurate（誤検知）、実在すればmanifest_presentとする。Dependabotアラート機能が無効なリポジトリはstatus=disabled、権限不足の403はstatus=unauthorizedと応答本文のmessageを出力し、いずれも件数0で終了コード0とする。その他の取得失敗、応答の不正とpagination未終端は非0で終了する。記録と対象リポジトリは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定し、gh認証が有効であること。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-audit pending --repo=ak110/dotfiles",
     },
     "atk review-audit mark": {
@@ -527,7 +560,9 @@ HELP["atk run-script"]["description"] += (
     "取得はatk run-command経由で、vitestの--reporter=json --outputFile=<絶対パス>、"
     "Playwrightのenv PLAYWRIGHT_JSON_OUTPUT_NAME=<絶対パス>と--reporter=json、"
     'dotnet testの--logger "trx;LogFileName=<絶対パス>"を指定する。'
-    "--list-results --results-summaryで一覧を読み、--result-testと--select-row・--modeで根拠を記入する。"
+    "ラッパー・コンテナ経由ではatk run-commandの--result-fileへホストの結果ファイルを指定し、"
+    "--path-map 子の絶対接頭辞=ホストの絶対接頭辞で結果中のパスを対応付ける。"
+    "--list-results --results-countsで件数を読み、--result-status・--result-change・--result-diagnostic-groupで群を選ぶ。--results-identifiersで群の全ID、指定省略で詳細を読む。--results-summaryは全ID付き要約を保つ。完成証拠は--list --rows-onlyで行一覧、--section・--rowで全欄を読み、evidence_partsの順序で同出力の根拠辞書を連結する。--result-testと--select-row・--modeで根拠を記入する。"
     "読者別探索の入力はreader-fit-prepareへ--repository・--review-start・--review-head・--output-dirを渡して保存する。"
     "再レビューは--previous-review-start・--previous-review-head、計画別の範囲は--review-contractを渡す。"
     "前回の契約は--previous-review-contractへ渡す。"
@@ -568,12 +603,14 @@ HELP["atk wi show"]["description"] += "重要フラグの限定は--all指定時
 HELP["atk run-command"]["description"] += (
     "\n検証実行: --verificationは同じOSアカウントのホスト共有実行枠を所有する。"
     "外側の検証から入れ子の起動へ所有を引き継ぎ、枠の待機は--timeoutに含めない。"
+    "\n結果宣言: --result-file PATHは結果の存在・SHA-256・バイト数を起動前後にresult_filesへ記録する。"
+    "--path-map CHILD=HOSTはpath_mapsへ子とホストの絶対パスの接頭辞を記録する。いずれも反復でき、"
+    "省略時は対応する記録項目を加えない。取込みは結果の作成・更新と終了後の内容保持を確かめる。"
 )
 
 _STATE_CHANGE_RESULT_LINE = "状態変更が成立した実行は標準出力の1行目へ`成功: `で始まる行を書く。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
 _VALUE_OUTPUT_RESULT_LINE = (
-    "状態変更が成立した実行は標準エラーの1行目へ`成功: `で始まる行を書き、標準出力は値と構造化データだけを保つ。"
-    "非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
+    "成功結果は標準出力の値と構造化データで返す。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
 )
 _READ_ONLY_RESULT_LINE = "成功行は書かない。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
 
@@ -650,7 +687,9 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
         if action.dest == "agents_subcommand" and value in ("start", "send_message", "kill", "stop"):
             raise argparse.ArgumentError(
                 action,
-                f"{value}はMCP専用操作です。次の操作: MCPサーバーagents_serverの{value}の公開説明で引数を確認し、そのツールを呼び出す",
+                f"{value}はMCP専用操作です。次の操作: MCPサーバーagents_serverの{value}の公開説明で引数を確認し、そのツールを呼び出す。"
+                f"Codexではfunctions.execの中でtools.mcp__agents_server__{value}(...)を呼ぶ。"
+                "名前と引数は同じexec内のALL_TOOLSで確かめる",
             )
         super()._check_value(action, value)
 

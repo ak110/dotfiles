@@ -1,0 +1,52 @@
+{{- $home := .chezmoi.homeDir -}}
+{{- $base := env "XDG_CONFIG_HOME" | default (joinPath $home ".config") -}}
+{{- if eq .chezmoi.os "windows" -}}
+{{- $base = env "LOCALAPPDATA" | default (joinPath $home "AppData" "Local") -}}
+{{- else if eq .chezmoi.os "darwin" -}}
+{{- $base = joinPath $home "Library" "Application Support" -}}
+{{- end -}}
+{{- $mode := "full" -}}
+{{- $config := joinPath $base "agent-toolkit" "config.json" -}}
+{{- if stat $config -}}
+{{- $mode = index (include $config | fromJson) "dotfiles_mode" | default "full" -}}
+{{- end -}}
+{{- $mode = env "AGENT_TOOLKIT_CONFIG_DOTFILES_MODE" | default $mode -}}
+{{- if not (has $mode (list "full" "minimal")) -}}
+{{- fail "dotfiles_modeはfullまたはminimalで指定してください" -}}
+{{- end -}}
+[tools]
+{{ if eq $mode "full" }}
+"npm:@google/gemini-cli" = "latest"
+{{ end }}
+{{ if eq $mode "full" }}
+"npm:aws-cdk" = "latest"
+{{ end }}
+chezmoi = "latest"
+# dotnetは共有ランタイムのルートへのsymlinkとして導入される。symlinkで導入済みの版は
+# `latest`のような曖昧な版指定の解決でmise.lockの確定バージョンより優先されるため、
+# 版を明示してこの解決経路を通さない。版の更新は`make update`が`mise upgrade --bump`で行う。
+{{ if eq $mode "full" }}
+dotnet = "10.0.402"
+{{ end }}
+fzf = "latest"
+{{ if eq $mode "full" }}
+gcloud = "latest"
+{{ end }}
+gh = "latest"
+glab = "latest"
+glow = "latest"
+jq = "latest"
+{{ if eq $mode "full" }}
+node = "lts"
+{{ end }}
+ripgrep = "latest"
+
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+lockfile = true
+minimum_release_age = "168h"
+
+# miseはglab CLIの設定ファイルからトークンを取得し、公開プロジェクトの取得へも付与する。
+# 期限切れのトークンは401を返すため、匿名で取得する。
+[settings.gitlab]
+glab_cli_tokens = false

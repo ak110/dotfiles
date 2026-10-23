@@ -78,7 +78,7 @@ def _bundle_events(
     未解決記録のイベントはどのファイルにも保存しないため、標準出力へ1回だけ書く。各ファイルの内容は、
     その走査を単独で実行した出力から未解決記録のイベントと`record-provenance`を除き、全収集記録の
     `record-provenance`を加えたものと一致する。単独実行の標準出力は結果が参照する記録の由来だけを返すが、
-    `session_review_prepare.py`は`timeline.jsonl`から候補の記録の由来を引くため、ファイルは全記録の由来を保つ。
+    `session_review_prepare.py`は`timeline.jsonl`から候補の記録の由来を取得するため、ファイルは全記録の由来を保つ。
     """
     if not directory.is_dir():
         return [
@@ -100,7 +100,9 @@ def _bundle_events(
         _hook_notice_candidate_events(collected),
         main_record_id=main_record.record_id,
         adhoc_processing=_adhoc_processing_events(collected),
-        wi_events=_wi_candidate_events(collected, main_record.path.stem),
+        wi_events=_wi_candidate_events(
+            collected, main_record.record_id.split(":", 1)[1] if main_record.runtime == "opencode" else main_record.path.stem
+        ),
         definition_reads=definition_body_read_events(collected),
     )
 

@@ -32,7 +32,7 @@ _SETTINGS_JSON_PATH = claude_common.SETTINGS_JSON_PATH
 def is_directory_type_registered() -> bool:
     """現在の登録が directory 型で健全かを返す。
 
-    ``install_claude_plugins`` がversion乖離に依存せず毎回 `plugin install`
+    ``install_claude_plugins`` がversion乖離の有無によらず毎回 `plugin install`
     を再実行するかどうかを判断するために参照する。健全なdirectory型登録があれば
     True、旧GitHub型や未登録の場合はFalse。
 
@@ -111,7 +111,7 @@ def repair_marketplace() -> bool:
     Note:
         JSON直接書き換えのフォールバック経路はClaude Code CLIの既知不具合
         （``marketplace add``直後も ``settings.json.extraKnownMarketplaces`` を
-         更新しない環境が存在する）への回避策であり、内部ファイル形式に依存する。
+         更新しない環境が存在する）への回避策であり、内部ファイル形式を前提とする。
         CLI側で該当不具合が解消したら、直接書き換え経路とその関連ヘルパー
         (``_rewrite_known_marketplaces_entry`` / ``_rewrite_settings_extra_known_entry``
          / ``_now_iso_millis`` / ``common.atomic_write_json``) は削除候補となる。

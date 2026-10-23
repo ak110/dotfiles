@@ -47,7 +47,8 @@ Codexの検証器を無条件の合格条件にしないのは、同梱資料が
 
 dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLIを準備した後に`agent-toolkit-codex/`を生成し、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
 `agent-toolkit-codex/`の生成に失敗した場合は、post-applyのstep失敗として永続logへ記録し、全体を非0で終了する。
-`install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入、無効、版数不一致のいずれかの場合だけ`codex plugin add <plugin-id>`を実行する。
+`install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入か、有効なpluginの版数不一致の場合に`codex plugin add <plugin-id>`を実行する。
+明示的に無効なpluginは導入状態とcacheを保持し、版更新も保留する。明示的な再有効化後に通常の更新を再開する（[Codexガイド](../guide/codex-guide.md#プラグイン更新の反映)）。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
 実際のaddまたはupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
 環境変数を指定しない更新では手動再起動の案内を表示し、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を明示した更新だけ`codex app-server daemon restart`を自動実行する。
@@ -57,7 +58,7 @@ CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数
 公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)はローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、導入先の実体をCodexが読み込むと定める。
 現行versionの導入はCodex CLIへ委ねる。
 更新処理は`plugin add`の前に通常のversionディレクトリを複製し、導入後の状態確認とdaemon処理を含む最後のCodex CLI呼出後に、CLIが削除した旧versionだけを同じ絶対パスへ戻す。
-退避から復旧までを1つの保護区間とし、復旧後はCodexを使う処理へ戻らず更新関数を終了する。これにより個別コマンドのcache副作用へ依存せず、更新関数の終了時に既存セッションが参照する全旧パスの存在を保証する。
+退避から復旧までを1つの保護区間とし、復旧後はCodexを使う処理へ戻らず更新関数を終了する。これにより個別コマンドのcache副作用を前提とせず、更新関数の終了時に既存セッションが参照する全旧パスの存在を保証する。
 Codex 0.163.0では、App Serverの`plugin/list` RPCもlocal marketplaceの新versionを自動導入し、更新関数の外で全旧cacheを削除する。
 この上流のcache寿命不整合は[openai/codex#31383](https://github.com/openai/codex/issues/31383)で複数版・複数OSから報告され、live hookの再読込も[openai/codex#36605](https://github.com/openai/codex/issues/36605)などで未解決である。
 dotfiles向けの生成済みhook定義は、版付きcacheの外へ先に配置する`atk-hook`を使う。
@@ -120,7 +121,7 @@ Claude Codeの`additionalContext`文字列は10,000文字の上限へ合わせ�
 ファイル保存と2,000文字のプレビューは別の出力契約として扱い、それぞれの観測条件と保証範囲を監査記録へ残す。
 却下した代替案は3つある。
 Codexメイン向け条文をAGENTS.mdへ生成器で埋め込む案は、Codexのサブエージェントにもメイン向け条文が届き、両ホストで配布手段が非対称になるため採らない。
-委譲先向け条文もフックだけで届ける案は、Codex backendの委譲先でフックの信頼登録と環境変数の印に依存し、未設定の環境で条文が欠落するため採らない。
+委譲先向け条文もフックだけで届ける案は、Codex backendの委譲先でフックの信頼登録と環境変数の印を必要とし、未設定の環境で条文が欠落するため採らない。
 Codex backendの子のApp Serverへ`AGENT_TOOLKIT_DELEGATED_SESSION`を渡す案はClaude委譲先の中で起動したCodex委譲先がstatusline表示でClaude委譲先と誤判定されるため採らない。
 
 Claude Codeが自動で読み込む規範は、Codexでは次のいずれかの手段で届けるか、対象外とする理由を記録する。
@@ -136,10 +137,10 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 | `~/.claude/rules/`直下の`*.local.md`と`~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md`からの読込指示 |
 | プロジェクト直下の`.claude/rules/`、`AGENTS.md`が無い場合の`CLAUDE.md`、`CLAUDE.local.md` | `~/.codex/AGENTS.md`からの読込指示 |
 
-ユーザー単位の`*.local.md`と`~/.claude/CLAUDE.md`の2種類は実行ホストごとにユーザーが置くファイルであり、リポジトリから生成する`~/.codex/AGENTS.md`へ埋め込めない。読込指示は実行時のファイルの有無に依存しないため、プロジェクト直下の`.claude/rules/`と同じ手段を選ぶ。
+ユーザー単位の`*.local.md`と`~/.claude/CLAUDE.md`の2種類は実行ホストごとにユーザーが置くファイルであり、リポジトリから生成する`~/.codex/AGENTS.md`へ埋め込めない。読込指示は実行時のファイルの有無によらず共通であるため、プロジェクト直下の`.claude/rules/`と同じ手段を選ぶ。
 2026年10月6日に、`agents_server`で起動したCodexの委譲先が、`~/.claude/rules/`直下の`*.local.md`が使えないと定めたコマンドを実行して失敗した。当時の読込指示はプロジェクト直下の3種だけを挙げ、ユーザー単位の規範を含めていなかった。
 却下した代替案は次の2つである。
-`SessionStart`・`SubagentStart` hookで`*.local.md`の本文を注入する案は、出力量がホストごとに変わり、hookの出力上限を外せるhandlerの条件（出力量が条文ファイルで固定され、上限を確かめるテストで拘束される）を満たさない。作業に該当しないファイルも毎回の起動で文脈へ入り、hookの信頼登録への依存もCodexのメインに残る。
+`SessionStart`・`SubagentStart` hookで`*.local.md`の本文を注入する案は、出力量がホストごとに変わり、hookの出力上限を外せるhandlerの条件（出力量が条文ファイルで固定され、上限を確かめるテストで拘束される）を満たさない。作業に該当しないファイルも毎回の起動で文脈へ入り、hookの信頼登録を要する条件もCodexのメインに残る。
 `agents_server`の`developerInstructions`へ本文を連結する手段だけで届ける案は、Codexのメインとネイティブのサブエージェントに届かず不足する。この連結は`agents_server`の委譲先へ届ける手段として併用する（`design-agents-server.md`「委譲先への指示と起動時の規範」）。起動時の指示に同じファイルの本文が境界付きで含まれる場合は、読込指示の側で読み直さない。
 
 `agents_server`の`start`で起動したClaude backendの委譲先は、`~/.claude/rules/agent-toolkit/`配下の3ファイルの全文をユーザー規範として保持し、起動時のシステム指示と区別する。
@@ -192,10 +193,10 @@ WI処理の運用形態、登録と回答、振り返りからの投入の流れ
 スキル本体が持つ規範を`references/`配下へ移す統合では、`references/`配下の資料が互いに規範を委ねる状態が構造的に生じる。このため、資料間の委譲は`SKILL.md`が同じ読込条件で併読を定める兄弟資料に限って認め、併読を定めない兄弟資料へは規範を委ねない。委譲の可否を決める責務は`SKILL.md`の読込条件が持ち、委ねる側と委ねられる側を同じ工程へ並べる。
 移設対象の全参照を各資料へ自己完結させる案は採用しない。同じ規範本文を複数の資料へ複製することになり、定義の単一性を失うためである。
 
-失敗・拒否・上限超過・遮断のときだけ実行する回復手順は異常が起きたときに読み手へ届く手段へ置く。異常の有無にかかわらず全文を読む文書には起動契機だけを残す（`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「失敗時の回復手順」）。この配置の根拠は常時の文脈に置いた失敗の教訓が平常時の成績を下げるという報告である。論文arXiv 2610.02994は、失敗の教訓を常時の文脈から除くとWebShopとMind2Web Replayの成績が上がったと報告する。評価したモデルはQwen3.5-9BとGPT-OSS-120Bに限られるため、規範側は努力目標として扱う。
+失敗・拒否・上限超過・遮断のときだけ実行する回復手順は異常が起きたときに読み手へ届く手段へ置く。異常の有無にかかわらず全文を読む文書には起動契機だけを残す（`agent-basics:writing-standards/references/agent-documents-additions.md`「失敗時の回復手順」）。この配置の根拠は常時の文脈に置いた失敗の教訓が平常時の成績を下げるという報告である。論文arXiv 2610.02994は、失敗の教訓を常時の文脈から除くとWebShopとMind2Web Replayの成績が上がったと報告する。評価したモデルはQwen3.5-9BとGPT-OSS-120Bに限られるため、規範側は努力目標として扱う。
 
 ## 場面別手順と外部投稿前レビュー
 
-managed-temp、品質確認、検索の手順は、それぞれ`agent-toolkit:managed-temp`、`agent-toolkit:check-execution`、`agent-toolkit:search`が所有する。作業ツリー外の秘匿値ファイルは`agent-toolkit:secret-files`が扱う。作業ツリー内のファイルは通常の手段で扱い、外部の認証情報を参照する場合は実体の位置で内外を判定する。実行時に必要な場面を各スキルの`description`で示す。手順本文を場面別スキルにまとめ、常時規範から長文を読む工程を減らす。委譲の親子契約は前節の境界に従って引き続き`share/`へ置く。スキル起動の判定は`description`に依存するため、常時規範からの決定的な読込契機は持たない。
+managed-temp、品質確認、検索の手順は、それぞれ`agent-toolkit:managed-temp`、`agent-toolkit:check-execution`、`agent-toolkit:search`が所有する。作業ツリー外の秘匿値ファイルは`agent-toolkit:secret-files`が扱う。作業ツリー内のファイルは通常の手段で扱い、外部の認証情報を参照する場合は実体の位置で内外を判定する。実行時に必要な場面を各スキルの`description`で示す。手順本文を場面別スキルにまとめ、常時規範から長文を読む工程を減らす。委譲の親子契約は前節の境界に従って引き続き`share/`へ置く。スキル起動は`description`から判定するため、常時規範からの決定的な読込契機は持たない。
 
 第三者が読む外部サービスへ起草した文面を投稿する前には`agent-toolkit:external-write-review`を用いる。投稿する主体が文面、投稿先、目的と根拠の所在を確定し、読み取り専用の投稿前レビュー担当へ文脈を持たない読者の観点で内容の確認を依頼する。投稿前レビュー担当は文面の採否と投稿認可を持たず、投稿主体が指摘を反映して送信する。投稿先ごとにレビュー手順を複製する案と常時規範から別の`share/`手順を読む案は、同じ判断の保守先と読込量を増やすため採用しない。

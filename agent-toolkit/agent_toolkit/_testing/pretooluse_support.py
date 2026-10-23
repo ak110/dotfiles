@@ -1,21 +1,28 @@
 """`_hooks/pretooluse/`のテストが共有する、PreToolUse hookの起動とpayload・作業場所の組み立て。
 
-hookはsubprocessで起動し、テストはexit code・stderr・stdoutを検証する。
+内容と状態遷移の試験は公開hookを同一プロセスで呼び、exit code・stderr・stdoutを検証する。
 """
 
 import ast
+import contextlib
+import io
 import json
 import os
 import pathlib
+import shlex
 import subprocess
+import sys
 
 import pytest
 
+from agent_toolkit import hook as _hook
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common.session_state import state_path
-from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import git_repository
+lazy from agent_toolkit._common.session_state import read_state
+lazy from agent_toolkit._hooks import agent_id, rules_context
+lazy from agent_toolkit._hooks.pretooluse import read_delivery
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 
@@ -41,20 +48,47 @@ _NOTICE_PREFIX = _message_format.opening_tag(_message_format.AUTO_INSERTED_ELEME
 _NOTICE_SUFFIX = f"</{_message_format.AUTO_INSERTED_ELEMENT}>"
 
 
-def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _run_hook_in_process(
+    subcommand: str,
+    payload: object,
+    env_overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """公開hookを同一プロセスで呼び、終了状態と標準出力・標準エラーを返す。"""
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     if env_overrides:
         env.update(env_overrides)
-    return _fork_runner.run_script(_SCRIPT, argv=("pretooluse",), input=text, env=env)
+    original_environ = os.environ.copy()
+    original_stdin = sys.stdin
+    output = io.StringIO()
+    errors = io.StringIO()
+    stdin = io.TextIOWrapper(io.BytesIO(text.encode("utf-8")), encoding="utf-8")
+    try:
+        os.environ.clear()
+        os.environ.update(env)
+        sys.stdin = stdin
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            returncode = _hook.main([subcommand])
+    finally:
+        sys.stdin = original_stdin
+        stdin.close()
+        os.environ.clear()
+        os.environ.update(original_environ)
+    return subprocess.CompletedProcess(
+        args=(str(_SCRIPT), subcommand),
+        returncode=returncode,
+        stdout=output.getvalue(),
+        stderr=errors.getvalue(),
+    )
+
+
+def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return _run_hook_in_process("pretooluse", payload, env_overrides)
 
 
 def _run_posttooluse(payload: object, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
     """PostToolUse hookを同じ一時状態ディレクトリで実行する。"""
-    text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
-    env = os.environ.copy()
-    env.update(env_overrides)
-    return _fork_runner.run_script(_SCRIPT, argv=("posttooluse",), input=text, env=env)
+    return _run_hook_in_process("posttooluse", payload, env_overrides)
 
 
 def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
@@ -95,7 +129,7 @@ def _stderr_warn_offenders(source: str) -> list[int]:
     1つは`tag="warn"`の呼び出しを引数へ直接書く形、
     もう1つはwarn通知を変数へ束縛してから引数へ渡す形である。
     後者には束縛元がwarn通知を返す関数の呼び出しである場合も含め、
-    定義順に依存しないよう関数名と変数名の収集を不動点まで繰り返す。
+    定義順によらず収集できるよう関数名と変数名の収集を不動点まで繰り返す。
     warn通知を関数の引数として別のヘルパーへ渡し、渡された先のヘルパーがstderrへ出力する
     間接的な受け渡しは検出しない。仮引数へ渡る値の由来を追跡しないためである。
     """
@@ -319,3 +353,52 @@ def _codex_payload(patch_text: str, cwd: pathlib.Path, session_id: str = "codex-
         "session_id": session_id,
         "turn_id": "turn-1",
     }
+
+
+def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> None:
+    """他のチェックを試す前提として、宣言資料の配送と実本文の取得を完了する。"""
+    if not isinstance(payload, dict) or not payload.get("session_id"):
+        return
+
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in (env_overrides or {}).items():
+            patch.setenv(name, value)
+        session_id = payload["session_id"]
+        for _attempt in range(12):
+            decision = read_delivery.deliver(payload, payload.get("tool_name", ""), payload.get("tool_input", {}), session_id)
+            if decision.block is not None:
+                return
+            records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+            agent = agent_id.resolve_hook_agent_id(payload)
+            targets = [
+                target
+                for target in read_delivery.selected_targets(records, agent)
+                if not read_delivery.target_ready(records, target, agent)
+            ]
+            if not targets and any("操作前に全文読む資料が未取得" in notice for notice in decision.notices):
+                targets = [
+                    target
+                    for row in read_delivery.declarations(str(payload.get("cwd", "")))
+                    if read_delivery.row_matches(
+                        row, payload.get("tool_name", ""), payload.get("tool_input", {}), str(payload.get("cwd", ""))
+                    )
+                    for target in row.targets
+                ]
+            if not targets:
+                return
+            for target in targets:
+                event = {
+                    **payload,
+                    "hook_event_name": "PostToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "cat -- " + shlex.quote(str(target.path))},
+                    "tool_response": {"stdout": target.path.read_text(encoding="utf-8"), "exit_code": 0},
+                }
+                assert _run_posttooluse(event, env_overrides or {}).returncode == 0
+        raise AssertionError("読込済み前提を構築できなかった")
+
+
+def run_after_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """宣言読込の前提を満たして、試験対象のチェックへ公開hookから到達する。"""
+    prepare_read_delivery(payload, env_overrides)
+    return _run(payload, env_overrides)

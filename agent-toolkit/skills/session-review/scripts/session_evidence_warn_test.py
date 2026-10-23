@@ -630,7 +630,7 @@ def test_warn_mode_accepts_case_variants_of_structured_warning_fields(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """構造化警告フィールドの大文字表記差を許容し、本文途中の語は拾わない。"""
+    """構造化警告フィールドの大文字表記差を許容し、本文途中の語は抽出しない。"""
     transcript = _write_transcript(
         tmp_path,
         [

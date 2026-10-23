@@ -1,7 +1,6 @@
 ---
 mode: delegate
-model_type: high_tier
-usage: base
+model_type: execute
 required_inputs:
 - 対象の不良
 - 引き継ぎ記録先
@@ -11,11 +10,23 @@ writes_worktree: false
 
 # 既存不良の調査担当タスク
 
+<!-- parent-read-source: agent-toolkit:/skills/bugfix/references/investigation-delegation.md#既存不良の調査担当の起動と受領 -->
+
 受領した既存不良の原因分析、類似見直しおよび対策・横展開処置・再発防止策の確定までを行い、確定した内容を返す。
 修正の実施、対象リポジトリとキューへの書込み、AWIの投入と、委譲元の元の作業の続行は担当せず、いずれも委譲元が担う。
 最初に`agent-toolkit:bugfix`を起動する。
 
 完了報告と成果物は日本語で書く。
+
+## 名指し参照の読込方法
+
+名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「処置の階層」「再発防止策の必須性」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「処置の階層」「再発防止策の必須性」` |
 
 ## 入力
 
@@ -26,7 +37,7 @@ writes_worktree: false
 
 `agent-toolkit:bugfix`に従い、初動から対策・横展開処置・再発防止策の確定まで行う。対象リポジトリとキューは読み取りだけで扱い、一時ファイルはmanaged-temp（`agent-toolkit:managed-temp`）へ置く。対策は委譲元がそのまま修正に使える粒度（変更する対象、内容、修正後に確かめる観測）で確定する。
 
-認識の違いで要件または結果が変わる未確定事項は、回答に依存しない調査を済ませてから続行できない理由として返す。
+認識の違いで要件または結果が変わる未確定事項は、回答を待たずに進められる調査を済ませてから続行できない理由として返す。
 
 ## 出力
 

@@ -156,7 +156,7 @@ def test_main_requires_exactly_one_transcript_source(
         {
             "kind": "error",
             "text": (
-                "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--delegation-record・--owner-session・"
+                "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--opencode-session-id・--delegation-record・--owner-session・"
                 "カタログ走査はいずれか一つだけを指定する"
             ),
         }
@@ -167,7 +167,7 @@ def test_main_requires_exactly_one_transcript_source(
         {
             "kind": "error",
             "text": (
-                "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--delegation-record・--owner-session・"
+                "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--opencode-session-id・--delegation-record・--owner-session・"
                 "カタログ走査はいずれか一つだけを指定する"
             ),
         }
@@ -418,7 +418,7 @@ def test_claude_subagent_record_keeps_normal_entries(tmp_path: pathlib.Path) -> 
 
 # pylint: disable=protected-access
 def test_claude_child_keeps_same_canonical_id_when_opened_directly_or_from_parent(tmp_path: pathlib.Path) -> None:
-    """同じ物理記録は収集元の指定に依存せず同じ正規IDを持ち、収集元固有名は別名としてだけ残す。"""
+    """同じ物理記録は収集元の指定によらず同じ正規IDを持ち、収集元固有名は別名としてだけ残す。"""
     transcript = _write_transcript(
         tmp_path,
         [{"type": "user", "message": {"role": "user", "content": "親の依頼"}}],

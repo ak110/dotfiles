@@ -20,7 +20,9 @@ from session_evidence_stats import _add_tokens, _codex_normalized_tokens, _parse
 
 from agent_toolkit._agents_server import record_paths
 from agent_toolkit._atk import review_table, session_record_format
+from agent_toolkit._atk.wi import layout as wi_layout
 from agent_toolkit._common import model_pricing, private_notes, session_cost
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
 
 _TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
@@ -67,7 +69,7 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def _history(repo: Path) -> list[tuple[str, str, datetime.datetime]]:
-    """各パスの追加commitと、そのcommit日時を履歴順で返す。"""
+    """主系列の各パスの追加・変更commitと日時を履歴順で返す。"""
     history: list[tuple[str, str, datetime.datetime]] = []
     commit = ""
     timestamp: datetime.datetime | None = None
@@ -78,9 +80,11 @@ def _history(repo: Path) -> list[tuple[str, str, datetime.datetime]]:
         "log",
         "--no-renames",
         "--reverse",
+        "--first-parent",
+        "--diff-merges=first-parent",
         "--format=COMMIT %H %cI",
         "--name-only",
-        "--diff-filter=A",
+        "--diff-filter=AM",
     ).splitlines():
         if line.startswith("COMMIT "):
             _, commit, time_text = line.split()
@@ -96,16 +100,25 @@ def _queue_metrics(
     history = _history(repo)
     adopted: dict[str, set[str]] = collections.defaultdict(set)
     first_additions: dict[str, datetime.datetime] = {}
+    states: dict[str, str] = {}
     for path, commit, timestamp in history:
         first_additions.setdefault(path, timestamp)
-        if "adopted" not in Path(path).parts or not path.endswith(".md") or not since <= timestamp <= until:
+        if not path.endswith(".md"):
             continue
         text = _git(repo, "show", f"{commit}:{path}")
         if text.startswith("---\n") and "\n---" in text[4:]:
             frontmatter = text[4:].split("\n---", 1)[0]
             metadata = yaml.safe_load(frontmatter)
             if isinstance(metadata, dict) and metadata.get("type") == "awi":
-                adopted[_week(timestamp)].add(Path(path).name)
+                location = Path(path)
+                try:
+                    state = wi_layout.entry_state_from_metadata(location, metadata)
+                except ActionableError:
+                    continue
+                name = location.name
+                if state == "adopted" and states.get(name) != "adopted" and since <= timestamp <= until:
+                    adopted[_week(timestamp)].add(name)
+                states[name] = state
     for week, names in adopted.items():
         weeks[week]["adopted_awi_count"] = len(names)
 
@@ -158,12 +171,24 @@ def _scan_sessions(
     for runtime, root in roots.items():
         oldest: datetime.datetime | None = None
         for path in sorted(root.rglob("*.jsonl")):
+            if runtime == "agy" and (
+                path.name not in {"transcript.jsonl", "transcript_full.jsonl"}
+                or path.name == "transcript.jsonl"
+                and path.with_name("transcript_full.jsonl").is_file()
+            ):
+                continue
             if runtime == "codex" and not path.name.startswith("rollout-"):
                 continue
             try:
                 if path.stat().st_mtime < since.timestamp():
-                    identity = session_record_format.codex_session_id(path) if runtime == "codex" else path.stem
-                    paths[identity].append((path, "codex" if runtime == "codex" else "claude"))
+                    identity = (
+                        session_record_format.codex_session_id(path)
+                        if runtime == "codex"
+                        else session_record_format.agy_session_id(path)
+                        if runtime == "agy"
+                        else path.stem
+                    )
+                    paths[identity].append((path, "codex" if runtime == "codex" else "agy" if runtime == "agy" else "claude"))
                     continue
                 records = _load_records(str(path))
             except OSError:
@@ -317,6 +342,12 @@ def main(argv: list[str] | None = None) -> int:
         "--codex-sessions-dir", type=Path, metavar="DIR", help="Codex記録ディレクトリのパス。省略時は~/.codex/sessions。"
     )
     parser.add_argument(
+        "--agy-brain-dir",
+        type=Path,
+        metavar="DIR",
+        help="Antigravity対話記録のbrainディレクトリ。省略時は~/.gemini/antigravity-cli/brain。",
+    )
+    parser.add_argument(
         "--private-notes",
         type=Path,
         metavar="DIR",
@@ -336,7 +367,10 @@ def main(argv: list[str] | None = None) -> int:
         roots = {
             "claude": args.claude_projects_dir or Path.home() / ".claude" / "projects",
             "codex": args.codex_sessions_dir or Path.home() / ".codex" / "sessions",
+            "agy": args.agy_brain_dir or Path.home() / ".gemini" / "antigravity-cli" / "brain",
         }
+        if args.agy_brain_dir is None and not roots["agy"].is_dir():
+            roots.pop("agy")
         roots = {key: value.expanduser().resolve() for key, value in roots.items()}
         coverage, session_rows = _session_metrics(roots, weeks, since, until)
         notes = (args.private_notes or private_notes.default_private_notes()).expanduser().resolve()

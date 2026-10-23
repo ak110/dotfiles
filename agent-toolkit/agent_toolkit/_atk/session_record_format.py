@@ -19,6 +19,7 @@ import typing
 from collections.abc import Iterator
 
 from agent_toolkit._common import session_record_paths as _record_paths
+from agent_toolkit._common.agy_records import normalize_entries
 from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
 
 RECORD_SUFFIX = _record_paths.RECORD_SUFFIX
@@ -59,6 +60,15 @@ def codex_session_records(codex_home: pathlib.Path) -> Iterator[pathlib.Path]:
     for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
         if path.is_file():
             yield path
+
+
+agy_session_records = _record_paths.agy_session_records
+agy_session_id = _record_paths.agy_session_id
+
+
+def agy_events(records: typing.Iterable[dict[str, typing.Any]]) -> list[SessionEvent]:
+    """対話記録と委譲先ストリームを共通の表示イベントへ変換する。"""
+    return claude_events(normalize_entries(list(records)))[0]
 
 
 def parsed_records(path: pathlib.Path) -> Iterator[dict[str, typing.Any]]:
@@ -397,26 +407,7 @@ def record_events(engine: str, records: typing.Iterable[dict[str, typing.Any]]) 
     if engine == "opencode":
         return opencode_events(records)
     if engine == "agy":
-        events = []
-        for record in records:
-            kind = record.get("type") or record.get("event")
-            if not isinstance(kind, str):
-                continue
-            body = record.get(kind)
-            if not isinstance(body, dict):
-                body = record
-            detail = next(
-                (
-                    body[key]
-                    for key in ("response", "text", "text_delta", "message", "summary")
-                    if isinstance(body.get(key), str)
-                ),
-                None,
-            )
-            if kind == "init" and detail is None:
-                detail = record.get("conversation_id")
-            events.append(SessionEvent(kind=kind, timestamp=None, text=detail))
-        return events
+        return agy_events(records)
     raise ValueError(f"unsupported engine: {engine}")
 
 

@@ -4,6 +4,7 @@ user-invocable: false
 description: >
   commitを作成・取り込む操作（通常commit、amend、fixup、cherry-pick、merge、rebase、revertなど）に着手する直前、
   push、CI確認、公開工程、リリースに着手する前、
+  既存未コミット差分を不採用として破棄する前、
   またはコミットメッセージ案（計画ファイル・PR説明など）を書く時点で起動する。
 # 編集時の注意点:
 # コミット境界判断のSSOTは本ファイル「通常commit」節。
@@ -14,26 +15,39 @@ description: >
 
 履歴の変更と公開にはGit、対象リポジトリおよび必要な公開先を操作できるCLIが必要である。Gitを操作できない環境では、提示された差分からメッセージ案と確認する条件を返し、commit・push・CI監視は機能を提供するClaude CodeまたはCodexで行う。メッセージ案には[文章の品質基準](references/quality-standards.md)を使う。
 
-git commitの運用とコミットメッセージの規約を定める。最初に`references/git-identifier.md`を全文読む。
+git commitの運用とコミットメッセージの規約を定める。識別子の確認、履歴操作と公開の前に`references/git-identifier.md`を読む。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/quality-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md#「暫定回避と結果報告」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「暫定回避と結果報告」` |
+| 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
+| 取得版の異なる結果をレビューへ渡す前 | `../review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
 
 ## 読込表
 
-次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本スキルを起動した時点 | `references/git-identifier.md` |
-| 公開工程またはリリース操作に着手する前 | `references/publish.md` |
-| amend、fixup、autosquash、rebaseまたはpush済み判定の前 | `references/history-rewrite.md` |
-| 実際にpushする前 | `references/push-and-ci.md` |
-| コミットメッセージを書く前（計画ファイルやPR説明へコミットメッセージ案を書く前を含む） | `references/message.md` |
-| 一時ブランチ、`git stash`の退避または別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `references/stash-cleanup.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| Git識別子・worktree・履歴・公開済みの状態を判定または操作する前 | `references/git-identifier.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/git-identifier.md` | |
+| 公開工程またはリリース操作に着手する前 | `references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
+| amend、fixup、autosquash、rebaseまたはpush済み判定の前 | `references/history-rewrite.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite.md` | |
+| 実際にpushする前 | `references/push-and-ci.md` | 操作 | `bash:git push` | |
+| コミットメッセージを書く前（計画ファイルやPR説明へコミットメッセージ案を書く前を含む） | `references/message.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/message.md` | |
+| 既存未コミット差分を不採用として破棄する前 | `references/stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
+| 一時ブランチ、`git stash`の退避または別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `references/stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
 
 push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルの`references/ci-failure-handling.md`で原因を分析する。
 
 ## 検証
 
-全コミットの完了後に計画全体を対象に変更範囲を検証し、レビューへ進む。
+開発中の試行は必要な時点で行う。レビューへ渡す最終の試験と有限終了の手動観測は、結果へ作用する実装・試験・入力を確定し、全commitとcommit hookの書換えを完了してから取得する。計画全体の変更範囲を被覆する結果と取得版を対応付けて、レビューへ進む。
+保存済み結果の再利用は、`agent-basics:check-execution`の`references/verification-scope.md`「実行条件と再実行」で判定する。
+取得版の対応は、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。内容確定後も有効な成功結果を使い、結果へ作用する変更と未確認集合だけを追加検証する。
 
 ## 通常commit
 
@@ -44,8 +58,8 @@ push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルの`refere
 
 別セッションが同じリポジトリへコミットしうる前提で、自セッションの担当範囲だけをstageし、ユーザーや他セッションの未コミット変更は残す。commit前にベースコミットが記録時から変わっていた場合の続行可否は`agent-toolkit/rules/02-agent-operations.md`「作業中に観測したリポジトリ状態変化の扱い」で判定する。
 
-commit前に、現在の単位だけがstageされ意図した変更を含むこと、format・lint・testが警告なく通ること、競合解決後は競合マーカー（`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`）が無いことを確かめる。対象プロジェクトの規範が検証の関門をCIと定めている場合は、CIが無条件に実行するチェックをローカルの確認から外す。
-解除条件付きの暫定回避を含むcommitでは、`agent-toolkit:bugfix`「対策の選定」が求める保存済みAWIに正式対応・解除条件・復帰後の結果と、時間経過・外部公開待ちの冷却期限が残っていることを確かめ、不足は同じWI投入手順で保存してからcommitする。
+commit前に、現在の単位だけがstageされ意図した変更を含むこと、format・lint・testが警告なく成功すること、競合解決後は競合マーカー（`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`）が無いことを確かめる。対象プロジェクトの規範が検証の関門をCIと定めている場合は、CIが無条件に実行するチェックをローカルの確認から外す。
+解除条件付きの暫定回避を含むcommitでは、`agent-toolkit:bugfix/SKILL.md`「暫定回避と結果報告」が求める保存済みAWIに正式対応・解除条件・復帰後の結果と、時間経過・外部公開待ちの冷却期限が残っていることを確かめ、不足は同じWI投入手順で保存してからcommitする。
 
 commit時のGit hookやhook管理ツールのチェックを省略・迂回する操作は、pre-commitのstashが競合し、かつ対象ファイルを正式な手順で検証済みの場合に限る。
 対象は`--no-verify`・`-n`、`-c core.hooksPath=/dev/null`など必要なhookを外す指定、`SKIP=<hook名>`である。検証省略やhook失敗の回避には使わない。プロジェクト規範が個別に認める`SKIP=<hook名>`はその規範に従う。迂回した場合は手段と理由をcommit後の報告へ記す。
@@ -63,10 +77,11 @@ atk run-script plan-commits -- <計画Markdownの絶対パス> --worktree <対�
 atk run-script plan-commits -- <引き継ぎ記録Markdownの絶対パス> --worktree <対象worktreeの絶対パス> --handoff --allowed-awi <記録の対象AWI全件を反復指定>
 ```
 
-取得対象を絞る場合は`--awi <AWIファイル名>`を反復する。省略時は計画の関連WI全件（引き継ぎ記録では`--allowed-awi`全件）を取得する。同じstemのJSONLは保存先であり、位置引数には渡さない。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら使え、複数あれば保存済み計画の実在パスを指定する。取得した短縮OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。実装差分なしの項目に記録が無ければ、その項目を除いた対象を`--awi`で指定する。実装commitを持つ項目の記録の欠落・対象外AWI・解決できないOIDは生成側が補完してから再取得し、説明文や件名から対応を推定しない。
+取得対象を絞る場合は`--awi <AWIファイル名>`を反復する。省略時は計画の関連WI全件（引き継ぎ記録では`--allowed-awi`全件）を取得する。同じstemのJSONLは保存先であり、位置引数には渡さない。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら使え、複数あれば保存済み計画の実在パスを指定する。取得した短縮OIDは`atk wi adopt --commit`へ渡し、複数commitでは`--commit <OID>`を反復指定する。commitの説明などのメモは`--note-file`へ記録する。実装差分なしの項目に記録が無ければ、その項目を除いた対象を`--awi`で指定する。実装commitを持つ項目の記録の欠落・対象外AWI・解決できないOIDは生成側が補完してから再取得し、説明文や件名から対応を推定しない。
 
 履歴変更: WI実装commitのOIDが履歴書換えやcommit分割で変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」に従う。
 検収した対応表と書換え前のHEADを、書換え範囲にWI実装commitを持つ全ての計画と引き継ぎ記録とともに1回の`atk run-script plan-rewrite`へ渡す。不足があれば同コマンドはどの記録も変えずに失敗する。
+同コマンドは対応記録に現れる終端済みAWIの対応commitと件名も新しいcommitへそろえる。private-notesの保存に失敗した場合は、エラーを解消して同じ引数で再実行する。
 未指定の記録は同コマンドが書込前に全件を示すため、示された記録を加えて再実行する。複数の対応表は`--rewrite-map`を書換え順に反復指定し、合成後のOIDが現在HEADに含まれることを確かめる。
 
 対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIは対応記録の対象外とし、進捗ログか引き継ぎ記録の根拠を使ってcommitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は対応記録ファイルと共に`atk plans commit`で保存する。

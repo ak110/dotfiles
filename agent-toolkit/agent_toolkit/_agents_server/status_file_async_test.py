@@ -473,7 +473,9 @@ async def test_auxiliary_save_retry_runs_outside_loop(
                 await session.drain_registration()
             config_path = tmp_path / "legacy-config.json"
             if route == "config":
-                config_path.write_text(json.dumps({"high_tier_model": "claude:test/medium"}), encoding="utf-8")
+                config_path.write_text(
+                    json.dumps({"execute_engine": "claude", "claude_high_tier_model": "test/medium"}), encoding="utf-8"
+                )
                 monkeypatch.setattr(atk_config, "_config_file_path", lambda: config_path)
             replace = atomic_file.os.replace
             attempts: list[str] = []
@@ -530,9 +532,9 @@ async def test_auxiliary_save_retry_runs_outside_loop(
                     await owner.stop("claude-session")
                     assert session_registry.resolve("claude-session").state is session_registry.Resolution.RELEASED
                 else:
-                    started = await owner.start("high_tier", "処理", str(tmp_path))
+                    started = await owner.start("execute", "処理", str(tmp_path))
                     assert started["session_id"] == "claude-session"
-                    assert "high_tier_model" not in json.loads(config_path.read_text(encoding="utf-8"))
+                    assert "claude_high_tier_model" not in json.loads(config_path.read_text(encoding="utf-8"))
                 assert len(attempts) == 6
                 assert len(set(attempts)) == 1
                 assert delays == [0.01, 0.02, 0.04, 0.08, 0.16]
@@ -618,7 +620,7 @@ async def test_close_propagates_candidate_failure_without_masking_terminal_failu
             str(tmp_path),
             model="gpt-6-sol",
             effort="medium",
-            model_type="high_tier",
+            model_type="execute",
             publish_registry=True,
             announced=True,
         )
@@ -773,7 +775,7 @@ async def test_close_waits_for_other_candidate_worker_after_first_save_failure(
                 str(tmp_path),
                 model=model,
                 effort="medium",
-                model_type="high_tier",
+                model_type="execute",
                 status="failed",
                 turn_completed=True,
                 error={"codexErrorInfo": "usageLimitExceeded"},

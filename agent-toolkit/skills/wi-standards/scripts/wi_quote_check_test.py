@@ -48,12 +48,13 @@ def _user_events(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *te
     return output
 
 
-def _run(body_path: pathlib.Path, *sources: pathlib.Path, import_spec: pathlib.Path | None = None) -> int:
+def _run(body_path: pathlib.Path, *sources: pathlib.Path, import_spec: pathlib.Path | None = None, detail: bool = True) -> int:
     args = argparse.Namespace(
         script_name="wi-quote-check",
         script_args=[
             "--",
             str(body_path),
+            *(["--detail"] if detail else []),
             *(item for source in sources for item in ("--source", str(source))),
             *(["--import-spec", str(import_spec)] if import_spec is not None else []),
         ],
@@ -65,6 +66,29 @@ def _spec(tmp_path: pathlib.Path, *selections: dict[str, object]) -> pathlib.Pat
     path = tmp_path / "selection.json"
     path.write_text(json.dumps(selections, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+def test_normal_success_reports_locations_without_reprinting_quote(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """正常時は原文を重ねず、詳細表示と不一致検出への到達を保つ。"""
+    quote = "同じ逐語引用を毎回再出力する工程を整理して。"
+    source = tmp_path / "source.txt"
+    source.write_text(quote, encoding="utf-8")
+    body = tmp_path / "draft.md"
+    body.write_text(_body(quote), encoding="utf-8")
+    before = body.read_bytes()
+    assert _run(body, source, detail=False) == 0
+    normal = capsys.readouterr()
+    assert quote not in normal.out
+    assert f"出所={source}" in normal.out
+    assert f"逐語引用 text[1] 文字1-{len(quote)}" in normal.out
+    assert body.read_bytes() == before
+    assert _run(body, source) == 0
+    assert quote in capsys.readouterr().out
+    source.write_text("別の原文。", encoding="utf-8")
+    assert _run(body, source, detail=False) == 1
+    assert "部分文字列でもありません" in capsys.readouterr().err
 
 
 def test_public_import_uses_saved_source_and_checks_result(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

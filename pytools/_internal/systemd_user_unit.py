@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Environment=はspecifier展開を行う。ExecStartの絶対パス指定だけでは、起動された
 # プログラムが名前で解決する外部コマンドをカバーできない。実体を持つ~/.local/binを
-# miseのshimより優先し、名前解決がshimの有効化状態に依存しないようにする。
+# miseのshimより優先し、shimの有効化状態によらず名前を解決できるようにする。
 USER_UNIT_PATH_ENVIRONMENT = (
     "Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n"
 )

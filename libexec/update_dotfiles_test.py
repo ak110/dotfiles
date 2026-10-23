@@ -170,6 +170,36 @@ def _fake_run(
     return fake_run
 
 
+@pytest.mark.parametrize("mode", ["full", "minimal"])
+def test_public_mode_argument_persists_and_reaches_every_update_stage(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, mode: str
+) -> None:
+    """更新の公開入力から保存値を変え、Git・テンプレート・post-applyへ同じ実効値を渡す。"""
+    configuration = tmp_path / "config.json"
+    configuration.write_text(
+        json.dumps({"dotfiles_mode": "minimal" if mode == "full" else "full", "other": 42}), encoding="utf-8"
+    )
+    monkeypatch.setattr(update_dotfiles.dotfiles_mode, "configuration_path", lambda: configuration)
+    monkeypatch.setenv(update_dotfiles.dotfiles_mode.MODE_ENV, "full")
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", tmp_path)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    calls: list[list[str]] = []
+    environments: list[dict[str, str]] = []
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls, environments=environments))
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls, environments=environments))
+    assert update_dotfiles.main(["--mode", mode]) == 0
+    assert json.loads(configuration.read_text(encoding="utf-8")) == {"dotfiles_mode": mode, "other": 42}
+    assert environments
+    assert all(environment[update_dotfiles.dotfiles_mode.MODE_ENV] == mode for environment in environments)
+    assert [call[:2] for call in calls if call[0] == "chezmoi"] == [
+        ["chezmoi", "git"],
+        ["chezmoi", "init"],
+        ["chezmoi", "status"],
+        ["chezmoi", "diff"],
+        ["chezmoi", "apply"],
+    ]
+
+
 class _FakePopen:
     """git pull用`Popen`の最小fake。"""
 
@@ -1704,7 +1734,7 @@ def _track_mise_lock(local: pathlib.Path, seed: pathlib.Path) -> None:
 
 @pytest.mark.usefixtures("real_stash_runtime")
 class TestStashLifecycle:
-    """更新の公開入口で復元・回収・旧退避保護の寿命を確認する。"""
+    """公開された更新コマンドで復元・回収・旧退避保護の寿命を確認する。"""
 
     @pytest.mark.parametrize("pull_code,cleanup_failure", [(0, False), (7, False), (0, True), (7, True)])
     def test_restored_changes_survive_cleanup_outcome(
@@ -2287,7 +2317,7 @@ def test_skipped_update_keeps_pending_for_next_timer(
     tmp_path: pathlib.Path,
     sync_report_path: pathlib.Path,
 ) -> None:
-    """自動更新入口が見送りを未完了として保持し、次の周期で再試行する。"""
+    """自動更新スクリプトが見送りを未完了として保持し、次の周期で再試行する。"""
     import update_dotfiles_if_upstream_changed as timer  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     local, _seed, _remote = _create_git_pair(tmp_path)
@@ -2304,6 +2334,7 @@ def test_skipped_update_keeps_pending_for_next_timer(
     git_outputs = {
         ("symbolic-ref", "HEAD"): "refs/heads/develop",
         ("rev-parse", "--symbolic-full-name", "@{upstream}"): "refs/remotes/origin/develop",
+        ("--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"): "",
         ("ls-remote", "--exit-code", "--refs", "origin", "refs/heads/develop"): f"{head}\trefs/heads/develop",
         ("rev-parse", "HEAD"): head,
     }

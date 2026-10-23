@@ -37,3 +37,7 @@
 | `pytools-edit` | `pytools/`・`scripts/`・`libexec/`・`bin/`・`rust/`配下の配置規約と実装規約 |
 | `sync-platform-pair` | Linux/Windowsペアファイルの同期 |
 | `merge-pr` | PRのマージと、マージ後のbranch同期、CIおよび必要なReleaseの検収 |
+
+## 成果物の品質基準
+
+本リポジトリは`agent-basics`を明示して使う。コード・文書・設定の作成と変更では`agent-basics:writing-standards`、レビューと指摘の採否では`agent-basics:review-standards`を適用する。WI、委譲、認可と完了報告の運用は`agent-toolkit`が担う。

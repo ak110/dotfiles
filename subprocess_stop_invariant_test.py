@@ -101,6 +101,8 @@ def test_timeouts_and_kills_use_process_tree_helpers():
     assert paths
     failures = []
     for path in paths:
+        if not (root / path).exists():
+            continue
         if path.suffix == ".py" and not path.name.endswith("_test.py") and "_testing" not in path.parts:
             failures.extend(_violations(path, (root / path).read_text(encoding="utf-8")))
     assert not failures, "共通関数を経由しない停止・時間上限:\n" + "\n".join(failures)

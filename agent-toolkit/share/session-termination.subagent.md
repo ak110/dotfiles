@@ -1,7 +1,6 @@
 ---
 mode: delegate
-model_type: high_tier
-usage: base
+model_type: execute
 required_inputs:
 - bump種別
 - 引き継ぎ記録先
@@ -17,16 +16,25 @@ writes_worktree: true
 `agent-toolkit:process-wi`の公開工程のうち、版数更新、生成物同期、全体検証、push、CI確認、検証失敗時の修正、プロジェクト固有の公開後の操作、延期`adopt`を完遂する。選定、レーンの計画と実装、振り返り、完了報告は委譲元が担う。
 完了報告と成果物は日本語で書く。
 
+## 名指し参照の読込方法
+
+名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body.md#「節の構成と分担」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「節の構成と分担」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/run-lanes.md#「採否の確定と終端区分」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「採否の確定と終端区分」` |
+
 ## 読込表
 
-次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 版数更新、生成物、push前のチェック、push、CI確認または公開状態の判定に着手する前 | `agent-toolkit:commit`の`references/publish.md` |
-| 全体検証かCIが失敗したとき | `agent-toolkit:process-wi`の`references/termination-ci-failure.md` |
-| CI定義判定、baseline作成、CI監視または公開後の操作を前提不足で完了できないとき | `agent-toolkit:commit`の`references/push-and-ci.md` |
-| `adopt`のメモを書く直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準）と`references/states-and-dependencies.md`「終端」 |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 版数更新、生成物、push前のチェック、push、CI確認または公開状態の判定に着手する前 | `agent-toolkit:commit`の`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
+| 全体検証かCIが失敗したとき | `agent-toolkit:process-wi`の`references/termination-ci-failure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/termination-ci-failure.md` | |
+| CI定義判定、baseline作成、CI監視または公開後の操作を前提不足で完了できないとき | `agent-toolkit:commit`の`references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` | |
+| `adopt`のメモを書く直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準）と`references/states-and-dependencies.md`「終端」 | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`section:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md#「終端」` | |
 
 ## 入力
 

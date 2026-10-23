@@ -1,41 +1,39 @@
 # サブエージェント定義ファイルと`<役割名>.parent.md`・`<役割名>.subagent.md`の記述基準
 
-`agents/`配下のClaude Codeサブエージェント定義ファイルの新規作成・改訂と、Claude CodeまたはCodexの委譲先が関与する手順の作成・改訂で満たす基準を定める。
-`agents/`のClaude Code用frontmatterの項目名と受理値は`https://code.claude.com/docs/ja/sub-agents.md`を公式の定義とする。agents_server用の`share/*.subagent.md`は本書の「agents_serverのfrontmatter」で定める。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/sub-agents.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
 
-## ディレクトリ構成
+以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
 
-`agents/`配下にはサブエージェント定義ファイルだけを置く。`agents/`配下は再帰的に走査され、サブディレクトリ内のファイルも定義として登録される（プラグインでは`<plugin-name>:<サブディレクトリ名>:<name>`として公開される）。
-定義が参照する資料は、そのサブエージェントの工程だけで読むものは対応するスキルの`references/`、複数のスキルや定義が共有するものはプラグインの`share/`（本文からは`${CLAUDE_PLUGIN_ROOT}/share/<ファイル名>`で参照）へ置く。
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/sub-agents.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/delivery-scope.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/sending.md#「委譲プロンプトの構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/sending.md#「委譲プロンプトの構成」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/routing.md#「会話を引き継ぐ委譲」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「会話を引き継ぐ委譲」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
 
 ## `<役割名>.parent.md`と`<役割名>.subagent.md`の組
 
-サブエージェントの手順は、委譲元の起動・検収を定める契約と、委譲先の作業を定める`<役割名>.subagent.md`へ分ける。
-機能上の呼び元が1カ所の契約は、その呼び元が必要な時点で読む規範の節へ統合する。複数の呼び元が共有する契約は`<役割名>.parent.md`を保持できる。
-索引・履歴・例示・テストの参照を呼び元に数えず、起動と受領を実際に行う主体で判定する。委譲先へは委譲先の手順と入力だけを配送し、責務境界を保つ。
-
-- `<役割名>.subagent.md`と、共有する場合の同名の`<役割名>.parent.md`をプラグインの`share/`配下へ置き、`${CLAUDE_PLUGIN_ROOT}/share/<ファイル名>`で参照する。単一呼び元の契約は呼び元の節へ置き、呼び元へ入力の確定と検収に必要な情報をそろえる
 - `<役割名>.parent.md`の起動を述べる節には、`agents_server`の`start`の各引数（`cwd`・`subagent_md_path`・`extra_params`・`mode`・`model_type`）へ渡す役割固有の値を書く（`subagent_md_path`は役割名）。起動の定型と共通の義務は`agent-toolkit:delegation`のSKILL.mdの「`<役割名>.parent.md`を持つ委譲の起動」が持つため、そちらへ委ねる。全役割に共通する省略時の値（`mode`を指定しないこと、`model_type`省略時にサーバーが工程別設定を使うこと）と、その定型に従う旨も書かない
+
 - 委譲先の恒常手順がClaude Codeの`agents/`配下の定義として既にある場合は、定義本文が`<役割名>.subagent.md`を兼ねるため`<役割名>.parent.md`だけを置く。`起動対象:`行へその定義のスコープ付き識別子を書く。Claude Code用frontmatterと分け、定義本文の`## 入力`のtextコードブロックへ`必須入力名: 対象, 観点`のように入力名をASCIIカンマ区切りで宣言する。agents_server用の`share/*.subagent.md`は後掲のYAMLの`required_inputs`を使う
 
-委譲元の契約（統合先の節または`<役割名>.parent.md`）は、委譲元が結果を利用するまでの入力確定・起動・待機・受領・検収・採否・統合を持つ。`<役割名>.subagent.md`は委譲先が入力を受領してから結果を返すまでの工程を持つ。以降のparentの記述基準は統合先の節にも適用する。
-
-- 両者が使う契約は定義の所有者を1つにし（`agent-documents-basics.md`「定義の所有者」と後掲の「`<役割名>.parent.md`と`<役割名>.subagent.md`の自己完結（双方向）」）、各文書は自身の工程で必要な参照契機だけを持つ
-- いずれの文書も複数工程を扱う場合は、その文書の全工程に必要な役割と分岐を同じ文書へ置く
-- 特定工程だけが使う判断条件、例外、固定書式、終了状態の詳細は、その工程で起動するスキルの`references/`へ置く。各文書は工程を条件とする読込表の行で全文取得を求める
 - 委譲元の起動前の義務に、サーバー、hook、modが起動時に確認・補完・実行する事項（必須入力の確認、`引き継ぎ記録先`の用意、`<役割名>.subagent.md`の所在の特定、委譲元のセッション記録の識別子と所在の特定、定期再確認の装着など）を置かない。実行側が一意に解決できる値を委譲元に組み立てさせると、読込と呼び出しが増え、組み立ての誤りが起動の失敗を招く
 
-`<役割名>.subagent.md`は`agent-documents-basics.md`「責務と構成」に従って冒頭で責務を示し、続けて入力、実行手順、出力形式を定める。
-
-### agents_serverのfrontmatter
+## agents_serverのfrontmatter
 
 `<役割名>.subagent.md`は先頭のYAML frontmatterへ起動設定を置く。
 
 ```yaml
 ---
 mode: explore
-model_type: low_tier
-usage: chores
+model_type: chores_fast
 required_inputs:
   - 対象
 optional_inputs:
@@ -47,15 +45,14 @@ continuations:
 ---
 ```
 
-必須キーは`mode`、`model_type`、`usage`、`required_inputs`、`writes_worktree`とする。
+必須キーは`mode`、`model_type`、`required_inputs`、`writes_worktree`とする。
 `optional_inputs`と`continuations`の省略時は空配列とする。キー・値・入力名・継続宣言の静的整合性は、全ての配布対象の役割文書を列挙するテストで保証する。
-起動時は設定を読み、起動経路と書込主体の判定に必要な`mode`・`writes_worktree`および呼出し入力を確認する。読めない設定は診断して終了する。
+起動時は設定を読み、起動方法と書込主体の判定に必要な`mode`・`writes_worktree`および呼出し入力を確認する。読めない設定は診断して終了する。
 
 | キー | 値と意味 |
 | --- | --- |
 | `mode` | `delegate`・`explore`・`shell`・`write`のいずれか。後3種は同名modeの軽量な起動条件を使う |
-| `model_type` | `low_tier`・`medium_tier`・`high_tier`。起動時の明示指定による上書きを保つ |
-| `usage` | `base`・`chores`・`execute`・`review`。engine順を選ぶ用途であり、段位を上書きしても保つ |
+| `model_type` | `execute`・`review`・`review_fast`・`chores`・`chores_fast`・`orchestrate`・`write`。起動時の明示指定による上書きを保つ |
 | `required_inputs` | 全受領条件で必須の入力名の配列 |
 | `optional_inputs` | 任意または条件付きで必要な入力名の配列。条件は本文の`## 入力`へ書く |
 | `writes_worktree` | 起動cwdの作業ツリーへ書く役割は`true`、書込先をその外へ限定した役割は`false` |
@@ -74,60 +71,22 @@ managed-temp・引き継ぎ記録・private-notesだけへ書く役割は`false`
 `explore`は全backendで通常の読取コマンドと読取MCPを使える。対象成果物・委譲入力・ユーザーデータの変更禁止は共通プロンプトが伝え、実行環境が管理するキャッシュ・状態・保存出力と区別する。
 同じ版の比較など、役割固有の検収に必要な保存資料は入力契約へ保持する。
 
-`continuations`の各要素は`instruction`に指示、`required`・`optional`に入力名、`paths`に実在するファイルの絶対パスだけを受ける入力名、`references`にパスと本文の双方を受ける入力名の配列を持つ。
-配列の省略時は空配列、`condition`の省略時は空文字列とする。`paths`と`references`はその指示が受理する入力に限り、同じ指示を重ねて宣言しない。
-絶対パスは実在を確かめ、本文は役割が定める契約へ渡す。`condition`が条件付きの必須値を定める場合、送信側は対象の工程・履歴から要否を判定する。
-サーバーと生成CLIはこの宣言から必須欠落・宣言外入力・パス欄の説明混入を検査する。生成・配送は`agent-toolkit:delegation`の`references/sending.md`「委譲プロンプトの構成」に従う。
+`continuations`の各要素は次の入力名の配列と指示を持つ。`instruction`は指示、`required`・`optional`は入力名、`paths`は実在するファイルの絶対パスだけを受ける入力名を持つ。`path_lists`は実在するファイルの絶対パス1件か、それらの空でないJSON配列を受ける入力名、`references`はパスと本文の双方を受ける入力名を持つ。
+配列の省略時は空配列、`condition`の省略時は空文字列とする。`paths`・`path_lists`・`references`はその指示が受理する入力に限り、各指示の宣言は1回に限る。
+絶対パスは配列の各要素も含め実在するファイルか確かめ、不正な値はその値と再実行形を示して拒否する。本文は役割が定める契約へ渡す。`condition`が条件付きの必須値を定める場合、送信側は対象の工程・履歴から要否を判定する。
+サーバーと生成CLIはこの宣言から必須欠落・宣言外入力・パス欄の説明混入をチェックする。生成・配送は`agent-toolkit:delegation`の`references/sending.md`「委譲プロンプトの構成」に従う。
 
-### 起動対象と入力の案内
+## 起動対象と入力の案内
 
 `<役割名>.parent.md`はH1の直後で最初のH2より前へ`text`のコードブロックを1件置き、1行目を`起動対象:`と半角空白に続けて、直接起動する`<役割名>.subagent.md`のファイル名をASCIIカンマ区切りで並べる。この行が起動関係の基準となる定義である。
-呼び元へ統合した契約はH2の節とし、その見出し直後へ同じ起動対象のコードブロックを置く。節内の起動・入力・検収はH3以下へ置き、共有parentと同じ宣言・入力の検査へ渡せるようにする。
-`<役割名>.parent.md`は各委譲先の`required_inputs`の項目名を本文へ逐語で書き、項目ごとに値の確定規則を書く。本文へ置く名称はこの逐語の項目名に限り、箇条書きで列挙する場合は本文を項目名で始め、直後にはコロン・句点・読点・全角丸括弧・空白のいずれかだけを置く（語を足すと対応付けを誤り、必須入力チェックが欠落を報告して委譲先の起動が失敗する）。
-
-### `<役割名>.parent.md`と`<役割名>.subagent.md`の自己完結（双方向）
-
-fork以外では文脈の独立を前提として、1つの取り決めを1つの文書だけへ置く。
-返却形式、応答言語、成果物の書式その他の受け渡しの取り決めは、それに従うエージェントが読む側の文書を正式な定義とし、もう一方には参照だけを置く。委譲先の内部の分岐と判断手順は委譲先側だけが持つ。
-同じ参照資料を双方へ読ませるのは、両者がその資料を異なる判断へ用いる場合だけとし、判断の差を条文へ書く。
-
-`<役割名>.parent.md`は委譲元の工程（起動前の確認、入力の確定、返却物の検収）に必要な定義を自身の本文だけで与える。定義の代わりに`<役割名>.subagent.md`の節や本文を読ませる記述を置くのは、次の3つの例外に限る。
-
-- 起動引数として渡す役割名の指定
-- 委譲先の作業手順の基準となる定義がその文書であることを述べる記述
-- 返却形式と入力宣言は`<役割名>.subagent.md`が所有する。起動前の値の確定は呼び元の契約で完結させ、返却を受領した後は同文書の`## 出力`を検収の基準として参照できる。どの欄を何と比べるかという検収の判断は`<役割名>.parent.md`の本文が持つ
-
-逆向きも同様に、`<役割名>.subagent.md`は`<役割名>.parent.md`を読ませる記述で自身の内容を代えない。委譲先は委譲プロンプトから入力を受領するため、`<役割名>.parent.md`を読む手順は不要であり、前段の例外は`<役割名>.parent.md`から`<役割名>.subagent.md`への方向に限る。
+呼び元へ統合した契約はH2の節とし、その見出し直後へ同じ起動対象のコードブロックを置く。節内の起動・入力・検収はH3以下へ置き、共有parentと同じ宣言・入力のチェックへ渡せるようにする。
+`<役割名>.parent.md`は各委譲先の`required_inputs`の項目名を本文へ逐語で書き、項目ごとに値の確定規則を書く。本文へ置く名称はこの逐語の項目名に限り、箇条書きで列挙する場合は本文を項目名で始め、直後にはコロン・句点・読点・全角丸括弧・空白のいずれかだけを置く（語を追加すると対応付けを誤り、必須入力チェックが欠落を報告して委譲先の起動が失敗する）。
 
 ## 返却形式の設計
 
-本節は努力目標とする。
-
-- 返却形式の行数と文字数が項目数に比例して増える場合は、委譲元が渡した絶対パスのファイルへ書き込ませ、ツール戻り値へは絶対パスと件数だけを返させる
 - 行を省略できる項目の定め方は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の省略時の値の項に従い、同じ要素は1つの構造だけへ列挙させる
+
 - 判断待ちの通知と続行は同書「返却形式の受け渡し」へ集約し、個別の停止条項を重ねない。調査で確定し得る結論には結果の値を持たせる
-
-## 名前付きagent、`<役割名>.subagent.md`およびskillの責務分離
-
-名前付きagentとは、実行ホストに定義を持ち、名前を指定して起動するagentを指す。
-
-- 名前付きagentは調整責務と受信形式を定め、呼び出し時には所定の`<役割名>.subagent.md`のパスと、起動入力として許す値だけを受け取る
-- 受け取る`<役割名>.subagent.md`は実施内容、対象、作成・レビューの規範を定めるスキル、検証、返却形式を定め、完了報告と成果物の言語を日本語とする条件を含める
-- skillはユーザーまたは委譲元が選ぶ作業の開始地点を定め、名前付きagentや`<役割名>.subagent.md`の本文は参照で示す
-- 委譲元と委譲先の双方が要する判断は共通skillへ置く
-- 起動入力として渡すのは委譲先が適用する作成・レビューの規範を定めるスキル、プラグイン内文書、役割から一意に導けない値だけとし、委譲先が自ら選べるものは委譲先が解決する
-
-## Claude Codeのfrontmatter
-
-- エージェント定義はセッション起動時に読み込まれるため、実行中のセッションで新設・改訂した定義はそのセッションの`subagent_type`から解決できない
-- 明示された委譲元からだけ起動する定義は、`description`へその委譲元（スキル名か起動契約）を一意に特定できる文面だけを書き、責務・処理概要・手順は本文へ置く（`description`は自動委譲の判定材料として恒常的にコンテキストを消費するため）
-- 起動時に常に必要な、作成・レビューの規範を定めるスキルは`skills`へ列挙し、本文へその起動手順を重ねない（努力目標）。特定の工程だけで要るスキルは列挙せず、観測可能な起動契機とともに本文へ起動手順を書く
-- `model`は指定がなければ`inherit`、`tools`は省略（無制限）とする。固定・限定する場合はfrontmatter内のコメント行へ実態と整合する理由を書き（努力目標）、整合する理由を書けなければ省略時の値を使う
-- `effort`は担う工程が要する推論量へ合わせる
-
-`skills`が注入したスキル本文には所在ディレクトリの絶対パスが付随し、プラグイン内の他ファイルはそこから確定したplugin rootの相対パスで解決する。
-スキル配下の`references/`は`skills`の宣言では読み込まれないため、必要な参照文書は本文から明示的に`Read`する。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/sub-agents.md：frontmatter：2026年8月19日」にある。
 
 ## コンテキスト境界
 
@@ -139,23 +98,3 @@ Codexで`agents_server`を使えず組み込み委譲へ代替する場合は、
 Codexネイティブの`spawn_agent`で起動した委譲先では、`fork_turns`が選ぶ会話履歴、対象worktreeから自動読込される`AGENTS.md`、`SubagentStart` hookが追加する委譲先規範を別々の入力として扱う。会話履歴に規範が含まれることをhook配送の代わりにせず、共通委譲先規範は`rules-subagent.md`を基準となる定義としてCodex hookとagents_serverの通常委譲へ同期する。Claude Code固有の委譲先規範はCodexへ配送せず、軽量な探索・書込・shellの各起動へ共通規範を配送しない契約も維持する。
 Codexでforkを選ぶ場合は、`spawn_agent`の`fork_turns`を省略するか`"all"`にする。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月27日」にある。
 役割文書を渡す起動は`agent-toolkit:delegation`のSKILL.md「送信」に従い、会話履歴を引き継がない。
-
-`Agent`ツールで`agents/`配下の定義から起動したサブエージェントが起動時に受け取るものは次のとおりとする。
-
-- 定義本文と、実行環境が付与する環境情報
-- 委譲元が組み立てた委譲プロンプト
-- 委譲元が読み込むメモリー階層（`CLAUDE.md`・プロジェクトルールなど）
-- 親セッションの開始時点のGitステータス（Gitリポジトリでない場合と`includeGitInstructions`が`false`の場合は付かない）
-- `skills`で宣言したスキルの全文
-- `main`とセッション内の他の名前付きエージェントの名簿（`tools`が`SendMessage`を含み、他に名前付きエージェントがある場合）
-
-名簿の監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月13日」にある。
-委譲元は定義本文を読まずに委譲プロンプトを組み立てるため、起動に必要な入力の項目は委譲元の手順へ書く。
-
-## 手順設計時の確認
-
-サブエージェントが関与する手順を作成・改訂する場合は、確定前に次を確かめる。
-
-- 手順が要求する各判断へ、判断するエージェントが起動時に受け取るものだけで到達できる
-- 委譲元・工程・処理段階の区別を条件とする記述は、その区別を委譲先が委譲プロンプト、宣言したスキル、参照する文書から観測できる（観測できない条件は判定されないまま手順が実行される）
-- 委譲先が名前で指名する値のうち自ら解決できないものは、frontmatterの入力宣言と呼び元の契約の渡す項目の列挙のいずれかに現れる（無いと実行時に続行できない理由を返して停止する）

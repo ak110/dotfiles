@@ -102,6 +102,10 @@ def find_session_record(
     codex_paths = find_codex_records(session_id, codex_home=codex_home)
     if codex_paths:
         return SessionRecord("codex", codex_paths)
+    logs = pathlib.Path.home() / ".gemini" / "antigravity-cli" / "brain" / session_id / ".system_generated" / "logs"
+    for name in ("transcript_full.jsonl", "transcript.jsonl"):
+        if (logs / name).is_file():
+            return SessionRecord("agy", (logs / name,))
     for engine in ("agy", "opencode"):
         paths = tuple(
             path
@@ -111,6 +115,27 @@ def find_session_record(
         if paths:
             return SessionRecord(engine, paths)
     return None
+
+
+def agy_session_id(path: pathlib.Path) -> str:
+    """対話記録のbrain祖先か、委譲先ログのstemから会話IDを返す。"""
+    return path.parents[2].name if path.name in {"transcript.jsonl", "transcript_full.jsonl"} else path.stem
+
+
+def agy_session_records(gemini_home: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    """会話ごとに切り詰めのない記録を優先し、各会話を1回だけ列挙する。"""
+    brain = gemini_home / "antigravity-cli" / "brain"
+    if not brain.is_dir():
+        return ()
+    paths = []
+    for conversation in sorted(brain.iterdir()):
+        logs = conversation / ".system_generated" / "logs"
+        for name in ("transcript_full.jsonl", "transcript.jsonl"):
+            path = logs / name
+            if path.is_file():
+                paths.append(path)
+                break
+    return tuple(paths)
 
 
 def find_codex_records(session_id: str, *, codex_home: pathlib.Path | None = None) -> tuple[pathlib.Path, ...]:

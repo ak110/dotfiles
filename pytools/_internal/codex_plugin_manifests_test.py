@@ -44,13 +44,22 @@ def _plugin_data() -> dict[str, Any]:
     }
 
 
+def _basics_plugin_data() -> dict[str, Any]:
+    return {**_plugin_data(), "name": "agent-basics", "version": "1.0.0"}
+
+
 @pytest.fixture(name="manifest_root")
 def manifest_root_fixture(tmp_path: Path) -> Path:
     """同期の入力となるplugin.json、marketplace.jsonなどの最小fixtureを作成する。"""
     plugin = _plugin_data()
-    marketplace = {"name": "ak110-dotfiles", "plugins": [{**plugin, "source": "./agent-toolkit"}]}
+    basics = _basics_plugin_data()
+    marketplace = {
+        "name": "ak110-dotfiles",
+        "plugins": [{**plugin, "source": "./agent-toolkit"}, {**basics, "source": "./agent-basics"}],
+    }
     fixtures: tuple[tuple[Path, dict[str, Any]], ...] = (
-        (subject.PLUGIN_SOURCE, plugin),
+        (subject.PLUGIN_SOURCE, {**plugin, "dependencies": ["agent-basics"]}),
+        (subject.BASICS_PLUGIN_SOURCE, basics),
         (subject.MARKETPLACE_SOURCE, marketplace),
         (
             subject.MCP_SOURCE,
@@ -132,19 +141,59 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
     cache.parent.mkdir(parents=True)
     cache.write_text("ignored", encoding="utf-8")
     subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    quality = tmp_path / subject.QUALITY_SOURCE
+    quality.parent.mkdir(parents=True)
+    quality.write_text(
+        "<!-- portable-quality:start -->\n\n## 基準\n\n本文\n\n<!-- portable-quality:end -->\n", encoding="utf-8"
+    )
     return tmp_path
+
+
+def test_basics_outputs_are_generated_without_claude_dependencies(manifest_root: Path) -> None:
+    """basicsはskillsだけを持つAgent Plugins/Codex manifestへ投影する。"""
+    basics = _basics_plugin_data()
+    (manifest_root / subject.BASICS_PLUGIN_SOURCE).parent.mkdir(parents=True, exist_ok=True)
+    (manifest_root / subject.BASICS_PLUGIN_SOURCE).write_text(json.dumps(basics), encoding="utf-8")
+    marketplace_path = manifest_root / subject.MARKETPLACE_SOURCE
+    marketplace = json.loads(marketplace_path.read_text(encoding="utf-8"))
+    marketplace["plugins"][1] = {**basics, "source": "./agent-basics"}
+    marketplace_path.write_text(json.dumps(marketplace), encoding="utf-8")
+    skills = manifest_root / "agent-basics/skills/writing-standards"
+    skills.mkdir(parents=True, exist_ok=True)
+    (skills / "SKILL.md").write_text("# writing\n", encoding="utf-8")
+    reference = skills / "references"
+    reference.mkdir(exist_ok=True)
+    (reference / "writing.md").write_text(
+        "<!-- portable-quality:start -->\n\n## 基準\n\n本文\n\n<!-- portable-quality:end -->\n", encoding="utf-8"
+    )
+
+    subject.sync(manifest_root)
+
+    agent = json.loads((manifest_root / subject.BASICS_AGENT_PLUGIN_TARGET).read_text(encoding="utf-8"))
+    codex = json.loads((manifest_root / subject.BASICS_PLUGIN_TARGET).read_text(encoding="utf-8"))
+    assert agent == {"$schema": subject.AGENT_PLUGIN_SCHEMA, **basics}
+    assert codex["skills"] == "./skills/"
+    assert "dependencies" not in agent
+    assert "hooks" not in codex
+    assert "mcpServers" not in codex
+    marketplace = json.loads((manifest_root / subject.MARKETPLACE_TARGET).read_text(encoding="utf-8"))
+    assert marketplace["plugins"][0]["source"] == {"source": "local", "path": "./agent-basics"}
 
 
 @pytest.fixture(name="quality_root")
 def _quality_root(manifest_root: Path) -> Path:
     """品質原本と、単独配布する2スキルを持つ最小の配布元を用意する。"""
-    for name in ("alpha", "beta", "writing-standards"):
-        path = manifest_root / "agent-toolkit/skills" / name / "SKILL.md"
+    for distribution, name in (
+        (distribution, name)
+        for distribution in ("agent-toolkit", "agent-basics")
+        for name in ("alpha", "beta", "writing-standards")
+    ):
+        path = manifest_root / distribution / "skills" / name / "SKILL.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         reference = "writing.md" if name == "writing-standards" else "quality-standards.md"
         path.write_text(f"# {name}\n\n[品質基準](references/{reference})\n", encoding="utf-8")
-    source = manifest_root / "agent-toolkit/skills/writing-standards/references/writing.md"
-    source.parent.mkdir()
+    source = manifest_root / subject.QUALITY_SOURCE
+    source.parent.mkdir(exist_ok=True)
     source.write_text(
         "# 原本\n\n配布の説明。\n\n<!-- portable-quality:start -->\n\n"
         "## 日本語の書き方\n\n主体と対象を明示する。\n\n"
@@ -159,7 +208,7 @@ def test_skill_quality_resources_follow_one_source_and_work_in_single_skill_copy
     expected_body = "# 日本語の書き方\n\n主体と対象を明示する。\n"
     expected_paths = {
         Path(distribution) / "skills" / name / "references/quality-standards.md"
-        for distribution in ("agent-toolkit", "agent-toolkit-codex")
+        for distribution in ("agent-toolkit", "agent-toolkit-codex", "agent-basics")
         for name in ("alpha", "beta")
     }
 
@@ -180,7 +229,7 @@ def test_skill_quality_resources_follow_one_source_and_work_in_single_skill_copy
     assert not (copied / "writing-standards").exists()
     assert subject.check(quality_root) is True
 
-    source = quality_root / "agent-toolkit/skills/writing-standards/references/writing.md"
+    source = quality_root / subject.QUALITY_SOURCE
     source.write_text(
         source.read_text(encoding="utf-8").replace("主体と対象を明示する。", "条件と結果を対応付ける。"), encoding="utf-8"
     )
@@ -192,7 +241,7 @@ def test_skill_quality_resources_follow_one_source_and_work_in_single_skill_copy
         )
 
 
-@pytest.mark.parametrize("distribution", ["agent-toolkit", "agent-toolkit-codex"])
+@pytest.mark.parametrize("distribution", ["agent-toolkit", "agent-toolkit-codex", "agent-basics"])
 @pytest.mark.parametrize("kind", ["欠落", "内容差", "余剰"])
 def test_skill_quality_check_reports_every_difference_and_sync_repairs_it(
     quality_root: Path, distribution: str, kind: str
@@ -224,7 +273,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
         assert generated[key] == value
     assert generated["hooks"] == "./hooks/hooks.codex.json"
     marketplace = json.loads((manifest_root / subject.MARKETPLACE_TARGET).read_text(encoding="utf-8"))
-    assert marketplace["plugins"][0]["source"] == {"source": "local", "path": "./agent-toolkit-codex"}
+    assert marketplace["plugins"][1]["source"] == {"source": "local", "path": "./agent-toolkit-codex"}
     codex_root = manifest_root / subject.CODEX_PLUGIN_ROOT_TARGET
     assert (codex_root / "GENERATED.md").read_text(encoding="utf-8") == subject.CODEX_ROOT_NOTICE
     assert not (codex_root / ".ruff_cache").exists()
@@ -812,7 +861,7 @@ def test_atomic_write_failure_is_reported(manifest_root: Path, monkeypatch: pyte
 
 @pytest.mark.asyncio
 async def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """静的な共通名の追加と動的な親環境の配送を分け、生成物の環境非依存を保つ。"""
+    """静的な共通名の追加と動的な親環境の配送を分け、環境によらず共通の生成物を保つ。"""
     names = (*mcp_environment.PROXY_ENVIRONMENT_VARIABLES, "TEST_PROXY")
     monkeypatch.setattr(mcp_environment, "PROXY_ENVIRONMENT_VARIABLES", names)
     monkeypatch.setitem(toolkit_config._MUTABLE_KEY_DEFAULTS, "future_engine", "codex")  # pylint: disable=protected-access

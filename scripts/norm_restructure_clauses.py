@@ -24,7 +24,7 @@ import re
 import subprocess
 import sys
 
-# WI「対象集合」の9領域。Git追跡のMarkdown（`.md`と`.md.tmpl`）だけを対象にする
+# WI「対象集合」の10領域。Git追跡のMarkdown（`.md`と`.md.tmpl`）だけを対象にする
 TARGET_PATHSPECS = (
     "agent-toolkit/rules/",
     "agent-toolkit/share/",
@@ -34,6 +34,7 @@ TARGET_PATHSPECS = (
     ".chezmoi-source/dot_claude/rules/",
     ".chezmoi-source/dot_claude/skills/",
     ".chezmoi-source/dot_claude/docs/",
+    ".chezmoi-source/dot_codex/AGENTS.md",
     ".chezmoi-source/dot_gemini/",
 )
 TARGET_SUFFIXES = (".md", ".md.tmpl")

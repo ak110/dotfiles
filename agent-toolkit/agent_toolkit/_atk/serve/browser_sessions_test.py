@@ -754,7 +754,7 @@ async def test_session_tree_places_children_of_every_launch_source_under_parents
 
     テストコードの記録は実行系の異なる親子、Codexの親thread、登録簿の委譲元だけで親が決まる委譲先、
     Claude Codeのサブエージェント、件数上限で外れた親とその子を持つ。
-    画面が親を子の実行系で引くと、実行系の異なる子が第1階層へ並ぶ。
+    画面が子の実行系を条件にして親を検索すると、実行系の異なる子が第1階層へ並ぶ。
     """
     _isolate_creation_time_index(tmp_path, monkeypatch)
     _write_entries(tmp_path)

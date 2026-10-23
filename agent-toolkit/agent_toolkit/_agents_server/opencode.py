@@ -13,6 +13,7 @@ from typing import Any
 from agent_toolkit._agents_server import context_usage, launch_prompts, session_errors
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server.cli_turn import CliTurnManager, finalize_turn
+from agent_toolkit._agents_server.result_projection import action_detail
 from agent_toolkit._agents_server.state import LaunchKind, SessionState
 from agent_toolkit._common import host_homes, message_format
 
@@ -20,7 +21,7 @@ from agent_toolkit._common import host_homes, message_format
 def build_command(prompt: str, model: str | None, effort: str | None, conversation_id: str | None) -> list[str]:
     """provider/modelとvariantを独立した引数として渡す。"""
     if not model:
-        raise session_errors.DelegateBackendError("OpenCodeのモデルが未設定。opencodeの段位モデルを設定する")
+        raise session_errors.DelegateBackendError("OpenCodeのモデルが未設定。工程別のモデル候補を設定する")
     command = ["opencode", "run", "--model", model, "--format", "json", "--auto"]
     if effort is not None:
         command += ["--variant", effort]
@@ -86,7 +87,10 @@ class OpenCodeManager(CliTurnManager):
                 if kind == "text":
                     session.agent_message += text
             if kind == "tool_use":
-                session.last_action = str(part.get("tool") or "tool")
+                tool = str(part.get("tool") or "tool")
+                state = part.get("state")
+                detail = action_detail(state.get("input") if isinstance(state, dict) else None)
+                session.last_action = f"{tool}: {detail}" if detail else tool
             session.status = "running"
             session.touch()
             await self._notify_waiters()

@@ -451,7 +451,11 @@ def _candidate_events(
             (event for event in timeline if _is_delegate_return(event, main_record_id=main_record_id)),
         ),
         ("adhoc-processing", iter(adhoc_processing or ())),
-        ("definition-body-read", iter(definition_reads or ())),
+        ("definition-body-read", (event for event in definition_reads or () if event["kind"] == "definition-body-read")),
+        (
+            "definition-read-unresolved",
+            (event for event in definition_reads or () if event["kind"] == "definition-read-unresolved"),
+        ),
         ("confirmation-request", (event for event in wi_events or () if event.get("kind") == "submitted-uwi")),
         ("wi-user-response", (event for event in wi_events or () if event.get("kind") == "wi-user-response")),
     )
@@ -592,13 +596,13 @@ def _candidate_events(
         if _is_bounded_hook_group(key):
             candidate["occurrence_count"] = occurrence_count
             candidate["omitted_locator_count"] = omitted_locator_count
-        if key and key[0] in {"adhoc-processing", "definition-body-read"}:
+        if key and key[0] in {"adhoc-processing", "definition-body-read", "definition-read-unresolved"}:
             ordered = sorted(events, key=lambda event: (str(event["record"]), int(event["line"])))
             candidate["calls"] = [
                 {"record": str(event["record"]), "line": int(event["line"]), "text": str(event.get("text", ""))}
                 for event in ordered
             ]
-            if key[0] == "definition-body-read":
+            if key[0] in {"definition-body-read", "definition-read-unresolved"}:
                 fields = (
                     "role",
                     "role_document",
@@ -609,6 +613,9 @@ def _candidate_events(
                     "result_observation",
                     "purpose",
                     "related_operations",
+                    "acquisition",
+                    "operations",
+                    "recorded_input",
                 )
                 for row, event in zip(candidate["calls"], ordered, strict=True):
                     row.update({field: event[field] for field in fields})
@@ -726,7 +733,7 @@ def _candidate_evidence_events(
             "text_limit": None if untruncated else _CANDIDATE_EVIDENCE_LENGTH,
             "events": details,
         }
-        if candidate["candidate_kind"] == "definition-body-read":
+        if candidate["candidate_kind"] in {"definition-body-read", "definition-read-unresolved"}:
             item["definition_reads"] = candidate["calls"]
         if budget.omitted:
             item["omitted"] = True
@@ -735,7 +742,7 @@ def _candidate_evidence_events(
 
 
 def _tool_use_index(collected: list[_CollectedRecord]) -> dict[tuple[str, str], dict[str, Any]]:
-    """記録ごとに、呼び出し識別子からツール呼び出しの入力と記録位置を引ける索引を作成する。
+    """記録ごとに、呼び出し識別子からツール呼び出しの入力と記録位置を取得できる索引を作成する。
 
     hook通知と失敗したツール結果は呼び出し識別子だけを持ち、対象のコマンドは別の行にある。
     Claude Codeは`tool_use`ブロックの`id`、Codexは`function_call`等の`call_id`で対応付ける。
@@ -838,7 +845,7 @@ def _is_escalation_return(event: dict[str, Any]) -> bool:
 def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
     """是正を求めない区分のhook通知を問題候補から除く場合に、除外の種別名を返す。
 
-    この判定は、是正を求める通知が`block`または`warn`の区分を必ず持つという前提へ依存する。
+    この判定は、是正を求める通知が`block`または`warn`の区分を必ず持つという前提に基づく。
     残す区分を列挙するのは、規範の注入や配送の種別のように是正の要否と無関係な値を`kind`へ持つ出力が
     今後追加されても、それを是正要求として扱わないためである。除く区分を列挙すると、列挙に無い新しい値が是正要求として残る。
     区分を持たない通知は、区分を示す必要が無い通知として発行されるため情報提示と同じ扱いとする。
@@ -1839,7 +1846,7 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
         return candidate_kind, failure_signature(candidate_kind, event)[0]
     if candidate_kind == "escalation":
         return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
-    if candidate_kind in {"adhoc-processing", "definition-body-read"}:
+    if candidate_kind in {"adhoc-processing", "definition-body-read", "definition-read-unresolved"}:
         # 記録（thread）ごとに1件へまとめ、委譲先が多い実行でも候補の件数が呼び出しの件数に比例しないようにする。
         return candidate_kind, str(event["record"])
     if candidate_kind in {"confirmation-request", "wi-user-response"}:

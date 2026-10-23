@@ -10,12 +10,21 @@ description: 「PRをマージして」などの明示依頼を受領したと�
 リリースの成否はリモートのbranch、CI、必要なReleaseで判定し、ローカルの作業ツリーとbranchはユーザーの変更を壊さない範囲でだけ扱う。
 `gh`の受理形式と取得可能な項目は、各操作の直前にヘルプで確かめる。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-release/SKILL.md#「developとmasterのリリース運用」` | 判断 | `section:*/skills/dotfiles-release/SKILL.md#「developとmasterのリリース運用」` |
+
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-toolkit:bugfix`の`references/ci-failure-handling.md` |
-| マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-toolkit:bugfix`の`references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` | |
+| マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md` | |
 
 ## 失敗時の扱い
 
@@ -80,7 +89,7 @@ GitHubの設定でhead branchを`develop`へ制限する操作は対象外とし
 GitHub Copilotのレビューはマージ後に到着することがあるため、前2節を終えた時点で1回だけ確認する。
 
 - `atk review-audit pending --repo <OWNER>/<REPO>`が終了コード0でJSONの`reviews`と`threads`を解釈でき、対象PRがどちらにも含まれなければ取得を省く。それ以外（含まれる、非0、解釈不能）は対象PRのCopilot由来のreview本文とreview threadを1回取得する
-- 取得、判定、GitHubへの記録、判定済みの記録は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`に従い、対象をそのPRへ限定する。新しいレビューの要求や到着の待機はしない（未到着分は`agent-toolkit:process-wi`の選定工程の監査が次回以降に拾う）
+- 取得、判定、GitHubへの記録、判定済みの記録は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`に従い、対象をそのPRへ限定する。新しいレビューの要求や到着の待機はしない（未到着分は`agent-toolkit:process-wi`の選定工程の監査が次回以降に取得する）
 - 要修正の指摘は「レビューコメントの確認」の振り分けに従う。同一セッションで是正する場合は`develop`への通常の変更として扱い、マージ工程を再実行せず次回のリリースPRへ公開を委ねる
 
 ## マージ後に`develop`へ加えた変更のCI確認
@@ -89,8 +98,10 @@ GitHub Copilotのレビューはマージ後に到着することがあるため
 
 ## 完了条件
 
-- `origin/develop`と`origin/master`の短縮OIDが一致し、必須CIと必要なRelease検収が成功している
+- マージ後のbranch同期時に`origin/develop`と`origin/master`の短縮OIDの一致を確認し、マージ対象の必須CIと必要なRelease検収が成功している
 - 「マージ後に到着したレビューの確認」を1回実施し、指摘の分類と処置を確定している
-- ローカル`develop`を同期した場合は、`develop`も`origin/master`と一致している
+- ローカル`develop`を同期した場合は、その同期時に`origin/master`との一致を確認している
+
+マージ後に同じセッションで`develop`へ加えた変更は、「マージ後に`develop`へ加えた変更のCI確認」の条件で判定し、検収済みのマージ結果と分けて報告する。
 
 ローカルの作業ツリーとbranchの状態は合否判定に使わない。`git status --short`の出力は現状の情報として完了報告へ添え、リモートの完了とローカル`develop`を同期したかどうかを区別して示す。

@@ -2,6 +2,15 @@
 
 処理対象WIの包含・除外・構成の理由を問われたメインが適用する。固定した選定集合を保ち、問いへの説明を終えて元の工程へ戻る。
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/pick-wi-explain.subagent.md` | 判断 | `read:agent-toolkit:*/share/pick-wi-explain.subagent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+
 ## 選定理由の説明担当の起動と受領
 
 ```text

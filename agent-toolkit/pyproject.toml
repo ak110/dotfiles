@@ -55,8 +55,9 @@ dev = [
 [tool.pyfltr]
 preset = "latest"
 python = true
-# Python 3.15のCIテストは約437秒を要し、省略時の600秒では余裕が小さいため、直下と同じ値を指定する。
 command-timeout = 900
+# 全通常pytestはCIの900秒時点で84%だったため、直下と同じpytest専用の有限枠を使う。
+pytest-timeout = 1500
 ty = true
 # 同じスキルのscripts内で共有するモジュールを、このsubprojectのcwd基準で探索する。
 # linked worktreeの祖先にある複製元のprojectより、このcwdの現物とPython 3.15を優先する。
@@ -67,6 +68,7 @@ ty-args = [
     "--extra-search-path", "skills/process-wi/scripts",
     "--extra-search-path", "skills/review-standards/scripts",
     "--extra-search-path", "skills/session-review/scripts",
+    "--extra-search-path", "skills/wi-standards/scripts",
 ]
 # pyfltrは設定を省略した場合、`ruff-format`で整形する前に`ruff check --fix --unsafe-fixes`を実行する。
 # `make test`で担当範囲外のファイルを自動修正しないよう、直下と同じくlintの自動修正を無効にする。

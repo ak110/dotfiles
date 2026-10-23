@@ -2,6 +2,16 @@
 
 本書は`atk agents wait`と待機中のツール呼び出しが異常で終わった場合、ホストから背景待機の停止通知を受けた場合と、`agents_server`のMCPサーバーが再起動した後の扱いを定める。平常時の待機は`references/waiting-and-monitoring.md`が定める。
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
+
 ## 終了コードと呼び出しの失敗
 
 - 終了コード4: `agents_server`の状態ディレクトリを解決できない実行環境である。事象と実行環境を委譲元へ返す

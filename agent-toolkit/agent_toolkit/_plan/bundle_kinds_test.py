@@ -49,7 +49,7 @@ def test_plan_bundle_kinds_cover_all_suffixes(tmp_path: pathlib.Path) -> None:
         assert bundle_kinds.is_viewable_name(expected.name, current_only=True) is (expected.viewable and expected.current)
         assert kind.current is expected.current
 
-    # ローカルとSSH先の一覧は同じ`viewer_files`の判定を通る。メイン計画の有無に応じてレビュー指摘管理表を載せる。
+    # ローカルとSSH先の一覧は同じ`viewer_files`の判定の対象になる。メイン計画の有無に応じてレビュー指摘管理表を載せる。
     with_main = tmp_path / "with-main"
     without_main = tmp_path / "without-main"
     for root in (with_main, without_main):

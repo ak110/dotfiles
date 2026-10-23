@@ -506,7 +506,17 @@ def test_cli_explains_every_caution_term(
     direction: str,
 ) -> None:
     """全注意語の警告が分類に対応する理由と書き換え方向を伝える。"""
-    path = _write(tmp_path, f"{term}を説明する。\n")
+    contextual_examples = {
+        "入口": "APIの入口を説明する。\n",
+        "受け口": "要求の受け口を説明する。\n",
+        "拾う": "夜間の処理が失敗を拾う。\n",
+        "引く": "本番データを引く。\n",
+        "通る": "書き込みも通る。\n",
+        "効く": "構成を選ぶときに効く。\n",
+        "響く": "全クライアントに響く。\n",
+        "足す": "中継しても値を足す。\n",
+    }
+    path = _write(tmp_path, contextual_examples.get(term, f"{term}を説明する。\n"))
 
     assert check_agent_doc_tone.main([str(path)]) == 0
 
@@ -566,6 +576,40 @@ def test_cli_preserves_data_and_structural_names(tmp_path: pathlib.Path, name: s
     assert path.read_text(encoding="utf-8") == body
 
 
+@pytest.mark.parametrize("ending", ["", "\n"])
+def test_json_diagnostics_keep_value_start_lines_and_ignore_keys_and_paths(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], ending: str
+) -> None:
+    """改行したキーとcolon、配列、エスケープを含むJSONでも説明値の開始行を返す。"""
+    body = "\n".join(
+        [
+            "{",
+            '  "正本"',
+            '  : "空白 : colon",',
+            '  "input_paths": ["既定.md", "nested/照合.md"],',
+            '  "items": [',
+            '    {"description": "正本を参照する。"},',
+            r'    {"description": "引用符\"と\n照合する。"},',
+            '    {"description": "入口を示す。"}',
+            "  ],",
+            '  "description"',
+            "  :",
+            '  "既定の動作。"',
+            "}",
+        ]
+    )
+    path = _write(tmp_path, body + ending, name="config.json")
+
+    assert check_agent_doc_tone.main([str(path)]) == 1
+
+    diagnostics = capsys.readouterr().err.splitlines()
+    expected = [(6, "error", "正本"), (7, "error", "照合"), (12, "error", "既定"), (8, "warning", "入口")]
+    assert len(diagnostics) == len(expected)
+    for diagnostic, (line, severity, term) in zip(diagnostics, expected, strict=True):
+        assert diagnostic.startswith(f"{path}:{line}: {severity}:")
+        assert f"「{term}」" in diagnostic
+
+
 @pytest.mark.parametrize("body", ["「前提を疑う観点」で実装を疑う。\n", "「前提を疑う観点」を使う。\n前提を疑う。\n"])
 def test_cli_warns_other_uses_of_doubt_beside_defined_viewpoint_name(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
@@ -598,6 +642,89 @@ def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> N
 
     assert check_agent_doc_tone.main([str(example)]) == 1
     assert check_agent_doc_tone.main([str(test_file)]) == 1
+
+
+@pytest.mark.parametrize(
+    "term",
+    ["拾う", "引く", "通る", "効く", "響く", "足す", "入口", "受け口"],
+)
+def test_cli_warns_machine_processing_metaphors(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], term: str) -> None:
+    """機械処理へ当てはめた動詞と場所の比喩名詞を警告する。"""
+    examples = {
+        "拾う": "夜間の処理が失敗を拾う。\n",
+        "引く": "本番データを引く。\n",
+        "通る": "書き込みも通る。\n",
+        "効く": "構成を選ぶときに効く。\n",
+        "響く": "全クライアントに響く。\n",
+        "足す": "中継しても値を足す。\n",
+        "入口": "APIの入口を説明する。\n",
+        "受け口": "要求の受け口を説明する。\n",
+    }
+    assert check_agent_doc_tone.main([str(_write(tmp_path, examples[term]))]) == 0
+    assert f"警告: 「{term}」" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("term", ["足すものがない", "失効が効く"])
+def test_cli_rejects_literal_translation_phrases(tmp_path: pathlib.Path, term: str) -> None:
+    """英語の定型句を逐語訳した表現を拒否する。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, f"この中継は{term}。\n"))]) == 1
+
+
+def test_cli_allows_dependency_terms(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """WIとパッケージのdependencyを示す用語は検出しない。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, "depends_onはWIの依存先を示す。\n"))]) == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "本番データを引く。",
+        "消えた分は夜間の処理が拾う。",
+        "書き込みも通る。",
+        "構成を選ぶときに効く。",
+        "全クライアントに響く。",
+        "入口を確認する。",
+        "受け口を用意する。",
+        "トークンを出す口を用意する。",
+        "`本番データを引く`と記述する。",
+    ],
+)
+def test_cli_warns_original_machine_metaphor_examples(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    """原要求の例と通常本文のコード表記も、警告の対象として保持する。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, body + "\n"))]) == 0
+    assert "警告:" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "機能の説明を補足する。処理の条件を満足する。",
+        "必要な条件が不足する場合は、別の条件を充足する。",
+        "処理が長引く場合の所要から、必要な待機を差し引く。",
+        "データを引き継ぐ。",
+        "操作は説明した通りである。",
+        "設定は有効かを確認する。",
+        "機能の影響から原因を調べる。",
+    ],
+)
+def test_cli_preserves_other_words_containing_verb_characters(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    """別の複合語や名詞に含まれる文字列を、禁止する動詞へ誤分類しない。"""
+    path = _write(tmp_path, body + "\n")
+    assert check_agent_doc_tone.main([str(path)]) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_cli_masks_only_explicit_prohibited_examples(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """明示した禁止例だけを除外し、一般本文にある直訳句は検出する。"""
+    masked = "<!-- agent-doc-tone: example-mask:start -->\n失効が効く。\n<!-- agent-doc-tone: example-mask:end -->\n"
+    assert check_agent_doc_tone.main([str(_write(tmp_path, masked))]) == 0
+    assert capsys.readouterr().err == ""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, "失効が効く。\n"))]) == 1
 
 
 def test_term_scope_preserves_existing_density_check(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -734,7 +861,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             "```text\n例文: 記録した値を読む。\n```\n",
             'print("是正本文")\n',
             "",
-            "入口を確認しない。" * 20,
+            "APIの入口を確認しない。" * 20,
             '{"input_path": "照合.md"}',
             False,
             1,
@@ -792,7 +919,7 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
     expected_output: list[str],
     expected_density_lines: list[int],
 ) -> None:
-    """通常の登録対象を通るチェックが、例の良い文と新しいコードの説明へ到達し、警告の語を位置付きの診断として表示する。"""
+    """通常の登録対象を検査するチェックが、例の良い文と新しいコードの説明へ到達し、警告の語を位置付きの診断として表示する。"""
     repository = pathlib.Path(__file__).resolve().parents[1]
     settings = tomllib.loads((repository / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["pyfltr"]
     command = settings["custom-commands"]["agent-doc-tone"]

@@ -21,6 +21,7 @@ from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import (
     plan_fixture as _plan_fixture,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
+from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
@@ -228,7 +229,7 @@ def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
 
 
 def _replace_action_table(content: str, rows: list[str], *, legacy: bool = False) -> str:
-    """fixtureの現行列構成に依存せず、実施内容表を指定した新旧形式へ置き換える。"""
+    """fixtureの現行列構成を前提とせず、実施内容表を指定した新旧形式へ置き換える。"""
     header = (
         f"| {' | '.join(_plan_format.PLAN_LEGACY_ACTION_TABLE_HEADER)} |\n| --- | --- | --- |"
         if legacy
@@ -728,7 +729,7 @@ def _run_plan_cli(
 ) -> tuple[int, str]:
     """計画を公開CLIへ1回渡し、終了コードと標準エラーを返す。
 
-    CLIは由来を比べるWIファイルをprivate-notesから探すため、実行環境の実物に依存しないよう
+    CLIは由来を比べるWIファイルをprivate-notesから探すため、実行環境の実物を参照しないよう
     一時のprivate-notesへ計画の人間由来行が指すWIファイルを置く。
     """
     inbox = work_dir / "private-notes" / "inbox"
@@ -922,7 +923,12 @@ def _run_plan_launcher(
         (inbox / name).write_text("# 要求\n\n本文。\n", encoding="utf-8")
     env = host_environ()
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(queue)
-    launcher = pathlib.Path(check_plan_file.__file__).resolve().parents[3] / "scripts" / "atk"
+    env["AGENT_TOOLKIT_RUNTIME_DATA"] = str(work_dir / "runtime")
+    # CI全体のfrozen指定は、公開ランチャーのno-project起動へ持ち込まない。
+    env.pop("UV_FROZEN", None)
+    root = pathlib.Path(check_plan_file.__file__).resolve().parents[3]
+    prepare_plugin_environment(root, env)
+    launcher = root / "scripts" / "atk"
     return subprocess.run(
         [str(launcher), "run-script", "plan-check", "--", "--work-dir", str(work_dir), *extra, *(str(p) for p in plans)],
         cwd=work_dir,

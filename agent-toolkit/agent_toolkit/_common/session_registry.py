@@ -122,7 +122,7 @@ class LaunchInfo:
     """同じsessionの再開と引き継ぎに使う起動情報、追送と各turnの終端応答。
 
     再開で`SessionState`を再生成する処理と、session登録簿の書込・復元は、この定義の項目を走査して値を写す。
-    項目を個別に列挙すると、項目を足したときに一部の処理が値を写さなくなり、型やテストでは検出されないためである。
+    項目を個別に列挙すると、項目を追加したときに一部の処理が値を写さなくなり、型やテストでは検出されないためである。
     `SessionState`と`SessionResumeState`は同名の属性を持つ。
     """
 
@@ -130,7 +130,6 @@ class LaunchInfo:
     prompt: str = ""
     # 項目を持たない旧形式の登録簿から復元したsessionでは開始時刻が不明なため`None`とする。
     created_at: str | None = None
-    usage: str | None = None
     followup_prompts: tuple[str, ...] = ()
     final_responses: tuple[tuple[int, str], ...] = ()
     terminal_error: str | None = None
@@ -199,6 +198,7 @@ class ResumeInfo:
     fast_mode: bool | None = None
     codex_model_provider: str | None = None
     codex_subscription_provider: str | None = None
+    codex_state_provider: str | None = None
     claude_api_env_file: str | None = None
     claude_connection: str | None = None
     claude_role: str | None = None
@@ -251,6 +251,7 @@ def publish(
     fast_mode: bool | None = None,
     codex_model_provider: str | None = None,
     codex_subscription_provider: str | None = None,
+    codex_state_provider: str | None = None,
     claude_api_env_file: str | None = None,
     claude_connection: str | None = None,
     claude_role: str | None = None,
@@ -318,6 +319,8 @@ def publish(
     if engine == "codex" and codex_model_provider:
         payload["codex_model_provider"] = codex_model_provider
         payload["codex_subscription_provider"] = codex_subscription_provider
+    if engine == "codex" and codex_state_provider:
+        payload["codex_state_provider"] = codex_state_provider
     if engine == "claude" and claude_api_env_file:
         payload["claude_api_env_file"] = claude_api_env_file
     if engine == "claude" and claude_connection:
@@ -461,8 +464,11 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
     if (
         info is not None
         and info.engine == "codex"
-        and info.codex_model_provider
-        and info.codex_model_provider != info.codex_subscription_provider
+        and (
+            info.codex_state_provider
+            or info.codex_model_provider
+            and info.codex_model_provider != info.codex_subscription_provider
+        )
     ):
         try:
             prior = json.loads(path.read_text(encoding="utf-8"))
@@ -615,6 +621,9 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         else None,
         codex_subscription_provider=payload.get("codex_subscription_provider")
         if payload["engine"] == "codex" and isinstance(payload.get("codex_subscription_provider"), str)
+        else None,
+        codex_state_provider=payload.get("codex_state_provider")
+        if payload["engine"] == "codex" and isinstance(payload.get("codex_state_provider"), str)
         else None,
         claude_api_env_file=payload.get("claude_api_env_file")
         if payload["engine"] == "claude" and isinstance(payload.get("claude_api_env_file"), str)

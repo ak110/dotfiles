@@ -1,7 +1,7 @@
 {
   "name": "agent-toolkit",
-  "version": "2.223.0",
-  "description": "Agent Plugins、Claude Code、Codex向けの品質支援プラグイン。コードと文書を扱う作業、計画やバグ調査の指針を示し、フックで入力と操作を確かめる。",
+  "version": "2.225.0",
+  "description": "WI・委譲・承認・記録・完了報告の運用を提供するプラグイン。成果物の品質判断にはagent-basicsを使う。",
   "author": {
     "name": "aki",
     "url": "https://github.com/ak110"
@@ -22,8 +22,8 @@
   "mcpServers": "./.mcp.codex.json",
   "interface": {
     "displayName": "agent-toolkit",
-    "shortDescription": "コード、文書、計画、レビューの作業指針",
-    "longDescription": "コード、文書、計画、レビューの各工程に共通の作業指針を提供する。計画の起草から実装、レビュー、AWI処理までを一貫した手順として扱う。",
+    "shortDescription": "WI・委譲・承認・記録・完了報告の運用",
+    "longDescription": "WI・委譲・承認・記録・完了報告の運用を提供する。成果物の品質判断にはagent-basicsを使う。",
     "developerName": "aki",
     "category": "Developer Tools",
     "capabilities": [

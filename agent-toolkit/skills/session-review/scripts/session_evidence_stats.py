@@ -13,6 +13,7 @@ from session_evidence_extract import (
     _CollectedRecord,
     _fallback,
     _json_object,
+    _launch_mode,
     _opencode_records,
     _parse_timestamp,
     _Record,
@@ -23,6 +24,7 @@ from session_evidence_records import (
     _codex_record_thread_id,
 )
 
+from agent_toolkit._common.agy_records import normalize_entries, usage_tokens
 from agent_toolkit._common.runtime_identity import distinct_identities as _distinct_identities
 
 _CLAUDE_TOKEN_KEYS = (
@@ -43,7 +45,7 @@ _CODEX_TOKEN_KEYS = (
 )
 
 
-_CLAUDE_HINT_KEYS = ("command", "file_path", "path", "pattern", "url", "query")
+_CLAUDE_HINT_KEYS = ("command", "CommandLine", "file_path", "path", "Path", "pattern", "url", "query")
 
 
 def _parse_cli_timestamp(value: str) -> datetime.datetime:
@@ -151,26 +153,7 @@ def _agy_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, i
     キャッシュ作成の成分は持たないため0とする。
     同じ応答の`usage`は完了した`agent_response`ステップだけが持つため、各ステップを1回ずつ数える。
     """
-    usages: list[tuple[_Record, dict[str, int]]] = []
-    for record in records:
-        step = record.entry.get("step_update")
-        if not isinstance(step, dict) or step.get("step_type") != "agent_response":
-            continue
-        usage = step.get("usage")
-        if not isinstance(usage, dict):
-            continue
-        usages.append(
-            (
-                record,
-                {
-                    "input_tokens": _token_value(usage.get("input_tokens")),
-                    "output_tokens": _token_value(usage.get("output_tokens")),
-                    "cache_creation_input_tokens": 0,
-                    "cache_read_input_tokens": _token_value(usage.get("cache_read_tokens")),
-                },
-            )
-        )
-    return usages
+    return [(record, usage) for record in records if (usage := usage_tokens(record.entry)) is not None]
 
 
 def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, int]]]:
@@ -261,7 +244,12 @@ def _turn_completion_data(
 
 def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, Any]:
     if runtime == "opencode":
-        return _stats_summary_data(_opencode_records(records), "claude")
+        opencode_summary = _stats_summary_data(_opencode_records(records), "claude")
+        opencode_summary.pop("observed_identities", None)
+        opencode_identities = [identity.public() for identity in _distinct_identities(records, runtime)]
+        if opencode_identities:
+            opencode_summary["observed_identities"] = opencode_identities
+        return opencode_summary
     timestamps = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
     summary: dict[str, Any] = {}
     identities = [identity.public() for identity in _distinct_identities(records, runtime)]
@@ -358,13 +346,17 @@ def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[
     """
     if runtime == "opencode":
         return _stats_call_entries(_opencode_records(records), "claude")
+    records = [
+        record._replace(entry=entry)
+        for record, entry in zip(records, normalize_entries([record.entry for record in records]), strict=True)
+    ]
     calls: dict[str, tuple[str, str | None, int, datetime.datetime]] = {}
     results: dict[str, list[datetime.datetime]] = {}
     for record in records:
         timestamp = _record_timestamp(record)
         if timestamp is None:
             continue
-        if runtime == "claude":
+        if runtime in {"claude", "agy"}:
             message = record.entry.get("message")
             content = message.get("content") if isinstance(message, dict) else None
             if not isinstance(content, list):
@@ -655,18 +647,21 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
     runtime = main_record.runtime
     if runtime is None:
         return _fallback()
-    summary = _stats_summary_data(main_records, runtime)
+    summaries = {
+        item.record_id: _stats_summary_data(item.records, item.runtime) for item in collected if item.runtime is not None
+    }
+    summary = summaries[main_record.record_id]
     subagents = [item for item in collected if item.role == "subagent" and item.runtime == "claude"]
     thread_summaries: list[tuple[_CollectedRecord, _Runtime, dict[str, Any]]] = []
     for item in collected:
         if item.role == "session" and item.runtime is not None:
-            thread_summaries.append((item, item.runtime, _stats_summary_data(item.records, item.runtime)))
+            thread_summaries.append((item, item.runtime, summaries[item.record_id]))
 
     total_tokens: dict[str, int] = {}
     if isinstance(summary.get("tokens"), dict):
         _add_tokens(total_tokens, _codex_normalized_tokens(summary["tokens"]) if runtime == "codex" else summary["tokens"])
     for subagent in subagents:
-        sub_summary = _stats_summary_data(subagent.records, "claude")
+        sub_summary = summaries[subagent.record_id]
         if isinstance(sub_summary.get("tokens"), dict):
             _add_tokens(total_tokens, sub_summary["tokens"])
     for _, thread_runtime, thread_summary in thread_summaries:
@@ -688,6 +683,29 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
     if "elapsed_seconds" in summary:
         total_event["elapsed_seconds"] = summary["elapsed_seconds"]
     events = [total_event]
+    modes: dict[str | None, dict[str, Any]] = {}
+    for item in collected:
+        mode = "main" if item.role == "main" else _launch_mode(item, collected)
+        group = modes.setdefault(
+            mode,
+            {
+                "kind": "stats-mode",
+                "mode": mode,
+                "tokens": {},
+                "measured_records": [],
+                "unmeasured_records": [],
+                "observed_identities": {},
+            },
+        )
+        observed = summaries.get(item.record_id, {})
+        group["observed_identities"][item.record_id] = observed.get("observed_identities", [])
+        tokens = observed.get("tokens")
+        if isinstance(tokens, dict):
+            _add_tokens(group["tokens"], _codex_normalized_tokens(tokens) if item.runtime == "codex" else tokens)
+            group["measured_records"].append(item.record_id)
+        else:
+            group["unmeasured_records"].append(item.record_id)
+    events.extend(modes.values())
     events.append(
         {"kind": "stats-summary", "engine": runtime, "record": main_record.record_id, **summary}
         if summary
@@ -702,7 +720,7 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
         subagent_rows: list[tuple[str, str | None, dict[str, Any]]] = []
         subagent_total: dict[str, int] = {key: 0 for key in _CLAUDE_TOKEN_KEYS}
         for subagent in subagents:
-            sub_summary = _stats_summary_data(subagent.records, "claude")
+            sub_summary = summaries[subagent.record_id]
             row: dict[str, Any] = {"agent": subagent.record_id, "engine": "claude", **sub_summary}
             if subagent.agent_type:
                 row["agent_type"] = subagent.agent_type

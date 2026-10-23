@@ -12,7 +12,7 @@ import time
 import uuid
 from pathlib import Path
 
-from agent_toolkit._atk import config, outcome
+from agent_toolkit._atk import config, outcome, usage_limit_policy
 from agent_toolkit._common import automated_prompt, claude_usage_limit, message_format
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
@@ -213,7 +213,7 @@ def _invoke(command: list[str], temporary: str) -> subprocess.CompletedProcess[s
 def _run_candidate(
     engine: str, executable: str, model: str, effort: str, root: Path, temporary: str, prompt: str
 ) -> subprocess.CompletedProcess[str]:
-    """1候補を起動する。ClaudeがWeekly limitか5時間の利用上限で拒否した場合は解除まで待ち、同じ会話を続ける。
+    """1候補を起動し、Claudeの待機対象の上限では解除後に同じ会話を続ける。
 
     元の依頼を新しい作業として送り直さず同じ会話を再開するため、拒否より前に行ったstageとcommitを繰り返さない。
     待機の回数と総時間に上限を置かない（ユーザー指示）。会話は同じ作業ディレクトリでだけ再開できるため、
@@ -225,7 +225,11 @@ def _run_candidate(
     result = _invoke(_command(engine, executable, model, effort, root, temporary, prompt, session_id=session_id), temporary)
     while result.returncode != 0:
         usage_limit = claude_usage_limit.from_stream_lines((result.stdout or "").splitlines())
-        if usage_limit is None or not usage_limit.is_wait_target:
+        if (
+            usage_limit is None
+            or not usage_limit.is_wait_target
+            or not usage_limit_policy.should_wait(engine, usage_limit.limit_type)
+        ):
             return result
         delay = usage_limit.delay_seconds(time.time())
         print(f"{usage_limit.describe()}。{int(delay)}秒後に同じ会話を再開します。", file=sys.stderr)
@@ -253,9 +257,9 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dry-run", action="store_true", help="コミットせず候補メッセージを表示する。")
     parser.add_argument(
         "--model-type",
-        default="medium_tier",
+        default="chores",
         metavar="TYPE",
-        help="モデル段位名またはengine:model[/effort]のカンマ区切り候補列。段位名はbase_engineのengine順に段位のモデルを並べる。省略時はmedium_tierを使う。",
+        help="工程別モデル種別またはengine:model[/effort]のカンマ区切り候補列。省略時はchoresを使う。",
     )
     parser.add_argument("additional_prompt", nargs="?", help="フォーマットや差分の追加指示。")
 
@@ -282,7 +286,9 @@ def dispatch(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             additional_prompt=args.additional_prompt or "",
         )
-        candidates = config.resolve_model_candidates(args.model_type, usage="base")
+        candidates = config.resolve_model_candidates(
+            args.model_type,
+        )
     except _next_action.ActionableError as error:
         outcome.report_failure(f"commitを開始できません: {error}", next_action=error.next_action)
         return 2
@@ -325,8 +331,8 @@ def dispatch(args: argparse.Namespace) -> int:
     outcome.report_failure(
         "利用できるモデル候補がありません",
         next_action=(
-            "スキップした理由を確認し、`atk config set <engine>_<段位>_model <VALUE>`"
-            "（段位を指定しない場合は`medium_tier`、engine順は`base_engine`）で"
+            "スキップした理由を確認し、`atk config set chores_model <候補列>`"
+            "（省略時は`chores`工程）で"
             "起動できる候補を追加するか、`--model-type`に別の候補を指定して再実行する"
         ),
     )

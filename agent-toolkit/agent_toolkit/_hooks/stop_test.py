@@ -50,13 +50,13 @@ def test_blocks_and_notifications_are_aggregated_in_check_order(monkeypatch: pyt
             "autonomous_exit": ("block", "自律終了"),
             "plan_save_advisor": ("approve", ""),
             "agents_server_session_advisor": ("notify", "未観測session"),
-            "pending_question_advisor": ("block", "問いかけ"),
+            "termination_order_advisor": ("block", "別の遮断"),
         },
     )
 
     assert stop.evaluate("{}") == {
         "decision": "block",
-        "reason": "自律終了\n\n問いかけ\n\n未観測session",
+        "reason": "自律終了\n\n別の遮断\n\n未観測session",
     }
 
 
@@ -67,7 +67,7 @@ def test_notifications_are_aggregated_without_block(monkeypatch: pytest.MonkeyPa
             "autonomous_exit": ("approve", ""),
             "plan_save_advisor": ("approve", ""),
             "agents_server_session_advisor": ("notify", "通知1"),
-            "pending_question_advisor": ("notify", "通知2"),
+            "termination_order_advisor": ("notify", "通知2"),
         },
     )
 
@@ -94,6 +94,13 @@ def test_yield_keeps_other_notifications(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_all_approve_returns_empty_object(monkeypatch: pytest.MonkeyPatch) -> None:
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
 
+    assert not stop.evaluate("{}")
+
+
+def test_suppressed_notifications_do_not_emit_empty_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    """共通noticeが抑止した本文は、空の通知応答へ変換しない。"""
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+    _replace_checks(monkeypatch, {"termination_order_advisor": ("notify", "")})
     assert not stop.evaluate("{}")
 
 
@@ -146,7 +153,7 @@ def test_first_block_starts_count_at_one(
     """再入でない入力は既存値にかかわらず連続回数を1から始める。"""
     _set_state_directory(monkeypatch, tmp_path)
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
-    _replace_checks(monkeypatch, {"pending_question_advisor": ("block", "問いかけ")})
+    _replace_checks(monkeypatch, {"termination_order_advisor": ("block", "別の遮断")})
     session_id = "first-block"
     _state_path(tmp_path, session_id).write_text(
         json.dumps({"stop_consecutive_block_count": 5}),
@@ -259,7 +266,7 @@ def test_queued_notifications_yield_without_overriding_block(
     monkeypatch.setattr(plan_save_advisor, "working_plans_root", lambda: tmp_path / "plans")
     _replace_checks(monkeypatch, {"user_response_advisor": ("notify_user", "ユーザー宛て通知")})
     if block:
-        _replace_checks(monkeypatch, {"pending_question_advisor": ("block", "別の遮断")})
+        _replace_checks(monkeypatch, {"termination_order_advisor": ("block", "別の遮断")})
     _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
     _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
     output_file = str(tmp_path / "tasks" / "b6n4gipz5.output")
@@ -334,9 +341,8 @@ def _run_busy_loop_turns(
         {
             "plan_save_advisor": ("approve", ""),
             "agents_server_session_advisor": ("approve", ""),
-            "pending_question_advisor": ("block", "問いかけ"),
             "user_response_advisor": ("approve", ""),
-            "termination_order_advisor": ("approve", ""),
+            "termination_order_advisor": ("block", "別の遮断"),
             "queued_notification_advisor": ("approve", ""),
         },
     )
@@ -380,5 +386,5 @@ def test_busy_loop_halt_unissued_keeps_other_decisions(
     assert calls == {"abort": 1, "terminate": 1}
     assert result["decision"] == "block"
     assert "atk agents-exit-session" in str(result["reason"])
-    assert "問いかけ" in str(result["reason"])
+    assert "別の遮断" in str(result["reason"])
     assert "セッションの終了要求は送っていない" in str(result["systemMessage"])

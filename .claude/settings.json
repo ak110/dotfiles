@@ -1,5 +1,8 @@
 {
   "claudeMdExcludes": [
     "**/.chezmoi-source/dot_codex/AGENTS.md"
-  ]
+  ],
+  "enabledPlugins": {
+    "agent-basics@ak110-dotfiles": true
+  }
 }

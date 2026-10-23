@@ -11,17 +11,13 @@ import subprocess
 import typing
 import urllib.request
 
-from agent_toolkit._common import atomic_file, host_homes, process_tree
+from agent_toolkit._common import atomic_file, claude_settings_sources, process_tree
 
 
 def _hooks(repo: pathlib.Path, event: str) -> list[dict[str, typing.Any]]:
     result = []
     environment = {}
-    for path in (
-        host_homes.claude_config_dir() / "settings.json",
-        repo / ".claude/settings.json",
-        repo / ".claude/settings.local.json",
-    ):
+    for path in claude_settings_sources.paths(repo):
         if not path.exists():
             continue
         settings = json.loads(path.read_text(encoding="utf-8"))

@@ -2,7 +2,7 @@
 name: dotfiles-norm-edit
 user-invocable: false
 description: >
-  dotfilesリポジトリで`AGENTS.md`・`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`・
+  dotfilesリポジトリで`AGENTS.md`・`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`・`agent-basics/skills/`・
   `.claude/skills/`のエージェント向け文書を変更、削除または縮小するとき、変更した規範を自セッションへ適用するとき、
   規範を変更したセッションで会話圧縮の後に作業を続けるとき、変更済みまたは新設したスキルを起動するとき、
   および`agent-toolkit:process-wi`のメインがAWIごとの`プロジェクト規範の指定`を書くときに起動する。
@@ -14,13 +14,25 @@ description: >
 メインが書く`プロジェクト規範の指定`、規範を削除・縮小するときの消失確認を提供する。
 `agent-toolkit/`配下の配置、版数更新と配布の手順は`agent-toolkit-edit`が扱う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/SKILL.md` | 判断 | `read:*/skills/agent-toolkit-edit/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
+
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| エージェント向け文書を編集する前 | `docs/development/concepts.md`と`docs/development/incidents.md`。編集するエージェント自身が全文を読む（要約、見出し一覧、部分読取、他のエージェントの読取結果では代えない） |
-| セッション中に変更または新設した規範ファイル（スキルと`${CLAUDE_PLUGIN_ROOT}`配下から読む文書）を使う時 | 作業ツリーの該当ファイル（絶対パスで読む） |
-| 規範を変更したセッションで、会話圧縮の後に次の判断へ進む前 | 以降の工程を定めるスキルと参照文書のうち、そのセッションで変更したものの作業ツリー版 |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| エージェント向け文書を編集する前 | `docs/development/concepts.md`と`docs/development/incidents.md`。編集するエージェント自身が全文を読む（要約、見出し一覧、部分読取、他のエージェントの読取結果では代えない） | 操作 | `agent-document-writing` | |
+| セッション中に変更または新設した規範ファイル（スキルと`${CLAUDE_PLUGIN_ROOT}`配下から読む文書）を使う時 | 作業ツリーの該当ファイル（絶対パスで読む） | 判断 | `tool:Read`、`tool:Bash` | `modified-agent-documents` |
+| 規範を変更したセッションで、会話圧縮の後に次の判断へ進む前 | 以降の工程を定めるスキルと参照文書のうち、そのセッションで変更したものの作業ツリー版 | 判断 | `tool:Read`、`tool:Bash` | `modified-agent-documents` |
 
 編集前に、読込表の1行目の方針と障害対策の記録と変更が矛盾しないことを確かめる。編集中に新たな障害または確定した意向が生じた場合は、対応する記録を更新する。
 
@@ -28,12 +40,12 @@ description: >
 
 依頼やAWIが引用する文面は、着手前に作業ツリーの現行本文から固定文字列で検索して反映先を特定する。見つからなければ同じ目的の現行条文を反映先とする（古い引用を置換対象にすると、更新済みの条文と競合する規定が別箇所へ増える）。編集対象の特定には作業ツリーを使い、配布先の`~/.claude/`と`~/.codex/`は対象外とする。
 
-対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`配下、`.claude/skills/`配下である。
-これらを変更したエージェントは、変更を確定した時点から変更後の文面を自身の以降の判断へ適用し、影響する委譲先の委譲プロンプトへその文面を明示して渡す。読み込まれているのはセッション開始時の版であり、作業ツリーの変更は自動では読み直されないためである。
+対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`・`agent-basics/skills/`配下、`.claude/skills/`配下である。
+これらを変更したエージェントは、変更を確定した時点から作業ツリー版を自身の以降の判断へ適用する。影響する委譲先には原本の絶対パス・適用節・版（commit、未commitならその旨と変更を確定した時点）を渡し、判断前に担当自身が読む。セッション開始時の版と作業ツリー版を区別し、同じ原本を各担当が参照する。
 
 - `Skill`ツールと`${CLAUDE_PLUGIN_ROOT}`配下の文書はセッション開始時に導入済みの版を返す（変更したスキルは旧本文、新設したスキルは`Unknown skill`）。読込表の2行目に従い作業ツリー版を使う
 - 会話圧縮の後は変更後の文面が失われるため、そのセッションのcommitが変更した対象規範を特定して読込表の3行目を適用する
-- 呼び元の起動・受領契約と、その`起動対象:`にある`<役割名>.subagent.md`は、同一のplugin rootから組で適用する。契約は共有する`<役割名>.parent.md`または単一呼び元へ統合した節に置く。入力宣言・起動設定と呼び元の値の確定・検収が成立する版だけを後続へ使い、確認できなければ稼働開始時の版を使い続ける（入力名や起動設定の異なる版を混在させないため）
+- 呼び元の起動・受領契約と、その`起動対象:`にある`<役割名>.subagent.md`は同一のplugin rootから組で適用する。契約は共有する`<役割名>.parent.md`または単一呼び元へ統合した節に置く。入力宣言・起動設定と呼び元の値の確定・検収が成立する版だけを後続へ使い、確認できなければ稼働開始時の版を使い続ける（入力名や起動設定の異なる版を混在させないため）
 - フック、MCPサーバー、スクリプト、権限設定の変更は配布と再起動まで反映されないため、自セッション適用の対象外とする。委譲先が現行plugin rootから自ら解決して実行する資源の欠陥を是正した場合は、`agent-toolkit:delegation`の`references/base-contract.md`の`是正済み資源:`の行で作業ツリー側の絶対パスを渡す
 - 変更後の規範では作業を完遂できないと判明した場合は、その変更の設計見直しを優先する
 
@@ -41,11 +53,12 @@ description: >
 
 `agent-toolkit:process-wi`の選定工程で、メインはAWIごとに`プロジェクト規範の指定`を書く。受け渡し形式は`agent-toolkit/skills/process-wi/references/selection-format.md`が定める。
 記載は`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`の`norm-spec`の条件から組み立てる。各条件は`paths`と`suffixes`か`agent-doc`で対象を選び、`require-paths`は当たったファイルのパス、`require-text`はその文字列を求める。`atk run-script pick-wi-check`が同じ設定で欠落を検出する。
+適用する規範は作業ツリー原本の絶対パス・適用節・版で指定し、担当自身が判断前に読む。指定した資料の本文は同じ原本を参照させる。
 
 - 前節の対象規範を変更するAWIには、変更の対象ファイルのリポジトリ相対パスを書く。どの条件にも当たらないAWIは`なし`とする
-- 反映先に本リポジトリのエージェント向け文書を含むAWI（`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真）には、変更を確定するエージェントが計画の採否を確定する前に読む要求を書く。`docs/development/concepts.md`と`docs/development/incidents.md`は索引であり全文を読み、加えて索引から変更対象のファイル名・工程名・機能名に関係する分割ファイルの節を選んで読む。ユーザーが確定した方針の本文は分割ファイルにあり、索引だけでは届かない
+- 反映先に本リポジトリのエージェント向け文書を含むAWI（`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真）には変更を確定するエージェントが計画の採否を確定する前に読む要求を書く。`docs/development/concepts.md`と`docs/development/incidents.md`は索引であり全文を読み、加えて索引から変更対象のファイル名・工程名・機能名に関係する分割ファイルの節を選んで読む。ユーザーが確定した方針の本文は分割ファイルにあり、索引だけでは届かない
 - レーン担当は選定結果から自レーンの指定を読むため、委譲プロンプトでの要求の再掲は省く（努力目標）。指定が`なし`以外の項目を担当するレーンへは、その項目のファイル名と対象ファイルのパスを渡す
-- レーンで規範の変更を確定したエージェントは、同じレーンの以降の委譲先へ変更後の文面を渡す。並行する他のレーンへの伝播は範囲外とする
+- レーンで規範の変更を確定したエージェントは、同じレーンの以降の委譲先へ前節の原本の絶対パス・適用節・版を渡す。並行する他のレーンへの伝播は範囲外とする
 
 ## 規範を削除・縮小するときの消失確認
 

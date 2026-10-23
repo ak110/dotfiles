@@ -756,7 +756,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """真正性検証を通らない古いディレクトリは自動削除の候補にしない。"""
+        """真正性検証に成功しない古いディレクトリは自動削除の候補にしない。"""
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("untrusted-expired")
         (target / _MARKER_NAME).write_text("{}", encoding="utf-8")

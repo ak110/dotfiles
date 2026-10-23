@@ -16,6 +16,24 @@ clean_environment = settings.clean_environment
 connection_environment = settings.connection_environment
 connection_overrides = settings.connection_overrides
 subscription_available = settings.subscription_available
+isolation_keys = settings.isolation_keys
+
+
+def api_only(role: str = "delegate") -> bool:
+    """当該役割の旧API固定と、明示したオーケストレーターのAPI固定を判定する。"""
+    key = "claude_orchestrator_api_only" if role == "orchestrator" else "claude_worker_api_first"
+    return config.claude_legacy_api_only(key) or (
+        role == "orchestrator" and config.claude_role_setting_is_explicit(key) and config.resolve_mutable_setting(key) == "true"
+    )
+
+
+def fixed_kind(role: str) -> str | None:
+    """役割に固定した接続を返し、候補順だけの方針ではNoneを返す。"""
+    if api_only(role):
+        return "api"
+    if role == "orchestrator" and config.claude_role_setting_is_explicit("claude_orchestrator_api_only"):
+        return "subscription"
+    return None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -38,11 +56,15 @@ class Candidates:
 
 
 def candidates(role: str, *, env: Mapping[str, str] | None = None) -> Candidates:
-    """両認証があるときの役割別順序と、一方だけの環境での単独候補を返す。"""
+    """オーケストレーターの接続固定と、委譲先の接続順から利用可能な候補を返す。"""
     raw_path = config.resolve_mutable_setting("claude_api_env_file")
-    if not raw_path:
+    strict_api = api_only(role)
+    orchestrator_api = config.resolve_mutable_setting("claude_orchestrator_api_only") == "true"
+    worker_api_first = config.resolve_mutable_setting("claude_worker_api_first") == "true"
+    role_key = "claude_orchestrator_api_only" if role == "orchestrator" else "claude_worker_api_first"
+    explicit_role = config.claude_role_setting_is_explicit(role_key)
+    if not raw_path and not strict_api and not explicit_role:
         return Candidates((Connection("inherit"),))
-    mode = config.resolve_mutable_setting("claude_api_mode")
     path = str(pathlib.Path(raw_path).absolute()) if raw_path else None
     diagnostic: list[str] = []
     api = False
@@ -59,34 +81,51 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None) -> Candidates
             )
     else:
         diagnostic.append("API: atk config set claude_api_env_file <パス>で認証環境を設定する")
+    if strict_api:
+        if api and path:
+            values = settings.read_api_env_file(path)
+            api = any(
+                values.get(key)
+                for key in (
+                    "ANTHROPIC_API_KEY",
+                    "ANTHROPIC_AUTH_TOKEN",
+                    "CLAUDE_CODE_USE_BEDROCK",
+                    "CLAUDE_CODE_USE_VERTEX",
+                    "CLAUDE_CODE_USE_FOUNDRY",
+                )
+            )
+            if not api:
+                diagnostic.append("API環境ファイルにAPI認証または接続方式を設定し、同じ会話へ再送する")
+        return Candidates((Connection("api", path, path),) if api else (), tuple(diagnostic))
     subscription_env = env
-    isolation_keys = AUTH_ENV
+    subscription_isolation_keys = AUTH_ENV
     if api:
-        overrides = connection_overrides(Connection("subscription", isolation_env_file=path))
+        selected = Connection("subscription", isolation_env_file=path)
         inherited = os.environ if env is None else env
-        subscription_env = {**inherited, **overrides}
-        isolation_keys = frozenset(overrides)
-    subscription = subscription_available(subscription_env, isolation_keys=isolation_keys)
+        subscription_env = connection_environment(inherited, selected)
+        subscription_isolation_keys = settings.isolation_keys(selected)
+    subscription = subscription_available(subscription_env, isolation_keys=subscription_isolation_keys)
     if not subscription:
         diagnostic.append("subscription: claude auth loginでサブスクリプションへログインする")
     available = {"api": api, "subscription": subscription}
-    if api and subscription:
-        if role == "orchestrator":
-            order = ("api",) if mode == "pay-as-you-go" else ("subscription",)
-        else:
-            order = ("subscription", "api") if mode == "pay-as-you-go" else ("api", "subscription")
+    if role == "orchestrator":
+        order = ("api",) if orchestrator_api else ("subscription",)
     else:
-        order = ("api", "subscription")
+        order = ("api", "subscription") if worker_api_first else ("subscription", "api")
     return Candidates(
         tuple(Connection(kind, path if kind == "api" else None, path if api else None) for kind in order if available[kind]),
         tuple(diagnostic),
     )
 
 
-def with_current_isolation(connection: Connection, *, env: Mapping[str, str] | None = None) -> Connection:
-    """保存済みsubscriptionの選択を保ち、現行のAPI専用キー集合だけを補う。"""
+def with_current_isolation(
+    connection: Connection, *, role: str = "delegate", env: Mapping[str, str] | None = None
+) -> Connection:
+    """役割の固定を保存済み会話にも適用し、subscriptionの隔離キーを補う。"""
+    if fixed_kind(role) is not None:
+        return candidates(role, env=env).require_first()
     if connection.kind != "subscription" or connection.isolation_env_file is not None:
         return connection
-    choices = candidates("delegate", env=env)
+    choices = candidates(role, env=env)
     path = next((item.isolation_env_file for item in choices.connections if item.isolation_env_file), None)
     return dataclasses.replace(connection, isolation_env_file=path)

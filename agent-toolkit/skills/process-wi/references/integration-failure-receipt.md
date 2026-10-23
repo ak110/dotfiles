@@ -11,3 +11,16 @@ rebase進行中の競合を受領した場合は、次のとおり扱う。レ�
 3. `対応完了`なら同じターンで`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「レビュー修正」と同じ判定で実行レビュー担当へ`再レビューせよ`と`round`を送る。複数の計画を持つレーンでは、送る計画を同書「起動方法別のレビュー基準」の影響する計画の判定で選ぶ。収束後に`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って新しい`実行レビュー済みHEAD`で統合指示を再送する。`対応完了（再レビュー不要）`にも同書「レビュー修正」の証拠判定を適用し、再判定が不要な場合だけ、保持した修正前後OIDの対応を使って現在のHEADで統合指示を再送する。
 
 同じthreadを継続できない場合は`agent-toolkit:delegation`のSKILL.mdの`## 継続と新規起動`に従い、新しいレーン担当には`再開位置`として`~/.claude/plans`の計画ファイルの絶対パスを渡す。
+
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/lane-integration.subagent.md#「検証結果の警告の判定」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「検証結果の警告の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-integration-failure.md#「rebaseの競合」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lane-integration-failure.md#「rebaseの競合」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md#「レビュー修正」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「レビュー修正」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |

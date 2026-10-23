@@ -2,6 +2,33 @@
 
 メインが固定した集合を、選定結果のレーン割当と依存順に従って実行する。各レーンの同じ担当threadが、必要な計画の起草、実装、レビュー修正、履歴統合および主作業ツリーへの統合を担う。
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-planning.md#「計画の起草」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lane-planning.md#「計画の起草」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「長時間待機前の会話圧縮」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md#「延期adoptと反映後の観測」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「延期adoptと反映後の観測」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md#「計画準備の受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「計画準備の受領」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-planning.md#「再開」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lane-planning.md#「再開」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#冒頭` |
+
 ## レーンと資源
 
 初期選定が1レーンの場合は、準備済みの専用worktreeと処理対象WIを1人のレーン担当へ渡し、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。以降の工程境界の往復は同契約の継続する工程へ読み替える。
@@ -20,7 +47,9 @@ atk lane create --repo <対象リポジトリの絶対パス> --base-branch <統
 
 所有session、Git共通ディレクトリ、専用branch、作成先、回収対象、選定原本、固有手順と実行記録は`record_path`の登録へ保存される。資源情報を手書きで再登録せず、親の`parent-handoff.md`には作成結果の所在と担当thread・引き継ぎ記録の対応を残す。メインは終了コード0・`ready`とprepareの保存済み両出力を読み、警告と環境準備の成立を判定してから担当を起動し、環境構築の結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`の`環境構築`へ渡す。準備が失敗した資源は登録と成果を保持し、入力を是正して同じcreateで再開する。
 
-統合済みの資源もセッション終了まで保持し、同じレーンへの追加は同じcreateの返却から専用worktreeとbranchを再利用する。登録と回収結果は専用資源の外に保持される。前回の強制終了などで残った登録は、process-wi開始時に`atk lane delete --list`で読み、担当とプロセスの終端を確かめてから同じ所有sessionのdeleteで再判定する。再開に使う場合は登録の`record_path`をcreateの`--reuse-record`へ渡して新しい所有sessionへ移す。旧配置（個別managed-temp）の登録も同じ作成先のまま移せる。固定作成先を別sessionの登録が保持している場合、createは回収条件を満たす資源だけを回収して同じパスへ再作成する。未統合・dirty・稼働中の資源と所有登録の無い実体は変更せずに失敗し、理由と`--reuse-record`またはdeleteの回復操作を返す。createは渡された選定原本からレーンのWI集合と統合状態を所有登録へ写し、選定原本が期限付き領域から失われた後も統合と回収はその保持値で判定する。選定情報を持たない旧形式の登録は、`atk lane recover --session-id <所有session>`で元のbranchを残したまま作業ツリーを解放する。回復済みの登録は固定作成先の所有と回収の判定から外れ、残したbranchとHEADは`atk lane delete --list`の登録本文で読める。回収は所有登録と現物が一致した専用資源に限り、主作業ツリーと登録のない資源は保持する。
+別namespaceへworktreeを渡す実装レーンでは、全消費主体から同じ絶対パスへ到達できることを読取専用で確認してから担当を起動する。確認できなければ担当を起動しない。作成先は現行の`atk lane create`の契約に従う。
+
+統合済みの資源もセッション終了まで保持し、同じレーンへの追加は同じcreateの返却から専用worktreeとbranchを再利用する。登録と回収結果は専用資源の外に保持される。前回の強制終了などで残った登録は、process-wi開始時に`atk lane delete --list`で読み、担当とプロセスの終端を確かめてから同じ所有sessionのdeleteで再判定する。再開に使う場合は登録の`record_path`をcreateの`--reuse-record`へ渡して新しい所有sessionへ移す。再利用元のworktreeが無い場合は移管せず、元の所有sessionのdeleteで登録を回収してから作成し直す。旧配置（個別managed-temp）の登録も同じ作成先のまま移せる。固定作成先を別sessionの登録が保持している場合、createは回収条件を満たす資源だけを回収して同じパスへ再作成する。未統合・dirty・稼働中の資源と所有登録の無い実体は変更せずに失敗し、理由と`--reuse-record`またはdeleteの回復操作を返す。createは渡された選定原本からレーンのWI集合と統合状態を所有登録へ写し、選定原本が期限付き領域から失われた後も統合と回収はその保持値で判定する。選定情報を持たない旧形式の登録は、`atk lane recover --session-id <所有session>`で元のbranchを残したまま作業ツリーを解放する。回復済みの登録は固定作成先の所有と回収の判定から外れ、残したbranchとHEADは`atk lane delete --list`の登録本文で読める。回収は主repoから実体のパス、Git登録、branchを照会し、全て無いと確定した登録だけを警告と最後に記録したHEADを残して回収する。作業ツリーのパスが無ければdelete手順を実行せず、Git登録だけが残れば強制解除する。branchが残る場合は統合済み判定を続ける。主作業ツリーと登録のない実体は保持する。
 
 各レーンのレーン担当を最初に起動した直後に、`atk agents list --include-terminated`から起動結果の`session_id`と一致する項目の`created_at`を時差付きの`レーン開始時刻`としてレーンの資源記録へ保存する。`started_at`はturnの開始時刻であり、初回起動の起点には使えない。同じレーンを再起動・置換してもこの値を変えず、統合指示で`exec.parent.md`の同名入力として渡す。レーン担当はこの値を`atk lane integrate`のmanifestの`lane_started_at`へ渡し、CLIは最初の値を所有登録へ保持してレーン稼働秒数の起点に使う。
 
@@ -59,7 +88,7 @@ Claude Codeでは、各段階（複数段階では途中の段階も含む）の
 
 ## 処理中に確定した必須是正レーン
 
-追加した処理対象WI（即時対応で確定したAWI、ユーザーが明示したAWI、処理中に告げられた回答済みUWIとその元項目）は、`selection-procedure.md`「処理対象WIの追加」で分類と処理開始を終えてから、本節の基準で割り当てる。未回答UWI、要求が未確定の項目、明示指示の無い新着は追加の対象外とする。
+追加した処理対象WI（ユーザーが明示したAWI、処理中に告げられた回答済みUWIとその元項目）は、`selection-procedure.md`「処理対象WIの追加」で分類と処理開始を終えてから、本節の基準で割り当てる。未回答UWI、要求が未確定の項目、明示指示の無い新着は追加の対象外とする。即時対応の正式対応AWIは次のセッションへ渡す。
 
 追加項目は既存レーンへ割り当て、処理中の追加で新しい最終レーン名を作成しない（上限と算定集合はselection-format.md「初回配分の算定根拠」）。既存レーンが0件なら、上限と割当先の不足を続行できない理由として返す。
 
@@ -89,7 +118,7 @@ Claude Codeでは、各段階（複数段階では途中の段階も含む）の
 
 ## 採否の確定と終端区分
 
-人間由来の要求を全部または一部不採用にする場合のレーン担当の判定と通知は`references/lane-planning.md`「計画の起草」が定める。メインは範囲、原文との差異、技術的理由、代替案を受け取り、部分採用の除外範囲も含めてユーザーへ確認する。確認の間も依存しないレーンを進める。計画確定後の工程は由来を再判定せず、計画で確定した採否を使う。
+人間由来の要求を全部または一部不採用にする場合のレーン担当の判定と通知は`references/lane-planning.md`「計画の起草」が定める。メインは範囲、原文との差異、技術的理由、代替案を受け取り、部分採用の除外範囲も含めてユーザーへ確認する。確認の間もその回答を待たずに進められるレーンを進める。計画確定後の工程は由来を再判定せず、計画で確定した採否を使う。
 
 回答を得られない場合は`agent-toolkit:wi-standards`に従ってUWIを登録し、`atk wi hold --state=processing <元AWIのファイル名>`で保留する。UWIの本文には元AWIのファイル名、対象、必要な回答と回答で変わる結果を書く。解除条件と再開工程は`atk run-script plan-progress --`で計画の`## 進捗ログ`へ記録する。計画が無ければ`atk wi edit <元AWIのファイル名> --append --body-file <絶対パス> --target-repo=<対象リポジトリ>`で元AWI本文へ追記する。採否は回答を受け取ってから確定する。同じ実行で回答を受け取った場合は、実装開始前ならレーン担当が計画へ、実装着手後ならレビュー指摘管理表へ反映して、同じレーンで確定する。
 
@@ -115,7 +144,7 @@ Claude Codeでは、各段階（複数段階では途中の段階も含む）の
 
 選定結果の担当モデル、起動側が解決した候補、終端後の物理記録から観測した実行identityを別の値として比べ、不一致は値と由来を区別して、観測できなければ未観測として引き継ぐ。
 
-レーン担当から確認事項または事後承認の対象を受け取ったら、その時点で根拠と既存認可を検収し、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」と`agent-toolkit:wi-standards`で発行要否を判定する。確認不要の技術判断は報告へ回し、事前承認の確認事項は受領時に直ちに発行する。事後承認型UWIは受領時には発行せず、実行レビュー（並列画面レビューではユーザビリティレビューを含む）の収束後・統合前に、収束した実装と一致する本文で発行する。実行レビューを行わないレーン（`実装なし`と`マージなし`）では、終端返却を受領した時点で発行する。`atk wi add`の成功とファイル名を保持し、回答を待たずに続ける。全受領事項の判定と発行を検収して統合へ進み、確認不要の報告のために統合を待たせない。
+レーン担当から確認事項または事後承認の対象を受け取ったら、その時点で根拠と既存認可を検収し、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」と`agent-toolkit:wi-standards`で発行要否を判定する。確認不要の技術判断は報告へ回し、事前承認の確認事項は受領時に直ちに発行する。事後承認型UWIは受領時には発行せず、実行レビュー（並列画面レビューではユーザビリティレビューを含む）の収束後・統合前に、収束した実装と一致する本文で発行する。実行レビューを行わないレーン（`実装なし`と`マージなし`）では終端返却を受領した時点で発行する。`atk wi add`の成功とファイル名を保持し、回答を待たずに続ける。全受領事項の判定と発行を検収して統合へ進み、確認不要の報告のために統合を待たせない。
 
 ## 統合とAWI終端
 
@@ -128,7 +157,10 @@ Git統合、全計画保存、WI終端と選定の統合状態は`atk lane integ
 `explore`と`作業ツリーへの書込: なし`の担当も稼働書込の判定から外し、一覧外の実書込担当だけをGit変更前に拒否する。
 合意した担当は`--writer-session`で指定する（`lane-integration.subagent.md`「公開統合操作」）。回収では全担当と外部プロセスの終了を確認する。資源、完了レーンと所属WIは追加に備えて保持する。
 
-資源の回収は終了時の`atk lane delete`が行う。登録全体を先に判定し、全工程と外部プロセスの終了、選定の統合済み、clean、Git共通ディレクトリと専用branchの登録一致、統合先への到達を削除直前にも確かめる。確認後は`--commands-file`で指定した`delete`コマンドの実行、worktree、到達を再確認したbranchの`-D`、旧配置の登録が持つ個別managed-tempの順で回収する。未統合、dirty、稼働中、不明、途中失敗の対象は、理由と残る操作を回収対象の外へ保存し、再実行は残る処理から続ける。セッションのmanaged-tempと証拠は専用worktreeへ置かず、回収対象から外す。通常終了の`atk agents-exit-session`と、process-loopが子セッションの終了後に行う処理が同じ回収を呼び出し、turnごとのSessionEndでは回収しない。
+資源の回収は終了時の`atk lane delete`が行う。登録全体を先に判定し、全工程と外部プロセスの終了、選定の統合済み、存在するworktreeのclean、Git共通ディレクトリと専用branchの登録一致、統合先への到達を削除直前にも確かめる。finalizedのレーンは、branchのHEADが統合時に記録した入力HEADと一致するとき、統合先の履歴書換え後も統合済みとして回収する。全実体が無い登録はこれらの判定を省く。確認後は存在するworktreeだけに`--commands-file`で指定した`delete`コマンドを実行し、worktree、統合済み判定を再確認したbranchの`-D`、旧配置の登録が持つ個別managed-tempの順で回収する。未統合、dirty、稼働中、不明、途中失敗の対象は、理由と残る操作を回収対象の外へ保存し、再実行は残る処理から続ける。セッションのmanaged-tempと証拠は専用worktreeへ置かず、回収対象から外す。通常終了の`atk agents-exit-session`と、process-loopが子セッションの終了後に行う処理が同じ回収を呼び出し、turnごとのSessionEndでは回収しない。
+自動終了の両経路は同じ適格判定を使い、終端sessionの解放応答を待たず、未確認なら既存の保持理由と結果保存先を返す。
+対話の`lane delete`・固定作成先の`lane create`・`--reuse-record`・`lane recover`は所有側の解放応答と実行プロセスの終了を期限まで待つ。
+解放要求が完了した後の別の担当や外部プロセスの使用は、1回の照会で保持理由へ変え、同じ公開操作による再判定へ渡す。
 終端済みの委譲sessionが保持する資源は、回収処理が所有側の`agents_server`へ解放を要求し、未回収の結果を保って解放してから使用中判定をやり直す。
 実行中のsessionと解放できない資源は保持し、次節の手順で再回収する。
 

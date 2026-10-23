@@ -76,7 +76,7 @@ def list_root_session_ids(state_root: pathlib.Path | None = None, *, strict: boo
 
 
 def aliases_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """現行session識別子からルートsession識別子を引く索引ディレクトリを返す。"""
+    """現行session識別子からルートsession識別子を取得するための索引ディレクトリを返す。"""
     root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / "aliases"
 

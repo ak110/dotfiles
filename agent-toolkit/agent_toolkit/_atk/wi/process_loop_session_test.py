@@ -74,12 +74,22 @@ def test_repository_delegate_prompt_is_minimal(tmp_path: pathlib.Path, monkeypat
     assert "agent-toolkit:process-wi" in lines[1]
     assert "previous" not in payload and "worktree_name" not in payload
     assert ": null" not in payload_line
-    assert [candidate["filename"] for candidate in payload["candidates"]] == ["ready.md"]
-    assert "blocked.md" not in str(payload["candidates"])
+    candidate_path = pathlib.Path(payload["candidate_file"])
+    candidates = json.loads(candidate_path.read_text(encoding="utf-8"))
+    assert [candidate["filename"] for candidate in candidates] == ["ready.md"]
+    assert "blocked.md" not in str(candidates)
+    assert "candidates" not in payload
     assert "追加指示:" not in prompt
     instructed = _pl_session.build_repository_delegate_prompt(snapshot, acquired, instruction="追加の要求")
     assert "追加指示:\n追加の要求" in instructed
+    second = json.loads(next(line for line in instructed.splitlines() if line.startswith("{")))
+    assert second["candidate_file"] != str(candidate_path)
+    assert json.loads(candidate_path.read_text(encoding="utf-8")) == candidates
+    second_path = pathlib.Path(second["candidate_file"])
+    assert json.loads(second_path.read_text(encoding="utf-8")) == candidates
     ownership.release(acquired)
+    assert not candidate_path.exists()
+    assert not second_path.exists()
 
 
 def _run_claude_session(
@@ -89,7 +99,7 @@ def _run_claude_session(
 ) -> None:
     """Claudeのオーケストレーターを1回起動し、本起動の`subprocess.run`を`launch`で受ける。"""
     monkeypatch.setattr(subprocess, "run", launch)
-    monkeypatch.setattr(lane, "cleanup_session", lambda _session: {"retained": False})
+    monkeypatch.setattr(lane, "cleanup_session", lambda _session, **_kwargs: {"retained": False})
     args = argparse.Namespace(resume=None, no_update=True, worktree="custom")
     assert not _pl_session.run_process_session(
         args,
@@ -158,7 +168,7 @@ def test_unconfigured_process_session_preserves_parent_auth(
         return subprocess.CompletedProcess(argv, 0)
 
     monkeypatch.setattr(subprocess, "run", launch)
-    monkeypatch.setattr(lane, "cleanup_session", lambda _session: {"retained": False})
+    monkeypatch.setattr(lane, "cleanup_session", lambda _session, **_kwargs: {"retained": False})
     _pl_session.run_process_session(
         argparse.Namespace(resume=resume, no_update=True),
         tmp_path,
@@ -185,7 +195,7 @@ def test_invalid_env_file_warning_reaches_process_loop_stderr(
     if content is not None:
         path.write_text(content, encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
     observed: dict[str, Any] = {}
 
     def launch(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
@@ -222,8 +232,8 @@ def test_subscription_orchestrator_drops_inherited_api_auth(tmp_path: pathlib.Pa
     observed, settings = _connection_launch(tmp_path, monkeypatch, "api-credits")
     assert "ANTHROPIC_API_KEY" not in observed["env"]
     assert "ANTHROPIC_AUTH_TOKEN" not in observed["env"]
-    assert not settings["env"]["ANTHROPIC_API_KEY"]
-    assert not settings["env"]["ANTHROPIC_AUTH_TOKEN"]
+    assert "ANTHROPIC_API_KEY" not in settings["env"]
+    assert "ANTHROPIC_AUTH_TOKEN" not in settings["env"]
 
 
 def test_orchestrator_resume_probe_keeps_selected_connection(
@@ -385,7 +395,7 @@ class TestProcessLoopPromptAndEnv:
         prompt = claude_calls[0]["cmd"][-1]
         assert prompt.startswith("/goal ")
         assert "agent-toolkit:process-wi" in prompt
-        # cwdをmyrepoへ固定し、claudeセッション内のcwd依存コマンドの解決先を対象リポジトリへ揃える。
+        # cwdをmyrepoへ固定し、claudeセッション内のcwdで解決先が変わるコマンドの解決先を対象リポジトリへ揃える。
         assert claude_calls[0]["cwd"] == myrepo
         command = claude_calls[0]["cmd"]
         debug_log = hook_debug_log(command)
@@ -894,6 +904,7 @@ class TestProcessLoopPromptAndEnv:
     ) -> None:
         """Weekly limitか5時間の利用上限の拒否では次候補へ進まず、解除まで待って同じClaude候補で本作業を始める。"""
         _setup_notes(tmp_path)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "always")
         set_orchestrate_model(tmp_path, "claude:opus/high,codex:gpt-5.6-sol/low")
         capsys.readouterr()
         myrepo = tmp_path / "myrepo"
@@ -1147,7 +1158,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """候補の実行ファイルを起動できない場合も残る候補を判定する。"""
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_LOW_TIER_MODEL", "gpt-6-luna/medium")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:gpt-6-luna/medium,claude:haiku/medium")
         calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -1173,7 +1184,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """全候補の実行機能を起動できない場合は既存の異常終了へ戻る。"""
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_LOW_TIER_MODEL", "gpt-6-luna/medium")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:gpt-6-luna/medium,claude:haiku/medium")
         calls: list[list[str]] = []
 
         def fail_start(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -1268,7 +1279,7 @@ class TestProcessLoopPromptAndEnv:
         _setup_notes(tmp_path)
         config_file = tmp_path / "config" / "config.json"
         config_file.parent.mkdir(parents=True)
-        config_file.write_text('{"orchestrate_engine": "invalid"}\n', encoding="utf-8")
+        config_file.write_text('{"orchestrate_model": "invalid"}\n', encoding="utf-8")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         session_calls: list[list[str]] = []
@@ -1285,8 +1296,8 @@ class TestProcessLoopPromptAndEnv:
         assert exc_info.value.code == 2
         assert not session_calls
         stderr = capsys.readouterr().err
-        assert "設定キーorchestrate_engineの値が不正です（値: invalid）" in stderr
-        assert "atk config set orchestrate_engine <VALUE>" in stderr
+        assert "設定キーorchestrate_modelの値が不正です（値: invalid）" in stderr
+        assert "atk config set orchestrate_model <VALUE>" in stderr
 
     def test_resume_applied_to_first_session_only(
         self,

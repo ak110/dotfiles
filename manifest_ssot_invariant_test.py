@@ -1,6 +1,6 @@
 """Claude Code向けmanifestの定義元間でSSOTの整合性を確かめる。
 
-version / description / nameを`agent-toolkit/.claude-plugin/plugin.json`と
+version / description / nameを各プラグインの`.claude-plugin/plugin.json`と
 `.claude-plugin/marketplace.json`の2箇所で重複管理しているため、
 片方だけ更新したために変更が配布されない事態を防ぐ。
 Codex向け派生manifestは`scripts/sync_codex_plugin_manifests.py`が検証する。
@@ -9,14 +9,16 @@ Codex向け派生manifestは`scripts/sync_codex_plugin_manifests.py`が検証す
 import json
 import pathlib
 
-_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent / "agent-toolkit"
-_PLUGIN_MANIFEST = _PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
-_MARKETPLACE_MANIFEST = _PLUGIN_ROOT.parent / ".claude-plugin" / "marketplace.json"
+import pytest
+
+_ROOT = pathlib.Path(__file__).resolve().parent
+_MARKETPLACE_MANIFEST = _ROOT / ".claude-plugin" / "marketplace.json"
 
 
-def test_plugin_manifest_matches_marketplace() -> None:
+@pytest.mark.parametrize("plugin_name", ["agent-basics", "agent-toolkit"])
+def test_plugin_manifest_matches_marketplace(plugin_name: str) -> None:
     """marketplaceの該当エントリがplugin.jsonと同じversion・description・nameを持つ。"""
-    plugin_manifest = json.loads(_PLUGIN_MANIFEST.read_text(encoding="utf-8"))
+    plugin_manifest = json.loads((_ROOT / plugin_name / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     marketplace = json.loads(_MARKETPLACE_MANIFEST.read_text(encoding="utf-8"))
 
     entries = [p for p in marketplace["plugins"] if p["name"] == plugin_manifest["name"]]

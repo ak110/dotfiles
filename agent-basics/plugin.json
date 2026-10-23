@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "agent-basics",
+  "version": "1.1.0",
+  "description": "コード・設計・テスト・レビュー・文章の品質基準を提供するスキル集。",
+  "author": {
+    "name": "aki",
+    "url": "https://github.com/ak110"
+  },
+  "homepage": "https://github.com/ak110/dotfiles",
+  "repository": "https://github.com/ak110/dotfiles",
+  "license": "MIT",
+  "keywords": [
+    "coding-standards",
+    "design",
+    "testing",
+    "review",
+    "writing",
+    "agent-plugins"
+  ]
+}

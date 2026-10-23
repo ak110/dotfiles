@@ -66,7 +66,9 @@ def _install_fake_agy(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -
 
 def test_build_command_passes_model_effort_and_conversation() -> None:
     """モデル、effort、会話識別子と事前承認の指定をコマンド列へ渡す。"""
-    command = antigravity.build_command("推敲して", "gemini-3.8-flash", "medium", "conv-1")
+    command = antigravity.AntigravityManager.build_command(
+        prompt="推敲して", model="gemini-3.8-flash", effort="medium", conversation_id="conv-1"
+    )
 
     assert command[0] == "agy"
     assert command[command.index("-p") + 1] == "推敲して"
@@ -467,15 +469,6 @@ def test_model_output_step_is_observed_and_notified(tmp_path: pathlib.Path, monk
     assert after_output
 
 
-@pytest.mark.parametrize("launch_kind", launch_prompts.LAUNCH_SYSTEM_PROMPTS)
-def test_system_prompt_does_not_promise_auto_resume(launch_kind: shared_state.LaunchKind) -> None:
-    """自動再開を確かめていないAntigravity backendは、同じsessionの自動再開と待機表明を委譲先へ約束しない。"""
-    prompt = antigravity._system_prompt(launch_kind)  # pylint: disable=protected-access
-
-    assert prompt == launch_prompts.LAUNCH_SYSTEM_PROMPTS[launch_kind]
-    assert launch_prompts.AUTO_RESUME_NOTICE not in prompt
-
-
 def test_start_and_reply_use_manager_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """起動と継続の子環境は、環境の別ownerよりManagerのrootを優先する。"""
     fake = _install_fake_agy(tmp_path, monkeypatch)
@@ -501,3 +494,80 @@ def test_start_and_reply_use_manager_root(tmp_path: pathlib.Path, monkeypatch: p
 
     asyncio.run(scenario())
     assert [json.loads(line) for line in captured.read_text(encoding="utf-8").splitlines()] == ["manager-root", "manager-root"]
+
+
+@pytest.mark.asyncio
+async def test_start_and_resume_deliver_current_rules_and_auto_resume_notice(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """起動と再開へホスト規範の現行本文、自動再開契約、保持CLIの位置を配送する。"""
+    from agent_toolkit._common import host_homes  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    config = host_homes.claude_config_dir()
+    (config / "rules").mkdir(parents=True, exist_ok=True)
+    rule = config / "rules" / "environment.local.md"
+    rule.write_text("この環境では操作を記録する。", encoding="utf-8")
+    fake = _install_fake_agy(tmp_path, monkeypatch)
+    captured = tmp_path / "prompts.jsonl"
+    fake.write_text(
+        _FAKE_AGY.format(python=sys.executable).replace(
+            'prompt = args[args.index("-p") + 1]\n',
+            'prompt = args[args.index("-p") + 1]\n'
+            f'with open({str(captured)!r}, "a", encoding="utf-8") as out:\n'
+            '    out.write(json.dumps(prompt) + "\\n")\n',
+        ),
+        encoding="utf-8",
+    )
+    async with antigravity.AntigravityManager() as backend:
+        session = await backend.start("起動", str(tmp_path))
+        async with asyncio.timeout(10):
+            while not session.terminal:
+                await asyncio.sleep(0.01)
+        rule.write_text("更新した環境規範。", encoding="utf-8")
+        resumed = await backend.resume(session.session_id, shared_state.ResumePrompt("再開"), str(tmp_path))
+        async with asyncio.timeout(10):
+            while not resumed.terminal:
+                await asyncio.sleep(0.01)
+    prompts = [json.loads(line) for line in captured.read_text().splitlines()]
+    assert "この環境では操作を記録する。" in prompts[0]
+    assert "更新した環境規範。" in prompts[1]
+    assert "この環境では操作を記録する。" not in prompts[1]
+    for prompt in prompts:
+        assert launch_prompts.AUTO_RESUME_NOTICE in prompt
+        assert 'kind="cli-runtime"' in prompt
+        assert f'path="{rule}"' in prompt
+
+
+@pytest.mark.asyncio
+async def test_pending_child_result_is_held_and_continues_same_conversation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """孫待機の結果は公開を保留し、完了通知の継続を同じ会話へ配送できる。"""
+    _install_fake_agy(tmp_path, monkeypatch)
+    async with antigravity.AntigravityManager() as backend:
+        session = await backend.start("開始", str(tmp_path))
+        async with asyncio.timeout(10):
+            while not session.terminal:
+                await asyncio.sleep(0.01)
+        session.live_child_session_ids.add("child-session")
+        await backend.process_event(session, {"event": "result", "result": {"status": "SUCCESS", "response": "待機中"}})
+        assert session.awaiting_auto_resume
+        assert not session.terminal
+        assert session.pending_result is not None
+        session.live_child_session_ids.clear()
+        session.auto_resume_consumed = True
+        delivery = await backend.send_message(session, "子が完了したため継続")
+        assert delivery["delivery"] == "reply_started"
+        async with asyncio.timeout(10):
+            while not session.terminal:
+                await asyncio.sleep(0.01)
+        assert session.session_id == "conv-1"
+        assert session.agent_message.endswith("子が完了したため継続")
+        assert not session.awaiting_auto_resume
+        assert session.auto_resume_consumed
+        session.live_child_session_ids.add("second-child")
+        await backend.process_event(session, {"event": "result", "result": {"status": "SUCCESS", "response": "完了"}})
+        assert session.terminal
+        assert not session.awaiting_auto_resume
+        assert isinstance(session.error, dict)
+        assert session.error["unobservedSessions"] == ["second-child"]

@@ -308,6 +308,37 @@ def test_adoption_counts_rename_into_adopted(dataset: tuple[Path, Path, Path], c
     assert week["adopted_awi_count"] == 2
 
 
+def test_current_adoption_ignores_migration_and_body_edits(
+    dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """年月配置の状態遷移を数え、採用済みの移設と本文更新を次週の採用へ加えない。"""
+    _, _, repo = dataset
+    path = repo / "2026/10/20261007-120000-001.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("---\ntype: awi\nstate: inbox\n---\n# 変更\n", encoding="utf-8")
+    question = path.with_name("20261007-120000-002.md")
+    question.write_text("---\ntype: uwi\nstate: inbox\n---\n質問\n", encoding="utf-8")
+    _commit(repo, "2026-10-07T12:00:00Z")
+    for item in (path, question):
+        item.write_text(item.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8")
+    _commit(repo, "2026-10-08T12:00:00Z")
+    legacy = repo / "one/adopted/same.md"
+    moved = path.with_name("same.md")
+    legacy.rename(moved)
+    moved.write_text("---\ntype: awi\nstate: adopted\n---\n# 移設\n", encoding="utf-8")
+    _commit(repo, "2026-10-13T12:00:00Z")
+    path.write_text(path.read_text(encoding="utf-8") + "本文の変更\n", encoding="utf-8")
+    _commit(repo, "2026-10-14T12:00:00Z")
+    first, second = [
+        event
+        for event in _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-19")
+        if event["kind"] == "cost-metrics-week"
+    ][:2]
+    assert first["adopted_awi_count"] == 2
+    assert second["adopted_awi_count"] == 0
+    assert second["tokens_per_awi"] == {"all": None, "process-wi": None}
+
+
 @pytest.mark.parametrize("period", [("--since", "不正"), ("--since", "2026-10-13", "--until", "2026-10-05")])
 def test_invalid_period_has_next_action(period: tuple[str, ...], capsys: pytest.CaptureFixture[str]) -> None:
     assert run_script.dispatch(argparse.Namespace(script_name="cost-metrics", script_args=["--", *period])) == 2

@@ -15,6 +15,7 @@ from agent_toolkit._common import stream_lines
         (b"a\nb\nc", [b"a\n", b"b\n", b"c"]),
         (("あ" * 50000 + "\n末尾").encode(), [("あ" * 50000 + "\n").encode(), "末尾".encode()]),
     ],
+    ids=["empty", "empty-lines", "multiple-lines", "long-utf8-line"],
 )
 @pytest.mark.asyncio
 async def test_iter_lines_preserves_records_beyond_transport_limit(data: bytes, expected: list[bytes]) -> None:

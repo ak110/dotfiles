@@ -229,7 +229,7 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
         monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
         writer.activate()
 
-        started = await manager.start("high_tier", "実装", str(tmp_path))
+        started = await manager.start("execute", "実装", str(tmp_path))
         session = manager.sessions[started["session_id"]]
         _complete(session, message="結果A")
         writer.flush()

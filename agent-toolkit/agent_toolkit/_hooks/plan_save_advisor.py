@@ -1,7 +1,7 @@
 r"""`~/.claude/plans`に残る計画バンドルの保存確認Stopフック。
 
 `~/.claude/plans`に現存する計画ファイル（メイン）のうち、現在のセッションが所有者として記録されたものだけを
-セッション終了時に1回だけ通知する。計画の所有記録は計画バンドルの新規作成時に生成され、
+同じ対象が残る間は1回だけ通知する。対象の変化と、解消後の再発は再通知する。計画の所有記録は計画バンドルの新規作成時に生成され、
 委譲先が作成した計画には委譲元のセッションが記録される。
 他のセッションを示す計画や、計画の所有記録を持たない計画は、現在のセッションからは処置できないため通知しない。
 これらの滞留は`atk plans list`の一覧で判別する。
@@ -24,7 +24,7 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
-lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
@@ -34,7 +34,6 @@ lazy from agent_toolkit._plan.owner_records import read_owner_session_id
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 _HOOK_ID = "plan_save_advisor"
-_NOTIFIED_STATE_KEY = "working_plan_save_notified"
 _PROCESS_WI_STATE_KEY = "process_wi_skill_invoked"
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
@@ -52,14 +51,6 @@ def _owned_working_plan_paths(session_id: str) -> list[pathlib.Path]:
         if path.is_file() and is_plan_main_file(str(path)) and read_owner_session_id(path) == session_id:
             paths.add(path)
     return sorted(paths)
-
-
-def _mark_notified(state: dict) -> dict | None:
-    """保存確認を通知済みにする。"""
-    if state.get(_NOTIFIED_STATE_KEY) is True:
-        return None
-    state[_NOTIFIED_STATE_KEY] = True
-    return state
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
@@ -93,16 +84,11 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if state.get(_PROCESS_WI_STATE_KEY) is True:
         append_stop_log(session_id, "approve_process_wi_running", {})
         return "approve", ""
-    if state.get(_NOTIFIED_STATE_KEY) is True:
-        append_stop_log(session_id, "approve_already_notified", {})
-        return "approve", ""
-
     paths = _owned_working_plan_paths(session_id)
     if not paths:
         append_stop_log(session_id, "approve_no_working_plans", {})
         return "approve", ""
 
-    update_state(session_id, _mark_notified)
     path_list = ", ".join(str(path) for path in paths)
     body = _notice(
         f"現在のセッションが所有する計画バンドルが`~/.claude/plans`に残っている: {path_list}",
@@ -115,4 +101,4 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         removable_cause=True,
     )
     append_stop_log(session_id, "notify_working_plan_save", {"paths": len(paths)})
-    return "notify", body
+    return ("notify", body) if body else ("approve", "")

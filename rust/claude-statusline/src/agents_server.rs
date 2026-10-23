@@ -622,7 +622,7 @@ mod tests {
                 "speed",
                 engine,
                 Value::String("model".into()),
-                ("high_tier", "delegate"),
+                ("execute", "delegate"),
                 ("", "label"),
                 "2025-12-31T23:59:30+00:00",
             );
@@ -974,7 +974,7 @@ mod tests {
             "selected",
             "codex",
             Value::String("gpt-5.6-terra".to_string()),
-            ("medium_tier", "delegate"),
+            ("review", "delegate"),
             ("", "pick-wi"),
             "2025-12-31T23:59:30+00:00",
         );

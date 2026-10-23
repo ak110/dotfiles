@@ -11,6 +11,33 @@ all-reposで起動した対象リポジトリ担当も、自分の対象cwd・�
 常駐プログラムは対象への直接Git操作や公開判定を代行せず、返却を記録し、未完了の担当へ続行を指示するか所有を保持して次の反復へ再開を渡す。
 1担当の公開工程の続行不能や回答待ちだけで、別のリポジトリ担当の公開・終了を止めない。
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/push-and-ci.md#「公開状態の4項目」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開状態の4項目」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/session-termination.parent.md#「起動前の前提」` | 判断 | `section:agent-toolkit:*/share/session-termination.parent.md#「起動前の前提」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/publish.md#「検証とCI」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「検証とCI」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/completion-report/SKILL.md#「工程」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「長時間待機前の会話圧縮」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「採否の確定と終端区分」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「採否の確定と終端区分」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/publish.md#「公開工程の続行不能からの再開」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「公開工程の続行不能からの再開」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `termination-ci-failure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/termination-ci-failure.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「未回収レーンの再回収」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「未回収レーンの再回収」` |
+
 ## 公開対象が無い場合の短絡
 
 公開対象と外部操作が1つも無く、公開状態の4項目が全て成立する場合だけ、終端担当を起動せずに「延期adoptと反映後の観測」へ進む。
@@ -26,17 +53,19 @@ all-reposで起動した対象リポジトリ担当も、自分の対象cwd・�
 専用worktreeとレーン専用branchは終端担当の起動前に回収せず、終了まで保持する。回収はGit共通ディレクトリを書き換え、`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`「起動前の前提」の単一の書込主体と競合するため、終端担当とCI修正担当を含む全工程・外部プロセスの終了後にだけ行い、途中で並行回収しない。
 
 レーン統合後に、保存済みからcheckoutした計画をメインまたはメインが起動した担当が履歴書換えへ追随させる場合がある。その場合は`agent-toolkit:commit`の`references/history-rewrite.md`「WI実装commitの対応の継承」に従って全計画バンドルを更新して再保存し、成功と警告を検収してから終端担当を起動する。
+同じ`plan-rewrite`で、統合時に終端したAWIの対応commitと件名も新しいcommitへそろう。
 
 メインはレーン数を問わず、各レーンの記録を対象リポジトリの版数規範で比べ、未公開の統合変更へ適用する最上位の`bump種別`を確定する。版数更新、生成物同期、push前のチェック、push、CI確認、検証失敗時の修正、終端担当の実行対象としたプロジェクト固有の公開後の操作、延期`adopt`は1件の終端担当へ委譲する。起動、入力、受領と検収は`session-termination.parent.md`、検証とCIの判定は`agent-toolkit:commit`の`references/publish.md`「検証とCI」に従う。外部APIへcommitを渡す処理には同書「pushと公開状態」の完全OID解決契約を適用する。終端担当の稼働中に主作業ツリーへ書き込むのは終端担当とそれが起動したCI修正担当のうち常に1つだけとし、メインは読取に限る。
 
 終端担当の公開・CI待機と並行して進めてよいのは、対象リポジトリへ書き込まず終端担当の入力も生成しない工程である。
 
 - キュー投入: `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従い、終端担当の起動と同じ工程で投入担当へ委譲する（書込先はprivate-notes）。終端担当の観測で初めて内容が確定する項目は返却後に渡す。
-- 読取調査とAWI原稿の準備: 公開結果に依存しない既知の警告の調査とAWI原稿の準備は、主作業ツリーとprivate-notesへ書き込まない独立した担当へ渡す。準備した証拠と原稿は公開後に`agent-toolkit:session-review`へ渡して採否を確定する。公開結果に依存する問題は結果の確定後に調べる。
-- 独立した追加工程: 長時間の公開・デプロイ・CI待機と追加の公開工程について、入力commit、成果物、配備先、排他資源、先行工程の成功への依存を起動前に進捗記録へ書く。独立した追加工程（別の成果物と配備先への緊急デプロイなど）は別のエージェントへ渡して並行させ、先行工程の成功を入力とする工程は成功を確かめてから始める。終端担当への指示では待機対象と並行開始する工程を区別する。
+- 読取調査とAWI原稿の準備: 公開結果を待たずに調べられる既知の警告の調査とAWI原稿の準備は、主作業ツリーとprivate-notesへ書き込まない独立した担当へ渡す。準備した証拠と原稿は公開後に`agent-toolkit:session-review`へ渡して採否を確定する。公開結果を要する問題は結果の確定後に調べる。
+- 独立した追加工程: 長時間の公開・デプロイ・CI待機と追加の公開工程について、入力commit、成果物、配備先、排他資源、先行工程の成功が必要かを起動前に進捗記録へ書く。独立した追加工程（別の成果物と配備先への緊急デプロイなど）は別のエージェントへ渡して並行させ、先行工程の成功を入力とする工程は成功を確かめてから始める。終端担当への指示では待機対象と並行開始する工程を区別する。
 - 常時稼働サーバーへの反映: `agent-toolkit:completion-report`の`SKILL.md`「工程」が定める反映手段と稼働確認手段の双方を持つプロジェクトでは、全レーンの統合を検収し資源を保持したまま、終端担当の起動直後（起動を省く場合は統合検収の後）に反映を始める。反映したHEADの一意な短縮OID、反映コマンドの終了状態、稼働確認の結果を完了報告へ渡す。
 
 終端担当がcheckoutした保存済み計画を履歴書換えへ追随させた場合は、同じ「WI実装commitの対応の継承」に従い、その担当の工程末に更新した全計画バンドル（延期adoptや未終端の計画を含む）を再保存し、成功と警告を検収する。メインは返却された保存結果を検収してから、後掲の観測・再開記録のためのcheckoutへ進む。
+この場合も同じ`plan-rewrite`が、統合時に終端したAWIの対応commitと件名を新しいcommitへ付け替える。
 
 ### 終端担当起動後の会話圧縮
 
@@ -95,7 +124,7 @@ Claude Codeのメインは終端担当を起動するたびに、前掲の並行
 
 `session-termination.parent.md`からCI照会不能または公開後の操作の前提不足を受領した場合は、公開状態の4項目が成立していても本節へ進む。
 確認済みpush、全体検証、版数・生成物・公開後の操作とWI終端の到達点を保持し、残るCI判定と公開後の操作を公開工程の未完了として扱う。成功済みの公開後の操作も保持する。
-回復・確認・個別UWIの保存と、回答に依存する未終端項目の保留は、`agent-toolkit:commit`の`references/publish.md`「公開工程の続行不能からの再開」に従う。
+回復・確認・個別UWIの保存と、回答を必要とする未終端項目の保留は、`agent-toolkit:commit`の`references/publish.md`「公開工程の続行不能からの再開」に従う。
 全体検証の失敗がある場合は`references/termination-ci-failure.md`へ渡し、CI未判定の解消だけで全体成功にしない。
 
 再開位置と証拠は終端担当の引き継ぎ記録を使い、関係する計画があれば`atk plans checkout`後に`atk run-script plan-progress --`で記録して`atk plans commit`で保存する。
@@ -124,10 +153,12 @@ completion-reportが報告する前に、公開状態の4項目（`agent-toolkit
 ## 完了報告と終了
 
 公開工程の完了後に`agent-toolkit:completion-report`を起動する。完了報告と振り返りを報告用UWIとして保存し、`atk wi add`・`atk wi edit`の成功報告と警告の検収（`agent-toolkit:wi-standards`の`SKILL.md`「投入と取得」）が成立してからセッションを終了する。振り返りが失敗した場合も未完了部分を同じUWIへ明示し、重複するUWIを投入しない。
-自律モードのユーザーへの伝達は報告用UWIの保存の検収で完了する（Stop hookが可視発話に本文を求めるのは協調モードの報告に限る）。Stop hookは起動不足を判定し、起動済みの成果作業へ同じ作業と人間入力の組に一度だけ終了時の点検を通知する。メインは同スキルの工程に従い、報告用UWIの実際の保存検収、振り返りの結果報告と新しい指摘の残処置まで確かめる。充足時は本文を再出力せず終了する。
+自律モードのユーザーへの伝達は報告用UWIの保存の検収で完了する。メインは同スキルの「工程」に従い、終了前に元要求と実際の送達・処置結果から未達・残工程を自ら点検し、報告用UWIの実際の保存検収、振り返りの結果報告と新しい指摘の残処置まで確かめる。充足時は本文を再出力せず終了する。
 
 通常終了の`atk agents-exit-session`が、所有sessionのレーン資源を`atk lane delete`と同じ条件で回収する。process-loopでは子sessionの終了後、正常・異常判定と再起動判断より前に同じ条件で回収する。返された回収結果の保存先と未回収対象を検収し、保持理由を解消できない対象は成果を保って報告へ残す。回収の失敗をホスト終了要求の成功で隠さず、次回開始時の`atk lane delete --list`へ引き継ぐ。
 all-reposのリポジトリ担当は`atk agents-exit-session`を実行せず、常駐プログラムへの最終返却でターンを終える（[all-repos-orchestration.md](all-repos-orchestration.md)「担当の役割」）。その担当のレーン資源は、常駐プログラムが担当の終了を確認して同じ担当へ続行する予定が無くなった時点で、同じ条件で`lane_session_id`ごとに回収する。保持した資源の理由と`atk lane delete --session-id <lane_session_id>`による再回収の操作は、常駐プログラムの端末出力とprocess-loopのログに残る。
 対象worktreeを保持する終端済みの委譲sessionは、所有側の`agents_server`へ結果を保持した解放を要求し、その後に使用中かを判定する。
+自動終了の回収は`lane delete`と同じ適格判定を使い、終端sessionの解放応答を待たず、未確認のsessionを保持理由と結果保存先付きで残す。
+対話の`atk lane delete`は所有側の解放応答と実行プロセスの終了を期限まで待ち、解放後の独立した使用は1回で判定する。
 実行中のsession、所有側が応答しないsession、解放後も外部プロセスが使うworktreeは保持する。
 未解放sessionのIDが返った場合は、`references/run-lanes.md`「未回収レーンの再回収」に従い、終端結果の回収後に公開MCPの`stop`へ渡し、同じ所有sessionの`atk lane delete`を再実行する。

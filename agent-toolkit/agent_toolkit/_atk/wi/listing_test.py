@@ -1437,7 +1437,7 @@ class TestListCount:
 
 
 class TestListJson:
-    """listサブコマンド: --jsonは端末幅に依存しないJSON Linesを返す。"""
+    """listサブコマンド: --jsonは端末幅によらず同じ形式のJSON Linesを返す。"""
 
     def test_json_preserves_long_fields_and_reports_readiness(
         self,

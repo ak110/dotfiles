@@ -236,7 +236,7 @@ def _emit_child_start(client: ControlledClaudeClient, session_id: str) -> None:
                 SimpleNamespace(
                     id="tool-start",
                     name="mcp__agents_server__start",
-                    input={"model_type": "high_tier"},
+                    input={"model_type": "execute"},
                 )
             ]
         )
@@ -312,7 +312,7 @@ async def test_run_resume_removes_previous_result_file(tmp_path: pathlib.Path) -
             model="model",
             effort="medium",
             engine="codex",
-            model_type="high_tier",
+            model_type="execute",
             turn_seq=1,
         )
         result_path = shared_layout.results_directory("root", tmp_path) / f"{source.session_id}.json"
@@ -543,23 +543,26 @@ async def test_wait_response_keys_are_unchanged_with_child_sessions(
 
 
 @pytest.mark.asyncio
-async def test_unobserved_child_sessions_appear_in_error(
+async def test_live_claude_child_survives_notification_deadline(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """自動再開の待機期限まで終端しない孫sessionをerrorへ示す。"""
+    """従来の通知期限を過ぎても生存中の子を待ち、子の終端後の最終結果を返す。"""
     monkeypatch.setattr(resume_waits, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
     client = ControlledClaudeClient("claude-child-deadline")
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = "child-deadline"
-        await _start(manager, tmp_path, monkeypatch)
+        session = await _start(manager, tmp_path, monkeypatch)
         session_registry.publish(child_session_id, terminal=False)
         _emit_child_start(client, child_session_id)
         client.emit(ResultMessage("孫session待機中"))
 
-        result = await _wait_with_timeout(manager, 1)
-
-        assert result["error"] == {"unobservedSessions": [child_session_id], "heldResultFinalized": True}
+        await _await_state(lambda: session.awaiting_auto_resume)
+        session.auto_resume_deadline = 0.0
+        assert (await _wait_with_timeout(manager, 0))["status"] == "running"
+        result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
+        assert result["agent_message"] == "孫session確認後の結果"
+        assert "error" not in result
 
 
 @pytest.mark.asyncio
@@ -573,7 +576,6 @@ async def test_unobserved_child_sessions_merge_into_existing_error(
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = "child-error"
         await _start(manager, tmp_path, monkeypatch)
-        session_registry.publish(child_session_id, terminal=False)
         _emit_child_start(client, child_session_id)
         client.emit(ResultMessage("失敗結果", is_error=True, errors=["既存エラー"]))
 
@@ -624,7 +626,8 @@ async def _codex_parent_with_child(
             "codex-parent",
             str(tmp_path),
             engine="codex",
-            model_type="high_tier",
+            codex_state_provider="openai",
+            model_type="execute",
             turn_seq=1,
             turn_id="turn-1",
         )
@@ -846,21 +849,33 @@ async def test_codex_auto_resume_failure_reports_unobserved_child(
 
 
 @pytest.mark.asyncio
-async def test_codex_auto_resume_deadline_publishes_pending_result_with_unobserved_child(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    """孫が終端しないまま保留期限に達した場合は、保留した結果と未観測の孫の識別子を返す。"""
+async def test_codex_live_child_survives_notification_deadline(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """子の生存中は期限を過ぎても保留し、終端後に同じ親を再開して最終結果を返す。"""
     async with _codex_parent_with_child(tmp_path) as (manager, backend, session, _writer):
         child_session_id = "codex-child"
         session_registry.publish(child_session_id, terminal=False)
         await _complete_codex_turn_with_child(backend, session, child_session_id)
         session.auto_resume_deadline = 0.0
-        send_message = AsyncMock()
+
+        async def resume_and_complete(current: state.SessionState, _prompt: str, **_kwargs: Any) -> dict[str, Any]:
+            state.begin_reply(current)
+            current.agent_message = "子の成果を反映した最終結果"
+            current.status = "completed"
+            current.turn_completed = True
+            current.touch()
+            return {"delivery": "reply_started"}
+
+        send_message = AsyncMock(side_effect=resume_and_complete)
         monkeypatch.setattr(backend, "send_message", send_message)
+        assert (await _wait_with_timeout(manager, 0))["status"] == "running"
+        assert session.awaiting_auto_resume
+        send_message.assert_not_awaited()
+        session_registry.publish(child_session_id, terminal=True)
         result = await _wait_with_timeout(manager, 5)
         assert result["status"] == "completed"
-        assert result["error"] == {"unobservedSessions": [child_session_id], "heldResultFinalized": True}
-        send_message.assert_not_awaited()
+        assert result["agent_message"] == "子の成果を反映した最終結果"
+        assert "error" not in result
+        send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -1005,6 +1020,31 @@ async def test_pending_result_waits_for_background_task_up_to_bash_limit(
         assert "error" not in result
 
 
+@pytest.mark.parametrize("task_type", ["local_agent", "unknown_future_task"])
+@pytest.mark.asyncio
+async def test_background_agent_survives_bash_notification_deadline(
+    task_type: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """Bashの期限を超えた背景エージェントも終端通知と再開turnの最終結果まで追跡する。"""
+    client = ControlledClaudeClient("claude-unbounded-task", report_state=True)
+    async with _manager(client, monkeypatch) as (manager, _backend):
+        session = await _start(manager, tmp_path, monkeypatch)
+        client.emit(TaskStartedMessage("agent", task_type=task_type))
+        client.finish_turn(ResultMessage("背景エージェントを待機中"))
+        await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
+        session.auto_resume_deadline = 0.0
+        # メッセージ受信を進め、backendとmanager双方の期限判定を通す。
+        client.emit(TaskUpdatedMessage("agent", "running"))
+        assert (await _wait_with_timeout(manager, 0))["status"] == "running"
+        assert session.awaiting_auto_resume
+        client.emit(TaskNotificationMessage("agent", "completed"))
+        client.emit(_session_state("running"))
+        client.finish_turn(ResultMessage("背景エージェントの成果を反映した", origin={"kind": "task-notification"}))
+        result = await _wait_with_timeout(manager, 1)
+        assert result["agent_message"] == "背景エージェントの成果を反映した"
+        assert "error" not in result
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("completion", ["deadline", "stream_end"])
 async def test_pending_result_is_finalized_without_auto_resume(
@@ -1042,7 +1082,7 @@ async def test_kill_interrupts_while_initial_result_is_pending(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保留中の中断要求はSDKへ配送したうえで保留していた結果を返し、以後の継続入力を受け付ける。
+    """保留中の中断要求はSDKへ配送し、CLI回収後に保留本文付きの停止結果を返して同じ会話の継続を受け付ける。
 
     SDKはturnの外で受けた中断要求へ何も返さないため、保留結果を確定しないと`kill`はtimeoutまで待つ。
     """
@@ -1055,13 +1095,15 @@ async def test_kill_interrupts_while_initial_result_is_pending(
 
         result = await manager.kill(session.session_id, timeout=1)
 
-        assert result["status"] == "completed"
+        assert result["status"] == "interrupted"
         assert result["agent_message"] == "初回結果"
         assert result["error"] == {"unfinishedBackgroundTasks": ["task-1"], "heldResultFinalized": True}
         assert result["kill_requested"] is True
         assert client.interrupts == 1
         assert session.auto_resume_consumed is True
 
+        assert client.disconnected
+        client.emit(SystemMessage(session.session_id))
         response = await manager.send_message(session.session_id, "続行", timeout=1)
         assert response["delivery"] == "reply_started"
 
@@ -1227,6 +1269,8 @@ async def test_send_message_preserves_child_wait_until_completion(
             turns = 0
 
             async def request(self, method: str, _params: Any, *, on_sent: Any = None) -> dict[str, Any]:
+                if method == "config/read":
+                    return {"config": {"model_provider": "openai"}}
                 if method == "thread/resume":
                     return {"thread": {"id": session.session_id}}
                 assert method == "turn/start"

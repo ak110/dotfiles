@@ -145,7 +145,7 @@ def test_windows_mozilla_tasks_are_stopped_before_upgrade_check(workflow_data: d
 
 
 def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]) -> None:
-    """Windowsジョブが公開入口ランチャーのテストを実行し、`.cmd`の分岐をWindowsで確かめる。"""
+    """Windowsジョブが公開された起動スクリプトのテストを実行し、`.cmd`の分岐をWindowsで確かめる。"""
     _, step = _windows_step(
         workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "公開入口ランチャーの動作確認"
     )
@@ -244,7 +244,7 @@ def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str,
     lint = next(step for step in steps if step.get("name") == "Python 3.15 pytest以外の検査")
     pytest_step = next(step for step in steps if step.get("name") == "Python 3.15 pytest")
     assert lint["run"] == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version"
-    assert pytest_step["run"] == "pyfltr ci --commands=pytest"
+    assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"
     cache = next(step for step in steps if str(step.get("uses", "")).startswith("actions/cache@"))
     cache_with = workflow_mapping(cache["with"])
     assert "${{ matrix.python-version }}" in str(cache_with["key"])
@@ -584,17 +584,18 @@ def test_update_checks_container_dependencies_after_lock_updates() -> None:
     assert check < commands.index("\t$(MAKE) test")
 
 
-def test_minimum_git_tests_run_with_readme_version(workflow_data: dict[str, object]) -> None:
-    """pytestのmatrix要素が、READMEの対応版と同じGitを導入し、その実行ファイルで実Gitテストを実行する。"""
+def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]) -> None:
+    """pytestのmatrix要素が、READMEの対応版のGitを通常pytestへ渡して1回だけ実行する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
     steps = workflow_steps(job)
     names = [step.get("name") for step in steps]
     pytest_index = names.index("Python 3.15 pytest")
     install_index = names.index("Git 2.34.1の導入")
-    test_index = names.index("Git 2.34.1での実Gitテスト")
-    assert pytest_index < install_index < test_index
-    install, test = steps[install_index], steps[test_index]
-    assert install["if"] == test["if"] == steps[pytest_index]["if"]
+    assert install_index < pytest_index
+    assert names.count("Python 3.15 pytest") == 1
+    assert "Git 2.34.1での実Gitテスト" not in names
+    install, pytest_step = steps[install_index], steps[pytest_index]
+    assert install["if"] == pytest_step["if"]
 
     package = str(workflow_mapping(install["env"])["GIT_DEB"])
     match = re.fullmatch(r"git_(\d+\.\d+\.\d+)-[0-9A-Za-z.]+_amd64\.deb", package)
@@ -605,8 +606,6 @@ def test_minimum_git_tests_run_with_readme_version(workflow_data: dict[str, obje
     assert f'grep -Fx "git version {version}"' in str(install["run"])
     assert "sha256sum -c" in str(install["run"])
 
-    environment = workflow_mapping(test["env"])
+    environment = workflow_mapping(pytest_step["env"])
     assert environment["AGENT_TOOLKIT_TEST_GIT"] == f"${{{{ steps.{install['id']}.outputs.git }}}}"
-    targets = direct_pytest_targets({"jobs": {"python-lint": {"steps": [test]}}})
-    # Git呼び出しを新設した経路も最低版の検収へ到達するよう、個別のテストではなくagent-toolkit全体を対象にする。
-    assert targets == ["agent-toolkit/"]
+    assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"

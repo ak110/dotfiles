@@ -686,7 +686,8 @@ async def test_concurrent_sync_requests_share_one_pull(
 
 
 @pytest.mark.asyncio
-async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("entry_state", ["inbox", "adopted", "rejected"])
+async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Path, entry_state: str) -> None:
     """画面の連続編集はremoteの応答を待たず、明示同期で両commitを反映する。"""
     remote = tmp_path / "remote.git"
     notes = tmp_path / "private-notes"
@@ -697,7 +698,7 @@ async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Pat
     git_repository.git_output(notes, "config", "user.email", "test@example.com")
     inbox = _fixed_path(notes, "entry.md").parent
     inbox.mkdir(parents=True, exist_ok=True)
-    original = "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\n---\n\n元の本文\n"
+    original = f"---\nstate: {entry_state}\ntype: awi\ntarget_repo: example/repo\n---\n\n元の本文\n"
     first_content = original.replace("元の本文", "最初の編集")
     second_content = original.replace("元の本文", "次の編集")
     (inbox / "entry.md").write_text(original, encoding="utf-8")
@@ -709,7 +710,9 @@ async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Pat
     client = app.test_client()
 
     for previous, updated in ((original, first_content), (first_content, second_content)):
-        response = await client.put("/api/entries/inbox/entry.md", json={"content": updated, "expected_content": previous})
+        response = await client.put(
+            f"/api/entries/{entry_state}/entry.md", json={"content": updated, "expected_content": previous}
+        )
         assert response.status_code == 200
     assert (inbox / "entry.md").read_text(encoding="utf-8") == second_content
     assert git_repository.git_output(tmp_path, "--git-dir", str(remote), "rev-parse", "refs/heads/main") == remote_before
@@ -1294,7 +1297,7 @@ async def test_entries_api_period_limits_by_filename_creation_time(tmp_path: pat
         _fixed_path(tmp_path, name).write_text(
             "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8"
         )
-    # 更新時刻はすべて現在とし、期間の判定が更新時刻に依存しないことを確かめる。
+    # 更新時刻はすべて現在とし、更新時刻が期間の判定を変えないことを確かめる。
     client = _serve_app(tmp_path).test_client()
 
     async def filenames(query: str) -> list[str]:
@@ -1377,7 +1380,7 @@ async def test_web_add_mutations_require_target_repo(
     path: str,
     payload: dict[str, object],
 ) -> None:
-    """新規追加系APIは常駐プロセスのカレントディレクトリへ依存しないためtarget_repoを必須とする。"""
+    """新規追加系APIは常駐プロセスのカレントディレクトリを参照しないためtarget_repoを必須とする。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -1532,7 +1535,7 @@ def test_background_sync_uses_stale_sync_and_skips_lock_conflict(
         raise filelock.Timeout("lock")
 
     monkeypatch.setattr(_wi_sync, "synchronize", conflicting_sync)
-    assert operations.background_sync() is False
+    assert operations.background_sync() is None
     assert calls == ["sync"]
 
 

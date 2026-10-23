@@ -44,6 +44,9 @@ def test_share_task_documents_have_no_bare_return_line_examples() -> None:
                 continue
             if in_fence:
                 continue
+            # HTMLコメントは機械宣言であり、返却形式の裸のラベル行には含めない。
+            if line.lstrip().startswith("<!--") and line.rstrip().endswith("-->"):
+                continue
             if bare_label_line.match(line):
                 offending.append(f"{path.name}:{lineno}: {line}")
     assert not offending

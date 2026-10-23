@@ -28,6 +28,8 @@ SCHEMA = (
     "基準版は--baseline-test-format・--baseline-test-file・--baseline-test-record。"
     "vitestは--reporter=json --outputFile=/絶対/結果、Playwrightはenv PLAYWRIGHT_JSON_OUTPUT_NAME=/絶対/結果 "
     'playwright test --reporter=json、dotnet testは--logger "trx;LogFileName=/絶対/結果"でatk run-commandから取得する。'
+    "ラッパー・コンテナ経由ではatk run-commandの--result-fileで結果のホスト絶対パスを宣言し、"
+    "必要に応じて--path-map 子の絶対接頭辞=ホストの絶対接頭辞を指定する。"
     '結果JSON: {"junit":{"xml":"/絶対/XML","run_record":"/絶対/record.json"},'
     '"baseline_junit":{同形式},"diagnostics":{"path":"/絶対/JSONL","run_record":"/絶対/record.json",'
     '"head":"完全OID","conditions":{"scope":[],"options":[],"dependencies":{},"parallelism":1,"environment":{}},'
@@ -99,6 +101,18 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
     parser.add_argument(
         "--results-summary", action="store_true", help="--list-resultsで状態・差・診断のまとまりと全識別子を表示"
     )
+    parser.add_argument(
+        "--results-counts", action="store_true", help="--list-resultsで全IDを省き状態・基準差・診断群の件数を読む"
+    )
+    parser.add_argument(
+        "--results-identifiers", action="store_true", help="--list-resultsで選択群の全識別子を読む。省略時は全詳細"
+    )
+    for option, label in (
+        ("status", "試験の状態"),
+        ("change", "試験と診断の基準差"),
+        ("diagnostic-group", "件数表示の診断群番号（1始まり）"),
+    ):
+        parser.add_argument("--result-" + option, action="append", help=label + "で選ぶ。反復は同種内の和、異種間は積")
     parser.add_argument(
         "--result-test",
         action="append",
@@ -227,8 +241,8 @@ _JUNIT_RERUN = (
 _PYFLTR_RUNS = {"run", "run-for-agent", "ci", "fast"}
 
 
-def _junit_rejection(reason: str) -> next_action.ActionableError:
-    return next_action.ActionableError(reason, next_action=_JUNIT_RERUN)
+def _junit_rejection(reason: str, action: str) -> next_action.ActionableError:
+    return next_action.ActionableError(reason, next_action=action)
 
 
 def _pyfltr_show(run_id: str, *options: str) -> dict[str, Any]:
@@ -245,14 +259,15 @@ def _pyfltr_show(run_id: str, *options: str) -> dict[str, Any]:
             timeout=60,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
-        raise _junit_rejection(f"pyfltrの実行記録{run_id}の読取を完了できません: {error}") from error
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}の読取を完了できません: {error}", _JUNIT_RERUN) from error
     if result.returncode:
         raise _junit_rejection(
-            f"pyfltrの実行記録{run_id}を読めません（--no-archiveでの実行か保持期間の経過）: {result.stderr.strip()}"
+            f"pyfltrの実行記録{run_id}を読めません（--no-archiveでの実行か保持期間の経過）: {result.stderr.strip()}",
+            _JUNIT_RERUN,
         )
     shown = json.loads(result.stdout)
     if not isinstance(shown, dict):
-        raise _junit_rejection(f"pyfltrの実行記録{run_id}の形式が不正です")
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}の形式が不正です", _JUNIT_RERUN)
     return shown
 
 
@@ -274,19 +289,21 @@ def _junit_origin(record: dict[str, Any], record_path: pathlib.Path) -> tuple[li
         header = None
     run_id = header.get("run_id") if isinstance(header, dict) and header.get("kind") == "header" else None
     if not isinstance(run_id, str) or not run_id:
-        raise _junit_rejection(f"pyfltrの標準出力の先頭にJSON Linesのheaderが無く、実行記録を特定できません: {record_path}")
+        raise _junit_rejection(
+            f"pyfltrの標準出力の先頭にJSON Linesのheaderが無く、実行記録を特定できません: {record_path}", _JUNIT_RERUN
+        )
     meta = _pyfltr_show(run_id).get("meta")
     if (
         not isinstance(meta, dict)
         or not isinstance(meta.get("cwd"), str)
         or pathlib.Path(meta["cwd"]).resolve() != cwd.resolve()
     ):
-        raise _junit_rejection(f"pyfltrの実行記録{run_id}のcwdが記録cwdと一致しません: {record_path}")
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}のcwdが記録cwdと一致しません: {record_path}", _JUNIT_RERUN)
     command = _pyfltr_show(run_id, "--commands", "pytest").get("command")
     commandline = command.get("commandline") if isinstance(command, dict) else None
     output = _pyfltr_show(run_id, "--commands", "pytest", "--output").get("output")
     if not isinstance(commandline, list) or any(not isinstance(v, str) for v in commandline) or not isinstance(output, str):
-        raise _junit_rejection(f"pyfltrの実行記録{run_id}にpytestのcommandlineと生出力がありません")
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}にpytestのcommandlineと生出力がありません", _JUNIT_RERUN)
     # サブプロジェクトごとの実行は生出力を`# subproject: <相対>`で区切り、各区間のpytestはその配下で起動する。
     roots: list[tuple[pathlib.Path, str]] = []
     section = cwd
@@ -303,26 +320,49 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
         raise ValueError("JUnitの組にはxmlとrun_recordを指定する")
     xml = path_value(spec["xml"])
     record_path, record = run_record(spec["run_record"])
+    declared = verification_diagnostics.declared_result(xml, record)
     argv, roots = _junit_origin(record, record_path)
-    if len(roots) != 1 or not pathlib.Path(roots[0][1]).is_absolute():
+    if not roots:
         raise _junit_rejection(
-            f"保存出力のpytest実行rootを一意に特定できません（pyfltrの複数サブプロジェクトの実行を含む）: {record_path}"
+            f"pytestの標準出力またはpyfltrのpytest生出力にrootdir: 見出し行がありません: {record_path}。"
+            "-q・-qqなどの見出しを抑止する指定（--pytest-argsとaddoptsを含む）があると実行rootを決められません",
+            "-q・-qqなどの見出しを抑止する指定を外してpytestを再実行し、そのXMLと記録を指定する",
+        )
+    if len(roots) != 1:
+        raise _junit_rejection(
+            f"保存出力のpytest実行rootが複数あります（pyfltrの複数サブプロジェクトの実行を含む）: {record_path}",
+            "1つのpytest実行だけを含む記録とXMLを指定する",
+        )
+    if not pathlib.Path(roots[0][1]).is_absolute():
+        raise _junit_rejection(
+            f"pytest実行rootが絶対パスではありません: {roots[0][1]!r}: {record_path}",
+            "絶対パスのrootdirを出力するpytest実行のXMLと記録を指定する",
         )
     pytest_cwd, rootdir = roots[0]
     xml_args = [v.split("=", 1)[1] for v in argv if v.startswith("--junitxml=")]
     xml_args.extend(argv[i + 1] for i, v in enumerate(argv[:-1]) if v == "--junitxml")
-    if len(xml_args) != 1 or (pytest_cwd / xml_args[0]).resolve() != xml.resolve():
-        raise _junit_rejection(f"XMLと実行argvの--junitxmlが対応しません: {xml}, {record_path}")
-    if "junit_family=xunit1" not in argv:
-        raise _junit_rejection(f"file属性を保存するjunit_family=xunit1の指定が実行argvにありません: {record_path}")
+    if not declared and (len(xml_args) != 1 or (pytest_cwd / xml_args[0]).resolve() != xml.resolve()):
+        action = "指定したXMLが実行argvの--junitxmlと同じファイルを指すように指定し直すか、再実行する"
+        if not xml_args:
+            action += "。ラッパー・コンテナ経由では--result-fileと必要な--path-mapを指定してatk run-commandを再実行する"
+        raise _junit_rejection(
+            f"XMLと実行argvの--junitxmlが対応しません: {xml}, {record_path}",
+            action,
+        )
+    if not declared and "junit_family=xunit1" not in argv:
+        raise _junit_rejection(
+            f"file属性を保存するjunit_family=xunit1の指定が実行argvにありません: {record_path}",
+            "-o junit_family=xunit1を加えてpytestを再実行し、そのXMLと記録を指定する",
+        )
     # 完全テスト名のファイル部分は、参照の所在確認と同じworktreeのルートを起点にする。
     worktree = verification_diagnostics.worktree_root(record)
     try:
-        prefix = pathlib.Path(rootdir).resolve().relative_to(worktree.resolve())
+        prefix = verification_diagnostics.mapped_path(rootdir, record).resolve().relative_to(worktree.resolve())
     except ValueError as error:
         raise next_action.ActionableError(
             f"pytest実行root {rootdir} が対象worktree {worktree} の外です",
-            next_action="--rootdirを省くか対象worktree内のディレクトリを指定してpytestを再実行し、そのXMLと記録を指定する",
+            next_action="--rootdirを対象worktree内にするか、コンテナ経由では--result-fileと--path-mapを指定して"
+            "atk run-commandを再実行し、そのXMLと記録を指定する",
         ) from error
     try:
         root = ET.parse(xml).getroot()
@@ -367,13 +407,17 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
     return results
 
 
-def _relative_file(filename: object, root: pathlib.Path, worktree: pathlib.Path) -> str:
+def _relative_file(filename: object, root: pathlib.Path, worktree: pathlib.Path, record: dict[str, Any]) -> str:
     if not isinstance(filename, str) or not filename:
         raise ValueError("試験のfileが不足しています")
     try:
-        return (root / filename).resolve().relative_to(worktree.resolve()).as_posix()
+        mapped = verification_diagnostics.mapped_path(filename, record)
+        return (root / mapped).resolve().relative_to(worktree.resolve()).as_posix()
     except ValueError as error:
-        raise ValueError(f"試験のfileが対象worktreeの外です: {filename}") from error
+        raise next_action.ActionableError(
+            f"試験のfileが対象worktreeの外です: {filename}",
+            next_action="ラッパー・コンテナ経由では--result-fileと--path-mapを指定してatk run-commandを再実行する",
+        ) from error
 
 
 def _titles(values: object) -> list[str]:
@@ -382,10 +426,10 @@ def _titles(values: object) -> list[str]:
     return values
 
 
-def _vitest(data: Any, cwd: pathlib.Path, worktree: pathlib.Path) -> list[tuple[str, str]]:
+def _vitest(data: Any, cwd: pathlib.Path, worktree: pathlib.Path, record: dict[str, Any]) -> list[tuple[str, str]]:
     cases = []
     for suite in data["testResults"]:
-        filename = _relative_file(suite["name"], cwd, worktree)
+        filename = _relative_file(suite["name"], cwd, worktree, record)
         if not suite["assertionResults"] and suite.get("status") == "failed":
             raise ValueError(f"vitestの試験収集が完了していません: {filename}。収集エラーを直して再実行する")
         for case in suite["assertionResults"]:
@@ -400,8 +444,8 @@ def _vitest(data: Any, cwd: pathlib.Path, worktree: pathlib.Path) -> list[tuple[
     return cases
 
 
-def _playwright(data: Any, cwd: pathlib.Path) -> list[tuple[str, str]]:
-    root = pathlib.Path(data["config"]["rootDir"])
+def _playwright(data: Any, cwd: pathlib.Path, record: dict[str, Any]) -> list[tuple[str, str]]:
+    root = verification_diagnostics.mapped_path(data["config"]["rootDir"], record)
     if not root.is_absolute() or data.get("errors"):
         raise ValueError("Playwrightの絶対rootDirと実行エラーのない結果が必要です")
     cases: list[tuple[str, str]] = []
@@ -411,7 +455,7 @@ def _playwright(data: Any, cwd: pathlib.Path) -> list[tuple[str, str]]:
             # 最外のsuite.titleはファイル名。fileから相対パスを確定する。
             ancestors = [*titles, *_titles([suite["title"]])] if titles else _titles([suite["title"]])
             for spec in suite.get("specs", []):
-                filename = _relative_file(spec["file"], root, cwd)
+                filename = _relative_file(spec["file"], root, cwd, record)
                 for case in spec["tests"]:
                     project = case["projectName"]
                     if not isinstance(project, str):
@@ -451,6 +495,7 @@ def _structured_tests(spec: object) -> dict[str, dict[str, Any]]:
         raise ValueError(f"未知の試験形式です: {format_name!r}。vitest・playwright・trxから指定する")
     path = path_value(spec["path"])
     record_path, record = run_record(spec["run_record"])
+    declared = verification_diagnostics.declared_result(path, record)
     argv, cwd = record["argv"], pathlib.Path(record["cwd"])
     worktree = verification_diagnostics.worktree_root(record) if format_name in {"vitest", "playwright"} else cwd
     if format_name == "vitest":
@@ -476,29 +521,37 @@ def _structured_tests(spec: object) -> dict[str, dict[str, Any]]:
             if part.startswith("LogFileName=")
         ]
         reporter = True
-    if (
+    if not declared and (
         not reporter
         or len(outputs) != 1
         or not pathlib.Path(outputs[0]).is_absolute()
         or pathlib.Path(outputs[0]).resolve() != path.resolve()
     ):
         raise ValueError(
-            f"試験結果と実行argvの出力指定が対応しません: {path}, {record_path}。絶対パスの構造化出力指定で再実行する"
+            f"試験結果と実行argvの出力指定が対応しません: {path}, {record_path}。"
+            "絶対パスの構造化出力指定で再実行する。ラッパー・コンテナ経由では"
+            "--result-fileと必要な--path-mapを指定してatk run-commandを再実行する"
         )
     try:
         if format_name == "trx":
             cases = _trx(path)
         else:
             data = load_json(path)
-            cases = _vitest(data, cwd, worktree) if format_name == "vitest" else _playwright(data, worktree)
+            cases = _vitest(data, cwd, worktree, record) if format_name == "vitest" else _playwright(data, worktree, record)
     except (KeyError, TypeError, AttributeError, ET.ParseError, json.JSONDecodeError) as error:
         raise ValueError(f"試験結果の形式・状態が不正です: {path}: {error}。選んだ形式の結果を再取得する") from error
     results = {}
+    if any(not isinstance(identity, str) or not identity for identity, _status in cases):
+        raise ValueError(f"テスト完全名が不正です: {path}")
+    occurrences = collections.Counter(identity for identity, _status in cases)
+    seen: collections.defaultdict[str, int] = collections.defaultdict(int)
     for number, (identity, status) in enumerate(cases, 1):
-        if not isinstance(identity, str) or not identity or identity in results:
-            raise ValueError(f"テスト完全名が一意ではありません: {path}: {identity!r}")
-        results[identity] = {
-            "test": identity,
+        seen[identity] += 1
+        indexed = f"{identity}#{seen[identity]}" if occurrences[identity] > 1 else identity
+        if indexed in results:
+            raise ValueError(f"テスト完全名が一意ではありません: {path}: {indexed!r}")
+        results[indexed] = {
+            "test": indexed,
             "status": status,
             "format": format_name,
             "path": str(path),
@@ -756,6 +809,15 @@ def updates_for_arguments(
 
 def validate_display(args: argparse.Namespace) -> None:
     """表示の選択を更新へ混入させず、要約と詳細の用途を分ける。"""
+    groups = bool(args.result_status or args.result_change or args.result_diagnostic_group)
+    if any((args.results_counts, args.results_identifiers, groups)) and not args.list_results:
+        raise ValueError("件数・群選択・識別子表示は--list-resultsと指定する")
+    if sum(bool(value) for value in (args.results_counts, args.results_summary, args.results_identifiers)) > 1:
+        raise ValueError("--results-counts・--results-summary・--results-identifiersは1種類を指定する")
+    if (args.results_counts or args.results_summary) and (groups or args.result_test or args.result_diagnostic):
+        raise ValueError("件数と群選択の詳細は別々に表示する")
+    if groups and (args.result_test or args.result_diagnostic):
+        raise ValueError("群選択と個別識別子の指定は別々に表示する")
     selecting = bool(args.result_test or args.result_diagnostic)
     direct = bool(selected_rows(args))
     if args.results_summary and not args.list_results or selecting and not (args.list_results or direct):
@@ -802,10 +864,59 @@ def _summary(results: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _selected_groups(results: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    """入力全体の順序と基準比較を保って群を選ぶ。"""
+    statuses, changes = set(args.result_status or []), set(args.result_change or [])
+    known_statuses = {value["status"] for value in results["tests"].values()}
+    known_changes = {item["change"] for item in results["test_changes"]} | {
+        value["change"] for value in results["diagnostics"].values()
+    }
+    groups = _summary(results)["diagnostics"]
+    requested = args.result_diagnostic_group or []
+    if any(not value.isdecimal() or not 1 <= int(value) <= len(groups) for value in requested):
+        raise ValueError("診断群番号は--results-countsのgroupにある1始まり番号を指定する")
+    if statuses - known_statuses or changes - known_changes:
+        raise ValueError(
+            f"指定した状態・差がありません: status={sorted(statuses - known_statuses)}, "
+            f"change={sorted(changes - known_changes)}。--results-countsで群を確認する"
+        )
+    identities = {identity for value in requested for identity in groups[int(value) - 1]["diagnostics"]}
+    changed_names = {item["test"] for item in results["test_changes"] if not changes or item["change"] in changes}
+    names = {
+        name
+        for name, value in results["tests"].items()
+        if (not statuses or value["status"] in statuses) and (not changes or name in changed_names)
+    }
+    if not statuses:
+        names |= changed_names
+    if requested:
+        names.clear()
+    return {
+        "tests": {name: value for name, value in results["tests"].items() if name in names},
+        "test_changes": [
+            item for item in results["test_changes"] if item["test"] in names and (not changes or item["change"] in changes)
+        ],
+        "diagnostics": {
+            identity: value
+            for identity, value in results["diagnostics"].items()
+            if not statuses and (not changes or value["change"] in changes) and (not requested or identity in identities)
+        },
+    }
+
+
 def list_results(results: dict[str, Any], args: argparse.Namespace) -> None:
     """一覧から担当が選べる識別子と所在を返す。"""
-    if args.results_summary:
+    if args.results_counts:
         displayed = _summary(results)
+        for section, groups in displayed.items():
+            for number, group in enumerate(groups, start=1):
+                group.pop("tests" if section != "diagnostics" else "diagnostics")
+                if section == "diagnostics":
+                    group["group"] = number
+    elif args.results_summary:
+        displayed = _summary(results)
+    elif args.result_status or args.result_change or args.result_diagnostic_group:
+        displayed = _selected_groups(results, args)
     elif args.result_test or args.result_diagnostic:
         names, identities = set(args.result_test or []), set(args.result_diagnostic or [])
         known_names = results["tests"].keys() | {item["test"] for item in results["test_changes"]}
@@ -821,6 +932,12 @@ def list_results(results: dict[str, Any], args: argparse.Namespace) -> None:
         }
     else:
         displayed = results
+    if args.results_identifiers:
+        displayed = {
+            "tests": list(displayed["tests"]),
+            "test_changes": [item["test"] for item in displayed["test_changes"]],
+            "diagnostics": list(displayed["diagnostics"]),
+        }
     print(json.dumps(displayed, ensure_ascii=False, indent=2))
 
 
@@ -1009,7 +1126,20 @@ def reference_failure(errors: list[str]) -> ValueError:
 
 
 def save(path: pathlib.Path, payload: dict[str, Any]) -> None:
-    """検証済みの全更新を一度で保存する。"""
+    """検証済みの全更新を保存し、保存先の全文が期待値と一致することを確かめる。"""
     if not path.is_absolute():
         raise ValueError("保存先は絶対パスで指定する")
-    atomic_write(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    expected = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    atomic_write(path, expected)
+    try:
+        actual = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise next_action.ActionableError(
+            f"保存後の出力を読み取れません: {path}: {error}",
+            next_action=f"保存先{path}の状態と読取権限を確認し、更新入力と比較してから同じ更新を再実行する",
+        ) from error
+    if actual != expected:
+        raise next_action.ActionableError(
+            f"保存後の出力が期待した更新内容と一致しません: {path}",
+            next_action=f"保存先{path}を更新入力と比較し、同時書込みの有無を確認してから同じ更新を再実行する",
+        )

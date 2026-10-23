@@ -134,10 +134,11 @@ def test_update_dotfiles_public_entry_restores_all_previous_plugin_caches(
             {
                 "name": "ak110-dotfiles",
                 "plugins": [
+                    {"name": "agent-basics", "source": {"source": "local", "path": "./agent-basics"}},
                     {
                         "name": "agent-toolkit",
                         "source": {"source": "local", "path": "./agent-toolkit-codex"},
-                    }
+                    },
                 ],
             }
         ),
@@ -146,6 +147,9 @@ def test_update_dotfiles_public_entry_restores_all_previous_plugin_caches(
     plugin_manifest = root / "agent-toolkit-codex/.codex-plugin/plugin.json"
     plugin_manifest.parent.mkdir(parents=True)
     plugin_manifest.write_text(json.dumps({"name": "agent-toolkit", "version": "1.2.3"}), encoding="utf-8")
+    basics_manifest = root / "agent-basics/.codex-plugin/plugin.json"
+    basics_manifest.parent.mkdir(parents=True)
+    basics_manifest.write_text(json.dumps({"name": "agent-basics", "version": "1.0.0"}), encoding="utf-8")
     wrapper_source = root / "agent-toolkit/scripts/atk-hook"
     wrapper_source.parent.mkdir(parents=True)
     shutil.copyfile(Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook", wrapper_source)
@@ -170,12 +174,13 @@ def test_update_dotfiles_public_entry_restores_all_previous_plugin_caches(
             return {"marketplaces": [{"name": "ak110-dotfiles", "root": str(root)}]}
         return {
             "installed": [
+                {"pluginId": "agent-basics@ak110-dotfiles", "version": "1.0.0", "enabled": True},
                 {
                     "pluginId": "agent-toolkit@ak110-dotfiles",
                     "name": "agent-toolkit",
                     "marketplaceName": "ak110-dotfiles",
                     **state,
-                }
+                },
             ]
         }
 

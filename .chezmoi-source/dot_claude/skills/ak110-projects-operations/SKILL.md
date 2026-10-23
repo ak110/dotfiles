@@ -20,7 +20,7 @@ description: >
 | --- | --- |
 | ドキュメント構成を変更・同期する前 | [references/doc-structure.md](references/doc-structure.md) |
 | 他プロジェクト向けの追従提案を複数リポジトリへ投入する前 | `agent-toolkit:wi-standards`の`references/cross-repository-submission.md` |
-| lint違反への対応か推奨設定の緩和を判断する前 | `agent-toolkit:writing-standards`の`references/implementation-time.md`「lintと機械チェック」 |
+| lint違反への対応か推奨設定の緩和を判断する前 | `agent-basics:writing-standards`の`references/implementation-time.md`「lintと機械チェック」 |
 | gv・lcをLinuxから編集・検証する前、prek・pyfltr・文書lintの呼び出しを変更する前、またはCI workflow（`.github/workflows/**`）を編集する前 | [references/ci-and-tooling.md](references/ci-and-tooling.md) |
 
 ## 前提
@@ -228,7 +228,7 @@ default branchで実行しているかと未コミット変更の有無を確認
 `.pre-commit-config.yaml`・`.github/workflows/`配下はpyfltr配布の推奨ガイドに揃える。
 推奨ガイドは`~/pyfltr/docs/guide/recommended.md`と`~/pyfltr/docs/guide/recommended-nonpython.md`である。
 
-- lint違反への対応と推奨設定の緩和は、`agent-toolkit:writing-standards`の`references/implementation-time.md`「lintと機械チェック」の原則に従う。設定の緩和（ruff・pylint・textlint等の設定ファイルへのignore追加、lint設定の弱体化）は根本原因の修正と行単位の無視で足りない場合に限る慎重な手段とする。推奨から逸脱する設定を導入する場合は、該当箇所に理由を述べたコメントを直接記述する
+- lint違反への対応と推奨設定の緩和は、`agent-basics:writing-standards`の`references/implementation-time.md`「lintと機械チェック」の原則に従う。設定の緩和（ruff・pylint・textlint等の設定ファイルへのignore追加、lint設定の弱体化）は根本原因の修正と行単位の無視で足りない場合に限る慎重な手段とする。推奨から逸脱する設定を導入する場合は、該当箇所に理由を述べたコメントを直接記述する
 - 推奨ガイド自体の改訂を要する場合の投入順は「追従作業と複数リポジトリ横断投入」節に従う
 
 ## 変更時の同期対象マトリクス

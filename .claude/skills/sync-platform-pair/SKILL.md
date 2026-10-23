@@ -10,13 +10,22 @@ description: >
 
 本スキルはLinux/Windowsのペアファイルの片方を編集するときに、両側の意味をそろえるための規約を提供する。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-development/SKILL.md#「開発手順」` | 判断 | `section:*/skills/dotfiles-development/SKILL.md#「開発手順」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-development/references/verification-values.md#「push前のチェックとCIだけが実行するチェック」` | 判断 | `section:*/skills/dotfiles-development/references/verification-values.md#「push前のチェックとCIだけが実行するチェック」` |
+
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前 | `<plugin root>/skills/writing-standards/references/powershell.md` |
-| Bash（`.sh`・`.sh.tmpl`）側を編集する前 | `<plugin root>/skills/writing-standards/references/bash.md` |
-| Linux側とWindows側で分岐するコードを変更する前 | `<plugin root>/skills/writing-standards/references/testing.md`の「プラットフォーム分岐の検証」 |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前 | `agent-basics:writing-standards/references/powershell.md` | 操作 | `path:*.ps1`、`path:*.ps1.tmpl` | |
+| Bash（`.sh`・`.sh.tmpl`）側を編集する前 | `agent-basics:writing-standards/references/bash.md` | 操作 | `path:*.sh`、`path:*.sh.tmpl` | |
+| Linux側とWindows側で分岐するコードを変更する前 | `agent-basics:writing-standards/references/testing.md`の「プラットフォーム分岐の検証」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「プラットフォーム分岐の検証」` | |
 
 ## ペアファイルの判別
 
@@ -32,5 +41,5 @@ description: >
 
 ## ローカルで実行するlintとCIジョブの対応
 
-Linux側とWindows側で分岐するコードのWindows側は`make test`では検証されず、CIの`test-windows`ジョブが検証する。`agent-toolkit:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。
+Linux側とWindows側で分岐するコードのWindows側は`make test`では検証されず、CIの`test-windows`ジョブが検証する。`agent-basics:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。
 ローカルの`make test`で実行されないCIジョブは`dotfiles-development`の`references/verification-values.md`「push前のチェックとCIだけが実行するチェック」が挙げる。

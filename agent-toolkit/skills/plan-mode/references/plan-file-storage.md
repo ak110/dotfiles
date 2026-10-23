@@ -2,6 +2,18 @@
 
 本書は計画ファイルと付属ファイルの保存先、stem、参照の書式および保存の時点を定める。
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-file-standards.md#「バグ調査」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「バグ調査」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-file-standards.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#冒頭` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/lane-integration.subagent.md#「計画最終化」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「計画最終化」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
+
 ## 計画ファイルの保存と参照
 
 計画は1ファイル`<stem>.md`とし、計画ファイル（バグ）を作成する場合（`plan-file-standards.md`「バグ調査」の作成条件）だけ同じstemの`<stem>.bugs.md`を同じディレクトリへ置く。
@@ -26,6 +38,8 @@ stemは`起動経路`ごとに次のとおりとする（`dd`は作成日、`HHm
 `~/.claude/plans`直下の各計画バンドルには所有セッションを示す局所状態（計画の所有記録）が付き、`atk plans list`で所有セッションと最終更新時刻を一覧できる。自身が所有しない計画はそのまま残す。private-notesの計画は`atk plans`の各コマンドで更新する。
 保存済み計画をcheckoutして履歴書換えへ追随させた主体は、その工程の末尾で更新した全計画バンドルを`atk plans commit`で再保存する。未終端のWIや延期adoptを持つ計画も省かず、終了コード0で未適用・未完了の警告がないことを検収する。レーンの実装途中・統合時、観測のみの再開、CI修正では既存の保存時点を使う。
 
+計画の節を差し替える前に、行頭完全一致の見出し行など一意に定まる境界を選び、各境界文字列の一致が1件であることを確かめてから置換する。
+
 実行レビュー指摘管理表は計画と同じディレクトリへ`<計画stem>.exec-review.tsv`（`track`は`exec-review`）として置く。
-計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。名前は、WIだけを基準とする直接実装では`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`の返り値をそのまま使う。
+計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。名前はWIだけを基準とする直接実装では`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`の返り値をそのまま使う。
 前者は収束後に削除する。後者は修正系列の終端で`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。この保存の時機は`agent-toolkit:bugfix`の`references/ci-failure-handling.md`の`入力計画`の段落が定める。

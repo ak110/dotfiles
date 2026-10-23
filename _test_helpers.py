@@ -51,16 +51,23 @@ if [ "$command_name $*" = "codex plugin list --json" ]; then
         plugin_version="$CODEX_PLUGIN_AFTER_VERSION"
         plugin_enabled="$CODEX_PLUGIN_AFTER_ENABLED"
     fi
-    printf '%s\n' "$((state_index + 1))" > "$CODEX_PLUGIN_STATE_FILE"
     if [ "$state_index" -eq 0 ] && [ -n "$CODEX_PLUGIN_BEFORE_JSON" ]; then
         printf '%s\n' "$CODEX_PLUGIN_BEFORE_JSON"
         exit 0
     fi
+    basics_version=1.0.0
+    basics_enabled=true
+    if [ -f "$CODEX_BASICS_ADDED" ]; then
+        [ "$CODEX_BASICS_FAULT" != version ] || basics_version=9.9.9
+        [ "$CODEX_BASICS_FAULT" != enabled ] || basics_enabled=false
+    fi
+    basics_state=$(printf '{"pluginId":"agent-basics@ak110-dotfiles","version":"%s","enabled":%s}' \\
+        "$basics_version" "$basics_enabled")
     if [ "$plugin_version" = "__missing__" ]; then
-        printf '{"installed":[]}\n'
+        printf '{"installed":[%s]}\n' "$basics_state"
     else
-        printf '{"installed":[{"pluginId":"agent-toolkit@ak110-dotfiles","version":"%s","enabled":%s}]}\n' \
-            "$plugin_version" "$plugin_enabled"
+        printf '{"installed":[{"pluginId":"agent-toolkit@ak110-dotfiles","version":"%s","enabled":%s},%s]}\n' \
+            "$plugin_version" "$plugin_enabled" "$basics_state"
     fi
     exit 0
 fi
@@ -69,6 +76,7 @@ if [ "$command_name $*" = "codex plugin marketplace list --json" ]; then
     exit 0
 fi
 if [ "$command_name $*" = "codex plugin add agent-toolkit@ak110-dotfiles --json" ]; then
+    printf 1 > "$CODEX_PLUGIN_STATE_FILE"
     rm -rf "$CODEX_PLUGIN_CACHE_ROOT"
     if [ "$CODEX_STUB_CREATE_CACHE" = "1" ]; then
         mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit"
@@ -78,6 +86,16 @@ if [ "$command_name $*" = "codex plugin add agent-toolkit@ak110-dotfiles --json"
     if [ -n "$CODEX_STUB_CONFLICT_VERSION" ]; then
         mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_STUB_CONFLICT_VERSION"
         printf 'keep\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_STUB_CONFLICT_VERSION/keep"
+    fi
+    exit 0
+fi
+if [ "$command_name $*" = "codex plugin add agent-basics@ak110-dotfiles --json" ]; then
+    rm -rf "$CODEX_HOME/plugins/cache/ak110-dotfiles/agent-basics"
+    [ "$CODEX_BASICS_FAULT" != add ] || exit 9
+    touch "$CODEX_BASICS_ADDED"
+    if [ "$CODEX_BASICS_FAULT" != skills ]; then
+        mkdir -p "$CODEX_HOME/plugins/cache/ak110-dotfiles/agent-basics/1.0.0/skills/writing-standards"
+        printf '# 品質基準\n' > "$CODEX_HOME/plugins/cache/ak110-dotfiles/agent-basics/1.0.0/skills/writing-standards/SKILL.md"
     fi
     exit 0
 fi
@@ -131,6 +149,11 @@ def make_command_stubs(
     log_path.touch()
     executable_mode = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
 
+    # 限定PATHでも、uv無しのbasics単独導入が使うPython 3をテスト実行環境から提供する。
+    python_stub = bin_dir / "python3"
+    python_stub.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8")
+    python_stub.chmod(python_stub.stat().st_mode | executable_mode)
+
     for command_name in ("claude", "codex"):
         if command_name == omit:
             continue
@@ -146,9 +169,11 @@ def make_command_stubs(
             'printf \'uv %s\\n\' "$*" >> "$CLI_STUB_LOG"\n'
             'if [ "$#" -lt 8 ] || [ "$1" != run ] || [ "$2" != --no-config ] || '
             '[ "$3" != --no-project ] || [ "$4" != --python ] || [ "$5" != 3.15 ] || '
-            '[ "$6" != python ] || [ "$7" != - ]; then\n'
+            '[ "$6" != python ]; then\n'
             "    exit 8\n"
             "fi\n"
+            'case "$7" in */scripts/launch.py) exit 0 ;; esac\n'
+            '[ "$7" = - ] || exit 8\n'
             "shift 6\n"
             f'exec {python_command} "$@"\n',
             encoding="utf-8",
@@ -178,8 +203,9 @@ def run_installer(
     check: bool = True,
     extra_env: dict[str, str] | None = None,
     ps1_script: pathlib.Path | None = None,
+    basics_only: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    """インストーラーを隔離したHOMEとstubのPATHで公開入口から実行する。
+    """インストーラーを隔離したHOMEとstubのPATHで公開された起動コマンドから実行する。
 
     `ps1_script`はPowerShell版の起動ファイルを差し替える（cmdletの失敗注入用の起動ラッパーなど）。
     """
@@ -199,6 +225,14 @@ def run_installer(
         ("__missing__", "false") if codex_plugin_after is None else (codex_plugin_after[0], str(codex_plugin_after[1]).lower())
     )
     effective_codex_home = codex_home or home / ".codex"
+    if codex_plugin_before_json:
+        try:
+            before_data = json.loads(codex_plugin_before_json)
+        except json.JSONDecodeError:
+            before_data = None
+        if isinstance(before_data, dict) and isinstance(before_data.get("installed"), list):
+            before_data["installed"].append({"pluginId": "agent-basics@ak110-dotfiles", "version": "1.0.0", "enabled": True})
+            codex_plugin_before_json = json.dumps(before_data)
     marketplace_root = home / "codex-marketplace"
     marketplace_manifest = marketplace_root / ".agents" / "plugins" / "marketplace.json"
     marketplace_manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -206,10 +240,11 @@ def run_installer(
         json.dumps(
             {
                 "plugins": [
+                    {"name": "agent-basics", "source": {"source": "local", "path": "./agent-basics"}},
                     {
                         "name": "agent-toolkit",
                         "source": {"source": "local", "path": "./agent-toolkit-codex"},
-                    }
+                    },
                 ]
             }
         ),
@@ -217,7 +252,10 @@ def run_installer(
     )
     manifest = marketplace_root / "agent-toolkit-codex" / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write_text(json.dumps({"version": after_version}), encoding="utf-8")
+    manifest.write_text(json.dumps({"name": "agent-toolkit", "version": after_version}), encoding="utf-8")
+    basics_manifest = marketplace_root / "agent-basics/.codex-plugin/plugin.json"
+    basics_manifest.parent.mkdir(parents=True, exist_ok=True)
+    basics_manifest.write_text(json.dumps({"name": "agent-basics", "version": "1.0.0"}), encoding="utf-8")
     claude_plugin_root = home / "claude-plugin"
     claude_plugin_script = claude_plugin_root / "agent_toolkit" / "agents_server_mcp.py"
     claude_plugin_script.parent.mkdir(parents=True, exist_ok=True)
@@ -242,10 +280,13 @@ def run_installer(
         (old_cache / "hook.py").write_text("old hook\n", encoding="utf-8")
     env = {
         "HOME": str(home),
+        "TMPDIR": str(home.parent),
         "PATH": os.pathsep.join(path_parts),
         "DOTFILES_RULES_URL": rules_url,
         "CLI_STUB_LOG": str(stub_log),
         "STUB_FAIL_PATTERN": fail_pattern,
+        "CODEX_BASICS_FAULT": "",
+        "CODEX_BASICS_ADDED": str(stub_log.with_suffix(".basics-added")),
         "CODEX_PLUGIN_STATE_FILE": str(stub_log.with_suffix(".codex-plugin-state")),
         "CODEX_PLUGIN_BEFORE_VERSION": before_version,
         "CODEX_PLUGIN_BEFORE_ENABLED": before_enabled,
@@ -266,6 +307,8 @@ def run_installer(
         if kind == "sh"
         else ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(ps1_script or INSTALL_PS1)]
     )
+    if basics_only:
+        command.append("--basics-only" if kind == "sh" else "-BasicsOnly")
     return subprocess.run(command, cwd=cwd, env=env, check=check, capture_output=True, text=True)
 
 

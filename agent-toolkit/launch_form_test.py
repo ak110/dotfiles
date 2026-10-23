@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import threading
@@ -20,9 +21,21 @@ from typing import Any
 import psutil
 import pytest
 
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import plugin_environment, process_tree
 
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
+
+
+def _prepared(environment: dict[str, str]) -> None:
+    """実依存同期をせず、公開launcher用の隔離環境を準備済みにする。"""
+    temporary = plugin_environment.project_environment(_PROJECT_ROOT, environment)
+    executable = plugin_environment.python_path(temporary)
+    executable.parent.mkdir(parents=True)
+    shutil.copyfile(sys.executable, executable)
+    executable.chmod(0o755)
+    shutil.copyfile(pathlib.Path(sys.prefix) / "pyvenv.cfg", temporary / "pyvenv.cfg")
+    (temporary / "lib").symlink_to(pathlib.Path(sys.prefix) / "lib", target_is_directory=True)
+    plugin_environment.publish_prepared_environment(_PROJECT_ROOT, environment)
 
 
 @pytest.fixture(name="launcher")
@@ -181,6 +194,7 @@ def test_public_launcher_preserves_argument_error_exit_status(
     """実CLIのargparse終了2をlauncherの終了状態まで伝播する。"""
     env = host_environ()
     env["AGENT_TOOLKIT_RUNTIME_DATA"] = str(tmp_path / "runtime")
+    _prepared(env)
     result = subprocess.run(
         [sys.executable, str(_PROJECT_ROOT / "scripts" / "launch.py"), "agent_toolkit/atk.py", "__invalid_launch_test__"],
         cwd=tmp_path,
@@ -212,6 +226,7 @@ def test_public_run_command_restores_callers_project_environment(
     expected = str(other) if project_environment else project_environment
     if expected is not None:
         env["UV_PROJECT_ENVIRONMENT"] = expected
+    _prepared(env)
     result = subprocess.run(
         [
             sys.executable,
@@ -244,3 +259,42 @@ def test_public_run_command_restores_callers_project_environment(
     assert observed == {"project": expected, "cwd": str(tmp_path), "argv": ["空 白"]}
     assert pathlib.Path(record["stderr_path"]).read_text(encoding="utf-8").strip() == "子の診断"
     assert {path.relative_to(other): path.read_bytes() for path in other.rglob("*") if path.is_file()} == before
+
+
+def test_prepare_syncs_dependencies_only_and_publishes_after_success(
+    launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """prepareは依存だけを一時環境へ同期し、成功後だけ通常起動へ公開する。"""
+    root = tmp_path / "plugin"
+    root.mkdir()
+    (root / "pyproject.toml").write_text(
+        '[project]\nname="probe"\nrequires-python=">=3.15"\ndependencies=[]\n', encoding="utf-8"
+    )
+    (root / "uv.lock").write_text("lock", encoding="utf-8")
+    environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path / "runtime")}
+    observed: list[list[str]] = []
+
+    def run(arguments: list[str], *, env: dict[str, str], check: bool) -> subprocess.CompletedProcess[object]:
+        assert check is False
+        observed.append(arguments)
+        executable = plugin_environment.python_path(pathlib.Path(env["UV_PROJECT_ENVIRONMENT"]))
+        executable.parent.mkdir(parents=True)
+        executable.write_text("", encoding="utf-8")
+        return subprocess.CompletedProcess(arguments, 0)
+
+    monkeypatch.setattr(launcher.subprocess, "run", run)
+    assert launcher._prepare(root, "uv", environment) == 0
+    assert observed == [
+        [
+            "uv",
+            "sync",
+            "--project",
+            str(root),
+            "--python",
+            sys.executable,
+            "--locked",
+            "--no-default-groups",
+            "--no-install-project",
+        ]
+    ]
+    assert plugin_environment.prepared_python(root, environment) is not None

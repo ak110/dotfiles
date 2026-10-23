@@ -1,4 +1,4 @@
-"""失敗した公開入口から復旧操作と元の終了・保持契約を検収する。"""
+"""公開された起動コマンドの失敗時に復旧操作と元の終了・保持契約を検収する。"""
 
 import io
 import pathlib
@@ -145,7 +145,7 @@ def test_media_windows_only_rejection_does_not_create_token(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """OS拒否は終了1でWindows側の同じ入口を案内する。"""
+    """OS拒否は終了1でWindows側の同じ起動コマンドを案内する。"""
     monkeypatch.setattr(media_cli.sys, "platform", "linux")
     token = tmp_path / "token"
     assert media_cli.main([command, "--token-file", str(token)]) == 1
@@ -257,7 +257,7 @@ def test_homonym_collision_keeps_both_files_and_explains_comparison(
 def test_ecoutilities_writes_editable_sample_before_retry(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """未作成の設定は生成後に編集対象と同じ入口を表示する。"""
+    """未作成の設定は生成後に編集対象と同じ起動コマンドを表示する。"""
     config = tmp_path / "sites.xml"
     monkeypatch.setattr(sys, "argv", ["EcoUtilities", "DownloadCustom", str(config)])
     with pytest.raises(SystemExit) as exit_info:

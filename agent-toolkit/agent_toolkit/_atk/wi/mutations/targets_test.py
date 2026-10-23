@@ -208,14 +208,14 @@ class TestSkipPush:
     """adopt・rejectの中間操作でpushを省略し、最後に滞留commitを送信する。"""
 
     @pytest.mark.parametrize("action", ["adopt", "reject"])
-    def test_skip_push_commits_without_push_and_reports_note(
+    def test_skip_push_commits_without_push_and_reports_result(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
         action: str,
     ) -> None:
-        """adoptとrejectの--skip-pushはcommitだけを実行し未push状態を案内する。"""
+        """adoptとrejectの--skip-pushはcommitを実行し、遷移結果を返す。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -230,8 +230,9 @@ class TestSkipPush:
         assert any(command[:2] == ["git", "commit"] for command in commands)
         assert ["git", "push"] not in commands
         captured = capsys.readouterr()
-        assert "未pushのcommit" in captured.err
-        assert "atk wi commit" in captured.err
+        expected_state = "adopted" if action == "adopt" else "rejected"
+        assert f"成功: 1件を{expected_state}へ移した" in captured.out
+        assert not captured.err
 
     def test_default_adopt_pushes_without_skip_note(
         self,
@@ -311,7 +312,7 @@ class TestSkipPush:
         tmp_path: pathlib.Path,
     ) -> None:
         """通常遷移は即時pushし、remote進行後もskip-pushの滞留commitを回復する。"""
-        # 対象リポジトリの一致判定はテスト実行時のカレントディレクトリに依存するため、省略時の解決を無効化する。
+        # 対象リポジトリの一致判定はテスト実行時のカレントディレクトリで決まるため、省略時の解決を無効化する。
         monkeypatch.setattr(repo, "detect_current_repo_id", lambda: None)
         first_home = tmp_path / "first"
         first_home.mkdir()
@@ -430,7 +431,7 @@ def test_edit_cli_rejects_removed_plan_file_option_without_changes(
         resolved.append((path, revision))
         return revision
 
-    monkeypatch.setattr(mutation_targets, "_resolve_commit", resolve_commit)
+    monkeypatch.setattr(mutation_targets, "resolve_commit", resolve_commit)
     with pytest.raises(SystemExit) as captured:
         atk.main(_edit_plan_args(tmp_path, filename, "統合本文", plan), home=tmp_path, now=_FIXED_DT)
 

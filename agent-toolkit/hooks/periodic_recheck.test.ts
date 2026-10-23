@@ -1,7 +1,7 @@
 import type { On } from "claude-code";
 import { expect, test } from "claude-code/testing";
 
-import { PERIODIC_RECHECK_MARKER } from "./periodic_recheck.ts";
+import { parseCronJobs, PERIODIC_RECHECK_MARKER } from "./periodic_recheck.ts";
 
 // `agents_server`の`start`の後に、メインの定期再確認のtaskを1件だけ作成し、結果を会話へ届けることを検証する。
 // 装着しないと、モデルが起動前の手順を省いた場合に停滞と外部ジョブの終了を検出する主体が欠ける。
@@ -61,6 +61,10 @@ function engine(on: On, options: Options): Recorded {
   on("tool.call", { tool: "CronCreate" }, (_$, e) => {
     recorded.calls.push("CronCreate");
     if (options.createError !== undefined) return { deny: options.createError };
+    if (typeof e.cron !== "string" || typeof e.prompt !== "string" ||
+        (e.recurring !== undefined && typeof e.recurring !== "boolean")) {
+      throw new Error("CronCreateの試験入力が不正");
+    }
     recorded.created.push({ cron: e.cron, prompt: e.prompt, recurring: e.recurring });
     const id = options.createdId ?? "cron-1";
     jobs.push({ id, prompt: e.prompt });
@@ -90,6 +94,19 @@ function engine(on: On, options: Options): Recorded {
 }
 
 const START_INPUT = { tool: START, cwd: "/repo", mode: "explore", prompt: "質問" } as const;
+
+test("CronListの必要項目を検査し、不明なtaskを回収判断へ渡さない", () => {
+  expect(parseCronJobs({ jobs: [{ id: "a", prompt: "p", durable: true }, { id: "b", prompt: "q" }] })).toEqual([
+    { id: "a", prompt: "p", durable: true }, { id: "b", prompt: "q", durable: undefined },
+  ]);
+  for (const result of [null, {}, { jobs: null }, { jobs: [null] },
+    { jobs: [{ id: 1, prompt: "p" }] }, { jobs: [{ id: "a", prompt: null }] },
+    { jobs: [{ id: "a", prompt: "p", durable: "true" }] }]) {
+    let rejected = false;
+    try { parseCronJobs(result); } catch { rejected = true; }
+    expect(rejected).toBe(true);
+  }
+});
 
 test("main start creates one task from json: taskを持たないメインのstartはJSONのcronとpromptで1件作成し、task IDを文脈へ届ける", async ($, on) => {
   const recorded = engine(on, { createdId: "cron-main" });

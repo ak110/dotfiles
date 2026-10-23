@@ -1,10 +1,26 @@
-# 受入シナリオ検証の試行と常駐サービスの観測
+# 受入シナリオの品質基準と試行の記録
 
-本書は受入シナリオ検証（`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`「用語」）を実施するエージェントへ、エージェント向け文書の改訂を試行で検証する方法と、検証資源の分離、本番の起動単位から起動する対象を公開前に観測する条件を提供する。
+品質の定義元は`agent-basics:check-execution`の`references/acceptance-scenarios.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。取得済みの同版本文は再取得せず使う。
+
+受入シナリオ検証の工程定義は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`「用語」に従う。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/acceptance-scenarios.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/acceptance-scenarios.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
+| 対話の継続と成果物の達成を確かめる試行を選ぶ前 | `../../refine-prompt/references/multi-turn-trials.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/multi-turn-trials.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/agents-server-explore.md#「文書の判定試行」` | 判断 | `section:agent-toolkit:*/share/agents-server-explore.md#「文書の判定試行」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/acceptance-scenarios.md#「検証資源の分離」` | 判断 | `section:agent-basics:*/skills/check-execution/references/acceptance-scenarios.md#「検証資源の分離」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` | 判断 | `section:agent-basics:*/skills/check-execution/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` |
 
 ## エージェント向け文書の試行
 
-対話の継続と成果物の達成を確かめる場合は、`agent-toolkit:refine-prompt`の`references/multi-turn-trials.md`を全文読み、同じ固定課題による手動の多ターン試行を選べる。
+対話の継続と成果物の達成には、読込表の基準に従って、同じ固定課題による手動の多ターン試行を選べる。
 読み取り専用の文書の判定試行は以下に従う。
 
 - 実装担当は読み取り専用の委譲へ固定入力と対象文書を渡し、委譲先はスキルを実際に起動せず文書の判定を入力へ適用して結果を返す。読取範囲と返却根拠には`${CLAUDE_PLUGIN_ROOT}/share/agents-server-explore.md`「文書の判定試行」を適用し、別の読み取り専用の起動手段を使う場合もその契約を委譲入力へ含める
@@ -14,14 +30,8 @@
 
 ## 検証資源の分離
 
-試験の操作、入力の注入、故障注入と自動終了の失敗が触れる資源は、所有者と共有範囲を確かめて実行先を選ぶ。エンドユーザーや他の処理と共有する資源は、別のセッション・仮想環境・専用端末などで分離する。分離できなければ既存の認可に基づく利用調整へ進み、認可が不足する場合は確認する。担当間の排他と終了時の復元だけでは、試験中のエンドユーザーから資源を分離したことにならない。
-
-共有範囲は資源ごとに異なる。たとえばWindowsで画面を非表示desktopへ置いても、同じwindow stationのクリップボードや実入力は分離されないため個別に確かめる。故障注入と自動終了失敗では、停止しなかった対象がエンドユーザーへ作用しない範囲を確保する。
-
-分離のための変更と期待結果の成否に作用する条件を区別し、成否に作用する起動条件・入力・状態は保つ。再現できない条件は差と理由を記録し、合格の範囲を再現済みの条件に限る。
+品質の定義は`agent-basics:check-execution`の`references/acceptance-scenarios.md`「検証資源の分離」を適用する。
 
 ## 常駐サービスの公開前の観測
 
-本番の起動単位（systemd unit、コンテナー定義、タスクスケジューラーの登録など）から起動する対象を公開前に観測する場合は、稼働中の実体と分離して起動し、変える値は衝突する値（待受ポート、状態ディレクトリ、単一起動の排他資源など）に限る。
-成否が依存する起動条件は本番と同じにする。起動単位の設定（停止シグナルの配送範囲、停止のタイムアウト、環境変数、作業ディレクトリなど）と、常駐する子プロセスや外部接続を生む設定がこれに含まれる。systemd unitでは同じunit設定を`systemd-run --user`の一時unitへ渡すなどで起動単位ごと再現できる。
-起動単位の外での直接起動や設定ディレクトリの一括差し替えは成否を左右する条件を失わせるため避け、本番の起動単位を使う。再現できない起動条件が残る場合は、その条件と理由を観測記録へ書く。
+品質の定義は`agent-basics:check-execution`の`references/acceptance-scenarios.md`「常駐サービスの公開前の観測」を適用する。

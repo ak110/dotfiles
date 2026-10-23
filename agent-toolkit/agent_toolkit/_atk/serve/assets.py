@@ -45,4 +45,4 @@ SCRIPTS = {
     # 3画面が共有するナビゲーションと処理、ワークアイテム・計画ファイル・セッションの各画面。
     for filename in ("shell.js", "common.js", "wi.js", "plans.js", "sessions.js")
 }
-"""`/static/<name>.js`で配信するESモジュール。ファイル名から本文を引く。"""
+"""`/static/<name>.js`で配信するESモジュール。ファイル名を指定して本文を取得する。"""

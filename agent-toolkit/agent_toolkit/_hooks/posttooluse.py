@@ -61,8 +61,9 @@ lazy from agent_toolkit._hooks import session_title, termination_evidence
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
+lazy from agent_toolkit._hooks.pretooluse import read_delivery as _read_delivery
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import _PLAN_MODE_SKILL_NAMES
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
@@ -122,7 +123,7 @@ _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗�
 _QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
 
 
-def _example_investigation_notice(prompt: str, source: str) -> str | None:
+def _example_investigation_notice(prompt: str, source: str, *, subject: str) -> str | None:
     """例示の語と調査を求める語を併せ持つ発話へ、範囲語と例示を併せた依頼の項の所在を示す注記を返す。
 
     該当する発話が範囲語か開放列挙を伴う調査の依頼かは受領側が判断し、本フックは字面の一致だけで返す。
@@ -138,15 +139,16 @@ def _example_investigation_notice(prompt: str, source: str) -> str | None:
         f"{utterance}「原文の保持と取り込み」の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用する。"
         f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従う。"
     )
-    return _notice_formatter(source)(body, tag="notice")
+    return _notice_formatter(source)(body, tag="notice", subject=subject)
 
 
-def content_notices(prompt: str, source: str) -> list[str]:
+def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]:
     """通常発話と質問への自由記述に共通の、内容に応じた注記を返す。"""
     notices: list[str] = []
+    subject = subject or prompt
     if "！！" in prompt:
-        notices.append(_notice_formatter(source)(_REALIGN_NOTICE_BODY, tag="notice"))
-    if (example := _example_investigation_notice(prompt, source)) is not None:
+        notices.append(_notice_formatter(source)(_REALIGN_NOTICE_BODY, tag="notice", subject=subject))
+    if (example := _example_investigation_notice(prompt, source, subject=subject)) is not None:
         notices.append(example)
     return notices
 
@@ -331,7 +333,7 @@ def _record_background_task_id(session_id: str, task_id: str) -> None:
     PreToolUse(TaskStop)が、停止対象が自セッションの起動したバックグラウンドタスクかを判定する入力とする。
     記録の契機は、Bashの背景実行が成功した応答と同じ指定で失敗した応答、実行上限または手動の操作で背景へ移ったBashの
     構造化`backgroundTaskId`、ホストのMCP移行通知およびAgent・Taskの背景起動が返した`agentId`とする。
-    所有の根拠は自身の呼び出しが識別子を返したことであり、その呼び出しの成否に依存しない。
+    所有の根拠は自身の呼び出しが識別子を返したことであり、その呼び出しの成否は問わない。
     """
 
     def _append(state: dict) -> dict | None:
@@ -475,15 +477,16 @@ def _observe_document_reads(payload: dict, session_id: str, tool_name: str, tool
     if _delegated_session.is_lightweight_delegated(os.environ):
         return
     agent = resolve_hook_agent_id(payload)
-    if is_codex_payload(payload):
+    if is_codex_payload(payload) or is_antigravity_payload(payload):
         command = tool_input.get("command")
-        if tool_name not in ATK_SHELL_TOOLS or not isinstance(command, str):
+        if tool_name in ATK_SHELL_TOOLS and isinstance(command, str):
+            text = _document_reads.response_text(payload.get("tool_response"))
+            for read in _document_reads.bash_document_reads(command):
+                if _document_reads.body_returned(read.skill, read.relative_path, text, plugin=read.plugin, path=read.path):
+                    _operation_skills.record_document_read(session_id, read, agent)
             return
-        text = _document_reads.response_text(payload.get("tool_response"))
-        for read in _document_reads.bash_document_reads(command):
-            if _document_reads.body_returned(read.skill, read.relative_path, text):
-                _operation_skills.record_document_read(session_id, read, agent)
-        return
+        if not is_antigravity_payload(payload):
+            return
     if tool_name != "Read":
         return
     read = _document_reads.read_tool_document(tool_input, payload.get("tool_response"))
@@ -524,12 +527,13 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
         return None
     operation = (
         f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/SKILL.md'}`を読む"
-        if is_codex_payload(payload)
+        if is_codex_payload(payload) or is_antigravity_payload(payload)
         else "Skillで`agent-toolkit:completion-report`を起動する"
     )
     return _llm_notice(
         f"作業を完了してユーザーへ成果を報告するときは、報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
         tag="notice",
+        subject=json.dumps([payload.get("cwd"), command, response], ensure_ascii=False, sort_keys=True),
     )
 
 
@@ -550,9 +554,21 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         return []
 
     notices: list[str] = []
+    try:
+        _read_delivery.observe(payload, tool_name, tool_input, session_id)
+    except (OSError, UnicodeError, ValueError) as error:
+        notices.append(
+            _llm_notice(
+                f"読込資料の取得を記録できない: {error}",
+                tag=_WARN_TAG,
+                fix="資料の実在と宣言を確認し、必要な本文を取得する。",
+                removable_cause=True,
+                escalate_on_repeat=False,
+            )
+        )
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず回答を確認し、ユーザーの回答から通知までの遅延を抑える。
-    # この通知が指示する反映と依存作業の再開はメインが所有するため、
+    # この通知が指示する反映と回答を待っていた作業の再開はメインが所有するため、
     # in-processのサブエージェントと`agents_server`の委譲先セッションでは通知を組み立てない。
     if cwd and is_main_agent_context(payload):
         uwi_notice = _uwi_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
@@ -560,12 +576,19 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
             notices.append(_llm_notice(uwi_notice, tag="notice"))
 
     # AskUserQuestion: ユーザーが書いた文はUserPromptSubmitを経ずにツール結果として届くため、同じ注記をここで返す。
-    # 1回の質問につき1回しか生じないため、UserPromptSubmitの経過時間の閾値は適用しない。
+    # 同じ質問・回答の再配送を抑え、別の質問または回答には改めて注記を届ける。
     if tool_name == _ASK_USER_QUESTION_TOOL:
         if answers := _free_text_answers(payload.get("tool_response")):
-            notices.append(_llm_notice(f"{VERIFICATION_NOTICE_BODY}{_FREE_TEXT_ANSWER_PROCEDURE}", tag="notice"))
+            subject = json.dumps(
+                [payload.get("tool_use_id"), tool_input, payload.get("tool_response")],
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            notices.append(
+                _llm_notice(f"{VERIFICATION_NOTICE_BODY}{_FREE_TEXT_ANSWER_PROCEDURE}", tag="notice", subject=subject)
+            )
             for answer in answers:
-                for content_notice in content_notices(answer, _HOOK_ID):
+                for content_notice in content_notices(answer, _HOOK_ID, subject=subject):
                     if content_notice not in notices:
                         notices.append(content_notice)
     elif tool_name == "Skill":
@@ -622,6 +645,7 @@ def main(payload_text: str) -> int:
     if not isinstance(payload, dict):
         payload = {}
     updated_output = _persisted_output.replacement(payload)
+    notices = [notice for notice in notices if notice]
     if notices or updated_output is not None:
         event_name = payload.get("hook_event_name", "PostToolUse")
         if event_name not in {"PostToolUse", "PostToolUseFailure"}:

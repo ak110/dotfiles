@@ -38,15 +38,13 @@ CHECK_MODULE_NAMES = (
     "autonomous_exit",
     "plan_save_advisor",
     "agents_server_session_advisor",
-    "pending_question_advisor",
     "user_response_advisor",
     "termination_order_advisor",
     "queued_notification_advisor",
 )
 
-# Codexでは説明言語と起動証拠を判定し、起動済みの成果作業へ終了時の点検を一度通知する。
-# 完遂・送達の意味判断はメインが担う。Claude Codeのtranscriptに依存する判定は適用しない。
-CODEX_CHECK_MODULE_NAMES = ("response_language_advisor", "termination_order_advisor")
+# Codexでは説明言語を判定する。非遮断通知を配送できないため、終了工程の支援は文書で扱う。
+CODEX_CHECK_MODULE_NAMES = ("response_language_advisor",)
 
 # 終了要求が成立し、同じStopで継続を求めてはならない`halt`の状態。
 _TERMINATION_ISSUED = frozenset({"exit_requested", "terminating"})
@@ -129,9 +127,9 @@ def evaluate(payload_text: str) -> dict[str, object]:
         if decision == "block":
             block_reasons.append(body)
             blocking_checks.append(module_name)
-        elif decision == "notify":
+        elif decision == "notify" and body:
             notifications.append(body)
-        elif decision == "notify_user":
+        elif decision == "notify_user" and body:
             user_messages.append(body)
         elif decision == "yield":
             yield_for_delivery = True

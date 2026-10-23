@@ -1,5 +1,5 @@
 import type { EngineInterface, On } from "claude-code";
-import { automatedMessage } from "./automated_message.ts";
+import { automatedMessage, changedWarning } from "./automated_message.ts";
 
 // `agents_server`の`start`の処理の中で、メインの定期再確認のtaskを`CronCreate`で装着し、結果をメインの会話へ届ける。
 // モデルが起動前に`atk wait-schedule`と`CronCreate`を呼ぶ手順は装着漏れを残し、起動までの呼び出しも増やすため、
@@ -56,6 +56,26 @@ function holdsTask(markedIds: string[]): boolean {
 
 type Schedule = { cron: string; prompt: string };
 
+type CronJob = { id: string; prompt: string; durable?: boolean };
+
+// ホストのツール宣言がunknownを返す場合も、回収判断に使う項目を全件確認する。
+export function parseCronJobs(result: unknown): CronJob[] {
+  if (typeof result !== "object" || result === null || !("jobs" in result) || !Array.isArray(result.jobs)) {
+    throw new Error("CronListがtask一覧を返さなかった");
+  }
+  return result.jobs.map((job: unknown) => {
+    if (typeof job !== "object" || job === null || !("id" in job) || typeof job.id !== "string" ||
+        !("prompt" in job) || typeof job.prompt !== "string") {
+      throw new Error("CronListのtaskに有効なid・prompt・durableがない");
+    }
+    const durable = "durable" in job ? job.durable : undefined;
+    if (durable !== undefined && typeof durable !== "boolean") {
+      throw new Error("CronListのtaskに有効なid・prompt・durableがない");
+    }
+    return { id: job.id, prompt: job.prompt, durable };
+  });
+}
+
 // `atk wait-schedule --format json`の標準出力から、cron式と標識で始まるpromptを取り出す。形が合わなければ`undefined`を返す。
 export function parseSchedule(stdout: string): Schedule | undefined {
   let parsed: unknown;
@@ -80,7 +100,7 @@ async function mount($: EngineInterface): Promise<MountOutcome | undefined> {
   const listed = await $.tool.call({ tool: "CronList" });
   if (listed.deny !== undefined) return notMounted(`\`CronList\`が拒否された: ${listed.deny}`);
   if (listed.isError === true) return notMounted(`\`CronList\`が失敗した: ${listed.text ?? "本文なし"}`);
-  const markedIds = listed.result.jobs.filter((job) => isMarked(job.prompt)).map((job) => job.id);
+  const markedIds = parseCronJobs(listed.result).filter((job) => isMarked(job.prompt)).map((job) => job.id);
   if (holdsTask(markedIds)) return undefined;
 
   const root = $.plugin.root;
@@ -125,10 +145,14 @@ async function mount($: EngineInterface): Promise<MountOutcome | undefined> {
   const created = await $.tool.call({ tool: "CronCreate", ...input });
   if (created.deny !== undefined) return notMounted(`\`CronCreate\`が拒否された: ${created.deny}`);
   if (created.isError === true) return notMounted(`\`CronCreate\`が失敗した: ${created.text ?? "本文なし"}`);
+  const createdTask: unknown = created.result;
+  if (typeof createdTask !== "object" || createdTask === null || !("id" in createdTask) || typeof createdTask.id !== "string") {
+    return notMounted("`CronCreate`がtask IDを返さなかった");
+  }
   return {
     note: notice(
       "notice",
-      `agent-toolkitのmodが定期再確認のtaskを作成した（task ID: ${created.result.id}、cron: ${cron}、` +
+      `agent-toolkitのmodが定期再確認のtaskを作成した（task ID: ${createdTask.id}、cron: ${cron}、` +
         `request bucket: main）。全待機対象の終端と結果回収後にmodが共通promptのtaskを自動回収する。` +
         `追加義務付きのtaskはセッション終了時に回収する。再利用とresume・compaction後の確認は${RUNTIME_REFERENCE}に従う。`,
     ),
@@ -162,9 +186,8 @@ export function register(on: On): void {
       sessionId = undefined;
     }
     if (sessionId !== undefined) {
-      if (outcome?.failed !== true) deliveredFailures.delete(sessionId);
-      else if (deliveredFailures.get(sessionId) === outcome.note) return result;
-      else deliveredFailures.set(sessionId, outcome.note);
+      const warning = changedWarning(deliveredFailures, sessionId, outcome?.failed === true ? outcome.note : undefined);
+      if (outcome?.failed === true && warning === undefined) return result;
     }
     if (outcome === undefined) return result;
     return { ...result, context: [...(result.context ?? []), outcome.note] };

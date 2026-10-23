@@ -12,6 +12,7 @@ const STATE_LABELS = {
 };
 const PROCESSABLE_STATES = new Set(['inbox', 'processing']);
 const MUTABLE_STATES = new Set(['inbox', 'processing', 'hold']);
+const EDITABLE_STATES = new Set(['inbox', 'processing', 'hold', 'adopted', 'rejected']);
 const TERMINAL_STATES = new Set(['adopted', 'rejected']);
 const DELETABLE_STATES = new Set(['inbox', 'processing', 'hold', 'adopted', 'rejected']);
 const SEARCH_FALLBACK_MAX_RESULTS = 5;
@@ -919,7 +920,7 @@ function setDetailMode(mode) {
   byId('decision-panel').hidden = decisionAction === '';
   byId('decision-panel').dataset.action = decisionAction;
   if (decisionAction) byId('decision-heading').textContent = decisionAction === 'adopt' ? '採用' : '却下';
-  byId('edit-button').hidden = mutating || !mutable;
+  byId('edit-button').hidden = mutating || !currentEntry || !EDITABLE_STATES.has(currentEntry.state);
   byId('important-button').hidden = mutating || !currentEntry;
   byId('important-button').textContent = currentEntry?.important === true ? '重要解除' : '重要設定';
   byId('answer-button').hidden = mutating || !currentEntry ||
@@ -989,7 +990,7 @@ function displayEntry(entry) {
   byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
   renderMetadata(entry);
   renderAnswerChoices(entry);
-  byId('readonly-notice').hidden = MUTABLE_STATES.has(entry.state) || entry.state === 'rejected';
+  byId('readonly-notice').hidden = EDITABLE_STATES.has(entry.state);
   setDetailMode('view');
   updateCurrentRowSelection();
   if (entrySelectionFromUrl()) history.replaceState({atkEntry: true}, '', entryPageUrl(entry));
@@ -1270,7 +1271,7 @@ function finishDetailMutation(key, filename, sessionGeneration, message) {
   else showToast(message);
 }
 
-// 詳細ダイアログからの全変更操作が通る共通の処理。送信中は詳細の再読込を保留し、成功時は保留を破棄して
+// 詳細ダイアログからの全変更操作を実行する共通の処理。送信中は詳細の再読込を保留し、成功時は保留を破棄して
 // 詳細を閉じ成功を通知する。失敗時は保留した再読込を実行してから例外を呼び出し元へ返し、
 // 呼び出し元が表示する失敗の文を再読込の警告で上書きしない。
 async function runDetailMutation(pendingKey, pendingOptions, request, successMessage) {
@@ -1766,7 +1767,7 @@ function subscribeEvents() {
     'sync-error': () => {
       const status = byId('connection-status');
       status.dataset.syncFailed = 'true';
-      status.textContent = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / Git同期`, 'Git同期に失敗しました。今すぐ同期で再試行してください。');
+      status.textContent = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / Git同期`, 'Git同期に失敗しました。自動で再試行します。今すぐ同期も利用できます。');
       status.hidden = false;
     },
     'sync-ok': () => {

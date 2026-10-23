@@ -1,9 +1,9 @@
 """atkの実行結果を表す行の接頭辞と出力先を決める共通処理。
 
-`atk`の出力を受け取る主体が結果行の先頭の語だけで成否を確定し、終了コードの再確認と
+`atk`の出力を受け取る主体が返却値または結果行の先頭の語で成否を確定し、終了コードの再確認と
 状態の再取得を要さない状態にするため、成功・失敗・警告・該当0件の4種の接頭辞を本モジュールへ集約する。
-成功行の出力先は、対象コマンドの標準出力が値、構造化データまたは本文の表示を担うかで決める。
-担う場合は標準エラー、担わない場合は標準出力の1行目とする。
+成功結果が値や構造化データに含まれる場合は、その出力を結果通知とする。
+状態変更報告型は標準出力の1行目へ成功行を書く。
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class ResultKind(enum.Enum):
     """標準出力が値・構造化データ・本文の表示を担わない状態変更報告型。成功行は標準出力へ書く。"""
 
     VALUE_OUTPUT = "value-output"
-    """標準出力が値・構造化データの表示を担う値出力型。成功行は標準エラーへ書く。"""
+    """標準出力が値・構造化データの表示を担う値出力型。独立した成功行は書かない。"""
 
 
 STATE_CHANGE_COMMANDS = frozenset(
@@ -87,7 +87,7 @@ VALUE_OUTPUT_COMMANDS = frozenset(
         "atk lane recover",
     }
 )
-"""値出力型のリーフサブコマンド。標準出力は値と構造化データのままとし、成功行を標準エラーへ書く。"""
+"""値出力型のリーフサブコマンド。標準出力の値と構造化データを結果通知とする。"""
 
 READ_ONLY_COMMANDS = frozenset(
     {
@@ -135,9 +135,9 @@ def force_utf8_stdio() -> None:
 
 
 def report_success(message: str, kind: ResultKind = ResultKind.STATE_CHANGE) -> None:
-    """完了した外部状態を区分に応じた出力先へ1行で書く。"""
-    stream = sys.stderr if kind is ResultKind.VALUE_OUTPUT else sys.stdout
-    print(f"{SUCCESS_PREFIX}{message}", file=stream)
+    """状態変更の完了を1行で書く。値出力型は返された値を結果通知とする。"""
+    if kind is ResultKind.STATE_CHANGE:
+        print(f"{SUCCESS_PREFIX}{message}")
 
 
 def report_failure(message: str, *, next_action: str) -> None:

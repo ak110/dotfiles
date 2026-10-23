@@ -60,23 +60,34 @@ def _records(path: pathlib.Path) -> Iterator[dict[str, Any]]:
                 yield record
 
 
-def _limit(rate_limits: Any) -> UsageLimitState:
-    windows: list[tuple[float, str, int | None]] = []
+def from_rate_limits(rate_limits: Any) -> UsageLimitState:
+    """rolloutとApp Serverの利用枠から、枯渇した窓の種類と解除予定を返す。"""
+    windows: list[tuple[float, str | None, int | None]] = []
     if isinstance(rate_limits, dict):
         for name in ("primary", "secondary"):
             window = rate_limits.get(name)
             if not isinstance(window, dict):
                 continue
-            used = window.get("used_percent")
+            used = window.get("used_percent", window.get("usedPercent"))
             if isinstance(used, bool) or not isinstance(used, int | float) or not math.isfinite(used) or used < 100:
                 continue
-            reset = window.get("resets_at")
+            reset = window.get("resets_at", window.get("resetsAt"))
             reset = reset if isinstance(reset, int) and not isinstance(reset, bool) else None
-            windows.append((used, name, reset))
+            minutes = window.get("window_minutes", window.get("windowDurationMins"))
+            limit_type = (
+                {300: "five_hour", 10080: "seven_day"}.get(minutes)
+                if isinstance(minutes, int) and not isinstance(minutes, bool)
+                else None
+            )
+            windows.append((used, limit_type, reset))
     # 同時に枯渇した窓は、全てが解除される時刻まで待つ。
-    known = [window for window in windows if window[2] is not None]
-    selected = max(known, key=lambda window: window[2] or 0) if known else (max(windows) if windows else None)
-    return UsageLimitState(selected[2], selected[1]) if selected is not None else UsageLimitState(None)
+    if not windows:
+        return UsageLimitState(None)
+    kinds = {window[1] for window in windows}
+    limit_type = "seven_day" if "seven_day" in kinds else None if None in kinds else "five_hour"
+    resets = [window[2] for window in windows]
+    resets_at = max(value for value in resets if value is not None) if all(value is not None for value in resets) else None
+    return UsageLimitState(resets_at, limit_type)
 
 
 def from_rollout(path: pathlib.Path) -> UsageLimitState | None:
@@ -96,7 +107,7 @@ def from_rollout(path: pathlib.Path) -> UsageLimitState | None:
             elif kind == "task_complete":
                 error = payload.get("error")
                 latest = (
-                    _limit(rate_limits)
+                    from_rate_limits(rate_limits)
                     if isinstance(error, dict) and error.get("codex_error_info") == "usage_limit_exceeded"
                     else None
                 )

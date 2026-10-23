@@ -7,6 +7,20 @@
 `agent-toolkit:process-wi`の公開工程で、メインが終端担当を起動し、入力を渡し、返却値を検収するときに本書を適用する。
 委譲先の作業手順は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`が定める。
 
+## 名指し参照の読込方法
+
+名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `session-termination.subagent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.subagent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/finish-session.md#「公開工程の続行不能の回復と再開」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「公開工程の続行不能の回復と再開」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/push-and-ci.md#「公開先に対応するCI定義の判定」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開先に対応するCI定義の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/push-and-ci.md#「公開状態の4項目」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開状態の4項目」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+
 ## 起動前の前提
 
 全レーンの終端を確かめ、対象リポジトリの主作業ツリーへ書き込む主体が自身だけであることを確定してから起動する。
@@ -49,7 +63,7 @@ push前の工程（版数更新、生成物、push前のチェック、push）�
 
 `終端完了`に続く8行と現在のGit状態で次を確かめる（成果物と実装差分の再読解は要しない）。一致しない場合は同じ終端担当へ差し戻す。
 
-- `git -C <対象リポジトリ> rev-parse --short=7`で得たベースbranchとそのリモート追跡refの値が、いずれも`ベースbranchのHEAD`と一致する
+- ベースbranchとそのリモート追跡refを1件ずつ`git -C <対象リポジトリ> rev-parse --verify --short=7 '<対象ref>^{commit}'`へ渡して得た値が、いずれも`ベースbranchのHEAD`と一致する
 - `全体検証`が`CI判定`か`ローカル成功`である。`ローカル成功`なら`実行した終端工程`が全体検証のコマンド、終了コードと警告の有無を挙げる。`CI判定`ならpush前に実行したチェックのコマンド、終了コード0と警告の扱い、およびその集合を求めた根拠を挙げる。省いたチェックには省いた理由と実行済みの結果の所在がある
 - `CIの結果`が次のいずれかである。それ以外は差し戻す
   - `CI成功`: 対象リポジトリのCI照会手段が`CIで検証したcommit`について同じ結論を返す

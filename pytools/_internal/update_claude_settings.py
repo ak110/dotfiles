@@ -84,7 +84,7 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] =
         "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_autonomous_exit.py",
         datetime.date(2026, 7, 27),
     ),
-    # 2026-08: 自律終了Stop hookをagent-toolkitプラグイン側へ移動したため個人common入口を除去
+    # 2026-08: 自律終了Stop hookをagent-toolkitプラグイン側へ移動したため個人用common hookを除去
     removal_registry.Registered(_REMOVED_POSIX_AUTONOMOUS_EXIT_COMMAND, datetime.date(2026, 8, 27)),
     removal_registry.Registered(_REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND, datetime.date(2026, 8, 27)),
     removal_registry.Registered(
@@ -93,13 +93,13 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] =
     removal_registry.Registered(
         'pretooluse; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"', datetime.date(2026, 8, 23)
     ),
-    # 2026-08: 振り返り入口をagent-toolkit側へ統合したため個人Stop hookを除去
+    # 2026-08: 振り返りの起動処理をagent-toolkit側へ統合したため個人Stop hookを除去
     removal_registry.Registered("claude_hook.py stop;", datetime.date(2026, 8, 7)),
     # 2026-09: pretooluseフックへスクリプト実在検査を追加したため、検査を持たない旧形式エントリを除去
     removal_registry.Registered(
         "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse;", datetime.date(2026, 9, 2)
     ),
-    # 2026-09: dotfiles固有hookをpytoolsのconsole scriptへ移したため旧共通入口を除去
+    # 2026-09: dotfiles固有hookをpytoolsのconsole scriptへ移したため旧共通hookを除去
     removal_registry.Registered("dotfiles/scripts/claude_hook.py", datetime.date(2026, 8, 27)),
     removal_registry.Registered("dotfiles\\scripts\\claude_hook.py", datetime.date(2026, 9, 9)),
     # 2026-09: console scriptの不在時に通過させる`command -v`前置を持たない旧形式を除去する。
@@ -269,7 +269,7 @@ _IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
 # 設定コマンド文字列内でホームディレクトリ絶対パスへ置換するプレースホルダー。
 # share/claude_settings_json_managed.*.json の statusLine/subagentStatusLine command で使う。
 # JSONマージはテンプレートエンジンを介さない生のdictマージのため、シェルの`~`展開に
-# 依存せずバイナリを直接起動できるよう本関数で明示的に絶対パスへ解決する。
+# よらずバイナリを直接起動できるよう本関数で明示的に絶対パスへ解決する。
 # Windows環境ではGit Bash経由でシェルへ渡される場合バックスラッシュがエスケープシーケンスとして
 # 解釈されるため、command側はフォワードスラッシュ表記に統一する（_substitute_home_placeholder参照）。
 _HOME_PLACEHOLDER = "__HOME__"

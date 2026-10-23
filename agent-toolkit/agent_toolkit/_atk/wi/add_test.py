@@ -1432,7 +1432,7 @@ def test_uwi_requires_question_type_and_rejects_free_form(
 ) -> None:
     """UWIの新規作成は回答形式の省略とfree-formを保存前に拒否し、選択肢形式で投入する操作を示す。
 
-    回答形式の省略を受理すると、選択肢を1組しか持てない形式を避けて複数の問いを1件へ束ねる投入が通る。
+    回答形式の省略を受理すると、選択肢を1組しか持てない形式を避けて複数の問いを1件へ束ねる投入が受理される。
     """
     notes = _setup_notes(tmp_path)
     body_path = tmp_path / "body.md"

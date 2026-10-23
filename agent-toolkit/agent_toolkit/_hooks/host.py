@@ -4,6 +4,11 @@
 """
 
 
+def is_antigravity_payload(payload: object) -> bool:
+    """アダプターが正規化したAntigravityの入力かを返す。"""
+    return isinstance(payload, dict) and payload.get("runtime") == "agy"
+
+
 def is_codex_payload(payload: object) -> bool:
     """hookの入力がCodexから届いたかを返す。
 
@@ -13,6 +18,8 @@ def is_codex_payload(payload: object) -> bool:
     ツール名の推測は判定に使わない。
     """
     if not isinstance(payload, dict):
+        return False
+    if is_antigravity_payload(payload):
         return False
     turn_id = payload.get("turn_id")
     if isinstance(turn_id, str) and turn_id:

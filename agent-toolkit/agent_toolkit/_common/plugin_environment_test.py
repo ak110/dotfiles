@@ -1,6 +1,7 @@
 """ホストの保存先と版別依存環境を、配布rootへ書かずに解決する契約を検証する。"""
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -37,21 +38,60 @@ def _user_data(directory: Path) -> dict[str, str]:
     }
 
 
-def test_dependency_environments_separate_roots_locks_and_versions(tmp_path: Path) -> None:
-    """同じrootと版では同じ環境を返し、rootの違い、lockfileの更新、配布版の更新ではそれぞれ別の環境を返す。"""
+def _prepared(root: Path, environment: dict[str, str]) -> None:
+    """実際の同期をせず、隔離したテスト環境を準備済みとして公開する。"""
+    temporary = subject.project_environment(root, environment)
+    executable = subject.python_path(temporary)
+    executable.parent.mkdir(parents=True)
+    shutil.copyfile(sys.executable, executable)
+    executable.chmod(0o755)
+    shutil.copyfile(Path(sys.prefix) / "pyvenv.cfg", temporary / "pyvenv.cfg")
+    (temporary / "lib").symlink_to(Path(sys.prefix) / "lib", target_is_directory=True)
+    subject.publish_prepared_environment(root, environment)
+
+
+def test_dependency_environments_share_roots_and_ignore_non_dependency_metadata(tmp_path: Path) -> None:
+    """root・配布版・説明・lint設定は共有を妨げず、lockfileの更新は分離する。"""
     root = _root(tmp_path / "first")
     other = _root(tmp_path / "second")
     environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
     first = subject.project_environment(root, environment)
     assert first == subject.project_environment(root, environment)
-    assert first != subject.project_environment(other, environment)
+    assert first == subject.project_environment(other, environment)
+    (other / "pyproject.toml").write_text(
+        '[project]\nname="bootstrap-probe"\nversion="2.0.0"\ndescription="別の説明"\nrequires-python=">=3.15"\ndependencies=[]\n\n[tool.ruff]\nline-length=88\n',
+        encoding="utf-8",
+    )
+    assert first == subject.project_environment(other, environment)
     (root / "uv.lock").write_text("changed lock", encoding="utf-8")
     locked = subject.project_environment(root, environment)
     assert locked != first
     (root / ".claude-plugin/plugin.json").write_text('{"version":"2.0.0"}', encoding="utf-8")
-    assert subject.project_environment(root, environment) not in {first, locked}
+    assert subject.project_environment(root, environment) == locked
     assert not first.exists()
     assert first.is_relative_to(tmp_path / "data")
+
+
+def test_prepared_environment_is_published_only_after_completion(tmp_path: Path) -> None:
+    """ready markerを持つ原子的に公開済み環境だけが通常起動で選ばれる。"""
+    root = _root(tmp_path / "plugin")
+    environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
+    temporary = subject.project_environment(root, environment)
+    executable = subject.python_path(temporary)
+    executable.parent.mkdir(parents=True)
+    executable.write_text("", encoding="utf-8")
+    assert subject.prepared_python(root, environment) is None
+    published = subject.publish_prepared_environment(root, environment)
+    assert subject.prepared_python(root, environment) == subject.python_path(published)
+
+
+def test_direct_environment_puts_current_root_before_existing_pythonpath(tmp_path: Path) -> None:
+    """共有依存環境でも各配布rootのコードを先に解決する。"""
+    root = _root(tmp_path / "plugin")
+    environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data"), "PYTHONPATH": "existing"}
+    direct = subject.direct_environment(root, environment)
+    assert direct["PYTHONPATH"].split(os.pathsep) == [str(root.resolve()), "existing"]
+    assert Path(direct["UV_PROJECT_ENVIRONMENT"]).is_relative_to(tmp_path / "data" / "environments")
 
 
 def test_launch_preserves_callers_environment_and_cli_preserves_path(tmp_path: Path) -> None:
@@ -162,6 +202,7 @@ def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
         timeout=15,
     )
     assert locked.returncode == 0, locked.stderr
+    _prepared(root, environment)
     probe = root / "probe.py"
     probe.write_text(
         "import json, os, sys\n"
@@ -276,6 +317,7 @@ def test_session_start_hook_separates_real_uv_and_restores_child_environment(
         check=False,
     )
     assert locked.returncode == 0, locked.stderr
+    _prepared(root, environment)
     shutil.copyfile(Path(inherited_venv.__file__), root / "inherited_venv.py")
     probe = root / "hook_probe.py"
     probe.write_text(
@@ -285,7 +327,8 @@ def test_session_start_hook_separates_real_uv_and_restores_child_environment(
         "child = subprocess.run([sys.executable, '-c', "
         "\"import json, os; print(json.dumps({'caller': os.environ.get('UV_PROJECT_ENVIRONMENT')}))\"], "
         "env=child_environment, capture_output=True, text=True, check=True, timeout=5)\n"
-        "print(json.dumps({'prefix': sys.prefix, 'child': json.loads(child.stdout), 'input': sys.stdin.read()}))\n",
+        "print(json.dumps({'prefix': sys.prefix, 'environment': os.environ['UV_PROJECT_ENVIRONMENT'], "
+        "'child': json.loads(child.stdout), 'input': sys.stdin.read()}))\n",
         encoding="utf-8",
     )
     bootstrap = Path(subject.__file__).resolve().parents[2] / "scripts/launch.py"
@@ -302,7 +345,7 @@ def test_session_start_hook_separates_real_uv_and_restores_child_environment(
     )
     assert launched.returncode == 0, launched.stderr
     observed = json.loads(launched.stdout)
-    assert Path(observed["prefix"]).is_relative_to(tmp_path / "runtime-data" / "environments")
+    assert Path(observed["environment"]).is_relative_to(tmp_path / "runtime-data" / "environments")
     assert observed["child"] == {"caller": expected}
     assert json.loads(observed["input"]) == {"hook_event_name": "SessionStart"}
     assert {str(path.relative_to(caller)): path.read_bytes() for path in protected_paths} == protected

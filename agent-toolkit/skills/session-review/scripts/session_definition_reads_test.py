@@ -76,6 +76,7 @@ def _prepare(
     entries: list[dict],
     *,
     child_entries: list[dict] | None = None,
+    kind: str | None = "definition-body-read",
 ) -> tuple[dict, list[dict]]:
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     transcript = tmp_path / "record.jsonl"
@@ -87,7 +88,9 @@ def _prepare(
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_NOW) == 0
     output = json.loads(capsys.readouterr().out)
     candidates = [json.loads(line) for line in (work / "bundle/candidates.jsonl").read_text(encoding="utf-8").splitlines()]
-    return output, [row for row in candidates if row.get("candidate_kind") == "definition-body-read"]
+    return output, [
+        row for row in candidates if row.get("kind") == "candidate" and (kind is None or row.get("candidate_kind") == kind)
+    ]
 
 
 def test_delegating_subagent_read_is_included_with_its_own_role_and_range(
@@ -125,7 +128,9 @@ def test_delegating_subagent_read_is_included_with_its_own_role_and_range(
         f"test -f {_ROLE_PATH} && cat -- {_ROLE_PATH}",
         f"sed -n '1,20p' {_ROLE_PATH}",
         f"atk read-file --start 10 -- {_ROLE_PATH}",
-        f"python3 -c 'print(open(\"{_ROLE_PATH}\").read())'",
+        f"cat < {_ROLE_PATH}",
+        f"Get-Content -Path '{_ROLE_PATH}' -TotalCount 10",
+        f"Get-Content -Delimiter /notes.txt -LiteralPath '{_ROLE_PATH}'",
     ],
 )
 def test_shell_body_reads_keep_compound_and_partial_acquisition(
@@ -211,3 +216,139 @@ def test_path_listing_and_existence_checks_are_not_body_reads(
     )
     _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries)
     assert candidates == []
+
+
+@pytest.mark.parametrize("route", ["Bash", "functions.exec"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        f"cat /notes.txt; test -f {_ROLE_PATH}",
+        f"rg -F 'cat {_ROLE_PATH}' /history.jsonl",
+        f"rg --glob '*.jsonl' -F 'cat {_ROLE_PATH}' /history.jsonl",
+        f"jq '.calls[] | select(.cmd == \"cat {_ROLE_PATH}\")' /history.json",
+        f"printf '%s' 'cat {_ROLE_PATH}'",
+        f"cat /notes.txt > {_ROLE_PATH}",
+        f"Get-Content -Delimiter {_ROLE_PATH} /notes.txt",
+        f"apply_patch '*** Update File: {_ROLE_PATH}\n+cat /notes.txt'",
+    ],
+)
+def test_operation_data_does_not_become_a_read_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], route: str, command: str
+) -> None:
+    """同じ語を含むデータと別操作の対象を、読取引数から分離する。"""
+    entry = (
+        support.claude_call("2026-10-21T00:00:02Z", "data", "Bash", {"command": command})
+        if route == "Bash"
+        else support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {
+                "type": "custom_tool_call",
+                "name": route,
+                "call_id": "data",
+                "input": f"text(await tools.exec_command({{cmd: {json.dumps(command)}}}));",
+            },
+        )
+    )
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, [entry])
+    assert not candidates
+
+
+def test_compound_cell_keeps_each_operation_and_unresolved_acquisition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """取得・取得未確定を同じ呼出位置から別候補と個別証拠へ接続する。"""
+    cell = (
+        f'await tools.apply_patch("cat {_ROLE_PATH}");'
+        f'await tools.exec_command({{cmd: "head -n 3 {_ROLE_PATH}"}});'
+        "await tools.exec_command({cmd: dynamicCommand});"
+        f'await tools.exec_command({{cmd: "cat /notes; test -f {_ROLE_PATH}"}});'
+        f'await tools.exec_command({{cmd: "cat {_ROLE_PATH}" + suffix}});'
+    )
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z", {"type": "custom_tool_call", "name": "functions.exec", "call_id": "mixed", "input": cell}
+        )
+    ]
+    output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    assert reads["calls"][0]["targets"] == [_ROLE_PATH]
+    assert [operation["operation"] for operation in reads["calls"][0]["operations"]] == [1]
+    call = unresolved["calls"][0]
+    assert call["line"] == 1 and call["result_line"] is None
+    assert not call["targets"] and call["recorded_input"] == cell
+    assert [operation["operation"] for operation in call["operations"]] == [2, 4]
+    assert all(operation["input"] and operation["reason"] for operation in call["operations"])
+    assert call["purpose"] == "未判定" and call["result_observation"] == "結果記録なし"
+    assert {reads["candidate_id"], unresolved["candidate_id"]} <= set(output["mandatory_candidates"])
+    index = [json.loads(line) for line in Path(output["review_index_path"]).read_text(encoding="utf-8").splitlines()]
+    assert next(row for row in index if row["candidate_id"] == unresolved["candidate_id"])["mandatory"] is True
+    evidence = [
+        json.loads(line)
+        for line in (Path(output["work_dir"]) / "bundle/candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    evidence_row = next(row for row in evidence if row.get("candidate_id") == unresolved["candidate_id"])
+    detail = json.loads((Path(output["work_dir"]) / "bundle" / evidence_row["path"]).read_text(encoding="utf-8"))
+    assert detail["definition_reads"] == unresolved["calls"]
+
+
+@pytest.mark.parametrize(
+    "command", ['cat "$ROLE_PATH"', f"python3 -c 'print(open(\"{_ROLE_PATH}\").read())'", f"cat $(resolve {_ROLE_PATH})"]
+)
+def test_dynamic_shell_read_remains_unresolved_with_input_and_result_location(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    entries = [
+        support.claude_call("2026-10-21T00:00:02Z", "read", "Bash", {"command": command}),
+        support.claude_result("2026-10-21T00:00:03Z", "read", "本文"),
+    ]
+    output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    assert not [row for row in candidates if row["candidate_kind"] == "definition-body-read"]
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    call = unresolved["calls"][0]
+    assert call["recorded_input"] == {"command": command} and call["result_line"] == 2
+    assert call["operations"][0]["reason"] and unresolved["candidate_id"] in output["mandatory_candidates"]
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        f'{{cmd: "cat {_ROLE_PATH}", [key]: replacement}}',
+        f'{{cmd: "cat {_ROLE_PATH}", get [key]() {{ return replacement; }}}}',
+        f'{{cmd: "cat {_ROLE_PATH}", cmd}}',
+        f'Object.assign({{cmd: "cat {_ROLE_PATH}"}}, replacements)',
+    ],
+)
+def test_dynamic_properties_keep_acquisition_unresolved_through_prepare(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], argument: str
+) -> None:
+    """上書き可能なobject propertyと非object引数を公開prepareから判定材料へ渡す。"""
+    cell = f"await tools.exec_command({argument});"
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z", {"type": "custom_tool_call", "name": "functions.exec", "call_id": "dynamic", "input": cell}
+        )
+    ]
+    output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    assert not [row for row in candidates if row["candidate_kind"] == "definition-body-read"]
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    call = unresolved["calls"][0]
+    assert call["line"] == 1 and call["recorded_input"] == cell
+    assert call["result_line"] is None and not call["targets"]
+    assert call["operations"][0]["input"] == f"tools.exec_command({argument})"
+    assert call["operations"][0]["reason"]
+    assert unresolved["candidate_id"] in output["mandatory_candidates"]
+
+
+def test_unknown_get_content_option_keeps_target_boundary_unresolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """値の有無を解釈しないオプションから対象ファイルを推定しない。"""
+    command = f"Get-Content -UnknownOption {_ROLE_PATH} /notes.txt"
+    entries = [support.claude_call("2026-10-21T00:00:02Z", "read", "Bash", {"command": command})]
+    output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    assert not [row for row in candidates if row["candidate_kind"] == "definition-body-read"]
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    call = unresolved["calls"][0]
+    assert call["recorded_input"] == {"command": command} and call["line"] == 1
+    assert call["operations"][0]["reason"] and unresolved["candidate_id"] in output["mandatory_candidates"]

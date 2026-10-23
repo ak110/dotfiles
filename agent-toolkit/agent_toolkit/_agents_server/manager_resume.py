@@ -23,6 +23,7 @@ from agent_toolkit._agents_server.responses import (
     turn_elapsed_seconds,
 )
 from agent_toolkit._agents_server.resume_waits import (
+    auto_resume_wait_deadline,
     clear_overload_resume,
     clear_usage_limit_wait,
     finalize_pending_result,
@@ -52,38 +53,15 @@ class ManagerResume(manager_registry.ManagerRegistry):
         """保留中の結果を、孫sessionの終端・過負荷と利用上限の待機の経過または保持期限に応じて進める。"""
         if not session.awaiting_auto_resume or session.pending_result is None:
             return
+        if session.interrupt_requested:
+            return
         if session.claude_api_resume_pending:
-            pending = session.pending_result
-            session.claude_api_resume_pending = False
-            prompt = ResumePrompt(
+            await self._resume_claude_wait(
+                session,
                 wrap_delivery_body(
                     "直前のturnは中断した。完了済みの操作と成果物を確認し、残る作業を続けて所定の返却形式を返せ。"
-                )
+                ),
             )
-            try:
-                await cast(claude.ClaudeServerManager, self._backend(session.engine)).resume(
-                    session.session_id,
-                    prompt,
-                    session.cwd,
-                    session.model,
-                    session.effort,
-                    model_type=session.model_type,
-                    launch_kind=session.launch_kind,
-                    excluded_candidates=session.excluded_candidates,
-                    turn_seq=session.turn_seq,
-                    api_env_file=session.claude_api_env_file,
-                    existing_session=session,
-                )
-            except Exception as exc:
-                session.awaiting_auto_resume = False
-                session.pending_result = None
-                session.status = pending["status"]
-                session.agent_message = pending["agent_message"]
-                session.error = {"message": f"{type(exc).__name__}: {exc}"}
-                session.turn_completed = True
-                session.touch()
-            finally:
-                prompt.close()
             return
         if session.codex_provider_resume_pending:
             pending = session.pending_result
@@ -137,19 +115,36 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.live_child_session_ids.discard(session_id)
             session.terminal_child_session_ids.add(session_id)
         session.live_child_session_ids.difference_update(unobserved)
+        if unobserved and has_pending_auto_resume_targets(session):
+            self._pending_unobserved_child_sessions[session.session_id] = (session.turn_seq, unobserved)
 
-        if (
-            not has_pending_auto_resume_targets(session)
-            and session.terminal_child_session_ids
+        if not has_pending_auto_resume_targets(session) and (
+            (session.terminal_child_session_ids or session.codex_terminal_subagent_thread_ids)
             and not session.auto_resume_consumed
+            or session.codex_self_message_observed
+            and not session.codex_self_message_repair_consumed
         ):
-            identifiers = sorted(session.terminal_child_session_ids)
+            identifiers = sorted(session.terminal_child_session_ids | session.codex_terminal_subagent_thread_ids)
+            repair_message = session.codex_self_message_observed and not session.codex_self_message_repair_consumed
             prompt = wrap_delivery_body(
-                "あなたが`agents_server`で起動した次のsessionは終端した。\n"
-                f"終端したsession: {', '.join(identifiers)}\n"
-                "各sessionの結果を確認し、所定の返却形式を返せ。",
+                (
+                    "あなたが起動した子は終端した。\n"
+                    f"終端したsession/thread: {', '.join(identifiers)}\n"
+                    "各子の結果を受け取り、残る工程を続けて所定の返却形式を返せ。"
+                    if identifiers
+                    else "直前のturnの返却本文を確認せよ。"
+                )
+                + (
+                    "\n`send_message`で自分宛てに送った本文は委譲元へ届いていない。"
+                    "agents_serverの委譲先の返却は最終応答の本文だけである。"
+                    "送ろうとした内容の全文を最終応答へ書いて返せ。"
+                    if repair_message
+                    else ""
+                ),
             )
             session.auto_resume_consumed = True
+            if repair_message:
+                session.codex_self_message_repair_consumed = True
             pending_result = session.pending_result
             assert pending_result is not None
             if unobserved:
@@ -158,6 +153,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 delivery = await self._backend(session.engine).send_message(session, prompt)
                 if delivery.get("delivery") == "reply_failed":
                     session.auto_resume_consumed = False
+                    if repair_message:
+                        session.codex_self_message_repair_consumed = False
                     return
             except Exception as exc:
                 self._pending_unobserved_child_sessions.pop(session.session_id, None)
@@ -176,6 +173,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session.touch()
                 return
             session.terminal_child_session_ids.difference_update(identifiers)
+            session.codex_terminal_subagent_thread_ids.difference_update(identifiers)
             if self._status_writer is not None:
                 await self._status_writer.delete_result_async(session.session_id, collector="auto-resume")
             return
@@ -187,9 +185,43 @@ class ManagerResume(manager_registry.ManagerRegistry):
             finalize_pending_result(session, unobserved_sessions=unobserved)
             return
 
-        deadline = session.auto_resume_deadline
+        deadline = auto_resume_wait_deadline(session)
         if deadline is not None and asyncio.get_running_loop().time() >= deadline:
             finalize_pending_result(session, unobserved_sessions=unobserved)
+
+    async def _resume_claude_wait(self, session: SessionState, body: str) -> None:
+        """CLI内の再試行を所有単位ごと回収し、killと同じ境界で同じ会話を再開する。"""
+        async with session.turn_control_lock:
+            if session.interrupt_requested or not session.awaiting_auto_resume or session.pending_result is None:
+                return
+            pending = session.pending_result
+            session.claude_api_resume_pending = False
+            session.usage_limit_resume_at = None
+            prompt = ResumePrompt(body)
+            try:
+                await cast(claude.ClaudeServerManager, self._backend(session.engine)).resume(
+                    session.session_id,
+                    prompt,
+                    session.cwd,
+                    session.model,
+                    session.effort,
+                    model_type=session.model_type,
+                    launch_kind=session.launch_kind,
+                    excluded_candidates=session.excluded_candidates,
+                    turn_seq=session.turn_seq,
+                    api_env_file=session.claude_api_env_file,
+                    existing_session=session,
+                )
+            except Exception as exc:
+                session.awaiting_auto_resume = False
+                session.pending_result = None
+                session.status = pending["status"]
+                session.agent_message = pending["agent_message"]
+                session.error = {"message": f"{type(exc).__name__}: {exc}", "cause": pending["error"]}
+                session.turn_completed = True
+                session.touch()
+            finally:
+                prompt.close()
 
     async def _resume_after_overload(self, session: SessionState) -> None:
         """過負荷の待機を終えたsessionへ、同じ作業を続ける指示を新しいturnとして送る。"""
@@ -229,9 +261,12 @@ class ManagerResume(manager_registry.ManagerRegistry):
         usage_limit = error.get("usageLimit") if isinstance(error, dict) else None
         limit_type = usage_limit.get("type") if isinstance(usage_limit, dict) else None
         prompt = wrap_delivery_body(
-            f"直前のturnはClaude Codeの利用上限（{limit_type or '不明'}）で中断し、解除予定時刻まで待った。\n"
+            f"直前のturnは{session.engine}の利用上限（{limit_type or '不明'}）で中断し、解除予定時刻まで待った。\n"
             "中断前の作業を続け、所定の返却形式を返せ。",
         )
+        if session.engine == "claude":
+            await self._resume_claude_wait(session, prompt)
+            return
         finalize_pending_result(session, touch=False, keep_resume_chain=True)
         try:
             await self._backend(session.engine).send_message(session, prompt)
@@ -274,6 +309,10 @@ class ManagerResume(manager_registry.ManagerRegistry):
                     "model_provider": resume_state.codex_model_provider,
                     "subscription_provider": resume_state.codex_subscription_provider,
                 }
+            if resume_state.engine == "codex" and resume_state.codex_state_provider is not None:
+                provider_args["state_provider"] = resume_state.codex_state_provider
+            if resume_state.engine in {"claude", "codex"}:
+                provider_args["handoff_prompt"] = resume_state.prompt
             session = await backend.resume(
                 session_id,
                 prompt,
@@ -373,6 +412,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 model_type=resume_state.model_type,
                 codex_model_provider=resume_state.codex_model_provider,
                 codex_subscription_provider=resume_state.codex_subscription_provider,
+                codex_state_provider=resume_state.codex_state_provider,
                 claude_api_env_file=resume_state.claude_api_env_file,
                 claude_connection=resume_state.claude_connection,
                 claude_role=resume_state.claude_role,

@@ -23,7 +23,7 @@ from pytools._internal import common, log_format
 
 logger = logging.getLogger(__name__)
 
-# post-applyは互いに依存しない工程を並列に実行する。プロセス全体のPATHを読んで書き戻す処理
+# post-applyは互いの成果を使わない工程を並列に実行する。プロセス全体のPATHを読んで書き戻す処理
 # （本モジュールの`prepend_path`とWindowsの`setup_mise`のshims追加）は、同時に実行すると
 # 一方の追加が失われるため、このロックで直列化する。
 PROCESS_PATH_LOCK = threading.Lock()

@@ -124,7 +124,7 @@ def elapsed_seconds(value: str | None) -> int | None:
 API_ERROR_USAGE_LIMIT_KEYS = ("limit_type", "resets_at")
 
 
-API_ERROR_PUBLIC_KEYS = ("type", "http_status", "elapsed_seconds", *API_ERROR_USAGE_LIMIT_KEYS)
+API_ERROR_PUBLIC_KEYS = ("type", "http_status", "elapsed_seconds", "retry_at", *API_ERROR_USAGE_LIMIT_KEYS)
 
 
 def activity_projection(
@@ -157,7 +157,7 @@ def activity_projection(
                 "elapsed_seconds": elapsed,
             }
             # 利用上限の解除待ちでは、種類と解除予定時刻を加えてAPI再試行と区別できるようにする。
-            for key in API_ERROR_USAGE_LIMIT_KEYS:
+            for key in (*API_ERROR_USAGE_LIMIT_KEYS, "retry_at"):
                 if api_error.get(key) is not None:
                     projection["api_error"][key] = api_error[key]
     return projection

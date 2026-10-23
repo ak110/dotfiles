@@ -621,7 +621,7 @@ def _run(
         "time -p { git commit -m message; }",
     ],
 )
-def test_git_completion_operation_notifies_each_successful_call(
+def test_git_completion_notice_distinguishes_retries_commits_and_targets(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, command: str, codex: bool
 ) -> None:
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -635,13 +635,25 @@ def test_git_completion_operation_notifies_each_successful_call(
     }
     if codex:
         payload["turn_id"] = "codex-turn"
-    for _ in range(2):
+    for index in range(2):
         result = _run(payload, state_dir=tmp_path)
         assert result.returncode == 0
+        if index:
+            assert not result.stdout
+            continue
         body = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert body.count("報告を書く前に") == 1
         assert "completion-report" in body
         assert ("SKILL.md" in body) is codex
+    payload["tool_response"] = {"exit_code": 0, "stdout": "[main 1234567] 次のcommit"}
+    changed_commit = _run(payload, state_dir=tmp_path)
+    assert changed_commit.returncode == 0
+    assert "completion-report" in json.loads(changed_commit.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert not _run(payload, state_dir=tmp_path).stdout
+    payload["cwd"] = str(tmp_path / "other-repository")
+    changed_target = _run(payload, state_dir=tmp_path)
+    assert changed_target.returncode == 0
+    assert "completion-report" in json.loads(changed_target.stdout)["hookSpecificOutput"]["additionalContext"]
     assert not any("completion" in key for key in _read_state(tmp_path, "completion-notice"))
 
 
@@ -769,32 +781,15 @@ def _single_notice_body(result: subprocess.CompletedProcess[str], source: str) -
         ),
     ],
 )
-def test_free_text_answer_receives_the_same_notice_as_user_prompt(tmp_path: pathlib.Path, tool_response: dict) -> None:
-    """ユーザーが書いた文は、通常発話と`AskUserQuestion`のどの形で届いても同じ現物確認の注記を受ける。
-
-    PostToolUseが注記を返さないと、回答が否定した前提を確かめないまま応答が同じ前提を繰り返す。
-    片方のhookだけ本文を改訂すると、同じ文にhookごとに異なる手順が届く。
-    """
+def test_free_text_answer_receives_answer_specific_procedure(tmp_path: pathlib.Path, tool_response: dict) -> None:
+    """自由記述の回答には、選択肢との違いに応じた既存の回答手順を届ける。"""
     session_id = "ask-user-question-free-text"
-    state_path = _state_path(session_id)
-    state_path.write_text(json.dumps({"last_user_prompt_at": 0.0}), encoding="utf-8")
-    env = os.environ.copy()
-    env.update({"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)})
-    user_prompt = _fork_runner.run_script(
-        _SCRIPT,
-        argv=("user_prompt_submit",),
-        input=json.dumps({"session_id": session_id, "prompt": _FREE_TEXT}, ensure_ascii=False),
-        env=env,
-    )
-    prompt_body = _single_notice_body(user_prompt, "user_prompt_submit")
-
     answer_body = _single_notice_body(
         _run(_ask_user_question_payload(session_id, tool_response), state_dir=tmp_path), "posttooluse"
     )
 
-    # 前提を否定する回答への手順の文意は定義の読解で確かめ、ここでは共通の本文に続く手順があることだけを確かめる。
-    assert answer_body.startswith(prompt_body)
-    assert answer_body[len(prompt_body) :].strip()
+    assert "提示した選択肢と一致しない自由記述" in answer_body
+    assert "回答に沿って進める" in answer_body
 
 
 @pytest.mark.parametrize(
@@ -831,6 +826,39 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
     assert ("認識合わせ" in context) == ("！！" in text)
     assert ("範囲語か開放列挙" in context) == text.startswith("例えば")
+
+
+@pytest.mark.parametrize("changed_field", ["tool_use_id", "question", "answer"])
+def test_free_text_notices_distinguish_replays_questions_and_answers(tmp_path: pathlib.Path, changed_field: str) -> None:
+    """同一回答の再配送を抑え、別の質問・自由回答へ必要な手順と内容注記を届ける。"""
+    payload = _ask_user_question_payload("free-text-notice-target", {"response": "例えば設定を調査して！！"})
+    payload["tool_use_id"] = "question-call-1"
+    payload["tool_input"] = {"questions": payload["tool_response"]["questions"]}
+
+    def context(event: dict) -> str:
+        result = _run(event, state_dir=tmp_path)
+        assert result.returncode == 0, result.stderr
+        if not result.stdout:
+            return ""
+        return json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+
+    first = context(payload)
+    for marker in ("提示した選択肢と一致しない自由記述", "認識合わせ", "範囲語か開放列挙"):
+        assert marker in first
+    assert not context(payload)
+
+    changed = json.loads(json.dumps(payload))
+    if changed_field == "tool_use_id":
+        changed["tool_use_id"] = "question-call-2"
+    elif changed_field == "question":
+        question = "別の対応について回答しますか？"
+        changed["tool_input"]["questions"][0]["question"] = question
+        changed["tool_response"]["questions"][0]["question"] = question
+        changed["tool_response"]["answers"][question] = changed["tool_response"]["answers"].pop(_QUESTION)
+    else:
+        changed["tool_response"]["response"] = "例えば実装を調査して！！"
+    assert context(changed) == first
+    assert not context(changed)
 
 
 def _registered_posttooluse_names(event: str = "PostToolUse") -> set[str]:
@@ -1052,7 +1080,7 @@ class TestDelegationReadiness:
         )
         assert result.returncode == 0
         state = _read_state(tmp_path, sid)
-        assert state["operation_skill_delivered_agents"] == {"agent-toolkit:delegation": ["main"]}
+        assert _legacy_operation_readiness(state) == {"agent-toolkit:delegation": ["main"]}
 
 
 class TestUwiCompletionNotice:
@@ -1671,7 +1699,7 @@ class TestAgentsServerSessionState:
                         "engine": "codex",
                         "model": "gpt-test",
                         "effort": "high",
-                        "model_type": "high_tier",
+                        "model_type": "execute",
                     }
                 },
             },
@@ -2288,32 +2316,32 @@ class TestAgentsServerProcessLoopLog:
     @pytest.mark.parametrize("observe_tool", ("kill",))
     def test_terminal_status_logs_start_and_end(self, tmp_path: pathlib.Path, observe_tool: str) -> None:
         """観測対象の工程は起動時刻を記録し、終端した観測で終了時刻を記録する。"""
-        text = self._run_session(tmp_path, model_type="high_tier", observe_tool=observe_tool)
+        text = self._run_session(tmp_path, model_type="execute", observe_tool=observe_tool)
         assert "event=subagent_start" in text
         assert "event=subagent_end" in text
-        assert text.count("type=high_tier") == 2
+        assert text.count("type=execute") == 2
 
     def test_untracked_model_type_is_not_logged(self, tmp_path: pathlib.Path) -> None:
         """探索起動など観測対象外の工程は記録しない。"""
-        assert self._run_session(tmp_path, model_type="low_tier") == ""
+        assert self._run_session(tmp_path, model_type="chores_fast") == ""
 
     def test_running_status_does_not_log_end(self, tmp_path: pathlib.Path) -> None:
         """終端していない観測では終了時刻を記録しない。"""
-        text = self._run_session(tmp_path, model_type="high_tier", final_status="running")
+        text = self._run_session(tmp_path, model_type="execute", final_status="running")
         assert "event=subagent_start" in text
         assert "event=subagent_end" not in text
 
     def test_disabled_env_suppresses_logging(self, tmp_path: pathlib.Path) -> None:
         """process-loop起動セッション以外では記録しない。"""
-        assert self._run_session(tmp_path, model_type="high_tier", enable_env=False) == ""
+        assert self._run_session(tmp_path, model_type="execute", enable_env=False) == ""
 
     def test_nested_session_id_suppresses_logging(self, tmp_path: pathlib.Path) -> None:
         """別会話が親の環境印を継承しても常駐ログへ書かない。"""
-        assert self._run_session(tmp_path, model_type="high_tier", expected_session_id="parent") == ""
+        assert self._run_session(tmp_path, model_type="execute", expected_session_id="parent") == ""
 
     def test_matching_session_id_logs(self, tmp_path: pathlib.Path) -> None:
         """親会話のIDに一致すると起動と終端を記録する。"""
-        text = self._run_session(tmp_path, model_type="high_tier", expected_session_id="process-loop")
+        text = self._run_session(tmp_path, model_type="execute", expected_session_id="process-loop")
         assert "event=subagent_start" in text
         assert "event=subagent_end" in text
 
@@ -2428,7 +2456,7 @@ def test_read_records_operation_skill_acquisition_only_for_full_body(
     }
     assert _run(payload, state_dir=tmp_path).returncode == 0
     state = _read_state(tmp_path, "read-acquisition")
-    assert state.get("operation_skill_delivered_agents") == expected
+    assert _legacy_operation_readiness(state) == expected
 
 
 @pytest.mark.parametrize(
@@ -2456,4 +2484,10 @@ def test_codex_bash_read_records_operation_skill_acquisition(
     }
     assert _run(payload, state_dir=tmp_path).returncode == 0
     state = _read_state(tmp_path, "codex-read")
-    assert state.get("operation_skill_delivered_agents") == expected
+    assert _legacy_operation_readiness(state) == expected
+
+
+def _legacy_operation_readiness(state: dict) -> dict | None:
+    """旧公開識別子の互換性を検収する。内容hashと節の取得は共通配送の試験が検収する。"""
+    rows = state.get("operation_skill_delivered_agents", {})
+    return {key: value for key, value in rows.items() if key.startswith("agent-toolkit:")} or None

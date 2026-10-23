@@ -1,4 +1,4 @@
-"""記録されたセルからコマンド実行入力を選び、保存出力の入力経路を判定する。"""
+"""記録されたセルからコマンド実行入力を選び、保存出力の渡し方を判定する。"""
 
 import ast
 import json
@@ -31,22 +31,57 @@ def _literal(token: str) -> str | None:
 
 def command_inputs(tool: str, text: str) -> list[str]:
     """実行ツールの静的なcmd文字列を呼び出しごとに返す。説明用文字列は走査しない。"""
+    return [row["command"] for row in command_input_observations(tool, text) if row["command"] is not None]
+
+
+def command_input_observations(tool: str, text: str) -> list[dict[str, str | None]]:
+    """実行入力と未確定理由を操作ごとに保つ。記録された式は評価しない。"""
     leaf = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1].casefold()
     if leaf != "exec":
-        return [text]
-    tokens = [match[0] for match in _JS_TOKEN.finditer(text) if not match[0].startswith(("//", "/*"))]
+        return [{"command": text, "input": text, "reason": None}]
+    matches = [match for match in _JS_TOKEN.finditer(text) if not match[0].startswith(("//", "/*"))]
+    tokens = [match[0] for match in matches]
     commands = []
-    for index in range(len(tokens) - 6):
-        if tokens[index : index + 5] != ["tools", ".", "exec_command", "(", "{"]:
+    for index in range(len(tokens) - 3):
+        if tokens[index : index + 4] != ["tools", ".", "exec_command", "("]:
+            continue
+        end = index + 4
+        parentheses = 1
+        while end < len(tokens) and parentheses:
+            if tokens[end] == "(":
+                parentheses += 1
+            elif tokens[end] == ")":
+                parentheses -= 1
+            end += 1
+        source = text[matches[index].start() : matches[end - 1].end()]
+        observation = {"command": None, "input": source, "reason": "実行引数を静的に確定できない"}
+        commands.append(observation)
+        if index + 4 >= len(tokens) or tokens[index + 4] != "{":
             continue
         depth = 1
         cursor = index + 5
+        ambiguous = False
+        command_count = 0
         while cursor < len(tokens) and depth:
             token = tokens[cursor]
             if token == "{":
                 depth += 1
             elif token == "}":
                 depth -= 1
+            if depth == 1 and tokens[cursor : cursor + 3] == [".", ".", "."]:
+                ambiguous = True
+            # 計算キーとcmdの短縮記法・アクセサーは、読取に見える値を上書きし得る。
+            # キーを求める式やgetterは評価せず、この操作の全体を未確定へ送る。
+            if depth == 1 and token == "[":
+                ambiguous = True
+            if (
+                depth == 1
+                and (token == "cmd" or _literal(token) == "cmd")
+                and tokens[cursor - 1] in {"{", ",", "get", "set"}
+                and cursor + 1 < len(tokens)
+                and tokens[cursor + 1] in {",", "}", "("}
+            ):
+                ambiguous = True
             if (
                 depth == 1
                 and (token == "cmd" or _literal(token) == "cmd")
@@ -54,19 +89,61 @@ def command_inputs(tool: str, text: str) -> list[str]:
                 and tokens[cursor + 1] == ":"
             ):
                 value = _literal(tokens[cursor + 2])
-                if value is not None:
-                    commands.append(value)
+                command_count += 1
+                if command_count > 1:
+                    ambiguous = True
+                if value is not None and cursor + 3 < len(tokens) and tokens[cursor + 3] in {",", "}"}:
+                    observation["command"] = value
+                    observation["reason"] = None
             cursor += 1
+        if cursor < len(tokens):
+            observation["input"] = text[matches[index].start() : matches[cursor].end()]
+        if depth or ambiguous:
+            observation["command"] = None
+            observation["reason"] = "実行引数の閉じ位置または上書きを静的に確定できない"
     return commands
 
 
-def _files(name: str, args: tuple[str, ...]) -> list[str]:
+def command_file_inputs(name: str, args: tuple[str, ...]) -> list[str]:
     """加工ツールのオプションとプログラムを除いた明示入力を返す。"""
-    values = []
+    values: list[str] = []
     expression = name in {"sed", "awk", "gawk", "jq", "rg", "grep"}
     index = 0
     while index < len(args):
         value = args[index]
+        if value == "--":
+            values.extend(args[index + 1 + int(expression) :])
+            return values
+        if name in {"rg", "grep"} and value in {
+            "-g",
+            "--glob",
+            "--iglob",
+            "-t",
+            "--type",
+            "-T",
+            "--type-not",
+            "--encoding",
+            "-m",
+            "--max-count",
+            "-A",
+            "--after-context",
+            "-B",
+            "--before-context",
+            "-C",
+            "--context",
+            "--include",
+            "--exclude",
+            "--exclude-dir",
+            "--color",
+            "--colors",
+            "--sort",
+            "--sortr",
+        }:
+            index += 2
+            continue
+        if name == "rg" and value == "-E":
+            index += 2
+            continue
         if name == "jq" and value in {"--arg", "--argjson", "--slurpfile", "--rawfile"}:
             index += 3
             continue
@@ -132,7 +209,7 @@ def processes_output(command: str) -> bool:
                     redirected.append(tokens[index + 1])
                 elif token.startswith("<") and not token.startswith("<<"):
                     redirected.append(token[1:])
-            inputs = _files(name, args)
+            inputs = command_file_inputs(name, args)
             explicit = [value for value in [*inputs, *redirected] if value != "-"]
             direct_saved = any(_SAVED.search(value) for value in explicit)
             if (name in _PROCESSORS or python) and (direct_saved or (saved_stream and not explicit)):

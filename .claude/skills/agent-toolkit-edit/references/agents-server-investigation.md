@@ -4,6 +4,16 @@
 委譲先は別プロセスのCLIで内部状態を委譲元から直接観測できないため、観測手段は実装と実行環境の複数箇所へ分散する。
 共有状態ごとの保存先と読み書きの担当は`references/agents-server-shared-state.md`が扱う。
 
+## 名指し参照の読込方法
+
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agents-server-shared-state.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 原因調査で発生位置と直接的原因を確定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
+
 ## 観測できる記録の所在
 
 診断ログのディレクトリは`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir`が解決し、`atk config get state_dir`の出力と一致する。
@@ -44,7 +54,7 @@ MCP再接続の監査記録は`docs/development/audit-records.md`の「docs/deve
 
 通常の公開応答では活動の経過を`seconds_since_activity`で確認し、絶対時刻と実行条件を比べる調査にはMCPの`show(verbose=True)`を使う。API失敗の公開診断は種別、HTTP状態、経過時間で、初期化診断は受信したメッセージの種別とその位置の失敗情報を示す。
 
-原因調査の前に`agent-toolkit:bugfix`を起動し、`agent-toolkit/skills/bugfix/SKILL.md`「直接的原因と事象時点の確定」に従って、実際の起動条件と成功・失敗を比べ、発生位置を再現する。その入力には本書の診断ログの`engine`・`launch_kind`と委譲先CLIの診断を使い、SDKと環境をそろえる再現には「外部プロセスでの再現」の起動形を使う。
+原因調査の前に`agent-toolkit:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」に従って、実際の起動条件と成功・失敗を比べ、発生位置を再現する。その入力には本書の診断ログの`engine`・`launch_kind`と委譲先CLIの診断を使い、SDKと環境をそろえる再現には「外部プロセスでの再現」の起動形を使う。
 
 ## 資源記録の読み方
 

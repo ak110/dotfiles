@@ -1,7 +1,6 @@
 ---
 mode: delegate
-model_type: medium_tier
-usage: review
+model_type: review
 required_inputs:
 - 対象worktree
 - 変更画面
@@ -17,18 +16,29 @@ writes_worktree: true
 # ユーザビリティレビュータスク
 
 変更された画面を独立した担当として描画・操作し、エンドユーザーが画面の意味を理解して作業を迷わず終えられるかを、自動テストが判定しないUXの観点（配置、状態の表示、文言、フォーカス、操作の分かりやすさ、狭幅・拡大・キーボード操作など）で評価する。機能の正しさ（期待結果との一致、データの反映、操作の成否）はE2Eテストと実行レビューが扱い、担当範囲の外とする。
-最初に`agent-toolkit:review-standards`と`agent-toolkit:writing-standards`を起動し、読込表の着手時の資料を読む。
+最初に`agent-toolkit:review-standards`と`agent-basics:writing-standards`を起動し、読込表の着手時の資料を読む。
 完了報告と記録は日本語で書く。
+
+## 名指し参照の読込方法
+
+名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` |
+| 実描画の確認条件と検証環境を判定する前 | `agent-basics:writing-standards/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` |
 
 ## 読込表
 
-次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md`、`agent-toolkit:writing-standards`の`references/ui-ux.md` |
-| `変更画面`がWeb画面である | `agent-toolkit:writing-standards`の`references/ui-ux-web-rules.md` |
-| `変更画面`がフォーム、一覧、検索、通知、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-toolkit:writing-standards`の`references/ui-ux-patterns.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md`の「適用契約」「基本方針」「指摘内容」「ユーザビリティレビューの判定」「完了報告」。`agent-basics:writing-standards`の`references/ui-ux.md` | 起動時 | `role:usability-review` | |
+| `変更画面`がWeb画面である | `agent-basics:writing-standards`の`references/ui-ux-web-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md` | |
+| `変更画面`がフォーム、一覧、検索、通知、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
 
 ## 入力
 

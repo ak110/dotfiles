@@ -33,11 +33,17 @@ def test_start_parameter_descriptions_are_self_contained() -> None:
 
 
 def test_start_description_selects_mode_and_lists_minimal_calls() -> None:
-    """`start`の説明と`mode`の引数説明が、公開する全modeの最小呼び出し例を持つ。"""
+    """`start`の説明と`mode`の引数説明が、公開する全modeの受理可能な呼び出し例を持つ。"""
     tool = _start_tool()
     description = tool.description + tool.parameters["properties"]["mode"]["description"]
     for mode in tool_names.START_MODES:
+        if mode == "task":
+            continue
         assert f"- {mode}: `{{" in description, mode
+    assert '- 通常task: `{"cwd":' in description
+    assert '- 軽量task: `{"cwd":' in description
+    assert tool_descriptions.START_NORMAL_TASK_EXAMPLE in description
+    assert tool_descriptions.START_LIGHTWEIGHT_TASK_EXAMPLE in description
 
 
 @pytest.mark.asyncio

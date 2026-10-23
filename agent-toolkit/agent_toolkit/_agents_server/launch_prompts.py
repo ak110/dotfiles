@@ -12,44 +12,27 @@ from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._agents_server.tool_descriptions import EXPLORE_BACKEND_CAPABILITIES, EXPLORE_COMMON_CAPABILITIES
 from agent_toolkit._common import message_format, plugin_environment
 
+# ベース指示の公開入力契約と再検証はdocs/development/audit-records.mdの
+# 「agent-toolkit/agent_toolkit/_agents_server/launch_prompts.py：委譲先のベース指示：2026年10月23日」にある。
+
 TASK_MODEL_TYPES = {
-    "add-wi.subagent.md": "high_tier",
-    "bulk-replace-review.subagent.md": "low_tier",
-    "copilot-review-audit.subagent.md": "high_tier",
-    "defect-investigation.subagent.md": "high_tier",
-    "exec-review.subagent.md": "medium_tier",
-    "exec.subagent.md": "high_tier",
-    "external-write-review.subagent.md": "low_tier",
-    "lane-integration.subagent.md": "high_tier",
-    "pick-wi-explain.subagent.md": "low_tier",
-    "reader-fit-review.subagent.md": "low_tier",
-    "recurrence-self-check.subagent.md": "medium_tier",
-    "refine-prompt.subagent.md": "medium_tier",
-    "session-termination.subagent.md": "high_tier",
-    "usability-review.subagent.md": "medium_tier",
-    "wi-draft-review.subagent.md": "medium_tier",
-}
-"""frontmatterを持たない旧版の役割文書だけに使うモデル段位の読取互換。新しい役割は追加しない。"""
-
-
-TASK_USAGES = {
-    "add-wi.subagent.md": "base",
-    "bulk-replace-review.subagent.md": "chores",
-    "copilot-review-audit.subagent.md": "base",
-    "defect-investigation.subagent.md": "base",
+    "add-wi.subagent.md": "execute",
+    "bulk-replace-review.subagent.md": "review_fast",
+    "copilot-review-audit.subagent.md": "execute",
+    "defect-investigation.subagent.md": "execute",
     "exec-review.subagent.md": "review",
     "exec.subagent.md": "execute",
-    "external-write-review.subagent.md": "chores",
-    "lane-integration.subagent.md": "base",
-    "pick-wi-explain.subagent.md": "chores",
-    "reader-fit-review.subagent.md": "chores",
+    "external-write-review.subagent.md": "review_fast",
+    "lane-integration.subagent.md": "execute",
+    "pick-wi-explain.subagent.md": "chores_fast",
+    "reader-fit-review.subagent.md": "review_fast",
     "recurrence-self-check.subagent.md": "review",
-    "refine-prompt.subagent.md": "base",
-    "session-termination.subagent.md": "base",
+    "refine-prompt.subagent.md": "chores",
+    "session-termination.subagent.md": "execute",
     "usability-review.subagent.md": "review",
     "wi-draft-review.subagent.md": "review",
 }
-"""旧版の役割文書だけに使う用途の読取互換。現行の用途はfrontmatterが所有する。"""
+"""frontmatterを持たない旧版の役割文書だけに使う工程の読取互換。新しい役割は追加しない。"""
 
 
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
@@ -69,6 +52,17 @@ NORMATIVE_ELEMENT = message_format.AUTO_INSERTED_ELEMENT
 
 
 NORMATIVE_SOURCE = "agent-toolkit"
+
+
+SUBAGENT_BASE_INSTRUCTIONS = _read_prompt("agents-server-base.md")
+
+
+RESULT_REPORT_INSTRUCTIONS = (
+    SUBAGENT_BASE_INSTRUCTIONS.split("<!-- quality-principles:result:start -->", maxsplit=1)[1]
+    .split("<!-- quality-principles:result:end -->", maxsplit=1)[0]
+    .strip()
+)
+"""共通規範を省く軽量委譲にも渡す、同梱済みの結果返却短節。"""
 
 
 def _normative(body: str, *, kind: str) -> str:
@@ -109,7 +103,7 @@ def _explore_system_prompt(backend: str) -> str:
     """共通の探索契約へ、選んだbackendの調査手段を加える。"""
     return _normative(
         f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}\n\n"
-        f"{EXPLORE_COMMON_CAPABILITIES}{EXPLORE_BACKEND_CAPABILITIES[backend]}",
+        f"{EXPLORE_COMMON_CAPABILITIES}{EXPLORE_BACKEND_CAPABILITIES[backend]}\n\n{RESULT_REPORT_INSTRUCTIONS}",
         kind="explore",
     )
 
@@ -120,13 +114,17 @@ EXPLORE_SYSTEM_PROMPT = _explore_system_prompt("codex")
 CLAUDE_EXPLORE_SYSTEM_PROMPT = _explore_system_prompt("claude")
 
 
-SHELL_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}", kind="shell")
+SHELL_SYSTEM_PROMPT = _normative(
+    f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}\n\n{RESULT_REPORT_INSTRUCTIONS}", kind="shell"
+)
 
 
-WRITE_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-write.md')}", kind="write")
+WRITE_SYSTEM_PROMPT = _normative(
+    f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-write.md')}\n\n{RESULT_REPORT_INSTRUCTIONS}", kind="write"
+)
 
 
-# 起動条件の種別ごとのシステム指示。Claude backendの通常委譲だけは、preset指示へ追記する形で渡す。
+# 起動条件の種別ごとの指示。ホストの基本指示の置換と、役割・規範の配送はbackendが分けて組み立てる。
 LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
     "delegate": DELEGATE_SYSTEM_PROMPT,
     "explore": EXPLORE_SYSTEM_PROMPT,

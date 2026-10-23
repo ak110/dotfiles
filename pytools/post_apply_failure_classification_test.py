@@ -16,6 +16,7 @@ import pytest
 
 from pytools import post_apply
 from pytools._internal import (
+    antigravity_plugin,
     apply_dotfiles_plugins,
     claude_common,
     claude_plugin_references,
@@ -26,6 +27,7 @@ from pytools._internal import (
     install_claude_plugins,
     install_codex_plugins,
     install_libarchive,
+    install_opencode_toolkit,
     prune_claude_plugin_cache,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
@@ -105,6 +107,11 @@ def _opencode_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 def _herdr_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(setup_herdr_cli, "_launcher_path", lambda: tmp_path / "herdr")
     monkeypatch.setattr(setup_cli_common, "run_official_installer", lambda *_args, **_kwargs: (None, "取得に失敗"))
+
+
+def _opencode_toolkit_cli_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    del tmp_path
+    monkeypatch.setattr(common, "resolve_executable", lambda _name: None)
 
 
 def _tmux_clone_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -231,6 +238,12 @@ def _rules_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(common, "atomic_write_text", lambda *_args, **_kwargs: False)
 
 
+def _opencode_toolkit_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(common, "resolve_executable", lambda _name: tmp_path / "opencode")
+    monkeypatch.setattr(install_opencode_toolkit, "sync", _raise(OSError("配布ファイルの書き込みに失敗")))
+
+
 def _codex_link_blocked(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     (tmp_path / "dotfiles" / "src").mkdir(parents=True)
     (tmp_path / ".codex" / "skills" / "x").mkdir(parents=True)
@@ -273,6 +286,12 @@ def _claude_settings_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     monkeypatch.setattr(update_claude_settings, "_SETTINGS_PATH", tmp_path / "settings.json")
     monkeypatch.setattr(update_claude_settings, "_CONFIG_PATH", tmp_path / ".claude.json")
     monkeypatch.setattr(common, "write_settings_hybrid", lambda *_args, **_kwargs: False)
+
+
+def _agy_plugin_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(common, "resolve_executable", lambda _name, **_kwargs: tmp_path / "agy")
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(antigravity_plugin, "sync", _raise(OSError("配布ファイルの書き込みに失敗")))
 
 
 def _gemini_settings_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -387,6 +406,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "Claude Code CLI の導入と更新": [(_claude_cli_installer_fails, 0)],
     "Antigravity CLI の導入": [(_agy_cli_installer_fails, 0)],
     "OpenCode CLI の導入": [(_opencode_cli_installer_fails, 0)],
+    "OpenCode toolkit の同期": [(_opencode_toolkit_cli_missing, 0), (_opencode_toolkit_write_fails, 1)],
     "Herdr CLI の導入と更新": [(_herdr_cli_installer_fails, 0)],
     "agent-toolkit ルールの同期": [(_rules_write_fails, 1)],
     "Codex リンクの同期": [(_codex_link_blocked, 1)],
@@ -401,6 +421,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "旧Codex User scope MCP登録の移行": [(_legacy_codex_mcp_removal_fails, 1)],
     "Claude 設定": [(_claude_settings_write_fails, 1)],
     "Gemini 設定": [(_gemini_settings_write_fails, 1)],
+    "Antigravity plugin の生成と登録": [(_agy_plugin_write_fails, 1)],
     "libarchive (Windows)": [(_libarchive_download_fails, 0)],
     "claude-statusline バイナリの取得": [(_statusline_build_fails, 0)],
     "atk serve 自動起動セットアップ (Linux)": [(_atk_serve_launcher_write_fails, 1)],
@@ -436,6 +457,8 @@ def test_failure_classification_per_step(
     """取得・導入の失敗はスキップで終了コード0、設定の書き換え・撤去の失敗は失敗で終了コード1になる。"""
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
     monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", tmp_path / "state" / "sync-report.json")
+    # 単独の公開操作を試し、update-dotfiles配下で案内を親へ任せる環境変数を引き継がない。
+    monkeypatch.delenv("UPDATE_DOTFILES_RUN_ID", raising=False)
     step = next(step for step in post_apply._DEFAULT_STEPS if step.name == name)
     simulation(monkeypatch, tmp_path)
 

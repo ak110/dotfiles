@@ -288,7 +288,7 @@ PLAN_WI_MACHINE_DETECTABLE_ORIGIN_HEADINGS: dict[str, bool] = {
 """
 
 PLAN_WI_SCOPE_HEADING: str = "適用範囲"
-"""通常AWIファイルで誤りの機構が依存する条件を記録する見出し。"""
+"""通常AWIファイルで誤りの機構が成立する条件を記録する見出し。"""
 
 _FRONTMATTER_DELIMITER: str = "---"
 _FRONTMATTER_SOURCE_PATTERN = re.compile(rf"^{PLAN_WI_SOURCE_KEY}:[ \t]*\S")

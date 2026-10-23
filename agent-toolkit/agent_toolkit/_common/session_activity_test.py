@@ -210,7 +210,7 @@ def test_other_session_records_while_host_probe_blocks(
 
 
 def test_session_end_skips_host_probe(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """SessionEndは祖先探索を通らずに会話の記録を削除する。"""
+    """SessionEndは祖先探索を行わずに会話の記録を削除する。"""
     session_activity.record_activity(
         {"session_id": "ending", "hook_event_name": "PreToolUse"}, process=_host("claude"), state_root=tmp_path
     )

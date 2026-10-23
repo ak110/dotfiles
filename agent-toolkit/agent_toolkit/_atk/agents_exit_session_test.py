@@ -113,8 +113,10 @@ def test_exit_requested_with_current_marker(
     assert agents_exit_session.main() == 0
 
     output = capsys.readouterr()
-    assert json.loads(output.out)["status"] == "exit_requested"
-    assert "ターンを終えると/exit" in output.err
+    result = json.loads(output.out)
+    assert result["status"] == "exit_requested"
+    assert "ターンを終えると/exit" in result["next_action"]
+    assert not output.err
     assert (directory / "request-session-1.txt").read_text(encoding="utf-8") == "requested"
 
 

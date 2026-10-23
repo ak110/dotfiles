@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-rem 同じGit管理下のcwdから呼んだ場合だけ、対象worktreeの入口へ移る。
+rem 同じGit管理下のcwdから呼んだ場合だけ、対象worktreeの起動用バッチを使う。
 for %%I in ("%~dp0..") do set "INSTALL_ROOT=%%~fI"
 set "INSTALL_COMMON="
 pushd "%INSTALL_ROOT%" || exit /b 127

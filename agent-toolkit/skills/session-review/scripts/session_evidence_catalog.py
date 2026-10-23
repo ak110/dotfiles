@@ -254,8 +254,8 @@ def _catalog_family_tokens(family: list[_CollectedRecord]) -> dict[str, int] | s
 def _catalog_agy_child(session_id: str) -> _CollectedRecord | None:
     """走査rootの外にあるAntigravityの委譲先ログを、カタログの子として読み込む。
 
-    agyの委譲先の記録はClaude CodeとCodexの履歴ディレクトリに置かれないため、走査rootだけからは子を引けない。
-    ClaudeとCodexの子は指定root内だけの比較一覧という前提を保つため、走査rootの記録からだけ引く。
+    agyの委譲先の記録はClaude CodeとCodexの履歴ディレクトリに置かれないため、走査rootだけからは子を検索できない。
+    ClaudeとCodexの子は指定root内だけの比較一覧という前提を保つため、走査rootの記録からだけ取得する。
     """
     found = _record_paths.find_session_record(session_id)
     if found is None or found.engine not in {"agy", "opencode"}:

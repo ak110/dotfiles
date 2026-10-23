@@ -1,11 +1,10 @@
 """CodexのBashによる大量の全文取得を共通の本文読取へ誘導する。
 
-Codexではシェル出力の上限を超えた取得が返却本文の欠落を招き、欠落した範囲を回復できないため遮断する。
+Codexでは出力予算を超えた取得が本文の省略を招くため、容量と継続読取の手段を警告する。
 Claude Codeはホストが上限超過を`PARTIAL view`または退避ファイルとして返し、残りを続けて取得できるため対象外とする。
 
-遮断後に対処する型のhookとする。規範は全文取得の前に容量を測る工程を求めず、
-遮断した場合だけ共通の本文読取コマンドで読ませる。閾値を出力上限から導いておけば、
-遮断は実際に上限を超え得るファイルだけで発火し、事前計測の呼び出しを操作のたびに払うより費用が小さい。
+内側コマンドと外側セルの予算をhookから確定できないため、通常の読取を継続する。
+全文と終了状態を保持できる予算なら標準読取を使え、省略時は共通の本文読取へ移れる。
 """
 
 from __future__ import annotations
@@ -27,7 +26,6 @@ lazy from agent_toolkit._common import host_homes, shell_cwd
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import plugin_resources
-lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
 
 # Codexの配布設定の出力上限`tool_output_token_limit = 20000`（トークン）と、
 # agent-toolkitのMarkdownで測った1トークンあたりバイト数の最小値3.10の積は約62,000バイトである。
@@ -38,6 +36,10 @@ _DEFAULT_BYTE_THRESHOLD = 48 * 1024
 _BYTE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_BYTES"
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
 _notice = formatter("pretooluse")
+
+
+def _large_warning(body: str, *, fix: str, subject: str = "") -> str:
+    return _notice(body, tag="warn", fix=fix, removable_cause=False, subject=subject)
 
 
 def _byte_threshold() -> int:
@@ -56,7 +58,7 @@ class _ReadPlan:
 
 
 def _measure_and_plan(path: pathlib.Path) -> _ReadPlan | None:
-    """遮断の判定と対象の説明に必要な容量だけを数える。"""
+    """警告の判定と対象の説明に必要な容量だけを数える。"""
     if not path.is_file():
         return None
     line_count = byte_count = 0
@@ -410,10 +412,10 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
         return None
     reference = plugin_resources.skill_reference("writing-standards", "references/session-records.md")
     return _notice(
-        "セッションの原記録の本文を、汎用ツールで直接参照しようとしている。",
+        "セッションの原記録の本文を、汎用ツールで直接参照しようとしている。\n対象: " + "、".join(str(path) for path in paths),
         tag="warn",
         fix=(
-            "コマンドを使え、実行が許可される担当は`atk run-script session-review-evidence --`へ、"
+            "`atk run-script session-review-evidence --`へ、"
             "ファイルは`--transcript <原記録の絶対パス>`、"
             "本文の検索は`--grep <正規表現>`か`--fixed-string <文字列>`、指定位置は`--detail <record:line>`、"
             "ツール入力は`--tool-calls --tool <名前> --input-regex <正規表現>`を渡す。"
@@ -421,7 +423,6 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
             "`--since <時刻> --observation-boundary <時刻>`を加える。"
             "発話後の呼出順は`--user-events`とツール一覧、または`--bundle`の抽出済み`conversation.jsonl`から集計する。"
             f"入力の選択は{reference}に従い、抽出済みの結果を後処理する。"
-            "コマンドを使えないか実行が制限される担当は、原記録の識別子・位置・必要な照会内容を委譲元へ返し、抽出済みの資料を受け取る。"
         ),
         removable_cause=False,
         escalate_on_repeat=False,
@@ -430,50 +431,52 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
 
 def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int) -> str:
     if _is_session_record(path):
-        return _block_notice(
-            f"原セッション記録の全文取得を遮断した（{plan.byte_count}バイト、閾値: {byte_threshold}バイト）: {path}",
-            fix="コマンドを使え、実行が許可される担当は"
+        return _large_warning(
+            f"原セッション記録の全文取得の出力量を確認する（{plan.byte_count}バイト、"
+            f"通知の閾値: {byte_threshold}バイト）: {path}",
+            fix="まず取得の必要性と範囲を見直す。目的に不要なら取得を中止する。必要な場合は、"
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加える。"
-            "`agent-toolkit:writing-standards`の`references/session-records.md`で入力と照会モードを選ぶ。"
-            "コマンドを使えないか実行が制限される担当は、原記録の識別子・位置・必要な照会内容を委譲元へ返し、抽出済みの資料を受け取る。",
+            "`agent-toolkit:writing-standards`の`references/session-records.md`で入力と照会モードを選ぶ。",
         )
-    return _block_notice(
-        f"{plan.line_count}行、{plan.byte_count}バイトのファイルの全文取得を遮断した（閾値: {byte_threshold}バイト）: {path}",
+    return _large_warning(
+        f"{plan.line_count}行、{plan.byte_count}バイトの全文取得の出力量を確認する"
+        f"（通知の閾値: {byte_threshold}バイト）: {path}",
         fix=(
-            f"コマンドを使え、実行が許可される担当は`{read_file.first_read_command(path)}`で取得し、`text`を連結する。"
+            "内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら、そのまま標準読取を使う。"
+            "予算を超える場合と本文が省略された場合は取得の範囲を選ぶ。"
+            "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使う。"
+            "全文が必要な場合だけ、"
+            f"`{read_file.first_read_command(path)}`で取得し、`text`を連結する。"
             f"継続は`atk read-file --start <next> -- {shlex.quote(str(path))}`の`<next>`へ直前の値を指定し、"
             "`eof`が`true`になるまで同じファイルの`text`を連結する。"
-            "コマンドを使えないか実行が制限される担当は、対象パス・必要な取得範囲を委譲元へ返し、分割取得した資料を受け取る。"
         ),
     )
 
 
 def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan]], byte_threshold: int) -> str:
     if any(_is_session_record(path) for path, _plan in path_counts):
-        return _block_notice(
-            "原セッション記録を含む複数ファイルの全文取得を遮断した。",
-            fix="コマンドを使え、実行が許可される担当は原記録を"
+        return _large_warning(
+            "原セッション記録を含む複数ファイルの全文取得の出力量を確認する。",
+            fix="まず取得の必要性と範囲を見直す。目的に不要なら取得を中止する。必要な原記録を"
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`へ照会条件を渡し、"
-            "通常の本文は別の呼び出しで取得する。入力の選択は`agent-toolkit:writing-standards`の`references/session-records.md`に従う。"
-            "コマンドを使えないか実行が制限される担当は、原記録の識別子・位置・必要な照会内容を委譲元へ返し、抽出済みの資料を受け取る。"
-            "通常資料も含む場合は対象パス・必要な取得範囲を添える。",
+            "通常の本文は別の呼び出しで取得する。入力の選択は`agent-toolkit:writing-standards`の`references/session-records.md`に従う。",
+            subject="\n".join(str(path) for path, _plan in path_counts),
         )
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)
-    details = "、".join(
-        f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト、初回`{read_file.first_read_command(path)}`、"
-        f"継続`atk read-file --start <next> -- {shlex.quote(str(path))}`"
-        for path, plan in path_counts
-    )
-    return _block_notice(
-        f"複数ファイルの全文取得を遮断した（合計: {total_bytes}バイト、閾値: {byte_threshold}バイト）: {details}",
-        fix="コマンドを使え、実行が許可される担当はファイルごとに示したコマンドで取得し、`text`を連結する。"
-        "継続コマンドの`<next>`へ同じファイルの直前の値を指定し、`eof`が`true`になるまで続ける。"
-        "コマンドを使えないか実行が制限される担当は、対象パス・必要な取得範囲を委譲元へ返し、分割取得した資料を受け取る。",
+    details = "、".join(f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト" for path, plan in path_counts)
+    return _large_warning(
+        f"複数ファイルの全文取得の出力量を確認する（合計: {total_bytes}バイト、通知の閾値: {byte_threshold}バイト）: {details}",
+        fix="内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら標準読取を使う。"
+        "予算を超える場合と本文が省略された場合は、取得の必要性と範囲を選ぶ。"
+        "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使う。"
+        "全文が必要なファイルだけ、`atk read-file -- <必要なファイルの絶対パス>`で取得する。"
+        "継続は`atk read-file --start <next> -- <同じファイルの絶対パス>`へ直前の値を指定し、"
+        "`eof`が`true`になるまで同じファイルの`text`を連結する。",
     )
 
 
 def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> str | None:
-    """Codexでパイプ・リダイレクトを持たない単純なBash全文取得のうち、閾値を超えるものだけを遮断する。"""
+    """Codexの単純なBash全文取得で、通知の閾値を超える容量を警告する。"""
     if not is_codex:
         return None
     byte_threshold = _byte_threshold()

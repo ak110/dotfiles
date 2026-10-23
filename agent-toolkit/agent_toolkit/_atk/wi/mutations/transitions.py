@@ -275,7 +275,7 @@ def _apply_transition(
     action: str,
     now: datetime.datetime,
     note: str | None,
-    commit_values: dict[pathlib.Path, CommitMetadata | None],
+    commit_values: dict[pathlib.Path, CommitMetadata | list[CommitMetadata] | None],
     cooldown_days: int | None,
 ) -> None:
     """検証済みエントリを削除するか、同じパスのstateを更新する。"""
@@ -330,7 +330,7 @@ def transition_entries(
     now: datetime.datetime,
     target_repo: str | typing.Iterable[str] | None = None,
     note: str | None = None,
-    commit: str | None = None,
+    commit: str | list[str] | None = None,
     lock_timeout: float = -1,
     force: bool = False,
     state: str | None = None,
@@ -381,7 +381,7 @@ def transition_entries(
             cooldown_days=cooldown_days,
             force=force,
         )
-        commit_values: dict[pathlib.Path, CommitMetadata | None] = (
+        commit_values: dict[pathlib.Path, CommitMetadata | list[CommitMetadata] | None] = (
             commit_values_by_path(paths, commit, local_worktree)
             if action in {"adopt", "reject"}
             else {path: None for path in paths}

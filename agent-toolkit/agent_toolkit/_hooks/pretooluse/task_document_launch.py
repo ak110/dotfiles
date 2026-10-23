@@ -2,7 +2,7 @@
 
 `share/<役割名>.subagent.md`を持つ委譲では、委譲先の手順、権限、検証方法、返却形式は
 `<役割名>.subagent.md`と委譲先が読む規範が定める。委譲プロンプトへそれらを書き足すと、委譲の費用が増え、指示の重複や
-委譲元の先入観が委譲先へ混入する。本モジュールは次の2つを遮断する。
+委譲元の先入観が委譲先へ混入する。本モジュールは次の2つを警告する。
 
 - `agents_server`の`start`のうち、自由本文を渡すmode（`delegate`・`explore`・`write`）の本文が
   `<役割名>.subagent.md`の実行を命じる起動。
@@ -14,8 +14,8 @@
 定型の`<.subagent.mdの絶対パス>の手順を実行せよ。`に限らず、パスの後の空白、`に従って作業せよ`・`に従い作業せよ`などの言い回し、
 `を読み、その手順を実行せよ`のように文書を読む指示へ実行を続ける文、同じ行に続く指示を持つ命令も対象とする。
 
-遮断の根拠: 委譲の起動は委譲プロンプトを委譲先のコンテキストへ取り込ませるため、通した後に結果を復元できない。
-実行主体は同じターンで、通知が示す`start`の呼び出しまたは宣言済みの行だけの本文へ組み直して再実行できる。
+起動形式と余分な説明は警告で案内する。コンテキストへの取込みだけを実害として遮断しない。
+必須入力が欠ける定型起動は、書込所有などの宣言済み契約が成立しないため遮断する。
 宣言を読めない`<役割名>.subagent.md`は入力との一致を確かめられないため遮断しない（`agents_server`の`start`も警告だけで起動を続ける）。
 宣言の解析は`agents_server`の`start`と`agent_toolkit._common.task_documents`を共有する。
 読解・比較の参照と、コードや引用に載せた命令の例は通す。命令を確定できない参照も通し、会話の意味を推定しない。
@@ -33,8 +33,10 @@ lazy from markdown_it.token import Token
 
 from agent_toolkit._agents_server import tool_names as _tool_names
 from agent_toolkit._common import task_documents
+from agent_toolkit._hooks.pretooluse.decision import Decision
 lazy from agent_toolkit._agents_server import launch_requests
-lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
+lazy from agent_toolkit._hooks.notice import _WARN_TAG
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 START_TOOLS: frozenset[str] = frozenset(
     f"{namespace}{operation}" for namespace in _tool_names.MCP_NAMESPACES for operation in _tool_names.START_OPERATIONS
@@ -75,45 +77,52 @@ _CONTINUATION_PREFIX = "  "
 _MARKDOWN = markdown_it.MarkdownIt("commonmark")
 
 
-def check_task_document_launch(tool_name: str, tool_input: dict) -> str | None:
-    """遮断する起動なら遮断通知の本文を返し、通す場合はNoneを返す。"""
+def check_task_document_launch(tool_name: str, tool_input: dict) -> Decision:
+    """起動形式の支援と、宣言済みの必須入力の不成立を分けて返す。"""
     prompt = tool_input.get("prompt")
     if not isinstance(prompt, str):
-        return None
+        return Decision()
     if tool_name in START_TOOLS:
         operation = tool_name.rsplit("__", 1)[-1]
         mode = _tool_names.start_mode(operation, tool_input)
-        return _check_free_text_start(mode, prompt) if mode in FREE_TEXT_START_MODES else None
+        return _check_free_text_start(mode, prompt) if mode in FREE_TEXT_START_MODES else Decision()
     if tool_name in AGENT_TOOL_NAMES:
         return _check_agent_prompt(prompt)
-    return None
+    return Decision()
 
 
-def _check_free_text_start(mode: str, prompt: str) -> str | None:
+def _check_free_text_start(mode: str, prompt: str) -> Decision:
     document = _execution_document(prompt)
     if document is None:
-        return None
+        return Decision()
     role_name = document.name.removesuffix(task_documents.TASK_DOCUMENT_SUFFIX)
-    return _block_notice(
-        f"blocked: `start`の`{mode}`で渡した`prompt`が`{document}`の手順を実行する命令を持つ。"
-        "`<役割名>.subagent.md`を持つ委譲は自由本文の起動の対象外である。",
-        fix=(
-            f"`agents_server`の`start`へ`mode`を指定せず、役割名の`subagent_md_path={role_name}`と、"
-            "`<役割名>.subagent.md`が宣言した入力名だけを持つ`extra_params`を渡して起動する。"
-            f"サーバー自身のプラグインルートと別の版の文書を使う場合だけ、`subagent_md_path`へ`{document}`を渡す。"
-        ),
+    return Decision(
+        notices=(
+            _llm_notice(
+                f"`start`の`{mode}`で渡した`prompt`が`{document}`の手順を実行する命令を持つ。"
+                "`<役割名>.subagent.md`を持つ委譲は自由本文の起動の対象外である。",
+                tag=_WARN_TAG,
+                subject=prompt,
+                removable_cause=True,
+                fix=(
+                    f"`agents_server`の`start`へ`mode`を指定せず、役割名の`subagent_md_path={role_name}`と、"
+                    "`<役割名>.subagent.md`が宣言した入力名だけを持つ`extra_params`を渡して起動する。"
+                    f"サーバー自身のプラグインルートと別の版の文書を使う場合だけ、`subagent_md_path`へ`{document}`を渡す。"
+                ),
+            ),
+        )
     )
 
 
-def _check_agent_prompt(prompt: str) -> str | None:
+def _check_agent_prompt(prompt: str) -> Decision:
     document = _execution_document(prompt)
     if document is None:
-        return None
+        return Decision()
     lines = prompt.rstrip().splitlines()
     expected_first = f"{document}の手順を実行せよ。"
     declaration = task_documents.read_declaration(document)
     if isinstance(declaration, str):
-        return None
+        return Decision()
     accepted = declaration.accepted
     violations: list[str] = []
     if not lines or not _is_canonical_first_line(lines[0], document):
@@ -133,21 +142,32 @@ def _check_agent_prompt(prompt: str) -> str | None:
             params = launch_requests.parse_named_inputs(lines[1:])
             launch_requests.builtin_task_prompt(str(document), params)
         except ValueError as error:
-            return _block_notice(
-                str(error),
-                fix=(
-                    "`atk run-script delegation-prompt -- --input <要求JSONの絶対パス>`で"
-                    "必須入力を持つ本文を生成し、その本文で起動し直す。"
-                ),
+            return Decision(
+                block=_block_notice(
+                    str(error),
+                    fix=(
+                        "`atk run-script delegation-prompt -- --input <要求JSONの絶対パス>`で"
+                        "必須入力を持つ本文を生成し、その本文で起動し直す。"
+                    ),
+                )
             )
-        return None
+        return Decision()
     shown = "\n".join(f"  {line}" for line in violations[:5])
-    return _block_notice(
-        f"blocked: `Agent`の本文が`{document}`を指しながら、1行目の命令と宣言済みの入力以外の行を含む。\n宣言外の行:\n{shown}",
-        fix=(
-            f"1行目を`{expected_first}`とし、2行目以降は`<入力名>: <値>`の行と半角空白2字で字下げした続きの行だけにする。"
-            f"受理する入力名: {', '.join(sorted(accepted))}。手順、権限、返却形式は`<役割名>.subagent.md`が定めるため書かない。"
-        ),
+    return Decision(
+        notices=(
+            _llm_notice(
+                f"`Agent`の本文が`{document}`を指しながら、1行目の命令と宣言済みの入力以外の行を含む。\n宣言外の行:\n{shown}",
+                tag=_WARN_TAG,
+                subject=prompt,
+                removable_cause=True,
+                fix=(
+                    f"1行目を`{expected_first}`とし、2行目以降は`<入力名>: <値>`の行と"
+                    "半角空白2字で字下げした続きの行だけにする。"
+                    f"受理する入力名: {', '.join(sorted(accepted))}。"
+                    "手順、権限、返却形式は`<役割名>.subagent.md`が定めるため書かない。"
+                ),
+            ),
+        )
     )
 
 

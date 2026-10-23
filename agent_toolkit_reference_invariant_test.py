@@ -9,11 +9,17 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 import pathlib
 import re
 import subprocess
+import warnings
 
+import pytest
+from agent_toolkit._common import read_triggers
 from agent_toolkit._plan.structure import is_agent_doc_target_file
+from agent_toolkit._testing.git_repository import commit_all, init_repository, run_git
 
 _PLUGIN_PREFIX = "agent-" + "toolkit"
 _REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
@@ -26,6 +32,16 @@ _PYTHON_PATH_PATTERN = re.compile(
     r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.py"
 )
 _SOURCE_SUFFIXES = frozenset({".json", ".md", ".py"})
+# 基準版の原文・由来・逆引きを固定引用として保持する正式データ。READMEと他の文書は検査する。
+_VERBATIM_REFERENCE_SOURCES = frozenset(
+    pathlib.Path(value)
+    for value in (
+        "docs/development/norm-restructure-20261022/ledger.tsv",
+        "docs/development/norm-restructure-20261022/mapping.json",
+        "docs/development/norm-restructure-20261022/reverse-index.tsv",
+    )
+)
+_SOURCE_MANIFEST = pathlib.Path("docs/development/norm-restructure-20261022/source-manifest.json")
 _INCIDENTS_RUNTIME = pathlib.Path("docs/development/incidents-runtime.md")
 _INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-validation.md")
 _INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-workflows.md")
@@ -217,6 +233,8 @@ def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list
     """指定した追跡ファイルからスキルの起動名と相対パス参照を収集する。"""
     references: list[tuple[str, pathlib.Path]] = []
     for relative in sources:
+        if relative in _VERBATIM_REFERENCE_SOURCES:
+            continue
         content = (root / relative).read_text(encoding="utf-8")
         references.extend((match.group(), relative) for match in _SKILL_INVOCATION_PATTERN.finditer(content))
         references.extend((match.group().rstrip("/"), relative) for match in _SKILL_PATH_PATTERN.finditer(content))
@@ -236,11 +254,36 @@ def _reference_exists(root: pathlib.Path, reference: str) -> bool:
 def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
     """実体へ解決できない参照と不足した既知の事故記録参照を返す。"""
     allowed_counts = _allowed_unresolved_reference_counts(sources)
+    captured_versions = _captured_reference_versions(root, sources)
+    unverified_capture_versions: set[str] = set()
     unresolved: list[tuple[str, pathlib.Path]] = []
     for reference, source in _collect_references(root, sources):
         if _reference_exists(root, reference):
             continue
         key = (reference, source)
+        if key in captured_versions:
+            captured_version = captured_versions.pop(key)
+            captured = subprocess.run(
+                ["git", "cat-file", "-e", f"{captured_version}:{reference}"],
+                cwd=root,
+                check=False,
+                capture_output=True,
+            )
+            if captured.returncode == 0:
+                continue
+            captured_commit = run_git(root, "cat-file", "-e", f"{captured_version}^{{commit}}", check=False)
+            if captured_commit.returncode != 0:
+                shallow = run_git(root, "rev-parse", "--is-shallow-repository", check=False)
+                if shallow.returncode == 0 and shallow.stdout.strip() == "true":
+                    if captured_version not in unverified_capture_versions:
+                        warnings.warn(
+                            f"{_SOURCE_MANIFEST}: 浅いcheckoutに取得版{captured_version}が無いため、"
+                            "sourcesの当時版の実体照合は未実施。現在参照の検査は継続する。",
+                            RuntimeWarning,
+                            stacklevel=2,
+                        )
+                        unverified_capture_versions.add(captured_version)
+                    continue
         if allowed_counts.get(key, 0) > 0:
             allowed_counts[key] -= 1
             continue
@@ -248,6 +291,34 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
     for key, remaining_count in allowed_counts.items():
         unresolved.extend([key] * remaining_count)
     return unresolved
+
+
+def _captured_reference_versions(root: pathlib.Path, sources: list[pathlib.Path]) -> dict[tuple[str, pathlib.Path], str]:
+    """固定manifestの取得ソースだけを、その記録が宣言した取得版へ対応付ける。
+
+    READMEや任意のJSON、manifest内でも取得ソース一覧にない参照は現在の実体で検査する。
+    有効な取得版とSHA-256を持つinventoryの各キー1回だけを歴史参照にする。
+    同じ値が他のfieldにも現れる場合は、その追加参照を現在の実体で検査する。
+    呼出側は取得版のGitオブジェクトを照合し、浅いcheckoutの取得版不在は未検収と報告する。
+    """
+    if _SOURCE_MANIFEST not in sources:
+        return {}
+    manifest = json.loads((root / _SOURCE_MANIFEST).read_text(encoding="utf-8"))
+    captured_head = manifest.get("head_at_capture")
+    captured_sources = manifest.get("sources")
+    if (
+        not isinstance(captured_head, str)
+        or re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", captured_head) is None
+        or not isinstance(captured_sources, dict)
+    ):
+        return {}
+    return {
+        (reference, _SOURCE_MANIFEST): captured_head
+        for reference, metadata in captured_sources.items()
+        if isinstance(metadata, dict)
+        and isinstance(metadata.get("sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"]) is not None
+    }
 
 
 def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
@@ -281,6 +352,76 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
 
     root_test.unlink()
     assert _unresolved_references(tmp_path, [source]) == [(f"{_PLUGIN_PREFIX}/skills/contract_test.py", source)]
+
+
+def test_captured_source_manifest_resolves_only_recorded_files_at_capture_commit(tmp_path: pathlib.Path) -> None:
+    """撤去済みの取得ソースは取得版で確かめ、未取得・架空・版不明の参照は欠損として残す。"""
+    reference = f"{_PLUGIN_PREFIX}/agent_toolkit/captured_example.py"
+    repository = init_repository(tmp_path / "repo", files={reference: "# 取得時の本文\n"})
+    captured_head = commit_all(repository, "取得版")
+    (repository / reference).unlink()
+    manifest = repository / _SOURCE_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    captured_sources = {reference: {"sha256": hashlib.sha256("# 取得時の本文\n".encode()).hexdigest()}}
+    data = {"head_at_capture": captured_head, "sources": captured_sources}
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    current = pathlib.Path("current-notes.json")
+    (repository / current).write_text(json.dumps({"path": reference}), encoding="utf-8")
+
+    assert _unresolved_references(repository, [_SOURCE_MANIFEST, current]) == [(reference, current)]
+
+    data["current_reference"] = reference
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [(reference, _SOURCE_MANIFEST)]
+    del data["current_reference"]
+
+    recorded_hash = captured_sources[reference]["sha256"]
+    captured_sources[reference]["sha256"] = "不正な取得hash"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [(reference, _SOURCE_MANIFEST)]
+    captured_sources[reference]["sha256"] = recorded_hash
+
+    nonexistent = f"{_PLUGIN_PREFIX}/agent_toolkit/never_captured.py"
+    captured_sources[nonexistent] = {"sha256": "a" * 64}
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [(nonexistent, _SOURCE_MANIFEST)]
+
+    data["head_at_capture"] = "0" * 40
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [
+        (reference, _SOURCE_MANIFEST),
+        (nonexistent, _SOURCE_MANIFEST),
+    ]
+
+
+def test_captured_manifest_in_shallow_checkout_keeps_current_references_checked(tmp_path: pathlib.Path) -> None:
+    """取得commitの無い浅いcheckoutは歴史照合の未実施を示し、現在参照の欠損を検出する。"""
+    reference = f"{_PLUGIN_PREFIX}/agent_toolkit/captured_example.py"
+    text = "# 取得時の本文\n"
+    repository = init_repository(tmp_path / "origin", files={reference: text})
+    captured_head = commit_all(repository, "取得版")
+    (repository / reference).unlink()
+    manifest = repository / _SOURCE_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    data = {"head_at_capture": captured_head, "sources": {reference: {"sha256": hashlib.sha256(text.encode()).hexdigest()}}}
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    commit_all(repository, "保存済み取得inventoryを保持してsourceを撤去")
+    shallow = tmp_path / "shallow"
+    run_git(tmp_path, "clone", "--depth=1", repository.as_uri(), str(shallow))
+    assert run_git(shallow, "cat-file", "-e", f"{captured_head}^{{commit}}", check=False).returncode != 0
+
+    with pytest.warns(RuntimeWarning, match="当時版の実体照合は未実施"):
+        assert not _unresolved_references(shallow, [_SOURCE_MANIFEST])
+
+    data["current_reference"] = reference
+    (shallow / _SOURCE_MANIFEST).write_text(json.dumps(data), encoding="utf-8")
+    current = pathlib.Path("current-notes.json")
+    (shallow / current).write_text(json.dumps({"path": reference}), encoding="utf-8")
+    with pytest.warns(RuntimeWarning, match="当時版の実体照合は未実施"):
+        assert _unresolved_references(shallow, [_SOURCE_MANIFEST, current]) == [
+            (reference, _SOURCE_MANIFEST),
+            (reference, current),
+        ]
 
 
 def test_codex_snapshot_requires_exact_known_legacy_references(tmp_path: pathlib.Path) -> None:
@@ -388,6 +529,7 @@ def test_incident_history_rejects_different_unresolved_references(tmp_path: path
 
 # 見出し名で節を指す参照を検査する規範Markdownの範囲。
 _NORMATIVE_MARKDOWN_PREFIXES = (
+    "agent-basics/skills/",
     f"{_PLUGIN_PREFIX}/rules/",
     f"{_PLUGIN_PREFIX}/skills/",
     f"{_PLUGIN_PREFIX}/share/",
@@ -396,11 +538,12 @@ _NORMATIVE_MARKDOWN_PREFIXES = (
 )
 _PLUGIN_ROOT_VARIABLES = ("${CLAUDE_PLUGIN_ROOT}/", "${PLUGIN_ROOT}/", "<plugin root>/")
 _HEADING_REFERENCE_PATTERN = re.compile(
-    rf"(?:{_PLUGIN_PREFIX}:(?P<skill>[A-Za-z0-9_-]+)`?の)?`(?P<path>[^`\s]+?\.md)`(?:の)?「(?P<name>[^」\n]+)」"
+    rf"(?:(?P<plugin>{_PLUGIN_PREFIX}|agent-basics):(?P<skill>[A-Za-z0-9_-]+)`?の)?`(?P<path>[^`\s]+?\.md)`(?:の)?「(?P<name>[^」\n]+)」"
 )
 # `` `<パス>.md`の`### <見出し>` ``のように見出し記号付きで節を指す記法。
 _HEADING_SYMBOL_REFERENCE_PATTERN = re.compile(
-    rf"(?:{_PLUGIN_PREFIX}:(?P<skill>[A-Za-z0-9_-]+)`?の)?`(?P<path>[^`\s]+?\.md)`の`#{{2,6}} (?P<name>[^`\n]+)`"
+    rf"(?:(?P<plugin>{_PLUGIN_PREFIX}|agent-basics):(?P<skill>[A-Za-z0-9_-]+)`?の)?"
+    r"`(?P<path>[^`\s]+?\.md)`の`#{2,6} (?P<name>[^`\n]+)`"
 )
 # 規範Markdownに加えて見出し名参照を検査する設計文書。
 _EXTENDED_HEADING_REFERENCE_DOCS = re.compile(r"docs/development/(?:design[^/]*|architecture|operations)\.md")
@@ -435,22 +578,27 @@ def _resolve_heading_reference_target(
     skill: str | None,
     reference: str,
     markdown_paths: list[pathlib.Path],
+    plugin: str | None = None,
 ) -> pathlib.Path | None:
     """参照が一意に指すMarkdownを返す。一意に決まらない参照は検査の対象外としてNoneを返す。"""
     for variable in _PLUGIN_ROOT_VARIABLES:
         reference = reference.replace(variable, f"{_PLUGIN_PREFIX}/")
+    if reference.startswith(("agent-toolkit:", "agent-basics:")):
+        return read_triggers.resolve_document(reference, root / source, root / _PLUGIN_PREFIX)
     if skill:
-        bases = [pathlib.Path(_PLUGIN_PREFIX, "skills", skill), pathlib.Path(_PLUGIN_PREFIX, "skills")]
+        bases = [pathlib.Path(plugin or _PLUGIN_PREFIX, "skills", skill), pathlib.Path(plugin or _PLUGIN_PREFIX, "skills")]
     else:
         bases = [pathlib.Path("."), *source.parents]
     for base in bases:
         candidate = root / base / reference
         if candidate.is_file():
-            return candidate
+            return read_triggers.resolve_read_source(candidate, root / _PLUGIN_PREFIX)
     if skill:
         return None
     suffix_matches = [path for path in markdown_paths if path.as_posix().endswith(f"/{reference}")]
-    return root / suffix_matches[0] if len(suffix_matches) == 1 else None
+    return (
+        read_triggers.resolve_read_source(root / suffix_matches[0], root / _PLUGIN_PREFIX) if len(suffix_matches) == 1 else None
+    )
 
 
 def _unresolved_heading_references(
@@ -464,7 +612,21 @@ def _unresolved_heading_references(
         content = (root / source).read_text(encoding="utf-8")
         matches = [*_HEADING_REFERENCE_PATTERN.finditer(content), *_HEADING_SYMBOL_REFERENCE_PATTERN.finditer(content)]
         for match in matches:
-            target = _resolve_heading_reference_target(root, source, match.group("skill"), match.group("path"), markdown_paths)
+            target = _resolve_heading_reference_target(
+                root, source, match.group("skill"), match.group("path"), markdown_paths, match.group("plugin")
+            )
+            line = content[
+                content.rfind("\n", 0, match.start()) + 1 : content.find("\n", match.end())
+                if "\n" in content[match.end() :]
+                else len(content)
+            ]
+            contextual = [
+                item
+                for item in read_triggers.material_targets(line, root / source, root / _PLUGIN_PREFIX, references_only=True)
+                if match.group("name") in item.heading
+            ]
+            if len({item.path for item in contextual}) == 1:
+                target = contextual[0].path
             if target is None:
                 continue
             if match.group("name") not in target.read_text(encoding="utf-8"):
@@ -507,6 +669,44 @@ def test_heading_symbol_reference_fails_after_heading_removal(tmp_path: pathlib.
     markdown_paths = [standard.relative_to(tmp_path)]
 
     assert _unresolved_heading_references(tmp_path, [source], markdown_paths) == [("docs/standard.md「消えた節」", source)]
+
+
+def test_heading_reference_follows_explicit_compatibility_source(tmp_path: pathlib.Path) -> None:
+    """転送先の節の実在を検査し、消えた節を互換入口の案内文で補わない。"""
+    toolkit = tmp_path / "agent-toolkit"
+    basics = tmp_path / "agent-basics"
+    (basics / ".claude-plugin").mkdir(parents=True)
+    (basics / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
+    actual = basics / "skills/writing-standards/references/rule.md"
+    actual.parent.mkdir(parents=True)
+    actual.write_text("# 品質\n## 判定\n本文\n", encoding="utf-8")
+    wrapper = toolkit / "skills/writing-standards/references/rule.md"
+    wrapper.parent.mkdir(parents=True)
+    wrapper.write_text(
+        "# 入口\n\n<!-- read-source: agent-basics:writing-standards/references/rule.md -->\n\n判定を引き継ぐ。\n",
+        encoding="utf-8",
+    )
+    source = pathlib.Path("source.md")
+    (tmp_path / source).write_text("`agent-toolkit:writing-standards`の`references/rule.md`「判定」\n", encoding="utf-8")
+    paths = [actual.relative_to(tmp_path), wrapper.relative_to(tmp_path), source]
+    assert not _unresolved_heading_references(tmp_path, [source], paths)
+    actual.write_text("# 品質\n節を撤去した。\n", encoding="utf-8")
+    assert _unresolved_heading_references(tmp_path, [source], paths) == [("references/rule.md「判定」", source)]
+
+
+def test_heading_reference_keeps_same_skill_context(tmp_path: pathlib.Path) -> None:
+    """直前に起動した同スキルのSKILLを、参照元自身のSKILLと区別する。"""
+    root = tmp_path / "agent-toolkit/skills"
+    bugfix = root / "bugfix/SKILL.md"
+    bugfix.parent.mkdir(parents=True)
+    bugfix.write_text("# 不具合\n## 所要の原因調査\n基準\n", encoding="utf-8")
+    source = pathlib.Path("agent-toolkit/skills/review-standards/references/reviewee.md")
+    (tmp_path / source).parent.mkdir(parents=True)
+    (tmp_path / source).parent.parent.joinpath("SKILL.md").write_text("# レビュー\n", encoding="utf-8")
+    (tmp_path / source).write_text(
+        "`agent-toolkit:bugfix`を起動し、同スキルの`SKILL.md`「所要の原因調査」へ渡す。\n", encoding="utf-8"
+    )
+    assert not _unresolved_heading_references(tmp_path, [source], [bugfix.relative_to(tmp_path), source])
 
 
 def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
@@ -792,3 +992,29 @@ def test_agent_doc_reader_detector_ignores_fixture_paths_and_reports_repository_
         "sample_test.py::test_glob -> AGENTS.md",
         "sample_test.py::test_reads -> AGENTS.md",
     ]
+
+
+def test_verbatim_ledger_references_preserve_current_document_checks(tmp_path: pathlib.Path) -> None:
+    """正式データの固定引用を保持し、同階層のREADME・別JSON・現行文書の参照不良を全て検出する。"""
+    historical = [
+        pathlib.Path("docs/development/norm-restructure-20261022") / name
+        for name in ("ledger.tsv", "mapping.json", "reverse-index.tsv")
+    ]
+    current = [
+        pathlib.Path("docs/development/norm-restructure-20261022/README.md"),
+        pathlib.Path("docs/development/norm-restructure-20261022/current-notes.json"),
+        pathlib.Path(".claude/skills/example/SKILL.md"),
+    ]
+    references = [
+        f"{_PLUGIN_PREFIX}:archived-example",
+        f"{_PLUGIN_PREFIX}/skills/archived-example/SKILL.md",
+        f"{_PLUGIN_PREFIX}/agent_toolkit/archived_example.py",
+    ]
+    for relative in [*historical, *current]:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join(references), encoding="utf-8")
+
+    unresolved = _unresolved_references(tmp_path, [*historical, *current])
+
+    assert unresolved == [(reference, source) for source in current for reference in references]

@@ -419,6 +419,7 @@ def test_agents_wait_help_states_own_limit_and_standalone_invocation(
         (["run-script", "session-review-evidence", "--", "t.jsonl", "--detail", "1"], False),
         (["run-script", "session-review-evidence", "--", "t.jsonl", "--user-events"], True),
         (["agents", "wait"], True),
+        (["review-audit", "pending", "--repo", "owner/repo"], True),
     ],
 )
 def test_output_saving_help_matches_cli_condition(argv: list[str], saved: bool) -> None:

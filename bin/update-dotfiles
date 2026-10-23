@@ -11,7 +11,7 @@ if [[ ! -x "$UV" ]]; then
 fi
 self_update_failed=0
 if [[ "${1:-}" != "logs" && "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != "1" ]]; then
-    "$UV" self update || self_update_failed=1
+    bash "${SCRIPT_DIR}/libexec/update_uv.sh" "$UV" || self_update_failed=1
 fi
 run_exit=0
 # 更新中にランチャーが置換されても、解析済みの終了処理を実行する。

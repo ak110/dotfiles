@@ -10,15 +10,17 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shlex
 
 import pytest
 
 from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 
 _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
+_SKILL = _SKILL_REFERENCES.parent / "SKILL.md"
 _APPROVAL = _SKILL_REFERENCES / "approval-scope.md"
 _CHOICE = _SKILL_REFERENCES / "choice-construction.md"
-_WARNING = "確認の前に全文読む資料"
+_WARNING = "操作前に全文読む資料が未取得"
 _QUESTION_INPUT = {
     "questions": [{"question": "どちらにしますか？", "header": "方針", "options": [{"label": "A"}, {"label": "B"}]}]
 }
@@ -40,19 +42,36 @@ def _bash(command: str) -> dict:
     }
 
 
-def _result(tool_id: str, *, error: bool = False) -> dict:
+def _result(tool_id: str, *, error: bool = False, content: str = "取得した本文") -> dict:
     return {
         "type": "user",
-        "message": {"content": [{"type": "tool_result", "tool_use_id": tool_id, "content": "取得した本文", "is_error": error}]},
+        "message": {"content": [{"type": "tool_result", "tool_use_id": tool_id, "content": content, "is_error": error}]},
     }
 
 
 def _successful_read(path: pathlib.Path) -> list[dict]:
-    return [_read(path), _result(f"read-{path.name}")]
+    return [_read(path), _result(f"read-{path.name}", content=path.read_text(encoding="utf-8"))]
 
 
 def _successful_bash(command: str) -> list[dict]:
-    return [_bash(command), _result("bash-read")]
+    arguments = shlex.split(command)
+    base = _SKILL_REFERENCES
+    if arguments[:1] == ["cd"]:
+        base = pathlib.Path(arguments[1])
+        arguments = arguments[arguments.index("&&") + 1 :]
+    if arguments[:1] == ["cat"]:
+        paths = [pathlib.Path(value) for value in arguments[1:] if not value.startswith("-")]
+        text = "".join((path if path.is_absolute() else base / path).read_text(encoding="utf-8") for path in paths)
+    elif arguments[:2] == ["atk", "read-file"]:
+        values = arguments[arguments.index("--") + 1 :]
+        assert len(values) == 1
+        body = pathlib.Path(values[0]).read_text(encoding="utf-8")
+        text = json.dumps({"start": 0, "end": len(body), "next": None, "eof": True}) + "\n" + body
+        maximum = int(arguments[arguments.index("--max-bytes") + 1]) if "--max-bytes" in arguments else 16384
+        assert len(text.encode("utf-8")) <= maximum
+    else:
+        text = " ".join(arguments[1:])
+    return [_bash(command), _result("bash-read", content=text)]
 
 
 _COMPACT = {"type": "system", "subtype": "compact_boundary"}
@@ -60,6 +79,8 @@ _COMPACT = {"type": "system", "subtype": "compact_boundary"}
 
 def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> dict:
     transcript = tmp_path / "transcript.jsonl"
+    # 比較対象の2資料とは独立に、共有の読込方法を含む親スキル本文を圧縮後にも取得する。
+    entries = [*entries, *_successful_read(_SKILL)]
     transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
     return {
         "tool_name": "AskUserQuestion",
@@ -99,10 +120,13 @@ def test_unread_reference_warns_without_blocking(
     遮断は`AskUserQuestion`の入力の再発行を要し損失が大きいため、警告で返す。
     """
     payload = _payload(tmp_path, entries)
-    for _ in range(2):
+    for attempt in range(2):
         result = _run(payload)
         assert result.returncode == 0
         context = _additional_context(result)
+        if attempt:
+            assert context == ""
+            continue
         assert context.count(_WARNING) == 1
         for path in (_APPROVAL, _CHOICE):
             assert (str(path) in context) == (path in unread)

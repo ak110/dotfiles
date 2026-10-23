@@ -3,13 +3,16 @@
   "mcpServers": {
     "pyfltr": {
       "type": "stdio",
-      "command": "uvx",
+      "command": "uv",
       "args": [
-        "--from",
-        "pyfltr>=3.22.0",
-        "--exclude-newer-package",
-        "pyfltr=false",
-        "pyfltr",
+        "run",
+        "--no-config",
+        "--no-project",
+        "--python",
+        "3.15",
+        "python",
+        "${PLUGIN_ROOT}/scripts/launch.py",
+        "agent_toolkit/_common/pyfltr_entry.py",
         "mcp"
       ]
     },

@@ -5,11 +5,21 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import pathlib
+import subprocess
 from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import codex, codex_providers, manager
+from agent_toolkit._agents_server import (
+    codex,
+    codex_providers,
+    manager,
+    record_paths,
+    resume_waits,
+    session_handoff,
+    state,
+)
 from agent_toolkit._atk import config
 from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import FakeCodexClient, install_backend
@@ -34,6 +44,7 @@ class ProviderClient(FakeCodexClient):
         self.reject: set[str] = set()
         self.mismatch = False
         self.usage_error = False
+        self.window_minutes: int | None = None
         self.explicit_openai_api = False
         self.notify_closed = True
         self.lose_turn_response = False
@@ -73,7 +84,7 @@ class ProviderClient(FakeCodexClient):
             return {
                 "accountId": self.snapshot_id,
                 "ordinaryUsageAllowed": self.allowed,
-                "rateLimits": {"primary": {"usedPercent": 100, "resetsAt": 1}},
+                "rateLimits": {"primary": {"usedPercent": 100, "resetsAt": 1, "windowDurationMins": self.window_minutes}},
             }
         result = await super().request(method, params, **kwargs)
         if method == "thread/unsubscribe":
@@ -467,7 +478,7 @@ async def test_provider_transition_preserves_pending_children(monkeypatch, tmp_p
         session = await backend.start("孫の結果を待つ作業", str(tmp_path))
         session.live_child_session_ids.add("child-thread")
         await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
-        assert session.pending_result is not None and session.auto_resume_deadline is not None
+        assert session.pending_result is not None and resume_waits.is_background_completion_wait(session)
         assert not session.codex_provider_resume_pending
         response = await backend.send_message(session, codex_providers.CONTINUE_PROMPT)
         assert response["delivery"] == "reply_started"
@@ -518,7 +529,7 @@ async def test_empty_provider_configuration_keeps_current_resume_settings(
         response = await backend.send_message(session, "続き")
         assert response["delivery"] == "reply_started"
         assert client.connection == "paid-b"
-        assert all("modelProvider" not in params for method, params in client.requests if method == "thread/resume")
+        assert all(params["modelProvider"] == "paid-b" for method, params in client.requests if method == "thread/resume")
 
 
 @pytest.mark.asyncio
@@ -632,3 +643,280 @@ async def test_api_primary_registry_restores_after_release(monkeypatch, tmp_path
                 assert root.sessions["provider-thread"].codex_subscription_provider is None
             finally:
                 await root.close()
+
+
+def write_resume_rollout(path: pathlib.Path, identifier: str, provider: str | None, item: dict[str, Any] | None) -> bytes:
+    """CLI 0.164.0のsession_metaとresponse_itemを、暗号化内容を模した値で保存する。"""
+    records = [{"type": "session_meta", "payload": {"id": identifier, "model_provider": provider}}]
+    if item is not None:
+        records.append(item if item.get("type") == "compacted" else {"type": "response_item", "payload": item})
+    path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+    return path.read_bytes()
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"type": "compaction", "id": "cmp_fake", "encrypted_content": "fake-compressed-state"},
+        {"type": "compacted", "payload": {"compaction_response_id": "cmp_fake"}},
+        {"type": "reasoning", "summary": [], "encrypted_content": "fake-reasoning-state"},
+    ],
+)
+@pytest.mark.parametrize("primary", ["openai", "paid-a"])
+@pytest.mark.asyncio
+async def test_opaque_state_switch_collects_result_and_hands_off(monkeypatch, tmp_path, provider_environment, item, primary):
+    """公開の追送・結果回収・引き継ぎ起動を経て、元会話と進捗を保持した後任を起動する。"""
+    del provider_environment
+    monkeypatch.setenv(config._config_env_name("codex_model_providers"), f"{primary},paid-b")
+    monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)
+    record = tmp_path / "rollout.jsonl"
+    client = ProviderClient()
+    client.primary = primary
+    client.rollout_path = record
+    original_request = client.request
+    starts = 0
+
+    async def request(method, params=None, **kwargs):
+        nonlocal starts
+        response = await original_request(method, params, **kwargs)
+        if method == "thread/start":
+            starts += 1
+            if starts > 1:
+                response["thread"]["id"] = "successor-thread"
+        if method == "turn/start" and client.connection != primary:
+            pytest.fail("互換性の無い接続先が元threadの状態を消費した")
+        return response
+
+    def extract(command, **_kwargs):
+        work = pathlib.Path(command[command.index("--work-dir") + 1])
+        (work / "conversation.md").write_text("完了済みの編集と残る検証の会話", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(client, "request", request)
+    monkeypatch.setattr(record_paths, "find_session_record", lambda _identifier: record_paths.SessionRecord("codex", (record,)))
+    monkeypatch.setattr(session_handoff.process_tree, "run_with_timeout", extract)
+    async with manager.AgentsServerManager() as root, backend_with_client(monkeypatch, client, root) as backend:
+        install_backend(root, "codex", backend)
+        started = await root.start("codex:gpt-6-sol/high", "編集してから検証する", str(tmp_path))
+        session = root.sessions[started["session_id"]]
+        await complete(backend, session)
+        await root.send_message(session.session_id, "検証は最後にまとめる")
+        session.agent_message = "編集を完了し、検証が残っている"
+        failure = (
+            {"codexErrorInfo": "usageLimitExceeded"}
+            if primary == "openai"
+            else {"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 401}}}
+        )
+        original = write_resume_rollout(record, session.session_id, primary, item)
+        await complete(backend, session, failure)
+        before = sum(method == "turn/start" for method, _params in client.requests)
+        response = await root.send_message(session.session_id, "残る作業を続ける")
+        assert response["delivery"] == "reply_failed"
+        result = await root.wait()
+        assert result["status"] == "failed" and "handoff_from" in result["next_action"]
+        assert result["agent_message"] == "編集を完了し、検証が残っている"
+        assert sum(method == "turn/start" for method, _params in client.requests) == before
+        assert not any(method == "thread/resume" and params["modelProvider"] != primary for method, params in client.requests)
+        assert session.codex_model_provider == primary
+        assert record.read_bytes() == original
+        successor = await root.start_handoff(session.session_id)
+        prompt = root.sessions[successor["session_id"]].prompt
+        assert "検証は最後にまとめる" in prompt and "編集を完了し、検証が残っている" in prompt
+        assert "完了済みの操作" in prompt and str(record) in prompt
+        public = json.dumps([response, result, successor], ensure_ascii=False)
+        assert "codex_state_provider" not in public and "paid-b" not in public
+
+
+@pytest.mark.parametrize("lifecycle", ["retained", "released", "restarted", "settings", "legacy_migration"])
+@pytest.mark.asyncio
+async def test_opaque_state_resume_uses_origin_in_every_lifecycle(monkeypatch, tmp_path, provider_environment, lifecycle):
+    """保持・解放・復元した会話の生成元と選択先が異なる場合、次turnより前に再開を拒否する。"""
+    del provider_environment
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    client = ProviderClient()
+    record = tmp_path / "rollout.jsonl"
+    client.rollout_path = record
+    original = write_resume_rollout(
+        record, "provider-thread", "openai", {"type": "reasoning", "encrypted_content": "fake-state"}
+    )
+    session_registry.publish(
+        "provider-thread",
+        terminal=True,
+        engine="codex",
+        cwd=str(tmp_path),
+        model="gpt-6-sol",
+        model_type="codex:gpt-6-sol/high",
+        effort="high",
+        turn_seq=1,
+        codex_model_provider=None if lifecycle == "settings" else "paid-b",
+        codex_state_provider=None if lifecycle == "legacy_migration" else "openai",
+        status="completed",
+        launch_info=session_registry.LaunchInfo(
+            prompt="元の進捗を保つ", followup_prompts=("最後に検証する",), final_responses=((1, "編集済み"),)
+        ),
+    )
+    if lifecycle == "released":
+        session_registry.release("provider-thread", reason="stopped")
+    if lifecycle == "settings":
+        client.primary = "paid-b"
+        monkeypatch.setenv(config._config_env_name("codex_model_providers"), "")
+    async with manager.AgentsServerManager() as root, backend_with_client(monkeypatch, client, root) as backend:
+        install_backend(root, "codex", backend)
+        if lifecycle == "retained":
+            await root.show_session("provider-thread")
+        response = await root.send_message("provider-thread", "残る工程")
+        assert response["delivery"] == "reply_failed"
+        result = await root.wait()
+        assert "handoff_from" in result["next_action"]
+        restored = root.sessions["provider-thread"]
+        assert dict(restored.final_responses)[1] == "編集済み"
+        assert restored.followup_prompts == ("最後に検証する",)
+        assert not any(method in {"thread/resume", "turn/start"} for method, _params in client.requests)
+        assert record.read_bytes() == original
+
+
+@pytest.mark.asyncio
+async def test_opaque_state_created_after_safe_switch_resumes_on_selected_connection(
+    monkeypatch, tmp_path, provider_environment
+):
+    """状態なしの移行後に生成した暗号化内容は、保存・解放後も同じ生成先で再利用できる。"""
+    del provider_environment
+    client = ProviderClient()
+    record = tmp_path / "rollout.jsonl"
+    client.rollout_path = record
+    async with backend_with_client(monkeypatch, client) as backend:
+        session = await backend.start("続ける作業", str(tmp_path))
+        write_resume_rollout(record, session.session_id, "openai", None)
+        await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
+        assert (await backend.send_message(session, "継続"))["delivery"] == "reply_started"
+        assert session.codex_state_provider == "paid-a"
+        await complete(backend, session)
+        original = write_resume_rollout(
+            record, session.session_id, "openai", {"type": "reasoning", "encrypted_content": "fake-api-state"}
+        )
+        info = state.SessionResumeState.from_session(session)
+        await backend.release_session(session)
+        client.closed = False
+        resumed = await backend.resume(
+            session.session_id,
+            state.ResumePrompt("同じ接続で継続"),
+            str(tmp_path),
+            model_provider=info.codex_model_provider,
+            state_provider=info.codex_state_provider,
+        )
+        assert resumed.status == "running" and client.connection == "paid-a"
+        assert record.read_bytes() == original
+
+
+@pytest.mark.parametrize("record_kind", ["missing", "broken", "no_metadata", "unknown_source", "same_source"])
+@pytest.mark.asyncio
+async def test_legacy_resume_requires_observed_state_compatibility(monkeypatch, tmp_path, record_kind):
+    """記録欠損・未知生成元と、同一接続で再開できる旧形式の暗号化会話を区別する。"""
+    monkeypatch.setenv(config._config_env_name("codex_model_providers"), "")
+    client = ProviderClient()
+    record = tmp_path / "rollout.jsonl"
+    client.rollout_path = record
+    opaque = {"type": "reasoning", "encrypted_content": "fake-state"}
+    if record_kind == "broken":
+        record.write_text('{"payload":', encoding="utf-8")
+    elif record_kind == "no_metadata":
+        record.write_text(json.dumps({"type": "response_item", "payload": opaque}) + "\n", encoding="utf-8")
+    elif record_kind != "missing":
+        write_resume_rollout(record, "thread-codex", "openai" if record_kind == "same_source" else None, opaque)
+    async with backend_with_client(monkeypatch, client) as backend:
+        resumed = await backend.resume("thread-codex", state.ResumePrompt("旧記録の継続"), str(tmp_path))
+        expected = record_kind == "same_source"
+        assert resumed.status == ("running" if expected else "failed")
+        assert sum(method == "turn/start" for method, _params in client.requests) == int(expected)
+        if not expected:
+            action = session_handoff.result_next_action(
+                {"engine": resumed.engine, "session_id": resumed.session_id, **resumed.previous_result()}
+            )
+            assert action is not None and "handoff_from" in action
+
+
+@pytest.mark.asyncio
+async def test_verified_state_provider_survives_registry_release_and_restart(monkeypatch, tmp_path):
+    """再開を許可した生成先の記録が、通常設定の会話でも解放・再起動を越える。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    session_registry.publish(
+        "verified-thread",
+        terminal=True,
+        engine="codex",
+        cwd=str(tmp_path),
+        codex_state_provider="paid-b",
+        status="completed",
+    )
+    session_registry.release("verified-thread", reason="stopped")
+    async with manager.AgentsServerManager() as root:
+        restored = await root._restore_registry_session("verified-thread")
+        assert restored is not None and restored.codex_state_provider == "paid-b"
+        assert restored.codex_model_provider is None
+        assert "codex_state_provider" not in json.dumps(await root.show_session("verified-thread"))
+
+
+@pytest.mark.parametrize(
+    ("policy", "minutes", "waits"),
+    [
+        ("never", 300, False),
+        ("five-hour", 300, True),
+        ("five-hour", 10080, False),
+        ("five-hour", None, False),
+        ("always", 10080, True),
+        ("always", None, True),
+    ],
+)
+@pytest.mark.asyncio
+async def test_codex_usage_wait_policy_selects_same_session_or_api(
+    monkeypatch, tmp_path, provider_environment, policy, minutes, waits
+):
+    """保存記録の実際の窓長と設定から、同一会話の解除待ちとAPI候補への継続を選ぶ。"""
+    del provider_environment
+    monkeypatch.setenv(config._config_env_name("codex_usage_limit_wait"), policy)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    directory = tmp_path / "sessions" / "2026" / "10" / "23"
+    directory.mkdir(parents=True)
+    client = ProviderClient()
+    rollout = directory / "rollout-test-thread-codex.jsonl"
+    client.rollout_path = rollout
+    async with backend_with_client(monkeypatch, client) as backend:
+        session = await backend.start("上限後も残工程を継続する", str(tmp_path))
+        write_resume_rollout(rollout, session.session_id, "openai", None)
+        with rollout.open("a", encoding="utf-8") as stream:
+            for payload in (
+                {
+                    "type": "token_count",
+                    "rate_limits": {"primary": {"used_percent": 100, "window_minutes": minutes, "resets_at": 2000000000}},
+                },
+                {"type": "task_complete", "error": {"codex_error_info": "usage_limit_exceeded"}},
+            ):
+                stream.write(json.dumps({"type": "event_msg", "payload": payload}) + "\n")
+        await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
+        assert (session.usage_limit_resume_at is not None) is waits
+        assert session.codex_provider_resume_pending is not waits
+        assert (await backend.send_message(session, "残る工程を続ける"))["delivery"] == "reply_started"
+        assert client.connection == ("openai" if waits else "paid-a")
+
+
+@pytest.mark.parametrize(
+    ("policy", "minutes", "expected"),
+    [
+        ("never", 300, "paid-a"),
+        ("five-hour", 300, "openai"),
+        ("five-hour", 10080, "paid-a"),
+        ("always", None, "openai"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_known_subscription_exhaustion_obeys_wait_policy_before_start(
+    monkeypatch, tmp_path, provider_environment, policy, minutes, expected
+):
+    """起動前の枯渇報告も、通知後の待機と同じ利用枠の種類で接続候補を選ぶ。"""
+    del provider_environment
+    monkeypatch.setenv(config._config_env_name("codex_usage_limit_wait"), policy)
+    client = ProviderClient()
+    client.allowed = False
+    client.window_minutes = minutes
+    async with backend_with_client(monkeypatch, client) as backend:
+        await backend.start("上限時の起動", str(tmp_path))
+        assert client.connection == expected

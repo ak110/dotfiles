@@ -9,7 +9,13 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._testing.pretooluse_support import _SHARE_DIR, _plan_file_state_env, _run, _run_posttooluse
+from agent_toolkit._testing.pretooluse_support import (
+    _SHARE_DIR,
+    _additional_context,
+    _plan_file_state_env,
+    _run,
+    _run_posttooluse,
+)
 
 _EXEC_DOCUMENT = _SHARE_DIR / "exec.subagent.md"
 
@@ -26,7 +32,7 @@ def test_role_launch_hook_requires_same_named_inputs(tool_name: str, tmp_path: p
 
 
 def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | None = None) -> subprocess.CompletedProcess[str]:
-    tool_input = {"prompt": prompt, "cwd": str(tmp_path), "model_type": "high_tier"}
+    tool_input = {"prompt": prompt, "cwd": str(tmp_path), "model_type": "execute"}
     if mode is not None:
         tool_input["mode"] = mode
     session_id = f"task-document-launch-{tool_name.rsplit('__', 1)[-1].lower()}-{mode}"
@@ -61,17 +67,17 @@ def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | Non
         ("mcp__agents_server__start", "write"),
     ],
 )
-def test_free_text_start_pointing_task_document_is_blocked(tool_name: str, mode: str, tmp_path: pathlib.Path) -> None:
+def test_free_text_start_pointing_task_document_is_warned(tool_name: str, mode: str, tmp_path: pathlib.Path) -> None:
     """自由本文のmodeで`<役割名>.subagent.md`を指すと遮断し、taskの`start`と役割名の`subagent_md_path`での起動を案内する。
 
     通すと、`<役割名>.subagent.md`の宣言を経ない委譲プロンプトが委譲先のコンテキストへ取り込まれる。
     """
     result = _invoke(tool_name, f"{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n", tmp_path, mode)
 
-    assert result.returncode == 2
-    assert "subagent_md_path=exec`" in result.stderr
-    assert f"`{_EXEC_DOCUMENT}`" in result.stderr
-    assert f"`start`の`{mode}`" in result.stderr
+    assert result.returncode == 0
+    assert "subagent_md_path=exec`" in _additional_context(result)
+    assert f"`{_EXEC_DOCUMENT}`" in _additional_context(result)
+    assert f"`start`の`{mode}`" in _additional_context(result)
 
 
 @pytest.mark.parametrize("mode", [None, "shell"])
@@ -132,9 +138,9 @@ def test_execution_uses_its_document_after_other_reference(tool_name: str, mode:
     task = _SHARE_DIR / "reader-fit-review.subagent.md"
     prompt = f"読解対象: {_EXEC_DOCUMENT}\n{task}の手順を実行せよ。\n成果物: {tmp_path / 'guide.md'}\n"
     result = _invoke(tool_name, prompt, tmp_path, mode)
-    assert result.returncode == 2
-    assert str(task) in result.stderr
-    assert f"`{_EXEC_DOCUMENT}`を指" not in result.stderr
+    assert result.returncode == 0
+    assert str(task) in _additional_context(result)
+    assert f"`{_EXEC_DOCUMENT}`を指" not in _additional_context(result)
 
 
 def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib.Path) -> None:
@@ -157,9 +163,9 @@ def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib
     blocked = _invoke("Agent", minimal + "\nあなたはレーン担当である。権限はcommitまでとする。", tmp_path)
 
     assert passed.returncode == 0
-    assert blocked.returncode == 2
-    assert "あなたはレーン担当である。" in blocked.stderr
-    assert "レーン識別子" in blocked.stderr
+    assert blocked.returncode == 0
+    assert "あなたはレーン担当である。" in _additional_context(blocked)
+    assert "レーン識別子" in _additional_context(blocked)
 
 
 def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path) -> None:
@@ -184,8 +190,8 @@ def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path
     assert _invoke("Agent", initial, tmp_path).returncode == 0
     assert _invoke("Agent", rereview, tmp_path).returncode == 0
     rejected = _invoke("Agent", rereview + "追加説明: 全文から指摘して\n", tmp_path)
-    assert rejected.returncode == 2
-    assert "追加説明" in rejected.stderr
+    assert rejected.returncode == 0
+    assert "追加説明" in _additional_context(rejected)
 
 
 def test_exec_review_previous_revision_passes_task_document_hook(tmp_path: pathlib.Path) -> None:
@@ -200,7 +206,7 @@ def test_exec_review_previous_revision_passes_task_document_hook(tmp_path: pathl
     assert _invoke("Agent", prompt, tmp_path).returncode == 0
 
 
-def test_agent_prompt_with_role_preface_before_command_is_blocked(tmp_path: pathlib.Path) -> None:
+def test_agent_prompt_with_role_preface_before_command_is_warned(tmp_path: pathlib.Path) -> None:
     """1行目が命令でない本文は、命令の前に置いた前置きを宣言外の行として遮断する。"""
     prompt = f"あなたは実装担当である。\n{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n"
 
@@ -209,8 +215,8 @@ def test_agent_prompt_with_role_preface_before_command_is_blocked(tmp_path: path
         env_overrides=_plan_file_state_env(tmp_path),
     )
 
-    assert result.returncode == 2
-    assert "あなたは実装担当である。" in result.stderr
+    assert result.returncode == 0
+    assert "あなたは実装担当である。" in _additional_context(result)
 
 
 _LAUNCHERS = [
@@ -245,7 +251,7 @@ _LAUNCHERS = [
         "continuative-verb",
     ],
 )
-def test_rephrased_execution_command_is_blocked(tool_name: str, mode: str | None, command: str, tmp_path: pathlib.Path) -> None:
+def test_rephrased_execution_command_is_warned(tool_name: str, mode: str | None, command: str, tmp_path: pathlib.Path) -> None:
     """定型行から表記を変えた引用外の実行命令も、宣言外の指示を伴う役割起動として遮断する。
 
     定型行との完全一致だけで判定すると、パスの後の空白、言い回し、同じ行の続きを持つ命令が遮断の判定を経ずに委譲先へ届く。
@@ -253,8 +259,8 @@ def test_rephrased_execution_command_is_blocked(tool_name: str, mode: str | None
     other = _SHARE_DIR / "reader-fit-review.subagent.md"
     result = _invoke(tool_name, command.format(document=_EXEC_DOCUMENT, other=other), tmp_path, mode)
 
-    assert result.returncode == 2
-    assert str(_EXEC_DOCUMENT) in result.stderr
+    assert result.returncode == 0
+    assert str(_EXEC_DOCUMENT) in _additional_context(result)
 
 
 @pytest.mark.parametrize(("tool_name", "mode"), _LAUNCHERS)

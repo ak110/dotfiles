@@ -99,6 +99,22 @@ Codexの委譲先（`codex:sol/medium`）とClaudeの委譲先（`claude:sonnet[
 変更前のCodex backendは、同じ待機表明を`completed`の結果として公開し、孫の識別子を`error.unobservedSessions`へ記録していた（同日の対照観測）。
 再検証は`make test-agents-live`と同じpytest引数（`-m live_agents`）を指定し、呼び出し元の会話と状態ディレクトリを分けるため別の`CLAUDE_CODE_SESSION_ID`を与えて同じテストを実行する。
 
+## agent-toolkit/agent_toolkit/_agents_server/codex_resume_state.py：会話状態の生成先：2026年10月23日
+
+Codex担当がCLI 0.164.0の同日rolloutで、先頭`session_meta.model_provider`、providerを持たない`turn_context`、`response_item`のreasoning内`encrypted_content`を観測した。対象は`rollout-2026-10-23T16-42-16-01a167b5-e496-7fd2-846b-2965d3c94ea0.jsonl`である。値を再掲せず、フィールドの所在と型を確認した。互換性検体はこの形を架空のIDと暗号文へ置換している。再確認時は当該版の実会話で生成したrolloutの`session_meta`と不透明状態を持つ応答のキーを読み、接続先選択と生成先の記録を分けて照合する。元障害の別ホストの原記録を再現したという証拠には用いない。
+
+## agent-toolkit/agent_toolkit/_agents_server/launch_prompts.py：委譲先のベース指示：2026年10月23日
+
+codex-cli 0.163.0の`codex app-server generate-json-schema --out <保存先>`でschemaを生成した。
+生成された`v2/ThreadStartParams.json`と`v2/ThreadResumeParams.json`は、どちらも`baseInstructions`と`developerInstructions`を受理する。ベース指示の差替えと既存のdeveloper指示の配送を併用できる。
+再検証は導入版を`codex --version`で確認し、同じ公開コマンドが生成する両schemaで行う。
+
+Claude Agent SDK 0.2.170を使った`claude_test.py`では、通常委譲の`system_prompt`が
+独自ベース本文・委譲先規範・自動再開通知・CLI情報を含む文字列であることと、軽量区分の設定の保持を確認した。
+`codex_test.py`では全起動区分の開始・通常再開・復元再開に同じベース本文が入ることを確認した。
+これらと`launch_prompts_test.py`、`dot_codex_config_test.py`の合計247件は成功した。
+この観測は公開リクエストとSDK引数の構築を検証するもので、外部モデルによる回答内容の実測は含まない。
+
 ## agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日
 
 2026年9月11日、`~/.claude/projects`配下の記録（Claude Code 2.1.239から2.1.268）で、`agents_server`のstart系ツールの呼び出し489件を集計した。
@@ -282,12 +298,12 @@ transcriptだけの取得を画面表示の観測として扱わず、画面へ�
 同じ応答でツール呼び出しより前に置いた地の文の一部が、APIの応答の時点で要約へ置き換わる根拠を記す。観測はいずれも`thinking`ブロックの署名を開かずに行った。
 
 公式文書「Thinking」（<https://platform.claude.com/docs/en/build-with-claude/thinking>、2026年10月7日取得）の節「Progress updates between tool calls」を確かめた。
-同節は、Fable 5.1、Mythos 5.1、Opus 5.5、Sonnet 5.5、Fable 5ではモデルがツール呼び出しの間にprogress updateを書き、直後の`tool_use`の前に独立した`thinking`ブロックとして返ると記す。
+同節はFable 5.1、Mythos 5.1、Opus 5.5、Sonnet 5.5、Fable 5ではモデルがツール呼び出しの間にprogress updateを書き、直後の`tool_use`の前に独立した`thinking`ブロックとして返ると記す。
 返り方は`display`で決まる。`"omitted"`（これらのモデルの既定）では文面が空で、`"updates"`（beta）では要約文になる。`"summarized"`では推論のブロックと区別できない要約になる。
 `"updates"`については「any `thinking` block with non-empty text is a progress update」「The text you receive is a summary of the progress update」と記す。どの`display`でも文面が空で返ることがあるとも記す。
 
 Claude Code 2.1.291の本体では、出力の項目`narration_block_indexes`の説明が該当ブロックを「server summaries of the prose between tool calls, not the model's own reasoning」と記す。
-項目`narration_hint`の説明は、そのブロックの末尾へ`· summarized`を描く規則を端末の表示と同じとする。
+項目`narration_hint`の説明はそのブロックの末尾へ`· summarized`を描く規則を端末の表示と同じとする。
 本体が要求へ`display: "updates"`とbeta`thinking-display-updates-2026-08-18`を加える条件は次の3つが揃うときである。環境変数`CLAUDE_CODE_THINKING_DISPLAY_UPDATES`が未設定であること、思考の表示の指定が`omitted`でないこと、設定`showThinkingSummaries`が`true`でないことである。
 観測した環境は`showThinkingSummaries`が`false`で、同環境変数を設定していなかった。
 
@@ -309,13 +325,13 @@ Claude Code 2.1.291の本体では、出力の項目`narration_block_indexes`の
 
 既知の報告としてIssue `anthropics/claude-code#95764`（2026年9月21日作成）が同じ事象を報告し、2026年10月7日時点でOPENで、Anthropicの回答は無かった。
 
-対策の`send_to_user`は、2026年10月6日にClaude Code 2.1.291で試作のFunction hooks moduleを使って確かめた。
+対策の`send_to_user`は2026年10月6日にClaude Code 2.1.291で試作のFunction hooks moduleを使って確かめた。
 `claude plugin validate`と`claude plugin test`（`ToolUse`の行を端末と`desktop`で描くテスト）が合格した。
 `claude -p --plugin-dir <試作> --model claude-opus-5-5`へ公式ガイドの誘導文を渡し、答えを先に伝えてからファイルを読むよう指示した。モデルはこのツールを呼び、入力は原文のまま記録された。
 tmux内の対話のClaude Code（Opus 5.5）では、ツールで送った見出しと箇条書きが端末の画面へその形で表示された。
 
-再検証は次の2つに限る。1つ目は、本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して`narration_block_indexes`の説明を確かめることである。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
-2つ目は、`display: "updates"`を要求する環境の記録で、`thinking`ブロックを文面の有無で数えることである。
+再検証は次の2つに限る。1つ目は本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して`narration_block_indexes`の説明を確かめることである。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+2つ目は`display: "updates"`を要求する環境の記録で、`thinking`ブロックを文面の有無で数えることである。
 
 ## agent-toolkit/share/rules-main.claude-code.md：ターンの終え方：2026年10月7日
 
@@ -342,7 +358,7 @@ run `36791008397`が進行中でjob `110143643856`が`completed/success`のと�
 APIは全jobログ、`--log-failed`は失敗ステップを返すため、出力件数の一致は求めない。
 進行中runが無い場合はその条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
 
-## agent-toolkit/skills/bugfix/references/ci-failure-handling.md：分類判定の補助：2026年10月7日
+## agent-basics/skills/bugfix/references/ci-failure-handling.md：分類判定の補助：2026年10月7日
 
 2026年10月7日、GitLabのリポジトリ（Runnerはgitlab-runner 18.2.1のDocker executor）のAWI処理回で、許容された終了コード4で終わるはずのjobがjobとして終了コード1を報告した事象を再現した。
 手段は次のとおりである。GitLabのjob取得とjob更新の要求に応える最小のHTTPサーバー（偽のjob API）を、コンテナーから到達できるアドレスで起動した。`gitlab/gitlab-runner:v18.2.1`の`run-single --executor docker`（helper `x86_64-v18.2.1`）でjobを1件ずつ実行し、Runnerがjob APIへ送った`exit_code`を報告値として読んだ。
@@ -355,7 +371,7 @@ bashのイメージで外部コマンドが4で終わると、`after_script`の�
 再検証では同じ手段で、bashのイメージで`python -c 'import sys; sys.exit(4)'`だけをscriptに持つjobを、同フラグの指定なしと`true`の2条件で実行し、前者が1、後者が4を報告することを確かめる。
 Runnerの版を変えた場合は、その版の`shells/bash.go`で生成形を確かめてから同じ2条件を実行する。
 
-## agent-toolkit/skills/check-execution/references/diagnostics.md：検証結果の診断と警告の判定：2026年10月3日
+## agent-basics/skills/check-execution/references/diagnostics.md：読む出力：2026年10月3日
 
 2026年10月3日、pyfltr 3.19.9でJSONLの要約と診断の粒度を確認した。
 `uv run --frozen pyfltr run --commands=textlint --no-fix agent-toolkit/share/add-wi.parent.md`は終了コード0だった。
@@ -610,7 +626,7 @@ agent-toolkit 2.199.0の基準commitは2026年10月8日「Merge pull request #14
 
 再検証ではClaude Bashで`type grep`と`grep --version`、`command grep --version`を取得する。専用領域に`a`を含む通常テキスト、ignore対象とbinary対象を用意し、関数の`grep`と`command grep`へ同じ対象・パターンを渡す。各標準出力・標準エラー・終了コードを保存して比較し、無出力の理由とパイプの後段で使う起動実体を区別する。
 
-## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年9月16日
+## agent-basics/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年9月16日
 
 条文は2026年10月6日まで`llm-characteristics.md`「知識の想起」にあり、同ファイルの撤去に伴って`agent-documents-basics.md`「語調と現行規則の表現」の理由へ移った。
 
@@ -662,39 +678,39 @@ Antigravityの`explore`と`delegate`はどちらも作業ディレクトリの`A
 見出しは`01-agent.md`「QCDと3段判定」、`02-agent-operations.md`「ツール・コマンド運用」、`rules-subagent.md`「確認事項の即時通知」である。
 ほかに`rules-main.codex.md`「メインエージェントだけに適用する規範」と作業ディレクトリの`AGENTS.md`「詳細の参照先」を使う。
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日
+## agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日
 
 2026年9月4日、Claude Code 2.1.260の実行ファイルと公式のHooksリファレンスで確認した。再検証ではこの2つの資料を読み、対象の文字列がどちらに由来するか確認する。
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：出力上限：2026年10月20日
+## agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力上限：2026年10月20日
 
 - 観測日: 2026年10月20日に[公式Hooksリファレンス](https://code.claude.com/docs/en/hooks#json-output)を再取得した。10,000文字の制限は各JSON文字列と通常の標準出力へ個別に適用され、超過時はセッション内の保存ファイルと最大2,000文字のプレビューへ置き換わる。標準エラー44,224文字が接頭辞込み44,346文字で全文届いた結果は、2026年10月19日05:33 UTCの既存調査記録に由来し、今回は再現していない
 - 観測した版数: 標準エラー配送の既存観測はClaude Code 2.1.303。公式ページの再取得は2026年10月20日時点の公開内容
 - 再検証手段: 固定したBash操作のPreToolUseへ、連番本文と末尾の`END-MARK-QZX`を標準エラーへ出力して終了2を返すhookを装着する。stream-jsonのツール結果との全文一致とモデルが回答した末尾を比べる。JSON各値と通常の標準出力は10,000文字の前後で保存先とプレビューを確認する。標準エラーの単一条件の成功から、配送量が無制限とは判断しない
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：組織向け設定：2026年10月20日
+## agent-basics/skills/writing-standards/references/claude-hooks-output.md：組織向け設定：2026年10月20日
 
 - 観測日: 2026年10月20日の起草時調査記録にある、本体の読解と組織設定のユーザー表示の観測による。今回の文書追随では本体の読解を再実行していない
 - 観測した版数: Claude Code 2.1.304。既存記録は2.1.302と2.1.303で該当通知が0件だった比較を含む
 - 再検証手段: 対象版の`PASSED_OVER_EVENTS`・`PASSED_OVER_DOORS`・`passedOverPatterns`を公開仕様と比べ、全Function hooks登録へ同じ判定を適用する不変条件テストを実行する。組織設定下でセッション名の自動設定、手動名の保持と`rate_limit`後の再開予約を確認する
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks-stop.md：入力：2026年9月4日
+## agent-basics/skills/writing-standards/references/claude-hooks-stop.md：入力：2026年9月4日
 
 2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節および`SubagentStop`節で前段の入力仕様を確認した。同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。`run_in_background`で起動したBashジョブが、`type`を`shell`、`status`を`running`とする要素として`background_tasks`へ現れた。再検証は同3節を読み、Stopフックへ渡る入力を捕捉して`background_tasks`の有無と要素の構造を確認する。
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日
 
 2026年9月2日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節と`SubagentStop`節で確認した。再検証は同2節を読む。
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日
 
 2026年9月4日、Claude Code 2.1.260の実行ファイルへ埋め込まれたパターンマッチ関数を確認した。この関数は値が空文字列と`"*"`のいずれかのときに正規表現へ変換せず一致を返す。同ドキュメントにも同じ3分類が記載されていた。再検証は同ドキュメントの`Matcher patterns`節を取得し、`strings`で抽出した関数が空値と`"*"`を短絡することを確認する。
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日
 
 2026年9月6日、Claude Code 2.1.263で次を確認した。地の文を1文書いた直後に同じ応答で`Bash`を1回呼ぶ指示を与え、その呼び出しの`PreToolUse`が受領した`transcript_path`の内容を捕捉した。フックの発火時点では、JSONLにアシスタントのエントリが1件も無かった。実行後の同じJSONLには、同一の`message.id`を持つ思考ブロック、テキストブロックおよびツール呼び出しの3エントリが並んでいた。再検証は同じ指示を与えて発火時点のJSONLの内容と実行後の内容を比較する。
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日
 
 2026年9月8日、Claude Code 2.1.263で次を確認した。
 存在しないリポジトリを指す`git -C /tmp log --oneline -1`は終了コード128で終わり、セッションの状態ファイルの`git_log_checked`は未設定のままだった。
@@ -703,15 +719,15 @@ Antigravityの`explore`と`delegate`はどちらも作業ディレクトリの`A
 当時の保存先は`{tempdir}/claude-agent-toolkit-<session_id>.json`だった。
 現行の再検証では`state_dir()/hook-sessions`のJSONと固定の`.state.lock`を使い、clear・期限回収後もlockが同じパスへ残ることを確認する。
 
-## agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年10月7日
+## agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年10月7日
 
 2026年10月7日、Claude Code 2.1.292の環境で公式ドキュメント<https://code.claude.com/docs/en/hooks.md>を取得し、`PostToolUseFailure`節と`PermissionDenied`節を確認した。前者は実行を始めたツールの失敗で発火し、`additionalContext`を受理する。未知のツール名、入力検証の失敗と権限拒否では発火しない。後者はauto modeの拒否だけで発火し、手動の拒否、`PreToolUse`の遮断とdeny規則の一致では発火しない。出力は`hookSpecificOutput.retry`だけを受理する。再検証は同ドキュメントの両節を読み、発火条件と受理する出力を確かめる。
 
-## agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日
+## agent-basics/skills/writing-standards/references/dependency-management.md：公開待機設定：2026年9月16日
 
 2026年9月16日、公開直後の新バージョンを待つ目安1日の典拠を確認した。`.chezmoi-source/dot_config/uv/uv.toml`は`exclude-newer = "1 day"`を持ち、同ファイルのコメントが公開後24時間未満のパッケージを除外する目的を示す。再検証は同ファイルから`exclude-newer`の値を取得する。この設定値が変わったときに再検証する。
 
-## agent-toolkit/skills/writing-standards/references/dependency-management.md：pnpm：2026年9月16日
+## agent-basics/skills/writing-standards/references/dependency-management.md：pnpm：2026年9月16日
 
 2026年9月16日、pnpm 11.25.0とnpm 11.19.0で検証した。
 環境変数`NPM_CONFIG_REGISTRY`へ`https://example.invalid/`を与えて`pnpm config get registry`を実行すると`https://registry.npmjs.org/`を返した。
@@ -719,11 +735,11 @@ Antigravityの`explore`と`delegate`はどちらも作業ディレクトリの`A
 再検証はpnpm 11.25.0とnpm 11.19.0に同じ環境変数を与える。両ツールから実効のレジストリー設定を取得し、環境変数が反映されるか比べる。
 再検証の契機はpnpmまたはnpmの更改とする。
 
-## agent-toolkit/skills/writing-standards/references/drizzle.md：H1直下：2026年9月16日
+## agent-basics/skills/writing-standards/references/drizzle.md：Drizzle ORM／Drizzle Kit記述スタイル：2026年9月16日
 
 2026年9月16日、参考実利用バージョンの取得元を確認した。`~/glatasks/package.json`は`drizzle-orm`を`^0.45.2`、`drizzle-kit`を`^0.31.10`で指定する。再検証は同ファイルから、この2つの依存の版指定を取得する。いずれかの依存が更新されたときに再検証する。
 
-## agent-toolkit/skills/writing-standards/references/file-editing.md：ファイル更新時の編集ツールの前提：2026年10月7日
+## agent-basics/skills/writing-standards/references/file-editing.md：ファイル更新時の編集ツールの前提：2026年10月7日
 
 確認日は2026年10月7日、観測した版はClaude Code 2.1.292である。
 `agents_server`で起動したClaudeの委譲先（auto mode）で、管理対象一時領域の1行のファイルを使って取得手段ごとにEditとWriteを発行した。
@@ -752,13 +768,13 @@ Writeのツール説明は「Overwriting an existing file you haven't Read will 
 Readを経ない取得手段（Bashのリダイレクトでの作成、`cp`での複製、変数を含むパスと複数コマンドの連結での表示、単独の`cat <絶対パス>`での表示、同じ内容の別パスのRead）ごとにEditを発行し、未読の既存ファイルへWriteを発行する。
 条件ごとに拒否の有無と文面、Readで読んだ後の同じ操作の成否を保存して比べる。版数は`claude --version`で取得する。
 
-## agent-toolkit/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月9日
+## agent-basics/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月9日
 
-2026年10月9日、Codex CLI 0.162.0の公式ソース（タグ`rust-v0.162.0`）を読解した記録に基づく。`codex-rs/exec/src/cli.rs`の`--ephemeral`と`codex-rs/exec/src/lib.rs`の適用はセッションの永続化を抑止する。認証の経路は`codex-rs/login/src/auth/manager.rs`と`codex-rs/login/src/auth/storage.rs`にあり、ChatGPTトークンの期限が5分以内か、最後のrefreshから8日を超える条件で更新し、認証ストレージへ保存する。`--ephemeral`はこの更新・保存を抑止しない。実機でrefreshを新たに起こす観測は行っていない。
+2026年10月9日、Codex CLI 0.162.0の公式ソース（タグ`rust-v0.162.0`）を読解した記録に基づく。`codex-rs/exec/src/cli.rs`の`--ephemeral`と`codex-rs/exec/src/lib.rs`の適用はセッションの永続化を抑止する。認証処理は`codex-rs/login/src/auth/manager.rs`と`codex-rs/login/src/auth/storage.rs`にあり、ChatGPTトークンの期限が5分以内か、最後のrefreshから8日を超える条件で更新し、認証ストレージへ保存する。`--ephemeral`はこの更新・保存を抑止しない。実機でrefreshを新たに起こす観測は行っていない。
 
-再検証では同じ公式タグのCLIオプション、execへの適用、認証更新条件と保存経路を対応付けて読む。実測する場合は公開された状態隔離手段と通常認証の成立を先に確認し、同じ実体のmtimeなどを前後で比較する。外部認証情報を隔離先へ複製しない。通常利用と既存のテスト隔離へ一律の隔離を追加する根拠にはしない。
+再検証では同じ公式タグのCLIオプション、execへの適用、認証更新条件と保存処理を対応付けて読む。実機で測定する場合は公開された状態隔離手段と通常認証の成立を先に確認し、同じ実体のmtimeなどを前後で比較する。外部認証情報を隔離先へ複製しない。通常利用と既存のテスト隔離へ一律の隔離を追加する根拠にはしない。
 
-## agent-toolkit/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月18日（1）
+## agent-basics/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月18日（1）
 
 観測した日付は2026年10月18日、版数はClaude Code 2.1.302である。
 再検証では再開・分岐を伴わない新規の`claude -p`を空のmanaged-tempで起動する。
@@ -781,7 +797,7 @@ Codexは信頼されていないGit外のディレクトリでは`--skip-git-rep
 再検証では空のmanaged-temp（Codexは空のGitリポジトリ）をcwdにして、変更前と変更後の可用性確認の起動形を1回ずつ実行する。
 Claudeは`result`イベントの`usage`の入力・キャッシュ作成・キャッシュ読取と`~/.claude/projects`の記録ファイルの有無を、Codexは`turn.completed`の`usage`と`CODEX_HOME`のrolloutの有無を比べる。
 
-## agent-toolkit/skills/writing-standards/references/mcp-server-design.md：典拠と既存サーバーへの適用：2026年10月2日
+## agent-basics/skills/writing-standards/references/mcp-server-design.md：典拠：2026年10月2日
 
 2026年10月2日、同書の典拠表の各資料を取得した。Claude Code公式資料（Claude Code 2.1.286の時点）の「For MCP server authors」は、ツール説明とserver instructionsを各2,048文字に切り詰めると記す。この値は`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で変更できる。「MCP output limits and warnings」は1万トークンの警告と2万5千トークンの上限を記し、上限を変える`MAX_MCP_OUTPUT_TOKENS`と`_meta["anthropic/maxResultSizeChars"]`を示す。MCP 2025-11-25のSchema Referenceは`InitializeResult.instructions`をsystem promptへ加えてもよいヒントとし、`ToolAnnotations`の全項目をヒントとする。
 再検証は各資料の該当節を取得し、切り詰めの文字数、出力上限、instructionsの扱いを比べる。値が変わった場合は同書の「ホスト固有の条件」と、後述の説明長のテストを改める。
@@ -801,7 +817,7 @@ pyfltrの公開ツールは`build_server`が登録する11件である。対象�
 - 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組合せ条件、省略時の動作はクライアントへ届かないdocstringにある（例: `grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組合せ、`config`の`action`ごとの必須引数）。全ツールの引数に説明が無い。`run`の`mode`、`replace_history`と`config`の`action`は文字列型で列挙値がスキーマに無い。`show_run_output`は出力ログの全文、`show_run_diagnostics`は指定コマンドの診断の全件を返し、範囲・件数の指定と省略の通知を持たない。annotationsは全ツールで未設定で、書込を伴う`replace_undo`と`config`の説明は書き換えを明示しない。説明の言語が日本語と英語で混在する。instructionsは未設定である
 - 仕様上の是正: 確定した該当なし。未確定として、workerプロセスからの結果JSONの読取に例外処理が無く、外部ツールがファイル記述子1へ直接書いた場合は汎用のエラー本文になる可能性がある（プロトコル違反ではない）。子プロセスの標準出力が常に取り込まれるかは確認していない
 
-## agent-toolkit/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日
+## agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日
 
 2026年10月13日、Claude Codeの公式リリースノートを`gh release view <タグ> -R anthropics/claude-code`で取得した。2つの版の変更項目は次のとおりである。
 
@@ -826,7 +842,7 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 
 再検証は同じコマンドで後続版のリリースノートからMCPの説明とinstructionsの上限の変更項目を探し、公式MCPガイドの「For MCP server authors」と比べる。値が変わった場合は同書の「ホスト固有の条件」、`tool_descriptions.py`の`START_DESCRIPTION`直前のコメントと前記のテストを改める。
 
-## agent-toolkit/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
+## agent-basics/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
 
 本表は2026年9月5日に実際に動かして確かめた結果である。次の1文を地の文、引用ブロック、フェンス付きコードブロックへ置いた3つのサンプルファイルを作成し、pyfltr 3.17.8の`textlint`・`colloquial-check`にかけた。
 
@@ -836,17 +852,17 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 
 地の文では口語表現チェックとtextlintの弱い表現がいずれも検出され、引用ブロックではtextlintの弱い表現だけが検出され、フェンス付きコードブロックではいずれも検出されなかった。em-dash（U+2014）を含む同じ形のサンプルを`scripts/check_dash.py`にかけたところ、引用ブロックでは検出され、フェンス付きコードブロックでは検出されなかった。再検証は同じ3つのサンプルファイルを再度作成し、同じ手順で検出の有無を対にして確認する。
 
-## agent-toolkit/skills/writing-standards/references/python.md：実行環境：2026年8月17日
+## agent-basics/skills/writing-standards/references/python.md：実行環境：2026年8月17日
 
 2026年8月17日、Linux・uv 0.12.3で、依存メタデータが同一でパスだけが異なるPEP 723スクリプトを`uv run --script`で実行すると、スクリプトごとにvenvを再構築することを確認した。パッケージと解決結果のキャッシュは共有され、ウォーム状態での再構築は1秒未満だった。再検証は同じ`# /// script`ブロックを持つスクリプトを2つのパスへ置き、`uv --version`を記録したうえで順に実行し、uvのキャッシュディレクトリ配下の環境の数と所要時間を比べる。
 
-## agent-toolkit/skills/writing-standards/references/python.md：静的解析の誤検出と抑制：2026年10月20日
+## agent-basics/skills/writing-standards/references/python.md：静的解析の誤検出と抑制：2026年10月20日
 
 - 観測日: 既存調査記録を2026年10月20日に確認した。元の観測日は未確認。同記録はLinuxで`sys.platform`による`msvcrt`と`fcntl`の分岐importを抑止なしで解析し、`msvcrt`だけに診断1件が出たと報告している。今回の文書追随では同じ解析を再実行していない
 - 観測した版数: pylint 4.1.3、astroid 4.3.4
 - 再検証手段: 同じ分岐importを一時Pythonファイルへ保存し、対象プロジェクトの`uv run --frozen pyfltr run --commands=pylint --no-fix <絶対パス>`で解析する。Windowsでは`fcntl`側の診断を対照取得する。pylintの`checkers/imports.py`にある`_ignore_import_failure`がOS分岐を除外しないことも確認する
 
-## agent-toolkit/skills/writing-standards/references/python.md：テストコード（pytest）：2026年10月20日
+## agent-basics/skills/writing-standards/references/python.md：テストコード（pytest）：2026年10月20日
 
 - 観測日: 既存調査記録を2026年10月20日に確認した。元の観測日は未確認。同記録はpyfltrのWindows CI実行39222530624で`Popen.pid`と子の自己申告PIDの不一致を観測したと報告している。修正commit `60161d7`後の実行39227766095は成功とされる。今回の文書追随ではWindows上で再現していない
 - 観測した版数: uvが作成したWindows runnerの仮想環境。観測したPythonの正確な版は未確認。Python公式`Doc/library/venv.rst`の3.7.2の変更記録はredirectorの仕様の根拠であり、観測版とは区別する
@@ -884,7 +900,7 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 既存調査はClaude Code 2.1.301の記録`7542c54d-c7b2-4bca-9e29-c9199e63c7a4.jsonl`の1022行と1031行に、同じtool_use IDを持つ`assistant`と`api-request-blob`があると報告した。写しは`message`に会話と同じ形のcontentを持ち、timestampとuuidを持たない。公開仕様での形式の保証は未確認である。
 今回の検証は、報告された構造を最小化した検体へツール呼出・失敗結果・完了通知の写しを追加し、通常抽出・呼出照会・警告・統計・ユーザー発話の結果が追加前と一致することを確かめる。生の行のdetail・grepは写しも表示する。再検証は`session_evidence_record_boundary_test.py`の`test_request_copies_do_not_create_conversation_events`を実行する。
 
-## agent-toolkit/skills/writing-standards/references/sqlalchemy.md：問い合わせと属性代入の順序：2026年9月14日
+## agent-basics/skills/writing-standards/references/sqlalchemy.md：問い合わせと属性代入の順序：2026年9月14日
 
 2026年9月14日、SQLAlchemy 2.0.52の公式文書で、`autoflush`を無効にしていない`Session`がORM対応の問い合わせ前に保留変更をflushすることと、`Session.flush()`で明示的にflushできることを確認した。
 2026年9月13日のAWIは、SQLAlchemy 2.0.51を使うアプリケーションで、保留中のUPDATEが一意制約へ違反するケースと、保留中のINSERTが`NOT NULL`制約へ違反するケースを確認した記録を持つ。
@@ -893,11 +909,11 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 あわせて、保留中のUPDATEとINSERTの後にORMへ問い合わせるテストで、問い合わせ前に各制約違反が送出されることを確認する。
 問い合わせを属性代入前かつ入力検証後へ移し、保留変更の反映が必要な箇所だけ明示的にflushした状態で、入力エラーと同じ処理単位の読み取りを対にして確認する。
 
-## agent-toolkit/skills/writing-standards/references/sub-agents.md：frontmatter：2026年8月19日
+## agent-basics/skills/writing-standards/references/sub-agents.md：Claude Codeのfrontmatter：2026年8月19日
 
 2026年8月19日、`skills`で宣言したスキルの本文がサブエージェントへ注入される際に、所在ディレクトリの絶対パスの表示が付随することをサブエージェントの記録で確認した。公式ドキュメントはこの表示を記載していない。再検証は`skills`を宣言した定義から起動したサブエージェントの記録を読み、注入されたスキル本文の直前または直後に所在の絶対パスが現れるかを確認する。
 
-## agent-toolkit/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月13日
+## agent-basics/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月13日
 
 2026年9月13日時点で、`main`と名前付きエージェントを列挙した名簿はClaude Code v2.1.206以降の版で付くことを確認した。再検証は`tools`に`SendMessage`を含む定義を、ほかの名前付きエージェントが稼働するセッションから起動し、サブエージェントの記録に名簿が現れるかと`claude --version`の版数を確認する。
 
@@ -905,7 +921,7 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 
 2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>とCodex CLI 0.157.1の`spawn_agent`公開スキーマで、通常起動とforkの履歴入力が異なることを確認した。再検証は同じ起動文で通常起動と全履歴forkを行い、委譲先に渡る会話履歴の有無を比較する。
 
-## agent-toolkit/skills/writing-standards/references/textlint-violations.md：文体と箇条書き：2026年9月10日
+## agent-basics/skills/writing-standards/references/textlint-violations.md：文体と箇条書き：2026年9月10日
 
 2026年9月10日、pyfltr 3.17.9のtextlintと本リポジトリの`.textlintrc.yaml`（`preset-jtf-style`の`1.1.3.箇条書き`を`shouldUsePoint: false`で運用する設定）で確認した。
 全ての項目が句点で終わる順序付きリストは同ルールへ一致0件であった。
@@ -913,15 +929,15 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 入れ子を独立した節へ移して各項目を1行に戻すと、再び一致0件であった。
 再検証は同じ順序付きリストについて入れ子を含む写しと含まない写しを作成し、`--commands=textlint`を指定した同じコマンドで一致件数を比べる。
 
-## agent-toolkit/skills/writing-standards/references/x-posts.md：投稿の同定と本文：2026年10月10日
+## agent-basics/skills/writing-standards/references/x-posts.md：投稿の同定と本文：2026年10月10日
 
-2026年10月10日、FxEmbedの公開原本を読解した。API版とURLは[API introduction](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)、v1の経路は[src/realms/api/router.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/realms/api/router.ts)、応答の`code`・`message`・`tweet`は[src/embed/status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)、本文・日時・写真の属性は[api-status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-status.ts)と[api-schemas.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-schemas.ts)へ対応付けた。v1は`/:handle/status/:id`、v2は`/2/`付きであり、資料のv1手順をv2の応答構造へ読み替えない。
+2026年10月10日、FxEmbedの公開原本を読解した。API版とURLは[API introduction](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)、v1の処理は[src/realms/api/router.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/realms/api/router.ts)、応答の`code`・`message`・`tweet`は[src/embed/status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)、本文・日時・写真の属性は[api-status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-status.ts)と[api-schemas.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-schemas.ts)へ対応付けた。v1は`/:handle/status/:id`、v2は`/2/`付きであり、資料のv1手順をv2の応答構造へ読み替えない。
 
 元ホストの取得条件はリポジトリ外の作業記録に由来する。X直接取得のHTTP 402、APIのHTTP 307、pbs画像の取得成功とWindows curlの失効確認エラーはその環境の記録であり、本改訂時に同じ通信を再現した結果でも全ホスト共通の仕様でもない。
 
 同日の追加読解では、API introductionのResponse FormatがHTTP状態とは別に`code`を確認する必要を説明し、v1の応答実装が数値の`code`、200の`OK`、401・404・503・500の失敗を分岐し、API応答のHTTP状態にも`code`を設定することを確認した。最終HTTP 200かつ数値のcode 200という採用条件を手順へ明示した。これは公式実装の読解の記録である。通信失敗や写真なしの実通信は新たに再現していない。
 
-再検証では前記原本のv1経路と応答生成を取得し、属性と版を比較する。通信を試す場合は公開投稿のURL・最終URL・HTTP状態・応答本文を保存し、最終HTTP 200と数値の`code` 200の両方、必要な`tweet`の属性の成立を確認してから画像URLをmanaged-tempへ取得する。HTTPだけの成功、codeの不一致・欠落・型の違い、通信とJSONの失敗、必要属性の欠落を未取得として区別する。成功応答で写真の一覧が空か写真媒体がない場合の「写真なし」と、写真の取得失敗も区別する。画像を実際に読んだホストと保存先を記録し、通信失敗の本文を画像や投稿の内容として扱わない。
+再検証では前記原本のv1の処理と応答生成を取得し、属性と版を比較する。通信を試す場合は公開投稿のURL・最終URL・HTTP状態・応答本文を保存し、最終HTTP 200と数値の`code` 200の両方、必要な`tweet`の属性の成立を確認してから画像URLをmanaged-tempへ取得する。HTTPだけの成功、codeの不一致・欠落・型の違い、通信とJSONの失敗、必要属性の欠落を未取得として区別する。成功応答で写真の一覧が空か写真媒体がない場合の「写真なし」と、写真の取得失敗も区別する。画像を実際に読んだホストと保存先を記録し、通信失敗の本文を画像や投稿の内容として扱わない。
 
 ## docs/development/design-hooks.md：通知の整形と反復検出：2026年10月13日
 
@@ -1052,6 +1068,16 @@ session `1e19cda7-eaf3-49dd-b96c-916c43f077d1`へ失敗原因と再予約可能�
 非対話はBashのバックグラウンドタスクと保存記録の再開操作を組み合わせ、圧縮後の領域通知からparent-handoff.mdへ到達し、通知から同じsessionと担当・監視対象が続行することも確かめる。任意指示で応答文字列を渡さない。
 故障と再予約は隔離した検証用プラグインだけへ例外を注入して試し、製品のプラグインを改変しない。
 
+## agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月23日
+
+Claude Code 2.1.309の`claude plugin test agent-toolkit`で、公開modの登録・時計・turn・背景タスク・圧縮APIを使う結合試験を実行した。
+`session.compact()`はturn間に呼び、成功のmessages、見送りのskip、例外を別の結果として扱う。
+5秒未満、利用率49%、状態未保存、委譲先とサブエージェントは自動圧縮しない。
+50%の境界、5秒後、turn完了への持越し、完了通知による取消し、失敗後の解放と自動再試行の抑止、閾値未満を経た再開を確認した。
+Python側の公開`wait-compaction-context`も、所有・mode・待機登録・保存時刻の12ケースで確認した。
+modの全136件は成功した。外部モデルによる実際の要約生成はこの試験へ含まない。
+再検証は同じ公開testコマンドと`wait_compaction_context_test.py`を使い、実際の要約生成を調べる場合は同月9日の隔離セッション手順で、予約・ホストの結果・待機の再開を分けて観測する。
+
 ## agent-toolkit/skills/user-confirmation-and-report/references/usage-limit.md：利用上限後の再開：2026年10月14日
 
 - 観測日: 2026年10月14日（起草時の観測報告に基づく記録）
@@ -1089,10 +1115,26 @@ atk run-script session-review-evidence -- --claude-session-id '<対象session ID
 - 観測した版数: Codex CLI 0.162.1、公式ソースのタグrust-v0.162.1
 - 再検証手段: ロールアウト記録のtask_complete.error.codex_error_infoがusage_limit_exceededであるturnと、直前token_count.rate_limitsのused_percent・resets_atを対応付ける。[turn.rs](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/session/turn.rs)の失敗時の終了とStop hookを呼ぶ条件、[goalのextension](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/ext/goal/src/extension.rs)の上限停止を確認する。TUIのthread_goal_actions.rsでは再開確認を調べる。偽のrollout・codex・時計でrun-skillとprocess-loopの再開を検証し、最上位TUIは解除後の実機観測へ分ける。実上限到達からの再開と、即時拒否turnのtoken_countの有無は今回再現していない
 
-## Python 3.15対応時の依存導入
+## agent-basics/skills/writing-standards/references/dependency-management.md：Python対応版の追加：2026年10月10日
 
 2026年10月10日の入力WIが保持する観測では、[pytilpackのCI run 38024857168・job 114133431911](https://github.com/ak110/pytilpack/actions/runs/38024857168/job/114133431911)が依存同期の終了1を記録した。停止した条件はcommit `1de178d2e7fb7e7cbf12135db690ae4a4c31b797`、CPython 3.15.0rc3、pydantic-core 2.46.5のsdistビルドとリンカー`cc`不在である。使用イメージは`ghcr.io/ak110/pyfltr`のdigest `sha256:224003f281050887c053eb24f14137970df5225b1b2c99af61b960fab43d8103`である。PyYAML 6.0.3のビルドは成功しており、ビルド発生だけを失敗と判定できない。同入力の更新commit 2026年10月10日「fix: 3.15用wheelのあるpydantic-coreへ依存を更新し、CIの3.15でソースビルドが走らないようにする」、`80d4be7`ではpydantic-core 2.50.0にcp315 wheelがある。この過去のCIの観測は入力WIに由来し、本レーンのローカル成功とは区別する。
 
 [uvのビルド失敗の公式説明](https://docs.astral.sh/uv/reference/troubleshooting/build-failures/#why-does-uv-build-a-package)では、導入環境に合うwheelが無ければsdistをビルドする。[CIキャッシュの説明](https://docs.astral.sh/uv/concepts/cache/#caching-in-continuous-integration)では、ソースからビルドしたwheelもキャッシュする。ローカルでの成功は、別のCI環境のビルド用ツールとキャッシュの成立を保証しない。
 
-再検証では該当jobの全ログとcommitのlockfileを取得し、Python版、OS・アーキテクチャ、イメージdigest、ビルド開始と終了状態を対応付ける。同じイメージとPython版の隔離環境で、プロジェクトの同期コマンドを既存wheelキャッシュに依存せず実行し、ビルド要件を確認する。互換wheelを持つ版への更新とCIで必要なビルド用ツールを用意する案を比較し、純Pythonのビルドと環境マーカーにより導入されない依存を区別する。
+再検証では該当jobの全ログとcommitのlockfileを取得し、Python版、OS・アーキテクチャ、イメージdigest、ビルド開始と終了状態を対応付ける。同じイメージとPython版の隔離環境で、既存wheelキャッシュを使わずにプロジェクトの同期コマンドを実行し、ビルド要件を確認する。互換wheelを持つ版への更新とCIで必要なビルド用ツールを用意する案を比較し、純Pythonのビルドと環境マーカーにより導入されない依存を区別する。
+
+## agent-basics/skills/writing-standards/references/host-official-references.md：子Claudeへ環境値を渡す：2026年10月22日
+
+Claude Codeの[公式環境変数資料](https://code.claude.com/docs/en/env-vars)と[settings資料](https://code.claude.com/docs/en/settings)を参照する。
+settingsのenvは変数を削除できず、空の値はBash・MCPサーバー・hookへ継承される。
+SDK 0.2.168の起動環境はos.environへoptions.envを重ねるため、agents_serverの起動時に隔離対象を取り除く。
+2026年10月21日の観測では、設定に接続変数が無い環境でも、委譲先のBashへ26変数が空の値で渡った。
+再検証はAPI環境ファイルを設定し、user・project・local設定のenvへ同じキーを持つ場合と持たない場合で、新規・再開した子の変数名と空値の件数だけを比較する。
+SDK・process-loop・可用性確認の起動環境と合成settingsを合わせた結果は、claude_connection_test.pyとruntime_isolation_test.pyの回帰検証で確認する。
+本記録の過去の実機観測はWI原本20261021-140153-001.mdに記された結果であり、今回の原稿作成担当による認証を伴う実機再測定は未実施である。
+
+## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月22日
+
+WI原本の2026年10月22日の観測（Codex CLI 0.163.0）では、起動直後の`ALL_TOOLS`へstdio MCPがまだ登録されず、20秒後の別の`exec`ではagents_serverの6ツールとpyfltrが現れた。2026年10月20日の比較記録では`tools.mcp__agents_server__start`の呼び出しが成功している。本変更の担当も2026年10月22日の`functions.exec`で`ALL_TOOLS`から同じ6ツールの名前と公開説明を取得した。
+
+再検証は同じ設定のCodex CLIで、起動直後と20秒後の別の`exec`から`text(ALL_TOOLS.map(x => x.name).filter(n => n.startsWith("mcp__")))`を実行する。引数は該当要素の`description`のexec tool declarationから読み、同じ`exec`から`tools.mcp__agents_server__list({})`を呼ぶ。原稿担当は配布先の変更を認可されていないため、生成物配布後の通常委譲の試行は統合担当が行う。

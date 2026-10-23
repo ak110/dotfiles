@@ -279,7 +279,7 @@ class TestFindMissingPaths:
         existing = tmp_path / "bin"
         existing.mkdir()
         # プレースホルダー化で変換されないよう Linux パス形式（tmp_path）をそのまま使う。
-        # ただし run() は win32 環境を想定するため、存在チェックは path.exists() で通る。
+        # ただし run() は win32 環境を想定するため、存在チェックは path.exists() で成功する。
         _stub_winutils(
             monkeypatch,
             user_value=str(existing),
@@ -343,6 +343,28 @@ class TestFindMissingPaths:
 
 class TestRun:
     """`run()` のシナリオテスト。"""
+
+    @pytest.mark.parametrize("case", ["missing", "existing", "inaccessible", "different-checkout"])
+    def test_only_known_missing_toolkit_bin_is_removed(self, monkeypatch: pytest.MonkeyPatch, case: str) -> None:
+        """廃止済みの自リポジトリのbinだけを除き、他の不足・実在・検査不能のPATHは保持する。"""
+        root = Path(r"C:\Users\test\other" if case == "different-checkout" else r"C:\Users\test\dotfiles")
+        old = root / "agent-toolkit" / "bin"
+        monkeypatch.setattr(cleanup_user_path.common, "find_dotfiles_root", lambda: root)
+        original_exists = Path.exists
+
+        def exists(path: Path) -> bool:
+            if path != old:
+                return original_exists(path)
+            if case == "inaccessible":
+                raise PermissionError("検査できない")
+            return case == "existing"
+
+        monkeypatch.setattr(Path, "exists", exists)
+        user_value = r"%USERPROFILE%\dotfiles\agent-toolkit\bin;%USERPROFILE%\missing"
+        writes, broadcasts = _stub_winutils(monkeypatch, user_value=user_value, user_reg_type=_REG_EXPAND_SZ, system_value="")
+        assert cleanup_user_path.run().changed is (case == "missing")
+        assert writes == ([("Path", r"%USERPROFILE%\missing", _REG_EXPAND_SZ)] if case == "missing" else [])
+        assert broadcasts == ([True] if case == "missing" else [])
 
     def test_removes_duplicates_and_broadcasts(self, monkeypatch: pytest.MonkeyPatch):
         """重複ありのケースで書き戻しとブロードキャストを実行する。"""

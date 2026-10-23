@@ -55,6 +55,7 @@ import sys
 lazy import collections.abc
 lazy from collections import deque
 
+lazy from agent_toolkit._common import agy_records
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
@@ -74,7 +75,7 @@ _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "CronC
 
 
 # `<task-notification>...</task-notification>`要素を非貪欲に切り出す正規表現。
-# `re.DOTALL`で本文中の改行も拾う。
+# `re.DOTALL`で本文中の改行にも一致させる。
 _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>", re.DOTALL)
 
 
@@ -369,15 +370,19 @@ def async_launch_offsets(transcript_path: str) -> dict[str, int]:
     if data is None:
         return {}
     raw_lines = data.splitlines(keepends=True)
-    offsets: dict[str, int] = {}
-    position = 0
+    parsed: list[dict] = []
     for raw in raw_lines:
-        start = position
-        position += len(raw)
         try:
             entry = json.loads(raw)
         except json.JSONDecodeError, UnicodeDecodeError:
-            continue
+            entry = None
+        parsed.append(entry if isinstance(entry, dict) else {})
+    entries = agy_records.normalize_entries(parsed, hook_view=True)
+    offsets: dict[str, int] = {}
+    position = 0
+    for raw, entry in zip(raw_lines, entries, strict=True):
+        start = position
+        position += len(raw)
         if not isinstance(entry, dict) or not entry_in_scan_scope(entry, include_sidechain=False):
             continue
         identifiers: list[object] = []

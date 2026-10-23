@@ -52,7 +52,9 @@ StartMode = Literal["task", "delegate", "explore", "write", "shell"]
 EXPLORE_COMMON_CAPABILITIES = (
     "explore: 対象成果物は読み取り専用。大きな検索結果は条件の絞込みか分割取得で必要範囲を最後まで読み、"
     "省略や未読を不在・件数・網羅性の根拠にしない。"
-    "資料で確定できなければ未確認事項を委譲元へ返す。環境作成・権限拡大・再委譲は禁止。"
+    "完成条件から全文読取と所在探索を分け、割当範囲の未読・未走査は担当内で完了する。"
+    "切り詰め・保存出力はread-fileのnextからeofまで回収する。"
+    "権限・到達不能・入力不足など自身で解消できない未確認だけを範囲と理由付きで返す。環境作成・権限拡大・再委譲は禁止。"
     "確定した操作はshell、自由な判断を伴う書込はdelegateへ渡す。"
     "shellとdelegateは書込を拒否せず、対象と許可する操作は委譲元が定める。"
 )
@@ -63,6 +65,9 @@ EXPLORE_BACKEND_CAPABILITIES = {
     engine: (
         "全backendでGitの読取照会、本文・属性検索、Python標準ライブラリの分割取得、"
         "atk read-fileなどの読取CLIとpyfltr grepなどの読取MCPを使える。"
+        "read-file -- <絶対パス>で開始し、先頭JSONのnextをread-file --start <next> -- <同じ絶対パス>へ渡し、"
+        "eof: trueまで本文を改行ごと保持する。位置は文字単位。--max-bytesはメタデータ込みのUTF-8バイト予算。"
+        "Codexでは内側コマンドと外側セルの両方へ収め、合計量が不明な全文取得は別セルに分ける。"
         "対象成果物・委譲入力・ユーザーデータの作成・変更・削除は禁止。"
         "実行環境が管理するキャッシュ・状態・保存出力はこの変更禁止対象と区別する。"
     )
@@ -90,12 +95,15 @@ LIGHTWEIGHT_MODE_SELECTION = (
     "委譲の要否は独立した文脈の必要性、段位と役割契約、起動・自動配送と明示読取・"
     "委譲元の受領レビュー・統合の総費用で選ぶ。本文量だけで分割しない。"
     "同じ担当の連続した作業はまとめ、独立した要件と独立文脈レビューは分ける。"
+    "全体点検は公開操作・共通定義・呼出元と必要本文量から範囲を定め、既存の列挙・参照を再利用し、不明なら所在と接続を先に探す。"
+    "委譲元が全対象を保持し、独立経路群を欠落なく割り当て、完成条件・根拠の所在・担当内の完了範囲を渡す。"
+    "文書群は単一応答の上限と全体の読取量を別に評価し、分割取得する単一担当と独立群への分担を選ぶ。"
     "explore・shell・writeは自己完結した1回の入力と返却に使い、追加対話と要求の再構成を要する作業は通常taskかdelegateへ渡す。"
     "既存の担当が詳しい文脈を持つ調査と判断は、新しく本文を読む前にその担当へ戻す。"
     "exploreは結論と所在で後続の判断が成立する調査、shellは終了状態と要約で後続の判断が成立する実行へ使う。\n"
-    "段位: 上位段位で動く主体は、判定基準を渡せる多数の対象の走査を費用の差から軽量段位のexploreへ分け、"
+    "工程: execute担当は、判定基準を渡せる多数の対象の走査を費用の差からchores_fastのexploreへ分け、"
     "自身は観点の選定と返った候補の判定に使う。計画・設計判断・原因分析は自身で行い、"
-    "内容の確定した書込作業はdelegateのmedium_tierへ任せる（自身で行う方が総費用で安い場合を除く）。"
+    "内容の確定した書込作業はdelegateのchoresへ任せる（自身で行う方が総費用で安い場合を除く）。"
 )
 """server instructionsとmodeの説明が共有する、コンテキストと費用の節約の目安。"""
 
@@ -122,7 +130,8 @@ MODE_DESCRIPTION = parameter_description(
     "modeごとの必須・禁止の入力は各引数の説明に従い、欠落と混在は委譲先を起動せずに拒否する。\n"
     "選び方: `<役割名>.subagent.md`がある作業はtaskで渡す。"
     "手順、権限、検証方法、返却形式は同ファイルが定めるため、委譲プロンプトへ書き足さない。"
-    "`<役割名>.subagent.md`を読み、同ファイルが宣言した入力名と`extra_params`が一致するか確かめてから起動する。"
+    "委譲元は呼び元の起動・受領契約から入力名と実行時の値を確定して`extra_params`へ渡す。"
+    "起動設定・必須入力・宣言外入力の機械検査はサーバーが行う。定義本文の読取は委譲先自身の手順、編集・調査と返却後の検収で行う。"
     "explore・write・shellの委譲先へは委譲先向けの規範（`share/rules-subagent.md`）が配送されず、"
     "ClaudeとCodexの委譲先では作業ディレクトリのプロジェクト規範（`AGENTS.md`など）も読み込まれず、"
     "スキルを使える保証も無い（Claude Codeの委譲先ではスキルを起動できない）。作業に必要な指示は全て`prompt`へ書く。"
@@ -132,9 +141,9 @@ MODE_DESCRIPTION = parameter_description(
     "読取ツールが管理するキャッシュ・状態・保存出力はこの対象と区別する。"
     "委譲元の文脈へは結果の要約だけが入る。"
     "判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、該当候補の抽出と非該当の判定）は"
-    "model_typeを省略した軽量段位へ分け、多い対象は重複のない群へ分けて並列に委ねる。"
+    "model_typeを省略したchores_fastへ分け、多い対象は重複のない群へ分けて並列に委ねる。"
     "観点・判定基準の選定、新しい候補の案出し、返った該当候補と判定保留の対象の判定は、"
-    "exploreでもdelegateでもmodel_type=high_tierを明示する。混在する依頼も全体をhigh_tierにせず、走査を分けてから判定する。\n"
+    "exploreでもdelegateでもmodel_type=executeを明示する。混在する依頼も全体をexecuteにせず、走査を分けてから判定する。\n"
     + EXPLORE_CAPABILITIES
     + "\n"
     "write: 設計、調査、レビューおよび公開操作を依頼せず、成果物種別、読者、事実、根拠、反映先と完成形を`prompt`へ明記する。"
@@ -152,7 +161,8 @@ SUBAGENT_MD_PATH_DESCRIPTION = parameter_description(
 
 EXTRA_PARAMS_DESCRIPTION = parameter_description(
     "taskだけで受理し、他のmodeでは指定しない。省略時は入力なしとして扱う。"
-    "`<役割名>.subagent.md`が`## 入力`で宣言した入力名（必須入力名と任意入力名）をキー、文字列を値とする。"
+    "呼び元の起動・受領契約が示す入力名をキー、実行時の値を文字列で渡す。"
+    "サーバーが役割文書で宣言された入力名と必須値を確認するため、起動準備のための定義本文の読取は不要。"
     "待機と再開の方針はサーバーが伝えるため、委譲プロンプトへ書き足さない。"
     "必須入力の欠落と宣言外の入力名を含む場合は委譲先を起動しない。"
     "ただし必須入力の`引き継ぎ記録先`を省略した場合は、サーバーが委譲元のセッションのmanaged-tempの直下に`（新規）`の記録先を用意し、"
@@ -174,9 +184,10 @@ PROMPT_DESCRIPTION = parameter_description(
 WHOLE_CONTRACT_PATH_DESCRIPTION = parameter_description(
     "task・delegateの通常起動だけで受理し、軽量起動（explore・write・shellと`mode:`が軽量の役割）とhandoff_fromでは指定しない。"
     "担当へ参照を配送する全体作業契約（`share/work-contract.md`の記録）の絶対パス。"
-    "省略時はサーバーが、直接の委譲元が受領済みの参照、委譲元の会話のmanaged-tempの`work-contract.md`の順に解決する。"
-    "委譲先がさらに委譲する場合も受領済みの参照を継承するため、通常は指定しない。"
-    "委譲元の会話を特定できず解決元が無いと起動前に拒否されるため、そのときと自動解決が別の記録を指すときに指定する。"
+    "初回を含む通常起動では、呼出側が保持する現行の全体作業契約の絶対パスを指定する。"
+    "省略時は互換のためサーバーが、直接の委譲元が受領済みの参照、委譲元の会話のmanaged-tempの`work-contract.md`の順に解決する。"
+    "委譲先がさらに委譲する場合も受領済みの参照を継承する。"
+    "明示したパスは自動解決より優先し、既知の現行契約と自動解決が別の記録を指す場合にも指定する。"
     "期待パスの記録が未作成で拒否されたときは、指定せずに期待パスへ記録を作成して再発行する。"
     "指定時は自動解決より優先し、不在・ディレクトリ・UTF-8で読めないパスは起動前に拒否する。"
 )
@@ -215,21 +226,21 @@ SESSION_ID_DESCRIPTION = parameter_description(
 
 
 MODEL_TYPE_DESCRIPTION = parameter_description(
-    "委譲先のモデルを選ぶ。モデル段位の種別（例: `high_tier`、`medium_tier`、`low_tier`、`write`、`orchestrate`）か、"
+    "委譲先のモデルを選ぶ。工程名（`execute`・`review`・`review_fast`・`chores`・`chores_fast`・`orchestrate`・`write`）か、"
     "ASCIIカンマ区切りの`<claude|codex|agy>:<model>[/<effort>]`か`opencode:<provider>/<model>[@<effort>]`の候補列"
     "（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）を指定する。"
     "候補は先頭から試し、起動できない候補を除いて次の候補へ切り替える。"
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
-    "exploreとshellが`low_tier`、writeが`write`の設定を使う。"
-    "判定基準を渡せる多数の対象の走査はexploreの省略時の`low_tier`へ分け、"
-    "観点・判定基準の選定、新しい候補の案出し、走査結果の判定と統合はexplore・delegateを問わず`high_tier`を明示する。"
-    "走査と案出しが混在する依頼も全体を`high_tier`にせず、走査を分けてから判定する。"
-    "軽量側の候補では判断材料が不足する走査には、exploreで`medium_tier`を指定する。"
-    "計画・設計判断で内容の確定した書込作業（単発のコーディング、確定済みの修正など）はdelegateの`medium_tier`へ任せ、"
-    "計画・設計判断・原因分析は上位段位の担当自身が行う。"
-    "段位名の候補は、`<役割名>.subagent.md`の役割かmodeで決まる用途のengine順に、engine別の段位のモデル設定を並べる。"
-    "`orchestrate`はprocess-loop・run-skillなど最上位セッションのorchestrate用途の上位段位を使う。"
-    "WI投入担当のadd-wiは専念型・付随型ともmodel_typeを省略し、役割に定めたbase用途・上位段位を使う。"
+    "exploreとshellが`chores_fast`、writeが`write`の設定を使う。"
+    "判定基準を渡せる多数の対象の走査はexploreの省略時の`chores_fast`へ分け、"
+    "観点・判定基準の選定、新しい候補の案出し、走査結果の判定と統合はexplore・delegateを問わず`execute`を明示する。"
+    "走査と案出しが混在する依頼も全体を`execute`にせず、走査を分けてから判定する。"
+    "軽量側の候補では判断材料が不足する走査には、exploreで`chores`を指定する。"
+    "計画・設計判断で内容の確定した書込作業（単発のコーディング、確定済みの修正など）はdelegateの`chores`へ任せ、"
+    "計画・設計判断・原因分析はexecute担当自身が行う。"
+    "工程名の候補は、対応する`<工程>_model`の候補列を直接使う。"
+    "`orchestrate`はprocess-loop・run-skillなど最上位セッションのorchestrate_modelを使う。"
+    "WI投入担当のadd-wiは専念型・付随型ともmodel_typeを省略し、役割に定めたexecute工程を使う。"
     "指定した値はそのsessionだけに使い、恒常的な変更は`atk config set`で行う。"
 )
 
@@ -244,9 +255,23 @@ START_MODE_INPUTS: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
 }
 
 
+START_NORMAL_TASK_EXAMPLE = (
+    '`{"cwd": "<絶対パス>", "subagent_md_path": "<通常起動の役割名>", "extra_params": {...}, '
+    '"whole_contract_path": "<全体作業契約の絶対パス>"}`'
+)
+"""全体作業契約を配送する通常taskの公開例。"""
+
+
+START_LIGHTWEIGHT_TASK_EXAMPLE = '`{"cwd": "<絶対パス>", "subagent_md_path": "<軽量起動の役割名>", "extra_params": {...}}`'
+"""全体作業契約を受理しない軽量taskの公開例。"""
+
+
 START_MODE_EXAMPLES = {
-    "task": '`{"cwd": "<絶対パス>", "subagent_md_path": "<役割名>", "extra_params": {...}}`',
-    "delegate": '`{"cwd": "<絶対パス>", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "high_tier"}`',
+    "task": START_LIGHTWEIGHT_TASK_EXAMPLE,
+    "delegate": (
+        '`{"cwd": "<絶対パス>", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "execute", '
+        '"whole_contract_path": "<全体作業契約の絶対パス>"}`'
+    ),
     "explore": '`{"cwd": "<絶対パス>", "mode": "explore", "prompt": "<質問と調べる範囲>", "label": "explore-<対象>"}`',
     "write": '`{"cwd": "<絶対パス>", "mode": "write", "prompt": "<起草の依頼>", "label": "write-<対象>"}`',
     "shell": (
@@ -269,26 +294,29 @@ START_DESCRIPTION = "\n".join(
         "exploreは対象成果物への書込禁止。読取ツール管理の保存出力を使え、成果ファイル生成の調査はdelegateへ。返却は委譲元が保存する。",
         EXPLORE_CAPABILITIES,
         "",
-        "| mode | 用途 | 必須の入力 | 起動条件と`model_type`省略時の設定 |",
+        "| mode | 用途 | 標準の入力 | 起動条件と`model_type`省略時の設定 |",
         "| --- | --- | --- | --- |",
-        "| `task`（省略時） | `share/<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path` | "
+        "| `task`（省略時） | `share/<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path`。"
+        "通常起動は`whole_contract_path`も渡す | "
         "`<役割名>.subagent.md`の`mode:`、対応する工程別設定 |",
-        "| `delegate` | `<役割名>.subagent.md`の無い単発作業 | `prompt`・`model_type` | "
-        "通常起動。委譲先規範が届き、ClaudeとCodexはスキルを使える。"
+        "| `delegate` | `<役割名>.subagent.md`の無い単発作業 | `prompt`・`model_type`・`whole_contract_path` | "
+        "通常起動。委譲先規範が届き、Claude・Codex・Antigravityはスキルを使える。"
         "OpenCodeへは共通規範・委譲先規範・ユーザー規範が全modeで届く。"
         "スキルは自動登録せず配送したplugin rootの`skills/`から明示読取する。"
         "プロジェクト規範のCLI読込は未確認で、必要な本文は委譲入力へ含める。"
-        "Antigravityへは`rules/`配下とagent-toolkitのスキルが届かない |",
-        "| `explore` | 読み取り専用の調査とレビュー | `prompt` | 軽量起動、`low_tier` |",
+        "Antigravityは登録済みプラグインから常時規範・スキル・役割とMCPを受け取る |",
+        "| `explore` | 読み取り専用の調査とレビュー | `prompt` | 軽量起動、`chores_fast` |",
         "| `write` | 確定した文章の起草と小規模な定型書込 | `prompt` | 軽量起動、`write` |",
-        "| `shell` | コマンド実行と結果の要約 | `command`・`summary_policy` | 軽量起動、`low_tier` |",
+        "| `shell` | コマンド実行と結果の要約 | `command`・`summary_policy` | 軽量起動、`chores_fast` |",
         "",
         "選び方は`mode`、制約は各引数を参照。"
         "必須入力の欠落、mode外の入力とtaskの宣言外の入力名は起動せず拒否し、該当・受理する入力と呼び出し方を返す。",
         "",
         "例（`cwd`は全modeで必須）:",
-        '- task: `{"cwd": "/repo", "subagent_md_path": "exec-review", "extra_params": {"計画": "/abs/plan.md"}}`',
-        '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "high_tier"}`',
+        f"- 通常task: {START_NORMAL_TASK_EXAMPLE}",
+        f"- 軽量task: {START_LIGHTWEIGHT_TASK_EXAMPLE}。`whole_contract_path`を渡さない。",
+        '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "execute", '
+        '"whole_contract_path": "/abs/work-contract.md"}`',
         '- explore: `{"cwd": "/repo", "mode": "explore", "prompt": "<質問と範囲>"}`',
         '- write: `{"cwd": "/repo", "mode": "write", "prompt": "<確定した書込依頼>"}`',
         '- shell: `{"cwd": "/repo", "mode": "shell", "command": "make test", '

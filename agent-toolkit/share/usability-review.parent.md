@@ -6,6 +6,18 @@
 
 画面差分がある場合の並列画面レビュー（いずれも定義は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`「用語」）で、メインがユーザビリティレビュー担当を起動し、返却を検収する手順を定める。
 
+## 名指し参照の読込方法
+
+名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` |
+| 実描画の確認条件と検証環境を決める前 | `agent-basics:writing-standards/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
+
 ## 起動
 
 起動の前に、対象worktreeの書込主体（レーン工程ではレーン担当）へ、対象リポジトリの手順で対象HEADを再配備または起動させ、完了を確かめる。実装途中に配備済みの環境も対象HEADへ更新し、修正後の再判定でも新しい対象HEADで同じく準備する。
@@ -22,7 +34,7 @@
 - 変更画面: 差分が変更した画面のパスまたはURLと、操作で表示する状態へ到達する手順。
 - 主要シナリオ: 計画またはWIが指定するエンドユーザーの作業の流れと、そこで確かめるUX上の観点。期待結果やデータの反映、操作の成否といった機能の正しさは判定基準として渡さない。
   観点は変更画面ごとに、その画面に対するWIの完成条件と計画の受入シナリオが求める範囲に限り、完成条件が異なる画面はシナリオの文を分ける（計画の要約が完成条件より広い結果を述べていてもWIの完成条件に合わせる）。
-  `agent-toolkit:writing-standards`の`references/ui-ux.md`「完了前の実描画確認」が実データから切り離した環境でだけ行うと定める操作を要する観点は、切り離した`検証環境`と許される操作を書くか、観点から外す。`検証環境`で禁止した操作を要する観点は書かない。
+  `agent-basics:writing-standards/references/ui-ux.md`「完了前の実描画確認」が実データから切り離した環境でだけ行うと定める操作を要する観点は、切り離した`検証環境`と許される操作を書くか、観点から外す。`検証環境`で禁止した操作を要する観点は書かない。
 - 検証環境: 対象プロジェクトの手順から確定したローカル起動形または127.0.0.1の稼働中URL。
 - 引き継ぎ記録先: 省略と継続の扱いは`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う。
 - round: 初回は1、同じ担当への再判定では直前の番号に1を足す。

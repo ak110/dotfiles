@@ -119,12 +119,18 @@ def edit_entry_content(
     expected_content: str | None = None,
     finalized_content: dict[str, str] | None = None,
     skip_remote_sync: bool = False,
+    allow_terminal: bool = False,
 ) -> bool:
     """平引数でAWI本文を更新する。
 
     `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
     """
-    if state not in WI_EDITABLE_STATES:
+    editable_states = (
+        (*WI_EDITABLE_STATES, _constants.WI_STATE_ADOPTED, _constants.WI_STATE_REJECTED)
+        if allow_terminal
+        else WI_EDITABLE_STATES
+    )
+    if state not in editable_states:
         raise WebInputError("編集可能状態はinbox、processingまたはholdです", next_action=_EDITABLE_STATE_NEXT_ACTION)
 
     directory = private_notes / state

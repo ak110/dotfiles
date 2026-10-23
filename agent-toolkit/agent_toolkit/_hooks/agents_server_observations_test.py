@@ -90,7 +90,7 @@ async def test_projection_probe_preparation_failure_closes_manager(
 async def test_public_start_after_projection_failure_reaches_hook_records_and_send_message(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """表示保存に失敗した公開start応答から、PostToolUseが所有・cwd・待機登録を記録し、同じsessionへの追送が通る。"""
+    """表示保存に失敗した公開start応答から、PostToolUseが所有・cwd・待機登録を記録し、同じsessionへの追送が受理される。"""
     for key in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "observed-root")
@@ -124,7 +124,7 @@ async def test_public_start_after_projection_failure_reaches_hook_records_and_se
                 "cwd": str(tmp_path),
                 "tool_input": start_input,
             }
-            assert _hook(pretooluse.main, payload) == 2
+            assert _hook(pretooluse.main, payload) == 0
             _acquire_delegation(payload)
             assert _hook(pretooluse.main, payload) == 0
             assert _hook(posttooluse.main, {**payload, "tool_response": {"structuredContent": started}}) == 0
@@ -234,24 +234,24 @@ def test_root_alias_uses_explicit_response_without_scanning_other_roots(
     ("operation", "tool_input", "expected"),
     (
         ("start", {"mode": "write", "prompt": "起草する", "cwd": "/tmp/x"}, "write"),
-        ("start", {"mode": "shell", "command": "make test", "cwd": "/tmp/x"}, "low_tier"),
-        ("start", {"mode": "explore", "prompt": "調べる", "cwd": "/tmp/x"}, "low_tier"),
-        ("start", {"mode": "explore", "prompt": "調べる", "cwd": "/tmp/x", "model_type": "medium_tier"}, "medium_tier"),
-        ("start", {"mode": "delegate", "prompt": "調べる", "cwd": "/tmp/x", "model_type": "high_tier"}, "high_tier"),
-        ("start", {"subagent_md_path": "/plugin/share/exec.subagent.md", "cwd": "/tmp/x"}, "high_tier"),
-        ("start", {"model_type": "medium_tier"}, "medium_tier"),
+        ("start", {"mode": "shell", "command": "make test", "cwd": "/tmp/x"}, "chores_fast"),
+        ("start", {"mode": "explore", "prompt": "調べる", "cwd": "/tmp/x"}, "chores_fast"),
+        ("start", {"mode": "explore", "prompt": "調べる", "cwd": "/tmp/x", "model_type": "review"}, "review"),
+        ("start", {"mode": "delegate", "prompt": "調べる", "cwd": "/tmp/x", "model_type": "execute"}, "execute"),
+        ("start", {"subagent_md_path": "/plugin/share/exec.subagent.md", "cwd": "/tmp/x"}, "execute"),
+        ("start", {"model_type": "review"}, "review"),
         ("start", {"mode": "unknown", "prompt": "調べる"}, None),
         # 統合前の起動ツール名で記録された呼び出しも、対応するmodeの種別を記録する。
         ("start_write", {"prompt": "起草する", "cwd": "/tmp/x"}, "write"),
-        ("start_shell", {"command": "make test", "cwd": "/tmp/x"}, "low_tier"),
-        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x"}, "low_tier"),
+        ("start_shell", {"command": "make test", "cwd": "/tmp/x"}, "chores_fast"),
+        ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x"}, "chores_fast"),
         ("start_custom", {"prompt": "調べる", "cwd": "/tmp/x"}, None),
     ),
 )
 def test_agents_server_model_type_matches_server_defaults(operation: str, tool_input: dict, expected: str | None) -> None:
     """記録する工程種別は、サーバーが各modeの省略時に使う種別と一致する。
 
-    writeで種別を省略すると`write`を使うため、shellと同じ`low_tier`を記録すると工程を別の種別に加算してしまう。
+    writeで種別を省略すると`write`を使うため、shellと同じ`chores_fast`を記録すると工程を別の種別に加算してしまう。
     """
     model_type = agents_server_observations._agents_server_model_type(tool_input, operation)  # pylint: disable=protected-access
     assert model_type == expected
@@ -267,18 +267,18 @@ def test_new_role_model_type_comes_from_same_declaration_as_server(tmp_path: pat
     document = tmp_path / "share/new-check.subagent.md"
     document.parent.mkdir()
     document.write_text(
-        "---\nmode: explore\nmodel_type: low_tier\nusage: chores\n"
+        "---\nmode: explore\nmodel_type: chores_fast\nusage: chores\n"
         "required_inputs: []\nwrites_worktree: false\n---\n# 読取確認\n",
         encoding="utf-8",
     )
-    model_type, _usage, _prompt, _mode, _handoff = launch_requests.task_document_request(str(document), {})
+    model_type, _prompt, _mode, _handoff = launch_requests.task_document_request(str(document), {})
     inputs = {"subagent_md_path": str(document)}
     assert agents_server_observations._agents_server_model_type(inputs, "start") == model_type  # pylint: disable=protected-access
     assert (
         agents_server_observations._agents_server_model_type(  # pylint: disable=protected-access
-            {**inputs, "model_type": "high_tier"}, "start"
+            {**inputs, "model_type": "execute"}, "start"
         )
-        == "high_tier"
+        == "execute"
     )
 
 
@@ -344,7 +344,7 @@ async def test_public_handoff_start_registers_successor_for_wait_and_followup(
             "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
             "tool_input": {"session_id": successor, "prompt": "残工程を続ける"},
         }
-        assert _hook(pretooluse.main, send) == 2
+        assert _hook(pretooluse.main, send) == 0
         _acquire_delegation(send)
         assert _hook(pretooluse.main, send) == 0
         assert (await mcp_tools.send_message(successor, "残工程を続ける"))["delivery"] == "steered"

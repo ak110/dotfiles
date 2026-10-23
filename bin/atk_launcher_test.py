@@ -1,4 +1,4 @@
-"""dotfilesの公開入口がcwdの実装を選び、子の結果を透過させる契約。"""
+"""dotfilesの公開された起動スクリプトがcwdの実装を選び、子の結果を透過させる契約。"""
 
 import json
 import os
@@ -112,7 +112,7 @@ def test_worktree_and_subdirectory_use_changed_version_and_preserve_results(
 
 @pytest.mark.parametrize("location", ["main", "other", "outside"])
 def test_main_and_unrelated_cwd_use_installed_entry(repositories: dict[str, pathlib.Path], location: str) -> None:
-    """主作業ツリーとGit外・別Gitの呼び出しは、入口が属する従来版へ到達する。"""
+    """主作業ツリーとGit外・別Gitの呼び出しは、起動スクリプトが属する従来版へ到達する。"""
     cwd = repositories[location]
     result = _run(repositories["main"], cwd, ["agents", "list"])
     assert result.returncode == 0
@@ -121,7 +121,7 @@ def test_main_and_unrelated_cwd_use_installed_entry(repositories: dict[str, path
 
 
 def test_missing_worktree_entry_fails_without_using_installed_success(repositories: dict[str, pathlib.Path]) -> None:
-    """同一リポジトリの入口不足を、別版の成功で隠さず対処とともに返す。"""
+    """同一リポジトリの起動スクリプトの不足を、別版の成功で隠さず対処とともに返す。"""
     worktree = repositories["worktree"]
     (worktree / "agent-toolkit" / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")).unlink()
     result = _run(repositories["main"], worktree, ["agents", "list"])

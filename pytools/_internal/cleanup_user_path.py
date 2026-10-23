@@ -1,12 +1,13 @@
 """ユーザー側 PATH を整理する（Windows のみ）。
 
 WindowsのPATHはシステム（HKLM）側とユーザー（HKCU）側に分かれて格納される。
-本ステップでは以下3点を担う:
+本ステップでは以下の整理を行う:
 
 - フルパスを `%LOCALAPPDATA%` / `%APPDATA%` / `%USERPROFILE%` プレースホルダーへ置換する
 - システム側 PATH と重複するエントリーをユーザー側から除外する
 - ユーザー側 PATH 内で重複するエントリーを除外する
-- 存在しないディレクトリを指すエントリーを検出した際に警告ログを出力する（自動削除はしない）
+- 現在のdotfiles作業ツリーに対応する、廃止済みagent-toolkit/binの消失したエントリーを除外する
+- その他の存在しないディレクトリを指すエントリーは警告ログを出力して保持する
 """
 
 import logging
@@ -15,7 +16,7 @@ import os
 from collections.abc import Iterable, Mapping
 from pathlib import Path, PureWindowsPath
 
-from pytools._internal import log_format, post_apply_outcome, winutils
+from pytools._internal import common, log_format, post_apply_outcome, winutils
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """ユーザー側 PATH を整理する。
 
     プレースホルダー化・システム側およびユーザー側の重複除外・存在チェック警告を実施する。
-    存在しないエントリーは警告ログを出力するのみで自動削除はしない。
+    既知の廃止済みパスを除き、存在しないエントリーは警告ログを出力して保持する。
     PATH の読み書きの失敗は失敗と数える。
     """
     user_value, reg_type = winutils.read_user_env_var("Path")
@@ -61,8 +62,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         if new_entry != entry:
             replacements.append((entry, new_entry))
 
-    # (2) システム側との重複除外
-    new_value, removed = _filter_user_path(_PATH_SEPARATOR.join(placeholder_entries), system_value or "")
+    # (2) 廃止済みのパスとシステム側との重複除外
+    new_value, removed = _filter_user_path(
+        _PATH_SEPARATOR.join(placeholder_entries), system_value or "", obsolete_key=_obsolete_toolkit_bin_key()
+    )
 
     # (3) 存在チェック警告
     missing, unresolved = _find_missing_paths(_split(new_value))
@@ -110,7 +113,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 def _collect_userprofile_env(environ: Mapping[str, str]) -> dict[str, str]:
     """プレースホルダー化に使う環境変数を最長一致順で収集する。
 
-    `_PLACEHOLDER_VAR_ORDER` の順で `environ` を引き、空値（未定義含む）は除外した
+    `_PLACEHOLDER_VAR_ORDER` の順で `environ` から値を取得し、空値（未定義含む）は除外した
     `"%NAME%" -> 展開値` の順序付き辞書を返す。
     """
     result: dict[str, str] = {}
@@ -153,8 +156,22 @@ def _replace_placeholders(entry: str, env_map: Mapping[str, str]) -> str:
     return entry
 
 
-def _filter_user_path(user_value: str, system_value: str) -> tuple[str, list[str]]:
-    """ユーザー側PATHからシステム側またはユーザー側で重複するエントリーを除く。
+def _obsolete_toolkit_bin_key() -> str | None:
+    """現在の配布元で廃止した旧binが実在しない場合だけ、既知の撤去対象を返す。"""
+    root = common.find_dotfiles_root()
+    if root is None:
+        return None
+    old = root / "agent-toolkit" / "bin"
+    try:
+        if old.exists():
+            return None
+    except OSError:
+        return None
+    return winutils.path_key(str(old))
+
+
+def _filter_user_path(user_value: str, system_value: str, *, obsolete_key: str | None = None) -> tuple[str, list[str]]:
+    """ユーザー側PATHから既知の廃止済みパスと、システム側またはユーザー側で重複するエントリーを除く。
 
     比較は各エントリーを `ntpath.expandvars` で環境変数展開し `PureWindowsPath`
     で表記正規化したキーで行う。ユーザー側の重複は先頭を残す。残すエントリーは
@@ -169,7 +186,7 @@ def _filter_user_path(user_value: str, system_value: str) -> tuple[str, list[str
     removed: list[str] = []
     for entry in _split(user_value):
         key = winutils.path_key(entry)
-        if key and (key in system_keys or key in seen_user_keys):
+        if key and (key == obsolete_key or key in system_keys or key in seen_user_keys):
             removed.append(entry)
             continue
         if key:

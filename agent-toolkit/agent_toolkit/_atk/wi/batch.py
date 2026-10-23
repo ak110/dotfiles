@@ -194,7 +194,7 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
 
 
 def _existing_entry_path(private_notes: pathlib.Path, name: str) -> pathlib.Path | None:
-    """5状態フォルダから指定されたファイル名の実体を探し、最初に見つかったパスを返す。"""
+    """年月配置から指定されたファイル名の実体を探し、最初に見つかったパスを返す。"""
     return next((path for path in iter_entry_paths(private_notes) if path.name == name), None)
 
 
@@ -225,7 +225,7 @@ def _duplicate_original_names(
     比較する前に改行を正規化する。frontmatterの値（`plan_file`を含む）は原文のまま比べる。
 
     `_rewrite_depends_on`による読み替えは本判定の前に適用しない。読み替え先は取り込むエントリの
-    保存名の割り当てで決まり、その割り当ては本判定の結果に依存するためである。
+    保存名の割り当てで決まり、その割り当てには本判定の結果が必要となるためである。
     取り込みを省いたエントリの依存先は、既存項目として保存済みの本文が指す名前のまま解決できる。
 
     本判定の対象を本モジュールでの取り込みだけとするのは、通常の`atk wi add`による投入が
@@ -259,7 +259,7 @@ def _assign_filenames(
 ) -> dict[str, str]:
     """元ファイル名から保存ファイル名への対応を書き込み前に一括確定する。
 
-    元名を維持できるエントリを先に確定し、5状態フォルダの既存名と衝突するエントリだけを
+    元名を維持できるエントリを先に確定し、年月配置の既存名と衝突するエントリだけを
     通常の投入と同じ規則を使って再採番する。再採番候補は既存名・元名を維持するエントリの元名・
     割り当て済みの保存名を予約集合として除外する。
     既存名との衝突判定と予約集合の判定は`_wi_filenames.comparison_key`が返す比較キーで行い、
@@ -383,7 +383,7 @@ def _dependency_warnings(
 ) -> list[str]:
     """取り込み先に実在しない`depends_on`参照を警告文へ列挙する。
 
-    取り込み後に実在する名前は、5状態フォルダの既存名、バッチ内エントリの元名
+    取り込み後に実在する名前は、年月配置の既存名、バッチ内エントリの元名
     （再採番された元名への参照は`_rewrite_depends_on`が新名へ差し替える）、
     および再採番で確定した保存名の3種とする。
     判定対象の依存先は`_declared_dependencies`が返す列とし、スカラー形式の`depends_on`も含める。
