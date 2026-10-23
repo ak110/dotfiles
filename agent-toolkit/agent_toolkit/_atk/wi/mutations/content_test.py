@@ -342,9 +342,11 @@ def test_agent_environment_allows_comment_neutral_edit_and_append(
     assert append_path.read_text(encoding="utf-8").endswith("追記前\n\n\n追記後")
 
 
+@pytest.mark.parametrize("source", [None, "test"])
 def test_agent_environment_edit_preserves_saved_user_comment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    source: str | None,
 ) -> None:
     """予約節を含まないMESSAGEで保存済みユーザーコメント節を保持する。"""
     notes = _setup_notes(tmp_path)
@@ -352,7 +354,7 @@ def test_agent_environment_edit_preserves_saved_user_comment(
         notes,
         "fb.md",
         body="編集前\n\n## ユーザーコメント\n\n保持する",
-        source="test",
+        source=source,
     )
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -446,27 +448,82 @@ class TestNoninteractiveEdit:
             "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: awi\nsource: session-review\n---\n\n編集後\n"
         )
 
-    def test_agent_environment_rejects_edit_without_source(
+    @pytest.mark.parametrize("dry_run", [False, True])
+    def test_agent_environment_preserves_missing_source_on_edit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        dry_run: bool,
+    ) -> None:
+        """人間由来の原文へ処理結果節を加える編集でも保存済みのsource欠落を保持する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "fb-001.md", body="人間が入力した要求。")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        message = "人間が入力した要求。\n\n## 処理結果\n\n確認した結果。"
+        args = _edit_body_args(tmp_path, "fb-001.md", message)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main([*args, *(["--dry-run"] if dry_run else [])], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        expected = original if dry_run else original + "\n## 処理結果\n\n確認した結果。\n"
+        assert path.read_text(encoding="utf-8") == expected
+
+    @pytest.mark.parametrize("source", [None, "test"])
+    @pytest.mark.parametrize("replacement", ["", "''", "[]"])
+    def test_agent_environment_rejects_invalid_explicit_source_on_edit(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        source: str | None,
+        replacement: str,
     ) -> None:
-        """sourceを持たない項目のsource未指定編集を拒否する。"""
+        """sourceの明示時は原本の由来によらず非空文字列を要求し、拒否時は原本を保つ。"""
         notes = _setup_notes(tmp_path)
-        path = _write_awi_file(notes, "fb-001.md", body="編集前")
+        path = _write_awi_file(notes, "fb-001.md", body="編集前", source=source)
         original = path.read_text(encoding="utf-8")
         monkeypatch.setenv("AI_AGENT", "1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        message = f"---\nsource: {replacement}\n---\n\n編集後"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
 
         assert exc_info.value.code == 1
         assert path.read_text(encoding="utf-8") == original
         error = capsys.readouterr().err
         assert "frontmatter" in error
         assert "--source" not in error
+
+    def test_agent_environment_rejects_source_removal_by_editor(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """明示sourceのある原本からEDITORでキーを削除した場合は保存しない。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        fallback = _make_subprocess_fake([])
+
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+            if cmd[0] == "fake-editor":
+                pathlib.Path(cmd[-1]).write_text(original.replace("source: test\n", ""), encoding="utf-8")
+                return subprocess.CompletedProcess(cmd, returncode=0)
+            return fallback(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert path.read_text(encoding="utf-8") == original
 
     def test_agent_environment_accepts_source_added_or_changed_by_edit(
         self,

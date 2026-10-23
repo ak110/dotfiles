@@ -95,11 +95,14 @@ def _preserve_agent_user_comment(original: str, updated: str) -> str:
     return updated.rstrip("\r\n") + "\n\n" + saved_user_comment
 
 
-def _require_agent_edit_source(content: str) -> None:
-    """エージェント環境の編集結果でsourceが確定していることを検証する。"""
+def _require_agent_edit_source(original: str, content: str) -> None:
+    """保存済みのsource欠落を保持する編集を受理し、明示sourceは非空文字列として検証する。"""
     if not is_agent_environment():
         return
+    stored = _frontmatter.parse_frontmatter(original)
     parsed = _frontmatter.parse_frontmatter(content)
+    if stored is not None and parsed is not None and "source" not in stored[0] and "source" not in parsed[0]:
+        return
     raw_source = parsed[0].get("source") if parsed is not None else None
     if not isinstance(raw_source, str) or not raw_source:
         raise WebInputError(
@@ -462,7 +465,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             tmp_path.unlink(missing_ok=True)
         sys.exit(1)
     try:
-        _require_agent_edit_source(edited)
+        _require_agent_edit_source(original, edited)
         if message is not None or tmp_path is not None:
             # 既存本文が旧書式でも、置換後の本文の`直接的原因`行は必ず判定する。
             _add.require_confirmed_cause(edited)
