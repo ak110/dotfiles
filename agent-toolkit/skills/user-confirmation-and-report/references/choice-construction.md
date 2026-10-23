@@ -15,7 +15,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md#「命名の方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/defined-names.md#「命名の方針」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「直接的原因と事象時点の確定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
 
 ## 根拠の確定
@@ -63,7 +63,7 @@
 
 実装方式、アルゴリズム、データ構造など手段の比較を選択肢にする前に、その手段が満たすべき達成目標と受入条件を確定する。確定できない場合は、達成目標と受入条件そのものを確認対象とする。
 
-観測した問題への対処を選ばせる確認（方針や初期設定の変更の認可、適用範囲の選択など、別の形で対処を問う確認を含む）では、選択肢を組む前に`agent-toolkit:bugfix`を起動し、「初動と拡張原因分析の判定」に従って直接的原因を観測で確定する。委譲先が返した直接的原因は、観測を現物と比べ、`agent-toolkit:bugfix`の`SKILL.md`「直接的原因と事象時点の確定」の推定の条件に当たらないことを確かめてから確定済みとして扱う。対策の選定は同スキル「対策の選定」に従い、比較した原因側・構造側の成立案を選択肢へ含めるか、成立しない根拠を観測結果で示す。原因を確かめられない場合は、原因の確定に必要な調査とその実施条件を確認の主題にする。
+観測した問題への対処を選ばせる確認（方針や初期設定の変更の認可、適用範囲の選択など、別の形で対処を問う確認を含む）では、選択肢を組む前に`agent-toolkit:bugfix`を起動し、「初動と拡張原因分析の判定」に従って直接的原因を観測で確定する。委譲先が返した直接的原因は、観測を現物と比べ、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」の推定の条件に当たらないことを確かめてから確定済みとして扱う。対策の選定は同スキル「対策の選定」に従い、比較した原因側・構造側の成立案を選択肢へ含めるか、成立しない根拠を観測結果で示す。原因を確かめられない場合は、原因の確定に必要な調査とその実施条件を確認の主題にする。
 
 ## 影響と回答単位
 

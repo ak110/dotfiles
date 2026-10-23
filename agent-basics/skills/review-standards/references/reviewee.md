@@ -10,7 +10,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
@@ -38,7 +38,7 @@
 
 指摘の採否と修正範囲を確定する前に要求の原本と現在の合意を参照し、保持対象・全体への波及・元の未完了作業を確かめる。
 
-成果物の欠陥を伴うユーザーの指摘・割り込み・是正要求では、`agent-basics:bugfix`を起動し、同スキルの`SKILL.md`「問題を見つけたときの対処」で原因分析の要否を判定する。本節は受領から採否の確定までを定める。
+成果物の欠陥を伴うユーザーの指摘・割り込み・是正要求では、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「問題を見つけたときの対処」で原因分析の要否を判定する。本節は受領から採否の確定までを定める。
 
 - 発言のうち変更の判断を左右する事実（是正対象の欠陥、採否の根拠など）は、着手前に現物（原文、実装、規範、実行結果、対象の目的を定める仕様・設計記録）と比べて確かめる。真偽で次の行動が変わらない事実（過去の経緯、説明の回数など）は確かめずに受け取る。確認結果が発言と異なる場合は、根拠と代替案を先に示す
 - 是正要求は目的、事実の認識と変更要求に分けて読み、事実の認識を述べた発言を変更要求へ広げない。元の要求原文と比べ、既存要件の復元を追加要件として扱わず、優先順位の低い既存規範で対象を縮めない

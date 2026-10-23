@@ -26,8 +26,8 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/report-formats.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md#「原因分析の品質確認」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「原因分析の品質確認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md#「再発防止策の必須性」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/references/report-formats.md#「振り返り結果報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「振り返り結果報告のフォーマット」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
@@ -97,9 +97,9 @@ description: >
    - 全体像の通読で、操作の順序・入力・前後関係が問題候補の発見に必要になった位置は、メインが記録位置を`--detail`へ渡して全文を取得する。会話の流れの通読はメイン1エージェントが担う。
 3. 通読返却と取得済み証拠へ全候補を対応付ける。同一事象の根拠が足りる部分は再利用し、追加事象・変更・未確認・判定不一致だけを補完する。候補ごとの原記録の独立した再調査は一律に求めない。メインは被覆・境界・不一致と原因・採否を確定し、基準付き走査の非該当全件を同じ目的で再走査しない。追加候補が既存判断を変える証拠を持つ場合だけ確定済み判断へ戻す。`candidates.md`を通読の補助として読み、通読の問題との対応付けと、通読では得られない事象（直近30日の複数セッションで反復した失敗署名、hook通知の発生源と件数、除外件数、その場のコードによる加工（`adhoc-processing`）、委譲先の内部）の追加に使う。候補に対応しない通読の問題と成功した作業の改善機会も独立して扱う。選別と工程4の確定は`references/analysis.md`の基準による。正常・必須・回復済みという分類で詳細な欠陥調査を終えた作業も、費用比較の採否へ対応付ける。資格情報の発見とその報告に関する発話は、同書「一次選別」の除外区分`credential-report`の条件と例外（過剰反応自体の是正を求めた発話は分析へ送る）で判定する。確定や比較に要る材料が概要から欠ければ、候補の有無によらず`atk run-script session-review-evidence`の`--detail`・`--tool-calls`・`--grep`で照会する。所要時間と全担当の費用には`stats.md`を使う。公開待機中に準備した調査とAWI原稿は、正式な選別結果と公開後の状態に照らして採否を確定し、公開結果を要する問題は結果の確定後に調べる。
 4. 選別した問題ごとに、メインが自ら`agent-toolkit:bugfix`を起動し、事象、期待する契約、実際の結果、発生条件を入力として適用する（同じセッションで先に起動していても振り返りごとに改めて適用する。WI投入担当の分析はメインの原因分析の代わりにならない）。
-   1. 事項が既存の上位規範（`agent-toolkit/rules/01-agent.md`のQCDや「完遂と先送り」など）や対象の目的と常識から導かれるかに答える（`agent-toolkit:bugfix`の`SKILL.md`「原因分析の品質確認」）。条文の追加より除去・緩和・一般化で目的を達成できるかに答える。
+   1. 事項が既存の上位規範（`agent-toolkit/rules/01-agent.md`のQCDや「完遂と先送り」など）や対象の目的と常識から導かれるかに答える（`agent-basics:bugfix/references/root-cause-analysis.md`「原因分析の品質確認」）。条文の追加より除去・緩和・一般化で目的を達成できるかに答える。
    2. 初動、拡張原因分析の判定、原因、類似見直しの結果、対策・横展開処置・再発防止策を証拠と比べ、原因と対策を1案へ確定する。
-   3. 工程2・3で得た費用比較の採否を再利用し、欠陥の判定と実施方法の判断をそれぞれ確定する。見送る問題も原因と比較を確定し、見送りの根拠が元の不成立、原因、比較の結果と対応し、`agent-toolkit:bugfix`の`SKILL.md`「再発防止策の必須性」が定める使えない根拠に当たらないことを`references/analysis.md`の基準で確かめる。
+   3. 工程2・3で得た費用比較の採否を再利用し、欠陥の判定と実施方法の判断をそれぞれ確定する。見送る問題も原因と比較を確定し、見送りの根拠を元の不成立、原因、比較の結果と対応させる。その根拠が`agent-basics:bugfix/references/root-cause-analysis.md`「再発防止策の必須性」が定める使えない根拠に当たらないことを`references/analysis.md`の基準で確かめる。
 5. 確定した原因と対策を要求として、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動方法」の単位でWI投入担当へ渡す。
    投入するAWIが1件以上あれば、担当の起動前に`## 振り返り結果の予告`（投入するAWIは`AWI登録予定`の行）を届け、同じ応答で担当を起動する。
    予告の書式は`agent-toolkit:completion-report`の`references/report-formats.md`「振り返り結果報告のフォーマット」に従う。

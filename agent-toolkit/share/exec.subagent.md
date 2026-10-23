@@ -72,6 +72,7 @@ continuations:
 | --- | --- | --- | --- | --- |
 | 初期選定が1レーンのレーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
+| CI修正担当として原因を調べる前 | `agent-toolkit:bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` | |
 | 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` | |
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-toolkit:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/diagnostics.md` | |
 | 手動観測を保存する前 | `verification-evidence.md`の「手動観測の保存」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「手動観測の保存」` | |
@@ -147,7 +148,7 @@ continuations:
 - 計画に無いファイルを書く場合は、選定結果を読み取り専用で読み、追加パスが未統合の他レーン（段階を問わない）の`書込対象`と同じパスか、パス要素で一方が他方を含む範囲かを確かめる。重なる場合だけ、追加パス、理由、重なるレーンと双方の定義を「確認事項の即時通知」でメインへ返し、メインが選定結果へ保存する。重ならない場合（稼働中の他レーンが無い場合を含む）は選定結果を変えず、前項の記録だけを残す。選定結果を書くのはメインと`atk lane integrate`だけであり、複数のレーンが書くと置換の間で更新が失われる
 - 実装中に要件・外部仕様水準の技術判断が生じたら、現在の結論を計画があればレビュー指摘管理表へ、なければ引き継ぎ記録へ残して実装を続ける。ユーザー選好か認可範囲の変更を要する部分だけを`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」で送り、回答を必要とする単位を待つ。通知済みの事後承認の対象について、レビュー修正で実施内容が変わった場合は、変更後の内容を同じ即時通知で再びメインへ送る
 - 完成条件を変更・除外して残りをadoptする判断が要る場合は、対象条件、外す技術的根拠、否定したユーザー判断（`agent-toolkit:review-standards`の`references/exec-review-recording.md`「失効の根拠」）の有無・所在をメインへ通知する。返された判断から再開し、エージェント由来であることだけを失効の根拠にはしない。メインの技術判断を受けたら、その完成条件を扱うレビュー指摘管理表の行（無ければ`atk review-table add`で加える）へ`atk review-table respond`の`--no-response-reason-file`で記録する。記録には`根拠の所在:`ラベルの行へ`メインの技術判断`、対象AWIのファイル名と完成条件、外す根拠を書く
-- 最後の実装commitの前に、差分を`agent-toolkit:writing-standards`の`references/design-heuristics.md`「設計品質の劣化確認」で評価して観点ごとの結論を検証結果へ残し、認可内の劣化は同じcommitで構造を整理する
+- 最後の実装commitの前に、差分を`agent-basics:writing-standards/references/design-heuristics.md`「設計品質の劣化確認」で評価して観点ごとの結論を検証結果へ残し、認可内の劣化は同じcommitで構造を整理する
 - 実装完了前に、具体化した`### 受入シナリオ`を受入シナリオ検証（`workflow-phases.md`）で自己検収し、公開された呼び出し手段と入力を使い、期待結果と実結果が一致するか確かめる。計画なしでもWIの完成条件へ同じ対応を使う。文書条件は送受信の主体・入力・条件・次操作と参照先の間で、渡す値と受理する値が一致するか確かめる。`検証結果`にはシナリオ別のテスト名と合否、手動判定の保存先、検証済み・未実施・条件変更の判断を分けて記す
 - 完成条件か受入シナリオが名指しした観測手段（コマンドの出力、画面、hookの通知など）を実装が生まない場合は、代替観測で埋めず実装の不足として是正する。完成条件自体の変更が要るなら採否の変更として「確認事項の即時通知」に従う。環境の不在など実装が決めない理由で観測できない場合は、実施できた範囲と観測に要る後続工程を記し、残存する状態が観測を妨げるなら、その状態の生成主体・起動元・起動契機も調べて未確定範囲とともに記す
 - 公開された呼び出し手段を置換・廃止した場合の完遂は`agent-toolkit/rules/01-agent.md`「QCDと3段判定」に従う。存在確認、mock、部分的なprobe、旧手段を併用した成功は検証結果に使わない
@@ -172,7 +173,7 @@ continuations:
 
 - `レビュー修正担当`は採用した指摘だけを修正し、レビュー指摘管理表が要求する証拠を保存する。採否と横展開は`agent-toolkit:review-standards`の`references/reviewee.md`「修正要否の立証」と「安全な修正」に従い、レビュー担当の修正方針を要件へ昇格させず独立に確定する。不採用は理由を表へ記録し、成果物は変更前のまま保つ。計画かWIの確定内容を覆す修正は適用せず、対立箇所を続行できない理由として返す
 - ユーザビリティレビューの指摘を修正した担当は、受領した操作順、画面状態、表示幅で新しいHEADを実ブラウザーで描画して確かめ、試した条件と結果を再提出に記す。自動化できる条件は既存のブラウザーテストへ保持する（努力目標。同条件のテストを重ねない）
-- `CI修正担当`はCI記録の7項目を実装契約とし、原因となった失敗だけを修正する。原因を調べる前に`agent-toolkit:bugfix`を起動し、`SKILL.md`「初動と拡張原因分析の判定」「直接的原因と事象時点の確定」の共通判定をCI記録の原因分析結果へ適用する。直接的原因を確定できなければ是正commitとして返さず、試した対照、残る候補、作成した診断の変更を、推定である旨とともに返す。診断コードを加える場合は、CI記録が対応付ける競合仮説・観測・採取対象を先に読み、判別に使わない列挙と走査を含めず、出力量は採取対象を限定して抑える。修正方法は`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」のCI失敗の区分に従い、原因commitへ取り込んだ場合は書換え前後のOID対応と`git range-diff`の結果を返す。原因となった失敗と根本原因を同じくする対象のうちCI記録が認可しない対象は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「類似見直し」の母集団として修正の対象と方向を委譲元へ返す。CIログの有無、再現性、外部の一時障害、再実行の認可と回数は除外条件にしない。pushは行わない
+- `CI修正担当`はCI記録の7項目を実装契約とし、原因となった失敗だけを修正する。原因を調べる前に`agent-toolkit:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「初動と拡張原因分析の判定」「直接的原因と事象時点の確定」の共通判定をCI記録の原因分析結果へ適用する。直接的原因を確定できなければ是正commitとして返さず、試した対照、残る候補、作成した診断の変更を、推定である旨とともに返す。診断コードを加える場合は、CI記録が対応付ける競合仮説・観測・採取対象を先に読み、判別に使わない列挙と走査を含めず、出力量は採取対象を限定して抑える。修正方法は`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」のCI失敗の区分に従い、原因commitへ取り込んだ場合は書換え前後のOID対応と`git range-diff`の結果を返す。原因となった失敗と根本原因を同じくする対象のうちCI記録が認可しない対象は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「類似見直し」の母集団として修正の対象と方向を委譲元へ返す。CIログの有無、再現性、外部の一時障害、再実行の認可と回数は除外条件にしない。pushは行わない
 
 ### 完成条件証拠の検証記録
 

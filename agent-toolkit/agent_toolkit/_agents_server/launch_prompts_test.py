@@ -95,6 +95,24 @@ def test_process_loop_launched_delegate_takes_main_role() -> None:
     assert marker in automated_prompt.wrap("本文", source=automated_prompt.SOURCE_PROCESS_LOOP, kind="repository-delegate")
 
 
+def test_lightweight_launches_receive_shared_result_contract_only() -> None:
+    """共通規範を省く全区分へ同じ返却条件が届き、ベース実務規律の全文は追加しない。"""
+    base = _shared_document_body("agents-server-base.md")
+    result_section = base.split("## 結果の返却\n\n", maxsplit=1)[1]
+    result_body = "\n".join(line for line in result_section.splitlines() if not line.startswith("<!--")).strip()
+    assert result_body
+    for prompt in (
+        launch_prompts.EXPLORE_SYSTEM_PROMPT,
+        launch_prompts.CLAUDE_EXPLORE_SYSTEM_PROMPT,
+        launch_prompts.SHELL_SYSTEM_PROMPT,
+        launch_prompts.WRITE_SYSTEM_PROMPT,
+    ):
+        assert result_body in prompt
+        assert base not in prompt
+        assert launch_prompts.SUBAGENT_RULES not in prompt
+    assert result_body in launch_prompts.SUBAGENT_BASE_INSTRUCTIONS
+
+
 def test_launch_prompts_carry_normative_boundaries() -> None:
     """system指示の各区分が、生成主体と種別を示す境界を持つこと。"""
     for kind, prompt in launch_prompts.LAUNCH_SYSTEM_PROMPTS.items():

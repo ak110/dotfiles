@@ -9,12 +9,12 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/runtime-routing.md#「代替時の組合せの目安」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「代替時の組合せの目安」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「再発防止策の必須性」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/agent-documents-basics.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/agent-documents-basics.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details.md#「検収手段の到達可能性」` | 判断 | `section:agent-basics:*/skills/review-standards/references/judgment-details.md#「検収手段の到達可能性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
@@ -25,7 +25,7 @@
 
 ## ユーザー介入と確認の判定
 
-ユーザー介入は従来の判断を是正した事象であり、評価を必須とする。探索の深さと再発防止策の要否は`agent-basics:bugfix`の`SKILL.md`「QとC・Dの区別」で判定する。ユーザー介入とWIの記入欄の是正（`wi-user-response`）を除外できるのは次の4区分だけで、除外区分と根拠を分析結果へ記録する。
+ユーザー介入は従来の判断を是正した事象であり、評価を必須とする。探索の深さと再発防止策の要否は`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」で判定する。ユーザー介入とWIの記入欄の是正（`wi-user-response`）を除外できるのは次の4区分だけで、除外区分と根拠を分析結果へ記録する。
 
 - `single-inquiry`（単発の照会）: 進捗・所要時間・状態を尋ねるだけで、是正・停止・方針変更・将来の振る舞い変更を含まない発話。根拠はその発話の本文
 - `non-changing-request`（判断を変えない追加要求）: 従来の判断・工程・成果物・要求分類・完了判定のいずれも変えない要求。根拠は変えていないことを示す本文の箇所
@@ -58,12 +58,12 @@
 
 1. 条文の特徴的な1行を`atk run-script session-review-evidence --`の`--context-at <事象の記録位置> --phrase=<文字列>`で照会し、判定と、条文が文脈へ入った方法を示す`channel`をAWIの原因へ書く。phraseは事象時点の文面から選ぶ（その後に改訂されていれば`git log -S`で得る）
 2. 判定を区分へ対応させる。`absent`は起動契機か参照時点（条文を持つ資料が読まれなかった）、`dropped-by-compaction`は参照時点（圧縮で外れ、再注入の対象外か切り詰めで欠けた）、`present`は判定条件・責務の所在・想起性とする。一致の`channel`が`user`と`assistant`だけなら、会話中の言及として扱う
-3. `agent-basics:bugfix`の`SKILL.md`「再発防止策の必須性」の未適用規範の是正原則で原因を特定し、条文の想起性改善案と、改善後の条文が誤りの機構を想起させる見込みの根拠をAWIへ書く。見込みは`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`が挙げる読み手の特性で判定する
+3. `agent-basics:bugfix/references/root-cause-analysis.md`「再発防止策の必須性」の未適用規範の是正原則で原因を特定し、条文の想起性改善案と、改善後の条文が誤りの機構を想起させる見込みの根拠をAWIへ書く。見込みは`agent-basics:writing-standards/references/agent-documents-basics.md`が挙げる読み手の特性で判定する
 
 目的逸脱には、規範による停止・差し戻し・空転・反復、条文の矛盾や前提の不在、要求を満たさない成果物などがあり、成功した工程の読込・照会・準備・確認の量も目的の操作と比べる。
 規範どおりの工程は適用のたびに生じるため、1セッションで1回でも反復する費用として扱い、呼出回数・読込量・所要と適用頻度から、必読範囲の縮小・集約、準備を呼ばれる側へ移す案、探索を不要にする案を比べる。
 条文の改訂は守る価値・導入目的・期待する成果へ対応付け、維持する場合は同じ停止が再現する条件と許容理由を記録する。
-判断の到達可能性は`agent-toolkit:review-standards`の`references/judgment-details.md`「検収手段の到達可能性」で確かめる。一般の案の比較は`agent-toolkit:writing-standards`の`references/design-heuristics.md`による。
+判断の到達可能性は`agent-toolkit:review-standards`の`references/judgment-details.md`「検収手段の到達可能性」で確かめる。一般の案の比較は`agent-basics:writing-standards/references/design-heuristics.md`による。
 
 ## 類似見直しの分担
 
@@ -76,4 +76,4 @@
 
 ## 自動検出のホスト契約
 
-- hookの採否と遮断・警告の別は`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」の費用比較で決める。この比較は手段の選択に使い、重大な問題で遮断・警告の案が成立しなくても`agent-basics:bugfix`の`SKILL.md`「QとC・Dの区別」に従って根本原因へ作用する別の手段を探す。不可逆性を遮断の根拠にする場合は、観測した事象の事実（パッケージ削除なら`remove`か`purge`かなど）で判定する
+- hookの採否と遮断・警告の別は`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」の費用比較で決める。この比較は手段の選択に使い、重大な問題で遮断・警告の案が成立しなくても`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」に従って根本原因へ作用する別の手段を探す。不可逆性を遮断の根拠にする場合は、観測した事象の事実（パッケージ削除なら`remove`か`purge`かなど）で判定する

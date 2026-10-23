@@ -12,7 +12,7 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `testing.md#「安定性: flakyテスト防止」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「安定性: flakyテスト防止」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「テストの原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「テストの原因調査」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「テストの原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「テストの原因調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `testing.md#「失敗テストの除外による回避禁止」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「失敗テストの除外による回避禁止」` |
 
 ## ロケーター戦略
@@ -32,7 +32,7 @@
 
 ## flaky対策
 
-原因の調査と是正の選定の前に`agent-basics:bugfix`を起動する。`agent-basics:bugfix`の`SKILL.md`「テストの原因調査」を適用する。本節のtraceと再試行はその調査の入力を採取する手段である。
+原因の調査と是正の選定の前に`agent-basics:bugfix`を起動する。`agent-basics:bugfix/references/root-cause-analysis.md`「テストの原因調査」を適用する。本節のtraceと再試行はその調査の入力を採取する手段である。
 
 - `retries`はCIでだけ有効にし（ローカルは0）、目的は次項のトレースの採取に限る。`failOnFlakyTests`（CLIでは`--fail-on-flaky-tests`）を併せて有効にし、再試行で成功したテストは`testing.md`「失敗テストの除外による回避禁止」に従って根本原因を直す
 - `trace: 'on-first-retry'`を設定し、CIのデバッグはトレースビューアーを優先する

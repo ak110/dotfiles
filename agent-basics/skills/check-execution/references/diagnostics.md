@@ -9,9 +9,10 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「所要の原因調査」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「所要の原因調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/testing.md#「速度」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「速度」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` |
+| 所要の増大や不要仕事を原因調査へ渡す前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 
 ## 読む出力
 
@@ -26,7 +27,7 @@ pyfltrの`commands_summary.needs_action.warning`はコマンド結果の区分�
 - 保存結果がない初回は、必要な処理・データ量・外部起動・契約上必要な待機から所要の見込みの根拠を示し、今回の観測と比べる。必要な待機や実プロセス・実環境の保証を比較基準に含める
 - 既存の所要出力（pytestのduration、pyfltrの`slow_tests`など）、保存済み実行記録とツールの経過時間を使う。区間の判別に必要な情報が不足する不審な対象だけ追加で測る
 
-仕事量や条件差で説明できない増大、不要な準備・取得・起動・待機の反復は、`agent-basics:bugfix`を起動して同スキルの`SKILL.md`「所要の原因調査」へ渡す。単独再実行の成功は仕事量の妥当性の根拠から外す。観測した個別・全体の所要、比較基準と条件、妥当性と改善または追加調査の判断を既存の検証結果へ残す。
+仕事量や条件差で説明できない増大、不要な準備・取得・起動・待機の反復は、`agent-basics:bugfix`を起動して`agent-basics:bugfix/references/root-cause-analysis.md`「所要の原因調査」へ渡す。単独再実行の成功は仕事量の妥当性の根拠から外す。観測した個別・全体の所要、比較基準と条件、妥当性と改善または追加調査の判断を既存の検証結果へ残す。
 設計時の不要仕事の除去とハング検出の時間上限は、`agent-basics:writing-standards`の`references/testing.md`「速度」に従う。ハング検出のtimeoutと所要の妥当性の基準は目的を分け、固定の許容秒数やその機械チェック、専用台帳・監視、毎回の全件再測定は加えない。
 
 ## 基準版と変更行への帰属
@@ -42,7 +43,7 @@ pyfltrの`commands_summary.needs_action.warning`はコマンド結果の区分�
 ## 合否
 
 - 未到達・未適用・未完了の出力は、既存か新規かにかかわらず阻害として扱う。比較不能と、意味・影響・帰属の未確定も阻害とし、残す理由の記録だけでは受理せず、理由と不足する条件を報告先へ返す
-- 欠陥を示す診断は是正し、権限や入力が不足する場合は報告先へ返す。警告の意味の判定は`agent-basics:bugfix`の`SKILL.md`「問題を見つけたときの対処」に従う
+- 欠陥を示す診断は是正し、権限や入力が不足する場合は報告先へ返す。警告の意味の判定は`agent-basics:bugfix/references/root-cause-analysis.md`「問題を見つけたときの対処」に従う
 - 処理が成立し欠陥を示さず、意味・影響・帰属・比較した版・残す理由を確定できた警告は、それらと診断本文を検証結果と進捗ログ（または引き継ぎ記録）へ残して続行する
 - 是正を要する既存不良は、観測した出力、直接的原因、修正の対象と方向を依頼元へ返し、割当と認可に従って是正する
 - 統合時は実装で警告を残した理由が統合後の入力と実行条件でも成立するかを確かめ、成立しなくなった理由と統合で初めて生じた欠陥を同じ基準で扱う

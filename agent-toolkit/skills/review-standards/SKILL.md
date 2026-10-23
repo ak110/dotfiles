@@ -8,7 +8,7 @@ description: >
   評価する時に最初に必ず起動する。外部の記事や資料に基づく改善案の評価にも適用する。
   レビュー担当サブエージェント、レビューイーとなる計画担当・実装担当、
   およびメインエージェント自身のいずれもが起動する。
-  著者向けスキル`agent-toolkit:writing-standards`と併用する。
+  著者向けの品質基準`agent-basics:writing-standards`と併用する。
 # 編集時の注意点:
 # レビュー担当側の基準はreferences/reviewer.md、レビューイー側の基準はreferences/reviewee.mdが定める。
 # 両役割へ共通する契約だけを本体へ置く。

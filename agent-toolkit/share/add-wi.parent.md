@@ -20,10 +20,10 @@ AWI・UWIの作成・更新で成立性調査と起草をWI投入担当へ委ね
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `add-wi.subagent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.subagent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/SKILL.md#「QとC・Dの区別」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/SKILL.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「直接的原因と事象時点の確定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「返却に含まれる既存不良の受領」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「返却に含まれる既存不良の受領」` |
@@ -44,13 +44,13 @@ AWI・UWIの作成・更新で成立性調査と起草をWI投入担当へ委ね
 
 ## 起動前の前提
 
-類似見直しの探索終了と保持する是正範囲は`agent-toolkit:bugfix`「QとC・Dの区別」に従う。
+類似見直しの探索終了と保持する是正範囲は`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」に従う。
 後掲のユーザー明示集合の保護は、同節が保持する既知の欠陥と追加・強化規定の既存対象にも適用する。
 未終端の既存WIを更新・修復する必要が分かった時点と、既存WIへ対象と根拠のある具体的な懸念を受けた時点で、認識合わせや調査より先に`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`の手順で対象を保留する。`processing`の項目は同書「保留と本文修正」の処理中の項目の扱いに従い、書き換えたい内容を新規投入の要求として渡す。
 
 要求ごとに投入先の対象リポジトリと種別を確定してから渡し、複数の投入先を持つ要求は要求と投入先の組へ展開する。
 `agent-toolkit:add-awi-by-user`からの委譲では、同スキル手順2が定める投入作業の記録を済ませてから渡す。起動後に新しい担当へ要求を渡す場合も同じ手順に従い、既に渡した要求のうち保存を終えていないものの投入先を記録に含める。投入先のprocess-loopはこの記録を持つ会話の委譲先も同じ投入作業として待つため、記録は委譲元だけが行う。
-観測した問題（失敗、不具合、未対応など）を起点とする要求では、委譲元が`agent-toolkit:bugfix`の`SKILL.md`「直接的原因と事象時点の確定」で直接的原因を調べる。把握できた場合は、同スキルの`references/root-cause-analysis.md`「類似見直し」に従い、根本原因から導く母集団（時間軸と他リポジトリを含む）の見込みを把握する。そのうえで症状が出た成果物、原因を生成する定義、機構を共有する成果物とそれぞれの所有リポジトリを分けて投入先を決める。原因を観測で確かめられなかった場合は、「渡す入力」の原因未確認の要求の規定に従い、観測事象・期待する契約・確定すべき問いを渡す。投入先は確定済みの対象と所有リポジトリから決め、残る原因調査を担当へ委ねる。担当は受領した投入先の中だけを扱うため、症状の出た成果物だけで投入先を決めると、機構を共有する他の成果物とリポジトリが是正から漏れる。把握した範囲の探索の深さと終了は同書「QとC・Dの区別」の重大度判断で決め、未走査部分は確認済みと区別する。ユーザーが明示した対象集合は保持する。集合を名指しの例へ狭める案は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文からの具体化を要する軸」で確認する。根本原因と対策の確定は担当へ残す。
+観測した問題（失敗、不具合、未対応など）を起点とする要求では、委譲元が`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」で直接的原因を調べる。把握できた場合は、同スキルの`references/root-cause-analysis.md`「類似見直し」に従い、根本原因から導く母集団（時間軸と他リポジトリを含む）の見込みを把握する。そのうえで症状が出た成果物、原因を生成する定義、機構を共有する成果物とそれぞれの所有リポジトリを分けて投入先を決める。原因を観測で確かめられなかった場合は、「渡す入力」の原因未確認の要求の規定に従い、観測事象・期待する契約・確定すべき問いを渡す。投入先は確定済みの対象と所有リポジトリから決め、残る原因調査を担当へ委ねる。担当は受領した投入先の中だけを扱うため、症状の出た成果物だけで投入先を決めると、機構を共有する他の成果物とリポジトリが是正から漏れる。把握した範囲の探索の深さと終了は同書「QとC・Dの区別」の重大度判断で決め、未走査部分は確認済みと区別する。ユーザーが明示した対象集合は保持する。集合を名指しの例へ狭める案は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文からの具体化を要する軸」で確認する。根本原因と対策の確定は担当へ残す。
 実行レビューの差分外の既存不良を専念型へ渡す場合（`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「返却に含まれる既存不良の受領」）、委譲元は前段の直接的原因と母集団の把握をしない。投入先は不良の対象ファイルを所有するリポジトリとし、投入先の外へ及ぶ対象は「続行できない理由の扱い」の投入先の外の対象として担当の返却から扱う。
 原因調査に必須でユーザーだけが提供できる資料・実例は、同スキルの`references/pending-decisions.md`「未確定判断の保留と暫定判断」に従い、担当の返却を待たずに提供を依頼して該当する要求を保留する。この依頼は対処の選択を問う確認と分けて送り、原因の説明は資料で確定してから伝える。資料なしで進められる要求はそのまま渡す。
 要求の分類は`agent-toolkit:wi-standards`の`references/drafting-workflow.md`「確定した要件と委譲元の判断」の共通契約に従う。逐語本文と実回答の出所から確認要否を判定し、ユーザーだけの値が残る事項は回答を得てから渡す。

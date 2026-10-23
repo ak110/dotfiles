@@ -23,8 +23,8 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前 | `<plugin root>/skills/writing-standards/references/powershell.md` | 操作 | `path:*.ps1`、`path:*.ps1.tmpl` | |
-| Bash（`.sh`・`.sh.tmpl`）側を編集する前 | `<plugin root>/skills/writing-standards/references/bash.md` | 操作 | `path:*.sh`、`path:*.sh.tmpl` | |
+| PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前 | `agent-basics:writing-standards/references/powershell.md` | 操作 | `path:*.ps1`、`path:*.ps1.tmpl` | |
+| Bash（`.sh`・`.sh.tmpl`）側を編集する前 | `agent-basics:writing-standards/references/bash.md` | 操作 | `path:*.sh`、`path:*.sh.tmpl` | |
 | Linux側とWindows側で分岐するコードを変更する前 | `agent-basics:writing-standards/references/testing.md`の「プラットフォーム分岐の検証」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「プラットフォーム分岐の検証」` | |
 
 ## ペアファイルの判別

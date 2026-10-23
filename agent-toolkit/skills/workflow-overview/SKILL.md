@@ -37,42 +37,24 @@ user-invocable: false
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` | |
+| 登録した複数リポジトリの担当起動・制御・再開を扱う前 | `../process-wi/references/all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` | |
+| レーンの準備・統合・回復・回収を扱う前 | `../process-wi/references/run-lanes.md`の「レーンと資源」と「統合とAWI終端」 | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「レーンと資源」「統合とAWI終端」` | |
 
 ## 利用形態と起動主体
 
-- 対話型: ユーザーがエージェントへ直接依頼する。計画の作成要否は`agent-toolkit:plan-mode`「計画ファイルの作成要否」、ユーザー確認の要否は`agent-toolkit:user-confirmation-and-report`「確認要否の判定」で決める。
-- 自律型: ユーザーが`atk wi process-loop`を起動する。process-loopが反復ごとに開始前更新と専用worktreeを準備し、子セッションで`agent-toolkit:process-wi`を起動する。子セッションへ渡すプロンプトはユーザーの発話ではない。子セッションは`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`で起動元を判別する。停止は`atk wi process-loop abort`、次の1セッションだけへの指示は`instruct`、状態は`status`で行う。
-- まとめ処理型: ユーザーが`agent-toolkit:single-lane-process`を手動起動し、たまったWIを1回の実行で扱う。
-- 定期実行型: ユーザーがcronなどへ`atk run-skill`を登録し、WIキューを経由せずにスキル1件を自律モードで1回ずつ実行する。結果は報告用UWI、判断が要る対応は事前承認型UWIで届く。これらのUWIは`source`が`run-skill`、`scope`がスキル名であり、process-wiの選定とprocess-loopの起動件数から除く。
+| 利用形態 | 起動主体と公開操作 | 処理の責務 |
+| --- | --- | --- |
+| 対話型 | ユーザーがエージェントへ直接依頼する | エージェントが依頼を扱う。計画の作成要否は`agent-toolkit:plan-mode`「計画ファイルの作成要否」、確認の要否は`agent-toolkit:user-confirmation-and-report`「確認要否の判定」で決める |
+| 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機・子セッション起動を管理し、子の`agent-toolkit:process-wi`が対象WIの処理を担う |
+| まとめ処理型 | ユーザーが`agent-toolkit:single-lane-process`を手動起動する | たまったWIを1回の実行で扱う |
+| 定期実行型 | ユーザーがcronなどへ`atk run-skill`を登録する | WIキューを経由せずスキル1件を自律モードで実行し、結果は報告用UWI、判断を要する対応は事前承認型UWIで届ける |
 
-登録した複数リポジトリのprocess-loopは、ホームから`atk wi process-loop all-repos`で起動する。
-登録は`process_loop_repositories`のJSON配列、登録集合の一覧は`atk wi list --configured-repos`で扱う。
-登録が空の場合は待機し、登録外のリポジトリへのWI投入は処理対象の登録と独立して使える。
-取得済み候補は対象リポジトリをcwdとする通常のdelegateへ渡し、オーケストレーターは担当とユーザーの中継だけを担う。
-選定・規範・prepare・監査・実装・Git・公開の判断は対象担当が持つ。
-レーン上限は対象リポジトリ別の候補数から求め、処理の所有は同じoriginを対象とする通常起動と共有する。
-詳細は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/all-repos-orchestration.md`が定める。
+process-loopの起動・待機・制御を扱う前に`atk wi process-loop --help`で条件を確認する。次の公開操作は、中断要求の`atk wi process-loop abort`、次の1セッションへの指示の`instruct`、状態確認の`status`である。
+複数リポジトリはホームから`atk wi process-loop all-repos`で起動し、`process_loop_repositories`へ登録した集合を`atk wi list --configured-repos`で確認する。常駐側は担当の起動・中継・所有管理を担い、対象の選定・規範・実装・Git・公開の判断は対象リポジトリの担当が持つ。登録と再開の条件は`../process-wi/references/all-repos-orchestration.md`が定める。
 
-process-loopは子セッションの開始前に、WI投入作業の活動による猶予と未回答UWIによる抑止を同時に評価する。
-活動猶予の理由は、`agent-toolkit:add-awi-by-user`が`atk wi submission begin`で記録した投入先が対象リポジトリ集合と交わる会話とその委譲先の活動に限る。
-同じoriginの別worktreeと別表記のURLは同じ投入先として扱い、同じリポジトリの別作業、別リポジトリへの投入、会話を持たないプロセスは理由にしない。
-活動猶予は処理可能WIの検出から10分で、共有private-notesへの新規WI到着の検出ごとに10分へ延長する。
-当該ループ自身とその子孫、終了済みのセッション、稼働中の子エージェントを持たずにユーザーの応答を待つセッションは、活動の理由から除く。
-活動猶予は活動がなくなった時点か期限の到来で解除し、既存WIの編集・状態移動は延長に数えない。
-対象集合に未回答UWIがあれば、保存済みUWIの最終更新から600秒が経過するか全件が回答されるまで開始を抑止する。
-`hold`のUWIと`run-skill`由来のUWIも抑止の判定に含め、回答後に`adopted`へ移ったUWIの更新も最終更新へ反映する。
-両条件が解除された後に候補を再評価し、待機理由・期限・延長・開始は端末とログで確認できる。
-入力可能な端末では、ユーザーがEnterで今回の開始前待機を解除し、両条件を待たずに候補の再評価へ進められる。
-解除は次回の待機へ持ち越さず、非TTY・EOF・バックグラウンドジョブなど入力できない実行では従来どおり待機する。
+process-wiのメインは選定・配分とユーザー確認を担い、レーン担当が計画・実装・独立した実行レビューの調整・統合を続ける。単一レーンの継続契約は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`とする。準備は`atk lane create`、統合は`atk lane integrate`、回収は`atk lane delete`へ進み、操作前に`../process-wi/references/run-lanes.md`の該当節を読む。保持された資源の回復は同書と`atk lane delete --help`・`atk lane recover --help`の条件・診断から再開する。
 
-process-wiでは、対象のメインが候補本文から分類と配分を判断し、取得済み候補と意味判断を`pick-wi-check`へ渡して定型欄の生成・確認・保存を1回で行う。
-保存済み選定YAMLから`atk lane create`へレーンを渡し、準備後に同じ担当threadが計画から統合までを担う。
-初期選定が1レーンならレーン担当が計画・実装・独立した実行レビューの調整から統合まで継続する。メインはレーン担当からユーザー判断を要する通知と統合の最終結果を受領し、必要なユーザー確認を仲介する。共通契約は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`とする。1レーンでも`atk lane integrate`を使い、統合と計画保存・WI終端・統合済み記録を同じ操作で完了する。
-操作の入力と失敗後の再開は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/run-lanes.md`が定める。
-意味判断、レーン数上限、単一writer、独立した実行レビュー、直列統合は各工程に残す。
-レーンの専用worktreeは対象リポジトリの主作業ツリーの`.claude/worktrees/process-wi-<レーン識別子>`に固定され、対象リポジトリごとに1つだけ起動するprocess-wiの反復でもパスが増えない。レーンのworktreeとbranchは統合後も追加に備えて保持し、通常終了では`atk agents-exit-session`が、process-loopでは子セッションの終了後の処理が、`atk lane delete`と同じ安全条件で回収する。次回の開始時は`atk lane delete --list`から残存登録と前回結果を読み、未統合・dirty・稼働中・不明の成果を保って再判定する。選定原本が失効し所有登録にも選定情報が無い旧登録は、`atk lane recover --session-id <所有session>`で元のbranchを残して作業ツリーを解放する。セッションのmanaged-tempと証拠は専用資源の回収対象から外す。
-自動終了の回収は同じ適格判定を使い、終端sessionの解放応答を待たず、未確認の資源を保持理由と再回収操作付きで残す。
-対話の`atk lane delete`は所有側の解放応答と実行プロセスの終了を期限まで待ち、解放後の独立した使用を1回で判定する。
+`run-skill`由来のUWIは`source`が`run-skill`、`scope`がスキル名であり、process-wiの選定とprocess-loopの起動件数から除く。
 
 ## 登録、回答、振り返り
 

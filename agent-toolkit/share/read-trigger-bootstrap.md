@@ -1,7 +1,7 @@
 # 操作を契機とする共有資料
 
 操作に共通するスキル起動の宣言をこの表へ置く。各スキル内の読込表は追加の資料を宣言する。
-配送操作の語彙と記法は`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「読込表」にある。
+配送操作の語彙と記法は`read-trigger-contract.md`「表と取得方法」が定義する。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -14,7 +14,7 @@
 | 要件・技術判断を分類し、確認要否を判定する前 | `../skills/user-confirmation-and-report/references/approval-scope.md` | 判断 | `skill:user-confirmation-and-report` |
 | 確認本文と選択肢を起草する前 | `../skills/user-confirmation-and-report/references/approval-scope.md`、`../skills/user-confirmation-and-report/references/choice-construction.md` | 判断 | `confirmation` |
 | 原因分析の判断前と記述前 | `agent-basics:bugfix/references/root-cause-analysis.md`、`../skills/bugfix/references/root-cause-analysis.md`、`../skills/bugfix/references/analysis-records.md` | 判断 | `skill:bugfix`、`root-cause-writing` |
-| エージェント向け文書の編集前 | `../skills/writing-standards/references/writing.md`、`../skills/writing-standards/references/agent-documents-basics.md` | 操作 | `agent-document-writing` |
+| エージェント向け文書の編集前 | `agent-basics:writing-standards/references/writing.md`、`agent-basics:writing-standards/references/agent-documents-basics.md`、`../skills/writing-standards/references/agent-documents-basics.md#「運用条件」「置き場所と配送」「読込表の宣言」` | 操作 | `agent-document-writing` |
 
 ## 常時規範が名指しする資料
 
@@ -22,6 +22,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 配送操作の語彙と記法を選ぶ前 | `read-trigger-contract.md#「表と取得方法」` | 判断 | `section:agent-toolkit:*/share/read-trigger-contract.md#「表と取得方法」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
@@ -37,7 +38,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/SKILL.md#「継続と新規起動」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「継続と新規起動」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/SKILL.md#「QとC・Dの区別」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/receiving.md#「受領後の扱い」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/receiving.md#「受領後の扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md#「レーン担当が確定した質問への回答」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「レーン担当が確定した質問への回答」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/receiving.md#「返却形式の適合確認」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/receiving.md#「返却形式の適合確認」` |

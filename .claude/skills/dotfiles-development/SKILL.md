@@ -27,7 +27,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-repo-layout/SKILL.md` | 判断 | `read:*/skills/dotfiles-repo-layout/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:check-execution/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:bugfix/SKILL.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「直接的原因と事象時点の確定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/references/distribution-and-hooks.md#「agent_toolkitパッケージの配置と層」` | 判断 | `section:*/skills/agent-toolkit-edit/references/distribution-and-hooks.md#「agent_toolkitパッケージの配置と層」` |
 
 ## 読込表
@@ -77,7 +77,7 @@ pyfltrを調査・計測用途で実行する場合は`--no-fix`で自動修正�
 
 ## ホスト本体のバイナリの検索
 
-本体の検索は、ホスト機能の公式ドキュメントと提供元の公開Issueトラッカーにある既知の報告の確認を補う手段である。結論と回避策の採否はそれらと合わせて決める。基準は`agent-basics:writing-standards`の`references/investigation.md`と`agent-toolkit:bugfix`の`SKILL.md`「直接的原因と事象時点の確定」にある。
+本体の検索は、ホスト機能の公式ドキュメントと提供元の公開Issueトラッカーにある既知の報告の確認を補う手段である。結論と回避策の採否はそれらと合わせて決める。基準は`agent-basics:writing-standards`の`references/investigation.md`と`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」にある。
 
 - 実体は`B=$(readlink -f "$(command -v claude)")`、`C=$(readlink -f "$(command -v codex)")`で解決する。特定のClaude Code版は`~/.local/share/claude/versions/<版>`を指定する
 - 件数は`timeout 60 rg -a -c -F -- '<語>' "$B"`、文脈は`timeout 60 rg -a -o -- '.{0,200}<語>.{0,200}' "$B"`で得る（文脈の語は正規表現としてエスケープする）。出力はmanaged-tempへ保存してから読む。上限による打切りを該当なしと区別する

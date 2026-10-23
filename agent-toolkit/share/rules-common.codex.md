@@ -7,13 +7,8 @@ Codex固有の公開能力と常時規範との差分を扱う。Codexのメイ�
 
 - agent-toolkitの規範・手順・CLIが名指しするMCPツールは、Codexでは`functions.exec`の中で`tools.mcp__<サーバー名>__<ツール名>(...)`として呼ぶ。対象はagents_serverの`start`・`send_message`・`kill`・`stop`・`list`・`show`、pyfltrの`run`などである。直接の関数一覧とは別に、同じ`exec`の`ALL_TOOLS`の各要素の`name`と`description`で有無と引数を確かめる。stdio MCPサーバーは起動の数秒後に登録されることがあるため、起動直後に見つからない場合は時間をおいて別の`exec`で照会し直してから不在を判断する。観測と再検証手段は`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月22日」にある
 
-- 容量が未知の通常ファイルは範囲を指定しない全文取得（`cat -- <絶対パス>`など）から始め、事前の容量計測を省く（努力目標。遮断時は次項へ移る）
-- 既知の長文と保存本文も、内側のコマンド出力と外側のセルの受信予算内で省略なく取得できる標準読取を使える。必要な資料と範囲を先に選び、全文を要する資料は終了状態と省略の有無を確かめる。予算を超える本文と省略された残りは`atk read-file -- <絶対パス>`で取得し、継続は`atk read-file --start <next> -- <同じ絶対パス>`を使う。1行目のJSONで`eof: true`になるまで、最初のLFより後ろの本文を改行も含めて連結する。位置は文字単位で、末尾超過は末尾へ補正される。省略時の上限16384バイトはメタデータ、区切りのLFと本文を含み、内側と外側の受信予算に収まらない場合は`--max-bytes <バイト数>`で小さくする
-- 独立した複数ファイルの全文取得は、既知の合計出力量が1セルの上限内なら並列実行し、各結果の終了状態と本文を確認する。合計が不明なら別々のセルで取得し、並列化だけを目的とする事前計測は省く
-- 最大出力量を確定できない検索、全件取得、全文取得は、それぞれを単独のセルで実行する
-- `functions.exec`から`exec_command`を呼ぶ場合は、返却オブジェクトの`exit_code`と`session_id`を出力本文とともに保持する。外側の`cell_id`は`functions.wait`、内側の`session_id`は`write_stdin`で同じターンに終端まで回収する。各識別子の待機中は同じコマンドを再発行せず、終了コードの無い結果を完了として扱わない
-  戻り値は`const r = await tools.exec_command(...); text(r);`のように全体を表示する。
-  `exit_code`が無く`session_id`がある間は実行中として扱う
+- 出力と待機は`02-agent-operations.md`「出力の保持と観測」「待機と背景実行」の結果契約に従う。標準読取で必要な範囲を取得できる場合はその結果を使い、切り詰められた保存本文は`atk read-file -- <絶対パス>`で必要範囲を回収する。予算、継続位置と完了表示の扱いは同CLIの`--help`と診断に従う
+- `functions.exec`から`exec_command`を呼ぶ場合は、返却オブジェクト全体を`text(r)`へ渡し、本文・診断と`exit_code`・`session_id`を保持する。外側の`cell_id`は`functions.wait`、内側の`session_id`は`write_stdin`で同じターンに終端まで回収する。`exit_code`が無く`session_id`がある結果は実行中として扱い、同じ実行のコマンドを再発行しない
 - 明示指示がないOfficeファイルは原本を直接変更せずに扱う。CSVは消費側の要求に従い、要求が不明な場合はUTF-8 BOM付きで保存する
 - `apply_patch`で既存ファイルを全体置換する場合も同じパスへのUpdate操作を使う。1つのpatchで同じパスをDeleteとAddに分けると適用が失敗する
 

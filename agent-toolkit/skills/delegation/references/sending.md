@@ -9,7 +9,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「送信」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「送信」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%82%92%E6%8C%81%E3%81%A4%E5%A7%94%E8%AD%B2%E3%81%AE%E8%B5%B7%E5%8B%95%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%82%92%E6%8C%81%E3%81%A4%E5%A7%94%E8%AD%B2%E3%81%AE%E8%B5%B7%E5%8B%95%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
@@ -21,10 +21,12 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/investigation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
+| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing-claude.md` |
 
 ## 委譲プロンプトの構成
 
-分量の判定は`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う。
+分量の判定は`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」に従う。
 役割指定の初回は`start(subagent_md_path=..., extra_params=...)`、定型継続は`send_message(session_id=..., instruction=..., extra_params=...)`から本文を生成する。
 受理する入力名は役割文書のfrontmatter、条件と値の意味は本文の`## 入力`が所有する。
 継続では保持済みの初回値を省き、今回の指示に必要な制御値と更新情報を渡す。
@@ -55,12 +57,14 @@
 - 完了条件・既知の事実・報告様式: `<役割名>.subagent.md`、agent定義、基準となる記録のいずれかが持つものはその記録を参照させ、持たないものだけを書く
 
 基準となる記録で内容が一意に定まる場合は、絶対パスと対象IDだけを置き、手順、品質規範、過去応答、合意事項、調査済み事実、完了条件は転記せず記録を参照させる。複数の委譲先が使う共通資料に基準となる記録が無い場合は、反復と読取負担を比べて有効ならmanaged-tempへ1回保存し、各委譲プロンプトへ絶対パスを渡す（努力目標）。記録が無い情報は委譲プロンプト内で完結させ、対象を本文だけで一意に特定できるように書く。
+変更した規範は本スキル「送信」の原本参照で渡す。版はcommit、未commitならその旨と変更を確定した時点を示し、適用節とともに役割文書が受理する規範指定の値か自由本文の入力へ含める。
 
 自由本文の起動（`start`の`delegate`・`explore`・`write`・`shell`）では委譲先が他の手段で得られない情報（対象、目的、確定済みの判断材料、完了条件、返却形式）を書く。サーバーは`mode`（`delegate`・`explore`・`write`・`shell`）ごとにplugin rootの`share/agents-server-<mode>.md`を渡す。その内容（読み取り専用、応答言語、担当範囲など）は書き足す対象から外し、迷う場合はその本文で確かめる。
 
 命令の語は対象・権限・完了条件を示し、その範囲で委譲先が技術判断できるように書く。指摘を受けた修正でも、要求と根拠から修正範囲と方法を独立に選べる条件を保つ。
 
 - 委譲先が適用する作成・レビューの規範を定めるスキルが作業手順を定める委譲では、そのスキル名を必須入力へ含める。指摘や改善提案の修正を委譲する場合は`agent-toolkit:review-standards`の`references/reviewee.md`を含める
+- 確定済みの編集を渡す場合は、`agent-basics:writing-standards`の共通`references/file-editing.md`へ接続する。Claude CodeのEdit・Writeによる既存更新だけは同じ所有元の`references/file-editing-claude.md`も編集前に読む条件を渡す。軽量writeは`share/agents-server-write.md`の配送でこの条件を受け取る
 - 委譲先が自身と同じ役割へ再委譲せず完遂する条件を、`<役割名>.subagent.md`、agent定義、適用規範のいずれも定めない場合は、`再委譲`という項目名の必須入力で渡す（`agents_server`は委譲先のツールを委譲元から制限する入力を持たない）
 
 ユーザーが定性語・程度語（軽微、過剰、十分など）で示した判定基準を、委譲先が適用する判定条文へ具体化して中継する場合は、その要件を未確定として扱い、判定対象、判定主体、判定時点、機械的な除外一覧か現場判断かを具体化案として示す。案の順位がユーザーだけが持つ値で変わる場合は`agent-toolkit:user-confirmation-and-report`「確認要否の判定」に従って確かめてから送り、技術的に決まる場合は確定して送り報告する。ユーザーが判定条件を逐語で指定した場合と、`agent-toolkit/rules/01-agent.md`「ユーザー発話の解釈」により技術判断で確定できる提案は対象外とする。解釈違いが委譲結果を変える場合だけ適用する。
@@ -98,7 +102,7 @@ PreToolUseフックは役割の実行命令を持つ初回起動を、サーバ�
 
 - 委譲先が着手時に読む成果物（委譲プロンプト・計画ファイルなど）へ、自ら確認していない具体値や既存実装の挙動・制約を書く場合は`未検証`と明記し、着手前の裏取りを指示する。位置は行番号でなく見出しや識別子で示す（努力目標）
 - 委譲した調査の報告を受ける前に原因をユーザーへ伝える場合は、推定と明記する
-- 委譲先が実行する手順として外部コマンド・ツールを書く場合の事前確認は`agent-toolkit:writing-standards`の`references/investigation.md`に従う
+- 委譲先が実行する手順として外部コマンド・ツールを書く場合の入力契約と根拠の確認は`agent-basics:writing-standards`の`references/investigation.md`に従う。toolkit固有の監査・記録の保存は`agent-toolkit:writing-standards`の同名資料に従う
 
 ## 判断材料と一時領域
 

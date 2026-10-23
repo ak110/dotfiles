@@ -25,6 +25,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../workflow-overview/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/workflow-overview/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 計画・実装・レビュー・CI失敗の原因分析を始める前 | `agent-basics:bugfix/references/root-cause-analysis.md#「初動と拡張原因分析の判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「初動と拡張原因分析の判定」` |
 
 ## 読込表
 
@@ -42,7 +43,7 @@ description: >
 
 ## 問題を見つけたときの対処
 
-対処の候補は`agent-toolkit/rules/01-agent.md`「判断指針」の3段判定で選別し、構造の比較には`agent-toolkit:writing-standards`の`references/design-heuristics.md`「設計案の予備選別」を使う。
+対処の候補は`agent-toolkit/rules/01-agent.md`「判断指針」の3段判定で選別し、構造の比較には`agent-basics:writing-standards/references/design-heuristics.md`「設計案の予備選別」を使う。
 
 - 既存不良も原則として同じセッションで類似見直し・再発防止策まで完遂する。先送りと担当外不良は`agent-toolkit/rules/01-agent.md`「完遂と先送り」、実行中のスキル固有の扱いはその手順（`agent-toolkit:process-wi`など）に従う。拡張原因分析・類似見直し・再発防止策のいずれかを要する調査は`${CLAUDE_PLUGIN_ROOT}/skills/bugfix/references/investigation-delegation.md`へ委譲し、修正は見つけたエージェントが返却された対策で行う。根本原因と類似見直しの母集団を自ら確定でき、その全対象と再発防止策をその場で処置できる不良はその場で直す
 - 続行を妨げない不自然さ・非効率・反復は即時是正から外し、メインは`agent-toolkit/share/rules-main.md`「作業中の改善点の報告」、委譲先は`agent-toolkit/share/rules-subagent.md`「返却と終端」の`気付いた改善点:`で扱う
@@ -55,7 +56,7 @@ description: >
 
 事象がWI処理の工程や運用に関わる場合は、対策を選ぶ前に`agent-toolkit:workflow-overview`を起動する。
 
-計画、実装、レビュー、CI失敗のいずれでも「初動と拡張原因分析の判定」から始め、読込表に従って参照資料へ進む。
+計画、実装、レビュー、CI失敗のいずれでも`agent-basics:bugfix/references/root-cause-analysis.md`「初動と拡張原因分析の判定」から始め、読込表に従って参照資料へ進む。
 文書・規範・出力文面を変える対策を提案または委譲する前は、`agent-toolkit:writing-standards`を起動し、受け取る主体が観測できる条件で方向を評価する。
 
 ## 暫定回避と結果報告
@@ -64,52 +65,52 @@ description: >
 
 ## 初動と拡張原因分析の判定
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「初動と拡張原因分析の判定」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「初動と拡張原因分析の判定」を適用する。
 
 ## 直接的原因と事象時点の確定
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「直接的原因と事象時点の確定」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」を適用する。
 
 ## 原因分析の品質確認
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「原因分析の品質確認」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「原因分析の品質確認」を適用する。
 
 ## QとC・Dの区別
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「QとC・Dの区別」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」を適用する。
 
 ## 再発防止策の必須性
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「再発防止策の必須性」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「再発防止策の必須性」を適用する。
 
 ## 対策の選定
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「対策の選定」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「対策の選定」を適用する。
 
 ## テストの原因調査
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「テストの原因調査」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「テストの原因調査」を適用する。
 
 ## 所要の原因調査
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「所要の原因調査」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「所要の原因調査」を適用する。
 
 ## 対策の影響範囲
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「対策の影響範囲」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「対策の影響範囲」を適用する。
 
 ## 母集団と件数を数える層
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「母集団と件数を数える層」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「母集団と件数を数える層」を適用する。
 
 ## 外部からの不具合報告
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「外部からの不具合報告」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「外部からの不具合報告」を適用する。
 
 ## 作業途中で発見した事象
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「作業途中で発見した事象」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「作業途中で発見した事象」を適用する。
 
 ## 同一症状の修正反復
 
-品質の定義は`agent-basics:bugfix`の`SKILL.md`「同一症状の修正反復」を適用する。
+品質の定義は`agent-basics:bugfix/references/root-cause-analysis.md`「同一症状の修正反復」を適用する。

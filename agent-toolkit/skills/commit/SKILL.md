@@ -25,7 +25,7 @@ git commitの運用とコミットメッセージの規約を定める。識別�
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md#「対策の選定」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「対策の選定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md#「暫定回避と結果報告」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「暫定回避と結果報告」` |
 | 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
 | 取得版の異なる結果をレビューへ渡す前 | `../review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
 
@@ -59,7 +59,7 @@ push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルの`refere
 別セッションが同じリポジトリへコミットしうる前提で、自セッションの担当範囲だけをstageし、ユーザーや他セッションの未コミット変更は残す。commit前にベースコミットが記録時から変わっていた場合の続行可否は`agent-toolkit/rules/02-agent-operations.md`「作業中に観測したリポジトリ状態変化の扱い」で判定する。
 
 commit前に、現在の単位だけがstageされ意図した変更を含むこと、format・lint・testが警告なく成功すること、競合解決後は競合マーカー（`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`）が無いことを確かめる。対象プロジェクトの規範が検証の関門をCIと定めている場合は、CIが無条件に実行するチェックをローカルの確認から外す。
-解除条件付きの暫定回避を含むcommitでは、`agent-toolkit:bugfix`「対策の選定」が求める保存済みAWIに正式対応・解除条件・復帰後の結果と、時間経過・外部公開待ちの冷却期限が残っていることを確かめ、不足は同じWI投入手順で保存してからcommitする。
+解除条件付きの暫定回避を含むcommitでは、`agent-toolkit:bugfix/SKILL.md`「暫定回避と結果報告」が求める保存済みAWIに正式対応・解除条件・復帰後の結果と、時間経過・外部公開待ちの冷却期限が残っていることを確かめ、不足は同じWI投入手順で保存してからcommitする。
 
 commit時のGit hookやhook管理ツールのチェックを省略・迂回する操作は、pre-commitのstashが競合し、かつ対象ファイルを正式な手順で検証済みの場合に限る。
 対象は`--no-verify`・`-n`、`-c core.hooksPath=/dev/null`など必要なhookを外す指定、`SKIP=<hook名>`である。検証省略やhook失敗の回避には使わない。プロジェクト規範が個別に認める`SKIP=<hook名>`はその規範に従う。迂回した場合は手段と理由をcommit後の報告へ記す。

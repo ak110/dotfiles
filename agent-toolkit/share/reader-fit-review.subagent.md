@@ -27,10 +27,10 @@ writes_worktree: false
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewer.md#「再レビューの場合」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「再レビューの場合」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/writing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「日本語の書き方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「日本語の書き方」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body.md#「節の構成と分担」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「節の構成と分担」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/uwi-format.md#「構成」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「構成」` |
@@ -65,14 +65,14 @@ repositoryはGit作業ツリーの絶対パス、baseとheadは比較元とレ�
 
 ## 観点
 
-冒頭の1文が読者の最初の疑問へ答えるかを確かめる。題名と主語は`agent-toolkit:writing-standards`の`references/writing.md`の共通基準で判定する。
+冒頭の1文が読者の最初の疑問へ答えるかを確かめる。題名と主語は`agent-basics:writing-standards`の`references/writing.md`の共通基準で判定する。
 
 読者への適合として、読者像の主体が文面だけから行為者と対象を特定し、判断、操作または検証へ進めるかを判定する。
 日本語の表現は`agent-basics:writing-standards/references/writing.md`「日本語の書き方」を読み、執筆と同じ基準で判定する。
 
-- 既知と未知: 読者が既に知っている情報の重複を除き、知らない語、内部の呼び名、手元だけの識別子は説明を添えて使う。既存の対象を指す名詞句は、定義元の実在と、読者がその文書から到達できることを確かめる。別文書の節名・用語・例の略号の示し方は`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う
+- 既知と未知: 読者が既に知っている情報の重複を除き、知らない語、内部の呼び名、手元だけの識別子は説明を添えて使う。既存の対象を指す名詞句は、定義元の実在と、読者がその文書から到達できることを確かめる。別文書の節名・用語・例の略号の示し方は`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」に従う
 - 情報の充足と到達性: 判断、操作または検証に使う情報（目的、対象、条件、手順の続き、参照先）を全て持ち、出所や根拠に使う参照は読者が到達できるものに限る（個人メモ、作業中の計画ファイル、会話の経緯などは到達性を確かめる）
-- 情報の必要性: `agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」の情報を加える前の判定に従い、書き手だけが持つ文脈を読者の前提から除く
+- 情報の必要性: `agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」の情報を加える前の判定に従い、書き手だけが持つ文脈を読者の前提から除く
 - 指す先の一意性: 行為者と対象が一意に識別でき、指示語と相対語の指す先が本文だけから定まる
 
 種別がエージェント向け文書または委譲の文書である場合は、役割への適合も判定する。
@@ -89,10 +89,9 @@ repositoryはGit作業ツリーの絶対パス、baseとheadは比較元とレ�
 
 種別がWIのユーザー向けの部分（AWIのタイトルとH1直下、UWIの冒頭）である場合は、次も読者への適合として判定する。読者像のユーザーは`agent-toolkit:wi-standards`冒頭の語の基準が前提とする知識を持つ。
 
-- その部分だけから、次の定義元が求める内容をユーザーの語で言い直せる
+- wi-standards冒頭の合否を、その部分だけで判定し、説明不足・多義的な語を全件指摘する。内容の定義元は次のとおりとする
   - AWI: `agent-toolkit:wi-standards`の`references/awi-body.md`「節の構成と分担」のH1直下の項目。`種別`で受領した欠陥起点の有無に対応する区分で判定する
   - UWI: 同スキルの`references/uwi-format.md`「構成」
-- 同スキル冒頭の判定方法で全ての名詞句を列挙・分類し、説明の無い内部の呼び名に分類した全句を同じ返却で指摘する。列挙した名詞句をタイトル、括弧内、インラインコード、記号を含む本文全体と比べて全句が列挙されていることを確かめ、指摘の無い一般語・説明済みの句も返却の列挙へ含める。他種別への全名詞句列挙は課さない
 
 複数成果物では、各ファイルの比較元・現行本文・差分と判定範囲を保持し、判定・指摘・証拠と不足・失敗をファイル別に返す。集合内の他ファイルの情報で、対象本文だけでは不足する説明を補って合格にしない。
 
@@ -103,8 +102,6 @@ repositoryはGit作業ツリーの絶対パス、baseとheadは比較元とレ�
 ```text
 状態: completed
 未解決の指摘数: <0以上の整数>
-名詞句の分類:
-<WIのユーザー向けの部分だけ、1句1行で「ファイル、箇所、名詞句、分類、根拠」を全件返す。分類は「ユーザーの発言に現れた語」「ユーザーが使っている公開名」「一般に意味が一意な語」「同じ部分で説明した語」「説明の無い内部の呼び名」のいずれか1つ。「既知語」など複数分類を束ねる値や、異なる句を一括して分類した行は使わない。同じ句を同じ意味で使う箇所は、その全箇所を1行へ対応付けてよい。他種別で本欄を省略した場合の値は「対象外」>
 対象別の判定と証拠: <全成果物ごとの比較資料・判定・根拠、入力不足がある対象と読者>
 新しい要件: <要求の原文・割当先・範囲の判断への異論などの根拠付き記述。該当なしは「なし」>
 <指摘ごとのファイルと該当箇所（行または見出し）、観点、問題点、修正案、根拠とした作成規範の所在（文書と節）、読者像が誤る判断・操作・検証>

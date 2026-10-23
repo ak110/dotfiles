@@ -57,6 +57,14 @@ NORMATIVE_SOURCE = "agent-toolkit"
 SUBAGENT_BASE_INSTRUCTIONS = _read_prompt("agents-server-base.md")
 
 
+RESULT_REPORT_INSTRUCTIONS = (
+    SUBAGENT_BASE_INSTRUCTIONS.split("<!-- quality-principles:result:start -->", maxsplit=1)[1]
+    .split("<!-- quality-principles:result:end -->", maxsplit=1)[0]
+    .strip()
+)
+"""共通規範を省く軽量委譲にも渡す、同梱済みの結果返却短節。"""
+
+
 def _normative(body: str, *, kind: str) -> str:
     """System promptへ渡す本文へ、生成主体と種別を示す境界を付ける。
 
@@ -95,7 +103,7 @@ def _explore_system_prompt(backend: str) -> str:
     """共通の探索契約へ、選んだbackendの調査手段を加える。"""
     return _normative(
         f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}\n\n"
-        f"{EXPLORE_COMMON_CAPABILITIES}{EXPLORE_BACKEND_CAPABILITIES[backend]}",
+        f"{EXPLORE_COMMON_CAPABILITIES}{EXPLORE_BACKEND_CAPABILITIES[backend]}\n\n{RESULT_REPORT_INSTRUCTIONS}",
         kind="explore",
     )
 
@@ -106,10 +114,14 @@ EXPLORE_SYSTEM_PROMPT = _explore_system_prompt("codex")
 CLAUDE_EXPLORE_SYSTEM_PROMPT = _explore_system_prompt("claude")
 
 
-SHELL_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}", kind="shell")
+SHELL_SYSTEM_PROMPT = _normative(
+    f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}\n\n{RESULT_REPORT_INSTRUCTIONS}", kind="shell"
+)
 
 
-WRITE_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-write.md')}", kind="write")
+WRITE_SYSTEM_PROMPT = _normative(
+    f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-write.md')}\n\n{RESULT_REPORT_INSTRUCTIONS}", kind="write"
+)
 
 
 # 起動条件の種別ごとの指示。ホストの基本指示の置換と、役割・規範の配送はbackendが分けて組み立てる。

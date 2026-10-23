@@ -6,10 +6,17 @@
 
 - 対象条件: プログラムが出力する失敗、警告、スキップ、待機の打ち切り、状態値の文面を差分で新設または変更している。例外のメッセージ、ログ、標準エラー、終了表示、シェルスクリプト・CI・Makefileの出力などを含む
 - 確認内容: 各文面に観測した事実と、受信側が実行できる次の操作がある。その操作ができない場合の代替手段か報告先も示す。型や共通の出力関数が次の操作を必須の値にしている出力は対象外とする
-- 根拠規範: [agent-toolkit:writing-standardsのreferences/writing.md](../skills/writing-standards/references/writing.md)「読み手別の追加注意点」のプログラムが出力するメッセージの項
+- 根拠規範: `agent-basics:writing-standards/references/writing.md`「読み手別の追加注意点」のプログラムが出力するメッセージの項
 
 ## 共通機構の是正が作用する全種類に届く
 
 - 対象条件: 共通機構の不具合を差分で是正している。許可リスト、パーサー、正規化、値の一致判定、判定関数、手順の契約などを含む
 - 確認内容: 症状を観測した値・入力・処理・欄の種類だけを扱う分岐や列挙へ是正を閉じず、同じ機構が作用する他の種類にも届く。届かない種類があれば具体的に挙げる。入力契約、ユーザーが明示した範囲、WIか計画が根拠付きで閉じた範囲は対象外とする
-- 根拠規範: [agent-toolkit:bugfixのSKILL.md](../skills/bugfix/SKILL.md)「直接的原因と事象時点の確定」の、直接的原因の機構を共有する対象全体へ対策を適用する項
+- 根拠規範: `agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」の、直接的原因の機構を共有する対象全体へ対策を適用する項
+
+## 根拠規範の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 失敗・警告の文面に次の操作があるかを判定する前 | `agent-basics:writing-standards/references/writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
+| 共通機構の是正が作用する全種類に届くかを判定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |

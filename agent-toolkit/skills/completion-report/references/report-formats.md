@@ -18,8 +18,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「QとC・Dの区別」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「QとC・Dの区別」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「再発防止策の必須性」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/references/analysis.md#「入力と照会」「一次選別」「原因と対策」` | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#「入力と照会」「一次選別」「原因と対策」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/references/analysis.md#「コストの無駄の確認」` | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#「コストの無駄の確認」` |
@@ -115,7 +115,7 @@
 
 `### 確定した問題と対策`は原因・対策を確定した問題ごとに1行とし、区分は`AWI登録予定`（WI投入担当を起動する前の予告）、`AWI登録`（新しく投入したAWI）、`AWI登録済み`（対策を覆う既存の未終端項目）、`実装済み`（同じセッションで実装した対策）とする。H1タイトルから問題と対策を読み取れない場合だけ`; 要旨: <補う内容>`をタイトルの後へ添える。複数の問題を1件のAWIで覆う場合は、各行へ同じAWIを書くか候補IDの括弧へ複数のIDを並べる。
 
-`### 対策を見送った問題`には候補一覧と会話の流れで見つけた問題のうち対策を見送ったものを書く。`判定済み`の根拠は確認済みの観測を短く書き、欠陥ではないとの判定、原因が未確定、処置を採用しない判断のどれかが読み取れるようにする。原因か対策が未確定なら`未確定`の行で、分析した後に再発防止策を採用しない問題は`再発防止策なし`の行で書く。`再発防止策なし`の終了は`agent-toolkit:bugfix`の`SKILL.md`「QとC・Dの区別」で判定し、Q影響、重大度、探索範囲・限界と許容する残存リスクを正直に記録する。`判定済み`と`再発防止策なし`の根拠に使えないものは、規範・案内が既にあり適用が抜けたこと、後段の確認工程や再実行で回復したこと、別の論点で下された判断とユーザーの判断が要ること、寄与が未確定であることの4つである（定義は`agent-toolkit:bugfix`の`SKILL.md`「再発防止策の必須性」）。重大な問題で成立する手段が無ければ未達として`未確定`の行へ書く。見送ってよい条件は`agent-toolkit:session-review`の`references/analysis.md`「入力と照会」「一次選別」「原因と対策」に従う。実施方法の見送り根拠は同書「コストの無駄の確認」の比較結果に対応付け、欠陥の有無の結論と費用比較の採否を分けて書く。
+`### 対策を見送った問題`には候補一覧と会話の流れで見つけた問題のうち対策を見送ったものを書く。`判定済み`の根拠は確認済みの観測を短く書き、欠陥ではないとの判定、原因が未確定、処置を採用しない判断のどれかが読み取れるようにする。原因か対策が未確定なら`未確定`の行で、分析した後に再発防止策を採用しない問題は`再発防止策なし`の行で書く。`再発防止策なし`の終了は`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」で判定し、Q影響、重大度、探索範囲・限界と許容する残存リスクを正直に記録する。`判定済み`と`再発防止策なし`の根拠に使えないものは、規範・案内が既にあり適用が抜けたこと、後段の確認工程や再実行で回復したこと、別の論点で下された判断とユーザーの判断が要ること、寄与が未確定であることの4つである。定義は`agent-basics:bugfix/references/root-cause-analysis.md`「再発防止策の必須性」にある。重大な問題で成立する手段が無ければ未達として`未確定`の行へ書く。見送ってよい条件は`agent-toolkit:session-review`の`references/analysis.md`「入力と照会」「一次選別」「原因と対策」に従う。実施方法の見送り根拠は同書「コストの無駄の確認」の比較結果に対応付け、欠陥の有無の結論と費用比較の採否を分けて書く。
 
 候補一覧の候補に当たる行は行末の括弧へ候補ID（`c0006`の形。複数は読点で区切る）を書く。
 

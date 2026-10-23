@@ -12,9 +12,9 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「処置の階層」「再発防止としてのテスト」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「処置の階層」「再発防止としてのテスト」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「テストの原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「テストの原因調査」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「テストの原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「テストの原因調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/diagnostics.md#「読む出力」` | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「所要の原因調査」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「所要の原因調査」` |
 
 ## 検証単位の優先順位
 
@@ -132,7 +132,7 @@ OS判定による分岐（`os.name`・`sys.platform`、OS別の状態ディレ�
 
 ## 安定性: flakyテスト防止
 
-非決定的な失敗の原因調査と是正の選定は`agent-basics:bugfix`の`SKILL.md`「テストの原因調査」に従う。本節は確定した原因へ適用する同期・隔離・決定論的入力の基準を持つ。
+非決定的な失敗の原因調査と是正の選定は`agent-basics:bugfix/references/root-cause-analysis.md`「テストの原因調査」に従う。本節は確定した原因へ適用する同期・隔離・決定論的入力の基準を持つ。
 
 - 現在時刻・乱数・UUIDなど非決定的な値は注入可能にして固定値を渡す
 - テストの判定と並行して進む主体（子プロセス・スレッド・ファイル監視・ブラウザー・タイマーなど）の状態到達を前提とする場合は、前提の到達（最初の出力、準備完了の印、シグナルハンドラーの設置、購読の成立など）を同期点で確かめる。その後に時間で進む操作（計時の開始、シグナルの送出、固定時間後の観測、否定判定の観測窓など）を始める。時間上限そのものを検証するテストでも同じとする。前提へ到達しない場合は上限付きの待機で明示的に失敗させる。同期点にはイベント・コールバック・ポーリングを使い、sleepは最終手段とする
@@ -147,4 +147,4 @@ OS判定による分岐（`os.name`・`sys.platform`、OS別の状態ディレ�
 ## 速度
 
 - テスト間の独立性を保ってsetupを共有し、データ量と外部プロセスの起動回数を抑える
-- 所要時間を、試験が保証する契約と必要な処理・データ量に照らして評価し、合否と独立に不要な取得・準備・待機・起動の反復を除く。実行ごとの個別・全体の所要比較は`agent-basics:check-execution`の`references/diagnostics.md`「読む出力」、疑わしい区間の原因調査は`agent-basics:bugfix`の`SKILL.md`「所要の原因調査」に従う。固定上限やその機械チェックは設けない
+- 所要時間を、試験が保証する契約と必要な処理・データ量に照らして評価し、合否と独立に不要な取得・準備・待機・起動の反復を除く。実行ごとの個別・全体の所要比較は`agent-basics:check-execution`の`references/diagnostics.md`「読む出力」に従う。疑わしい区間の原因調査は`agent-basics:bugfix/references/root-cause-analysis.md`「所要の原因調査」に従う。固定上限やその機械チェックは設けない

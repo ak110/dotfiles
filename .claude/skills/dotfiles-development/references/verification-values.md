@@ -17,7 +17,7 @@
 
 変更範囲の検証の対象は`agent-toolkit:check-execution`の類型で選ぶ。本リポジトリでの値は次のとおり。
 
-- 横断テスト: `SKILL.md`「テスト配置」の`*_invariant_test.py`。変更範囲の検証へ`uv run --frozen pyfltr fast --commands=pytest`（対象ファイルを渡さずリポジトリrootで実行）を含め、rootと`agent-toolkit/`の両方を実行する。commit時のprekも同じfastを動かすが、検証の後なので変更範囲の検証の結果には使わない。前提と再検証手段は`docs/development/audit-records.md`「.claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月4日」にある
+- 横断テスト: `SKILL.md`「テスト配置」の`*_invariant_test.py`。変更範囲の検証へ`uv run --frozen pyfltr fast --commands=pytest`（対象ファイルを渡さずリポジトリrootで1回実行）を含める。この1操作がrootとサブプロジェクト`agent-toolkit/`を一括で実行する。保存出力の`# subproject: .`と`# subproject: agent-toolkit`それぞれのpytest終了状態を確かめ、両projectの横断検証の結果として使う。commit時のprekも同じfastを動かすが、検証の後なので変更範囲の検証の結果には使わない。前提と再検証手段は`docs/development/audit-records.md`「.claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月4日」にある
 - WI画面の資産と擬似DOM: `agent-toolkit/agent_toolkit/_testing/serve_support.py`の`_run_node_ui`が擬似DOMの構築と実行に読む資産が対象である。
   対象は`agent-toolkit/agent_toolkit/_atk/serve/static/`の`common.js`・`wi.js`・`index.html`と、`serve_support.py`自身に限る。
   `static/`配下のその他の資産の変更には本項を適用せず、他の項目と`agent-toolkit:check-execution`の類型で検証対象を選ぶ。
