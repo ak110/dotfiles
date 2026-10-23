@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock
 
 import anyio
 import claude_agent_sdk
+import psutil
 import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
@@ -486,18 +487,19 @@ def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, launcher
     """ランチャーとサーバーがともに記録できずに終わった診断は`incomplete`として返し、終了状態を補わない。"""
     with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
-        server_pid = server.server_pid()
-        # ランチャーを先に止め、サーバーの終了を観測する主体を残さない。サーバーが標準出力を保持するため、両方を止めてから待つ。
+        server_process = psutil.Process(server.server_pid())
+        # ランチャーの死亡を先に確定し、サーバーの終了を観測する主体を残さない。
+        # サーバーが標準出力を保持するため、readerの回収は両方を止めた後に行う。
         server.process.kill()
-        os.kill(server_pid, signal.SIGKILL)
+        assert server.process.wait(timeout=_LAUNCH_TIMEOUT) == -signal.SIGKILL
+        server_process.kill()
         server.wait()
         deadline = time.monotonic() + _LAUNCH_TIMEOUT
-        while time.monotonic() < deadline:
-            try:
-                os.kill(server_pid, 0)
-            except ProcessLookupError:
-                break
-            time.sleep(0.05)
+        # 孤児の回収時機はPID 1に依存する。終了済みzombieは記録を書けず、PIDが残っていても停止済みである。
+        with contextlib.suppress(psutil.NoSuchProcess):
+            while server_process.is_running() and server_process.status() != psutil.STATUS_ZOMBIE:
+                assert time.monotonic() < deadline, "SIGKILLしたサーバーが停止していない"
+                time.sleep(0.05)
 
         names = {event["event"] for event in server.events()}
         assert not names & logging_config.TERMINATION_EVENTS

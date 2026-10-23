@@ -119,8 +119,9 @@ require-text = ["docs/development/concepts.md", "docs/development/incidents.md",
 [tool.pyfltr]
 preset = "latest"
 python = true
-# Python 3.15のCIテストは約437秒を要し、省略時の600秒では余裕が小さいためCIタイムアウトを延伸する。
 command-timeout = 900
+# 全通常pytestはCIの900秒時点で84%だったため、試験集合を保ってpytestだけに余裕を持たせる。
+pytest-timeout = 1500
 ty = true
 # linked worktreeの祖先にある複製元のprojectが選ばれても、対象版と先頭の探索先をこのcwdへそろえる。
 # CLIスクリプトと、同じスキルのscripts内で共有するモジュールも解決する。

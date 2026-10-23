@@ -25,15 +25,25 @@ def _write(root: pathlib.Path, relative: str, content: str) -> pathlib.Path:
     return path
 
 
+@pytest.mark.parametrize("distribution_in_worktree", [False, True], ids=["outside-git", "inside-git"])
 def test_cli_prefers_corresponding_tracked_original_and_keeps_other_and_split_items(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    distribution_in_worktree: bool,
 ) -> None:
     """配布と同じ原本は追跡側へまとめ、同名本文の別観点と分割ファイルは全て入力に残す。"""
-    distribution = tmp_path / "distribution"
+    repository = git.init_repository(tmp_path / "repo")
+    distribution = (repository if distribution_in_worktree else tmp_path) / "distribution"
     _write(distribution, ".claude-plugin/plugin.json", '{"name":"agent-toolkit"}')
     installed = _write(distribution, "share/recurrence-items.md", _ITEM)
     distribution_only = _write(distribution, "share/part.md", _ITEM)
-    repository = git.init_repository(tmp_path / "repo")
+    ignored = _write(distribution, "ignored.md", _ITEM)
+    hidden_file = _write(distribution, ".hidden.md", _ITEM)
+    _write(distribution, ".gitignore", "ignored.md\n")
+    _write(distribution, ".hidden/part.md", _ITEM)
+    _write(distribution, "other.txt", _ITEM)
+    _write(distribution, "upper.MD", _ITEM)
     _write(repository, "vendor/agent-toolkit/.claude-plugin/plugin.json", '{"name":"agent-toolkit"}')
     original = _write(
         repository, "vendor/agent-toolkit/share/recurrence-items.md", _ITEM.replace("契約を保つ", "現在の契約を保つ")
@@ -44,16 +54,24 @@ def test_cli_prefers_corresponding_tracked_original_and_keeps_other_and_split_it
     git.run_git(repository, "add", "vendor", "docs/other.md", ".claude")
     monkeypatch.setattr(recurrence_items, "PLUGIN_ROOT", distribution)
     output = tmp_path / "receipt.json"
+    original_run = subprocess.run
+
+    def without_rg(args: list[str], *, check: bool = False, **kwargs: typing.Any) -> subprocess.CompletedProcess[bytes]:
+        if args[0] == "rg":
+            raise FileNotFoundError("rg is not installed")
+        return original_run(args, check=check, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", without_rg)
 
     assert recurrence_items.main(["--worktree", str(repository), "--output", str(output)]) == 0
 
     response = json.loads(capsys.readouterr().out)
-    expected = sorted(str(path) for path in (original, other, split, distribution_only))
+    expected = sorted(str(path) for path in (original, other, split, distribution_only, ignored, hidden_file))
     assert json.loads(response["観点ファイル"]) == expected
     assert response["観点あり"] is True
     assert response["収集記録"] == str(output)
     receipt = json.loads(output.read_text(encoding="utf-8"))
-    assert receipt["distributed"] == sorted([str(installed), str(distribution_only)])
+    assert receipt["distributed"] == sorted(str(path) for path in (installed, distribution_only, ignored, hidden_file))
     assert receipt["tracked"] == sorted([str(original), str(other), str(split)])
     assert receipt["prefer_tracked"] == [
         {"distributed": str(installed), "tracked": [str(original)], "relative": "share/recurrence-items.md"}
@@ -162,7 +180,7 @@ def test_cli_preserves_distributed_collection_failure_and_does_not_report_empty_
     original_run = subprocess.run
 
     def _run(args: list[str], *, check: bool = False, **kwargs: typing.Any) -> subprocess.CompletedProcess[bytes]:
-        if args[0] == "rg":
+        if args[:3] == ["git", "grep", "--no-index"]:
             return subprocess.CompletedProcess(args, 2, b"", b"collection source is unreadable")
         return original_run(args, check=check, **kwargs)
 

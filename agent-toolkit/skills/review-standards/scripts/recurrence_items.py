@@ -74,10 +74,21 @@ def collect(worktree: pathlib.Path) -> dict[str, object]:
         raise ValueError(f"対象worktreeのGit rootを取得できない: {repository.stderr.strip()}")
     root = pathlib.Path(repository.stdout.strip()).resolve()
     distributed = _paths(
-        subprocess.run(
-            ["rg", "-l", "--null", "--glob", "*.md", "^" + _TITLE, str(plugin_root)],
+        command.run(
+            [
+                "grep",
+                "--no-index",
+                "--null",
+                "-l",
+                "-E",
+                "-e",
+                "^" + _TITLE,
+                "--",
+                "*.md",
+                ":(exclude,glob)**/.*/**",
+            ],
+            plugin_root,
             capture_output=True,
-            check=False,
         ),
         "配布観点",
         plugin_root,

@@ -71,18 +71,19 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
         ]
         if not targets:
             break
-        for path in dict.fromkeys(target.path for target in targets if target.path not in seen):
-            read = {**payload, "tool_name": "Bash", "tool_input": {"command": f"cat -- {shlex.quote(str(path))}"}}
+        paths = list(dict.fromkeys(target.path for target in targets if target.path not in seen))
+        if paths:
+            read = {**payload, "tool_name": "Bash", "tool_input": {"command": "cat -- " + shlex.join(map(str, paths))}}
             assert dispatch.main(json.dumps(read)) == 0
             _context(capsys.readouterr())
             result = {
                 **read,
                 "hook_event_name": "PostToolUse",
-                "tool_response": {"stdout": path.read_text(encoding="utf-8"), "exit_code": 0},
+                "tool_response": {"stdout": "".join(path.read_text(encoding="utf-8") for path in paths), "exit_code": 0},
             }
             assert posttooluse.main(json.dumps(result)) == 0
             capsys.readouterr()
-            seen.add(path)
+            seen.update(paths)
         assert dispatch.main(json.dumps(payload)) == 0
         _context(capsys.readouterr())
     else:
