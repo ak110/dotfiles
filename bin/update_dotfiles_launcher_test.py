@@ -385,6 +385,18 @@ def test_missing_uv_returns_127(tmp_path: pathlib.Path) -> None:
     assert "update-dotfilesを再実行してください" in result.stderr
 
 
+def _windows_warning_script(content: str) -> str:
+    """自己更新失敗時の警告を出力するPowerShell本文を一意に取り出す。"""
+    (warning_line,) = [
+        line
+        for line in content.splitlines()
+        if line.startswith('if "%UV_SELF_UPDATE_FAILED%"=="1" powershell.exe ') and '-Command "' in line
+    ]
+    script = warning_line.split('-Command "', maxsplit=1)[1]
+    assert script.endswith('"')
+    return script.removesuffix('"')
+
+
 def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     """Windows側の行末、公式uv必須、自己更新、引数伝播を固定する。"""
     raw = _WINDOWS_LAUNCHER.read_bytes()
@@ -413,9 +425,11 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     assert capture_run_exit in content
     assert warning_state in content
     assert warning in content
-    assert "[Console]::IsErrorRedirected" in content
-    assert "[System.Text.UTF8Encoding]::new($false)" in content
-    assert "[Console]::Error.WriteLine($message)" in content
+    warning_script = _windows_warning_script(content)
+    assert "$env:UV_SELF_UPDATE_WARNING" in warning_script
+    assert "[Console]::IsErrorRedirected" in warning_script
+    assert "[System.Text.UTF8Encoding]::new($false)" in warning_script
+    assert "[Console]::Error.WriteLine($message)" in warning_script
     assert f"echo {_UPDATE_WARNING}" not in content
     assert return_run_exit in content
     assert "self update || exit /b 1" not in content
@@ -438,8 +452,7 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
 def test_windows_warning_redirects_as_utf8_without_bom() -> None:
     """Windows警告のリダイレクト出力がBOMなしUTF-8になる。"""
     content = _WINDOWS_LAUNCHER.read_bytes().decode("cp932")
-    warning_line = next(line for line in content.splitlines() if "powershell.exe -NoLogo" in line)
-    script = warning_line.split('-Command "', maxsplit=1)[1].removesuffix('"')
+    script = _windows_warning_script(content)
     environment = os.environ.copy()
     environment["UV_SELF_UPDATE_WARNING"] = _UPDATE_WARNING
 

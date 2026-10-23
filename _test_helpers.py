@@ -149,6 +149,11 @@ def make_command_stubs(
     log_path.touch()
     executable_mode = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
 
+    # 限定PATHでも、uv無しのbasics単独導入が使うPython 3をテスト実行環境から提供する。
+    python_stub = bin_dir / "python3"
+    python_stub.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8")
+    python_stub.chmod(python_stub.stat().st_mode | executable_mode)
+
     for command_name in ("claude", "codex"):
         if command_name == omit:
             continue

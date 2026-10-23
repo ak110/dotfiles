@@ -2334,6 +2334,7 @@ def test_skipped_update_keeps_pending_for_next_timer(
     git_outputs = {
         ("symbolic-ref", "HEAD"): "refs/heads/develop",
         ("rev-parse", "--symbolic-full-name", "@{upstream}"): "refs/remotes/origin/develop",
+        ("--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"): "",
         ("ls-remote", "--exit-code", "--refs", "origin", "refs/heads/develop"): f"{head}\trefs/heads/develop",
         ("rev-parse", "HEAD"): head,
     }

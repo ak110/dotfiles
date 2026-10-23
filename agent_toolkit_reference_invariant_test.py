@@ -9,14 +9,17 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import pathlib
 import re
 import subprocess
+import warnings
 
+import pytest
 from agent_toolkit._common import read_triggers
 from agent_toolkit._plan.structure import is_agent_doc_target_file
-from agent_toolkit._testing.git_repository import commit_all, init_repository
+from agent_toolkit._testing.git_repository import commit_all, init_repository, run_git
 
 _PLUGIN_PREFIX = "agent-" + "toolkit"
 _REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
@@ -252,20 +255,35 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
     """実体へ解決できない参照と不足した既知の事故記録参照を返す。"""
     allowed_counts = _allowed_unresolved_reference_counts(sources)
     captured_versions = _captured_reference_versions(root, sources)
+    unverified_capture_versions: set[str] = set()
     unresolved: list[tuple[str, pathlib.Path]] = []
     for reference, source in _collect_references(root, sources):
         if _reference_exists(root, reference):
             continue
         key = (reference, source)
         if key in captured_versions:
+            captured_version = captured_versions.pop(key)
             captured = subprocess.run(
-                ["git", "cat-file", "-e", f"{captured_versions[key]}:{reference}"],
+                ["git", "cat-file", "-e", f"{captured_version}:{reference}"],
                 cwd=root,
                 check=False,
                 capture_output=True,
             )
             if captured.returncode == 0:
                 continue
+            captured_commit = run_git(root, "cat-file", "-e", f"{captured_version}^{{commit}}", check=False)
+            if captured_commit.returncode != 0:
+                shallow = run_git(root, "rev-parse", "--is-shallow-repository", check=False)
+                if shallow.returncode == 0 and shallow.stdout.strip() == "true":
+                    if captured_version not in unverified_capture_versions:
+                        warnings.warn(
+                            f"{_SOURCE_MANIFEST}: 浅いcheckoutに取得版{captured_version}が無いため、"
+                            "sourcesの当時版の実体照合は未実施。現在参照の検査は継続する。",
+                            RuntimeWarning,
+                            stacklevel=2,
+                        )
+                        unverified_capture_versions.add(captured_version)
+                    continue
         if allowed_counts.get(key, 0) > 0:
             allowed_counts[key] -= 1
             continue
@@ -279,7 +297,9 @@ def _captured_reference_versions(root: pathlib.Path, sources: list[pathlib.Path]
     """固定manifestの取得ソースだけを、その記録が宣言した取得版へ対応付ける。
 
     READMEや任意のJSON、manifest内でも取得ソース一覧にない参照は現在の実体で検査する。
-    取得版の宣言だけで欠損を許可せず、呼出側がその版のGitオブジェクトの存在を確かめる。
+    有効な取得版とSHA-256を持つinventoryの各キー1回だけを歴史参照にする。
+    同じ値が他のfieldにも現れる場合は、その追加参照を現在の実体で検査する。
+    呼出側は取得版のGitオブジェクトを照合し、浅いcheckoutの取得版不在は未検収と報告する。
     """
     if _SOURCE_MANIFEST not in sources:
         return {}
@@ -292,7 +312,13 @@ def _captured_reference_versions(root: pathlib.Path, sources: list[pathlib.Path]
         or not isinstance(captured_sources, dict)
     ):
         return {}
-    return {(reference, _SOURCE_MANIFEST): captured_head for reference in captured_sources}
+    return {
+        (reference, _SOURCE_MANIFEST): captured_head
+        for reference, metadata in captured_sources.items()
+        if isinstance(metadata, dict)
+        and isinstance(metadata.get("sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"]) is not None
+    }
 
 
 def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
@@ -336,7 +362,7 @@ def test_captured_source_manifest_resolves_only_recorded_files_at_capture_commit
     (repository / reference).unlink()
     manifest = repository / _SOURCE_MANIFEST
     manifest.parent.mkdir(parents=True)
-    captured_sources = {reference: {"sha256": "記録値"}}
+    captured_sources = {reference: {"sha256": hashlib.sha256("# 取得時の本文\n".encode()).hexdigest()}}
     data = {"head_at_capture": captured_head, "sources": captured_sources}
     manifest.write_text(json.dumps(data), encoding="utf-8")
     current = pathlib.Path("current-notes.json")
@@ -344,8 +370,19 @@ def test_captured_source_manifest_resolves_only_recorded_files_at_capture_commit
 
     assert _unresolved_references(repository, [_SOURCE_MANIFEST, current]) == [(reference, current)]
 
+    data["current_reference"] = reference
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [(reference, _SOURCE_MANIFEST)]
+    del data["current_reference"]
+
+    recorded_hash = captured_sources[reference]["sha256"]
+    captured_sources[reference]["sha256"] = "不正な取得hash"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [(reference, _SOURCE_MANIFEST)]
+    captured_sources[reference]["sha256"] = recorded_hash
+
     nonexistent = f"{_PLUGIN_PREFIX}/agent_toolkit/never_captured.py"
-    captured_sources[nonexistent] = {"sha256": "記録値"}
+    captured_sources[nonexistent] = {"sha256": "a" * 64}
     manifest.write_text(json.dumps(data), encoding="utf-8")
     assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [(nonexistent, _SOURCE_MANIFEST)]
 
@@ -355,6 +392,36 @@ def test_captured_source_manifest_resolves_only_recorded_files_at_capture_commit
         (reference, _SOURCE_MANIFEST),
         (nonexistent, _SOURCE_MANIFEST),
     ]
+
+
+def test_captured_manifest_in_shallow_checkout_keeps_current_references_checked(tmp_path: pathlib.Path) -> None:
+    """取得commitの無い浅いcheckoutは歴史照合の未実施を示し、現在参照の欠損を検出する。"""
+    reference = f"{_PLUGIN_PREFIX}/agent_toolkit/captured_example.py"
+    text = "# 取得時の本文\n"
+    repository = init_repository(tmp_path / "origin", files={reference: text})
+    captured_head = commit_all(repository, "取得版")
+    (repository / reference).unlink()
+    manifest = repository / _SOURCE_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    data = {"head_at_capture": captured_head, "sources": {reference: {"sha256": hashlib.sha256(text.encode()).hexdigest()}}}
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    commit_all(repository, "保存済み取得inventoryを保持してsourceを撤去")
+    shallow = tmp_path / "shallow"
+    run_git(tmp_path, "clone", "--depth=1", repository.as_uri(), str(shallow))
+    assert run_git(shallow, "cat-file", "-e", f"{captured_head}^{{commit}}", check=False).returncode != 0
+
+    with pytest.warns(RuntimeWarning, match="当時版の実体照合は未実施"):
+        assert not _unresolved_references(shallow, [_SOURCE_MANIFEST])
+
+    data["current_reference"] = reference
+    (shallow / _SOURCE_MANIFEST).write_text(json.dumps(data), encoding="utf-8")
+    current = pathlib.Path("current-notes.json")
+    (shallow / current).write_text(json.dumps({"path": reference}), encoding="utf-8")
+    with pytest.warns(RuntimeWarning, match="当時版の実体照合は未実施"):
+        assert _unresolved_references(shallow, [_SOURCE_MANIFEST, current]) == [
+            (reference, _SOURCE_MANIFEST),
+            (reference, current),
+        ]
 
 
 def test_codex_snapshot_requires_exact_known_legacy_references(tmp_path: pathlib.Path) -> None:

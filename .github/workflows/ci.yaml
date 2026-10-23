@@ -113,9 +113,15 @@ jobs:
       - name: 約3日前からの update-dotfiles 更新検証
         if: needs.common-ci-owner.outputs.owns == 'true'
         working-directory: ${{ env.DOTFILES_DIR }}
+        env:
+          # Ubuntu 26.04の/tmpはquota付きtmpfsのため、完全導入の検証homeと展開先をrunnerの作業ディスクへ置く。
+          # https://github.com/actions/runner-images/issues/14777
+          TMPDIR: ${{ runner.temp }}
         run: uv run --script scripts/check_update_dotfiles_upgrade.py --platform linux --repo "$DOTFILES_DIR"
       - name: install.sh 実行
         if: needs.common-ci-owner.outputs.owns == 'true'
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: ~/dotfiles/install.sh
       - name: 主要ファイルの存在確認
         if: needs.common-ci-owner.outputs.owns == 'true'

@@ -385,7 +385,7 @@ fast = true
 [tool.pyfltr.custom-commands.writing-check-dash]
 type = "linter"
 path = "uv"
-args = ["run", "--frozen", "atk", "run-script", "writing-check-dash", "--"]
+args = ["run", "--frozen", "python", "agent-toolkit/agent_toolkit/atk.py", "run-script", "writing-check-dash", "--"]
 targets = ["*.md", "*.md.tmpl"]
 error-pattern = '^(?P<file>.+?):(?P<line>\d+):(?P<column>\d+): (?P<severity>error): (?P<message>.+)$'
 fast = true

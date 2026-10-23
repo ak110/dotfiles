@@ -129,6 +129,11 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
     # 検証homeへ置くuvは、pytestを起動したuv本体を指す`UV`から取る。
     uv_executable = os.environ.get("UV")
     assert uv_executable, "uv run経由でpytestを起動する"
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    monkeypatch.setenv("TMPDIR", str(runner_temp))
+    # 既に他テストが解決した一時配置先を戻し、このテストのTMPDIRから再解決する。
+    monkeypatch.setattr(upgrade.tempfile, "tempdir", None)
     monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "ci-tool-bin"))
     monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "ci-tools"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "ci-codex-home"))
@@ -145,6 +150,8 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
         if env is not None:
             assert isinstance(env, dict)
             home = pathlib.Path(env["HOME"])
+            assert home.is_relative_to(runner_temp)
+            assert env["TMPDIR"] == str(runner_temp)
             assert env["CODEX_HOME"] == str(home / ".codex")
             assert pathlib.Path(env["CODEX_HOME"]).is_dir()
             shared_bin = home / ".local" / "bin"

@@ -17,6 +17,7 @@ import pytest
 from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 
 _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
+_SKILL = _SKILL_REFERENCES.parent / "SKILL.md"
 _APPROVAL = _SKILL_REFERENCES / "approval-scope.md"
 _CHOICE = _SKILL_REFERENCES / "choice-construction.md"
 _WARNING = "操作前に全文読む資料が未取得"
@@ -78,6 +79,8 @@ _COMPACT = {"type": "system", "subtype": "compact_boundary"}
 
 def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> dict:
     transcript = tmp_path / "transcript.jsonl"
+    # 比較対象の2資料とは独立に、共有の読込方法を含む親スキル本文を圧縮後にも取得する。
+    entries = [*entries, *_successful_read(_SKILL)]
     transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
     return {
         "tool_name": "AskUserQuestion",

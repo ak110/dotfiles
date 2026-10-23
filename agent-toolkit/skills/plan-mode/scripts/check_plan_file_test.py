@@ -21,6 +21,7 @@ from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import (
     plan_fixture as _plan_fixture,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
+from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
@@ -922,7 +923,12 @@ def _run_plan_launcher(
         (inbox / name).write_text("# 要求\n\n本文。\n", encoding="utf-8")
     env = host_environ()
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(queue)
-    launcher = pathlib.Path(check_plan_file.__file__).resolve().parents[3] / "scripts" / "atk"
+    env["AGENT_TOOLKIT_RUNTIME_DATA"] = str(work_dir / "runtime")
+    # CI全体のfrozen指定は、公開ランチャーのno-project起動へ持ち込まない。
+    env.pop("UV_FROZEN", None)
+    root = pathlib.Path(check_plan_file.__file__).resolve().parents[3]
+    prepare_plugin_environment(root, env)
+    launcher = root / "scripts" / "atk"
     return subprocess.run(
         [str(launcher), "run-script", "plan-check", "--", "--work-dir", str(work_dir), *extra, *(str(p) for p in plans)],
         cwd=work_dir,
