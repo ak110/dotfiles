@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+lazy import hashlib
 lazy import re
 lazy import shlex
 lazy import subprocess
@@ -25,12 +26,12 @@ lazy import urllib.parse
 lazy from typing import Any
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import message_format, plugin_environment
+from agent_toolkit._common import message_format, plugin_environment, read_triggers
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.session_state import update_state
-lazy from agent_toolkit._hooks import work_contract
+lazy from agent_toolkit._hooks import plugin_resources, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
 
@@ -121,17 +122,39 @@ READ_CONTEXT_RESET_KEY = "startup-context-reset"
 """最初の操作より前の圧縮でも、履歴上の起動本文の取得を再計上しないための主体識別子。"""
 
 
-def reset_main_operation_skill_ready(session_id: str) -> None:
+def reset_main_operation_skill_ready(
+    session_id: str, *, retain_for_compact: bool = False
+) -> list[tuple[pathlib.Path, str, str]]:
     """メイン会話の起動済みの記録を除く。
 
     `clear`と`compact`ではスキルの本文が文脈から外れるため、次の操作で再び取得を求める。
     サブエージェントの記録は親の会話圧縮と独立した文脈のため変えない。
     """
+    recovery: list[tuple[pathlib.Path, str, str]] = []
 
     def _reset(current: dict) -> dict | None:
+        recovery.clear()
         recorded = current.get(OPERATION_SKILL_READY_KEY)
         if not isinstance(recorded, dict):
             recorded = {}
+        if retain_for_compact:
+            for name, agents in recorded.items():
+                if not name.startswith("selected-read-target:") or not isinstance(agents, list) or MAIN_AGENT_ID not in agents:
+                    continue
+                try:
+                    selected = json.loads(name.removeprefix("selected-read-target:"))
+                    path = pathlib.Path(selected["path"]).resolve()
+                    heading = selected["heading"]
+                    fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
+                except KeyError, OSError, TypeError, ValueError:
+                    continue
+                ready = f"read-trigger:{path}#sha256:{fingerprint}"
+                if (
+                    MAIN_AGENT_ID in recorded.get(ready, [])
+                    or heading
+                    and MAIN_AGENT_ID in recorded.get(ready + "#heading:" + heading, [])
+                ):
+                    recovery.append((path, heading, fingerprint))
         updated = {
             name: (
                 [agent for agent in agents if agent != MAIN_AGENT_ID]
@@ -161,6 +184,81 @@ def reset_main_operation_skill_ready(session_id: str) -> None:
         return current
 
     update_state(session_id, _reset)
+    return recovery
+
+
+def _compact_recovery_context(
+    session_id: str, budget: int, recovery_targets: list[tuple[pathlib.Path, str, str]]
+) -> str | None:
+    """圧縮で失われたmain主体の選択済み資料を、SessionStartの残予算内で再配送する。"""
+    if budget <= 0:
+        return None
+    targets: list[tuple[read_triggers.ReadTarget, str]] = []
+    for path, heading, fingerprint in recovery_targets:
+        target = read_triggers.ReadTarget(path, heading)
+        try:
+            current_fingerprint = hashlib.sha256(target.path.read_bytes()).hexdigest()
+        except OSError:
+            continue
+        if target.path.is_file() and current_fingerprint == fingerprint:
+            targets.append((target, fingerprint))
+    if not targets:
+        return None
+
+    def context(
+        bodies: list[tuple[read_triggers.ReadTarget, bytes, str]], remaining: list[tuple[read_triggers.ReadTarget, str]]
+    ) -> str:
+        text = "会話圧縮後の次の判断前に、同一主体が選択済みの資料を再配送する。"
+        for target, raw, body in bodies:
+            text += (
+                '\n<atk-auto source="read-delivery" kind="document">\n'
+                f"資料: {target.path}\n本文識別子: {hashlib.sha256(raw).hexdigest()}\n"
+                f"相対参照の基点: {target.path.parent}\n{body}\n</atk-auto>\n"
+            )
+        if remaining:
+            text += "\n未取得: " + "、".join(
+                f"`{target.path}`" + (f"の{target.heading}" if target.heading else "") for target, _ in remaining
+            )
+            text += "。示した絶対パスから、次の判断前に指定範囲を取得する。"
+        return _llm_notice(
+            text, tag="notice", fix="再配送本文の基準を適用する。未取得の資料は示した絶対パスから指定範囲を読む。"
+        )
+
+    included: list[tuple[read_triggers.ReadTarget, bytes, str]] = []
+    remaining = list(targets)
+    while remaining:
+        target, _fingerprint = remaining[0]
+        try:
+            raw = target.path.read_bytes()
+            owner = next(
+                (parent.parent for parent in target.path.parents if parent.name == "skills"), plugin_resources.plugin_root()
+            )
+            body = target.body(raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")).replace(
+                "${CLAUDE_PLUGIN_ROOT}", str(owner)
+            )
+        except OSError, UnicodeError, ValueError:
+            break
+        candidate = [*included, (target, raw, body)]
+        if len(context(candidate, remaining[1:])) > budget:
+            break
+        included, remaining = candidate, remaining[1:]
+    result = context(included, remaining)
+    if len(result) > budget:
+        return None
+
+    def _mark_delivered(current: dict) -> dict:
+        records = current.setdefault(OPERATION_SKILL_READY_KEY, {})
+        for target, raw, _body in included:
+            key = f"read-trigger:{target.path}#sha256:{hashlib.sha256(raw).hexdigest()}" + (
+                f"#heading:{target.heading}" if target.heading else ""
+            )
+            agents = records.setdefault(key, [])
+            if MAIN_AGENT_ID not in agents:
+                agents.append(MAIN_AGENT_ID)
+        return current
+
+    update_state(session_id, _mark_delivered)
+    return result
 
 
 def mark_user_confirmation_pending(session_id: str) -> None:
@@ -378,8 +476,9 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             content = f"{content}\n\n{identity_context}" if content else identity_context
         if isinstance(session_id, str) and session_id:
             session_temp = None
+            recovery_targets: list[tuple[pathlib.Path, str, str]] = []
             if source in _OPERATION_SKILL_RESET_SOURCES:
-                reset_main_operation_skill_ready(session_id)
+                recovery_targets = reset_main_operation_skill_ready(session_id, retain_for_compact=source == "compact")
             if not delegated and source in _CONTEXT_LOSING_SOURCES:
                 mark_user_confirmation_pending(session_id)
             try:
@@ -401,6 +500,15 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     _compaction_notice(session_id, payload.get("transcript_path"), session_temp, delegated=delegated)
                 )
                 content = f"{content}\n\n{compact}" if content else compact
+            if source == "compact":
+                # PreToolUseを経ない最初の判断にも、圧縮前に選択した資料の本文を届ける。
+                recovery = _compact_recovery_context(
+                    session_id,
+                    CLAUDE_CODE_OUTPUT_LIMIT - len(content or "") - 2,
+                    recovery_targets,
+                )
+                if recovery is not None:
+                    content = f"{content}\n\n{recovery}" if content else recovery
     elif event_name == "SubagentStart":
         content = compose_subagent_start(host=host)
         session_temp = _existing_session_temp(payload.get("session_id"))
