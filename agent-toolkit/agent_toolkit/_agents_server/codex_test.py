@@ -1068,6 +1068,10 @@ def _lease_plugin_source(base: pathlib.Path, version: str = "1.0.0") -> pathlib.
     return root
 
 
+# 実MCP試験の依存導入（UV_LINK_MODE=copyで新規環境へ全パッケージを複製する）の上限（秒）。
+_REAL_MCP_PREPARE_TIMEOUT = 120
+
+
 def _real_mcp_environment(
     tmp_path: pathlib.Path,
     tmp_path_factory: pytest.TempPathFactory,
@@ -1138,7 +1142,7 @@ async def test_stable_plugin_root_shared_across_processes(
     state_base = tmp_path / "runtime-state"
     uv = shutil.which("uv", path=environment["PATH"])
     assert uv is not None
-    prepare_plugin_environment(source, environment)
+    prepare_plugin_environment(source, environment, timeout=_REAL_MCP_PREPARE_TIMEOUT)
     dependency_environment = plugin_environment.project_environment(source, environment)
     lease_directory = state_base / "agent-toolkit/plugin-root-leases"
     clients: list[ClientSession] = []
@@ -1269,7 +1273,7 @@ SERVER_PLUGIN_ROOT = resolve_stable_plugin_root()
 
 
 # Windowsのcold依存導入、配布コピーと終了後の回収までを含む上限。
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("share_package_caches")
 async def test_legacy_plugin_root_real_mcp_lifecycle(
@@ -1287,7 +1291,8 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
     environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
     uv = shutil.which("uv", path=environment["PATH"])
     assert uv is not None
-    prepare_plugin_environment(source, environment)
+    # Windowsでは124パッケージのcopy導入に成功時53秒、失敗時60秒超を観測したため、補助関数の60秒より長い上限を使う。
+    prepare_plugin_environment(source, environment, timeout=_REAL_MCP_PREPARE_TIMEOUT)
     command = plugin_environment.launch_command(source, pathlib.Path("agent_toolkit/agents_server_mcp.py"))
     log = tmp_path / "legacy-mcp.stderr"
     log.touch()

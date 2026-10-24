@@ -8,8 +8,11 @@ import sys
 from agent_toolkit._common import plugin_environment, process_tree
 
 
-def prepare_plugin_environment(root: pathlib.Path, environment: dict[str, str]) -> pathlib.Path:
-    """指定した一時runtimeを公開prepareで準備し、後続の通常起動へ同じ環境を渡す。"""
+def prepare_plugin_environment(root: pathlib.Path, environment: dict[str, str], *, timeout: float = 60) -> pathlib.Path:
+    """指定した一時runtimeを公開prepareで準備し、後続の通常起動へ同じ環境を渡す。
+
+    依存を新規の環境へ複製する呼出元は、OSごとの複製時間に合わせて`timeout`（秒）を指定する。
+    """
     assert environment.get(plugin_environment.RUNTIME_DATA_ENV), "試験専用のruntime領域を指定する"
     directories = []
     for directory in os.get_exec_path(environment):
@@ -29,7 +32,7 @@ def prepare_plugin_environment(root: pathlib.Path, environment: dict[str, str]) 
         capture_output=True,
         encoding="utf-8",
         check=False,
-        timeout=60,
+        timeout=timeout,
     )
     assert result.returncode == 0, result.stderr
     python = plugin_environment.prepared_python(root, environment)
