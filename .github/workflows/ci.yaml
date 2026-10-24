@@ -89,6 +89,12 @@ jobs:
         with:
           fetch-depth: 0
           path: dotfiles
+      - name: 一時領域を作業ディスクへ置く
+        if: needs.common-ci-owner.outputs.owns == 'true'
+        # Ubuntu 26.04の/tmpはquota付きtmpfsのため、完全導入の検証homeや展開先など大容量の一時物を
+        # job内の全stepでrunnerの作業ディスクへ置く。
+        # https://github.com/actions/runner-images/issues/14777
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
       # ローカルのcomposite actionは作業場所の実在パスで参照するため、checkoutしたディレクトリを移す前に導入する。
       - name: chezmoi インストール
         if: needs.common-ci-owner.outputs.owns == 'true'
@@ -113,15 +119,9 @@ jobs:
       - name: 約3日前からの update-dotfiles 更新検証
         if: needs.common-ci-owner.outputs.owns == 'true'
         working-directory: ${{ env.DOTFILES_DIR }}
-        env:
-          # Ubuntu 26.04の/tmpはquota付きtmpfsのため、完全導入の検証homeと展開先をrunnerの作業ディスクへ置く。
-          # https://github.com/actions/runner-images/issues/14777
-          TMPDIR: ${{ runner.temp }}
         run: uv run --script scripts/check_update_dotfiles_upgrade.py --platform linux --repo "$DOTFILES_DIR"
       - name: install.sh 実行
         if: needs.common-ci-owner.outputs.owns == 'true'
-        env:
-          TMPDIR: ${{ runner.temp }}
         run: ~/dotfiles/install.sh
       - name: 主要ファイルの存在確認
         if: needs.common-ci-owner.outputs.owns == 'true'
