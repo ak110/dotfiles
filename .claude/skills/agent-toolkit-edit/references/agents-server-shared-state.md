@@ -171,7 +171,7 @@ Claudeの途中通知も待機と代替接続を評価し、利用枠が通知�
 この予定はメモリーだけに置き、選択した接続とAPI接続のパスを既存の内部再開情報へ保存する。移行後の会話は設定変更・解除や資源解放の後も保持した接続を使い、新規sessionは候補順の先頭から始める。役割に現行のAPI固定・サブスクリプション固定がある場合は、次turn・再開時に同じ会話をその固定先へ移す。利用上限でサブスクリプションから移した委譲先だけは、サブスクリプションが先頭候補のままなら解除予定時刻の後の最初のturn（追送と自動再開）で同じ会話をサブスクリプションで再開する。CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）の間は所有タスクを止めない。資源解放の後は戻す時刻を持たないため保持した接続を使う。
 切替のログはsession IDと利用枠の種類だけを記録し、envの値や切替の情報を公開応答と継続指示へ加えない。
 
-Codexの接続先選択順は`codex_model_providers`が持つ。先頭APIの不受理やサブスク利用上限で後続APIへ移す間も、既存の結果保留と監視を使う。空設定の会話は通常のCodex設定に従う。選択済みproviderは同じ会話の再開へ渡し、主接続先の設定変更と利用枠の回復は新規起動だけへ適用し、後続候補は次の代替試行で現行列から選ぶ。現在アカウントの利用可否は永続台帳へ記録せず、新規起動ごとにApp Serverへ照会する。人向けログへは候補の診断だけを記録する。接続先の設定とcold resumeの契約は`docs/guide/codex-guide.md`と`docs/development/design-agents-server.md`にある。
+Codexの接続先選択順は`codex_model_providers`が持つ。先頭APIの不受理やサブスク利用上限で後続APIへ移す間も、既存の結果保留と監視を使う。空設定の会話は通常のCodex設定に従う。選択済みproviderは同じ会話の再開へ渡し、主接続先の設定変更と利用枠の回復は新規起動だけへ適用し、後続候補は次の代替試行で現行列から選ぶ。現在アカウントの利用可否は永続台帳へ記録せず、新規起動ごとにApp Serverへ照会する。人向けログへは候補の診断だけを記録する。ユーザー向けの接続先設定、料金、認証、復旧操作は`docs/guide/codex-guide.md`にある。cold resumeの内部契約は`docs/development/design-agents-server.md`にある。
 冷再開の前には`config/read`で実効providerを解決する。
 Codex backendは接続切替と旧記録の互換性を、`thread/read.path`か既存の記録解決で得たrolloutから確認する。
 確認する項目は`session_meta.id`とprovider、`response_item`のcompaction・`encrypted_content`、`compacted`の`replacement_history`・`compaction_response_id`である。

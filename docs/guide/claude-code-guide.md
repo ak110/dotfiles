@@ -191,9 +191,9 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `atk agents wait`は委譲先の終端を待ち、回収した結果を表示する。
 `agents_server`の公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）の入力と応答の契約は[design-agents-server.md](../development/design-agents-server.md)を参照。
 
-Bashの静的な検出は、for・算術for・select・while・until・if/elif/else・caseの条件と本体、入れ子、文全体のパイプ・リダイレクト・背景化にも及ぶ。未引用の予約語前置`time`・`time -p`・`!`・`coproc`を共通解析で扱い、coprocの暗黙の出力パイプと背景実行を保持する。引用やheredoc本文、算術式のデータ、未実行の関数定義と未確定の動的コマンドは実行位置とみなさない。未完了の背景出力の読取は進捗確認として警告にとどめ、反復しても遮断しない。終端結果は完了後に同じ保存先の全量を読み直して確認する。
+警告または遮断が表示された場合は、本文の次の操作に従い、完了したコマンドの保存出力と終了状態を確認する。判定条件は[design-hooks.md](../development/design-hooks.md)を参照。
 
-Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本文をRead・Grep・静的に判定できるBashで参照すると、PreToolUseが`atk run-script session-review-evidence`を案内する。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。属性確認やパスの言及、正式な抽出と派生証拠の処理は対象外である。大容量の原記録も同じ専用照会へ案内する。原記録以外の保存本文は、Claude Codeでは`Read`に`allow_large: true`を指定して全文を読み、Codexでは`atk read-file`で終端まで読む。
+原セッション記録を検索・位置確認・ツール入力の確認に使う場合は`atk run-script session-review-evidence`を使う。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。原記録以外の保存本文は、Claude Codeでは`Read`に`allow_large: true`を指定して全文を読み、Codexでは`atk read-file`で終端まで読む。
 
 カタログの親セッション一覧は`--catalog-workflow process-wi`の完全一致、`--catalog-known-workflow`のunknown以外、`--catalog-cwd-contains <文字列>`の条件で選べる。
 `--catalog-fields session_id,workflow,workflow_locator,started_at,tokens`を付けると行の種類を表す`kind`に続いて指定順の項目を返す。
@@ -234,7 +234,7 @@ JSON Linesの`cost-metrics-week`は月曜0時から始まる週ごとの次の�
 
 各記録は1回だけ数え、委譲先はルートの開始週へ合算する。
 Codexのreasoning_output_tokensは出力に内包される。
-週の`tokens`はトークンのまま示し、金額は`cost-metrics-session`の別行へ出す。
+週の`tokens`はトークンのまま示し、金額は`cost-metrics-session`の別行へ出力する。
 レビュー表の旧trackであるimplementation-reviewはexec-reviewとして読み、他のtrackは対象外とする。
 `~/.claude/plans`だけにある未保存の表は集計から除き、`unsaved_table_count`で件数を示す。
 
@@ -499,14 +499,7 @@ holdとrun-skill由来もこの判定へ含め、回答後にadoptedへ移った
 待機理由・期限・延長・開始は端末とprocess-loopのログで確認でき、待機中も`abort`で中断できる。
 すぐに処理を始めたい場合は、process-loopを動かす端末（tmuxではそのペイン）でEnterを押すと、活動猶予とUWI待機をまとめて今回だけ解除し、処理可能なWIの再評価へ進む。
 解除は次回の待機へ持ち越さない。標準入力が端末でない実行、入力が閉じた実行、バックグラウンドジョブでは入力を読まず、従来どおり期限まで待つ。
-選定はClaude CodeとCodexのどちらもメインが直接行い、別の選定担当は起動しない。候補本文から分類・割当・モデル・配置根拠を判断し、取得済み候補と意味判断をpick-wi-checkへ渡して定型欄の生成・確認・保存を1回で行う。意味判断と要求の被覆、レーン数上限、同じ担当thread、単一writer、実行レビューと直列統合は維持する。
-圧縮ツールが提供されるClaude Codeでは、各段階の全初期通常レーンの初回起動後と、終端担当の起動後の長時間待機前に会話圧縮を予約する。独立した工程を先に開始し、セッションのmanaged-temp直下のparent-handoff.mdへ再開状態を保存する。引数なしで予約し、背景待機を始めてターンを終える。受付は圧縮完了と区別し、通知後に保存記録から同じ工程へ戻る。ツールが無い環境では、その旨を記録して通常の待機へ進む。Codex、通常0件、処理中の追加レーン起動と実行レビュー待機は予約の対象外とする。
-
-レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。process-wiは対象リポジトリごとに1つだけ起動する前提で、専用worktreeは対象リポジトリの`.claude/worktrees/process-wi-lane-NN`に固定され、実行を繰り返してもパスは増えない。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。自動回収は解放を待たず、その時点で適格な資源を回収する。未統合・dirty・稼働中・未解放・確認不能・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。worktreeパス・Git登録・branchが全て無いと確定した登録は、警告と最後に記録したHEADを残して回収する。worktreeパスが無い場合はdelete手順を実行しない。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。選定結果の一時ファイルが失効しても、所有登録が写した選定情報で統合と回収を続ける。選定情報を持たない古い登録は`atk lane recover --session-id <所有session>`で元のbranchを残して専用worktreeを解放する。
-要件を本文だけで説明できる作業に向く。
-1レーンの場合も隔離と独立文脈レビューを保ち、`atk lane integrate`が統合・計画保存・WI終端・統合済み記録をまとめて行う。
-途中失敗は進行記録と成果を残し、同じ入力で未完了の工程から再開する。
-操作の詳細は[run-lanes.md](../../agent-toolkit/skills/process-wi/references/run-lanes.md)を参照。
+process-loopは要求を選定し、隔離した環境での実装、レビュー、統合を進める。ユーザーは実行中の状態を確認し、停止・指示・再開を操作する。作業が中断した場合は、保存された進行記録を使って同じ処理を再開する。工程の内部契約は`agent-toolkit:process-wi`と[run-lanes.md](../../agent-toolkit/skills/process-wi/references/run-lanes.md)を参照。
 要求を登録するときは、先行する要求の成果が無いと安全に実施できないか完成を判定できない場合だけ、その先行する要求への依存を設定する。
 
 自律型でも対話型と同じ基準で確認の要否を判定し、技術と既存認可で確定する事項はエージェントが実施して報告する。
@@ -546,6 +539,21 @@ atk wi process-loop all-repos
 
 共通オプションは`atk wi process-loop --no-update all-repos`のように`all-repos`の前へ指定する。
 通常の`atk wi process-loop`は現在のリポジトリだけを処理する。
+
+停止要求の有無は`status`で確認する。停止要求と次回の処理への指示も同じOSアカウントで実行する。
+
+```bash
+atk wi process-loop status
+atk wi process-loop abort
+atk wi process-loop instruct '次の処理へ適用する指示'
+```
+
+`abort`は処理中のセッションが終わった時点でループを止める要求を保存する。
+`instruct`は単一リポジトリの起動では次の処理会話へ1回だけ指示を渡す。
+all-reposでは常駐プログラムが次の起動集合の開始時に1回だけ指示を受け取り、その集合で起動する各リポジトリ担当へ同じ指示を渡す。
+各担当は自分の対象リポジトリに関する部分を適用する。
+
+中断した処理を再開する場合は、`atk wi process-loop --resume`を実行し、選択画面から会話を選ぶ。session IDが分かる場合は`--resume <session-ID>`で直接指定できる。all-reposでは対象ごとの担当session IDを指定する。
 登録が空配列なら待機し、登録外のリポジトリへのWI投入はできる。
 登録先を解決できない場合は表示された対象を直して再実行する。
 同じoriginの登録は先頭へまとめ、登録変更は次の取得へ反映する。
@@ -556,9 +564,6 @@ all-reposは一括取得した候補を各対象cwdの通常delegateへ渡し、
 開始前の猶予は登録対象全体に作用し、開始後は1担当の失敗や所有待ちで別担当を止めない。
 通常起動と同じoriginの処理所有を共有し、対象のWorktreeCreate/Removeがあれば作成先と撤去へ反映する。
 設定済みhookが失敗した場合は診断と途中資源を保持する。
-`abort`・`status`・`instruct`は同じOSアカウントの制御である。
-`instruct`は単一起動では次の処理会話へ1回だけ渡る。
-all-reposでは次の起動集合で1回受領し、各担当へ中継して、その担当の対象に関する部分を適用する。
 再開は記録されたall-repos担当のsession IDを`--resume`へ指定する。
 詳細は[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)を参照。
 
@@ -635,11 +640,6 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 show形式の構造とは、直後にfrontmatterが続く`### <ファイル名>.md`の行を持ち、その行より前が空行と`# awi`・`# uwi`・`## target_repo: ...`の見出しだけで構成される本文を指す。
 このときtarget-repo欄とUWI用の入力欄の値は使わない。
 
-add-awi-by-userでは、件数や原因分析の有無によらず、メインが調査・方針の確定・起草・検収・保存まで担当するのを原則とする。
-本来の作業に付随する別件の投入など、文脈を分ける意味がある場合はWI投入担当へ委譲する。独立した投入前レビューの要否は要求の性質から選び、基準付きの大量走査は軽量な読取探索を使える。
-WI投入担当は`execute_model`を使う。
-委譲の粒度は起動・自動配送・明示読取・親の検収・統合と再試行の総費用で選ぶ。同じ要求の取得済み証拠を再利用し、独立要求と独立文脈レビューの文脈、単一writerは保つ。
-
 登録したAWIの計画、実装と実行レビューはエージェントが進める。登録者が行う操作は、UWIへの回答と、次に述べる登録済み項目の修正である。
 実行レビューの役割と証拠の扱いの設計は[design-review-evidence.md](../development/design-review-evidence.md)、実行時の手順は`agent-toolkit/share/exec-review.subagent.md`にある。
 
@@ -680,7 +680,7 @@ atk config set serve_plans_remote_hosts '["remote-host"]'
 atk config set serve_sessions_remote_hosts '["remote-host"]'
 ```
 
-以前の版の設定ファイル`serve.toml`が残っている場合は、`atk serve`の起動時と`atk config`の実行時に`atk config`へ未保存の値だけを移行し、元のファイルを`serve.toml.migrated`へ改名する。移行元は設定ディレクトリの`serve.toml`で、環境変数`AGENT_TOOLKIT_SERVE_CONFIG`を指定した場合はそのファイルとする。`atk config`へ保存済みの値は上書きしない。`serve.toml`を読めない場合や値の形式が不正な場合は、元のファイルと`atk config`の内容を変えずに原因を表示して終了するため、示された箇所を直して再実行する。
+以前の版の設定ファイル`serve.toml`が残っている場合は、`atk serve`の起動時と`atk config`の実行時に`atk config`へ未保存の値だけを移行し、移行元ファイル名の末尾へ`.migrated`を付けて改名する。`serve.toml`では`serve.toml.migrated`となる。環境変数`AGENT_TOOLKIT_SERVE_CONFIG`を指定した場合は、その指定ファイルを移行元とする。`atk config`へ保存済みの値は上書きしない。`serve.toml`を読めない場合や値の形式が不正な場合は、元のファイルと`atk config`の内容を変えずに原因を表示して終了するため、示された箇所を直して再実行する。
 
 `atk serve`は同じナビゲーションから「WI」「計画ファイル」「セッション」の3画面を提供する。WI画面はキューの登録・編集・状態遷移を扱い、計画ファイル画面はローカルと設定済みリモートホストの計画ファイルを一覧・全文検索してMarkdownを表示する。セッション画面はClaude CodeとCodexの保存済みセッションを作業ディレクトリと開始時刻で一覧し、最初のユーザー発話を検索対象に使う。右ペインには発話・思考・ツール呼び出しを時系列に表示する。アシスタントの発言は見出し・箇条書き・表・コードをMarkdownとして整形して表示し、それ以外の本文は記号を残した等幅で表示する。実行環境が挿入した本文は「自動挿入」として折りたたみ、一覧の検索対象となる最初の発話からも除く。計画ファイルとセッションの参照元は、前述の`atk config`の`serve_plans_*`・`serve_sessions_*`で指定する。
 
@@ -743,21 +743,6 @@ CLI移設前に起動した`update-dotfiles`はpullと未コミット内容の�
 
 ## 構成と機能
 
-### 定型の委譲を追加する場合
-
-agent-toolkitの定型チェックは、`share/<役割名>.subagent.md`の先頭のYAML frontmatterへmode・工程別model_type・入力・継続・書込を宣言し、本文へ観点・手順・返却形式を書く。
-読取専用の軽量チェックは`mode: explore`と`model_type: chores_fast`で定義でき、役割名別のPython対応表への登録を要しない。
-起動と受領に必要な入力の決め方・検収は呼び元の規範が持つ。呼び元が1カ所ならその工程へ統合し、複数から共有する場合は`<役割名>.parent.md`を保持できる。
-たとえば`quick-check`を定義した後は、MCPの`start`へ次の形で渡す。
-
-```json
-{"cwd": "/repo", "subagent_md_path": "quick-check", "extra_params": {"対象": "/repo/report.md"}}
-```
-
-静的な設定の整合性は配布対象全件のテストで保証する。起動時は設定を読み、実行に必要な条件と呼出し入力を確かめる。モデルの明示上書きと既存sessionの継続を保つ。
-委譲元は起動準備のために定義本文を取得せず、呼び元の契約から値を決める。
-設定項目と作成基準は[サブエージェントの記述基準](../../agent-toolkit/skills/writing-standards/references/sub-agents.md#agents_serverのfrontmatter)を参照する。
-
 ### 常時有効な仕組み
 
 ルールファイル（`~/.claude/rules/agent-toolkit/`配下）は自動ロードされる。
@@ -796,6 +781,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づき、編集前にチェックする | 対応 | 非対応 |
 
 各フックの判定条件と、Codexでの対応範囲の詳細は[design-hooks.md](../development/design-hooks.md)「フックごとの処理とCodexの対応範囲」を参照。
+Codexの更新後の確認と信頼操作は[フックの信頼確認](codex-guide.md#フックの信頼確認)を参照。
 
 Claude Codeの背景処理が終わり、完了通知がまだ届いていない場合、ほかに作業を続ける必要があるとしてターンの終了を止める判定が無ければ現在のターンを終える。
 通知を受けた次のターンで保存出力と終了状態を受け取り、作業を続ける。ターンの終了を止める判定が残る場合は、その理由と結果受領の案内を保持する。
@@ -807,24 +793,7 @@ commitされていないことだけを理由にcommitを求めない。
 
 Claude CodeとCodexでは、`git rev-parse --short HEAD HEAD~1`のように、`--short`や`--verify`の後へリビジョンを複数並べると、PreToolUseが警告する。コマンドは実行され、複数指定によって失敗するため、同じオプションを付けたままリビジョンを1つずつ実行して結果を取得する。
 
-PreToolUseは、未取得のdelegationを委譲操作の前に、未取得のwriting-standardsを本文の作成・更新の前に全文で取得するよう案内する。本文編集は`Write`・`Edit`・`MultiEdit`と`apply_patch`を言語やファイル名によらず対象にする。Bashでは、静的に確定した書込先へのheredoc・here-string、インプレース置換、Pythonの本文書込も対象にする。managed-tempにはWIや投稿文の下書きも置くため、通常本文と同じ基準を使う。コマンドの生成出力の保存と複製は通常本文の作成から除く。親子の取得済み記録は分け、Codexにも同じ取得契約を適用する。
-commit・push後のPostToolUseの案内は、成果報告へ進むメインへcompletion-reportの適用条件を示す。Claude CodeではSkillの起動、Codexでは通知されたSKILL.mdの読取へ進む。失敗・背景・dry-run・help・委譲先は対象外で、後続の該当操作にも案内する。
-
-plugin `PreToolUse/pretooluse`は、静的に分かるatkの実行位置と出力の接続先から、結果の受領を妨げる接続を警告する。呼び出し自体は実行される。
-検索語やheredoc本文に現れたatkと、ホストが管理する背景実行はこの警告の対象外である。ただし区切り語を引用しないheredocの本文にあるコマンド置換は、`bash`が実行するため置換の中身によらず遮断する。
-この限定と、一般の検証コマンドの出力切り詰めチェックを復元しなかった理由は、[フックの責務境界](../development/design-hooks.md#フックの責務境界)を参照。
-警告を受けた呼び出しの保存結果と終了状態を回収し、以後の呼び出しでは次の手順で結果を受領する。
-
-- `atk agents wait`はシェルの`&`と標準出力の破棄を外して単独で発行する。
-  Claude Codeで背景で待つ場合はBashの`run_in_background`を使い、返されたtask識別子で結果を受領する。
-- atkの出力はパイプにもリダイレクトにもつながず、単独で呼び出す。出力量はサブコマンドの対象限定で減らし、生成側が返す標準出力・標準エラーの保存先から全量を読む。エージェント環境で量によらず保存されるのは、`atk agents wait`の回収結果と複数件の`atk wi show`、`atk run-script session-review-evidence`の`--user-events`であり、短い単発の照会は直接表示される。保存後の標準出力には、`atk agents wait`では通知・終端の内訳と直接表示できる量の本文が、`--user-events`では発話ごとの記録位置と本文の冒頭を示す`発話:`行が続く。表記診断の詳細は`標準エラー保存先:`が示す別のファイルに保持される。人の端末は直接表示と各ストリームのリダイレクトを使える。
-  保存した本文の選別は別の呼び出しで行う。
-
-Codexの`SessionStart`は`startup`・`resume`・`clear`・`compact`の全てで条文を追加し、`compact`では`QUALITY_CHECKPOINT_NOTICE`も追加する。
-pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする9イベントの定義を確認して信頼する。
-登録集合は`SessionStart`、`SubagentStart`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、`UserPromptSubmit`、`Stop`、`SubagentStop`、`SessionEnd`である。
-登録が0件の場合は信頼操作へ進まず、`agent-toolkit-codex/`のmanifest選択を確認する。信頼前は登録済みHookがスキップされるため、条文の追加と圧縮後通知は発火しない。
-信頼後に新しいセッションを開始し、最初の応答の前に自動生成通知が現れることを確認する。
+フックが警告や保存出力の案内を表示した場合は、表示された保存先を読み、次の操作に進む。判定条件とエージェント向け規範は[design-hooks.md](../development/design-hooks.md)を参照。
 
 ### 一時成果物の配置と回収
 
@@ -843,31 +812,15 @@ turn終了時にも残るため、同じ会話の再開や委譲先の結果確�
 版付きプラグインから起動する`agents_server`は同じ配布元・版の保持実体を複数プロセスで共有する。
 使用中の実体を保護するため、配布元の更新後も起動時のスキルと内部資源を参照できる。
 
-### `~/.claude/plans`の計画ファイルと実行レビュー後の`private-notes/plans/`への保存
+### 計画ファイルの保存
 
-メインが`agent-toolkit:plan-mode`を起動した場合、新規計画は内部の保存処理を使って`~/.claude/plans`へ1ファイルとして保存される。
-
-```text
-~/.claude/plans/dd-HHmm_<日本語の簡潔な名詞>.md
-```
-
-`agent-toolkit:process-wi`のレーンでは`dd-HHmm_process-wi_レーンNN.md`（`NN`は2桁）とする。
-`agent-toolkit:single-lane-process`では`dd-HHmm_single-lane-process.md`とし、同じ名前が既にある場合だけ`-<小文字16進数4桁>`が付く。
-
-viewerのパスコピーは選択中の実体を指すため、作業中は`~/.claude/plans/...`、保存後はprivate-notes側の可搬表記を返す。
-実装後レビューが収束した後だけ、`~/.claude/plans`直下のファイル名またはそのroot配下の絶対パスを指定して計画バンドルを保存する。
-現行名は`dd-HHmm_<名称>.md`で、衝突時は名称の後に`-<小文字16進数4桁>`が付く。
-保存済み計画には`private-notes/plans/`相対パスと、そのroot配下の絶対パスを指定できる。
+作業中の計画は`atk plans list`で実パスを確認する。実装後レビューが収束したら、表示された計画ファイルを保存する。
 
 ```bash
-atk plans commit dd-HHmm_<名詞>.md
+atk plans commit "<一覧で確認した計画ファイルの絶対パス>"
 ```
 
-`atk plans commit`は同じstemの計画、バグ調査ファイルおよびレビュー指摘管理表を、計画ファイルの作成日に対応する`private-notes/plans/yyyy/MM/`へ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
-pushを行わずローカルcommitまでで止める場合は`--skip-push`を指定する。この場合もローカルcommitの成功後に作業側を回収する。
-計画作成基準は`agent-toolkit:plan-mode`の`plan-file-standards.md`、可搬参照の書式は同スキルの`plan-file-storage.md`が定める。
-
-計画ファイルの固定見出し、進捗ログおよびレビュー指摘管理表の規則は`agent-toolkit:plan-mode`が定め、計画ファイルの書き込み時に上表の`PreToolUse`・`PostToolUse`が構造をチェックする。
+`--skip-push`はローカルcommitだけを作成する。保存後はprivate-notes側の参照を使う。commitまたはpushに失敗した場合は作業側の計画を保持するため、同じコマンドで再開する。詳細は`agent-toolkit:plan-mode`を参照。
 
 ### オンデマンドのスキル
 
@@ -879,13 +832,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
 - `agent-toolkit:bugfix`: 問題対処の原因分析と、類似見直し・再発防止の唯一の判断基準。成果物の品質に影響する問題では、費用や所要時間を理由に、同じ原因の問題を探して直す範囲を狭めず、同じ原因の問題を今後起こさない対策を省かない。探す範囲には同じ原因の過去の作業と他のリポジトリも含める
 - `agent-toolkit:delegation`: 起動方式の選択、継続、停滞検知または複数主体調整が必要な高度な委譲の手順。
   自動的に適用せず、対象工程が高度な委譲の条件を持つ場合にだけ読み込む
-- `agent-toolkit:plan-mode`: 計画ファイル作成と、実装後の実行レビューを含む実行引き継ぎ
-  - 計画確定時は計画構造の自動チェックで固定H2と表、計画メタ情報、見出し階層、参照実在を確認する
-  - ユーザー発言は`## 変更履歴`、実装時の進捗は`## 進捗ログ`へ記録する
-  - 実行レビューでは計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`をレビュー担当が作成・更新し、全ラウンドで同じ表を使う
-  - バグ対応計画は計画メタ情報の固定記法から判定し、関連WIの`## 原因分析`に記録した原因と調査を参照する。入力WIが無い場合とWIの原因分析を訂正・追加する場合だけ、計画ファイル（バグ）の原因分析表と固定の調査表で両要因を分析し、原因起点の類似見直し、対策・横展開・再発防止を記録する
-  - 変更履歴は見出しごとの記録でレビュー指摘をラウンド単位に集約し、指摘原文・個別採否・対応内容はレビュー指摘管理表へ記録し、変更履歴には書かない
-  - 進捗ログは日時・完了した工程・結果の3列表で実行工程の作業状況を追跡し、異常終了からの再開に使う
+- `agent-toolkit:plan-mode`: 計画、実装、実行レビューの引き継ぎを扱う。保存と再開の操作は前節を参照
 - `agent-toolkit:review-standards`: レビュー担当とレビューイーの判断基準。
   レビュー担当にはコードレビュー・ドキュメントレビューの実施基準を、レビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領したレビューイーには修正要否の立証、安全な修正、自己点検と公開可能性の検証基準を与える
 - `agent-toolkit:wi-standards`: AWIとUWIの本文、由来、状態、承認および投入の共通規範

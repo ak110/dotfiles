@@ -10,187 +10,52 @@ Codex向け`AGENTS.md`、共有ルールの同期、共有スキルのリンク�
 
 ## `atk wi process-loop`によるAWIの継続処理
 
-次のコマンドはCodexの対話UIを起動し、対象リポジトリのAWIを継続して処理する。
+共通の起動、複数リポジトリ登録、待機、状態確認、停止、次回への指示、UWI回答は[agent-toolkit導入ガイド](claude-code-guide.md#推奨ワークフロー)を参照する。
+
+Codexで処理する場合は、起動前に候補列を設定する。
 
 ```bash
 atk config set orchestrate_model codex:sol/medium,claude:opus[1m]/medium
 atk wi process-loop
 ```
 
-開始時点の候補を固定し、明示追加と即時対応で確定した差分を同じセッションへ加える。
-告げられていない新着と振り返りAWIは次のセッションへ残す。
-ready項目がなくなると、完了報告の後にセッションを自動で終了し、親の監視ループへ戻る。
-自動で終了できない環境では対話UIに終了案内が表示されるため、`/exit`を入力して親の監視ループへ戻す。
-
-初回と0件待機からの処理再開時は、private-notesを同期し、ready項目があれば
-`update-dotfiles`とprivate-notesの再同期を終えてからCodexを起動する。
-同期に失敗した場合はCodexを起動せず、変更検知を待って再試行する。
-
-開始前は別セッションの活動に応じて10分を猶予し、新規WIの到着を検出するたびに検出時点から10分へ延長する。
-対象は共有private-notesの新規AWIとUWIで、既存項目の編集・状態移動は延長に数えない。
-延長の回数・累計時間に上限はなく、活動がなくなれば期限前でも開始判定へ戻る。
-当該ループと子孫、終了済み、稼働中の子がないユーザー応答待ちは除き、別ループや別cwdの活動も調べる。
-対象集合に未回答UWIがある場合は、保存済みUWIの最終更新から10分か全回答まで抑止する。
-保留中（`hold`）の確認項目と、スキルの単発実行（`atk run-skill`）が登録した確認項目も判定に含める。
-回答を終えて採用済み（`adopted`）へ移った確認項目も、保存済みの最終更新を判定に使う。
-両条件を同時に評価し、解除後に候補を再確認する。
-待機理由・期限・延長・開始は端末とログで確認できる。
-
-ホームから登録した複数リポジトリを処理する場合は、次のように起動する。
-
-```bash
-atk config set process_loop_repositories '["/home/user/project-a", "/home/user/project-b"]'
-atk wi list --configured-repos
-atk wi process-loop all-repos
-```
-
-共通オプションは`atk wi process-loop --no-update all-repos`のように`all-repos`の前へ置く。
-空登録は待機し、登録外へのWI投入はできる。
-登録先の解決失敗は診断に従って設定を直し、同じoriginの重複は先頭の登録を使う。
-取得済み候補を各対象cwdの通常delegateへ渡し、対象の選定・規範・prepare・実装・Git・公開は各担当が行う。
-process-loop（`atk wi process-loop`）は担当の起動・所有・完遂判定・続行指示を行い、候補数とレーン上限、通常起動との処理所有は対象別に扱う。
-各担当は対象リポジトリのprocess-wiのメインとして、ユーザーへの確認、完了報告と振り返りまで自ら行う。
-開始猶予は登録対象全体へ作用し、開始後の1担当の失敗・所有待ちは別担当の進行を止めない。
-登録変更は次の取得へ反映し、進行中の処理対象WIは維持する。
-`abort`・`status`・`instruct`はOSアカウント単位で使う。
-稼働状態は`atk wi process-loop status`、停止は`atk wi process-loop abort`で操作する。
-次の処理への指示は`atk wi process-loop instruct '適用する指示'`で渡す。
-`instruct`は単一起動では次の処理会話へ1回だけ渡る。
-all-reposでは次の起動集合で1回受領し、各担当へ中継して、その担当の対象に関する部分を適用する。
-all-reposの`--resume`は保持した担当session IDを指定する。
-
-各対象リポジトリに担当エージェントを1人ずつ置く。あるリポジトリの初期選定が1レーンなら、その担当が計画・実装・独立した実行レビューの調整・統合を続ける。
-各担当は対象リポジトリのprocess-wiのメインとして、必要なユーザー判断をUWIで確認し、完了報告と振り返りを報告用UWIでユーザーへ届ける。process-loop（`atk wi process-loop`）は担当の返却を記録して続行を判断する。
-1レーンでも専用worktreeと独立文脈レビューを保ち、`atk lane create`・`integrate`・`delete`で準備・統合・回収を扱う。
-対象のWorktreeCreate/Removeを資源操作へ接続し、設定済みhookの失敗では途中資源を保持する。
-統合と計画保存・WI終端・統合済み記録を同じ操作で行い、失敗後は同じ入力で残工程から再開する。
-共通の運用は[推奨ワークフロー](claude-code-guide.md#推奨ワークフロー)、担当への受渡しは[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)を参照。
-
-process-loopはCodexの承認方針とsandbox設定を上書きせず、ユーザーのCodex設定を継承する。
-WindowsではCodexを親の監視ループと別のプロセスグループで起動するため、
-Codexの実行中もCtrl+Cで親の監視ループを終了できる。
-また、process-loop内のCodexに限り、Git for Windowsを介してbash形式のplugin hookへ
-Windows絶対パスを渡す。Claude、`update-dotfiles`、process-loop外のCodexのPATHは変更しない。
+process-loopはCodexの承認方針とsandbox設定を継承する。Windowsでは親の監視ループをCtrl+Cで終了できる。自動終了できない環境では、完了報告の後に`/exit`を入力して監視ループへ戻る。
 
 ## プラグイン更新の反映
 
-Codex向けのプラグインは`update-dotfiles`が生成して導入する。生成物の構成は[architecture.md](../development/architecture.md)「agent-toolkitの3形式配布」を参照。
+Codex向けプラグインは`update-dotfiles`または`chezmoi apply`で更新する。更新前に実行中のCodexセッションと委譲の完了時刻を確認する。実行中のセッションは更新前の版を使い続けるため、更新後は新しいセッションで新版を使う。
 
-`update-dotfiles`は未導入、または有効なpluginのversion不一致の場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
-明示的に無効なpluginは無効状態と現在の版を保持し、再び有効にした後の通常更新で新版へそろえる。
-更新前にagent-toolkitの全通常versionディレクトリを複製する。
-`codex plugin add`が削除した旧versionは、導入後の状態確認とdaemon処理を含む更新関数内のCodex CLI呼出が全て終了した後に同じ絶対パスへ戻すため、保存済みセッションを終了せずに更新できる。
-別のCodex App Serverがlocal marketplaceを自動更新して旧versionを削除した場合、dotfiles向けhookの起動コマンドはClaude Code側に残る同versionを使う。
-削除された旧versionのCodex plugin cache rootと同じ絶対パスへ復旧してからhookを起動する。
-同versionが残っていない場合は、Claude Codeの現行導入版からhookを起動する。
-CLIが導入した目標versionは復元対象から外し、導入後の内容を維持する。
-`update-dotfiles`は更新の失敗と旧versionの復旧失敗を区別して診断する。
-Linuxでは、過去の設定で診断ログDBを共有メモリー（`/dev/shm/codex-<UID>-logs_2.sqlite`と、その`-wal`・`-shm`ファイル）へ移していた場合、`update-dotfiles`が通常の保存先`~/.codex/`へ戻す。`<UID>`はOSのユーザーIDを指す。
-同じユーザーのCodexが稼働中なら、対象ファイルを案内して処置を延期する。Codexの終了後の`update-dotfiles`（自動更新タイマーを持つホストではタイマーの再試行）で、共有メモリーのファイルを通常の保存先へコピーし、旧ファイルを指すシンボリックリンクを通常ファイルへ置き換える。タイマーを持たないホストでは、Codexを終了して`update-dotfiles`を再実行する。
-復元後の次の`update-dotfiles`実行では両方の内容が一致することを確認して共有メモリーの旧コピーを削除する。旧ファイルが既に失われたシンボリックリンクは、復元処理の際に削除する。内容の不一致などで延期した場合は、表示された診断に従って復旧する。
-旧ファイルも旧ファイルを指すリンクも無い場合は、処置と延期の案内を省く。
-診断ログDBの移行と不要pluginの除去は、稼働中のCodexを判定する。
-対象は通常のCodexセッション、`agents_server`が委譲用に起動する`codex app-server --stdio`、app-server daemonおよびその補助プロセスである。
-app-server daemonは`codex app-server daemon start`が起動する管理daemonを指す。
-管理daemonの停止後も残る更新ループ`codex app-server daemon pid-update-loop`はpluginと診断ログDBを開かないため、対象に含めない。
-`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定した場合は、agent-toolkitの更新後に管理daemonを再起動する。
+更新が延期または失敗した場合は、`update-dotfiles logs`で原因と次の操作を確認し、表示されたCodexを終了してから`update-dotfiles`を再実行する。WindowsでCodexが実行中の場合も、終了後の再実行で更新と整理を続ける。
 
-### 管理daemonだけが残る場合の一時停止
-
-Codexを使っていなくても、管理daemonは自動で起動して残ることがある。
-次の条件をすべて満たす場合、Linuxの`update-dotfiles`は`chezmoi apply`の直前に`codex app-server daemon stop`で管理daemonを一時停止する。
-
-- 通常のCodexセッションと`agents_server`の`codex app-server --stdio`が無い
-- `DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定していない
-
-`atk wi process-loop`の待機中と子セッション開始前の更新は通常この条件に当たり、Codexを手動で停止しなくてもpluginと診断ログを更新する。
-一時停止した管理daemonは、更新の成否にかかわらず終了前に`codex app-server daemon start`で起動し直す。
-更新前から管理daemonが停止していた場合は起動しない。
-遠隔接続機能（remote control）の状態は条件に含めないため、遠隔クライアントが管理daemon経由で利用中の作業も一時停止の間は中断され得る。
-`codex app-server daemon enable-remote-control`で有効にした遠隔接続機能の設定は、再起動した管理daemonにも引き継がれる。
-一時停止と再起動の結果は`update-dotfiles`の出力と`update-dotfiles logs`で確認できる。
-停止または再起動に失敗した場合は`update-dotfiles`が非0で終了し、標準エラーと`update-dotfiles logs`に失敗の内容を表示する。
-再起動に失敗した場合は、次のコマンドで管理daemonを起動する。
-
-```bash
-codex app-server daemon start
-```
-
-### Codexの利用中に更新する場合
-
-Codexのセッションまたは`agents_server`の委譲が残る場合も、有効なagent-toolkitを目標versionへ更新する。
-旧versionの複製は元の実体を残したまま行い、`plugin add`の完了後に削除されたversionだけを復旧する。
-更新中に使っていたセッションは旧versionを参照し続け、新しく始めたセッションは目標versionを使う。
-保存済みセッションの旧pathが別processに削除された場合も、次のhookイベントでClaude Code側の同版cacheから復旧する。
-ウォームアップは更新後の有効版を使う。
-
-post-applyの延期記録は、診断ログDBの移行や不要pluginの除去など、実体の除去を伴う工程がCodexの終了を待つ場合に使う。
-自動更新タイマーを持つホストは延期記録がある間、上流に変更がなくても`update-dotfiles`を再実行する。
-タイマーを持たないホストでは、案内された対象を使うCodexを終了して`update-dotfiles`を再実行する。
-
-公開インストーラー（`install-claude.sh`・`install-claude.ps1`）も全通常versionを複製してから更新し、CLIが削除した旧versionを同じ実行で復旧する。
-旧versionの復旧に失敗した場合は退避先を表示して非0で終了する。
-退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告する。
-
-### プラグイン更新後のdaemonの再起動
-
-ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
-`codex app-server daemon version`が成功した場合に限り、次の再起動コマンドを案内する。
+更新後にdaemonの再起動を案内された場合は、Codex pluginまたはremote controlを使うセッションを終了してから実行する。再起動が失敗した場合はdaemonを起動する。
 
 ```bash
 codex app-server daemon restart
 ```
 
-公開インストーラーでは、プラグイン追加または`atk`配置が失敗した場合も、エラーの後の最終行へ
-必要な再起動コマンドを表示し、非0の終了状態を維持する。`agents_server` MCPの登録や
-`~/.claude.json`のUser scope設定は行わない。
-通常は進行中のセッションを保護するため、app-server daemonを自動再起動しない。
-`update-dotfiles`によるagent-toolkitの追加・更新後に稼働中daemonを自動再起動する場合は、実行環境へ次の設定を明示する。
+再起動が失敗した場合だけ、次のコマンドでdaemonを起動する。
+
+```bash
+codex app-server daemon start
+```
+
+更新時に接続を切断してよい場合だけ、daemonを自動再起動できる。
 
 ```bash
 DOTFILES_CODEX_DAEMON_AUTO_RESTART=1 update-dotfiles
 ```
 
-PowerShellでは同じ実行に対して次のように設定する。
-
-```powershell
-$env:DOTFILES_CODEX_DAEMON_AUTO_RESTART = "1"
-update-dotfiles
-```
-
-自動再起動は、pluginの追加または更新、導入済みversionと有効状態、hook状態の確認がすべて完了した後に1回だけ実行する。
-daemonが停止中の場合、pluginが無変更の場合およびmarketplace登録だけが変化した場合は実行しない。
-再起動に失敗した場合は終了コードをupdate-dotfilesログへ記録し、手動再起動の案内へ戻る。
-Codex pluginまたはremote-controlを利用する実行中セッションは、自動再起動によって接続が切断される可能性がある。
-これらのセッションを終了できる時点でだけ、自動再起動を有効にする。
-
-`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定しない場合は、更新中のセッションを作業完了後に終了し、再起動案内が表示された場合はdaemonを再起動して新versionを利用する。
-
-再起動案内は、ローカルと外部のいずれかのプラグインを実際に追加または更新し、daemonの稼働状態を確認できた場合だけ表示される。
-daemonの未起動、状態確認の失敗、マーケットプレイスの登録だけの変化、公開インストーラーでの導入前後の状態の一致、
-プラグイン追加前の処理と追加自体のいずれかの失敗、外部プラグインの導入済みなど、それ以外の場合は表示しない。
-案内されたコマンドは、Codex plugin、remote-controlを利用する実行中セッションの終了後に実行する。
-daemonを利用しない既存のCLI・IDEセッションは、作業完了後に新しいセッションを開始する。
+PowerShellでは`$env:DOTFILES_CODEX_DAEMON_AUTO_RESTART = "1"`を設定してから`update-dotfiles`を実行する。更新の内部的な版保持、診断ログ移行およびdaemon制御の条件は[architecture.md](../development/architecture.md)と[operations.md](../development/operations.md)を参照する。
 
 ## agents_serverによる委譲
 
-`agents_server`はClaude CodeとCodexが共有する委譲用のMCPであり、工程別モデル設定（[agent-toolkit導入ガイド](claude-code-guide.md)の「工程別モデル設定」）に従って、CodexとClaudeのどちらで委譲先を起動するかを選ぶ。
-
-`agents_server`がCodexで起動した委譲先は、`~/.claude/rules/`配下に置いた規範ファイル（サブディレクトリを含み、`~/.codex/AGENTS.md`が埋め込むものを除く）の本文を起動時の指示として受け取り、Claudeで起動した委譲先と同じ規範で作業する。Codexのメインとネイティブのサブエージェントはこの指示を受け取らず、`~/.codex/AGENTS.md`の読込指示で`~/.claude/rules/`直下の`*.local.md`と`~/.claude/CLAUDE.md`を読む。Codexのメインにも適用したい規範は`~/.claude/rules/`直下の`*.local.md`へ置く。
-
-委譲の状態は`atk agents list`で一覧し、`atk agents wait`で終端と結果を受け取る。
-公開ツールの入力と応答の契約は[design-agents-server.md](../development/design-agents-server.md)を参照。
+`agents_server`はClaude CodeとCodexが共有する委譲用MCPである。委譲の状態は`atk agents list`で確認し、`atk agents wait`で終端と結果を受け取る。委譲するエージェントの選択は[agent-toolkit導入ガイド](claude-code-guide.md#工程別モデル設定)を参照する。
 
 ### CodexのサブスクとAPI接続先
 
-`agents_server`の接続先の選択順は、`atk config`の`codex_model_providers`だけで指定する。
-未設定の場合は、Codexの`config.toml`の実効`model_provider`と認証に従い、APIへ自動移行しない。
-空文字列を保存し、対応する環境変数を解除した場合も同じ動作になる。
-列を指定した場合は先頭を優先し、後続を代替接続先として使う。Codex側の`model_provider`を同時に変更する必要はない。
+接続先の選択順は`atk config`の`codex_model_providers`で指定する。未設定または空文字列ではCodexの通常の`model_provider`と認証を使う。ChatGPTサブスクリプションだけを使う場合はCodexへログインし、通常設定のproviderを省略するか`"openai"`にする。
 
-サブスクだけを使う場合はCodexへChatGPTログインし、通常設定の`model_provider`を省略するか`"openai"`にする。
-`atk config set codex_model_providers ''`で通常設定へ戻せる。
-サブスクとAPIを併用する場合は、APIの定義だけをCodexの`config.toml`へ置く。
+APIを併用する場合は、Codexの`config.toml`に接続先とAPIキーの環境変数名を定義し、APIキーをその環境変数へ設定してから、候補の順序を設定する。
 
 ```toml
 [model_providers.custom]
@@ -201,37 +66,21 @@ env_key = "MY_SERVER_API_KEY"
 requires_openai_auth = false
 ```
 
-APIキーを環境変数`MY_SERVER_API_KEY`へ設定してホストを起動し、次のコマンドで選択順を指定する。
-ChatGPTのtokenをAPIキーとして使わない。接続先の定義と認証はCodexが所有し、atkへ複製しない。
-
 ```bash
+export MY_SERVER_API_KEY='<APIキー>'
 atk config set codex_model_providers 'openai,custom'
 atk config get codex_model_providers
 ```
 
-ChatGPTログインの`openai`を先に使い、待機対象外の利用上限で状態の互換性を確認して`custom`へ同じ会話を移す。
-APIだけを使う場合は`atk config set codex_model_providers 'custom'`とする。
-APIを優先して別のAPIへ代替する場合は`'custom,another'`とし、各IDをCodexへ定義する。
-標準OpenAI providerをAPIキー認証で使う場合はCodexの既存の認証選択に従う。
-API会話からChatGPTへは戻さない。API主接続の認証・モデル不受理等も、後続APIだけを順に一度ずつ試す。
+`openai`はChatGPTログイン、`custom`は`config.toml`で定義したAPI接続先を表す。APIだけを使う場合は`'custom'`を指定し、通常設定へ戻す場合は空文字列を保存する。
 
-前後空白と重複を除き、空要素とID内空白は拒否する。
-未定義または独立したAPI認証のない候補は除外し、全候補が使えなければ失敗で終端する。
-指定外の通常接続は候補として使わない。
-`AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS`の空でない値は保存値より優先するため、解除時はこの変数も外す。
+```bash
+atk config set codex_model_providers ''
+```
 
-適用先は`agents_server`がCodexへ解決した全`mode`とその会話の継続である。
-直接Codex、`atk run-skill`、`atk wi process-loop`の起動設定は変えない。
-現在アカウントの確定した利用枠不使用、または終端した利用上限失敗を、`codex_usage_limit_wait`の方針と照合してサブスクからAPIへ移す。
-`five-hour`（既定）は5時間枠の解除を待ち、`always`は週次枠なども待ち、`never`は解除を待たない。
-回復後は新規sessionだけが指定列の先頭へ戻り、既存API会話は列変更・設定解除・保持期限・stop・
-サーバー再起動を跨ぐ再開でも選択済みAPIを使う。API料金は接続先の課金規則に従い、継続にも発生する。
-切替の診断は人向けの`agents-server.log`へ記録し、委譲元の応答や継続指示へ加えない。
-接続切替と旧記録の再開では、保存した会話状態の生成元と再開先の互換性を次のturnより前に確認する。
-圧縮・暗号化された状態の生成元が異なる場合や、生成元・記録を確認できない場合は、元の記録と進捗を保持して`threadStateIncompatible`で終端する。
-返された案内に従い、引き継ぎ記録から後任を起動する。
-互換性を確認済みの同じ接続先への通常再開は継続できる。
-旧移行記録では選択先と実際の状態生成元を区別できない場合があり、その会話は引き継ぎで再開する。
+API料金は接続先の課金規則に従う。ChatGPTのtokenをAPIキーとして使わない。`AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS`に空でない値が設定されている場合は保存値より優先するため、設定解除時はこの環境変数も解除する。
+
+候補が使えない場合は診断を確認し、Codexの接続先定義または認証を修正してから再試行する。この設定はagents_serverが起動する全modeと継続へ作用し、直接Codex、`atk run-skill`、`atk wi process-loop`の起動設定は変えない。`codex_usage_limit_wait`は、既定の`five-hour`で5時間枠だけを待ち、`always`で週次枠なども待ち、`never`では待たない。API料金は継続にも発生し、選択済みAPI会話は継続で同じ接続先を使う。接続先の変更は新しい会話から適用される。会話状態の互換性を確認できない場合は、表示された引き継ぎ案内に従って新しい会話で再開する。内部の再開契約は[design-agents-server.md](../development/design-agents-server.md)を参照する。
 
 ## 利用上限後の再開
 
@@ -274,9 +123,6 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 [Claude Code利用ガイド](claude-code-guide.md)の「常時有効な仕組み」にある対応表を参照する。
 
 表示内容を確認してフックを信頼する。
-信頼後の`PreToolUse`は`apply_patch`が`uv.lock`などのlockfileを直接編集する場合、
-`uv add`などのパッケージ管理ツールでの更新を促す通知を返す。
-動作を確かめる場合は、`uv.lock`へ1行を加える変更を`apply_patch`で適用し、通知の有無を確認する。
 CodexのStopは説明言語を判定する。
 completion-reportの起動忘れ通知と報告本文の判定は対象外である。
 工程の完遂と報告は`agent-toolkit:completion-report`の規範に従ってエージェントが確かめる。
