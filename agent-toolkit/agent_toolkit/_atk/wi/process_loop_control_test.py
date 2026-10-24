@@ -48,6 +48,8 @@ def test_instruction_append_rejects_duplicate_and_over_limit(monkeypatch, tmp_pa
         ("あ" * (process_loop_log.INSTRUCTION_MAX_CHARS + 1), "instruct-cancel"),
         ("   ", "本文を記入して再実行する"),
     ],
+    # 上限超過の本文が自動node IDへ展開されると、CIの詳細進捗の1行が本文長に比例して伸びる。
+    ids=["over-limit", "blank"],
 )
 def test_instruct_rejection_reports_next_action(
     monkeypatch: pytest.MonkeyPatch,

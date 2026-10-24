@@ -6,6 +6,8 @@ import shlex
 from agent_toolkit._git import remote
 
 _GLAB_HOST_VARIABLES = ("GITLAB_HOST", "GITLAB_URI", "GL_HOST")
+# run内の全jobのID・名前・結論を1行ずつ表示する`gh run view --jq`の式。
+GITHUB_JOB_LIST = ".jobs[] | [.databaseId, .name, .conclusion] | @tsv"
 
 
 def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environment: bool = False) -> dict[str, str]:
@@ -55,13 +57,17 @@ def failure_log_commands(
     """リポジトリを指定したログ取得argvを返す。job未確定なら取得とtraceを順に返す。"""
     target = remote.parse_remote_location(repository)
     if forge == "github":
+        # `gh run view --log-failed`は64KiBを超える行で後続を欠落させても成功終了するため、
+        # run単位でもjob IDを確定してから全jobログのAPIで取得する。
+        command = ["gh", "api", f"repos/{target.project_path}/actions/jobs/{identifier if job else '<job ID>'}/logs"]
+        command.append("--allow-escape-sequences")
+        if target.hostname:
+            command.extend(("--hostname", target.hostname))
         if job:
-            command = ["gh", "api", f"repos/{target.project_path}/actions/jobs/{identifier}/logs", "--allow-escape-sequences"]
-            if target.hostname:
-                command.extend(("--hostname", target.hostname))
             return (tuple(command),)
         repo = f"{target.authority}/{target.project_path}" if target.authority else target.project_path
-        return (("gh", "run", "view", identifier, "--repo", repo, "--log-failed"),)
+        jobs = ("gh", "run", "view", identifier, "--repo", repo, "--json", "jobs", "--jq", GITHUB_JOB_LIST)
+        return (jobs, tuple(command))
     repo = glab_repository(repository, prefer_environment=prefer_environment)
     assignments: list[str] = []
     environment = glab_environment(repository, prefer_environment=prefer_environment)
@@ -88,8 +94,11 @@ def failure_next_action(
     """共通argvを引用可能な案内へ変換する。"""
     commands = failure_log_commands(forge, repository, identifier, job=job, prefer_environment=prefer_environment)
     rendered = [f"`{shlex.join(command)}`" for command in commands]
+    if forge == "github":
+        save = "全jobログをmanaged-tempの中のファイルへ保存し、失敗箇所を読んで原因を調べる"
+        if job:
+            return f"{rendered[0]}で{save}"
+        return f"{rendered[0]}で失敗jobのIDを取得し、{rendered[1]}の`<job ID>`を置換して失敗jobごとに{save}"
     if len(rendered) == 2:
         return f"{rendered[0]}で失敗jobのIDを取得し、{rendered[1]}の`<job ID>`を置換してログを取得し原因を調べる"
-    if forge == "github" and job:
-        return f"{rendered[0]}で全jobログをmanaged-tempの中のファイルへ保存し、失敗箇所を読んで原因を調べる"
     return f"{rendered[0]}で失敗ログを取得して原因を調べる"

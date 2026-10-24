@@ -358,6 +358,17 @@ run `36791008397`が進行中でjob `110143643856`が`completed/success`のと�
 APIは全jobログ、`--log-failed`は失敗ステップを返すため、出力件数の一致は求めない。
 進行中runが無い場合はその条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
 
+## agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月24日
+
+2026年10月24日、LinuxのGitHub CLI 2.102.0で`ak110/dotfiles`の終端済み失敗run `39987263957`とjob `120529624126`（pytest (3.15)）を対象に確認した。
+job logs APIを`--allow-escape-sequences`付きで取得すると終了コード0で29773行・6090534bytesを保存でき、最長行は600188bytes、外側の時間上限による終了の表示を含んだ。
+同じrunとjobへの`gh run view --log-failed`も終了コード0・標準エラー0bytesだったが、17833行・3430008bytesで、試験の進捗44%の行で終わり、時間上限の表示を含まなかった。
+APIの原本では、その次の行が600KB前後の試験名を持つ行だった。
+GitHub CLIの[該当source](https://github.com/cli/cli/blob/v2.102.0/pkg/cmd/run/view/view.go#L549)は既定の`bufio.Scanner`で行を読み、走査後の`Err()`を返していない。[`bufio.Scanner`の既定の上限](https://pkg.go.dev/bufio#MaxScanTokenSize)は64KiBである。
+
+再検証では`gh version`を取得し、64KiBを超える行を含む失敗jobへ両コマンドを適用して、終了コード・行数・bytes・末尾の行を比較する。
+該当する失敗jobが無い場合は条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
+
 ## agent-basics/skills/bugfix/references/ci-failure-handling.md：分類判定の補助：2026年10月7日
 
 2026年10月7日、GitLabのリポジトリ（Runnerはgitlab-runner 18.2.1のDocker executor）のAWI処理回で、許容された終了コード4で終わるはずのjobがjobとして終了コード1を報告した事象を再現した。

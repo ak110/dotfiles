@@ -533,7 +533,7 @@ jobs:
       - name: ブラウザーE2E
         if: needs.common-ci-owner.outputs.owns == 'true'
         run: >-
-          uv run pytest
+          uv run pytest -v
           -m browser agent-toolkit/agent_toolkit/_atk/serve
           -o addopts='' -p no:cacheprovider
 

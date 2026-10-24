@@ -1407,7 +1407,7 @@ class TestNextActionOnNonZeroExit:
             (
                 {"run_list_fn": lambda _s: [_run(conclusion="failure")]},
                 wait_ci.EXIT_CI_FAILED,
-                ["gh run view 1", "--repo owner/repository", "--log-failed"],
+                ["gh run view 1", "--repo owner/repository", "--json jobs", "actions/jobs/<job ID>/logs"],
             ),
             ({"run_list_fn": lambda _s: [], "registration_grace": 100.0, "timeout": 1.0}, wait_ci.EXIT_TIMEOUT, ["--timeout"]),
             (
@@ -1497,13 +1497,14 @@ class TestNextActionOnNonZeroExit:
             assert "managed-tempの中のファイルへ保存" in action
             assert "--log-failed" not in action
         else:
-            assert "gh run view 303 --repo github.example.com/team/project --log-failed" in action
-            assert "actions/jobs" not in action
+            assert "gh run view 303 --repo github.example.com/team/project --json jobs" in action
+            assert "repos/team/project/actions/jobs/<job ID>/logs" in action
+            assert "--log-failed" not in action
 
     def test_terminal_non_success_guidance_uses_failed_run(self, capsys: pytest.CaptureFixture[str]) -> None:
         """早期失敗に含まれない終端状態でも成功runのIDを案内しない。"""
         assert _run_wait(lambda _sha: [_run(db_id=301), _run(db_id=302, conclusion="skipped")]) == wait_ci.EXIT_CI_FAILED
-        assert "gh run view 302 --repo owner/repository --log-failed" in _next_action(capsys.readouterr().err)
+        assert "gh run view 302 --repo owner/repository --json jobs" in _next_action(capsys.readouterr().err)
 
     def test_gitlab_failure_guidance_uses_job_trace(self, capsys: pytest.CaptureFixture[str]) -> None:
         """GitLabの失敗jobには検出したjob IDでtrace取得を案内する。"""

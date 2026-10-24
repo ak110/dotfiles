@@ -13,6 +13,7 @@ from agent_toolkit._testing import git_repository
 from pytools import releaser
 from pytools.releaser import (
     _build_parser,
+    _check_runs_success,
     _list_release_runs,
     _list_runs_for_commit,
     _ReleaserError,
@@ -266,6 +267,24 @@ class TestGhReadPolicy:
         assert run.call_count == 1
 
 
+class TestCheckRunsSuccess:
+    """CI失敗時の次操作を検証する。"""
+
+    def test_failure_guides_job_logs_with_escape_sequences(self) -> None:
+        expected_command = "gh api repos/<owner>/<repo>/actions/jobs/<job ID>/logs --allow-escape-sequences"
+        with pytest.raises(_ReleaserError) as exc_info:
+            _check_runs_success(
+                [
+                    {
+                        "databaseId": 1,
+                        "workflowName": "CI",
+                        "conclusion": "failure",
+                    }
+                ]
+            )
+        assert expected_command in str(exc_info.value)
+
+
 class TestWatchRun:
     """watch失敗後のrun状態判定を検証する。"""
 
@@ -289,16 +308,18 @@ class TestWatchRun:
         assert sleeps == [1.0]
         assert run.call_args_list[1].kwargs["timeout"] == 6
 
-    def test_completed_failure_is_not_hidden(self) -> None:
+    def test_completed_failure_guides_job_logs_with_escape_sequences(self) -> None:
+        expected_command = "gh api repos/<owner>/<repo>/actions/jobs/<job ID>/logs --allow-escape-sequences"
         results = [
             _completed_process(returncode=1),
             _completed_process(stdout='{"status": "completed", "conclusion": "failure"}'),
         ]
         with (
             patch("pytools.releaser.subprocess.run", side_effect=results),
-            pytest.raises(_ReleaserError, match="conclusion=failure"),
+            pytest.raises(_ReleaserError, match="conclusion=failure") as exc_info,
         ):
             _watch_run(42)
+        assert expected_command in str(exc_info.value)
 
     def test_incomplete_run_restarts_watch(self) -> None:
         sleeps: list[float] = []

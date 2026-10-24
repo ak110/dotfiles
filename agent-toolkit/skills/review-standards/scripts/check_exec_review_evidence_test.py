@@ -868,7 +868,10 @@ def test_plan_only_template_and_return_keep_existing_rows(
 
 @pytest.mark.parametrize("layout", ["same-wi", "cross-wi", "cross-array", "plan"])
 @pytest.mark.parametrize(
-    "evidence_text", ["実行結果", " 提出済み検証記録 ", "レビュー対象差分", "テスト成功", "missing.md", "観測した内容" * 100]
+    "evidence_text",
+    ["実行結果", " 提出済み検証記録 ", "レビュー対象差分", "テスト成功", "missing.md", "観測した内容" * 100],
+    # 反復した長文を自動node IDへ展開させず、CIの詳細進捗の行長を入力長から切り離す。
+    ids=["result", "padded-record", "review-diff", "test-success", "missing-file", "long-observation"],
 )
 def test_public_command_rejects_shared_evidence_without_reference(
     tmp_path: pathlib.Path,

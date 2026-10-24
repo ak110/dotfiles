@@ -13,18 +13,17 @@ def test_failure_commands_are_explicit_and_noninteractive(forge: str, job: bool)
     repository = f"{forge}.example.com/group/repo"
     commands = forge_cli.failure_log_commands(forge, repository, "24", job=job)
     if forge == "github":
-        assert len(commands) == 1
+        job_log = ("gh", "api", "repos/group/repo/actions/jobs/{}/logs", "--allow-escape-sequences")
+        job_log += ("--hostname", "github.example.com")
         if job:
-            assert commands[0] == (
-                "gh",
-                "api",
-                "repos/group/repo/actions/jobs/24/logs",
-                "--allow-escape-sequences",
-                "--hostname",
-                "github.example.com",
-            )
+            assert commands == (tuple(part.format("24") for part in job_log),)
         else:
-            assert commands[0] == ("gh", "run", "view", "24", "--repo", repository, "--log-failed")
+            # 64KiB超の行で後続を黙って欠落させる`--log-failed`を案内せず、job IDを経由して全ログを取得させる。
+            assert commands == (
+                ("gh", "run", "view", "24", "--repo", repository, "--json", "jobs", "--jq", forge_cli.GITHUB_JOB_LIST),
+                tuple(part.format("<job ID>") for part in job_log),
+            )
+        assert not any("--log-failed" in command for command in commands)
     elif job:
         assert commands == (("glab", "ci", "trace", "24", "--repo", f"https://{repository}"),)
     else:

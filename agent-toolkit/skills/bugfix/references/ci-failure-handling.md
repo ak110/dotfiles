@@ -28,8 +28,8 @@ push先、更新ref、run監視、証拠の一時保存と後始末は`agent-too
 
 - 監視で得たrun ID（GitLabではpipeline ID）とjob IDを引き継ぎ、全体の状態を確かめてから失敗jobのログを取得する。`gh`と`glab`の受理形式は実行直前のヘルプで確かめる
   - GitHubでrun進行中に対象jobが完了済みなら、`gh api repos/<OWNER>/<REPO>/actions/jobs/<job ID>/logs --allow-escape-sequences`で全jobログをmanaged-tempへ暫定保存する。端末エスケープを含む応答はこの指定が無いと拒否される。取得できない場合とjob進行中は、annotationや失敗テスト名など取得できる証拠で先行分析する
-  - run終端後は`gh run view <run ID> --repo <OWNER>/<REPO> --job <job ID> --log-failed`で失敗ステップを取得し、全失敗jobは`--job`を省いたrun単位で確かめる。run単位の取得は`wait_ci.py`を呼び直して全体終端の返却を受けてから行う。待機の再開は、終了コード6では同じ引数で、2では`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の終了コード2の箇条に従う（1は終端のCI失敗、3は待機手段の失敗）。同箇条は同じSHAとbaselineまたは待機専用記録を保ったまま`--timeout`を増やして呼び直すことを定める
-  - 観測結果と再検証手段は`docs/development/audit-records.md`の「agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日」にある
+  - run終端後は`gh run view <run ID> --repo <OWNER>/<REPO> --json jobs`で全失敗jobのIDを確かめ、各失敗jobの全jobログを同じjob logs APIで保存する。`gh run view --log-failed`は64KiBを超える行（大きなパラメーターを含む試験名など）で以後の出力を欠落させても終了コード0で終わる。このため失敗の取得と不在の判断に使わない。全失敗jobの確認は`wait_ci.py`を呼び直して全体終端の返却を受けてから行う。待機の再開は、終了コード6では同じ引数で、2では`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の終了コード2の箇条に従う（1は終端のCI失敗、3は待機手段の失敗）。同箇条は同じSHAとbaselineまたは待機専用記録を保ったまま`--timeout`を増やして呼び直すことを定める
+  - 観測結果と再検証手段は`docs/development/audit-records.md`の「agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日」にある。`--log-failed`の欠落の観測は同ファイルの「agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月24日」にある
 - VRT差分画像やtest-resultsなどのartifactも取得する。artifactの無い失敗はログの失敗テスト名・ステップ・エラーメッセージで分類する
 - 同一SHAでローカル再現を試す
 
