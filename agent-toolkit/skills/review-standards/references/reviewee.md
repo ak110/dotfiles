@@ -87,8 +87,7 @@ atk review-table show <表の絶対パス> --row-id 1 --field no-response-reason
 
 採否、修正方針、対応結果および検証結果は、指定されたレビュー指摘管理表と成果物へ記録する。委譲元へ返す文面と返却値の排他性は、その委譲の`<役割名>.subagent.md`が定める。委譲先でないエージェントは本書の判定だけを適用して自身の工程を進める。
 
-再レビューの優先条件と機械的修正・詳細実装の省略条件は`agent-basics:review-standards`の`references/reviewee.md`「方式見直しと再レビュー」を適用する。WI証拠の`wi_conditions`か`user_requirements`に未達・証拠不足の再判定を要する修正は優先条件として扱う。
-同品質基準の低リスク分類を使う場合は、開始時点からの全変更パスが以下の分類で低リスクのときに省略できる。
+再レビューの優先条件と、機械的修正・詳細実装の省略条件は`agent-basics:review-standards`の`references/reviewee.md`「方式見直しと再レビュー」を定義元として適用する。WI証拠の`wi_conditions`か`user_requirements`に未達・証拠不足の再判定を要する修正は優先条件として扱う。低リスク分類を追加の省略経路として使う場合だけ、開始時点からの全変更パスを次のコマンドで判定する。
 
 段階は対象worktreeで`atk run-script agent-doc-changes -- --repo <対象worktree> --review-risk <開始時点> <HEAD>`により求める。
 全変更パスがエージェント向け文書に該当しない`.md`・`.md.tmpl`なら低リスク、それ以外は通常であり、Git管理外の変更を受領したラウンドは通常として扱う。

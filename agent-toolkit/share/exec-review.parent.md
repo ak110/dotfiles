@@ -4,8 +4,8 @@
 起動対象: exec-review.subagent.md
 ```
 
-メインが実装後のHEADを実行レビュー担当へレビューさせ、指摘への修正と履歴統合を管理する際に本書へ従う。
-実行レビュー担当自身の手順は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`が定める。本書は起動、入力生成、レビュー修正、レビュー指摘管理表の保存を扱い、レビュー分類と判定手順は同書と`agent-toolkit:review-standards`に委ねる。
+メインは実装後HEADの実行レビュー、修正、履歴統合を管理する。
+レビュー担当の手順は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`が定める。本書は起動、入力生成、修正、指摘管理表の保存を扱い、分類と判定は同書と`agent-toolkit:review-standards`に委ねる。
 
 全起動で名前付き入力`未判定検証記録`を渡す。証拠要求ありでは実装担当かメインが作成したJSONの実在し読取可能な絶対パス、証拠要求なしでは`なし`とする。値は起動前に確定して渡す（レビュー担当に進捗ログや引き継ぎから探させない）。引き継ぎ再レビューでも初回値を保持する。JSONの作成手順は`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「完成条件証拠の検証記録」が定め、メインが自ら実装した場合はメインが同じ手順で実装完了前に作成する。根拠にするテスト出力と手動観測は、同書「手動観測の保存」の手順で実行した版（HEADと未commit・未追跡の状態）とともに保存する。
 任意入力`受理済みの完成条件証拠`へは同じ計画の進捗ログに保存した受理済み証拠のうち後続担当が読めるJSONの絶対パスを渡す（省略時と行が無い場合は`なし`）。未判定検証記録とは分け、参照を使える条件と判定は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」に従う。
@@ -63,6 +63,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md#「応答済みの判定」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「応答済みの判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewee.md#「完了報告」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「完了報告」` |
+| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee.md#「方式見直しと再レビュー」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewee.md#「方式見直しと再レビュー」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-integration.subagent.md#「マージありの統合」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「マージありの統合」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/references/plan-file-storage.md#「計画ファイルの保存と参照」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md#「計画ファイルの保存と参照」` |
 
@@ -117,11 +118,6 @@
 
 - 受入シナリオでは要求固有の呼び出し手段（コマンド・画面・API・hookなど）と結果を条項にし、提出されたテストと実際の観測を比べる。全体検証とCIの成功は公開工程判定（`workflow-phases.md`）に従う
 - 外部可視の属性を名指しした計画や要求では、最終値だけでなく、実装が最終値を導く入力、条件分岐、省略時の値を条項にする（直接設定が一致しても導出後の値の違いを検出できるように）
-
-<例>
-海外扱いのモデル
-権限に応じた画面表示
-</例>
 
 海外扱いのモデルでは`regions`から最終地域区分を導く全分岐と省略時の値を確かめ、直接設定が海外でも最終値が国内なら不合格とする。権限に応じた画面表示では、バックエンドが導く権限フラグの入力と分岐、テンプレートが参照する値と最終的な表示可否を確かめる。
 
@@ -182,7 +178,7 @@ Git管理外の変更元と変更前複製の対がある場合は、レーン�
 
 1. 返却の`レビューしたHEAD`、round、表と証拠のパス、`計画のパス`、`入力記録のパス`を同じレビューの入力として保持する。未解決件数は返却値をそのまま使い、`<配列>の判定内訳`と`達成以外の行`は非達成行の所在の一覧として使う
 2. `読者別探索`のファイル別JSON申告と`レビュー開始時点`、`前回確認版の開始時点`、`前回確認版HEAD`を同じレビューの値として保持する。メイン自身が保持する回答下書きの絶対パスと、レーンの引き継ぎ記録にある`Git管理外の変更`の元ファイルのうち`.md`・`.md.tmpl`から対象集合を求め、生成済み入力の各組の必須配列`external_artifacts`（0件は`[]`）と一致することを確かめる
-3. 対象worktreeで`atk run-script exec-review-evidence-check -- --batch <受領確認入力のパス>`を単独実行する。複数の返却は`--batch <生成済み入力の絶対パス>`を反復し、入力の結合・再編集をせず渡す。生成側が保存した`version: 1`・`reviews`は組ごとのWI・証拠・表・round・計画と入力記録の配列・読者別探索・今回と前回の開始時点とHEADを保持する。`external_artifacts`と、受領したYAML契約の絶対パスを持つ任意の`review_contract`も同じ組で渡す。契約のパスはメインが起動時に渡した値と比べる。再レビューや引き継ぎでも、その返却が生成した値を使い、再レビューを省いた修正やrebaseを理由に付け替えない。各組の診断を読み、1組でも非0なら全体を非0として扱う。Git管理下と管理外の対象集合と申告・省略の対応はこのコマンドが確かめ、不成立は同じ担当へ探索と再判定を求める
+3. 同じ返却の`--return-result`が終了0で生成した入力には`--batch`を再実行しない。証拠・WI・計画・契約・参照先の根拠が生成後に変わった場合、または返却が固定形式でない場合だけ、対象worktreeで`atk run-script exec-review-evidence-check -- --batch <受領確認入力のパス>`を単独実行する。複数の返却は`--batch <生成済み入力の絶対パス>`を反復し、入力の結合・再編集をせず渡す。生成側が保存した`version: 1`・`reviews`は組ごとのWI・証拠・表・round・計画と入力記録の配列・読者別探索・今回と前回の開始時点とHEADを保持する。`external_artifacts`と、受領したYAML契約の絶対パスを持つ任意の`review_contract`も同じ組で渡す。契約のパスはメインが起動時に渡した値と比べる。再レビューや引き継ぎでも、その返却が生成した値を使い、再レビューを省いた修正やrebaseを理由に付け替えない。再検査した各組の診断を読み、1組でも非0なら全体を非0として扱う。Git管理下と管理外の対象集合と申告・省略の対応はこのコマンドが確かめ、不成立は同じ担当へ探索と再判定を求める
 4. 未解決件数が0件で、達成必須の全行が達成していること。`--list --rows-only`で`証拠の行一覧`だけを取得できる。全行の判定・原文・`source`を行番号で対応付け、`--show-all-rows`か選択行の表示で各行の全欄と根拠全文、reviewed_headおよび参照先の入力・観測結果を読む。個別の行の読み直しは、出力を加工せずに`atk run-script exec-review-evidence-check -- <証拠の絶対パス> --list --section <配列> --row <N>`（複数行は`--row`を反復）で行う。長い出力は保存先から末尾まで読む。コマンドの成功だけで達成を受理しない
 5. 再実行が非0の返却、または`達成以外の行`などが`--return-result`の固定形式である行ごとのJSONになっていない返却は、手で組み立てた返却として受理せず、報告されたWI名と不足内容を同じ担当へ返す。同じコマンドで返却を生成し直すよう求める
 
@@ -235,10 +231,8 @@ Git管理外の変更元と変更前複製の対がある場合は、レーン�
 全指摘を不採用として根拠と応答を記録した採用0件の`対応完了`も、通常の再レビューへ進める。
 修正commitや履歴統合の有無を返却分類の条件には使わず、未応答0件を確かめる。
 `対応完了`では、`review-loop-coordination.md`「応答済みの判定」で未応答件数が0件の場合だけ同じレビューthreadへ`再レビューせよ`と`round: <ラウンド番号>`を送る。送る直前に、開始時点から現在HEADまでの累積差分に別の計画で認可されたcommitが含まれるかを確かめる。含まれれば「`review_contract`の生成」の独立条項を現在のOIDで生成し、初回の条項も含めて検証してから`review_contract: <絶対パス>`を加える。前回レビュー後に履歴書換えでOIDが変わった場合は、保存された対応表を`rewrite_map: <絶対パス>`として加える（引き継ぎ再レビューでは`extra_params`の`rewrite_map`）。対応表は`agent-toolkit:commit`の`references/history-rewrite.md`「WI実装commitの対応の継承」が保存させるJSONである。`画面差分: あり`では同じ工程で`usability-review.parent.md`に従ってユーザビリティレビューの再判定（未起動なら初回レビュー）を依頼する。
-`対応完了（再レビュー不要）`では、`agent-toolkit:review-standards`の`references/reviewee.md`「完了報告」の優先条件と省略条件を確認する。
-機械的修正に当たらない返却では、同節の段階判定を修正後HEADに適用し、低リスクであることを確かめる。
-通常の場合は同節の詳細・実装だけの省略条件が成立することを確かめ、成立しなければ`対応完了`と同じ再レビューへ進む。
-完成条件証拠があればその`wi_conditions`と`user_requirements`を読み、`exec-review-recording.md`「統合時の完成条件判定」で受理できない`未達`・`証拠不足`行が残る場合と、修正との関係を確定できない場合も同じ再レビューへ進む。
+`対応完了（再レビュー不要）`では、`agent-basics:review-standards`の`references/reviewee.md`「方式見直しと再レビュー」を省略条件の定義元として確認する。機械的修正、詳細・実装だけの修正、または低リスク段階の追加経路のいずれかを満たすことを確かめ、低リスク段階を使う場合だけtoolkit側`reviewee.md`の判定コマンドを修正後HEADへ適用する。会話履歴が欠けた再開、修正に関係する未達・証拠不足の再判定、修正との関係を確定できない場合は`対応完了`と同じ再レビューへ進む。
+完成条件証拠があればその`wi_conditions`と`user_requirements`を読み、`exec-review-recording.md`「統合時の完成条件判定」で受理できない、修正に関係する`未達`・`証拠不足`行が残る場合も同じ再レビューへ進む。
 判定値と`reviewed_head`の更新は再判定した実行レビュー担当が行う。
 
 再判定が不要な場合は実行レビューを省き、次の順で統合入力HEADを確定する。amendとautosquashでHEADが変わるため、統合入力HEADと証拠を判定した`レビューしたHEAD`を別の値として保持する。

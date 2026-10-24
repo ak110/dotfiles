@@ -521,17 +521,6 @@ def dynamic_targets(
         return [read_triggers.ReadTarget(pathlib.Path(path)) for path in paths if pathlib.Path(path).is_file()]
     if row.selector == "artifact-standards":
         cwd = payload.get("cwd", "")
-        paths = operation_skills.written_paths(tool_name, tool_input, cwd)
-        mapping = {
-            ".py": "python.md",
-            ".ts": "typescript.md",
-            ".tsx": "typescript.md",
-            ".rs": "rust.md",
-            ".cs": "csharp.md",
-            ".sh": "bash.md",
-            ".ps1": "powershell.md",
-            ".cmd": "windows-batch.md",
-        }
         targets = []
         host = "codex" if is_codex_payload(payload) else "claude"
         provider = document_reads.document_plugin(str(row.source))
@@ -550,14 +539,6 @@ def dynamic_targets(
                 )
             ):
                 targets.extend(candidate.targets)
-        for path in paths:
-            reference = mapping.get(pathlib.Path(path).suffix)
-            if reference:
-                target = read_triggers.resolve_document(
-                    f"{provider}:writing-standards/references/{reference}", row.source, plugin_resources.plugin_root(), host
-                )
-                if target is not None and target.is_file():
-                    targets.append(read_triggers.ReadTarget(target))
         return list(dict.fromkeys(targets))
     if row.selector == "external-pytilpack-index":
         index_ready = agent in records.get("external-document:https://ak110.github.io/pytilpack/llms.txt", [])

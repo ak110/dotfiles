@@ -52,7 +52,7 @@ user-invocable: false
 process-loopの起動・待機・制御を扱う前に`atk wi process-loop --help`で条件を確認する。次の公開操作は、中断要求の`atk wi process-loop abort`、次の1セッションへの指示の`instruct`、状態確認の`status`である。
 複数リポジトリはホームから`atk wi process-loop all-repos`で起動し、`process_loop_repositories`へ登録した集合を`atk wi list --configured-repos`で確認する。常駐側は担当の起動・中継・所有管理を担い、対象の選定・規範・実装・Git・公開の判断は対象リポジトリの担当が持つ。登録と再開の条件は`../process-wi/references/all-repos-orchestration.md`が定める。
 
-process-wiのメインは選定・配分とユーザー確認を担い、レーン担当が計画・実装・独立した実行レビューの調整・統合を続ける。単一レーンの継続契約は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`とする。準備は`atk lane create`、統合は`atk lane integrate`、回収は`atk lane delete`へ進み、操作前に`../process-wi/references/run-lanes.md`の該当節を読む。保持された資源の回復は同書と`atk lane delete --help`・`atk lane recover --help`の条件・診断から再開する。
+process-wiのメインは選定・配分とユーザー確認を担い、レーン担当が計画・実装・独立した実行レビューの調整・統合を続ける。初回の独立した実行レビューは詳細点検を担い、レビュー限定基準の違反は指摘として届く。再レビューは前回指摘、修正差分と直接影響範囲を確認する。単一レーンの継続契約は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`とする。準備は`atk lane create`、統合は`atk lane integrate`、回収は`atk lane delete`へ進み、操作前に`../process-wi/references/run-lanes.md`の該当節を読む。保持された資源の回復は同書と`atk lane delete --help`・`atk lane recover --help`の条件・診断から再開する。
 
 `run-skill`由来のUWIは`source`が`run-skill`、`scope`がスキル名であり、process-wiの選定とprocess-loopの起動件数から除く。
 

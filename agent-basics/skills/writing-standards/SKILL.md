@@ -79,7 +79,9 @@ description: >
 
 | 時点または条件 | 取得する範囲 |
 | --- | --- |
-| 恒久的な成果物の文面案を執筆する前と、textlintの指摘へ対応する時 | `references/textlint-violations.md` |
+| textlintなど文章チェックの診断へ対応する時 | `references/textlint-violations.md` |
+| 文章の書き直しを委ねる時 | `references/textlint-violations.md`の「文の書き直しの委譲と検収」 |
+| 独立したレビューを経ずに成果物を完成させる時（再レビューを省く修正、独立したレビューを起動しない修正経路を含む）と、レビュー限定基準の指摘を受けて採否を判断する時 | `references/review-only-criteria.md` |
 | lint設定の緩和・無効化・除外指定を追加する時 | `references/lint-relax-criteria.md` |
 | 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む）。正しい例と説明から、元の意味と条件を保つ書き方を選ぶ | `references/tone-examples.md`、`references/tone-examples-llm-tone.md` |
 | 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` |
@@ -98,7 +100,7 @@ description: >
 
 | 時点または条件 | 取得する範囲 |
 | --- | --- |
-| `py` | `references/python.md` |
+| `py` | `references/python.md`の「言語スタイル」「テストコード（pytest）」「Python新構文と導入バージョン」 |
 | `ts`・`tsx` | `references/typescript.md` |
 | `rs` | `references/rust.md` |
 | `cs` | `references/csharp.md` |
@@ -124,6 +126,7 @@ description: >
 | 依存の追加・更新、またはPythonの対応版を追加する時（CI・開発環境の版指定変更を含む） | `references/dependency-management.md` |
 | MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` |
 | テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md` |
+| Pythonの静的解析（ruff・pylint・pyright・mypyなど）の診断へ対処する時と、抑制を追加する時 | `references/python.md`の「静的解析の誤検出と抑制」 |
 | 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化など） | `references/encoding.md` |
 | 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボードなど）の作成・修正時 | `references/independent-html.md` |
 | エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `references/ui-ux.md` |

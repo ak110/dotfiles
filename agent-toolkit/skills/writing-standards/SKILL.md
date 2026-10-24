@@ -34,7 +34,8 @@ toolkitの公開スキルを使う既存の呼び出しは、このスキルで�
 | 人間が読む文章（ドキュメント、コメント、AWI・UWIの本文など）を書く時 | `references/writing.md`の「文章の共通規定」 | 起動時 | `skill:writing-standards` | |
 | ユーザーの入力素材を整理して取り込む時 | `references/writing.md`の「ユーザー入力素材の取扱い」 | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | |
 | 文章を書く時と表記をチェックする時（他の行より先に読む） | `references/notation-rules.md`の「チェックの対象範囲」「文章チェックの一括実行」 | 起動時 | `skill:writing-standards` | |
-| 恒久的な成果物の文面案を執筆する前と、textlintの指摘へ対応する時 | `references/textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/textlint-violations.md#「文の書き直しの委譲と検収」` | |
+| textlintなど文章チェックの診断へ対応する時 | `references/textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/textlint-violations.md#「文の書き直しの委譲と検収」` | |
+| 文章の書き直しを委ねる時 | `references/textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/textlint-violations.md#「文の書き直しの委譲と検収」` | |
 | 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md#「運用条件」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/document-types.md#「運用条件」` | |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md#「一覧」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/defined-names.md#「一覧」` | |
 | `py` | `references/python.md`の「標準ライブラリとログ」 | 操作 | `path:*.py` | |
