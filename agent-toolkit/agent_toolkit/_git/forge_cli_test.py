@@ -18,7 +18,7 @@ def test_failure_commands_are_explicit_and_noninteractive(forge: str, job: bool)
         if job:
             assert commands == (tuple(part.format("24") for part in job_log),)
         else:
-            # 64KiB超の行で後続を黙って欠落させる`--log-failed`を案内せず、job IDを経由して全ログを取得させる。
+            # 64KiB超の行で後続が欠落する`--log-failed`を避け、job IDを経由して全ログを取得させる。
             assert commands == (
                 ("gh", "run", "view", "24", "--repo", repository, "--json", "jobs", "--jq", forge_cli.GITHUB_JOB_LIST),
                 tuple(part.format("<job ID>") for part in job_log),
