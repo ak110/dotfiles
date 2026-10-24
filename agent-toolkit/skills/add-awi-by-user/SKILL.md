@@ -12,6 +12,13 @@ disable-model-invocation: true
 WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。本スキルは協調モードで動作する。
 この場で求められた案・回答・選好の確定は本セッションで行い、後続の変更要求をWIへ保存する。
 
+厳守事項として、要求に必要な調査・棚卸し・対象の分類・対象ごとの採否は登録前にこのセッションで終え、根拠・反映先・完成条件が確定した変更だけを登録する。
+調査や棚卸しそのものを作業要求にしたAWI、調査の残りを計画工程や実装担当へ渡すAWI、判断基準だけを書いて対象ごとの判断を後続へ残すAWIは保存しない。
+後続へ渡せるのは、確定した変更の内部設計、実装単位の分け方と実装後の検証に限る。
+調査が終わらない間は同じセッションで調べ続ける。自ら取得できない資料やユーザーだけの判断を待つ場合は、その状態を続行できない理由としてユーザーへ報告し、調査を要求するAWIの保存で完了に置き換えない。
+この厳守事項は、`agent-toolkit:wi-standards`の`references/drafting-completion.md`「対象集合の仕分け」が定める処理時点の仕分けより優先する。
+`agent-toolkit:user-confirmation-and-report`「成果物の制限」の後続調査の登録規定よりも優先する。
+
 正式な登録には、対象リポジトリと既存キューの読取、`atk`と参照資料が必要である。これらが無い環境では、対話で要求を整理した原稿を返し、登録前の下書きとして扱う。既存項目との比較・保留・投入と保存の検収は、機能を提供するClaude CodeまたはCodexで行う。要求の文は[文章の品質基準](references/quality-standards.md)で確かめる。
 
 ## 名指し参照の読込方法
@@ -26,6 +33,7 @@ WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/w
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-completion.md#「対象集合の仕分け」「確定の判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「対象集合の仕分け」「確定の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「成果物の制限」` |
@@ -53,6 +61,7 @@ WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/w
    - 対象リポジトリの外へ成果を反映する要求では、反映先ごとの終了状態（commitまでかpushまでか）を`agent-toolkit:wi-standards`の`references/awi-body.md`「完成条件」で判定する。質問ラウンドで確認するのは、反映先の規範と成立済みの認可で定まらずユーザーだけが決める部分に限る。
    - 観測した問題（失敗、不具合、未対応など）を起点とする要求では、対処の選択を原因分析の後に行う。wi-standardsの共通手順で投入先を確定し、手順3の作成主体が初動・原因分析・類似見直しを行って対策を確定する。対処について確認するのは、原因確定後もユーザーだけが持つ値が残る場合に限る。目的や対象範囲の確認はこの手順で行う。
 3. wi-standardsの要求の同一性で独立要求を分け、件数によらずメイン自身が調査・対策確定・起草・検収・保存まで担当するのを原則とする。
+   - 冒頭の厳守事項に従い、起草を確定する前に対象ごとの採否・根拠・変更先・変更内容を本文へ書ける状態まで調査を終える。全体の棚卸しを求められた場合も、棚卸しの結果を対象ごとに本文で確定する。
    - 原文・出所・確定要件と技術判断を区別し、取得済み証拠を再利用する。複数要求は混ぜずに扱い、同じ要求の更新は同じ作成主体が現行要件と差分から行う。登録を要する要求が無ければ、再利用・回答による解決・取り下げの結果を集約して手順4へ進む。
    - 本来の作業に付随する別件の投入など、文脈を分ける意味がある場合は`add-wi.parent.md`で委譲を選ぶ。基準付きの大量走査は軽量な読取探索を使え、起草と保存の責務はメインに保つ。
    - 検収の構成は`references/drafting-workflow.md`「直接起草と独立した検収の選択」に従い、引用・構造の機械チェックと`references/draft-semantic-review.md`の読み直しを保つ。独立検収を要する場合は、同時に用意済みの原稿と要求・出所・証拠を要求識別子で対応付けて`share/wi-draft-review.parent.md`へまとめて渡し、作成主体が指摘の採否を確定して保存する。
@@ -73,6 +82,7 @@ WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/w
 ## 完成条件
 
 - 認識の違いで要件または結果が変わる事項の回答を投入前に得ている
+- 登録した全AWIが、調査・棚卸し・分類・対象ごとの採否を投入前に終えた確定変更だけを要求している（冒頭の厳守事項）
 - 必要な認識合わせを終え、手順3の作成主体が要求の性質に応じた検収を経て要求を登録している
 - 直接起草ではメインの意味検収と機械チェック、独立検収を要する要求では投入前レビューと保存結果を検収している
 - 対象リポジトリの実装と`processing`項目を起動時のまま保っている
