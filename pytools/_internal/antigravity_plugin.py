@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shlex
 import stat
 import subprocess
@@ -17,6 +18,7 @@ EVENTS = ("SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInv
 _ALWAYS_ON = "---\ntrigger: always_on\n---\n\n"
 _SOURCE_DIRECTORIES = ("skills", "agents", "share", "agent_toolkit", "scripts")
 _EXCLUDED = frozenset({"__pycache__", ".venv", ".pytest_cache", ".mypy_cache", ".ruff_cache"})
+_MARKDOWN_HEADING = re.compile(r"#{1,6}(?:\s|$)")
 
 
 def _json(value: object) -> bytes:
@@ -37,24 +39,55 @@ def _project_paths(value: object, target: Path) -> object:
     return value
 
 
+def _heading_tail(lines: list[tuple[str, bool]]) -> int:
+    """末尾の見出しと空行だけの並びが始まる位置を返す。該当しなければ行数を返す。"""
+    start = len(lines)
+    for index in range(len(lines) - 1, -1, -1):
+        line, heading = lines[index]
+        if heading:
+            start = index
+        elif line.strip():
+            break
+    return start
+
+
 def _rules(source: Path) -> dict[Path, bytes]:
-    """各ファイルを行境界で分割し、同じ本文を常時ロードへ投影する。"""
+    """各ファイルを行境界で分割し、同じ本文を常時ロードへ投影する。
+
+    分割の直前が見出しで終わると、見出しと説明する本文が別ファイルに分かれて読み手が対応を失う。
+    末尾の見出し（直後の空行を含む）は次のファイルへ繰り越し、繰り越しても上限に収まらない場合だけ行で分ける。
+    """
     chunks: list[str] = []
-    current = ""
+    current: list[tuple[str, bool]] = []
+    current_bytes = 0
+    in_fence = False
     body_limit = RULE_FILE_BYTES - len(_ALWAYS_ON.encode("utf-8"))
     for path in sorted((source / "rules").glob("*.md")):
         text = path.read_text(encoding="utf-8")
         if not text.endswith("\n"):
             text += "\n"
         for line in text.splitlines(keepends=True):
-            if len(line.encode("utf-8")) > body_limit:
+            size = len(line.encode("utf-8"))
+            if size > body_limit:
                 raise ValueError(f"Antigravity規範の1行がファイル上限を超えています: {path}")
-            if len((current + line).encode("utf-8")) > body_limit:
-                chunks.append(current)
-                current = ""
-            current += line
+            stripped = line.lstrip()
+            # コードフェンス内の`#`行（シェルのコメントなど）は見出しとして扱わない。
+            fence = stripped.startswith(("```", "~~~"))
+            heading = not in_fence and not fence and _MARKDOWN_HEADING.match(stripped) is not None
+            if fence:
+                in_fence = not in_fence
+            if current_bytes + size > body_limit:
+                tail = _heading_tail(current)
+                carried = current[tail:]
+                carried_bytes = sum(len(item.encode("utf-8")) for item, _ in carried)
+                if tail == 0 or carried_bytes + size > body_limit:
+                    tail, carried, carried_bytes = len(current), [], 0
+                chunks.append("".join(item for item, _ in current[:tail]))
+                current, current_bytes = carried, carried_bytes
+            current.append((line, heading))
+            current_bytes += size
     if current:
-        chunks.append(current)
+        chunks.append("".join(item for item, _ in current))
     # agyの規範予算はモデル共通。日本語を含む本文へUTF-8の2 bytes/token換算を
     # 採り、英語中心の4 bytes/token換算より余裕を持って生成時に検査する。
     estimated_tokens = sum(
