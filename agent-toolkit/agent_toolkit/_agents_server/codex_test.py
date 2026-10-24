@@ -1069,6 +1069,10 @@ def _lease_plugin_source(base: pathlib.Path, version: str = "1.0.0") -> pathlib.
 
 
 # 実MCP試験の依存導入（UV_LINK_MODE=copyで新規環境へ全パッケージを複製する）の上限（秒）。
+# 60秒ではWindows CIで超過した。2026年10月23〜24日のWindows CI 9runでは、
+# 旧形式試験のworker作成から判定までが43〜77秒（試験開始の遅れを含む上限値で、
+# 導入単独の所要は未取得）だった。所要分布を保証する値ではないため、
+# 導入方式や対象試験を変える場合は同じ区間の所要を測り直して比べる。
 _REAL_MCP_PREPARE_TIMEOUT = 120
 
 

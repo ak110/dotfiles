@@ -118,6 +118,56 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     assert (target / _CHECK_SKILL).read_text() == "新しい定義"
 
 
+def _boundary_rules(source: Path, tail: str, follow: str) -> str:
+    """前ファイルの残り容量へ`tail`だけが収まり、`follow`で上限を超える規範を書き、その本文を返す。"""
+    body_limit = subject.RULE_FILE_BYTES - len(b"---\ntrigger: always_on\n---\n\n")
+    filler = "共通規範を守る。\n"
+    room = len(tail.encode()) + 1
+    count, remainder = divmod(body_limit - room, len(filler.encode()))
+    # 残りの端数は1バイト文字で埋め、tailの直後でちょうど上限の1バイト手前になるようにする。
+    text = filler * count + "a" * remainder + "\n" + tail + follow + "続く本文。\n"
+    assert len((filler * count + "a" * remainder + "\n" + tail).encode()) <= body_limit
+    assert len((filler * count + "a" * remainder + "\n" + tail + follow).encode()) > body_limit
+    (source / "agent-toolkit/rules/01-agent.md").write_text(text, encoding="utf-8")
+    return text
+
+
+def _rule_chunks(source: Path) -> list[str]:
+    """生成順（AGENTS.md、AGENTS-02.md、…）に常時ロード前置を除いた規範の本文を返す。"""
+    outputs = {path: data for path, (data, _) in subject.outputs(source).items() if path.parent == Path("rules")}
+    assert all(len(data) <= subject.RULE_FILE_BYTES for data in outputs.values())
+    ordered = sorted(outputs.items(), key=lambda item: (item[0].name != "AGENTS.md", item[0].name))
+    return [data.decode().removeprefix("---\ntrigger: always_on\n---\n\n") for _, data in ordered]
+
+
+@pytest.mark.parametrize(
+    ("tail", "follow"),
+    [
+        ("## 使用言語\n\n", "成果物は日本語で書く。\n"),
+        ("## 判断指針\n\n### QCDと3段判定\n\n", "品質を先に守る。\n"),
+        ("## 見出し直後に空行が無い\n", "本文の1行目。\n"),
+    ],
+    ids=["heading-blank", "nested-headings", "heading-without-blank"],
+)
+def test_rules_keep_heading_with_following_body(source: Path, tail: str, follow: str) -> None:
+    """上限の近傍に置いた見出しは次のファイルへ繰り越し、全文保持と上限を同時に満たす。"""
+    text = _boundary_rules(source, tail, follow)
+    chunks = _rule_chunks(source)
+    assert len(chunks) == 2
+    assert "".join(chunks) == text
+    last_line = [line for line in chunks[0].splitlines() if line.strip()][-1]
+    assert not last_line.startswith("#")
+    assert chunks[1].startswith(tail + follow)
+
+
+def test_rules_ignore_hash_lines_inside_code_fence(source: Path) -> None:
+    """コードフェンス内の`#`行は見出しとして繰り越さず、従来どおり行境界で分ける。"""
+    text = _boundary_rules(source, "```bash\n# コメント\n", "echo 本文\n```\n")
+    chunks = _rule_chunks(source)
+    assert "".join(chunks) == text
+    assert chunks[0].endswith("# コメント\n")
+
+
 @pytest.mark.parametrize(
     "body", ["あ" * 8001, "あ\n" * 11000, "あ\n" * 10000], ids=["long-line", "total-budget", "headers-budget"]
 )

@@ -63,14 +63,11 @@ def _missing_records(worktree: pathlib.Path, records: list[_Record], previous: s
             if root in (working, saved) and record.stem in provided_stems:
                 continue
             try:
-                events = commit_mapping.file_events(path)
-                if record.is_file():
-                    events = commit_mapping.body_events(record.read_text(encoding="utf-8")) + events
-                names = _allowed_wis(_Record(record, True), "", events)
-                mapping = commit_mapping.read_mapping(worktree, events, names, allow_missing=True)
-                affected = commit_mapping.rewritten_commits(worktree, mapping, previous)
-            except commit_mapping.CommitMappingError:
-                # 他リポジトリの短縮OIDや過去の書換えは今回の到達可能な範囲に属さない。
+                affected = _candidate_affected(worktree, path, record, previous)
+            except OSError, ValueError:
+                # 処理対象と確定していない候補は、読取から書換え対象の判定までのどの段階で失敗しても除外する。
+                # 他リポジトリの短縮OID、過去の書換え、無関係な不正記録が該当する。明示指定した記録は
+                # `_plan_events`が厳密に検証する。ValueErrorは`CommitMappingError`・`UnicodeDecodeError`を含む。
                 continue
             if affected:
                 guidance = "atk plans checkoutで取得して--planへ加える" if root == saved else "--planまたは--handoffへ加える"
@@ -78,6 +75,19 @@ def _missing_records(worktree: pathlib.Path, records: list[_Record], previous: s
                     f"入力に未指定の記録: {record}: commit={', '.join(affected)}。{guidance}。どの記録も変更していない"
                 )
     return problems
+
+
+def _candidate_affected(worktree: pathlib.Path, mapping_file: pathlib.Path, record: pathlib.Path, previous: str) -> list[str]:
+    """探索で見つけた候補1件を評価し、今回の書換えで現在のHEADから外れた記録済みcommitを返す。
+
+    候補の評価に加える検証段階は本関数の中へ置き、呼出元の除外方針が全段階へ作用するようにする。
+    """
+    events = commit_mapping.file_events(mapping_file)
+    if record.is_file():
+        events = commit_mapping.body_events(record.read_text(encoding="utf-8")) + events
+    names = _allowed_wis(_Record(record, True), "", events)
+    mapping = commit_mapping.read_mapping(worktree, events, names, allow_missing=True)
+    return commit_mapping.rewritten_commits(worktree, mapping, previous)
 
 
 def _allowed_wis(record: _Record, content: str, events: list[dict[str, object]]) -> set[str]:

@@ -15,6 +15,7 @@ import io
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -62,11 +63,58 @@ def _registered_subcommands() -> tuple[str, ...]:
         for entries in definitions.values():
             for entry in entries:
                 for hook in entry["hooks"]:
-                    names.add(hook["command"].split()[-1])
+                    names.add(hook["command"].removesuffix(" || exit 1").split()[-1])
     return tuple(sorted(names))
 
 
 _SUBCOMMANDS = _registered_subcommands()
+
+# hook定義の起動コマンドが持つ末尾。起動の失敗（終了コード2を含む非0）を非遮断の終了コード1へ変換する。
+_HOOK_FAILURE_SUFFIX = " || exit 1"
+
+
+def _definition_commands() -> list[tuple[str, str]]:
+    """両方のhook定義の（定義ファイル名、command）を返す。"""
+    commands: list[tuple[str, str]] = []
+    for path in _HOOK_DEFINITIONS:
+        for entries in json.loads(path.read_text(encoding="utf-8"))["hooks"].values():
+            commands.extend((path.name, hook["command"]) for entry in entries for hook in entry["hooks"])
+    return commands
+
+
+def test_every_hook_command_converts_launch_failure_to_non_blocking() -> None:
+    """全hookの起動コマンドが、起動失敗を非遮断へ変換する末尾を持つ。"""
+    missing = [f"{name}: {command}" for name, command in _definition_commands() if not command.endswith(_HOOK_FAILURE_SUFFIX)]
+    assert not missing
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXシェルでの起動コマンドの終了コードを確かめる")
+@pytest.mark.parametrize(("name", "command"), _definition_commands())
+def test_hook_launch_failure_exits_with_non_blocking_code(tmp_path: pathlib.Path, name: str, command: str) -> None:
+    """起動スクリプトが無い配布rootでhookを起動すると、非遮断の終了コード1で終わる。
+
+    スクリプトが無いとPythonは終了コード2で終わり、ホストはPreToolUseなどの2を遮断として扱う。
+    """
+    del name
+    shell = shutil.which("sh")
+    assert shell is not None
+    launcher = "uv run --no-config --no-project --python 3.15 python "
+    assert command.startswith(launcher)
+    # uvの解決は実行環境（miseのshimなど）に左右されるため、同じPythonの起動に置き換えて末尾の変換だけを確かめる。
+    resolved = (
+        shlex.quote(sys.executable)
+        + " "
+        + command.removeprefix(launcher)
+        .replace("${CLAUDE_PLUGIN_ROOT}", str(tmp_path))
+        .replace("${PLUGIN_ROOT}", str(tmp_path))
+    )
+    without_suffix = subprocess.run(  # noqa: S603
+        [shell, "-c", resolved.removesuffix(_HOOK_FAILURE_SUFFIX)], input="{}", capture_output=True, text=True, check=False
+    )
+    completed = subprocess.run([shell, "-c", resolved], input="{}", capture_output=True, text=True, check=False)  # noqa: S603
+    assert without_suffix.returncode == 2, without_suffix.stderr
+    assert completed.returncode == 1, completed.stderr
+    assert "launch.py" in completed.stderr
 
 
 def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:

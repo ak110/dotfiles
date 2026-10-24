@@ -14,15 +14,36 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     del parser
 
 
+# 実行中のplugin root。テストは配布形式ごとのmanifest配置を再現した一時ディレクトリへ差し替える。
+_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+# 配布形式ごとの正規manifest。Codex配布物はroot直下の`plugin.json`を持たず、
+# Claude Code配布物とソース配置は全てを持つため、実在する最初のmanifestを使う。
+_MANIFEST_CANDIDATES = (
+    pathlib.Path(".codex-plugin/plugin.json"),
+    pathlib.Path(".claude-plugin/plugin.json"),
+    pathlib.Path("plugin.json"),
+)
+
+
+def _plugin_version(plugin_root: pathlib.Path) -> str | None:
+    """Plugin root自身の正規manifestから版数を返す。どれからも得られなければNoneを返す。"""
+    for relative in _MANIFEST_CANDIDATES:
+        try:
+            manifest = json.loads((plugin_root / relative).read_text(encoding="utf-8"))
+        except OSError, ValueError:
+            continue
+        version = manifest.get("version") if isinstance(manifest, dict) else None
+        if isinstance(version, str) and version:
+            return version
+    return None
+
+
 def dispatch(args: argparse.Namespace) -> None:
     """現在の実行文脈とplugin配布元の情報を読み取り専用で表示する。"""
     del args
-    plugin_root = pathlib.Path(__file__).resolve().parents[2]
-    manifest = plugin_root / "plugin.json"
-    try:
-        version = json.loads(manifest.read_text(encoding="utf-8"))["version"]
-    except OSError, ValueError, KeyError, TypeError:
-        version = "不明"
+    plugin_root = _PLUGIN_ROOT
+    version = _plugin_version(plugin_root) or "不明"
     config_file = _config_cmd._config_file_path()  # pylint: disable=protected-access
     print(f"作業ディレクトリ: {pathlib.Path.cwd()}")
     print(f"起動ファイル: {pathlib.Path(sys.argv[0]).resolve()}")

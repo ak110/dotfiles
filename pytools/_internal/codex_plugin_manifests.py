@@ -48,18 +48,25 @@ SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr", "agents_server"})
 _UV_LAUNCH_ARGS = ("run", "--no-config", "--no-project", "--python", "3.15", "python")
 
 
+# hookの起動自体の失敗（uvやPythonの起動失敗、スクリプト不在）は終了コード2で終わることがあり、
+# ホストはPreToolUse・UserPromptSubmit・Stopの終了コード2を遮断として扱う。起動の失敗で全操作が
+# 止まらないよう、非0を非遮断のhookエラー（終了コード1）へ変換する。hook.pyは判定をJSONで返し、
+# 終了コード2を使わないため判定結果は変わらない。
+HOOK_FAILURE_SUFFIX = " || exit 1"
+
+
 def _hook_command(name: str, *, persist_environment: bool = False) -> str:
     persist = "--persist-claude-env " if persist_environment else ""
     return (
         'uv run --no-config --no-project --python 3.15 python "${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" '
-        f"{persist}agent_toolkit/hook.py {name}"
+        f"{persist}agent_toolkit/hook.py {name}{HOOK_FAILURE_SUFFIX}"
     )
 
 
 def _codex_hook_command(name: str) -> str:
     return (
         'uv run --no-config --no-project --python 3.15 python "${PLUGIN_ROOT}/scripts/launch.py" '
-        f"agent_toolkit/hook.py {name}"
+        f"agent_toolkit/hook.py {name}{HOOK_FAILURE_SUFFIX}"
     )
 
 
@@ -76,7 +83,9 @@ def _local_codex_hook_manifest(content: str) -> str:
                         "agent-toolkit/hooks/hooks.jsonのcommandを確認し、"
                         "scripts/sync_codex_plugin_manifests.pyを再実行してください"
                     )
-                hook["command"] = f"atk-hook {command.rsplit(' ', maxsplit=1)[-1]}"
+                # local用はWindowsのCodexが使うシェルを確かめられないため、末尾の変換を付けない。
+                subcommand = command.removesuffix(HOOK_FAILURE_SUFFIX).rsplit(" ", maxsplit=1)[-1]
+                hook["command"] = f"atk-hook {subcommand}"
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
 

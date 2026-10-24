@@ -116,7 +116,8 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                                 {
                                     "type": "command",
                                     "command": "uv run --no-config --no-project --python 3.15 python "
-                                    '"${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py permissionrequest',
+                                    '"${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py permissionrequest'
+                                    " || exit 1",
                                 }
                             ],
                         },
@@ -290,7 +291,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     local_commands = [hook["command"] for groups in local_hooks.values() for group in groups for hook in group["hooks"]]
     assert all(command.startswith(_CODEX_HOOK_PREFIX) for command in portable_commands)
     assert {command.removeprefix("atk-hook ") for command in local_commands} == {
-        command.rsplit(" ", maxsplit=1)[-1] for command in portable_commands
+        command.removesuffix(subject.HOOK_FAILURE_SUFFIX).rsplit(" ", maxsplit=1)[-1] for command in portable_commands
     }
     agent_plugin_text = (manifest_root / subject.AGENT_PLUGIN_TARGET).read_text(encoding="utf-8")
     agent_plugin = json.loads(agent_plugin_text)
@@ -356,38 +357,50 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             "PreToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PreToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "pretooluse"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "pretooluse" + subject.HOOK_FAILURE_SUFFIX}],
                 }
             ],
             "PostToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "posttooluse"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "posttooluse" + subject.HOOK_FAILURE_SUFFIX}],
                 }
             ],
             "PermissionRequest": [
                 {
                     "matcher": "Bash",
-                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "permissionrequest_codex"}],
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": _CODEX_HOOK_PREFIX + "permissionrequest_codex" + subject.HOOK_FAILURE_SUFFIX,
+                        }
+                    ],
                 }
             ],
             "UserPromptSubmit": [
                 {
-                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "user_prompt_submit"}],
+                    "hooks": [
+                        {"type": "command", "command": _CODEX_HOOK_PREFIX + "user_prompt_submit" + subject.HOOK_FAILURE_SUFFIX}
+                    ],
                 }
             ],
             "SubagentStop": [
                 {
-                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "subagent_stop_advisor"}],
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": _CODEX_HOOK_PREFIX + "subagent_stop_advisor" + subject.HOOK_FAILURE_SUFFIX,
+                        }
+                    ],
                 }
             ],
-            "Stop": [{"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "stop"}]}],
+            "Stop": [{"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "stop" + subject.HOOK_FAILURE_SUFFIX}]}],
             "SessionEnd": [
                 {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": _CODEX_HOOK_PREFIX + "session_end_cleanup",
+                            "command": _CODEX_HOOK_PREFIX + "session_end_cleanup" + subject.HOOK_FAILURE_SUFFIX,
                             "timeout": subject.CODEX_SESSION_END_TIMEOUT_SECONDS,
                         }
                     ],
@@ -398,7 +411,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": _CODEX_HOOK_PREFIX + "rules_context_codex",
+                            "command": _CODEX_HOOK_PREFIX + "rules_context_codex" + subject.HOOK_FAILURE_SUFFIX,
                             "additionalContextLimit": 0,
                         }
                     ],
@@ -409,17 +422,26 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": _CODEX_HOOK_PREFIX + "rules_context_codex",
+                            "command": _CODEX_HOOK_PREFIX + "rules_context_codex" + subject.HOOK_FAILURE_SUFFIX,
                             "additionalContextLimit": 0,
                         }
                     ]
                 }
             ],
-            "Interrupt": [{"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "session_activity"}]}],
+            "Interrupt": [
+                {
+                    "hooks": [
+                        {"type": "command", "command": _CODEX_HOOK_PREFIX + "session_activity" + subject.HOOK_FAILURE_SUFFIX}
+                    ]
+                }
+            ],
         }
     }
     assert len(generated_hooks["hooks"]) == 10
-    assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"] == _CODEX_HOOK_PREFIX + "rules_context_codex"
+    assert (
+        generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"]
+        == _CODEX_HOOK_PREFIX + "rules_context_codex" + subject.HOOK_FAILURE_SUFFIX
+    )
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
 
@@ -513,7 +535,7 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
             }
             Path(hook_environment["TMPDIR"]).mkdir()
             session_start = next(hook for hook in hooks if hook["eventName"] == "sessionStart")
-            start_command = shlex.split(session_start["command"])
+            start_command = shlex.split(session_start["command"].removesuffix(subject.HOOK_FAILURE_SUFFIX))
             uv = common.resolve_uv_path()
             assert uv is not None
             start_command[0] = str(uv)
@@ -534,7 +556,7 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
             assert str(managed_path) in additional_context
 
             session_end = next(hook for hook in hooks if hook["eventName"] == "sessionEnd")
-            end_command = shlex.split(session_end["command"])
+            end_command = shlex.split(session_end["command"].removesuffix(subject.HOOK_FAILURE_SUFFIX))
             end_command[0] = str(uv)
             subprocess.run(  # noqa: S603
                 end_command,
@@ -592,7 +614,9 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
     assert generated["PostToolUse"][0]["matcher"] == subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher
     assert generated["SessionEnd"][0]["hooks"][0]["timeout"] <= 3
     assert "matcher" not in generated["SubagentStop"][0]
-    assert generated["Stop"] == [{"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "stop"}]}]
+    assert generated["Stop"] == [
+        {"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "stop" + subject.HOOK_FAILURE_SUFFIX}]}
+    ]
     assert "Bash" in generated["PostToolUse"][0]["matcher"].split("|")
     assert all("timeout" not in handler for handler in generated["PreToolUse"][0]["hooks"])
 

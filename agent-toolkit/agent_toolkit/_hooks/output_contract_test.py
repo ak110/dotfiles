@@ -47,7 +47,7 @@ _FIXTURES: dict[tuple[str, str], tuple[str, bool]] = {
 def _registered_hooks() -> set[tuple[str, str]]:
     manifest = json.loads(_HOOKS_PATH.read_text(encoding="utf-8"))
     return {
-        (event_name, shlex.split(hook["command"])[-1])
+        (event_name, shlex.split(hook["command"].removesuffix(" || exit 1"))[-1])
         for event_name, matcher_groups in manifest["hooks"].items()
         for matcher_group in matcher_groups
         for hook in matcher_group["hooks"]
@@ -473,7 +473,7 @@ def test_pretooluse_public_entry_returns_host_output(
     if host == "codex":
         manifest = json.loads((_PLUGIN_ROOT / "hooks/hooks.codex.json").read_text(encoding="utf-8"))
         assert any(
-            shlex.split(hook_entry["command"])[-1] == "pretooluse"
+            shlex.split(hook_entry["command"].removesuffix(" || exit 1"))[-1] == "pretooluse"
             for group in manifest["hooks"]["PreToolUse"]
             for hook_entry in group["hooks"]
         )

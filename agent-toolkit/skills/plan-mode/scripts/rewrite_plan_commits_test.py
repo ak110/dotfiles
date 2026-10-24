@@ -5,6 +5,7 @@ import dataclasses
 import json
 import pathlib
 import re
+from typing import Any
 
 import get_plan_commits
 import pytest
@@ -12,6 +13,7 @@ import rewrite_plan_commits
 
 from agent_toolkit import atk
 from agent_toolkit._atk import managed_temp, run_script
+from agent_toolkit._common import next_action
 from agent_toolkit._plan import commit_mapping
 from agent_toolkit._testing import git_repository
 
@@ -469,6 +471,54 @@ def test_discovery_skips_candidate_with_invalid_events(rebased: _Rebased, monkey
         )
 
     assert rewrite_plan_commits.main(rebased.argv(rebased.range_map("a", "u", "b"))) == 0
+
+
+@pytest.mark.parametrize("source", ["file", "body"])
+def test_discovery_skips_unreadable_candidate(rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, source: str) -> None:
+    """UTF-8として読めない探索候補は、指定済み記録への継承を妨げない。"""
+    config = rebased.repo.parent / "config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    unreadable = _plan(config / "plans" / f"06-unreadable-{source}.md", [WI_A])
+    mapping = commit_mapping.mapping_path(unreadable)
+    if source == "file":
+        mapping.write_bytes(b"\xff\xfe{")
+    else:
+        mapping.write_text("", encoding="utf-8")
+        unreadable.write_bytes(unreadable.read_bytes() + b"\xff\xfe\n")
+
+    assert rewrite_plan_commits.main(rebased.argv(rebased.range_map("a", "u", "b"))) == 0
+    assert rebased.new["a"][:7] in commit_mapping.mapping_path(rebased.plan).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "error",
+    [next_action.ActionableError("将来の検証段階が候補を不正と判定", next_action="候補を直す"), ValueError("将来の検証段階")],
+    ids=["actionable", "value"],
+)
+def test_discovery_excludes_failures_from_any_candidate_stage(
+    rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    """候補評価の最終段階から送出された候補不正も候補単位で除外し、指定済み記録の継承を完了する。
+
+    将来の検証段階が候補評価へ加わり、既存の除外例外以外を送出する形の持ち込み例を、
+    候補評価の最後の段階の差し替えで再現する。
+    """
+    config = rebased.repo.parent / "config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    candidate = _plan(config / "plans" / "06-candidate.md", [WI_A])
+    commit_mapping.append_event(candidate, {"commit": rebased.orphan, "awi": [WI_A]})
+    calls: list[pathlib.Path] = []
+
+    def _fail_stage(*args: Any, **kwargs: Any) -> list[str]:
+        del args, kwargs
+        calls.append(candidate)
+        raise error
+
+    monkeypatch.setattr(commit_mapping, "rewritten_commits", _fail_stage)
+
+    assert rewrite_plan_commits.main(rebased.argv(rebased.range_map("a", "u", "b"))) == 0
+    assert calls
+    assert rebased.new["a"][:7] in commit_mapping.mapping_path(rebased.plan).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("source", ["file", "body"])
