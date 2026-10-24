@@ -254,28 +254,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("profile_default"), datetime.date(2026, 8, 14), empty_dir_only=True),
     ],
     Path.home() / "bin": [
-        # bin/ はリポジトリ直下に置き、~/dotfiles/bin を PATH に通す方式を採用する。
-        # 旧配布物 (~/bin/ 配下) を削除する。Linux 用と Windows 用 (.cmd) を共通キーで列挙する。
-        cleanup_paths.RemovedPath(Path("c"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("c.cmd"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("ccusage"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("ccusage.cmd"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("check-gh-actions"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("claude-code-viewer"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("claude-code-viewer.cmd"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("countfiles"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("git_find_big.sh"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("gpuwatch"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("ipy"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("lab"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("lab-bg"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("rdp"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("remote-plans.cmd"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("sonnet"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("sonnet.cmd"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("sudoll"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("update-dotfiles"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("update-dotfiles.cmd"), datetime.date(2026, 4, 24)),
         # pytools/ パッケージ化 (fe09fa3) 以降 .chezmoi-source/bin/ の配布対象外となった旧配布物。
         # 現在は pytools/ の CLI として uv tool install 経由で ~/.local/bin 等に配置される。
         cleanup_paths.RemovedPath(Path("check-image-sizes.py"), datetime.date(2026, 4, 27)),
