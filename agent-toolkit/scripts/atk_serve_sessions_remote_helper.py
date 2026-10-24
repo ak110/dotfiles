@@ -5,7 +5,7 @@
 """`atk serve`のセッション画面が使うリモートホスト側ヘルパー。
 
 操作種別はargvで受け取る（`list`・`read`・`serve`）。
-`list`は保存済みセッションの一覧を、`read`は1件の記録本文とサブエージェント記録の一覧をJSONで返す。
+`list`は保存済みセッションの一覧を、`read`は1件の記録本文とサブエージェント記録の一覧、Codexの記録ではthread名をJSONで返す。
 `serve`はstdinから行区切りJSONのRPCを受け取り、同じ内容をstdoutへ返す常駐モードとする。
 `serve`は記録のrootの変更も監視し、一覧の再取得と記録1件の更新の通知を同じstdoutへ行で書く。
 
@@ -184,7 +184,7 @@ def _read_payload(path_b64: str) -> dict[str, typing.Any]:
         raise ValueError(f"record too large: {len(data)} bytes")
     records, broken = session_record_format.parse_records(data.decode("utf-8", errors="replace"))
     engine = "codex" if path.resolve().is_relative_to((host_homes.codex_home() / "sessions").resolve()) else "claude"
-    return {
+    payload: dict[str, typing.Any] = {
         "data": base64.b64encode(data).decode("ascii"),
         "mtime_epoch": path.stat().st_mtime,
         # サブエージェント記録が無い場合も空のリストを返す。応答が本欄を持つこと自体を、
@@ -198,6 +198,12 @@ def _read_payload(path_b64: str) -> dict[str, typing.Any]:
             broken_lines=broken,
         ),
     }
+    if engine == "codex":
+        # Codexのthread名はロールアウトの記録に無く、このホストの`session_index.jsonl`だけが持つ。
+        payload["thread_name"] = session_record_format.codex_thread_name(
+            host_homes.codex_home(), session_record_format.codex_session_id(path)
+        )
+    return payload
 
 
 _STDOUT_LOCK = threading.Lock()

@@ -328,7 +328,8 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert developer_background not in existing_backgrounds
     assert await developer.evaluate("element => element.open")
     assert not await compacted.evaluate("element => element.open")
-    assert "/home/aki/other" in await harness.page.locator("#detail-title").inner_text()
+    # 名前の記録を持たないCodexの記録はエンジン名だけを見出しへ表示し、ホスト名と作業ディレクトリを表示しない。
+    assert await harness.page.locator("#detail-title").inner_text() == "Codex"
     shell_summary = harness.page.locator("#detail .kind-tool_call", has_text="shell").locator("summary")
     assert "pwd" in await shell_summary.inner_text()
     broken_summary = harness.page.locator("#detail .kind-tool_call", has_text="broken").locator("summary")
@@ -586,6 +587,34 @@ async def test_session_assistant_markdown_rendered(
             assert "## " not in text
             assert "| ---" not in text
             assert await page.locator("#detail .event.kind-assistant > pre").count() == 0
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_session_detail_title_shows_engine_and_session_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
+) -> None:
+    """右ペインの見出しはエンジン名と取得できたセッション名を表示し、ホスト名と作業ディレクトリを表示しない。
+
+    ホスト名と作業ディレクトリは左ペインの一覧項目が示す。名前の記録が無い記録はエンジン名だけを表示する。
+    """
+    named = _write_local_session(
+        tmp_path,
+        "named",
+        {"type": "ai-title", "aiTitle": "生成題名"},
+        {"type": "custom-title", "customTitle": "名前付きセッション"},
+        _assistant_record("応答"),
+    )
+    unnamed = _write_local_session(tmp_path, "unnamed", _assistant_record("応答"))
+    async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
+        title = page.locator("#detail-title")
+        await _open_session(page, base_url, "browser-test", named)
+        await playwright.async_api.expect(title).to_have_text("Claude Code / 名前付きセッション")
+        item = page.locator(f'#sessions .session-item[data-path="{named}"]')
+        # 左ペインの一覧項目は従来どおり作業ディレクトリとホスト名を表示する。
+        assert "/home/aki/md" in await item.inner_text()
+        assert "browser-test" in await item.inner_text()
+        await _open_session(page, base_url, "browser-test", unnamed)
+        await playwright.async_api.expect(title).to_have_text("Claude Code")
 
 
 @pytest.mark.asyncio(loop_scope="session")

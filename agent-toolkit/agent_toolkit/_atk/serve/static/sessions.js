@@ -443,7 +443,9 @@ function captureDetailState() {
 
 function renderDetail(detail, preserved = null) {
   currentDetail = detail;
-  detailTitleEl.textContent = `${ENGINE_LABELS[detail.engine] || detail.engine} / ${detail.host} / ${detail.project || "(プロジェクト不明)"}`;
+  // ホスト名と作業ディレクトリは左ペインの一覧項目が示すため、見出しはエンジン名と取得できたセッション名に限る。
+  const engineLabel = ENGINE_LABELS[detail.engine] || detail.engine;
+  detailTitleEl.textContent = detail.session_name ? `${engineLabel} / ${detail.session_name}` : engineLabel;
   const cost = detailCost(detail);
   detailUsageEl.textContent = costText(cost);
   // 子要素だけを差し替えるため、本文装飾を担う`#detail`自身のmarkdown-bodyクラスは保持される。

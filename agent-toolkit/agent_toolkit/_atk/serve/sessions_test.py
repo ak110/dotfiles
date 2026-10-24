@@ -376,7 +376,8 @@ def test_detail_renders_claude_records_in_order(tmp_path: pathlib.Path) -> None:
             "path": None,
         }
     ]
-    assert detail["project"] == "/home/aki/proj"
+    assert "project" not in detail
+    assert detail["session_name"] is None
     assert detail["started_at"] == "2026-09-01T00:00:00Z"
 
 
@@ -444,7 +445,59 @@ def test_detail_renders_codex_records_in_order(tmp_path: pathlib.Path) -> None:
     assert detail["events"][2]["name"] == "shell"
     # Codexは累計値を通知するため、加算せず最後の観測値で置き換える。
     assert detail["usage"] == {"input_tokens": 21, "output_tokens": 5}
-    assert detail["project"] == "/home/aki/other"
+    assert "project" not in detail
+    assert detail["session_name"] is None
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        (
+            [
+                {"type": "custom-title", "customTitle": "古い名前"},
+                {"type": "ai-title", "aiTitle": "生成題名"},
+                {"type": "custom-title", "customTitle": "付けた名前"},
+                {"type": "agent-name", "agentName": "委譲先名"},
+            ],
+            "付けた名前",
+        ),
+        ([{"type": "ai-title", "aiTitle": "最初の題名"}, {"type": "ai-title", "aiTitle": "生成題名"}], "生成題名"),
+        ([{"type": "custom-title", "customTitle": "  "}, {"type": "ai-title", "aiTitle": "生成題名"}], "生成題名"),
+        ([], None),
+    ],
+)
+def test_claude_detail_session_name_prefers_custom_title(
+    tmp_path: pathlib.Path, extra: list[dict[str, str]], expected: str | None
+) -> None:
+    """詳細APIのセッション名は最後のcustom-title、無ければ最後のai-titleとし、名前の記録が無ければnullを返す。"""
+    path = _claude_record(tmp_path)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.writelines(json.dumps(record, ensure_ascii=False) + "\n" for record in extra)
+
+    detail = sessions.read_local_detail(_context(tmp_path), "claude", str(path))
+
+    assert detail["session_name"] == expected
+
+
+def test_codex_detail_session_name_uses_last_matching_session_index_line(tmp_path: pathlib.Path) -> None:
+    """Codexのセッション名は`<codex_home>/session_index.jsonl`のthread IDが一致する最後の行の`thread_name`とする。"""
+    path = _codex_record(tmp_path)
+    context = _context(tmp_path)
+    thread_id = sessions.read_local_detail(context, "codex", str(path))["session_id"]
+    (tmp_path / "codex" / "session_index.jsonl").write_text(
+        "".join(
+            json.dumps(record, ensure_ascii=False) + "\n"
+            for record in [
+                {"id": thread_id, "thread_name": "最初の名前", "updated_at": "2026-09-01T00:00:00Z"},
+                {"id": "other-thread", "thread_name": "別のthread", "updated_at": "2026-09-01T00:00:01Z"},
+                {"id": thread_id, "thread_name": "変更後の名前", "updated_at": "2026-09-01T00:00:02Z"},
+            ]
+        )
+        + "{壊れた行\n",
+        encoding="utf-8",
+    )
+
+    assert sessions.read_local_detail(context, "codex", str(path))["session_name"] == "変更後の名前"
 
 
 def test_codex_roles_and_compaction_are_preserved(tmp_path: pathlib.Path) -> None:
@@ -844,6 +897,31 @@ def _load_remote_helper() -> typing.Any:
     return helper
 
 
+def _helper_runner(environment: dict[str, str], *, only_op: str | None = None) -> sessions.SshRunner:
+    """実際のリモートヘルパーを`environment`の環境で子プロセスとして起動する単発SSHの代替を返す。
+
+    `only_op`を渡すと、それ以外の操作の呼び出しをテストの失敗にする。
+    """
+    helper = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "atk_serve_sessions_remote_helper.py"
+
+    async def runner(_host: str, op: str, args: list[str]) -> str:
+        assert only_op is None or op == only_op
+        completed = await asyncio.to_thread(
+            process_tree.run_with_timeout,
+            [sys.executable, str(helper), op, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=30,
+            env=environment,
+        )
+        return completed.stdout
+
+    return runner
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("unknown", [False, True])
 async def test_local_and_remote_detail_use_same_family_cost(
@@ -932,22 +1010,7 @@ async def test_local_and_remote_detail_use_same_family_cost(
             "LOCALAPPDATA": str(tmp_path / "state"),
         }
     )
-    helper = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "atk_serve_sessions_remote_helper.py"
-
-    async def runner(_host: str, op: str, args: list[str]) -> str:
-        assert op == "read"
-        completed = await asyncio.to_thread(
-            process_tree.run_with_timeout,
-            [sys.executable, str(helper), op, *args],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=True,
-            timeout=30,
-            env=environment,
-        )
-        return completed.stdout
+    runner = _helper_runner(environment, only_op="read")
 
     context = sessions.create_context(
         hostname="local",
@@ -1739,3 +1802,68 @@ def test_default_record_homes_follow_claude_config_dir_and_codex_home(
     context = sessions.create_context(hostname="local", state_dir=tmp_path / "state")
     assert context.claude_home == tmp_path / "claude-config"
     assert context.codex_home == tmp_path / "codex-home"
+
+
+@pytest.mark.asyncio
+async def test_remote_detail_session_name_follows_local_rules(
+    tmp_path: pathlib.Path, host_environ: typing.Callable[[], dict[str, str]]
+) -> None:
+    """実際のremote helperのreadを経由し、リモートの記録にもローカルと同じ規則でセッション名を付ける。
+
+    Claude Codeは記録本文の`custom-title`から、Codexはリモートホストの`session_index.jsonl`からヘルパーが返す
+    `thread_name`から得る。
+    """
+    remote_home = tmp_path / "remote-home"
+    codex_home = remote_home / "codex"
+    claude = _write(
+        remote_home / ".claude" / "projects" / "proj" / "remote-claude.jsonl",
+        [
+            {"type": "user", "timestamp": "2026-09-05T00:00:00Z", "cwd": "/remote", "message": {"content": "やあ"}},
+            {"type": "ai-title", "aiTitle": "生成題名"},
+            {"type": "custom-title", "customTitle": "リモートの名前"},
+        ],
+    )
+    codex = _write(
+        codex_home
+        / "sessions"
+        / "2026"
+        / "09"
+        / "05"
+        / "rollout-2026-09-05T00-00-00-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl",
+        [
+            {"type": "session_meta", "payload": {"cwd": "/remote", "timestamp": "2026-09-05T00:00:00Z"}},
+            {"type": "response_item", "payload": {"role": "user", "content": [{"text": "やあ"}]}},
+        ],
+    )
+    unnamed = _write(
+        codex_home
+        / "sessions"
+        / "2026"
+        / "09"
+        / "05"
+        / "rollout-2026-09-05T00-00-01-ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl",
+        [{"type": "response_item", "payload": {"role": "user", "content": [{"text": "名前なし"}]}}],
+    )
+    _write(
+        codex_home / "session_index.jsonl",
+        [
+            {
+                "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "thread_name": "リモートのthread",
+                "updated_at": "2026-09-05T00:00:00Z",
+            }
+        ],
+    )
+    environment = host_environ()
+    environment.update({"HOME": str(remote_home), "USERPROFILE": str(remote_home), "CODEX_HOME": str(codex_home)})
+    environment.pop("CLAUDE_CONFIG_DIR", None)
+    context = _context(tmp_path, remote_hosts=["remote"], ssh_runner=_helper_runner(environment))
+
+    claude_detail = await sessions.session_detail(context, "claude", "remote", str(claude))
+    codex_detail = await sessions.session_detail(context, "codex", "remote", str(codex))
+    unnamed_detail = await sessions.session_detail(context, "codex", "remote", str(unnamed))
+
+    assert claude_detail["session_name"] == "リモートの名前"
+    assert codex_detail["session_name"] == "リモートのthread"
+    assert unnamed_detail["session_name"] is None
+    assert "project" not in codex_detail
