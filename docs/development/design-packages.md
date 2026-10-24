@@ -81,7 +81,7 @@ CLIと`pytools/`の各コマンドも、ヘルプや補完など一部の処理�
 関数内importとStop判定のホスト別の動的な選択は、そのまま残す。
 
 以前はモジュール冒頭の`__lazy_modules__`へ対象モジュールを列挙し、`lazy import`構文への一括置換は行わない判断としていた。
-構文を解釈できない旧Pythonでも同じファイルを通常のimportとして実行できることが、列挙方式を採った理由である。
+構文を解釈できない旧Pythonでも同じファイルを通常のimportとして実行できることが、列挙方式を採用した理由である。
 Python 3.15以降だけを前提にするよう求めたユーザーの要求（AWI 20261012-145728-001.md）を受けて、この判断を改めた。
 下限が3.15になったため旧版向けの互換は不要となり、列挙とimport文が離れた書き方は、importの追加・削除・改名の際に列挙だけが古いまま残る原因になる。
 例えば`from <パッケージ> import <サブモジュール>`の形で読むサブモジュールを列挙しても遅延されない。列挙と比べる名前は文のモジュール名だからである。
@@ -134,12 +134,15 @@ session scopeを全テストへ適用する案は、先行テストの遅延処�
 
 run-command、plan検証、lane検証と全てのpytest起動は、pyfltrのホスト共有実行APIへ接続する。
 pytestのbasetempは実行単位で分離し、controllerとworkerの終了後に正常・失敗・中断のどの場合も回収する。
+終了時に回収する子孫からは、同じプロセスのmultiprocessingのresource_trackerを除く。trackerはpytestの終了で自ら終わり、先に停止すると終了時の資源解放がtrackerを再起動し、未解放の資源を報告する警告を出力するためである。
 明示basetempとJUnit・traceなどの保存証拠、serveとwatcherはそれぞれの所有主体が必要な寿命まで保持する。
 資源所有クラスは文脈マネージャーで獲得直後から解放を保証し、再入可能なcloseと起動途中の所有移譲を扱う。
 呼び出し元へ手動closeを分散する案は、例外が発生した場合と複数の後始末が失敗した場合に資源が残るため採用しない。
 
 テストを開発機だけにある状態から切り離す隔離は、`agent-toolkit/agent_toolkit/_testing/isolation.py`の1箇所に定義する。
 対象の次元は、ホームと設定ディレクトリ、private-notes、一時ディレクトリ、Gitのglobal・system設定、開発セッションの環境変数、PATH上の開発機専用のエージェントCLI（`codex`・`claude`・`agy`）の6つである。
+開発セッションの環境変数には、`update-dotfiles`が子へ渡す実行状態（`UPDATE_DOTFILES_RUN_ID`など）と`AGENT_TOOLKIT_CONFIG_`で始まる設定の上書きを含める。Codex daemonの再起動を経てエージェントのシェルとpytestへ継承され、単独の公開操作を試すテストを更新処理配下の分岐へ入れていた。
+ホームと設定ディレクトリは、試験関数ごとの差し替えに加えて、`pytest_plugin`が収集区間だけbasetemp配下へ向ける。収集時にimportされる製品モジュールは`Path.home()`などを定数へ確定し、試験関数ごとの差し替えでは実ホームを指したまま残るためである。セッション全体で差し替える案は、xdistのworkerが祖先から継承するpyfltrの検証枠のロック位置まで変わり、worker同士が互いの解放を待つため採用しない。
 リポジトリ直下の`conftest.py`（`pytools/`・`scripts/`）と`agent-toolkit/conftest.py`（`agent_toolkit/`・`skills/`）が同じ定義をautouseで適用する。
 pytestは祖先ディレクトリのconftestだけを読むため、起動範囲ごとにconftestを置くと隔離の集合が範囲ごとに異なり、範囲を横断する定義を持たないまま事象ごとに次元を追加する運用になっていた。その結果、開発機で成功しCIだけで失敗する事象が、Git設定、private-notes、PATH上のCLIと次元を変えて繰り返された。
 リポジトリ直下から`agent-toolkit/`配下を指定して起動すると2つのconftestが読まれるが、fixture名が同じため近い側の定義だけが適用され、二重に適用されない。
@@ -147,7 +150,8 @@ pytestは祖先ディレクトリのconftestだけを読むため、起動範囲
 パッケージ内の共通fixtureは自動・明示要求型とも`agent_toolkit._testing.pytest_plugin`が登録し、両`pyproject.toml`のpytest `addopts`から`-p`で読み込む。
 pytest 9.1.1では、パッケージ内・親ディレクトリ・パッケージ内の順にファイルを指定するとcollectorが再生成され、conftestに結び付いたfixtureが後半で失われる（[pytest #14997](https://github.com/pytest-dev/pytest/issues/14997)、[修正 #14645](https://github.com/pytest-dev/pytest/pull/14645)）。fixtureの種別によらず配置で結果が変わるため、明示要求型も起動時に登録する。
 起動時登録はcollectorの同一性から切り離し、自動fixture本体はテストのファイル位置で従来の適用範囲を守る。
-環境変数・警告状態・Codexモデル一覧・終了待機・端末幅の5件は`agent_toolkit/`配下、外部真正性状態の隔離は`_atk/managed_temp/`配下、編集環境の隔離は`_atk/wi/mutations/`配下に限る。
+環境変数・警告状態・Codexモデル一覧・終了待機・端末幅・agents_serverの診断ログhandlerの回収の6件は`agent_toolkit/`配下、外部真正性状態の隔離は`_atk/managed_temp/`配下、編集環境の隔離は`_atk/wi/mutations/`配下に限る。
+診断ログhandlerの回収は、`configure_logging`の標準エラー向けhandlerが構築時の`sys.stderr`（試験中の取り込み用stream）を保持し、試験ごとに回収を書く方式では回収を持たない呼出し元の試験が残ったため、全ての試験で行う。
 自動fixtureを実物へ戻す`real_end_turn_wait`、agents_serverの隔離、計画インデックス、口語検出の入力、Gitリポジトリのfactory、JST固定も同じプラグインへ置く。テスト内の個別差し替えはそのまま使う。
 conftest.pyを置けるのはリポジトリ直下と`agent-toolkit/`直下だけとし、後者の登録名は前者にもそろえる。`pytest_fixture_registration_invariant_test.py`が配置と登録の不変条件を確かめる。
 修正を含むpytest安定版を採用し、自動・明示要求型ともプラグインの回避を外して同じ収集順と適用範囲・個別差し替えの契約が成立すれば、この登録方式と配置制約の回避を撤去できる。

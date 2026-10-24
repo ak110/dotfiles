@@ -26,7 +26,6 @@ from agent_toolkit._agents_server import status_file as subject
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import atomic_file, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
-from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 
 
 async def _wait_now(manager: server_manager.AgentsServerManager) -> dict[str, typing.Any]:
@@ -1005,11 +1004,10 @@ class _ReplaceRefusal:
 
 
 @pytest.fixture(name="diagnostic_log")
-def _diagnostic_log(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> typing.Iterator[pathlib.Path]:
-    """既存の診断ログ設定を隔離した状態ディレクトリへ向け、試験後に元のhandlerへ戻す。"""
+def _diagnostic_log(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """診断ログ設定を隔離した状態ディレクトリへ向ける。handlerの回収は`pytest_plugin`の自動fixtureが行う。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    with isolated_agents_server_logging():
-        yield logging_config.configure_logging()
+    return logging_config.configure_logging()
 
 
 async def _until(condition: typing.Callable[[], bool], *, limit: float = 5.0) -> None:

@@ -10,7 +10,8 @@ import os
 import pathlib
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Generator, Iterator
+from multiprocessing import resource_tracker
 from typing import Any
 
 import pytest
@@ -26,7 +27,8 @@ from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import git_repository as _git_repository
-from agent_toolkit._testing import session_evidence_support
+from agent_toolkit._testing import isolation, session_evidence_support
+from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.wi_mutations_support import _AGENT_ENVIRONMENT_VARIABLES
 
@@ -79,7 +81,16 @@ def pytest_configure(config: pytest.Config) -> None:
         config.option.basetemp = str(directory / "fixtures")
 
     def release_resources() -> None:
-        children = [child for child in process_tree.collect_descendants(os.getpid()) if child not in previous_children]
+        # multiprocessingのresource_trackerは同じインタープリターが終了まで使う補助プロセスであり、
+        # pytestの終了で書込側のpipeが閉じると自ら終了する。先に停止すると、終了時の資源解放が
+        # trackerの死亡を検出して再起動し、未解放の資源を報告する警告（`process died unexpectedly, relaunching`）を出力する。
+        # 起動PIDは公開APIを持たないため、標準ライブラリの内部属性から読む。
+        tracker = getattr(resource_tracker._resource_tracker, "_pid", None)  # pylint: disable=protected-access
+        children = [
+            child
+            for child in process_tree.collect_descendants(os.getpid())
+            if child not in previous_children and child.pid != tracker
+        ]
         residual = process_tree.reclaim_descendants(children)
         if residual:
             raise pytest.UsageError(
@@ -96,6 +107,34 @@ def pytest_configure(config: pytest.Config) -> None:
                 managed_temp.cleanup_managed_temp(directory)
 
     stack.callback(release_resources)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_collection(session: pytest.Session) -> Generator[None, object, object]:
+    """収集区間だけホームと設定ディレクトリをbasetemp配下へ向け、収集時にimportされる定数を実ホームから外す。
+
+    試験関数ごとの隔離は収集の後に始まるため、収集時にimportされた製品モジュールが`Path.home()`などから
+    確定した定数は、この区間が無いと実ホームを指す。セッション全体で差し替えない理由は`isolation`の説明を参照する。
+    """
+    basetemp = session.config.option.basetemp
+    if basetemp is None:
+        raise pytest.UsageError("収集時のホームを隔離するbasetempが未設定です。--basetempを指定して再実行してください")
+    with isolation.import_time_home(pathlib.Path(basetemp) / "import-time-home"):
+        return (yield)
+
+
+@pytest.fixture(autouse=True)
+def _reclaim_agents_server_logging(request: pytest.FixtureRequest) -> Iterator[None]:
+    """診断ログ設定を呼んだテストのhandlerを、そのテストの終了時に回収してloggerの設定を戻す。
+
+    `configure_logging`の標準エラー向けhandlerは構築時の`sys.stderr`（試験中はpytestの取り込み用stream）を保持する。
+    回収しないと、streamが閉じた後も後続のテストの警告がそのhandlerへ届き、書込に失敗する。
+    """
+    if not request.path.is_relative_to(_PACKAGE_ROOT):
+        yield
+        return
+    with isolated_agents_server_logging():
+        yield
 
 
 @pytest.fixture(autouse=True)

@@ -11,7 +11,6 @@ import pathlib
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -51,17 +50,9 @@ from agent_toolkit._testing.agents_server_support import (
     _start_tool,
     _without_root,
 )
-from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
-
-
-@pytest.fixture(name="isolated_logging")
-def _isolated_logging() -> Iterator[None]:
-    """logging設定を呼ぶテストコードだけ、そのhandlerをcaptureの寿命内に回収する。"""
-    with isolated_agents_server_logging():
-        yield
 
 
 @pytest.mark.asyncio
@@ -105,7 +96,6 @@ async def test_new_request_and_handoff_preserve_required_context(
         assert backend.prompts[-1] == launch_requests.wrap_delivery_body("再レビューせよ\nround: 2")
 
 
-@pytest.mark.usefixtures("isolated_logging")
 def test_main_strips_conversation_context_before_backend_start(monkeypatch: pytest.MonkeyPatch) -> None:
     """MCP起動は全backendの継承元を整え、接続設定と引き継ぎ元snapshotを保持する。"""
     monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", None, raising=False)
@@ -585,7 +575,6 @@ async def test_list_returns_root_session_id_when_session_list_is_empty(tmp_path:
         }
 
 
-@pytest.mark.usefixtures("isolated_logging")
 def test_main_strips_launcher_venv_from_child_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """起動処理が後続工程より前に、起動元ツールの仮想環境を`VIRTUAL_ENV`と`PATH`から取り除く。"""
     venv_root = "/tmp/agents-server-environment"
@@ -603,7 +592,6 @@ def test_main_strips_launcher_venv_from_child_environment(monkeypatch: pytest.Mo
     assert observed["path"] == os.pathsep.join(["/usr/local/bin", "", "/usr/bin"])
 
 
-@pytest.mark.usefixtures("isolated_logging")
 def test_dependency_check_cli_does_not_start_mcp(monkeypatch: pytest.MonkeyPatch) -> None:
     """依存の確認を指定した場合はMCP stdioを起動しない。"""
     calls: list[bool] = []
@@ -614,7 +602,6 @@ def test_dependency_check_cli_does_not_start_mcp(monkeypatch: pytest.MonkeyPatch
     assert calls == [True]
 
 
-@pytest.mark.usefixtures("isolated_logging")
 def test_dependency_check_cli_propagates_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """依存の確認処理で発生した例外を捕捉せず呼び出し元へ伝える。"""
 
@@ -626,7 +613,6 @@ def test_dependency_check_cli_propagates_failure(monkeypatch: pytest.MonkeyPatch
         entry_script.main(["--check-dependencies"])
 
 
-@pytest.mark.usefixtures("isolated_logging")
 def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """依存の確認を含む起動初期の診断を状態ディレクトリへ永続化する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -643,7 +629,6 @@ def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("isolated_logging")
 async def test_mcp_lifespan_persists_activate_and_close_milestones(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -665,7 +650,6 @@ async def test_mcp_lifespan_persists_activate_and_close_milestones(
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("isolated_logging")
 async def test_mcp_lifespan_persists_activate_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

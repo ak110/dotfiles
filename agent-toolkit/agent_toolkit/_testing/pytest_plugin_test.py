@@ -292,3 +292,125 @@ def test_collection_order_preserves_isolation_and_overrides(tmp_path: pathlib.Pa
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "8 passed" in result.stdout
+
+
+def _run_child_pytest(tmp_path: pathlib.Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    """起動時プラグインだけを読む子pytestを`tmp_path`で実行し、両出力と終了コードを返す。"""
+    environment = dict(os.environ)
+    environment.pop("PYTEST_ADDOPTS", None)
+    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    environment["PYFLTR_CACHE_DIR"] = str(tmp_path / "pyfltr")
+    argv = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
+    return subprocess.run(
+        [*argv, *arguments],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+
+
+def test_release_keeps_interpreter_resource_tracker(tmp_path: pathlib.Path) -> None:
+    """spawnの資源を終了まで保持する試験の後も、未解放の資源を報告する警告を出力せず、試験が残した子だけを回収する。
+
+    共通回収がmultiprocessingのresource_trackerを停止すると、終了時の資源解放がtrackerを再起動し、
+    `process died unexpectedly, relaunching`を標準エラーへ出力する。
+    """
+    evidence = tmp_path / "evidence.json"
+    (tmp_path / "tracker_test.py").write_text(
+        textwrap.dedent(f"""\
+            import json, multiprocessing, pathlib, subprocess, sys
+            from multiprocessing import resource_tracker
+
+            KEPT = []
+
+            def test_probe():
+                KEPT.append(multiprocessing.get_context("spawn").Semaphore())
+                child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+                pathlib.Path({str(evidence)!r}).write_text(json.dumps({{
+                    "tracker": resource_tracker._resource_tracker._pid, "child": child.pid,
+                }}), encoding="utf-8")
+        """),
+        encoding="utf-8",
+    )
+    result = _run_child_pytest(tmp_path, "tracker_test.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "relaunching" not in result.stderr, result.stderr
+    observed = json.loads(evidence.read_text(encoding="utf-8"))
+    assert observed["tracker"] is not None
+    # 回収済みの子は照会の間に消えることがあるため、消滅とzombieの両方を回収済みとみなす。
+    with contextlib.suppress(psutil.NoSuchProcess):
+        assert psutil.Process(observed["child"]).status() == psutil.STATUS_ZOMBIE
+
+
+@pytest.mark.parametrize("workers", [0, 2])
+def test_collection_binds_import_time_home_to_basetemp(tmp_path: pathlib.Path, workers: int) -> None:
+    """収集時にimportされたモジュールが確定するホームは、実行環境のホームでなくbasetemp配下を指す。
+
+    試験関数ごとの隔離は収集の後に始まるため、収集区間の隔離が無いとimport時の定数が実ホームを指す。
+    """
+    (tmp_path / "home_probe.py").write_text("import pathlib\n\nHOME = pathlib.Path.home()\n", encoding="utf-8")
+    (tmp_path / "home_test.py").write_text(
+        textwrap.dedent(f"""\
+            import os, pathlib
+            import home_probe
+
+            def test_probe(pytestconfig):
+                assert home_probe.HOME == pathlib.Path(pytestconfig.option.basetemp) / "import-time-home"
+                assert home_probe.HOME != pathlib.Path({str(pathlib.Path.home())!r})
+                assert pathlib.Path.home() == pathlib.Path({str(pathlib.Path.home())!r})
+        """),
+        encoding="utf-8",
+    )
+    arguments = ["-p", "xdist.plugin", "-n", str(workers)] if workers else []
+    result = _run_child_pytest(tmp_path, *arguments, "home_test.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_agents_server_logging_reclaimed_before_next_test(tmp_path: pathlib.Path) -> None:
+    """ログ設定を呼んだ試験の後でも、後続の試験の警告は閉じた出力先へ書かれず有効な取り込み先へ届く。
+
+    標準エラー向けhandlerは構築時の`sys.stderr`（試験中の取り込み用stream）を保持する。
+    回収しないと、後続の警告がそのhandlerで`I/O operation on closed file`となり`Logging error`を出力する。
+    """
+    package = tmp_path / "sample"
+    package.mkdir()
+    (package / "__init__.py").touch()
+    (tmp_path / "conftest.py").write_text(
+        textwrap.dedent("""\
+            import pathlib
+            from agent_toolkit._testing import pytest_plugin
+
+            def pytest_configure(config):
+                pytest_plugin._PACKAGE_ROOT = pathlib.Path(__file__).parent / "sample"
+        """),
+        encoding="utf-8",
+    )
+    (package / "logging_test.py").write_text(
+        textwrap.dedent("""\
+            import logging
+            from agent_toolkit._agents_server import logging_config
+            from agent_toolkit._common import state_paths
+
+            SERVER = logging.getLogger("agent-toolkit.agents-server")
+            BEFORE = (tuple(SERVER.handlers), SERVER.level, SERVER.propagate)
+
+            def test_a_configures_logging(capsys, monkeypatch, tmp_path):
+                monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+                logging_config.configure_logging()
+                assert SERVER.handlers
+
+            def test_b_later_warning_reaches_capture(capsys, caplog):
+                assert (tuple(SERVER.handlers), SERVER.level, SERVER.propagate) == BEFORE
+                logging.getLogger("agent-toolkit.agents-server.probe").warning("後続の警告")
+                assert "Logging error" not in capsys.readouterr().err
+                assert "後続の警告" in caplog.text
+        """),
+        encoding="utf-8",
+    )
+    result = _run_child_pytest(tmp_path, "-v", "sample/logging_test.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "2 passed" in result.stdout

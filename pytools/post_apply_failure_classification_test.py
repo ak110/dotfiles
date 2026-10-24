@@ -457,8 +457,6 @@ def test_failure_classification_per_step(
     """取得・導入の失敗はスキップで終了コード0、設定の書き換え・撤去の失敗は失敗で終了コード1になる。"""
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
     monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", tmp_path / "state" / "sync-report.json")
-    # 単独の公開操作を試し、update-dotfiles配下で案内を親へ任せる環境変数を引き継がない。
-    monkeypatch.delenv("UPDATE_DOTFILES_RUN_ID", raising=False)
     step = next(step for step in post_apply._DEFAULT_STEPS if step.name == name)
     simulation(monkeypatch, tmp_path)
 

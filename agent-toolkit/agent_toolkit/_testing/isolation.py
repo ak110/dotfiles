@@ -7,12 +7,19 @@
 
 隔離する次元は次の6つとする。
 
-- ホームディレクトリと設定ディレクトリの環境変数
+- ホームディレクトリと設定ディレクトリの環境変数（試験モジュールの収集時を含む）
 - private-notes（`AGENT_TOOLKIT_PRIVATE_NOTES`）
 - 一時ディレクトリ
 - Gitのglobal・system設定と、呼び出し元のrepo・indexの指定
-- 開発セッションの環境変数（エージェント環境の判定、委譲先とprocess-loopの標識）
+- 開発セッションの環境変数（エージェント環境の判定、委譲先とprocess-loopの標識、
+  親の`update-dotfiles`の実行状態、`AGENT_TOOLKIT_CONFIG_`で始まる設定の上書き）
 - PATH上の開発機専用のエージェントCLI（`codex`・`claude`・`agy`）
+
+試験モジュールが収集時にimportする製品モジュールは、`Path.home()`や`platformdirs`の値を定数へ確定する
+（`pytools._internal.claude_common.INSTALLED_PLUGINS_PATH`など）。試験関数の開始時に環境変数を差し替えても
+その定数は実ホームを指したまま残るため、`pytest_plugin`が`import_time_home`で収集区間だけホームを一時領域へ向ける。
+差し替えをセッション全体へ広げると、xdistのworkerが祖先から継承する検証枠のロック位置
+（pyfltrのユーザーキャッシュ配下）も変わり、worker同士が互いの解放を待つため、収集区間に限る。
 
 環境変数`AGENT_TOOLKIT_TEST_GIT`へGitの実行ファイルの絶対パスを指定すると、テストへ渡すPATHの先頭へ
 そのGitを`git`の名前で置く。実Gitを起動するテストを、開発用Gitと異なる版（agent-toolkitが対応する最低版など）で
@@ -26,6 +33,7 @@
 fixtureの名前が同じであるため、テストに近い側の定義だけが適用される。
 """
 
+import contextlib
 import functools
 import ntpath
 import os
@@ -35,7 +43,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Generator, Mapping
 
 import platformdirs
 import pytest
@@ -77,7 +85,15 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     # 解決先が実行環境で変わる。指定した場合の解決を検証するテストは自身で設定する。
     "CLAUDE_CONFIG_DIR",
     "CODEX_HOME",
+    # `update-dotfiles`が子へ渡す実行状態。Codex daemonの再起動を経てエージェントのシェルとpytestへ継承される。
+    # 継承されると、単独の公開操作を試すテストが更新処理配下の分岐（案内を親へ任せるなど）へ入る。
+    "UPDATE_DOTFILES_RUN_ID",
+    "DOTFILES_PRUNE",
+    "DOTFILES_CODEX_DAEMON_AUTO_RESTART",
 )
+# `atk config`の設定を環境変数で上書きする接頭辞（`_atk/config.py`の`_CONFIG_ENV_PREFIX`）。
+# `update-dotfiles`は導入モードを`AGENT_TOOLKIT_CONFIG_DOTFILES_MODE`で子へ渡す。上書きを検証するテストは自身で設定する。
+CONFIG_OVERRIDE_ENVIRONMENT_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 _GIT_IDENTITY_NAME = "test"
 _GIT_IDENTITY_EMAIL = "test@example.invalid"
 # `git rev-parse --local-env-vars`が示す呼び出し元のGit指定を、設定の差し替えより先に解除する。
@@ -208,6 +224,9 @@ def isolate_development_state(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
         monkeypatch.setenv(name, value)
     for name in DEVELOPMENT_SESSION_ENVIRONMENT_NAMES:
         monkeypatch.delenv(name, raising=False)
+    for name in tuple(os.environ):
+        if name.startswith(CONFIG_OVERRIDE_ENVIRONMENT_PREFIX):
+            monkeypatch.delenv(name)
     # CIにはエージェントCLIが無い。開発機でも同じ条件にし、偽の実装へ差し替えていないテストを開発機で失敗させる。
     monkeypatch.setenv("PATH", _isolated_path_value)
 
@@ -301,6 +320,22 @@ def share_package_caches(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(name, value)
 
 
+@contextlib.contextmanager
+def import_time_home(home: pathlib.Path) -> Generator[None]:
+    """区間の間だけホームと設定ディレクトリの環境変数を`home`配下へ向け、区間の終了時に戻す。
+
+    `AGENT_TOOLKIT_RUNTIME_DATA`は`pytest_plugin`の`pytest_configure`が配布CLIの依存環境として固定するため変えない。
+    区間内でimportされたモジュールが確定した定数は、区間の終了後も`home`配下を指す。
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        for name in HOME_ENVIRONMENT_NAMES:
+            patch.setenv(name, str(home))
+        for name in CONFIG_DIRECTORY_ENVIRONMENT_NAMES:
+            if name != "AGENT_TOOLKIT_RUNTIME_DATA":
+                patch.setenv(name, str(home / name.lower()))
+        yield
+
+
 def restore_host_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """テストのプロセス自身でホームディレクトリ、設定ディレクトリおよびPATHを隔離前の値へ戻す。
 
@@ -341,6 +376,7 @@ def assert_development_state_isolated(tmp_path: pathlib.Path) -> None:
             assert name not in os.environ, name
     for name in DEVELOPMENT_SESSION_ENVIRONMENT_NAMES:
         assert name not in os.environ, name
+    assert not [name for name in os.environ if name.startswith(CONFIG_OVERRIDE_ENVIRONMENT_PREFIX)]
     for name in AGENT_CLI_NAMES:
         assert shutil.which(name) is None, name
     try:
