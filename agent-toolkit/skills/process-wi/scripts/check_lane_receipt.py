@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -12,7 +13,7 @@ from typing import Any
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import cli as wi_cli
-from agent_toolkit._common import next_action, process_tree
+from agent_toolkit._common import next_action, plugin_environment, process_tree
 from agent_toolkit._git import command
 from agent_toolkit._plan import commit_mapping, locations
 
@@ -218,7 +219,13 @@ def check(args: argparse.Namespace) -> dict[str, Any]:
             head,
         ]
         completed = process_tree.run_with_timeout(
-            invocation, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False
+            invocation,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            check=False,
+            env=plugin_environment.direct_environment(pathlib.Path(__file__).resolve().parents[3], os.environ),
         )
         if completed.returncode:
             raise ValueError(f"変更文書の取得が失敗した: {completed.stderr.strip()}")

@@ -97,12 +97,14 @@ def launch_environment(root: Path, environment: Mapping[str, str]) -> dict[str, 
     """準備・直接起動の子プロセス環境を組み立てる。"""
     result = dict(environment)
     inherited_venv.strip_inherited_venv(result)
+    caller = dict(result)
     if "UV_PROJECT_ENVIRONMENT" in result:
         result[inherited_venv.CALLER_PROJECT_ENVIRONMENT_KEY] = result["UV_PROJECT_ENVIRONMENT"]
     selected = str(project_environment(root, environment))
     result[RUNTIME_DATA_ENV] = str(runtime_data(environment))
     result[RUNTIME_ENVIRONMENT_ENV] = selected
     result["UV_PROJECT_ENVIRONMENT"] = selected
+    inherited_venv.record_launch_changes(result, caller)
     return result
 
 
@@ -123,9 +125,12 @@ def prepared_python(root: Path, environment: Mapping[str, str]) -> Path | None:
 def direct_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:
     """rootのコードを共有依存環境のPythonで解決する環境を返す。"""
     result = launch_environment(root, environment)
+    caller = dict(result)
+    inherited_venv.strip_inherited_venv(caller)
     root_text = str(root.resolve())
     previous = result.get("PYTHONPATH")
     result["PYTHONPATH"] = root_text + (os.pathsep + previous if previous else "")
+    inherited_venv.record_launch_changes(result, caller)
     return result
 
 

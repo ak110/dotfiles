@@ -8,11 +8,98 @@ import socket
 import subprocess
 import sys
 import textwrap
+from typing import cast
 
 import psutil
 import pytest
 
 from agent_toolkit._testing import pytest_plugin
+
+# 読込済みrootと公開設定から求める対象rootを正負で直接比較する。
+# pylint: disable=protected-access
+
+
+class _Config:
+    def __init__(self, rootpath: pathlib.Path) -> None:
+        self.rootpath = rootpath
+
+
+def _config(rootpath: pathlib.Path) -> pytest.Config:
+    """rootpathだけを使う読込元比較へ、公開Configと同じ静的型で渡す。"""
+    return cast(pytest.Config, _Config(rootpath))
+
+
+def test_target_plugin_root_limits_import_check_to_public_target(tmp_path: pathlib.Path) -> None:
+    """外部fixtureのrootは比較せず、dotfilesとplugin rootは対象を一意にする。"""
+    plugin = tmp_path / "dotfiles" / "agent-toolkit"
+    (plugin / "agent_toolkit").mkdir(parents=True)
+    (plugin / "agent_toolkit" / "__init__.py").touch()
+    assert pytest_plugin._target_plugin_root(_config(plugin)) == plugin
+    assert pytest_plugin._target_plugin_root(_config(plugin.parent)) == plugin
+    assert pytest_plugin._target_plugin_root(_config(tmp_path / "external")) is None
+
+
+def test_target_plugin_root_accepts_renamed_standalone_package(tmp_path: pathlib.Path) -> None:
+    """standalone checkoutはディレクトリ名に関係なく実在するパッケージで判定する。"""
+    standalone = tmp_path / "cached-agent-toolkit-vnext"
+    (standalone / "agent_toolkit").mkdir(parents=True)
+    (standalone / "agent_toolkit" / "__init__.py").touch()
+    assert pytest_plugin._target_plugin_root(_config(standalone)) == standalone
+
+
+@pytest.mark.parametrize("target_kind", ["plugin", "dotfiles"])
+def test_validate_import_root_accepts_public_target_root(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, target_kind: str
+) -> None:
+    """plugin rootとdotfiles rootのどちらからも、対象内の読込を受理する。"""
+    plugin = tmp_path / "dotfiles" / "agent-toolkit"
+    loaded = plugin / "agent_toolkit" / "__init__.py"
+    loaded.parent.mkdir(parents=True)
+    loaded.touch()
+    monkeypatch.setattr(pytest_plugin.agent_toolkit, "__file__", str(loaded))
+    pytest_plugin._validate_import_root(_config(plugin if target_kind == "plugin" else plugin.parent))
+
+
+@pytest.mark.parametrize("target_kind", ["plugin", "dotfiles"])
+def test_validate_import_root_rejects_other_plugin(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, target_kind: str
+) -> None:
+    """公開対象とは異なる配布rootの読込を、双方のパスを含む診断で拒否する。"""
+    target = tmp_path / "dotfiles" / "agent-toolkit"
+    foreign = tmp_path / "foreign" / "agent_toolkit" / "__init__.py"
+    (target / "agent_toolkit").mkdir(parents=True)
+    (target / "agent_toolkit" / "__init__.py").touch()
+    foreign.parent.mkdir(parents=True)
+    foreign.touch()
+    monkeypatch.setattr(pytest_plugin.agent_toolkit, "__file__", str(foreign))
+    root = target if target_kind == "plugin" else target.parent
+    with pytest.raises(pytest.UsageError) as error:
+        pytest_plugin._validate_import_root(_config(root))
+    message = str(error.value)
+    assert "loaded=" in message and "target=" in message
+    assert "PYTHONPATH と UV_PYTHON を解除し" in message
+    assert "対象worktreeをカレントディレクトリにして" in message
+    assert "uv run --frozen pytest <対象試験>" in message
+
+
+def test_validate_import_root_skips_external_fixture_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """外部fixtureのpytestはagent-toolkit読込元の比較対象にしない。"""
+    foreign = tmp_path / "foreign" / "agent_toolkit" / "__init__.py"
+    foreign.parent.mkdir(parents=True)
+    foreign.touch()
+    monkeypatch.setattr(pytest_plugin.agent_toolkit, "__file__", str(foreign))
+    pytest_plugin._validate_import_root(_config(tmp_path / "fixture"))
+
+
+def test_validate_import_root_skips_name_only_external_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """名前だけがagent-toolkitの外部fixtureはパッケージ実体がなければ対象外にする。"""
+    external = tmp_path / "agent-toolkit"
+    external.mkdir()
+    foreign = tmp_path / "foreign" / "agent_toolkit" / "__init__.py"
+    foreign.parent.mkdir(parents=True)
+    foreign.touch()
+    monkeypatch.setattr(pytest_plugin.agent_toolkit, "__file__", str(foreign))
+    pytest_plugin._validate_import_root(_config(external))
 
 
 @pytest.mark.parametrize("mode", ["pass", "fail", "interrupt", "xdist", "explicit"])

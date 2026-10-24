@@ -36,6 +36,7 @@ import types
 lazy import datetime
 lazy import traceback
 
+from agent_toolkit._common import inherited_venv
 lazy from agent_toolkit._atk import outcome as _outcome
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import notice as _notice
@@ -93,6 +94,7 @@ def _record_activity(payload: object, *, output: str = "", returncode: int = 0) 
 
 def main(argv: list[str]) -> int:
     """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。"""
+    inherited_venv.strip_inherited_venv(os.environ)
     _configure_standard_output()
     known_subcommands = "|".join(sorted(_SUBCOMMANDS))
     if not argv or argv[0] not in _SUBCOMMANDS:

@@ -155,11 +155,13 @@ def merge_settings(
 
 def api_key_helper(path: str) -> str:
     """対話起動のAPIキー確認を要しない、ファイルからのキー取得コマンドを返す。"""
+    root = pathlib.Path(__file__).resolve().parents[2]
     argv = [
         sys.executable,
         "-c",
         (
-            "import sys; from agent_toolkit._common.claude_connection import read_api_env_file; "
+            f"import sys; sys.path.insert(0, {str(root)!r}); "
+            "from agent_toolkit._common.claude_connection import read_api_env_file; "
             "print(read_api_env_file(sys.argv[1]).get('ANTHROPIC_API_KEY', ''))"
         ),
         path,

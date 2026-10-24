@@ -49,7 +49,11 @@ def main() -> int:
     try:
         if options.persist_claude_env:
             plugin_environment.persist_claude_environment(root, os.environ)
-        environment = plugin_environment.launch_environment(root, os.environ)
+        caller_environment = dict(os.environ)
+        path = caller_environment.get("PATH", "").split(os.pathsep)
+        if path and Path(path[0]).resolve() == Path(sys.executable).resolve().parent:
+            caller_environment["PATH"] = os.pathsep.join(path[1:])
+        environment = plugin_environment.launch_environment(root, caller_environment)
     except OSError as exc:
         next_action.report(
             f"起動環境を準備できないため、agent-toolkitを起動できません: {exc}",
@@ -69,7 +73,7 @@ def main() -> int:
             return dispatched
     if options.prepare:
         return _prepare(root, uv, environment)
-    python = plugin_environment.prepared_python(root, os.environ)
+    python = plugin_environment.prepared_python(root, caller_environment)
     if python is None:
         next_action.report(
             "共有依存環境が未準備のため、agent-toolkitを起動できません。",
@@ -77,7 +81,7 @@ def main() -> int:
         )
         return 1
     arguments = [str(python), str(target), *options.arguments]
-    environment = plugin_environment.direct_environment(root, os.environ)
+    environment = plugin_environment.direct_environment(root, caller_environment)
     if target == root / _AGENTS_SERVER_TARGET:
         return _run_agents_server(arguments, environment)
     if target == root / "agent_toolkit/_common/pyfltr_entry.py" and options.arguments[:1] == ["mcp"]:

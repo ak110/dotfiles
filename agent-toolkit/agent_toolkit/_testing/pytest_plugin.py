@@ -18,6 +18,7 @@ import pytest
 from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
+import agent_toolkit
 from agent_toolkit._agents_server import launch_requests, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
@@ -38,6 +39,31 @@ _PACKAGE_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _ORIGINAL_WAIT_FOR_END_TURN = _transcript_scan.wait_for_end_turn
 
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
+
+
+def _target_plugin_root(config: pytest.Config) -> pathlib.Path | None:
+    """公開pytest設定が対象にするagent-toolkit rootだけを返す。"""
+    root = config.rootpath.resolve()
+    if (root / "agent_toolkit" / "__init__.py").is_file():
+        return root
+    candidate = root / "agent-toolkit"
+    return candidate if (candidate / "agent_toolkit" / "__init__.py").is_file() else None
+
+
+def _validate_import_root(config: pytest.Config) -> None:
+    """対象worktreeのpytestが別のagent-toolkitを読んだ状態を早期に拒否する。"""
+    target = _target_plugin_root(config)
+    if target is None:
+        return
+    loaded = pathlib.Path(agent_toolkit.__file__).resolve().parent.parent
+    if loaded != target:
+        raise pytest.UsageError(
+            "agent_toolkitの読込元が対象worktreeと異なる: "
+            f"loaded={loaded}, target={target}。PYTHONPATH と UV_PYTHON を解除し、"
+            "対象worktreeをカレントディレクトリにして "
+            "`uv run --frozen pytest <対象試験>` を再実行する。"
+        )
+
 
 _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
     "FORCE_PROMPT_CACHING_5M",
@@ -63,6 +89,7 @@ def pytest_configure(config: pytest.Config) -> None:
     HOMEやキャッシュを一時ディレクトリへ向けたテストから起動すると、未指定ではテストごとに環境を構築し直す。
     保存先そのものを検証するテストは、明示した環境の辞書か`delenv`で上書きする。
     """
+    _validate_import_root(config)
     os.environ.setdefault(plugin_environment.RUNTIME_DATA_ENV, str(plugin_environment.runtime_data(os.environ)))
     stack = contextlib.ExitStack()
     config.add_cleanup(stack.close)

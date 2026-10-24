@@ -302,6 +302,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
             errors="replace",
             timeout=15,
             check=True,
+            env=plugin_environment.direct_environment(SHARE_DIR.parent, os.environ),
         )
         users = [
             event

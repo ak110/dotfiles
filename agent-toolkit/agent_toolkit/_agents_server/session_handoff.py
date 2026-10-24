@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shlex
 import subprocess
@@ -12,7 +13,7 @@ from typing import Any
 from agent_toolkit._agents_server import backends, handoff_next_action, plugin_root, record_paths
 from agent_toolkit._agents_server.state import SessionResumeState, SessionState
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import delegated_session, process_tree
+from agent_toolkit._common import delegated_session, plugin_environment, process_tree
 from agent_toolkit._common.next_action import ActionableError
 
 result_next_action = handoff_next_action.result_next_action
@@ -72,7 +73,14 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
         conversation = directory / "conversation.md"
     try:
         completed = process_tree.run_with_timeout(
-            command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=270, check=False
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=270,
+            check=False,
+            env=plugin_environment.direct_environment(plugin_root.SERVER_PLUGIN_ROOT, os.environ),
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         (directory / "prepare.stderr").write_text(str(error), encoding="utf-8")

@@ -33,6 +33,9 @@
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`: process-loopがClaude会話の新規起動またはID指定再開で子へ渡す会話ID。hook入力の`session_id`と比べ、環境印を継承した入れ子の別会話を自律終了、空転ガード、計画保存通知、セッション名および観測ログの対象から外す
 - `AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`: 常駐実行がセッション起動時に渡す追加指示の本文。`rules_context`が委譲先を除くメインのセッション開始時の文脈へ置く
 - `AGENT_TOOLKIT_LARGE_READ_BYTES`: CodexのBashによる全文取得を分割読取へ誘導する`pretooluse/large_reads`のバイト数の閾値。正の整数だけを採用し、それ以外は省略時の値を使う
+- `AGENT_TOOLKIT_RUNTIME_DATA`: 配布rootの外に置く共有依存環境の保存先。起動処理が確定し、委譲先にも意図して渡す
+- `AGENT_TOOLKIT_RUNTIME_ENVIRONMENT`・`AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT`: 起動処理が選んだ依存環境と、呼出元の`UV_PROJECT_ENVIRONMENT`を保持する内部値。子へ渡す環境を整える処理が復元後に除く
+- `AGENT_TOOLKIT_LAUNCH_RESTORE`: 起動処理が変えた環境値の変更前後を保持する内部JSON。`plugin_environment`が記録し、`inherited_venv`が現在値と記録の一致する項目だけを復元して記録を除く。起動後に変更された値は保持する
 
 ホストが定める次の環境変数は、`agent_toolkit/_common/host_homes.py`の関数だけが読む。
 
