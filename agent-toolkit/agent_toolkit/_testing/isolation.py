@@ -231,21 +231,19 @@ def isolate_development_state(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     monkeypatch.setenv("PATH", _isolated_path_value)
 
 
+def build_host_environ() -> dict[str, str]:
+    """ホーム、設定、PATHとmiseの探索範囲だけを隔離前の値へ戻す。"""
+    environ = dict(os.environ)
+    for name in _HOST_RESTORED_ENVIRONMENT_NAMES:
+        environ.pop(name, None)
+    environ.update(_HOST_ENVIRON)
+    return environ
+
+
 @pytest.fixture(name="host_environ")
 def host_environ() -> Callable[[], dict[str, str]]:
-    """ホームディレクトリ、設定ディレクトリ、PATHおよびmiseの探索範囲を隔離前の値へ戻した環境変数を組み立てるfactory。
-
-    他の次元の隔離は維持する。呼び出し時点の`os.environ`を基にするため、autouse fixtureの適用順序によらず同じ結果になる。
-    """
-
-    def _build() -> dict[str, str]:
-        environ = dict(os.environ)
-        for name in _HOST_RESTORED_ENVIRONMENT_NAMES:
-            environ.pop(name, None)
-        environ.update(_HOST_ENVIRON)
-        return environ
-
-    return _build
+    """隔離を保ったままホストのNode実行環境を組み立てるfactory。"""
+    return build_host_environ
 
 
 def package_cache_environ(environ: Mapping[str, str], platform: str) -> dict[str, str]:
