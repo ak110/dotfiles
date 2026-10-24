@@ -239,7 +239,7 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         # pyfltr v3.14.1で口語表現チェッカーが内蔵化されたため
         # dotfiles配布のカスタムコマンド定義（旧`config.toml`）を配布先から除去する。
         cleanup_paths.RemovedPath(Path("pyfltr/config.toml"), datetime.date(2026, 7, 1)),
-        # 計画ファイル閲覧は atk serve へ統合した。設定は ~/.config/agent-toolkit/serve.toml へ移した。
+        # 計画ファイル閲覧は atk serve へ統合した。設定は atk config の serve_* キーへ移した。
         cleanup_paths.RemovedPath(Path("pytools/claude-plans-viewer.toml"), datetime.date(2026, 9, 2)),
         # 廃止した工程が配置したフラグファイル。いずれも廃止時に削除登録がなく残存していた。
         # feedback-inbox.enabled は setup_feedback_inbox（d08f8d5b で廃止）、

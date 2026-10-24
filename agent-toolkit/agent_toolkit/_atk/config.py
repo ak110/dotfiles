@@ -1,7 +1,7 @@
 """`atk config`サブコマンド。
 
 XDG関連パス（設定・状態・データ各ディレクトリ、private-notesの解決結果）の確認と、
-工程ごとのモデル候補列の確認・変更を提供する。
+工程ごとのモデル候補列と`atk serve`の設定などの確認・変更を提供する。
 """
 
 import argparse
@@ -11,6 +11,7 @@ import os
 import pathlib
 import re
 import sys
+import tomllib
 from typing import Any, cast
 
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
@@ -73,6 +74,45 @@ _PRESET_MODELS = {
 _APPLY_PRESET_SHOW = "show"
 
 
+# IDEのリモート開発拡張はLinux側の待受ポートをWindows側へ自動転送するため、Windowsでも同じ番号を
+# 未指定時の値にすると、Windowsでローカル実行したatk serveの待受ポートが転送先と衝突する。
+# Windowsだけ別の番号にして衝突を避ける。
+SERVE_LINUX_DEFAULT_PORT = 28766
+SERVE_WINDOWS_DEFAULT_PORT = 28876
+
+
+def serve_default_port(platform: str | None = None) -> int:
+    """`atk serve`の待受ポートを指定しない場合に使うOS別の値を返す。"""
+    return SERVE_WINDOWS_DEFAULT_PORT if (platform or sys.platform) == "win32" else SERVE_LINUX_DEFAULT_PORT
+
+
+# `atk serve`の設定。パスの空文字列は未指定を表し、`atk serve`が各画面の省略時の参照元を使う。
+_SERVE_KEY_DEFAULTS = {
+    "serve_host": "127.0.0.1",
+    "serve_port": str(serve_default_port()),
+    "serve_plans_root": "",
+    "serve_plans_remote_hosts": "[]",
+    "serve_sessions_claude_home": "",
+    "serve_sessions_codex_home": "",
+    "serve_sessions_remote_hosts": "[]",
+}
+_SERVE_PATH_KEYS = frozenset({"serve_plans_root", "serve_sessions_claude_home", "serve_sessions_codex_home"})
+_SERVE_HOSTS_KEYS = frozenset({"serve_plans_remote_hosts", "serve_sessions_remote_hosts"})
+
+SERVE_CONFIG_ENV = "AGENT_TOOLKIT_SERVE_CONFIG"
+"""旧`serve.toml`の場所を指定していた環境変数。統合後は自動移行の移行元を示す。"""
+
+# 旧`serve.toml`の位置（節名とキー）と移行先のキー。
+_LEGACY_SERVE_KEYS = {
+    (None, "host"): "serve_host",
+    (None, "port"): "serve_port",
+    ("plans", "root"): "serve_plans_root",
+    ("plans", "remote_hosts"): "serve_plans_remote_hosts",
+    ("sessions", "claude_home"): "serve_sessions_claude_home",
+    ("sessions", "codex_home"): "serve_sessions_codex_home",
+    ("sessions", "remote_hosts"): "serve_sessions_remote_hosts",
+}
+
 # 挿入順は`atk config show`の表示順とキー案内の順を兼ねる。
 _MUTABLE_KEY_DEFAULTS = {
     **_MODEL_DEFAULTS,
@@ -85,6 +125,7 @@ _MUTABLE_KEY_DEFAULTS = {
     "codex_usage_limit_wait": "five-hour",
     "process_loop_repositories": "[]",
     "dotfiles_mode": "full",
+    **_SERVE_KEY_DEFAULTS,
 }
 
 _CLAUDE_CONNECTION_KEYS = ("claude_orchestrator_api_only", "claude_worker_api_first")
@@ -181,7 +222,31 @@ def _load_config() -> dict[str, str]:
     return {key: value for key, value in data.items() if isinstance(value, str)}
 
 
-def _save_config(config: dict[str, str]) -> None:
+def _load_config_strict() -> dict[str, Any]:
+    """永続化済みの変更可能設定を読み込む。破損・形式不正は空とみなさず`ActionableError`を送出する。
+
+    他の設定を保持したまま一部のキーを書き込む処理が使う。破損したファイルを空として扱うと、
+    書込みが他用途の設定を失わせるためである。文字列以外の値は保持の対象として読んだまま返す。
+    """
+    path = _config_file_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise _next_action.ActionableError(
+            f"設定ファイル{path}を読めない: {error}",
+            next_action=f"{path}をJSONのobjectとして読める内容へ直して再実行する",
+        ) from error
+    if not isinstance(data, dict):
+        raise _next_action.ActionableError(
+            f"設定ファイル{path}がJSONのobjectではない",
+            next_action=f"{path}をJSONのobjectへ直して再実行する",
+        )
+    return data
+
+
+def _save_config(config: dict[str, Any]) -> None:
     """変更可能設定をJSONファイルへ永続化する。"""
     path = _config_file_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -228,6 +293,17 @@ def _validate_mutable_setting(key: str, value: str) -> None:
     elif key == "claude_api_env_file":
         if "\n" in value or "\r" in value or "\0" in value:
             raise ValueError("envファイルのパス1つ、または空文字列で指定する")
+    elif key == "serve_host":
+        if not value.strip():
+            raise ValueError("待受ホストを空でない文字列で指定する")
+    elif key == "serve_port":
+        if not value.isdecimal() or not 1 <= int(value) <= 65535:
+            raise ValueError("1から65535までの整数で指定する")
+    elif key in _SERVE_PATH_KEYS:
+        if "\n" in value or "\r" in value or "\0" in value:
+            raise ValueError("パス1つ、または未指定を表す空文字列で指定する")
+    elif key in _SERVE_HOSTS_KEYS:
+        parse_remote_hosts(value)
     elif key == "claude_api_mode":
         if value not in _LEGACY_CLAUDE_MODES:
             raise ValueError("受理可能値: pay-as-you-go, api-credits, api-only")
@@ -315,6 +391,17 @@ def resolve_configured_repositories() -> tuple[ConfiguredRepository, ...]:
             str(error),
             next_action=f"`atk config set {key} <JSON配列>`で登録先を直して再実行する",
         ) from error
+
+
+def parse_remote_hosts(value: str) -> tuple[str, ...]:
+    """リモートホストの指定をSSH接続先名のJSON文字列配列として解釈する。空配列はリモートホストなしを表す。"""
+    try:
+        hosts = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise ValueError('SSH接続先名のJSON文字列配列で指定する（例: ["remote-host"]、空配列も可）') from error
+    if not isinstance(hosts, list) or any(not isinstance(host, str) or not host.strip() for host in hosts):
+        raise ValueError("空でないSSH接続先名のJSON文字列配列で指定する（空配列も可）")
+    return tuple(hosts)
 
 
 def parse_codex_provider_candidates(value: str) -> tuple[str, ...]:
@@ -482,6 +569,116 @@ def migrate_legacy_settings() -> None:
         _save_config(migrated)
 
 
+def legacy_serve_config_path() -> pathlib.Path:
+    """旧`serve.toml`の場所を返す。`AGENT_TOOLKIT_SERVE_CONFIG`があればその値、無ければ設定ディレクトリの`serve.toml`。"""
+    explicit = os.environ.get(SERVE_CONFIG_ENV)
+    return pathlib.Path(explicit) if explicit else _config_dir() / "serve.toml"
+
+
+def _legacy_serve_values(loaded: dict[str, Any], path: pathlib.Path) -> dict[str, str]:
+    """旧`serve.toml`の内容を移行先のキーと保存形式の値へ変換する。未知キーと型不正は`ValueError`を送出する。"""
+    known_sections = {section for section, _ in _LEGACY_SERVE_KEYS if section is not None}
+    values: dict[str, str] = {}
+    unknown: list[str] = []
+    for name, item in loaded.items():
+        if name in known_sections:
+            if not isinstance(item, dict):
+                raise ValueError(f"{path}の{name}がテーブルではない")
+            entries = [((name, key), value) for key, value in item.items()]
+        else:
+            entries = [((None, name), item)]
+        for (section, key), value in entries:
+            target = _LEGACY_SERVE_KEYS.get((section, key))
+            label = key if section is None else f"{section}.{key}"
+            if target is None:
+                unknown.append(label)
+                continue
+            if target == "serve_port":
+                if not isinstance(value, int) or isinstance(value, bool):
+                    raise ValueError(f"{path}の{label}が整数ではない")
+                converted = str(value)
+            elif target in _SERVE_HOSTS_KEYS:
+                if not isinstance(value, list) or any(not isinstance(host, str) for host in value):
+                    raise ValueError(f"{path}の{label}が文字列の配列ではない")
+                converted = json.dumps(value, ensure_ascii=False)
+            elif isinstance(value, str) and value.strip():
+                converted = value
+            else:
+                raise ValueError(f"{path}の{label}が空でない文字列ではない")
+            try:
+                _validate_mutable_setting(target, converted)
+            except ValueError as error:
+                raise ValueError(f"{path}の{label}の値が不正である。{error}") from error
+            values[target] = converted
+    if unknown:
+        raise ValueError(f"{path}に移行先の無いキーがある: {', '.join(sorted(unknown))}")
+    return values
+
+
+def migrate_serve_settings() -> None:
+    """旧`serve.toml`の値を統一設定へ移行し、旧ファイルを`<旧ファイル名>.migrated`へ改名する。
+
+    統一設定に既にあるキーは上書きせず、無いキーだけを補う。改名後は移行元が無くなるため、
+    再実行しても移行済みの値を旧ファイルで上書きしない。読めない・形式不正・保存失敗・改名失敗では
+    旧ファイルと統一設定の既存内容を変えずに`ActionableError`を送出し、直して再実行できる状態を保つ
+    （改名だけが失敗した場合は保存済みの値を保ち、再実行で改名だけを行う）。
+    """
+    path = legacy_serve_config_path()
+    retry = f"{path}の記述を直すか、移行しない項目を削除してから再実行する"
+    try:
+        loaded = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
+        raise _next_action.ActionableError(
+            f"旧設定ファイル{path}を読めないため移行できない: {error}", next_action=retry
+        ) from error
+    try:
+        values = _legacy_serve_values(loaded, path)
+    except ValueError as error:
+        raise _next_action.ActionableError(f"旧設定ファイルを移行できない: {error}", next_action=retry) from error
+    config = _load_config_strict()
+    additions = {key: value for key, value in values.items() if key not in config}
+    if additions:
+        try:
+            _save_config({**config, **additions})
+        except OSError as error:
+            raise _next_action.ActionableError(
+                f"旧設定ファイル{path}の値を{_config_file_path()}へ保存できない: {error}",
+                next_action=f"{_config_file_path().parent}へ書き込めるようにして再実行する",
+            ) from error
+    target = path.with_name(f"{path.name}.migrated")
+    try:
+        path.replace(target)
+    except OSError as error:
+        raise _next_action.ActionableError(
+            f"旧設定ファイル{path}を{target}へ改名できない（値の移行は完了済み）: {error}",
+            next_action=f"{path}を改名できるようにするか削除して再実行する",
+        ) from error
+    migrated = ", ".join(additions) if additions else "なし（全キーが保存済み）"
+    _outcome.report_warning(
+        f"旧設定ファイル{path}の値を`atk config`へ移行し、元のファイルを{target}へ改名した。移行したキー: {migrated}",
+        next_action="対応不要。以後の確認と変更は`atk config get serve_<項目>`・`atk config set serve_<項目> <値>`で行う",
+    )
+
+
+def save_mutable_settings(updates: dict[str, str]) -> bool:
+    """変更可能設定の複数キーを検証して保存し、保存内容が変わったかを返す。
+
+    他のキーと他用途の設定は保持する。値が既存の保存値と同じキーだけなら書き込まない。
+    統一設定の破損と値の不正は`ValueError`（`ActionableError`を含む）、書込失敗は`OSError`で送出する。
+    """
+    for key, value in updates.items():
+        if key not in _MUTABLE_KEY_DEFAULTS:
+            raise KeyError(key)
+        _validate_mutable_setting(key, value)
+    config = _load_config_strict()
+    if all(config.get(key) == value for key, value in updates.items()):
+        return False
+    _save_config({**config, **updates})
+    return True
+
+
 def _check_legacy_environment() -> None:
     """廃止キーの環境変数があれば、対応する工程別環境変数を案内する。"""
     found = sorted(key for key in _RETIRED_MODEL_KEYS if _config_env_name(key) in os.environ)
@@ -515,6 +712,7 @@ def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     """XDG関連パスの導出値と変更可能設定をまとめて返す（表示・`get`共通の解決結果）。"""
     _check_legacy_environment()
     migrate_legacy_settings()
+    migrate_serve_settings()
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
     settings = {
         "config_dir": str(_config_dir()),
@@ -611,6 +809,8 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
         )
         sys.exit(2)
     _report_candidate_warnings(_stage_model_candidate_warnings(args.key, args.value))
+    # 旧serve.tomlの値を先に移行し、続く保存で明示値が移行値に上書きされないようにする。
+    migrate_serve_settings()
     value = ",".join(parse_codex_provider_candidates(args.value)) if args.key == "codex_model_providers" else args.value
     config = _plan_legacy_migration(_load_config(), updates={args.key: value})
     _save_config(config)

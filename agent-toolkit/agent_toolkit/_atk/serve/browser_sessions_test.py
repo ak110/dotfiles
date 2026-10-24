@@ -596,6 +596,7 @@ async def test_session_detail_title_shows_engine_and_session_name(
     """右ペインの見出しはエンジン名と取得できたセッション名を表示し、ホスト名と作業ディレクトリを表示しない。
 
     ホスト名と作業ディレクトリは左ペインの一覧項目が示す。名前の記録が無い記録はエンジン名だけを表示する。
+    セッション名は見出しだけが示すため、長い名前も狭い幅で省略せず全文を表示する。
     """
     named = _write_local_session(
         tmp_path,
@@ -605,6 +606,10 @@ async def test_session_detail_title_shows_engine_and_session_name(
         _assistant_record("応答"),
     )
     unnamed = _write_local_session(tmp_path, "unnamed", _assistant_record("応答"))
+    long_name = "長いセッション名の折り返し確認用" * 4
+    long_named = _write_local_session(
+        tmp_path, "long-named", {"type": "custom-title", "customTitle": long_name}, _assistant_record("応答")
+    )
     async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
         title = page.locator("#detail-title")
         await _open_session(page, base_url, "browser-test", named)
@@ -615,6 +620,17 @@ async def test_session_detail_title_shows_engine_and_session_name(
         assert "browser-test" in await item.inner_text()
         await _open_session(page, base_url, "browser-test", unnamed)
         await playwright.async_api.expect(title).to_have_text("Claude Code")
+        # 長いセッション名は狭い幅（320px。1280pxの400%拡大と同じCSS幅）でも省略せず、折り返して全文を表示する。
+        await _open_session(page, base_url, "browser-test", long_named)
+        await playwright.async_api.expect(title).to_have_text(f"Claude Code / {long_name}")
+        await page.set_viewport_size({"width": 320, "height": 720})
+        metrics = await title.evaluate(
+            "element => ({scroll: element.scrollWidth, client: element.clientWidth,"
+            " right: element.getBoundingClientRect().right, viewport: document.documentElement.clientWidth})"
+        )
+        assert metrics["scroll"] <= metrics["client"], metrics
+        assert metrics["right"] <= metrics["viewport"], metrics
+        assert await title.evaluate("element => getComputedStyle(element).textOverflow") != "ellipsis"
 
 
 @pytest.mark.asyncio(loop_scope="session")

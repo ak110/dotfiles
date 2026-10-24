@@ -9,6 +9,8 @@ import logging
 import pathlib
 import stat
 
+from agent_toolkit._atk import config as toolkit_config
+
 from pytools._internal import common, host_roles, log_format, post_apply_outcome, systemd_user_unit
 
 logger = logging.getLogger(__name__)
@@ -32,10 +34,17 @@ exec "{uv}" run --no-config --no-project --python 3.15 python \\
   "{dotfiles}/agent-toolkit/scripts/launch.py" agent_toolkit/atk.py serve "$@"
 """
 
+# 役割linux_serverのホスト固有の`atk serve`設定。unitへ書かず`atk config`の統一設定へ保存する。
+# 以前はchezmoiが`~/.config/agent-toolkit/serve.toml`として配布しており、同じく適用ごとにこの値へ戻す。
+# 配布済みの旧ファイルは`atk serve`の起動時の自動移行が改名する（値はここで保存済みのため上書きしない）。
+_SERVE_SETTINGS = {
+    "serve_host": "localhost",
+    "serve_plans_remote_hosts": '["stheno"]',
+    "serve_sessions_remote_hosts": '["stheno"]',
+}
+
 # unit ファイル本文。ExecStart は systemd specifier %h を使い、
 # post_apply 実行時の Path.home() を埋め込まない。
-# 待受アドレス・ポートはホスト固有値であり、
-# `~/.config/agent-toolkit/serve.toml` 経由で指定する。
 _UNIT_CONTENT = f"""[Unit]
 Description=agent-toolkit work item server
 After=network.target
@@ -54,10 +63,11 @@ WantedBy=default.target
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """`atk serve`の systemd 自動起動状態を整える (役割linux_serverのホストのみ)。
+    """`atk serve`の設定と systemd 自動起動状態を整える (役割linux_serverのホストのみ)。
 
     対象ホストで状態を確認した場合は変更あり、ホスト不一致や uv・dotfiles ルートを解決できず何もしなかった場合は変更なしを返す。
     旧unitの撤去の失敗は失敗と数え、ランチャーとunitの配置は続ける。
+    ホスト固有の設定を統一設定へ保存できない場合は、配置へ進まず失敗として返す。
     ユーザーマネージャーへ接続できない場合は、復旧手順を次の操作とする失敗として返す。
 
     Raises:
@@ -90,6 +100,17 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     legacy_failure = _remove_legacy_unit()
 
+    try:
+        settings_changed = toolkit_config.save_mutable_settings(_SERVE_SETTINGS)
+    except (ValueError, OSError) as error:
+        # 統一設定の破損は他用途の設定も含むため、空とみなして上書きせず失敗として返す。
+        failure = f"atk serveの設定を統一設定へ保存できない: {error}"
+        return post_apply_outcome.PostApplyOutcome(
+            failure=failure if legacy_failure is None else f"{legacy_failure} / {failure}",
+            next_action=getattr(error, "next_action", None)
+            or "`atk config show`で設定ファイルの状態を確かめて直し、`update-dotfiles`を再実行する。",
+        )
+
     launcher = _launcher_path()
     content = _LAUNCHER_TEMPLATE.format(uv=uv, dotfiles=dotfiles)
     launcher_changed = _read_text(launcher) != content
@@ -108,7 +129,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             unit_content=unit_content,
             log_tag="atk-serve",
             service_name=_SERVICE_UNIT,
-            restart_needed=launcher_changed,
+            # 設定は起動時にだけ読むため、保存値を変えた場合も稼働中のサービスへ反映する。
+            restart_needed=launcher_changed or settings_changed,
             journal_identifier="atk-serve-setup",
         )
     except systemd_user_unit.UserManagerUnavailableError as error:

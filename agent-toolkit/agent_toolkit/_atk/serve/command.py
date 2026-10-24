@@ -31,13 +31,13 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--host",
         default=None,
-        help="待受ホスト（環境変数 AGENT_TOOLKIT_SERVE_HOST、設定ファイルからも参照）",
+        help="待受ホスト（環境変数 AGENT_TOOLKIT_SERVE_HOST、atk configのserve_hostからも参照）",
     )
     parser.add_argument(
         "--port",
         default=None,
         type=_port_type,
-        help="待受ポート（環境変数 AGENT_TOOLKIT_SERVE_PORT、設定ファイルからも参照）",
+        help="待受ポート（環境変数 AGENT_TOOLKIT_SERVE_PORT、atk configのserve_portからも参照）",
     )
 
 

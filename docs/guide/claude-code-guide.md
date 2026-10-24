@@ -657,34 +657,31 @@ WI一覧の「全てコピー」は、現在のフィルターに一致する全
 一覧の表示対象は重要・非重要で限定できる。
 通常の自動処理の順序は重要フラグで変わらず、重要項目だけの処理は対象として明示した場合に行われる。
 
-画面を使うには、ターミナルで`atk serve`を実行してサーバーを起動する。起動ログの`atk serveを http://<ホスト>:<ポート>/ で配信します`に表示されたURLをブラウザーで開く。待受のホストとポートを指定しない場合は`127.0.0.1`のポート28766（Windowsでは28876）で待ち受ける。変更には`--host`・`--port`（例: `atk serve --port=28767`）、環境変数`AGENT_TOOLKIT_SERVE_HOST`・`AGENT_TOOLKIT_SERVE_PORT`、設定ファイル`serve.toml`を使い、この順に優先する。前景で起動した`atk serve`を終了するには、そのターミナルで`Ctrl+C`を押す。
+画面を使うには、ターミナルで`atk serve`を実行してサーバーを起動する。起動ログの`atk serveを http://<ホスト>:<ポート>/ で配信します`に表示されたURLをブラウザーで開く。待受のホストとポートを指定しない場合は`127.0.0.1`のポート28766（Windowsでは28876）で待ち受ける。変更には`--host`・`--port`（例: `atk serve --port=28767`）、環境変数`AGENT_TOOLKIT_SERVE_HOST`・`AGENT_TOOLKIT_SERVE_PORT`、`atk config`の設定を使い、この順に優先する。前景で起動した`atk serve`を終了するには、そのターミナルで`Ctrl+C`を押す。
 
-待受の設定と画面の参照元の設定は、どちらも同じ設定ファイル`serve.toml`に書く。
-環境変数`AGENT_TOOLKIT_SERVE_CONFIG`にファイルのパスを指定した場合は、そのファイルを読む。
-指定しない場合は、OSごとに次の場所のファイルを読み、ファイルが無ければ設定ファイルなしで起動する。
+待受の設定と画面の参照元の設定は、`atk config`の次のキーで確認・変更する。`atk config show`で現在値を一覧でき、`atk config set <キー> <値>`で保存した値は`atk serve`の次回起動から反映する。
 
-- Linux: `~/.config/agent-toolkit/serve.toml`。環境変数`XDG_CONFIG_HOME`に絶対パスを設定した場合は`$XDG_CONFIG_HOME/agent-toolkit/serve.toml`
-- macOS: `~/Library/Application Support/agent-toolkit/serve.toml`。環境変数`XDG_CONFIG_HOME`に絶対パスを設定した場合は`$XDG_CONFIG_HOME/agent-toolkit/serve.toml`
-- Windows: `%LOCALAPPDATA%\agent-toolkit\serve.toml`
+| キー | 内容 | 値の形式 | 未指定時 |
+| --- | --- | --- | --- |
+| `serve_host` | 待受ホスト | 文字列 | `127.0.0.1` |
+| `serve_port` | 待受ポート | 1〜65535の整数 | 28766（Windowsでは28876） |
+| `serve_plans_root` | 計画ファイル画面の参照元 | パス（空文字列は未指定） | private-notesの`plans`と`~/.claude/plans`の両方 |
+| `serve_plans_remote_hosts` | 計画ファイル画面のリモートホスト | SSH接続先名のJSON文字列配列 | `[]` |
+| `serve_sessions_claude_home` | セッション画面のClaude Codeの参照元 | パス（空文字列は未指定） | `~/.claude` |
+| `serve_sessions_codex_home` | セッション画面のCodexの参照元 | パス（空文字列は未指定） | `CODEX_HOME`、空なら`~/.codex` |
+| `serve_sessions_remote_hosts` | セッション画面のリモートホスト | SSH接続先名のJSON文字列配列 | `[]` |
 
-設定例を次に示す。`host`と参照元のパスは文字列、`port`は整数、`remote_hosts`はSSH接続先名の文字列配列とする。
-各キーは省略でき、省略した参照元は後述の場所を使う。パスとSSH接続先名は利用する環境へ置き換える。
+設定例を次に示す。パスとSSH接続先名は利用する環境へ置き換える。
 
-```toml
-host = "127.0.0.1"
-port = 28767
-
-[plans]
-root = "/home/user/private-notes/plans"
-remote_hosts = ["remote-host"]
-
-[sessions]
-claude_home = "/home/user/.claude"
-codex_home = "/home/user/.codex"
-remote_hosts = ["remote-host"]
+```bash
+atk config set serve_port 28767
+atk config set serve_plans_remote_hosts '["remote-host"]'
+atk config set serve_sessions_remote_hosts '["remote-host"]'
 ```
 
-`atk serve`は同じナビゲーションから「WI」「計画ファイル」「セッション」の3画面を提供する。WI画面はキューの登録・編集・状態遷移を扱い、計画ファイル画面はローカルと設定済みリモートホストの計画ファイルを一覧・全文検索してMarkdownを表示する。セッション画面はClaude CodeとCodexの保存済みセッションを作業ディレクトリと開始時刻で一覧し、最初のユーザー発話を検索対象に使う。右ペインには発話・思考・ツール呼び出しを時系列に表示する。アシスタントの発言は見出し・箇条書き・表・コードをMarkdownとして整形して表示し、それ以外の本文は記号を残した等幅で表示する。実行環境が挿入した本文は「自動挿入」として折りたたみ、一覧の検索対象となる最初の発話からも除く。計画ファイルとセッションの参照元は、前述の設定ファイル`serve.toml`の`[plans]`・`[sessions]`で指定する。未指定の場合、計画ファイル画面はprivate-notesの`plans`と`~/.claude/plans`の両方を参照し、セッション画面は`~/.claude`と、`CODEX_HOME`が空のときは`~/.codex`を参照する。
+以前の版の設定ファイル`serve.toml`が残っている場合は、`atk serve`の起動時と`atk config`の実行時に`atk config`へ未保存の値だけを移行し、元のファイルを`serve.toml.migrated`へ改名する。移行元は設定ディレクトリの`serve.toml`で、環境変数`AGENT_TOOLKIT_SERVE_CONFIG`を指定した場合はそのファイルとする。`atk config`へ保存済みの値は上書きしない。`serve.toml`を読めない場合や値の形式が不正な場合は、元のファイルと`atk config`の内容を変えずに原因を表示して終了するため、示された箇所を直して再実行する。
+
+`atk serve`は同じナビゲーションから「WI」「計画ファイル」「セッション」の3画面を提供する。WI画面はキューの登録・編集・状態遷移を扱い、計画ファイル画面はローカルと設定済みリモートホストの計画ファイルを一覧・全文検索してMarkdownを表示する。セッション画面はClaude CodeとCodexの保存済みセッションを作業ディレクトリと開始時刻で一覧し、最初のユーザー発話を検索対象に使う。右ペインには発話・思考・ツール呼び出しを時系列に表示する。アシスタントの発言は見出し・箇条書き・表・コードをMarkdownとして整形して表示し、それ以外の本文は記号を残した等幅で表示する。実行環境が挿入した本文は「自動挿入」として折りたたみ、一覧の検索対象となる最初の発話からも除く。計画ファイルとセッションの参照元は、前述の`atk config`の`serve_plans_*`・`serve_sessions_*`で指定する。
 
 WI画面で状態が`needs-verify`と表示される項目は、反映後の観測だけが残っているため、観測できる時刻まで`inbox`へ戻されたAWIである。保存状態は`inbox`のままで、状態フィルターの`inbox`にも含まれ、次の`agent-toolkit:process-wi`が観測から再開する。
 
@@ -695,7 +692,8 @@ WI画面で状態が`needs-verify`と表示される項目は、反映後の観�
 CLIでは`atk wi add --cooldown-until '2026-10-11T12:00:00+09:00' --body-file <本文ファイル>`でAWIの初回保存から期限を設定できる。複数本文には同じ期限を適用する。空・不正日時・タイムゾーンなし、UWI・batchとの併用と通常本文のfrontmatterによる期限指定は拒否する。`inbox`または`hold`のAWIの期限は`atk wi edit <ファイル名> --cooldown-until <日時>`で変更し、この編集だけは空文字列で解除できる。`processing`では設定と解除の双方を拒否する。
 
 セッション画面を開いたままでも、ローカルと設定済みリモートホストで新しいセッションの記録が保存されると一覧へ自動で加わり、表示中の記録へ追記されたイベントも再読み込みせずに右ペインへ現れる。右ペインは記録の先頭100件を描画し、末尾までスクロールすると続きを自動で描画して、記録の最後のイベントまで読み進められる。右ペインの更新では、開いたイベント、描画した件数およびスクロール位置を保つ。末尾を表示している間は追記に合わせて末尾へ進み、それより上を読んでいる間は位置を保ち、末尾まで読み進めた時点で追記したイベントが現れる。
-右ペインの見出しにはAPI料金換算の推定費用（USD）を表示し、本文に料金表の基準日とトークン数を残す。
+右ペインの見出しにはエンジン名（Claude CodeまたはCodex）と、取得できた場合はセッション名を表示する。セッション名はClaude Codeでは`/rename`などで付けた名前か自動生成された題名、CodexではCodexが保存するthread名である。ホスト名と作業ディレクトリは左ペインの一覧に表示する。
+右ペインの見出しにはAPI料金換算の推定費用（USD）も表示し、本文に料金表の基準日とトークン数を残す。
 親を開くと子孫込み、子や委譲先を開くとその記録自身の額になる。単価不明や読み取れない記録がある場合は、既知分と不明の表示を区別する。
 親の費用は一覧で子孫と確定した記録の更新通知でも更新する。リモートの費用算出にはリモートホスト側のdotfiles更新が必要で、未対応のヘルパーからは費用を取得できない旨を示す。
 一覧への掲載は、記録にユーザーのロールを持つ行が1件でもあるかで決める。ユーザーのロールを持つ行が無い記録（Codexを起動しただけで入力しなかった記録など）は一覧に出ず、その行が保存されると一覧へ加わる。実行環境の挿入本文だけを持つ記録は一覧に残るが、最初の発話の検索値は空になる。リモートホストの自動更新には、リモートホスト側のdotfilesの更新が必要である。

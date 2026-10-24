@@ -420,31 +420,6 @@ async def test_state_publishes_at_max_wait_deadline_and_restarts_debounce(
     assert published == ["changed", "changed"]
 
 
-def test_config_resolves_plans_and_sessions_sources(tmp_path: pathlib.Path) -> None:
-    """設定の読み込みを`serve.toml`に統合し、両画面の参照元を同じファイルで解決する。"""
-    path = tmp_path / "serve.toml"
-    path.write_text(
-        'host = "toml-host"\n'
-        "\n"
-        "[plans]\n"
-        'root = "/srv/plans"\n'
-        'remote_hosts = ["remote-host", "stheno"]\n'
-        "\n"
-        "[sessions]\n"
-        'claude_home = "/srv/claude"\n'
-        'codex_home = "/srv/codex"\n'
-        'remote_hosts = ["remote-host"]\n',
-        encoding="utf-8",
-    )
-    resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
-    assert resolved.plans == config.PlansConfig(root="/srv/plans", remote_hosts=("remote-host", "stheno"))
-    assert resolved.sessions == config.SessionsConfig(
-        claude_home="/srv/claude",
-        codex_home="/srv/codex",
-        remote_hosts=("remote-host",),
-    )
-
-
 @pytest.mark.asyncio
 async def test_cancelled_sync_request_does_not_cancel_shared_sync(
     tmp_path: pathlib.Path,

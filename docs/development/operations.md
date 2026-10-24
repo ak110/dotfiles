@@ -426,7 +426,11 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
   - サブパス公開時は`X-Forwarded-Prefix`ヘッダー付与かつプレフィクスを保持したまま
     転送する構成を前提とする。Web UI側は`pytilpack.quart.ProxyFix`でこれを解釈する
   - ホスト固有の待受設定と、計画ファイル・セッションの参照元はunitへ書かず
-    `~/.config/agent-toolkit/serve.toml`で与える
+    `atk config`の`serve_*`キーで与える
+    - 同じ後処理が`pytools/_internal/setup_atk_serve.py`の`_SERVE_SETTINGS`（`serve_host`と両画面の`remote_hosts`）を統一設定へ保存し、
+      値を変えた場合はサービスを再起動する。この3キーは`update-dotfiles`ごとに宣言値へ戻り、他のキーと他用途の設定は保持する
+    - 以前chezmoiが配布した`~/.config/agent-toolkit/serve.toml`は配布を止めた後も残り、`atk serve`の起動時の自動移行が
+      `serve.toml.migrated`へ改名する。移行前の値を失わないよう、`post_apply.py`の`_REMOVED_PATHS`による一括削除の対象にしない
 - unitは`Environment=PATH`で`%h/.local/bin`、miseのshims、systemdが設定するPATHをこの順に指定する
   - `ExecStart`を絶対パスで書いても、起動されたプログラムが実行ファイル名で解決する外部コマンドには及ばない
   - `~/.local/bin`を先頭へ置き、実体を持つコマンドをmiseのshimより優先する
