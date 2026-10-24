@@ -154,7 +154,8 @@ def test_pytest_owns_fixture_directory_and_reclaims_children(tmp_path: pathlib.P
         # xdist側ではworkerの領域が記録される。controllerが所有する最上位領域も回収される。
         directory = next(path for path in (base, *base.parents) if path.name == "fixtures")
         assert not directory.parent.exists()
-    assert not psutil.pid_exists(observed["pid"]) or psutil.Process(observed["pid"]).status() == psutil.STATUS_ZOMBIE
+    with contextlib.suppress(psutil.NoSuchProcess):
+        assert psutil.Process(observed["pid"]).status() == psutil.STATUS_ZOMBIE
 
 
 @pytest.mark.parametrize("workers", [0, 2])
