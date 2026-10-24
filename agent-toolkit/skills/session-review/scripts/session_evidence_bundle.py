@@ -21,6 +21,7 @@ from session_evidence_extract import (
     _collection_events,
     _default_events,
     _error_event,
+    _recovery_events,
     _unresolved_events,
     _UnresolvedRecord,
 )
@@ -75,7 +76,7 @@ def _bundle_events(
     取捨は代替対象の集計を確認してから判断する。
     保存先のファイルと同じ内容になる集計と通知の走査は標準出力へ返さない。呼び出し元が同じ内容を
     ファイルと標準出力の双方から受け取ると、標準出力の分量が実行環境の切り詰めの上限に達するためである。
-    未解決記録のイベントはどのファイルにも保存しないため、標準出力へ1回だけ書く。各ファイルの内容は、
+    未解決記録と回復した記録行のイベントはどのファイルにも保存しないため、標準出力へ1回だけ書く。各ファイルの内容は、
     その走査を単独で実行した出力から未解決記録のイベントと`record-provenance`を除き、全収集記録の
     `record-provenance`を加えたものと一致する。単独実行の標準出力は結果が参照する記録の由来だけを返すが、
     `session_review_prepare.py`は`timeline.jsonl`から候補の記録の由来を取得するため、ファイルは全記録の由来を保つ。
@@ -89,7 +90,7 @@ def _bundle_events(
         ], 2
     resolved = directory.resolve()
     timeline = _default_events(collected, [])
-    metadata = _collection_events(collected, [])
+    metadata = _collection_events(collected, [], recoveries=False)
     warnings = [*metadata, *_warning_collection_events(collected, [])]
     stats = [*metadata, *_stats_events(collected, compaction_record_dir)]
     hook_notices = [*metadata, *_hook_notice_events([record for item in collected for record in item.records])]
@@ -145,6 +146,7 @@ def _bundle_events(
     events.extend(_bundle_timeline_events(timeline))
     events.extend(_bundle_warning_events(warnings))
     events.extend(_unresolved_events(unresolved))
+    events.extend(_recovery_events(collected))
     return events, 0
 
 

@@ -55,7 +55,7 @@ from session_evidence_extract import (
     _CollectedRecord,
     _default_events,
     _error_event,
-    _load_records,
+    _load_records_checked,
     _referenced_provenance_events,
     _Runtime,
     _unresolved_events,
@@ -90,7 +90,7 @@ from agent_toolkit._agents_server import record_paths as _record_paths
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import opencode_records
 from agent_toolkit._common import state_paths as _state_paths
-from agent_toolkit._common.session_family import _started_after_boundary
+from agent_toolkit._common.session_family import _RecordRecovery, _started_after_boundary
 
 _CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録は数えない。"
 
@@ -721,12 +721,27 @@ def main(argv: list[str] | None = None) -> int:
     else:
         transcript_path = args.transcript or args.transcript_path
 
-    records = opencode_collected[0].records if opencode_collected is not None else _load_records(transcript_path)
-    if records is None:
-        return _print_error(
-            f"対象記録を読み込めない: {transcript_path}",
-            next_action="`--transcript`の対象の存在・読み取り権限・UTF-8・各行のJSONを確かめて再実行する",
-        )
+    main_recoveries: tuple[_RecordRecovery, ...] = ()
+    if opencode_collected is not None:
+        records = opencode_collected[0].records
+    else:
+        loaded = _load_records_checked(transcript_path)
+        records, main_recoveries = loaded.records, loaded.recoveries
+        if records is None:
+            failure = loaded.failure
+            if failure is not None and failure.line is not None:
+                return _print_error(
+                    f"対象記録を読み込めない: {transcript_path}（{failure.reason}）",
+                    next_action=(
+                        f"`--transcript`の対象の{failure.line}行目のUTF-8とJSONを、原本を変更せず読取専用で確かめる。"
+                        "直後に同じordinalとtypeの完全な行が無い途中書込みや破損は回復しないため、"
+                        "所在と行番号を生成元の不具合として報告し、振り返りは未完了として保持する"
+                    ),
+                )
+            return _print_error(
+                f"対象記録を読み込めない: {transcript_path}",
+                next_action="`--transcript`の対象の存在・読み取り権限・UTF-8を確かめて再実行する",
+            )
     boundary = None
     if args.observation_boundary is not None:
         try:
@@ -761,7 +776,12 @@ def main(argv: list[str] | None = None) -> int:
         unresolved = opencode_unresolved
     else:
         collected, unresolved = _collect_records(
-            transcript_path, records, delegate_codex_home, boundary, main_only=args.user_events and sum(query_modes) == 1
+            transcript_path,
+            records,
+            delegate_codex_home,
+            boundary,
+            main_only=args.user_events and sum(query_modes) == 1,
+            main_recoveries=main_recoveries,
         )
     compaction_record_dir = (
         Path(args.compaction_record_dir)
