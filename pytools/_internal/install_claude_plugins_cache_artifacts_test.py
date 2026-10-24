@@ -34,7 +34,7 @@ def _cache_dir(tmp_path: pathlib.Path) -> pathlib.Path:
 
 def _write_plugin_copy(install_path: pathlib.Path) -> None:
     """Claude Codeが主作業ツリーから複製した版ディレクトリを再現する（配布物と開発用生成物）。"""
-    for relative in _install_claude_plugins._PLUGIN_CACHE_REQUIRED_FILES:
+    for relative in _install_claude_plugins._plugin_cache_required_files(_NAME):
         target = install_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("", encoding="utf-8")
@@ -105,7 +105,7 @@ def test_removes_only_development_artifacts_inside_cache(
     for artifact in _install_claude_plugins._PLUGIN_CACHE_DEVELOPMENT_ARTIFACTS:
         assert not (cache_dir / artifact).exists(), artifact
     assert (cache_dir / "agent_toolkit" / "hook.py").read_text(encoding="utf-8") == "hook"
-    assert not _install_claude_plugins._missing_plugin_cache_files(cache_dir)
+    assert not _install_claude_plugins._missing_plugin_cache_files(_NAME, cache_dir)
 
 
 def test_keeps_artifacts_outside_cache(tmp_path: pathlib.Path, install_into: typing.Callable[..., None]) -> None:

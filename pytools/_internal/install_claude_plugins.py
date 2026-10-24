@@ -30,10 +30,12 @@ from pytools._internal import (
 logger = logging.getLogger(__name__)
 
 
-# plugin cache の version 直下に揃っている必要があるファイル。
-# いずれかが欠けると `uv run --project <キャッシュ>` がそのディレクトリをプロジェクトとして
-# 解決できず、対象 plugin の起動スクリプトが import に失敗する。
-_PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = ("pyproject.toml", "uv.lock", ".claude-plugin/plugin.json")
+# plugin cache の version 直下に全plugin共通で揃っている必要があるファイル。
+_PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = (".claude-plugin/plugin.json",)
+
+# Python実行pluginは起動スクリプトが`uv run --project <キャッシュ>`で依存を解決する。
+_PYTHON_RUNTIME_PLUGIN_NAMES: frozenset[str] = frozenset({"agent-toolkit", "agent-toolkit-agy", "agent-toolkit-codex"})
+_PYTHON_RUNTIME_PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = ("pyproject.toml", "uv.lock")
 
 # directory型marketplaceからの導入で、主作業ツリーのgitignore対象ごと版ディレクトリへ複製される開発用の生成物。
 # `.venv`は主作業ツリーの開発環境の実バイトの複製（版ごとに約0.9G）で、pluginの実行は`scripts/launch.py`が
@@ -754,9 +756,16 @@ def _plugin_cache_directory(name: str) -> Path | None:
     return None
 
 
-def _missing_plugin_cache_files(cache_dir: Path) -> list[str]:
+def _plugin_cache_required_files(name: str) -> tuple[str, ...]:
+    """pluginの配布形態に対応するcacheの必須ファイルを返す。"""
+    if name in _PYTHON_RUNTIME_PLUGIN_NAMES:
+        return _PYTHON_RUNTIME_PLUGIN_CACHE_REQUIRED_FILES + _PLUGIN_CACHE_REQUIRED_FILES
+    return _PLUGIN_CACHE_REQUIRED_FILES
+
+
+def _missing_plugin_cache_files(name: str, cache_dir: Path) -> list[str]:
     """必須ファイルのうち plugin cache に揃っていないものを列挙する。"""
-    return [relative for relative in _PLUGIN_CACHE_REQUIRED_FILES if not (cache_dir / relative).is_file()]
+    return [relative for relative in _plugin_cache_required_files(name) if not (cache_dir / relative).is_file()]
 
 
 def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired", "deferred"]:
@@ -799,7 +808,7 @@ def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired",
             ),
         )
         return "unchanged"
-    missing = _missing_plugin_cache_files(cache_dir)
+    missing = _missing_plugin_cache_files(name, cache_dir)
     if not missing:
         return "unchanged"
     reasons = claude_plugin_references.holding_reasons(claude_plugin_references.scan(), cache_dir, session_window=None)
@@ -828,7 +837,7 @@ def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired",
         message = f"plugin cache の修復インストールに失敗しました: {log_format.home_short(cache_dir)}"
         raise RuntimeError(f"{name}: {message}")
     repaired_dir = _plugin_cache_directory(name) or cache_dir
-    missing = _missing_plugin_cache_files(repaired_dir)
+    missing = _missing_plugin_cache_files(name, repaired_dir)
     if missing:
         command = f"claude plugin install {name}@{claude_common.MARKETPLACE_NAME} --scope=user -y"
         message = (

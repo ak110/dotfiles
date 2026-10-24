@@ -532,7 +532,10 @@ class TestEnsurePluginCacheComplete:
 
     _NAME = "agent-toolkit"
 
-    def _prepare(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, *, install_path: pathlib.Path) -> None:
+    def _prepare(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, *, install_path: pathlib.Path, name: str | None = None
+    ) -> None:
+        name = name or self._NAME
         installed = tmp_path / "plugins" / "installed_plugins.json"
         installed.parent.mkdir(parents=True, exist_ok=True)
         installed.write_text(
@@ -540,7 +543,7 @@ class TestEnsurePluginCacheComplete:
                 {
                     "version": 2,
                     "plugins": {
-                        f"{self._NAME}@{_claude_common.MARKETPLACE_NAME}": [
+                        f"{name}@{_claude_common.MARKETPLACE_NAME}": [
                             {"scope": "user", "version": "1.0.0", "installPath": str(install_path)}
                         ]
                     },
@@ -551,9 +554,9 @@ class TestEnsurePluginCacheComplete:
         )
         monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", installed)
 
-    def _write_cache(self, cache_dir: pathlib.Path, *, missing: tuple[str, ...] = ()) -> None:
+    def _write_cache(self, cache_dir: pathlib.Path, *, name: str | None = None, missing: tuple[str, ...] = ()) -> None:
         cache_dir.mkdir(parents=True, exist_ok=True)
-        for relative in _install_claude_plugins._PLUGIN_CACHE_REQUIRED_FILES:
+        for relative in _install_claude_plugins._plugin_cache_required_files(name or self._NAME):
             if relative in missing:
                 continue
             target = cache_dir / relative
@@ -576,6 +579,22 @@ class TestEnsurePluginCacheComplete:
 
         assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "unchanged"
 
+    def test_skill_only_cache_does_not_require_python_project(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """スキル専用pluginはmanifestだけで完全なcacheとして扱う。"""
+        name = "agent-basics"
+        cache_dir = tmp_path / "plugins" / "cache" / "ak110-dotfiles" / name / "1.0.0"
+        self._prepare(monkeypatch, tmp_path, install_path=cache_dir, name=name)
+        self._write_cache(cache_dir, name=name)
+        monkeypatch.setattr(
+            _install_claude_plugins,
+            "_install_plugin",
+            lambda _name: pytest.fail("スキル専用pluginのcache修復を起動した"),
+        )
+
+        assert _install_claude_plugins._ensure_plugin_cache_complete(name) == "unchanged"
+
     def test_missing_file_triggers_repair_install(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """欠落を検出したらキャッシュを削除して再インストールし、欠落を解消する。"""
         cache_dir = self._cache_dir(tmp_path)
@@ -593,7 +612,7 @@ class TestEnsurePluginCacheComplete:
 
         assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "repaired"
         assert calls == [self._NAME]
-        assert _install_claude_plugins._missing_plugin_cache_files(cache_dir) == []
+        assert _install_claude_plugins._missing_plugin_cache_files(self._NAME, cache_dir) == []
 
     @pytest.mark.skipif(sys.platform != "linux", reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
     @pytest.mark.parametrize(
@@ -645,7 +664,7 @@ class TestEnsurePluginCacheComplete:
 
         assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "repaired"
         assert calls == [self._NAME]
-        assert _install_claude_plugins._missing_plugin_cache_files(cache_dir) == []
+        assert _install_claude_plugins._missing_plugin_cache_files(self._NAME, cache_dir) == []
 
     def test_still_missing_after_repair_fails_with_file_names(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
