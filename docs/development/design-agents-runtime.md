@@ -244,12 +244,21 @@ goalの上限停止は[goalのextension](https://github.com/openai/codex/blob/ru
 過去の観測条件と再検証手段は[audit-records.md](audit-records.md)の「docs/development/design-agents-runtime.md：Codexの利用上限記録と再開：2026年10月14日」にある。
 起草時の元session記録はリポジトリ外の私有記録であり、設計判断の確認には上記の公開ソースとリポジトリ内の実装・テストを使う。
 
-最上位のCodex TUIの解除後の自動再開は未達であり、`/goal resume`か発話で続ける。
+最上位のCodex TUIの解除後の自動再開は実装せず、`/goal resume`か発話で続ける。
 利用上限で失敗したturnはStop hookを呼ばずに終わる。
 `/goal`の状態は`usage_limited`となり、自動継続を停止する。
-外側から`codex queue`を送る案は共有daemonへ接続しない起動を対象にできない。
-daemon接続時もTUI終了後のagents_serverの寿命と、表示中threadへの投入の表示を実機で確かめる必要がある。
-この実機観測と自動再開の実装は独立した後続作業とする。
+検討した案は、agents_serverが起動元threadのrolloutを監視し、解除予定時刻の後に`codex queue --thread <thread-id>`で再開の指示を1回送る方式である。
+Codex CLI 0.164.0の実機観測では、共有daemonへ接続したidleのTUIへ`codex queue`で積んだ指示は直ちにturnを始め、TUIの画面に表示された。
+一方で次の2点から、監視側はTUIを閉じた会話への送信を避けられない。
+
+- TUIが使うagents_serverのMCPプロセスはTUIの子ではなくdaemonの子として起動し、TUIの終了後も残る。daemonは最後の購読者が離れても、購読者とthreadの活動が無い状態が30分続くまでthreadを読込済みに保つ（[app-serverの公式資料](https://learn.chatgpt.com/docs/app-server)「Unsubscribe from a loaded thread」）。TUIの終了後に積んだ指示は、画面の無いままdaemonでturnを始めて完了した
+- そのMCPプロセスの環境に`CODEX_THREAD_ID`は無く、監視側は起動元のthreadを特定できない。app-serverの公開要求にもthreadの購読者の有無を返すものが無く、TUIの終了を判別できない
+
+閉じた会話を無人で再開すると、ユーザーが画面で確認できない作業が承認設定のまま進む。
+このため送信の安全条件（TUIが開いている間だけ送る）を満たす手段が無く、監視を実装しない。
+共有daemonへ接続しない起動（`-c`などを指定したTUI）は`codex queue`の宛先にもならない。
+観測の条件と再検証手段は[audit-records.md](audit-records.md)の「docs/development/design-agents-runtime.md：最上位のCodex TUIの解除後の再開：2026年10月24日」にある。
+Codexがthreadの購読者を判別できる公開手段、またはMCPプロセスへ起動元のthreadを渡す手段を提供した版では、同じ方式を再評価できる。
 
 ## 委譲先の起動失敗を待機側が観測できる状態
 

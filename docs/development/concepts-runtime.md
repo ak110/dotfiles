@@ -118,7 +118,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
 | Agentツールのサブエージェント | メインのセッションの一部であり、メインの再開で委譲元が続ける |
 | Codexのrun-skill | 解除後に`codex exec resume`で同じ会話を再開する |
 | Codexのprocess-loopの子 | 上限で止まった所有する子を終了し、次の反復の候補判定を経てレーンとWIから続ける |
-| 端末で`codex`を直接起動した対話画面 | 自動再開は未達として独立した実機観測・実装へ渡す。現行の操作は解除後の`/goal resume`か発話とする |
+| 端末で`codex`を直接起動した対話画面 | 自動再開しない。外部からの`codex queue`は画面を閉じた会話も無人で再開させ、送信側が画面の終了を判別できないため（2026年10月24日の実機観測、[design-agents-runtime.md](design-agents-runtime.md#api失敗過負荷利用上限の待機)）。解除後に`/goal resume`か発話で続ける |
 | Codex TUIの子thread | 親threadの再開で親が続ける |
 | agents_serverのCodex委譲先 | run-skillとprocess-loopの再開の対象外。既存の接続先移行と、終端した前任からの引き継ぎ起動で扱う |
 | Codexのcommit | `--ephemeral`の単発操作であり、失敗を終了コードと次の操作として呼出元のエージェントへ返す |
