@@ -973,6 +973,35 @@ def test_explicit_foreign_skill_keeps_startup_and_followup_declarations(tmp_path
     assert str(active) not in _notice_body(selected)
 
 
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("shell", [False, True])
+@pytest.mark.usefixtures("memory")
+def test_packaged_skill_read_delivers_startup_material_before_its_own_pending_read(tmp_path, monkeypatch, codex, shell):
+    root = tmp_path / "agent-toolkit"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text(
+        json.dumps({"name": "agent-toolkit", "version": "2.224.0"}), encoding="utf-8"
+    )
+    skill = root / "skills/chosen/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# 選択したskill\n", encoding="utf-8")
+    initial = skill.parent / "initial.md"
+    initial.write_text("# 初動\n判断前の本文\n", encoding="utf-8")
+    rows = [
+        ReadTrigger(skill, 1, "起動時", ("skill:chosen",), (initial,)),
+        ReadTrigger(skill, 2, "判断", ("read:*/skills/chosen/SKILL.md",), (skill,), selector="same-document"),
+    ]
+    monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
+    tool, inputs = ("Bash", {"command": f"cat -- {skill}"}) if shell else ("Read", {"file_path": str(skill)})
+
+    first = read_delivery.deliver(payload, tool, inputs, "test")
+    assert str(initial) in _notice_body(first)
+    read_delivery.observe({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
+    assert _guidance(read_delivery.deliver(payload, tool, inputs, "test")) is None
+
+
 @pytest.mark.parametrize("case", ["full", "section", "actor", "changed", "data"])
 def test_only_current_full_actor_proof_activates_plugin_declarations(tmp_path, monkeypatch, case):
     active, foreign = _two_plugin_roots(tmp_path, monkeypatch)

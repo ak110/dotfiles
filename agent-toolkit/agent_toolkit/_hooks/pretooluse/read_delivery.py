@@ -973,9 +973,11 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             return Decision()
     if any(target.path in acquisition_paths for target in pending):
         _select_targets(session_id, pending, agent)
-        # 取得操作を許可し、PostToolUseで返却本文と資料の指定範囲が一致するか確かめる。
-        # 次の依存操作では取得完了を確かめ、未取得なら関連資料を案内する。
-        return Decision()
+        pending = [target for target in pending if target.path not in acquisition_paths]
+        if not pending:
+            # 取得操作を許可し、PostToolUseで返却本文と資料の指定範囲が一致するか確かめる。
+            # 次の依存操作では取得完了を確かめ、未取得なら関連資料を案内する。
+            return Decision()
     shown = "、".join(f"`{path}`" for path in pending)
     if warning_only:
         if tool_name != "ExitPlanMode":
