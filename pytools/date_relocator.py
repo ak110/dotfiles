@@ -24,15 +24,17 @@ def main() -> None:
     enable_completion(parser)
     args = parser.parse_args()
     setup_logging()
+    failures = 0
     for target in args.targets:
         if not target.is_dir():
+            failures += 1
             logger.warning(
                 ("%s はディレクトリではありません。スキップして続行します。存在するディレクトリを指定して再実行してください。"),
                 target,
             )
             continue
         relocate(target, dry_run=args.dry_run)
-    sys.exit(0)
+    sys.exit(1 if failures else 0)
 
 
 def relocate(target: pathlib.Path, *, dry_run: bool = False) -> None:

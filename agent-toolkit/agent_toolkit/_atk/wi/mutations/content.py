@@ -56,6 +56,30 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
 """`atk wi edit`が変更を受け付けない予約キーと、代わりに行う操作の対応。"""
 
 
+def _outside_fence_heading_offset(content: str, heading: str) -> int | None:
+    """コードフェンス外にある最初の厳密な見出しのバイト位置を返す。"""
+    offset = 0
+    fence: str | None = None
+    for line in content.splitlines(keepends=True):
+        stripped = line.rstrip("\r\n")
+        marker = stripped.lstrip(" ")
+        if marker.startswith(("```", "~~~")):
+            token = marker[:3]
+            if fence is None:
+                fence = token
+            elif token == fence:
+                fence = None
+        elif fence is None and stripped == heading:
+            return offset
+        offset += len(line.encode("utf-8"))
+    return None
+
+
+def _message_starts_result_heading(message: str) -> bool:
+    """追記本文の最初の非空行が処理結果見出しかを返す。"""
+    return next((line for line in message.splitlines() if line.strip()), "") == "## 処理結果"
+
+
 def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
     """$EDITORでユーザーコメントを変更し、保存を拒否した場合に真を返す。"""
     if not is_agent_environment():
@@ -95,11 +119,14 @@ def _preserve_agent_user_comment(original: str, updated: str) -> str:
     return updated.rstrip("\r\n") + "\n\n" + saved_user_comment
 
 
-def _require_agent_edit_source(content: str) -> None:
-    """エージェント環境の編集結果でsourceが確定していることを検証する。"""
+def _require_agent_edit_source(original: str, content: str) -> None:
+    """保存済みのsource欠落を保持する編集を受理し、明示sourceは非空文字列として検証する。"""
     if not is_agent_environment():
         return
+    stored = _frontmatter.parse_frontmatter(original)
     parsed = _frontmatter.parse_frontmatter(content)
+    if stored is not None and parsed is not None and "source" not in stored[0] and "source" not in parsed[0]:
+        return
     raw_source = parsed[0].get("source") if parsed is not None else None
     if not isinstance(raw_source, str) or not raw_source:
         raise WebInputError(
@@ -462,7 +489,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             tmp_path.unlink(missing_ok=True)
         sys.exit(1)
     try:
-        _require_agent_edit_source(edited)
+        _require_agent_edit_source(original, edited)
         if message is not None or tmp_path is not None:
             # 既存本文が旧書式でも、置換後の本文の`直接的原因`行は必ず判定する。
             _add.require_confirmed_cause(edited)
@@ -571,14 +598,24 @@ def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: s
                 next_action=_USER_COMMENT_BROKEN_NEXT_ACTION.format(name=path.name),
             )
             sys.exit(1)
+        result_boundary = (
+            b"" if _outside_fence_heading_offset(before_user_comment, "## 処理結果") is not None else "\n\n## 処理結果".encode()
+        )
+        if _message_starts_result_heading(message):
+            result_boundary = b""
         content = (
             before_user_comment.encode("utf-8")
+            + result_boundary
             + b"\n\n"
             + message.encode("utf-8")
             + (b"\n\n" + saved_user_comment.encode("utf-8") if saved_user_comment else b"")
         )
     else:
-        content = snapshot + b"\n\n" + message.encode("utf-8")
+        result_offset = _outside_fence_heading_offset(original, "## 処理結果")
+        if result_offset is None:
+            content = snapshot + b"\n\n" + message.encode("utf-8")
+        else:
+            content = snapshot[:result_offset] + message.encode("utf-8") + b"\n\n" + snapshot[result_offset:]
     finalized_content: dict[str, str] = {}
     try:
         append_entry_content(

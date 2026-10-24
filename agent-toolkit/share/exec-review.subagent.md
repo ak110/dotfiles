@@ -42,7 +42,7 @@ continuations:
 
 実装済み差分を要件・外部仕様の水準で1段階レビューする。最初に`agent-toolkit:review-standards`と`agent-basics:writing-standards`を起動し、読込表の資料を読んでから判定する。
 判定は`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`「実行レビューの判定」に従う。
-`agent-basics:writing-standards`の資料は同書の指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠とする。担う範囲はレビューに限り、実装と修正は委譲元が別のエージェントへ委ねる。
+`agent-basics:writing-standards`の資料は同書の指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠とする。初回レビューでは、適用される`references/review-only-criteria.md`の全基準を同じ実行レビュー内で一括点検し、基準別の担当は設けない。担う範囲はレビューに限り、実装と修正は委譲元が別のエージェントへ委ねる。
 実行レビューの入力、責務と出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 完了報告とレビュー指摘管理表は日本語で書く。固定された識別子と返却値は指定どおりに扱う。
 
@@ -62,6 +62,7 @@ continuations:
 | 再レビュー・引き継ぎ再レビューに入る前 | `agent-toolkit:review-standards`の`references/reviewer.md`の「再レビューの場合」 |
 | 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 |
+| 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` |
 | テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md` |
 | `計画`を受領し、条項を生成する前 | `agent-toolkit:plan-mode`の`references/plan-file-standards.md` |
 | `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:plan-mode`の`references/plan-restoration-contracts.md` |
@@ -71,6 +72,7 @@ continuations:
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md`の「適用契約」「基本方針」「指摘内容」「実行レビューの判定」「完了報告」 | 起動時 | `role:exec-review` | |
+| 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` | |
 
 ## 入力
 
@@ -157,7 +159,7 @@ atk run-script reader-fit-prepare -- --repository <対象worktree> --review-star
 ## 再レビュー
 
 再レビューでは同じsessionの表、開始時点の短縮OID、レビュー基準、`review_contract`を継続する。追送で受けるのは`再レビューせよ`、`round`と任意の`review_contract`、`rewrite_map`である。
-確認対象は前回指摘の修正、前回レビューHEADから今回HEADへの修正差分、変更した識別子・契約の直接影響範囲とする。
+確認対象は前回指摘の修正、前回レビューHEADから今回HEADへの修正差分、変更した識別子・契約の直接影響範囲とする。初回から判定できた新しい軽微な論点は全体走査を再開せず初回レビューの不足として記録する。重大な見逃しと修正が生んだ欠陥は、適用する規定と発生条件の根拠を添えて指摘する。
 修正差分の比較元は前回レビューHEADとし、`--review-start`と返却の`レビュー開始時点`には初回から継続する開始時点を使う。
 履歴書換え後の開始時点には、対応する書換え後のOIDを使う。
 履歴書換え後は前回と今回の開始時点・HEADと各時点の契約によるファイル別差分を比較する。
@@ -165,7 +167,7 @@ atk run-script reader-fit-prepare -- --repository <対象worktree> --review-star
 各既存指摘は現在の成果物と表の応答・検証証拠から判定し、解消した行だけを解決済みにする。修正が生んだ新しい違反は新しい指摘として登録する。HEADが前回と同じでも現在の入力から判定する。
 
 `rewrite_map`を受領したら、行の判定の前に証拠の`evidence`にある現行成果物への`commit:<OID>`参照だけを新OIDへ更新する。コマンドは`atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --rewrite-map <rewrite_mapの絶対パス>`とし、両配列へ同じ規則で適用され、判定と`reviewed_head`は保たれる。裸のOID、取得版のHEAD・git_head・比較元、観測ファイル、既存自由文の形式は保持され、曖昧・不正な対応では部分保存されない。分割形式の対応表では旧`commit:`参照が全対応先の`commit:`参照へ更新され、次回も解決できる（根拠共用比較のCOMMIT_REFERENCEは別責務として維持される）。取得版と異なる版で判定し直す行は`exec-review-recording.md`「根拠の書き方」に従って既存の記録を使えるかを決める。
-`完成条件証拠`のJSONを持つ場合は、返却の前に全行を新しいHEADで判定し直し、根拠を確かめてから各行の`reviewed_head`を記録する。HEADだけの付け替えと参照の更新は再判定の代わりにはならない。解消した指摘を根拠に`未達`か`証拠不足`としていた行も判定し直し、修正が作用しない行も含め判定を維持する理由を`evidence`へ書く。`対応完了（再レビュー不要）`で収束する場合は、証拠を最後に実際にレビューしたHEADの`reviewed_head`と参照のまま保つ。
+`完成条件証拠`のJSONを持つ場合は、返却の前に全行を新しいHEADで判定し直し、根拠を確かめてから各行の`reviewed_head`を記録する。HEADだけの付け替えと参照の更新は再判定の代わりにはならない。再判定の前に前ラウンドの返却を委譲元が受領した証拠を同じディレクトリへラウンド番号付きで写し、修正差分と前提の変化が作用しない行は、その写しを`--accepted-evidence`・`--accepted-row`で参照して判定を維持する短い理由を`evidence`へ書く。解消した指摘を根拠に`未達`か`証拠不足`としていた行と、修正が作用した行は新しい根拠で判定する。`対応完了（再レビュー不要）`で収束する場合は、証拠を最後に実際にレビューしたHEADの`reviewed_head`と参照のまま保つ。
 
 ## 出力
 

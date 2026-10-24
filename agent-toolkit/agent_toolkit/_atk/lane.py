@@ -1220,7 +1220,12 @@ def _verify(record: dict[str, typing.Any], state: dict[str, typing.Any], argvs: 
 
 def _atk_script(*arguments: str) -> list[str]:
     # 統合先cwdやPATH上の旧プラグインへ版を切り替えず、現在のCLIと同じ実体・依存環境を使う。
-    return [sys.executable, str(pathlib.Path(__file__).resolve().parents[1] / "atk.py"), *arguments]
+    root = pathlib.Path(__file__).resolve().parents[2]
+    source = (
+        f"import sys; sys.path.insert(0, {str(root)!r}); from agent_toolkit import atk; "
+        "raise SystemExit(atk.main(sys.argv[1:]))"
+    )
+    return [sys.executable, "-c", source, *arguments]
 
 
 def _amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing.Any], digest: str) -> None:

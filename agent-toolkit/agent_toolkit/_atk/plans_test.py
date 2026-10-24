@@ -792,10 +792,13 @@ def test_commit_plan_moves_working_bundle_and_removes_source_after_commit(tmp_pa
     main = _plan_file.working_plans_root(home) / relative
     detail = main.with_name(main.stem + ".detail.md")
     review = main.with_name(main.stem + ".exec-review.tsv")
+    unrelated = main.with_name(main.stem + ".unrelated.md")
+    unrelated_contents = b"working notes\x00\xff\n"
     main.parent.mkdir(parents=True)
     main.write_text("# main\n", encoding="utf-8")
     detail.write_text("# detail\n", encoding="utf-8")
     review.write_text('1\t"implementation-review"\n', encoding="utf-8")
+    unrelated.write_bytes(unrelated_contents)
 
     result = _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
@@ -807,6 +810,8 @@ def test_commit_plan_moves_working_bundle_and_removes_source_after_commit(tmp_pa
     assert saved_main.read_text(encoding="utf-8") == "# main\n"
     assert not main.exists()
     assert detail.read_text(encoding="utf-8") == "# detail\n"
+    assert unrelated.read_bytes() == unrelated_contents
+    assert not (saved_main.parent / unrelated.name).exists()
     assert not review.exists()
 
 

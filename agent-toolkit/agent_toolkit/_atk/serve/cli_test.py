@@ -18,6 +18,8 @@ import zlib
 import pytest
 import watchdog.events
 
+from agent_toolkit import atk
+from agent_toolkit._atk import config as toolkit_config
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import assets, config, state, wi_operations
 from agent_toolkit._atk.serve import cli as serve
@@ -44,19 +46,25 @@ from agent_toolkit._testing.serve_support import (
 _HOST_ENVIRON = dict(os.environ)
 
 
-def test_config_precedence_and_platform_ports(tmp_path: pathlib.Path) -> None:
-    """設定優先順位とOS別ポートを検証する。"""
-    path = tmp_path / "serve.toml"
-    path.write_text('host = "toml-host"\nport = 3000\n', encoding="utf-8")
-    env = {
-        "AGENT_TOOLKIT_SERVE_CONFIG": str(path),
-        "AGENT_TOOLKIT_SERVE_HOST": "0.0.0.0",
-        "AGENT_TOOLKIT_SERVE_PORT": "4000",
-    }
-    assert config.resolve_config(environ=env) == config.ServeConfig("0.0.0.0", 4000)
-    assert config.resolve_config(host="cli-host", port=5000, environ=env) == config.ServeConfig("cli-host", 5000)
-    assert config.default_port("linux") == 28766
-    assert config.default_port("win32") == 28876
+def test_config_precedence_and_platform_ports(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """`atk config`の保存値をSERVE環境変数とCLIが順に上書きし、未保存の待受ポートはOS別の値になる。"""
+    for name in ("AGENT_TOOLKIT_SERVE_HOST", "AGENT_TOOLKIT_SERVE_PORT", "AGENT_TOOLKIT_SERVE_CONFIG"):
+        monkeypatch.delenv(name, raising=False)
+    for key in ("SERVE_HOST", "SERVE_PORT"):
+        monkeypatch.delenv(f"AGENT_TOOLKIT_CONFIG_{key}", raising=False)
+    assert config.resolve_config() == config.ServeConfig("127.0.0.1", toolkit_config.serve_default_port())
+    assert toolkit_config.serve_default_port("linux") == 28766
+    assert toolkit_config.serve_default_port("win32") == 28876
+    for key, value in (("serve_host", "saved-host"), ("serve_port", "3000")):
+        with pytest.raises(SystemExit) as exited:
+            atk.main(["config", "set", key, value])
+        assert exited.value.code == 0
+    capsys.readouterr()
+    assert config.resolve_config() == config.ServeConfig("saved-host", 3000)
+    monkeypatch.setenv("AGENT_TOOLKIT_SERVE_HOST", "0.0.0.0")
+    monkeypatch.setenv("AGENT_TOOLKIT_SERVE_PORT", "4000")
+    assert config.resolve_config() == config.ServeConfig("0.0.0.0", 4000)
+    assert config.resolve_config(host="cli-host", port=5000) == config.ServeConfig("cli-host", 5000)
 
 
 def test_text_assets_are_bundled_as_plugin_files() -> None:

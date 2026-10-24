@@ -62,11 +62,11 @@ def _missing_records(worktree: pathlib.Path, records: list[_Record], previous: s
             seen.add(record.resolve())
             if root in (working, saved) and record.stem in provided_stems:
                 continue
-            events = commit_mapping.file_events(path)
-            if record.is_file():
-                events = commit_mapping.body_events(record.read_text(encoding="utf-8")) + events
-            names = _allowed_wis(_Record(record, True), "", events)
             try:
+                events = commit_mapping.file_events(path)
+                if record.is_file():
+                    events = commit_mapping.body_events(record.read_text(encoding="utf-8")) + events
+                names = _allowed_wis(_Record(record, True), "", events)
                 mapping = commit_mapping.read_mapping(worktree, events, names, allow_missing=True)
                 affected = commit_mapping.rewritten_commits(worktree, mapping, previous)
             except commit_mapping.CommitMappingError:

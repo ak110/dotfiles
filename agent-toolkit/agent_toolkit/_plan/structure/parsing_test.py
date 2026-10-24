@@ -360,7 +360,7 @@ def test_detail_structure_rejects_invalid_implementation_unit_contract(old: str,
     assert any(message in error for error in errors), errors
 
 
-@pytest.mark.parametrize("content", [_HUMAN_DETAIL_CONTENT, _VALID_DETAIL_CONTENT])
+@pytest.mark.parametrize("content", [_HUMAN_DETAIL_CONTENT, _VALID_DETAIL_CONTENT], ids=["human-detail", "valid-detail"])
 def test_detail_structure_reads_legacy_verification_column(content: str) -> None:
     """進行中の二ファイル計画は旧検証列名を読める。"""
     legacy = content.replace("変更範囲の検証", "近接検証", 1)

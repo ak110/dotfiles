@@ -2,7 +2,7 @@
 
 | 時点または条件（対象の拡張子・ファイル名・パス・依存名） | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| `py` | `references/python.md` | 操作 | `path:*.py` | |
+| `py` | `references/python.md`の「言語スタイル」「テストコード（pytest）」「Python新構文と導入バージョン」 | 操作 | `path:*.py` | |
 | `ts`・`tsx` | `references/typescript.md` | 操作 | `path:*.ts`、`path:*.tsx` | |
 | `rs` | `references/rust.md` | 操作 | `path:*.rs` | |
 | `cs` | `references/csharp.md` | 操作 | `path:*.cs` | |

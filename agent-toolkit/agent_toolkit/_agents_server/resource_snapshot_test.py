@@ -62,9 +62,7 @@ async def test_resource_snapshot_follows_public_session_lifecycle(
 ) -> None:
     """共通managerは全engineの新規・reply・登録簿からの再開と終端だけを既存の回転ログへ記録する。"""
     async with _manager(tmp_path, monkeypatch, engine) as manager:
-        logger = logging.getLogger("agent-toolkit.agents-server")
-        original_handlers, original_level, original_propagate = logger.handlers[:], logger.level, logger.propagate
-        logger.handlers = []
+        # loggerのhandlerの退避と回収は`pytest_plugin`の自動fixtureが行う。
         path = logging_config.configure_logging()
         try:
             started = await manager.start("plan", "秘密の本文を記録しない", str(tmp_path))
@@ -107,9 +105,6 @@ async def test_resource_snapshot_follows_public_session_lifecycle(
             assert "秘密の本文" not in path.read_text(encoding="utf-8")
         finally:
             await manager.close()
-            for handler in logger.handlers:
-                handler.close()
-            logger.handlers, logger.level, logger.propagate = original_handlers, original_level, original_propagate
 
 
 @pytest.mark.asyncio

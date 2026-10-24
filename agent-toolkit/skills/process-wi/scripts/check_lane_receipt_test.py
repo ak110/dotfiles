@@ -151,7 +151,21 @@ def test_public_receipt_checks_git_and_completed_finalization(
     assert code == 1 and not output and "次の操作:" in diagnostic
 
 
-@pytest.mark.parametrize("condition", ["leave-open", "previous-reply", "plan", "handoff"])
+@pytest.mark.parametrize("field", ["想定外事象", "気付いた改善点"])
+def test_public_receipt_accepts_subagent_annotations(
+    receipt_case: dict[str, Any], capsys: pytest.CaptureFixture[str], field: str
+) -> None:
+    """共通の返却規範が許す末尾の報告と、原本にある統合結果の確認を両立する。"""
+    receipt_case["rows"][field] = f"観測と詳細は引き継ぎ記録へ保存済み。\n{field}: 下位担当の報告を逐語で継承した。"
+    code, output, diagnostic = _invoke(receipt_case, capsys)
+    assert code == 0, diagnostic
+    assert json.loads(output)["head"] == receipt_case["after"]
+    receipt_case["rows"]["統合後のHEAD"] = receipt_case["before"][:12]
+    code, output, diagnostic = _invoke(receipt_case, capsys)
+    assert code == 1 and not output and "次の操作:" in diagnostic
+
+
+@pytest.mark.parametrize("condition", ["leave-open", "previous-reply", "plan", "handoff", "module-launch"])
 def test_public_receipt_resolves_original_sources_and_missing_launch_facts(
     receipt_case: dict[str, Any], capsys: pytest.CaptureFixture[str], condition: str
 ) -> None:
@@ -171,6 +185,10 @@ def test_public_receipt_resolves_original_sources_and_missing_launch_facts(
     elif condition == "plan":
         manifest["plans"][0]["saved"] = "/missing/first.md"
         extra = ["--plan", str(receipt_case["plans"][0])]
+    elif condition == "module-launch":
+        for wi in manifest["wis"]:
+            for argv in wi["commands"]:
+                argv[:1] = ["env", "-u", "PYTHONPATH", "uv", "run", "--frozen", "python", "-m", "agent_toolkit.atk"]
     else:
         manifest["handoff"] = str(receipt_case["plans"][0])
         manifest["plans"] = []

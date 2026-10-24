@@ -11,6 +11,7 @@ import subprocess
 import typing
 
 import pytest
+from agent_toolkit._atk import config as toolkit_config
 
 from pytools._internal import common, host_roles, setup_atk_serve, systemd_user_unit
 
@@ -194,6 +195,7 @@ class TestRunLauncherDeployment:
             encoding="utf-8",
         )
         launcher.chmod(0o755)
+        toolkit_config.save_mutable_settings(setup_atk_serve._SERVE_SETTINGS)
 
         def unexpected_write(*args: object, **kwargs: object) -> None:
             del args, kwargs
@@ -245,6 +247,61 @@ class TestRunLauncherDeployment:
         assert "find " not in content
         assert "bin/atk" not in content
         assert "exec uv " not in content
+
+
+class TestRunServeSettings:
+    """役割linux_serverのホスト固有の`atk serve`設定を統一設定へ保存する。"""
+
+    @pytest.fixture(name="prepared")
+    def _prepared(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+        """euryale + uv 配置済みの状態を共通セットアップする。"""
+        _run_linux_euryale(monkeypatch, tmp_path)
+        for key in setup_atk_serve._SERVE_SETTINGS:
+            monkeypatch.delenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", raising=False)
+        return tmp_path
+
+    def test_saves_host_settings_keeping_other_values_and_restarts_only_on_change(
+        self,
+        prepared: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """初回と宣言値の変更時に保存して再起動を求め、同じ値の再実行では再起動を求めない。他の設定は保持する。"""
+        del prepared
+        toolkit_config.save_mutable_settings({"serve_port": "28767", "codex_fast_mode": "true"})
+        restarts: list[bool] = []
+
+        def setup(**kwargs: typing.Any) -> bool:
+            restarts.append(kwargs["restart_needed"])
+            return True
+
+        monkeypatch.setattr(systemd_user_unit, "setup", setup)
+        assert setup_atk_serve.run().changed
+        assert setup_atk_serve.run().changed
+        toolkit_config.save_mutable_settings({"serve_host": "127.0.0.1"})
+        assert setup_atk_serve.run().changed
+
+        assert restarts == [True, False, True]
+        for key, value in {**setup_atk_serve._SERVE_SETTINGS, "serve_port": "28767", "codex_fast_mode": "true"}.items():
+            assert toolkit_config.resolve_mutable_setting(key) == value
+
+    def test_broken_unified_settings_fail_without_overwriting(
+        self,
+        prepared: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """統一設定を読めない場合は上書きせず、配置へ進まずに次の操作付きの失敗を返す。"""
+        del prepared
+        path = toolkit_config.process_loop_configuration_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{broken", encoding="utf-8")
+        monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
+
+        result = setup_atk_serve.run()
+
+        assert result.failure is not None
+        assert "保存できない" in result.failure
+        assert result.next_action
+        assert path.read_text(encoding="utf-8") == "{broken"
 
 
 def test_run_propagates_setup_error(

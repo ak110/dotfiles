@@ -13,6 +13,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-time.md#「実装方針の選択」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-time.md#「実装方針の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `encoding.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/encoding.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「QCDと3段判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md#「コメントの再掲と重複」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「コメントの再掲と重複」` |
 
 ## 編集前の読解
 
@@ -52,7 +53,7 @@
 - コメントは意図・成立条件・非自明な理由を残し、冒頭は役割と適用範囲、局所は実装の判断を説明する（努力目標。自明な処理は再掲を避ける）
 - 実装の判断根拠となる外部の挙動と観測値は、観測した原文のまま残す（失うと後続の変更が分岐の成立条件を判定できない）。規範は安定したファイルと節、観測は再現条件、ユーザー要望は恒久的な要件か外部挙動へ変換して書き、セッション、個人、対話の経緯は手元の記録にとどめる
 - コード上に現れる設定値・数値リテラルそのものはコメントへ埋め込まず、選定理由と制約の根拠だけを書く。コード上に現れない値や別の出所を持つ値で判断根拠に要るものは、出所とともに書く
-- 同じ概念の説明は呼出関係の起点へ集約する
+- 同じ概念の説明は呼出関係の起点へ集約する。完成したコードとコメントの再掲と重複を確認する手順は、レビュー限定基準の`review-only-criteria.md`「コメントの再掲と重複」が定める
 - ドキュメントは現在の状態を直接書き、履歴はコミットメッセージへ委ねる（努力目標）。過去の挙動が現在の判断の根拠となる場合は、その挙動を現在の記述へ含める
 
 ## データと計算

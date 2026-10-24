@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -12,7 +13,7 @@ from typing import Any
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import cli as wi_cli
-from agent_toolkit._common import next_action, process_tree
+from agent_toolkit._common import next_action, plugin_environment, process_tree
 from agent_toolkit._git import command
 from agent_toolkit._plan import commit_mapping, locations
 
@@ -50,6 +51,10 @@ def _reply(path: pathlib.Path) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for line in lines[1:]:
         field, separator, value = line.partition(": ")
+        if separator and field in {"想定外事象", "気付いた改善点"}:
+            if set(result) != set(_FIELDS) or not value.strip():
+                raise ValueError(f"返却の追記は必須項目の後へ本文を持つ行で指定する: {field}")
+            continue
         if not separator or field not in _FIELDS or field in result:
             raise ValueError(f"返却の項目が不正または重複している: {field}")
         result[field] = value
@@ -113,7 +118,10 @@ def _dispositions(manifest: dict[str, Any], completed: list[str], leave_open: li
         dispositions: set[str] = set()
         for argv in row["commands"]:
             for index in range(1, len(argv) - 1):
-                if argv[index] != "wi" or pathlib.Path(argv[index - 1]).name not in {"atk", "atk.cmd", "atk.py"}:
+                if argv[index] != "wi":
+                    continue
+                module_launch = index >= 2 and argv[index - 2 : index] == ["-m", "agent_toolkit.atk"]
+                if pathlib.Path(argv[index - 1]).name not in {"atk", "atk.cmd", "atk.py"} and not module_launch:
                     continue
                 if argv[index + 1] not in {"adopt", "reject"}:
                     continue
@@ -218,7 +226,13 @@ def check(args: argparse.Namespace) -> dict[str, Any]:
             head,
         ]
         completed = process_tree.run_with_timeout(
-            invocation, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False
+            invocation,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            check=False,
+            env=plugin_environment.direct_environment(pathlib.Path(__file__).resolve().parents[3], os.environ),
         )
         if completed.returncode:
             raise ValueError(f"変更文書の取得が失敗した: {completed.stderr.strip()}")

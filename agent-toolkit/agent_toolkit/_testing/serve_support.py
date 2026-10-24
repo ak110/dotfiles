@@ -5,7 +5,6 @@
 import contextlib
 import html.parser
 import json
-import os
 import pathlib
 import re
 import subprocess
@@ -21,16 +20,11 @@ from agent_toolkit._atk.serve import cli as serve
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._testing import wi_entry_files
+from agent_toolkit._testing import isolation, wi_entry_files
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
-# そのまま渡すとこの解決が失敗するため、取り込み時点の環境変数を控えてNodeへ渡す。
-# 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
-# module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
-_HOST_ENVIRON = dict(os.environ)
-
-
+# そのまま渡すとこの解決が失敗するため、Nodeを起動する時点で隔離前の値を組み立てて渡す。
 _MODULE_IMPORT_RE = re.compile(r"^import\s*\{[^}]*\}\s*from\s*\"[^\"]+\";\n", re.MULTILINE)
 _MODULE_EXPORT_RE = re.compile(r"^export (?=(?:async )?function |const |let |class )", re.MULTILINE)
 
@@ -88,13 +82,14 @@ class _HtmlDom(html.parser.HTMLParser):
             self.nodes[self._stack[-1]]["text"] += data
 
 
-def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
+def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None = None) -> dict[str, typing.Any]:
     """WI画面のUI関数を最小DOM上で実行し、シナリオのJSON結果を返す。
 
     WI画面はESモジュールであり、モジュールの外から内部の関数と変数を参照できない。
     共通モジュールとWI画面の本文を`import`と`export`を除いて1つの関数スコープへ並べ、
     シナリオも同じスコープへ置いて検証対象の関数を直接呼べるようにする。
     画面の登録先の`shell.js`は文書全体のナビゲーションを扱うため読み込まず、登録関数だけを代替する。
+    `environment`を指定した呼び出し元は、隔離を避けるために子のNodeへ渡す環境を明示する。
     """
     executable = (
         "(() => {\n"
@@ -281,7 +276,7 @@ eval({json.dumps(executable)});
         errors="replace",
         capture_output=True,
         check=False,
-        env=_HOST_ENVIRON,
+        env=isolation.build_host_environ() if environment is None else environment,
     )
     assert completed.returncode == 0, completed.stderr
     return typing.cast(dict[str, typing.Any], json.loads(completed.stdout))

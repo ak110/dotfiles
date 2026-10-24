@@ -7,10 +7,8 @@ import json
 import pathlib
 from typing import Any
 
-import append_progress_log
 import pytest
 import review_contract
-import rewrite_plan_commits
 import yaml
 
 from agent_toolkit._atk import run_script
@@ -106,22 +104,25 @@ def test_generation_accepts_integrated_plan_from_same_repository_worktree(
         assert "次の操作:" in error and "--worktree" not in error
         assert str(linked) in error and "plan-rewrite" in error and "cwd" in error
         assert (
-            append_progress_log.main(
-                [
-                    str(plan),
-                    "--worktree",
-                    str(linked),
-                    "--commit",
-                    "abcdef123456",
-                    "--previous-head",
-                    base,
-                    "--awi",
-                    wi,
-                    "--completed-step",
-                    "記録",
-                    "--result",
-                    "対応",
-                ]
+            run_script.dispatch(
+                argparse.Namespace(
+                    script_name="plan-progress",
+                    script_args=[
+                        str(plan),
+                        "--worktree",
+                        str(linked),
+                        "--commit",
+                        "abcdef123456",
+                        "--previous-head",
+                        base,
+                        "--awi",
+                        wi,
+                        "--completed-step",
+                        "記録",
+                        "--result",
+                        "対応",
+                    ],
+                )
             )
             == 1
         )
@@ -129,21 +130,24 @@ def test_generation_accepts_integrated_plan_from_same_repository_worktree(
         rewrite = tmp_path / "rewrite.json"
         rewrite.write_text(json.dumps({implementation: implementation}), encoding="utf-8")
         assert (
-            rewrite_plan_commits.main(
-                [
-                    "--worktree",
-                    str(linked),
-                    "--previous-head",
-                    "abcdef123456",
-                    "--rewrite-map",
-                    str(rewrite),
-                    "--completed-step",
-                    "記録",
-                    "--result",
-                    "対応",
-                    "--plan",
-                    str(plan),
-                ]
+            run_script.dispatch(
+                argparse.Namespace(
+                    script_name="plan-rewrite",
+                    script_args=[
+                        "--worktree",
+                        str(linked),
+                        "--previous-head",
+                        "abcdef123456",
+                        "--rewrite-map",
+                        str(rewrite),
+                        "--completed-step",
+                        "記録",
+                        "--result",
+                        "対応",
+                        "--plan",
+                        str(plan),
+                    ],
+                )
             )
             == 1
         )

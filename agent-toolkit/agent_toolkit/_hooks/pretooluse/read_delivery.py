@@ -521,17 +521,6 @@ def dynamic_targets(
         return [read_triggers.ReadTarget(pathlib.Path(path)) for path in paths if pathlib.Path(path).is_file()]
     if row.selector == "artifact-standards":
         cwd = payload.get("cwd", "")
-        paths = operation_skills.written_paths(tool_name, tool_input, cwd)
-        mapping = {
-            ".py": "python.md",
-            ".ts": "typescript.md",
-            ".tsx": "typescript.md",
-            ".rs": "rust.md",
-            ".cs": "csharp.md",
-            ".sh": "bash.md",
-            ".ps1": "powershell.md",
-            ".cmd": "windows-batch.md",
-        }
         targets = []
         host = "codex" if is_codex_payload(payload) else "claude"
         provider = document_reads.document_plugin(str(row.source))
@@ -550,14 +539,6 @@ def dynamic_targets(
                 )
             ):
                 targets.extend(candidate.targets)
-        for path in paths:
-            reference = mapping.get(pathlib.Path(path).suffix)
-            if reference:
-                target = read_triggers.resolve_document(
-                    f"{provider}:writing-standards/references/{reference}", row.source, plugin_resources.plugin_root(), host
-                )
-                if target is not None and target.is_file():
-                    targets.append(read_triggers.ReadTarget(target))
         return list(dict.fromkeys(targets))
     if row.selector == "external-pytilpack-index":
         index_ready = agent in records.get("external-document:https://ak110.github.io/pytilpack/llms.txt", [])
@@ -992,9 +973,11 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             return Decision()
     if any(target.path in acquisition_paths for target in pending):
         _select_targets(session_id, pending, agent)
-        # 取得操作を許可し、PostToolUseで返却本文と資料の指定範囲が一致するか確かめる。
-        # 次の依存操作では取得完了を確かめ、未取得なら関連資料を案内する。
-        return Decision()
+        pending = [target for target in pending if target.path not in acquisition_paths]
+        if not pending:
+            # 取得操作を許可し、PostToolUseで返却本文と資料の指定範囲が一致するか確かめる。
+            # 次の依存操作では取得完了を確かめ、未取得なら関連資料を案内する。
+            return Decision()
     shown = "、".join(f"`{path}`" for path in pending)
     if warning_only:
         if tool_name != "ExitPlanMode":

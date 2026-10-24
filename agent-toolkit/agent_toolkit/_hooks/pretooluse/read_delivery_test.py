@@ -271,19 +271,29 @@ def test_external_index_requires_the_selected_page(monkeypatch, tmp_path):
 def test_artifact_standards_use_the_author_declaration(monkeypatch, tmp_path):
     source = tmp_path / "skills/review-standards/SKILL.md"
     author = tmp_path / "skills/writing-standards/SKILL.md"
-    reference = tmp_path / "author-rule.md"
-    reference.write_text("# 作成規範\n対象言語の基準\n", encoding="utf-8")
+    reference = tmp_path / "python.md"
+    reference.write_text("# 作成規範\n## 対象節\n対象言語の基準\n", encoding="utf-8")
+    author.parent.mkdir(parents=True)
+    author.write_text("# 作成側の基準\n", encoding="utf-8")
     row = ReadTrigger(source, 1, "判断", ("skill:review-standards",), (), selector="artifact-standards")
-    declared = ReadTrigger(author, 1, "操作", ("path:*.py",), (reference,))
+    declared = ReadTrigger(author, 1, "操作", ("path:*.py",), (reference,), ("対象節",))
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row, declared])
+    # 旧来の拡張子別の全文対応表が残っていれば`references/python.md`の全文が加わるよう、名前で解決先を分ける。
+    monkeypatch.setattr(
+        read_delivery.read_triggers,
+        "resolve_document",
+        lambda spec, *_args, **_kwargs: reference if spec.endswith("references/python.md") else author,
+    )
     targets = read_delivery.dynamic_targets(
         row, {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / "code.py"), "content": "value = 1"}, {}, "main"
     )
-    assert ReadTarget(reference) in targets
+    assert ReadTarget(author) in targets
+    assert ReadTarget(reference, "対象節") in targets
+    assert ReadTarget(reference) not in targets
     read_targets = read_delivery.dynamic_targets(
         row, {"cwd": str(tmp_path)}, "Read", {"file_path": str(tmp_path / "code.py")}, {}, "main"
     )
-    assert ReadTarget(reference) not in read_targets
+    assert ReadTarget(reference, "対象節") not in read_targets
 
 
 def test_same_skill_name_keeps_plugin_boundary(tmp_path, monkeypatch):
@@ -961,6 +971,35 @@ def test_explicit_foreign_skill_keeps_startup_and_followup_declarations(tmp_path
     selected = read_delivery.deliver(payload, "Do", {}, "test")
     assert str(later) in _notice_body(selected)
     assert str(active) not in _notice_body(selected)
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("shell", [False, True])
+@pytest.mark.usefixtures("memory")
+def test_packaged_skill_read_delivers_startup_material_before_its_own_pending_read(tmp_path, monkeypatch, codex, shell):
+    root = tmp_path / "agent-toolkit"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text(
+        json.dumps({"name": "agent-toolkit", "version": "2.224.0"}), encoding="utf-8"
+    )
+    skill = root / "skills/chosen/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# 選択したskill\n", encoding="utf-8")
+    initial = skill.parent / "initial.md"
+    initial.write_text("# 初動\n判断前の本文\n", encoding="utf-8")
+    rows = [
+        ReadTrigger(skill, 1, "起動時", ("skill:chosen",), (initial,)),
+        ReadTrigger(skill, 2, "判断", ("read:*/skills/chosen/SKILL.md",), (skill,), selector="same-document"),
+    ]
+    monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
+    tool, inputs = ("Bash", {"command": f"cat -- {skill}"}) if shell else ("Read", {"file_path": str(skill)})
+
+    first = read_delivery.deliver(payload, tool, inputs, "test")
+    assert str(initial) in _notice_body(first)
+    read_delivery.observe({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
+    assert _guidance(read_delivery.deliver(payload, tool, inputs, "test")) is None
 
 
 @pytest.mark.parametrize("case", ["full", "section", "actor", "changed", "data"])

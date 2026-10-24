@@ -358,6 +358,17 @@ run `36791008397`が進行中でjob `110143643856`が`completed/success`のと�
 APIは全jobログ、`--log-failed`は失敗ステップを返すため、出力件数の一致は求めない。
 進行中runが無い場合はその条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
 
+## agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月24日
+
+2026年10月24日、LinuxのGitHub CLI 2.102.0で`ak110/dotfiles`の終端済み失敗run `39987263957`とjob `120529624126`（pytest (3.15)）を対象に確認した。
+job logs APIを`--allow-escape-sequences`付きで取得すると終了コード0で29773行・6090534bytesを保存でき、最長行は600188bytes、外側の時間上限による終了の表示を含んだ。
+同じrunとjobへの`gh run view --log-failed`も終了コード0・標準エラー0bytesだったが、17833行・3430008bytesで、試験の進捗44%の行で終わり、時間上限の表示を含まなかった。
+APIの原本では、その次の行が600KB前後の試験名を持つ行だった。
+GitHub CLIの[該当source](https://github.com/cli/cli/blob/v2.102.0/pkg/cmd/run/view/view.go#L549)は既定の`bufio.Scanner`で行を読み、走査後の`Err()`を返していない。[`bufio.Scanner`の既定の上限](https://pkg.go.dev/bufio#MaxScanTokenSize)は64KiBである。
+
+再検証では`gh version`を取得し、64KiBを超える行を含む失敗jobへ両コマンドを適用して、終了コード・行数・bytes・末尾の行を比較する。
+該当する失敗jobが無い場合は条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
+
 ## agent-basics/skills/bugfix/references/ci-failure-handling.md：分類判定の補助：2026年10月7日
 
 2026年10月7日、GitLabのリポジトリ（Runnerはgitlab-runner 18.2.1のDocker executor）のAWI処理回で、許容された終了コード4で終わるはずのjobがjobとして終了コード1を報告した事象を再現した。
@@ -948,8 +959,8 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 
 ## docs/development/design-hooks.md：通知の整形と反復検出：2026年10月20日
 
-2026年10月20日、Claude Code 2.1.304での観測がAWI `20261020-131324-001.md`へ記録された。開始時と別のディレクトリで再開すると、SessionStart入力の`transcript_path`が再開時のディレクトリに対応する実在しないパスを示した。同じ会話のPreToolUse入力63件は、開始時のworktree側にある実在する記録を示した。
-今回の文書追随では同WIを読み、元ホストでの再現は行っていない。再検証では専用会話を開始時と別のディレクトリで再開し、SessionStartと同じ会話のPreToolUseの`transcript_path`およびファイルの実在を比べる。通知は同じsession IDの完全一致で1件へ解決し、0件では新規会話の未作成を許容して入力値を保ち、複数件と探索失敗ではID指定による取得を案内する。
+2026年10月20日、Claude Code 2.1.304で、開始時と別のディレクトリで再開すると、SessionStart入力の`transcript_path`が再開時のディレクトリに対応する実在しないパスを示した。同じ会話のPreToolUse入力63件は、開始時のworktree側にある実在する記録を示した。
+今回の文書追随では元ホストで再現していない。再検証では専用会話を開始時と別のディレクトリで再開し、SessionStartと同じ会話のPreToolUseの`transcript_path`およびファイルの実在を比べる。通知は同じsession IDの完全一致で1件へ解決し、0件では新規会話の未作成を許容して入力値を保ち、複数件と探索失敗ではID指定による取得を案内する。一次記録はリポジトリ外の作業記録にある。
 
 ## docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日
 
@@ -960,9 +971,8 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 
 ## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日
 
-2026年10月19日、Codex CLI 0.163.0での観測がAWI `20261020-131339-001.md`へ記録された。今回の文書追随では同WI本文と既存監査記録を比較し、実機での再現は行っていない。
-記録`codex:01a1547c-57e6-70c2-94cd-647f9d361f26:380`と`codex:01a1547c-8239-7f70-b8fc-f48eb3d6336f:847`では戻り値の一部だけの表示により識別子を失い、待機を重ねた。記録`01a1547b`では戻り値全体を表示し、`write_stdin`で1つの待機を回収した。
-再検証は同WIの「実現性」に記録された原記録の取得先とlocatorを使う。長時間コマンドのyield結果が`session_id`を持ち`exit_code`を持たないこと、`text(r)`で両欄と本文が保持されること、同じ識別子で終端を回収できることを比べる。原記録の所在は同WIの値を使い、この監査の作成時に取得していないパスは補わない。
+2026年10月19日、Codex CLI 0.163.0で、戻り値の一部だけを表示すると識別子を失い、待機を重ねた。戻り値全体を表示した対照では、`write_stdin`で1つの待機を回収した。今回の文書追随では保存済みの観測記録を比較しており、実機では再現していない。
+再検証では、長時間コマンドのyield結果が`session_id`を持ち`exit_code`を持たないこと、`text(r)`で両欄と本文が保持されること、同じ識別子で終端を回収できることを比べる。一次記録はリポジトリ外の作業記録にある。
 
 ## docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日
 
@@ -1114,6 +1124,13 @@ atk run-script session-review-evidence -- --claude-session-id '<対象session ID
 - 観測日: 2026年10月14日（起草時の観測報告に基づく記録）
 - 観測した版数: Codex CLI 0.162.1、公式ソースのタグrust-v0.162.1
 - 再検証手段: ロールアウト記録のtask_complete.error.codex_error_infoがusage_limit_exceededであるturnと、直前token_count.rate_limitsのused_percent・resets_atを対応付ける。[turn.rs](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/session/turn.rs)の失敗時の終了とStop hookを呼ぶ条件、[goalのextension](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/ext/goal/src/extension.rs)の上限停止を確認する。TUIのthread_goal_actions.rsでは再開確認を調べる。偽のrollout・codex・時計でrun-skillとprocess-loopの再開を検証し、最上位TUIは解除後の実機観測へ分ける。実上限到達からの再開と、即時拒否turnのtoken_countの有無は今回再現していない
+
+## docs/development/design-agents-runtime.md：最上位のCodex TUIの解除後の再開：2026年10月24日
+
+- 観測日: 2026年10月24日
+- 観測した版数: Codex CLI 0.164.0（共有app-server daemon 0.164.0）、agent-toolkit 2.225.1
+- 観測の結果: 引数なしの`codex`を専用ソケットのtmuxで起動し、1回のturnの後に`codex queue --thread <thread-id> --message <指示>`を実行すると、終了0で指示がturnを始め、TUIの画面に発話と応答が表示された。TUIのagents_serverのMCPプロセスの親はdaemonで、環境に`CODEX_THREAD_ID`は無かった。`/quit`でTUIを終了した5秒後と65秒後に同じMCPプロセスが残り、終了後に積んだ指示はTUIの無いままturnを開始・完了した
+- 再検証手段: 隔離した作業ディレクトリで`tmux -L <専用名> new-session -d -c <作業ディレクトリ> codex`を起動し、`tmux capture-pane`で画面を取得する。turnの後に`ps -o ppid`と`/proc/<pid>/environ`の変数名でMCPプロセスの親と`CODEX_THREAD_ID`の有無を確かめ、TUIの前後で`codex queue`を実行してrolloutの`task_started`・`task_complete`を比べる。購読者の判別手段は`codex app-server generate-json-schema --out <ディレクトリ>`のClientRequestで確認する。実上限からの解除時刻での再開は観測していない
 
 ## agent-basics/skills/writing-standards/references/dependency-management.md：Python対応版の追加：2026年10月10日
 

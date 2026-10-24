@@ -16,12 +16,17 @@ description: >
 本スキルは本リポジトリの自動チェック、コード整形、依存更新、テスト配置、コミットメッセージ方針、ホスト本体のバイナリの検索手順および振り返りの参照文書の位置を提供する。
 リリース運用は`dotfiles-release`、配布元と配布先の対応は`dotfiles-repo-layout`が扱う。
 
+本リポジトリで`agent-toolkit:process-wi`を起動したセッションは、振り返りと完了報告を含む全工程で3時間以内を目標にする。
+計測範囲は[セッションの所要時間目標](../../../.chezmoi-source/dot_claude/docs/session-review-dotfiles.md#セッションの所要時間目標)に従い、進行中の見直しには`agent-basics:writing-standards`の`references/quality-principles.md`「QCDと3段判定」を適用する。
+
 ## 名指し参照の読込方法
 
 本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 進捗と時間目標を見直す前 | `agent-basics:writing-standards/references/quality-principles.md#「QCDと3段判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-release/SKILL.md` | 判断 | `read:*/skills/dotfiles-release/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-repo-layout/SKILL.md` | 判断 | `read:*/skills/dotfiles-repo-layout/SKILL.md` |
@@ -44,6 +49,7 @@ description: >
 ### 作業ツリーの準備
 
 - 専用worktreeや回収予定の検証用複製は、mise trustを済ませた後に依存を同期し、成功を確かめてから渡す。同期はその作業ツリーのrootで`make sync`を実行し、リポジトリ直下と`agent-toolkit/`の`.venv`を`uv.lock`のパッケージ集合と`.python-version`の版へそろえる
+  - 回収予定の検証用複製は、`atk managed-temp create`の作業用領域へ`git worktree add --detach`で作成し、`make sync`で環境をそろえる。作業ツリーをファイル複製すると、入れ子の`.claude/worktrees/`と`.venv`を実容量で複製する。使用後は`git worktree remove`の後に`atk managed-temp cleanup`で回収する
   - 回収予定の作業場所ではローカル依存の同期だけを行い、Git hookとtemplateは既存設定を使う。共有CLIの導入元と共通Git設定は回収後も存続する必要があるためである。`mise run bootstrap`・`mise bootstrap`・`make setup`、`uv tool install --editable`、`prek install`、`git config --local commit.template`は恒久作業ツリーの初期導入に限る。観測と再検証手段は`docs/development/audit-records.md`「dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日」にある
 - miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下に保持される。そのため複製元と異なる絶対パスで`mise.toml`を解決する作業場所や、`XDG_STATE_HOME`などで状態ディレクトリを差し替える作業場所は、作成したエージェントが検証の起動前に`mise trust`を済ませる
   - linked worktreeは複製元の信頼を共有するため、複製元リポジトリルートの`mise.toml`へ1回実行すれば十分である。検証用の複製は複製先の`mise.toml`の絶対パスを指定し、状態ディレクトリを差し替えた環境は自動チェックと同じ環境変数を与えて実行する
@@ -64,6 +70,7 @@ description: >
 pyfltrを調査・計測用途で実行する場合は`--no-fix`で自動修正を抑止する。formatter段は`--no-fix`でも書き換えるため、読取専用の用途では書き換える段を実行しない。
 
 - 特定ファイルに限定する検証は、MCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。初回は`commands`（CLIは`--commands`）を指定せず、修正後の再実行だけ失敗したチェックへ限定する
+  - pytestを選ぶ実行は、渡したファイルによらず`pytest-always-targets`の横断テストをrootと`agent-toolkit/`の両方で加える（`references/verification-values.md`の横断テストの項）。同じ内容への2回目以降の静的チェックは`commands`でpytestを除き、失敗したテストだけの再確認は`--only-failed`を使う。単一テストの局所確認は`pytest`を対象ファイル（必要なら`-k`）で直接実行し、出力の収集件数が意図した集合と一致することを確かめる
 - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。`-o`と`-p`は`pytest`のオプションで、`pyfltr run`へ渡すと終了コード2で終わる。`-o addopts=''`で`addopts`を解除する場合は`-p no:cacheprovider`を併記する
 - `.venv`を再作成し得る自動チェック（`uv run --python`による版切替、依存更新など）は、同じ仮想環境パスでは直列に実行する。並列にする場合は自動チェックごとに別の仮想環境パスを明示する
 - pyfltrの所要時間を比べる場合は、`uv run --frozen pyfltr list-runs`で取得したrun識別子を`uv run --frozen pyfltr show-run <run_id>`へ渡す

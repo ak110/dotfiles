@@ -10,6 +10,7 @@ dotfiles apply全体の失敗にはしない。前提を満たしたうえで管
 import json
 import logging
 import shutil
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, cast
@@ -33,6 +34,12 @@ logger = logging.getLogger(__name__)
 # いずれかが欠けると `uv run --project <キャッシュ>` がそのディレクトリをプロジェクトとして
 # 解決できず、対象 plugin の起動スクリプトが import に失敗する。
 _PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = ("pyproject.toml", "uv.lock", ".claude-plugin/plugin.json")
+
+# directory型marketplaceからの導入で、主作業ツリーのgitignore対象ごと版ディレクトリへ複製される開発用の生成物。
+# `.venv`は主作業ツリーの開発環境の実バイトの複製（版ごとに約0.9G）で、pluginの実行は`scripts/launch.py`が
+# 共有の依存環境を使うため参照しない。`agent-toolkit/scripts/atk-hook`の`_COPY_IGNORE`から、
+# 実行時にも生成される`__pycache__`を除いた集合。
+_PLUGIN_CACHE_DEVELOPMENT_ARTIFACTS: tuple[str, ...] = (".venv", ".mypy_cache", ".hypothesis", ".pytest_cache", ".ruff_cache")
 
 # インストール済みかつ`enabledPlugins`で`false`にされておらず有効なものを `run()` 中に `claude plugin disable` で無効化する。
 _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
@@ -69,30 +76,37 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
     try:
-        changed, recommendations, disable_failed_count, deferred = _install_plugins()
+        changed, recommendations, disable_failed_count, artifact_failed_count, deferred = _install_plugins()
     except RuntimeError as error:
         logger.warning(
             log_format.format_status("plugins", f"導入または更新に失敗: {error}。`update-dotfiles`を再実行する"),
         )
         return post_apply_outcome.PostApplyOutcome()
-    failure = f"外部plugin {disable_failed_count} 件の自動無効化に失敗" if disable_failed_count else None
+    failures: list[str] = []
+    if disable_failed_count:
+        failures.append(f"外部plugin {disable_failed_count} 件の自動無効化に失敗")
+    if artifact_failed_count:
+        failures.append(f"plugin cache の開発用生成物 {artifact_failed_count} 件の削除に失敗")
+    failure = "、".join(failures) or None
     return post_apply_outcome.PostApplyOutcome(
         changed=changed,
         recommendations=tuple(recommendations),
         failure=failure,
-        next_action="`update-dotfiles`を再実行して外部pluginの無効化をやり直す。" if failure is not None else None,
+        next_action="`update-dotfiles`を再実行して失敗した処理をやり直す。" if failure is not None else None,
         deferred=deferred,
     )
 
 
-def _install_plugins() -> tuple[bool, list[str], int, bool]:
-    """導入・更新・自動無効化を行い、`(変更の有無, 推奨コマンド, 自動無効化の失敗件数, 修復の延期の有無)`を返す。
+def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
+    """導入・更新・自動無効化を行い、結果を返す。
+
+    戻り値は`(変更の有無, 推奨コマンド, 自動無効化の失敗件数, 開発用生成物の削除の失敗件数, 修復か削除の延期の有無)`。
 
     Raises:
         RuntimeError: 管理対象pluginの導入・更新に失敗した場合、または導入後の状態が目標と一致しない場合。
     """
     if not _prerequisites_ok():
-        return False, [], 0, False
+        return False, [], 0, 0, False
 
     external_changed = _remove_unused_plugins()
 
@@ -104,7 +118,7 @@ def _install_plugins() -> tuple[bool, list[str], int, bool]:
                 "dotfiles ルート (marketplace.json) が見つからずスキップ。`update-dotfiles`を再実行する",
             ),
         )
-        return external_changed, [], 0, False
+        return external_changed, [], 0, 0, False
 
     # 対象プラグインは marketplace.json の plugins[] 全件から動的に決める。
     target_versions, deprecated_names = _read_target_info(dotfiles_root)
@@ -115,10 +129,10 @@ def _install_plugins() -> tuple[bool, list[str], int, bool]:
                 "marketplace.json に対象 plugin が無いためスキップ。導入対象が無いため対応不要",
             ),
         )
-        return external_changed, [], 0, False
+        return external_changed, [], 0, 0, False
 
     if not claude_marketplace.ensure_marketplace():
-        return external_changed, [], 0, False
+        return external_changed, [], 0, 0, False
 
     # marketplace の修復は remove/add により導入済み登録を変更し得るため、
     # 修復完了後の実体だけを導入判定へ用いる。
@@ -132,7 +146,7 @@ def _install_plugins() -> tuple[bool, list[str], int, bool]:
                     "インストール済み plugin 一覧の取得に失敗したためスキップ。`update-dotfiles`を再実行する",
                 ),
             )
-            return external_changed, [], 0, False
+            return external_changed, [], 0, 0, False
 
     any_change = False
 
@@ -208,6 +222,12 @@ def _install_plugins() -> tuple[bool, list[str], int, bool]:
         cache_state = _ensure_plugin_cache_complete(name)
         any_change = any_change or cache_state == "repaired"
         cache_deferred = cache_deferred or cache_state == "deferred"
+    artifact_failed_count = 0
+    for name in cache_check_names:
+        removed, failed, held = _remove_development_artifacts(name)
+        any_change = any_change or removed
+        artifact_failed_count += failed
+        cache_deferred = cache_deferred or held
 
     # 外部 marketplace の自動 disable 実行と install/enable 推奨コマンド算出 (公式プラグイン)。
     # 対象は ak110-dotfiles 以外の marketplace であり、上記のインストールループで
@@ -230,7 +250,7 @@ def _install_plugins() -> tuple[bool, list[str], int, bool]:
     )
     # CLIの終了コードだけでなく、Claude Codeが次回起動時に読む実体を完了条件とする。
     _verify_target_plugins(target_versions, failed_operations)
-    return external_changed or any_change, recommendations, disable_failed_count, cache_deferred
+    return external_changed or any_change, recommendations, disable_failed_count, artifact_failed_count, cache_deferred
 
 
 def _remove_unused_plugins() -> bool:
@@ -818,6 +838,62 @@ def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired",
         raise RuntimeError(f"{name}: {message}")
     logger.info(log_format.format_status(name, "plugin cache の欠落を再インストールで解消しました"))
     return "repaired"
+
+
+def _remove_development_artifacts(name: str) -> tuple[bool, int, bool]:
+    """導入先の版ディレクトリから、主作業ツリー由来の開発用生成物を削除する。
+
+    戻り値は（1件以上削除したか、削除に失敗した件数、参照中のため保持したか）。
+    削除はplugin cacheの内側にある導入先の直下で、symlinkでないディレクトリに限る。
+    導入先を解決できない場合とcacheの外の場合は`_ensure_plugin_cache_complete`が報告するため、ここでは何もしない。
+    """
+    cache_root = claude_common.INSTALLED_PLUGINS_PATH.parent / "cache"
+    cache_dir = _plugin_cache_directory(name)
+    if cache_dir is None or not cache_dir.is_relative_to(cache_root):
+        return False, 0, False
+    targets = [
+        cache_dir / artifact
+        for artifact in _PLUGIN_CACHE_DEVELOPMENT_ARTIFACTS
+        if (cache_dir / artifact).is_dir() and not (cache_dir / artifact).is_symlink()
+    ]
+    if not targets:
+        return False, 0, False
+    processes = claude_plugin_references.scan()
+    # セッションは版ディレクトリのhook・skillを使うが開発用生成物は使わないため、
+    # 稼働中のセッションを保持の理由にしない（空の期間を渡す）。生成物のパスを参照するプロセスと、
+    # 参照先を取得できないClaude Codeのプロセスがある間は保持する。
+    now = time.time()
+    removed = False
+    failed = 0
+    held = False
+    for target in targets:
+        short = log_format.home_short(target)
+        reasons = claude_plugin_references.holding_reasons(processes, target, session_window=(now, now))
+        if reasons:
+            held = True
+            logger.warning(
+                log_format.format_status(
+                    name,
+                    f"plugin cache の開発用生成物 {short} を参照中のため削除を延期しました（{'、'.join(reasons)}）。"
+                    + deferred_updates.retry_guidance("参照の終了後に`update-dotfiles`を再実行してください。"),
+                ),
+            )
+            continue
+        try:
+            shutil.rmtree(target)
+        except OSError as error:
+            failed += 1
+            logger.warning(
+                log_format.format_status(
+                    name,
+                    f"plugin cache の開発用生成物 {short} を削除できません: {error}。"
+                    "権限と使用中のプロセスを確認して`update-dotfiles`を再実行する",
+                ),
+            )
+            continue
+        removed = True
+        logger.info(log_format.format_status(name, f"plugin cache の開発用生成物を削除しました: {short}"))
+    return removed, failed, held
 
 
 def _verify_target_plugins(target_versions: dict[str, str], failed_operations: Sequence[str] = ()) -> None:

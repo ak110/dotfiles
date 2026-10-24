@@ -38,7 +38,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する前 | `docs/guide/claude-code-guide.md`のうち編集対象と同期する節（少なくとも「推奨ワークフロー」）。あわせて`agent-toolkit:workflow-overview`を起動する | 判断 | `section:*/docs/guide/claude-code-guide.md#「推奨ワークフロー」`、`read:agent-toolkit:*/skills/workflow-overview/SKILL.md` | |
+| WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する前 | `agent-toolkit:workflow-overview`を起動する。ユーザーの判断、操作または観測結果が変わる場合だけ、対応する`docs/guide/`節も読む | 判断 | `read:agent-toolkit:*/skills/workflow-overview/SKILL.md` | |
 | `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下または`rust/claude-statusline/src/agents_server.rs`の実装を変更または調査する前 | `references/agents-server-shared-state.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md` | |
 | `agents_server`が起動した委譲先が動かない事象（起動の失敗、初期化の未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-investigation.md` | |
 | `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/atk-serve-static.md` | |
@@ -107,13 +107,13 @@ description: >
 
 - engineを追加するときは、委譲先と対話ホストそれぞれへの導入要否を判断し、採用した配布範囲と非導入の理由を構成・設計記録へ残す
 - 複数ファイルにまたがる機構または委譲構造を新設・変更する実装では、`docs/development/design.md`の索引から該当主題の本文を選び、目的、構造の理由、知識境界、却下した代替案を追加・更新する（努力目標）。新しい主題は主題別ファイルへ置いて索引の対応表へ行を足し、索引自体には節の見出しや機構の詳細を書かない
-- `agent-toolkit/skills/workflow-overview/SKILL.md`と`docs/guide/claude-code-guide.md`「推奨ワークフロー」は、運用形態、WIの登録方法、回答の流れを同じ変更単位でそろえる
-- `docs/guide/claude-code-guide.md`「設定確認」節のチェック内容要約は、要約が変わる変更（check追加・削除、検出範囲の大きな変更、依存ツールの変更、新規プラグイン追加など）で更新する
+- `agent-toolkit/skills/workflow-overview/SKILL.md`はエージェントの工程契約を所有する。ユーザーの運用形態、登録方法または回答操作が変わる場合は、`docs/guide/claude-code-guide.md`「推奨ワークフロー」も同じ変更単位でそろえる
+- `docs/guide/claude-code-guide.md`「設定確認」は、ユーザーが実行する確認コマンド、期待結果または復旧操作が変わる場合に更新する
 - `install-claude.sh`の`FILES`、`install-claude.ps1`の`$files`、`agent-toolkit/rules/`配下のmd一覧は完全一致を保つ。`install_script_ssot_invariant_test.py`が検証し、`uv run python scripts/sync_generated_files.py`が同期する
 - 配布物スキルの外部インターフェース（判定区分・出力フォーマット・後始末コマンド分岐・サマリー表現など）を追加・削除・改名する場合は、呼び出し元を検索して連携先の記述を同じ計画で更新する
 - `agent-toolkit/rules/01-agent.md`・`02-agent-operations.md`と`agent-toolkit/share/rules-common.codex.md`は`.chezmoi-source/dot_codex/AGENTS.md`の生成元である。生成は`uv run python scripts/sync_generated_files.py`で行い、計画への記載は`references/version-bump.md`「plan modeでの取り扱い」の派生物の規則に従う
 - `agent-toolkit/share/rules-main*.md`と`rules-subagent*.md`の編集は生成差分も配布一覧の変更も生まないが、版数更新は要る。各起動区分へ届く規範は`agent-toolkit:writing-standards`の`references/delivery-scope.md`の配送範囲表が示す（軽量なagents_server委譲へ`rules-subagent.md`を配らない境界はテストが保持する）
-- 計画ファイルの見出し、固定H3、表の行名は`agent-toolkit/agent_toolkit/_plan/structure/constants.py`の構造定数が定める。改訂時は構造定数を変え、同じ名称を持つ記述も同じ変更単位でそろえる。そろえる対象は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`と`agent-toolkit/share/`配下の`<役割名>.subagent.md`である。`docs/development/`の該当設計資料と`concepts.md`、`docs/guide/claude-code-guide.md`も含む。改訂前の名称は読み取り互換の構造定数として残し、新規作成と改訂の処理でだけ拒否する
+- 計画ファイルの見出し、固定H3、表の行名は`agent-toolkit/agent_toolkit/_plan/structure/constants.py`の構造定数が定める。改訂時は構造定数を変え、同じ名称を持つ記述も同じ変更単位でそろえる。そろえる対象は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`と`agent-toolkit/share/`配下の`<役割名>.subagent.md`である。`docs/development/`の該当設計資料と`concepts.md`も含む。ユーザーの操作または観測結果が変わる場合だけ、対応するガイドを更新する。改訂前の名称は読み取り互換の構造定数として残し、新規作成と改訂の処理でだけ拒否する
 - 構造定数を持たず`plan-file-standards.md`だけが必須とする見出しは同ファイルに従う。稼働中の計画を自動チェックで不合格にしないためにこの形を選んだ場合は、理由を計画へ記録する
 
 ## セッション状態フラグ

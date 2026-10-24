@@ -153,6 +153,16 @@ def section(body: list[str], heading: str) -> list[str] | None:
     return body[start + 1 : end]
 
 
+def _outside_fence_heading_indexes(body: list[str], heading: str) -> list[int]:
+    """コードフェンス外の厳密なH2見出しの位置を返す。"""
+    indexes: list[int] = []
+    fenced = {position for start, end, _info in fenced_blocks(body) for position in range(start, end + 1)}
+    for index, line in enumerate(body):
+        if index not in fenced and line == heading:
+            indexes.append(index)
+    return indexes
+
+
 def normalize_condition(text: str) -> str:
     """完成条件の行頭記号と前後の空白を除く。"""
     return LIST_ITEM.sub("", text.strip()).strip()
@@ -193,10 +203,21 @@ def expected_rows(output: str, filename: str) -> tuple[list[str], list[tuple[str
         if not requirements:
             raise ValueError(f"{filename}: 『回答』節が空です")
         return [], requirements
-    result = section(body, "## 処理結果")
-    if result is not None:
-        body = body[: body.index("## 処理結果")]
-    requirements = [(unit, f"{filename}#本文") for unit in requirement_units(body)]
+    result_indexes = _outside_fence_heading_indexes(body, "## 処理結果")
+    result_index = result_indexes[0] if result_indexes else len(body)
+    requirement_body = body[:result_index]
+    comment_indexes = _outside_fence_heading_indexes(body, "## ユーザーコメント")
+    if comment_indexes and comment_indexes[-1] > result_index:
+        # 追記した処理記録の境界より後ろへ置かれたユーザーコメントも原要求として数える。
+        # 採否の記録（`## 処理結果`）がコメントの後ろへ続く場合は、その見出しの手前までをコメント節とする。
+        comment_index = comment_indexes[-1]
+        fenced = {position for start, end, _info in fenced_blocks(body) for position in range(start, end + 1)}
+        comment_end = next(
+            (index for index in range(comment_index + 1, len(body)) if index not in fenced and body[index].startswith("## ")),
+            len(body),
+        )
+        requirement_body.extend(body[comment_index + 1 : comment_end])
+    requirements = [(unit, f"{filename}#本文") for unit in requirement_units(requirement_body)]
     if not requirements:
         raise ValueError(f"{filename}: 原文本文が空です")
     return [], requirements

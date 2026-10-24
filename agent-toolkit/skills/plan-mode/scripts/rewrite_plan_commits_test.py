@@ -450,3 +450,46 @@ def test_discovery_ignores_unrelated_and_unchanged_commits(
     rewrite.write_text(json.dumps(pairs), encoding="utf-8")
     assert rewrite_plan_commits.main(rebased.argv(rewrite)) == 0
     assert "入力に未指定の記録" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("source", ["file", "body"])
+def test_discovery_skips_candidate_with_invalid_events(rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, source: str) -> None:
+    """探索中の不正な対応記録は、指定済み記録への継承を妨げない。"""
+    config = rebased.repo.parent / "config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    malformed = _plan(config / "plans" / f"06-malformed-{source}.md", [WI_A])
+    mapping = commit_mapping.mapping_path(malformed)
+    if source == "file":
+        mapping.write_text("{", encoding="utf-8")
+    else:
+        mapping.write_text("", encoding="utf-8")
+        malformed.write_text(
+            malformed.read_text(encoding="utf-8") + commit_mapping.PREFIX + "{" + commit_mapping.SUFFIX + "\n",
+            encoding="utf-8",
+        )
+
+    assert rewrite_plan_commits.main(rebased.argv(rebased.range_map("a", "u", "b"))) == 0
+
+
+@pytest.mark.parametrize("source", ["file", "body"])
+def test_explicit_record_with_invalid_events_fails_without_writes(
+    rebased: _Rebased, capsys: pytest.CaptureFixture[str], source: str
+) -> None:
+    """明示指定した不正な対応記録は、保存前に失敗する。"""
+    malformed = _plan(rebased.repo.parent / f"malformed-{source}.md", [WI_A])
+    mapping = commit_mapping.mapping_path(malformed)
+    if source == "file":
+        mapping.write_text("{", encoding="utf-8")
+    else:
+        mapping.write_text("", encoding="utf-8")
+        malformed.write_text(
+            malformed.read_text(encoding="utf-8") + commit_mapping.PREFIX + "{" + commit_mapping.SUFFIX + "\n",
+            encoding="utf-8",
+        )
+    records = [rebased.plan, rebased.handoff, rebased.unaffected, malformed]
+    before = _snapshot(records)
+
+    assert rewrite_plan_commits.main(rebased.argv(rebased.range_map("a", "u", "b"), extra=("--plan", str(malformed)))) == 1
+
+    assert "commit対応のJSONが不正です" in capsys.readouterr().err
+    assert _snapshot(records) == before

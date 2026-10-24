@@ -28,6 +28,7 @@ from agent_toolkit._common.session_family import (
     _detect_runtime,
     _json_object,
     _load_records,
+    _load_records_checked,
     _parse_timestamp,
     _Record,
     _record_timestamp,
@@ -1132,10 +1133,11 @@ def _fallback() -> list[dict[str, Any]]:
 
 def load_and_extract(raw_path: str) -> list[dict[str, Any]]:
     """絶対パスのJSONLを一度読み、抽出結果を返す。"""
-    records = _load_records(raw_path)
-    if records is None:
-        raise ValueError(f"対象記録を読み込めない: {raw_path}")
-    return _extract_records(records)
+    loaded = _load_records_checked(raw_path)
+    if loaded.records is None:
+        reason = f"（{loaded.failure.reason}）" if loaded.failure is not None else ""
+        raise ValueError(f"対象記録を読み込めない: {raw_path}{reason}")
+    return _extract_records(loaded.records)
 
 
 def _extract_records(records: list[_Record]) -> list[dict[str, Any]]:
@@ -1145,7 +1147,27 @@ def _extract_records(records: list[_Record]) -> list[dict[str, Any]]:
 
 def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
     """解決できなかった委譲先を機械可読イベントへ変換する。"""
-    return [{"kind": item.kind, "record": item.record_id, "line": item.line} for item in unresolved]
+    return [
+        {"kind": item.kind, "record": item.record_id, "line": item.line, **({"reason": item.reason} if item.reason else {})}
+        for item in unresolved
+    ]
+
+
+def _recovery_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """JSONとして成立しない行を後続の完全な行で置き換えた対応を、記録と行番号で示す。"""
+    return [
+        {
+            "kind": "recovered-record-line",
+            "record": item.record_id,
+            "line": recovery.line,
+            "superseded_by": recovery.superseded_by,
+            "ordinal": recovery.ordinal,
+            "entry_type": recovery.entry_type,
+            "length": recovery.length,
+        }
+        for item in collected
+        for recovery in item.recoveries
+    ]
 
 
 def _role_document(item: _CollectedRecord) -> str | None:
@@ -1208,8 +1230,10 @@ def _launch_mode(item: _CollectedRecord, collected: list[_CollectedRecord]) -> s
     return None
 
 
-def _collection_events(collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
-    """全収集照会が同じ記録由来と未解決の対象を出力する。"""
+def _collection_events(
+    collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord], *, recoveries: bool = True
+) -> list[dict[str, Any]]:
+    """全収集照会が同じ記録由来と未解決の対象、回復した記録行を出力する。"""
     return [
         *(
             {
@@ -1224,6 +1248,7 @@ def _collection_events(collected: list[_CollectedRecord], unresolved: list[_Unre
             for item in collected
         ),
         *_unresolved_events(unresolved),
+        *(_recovery_events(collected) if recoveries else []),
     ]
 
 
@@ -1248,7 +1273,7 @@ def _referenced_provenance_events(collected: list[_CollectedRecord], events: lis
         if source is not None and source not in referenced:
             referenced.add(source)
             pending.append(source)
-    return [event for event in _collection_events(collected, []) if event["record"] in referenced]
+    return [event for event in _collection_events(collected, [], recoveries=False) if event["record"] in referenced]
 
 
 def _scannable_records(records: list[_Record]) -> list[_Record]:
@@ -1461,6 +1486,7 @@ __all__ = [
     "_detect_runtime",
     "_json_object",
     "_load_records",
+    "_load_records_checked",
     "_parse_timestamp",
     "_record_timestamp",
     "_started_after_boundary",

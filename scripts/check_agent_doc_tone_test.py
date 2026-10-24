@@ -352,7 +352,11 @@ def test_density_rewriting_required_sentences_clears_the_metric(
     assert "数えた「当該」" in output
 
 
-@pytest.mark.parametrize("body", [_DENSITY_BODY.replace("観測した値を記録する。\n" * 15, ""), "観測した値を記録する。" * 30])
+@pytest.mark.parametrize(
+    "body",
+    [_DENSITY_BODY.replace("観測した値を記録する。\n" * 15, ""), "観測した値を記録する。" * 30],
+    ids=["below-min-sentences", "within-limit"],
+)
 def test_density_elements_are_not_listed_within_threshold(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
 ) -> None:

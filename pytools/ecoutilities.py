@@ -42,19 +42,21 @@ def main(args: argparse.Namespace | None = None) -> None:
         print("Usage: EcoUtilities mode ...。EcoUtilities --helpで有効なmodeと引数を確認してください。")
         sys.exit(1)
 
+    # 処理対象ごとの失敗を捕捉して続行するモードは失敗件数を返し、1件以上なら終了コード1で終える。
+    failures = 0
     if args.mode == "YearMonthFolder256":
         year_month_folder_256(args.dirs)
     elif args.mode == "DeleteEmptyFolders":
-        delete_empty_folders(args.dirs)
+        failures = delete_empty_folders(args.dirs)
     elif args.mode == "FixGVBByFileName":
-        fix_gvb_by_file_name(args.gvb_dir, args.data_dir)
+        failures = fix_gvb_by_file_name(args.gvb_dir, args.data_dir)
     elif args.mode == "DisposeTCBookmarks":
         dispose_tc_bookmarks(args.path)
     elif args.mode in ("RandomList", "RandomM3U8"):
         random_list(args.dir, args.list_path, args.encoding)
     elif args.mode == "DownloadCustom":
-        run_download_custom(args.sites_file)
-    sys.exit(0)
+        failures = run_download_custom(args.sites_file)
+    sys.exit(1 if failures else 0)
 
 
 def year_month_folder_256(dirs: list[str]) -> None:
@@ -87,8 +89,9 @@ def year_month_folder_256(dirs: list[str]) -> None:
                 print(dst)
 
 
-def delete_empty_folders(dirs: list[str]) -> None:
-    """各ディレクトリ配下の空サブディレクトリを削除する。"""
+def delete_empty_folders(dirs: list[str]) -> int:
+    """各ディレクトリ配下の空サブディレクトリを削除し、空でないこと以外の理由で削除できなかった件数を返す。"""
+    failures = 0
     for dir_str in dirs:
         base = Path(dir_str)
         subdirs = [p for p in base.rglob("*") if p.is_dir()]
@@ -100,11 +103,16 @@ def delete_empty_folders(dirs: list[str]) -> None:
             except OSError as e:
                 # 非空ディレクトリ（ENOTEMPTY）は想定内のため無視し、それ以外は標準エラーへ出力する（C#の二段catch相当）。
                 if e.errno != errno.ENOTEMPTY:
+                    failures += 1
                     print(e, file=sys.stderr)
+    return failures
 
 
-def fix_gvb_by_file_name(gvb_dir: str, data_dir: str) -> None:
-    """データフォルダーのファイル名一致で、gvb内の絶対パス行を実在パスへ付け替える。"""
+def fix_gvb_by_file_name(gvb_dir: str, data_dir: str) -> int:
+    """データフォルダーのファイル名一致で、gvb内の絶対パス行を実在パスへ付け替える。
+
+    ディレクトリ指定が不正な場合は1、それ以外は0を返す。
+    """
     gvb_base = Path(gvb_dir)
     data_base = Path(data_dir)
     if not (gvb_base.is_dir() and data_base.is_dir()):
@@ -114,7 +122,7 @@ def fix_gvb_by_file_name(gvb_dir: str, data_dir: str) -> None:
             f"ディレクトリ指定が不正です: gvb={gvb_dir}, data={data_dir}。"
             f"存在するディレクトリを指定して再実行してください。"
         )
-        return
+        return 1
 
     name_to_path: dict[str, str] = {}
     for path in data_base.rglob("*"):
@@ -138,6 +146,7 @@ def fix_gvb_by_file_name(gvb_dir: str, data_dir: str) -> None:
             print("更新：    " + str(gvb_file))
         else:
             print("スキップ：" + str(gvb_file))
+    return 0
 
 
 def dispose_tc_bookmarks(path_str: str) -> None:
@@ -180,8 +189,11 @@ class Site(pydantic.BaseModel):
     flat_directory: bool = False
 
 
-def run_download_custom(sites_file: str) -> None:
-    """設定ファイルを読み込み、存在しなければサンプルを出力し、存在すれば全サイトをクロールする。"""
+def run_download_custom(sites_file: str) -> int:
+    """設定ファイルを読み込み、存在しなければサンプルを出力し、存在すれば全サイトをクロールする。
+
+    取得・保存に失敗したURLの件数を返す。
+    """
     path = Path(sites_file)
     if not path.exists():
         _write_sample_sites(path)
@@ -190,20 +202,22 @@ def run_download_custom(sites_file: str) -> None:
             f"保存先とURL・リンクパターンを編集し、同じ設定ファイルを指定してEcoUtilities "
             f"DownloadCustomを再実行してください。"
         )
-        return
+        return 0
     sites = load_sites(path)
     with httpx.Client(timeout=_HTTP_TIMEOUT) as client:
-        download_custom_sites(sites, client)
+        return download_custom_sites(sites, client)
 
 
-def download_custom_sites(sites: list[Site], client: httpx.Client) -> None:
-    """与えられたサイト群を順にクロールする。HTTPクライアントは呼び出し側が注入する。"""
+def download_custom_sites(sites: list[Site], client: httpx.Client) -> int:
+    """与えられたサイト群を順にクロールし、取得・保存に失敗したURLの件数を返す。HTTPクライアントは呼び出し側が注入する。"""
     visited: set[str] = set()
+    failures = 0
     for site in sites:
         print(f"処理開始: {site.first_url} => {site.download_folder_path}")
         link_patterns = [re.compile(p) for p in site.link_patterns]
         exclude_patterns = [re.compile(p) for p in site.exclude_patterns]
-        _download_by_pattern(site, client, site.first_url, link_patterns, exclude_patterns, visited)
+        failures += _download_by_pattern(site, client, site.first_url, link_patterns, exclude_patterns, visited)
+    return failures
 
 
 def _download_by_pattern(
@@ -213,10 +227,11 @@ def _download_by_pattern(
     patterns: list[re.Pattern[str]],
     exclude_patterns: list[re.Pattern[str]],
     visited: set[str],
-) -> None:
-    """リンクパターンを段階適用し、BaseURL配下のリンクを辿ってダウンロードする。"""
+) -> int:
+    """リンクパターンを段階適用し、BaseURL配下のリンクを辿ってダウンロードし、失敗したURLの件数を返す。"""
     if url in visited:
-        return
+        return 0
+    failures = 0
     visited.add(url)
     try:
         print("ダウンロード中: " + url)
@@ -234,15 +249,16 @@ def _download_by_pattern(
                 continue
             if first_pattern.search(download_uri):
                 if len(patterns) == 1:
-                    _download_data(site, client, download_uri, exclude_patterns, visited)
+                    failures += _download_data(site, client, download_uri, exclude_patterns, visited)
                 else:
-                    _download_by_pattern(site, client, download_uri, patterns, exclude_patterns, visited)
+                    failures += _download_by_pattern(site, client, download_uri, patterns, exclude_patterns, visited)
             elif second_pattern is not None and second_pattern.search(download_uri):
                 if len(patterns) == 2:
-                    _download_data(site, client, download_uri, exclude_patterns, visited)
+                    failures += _download_data(site, client, download_uri, exclude_patterns, visited)
                 else:
-                    _download_by_pattern(site, client, download_uri, patterns[1:], exclude_patterns, visited)
+                    failures += _download_by_pattern(site, client, download_uri, patterns[1:], exclude_patterns, visited)
     except Exception as e:  # noqa: BLE001  # クロール継続のため個別URLの失敗を捕捉する（C#のcatch相当）。
+        failures += 1
         print(
             "ダウンロードに失敗: "
             + url
@@ -253,6 +269,7 @@ def _download_by_pattern(
             )
         )
         print(e)
+    return failures
 
 
 def _download_data(
@@ -261,14 +278,14 @@ def _download_data(
     download_uri: str,
     exclude_patterns: list[re.Pattern[str]],
     visited: set[str],
-) -> None:
-    """単一URLのデータを保存先パスへダウンロードする。"""
+) -> int:
+    """単一URLのデータを保存先パスへダウンロードし、失敗した場合は1、それ以外は0を返す。"""
     try:
         if download_uri in visited:
-            return
+            return 0
         visited.add(download_uri)
         if any(p.search(download_uri) for p in exclude_patterns):
-            return
+            return 0
         rel = download_uri[len(site.base_url) :]
         if site.flat_directory:
             for c in '\\/?:*"><|':
@@ -296,6 +313,8 @@ def _download_data(
             )
         )
         print(e)
+        return 1
+    return 0
 
 
 def load_sites(path: Path) -> list[Site]:

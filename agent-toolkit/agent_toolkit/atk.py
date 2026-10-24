@@ -414,6 +414,7 @@ def main(
     _saved_show_fields: list[str] | None = None,
 ) -> None:
     """エントリポイント。"""
+    _inherited_venv.strip_inherited_venv(os.environ)
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
     _outcome.force_utf8_stdio()
     raw_argv = argv if argv is not None else sys.argv[1:]

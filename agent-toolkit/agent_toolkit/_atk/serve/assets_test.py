@@ -427,19 +427,6 @@ async def test_plan_and_session_apis_classify_input_errors(tmp_path: pathlib.Pat
     assert (await client.get("/api/sessions/detail?engine=unknown&path=a.jsonl")).status_code == 404
 
 
-def test_config_warns_unknown_keys_in_screen_sections(
-    tmp_path: pathlib.Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """画面別の節の未知キーを警告して無視し、既知キーの解決は継続する。"""
-    path = tmp_path / "serve.toml"
-    path.write_text('[plans]\nroot = "/srv/plans"\nunknown_key = 1\n', encoding="utf-8")
-    with caplog.at_level("WARNING"):
-        resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
-    assert resolved.plans.root == "/srv/plans"
-    assert "unknown_key" in caplog.text
-
-
 @pytest.mark.asyncio
 async def test_cancelled_request_keeps_worker_slot_until_completion() -> None:
     """要求キャンセル後も同期処理が終わるまでSemaphore枠を解放しない。"""

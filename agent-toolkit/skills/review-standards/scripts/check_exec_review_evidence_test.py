@@ -14,12 +14,15 @@ import typing
 import check_exec_review_evidence  # pylint: disable=import-error
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._atk import review_table, run_script
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import repo as wi_repo
 from agent_toolkit._atk.wi import sync as wi_sync
+from agent_toolkit._common import requirement_units
 from agent_toolkit._git import worktrees as git_worktrees
 from agent_toolkit._testing import git_repository
+from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file
 
 FIRST_WI = "20260928-192559-001.md"
 SECOND_WI = "20260928-192559-002.md"
@@ -868,7 +871,10 @@ def test_plan_only_template_and_return_keep_existing_rows(
 
 @pytest.mark.parametrize("layout", ["same-wi", "cross-wi", "cross-array", "plan"])
 @pytest.mark.parametrize(
-    "evidence_text", ["実行結果", " 提出済み検証記録 ", "レビュー対象差分", "テスト成功", "missing.md", "観測した内容" * 100]
+    "evidence_text",
+    ["実行結果", " 提出済み検証記録 ", "レビュー対象差分", "テスト成功", "missing.md", "観測した内容" * 100],
+    # 反復した長文を自動node IDへ展開させず、CIの詳細進捗の行長を入力長から切り離す。
+    ids=["result", "padded-record", "review-diff", "test-success", "missing-file", "long-observation"],
 )
 def test_public_command_rejects_shared_evidence_without_reference(
     tmp_path: pathlib.Path,
@@ -4519,6 +4525,48 @@ def _generated_review_setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPa
     return first, head, evidence
 
 
+def test_public_rereview_accepts_copied_evidence_and_rejects_same_output(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """再レビューは前回証拠の写しを参照でき、同じ出力先の参照は拒否する。"""
+    _first, head, evidence = _generated_review_setup(tmp_path, monkeypatch)
+    accepted = tmp_path / "accepted.json"
+    accepted.write_bytes(evidence.read_bytes())
+    note = tmp_path / "rereview.md"
+    note.write_text("# 再レビュー\n差分は保存条件へ影響しない。\n", encoding="utf-8")
+    output = tmp_path / "rereview.json"
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[
+            str(evidence),
+            "--select-row",
+            "wi_conditions:1",
+            "--row-outcome",
+            "wi_conditions:1",
+            "達成",
+            "--reviewed-head",
+            head,
+            "--mode",
+            "replace",
+            "--evidence-file",
+            str(note),
+            "--accepted-evidence",
+            str(accepted),
+            "--accepted-row",
+            "wi_conditions:1",
+            "wi_conditions:1",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+    assert json.loads(output.read_text(encoding="utf-8"))["wi_conditions"][0]["reviewed_head"] == head
+    args.script_args[args.script_args.index(str(output))] = str(accepted)
+    assert run_script.dispatch(args) == 1
+    assert "上書きせず" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("round_value", [1, 2, 3], ids=["initial", "rereview", "handoff"])
 @pytest.mark.parametrize("plan_count", [0, 1, 2], ids=["no-plan", "single-plan", "multiple-plans"])
 def test_generated_return_input_rechecks_without_conversion(
@@ -5252,3 +5300,132 @@ def test_public_shared_separator_keeps_original_evidence(tmp_path: pathlib.Path,
     for number, row in enumerate(displayed, 1):
         assert row == {"配列": "wi_conditions", "行番号": number, **rows[number - 1]}
     assert evidence.read_bytes() == before
+
+
+_APPEND_MESSAGE = "処理メモの文を追記する。"
+_AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+_APPEND_BODIES = {
+    "plain": "本文要求を満たす。\n\n## ユーザーコメント\n\nコメント要求を満たす。",
+    "with-result": "本文要求を満たす。\n\n## 処理結果\n\n既存メモ。\n\n## ユーザーコメント\n\nコメント要求を満たす。",
+    "conditions": "## 完成条件\n- 条件を満たす\n\n## ユーザーコメント\n\nコメント要求を満たす。",
+}
+
+
+def _shown_rows(path: pathlib.Path) -> tuple[list[str], list[tuple[str, str]]]:
+    """保存済みWIを`atk wi show`と同じ見出し付きの出力として期待行を求める。"""
+    name = "20260101-000000-001.md"
+    return requirement_units.expected_rows(f"### {name} [processing]\n" + path.read_text(encoding="utf-8"), name)
+
+
+def _append_requirements(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, body: str, message: str, agent: bool
+) -> tuple[tuple[list[str], list[tuple[str, str]]], tuple[list[str], list[tuple[str, str]]]]:
+    """公開の追記操作の前後で、証拠の判定と雛形が共有する期待行を求める。"""
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    if agent:
+        monkeypatch.setenv("CLAUDECODE", "1")
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "fb.md", body=body)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    before = _shown_rows(path)
+    message_file = tmp_path / "message.md"
+    message_file.write_text(message, encoding="utf-8")
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "edit", "fb.md", "--append", "--body-file", str(message_file)], home=tmp_path)
+    assert result.value.code == 0
+    after = _shown_rows(path)
+    return before, after
+
+
+@pytest.mark.parametrize("message", [_APPEND_MESSAGE, f"## 処理結果\n\n{_APPEND_MESSAGE}", f"## 補足\n\n{_APPEND_MESSAGE}"])
+@pytest.mark.parametrize("kind", list(_APPEND_BODIES))
+def test_agent_append_does_not_add_requirement_rows(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, kind: str, message: str
+) -> None:
+    """エージェントの処理メモ追記は、完成条件の有無と既存の処理結果の有無によらず期待行を増減しない。"""
+    before, after = _append_requirements(tmp_path, monkeypatch, _APPEND_BODIES[kind], message, agent=True)
+    assert after == before
+    assert any("コメント要求" in unit for unit, _source in after[1])
+    assert not any("処理メモの文" in unit for unit, _source in after[1])
+
+
+@pytest.mark.parametrize("kind", ["plain", "with-result"])
+def test_human_append_adds_requirement_rows(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
+    """非エージェント環境の人間の追記は要求であり、追記した文が期待行へ加わる。"""
+    before, after = _append_requirements(tmp_path, monkeypatch, _APPEND_BODIES[kind], _APPEND_MESSAGE, agent=False)
+    assert after[0] == before[0]
+    assert not any("処理メモの文" in unit for unit, _source in before[1])
+    assert any("処理メモの文" in unit for unit, _source in after[1])
+
+
+_SHARED_NOTE_HEADING = "共通の観測"
+
+
+def _shared_note_setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str, pathlib.Path, pathlib.Path]:
+    """2条件のWIと、`完成条件証拠`と同じ場所の共通ノート、全行を未判定にした雛形を用意する。"""
+    first, head, evidence = _generated_review_setup(tmp_path, monkeypatch)
+    wi_path = next((tmp_path / "notes").rglob(FIRST_WI))
+    wi_path.write_text(wi_path.read_text(encoding="utf-8") + "- 再読込\n", encoding="utf-8")
+    note = tmp_path / "共通ノート.md"
+    note.write_text(f"# 共通ノート\n\n## {_SHARED_NOTE_HEADING}\n保存と再読込を同じ実行で観測した。\n", encoding="utf-8")
+    assert _template(evidence, FIRST_WI) == 0
+    return first, head, evidence, note
+
+
+def _save_with_shared_note(tmp_path: pathlib.Path, head: str, template: pathlib.Path, note: str) -> tuple[int, pathlib.Path]:
+    """行固有の判断と共通ノート参照を行別の証拠ファイルで保存する。"""
+    output = tmp_path / "saved.json"
+    argv = [str(template)]
+    for number, text in ((1, "保存は値が書き込まれた"), (2, "再読込は保存済みの値が戻った")):
+        reason = tmp_path / f"reason{number}.md"
+        reason.write_text(f"行固有の判断: {text}。根拠は {note}", encoding="utf-8")
+        argv += [
+            "--row-outcome",
+            f"wi_conditions:{number}",
+            "達成",
+            "--row-evidence-file",
+            f"wi_conditions:{number}",
+            str(reason),
+        ]
+    argv += ["--reviewed-head", head, "--mode", "replace", "--output", str(output)]
+    return run_script.dispatch(argparse.Namespace(script_name="exec-review-evidence-check", script_args=argv)), output
+
+
+def test_shared_note_reference_is_accepted_by_save_return_and_batch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """行固有の判断と共通ノートの見出し参照で構成した根拠を、保存・返却生成・生成入力の一括検査が受理する。"""
+    first, head, template, note = _shared_note_setup(tmp_path, monkeypatch)
+    capsys.readouterr()
+    status, saved = _save_with_shared_note(tmp_path, head, template, f"{note}#{_SHARED_NOTE_HEADING}")
+    assert status == 0, capsys.readouterr().err
+    table = tmp_path / "review.tsv"
+    review_table.init(table)
+    options = _review_options(head, table, 1)
+    options[options.index("--review-start") + 1] = first
+    argv = [str(saved), FIRST_WI, *options, "--return-result", "--reader-fit-review", "文章成果物なし"]
+    capsys.readouterr()
+    assert run_script.dispatch(argparse.Namespace(script_name="exec-review-evidence-check", script_args=argv)) == 0
+    generated = _return_input(capsys.readouterr().out)
+    received = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--batch", str(generated)])
+    assert run_script.dispatch(received) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["exit_code"] == 0 and not result["diagnostics"]
+
+
+def test_shared_note_reference_with_missing_heading_is_rejected(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """共通ノートに無い見出しへの参照は、保存した証拠の検査で拒否する。"""
+    _first, head, template, note = _shared_note_setup(tmp_path, monkeypatch)
+    capsys.readouterr()
+    status, saved = _save_with_shared_note(tmp_path, head, template, f"{note}#存在しない見出し")
+    error = capsys.readouterr().err
+    if status == 0:
+        args = argparse.Namespace(
+            script_name="exec-review-evidence-check", script_args=["--", str(saved), FIRST_WI, "--expected-head", head]
+        )
+        assert run_script.dispatch(args) == 1
+        error = capsys.readouterr().err
+    assert "見出し" in error

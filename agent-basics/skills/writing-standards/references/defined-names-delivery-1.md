@@ -6,3 +6,4 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「要件と認可」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「要件と認可」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux.md#「判断の順序」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/ui-ux.md#「判断の順序」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` |

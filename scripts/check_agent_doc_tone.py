@@ -398,12 +398,12 @@ def _toml_fragments(text: str) -> Iterator[tuple[int, str]]:
 
 def term_violations(path: pathlib.Path, text: str) -> list[tuple[int, str]]:
     """説明文へ戻った失敗対象の語を行番号とともに返す。"""
-    return _term_matches(path, text, _TERM_PATTERNS)
+    return _term_matches(_term_fragments(path, text), _TERM_PATTERNS)
 
 
 def term_cautions(path: pathlib.Path, text: str) -> list[tuple[int, str]]:
     """説明文にある警告対象の語を行番号とともに返す。"""
-    return _term_matches(path, text, _CAUTION_TERM_PATTERNS)
+    return _term_matches(_term_fragments(path, text), _CAUTION_TERM_PATTERNS)
 
 
 def _mask_term_examples(text: str) -> str:
@@ -422,8 +422,11 @@ def _mask_term_examples(text: str) -> str:
     return "".join(masked)
 
 
-def _term_matches(path: pathlib.Path, text: str, patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> list[tuple[int, str]]:
-    """説明文の断片から指定した語に一致する箇所を行番号とともに返す。"""
+def _term_fragments(path: pathlib.Path, text: str) -> list[tuple[int, str]]:
+    """語の判定に使う説明文の断片を、保存形式の名称を除いた形で行番号とともに返す。
+
+    構文解析と名称の除去は入力ごとに1回だけ行い、失敗対象と警告対象の語の表で同じ断片を共有する。
+    """
     text = _mask_term_examples(text)
     if path.suffix == ".md":
         fragments = _markdown_fragments(text)
@@ -438,14 +441,12 @@ def _term_matches(path: pathlib.Path, text: str, patterns: tuple[tuple[str, re.P
         fragments = _toml_fragments(text)
     else:
         fragments = ((index, line) for index, line in enumerate(text.splitlines(), start=1))
-    return sorted(
-        {
-            (line, name)
-            for line, fragment in fragments
-            for name, pattern in patterns
-            if pattern.search(_without_structural_labels(fragment))
-        }
-    )
+    return [(line, _without_structural_labels(fragment)) for line, fragment in fragments]
+
+
+def _term_matches(fragments: list[tuple[int, str]], patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> list[tuple[int, str]]:
+    """断片から指定した語に一致する箇所を行番号とともに返す。"""
+    return sorted({(line, name) for line, fragment in fragments for name, pattern in patterns if pattern.search(fragment)})
 
 
 def _term_target(path: pathlib.Path, roots: list[pathlib.Path]) -> bool:
@@ -792,11 +793,12 @@ def main(argv: list[str] | None = None) -> int:
     for path, text in contents:
         try:
             if _term_target(path, args.term_root or []):
-                for line, term in term_violations(path, text):
+                fragments = _term_fragments(path, text)
+                for line, term in _term_matches(fragments, _TERM_PATTERNS):
                     diagnostics.emit(
                         path, line, Severity.ERROR, f"「{term}」を説明に使用している。対象と動作が分かる文へ書き直す。"
                     )
-                for line, term in term_cautions(path, text):
+                for line, term in _term_matches(fragments, _CAUTION_TERM_PATTERNS):
                     diagnostics.emit(
                         path,
                         line,

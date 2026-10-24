@@ -13,4 +13,5 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime.md#「agents_serverの二層待機」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「agents_serverの二層待機」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「委譲単位の確定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「委譲単位の確定」` |
+| 作業を分担するかと総費用を比較する時 | `routing.md#「要否判定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「要否判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sending.md#「起動と観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/sending.md#「起動と観測」` |

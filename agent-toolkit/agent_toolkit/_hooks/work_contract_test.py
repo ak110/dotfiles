@@ -105,7 +105,7 @@ def test_compaction_notifies_record_and_pending_inputs(
     path.write_text("目的: A全体\n", encoding="utf-8")
     work_contract.observe_input("session")
     monkeypatch.setattr(rules_context, "is_delegated", lambda *_args: False)
-    monkeypatch.setattr(rules_context, "reset_main_operation_skill_ready", lambda *_args: None)
+    monkeypatch.setattr(rules_context, "reset_main_operation_skill_ready", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(rules_context, "mark_user_confirmation_pending", lambda *_args: None)
     monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", lambda *_args, **_kwargs: tmp_path)
     assert (

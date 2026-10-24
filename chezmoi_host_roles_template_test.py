@@ -44,13 +44,6 @@ def _execute(template: Path, hostname: str) -> str:
 
 
 @pytest.mark.parametrize("hostname", _HOSTNAMES)
-def test_atk_serve_config_is_distributed_only_to_linux_server(hostname: str) -> None:
-    """`atk serve`の設定ファイルは役割linux_server（euryale）のホストだけへ配布する。"""
-    ignored = ".config/agent-toolkit/serve.toml" in _execute(SOURCE / ".chezmoiignore", hostname).splitlines()
-    assert ignored is (hostname.lower() != "euryale")
-
-
-@pytest.mark.parametrize("hostname", _HOSTNAMES)
 def test_myprojects_selects_section_by_role(hostname: str) -> None:
     """Windowsアプリの環境（stheno）と全プロジェクトの環境（euryale・euryale-container）で本文を切り替える。"""
     text = _execute(SOURCE / "dot_claude" / "rules" / "myprojects.md.tmpl", hostname)

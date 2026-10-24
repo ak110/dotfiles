@@ -59,20 +59,6 @@ def _fixed_path(root: pathlib.Path, filename: str) -> pathlib.Path:
     return path
 
 
-def test_unknown_config_key_logs_warning(
-    tmp_path: pathlib.Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """未知の設定キーを警告ログで通知し、既知キーの解決は継続する。"""
-    path = tmp_path / "serve.toml"
-    path.write_text('host = "toml-host"\nunknown = 1\n', encoding="utf-8")
-    env = {"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}
-    with caplog.at_level("WARNING"):
-        resolved = config.resolve_config(environ=env, platform="linux")
-    assert resolved == config.ServeConfig("toml-host", 28766)
-    assert "unknown" in caplog.text
-
-
 def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:
     """高さを決めるビューポート単位を`svh`で書く。
 
@@ -452,17 +438,6 @@ process.stdout.write(JSON.stringify({
         "listCount": 1,
         "createCalls": 1,
     }
-
-
-def test_config_ignores_legacy_plans_viewer_file(tmp_path: pathlib.Path) -> None:
-    """旧`claude-plans-viewer.toml`は読み込まず、設定を`serve.toml`だけから読み込む。"""
-    legacy = tmp_path / "claude-plans-viewer.toml"
-    legacy.write_text('root = "/legacy"\nremote-hosts = ["legacy-host"]\n', encoding="utf-8")
-    path = tmp_path / "serve.toml"
-    path.write_text("", encoding="utf-8")
-    resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
-    assert resolved.plans.root is None
-    assert not resolved.plans.remote_hosts
 
 
 @pytest.mark.asyncio

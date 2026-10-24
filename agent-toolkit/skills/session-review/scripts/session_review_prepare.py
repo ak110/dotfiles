@@ -168,6 +168,10 @@ def _read_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+# 未解決の対象と回復した記録行は、どのbundleファイルにも保存されず標準出力だけで届く。
+_SCOPE_EVENT_KINDS = frozenset({"unresolved-record", "unresolved-delegation", "recovered-record-line"})
+
+
 def _extract_bundle(session_arguments: list[str], bundle_dir: pathlib.Path) -> tuple[str | None, list[dict[str, Any]]]:
     """bundleの成功時も未解決通知を受け渡し、走査全量と最終JSONへ混ぜない。"""
     captured = io.StringIO()
@@ -179,20 +183,35 @@ def _extract_bundle(session_arguments: list[str], bundle_dir: pathlib.Path) -> t
         events = [json.loads(line) for line in captured.getvalue().splitlines() if line.strip()]
     except ValueError as error:
         return str(error), []
-    return None, [event for event in events if event.get("kind") in {"unresolved-record", "unresolved-delegation"}]
+    return None, [event for event in events if event.get("kind") in _SCOPE_EVENT_KINDS]
 
 
-def _unconfirmed_lines(events: list[dict[str, Any]]) -> list[str]:
-    """候補件数と区別した確認範囲を、全ての準備文書へ同じ集合で示す。"""
+def _unconfirmed_lines(events: list[dict[str, Any]], recovered: list[dict[str, Any]]) -> list[str]:
+    """候補件数と区別した確認範囲と回復した記録行を、全ての準備文書へ同じ集合で示す。"""
     lines = ["", "## 未確認範囲", ""]
     if not events:
-        return [*lines, "未解決の対象は無い。", ""]
-    return [
-        *lines,
-        f"未解決{len(events)}件。全件はbundle/unconfirmed.jsonlへ保持する。以下は先頭10件の概要である。",
-        *(f"- {event['kind']}: {_clip_utf8(json.dumps(event, ensure_ascii=False), 200)}" for event in events[:10]),
-        "",
-    ]
+        lines.append("未解決の対象は無い。")
+    else:
+        lines.extend(
+            [
+                f"未解決{len(events)}件。全件はbundle/unconfirmed.jsonlへ保持する。以下は先頭10件の概要である。",
+                *(f"- {event['kind']}: {_clip_utf8(json.dumps(event, ensure_ascii=False), 200)}" for event in events[:10]),
+            ]
+        )
+    if recovered:
+        lines.extend(
+            [
+                "",
+                f"回復した記録行{len(recovered)}件。JSONとして成立しない行を、直後にある同じordinalとtypeの完全な行で置き換えた。"
+                "原本は変更していない。全件はbundle/recovered.jsonlへ保持する。",
+                *(
+                    f"- {event['record']}: {event['line']}行目 → {event['superseded_by']}行目"
+                    f"（ordinal={event['ordinal']}、type={event['entry_type']}）"
+                    for event in recovered[:10]
+                ),
+            ]
+        )
+    return [*lines, ""]
 
 
 def _fence(body: str, info: str = "text") -> list[str]:
@@ -1091,7 +1110,9 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         session_arguments = ["--codex-thread-id", args.codex_thread_id]
     bundle_dir = work_dir / "bundle"
     bundle_dir.mkdir(exist_ok=True)
-    failure, unresolved = _extract_bundle(session_arguments, bundle_dir)
+    failure, scope_events = _extract_bundle(session_arguments, bundle_dir)
+    unresolved = [event for event in scope_events if event["kind"] != "recovered-record-line"]
+    recovered = [event for event in scope_events if event["kind"] == "recovered-record-line"]
     if failure is not None:
         return _missing("bundle", f"{failure}\n診断用に保持した作業領域: {work_dir}")
     try:
@@ -1108,6 +1129,9 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         return _missing("bundle", str(error))
     (bundle_dir / "unconfirmed.jsonl").write_text(
         "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in unresolved), encoding="utf-8"
+    )
+    (bundle_dir / "recovered.jsonl").write_text(
+        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in recovered), encoding="utf-8"
     )
 
     # 準備と証拠照会で同じ入力指定を使い、
@@ -1136,6 +1160,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
                     "conversation_utf8_bytes": conversation_bytes,
                     "conversation_limit_bytes": _CONVERSATION_MAX_BYTES,
                     "unconfirmed_scope": unresolved,
+                    "recovered_record_lines": recovered,
                 },
                 ensure_ascii=False,
                 separators=(",", ":"),
@@ -1189,7 +1214,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         ),
         encoding="utf-8",
     )
-    unconfirmed_text = "\n".join(_unconfirmed_lines(unresolved))
+    unconfirmed_text = "\n".join(_unconfirmed_lines(unresolved, recovered))
     improvement_rows = [
         f"- {event['record']}:{event['line']}: {line}" for event in timeline for line in event.get("reported_improvements", [])
     ]
@@ -1240,6 +1265,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         },
         "failure_ledger_skipped": ledger_skipped,
         "unconfirmed_scope": unresolved,
+        "recovered_record_lines": recovered,
         "improvement_lines": list(dict.fromkeys(line for event in timeline for line in event.get("reported_improvements", []))),
         "elapsed_seconds": total.get("elapsed_seconds"),
         "compaction_count": compaction.get("count", 0),

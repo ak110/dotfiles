@@ -7,6 +7,7 @@ import pathlib
 import shlex
 import subprocess
 import sys
+import textwrap
 import typing
 
 import pytest
@@ -292,3 +293,46 @@ def test_test_git_directory_resolves_specified_executable(tmp_path: pathlib.Path
     for value in ("git", str(tmp_path / "missing"), str(broken)):
         with pytest.raises(pytest.UsageError, match=isolation.TEST_GIT_ENVIRONMENT_NAME):
             isolation.build_test_git_directory(value, tmp_path / f"rejected-{len(value)}")
+
+
+def test_parent_update_and_config_override_environment_removed(tmp_path: pathlib.Path) -> None:
+    """親の`update-dotfiles`の実行状態と設定上書きを継承した子pytestでも、試験はそれらを持たない状態で始まる。
+
+    `update-dotfiles`はCodex daemonの再起動を経て、エージェントのシェルへこれらの変数を残す。
+    継承されると単独の公開操作を試すテストが更新処理配下の分岐へ入るため、共通隔離で除く。
+    """
+    probe = tmp_path / "probe_test.py"
+    probe.write_text(
+        textwrap.dedent("""\
+            import os
+            from agent_toolkit._testing import isolation
+
+            def test_probe(tmp_path):
+                isolation.assert_development_state_isolated(tmp_path)
+                for name in ("UPDATE_DOTFILES_RUN_ID", "DOTFILES_PRUNE", "DOTFILES_CODEX_DAEMON_AUTO_RESTART",
+                             "AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "AGENT_TOOLKIT_CONFIG_EXAMPLE"):
+                    assert name not in os.environ, name
+        """),
+        encoding="utf-8",
+    )
+    environment = {
+        **os.environ,
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "UPDATE_DOTFILES_RUN_ID": "parent-run",
+        "DOTFILES_PRUNE": "1",
+        "DOTFILES_CODEX_DAEMON_AUTO_RESTART": "1",
+        "AGENT_TOOLKIT_CONFIG_DOTFILES_MODE": "minimal",
+        "AGENT_TOOLKIT_CONFIG_EXAMPLE": "parent",
+    }
+    environment.pop("PYTEST_ADDOPTS", None)
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-o", "addopts=", "-p", isolation.__name__, str(probe)],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

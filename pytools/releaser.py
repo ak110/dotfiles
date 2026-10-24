@@ -462,7 +462,8 @@ def _check_runs_success(runs: list[dict[str, Any]]) -> None:
         details = ", ".join(f"{n}: {c}" for n, c in failed)
         raise _ReleaserError(
             f"CIに失敗しています: {details}。"
-            "gh run listでrun IDを取得し、gh run view <id> --log-failedで原因を確認・修正してから"
+            "gh run listでrun IDを、gh run view <id> --json jobsで失敗jobのIDを取得し、"
+            "gh api repos/<owner>/<repo>/actions/jobs/<job ID>/logs --allow-escape-sequencesの全ログで原因を確認・修正してから"
             "releaserを再実行してください。"
         )
     logger.info("CIは全て成功しています。")
@@ -656,7 +657,9 @@ def _watch_run(
                 return
             raise _ReleaserError(
                 f"release run {run_id} が失敗しました（conclusion={conclusion}）。"
-                f"gh run view {run_id} --log-failedで原因を確認・修正してください。"
+                f"gh run view {run_id} --json jobsで失敗jobのIDを取得し、"
+                "gh api repos/<owner>/<repo>/actions/jobs/<job ID>/logs "
+                "--allow-escape-sequencesの全ログで原因を確認・修正してください。"
             )
         if status not in _IN_PROGRESS_STATUSES:
             raise _ReleaserError(

@@ -1578,10 +1578,10 @@ main > .toolbar {
 #screen-sessions main .spacer {
   flex: 1;
 }
+/* セッション名は見出しだけが示すため、狭い幅や拡大時も省略せず折り返して全文を表示する。 */
 #screen-sessions .detail-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-weight: 600;
 }
 #screen-sessions #detail-usage {

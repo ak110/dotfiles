@@ -43,6 +43,7 @@ description: >
 ## pyfltrの起動形
 
 - 名前が確定したチェックの実効設定（有効状態・実行器・コマンドライン・実行ファイルの解決）は、最初に`pyfltr command-info <command> --output-format=jsonl`で取得する
+- 渡した対象ファイルとcwdは実行集合と一致しないことがある。モノレポでは子プロジェクトへ展開し、設定（pytestの`pytest-always-targets`など）は対象外のファイルを加える。起動前に実効設定と設定ファイルから実行集合を見積もり、実行後は保存結果のsubproject別の件数で確かめる。同じ内容へ同じ集合を重ねる起動は避け、失敗対象だけの再確認には`--only-failed`か`commands`の限定を使う
 - 起動形は対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえ、定義が無ければ`uvx pyfltr`を使う
 - 使い分け・入出力形式・失敗時の再実行は`pyfltr <サブコマンド> --help`とMCPスキーマで確認する。未掲載の設定・導入手順は<https://ak110.github.io/pyfltr/llms.txt>からたどる
 

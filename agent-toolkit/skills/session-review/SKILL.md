@@ -79,6 +79,7 @@ description: >
    - `stats.md`は30,000バイト以下で、全担当を母集団とした総量・計数定義、担当別tokens上位、律速区間、圧縮・未計測、読込・Skill・反復・結果量の上位を示す。担当別・対象別の全量は`bundle/stats.jsonl`と`bundle/resource-usage.jsonl`へ保持し、表示外・非律速担当も照会できる。毎回読む索引と保存する全量を分け、判断に要る詳細だけ追加取得する
    - `stats.md`の大出力点検は、記録の返却本文8,192バイト以上について、単独の明示本文取得を除き大きい順の最大10件と入力・結果位置を示す。不要な項目・反復・表示と保存の混在を見直す。量と反復だけでは問題と判定しない
    - `candidates.md`・`stats.md`の未確認範囲とJSONの`unconfirmed_scope`は未解決の記録と識別子を得られない呼び出しを区別して示す。候補件数とは別の確認範囲である
+   - JSONとして成立しない記録行のうち、直後に同じ`ordinal`と`type`の完全な行がある途中書込みは、その完全な行で置き換えて読む。置き換えた行は`candidates.md`と`stats.md`の「未確認範囲」節の「回復した記録行」とJSONの`recovered_record_lines`、全件は`bundle/recovered.jsonl`に示す。それ以外の破損は回復せず、メイン記録なら行番号付きで準備を止め、委譲先記録なら理由付きで`unconfirmed_scope`へ残す
 
    標準出力の1行JSONは各文書の所在（`conversation_path`、`comparison_materials_path`、`candidates_path`、`stats_path`）と`reference_document`（無ければnull）を持つ。
    ほかに`prepared_at`、`utterance_counts`、`candidate_total`・`candidate_counts`、`excluded_counts`、`failure_ledger_skipped`を持つ。

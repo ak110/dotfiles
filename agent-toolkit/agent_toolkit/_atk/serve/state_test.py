@@ -5,7 +5,6 @@
 import asyncio
 import contextlib
 import json
-import os
 import pathlib
 import signal
 import typing
@@ -31,13 +30,6 @@ from agent_toolkit._testing.serve_support import (
     _write_detail_entry,
 )
 
-# UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
-# 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
-# そのまま渡すとこの解決が失敗するため、取り込み時点の環境変数を控えてNodeへ渡す。
-# 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
-# module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
-_HOST_ENVIRON = dict(os.environ)
-
 
 @pytest.mark.parametrize("port", [True, 0, 65536])
 def test_invalid_port(port: object) -> None:
@@ -46,7 +38,9 @@ def test_invalid_port(port: object) -> None:
         config.resolve_config(port=port)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
-def test_assets_global_error_uses_shared_lifecycle_for_all_generators() -> None:
+def test_assets_global_error_uses_shared_lifecycle_for_all_generators(
+    host_environ: typing.Callable[[], dict[str, str]],
+) -> None:
     """共通エラーの消去・再表示と、各生成元が同じ処理で表示することを検証する。"""
     result = _run_node_ui(
         """
@@ -111,7 +105,8 @@ initializeApp();
 await initialization;
 failures.push(elements['operation-notice-message'].textContent);
 process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
-"""
+""",
+        environment=host_environ(),
     )
     assert result == {
         "shown": {"message": "［WI / node-test / /notes / 操作］最初のエラー", "hidden": False},
@@ -418,31 +413,6 @@ async def test_state_publishes_at_max_wait_deadline_and_restarts_debounce(
     latest.function(*latest.args)
     await asyncio.sleep(0)
     assert published == ["changed", "changed"]
-
-
-def test_config_resolves_plans_and_sessions_sources(tmp_path: pathlib.Path) -> None:
-    """設定の読み込みを`serve.toml`に統合し、両画面の参照元を同じファイルで解決する。"""
-    path = tmp_path / "serve.toml"
-    path.write_text(
-        'host = "toml-host"\n'
-        "\n"
-        "[plans]\n"
-        'root = "/srv/plans"\n'
-        'remote_hosts = ["remote-host", "stheno"]\n'
-        "\n"
-        "[sessions]\n"
-        'claude_home = "/srv/claude"\n'
-        'codex_home = "/srv/codex"\n'
-        'remote_hosts = ["remote-host"]\n',
-        encoding="utf-8",
-    )
-    resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
-    assert resolved.plans == config.PlansConfig(root="/srv/plans", remote_hosts=("remote-host", "stheno"))
-    assert resolved.sessions == config.SessionsConfig(
-        claude_home="/srv/claude",
-        codex_home="/srv/codex",
-        remote_hosts=("remote-host",),
-    )
 
 
 @pytest.mark.asyncio

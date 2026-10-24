@@ -3,6 +3,9 @@
 import pathlib
 import subprocess
 import sys
+import typing
+
+import pytest
 
 from pytools import rename
 
@@ -129,3 +132,71 @@ class TestPatternFile:
         rename.rename_tree(tmp_path, rules, dirs_only=True)
         assert (tmp_path / "dir").exists()
         assert (tmp_path / "sub_file.txt").exists()  # ファイルは改名されない
+
+
+class TestExitCode:
+    """続行した改名の失敗を終了コードへ反映するテスト。"""
+
+    @staticmethod
+    def _run_main(monkeypatch: pytest.MonkeyPatch, *args: str) -> int | str | None:
+        monkeypatch.setattr(sys, "argv", ["py-rename", *args])
+        with pytest.raises(SystemExit) as exc_info:
+            rename.main()
+        return exc_info.value.code
+
+    @staticmethod
+    def _fail_rename_of(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+        real_rename = pathlib.Path.rename
+
+        def flaky_rename(self: pathlib.Path, target: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> pathlib.Path:
+            if self.name == name:
+                raise PermissionError("denied")
+            return real_rename(self, target, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "rename", flaky_rename)
+
+    def test_args_form_exit_code_one_on_failure(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """引数形: 1件の改名が失敗しても残りを改名し、終了コード1で終える。"""
+        (tmp_path / "foo_a.txt").touch()
+        (tmp_path / "foo_b.txt").touch()
+        self._fail_rename_of(monkeypatch, "foo_a.txt")
+
+        code = self._run_main(monkeypatch, "foo", "bar", str(tmp_path / "foo_a.txt"), str(tmp_path / "foo_b.txt"))
+
+        assert code == 1
+        assert (tmp_path / "foo_a.txt").exists()
+        assert (tmp_path / "bar_b.txt").exists()
+
+    def test_args_form_exit_code_zero_without_failure(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """引数形: 失敗が無ければ終了コード0で終える。"""
+        (tmp_path / "foo_a.txt").touch()
+
+        assert self._run_main(monkeypatch, "foo", "bar", str(tmp_path / "foo_a.txt")) == 0
+        assert (tmp_path / "bar_a.txt").exists()
+
+    def test_pattern_file_form_exit_code_one_on_failure(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """パターンファイル形: 1件の改名が失敗しても残りを改名し、終了コード1で終える。"""
+        target = tmp_path / "target"
+        target.mkdir()
+        (target / "foo_a.txt").touch()
+        (target / "foo_b.txt").touch()
+        pf = tmp_path / "rules.txt"
+        pf.write_text("^foo_\tbar_\n", encoding="utf-8")
+        self._fail_rename_of(monkeypatch, "foo_a.txt")
+
+        assert self._run_main(monkeypatch, "-f", str(pf), "-t", str(target)) == 1
+        assert (target / "foo_a.txt").exists()
+        assert (target / "bar_b.txt").exists()
+
+    def test_pattern_file_form_exit_code_zero_without_failure(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """パターンファイル形: 失敗が無ければ終了コード0で終える。"""
+        target = tmp_path / "target"
+        target.mkdir()
+        (target / "foo_a.txt").touch()
+        pf = tmp_path / "rules.txt"
+        pf.write_text("^foo_\tbar_\n", encoding="utf-8")
+
+        assert self._run_main(monkeypatch, "-f", str(pf), "-t", str(target)) == 0
+        assert (target / "bar_a.txt").exists()

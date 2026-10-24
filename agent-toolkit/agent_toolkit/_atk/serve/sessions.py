@@ -357,7 +357,11 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
     detail["host"] = context.hostname
     detail["path"] = raw_path
     detail["started_at"] = _started_at(engine, records)
-    detail["project"] = _detail_project(engine, records, path)
+    detail["session_name"] = (
+        session_record_format.claude_session_name(records)
+        if engine == "claude"
+        else session_record_format.codex_thread_name(context.codex_home, detail["session_id"])
+    )
     detail["cost"] = session_cost_records.estimate_detail_cost(
         engine,
         path,
@@ -369,18 +373,6 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
         broken_lines=broken,
     )
     return detail
-
-
-def _detail_project(engine: str, records: list[dict[str, typing.Any]], path: pathlib.PurePath) -> str | None:
-    """記録から作業ディレクトリを取り出す。持たない場合はディレクトリ名で代替する。"""
-    if engine == "codex":
-        cwd = session_record_format.codex_metadata(records).get("cwd")
-        return cwd if isinstance(cwd, str) else None
-    for record in records:
-        cwd = record.get("cwd")
-        if isinstance(cwd, str) and cwd:
-            return cwd
-    return path.parent.name
 
 
 # --------------------------------------------------------------------------------------
@@ -703,7 +695,14 @@ async def session_detail(context: SessionsContext, engine: str, host: str, path:
     detail["host"] = host
     detail["path"] = path
     detail["started_at"] = _started_at(engine, records)
-    detail["project"] = _detail_project(engine, records, pure_path)
+    # Codexのthread名はロールアウトの記録に無く、リモートホストの`session_index.jsonl`をヘルパーが読んで返す。
+    # 欄を返さない旧版のヘルパーでは名前なしとして扱う。
+    thread_name = payload.get("thread_name")
+    detail["session_name"] = (
+        session_record_format.claude_session_name(records)
+        if engine == "claude"
+        else (thread_name if isinstance(thread_name, str) and thread_name.strip() else None)
+    )
     # 算出は記録があるホストで行う。子孫の本文を画面サーバーへ転送しない。
     detail["cost"] = payload.get("cost")
     return detail

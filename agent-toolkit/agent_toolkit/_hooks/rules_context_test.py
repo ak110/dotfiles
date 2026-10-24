@@ -14,7 +14,10 @@ import pytest
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log
 from agent_toolkit._common import plugin_environment
+from agent_toolkit._common.read_triggers import ReadTarget
+from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import posttooluse, pretooluse, rules_context, rules_context_codex
+from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
@@ -273,6 +276,132 @@ def test_session_start_context_fits_claude_code_cap(
     assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT, _session_start_length_report(output)
 
 
+# compact前の内部状態を既存PreToolUse記録で組み立てる局所fixtureだけを許可する。
+# pylint: disable=protected-access
+@pytest.mark.parametrize(
+    ("selected_agent", "acquired", "heading", "expected"),
+    [
+        (None, False, "", None),
+        ("main", False, "", None),
+        ("main", True, "", "全文の基準"),
+        ("main", True, "「必要範囲」", "指定範囲の基準"),
+        ("sub-1", True, "", None),
+    ],
+)
+def test_compact_restores_selected_material_only_for_the_same_main_agent(
+    selected_agent: str | None,
+    acquired: bool,
+    heading: str,
+    expected: str | None,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """compact直後は、同一主体が選択済みの必要範囲だけを次のPreToolUseより先に回復する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    document = tmp_path / "changed-rule.md"
+    document.write_text(
+        "# 変更規範\n\n全文の基準\n\n## 「必要範囲」\n\n指定範囲の基準\n\n## 「別範囲」\n\n配送しない本文\n",
+        encoding="utf-8",
+    )
+    target = ReadTarget(document, heading)
+    if selected_agent is not None:
+        read_delivery._select_targets("compact-recovery", [target], selected_agent)
+        if acquired:
+            read_delivery._mark("compact-recovery", document, selected_agent, heading)
+
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "compact-recovery"}))
+
+    output = _output(capsys)
+    records = read_state("compact-recovery").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    if expected is None:
+        assert "全文の基準" not in output
+        assert not read_delivery.target_ready(records, target, "main")
+    else:
+        assert expected in output
+        assert read_delivery.target_ready(records, target, "main")
+        if heading:
+            assert "配送しない本文" not in output
+
+
+def test_compact_keeps_target_unread_and_shows_its_range_when_recovery_budget_is_insufficient(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """本文がSessionStart残予算へ収まらない場合、取得済みへ戻さず読取先と必要範囲を示す。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    document = tmp_path / "large-rule.md"
+    document.write_text("# 大きい変更規範\n\n" + "本文" * rules_context.CLAUDE_CODE_OUTPUT_LIMIT, encoding="utf-8")
+    target = ReadTarget(document)
+    read_delivery._select_targets("compact-budget", [target], "main")
+    read_delivery._mark("compact-budget", document, "main")
+
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "compact-budget"}))
+
+    output = _output(capsys)
+    records = read_state("compact-budget").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert str(document) in output
+    assert "未取得" in output
+    assert not read_delivery.target_ready(records, target, "main")
+    assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
+
+
+def test_compact_restores_acquired_material_for_a_delegated_independent_session(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """独立した委譲sessionも、自身のmain主体が取得済みだった資料をcompact後に回復する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    document = tmp_path / "delegated-rule.md"
+    document.write_text("# 委譲規範\n\n委譲先の取得済み基準\n", encoding="utf-8")
+    target = ReadTarget(document)
+    read_delivery._select_targets("delegated-compact", [target], "main")
+    read_delivery._mark("delegated-compact", document, "main")
+
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "delegated-compact"}))
+
+    output = _output(capsys)
+    records = read_state("delegated-compact").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert "委譲先の取得済み基準" in output
+    assert read_delivery.target_ready(records, target, "main")
+
+
+@pytest.mark.parametrize("between", ["clear", "compact"])
+def test_compact_discards_undelivered_recovery_target_before_a_later_context_boundary(
+    between: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """予算超過後の復旧候補をclearまたは次のcompactへ持ち越さない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    document = tmp_path / "large-rule.md"
+    document.write_text("# 大きい変更規範\n\n" + "本文" * rules_context.CLAUDE_CODE_OUTPUT_LIMIT, encoding="utf-8")
+    target = ReadTarget(document)
+    session_id = f"stale-{between}"
+    read_delivery._select_targets(session_id, [target], "main")
+    read_delivery._mark(session_id, document, "main")
+
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": session_id}))
+    assert str(document) in _output(capsys)
+
+    if between == "clear":
+        rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "clear", "session_id": session_id}))
+        assert str(document) not in _output(capsys)
+        rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": session_id}))
+    else:
+        rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": session_id}))
+
+    output = _output(capsys)
+    records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert str(document) not in output
+    assert not read_delivery.target_ready(records, target, "main")
+
+
+# pylint: enable=protected-access
 def test_subagent_start_context_fits_claude_code_cap(capsys: pytest.CaptureFixture[str]) -> None:
     """Claude固有規範を含むSubagentStart本文がhook上限へ収まる。"""
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "general-purpose"}))

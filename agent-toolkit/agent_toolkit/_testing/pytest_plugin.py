@@ -10,13 +10,15 @@ import os
 import pathlib
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Generator, Iterator
+from multiprocessing import resource_tracker
 from typing import Any
 
 import pytest
 from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
+import agent_toolkit
 from agent_toolkit._agents_server import launch_requests, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
@@ -26,7 +28,8 @@ from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import git_repository as _git_repository
-from agent_toolkit._testing import session_evidence_support
+from agent_toolkit._testing import isolation, session_evidence_support
+from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.wi_mutations_support import _AGENT_ENVIRONMENT_VARIABLES
 
@@ -36,6 +39,31 @@ _PACKAGE_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _ORIGINAL_WAIT_FOR_END_TURN = _transcript_scan.wait_for_end_turn
 
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
+
+
+def _target_plugin_root(config: pytest.Config) -> pathlib.Path | None:
+    """公開pytest設定が対象にするagent-toolkit rootだけを返す。"""
+    root = config.rootpath.resolve()
+    if (root / "agent_toolkit" / "__init__.py").is_file():
+        return root
+    candidate = root / "agent-toolkit"
+    return candidate if (candidate / "agent_toolkit" / "__init__.py").is_file() else None
+
+
+def _validate_import_root(config: pytest.Config) -> None:
+    """対象worktreeのpytestが別のagent-toolkitを読んだ状態を早期に拒否する。"""
+    target = _target_plugin_root(config)
+    if target is None:
+        return
+    loaded = pathlib.Path(agent_toolkit.__file__).resolve().parent.parent
+    if loaded != target:
+        raise pytest.UsageError(
+            "agent_toolkitの読込元が対象worktreeと異なる: "
+            f"loaded={loaded}, target={target}。PYTHONPATH と UV_PYTHON を解除し、"
+            "対象worktreeをカレントディレクトリにして "
+            "`uv run --frozen pytest <対象試験>` を再実行する。"
+        )
+
 
 _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
     "FORCE_PROMPT_CACHING_5M",
@@ -61,6 +89,7 @@ def pytest_configure(config: pytest.Config) -> None:
     HOMEやキャッシュを一時ディレクトリへ向けたテストから起動すると、未指定ではテストごとに環境を構築し直す。
     保存先そのものを検証するテストは、明示した環境の辞書か`delenv`で上書きする。
     """
+    _validate_import_root(config)
     os.environ.setdefault(plugin_environment.RUNTIME_DATA_ENV, str(plugin_environment.runtime_data(os.environ)))
     stack = contextlib.ExitStack()
     config.add_cleanup(stack.close)
@@ -79,7 +108,16 @@ def pytest_configure(config: pytest.Config) -> None:
         config.option.basetemp = str(directory / "fixtures")
 
     def release_resources() -> None:
-        children = [child for child in process_tree.collect_descendants(os.getpid()) if child not in previous_children]
+        # multiprocessingのresource_trackerは同じインタープリターが終了まで使う補助プロセスであり、
+        # pytestの終了で書込側のpipeが閉じると自ら終了する。先に停止すると、終了時の資源解放が
+        # trackerの死亡を検出して再起動し、未解放の資源を報告する警告（`process died unexpectedly, relaunching`）を出力する。
+        # 起動PIDは公開APIを持たないため、標準ライブラリの内部属性から読む。
+        tracker = getattr(resource_tracker._resource_tracker, "_pid", None)  # pylint: disable=protected-access
+        children = [
+            child
+            for child in process_tree.collect_descendants(os.getpid())
+            if child not in previous_children and child.pid != tracker
+        ]
         residual = process_tree.reclaim_descendants(children)
         if residual:
             raise pytest.UsageError(
@@ -96,6 +134,34 @@ def pytest_configure(config: pytest.Config) -> None:
                 managed_temp.cleanup_managed_temp(directory)
 
     stack.callback(release_resources)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_collection(session: pytest.Session) -> Generator[None, object, object]:
+    """収集区間だけホームと設定ディレクトリをbasetemp配下へ向け、収集時にimportされる定数を実ホームから外す。
+
+    試験関数ごとの隔離は収集の後に始まるため、収集時にimportされた製品モジュールが`Path.home()`などから
+    確定した定数は、この区間が無いと実ホームを指す。セッション全体で差し替えない理由は`isolation`の説明を参照する。
+    """
+    basetemp = session.config.option.basetemp
+    if basetemp is None:
+        raise pytest.UsageError("収集時のホームを隔離するbasetempが未設定です。--basetempを指定して再実行してください")
+    with isolation.import_time_home(pathlib.Path(basetemp) / "import-time-home"):
+        return (yield)
+
+
+@pytest.fixture(autouse=True)
+def _reclaim_agents_server_logging(request: pytest.FixtureRequest) -> Iterator[None]:
+    """診断ログ設定を呼んだテストのhandlerを、そのテストの終了時に回収してloggerの設定を戻す。
+
+    `configure_logging`の標準エラー向けhandlerは構築時の`sys.stderr`（試験中はpytestの取り込み用stream）を保持する。
+    回収しないと、streamが閉じた後も後続のテストの警告がそのhandlerへ届き、書込に失敗する。
+    """
+    if not request.path.is_relative_to(_PACKAGE_ROOT):
+        yield
+        return
+    with isolated_agents_server_logging():
+        yield
 
 
 @pytest.fixture(autouse=True)

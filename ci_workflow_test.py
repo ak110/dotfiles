@@ -609,3 +609,15 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
     environment = workflow_mapping(pytest_step["env"])
     assert environment["AGENT_TOOLKIT_TEST_GIT"] == f"${{{{ steps.{install['id']}.outputs.git }}}}"
     assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"
+
+
+def test_linux_job_places_temporary_files_on_runner_disk(workflow_data: dict[str, object]) -> None:
+    """test-linuxは大容量の一時物を生成する全stepより前に、job全体の一時領域をrunnerの作業ディスクへ向ける。
+
+    Ubuntu 26.04の/tmpはquota付きtmpfsであり、完全導入の検証homeや展開物が容量制限で失敗する。
+    """
+    steps = workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-linux"]))
+    runs = [str(step.get("run", "")) for step in steps]
+    placement = runs.index('echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"')
+    for marker in ("scripts/check_update_dotfiles_upgrade.py", "install.sh"):
+        assert placement < next(index for index, run in enumerate(runs) if marker in run), marker

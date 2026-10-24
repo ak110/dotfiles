@@ -29,6 +29,7 @@ def main() -> None:
         flags |= re.IGNORECASE
     regex_list = [re.compile(pattern, flags=flags) for pattern in args.patterns]
 
+    failures = 0
     for path in args.target.rglob("*"):
         if not path.is_dir():
             continue
@@ -43,12 +44,13 @@ def main() -> None:
             if not args.dry_run:
                 shutil.rmtree(path)
         except Exception as e:
+            failures += 1
             print(
                 f"{path}: rmtree failed ({e})。"
                 f"後続の処理は続行します。"
                 f"残った内容と削除権限・使用中のアプリを確認して再実行してください。"
             )
-    sys.exit(0)
+    sys.exit(1 if failures else 0)
 
 
 def _match(regex_list: list[re.Pattern], value: str) -> bool:

@@ -94,6 +94,27 @@ def test_direct_environment_puts_current_root_before_existing_pythonpath(tmp_pat
     assert Path(direct["UV_PROJECT_ENVIRONMENT"]).is_relative_to(tmp_path / "data" / "environments")
 
 
+@pytest.mark.parametrize("caller_pythonpath", [None, "existing"])
+def test_direct_environment_restores_callers_pythonpath_for_child(tmp_path: Path, caller_pythonpath: str | None) -> None:
+    """直接起動の子は起動層が前置した読込先を継承しない。"""
+    root = _root(tmp_path / "plugin")
+    environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
+    if caller_pythonpath is not None:
+        environment["PYTHONPATH"] = caller_pythonpath
+    child = subject.direct_environment(root, environment)
+    inherited_venv.strip_inherited_venv(child)
+    assert child.get("PYTHONPATH") == caller_pythonpath
+
+
+def test_nested_direct_environment_keeps_only_inner_root(tmp_path: Path) -> None:
+    """入れ子の直接起動は外側の読込先と復元記録を残さない。"""
+    outer = _root(tmp_path / "outer")
+    inner = _root(tmp_path / "inner")
+    environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data"), "PYTHONPATH": "existing"}
+    nested = subject.direct_environment(inner, subject.direct_environment(outer, environment))
+    assert nested["PYTHONPATH"].split(os.pathsep) == [str(inner.resolve()), "existing"]
+
+
 def test_launch_preserves_callers_environment_and_cli_preserves_path(tmp_path: Path) -> None:
     """呼出元の環境を変更せず、uvの子プロセスへ専用の保存先を渡し、CLIのPATHには既存の要素を保つ。"""
     root = _root(tmp_path / "plugin")
@@ -303,6 +324,7 @@ def test_session_start_hook_separates_real_uv_and_restores_child_environment(
     protected_paths = (caller / "pyvenv.cfg", marker, module)
     protected = {str(path.relative_to(caller)): path.read_bytes() for path in protected_paths}
     expected = None if caller_setting == "unset" else ("" if caller_setting == "empty" else str(caller))
+    expected_pythonpath = environment.get("PYTHONPATH")
     if expected is not None:
         environment["UV_PROJECT_ENVIRONMENT"] = expected
     environment["CLAUDE_ENV_FILE"] = str(tmp_path / "session-start-env.sh")
@@ -325,7 +347,8 @@ def test_session_start_hook_separates_real_uv_and_restores_child_environment(
         "child_environment = dict(os.environ)\n"
         "inherited_venv.strip_inherited_venv(child_environment)\n"
         "child = subprocess.run([sys.executable, '-c', "
-        "\"import json, os; print(json.dumps({'caller': os.environ.get('UV_PROJECT_ENVIRONMENT')}))\"], "
+        "\"import json, os; print(json.dumps({'caller': os.environ.get('UV_PROJECT_ENVIRONMENT'), "
+        "'pythonpath': os.environ.get('PYTHONPATH')}))\"], "
         "env=child_environment, capture_output=True, text=True, check=True, timeout=5)\n"
         "print(json.dumps({'prefix': sys.prefix, 'environment': os.environ['UV_PROJECT_ENVIRONMENT'], "
         "'child': json.loads(child.stdout), 'input': sys.stdin.read()}))\n",
@@ -346,7 +369,7 @@ def test_session_start_hook_separates_real_uv_and_restores_child_environment(
     assert launched.returncode == 0, launched.stderr
     observed = json.loads(launched.stdout)
     assert Path(observed["environment"]).is_relative_to(tmp_path / "runtime-data" / "environments")
-    assert observed["child"] == {"caller": expected}
+    assert observed["child"] == {"caller": expected, "pythonpath": expected_pythonpath}
     assert json.loads(observed["input"]) == {"hook_event_name": "SessionStart"}
     assert {str(path.relative_to(caller)): path.read_bytes() for path in protected_paths} == protected
     assert "UV_PROJECT_ENVIRONMENT" not in Path(environment["CLAUDE_ENV_FILE"]).read_text(encoding="utf-8")

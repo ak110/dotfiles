@@ -370,6 +370,49 @@ def codex_metadata(records: typing.Iterable[dict[str, typing.Any]]) -> dict[str,
     return {"cwd": None, "started_at": None}
 
 
+def claude_session_name(records: typing.Iterable[dict[str, typing.Any]]) -> str | None:
+    """Claude Codeの記録からセッション名を返す。
+
+    `/rename`などで付けた名前（最後の`custom-title`の`customTitle`）を優先し、
+    無ければClaude Codeが生成した題名（最後の`ai-title`の`aiTitle`）を使う。どちらも無ければ`None`を返す。
+    """
+    custom: str | None = None
+    generated: str | None = None
+    for record in records:
+        kind = record.get("type")
+        if kind == "custom-title":
+            value = record.get("customTitle")
+            if isinstance(value, str) and value.strip():
+                custom = value
+        elif kind == "ai-title":
+            value = record.get("aiTitle")
+            if isinstance(value, str) and value.strip():
+                generated = value
+    return custom if custom is not None else generated
+
+
+CODEX_SESSION_INDEX = "session_index.jsonl"
+"""Codexがthread名を保存する`<CODEX_HOME>`直下のファイル名。ロールアウトの記録はthread名を持たない。"""
+
+
+def codex_thread_name(codex_home: pathlib.Path, thread_id: str) -> str | None:
+    """`<codex_home>/session_index.jsonl`から、thread IDが一致する最後の行の`thread_name`を返す。
+
+    ファイルが無いか読めない場合と、一致する行が無い場合は`None`を返す。
+    同じthreadの行は名前の変更ごとに追記されるため、最後の行を現在の名前とする。
+    """
+    try:
+        text = (codex_home / CODEX_SESSION_INDEX).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    name: str | None = None
+    for record in parse_records(text)[0]:
+        value = record.get("thread_name")
+        if record.get("id") == thread_id and isinstance(value, str) and value.strip():
+            name = value
+    return name
+
+
 def codex_session_id(path: pathlib.Path) -> str:
     """ロールアウトの識別子を、記録解決と共通の保存規約で取り出す。"""
     return _record_paths.codex_session_id(path)

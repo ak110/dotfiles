@@ -239,7 +239,7 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         # pyfltr v3.14.1で口語表現チェッカーが内蔵化されたため
         # dotfiles配布のカスタムコマンド定義（旧`config.toml`）を配布先から除去する。
         cleanup_paths.RemovedPath(Path("pyfltr/config.toml"), datetime.date(2026, 7, 1)),
-        # 計画ファイル閲覧は atk serve へ統合した。設定は ~/.config/agent-toolkit/serve.toml へ移した。
+        # 計画ファイル閲覧は atk serve へ統合した。設定は atk config の serve_* キーへ移した。
         cleanup_paths.RemovedPath(Path("pytools/claude-plans-viewer.toml"), datetime.date(2026, 9, 2)),
         # 廃止した工程が配置したフラグファイル。いずれも廃止時に削除登録がなく残存していた。
         # feedback-inbox.enabled は setup_feedback_inbox（d08f8d5b で廃止）、
@@ -254,28 +254,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("profile_default"), datetime.date(2026, 8, 14), empty_dir_only=True),
     ],
     Path.home() / "bin": [
-        # bin/ はリポジトリ直下に置き、~/dotfiles/bin を PATH に通す方式を採用する。
-        # 旧配布物 (~/bin/ 配下) を削除する。Linux 用と Windows 用 (.cmd) を共通キーで列挙する。
-        cleanup_paths.RemovedPath(Path("c"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("c.cmd"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("ccusage"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("ccusage.cmd"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("check-gh-actions"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("claude-code-viewer"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("claude-code-viewer.cmd"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("countfiles"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("git_find_big.sh"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("gpuwatch"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("ipy"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("lab"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("lab-bg"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("rdp"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("remote-plans.cmd"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("sonnet"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("sonnet.cmd"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("sudoll"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("update-dotfiles"), datetime.date(2026, 4, 24)),
-        cleanup_paths.RemovedPath(Path("update-dotfiles.cmd"), datetime.date(2026, 4, 24)),
         # pytools/ パッケージ化 (fe09fa3) 以降 .chezmoi-source/bin/ の配布対象外となった旧配布物。
         # 現在は pytools/ の CLI として uv tool install 経由で ~/.local/bin 等に配置される。
         cleanup_paths.RemovedPath(Path("check-image-sizes.py"), datetime.date(2026, 4, 27)),

@@ -33,6 +33,35 @@ class _Record(NamedTuple):
         return json.loads(self.text)
 
 
+class _RecordRecovery(NamedTuple):
+    """JSONとして成立しない行を、同じ記録の後続の完全な行で置き換えた対応。
+
+    `line`は成立しない行、`superseded_by`は同じ`ordinal`と`type`を持ち、成立しない行の`payload`以降を
+    接頭辞として含む行である。どちらも1始まりの行番号で、原本は変更しない。
+    """
+
+    line: int
+    superseded_by: int
+    ordinal: int
+    entry_type: str
+    length: int
+
+
+class _RecordLoadFailure(NamedTuple):
+    """記録を読めなかった理由と、JSONが成立しない行の1始まりの行番号。"""
+
+    reason: str
+    line: int | None = None
+
+
+class _RecordLoad(NamedTuple):
+    """記録の読込結果。`records`が`None`なら`failure`が理由を持つ。"""
+
+    records: list[_Record] | None
+    recoveries: tuple[_RecordRecovery, ...] = ()
+    failure: _RecordLoadFailure | None = None
+
+
 class _CollectedRecord(NamedTuple):
     """全照会モードが共有する、由来と識別子を持つ1記録。"""
 
@@ -45,6 +74,7 @@ class _CollectedRecord(NamedTuple):
     agent_type: str | None
     role: Literal["main", "subagent", "session"]
     aliases: tuple[str, ...] = ()
+    recoveries: tuple[_RecordRecovery, ...] = ()
 
 
 class _UnresolvedRecord(NamedTuple):
@@ -53,6 +83,7 @@ class _UnresolvedRecord(NamedTuple):
     record_id: str
     line: int
     kind: Literal["unresolved-record", "unresolved-delegation"] = "unresolved-record"
+    reason: str | None = None
 
 
 def _text_blocks(content: Any) -> list[str]:
@@ -120,30 +151,81 @@ def _analysis_entry(entry: dict[str, Any]) -> dict[str, Any]:
     return entry
 
 
-def _load_records(raw_path: str | None) -> list[_Record] | None:
-    """絶対パスのJSONLを行番号付きで読み、失敗時は`None`を返す。"""
-    if not raw_path:
+_PARTIAL_HEAD = re.compile(rb'^\{"timestamp":"[^"]*","ordinal":(\d+),"type":"([^"]+)",')
+
+
+def _superseding_line(broken: bytes, following: list[tuple[int, bytes]]) -> _RecordRecovery | None:
+    """成立しない行が、直後の完全な行の途中までの書込みであれば対応を返す。
+
+    Codexのrolloutでは、途中で終わった行（JSONの文字列やUTF-8の多バイト文字の途中で終わった行）の直後に、
+    同じ`ordinal`の完全な行が書かれた記録を観測した。
+    同じ`ordinal`と`type`を持ち、`payload`以降のバイト列が直後の行の接頭辞である場合に限って置き換え、
+    それ以外の破損は回復せず読込失敗として扱う。
+    """
+    head = _PARTIAL_HEAD.match(broken)
+    marker = broken.find(b'"payload":')
+    if head is None or marker < 0:
         return None
+    ordinal, entry_type, body = int(head.group(1)), head.group(2), broken[marker:]
+    for number, line in following:
+        if not line.strip():
+            continue
+        candidate = _PARTIAL_HEAD.match(line)
+        start = line.find(b'"payload":')
+        if candidate is None or int(candidate.group(1)) != ordinal or candidate.group(2) != entry_type:
+            return None
+        if start < 0 or not line[start:].startswith(body):
+            return None
+        try:
+            json.loads(line.decode("utf-8"))
+        except ValueError:
+            return None
+        return _RecordRecovery(0, number, ordinal, entry_type.decode("utf-8", "replace"), len(broken))
+    return None
+
+
+def _load_records_checked(raw_path: str | None) -> _RecordLoad:
+    """絶対パスのJSONLを行番号付きで読み、回復した行と読めない理由を併せて返す。
+
+    行は改行（LF）だけで分ける。JSONの文字列はU+2028などの区切り文字をそのまま含められるため、
+    `str.splitlines`で分けると1つのレコードが複数行に分かれる。
+    """
+    if not raw_path:
+        return _RecordLoad(None, failure=_RecordLoadFailure("記録のパスが指定されていない"))
     path = Path(raw_path)
     if not path.is_absolute():
-        return None
+        return _RecordLoad(None, failure=_RecordLoadFailure(f"記録のパスが絶対パスでない: {raw_path}"))
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError, UnicodeError:
-        return None
+        data = path.read_bytes()
+    except OSError as error:
+        return _RecordLoad(None, failure=_RecordLoadFailure(f"記録を読み取れない: {error}"))
 
+    lines = [(number, raw.removesuffix(b"\r")) for number, raw in enumerate(data.split(b"\n"), start=1)]
     records: list[_Record] = []
-    try:
-        for number, line in enumerate(text.splitlines(), start=1):
-            if not line.strip():
-                continue
+    recoveries: list[_RecordRecovery] = []
+    for index, (number, raw) in enumerate(lines):
+        if not raw.strip():
+            continue
+        try:
+            line = raw.decode("utf-8")
             parsed = json.loads(line)
-            if isinstance(parsed, dict):
-                records.append(_Record(number, line, _analysis_entry(parsed)))
-    except json.JSONDecodeError, ValueError:
-        return None
+        except ValueError as error:
+            recovery = _superseding_line(raw, lines[index + 1 :])
+            if recovery is None:
+                return _RecordLoad(None, failure=_RecordLoadFailure(f"{number}行目を読めない: {error}", number))
+            recoveries.append(recovery._replace(line=number))
+            continue
+        if isinstance(parsed, dict):
+            records.append(_Record(number, line, _analysis_entry(parsed)))
     normalized = normalize_entries([record.entry for record in records])
-    return [record._replace(entry=entry) for record, entry in zip(records, normalized, strict=True)]
+    return _RecordLoad(
+        [record._replace(entry=entry) for record, entry in zip(records, normalized, strict=True)], tuple(recoveries)
+    )
+
+
+def _load_records(raw_path: str | None) -> list[_Record] | None:
+    """絶対パスのJSONLを行番号付きで読み、失敗時は`None`を返す。"""
+    return _load_records_checked(raw_path).records
 
 
 def _parse_timestamp(value: str) -> datetime.datetime:
@@ -392,9 +474,14 @@ def _subagent_records(
     for path in paths:
         if modified_since is not None and path.stat().st_mtime < modified_since.timestamp():
             continue
-        records = _load_records(str(path))
+        loaded = _load_records_checked(str(path))
+        records = loaded.records
         if records is None:
-            unresolved.append(_UnresolvedRecord(f"{source.record_id}/{path.stem}", 0))
+            unresolved.append(
+                _UnresolvedRecord(
+                    f"{source.record_id}/{path.stem}", 0, reason=loaded.failure.reason if loaded.failure else None
+                )
+            )
             continue
         meta_path = path.with_name(f"{path.stem}.meta.json")
         try:
@@ -415,6 +502,7 @@ def _subagent_records(
                 agent_type if isinstance(agent_type, str) else None,
                 "subagent",
                 (legacy_id,) if legacy_id != record_id else (),
+                loaded.recoveries,
             )
         )
     return selected
@@ -429,6 +517,7 @@ def _collect_records(
     main_only: bool = False,
     session_resolver: Callable[[str], tuple[Path, _Runtime] | None] | None = None,
     modified_since: datetime.datetime | None = None,
+    main_recoveries: tuple[_RecordRecovery, ...] = (),
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
     """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。"""
     main_records = [
@@ -453,6 +542,7 @@ def _collect_records(
             None,
             "main",
             ("main",),
+            main_recoveries,
         )
     ]
     if main_only:
@@ -499,9 +589,12 @@ def _collect_records(
                     continue
                 if modified_since is not None and path.stat().st_mtime < modified_since.timestamp():
                     continue
-                records = _load_records(str(path))
+                loaded = _load_records_checked(str(path))
+                records = loaded.records
                 if records is None:
-                    unresolved.append(_UnresolvedRecord(session_id, record.line))
+                    unresolved.append(
+                        _UnresolvedRecord(session_id, record.line, reason=loaded.failure.reason if loaded.failure else None)
+                    )
                     continue
                 seen_paths.add(resolved)
                 collected.append(
@@ -515,6 +608,7 @@ def _collect_records(
                         None,
                         "session",
                         (),
+                        loaded.recoveries,
                     )
                 )
     return collected, unresolved
