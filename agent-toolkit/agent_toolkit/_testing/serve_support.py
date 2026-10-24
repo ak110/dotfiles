@@ -88,13 +88,14 @@ class _HtmlDom(html.parser.HTMLParser):
             self.nodes[self._stack[-1]]["text"] += data
 
 
-def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
+def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None = None) -> dict[str, typing.Any]:
     """WI画面のUI関数を最小DOM上で実行し、シナリオのJSON結果を返す。
 
     WI画面はESモジュールであり、モジュールの外から内部の関数と変数を参照できない。
     共通モジュールとWI画面の本文を`import`と`export`を除いて1つの関数スコープへ並べ、
     シナリオも同じスコープへ置いて検証対象の関数を直接呼べるようにする。
     画面の登録先の`shell.js`は文書全体のナビゲーションを扱うため読み込まず、登録関数だけを代替する。
+    `environment`を指定した呼び出し元は、隔離を避けるために子のNodeへ渡す環境を明示する。
     """
     executable = (
         "(() => {\n"
@@ -281,7 +282,7 @@ eval({json.dumps(executable)});
         errors="replace",
         capture_output=True,
         check=False,
-        env=_HOST_ENVIRON,
+        env=_HOST_ENVIRON if environment is None else environment,
     )
     assert completed.returncode == 0, completed.stderr
     return typing.cast(dict[str, typing.Any], json.loads(completed.stdout))
