@@ -156,6 +156,9 @@
   振り返り時に読み込まれる原本は`~/.claude/docs/session-review-dotfiles.md`の
   「セッションの所要時間目標」節とする。
   配布元は`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`である。
+  進行中も定期的および重い処理への着手前に、進捗と目標時間から必須性と低負担な案を比較する。
+  曖昧な要求による必要な調査と、手順・ツールによる回避可能な反復を区別する。
+  現行規範は`agent-basics/skills/writing-standards/references/quality-principles.md`と`.claude/skills/dotfiles-development/SKILL.md`にある（2026年10月25日、ユーザー指示）。
   本文書は経緯を記録する（2026年8月、ユーザー指示）。
   （2026年9月2日、ユーザー指示により計測範囲と毎セッションの分析を定めた。
   2026年9月4日、ユーザー指示により規模別の目標を撤去して単一の値へ戻した。

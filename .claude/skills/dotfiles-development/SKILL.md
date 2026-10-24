@@ -16,12 +16,17 @@ description: >
 本スキルは本リポジトリの自動チェック、コード整形、依存更新、テスト配置、コミットメッセージ方針、ホスト本体のバイナリの検索手順および振り返りの参照文書の位置を提供する。
 リリース運用は`dotfiles-release`、配布元と配布先の対応は`dotfiles-repo-layout`が扱う。
 
+本リポジトリで`agent-toolkit:process-wi`を起動したセッションは、振り返りと完了報告を含む全工程で3時間以内を目標にする。
+計測範囲は[セッションの所要時間目標](../../../.chezmoi-source/dot_claude/docs/session-review-dotfiles.md#セッションの所要時間目標)に従い、進行中の見直しには`agent-basics:writing-standards`の`references/quality-principles.md`「QCDと3段判定」を適用する。
+
 ## 名指し参照の読込方法
 
 本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 進捗と時間目標を見直す前 | `agent-basics:writing-standards/references/quality-principles.md#「QCDと3段判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-release/SKILL.md` | 判断 | `read:*/skills/dotfiles-release/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-repo-layout/SKILL.md` | 判断 | `read:*/skills/dotfiles-repo-layout/SKILL.md` |
