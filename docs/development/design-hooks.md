@@ -25,6 +25,13 @@ Stopのエントリーポイントを統合した後も、4つのサブコマン
 `hook.py`は未知のサブコマンドを終了コード0で通過させるため、旧定義が届いてもツール呼び出しは拒否されない。
 登録との一致は`agent-toolkit/agent_toolkit/hook_test.py`が両方のhook定義から求めた和集合と比べて確かめる。
 
+`hooks.json`と生成する`hooks.codex.json`の全commandは末尾に`|| exit 1`を持つ。
+uvやPythonの起動失敗、起動スクリプトの不在は終了コード2で終わることがあり、ホストはPreToolUse・UserPromptSubmit・Stopの終了コード2を遮断として扱うため、起動の失敗だけで全操作が止まっていた。
+末尾の変換で起動の失敗は非遮断のhookエラー（終了コード1）として観測され、作業は続く。
+`hook.py`は判定をJSONで返して終了コード2を使わないため、判定の結果は変わらない。
+` || `はbash、PowerShell 7、cmdで同じ意味を持つ。dotfilesが個人binの`atk-hook`を起動するlocal用のCodex定義は、WindowsのCodexがhookを実行するシェルを公開文書で確かめられず、PowerShell 5.1では` || `が構文エラーになって全hookが常に失敗するため、末尾を付けない。
+末尾の有無と変換後の終了コードは`hook_test.py`が両方の定義の全commandについて確かめる。
+
 各判定は結果を値で返し、標準出力・標準エラーと終了コードへの変換はイベントのエントリーポイントだけが行う。
 Stopの判定は`evaluate`が判定と本文の組を返し、`stop.py`が集約する。
 PreToolUseの判定は`pretooluse/decision.py`の`Decision`（遮断の本文、追加コンテキスト、保留中の通知への追加、許可）を返し、`pretooluse/dispatch.py`の`main`が保留中の通知と結合して書く。
