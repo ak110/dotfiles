@@ -232,7 +232,7 @@ def test_date_relocator_skips_invalid_target_and_continues(
     monkeypatch.setattr(sys, "argv", ["date-relocator", str(tmp_path / "missing"), str(source)])
     with pytest.raises(SystemExit) as exit_info:
         date_relocator.main()
-    assert exit_info.value.code == 0
+    assert exit_info.value.code == 1
     assert "存在するディレクトリを指定" in caplog.text
     assert not (source / "item").exists()
     assert len(list(tmp_path.glob("directory-*/item"))) == 1
