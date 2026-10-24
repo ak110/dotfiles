@@ -81,7 +81,7 @@ def main() -> None:
                 "パターンファイルに有効なエントリがありません。"
                 "UTF-8のTAB区切りで「正規表現<TAB>置換文字列」または「F/D<TAB>正規表現<TAB>置換文字列」の行を指定してください。"
             )
-        rename_tree(
+        failures = rename_tree(
             args.target_dir,
             rules,
             files_only=args.files_only,
@@ -91,7 +91,7 @@ def main() -> None:
             overwrite=args.overwrite,
             dry_run=args.dry_run,
         )
-        sys.exit(0)
+        sys.exit(1 if failures else 0)
 
     if not pattern or replacement is None:
         parser.error("pattern と replacement を指定するか、-f でパターンファイルを指定してください")
@@ -105,6 +105,7 @@ def main() -> None:
     if args.ignore_case:
         flags |= re.IGNORECASE
     regex = re.compile(pattern, flags=flags)
+    failures = 0
     for src_path in targets:
         try:
             if args.fullpath:
@@ -127,12 +128,13 @@ def main() -> None:
             if not args.dry_run:
                 src_path.rename(dst_path)
         except OSError as e:
+            failures += 1
             print(
                 f"{src_path}: rename failed ({e})。"
                 f"後続の処理は続行します。"
                 f"移動先の衝突・権限と使用中のアプリを確認して再実行してください。"
             )
-    sys.exit(0)
+    sys.exit(1 if failures else 0)
 
 
 def load_pattern_file(path: pathlib.Path, *, ignore_case: bool = False) -> list[RenameRule]:
@@ -229,8 +231,8 @@ def rename_tree(
     enable_mkdir: bool = False,
     overwrite: bool = False,
     dry_run: bool = False,
-) -> None:
-    """ディレクトリツリーを走査してルールを適用する。
+) -> int:
+    """ディレクトリツリーを走査してルールを適用し、捕捉して続行した改名の失敗件数を返す。
 
     ディレクトリの改名は下位ツリーのパスを無効化するため、深い階層から処理する
     （rglobの結果をパス長でソート）。
@@ -243,6 +245,7 @@ def rename_tree(
     # 改名順: まずディレクトリを深い方から、続いてファイル
     entries.sort(key=lambda p: (not p.is_dir(), -len(p.parts)))
 
+    failures = 0
     for path in entries:
         try:
             is_dir = path.is_dir()
@@ -282,6 +285,7 @@ def rename_tree(
             if not dry_run:
                 path.rename(new_path)
         except OSError as e:
+            failures += 1
             logger.warning(
                 (
                     "%s: rename 失敗 (%s)。"
@@ -291,6 +295,7 @@ def rename_tree(
                 path,
                 e,
             )
+    return failures
 
 
 if __name__ == "__main__":

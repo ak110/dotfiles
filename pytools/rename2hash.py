@@ -30,14 +30,14 @@ def main() -> None:
     args = parser.parse_args()
     setup_logging()
     with args.log_file.open("a", encoding="utf-8") if args.log_file else contextlib.nullcontext() as log_fp:
-        rename_to_hash(
+        failures = rename_to_hash(
             args.path,
             pattern=args.pattern,
             recursive=args.recursive,
             dry_run=args.dry_run,
             log_fp=log_fp,
         )
-    sys.exit(0)
+    sys.exit(1 if failures else 0)
 
 
 def rename_to_hash(
@@ -47,8 +47,9 @@ def rename_to_hash(
     recursive: bool = False,
     dry_run: bool = False,
     log_fp: io.TextIOBase | None = None,
-) -> None:
-    """ディレクトリ内のファイルを内容ハッシュの名前へリネームする。"""
+) -> int:
+    """ディレクトリ内のファイルを内容ハッシュの名前へリネームし、読み込みに失敗した件数を返す。"""
+    failures = 0
     iterator = path.rglob(pattern) if recursive else path.glob(pattern)
     for file in iterator:
         if not file.is_file():
@@ -56,6 +57,7 @@ def rename_to_hash(
         try:
             digest = _md5_of_file(file)
         except OSError as e:
+            failures += 1
             logger.warning(
                 (
                     "%s: 読み込み失敗 (%s)。"
@@ -82,6 +84,7 @@ def rename_to_hash(
                 file.rename(new_path)
         if log_fp is not None:
             log_fp.write(f"{file}\t{new_path}\n")
+    return failures
 
 
 def _md5_of_file(path: pathlib.Path) -> str:

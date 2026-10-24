@@ -1,12 +1,17 @@
 """ecoutilitiesモジュールのテスト。"""
 
 import datetime
+import errno
 import os
+import sys
+import typing
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import httpx
 import pytest
 
+from pytools import ecoutilities
 from pytools.ecoutilities import (
     Site,
     delete_empty_folders,
@@ -371,3 +376,136 @@ def test_crawl_skips_existing_file(tmp_path: Path):
 
     assert existing.read_bytes() == b"OLD"
     assert "/a.jpg" not in requested
+
+
+class TestMainExitCode:
+    """続行した失敗を`EcoUtilities`の終了コードへ反映するテスト。"""
+
+    @staticmethod
+    def _run_main(monkeypatch: pytest.MonkeyPatch, *args: str) -> int | str | None:
+        monkeypatch.setattr(sys, "argv", ["EcoUtilities", *args])
+        with pytest.raises(SystemExit) as exc_info:
+            ecoutilities.main()
+        return exc_info.value.code
+
+    def test_delete_empty_folders_exit_code_one_on_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """空でないこと以外の理由のrmdir失敗があれば、残りを削除して終了コード1で終える。"""
+        base = tmp_path / "src"
+        (base / "locked").mkdir(parents=True)
+        (base / "empty").mkdir()
+        (base / "keep").mkdir()
+        (base / "keep" / "f.txt").write_bytes(b"x")
+        real_rmdir = Path.rmdir
+
+        def flaky_rmdir(self: Path, *args: typing.Any, **kwargs: typing.Any) -> None:
+            if self.name == "locked":
+                raise PermissionError(errno.EACCES, "denied", str(self))
+            real_rmdir(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "rmdir", flaky_rmdir)
+
+        assert self._run_main(monkeypatch, "DeleteEmptyFolders", str(base)) == 1
+        assert (base / "locked").exists()
+        assert not (base / "empty").exists()
+        assert "denied" in capsys.readouterr().err
+
+    def test_delete_empty_folders_exit_code_zero_with_only_non_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """空でないディレクトリだけが残る場合は失敗に数えず終了コード0で終える。"""
+        base = tmp_path / "src"
+        (base / "keep").mkdir(parents=True)
+        (base / "keep" / "f.txt").write_bytes(b"x")
+        (base / "empty").mkdir()
+
+        assert self._run_main(monkeypatch, "DeleteEmptyFolders", str(base)) == 0
+        assert (base / "keep").exists()
+        assert not (base / "empty").exists()
+
+    def test_fix_gvb_exit_code_one_when_not_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ディレクトリ指定が不正ならUsageを表示して終了コード1で終える。"""
+        assert self._run_main(monkeypatch, "FixGVBByFileName", str(tmp_path / "missing"), str(tmp_path)) == 1
+
+    @staticmethod
+    def _use_mock_client(monkeypatch: pytest.MonkeyPatch, handler: typing.Callable[[httpx.Request], httpx.Response]) -> None:
+        real_client = httpx.Client
+
+        def mock_client(*args: typing.Any, **kwargs: typing.Any) -> httpx.Client:
+            del args
+            return real_client(transport=httpx.MockTransport(handler), timeout=kwargs.get("timeout"))
+
+        monkeypatch.setattr(httpx, "Client", mock_client)
+
+    @staticmethod
+    def _write_sites(path: Path, dl: Path, link_patterns: list[str]) -> None:
+        site = Site(
+            download_folder_path=str(dl),
+            first_url="http://example.com/index.html",
+            base_url="http://example.com/",
+            link_patterns=link_patterns,
+        )
+        root = ET.Element("ArrayOfSite")
+        el = ET.SubElement(root, "Site")
+        ET.SubElement(el, "DownloadFolderPath").text = site.download_folder_path
+        ET.SubElement(el, "FirstURL").text = site.first_url
+        ET.SubElement(el, "BaseURL").text = site.base_url
+        links = ET.SubElement(el, "LinkPatterns")
+        for pattern in site.link_patterns:
+            ET.SubElement(links, "string").text = pattern
+        ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+    def test_download_custom_exit_code_one_when_data_download_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """データ1件の取得が失敗しても他を保存し、終了コード1で終える。"""
+        dl = tmp_path / "dl"
+        sites = tmp_path / "Sites.xml"
+        self._write_sites(sites, dl, [r"/img/.*\.jpg"])
+        body = '<a href="/img/ok.jpg">a</a><a href="/img/ng.jpg">b</a>'
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/index.html":
+                return httpx.Response(200, text=body)
+            if request.url.path == "/img/ok.jpg":
+                return httpx.Response(200, content=b"OK")
+            return httpx.Response(500)
+
+        self._use_mock_client(monkeypatch, handler)
+
+        assert self._run_main(monkeypatch, "DownloadCustom", str(sites)) == 1
+        assert (dl / "img" / "ok.jpg").read_bytes() == b"OK"
+        assert not (dl / "img" / "ng.jpg").exists()
+
+    def test_download_custom_exit_code_one_when_page_download_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """一覧ページの取得が失敗した場合も終了コード1で終える。"""
+        dl = tmp_path / "dl"
+        sites = tmp_path / "Sites.xml"
+        self._write_sites(sites, dl, [r"/img/.*\.jpg"])
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            del request
+            return httpx.Response(503)
+
+        self._use_mock_client(monkeypatch, handler)
+
+        assert self._run_main(monkeypatch, "DownloadCustom", str(sites)) == 1
+
+    def test_download_custom_exit_code_zero_without_failure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """失敗が無ければ保存して終了コード0で終える。"""
+        dl = tmp_path / "dl"
+        sites = tmp_path / "Sites.xml"
+        self._write_sites(sites, dl, [r"/img/.*\.jpg"])
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/index.html":
+                return httpx.Response(200, text='<a href="/img/ok.jpg">a</a>')
+            return httpx.Response(200, content=b"OK")
+
+        self._use_mock_client(monkeypatch, handler)
+
+        assert self._run_main(monkeypatch, "DownloadCustom", str(sites)) == 0
+        assert (dl / "img" / "ok.jpg").read_bytes() == b"OK"
