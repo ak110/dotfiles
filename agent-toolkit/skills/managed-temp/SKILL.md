@@ -29,6 +29,9 @@ SessionStartはセッションごとにmanaged-tempの中へ専用のディレ�
 
 元資料から再生成できる抽出・比較用の複製や検証用の環境は、保存物と寿命を分ける。
 用途ごとに`atk managed-temp create --prefix <用途> --session-root <通知された絶対パス>`で作業用領域を作成し、全消費工程と外部プロセスの終了後に`atk managed-temp cleanup --path <作成した絶対パス>`で回収する。
+TMPDIRなどを作業用領域へ向けた試験の一時ディレクトリも、同じ回収の対象に含める。
+Git管理の作業ツリーの検証用複製は`git worktree add`かcloneで作成し、仮想環境などの依存環境はパッケージマネージャーの同期で作成する。
+作業ツリーのファイル複製は、入れ子のworktreeとgitignore対象の仮想環境を、キャッシュとのハードリンクを外した実容量で複製する。
 後続turnへの入力と参照される証拠・結果は、回収する作業用領域の外にあるセッションのmanaged-tempへ残す。
 `.git`を含む検証用cloneやGit fixtureは、次節の個別領域へ置く。
 
