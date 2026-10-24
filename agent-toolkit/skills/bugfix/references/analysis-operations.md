@@ -67,8 +67,8 @@
 
 ## 類似見直しの分担
 
-- 母集団の各対象を該当・非該当へ分ける走査は、`execute`担当が根本原因から母集団と判定観点を確定した後、判定観点と判定基準を`prompt`へ書いて`chores_fast`の`explore`へ委ねてよい。工程の分担は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」が定める。`chores_fast`が非該当と返した対象は`execute`担当で全件読み直さず、`execute`担当は該当と判定保留の対象と、判定観点を言語化して渡せなかった対象を判定する。現に動いている成果物には致命的な問題が少ないとみなすためである。重大な問題でも、grepなどの機械的抽出とこの分担で効率化し、`execute`担当による全量走査を前提にしない
-- 委譲は`agent-toolkit:delegation`の`references/routing.md`と`references/runtime-routing.md`で選び、会話のfork、問題を知る担当の継続、自分自身の走査で代えない。読取専用担当が実行できないコマンドの素材は、取得済みファイルを渡すか実行できる起動形を使う。分担した場合は返却の和で摘出を判定し、走査担当はこの手順を自身の走査へ重ねない
+- 母集団の各対象を該当・非該当へ分ける走査は、`execute`担当が根本原因から母集団と判定観点を確定した後、判定観点と判定基準を`prompt`へ書いて`chores_fast`の`explore`へ委ねる。自身で行う方が総費用で安い少数の対象は、`execute`担当が直接走査する。工程の分担は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」が定める。`chores_fast`が非該当と返した対象は`execute`担当で全件読み直さず、`execute`担当は該当と判定保留の対象と、判定観点を言語化して渡せなかった対象を判定する。現に動いている成果物には致命的な問題が少ないとみなすためである。重大な問題でも、grepなどの機械的抽出とこの分担で効率化し、`execute`担当による全量走査を前提にしない
+- 前項で委譲すると判断した場合は、`agent-toolkit:delegation`の`references/routing.md`と`references/runtime-routing.md`で起動方式を選び、会話のfork、問題を知る担当の継続、自分自身の走査で代えない。読取専用担当が実行できないコマンドの素材は、取得済みファイルを渡すか実行できる起動形を使う。分担した場合は返却の和で摘出を判定し、走査担当はこの手順を自身の走査へ重ねない
 
 ## 潜在欠陥の受渡し
 
