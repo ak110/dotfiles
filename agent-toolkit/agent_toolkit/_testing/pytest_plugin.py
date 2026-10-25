@@ -83,7 +83,6 @@ _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
 )
 
 
-@pytest.hookimpl(tryfirst=True)
 def _notify_slot_wait(owner: execution_slot.SlotOwner | None) -> None:
     """実行枠の待機を始めたことを、保持者の情報とともに標準エラーへ1回出力する。
 
@@ -101,6 +100,7 @@ def _notify_slot_wait(owner: execution_slot.SlotOwner | None) -> None:
     )
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
     """共有検証の所有と一時領域をpytestの寿命へ結び、配布CLIの依存環境の保存先を固定する。
 
