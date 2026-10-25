@@ -9,6 +9,7 @@ import contextlib
 import os
 import pathlib
 import re
+import sys
 import tempfile
 from collections.abc import Callable, Generator, Iterator
 from multiprocessing import resource_tracker
@@ -83,6 +84,23 @@ _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
 
 
 @pytest.hookimpl(tryfirst=True)
+def _notify_slot_wait(owner: execution_slot.SlotOwner | None) -> None:
+    """実行枠の待機を始めたことを、保持者の情報とともに標準エラーへ1回出力する。
+
+    出力が無いまま待つと、呼出元は待機と停止を区別できない。示す情報はpyfltrの`execution-slot`の警告とそろえる。
+    """
+    if owner is None:
+        holder = "保持者の記録を読めない"
+    else:
+        holder = f"label={owner.label}、pid={owner.pid}、cwd={owner.cwd}、acquired_at={owner.acquired_at}"
+    print(
+        f"pytest: 同じOSアカウントで別の検証が実行枠を保持しているため（{holder}）、その解放を待ってから試験を実行する。"
+        "待機時間は試験の処理時間に含まれない",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """共有検証の所有と一時領域をpytestの寿命へ結び、配布CLIの依存環境の保存先を固定する。
 
@@ -95,7 +113,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.add_cleanup(stack.close)
     worker = hasattr(config, "workerinput")
     # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。
-    stack.enter_context(execution_slot.hold(label="pytest"))
+    stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait))
     previous_children = set(process_tree.collect_descendants(os.getpid()))
     resource_environment = {
         name: os.environ.get(name)

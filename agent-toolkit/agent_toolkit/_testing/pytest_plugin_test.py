@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 import textwrap
+import time
 from typing import cast
 
 import psutil
@@ -502,3 +503,68 @@ def test_agents_server_logging_reclaimed_before_next_test(tmp_path: pathlib.Path
     result = _run_child_pytest(tmp_path, "-v", "sample/logging_test.py")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "2 passed" in result.stdout
+
+
+def test_pytest_notifies_once_while_waiting_for_slot_held_by_other_process(tmp_path: pathlib.Path) -> None:
+    """別プロセスが実行枠を保持する間に起動したpytestは、保持者の情報を含む待機の通知を標準エラーへ1回出す。"""
+    probe = tmp_path / "probe_test.py"
+    probe.write_text("def test_probe():\n    pass\n", encoding="utf-8")
+    holder_script = tmp_path / "holder.py"
+    holder_script.write_text(
+        textwrap.dedent("""\
+            import pathlib, sys, time
+            from pyfltr.command import execution_slot
+
+            with execution_slot.hold(label="holder-probe"):
+                print("held", flush=True)
+                release = pathlib.Path(sys.argv[1])
+                deadline = time.monotonic() + 60
+                while not release.exists() and time.monotonic() < deadline:
+                    time.sleep(0.1)
+        """),
+        encoding="utf-8",
+    )
+    release = tmp_path / "release"
+    error_path = tmp_path / "child.stderr"
+    environment = {**os.environ, "PYFLTR_CACHE_DIR": str(tmp_path / "pyfltr"), "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
+    environment.pop("PYTEST_ADDOPTS", None)
+    child_argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts="]
+    child_argv += ["-p", pytest_plugin.__name__, str(probe)]
+    with (
+        subprocess.Popen(
+            [sys.executable, str(holder_script), str(release)],
+            env=environment,
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        ) as holder,
+        error_path.open("w", encoding="utf-8") as error_stream,
+    ):
+        try:
+            assert holder.stdout is not None
+            assert holder.stdout.readline().strip() == "held"
+            with subprocess.Popen(
+                child_argv,
+                cwd=tmp_path,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=error_stream,
+                text=True,
+                encoding="utf-8",
+            ) as child:
+                deadline = time.monotonic() + 60
+                # 子pytestの待機の開始を確かめてから保持を解く。
+                while "実行枠を保持している" not in error_path.read_text(encoding="utf-8"):
+                    assert child.poll() is None, error_path.read_text(encoding="utf-8")
+                    assert time.monotonic() < deadline
+                    time.sleep(0.1)
+                release.touch()
+                output, _ = child.communicate(timeout=60)
+        finally:
+            release.touch()
+            holder.wait(timeout=60)
+    errors = error_path.read_text(encoding="utf-8")
+    assert child.returncode == 0, (output, errors)
+    assert errors.count("実行枠を保持している") == 1
+    assert f"label=holder-probe、pid={holder.pid}" in errors
+    assert "待機時間は試験の処理時間に含まれない" in errors

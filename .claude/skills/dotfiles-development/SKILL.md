@@ -72,6 +72,8 @@ pyfltrを調査・計測用途で実行する場合は`--no-fix`で自動修正�
 - 特定ファイルに限定する検証は、MCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。初回は`commands`（CLIは`--commands`）を指定せず、修正後の再実行だけ失敗したチェックへ限定する
   - pytestを選ぶ実行は、渡したファイルによらず`pytest-always-targets`の横断テストをrootと`agent-toolkit/`の両方で加える（`references/verification-values.md`の横断テストの項）。同じ内容への2回目以降の静的チェックは`commands`でpytestを除き、失敗したテストだけの再確認は`--only-failed`を使う。単一テストの局所確認は`pytest`を対象ファイル（必要なら`-k`）で直接実行し、出力の収集件数が意図した集合と一致することを確かめる
 - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。`-o`と`-p`は`pytest`のオプションで、`pyfltr run`へ渡すと終了コード2で終わる。`-o addopts=''`で`addopts`を解除する場合は`-p no:cacheprovider`を併記する
+- pyfltrの実行枠に参加するのは、`make test`、`uv run --frozen pyfltr run`、`git commit`（commit hookの`pyfltr fast`）と、`agent_toolkit._testing.pytest_plugin`を読み込むpytestである。rootと`agent-toolkit/`の`addopts`が`-p`でこのプラグインを読み込む。`-o addopts=''`でプラグインを外す`make test-browser`などは対象外とする
+  - 参加する検証をシェルから起動する場合は、`agent-toolkit:check-execution`「統合実行ツール経由の起動」の実行枠の起動形と3分類に従う
 - `.venv`を再作成し得る自動チェック（`uv run --python`による版切替、依存更新など）は、同じ仮想環境パスでは直列に実行する。並列にする場合は自動チェックごとに別の仮想環境パスを明示する
 - pyfltrの所要時間を比べる場合は、`uv run --frozen pyfltr list-runs`で取得したrun識別子を`uv run --frozen pyfltr show-run <run_id>`へ渡す
 
