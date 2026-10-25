@@ -39,7 +39,8 @@ _PERIODIC_RECHECK_BODY_LINES: tuple[str, ...] = (
     "3. 所有されていない対象は記録側の状態と完了通知を確かめ、完了した対象があれば既存の受領手順へ進む。",
     "4. 成果物の状況は補助観測として、その回の記録から解決したGit作業ツリーなら"
     '`git -C "$worktree_path" status --porcelain=v1`と`git -C "$worktree_path" rev-parse --short HEAD`、'
-    '通常のファイルなら`wc -l -- "$artifact_path"`と`stat -L -c %Y -- "$artifact_path"`（最終更新のepoch秒）で補う。'
+    '通常のファイルなら`wc -l -- "$artifact_path"`と`stat -L -c %Y -- "$artifact_path"`'
+    '（macOSは`stat -L -f %m -- "$artifact_path"`。最終更新のepoch秒）で補う。'
     "稼働と終端は待機対象ごとの終了状態と完了通知から判定する。",
     "5. このpromptの終了タグの前に経過時間起動の義務の行がある場合は、"
     "各行の測定コマンドで経過を測定し、判定閾値へ到達した義務を実行する。"
