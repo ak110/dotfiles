@@ -18,12 +18,20 @@ from agent_toolkit._common import file_lock, plugin_root_leases
 _NOW = datetime.datetime(2026, 10, 25, 12, 0, tzinfo=datetime.UTC)
 
 
+def _set_times(path: pathlib.Path, stamp: float) -> None:
+    """リンクは辿らずに更新時刻を設定する。Windowsはリンク自身の時刻を変えられないため、リンクは据え置く。"""
+    if not path.is_symlink():
+        os.utime(path, (stamp, stamp))
+    elif os.utime in os.supports_follow_symlinks:
+        os.utime(path, (stamp, stamp), follow_symlinks=False)
+
+
 def _age(path: pathlib.Path, days: float) -> None:
     """対象と配下の更新時刻を`days`日前へ揃える。"""
     stamp = (_NOW - datetime.timedelta(days=days)).timestamp()
     for item in sorted(path.rglob("*"), reverse=True) if path.is_dir() and not path.is_symlink() else []:
-        os.utime(item, (stamp, stamp), follow_symlinks=False)
-    os.utime(path, (stamp, stamp), follow_symlinks=False)
+        _set_times(item, stamp)
+    _set_times(path, stamp)
 
 
 def _area(name: str, *, days: float, files: dict[str, str] | None = None) -> pathlib.Path:
@@ -56,7 +64,7 @@ def test_sweep_removes_expired_files_and_directories_and_keeps_protected(tmp_pat
     (outside / "keep.txt").write_text("keep", encoding="utf-8")
     link = paths.temp_root() / "link-abc"
     link.symlink_to(outside, target_is_directory=True)
-    os.utime(link, (0, 0), follow_symlinks=False)
+    _set_times(link, 0)
 
     result = managed_temp.sweep_managed_temp(now=_NOW)
 
