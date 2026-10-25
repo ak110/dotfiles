@@ -41,7 +41,6 @@ def test_wi_show_saved_output_reports_user_fields(
     saved = pathlib.Path(report[0].removeprefix("保存先: "))
     assert saved.read_text(encoding="utf-8") == direct
     assert report[1] == f"行数: {len(direct.splitlines())}"
-    assert report[2] == f"読取: atk read-file -- {saved}"
     lines = direct.splitlines()
     expected = {
         "comment.md": f"## ユーザーコメント あり 開始行: {lines.index('## ユーザーコメント') + 1}",
@@ -50,7 +49,7 @@ def test_wi_show_saved_output_reports_user_fields(
     }
     if selection != "single":
         expected["answered.md"] = f"## 回答 あり 開始行: {len(lines) - lines[::-1].index('## 回答')}"
-    assert sorted(report[3:]) == sorted(f"記入欄: {name} {expected[name]}" for name in selected)
+    assert sorted(report[2:]) == sorted(f"記入欄: {name} {expected[name]}" for name in selected)
 
 
 def test_wi_show_saved_output_reports_all_user_fields(
@@ -66,5 +65,5 @@ def test_wi_show_saved_output_reports_all_user_fields(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "show", *names, "--target-repo=all", "--skip-pull"], home=tmp_path)
     report = capsys.readouterr().out.splitlines()
-    assert len(report[3:]) == len(names)
-    assert [line.split()[1] for line in report[3:]] == names
+    assert len(report[2:]) == len(names)
+    assert [line.split()[1] for line in report[2:]] == names

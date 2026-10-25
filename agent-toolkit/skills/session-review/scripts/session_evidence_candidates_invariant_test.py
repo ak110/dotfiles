@@ -23,11 +23,10 @@ def test_delegate_completion_values_are_defined_by_task_documents() -> None:
 
 
 def test_subagent_outputs_have_recognized_first_lines() -> None:
-    """自由記述を返す2担当を除き、全担当の先頭行を候補抽出が認識する。"""
+    """自由記述を返す担当を除き、全担当の先頭行を候補抽出が認識する。"""
     share = pathlib.Path(evidence.__file__).resolve().parents[3] / "share"
     exceptions = {
         "copilot-review-audit.subagent.md": "監査結果の本文自体が成果物",
-        "pick-wi-explain.subagent.md": "選定理由の説明本文自体が成果物",
     }
     documents = set(share.glob("*.subagent.md"))
     assert {path.name for path in documents if path.name in exceptions} == set(exceptions)

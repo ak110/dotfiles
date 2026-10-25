@@ -44,7 +44,6 @@ def _ref_labels(repo: pathlib.Path) -> set[str]:
             st.just(("modify", "")),
             st.tuples(st.just("save"), st.sampled_from(_LABELS)),
             st.tuples(st.just("drop-ref"), st.sampled_from(_LABELS)),
-            st.tuples(st.just("protect"), st.sampled_from(_LABELS)),
             st.just(("gc", "")),
             st.just(("drop-stash", "")),
         ),
@@ -78,8 +77,6 @@ def test_stash_sequences_match_reference_model(operations: list[tuple[str, str]]
             code = worktree_stash.drop(ref, cwd=repo)
             assert code == (0 if ref in refs else 2)
             refs.discard(ref)
-        elif operation == "protect":
-            assert worktree_stash.protect(f"refs/worktree/{label}", cwd=repo) == (0 if f"refs/worktree/{label}" in refs else 2)
         elif operation == "gc":
             git_repository.git_output(repo, "gc", "--prune=now")
             for ref in refs:

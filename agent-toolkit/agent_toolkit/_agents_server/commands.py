@@ -18,6 +18,7 @@ from agent_toolkit._agents_server import (
     agents_wait,
     context_usage,
     logs_export,
+    owner_lost,
     record_paths,
     result_projection,
     resume_waits,
@@ -26,11 +27,10 @@ from agent_toolkit._agents_server import (
     shared_roots,
     state,
     status_reader,
-    wait_output_tracking,
 )
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
-from agent_toolkit._atk import output_file, session_record_format
+from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._common import session_registry
 from agent_toolkit._common.next_action import report, with_next_action
@@ -98,152 +98,6 @@ def _dump(payload: Any, environment: Mapping[str, str]) -> str:
     if is_agent_environment(environment):
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     return json.dumps(payload, ensure_ascii=False, indent=2)
-
-
-# 要約行の先頭に固定の順序で置く項目と、要約行から除く項目。
-# `agent_message`は`agent_message_path`の本文として、`notices`は`通知:`の行として別に示す。
-_SUMMARY_LEADING_KEYS = ("session_id", "label", "status", "agent_message_path")
-_SUMMARY_EXCLUDED_KEYS = frozenset({"agent_message", "notices"})
-
-
-def summarize_saved_wait(path: pathlib.Path) -> None:
-    """保存した待機結果に含まれる通知と終端の内訳を、直接表示できる量の本文とともに表示する。
-
-    終端行ごとに、本文を運ぶ`agent_message`と件数を別の行で示す`notices`を除く全項目を1行ずつ示す。
-    先頭は`session_id`、`label`、`status`、`agent_message_path`の順とし、`error`と`next_action`を含む残りの項目を続ける。
-    呼び出し元は保存先を開かずに、どの依頼が終端したか、結果本文のファイルの所在、失敗の原因と次の操作を得られる。
-    終端行へ項目が加わった場合も、本関数を変えずに要約へ現れる。
-    保留した結果を待機対象が残ったまま確定した終端結果は、`unfinished_waits`へ残った待機対象の件数を加える。
-    結果本文はその時点の待機表明であり再開したturnの結果ではないことを、委譲元が終端行だけから判別できるようにする。
-    行頭は`保存先:`以外とし、保存先の行を読む既存の処理と競合させない。
-
-    `通知:`の行の後には通知の本文を、各終端行の直後には`agent_message_path`の本文を、
-    `本文開始:`と`本文終了:`の行で囲んで続ける。委譲元が待機の出力を1回読むだけで本文まで受け取れるようにするためである。
-    本文を加えた標準出力全体（先に表示した`保存先:`と`行数:`の行を含む）が直接表示の上限を超える本文と、
-    読めない本文ファイルは表示せず、従来どおり`agent_message_path`と保存したJSON Linesから読ませる。
-    """
-    notice_count = 0
-    notice_session_ids: set[str] = set()
-    notice_bodies: list[tuple[str, str]] = []
-    terminal_count = 0
-    terminal_lines: list[tuple[str, tuple[str, str] | None]] = []
-    with path.open(encoding="utf-8", newline="") as stream:
-        for line in stream:
-            try:
-                result = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(result, dict):
-                continue
-            notices = result.get("notices")
-            if isinstance(notices, list) and notices:
-                notice_count += len(notices)
-                session_id = result.get("session_id")
-                if isinstance(session_id, str):
-                    notice_session_ids.add(session_id)
-                    notice_bodies.extend(
-                        (session_id, notice["body"])
-                        for notice in notices
-                        if isinstance(notice, dict) and isinstance(notice.get("body"), str)
-                    )
-            if result.get("status") in state.TERMINAL_STATUSES:
-                terminal_count += 1
-                fields = [
-                    f"session_id={result.get('session_id')}",
-                    f"label={result.get('label') or 'なし'}",
-                    f"status={result.get('status')}",
-                    f"agent_message_path={result.get('agent_message_path') or 'なし'}",
-                    *(
-                        f"{key}={_summary_value(value)}"
-                        for key, value in result.items()
-                        if key not in _SUMMARY_LEADING_KEYS and key not in _SUMMARY_EXCLUDED_KEYS
-                    ),
-                ]
-                unfinished_waits = _unfinished_wait_count(result.get("error"))
-                if unfinished_waits:
-                    fields.append(f"unfinished_waits={unfinished_waits}")
-                terminal_lines.append((f"終端行: {' '.join(fields)}", _terminal_body(result)))
-    summary: list[str] = []
-    if notice_count:
-        summary.append(f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）")
-    if terminal_count:
-        summary.append(f"終端: {terminal_count}件")
-        summary.extend(line for line, _body in terminal_lines)
-    # 保存先と行数の行は`output_file`が要約より先に表示しており、同じ文字列を上限の内訳へ含める。
-    remaining = (
-        output_file.AUTO_SAVE_THRESHOLD_BYTES
-        - _utf8_size(output_file.saved_report_text(path))
-        - sum(_utf8_size(f"{line}\n") for line in summary)
-    )
-    if notice_count:
-        print(summary[0])
-        for session_id, body in notice_bodies:
-            remaining = _print_body_within(session_id, body, remaining)
-    if terminal_count:
-        print(f"終端: {terminal_count}件")
-        for line, body_entry in terminal_lines:
-            print(line)
-            if body_entry is not None:
-                remaining = _print_body_within(*body_entry, remaining)
-
-
-def _summary_value(value: object) -> str:
-    """要約行の項目の値を、空白で区切った他の項目と区別できる1行の表記へ変換する。
-
-    空白を含まない空でない文字列はそのまま示し、それ以外（空白や改行を含む文字列、辞書、数値など）は
-    改行を含まないJSONで示す。
-    """
-    if isinstance(value, str) and value and not value.startswith('"') and not any(char.isspace() for char in value):
-        return value
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-
-
-def _terminal_body(result: Mapping[str, Any]) -> tuple[str, str] | None:
-    """終端行の直後に表示する本文を`agent_message_path`のファイルから読み、session識別子と組にして返す。
-
-    本文ファイルが無いか読めない場合は`None`を返し、終端行は`agent_message_path`だけを示す。
-    """
-    session_id = result.get("session_id")
-    body_path = result.get("agent_message_path")
-    if not isinstance(session_id, str) or not isinstance(body_path, str):
-        return None
-    try:
-        with pathlib.Path(body_path).open(encoding="utf-8", newline="") as stream:
-            return session_id, stream.read()
-    except OSError, UnicodeError:
-        return None
-
-
-def _print_body_within(session_id: str, body: str, remaining: int) -> int:
-    """本文を区切りの行で囲んで表示できる場合だけ表示し、残りのバイト数を返す。"""
-    block = f"{wait_output_tracking.WAIT_BODY_START_PREFIX}{session_id}\n{body}"
-    if body and not body.endswith("\n"):
-        block += "\n"
-    block += f"{wait_output_tracking.WAIT_BODY_END_PREFIX}{session_id}\n"
-    size = _utf8_size(block)
-    if size > remaining:
-        return remaining
-    sys.stdout.write(block)
-    return remaining - size
-
-
-def _utf8_size(text: str) -> int:
-    return len(text.encode("utf-8"))
-
-
-def _unfinished_wait_count(error: object) -> int:
-    """保留した結果の確定時に残ったバックグラウンドタスクと子sessionの件数を返す。
-
-    `unobservedSessions`は再開したturnの終端など保留と無関係な処理でも記録されるため、
-    保留の確定が付ける`heldResultFinalized`を持つ結果だけを数える。
-    """
-    if not isinstance(error, dict) or error.get(resume_waits.HELD_RESULT_FINALIZED_KEY) is not True:
-        return 0
-    return sum(
-        len(identifiers)
-        for key in (resume_waits.UNFINISHED_BACKGROUND_TASKS_KEY, resume_waits.UNOBSERVED_SESSIONS_KEY)
-        if isinstance(identifiers := error.get(key), list)
-    )
 
 
 def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None = None) -> int:
@@ -355,7 +209,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
     if selected is None and root_session_id is not None:
         selected = _retained_session(root_session_id, args.session_id)
     if selected is None:
-        selected = _registry_session(args.session_id)
+        selected = _registry_session(args.session_id, root_session_id)
     if selected is None:
         report(
             f"unknown session: {args.session_id}",
@@ -398,7 +252,13 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> di
         }
     if detailed and session.get("error"):
         result["error"] = result_projection.refresh_error_diagnostics(session["error"])
+    if detailed:
+        result.update((key, session[key]) for key in _OWNER_LOST_FIELDS if key in session)
     return result
+
+
+_OWNER_LOST_FIELDS = ("ownership", "recorded_processes", "owner_root_session_id", "stranded_notice_count", "next_action")
+"""所有サーバーを失った実行中のsessionだけが持つ診断と案内の項目。"""
 
 
 def _registry_interrupted_turns(session_id: str) -> list[dict[str, Any]]:
@@ -690,10 +550,11 @@ def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] |
     return session
 
 
-def _registry_session(session_id: str) -> dict[str, Any] | None:
+def _registry_session(session_id: str, root_session_id: str | None) -> dict[str, Any] | None:
     """状態ファイルに無いsessionを、session登録簿の解決結果（実行中か終端）から表示する。
 
     所有するagents_serverの状態ファイルが失われたsessionも、登録簿が実行中か、実行プロセスの不在による中断かを示せる。
+    所有サーバーを失った実行中のsessionには、記録プロセス、記録時のルート、旧ルートに残る通知の件数と案内を加える。
     """
     if not shared_layout.valid_session_id(session_id):
         return None
@@ -721,6 +582,9 @@ def _registry_session(session_id: str) -> dict[str, Any] | None:
     error = result_projection.resolution_interruption_error(resolution)
     if error is not None:
         session["error"] = error
+    diagnosis = owner_lost.diagnose(session_id, resolution, own_root_session_id=root_session_id)
+    if diagnosis is not None:
+        session.update(diagnosis.diagnostics(), next_action=owner_lost.OWNER_LOST_NEXT_ACTION)
     return session
 
 

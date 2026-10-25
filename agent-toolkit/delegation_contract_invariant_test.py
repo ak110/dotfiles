@@ -412,8 +412,8 @@ def test_new_role_configuration_needs_no_python_registration(tmp_path: pathlib.P
     assert _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True) == ([], True)
 
 
-def test_exec_review_receives_unjudged_evidence_and_owns_final_evidence() -> None:
-    """未判定記録の直接配送と完成条件証拠の単一所有者を固定する。"""
+def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> None:
+    """検証結果の記録と、条件別判定行を返す実行レビュー担当の単一所有を固定する。"""
     root = pathlib.Path(__file__).resolve().parent
     review = (root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
     parent = (root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
@@ -427,11 +427,15 @@ def test_exec_review_receives_unjudged_evidence_and_owns_final_evidence() -> Non
 
     declaration = task_documents.read_declaration_unchecked(root / "share/exec-review.subagent.md", review)
     assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
-    assert declaration.required == ("レビュー基準", "引き継ぎ記録先", "未判定検証記録", "完成条件証拠")
-    assert "引き継ぎ再レビューでも初回値を保持" in parent
-    assert all("未判定検証記録" in path.read_text(encoding="utf-8") for path in launchers)
+    assert declaration.required == ("レビュー基準", "引き継ぎ記録先")
+    for path in launchers:
+        content = path.read_text(encoding="utf-8")
+        assert "検証結果" in content and "未判定検証記録" not in content, path
+    assert "レビューHEAD: " in review
+    # 委譲元は返却の条件別判定行を受領確認し、JSON中のHEADの付替えを行わない。
+    assert "## 完成条件証拠の受領確認" in parent and "agent_message_path" in parent
     for content in (review, recording):
-        assert all(name in content for name in ("outcome", "evidence", "reviewed_head"))
+        assert "完成条件<N>: 達成|未達|根拠不足" in content
         assert "レビュー担当だけ" in content or "実行レビュー担当だけ" in content
 
 
@@ -494,30 +498,25 @@ def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> 
 
 
 def test_selection_explanation_contract_covers_questions_without_state_changes() -> None:
-    """選定理由の説明は専用ペアへ分かれ、読み取り専用の軽量起動で選定結果とキュー状態を変更しない。
+    """選定理由への質問には選定したメインが保存済みの判断から答え、選定結果とキュー状態を変更しない。
 
-    選定手順の文書と説明担当の起動契約を分け、`start`は説明専用ペアが宣言した必須入力を受け取る。
-    説明担当の文書が状態を変える`atk wi`の操作を含むと、軽量起動の読み取り専用の契約と衝突する。
+    説明のための担当を起動すると、同じ選定資料を別の担当が読み直して判断を再構成する。
+    未取得の事実の収集だけを読み取り専用の探索へ渡し、状態を変える`atk wi`の操作を含めない。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
-    share = plugin_root / "share"
-    explain = share / "pick-wi-explain.subagent.md"
-    declaration = _declaration(explain)
+    explanation_path = plugin_root / "skills" / "process-wi" / "references" / "selection-explanation.md"
+    explanation = explanation_path.read_text(encoding="utf-8")
     selection_text = _selection_documents(plugin_root)
     question_route = _h2_section(_selection_procedure(plugin_root), "読込表")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
 
-    assert declaration.launch_kind == "explore"
-    assert declaration.required == (
-        "説明対象の選定結果の出力先ファイル",
-        "activeなWI本文の保存先",
-        "選定理由への質問",
-    )
+    assert not (plugin_root / "share" / "pick-wi-explain.subagent.md").exists()
+    assert _LAUNCH_TARGET_PREFIX not in explanation
+    assert "説明はメイン自身が行う" in explanation
+    assert "`mode: explore`" in explanation
     assert "selection-explanation.md" in question_route
     assert "## 選定理由の説明" not in selection_text
-    assert not re.search(
-        r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explain.read_text(encoding="utf-8")
-    )
+    assert not re.search(r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explanation)
     assert "selection-procedure.md" in lanes and "包含理由、除外理由" in lanes
 
 
@@ -739,7 +738,9 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
-    explanation = (plugin_root / "share" / "pick-wi-explain.subagent.md").read_text(encoding="utf-8")
+    explanation = (plugin_root / "skills" / "process-wi" / "references" / "selection-explanation.md").read_text(
+        encoding="utf-8"
+    )
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
     assert "  段階:" in selection_text and "  先行レーン:" in selection_text
     assert "先行統合条件" in parent
@@ -918,6 +919,92 @@ def test_parent_launch_section_without_role_is_reported(tmp_path: pathlib.Path) 
 
     _write_pair(tmp_path, parent_body=_parent_body(after_marker="\n| `subagent_md_path` | `task` |\n"))
     assert not _launch_role_errors(tmp_path)
+
+
+# 時点を限らない定型の読込条件。起動契約がこの条件で委譲先の手順書を挙げると、委譲元は起動前にそれを読む。
+_GENERIC_READ_CONDITION = "本文がこの資料の基準を使う場面で、資料を選択して取得する時"
+_READ_TABLE_SOURCE_PATTERN = re.compile(r"<!-- read-table-source: (\S+) -->")
+
+
+def _read_table_files(source: pathlib.Path) -> list[pathlib.Path]:
+    """文書と、その`read-table-source`で接続した読込表の資料を返す。"""
+    files: list[pathlib.Path] = []
+    pending = [source.resolve()]
+    while pending:
+        path = pending.pop(0)
+        if path in files or not path.is_file():
+            continue
+        files.append(path)
+        pending.extend(
+            (path.parent / name).resolve() for name in _READ_TABLE_SOURCE_PATTERN.findall(path.read_text(encoding="utf-8"))
+        )
+    return files
+
+
+def _launch_read_errors(share: pathlib.Path) -> list[str]:
+    """起動契約の読込案内が、起動する委譲先の手順書を定型の条件で読ませる行を返す。
+
+    委譲元は委譲先の手順書を読まずに起動する（`agent-toolkit:delegation`「送信」）。
+    返却後の検収・編集・調査で読む行は条件へその時点を書き、手順の所有者を示すだけの本文は「所在参照」と明記する。
+    """
+    errors: list[str] = []
+    contracts: list[_Contract] = [*sorted(share.glob("*.parent.md")), *_embedded_contracts(share)]
+    for contract in contracts:
+        targets, valid_structure = _marker_values(contract, _LAUNCH_TARGET_PREFIX, recipient=False)
+        if not valid_structure:
+            continue
+        source = contract if isinstance(contract, pathlib.Path) else contract.source
+        for path in _read_table_files(source):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                cells = [cell.strip() for cell in line.strip().strip("|").split("|")] if line.startswith("|") else []
+                if len(cells) < 2 or cells[0] != _GENERIC_READ_CONDITION:
+                    continue
+                errors.extend(
+                    f"起動する委譲先の手順書を定型の条件で読ませる: {path.name}:{number} -> {target}"
+                    for target in targets
+                    if re.search(rf"(?<![A-Za-z0-9_.-]){re.escape(target)}(?=[`#])", cells[1])
+                )
+    return list(dict.fromkeys(errors))
+
+
+def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> None:
+    """起動対象を宣言する全文書が、その委譲先の手順書を時点を限らない条件で読ませない。"""
+    share = pathlib.Path(__file__).resolve().parent / "share"
+
+    errors = _launch_read_errors(share)
+
+    assert not errors, "\n".join(errors)
+
+
+def test_launch_contract_generic_read_of_recipient_is_reported(tmp_path: pathlib.Path) -> None:
+    """定型の条件で委譲先の手順書や入力節を読ませる行を報告し、時点を書いた行と所在参照を受理する。"""
+    share = tmp_path / "share"
+    generic = f"| {_GENERIC_READ_CONDITION} | `task.subagent.md` | 判断 | `read:agent-toolkit:*/share/task.subagent.md` |\n"
+    section = (
+        f"| {_GENERIC_READ_CONDITION} | `task.subagent.md#「入力」` | 判断 "
+        "| `section:agent-toolkit:*/share/task.subagent.md#「入力」` |\n"
+    )
+    table = "\n## 名指し参照の読込方法\n\n| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+    _write_pair(
+        share,
+        parent_body=_parent_body(after_marker="\n委譲先の手順は`task.subagent.md`が定める。\n" + table + generic + section),
+    )
+
+    assert _launch_read_errors(share) == [
+        "起動する委譲先の手順書を定型の条件で読ませる: task.parent.md:13 -> task.subagent.md",
+        "起動する委譲先の手順書を定型の条件で読ませる: task.parent.md:14 -> task.subagent.md",
+    ]
+
+    timed = (
+        "| 返却を受け取った後に形式を検収する時 | `task.subagent.md#「出力」` | 判断 "
+        "| `section:agent-toolkit:*/share/task.subagent.md#「出力」` |\n"
+    )
+    _write_pair(
+        share,
+        parent_body=_parent_body(after_marker="\n委譲先の手順は`task.subagent.md`が定める（所在参照）。\n" + table + timed),
+    )
+
+    assert not _launch_read_errors(share)
 
 
 def test_missing_launch_target_reports_parent(tmp_path: pathlib.Path) -> None:

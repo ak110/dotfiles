@@ -8,9 +8,9 @@ description: >
 
 # managed-temp
 
-一時ファイルの置き場所と、managed-tempの中へ個別のディレクトリを作成する例外用途を定める。
+一時ファイルの置き場所と、作業用ディレクトリの作成・回収の手順を定める。
 
-領域の作成と回収には、対象のファイルを操作できるホストと`atk`が必要である。これらが無い環境では、保存する内容と保存先に求める条件を整理した原稿を返し、実際の保存と回収はClaude CodeまたはCodexで行う。[文章の品質基準](references/quality-standards.md)はこのスキルフォルダー内で読める。
+領域の作成と回収には、対象のファイルを操作できるホストが必要である。それが無い環境では、保存する内容と保存先に求める条件を整理した原稿を返し、実際の保存と回収はClaude CodeまたはCodexで行う。[文章の品質基準](references/quality-standards.md)はこのスキルフォルダー内で読める。
 
 ## 名指し参照の読込方法
 
@@ -18,37 +18,46 @@ description: >
 
 <!-- read-table-source: SKILL-delivery-1.md -->
 
+## 一時rootと自動削除
+
+managed-tempの一時rootは次のディレクトリである。
+
+- Linux: `${XDG_CACHE_HOME:-~/.cache}/agent-toolkit/managed-temp`
+- macOS: `~/Library/Caches/agent-toolkit/managed-temp`
+- Windows: `%LOCALAPPDATA%\agent-toolkit\managed-temp`
+
+一時root直下の各ディレクトリと通常ファイルは、配下の最終更新から7日を超えると`atk`の実行時に自動で削除される。`.git`を含む領域と使用中の配布物の複製は自動削除の対象外である。
+
 ## セッションのmanaged-temp
 
-SessionStartはセッションごとにmanaged-tempの中へ専用のディレクトリ（セッションのmanaged-temp）を作成し、その絶対パスを文脈へ通知する。
+SessionStartはセッションごとに一時root直下へ専用のディレクトリ（セッションのmanaged-temp）を用意し、その絶対パスを文脈へ通知する。同じ`session_id`で再開した会話と会話圧縮の後にも同じパスが通知される。
 同じセッション内で読まれる、turnをまたぐ入力、完成条件の証拠、検証結果、委譲先へ渡す成果物と引き継ぎ記録はここへ置く（サブディレクトリも可）。セッションの終了後かWIの終端後に読まれる記録（後段の解除条件・取得する記録・再開操作など）は、作成時に対象AWI本文か計画の`## 進捗ログ`へ置く。最後に読む時点まで保持できる保存先を選ぶ。
 作業目的の退避・比較・中間出力も作業ツリーの外へ置き、コミットする成果物との混在を防ぐ。
 
-保存物を置くセッションのmanaged-temp本体は、最終更新から7日を超えた後の`atk`の実行時に自動で削除される。同じ`session_id`で再開した会話へ同じ領域を渡すため、本体の回収は自動削除へ委ねる。
+セッションのmanaged-temp本体の回収は自動削除へ委ねる。同じ`session_id`で再開した会話へ同じ領域を渡すためである。
 `Agent`ツールのサブエージェントには担当専用の子ディレクトリが通知される。一時ファイルはそこへ置き、親の領域は委譲元が渡したファイルの読み書きに使ってよい。
 
+## 作業用ディレクトリ
+
 元資料から再生成できる抽出・比較用の複製や検証用の環境は、保存物と寿命を分ける。
-用途ごとに`atk managed-temp create --prefix <用途> --session-root <通知された絶対パス>`で作業用領域を作成し、全消費工程と外部プロセスの終了後に`atk managed-temp cleanup --path <作成した絶対パス>`で回収する。
-TMPDIRなどを作業用領域へ向けた試験の一時ディレクトリも、同じ回収の対象に含める。
-Git管理の作業ツリーの検証用複製は`git worktree add`かcloneで作成し、仮想環境などの依存環境はパッケージマネージャーの同期で作成する。
+用途ごとに通知されたセッションのmanaged-tempの中へ`mktemp -d '<セッションのmanaged-tempの絶対パス>/<用途>-XXXXXXXX'`で作業用ディレクトリを作成する。参照を終えた作成者は、全消費工程と起動したプロセスの終了後に`rm -rf -- <作成した絶対パス>`で回収する。Windows PowerShellでは`New-Item -ItemType Directory -Path <絶対パス>`で作成し、`Remove-Item -LiteralPath <作成した絶対パス> -Recurse -Force`で回収する。
+TMPDIRなどを作業用ディレクトリへ向けた試験の一時ディレクトリも、同じ回収の対象に含める。
+Git管理の作業ツリーの検証用複製は`git worktree add`かcloneで作成し、仮想環境などの依存環境はパッケージマネージャーの同期で作成する。worktreeは`rm`の前に`git worktree remove`で外す。
 作業ツリーのファイル複製は、入れ子のworktreeとgitignore対象の仮想環境を、キャッシュとのハードリンクを外した実容量で複製する。
-後続turnへの入力と参照される証拠・結果は、回収する作業用領域の外にあるセッションのmanaged-tempへ残す。
-`.git`を含む検証用cloneやGit fixtureは、次節の個別領域へ置く。
+後続turnへの入力と参照される証拠・結果は、回収する作業用ディレクトリの外にあるセッションのmanaged-tempへ残す。
 
-## 個別に作成する例外用途
+## 一時root直下に作成する領域
 
-`atk managed-temp create --prefix <用途>`で個別の領域を作成するのは、セッションのmanaged-tempで用途を満たせない場合に限る。
+次の用途では、作業用ディレクトリを一時root直下へ`mktemp -d '<一時root>/<用途>-XXXXXXXX'`で作成する。
 
 <例>
 セッションのmanaged-tempの通知を受け取っていない場合: 作成し、回収は7日の自動削除へ委ねてよい。
-別のファイルシステム名前空間（Dockerなど）から同じパスへ到達させる場合: `--root`で共有ディレクトリを指定する。
-Git worktreeなど`.git`を含む領域を置く場合: 作成する。
+Git worktree、検証用clone、Git fixtureなど`.git`を含む領域を置く場合: 作成し、作成した工程が不要になった時点で`git worktree remove`の後に`rm -rf --`で回収する。7日の自動削除は`.git`を含む領域を削除しない。
+別のファイルシステム名前空間（Dockerなど）から同じパスへ到達させる場合: 全消費主体から到達できる既存の共有ディレクトリを確かめ、`mktemp -d -p <共有先の絶対パス>`で作成し、作成者が明示的に回収する。
 </例>
 
-7日の自動削除は`.git`を含む領域を削除しないため、作成した工程が不要になった時点で`atk managed-temp cleanup --path <絶対パス>`で回収する。
 process-wiのレーンworktreeは対象リポジトリの主作業ツリーの`.claude/worktrees/process-wi-<レーン識別子>`へ`atk lane create`が作成し、worktree・branch・所有sessionと対応付けて登録する。統合後も追加に備えて保持し、全工程と外部プロセスの終了後に`atk lane delete`が回収する。回収の順序は、対象リポジトリが`atk lane create --commands-file`へ渡したdeleteのコマンド、worktree、branch、以前の配置でworktreeを収めていた個別managed-tempである。通常終了の`atk agents-exit-session`と、process-loopが子セッションの終了後に行う処理が同じ回収を呼び出す。メインは所有資源を手書きで再登録しない。未統合・dirty・稼働中・不明・部分失敗の資源は登録と成果を保持する。登録と回収結果への参照は、回収対象のworktree・branch・個別managed-tempとは別の状態ディレクトリへ置き、回収結果は通常の7日保持へ委ねる。統合と回収の再開に要る選定情報、rebase後の対応表と検証記録も`atk lane`が所有登録と同じ状態ディレクトリへ保持し、managed-tempの7日保持を存続の前提としない。選定原本も所有登録の選定情報も無い旧登録の作業ツリーは`atk lane recover --session-id <所有session>`で解放する。次回開始時は`atk lane delete --list`で残存理由と再開する操作を読む。
 `.git`を含む領域へ置くのは作業ツリーとそれとともに捨ててよいものに限る。完成条件証拠、検証記録、引き継ぎ記録、完了報告が参照する保存物（検証の出力、手動観測の記録など）および委譲先へ指定する保存先は、同じセッション内で使う場合に、委譲元か委譲先のセッションのmanaged-tempに置く。セッション終了後かWI終端後に読む記録の保存先は、前節「セッションのmanaged-temp」に従う。こうしておけば回収時に中身を確かめずに捨てられる。
-個別の領域には対応するAWIを`--awi <ファイル名>`で記録できる。
 
 ## 設定領域を変更する前の一時バックアップ
 

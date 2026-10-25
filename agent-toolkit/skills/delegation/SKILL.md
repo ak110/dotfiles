@@ -87,7 +87,7 @@ CLIへ待機対象やtimeoutを指定せず、CLI自身が上限で`running`を�
 
 Claude Codeが会話イベントの処理を登録するために読み込むプラグインのモジュールをFunction hooks module（以下「mod」）と呼ぶ。Claude Codeのメインは、最初の`start`でmodが装着した定期再確認のtask IDを保持する。modは自身の一覧取得・作成・削除能力を確認して装着し、全待機対象の終端と結果回収後に共通promptのtaskを自動回収する。モデルに`CronDelete`が公開されていることは自動回収の条件に含めない。装着失敗の通知では理由と次の操作に従う。modの装着通知も`CronList`の該当taskも無い場合は、`CronCreate`・`CronList`・`CronDelete`を使えるときだけ自ら装着する。
 
-- `atk wait-schedule --request-bucket main --format json`を1回実行し、返った`cron`と`prompt`を変更せず`CronCreate`へ渡して`recurring: true`で1件作成する
+- `atk wait-schedule`を1回実行し、返った`cron`と`prompt`を変更せず`CronCreate`へ渡して`recurring: true`で1件作成する
 - 所有taskはpromptの1行目の標識`<atk-auto source="periodic-recheck" kind="periodic-recheck">`と保持したIDで確認する。再開・会話圧縮後も`CronList`の実在taskと比べ、一意に確認できないtaskの操作や重複作成はしない
 - 未完了の対象や未回収の結果がある間は同じtaskを再利用する。共通promptのtaskの通常回収はmodが担い、追加義務付きのtaskはセッション終了時に回収する。modが無い環境で自ら装着したtaskは、全対象の終端後に保持したIDを`CronDelete`へ渡す。定期promptは待機CLIが所有する対象を再照会せず、終端はCLIの結果と完了通知から確定する
 - 固有の経過時間起動の義務がある場合は、義務ごとの測定コマンドと閾値を共通promptの終了タグの前へ加え、所有taskを削除して同じ開始標識で作成し直す

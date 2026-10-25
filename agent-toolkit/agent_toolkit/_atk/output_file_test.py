@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import shlex
 import sys
 
 import pytest
@@ -13,8 +12,8 @@ from agent_toolkit import atk
 from agent_toolkit._atk import output_file
 
 
-def test_saved_streams_lead_to_read_file(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """標準出力と標準エラーの保存先の案内から、公開されたコマンドだけで保存した全文を取得できる。"""
+def test_saved_streams_report_path_and_line_count(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """標準出力と標準エラーの保存先と行数だけを示し、示した行数の範囲で保存した全文を読める。"""
     bodies = ("標準出力\r\n" * 3000, "標準エラー\n" * 3000)
     with output_file.auto_save(lambda: tmp_path):
         sys.stdout.write(bodies[0])
@@ -22,19 +21,11 @@ def test_saved_streams_lead_to_read_file(tmp_path: pathlib.Path, capsys: pytest.
     captured = capsys.readouterr()
     for output, expected, prefix in zip((captured.out, captured.err), bodies, ("", "標準エラー"), strict=True):
         lines = output.splitlines()
+        assert len(lines) == 2
         assert lines[0].startswith(f"{prefix}保存先: ")
         assert lines[1] == f"{prefix}行数: 3000"
-        argv = shlex.split(lines[2].removeprefix(f"{prefix}読取: "))
-        parts: list[str] = []
-        while True:
-            code, body, error = run_atk(argv[1:], capsys)
-            assert code == 0 and not error
-            response, text = _read_file_response(body)
-            parts.append(text)
-            if response["eof"]:
-                break
-            argv = ["atk", "read-file", "--start", str(response["next"]), "--", argv[-1]]
-        assert "".join(parts) == expected
+        saved = pathlib.Path(lines[0].removeprefix(f"{prefix}保存先: "))
+        assert saved.read_bytes() == expected.encode("utf-8")
 
 
 @pytest.mark.parametrize("stderr", [False, True])
@@ -130,13 +121,6 @@ def run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[object
     return code, captured.out, captured.err
 
 
-def _read_file_response(output: str) -> tuple[dict, str]:
-    """read-fileのメタデータと無加工本文を分ける。"""
-    metadata, separator, body = output.partition("\n")
-    assert separator
-    return json.loads(metadata), body
-
-
 @pytest.mark.parametrize("agent", [False, True])
 @pytest.mark.parametrize(
     ("query", "passes_file"),
@@ -177,7 +161,7 @@ def test_evidence_saves_only_output_passed_as_file(
         output = path.read_text(encoding="utf-8")
         # 保存後の表示は保存ファイルの発話行と同じ順・同じ記録位置を示し、呼び出し元は保存先を開かずに出所を選べる。
         users = [event for event in map(json.loads, output.splitlines()) if event["kind"] == "user"]
-        assert summary[3:] == [f"発話: record={event['record']} line={event['line']} {event['text']}" for event in users]
+        assert summary[2:] == [f"発話: record={event['record']} line={event['line']} {event['text']}" for event in users]
     assert "検索語" in output
 
 
@@ -228,7 +212,6 @@ def test_help_and_early_returns_use_same_capture(
         ["wi", "grep", "対象"],
         ["agents", "wait"],
         ["plans", "list"],
-        ["managed-temp", "list"],
         ["review-table", "show", "/some/review.tsv"],
         ["review-audit", "list", "--repo", "/some/repo"],
         ["run-script", "session-review-evidence", "--"],

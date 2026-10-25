@@ -8,26 +8,13 @@ from agent_toolkit._common import wait_schedule as _wait_schedule
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    """`atk wait-schedule`の引数を登録する。"""
-    parser.add_argument(
-        "--request-bucket",
-        choices=("main", "subagent"),
-        required=True,
-        help="判定対象のrequest bucket（mainまたはsubagent）。",
-    )
-    parser.add_argument(
-        "--format",
-        choices=("text", "json"),
-        default="text",
-        help="出力形式。textはcron式の1行、jsonは`cron`と定期再確認の`prompt`を持つJSONを出力する（省略時はtext）。",
-    )
+    """`atk wait-schedule`は引数を取らない。"""
+    del parser  # noqa
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """Request bucketに対応するcron式（`--format json`では定期再確認のpromptも）を出力する。"""
-    schedule = _wait_schedule.get_schedule(args.request_bucket)
-    if args.format == "json":
-        print(json.dumps({"cron": schedule, "prompt": _periodic_recheck.PERIODIC_RECHECK_PROMPT}, ensure_ascii=False))
-    else:
-        print(schedule)
+    """メインのcron式と定期再確認のpromptをJSONの1行で出力する。"""
+    del args  # noqa
+    schedule = _wait_schedule.get_schedule("main")
+    print(json.dumps({"cron": schedule, "prompt": _periodic_recheck.PERIODIC_RECHECK_PROMPT}, ensure_ascii=False))
     return 0

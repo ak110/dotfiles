@@ -119,7 +119,7 @@ def test_private_module_directly_under_agent_toolkit_is_reported(
 def test_public_scripts_and_tests_directly_under_agent_toolkit_are_accepted(_isolate_repo_root: pathlib.Path) -> None:
     """直下が公開スクリプト・`__init__.py`・`conftest.py`・テストだけならexit 0。"""
     scripts_root = _isolate_repo_root / "agent-toolkit/agent_toolkit"
-    for name in ("hook.py", "atk.py", "agents_server_mcp.py", "wait_ci.py", "_managed_temp.py", "__init__.py", "conftest.py"):
+    for name in ("hook.py", "atk.py", "agents_server_mcp.py", "wait_ci.py", "__init__.py", "conftest.py"):
         (scripts_root / name).write_text("", encoding="utf-8")
     (scripts_root / "atk_test.py").write_text("", encoding="utf-8")
 
@@ -424,7 +424,7 @@ def test_agent_toolkit_allows_line_level_f821_noqa(_isolate_repo_root: pathlib.P
 
 @pytest.mark.parametrize(
     "relative_path",
-    ["atk.py", "agents_server_mcp.py", "wait_ci.py", "_managed_temp.py", "../skills/example/scripts/tool.py"],
+    ["atk.py", "agents_server_mcp.py", "wait_ci.py", "../skills/example/scripts/tool.py"],
 )
 def test_agent_toolkit_entry_scripts_cannot_import_hooks(
     _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], relative_path: str

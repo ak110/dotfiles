@@ -17,7 +17,6 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
@@ -31,7 +30,7 @@
 
 ## レーンと資源
 
-初期選定が1レーンの場合は、準備済みの専用worktreeと処理対象WIを1人のレーン担当へ渡し、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。以降の工程境界の往復は同契約の継続する工程へ読み替える。
+各レーンの準備済みの専用worktreeと処理対象WIを1人のレーン担当へ渡し、レーン数によらず`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。以降の工程境界の往復は同契約の継続する工程へ読み替え、複数レーンでは主作業ツリーへの統合の許可だけをメインが`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の許可」に従って直列に送る。
 
 選定結果の`段階`を昇順に処理し、同じ段階の独立レーンを並行起動する。`先行レーン`を持つ後段は、列挙した全レーンの統合完了を受領してから、統合先の現行HEADを基点にworktreeを作成する。単一段階なら全レーンを同時に作成して起動する。
 
@@ -102,7 +101,7 @@ Claude Codeでは、各段階（複数段階では途中の段階も含む）の
 割当先が統合済みでも資源は保持されているため、同じ`atk lane create`で所有登録とGit登録の一致を確かめ、返された同じworktree・branchへ追加する。指示は準備済みの環境を保持した同じ担当threadと引き継ぎ記録へ送る。登録と現物が一致しない場合は成果を保持し、回復に必要な事実を返す。合流先は未統合へ戻るため、終了時も再統合が完了するまで資源を保持する。
 
 選定YAMLへ追加した時点で、現在工程の完了を待たずに同じthreadへ1回指示を送る。指示には追加WI名、専用worktreeとbranch、引き継ぎ記録、選定YAMLから本文と`プロジェクト規範の指定`を取得すること、現在工程を置換せず完了後にturnを終えず追加計画の起草へ進むことを含める。割当を見直すためだけに稼働中の担当を中断しない。
-工程境界の届け方は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`に委ね、返却を一律に求めない（非待機の`計画検査完了`は`atk agents notify`の通知であり、返却を求めると実装が止まる）。レーン担当は現在工程の結果を、追加後に最初に届ける工程境界の本文の先頭へ含める。
+工程境界の届け方は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`に委ね（所在参照）、返却を一律に求めない（非待機の`計画検査完了`は`atk agents notify`の通知であり、返却を求めると実装が止まる）。レーン担当は現在工程の結果を、追加後に最初に届ける工程境界の本文の先頭へ含める。
 メインはその境界の受領で追加工程の開始を判定し、先行計画を凍結したまま、追加計画の絶対パス、AWI集合、保存状態と進捗をレーンの引き継ぎ記録へ累積して実行レビューと統合へ全計画を渡す。
 
 同じthreadの再開が成立しない場合は、公開応答の事実・対象・不足する条件を続行できない理由として返し、同じレーンの回復判断を受ける。再開不能や全レーン統合済みであっても新しいレーンを作成しない。追加分にも計画・レビュー・統合・終端の既存手順を使う。
@@ -114,7 +113,7 @@ Claude Codeでは、各段階（複数段階では途中の段階も含む）の
 メインは選定時にAWI・UWIの元本文を読み、その後は主に選定の構造化出力、計画の`## 概要`と`## 実施内容`、工程境界の出力、レビュー指摘管理表の状態、統合結果を読む（努力目標。メインのコンテキストを保護する）。計画の他の節と実装差分は、エスカレーション、ユーザー介入、レビュー収束の判断で要る場合に読む。統合結果の`変更したエージェント向け文書`の再取得は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従う。
 
 処理対象WIへの包含理由、除外理由またはその構成を尋ねるユーザーの質問は、`selection-procedure.md`の読込表が示す説明手順へ渡す。
-説明手順は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-explanation.md`にあり、返された根拠と限界をユーザーへ伝える。
+説明手順は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-explanation.md`にあり、メインが保存済みの選定結果と判断から根拠と限界をユーザーへ伝える。
 
 ## 採否の確定と終端区分
 

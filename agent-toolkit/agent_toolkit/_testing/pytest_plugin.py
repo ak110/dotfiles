@@ -9,6 +9,7 @@ import contextlib
 import os
 import pathlib
 import re
+import sys
 import tempfile
 from collections.abc import Callable, Generator, Iterator
 from multiprocessing import resource_tracker
@@ -82,6 +83,23 @@ _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
 )
 
 
+def _notify_slot_wait(owner: execution_slot.SlotOwner | None) -> None:
+    """実行枠の待機を始めたことを、保持者の情報とともに標準エラーへ1回出力する。
+
+    出力が無いまま待つと、呼出元は待機と停止を区別できない。示す情報はpyfltrの`execution-slot`の警告とそろえる。
+    """
+    if owner is None:
+        holder = "保持者の記録を読めない"
+    else:
+        holder = f"label={owner.label}、pid={owner.pid}、cwd={owner.cwd}、acquired_at={owner.acquired_at}"
+    print(
+        f"pytest: 同じOSアカウントで別の検証が実行枠を保持しているため（{holder}）、その解放を待ってから試験を実行する。"
+        "待機時間は試験の処理時間に含まれない",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
     """共有検証の所有と一時領域をpytestの寿命へ結び、配布CLIの依存環境の保存先を固定する。
@@ -95,7 +113,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.add_cleanup(stack.close)
     worker = hasattr(config, "workerinput")
     # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。
-    stack.enter_context(execution_slot.hold(label="pytest"))
+    stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait))
     previous_children = set(process_tree.collect_descendants(os.getpid()))
     resource_environment = {
         name: os.environ.get(name)
@@ -104,7 +122,7 @@ def pytest_configure(config: pytest.Config) -> None:
     directory = None
     if not worker and config.option.basetemp is None:
         directory = managed_temp.create_managed_temp("pytest-fixtures")
-        # managed-tempの所有markerを維持するため、pytestの初期化対象を子ディレクトリにする。
+        # pytestは開始時にbasetempを削除して作成し直すため、作成した領域の子を初期化対象にする。
         config.option.basetemp = str(directory / "fixtures")
 
     def release_resources() -> None:
@@ -124,7 +142,7 @@ def pytest_configure(config: pytest.Config) -> None:
                 "pytestの子孫を回収できない: " + "; ".join(residual) + "; 対象の終了を確認してから一時領域を回収する"
             )
         if directory is not None:
-            # conftestやテストの隔離が保存先を変えても、作成時の外部登録簿で所有を検証する。
+            # テストの隔離がHOME・キャッシュの場所を変えても、作成時と同じ一時rootで包含を判定する。
             with pytest.MonkeyPatch.context() as patch:
                 for name, value in resource_environment.items():
                     if value is None:
@@ -279,13 +297,13 @@ def _real_end_turn_wait(request: pytest.FixtureRequest, monkeypatch: pytest.Monk
 
 @pytest.fixture(autouse=True)
 def isolated_state_root(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """外部真正性状態を各テストの専用領域へ分離する。"""
+    """一時rootと状態rootを各テストの専用領域へ分離する。"""
     if not request.path.is_relative_to(_PACKAGE_ROOT / "_atk" / "managed_temp"):
         return
     cache_root = tmp_path / "managed-temp"
     cache_root.mkdir(mode=0o700)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
-    setattr_in_managed_temp_modules(monkeypatch, "_temp_root", lambda: cache_root)
+    setattr_in_managed_temp_modules(monkeypatch, "_temp_root_path", lambda: cache_root)
 
 
 @pytest.fixture(autouse=True)

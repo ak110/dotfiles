@@ -3,8 +3,8 @@
 
 サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents <sub>`・
 `atk wait-schedule`・
-`atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`・
-`atk review-audit <sub>`・`atk run-script <script> -- <引数>`・`atk run-command -- <argv>`・
+`atk worktree-stash <sub>`・`atk review-table <sub>`・
+`atk review-audit <sub>`・`atk run-script <script> -- <引数>`・
 `atk run-skill <スキル名>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
@@ -24,12 +24,9 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - mq submission begin/end: add-awi-by-userの投入先と作業期間を、process-loopの開始前の活動猶予へ記録する
 - config show/get/set/apply-preset: XDG関連パス・モデル設定の確認・変更
 - plans commit/list: 現行計画またはCI対応レビュー指摘管理表の保存と作業中計画の一覧
-- managed-temp create/cleanup: managed-tempのディレクトリの作成・後始末
-- watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
-- wait-schedule: request bucketと公開情報から委譲待機用のcron式を出力する（`--format json`では定期再確認のpromptも）
+- wait-schedule: 公開情報から委譲待機用のcron式と定期再確認のpromptをJSONで出力する
 - agents wait/notify/list/show: 委譲sessionの待機・通知・一覧・詳細表示
 - run-script: plugin内部スクリプトを安定した公開名で実行する
-- run-command: 有限終了する外部コマンドの両ストリームと終了状態を保持する
 - run-skill: 定期実行から任意のスキルを自律モードで1回実行する
 
 各サブコマンドの引数の登録と実行は、それぞれのモジュールの`build_parser`と`dispatch`が持つ
@@ -62,16 +59,13 @@ lazy from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402 
 lazy from agent_toolkit._atk import outcome as _outcome  # noqa: E402
 lazy from agent_toolkit._atk import output_file as _output_file  # noqa: E402
 lazy from agent_toolkit._atk import plans as _plans  # noqa: E402
-lazy from agent_toolkit._atk import read_file as _read_file
 lazy from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
 lazy from agent_toolkit._atk import review_table as _review_table  # noqa: E402
-lazy from agent_toolkit._atk import run_command as _run_command  # noqa: E402
 lazy from agent_toolkit._atk import run_script as _run_script  # noqa: E402
 lazy from agent_toolkit._atk import run_skill as _run_skill  # noqa: E402
 lazy from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
 lazy from agent_toolkit._atk import user_events_summary as _user_events_summary  # noqa: E402
 lazy from agent_toolkit._atk import wait_schedule as _wait_schedule_cmd
-lazy from agent_toolkit._atk import watch as _watch  # noqa: E402
 lazy from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
 lazy from agent_toolkit._atk.serve import command as _serve_command
 lazy from agent_toolkit._atk.wi import cli as _wi_cli
@@ -81,8 +75,10 @@ lazy from agent_toolkit._common import inherited_venv as _inherited_venv
 lazy from agent_toolkit._common import mcp_environment as _mcp_environment
 lazy from agent_toolkit._common import private_notes as _private_notes  # noqa: E402
 
-_MANAGED_TEMP_CHECK_NEXT_ACTION = "本来の操作は継続した。`atk managed-temp list`で残存を確認する"
-"""managed-tempのディレクトリの自動削除・探索の失敗に添える次の操作。"""
+_MANAGED_TEMP_CHECK_NEXT_ACTION = (
+    "本来の操作は継続した。表示した原因（所有者・権限など）を除去すると、1時間後以降の`atk`の起動で再び回収を試みる"
+)
+"""managed-tempの期限切れの対象を自動削除できなかった場合に添える次の操作。"""
 
 
 _LEGACY_TOP_LEVEL_COMMANDS = {"mq": "wi"}
@@ -148,8 +144,6 @@ _PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None
     ("setup-project", lambda parser: _setup_project.build_parser(parser)),
     ("wi", lambda parser: _wi_cli.build_parser(parser)),
     ("run-script", lambda parser: _run_script.build_parser(parser)),
-    ("run-command", lambda parser: _run_command.build_parser(parser)),
-    ("read-file", lambda parser: _read_file.build_parser(parser)),
     ("run-skill", lambda parser: _run_skill.build_parser(parser)),
     ("plans", lambda parser: _plans.build_parser(parser)),
     ("serve", lambda parser: _serve_command.build_parser(parser)),
@@ -158,9 +152,7 @@ _PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None
     ("agents", lambda parser: _agents.build_parser(parser)),
     ("agents-exit-session", lambda parser: _agents_exit_session.build_parser(parser)),
     ("lane", lambda parser: _lane.build_parser(parser)),
-    ("managed-temp", lambda parser: _managed_temp.build_parser(parser, command_dest="managed_temp_subcommand")),
     ("worktree-stash", lambda parser: _worktree_stash.build_parser(parser, command_dest="worktree_stash_subcommand")),
-    ("watch", lambda parser: _watch.build_parser(parser)),
 )
 """トップレベルのサブコマンドと引数を登録する関数の対応。`review-table`・`review-audit`は自身でサブコマンドを登録する。"""
 # pylint: enable=unnecessary-lambda
@@ -254,9 +246,6 @@ def _auto_saves_output(args: argparse.Namespace) -> bool:
     """
     if not is_agent_environment():
         return False
-    if args.command == "read-file":
-        # read-fileは自身の返却予算内で原文のバイト列を直接出力し、共通の文字列捕捉による改行変換を避ける。
-        return False
     if args.command == "serve":
         return False
     if (
@@ -288,11 +277,6 @@ _OUTPUT_AS_FILE_CALLS = (
         # pylint: disable-next=unnecessary-lambda
         after_save=lambda path: _review_audit.summarize_saved_pending(path),
         reason="監査担当へ生成元のJSONファイルを渡す。保存後は起動判断に必要な件数と取得状態だけを表示する",
-    ),
-    _OutputAsFile(
-        applies=lambda args: args.command == "agents" and args.agents_subcommand == "wait",
-        after_save=lambda path: _agents.summarize_saved_wait(path),  # pylint: disable=unnecessary-lambda  # 保存対象だけ読み込む
-        reason="回収前に保存先を開き、保存できない場合に未受領の結果を消費しない。保存後は通知・終端の内訳と本文を表示する",
     ),
     _OutputAsFile(
         applies=lambda args: (
@@ -329,23 +313,8 @@ class _Invocation:
     """共通の前処理を終えた1回の起動の文脈。"""
 
     args: argparse.Namespace
-    parser: argparse.ArgumentParser
     home: pathlib.Path
     now: datetime.datetime
-    automatically_cleaned: tuple[pathlib.Path, ...]
-
-
-def _dispatch_managed_temp(invocation: _Invocation) -> int:
-    """`atk managed-temp`を実行する。同じ起動の掃引で削除済みになった対象の後始末は成功として扱う。"""
-    args = invocation.args
-    if (
-        args.managed_temp_subcommand == "cleanup"
-        and args.path is not None
-        and args.path.is_absolute()
-        and pathlib.Path(os.path.abspath(args.path)) in invocation.automatically_cleaned
-    ):
-        return 0
-    return _managed_temp.dispatch(args, command_dest="managed_temp_subcommand")
 
 
 # parserと同じく、登録時の属性参照による一括読込を避ける。
@@ -378,17 +347,13 @@ _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
     "agents-exit-session": lambda invocation: _agents_exit_session.dispatch(invocation.args),
     "lane": lambda invocation: _lane.dispatch(invocation.args),
     "run-script": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _run_script.dispatch),
-    "run-command": lambda invocation: _run_command.dispatch(invocation.args),
-    "read-file": lambda invocation: _read_file.dispatch(invocation.args),
     "run-skill": lambda invocation: _run_skill.dispatch(invocation.args),
-    "serve": lambda invocation: _serve_command.dispatch(invocation.args, parser=invocation.parser, home=invocation.home),
-    "managed-temp": _dispatch_managed_temp,
+    "serve": lambda invocation: _serve_command.dispatch(invocation.args, home=invocation.home),
     "worktree-stash": lambda invocation: _worktree_stash.dispatch(
         invocation.args,
         command_dest="worktree_stash_subcommand",
         private_notes=_private_notes.default_private_notes(invocation.home),
     ),
-    "watch": lambda invocation: _watch.dispatch(invocation.args, now=invocation.now),
     "config": lambda invocation: _config_cmd.dispatch(invocation.args, invocation.home),
     "plans": lambda invocation: _plans.dispatch_command(invocation.args, home=invocation.home),
     "review-table": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_table.dispatch),
@@ -466,37 +431,17 @@ def main(
         _wi_cli.prepare_args(args, parser)
     if now is None:
         now = datetime.datetime.now()
-    automatically_cleaned: list[pathlib.Path] = []
-    sweep_result: _managed_temp.SweepResult | None = None
     try:
         sweep_result = _managed_temp.sweep_managed_temp(now=now)
-        automatically_cleaned = sweep_result.deleted
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
-        _outcome.report_persistent_warning(
-            f"managed-tempのディレクトリの自動削除に失敗した: {error}",
-            next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
-        )
-    is_delegated_session = _delegated_session.is_delegated(os.environ)
-    if sweep_result is not None and args.command != "managed-temp" and not is_delegated_session:
-        if sweep_result.retention_changed:
-            _outcome.report_warning(
-                f"使用中または使用状態を確認できない配布物を{len(sweep_result.retained)}件保持した",
-                next_action="`atk managed-temp list`で対象・保持理由・再判定条件を確認する",
-            )
-        # 掃引が同じ起動で探索した結果を使い、未登録候補を再探索しない。
-        # 最終更新から7日以内の候補は使用中として自動削除から外れ、対処を要しないため数えない。
-        unregistered_candidates = sweep_result.stale_unregistered
-        if sweep_result.unregistered_error is not None:
+        sweep_result = _managed_temp.SweepResult([], ((_managed_temp.temp_root_path(), str(error)),))
+    # 回収を判断できない委譲先には、所有しない領域の警告を出力しない。
+    if sweep_result.failed and not _delegated_session.is_delegated(os.environ):
+        for path, reason in sweep_result.failed:
             _outcome.report_persistent_warning(
-                f"登録を持たない管理対象を探索できなかった: {sweep_result.unregistered_error}",
+                f"managed-tempの期限切れの対象を自動削除できなかった: {path}: {reason}",
                 next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
             )
-        else:
-            if unregistered_candidates:
-                _outcome.report_persistent_warning(
-                    f"自動削除されずに残った、登録を持たない管理対象が{len(unregistered_candidates)}件ある",
-                    next_action="`atk managed-temp list`で一覧と回収方法を確認する",
-                )
     args.repo_path_override = repo_path_override
     if args.command == "wi":
         _wi_cli.validate_args(args)
@@ -507,10 +452,8 @@ def main(
         command(
             _Invocation(
                 args=args,
-                parser=parser,
                 home=home if home is not None else pathlib.Path.home(),
                 now=now,
-                automatically_cleaned=tuple(automatically_cleaned),
             )
         )
     )

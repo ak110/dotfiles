@@ -53,7 +53,7 @@ EXPLORE_COMMON_CAPABILITIES = (
     "explore: 対象成果物は読み取り専用。大きな検索結果は条件の絞込みか分割取得で必要範囲を最後まで読み、"
     "省略や未読を不在・件数・網羅性の根拠にしない。"
     "完成条件から全文読取と所在探索を分け、割当範囲の未読・未走査は担当内で完了する。"
-    "切り詰め・保存出力はread-fileのnextからeofまで回収する。"
+    "切り詰め・保存出力は示された行数まで行範囲を分けて最後まで読む。"
     "権限・到達不能・入力不足など自身で解消できない未確認だけを範囲と理由付きで返す。環境作成・権限拡大・再委譲は禁止。"
     "確定した操作はshell、自由な判断を伴う書込はdelegateへ渡す。"
     "shellとdelegateは書込を拒否せず、対象と許可する操作は委譲元が定める。"
@@ -63,10 +63,9 @@ EXPLORE_COMMON_CAPABILITIES = (
 
 EXPLORE_BACKEND_CAPABILITIES = {
     engine: (
-        "全backendでGitの読取照会、本文・属性検索、Python標準ライブラリの分割取得、"
-        "atk read-fileなどの読取CLIとpyfltr grepなどの読取MCPを使える。"
-        "read-file -- <絶対パス>で開始し、先頭JSONのnextをread-file --start <next> -- <同じ絶対パス>へ渡し、"
-        "eof: trueまで本文を改行ごと保持する。位置は文字単位。--max-bytesはメタデータ込みのUTF-8バイト予算。"
+        "全backendでGitの読取照会（git grep・git show・git diff）、本文・属性検索（rg・find）、"
+        "標準の読取（ハーネスのRead、cat、sed -n '<開始行>,<終了行>p' -- <絶対パス>、JSONはjq）と"
+        "pyfltr grepなどの読取MCPを使える。長い本文は行数を確かめ（wc -l）、行範囲を分けて最後まで読む。"
         "Codexでは内側コマンドと外側セルの両方へ収め、合計量が不明な全文取得は別セルに分ける。"
         "対象成果物・委譲入力・ユーザーデータの作成・変更・削除は禁止。"
         "実行環境が管理するキャッシュ・状態・保存出力はこの変更禁止対象と区別する。"

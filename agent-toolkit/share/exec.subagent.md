@@ -37,6 +37,12 @@ continuations:
   - レビュー指摘管理表
   references: []
   condition: ''
+- instruction: 統合許可
+  required: []
+  optional: []
+  paths: []
+  references: []
+  condition: ''
 - instruction: 統合開始
   required:
   - 統合区分
@@ -50,7 +56,6 @@ continuations:
   optional:
   - プロジェクト固有の公開後の操作の順序
   - 完成条件証拠
-  - 受領確認入力
   paths: []
   references: []
   condition: ''
@@ -70,15 +75,15 @@ continuations:
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 初期選定が1レーンのレーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
+| レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
 | CI修正担当として原因を調べる前 | `agent-toolkit:bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` | |
 | 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` | |
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-toolkit:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/diagnostics.md` | |
 | 手動観測を保存する前 | `verification-evidence.md`の「手動観測の保存」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「手動観測の保存」` | |
-| 未判定検証記録を作成・更新する前 | `verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` | |
+| `検証結果`を書く前 | `verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` | |
 | 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-verification-failure.md` | |
-| `実装なし`またはレビュー収束後にメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` | |
+| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` | |
 | ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
 
 ## 入力
@@ -86,7 +91,7 @@ continuations:
 `レーン担当`は`選定結果の出力先ファイル`から`レーン`が`レーン識別子`と一致する`選定`の項目だけを読み、AWIファイル名、順序、`鮮度`、`担当モデル`、`プロジェクト規範の指定`、上流投入の3行、`プロジェクト固有の公開後の操作の順序`を入力とする。書式と省略時の値は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-format.md`の`## 選定結果の書式`に従い、省略された行は省略時の値として扱う。該当項目が無い、同じAWIが重複する、必須フィールドが形式外の場合は推測せず続行できない理由を返す。
 
 計画作成と実装の前（計画なしでは本文を読んだ時点）に、AWI本文が明示した担当とモデルの組を選定結果の`担当モデル`と比べ、一致しなければ下位担当の起動で補わず、WIファイル名、本文の組、選定結果の値を`続行できない理由`で返す。
-`担当モデル.実装担当`の値は自身の担当範囲の一部を任せる下位実装担当（「操作区分」の内部群など）の`model_type`へ渡す。比較と記録は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の担当モデルの段落に従う。指定が無い場合の下位実装担当の工程は同節の工程分担の段落に従う（内容の確定した単位は`delegate`の`chores`、自ら行う方が安ければ自身が行う）。自身のレーン全体は自分のthreadで担い続ける（別の`レーン担当`へ任せない）。初期選定が1レーンの場合は単一担当の実行契約に従い、実行レビュー担当の起動と統合の検収も自身が行う。複数レーンでは実行レビュー担当の起動と`統合開始`の送付はメインが行う。
+`担当モデル.実装担当`の値は自身の担当範囲の一部を任せる下位実装担当（「操作区分」の内部群など）の`model_type`へ渡す。比較と記録は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の担当モデルの段落に従う。指定が無い場合の下位実装担当の工程は同節の工程分担の段落に従う（内容の確定した単位は`delegate`の`chores`、自ら行う方が安ければ自身が行う）。自身のレーン全体は自分のthreadで担い続ける（別の`レーン担当`へ任せない）。レーン数によらず単一担当の実行契約に従い、実行レビュー担当の起動、指摘への対応と統合の検収も自身が行う。初期選定が複数レーンの場合は、主作業ツリーへの統合をメインの`統合許可`の受領後に行う。
 
 要求単位の由来は`agent-toolkit:wi-standards`の`## 由来と承認`に従い、計画の起草時に`atk wi show`のAWI本文とfrontmatterから判定する。判定結果は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`の書式で計画の`由来`欄へ書く。計画の確定後は由来の再判定を実装と統合の対象から除く。その後は計画で確定した採否と終端区分を用いる（由来の確定時点）。
 計画を省くレーンは同じ判定の結果を引き継ぎ記録へ残す。ユーザーが報告した不具合を既存実装で充足済みとする場合は、`plan-file-standards.md`「実施内容」が定める調査（呼び出し手段、操作順、結果、報告時点との差）を行い、操作、観測結果、相違、未特定の範囲を同じ記録へ残す。
@@ -113,14 +118,14 @@ continuations:
 
 | 担当種別 | 計画起草 | 実装・修正 | commit | 統合 |
 | --- | --- | --- | --- | --- |
-| レーン担当 | 再開位置が`なし`の場合に作成要否を判定する | メインの判断を待つ場合は`実装開始`受領後、待たない場合は通知後に実施 | 可 | 統合指示の受領後に実施し、統合を完了するまで同じthreadが担当する |
+| レーン担当 | 再開位置が`なし`の場合に作成要否を判定する | 単一担当の実行契約では採否の検収後、メインの判断を待つ場合は`実装開始`受領後に実施 | 可 | 統合入力の確定後（初期選定が複数レーンでは`統合許可`の受領後）か統合指示の受領後に実施し、統合を完了するまで同じthreadが担当する |
 | レビュー修正担当 | 実施しない | 受領した指摘だけを修正 | fixup commit可 | 実施しない |
 | CI修正担当 | 実施しない | CI記録が認可する失敗だけを修正 | 可 | 実施しない |
 
 この許可は委譲プロンプトや追送を受けた後もそのまま保つ。レビュー修正の`autosquash`と`lane-integration.subagent.md`「マージありの統合」の統合先HEADへのrebaseは別の操作であり、一方への禁止はその操作だけに適用する。担当種別に必須の操作を委譲プロンプトか追送が禁止する場合は着手せず、制限の文面と必須の操作を続行できない理由として返す。
 `レビュー修正担当`として起動された担当が統合指示を受領した場合は、`レーン担当`へ戻って統合を実施する。
 
-統合指示の受領後は`lane-integration.subagent.md`「公開統合操作」の`atk lane integrate`へ所有登録、統合入力HEAD、今回の全計画・WI、検収済み採否と`受領確認入力`を渡す。資源、受領入力の機械検査、Git統合、最終化と選定状態の定型操作は同じCLIへ集約し、担当は独立文脈レビューの受理、完成条件判定、診断と延期の判断を担う。生成済み入力と最後の実レビューHEADの組を保持し、失敗後は保存済み進行と同じ入力で再開する。
+統合指示の受領後は`lane-integration.subagent.md`「公開統合操作」の`atk lane integrate`へ所有登録、統合入力HEAD、今回の全計画・WIと検収済み採否を渡す。資源、Git統合、最終化と選定状態の定型操作は同じCLIへ集約し、担当は独立文脈レビューの受理、完成条件判定、診断と延期の判断を担う。受理した返却のファイルと最後の`レビューHEAD`の組を保持し、失敗後は保存済み進行と同じ入力で再開する。
 
 同じ専用worktreeで書込を分担する場合は、`agent-toolkit:delegation`の`references/mandatory-rules.md`「作業ツリーの保護」に従う。書込先が交わらない担当を並列に、または1つの担当を直列に置き、commitと作業ツリー全体へ作用する操作はレーン担当が全担当の終端後に行う。担当種別の切替は同じthreadの継続であり、書込の所有者は変わらない。
 担当ごとのcommitや書き換えを伴う検証が要る場合と、書込先を事前に確定できない場合は、別branch・別worktreeの一時的な内部群を使う。内部群へ渡すのはレーン担当の計画で内容の確定した書込作業の単位とし、計画の起草と設計判断を内部群の担当へ委ねるのは独立が明らかな複数タスクに限る。レーン担当がファイルの所有表を確定し、レーンbranchの確定済みcommitから群ごとの別branch・別worktreeを作成する（各worktreeの書込担当は1つ）。各群の担当は自身のworktreeのcommitとGit hookの処理を所有し、hookが更新した生成物を同じcommitへ含める。群の粒度と同時起動数は固定の分割数や上限を置かず`agent-toolkit:delegation`の`references/routing.md`「委譲単位の確定」で選び、契約で結び付く出力元とテスト期待値は同じ群へ置く。レーン担当は各担当の終端、clean状態、群のcommit・差分・検証（実行した版とともに）を確かめ、レーンbranchへ順に統合し、取り込みごとに前後のHEADを`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の手段で記録する。レーン担当は統合後に群間で重なる生成物の差を原本から同期し、対象語の残存と直接影響範囲、変更範囲を検証してから一時worktreeとbranchを回収する。群の検証記録はOIDが変わっただけでは破棄せず、統合で結果が変わり得る行と統合で初めて成立する観測だけを取り直す。内部群は別レーンや別要求の担当にせず、計画、検収、commitの対応記録、統合とメインへの返却はレーン担当が所有する。
@@ -158,12 +163,12 @@ continuations:
   1. 外部から観測できる文言か挙動を変えた場合は、`plan-file-standards.md`「要件・外部仕様」の直接影響範囲の段落が定める検索語を固定文字列で個別に検索する。値を組み立てる生成コードでは、変更前の実行結果から旧値を列挙するか、生成元を使う全テストを実行する
   2. 検出した直接影響範囲の実装ファイルに対応するテストを変更範囲の検証へ加える。加えない場合は理由を残す
   3. 計画の起草で確定した検証対象を実装の現物と比べ、`agent-toolkit:check-execution`の`references/verification-scope.md`の類型で外れていた対象を加える
-  4. 検索語、検出結果、採否、テスト実行の採否、検証対象ごとの結果と除外理由をmanaged-tempへ保存し、`検証結果`から参照する
+  4. 検索語、検出結果、採否、テスト実行の採否、検証対象ごとの結果と除外理由を自分のセッションのmanaged-temp内のファイルへ保存し、`検証結果`から参照する
   5. 検証の実行後、手順2・3で選んだ消費側の試験ごとに保存済み結果の合否を対応付ける。結果に無い試験は加えて再実行し、対応を手順4の保存物へ加える。入力パスから試験を選ぶツールの成功とテスト総数は対応付けの代わりにしない
 
-  検索は語ごとに`atk run-command --cwd <対象worktreeの絶対パス> --timeout <有限秒数> -- git grep -n -F -e '<検索語>' -- .`（Git追跡外は子argvを`rg -n -F -- '<検索語>' <対象の絶対パス>`）で保存する。exit 1は不一致、起動失敗・timeout・保存失敗・その他の非0は検索失敗であり、不在の根拠にしない
+  検索は語ごとに`git -C <対象worktreeの絶対パス> grep -n -F -e '<検索語>' -- .`（Git追跡外は`rg -n -F -e '<検索語>' -- <対象の絶対パス>`）で行い、出力と終了コードを手順4の保存物へ残す。終了コード0は一致、1は不一致、それ以外は検索失敗であり、検索失敗を不在の根拠にしない
 - ユーザーがAWIの`## ユーザーコメント`かUWIの`## 回答`へ処理側に宛てて直接記入した質問（AWI本文へ転記された質問は対象外）は、回答本文（語は`agent-toolkit:wi-standards`冒頭の語の基準に従う）と根拠を下書きへ保存して絶対パスをメインへ通知し、`検証結果`にも記す。レビューの指摘は下書きへ反映する。メインが回答UWIを保存して返したファイル名を進捗ログ（計画なしでは引き継ぎ記録）へ追記する。回答完了の判定は保存後に限る
-- 計画の変更範囲の検証は`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <対象worktreeの絶対パス> --timeout <正の有限秒数> --summary-only`で実行する。訂正済み検証表があれば`--verification-plan <訂正済み検証表の絶対パス>`を加える。列挙・実行・結果の検収は`agent-toolkit:check-execution`「統合実行ツール経由の起動」に従う。実行後は保存された結果まとめの`results_path`を`atk run-command --records-file <絶対パス>`へ渡し、全件の`record_path`・両出力と子・wrapperの終了状態を読む。計画なしでは引き継ぎ記録で確定したコマンドを実行し、`--record <record_path>`の反復で保存済み結果を読む。読むのは保存済み結果だけとし、旧記録の未記録値と保存・読取失敗を成功と扱わない
+- 計画の変更範囲の検証は、`## 検証`（訂正済み検証表があればその表）の各コマンドを対象worktreeで順に標準実行し、各コマンドの終了コードと出力を読んで判定する。計画なしでは引き継ぎ記録で確定したコマンドを実行する。実行と判定は`agent-toolkit:check-execution`「統合実行ツール経由の起動」、結果の書き方は`verification-evidence.md`「完成条件証拠の検証記録」に従う。終了コードを観測できなかった実行と出力を読めなかった実行を成功と扱わない
 - commit直前に`agent-toolkit:commit`へ従う。計画を持つ場合は、そのcommitの実装単位に属する`### 恒久化`と`### リファクタリング`の行を差分と比べて不足を同じcommitへ含め、最後の実装commitの前には両表の全行がいずれかのcommitに対応することを確かめる。各commitの前後のHEADを`atk run-script plan-progress --`へ渡して進捗ログと同じstemの対応記録へ記録する（commit失敗時は記録しない。最初の記録では専用worktreeの絶対パスとbranch名を`--result`へ渡す）。実装・レビュー修正・CI修正の各commitで、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の記録を残す
 
 ### 担当種別ごとの修正
@@ -175,9 +180,9 @@ continuations:
 - ユーザビリティレビューの指摘を修正した担当は、受領した操作順、画面状態、表示幅で新しいHEADを実ブラウザーで描画して確かめ、試した条件と結果を再提出に記す。自動化できる条件は既存のブラウザーテストへ保持する（努力目標。同条件のテストを重ねない）
 - `CI修正担当`はCI記録の7項目を実装契約とし、原因となった失敗だけを修正する。原因を調べる前に`agent-toolkit:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「初動と拡張原因分析の判定」「直接的原因と事象時点の確定」の共通判定をCI記録の原因分析結果へ適用する。直接的原因を確定できなければ是正commitとして返さず、試した対照、残る候補、作成した診断の変更を、推定である旨とともに返す。診断コードを加える場合は、CI記録が対応付ける競合仮説・観測・採取対象を先に読み、判別に使わない列挙と走査を含めず、出力量は採取対象を限定して抑える。修正方法は`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」のCI失敗の区分に従い、原因commitへ取り込んだ場合は書換え前後のOID対応と`git range-diff`の結果を返す。原因となった失敗と根本原因を同じくする対象のうちCI記録が認可しない対象は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「類似見直し」の母集団として修正の対象と方向を委譲元へ返す。CIログの有無、再現性、外部の一時障害、再実行の認可と回数は除外条件にしない。pushは行わない
 
-### 完成条件証拠の検証記録
+### 検証結果の記録
 
-要求別の未判定検証記録の作成・更新は`verification-evidence.md`「完成条件証拠の検証記録」に従う。
+`検証結果`の書き方と、手動観測の全量の保存は`verification-evidence.md`「完成条件証拠の検証記録」「手動観測の保存」に従う。
 
 ### 返却前の確認
 
@@ -196,9 +201,9 @@ continuations:
 - 書換えの前に、対象worktreeがclean、rewrite対象が未push、操作直前に解決したrewrite対象のOID集合がそのレーンのcommitだけであることを確かめ、別の呼び出しで同書「履歴確認の起動形」の`git log`を実行する
 - autosquashは同書「fixupの実行上の制約」の起動形で実行し、競合と失敗は同書「失敗時の扱い」に従う。同じ指摘の履歴統合の再試行は委譲元の判断を得てから行う
 - 書換え前後のOID、tree、親OID、件名を保持して`rewrite_guard`の要求に合うか確かめる。続けて同書「操作前後の確認」の起動形で、終了コード0と検収済み対応表の保存を確かめる（autosquashは`atk run-script history-compare -- --operation autosquash`、amendは`--operation amend`）
-- レビュー指摘管理表へ、指摘、採否、修正commit、検証結果、書換え前後の7文字以上の一意な短縮OIDの対応、一致確認結果、対応表の絶対パスを残す。この完全OID対応表を`atk run-script plan-rewrite --`へ同書の起動形で渡し、AWI集合を現在の実装commitへ継承する。未判定検証記録は`atk run-script verification-record -- --output <未判定検証記録の絶対パス> --rewrite-map <対応表の絶対パス>`で参照を更新する。完成条件証拠は、委譲元が`rewrite_map`を追送した実行レビュー担当が`exec-review.subagent.md`「再レビュー」のコマンドで更新する
+- レビュー指摘管理表へ、指摘、採否、修正commit、検証結果、書換え前後の7文字以上の一意な短縮OIDの対応、一致確認結果、対応表の絶対パスを残す。この完全OID対応表を`atk run-script plan-rewrite --`へ同書の起動形で渡し、AWI集合を現在の実装commitへ継承する。完成条件証拠は、委譲元が`rewrite_map`を追送した実行レビュー担当が新しいHEADで判定し直す
 - 履歴統合後の変更範囲の検証は`diagnostics.md`で、記録済みの基準版と累積差分から判定し、`atk run-script plan-progress --`で進捗ログへ追記する
-- 取得版がレビュー対象の祖先から外れた検証記録は、結果に作用する差がある行と取得版を特定できない行だけを取り直す。他の行は`exec-review-recording.md`「根拠の書き方」に従って取得版を保持する観測ファイルの参照と適用理由を`evidence`へ書く。`--rewrite-map`で更新するのは現行成果物を指す`commit:<OID>`の参照だけであり、裸のOID、取得版のHEAD・git_head・比較元、観測ファイルと判定欄、既存自由文の形式は保持される。分割した対応先も各`commit:`参照として次回更新へ渡す
+- 取得版がレビュー対象の祖先から外れた検証結果は、結果に作用する差がある検証と取得版を特定できない検証だけを新しいHEADで取り直す。他の検証は`exec-review-recording.md`「根拠の書き方」に従って取得時のHEAD、観測の所在と適用理由を`検証結果`へ書く
 - 会話履歴が欠けた状態で再開する場合は、レビュー指摘管理表の完了内容を現行のGit実体と比べ、保存済みの書換え前後のOID対応、公開済み判定、件名の一意性から確定できる場合だけ進む。旧OIDは保存済みの記録から取る（無指定のreflogは出所にしない）。確定できなければ対象OIDと不足範囲を続行できない理由で返す
 
 `history-rewrite.md`が用いる各phaseの対象は次のとおりとする。
@@ -223,8 +228,16 @@ continuations:
 
 ```text
 実装完了
-検証結果: <実行した変更範囲の検証、終了コード、警告の有無、受入シナリオ別のテスト名と合否、要求単位ごとの未判定検証記録JSONの絶対パス、直接影響範囲の探索の成果物およびユーザーがWIへ直接記入した質問への回答下書きの絶対パス。保存後はUWIのファイル名も記録>
+検証結果: <実行した変更範囲の検証のコマンド・終了コード・要点と検証HEADの完全OID、警告の有無、受入シナリオ別のテスト名と合否、保存した両出力と手動観測の絶対パス、直接影響範囲の探索の成果物およびユーザーがWIへ直接記入した質問への回答下書きの絶対パス。保存後はUWIのファイル名も記録>
 画面差分: <あり（変更した画面資産の相対パスの列挙）|なし>
+```
+
+初期選定が複数レーンの場合は、単一担当の実行契約の手順5で統合入力を確定した後、次の形式で`統合準備完了`を返して`統合許可`を待つ。
+
+```text
+統合準備完了
+統合区分: <マージあり|マージなし>
+統合入力HEAD: <統合入力HEADの完全OID。マージなしでは`なし`>
 ```
 
 終端結果では、担当モデル、起動候補、物理記録から観測した`engine`・`model`・`effort`を区別して返す。不一致は各値と由来を引き継ぎへ残し、観測不能は未確認とする。

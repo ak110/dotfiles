@@ -132,7 +132,6 @@ ty-args = [
     "--extra-search-path", "libexec",
     "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts",
     "--extra-search-path", "agent-toolkit/skills/process-wi/scripts",
-    "--extra-search-path", "agent-toolkit/skills/review-standards/scripts",
     "--extra-search-path", "agent-toolkit/skills/session-review/scripts",
     "--extra-search-path", "agent-toolkit/skills/wi-standards/scripts",
 ]

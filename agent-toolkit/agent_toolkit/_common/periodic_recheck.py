@@ -37,9 +37,11 @@ _PERIODIC_RECHECK_BODY_LINES: tuple[str, ...] = (
     "2. `atk agents wait`かそれを起動したバックグラウンドタスクが終端の`status`を返していない間は、"
     "それが所有する対象へ状態照会を発行せず、その終端応答か完了通知で受け取る。",
     "3. 所有されていない対象は記録側の状態と完了通知を確かめ、完了した対象があれば既存の受領手順へ進む。",
-    '4. 成果物の状況は、その回の記録から解決したGit作業ツリーなら`atk watch --worktree "$worktree_path"`、'
-    '通常のファイルなら`atk watch --file "$artifact_path"`で補う。'
-    "終端は待機対象ごとの終了状態と完了通知から判定する。",
+    "4. 成果物の状況は補助観測として、その回の記録から解決したGit作業ツリーなら"
+    '`git -C "$worktree_path" status --porcelain=v1`と`git -C "$worktree_path" rev-parse --short HEAD`、'
+    '通常のファイルなら`wc -l -- "$artifact_path"`と`stat -L -c %Y -- "$artifact_path"`'
+    '（macOSは`stat -L -f %m -- "$artifact_path"`。最終更新のepoch秒）で補う。'
+    "稼働と終端は待機対象ごとの終了状態と完了通知から判定する。",
     "5. このpromptの終了タグの前に経過時間起動の義務の行がある場合は、"
     "各行の測定コマンドで経過を測定し、判定閾値へ到達した義務を実行する。"
     "行が無い場合も、そのセッションに適用される経過時間起動の義務（定期報告、cooldown解除、期限監視、"

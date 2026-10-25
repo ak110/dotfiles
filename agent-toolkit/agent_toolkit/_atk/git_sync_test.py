@@ -687,7 +687,7 @@ def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path:
     [
         ("fatal: Authentication failed for 'https://example.invalid/repo.git/'\n", "認証", "remote -v"),
         ("ssh: Could not resolve hostname example.invalid\n", "接続", "ネットワーク接続"),
-        (" ! [rejected]        main -> main (fetch first)\n", "upstream", "atk wi pull"),
+        (" ! [rejected]        main -> main (fetch first)\n", "upstream", "atk wi commit"),
     ],
 )
 @pytest.mark.usefixtures("remote_sync")
@@ -789,10 +789,9 @@ def test_notes_cli_with_upstream_states(
     edited = git_repository.run_git(notes, "rev-parse", "HEAD").stdout
     assert edited != added
     invoke("wi", "list", "--summary-only")
-    pulled = invoke("wi", "pull")
     committed = invoke("wi", "commit")
     if configuration != "upstream":
-        assert "remoteかupstreamが無いため" in pulled and "remoteかupstreamが無いため" in committed
+        assert "remoteかupstreamが無いため" in committed
     if configuration == "upstream":
         assert git_repository.run_git(remote, "rev-parse", "main").stdout == edited
     elif configuration == "remote":

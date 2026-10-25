@@ -61,7 +61,6 @@
 | 再発防止セルフチェック担当 | 再発防止観点の判定の委譲先 | `agent-toolkit/share/recurrence-self-check.subagent.md`冒頭 |
 | 再発防止セルフチェック観点 | レビュー時に差分へ当てはめる項目 | `agent-toolkit/share/recurrence-self-check-items.md`冒頭 |
 | プロンプト評価担当 | refine-promptの委譲先 | `agent-toolkit/share/refine-prompt.subagent.md`冒頭 |
-| 説明担当 | 選定結果の説明の委譲先 | `agent-toolkit/skills/process-wi/references/selection-explanation.md` |
 | ユーザー確認 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | ユーザーへの報告 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | 要件・意図の曖昧さ | 確認を要する事項 | `agent-toolkit/skills/user-confirmation-and-report/SKILL.md`「確認要否の判定」 |

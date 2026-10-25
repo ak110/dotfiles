@@ -9,6 +9,7 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 import pathlib
 from typing import Any
 
@@ -38,6 +39,7 @@ from agent_toolkit._agents_server.state import (
     terminal_result_payload,
 )
 from agent_toolkit._agents_server.wait_targets import release_wait_target
+from agent_toolkit._common import session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.status-file")
@@ -89,6 +91,8 @@ class StatusFileWriter:
         self._state_root = state_root
         self._directory = status_directory(identity.root_session_id, state_root)
         self._path = self._directory / identity.file_name
+        # 実際に射影を書くファイル。起動時に同名のファイルを生存中の別プロセスが書いていれば別名へ移す。
+        self._projection_path = self._path
         self._aggregate_seconds = aggregate_seconds
         self._flush_handle: asyncio.TimerHandle | None = None
         self._retention_handle: asyncio.TimerHandle | None = None
@@ -239,12 +243,12 @@ class StatusFileWriter:
                         self._published_results.discard(session.session_id)
                     elif result_state != "published":
                         await self._write_terminal_result_async(session)
-            live_hosts = await run_file_operation(_live_descendant_hosts, self._directory, self._path)
+            live_hosts = await run_file_operation(_live_descendant_hosts, self._directory, self._projection_path)
             result_states = {key: await self.result_state_async(key) for key in tuple(self._sessions)}
             host_session_id = await self._host_session_id_async()
             visible, now, payload = self._projection(live_hosts, result_states, host_session_id)
             try:
-                await run_file_operation(atomic_write, self._path, json.dumps(payload, ensure_ascii=False) + "\n")
+                await run_file_operation(atomic_write, self._projection_path, json.dumps(payload, ensure_ascii=False) + "\n")
             except OSError as error:
                 _LOG.exception("表示用状態の保存に失敗しました: writer=%s sessions=%s", self._path, sorted(self._sessions))
                 raise ProjectionWriteError(str(error)) from error
@@ -290,7 +294,7 @@ class StatusFileWriter:
         # 稼働中の子孫を持つsessionは、自身の結果回収と表示期限によらず祖先の行として残す。
         # 結果の再公開や期限の延長はせず、子孫の終端後の次回flushで通常の判定へ戻る。
         if live_hosts is None:
-            live_hosts = _live_descendant_hosts(self._directory, self._path)
+            live_hosts = _live_descendant_hosts(self._directory, self._projection_path)
             host_session_id = self._resolve_host_session_id()
         if result_states is None:
             result_states = {key: self.result_state(key) for key in self._sessions}
@@ -320,13 +324,14 @@ class StatusFileWriter:
             "host_session_id": host_session_id,
             "heartbeat_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "updated_at": _updated_at(visible),
+            "writer_process": _writer_process_payload(),
             "sessions": [_serialize_session(session) for session in visible],
         }
         return visible, now, payload
 
     def _write_projection(self, payload: dict[str, Any]) -> None:
         try:
-            atomic_write(self._path, json.dumps(payload, ensure_ascii=False) + "\n")
+            atomic_write(self._projection_path, json.dumps(payload, ensure_ascii=False) + "\n")
         except OSError as error:
             _LOG.exception("表示用状態の保存に失敗しました: writer=%s sessions=%s", self._path, sorted(self._sessions))
             raise ProjectionWriteError(str(error)) from error
@@ -532,10 +537,24 @@ class StatusFileWriter:
         await finish_task(asyncio.create_task(write_and_reflect()))
 
     def _remove_owned_and_expired_files(self) -> None:
-        """自身の状態ファイルと保持期限を超えた通知だけを削除する。"""
-        self._path.unlink(missing_ok=True)
-        for path in self._directory.glob(f".{self._path.name}.*.tmp"):
-            path.unlink()
+        """自身の状態ファイルと保持期限を超えた通知だけを削除する。
+
+        同名のファイルを、生存の印が有効なまま生存中の別プロセスが書いている場合は削除しない。
+        同じ会話で起動単位が交代し旧起動単位が残ると（Claude Codeの`<会話ID>/root.json`）、削除は旧起動単位が
+        所有するsessionを状態ファイルから削除し、そのsessionを書ける所有者がいないと誤って判定させるためである。
+        この場合は自身の射影を`<書込主体>-p<pid>.json`へ書く。
+        """
+        if self._projection_path == self._path and _held_by_other_live_writer(self._path):
+            self._projection_path = self._path.with_name(f"{self._path.stem}-p{os.getpid()}.json")
+            _LOG.warning(
+                "同名の状態ファイルを生存中の別プロセスが書いているため削除せず、別名へ書きます: path=%s projection=%s",
+                self._path,
+                self._projection_path,
+            )
+        self._projection_path.unlink(missing_ok=True)
+        for path in self._directory.glob(f".{self._projection_path.name}.*.tmp"):
+            # 同じ名前へ書く別の書込主体の一時ファイルは、列挙の後にrenameで消えることがある。
+            path.unlink(missing_ok=True)
         results = results_directory(self.root_session_id, self._state_root)
         if results.exists() and not any(results.iterdir()):
             results.rmdir()
@@ -593,7 +612,7 @@ class StatusFileWriter:
         """生存の印が失効した他の書込主体の状態ファイルを削除する。"""
         cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=HEARTBEAT_EXPIRY_SECONDS)
         for path in self._directory.glob("*.json"):
-            if path == self._path:
+            if path == self._projection_path:
                 continue
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
@@ -615,6 +634,37 @@ class StatusFileWriter:
         self._retention_handle = None
         if deadlines:
             self._retention_handle = asyncio.get_running_loop().call_at(min(deadlines), self._flush_scheduled)
+
+
+def _writer_process_payload() -> dict[str, Any] | None:
+    """状態ファイルを書くプロセスの識別を返す。同名ファイルの書込主体が生存しているかの判定に使う。"""
+    process = session_registry.owner_process()
+    return None if process is None else session_registry.process_payload(process)
+
+
+def _held_by_other_live_writer(path: pathlib.Path) -> bool:
+    """状態ファイルの生存の印が有効で、書いたプロセスが自プロセス以外として実在するかを返す。
+
+    書いたプロセスの識別を持たない旧形式のファイルは判定できないため、従来どおり自身のファイルとして扱う。
+    """
+    try:
+        payload = status_reader.read_payload(path)
+    except OSError, UnicodeError, ValueError:
+        return False
+    writer = payload.get("writer_process")
+    if not isinstance(writer, dict) or not status_reader.heartbeat_is_current(payload, status_reader.heartbeat_cutoff()):
+        return False
+    pid = writer.get("pid")
+    create_time = writer.get("create_time")
+    if (
+        not isinstance(pid, int)
+        or isinstance(pid, bool)
+        or not isinstance(create_time, (int, float))
+        or isinstance(create_time, bool)
+    ):
+        return False
+    identity = session_registry.ProcessIdentity(pid, float(create_time))
+    return identity != session_registry.owner_process() and identity.exists()
 
 
 def _live_descendant_hosts(directory: pathlib.Path, own_path: pathlib.Path) -> set[str]:

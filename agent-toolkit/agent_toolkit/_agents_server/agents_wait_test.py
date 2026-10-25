@@ -260,12 +260,14 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
     wait_environment.mkdir(parents=True, exist_ok=True)
     terminal = {"status": "completed", "agent_message": "結果本文", "turn_seq": 1}
     (wait_environment / "session-1.json").write_text(json.dumps(terminal), encoding="utf-8")
-    original_create = managed_temp.create_output_temp
+    original_resolve = managed_temp.resolve_session_temp
+    original_create = managed_temp.create_managed_temp
 
     def fail_create(*_args: Any, **_kwargs: Any) -> pathlib.Path:
         raise managed_temp.ManagedTempError("容量不足")
 
-    setattr_in_managed_temp_modules(monkeypatch, "create_output_temp", fail_create)
+    setattr_in_managed_temp_modules(monkeypatch, "resolve_session_temp", fail_create)
+    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", fail_create)
     with pytest.raises(SystemExit) as failed:
         atk.main(["agents", "wait"])
     first = capsys.readouterr()
@@ -274,7 +276,8 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
     assert "結果本文のファイルを書けません" in first.err
     assert NEXT_ACTION_PREFIX in first.err
 
-    setattr_in_managed_temp_modules(monkeypatch, "create_output_temp", original_create)
+    setattr_in_managed_temp_modules(monkeypatch, "resolve_session_temp", original_resolve)
+    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", original_create)
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait"])
     delivered = json.loads(capsys.readouterr().out)
@@ -933,7 +936,7 @@ def test_agents_wait_contention_uses_derived_deadline_and_preserves_results(
     assert "Traceback" not in captured.err
     assert NEXT_ACTION_PREFIX in captured.err
     assert "保存出力" in captured.err
-    assert "atk read-file" in captured.err
+    assert "jq -r .output" in captured.err
     assert sleeps == [1.0, 0.5]
     assert clock[0] == expected_limit
     for path, content in preserved.items():
@@ -1009,7 +1012,7 @@ def test_agents_wait_contention_diagnostic_recovers_collected_body(
     capsys: pytest.CaptureFixture[str],
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """期限時のrun記録からread-fileで回収済み本文を読める。"""
+    """期限時のrun記録から回収済み本文のパスへ戻り、本文ファイルを読める。run記録は本文を重ねて持たない。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
     wait_environment.mkdir(parents=True, exist_ok=True)
     original = wait_environment / "session-1.json"
@@ -1068,25 +1071,11 @@ def test_agents_wait_contention_diagnostic_recovers_collected_body(
     assert "agent_message_path" in diagnostic
     assert run_path.read_bytes() == saved
 
-    def read_file(path: str) -> str:
-        read = subprocess.run(
-            [sys.executable, "-m", "agent_toolkit.atk", "read-file", "--", path],
-            env=environment,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=15,
-            check=False,
-        )
-        assert read.returncode == 0, read.stderr
-        metadata_text, separator, body = read.stdout.partition("\n")
-        assert separator and json.loads(metadata_text)["eof"] is True
-        return body
-
-    record = json.loads(read_file(str(run_path)))
+    record = json.loads(run_path.read_text(encoding="utf-8"))
     terminal = json.loads(record["output"])
-    assert terminal == delivered
-    assert read_file(terminal["agent_message_path"]) == delivered["agent_message"]
+    assert "agent_message" not in terminal
+    assert terminal == {key: value for key, value in delivered.items() if key != "agent_message"}
+    assert pathlib.Path(terminal["agent_message_path"]).read_text(encoding="utf-8") == delivered["agent_message"]
 
 
 @pytest.mark.parametrize("stream", ["stdout", "stderr"])

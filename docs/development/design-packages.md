@@ -6,7 +6,7 @@
 ## agent-toolkit/agent_toolkit/のパッケージ構成
 
 `agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置く。
-該当するファイルはフック共通の`hook.py`、CLI`atk.py`、MCPサーバー`agents_server_mcp.py`、CI待機`wait_ci.py`、managed-tempの後始末`_managed_temp.py`とする。リモートホスト上で読み込んで実行するヘルパー2件（`atk_serve_plans_remote_helper.py`・`atk_serve_sessions_remote_helper.py`）は`agent-toolkit/scripts/`に置く。
+該当するファイルはフック共通の`hook.py`、CLI`atk.py`、MCPサーバー`agents_server_mcp.py`、CI待機`wait_ci.py`とする。リモートホスト上で読み込んで実行するヘルパー2件（`atk_serve_plans_remote_helper.py`・`atk_serve_sessions_remote_helper.py`）は`agent-toolkit/scripts/`に置く。
 それ以外の実装モジュールは、責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ収める。
 この6つを依存の層とし、この並び順を層の順序とする。
 後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
@@ -30,9 +30,7 @@ Gitリポジトリの作成とGitコマンドの実行は`_testing/git_repositor
 直下のスクリプトを含む全てのモジュールをサブパッケージへ移す案は、これらの外部契約を同時に変えるため採らない。
 
 直下に置く公開ファイルは接頭辞`_`を付けずに命名する。
-`_managed_temp.py`だけは接頭辞を残す。
-このパスは`agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex.py`がCodex側の許可判定で解決し、hookの出力契約テストが生成するコマンド文字列にも現れる。
-改名すると同じコマンドが許可されなくなるため、名前を維持して`agent-toolkit/agent_toolkit/script_prefix_invariant_test.py`へ`_managed_temp.py`の除外を置く。
+Codex側の許可判定がパスで解決していた`_managed_temp.py`は、2026年10月25日に許可対象を`rm -rf -- <1パス>`へ替えて撤去した（ユーザー指示）。
 
 サブパッケージ内のimportには相対importを使わず絶対importを使う。
 `scripts/check_script_imports.py`は`sys.path.insert`の静的評価と絶対importの解決によりPEP 723スクリプトのimport到達性を確かめる。
@@ -147,7 +145,7 @@ pytest-asyncioのfixtureとtestの既定loop scopeはfunctionとし、テスト�
 session scopeを全テストへ適用する案は、先行テストの遅延処理が後続テストの登録簿へ書く問題を残すため採用しない。
 リポジトリ直下、`agent-toolkit/`全体、`agent_toolkit/`と`skills/`の4起動範囲で同じ隔離を確認する。
 
-run-command、plan検証、lane検証と全てのpytest起動は、pyfltrのホスト共有実行APIへ接続する。
+laneの統合検証と全てのpytest起動は、pyfltrのホスト共有実行APIへ接続する。
 pytestのbasetempは実行単位で分離し、controllerとworkerの終了後に正常・失敗・中断のどの場合も回収する。
 終了時に回収する子孫からは、同じプロセスのmultiprocessingのresource_trackerを除く。trackerはpytestの終了で自ら終わり、先に停止すると終了時の資源解放がtrackerを再起動し、未解放の資源を報告する警告を出力するためである。
 明示basetempとJUnit・traceなどの保存証拠、serveとwatcherはそれぞれの所有主体が必要な寿命まで保持する。

@@ -16,4 +16,4 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `recurrence-self-check-items.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check-items.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `recurrence-self-check.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/recurrence-self-check.subagent.md#「出力」` |
+| 再発防止セルフチェック担当の返却を受け取った後に結果を観点へ対応付ける時 | `recurrence-self-check.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/recurrence-self-check.subagent.md#「出力」` |

@@ -1,7 +1,9 @@
 """宣言された操作の前に、主体の文脈に未取得の資料を届ける。
 
 確認は関係する資料のパスを警告にまとめ、通常の操作を継続する。
-配送できた資料だけを取得へ記録する。Codexの配送本文の到達上限は未確認のため全文読取を案内する。
+配送できた資料だけを取得へ記録する。
+Codexの配送本文の到達上限は未確認のため、資料から算出した行範囲の`sed -n`による取得を案内する。
+取得後は出力と資料の該当行の一致を確かめ、分割した取得を区間の被覆として記録する。
 軽量委譲は起動契約がスキルを使わないため対象外とする。
 """
 
@@ -18,7 +20,7 @@ import shlex
 from collections.abc import Iterator
 lazy import subprocess
 
-from agent_toolkit._common import delegated_session, read_triggers, transcript
+from agent_toolkit._common import delegated_session, read_triggers, shell_cwd, transcript
 from agent_toolkit._common.plugin_roots import PluginRootError, sibling_plugin_root
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments
@@ -29,7 +31,7 @@ from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
-from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths
+from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, sed_read_range
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
 lazy from agent_toolkit._common import process_tree, task_documents
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
@@ -68,70 +70,88 @@ def _read_paths(tool_name: str, tool_input: dict, cwd: str, *, resolve: bool = T
         return [path.resolve() if resolve else path]
     command = tool_input.get("command")
     if tool_name == "Bash" and isinstance(command, str):
-        paths = [
+        return [
             path.resolve() if resolve else path
             for group in bash_read_paths(command, cwd, include_partial=True)
             for path in group
         ]
-        for segment in extract_execution_segments(command):
-            if (
-                segment.resolved
-                and is_atk_command(segment.tokens)
-                and segment.tokens[1:2] == ("read-file",)
-                and "--" in segment.tokens
-            ):
-                for value in segment.tokens[segment.tokens.index("--") + 1 :]:
-                    path = pathlib.Path(value).expanduser()
-                    path = path if path.is_absolute() else pathlib.Path(cwd) / path
-                    if resolve:
-                        path = path.resolve()
-                    host = (
-                        "codex"
-                        if os.environ.get("CODEX_THREAD_ID")
-                        and not (os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"))
-                        else "claude"
-                    )
-                    # 公開CLIが同じ入力を診断する。ここでは取得成功を推定しない。
-                    if resolve:
-                        with contextlib.suppress(OSError, UnicodeError, ValueError):
-                            path = read_triggers.resolve_read_source(path, plugin_resources.plugin_root(), host)
-                    paths.append(path)
-        return paths
     return []
 
 
-def _requested_section(tool_name: str, tool_input: dict) -> str:
-    """公開read-fileの明示した節選択を静的な引数から取り出す。"""
-    if tool_name != "Bash" or not isinstance(tool_input.get("command"), str):
-        return ""
-    for segment in extract_execution_segments(tool_input["command"]):
-        tokens = segment.tokens
-        if segment.resolved and is_atk_command(tokens) and tokens[1:2] == ("read-file",):
-            for index, token in enumerate(tokens[2:], 2):
-                if token.startswith("--section="):
-                    return token.split("=", 1)[1]
-                if token == "--section" and index + 1 < len(tokens):
-                    return tokens[index + 1]
-    return ""
+def _read_path_variants(tool_name: str, tool_input: dict, cwd: str) -> list[pathlib.Path]:
+    """資料の取得を始める読取のパスを、リンク経由の名前でも宣言へ一致させるため解決前後の両方で返す。
+
+    行範囲の読取は1行目から始まるものだけを含める。途中の節や続きの行範囲は、section宣言と取得後の被覆記録が扱う。
+    """
+    command = tool_input.get("command")
+    if tool_name == "Bash" and isinstance(command, str):
+        groups = list(bash_read_paths(command, cwd, include_partial=True, first_line_only=True))
+        return [path.resolve() if resolve else path for resolve in (True, False) for group in groups for path in group]
+    return [path for resolve in (True, False) for path in _read_paths(tool_name, tool_input, cwd, resolve=resolve)]
 
 
-def _full_read_paths(tool_name: str, tool_input: dict, cwd: str) -> list[pathlib.Path]:
-    """指定節の取得と、同じ呼出し内の独立した全文取得を分ける。"""
-    requests = [tool_input]
-    if _requested_section(tool_name, tool_input):
-        requests = [
-            request
-            for segment in extract_execution_segments(tool_input["command"])
-            if segment.resolved
-            for request in [{"command": shlex.join(segment.tokens)}]
-            if not _requested_section(tool_name, request)
-        ]
-    return [
-        path
-        for request in requests
-        for resolve in (True, False)
-        for path in _read_paths(tool_name, request, cwd, resolve=resolve)
-    ]
+def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[pathlib.Path, int, int | None]], bool]:
+    """Bashの静的な`sed -n '<開始行>,<終了行>p'`を出力順に返す。
+
+    2番目の値は、移動以外の全ての呼出しが行範囲の読取であり、出力全体を範囲の連結と比べられるかを示す。
+    """
+    command = tool_input.get("command")
+    if tool_name != "Bash" or not isinstance(command, str):
+        return [], False
+    reads: list[tuple[pathlib.Path, int, int | None]] = []
+    only_reads = True
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
+        tokens = invocation.segment.tokens
+        if invocation.arguments_known and tokens and pathlib.PurePath(tokens[0]).name == "cd":
+            continue
+        sed = sed_read_range(tokens) if invocation.arguments_known else None
+        if (
+            sed is None
+            or any(marker in sed[0] for marker in ("$", "`", "<", ">", "*", "?"))
+            or invocation.output_pipe
+            or invocation.output_redirected
+            or invocation.captured
+            or not (pathlib.Path(sed[0]).expanduser().is_absolute() or current.resolved)
+        ):
+            only_reads = False
+            continue
+        operand, start, end = sed
+        path = pathlib.Path(operand).expanduser()
+        reads.append(((path if path.is_absolute() else pathlib.Path(current.path) / path).resolve(), start, end))
+    return reads, only_reads and bool(reads)
+
+
+def _line_spans(target: read_triggers.ReadTarget, source: str) -> list[tuple[int, int]]:
+    """指定範囲が占める資料の行を、1始まりで両端を含む連続区間の列として返す。
+
+    指定範囲は資料の行を順に選んだ部分列であるため、先頭から順に行を比べて位置を求める。
+    """
+    lines = source.splitlines(keepends=True)
+    spans: list[tuple[int, int]] = []
+    cursor = 0
+    for line in target.body(source).splitlines(keepends=True):
+        while cursor < len(lines) and lines[cursor] != line:
+            cursor += 1
+        if cursor == len(lines):
+            raise ValueError(f"{target}: 指定範囲の行を資料内に特定できない")
+        cursor += 1
+        if spans and spans[-1][1] == cursor - 1:
+            spans[-1] = (spans[-1][0], cursor)
+        else:
+            spans.append((cursor, cursor))
+    return spans
+
+
+def _source_text(path: pathlib.Path) -> str:
+    return path.read_bytes().decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _range_steps(target: read_triggers.ReadTarget) -> str:
+    """未取得の資料の取得に使う行範囲を、資料の現在の本文から算出して示す。"""
+    source = _source_text(target.path)
+    spans = _line_spans(target, source) if target.heading else [(1, len(source.splitlines()))]
+    quoted = shlex.quote(str(target.path))
+    return "と".join(f"`sed -n '{start},{end}p' -- {quoted}`" for start, end in spans)
 
 
 def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
@@ -148,21 +168,22 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
             for path in operation_skills.written_paths(tool_name, tool_input, cwd)
         )
     if prefix == "read":
-        # 節取得はsection宣言が扱う。同じ呼出し内の全文取得は独立に保つ。
-        return any(_matches_document_path(path, value) for path in _full_read_paths(tool_name, tool_input, cwd))
+        return any(_matches_document_path(path, value) for path in _read_path_variants(tool_name, tool_input, cwd))
     if prefix == "path":
         paths = operation_skills.written_paths(tool_name, tool_input, cwd)
         return any(fnmatch.fnmatch(path.replace("\\", "/"), value) for path in paths)
     if prefix == "section":
+        # 行範囲の読取が宣言した節の行を1行でも含めば、その節の取得とする。分割取得の被覆は取得後に記録する。
         pattern, separator, heading = value.partition("#")
-        requested = _requested_section(tool_name, tool_input)
-        if not separator or not requested:
+        if not separator:
             return False
-        return any(
-            _matches_document_path(path, pattern)
-            and read_triggers.ReadTarget(path, heading).body().strip() in read_triggers.ReadTarget(path, requested).body()
-            for path in _read_paths(tool_name, tool_input, cwd)
-        )
+        for path, start, end in _sed_reads(tool_name, tool_input, cwd)[0]:
+            if not _matches_document_path(path, pattern) or not path.is_file():
+                continue
+            spans = _line_spans(read_triggers.ReadTarget(path, heading), _source_text(path))
+            if any(left <= (end or right) and start <= right for left, right in spans):
+                return True
+        return False
     if prefix == "dependency":
         fields = tool_input_fields.new_content_fields(tool_name, tool_input)
         contents = [content for _name, content in fields or []]
@@ -183,7 +204,7 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
         return (tool_name == "Skill" and requested == plugin + ":" + short) or any(
             document_reads.skill_document(str(path)) == (short, "SKILL.md")
             and document_reads.document_plugin(str(path)) == plugin
-            for path in _full_read_paths(tool_name, tool_input, cwd)
+            for path in _read_path_variants(tool_name, tool_input, cwd)
         )
     if prefix == "bash" and tool_name == "Bash" and isinstance(tool_input.get("command"), str):
         expected = shlex.split(value)
@@ -689,7 +710,7 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                 with contextlib.suppress(OSError, UnicodeError, ValueError, RuntimeError):
                     read_paths = [candidate for candidate in _read_paths(name, inputs, cwd) if candidate in paths]
                     for target, start, end, length, fingerprint in _read_body_proofs(
-                        name, inputs, response, read_paths, paths, sections
+                        name, inputs, response, read_paths, paths, sections, cwd
                     ):
                         key = (target, length, fingerprint)
                         ranges.setdefault(key, []).append((start, end))
@@ -770,6 +791,8 @@ def _declaration_recovery_operation(tool_name: str, tool_input: dict, error: Exc
     name = pathlib.Path(tokens[0]).name
     if name in {"cat", "cat.exe"}:
         return len(tokens) > 1
+    if sed_read_range(tokens) is not None:
+        return True
     if name in {"codex", "codex.exe"}:
         return (
             tokens[1:3] == ("plugin", "list")
@@ -778,7 +801,7 @@ def _declaration_recovery_operation(tool_name: str, tool_input: dict, error: Exc
             or _codex_dependency_repair(tokens, error)
         )
     if is_atk_command(tokens):
-        return tokens[1:2] in {("read-file",), ("info",), ("--help",)} or tokens[1:3] in {
+        return tokens[1:2] in {("info",), ("--help",)} or tokens[1:3] in {
             ("agents", "logs"),
             ("agents", "list"),
             ("agents", "status"),
@@ -1000,12 +1023,10 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         )
     _select_targets(session_id, pending, agent)
     if is_codex_payload(payload):
-        steps = []
-        for target in pending:
-            if target.heading:
-                steps.append(f"`atk read-file --section {shlex.quote(target.heading)} -- {shlex.quote(str(target.path))}`")
-            else:
-                steps.append(f"`{target.path}`を`cat`などで全文取得する")
+        try:
+            steps = [f"`{target}`は{_range_steps(target)}" for target in pending]
+        except (OSError, UnicodeError, ValueError) as error:
+            steps = [f"行範囲を算出できない（{error}）。各資料を`cat -- <絶対パス>`で全文取得する"]
         return Decision(
             notices=(
                 _llm_notice(
@@ -1014,10 +1035,10 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     removable_cause=True,
                     escalate_on_repeat=False,
                     fix="まず操作の必要性と資料の読込条件を見直す。不要な操作は中止する。"
-                    "続行する場合は、条件に該当する資料の指定範囲を"
+                    "続行する場合は、条件に該当する資料の指定範囲を取得する。"
                     + "。".join(steps)
-                    + "。標準読取で全文と終了状態を予算内で取得する。予算を超える本文や省略された残りは"
-                    "`atk read-file`でeofまで継続する。全文必須の資料は検索だけで読了としない。",
+                    + "。予算を超える範囲や出力が省略された範囲は、開始行と終了行を狭めて同じ形で分割取得する。"
+                    "全文必須の資料は検索だけで読了としない。",
                 ),
             )
         )
@@ -1066,7 +1087,14 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         except (OSError, UnicodeError, ValueError) as error:
             read_failure += f"\n資料の取得結果を登録できない: {error}"
     remaining = pending[len(bodies) :]
-    suffix = ("\n未取得: " + "、".join(f"`{path}`" for path in remaining) if remaining else "") + read_failure
+    suffix = ""
+    if remaining:
+        try:
+            suffix = "\n未取得: " + "、".join(f"`{target}`（{_range_steps(target)}）" for target in remaining)
+        except OSError, UnicodeError, ValueError:
+            suffix = "\n未取得: " + "、".join(f"`{target}`" for target in remaining)
+        suffix += "\n行範囲はReadの`offset`（開始行）と`limit`（行数）でも同じ範囲を取得できる。"
+    suffix += read_failure
     return Decision(
         notices=(
             _llm_notice(
@@ -1085,6 +1113,7 @@ def _read_body_proofs(
     paths: list[pathlib.Path],
     targets: set[pathlib.Path],
     section_targets: set[read_triggers.ReadTarget],
+    cwd: str,
 ) -> Iterator[tuple[read_triggers.ReadTarget, int, int, int, str]]:
     """本文と位置が実ファイルに一致する取得範囲を返す。履歴とPostToolUseで同じ本文一致の判定を使う。"""
     if isinstance(response, str):
@@ -1106,6 +1135,11 @@ def _read_body_proofs(
     if not isinstance(text, str) or any(
         marker in text for marker in ("truncated output", "Output too large", "truncatedByTokenCap")
     ):
+        return
+    sed_reads, only_reads = _sed_reads(tool_name, tool_input, cwd)
+    if sed_reads:
+        if only_reads:
+            yield from _sed_range_proofs(sed_reads, text, targets, section_targets)
         return
     for path in paths:
         if path not in targets:
@@ -1148,32 +1182,49 @@ def _read_body_proofs(
                 if expected.rstrip("\n") == normalized.rstrip("\n"):
                     left = len("".join(lines[: start - 1]))
                     yield read_triggers.ReadTarget(path), left, left + len(expected), len(body), fingerprint
+
+
+def _sed_range_proofs(
+    reads: list[tuple[pathlib.Path, int, int | None]],
+    text: str,
+    targets: set[pathlib.Path],
+    section_targets: set[read_triggers.ReadTarget],
+) -> Iterator[tuple[read_triggers.ReadTarget, int, int, int, str]]:
+    """行範囲の連結が出力全体と一致した場合だけ、各範囲を資料と節の文字位置へ変換して返す。
+
+    範囲が資料の行数を外れる場合と、出力の欠落・追加・相違がある場合は、どの範囲も取得済みにしない。
+    """
+    pieces = []
+    for path, start, end in reads:
+        source = _source_text(path)
+        lines = source.splitlines(keepends=True)
+        last = len(lines) if end is None else min(end, len(lines))
+        if start > last:
+            return
+        pieces.append((path, source, lines, start, last))
+    expected = "".join("".join(lines[start - 1 : last]) for _path, _source, lines, start, last in pieces)
+    if expected.rstrip("\n") != text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n"):
+        return
+    for path, source, lines, start, last in pieces:
+        if path not in targets:
             continue
-        # atk read-fileの位置は文字単位。出力メタデータと実本文の一致を両方確かめる。
-        try:
-            metadata, chunk = text.split("\n", 1)
-            metadata = json.loads(metadata)
-        except ValueError, TypeError:
-            continue
-        if not isinstance(metadata, dict):
-            continue
-        section = metadata.get("section", "")
-        if not isinstance(section, str) or section != _requested_section(tool_name, tool_input):
-            continue
-        if section:
-            body = read_triggers.ReadTarget(path, section).body(source_body)
-        start, end = metadata.get("start"), metadata.get("end")
-        if (
-            not isinstance(start, int)
-            or isinstance(start, bool)
-            or not isinstance(end, int)
-            or isinstance(end, bool)
-            or not 0 <= start < end <= len(body)
-        ):
-            continue
-        if chunk.rstrip("\n") != body[start:end].rstrip("\n"):
-            continue
-        yield read_triggers.ReadTarget(path, section), start, end, len(body), fingerprint
+        fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
+        left = len("".join(lines[: start - 1]))
+        yield read_triggers.ReadTarget(path), left, left + len("".join(lines[start - 1 : last])), len(source), fingerprint
+        for target in section_targets:
+            if target.path != path:
+                continue
+            # 節の本文は選ばれた行の連結であり、行範囲と重なる行は節の本文の中で連続する。
+            numbers = [
+                number for left_line, right_line in _line_spans(target, source) for number in range(left_line, right_line + 1)
+            ]
+            inside = [index for index, number in enumerate(numbers) if start <= number <= last]
+            if not inside:
+                continue
+            offset = len("".join(lines[number - 1] for number in numbers[: inside[0]]))
+            size = len("".join(lines[numbers[index] - 1] for index in inside))
+            length = len("".join(lines[number - 1] for number in numbers))
+            yield target, offset, offset + size, length, fingerprint
 
 
 def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> None:
@@ -1264,7 +1315,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                 _mark(session_id, path, agent)
         return
     for target, start, end, length, fingerprint in _read_body_proofs(
-        tool_name, tool_input, response, paths, targets, section_targets
+        tool_name, tool_input, response, paths, targets, section_targets, cwd
     ):
         if start == 0 and end == length:
             _mark(session_id, target.path, agent, target.heading, fingerprint)

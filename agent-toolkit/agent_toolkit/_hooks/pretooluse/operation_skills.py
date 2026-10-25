@@ -20,7 +20,6 @@ lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
 lazy from agent_toolkit._common.session_state import update_state
-lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import document_reads as _document_reads
@@ -138,22 +137,26 @@ def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
     return fields is not None and any(_ROOT_CAUSE_HEADING.search(value) for _, value in fields)
 
 
-def _is_managed_temp_create(tool_name: str, tool_input: dict) -> bool:
-    """`agent-toolkit:managed-temp`の起動の契機とする`atk managed-temp create`の実行かを返す。
+def _is_temp_directory_create(tool_name: str, tool_input: dict) -> bool:
+    """`agent-toolkit:managed-temp`の起動の契機とする、個別の一時ディレクトリを作成する`mktemp -d`の実行かを返す。
 
-    共通のBash解析から得た実行位置をランチャーの共通定義へ渡す。
-    複合文と置換の内側も同じ起動として扱い、他のコマンドの引数は起動に含めない。
-    `cleanup`と`list`は対象外とする。
+    作成先の選択は同スキルが定めるため、作成先の指定によらず対象とする。
+    複合文と置換の内側も共通のBash解析から実行位置を得て判定し、他のコマンドの引数は起動に含めない。
+    一時ファイルだけを作成する`mktemp`は対象外とする。
     """
     if tool_name != "Bash":
         return False
     command = tool_input.get("command")
     if not isinstance(command, str):
         return False
-    return any(
-        is_atk_command(invocation.segment.tokens) and invocation.segment.tokens[1:3] == ("managed-temp", "create")
-        for invocation in extract_bash_invocations(command)
-    )
+    for invocation in extract_bash_invocations(command):
+        tokens = invocation.segment.tokens
+        if not tokens or pathlib.PurePath(tokens[0]).name != "mktemp":
+            continue
+        options = tokens[1 : tokens.index("--")] if "--" in tokens else tokens[1:]
+        if any(option == "--directory" or re.fullmatch(r"-[A-Za-z]*d[A-Za-z]*", option) for option in options):
+            return True
+    return False
 
 
 def _python_write_paths(code: str) -> list[str]:
@@ -521,10 +524,6 @@ def _is_verification_tokens(tokens: Sequence[str]) -> bool:
         return False
     name = pathlib.PurePath(tokens[0]).name
     rest = tokens[1:]
-    if is_atk_command(tokens):
-        if tuple(rest[:2]) == ("run-script", "plan-verify"):
-            return True
-        return tuple(rest[:1]) == ("run-command",) and "--" in rest and _is_verification_tokens(rest[rest.index("--") + 1 :])
     if name == "uv" and tuple(rest[:1]) == ("run",):
         return _is_verification_tokens(_skip_runner_options(rest[1:]))
     if name in {"uvx", "npx", "pnpx"}:
@@ -565,7 +564,7 @@ OPERATION_SKILLS: tuple[OperationSkill, ...] = (
     OperationSkill("agent-toolkit:delegation", "delegation", "委譲操作", _is_delegation_operation),
     OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),
     OperationSkill("agent-toolkit:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
-    OperationSkill("agent-toolkit:managed-temp", "managed-temp", "個別のmanaged-temp領域の作成", _is_managed_temp_create),
+    OperationSkill("agent-toolkit:managed-temp", "managed-temp", "個別の一時ディレクトリの作成", _is_temp_directory_create),
     OperationSkill("agent-toolkit:writing-standards", "writing-standards", "本文の作成・更新", _is_body_writing),
     OperationSkill(
         "agent-toolkit:check-execution",
@@ -686,7 +685,7 @@ def operation_matches(operation: str, tool_name: str, tool_input: dict) -> bool 
         "delegation": _is_delegation_operation,
         "search": _is_search_operation,
         "root-cause-writing": _is_root_cause_writing,
-        "managed-temp-create": _is_managed_temp_create,
+        "managed-temp-create": _is_temp_directory_create,
         "body-writing": _is_body_writing,
         "verification": _is_verification_operation,
         "agent-document-writing": _is_agent_document_writing,

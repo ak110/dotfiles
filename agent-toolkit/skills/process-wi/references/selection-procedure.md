@@ -44,7 +44,7 @@ mise設定がある対象で`mise trust --show`が`untrusted`を示す場合は`
 
 通常起動では`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を実行する。
 all-reposのリポジトリ担当は[all-repos-orchestration.md](all-repos-orchestration.md)「取得済み候補の受領」に従い、受領した`candidate_file`の保存原本と`readiness`を初回取得結果として扱う。
-明示一覧がある場合にworktree指定の初回取得結果に現れない項目は、`atk wi show <WIファイル名> --target-repo=all`で保存済み`target_repo`を取得し、originとの不一致が住所の移転・パス改名か別リポジトリかを判定する。同一性と変更先はユーザーの明示指定か移転・別名対応の記録で確定する。`ls-remote`のOID一致だけでは移転の根拠が不足する。移転が確定した項目は`start-processing`前に`atk wi edit <WIファイル名> --target-repo=<保存済みtarget_repo> --body-file <原稿>`で`target_repo`と本文中の操作先を変更先へ揃える。旧住所に結び付くメタデータの更新は同コマンドへ任せる。同じworktree指定の一覧と`verification-record --list`から対象と完成条件を取得できることを確かめて候補に加える。移転の根拠が得られなければ両識別子と不足する根拠を続行できない理由へ記録する。指定が無い場合は`processing`の全項目と、`ready`が偽で`blocked_reason`が`dependency-unmet-internal`以外であるものを除いた`inbox`項目を候補とする。
+明示一覧がある場合にworktree指定の初回取得結果に現れない項目は、`atk wi show <WIファイル名> --target-repo=all`で保存済み`target_repo`を取得し、originとの不一致が住所の移転・パス改名か別リポジトリかを判定する。同一性と変更先はユーザーの明示指定か移転・別名対応の記録で確定する。`ls-remote`のOID一致だけでは移転の根拠が不足する。移転が確定した項目は`start-processing`前に`atk wi edit <WIファイル名> --target-repo=<保存済みtarget_repo> --body-file <原稿>`で`target_repo`と本文中の操作先を変更先へ揃える。旧住所に結び付くメタデータの更新は同コマンドへ任せる。同じworktree指定の一覧と`atk wi show <WIファイル名> --skip-pull`から対象と完成条件を取得できることを確かめて候補に加える。移転の根拠が得られなければ両識別子と不足する根拠を続行できない理由へ記録する。指定が無い場合は`processing`の全項目と、`ready`が偽で`blocked_reason`が`dependency-unmet-internal`以外であるものを除いた`inbox`項目を候補とする。
 `staleness`は選定結果の`鮮度`へそのまま保存する。`notice`だけでは履歴を調べず（選定時間を短く保つため）、内容の不一致、充足済みまたは巻戻しの危険を観測した項目だけ履歴を確認する。
 
 各項目の`depends_on`は依存先ごとに`atk wi show <依存ファイル名> --skip-pull`で全状態・全対象リポジトリを照会して解決する。現在の対象リポジトリにあればそれに従い、無ければ1件の候補の`target_repo`と状態に従う。複数の`target_repo`に同名項目がある場合は自動選択せず続行できない理由とする。別リポジトリの依存先は終端済みなら充足、未終端なら`dependency-unmet-external`とする。
@@ -207,4 +207,4 @@ atk run-script pick-wi-check -- <既存選定YAML> --merge <追加の意味判�
 
 統合操作は全体チェックが成功したときだけ元YAMLを更新する。欄の書き換えはこの統合操作で行う。非0なら分類か割当を直して再実行し、保存成功、意味検収、集合と依存順の検収を終えた追加分だけをレーンへ渡す。既存と追加の原本、対応JSON、保存先は`parent-handoff.md`へ残す。
 
-初期選定の通常レーンが1つの場合は、確定した集合と準備済みworktreeを`run-lanes.md`の単一担当の実行契約へ渡す。追加WIも同じ担当threadと資源へ渡し、初期選定で確定した工程調整の担当を維持する。
+確定した集合と準備済みworktreeは、通常レーンの数によらず`run-lanes.md`の単一担当の実行契約へ渡す。追加WIも同じ担当threadと資源へ渡し、初期選定で確定した工程調整の担当を維持する。

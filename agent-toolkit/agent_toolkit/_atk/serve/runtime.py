@@ -54,7 +54,7 @@ class BoundedWorkers:
             except SystemExit as error:
                 raise _wi_operations.WebApiInputError(
                     "処理に失敗しました。失敗理由はサーバーの標準エラー出力で確認する。"
-                    "user serviceで起動した場合は`atk serve logs`を実行する"
+                    "user serviceで起動した場合は`journalctl --user -u atk-serve.service -n 100`で読む"
                 ) from error
 
         async def managed() -> R:

@@ -39,7 +39,7 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 | --- | --- | --- | --- |
 | WI選定・レーン分け・計画・設計判断を伴う実装と修正・原因分析・観点選定・候補判定・結論の統合。`exec`・`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination` | `execute` | 各担当を委譲するメインか工程担当 | `agents_server` |
 | 内容と完成判定が確定した単発コーディング・修正・追随、中規模走査。`refine-prompt` | `chores` | 分担を所有する担当 | `agents_server` |
-| 定型走査・軽微な作業・コマンド実行。`pick-wi-explain`、自由本文の`explore`・`shell`の省略時 | `chores_fast` | 委譲する担当 | `agents_server` |
+| 定型走査・軽微な作業・コマンド実行。自由本文の`explore`・`shell`の省略時 | `chores_fast` | 委譲する担当 | `agents_server` |
 | 実行レビュー・ユーザビリティレビュー・投入前レビュー・再発防止セルフチェック。`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check` | `review` | 各レビューを委譲する担当 | `agents_server` |
 | 小規模レビュー。`bulk-replace-review`・`external-write-review`・`reader-fit-review` | `review_fast` | 各レビューを委譲する担当 | `agents_server` |
 | 最上位オーケストレーター、process-loopの新規セッション、run-skill | `orchestrate` | process-loop・run-skill・委譲する担当 | `atk`か`agents_server` |
@@ -67,7 +67,7 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 WIの`担当モデル`が担当・モデル・effortを指定した工程では、委譲元が指定値をmodel_typeへ渡す。同じ起動に異なる指定があれば、WIと指定値を示して単位を分ける。終端のengine・model・effortと指定値を比べ、WI・指定・実際値を進捗ログか引き継ぎ記録へ残す。各工程は自身の担当名（`担当モデル.実装担当`など）と本段落の参照を持つ。
 
-作業の分担と総費用の比較は`routing.md`「要否判定」に従う。表の`model_type`は役割文書を渡す工程の起動へ適用し、役割全体の工程指定を保持する。役割担当は観点選定・案出し・候補判定・結論の統合を自身で行う。役割の内部では、作業を判断部分と、読取・調査・要約・走査・確定済みの編集・コマンド実行の部分へ極力細分化する。後者を委譲するときは、定型走査・事実収集・コマンド実行を`chores_fast`へ、その能力では材料が足りない中規模の読取・要約・走査と確定済みの編集を`chores`へ渡す。表の`execute`を指定するのは役割文書を渡す工程と、計画・設計判断・原因分析など分割できない判断を独立した担当へ任せる場合に限る。その判断のための調査を`execute`の`explore`へ渡さない。
+作業の分担と総費用の比較は`routing.md`「要否判定」に従う。表の`model_type`は役割文書を渡す工程の起動へ適用し、役割全体の工程指定を保持する。役割担当は観点選定・案出し・候補判定・結論の統合を自身で行う。役割の内部では、作業を判断部分と、読取・調査・要約・走査・確定済みの編集・コマンド実行の部分へ極力細分化する。細分化は作業の分類であり、同じ背景と実行条件を使う確定済みの作業は1件の起動へまとめる（`routing.md`「要否判定」）。後者を委譲するときは、定型走査・事実収集・コマンド実行を`chores_fast`へ、その能力では材料が足りない中規模の読取・要約・走査と確定済みの編集を`chores`へ渡す。表の`execute`を指定するのは役割文書を渡す工程と、計画・設計判断・原因分析など分割できない判断を独立した担当へ任せる場合に限る。その判断のための調査を`execute`の`explore`へ渡さない。
 
 工程別設定の対象外の委譲には「modelとreasoning effort」を適用し、独自の名前付きagentは自身のfrontmatterに従う。
 

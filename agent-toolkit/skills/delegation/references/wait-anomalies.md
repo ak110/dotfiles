@@ -15,7 +15,7 @@
 ## 終了コードと呼び出しの失敗
 
 - 終了コード4: `agents_server`の状態ディレクトリを解決できない実行環境である。事象と実行環境を委譲元へ返す
-- 終了コード8: run記録を持たない旧形式の待機との競合、先行runへの合流中の待機期限到達、先行run記録の読取不能、未公開または回収済みを示し、待機対象の異常とは別の事象である。競合の期限到達では書込主体、固定run識別子、待機対象と`run_path`の絶対パスを返す。先行するバックグラウンドタスクの保存出力を読み、先行待機の終了後に再待機する。保存出力を受け取れない場合は`atk read-file -- <run_path>`でrun記録の`output`を読み、そこにある`agent_message_path`から本文を読む。本文ファイルが無くても`output`の`agent_message`を読める。取得失敗時も原本と耐久退避、先行runを保持し、診断本文を委譲元へ返す
+- 終了コード8: run記録を持たない旧形式の待機との競合、先行runへの合流中の待機期限到達、先行run記録の読取不能、未公開または回収済みを示し、待機対象の異常とは別の事象である。競合の期限到達では書込主体、固定run識別子、待機対象と`run_path`の絶対パスを返す。先行するバックグラウンドタスクの保存出力を読み、先行待機の終了後に再待機する。保存出力を受け取れない場合は`jq -r .output -- <run_path>`でrun記録の終端行を読み、そこにある`agent_message_path`から本文を読む。取得失敗時も原本と耐久退避、先行runを保持し、診断本文を委譲元へ返す
 - 終了コード10: 委譲元の状態に待機対象が登録されていないことを示し、委譲先の失敗とは別の事象である。起動応答と`atk agents list`でsessionの存在を確かめ、ホストの組み込み委譲で起動した対象はそのホストの委譲一覧と指定成果物で終端を観測する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日」にある
 - 待機対象の登録と`starting`を含む保持中sessionがともに0件で非0終了した場合は、回収対象が無いため再発行せず起動応答を確かめる。保持中sessionがあれば通常の待機上限まで待つ
 - ホストの上限やメモリー不足で背景待機の停止通知を受けた場合は、次節の判断で元の待機と結果を回収する。委譲先の停滞・中断・再起動は`atk agents list`のsessionの`status`で判定する
@@ -41,7 +41,11 @@ Codexのcell IDとコマンドsession IDは、公開された同一実行の継�
 
 ## MCPサーバーの再起動後
 
-再起動後も同じ`session_id`はsession登録簿から遅延解決され、終端が確定した記録だけを結果観測と会話再開に使える。正常停止したサーバーは実行中だったturnを`interrupted`として公開する。強制終了で`running`のまま残ったCodexの記録は、どのサーバーもそのsessionを保持しておらず、Codexのthreadの記録がturnの終端を示す場合に限り、`show`か`send_message`の照会で終端として引き継がれる。
+再起動後も同じ`session_id`はsession登録簿から遅延解決され、終端が確定した記録だけを結果観測と会話再開に使える。正常停止したサーバーは実行中だったturnを`interrupted`として公開する。強制終了で`running`のまま残ったCodexの記録は、`show`・`send_message`・`kill`の照会で終端として引き継がれる場合がある。条件はどのサーバーもそのsessionを保持せず、turnを実行する委譲先CLIのプロセスが終了し、Codexのthreadの記録がturnの終端を示すことである。
 
+旧サーバーが交代後も応答せずに残るか、旧サーバーの下で委譲先CLIが作業を続ける場合は、所有サーバーを失った実行中になる。`show`か`atk agents show`の`status`が`running`で`ownership`が`owner_lost`であることで見分ける。`recorded_processes`（所有サーバーと委譲先CLIのpidと生存）、`owner_root_session_id`、`stranded_notice_count`も確かめる。この状態の`send_message`は`error.recovery=owner_lost`で拒否される。
+
+- 作業を続けさせる場合は`atk agents wait`で終了を待つ。旧ルートに残った委譲先の通知は、新しいサーバーの`atk agents wait`と`show`・`send_message`・`kill`の応答が回収して返す
+- 続行の指示が必要な場合は、同じsessionへ`kill`を発行して委譲先CLIを止めてから、同じ`session_id`へ`send_message`する。`kill`は実行中のturnを中断する。後任を新しい`start`で起動しない（旧委譲先CLIが作業ツリーへ書き込み続け、書込主体が並ぶ）
 - `error.recovery=turn_unobserved`: 終端が未確定である。同じ作業を新しい`start`でやり直さず、実行中の可能性を添えて委譲元へ返す
-- `missing`、`unreadable`、`no_resume_info`: そのsessionは失われたものとして扱ってよい
+- `missing`、`unreadable`、`no_resume_info`: 委譲先CLIのプロセスが残っていないことを確かめてから、そのsessionを失われたものとして扱う。起動応答や記録からpidを得られる場合はその生存を確かめ、生存していれば終了を待つ

@@ -21,7 +21,7 @@ def test_session_start_resolves_exact_record(
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", lambda *args, **kwargs: tmp_path)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *args, **kwargs: tmp_path)
     found = []
     for index in range(candidates):
         path = config / "projects" / f"project-{index}" / "resume-test.jsonl"
@@ -69,7 +69,7 @@ def test_compact_extracts_original_user_events(
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     else:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", lambda *args, **kwargs: tmp_path)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *args, **kwargs: tmp_path)
     rules_context.main(
         json.dumps(
             {"hook_event_name": "SessionStart", "source": "compact", "session_id": "compact-test", "transcript_path": str(path)}
@@ -108,7 +108,7 @@ def test_failed_extraction_keeps_resume_and_removes_stale_file(
         raise subprocess.TimeoutExpired("extract", 15)
 
     monkeypatch.setattr(rules_context.process_tree, "run_with_timeout", fail)
-    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", lambda *args, **kwargs: tmp_path)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *args, **kwargs: tmp_path)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     assert (
@@ -144,7 +144,7 @@ def test_noncompact_session_start_does_not_extract(
         pytest.fail("圧縮以外の開始で抽出を起動した")
 
     monkeypatch.setattr(rules_context.process_tree, "run_with_timeout", unexpected)
-    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", lambda *args, **kwargs: tmp_path)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *args, **kwargs: tmp_path)
     assert (
         rules_context.main(
             json.dumps(
@@ -174,7 +174,7 @@ def test_resolved_resume_notice_path_is_accepted_by_prepare(
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", lambda *args, **kwargs: tmp_path)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *args, **kwargs: tmp_path)
     rules_context.main(
         json.dumps(
             {

@@ -26,7 +26,7 @@ _POSITIVE_OPERATIONS: dict[str, tuple[str, dict]] = {
     "delegation": ("Agent", {"prompt": "調査する"}),
     "search": ("Grep", {"pattern": "x"}),
     "bugfix": ("Bash", {"command": "cat > /tmp/awi.md <<'EOF'\n## 原因分析\nEOF"}),
-    "managed-temp": ("Bash", {"command": "atk managed-temp create --prefix example"}),
+    "managed-temp": ("Bash", {"command": "mktemp -d /work/example-XXXXXXXX"}),
     "writing-standards": ("Write", {"file_path": "/work/notes.md", "content": "# 見出し\n"}),
     "check-execution": ("Bash", {"command": "uv run --frozen pytest a_test.py"}),
 }

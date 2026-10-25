@@ -263,7 +263,7 @@ def test_atk_launcher_resident_detection_for_both_shell_tools(tmp_path, tool, la
     "command",
     [
         "make test",
-        "atk run-script plan-verify -- --plan /p.md --worktree /repo --timeout 600",
+        "atk run-script plan-check -- --plan /p.md",
         "timeout 10 atk serve",
         "echo serve",
         "echo --watch",

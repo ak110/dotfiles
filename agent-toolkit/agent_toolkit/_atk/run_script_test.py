@@ -143,26 +143,6 @@ def test_dispatch_forwards_termination_decision_file(monkeypatch: pytest.MonkeyP
     assert observed == [str(run_script.registered_script_path("termination-evidence")), *script_args]
 
 
-def test_dispatch_runs_review_contract_validator(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """実行レビューの手順書が示す公開名で検証器を起動し、plugin環境の依存で実行して終了コードを透過する。
-
-    登録が無い場合や登録パスが誤っている場合は起動できず、依存（yaml）を解決できない起動環境では検証へ到達しない。
-    """
-    contract = tmp_path / "review-contract.yaml"
-    arguments = ["--", "--contract", str(contract)]
-    contract.write_text(
-        "version: 1\nclauses:\n  - clause: 対象\n    content: commit abc1234の契約\n    source: 20260921-204636-005.md\n",
-        encoding="utf-8",
-    )
-
-    assert run_script.dispatch(argparse.Namespace(script_name="review-contract", script_args=arguments)) == 0
-
-    contract.write_text("version: 1\nclauses: []\n", encoding="utf-8")
-
-    assert run_script.dispatch(argparse.Namespace(script_name="review-contract", script_args=arguments)) == 2
-    assert "clauses" in capsys.readouterr().err
-
-
 @pytest.mark.parametrize(
     ("module_name", "script_source"),
     [

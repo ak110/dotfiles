@@ -49,7 +49,7 @@ description: >
 ### 作業ツリーの準備
 
 - 専用worktreeや回収予定の検証用複製は、mise trustを済ませた後に依存を同期し、成功を確かめてから渡す。同期はその作業ツリーのrootで`make sync`を実行し、リポジトリ直下と`agent-toolkit/`の`.venv`を`uv.lock`のパッケージ集合と`.python-version`の版へそろえる
-  - 回収予定の検証用複製は、`atk managed-temp create`の作業用領域へ`git worktree add --detach`で作成し、`make sync`で環境をそろえる。作業ツリーをファイル複製すると、入れ子の`.claude/worktrees/`と`.venv`を実容量で複製する。使用後は`git worktree remove`の後に`atk managed-temp cleanup`で回収する
+  - 回収予定の検証用複製は`.git`を含むため、managed-tempの一時root直下へ`mktemp -d '<一時root>/<用途>-XXXXXXXX'`で作業用領域を作成する。そこへ`git worktree add --detach`で複製を作成し、`make sync`で環境をそろえる。作業ツリーをファイル複製すると、入れ子の`.claude/worktrees/`と`.venv`を実容量で複製する。最終消費工程と起動したプロセスの終了後に、`git worktree remove`の後で`rm -rf -- <作成した絶対パス>`で回収する
   - 回収予定の作業場所ではローカル依存の同期だけを行い、Git hookとtemplateは既存設定を使う。共有CLIの導入元と共通Git設定は回収後も存続する必要があるためである。`mise run bootstrap`・`mise bootstrap`・`make setup`、`uv tool install --editable`、`prek install`、`git config --local commit.template`は恒久作業ツリーの初期導入に限る。観測と再検証手段は`docs/development/audit-records.md`「dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日」にある
 - miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下に保持される。そのため複製元と異なる絶対パスで`mise.toml`を解決する作業場所や、`XDG_STATE_HOME`などで状態ディレクトリを差し替える作業場所は、作成したエージェントが検証の起動前に`mise trust`を済ませる
   - linked worktreeは複製元の信頼を共有するため、複製元リポジトリルートの`mise.toml`へ1回実行すれば十分である。検証用の複製は複製先の`mise.toml`の絶対パスを指定し、状態ディレクトリを差し替えた環境は自動チェックと同じ環境変数を与えて実行する
@@ -72,6 +72,8 @@ pyfltrを調査・計測用途で実行する場合は`--no-fix`で自動修正�
 - 特定ファイルに限定する検証は、MCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。初回は`commands`（CLIは`--commands`）を指定せず、修正後の再実行だけ失敗したチェックへ限定する
   - pytestを選ぶ実行は、渡したファイルによらず`pytest-always-targets`の横断テストをrootと`agent-toolkit/`の両方で加える（`references/verification-values.md`の横断テストの項）。同じ内容への2回目以降の静的チェックは`commands`でpytestを除き、失敗したテストだけの再確認は`--only-failed`を使う。単一テストの局所確認は`pytest`を対象ファイル（必要なら`-k`）で直接実行し、出力の収集件数が意図した集合と一致することを確かめる
 - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。`-o`と`-p`は`pytest`のオプションで、`pyfltr run`へ渡すと終了コード2で終わる。`-o addopts=''`で`addopts`を解除する場合は`-p no:cacheprovider`を併記する
+- pyfltrの実行枠に参加するのは、`make test`、`uv run --frozen pyfltr run`、`git commit`（commit hookの`pyfltr fast`）と、`agent_toolkit._testing.pytest_plugin`を読み込むpytestである。rootと`agent-toolkit/`の`addopts`が`-p`でこのプラグインを読み込む。`-o addopts=''`でプラグインを外す`make test-browser`などは対象外とする
+  - 参加する検証をシェルから起動する場合は、`agent-toolkit:check-execution`「統合実行ツール経由の起動」の実行枠の起動形と3分類に従う
 - `.venv`を再作成し得る自動チェック（`uv run --python`による版切替、依存更新など）は、同じ仮想環境パスでは直列に実行する。並列にする場合は自動チェックごとに別の仮想環境パスを明示する
 - pyfltrの所要時間を比べる場合は、`uv run --frozen pyfltr list-runs`で取得したrun識別子を`uv run --frozen pyfltr show-run <run_id>`へ渡す
 
@@ -112,6 +114,7 @@ pyfltrを調査・計測用途で実行する場合は`--no-fix`で自動修正�
 - パッケージを取得して起動する外部ツール（pnpmの`dlx`、corepackなど）を動かすテストは、同モジュールの`share_package_caches`で取得物の保存先だけをホストと共有する
 - `pytools`の配布物には`[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を含めない
 - `scripts/`配下はpytestのprependモードで`sys.path`へ入るためテストから直接importできる。importするスクリプトはアンダースコア区切りで命名し、shebang付きスクリプトは`chmod +x`する
+- 別ディレクトリのスクリプトをテストから裸の名前でimportしない。pytestのprependモードとpylintは同じ実行に含めたファイルのディレクトリだけを`sys.path`へ加えるため、限定したpytest・pylintで解決できなくなる。登録済みのスクリプトは`agent_toolkit._atk.run_script.dispatch`経由で呼ぶか、テスト自身で`sys.path`へ対象ディレクトリを明示的に加える。`test_import_resolution_invariant_test.py`が違反を検出する
 
 ## コミットメッセージ方針と.gitmessage
 

@@ -51,7 +51,6 @@ STATE_CHANGE_COMMANDS = frozenset(
         "atk wi set-dependencies",
         "atk wi answer",
         "atk wi commit",
-        "atk wi pull",
         "atk wi process-loop abort",
         "atk wi process-loop abort-cancel",
         "atk wi process-loop instruct",
@@ -60,27 +59,22 @@ STATE_CHANGE_COMMANDS = frozenset(
         "atk wi submission end",
         "atk plans checkout",
         "atk plans commit",
-        "atk plans rewrite-references",
         "atk config set",
         "atk config apply-preset",
         "atk review-table add",
         "atk review-table respond",
         "atk review-table validate",
-        "atk managed-temp cleanup",
     }
 )
 """状態変更報告型のリーフサブコマンド。成功行を標準出力の1行目へ書く。"""
 
 VALUE_OUTPUT_COMMANDS = frozenset(
     {
-        "atk managed-temp create",
         "atk worktree-stash save",
-        "atk worktree-stash protect",
         "atk worktree-stash drop",
         "atk review-table init",
         "atk review-audit mark",
         "atk agents-exit-session",
-        "atk run-command",
         "atk lane create",
         "atk lane delete",
         "atk lane integrate",
@@ -92,7 +86,6 @@ VALUE_OUTPUT_COMMANDS = frozenset(
 READ_ONLY_COMMANDS = frozenset(
     {
         "atk info",
-        "atk read-file",
         "atk wi list",
         "atk wi show",
         "atk wi grep",
@@ -105,12 +98,10 @@ READ_ONLY_COMMANDS = frozenset(
         "atk agents list",
         "atk agents logs",
         "atk agents show",
-        "atk managed-temp list",
         "atk review-table show",
         "atk review-audit list",
         "atk review-audit pending",
         "atk wait-schedule",
-        "atk watch",
     }
 )
 """読み取り専用型のリーフサブコマンド。成功行を書かない。"""
@@ -118,7 +109,7 @@ READ_ONLY_COMMANDS = frozenset(
 OUT_OF_SCOPE_COMMANDS = frozenset({"atk wi process-loop", "atk wi process-loop all-repos", "atk serve", "atk run-script"})
 """結果行の規約の対象外。process-loop、サーバーおよび委譲先scriptが終了状態を表す。"""
 
-NO_MATCH_COMMANDS = frozenset({"atk wi grep", "atk managed-temp list"})
+NO_MATCH_COMMANDS = frozenset({"atk wi grep"})
 """該当0件で終了コード1を返し、該当0件の行を標準エラーへ書く読み取りのコマンド。"""
 
 

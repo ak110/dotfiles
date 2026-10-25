@@ -37,7 +37,8 @@ def predecessor_error(session: SessionState | SessionResumeState) -> Any:
 def prepare_prompt(session: SessionState | SessionResumeState) -> str:
     """会話の流れを生成し、追送と各turnの最終応答全文を元の起動本文へ加える。
 
-    ファイルは既存managed-tempと同じ保持期間で掃引される。抽出失敗時は後任を起動せず、記録の回復を案内する。
+    会話が分かる場合はセッションのmanaged-tempの子へ保存し、既存managed-tempと同じ保持期間で掃引される。
+    成功時はconversation.mdだけを残し、抽出失敗時だけ両出力の診断を保存して後任を起動せず、記録の回復を案内する。
     """
     if not session.prompt or not session.model_type:
         raise ActionableError(
@@ -50,7 +51,7 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
             f"前任の記録を一意に解決できません: {session.session_id}",
             next_action="`atk agents logs <前任session_id>`で記録の所在を確かめ、解消後に同じ引き継ぎ起動を再発行する",
         )
-    directory = managed_temp.create_managed_temp("session-handoff")
+    directory = managed_temp.create_output_temp("session-handoff")
     entry = plugin_root.SERVER_PLUGIN_ROOT / "agent_toolkit" / "atk.py"
     if session.engine in {"agy", "opencode"}:
         command = [sys.executable, str(entry), "agents", "logs", session.session_id, "--format", "markdown"]
@@ -88,9 +89,10 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
             f"前任の会話抽出を完了できません: session_id={session.session_id}, 診断={directory}",
             next_action="保存したprepare.stderrを読み、抽出が成立してから引き継ぎ起動を再発行する",
         ) from error
-    (directory / "prepare.stdout").write_text(completed.stdout, encoding="utf-8")
-    (directory / "prepare.stderr").write_text(completed.stderr, encoding="utf-8")
     if completed.returncode != 0:
+        # 診断は失敗時だけ保存する。成功時の両出力は会話の流れの生成に使い終え、後任へ渡すのはconversation.mdだけである。
+        (directory / "prepare.stdout").write_text(completed.stdout, encoding="utf-8")
+        (directory / "prepare.stderr").write_text(completed.stderr, encoding="utf-8")
         raise ActionableError(
             f"前任の会話抽出が失敗しました: session_id={session.session_id}, "
             f"exit_code={completed.returncode}, 診断={directory}",
@@ -99,6 +101,8 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
     if session.engine in {"agy", "opencode"}:
         conversation.write_text(completed.stdout, encoding="utf-8")
     if not conversation.is_file():
+        (directory / "prepare.stdout").write_text(completed.stdout, encoding="utf-8")
+        (directory / "prepare.stderr").write_text(completed.stderr, encoding="utf-8")
         raise ActionableError(
             f"前任の会話抽出がconversation.mdを生成しませんでした: {directory}",
             next_action="保存したprepare.stdoutとprepare.stderrを読み、抽出の不具合を報告する",

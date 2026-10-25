@@ -953,9 +953,8 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
         "verification",
         "handoff",
         "lane_started_at",
-        "review_inputs",
     }:
-        raise ValueError("manifestはplans・wis・verification・handoff・lane_started_at・review_inputsを持つobjectで指定する")
+        raise ValueError("manifestはplans・wis・verification・handoff・lane_started_atを持つobjectで指定する")
     for name in ("plans", "wis"):
         rows = manifest.get(name)
         if not isinstance(rows, list):
@@ -1013,116 +1012,6 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
     if referenced and "lane_started_at" not in manifest:
         raise ValueError("最終化argvが確定値を参照する場合はmanifestのlane_started_atを指定する")
     return manifest
-
-
-def _review_targets(data: object, path: pathlib.Path, reviewed: str) -> tuple[list[str], list[str]]:
-    """生成済み入力から、実レビュー版の一致を確かめた計画・WI集合を取り出す。"""
-    if (
-        not isinstance(data, dict)
-        or set(data) != {"version", "reviews"}
-        or not isinstance(data["version"], int)
-        or isinstance(data["version"], bool)
-        or data["version"] != 1
-        or not isinstance(data["reviews"], list)
-        or not data["reviews"]
-    ):
-        raise ValueError(f"受領確認入力には生成済みのversion: 1とreviews配列を指定する: {path}")
-    plans: list[str] = []
-    wis: list[str] = []
-    for review in data["reviews"]:
-        if (
-            not isinstance(review, dict)
-            or not isinstance(review.get("wi"), list)
-            or not all(isinstance(name, str) for name in review["wi"])
-            or not isinstance(review.get("plans"), list)
-            or not all(isinstance(name, str) for name in review["plans"])
-            or review.get("reviewed_head") != reviewed
-            or review.get("plan") != (review["plans"][0] if review["plans"] else "なし")
-        ):
-            raise ValueError(f"受領確認入力のWI・計画または実レビューHEADが受理した組と一致しない: {path}")
-        plans.extend(pathlib.Path(name).name for name in review["plans"])
-        wis.extend(review["wi"])
-    return plans, wis
-
-
-def _check_review_inputs(
-    record: dict[str, typing.Any], manifest: dict[str, typing.Any], *, no_merge: bool, reviewed_head: str
-) -> None:
-    """生成済み入力の計画・WI・HEADを今回の入力と比べ、Git変更と最終化の前に既存コマンドで確かめる。"""
-    inputs = manifest.get("review_inputs", [])
-    if not isinstance(inputs, list) or (not inputs and not no_merge):
-        raise ValueError("マージありのmanifestのreview_inputsへ生成済み受領確認入力と実レビューHEADを指定する")
-    expected_plans = {row["name"] for row in manifest["plans"] if not row.get("no_merge", False)}
-    expected_wis = {row["name"] for row in manifest["wis"] if not row.get("no_merge", False)}
-    state = record.get("integration", {})
-    finalized_input = state.get("phase") == "git-integrated" or (
-        state.get("phase") == "finalized"
-        and state.get("input", {}).get("reviewed_head") == reviewed_head
-        and state.get("input", {}).get("manifest") == manifest
-    )
-    saved_payloads = record.get("review_input_payloads", {}) if finalized_input else {}
-    if finalized_input and inputs:
-        observed = record.get("review_input_check", {})
-        if (
-            state.get("input", {}).get("manifest", {}).get("review_inputs") != inputs
-            or observed.get("child_exit_code") != 0
-            or observed.get("wrapper_exit_code") != 0
-            or not all(
-                isinstance(observed.get(field), str) and pathlib.Path(observed[field]).is_file()
-                for field in ("record_path", "stdout_path", "stderr_path")
-            )
-        ):
-            raise ValueError("最終化再開の受領確認入力または保存済み検査記録が一致しない。前回の入力と実行記録を復元する")
-    seen_plans: set[str] = set()
-    seen_wis: set[str] = set()
-    paths: list[str] = []
-    payloads: dict[str, typing.Any] = {}
-    for item in inputs:
-        if (
-            not isinstance(item, dict)
-            or set(item) != {"path", "reviewed_head"}
-            or not isinstance(item["path"], str)
-            or not isinstance(item["reviewed_head"], str)
-            or not re.fullmatch(r"[0-9a-fA-F]{7,64}", item["reviewed_head"])
-        ):
-            raise ValueError("review_inputsの各項目はpathと受理したreviewed_headを持つobjectで指定する")
-        path = pathlib.Path(item["path"])
-        if not path.is_absolute() or (not path.is_file() and str(path) not in saved_payloads) or str(path) in paths:
-            raise ValueError(f"受領確認入力は重複のない実在する絶対パスで指定する: {path}")
-        data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else saved_payloads[str(path)]
-        if finalized_input and saved_payloads.get(str(path)) != data:
-            raise ValueError(f"最終化再開の受領確認入力が検査時の保存本文と一致しない: {path}。検査済みの入力を復元する")
-        payloads[str(path)] = data
-        reviewed = _git(pathlib.Path(record["worktree"]), "rev-parse", "--verify", f"{item['reviewed_head']}^{{commit}}")
-        plans, wis = _review_targets(data, path, reviewed)
-        if (
-            len(set(plans)) != len(plans)
-            or len(set(wis)) != len(wis)
-            or set(plans) & seen_plans
-            or set(wis) & seen_wis
-            or not set(plans) <= expected_plans
-            or not set(wis) <= expected_wis
-        ):
-            raise ValueError(f"受領確認入力の計画・WI集合が今回のmanifestと一致しないか重複している: {path}")
-        seen_plans.update(plans)
-        seen_wis.update(wis)
-        paths.append(str(path))
-    if inputs and (seen_plans != expected_plans or seen_wis != expected_wis):
-        raise ValueError("受領確認入力がmanifestの実装対象の計画・WI集合を欠落なく覆っていない")
-    if paths and not finalized_input:
-        argv = _atk_script("run-script", "exec-review-evidence-check", "--")
-        for path_text in paths:
-            argv.extend(("--batch", path_text))
-        observed, code, failure = run_command.execute(argv, pathlib.Path(record["worktree"]), record["procedure_timeout"])
-        observed = _persist_observed(record, "review-input-check", observed)
-        record["review_input_check"] = observed
-        record["review_input_payloads"] = payloads
-        _save(pathlib.Path(record["record_path"]), record)
-        if code:
-            raise ValueError(
-                f"受領確認入力の検査が終了{code}: {failure or observed['record_path']}。"
-                "保存済みの診断を読み、同じレビュー担当が入力を是正してから同じlane integrateで再開する"
-            )
 
 
 # 最終化argvが参照する確定値。値は最終化の最初の操作の前に1回だけ生成し、再開では保存値を使う。
@@ -1212,7 +1101,7 @@ def _integration_command(
 
 
 def _verify(record: dict[str, typing.Any], state: dict[str, typing.Any], argvs: list[list[str]], cwd: pathlib.Path) -> None:
-    # 検証argvはplan-verifyの--timeoutやatk run-command --timeoutで自身の上限を持つ。
+    # 検証argvは計画の検証コマンドをそのまま渡し、自身の上限（pyfltrのcommand-timeoutなど）で終わる。
     # 固有手順向けのprocedure_timeoutを重ねると、検証が自身の上限より先に打ち切られる。
     for index, argv in enumerate(argvs):
         _integration_command(record, state, f"verification-{index}", argv, cwd, timeout=None)
@@ -1241,9 +1130,9 @@ def _amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing
             "Git統合後は前回と同じレビューHEADと統合先を指定する"
         )
     old, new = previous["manifest"], identity["manifest"]
-    if any(old.get(key) != new.get(key) for key in ("verification", "handoff", "lane_started_at", "review_inputs")):
+    if any(old.get(key) != new.get(key) for key in ("verification", "handoff", "lane_started_at")):
         raise ValueError(
-            "最終化入力の補完では検証・引き継ぎ記録・レーン開始時刻・受領確認入力を変更しない。"
+            "最終化入力の補完では検証・引き継ぎ記録・レーン開始時刻を変更しない。"
             "Git統合前なら--amend-finalizationを外して--restart-reviewで是正して再開し、"
             "Git統合後は前回と同じ値のまま未完了の最終化argvだけを補完する"
         )
@@ -1327,7 +1216,6 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         if not re.fullmatch(r"[0-9a-fA-F]{7,64}", args.reviewed_head):
             raise ValueError("reviewed-headは7文字以上の一意なcommit OIDで指定する")
         reviewed = _git(worktree, "rev-parse", "--verify", f"{args.reviewed_head}^{{commit}}")
-        _check_review_inputs(record, manifest, no_merge=args.no_merge, reviewed_head=reviewed)
         identity = {
             "reviewed_head": reviewed,
             "target": str(target),
@@ -1577,8 +1465,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
             "計画なしはplans:[]とhandoff:ABS。保存済みplansはcommands:[]とsaved:ABS、延期wisはcommands:[]。"
             "lane_started_atは最初のレーン開始時刻（時差付きISO 8601）。plans/wisのargvの"
             "{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}と{{expand-file:ABS}}を確定値で展開する。"
-            "review_inputsは生成済み受領確認入力の{path:ABS,reviewed_head:実レビューOID}配列。"
-            "実装なしのplans/wisにはno_merge:trueを指定する。マージありでは実装対象全件の入力を必須とする。"
+            "実装なしのplans/wisにはno_merge:trueを指定する。"
         ),
     )
     integrate_parser.add_argument("--no-merge", action="store_true", help="Gitを変更せず計画保存・WI終端だけ行う。")

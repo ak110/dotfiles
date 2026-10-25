@@ -12,7 +12,7 @@ description: >
 # プロンプトの改善案の検討
 
 エージェントへの指示文を前提知識の無いプロンプト評価担当に読ませて指摘を集め、メインが改善案と採否を確定して反映する。
-評価担当の入力・手順・出力は`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`、起動と受領は本書「プロンプト評価担当の起動と受領」が定める。
+評価担当の入力・手順・出力は`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`、起動と受領は本書「プロンプト評価担当の起動と受領」が定める（前者は所在参照）。
 
 評価担当の起動と試行には委譲手段、参照資料と対象の実行機能が必要である。これらが無い場合は、提示されたプロンプトを本セッションで直接評価し、直接評価であることと未実施の試行を明示する。独立した担当による試行とファイルへの反映は、それらを行えるClaude CodeまたはCodexで続ける。指摘と改善案の文には[文章の品質基準](references/quality-standards.md)を使う。
 
@@ -22,7 +22,6 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/refine-prompt.subagent.md` | 判断 | `read:agent-toolkit:*/share/refine-prompt.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
@@ -35,7 +34,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「定義の所有者」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「定義の所有者」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/refine-prompt.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/refine-prompt.subagent.md#「出力」` |
+| 評価担当の返却を受け取った後に形式を確かめる時 | `../../share/refine-prompt.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/refine-prompt.subagent.md#「出力」` |
 
 ## 読込表
 
@@ -98,7 +97,7 @@ Plan modeの外で実行する（Claude Codeでは`ExitPlanMode`で抜ける）�
 ```
 
 `agent-toolkit:refine-prompt`を実行するエージェントが、本書に従ってプロンプト評価担当を起動し、指摘を受領する。
-プロンプト評価担当の手順と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`が定める。
+プロンプト評価担当の手順と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`が定める（所在参照）。
 
 ### 起動
 

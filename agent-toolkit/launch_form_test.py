@@ -208,12 +208,12 @@ def test_public_launcher_preserves_argument_error_exit_status(
 
 
 @pytest.mark.parametrize("project_environment", [None, "", "別の仮想環境"])
-def test_public_run_command_restores_callers_project_environment(
+def test_launcher_restores_callers_project_environment_for_children(
     tmp_path: pathlib.Path,
     host_environ: Callable[[], dict[str, str]],
     project_environment: str | None,
 ) -> None:
-    """実launcherとrun-commandで、同期先の分離と子への値・未設定の配送を同時に確認する。"""
+    """実launcherから起動した子で、同期先の分離と子への値・未設定の配送を同時に確認する。"""
     env = host_environ()
     env["AGENT_TOOLKIT_RUNTIME_DATA"] = str(tmp_path / "runtime")
     other = tmp_path / "別の仮想環境"
@@ -231,13 +231,7 @@ def test_public_run_command_restores_callers_project_environment(
         [
             sys.executable,
             str(_PROJECT_ROOT / "scripts" / "launch.py"),
-            "agent_toolkit/atk.py",
-            "run-command",
-            "--cwd",
-            str(tmp_path),
-            "--timeout",
-            "30",
-            "--",
+            "agent_toolkit/_testing/child_environment_probe.py",
             sys.executable,
             "-c",
             "import json, os, sys; print(json.dumps({'project': os.environ.get('UV_PROJECT_ENVIRONMENT'), "
@@ -253,11 +247,9 @@ def test_public_run_command_restores_callers_project_environment(
         timeout=120,
     )
     assert result.returncode == 7, result.stderr
-    record = json.loads(result.stdout)
-    assert record["child_exit_code"] == record["wrapper_exit_code"] == 7
-    observed = json.loads(pathlib.Path(record["stdout_path"]).read_text(encoding="utf-8"))
+    observed = json.loads(result.stdout)
     assert observed == {"project": expected, "cwd": str(tmp_path), "argv": ["空 白"]}
-    assert pathlib.Path(record["stderr_path"]).read_text(encoding="utf-8").strip() == "子の診断"
+    assert "子の診断" in result.stderr
     assert {path.relative_to(other): path.read_bytes() for path in other.rglob("*") if path.is_file()} == before
 
 

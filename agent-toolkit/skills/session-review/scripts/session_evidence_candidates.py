@@ -55,6 +55,7 @@ from agent_toolkit._common import response_language_check as _response_language_
 from agent_toolkit._common.bash_invocations import extract_bash_invocations, is_read_predicate
 from agent_toolkit._common.shell_quoting import QuotingScanner as _QuotingScanner
 from agent_toolkit._common.shell_segments import extract_execution_segments as _extract_execution_segments
+from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
 
 _PERMISSION_DENIAL_MARKER = "denied by the Claude Code auto mode classifier"
 """auto mode classifierの拒否本文に現れる定型句。実行環境が返す本文をそのまま用いる。"""
@@ -254,7 +255,7 @@ def _processed_wi_filenames(collected: list[_CollectedRecord]) -> set[str]:
                 tokens = list(segment.tokens)
                 if not segment.resolved or len(tokens) < 3:
                     continue
-                if Path(tokens[0].replace("\\", "/")).name not in {"atk", "atk.cmd", "atk.py"} or tokens[1] != "wi":
+                if not _is_atk_command(tokens) or tokens[1] != "wi":
                     continue
                 if tokens[2] in _WI_PROCESSING_OPERATIONS:
                     names.update(Path(token).name for token in tokens[3:] if _WI_FILENAME.fullmatch(Path(token).name))
@@ -1228,7 +1229,7 @@ def _event_without_run_command_wrapper(event: dict[str, Any]) -> dict[str, Any]:
     if args and _basename(args[0]) in _SHELL_NAMES and len(args) == 3 and args[1] in {"-c", "-lc"}:
         tokens = _shell_command_tokens(args[2])
         args = [token.value for token in tokens] if tokens and not any(token.operator for token in tokens) else []
-    if len(args) < 4 or _basename(args[0]) != "atk" or args[1] != "run-command" or "--" not in args[2:]:
+    if len(args) < 4 or not _is_atk_command(args) or args[1] != "run-command" or "--" not in args[2:]:
         return event
     text = str(event.get("diagnostic") or event.get("text") or "")
     results = [_json_object(line) for line in text.splitlines() if line.startswith("{")]
@@ -1736,7 +1737,8 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
     if not args:
         name = str(event.get("tool_name") or event.get("tool") or "")
         return name, "", display, []
-    name = _basename(args[0])
+    # 起動名の表記（絶対パス、atk.cmd、atk.pyなど）を共通の判定でatkへそろえ、後続の比較が1つの名前で済むようにする。
+    name = "atk" if _is_atk_command(args) else _basename(args[0])
     if name == "git":
         index = 1
         while index < len(args):

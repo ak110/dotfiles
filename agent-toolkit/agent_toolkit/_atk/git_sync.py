@@ -569,7 +569,7 @@ def _sync_failure_next_action(resolved: pathlib.Path, error: subprocess.CalledPr
         return (
             "upstreamにローカルへ無いcommitがある",
             f"`git -C {resolved} status`と`git -C {resolved} log --left-right --oneline HEAD...@{{u}}`で差分を確認し、"
-            f"`atk wi pull`で取り込んでから失敗した`atk`操作を再実行する",
+            f"`atk wi commit`でロック下の取込と送信を行ってから失敗した`atk`操作を再実行する",
         )
     return (
         "直前のgitの出力が失敗理由である。認証、ネットワーク接続、remoteの状態のいずれかを解消する",

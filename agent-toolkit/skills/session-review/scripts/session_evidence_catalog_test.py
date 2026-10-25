@@ -65,6 +65,21 @@ def test_wi_operation_requires_terminal_success(
     assert not _operation_catalog(tmp_path, capsys, entries)
 
 
+def test_wi_operation_recognizes_launcher_by_common_names(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """起動名を共通の起動判定と同じ集合で認識し、絶対パスのatk.pyによる操作も成功操作へ含める。"""
+    entries: list[dict[str, Any]] = [
+        {
+            "payload": {
+                "type": "function_call",
+                "call_id": "a",
+                "arguments": json.dumps({"cmd": "/opt/plugin/agent_toolkit/atk.py wi get"}),
+            }
+        },
+        {"payload": {"type": "function_call_output", "call_id": "a", "output": "Process exited with code 0"}},
+    ]
+    assert [item["operation"] for item in _operation_catalog(tmp_path, capsys, entries)] == ["get"]
+
+
 def test_wi_operation_tracks_shell_wrapped_command_until_poll_completion(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

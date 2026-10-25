@@ -30,7 +30,7 @@ from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import readiness as _wi_readiness
-from agent_toolkit._common import session_activity, session_registry, state_paths
+from agent_toolkit._common import inherited_venv, session_activity, session_registry, state_paths
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
@@ -40,6 +40,16 @@ from agent_toolkit.atk_test import _setup_notes
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 
 _HOOK_DEFINITIONS = tuple(_SCRIPT.parents[1] / "hooks" / name for name in ("hooks.json", "hooks.codex.json"))
+
+
+def test_entry_restores_launch_environment_for_children(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`hook.main`は開始時に、起動層が変えた値を呼出元の値へ戻し、hookが起動する子へ渡さない。"""
+    monkeypatch.setenv("PYTHONPATH", "/plugin-root:/caller")
+    monkeypatch.setenv(inherited_venv.LAUNCH_RESTORE_KEY, json.dumps({"PYTHONPATH": ["/caller", "/plugin-root:/caller"]}))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
+    assert _hook.main(["unknown-command"]) == 0
+    assert os.environ["PYTHONPATH"] == "/caller"
+    assert inherited_venv.LAUNCH_RESTORE_KEY not in os.environ
 
 
 @pytest.mark.parametrize("argv", [[], ["unknown-command"]])

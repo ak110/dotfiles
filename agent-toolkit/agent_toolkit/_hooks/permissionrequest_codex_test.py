@@ -1,6 +1,4 @@
-"""permissionrequest_codexの厳密一致とfail-open境界を検証する。"""
-
-# pylint: disable=protected-access
+"""permissionrequest_codexの厳密一致と回収対象の保護を検証する。"""
 
 from __future__ import annotations
 
@@ -8,307 +6,110 @@ import json
 import os
 import pathlib
 import shlex
-import shutil
 import subprocess
 import sys
-import tempfile
-import typing
 
 import pytest
 
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
-from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
+from agent_toolkit._common import plugin_root_leases
 from agent_toolkit._hooks import permissionrequest_codex as subject
-from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 _ENTRYPOINT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
-_HELPER = pathlib.Path(__file__).resolve().parents[1] / "_managed_temp.py"
+_ALLOW = {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}
 
 
-@pytest.fixture(autouse=True)
-def isolated_state_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """所有検証が参照する外部の状態ディレクトリを、テストごとの専用領域へ置き換える。"""
-    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+def _payload(command: str, *, tool_name: str = "Bash", event: str = "PermissionRequest") -> str:
+    return json.dumps({"hook_event_name": event, "tool_name": tool_name, "tool_input": {"command": command}})
 
 
-def _payload(command: str, *, tool_name: str = "Bash") -> str:
-    return json.dumps(
-        {
-            "hook_event_name": "PermissionRequest",
-            "tool_name": tool_name,
-            "tool_input": {"command": command},
-        }
-    )
-
-
-def _command(plugin_root: pathlib.Path, target: pathlib.Path) -> str:
-    tokens = [
-        "uv",
-        "run",
-        "--no-project",
-        "--script",
-        str(plugin_root / "agent_toolkit" / "_managed_temp.py"),
-        "cleanup",
-        "--path",
-        str(target),
-    ]
+def _rm(target: pathlib.Path | str, *extra: str) -> str:
+    tokens = ["rm", "-rf", "--", str(target), *extra]
     return subprocess.list2cmdline(tokens) if os.name == "nt" else shlex.join(tokens)
 
 
-def _atk_command(target: pathlib.Path) -> str:
-    tokens = ["atk", "managed-temp", "cleanup", "--path", str(target)]
-    return subprocess.list2cmdline(tokens) if os.name == "nt" else shlex.join(tokens)
+def _decision(capsys: pytest.CaptureFixture[str], command: str, **kwargs: str) -> object:
+    assert subject.main(_payload(command, **kwargs)) == 0
+    output = capsys.readouterr().out
+    return json.loads(output) if output else None
 
 
-def test_allows_only_valid_managed_cleanup(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    plugin_root = pathlib.Path(__file__).resolve().parents[2]
-    temp_root = tmp_path / "temp"
-    temp_root.mkdir()
-    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
-    target = _managed_temp.create_managed_temp("hook-test")
-
-    assert subject.main(_payload(_command(plugin_root, target))) == 0
-
-    output = json.loads(capsys.readouterr().out)
-    assert output == {
-        "hookSpecificOutput": {
-            "hookEventName": "PermissionRequest",
-            "decision": {"behavior": "allow"},
-        }
-    }
-    assert target.exists()
+def test_allows_rm_of_work_area_and_its_child(capsys: pytest.CaptureFixture[str]) -> None:
+    """一時root直下の作業領域と、その配下の子をどちらも許可する。"""
+    area = _managed_temp.create_managed_temp("hook-test")
+    child = area / "nested"
+    child.mkdir()
+    assert _decision(capsys, _rm(area)) == _ALLOW
+    assert _decision(capsys, _rm(child)) == _ALLOW
+    assert area.is_dir(), "許可の判定だけを行い、対象を削除しない"
 
 
 @pytest.mark.parametrize(
-    "mutate",
+    "command",
     [
-        lambda command: f"{command} && true",
-        lambda command: f"env X=1 {command}",
-        lambda command: command.replace("cleanup", "create"),
-        lambda command: command.replace("--path", "--prefix"),
-        lambda command: command.replace("uv run", "uv  run", 1) + " extra",
-        lambda command: f"{command} | more",
-        lambda command: f"{command}\nver",
-        lambda command: f"{command}; ver",
-        lambda command: command.replace("uv run", "rm -rf", 1),
-        lambda command: f'"{command}',
-        lambda command: f'{command}"',
+        "rm -rf {area}",
+        "rm -r -f -- {area}",
+        "rm -rf -- {area} {area}",
+        "rm -fr -- {area}",
+        "rm -rf -- relative/path",
+        "atk managed-temp cleanup --path {area}",
     ],
 )
-def test_rejects_noncanonical_command(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    mutate: object,
-) -> None:
-    plugin_root = pathlib.Path(__file__).resolve().parents[2]
-    temp_root = tmp_path / "temp"
-    temp_root.mkdir()
-    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
-    target = _managed_temp.create_managed_temp("hook-test")
-    command = typing.cast("typing.Callable[[str], str]", mutate)(_command(plugin_root, target))
-
-    assert subject.main(_payload(command)) == 0
-    assert not capsys.readouterr().out
-    assert target.exists()
+def test_rejects_noncanonical_command(command: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """`rm -rf -- <1パス>`以外の形は判定を返さない。"""
+    area = _managed_temp.create_managed_temp("hook-test")
+    assert _decision(capsys, command.format(area=shlex.quote(str(area)))) is None
 
 
-def test_rejects_wrong_tool_event_root_and_unmanaged_path(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    plugin_root = pathlib.Path(__file__).resolve().parents[2]
-    temp_root = tmp_path / "temp"
-    temp_root.mkdir()
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
-    target = _managed_temp.create_managed_temp("hook-test")
-    command = _command(plugin_root, target)
+def test_rejects_root_outside_and_link(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """root自身・root外・リンクとリンクを経由する経路を許可しない。"""
+    area = _managed_temp.create_managed_temp("hook-test")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = _managed_temp.temp_root_path() / "hook-link"
+    link.symlink_to(outside, target_is_directory=True)
+    for target in (_managed_temp.temp_root_path(), outside, link, link / "child", area.parent.parent):
+        assert _decision(capsys, _rm(target)) is None, target
 
-    monkeypatch.delenv("PLUGIN_ROOT", raising=False)
-    assert subject.main(_payload(command)) == 0
-    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    assert subject.main(_payload(command, tool_name="Write")) == 0
-    wrong_event = json.loads(_payload(command))
-    wrong_event["hook_event_name"] = "PreToolUse"
-    assert subject.main(json.dumps(wrong_event)) == 0
-    unmanaged = temp_root / "unmanaged"
-    unmanaged.mkdir()
-    assert subject.main(_payload(_command(plugin_root, unmanaged))) == 0
+
+def test_rejects_plugin_root_in_use(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """使用中の保持配布物とその配下は許可しない。"""
+    area = _managed_temp.create_managed_temp("agents-server-plugin-root-shared")
+    monkeypatch.setattr(plugin_root_leases, "plugin_root_in_use", lambda path: path == area)
+    assert _decision(capsys, _rm(area)) is None
+    assert _decision(capsys, _rm(area / "agent-toolkit")) is None
+
+
+@pytest.mark.parametrize("payload", ["", "not json", "[]", json.dumps({"hook_event_name": "PermissionRequest"})])
+def test_malformed_payload_returns_no_decision(payload: str, capsys: pytest.CaptureFixture[str]) -> None:
+    assert subject.main(payload) == 0
     assert not capsys.readouterr().out
 
 
-def test_rejects_handmade_marker_without_external_state(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """管理対象内のマーカーファイルだけを模造しても承認しない。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[2]
-    temp_root = tmp_path / "temp"
-    temp_root.mkdir()
-    target = temp_root / "handmade"
-    target.mkdir(mode=0o700)
-    if os.name == "nt":
-        managed_temp_windows_security._windows_secure_path(target, directory=True)
-    marker = managed_temp_registry._record(
-        target,
-        "0" * 64,
-        prefix="handmade",
-        created_at="2026-08-30T00:00:00+00:00",
-        awis=(),
-    )
-    managed_temp_registry._write_marker(target, marker)
-    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
-
-    assert subject.main(_payload(_command(plugin_root, target))) == 0
-    assert not capsys.readouterr().out
-    assert target.exists()
+def test_rejects_wrong_tool_and_event(capsys: pytest.CaptureFixture[str]) -> None:
+    area = _managed_temp.create_managed_temp("hook-test")
+    assert _decision(capsys, _rm(area), tool_name="Write") is None
+    assert _decision(capsys, _rm(area), event="PreToolUse") is None
 
 
-def test_malformed_payload_and_validation_error_return_no_decision(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    plugin_root = pathlib.Path(__file__).resolve().parents[2]
-    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    assert subject.main("not-json") == 0
-    assert subject.main("[]") == 0
-    assert subject.main(json.dumps({"hook_event_name": "PermissionRequest", "tool_name": "Bash"})) == 0
-    assert not capsys.readouterr().out
-
-
-@pytest.mark.parametrize("launcher_source", ["home", "plugin", "absolute"])
-def test_allows_trusted_atk_launcher_command(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    launcher_source: str,
-) -> None:
-    """信頼済みの名前付きCLIと、PATHを使わない配布内の絶対CLIを所有検証後に許可する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[2]
-    temp_root = tmp_path / "temp"
-    temp_root.mkdir()
-    home = tmp_path / "home"
-    launcher_name = "atk.cmd" if os.name == "nt" else "atk"
-    home_launcher = home / ".local" / "bin" / launcher_name
-    home_launcher.parent.mkdir(parents=True)
-    home_launcher.write_text("launcher\n", encoding="utf-8")
-    launcher = home_launcher if launcher_source == "home" else plugin_root / "scripts" / launcher_name
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    resolved_launcher = None if launcher_source == "absolute" else str(launcher)
-    monkeypatch.setattr(shutil, "which", lambda name: resolved_launcher if name == "atk" else None)
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
-    target = _managed_temp.create_managed_temp("hook-test")
-
-    command = _atk_command(target)
-    if launcher_source == "absolute":
-        tokens = [str(launcher), "managed-temp", "cleanup", "--path", str(target)]
-        command = subprocess.list2cmdline(tokens) if os.name == "nt" else shlex.join(tokens)
-    assert subject.main(_payload(command)) == 0
-    output = json.loads(capsys.readouterr().out)
-    assert output["hookSpecificOutput"]["decision"] == {"behavior": "allow"}
-
-
-def test_allows_cleanup_from_registered_root_after_temp_root_change(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Codex側cleanupが登録pathの親rootを検証する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[2]
-    shared_root = tmp_path / "shared-root"
-    current_root = tmp_path / "current-root"
-    shared_root.mkdir()
-    current_root.mkdir()
-    if os.name == "nt":
-        managed_temp_windows_security._windows_secure_path(shared_root, directory=True)
-    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(current_root))
-    target = _managed_temp.create_managed_temp("hook-shared-root", root=shared_root)
-
-    assert subject.main(_payload(_command(plugin_root, target))) == 0
-    output = json.loads(capsys.readouterr().out)
-    assert output["hookSpecificOutput"]["decision"] == {"behavior": "allow"}
-
-
-def test_rejects_untrusted_or_noncanonical_atk_command(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """別ランチャー、追加引数、演算子、相対パス、管理外パスを拒否する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[2]
-    temp_root = tmp_path / "temp"
-    temp_root.mkdir()
-    other_launcher = tmp_path / ("atk.cmd" if os.name == "nt" else "atk")
-    other_launcher.write_text("other\n", encoding="utf-8")
-    monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
-    target = _managed_temp.create_managed_temp("hook-test")
-    command = _atk_command(target)
-
-    monkeypatch.setattr(shutil, "which", lambda name: str(other_launcher) if name == "atk" else None)
-    assert subject.main(_payload(command)) == 0
-
-    plugin_launcher = plugin_root / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")
-    monkeypatch.setattr(shutil, "which", lambda name: str(plugin_launcher) if name == "atk" else None)
-    other_tokens = [str(other_launcher), "managed-temp", "cleanup", "--path", str(target)]
-    other_command = subprocess.list2cmdline(other_tokens) if os.name == "nt" else shlex.join(other_tokens)
-    for rejected in (
-        f"{command} extra",
-        f"{command} && true",
-        f"env X=1 {command}",
-        _atk_command(pathlib.Path("relative")),
-        _atk_command(temp_root / "unmanaged"),
-        other_command,
-    ):
-        assert subject.main(_payload(rejected)) == 0
-    assert not capsys.readouterr().out
-
-
-def test_entrypoint_subprocess_allows_valid_cleanup_without_deleting(tmp_path: pathlib.Path) -> None:
+def test_entrypoint_subprocess_allows_valid_rm_without_deleting(tmp_path: pathlib.Path) -> None:
     """共通のhook起動スクリプト`hook.py`へ実stdinを渡してallow JSONと非削除を確認する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[2]
     env = os.environ.copy()
     if os.name == "nt":
-        env["TEMP"] = str(tmp_path)
-        env["TMP"] = str(tmp_path)
         env["LOCALAPPDATA"] = str(tmp_path / "local-app-data")
     else:
-        env["TMPDIR"] = str(tmp_path)
+        env["XDG_CACHE_HOME"] = str(tmp_path / "cache")
         env["XDG_STATE_HOME"] = str(tmp_path / "state")
-    env["PLUGIN_ROOT"] = str(plugin_root)
-    created = subprocess.run(
-        [sys.executable, str(_HELPER), "create", "--prefix", "hook-subprocess"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-        env=env,
+    root = (
+        tmp_path / "local-app-data" / "agent-toolkit" / "managed-temp"
+        if os.name == "nt"
+        else tmp_path / "cache" / "agent-toolkit" / "managed-temp"
     )
-    target = pathlib.Path(created.stdout.strip())
+    target = root / "hook-subprocess-abcd1234"
+    target.mkdir(parents=True, mode=0o700)
     result = subprocess.run(
         [sys.executable, str(_ENTRYPOINT), "permissionrequest_codex"],
-        input=_payload(_command(plugin_root, target)),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-        env=env,
-    )
-    cleanup = subprocess.run(
-        [sys.executable, str(_HELPER), "cleanup", "--path", str(target)],
+        input=_payload(_rm(target)),
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -316,6 +117,6 @@ def test_entrypoint_subprocess_allows_valid_cleanup_without_deleting(tmp_path: p
         env=env,
     )
     assert result.returncode == 0
-    assert json.loads(result.stdout)["hookSpecificOutput"]["decision"] == {"behavior": "allow"}
-    assert cleanup.returncode == 0
+    assert json.loads(result.stdout) == _ALLOW
     assert not result.stderr
+    assert target.is_dir()

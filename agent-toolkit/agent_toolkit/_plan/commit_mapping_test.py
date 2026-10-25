@@ -276,3 +276,25 @@ def test_range_mapping_failure_points_to_public_comparison(
     accepted = re.search(r"--operation \{([a-z,]+)\}", capsys.readouterr().out)
     assert accepted is not None and set(guided.group(1).split("|")) <= set(accepted.group(1).split(","))
     assert "git range-diff" not in raised.value.next_action
+
+
+def test_plan_allowed_wis_returns_related_wi_including_previous_session(tmp_path: pathlib.Path) -> None:
+    """計画の許可集合は計画メタ情報の`関連WI`であり、再開した計画の前のセッションのAWIも含む。"""
+    content = (
+        "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n"
+        "  - 20261023-172330-001.md: 前のセッションで実装した項目\n"
+        "  - 20261025-003916-001.md: 今回の項目\n"
+    )
+    assert commit_mapping.plan_allowed_wis(content, tmp_path / "plan.md") == {
+        "20261023-172330-001.md",
+        "20261025-003916-001.md",
+    }
+
+
+def test_plan_allowed_wis_rejects_plan_without_metadata(tmp_path: pathlib.Path) -> None:
+    """計画メタ情報を確定できない計画は、計画の構造の確認を次の操作とする誤りにする。"""
+    path = tmp_path / "plan.md"
+    with pytest.raises(commit_mapping.CommitMappingError) as error:
+        commit_mapping.plan_allowed_wis("# 計画\n\n## 概要\n", path)
+    assert str(path) in error.value.reason
+    assert "plan-check" in error.value.next_action

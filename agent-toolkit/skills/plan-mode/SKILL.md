@@ -43,9 +43,9 @@ description: >
 | 進捗を記録する前と、中断後に再開する前 | `references/plan-file-standards.md`の「進捗ログ」 | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「進捗ログ」` | |
 | 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` | 操作 | `bash:atk plans commit` | |
 | 保持、不変性、完全復元のいずれかを計画の契約か確認の選択肢へ書く前と、過去の契約へ戻す変更か過去の契約を撤去する変更を計画する前 | `references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md` | |
-| `起動経路`がメインによる起動で、計画構造の検証を終えて実装へ進む前（メインが自ら実装に着手する直前） | `references/main-launch.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`未判定検証記録`の段落と「起動」の`Git管理外の変更`の段落 | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/main-launch.md`、`section:agent-toolkit:*/share/exec-review.parent.md#冒頭` | |
+| `起動経路`がメインによる起動で、計画構造の検証を終えて実装へ進む前（メインが自ら実装に着手する直前） | `references/main-launch.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`検証結果`の段落と「起動」の`Git管理外の変更`の段落 | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/main-launch.md`、`section:agent-toolkit:*/share/exec-review.parent.md#冒頭` | |
 | 計画構造を検証する前 | `references/plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-structure-check.md` | |
-| 未判定検証記録を作成・更新する前 | `${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` | |
+| `検証結果`を記録する前 | `${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` | |
 | 旧単一ファイル形式または旧二ファイル形式の計画を読む前と、計画書式の読み取り互換の実装・自動チェックを変更する前 | `references/legacy-plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/legacy-plan-file-standards.md` | |
 
 ## 確認と起動経路
@@ -81,5 +81,5 @@ description: >
 
 ## メインによる起動の実装と終端
 
-実装、実行レビュー、終端は`references/main-launch.md`に従う。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、名前付き入力`未判定検証記録`は同書冒頭の規定どおり渡す。
-記録は`atk run-script verification-record -- --output <未判定検証記録JSONの絶対パス> --plan <計画の絶対パス>`で生成する（WI直渡しには`--wi <WIファイル名>`を反復できる）。根拠の追記・置換とレビュー修正後の再生成は`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「完成条件証拠の検証記録」に従い、更新したJSONの絶対パスを実行レビューへ渡す。
+実装、実行レビュー、終端は`references/main-launch.md`に従う。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`検証結果`は同書冒頭の規定どおり計画の進捗ログへ記録する。
+書き方とレビュー修正後の更新は`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「完成条件証拠の検証記録」に従う。

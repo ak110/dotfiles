@@ -1,15 +1,14 @@
-"""有限終了する外部コマンドの両ストリームと終了状態を保持する。"""
+"""laneの統合各段が記録と再開に使う、有限終了する外部コマンドの両ストリームと終了状態の保持。
+
+公開コマンドにはしない。一般の検証はハーネスの標準実行で行う。
+"""
 
 from __future__ import annotations
 
-import argparse
 import contextlib
-import hashlib
 import json
-import math
 import os
 import pathlib
-import re
 import shlex
 import subprocess
 import sys
@@ -27,91 +26,6 @@ _EXIT_TIMEOUT = 124
 _EXIT_WRAPPER_FAILURE = 125
 # 子プロセスの起動前に作業ツリーの状態を取る`git`の時間上限。観測の前処理で実行を止めないよう短く保つ。
 _GIT_STATE_TIMEOUT_SECONDS = 30.0
-
-
-def _positive_seconds(value: str) -> float:
-    """正の秒数を返す。"""
-    try:
-        seconds = float(value)
-    except ValueError as error:
-        raise argparse.ArgumentTypeError("正の秒数を指定してください") from error
-    if not math.isfinite(seconds) or seconds <= 0:
-        raise argparse.ArgumentTypeError("正の秒数を指定してください")
-    return seconds
-
-
-def _absolute_directory(value: str) -> pathlib.Path:
-    """実在する絶対ディレクトリを返す。"""
-    path = pathlib.Path(value)
-    if not path.is_absolute():
-        raise argparse.ArgumentTypeError("--cwdは絶対パスで指定してください")
-    resolved = path.resolve()
-    if not resolved.is_dir():
-        raise argparse.ArgumentTypeError(f"--cwdが実在するディレクトリではありません: {path}")
-    return resolved
-
-
-def _result_file(value: str) -> pathlib.Path:
-    path = pathlib.Path(value)
-    if not path.is_absolute():
-        raise argparse.ArgumentTypeError("--result-fileはホストの絶対パスで指定してください")
-    return path.resolve()
-
-
-def _path_map(value: str) -> dict[str, str]:
-    child, separator, host = value.partition("=")
-    if (
-        not separator
-        or not (pathlib.PurePosixPath(child).is_absolute() or pathlib.PureWindowsPath(child).is_absolute())
-        or not pathlib.Path(host).is_absolute()
-    ):
-        raise argparse.ArgumentTypeError("--path-mapは子の絶対パス=ホストの絶対パスで指定してください")
-    return {"child": child, "host": str(pathlib.Path(host).resolve())}
-
-
-def _snapshot(path: pathlib.Path) -> dict[str, Any]:
-    """指定した結果だけを読み、実行前後の内容の一致を比較できる状態にする。"""
-    try:
-        with path.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
-            size = os.fstat(stream.fileno()).st_size
-    except FileNotFoundError:
-        return {"exists": False, "sha256": None, "bytes": 0}
-    return {"exists": True, "sha256": digest, "bytes": size}
-
-
-def build_parser(parser: argparse.ArgumentParser) -> None:
-    """`atk run-command`の引数を登録する。"""
-    parser.add_argument("--cwd", type=_absolute_directory, metavar="DIR", help="子プロセスの作業ディレクトリの絶対パス。")
-    parser.add_argument("--timeout", type=_positive_seconds, metavar="SECONDS", help="正の実行上限秒数。")
-    parser.add_argument(
-        "--verification", action="store_true", help="ホスト共有の検証実行枠を所有して実行する。待機時間はtimeoutに含めない。"
-    )
-    parser.add_argument(
-        "--result-file",
-        type=_result_file,
-        action="append",
-        metavar="PATH",
-        help="子が書く結果ファイルのホスト絶対パス。存在・SHA-256・サイズを実行前後に記録する。反復可。",
-    )
-    parser.add_argument(
-        "--path-map",
-        type=_path_map,
-        action="append",
-        metavar="CHILD=HOST",
-        help="子が結果に書く絶対パスとホストの接頭辞の対応。取込時に最長一致で変換する。反復可。",
-    )
-    parser.add_argument(
-        "--record",
-        type=pathlib.Path,
-        action="append",
-        metavar="PATH",
-        help="保存済みrecord.jsonを読み、子を起動しない。反復可。",
-    )
-    parser.add_argument(
-        "--records-file", type=pathlib.Path, metavar="PATH", help="plan-verifyが保存したrecords配列を持つJSON。"
-    )
-    parser.add_argument("command_argv", nargs=argparse.REMAINDER, metavar="COMMAND", help="`--`以後の実行argv。")
 
 
 def _file_metrics(path: pathlib.Path) -> tuple[int, int]:
@@ -208,22 +122,17 @@ def execute(
     timeout: float | None,
     *,
     verification: bool = False,
-    result_files: list[pathlib.Path] | None = None,
-    path_maps: list[dict[str, str]] | None = None,
 ) -> tuple[dict[str, Any], int, str | None]:
     """検証用途では共有実行枠を取得し、子の終了と記録保存まで所有する。"""
     ownership = execution_slot.hold(label=shlex.join(argv)) if verification else contextlib.nullcontext()
     with ownership:
-        return _execute(argv, cwd, timeout, result_files=result_files, path_maps=path_maps)
+        return _execute(argv, cwd, timeout)
 
 
 def _execute(
     argv: list[str],
     cwd: pathlib.Path,
     timeout: float | None,
-    *,
-    result_files: list[pathlib.Path] | None = None,
-    path_maps: list[dict[str, str]] | None = None,
 ) -> tuple[dict[str, Any], int, str | None]:
     """終了する子プロセスを実行して記録を保存し、表示とは別に結果・終了コード・保存の失敗を返す。"""
     child_env = dict(os.environ)
@@ -237,14 +146,12 @@ def _execute(
     wrapper_exit_code = _EXIT_WRAPPER_FAILURE
     failure: str | None = None
     directory: pathlib.Path | None = None
-    declared: list[dict[str, Any]] = []
     try:
         directory = managed_temp.create_output_temp("atk-command")
         stdout_path = (directory / "stdout.bin").resolve()
         stderr_path = (directory / "stderr.bin").resolve()
         with stdout_path.open("xb") as stdout_stream, stderr_path.open("xb") as stderr_stream:
             try:
-                declared = [{"path": str(path), "before": _snapshot(path)} for path in dict.fromkeys(result_files or [])]
                 # 回収不能でも記録を確定するため、context managerの無期限waitを重ねない。
                 process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
                     argv, cwd=cwd, env=child_env, stdout=stdout_stream, stderr=stderr_stream
@@ -261,13 +168,11 @@ def _execute(
                     if residual:
                         failure = "子孫プロセスを回収できない: " + "; ".join(residual)
                 except BaseException:
-                    process_tree.log_residual(process_tree.stop_process_tree(process), context="run-command exception")
+                    process_tree.log_residual(process_tree.stop_process_tree(process), context="lane command exception")
                     raise
                 child_exit_code = process.returncode
-                for item in declared:
-                    item["after"] = _snapshot(pathlib.Path(item["path"]))
             except (OSError, ValueError) as error:
-                failure = f"子の実行または結果ファイルの状態取得に失敗した: {error}"
+                failure = f"子の実行に失敗した: {error}"
         if timed_out:
             wrapper_exit_code = _EXIT_TIMEOUT
         elif child_exit_code is not None:
@@ -291,10 +196,6 @@ def _execute(
         stderr_path=stderr_path,
     )
     metric_errors = metadata.pop("_metric_errors")
-    if result_files:
-        metadata["result_files"] = declared
-    if path_maps:
-        metadata["path_maps"] = path_maps
     if metric_errors:
         wrapper_exit_code = _EXIT_WRAPPER_FAILURE
         failure = "\n".join([*([failure] if failure else []), *metric_errors])
@@ -314,166 +215,3 @@ def _execute(
             metadata["wrapper_exit_code"] = wrapper_exit_code
             metadata["failure"] = failure
     return metadata, wrapper_exit_code, failure
-
-
-def read_records(paths: list[pathlib.Path], bundle: pathlib.Path | None = None) -> tuple[dict[str, Any], int]:
-    """終了済み実行をまとめて読み、旧記録の未記録値と取得失敗を区別して返す。"""
-    missing_records = []
-    if bundle is not None:
-        if not bundle.is_absolute():
-            raise ValueError("--records-fileは絶対パスで指定する")
-        document = json.loads(bundle.read_text(encoding="utf-8"))
-        if not isinstance(document, dict) or not isinstance(document.get("records"), list):
-            raise ValueError("保存結果はrecordsにrecord_pathの文字列配列を持つJSON objectを指定する")
-        if any(not isinstance(value, str) for value in document["records"]):
-            raise ValueError("recordsは保存JSONの絶対パスの文字列配列にする")
-        results = document.get("results", [])
-        if not isinstance(results, list) or any(not isinstance(row, dict) or "record_path" not in row for row in results):
-            raise ValueError("resultsはrecord_pathを持つ実行結果の配列にする")
-        if (
-            "results" in document
-            and [row["record_path"] for row in results if row["record_path"] is not None] != document["records"]
-        ):
-            raise ValueError("resultsの保存先とrecordsの順序が一致しない")
-        paths = [*(pathlib.Path(value) for value in document["records"]), *paths]
-        missing_records = [row for row in results if row["record_path"] is None]
-    if not paths and bundle is None:
-        raise ValueError("--recordか--records-fileへ保存済み実行を指定する")
-    entries = []
-    errors = [
-        {
-            "record_path": None,
-            "order": row.get("order"),
-            "error": row.get("failure"),
-            "record": row.get("record"),
-            "next_action": "子の結果と両出力を保持し、保存失敗を解消して記録を回復する",
-        }
-        for row in missing_records
-    ]
-    for path in dict.fromkeys(paths):
-        try:
-            if not path.is_absolute():
-                raise ValueError("実行記録は絶対パスで指定する")
-            record = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(record, dict):
-                raise ValueError("実行記録はJSON objectである必要がある")
-            fields = {
-                "argv",
-                "cwd",
-                "git_head",
-                "git_status",
-                "child_exit_code",
-                "timed_out",
-                "signal",
-                "stdout_path",
-                "stderr_path",
-            }
-            if not fields <= record.keys() or not isinstance(record["argv"], list) or not isinstance(record["cwd"], str):
-                raise ValueError("実行条件と子の終了状態・保存先が不足している")
-            if any(not isinstance(value, str) for value in record["argv"]) or not pathlib.Path(record["cwd"]).is_absolute():
-                raise ValueError("実行argvまたはcwdの型・形式が不正である")
-            if not isinstance(record["timed_out"], bool):
-                raise ValueError("timed_outは真偽値である必要がある")
-            if record["git_head"] is not None and (
-                not isinstance(record["git_head"], str)
-                or re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", record["git_head"]) is None
-            ):
-                raise ValueError("git_headは取得時の完全OIDかnullである必要がある")
-            if record["git_status"] is not None and (
-                not isinstance(record["git_status"], list) or any(not isinstance(value, str) for value in record["git_status"])
-            ):
-                raise ValueError("git_statusは文字列配列かnullである必要がある")
-            for field in ("child_exit_code", "signal", "wrapper_exit_code"):
-                value = record.get(field)
-                if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
-                    raise ValueError(f"{field}は整数かnullである必要がある")
-            if record.get("failure") is not None and not isinstance(record["failure"], str):
-                raise ValueError("failureは文字列かnullである必要がある")
-            missing = [field for field in ("wrapper_exit_code", "failure") if field not in record]
-            displayed: dict[str, Any] = dict(record, requested_record=str(path), unrecorded=missing)
-            for field in missing:
-                displayed[field] = None
-            for stream in ("stdout", "stderr"):
-                source = record[stream + "_path"]
-                if source is not None and (not isinstance(source, str) or not pathlib.Path(source).is_absolute()):
-                    raise ValueError(f"{stream}_pathは絶対パスかnullで指定する")
-                displayed[stream] = pathlib.Path(source).read_bytes().decode("utf-8", errors="replace") if source else None
-            entries.append(displayed)
-        except (OSError, UnicodeError, ValueError, TypeError) as error:
-            errors.append(
-                {
-                    "record_path": str(path),
-                    "error": str(error),
-                    "next_action": "保存先とJSON・両出力を確認して同じ読取を再実行する",
-                }
-            )
-    return {"records": entries, "errors": errors}, _EXIT_WRAPPER_FAILURE if errors else 0
-
-
-def dispatch(args: argparse.Namespace) -> int:
-    """外部コマンドを実行し、保存結果のJSONと実際の終了状態を返す。"""
-    argv = list(args.command_argv)
-    records = getattr(args, "record", None) or []
-    bundle = getattr(args, "records_file", None)
-    if records or bundle:
-        if (
-            argv
-            or args.cwd is not None
-            or args.timeout is not None
-            or getattr(args, "verification", False)
-            or (getattr(args, "result_file", None) or getattr(args, "path_map", None))
-        ):
-            outcome.report_failure(
-                "保存済み読取と子の実行指定は混在できない", next_action="--record・--records-fileだけで再実行する"
-            )
-            return _EXIT_WRAPPER_FAILURE
-        try:
-            result, code = read_records(records, bundle)
-        except (OSError, UnicodeError, ValueError) as error:
-            outcome.report_failure(str(error), next_action="保存結果とパスを確認し同じ読取を再実行する")
-            return _EXIT_WRAPPER_FAILURE
-        print(json.dumps(result, ensure_ascii=False))
-        if code:
-            outcome.report_failure("一部の保存済み実行を読めない", next_action="errorsの対象を解消して同じ読取を再実行する")
-        return code
-    if not argv or argv[0] != "--" or len(argv) == 1:
-        outcome.report_failure(
-            "`--`以後に実行するCOMMANDがありません", next_action="`atk run-command -- COMMAND [ARG...]`で再実行する"
-        )
-        return _EXIT_WRAPPER_FAILURE
-    cwd = args.cwd if args.cwd is not None else pathlib.Path.cwd().resolve()
-    metadata, wrapper_exit_code, failure = execute(
-        argv[1:],
-        cwd,
-        args.timeout,
-        verification=getattr(args, "verification", False),
-        result_files=getattr(args, "result_file", None),
-        path_maps=getattr(args, "path_map", None),
-    )
-    # 保存できた通常実行では次の判断に要る結果と所在だけを返す。
-    # 保存失敗では実行条件の回復先が無いため、取得できた全情報を返す。
-    summary = metadata
-    if metadata["record_path"] is not None:
-        summary = {
-            key: metadata[key]
-            for key in (
-                "record_path",
-                "child_exit_code",
-                "wrapper_exit_code",
-                "stdout_path",
-                "stderr_path",
-                "stdout_bytes",
-                "stderr_bytes",
-            )
-        }
-        for key in ("timed_out", "signal", "failure"):
-            if metadata[key]:
-                summary[key] = metadata[key]
-    print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
-    if wrapper_exit_code == 0:
-        outcome.report_success("外部コマンドが終了した", outcome.ResultKind.VALUE_OUTPUT)
-    else:
-        detail = failure or f"外部コマンドが終了コード{wrapper_exit_code}で終了した"
-        paths = f"stdout={metadata['stdout_path']}, stderr={metadata['stderr_path']}"
-        outcome.report_failure(detail, next_action=f"保存先を診断する: {paths}")
-    return wrapper_exit_code

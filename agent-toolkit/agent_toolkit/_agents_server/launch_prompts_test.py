@@ -148,14 +148,14 @@ def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> N
         assert "自身による成果ファイルの作成を禁止する" in prompt
         assert "キャッシュ・状態・保存出力" in prompt
         assert "省略や未読" in prompt
-        for operation in ("read-file --", "--start <next>", "eof: true", "--max-bytes"):
+        for operation in ("sed -n '<開始行>,<終了行>p' -- <絶対パス>", "wc -l", "jq", "git grep", "rg"):
             assert operation in prompt, (backend, operation)
-        assert "文字単位" in prompt
+        assert "行範囲を分けて最後まで読む" in prompt
         assert "内側コマンドと外側セル" in prompt
         assert "完成条件" in prompt
         assert "担当内で完了" in prompt
         assert "自身で解消できない" in prompt
-    assert "atk read-file" in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
+    assert "atk read-file" not in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
     assert "pyfltr grep" in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
 
 

@@ -76,9 +76,8 @@ def test_native_records_preserve_original_and_hook_view(tmp_path: Path) -> None:
     call = canonical[1]["message"]["content"][0]
     assert call["name"] == "Bash" and call["input"]["command"] == "pytest -q"
     assert transcript.read_transcript_bytes(str(path)) == raw.encode()
-    assistant = transcript.latest_main_assistant_entry(str(path))
-    assert assistant is not None
-    assert transcript.assistant_text(assistant["message"]) == "修正を完了した"
+    assistant = next(transcript.iter_latest_assistant_text_messages(str(path)))
+    assert transcript.visible_assistant_text(assistant) == "修正を完了した"
 
 
 def test_native_discovery_prefers_complete_record(tmp_path: Path) -> None:

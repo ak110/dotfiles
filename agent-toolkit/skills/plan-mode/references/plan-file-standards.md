@@ -1,6 +1,6 @@
 # 計画ファイル作成基準
 
-本書は計画ファイル（作業実体は`~/.claude/plans/*.md`）の成果物契約を定める。計画を起草するエージェントは全項を満たす計画を作成し、実行レビュー担当は点検の基準に使う。読込の時点は、起草者では`agent-toolkit:plan-mode`のSKILL.mdの読込表、実行レビュー担当では`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`の読込表が定める。
+本書は計画ファイル（作業実体は`~/.claude/plans/*.md`）の成果物契約を定める。計画を起草するエージェントは全項を満たす計画を作成し、実行レビュー担当は点検の基準に使う。読込の時点は、起草者では`agent-toolkit:plan-mode`のSKILL.mdの読込表、実行レビュー担当では`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`の読込表が定める（所在参照）。
 保存先と参照の書式は`plan-file-storage.md`、過去の契約へ戻す変更と保持・不変性・完全復元の契約は`plan-restoration-contracts.md`、構造の検証は`plan-structure-check.md`が定める。
 
 計画ファイルは要求単位の欠落を防ぎ、実装と実行レビューの基準を示し、中断後の再開と作業記録に使う内部資料である。ユーザーの承認を前提としない。
@@ -25,7 +25,6 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-structure-check.md` |
@@ -201,13 +200,13 @@
 
 - 走査対象は変更ファイルとその直接影響範囲に限り、ファイル単位で書く（努力目標）。直接影響範囲の類型と範囲は`agent-toolkit:check-execution`の`references/verification-scope.md`に従い、選んだテストファイルと検証単位をコマンドへ明示する。類型に当たるが外すものは理由を直接影響範囲の記述へ書く。検証行は起草時点の選定であり、実行する担当が実行の直前に同書に従って実差分で補正する
 - タスクランナーのターゲット単位ごとにコマンドを分ける（努力目標。失敗した単位だけを再実行できるように）
-- セルは1 code spanに1つの完全なコマンドを書き、複数は`<br>`で分け、説明は表の外へ置く。shellのpipeline・redirect・環境代入などは実行可能なscriptへ移してそのargvを書く（引数はshellの再評価なしに解析される）
-- 実行は`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <対象worktreeの絶対パス> --timeout <正の有限秒数> --summary-only`を使い、先に同じ入力の`--list`で順序とargvを確かめる。失敗やtimeoutの後も残りのコマンドを動かして全件の結果を返すため、集約の非0だけで終えず各記録と出力を判定する
+- セルは1 code spanに1つの完全なコマンドを書き、複数は`<br>`で分け、説明は表の外へ置く。shellのpipeline・redirect・環境代入などは実行可能なscriptへ移してそのargvを書く（統合時に`atk lane integrate`のmanifestの`verification`へargv配列として渡し、shellの再評価なしに実行されるため）
+- 実行は実装担当が各コマンドを対象worktreeで順に標準実行する。1件が失敗しても残りのコマンドを実行し、各コマンドの終了コードと出力を判定する
 
 凍結後に検証条件を訂正した場合は、レビュー指摘管理表の現在の結論を反映した全コマンドを別ファイルへ保存し、訂正済み検証表とする。そのファイルには本節と同じ`## 検証`の固定表を1つ置く。計画メタ情報は不要で、凍結計画の検証表全体を置き換える内容を書く。
-列挙と実行の双方へ`--verification-plan <訂正済み検証表の絶対パス>`を加える。計画・訂正の結論・訂正済み検証表の対応と絶対パスを引き継ぎ記録へ残し、実装・実行レビュー・統合へ同じ内容を渡す。引き継いだ内容を保持し、訂正済み検証表を更新した場合は更新後の条件で列挙と検証をやり直す。
+訂正後の検証は訂正済み検証表のコマンドを実行する。計画・訂正の結論・訂正済み検証表の対応と絶対パスを引き継ぎ記録へ残し、実装・実行レビュー・統合へ同じ内容を渡す。引き継いだ内容を保持し、訂正済み検証表を更新した場合は更新後の条件で検証をやり直す。
 
-pyfltrの`run`・`run-for-agent`・`fast`・`ci`をplan-verifyから実行するときは`--output-format=jsonl`を明記し、対象到達・完了を示すsummaryを保存する。plan-verifyはこのオプションを自動付与しない。検証の合否は結果まとめの各行の`state`と`failure`も含めて判定する。summaryが示す未到達・未完了や完了結果の取得失敗は子の終了0でも`state: failure`と集約終了1になるため、子の終了0だけで合格にしない。
+pyfltrの`run`・`run-for-agent`・`fast`・`ci`は`--output-format=jsonl`を明記して実行し、対象到達・完了を示すsummaryを読む。summaryが示す未到達・未完了や完了結果の取得失敗は終了0でも合格にしない。
 
 `## 終端工程`は確認した公開範囲と、commit・push後の操作（PR/MRの作成とタイトル・本文、リリース、タグ付けなど）を書く。公開範囲の確認を要さず公開後の固有操作も無い計画は`なし`と書く。
 

@@ -16,7 +16,7 @@
 
 ## agent_toolkitパッケージの配置と層
 
-- `agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置き、接頭辞`_`を付けずに命名する。対象は`hook.py`・`atk.py`・`agents_server_mcp.py`・`wait_ci.py`・`_managed_temp.py`である。`_managed_temp.py`は外部の許可判定がパスを解決するため名前を維持する（`script_prefix_invariant_test.py`が除外する）
+- `agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置き、接頭辞`_`を付けずに命名する。対象は`hook.py`・`atk.py`・`agents_server_mcp.py`・`wait_ci.py`である
 - リモートホストで実行する`atk_serve_plans_remote_helper.py`と`atk_serve_sessions_remote_helper.py`は`agent-toolkit/scripts/`直下の公開スクリプトとする。同じcheckoutの`agent_toolkit`を`sys.path`経由でimportし、SSH先は標準ライブラリと`platformdirs`・`watchdog`だけを与えるため、両ヘルパーがimportするモジュールはそれらだけに依存させる
 - 実装モジュールは`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`のサブパッケージへ置き、この順を依存の層とする。importは後ろの層から前の層への向きと、同じ層の中に限る。新しいモジュールは読み込む主体が属するサブパッケージへ置き、hook以外からも使うものは`_hooks`へ置かない
 - 直下の公開スクリプトと`agent-toolkit/skills/*/scripts/`配下は起動スクリプトとして全層をimportできるが、`_hooks`をimportできるのは`hook.py`だけとする

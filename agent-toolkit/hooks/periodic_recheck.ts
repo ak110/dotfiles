@@ -4,7 +4,7 @@ import { automatedMessage, changedWarning } from "./automated_message.ts";
 // `agents_server`の`start`の処理の中で、メインの定期再確認のtaskを`CronCreate`で装着し、結果をメインの会話へ届ける。
 // モデルが起動前に`atk wait-schedule`と`CronCreate`を呼ぶ手順は装着漏れを残し、起動までの呼び出しも増やすため、
 // 作成前にmod自身の回収能力も確認する。装着できない場合は理由と完了通知による待機を案内する。
-// cron式とpromptの共通本文は`atk wait-schedule --format json`の出力から得る。本文の定義元はPython側の1か所であり、
+// cron式とpromptの共通本文は`atk wait-schedule`の出力から得る。本文の定義元はPython側の1か所であり、
 // モデルが自ら装着する手順も同じ出力を使う。
 // `Agent`ツールのサブエージェント（`agentId`を持つ呼出主体）へは装着も通知もしない。`CronList`はメインと共有され、
 // サブエージェントが作成したtaskのpromptは親の会話へ届くため、サブエージェントの待機を再確認できない。
@@ -76,7 +76,7 @@ export function parseCronJobs(result: unknown): CronJob[] {
   });
 }
 
-// `atk wait-schedule --format json`の標準出力から、cron式と標識で始まるpromptを取り出す。形が合わなければ`undefined`を返す。
+// `atk wait-schedule`の標準出力から、cron式と標識で始まるpromptを取り出す。形が合わなければ`undefined`を返す。
 export function parseSchedule(stdout: string): Schedule | undefined {
   let parsed: unknown;
   try {
@@ -114,17 +114,13 @@ async function mount($: EngineInterface): Promise<MountOutcome | undefined> {
       "--no-default-groups",
       `${root}/agent_toolkit/atk.py`,
       "wait-schedule",
-      "--request-bucket",
-      "main",
-      "--format",
-      "json",
     ],
     { timeoutMs: WAIT_SCHEDULE_TIMEOUT_MS },
   );
   const parsed = schedule.exitCode === 0 ? parseSchedule(schedule.stdout) : undefined;
   if (parsed === undefined) {
     return notMounted(
-      `\`atk wait-schedule --request-bucket main --format json\`がcron式と標識付きのpromptを返さなかった（終了コード${schedule.exitCode}、` +
+      `\`atk wait-schedule\`がcron式と標識付きのpromptを返さなかった（終了コード${schedule.exitCode}、` +
         `標準エラー: ${schedule.stderr.trim() || "なし"}）`,
     );
   }

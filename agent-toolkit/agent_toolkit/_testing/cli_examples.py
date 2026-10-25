@@ -78,9 +78,6 @@ def validate_example(command: str, *, source: str, parsers: dict[str, argparse.A
     """案内に書かれたargvを実parserで検査し、所在付きで構文差を報告する。"""
     argv = example_argv(command)
     assert argv and argv[0] == "atk", (source, command)
-    if argv[1:2] == ["run-command"] and "--cwd" in argv:
-        # --cwdの実在検査に必要な前提だけを、同じ絶対パス種別の既存領域で満たす。
-        argv[argv.index("--cwd") + 1] = str(pathlib.Path.cwd())
     diagnostic = io.StringIO()
     with contextlib.redirect_stderr(diagnostic), contextlib.redirect_stdout(io.StringIO()):
         try:

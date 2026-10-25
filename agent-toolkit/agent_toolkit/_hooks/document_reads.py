@@ -15,21 +15,17 @@ lazy from agent_toolkit._common.plugin_roots import resolve_plugin_root
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
-lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._hooks import plugin_resources
 
 _READ_PROGRAMS = frozenset({"cat", "sed", "head", "nl", "less", "more", "bat", "type", "get-content", "gc"})
 """Codexが資料を表示する読取コマンド。検索・抽出のコマンドは本文全体を返さないため含めない。
 
-`pretooluse/large_reads.py`の`bash_read_paths`は全文取得の警告用で、`atk read-file`・`head`・`nl`・`bat`・
+`pretooluse/large_reads.py`の`bash_read_paths`は全文取得の警告用で、`head`・`nl`・`bat`・
 PowerShellの`Get-Content`を扱わない。completion-reportの起動証拠はこれらの読取も受理するため、別に列挙する。
 """
 
 _SED_FULL_SCRIPTS = frozenset({"p", "1,$p"})
 """`sed -n`のうち全行を表示するスクリプト。他のスクリプトは範囲だけを返し得る。"""
-
-_ATK_RANGE_OPTIONS = ("--start", "--max-bytes")
-"""`atk read-file`の範囲を限定するオプション。"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -84,17 +80,11 @@ def bash_document_reads(command: str) -> list[DocumentRead]:
         tokens = list(segment.tokens)
         if "--help" in tokens or "-h" in tokens:
             continue
-        if is_atk_command(tokens):
-            if tokens[1:2] != ["read-file"]:
-                continue
-            arguments = tokens[2:]
-            partial = any(argument.startswith(_ATK_RANGE_OPTIONS) for argument in arguments)
-        else:
-            program = pathlib.PurePosixPath(tokens[0].replace("\\", "/")).name.lower().removesuffix(".exe")
-            if program not in _READ_PROGRAMS:
-                continue
-            arguments = tokens[1:]
-            partial = program == "head" or program == "sed" and not _SED_FULL_SCRIPTS.intersection(arguments)
+        program = pathlib.PurePosixPath(tokens[0].replace("\\", "/")).name.lower().removesuffix(".exe")
+        if program not in _READ_PROGRAMS:
+            continue
+        arguments = tokens[1:]
+        partial = program == "head" or program == "sed" and not _SED_FULL_SCRIPTS.intersection(arguments)
         for argument in arguments:
             document = skill_document(argument)
             if document is not None:
@@ -149,7 +139,7 @@ def _identifying_line(skill: str, relative_path: str, plugin: str = "agent-toolk
 def body_returned(skill: str, relative_path: str, text: str | None, *, plugin: str = "agent-toolkit", path: str = "") -> bool:
     """読取の結果が資料の本文を返したかを返す。パスの文字列だけを根拠にしない。"""
     line = _identifying_line(skill, relative_path, plugin, path)
-    return text is not None and line is not None and line in returned_text(text)
+    return text is not None and line is not None and line in text
 
 
 # 両ホストのPostToolUseの`tool_response`の形（CodexのBashでは終了コードを含まない出力文字列）と、
@@ -171,16 +161,3 @@ def response_text(response: object) -> str | None:
             if isinstance(value, str):
                 return value
     return None
-
-
-def returned_text(text: str) -> str:
-    """`atk`が出力を保存先へ書いた場合は保存先の全量を返し、欠落したpreviewを読取結果の代わりにしない。"""
-    paths = [line.removeprefix("保存先: ").strip() for line in text.splitlines() if line.startswith("保存先: ")]
-    if len(paths) == 1:
-        path = pathlib.Path(paths[0])
-        if path.is_absolute():
-            try:
-                return path.read_text(encoding="utf-8")
-            except OSError, UnicodeError:
-                return ""
-    return text

@@ -407,15 +407,17 @@ async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, 
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        explain = launch_requests._SHARE_DIRECTORY / "pick-wi-explain.subagent.md"
+        explore_role = launch_requests._SHARE_DIRECTORY / "bulk-replace-review.subagent.md"
 
         response = await mcp_tools.start(
-            str(tmp_path), subagent_md_path=str(explain), extra_params=_observed_input_params(explain.name, tmp_path)
+            str(tmp_path),
+            subagent_md_path=str(explore_role),
+            extra_params=_observed_input_params(explore_role.name, tmp_path),
         )
 
         shown = await manager.show_session(response["session_id"])
         assert shown["launch_kind"] == "explore"
-        assert shown["model_type"] == "chores_fast"
+        assert shown["model_type"] == "review_fast"
 
 
 @pytest.mark.asyncio
@@ -498,7 +500,6 @@ async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPat
         "exec.subagent.md",
         "external-write-review.subagent.md",
         "lane-integration.subagent.md",
-        "pick-wi-explain.subagent.md",
         "reader-fit-review.subagent.md",
         "session-termination.subagent.md",
     ],
@@ -644,7 +645,7 @@ async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.Monk
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-state")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    session_area = _managed_temp.create_managed_temp("session", session_id="caller-session")
+    session_area = _managed_temp.resolve_session_temp("caller-session")
     (session_area / "work-contract.md").write_text("目的: 引き継ぎ記録先の自動用意を確かめる\n", encoding="utf-8")
     task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
     input_lines = [
@@ -983,11 +984,10 @@ def test_every_task_role_has_engineering_model_type() -> None:
         ("external-write-review", "review_fast"),
         ("reader-fit-review", "review_fast"),
         ("refine-prompt", "chores"),
-        ("pick-wi-explain", "chores_fast"),
     ],
 )
 @pytest.mark.asyncio
-async def test_public_start_resolves_all_fifteen_roles_to_required_engineering_stage(tmp_path, monkeypatch, role, expected):
+async def test_public_start_resolves_all_fourteen_roles_to_required_engineering_stage(tmp_path, monkeypatch, role, expected):
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "role", "status": "running", "label": role}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     additional_inputs = {
@@ -1233,7 +1233,7 @@ async def test_reader_fit_start_rejects_mismatched_materials(
         current.write_text("一\n改\n三\n", encoding="utf-8")
         materials["今回差分"] = other["今回差分"]
     elif defect == "scope-as-full":
-        # reader-fit-prepareの帰属限定差分の形（行位置を持たない@@）を全差分として渡す。
+        # 計画別に帰属を限定した差分の形（行位置を持たない@@）を全差分として渡す。
         pathlib.Path(materials["今回差分"]).write_text("--- a/guide.md\n+++ b/guide.md\n@@\n-二\n+改\n", encoding="utf-8")
     elif defect == "stale-current":
         current.write_text("一\n未commitの別の版\n三\n", encoding="utf-8")
@@ -1410,8 +1410,6 @@ async def test_start_rejects_reader_material_defects_before_launch(
         ("external-write-review", "文面ファイル"),
         ("external-write-review", "根拠の所在"),
         ("bulk-replace-review", "差分ファイル"),
-        ("pick-wi-explain", "説明対象の選定結果の出力先ファイル"),
-        ("pick-wi-explain", "activeなWI本文の保存先"),
     ],
 )
 @pytest.mark.asyncio

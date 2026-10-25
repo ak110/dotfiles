@@ -8,24 +8,84 @@ import pathlib
 import re
 import shlex
 import stat
+import subprocess
 import types
 
 import pytest
 
-from agent_toolkit import atk
 from agent_toolkit._hooks import pretooluse
-from agent_toolkit._hooks.pretooluse import dispatch, large_reads, operation_skills
-from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read
+from agent_toolkit._hooks.pretooluse import confirmation_reads, dispatch, large_reads, operation_skills
+from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read, sed_read_range
 
 _THRESHOLD = 48 * 1024
 
 
-@pytest.mark.parametrize("launcher", ["atk", "C:/tools/atk.cmd", r"'C:\tools\atk.cmd'", "atk.py"])
-def test_atk_launcher_read_paths_share_operand_contract(tmp_path, launcher):
-    """全ランチャーのread-fileが同じ読取対象を返す。"""
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("sed -n p note.md", ("note.md", 1, None)),
+        ("sed -n '1,$p' -- note.md", ("note.md", 1, None)),
+        ("sed -n '3p' note.md", ("note.md", 3, 3)),
+        ("sed -n '2,40p' -- note.md", ("note.md", 2, 40)),
+        ("/usr/bin/sed -n '5,$p' note.md", ("note.md", 5, None)),
+        ("sed -n '0,4p' note.md", None),
+        ("sed -n '1,4p' -x note.md", None),
+        ("sed -n '1,4p' -- a.md b.md", None),
+        ("sed -n '1,4w out' note.md", None),
+        ("sed -n '/x/p' note.md", None),
+        ("sed '1,4p' note.md", None),
+        ("sed -n '1,4p' -note.md", None),
+    ],
+)
+def test_sed_read_range_accepts_only_static_line_ranges(command, expected):
+    """終端の有無によらず静的な行範囲だけを読取として解析し、書込や複数ファイルを含む形を除く。"""
+    assert sed_read_range(shlex.split(command)) == expected
+
+
+@pytest.mark.parametrize("separator", ["", "-- "])
+def test_sed_range_read_paths_share_operand_contract(tmp_path, separator):
+    """終端の有無によらず、行範囲の読取が同じ読取対象を返す。"""
     target = tmp_path / "note.md"
-    command = f"{launcher} read-file -- {shlex.quote(str(target))}"
+    command = f"sed -n '2,4p' {separator}{shlex.quote(str(target))}"
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
+    assert not list(bash_read_paths(command, str(tmp_path)))
+
+
+@pytest.mark.parametrize("separator", [[], ["--"]])
+def test_same_range_reads_reach_all_three_consumers(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, separator: list[str]
+) -> None:
+    """同じ行範囲の読取入力から大量読取・確認資料・commit資料の各消費側が対象パスを認識する。"""
+    root = pathlib.Path(large_reads.__file__).resolve().parents[3]
+    targets = [
+        root / "skills/user-confirmation-and-report/references/approval-scope.md",
+        root / "skills/user-confirmation-and-report/references/choice-construction.md",
+        root / "skills/commit/references/message.md",
+    ]
+    command = "; ".join(shlex.join(["sed", "-n", "1,400p", *separator, str(path)]) for path in targets)
+    assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(path,) for path in targets]
+    # この識別処理自体が指定された消費側であり、実在するcommit資料を渡して判定する。
+    assert dispatch._reads_commit_message_rules(command, str(tmp_path))  # pylint: disable=protected-access
+    entries = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "tool_use", "id": "read-references", "name": "Bash", "input": {"command": command}}]
+            },
+        },
+        {
+            "type": "user",
+            "message": {"content": [{"type": "tool_result", "tool_use_id": "read-references", "content": "取得済み"}]},
+        },
+    ]
+    transcript = tmp_path / "reads.jsonl"
+    transcript.write_text("\n".join(json.dumps(entry) for entry in entries), encoding="utf-8")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    payload = {"transcript_path": str(transcript), "cwd": str(tmp_path)}
+    assert confirmation_reads.unread_reference_warning(payload, "AskUserQuestion") is None
+    transcript.write_text("", encoding="utf-8")
+    assert confirmation_reads.unread_reference_warning(payload, "AskUserQuestion") is not None
 
 
 @pytest.mark.parametrize(
@@ -70,11 +130,9 @@ def test_python_heredoc_write_uses_invocation_cwd(tmp_path):
     "command",
     [
         "sed -n '2,3p' large.txt",
-        "atk read-file -- large.txt",
-        "atk read-file --start 0 --max-bytes 12000 -- large.txt",
-        "atk read-file --max-bytes=12000 --start=0 -- large.txt",
-        "atk read-file -- large.txt --start 0 --max-bytes 12000",
-        "atk read-file -- large.txt --max-bytes=12000 --start=0",
+        "sed -n '2,3p' -- large.txt",
+        "sed -n '5p' large.txt",
+        "sed -n '2,$p' -- large.txt",
     ],
 )
 def test_partial_delivery_keeps_large_read_trigger_unchanged(tmp_path: pathlib.Path, command: str) -> None:
@@ -149,7 +207,7 @@ def test_full_read_options_and_delivery(tmp_path: pathlib.Path, command: str) ->
     notice = _codex_read(value, tmp_path)
     assert notice is not None
     assert "合計: 51200バイト" in notice
-    assert "atk read-file" in notice
+    assert "sed -n '<開始行>,<終了行>p' -- " in notice
 
 
 @pytest.mark.parametrize(
@@ -208,11 +266,16 @@ def _codex_read(command: str, cwd: pathlib.Path) -> str | None:
     return check_large_bash_read(command, str(cwd), is_codex=True)
 
 
-def _read_file_response(output: str) -> tuple[dict, str]:
-    """read-fileのメタデータと無加工本文を分ける。"""
-    metadata, separator, body = output.partition("\n")
-    assert separator
-    return json.loads(metadata), body
+def _sed_chunks(path: pathlib.Path, chunk: int, cwd: pathlib.Path) -> bytes:
+    """通知の行数単位で`sed -n`を末尾の行まで進め、取得した出力を連結する。"""
+    total = len(path.read_bytes().splitlines(keepends=True))
+    parts: list[bytes] = []
+    for start in range(1, total + 1, chunk):
+        command = shlex.join(["sed", "-n", f"{start},{start + chunk - 1}p", "--", str(path)])
+        assert _codex_read(command, cwd) is None
+        parts.append(subprocess.run(shlex.split(command), check=True, capture_output=True).stdout)
+    assert len(parts) == -(-total // chunk)
+    return b"".join(parts)
 
 
 def test_codex_byte_threshold_boundary(tmp_path: pathlib.Path) -> None:
@@ -225,64 +288,39 @@ def test_codex_byte_threshold_boundary(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize("single_line", [False, True])
-def test_block_notice_leads_to_read_file(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], single_line: bool) -> None:
-    """通知から示した公開コマンドだけで、長い単一行を含む全文を復元する。"""
+def test_block_notice_leads_to_sed_ranges(tmp_path: pathlib.Path, single_line: bool) -> None:
+    """通知が示した行範囲の取得だけで、長い単一行を含む全文を復元する。"""
     path = _sized_file(tmp_path / "with space", _THRESHOLD + 300, line_bytes=100000 if single_line else 100)
     notice = _codex_read(f"cat {shlex.quote(str(path))}", tmp_path)
     assert notice is not None
-    command = re.search(r"`(atk read-file -- [^`]+)`", notice)
-    assert command is not None
-    argv = shlex.split(command.group(1))
-    parts: list[str] = []
-    while True:
-        assert _codex_read(shlex.join(argv), tmp_path) is None
-        with pytest.raises(SystemExit, match="0"):
-            atk.main(argv[1:])
-        captured = capsys.readouterr()
-        assert not captured.err
-        assert len(captured.out.encode("utf-8")) <= 16384
-        result, body = _read_file_response(captured.out)
-        parts.append(body)
-        if result["eof"]:
-            break
-        argv = ["atk", "read-file", "--start", str(result["next"]), "--", str(path)]
-    assert "".join(parts).encode("utf-8") == path.read_bytes()
+    first = re.search(r"`(sed -n '1,(\d+)p' -- [^`]+)`", notice)
+    assert first is not None
+    assert shlex.split(first.group(1))[-1] == str(path)
+    chunk = int(first.group(2))
+    assert f"`sed -n '{chunk + 1},{2 * chunk}p' -- {shlex.quote(str(path))}`" in notice
+    assert _sed_chunks(path, chunk, tmp_path) == path.read_bytes()
 
 
 @pytest.mark.parametrize("multiple", [False, True])
-def test_notice_continuation_commands_roundtrip_utf8(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], multiple: bool
-) -> None:
-    """共通テンプレートにも引用した実パスを入れ、日本語とCRLFを終端まで復元する。"""
+def test_notice_range_commands_roundtrip_utf8(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, multiple: bool) -> None:
+    """引用した実パスとテンプレートの行範囲取得で、日本語とCRLFを末尾の行まで復元する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
     paths = [tmp_path / "file's name.txt", *([tmp_path / "second file.txt"] if multiple else [])]
     for index, path in enumerate(paths):
         path.write_bytes((f"本文{index}\r\n" * 3000).encode("utf-8"))
     notice = _codex_read(shlex.join(["cat", *map(str, paths)]), tmp_path)
     assert notice is not None
-    initial = re.findall(r"`(atk read-file -- [^`]+)`", notice)
-    continuations = re.findall(r"`(atk read-file --start <next> -- [^`]+)`", notice)
     if multiple:
-        assert len(initial) == len(continuations) == 1
-        initial = [initial[0].replace("<必要なファイルの絶対パス>", shlex.quote(str(path))) for path in paths]
-        continuations = [continuations[0].replace("<同じファイルの絶対パス>", shlex.quote(str(path))) for path in paths]
-    assert len(initial) == len(continuations) == len(paths)
-    for path, first, continuation in zip(paths, initial, continuations, strict=True):
-        assert shlex.split(continuation)[-1] == str(path)
-        argv = shlex.split(first)
-        parts: list[str] = []
-        while True:
-            with pytest.raises(SystemExit, match="0"):
-                atk.main(argv[1:])
-            result = capsys.readouterr()
-            assert not result.err
-            response, body = _read_file_response(result.out)
-            parts.append(body)
-            if response["eof"]:
-                break
-            argv = shlex.split(continuation.replace("<next>", str(response["next"])))
-        assert len(parts) > 1
-        assert "".join(parts).encode("utf-8") == path.read_bytes()
+        template = re.findall(r"`(sed -n '<開始行>,<終了行>p' -- <必要なファイルの絶対パス>)`", notice)
+        assert len(template) == 1
+        chunk = 1000
+    else:
+        first = re.search(r"`sed -n '1,(\d+)p' -- ([^`]+)`", notice)
+        assert first is not None
+        assert shlex.split(first.group(2)) == [str(paths[0])]
+        chunk = int(first.group(1))
+    for path in paths:
+        assert _sed_chunks(path, chunk, tmp_path) == path.read_bytes()
 
 
 @pytest.mark.parametrize("change", ["cd", "pushd"])
@@ -384,7 +422,7 @@ def test_dispatch_codex_warns_and_allows_bash_full_read(tmp_path: pathlib.Path, 
     message = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
     assert not captured.err
     assert str(target) in message
-    assert "atk read-file -- " in message
+    assert "sed -n '1," in message
     assert 'kind="warn"' in message
     assert "内側コマンドと外側セル" in message
 
@@ -414,7 +452,7 @@ def test_large_original_record_is_guided_to_evidence_query(
     assert not captured.err
     assert "session-review-evidence" in captured.out
     assert "--transcript" in captured.out
-    assert "atk read-file" not in captured.out
+    assert "sed -n '" not in captured.out
 
 
 @pytest.mark.parametrize("multiple", [False, True])
@@ -435,4 +473,4 @@ def test_large_read_notice_keeps_recovery_without_generic_fallback(tmp_path, mon
         assert "session-review-evidence" in notice
         assert "--transcript" in notice
     else:
-        assert "atk read-file" in notice and "eof" in notice
+        assert "sed -n '" in notice and "末尾の" in notice

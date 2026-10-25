@@ -19,7 +19,6 @@ push先、更新ref、run監視、証拠の一時保存と後始末は`agent-too
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/exec-review-recording.md#「受理済み判定への参照」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「受理済み判定への参照」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/session-termination.subagent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md#「失敗の性質による分類」` | 判断 | `section:agent-basics:*/skills/bugfix/references/ci-failure-handling.md#「失敗の性質による分類」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md#「対処選択肢と判定基準」` | 判断 | `section:agent-basics:*/skills/bugfix/references/ci-failure-handling.md#「対処選択肢と判定基準」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md#「分類判定の補助」` | 判断 | `section:agent-basics:*/skills/bugfix/references/ci-failure-handling.md#「分類判定の補助」` |
@@ -64,7 +63,7 @@ push先、更新ref、run監視、証拠の一時保存と後始末は`agent-too
 
 ### 修正系列
 
-計画を基準とする後続の実行レビューには、計画の進捗ログに保存された読取可能な受理済み証拠の絶対パスを任意入力`受理済みの完成条件証拠`として渡す（無ければ`なし`）。使える条件は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」に従う。受領確認を終えた新しい証拠の所在も同じ進捗ログへ保存し、修正系列の後続起動から到達できるようにする。
+計画を基準とする後続の実行レビューには、計画の進捗ログに保存された読取可能な受理済みの実行レビュー返却のファイルの絶対パスを任意入力`受理済みの完成条件証拠`として渡す（無ければ`なし`）。使える条件は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」に従う。受領確認を終えた新しい返却の所在も同じ進捗ログへ保存し、修正系列の後続起動から到達できるようにする。
 
 最初のCI失敗（公開工程では全体検証の失敗を含む）からCIの成功か工程の終端までを「修正系列」と呼ぶ。修正の回数、CI記録、レビュー指摘管理表、`修正系列の開始時のHEAD`はこの単位で引き継ぎ、原因commitが変わっても回数を継続する。回数は是正した失敗に対応する修正の数で数え、原因commitへ取り込んだ修正（`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の「原因commitへ取り込む区分」）も1回とする。取り込んだ場合、`exec-review`へ渡す`原因commitOID`は書き換え後の履歴で解決できる値とし、書き換え前後のOIDの対応と`git range-diff`の結果をCI記録へ残す。
 
@@ -83,7 +82,7 @@ push先、更新ref、run監視、証拠の一時保存と後始末は`agent-too
 ### 公開工程の終端担当が扱うCI修正
 
 `agent-toolkit:process-wi`の公開工程のCI修正は公開工程の中で完了させ、新しい計画ファイル（バグ）は作成しない。
-終端担当は7項目のCI記録を保持し、主作業ツリーを対象とする`CI修正担当`へ修正させる（本節冒頭の、自ら修正する一般則の例外。手順は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`）。
+終端担当は7項目のCI記録を保持し、主作業ツリーを対象とする`CI修正担当`へ修正させる（本節冒頭の、自ら修正する一般則の例外。手順は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`。所在参照）。
 全体検証の失敗も同じ修正系列に数え、`exec-review`の起動条件と起動しない修正の前提は「修正系列」と同じとする。
 各修正commitの後に版数とmanifestを再判定して再push、CI確認へ戻り、再push後の失敗では新しい原因commitについて対応する計画の有無を判定し直す。
 

@@ -23,7 +23,6 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/external-write-review.subagent.md` | 判断 | `read:agent-toolkit:*/share/external-write-review.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/reviewee.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 
@@ -40,7 +39,7 @@ private-notesのWI本文も対象外であり、`agent-toolkit:wi-standards`と`
 ```
 
 `agent-toolkit:external-write-review`の対象となる文面を投稿するエージェントが、本書に従って投稿前レビュー担当を起動し、結果を受領する。
-レビュー担当の観点と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/external-write-review.subagent.md`が定める。
+レビュー担当の観点と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/external-write-review.subagent.md`が定める（所在参照）。
 
 ### 起動
 

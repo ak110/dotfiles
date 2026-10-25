@@ -306,7 +306,7 @@ async def test_public_start_returns_label_of_started_session(
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-state")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    session_area = _managed_temp.create_managed_temp("session", session_id="caller-session")
+    session_area = _managed_temp.resolve_session_temp("caller-session")
     (session_area / "work-contract.md").write_text("目的: 起動したセッションのラベルの返却を確かめる\n", encoding="utf-8")
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -773,7 +773,7 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         exec_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
         exec_params = {**_observed_input_params(exec_document.name, tmp_path), "レーン識別子": "lane-01"}
-        explain_document = launch_requests._SHARE_DIRECTORY / "pick-wi-explain.subagent.md"
+        explain_document = launch_requests._SHARE_DIRECTORY / "external-write-review.subagent.md"
         explain_params = _observed_input_params(explain_document.name, tmp_path)
 
         labels = {
@@ -782,7 +782,7 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
                 str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params
             ),
             "named": await mcp_tools.start(
-                str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params, label="選定理由の説明"
+                str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params, label="投稿前の確認"
             ),
             "blank": await mcp_tools.start(
                 str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params, label="   "
@@ -798,9 +798,9 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
         shown = {key: (await manager.show_session(response["session_id"]))["label"] for key, response in labels.items()}
         assert shown == {
             "lane": "lane-01-exec",
-            "explain": "pick-wi-explain",
-            "named": "選定理由の説明",
-            "blank": "pick-wi-explain",
+            "explain": "external-write-review",
+            "named": "投稿前の確認",
+            "blank": "external-write-review",
             "shell": "shell-make",
             "shell_path": "shell-git",
             "explore": "explore",

@@ -558,6 +558,36 @@ async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Pat
 
 
 @pytest.mark.asyncio
+async def test_root_writer_activates_when_temporary_file_vanishes_after_listing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """列挙した自身の名前の一時ファイルが削除前に消えても、起動時の不要ファイルの削除を続けて起動する。"""
+    writer = subject.StatusFileWriter(
+        {},
+        shared_roots.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    directory = shared_layout.status_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    vanished = directory / ".root.json.renamed.tmp"
+    original_glob = pathlib.Path.glob
+
+    def glob_listing_vanished(self: pathlib.Path, pattern: str, **kwargs: typing.Any) -> typing.Iterator[pathlib.Path]:
+        if self == directory and pattern == ".root.json.*.tmp":
+            return iter([vanished])
+        return original_glob(self, pattern, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "glob", glob_listing_vanished)
+
+    writer.activate()
+    try:
+        assert writer.path.exists()
+    finally:
+        writer.deactivate()
+
+
+@pytest.mark.asyncio
 async def test_writer_removes_state_file_with_expired_heartbeat(tmp_path: pathlib.Path) -> None:
     """生存の印が失効した他の状態ファイルを削除する。"""
     directory = shared_layout.status_directory("root", tmp_path)

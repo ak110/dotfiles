@@ -113,8 +113,7 @@ AWIは`agent-toolkit:wi-standards`「通常AWIの本文」、UWIは`references/u
 
 各要求の本文を他の要求から独立して`drafting-completion.md`「投入前の読み直し」で読み直し、あわせて次を確かめる。不合格の本文は修正して再チェックする。
 
-同時に準備できる引用付きAWIは、`atk run-script wi-draft-prepare -- <共通入力JSONの絶対パス> --target-repo <worktreeの絶対パス> --output-dir <managed-temp内の新しいディレクトリ>`でまとめる。入力は共通の`source`（保存済みuser-events）・`要求と出所`・`成立性の証拠`と、`原稿群`の配列とする。各原稿は`要求識別子`・`原稿`・`引用選択`を持ち、選択のrecord・line・任意のsequence・mode・範囲はwi-quote-checkと同じ契約を使う。選択のsourceは共通値を省略できる。取り込む意味と原稿本文はエージェントが確定し、位置計算・引用取込・冒頭抽出・公開dry-run・レビュー対応表は同じ準備結果から使う。
-出力JSONの`原稿`・`要求と出所`・`成立性の証拠`を投入前レビューへそのまま渡す。checks.jsonは対象・出所・範囲・成否・診断を保持する。正常な引用検証は原文を再表示せず、必要な全文は原記録かwi-quote-checkの`--detail`で取得する。生成後に原稿が変わった場合は変更した原稿を準備し直す。既存の単体wi-quote-checkとdry-runも使える。
+同時に準備する複数の原稿も、原稿ごとに次の確認と`atk wi add --dry-run`・`atk wi edit --dry-run`を行う。引用付きAWIの引用節は`atk run-script wi-quote-check -- --import-spec <選択JSONの絶対パス> <原稿の絶対パス>`で取り込み、選択のsource・record・line・任意のsequence・modeは同コマンドの`--help`の契約に従う。取り込む意味と原稿本文はエージェントが確定する。正常な引用検証は原文を再表示せず、必要な全文は原記録かwi-quote-checkの`--detail`で取得する。原稿・要求と出所・成立性の証拠は自分のセッションのmanaged-temp内のファイルへ保存し、そのパスを投入前レビューへ直接渡す。準備後に原稿が変わった場合は、変更した原稿の確認とdry-runをやり直す。
 
 - 前節の起草時の条件（要求単位と引用位置の対応、原文のフェンス内保持、送達済みの質問だけへの回答済み注記、完成条件と後続工程の手段の根拠）が本文に成立する。逐語本文が原文と一致することは`atk run-script wi-quote-check`の取り込みで確かめ、取り込み後に引用節を編集した場合は同じスクリプトへ`--source`を渡して確かめる。コマンド・終了コード・出力を証拠へ含める
 - 完成条件ごとに同一セッションで自己観測できる手段を確かめ、例外は`awi-body.md`「完成条件」に従って根拠を`## 実現性`へ残した

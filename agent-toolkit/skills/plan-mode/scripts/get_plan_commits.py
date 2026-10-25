@@ -13,7 +13,7 @@ import append_progress_log
 
 
 def main(argv: list[str] | None = None) -> int:
-    """`plan-progress --get-commits`と同じ処理で、既存の記録・Git実体・対象集合を判定して対応を取得する。"""
+    """`plan-progress`と同じ記録の解釈で、既存の記録・Git実体・対象集合を判定して対応を取得する。"""
     return append_progress_log.main(sys.argv[1:] if argv is None else argv, description=__doc__, retrieval=True)
 
 

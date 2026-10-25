@@ -6,8 +6,7 @@ import re
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy from pyfltr.colloquial import check as colloquial
 
-from agent_toolkit._atk import managed_temp, outcome, output_file
-from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk import outcome
 
 _DASH = re.compile("—|―|──")
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
@@ -19,6 +18,7 @@ _BODY_WARNING_CONTEXT = re.compile(
     r'^警告: WI本文の表記診断: 入力元="(?:[^"\\]|\\.)*" 論理本文:\d+:\d+: (?:口語表現|ダッシュ) '
 )
 _BODY_WARNING_SUMMARY = re.compile(r"^警告: " + re.escape(_SUMMARY_PREFIX) + r"[1-9]\d*件(?:\s|$)")
+"""件数だけの要約行。現行版は書かないが、過去の記録を読むsession-reviewが同じ診断として識別する。"""
 
 
 def is_body_style_diagnostic_warning(text: str) -> bool:
@@ -65,20 +65,6 @@ def warnings_for_body(body: str, *, source: str = "本文入力") -> list[str]:
 
 
 def report_warnings(warnings: list[str], *, next_action: str) -> None:
-    """エージェントには診断の全量を保存し、件数・保存先・続行可否を返す。"""
-    if not warnings:
-        return
-    details = "\n警告: ".join(warnings)
-    if is_agent_environment():
-        try:
-            path = output_file.save_text(
-                details + "\n", lambda: managed_temp.create_output_temp("atk-diagnostics"), filename="stderr.txt"
-            )
-        except Exception as error:  # noqa: BLE001  # 診断保存の失敗でも本来の詳細と結果を保持する
-            outcome.report_warning(
-                f"表記診断を保存できないため全量を表示する: {error}\n警告: {details}", next_action=next_action
-            )
-        else:
-            outcome.report_warning(f"{_SUMMARY_PREFIX}{len(warnings)}件\n標準エラー保存先: {path}", next_action=next_action)
-    else:
-        outcome.report_warning(details, next_action=next_action)
+    """診断の全量を標準エラーへ直接書く。長い場合はエージェント環境の共通の保存機構が全量を保存する。"""
+    if warnings:
+        outcome.report_warning("\n警告: ".join(warnings), next_action=next_action)

@@ -154,7 +154,7 @@ def _definition_read_operations(
             if any(char in words[0] for char in "$`*?[]{}"):
                 unresolved.append({**original, "reason": "実行するコマンドに動的展開がある"})
                 continue
-            if executable in {"atk", "atk.cmd"} or executable.endswith("/atk"):
+            if shell_tokens.is_atk_command(words):
                 if args[:1] != ("read-file",):
                     continue
                 args = args[1:]
@@ -316,7 +316,7 @@ def _expected_body_read(tool: str, inputs: dict[str, Any]) -> bool:
     if not argv:
         return False
     executable = pathlib.PurePosixPath(argv[0]).name
-    return executable == "cat" or executable in {"atk", "atk.cmd"} and argv[1:2] == ["read-file"]
+    return executable == "cat" or shell_tokens.is_atk_command(argv) and argv[1:2] == ["read-file"]
 
 
 def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:

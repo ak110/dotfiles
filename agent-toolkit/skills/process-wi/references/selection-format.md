@@ -12,7 +12,7 @@ all-reposでも各リポジトリ担当が自分の取得済み候補から作�
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
+| レーン担当が返した書込対象の追加を受領する時 | `../../../share/exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「統合とAWI終端」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「統合とAWI終端」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
 

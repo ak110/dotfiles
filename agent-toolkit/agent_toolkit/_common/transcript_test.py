@@ -4,10 +4,8 @@ import json
 import pathlib
 
 from agent_toolkit._common.transcript import (
-    assistant_text,
     iter_latest_assistant_messages,
     iter_latest_assistant_text_messages,
-    latest_main_assistant_entry,
 )
 from agent_toolkit._testing.helpers import _write_transcript
 
@@ -201,64 +199,3 @@ class TestIterLatestAssistantTextMessages:
 
         assert not list(iter_latest_assistant_text_messages(str(transcript)))
         assert not list(iter_latest_assistant_text_messages(str(tmp_path / "missing.jsonl")))
-
-
-class TestLatestMainAssistantEntry:
-    """末尾エントリ取得の単体テスト。"""
-
-    def test_returns_entry_with_top_level_flag(self, tmp_path: pathlib.Path):
-        """APIエラーエントリの後に`system`エントリが続いてもエントリ全体を返し、トップレベルフラグを保持する。"""
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("質問"),
-                _api_error_entry("The model's tool call could not be parsed (retry also failed)."),
-                _system_entry(),
-            ],
-        )
-        entry = latest_main_assistant_entry(str(transcript))
-        assert entry is not None
-        assert entry["isApiErrorMessage"] is True
-
-    def test_excludes_sidechain(self, tmp_path: pathlib.Path):
-        """末尾がsidechainのassistantなら遡って非sidechainのassistantを返す。"""
-        sidechain_entry = {
-            "type": "assistant",
-            "isSidechain": True,
-            "message": {"id": "side", "role": "assistant", "content": [_text_block("sub")], "stop_reason": "end_turn"},
-        }
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _assistant_entry([_text_block("回答")], msg_id="m1"),
-                sidechain_entry,
-            ],
-        )
-        entry = latest_main_assistant_entry(str(transcript))
-        assert entry is not None
-        assert entry["message"]["id"] == "m1"
-
-    def test_returns_none_without_assistant(self, tmp_path: pathlib.Path):
-        """assistantエントリが無ければNoneを返す。"""
-        transcript = _write_transcript(tmp_path, [_user_entry("質問")])
-        assert latest_main_assistant_entry(str(transcript)) is None
-
-    def test_returns_none_for_missing_path(self, tmp_path: pathlib.Path):
-        """空文字列パス・存在しないパスはNoneを返す。"""
-        assert latest_main_assistant_entry("") is None
-        assert latest_main_assistant_entry(str(tmp_path / "missing.jsonl")) is None
-
-
-class TestAssistantText:
-    """message dictからのテキスト抽出の単体テスト。"""
-
-    def test_concatenates_text_blocks(self):
-        message = {"content": [_text_block("a"), {"type": "tool_use", "name": "x"}, _text_block("b")]}
-        assert assistant_text(message) == "ab"
-
-    def test_returns_string_content_as_is(self):
-        assert assistant_text({"content": "plain"}) == "plain"
-
-    def test_returns_empty_for_non_dict(self):
-        assert assistant_text(None) == ""
-        assert assistant_text([]) == ""

@@ -170,7 +170,7 @@ def _original_record(tmp_path: pathlib.Path, root_kind: str, monkeypatch: pytest
         "rg",
         "grep-pattern-option",
         "head",
-        "read-file",
+        "sed-without-terminator",
         "relative",
         "substitution",
         "inline-open",
@@ -197,7 +197,7 @@ def test_original_record_access_is_guided_through_shared_pretooluse(
         "rg": f"rg -n -F -- assistant {quoted}",
         "grep-pattern-option": f"grep -e assistant -- {quoted}",
         "head": f"head -n 2 {quoted}",
-        "read-file": f"atk read-file --max-bytes 12000 -- {quoted}",
+        "sed-without-terminator": f"sed -n '3,$p' {quoted}",
         "relative": f"cd {shlex.quote(str(path.parent))} && cat {shlex.quote(path.name)}",
         "substitution": f"printf '%s' \"$(cat {quoted})\"",
         "inline-open": "python3 -c " + shlex.quote(f"open({str(path)!r}).read()"),
@@ -399,7 +399,7 @@ def test_commit_message_file_is_read_once_for_format_and_attribution(
     assert reads == 1
 
 
-@pytest.mark.parametrize("reader", ["cat --", "sed -n '1,200p'", "awk '{print}'", "atk read-file --"])
+@pytest.mark.parametrize("reader", ["cat --", "sed -n '1,200p'", "sed -n '1,200p' --", "awk '{print}'"])
 def test_commit_rules_read_delivers_observed_trailer_and_allows_same_turn_commit(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

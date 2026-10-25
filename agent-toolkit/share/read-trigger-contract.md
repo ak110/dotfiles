@@ -21,7 +21,7 @@
 - 共有の`<役割名>.parent.md`を持たない役割は、役割文書の`<!-- parent-read-source: agent-toolkit:/<資料>#<見出し> -->`で起動・受領契約の所有者を宣言する。同じ役割の全呼出元が共有する固定契約だけを指し、条件付きで挙げる詳細資料は所有文書の読込表に従う。
 - `資料選択子`は次の値を受け取る。`modified-agent-documents`・`role-contract`・`review-reference`・`external-pytilpack-index`・`artifact-standards`・`same-document`・`project-skill`・`input:<入力名>`である。入力不足と未対応の取得対象は診断として返す。
 
-`input:作業契約`は通常task・delegateの公開入力`whole_contract_path`または既存の正式な解決結果へ接続する。解決した現行本文を起動promptへ入れ、実在パス・本文hash・入力識別子を共通のstartup-documentで渡す。受領側は同じ入力から圧縮後に再配送する。
+`input:作業契約`は通常task・delegateの公開入力`whole_contract_path`または既存の正式な解決結果へ接続する。解決した現行本文を起動promptへ含め、実在パス・本文hash・入力識別子を共通のstartup-documentで渡す。受領側は同じ入力から圧縮後に再配送する。
 `project-skill`は呼出側が確定してReadか静的な全文読取へ渡したSKILL.mdの実体を使う。`.claude/skills/`と`.agents/skills/`の取得入力を認識し、リンク先の実体を共通の資料識別へ使う。最初のSKILL.md取得の再発行前に起動時資料を届け、取得したスキルの宣言を後続操作へ適用する。指定節と条件を保持し、実体の選択を自然文から推測しない。`resolved-project-skill:<絶対パス>`は選択したスキルの実体を保持し、圧縮後にも同じ宣言を読む。
 
 Antigravityの公式生成形は同階層のagent-toolkit-agyとagent-basics-agyを使い、manifestの論理名を保持する。長文SKILLの短いSKILL.mdはread-sourceで生成全文資料へ接続する。生成全文資料の相対参照は元のSKILLディレクトリを基点とし、元のSKILLと同じ識別子で取得済み状態と指定節を確かめる。rootは正式な生成配置でmanifestの論理名と指定名が一致する実体へ解決する。
@@ -33,6 +33,6 @@ Antigravityの公式生成形は同階層のagent-toolkit-agyとagent-basics-agy
 共通のPreToolUseは宣言に合致した操作へ必要な本文を追加文脈で届ける。資料不足は警告として返し、通常の読取・診断・結果回収を継続できる。資料の取得状態と、実害を防ぐ操作ごとの遮断はそれぞれの条件で判定する。
 取得は主体・資料の内容hash・節範囲に結び付ける。本文不在、失敗、途中省略、別主体の取得は取得済みとしない。圧縮後は取得状態をリセットし、保持した対象範囲を次の操作前に取り戻す。
 資料の不在、未知の語彙、見出しの不在と重複、条件付き参照の到達手順の欠落はCIの宣言チェックで拒否する。
-`atk read-file --section <見出し指定> -- <絶対パス>`は指定範囲を取得する。継続位置はその範囲内の文字位置で、`eof: true`まで取得する。
+節の取得はhookが資料から算出して通知する行範囲を使い、`sed -n '<開始行>,<終了行>p' -- <絶対パス>`かReadの`offset`と`limit`で読む。長い範囲は開始行と終了行を進めて分割取得し、通知された範囲の全行を取得し終えるまで取得済みとしない。
 
 役割起動時の配送は受領プロンプトへ直接挿入する。通常の判断では選択基準の起動時配送と、選択した詳細資料の明示取得を使う。実装が観測するのは公開操作と配送本文であり、私的思考の開始ではない。

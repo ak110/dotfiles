@@ -93,12 +93,12 @@ COMMON_INVESTIGATION_INPUT = LiveInput(
 1. コマンド {git} を実行し、HEADとGit状態を取得する。
 2. コマンド {rg} を実行し、該当行番号と本文を取得する。
 3. コマンド {python} を実行し、Python標準ライブラリで分割取得した本文を得る。
-4. コマンド {atk} を実行し、read-fileの1行目のJSONにあるnextを使い、eofまで最初のLFより後ろの本文を連結する。
+4. コマンド {sed} を実行し、行範囲の本文を全行取得する。
 5. 読取MCPクライアントのコマンド {mcp} を実行する。
 入力資料のクライアントはpyfltr MCPサーバーとstdioで接続する。
 grepへpaths=[{file_json}]、pattern=P4_READ_、fixed_strings=true、summary_mode=count、no_exclude=trueを渡す。
-最終応答はhead、git_status、rg_lines、python_text、atk_text、mcp_countを持つJSONオブジェクトだけにする。
-headはOID、git_statusは文字列、rg_linesは行番号付きの文字列2件の配列、python_textとatk_textは全文、mcp_countは整数とする。""",
+最終応答はhead、git_status、rg_lines、python_text、sed_text、mcp_countを持つJSONオブジェクトだけにする。
+headはOID、git_statusは文字列、rg_linesは行番号付きの文字列2件の配列、python_textとsed_textは全文、mcp_countは整数とする。""",
     ),
     frozenset({"Bash"}),
 )
@@ -180,8 +180,7 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
     isolation.restore_host_environment(monkeypatch)
     models = {"claude": "claude:sonnet[1m]/medium", "codex": "codex:sol/medium", "agy": "agy:gemini-3.8-flash/medium"}
     python_code = f"import pathlib; s=pathlib.Path({str(source)!r}).read_text(encoding='utf-8'); print(s[:7]+s[7:], end='')"
-    atk = pathlib.Path(__file__).parents[1] / "scripts" / "atk"
-    mcp_spec = json.loads((atk.parents[1] / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
+    mcp_spec = json.loads((pathlib.Path(__file__).parents[1] / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
     prompt = COMMON_INVESTIGATION_INPUT.texts[0].format(
         git=(
             f"git -C {shlex.quote(str(repository))} rev-parse HEAD と "
@@ -189,7 +188,7 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
         ),
         rg=f"rg -n -F P4_READ_ {shlex.quote(str(source))}",
         python=f"{shlex.quote(sys.executable)} -c {shlex.quote(python_code)}",
-        atk=f"{shlex.quote(str(atk))} read-file -- {shlex.quote(str(source))}",
+        sed=f"sed -n '1,$p' -- {shlex.quote(str(source))}",
         mcp=" ".join(
             shlex.quote(value)
             for value in (sys.executable, str(repository / "input/pyfltr_mcp_read.py"), str(source), json.dumps(mcp_spec))
@@ -238,7 +237,7 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
                 entry["event_count"] = len(entry["tool_events"])
                 actual_events = entry["tool_events"][prior_count:]
                 tool_text = json.dumps(actual_events, ensure_ascii=False)
-                for command in ("git", "rg", "read-file", "python", "pyfltr"):
+                for command in ("git", "rg", "sed -n", "python", "pyfltr"):
                     assert command in tool_text, (command, actual_events)
                 # CLIが引数を省略した実記録でも、MCPの実返却値で件数を確認する。
                 assert "mcp" in tool_text.lower(), actual_events
@@ -264,7 +263,7 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
                     "git_status": "",
                     "rg_lines": ["1:P4_READ_ALPHA", "3:P4_READ_BETA"],
                     "python_text": text,
-                    "atk_text": text,
+                    "sed_text": text,
                     "mcp_count": 2,
                 }, value
                 entry["after"] = _investigation_snapshot(repository)

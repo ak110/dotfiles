@@ -12,7 +12,7 @@ const START_TEXT = '{"session_id": "s1", "status": "running"}';
 
 type Job = { id: string; prompt: string };
 
-// `atk wait-schedule --format json`が返すpromptの代わり。本文の内容はPython側の定義が持ち、modは受け取った本文をそのまま渡す。
+// `atk wait-schedule`が返すpromptの代わり。本文の内容はPython側の定義が持ち、modは受け取った本文をそのまま渡す。
 const SCHEDULE_PROMPT = `${PERIODIC_RECHECK_MARKER}\n定期再確認の発火である。\n</atk-auto>`;
 
 type Options = {
@@ -115,7 +115,7 @@ test("main start creates one task from json: taskを持たないメインのstar
   expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
   expect(recorded.created).toEqual([{ cron: "*/30 * * * *", prompt: SCHEDULE_PROMPT, recurring: true }]);
   const argv = recorded.argv[0] ?? [];
-  expect(argv.slice(-5)).toEqual(["wait-schedule", "--request-bucket", "main", "--format", "json"]);
+  expect(argv.slice(-1)).toEqual(["wait-schedule"]);
   expect(result.context?.length).toBe(1);
   expect(result.context?.[0]).toContain("task ID: cron-main");
   expect(result.context?.[0]).toContain('kind="notice"');

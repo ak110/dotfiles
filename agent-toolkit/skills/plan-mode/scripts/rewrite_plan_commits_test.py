@@ -355,6 +355,31 @@ def test_run_script_entry_rewrites_records(rebased: _Rebased, capsys: pytest.Cap
     assert commit_mapping.get_commits(rebased.repo, events, [WI_A], {WI_A}) == {WI_A: [short]}
 
 
+def test_run_script_entry_with_other_worktree_fails_without_writes(
+    rebased: _Rebased, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """記録のcommitを持たない別の作業ツリーを`--worktree`へ渡すと、公開名の起動は全記録を変えずに終了1となる。
+
+    診断の`次の操作:`は`--worktree`が対象作業ツリーを指すかの確認を示す。
+    """
+    other = rebased.repo.parent / "other"
+    other.mkdir()
+    git_repository.init_repository(other, initial_branch="main")
+    _commit(other, "other")
+    records = [rebased.plan, rebased.handoff, rebased.unaffected]
+    before = _snapshot(records)
+    argv = [
+        f"--worktree={other}" if arg.startswith("--worktree=") else arg
+        for arg in rebased.argv(rebased.range_map("a", "u", "b"))
+    ]
+
+    assert run_script.dispatch(argparse.Namespace(script_name="plan-rewrite", script_args=["--", *argv])) == 1
+
+    error = capsys.readouterr().err
+    assert "次の操作:" in error and "--worktreeが対象作業ツリーを指すか確かめて再実行する" in error
+    assert _snapshot(records) == before
+
+
 @pytest.mark.parametrize("location", ["working", "saved", "handoff"])
 def test_omitted_record_is_detected_before_any_writes(
     rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], location: str

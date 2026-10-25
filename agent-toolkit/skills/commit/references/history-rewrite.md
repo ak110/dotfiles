@@ -100,14 +100,7 @@ WIは保存ファイル名、OIDはGitで一意に解決できる値で書く。
 rebaseの競合解消で内容が変わった旧commitは、`history-compare`へ`--resolved-conflict <旧OID>`を反復指定する。
 同コマンドは件名、相対順と変更パス集合から一意な対応を検収し、指定の不足・不正と曖昧な対応では保存せず次の操作を示す。
 検収済みの同じ対応表を、後掲の`atk run-script plan-rewrite --`へ渡す（個別記録の更新では`atk run-script plan-progress --`の`--rewrite-map`）。
-未判定検証記録は実装担当が、完成条件証拠は実行レビュー担当が次の操作で参照を更新する。
-
-```sh
-atk run-script verification-record -- --output <未判定検証記録の絶対パス> --rewrite-map <対応表の絶対パス>
-atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --rewrite-map <対応表の絶対パス>
-```
-
-`exec-review-evidence-check --rewrite-map`と`verification-record --rewrite-map`が各記録のevidenceで書き換えるのは、現行成果物への`commit:<OID>`参照だけである（分割時は全対応先をそれぞれ`commit:`標識で残す）。裸のOID、過去の取得版（HEAD・git_head・比較元）、観測ファイル、判定とreviewed_headは保持する。既存の自由文を推測して標識へ移さず、曖昧・不正な入力は部分保存せず拒否する。OIDの対応だけで観測を新しい版へ適用せず、結果に作用する内容と条件が変わった行だけを再観測する。根拠共用のCOMMIT_REFERENCEはこの更新とは別の責務として維持する。
+実行レビューの再レビューへは同じ対応表を`rewrite_map`として渡し、実行レビュー担当が新しいHEADで完成条件を判定し直す。実装担当の`検証結果`は、OIDの対応だけで観測を新しい版へ適用せず、結果に作用する内容と条件が変わった検証だけを取り直し、他は取得時のHEADと適用理由を書く。
 
 書換え直前のHEADと対応表を、書換え範囲のcommitを参照する作業中・保存済みの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す（記録・worktree・対応表は絶対パス、`--rewrite-map`はファイルパス）。同じ修正系列で書換えを繰り返す間は毎回同じ記録の集合を渡す。
 

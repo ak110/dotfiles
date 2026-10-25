@@ -12,7 +12,6 @@ required_inputs:
 - 書込担当一覧
 optional_inputs:
 - 完成条件証拠
-- 受領確認入力
 - プロジェクト固有の公開後の操作の順序
 writes_worktree: true
 ---
@@ -51,8 +50,7 @@ writes_worktree: true
 ## 入力
 
 - `実行レビュー済みHEAD`: `マージあり`では統合入力HEAD（実行レビューが収束したラウンドの対象HEAD、または収束後に再レビューを省いた修正の後のHEAD）の7文字以上の一意な短縮OID。`マージなし`では`なし`
-- `完成条件証拠`: `マージあり`で受領する、計画ファイル名（計画なしは`なし`）、対応AWI集合、実行レビューが返した`完成条件証拠のパス`の絶対パスを持つ順序付きJSON配列。統合開始時に全証拠を読み、採用予定AWIの集合を重複も欠落もなく覆うことを確かめ、統合時の完成条件判定を各AWIへ適用する
-- `受領確認入力`: `マージあり`で受領する、生成済み入力JSONの`path`と受理した最後の実レビューHEADの`reviewed_head`を持つ順序付きJSON配列。manifestの`review_inputs`へそのまま渡し、統合入力HEADと実レビューHEADを別々に保持する
+- `完成条件証拠`: `マージあり`で受領する、計画ファイル名（計画なしは`なし`）、対応AWI集合、受理した最後の実行レビューの返却のファイルの絶対パスとその`レビューHEAD`を持つ順序付きJSON配列。統合開始時に全返却を読み、採用予定AWIの集合を重複も欠落もなく覆うことを確かめ、統合時の完成条件判定（各`達成`行が所在と観測内容の組を持つことの確認を含む）を各AWIへ適用する。統合入力HEADと`レビューHEAD`を別々に保持する
 - `計画ファイル名一覧`: 重複のないファイル名の順序付きJSON配列。計画を作成しなかったレーンでは`[]`。引き継ぎ記録の計画集合、対応AWIと保存状態に一致するか確かめる
 - `レーン開始時刻`: メインが保持した最初のレーン担当起動の時差付き時刻。欠落・不正な値はメインへ補完を求め、自身や置換後のsessionの開始時刻で補わない
 - `書込担当一覧`: 重複のない実session IDのJSON配列。現在のレーン担当と統合先メイン、合意済みの他の書込担当を含め、初回統合と再開に受領した現行の全要素を使う
@@ -65,7 +63,7 @@ writes_worktree: true
 
 ## 公開統合操作
 
-初期選定が1レーンの場合は、単一担当の実行契約で独立した実行レビューを受理したレーン担当が統合入力を確定し、本節へ進む。レーン担当が`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」の統合前検収（完成条件証拠、レビュー収束、対象HEAD、採否）を終えてから統合操作へ進む。所有登録、レビュー済みHEAD、完成条件証拠と最終化の検収条件は同じものを使う。
+単一担当の実行契約で独立した実行レビューを受理したレーン担当が統合入力を確定し、本節へ進む（初期選定が複数レーンでは`統合許可`の受領後）。レーン担当が`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」の統合前検収（完成条件証拠、レビュー収束、対象HEAD、採否）を終えてから統合操作へ進む。所有登録、レビュー済みHEAD、完成条件証拠と最終化の検収条件は同じものを使う。
 
 受領した完成条件証拠を検収し、全計画と今回のWI集合、確定した採否・延期を順序付きmanifestへ保存する。Gitの所有確認、rebase、内容比較、再検証、ff、最終化と選定の統合状態更新は次の公開操作で実行する。
 
@@ -85,18 +83,16 @@ atk lane integrate --record <所有登録の絶対パス> --reviewed-head <統�
 manifestはJSON objectで、次の値を持つ。
 
 - `plans`: 全計画の順序付き配列。各項目は`name`（計画ファイル名）と`commands`（後掲「計画最終化」のplan-check・保存argv配列）を持つ。保存済みで進捗を追記していない計画は`commands: []`とし、`saved`へ同名の保存済み計画の絶対パスを指定する。実装なしの計画には`no_merge: true`を付ける。計画なしは`[]`
-- `wis`: 選定の今回のレーンへ属する全WIの順序付き配列。各項目は`name`（WIファイル名）と`commands`（後掲「AWI行の終端」の確定済み終端argv配列）を持つ。延期・終端しない項目と既に終端した項目は`commands: []`とし、その区分と根拠を引き継ぎ記録へ残す。実装なしの項目には`no_merge: true`を付け、実装を伴う延期項目は受領確認の対象へ残す
-- `review_inputs`: 受領した`受領確認入力`の配列。CLIは生成済みJSONが対象計画・WIと実レビューHEADに対応することを確かめ、既存の`exec-review-evidence-check --batch`でGit変更前に検査する。失敗では実行記録と診断を所有登録へ残し、Git統合とWI終端を保留する。全体が`--no-merge`のときは省略できる
-- `verification`: 統合前に実行する検証argvの順序付き配列。計画ありは各計画のplan-verify、計画なしは引き継ぎ記録の確定済み検証を使う。同じworktreeの同じHEADで実行する順序・argv・cwd・timeoutの列が一致する検証は1回だけ実行し、成功済みの同じ検証はff前に繰り返さない。各計画のplan-verifyを実行時と同じ入力の`--list`で列挙して比較し、列が一致する計画群から代表1件だけを`verification`へ加える。省いた計画と代表計画の対応を引き継ぎ記録へ残す。同じ訂正済み検証表を共有する場合もこの判定を使い、一部だけ重なる列は各計画のplan-verifyを加える。CLIは検証argvへ時間上限を重ねないため、各argvは自身の上限を持つ形で渡す。plan-verifyは`--timeout`を必須とし、計画なしの確定済み検証は`atk run-command --timeout <秒数> --`で包む。包む秒数はその検証が正常に終わる所要を上回る有限の値とし、引き継ぎ記録にある同じ検証の実行記録の所要を基準にする。訂正済み検証表がある計画のargvには`--verification-plan`とその絶対パスを含める。訂正済み検証表の保持と引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」、列挙と結果の検収は`agent-toolkit:check-execution`「統合実行ツール経由の起動」に従う。統合後にだけ成立するプロジェクト検証も含める。rebaseした場合は新しいHEADで実行する
+- `wis`: 選定の今回のレーンへ属する全WIの順序付き配列。各項目は`name`（WIファイル名）と`commands`（後掲「AWI行の終端」の確定済み終端argv配列）を持つ。延期・終端しない項目と既に終端した項目は`commands: []`とし、その区分と根拠を引き継ぎ記録へ残す。実装なしの項目には`no_merge: true`を付ける
+- `verification`: 統合前とrebase後に実行する検証argvの順序付き配列。各argvは計画の`## 検証`（訂正済み検証表があればその表）の検証コマンドを文字列配列にしたものとし、計画なしは引き継ぎ記録の確定済み検証を使う。CLIはレーンworktreeをcwdとして各argvを直接実行する。複数計画が同じ検証コマンドを持つ場合は1回だけ加え、省いた計画と代表の対応を引き継ぎ記録へ残す。成功済みの同じ検証はff前に繰り返されない。CLIは検証argvへ時間上限を重ねないため、各argvは自身の上限（pyfltrのcommand-timeoutなど）で終わる形で渡し、上限を持たないコマンドは`timeout <秒数>`で包む。包む秒数はその検証が正常に終わる所要を上回る有限の値とし、引き継ぎ記録にある同じ検証の所要を基準にする。訂正済み検証表の保持と引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」、結果の検収は`agent-toolkit:check-execution`「統合実行ツール経由の起動」に従う。統合後にだけ成立するプロジェクト検証も含める。rebaseした場合は新しいHEADで実行される
 - `handoff`: 計画なしの場合に使う既存引き継ぎ記録の絶対パス。計画ありでは省略でき、省略時は引き継ぎ記録の追加入力を要しない
 - `lane_started_at`: 受領した`レーン開始時刻`（時差付きISO 8601）。plansとwisのargvが確定値を参照する場合に必須とする。CLIは最初に受理した値を所有登録へ保持し、異なる値を拒否する
 
-plansとwisのargvは、確定値の参照`{{integrated_head_short}}`（統合後HEADの短縮OID）、`{{completed_at}}`（完了時刻）、`{{lane_seconds}}`（`lane_started_at`から完了時刻までの総経過秒数）を含められる。本文ファイルを渡す操作では、manifestのargvへ`{{expand-file:<テンプレートの絶対パス>}}`と書く。テンプレートは統合する担当が統合の前に`atk managed-temp`の領域へ作成し、存在する絶対パスをmanifestへ書く。CLIは最終化の実行時にテンプレート内の同じ参照を展開した複製を作成し、その絶対パスへ置き換えて渡す。複製のパスは作成の時点で存在しないため、manifestにはテンプレートのパスだけが載る。CLIはGit統合の成功後、最終化の最初の操作の前に確定値を1回だけ生成して所有登録へ保存し、shellを介さず展開する。再開では保存した確定値を使い、返却JSONの`finalization_values`にも同じ値を含める。
+plansとwisのargvは、確定値の参照`{{integrated_head_short}}`（統合後HEADの短縮OID）、`{{completed_at}}`（完了時刻）、`{{lane_seconds}}`（`lane_started_at`から完了時刻までの総経過秒数）を含められる。本文ファイルを渡す操作では、manifestのargvへ`{{expand-file:<テンプレートの絶対パス>}}`と書く。テンプレートは統合する担当が統合の前に自分のセッションのmanaged-tempへ作成し、存在する絶対パスをmanifestへ書く。CLIは最終化の実行時にテンプレート内の同じ参照を展開した複製を作成し、その絶対パスへ置き換えて渡す。複製のパスは作成の時点で存在しないため、manifestにはテンプレートのパスだけが載る。CLIはGit統合の成功後、最終化の最初の操作の前に確定値を1回だけ生成して所有登録へ保存し、shellを介さず展開する。再開では保存した確定値を使い、返却JSONの`finalization_values`にも同じ値を含める。
 
 各argvは文字列配列とし、対象・OID・採否・完成条件証拠は受理済み入力から確定する。レビュー採否とWIごとのcommit対応はレーン担当が確定し、CLIへ渡す。計画の稼働時間、採否、証拠と進捗追記の値は以下の節で検収してからmanifestへ渡す。実行済み結果は所有登録の`integration.results`から読み、同じ操作は個別の再実行対象から除く。
 
-plan-verifyの実行argvには`--summary-only`を含め、順序と終了状態を一覧で受領する。
-各結果の詳細は保存された`results_path`を`atk run-command --records-file`へ渡して読み、取得版・子とwrapperの終了状態・両出力を検収する。
+各検証の結果は所有登録の`integration.results`の`verification-<番号>`が持ち、`record_path`から終了状態と両出力の保存先を読んで検収する。
 
 ### マージありの統合
 
@@ -107,19 +103,17 @@ plan-verifyの実行argvには`--summary-only`を含め、順序と終了状態�
 
 統合先HEADの子孫ならrebaseせずffへ進む。分岐している場合は書換え範囲の全commitがremote追跡refへ未到達であることを確認し、旧ベースとHEADを保存してrebaseする。親だけを操作するrebaseと、その続行・中止では`git -c submodule.recurse=false`を呼び出しごとに適用し、初期化済みの子のHEAD・branch・作業内容を保持する。push済み、競合、内容不一致、検証失敗では続行できない理由と所有記録を返す。競合は`lane-integration-failure.md`で処置し、同じCLIへ戻る。
 
-rebase後はhistory-compareによる一意な全1対1対応表と変更範囲の再検証結果を保存し、`phase: awaiting-validation`と終了コード1を返す。対応表、後掲の警告判定、WI実装commitと証拠の参照更新を検収してから、同じ入力に`--accept-rebased-head <返された完全new_head>`を加えて再開する。受理前は統合先を現状のまま保持する。
+rebase後はhistory-compareによる一意な全1対1対応表と変更範囲の再検証結果を保存し、`phase: awaiting-validation`と終了コード1を返す。対応表、後掲の警告判定、WI実装commitの対応の更新と完成条件証拠の再判定の要否を検収してから、同じ入力に`--accept-rebased-head <返された完全new_head>`を加えて再開する。受理前は統合先を現状のまま保持する。
 
 Git統合前に検証argv・最終化argv・handoffを是正してmanifestだけが変わった場合は、レビュー済みHEADと更新したmanifestへ`--restart-review`を加えて同じCLIから再開する。現在HEADが記録の`new_head`と一致するrebase結果は、記録の`old_head`か`new_head`を`--reviewed-head`へ渡す。新しい独立文脈レビューは要さず、引き継いだ対応表と再実行した検証の`awaiting-validation`を検収し、`--restart-review`を外して`--accept-rebased-head`で再開する。受理後の`verified`からの再開も検収待ちへ戻る。HEADが変わった場合は、独立文脈レビューを受理した現在HEADと更新したmanifestへ`--restart-review`を加える。直前の進行と結果は`previous_integration`へ保持する。Git統合後はレビューHEADと対象集合を保ち、残る最終化だけを再開する。
 
 rebase対応表で確定したWI commitや、保存失敗の原因を直した未完了の最終化argvは、更新したmanifestと`--amend-finalization`で補完する。CLIはレビューHEAD・統合先・検証・引き継ぎ記録、全計画・WIの集合と順序、成功済みargvを保持する。検収待ちの受理は同時に`--accept-rebased-head`を指定し、Git統合済みではGitを再実行しない。
 
 ff後は`phase: git-integrated`を保存し、plans、wisの各argvを順に実行して成功済み操作を記録する。途中で保存・終端が失敗した場合、同じmanifestとレビュー対象HEADで再実行するとGit統合と成功済み操作を省いて残る最終化へ戻る。全操作の成立後にpick-wi-checkで選定全体を確認して統合状態を更新し、`phase: finalized`と終了コード0を返す。追加WIの統合では現在のレビュー対象HEADと累積した全計画・WI集合の新しいmanifestを使い、進行中の入力は変更しない。
-Git統合前の再開では生成済み受領入力を再検査する。Git統合後は、計画・表の保存で原パスが変わるため、所有登録に保存した入力本文と成功した実検査の記録・両出力を検収し、同じ入力の残る最終化へ進む。生成済み入力の原本が残る場合は保存本文との一致も確かめ、rebase後も証拠の`reviewed_head`を最後の実レビュー版に保つ。
+Git統合後の再開では、所有登録が保持する成功済み操作と残る最終化から同じ入力で進む。rebase後も完成条件証拠の`レビューHEAD`は最後に実際にレビューした版として保持し、統合入力HEADと区別する。
 
 rebaseした場合は、`history-compare`の対応表を`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段の`--rewrite-map`へそのまま渡し、rebase前のHEADと統合する全ての計画または引き継ぎ記録も同じ1回で渡す。
-未判定検証記録は`atk run-script verification-record -- --output <未判定検証記録の絶対パス> --rewrite-map <対応表の絶対パス>`で更新する。
-完成条件証拠は同じ対応表を実行レビュー担当へ渡し、`atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --rewrite-map <対応表の絶対パス>`で更新する。
-更新するのは`evidence`の`commit:<OID>`だけとする（分割の各対応先も`commit:`標識を保つ）。裸の取得版OID・HEAD・git_head・比較元、観測ファイル、判定と`reviewed_head`、既存自由文の形式はそのまま保持する。結果に作用する内容・条件の差がある行だけを再観測し、根拠は、完成条件証拠と未判定検証記録の各CLIへ保存物を直接指定し、`--select-row`で行を選んで更新する。
+rebaseだけでOIDが変わった計画の完成条件証拠は再判定を要さない（`exec-review.parent.md`「起動方法別のレビュー基準」）。統合先との組合せで内容が変わり、結果に作用する差がある条件だけを、新しいHEADで取り直した検証結果とともに同じ実行レビュー担当へ再判定させる。
 
 ### 検証結果の警告の判定
 
@@ -137,7 +131,7 @@ rebaseした場合は、`history-compare`の対応表を`agent-toolkit:commit`�
 
 本節はmanifestのplansへ渡す操作と値の検収基準である。各操作は公開統合操作から実行し、成功済み操作と保存先は所有登録へ保持する。
 
-受理した完成条件証拠がある計画は、そのJSONの絶対パスを`受理済みの完成条件証拠`として進捗ログへ残す（後続レビューの参照入力に使い、未判定検証記録と区別する）。
+受理した完成条件証拠がある計画は、その返却のファイルの絶対パスを`受理済みの完成条件証拠`として進捗ログへ残す（後続レビューの参照入力に使う）。
 
 `計画ファイル名一覧`が`[]`なら`plan-check`と計画の保存を省き、後述の稼働記録、統合結果およびAWI終端前の状態を引き継ぎ記録へ残して、`保存した計画ファイル`を`[]`で返す。予測補正記録は対象AWI本文へ保存する。テンプレートの本文は`plan-file-standards.md`「進捗ログ」の`予測補正記録`の書式に、`完了時刻=`を`{{completed_at}}`、`総経過秒=`を`{{lane_seconds}}`で置いた1件とする。
 保存は`atk wi edit <AWIのファイル名> --append --body-file {{expand-file:<テンプレートの絶対パス>}} --target-repo=<統合先worktree>`で行う。この操作はmanifestのそのAWIのwisの終端argvより前へ置く（終端した項目は`atk wi edit`の対象外）。引き継ぎ記録へは返却JSONの`finalization_values`を写す。計画がある場合は配列の順に各計画へ次を適用する。

@@ -18,6 +18,7 @@ import os
 import pathlib
 import queue
 import secrets
+import shlex
 import signal
 import threading
 from collections.abc import Callable, Iterable, Mapping
@@ -450,7 +451,7 @@ def _evaluated_reference(result: dict[str, Any], path: pathlib.Path) -> dict[str
             value = json.loads(line)
             if isinstance(value, dict) and isinstance(value.get("event"), str):
                 events.add(value["event"])
-    read_action = f"`atk read-file -- {path}`で終了診断を読む"
+    read_action = f"`sed -n '1,200p' -- {shlex.quote(str(path))}`のように行範囲を分けて終了診断を読む"
     if events & TERMINATION_EVENTS:
         return {**result, "status": "collected", "next_action": read_action}
     return {

@@ -1486,14 +1486,19 @@ async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_pa
 async def test_record_with_a_live_recorded_process_keeps_running_on_every_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """記録したプロセスが1つでも存在する記録は、同じ照会のいずれでも従来どおり別プロセスの実行中として扱う。"""
+    """記録したプロセスが1つでも存在する記録は、同じ照会のいずれでも実行中として扱う。
+
+    所有サーバーが終了し委譲先CLIが生存する記録は、所有サーバーを失った実行中として案内を返し、追送は再開せずに拒否する。
+    """
     owner = session_registry.owner_process()
     assert owner is not None
     _publish_record_with_processes(monkeypatch, tmp_path, "claude", (exited_process_identity(), owner))
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "show", _ORPHANED_SESSION_ID])
-    assert json.loads(capsys.readouterr().out)["status"] == "running"
+    shown_by_cli = json.loads(capsys.readouterr().out)
+    assert shown_by_cli["status"] == "running"
+    assert shown_by_cli["ownership"] == "owner_lost"
 
     async with _manager_with_fake("claude") as (parent_manager, parent_backend):
         parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
@@ -1508,9 +1513,10 @@ async def test_record_with_a_live_recorded_process_keeps_running_on_every_path(
         async with server_manager.AgentsServerManager(None) as manager:
             backend = FakeBackend(manager.sessions, "claude")
             _install_backend(manager, "claude", backend)
-            with pytest.raises(ValueError, match="another writer"):
-                await _show_through_tool(monkeypatch, manager, _ORPHANED_SESSION_ID)
-            with pytest.raises(ValueError, match="error.recovery=turn_unobserved"):
+            shown = await _show_through_tool(monkeypatch, manager, _ORPHANED_SESSION_ID)
+            assert shown["status"] == "running"
+            assert shown["ownership"] == "owner_lost"
+            with pytest.raises(ValueError, match="error.recovery=owner_lost"):
                 await manager.send_message(_ORPHANED_SESSION_ID, "続行")
             assert session_registry.resolve(_ORPHANED_SESSION_ID).state is session_registry.Resolution.RUNNING
             assert not backend.resume_calls
@@ -1570,7 +1576,7 @@ async def test_interrupted_show_references_server_diagnostics(
     by_cli = _cli_show(capsys)["error"]
     assert by_cli["interruptionReason"] == session_registry.OWNER_PROCESSES_EXITED
     assert {key: by_cli["diagnostics"][key] for key in expected} == expected
-    assert f"atk read-file -- {diagnostics_path}" in by_cli["diagnostics"]["next_action"]
+    assert f"sed -n '1,200p' -- {diagnostics_path}" in by_cli["diagnostics"]["next_action"]
 
     async with server_manager.AgentsServerManager(None) as manager:
         backend = ThreadReadBackend(manager.sessions, None) if engine == "codex" else FakeBackend(manager.sessions, engine)

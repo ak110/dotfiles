@@ -143,7 +143,7 @@ def test_public_cli_records_and_reads_commit_mapping(
     assert [json.loads(line) for line in attachment.read_text(encoding="utf-8").splitlines()] == [
         {"commits": [short], "awi": [wi]}
     ]
-    assert append_progress_log.main([*common, "--get-commits"]) == 0
+    assert append_progress_log.main([*common], retrieval=True) == 0
     assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [short]}
     saved = path.read_bytes()
     saved_attachment = attachment.read_bytes()
@@ -207,7 +207,7 @@ def test_public_cli_records_and_reads_commit_mapping(
     assert "wi-commits" not in path.read_text(encoding="utf-8")
     new_short = git_repository.git_output(repo, "rev-parse", "--short", new_oid)
     assert json.loads(attachment.read_text(encoding="utf-8").splitlines()[-1]) == {"rewrite": {short: new_short}}
-    assert append_progress_log.main([*common, "--get-commits"]) == 0
+    assert append_progress_log.main([*common], retrieval=True) == 0
     assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [new_short]}
 
 
@@ -329,17 +329,17 @@ def test_get_commits_reads_unique_saved_plan_from_removed_working_path(
     # `atk plans commit`と同じく対応記録ファイルも保存先へ移し、保存済み計画と同じstemの記録を読む。
     attachment = working.with_name(working.stem + ".wi-commits.jsonl")
     attachment.rename(saved.with_name(attachment.name))
-    assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi, "--get-commits"]) == 0
+    assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi], retrieval=True) == 0
     assert json.loads(capsys.readouterr().out)["awi"] == wi
     duplicate = notes / "plans" / "2025" / "10" / working.name
     duplicate.parent.mkdir(parents=True)
     duplicate.write_bytes(saved.read_bytes())
-    assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi, "--get-commits"]) == 1
+    assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi], retrieval=True) == 1
     assert "一意に特定できません" in capsys.readouterr().err
-    assert append_progress_log.main([str(saved), "--worktree", str(repo), "--awi", wi, "--get-commits"]) == 0
+    assert append_progress_log.main([str(saved), "--worktree", str(repo), "--awi", wi], retrieval=True) == 0
     saved.unlink()
     duplicate.unlink()
-    assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi, "--get-commits"]) == 1
+    assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi], retrieval=True) == 1
     assert "同名=0件" in capsys.readouterr().err
 
 
@@ -392,7 +392,7 @@ def test_records_range_from_cherry_pick_and_fast_forward_in_one_call(
     records = (tmp_path / "record.wi-commits.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(records) == 2
     assert [len(json.loads(line)["commits"]) for line in records] == [2, 3]
-    assert append_progress_log.main([*common, "--get-commits"]) == 0
+    assert append_progress_log.main([*common], retrieval=True) == 0
     commits = json.loads(capsys.readouterr().out)["commits"]
     added = [
         *git_repository.git_output(repo, "rev-list", f"{previous}..group").splitlines(),
@@ -466,7 +466,7 @@ def test_legacy_body_comment_and_attachment_are_combined(tmp_path: pathlib.Path,
         == 0
     )
     assert path.read_text(encoding="utf-8").count("wi-commits") == 1
-    assert append_progress_log.main([*common, "--awi", wi_a, "--awi", wi_b, "--get-commits"]) == 0
+    assert append_progress_log.main([*common, "--awi", wi_a, "--awi", wi_b], retrieval=True) == 0
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert lines == [
         {"awi": wi_b, "commits": [git_repository.git_output(repo, "rev-parse", "--short", "HEAD")]},
@@ -526,7 +526,7 @@ def test_public_progress_split_preserves_assignment_and_rejects_loss(
     assert dispatch("--rewrite-map", str(replacement), "--completed-step", "分割", "--result", "成功") == 0
     assert path.read_bytes().startswith(saved[0])
     capsys.readouterr()
-    assert dispatch("--get-commits") == 0
+    assert run_script.dispatch(argparse.Namespace(script_name="plan-commits", script_args=common)) == 0
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert {row["awi"]: row["commits"] for row in records} == {
         wi: [git_repository.git_output(repo, "rev-parse", "--short", oid)]
@@ -576,10 +576,11 @@ def test_record_past_ranges_per_awi(tmp_path: pathlib.Path, capsys: pytest.Captu
     expected = {
         wi: [git_repository.git_output(repo, "rev-parse", "--short", oid)] for wi, oid in zip(wis, commits[1:], strict=True)
     }
-    for name, extra in (("plan-commits", []), ("plan-progress", ["--get-commits"])):
-        assert run_script.dispatch(argparse.Namespace(script_name=name, script_args=[*common, *extra])) == 0
-        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-        assert {row["awi"]: row["commits"] for row in rows} == expected
+    assert run_script.dispatch(argparse.Namespace(script_name="plan-commits", script_args=common)) == 0
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert {row["awi"]: row["commits"] for row in rows} == expected
+    # 取得はplan-commitsへ一本化し、plan-progressは取得の指定を受理しない。
+    assert run_script.dispatch(argparse.Namespace(script_name="plan-progress", script_args=[*common, "--get-commits"])) == 2
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == commits[-1]
     assert len(path.with_suffix(".wi-commits.jsonl").read_text(encoding="utf-8").splitlines()) == 3
 

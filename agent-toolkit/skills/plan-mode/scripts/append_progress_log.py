@@ -7,7 +7,7 @@
 
 進捗だけの追記は計画Markdownと`--completed-step`・`--result`を渡す。
 commit対応の記録は、これらに`--commit`・`--previous-head`・`--awi`・絶対パスの`--worktree`を加える。
-`--handoff`はcommit対応の記録・履歴更新・取得に使い、対象集合を`--allowed-awi`で渡す。
+`--handoff`はcommit対応の記録・履歴更新に使い、対象集合を`--allowed-awi`で渡す。対応の取得は`plan-commits`が行う。
 引き継ぎ記録へ進捗だけを残す場合は、通常のファイル編集で更新する。
 """
 
@@ -182,10 +182,7 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
     if args.handoff:
         allowed = commit_mapping.validate_wis(args.allowed_awi or [])
     else:
-        metadata, errors = _plan_format.parse_plan_metadata(content)
-        if metadata is None or errors:
-            raise ProgressLogError("計画の関連WIを確定できません", next_action=_CHECK_STRUCTURE)
-        allowed = {wi for wi, _summary in metadata.related_wi}
+        allowed = commit_mapping.plan_allowed_wis(content, read_path)
     targets = args.awi if args.awi is not None else sorted(allowed) if args.get_commits else []
     if args.get_commits or args.commit:
         commit_mapping.validate_targets(targets, allowed)
@@ -213,7 +210,7 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         mapping = commit_mapping.read_mapping(args.worktree, events, allowed)
         event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping)
     else:
-        parser.error("--handoffには--commit、--rewrite-mapまたは--get-commitsが必要です")
+        parser.error("--handoffには--commitか--rewrite-mapが必要です。対応の取得は`atk run-script plan-commits`で行う")
         return False
     # 進捗の行を先に追記し、構造の不正で失敗した場合は対応記録ファイルも変えない。
     if args.handoff:
@@ -272,6 +269,7 @@ def main(argv: list[str] | None = None, *, description: str | None = None, retri
         )
     else:
         _add_record_arguments(parser)
+        parser.set_defaults(get_commits=False)
     parser.add_argument(
         "--awi",
         action="append",
@@ -336,9 +334,6 @@ def _add_record_arguments(parser: argparse.ArgumentParser) -> None:
         metavar="PATH",
         help="検収済みの旧OIDから新OIDへの対応を保存したJSONファイルの絶対パス。OIDは短縮OIDか完全OID。"
         '分割は旧OIDの値に[{"commit":"新OID","awi":["WIファイル名"]}]を指定し、全旧AWIを割り当てる',
-    )
-    operation.add_argument(
-        "--get-commits", action="store_true", help="対象AWIの現在のcommit対応を短縮OIDのJSON Linesで取得する"
     )
 
 

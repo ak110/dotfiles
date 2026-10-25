@@ -8,10 +8,13 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import Any
+
+import psutil
 
 from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import lane as _lane
@@ -392,13 +395,15 @@ def _run_started_process_session(
         if orchestrator == "codex":
             result = _run_codex_session(session_argv, launch_env, session_path)
         else:
-            result = subprocess.run(
-                session_argv,
-                check=False,
-                env=launch_env,
-                cwd=session_path,
-                creationflags=_pl_env.session_creation_flags(orchestrator),
-            )
+            identifier = launch_env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV) if orchestrator == "claude" else None
+            with recording_orchestrator_child(identifier):
+                result = subprocess.run(
+                    session_argv,
+                    check=False,
+                    env=launch_env,
+                    cwd=session_path,
+                    creationflags=_pl_env.session_creation_flags(orchestrator),
+                )
     except OSError as error:
         _process_loop_log.append("session_launch_failed", error=type(error).__name__, detail=str(error))
         raise
@@ -446,6 +451,78 @@ def _run_started_process_session(
         dotfiles_updated=False,
     )
     return False
+
+
+_CHILD_POLL_SECONDS = 0.2
+"""オーケストレーターの子プロセスを探す間隔（秒）。"""
+
+
+@contextlib.contextmanager
+def recording_orchestrator_child(identifier: str | None) -> Generator[None]:
+    """区間の間、`identifier`を環境に持つ直下の子プロセスを探し、登録簿の記録プロセスへ委譲先CLIとして加える。
+
+    登録簿の記録が所有プロセス（process-loop自身）だけを持つと、process-loopが強制終了して`claude`の子が
+    生存し続ける場合も、全プロセスの不在から終端と解決される。
+    子の起動は`subprocess.run`が所有するためpidを直接受け取れず、環境に渡したsession識別子の一致で子を特定する。
+    識別子は起動ごとに生成した値であり、プロセス名の一致で対象を広げない。
+    fork直後で起動前の子はprocess-loop自身の環境を持つため、一致しない子も次の巡回で読み直す。
+    """
+    if identifier is None:
+        yield
+        return
+    stop = threading.Event()
+    thread = threading.Thread(
+        target=_record_orchestrator_child, args=(identifier, stop), name="process-loop-child-record", daemon=True
+    )
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+
+
+def _record_orchestrator_child(identifier: str, stop: threading.Event) -> None:
+    try:
+        own = psutil.Process()
+    except psutil.Error:
+        return
+    while not stop.wait(_CHILD_POLL_SECONDS):
+        try:
+            children = own.children()
+        except psutil.Error:
+            continue
+        for child in children:
+            try:
+                if child.environ().get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV) != identifier:
+                    continue
+                identity = _registry.ProcessIdentity(child.pid, child.create_time())
+            except psutil.Error:
+                continue
+            _attach_orchestrator_child(identifier, identity)
+            return
+
+
+def _attach_orchestrator_child(identifier: str, child: _registry.ProcessIdentity) -> None:
+    """起動時に公開したオーケストレーターの記録へ、turnを実行する子プロセスの識別を加えて公開し直す。"""
+    resolution = _registry.resolve(identifier)
+    info = resolution.resume_info
+    owner = _registry.owner_process()
+    if resolution.state is not _registry.Resolution.RUNNING or info is None or owner is None:
+        return
+    _registry.publish(
+        identifier,
+        terminal=False,
+        engine="claude",
+        cwd=info.cwd,
+        model=info.model,
+        effort=info.effort,
+        model_type="orchestrate",
+        claude_api_env_file=info.claude_api_env_file,
+        claude_connection=info.claude_connection,
+        claude_role="orchestrator",
+        processes=(owner, child),
+    )
 
 
 def _run_codex_session(argv: list[str], env: dict[str, str], cwd: pathlib.Path) -> subprocess.CompletedProcess[bytes]:
