@@ -17,7 +17,7 @@ import secrets
 import stat
 import typing
 
-from agent_toolkit._atk.managed_temp import paths
+from agent_toolkit._atk.managed_temp import paths, permissions
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
 from agent_toolkit._common import file_lock, plugin_root_leases
@@ -31,6 +31,9 @@ _GIT_RECHECK_NS = 86_400 * _NANOSECONDS_PER_SECOND
 """`.git`を含む期限切れの対象を次に調べるまでの間隔。worktreeの撤去後は次の調査で回収する。"""
 _LEGACY_INTERVAL_NS = 86_400 * _NANOSECONDS_PER_SECOND
 """旧版の状態を調べる間隔。数万件に及ぶ旧ロックを起動ごとに走査しない。"""
+_DESCRIPTOR_WALK = os.scandir in os.supports_fd and os.open in os.supports_dir_fd
+"""記述子を基点に相対名で走査できるか。Windowsは記述子による走査を提供しない。"""
+_DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _LEGACY_REGISTRY_SUFFIX = ".json"
 _LEGACY_CLEANUP_LOCK_SUFFIX = ".json.cleanup.lock"
 
@@ -106,8 +109,12 @@ def _latest_update_and_git(path: pathlib.Path) -> tuple[int, bool]:
     """領域自身と配下の最終更新時刻（ナノ秒）と、配下に`.git`があるかを返す。リンクは辿らない。
 
     配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
+    記述子で辿れる環境では親の記述子からの相対名で走査し、連結長がPATH_MAXを超える木も調べる。
     """
     latest = path.lstat().st_mtime_ns
+    if _DESCRIPTOR_WALK:
+        with permissions.descriptor(path, _DIRECTORY_FLAGS) as opened:
+            return _latest_under(opened, latest)
     pending = [path]
     while pending:
         directory = pending.pop()
@@ -119,6 +126,23 @@ def _latest_update_and_git(path: pathlib.Path) -> tuple[int, bool]:
                 latest = max(latest, metadata.st_mtime_ns)
                 if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata):
                     pending.append(pathlib.Path(child.path))
+    return latest, False
+
+
+def _latest_under(directory: int, latest: int) -> tuple[int, bool]:
+    """記述子が指すディレクトリの配下を相対名で辿り、`_latest_update_and_git`と同じ値を返す。"""
+    with os.scandir(directory) as children:
+        listed = list(children)
+    for child in listed:
+        if child.name == ".git":
+            return latest, True
+        metadata = child.stat(follow_symlinks=False)
+        latest = max(latest, metadata.st_mtime_ns)
+        if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata):
+            with permissions.descriptor(child.name, _DIRECTORY_FLAGS, dir_fd=directory) as nested:
+                latest, has_git = _latest_under(nested, latest)
+            if has_git:
+                return latest, True
     return latest, False
 
 

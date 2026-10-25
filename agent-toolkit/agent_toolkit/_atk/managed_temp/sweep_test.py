@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import hashlib
 import json
@@ -11,7 +12,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._atk.managed_temp import paths, sweep
+from agent_toolkit._atk.managed_temp import paths, permissions, sweep
 from agent_toolkit._common import file_lock, plugin_root_leases
 
 _NOW = datetime.datetime(2026, 10, 25, 12, 0, tzinfo=datetime.UTC)
@@ -77,6 +78,37 @@ def test_sweep_keeps_plugin_root_in_use(monkeypatch: pytest.MonkeyPatch) -> None
     in_use = False
     later = _NOW + datetime.timedelta(hours=2)
     assert area in managed_temp.sweep_managed_temp(now=later).deleted
+
+
+@pytest.mark.skipif(
+    os.scandir not in os.supports_fd or os.open not in os.supports_dir_fd, reason="記述子による相対名の走査を提供しない環境"
+)
+@pytest.mark.parametrize("has_git", [False, True])
+def test_sweep_handles_tree_longer_than_path_max(has_git: bool) -> None:
+    """連結長がPATH_MAXを超える木も調べ、期限切れなら回収し、深い位置の`.git`があれば残す。"""
+    area = _area("deep-abc", days=8)
+    stamp = int((_NOW - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+    with contextlib.ExitStack() as stack:
+        directory = stack.enter_context(permissions.descriptor(area, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW))
+        opened = [directory]
+        for index in range(24):
+            name = f"{index:02d}-" + "x" * 197
+            os.mkdir(name, mode=0o700, dir_fd=directory)
+            directory = stack.enter_context(
+                permissions.descriptor(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            )
+            opened.append(directory)
+        leaf = ".git" if has_git else "payload"
+        payload = stack.enter_context(permissions.descriptor(leaf, os.O_WRONLY | os.O_CREAT, 0o600, dir_fd=directory))
+        os.utime(payload, ns=(stamp, stamp))
+        for descriptor in reversed(opened):
+            os.utime(descriptor, ns=(stamp, stamp))
+
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+
+    assert not result.failed
+    assert (area in result.deleted) is not has_git
+    assert os.path.lexists(area) is has_git
 
 
 def test_sweep_keeps_legacy_area_while_old_cleanup_lock_is_held() -> None:
