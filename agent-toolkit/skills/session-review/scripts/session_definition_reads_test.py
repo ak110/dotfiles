@@ -128,6 +128,8 @@ def test_delegating_subagent_read_is_included_with_its_own_role_and_range(
         f"test -f {_ROLE_PATH} && cat -- {_ROLE_PATH}",
         f"sed -n '1,20p' {_ROLE_PATH}",
         f"atk read-file --start 10 -- {_ROLE_PATH}",
+        # 起動名は共通の起動判定と同じ集合で認識する。
+        f"/opt/plugin/agent_toolkit/atk.py read-file -- {_ROLE_PATH}",
         f"cat < {_ROLE_PATH}",
         f"Get-Content -Path '{_ROLE_PATH}' -TotalCount 10",
         f"Get-Content -Delimiter /notes.txt -LiteralPath '{_ROLE_PATH}'",
