@@ -1229,7 +1229,7 @@ def _event_without_run_command_wrapper(event: dict[str, Any]) -> dict[str, Any]:
     if args and _basename(args[0]) in _SHELL_NAMES and len(args) == 3 and args[1] in {"-c", "-lc"}:
         tokens = _shell_command_tokens(args[2])
         args = [token.value for token in tokens] if tokens and not any(token.operator for token in tokens) else []
-    if len(args) < 4 or _basename(args[0]) != "atk" or args[1] != "run-command" or "--" not in args[2:]:
+    if len(args) < 4 or not _is_atk_command(args) or args[1] != "run-command" or "--" not in args[2:]:
         return event
     text = str(event.get("diagnostic") or event.get("text") or "")
     results = [_json_object(line) for line in text.splitlines() if line.startswith("{")]
@@ -1737,7 +1737,8 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
     if not args:
         name = str(event.get("tool_name") or event.get("tool") or "")
         return name, "", display, []
-    name = _basename(args[0])
+    # 起動名の表記（絶対パス、atk.cmd、atk.pyなど）を共通の判定でatkへそろえ、後続の比較が1つの名前で済むようにする。
+    name = "atk" if _is_atk_command(args) else _basename(args[0])
     if name == "git":
         index = 1
         while index < len(args):

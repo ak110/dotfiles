@@ -1100,6 +1100,8 @@ def test_public_bundle_excludes_claude_wait_continuations(tmp_path: pathlib.Path
         ("sh -c 'atk agents wait'", 3),
         ("atk agents wait && false", 3),
         ("atk agents wait", 2),
+        # 起動名は共通の起動判定と同じ集合で認識する。
+        ("/opt/plugin/agent_toolkit/atk.py agents wait", 3),
     ]
     for index, (command, code) in enumerate(cases):
         call_id = f"toolu_{index}"
@@ -1138,7 +1140,7 @@ def test_public_bundle_excludes_claude_wait_continuations(tmp_path: pathlib.Path
     capsys.readouterr()
     records = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
     assert {locator["line"] for item in records[:-1] for locator in item["locators"]} == {10, 12}
-    assert records[-1]["excluded"]["normal-nonterminal-result"] == 4
+    assert records[-1]["excluded"]["normal-nonterminal-result"] == 5
 
 
 def test_candidate_events_does_not_spend_hook_budget_on_repeat_summaries() -> None:

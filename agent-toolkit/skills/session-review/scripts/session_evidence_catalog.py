@@ -46,6 +46,7 @@ from session_evidence_tool_calls import (
 from session_evidence_user_events import _query_user_events
 
 from agent_toolkit._agents_server import record_paths as _record_paths
+from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
 
 CATALOG_PARENT_FIELDS = (
     "runtime",
@@ -124,7 +125,7 @@ def _wi_command(tokens: list[str]) -> str | None:
         return None
     if any(word in {";", "&&", "||", "|"} for word in words):
         return None
-    if len(words) < 3 or _basename(words[0]) != "atk" or words[1] != "wi":
+    if len(words) < 3 or not _is_atk_command(words) or words[1] != "wi":
         return None
     return words[2]
 
