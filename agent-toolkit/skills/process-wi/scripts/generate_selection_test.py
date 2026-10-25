@@ -161,7 +161,7 @@ def test_public_generation_checks_repository_before_saving(
 
 
 @pytest.mark.parametrize("old_address", ["old.example/team/project", "github.com/test/old-name"])
-def test_repository_migration_cli_edit_list_start_and_verification(
+def test_repository_migration_cli_edit_list_start_and_show(
     environment: tuple[pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
     old_address: str,
@@ -216,11 +216,7 @@ def test_repository_migration_cli_edit_list_start_and_verification(
         assert result.returncode == 0, result.stderr
         return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
 
-    output = tmp_path / "verification.json"
-    record_args = ("run-script", "verification-record", "--", "--wi", filename, "--output", str(output), "--list")
     assert not listed()
-    before = cli(*record_args)
-    assert before.returncode == 1 and "WI本文を取得できません" in before.stderr
     draft = tmp_path / "migrated.md"
     draft.write_text(body.replace(old_address, "github.com/test/repo"), encoding="utf-8")
     edited = cli("wi", "edit", filename, "--target-repo", old_address, "--body-file", str(draft))
@@ -231,10 +227,9 @@ def test_repository_migration_cli_edit_list_start_and_verification(
     started = cli("wi", "start-processing", filename, "--target-repo", str(repo))
     assert started.returncode == 0, started.stderr
     assert source.is_file() and entry_state_of(source) == "processing"
-    after = cli(*record_args)
-    assert after.returncode == 0, after.stderr
-    payload = json.loads(output.read_text(encoding="utf-8"))
-    assert [row["condition"] for row in payload["wi_conditions"]] == ["保存した結果を取得できる。"]
+    shown = cli("wi", "show", filename, "--skip-pull")
+    assert shown.returncode == 0, shown.stderr
+    assert "保存した結果を取得できる。" in shown.stdout
 
 
 def test_generated_addition_saves_once_and_preserves_initial_allocation(

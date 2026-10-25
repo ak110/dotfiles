@@ -269,17 +269,6 @@ def test_codex_path_string_or_failed_read_is_not_evidence(tmp_path: pathlib.Path
     assert _missing_completion(tmp_path) == ["commit"]
 
 
-def test_codex_saved_output_of_read_is_evidence(tmp_path: pathlib.Path) -> None:
-    """`atk read-file`が全量を保存した場合は、保存先の本文で読取の結果を確かめる。"""
-    supply_commit(tmp_path, codex=True)
-    saved = tmp_path / "saved.txt"
-    saved.write_text(json.dumps({"text": COMPLETION_SKILL_TEXT, "eof": True}, ensure_ascii=False), encoding="utf-8")
-    command = "atk read-file -- /plugin/skills/completion-report/SKILL.md"
-    _tool(tmp_path, "read", "Bash", {"command": command}, f"保存先: {saved}\n行数: 1", codex=True)
-    assert not _missing_completion(tmp_path)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True)) == ("approve", "")
-
-
 def test_claude_failed_or_unrelated_skill_is_not_evidence(tmp_path: pathlib.Path) -> None:
     """失敗したcompletion-reportの起動と、他のスキルの起動を起動証拠にしない。"""
     supply_commit(tmp_path)
@@ -1170,12 +1159,12 @@ def test_legacy_stop_review_notice_is_not_completion_evidence():
     ("command", "response", "accepted"),
     [
         ("cat /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True),
-        ("atk read-file -- /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True),
+        ("sed -n '1,$p' -- /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True),
         ("cat /plugin/skills/{skill}/SKILL.md", "cat: /plugin/skills/{skill}/SKILL.md: No such file", False),
         ("echo /plugin/skills/{skill}/SKILL.md", "/plugin/skills/{skill}/SKILL.md", False),
         ("grep -n name /plugin/skills/{skill}/SKILL.md", "2:name: {skill}", False),
     ],
-    ids=["cat", "atk-read-file", "failed", "path-only", "grep"],
+    ids=["cat", "sed", "failed", "path-only", "grep"],
 )
 def test_termination_evidence_and_operation_skills_share_read_judgment(
     tmp_path: pathlib.Path, command: str, response: str, *, accepted: bool

@@ -472,12 +472,12 @@ def _material_error(name: str, reason: str) -> ActionableError:
         f"探索資料の入力が不成立です: {name}: {reason}。委譲先は起動していない。",
         next_action=(
             f"`{name}`に必要な本文・差分・証拠をUTF-8の読取可能な通常ファイルへ保存し、"
-            "絶対パスで補完して`start`を再発行する。reader-fit-reviewの`比較資料`は"
+            "絶対パスで補完して`start`を再発行する。reader-fit-reviewの`比較資料`は、Git管理下では"
+            '`{"repository":"/repo","base":"<比較元OID>","head":"<レビューHEAD>","paths":["文書.md"]}`とし、'
+            "担当が`git show`・`git diff`で読む。Git管理外では"
             '`{"比較元本文":"/保存先/旧本文.md","今回差分":"/保存先/差分.patch","現行本文":"/成果物.md"}`'
-            "とする。複数成果物では同じ3項目のオブジェクト配列を渡す。"
+            "とし、複数成果物では同じ3項目のオブジェクト配列を渡す。"
             "新規成果物だけ比較元本文へ`新規`、今回差分へ`全文`を指定できる。"
-            "Git管理下では`reader-fit-prepare`の出力の`before`・`patch`・`current`を3項目へ、"
-            "`scope_patch`を任意の`判定範囲差分`へ渡す（Git識別子の形式ではpathsの各パスから保存ファイルへの対応で渡す）。"
             "再レビューの`未解決事項`は保存ファイルの絶対パス、その絶対パスのJSON配列か`なし`だけを渡し、説明は保存物へ書く"
         ),
     )
@@ -733,8 +733,8 @@ def _check_git_reader_materials(materials: dict[str, Any], current: list[pathlib
         raise _material_error("比較資料", "pathsに空でないリポジトリ相対パス配列が必要")
     if len(paths) != len(current) or {pathlib.Path(repository) / path for path in paths} != set(current):
         raise _material_error("比較資料", "pathsが成果物の集合と一致しない")
-    # 計画別の判定範囲は、保存資料の形式と同じ`reader-fit-prepare`の`scope_patch`をパスごとに受け取る。
-    # 探索担当は読み取り専用のため、契約から帰属を計算させず、計算済みの差分で走査範囲を1通りに決める。
+    # 計画別の判定範囲は、委譲元が`git diff`などで保存した差分ファイルをパスごとに任意で受け取る。
+    # 探索担当は読み取り専用のため、契約から帰属を計算させず、保存済みの差分で走査範囲を1通りに決める。
     scopes = materials.get("判定範囲差分", {})
     if not isinstance(scopes, dict) or set(scopes) - set(paths) or any(not isinstance(value, str) for value in scopes.values()):
         raise _material_error(

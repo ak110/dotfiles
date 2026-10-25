@@ -22,10 +22,12 @@ from agent_toolkit._agents_server import (
     session_handoff,
     shared_layout,
     shared_roots,
+    state,
+    wait_summary,
     wait_targets,
 )
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._atk.environment import is_human_terminal
+from agent_toolkit._atk.environment import is_agent_environment, is_human_terminal
 from agent_toolkit._common import session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
@@ -43,7 +45,7 @@ _CONSUMED_NEXT_ACTION = (
 _PRECEDING_WAIT_NEXT_ACTION = (
     "先行するバックグラウンドタスクの保存出力を読み、先行する`atk agents wait`の終了後に再実行する。"
     "保存出力を受け取れず`run_path`が示されている場合は、"
-    "`atk read-file -- <run_path>`でrun記録の`output`を読み、その`agent_message_path`から本文を読む"
+    "`jq -r .output -- <run_path>`でrun記録の`output`を読み、その`agent_message_path`から本文を読む"
 )
 _BROKEN_STATE_NEXT_ACTION = (
     "agents_serverの状態が壊れているため、MCPの`list`で保持状態を確かめ、agents_serverの不具合としてユーザーへ報告する"
@@ -54,8 +56,8 @@ _READ_FAILURE_NEXT_ACTION = (
 )
 _ABSENT_TARGETS_NEXT_ACTION = "委譲先を起動してから`atk agents wait`を実行する"
 _SAVED_RESULT_NEXT_ACTION = (
-    "保存runの`run_path`を`atk read-file --`へ1引数として渡し、`output`の終端結果本文を読む。"
-    "`agent_message_paths`にある実在する本文も読める。新しい結果の待機が必要な場合だけ`atk agents wait`を実行する"
+    "`agent_message_paths`にある本文ファイルを読む。保存runの終端行は`jq -r .output -- <run_path>`で読める。"
+    "新しい結果の待機が必要な場合だけ`atk agents wait`を実行する"
 )
 _IDENTITY_NEXT_ACTION = "同じsessionで`atk agents list`と`atk agents wait`を実行する"
 _FAILED_RESULT_NEXT_ACTION = (
@@ -67,29 +69,44 @@ _BODY_FILE_NEXT_ACTION = (
     "回収した結果は退避して保持しているため、managed-tempへ書き込めない原因（容量や権限）を解消してから"
     "`atk agents wait`を再実行し、同じ結果を受け取る"
 )
-_BODY_TEMP_PREFIX = "agents-wait"
-"""結果本文のファイルを置くmanaged-tempの接頭辞。呼び出しごとに新しい領域を作成し、7日後の自動削除へ委ねる。"""
+_BODY_DIRECTORY_NAME = "agents-wait"
+"""結果本文のファイルを置くディレクトリ名。会話が分かる場合はセッションのmanaged-tempの直下に固定し、後続の入力へパスで渡す。"""
 
 
 class _BodyFileWriter:
     """終端結果の`agent_message`をエスケープを含まないMarkdownファイルへ書き、その絶対パスを返す。
 
     呼び出し元がJSON文字列のエスケープを解く処理を持たずに結果本文を読めるようにするためである。
-    書込先のmanaged-tempは最初の書込時に1回だけ作成する。
+    本文は終端ごとにこの1ファイルだけが持ち、run記録と標準出力の保存物へ重ねない。
+    同じsessionの次のturnの終端は、前の本文を上書きせずに番号付きの別ファイルへ書く。
     """
 
     def __init__(self) -> None:
         self._directory: pathlib.Path | None = None
 
+    def _resolve_directory(self) -> pathlib.Path:
+        if self._directory is None:
+            session_id = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CODEX_THREAD_ID")
+            if session_id:
+                directory = _managed_temp.resolve_session_temp(session_id) / _BODY_DIRECTORY_NAME
+                directory.mkdir(mode=0o700, exist_ok=True)
+            else:
+                directory = _managed_temp.create_managed_temp(_BODY_DIRECTORY_NAME)
+            self._directory = directory
+        return self._directory
+
     def write(self, session_id: str, result: Mapping[str, Any]) -> pathlib.Path:
         """本文を書いたファイルの絶対パスを返す。書けない場合は`OSError`か`ManagedTempError`を送出する。"""
-        if self._directory is None:
-            self._directory = _managed_temp.create_output_temp(_BODY_TEMP_PREFIX)
-        # 呼び出しごとに新しい領域なので、内部のturn番号を公開結果へ残す必要はない。
-        path = self._directory / f"{session_id}.md"
-        with path.open("w", encoding="utf-8", newline="") as stream:
-            stream.write(str(result["agent_message"]))
-        return path
+        directory = self._resolve_directory()
+        for index in range(1, 10_000):
+            path = directory / (f"{session_id}.md" if index == 1 else f"{session_id}-{index}.md")
+            try:
+                with path.open("x", encoding="utf-8", newline="") as stream:
+                    stream.write(str(result["agent_message"]))
+            except FileExistsError:
+                continue
+            return path
+        raise OSError(f"結果本文のファイル名を確保できない: {directory / session_id}")
 
 
 def _wait_run_directory(root_session_id: str, owner: str, state_root: pathlib.Path | None) -> pathlib.Path:
@@ -138,7 +155,7 @@ def _saved_wait_recovery(run_path: pathlib.Path | None) -> dict[str, Any]:
         and row.get("status") in {"completed", "failed", "interrupted"}
         and isinstance(row.get("session_id"), str)
         and shared_layout.valid_session_id(row["session_id"])
-        and isinstance(row.get("agent_message"), str)
+        and (isinstance(row.get("agent_message_path"), str) or isinstance(row.get("agent_message"), str))
     ]
     if not results:
         return {**base, "status": "no-results"}
@@ -209,14 +226,14 @@ def _publish_wait_result(
     value.update(
         {
             "status": "published",
-            "output": output,
+            "output": _without_bodies(output, stream),
             "exit_code": code,
             "stream": stream,
             "continuable": False,
         }
     )
     _write_json(run_path, value)
-    print(output, file=sys.stderr if stream == "stderr" else sys.stdout, flush=True)
+    _print_public(output, stream)
     value["status"] = "foreground-delivered"
     value["continuable"] = continuable
     _write_json(run_path, value)
@@ -255,7 +272,7 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
         or not isinstance(code, int)
     ):
         return _fail(f"先行する待機の終端結果が公開されていません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
-    print(_public_wait_output(output, stream), file=sys.stderr if stream == "stderr" else sys.stdout, flush=True)
+    _print_public(_public_wait_output(output, stream), stream)
     value["status"] = "consumed"
     _write_json(run_path, value)
     _remove_wait_stash(run_path)
@@ -799,6 +816,52 @@ def _public_wait_output(output: str, stream: str | None) -> str:
         json.dumps(_public_wait_response(json.loads(line)), ensure_ascii=False, separators=(",", ":"))
         for line in output.splitlines()
     )
+
+
+def _without_bodies(output: str, stream: str) -> str:
+    """run記録へ残す出力から、本文ファイルが持つ`agent_message`を除く。"""
+    if stream == "stderr":
+        return output
+    rows = [json.loads(line) for line in output.splitlines() if line.strip()]
+    for row in rows:
+        if isinstance(row.get("agent_message_path"), str):
+            row.pop("agent_message", None)
+    return "\n".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) for row in rows)
+
+
+def _with_body(row: dict[str, Any]) -> dict[str, Any]:
+    """本文を除いて保存した行へ、本文ファイルから`agent_message`を戻す。読めない場合はパスだけを残す。"""
+    path = row.get("agent_message_path")
+    if "agent_message" in row or not isinstance(path, str):
+        return row
+    try:
+        with pathlib.Path(path).open(encoding="utf-8", newline="") as stream:
+            return {**row, "agent_message": stream.read()}
+    except OSError, UnicodeError:
+        return row
+
+
+def _print_public(output: str, stream: str | None) -> None:
+    """待機結果を前景へ書く。エージェント環境では本文を重ねて保存しないよう、要約を標準出力へ直接書く。
+
+    要約は通知・終端の内訳と上限内の本文を示し、本文ファイルを`agent_message_path`で後続へ渡せるようにする。
+    それ以外の行（`status: running`など）は通知を除いた1行のJSONとして続ける。
+    人の端末では従来どおり本文を含むJSON Linesを書く。
+    """
+    if stream == "stderr":
+        print(output, file=sys.stderr, flush=True)
+        return
+    rows = [_with_body(json.loads(line)) for line in output.splitlines() if line.strip()]
+    if not is_agent_environment():
+        print("\n".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) for row in rows), flush=True)
+        return
+    others = [
+        json.dumps({key: value for key, value in row.items() if key != "notices"}, ensure_ascii=False, separators=(",", ":"))
+        for row in rows
+        if row.get("status") not in state.TERMINAL_STATUSES
+    ]
+    sys.stdout.write(wait_summary.render(rows) + "".join(f"{line}\n" for line in others))
+    sys.stdout.flush()
 
 
 def _public_wait_response(payload: Mapping[str, Any]) -> dict[str, Any]:

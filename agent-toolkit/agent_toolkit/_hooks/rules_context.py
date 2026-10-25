@@ -48,7 +48,6 @@ MAIN_RULES_CODEX_PATH = SHARE_DIR / "rules-main.codex.md"
 SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
 SUBAGENT_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-subagent.claude-code.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
-SESSION_TEMP_PREFIX = managed_temp.SESSION_TEMP_PREFIX
 # `atk wi process-loop instruct`が保持し、process-loopがセッション起動時に渡す本文。
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 PROCESS_LOOP_INSTRUCTION_ELEMENT = message_format.FORWARDED_USER_INPUT_ELEMENT
@@ -342,7 +341,7 @@ def _existing_session_temp(session_id: object) -> str | None:
     """SessionStartが作成済みのセッションのmanaged-tempを、新たに作成せずに解決する。
 
     サブエージェントは親と同じsession_idを受け取るため、親のセッションのmanaged-tempを解決できる。
-    SubagentStartでは管理領域を登録しない。親のSessionStartが作成していない場合は通知しない。
+    SubagentStartでは領域を作成しない。親のSessionStartが作成していない場合は通知しない。
     """
     if not isinstance(session_id, str) or not session_id:
         return None
@@ -482,10 +481,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             if not delegated and source in _CONTEXT_LOSING_SOURCES:
                 mark_user_confirmation_pending(session_id)
             try:
-                session_temp = managed_temp.create_managed_temp(
-                    SESSION_TEMP_PREFIX,
-                    session_id=session_id,
-                )
+                session_temp = managed_temp.resolve_session_temp(session_id)
             except managed_temp.ManagedTempError, OSError:
                 pass
             else:

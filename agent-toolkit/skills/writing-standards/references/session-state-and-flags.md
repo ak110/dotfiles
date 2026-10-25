@@ -60,11 +60,11 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - 開始前判定は、投入先がprocess-loopの対象リポジトリ集合と交わる属性を持つ会話とその子孫の活動だけを理由にし、属性を読めない会話と属性のない会話を除く。
 - 除外する会話とその子孫は`_common/session_parents.py`の親子解決を使い、process-loopの共通環境印だけで別ループの会話を除外しない。
 
-## managed-tempの登録情報
+## managed-tempの状態
 
-managed-tempのマーカーファイル（`.agent-toolkit-managed-temp.json`）とOSアカウント専用の登録簿は、同じ版数付きの登録情報を保持する。
-スキーマ版数3は`prefix`・`created_at`・`awis`を必須とし、全項目の完全一致を検証する。版数2は`prefix`と`created_at`を必須とする版数2のフィールド集合どうし、版数1は版数1のフィールド集合どうしだけを完全一致で検証する。
-版数の不一致、片側だけの更新、必須項目の欠落、型不正、余分な項目は拒否する。
+- セッションのmanaged-tempは一時root直下の`session-<sha256(session_id)の16進表記の先頭16桁>`とし、全解決元が同じ関数で導く。新しい領域の状態は一時root直下の実体ディレクトリだけで表す
+- 旧版が作成した状態root（`<state_dir>/managed-temp`）の`.sessions/<sha256(session_id)>`が一時root直下の実在する非リンクディレクトリを指す場合は、その旧パスを同じ会話の領域として再利用し、参照は読取だけに使う。旧マーカー（`.agent-toolkit-managed-temp.json`）、旧登録簿、`.sessions`参照とcleanupロックは改名・一括削除せず、掃引が回収条件を確かめ対象別のロックを非待機で取得できたものだけを個別に回収する
+- 7日掃引の次回の確認時刻は、状態rootの`.sweep/schedule`に一時root直下の名前をキーとする1表で記録する
 
 ## 完了報告からの状態読み取り
 

@@ -107,7 +107,7 @@ def test_compaction_notifies_record_and_pending_inputs(
     monkeypatch.setattr(rules_context, "is_delegated", lambda *_args: False)
     monkeypatch.setattr(rules_context, "reset_main_operation_skill_ready", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(rules_context, "mark_user_confirmation_pending", lambda *_args: None)
-    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", lambda *_args, **_kwargs: tmp_path)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
     assert (
         rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session"})) == 0
     )

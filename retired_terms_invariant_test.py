@@ -62,10 +62,6 @@ class _RetiredTerm:
 _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     "証拠行": (
         # 既存の達成根拠へ付加された標識を読み、観測本文と分けて比較する箇所。
-        _AllowedLocation("agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence.py", 'rf"証拠行'),
-        _AllowedLocation(
-            "agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence_test.py", '"証拠行 {source}"'
-        ),
         _AllowedLocation("agent-toolkit/share/exec-review.subagent.md", "`証拠行`"),
         _AllowedLocation("docs/development/design-review-evidence.md", "「証拠行」"),
     ),
@@ -485,9 +481,9 @@ _RETIRED_TERMS = (
             ("常駐処理", "process-loop（`atk wi process-loop`）"),
             ("抽出器", "`atk run-script session-review-evidence`"),
             ("準備スクリプト", "`atk run-script session-review-prepare`"),
-            ("証拠を確認するコマンド", "`atk run-script exec-review-evidence-check`"),
+            ("証拠を確認するコマンド", "実行レビューの返却の条件別判定行"),
             ("上流投入情報", "選定結果の欄`上流投入`"),
-            ("バリデーター", "`atk run-script review-contract`"),
+            ("バリデーター", "検証する処理の名前"),
             ("pendingの取得", "`atk review-audit pending`"),
             ("管理CLI", "コマンド名"),
             ("リモート補助処理", "`atk_serve_*_remote_helper.py`"),

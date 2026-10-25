@@ -199,8 +199,7 @@ def test_exec_review_previous_revision_passes_task_document_hook(tmp_path: pathl
     task = _SHARE_DIR / "exec-review.subagent.md"
     prompt = (
         f"{task}の手順を実行せよ。\nレビュー基準: 計画\n計画: {tmp_path / 'plan.md'}\n"
-        f"引き継ぎ記録先: {tmp_path / 'handoff.md'}\n完成条件証拠: なし\n"
-        "未判定検証記録: なし\n"
+        f"引き継ぎ記録先: {tmp_path / 'handoff.md'}\n"
         f"レビュー種別: 引き継ぎ再レビュー\nround: 2\n前回確認版: {tmp_path / 'previous.md'}\n"
     )
     assert _invoke("Agent", prompt, tmp_path).returncode == 0

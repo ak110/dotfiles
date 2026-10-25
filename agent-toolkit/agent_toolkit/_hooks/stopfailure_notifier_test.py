@@ -1,20 +1,18 @@
 """agent-toolkit/agent_toolkit/_hooks/stopfailure_notifier.py のテスト。
 
-StopFailure発火内容のログ追記を、時刻固定の引数注入で検証する。
+利用上限の再開要求の作成条件と、それ以外の失敗で保存物を作成しないことを検証する。
 """
 
-import datetime
 import json
 import pathlib
+import tempfile
 
 import pytest
 
 from agent_toolkit._hooks import stopfailure_notifier
-from agent_toolkit._hooks.stopfailure_notifier import append_log
 from agent_toolkit._testing import fork_runner as _fork_runner
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
-_FIXED_NOW = datetime.datetime(2026, 5, 26, 12, 0, 0, tzinfo=datetime.UTC)
 
 
 @pytest.mark.parametrize(
@@ -24,7 +22,7 @@ _FIXED_NOW = datetime.datetime(2026, 5, 26, 12, 0, 0, tzinfo=datetime.UTC)
 def test_rate_limit_command_hook_hands_request_to_turn_complete(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, error: str, delegated: bool, agent: str | None
 ) -> None:
-    """StopFailureの公開errorからメインだけの再開要求を作る。"""
+    """StopFailureの公開errorからメインだけの再開要求を作成する。"""
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
@@ -43,65 +41,23 @@ def test_rate_limit_command_hook_hands_request_to_turn_complete(
         assert request.read_text(encoding="utf-8") == "requested"
 
 
-def test_append_log_writes_record(tmp_path: pathlib.Path):
-    """入力JSON全体とtranscript末尾要約を含む1行を追記する。"""
+def test_failure_does_not_create_a_log_or_transcript_summary(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """再開要求の対象外の失敗では、一時領域と設定領域へ何も書かない。"""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
     transcript = tmp_path / "transcript.jsonl"
-    error_entry = {
-        "type": "assistant",
-        "isApiErrorMessage": True,
-        "message": {
-            "id": "err",
-            "role": "assistant",
-            "content": [{"type": "text", "text": "The model's tool call could not be parsed (retry also failed)."}],
-        },
-    }
-    transcript.write_text(json.dumps(error_entry, ensure_ascii=False) + "\n", encoding="utf-8")
-    log_path = tmp_path / "stopfailure.jsonl"
+    transcript.write_text("{}\n", encoding="utf-8")
     payload = {
-        "session_id": "s1",
         "hook_event_name": "StopFailure",
-        "cwd": "/work",
-        "error_type": "rate_limit",
+        "session_id": "s1",
+        "error": "server_error",
         "transcript_path": str(transcript),
     }
-
-    append_log(payload, log_path=log_path, now=_FIXED_NOW)
-
-    lines = log_path.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 1
-    record = json.loads(lines[0])
-    assert record["timestamp"] == "2026-05-26T12:00:00+00:00"
-    assert record["session_id"] == "s1"
-    assert record["hook_event_name"] == "StopFailure"
-    assert record["cwd"] == "/work"
-    assert record["input"] == payload
-    assert "could not be parsed" in record["transcript_summary"]
-
-
-def test_append_log_appends_across_sessions(tmp_path: pathlib.Path):
-    """セッション横断で同一ログへ追記し、既存行を保持する。"""
-    log_path = tmp_path / "stopfailure.jsonl"
-    append_log({"session_id": "s1"}, log_path=log_path, now=_FIXED_NOW)
-    append_log({"session_id": "s2"}, log_path=log_path, now=_FIXED_NOW)
-    lines = log_path.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 2
-    assert json.loads(lines[0])["session_id"] == "s1"
-    assert json.loads(lines[1])["session_id"] == "s2"
-
-
-def test_append_log_rotates_one_generation_at_one_megabyte(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """閾値超過済みログを1世代へ退避して新しいレコードを追記する。"""
-    log_path = tmp_path / "stopfailure.jsonl"
-    log_path.write_text("x" * 11, encoding="utf-8")
-    monkeypatch.setattr(stopfailure_notifier, "_LOG_MAX_BYTES", 10)
-
-    append_log({"session_id": "s1"}, log_path=log_path, now=_FIXED_NOW)
-
-    assert log_path.with_suffix(".jsonl.1").read_text(encoding="utf-8") == "x" * 11
-    assert json.loads(log_path.read_text(encoding="utf-8"))["session_id"] == "s1"
+    assert stopfailure_notifier.main(json.dumps(payload)) == 0
+    assert not list(temp.iterdir())
+    assert not (tmp_path / "claude").exists()
 
 
 def test_invalid_json_exits_safely():

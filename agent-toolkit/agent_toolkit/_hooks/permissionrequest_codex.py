@@ -1,6 +1,6 @@
-"""Codexのmanaged-tempのcleanupだけを承認するPermissionRequest hook。
+"""Codexでmanaged-temp配下の作業領域を回収する`rm -rf -- <1パス>`だけを承認するPermissionRequest hook。
 
-対象を、登録済みpathの親rootも検証する共通処理へ渡し、現在の一時rootを前提としない。
+一時rootの配下にあり、root自身でもリンクを経由する経路でもなく、使用中の保持配布物に属さない対象に限る。
 """
 
 from __future__ import annotations
@@ -12,13 +12,11 @@ import pathlib
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import ctypes
 lazy import shlex
-lazy import shutil
 lazy import subprocess
 lazy import typing
 lazy from ctypes import wintypes
 
 lazy from agent_toolkit._atk import managed_temp as _managed_temp
-lazy from agent_toolkit._common.shell_tokens import atk_launcher_name
 
 
 def _windows_dll(name: str) -> typing.Any:
@@ -67,53 +65,15 @@ def _payload_object(payload_text: str) -> dict[str, typing.Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _is_trusted_atk_launcher(plugin_root: pathlib.Path) -> bool:
-    """PATH上のatkが配布済みの安定ランチャーか判定する。"""
-    executable = shutil.which(atk_launcher_name(windows=False))
-    if executable is None:
-        return False
-    launcher_name = atk_launcher_name(windows=os.name == "nt")
-    candidates = (
-        pathlib.Path.home() / ".local" / "bin" / launcher_name,
-        plugin_root / "scripts" / launcher_name,
-    )
-    resolved = pathlib.Path(executable).resolve(strict=True)
-    for candidate in candidates:
-        try:
-            if resolved == candidate.resolve(strict=True):
-                return True
-        except OSError:
-            continue
-    return False
-
-
-def _cleanup_target(
-    tokens: list[str],
-    *,
-    plugin_root: pathlib.Path,
-    helper: pathlib.Path,
-) -> pathlib.Path | None:
-    """許可対象の新旧cleanupコマンドから対象パスを返す。"""
-    if len(tokens) == 5 and tokens[1:4] == ["managed-temp", "cleanup", "--path"]:
-        if tokens[0] == atk_launcher_name(windows=False):
-            return pathlib.Path(tokens[4]) if _is_trusted_atk_launcher(plugin_root) else None
-        executable = pathlib.Path(tokens[0])
-        launcher_name = atk_launcher_name(windows=os.name == "nt")
-        trusted = plugin_root / "scripts" / launcher_name
-        if executable.is_absolute() and executable.resolve(strict=True) == trusted.resolve(strict=True):
-            return pathlib.Path(tokens[4])
+def _cleanup_target(tokens: list[str]) -> pathlib.Path | None:
+    """`rm -rf -- <1パス>`の形に厳密に一致する場合だけ対象パスを返す。"""
+    if len(tokens) != 4 or tokens[:3] != ["rm", "-rf", "--"]:
         return None
-    if len(tokens) != 8:
-        return None
-    if tokens[:5] != ["uv", "run", "--no-project", "--script", str(helper)]:
-        return None
-    if tokens[5:7] != ["cleanup", "--path"]:
-        return None
-    return pathlib.Path(tokens[7])
+    return pathlib.Path(tokens[3])
 
 
 def main(payload_text: str) -> int:
-    """厳密に一致して所有権検証を通過したcleanupだけを承認する。"""
+    """厳密に一致して回収対象の検証を通過した削除だけを承認する。"""
     payload = _payload_object(payload_text)
     if payload is None or payload.get("hook_event_name") != "PermissionRequest":
         return 0
@@ -122,22 +82,17 @@ def main(payload_text: str) -> int:
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict) or not isinstance(tool_input.get("command"), str):
         return 0
-    plugin_root_value = os.environ.get("PLUGIN_ROOT")
-    if not plugin_root_value:
-        return 0
     try:
-        plugin_root = pathlib.Path(plugin_root_value).resolve(strict=True)
-        helper = (plugin_root / "agent_toolkit" / "_managed_temp.py").resolve(strict=True)
         command = tool_input["command"]
         tokens = _tokens(command)
         if os.name == "nt" and command != subprocess.list2cmdline(tokens):
             return 0
-        target = _cleanup_target(tokens, plugin_root=plugin_root, helper=helper)
-        if target is None:
+        target = _cleanup_target(tokens)
+        if target is None or not target.is_absolute():
             return 0
-        if not target.is_absolute():
+        # root自身・root外・リンクを経由する経路を拒否し、使用中の保持配布物も許可しない。
+        if _managed_temp.plugin_root_in_use(_managed_temp.top_level_area(_managed_temp.contained_target(target))):
             return 0
-        _managed_temp.validate_managed_temp(target)
     except OSError, ValueError, _managed_temp.ManagedTempError:
         return 0
     _allow()

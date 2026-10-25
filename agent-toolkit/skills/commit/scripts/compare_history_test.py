@@ -388,10 +388,10 @@ def test_rebase_compares_binary_payload(repo: pathlib.Path, tmp_path: pathlib.Pa
         assert json.loads(output.read_text(encoding="utf-8")) == {old_head: new_head}
 
 
-def test_amend_mapping_flows_to_rewrite_consumers(
+def test_amend_mapping_is_saved_as_one_pair(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """amendの旧新HEADを1件の対応表へ保存し、両記録のcommit標識だけを新OIDへ更新させ、裸の取得版は保つ。"""
+    """amendの旧新HEADを1件の対応表へ保存する。"""
     base = _git(repo, "rev-parse", "HEAD")
     old_head = _commit(repo, "first.txt", "一", "一つ目")
     (repo / "first.txt").write_text("一改訂", encoding="utf-8")
@@ -401,28 +401,6 @@ def test_amend_mapping_flows_to_rewrite_consumers(
     mapping = tmp_path / "amend.json"
     assert _compare(repo, mapping, "amend", (base, old_head, base, new_head)) == 0
     assert json.loads(mapping.read_text(encoding="utf-8")) == {old_head: new_head}
-    evidence_text = f"現行commit:{old_head} を確認。取得版 {old_head} の実行記録を適用"
-    row = {"source": "原文", "outcome": "", "reviewed_head": "", "evidence": evidence_text}
-    wi = "20261017-000000-001.md"
-    pending = tmp_path / "pending.json"
-    pending.write_text(
-        json.dumps({"wi_conditions": [{"awi": wi, "condition": "保存する。", **row}], "user_requirements": []}),
-        encoding="utf-8",
-    )
-    evidence = tmp_path / "evidence.json"
-    reviewed = {**row, "awi": wi, "condition": "保存する。", "outcome": "達成", "reviewed_head": old_head}
-    evidence.write_text(json.dumps({"wi_conditions": [reviewed], "user_requirements": []}), encoding="utf-8")
-    for argv in (
-        ["verification-record", "--", "--output", str(pending), "--rewrite-map", str(mapping)],
-        ["exec-review-evidence-check", "--", str(evidence), "--rewrite-map", str(mapping)],
-    ):
-        with pytest.raises(SystemExit) as raised:
-            atk.main(["run-script", *argv])
-        assert raised.value.code == 0
-    expected = f"現行commit:{new_head} を確認。取得版 {old_head} の実行記録を適用"
-    for path in (pending, evidence):
-        assert json.loads(path.read_text(encoding="utf-8"))["wi_conditions"][0]["evidence"] == expected
-    assert json.loads(evidence.read_text(encoding="utf-8"))["wi_conditions"][0]["reviewed_head"] == old_head
     capsys.readouterr()
 
 
@@ -551,24 +529,6 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
     events = commit_mapping.read_events(plan, plan.read_text(encoding="utf-8"))
     expected = [_git(repo, "rev-parse", "--short", value) for value in dict.fromkeys(pairs.values())]
     assert commit_mapping.get_commits(repo, events, [wi], {wi}) == {wi: expected}
-    evidence = tmp_path / "evidence.json"
-    original = {
-        "awi": wi,
-        "condition": "対応を継承する。",
-        "source": f"{wi} 完成条件1",
-        "outcome": "達成",
-        "reviewed_head": old_head,
-        "evidence": f"現行commit:{target} と修正commit:{old_head}。取得版 {target} と比較元 {old_head}",
-    }
-    evidence.write_text(json.dumps({"wi_conditions": [original], "user_requirements": []}), encoding="utf-8")
-    with pytest.raises(SystemExit) as raised:
-        atk.main(["run-script", "exec-review-evidence-check", "--", str(evidence), "--rewrite-map", str(mapping)])
-    assert raised.value.code == 0
-    updated = json.loads(evidence.read_text(encoding="utf-8"))["wi_conditions"][0]
-    assert updated["evidence"] == (
-        f"現行commit:{pairs[target]} と修正commit:{pairs[old_head]}。取得版 {target} と比較元 {old_head}"
-    )
-    assert updated["reviewed_head"] == old_head and updated["outcome"] == "達成"
     assert mapping.read_bytes() == before
     capsys.readouterr()
 

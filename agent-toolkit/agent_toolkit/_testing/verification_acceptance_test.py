@@ -6,7 +6,6 @@ import contextlib
 import json
 import os
 import pathlib
-import shlex
 import subprocess
 import sys
 import time
@@ -103,13 +102,13 @@ def _driver(mode: str, root: pathlib.Path, label: str, *argv: str) -> list[str]:
     return [sys.executable, str(_DRIVER), mode, str(root), label, *argv]
 
 
-def test_four_public_verification_entries_share_one_execution_interval(
+def test_public_verification_entries_share_one_execution_interval(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     record_property: Callable[[str, object], None],
 ) -> None:
-    """4種類の検証コマンドが保持者の解放を待ち、検証区間が重ならず全て終了する。"""
+    """laneの統合検証・pytest・pyfltrの3種類が保持者の解放を待ち、検証区間が重ならず全て終了する。"""
     probe = tmp_path / "probe.py"
     probe.write_text(_PROBE, encoding="utf-8")
     events = tmp_path / "events.jsonl"
@@ -133,22 +132,7 @@ def test_four_public_verification_entries_share_one_execution_interval(
         "targets=['*.py']\npass-filenames=false\n",
         encoding="utf-8",
     )
-    plan = tmp_path / "plan.md"
-    command = shlex.join([sys.executable, str(probe), "plan", str(events)])
-    plan.write_text(
-        f"# 計画\n\n## 検証\n\n| 区分 | 検証コマンド |\n| --- | --- |\n| 変更範囲の検証 | `{command}` |\n",
-        encoding="utf-8",
-    )
     commands = {
-        "plan": [
-            str(_PLUGIN / "skills/plan-mode/scripts/run_plan_verifications.py"),
-            "--plan",
-            str(plan),
-            "--worktree",
-            str(project),
-            "--timeout",
-            "20",
-        ],
         "lane": lane[1:],
         "pytest": ["-m", "pytest", "-p", "no:cacheprovider", "-q", str(project / "probe_test.py")],
         "pyfltr": ["-m", "pyfltr", "run", "--commands=probe", "--no-cache", "--no-fix", "--no-clear", str(project / "work.py")],
@@ -171,9 +155,9 @@ def test_four_public_verification_entries_share_one_execution_interval(
             assert process.returncode == 0, (label, stdout, stderr)
             observed[label] = {"stdout": stdout, "stderr": stderr}
     intervals = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
-    assert len(intervals) == 8
+    assert len(intervals) == 6
     assert {row["label"] for row in intervals} == set(commands)
-    assert len({row["owner"] for row in intervals}) == 4
+    assert len({row["owner"] for row in intervals}) == 3
     for start, end in zip(intervals[::2], intervals[1::2], strict=True):
         assert start["event"] == "start" and end["event"] == "end"
         assert start["label"] == end["label"] and start["time"] < end["time"]
@@ -209,23 +193,24 @@ def test_real_serve_releases_observer_before_next_verification(
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(0.01)
+        project = tmp_path / "next-project"
+        project.mkdir()
+        (project / "probe_test.py").write_text(
+            "import subprocess\n"
+            "def test_record():\n"
+            f"    subprocess.run({[sys.executable, str(probe), 'next', str(events)]!r}, check=True)\n",
+            encoding="utf-8",
+        )
+        (project / "pyproject.toml").write_text(
+            "[tool.pytest.ini_options]\naddopts=['-p', 'agent_toolkit._testing.pytest_plugin']\n", encoding="utf-8"
+        )
         following = stack.enter_context(
             _process(
                 _driver(
-                    "entry",
-                    tmp_path,
-                    "next",
-                    str(_PLUGIN / "agent_toolkit/atk.py"),
-                    "run-command",
-                    "--verification",
-                    "--",
-                    sys.executable,
-                    str(probe),
-                    "next",
-                    str(events),
+                    "entry", tmp_path, "next", "-m", "pytest", "-p", "no:cacheprovider", "-q", str(project / "probe_test.py")
                 ),
                 environment,
-                tmp_path,
+                project,
             )
         )
         _wait(tmp_path / "next.waiting", following)
@@ -250,52 +235,4 @@ def test_real_serve_releases_observer_before_next_verification(
             },
             ensure_ascii=False,
         ),
-    )
-
-
-def test_shared_wait_longer_than_child_timeout_keeps_exit_and_outputs(
-    tmp_path: pathlib.Path, record_property: Callable[[str, object], None]
-) -> None:
-    """共有待機が実行上限を超えても、子を実行して終了値と両出力を保持する。"""
-    environment = _environment(tmp_path)
-    with contextlib.ExitStack() as stack:
-        holder = stack.enter_context(_process(_driver("hold", tmp_path, "holder"), environment, tmp_path))
-        _wait(tmp_path / "holder.ready", holder)
-        waiting = stack.enter_context(
-            _process(
-                _driver(
-                    "entry",
-                    tmp_path,
-                    "bounded",
-                    str(_PLUGIN / "agent_toolkit/atk.py"),
-                    "run-command",
-                    "--verification",
-                    "--timeout",
-                    "1",
-                    "--",
-                    sys.executable,
-                    "-c",
-                    "import sys; print('retained-out'); print('retained-err', file=sys.stderr); sys.exit(7)",
-                ),
-                environment,
-                tmp_path,
-            )
-        )
-        _wait(tmp_path / "bounded.waiting", waiting)
-        started = time.monotonic()
-        time.sleep(1.2)
-        assert waiting.poll() is None
-        (tmp_path / "holder.release").touch()
-        assert holder.wait(timeout=10) == 0
-        stdout, stderr = waiting.communicate(timeout=20)
-        assert waiting.returncode == 7, (stdout, stderr)
-    metadata = json.loads(stdout)
-    assert metadata["child_exit_code"] == metadata["wrapper_exit_code"] == 7
-    record = json.loads(pathlib.Path(metadata["record_path"]).read_text(encoding="utf-8"))
-    assert not record["timed_out"] and time.monotonic() - started > 1
-    output = pathlib.Path(metadata["stdout_path"]).read_text(encoding="utf-8")
-    diagnostic = pathlib.Path(metadata["stderr_path"]).read_text(encoding="utf-8")
-    assert output == "retained-out\n" and diagnostic == "retained-err\n"
-    record_property(
-        "shared_wait_observation", json.dumps({"record": metadata, "stdout": output, "stderr": diagnostic}, ensure_ascii=False)
     )

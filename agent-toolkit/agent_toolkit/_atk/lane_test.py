@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import contextlib
 import datetime
-import io
 import json
 import os
 import pathlib
@@ -23,7 +22,7 @@ import pytest
 import yaml
 
 from agent_toolkit import atk
-from agent_toolkit._atk import agents_exit_session, lane, managed_temp, review_table
+from agent_toolkit._atk import agents_exit_session, lane, managed_temp
 from agent_toolkit._atk.wi import process_loop_session
 from agent_toolkit._common import session_registry, task_documents, wait_schedule
 from agent_toolkit._testing import git_repository, isolation, wi_entry_files
@@ -1010,11 +1009,6 @@ def test_process_loop_child_exit_cleans_before_normal_or_abnormal_classification
 
 
 def _integration_args(record: dict[str, Any], repo: pathlib.Path, manifest: pathlib.Path, head: str) -> tuple[str, ...]:
-    if manifest.is_file():
-        document = json.loads(manifest.read_text(encoding="utf-8"))
-        if "review_inputs" not in document:
-            document["review_inputs"] = [_generated_review_input(record, manifest, head)]
-            manifest.write_text(json.dumps(document), encoding="utf-8")
     return (
         "integrate",
         "--record",
@@ -1028,86 +1022,6 @@ def _integration_args(record: dict[str, Any], repo: pathlib.Path, manifest: path
         "--manifest",
         str(manifest),
     )
-
-
-def _generated_review_input(record: dict[str, Any], manifest: pathlib.Path, head: str) -> dict[str, str]:
-    """公開テンプレートと返却生成を使い、統合試験へ実際の生成済み受領入力を用意する。"""
-    document = json.loads(manifest.read_text(encoding="utf-8"))
-    directory = manifest.parent / (manifest.stem + "-review")
-    directory.mkdir(exist_ok=True)
-    identity = {
-        "head": head,
-        "plans": [{key: value for key, value in row.items() if key != "commands"} for row in document["plans"]],
-        "wis": [{key: value for key, value in row.items() if key != "commands"} for row in document["wis"]],
-    }
-    binding = directory / "binding.json"
-    if binding.is_file():
-        saved = json.loads(binding.read_text(encoding="utf-8"))
-        if saved["identity"] == identity:
-            return saved["input"]
-    plans: list[str] = []
-    for row in document["plans"]:
-        if row.get("no_merge", False):
-            continue
-        plan = pathlib.Path(row.get("saved", str(directory / row["name"])))
-        if not plan.exists():
-            plan.write_text("# 計画\n", encoding="utf-8")
-        plans.extend(("--plan", str(plan)))
-    wis = [row["name"] for row in document["wis"] if not row.get("no_merge", False)]
-    evidence = directory / "evidence.json"
-    command = [sys.executable, str(pathlib.Path(atk.__file__).resolve()), "run-script", "exec-review-evidence-check", "--"]
-    worktree = pathlib.Path(record["worktree"])
-    if wis or plans:
-        template = subprocess.run(
-            [*command, "--template", str(evidence), *wis, *plans],
-            cwd=worktree,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        assert template.returncode == 0, template.stderr
-        payload = json.loads(evidence.read_text(encoding="utf-8"))
-        number = 0
-        for rows in payload.values():
-            for row in rows:
-                number += 1
-                row.update(outcome="達成", evidence=f"test_lane_observation_{number} 成功", reviewed_head=head)
-        evidence.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    table = directory / "review.tsv"
-    if not table.exists():
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            assert review_table.init(table) == 0
-    generated = subprocess.run(
-        [
-            *command,
-            str(evidence) if wis or plans else "なし",
-            *wis,
-            *plans,
-            "--expected-head",
-            head,
-            "--review-start",
-            head,
-            "--review-table",
-            str(table),
-            "--round",
-            "1",
-            "--return-result",
-            "--reader-fit-review",
-            '{"files":{},"external":{}}',
-        ],
-        cwd=worktree,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    assert generated.returncode == 0, generated.stderr
-    prefix = "受領確認入力のパス: "
-    path = next(line.removeprefix(prefix) for line in generated.stdout.splitlines() if line.startswith(prefix))
-    result = {"path": path, "reviewed_head": head}
-    binding.write_text(json.dumps({"identity": identity, "input": result}), encoding="utf-8")
-    return result
 
 
 def _integration_selection(path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path) -> None:
@@ -1226,86 +1140,6 @@ def test_integrate_public_lifecycle(
     assert code == 0 and deleted["removed"] == ["lane-01"], stderr
 
 
-@pytest.mark.parametrize("invalid", ["missing", "schema", "wi", "plan", "head", "evidence"])
-def test_integrate_checks_generated_review_input_before_git_and_finalization(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    invalid: str,
-) -> None:
-    """欠落・不成立・別対象の生成済み入力を拒否し、同じ公開操作から修復後に統合する。"""
-    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch, repo)
-    worktree = pathlib.Path(record["worktree"])
-    (worktree / "feature").write_text("成果", encoding="utf-8")
-    head = git_repository.commit_all(worktree, "レビュー対象")
-    before = git_repository.git_output(repo, "rev-parse", "HEAD")
-    manifest = _finalization_manifest(tmp_path)
-    args = _integration_args(record, repo, manifest, head)
-    original = manifest.read_text(encoding="utf-8")
-    value = json.loads(original)
-    batch = pathlib.Path(value["review_inputs"][0]["path"])
-    original_batch = batch.read_text(encoding="utf-8")
-    payload = json.loads(original_batch)
-    evidence = pathlib.Path(payload["reviews"][0]["evidence"])
-    original_evidence = evidence.read_text(encoding="utf-8")
-    if invalid == "missing":
-        value.pop("review_inputs")
-    elif invalid == "schema":
-        payload["reviews"] = []
-    elif invalid == "wi":
-        payload["reviews"][0]["wi"] = ["another.md"]
-    elif invalid == "plan":
-        payload["reviews"][0].update(plans=[str(tmp_path / "another.md")], plan=str(tmp_path / "another.md"))
-    elif invalid == "head":
-        payload["reviews"][0]["reviewed_head"] = before
-    else:
-        evidence.write_text('{"wi_conditions":[],"user_requirements":[]}', encoding="utf-8")
-    manifest.write_text(json.dumps(value), encoding="utf-8")
-    batch.write_text(json.dumps(payload), encoding="utf-8")
-
-    code, _result, stderr = _invoke(capsys, *args)
-
-    assert code == 2 and "受領確認入力" in stderr
-    assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
-    assert "未統合" in selected.read_text(encoding="utf-8")
-    assert pathlib.Path(record["record_path"]).is_file() and worktree.is_dir()
-    if invalid == "evidence":
-        stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
-        assert pathlib.Path(stored["review_input_check"]["stderr_path"]).is_file()
-    manifest.write_text(original, encoding="utf-8")
-    batch.write_text(original_batch, encoding="utf-8")
-    evidence.write_text(original_evidence, encoding="utf-8")
-    code, integrated, stderr = _invoke(capsys, *args)
-    assert code == 0 and integrated["phase"] == "finalized", stderr
-    assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
-
-
-def test_integrate_keeps_last_real_review_when_input_history_is_rewritten(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """amend後の統合入力Hでも、受理済みの実レビューRと生成済み証拠を保持して確認する。"""
-    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch, repo)
-    worktree = pathlib.Path(record["worktree"])
-    (worktree / "feature").write_text("成果", encoding="utf-8")
-    reviewed = git_repository.commit_all(worktree, "レビュー対象")
-    manifest = _finalization_manifest(tmp_path)
-    _integration_args(record, repo, manifest, reviewed)
-    inputs = json.loads(manifest.read_text(encoding="utf-8"))["review_inputs"]
-    batch = pathlib.Path(inputs[0]["path"])
-    before = batch.read_bytes()
-    git_repository.run_git(worktree, "commit", "--amend", "-m", "検収済みの履歴整理")
-    head = git_repository.git_output(worktree, "rev-parse", "HEAD")
-    assert reviewed != head
-
-    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
-
-    assert code == 0 and result["phase"] == "finalized", stderr
-    assert batch.read_bytes() == before
-    assert result["input"]["manifest"]["review_inputs"][0]["reviewed_head"] == reviewed
-
-
 def test_integrate_mixed_manifest_reviews_implemented_deferral_and_keeps_no_merge_items(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1344,9 +1178,6 @@ def test_integrate_mixed_manifest_reviews_implemented_deferral_and_keeps_no_merg
     args = _integration_args(record, repo, manifest, head)
     code, result, stderr = _invoke(capsys, *args)
     assert code == 0 and result["phase"] == "finalized", stderr
-    inputs = json.loads(manifest.read_text(encoding="utf-8"))["review_inputs"]
-    payload = json.loads(pathlib.Path(inputs[0]["path"]).read_text(encoding="utf-8"))
-    assert payload["reviews"][0]["wi"] == ["20261023-000000-001.md"] and not payload["reviews"][0]["plans"]
 
 
 def test_integrate_resume_and_preservation(
@@ -1389,13 +1220,6 @@ def test_integrate_resume_and_preservation(
     assert stored["integration"]["phase"] == "git-integrated"
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
     assert "統合済み" not in selected.read_text(encoding="utf-8")
-    # 計画保存が原パスを移動した後も、検査時の入力と実行記録から残る最終化を再開する。
-    batch = pathlib.Path(json.loads(manifest.read_text(encoding="utf-8"))["review_inputs"][0]["path"])
-    payload = json.loads(batch.read_text(encoding="utf-8"))
-    for review in payload["reviews"]:
-        for source in [review["evidence"], review["review_table"], *review["plans"]]:
-            pathlib.Path(source).unlink()
-    batch.unlink()
     permit.touch()
     code, result, stderr = _invoke(capsys, *args)
     assert code == 0 and result["phase"] == "finalized", stderr
@@ -1542,7 +1366,7 @@ def test_hook_owned_resource(
     code, record, stderr = _create_in(capsys, monkeypatch, "hook-owner", repo, selected)
     assert code == 0 and record["worktree"] == str(destination), stderr
     diagnostics = pathlib.Path(record["hook_diagnostics"]["WorktreeCreate"])
-    assert (diagnostics / ".agent-toolkit-managed-temp.json").is_file()
+    assert diagnostics.parent == managed_temp.temp_root_path()
     observed = json.loads((diagnostics / "WorktreeCreate-0.json").read_text(encoding="utf-8"))
     assert observed["exit_code"] == 0 and observed["input"]["session_id"] == "hook-owner"
     assert git_repository.git_output(destination, "symbolic-ref", "--short", "HEAD") == record["branch"]

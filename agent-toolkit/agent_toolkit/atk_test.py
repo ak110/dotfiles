@@ -14,7 +14,6 @@ import os
 import pathlib
 import subprocess
 import sys
-import tempfile
 import time
 import types
 from collections.abc import Callable
@@ -28,10 +27,7 @@ from agent_toolkit._atk import config as _config  # noqa: E402  # pylint: disabl
 from agent_toolkit._atk import git_sync as _git_sync
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import plans as _plans_module
-from agent_toolkit._atk import run_command as _run_command  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._atk.managed_temp import inventory as managed_temp_inventory
-from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import listing as _wi_listing
@@ -40,7 +36,6 @@ from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
 from agent_toolkit._common import codex_models, mcp_environment
-from agent_toolkit._common import session_state as _session_state  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._hooks import user_prompt_submit  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing import git_repository, wi_entry_files
@@ -60,54 +55,26 @@ def test_persistent_warning_once_per_session(
     capsys: pytest.CaptureFixture[str],
     tmp_path: pathlib.Path,
 ) -> None:
-    """期限超過の未登録領域の削除失敗と残存件数を、公開サブコマンドから観測する。"""
+    """期限切れの対象を削除できなかった掃引の失敗を、同じ会話で1回だけ公開サブコマンドから警告する。"""
     for key in ("AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_DELEGATED_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
-
-    area = _managed_temp.create_managed_temp("failed-orphan")
-    managed_temp_registry._registry_path(area).unlink()  # pylint: disable=protected-access
-    # マーカー不正のため強制回収へ進み、実際の削除primitiveだけを失敗させる。
-    (area / ".agent-toolkit-managed-temp.json").write_text("{}", encoding="utf-8")
-    expired = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
-    for path in (*area.rglob("*"), area):
-        os.utime(path, (expired, expired))
-    metadata = area.stat()
-    identity = metadata.st_dev, metadata.st_ino
-    clear_directory = managed_temp_inventory._clear_directory  # pylint: disable=protected-access
-    remove_windows = managed_temp_inventory._remove_windows_quarantine  # pylint: disable=protected-access
-    windows_extended_path = managed_temp_inventory._windows_extended_path  # pylint: disable=protected-access
-
-    def fail_posix_removal(descriptor: int, **kwargs: Any) -> None:
-        current = os.fstat(descriptor)
-        if (current.st_dev, current.st_ino) == identity:
-            raise PermissionError("persistent deletion failure")
-        clear_directory(descriptor, **kwargs)
-
-    def fail_windows_removal(root: pathlib.Path, expected_tree: dict, **kwargs: Any) -> None:
-        if windows_extended_path(root) == windows_extended_path(area):
-            raise PermissionError("persistent deletion failure")
-        remove_windows(root, expected_tree, **kwargs)
-
-    monkeypatch.setattr(managed_temp_inventory, "_clear_directory", fail_posix_removal)
-    monkeypatch.setattr(managed_temp_inventory, "_remove_windows_quarantine", fail_windows_removal)
+    failed = tmp_path / "failed-area"
+    setattr_in_managed_temp_modules(
+        monkeypatch,
+        "sweep_managed_temp",
+        lambda **_kwargs: _managed_temp.SweepResult([], ((failed, "persistent deletion failure"),)),
+    )
     monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "result")
 
-    def invoke() -> str:
+    def expect_warning(expected: bool) -> None:
         with pytest.raises(SystemExit) as raised:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
+            atk.main(["wait-schedule"], home=tmp_path)
         assert raised.value.code == 0
         output = capsys.readouterr()
-        assert output.out == "result\n"
-        assert area.is_dir()
-        assert (area / ".agent-toolkit-managed-temp.json").read_text(encoding="utf-8") == "{}"
-        return output.err
-
-    def expect_warning(expected: bool) -> None:
-        output = invoke()
-        assert ("登録を失ったmanaged-tempのディレクトリを自動削除できない" in output) is expected
-        assert ("自動削除されずに残った、登録を持たない管理対象が1件ある" in output) is expected
+        assert json.loads(output.out)["cron"] == "result"
+        assert ("managed-tempの期限切れの対象を自動削除できなかった" in output.err) is expected
         if expected:
-            assert "persistent deletion failure" in output
+            assert "persistent deletion failure" in output.err and str(failed) in output.err
 
     for key in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         monkeypatch.setenv(key, key)
@@ -127,33 +94,6 @@ def test_persistent_warning_once_per_session(
 
 
 _GitCall = dict[str, Any]
-
-
-def test_retention_transition_reports_same_count(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    tmp_path: pathlib.Path,
-) -> None:
-    """保持件数が同じでも対象の変化を要約し、不変の状態では出力を省く。"""
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "retention-transitions")
-    results = iter(
-        [
-            _managed_temp.SweepResult([], (), None, (("first", "live"),), True),
-            _managed_temp.SweepResult([], (), None, (("second", "live"),), True),
-            _managed_temp.SweepResult([], (), None, (("second", "live"),), False),
-        ]
-    )
-    setattr_in_managed_temp_modules(monkeypatch, "sweep_managed_temp", lambda **_kwargs: next(results))
-    monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "result")
-    for changed in (True, True, False):
-        with pytest.raises(SystemExit) as raised:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
-        assert raised.value.code == 0
-        output = capsys.readouterr()
-        assert output.out == "result\n"
-        assert ("配布物を1件保持した" in output.err) is changed
 
 
 _ATK_PATH = pathlib.Path(atk.__file__).resolve()
@@ -250,23 +190,6 @@ _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
 _FIXED_ISO = _FIXED_DT.isoformat()
 
 
-def test_run_command_dispatches_remainder_argv(monkeypatch: pytest.MonkeyPatch) -> None:
-    """トップレベルCLIが`--`以後のargvをrun-commandへ渡す。"""
-    received: list[argparse.Namespace] = []
-
-    def fake_run(args: argparse.Namespace) -> int:
-        received.append(args)
-        return 23
-
-    monkeypatch.setattr(_run_command, "dispatch", fake_run)
-
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(["run-command", "--cwd", str(pathlib.Path.cwd()), "--", "tool", "a b", "|", "-x"])
-
-    assert exc_info.value.code == 23
-    assert received[0].command_argv in (["--", "tool", "a b", "|", "-x"], ["tool", "a b", "|", "-x"])
-
-
 def _body_file_args(tmp_path: pathlib.Path, *messages: str) -> list[str]:
     """本文群をファイルへ保存し、繰り返し可能な`--body-file`引数列を返す。"""
     args: list[str] = []
@@ -289,35 +212,6 @@ def _isolate_agent_and_managed_temp_environment(
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-
-
-def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """別cloneの追加項目を取得し、連続実行でも明示したpull処理を完了する。"""
-    origin = tmp_path / "origin.git"
-    seed = tmp_path / "seed"
-    notes = tmp_path / "private-notes"
-    peer = tmp_path / "peer"
-    git_repository.init_bare_repository(origin)
-    git_repository.init_repository(
-        seed, initial_branch="main", origin=str(origin), files={".gitkeep": ""}, commit_message="base"
-    )
-    git_repository.run_git(seed, "push", "-u", "origin", "main")
-    git_repository.run_git(tmp_path, "clone", str(origin), str(notes))
-    git_repository.run_git(tmp_path, "clone", str(origin), str(peer))
-    _write_awi_file(peer, "remote.md")
-    git_repository.commit_all(peer, "remote entry")
-    git_repository.run_git(peer, "push")
-
-    for _ in range(2):
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "pull"], home=tmp_path)
-        assert exc_info.value.code == 0
-
-    assert (notes / "2026/10/remote.md").exists()
-    assert capsys.readouterr().out == f"成功: private-notesをremoteと同期した: {notes.resolve()}\n" * 2
 
 
 @pytest.mark.parametrize(
@@ -561,62 +455,46 @@ class TestAgentsExitSessionParser:
 class TestWaitScheduleParser:
     """`wait-schedule`の公開parserとdispatchを検証する。"""
 
-    @pytest.mark.parametrize("bucket", ["main", "subagent"])
-    def test_accepts_request_bucket(self, bucket: str) -> None:
-        """mainとsubagentをrequest bucketとして受理する。"""
+    def test_accepts_no_arguments(self) -> None:
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["wait-schedule", "--request-bucket", bucket])
-        assert args.command == "wait-schedule"
-        assert args.request_bucket == bucket
+        assert parser.parse_args(["wait-schedule"]).command == "wait-schedule"
 
     @pytest.mark.parametrize(
         "argv",
         [
-            ["wait-schedule"],
-            ["wait-schedule", "--request-bucket=worker"],
-            ["wait-schedule", "--request-bucket=main", "extra"],
-            ["wait-schedule", "--request-bucket=main", "--format=yaml"],
+            ["wait-schedule", "--request-bucket=main"],
+            ["wait-schedule", "--format", "json"],
+            ["wait-schedule", "extra"],
         ],
     )
-    def test_rejects_missing_unknown_or_extra_arguments(self, argv: list[str]) -> None:
-        """request bucketの欠落・未知値・余分な引数を拒否する。"""
+    def test_rejects_removed_or_extra_arguments(self, argv: list[str]) -> None:
+        """廃止した`--request-bucket`・`--format`と余分な引数を拒否する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(argv)
         assert exc_info.value.code == 2
 
-    def test_dispatches_selected_schedule(
+    def test_outputs_main_schedule_and_prompt_as_json(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """公開CLIが判定モジュールのcron式を1行で出力する。"""
+        """メインのcron式と、1行目がUserPromptSubmitの機械注入の標識であるpromptを1行のJSONで出力する。"""
+        buckets: list[str] = []
 
         def fake_get_schedule(request_bucket: str) -> str:
-            assert request_bucket == "main"
-            return "*/30 * * * *"
+            buckets.append(request_bucket)
+            return "*/3 * * * *"
 
         monkeypatch.setattr(_wait_schedule, "get_schedule", fake_get_schedule)
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
-        assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "*/30 * * * *\n"
-
-    def test_wait_schedule_json_format(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """`--format json`はcron式と、1行目がUserPromptSubmitの機械注入の標識であるpromptを1行のJSONで出力する。"""
-        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "*/3 * * * *")
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main", "--format", "json"], home=tmp_path)
+            atk.main(["wait-schedule"], home=tmp_path)
         assert exc_info.value.code == 0
         out = capsys.readouterr().out
         assert out.count("\n") == 1
         payload = json.loads(out)
+        assert buckets == ["main"]
         assert payload["cron"] == "*/3 * * * *"
         assert payload["prompt"].split("\n", 1)[0] == user_prompt_submit.PERIODIC_RECHECK_MARKER
 
@@ -630,60 +508,19 @@ class TestWaitScheduleParser:
 
         def fake_sweep(*, now: datetime.datetime) -> _managed_temp.SweepResult:
             calls.append(now)
-            return _managed_temp.SweepResult([], (), None)
+            return _managed_temp.SweepResult([], ())
 
         setattr_in_managed_temp_modules(monkeypatch, "sweep_managed_temp", fake_sweep)
-
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
-
+            atk.main(["wait-schedule"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
         assert calls == [_FIXED_DT]
-
-    @pytest.mark.parametrize("count", [0, 1, 3])
-    def test_unregistered_managed_temp_warning_is_summarized_for_unrelated_subcommand(
-        self,
-        count: int,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """無関係なサブコマンドは未登録領域を件数だけの1行で報告する。"""
-        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-
-        def fixed_schedule(request_bucket: str) -> str:
-            assert request_bucket == "main"
-            return "fixed-subcommand-output"
-
-        monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
-        setattr_in_managed_temp_modules(
-            monkeypatch,
-            "sweep_managed_temp",
-            lambda *, now: _managed_temp.SweepResult([], tuple(tmp_path / f"orphan-{index}" for index in range(count)), None),
-        )
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "fixed-subcommand-output\n"
-        err_lines = captured.err.splitlines()
-        warning_lines = [line for line in err_lines if "登録を持たない管理対象" in line]
-        if count == 0:
-            assert not warning_lines
-        else:
-            assert warning_lines == [f"警告: 自動削除されずに残った、登録を持たない管理対象が{count}件ある"]
-            next_action = err_lines[err_lines.index(warning_lines[0]) + 1]
-            assert next_action.startswith("次の操作: ")
-            assert "atk managed-temp list" in next_action
-            assert str(tmp_path) not in captured.err
 
     @pytest.mark.parametrize(
         ("delegated_session", "expects_warning"),
         [(None, True), ("1", False), ("other", True)],
     )
-    def test_unregistered_managed_temp_warning_depends_on_delegated_session(
+    def test_sweep_failure_warning_depends_on_delegated_session(
         self,
         delegated_session: str | None,
         expects_warning: bool,
@@ -691,354 +528,25 @@ class TestWaitScheduleParser:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """未登録領域の警告は値が1の委譲先だけで抑止する。"""
-        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
+        """削除できなかった対象の警告は、回収を判断できない委譲先（値が1）だけで抑止する。"""
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "*/3 * * * *")
         setattr_in_managed_temp_modules(
-            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
+            monkeypatch,
+            "sweep_managed_temp",
+            lambda *, now: _managed_temp.SweepResult([], ((tmp_path / "orphan", "削除失敗"),)),
         )
         if delegated_session is None:
             monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
         else:
             monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", delegated_session)
-
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
-
+            atk.main(["wait-schedule"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "fixed-subcommand-output\n"
-        assert ("登録を持たない管理対象が1件ある" in captured.err) is expects_warning
-
-    def test_sweep_notice_suppressed_for_codex_delegated_session(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """委譲元の識別子だけを持つCodexの委譲先でも、未登録領域の警告を出力しない。
-
-        Codexの委譲先は`AGENT_TOOLKIT_DELEGATED_SESSION`を持たず、`AGENT_TOOLKIT_OWNER_SESSION`だけを持つ。
-        """
-        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        setattr_in_managed_temp_modules(
-            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
-        )
-        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "owner-session")
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "fixed-subcommand-output\n"
-        assert "登録を持たない管理対象" not in captured.err
-
-    def test_unregistered_managed_temp_count_failure_does_not_change_subcommand_result(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """未登録領域の件数取得失敗は本来の出力と終了コードを変えない。"""
-        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-
-        def fixed_schedule(request_bucket: str) -> str:
-            assert request_bucket == "main"
-            return "fixed-subcommand-output"
-
-        monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
-        setattr_in_managed_temp_modules(
-            monkeypatch,
-            "sweep_managed_temp",
-            lambda *, now: _managed_temp.SweepResult([], (), _managed_temp.ManagedTempError("走査失敗")),
-        )
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "fixed-subcommand-output\n"
-        err_lines = captured.err.splitlines()
-        assert err_lines[0] == "警告: 登録を持たない管理対象を探索できなかった: 走査失敗"
-        assert err_lines[1].startswith("次の操作: 本来の操作は継続した。")
-        assert "atk managed-temp list" in err_lines[1]
-        assert len(err_lines) == 2
-
-    def test_identical_unregistered_managed_temp_warning_is_emitted_once_per_session(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """同じセッションと候補集合では未登録領域の警告を初回だけ出力する。"""
-        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
-        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        setattr_in_managed_temp_modules(
-            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
-        )
-        state: dict = {}
-
-        def update_state(_session_id: str, mutator):
-            updated = mutator(state.copy())
-            if updated is None:
-                return False
-            state.clear()
-            state.update(updated)
-            return True
-
-        monkeypatch.setattr(_session_state, "update_state", update_state)
-
-        for _ in range(2):
-            with pytest.raises(SystemExit) as exc_info:
-                atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
-            assert exc_info.value.code == 0
-
-        warning_lines = [line for line in capsys.readouterr().err.splitlines() if "登録を持たない管理対象" in line]
-        assert len(warning_lines) == 1
-
-    def test_unregistered_managed_temp_warning_survives_state_update_failure(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """状態更新がコールバックへ到達しなくても未登録候補を警告する。"""
-        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "managed-temp-warning-session")
-        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        setattr_in_managed_temp_modules(
-            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (tmp_path / "orphan",), None)
-        )
-
-        def fail_update(_session_id: str, _mutator) -> bool:
-            return False
-
-        monkeypatch.setattr(_session_state, "update_state", fail_update)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "fixed-subcommand-output\n"
-        assert "登録を持たない管理対象が1件ある" in captured.err
-
-    def test_managed_temp_list_keeps_recent_unregistered_paths(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """managed-temp listは直近に更新された未登録領域を保持する。"""
-        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-        target = _managed_temp.create_managed_temp("orphan")
-        managed_temp_registry._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["managed-temp", "list"], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert str(target) not in captured.err
-        assert "cleanup --path" not in captured.err
-        assert target.exists()
-        assert "登録を持たない管理対象が1件ある" not in captured.err
-
-    def test_cleanup_failure_does_not_change_subcommand_exit_code(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """期限超過領域の後始末失敗は警告し、本来のサブコマンドを継続する。"""
-        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-        monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h")
-        target = _managed_temp.create_managed_temp("cleanup-failure")
-        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
-        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
-        for path in (target, *target.rglob("*")):
-            os.utime(path, ns=(old_ns, old_ns), follow_symlinks=False)
-
-        def fail_cleanup(
-            path: pathlib.Path,
-            *,
-            recover_registry: bool = False,
-            blocking: bool = True,
-        ) -> bool:
-            del recover_registry, blocking
-            raise _managed_temp.ManagedTempError(f"後始末失敗: {path}")
-
-        setattr_in_managed_temp_modules(monkeypatch, "_cleanup_managed_temp", fail_cleanup)  # noqa: SLF001
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=now)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "*/30 * * * *\n"
-        assert "警告: managed-tempのディレクトリを自動削除できない" in captured.err
-        assert f"atk managed-temp cleanup --path {target}" in captured.err
-        assert target.exists()
-
-    def test_unregistered_managed_temp_is_swept_unless_in_use(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """登録を失った領域は、最終更新7日以内とgit worktreeの登録が残る`.git`を含むもの以外を削除する。
-
-        残すべき領域を削除すると他の作業が使う一時ファイルやworktreeを失い、
-        削除すべき領域を残すと所有を確かめられない領域が無期限に残る。
-        """
-        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
-        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
-        repository_admin = tmp_path / "repository" / ".git" / "worktrees" / "lane"
-        repository_admin.mkdir(parents=True)
-
-        def unregistered(prefix: str, *, expired: bool, gitdir: pathlib.Path | None = None) -> pathlib.Path:
-            target = _managed_temp.create_managed_temp(prefix)
-            managed_temp_registry._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
-            if gitdir is not None:
-                (target / "wt").mkdir()
-                (target / "wt" / ".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
-            if expired:
-                for path in (*target.rglob("*"), target):
-                    os.utime(path, ns=(old_ns, old_ns), follow_symlinks=False)
-            return target
-
-        abandoned = unregistered("abandoned", expired=True)
-        recent = unregistered("recent", expired=False)
-        live_worktree = unregistered("live-worktree", expired=True, gitdir=repository_admin)
-        stale_worktree = unregistered("stale-worktree", expired=True, gitdir=tmp_path / "missing" / "worktrees" / "lane")
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=now)
-
-        assert exc_info.value.code == 0
-        assert not abandoned.exists()
-        assert not stale_worktree.exists()
-        assert recent.exists()
-        assert live_worktree.exists()
-        err_lines = capsys.readouterr().err.splitlines()
-        assert not [line for line in err_lines if "登録を持たない管理対象が" in line]
-
-    def test_startup_does_not_revalidate_pending_managed_temp(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """期限前の管理対象は2回目以降の共通起動で検証せず、期限の到来後に回収する。
-
-        起動ごとに登録件数に比例する真正性検証と未登録探索を繰り返すと、管理対象が多い環境で
-        全サブコマンドの応答が遅れる。
-        """
-        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
-        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
-        pending_ns = int((now - datetime.timedelta(days=6)).timestamp() * 1_000_000_000)
-        targets = [_managed_temp.create_managed_temp(f"pending-{index}") for index in range(10)]
-        for target in targets:
-            for path in (target, *target.rglob("*")):
-                os.utime(path, ns=(pending_ns, pending_ns), follow_symlinks=False)
-        validated: list[pathlib.Path] = []
-        original_validate = _managed_temp.validate_managed_temp
-
-        def record_validate(path: pathlib.Path | str) -> object:
-            validated.append(pathlib.Path(path))
-            return original_validate(path)
-
-        setattr_in_managed_temp_modules(monkeypatch, "validate_managed_temp", record_validate)
-
-        for moment in (now, now):
-            with pytest.raises(SystemExit) as exc_info:
-                atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=moment)
-            assert exc_info.value.code == 0
-        assert sorted(validated) == sorted(targets)
-        assert all(target.exists() for target in targets)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=now + datetime.timedelta(days=2))
-        assert exc_info.value.code == 0
-        assert not any(target.exists() for target in targets)
-        assert "警告" not in capsys.readouterr().err
-
-    @pytest.mark.parametrize("path_form", ["canonical", "parent-reference"])
-    def test_explicit_cleanup_succeeds_after_automatic_cleanup(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        path_form: str,
-    ) -> None:
-        """期限超過した明示対象を絶対パス表記にかかわらず重複処理せず、ほかの対象も削除する。"""
-        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-        target = _managed_temp.create_managed_temp("explicit-cleanup")
-        other = _managed_temp.create_managed_temp("other-expired")
-        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
-        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
-        for managed_temp in (target, other):
-            for path in (managed_temp, *managed_temp.rglob("*")):
-                os.utime(path, ns=(old_ns, old_ns), follow_symlinks=False)
-
-        cleanup_path = target
-        if path_form == "parent-reference":
-            anchor = target.parent / "anchor"
-            anchor.mkdir()
-            cleanup_path = anchor / ".." / target.name
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["managed-temp", "cleanup", "--path", str(cleanup_path)], home=tmp_path, now=now)
-
-        assert exc_info.value.code == 0
-        assert not target.exists()
-        assert not other.exists()
-
-    def test_explicit_cleanup_rejects_relative_path_after_automatic_cleanup(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """自動削除済みの対象でも、明示cleanupの相対パスは受理しない。"""
-        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-        target = _managed_temp.create_managed_temp("relative-cleanup")
-        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
-        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
-        for path in (target, *target.rglob("*")):
-            os.utime(path, ns=(old_ns, old_ns), follow_symlinks=False)
-        monkeypatch.chdir(tmp_path)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["managed-temp", "cleanup", "--path", target.name], home=tmp_path, now=now)
-
-        assert exc_info.value.code == 2
-        assert not target.exists()
-
-    @pytest.mark.parametrize("count", [0, 1, 2])
-    def test_cleanup_without_path_reports_managed_temps(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-        count: int,
-    ) -> None:
-        """省略時は管理対象の一覧を示して終了コード2を返す。"""
-        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
-        targets = [_managed_temp.create_managed_temp(f"cleanup-without-path-{index}") for index in range(count)]
-        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["managed-temp", "cleanup"], home=tmp_path, now=now)
-
-        assert exc_info.value.code == 2
-        captured = capsys.readouterr()
-        assert "--pathを指定してください。" in captured.err
-        if count == 2:
-            first, second = (str(target) for target in targets)
-            assert captured.err.index(first) < captured.err.index(second)
+        assert json.loads(captured.out)["cron"] == "*/3 * * * *"
+        assert ("自動削除できなかった" in captured.err) is expects_warning
 
     def test_does_not_expose_environment_values(
         self,
@@ -1049,11 +557,10 @@ class TestWaitScheduleParser:
         """環境変数値を公開出力へ混在させない。"""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "environment-secret")
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
-
+            atk.main(["wait-schedule"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "*/3 * * * *\n"
+        assert json.loads(captured.out)["cron"] == "*/3 * * * *"
         assert not captured.err
         assert "environment-secret" not in captured.out + captured.err
 
@@ -1084,11 +591,10 @@ class TestWaitScheduleParser:
 
         monkeypatch.setattr(_wait_schedule.subprocess, "run", fake_run)
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
-
+            atk.main(["wait-schedule"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "*/30 * * * *\n"
+        assert json.loads(captured.out)["cron"] == "*/30 * * * *"
         assert not captured.err
         assert "auth-secret" not in captured.out + captured.err
         assert "auth-error-secret" not in captured.out + captured.err
@@ -1167,7 +673,7 @@ def _setup_notes_with_pending_commit(tmp_path: pathlib.Path, *, pending: bool = 
     return notes
 
 
-_SYNC_MUTATION_ENTRIES = ("wi start-processing", "wi add --dry-run", "plans rewrite-references")
+_SYNC_MUTATION_ENTRIES = ("wi start-processing", "wi add --dry-run", "plans commit")
 """終了時に未pushを判定する同期対象操作のコマンド。`wi add --dry-run`は自身でcommitしない操作として含める。"""
 
 _DRY_RUN_SUCCESS = "成功: 投入前の検証が成立した（--dry-runのため保存していない）"
@@ -1184,7 +690,7 @@ def _prepare_sync_mutation(entry: str, tmp_path: pathlib.Path, monkeypatch: pyte
         body.write_text("本文\n", encoding="utf-8")
         return ["wi", "add", "--dry-run", "--target-repo", "github.com/example/repo", "--body-file", str(body)]
     monkeypatch.setattr(_plans_module, "dispatch", lambda *_args: 0)
-    return ["plans", "rewrite-references"]
+    return ["plans", "commit", "01-0900_example.md"]
 
 
 @pytest.mark.parametrize("entry", _SYNC_MUTATION_ENTRIES)
@@ -1453,34 +959,6 @@ def test_note_file_rejects_relative_path_before_environment_changes(
     assert not (tmp_path / "private-notes").exists()
 
 
-def test_wi_pull_uses_lock_and_suppresses_entry_notification(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """明示pullは排他区間で毎回同期し、対象パスの1行だけを出力する。"""
-    notes = _setup_notes(tmp_path)
-    events: list[str] = []
-
-    class Lock:
-        def __enter__(self) -> None:
-            events.append("lock-enter")
-
-        def __exit__(self, *_args: object) -> None:
-            events.append("lock-exit")
-
-    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
-    monkeypatch.setattr(_wi_sync, "repo_lock", lambda _path: Lock())
-    monkeypatch.setattr(_wi_sync, "pull", lambda _path: events.append("pull"))
-
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "pull"], home=tmp_path)
-
-    assert exc_info.value.code == 0
-    assert events == ["lock-enter", "pull", "lock-exit"]
-    assert capsys.readouterr().out == f"成功: private-notesをremoteかupstreamが無いため同期していない: {notes.resolve()}\n"
-
-
 @pytest.mark.parametrize(
     "argv",
     [
@@ -1495,6 +973,75 @@ def test_removed_plan_mutation_commands_are_rejected(argv: list[str]) -> None:
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(argv)
     assert exc_info.value.code == 2
+
+
+_REMOVED_RUN_SCRIPTS = (
+    "verification-record",
+    "exec-review-evidence-check",
+    "plan-verify",
+    "review-contract",
+    "review-impact",
+    "reader-fit-prepare",
+    "recurrence-items",
+    "lane-receipt-check",
+    "wi-draft-prepare",
+)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["managed-temp", "list"],
+        ["managed-temp", "create", "--prefix", "example"],
+        ["managed-temp", "cleanup", "--path", "/absolute/example"],
+        ["read-file", "--", "/absolute/example"],
+        ["run-command", "--", "true"],
+        ["watch", "--file", "/absolute/example"],
+        ["wi", "pull"],
+        ["plans", "rewrite-references"],
+        ["serve", "logs"],
+        ["serve", "--follow"],
+        ["worktree-stash", "protect", "refs/worktree/example"],
+        ["wait-schedule", "--request-bucket", "main"],
+        *(["run-script", name, "--"] for name in _REMOVED_RUN_SCRIPTS),
+    ],
+)
+def test_removed_public_paths_are_rejected(argv: list[str]) -> None:
+    """標準手段へ置き換えて削除した公開経路を、引数の誤りとして受理しない。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(argv)
+    assert exc_info.value.code == 2
+
+
+def test_retained_run_scripts_are_exactly_the_kept_registrations() -> None:
+    """残す19登録だけを公開し、撤去した9登録を含めない。"""
+    from agent_toolkit._atk import run_script  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    assert sorted(run_script.SCRIPT_PATHS) == sorted(
+        (
+            "wait-ci",
+            "cost-metrics",
+            "delegation-prompt",
+            "history-compare",
+            "agent-doc-changes",
+            "plan-create",
+            "plan-check",
+            "plan-progress",
+            "plan-commits",
+            "plan-rewrite",
+            "pick-wi-check",
+            "termination-evidence",
+            "multi-turn-trials",
+            "record-stall-detection",
+            "wait-compaction-context",
+            "session-review-evidence",
+            "session-review-prepare",
+            "writing-check-dash",
+            "wi-quote-check",
+        )
+    )
+    assert not set(_REMOVED_RUN_SCRIPTS) & set(run_script.SCRIPT_PATHS)
 
 
 class TestLegacyTopLevelCommandAlias:
@@ -1574,25 +1121,6 @@ class TestServeParser:
             atk.main(["serve", "--host", "127.0.0.2", "--port", "28766"], home=tmp_path)
         assert error.value.code == 0
         assert calls == [{"host": "127.0.0.2", "port": 28766, "home": tmp_path}]
-
-    @pytest.mark.parametrize("follow_flag", ["-f", "--follow"])
-    def test_logs_dispatches_follow(self, monkeypatch: pytest.MonkeyPatch, follow_flag: str) -> None:
-        """logsの短縮形と長い形をjournal表示へ渡す。"""
-        calls: list[bool] = []
-        serve = types.ModuleType("agent_toolkit._atk.serve.cli")
-
-        def show_logs(*, follow: bool) -> int:
-            calls.append(follow)
-            return 0
-
-        serve.__dict__["show_logs"] = show_logs
-        monkeypatch.setitem(sys.modules, "agent_toolkit._atk.serve.cli", serve)
-
-        with pytest.raises(SystemExit) as error:
-            atk.main(["serve", "logs", follow_flag])
-
-        assert error.value.code == 0
-        assert calls == [True]
 
     def test_non_serve_import_does_not_load_serve_dependencies(self) -> None:
         """fresh processでatkを読み込んでもserve実装を解決しない。"""

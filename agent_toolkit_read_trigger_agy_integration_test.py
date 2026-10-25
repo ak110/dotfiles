@@ -1,10 +1,9 @@
 """正式なagy生成rootの名前空間・全文転送・節指定を同じ入力で結合検証する。"""
 
-import argparse
 import json
+import subprocess
 
 import pytest
-from agent_toolkit._atk import read_file
 from agent_toolkit._common import plugin_roots, read_triggers
 from agent_toolkit._hooks import document_reads
 from agent_toolkit._hooks.pretooluse import read_delivery
@@ -82,20 +81,21 @@ def test_generated_root_keeps_logical_namespace_and_relative_base(generated, mon
     assert read_delivery.matches("skill:agent-basics:long", "Read", {"file_path": str(full)}, "")
 
 
-def test_generated_short_entry_supports_the_public_section_cli(generated, monkeypatch, capsys):
-    toolkit, native, _full = generated
-    monkeypatch.setattr(read_file, "_PLUGIN_ROOT", toolkit)
+def test_generated_full_instructions_section_is_read_by_line_range(generated, monkeypatch):
+    """全文転送先の節の行範囲を資料から算出し、その行範囲の読取を論理名の節宣言へ結びつける。"""
+    toolkit, _native, full = generated
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", toolkit)
-    parser = argparse.ArgumentParser()
-    read_file.build_parser(parser)
-    args = parser.parse_args(["--section", "必要節", "--", str(native / "skills/long/SKILL.md")])
-    assert read_file.dispatch(args) == 0
-    output = capsys.readouterr().out
-    assert "選択した基準本文" in output
+    target = read_triggers.ReadTarget(full, "必要節")
+    spans = read_delivery._line_spans(target, full.read_text(encoding="utf-8"))  # pylint: disable=protected-access
+    assert len(spans) == 1
+    start, end = spans[0]
+    command = ["sed", "-n", f"{start},{end}p", "--", str(full)]
+    output = subprocess.run(command, check=True, capture_output=True, encoding="utf-8").stdout
+    assert output == target.body()
     assert "別用途の大きな本文" not in output
     assert read_delivery.matches(
         "section:agent-basics:*/skills/long/SKILL.md#必要節",
         "Bash",
-        {"command": f"atk read-file --section 必要節 -- {native / 'skills/long/SKILL.md'}"},
+        {"command": f"sed -n '{start},{end}p' -- {full}"},
         str(toolkit.parent),
     )

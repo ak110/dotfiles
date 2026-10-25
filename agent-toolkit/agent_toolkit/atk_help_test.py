@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import json
 import pathlib
 import shlex
 from collections.abc import Iterator
@@ -117,7 +116,7 @@ def test_help_example_invalid_inputs_are_detected(monkeypatch: pytest.MonkeyPatc
     """ヘルプ実物の不正な選択肢・未知オプション・必須値の欠落を実parserで検出する。"""
     for epilog in (
         "実行例:\n\n  atk wi list --type unsupported-choice",
-        "実行例:\n\n  atk read-file -- /absolute/file --unknown-option 16000",
+        "実行例:\n\n  atk agents show session-1 --unknown-option 16000",
         "実行例:\n\n  atk plans checkout",
     ):
         with monkeypatch.context() as patch:
@@ -129,7 +128,7 @@ def test_help_example_invalid_inputs_are_detected(monkeypatch: pytest.MonkeyPatc
 @pytest.mark.parametrize(
     "argv, expected",
     [
-        (["read-file", "/tmp/a", "/tmp/b"], "path"),
+        (["agents", "show", "session-a", "session-b"], "session_id"),
         (["wi", "list", "extra-positional"], "なし"),
     ],
 )
@@ -148,7 +147,7 @@ def test_extra_positionals_report_the_accepted_positionals(
 
 @pytest.mark.parametrize(
     "argv",
-    [[], ["wi"], ["plans"], ["managed-temp"], ["review-table"], ["review-audit"]],
+    [[], ["wi"], ["plans"], ["agents"], ["review-table"], ["review-audit"]],
 )
 def test_command_without_subcommand_prints_help(
     argv: list[str],
@@ -243,45 +242,6 @@ def test_every_subcommand_rejects_unsupported_argument_with_accepted_options(
         assert f"解釈できない引数: --unsupported。{target.prog}が受理するオプションは{accepted}" in error, command
 
 
-@pytest.mark.parametrize(
-    ("option", "expected_text"),
-    [
-        (["--max-bytes", "16000"], "本文\n"),
-        (["--max-bytes=16000"], "本文\n"),
-        (["--start", "0"], "本文\n"),
-        (["--start", "1", "--max-bytes", "16000"], "文\n"),
-    ],
-)
-def test_trailing_option_cli_matches_leading_option(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    option: list[str],
-    expected_text: str,
-) -> None:
-    """パス後方へ追加した登録済みオプションが同じ本文と継続位置を返す。"""
-    source = tmp_path / "本文.txt"
-    source.write_text("本文\n", encoding="utf-8")
-    with pytest.raises(SystemExit) as trailing:
-        atk.main(["read-file", "--", str(source), *option], _output_capture_active=True)
-    assert trailing.value.code == 0
-    trailing_output = capsys.readouterr()
-    assert not trailing_output.err
-    with pytest.raises(SystemExit) as accepted:
-        atk.main(["read-file", *option, "--", str(source)], _output_capture_active=True)
-    assert accepted.value.code == 0
-    result, body = _read_file_response(capsys.readouterr().out)
-    trailing_result, trailing_body = _read_file_response(trailing_output.out)
-    assert result == trailing_result and body == trailing_body
-    assert body == expected_text and result["eof"] is True
-
-
-def _read_file_response(output: str) -> tuple[dict, str]:
-    """read-fileのメタデータと無加工本文を分ける。"""
-    metadata, separator, body = output.partition("\n")
-    assert separator
-    return json.loads(metadata), body
-
-
 def test_subcommand_trailing_options_use_registered_actions(capsys: pytest.CaptureFixture[str]) -> None:
     """固定位置引数の後にある登録済みフラグをコマンド木全体で受理する。"""
     checked = 0
@@ -314,7 +274,7 @@ def test_subcommand_trailing_options_use_registered_actions(capsys: pytest.Captu
             assert vars(parsed) == vars(expected), command
             checked += 1
     assert checked > 5
-    for argv in (["agents", "logs", "--", "sample", "--follow"], ["serve", "logs", "--", "--follow"]):
+    for argv in (["agents", "logs", "--", "sample", "--follow"],):
         parsed = atk._build_parser().parse_args(argv)  # pylint: disable=protected-access
         assert parsed.follow is True
         assert not capsys.readouterr().err
@@ -323,16 +283,15 @@ def test_subcommand_trailing_options_use_registered_actions(capsys: pytest.Captu
 def test_consumed_and_forwarded_options_keep_their_meaning(capsys: pytest.CaptureFixture[str]) -> None:
     """位置引数と子へ渡す引数は、登録名と同じ綴りでも移動させない。"""
     parser = atk._build_parser()  # pylint: disable=protected-access
-    assert parser.parse_args(["read-file", "--", "--max-bytes"]).path == pathlib.Path("--max-bytes")
+    assert parser.parse_args(["agents", "show", "--", "--max-bytes"]).session_id == "--max-bytes"
     parsed = parser.parse_args(["run-script", "writing-check-dash", "--", "--max-bytes", "100"])
     assert "--max-bytes" in parsed.script_args
-    parser.parse_args(["run-command", "--", "echo", "--max-bytes", "100"])
     assert not capsys.readouterr().err
     with pytest.raises(SystemExit):
-        parser.parse_args(["read-file", "--", "/example", "--unknown"])
+        parser.parse_args(["agents", "show", "--", "session-1", "--unknown"])
     assert "位置が誤っています" not in capsys.readouterr().err
     with pytest.raises(SystemExit) as extra:
-        parser.parse_args(["read-file", "--", "/example", "--start", "0", "extra-positional"])
+        parser.parse_args(["agents", "show", "--", "session-1", "extra-positional"])
     assert extra.value.code == 2
     capsys.readouterr()
 
@@ -418,7 +377,7 @@ def test_agents_wait_help_states_own_limit_and_standalone_invocation(
         (["wi", "show", "--all"], True),
         (["run-script", "session-review-evidence", "--", "t.jsonl", "--detail", "1"], False),
         (["run-script", "session-review-evidence", "--", "t.jsonl", "--user-events"], True),
-        (["agents", "wait"], True),
+        (["agents", "wait"], False),
         (["review-audit", "pending", "--repo", "owner/repo"], True),
     ],
 )
@@ -519,15 +478,15 @@ def test_lane_integrate_help_passes_complete_writer_set_initially_and_on_resume(
 def test_run_script_help_explains_plan_rewrite_record_discovery_and_order(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """共通ヘルプから未指定記録の取得と書換え順の複数表指定へ到達できる。"""
+    """plan-rewrite自身のヘルプから未指定記録の取得と書換え順の複数表指定へ到達できる。"""
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["run-script", "--help"])
+        atk.main(["run-script", "plan-rewrite", "--", "--help"])
     output = capsys.readouterr()
     assert not output.err
     text = "".join(output.out.split())
-    assert "plan-rewriteは作業中・保存済み計画と引き継ぎ記録から未指定の対象記録を検出" in text
-    assert "書込前に全件を示して拒否" in text and "atkplanscheckout" in text
-    assert "--rewrite-mapを書換え順に反復指定" in text and "--previous-head" in text
+    assert "未指定の対象記録を検出" in text
+    assert "書込前に全件を示して拒否" in text and "`atkplanscheckout`" in text
+    assert "`--rewrite-map`を書換え順に反復指定" in text and "`--previous-head`" in text
 
 
 def test_bulk_transition_commands_accept_the_same_filter_options() -> None:

@@ -269,11 +269,11 @@ class TestCommitSubcommand:
         assert tracked.returncode == 0
 
 
-def test_commit_reports_sent_count_then_zero_and_pull_syncs(
+def test_commit_reports_sent_count_then_zero(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """実Gitで滞留1件の送信と送信対象なしを区別し、remoteありの同期を示す。"""
+    """実Gitで滞留1件の送信と送信対象なしを区別する。"""
     _setup_notes_with_pending_commit(tmp_path)
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "commit"], home=tmp_path)
@@ -281,17 +281,14 @@ def test_commit_reports_sent_count_then_zero_and_pull_syncs(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "commit"], home=tmp_path)
     assert "pushするcommitは無かった" in capsys.readouterr().out
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["wi", "pull"], home=tmp_path)
-    assert "remoteと同期した" in capsys.readouterr().out
 
 
-def test_local_only_commit_and_pull_report_skipped_remote_operations(
+def test_local_only_commit_reports_skipped_remote_operations(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """remoteなしの初回・外部編集・同期で、行っていないpushや同期を完了と書かない。"""
+    """remoteなしの初回・外部編集で、行っていないpushを完了と書かない。"""
     notes = git_repository.init_repository(tmp_path / "private-notes")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     setup = notes / "setup.txt"
@@ -309,12 +306,7 @@ def test_local_only_commit_and_pull_report_skipped_remote_operations(
     edited = capsys.readouterr().out
     assert "外部編集分をcommitした" in edited
     assert "remoteかupstreamが無いためpushしていない" in edited
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["wi", "pull"], home=tmp_path)
-    synced = capsys.readouterr().out
-    assert "remoteかupstreamが無いため同期していない" in synced
     assert "pushした" not in clean + edited
-    assert "remoteと同期した" not in synced
 
 
 def _write_processing_file(

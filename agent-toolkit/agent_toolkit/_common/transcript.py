@@ -107,29 +107,6 @@ def iter_latest_assistant_text_messages(transcript_path: str) -> collections.abc
         yield message
 
 
-def latest_main_assistant_entry(transcript_path: str) -> dict | None:
-    """末尾（最新側）で最初に見つかる非sidechainのassistantエントリ全体を返す。
-
-    `iter_latest_assistant_messages`がmessage dictのみを返すのに対し、本関数は
-    `isApiErrorMessage`などエントリのトップレベルのフラグを参照できるようエントリ全体を返す。
-    APIエラー停止のassistantエントリ直後にsystemエントリ（turn_duration）が続く配置でも、
-    後方から走査して直近のassistantエントリを取得する。
-
-    見つからない場合・読み取り失敗時（空文字列パス・存在しないパス・OSエラーを含む）はNoneを返す。
-    """
-    lines = read_transcript_lines(transcript_path)
-    if lines is None:
-        return None
-    for line in reversed(lines):
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError, ValueError:
-            continue
-        if entry.get("type") == "assistant" and not entry.get("isSidechain"):
-            return entry
-    return None
-
-
 def iter_assistant_content_blocks(lines: list[str]) -> collections.abc.Iterator[tuple[int, dict]]:
     """非sidechain assistantエントリの`content`配下dict要素を`(行位置, block)`で順に返す。
 
@@ -151,25 +128,6 @@ def iter_assistant_content_blocks(lines: list[str]) -> collections.abc.Iterator[
         for block in content:
             if isinstance(block, dict):
                 yield position, block
-
-
-def assistant_text(message: typing.Any) -> str:
-    """Assistant message dictのテキストブロックを連結して返す。
-
-    `content`が文字列ならそのまま返し、ブロックのリストなら`type == "text"`のテキストを連結する。
-    テキストを取得できない場合は空文字列を返す。
-
-    引数はtranscript JSON由来の任意値を扱うため`Any`型とする
-    （`object`をisinstanceでdictへ限定すると型検査器tyが型引数を`Never`と誤推論するため）。
-    """
-    if not isinstance(message, dict):
-        return ""
-    content = message.get("content")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "".join(block.get("text", "") for block in content if isinstance(block, dict) and block.get("type") == "text")
-    return ""
 
 
 def read_transcript_bytes(transcript_path: str, *, offset: int = 0) -> bytes | None:

@@ -338,7 +338,7 @@ def load_rewrite_map(source: pathlib.Path) -> RewriteMap:
     """`--rewrite-map`が受け取る旧OIDから新OIDへの対応表を読み、形式を確かめて返す。
 
     対応表は旧OIDをキー、新OIDを値とする非空のJSONオブジェクトで、OIDは7文字以上の短縮OIDか完全OIDとする。
-    `plan-progress`の対応記録の更新と`exec-review-evidence-check`の証拠の参照更新が同じ形式を使う。
+    `plan-progress`の対応記録の更新と計画の対応記録の書換えが同じ形式を使う。
     読めない場合は、計画ファイルや証拠の失敗と区別できるよう、その引数の値を読めなかったことを理由へ書く。
     """
     retry = (

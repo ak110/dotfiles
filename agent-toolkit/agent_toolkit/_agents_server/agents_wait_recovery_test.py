@@ -66,7 +66,7 @@ def test_empty_wait_points_to_delivered_run(
     assert code == 10
     assert str(path) in captured.err
     assert "session-a" in captured.err and "session-b" in captured.err
-    assert "atk read-file" in captured.err
+    assert "jq -r .output" in captured.err
     assert "未読" not in captured.err
     saved = json.loads(path.read_text(encoding="utf-8"))
     rows = [json.loads(line) for line in saved["output"].splitlines()]
@@ -104,7 +104,7 @@ def test_consumed_wait_points_to_saved_result(
     assert code == 8
     assert response["recovery"]["run_path"] == str(path)
     assert response["recovery"]["session_ids"] == ["session-a", "session-b"]
-    assert "atk read-file" in response["next_action"]
+    assert "agent_message_paths" in response["next_action"]
 
 
 @pytest.mark.parametrize("problem", ("missing", "broken", "empty", "other-owner"))

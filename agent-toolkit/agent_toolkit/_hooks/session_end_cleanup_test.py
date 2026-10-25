@@ -6,16 +6,15 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 import time
 
 import pytest
 
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import session_state
 from agent_toolkit._testing import fork_runner as _fork_runner
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
-_MANAGED_TEMP_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "_managed_temp.py"
 _STALE_AGE_SECONDS = 15 * 24 * 60 * 60
 
 
@@ -274,37 +273,11 @@ def test_session_scoped_managed_temp_survives_session_end(
     `agents_server`経由のsessionはturnごとにSessionEndが発火するため、ここで削除すると後続のturnと
     委譲先が成果物を読めなくなる。回収は最終更新から7日の掃引に委ねる。
     """
-    env = os.environ.copy()
-    env.update(
-        {
-            "TMPDIR": str(tmp_path),
-            "TEMP": str(tmp_path),
-            "TMP": str(tmp_path),
-            "XDG_STATE_HOME": str(tmp_path / "state"),
-        }
-    )
-
-    def managed_temp_command(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [sys.executable, str(_MANAGED_TEMP_SCRIPT), *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-        )
-
-    created = managed_temp_command("create", "--prefix", "session", "--session-id", "target")
-    assert created.returncode == 0, created.stderr
-    target = pathlib.Path(created.stdout.strip())
+    target = managed_temp.resolve_session_temp("target")
     (target / "handoff.md").write_text("記録", encoding="utf-8")
 
     result = _run(_session_end("target", reason=reason), tmp_path)
 
     assert result.returncode == 0
     assert (target / "handoff.md").read_text(encoding="utf-8") == "記録"
-    listed = managed_temp_command("list", "--prefix", "session")
-    assert listed.returncode == 0, listed.stderr
-    assert [json.loads(line)["path"] for line in listed.stdout.splitlines()] == [str(target)]
-    resumed = managed_temp_command("create", "--prefix", "session", "--session-id", "target")
-    assert resumed.returncode == 0, resumed.stderr
-    assert resumed.stdout.strip() == str(target)
+    assert managed_temp.resolve_session_temp("target") == target

@@ -412,8 +412,8 @@ def test_new_role_configuration_needs_no_python_registration(tmp_path: pathlib.P
     assert _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True) == ([], True)
 
 
-def test_exec_review_receives_unjudged_evidence_and_owns_final_evidence() -> None:
-    """未判定記録の直接配送と完成条件証拠の単一所有者を固定する。"""
+def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> None:
+    """検証結果の記録と、条件別判定行を返す実行レビュー担当の単一所有を固定する。"""
     root = pathlib.Path(__file__).resolve().parent
     review = (root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
     parent = (root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
@@ -427,11 +427,15 @@ def test_exec_review_receives_unjudged_evidence_and_owns_final_evidence() -> Non
 
     declaration = task_documents.read_declaration_unchecked(root / "share/exec-review.subagent.md", review)
     assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
-    assert declaration.required == ("レビュー基準", "引き継ぎ記録先", "未判定検証記録", "完成条件証拠")
-    assert "引き継ぎ再レビューでも初回値を保持" in parent
-    assert all("未判定検証記録" in path.read_text(encoding="utf-8") for path in launchers)
+    assert declaration.required == ("レビュー基準", "引き継ぎ記録先")
+    for path in launchers:
+        content = path.read_text(encoding="utf-8")
+        assert "検証結果" in content and "未判定検証記録" not in content, path
+    assert "レビューHEAD: " in review
+    # 委譲元は返却の条件別判定行を受領確認し、JSON中のHEADの付替えを行わない。
+    assert "## 完成条件証拠の受領確認" in parent and "agent_message_path" in parent
     for content in (review, recording):
-        assert all(name in content for name in ("outcome", "evidence", "reviewed_head"))
+        assert "完成条件<N>: 達成|未達|根拠不足" in content
         assert "レビュー担当だけ" in content or "実行レビュー担当だけ" in content
 
 

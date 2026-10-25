@@ -280,7 +280,7 @@ def test_collection_order_preserves_isolation_and_overrides(tmp_path: pathlib.Pa
             import tempfile
             from agent_toolkit._common import codex_models
             from agent_toolkit._hooks import notice, transcript_scan
-            from agent_toolkit._atk.managed_temp import registry
+            from agent_toolkit._atk.managed_temp import paths as registry
 
             original_models = codex_models.list_models
             original_wait = transcript_scan.wait_for_end_turn
@@ -311,7 +311,7 @@ def test_collection_order_preserves_isolation_and_overrides(tmp_path: pathlib.Pa
             def managed(tmp_path):
                 common()
                 assert registry._state_root_path() == tmp_path / "external-state"
-                assert registry._temp_root() == tmp_path / "managed-temp"
+                assert registry._temp_root_path() == tmp_path / "managed-temp"
                 assert os.environ["AI_AGENT"] == "outside"
 
             def mutations(tmp_path):

@@ -51,8 +51,8 @@ disable-model-invocation: true
 | --- | --- | --- | --- | --- |
 | 計画または直接実装に着手する前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
 | 計画対象がある場合に計画を起草する前（実行順3） | `agent-toolkit:plan-mode`のSKILL.mdと、同書の初版起草の行が指定する範囲 | 判断 | `skill:plan-mode` | |
-| 未判定検証記録を作成・更新する前 | `${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` | |
-| 計画あり・なしのどちらでも、メインが自ら実装に着手する直前（実行順4） | `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`未判定検証記録`の段落と「起動」の`Git管理外の変更`の段落 | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#冒頭` | |
+| 検証結果を記録する前 | `${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` | |
+| 計画あり・なしのどちらでも、メインが自ら実装に着手する直前（実行順4） | `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`検証結果`の段落と「起動」の`Git管理外の変更`の段落 | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#冒頭` | |
 | 対象worktreeごとに公開する前（実行順8） | `agent-toolkit:commit`を起動し、同スキルの`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
 | Claude Codeでpush後のCI監視の待機へ入る前（実行順8） | `agent-toolkit:delegation`の`references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` | |
 
@@ -92,7 +92,7 @@ disable-model-invocation: true
 
 ## 実行順
 
-計画・実装・独立した実行レビューの調整は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`の共通契約に従う。以下は本スキル固有の対象取得、worktree対応付けと公開の手順を定める。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`未判定検証記録`は同書冒頭の規定に従って渡す。
+計画・実装・独立した実行レビューの調整は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`の共通契約に従う。以下は本スキル固有の対象取得、worktree対応付けと公開の手順を定める。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`検証結果`は同書冒頭の規定に従って記録する。
 
 1. processable一覧と各WI本文を取得し、同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`で回答済みUWIを取得する。
    対象worktreeごとに公開対象とベースbranchを明示し、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象の決定」の開始時CI点検を適用する。実際の照会、失敗ログの取得と残工程への作用の判定を実装前に行い、既存失敗は「見つけた既存不良の扱い」、ユーザーだけが決められる事項は確認手順へ渡す。公開時のbaselineとCI検収も実行順8で行う。
@@ -102,8 +102,8 @@ disable-model-invocation: true
    初回の`atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`の引数は保存済み対応表のうち開始前にinboxだった全件からworktreeごとに導く。開始済み項目は重複遷移させない。途中失敗はCLIの診断と残存状態を同じ対応表へ記録し、未完了工程から再開する。ユーザーの明示追加は同じ対応表へ反映し、後工程の比較元を更新する。固定後にユーザーが告げた回答済みUWIとAWIの追加は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」の判断基準で扱う。
 2. `atk wi`の`adopt`・`reject`へ`--commit`を渡す場合は対象worktreeの絶対パスを`--target-repo`へ渡し、それ以外の操作は保存済み`target_repo`を使う。Gitの起点比較、実装、検証、commit、レビューは対応表のworktreeと開始時のHEADを使い、別のworktreeや複製元のHEADで代用しない。
 3. 計画対象がある場合は、対象worktreeごとに計画ファイルを起草する。計画メタ情報の対象リポジトリと計画構造の自動チェックの`--work-dir`にはそのworktreeを使い、対応表の全計画対象を`--expected-wi <WIファイル名>`で全件反復指定して実装前に一致を確かめる。全件が直接実装対象なら計画を新設せず、対応表とレビュー集合の和で被覆を検収する。
-4. 対応表のworktreeで、計画対象は`## 要件・外部仕様`、直接実装対象はWIの要求と完成条件に従って実装する。Git管理外のファイルを変更する場合は最初の変更より前に変更前複製を作成し、証拠要求ありでは実装完了前に未判定検証記録JSONを作成する。複製の対とJSONの絶対パスは計画の`## 進捗ログ`か直接実装の引き継ぎ記録へ残す。検証は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`の受入シナリオ検証に従い、シナリオ別のテスト名と合否を記録する。
-   計画なしとレビュー修正でも、実装前に公開された呼び出し手段・入力と初期状態・有効な期待結果・検出する失敗を確定する。試験は`agent-basics:writing-standards/references/testing.md`「検証単位の選定」で選ぶ。公開された呼び出し手段の実結果を自己検収し、既存の未判定検証記録へ対応付ける。未実施と条件変更の判断、メインが所有する残工程の担当と再開先を分けて独立した実行レビューへ渡す。テスト出力と手動観測の保存は`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「手動観測の保存」に従う。
+4. 対応表のworktreeで、計画対象は`## 要件・外部仕様`、直接実装対象はWIの要求と完成条件に従って実装する。Git管理外のファイルを変更する場合は最初の変更より前に変更前複製を作成し、証拠要求ありでは実装完了前に検証結果を記録する。複製の対と保存した出力の絶対パスは計画の`## 進捗ログ`か直接実装の引き継ぎ記録へ残す。検証は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`の受入シナリオ検証に従い、シナリオ別のテスト名と合否を記録する。
+   計画なしとレビュー修正でも、実装前に公開された呼び出し手段・入力と初期状態・有効な期待結果・検出する失敗を確定する。試験は`agent-basics:writing-standards/references/testing.md`「検証単位の選定」で選ぶ。公開された呼び出し手段の実結果を自己検収し、検証結果へ記録する。未実施と条件変更の判断、メインが所有する残工程の担当と再開先を分けて独立した実行レビューへ渡す。テスト出力と手動観測の保存は`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「手動観測の保存」に従う。
    履歴整理で取得版が変わった記録の再利用は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。互いの成果を使わないworktreeは並行してよい。
    commitは`agent-toolkit:commit`に従い、WI実装commitごとに同スキル`SKILL.md`「WI実装commitの対応」の手段で、計画（直接実装では引き継ぎ記録）と同じstemの対応記録ファイルへ記録する。レビュー修正・CI修正・履歴変更後も同節に従い、実行順8の前に現在の対応を取得してadoptへ渡す。
 5. 保存済み対応表から対象worktreeの全計画対象と全直接実装対象の和を導き、1件の実行レビューを起動する。全対応表の所在と区分を同じ引き継ぎからたどれるようにする。計画対象があれば計画ファイルの絶対パス、直接実装対象があればWIの記録を同じ委譲プロンプトへ渡し、計画対象が無ければそのworktreeの`開始時のHEAD`を渡す。`cwd`、`開始時のHEAD`、レビュー指摘管理表、レビュー基準には同じworktreeの値だけを使う。

@@ -72,6 +72,25 @@ from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES,
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
+_CLEANUP_ENTRY_SOURCE = """\"\"\"内部の回収APIへ1件の対象を渡し、拒否を終了コード2で返す試験用の入口。\"\"\"
+import sys
+
+from agent_toolkit._atk import managed_temp
+
+try:
+    managed_temp.cleanup_managed_temp(sys.argv[1])
+except managed_temp.ManagedTempError as error:
+    print(error, file=sys.stderr)
+    sys.exit(2)
+"""
+
+
+def _cleanup_entry(directory: pathlib.Path) -> pathlib.Path:
+    """公開CLIを持たない回収APIを、別プロセスから実物のまま呼ぶ入口を作成する。"""
+    entry = directory / "cleanup_entry.py"
+    entry.write_text(_CLEANUP_ENTRY_SOURCE, encoding="utf-8")
+    return entry
+
 
 @contextlib.asynccontextmanager
 async def _owned_async_child(*args: Any, **kwargs: Any) -> AsyncGenerator[asyncio.subprocess.Process]:
@@ -1205,14 +1224,7 @@ async def test_stable_plugin_root_shared_across_processes(
                         assert not source.exists()
                         for target in (area, held):
                             protected = subprocess.run(
-                                [
-                                    sys.executable,
-                                    str(plugin / "agent_toolkit/_managed_temp.py"),
-                                    "cleanup",
-                                    "--path",
-                                    str(target),
-                                    "--force-remove",
-                                ],
+                                [sys.executable, str(_cleanup_entry(tmp_path)), str(target)],
                                 capture_output=True,
                                 text=True,
                                 encoding="utf-8",
@@ -1234,7 +1246,7 @@ async def test_stable_plugin_root_shared_across_processes(
             print(f"S02 MCP診断 {log.name}:\n" + log.read_text(encoding="utf-8"))
     assert area is not None
     cleaned = subprocess.run(
-        [sys.executable, str(plugin / "agent_toolkit/_managed_temp.py"), "cleanup", "--path", str(area)],
+        [sys.executable, str(_cleanup_entry(tmp_path)), str(area)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -1340,9 +1352,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                 sys.executable,
                 str(cleanup_script),
                 json.dumps(identities),
-                str(plugin / "agent_toolkit/_managed_temp.py"),
-                "cleanup",
-                "--path",
+                str(_cleanup_entry(tmp_path)),
                 str(target),
             ],
             capture_output=True,
@@ -1435,7 +1445,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                     protected = cleanup(area)
                     assert protected.returncode == 2, protected.stderr
                     assert area.exists()
-                    assert "使用中または使用状態を確認できない配布物を保持した" in protected.stderr
+                    assert "使用中または使用状態を確認できない配布物のため回収しない" in protected.stderr
                     assert {tool.name for tool in (await client.list_tools()).tools} == tools
                     observation = {
                         "fixture_origin": "90cad03:plugin_root.pyの版別root正常系保持生成",

@@ -204,7 +204,6 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 
 並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/agent_toolkit/_common/file_lock.py`で排他する。ロック中にstashを生成し、`refs/worktree/<退避ラベル>`とworktree・label別の共有保護refを記録してから生成分だけのstashをdropする。固有refだけでは別worktreeのGCから到達できないため、共有する`refs/atk/worktree-stash/`配下へ同じOIDを保護する。既存の`refs/stash`先頭OIDは維持し、途中失敗時は復旧識別子と保護または共有stashを保持する。固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
 
-正常な旧固有refは`atk worktree-stash protect <ref>`で識別子を変えず保護できる。
 `update-dotfiles`は同じPython環境で専用ヘルパーを1回起動し、旧退避の分類と保護をGitの一括処理へ渡す。
 保存した作業内容・index・未追跡内容がrootの`mise.lock`だけであり、退避元commitがbranch・remoteから到達できる旧退避は回収する。
 その他の退避と、ローカルcommitの唯一の参照になっている退避は保持し、共有保護が無いものだけ保護する。

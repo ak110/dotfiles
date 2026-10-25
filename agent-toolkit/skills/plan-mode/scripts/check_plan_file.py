@@ -852,7 +852,10 @@ def _origin_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
         return None
     actions = []
     if any("private-notesが実在しない:" in message for message in skips):
-        actions.append("`atk info`でprivate-notesの場所を確認し、`AGENT_TOOLKIT_PRIVATE_NOTES`をその場所へ合わせて再実行する")
+        actions.append(
+            "`atk config get private_notes`でprivate-notesの場所を確認し、"
+            "`AGENT_TOOLKIT_PRIVATE_NOTES`をその場所へ合わせて再実行する"
+        )
     if any("WIファイルを特定できない:" in message for message in skips):
         actions.append("実施内容と関連WIのファイル名を`atk wi show <ファイル名>`で確かめ、誤りを直して再実行する")
     if any("WI本文を取得できない:" in message for message in skips):

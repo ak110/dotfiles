@@ -492,8 +492,6 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
         return [
             "レビュー基準: 計画",
             f"計画: {root / 'plan.md'}",
-            "未判定検証記録: なし",
-            f"完成条件証拠: {root / 'completion-evidence.json'}",
             handoff,
         ]
     if task_name == "exec.subagent.md":

@@ -49,7 +49,8 @@ Claudeの`inherit`接続でも、この会話contextの除去を適用し、認�
 配送するルートはManagerが持つ`StatusFileWriter.root_session_id`である。環境にownerが無くManagerが生成したルートも、Codex App Serverの子環境、threadの開始・再開のMCP環境とhost索引、Claude SDKの新規・再開環境、Antigravityの子環境へ同じ入力として渡す。backendはこの入力から通知先の所有者を決める。Antigravityではルート配送だけを保証し、固有の通知元識別子の解決と通知成功は別の課題として扱う。計画の所有記録とUWIの投入元の解決はこの配送と別の契約であり、Managerが生成したプロセス専用のroot（`mcp-`で始まる識別子）は会話を表さないため、所有会話と投入元の記録から除く。判定は`agent-toolkit/agent_toolkit/_plan/owner_records.py`の`resolve_conversation_session_id`が持つ。
 CodexのPostToolUseフックは、所有session識別子があり環境変数から書込主体を解決できない場合、入力JSONの検証済み現行session識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当として補完する。PostToolUseフックと`atk agents wait`は`hosts`索引が存在する場合は委譲元のthreadから書込主体を逆引きし、状態ファイルと待機対象登録を同じ名前空間で扱う。索引が無い場合は補完した識別子をそのまま書込主体として使う。
 Codex backendは、子sessionを起動した委譲先から`atk agents wait`に成功した`commandExecution`を受け取る。
-人の端末の標準出力、またはエージェント環境で量によらず自動保存した`stdout`の`保存先:`が示す保存結果の終端識別子を、`_agents_server/wait_output_tracking.py`の`consume_agents_wait_output`で追跡集合から外す。
+`_agents_server/wait_output_tracking.py`の`consume_agents_wait_output`は回収済みの終端識別子を追跡集合から外す。
+読む対象は人の端末の標準出力のJSON Lines、エージェント環境で標準出力へ直接書いた要約の`終端行:`、要約が長く`atk`の共通の自動保存へ回った場合の`保存先:`が示す保存結果である。
 標準エラーの保存先は別の標識で返し、待機のJSON Linesとして読まない。保存先は結果回収より先に開き、準備できなければ結果を消費しない。
 待機失敗と読取不能の結果は追跡集合へ残す。
 
@@ -103,9 +104,9 @@ process-loop、レーン操作と配布物保持が共有する状態は、前�
 | 保持した配布物を使用するプロセス | `plugin-root-leases/<保持領域の識別子>-<pid>.json`と領域ごとの`.lock` | 配布物の起動側とmanaged-tempの回収・掃引 | `_common/plugin_root_leases.py`。起動側が領域path・PID・プロセス作成時刻を登録し、読む側は同じ領域の排他下で生存を検収する。終了済みの使用記録を除き、取得不能な記録と使用中の実体を保護する。使用登録と回収が排他を共有するのは、検収と登録の間に実体を削除しないためであり、`atk`の自動掃引だけは排他を待たず、競合した領域を保持して次回へ回す |
 | 同じ配布元・版から共有する完成済み配布物 | managed-tempの保持領域直下の`.agent-toolkit-plugin-root.json` | `_agents_server/plugin_root.py`の起動・再利用 | コピーする起動側が配布元・版・root名を保存する。内側MCPも同じ完成済み実体を使い、回収側は前行の使用記録を検収する |
 | MCPのlease対応能力 | `plugin-root-leases/capability-<pid>.json` | 配布物rootの解決と旧形式領域の回収判定 | 保持領域を使わない起動もPIDと作成時刻を公開する。既存の領域別leaseも対応能力の証拠として使う |
-| 会話の保存領域の直接参照 | `managed-temp/.sessions/<session_idのhash>`と会話別`.lock` | managed-tempの作成API | 登録・marker・session_id・identityを検証して親を再利用し、参照不成立時は登録を探索して復元する。出力保存は親の一意な子へ集約する |
-| 掃引の省略判定 | `managed-temp/.sweep/schedule`と隣接する`.managed-temp-sweep-gate` | managed-tempの掃引 | 詳細と小さい集合・期限情報を分け、期限前・集合不変では候補列挙と詳細全量読取を省く |
-| セッション配下の作業用領域の回収再開情報 | `managed-temp/`配下の`.child-cleanup`ファイル | `atk managed-temp cleanup` | `_atk/managed_temp/inventory.py`。親の登録と対象identityを検収して回収し、途中失敗の情報を次回の同じ操作へ渡す。保存証拠を持つ親領域を保持する |
+| 旧版が会話へ割り当てた保存領域の参照 | `managed-temp/.sessions/<session_idのSHA-256>`と会話別`.lock` | `_atk/managed_temp/creation.py`のセッションのmanaged-tempの解決。参照が一時root直下の実在する非リンクディレクトリを指す場合だけ、その旧パスを再利用する | 新版は作成・書換えをしない。`_atk/managed_temp/sweep.py`が、指す対象が無く会話別`.lock`を非待機で取得できた参照だけを個別に回収する |
+| 旧版の登録簿とcleanupロック | `managed-temp/`直下の登録簿JSON、`.consuming-`付きの消費途中状態と`.json.cleanup.lock` | 旧版プロセスと掃引 | 新版は作成しない。掃引は対象と消費途中状態が無く対応ロックを取得できた登録簿と、登録簿と消費途中状態が無くロックを取得できたcleanupロックだけを個別に回収する |
+| 掃引の次回確認時刻 | `managed-temp/.sweep/schedule`（一時root直下の名前をキーとする1表） | managed-tempの掃引 | `_atk/managed_temp/sweep.py`。一時rootの更新時刻が変わらず次の確認時刻にも達していない起動では一覧を取らずに戻る |
 
 使用記録のない保持領域の回収では、`_common/plugin_root_leases.py`がOSの起動引数と開いている既存診断ログへの参照も読む。旧形式は同じOSアカウント・状態名前空間のlease非対応MCPと帰属不明の候補を保持し、候補の不在を確認した後に回収へ進める。能力記録か有効な領域別leaseで対応能力を確認できるMCPは、この帰属不明の候補から外す。旧形式・新形式とも、lease登録前に保持先を直接参照する公開MCPランチャーを保護する。新規の作成には`agents-server-plugin-root-shared`のprefixを使い、旧形式の列挙互換と完成済みmarkerの契約を保つ。
 

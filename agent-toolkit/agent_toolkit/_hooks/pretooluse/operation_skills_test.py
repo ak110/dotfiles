@@ -128,7 +128,7 @@ def test_write_paths_respect_option_roles(command: str, expected: list[str], tmp
             },
             ["bugfix", "writing-standards"],
         ),
-        (_bash("atk managed-temp create --prefix x", "codex"), ["managed-temp"]),
+        (_bash("mktemp -d /cache/session/x-XXXXXXXX", "codex"), ["managed-temp"]),
         (_bash("echo rule > AGENTS.md", "codex"), ["writing-standards"]),
     ],
     ids=["rg", "git-grep", "find", "grep-r", "root-cause-bash", "root-cause-apply_patch", "managed-temp", "agent-doc"],
@@ -448,34 +448,34 @@ _MANAGED_TEMP_SKILL = "agent-toolkit:managed-temp"
 @pytest.mark.parametrize(
     "command",
     [
-        "atk managed-temp create --prefix lane-02-grp-a",
-        "C:/tools/atk.cmd managed-temp create --prefix x",
-        r"'C:\tools\atk.cmd' managed-temp create --prefix x",
-        "atk.py managed-temp create --prefix x",
-        "/home/u/dotfiles/agent-toolkit/bin/atk managed-temp create --prefix x",
-        "cd /repo && atk managed-temp create --prefix x",
-        "for l in a b; do atk managed-temp create --prefix $l; done",
-        "cd /repo && d=$(atk managed-temp create --prefix y)",
+        "mktemp -d '/cache/session/lane-02-XXXXXXXX'",
+        "mktemp --directory -p /cache/session",
+        "mktemp -dp /cache/session work-XXXXXXXX",
+        "/usr/bin/mktemp -p /cache/session -d",
+        "cd /repo && mktemp -d /cache/session/x-XXXXXXXX",
+        'for l in a b; do mktemp -d "/cache/session/$l-XXXXXXXX"; done',
+        "cd /repo && d=$(mktemp -d /cache/session/y-XXXXXXXX)",
     ],
 )
-def test_managed_temp_create_without_skill_blocks_until_acquired(command: str) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
+def test_temp_directory_create_triggers_managed_temp(command: str) -> None:
+    """個別の一時ディレクトリを作成する静的な呼出しを、置換と複合文の内側も含めて検出する。"""
     assert operation_skills.operation_matches("managed-temp-create", "Bash", {"command": command})
 
 
 @pytest.mark.parametrize(
     "command",
     [
-        "atk managed-temp cleanup --path /tmp/x",
-        "atk managed-temp list",
-        "git grep -F 'atk managed-temp create'",
-        "printf '%s' 'atk managed-temp create'",
-        "printf '%s' C:/tools/atk.cmd managed-temp create",
+        "mktemp /cache/session/file-XXXXXXXX",
+        "mktemp -p /cache/session",
+        "mktemp -- -d",
+        "rm -rf -- /cache/session/x-12345678",
+        "git grep -F 'mktemp -d'",
+        "printf '%s' 'mktemp -d'",
         "atk wi list",
     ],
 )
 def test_other_commands_do_not_warn_managed_temp(command: str) -> None:
-    """既存の操作に対する検出条件を静的解析で確かめる。"""
+    """一時ファイルの作成、回収、他のコマンドの引数を一時ディレクトリの作成として扱わない。"""
     assert not operation_skills.operation_matches("managed-temp-create", "Bash", {"command": command})
 
 
@@ -484,8 +484,6 @@ _SCOPE_REFERENCE = plugin_resources.skill_document_path("check-execution", "refe
 
 
 _VERIFICATION_PAYLOADS = [
-    _bash("atk run-script plan-verify -- --plan /p.md --worktree /w --timeout 60 --summary-only", "verify"),
-    _bash("atk run-script plan-verify -- --plan /p.md --worktree /w --list", "verify"),
     _bash("uv run --frozen pyfltr run --output-format=jsonl a.py", "verify"),
     _bash("uvx pyfltr fast --commands=pytest", "verify"),
     _bash("python3 -m pyfltr ci", "verify"),
@@ -499,7 +497,6 @@ _VERIFICATION_PAYLOADS = [
     _bash("npx playwright test", "verify"),
     _bash("cargo test", "verify"),
     _bash("dotnet test lc.sln", "verify"),
-    _bash("atk run-command --cwd /w --timeout 60 -- uv run --frozen pytest a_test.py", "verify"),
     _bash("cd /w && make test-browser", "verify"),
     {"tool_name": "mcp__plugin_agent-toolkit_pyfltr__run", "tool_input": {"paths": ["/w/a.py"]}, "session_id": "verify"},
     {"tool_name": "mcp__pyfltr__run", "tool_input": {"paths": ["/w/a.py"]}, "session_id": "verify"},
@@ -524,9 +521,8 @@ def test_verification_operations_require_check_execution_and_scope_reference(pay
         _bash("uvx pyfltr command-info pytest --output-format=jsonl", "query"),
         _bash("uv run --frozen pytest --help", "query"),
         _bash("uv run --frozen pytest --collect-only -q", "query"),
-        _bash("atk run-script plan-verify -- --help", "query"),
-        _bash("atk run-command --records-file /tmp/results.json", "query"),
-        _bash("atk read-file -- /tmp/pytest.log", "query"),
+        _bash("atk run-script plan-check -- --plan /p.md", "query"),
+        _bash("sed -n '1,200p' -- /tmp/pytest.log", "query"),
         _bash("cat /tmp/pytest.log", "query"),
         _bash("make help", "query"),
         _bash("pnpm install", "query"),

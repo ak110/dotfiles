@@ -16,6 +16,7 @@ import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
@@ -84,7 +85,7 @@ def test_project_hook(
         match = re.search(r"途中資源を保持した: (.+?\.json):", capsys.readouterr().err)
         assert match is not None
         evidence = pathlib.Path(match[1])
-        assert (evidence.parent / ".agent-toolkit-managed-temp.json").is_file()
+        assert evidence.parent.parent == managed_temp.temp_root_path()
         observed = json.loads(evidence.read_text(encoding="utf-8"))
         assert observed["exit_code"] == 3 and observed["input"]["name"] == (name or "process-loop")
     else:
@@ -93,7 +94,7 @@ def test_project_hook(
         assert len(stored_paths) == 1
         stored = json.loads(stored_paths[0].read_text(encoding="utf-8"))
         diagnostics = pathlib.Path(stored["hook_diagnostics"])
-        assert (diagnostics / ".agent-toolkit-managed-temp.json").is_file()
+        assert diagnostics.parent == managed_temp.temp_root_path()
         observed = json.loads((diagnostics / "WorktreeCreate-0.json").read_text(encoding="utf-8"))
         assert observed["exit_code"] == 0 and observed["input"]["cwd"] == str(local)
         count.unlink()

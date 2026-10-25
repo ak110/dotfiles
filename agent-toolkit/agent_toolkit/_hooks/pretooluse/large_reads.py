@@ -1,10 +1,10 @@
-"""CodexのBashによる大量の全文取得を共通の本文読取へ誘導する。
+"""CodexのBashによる大量の全文取得を、行範囲を分割した標準読取へ誘導する。
 
-Codexでは出力予算を超えた取得が本文の省略を招くため、容量と継続読取の手段を警告する。
+Codexでは出力予算を超えた取得が本文の省略を招くため、容量と行範囲の分割取得の手段を警告する。
 Claude Codeはホストが上限超過を`PARTIAL view`または退避ファイルとして返し、残りを続けて取得できるため対象外とする。
 
 内側コマンドと外側セルの予算をhookから確定できないため、通常の読取を継続する。
-全文と終了状態を保持できる予算なら標準読取を使え、省略時は共通の本文読取へ移れる。
+全文と終了状態を保持できる予算なら標準読取を使え、省略時は`sed -n '<開始行>,<終了行>p'`の分割取得へ移れる。
 """
 
 from __future__ import annotations
@@ -21,9 +21,7 @@ lazy import stat
 lazy from collections.abc import Iterator, Sequence
 
 from agent_toolkit._hooks.notice import formatter
-lazy from agent_toolkit._atk import read_file
 lazy from agent_toolkit._common import host_homes, shell_cwd
-lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import plugin_resources
 
@@ -148,53 +146,70 @@ def _display_operands(name: str, tokens: Sequence[str]) -> tuple[str, ...]:
     return tuple(operands)
 
 
-def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str, ...]:
-    """全文取得のファイル引数を返す。`include_partial`が真なら、帰属行の配送だけが対象とする範囲取得のファイル引数も含める。"""
+def _read_operands(tokens: Sequence[str], *, include_partial: bool, first_line_only: bool = False) -> tuple[str, ...]:
+    """全文取得のファイル引数を返す。`include_partial`が真なら、帰属行の配送だけが対象とする範囲取得のファイル引数も含める。
+
+    `first_line_only`が真なら、行範囲の取得は1行目から始まるものだけを含める。
+    """
     if not tokens:
         return ()
     name = pathlib.PurePath(tokens[0]).name
     if name in _FULL_READ_COMMANDS:
         return _display_operands(name, tokens)
-    if (
-        len(tokens) == 4
-        and name == "sed"
-        and tokens[1] == "-n"
-        and (tokens[2] in {"p", "1,$p"} or include_partial and re.fullmatch(r"\d+(?:,[\d$]+)?p|p", tokens[2]))
-    ):
-        return (tokens[3],)
+    sed = sed_read_range(tokens)
+    if sed is not None:
+        operand, start, end = sed
+        if first_line_only and start > 1:
+            return ()
+        return (operand,) if include_partial or (start == 1 and end is None) else ()
     if len(tokens) == 3 and name == "awk":
         program = "".join(tokens[1].split())
         if program in {"{print}", "{print$0}"}:
             return (tokens[2],)
-    if include_partial and is_atk_command(tokens) and tokens[1:2] == ("read-file",) and "--" in tokens:
-        separator = tokens.index("--")
-        if separator + 1 >= len(tokens):
-            return ()
-        operand = tokens[separator + 1]
-        options = (*tokens[2:separator], *tokens[separator + 2 :])
-        index = 0
-        while index < len(options):
-            option, equals, value = options[index].partition("=")
-            if option not in {"--start", "--max-bytes"}:
-                return ()
-            if not equals:
-                index += 1
-                value = options[index] if index < len(options) else ""
-            if not value.isdigit():
-                return ()
-            index += 1
-        return (operand,)
     return ()
 
 
-def bash_read_paths(command: str, cwd: str, *, include_partial: bool = False) -> Iterator[tuple[pathlib.Path, ...]]:
-    """読取の解析とcwd・パスの解決を共有し、コマンドごとにファイル群を返す。"""
+def sed_read_range(tokens: Sequence[str]) -> tuple[str, int, int | None] | None:
+    """静的な`sed -n '<開始行>,<終了行>p' [--] <パス>`のパスと1始まりの行範囲を返す。
+
+    終了行の`None`は末尾までを表す。書込や置換を含み得る他のスクリプトと複数ファイルの指定は対象外とする。
+    """
+    if len(tokens) not in {4, 5} or pathlib.PurePath(tokens[0]).name != "sed" or tokens[1] != "-n":
+        return None
+    if len(tokens) == 5 and tokens[3] != "--":
+        return None
+    operand = tokens[-1]
+    if len(tokens) == 4 and operand.startswith("-"):
+        return None
+    matched = re.fullmatch(r"(?:(\d+)(?:,(\d+|\$))?)?p", tokens[2])
+    if matched is None:
+        return None
+    if matched[1] is None:
+        return operand, 1, None
+    start = int(matched[1])
+    if start < 1:
+        return None
+    if matched[2] is None:
+        return operand, start, start
+    if matched[2] == "$":
+        return operand, start, None
+    # sedは終了行が開始行より前なら開始行だけを出力する。
+    return operand, start, max(start, int(matched[2]))
+
+
+def bash_read_paths(
+    command: str, cwd: str, *, include_partial: bool = False, first_line_only: bool = False
+) -> Iterator[tuple[pathlib.Path, ...]]:
+    """読取の解析とcwd・パスの解決を共有し、コマンドごとにファイル群を返す。
+
+    `first_line_only`は`_read_operands`の同名の指定へ渡す。
+    """
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         if not invocation.arguments_known or invocation.output_pipe or invocation.output_redirected or invocation.captured:
             continue
         tokens = invocation.segment.tokens
         paths = []
-        for operand in _read_operands(tokens, include_partial=include_partial):
+        for operand in _read_operands(tokens, include_partial=include_partial, first_line_only=first_line_only):
             if include_partial and any(marker in operand for marker in ("$", "`", "<", ">", "*", "?")):
                 continue
             if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
@@ -438,6 +453,9 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加える。"
             "`agent-toolkit:writing-standards`の`references/session-records.md`で入力と照会モードを選ぶ。",
         )
+    # 1行あたりの平均バイト数から、閾値の半分程度に収まる行数を1回の取得単位として示す。
+    chunk = max(1, plan.line_count * byte_threshold // (2 * max(plan.byte_count, 1)))
+    quoted = shlex.quote(str(path))
     return _large_warning(
         f"{plan.line_count}行、{plan.byte_count}バイトの全文取得の出力量を確認する"
         f"（通知の閾値: {byte_threshold}バイト）: {path}",
@@ -446,9 +464,9 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
             "予算を超える場合と本文が省略された場合は取得の範囲を選ぶ。"
             "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使う。"
             "全文が必要な場合だけ、"
-            f"`{read_file.first_read_command(path)}`で取得し、`text`を連結する。"
-            f"継続は`atk read-file --start <next> -- {shlex.quote(str(path))}`の`<next>`へ直前の値を指定し、"
-            "`eof`が`true`になるまで同じファイルの`text`を連結する。"
+            f"`sed -n '1,{chunk}p' -- {quoted}`から始め、"
+            f"`sed -n '{chunk + 1},{2 * chunk}p' -- {quoted}`のように開始行と終了行を進めて"
+            f"末尾の{plan.line_count}行目まで別の呼び出しで取得する。出力が省略された範囲は行数を狭めて取り直す。"
         ),
     )
 
@@ -469,9 +487,9 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
         fix="内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら標準読取を使う。"
         "予算を超える場合と本文が省略された場合は、取得の必要性と範囲を選ぶ。"
         "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使う。"
-        "全文が必要なファイルだけ、`atk read-file -- <必要なファイルの絶対パス>`で取得する。"
-        "継続は`atk read-file --start <next> -- <同じファイルの絶対パス>`へ直前の値を指定し、"
-        "`eof`が`true`になるまで同じファイルの`text`を連結する。",
+        "全文が必要なファイルだけ、ファイルごとに別の呼び出しで"
+        "`sed -n '<開始行>,<終了行>p' -- <必要なファイルの絶対パス>`を使い、行範囲を進めて末尾の行まで取得する。"
+        "出力が省略された範囲は行数を狭めて取り直す。",
     )
 
 

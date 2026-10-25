@@ -9,7 +9,7 @@ import pathlib
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import tool_names
+from agent_toolkit._agents_server import tool_names, wait_summary
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionState
 from agent_toolkit._common import background_output
@@ -132,16 +132,10 @@ def consume_agents_server_tool_result(
         session.terminal_child_session_ids.add(session_id)
 
 
-# `atk agents wait`がエージェント環境の自動保存時に標準出力へ書く保存先の行。
+# `atk`の共通の自動保存が、要約が長い場合に標準出力へ書く保存先の行。
 _AGENTS_WAIT_SAVED_PREFIX = "保存先: "
-
-
-WAIT_BODY_START_PREFIX = "本文開始: session_id="
-"""`atk agents wait`の要約が結果本文と通知本文の直前に置く行の接頭辞。後ろへsession識別子を続ける。"""
-
-
-WAIT_BODY_END_PREFIX = "本文終了: session_id="
-"""`atk agents wait`の要約が結果本文と通知本文の直後に置く行の接頭辞。後ろへsession識別子を続ける。"""
+WAIT_BODY_START_PREFIX = wait_summary.WAIT_BODY_START_PREFIX
+WAIT_BODY_END_PREFIX = wait_summary.WAIT_BODY_END_PREFIX
 
 
 def _is_agents_wait_command(tool_input: Any) -> bool:
@@ -166,8 +160,8 @@ def _tool_result_text(value: Any) -> str:
 
 
 def _collected_session_ids(text: str) -> set[str]:
-    """`atk agents wait`のJSON Lines出力から、終端結果を回収したsession識別子を返す。"""
-    collected: set[str] = set()
+    """`atk agents wait`のJSON Lines出力とエージェント環境の要約の`終端行:`から、終端結果を回収したsession識別子を返す。"""
+    collected = wait_summary.terminal_session_ids(text)
     for line in text.splitlines():
         try:
             payload: Any = json.loads(line)
@@ -187,7 +181,8 @@ def consume_agents_wait_output(session: SessionState, text: str) -> None:
 
     回収済みの結果は再配送されないため、そのsessionの終端を理由に委譲先を再開させると、
     委譲先は受け取り済みの結果について同じ報告を返し直すだけのturnを費やす。
-    回収の根拠は待機コマンドが返したJSON Linesとし、エージェント環境の自動保存時は標準出力が示す保存先を読む。
+    回収の根拠は待機コマンドが返したJSON Linesかエージェント環境の要約の`終端行:`とする。
+    要約が長く保存された場合は標準出力が示す保存先を読む。
     結果ファイルの不在は公開前の状態と区別できないため、回収の根拠に用いない。
     ホストが待機を背景実行へ移した場合は結果本文が出力ファイルへ書かれるため、そのパスを記録し、
     `consume_agents_wait_background_outputs`が判定の直前に読む。
@@ -213,7 +208,7 @@ def consume_agents_wait_background_outputs(session: SessionState) -> None:
 def _collected_from_wait_output(text: str) -> set[str]:
     """`atk agents wait`の標準出力から、終端結果を回収したsession識別子を返す。
 
-    標準出力はJSON Linesか、エージェント環境の自動保存時に保存先の行と要約を持つ。
+    標準出力はJSON Linesか、エージェント環境の要約（長い場合は共通の自動保存による保存先の行）を持つ。
     ツール結果の本文と背景実行の出力ファイルはどちらも標準出力そのものであるため、同じ規則で読む。
     要約が表示する委譲先の本文は待機の出力を引用して終端行や保存先の行と同じ形の行を含み得るため、
     本文の範囲の行は回収の根拠から外す。

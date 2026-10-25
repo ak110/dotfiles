@@ -247,40 +247,6 @@ def test_drop_refuses_queue_repository_worktree(
     assert git_repository.run_git(target_repository, "show-ref", "--verify", "--quiet", ref, check=False).returncode == 1
 
 
-def test_protect_refuses_queue_repository_worktree(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """protectはprivate-notesの状態を保って拒否し、別リポジトリでは保護する。"""
-    queue_repository = _make_repository(tmp_path, "private-notes")
-    target_repository = _make_repository(tmp_path, "target")
-    ref = "refs/worktree/protect-target"
-    for repository in (queue_repository, target_repository):
-        oid = git_repository.run_git(repository, "rev-parse", "HEAD").stdout.strip()
-        git_repository.run_git(repository, "update-ref", ref, oid)
-        _make_changes(repository, repository.name)
-    queue_status = git_repository.run_git(queue_repository, "status", "--short").stdout
-    queue_refs = git_repository.run_git(queue_repository, "show-ref").stdout
-    args = argparse.Namespace(command="protect", identifier=ref)
-
-    monkeypatch.chdir(queue_repository)
-    assert stash.dispatch(args, private_notes=queue_repository) == 2
-    error = capsys.readouterr().err
-    assert "private-notes" in error
-    assert "次の操作: " in error
-    assert "atk wi・atk plansのコマンドかatk serveの画面" in error
-    assert "atk wi commit" in error
-    assert git_repository.run_git(queue_repository, "status", "--short").stdout == queue_status
-    assert git_repository.run_git(queue_repository, "show-ref").stdout == queue_refs
-    monkeypatch.chdir(target_repository)
-    assert stash.dispatch(args, private_notes=queue_repository) == 0
-    protections = git_repository.run_git(
-        target_repository, "for-each-ref", "--format=%(objectname)", "refs/atk/worktree-stash/"
-    ).stdout.splitlines()
-    assert protections == [git_repository.run_git(target_repository, "rev-parse", ref).stdout.strip()]
-
-
 @pytest.mark.parametrize("failure", ["update-ref", "drop"])
 def test_intermediate_failure_preserves_recovery_identifier(
     tmp_path: pathlib.Path,
@@ -389,18 +355,6 @@ def test_drop_removes_shared_stash_by_identifier(tmp_path: pathlib.Path) -> None
     assert git_repository.run_git(repo, "rev-parse", "--verify", "refs/stash", check=False).returncode != 0
 
 
-def _protect(worktree: pathlib.Path, ref: str) -> subprocess.CompletedProcess[str]:
-    """公開CLIで旧退避を保護する。"""
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT), "worktree-stash", "protect", ref],
-        cwd=worktree,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=20,
-    )
-
-
 def _gc(worktree: pathlib.Path) -> None:
     git_repository.run_git(worktree, "reflog", "expire", "--expire=now", "--expire-unreachable=now", "--all")
     git_repository.run_git(worktree, "gc", "--prune=now")
@@ -429,63 +383,6 @@ def test_same_label_main_and_linked_survive_gc_fetch_and_restore(tmp_path: pathl
         git_repository.run_git(worktree, "fetch", str(remote), "main")
         git_repository.run_git(worktree, "pull", "--ff-only", str(remote), "main")
         _assert_restored(worktree, "refs/worktree/same", marker)
-
-
-def test_protect_legacy_ref_is_idempotent_and_preserves_missing_ref(tmp_path: pathlib.Path) -> None:
-    """旧固有refを改名せず保護し、欠損OIDは失敗してrefを残す。"""
-    repo, first, second = _make_worktrees(tmp_path)
-    _make_changes(first, "legacy")
-    git_repository.run_git(first, "stash", "push", "--include-untracked")
-    oid = git_repository.run_git(first, "rev-parse", "refs/stash").stdout.strip()
-    ref = "refs/worktree/legacy"
-    git_repository.run_git(first, "update-ref", ref, oid)
-    git_repository.run_git(first, "stash", "drop", "stash@{0}")
-    for _ in range(2):
-        result = _protect(first, ref)
-        assert result.returncode == 0, result.stderr
-        assert result.stdout.strip() == ref
-        assert not result.stderr
-    _gc(second)
-    _assert_restored(first, ref, "legacy")
-    missing_ref = "refs/worktree/missing"
-    missing_path = pathlib.Path(git_repository.run_git(repo, "rev-parse", "--git-path", missing_ref).stdout.strip())
-    if not missing_path.is_absolute():
-        missing_path = repo / missing_path
-    missing_path.parent.mkdir(parents=True, exist_ok=True)
-    missing_path.write_text("1" * 40 + "\n", encoding="ascii")
-    failed = _protect(repo, missing_ref)
-    assert failed.returncode == 1
-    assert missing_ref in failed.stderr
-    assert missing_path.read_text(encoding="ascii") == "1" * 40 + "\n"
-    absent = _protect(repo, "refs/worktree/absent")
-    assert absent.returncode == 2
-    assert "refs/worktree/absent" in absent.stderr
-
-
-@pytest.mark.parametrize("operation", ["show-ref", "rev-parse"])
-def test_protect_query_failure_preserves_existing_ref(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    operation: str,
-) -> None:
-    """存在照会とOID照会の障害を不在と区別し、既存refを保持する。"""
-    repo = _make_repository(tmp_path)
-    ref = "refs/worktree/protect-target"
-    oid = git_repository.run_git(repo, "rev-parse", "HEAD").stdout.strip()
-    git_repository.run_git(repo, "update-ref", ref, oid)
-    before = git_repository.run_git(repo, "show-ref").stdout
-    original_run = stash._run_git  # pylint: disable=protected-access  # noqa: SLF001
-
-    def fail_query(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
-        if args[0] == operation and args[-1] == ref:
-            return subprocess.CompletedProcess(args, 128, "", "injected ref query failure")
-        return original_run(args, cwd)
-
-    monkeypatch.setattr(stash, "_run_git", fail_query)
-    assert stash.protect(ref, cwd=repo) == 1
-    assert "照会できない" in capsys.readouterr().err
-    assert git_repository.run_git(repo, "show-ref").stdout == before
 
 
 def test_drop_partial_failure_can_retry_without_losing_protection(

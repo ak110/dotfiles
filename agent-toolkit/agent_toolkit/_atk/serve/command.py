@@ -26,8 +26,6 @@ def _port_type(value: str) -> int:
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
     """`atk serve`の引数を登録する。"""
-    parser.add_argument("serve_action", nargs="?", choices=("logs",), help="user serviceのjournalを表示")
-    parser.add_argument("-f", "--follow", action="store_true", help="直近100行を表示して追従")
     parser.add_argument(
         "--host",
         default=None,
@@ -41,13 +39,9 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def dispatch(args: argparse.Namespace, *, parser: argparse.ArgumentParser, home: pathlib.Path) -> int:
-    """`atk serve`を実行し、終了コードを返す。`parser`は`--follow`の誤用を報告するトップレベルのパーサー。"""
+def dispatch(args: argparse.Namespace, *, home: pathlib.Path) -> int:
+    """`atk serve`を実行し、終了コードを返す。"""
     serve_cli = importlib.import_module("agent_toolkit._atk.serve.cli")
-    if args.serve_action == "logs":
-        return serve_cli.show_logs(follow=args.follow)
-    if args.follow:
-        parser.error("--followは`atk serve logs`で指定してください。")
     try:
         serve_cli.run(host=args.host, port=args.port, home=home)
     except ValueError as error:

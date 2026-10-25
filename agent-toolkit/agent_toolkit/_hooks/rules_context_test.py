@@ -39,7 +39,7 @@ def test_session_start_delivers_current_conversation_identity(
             raise OSError("一時領域を作成できません")
         return tmp_path
 
-    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", make_temp)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", make_temp)
     for session in ("conversation-a", "conversation-b"):
         transcript = str(tmp_path / f"{session}.jsonl")
         rules_context.main(
@@ -73,7 +73,7 @@ def test_conversation_identity_notice_is_limited_to_claude_main(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", lambda *_args, **_kwargs: tmp_path)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
     rules_context.main(
         json.dumps(
             {
@@ -423,7 +423,7 @@ def test_subagent_start_does_not_create_session_scoped_managed_temp(
     """SubagentStartはsession_idを受け取っても領域を確保しない。"""
     monkeypatch.setattr(
         rules_context.managed_temp,
-        "create_managed_temp",
+        "resolve_session_temp",
         lambda *_args, **_kwargs: pytest.fail("SubagentStartで領域を作成した"),
     )
 
@@ -448,13 +448,12 @@ def test_session_start_provides_one_session_scoped_managed_temp(
     first_output = _output(capsys)
     rules_context.main(payload)
     second_output = _output(capsys)
-    entries = managed_temp.list_managed_temp(session_id="session-1")
+    session_root = managed_temp.find_session_temp("session-1")
 
-    assert len(entries) == 1
-    assert entries[0]["path"] in first_output
-    assert entries[0]["path"] in second_output
-    assert managed_temp.sweep_expired_managed_temp(now=datetime.datetime.now(datetime.UTC)) == []
-    session_root = pathlib.Path(entries[0]["path"])
+    assert session_root is not None and session_root == managed_temp.session_temp_path("session-1")
+    assert str(session_root) in first_output
+    assert str(session_root) in second_output
+    assert managed_temp.sweep_managed_temp(now=datetime.datetime.now(datetime.UTC)).deleted == []
     assert session_root.exists()
     child = managed_temp.create_session_temp("child", session_root)
     assert child.parent == session_root
@@ -572,11 +571,10 @@ def test_session_start_temp_notice_points_to_registered_directory(
         json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-2"}), host=host
     )
     output = _output(capsys)
-    entries = managed_temp.list_managed_temp(session_id="session-2")
+    session_root = managed_temp.find_session_temp("session-2")
 
-    assert len(entries) == 1
-    assert str(entries[0]["path"]) in output
-    assert pathlib.Path(entries[0]["path"]).is_dir()
+    assert session_root is not None and str(session_root) in output
+    assert session_root.is_dir()
 
 
 def test_subagent_start_notifies_existing_session_temp_without_creating(
@@ -592,10 +590,10 @@ def test_subagent_start_notifies_existing_session_temp_without_creating(
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-3"}))
     _output(capsys)
-    session_root = managed_temp.list_managed_temp(session_id="session-3")[0]["path"]
+    session_root = managed_temp.find_session_temp("session-3")
     monkeypatch.setattr(
         rules_context.managed_temp,
-        "create_managed_temp",
+        "resolve_session_temp",
         lambda *_args, **_kwargs: pytest.fail("SubagentStartで領域を作成した"),
     )
 
@@ -628,7 +626,8 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "parent"}))
     _output(capsys)
-    parent = pathlib.Path(managed_temp.list_managed_temp(session_id="parent")[0]["path"])
+    parent = managed_temp.find_session_temp("parent")
+    assert parent is not None
     paths = []
     for agent in ("group-a", "group-b", "group-a"):
         rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "session_id": "parent", "agent_id": agent}))
@@ -643,7 +642,7 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
     (paths[0] / "msg1.txt").write_text("担当A", encoding="utf-8")
     (paths[1] / "msg1.txt").write_text("担当B", encoding="utf-8")
     assert (paths[0] / "msg1.txt").read_text(encoding="utf-8") == "担当A"
-    assert len(managed_temp.list_managed_temp(session_id="parent")) == 1
+    assert managed_temp.find_session_temp("parent") == parent
 
 
 @pytest.mark.parametrize(
@@ -678,7 +677,7 @@ def test_session_start_resets_operation_skill_ready_for_main(
     def _no_session_temp(*_args: object, **_kwargs: object) -> pathlib.Path:
         raise OSError("テストではセッションのmanaged-tempを作成しない")
 
-    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", _no_session_temp)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", _no_session_temp)
 
     def _hook_context(handler: Callable[[str], int], payload: dict) -> str:
         code = handler(json.dumps(payload))

@@ -121,7 +121,10 @@ _MISSING_NEXT_ACTIONS = {
         "`atk run-script session-review-prepare -- <引数>`で起動する。"
         "解消しない場合はagent-toolkitの導入が壊れているため、ユーザーへ報告する"
     ),
-    "work_dir": "`atk managed-temp create`で作成したディレクトリの絶対パスを`--work-dir`へ渡して再実行する",
+    "work_dir": (
+        "通知されたセッションのmanaged-temp内に`mktemp -d '<親>/session-review-XXXXXXXX'`で作成した"
+        "ディレクトリの絶対パスを`--work-dir`へ渡して再実行する"
+    ),
     "transcript_path": (
         "`--transcript`へClaude Codeの記録、Codexでは`--codex-thread-id`、OpenCodeでは`--opencode-session-id`を渡す"
     ),

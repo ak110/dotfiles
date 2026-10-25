@@ -262,7 +262,7 @@ def test_add_dry_run_reports_style_warnings_with_section_errors(
 def test_add_multiple_body_files_preserves_source_and_occurrence(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """複数原稿の保存詳細から入力元と同じ行の各出現箇所を識別できる。"""
+    """複数原稿の表記診断から入力元と同じ行の各出現箇所を識別できる。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
@@ -273,9 +273,9 @@ def test_add_multiple_body_files_preserves_source_and_occurrence(
 
     _run_public_add(args, notes, _FIXED_DT, tmp_path)
 
-    error = capsys.readouterr().err
-    detail_path = pathlib.Path(error.split("標準エラー保存先: ", 1)[1].splitlines()[0])
-    details = detail_path.read_text(encoding="utf-8")
+    # 短い診断は保存せず、標準エラーの全文から入力元と出現箇所を読む。
+    details = capsys.readouterr().err
+    assert "標準エラー保存先:" not in details
     assert f'入力元="{tmp_path / "body.md"}"' in details
     assert f'入力元="{second}"' in details
     assert "文脈: 開始【—】中間—終了" in details

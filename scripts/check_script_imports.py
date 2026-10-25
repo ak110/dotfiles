@@ -74,7 +74,7 @@ _LAYER_ORDER = ("_common", "_git", "_plan", "_atk", "_agents_server", "_hooks")
 # 直下へ置ける名前。公開スクリプトの集合は
 # `.claude/skills/agent-toolkit-edit/references/distribution-and-hooks.md`「agent_toolkitパッケージの配置と層」が定める。
 _AGENT_TOOLKIT_ROOT_MODULES = frozenset(
-    {"hook.py", "atk.py", "agents_server_mcp.py", "wait_ci.py", "_managed_temp.py", "__init__.py", "conftest.py"}
+    {"hook.py", "atk.py", "agents_server_mcp.py", "wait_ci.py", "__init__.py", "conftest.py"}
 )
 
 # PEP 723インラインメタデータブロックの抽出パターン（公式仕様のリファレンス実装に準拠）。

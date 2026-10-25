@@ -362,9 +362,7 @@ class TestProcessLoopPromptAndEnv:
             real_close(descriptor)
 
         # 共通起動の掃引も`os.fchmod`で期限判定記録を書くため、掃引を外してhook診断ログの記述子だけを数える。
-        setattr_in_managed_temp_modules(
-            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (), None)
-        )
+        setattr_in_managed_temp_modules(monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], ()))
         monkeypatch.setattr(_process_loop.os, "fchmod", record_fchmod)
         monkeypatch.setattr(_process_loop.os, "close", record_close)
 
@@ -655,9 +653,7 @@ class TestProcessLoopPromptAndEnv:
             real_close(descriptor)
 
         # 共通起動の掃引も`os.fchmod`で期限判定記録を書くため、掃引を外してhook診断ログの記述子だけを数える。
-        setattr_in_managed_temp_modules(
-            monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], (), None)
-        )
+        setattr_in_managed_temp_modules(monkeypatch, "sweep_managed_temp", lambda *, now: _managed_temp.SweepResult([], ()))
         monkeypatch.setattr(_process_loop.os, "fchmod", fail_fchmod)
         monkeypatch.setattr(_process_loop.os, "close", record_close)
 

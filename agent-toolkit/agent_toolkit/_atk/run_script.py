@@ -22,16 +22,8 @@ SCRIPT_PATHS = {
     "plan-progress": pathlib.Path("skills/plan-mode/scripts/append_progress_log.py"),
     "plan-commits": pathlib.Path("skills/plan-mode/scripts/get_plan_commits.py"),
     "plan-rewrite": pathlib.Path("skills/plan-mode/scripts/rewrite_plan_commits.py"),
-    "plan-verify": pathlib.Path("skills/plan-mode/scripts/run_plan_verifications.py"),
     "pick-wi-check": pathlib.Path("skills/process-wi/scripts/check_selection.py"),
-    "lane-receipt-check": pathlib.Path("skills/process-wi/scripts/check_lane_receipt.py"),
     "termination-evidence": pathlib.Path("agent_toolkit/_hooks/termination_evidence.py"),
-    "exec-review-evidence-check": pathlib.Path("skills/review-standards/scripts/check_exec_review_evidence.py"),
-    "verification-record": pathlib.Path("skills/review-standards/scripts/update_verification_record.py"),
-    "review-contract": pathlib.Path("skills/review-standards/scripts/review_contract.py"),
-    "reader-fit-prepare": pathlib.Path("skills/review-standards/scripts/reader_fit_prepare.py"),
-    "review-impact": pathlib.Path("skills/review-standards/scripts/review_impact.py"),
-    "recurrence-items": pathlib.Path("skills/review-standards/scripts/recurrence_items.py"),
     "multi-turn-trials": pathlib.Path("skills/refine-prompt/scripts/multi_turn_trials.py"),
     "record-stall-detection": pathlib.Path("skills/delegation/scripts/record_stall_detection.py"),
     "wait-compaction-context": pathlib.Path("skills/delegation/scripts/wait_compaction_context.py"),
@@ -39,7 +31,6 @@ SCRIPT_PATHS = {
     "session-review-prepare": pathlib.Path("skills/session-review/scripts/session_review_prepare.py"),
     "writing-check-dash": pathlib.Path("skills/writing-standards/scripts/check_dash.py"),
     "wi-quote-check": pathlib.Path("skills/wi-standards/scripts/wi_quote_check.py"),
-    "wi-draft-prepare": pathlib.Path("skills/wi-standards/scripts/wi_draft_prepare.py"),
 }
 
 

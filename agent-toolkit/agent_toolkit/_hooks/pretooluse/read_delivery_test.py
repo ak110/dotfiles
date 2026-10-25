@@ -81,7 +81,7 @@ def test_common_method_is_delivered_for_direct_and_pending_reads_without_startin
         assert "共通取得順" in first
     _mark("test", skill, "main", "名指し参照の読込方法")
     assert not _guidance(read_delivery.deliver(payload, "Read", {"file_path": str(rule)}, "test"))
-    method_read = {"command": f"atk read-file --section '名指し参照の読込方法' -- {skill}"}
+    method_read = {"command": f"sed -n '2,3p' -- {skill}"}
     assert not _guidance(read_delivery.deliver(payload, "Bash", method_read, "test"))
     memory.clear()
     pending = _notice_body(read_delivery.deliver(payload, "Judge", {}, "test"))
@@ -219,7 +219,7 @@ def test_review_reference_arrives_after_successful_prepare_result(tmp_path, monk
     reference = tmp_path / "project-review.md"
     reference.write_text("# プロジェクト参照\n判断前の固有基準\n", encoding="utf-8")
     output = tmp_path / "prepare.json"
-    body = json.dumps({"reference_document": str(reference)})
+    body = json.dumps({"reference_document": str(reference), "status": "ok"}, indent=1)
     output.write_text(body, encoding="utf-8")
     row = ReadTrigger(tmp_path / "SKILL.md", 1, "判断", ("tool:Do",), (), selector="review-reference")
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
@@ -237,13 +237,12 @@ def test_review_reference_arrives_after_successful_prepare_result(tmp_path, monk
                 {"tool_response": {"stdout": body, "exit_code": 0}}, "Bash", {"command": f"cat -- {output}"}, "test"
             )
         else:
-            midpoint = len(body) // 2
-            for start, end in ((0, midpoint), (midpoint, len(body))):
-                chunk = json.dumps({"start": start, "end": end, "next": end, "eof": end == len(body)}) + "\n" + body[start:end]
+            lines = body.splitlines(keepends=True)
+            for start, end in ((1, 2), (3, len(lines))):
                 read_delivery.observe(
-                    {"tool_response": {"stdout": chunk, "exit_code": 0}},
+                    {"tool_response": {"stdout": "".join(lines[start - 1 : end]), "exit_code": 0}},
                     "Bash",
-                    {"command": f"atk read-file --start {start} -- {output}"},
+                    {"command": f"sed -n '{start},{end}p' -- {output}"},
                     "test",
                 )
     assert "判断前の固有基準" in _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
@@ -541,20 +540,96 @@ def test_agent_scope_and_compaction(tmp_path, monkeypatch, memory):
     assert not _guidance(read_delivery.deliver({"agent_id": "child"}, "Do", {}, "test"))
 
 
-def test_atk_partitioned_reads_require_complete_coverage(tmp_path, monkeypatch, memory):
+@pytest.mark.parametrize("separator", ["", "-- "])
+def test_sed_partitioned_reads_require_complete_coverage(tmp_path, monkeypatch, memory, separator):
     path = _rows(tmp_path, monkeypatch, "tool:Do", count=1)[0]
-    body = path.read_text(encoding="utf-8")
-    for start, end in [(4, len(body)), (0, 4)]:
-        text = json.dumps({"start": start, "end": end, "next": None, "eof": end == len(body)}) + "\n" + body[start:end]
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    for script, start, end in [("2,$p", 2, len(lines)), ("1p", 1, 1)]:
         read_delivery.observe(
-            {"tool_response": {"stdout": text, "exit_code": 0}},
+            {"tool_response": {"stdout": "".join(lines[start - 1 : end]), "exit_code": 0}},
             "Bash",
-            {"command": f"atk read-file --start {start} -- {path}"},
+            {"command": f"sed -n '{script}' {separator}{path}"},
             "test",
         )
-        if start:
-            assert not any(key == read_delivery.document_key(path) for key in memory[rules_context.OPERATION_SKILL_READY_KEY])
+        if start > 1:
+            assert read_delivery.document_key(path) not in memory[rules_context.OPERATION_SKILL_READY_KEY]
     assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
+
+
+@pytest.mark.parametrize(
+    ("case", "ready"),
+    [
+        ("exact", True),
+        ("missing-line", False),
+        ("changed-line", False),
+        ("extra-output", False),
+        ("truncated", False),
+        ("beyond-end", False),
+        ("other-command", False),
+        ("joined", True),
+    ],
+)
+def test_sed_range_output_must_match_the_document_lines(tmp_path, monkeypatch, memory, case, ready):
+    """行範囲の出力が資料の該当行と一致した場合だけ取得とし、欠落・相違・追加・切り詰めを取得にしない。"""
+    paths = _rows(tmp_path, monkeypatch, "tool:Do", count=2 if case == "joined" else 1)
+    lines = paths[0].read_text(encoding="utf-8").splitlines(keepends=True)
+    command = f"sed -n '1,{len(lines)}p' -- {paths[0]}"
+    output = "".join(lines)
+    if case == "missing-line":
+        output = "".join(lines[:-1])
+    elif case == "changed-line":
+        output = output.replace("必須基準0", "別の基準")
+    elif case == "extra-output":
+        output += "追加の出力\n"
+    elif case == "truncated":
+        output += "\nOutput too large"
+    elif case == "beyond-end":
+        command = f"sed -n '{len(lines) + 1},{len(lines) + 5}p' -- {paths[0]}"
+        output = ""
+    elif case == "other-command":
+        command = f"echo 前置き; {command}"
+        output = "前置き\n" + output
+    elif case == "joined":
+        command = "; ".join(f"sed -n '1,$p' -- {path}" for path in paths)
+        output = "".join(path.read_text(encoding="utf-8") for path in paths)
+    read_delivery.observe({"tool_response": {"stdout": output, "exit_code": 0}}, "Bash", {"command": command}, "test")
+    records = memory.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert all(read_delivery.target_ready(records, ReadTarget(path), "main") is ready for path in paths)
+
+
+@pytest.mark.usefixtures("memory")
+def test_codex_notice_ranges_lead_to_completed_section_and_document_reads(tmp_path, monkeypatch):
+    """Codexへ示した行範囲を分割して読むと、節と全文の取得が完了する。"""
+    path = tmp_path / "reference.md"
+    path.write_text("# 基準\n\n## 共通\n選択基準\n補足\n\n## 後段\n後段本文\n", encoding="utf-8")
+    other = tmp_path / "full.md"
+    other.write_text("# 全文\n一行目\n二行目\n", encoding="utf-8")
+    rows = [ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (path, other), ("共通", ""))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    payload = {"turn_id": "turn"}
+    notice = _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
+    assert f"`sed -n '3,6p' -- {path}`" in notice
+    assert f"`sed -n '1,3p' -- {other}`" in notice
+    assert "atk read-file" not in notice
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    for start, end in ((3, 4), (5, 6)):
+        command = {"command": f"sed -n '{start},{end}p' -- {path}"}
+        read_delivery.observe({**payload, "tool_response": "".join(lines[start - 1 : end])}, "Bash", command, "test")
+    assert _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
+    read_delivery.observe(
+        {**payload, "tool_response": other.read_text(encoding="utf-8")}, "Bash", {"command": f"sed -n '1,3p' {other}"}, "test"
+    )
+    assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
+
+
+def test_claude_notice_shows_ranges_for_documents_over_the_budget(tmp_path, monkeypatch, memory):
+    """配送本文に収まらない資料へ、行範囲とReadの範囲指定による取得方法を示す。"""
+    del memory
+    paths = _rows(tmp_path, monkeypatch, "tool:Do", count=2)
+    monkeypatch.setattr(read_delivery, "CLAUDE_BODY_BUDGET", 150 + len(str(paths[0])) + len(str(tmp_path)))
+    notice = _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
+    assert f"`sed -n '1,3p' -- {paths[1]}`" in notice
+    assert "`offset`" in notice and "`limit`" in notice
 
 
 @pytest.mark.parametrize("failure", [{"exit_code": 1}, {"interrupted": True}])
@@ -617,14 +692,13 @@ def test_selected_section_acquisition_can_complete_before_next_operation(tmp_pat
     row = ReadTrigger(tmp_path / "SKILL.md", 1, "判断", ("section:*reference.md#共通",), (path,), ("共通",))
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     payload = {"turn_id": "turn"}
-    tool_input = {"command": f"atk read-file --section 共通 -- {path}"}
-    assert not _guidance(read_delivery.deliver(payload, "Bash", tool_input, "test"))
-    selected = target.body()
-    for start, end in [(0, 4), (4, len(selected))]:
-        metadata = {"start": start, "end": end, "next": None, "eof": end == len(selected), "section": "共通"}
-        response = {"stdout": json.dumps(metadata) + "\n" + selected[start:end], "exit_code": 0}
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    for start, end in [(3, 3), (4, 5)]:
+        tool_input = {"command": f"sed -n '{start},{end}p' -- {path}"}
+        assert not _guidance(read_delivery.deliver(payload, "Bash", tool_input, "test"))
+        response = {"stdout": "".join(lines[start - 1 : end]), "exit_code": 0}
         read_delivery.observe({**payload, "tool_response": response}, "Bash", tool_input, "test")
-        if not start:
+        if start == 3:
             assert not read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], target, "main")
     assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
     records = memory[rules_context.OPERATION_SKILL_READY_KEY]
@@ -641,15 +715,19 @@ def test_modified_document_invalidates_previous_acquisition(tmp_path, monkeypatc
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
-@pytest.mark.parametrize("selector", ["「必要節」", "冒頭「必要節」"])
-def test_full_read_trigger_does_not_expand_an_explicit_section(tmp_path, selector):
+@pytest.mark.parametrize(
+    ("script", "matched"),
+    [("3,4p", True), ("1,4p", True), ("4p", True), ("1,2p", False), ("5,$p", False)],
+)
+def test_section_trigger_matches_ranges_overlapping_the_section_lines(tmp_path, script, matched):
+    """節の宣言は、資料から算出した節の行と重なる行範囲の読取に一致する。"""
     document = tmp_path / "criteria.md"
     document.write_text("# 基準\n共通前提\n## 必要節\n必要本文\n## 別用途\n別用途本文\n", encoding="utf-8")
-    full = "read:*/criteria.md"
     section = "section:*/criteria.md#「必要節」"
-    inputs = {"command": f"atk read-file --section '{selector}' -- {document}"}
-    assert not read_delivery.matches(full, "Bash", inputs, str(tmp_path))
-    assert read_delivery.matches(section, "Bash", inputs, str(tmp_path))
+    inputs = {"command": f"sed -n '{script}' -- {document}"}
+    assert read_delivery.matches(section, "Bash", inputs, str(tmp_path)) is matched
+    assert not read_delivery.matches(section, "Bash", {"command": f"cat -- {document}"}, str(tmp_path))
+    full = "read:*/criteria.md"
     assert read_delivery.matches(full, "Bash", {"command": f"cat -- {document}"}, str(tmp_path))
     assert read_delivery.matches(full, "Read", {"file_path": str(document)}, str(tmp_path))
 
@@ -675,7 +753,7 @@ def test_section_and_full_read_in_one_call_keep_the_full_read(tmp_path, section_
     document = tmp_path / "criteria.md"
     document.write_text("# 基準\n## 必要節\n本文\n", encoding="utf-8")
     full = f"cat -- {document}"
-    section = f"atk read-file --section '「必要節」' -- {document}"
+    section = f"sed -n '2,3p' -- {document}"
     commands = [section, full] if section_first else [full, section]
     assert read_delivery.matches("read:*/criteria.md", "Bash", {"command": "; ".join(commands)}, str(tmp_path))
 
@@ -687,7 +765,8 @@ def test_section_and_full_read_in_one_call_keep_the_full_read(tmp_path, section_
         ("Glob", {"pattern": "*.md"}, True),
         ("Grep", {"pattern": "read-table-source"}, True),
         ("Bash", {"command": "cat -- /source/criteria.md"}, True),
-        ("Bash", {"command": "atk read-file -- /source/criteria.md"}, True),
+        ("Bash", {"command": "sed -n '1,20p' -- /source/criteria.md"}, True),
+        ("Bash", {"command": "sed -n '1,20w /source/out.md' /source/criteria.md"}, False),
         ("Bash", {"command": "codex plugin list --json"}, True),
         ("Bash", {"command": "atk agents logs --session-id observed"}, True),
         ("Bash", {"command": "cat -- /source/criteria.md > /source/result.md"}, False),
@@ -1051,7 +1130,7 @@ def test_obsolete_duplicate_selection_does_not_impersonate_an_explicit_source_re
         ("Read", {"file_path": "/source/criteria.md"}),
         ("mcp__agents_server__list", {}),
         ("Bash", {"command": "cat -- /source/criteria.md"}),
-        ("Bash", {"command": "atk read-file -- /source/criteria.md"}),
+        ("Bash", {"command": "sed -n '1,20p' -- /source/criteria.md"}),
         ("Bash", {"command": "codex plugin list --json"}),
     ],
 )

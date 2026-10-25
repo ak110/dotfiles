@@ -306,7 +306,7 @@ async def test_public_start_returns_label_of_started_session(
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-state")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    session_area = _managed_temp.create_managed_temp("session", session_id="caller-session")
+    session_area = _managed_temp.resolve_session_temp("caller-session")
     (session_area / "work-contract.md").write_text("目的: 起動したセッションのラベルの返却を確かめる\n", encoding="utf-8")
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)

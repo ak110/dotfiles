@@ -13,7 +13,6 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
 from agent_toolkit._common import session_state
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
@@ -103,25 +102,12 @@ def _build_fixture(
     elif fixture_name == "subagent_stop_advisor":
         payload["last_assistant_message"] = ""
     elif fixture_name == "permissionrequest_codex":
-        managed_root = tmp_path / "managed temp"
-        managed_root.mkdir()
-        if os.name == "nt":
-            managed_temp_windows_security._windows_secure_path(  # pylint: disable=protected-access
-                managed_root,
-                directory=True,
-            )
-        target = _managed_temp.create_managed_temp("hook-test", root=managed_root)
-        helper = _PLUGIN_ROOT / "agent_toolkit" / "_managed_temp.py"
-        command_tokens = [
-            "uv",
-            "run",
-            "--no-project",
-            "--script",
-            str(helper),
-            "cleanup",
-            "--path",
-            str(target),
-        ]
+        # 子プロセスのhookへ、隔離済みの同じ一時rootを指す環境変数を渡す。
+        for name in ("LOCALAPPDATA",) if os.name == "nt" else ("XDG_CACHE_HOME",):
+            if name in os.environ:
+                env[name] = os.environ[name]
+        target = _managed_temp.create_managed_temp("hook-test")
+        command_tokens = ["rm", "-rf", "--", str(target)]
         command = subprocess.list2cmdline(command_tokens) if os.name == "nt" else shlex.join(command_tokens)
         payload.update(
             {

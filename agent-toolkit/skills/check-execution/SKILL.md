@@ -35,10 +35,10 @@ description: >
 
 ## 統合実行ツール経由の起動
 
-- 確定した計画の変更範囲の検証は`atk run-script plan-verify -- --plan <絶対パス> --worktree <絶対パス> --timeout <正の有限秒数> --summary-only`で実行する。訂正済み検証表があれば`--verification-plan <訂正済み検証表の絶対パス>`を加える。先に同じ入力の`--list`で全対象と順序が実差分を含むことを確かめる。失敗・timeout後も全件を実行するため、集約終了コードに加えて結果まとめの各行の`state`・`failure`、各record_pathと両出力を読んで判定する。検証行・訂正済み検証表の書式と引き継ぎ、pyfltrのJSONL指定と完了の検収は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」に従う
+- 確定した計画の変更範囲の検証は、計画の`## 検証`（訂正済み検証表があればその表）の各コマンドを対象worktreeで順に実行する。実行前に、コマンドの対象が実差分を含むことを確かめる。1件が失敗しても残りを実行し、各コマンドの終了コードと出力を読んで判定する。検証行・訂正済み検証表の書式と引き継ぎ、pyfltrの完了の検収は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」に従う
 - プロジェクトが採用する統合実行ツール（`pyfltr`など）を使い、対象を限定する場合も同じツールへパスを渡す。個別ツールの直接起動はデバッグ・最小再現・原因特定などプロジェクト規範が認める用途に限る
-- チェック実行用MCPを優先し、pyfltrでは`run`を使う。MCPを使えない外部チェックや手動観測で両出力と終了状態を残す場合は、`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`を使う。返却JSONの`record_path`（実行条件・子終了状態・両出力へ到達できる保存JSON）の絶対パスを検証記録へ渡す
-- 実際のrun_id・record_path、保存した手動観測は、完了報告の送達前確認へ渡す。報告する結果と保存物の対応は`agent-toolkit:completion-report`の`references/report-formats.md`「検証結果と実行記録」が定める
+- チェック実行用MCPを優先し、pyfltrでは`run`を使う。MCPを使えない外部チェックと手動観測はハーネスの標準実行・背景実行・待機機能で実行する。別の担当へ全量を渡す場合は、自分のセッションのmanaged-tempへ標準出力と標準エラーを分けて保存し、終了コードと取得時の`git rev-parse HEAD`を`検証結果`へ書く
+- 実際のrun_id、保存した出力と手動観測は、完了報告の送達前確認へ渡す。報告する結果と保存物の対応は`agent-toolkit:completion-report`の`references/report-formats.md`「検証結果と実行記録」が定める
 
 ## pyfltrの起動形
 
@@ -51,5 +51,5 @@ description: >
 
 保存前に、生成元の公開指定から用途に合う出力形式と対象を選ぶ。
 保存済みpyfltrログの本文を読むときは`pyfltr show-run <run_id> --commands <コマンド名> --output --output-format=text`を使い、表示のためだけのJSON抽出を省く。
-構造化診断には`show-run --commands <コマンド名> --output-format=jsonl`を、試験結果の関連付けには`verification-record`の結果ファイル入力と`--list-results`を使う。
+構造化診断には`show-run --commands <コマンド名> --output-format=jsonl`を使い、JSONは`jq`で読む。試験結果は`-v`付きの出力の完全なテスト名と結果の行を要求へ対応付ける。
 生成元の表示指定が無い用途や、結果の関連付け・意味の判定は、本文表示の取得と分けて扱う。

@@ -1,18 +1,19 @@
-"""表記診断の詳細と件数・続行可否を両環境へ保持して返すことを検証する。"""
+"""表記診断の詳細と続行可否を、保存物を作成せず標準エラーへ直接返すことを検証する。"""
 
 import pathlib
 
 import pytest
 
+from agent_toolkit import atk
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import style_diagnostics
 
 
 @pytest.mark.parametrize("agent", [False, True])
-def test_report_preserves_every_warning_and_distinguishes_stderr(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], agent: bool
+def test_short_warnings_go_to_stderr_without_saved_file(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], agent: bool
 ) -> None:
-    """短い2件の警告も全量を保持し、エージェント環境では保存先のファイルから、それ以外では標準エラーから全ての警告を読める。"""
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    """短い2件の警告は両環境で標準エラーへ全量を書き、managed-tempへ派生ファイルを作成しない。"""
     if agent:
         monkeypatch.setenv("CLAUDECODE", "1")
     warnings = style_diagnostics.warnings_for_body("開始—中間—終了", source="原稿.md")
@@ -23,27 +24,32 @@ def test_report_preserves_every_warning_and_distinguishes_stderr(
     captured = capsys.readouterr()
     assert not captured.out
     assert "投入は続行する" in captured.err
-    if agent:
-        assert "表記診断: 2件" in captured.err
-        path = pathlib.Path(captured.err.split("標準エラー保存先: ", 1)[1].splitlines()[0])
-        assert path.is_absolute()
-        details = path.read_text(encoding="utf-8")
-    else:
-        assert "保存先:" not in captured.err
-        details = captured.err
-    assert all(warning in details for warning in warnings)
+    assert "保存先:" not in captured.err
+    assert all(warning in captured.err for warning in warnings)
+    assert not managed_temp.list_managed_temp("atk-diagnostics")
 
 
-def test_save_failure_keeps_full_diagnostics(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """診断保存の失敗でも警告を抑制せず、その全量と続行可否を表示する。"""
+def test_long_warnings_use_common_saved_stderr(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """長い診断だけを、エージェント環境のatkの共通の保存機構が標準エラーの保存先へ全量で保存する。"""
     monkeypatch.setenv("CLAUDECODE", "1")
+    warnings = style_diagnostics.warnings_for_body("開始—中間\n" * 400, source="原稿.md")
 
-    def fail(_prefix: str) -> pathlib.Path:
-        raise OSError("保存できない")
+    def emit(_args: object) -> int:
+        style_diagnostics.report_warnings(warnings, next_action="編集は続行する")
+        return 0
 
-    monkeypatch.setattr(style_diagnostics.managed_temp, "create_output_temp", fail)
-    warnings = style_diagnostics.warnings_for_body("開始—中間—終了", source="原稿.md")
-    style_diagnostics.report_warnings(warnings, next_action="編集は続行する")
+    monkeypatch.setitem(atk._COMMANDS, "wait-schedule", emit)  # pylint: disable=protected-access
+    with pytest.raises(SystemExit):
+        atk.main(["wait-schedule"])
     error = capsys.readouterr().err
-    assert all(text in error for text in ["保存できない", *warnings, "編集は続行する"])
+    path = pathlib.Path(error.split("標準エラー保存先: ", 1)[1].splitlines()[0])
+    saved = path.read_text(encoding="utf-8")
+    assert all(warning in saved for warning in warnings)
+    assert "編集は続行する" in saved
+
+
+def test_warning_lines_are_identified_as_body_style_diagnostics() -> None:
+    """標準エラーへ書いた各行と過去の要約行を、記録を読む側が表記診断として識別できる。"""
+    warnings = style_diagnostics.warnings_for_body("開始—中間—終了", source="原稿.md")
     assert all(style_diagnostics.is_body_style_diagnostic_warning("警告: " + warning) for warning in warnings)
+    assert style_diagnostics.is_body_style_diagnostic_warning("警告: WI本文の表記診断: 2件")

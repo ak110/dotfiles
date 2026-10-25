@@ -66,8 +66,8 @@ toolの公開、呼び出し結果、完了通知の配送はprovider、Claude C
 
 ## 一時領域と成果物の観測
 
-- `Agent`の`output_file`はセッションのJSONLへのシンボリックリンクになることがあり、リンク自体の`stat`や`ls -l`は変化しなくてもリンク先は追記され得る。補助観測には`atk watch --file <output_file>`か`stat -L <output_file>`を使い、本文の読取は進捗の確認以外の用途に限る。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/delegation/references/claude-code-runtime.md：一時領域と成果物の観測：2026年10月9日」にある
-- 成果物側の状況は`atk watch`を単独で実行して観測する（対象の指定、出力項目、終了コードは`atk watch --help`）。これは補助観測であり、稼働状態は`ListAgents`か代替稼働観測で判定する
+- `Agent`の`output_file`はセッションのJSONLへのシンボリックリンクになることがあり、リンク自体の`stat`や`ls -l`は変化しなくてもリンク先は追記され得る。補助観測には`stat -L -c %Y -- <output_file>`と`wc -l -- <output_file>`を使い、本文の読取は進捗の確認以外の用途に限る。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/delegation/references/claude-code-runtime.md：一時領域と成果物の観測：2026年10月9日」にある
+- 成果物側の状況は補助観測とする。作業ツリーは`git -C <worktree> status --porcelain=v1`と`git -C <worktree> rev-parse --short HEAD`で観測する。成果物ファイルは`wc -l -- <file>`と`stat -L -c %Y -- <file>`（最終更新のepoch秒）で観測する。稼働状態は`ListAgents`か代替稼働観測で判定する
 
 ## 結果の受け取り方
 
@@ -99,8 +99,8 @@ toolの公開、呼び出し結果、完了通知の配送はprovider、Claude C
 ## 稼働状態の観測と継続依頼
 
 - `ListAgents`と`TaskStop`は自身のツール一覧に公開され呼び出しが成功する場合だけ使う
-- 背景の委譲の稼働状態は`ListAgents`で観測する。進捗だけを確かめる回は、成果物パスが確定していれば`atk watch`で判定して`ListAgents`を呼ばず、停滞の判定、催促か巻き取りの要否と宛先の確定、終端の観測で呼ぶ。成果物パスも保持したプロセスも無ければ、進捗の報告を省いて完了通知を待つ。完了直後の委譲先は列挙されないことがあるため、列挙されないことは終了を支持する材料にとどめる
-- `ListAgents`か`TaskStop`が使えない場合は、起動結果の識別子を保持し、出力ファイルの末尾標識（回数上限付き）、`atk watch`、保持したプロセスの生存照会を組み合わせて判定する。更新が続く間は完了と決めつけず催促にとどめる
+- 背景の委譲の稼働状態は`ListAgents`で観測する。進捗だけを確かめる回は、成果物パスが確定していれば前節の補助観測で判定して`ListAgents`を呼ばず、停滞の判定、催促か巻き取りの要否と宛先の確定、終端の観測で呼ぶ。成果物パスも保持したプロセスも無ければ、進捗の報告を省いて完了通知を待つ。完了直後の委譲先は列挙されないことがあるため、列挙されないことは終了を支持する材料にとどめる
+- `ListAgents`か`TaskStop`が使えない場合は、起動結果の識別子を保持し、出力ファイルの末尾標識（回数上限付き）、前節の補助観測、保持したプロセスの生存照会を組み合わせて判定する。更新が続く間は完了と決めつけず催促にとどめる
 - 待機の解除手段と、MCPツール呼び出しが背景へ移った場合の扱いは`references/waiting-and-monitoring.md`「待機区間の構成」、`Agent`ツールの担当の継続条件と配送不能の判定は`references/runtime-routing.md`「継続と新規起動」に従う
 
 ## 待機中の定期再確認と背景転換
@@ -113,10 +113,10 @@ toolの公開、呼び出し結果、完了通知の配送はprovider、Claude C
 - `start`の結果の後に装着の通知が無く、`CronList`に後述の標識を1行目に持つtaskも無い場合（modが読み込まれない環境など）
 - `Agent`ツールの委譲先かバックグラウンドタスクを、そのセッションで最初に起動する直前
 
-自ら装着する場合は`atk wait-schedule --request-bucket main --format json`を1回実行し、出力の`cron`と`prompt`を変更せず`CronCreate`へ渡して`recurring: true`で1件だけ作成する（`prompt`はmodと同じ共通本文）。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行である。UserPromptSubmitフックはこの行で機械注入ターンを判定し、resume後の所有taskの確認もこの標識の完全一致で行う。
+自ら装着する場合は`atk wait-schedule`を1回実行し、出力の`cron`と`prompt`を変更せず`CronCreate`へ渡して`recurring: true`で1件だけ作成する（`prompt`はmodと同じ共通本文）。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行である。UserPromptSubmitフックはこの行で機械注入ターンを判定し、resume後の所有taskの確認もこの標識の完全一致で行う。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日」にある。
 
-- 定期promptが持つのは、待機対象を記録側から列挙する手段、対象ごとの成果物を決める方法、動的に解決したパスを渡すコマンド形（`atk watch --worktree "$worktree_path"`か`atk watch --file "$artifact_path"`）だけとする。待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程は発火の各回に記録側から読み直させる（可変状態の写しは工程が進むと事実と一致しなくなる）
+- 定期promptが持つのは、待機対象を記録側から列挙する手段、対象ごとの成果物を決める方法、動的に解決したパスを渡すコマンド形だけとする。作業ツリーのコマンド形は`git -C "$worktree_path" status --porcelain=v1`と`git -C "$worktree_path" rev-parse --short HEAD`である。ファイルのコマンド形は`wc -l -- "$artifact_path"`と`stat -L -c %Y -- "$artifact_path"`である。待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程は発火の各回に記録側から読み直させる（可変状態の写しは工程が進むと事実と一致しなくなる）
 - 定期promptは、blocking waitとそのバックグラウンドタスクに所有されていない待機対象について記録側の状態と完了通知を再確認し、完了対象があれば受領手順へ進ませる。所有されている対象への照会は省く（所有の判定は`references/waiting-and-monitoring.md`「完了通知を待ってターンを終える場合」）。全対象が未完了なら、閾値に達した経過時間起動の義務だけを実行し、無ければ報告を出力せず待機を続ける。発火自体は完了と停滞の判定の入力から外す
 - セッション固有の経過時間起動の義務（定期報告、cooldown解除、期限監視など）は共通本文の外にある。義務がある場合は、義務ごとに経過を実際に測るコマンドと判定閾値を1行ずつ共通本文の終了タグ（`</atk-auto>`）の前へ加え、保持したtask IDを`CronDelete`してから同じ標識のpromptで`CronCreate`し直し、新しいIDを以後の対象にする。義務が後から確定した場合はその時点で作成し直す
 - cron式は壁時計基準で、REPLがidleのときだけ発火し、再帰taskは7日で失効し、発火時刻にjitterが加わり得る（`CronCreate`のtool定義で確認する）

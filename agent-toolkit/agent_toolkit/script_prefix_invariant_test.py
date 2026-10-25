@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import pathlib
 
-_EXEMPT_ENTRIES = frozenset({"_managed_temp.py"})
+_EXEMPT_ENTRIES: frozenset[str] = frozenset()
 
 
 def _has_main_guard(path: pathlib.Path) -> bool:

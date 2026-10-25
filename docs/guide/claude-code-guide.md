@@ -193,7 +193,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 警告または遮断が表示された場合は、本文の次の操作に従い、完了したコマンドの保存出力と終了状態を確認する。判定条件は[design-hooks.md](../development/design-hooks.md)を参照。
 
-原セッション記録を検索・位置確認・ツール入力の確認に使う場合は`atk run-script session-review-evidence`を使う。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。原記録以外の保存本文は、Claude Codeでは`Read`に`allow_large: true`を指定して全文を読み、Codexでは`atk read-file`で終端まで読む。
+原セッション記録を検索・位置確認・ツール入力の確認に使う場合は`atk run-script session-review-evidence`を使う。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。原記録以外の保存本文は、Claude Codeでは`Read`に`allow_large: true`を指定して全文を読み、Codexでは`sed -n '<開始行>,<終了行>p' -- <絶対パス>`の行範囲を進めて末尾まで読む。
 
 カタログの親セッション一覧は`--catalog-workflow process-wi`の完全一致、`--catalog-known-workflow`のunknown以外、`--catalog-cwd-contains <文字列>`の条件で選べる。
 `--catalog-fields session_id,workflow,workflow_locator,started_at,tokens`を付けると行の種類を表す`kind`に続いて指定順の項目を返す。
@@ -773,7 +773,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する | 対応 | 対応 |
 | plugin `Stop/stop` | Claudeでは未観測の委譲・背景処理や終了工程の記録を確認し、completion-reportの起動忘れを非遮断で通知する。報告本文の意味や固定句は判定しない。Codexでは説明言語だけを判定する | 対応 | 部分対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | 発話の内容を現物で確かめる手順や、発話に応じて適用する規範の所在を示す注記を返す | 対応 | 対応 |
-| plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応 | 対応 |
+| plugin `PermissionRequest/permissionrequest_codex` | managed-tempの一時root配下の作業領域を回収する`rm -rf -- <1パス>`だけを許可する。一時root自身、シンボリックリンクを含むパス、使用中の保持配布物は対象外とする | 非対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をログへ記録する | 対応 | 非対応 |
 | plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した場合も、そのタスクをバックグラウンドタスクの記録へ残す | 対応 | 非対応 |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応 |
@@ -805,8 +805,8 @@ AWIとUWIは`private-notes/yyyy/MM/<filename>`へ保存され、状態変更後�
 turn終了時にも残るため、同じ会話の再開や委譲先の結果確認に使える。
 
 抽出した配布物、cloneとGit fixtureなどの再生成可能な作業用複製は、保存証拠と分けて置く。
-作成した工程が全消費工程と外部プロセスの終了後に回収し、後続turnで読む証拠と再開入力を残す。
-領域の確認には`atk managed-temp list`を使える。
+作業用複製は`mktemp -d`で作成する。cloneなど`.git`を含む領域はmanaged-tempの一時root直下、それ以外は通知されたセッションのmanaged-tempの中に置く。
+作成した工程は、全消費工程と外部プロセスの終了後に`rm -rf -- <作成した絶対パス>`で回収する（worktreeは先に`git worktree remove`する）。後続turnで読む証拠と再開入力は残す。
 配置と回収の手順は`agent-toolkit:managed-temp`、寿命を分ける理由は[design-storage.md](../development/design-storage.md#managed-temp)を参照。
 
 版付きプラグインから起動する`agents_server`は同じ配布元・版の保持実体を複数プロセスで共有する。

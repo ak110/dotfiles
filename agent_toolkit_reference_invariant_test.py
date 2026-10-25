@@ -261,8 +261,8 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
         if _reference_exists(root, reference):
             continue
         key = (reference, source)
-        if key in captured_versions:
-            captured_version = captured_versions.pop(key)
+        if captured_versions.get(key):
+            captured_version = captured_versions[key].pop()
             captured = subprocess.run(
                 ["git", "cat-file", "-e", f"{captured_version}:{reference}"],
                 cwd=root,
@@ -293,12 +293,13 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
     return unresolved
 
 
-def _captured_reference_versions(root: pathlib.Path, sources: list[pathlib.Path]) -> dict[tuple[str, pathlib.Path], str]:
+def _captured_reference_versions(root: pathlib.Path, sources: list[pathlib.Path]) -> dict[tuple[str, pathlib.Path], list[str]]:
     """固定manifestの取得ソースだけを、その記録が宣言した取得版へ対応付ける。
 
     READMEや任意のJSON、manifest内でも取得ソース一覧にない参照は現在の実体で検査する。
-    有効な取得版とSHA-256を持つinventoryの各キー1回だけを歴史参照にする。
-    同じ値が他のfieldにも現れる場合は、その追加参照を現在の実体で検査する。
+    有効な取得版とSHA-256を持つinventoryの各キー1回と、取得版の変更一覧（`implementation_changes_from_v5`）で
+    変更後のSHA-256を持つ各項目の`path`1回を歴史参照にする。
+    同じ値がそれ以外のfieldにも現れる場合は、その追加参照を現在の実体で検査する。
     呼出側は取得版のGitオブジェクトを照合し、浅いcheckoutの取得版不在は未検収と報告する。
     """
     if _SOURCE_MANIFEST not in sources:
@@ -312,13 +313,24 @@ def _captured_reference_versions(root: pathlib.Path, sources: list[pathlib.Path]
         or not isinstance(captured_sources, dict)
     ):
         return {}
-    return {
-        (reference, _SOURCE_MANIFEST): captured_head
-        for reference, metadata in captured_sources.items()
-        if isinstance(metadata, dict)
-        and isinstance(metadata.get("sha256"), str)
-        and re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"]) is not None
-    }
+    captured: dict[tuple[str, pathlib.Path], list[str]] = {}
+    for reference, metadata in captured_sources.items():
+        if (
+            isinstance(metadata, dict)
+            and isinstance(metadata.get("sha256"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"]) is not None
+        ):
+            captured.setdefault((reference, _SOURCE_MANIFEST), []).append(captured_head)
+    changes = manifest.get("implementation_changes_from_v5")
+    for change in changes if isinstance(changes, list) else []:
+        if (
+            isinstance(change, dict)
+            and isinstance(change.get("path"), str)
+            and isinstance(change.get("after_sha256"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", change["after_sha256"]) is not None
+        ):
+            captured.setdefault((change["path"], _SOURCE_MANIFEST), []).append(captured_head)
+    return captured
 
 
 def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:

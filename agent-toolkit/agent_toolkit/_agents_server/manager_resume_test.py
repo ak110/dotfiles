@@ -1434,8 +1434,6 @@ async def test_minimal_followup_uses_restored_launch_history(monkeypatch: pytest
                 "レビュー基準": "計画",
                 "計画": str(tmp_path / "計画.md"),
                 "引き継ぎ記録先": str(tmp_path / "引継ぎ.md"),
-                "未判定検証記録": "なし",
-                "完成条件証拠": "なし",
             },
         )
         session = state.SessionState("restored-review", str(tmp_path), engine="claude", prompt=prompt, publish_registry=True)

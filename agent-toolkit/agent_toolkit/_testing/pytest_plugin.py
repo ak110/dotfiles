@@ -104,7 +104,7 @@ def pytest_configure(config: pytest.Config) -> None:
     directory = None
     if not worker and config.option.basetemp is None:
         directory = managed_temp.create_managed_temp("pytest-fixtures")
-        # managed-tempの所有markerを維持するため、pytestの初期化対象を子ディレクトリにする。
+        # pytestは開始時にbasetempを削除して作成し直すため、作成した領域の子を初期化対象にする。
         config.option.basetemp = str(directory / "fixtures")
 
     def release_resources() -> None:
@@ -124,7 +124,7 @@ def pytest_configure(config: pytest.Config) -> None:
                 "pytestの子孫を回収できない: " + "; ".join(residual) + "; 対象の終了を確認してから一時領域を回収する"
             )
         if directory is not None:
-            # conftestやテストの隔離が保存先を変えても、作成時の外部登録簿で所有を検証する。
+            # テストの隔離がHOME・キャッシュの場所を変えても、作成時と同じ一時rootで包含を判定する。
             with pytest.MonkeyPatch.context() as patch:
                 for name, value in resource_environment.items():
                     if value is None:
@@ -279,13 +279,13 @@ def _real_end_turn_wait(request: pytest.FixtureRequest, monkeypatch: pytest.Monk
 
 @pytest.fixture(autouse=True)
 def isolated_state_root(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """外部真正性状態を各テストの専用領域へ分離する。"""
+    """一時rootと状態rootを各テストの専用領域へ分離する。"""
     if not request.path.is_relative_to(_PACKAGE_ROOT / "_atk" / "managed_temp"):
         return
     cache_root = tmp_path / "managed-temp"
     cache_root.mkdir(mode=0o700)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
-    setattr_in_managed_temp_modules(monkeypatch, "_temp_root", lambda: cache_root)
+    setattr_in_managed_temp_modules(monkeypatch, "_temp_root_path", lambda: cache_root)
 
 
 @pytest.fixture(autouse=True)

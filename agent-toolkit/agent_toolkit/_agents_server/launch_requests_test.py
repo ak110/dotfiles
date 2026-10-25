@@ -644,7 +644,7 @@ async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.Monk
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-state")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    session_area = _managed_temp.create_managed_temp("session", session_id="caller-session")
+    session_area = _managed_temp.resolve_session_temp("caller-session")
     (session_area / "work-contract.md").write_text("目的: 引き継ぎ記録先の自動用意を確かめる\n", encoding="utf-8")
     task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
     input_lines = [
@@ -1233,7 +1233,7 @@ async def test_reader_fit_start_rejects_mismatched_materials(
         current.write_text("一\n改\n三\n", encoding="utf-8")
         materials["今回差分"] = other["今回差分"]
     elif defect == "scope-as-full":
-        # reader-fit-prepareの帰属限定差分の形（行位置を持たない@@）を全差分として渡す。
+        # 計画別に帰属を限定した差分の形（行位置を持たない@@）を全差分として渡す。
         pathlib.Path(materials["今回差分"]).write_text("--- a/guide.md\n+++ b/guide.md\n@@\n-二\n+改\n", encoding="utf-8")
     elif defect == "stale-current":
         current.write_text("一\n未commitの別の版\n三\n", encoding="utf-8")

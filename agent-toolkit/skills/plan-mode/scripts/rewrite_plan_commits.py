@@ -5,6 +5,10 @@
 作業中・保存済み計画とmanaged-tempから未指定の対象記録を検出し、複数の対応表は書換え順に合成する。
 全ての記録を検証してから書込みを始め、対応表の不足・過去の書換えの未追記・対応表の誤り・保存済み計画のいずれかがあれば
 どの記録も変えずに失敗する。計画には進捗ログの1行を、引き継ぎ記録には`<完了した工程>: <結果>`の1行を追記する。
+
+未指定の対象記録は書込前に全件を示して拒否する。示された記録を入力へ加え、保存済み計画は`atk plans checkout`で取得する。
+複数の対応表は`--rewrite-map`を書換え順に反復指定し、最初の書換え前HEADを`--previous-head`へ渡す。
+対応表は`history-compare`が生成し、競合解消で内容が変わった旧commitは同コマンドの`--resolved-conflict`へ反復指定する。
 """
 
 from __future__ import annotations
@@ -47,7 +51,7 @@ def _missing_records(worktree: pathlib.Path, records: list[_Record], previous: s
     """既存の対応記録から書換え対象を導き、入力に指定されていない記録を返す。"""
     working = locations.working_plans_root()
     saved = locations.new_plans_root()
-    roots = [working, saved, *(pathlib.Path(row["path"]) for row in managed_temp.list_managed_temp() if row["path"])]
+    roots = [working, saved, *managed_temp.list_managed_temp()]
     provided = {record.path.resolve() for record in records}
     provided_stems = {record.path.stem for record in records if not record.handoff}
     problems = []

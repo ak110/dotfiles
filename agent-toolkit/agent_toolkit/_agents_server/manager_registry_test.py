@@ -1570,7 +1570,7 @@ async def test_interrupted_show_references_server_diagnostics(
     by_cli = _cli_show(capsys)["error"]
     assert by_cli["interruptionReason"] == session_registry.OWNER_PROCESSES_EXITED
     assert {key: by_cli["diagnostics"][key] for key in expected} == expected
-    assert f"atk read-file -- {diagnostics_path}" in by_cli["diagnostics"]["next_action"]
+    assert f"sed -n '1,200p' -- {diagnostics_path}" in by_cli["diagnostics"]["next_action"]
 
     async with server_manager.AgentsServerManager(None) as manager:
         backend = ThreadReadBackend(manager.sessions, None) if engine == "codex" else FakeBackend(manager.sessions, engine)

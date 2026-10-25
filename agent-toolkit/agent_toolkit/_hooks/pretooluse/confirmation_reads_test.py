@@ -62,13 +62,10 @@ def _successful_bash(command: str) -> list[dict]:
     if arguments[:1] == ["cat"]:
         paths = [pathlib.Path(value) for value in arguments[1:] if not value.startswith("-")]
         text = "".join((path if path.is_absolute() else base / path).read_text(encoding="utf-8") for path in paths)
-    elif arguments[:2] == ["atk", "read-file"]:
-        values = arguments[arguments.index("--") + 1 :]
-        assert len(values) == 1
-        body = pathlib.Path(values[0]).read_text(encoding="utf-8")
-        text = json.dumps({"start": 0, "end": len(body), "next": None, "eof": True}) + "\n" + body
-        maximum = int(arguments[arguments.index("--max-bytes") + 1]) if "--max-bytes" in arguments else 16384
-        assert len(text.encode("utf-8")) <= maximum
+    elif arguments[:2] == ["sed", "-n"]:
+        start, end = map(int, arguments[2].removesuffix("p").split(","))
+        lines = pathlib.Path(arguments[-1]).read_text(encoding="utf-8").splitlines(keepends=True)
+        text = "".join(lines[start - 1 : end])
     else:
         text = " ".join(arguments[1:])
     return [_bash(command), _result("bash-read", content=text)]
@@ -143,8 +140,8 @@ def test_unread_reference_warns_without_blocking(
             _successful_bash(f"cd {_SKILL_REFERENCES} && cat approval-scope.md choice-construction.md"), id="bash-relative"
         ),
         pytest.param(
-            [*_successful_bash(f"atk read-file --max-bytes 12000 -- {_APPROVAL}"), *_successful_read(_CHOICE)],
-            id="budgeted-read-file",
+            [*_successful_bash(f"sed -n '1,400p' -- {_APPROVAL}"), *_successful_read(_CHOICE)],
+            id="line-range",
         ),
     ],
 )

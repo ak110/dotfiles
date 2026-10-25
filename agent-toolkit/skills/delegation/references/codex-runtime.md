@@ -68,4 +68,4 @@ CLIへタスク固有timeoutを渡さず、CLI自身が待機上限へ達し対�
 逐次待機とlock競合した後発待機の回収は`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」にある。
 
-委譲先の成果物側だけを補助観測するときは`atk watch --worktree [<ラベル>=]<絶対パス> --file [<ラベル>=]<絶対パス>`を単独で使い、session自体の稼働確認には起動手段の状態を使う。
+委譲先の成果物側だけを補助観測するときは、作業ツリーを`git -C <絶対パス> status --porcelain=v1`と`git -C <絶対パス> rev-parse --short HEAD`で観測する。成果物ファイルは`wc -l -- <絶対パス>`と`stat -L -c %Y -- <絶対パス>`で観測する。session自体の稼働確認には起動手段の状態を使う。

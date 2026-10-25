@@ -76,12 +76,8 @@ def _resolve_shared_root(root: Path) -> Path:
     version = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
     identity = {"source": str(root.resolve()), "version": version, "root_name": root.name}
     with plugin_root_leases.plugin_root_lock(root):
-        entries = [
-            *_managed_temp.list_managed_temp(STABLE_PLUGIN_ROOT_PREFIX),
-            *_managed_temp.list_managed_temp(plugin_root_leases.SHARED_PLUGIN_ROOT_PREFIX),
-        ]
-        for entry in entries:
-            area = Path(entry["path"])
+        # 共有形式の接頭辞は旧形式の接頭辞で始まるため、旧形式の一覧が両方を含む。
+        for area in _managed_temp.list_managed_temp(STABLE_PLUGIN_ROOT_PREFIX):
             with plugin_root_leases.plugin_root_lock(area):
                 try:
                     marker = json.loads((area / _SHARED_MARKER).read_text(encoding="utf-8"))

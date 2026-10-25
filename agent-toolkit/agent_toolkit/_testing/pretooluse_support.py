@@ -16,7 +16,6 @@ import sys
 import pytest
 
 from agent_toolkit import hook as _hook
-from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common.session_state import state_path
 from agent_toolkit._testing import git_repository
@@ -285,31 +284,6 @@ def _make_repo_with_optional_remote(path: pathlib.Path, remote_url: str | None) 
     `remote_url`が`None`の場合は`git remote`が空リストを返すrepoになる。
     """
     return str(git_repository.init_repository(path, origin=remote_url))
-
-
-def _make_managed_temp_git_case(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    condition: str,
-) -> str:
-    """managed-tempのGit除外判定に与える条件別の作業場所を作成する。"""
-    state_home = tmp_path / "managed-temp-state"
-    monkeypatch.setenv("XDG_STATE_HOME", str(state_home))
-    monkeypatch.setenv("LOCALAPPDATA", str(state_home))
-    if condition == "unmanaged":
-        return _make_repo_with_optional_remote(tmp_path / "unmanaged" / "repo", None)
-
-    managed = _managed_temp.create_managed_temp(f"pretooluse-{condition}", root=tmp_path)
-    repo = managed / "repo"
-    if condition == "git-query-failure":
-        repo.mkdir()
-        return str(repo)
-
-    remote_url = "https://example.invalid/x.git" if condition == "remote" else None
-    result = _make_repo_with_optional_remote(repo, remote_url)
-    if condition == "invalid-marker":
-        (managed / ".agent-toolkit-managed-temp.json").write_text("{}\n", encoding="utf-8")
-    return result
 
 
 def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:

@@ -272,7 +272,6 @@ jobs:
           agent-toolkit/agent_toolkit/_agents_server/codex_test.py::test_legacy_plugin_root_real_mcp_lifecycle
           agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
           agent-toolkit/agent_toolkit/_plan/structure
-          agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence_test.py::test_public_command_reads_wi_in_process
       - name: Codex CLI 0.163.0の導入
         if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh
