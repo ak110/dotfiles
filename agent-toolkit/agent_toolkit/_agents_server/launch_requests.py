@@ -713,7 +713,6 @@ def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, s
     required_files = {
         "external-write-review": ("文面ファイル",),
         "bulk-replace-review": ("差分ファイル",),
-        "pick-wi-explain": ("説明対象の選定結果の出力先ファイル", "activeなWI本文の保存先"),
     }
     for name in required_files.get(role, ()):
         _material_paths(name, params[name])

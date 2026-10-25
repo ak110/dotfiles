@@ -322,7 +322,6 @@ def test_same_skill_name_keeps_plugin_boundary(tmp_path, monkeypatch):
         "defect-investigation",
         "external-write-review",
         "lane-integration",
-        "pick-wi-explain",
         "recurrence-self-check",
         "refine-prompt",
     ],

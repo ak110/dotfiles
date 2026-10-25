@@ -498,30 +498,25 @@ def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> 
 
 
 def test_selection_explanation_contract_covers_questions_without_state_changes() -> None:
-    """選定理由の説明は専用ペアへ分かれ、読み取り専用の軽量起動で選定結果とキュー状態を変更しない。
+    """選定理由への質問には選定したメインが保存済みの判断から答え、選定結果とキュー状態を変更しない。
 
-    選定手順の文書と説明担当の起動契約を分け、`start`は説明専用ペアが宣言した必須入力を受け取る。
-    説明担当の文書が状態を変える`atk wi`の操作を含むと、軽量起動の読み取り専用の契約と衝突する。
+    説明のための担当を起動すると、同じ選定資料を別の担当が読み直して判断を再構成する。
+    未取得の事実の収集だけを読み取り専用の探索へ渡し、状態を変える`atk wi`の操作を含めない。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
-    share = plugin_root / "share"
-    explain = share / "pick-wi-explain.subagent.md"
-    declaration = _declaration(explain)
+    explanation_path = plugin_root / "skills" / "process-wi" / "references" / "selection-explanation.md"
+    explanation = explanation_path.read_text(encoding="utf-8")
     selection_text = _selection_documents(plugin_root)
     question_route = _h2_section(_selection_procedure(plugin_root), "読込表")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
 
-    assert declaration.launch_kind == "explore"
-    assert declaration.required == (
-        "説明対象の選定結果の出力先ファイル",
-        "activeなWI本文の保存先",
-        "選定理由への質問",
-    )
+    assert not (plugin_root / "share" / "pick-wi-explain.subagent.md").exists()
+    assert _LAUNCH_TARGET_PREFIX not in explanation
+    assert "説明はメイン自身が行う" in explanation
+    assert "`mode: explore`" in explanation
     assert "selection-explanation.md" in question_route
     assert "## 選定理由の説明" not in selection_text
-    assert not re.search(
-        r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explain.read_text(encoding="utf-8")
-    )
+    assert not re.search(r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explanation)
     assert "selection-procedure.md" in lanes and "包含理由、除外理由" in lanes
 
 
@@ -743,7 +738,9 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
-    explanation = (plugin_root / "share" / "pick-wi-explain.subagent.md").read_text(encoding="utf-8")
+    explanation = (plugin_root / "skills" / "process-wi" / "references" / "selection-explanation.md").read_text(
+        encoding="utf-8"
+    )
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
     assert "  段階:" in selection_text and "  先行レーン:" in selection_text
     assert "先行統合条件" in parent

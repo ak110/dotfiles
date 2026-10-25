@@ -6,7 +6,7 @@ description: >
 
 # AWIのレーン処理
 
-選定時に固定したAWIをレーンへ分け、各レーンの同じ担当threadが計画（要る場合）から統合までを担う。メインは選定、ユーザー判断の中継、公開工程およびセッション終端を担う。初期選定が1レーンの場合は、レーン担当が`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`に従って計画から独立した実行レビューの調整・統合まで続ける。複数レーンの場合はメインが計画境界と実行レビューを調整する。
+選定時に固定したAWIをレーンへ分け、各レーンの同じ担当threadが計画（要る場合）から統合までを担う。メインは選定、ユーザー判断の中継、公開工程およびセッション終端を担う。レーン数によらず、レーン担当が`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`に従って計画から独立した実行レビューの調整・統合まで続ける。複数レーンでは、メインがレーン間の書込競合と依存を調停し、主作業ツリーへの統合を1レーンずつ許可する。
 AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手順は`agent-toolkit:user-confirmation-and-report`に従う。本スキルの実行中は自律モードとする。
 all-reposの中継として起動した場合は`references/all-repos-orchestration.md`へ進み、以下の実行順は各対象cwdのリポジトリ担当へ渡す。
 
@@ -78,9 +78,9 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 1. `## 直前の同期結果の検分`と`references/selection-procedure.md`「処理対象の決定」の開始時CI点検に従い、このセッションでAWIの処理を完遂できるかを判定する。手動起動・process-loop起動・all-reposの各対象で、公開対象とベースbranchのCI照会と状態を実装前に確かめる。
 2. `references/selection-procedure.md`に従い、対象cwdのメイン自身が対象選定と集合確定直後の処理開始を行う。all-reposのリポジトリ担当は受領した初回候補を使う。意味判断と取得済み候補をpick-wi-checkへ渡し、定型欄の生成・確認・保存を1回で行う。選定を別の担当へ委譲しない。あわせて`## 自動コードレビュー監査`を行う。
 3. `references/run-lanes.md`に従い、選定結果の`段階`と`先行レーン`に従って`atk lane create`へ作成対象を渡し、準備済み資源を受領してレーン担当を起動する。後段は先行レーンの統合と書込主体の解放を受領してから現行HEADを基点に作成する。Claude Codeでは各段階の全初回起動後に共通の圧縮予約手順へ進む。
-4. 初期選定が1レーンの場合は、手順4〜6を単一担当の実行契約へ渡し、メインはユーザー判断の通知と最終の統合結果だけを受領して手順7へ進む。複数レーンの場合は各レーンの計画または計画なしの準備結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「計画準備の受領」に従って受け取り、判断を要する場合だけ`実装開始`または`実装なし`を返す。
-5. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って実行レビューを収束させる。
-6. 追加した処理対象WIも`references/run-lanes.md`に従って割り当てて収束させる。同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示する。1レーンの場合も`atk lane integrate`で統合から計画最終化・AWI終端・選定の統合済み記録までを完了させる。
+4. 各レーンは単一担当の実行契約で、計画・実装・独立した実行レビューの調整と指摘への対応を続ける。メインはユーザー判断の通知を中継し、レーン間の書込競合と依存を調停する。
+5. 初期選定が複数レーンの場合は、`統合準備完了`を返したレーンへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の許可」に従って1レーンずつ`統合許可`を送る。各レーンは`atk lane integrate`で統合から計画最終化・AWI終端・選定の統合済み記録までを完了させ、メインは返却した`統合完了`を同書「統合の指示と受領」の受領条件で検収する。
+6. 追加した処理対象WIも`references/run-lanes.md`に従って既存レーンへ割り当て、同じレーン担当threadで収束させて統合する。
 7. 全レーンの終端と起動した監査の処置確定の後、`references/finish-session.md`に従って公開とセッション終端を完遂する。
 
 ## 直前の同期結果の検分

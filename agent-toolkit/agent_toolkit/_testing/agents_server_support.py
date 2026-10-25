@@ -550,14 +550,6 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
     if task_name == "bulk-replace-review.subagent.md":
         (root / "word-diff.txt").write_text("[-旧-]{+新+}\n", encoding="utf-8")
         return [f"差分ファイル: {root / 'word-diff.txt'}（120行）"]
-    if task_name == "pick-wi-explain.subagent.md":
-        for name in ("selection.json", "active-wi.md"):
-            (root / name).write_text("選定理由の説明資料\n", encoding="utf-8")
-        return [
-            f"説明対象の選定結果の出力先ファイル: {root / 'selection.json'}",
-            f"activeなWI本文の保存先: {root / 'active-wi.md'}",
-            "選定理由への質問: 20260101-000000-001.mdを別レーンにした理由",
-        ]
     if task_name == "defect-investigation.subagent.md":
         return ["対象の不良: 委譲プロンプトの必須入力検査が見出しを誤認する（agents_server_mcp.py）", handoff]
     raise ValueError(f"未対応の`<役割名>.subagent.md`: {task_name}")

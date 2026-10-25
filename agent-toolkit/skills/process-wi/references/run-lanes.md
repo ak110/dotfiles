@@ -30,7 +30,7 @@
 
 ## レーンと資源
 
-初期選定が1レーンの場合は、準備済みの専用worktreeと処理対象WIを1人のレーン担当へ渡し、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。以降の工程境界の往復は同契約の継続する工程へ読み替える。
+各レーンの準備済みの専用worktreeと処理対象WIを1人のレーン担当へ渡し、レーン数によらず`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。以降の工程境界の往復は同契約の継続する工程へ読み替え、複数レーンでは主作業ツリーへの統合の許可だけをメインが`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の許可」に従って直列に送る。
 
 選定結果の`段階`を昇順に処理し、同じ段階の独立レーンを並行起動する。`先行レーン`を持つ後段は、列挙した全レーンの統合完了を受領してから、統合先の現行HEADを基点にworktreeを作成する。単一段階なら全レーンを同時に作成して起動する。
 
@@ -113,7 +113,7 @@ Claude Codeでは、各段階（複数段階では途中の段階も含む）の
 メインは選定時にAWI・UWIの元本文を読み、その後は主に選定の構造化出力、計画の`## 概要`と`## 実施内容`、工程境界の出力、レビュー指摘管理表の状態、統合結果を読む（努力目標。メインのコンテキストを保護する）。計画の他の節と実装差分は、エスカレーション、ユーザー介入、レビュー収束の判断で要る場合に読む。統合結果の`変更したエージェント向け文書`の再取得は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従う。
 
 処理対象WIへの包含理由、除外理由またはその構成を尋ねるユーザーの質問は、`selection-procedure.md`の読込表が示す説明手順へ渡す。
-説明手順は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-explanation.md`にあり、返された根拠と限界をユーザーへ伝える。
+説明手順は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-explanation.md`にあり、メインが保存済みの選定結果と判断から根拠と限界をユーザーへ伝える。
 
 ## 採否の確定と終端区分
 

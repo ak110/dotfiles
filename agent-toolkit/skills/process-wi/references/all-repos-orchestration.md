@@ -69,7 +69,7 @@ agents_serverの通常委譲として起動されるため委譲先向けの配�
 設定済みhookの失敗では診断と途中資源を保持し、同じhookの再開へ渡す。
 通常Git作成への暗黙の切替は禁止する。
 hookが無い対象は固定配置と対象固有のprepareを使い、反復でも同じ配置を再利用する。
-初期選定が1レーンの場合は、対象cwdのレーン担当が単一担当の実行契約でレビューの調整まで続ける。常駐プログラムはこの調整に関与しない。準備・統合・回収は同じ公開操作を使い、統合は[run-lanes.md](run-lanes.md)と`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`へ接続する。
+レーン数によらず、対象cwdの各レーン担当が単一担当の実行契約でレビューの調整まで続ける。常駐プログラムはこの調整に関与しない。準備・統合・回収は同じ公開操作を使い、統合は[run-lanes.md](run-lanes.md)と`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`へ接続する。
 公開とCIの検収は[finish-session.md](finish-session.md)へ渡す。
 
 ## 所有、制御と再開

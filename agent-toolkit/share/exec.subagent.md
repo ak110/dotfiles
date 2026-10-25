@@ -37,6 +37,12 @@ continuations:
   - レビュー指摘管理表
   references: []
   condition: ''
+- instruction: 統合許可
+  required: []
+  optional: []
+  paths: []
+  references: []
+  condition: ''
 - instruction: 統合開始
   required:
   - 統合区分
@@ -69,7 +75,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 初期選定が1レーンのレーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
+| レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
 | CI修正担当として原因を調べる前 | `agent-toolkit:bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` | |
 | 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` | |
@@ -77,7 +83,7 @@ continuations:
 | 手動観測を保存する前 | `verification-evidence.md`の「手動観測の保存」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「手動観測の保存」` | |
 | `検証結果`を書く前 | `verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` | |
 | 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-verification-failure.md` | |
-| `実装なし`またはレビュー収束後にメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` | |
+| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` | |
 | ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
 
 ## 入力
@@ -85,7 +91,7 @@ continuations:
 `レーン担当`は`選定結果の出力先ファイル`から`レーン`が`レーン識別子`と一致する`選定`の項目だけを読み、AWIファイル名、順序、`鮮度`、`担当モデル`、`プロジェクト規範の指定`、上流投入の3行、`プロジェクト固有の公開後の操作の順序`を入力とする。書式と省略時の値は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-format.md`の`## 選定結果の書式`に従い、省略された行は省略時の値として扱う。該当項目が無い、同じAWIが重複する、必須フィールドが形式外の場合は推測せず続行できない理由を返す。
 
 計画作成と実装の前（計画なしでは本文を読んだ時点）に、AWI本文が明示した担当とモデルの組を選定結果の`担当モデル`と比べ、一致しなければ下位担当の起動で補わず、WIファイル名、本文の組、選定結果の値を`続行できない理由`で返す。
-`担当モデル.実装担当`の値は自身の担当範囲の一部を任せる下位実装担当（「操作区分」の内部群など）の`model_type`へ渡す。比較と記録は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の担当モデルの段落に従う。指定が無い場合の下位実装担当の工程は同節の工程分担の段落に従う（内容の確定した単位は`delegate`の`chores`、自ら行う方が安ければ自身が行う）。自身のレーン全体は自分のthreadで担い続ける（別の`レーン担当`へ任せない）。初期選定が1レーンの場合は単一担当の実行契約に従い、実行レビュー担当の起動と統合の検収も自身が行う。複数レーンでは実行レビュー担当の起動と`統合開始`の送付はメインが行う。
+`担当モデル.実装担当`の値は自身の担当範囲の一部を任せる下位実装担当（「操作区分」の内部群など）の`model_type`へ渡す。比較と記録は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の担当モデルの段落に従う。指定が無い場合の下位実装担当の工程は同節の工程分担の段落に従う（内容の確定した単位は`delegate`の`chores`、自ら行う方が安ければ自身が行う）。自身のレーン全体は自分のthreadで担い続ける（別の`レーン担当`へ任せない）。レーン数によらず単一担当の実行契約に従い、実行レビュー担当の起動、指摘への対応と統合の検収も自身が行う。初期選定が複数レーンの場合は、主作業ツリーへの統合をメインの`統合許可`の受領後に行う。
 
 要求単位の由来は`agent-toolkit:wi-standards`の`## 由来と承認`に従い、計画の起草時に`atk wi show`のAWI本文とfrontmatterから判定する。判定結果は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`の書式で計画の`由来`欄へ書く。計画の確定後は由来の再判定を実装と統合の対象から除く。その後は計画で確定した採否と終端区分を用いる（由来の確定時点）。
 計画を省くレーンは同じ判定の結果を引き継ぎ記録へ残す。ユーザーが報告した不具合を既存実装で充足済みとする場合は、`plan-file-standards.md`「実施内容」が定める調査（呼び出し手段、操作順、結果、報告時点との差）を行い、操作、観測結果、相違、未特定の範囲を同じ記録へ残す。
@@ -112,7 +118,7 @@ continuations:
 
 | 担当種別 | 計画起草 | 実装・修正 | commit | 統合 |
 | --- | --- | --- | --- | --- |
-| レーン担当 | 再開位置が`なし`の場合に作成要否を判定する | メインの判断を待つ場合は`実装開始`受領後、待たない場合は通知後に実施 | 可 | 統合指示の受領後に実施し、統合を完了するまで同じthreadが担当する |
+| レーン担当 | 再開位置が`なし`の場合に作成要否を判定する | 単一担当の実行契約では採否の検収後、メインの判断を待つ場合は`実装開始`受領後に実施 | 可 | 統合入力の確定後（初期選定が複数レーンでは`統合許可`の受領後）か統合指示の受領後に実施し、統合を完了するまで同じthreadが担当する |
 | レビュー修正担当 | 実施しない | 受領した指摘だけを修正 | fixup commit可 | 実施しない |
 | CI修正担当 | 実施しない | CI記録が認可する失敗だけを修正 | 可 | 実施しない |
 
@@ -224,6 +230,14 @@ continuations:
 実装完了
 検証結果: <実行した変更範囲の検証のコマンド・終了コード・要点と検証HEADの完全OID、警告の有無、受入シナリオ別のテスト名と合否、保存した両出力と手動観測の絶対パス、直接影響範囲の探索の成果物およびユーザーがWIへ直接記入した質問への回答下書きの絶対パス。保存後はUWIのファイル名も記録>
 画面差分: <あり（変更した画面資産の相対パスの列挙）|なし>
+```
+
+初期選定が複数レーンの場合は、単一担当の実行契約の手順5で統合入力を確定した後、次の形式で`統合準備完了`を返して`統合許可`を待つ。
+
+```text
+統合準備完了
+統合区分: <マージあり|マージなし>
+統合入力HEAD: <統合入力HEADの完全OID。マージなしでは`なし`>
 ```
 
 終端結果では、担当モデル、起動候補、物理記録から観測した`engine`・`model`・`effort`を区別して返す。不一致は各値と由来を引き継ぎへ残し、観測不能は未確認とする。
