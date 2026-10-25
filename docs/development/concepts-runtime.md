@@ -237,6 +237,10 @@ Codexの公開回収機能による同一ターン回収と、通知再開を持
 - 実行レビューは計画に加えて、処理対象のWIの要求と完成条件も基準に含める。レビュー基準は`計画`・`CI記録`・`WI`の集合値とし、1件の実行レビュー担当が複数の基準を同時に受理する。事後承認型UWIの是正実装が実行レビューの対象になり得るため、基準の呼称はAWIに限定しない
   （2026年9月15日、ユーザー指示。`agent-toolkit:process-wi`がWI基準のレビューを実施していないという指摘に由来する）。
   現行の規定は`agent-toolkit/share/exec-review.parent.md`と`agent-toolkit/share/exec-review.subagent.md`にある
+- commitとPR説明の帰属行（セッションURLを含む）はClaude Codeの既定のまま残し、投稿前レビューと振り返りはこれらを内部識別子の混入として扱わない。
+  managed settingsの`attribution.sessionUrl`と`attribution.pr`も設定しない。
+  2026年10月5日、セッションURLをcommitとPR説明から外す案に対して、ユーザーが設定を増やさず既定のままとすると回答したことに由来する。
+  現行の規定は`agent-toolkit/share/external-write-review.subagent.md`「観点」の3項目めにある
 
 ### 計画レビュー廃止前の運用（2026年9月13日まで）
 
