@@ -181,10 +181,20 @@ def _try_lock(path: pathlib.Path) -> typing.Generator[bool]:
             file_lock.release_lock(handle)
 
 
+def _unlink_released_lock(path: pathlib.Path) -> None:
+    """解放して閉じたロックファイルを削除する。他のプロセスが開いていて削除できなければ次の調査まで残す。
+
+    Windowsは開いているファイルを削除できないため、ロックの保持中には削除しない。
+    """
+    with contextlib.suppress(PermissionError):
+        path.unlink(missing_ok=True)
+
+
 def _remove_legacy_area(state_root: pathlib.Path, area: pathlib.Path) -> bool:
     """旧marker付きの領域を、旧版のcleanupロックを待たずに取れた場合だけ削除する。取れなければ偽を返す。"""
     original = _legacy_original_path(area)
     lock_path = _legacy_lock_path(state_root, original)
+    collected = False
     with _try_lock(lock_path) as locked:
         if not locked:
             return False
@@ -192,7 +202,9 @@ def _remove_legacy_area(state_root: pathlib.Path, area: pathlib.Path) -> bool:
         registry = lock_path.with_name(lock_path.name.removesuffix(".cleanup.lock"))
         if not os.path.lexists(original) and not any(state_root.glob(f"{registry.name}.consuming-*")):
             registry.unlink(missing_ok=True)
-            lock_path.unlink(missing_ok=True)
+            collected = True
+    if collected:
+        _unlink_released_lock(lock_path)
     return True
 
 
@@ -220,14 +232,16 @@ def _sweep_legacy_state(state_root: pathlib.Path) -> None:
             with _try_lock(state_root / f"{name}.cleanup.lock") as locked:
                 if locked:
                     (state_root / name).unlink(missing_ok=True)
-                    (state_root / f"{name}.cleanup.lock").unlink(missing_ok=True)
+            if locked:
+                _unlink_released_lock(state_root / f"{name}.cleanup.lock")
         elif name.endswith(_LEGACY_CLEANUP_LOCK_SUFFIX):
             registry = name.removesuffix(".cleanup.lock")
             if registry in names or registry in consuming:
                 continue
             with _try_lock(state_root / name) as locked:
-                if locked:
-                    (state_root / name).unlink(missing_ok=True)
+                pass
+            if locked:
+                _unlink_released_lock(state_root / name)
     sessions = state_root / ".sessions"
     try:
         with os.scandir(sessions) as entries:
@@ -247,7 +261,8 @@ def _sweep_legacy_state(state_root: pathlib.Path) -> None:
         with _try_lock(sessions / f"{name}.lock") as locked:
             if locked:
                 (sessions / name).unlink(missing_ok=True)
-                (sessions / f"{name}.lock").unlink(missing_ok=True)
+        if locked:
+            _unlink_released_lock(sessions / f"{name}.lock")
 
 
 def _examine(
