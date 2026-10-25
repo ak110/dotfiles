@@ -5,7 +5,7 @@
 ```
 
 メインは実装後HEADの実行レビュー、修正、履歴統合を管理する。
-レビュー担当の手順は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`が定める。本書は起動、入力生成、修正、指摘管理表の保存を扱い、分類と判定は同書と`agent-toolkit:review-standards`に委ねる。
+レビュー担当の手順は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`が定める（所在参照）。本書は起動、入力生成、修正、指摘管理表の保存を扱い、分類と判定は同書と`agent-toolkit:review-standards`に委ねる。
 
 実装担当かメインは、計画の検証コマンドと受入シナリオの実行結果を`検証結果`として返し、計画の`## 進捗ログ`（計画なしでは引き継ぎ記録）へ記録する。書き方は`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「完成条件証拠の検証記録」、手動観測と全量の保存は同書「手動観測の保存」が定め、メインが自ら実装した場合もメインが同じ手順で実装完了前に記録する。レビュー担当は進捗ログか引き継ぎ記録から検証結果を読むため、起動入力へ再掲しない。
 任意入力`受理済みの完成条件証拠`へは、同じ計画の進捗ログに保存した受理済みの実行レビュー返却のファイルのうち後続担当が読めるものの絶対パスを渡す（省略時と該当が無い場合は`なし`）。参照を使える条件と判定は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」に従う。
@@ -23,7 +23,6 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
 | 検証結果を記録する前 | `verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` |
@@ -45,7 +44,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/exec-review.subagent.md#「出力」` |
+| 返却を受け取った後に受領確認する時 | `exec-review.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/exec-review.subagent.md#「出力」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` |
 | 返却の`達成`行の根拠を受領確認する前 | `../skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md#「技術判断で外せる完成条件」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「技術判断で外せる完成条件」` |
@@ -167,7 +166,7 @@ Git管理外の変更元と変更前複製の対がある場合は、レーン�
 - `前回確認版`: 旧担当の引き継ぎ記録にある記録の絶対パス。前回レビューしたHEADと、Git管理外の文章成果物ごとの識別子・前回本文の複製パスを含む。記録と比較元の実在を確かめてから起動し、取得できなければ欠けたHEADか本文の取得先を委譲元へ返す
 - 基準ごとの追加入力: 「起動方法別のレビュー基準」と本節の`CI記録`・`開始時のHEAD`の段落が定める値
 
-起動前に、必須入力（`レビュー基準`、`引き継ぎ記録先`）と基準ごとの追加入力がそろい、既存の実体を指すパスが実在し、全ての基準・開始時点・表・`review_contract`が同じ対象リポジトリに属することを確かめる。欠ける場合は起動せず、欠けた入力か条項を委譲元へ返す。
+必須入力の欠落は`agents_server`が起動時に拒否する。起動前に、基準ごとの追加入力がそろい、既存の実体を指すパスが実在し、全ての基準・開始時点・表・`review_contract`が同じ対象リポジトリに属することを確かめる。欠ける場合は起動せず、欠けた入力か条項を委譲元へ返す。
 
 ## 完成条件証拠の受領確認
 

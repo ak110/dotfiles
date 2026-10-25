@@ -924,6 +924,92 @@ def test_parent_launch_section_without_role_is_reported(tmp_path: pathlib.Path) 
     assert not _launch_role_errors(tmp_path)
 
 
+# 時点を限らない定型の読込条件。起動契約がこの条件で委譲先の手順書を挙げると、委譲元は起動前にそれを読む。
+_GENERIC_READ_CONDITION = "本文がこの資料の基準を使う場面で、資料を選択して取得する時"
+_READ_TABLE_SOURCE_PATTERN = re.compile(r"<!-- read-table-source: (\S+) -->")
+
+
+def _read_table_files(source: pathlib.Path) -> list[pathlib.Path]:
+    """文書と、その`read-table-source`で接続した読込表の資料を返す。"""
+    files: list[pathlib.Path] = []
+    pending = [source.resolve()]
+    while pending:
+        path = pending.pop(0)
+        if path in files or not path.is_file():
+            continue
+        files.append(path)
+        pending.extend(
+            (path.parent / name).resolve() for name in _READ_TABLE_SOURCE_PATTERN.findall(path.read_text(encoding="utf-8"))
+        )
+    return files
+
+
+def _launch_read_errors(share: pathlib.Path) -> list[str]:
+    """起動契約の読込案内が、起動する委譲先の手順書を定型の条件で読ませる行を返す。
+
+    委譲元は委譲先の手順書を読まずに起動する（`agent-toolkit:delegation`「送信」）。
+    返却後の検収・編集・調査で読む行は条件へその時点を書き、手順の所有者を示すだけの本文は「所在参照」と明記する。
+    """
+    errors: list[str] = []
+    contracts: list[_Contract] = [*sorted(share.glob("*.parent.md")), *_embedded_contracts(share)]
+    for contract in contracts:
+        targets, valid_structure = _marker_values(contract, _LAUNCH_TARGET_PREFIX, recipient=False)
+        if not valid_structure:
+            continue
+        source = contract if isinstance(contract, pathlib.Path) else contract.source
+        for path in _read_table_files(source):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                cells = [cell.strip() for cell in line.strip().strip("|").split("|")] if line.startswith("|") else []
+                if len(cells) < 2 or cells[0] != _GENERIC_READ_CONDITION:
+                    continue
+                errors.extend(
+                    f"起動する委譲先の手順書を定型の条件で読ませる: {path.name}:{number} -> {target}"
+                    for target in targets
+                    if re.search(rf"(?<![A-Za-z0-9_.-]){re.escape(target)}(?=[`#])", cells[1])
+                )
+    return list(dict.fromkeys(errors))
+
+
+def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> None:
+    """起動対象を宣言する全文書が、その委譲先の手順書を時点を限らない条件で読ませない。"""
+    share = pathlib.Path(__file__).resolve().parent / "share"
+
+    errors = _launch_read_errors(share)
+
+    assert not errors, "\n".join(errors)
+
+
+def test_launch_contract_generic_read_of_recipient_is_reported(tmp_path: pathlib.Path) -> None:
+    """定型の条件で委譲先の手順書や入力節を読ませる行を報告し、時点を書いた行と所在参照を受理する。"""
+    share = tmp_path / "share"
+    generic = f"| {_GENERIC_READ_CONDITION} | `task.subagent.md` | 判断 | `read:agent-toolkit:*/share/task.subagent.md` |\n"
+    section = (
+        f"| {_GENERIC_READ_CONDITION} | `task.subagent.md#「入力」` | 判断 "
+        "| `section:agent-toolkit:*/share/task.subagent.md#「入力」` |\n"
+    )
+    table = "\n## 名指し参照の読込方法\n\n| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+    _write_pair(
+        share,
+        parent_body=_parent_body(after_marker="\n委譲先の手順は`task.subagent.md`が定める。\n" + table + generic + section),
+    )
+
+    assert _launch_read_errors(share) == [
+        "起動する委譲先の手順書を定型の条件で読ませる: task.parent.md:13 -> task.subagent.md",
+        "起動する委譲先の手順書を定型の条件で読ませる: task.parent.md:14 -> task.subagent.md",
+    ]
+
+    timed = (
+        "| 返却を受け取った後に形式を検収する時 | `task.subagent.md#「出力」` | 判断 "
+        "| `section:agent-toolkit:*/share/task.subagent.md#「出力」` |\n"
+    )
+    _write_pair(
+        share,
+        parent_body=_parent_body(after_marker="\n委譲先の手順は`task.subagent.md`が定める（所在参照）。\n" + table + timed),
+    )
+
+    assert not _launch_read_errors(share)
+
+
 def test_missing_launch_target_reports_parent(tmp_path: pathlib.Path) -> None:
     """起動対象を持たない`<役割名>.parent.md`をファイル名付きで報告する。"""
     _write_pair(tmp_path, parent_body="# 委譲元\n\n対象リポジトリ: 値\n")

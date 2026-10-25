@@ -12,7 +12,6 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/bulk-replacement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/bulk-replacement.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/textlint-violations.md#「文の書き直しの委譲と検収」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/bulk-replace-review.subagent.md` | 判断 | `read:agent-toolkit:*/share/bulk-replace-review.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 
 ## 運用条件
@@ -28,7 +27,7 @@
 ```
 
 本書の冒頭の基準で候補置換を適用したエージェントが、次の手順で一括置換後レビュー担当を起動し、結果を受領する。
-レビュー担当の観点と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/bulk-replace-review.subagent.md`が定める。
+レビュー担当の観点と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/bulk-replace-review.subagent.md`が定める（所在参照）。
 
 ### 起動
 

@@ -8,7 +8,6 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/pick-wi-explain.subagent.md` | 判断 | `read:agent-toolkit:*/share/pick-wi-explain.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 
 ## 選定理由の説明担当の起動と受領
@@ -18,7 +17,7 @@
 ```
 
 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねた場合に、メインが本書に従って読み取り専用の説明担当を起動し、結果を受領する。
-説明担当の手順は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi-explain.subagent.md`が定める。
+説明担当の手順は`${CLAUDE_PLUGIN_ROOT}/share/pick-wi-explain.subagent.md`が定める（所在参照）。
 
 ### 起動
 

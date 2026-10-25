@@ -13,10 +13,9 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/copilot-review-audit.subagent.md` | 判断 | `read:agent-toolkit:*/share/copilot-review-audit.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/copilot-review-audit.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/copilot-review-audit.subagent.md#「出力」` |
+| 監査担当の返却を受け取った後に形式を確かめる時 | `../../../share/copilot-review-audit.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/copilot-review-audit.subagent.md#「出力」` |
 
 ## 自動コードレビュー監査担当の起動と受領
 
@@ -25,7 +24,7 @@
 ```
 
 `agent-toolkit:process-wi`のメインが自動コードレビュー監査を委譲するときに、本書に従って監査担当を起動し、結果を受領する。
-監査の手順と返却項目は`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`が定める。
+監査の手順と返却項目は`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`が定める（所在参照）。
 
 ### 起動
 

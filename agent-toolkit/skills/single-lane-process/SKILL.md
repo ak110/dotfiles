@@ -21,9 +21,7 @@ disable-model-invocation: true
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/single-lane-process/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/session-termination.parent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/session-termination.subagent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/SKILL.md#「計画ファイルの作成要否」` |
@@ -61,8 +59,8 @@ disable-model-invocation: true
 `agent-toolkit:process-wi`を名指しする条文は本スキルの実行中にも適用する。ただしレーン担当、終端担当、専用worktreeを前提とする契約は直接適用せず、本書が示す同等の工程をメインが行う。直接適用しない文書は次のとおり。
 
 - `agent-toolkit/skills/process-wi/`配下
-- `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`
-- `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`
+- `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`（所在参照）
+- `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`（所在参照）
 
 `agent-toolkit:plan-mode`を起動した場合は、確認要否と手段を`agent-toolkit:user-confirmation-and-report`で選び、起草後は本書の実行順へ戻って主作業ツリーで実装する。計画stemは`dd-HHmm_single-lane-process`、実行レビューのレビューイーはメインとする。Codexでは`../plan-mode/references/codex-runtime.md`が専用処理へ定めるUWI記録と暫定判断を本スキルにも適用する。
 版数はメインが対象リポジトリの版数規範の単一worktree向け一般則に従って実装段階で更新する。

@@ -11,10 +11,9 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/defect-investigation.subagent.md` | 判断 | `read:agent-toolkit:*/share/defect-investigation.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/defect-investigation.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/defect-investigation.subagent.md#「出力」` |
+| 調査担当の返却を受け取った後に検収する時 | `../../../share/defect-investigation.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/defect-investigation.subagent.md#「出力」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
@@ -34,7 +33,7 @@
 
 自分の作業で導入していない既存不良を、AWIを投入せずに見つけたエージェントが元の文脈で直す場合に、調査担当の起動と検収へ適用する。文脈を分けるのは調査だけとし、修正は見つけたエージェントが行う。
 AWIとして投入する用途（`agent-toolkit:process-wi`の即時対応、次のセッションへ回す不良など）は`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`を使う。
-委譲先の手順と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/defect-investigation.subagent.md`が定める。
+委譲先の手順と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/defect-investigation.subagent.md`が定める（所在参照）。
 
 ### 起動方法
 

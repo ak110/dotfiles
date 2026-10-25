@@ -6,7 +6,7 @@
 
 メインが`agent-toolkit:process-wi`のレーンを実行する際、本書に従ってレーン担当を起動し、計画あり・なしの準備結果、実装完了およびエスカレーションを受領する。
 公開工程で終端担当が`CI修正担当`を起動する場合と、実行レビューの修正担当を新しく起動する場合も本書に従う。
-レーン担当は計画の起草、実装、変更範囲の検証、commit、レビュー修正、統合を同じthreadで担う。その手順は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める。
+レーン担当は計画の起草、実装、変更範囲の検証、commit、レビュー修正、統合を同じthreadで担う。その手順は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める（所在参照）。
 
 ## 名指し参照の読込方法
 
@@ -15,18 +15,16 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「起動方法別のレビュー基準」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「起動方法別のレビュー基準」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/sending.md#「委譲プロンプトの構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/sending.md#「委譲プロンプトの構成」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.subagent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「入力」` |
+| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec.subagent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「入力」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
+| 計画準備の返却を受領し、書込対象の追加を判断する時 | `exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#冒頭` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#冒頭` |
@@ -36,9 +34,9 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「返却に含まれる既存不良の受領」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「返却に含まれる既存不良の受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md#「エスカレーションの事由別の扱い」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「エスカレーションの事由別の扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/check-execution/references/diagnostics.md#「読む出力」` | 判断 | `section:agent-toolkit:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-integration.subagent.md#「検証結果の警告の判定」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「検証結果の警告の判定」` |
+| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration.subagent.md#「検証結果の警告の判定」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「検証結果の警告の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「完成条件証拠の受領確認」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「完成条件証拠の受領確認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-integration.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「出力」` |
+| 統合の返却を受け取った後に受領条件を確かめる時 | `lane-integration.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「出力」` |
 
 ## 読込表
 
@@ -62,7 +60,7 @@
 
 指定値と実際値の比較と記録は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の担当モデルの段落に従い、記録先はレーンの引き継ぎ記録とする。
 
-- `担当種別`: `レーン担当`。公開工程のCI失敗修正では`CI修正担当`。同じthreadを継続できずに統合を担う担当を新しく起動する場合も`レーン担当`とする（統合手順は委譲先が読込表から`lane-integration.subagent.md`を読む）
+- `担当種別`: `レーン担当`。公開工程のCI失敗修正では`CI修正担当`。同じthreadを継続できずに統合を担う担当を新しく起動する場合も`レーン担当`とする（統合手順は委譲先が読込表から`lane-integration.subagent.md`を読む。所在参照）
 - `選定結果の出力先ファイル`: メインが選定結果を書いたファイルの絶対パス
 - `レーン識別子`: メインがそのレーンへ割り当てた識別子
 - `固有指示`: AWI固有の処理順、公開、確認または検証の指示。選定結果が持つ`プロジェクト規範の指定`と上流投入の3行は除く。無い場合は省略する
@@ -135,7 +133,7 @@
 
 検証結果の診断・警告と個別・全体の所要は`agent-toolkit:check-execution`の`references/diagnostics.md`「読む出力」の共通基準で受領する。統合前HEADとの比較と統合固有の是正は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「検証結果の警告の判定」に従う。
 
-全計画の実装有無から、採用する実装範囲が1件でもあるレーンを`マージあり`、無いレーンを`マージなし`と確定する（計画ごとの`マージなし`は計画に対応付けて保持する）。レーン担当へ統合を委ねる場合は同じthreadへ`send_message`で指示し、`start`を呼ばず、`引き継ぎ記録先`を省いて起動時の値を継続する。継続できない場合の新規起動は`## 入力`に従う。レーン担当が統合する手順は`lane-integration.subagent.md`が定め、メイン自身によるCLI実行も後掲の検収条件を使う。
+全計画の実装有無から、採用する実装範囲が1件でもあるレーンを`マージあり`、無いレーンを`マージなし`と確定する（計画ごとの`マージなし`は計画に対応付けて保持する）。レーン担当へ統合を委ねる場合は同じthreadへ`send_message`で指示し、`start`を呼ばず、`引き継ぎ記録先`を省いて起動時の値を継続する。継続できない場合の新規起動は`## 入力`に従う。レーン担当が統合する手順は`lane-integration.subagent.md`が定め（所在参照）、メイン自身によるCLI実行も後掲の検収条件を使う。
 
 統合入力HEADは収束したラウンドの`レビューHEAD`とし、収束後に再レビューを省いた修正があれば`exec-review.parent.md`「レビュー修正」が保持した修正後のHEADとする。
 `マージあり`では、指示の前に次を確かめる。

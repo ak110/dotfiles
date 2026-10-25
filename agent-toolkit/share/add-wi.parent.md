@@ -4,7 +4,7 @@
 起動対象: add-wi.subagent.md
 ```
 
-AWI・UWIの作成・更新で成立性調査と起草をWI投入担当へ委ねるエージェントは、本書を全文読み、起動、入力の受け渡しおよび返却の検収へ適用する。`agent-toolkit:process-wi`のレーン工程で上流リポジトリへの投入を要する項目も同じ委譲で扱う。委譲先の手順と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/add-wi.subagent.md`が定める。
+AWI・UWIの作成・更新で成立性調査と起草をWI投入担当へ委ねるエージェントは、本書を全文読み、起動、入力の受け渡しおよび返却の検収へ適用する。`agent-toolkit:process-wi`のレーン工程で上流リポジトリへの投入を要する項目も同じ委譲で扱う。委譲先の手順と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/add-wi.subagent.md`が定める（所在参照）。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
@@ -19,7 +19,6 @@ AWI・UWIの作成・更新で成立性調査と起草をWI投入担当へ委ね
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `add-wi.subagent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
@@ -37,7 +36,7 @@ AWI・UWIの作成・更新で成立性調査と起草をWI投入担当へ委ね
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wi-draft-review.parent.md` | 判断 | `read:agent-toolkit:*/share/wi-draft-review.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `add-wi.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/add-wi.subagent.md#「出力」` |
+| 原稿・結果の返却を受け取った後に検収する時 | `add-wi.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/add-wi.subagent.md#「出力」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |

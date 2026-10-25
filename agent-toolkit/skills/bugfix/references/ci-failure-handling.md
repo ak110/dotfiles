@@ -19,7 +19,6 @@ push先、更新ref、run監視、証拠の一時保存と後始末は`agent-too
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/exec-review-recording.md#「受理済み判定への参照」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「受理済み判定への参照」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/session-termination.subagent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md#「失敗の性質による分類」` | 判断 | `section:agent-basics:*/skills/bugfix/references/ci-failure-handling.md#「失敗の性質による分類」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md#「対処選択肢と判定基準」` | 判断 | `section:agent-basics:*/skills/bugfix/references/ci-failure-handling.md#「対処選択肢と判定基準」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md#「分類判定の補助」` | 判断 | `section:agent-basics:*/skills/bugfix/references/ci-failure-handling.md#「分類判定の補助」` |
@@ -83,7 +82,7 @@ push先、更新ref、run監視、証拠の一時保存と後始末は`agent-too
 ### 公開工程の終端担当が扱うCI修正
 
 `agent-toolkit:process-wi`の公開工程のCI修正は公開工程の中で完了させ、新しい計画ファイル（バグ）は作成しない。
-終端担当は7項目のCI記録を保持し、主作業ツリーを対象とする`CI修正担当`へ修正させる（本節冒頭の、自ら修正する一般則の例外。手順は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`）。
+終端担当は7項目のCI記録を保持し、主作業ツリーを対象とする`CI修正担当`へ修正させる（本節冒頭の、自ら修正する一般則の例外。手順は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`。所在参照）。
 全体検証の失敗も同じ修正系列に数え、`exec-review`の起動条件と起動しない修正の前提は「修正系列」と同じとする。
 各修正commitの後に版数とmanifestを再判定して再push、CI確認へ戻り、再push後の失敗では新しい原因commitについて対応する計画の有無を判定し直す。
 

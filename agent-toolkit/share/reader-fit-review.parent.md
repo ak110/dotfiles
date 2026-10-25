@@ -5,7 +5,7 @@
 ```
 
 文章成果物を含むレビューで、レビュー担当が本書に従って読者別探索担当を起動し、結果を受領する。
-読者別探索担当の観点と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.subagent.md`が定める。
+読者別探索担当の観点と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.subagent.md`が定める（所在参照）。
 
 ## 名指し参照の読込方法
 

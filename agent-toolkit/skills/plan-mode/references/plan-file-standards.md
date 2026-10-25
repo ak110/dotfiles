@@ -1,6 +1,6 @@
 # 計画ファイル作成基準
 
-本書は計画ファイル（作業実体は`~/.claude/plans/*.md`）の成果物契約を定める。計画を起草するエージェントは全項を満たす計画を作成し、実行レビュー担当は点検の基準に使う。読込の時点は、起草者では`agent-toolkit:plan-mode`のSKILL.mdの読込表、実行レビュー担当では`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`の読込表が定める。
+本書は計画ファイル（作業実体は`~/.claude/plans/*.md`）の成果物契約を定める。計画を起草するエージェントは全項を満たす計画を作成し、実行レビュー担当は点検の基準に使う。読込の時点は、起草者では`agent-toolkit:plan-mode`のSKILL.mdの読込表、実行レビュー担当では`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`の読込表が定める（所在参照）。
 保存先と参照の書式は`plan-file-storage.md`、過去の契約へ戻す変更と保持・不変性・完全復元の契約は`plan-restoration-contracts.md`、構造の検証は`plan-structure-check.md`が定める。
 
 計画ファイルは要求単位の欠落を防ぎ、実装と実行レビューの基準を示し、中断後の再開と作業記録に使う内部資料である。ユーザーの承認を前提としない。
@@ -25,7 +25,6 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-structure-check.md` |

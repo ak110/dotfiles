@@ -23,7 +23,6 @@ all-reposの中継として起動した場合は`references/all-repos-orchestrat
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../commit/references/publish.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#冒頭` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/SKILL.md#「計画ファイルの作成要否」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
@@ -58,7 +57,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 - **選定工程、レーン工程、公開工程**: 本スキルの3つの主要工程。詳細はそれぞれ`references/selection-procedure.md`、`references/run-lanes.md`、`references/finish-session.md`が定める。公開工程の定義は`agent-toolkit:commit`の`references/publish.md`冒頭にあり、本スキルでは終端担当が担う
 - **処理対象WI**: メインが選定時に固定した、1回の実行で処理するAWI。処理中にユーザーが追加を明示したAWIを含む
 - **レーン**: 処理対象を割り当てる処理単位。専用branchと専用worktree（レーンへ1つ割り当てるgit worktree）を1つずつ持つ
-- **レーン担当**: 各レーンの計画、実装、レビュー修正、履歴統合および主作業ツリーへの統合を同じthreadで担う担当。担当種別はレーン担当、レビュー修正担当、CI修正担当の3種とする（`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の操作区分）
+- **レーン担当**: 各レーンの計画、実装、レビュー修正、履歴統合および主作業ツリーへの統合を同じthreadで担う担当。担当種別はレーン担当、レビュー修正担当、CI修正担当の3種とする（`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の操作区分。所在参照）
 - **主作業ツリー**: マージ先branchをチェックアウトしている作業ツリー。`atk wi process-loop`が起動したセッションでは、process-loopが用意して子セッションを起動したworktree（起動時の作業ディレクトリ）を指す
 - **終端担当**: 公開工程（push、CI、検証失敗時の修正、プロジェクト固有の公開後の操作、延期adoptなど）を担う委譲先。委譲範囲は`references/finish-session.md`「終端担当の起動と並行工程」が定める
 - **即時対応**: 作業の進行に必要な最小修正をその場で行い、正式対応を次のセッションのAWIへ渡す手順
