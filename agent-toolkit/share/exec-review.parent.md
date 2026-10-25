@@ -47,6 +47,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/exec-review.subagent.md#「出力」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` |
+| 返却の`達成`行の根拠を受領確認する前 | `../skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md#「技術判断で外せる完成条件」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「技術判断で外せる完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
@@ -177,7 +178,7 @@ Git管理外の変更元と変更前複製の対がある場合は、レーン�
 3. 返却の`未解決の指摘数`が、`atk review-table show <表の絶対パス> --format=summary --round <round>`の`unanswered_count`と一致する
 4. 証拠要求ありでは、対象WI集合の本文を読込表の資料の手順で取得し、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」の手順3で条件番号の過不足・重複と原文要求の対応を確かめる。不足した条件と要求単位は同じレビュー担当へ補完を求め、そろってから後続へ渡す
 5. `読者別探索`のファイル別JSON申告を2つの対象集合へ対応付ける。Git管理下の集合は、`git diff --name-only --diff-filter=d <レビュー開始時点> <レビューHEAD> -- '*.md' '*.md.tmpl'`から`review_contract`の判定対象外commitだけが変えたファイルを除く。Git管理外の集合は、メイン自身が保持する回答下書きの絶対パスと、レーンの引き継ぎ記録にある`Git管理外の変更`の元ファイルのうち`.md`・`.md.tmpl`とする。各対象が起動結果の識別子か、`exec-review.subagent.md`「出力」の条件を満たす`再点検対象なし`を持つことを確かめる。`文章成果物なし`は両集合が空の場合に限る。不成立は同じ担当へ探索と再判定を求める
-6. 未解決件数が0件の返却では、達成を要する全条件が`達成`であるか、区分名の付いた`未達`・`根拠不足`が統合時の完成条件判定の受理条件を満たす。各`達成`行の根拠を条件と記録・本文（リポジトリ内は`git show <レビューHEAD>:<パス>`）で確かめ、判定行の件数だけで受理しない
+6. 未解決件数が0件の返却では、達成を要する全条件が`達成`であるか、区分名の付いた`未達`・`根拠不足`が統合時の完成条件判定の受理条件を満たす。各`達成`行が`exec-review-recording.md`「根拠の書き方」の所在と観測内容の組を持つことを確かめる。組を欠く行と、条件文の再掲と突き合わせ・確認・判定の定型句だけが行ごとに違う行は、件数・HEADが一致しても受理せず、同じ担当へ差し戻す。組を持つ行の根拠は条件と記録・本文（リポジトリ内は`git show <レビューHEAD>:<パス>`）で確かめ、判定行の件数だけで受理しない
 
 未応答1件以上のcompletedは、修正へ渡す正常な返却として受領する。達成必須の条件との整合は未応答0件の返却でだけ確かめる。全体不採用のWIでは、未応答件数によらず各条件が`reject`の`未達`で、根拠に計画か入力記録の実施内容の不採用根拠の所在があることを受領条件とする。
 
