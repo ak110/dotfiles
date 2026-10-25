@@ -35,7 +35,7 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
-from agent_toolkit._common import codex_models, mcp_environment
+from agent_toolkit._common import codex_models, inherited_venv, mcp_environment
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._hooks import user_prompt_submit  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing import git_repository, wi_entry_files
@@ -172,6 +172,15 @@ def _isolated_cli_environ(host_environ: Callable[[], dict[str, str]], tmp_path: 
     environ["XDG_CACHE_HOME"] = str(tmp_path / "cli-cache")
     environ["XDG_STATE_HOME"] = str(tmp_path / "cli-state")
     return environ
+
+
+def test_entry_restores_launch_environment_for_children(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`atk.main`は開始時に、起動層が変えた値を呼出元の値へ戻し、`atk commit`や`$EDITOR`などの子へ渡さない。"""
+    monkeypatch.setenv("PYTHONPATH", "/plugin-root")
+    monkeypatch.setenv(inherited_venv.LAUNCH_RESTORE_KEY, json.dumps({"PYTHONPATH": [None, "/plugin-root"]}))
+    atk.main(["info"])
+    assert "PYTHONPATH" not in os.environ
+    assert inherited_venv.LAUNCH_RESTORE_KEY not in os.environ
 
 
 def test_info_reports_current_execution_context(capsys: pytest.CaptureFixture[str]) -> None:

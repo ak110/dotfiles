@@ -6,8 +6,9 @@ import shutil
 import subprocess
 import sys
 import sysconfig
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -113,6 +114,144 @@ def test_nested_direct_environment_keeps_only_inner_root(tmp_path: Path) -> None
     environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data"), "PYTHONPATH": "existing"}
     nested = subject.direct_environment(inner, subject.direct_environment(outer, environment))
     assert nested["PYTHONPATH"].split(os.pathsep) == [str(inner.resolve()), "existing"]
+
+
+@pytest.mark.parametrize("caller_has_value", [False, True])
+def test_key_added_to_launch_layer_returns_to_caller_value_without_restore_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caller_has_value: bool
+) -> None:
+    """起動層が記録の前に新しいキーを設定しても、復元側を書き足さずに子では呼出元の値へ戻る。
+
+    将来の起動層が`UV_PYTHON`などを設定する変更を、記録処理の直前にキーを加えて模す。
+    """
+    original = inherited_venv.record_launch_changes
+
+    def record_with_new_key(env: MutableMapping[str, str], caller: MutableMapping[str, str], **kwargs: Any) -> None:
+        env["UV_PYTHON"] = "launch-python"
+        original(env, caller, **kwargs)
+
+    monkeypatch.setattr(inherited_venv, "record_launch_changes", record_with_new_key)
+    root = _root(tmp_path / "plugin")
+    environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
+    if caller_has_value:
+        environment["UV_PYTHON"] = "caller-python"
+    direct = subject.direct_environment(root, environment)
+    assert direct["UV_PYTHON"] == "launch-python"
+    inherited_venv.strip_inherited_venv(direct)
+    assert direct.get("UV_PYTHON") == environment.get("UV_PYTHON")
+
+
+def _copy_plugin_code(root: Path) -> None:
+    """依存環境を共有する配布rootとして、試験対象のコードとlockだけを複製する。"""
+    source = Path(subject.__file__).resolve().parents[2]
+    root.mkdir()
+    shutil.copytree(source / "agent_toolkit", root / "agent_toolkit", ignore=shutil.ignore_patterns("__pycache__", "*_test.py"))
+    for name in ("pyproject.toml", "uv.lock"):
+        shutil.copyfile(source / name, root / name)
+
+
+def _prepared_without_project(root: Path, environment: dict[str, str]) -> None:
+    """`agent_toolkit`を導入しない共有依存環境を、試験用venvの依存だけで模して公開する。
+
+    試験用venvは`agent_toolkit`を編集可能導入しており、そのsite-packagesを読むと継承値なしでも読込が成立する。
+    `.pth`の行が加えるディレクトリ内の`.pth`は処理されないため、依存だけを読込先へ加えられる。
+    """
+    target = subject.project_environment(root, environment)
+    executable = subject.python_path(target)
+    executable.parent.mkdir(parents=True)
+    shutil.copyfile(sys.executable, executable)
+    executable.chmod(0o755)
+    shutil.copyfile(Path(sys.prefix) / "pyvenv.cfg", target / "pyvenv.cfg")
+    site_packages = Path(sysconfig.get_path("purelib", vars={"base": str(target), "platbase": str(target)}))
+    site_packages.mkdir(parents=True)
+    (site_packages / "test-dependencies.pth").write_text(sysconfig.get_path("purelib") + "\n", encoding="utf-8")
+    subject.publish_prepared_environment(root, environment)
+
+
+_CHILD_ENVIRONMENT_PROBE = """\
+import json, os, pathlib, subprocess, sys
+from agent_toolkit._atk import lane
+from agent_toolkit._common import claude_connection, inherited_venv, plugin_environment
+
+root = pathlib.Path(__file__).resolve().parent
+child = dict(os.environ)
+inherited_venv.strip_inherited_venv(child)
+options = {"env": child, "capture_output": True, "text": True, "encoding": "utf-8", "timeout": 60, "check": False}
+dumped = subprocess.run([sys.executable, "-c", "import json, os; print(json.dumps(dict(os.environ)))"], **options)
+key_file = pathlib.Path(sys.argv[1])
+key_file.write_text("ANTHROPIC_API_KEY=probe-key\\n", encoding="utf-8")
+restarts = {
+    "lane": subprocess.run(lane._atk_script("--help"), **options),
+    "direct_environment": subprocess.run(
+        [sys.executable, str(root / "agent_toolkit/atk.py"), "--help"],
+        **{**options, "env": plugin_environment.direct_environment(root, child)},
+    ),
+    "api_key_helper": subprocess.run(claude_connection.api_key_helper(str(key_file)), shell=True, **options),
+}
+print(json.dumps({
+    "child": json.loads(dumped.stdout),
+    "restarts": {name: [r.returncode, r.stdout.strip()[-200:], r.stderr.strip()[-2000:]] for name, r in restarts.items()},
+}))
+"""
+
+
+@pytest.mark.parametrize("caller_pythonpath", [False, True])
+def test_public_launcher_child_receives_caller_environment_and_internal_restarts_succeed(
+    tmp_path: Path, host_environ: Callable[[], dict[str, str]], caller_pythonpath: bool
+) -> None:
+    """公開の起動口から起動した処理の子は呼出元と同じ環境を受け取り、内部の再起動は継承値なしで成立する。
+
+    `uv run --no-project`が`PATH`の先頭へ加えるインタープリターの`bin`を模し、起動層がそれも呼出元の値へ戻すことを確かめる。
+    内部の再起動は`lane._atk_script`、`api_key_helper`、`direct_environment`を渡す起動（委譲の引き継ぎ・hook）の3形を通す。
+    """
+    root = tmp_path / "plugin"
+    _copy_plugin_code(root)
+    (root / "probe.py").write_text(_CHILD_ENVIRONMENT_PROBE, encoding="utf-8")
+    caller = host_environ()
+    for key in (
+        "PYTHONPATH",
+        "VIRTUAL_ENV",
+        "UV_PROJECT_ENVIRONMENT",
+        subject.RUNTIME_ENVIRONMENT_ENV,
+        inherited_venv.CALLER_PROJECT_ENVIRONMENT_KEY,
+        inherited_venv.LAUNCH_RESTORE_KEY,
+    ):
+        caller.pop(key, None)
+    caller[subject.RUNTIME_DATA_ENV] = str((tmp_path / "runtime-data").resolve())
+    if caller_pythonpath:
+        unrelated = tmp_path / "caller-pythonpath"
+        unrelated.mkdir()
+        caller["PYTHONPATH"] = str(unrelated)
+    _prepared_without_project(root, caller)
+    launched_environment = {
+        **caller,
+        "PATH": str(Path(sys.executable).resolve().parent) + os.pathsep + caller.get("PATH", ""),
+    }
+    bootstrap = Path(subject.__file__).resolve().parents[2] / "scripts/launch.py"
+    launched = subprocess.run(
+        [sys.executable, str(bootstrap), "--project", str(root), "probe.py", str(tmp_path / "api-key.env")],
+        cwd=tmp_path,
+        env=launched_environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+    assert launched.returncode == 0, launched.stderr
+    observed = json.loads(launched.stdout)
+
+    def normalized(environment: dict[str, str]) -> dict[str, str]:
+        # Windowsの環境変数名は大文字小文字を区別せず、子の`os.environ`は大文字の名前を返す。
+        return {key.upper(): value for key, value in environment.items()} if os.name == "nt" else environment
+
+    assert normalized(observed["child"]) == normalized(caller)
+    assert {name: result[0] for name, result in observed["restarts"].items()} == {
+        "lane": 0,
+        "direct_environment": 0,
+        "api_key_helper": 0,
+    }, observed["restarts"]
+    assert observed["restarts"]["api_key_helper"][1] == "probe-key"
 
 
 def test_launch_preserves_callers_environment_and_cli_preserves_path(tmp_path: Path) -> None:
