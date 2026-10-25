@@ -338,3 +338,5 @@ def test_handoff_prepares_conversation_through_registered_script(
     conversation = pathlib.Path(conversation_line.removeprefix("会話の流れ: "))
     assert "確定事項と残工程" in conversation.read_text(encoding="utf-8")
     assert str(record) in prompt
+    # 成功時の両出力は会話の流れの生成に使い終えるため、診断ファイルとして残さない。
+    assert sorted(path.name for path in conversation.parent.iterdir() if path.name.startswith("prepare.")) == []
