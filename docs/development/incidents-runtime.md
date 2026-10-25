@@ -333,3 +333,8 @@
   背景原因: （作り込み要因）外部コマンドとApp Serverの副作用を実機で確かめず、提供元Issueと上流実装も調べないまま、cacheを削除する主体を明示的な`plugin add`と更新関数内の後続呼出しへ限定した。（見逃し要因）既存試験は内部`run()`と単体インストーラーへ削除を注入し、`git commit`、生成処理、別App Serverの自動導入、live hook消費を一続きで通さなかった。（根本原因）外部挙動を確認しない設計と内部単位だけの試験を、実用シナリオ全体の保証として受理できた。
   調査の経過: Codex 0.163.0の隔離対照では、新versionに対するApp Serverの`plugin/list` RPCとCLIの`plugin add`が旧cacheを削除した。同versionのRPC、CLIの`plugin list --json`、daemon照会と`codex exec`は旧cacheを保持した。[openai/codex#31383](https://github.com/openai/codex/issues/31383)は0.142.5から0.162.0までの複数環境で同じcache寿命不整合を報告している。
   対策: 更新処理内の全旧version退避・復旧を維持する。dotfiles向けの生成済みhookはcache外の`atk-hook`から起動し、旧`PLUGIN_ROOT`欠落時はClaude Code側の同版cacheを同じ絶対パスへ原子的に復旧する。同版が無い場合はClaude Codeの現行導入版からhookを起動する。commitと`update-dotfiles`の実用シナリオで、外部主体の削除からhook消費までを検証する
+
+- 2026年10月25日: dotfilesの自動更新のたびに、Git管理下の`.claude/settings.json`から`enabledPlugins`のagent-basicsが消えた。作業ツリーとレーンworktreeに未コミット変更が残った。
+  直接原因: `install_claude_plugins.py`の`_cleanup_old_project_scope`が、管理対象pluginのproject scopeの登録を全て`claude plugin uninstall --scope=project`で除去した。この除去でClaude Codeがプロジェクトの共有設定を書き換えた。
+  背景原因: （根本原因）2026年4月のuser scope移行用の除去処理が、project scopeの登録を全て古い残骸とみなす前提のまま残った。2026年10月23日にdotfilesリポジトリがagent-basicsを共有設定で意図して有効化した後は、Claude Codeがセッション開始のたびに再登録する項目を、自動更新のたびに除去していた（10月25日だけで00:31、02:13、02:23、06:40、16:42に発生）。
+  対策: 移行から6か月を過ぎたため除去処理を撤去し、project scopeの登録をバージョン判定から外したまま除去もしないことをテストで固定した

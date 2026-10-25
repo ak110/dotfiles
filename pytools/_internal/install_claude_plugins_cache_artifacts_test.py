@@ -61,7 +61,6 @@ def _install_into(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> ty
     monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: True)
     monkeypatch.setattr(_install_claude_plugins, "_read_target_info", lambda _root: ({_NAME: "1.0.0"}, set()))
     monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: [])
-    monkeypatch.setattr(_install_claude_plugins, "_cleanup_old_project_scope", lambda _name, _raw: None)
     monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
     monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
     monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])

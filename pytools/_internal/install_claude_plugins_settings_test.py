@@ -74,22 +74,34 @@ def _enabled_target_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
 class TestReadInstalledFromFile:
     """installed_plugins.json の直接読み取りが run() のインストール判定に反映されること。"""
 
+    @pytest.mark.parametrize(
+        "entries",
+        [
+            [{"scope": "user", "version": "0.2.0"}],
+            [
+                {"scope": "user", "version": "0.2.0"},
+                {"scope": "project", "version": "0.1.0", "projectPath": "/some/path"},
+            ],
+        ],
+        ids=["user_only", "with_project_scope"],
+    )
     def test_normal_read_version_match_skips_install(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        entries: list[dict[str, str]],
     ):
-        """正常な installed_plugins.json を読み取り、version 一致でインストールをスキップする。"""
+        """正常な installed_plugins.json を読み取り、user scope の version 一致で何も発行しない。
+
+        project scope のエントリはバージョン確認の対象外で、除去もしない。
+        project scope の登録はプロジェクトの共有設定が意図して有効化した結果であるため。
+        """
         path = tmp_path / "installed_plugins.json"
         path.write_text(
             json.dumps(
                 {
                     "version": 2,
-                    "plugins": {
-                        "agent-toolkit@ak110-dotfiles": [
-                            {"scope": "user", "version": "0.2.0"},
-                        ],
-                    },
+                    "plugins": {"agent-toolkit@ak110-dotfiles": entries},
                 },
                 ensure_ascii=False,
             ),
@@ -121,7 +133,8 @@ class TestReadInstalledFromFile:
 
         changed = _install_claude_plugins.run().changed
         assert changed is False
-        assert not any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
+        for subcommand in ("install", "update", "uninstall"):
+            assert not any(command_matches(c, ["claude", "plugin", subcommand]) for c in calls)
 
     @pytest.mark.parametrize("content", [None, "{invalid"], ids=["file_not_found", "invalid_json"])
     def test_unreadable_file_falls_back_to_cli(
@@ -151,60 +164,6 @@ class TestReadInstalledFromFile:
         assert changed is True
         # CLI フォールバックとして plugin list が呼ばれている
         assert any(command_matches(c, ["claude", "plugin", "list"]) for c in calls)
-
-    def test_mixed_scopes_user_scope_only_in_version_check(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ):
-        """複数スコープのエントリがある場合、user scope のみがバージョン確認の対象になる。"""
-        path = tmp_path / "installed_plugins.json"
-        path.write_text(
-            json.dumps(
-                {
-                    "version": 2,
-                    "plugins": {
-                        "agent-toolkit@ak110-dotfiles": [
-                            {"scope": "user", "version": "0.2.0"},
-                            {"scope": "project", "version": "0.1.0", "projectPath": "/some/path"},
-                        ],
-                    },
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", path)
-        monkeypatch.setattr(
-            _install_claude_plugins,
-            "_read_target_info",
-            lambda _root: ({"agent-toolkit": "0.2.0"}, set()),
-        )
-        monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
-        monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
-        monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
-        monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
-        monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
-                return _FakeResult(
-                    returncode=0,
-                    stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
-                )
-            # project scope の uninstall は成功を返す
-            if command_matches(cmd, ["claude", "plugin", "uninstall"]):
-                return _FakeResult(returncode=0)
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_common, "run_subprocess", fake_run)
-
-        _install_claude_plugins.run()
-        # user scope で version 一致のため install/update は発行されない
-        assert not any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
-        assert not any(command_matches(c, ["claude", "plugin", "update"]) for c in calls)
 
 
 class TestCheckMarketplaceFromFile:

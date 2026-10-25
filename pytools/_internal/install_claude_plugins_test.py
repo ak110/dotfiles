@@ -492,41 +492,6 @@ class TestUninstallDeprecated:
         assert calls == [["plugin", "uninstall", f"{self._NAME}@{_claude_common.MARKETPLACE_NAME}", "--keep-data"]]
 
 
-class TestCleanupOldProjectScope:
-    """project scope の除去がデータ領域を残すことを検証する。"""
-
-    def test_failure_guidance_keeps_plugin_data(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """除去の失敗時に案内する手動コマンドも、自動実行と同じく`--keep-data`を含める。
-
-        案内どおりに手動実行したときに、他のscopeが残らないpluginの永続データ領域を削除しないため。
-        """
-        raw_data = [
-            {
-                "id": f"agent-toolkit@{_claude_common.MARKETPLACE_NAME}",
-                "version": "1.0.0",
-                "scope": "project",
-                "projectPath": str(tmp_path),
-            }
-        ]
-        calls: list[list[str]] = []
-
-        def fake_run_claude(args: list[str], **_kwargs: object) -> _FakeResult:
-            calls.append(args)
-            return _FakeResult(returncode=1, stderr="uninstall failed")
-
-        monkeypatch.setattr(_claude_common, "run_claude", fake_run_claude)
-
-        with caplog.at_level(logging.INFO):
-            _install_claude_plugins._cleanup_old_project_scope("agent-toolkit", raw_data)
-
-        assert calls == [
-            ["plugin", "uninstall", f"agent-toolkit@{_claude_common.MARKETPLACE_NAME}", "--scope=project", "--keep-data"]
-        ]
-        assert f"agent-toolkit@{_claude_common.MARKETPLACE_NAME} --scope=project --keep-data`を実行する" in caplog.text
-
-
 class TestEnsurePluginCacheComplete:
     """plugin cache の必須ファイルの欠落を検出し、1 回だけ再インストールで修復する。"""
 

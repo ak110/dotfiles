@@ -182,9 +182,6 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
     # CLI が成功終了した plugin だけを、キャッシュ実体の検査対象にする。
     cache_check_names: list[str] = []
     for name, target in target_versions.items():
-        # project scope に残存するエントリを除去 (user scope 移行用)
-        _cleanup_old_project_scope(name, raw_data)
-
         current = installed.get(name)
         if current is None:
             if _install_plugin(name):
@@ -568,38 +565,6 @@ def _is_installed(name: str, raw_data: object) -> bool:
     return False
 
 
-def _project_scope_paths(name: str, raw_data: object) -> list[Path]:
-    """指定プラグインのproject scopeエントリに対応するprojectPath一覧を返す。
-
-    `claude plugin uninstall --scope=project` は呼び出し時のcwdに紐づく
-    プロジェクト設定のみを参照する。そのため、除去対象のproject scope
-    エントリごとにインストール元プロジェクトの絶対パスを取得し、
-    後段でそれをcwdにしてCLIを呼ぶ必要がある。
-    """
-    if not isinstance(raw_data, list):
-        return []
-    paths: list[Path] = []
-    for item in cast("list[object]", raw_data):
-        if not isinstance(item, dict):
-            continue
-        entry = cast("dict[str, object]", item)
-        if _name_from_entry(entry) != name or entry.get("scope") != "project":
-            continue
-        project_path = entry.get("projectPath")
-        if not isinstance(project_path, str) or not project_path:
-            logger.info(
-                log_format.format_status(
-                    name,
-                    "project scope エントリに projectPath が無いためスキップ。"
-                    "~/.claude/plugins/installed_plugins.jsonでこのpluginの不要なproject "
-                    "scopeエントリを手動削除する",
-                ),
-            )
-            continue
-        paths.append(Path(project_path))
-    return paths
-
-
 def _uninstall_deprecated(name: str, raw_data: object) -> bool:
     """Deprecated プラグインがインストール済みならアンインストールする。
 
@@ -621,41 +586,6 @@ def _uninstall_deprecated(name: str, raw_data: object) -> bool:
         ),
     )
     return False
-
-
-def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
-    """管理対象プラグインの project scope エントリを除去する (user scope 移行用)。
-
-    `claude plugin uninstall --scope=project` は呼び出し時の cwd から
-    プロジェクト設定を特定するため、各エントリの projectPath を cwd に渡す。
-    他の scope が残らない除去は永続データ領域を削除するため、続けて導入する user scope が同じデータ領域を
-    使えるよう`--keep-data`で残す。
-    """
-    for project_path in _project_scope_paths(name, raw_data):
-        if not project_path.is_dir():
-            logger.info(
-                log_format.format_status(
-                    name,
-                    f"project scope の除去対象 {project_path} が存在しないためスキップ "
-                    "(必要に応じて ~/.claude/plugins/installed_plugins.json から手動で削除)",
-                ),
-            )
-            continue
-        result = claude_common.run_claude(
-            ["plugin", "uninstall", f"{name}@{claude_common.MARKETPLACE_NAME}", "--scope=project", "--keep-data"],
-            cwd=project_path,
-        )
-        if result is not None and result.returncode == 0:
-            logger.info(log_format.format_status(name, f"project scope を除去しました ({project_path})"))
-        else:
-            logger.info(
-                log_format.format_status(
-                    name,
-                    f"project scope の除去に失敗 (続行): {common.format_cli_error(result)}。"
-                    f"{project_path}へ移動して`claude plugin uninstall "
-                    f"{name}@{claude_common.MARKETPLACE_NAME} --scope=project --keep-data`を実行する",
-                ),
-            )
 
 
 def _install_plugin(name: str) -> bool:
