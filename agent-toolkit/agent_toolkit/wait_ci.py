@@ -24,7 +24,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NoReturn
 from urllib.parse import quote
 
 from agent_toolkit._atk import outcome as _outcome
@@ -45,6 +45,7 @@ EXIT_GH_ERROR = 3
 EXIT_NO_RUNS = 4
 EXIT_NO_CI_CONFIG = 5
 EXIT_NEW_FAILURE = 6
+EXIT_USAGE = 7
 EXIT_INTERRUPTED = 130
 
 _STDERR_FD = 2
@@ -1203,11 +1204,31 @@ def _full_sha(value: str) -> str:
     return value.lower()
 
 
+_NEXT_ACTION_BASELINE_MISMATCH = (
+    "push前に同じ`--repo`・`--ref`・`--source-ref`で`--write-baseline`を取り直してから待機するか、"
+    "baselineを使わない`--wait-sha`で対象commitの全runを待つ"
+)
+_NEXT_ACTION_USAGE = "`atk run-script wait-ci -- --help`で受理形式を確かめて引数を直し、起動し直す"
+
+
+class _UsageErrorParser(argparse.ArgumentParser):
+    """引数の誤りをtimeout（終了コード2）と区別できる終了コードで終える。
+
+    argparseは引数の誤りを終了コード2で返し、本スクリプトの`EXIT_TIMEOUT`と重なる。
+    手順書は終了コード2をtimeoutとして再呼び出しへ振り分けるため、引数の誤りは`EXIT_USAGE`で終える。
+    """
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        sys.exit(_finish(EXIT_USAGE, _NEXT_ACTION_USAGE))
+
+
 def main(argv: list[str] | None = None) -> int:
     """コマンドライン引数を解析し、baseline作成またはCI通過確認を実行する。"""
     _outcome.force_utf8_stdio()
     _install_signal_handlers()
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = _UsageErrorParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write-baseline", type=pathlib.Path, metavar="PATH", help="push前の実行IDを保存するJSONパス")
     mode.add_argument("--baseline", type=pathlib.Path, metavar="PATH", help="push前に保存したbaseline JSONパス")
@@ -1220,15 +1241,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--repo",
-        required=True,
         help=(
-            "対象repository。GitLabのホスト付き識別子とSSH指定はglabのホスト別API・認証設定を使う。"
+            "対象repository。--write-baselineと--wait-shaでは必須。--baselineでは省略するとbaselineの保存値を使い、"
+            "指定するとbaselineの保存値と一致するかを確かめる。GitLabのホスト付き識別子とSSH指定はglabのホスト別API・認証設定を使う。"
             "明示HTTP(S) URLはscheme・authorityをAPI接続先と認証設定のホストキーに使う。"
-            "baseline作成と待機は同じ値を使う。ホスト省略時はGITLAB_HOST・GITLAB_URI・GL_HOSTとglabの設定を使う"
+            "ホスト省略時はGITLAB_HOST・GITLAB_URI・GL_HOSTとglabの設定を使う"
         ),
     )
-    parser.add_argument("--ref", required=True, help="対象destination ref（例: refs/heads/main）")
-    parser.add_argument("--source-ref", required=True, help="push元のローカルsource ref（例: HEAD）")
+    parser.add_argument(
+        "--ref",
+        help="対象destination ref（例: refs/heads/main）。--baselineでは省略するとbaselineの保存値を使う",
+    )
+    parser.add_argument(
+        "--source-ref",
+        help="push元のローカルsource ref（例: HEAD）。--baselineでは省略するとbaselineの保存値を使う",
+    )
     parser.add_argument(
         "--sha",
         help="対象commit SHA（省略時はbaseline作成でsource ref、待機でbaseline保存SHAを使用）",
@@ -1255,6 +1282,7 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "対象ホスティング種別。省略時はautoとして--repoのホストから自動判定する。"
             "ホストを含まない場合は作業ディレクトリのGit remoteから判定する。"
+            "--baselineで--repoを省略した場合はbaselineの保存値を使う。"
         ),
     )
     parser.add_argument(
@@ -1267,7 +1295,28 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--wait-shaと--shaは同時に指定できません")
     if args.failure_record is not None and args.wait_sha is None:
         parser.error("--failure-recordは--wait-shaと組み合わせて指定してください")
-    forge = _resolve_forge(args.forge, args.repo)
+    baseline: CiBaseline | None = None
+    if args.baseline is None:
+        missing = [
+            name
+            for name, value in (("--repo", args.repo), ("--ref", args.ref), ("--source-ref", args.source_ref))
+            if value is None
+        ]
+        if missing:
+            parser.error(f"--write-baselineと--wait-shaでは次の引数が必須です: {', '.join(missing)}")
+        forge = _resolve_forge(args.forge, args.repo)
+    else:
+        try:
+            baseline = _load_baseline(args.baseline)
+        except RunListError as exc:
+            print(f"[wait_ci] baseline検証に失敗: {exc}", file=sys.stderr)
+            return _finish(EXIT_GH_ERROR, _NEXT_ACTION_BASELINE_MISMATCH)
+        # 省略した値はbaselineの保存値を使い、指定した値は後段でbaselineの保存値と比べる。
+        explicit_repo = args.repo is not None
+        args.repo = baseline.repository if args.repo is None else args.repo
+        args.ref = baseline.ref if args.ref is None else args.ref
+        args.source_ref = baseline.source_ref if args.source_ref is None else args.source_ref
+        forge = _resolve_forge(args.forge, args.repo) if explicit_repo or args.forge != "auto" else baseline.forge
     if forge is None:
         print("[wait_ci] 対象forgeを--repoと作業ディレクトリのGit remoteから判別できない", file=sys.stderr)
         return _finish(EXIT_GH_ERROR, "`--forge github`または`--forge gitlab`を明示指定して再実行する")
@@ -1314,8 +1363,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[wait_ci] 待機記録の準備に失敗: {exc}", file=sys.stderr)
             return _finish(EXIT_GH_ERROR, "対象に一致する書込可能な`--failure-record`を指定して再実行する")
         return _wait_from_record(args, baseline, record_path)
+    assert baseline is not None
     try:
-        baseline = _load_baseline(args.baseline)
         if args.sha is None:
             sha = baseline.sha
         else:
@@ -1326,11 +1375,7 @@ def main(argv: list[str] | None = None) -> int:
         _validate_baseline_context(baseline, forge, args.repo, args.ref, args.source_ref, sha)
     except RunListError as exc:
         print(f"[wait_ci] baseline検証に失敗: {exc}", file=sys.stderr)
-        return _finish(
-            EXIT_GH_ERROR,
-            "push前に同じ`--repo`・`--ref`・`--source-ref`で`--write-baseline`を取り直してから待機するか、"
-            "baselineを使わない`--wait-sha`で対象commitの全runを待つ",
-        )
+        return _finish(EXIT_GH_ERROR, _NEXT_ACTION_BASELINE_MISMATCH)
     return _wait_from_record(args, baseline, args.baseline)
 
 
