@@ -182,10 +182,7 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
     if args.handoff:
         allowed = commit_mapping.validate_wis(args.allowed_awi or [])
     else:
-        metadata, errors = _plan_format.parse_plan_metadata(content)
-        if metadata is None or errors:
-            raise ProgressLogError("計画の関連WIを確定できません", next_action=_CHECK_STRUCTURE)
-        allowed = {wi for wi, _summary in metadata.related_wi}
+        allowed = commit_mapping.plan_allowed_wis(content, read_path)
     targets = args.awi if args.awi is not None else sorted(allowed) if args.get_commits else []
     if args.get_commits or args.commit:
         commit_mapping.validate_targets(targets, allowed)

@@ -25,7 +25,6 @@ from agent_toolkit._atk.wi.mutations import result_commits
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes
 from agent_toolkit._plan import commit_mapping, locations
-from agent_toolkit._plan import structure as _plan_format
 
 _CURRENT_OMISSION_ACTION = (
     "対応表は`atk run-script history-compare -- --operation <rebase|autosquash|amend> --work-dir <worktreeの絶対パス>"
@@ -103,13 +102,7 @@ def _allowed_wis(record: _Record, content: str, events: list[dict[str, object]])
             if isinstance(names, list):
                 wis.update(name for name in names if isinstance(name, str))
         return wis
-    metadata, errors = _plan_format.parse_plan_metadata(content)
-    if metadata is None or errors:
-        raise commit_mapping.CommitMappingError(
-            f"計画の関連WIを確定できません: {record.path}",
-            next_action="`atk run-script plan-check -- <計画ファイルの絶対パス>`で計画の構造を確かめ、直してから再実行する",
-        )
-    return {wi for wi, _summary in metadata.related_wi}
+    return commit_mapping.plan_allowed_wis(content, record.path)
 
 
 def _check_writable(record: _Record, completed_step: str, result: str) -> None:

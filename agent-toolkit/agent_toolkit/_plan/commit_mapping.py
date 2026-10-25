@@ -16,6 +16,7 @@ from agent_toolkit._common import next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
+from agent_toolkit._plan import structure as _plan_structure
 
 PREFIX = "<!-- wi-commits: "
 SUFFIX = " -->"
@@ -73,6 +74,22 @@ def validate_wis(wis: list[str], *, recorded: bool = False) -> set[str]:
     if not wis or any(_WI.fullmatch(wi) is None for wi in wis):
         raise (_fail if recorded else _input_fail)(f"AWI集合が不正です: {wis}")
     return set(wis)
+
+
+def plan_allowed_wis(content: str, path: pathlib.Path) -> set[str]:
+    """計画の対応記録の許可集合として、計画メタ情報の`関連WI`を返す。
+
+    計画の対応記録には、再開した計画が前のセッションで記録したAWIも含まれる。
+    許可集合をレーンや選定のAWI集合で代えると、正しい記録を対象外として拒否するため、
+    計画の対応記録を読む処理はこの関数で許可集合を求める。
+    """
+    metadata, errors = _plan_structure.parse_plan_metadata(content)
+    if metadata is None or errors:
+        raise CommitMappingError(
+            f"計画の関連WIを確定できません: {path}",
+            next_action="`atk run-script plan-check -- <計画ファイルの絶対パス>`で計画の構造を確かめ、直してから再実行する",
+        )
+    return {wi for wi, _summary in metadata.related_wi}
 
 
 def validate_targets(wis: list[str], allowed_wis: set[str]) -> set[str]:
