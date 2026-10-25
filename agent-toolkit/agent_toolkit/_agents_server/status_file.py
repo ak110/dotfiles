@@ -553,7 +553,8 @@ class StatusFileWriter:
             )
         self._projection_path.unlink(missing_ok=True)
         for path in self._directory.glob(f".{self._projection_path.name}.*.tmp"):
-            path.unlink()
+            # 同じ名前へ書く別の書込主体の一時ファイルは、列挙の後にrenameで消えることがある。
+            path.unlink(missing_ok=True)
         results = results_directory(self.root_session_id, self._state_root)
         if results.exists() and not any(results.iterdir()):
             results.rmdir()
