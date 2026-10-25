@@ -112,6 +112,7 @@ pyfltrを調査・計測用途で実行する場合は`--no-fix`で自動修正�
 - パッケージを取得して起動する外部ツール（pnpmの`dlx`、corepackなど）を動かすテストは、同モジュールの`share_package_caches`で取得物の保存先だけをホストと共有する
 - `pytools`の配布物には`[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を含めない
 - `scripts/`配下はpytestのprependモードで`sys.path`へ入るためテストから直接importできる。importするスクリプトはアンダースコア区切りで命名し、shebang付きスクリプトは`chmod +x`する
+- 別ディレクトリのスクリプトをテストから裸の名前でimportしない。pytestのprependモードとpylintは同じ実行に含めたファイルのディレクトリだけを`sys.path`へ加えるため、限定したpytest・pylintで解決できなくなる。登録済みのスクリプトは`agent_toolkit._atk.run_script.dispatch`経由で呼ぶか、テスト自身で`sys.path`へ対象ディレクトリを明示的に加える。`test_import_resolution_invariant_test.py`が違反を検出する
 
 ## コミットメッセージ方針と.gitmessage
 
