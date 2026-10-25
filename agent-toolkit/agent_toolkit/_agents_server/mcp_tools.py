@@ -308,6 +308,8 @@ async def kill(
     timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。
     終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
     `show`の`result_held`が真のsessionでは、保留中の結果をそのまま終端結果として返し、以後の`send_message`を受け付ける。
+    `show`の`ownership`が`owner_lost`のsessionでは、登録簿のpidと起動時刻が一致する委譲先CLIだけを停止し、
+    停止を確かめてから`interrupted`を返す。所有していたagents_serverのプロセスは止めない。以後の`send_message`は同じ会話を再開する。
     """
     return await _MANAGER.kill(session_id, timeout, stop)
 
@@ -399,6 +401,9 @@ async def show_session(
     ただし所有するagents_serverが終端を公開せずに終了し、turnを実行するプロセスも存在しないsessionは、
     `status`を`interrupted`とし、`error`の`interruptionReason`が`owner_processes_exited`を示す。
     所有するagents_serverの停止で中断したturnは`interruptionReason`が`owner_server_stopped`を示す。
+    所有するagents_serverが状態を公開しなくなった後も委譲先CLIが生存するsessionは`status`を`running`とし、
+    `ownership`へ`owner_lost`、`recorded_processes`、`owner_root_session_id`、`stranded_notice_count`と
+    終了を待つか`kill`の後に`send_message`する`next_action`を返す。旧ルートに残った通知は`notices`で返す。
     中断の`error`は`diagnostics`へ、そのturnを所有したサーバー起動単位の終了診断への参照を持つ。
     `diagnostics.status`は`collected`（終了の記録あり）、`incomplete`（記録はあるが終了を示す記録が無く原因を判断できない）、
     `not_collected`（終了診断の導入前の記録）、`missing`、`unreadable`のいずれかで、`next_action`が読み取り操作を示す。

@@ -156,6 +156,8 @@ def public_send_message_response(response: Mapping[str, Any]) -> dict[str, Any]:
     previous_result = response.get("previous_result")
     if previous_result:
         public["previous_result"] = result_projection.public_result(previous_result)
+    if response.get("notices"):
+        public["notices"] = [result_projection.public_notice(notice) for notice in response["notices"]]
     next_action = REPLY_NEXT_ACTIONS.get(response["delivery"])
     if next_action is not None:
         public["next_action"] = next_action

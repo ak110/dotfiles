@@ -38,6 +38,38 @@ def heartbeat_is_current(payload: dict[str, Any], cutoff: datetime.datetime) -> 
     return heartbeat.tzinfo is not None and heartbeat >= cutoff
 
 
+def root_has_live_writer(
+    root_session_id: str, state_root: pathlib.Path | None = None, *, cutoff: datetime.datetime | None = None
+) -> bool:
+    """ルートに生存の印が有効な状態ファイルがあるかを返す。読めないファイルは生存しているものとして扱う。
+
+    読めないファイルを失効と扱うと、所有者が書込中のルートの通知や結果を他のMCPサーバーが回収するためである。
+    """
+    if cutoff is None:
+        cutoff = heartbeat_cutoff()
+    for path in shared_layout.list_status_files(root_session_id, state_root):
+        try:
+            payload = read_payload(path)
+        except OSError, UnicodeError, ValueError:
+            return True
+        if heartbeat_is_current(payload, cutoff):
+            return True
+    return False
+
+
+def ownerless_root_session_ids(exclude: str | None, state_root: pathlib.Path | None = None) -> list[str]:
+    """生存の印が有効な書込主体のいないルートを、`exclude`を除いて安定順で返す。
+
+    所有サーバーの起動単位が替わった後、旧起動単位のルートへ残った委譲先の通知と終端結果を回収する対象に使う。
+    """
+    cutoff = heartbeat_cutoff()
+    return [
+        root_session_id
+        for root_session_id in shared_layout.list_root_session_ids(state_root)
+        if root_session_id != exclude and not root_has_live_writer(root_session_id, state_root, cutoff=cutoff)
+    ]
+
+
 def read_payload(path: pathlib.Path) -> dict[str, Any]:
     """JSONオブジェクトを読み、取得不能を空の状態と区別するため例外を呼出側へ返す。"""
     payload: Any = json.loads(path.read_text(encoding="utf-8"))

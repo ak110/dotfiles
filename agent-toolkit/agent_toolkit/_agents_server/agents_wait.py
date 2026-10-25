@@ -17,12 +17,14 @@ from typing import Any
 from agent_toolkit._agents_server import (
     logging_config,
     notice_inbox,
+    owner_lost,
     result_projection,
     retained_results,
     session_handoff,
     shared_layout,
     shared_roots,
     state,
+    status_reader,
     wait_summary,
     wait_targets,
 )
@@ -357,7 +359,8 @@ def _target_origins(
     }
     for session_id in set(registered_ids) - listed_ids - result_ids:
         resolution = session_registry.resolve(session_id, state_root=state_root)
-        if resolution.state in releasable:
+        # 委譲元のサーバーが替わると、終端結果は旧ルートに残る。回収するまで待機対象を解放しない。
+        if resolution.state in releasable and not owner_lost.has_stranded_result(session_id, root_session_id, state_root):
             wait_targets.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
             registered_ids.remove(session_id)
             interrupted = _interrupted_session(session_id, resolution, state_root)
@@ -631,6 +634,7 @@ def _wait_for_result(
                         ",".join(sorted(current_origins[session_id])),
                     )
                 status_paths = shared_layout.list_status_files(root_session_id, state_root)
+                stranded_roots: list[str] | None = None
                 collected: list[dict[str, Any]] = []
                 read_failure: str | None = None
                 for session_id in ordered_ids:
@@ -643,6 +647,20 @@ def _wait_for_result(
                         state_root=state_root,
                         stash_path=run_path.with_suffix("") / "results" / f"{session_id}.json",
                     )
+                    # 自身の状態ファイルに無いsessionは登録簿から解決した対象であり、委譲元のサーバーが替わると
+                    # 通知と終端結果が旧ルートに残るため、所有者のいない他のルートからも回収する。
+                    registry_resolved = "status" not in current_origins.get(session_id, set())
+                    if registry_resolved and stranded_roots is None:
+                        stranded_roots = status_reader.ownerless_root_session_ids(root_session_id, state_root)
+                    if result is None and read_error is None and registry_resolved:
+                        result, read_error = owner_lost.take_stranded_result(
+                            session_id,
+                            root_session_id,
+                            collector="atk-agents-wait",
+                            state_root=state_root,
+                            stash_path=run_path.with_suffix("") / "results" / f"{session_id}.json",
+                            roots=stranded_roots,
+                        )
                     if read_error is not None:
                         read_failure = f"終端結果ファイルを読めません: {result_path}: {read_error}"
                         break
@@ -652,6 +670,16 @@ def _wait_for_result(
                         state_root,
                         stash_directory=run_path.with_suffix("") / "notices",
                     )
+                    if registry_resolved:
+                        notices.extend(
+                            owner_lost.take_stranded_notices(
+                                session_id,
+                                root_session_id,
+                                state_root,
+                                stash_directory=run_path.with_suffix("") / "notices",
+                                roots=stranded_roots,
+                            )
+                        )
                     if result is not None:
                         result["session_id"] = session_id
                         if isinstance(result.get("agent_message"), str):

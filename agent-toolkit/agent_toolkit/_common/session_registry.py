@@ -3,9 +3,13 @@
 所有側のagents_serverがsessionを解放した場合は、レコードを削除せず解放済みレコードへ置き換える。
 照会した別プロセスが「所有側が正常に解放した」と「どのagents_serverにも記録が無い」を区別できるようにするためである。
 
-実行中のレコードは、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別を持つ。
+実行中のレコードは、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別（記録プロセス）を持つ。
 所有側が終端を公開せずに終了した場合、照会側は記録された全プロセスの不在から終端（`interrupted`）と解決する。
 この判定はレコードを書き換えず解決の結果として返し、書込は所有側と引き継ぎの処理に残す。
+
+終端と所有の判定は記録プロセスの実在を一次の根拠とし、本モジュールの`resolve`と`running_ownership`へ集約する。
+所有サーバーの起動単位が替わった後も、応答しない旧起動単位や委譲先CLIが生存し続ける場合があるためである。
+状態ファイルの生存の印や委譲先CLIへの外部照会だけで終端・所有不在を決めると、作業中の委譲先を中断と公開する。
 """
 
 from __future__ import annotations
@@ -204,6 +208,17 @@ class ResumeInfo:
     claude_role: str | None = None
 
 
+class RunningOwnership(enum.StrEnum):
+    """`running`の記録の所有状態。`running_ownership`が記録プロセスの実在と状態ファイルの生存の印から判定する。"""
+
+    OWNED = "owned"
+    """生存の印が有効な状態ファイルがsessionを載せている。所有サーバーが終端を公開する。"""
+    OWNER_LOST = "owner_lost"
+    """所有サーバーを失った実行中。生存の印が有効な状態ファイルが無く、記録プロセスのうち委譲先CLIが実在する。"""
+    ORPHANED = "orphaned"
+    """所有者も委譲先CLIもいない。記録プロセスを持たない旧形式の記録と、委譲先CLIが実在しない記録が該当する。"""
+
+
 @dataclasses.dataclass(frozen=True)
 class InterruptedTurn:
     """中断で終わったturnと、そのturnを所有していた起動単位。`server_instance`が`None`なら旧記録を表す。"""
@@ -233,6 +248,33 @@ class SessionResolution:
     server_instance: str | None = None
     # 中断で終わったturnの履歴（新しい順）。再開・所有者の交代・解放の後も引き継ぐ。
     interrupted_turns: tuple[InterruptedTurn, ...] = ()
+    # 記録プロセス。`processes`の先頭が所有サーバー、以降が委譲先CLIである。項目を持たない記録では空とする。
+    owner_process: ProcessIdentity | None = None
+    executor_processes: tuple[ProcessIdentity, ...] = ()
+    # `running`の記録で、解決の時点で実在した委譲先CLI。終端の記録では照会しないため空とする。
+    live_executors: tuple[ProcessIdentity, ...] = ()
+    # 記録を書いた所有サーバーの状態ディレクトリのルート。項目を持たない旧記録では`None`とする。
+    owner_root_session_id: str | None = None
+
+
+def running_ownership(resolution: SessionResolution, *, writer_alive: bool) -> RunningOwnership | None:
+    """`running`と解決した記録の所有状態を返す。`running`以外の解決には`None`を返す。
+
+    `writer_alive`は、生存の印が有効な状態ファイルがそのsessionを載せているかを呼び出し側が照会した値である。
+    状態ファイルを読む処理は`_agents_server`に属するため、層の順序に従い呼び出し側から受け取る。
+    所有サーバーのプロセスが実在しても、生存の印を更新しない起動単位は所有者として扱わない。
+    委譲先CLIが実在する限りturnが進んでいる可能性を排除できないため、終端と推定する処理は`ORPHANED`に限る。
+    """
+    if resolution.state is not Resolution.RUNNING:
+        return None
+    if writer_alive:
+        return RunningOwnership.OWNED
+    return RunningOwnership.OWNER_LOST if resolution.live_executors else RunningOwnership.ORPHANED
+
+
+def process_payload(process: ProcessIdentity) -> dict[str, Any]:
+    """公開応答と診断へ載せる記録プロセスの識別を返す。"""
+    return {"pid": process.pid, "create_time": process.create_time}
 
 
 def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
@@ -267,12 +309,16 @@ def publish(
     interruption: InterruptionReason | None = None,
     launcher_session_id: str | None = None,
     preserve_server_instance: bool = False,
+    owner_root_session_id: str | None = None,
     state_root: pathlib.Path | None = None,
 ) -> None:
     """sessionの終端可否と再開条件を原子的に公開する。
 
     `processes`は所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別で、`resolve`が実行中の記録の
-    終端を判定する入力になる。`interruption`は実行プロセスの不在から引き継いだ終端の理由を残す。
+    終端を判定する入力になる。先頭を所有サーバー、以降を委譲先CLIとする（`resolve`と`session_release`がこの順序で読む）。
+    `interruption`は実行プロセスの不在から引き継いだ終端の理由を残す。
+    `owner_root_session_id`は所有サーバーの状態ディレクトリのルートで、所有サーバーを失った実行中の案内に使う。
+    省略した場合は既存のレコードが持つ値を引き継ぐ。
     `launcher_session_id`はsessionを作成した時点の委譲元sessionの識別子である。
     省略した場合は既存のレコードが持つ値を引き継ぐ。`atk serve`の一覧が、親のセッション記録に
     起動結果が残らない委譲先の親を結ぶために読むため、状態の更新で失わないようにする。
@@ -311,7 +357,7 @@ def publish(
     if turn_id:
         payload["turn_id"] = turn_id
     if processes:
-        payload["processes"] = [{"pid": process.pid, "create_time": process.create_time} for process in processes]
+        payload["processes"] = [process_payload(process) for process in processes]
     if interruption is not None:
         payload["interruption"] = interruption
     if engine == "codex" and fast_mode is not None:
@@ -328,6 +374,9 @@ def publish(
         payload["claude_role"] = claude_role
     path = registry_directory(state_root) / f"{session_id}.json"
     prior = _read_payload(path)
+    owner_root = owner_root_session_id if owner_root_session_id is not None else _recorded_owner_root(prior)
+    if owner_root is not None:
+        payload["owner_root_session_id"] = owner_root
     instance = prior.get("server_instance") if preserve_server_instance else _OWNER_SERVER_INSTANCE
     if isinstance(instance, str) and instance:
         payload["server_instance"] = instance
@@ -351,6 +400,7 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
 
     `running`の記録がプロセスの識別を持ち、記録された全プロセスが存在しない場合は、所有側が終端を公開せずに
     終了したものとして`interrupted`の終端と解決する。1つでも存在する記録と識別を持たない記録は実行中とする。
+    実行中の解決は、実在した委譲先CLIを`live_executors`へ返す。所有状態の判定は`running_ownership`が行う。
     """
     _validate_session_id(session_id)
     path = registry_directory(state_root) / f"{session_id}.json"
@@ -396,6 +446,10 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
         return SessionResolution(Resolution.UNREADABLE)
     instance = _recorded_server_instance(payload)
     turns = _recorded_interrupted_turns(payload)
+    processes = _recorded_processes(payload)
+    owner = processes[0] if processes else None
+    executors = processes[1:]
+    owner_root = _recorded_owner_root(payload)
     if payload["terminal"]:
         interruption = payload.get("interruption")
         return SessionResolution(
@@ -404,9 +458,12 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
             interruption=interruption if interruption in _INTERRUPTION_MESSAGES else None,
             server_instance=instance,
             interrupted_turns=turns,
+            owner_process=owner,
+            executor_processes=executors,
+            owner_root_session_id=owner_root,
         )
-    processes = _recorded_processes(payload)
-    if processes and not any(process.exists() for process in processes):
+    alive = [process for process in processes if process.exists()]
+    if processes and not alive:
         return SessionResolution(
             Resolution.TERMINAL,
             dataclasses.replace(info, status="interrupted"),
@@ -414,8 +471,20 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
             inferred_terminal=True,
             server_instance=instance,
             interrupted_turns=turns,
+            owner_process=owner,
+            executor_processes=executors,
+            owner_root_session_id=owner_root,
         )
-    return SessionResolution(Resolution.RUNNING, info, server_instance=instance, interrupted_turns=turns)
+    return SessionResolution(
+        Resolution.RUNNING,
+        info,
+        server_instance=instance,
+        interrupted_turns=turns,
+        owner_process=owner,
+        executor_processes=executors,
+        live_executors=tuple(process for process in executors if process in alive),
+        owner_root_session_id=owner_root,
+    )
 
 
 def _recorded_processes(payload: dict[str, Any]) -> tuple[ProcessIdentity, ...]:
@@ -537,6 +606,11 @@ def _read_payload(path: pathlib.Path) -> dict[str, Any]:
     except OSError, UnicodeError, json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _recorded_owner_root(payload: dict[str, Any]) -> str | None:
+    value = payload.get("owner_root_session_id")
+    return value if isinstance(value, str) and _SESSION_ID_PATTERN.fullmatch(value) else None
 
 
 def _recorded_server_instance(payload: dict[str, Any]) -> str | None:

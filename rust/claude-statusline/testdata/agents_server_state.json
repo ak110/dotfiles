@@ -2,7 +2,7 @@
   "version": 1,
   "heartbeat_expiry_seconds": 120,
   "state_directory": ["agent-toolkit", "agents-server", "<root_session_id>"],
-  "state_file_keys": ["heartbeat_at", "host_session_id", "sessions", "updated_at", "version"],
+  "state_file_keys": ["heartbeat_at", "host_session_id", "sessions", "updated_at", "version", "writer_process"],
   "session_keys": [
     "context_tokens",
     "context_window",
@@ -29,6 +29,7 @@
     "host_session_id": "host-1",
     "heartbeat_at": "2026-10-07T00:00:00+00:00",
     "updated_at": "2026-10-07T00:00:00+00:00",
+    "writer_process": { "pid": 4242, "create_time": 1791331200.0 },
     "sessions": [
       {
         "session_id": "session-1",

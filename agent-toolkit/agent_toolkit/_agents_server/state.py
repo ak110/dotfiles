@@ -360,6 +360,8 @@ class SessionState:
     # turnを実行する委譲先CLIのプロセスの識別。所有するagents_serverの識別とともに登録簿へ公開し、
     # 所有側が終端を公開せずに終了した記録を、照会側が全プロセスの不在から終端と判定する入力にする。
     executor_process: session_registry.ProcessIdentity | None = dataclasses.field(default=None, repr=False)
+    # 所有するMCPサーバーの状態ディレクトリのルート。登録簿へ公開し、所有サーバーを失った実行中の案内に使う。
+    owner_root_session_id: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_launcher: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
@@ -367,6 +369,7 @@ class SessionState:
     _published_registry_fast_mode: bool | None = dataclasses.field(default=None, repr=False)
     _published_registry_launch_info: session_registry.LaunchInfo | None = dataclasses.field(default=None, repr=False)
     _published_registry_executor: session_registry.ProcessIdentity | None = dataclasses.field(default=None, repr=False)
+    _published_registry_owner_root: str | None = dataclasses.field(default=None, repr=False)
     _terminal_notified: bool = dataclasses.field(default=False, repr=False)
     _lifecycle_running: bool = dataclasses.field(default=False, repr=False)
     _registration_task: asyncio.Task[str | None] | None = dataclasses.field(default=None, repr=False)
@@ -614,9 +617,11 @@ class SessionState:
                 or self.fast_mode != self._published_registry_fast_mode
                 or launch_info != self._published_registry_launch_info
                 or self.executor_process != self._published_registry_executor
+                or self.owner_root_session_id != self._published_registry_owner_root
             )
         ):
             return None
+        owner = session_registry.owner_process()
         return {
             "terminal": registry_terminal,
             "engine": self.engine,
@@ -637,9 +642,11 @@ class SessionState:
             "started_at": self.started_at,
             "session_updated_at": self.updated_at,
             "turn_id": self.turn_id or None,
-            "processes": tuple(
-                process for process in (session_registry.owner_process(), self.executor_process) if process is not None
-            ),
+            # 先頭を所有サーバーとする順序契約を保つため、所有サーバーの識別を得られない場合は委譲先CLIも載せない。
+            "processes": ()
+            if owner is None
+            else tuple(process for process in (owner, self.executor_process) if process is not None),
+            "owner_root_session_id": self.owner_root_session_id,
             "status": typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
             "launcher_session_id": self.launcher_session_id,
         }
@@ -652,6 +659,7 @@ class SessionState:
         self._published_registry_fast_mode = parameters["fast_mode"]
         self._published_registry_launch_info = parameters["launch_info"]
         self._published_registry_executor = executor
+        self._published_registry_owner_root = parameters["owner_root_session_id"]
 
     def public_status(self, *, include_result: bool = False) -> dict[str, Any]:
         """waitとkillが消費する状態を公開契約へ射影する。"""

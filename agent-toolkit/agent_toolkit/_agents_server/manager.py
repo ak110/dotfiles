@@ -365,6 +365,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
     async def _save_started_session(self, session: SessionState) -> list[dict[str, str]]:
         """開始済みの情報を公開し、共有状態などの補助的な保存に失敗してもsessionが存在しないとは扱わない。"""
         warnings: list[dict[str, str]] = []
+        if self._status_writer is not None:
+            # 委譲先の通知と結果が届くルートを登録簿へ残し、所有サーバーを失った後の案内に使う。
+            session.owner_root_session_id = self._status_writer.root_session_id
         try:
             session.touch()
         except OSError as error:
@@ -595,7 +598,10 @@ class AgentsServerManager(manager_wait.ManagerWait):
         if current is None:
             current = await self._resolve_stopped_session(session_id)
         if current is None:
+            await self.take_over_orphaned_session(session_id)
+            await self._raise_if_owner_lost(session_id)
             current = await self._restore_registry_session(session_id)
+        registry_resolved = self._is_registry_resume_state(current)
         prompt = await run_file_operation(
             launch_requests.continuation_prompt,
             current.prompt if current is not None else "",
@@ -615,6 +621,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 # 開始時と同じbest-effort公開で、配送結果と同じsessionの待機登録を保つ。
                 await self._save_started_session(session)
             response = {**response, "root_session_id": self._status_writer.root_session_id}
+        if registry_resolved:
+            response = self._response_with_notices(dict(response), await self._take_registry_notices(session_id))
         return response
 
     async def _deliver_message(self, session_id: str, prompt: str, timeout: float) -> dict[str, Any]:
@@ -747,13 +755,18 @@ class AgentsServerManager(manager_wait.ManagerWait):
             )
         stopped_state = await self._resolve_stopped_session(session_id)
         recovered_state: SessionResumeState | None = None
+        if stopped_state is None and session_id not in self.sessions and session_id not in self._pending_resumes:
+            await self.take_over_orphaned_session(session_id)
+            owner_lost_response = await self._kill_owner_lost(session_id)
+            if owner_lost_response is not None:
+                return await self._stop_after_terminal_response(session_id, owner_lost_response, stop)
         if stopped_state is None:
             recovered_state = await self._restore_registry_session(session_id)
             stopped_state = recovered_state
         if recovered_state is not None:
             response = self._recovered_result_response(recovered_state)
             response["kill_requested"] = False
-            return response
+            return self._response_with_notices(response, await self._take_registry_notices(session_id))
         if stopped_state is not None:
             stopped_response = await self._take_stopped_result(session_id, stopped_state, collector="kill")
             if stopped_response is not None:

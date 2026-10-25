@@ -18,6 +18,7 @@ from agent_toolkit._agents_server import (
     agents_wait,
     context_usage,
     logs_export,
+    owner_lost,
     record_paths,
     result_projection,
     resume_waits,
@@ -208,7 +209,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
     if selected is None and root_session_id is not None:
         selected = _retained_session(root_session_id, args.session_id)
     if selected is None:
-        selected = _registry_session(args.session_id)
+        selected = _registry_session(args.session_id, root_session_id)
     if selected is None:
         report(
             f"unknown session: {args.session_id}",
@@ -251,7 +252,13 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> di
         }
     if detailed and session.get("error"):
         result["error"] = result_projection.refresh_error_diagnostics(session["error"])
+    if detailed:
+        result.update((key, session[key]) for key in _OWNER_LOST_FIELDS if key in session)
     return result
+
+
+_OWNER_LOST_FIELDS = ("ownership", "recorded_processes", "owner_root_session_id", "stranded_notice_count", "next_action")
+"""所有サーバーを失った実行中のsessionだけが持つ診断と案内の項目。"""
 
 
 def _registry_interrupted_turns(session_id: str) -> list[dict[str, Any]]:
@@ -543,10 +550,11 @@ def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] |
     return session
 
 
-def _registry_session(session_id: str) -> dict[str, Any] | None:
+def _registry_session(session_id: str, root_session_id: str | None) -> dict[str, Any] | None:
     """状態ファイルに無いsessionを、session登録簿の解決結果（実行中か終端）から表示する。
 
     所有するagents_serverの状態ファイルが失われたsessionも、登録簿が実行中か、実行プロセスの不在による中断かを示せる。
+    所有サーバーを失った実行中のsessionには、記録プロセス、記録時のルート、旧ルートに残る通知の件数と案内を加える。
     """
     if not shared_layout.valid_session_id(session_id):
         return None
@@ -574,6 +582,9 @@ def _registry_session(session_id: str) -> dict[str, Any] | None:
     error = result_projection.resolution_interruption_error(resolution)
     if error is not None:
         session["error"] = error
+    diagnosis = owner_lost.diagnose(session_id, resolution, own_root_session_id=root_session_id)
+    if diagnosis is not None:
+        session.update(diagnosis.diagnostics(), next_action=owner_lost.OWNER_LOST_NEXT_ACTION)
     return session
 
 

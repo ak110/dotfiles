@@ -7,6 +7,7 @@ import json
 import logging
 import pathlib
 import shutil
+from collections.abc import Callable
 
 from agent_toolkit._agents_server import compaction_metrics, logging_config
 from agent_toolkit._agents_server.shared_layout import RESERVED_DIRECTORY_NAMES, valid_session_id
@@ -50,7 +51,9 @@ def sweep_stale_shared_state(
                 shutil.rmtree(directory)
         except OSError as exc:
             _LOG.warning("stale root状態を回収できませんでした: path=%s error=%s", directory, exc)
-    _sweep_stale_files(session_registry.registry_directory(root), cutoff)
+    _sweep_stale_files(
+        session_registry.registry_directory(root), cutoff, keep=lambda path: _registry_record_is_running(path, root)
+    )
     _sweep_stale_compaction(compaction_metrics.record_directory(root), cutoff)
     referenced = session_registry.recorded_server_instances(root) | _result_server_instances(base)
     logging_config.sweep_instance_diagnostics(
@@ -78,15 +81,29 @@ def _result_server_instances(base: pathlib.Path) -> set[str]:
     return instances
 
 
-def _sweep_stale_files(directory: pathlib.Path, cutoff: float) -> None:
-    """ディレクトリ直下の期限切れファイルを個別失敗で停止せず削除する。"""
+def _registry_record_is_running(path: pathlib.Path, state_root: pathlib.Path) -> bool:
+    """登録簿の記録が終端しておらず、記録プロセスのいずれかが実在するかを返す。
+
+    更新時刻は所有側の公開の契機でしか進まないため、7日を超えて1つのturnを続ける委譲先の記録も期限切れと判定される。
+    削除すると以後の照会は不在と解決するため、記録プロセスが実在する間は保持する。
+    """
+    if path.suffix != ".json" or not valid_session_id(path.stem):
+        return False
+    resolution = session_registry.resolve(path.stem, state_root=state_root)
+    return resolution.state is session_registry.Resolution.RUNNING and (
+        resolution.owner_process is not None or bool(resolution.executor_processes)
+    )
+
+
+def _sweep_stale_files(directory: pathlib.Path, cutoff: float, *, keep: Callable[[pathlib.Path], bool] | None = None) -> None:
+    """ディレクトリ直下の期限切れファイルを個別失敗で停止せず削除する。`keep`が真を返すファイルは保持する。"""
     try:
         paths = tuple(directory.iterdir())
     except OSError:
         return
     for path in paths:
         try:
-            if path.is_file() and path.stat().st_mtime < cutoff:
+            if path.is_file() and path.stat().st_mtime < cutoff and (keep is None or not keep(path)):
                 path.unlink()
         except OSError as exc:
             _LOG.warning("期限切れ共有状態を回収できませんでした: path=%s error=%s", path, exc)
