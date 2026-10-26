@@ -2,17 +2,17 @@
 name: sync-platform-pair
 user-invocable: false
 description: >
-  Linux/Windowsペアファイル（`.sh`と`.cmd`、拡張子なしの`bin/<name>`と`bin/<name>.cmd`、`.sh`と`.ps1`、
+  LinuxとWindowsのペアファイル（`.sh`と`.cmd`、拡張子なしの`bin/<name>`と`bin/<name>.cmd`、`.sh`と`.ps1`、
   `.sh.tmpl`と`-windows.ps1.tmpl`、`*.posix.json`と`*.win32.json`など）を編集するときに使う。
 ---
 
-# Linux/Windowsペアファイル編集支援
+# Linux/Windowsペアファイルの編集支援
 
-本スキルはLinux/Windowsのペアファイルの片方を編集するときに、両側の意味をそろえるための規約を提供する。
+このスキルは、LinuxとWindows向けに用意されたペアファイルの片方を編集する際に、両者の動作や意味の整合性を保つための規約をまとめたものである。
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+本文中の各参照について適用条件を確認し、選んだ資料の該当範囲を読み込んでから、その基準に基づく具体的な判断へ進む。起動時の表にある資料は、起動本文とともに提供される。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -29,17 +29,17 @@ description: >
 
 ## ペアファイルの判別
 
-ペアはfrontmatterのファイル名規則（`.sh`と`.cmd`、拡張子なしの`bin/<name>`と`bin/<name>.cmd`、`.sh`と`.ps1`、`.sh.tmpl`と`-windows.ps1.tmpl`、`*.posix.json`と`*.win32.json`）で判別する。着手時にもう一方も作業対象へ含める。
+ペアとなるファイルは、frontmatter記載のファイル名規則に基づいて判別する。これには`.sh`と`.cmd`、拡張子なしの`bin/<name>`と`bin/<name>.cmd`、`.sh`と`.ps1`、`.sh.tmpl`と`-windows.ps1.tmpl`、`*.posix.json`と`*.win32.json`などが含まれる。作業に着手する際は、もう一方のファイルも必ず作業対象に含める。
 
 ## 編集の要点
 
-- 意味的な変更は両側へ適用し、違いはプラットフォーム固有の書き方だけにとどめる
-- 実行できる側は実行して確かめ、実行できない側も最低限syntax checkする。検証は`dotfiles-development`「開発手順」の特定ファイルに限定する実行形へ両側のパスを渡す
-- 新規ペアは両OS分を同時に追加する。種類によってはOSごとのデプロイのため`.chezmoiignore`への除外エントリも要る
-- PowerShell側でBOMなしUTF-8を出力する場合は`System.Text.UTF8Encoding`のインスタンスを使う（`install-claude.ps1`の`$script:utf8NoBom`）
-- `.sh.tmpl`の`set`のオプションは`.chezmoi-source/run_after_post-apply.sh.tmpl`に合わせる
+- 実質的な処理内容の変更は双方のファイルへ反映し、両者の差異は各プラットフォーム固有の記法や作法の違いのみにとどめる。
+- 実行可能なプラットフォーム側のファイルは実際に動かして動作を確認し、直接実行できない側のファイルについても最低限の構文チェック（構文エラーがないことの確認）を行う。検証する際は、`dotfiles-development`「開発手順」に記載された、対象ファイルを限定して実行するコマンド形式に両ファイルのパスを渡して実行する。
+- 新しくペアファイルを作成する場合は、両方のOS向けファイルを同時に追加する。ファイルの種類によっては、OSごとのデプロイを正しく制御するために`.chezmoiignore`への除外設定の追加も必要となる。
+- PowerShell側でBOMなしUTF-8のテキストを出力する場合は、`System.Text.UTF8Encoding`のインスタンスを使用する（`install-claude.ps1`における`$script:utf8NoBom`の実装を参照）。
+- `.sh.tmpl`に記述する`set`コマンドのオプションは、`.chezmoi-source/run_after_post-apply.sh.tmpl`の記述スタイルに合わせる。
 
-## ローカルで実行するlintとCIジョブの対応
+## ローカルで実行するチェックとCIジョブの対応関係
 
-Linux側とWindows側で分岐するコードのWindows側は`make test`では検証されず、CIの`test-windows`ジョブが検証する。`agent-basics:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。
-ローカルの`make test`で実行されないCIジョブは`dotfiles-development`の`references/verification-values.md`「push前のチェックとCIだけが実行するチェック」が挙げる。
+Linux側とWindows側で処理を分岐させているコードのうち、Windows側の分岐処理はローカル環境の`make test`では検証されず、CI上の`test-windows`ジョブによって検証される。そのため、`agent-basics:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OSの判定に利用する値を引数として受け取るヘルパー関数等に処理を集約し、パラメーター化テストを用いて両方の分岐をテストで網羅できるように実装する。
+ローカルの`make test`では実行されないCIジョブの一覧については、`dotfiles-development`の`references/verification-values.md`「push前のチェックとCIだけが実行するチェック」を参照する。

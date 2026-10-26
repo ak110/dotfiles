@@ -73,7 +73,7 @@ marker保持側は終了0、除去側はzstandard 0.25.0のビルドに到達し
 `update`から`$(MAKE) ci-deps-check`を除いたMakefileでは、同じ試験が失敗することを確かめる。
 `make -n update`では両lockの更新後に`ci-deps-check`の`docker run`が出力された。
 
-## .claude/skills/merge-pr/SKILL.md：マージ前の確認：2026年10月5日
+## .claude/skills/merge-pr/SKILL.md：マージ前の確認事項：2026年10月5日
 
 2026年10月5日、GitHub CLI 2.101.0でPR #138のcheck登録順を確認した。run `37327087407`は同じPR headの`push`起点CIであり、run `37329129743`は`pull_request`起点CIであった。後者の`statusline-version`は先行するcheckの観測後に非同期で登録された。同じheadとcheck名だけでは起点を識別できず、PR起点checkの登録前に必須checkの集合を完全と判定できない。
 
@@ -369,7 +369,7 @@ GitHub CLIの[該当source](https://github.com/cli/cli/blob/v2.102.0/pkg/cmd/run
 再検証では`gh version`を取得し、64KiBを超える行を含む失敗jobへ両コマンドを適用して、終了コード・行数・bytes・末尾の行を比較する。
 該当する失敗jobが無い場合は条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
 
-## agent-basics/skills/bugfix/references/ci-failure-handling.md：分類判定の補助：2026年10月7日
+## agent-basics/skills/bugfix/references/ci-failure-handling.md：分類判断のための詳細検討：2026年10月7日
 
 2026年10月7日、GitLabのリポジトリ（Runnerはgitlab-runner 18.2.1のDocker executor）のAWI処理回で、許容された終了コード4で終わるはずのjobがjobとして終了コード1を報告した事象を再現した。
 手段は次のとおりである。GitLabのjob取得とjob更新の要求に応える最小のHTTPサーバー（偽のjob API）を、コンテナーから到達できるアドレスで起動した。`gitlab/gitlab-runner:v18.2.1`の`run-single --executor docker`（helper `x86_64-v18.2.1`）でjobを1件ずつ実行し、Runnerがjob APIへ送った`exit_code`を報告値として読んだ。
@@ -687,7 +687,7 @@ Antigravityの`explore`と`delegate`はどちらも作業ディレクトリの`A
 再検証では`start`の`model_type`へ`codex:<model>`、`agy:<model>`、`claude:<model>`を指定し、ツールを使わない指示とともに同じ問いを渡す。
 問いは初期コンテキストの文書一覧と、次の各見出しの直後の1文である。
 見出しは`01-agent.md`「QCDと3段判定」、`02-agent-operations.md`「ツール・コマンド運用」、`rules-subagent.md`「確認事項の即時通知」である。
-ほかに`rules-main.codex.md`「メインエージェントだけに適用する規範」と作業ディレクトリの`AGENTS.md`「詳細の参照先」を使う。
+ほかに`rules-main.codex.md`「メインエージェント向け規範」と作業ディレクトリの`AGENTS.md`「詳細な参照先」を使う。
 
 ## agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日
 
@@ -940,7 +940,7 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 入れ子を独立した節へ移して各項目を1行に戻すと、再び一致0件であった。
 再検証は同じ順序付きリストについて入れ子を含む写しと含まない写しを作成し、`--commands=textlint`を指定した同じコマンドで一致件数を比べる。
 
-## agent-basics/skills/writing-standards/references/x-posts.md：投稿の同定と本文：2026年10月10日
+## agent-basics/skills/writing-standards/references/x-posts.md：投稿の同定と本文の取得：2026年10月10日
 
 2026年10月10日、FxEmbedの公開原本を読解した。API版とURLは[API introduction](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)、v1の処理は[src/realms/api/router.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/realms/api/router.ts)、応答の`code`・`message`・`tweet`は[src/embed/status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)、本文・日時・写真の属性は[api-status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-status.ts)と[api-schemas.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-schemas.ts)へ対応付けた。v1は`/:handle/status/:id`、v2は`/2/`付きであり、資料のv1手順をv2の応答構造へ読み替えない。
 

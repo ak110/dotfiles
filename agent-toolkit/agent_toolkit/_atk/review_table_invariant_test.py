@@ -37,7 +37,7 @@ def test_delegation_skill_refers_to_reviewee_response_section() -> None:
     ラベルの定義を転記すると定義元の改訂に追随しない複製が残るため、`reviewee.md`の節への参照だけを持たせる。
     """
     skill = pathlib.Path(__file__).parents[2] / "skills" / "delegation" / "SKILL.md"
-    paragraph = next(line for line in skill.read_text(encoding="utf-8").splitlines() if "応答欄の本文は" in line)
+    paragraph = next(line for line in skill.read_text(encoding="utf-8").splitlines() if "応答欄の記入時は" in line)
     assert "`references/reviewee.md`「レビュー指摘管理表への応答」" in paragraph
     assert not any(f"`{label}`" in paragraph for label in table.RESPONSE_LABELS)
 

@@ -1,7 +1,13 @@
 # agents_serverの共有状態と読み書きの担当
 
-`agents_server`の状態はMCPサーバーのメモリー、状態ディレクトリのファイル、フックが記録するセッション状態およびstatuslineが読む射影の4つの表現に分かれる。
-実行主体ごとに更新できる範囲が異なるため、挙動を確定する際は関係する全ての処理の流れを読む（単一の処理だけを読むと、別の処理が同じ状態を更新しない事実を見逃す）。
+`agents_server`の状態は、以下の4つの形式で保持・表現される。
+
+1. MCPサーバーのメモリー
+2. 状態ディレクトリ内のファイル
+3. フックが記録するセッション状態
+4. statuslineが参照する射影データ
+
+コンポーネント（実行主体）ごとに更新できる範囲が異なる。挙動を確認する際は、関係するすべての処理フローを網羅して確認する（単一の処理だけを追うと、別の処理がその状態を更新していることを見落としやすくなる）。
 
 ## 名指し参照の読込方法
 
@@ -15,271 +21,272 @@
 
 | 実行主体 | 実体 | 寿命 |
 | --- | --- | --- |
-| MCPサーバー | 起動スクリプト`agent-toolkit/agent_toolkit/agents_server_mcp.py`。MCPツールは`_agents_server/mcp_tools.py`、sessionの管理は`_agents_server/manager.py`と`manager_*.py`が持つ | ホストがMCPサーバーを起動する単位ごとに1プロセス。起動時の会話contextから自身の識別に使う値を確定して保持する。各プロセスが保持するsessionの集合は独立する |
-| `atk`のCLI | `atk agents wait`、`atk agents notify`、`atk agents list`、`atk agents show`、`atk agents logs`、`atk lane create/integrate/delete` | 呼び出しごとの短命プロセス。現行のsession識別子を得る。レーン操作は既存のsession登録を読むだけとする |
-| フック | `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`。観測の記録の書き込みと読み取りは`_hooks/agents_server_observations.py`が持つ | イベントごとの短命プロセス。入力JSONで現行のsession識別子を得る |
-| statusline | `rust/claude-statusline` | 描画ごとの短命プロセス。入力JSONで現行のsession識別子を得る |
+| MCPサーバー | 起動スクリプトは`agent-toolkit/agent_toolkit/agents_server_mcp.py`。MCPツールの実装は`_agents_server/mcp_tools.py`、セッション管理は`_agents_server/manager.py`および`manager_*.py`が担当する | ホストがMCPサーバーを起動する単位ごとに1プロセスが存在する。起動時の会話コンテキストから自身の識別情報を確定して保持する。プロセスごとに管理するセッションの集合は独立している |
+| `atk`のCLI | `atk agents wait`、`atk agents notify`、`atk agents list`、`atk agents show`、`atk agents logs`、`atk lane create/integrate/delete`など | コマンド呼び出しごとに起動する短命なプロセス。現在のセッション識別子を取得して動作する。レーン操作では既存のセッション登録情報の参照のみを行う |
+| フック | `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`。観測記録の読み書きは`_hooks/agents_server_observations.py`が担当する | ツール実行イベントごとに起動する短命なプロセス。入力JSONから現在のセッション識別子を取得する |
+| statusline | `rust/claude-statusline` | 描画更新ごとに起動する短命なプロセス。入力JSONから現在のセッション識別子を取得する |
 
-`CLAUDE_CODE_SESSION_ID`は子プロセスの起動時に現行のsession識別子が注入される値である。
-Claude Codeが同一プロセスのままsession識別子を切り替えた場合、切替後に起動する短命プロセスは新しい値を得る一方、長命なMCPサーバーは起動時の値を保持し続ける。
-このため`start`の`task`が起動本文へ添える委譲元の記録情報（`atk-auto`の`kind="launcher-record"`。`ManagerBase.launcher_record_context`が組み立てる）も、会話の切替後は古い会話を指し得る。消費側は明示された出所と取得済みの`record`・`line`を優先し、対象発話との一致を確かめる。
-`session-review-evidence`の`--delegation-record parent`と`--delegation-record root`は委譲先自身を起点に直接の委譲元と最上位の会話を解決する。
-親子判定は`_common/session_parents.py`を共有し、記録に残る起動結果を登録簿の作成時点の委譲元より優先する。
-MCPサーバープロセスには`CLAUDE_PID`が渡らないため、Claude Codeプロセスを指す識別子を環境変数から解決できない。
+環境変数`CLAUDE_CODE_SESSION_ID`には、子プロセスの起動時に現在のセッション識別子が設定される。
+Claude Codeが同一プロセス内でセッション識別子を切り替えた場合、切り替え後に起動される短命プロセスは新しい識別子を取得できるが、常駐している長命なMCPサーバーは起動時の識別子を保持し続ける。
+そのため、`start`ツールの`task`が委譲プロンプトに付与する委譲元の記録情報（`atk-auto`の`kind="launcher-record"`。`ManagerBase.launcher_record_context`が生成）も、会話の切り替え後には以前の会話を指している可能性がある。データを利用する側は、明示された出所情報や取得済みの`record`・`line`を優先し、対象の発話と一致しているか確認する必要がある。
+`session-review-evidence`の`--delegation-record parent`および`--delegation-record root`は、委譲先自身を起点として直接の委譲元や最上位の会話を解決する。
+親子関係の判定ロジックは`_common/session_parents.py`に共通化されており、ログ等の記録に残っている起動結果を、登録簿作成時の委譲元情報よりも優先して扱う。
+なお、MCPサーバープロセスには`CLAUDE_PID`が渡されないため、Claude Codeのプロセス識別子を環境変数から直接解決できない。
 
-Codex CLIはstdio MCPサーバーへ親環境を限定して渡す。届くのはCodexの既定の許可リストにある変数、`env_vars`に列挙した名前のうち親環境に値がある変数、`env`で明示した値である。
-外側の`agents_server`は`thread/start`・`thread/resume`の`config.mcp_servers.agents_server`へ、`env`でルートsession識別子と書込主体識別子を配送し、`env_vars`で保存先・公開設定・proxy設定の変数名を渡す。
-変数名と除外条件は`agent_toolkit/_common/mcp_environment.py`が持つ。静的な配布設定は`environment_variable_names`、内側MCPの開始・再開は`runtime_environment_variable_names`を使う。
-静的な集合は認証・接続先・モデル設定、保存先、通信、ロケール、keyring接続などの公開名を含み、生成元の環境によらず共通とする。
-公開設定の`AGENT_TOOLKIT_CONFIG_`名は`_atk/config.py`の`config_environment_variable_names`が現行キーと旧キーから返す。旧キーも子へ配送して拒否と置換案内を保つ。
-動的な集合は実際の親環境の全名前から起動元の会話・端末・プロセスのcontextと上流の継承禁止名を除く。除外は大文字・小文字を区別せず、TOKEN・KEYという名前だけで認証名を除外しない。
-miseの設定・信頼状態・導入先・キャッシュの所在は`MISE_CONFIG_DIR`・`MISE_STATE_DIR`・`MISE_DATA_DIR`・`MISE_CACHE_DIR`の公開名で引き継ぎ、XDGを変更しても呼出元が選んだmiseの所在と信頼設定を保つ。
-Codex向けプラグイン設定の生成器（`pytools/_internal/codex_plugin_manifests.py`）も、同じ集合を`agents_server`と`pyfltr`の`env_vars`へ射影する。
-配布設定は変数名だけを持ち、子へ届くのは親環境に値がある変数に限られる。`env_vars`はCodex向けの設定だけが持ち、Claude向けの`.mcp.json`とAgent Plugins向け`mcp.json`は従来の形式を保つ。
-通常起動・再開・多段委譲でも、呼出元が選んだ設定、キューと状態の名前空間を引き継ぐ。owner・状態書込主体は各起動が明示した値を優先する。
-外側の静的なMCP境界ですでに失われた未知名は内側から回復せず、親プロセスや認証ファイルの読直しで補わない。
-atk自身のuv同期先はlauncherが固定し、子へは呼出元の`UV_PROJECT_ENVIRONMENT`の値と未設定の別を戻す。
-委譲先CLIとprocess-loop・run-skillが起動する最上位の会話へは、起動元の会話・端末・プロセスのcontextを継承させない。
-除去は`_common/mcp_environment.py`の`strip_conversation_context`へ集約し、MCPサーバーの環境整備、`atk wi`のall-reposでのManager生成と`_atk/orchestrator.py`の`child_env`が使う。
-除去する名前は内側MCPの`env_vars`と同じ`_NON_INHERITABLE_NAMES`で定め、全backendは整備後の環境を継承する。
-ルート、書込主体、委譲元の記録情報と引き継ぎ記録先は除去前の値から確定し、各backendが明示するownerと委譲の印は除去後に設定する。
-起動区分の印（`AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`）も同じく除去後に設定する。Claude backendはSDKのenvへ全起動区分で、Codex backendはsessionごとのApp Serverの子環境へ開始時の起動区分と再開時の`SessionState.launch_kind`で設定し、モデル一覧と`thread/read`の照会用のApp Serverからは除く。委譲先のhookが軽量起動を判別するために読む。
-Claudeの`inherit`接続でも、この会話contextの除去を適用し、認証・接続設定は通常の継承契約に従う。
-観測の根拠は`docs/development/audit-records.md`の「.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md：実行主体：2026年10月18日」にある。
-配送するルートはManagerが持つ`StatusFileWriter.root_session_id`である。環境にownerが無くManagerが生成したルートも、Codex App Serverの子環境、threadの開始・再開のMCP環境とhost索引、Claude SDKの新規・再開環境、Antigravityの子環境へ同じ入力として渡す。backendはこの入力から通知先の所有者を決める。Antigravityではルート配送だけを保証し、固有の通知元識別子の解決と通知成功は別の課題として扱う。計画の所有記録とUWIの投入元の解決はこの配送と別の契約であり、Managerが生成したプロセス専用のroot（`mcp-`で始まる識別子）は会話を表さないため、所有会話と投入元の記録から除く。判定は`agent-toolkit/agent_toolkit/_plan/owner_records.py`の`resolve_conversation_session_id`が持つ。
-CodexのPostToolUseフックは、所有session識別子があり環境変数から書込主体を解決できない場合、入力JSONの検証済み現行session識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当として補完する。PostToolUseフックと`atk agents wait`は`hosts`索引が存在する場合は委譲元のthreadから書込主体を逆引きし、状態ファイルと待機対象登録を同じ名前空間で扱う。索引が無い場合は補完した識別子をそのまま書込主体として使う。
-Codex backendは、子sessionを起動した委譲先から`atk agents wait`に成功した`commandExecution`を受け取る。
-`_agents_server/wait_output_tracking.py`の`consume_agents_wait_output`は回収済みの終端識別子を追跡集合から外す。
-読む対象は人の端末の標準出力のJSON Lines、エージェント環境で標準出力へ直接書いた要約の`終端行:`、要約が長く`atk`の共通の自動保存へ回った場合の`保存先:`が示す保存結果である。
-標準エラーの保存先は別の標識で返し、待機のJSON Linesとして読まない。保存先は結果回収より先に開き、準備できなければ結果を消費しない。
-待機失敗と読取不能の結果は追跡集合へ残す。
+Codex CLIは、stdio経由のMCPサーバーへ親環境の変数を限定して渡す。渡されるのは、Codexの既定の許可リストにある変数、`env_vars`に列挙された変数のうち親環境に値が存在するもの、および`env`で明示された値に限られる。
+外側の`agents_server`は、`thread/start`や`thread/resume`の`config.mcp_servers.agents_server`に対して、`env`経由でルートセッション識別子と書込主体識別子を渡し、`env_vars`経由で保存先・公開設定・プロキシ設定の環境変数名を渡す。
+対象の変数名と除外条件は`agent_toolkit/_common/mcp_environment.py`で管理されている。静的な配布設定には`environment_variable_names`を使い、内部MCPの開始・再開時には`runtime_environment_variable_names`を使う。
+静的な変数集合には、認証・接続先・モデル設定、保存先、通信、ロケール、keyring接続などの公開名が含まれ、実行元の環境に関わらず共通して適用される。
+公開設定である`AGENT_TOOLKIT_CONFIG_`から始まる変数名は、`_atk/config.py`の`config_environment_variable_names`が現行キーと旧キーの双方から取得して返す。旧キーも子プロセスへ渡すことで、設定の拒否や置換案内の挙動を維持する。
+動的な変数集合は、実際の親環境の全変数から、起動元の会話・端末・プロセスのコンテキストと上流で継承禁止とされた変数を除外して生成する。除外判定は大文字・小文字を区別せずに行うが、単に名前にTOKENやKEYが含まれているという理由だけで認証用の変数を除外することはない。
+miseの設定、信頼状態、インストール先、キャッシュの場所は、`MISE_CONFIG_DIR`、`MISE_STATE_DIR`、`MISE_DATA_DIR`、`MISE_CACHE_DIR`の公開変数名で引き継がれる。これにより、XDG環境変数が変更された場合でも、呼び出し元が選択したmiseの配置先や信頼設定がそのまま維持される。
+Codex向けプラグイン設定の生成処理（`pytools/_internal/codex_plugin_manifests.py`）も、この集合を`agents_server`と`pyfltr`の`env_vars`に反映する。
+配布設定は変数名の一覧のみを保持するため、子プロセスに実際に渡るのは親環境で値が設定されている変数だけである。なお、`env_vars`を持つのはCodex向けの設定のみであり、Claude向けの`.mcp.json`やAgent Plugins向けの`mcp.json`は従来の形式を維持する。
+通常起動、再開、多段委譲のいずれの場合でも、呼び出し元が選択した設定、キュー、および状態の名前空間を引き継ぐ。ただし、ownerや状態書込主体については、各起動時に明示された値を優先する。
+外側の静的なMCP境界ですでに欠落した未知の変数は、内側から復元することはせず、親プロセスや認証ファイルを再読み込みして補うことも行わない。
+`atk`自身のuv同期先はランチャー側で固定されているため、子プロセスには呼び出し元の`UV_PROJECT_ENVIRONMENT`の値（未設定の場合は未設定である状態）をそのまま戻す。
+委譲先CLIや、process-loop・run-skillが起動する最上位の会話に対しては、起動元の会話・端末・プロセスのコンテキストを継承させない。
+このコンテキスト除去処理は`_common/mcp_environment.py`の`strip_conversation_context`に集約されている。MCPサーバーの環境整備や、`atk wi`のall-reposでのManager生成、`_atk/orchestrator.py`の`child_env`で使用される。
+除去対象の名前は、内部MCPの`env_vars`と同じ`_NON_INHERITABLE_NAMES`で定義されており、すべてのバックエンドがこの整備済み環境を継承する。
+ルート、書込主体、委譲元の記録情報、および引き継ぎ記録先のパスは、除去前の環境変数から確定し、各バックエンドが明示するownerや委譲フラグは除去後の環境に設定する。
+起動区分を示すフラグ（`AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`）も同様に除去後に設定する。Claudeバックエンドでは全起動区分でSDKのenvに設定する。CodexバックエンドではセッションごとのApp Serverの子環境に対して、開始時の起動区分と再開時の`SessionState.launch_kind`を設定する（モデル一覧や`thread/read`の問い合わせ用App Serverからは除外する）。委譲先フックはこの値を参照して軽量起動かどうかを判別する。
+Claudeの`inherit`接続の場合でも同様に会話コンテキストの除去を適用し、認証や接続設定は通常の継承ルールに従う。
+これらの観測根拠は`docs/development/audit-records.md`の「.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md：実行主体：2026年10月18日」に記録されている。
 
-Codex App Serverの所有単位は委譲sessionである。Codex backendはsessionごとにApp Serverを起動し、そのsessionの開始・継続・再開・中断を所有する接続へ送る。サーバー要求への応答と接続障害の反映も、その接続を所有するsessionだけを対象にする。
-App Serverはthreadごとのstdio MCPサーバーを子孫として起動し、`thread/unsubscribe`の応答後も猶予の間は生存させる（2026年10月16日にCodex CLI 0.163.0で観測）。このため購読解除の応答は資源解放の完了を表さず、完了の判定にはApp Serverと子孫の終了を使う。
-sessionの資源解放（`stop`、保持期限の経過、起動候補の断念、MCPサーバーの停止）は、所有するApp Serverと、App Serverへの終了要求の直前に列挙した子孫の終了をOS上で確認して完了とする（App Serverの終了後は子孫の親が変わり、PIDから辿れなくなるため）。終了を確認できない対象が残れば、接続の所有を保ったまま再試行できる失敗を返し、登録簿は解放前の記録のまま残す。
-解放後の`send_message`は新しいApp Serverで`thread/resume`して同じ会話を再開する。モデル一覧と`thread/read`の照会は専用のApp Serverを起動し、応答の後に終了させる。
+子環境へ伝達するルートセッション識別子には、Managerが保持する`StatusFileWriter.root_session_id`を使用する。環境変数にownerが存在せずManagerが自動生成したルート識別子であっても、Codex App Serverの子環境、thread開始・再開時のMCP環境とhosts索引、Claude SDKの新規・再開環境、およびAntigravityの子環境に対して共通の入力として渡される。各バックエンドはこの入力情報に基づいて通知先の所有者を決定する。Antigravity環境ではルート識別子の伝達のみを保証しており、固有の通知元識別子の解決や通知の成功可否は個別の課題として扱う。計画の所有記録やUWIの投入元を解決するルールは本伝達の契約とは異なり、Managerが生成したプロセス専用のルート（`mcp-`で始まる識別子）は特定の会話を表すものではないため、所有会話や投入元の記録対象から除外される。この判定ロジックは`agent-toolkit/agent_toolkit/_plan/owner_records.py`の`resolve_conversation_session_id`が管理している。
+CodexのPostToolUseフックは、所有セッション識別子が存在する一方で環境変数から書込主体を解決できない場合、入力JSONに含まれる検証済みの現在セッション識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当の値として補完する。PostToolUseフックと`atk agents wait`は、`hosts`索引が存在していれば委譲元のthreadから書込主体を逆引きし、状態ファイルと待機対象登録を同一の名前空間で管理する。索引が存在しない場合は、補完した識別子をそのまま書込主体として扱う。
+Codexバックエンドは、子セッションを起動した委譲先から`atk agents wait`の実行に成功した`commandExecution`を受け取る。
+回収済みの終了セッション識別子は、`_agents_server/wait_output_tracking.py`の`consume_agents_wait_output`によって追跡対象の集合から除外される。
+読み取りの対象となるのは、ターミナル等の標準出力に出力されたJSON Lines、エージェント環境で標準出力に直接書き込まれた要約の`終端行:`、ならびに要約が長文となって`atk`の自動保存機能により保存された場合の`保存先:`が示すファイル内容である。
+標準エラー出力の保存先は別のラベルで返されるため、待機処理のJSON Linesとしては読み取らない。保存先ファイルは結果の回収処理を行う前にあらかじめ開き、準備が整わない限り結果データを消費しない。
+待機に失敗した場合や内容が読み取れなかった結果については、追跡対象の集合に残したまま保持する。
+
+Codex App Serverの管理・所有単位は委譲セッションごとである。Codexバックエンドはセッション単位で個別にApp Serverを起動し、そのセッションの開始・継続・再開・中断のリクエストを該当の接続へ送信する。サーバーからのリクエストに対する応答や接続エラーの通知も、その接続を所有するセッションのみを対象として処理する。
+App Serverはthreadごとのstdio MCPサーバーを子孫プロセスとして起動するが、`thread/unsubscribe`のレスポンスを返した後もしばらくの間プロセスを存続させる挙動がある（2026年10月16日にCodex CLI 0.163.0で確認）。そのため、購読解除の応答が返ったことだけではリソースの解放完了とはみなせず、完了判定にはApp Serverおよびその子孫プロセスの実際の終了確認を用いる。
+セッションのリソース解放（`stop`の実行、保持期限切れ、起動候補の取り下げ、MCPサーバー停止など）を行う際は、所有するApp Serverと、そのApp Serverへの終了要求の直前に取得した子孫プロセスの一覧がOS上で実際に終了したことを確認して完了とする。App Serverが先に終了してしまうと、子孫プロセスの親PIDが変わり、追跡できなくなるためである。終了が確認できないプロセスが残っている場合は、接続の所有関係を維持したまま再試行可能なエラーを返し、セッション登録簿も解放前の状態を保持する。
+リソース解放後に`send_message`が呼び出された場合は、新たなApp Serverを起動して`thread/resume`を実行し、同一の会話を再開する。モデル一覧の取得や`thread/read`で参照する際は、専用のApp Serverを一時的に起動し、応答を受け取った後に終了させる。
 
 ## 共有状態ごとの保持先と読み書きの担当
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
-| session一覧と`status`・`progress` | MCPサーバーのメモリーの`SessionState` | MCPサーバー | managerと、当該sessionのengineを所有するbackend。各backendは共有一覧から自身のengineだけを検索・状態遷移の対象とし、接続障害時も他engineを変更しない |
-| 再開要求の配送結果 | 要求ごとの`ResumePrompt.delivery`。`PendingResume`が同じ要求から読む | 再開の共通応答と配送結果の消費側 | backendが受理・開始不能・開始不確定を`record_delivery`で確定する。成功した再開は`reply_started`を保持し、後続turnの終端では変更しない |
-| Codex会話の選択済みprovider ID、通常サブスクのprovider IDと検証済みの会話状態生成元`codex_state_provider` | `SessionState`、解放時の`SessionResumeState`と既存session登録簿の内部再開情報 | Codex backendとmanagerの復元処理。公開の状態・応答・通知・結果の射影は読まない | Codex backendが接続先を確定し、新規開始と互換性を確認した再開だけが生成元を確定する。所有MCPサーバーが解放済み記録にも保存し、既存の7日掃引へ委ねる。認証情報は保存しない |
-| Claude会話の役割（`orchestrator`・`delegate`）、選択済みの接続（`api`・`subscription`・`inherit`）とAPI接続のenvファイルの絶対パス | `SessionState`の`claude_role`・`claude_connection`・`claude_api_env_file`、`SessionResumeState`とsession登録簿の内部再開情報 | Claude backend、managerの復元処理とprocess-loopの再開時の可用性判定 | 接続はClaude backendが起動時と切替時に確定し、所有MCPサーバーが保存する。process-loopのオーケストレーターも役割と接続を登録する。新規sessionは`claude_orchestrator_api_only`と`claude_worker_api_first`で選び、再開は保存した接続を使う。サブスクリプション優先で上限によりAPIへ移した委譲先は、`claude_subscription_retry_at`をメモリーだけに保持し、その時刻後の最初の追送・自動再開でサブスクリプションへ戻す。env未設定で始めた`inherit`会話は親環境と通常認証を維持する。envの値は各起動で読み、登録簿と公開状態へ複製しない |
-| 引き継ぐ用途・配送済み追送・各turnの最終応答全文と終端エラー | `SessionState`、`SessionResumeState`とsession登録簿の`LaunchInfo`。解放済み記録では内部の`handoff_info` | managerの引き継ぎ起動と再開処理 | 所有MCPサーバーが起動・追送・終端時に更新し、解放時も既存登録簿へ保持する |
-| 全体の現行要求と通常委譲の作業記録 | 各会話のmanaged-temp直下の`work-contract.md`と、通常の`task`・`delegate`へ割り当てる専用の引き継ぎ記録先 | 起動処理が全体記録の所在を、`start`の`whole_contract_path`、直接の委譲元が起動時に受領した参照（session登録簿の起動本文）、所有会話（起動時に保持した会話か、それがプロセス専用ルートか不在ならManagerが解決した委譲元会話）の`work-contract.md`の順に解決し、委譲先へ参照を配送する。解決できない起動は拒否する。委譲元は終端後に専用記録を検収する | メインが全体記録、委譲先が自身の専用記録を作成・更新する。MCPは記録先を確定して同じパスを起動本文と応答へ渡し、本文の書込は担当へ残す。後任は同じ引き継ぎ記録を継続し、軽量起動は委譲元の記録へ対応付ける |
-| statusline・CLI向けの状態ファイルと、書いたプロセスの識別`writer_process` | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json`。起動時に同名のファイルを生存中の別プロセスが書いていれば`<書込主体>-p<pid>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show`、同じルートに属する他のMCPサーバー（稼働中の子孫を持つ終端sessionの表示判定）、全ルートを読む資源記録 | そのルートに属する各MCPサーバー。各MCPサーバーは自身のファイルだけを書く |
-| 書込主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイルの`host_session_id`を委譲元のsession識別子へ解決する主体、PostToolUseフック、`atk agents wait` | そのsessionを起動したMCPサーバー |
-| 状態ファイルの`host_session_id`（そのファイルが載せるsessionの委譲元） | 状態ファイル | statuslineと`atk agents list`の人向けツリー（親子付けの親IDとして使う。`status_reader.load_root`が各sessionへ付ける）、同じルートに属する他のMCPサーバー（稼働中の子孫の判定） | その状態ファイルを書き込むMCPサーバー。状態ファイル名（`owner_status_file`）は書込主体の識別子であり、結果の所有権の判定に使い、親IDへ転用しない |
-| 状態ファイルの生存の印`heartbeat_at` | 状態ファイルを書き込むMCPサーバー | statusline、同じルートに属する他のMCPサーバー | その状態ファイルを書き込むMCPサーバー |
-| 終端結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`の存在。CLIが回収途中の結果は下記のrun別退避物へ移る | MCPサーバー、`atk agents wait`、statusline | MCPサーバー（作成と削除）、待機CLI（自身の書込主体が公開した結果だけを削除） |
-| CLI待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<書込主体>.lock`のファイルロック | `atk agents wait`、Stop時の未観測作業の助言 | `atk agents wait`。1書込主体につき同時に1実行だけが全対象を待ち、ロックファイル自体は解放後も保持する |
-| CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`と`current.json` | 先行waitへ合流する後続`atk agents wait`、待機対象0件（終了コード10）と`consumed`（終了コード8）の診断を組み立てる後続`atk agents wait` | 先行waitが`running`と`published`および再待機が必要かを示す`continuable`を書き、結果を返した後続waitが`consumed`を書く |
-| CLI待機が回収途中の結果と通知 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>/results/<session_id>.json`と`notices/<通知ファイル>` | 中断後に同じrunを再開する`atk agents wait` | 待機CLI。結果は所有者を確認した排他区間で、通知は原本の削除前に退避する |
-| CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop時の未観測作業の助言 | PostToolUseフック（子sessionの開始とreply再開時の追加。`atk agents wait`と同じく索引を経たルートへ登録する）、`atk agents wait`（待機開始時の追加と回収・破棄時の削除）。助言側は読むだけとする |
-| 全sessionの終端登録と再開情報、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別（pidと起動時刻。`processes`の先頭が所有サーバー、以降が委譲先CLI）、所有サーバーのルート（`owner_root_session_id`）、所有するagents_serverの起動単位（`server_instance`）、中断で終わったturnの履歴（`interrupted_turns`。turn番号・中断の理由・そのturnを所有した起動単位。新しい順に16件）、所有側による解放済みの理由と時刻、作成時点の委譲元（`launcher_session_id`） | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー、保持しない識別子への応答を診断するMCPサーバー、`atk agents wait`、`atk agents show`（状態ファイルに無いsessionの実行中・終端）、`atk serve`のセッション一覧（ローカルとリモートヘルパー。委譲元だけを親子付けに読む）、`session-review-evidence`（共通の親子判定が登録簿の委譲元を起動結果の補助に読む）、`atk lane create/delete`（専用worktreeを使う担当のcwdと、`session_registry.resolve`の解決結果から終了を判定する）、`atk lane integrate`（同じ解決結果に加え、起動本文`prompt`の1行目から役割文書を特定して書込宣言を読み、`launcher_session_id`から呼出元の委譲元の連鎖をたどる）、通常の`task`・`delegate`を起動するMCPサーバー（委譲元sessionの起動本文から受領済みの全体作業契約の参照を読む。解放済みの記録は`handoff_info`の起動本文を読む）。実行状態を読む主体は`session_registry.resolve`で解決し、実行プロセスの不在による中断を同じく扱う | そのsessionを所有するMCPサーバー（停止時の終端公開と中断turnの履歴への追加、委譲先CLIを起動し直した時点の識別の更新を含む）。所有者のいない`running`の記録への終端の公開だけは、再起動後に同じ識別子を照会したMCPサーバーも行う（下記「再起動をまたぐsessionの解決」の条件と、所有サーバーを失った実行中への明示の`kill`）。process-loopはオーケストレーターの記録を作成し、`claude`の子プロセスを委譲先CLIとして加える。この公開は元の`server_instance`を保ったまま中断turnを履歴へ加える。各書込は既存の`interrupted_turns`を引き継ぎ、解放済みへの置換も`server_instance`と`interrupted_turns`を写す |
-| 終端済み委譲sessionの解放要求と応答 | `<状態ディレクトリ>/sessions/<uuid>.release-request`と同名の`.release-response` | lane回収CLIと対象sessionを所有するMCPサーバー | CLIが要求を作成し、所有MCPサーバーが終端と所有を再検収して結果保持のstopを実行し応答する。CLI完了時に両ファイルを回収する |
-| Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | `atk run-script session-review-evidence` | agents_serverのCodex backend |
-| 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents wait`。登録簿から解決したsessionは、生存の印が有効な書込主体のいない他のルートからも`show`・`send_message`・`kill`・`atk agents wait`が読む | `atk agents notify`が作成し、MCP待機とCLI待機、前列の他ルートからの回収が回収時に削除する |
-| ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`、`send_message`、`list`など、`root_session_id`を明示する応答の値を操作名によらず使う） |
-| MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
-| MCPサーバーの起動単位の終了診断（開始、Managerの所属ルート、受信シグナル、stdio切断、停止で中断したturn、正常・例外終了、起動ランチャーが観測した終了状態と標準エラー末尾） | `<診断ログのディレクトリ>/agents-server-instances/<server_instance>.jsonl`（追記のみのJSON Lines。1ファイル64KiBまで） | 中断を返すMCPの`show`、`atk agents show`・`atk agents wait`（`diagnostics.status`を表示時点で判定する）、MCPサーバーの起動時とSessionEndの掃引、終了の経過を調べる主体 | その起動単位のMCPサーバー（`_agents_server/logging_config.py`）と、そのサーバーを子として起動して終了を待つ`scripts/launch.py`（`process_exited`だけ）。ランチャーは環境変数`AGENT_TOOLKIT_AGENTS_SERVER_LAUNCH_RECORD`の一時ファイルでサーバーから所在を受け取る |
-| 委譲先CLI自身の診断ログ | `<診断ログのディレクトリ>/delegate-debug/<起動時刻>-<session識別子>-<起動区分>.log` | 初期化失敗を事後に調べる主体 | Claude backend（作成、初期化完了後の改名と、保持世代を超えた記録の削除） |
-| Claude起動別の合成settings | `<状態ディレクトリ>/<ルートsession識別子>/claude-settings/settings-<一意な値>.json`。rootを受領しない直接構築では`settings-<一意な値>`をrootとして使う | 当該起動のClaude CLI | Claude backendの`claude_settings.py`。親設定がファイルの場合とAPI envを合成する場合に、所有者のみ読める起動別ファイルを作成する。各起動は自分のファイルだけを接続終了・起動失敗・依存確認終了で回収する |
-| Antigravityの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、セッションのイベント経過を調べる主体 | Antigravity backend（公開stream-jsonイベントの追記） |
-| OpenCodeの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/opencode/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、推定費用の集計 | OpenCode backendと共通の`cli_turn.py`。公開JSONイベントと、入力・要求モデルを示す`agent_toolkit_input`を追記する。要求モデルは実モデルの観測値と分ける |
-| engineの可用性を理由に除外した候補（解除待ちの対象のClaude利用上限は記録せず、旧版の理由`429`のClaude候補は読み込み時に除外の根拠から外す） | `<状態ディレクトリ>/unavailable-candidates.json` | 起動の候補列を解決するMCPサーバー | その状態ディレクトリを共有する各MCPサーバー（ファイルロック下の読み書き） |
+| session一覧と`status`・`progress` | MCPサーバーのメモリー上の`SessionState` | MCPサーバー | Manager、および該当セッションのengineを所有するバックエンド。各バックエンドは共有一覧から自身が所有するengineのみを検索・状態遷移の対象とし、接続障害が発生した場合でも他のengineの状態は変更しない |
+| 再開要求の配送結果 | リクエストごとの`ResumePrompt.delivery`（`PendingResume`は同一リクエストから読み取る） | 再開処理の共通レスポンス、および配送結果の受領側 | バックエンドが`record_delivery`を通じて受理・開始不能・開始不確定の各状態を確定する。再開に成功した場合は`reply_started`を保持し、後続ターンの終了時に上書きすることはない |
+| Codex会話の選択済みprovider ID、通常サブスクのprovider IDと検証済みの会話状態生成元`codex_state_provider` | `SessionState`、リソース解放時の`SessionResumeState`、および既存セッション登録簿内の内部再開情報 | Codexバックエンド、およびManagerの復元処理（公開用の状態、レスポンス、通知、結果の射影データからは読み取らない） | Codexバックエンドが接続先を確定し、新規開始時および互換性を確認した再開時のみ生成元を確定する。所有MCPサーバーはリソース解放済みの記録にもこれを保存し、既存の7日間掃引処理に委ねる。認証情報は保存しない |
+| Claude会話の役割（`orchestrator`・`delegate`）、選択済みの接続（`api`・`subscription`・`inherit`）とAPI接続のenvファイルの絶対パス | `SessionState`の`claude_role`・`claude_connection`・`claude_api_env_file`、`SessionResumeState`、およびセッション登録簿の内部再開情報 | Claudeバックエンド、Managerの復元処理、およびprocess-loop再開時の可用性判定 | 接続方式はClaudeバックエンドが起動時および切り替え時に確定し、所有MCPサーバーが保存する。process-loopのオーケストレーターも自身の役割と接続方式を登録する。新規セッションは`claude_orchestrator_api_only`と`claude_worker_api_first`の設定に従って選択され、再開時には保存済みの接続方式を使用する。サブスクリプション優先で起動し、利用上限到達によってAPI接続へ切り替えた委譲先は、`claude_subscription_retry_at`をメモリー上でのみ保持し、指定時刻を過ぎた最初のプロンプト追送や自動再開のタイミングでサブスクリプション接続へと戻す。env未指定で起動した`inherit`会話は親環境の設定と通常の認証情報を維持する。envファイルの値は各起動時に直接読み取るものとし、登録簿や公開状態へ値を複製・保存することはない |
+| 引き継ぐ用途・配送済み追送・各turnの最終応答全文と終端エラー | `SessionState`、`SessionResumeState`、およびセッション登録簿の`LaunchInfo`（リソース解放済みの記録では内部の`handoff_info`） | Managerの引き継ぎ起動処理および再開処理 | 所有MCPサーバーが起動時・追送時・終了時に更新し、リソース解放後も既存の登録簿へ保持する |
+| 全体の現行要求と通常委譲の作業記録 | 各会話のmanaged-temp直下にある`work-contract.md`、および通常の`task`・`delegate`に割り当てられる専用の引き継ぎ記録先ファイル | 起動処理が全体記録の所在を解決する。探索順序は、`start`の`whole_contract_path`、直接の委譲元が起動時に受け取った参照（セッション登録簿の委譲プロンプト）、所有会話（起動時に保持した会話、またはそれがプロセス専用ルートもしくは不在ならManagerが解決した委譲元会話）の`work-contract.md`の順とし、特定した参照を委譲先へ渡す。参照を解決できない起動リクエストは拒否する。委譲元は委譲先セッションの終了後に専用記録の内容を検収する | メインエージェントが全体記録を作成・更新し、委譲先エージェントが自身の専用記録を作成・更新する。MCP側は記録先のパスを確定して委譲プロンプトとレスポンスに渡すのみとし、ファイル本文の書き込みは各エージェントの担当とする。後任エージェントは前任と同じ引き継ぎ記録を継続して利用し、軽量起動の場合は委譲元の記録に対応付ける |
+| statusline・CLI向けの状態ファイルと、書いたプロセスの識別`writer_process` | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json`（起動時に同名ファイルを別の生存プロセスが使用していれば`<書込主体>-p<pid>.json`） | statusline、`atk agents wait`、`atk agents list`、`atk agents show`、同一ルートに属する他のMCPサーバー（稼働中の子孫を持つ終了セッションの表示判定時）、および全ルートを参照するリソース監視処理 | そのルートに属する各MCPサーバー。各MCPサーバーは自身が担当するファイルのみを更新する |
+| 書込主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイル内の`host_session_id`を委譲元のセッション識別子へ解決する処理、PostToolUseフック、`atk agents wait` | そのセッションを起動したMCPサーバー |
+| 状態ファイルの`host_session_id`（そのファイルが載せるsessionの委譲元） | 状態ファイル | statuslineおよび`atk agents list`のツリー表示（親子の関連付けにおける親IDとして利用。`status_reader.load_root`が各セッションに付与する）、同一ルートに属する他のMCPサーバー（稼働中の子孫プロセスの判定） | その状態ファイルを書き込むMCPサーバー。なお、状態ファイルのファイル名（`owner_status_file`）は書込主体の識別子であり、結果の所有権判定にのみ用い、親IDとして転用することはない |
+| 状態ファイルの生存の印`heartbeat_at` | 状態ファイル内 | statusline、同一ルートに属する他のMCPサーバー | その状態ファイルを書き込むMCPサーバー |
+| 終端結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`の存在（CLIが回収途中の結果は、後述のrun別退避ディレクトリへ移動する） | MCPサーバー、`atk agents wait`、statusline | MCPサーバー（作成および削除）、待機CLI（自身と同じ書込主体が公開した結果のみを削除） |
+| CLI待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<書込主体>.lock`のファイルロック | `atk agents wait`、Stop処理時の未確認作業に関する助言機能 | `atk agents wait`。1つの書込主体に対して同時に1つの実行プロセスのみが全対象を待機する。ロックファイル自体はロック解放後も削除せず保持する |
+| CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`および`current.json` | 先行する待機処理へ合流する後続の`atk agents wait`、待機対象0件（終了コード10）および`consumed`（終了コード8）の診断情報を生成する後続の`atk agents wait` | 先行する待機処理が`running`、`published`、および再待機が必要かを示す`continuable`を書き込み、結果を返却した後続の待機処理が`consumed`を書き込む |
+| CLI待機が回収途中の結果と通知 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>/results/<session_id>.json`および`notices/<通知ファイル>` | 中断後に同一のrunを再開する`atk agents wait` | 待機CLI。結果ファイルは所有者を確認した排他区間内で退避し、通知ファイルは原本を削除する前に退避する |
+| CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop処理時の未確認作業に関する助言機能 | PostToolUseフック（子セッション開始時およびreply再開時の追加。`atk agents wait`と同様に索引を経由したルートへ登録する）、`atk agents wait`（待機開始時の追加、および回収・破棄時の削除）。助言機能側は読み取りのみを行う |
+| 全sessionの終端登録と再開情報、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別（pidと起動時刻。`processes`の先頭が所有サーバー、以降が委譲先CLI）、所有サーバーのルート（`owner_root_session_id`）、所有するagents_serverの起動単位（`server_instance`）、中断で終わったturnの履歴（`interrupted_turns`。turn番号・中断の理由・そのturnを所有した起動単位。新しい順に16件）、所有側による解放済みの理由と時刻、作成時点の委譲元（`launcher_session_id`） | `<状態ディレクトリ>/sessions/<session_id>.json` | 親セッションを所有するMCPサーバー、同一識別子を再解決するMCPサーバー、自身が管理していない識別子への応答時に診断するMCPサーバー、`atk agents wait`、`atk agents show`（状態ファイルに存在しないセッションの実行中・終了状態の確認）、`atk serve`のセッション一覧（ローカルおよびリモートヘルパー。親子関係の構築用に委譲元のみを参照）、`session-review-evidence`（共通の親子判定処理が登録簿の委譲元情報を起動結果の補助情報として参照）、`atk lane create/delete`（専用worktreeを使用する担当のcwdと`session_registry.resolve`の解決結果から終了を判定）、`atk lane integrate`（上記の解決結果に加え、委譲プロンプト`prompt`の1行目からロール定義文書を特定して書込権限の宣言を読み取り、`launcher_session_id`から呼び出し元の委譲元チェーンを追跡）、通常の`task`・`delegate`を起動するMCPサーバー（委譲元セッションの委譲プロンプトから受領済みの全体作業契約への参照を読み取る。解放済み記録の場合は`handoff_info`内の委譲プロンプトを参照）。実行状態を読み取る主体は`session_registry.resolve`を通じて解決し、実行プロセスの不在による中断も同様に処理する | 該当セッションを所有するMCPサーバー（停止時の終了情報の公開、中断ターン履歴への追加、委譲先CLIを再起動した際の情報更新を含む）。なお、所有者が存在しない`running`レコードに対する終了情報の公開に限っては、再起動後に同一識別子を照会したMCPサーバーも行うことができる（後述の「再起動をまたぐsessionの解決」の条件、および所有サーバーが失われた実行中セッションへの明示的な`kill`時）。process-loopはオーケストレーターの記録を作成し、`claude`の子プロセスを委譲先CLIとして追加する。この公開処理は元の`server_instance`を維持したまま中断ターンを履歴へ追加する。各書き込み処理は既存の`interrupted_turns`を引き継ぎ、解放済みレコードへの更新時にも`server_instance`と`interrupted_turns`の値を保持する |
+| 終端済み委譲sessionの解放要求と応答 | `<状態ディレクトリ>/sessions/<uuid>.release-request`および同名の`.release-response` | レーン回収CLI、および対象セッションを所有するMCPサーバー | CLIが解放要求を作成し、所有MCPサーバーが終了状態と所有関係を再確認した上で結果保持付きの停止（stop）を実行し、応答を書き込む。CLIの処理完了時に両ファイルとも削除・回収される |
+| Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | `atk run-script session-review-evidence` | `agents_server`のCodexバックエンド |
+| 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents wait`。登録簿から解決されたセッションについては、有効な生存シグナルを持つ書込主体が存在しない他のルートからも、`show`、`send_message`、`kill`、`atk agents wait`が通知を読み取る | `atk agents notify`がファイルを作成し、MCPの待機処理、CLIの待機処理、または上記別ルートからの回収処理が読み取り完了時に削除する |
+| ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`、`send_message`、`list`など、レスポンス内に`root_session_id`が明示されている場合は、ツール名に関わらずその値を索引に書き込む） |
+| MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフック、およびStop処理時の助言機能 | PostToolUseフック |
+| MCPサーバーの起動単位の終了診断（開始、Managerの所属ルート、受信シグナル、stdio切断、停止で中断したturn、正常・例外終了、起動ランチャーが観測した終了状態と標準エラー末尾） | `<診断ログのディレクトリ>/agents-server-instances/<server_instance>.jsonl`（追記専用のJSON Lines形式。1ファイルあたり最大64KiB） | 中断を返すMCPツールの`show`、`atk agents show`、`atk agents wait`（表示時点で`diagnostics.status`を評価する）、MCPサーバー起動時およびSessionEnd時のクリーンアップ処理、終了の経緯を調査する処理 | 該当インスタンスのMCPサーバー（`_agents_server/logging_config.py`）、およびそのサーバーを子プロセスとして起動して終了を監視する`scripts/launch.py`（`process_exited`イベントのみ）。ランチャーは環境変数`AGENT_TOOLKIT_AGENTS_SERVER_LAUNCH_RECORD`で指定された一時ファイルを介してサーバーから出力先パスを受け取る |
+| 委譲先CLI自身の診断ログ | `<診断ログのディレクトリ>/delegate-debug/<起動時刻>-<session識別子>-<起動区分>.log` | 初期化失敗などのトラブルを事後調査する処理 | Claudeバックエンド（ファイルの作成、初期化完了後のリネーム、保持世代数を超えた古いログの削除を担当） |
+| Claude起動別の合成settings | `<状態ディレクトリ>/<ルートsession識別子>/claude-settings/settings-<一意な値>.json`（ルート識別子を受け取らない直接構築時は`settings-<一意な値>`をルート名として使用） | 該当の起動におけるClaude CLI | Claudeバックエンドの`claude_settings.py`。親設定がファイルで与えられている場合や、API環境変数を合成する場合に、実行ユーザーのみ読み取り可能な起動別設定ファイルを生成する。各起動プロセスは、接続終了時・起動失敗時・依存確認の終了時に自身のファイルを削除・回収する |
+| Antigravityの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、セッションのイベント推移を調査する処理 | Antigravityバックエンド（公開stream-jsonイベントを追記） |
+| OpenCodeの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/opencode/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、推定利用料金の集計処理 | OpenCodeバックエンドおよび共通モジュールの`cli_turn.py`。公開JSONイベントとともに、入力内容や要求モデルを示す`agent_toolkit_input`を追記する。要求モデルの情報は、実際の観測モデル名とは区別して記録する |
+| engineの可用性を理由に除外した候補（解除待ちの対象のClaude利用上限は記録せず、旧版の理由`429`のClaude候補は読み込み時に除外の根拠から外す） | `<状態ディレクトリ>/unavailable-candidates.json` | 起動候補リストを解決するMCPサーバー | 当該の状態ディレクトリを共有する各MCPサーバー（ファイルロックを取得した上で読み書きを行う） |
 
-process-loop、レーン操作と配布物保持が共有する状態は、前表のagents-server領域と同じ`state_dir`の下で次のように保持する。
+process-loop、レーン操作、配布物保持が共有する状態は、前述のagents-server領域と同じ`state_dir`の下で次のように保持する。
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
-| ホストsessionのターンと子エージェントの活動 | `session-activity/<session_id>.json` | `_common/session_activity.py`。実プロセス、セッション記録、共通親子解決と合わせて開始猶予を判定する | `hook.py`の活動記録。排他下で最新状態を置換し、SessionEndで自sessionを回収する。残存記録はPIDと起動時刻で失効を判定する |
-| WI投入作業の投入先と作業期間 | `session-activity/submissions/<session_id>.json` | `_common/session_activity.py`。投入先がprocess-loopの対象と交わる会話とその子孫だけを開始猶予の理由にする | `atk wi submission begin`が作成・置換し、`end`が削除する。SessionEndでは削除しない |
-| origin単位の処理所有と未完了の再開情報 | `process-loop-ownership/<originのSHA-256>.json`と同名lock | 専用process-loopとall-repos | `_atk/wi/process_loop_ownership.py`。短い排他で所有tokenと生存を検収し、worktree・Git共通ディレクトリ・担当session・レーン所有sessionを更新する |
-| 対象別の担当返却 | `process-loop-ownership/<originのSHA-256>.result.json` | all-reposの中継と再開を担う処理 | `_atk/wi/process_loop_all_repos.py`。担当終端を観測した後に確認済み工程と残工程を保存する |
-| 担当が進捗なしで終えた起動入力（無進捗記録） | `process-loop-no-progress/<originのSHA-256>.json` | 専用process-loopとall-reposの起動判定 | `_atk/wi/process_loop_launch_gate.py`。担当が進捗なしで終わった時点の起動入力を対象ごとに保存し、見送らずに担当を起動した時点と起動入力が空になった時点で削除する。ホストごとの記録であり、WIの状態へは反映しない |
-| Git統合と計画保存・WI終端の進行 | `lanes/<所有session>/<lane>.json`のintegration | `atk lane integrate`と回収判定 | `_atk/lane.py`。Git統合と成功済みの最終化を保存し、失敗後は残工程だけを再開する。最終化の最初の操作の前に生成した確定値（統合後HEADの短縮OID・完了時刻・レーン稼働秒数）を統合状態へ、最初に受理した`lane_started_at`を登録の最上位へ保存し、再開では生成し直さない。全最終化と選定集合・統合状態の整合確認の成功後に統合済みを記録する。rebase対応表はmanaged-tempに保存し、レーン回収後も同じ保持期限で参照できる |
-| 保持した配布物を使用するプロセス | `plugin-root-leases/<保持領域の識別子>-<pid>.json`と領域ごとの`.lock` | 配布物の起動側とmanaged-tempの回収・掃引 | `_common/plugin_root_leases.py`。起動側が領域path・PID・プロセス作成時刻を登録し、読む側は同じ領域の排他下で生存を検収する。終了済みの使用記録を除き、取得不能な記録と使用中の実体を保護する。使用登録と回収が排他を共有するのは、検収と登録の間に実体を削除しないためであり、`atk`の自動掃引だけは排他を待たず、競合した領域を保持して次回へ回す |
-| 同じ配布元・版から共有する完成済み配布物 | managed-tempの保持領域直下の`.agent-toolkit-plugin-root.json` | `_agents_server/plugin_root.py`の起動・再利用 | コピーする起動側が配布元・版・root名を保存する。内側MCPも同じ完成済み実体を使い、回収側は前行の使用記録を検収する |
-| MCPのlease対応能力 | `plugin-root-leases/capability-<pid>.json` | 配布物rootの解決と旧形式領域の回収判定 | 保持領域を使わない起動もPIDと作成時刻を公開する。既存の領域別leaseも対応能力の証拠として使う |
-| 旧版が会話へ割り当てた保存領域の参照 | `managed-temp/.sessions/<session_idのSHA-256>`と会話別`.lock` | `_atk/managed_temp/creation.py`のセッションのmanaged-tempの解決。参照が一時root直下の実在する非リンクディレクトリを指す場合だけ、その旧パスを再利用する | 新版は作成・書換えをしない。`_atk/managed_temp/sweep.py`が、指す対象が無く会話別`.lock`を非待機で取得できた参照だけを個別に回収する |
-| 旧版の登録簿とcleanupロック | `managed-temp/`直下の登録簿JSON、`.consuming-`付きの消費途中状態と`.json.cleanup.lock` | 旧版プロセスと掃引 | 新版は作成しない。掃引は対象と消費途中状態が無く対応ロックを取得できた登録簿と、登録簿と消費途中状態が無くロックを取得できたcleanupロックだけを個別に回収する |
-| 掃引の次回確認時刻 | `managed-temp/.sweep/schedule`（一時root直下の名前をキーとする1表） | managed-tempの掃引 | `_atk/managed_temp/sweep.py`。一時rootの更新時刻が変わらず次の確認時刻にも達していない起動では一覧を取らずに戻る |
+| ホストsessionのターンと子エージェントの活動 | `session-activity/<session_id>.json` | `_common/session_activity.py`。実プロセス、セッションログ、共通の親子判定結果と突き合わせて、開始猶予（待機時間）の要否を判定する | `hook.py`による活動記録処理。ファイルロック下で最新状態に上書き更新し、SessionEndイベント発生時に自身のセッションファイルを削除する。残存した古い記録については、PIDとプロセス起動時刻からプロセスの生存を確認して失効を判定する |
+| WI投入作業の投入先と作業期間 | `session-activity/submissions/<session_id>.json` | `_common/session_activity.py`。投入先がprocess-loopの処理対象と重複する会話およびその子孫会話に限り、開始猶予の対象とする | `atk wi submission begin`が作成・更新し、`atk wi submission end`が削除する。SessionEndイベントでは削除しない |
+| origin単位の処理所有と未完了の再開情報 | `process-loop-ownership/<originのSHA-256>.json`および同名の`.lock` | 専用process-loopおよびall-repos | `_atk/wi/process_loop_ownership.py`。短時間のファイルロックを取得して所有権トークンと生存状態を確認し、worktree、Git共通ディレクトリ、担当セッション、レーン所有セッションの情報を更新する |
+| 対象別の担当返却 | `process-loop-ownership/<originのSHA-256>.result.json` | all-reposの中継処理および再開処理 | `_atk/wi/process_loop_all_repos.py`。担当エージェントの終了を確認した後、完了済み工程と残存工程の情報を保存する |
+| 担当が進捗なしで終えた起動入力（無進捗記録） | `process-loop-no-progress/<originのSHA-256>.json` | 専用process-loopおよびall-reposの起動判定処理 | `_atk/wi/process_loop_launch_gate.py`。担当エージェントが進捗なしで終了した時点の起動入力を対象リポジトリごとに保存する。スキップせずに担当エージェントを起動した時点、または起動入力が空になった時点で削除する。この記録はホストごとの一時的な制御用であり、WI自体のステータスには影響を与えない |
+| Git統合と計画保存・WI終端の進行 | `lanes/<所有session>/<lane>.json`の`integration`セクション | `atk lane integrate`、および回収可否の判定処理 | `_atk/lane.py`。Git統合の進行状況と成功した最終化処理の記録を保存し、失敗時には残りの工程のみを再開できるようにする。最終化処理の最初のステップを開始する前に確定値（統合後HEADの短縮OID、完了時刻、レーン稼働秒数）を生成して統合状態へ保存し、最初に受け付けた`lane_started_at`を登録の最上位へ保存する（再開時に再生成しない）。すべての最終化処理と、対象ファイル群および統合状態の整合性確認が成功した段階で統合完了を記録する。rebase対応表はmanaged-temp内に保存され、レーン回収後も同一の保持期限内であれば参照できる |
+| 保持した配布物を使用するプロセス | `plugin-root-leases/<保持領域の識別子>-<pid>.json`および領域ごとの`.lock` | 配布物の起動側、ならびにmanaged-tempの回収・掃引処理 | `_common/plugin_root_leases.py`。起動側プロセスが領域パス、PID、プロセス作成時刻を登録し、読み取り側は同一領域のファイルロック下でプロセスの生存を確認する。終了済みプロセスの使用記録を除外し、情報取得不能な記録や使用中の実体ディレクトリを保護する。使用登録と回収処理でロックを共有するのは、生存確認と新規登録の合間に実体ディレクトリが削除されるのを防ぐためである。なお、`atk`の自動掃引処理だけはロック取得を待たず、競合した領域の処理をスキップして次回に回す |
+| 同じ配布元・版から共有する完成済み配布物 | managed-tempの保持領域直下の`.agent-toolkit-plugin-root.json` | `_agents_server/plugin_root.py`による起動・再利用処理 | 配布物をコピーして配置する起動側プロセスが、配布元・バージョン・ルートディレクトリ名を保存する。内部MCPもこの完成済みの実体を共有し、回収側は前述の使用中リース記録を確認して安全に回収する |
+| MCPのlease対応能力 | `plugin-root-leases/capability-<pid>.json` | 配布物ルートディレクトリの解決処理、および旧形式領域の回収可否判定 | 保持領域を使用しない起動プロセスも含め、自身のPIDとプロセス作成時刻を公開する。既存の領域別リース記録が存在する場合も、対応能力を持つ証拠として扱う |
+| 旧版が会話へ割り当てた保存領域の参照 | `managed-temp/.sessions/<session_idのSHA-256>`および会話別の`.lock` | `_atk/managed_temp/creation.py`によるセッションのmanaged-temp解決処理。参照先が一時ルート直下に実在する（シンボリックリンクではない）ディレクトリである場合のみ、その旧パスを再利用する | 新しいバージョンでは作成や更新を行わない。`_atk/managed_temp/sweep.py`が、参照先ディレクトリが存在せず、かつ会話別ロックを非ブロッキングで取得できた参照ファイルのみを個別に回収・削除する |
+| 旧版の登録簿とcleanupロック | `managed-temp/`直下の登録簿JSON、`.consuming-`が付いた消費中の一時ファイル、および`.json.cleanup.lock` | 旧バージョンのプロセス、および掃引処理 | 新しいバージョンでは作成しない。掃引処理において、対象データおよび消費中ファイルが存在せず対応ロックを取得できた登録簿と、登録簿および消費中ファイルが存在せずロックを取得できたcleanupロックのみを個別に回収・削除する |
+| 掃引の次回確認時刻 | `managed-temp/.sweep/schedule`（一時ルート直下のディレクトリ名をキーとする単一のテーブル） | managed-tempの掃引処理 | `_atk/managed_temp/sweep.py`。一時ルートディレクトリの更新時刻に変更がなく、かつ次回の確認予定時刻に達していない場合は、一覧取得せずに処理を終了する |
 
-使用記録のない保持領域の回収では、`_common/plugin_root_leases.py`がOSの起動引数と開いている既存診断ログへの参照も読む。旧形式は同じOSアカウント・状態名前空間のlease非対応MCPと帰属不明の候補を保持し、候補の不在を確認した後に回収へ進める。能力記録か有効な領域別leaseで対応能力を確認できるMCPは、この帰属不明の候補から外す。旧形式・新形式とも、lease登録前に保持先を直接参照する公開MCPランチャーを保護する。新規の作成には`agents-server-plugin-root-shared`のprefixを使い、旧形式の列挙互換と完成済みmarkerの契約を保つ。
+使用記録（リース情報）が存在しない保持領域を回収する際、`_common/plugin_root_leases.py`はOS上のプロセスの起動引数や、現在開かれている既存の診断ログファイルへの参照も確認する。旧形式の領域については、同一のOSアカウントおよび状態名前空間に属する「リース機能に非対応のMCPサーバー」や所属不明の候補プロセスを保護対象として維持し、それらの候補プロセスが存在しないことを確認した上で回収する。能力記録（capabilityファイル）または有効な領域別リースによってリース対応が確認できるMCPサーバーは、この所属不明候補から除外する。また、旧形式・新形式のいずれであっても、リース登録が完了する前に保持先ディレクトリを直接参照する公開MCPランチャーを保護する。新規に保持領域を作成する際は`agents-server-plugin-root-shared`というプレフィックスを使用し、旧形式との一覧互換性や完了マーカーの仕様を維持する。
 
-`_common/session_parents.py`と`_common/session_activity.py`は前表のsession登録簿を読み、保存済みの委譲元とプロセス識別を活動判定に使う。
-MCPサーバーのSessionStateとsession登録簿の更新は、両モジュールの対象外である。
+`_common/session_parents.py`と`_common/session_activity.py`は、前述のセッション登録簿を読み取り、保存されている委譲元情報やプロセス識別情報を参照してアクティビティを判定する。MCPサーバーの`SessionState`やセッション登録簿自体の更新は、これら両モジュールの担当外である。
 
-状態ディレクトリ配下の読み書きは、`agent-toolkit/agent_toolkit/_agents_server/`配下の次のモジュールが担う。
+状態ディレクトリ配下の読み書きは、`agent-toolkit/agent_toolkit/_agents_server/`配下の次のモジュールが担当する。
 
 | 対象 | モジュール |
 | --- | --- |
-| 配置とsession識別子の検証 | `shared_layout.py` |
-| Claude起動の設定合成と所有ファイルの回収 | `claude_settings.py` |
-| ルートと書込主体の識別、索引（`aliases`・`hosts`） | `shared_roots.py` |
-| statusline・CLI向けの状態ファイルの出力 | `status_file.py` |
-| 一覧と資源記録の共有読取・生存判定・session重複排除 | `status_reader.py` |
-| 開始・終端の稼働数とホスト資源の診断記録 | `resource_snapshot.py` |
-| 終端結果の保持と回収 | `retained_results.py` |
-| CLI待機の対象登録 | `wait_targets.py` |
+| 配置とセッション識別子の検証 | `shared_layout.py` |
+| Claude起動時の設定合成と所有ファイルの回収 | `claude_settings.py` |
+| ルートおよび書込主体の識別、索引管理（`aliases`・`hosts`） | `shared_roots.py` |
+| statuslineおよびCLI向け状態ファイルの出力 | `status_file.py` |
+| 一覧・リソース記録の共有読み取り、生存確認、セッションの重複排除 | `status_reader.py` |
+| 開始・終了時の稼働数やホストリソースの診断記録 | `resource_snapshot.py` |
+| 終了結果の保持と回収 | `retained_results.py` |
+| CLI待機対象の登録管理 | `wait_targets.py` |
 | 上り通知の回収 | `notice_inbox.py` |
-| 所有サーバーを失った実行中の診断と委譲先CLIの停止、所有者のいない他ルートからの通知・終端結果の回収 | `owner_lost.py` |
-| 除外した候補の記録 | `unavailable_candidates.py` |
-| 保持期限を過ぎた状態の掃引 | `shared_sweep.py` |
-| 全sessionの終端登録と、実行プロセスの不在による中断の解決 | `../_common/session_registry.py`（`atk lane`も読むため、層の順序で前にある`_common`へ置く） |
-| 終端済みsessionの解放要求と応答、媒体の回収 | `../_common/session_release.py`（回収CLIと所有MCPサーバーが共有する） |
-| 前任の記録抽出と後任へ渡す引き継ぎ本文 | `session_handoff.py`（既存session-reviewの会話抽出を使う） |
+| 所有サーバーを失った実行中セッションの診断、委譲先CLIの停止、所有者のいない他ルートからの通知・終了結果の回収 | `owner_lost.py` |
+| 除外候補の記録管理 | `unavailable_candidates.py` |
+| 保持期限切れ状態のクリーンアップ（掃引） | `shared_sweep.py` |
+| 全セッションの終了登録、および実行プロセス不在による中断状態の解決 | `../_common/session_registry.py`（`atk lane`からも参照されるため、レイヤー構成上、前段の`_common`配下に配置する） |
+| 終了済みセッションの解放要求と応答、ファイル等の回収 | `../_common/session_release.py`（回収CLIと所有MCPサーバーで共有する） |
+| 前任エージェントのログ抽出と後任へ渡す引き継ぎプロンプトの作成 | `session_handoff.py`（既存の`session-review`の会話抽出機能を利用する） |
 
-新規sessionの識別子は`session_identity.identity_validator`で、各backendが共有一覧へ登録する前に重複を確かめる。
-ルート、稼働中・保持中の別sessionと、共有登録簿で実行中・終端に解決されるsessionとの識別子の重複は、原因と次の操作を示す起動エラーとする。
-重複した値は登録簿、状態・結果ファイル、待機対象とイベントログへの永続化へ渡さない。
-同じ識別子を再利用する再開は、`expected_session_id`との一致を検収して許可する。
+新規セッションの識別子は、各バックエンドが共有セッション一覧に登録する前に、`session_identity.identity_validator`を使って重複の有無を検証する。
+ルート識別子、稼働中・保持中の他のセッション識別子、ならびに共有登録簿上で実行中または終了状態として解決されるセッション識別子との重複が検出された場合は、原因と対処手順を示す起動エラーとする。
+重複した値は、登録簿、状態・結果ファイル、待機対象リスト、イベントログなどの永続化処理には渡さない。
+同一の識別子を再利用して再開する場合は、指定された`expected_session_id`と完全に一致していることを確認した上で許可する。
 
-sessionの`created_at`は最初の開始時刻で、turnごとに更新する`started_at`と別に保持する。`label`と`prompt`も`start`の時点で決まる。これら3項目を再開と再起動をまたいで保持する起動情報とし、項目の集合は`agent-toolkit/agent_toolkit/_common/session_registry.py`の`LaunchInfo`が1か所で定める。MCPサーバーのメモリーを基準とし、状態ファイルとsession登録簿（版数2の任意項目）へ射影する。再開したsessionは登録簿または退避した再開情報の値を`LaunchInfo`の項目ごとに引き継ぐ。項目を持たない旧形式の登録簿から再開した場合、`label`と`prompt`は空文字列とし、`created_at`は再開時刻から数え直す。
-`start`と`send_message`の公開応答へは、開始したsessionと配送先のsessionがメモリーに保持する`label`を返す。委譲元が起動応答と追送応答だけで`session_id`と担当名を対応付け、追送の宛先を確かめられるようにするためである。
-`LaunchInfo`は用途の`usage`、配送済みの`followup_prompts`、turn番号と最終応答全文の`final_responses`、`terminal_error`も保持する。
-これらは所有側が起動・追送・終端の各契機で更新し、同じsessionの再開と前任からの引き継ぎに使う。
-配送前の確認とdelegation-prompt生成CLIも既存の`prompt`・`followup_prompts`を読み、今回の入力が役割宣言に合うかを確かめる。
-CLIは登録済みsessionか既存の起動・セッション記録への参照を使い、既存の保持先へ集約する。
-同じパスの参照先が更新された場合も、今回必要な入力を保持する。
-`handoff_from`を使うstartは前任のcwdとmodel_typeを復元して応答へ返し、PostToolUseフックは引き継ぎ起動時だけ両値を応答から取得し、後任の待機対象と工程種別を記録する。通常のstartでは入力cwdとmodel_typeを検収する。
-引き継ぎ用の会話抽出はsession-reviewの`--conversation-only`を使う。既存bundleの抽出物を生成し、候補文書・比較材料・統計の生成とfailure ledgerの更新を省く。生成物の保存先はmanaged-tempの保持期限へ委ねる。
+セッションの`created_at`は初回の開始時刻を表し、ターンごとに更新される`started_at`とは区別して保持する。また、`label`と`prompt`も初回の`start`時点で確定する。これら3つの項目は、セッションの再開や再起動をまたいで保持される基本起動情報であり、その定義は`agent-toolkit/agent_toolkit/_common/session_registry.py`の`LaunchInfo`で一元管理されている。MCPサーバーのメモリー上の値を正とし、状態ファイルやセッション登録簿（フォーマットバージョン2のオプショナル項目）へ反映（射影）される。再開されたセッションは、登録簿または退避済みの再開情報から各項目を引き継ぐ。これらの項目を持たない旧形式の登録簿から再開された場合は、`label`と`prompt`を空文字列とし、`created_at`は再開時刻を起点として扱い直す。
+`start`および`send_message`の公開レスポンスには、起動したセッションや送信先セッションがメモリー内に保持している`label`を含めて返す。これにより、委譲元エージェントが起動時やプロンプト追送時のレスポンスを見るだけで、`session_id`と担当エージェント名を正確に対応付け、送り先を確認できるようにしている。
+また、`LaunchInfo`は用途を示す`usage`、送信済みの追送プロンプト一覧である`followup_prompts`、ターン番号と最終応答全文を記録する`final_responses`、および`terminal_error`も管理する。
+これらの項目は、所有側が起動時・追送時・終了時の各タイミングで更新し、同一セッションの再開や前任エージェントからの引き継ぎ時に活用される。
+プロンプト送信前の事前確認処理や委譲プロンプト生成CLIも、既存の`prompt`や`followup_prompts`を参照して、今回の入力がエージェントの役割宣言に沿っているかを検証する。
+CLIは登録済みのセッション情報や既存の起動・ログ記録への参照を利用し、既存の保存先へ情報を集約する。参照先のパスの内容が更新された場合でも、その時点で必要な入力を保持する。
+`handoff_from`を指定して起動した場合は、前任エージェントの作業ディレクトリ（cwd）とモデル種別（model_type）を復元してレスポンスに含める。PostToolUseフックはこの引き継ぎ起動時に限りレスポンスから両方の値を取得し、後任エージェントの待機対象とタスク種別を記録する。通常の起動時には、指定された入力のcwdとmodel_typeを検証して受け付ける。
+引き継ぎに必要な会話ログの抽出には、`session-review`の`--conversation-only`オプションを使用する。既存バンドルからの会話抽出のみを行い、候補文書、比較資料、統計データの生成やfailure ledgerの更新はスキップする。生成されたログデータの保存期間は、managed-tempの保持期限に従う。
 
-API失敗状態はいずれもMCPサーバーの`SessionState`を正とし、同じ書込主体が状態ファイルへ射影する。対象はClaudeの合成assistantメッセージと`SystemMessage(api_retry)`、Codexの`willRetry: true`の`error`通知による再試行中と、Codexの過負荷（`serverOverloaded`）による自動継続を待つ間の`api_error`である。過負荷の待機中の記録は待機を予定したCodex backendの終端処理が作成し、MCPサーバーが継続のturnを送った時点で削除する。待機の予定時刻と連鎖の回数もMCPサーバーのメモリーだけに置き、状態ファイルへは`api_error`の形でだけ射影する。API失敗の合成メッセージは活動時刻を進めず、状態ファイルの更新だけを通知する。`show`・`list`とCLIは共通の活動射影から失敗の経過を算出し、正常なassistantメッセージで記録を削除する。Claudeの`api_retry`は`error`の種別・`error_status`と、受信時刻に`retry_delay_ms`を加えたUTCの`retry_at`を記録し、`count`は同じ通知の反復でも`attempt`の値とする。Codexの再試行通知は同じthread・turnの`codexErrorInfo`の種別と、存在する`httpStatusCode`を記録し、後続のモデル活動とturn終端で削除する。`retry_at`も共通の公開項目へ射影する。生のエラー本文は共有状態へ保存しない。
+API失敗状態は、すべてMCPサーバーの`SessionState`を基準（正）として管理し、同一の書込主体が状態ファイルへ反映（射影）する。対象となるのは、Claudeの合成assistantメッセージや`SystemMessage(api_retry)`、Codexの`willRetry: true`による再試行中状態、ならびに過負荷（`serverOverloaded`）に伴う自動継続待ちの`api_error`である。過負荷待機中の記録は、待機を予定したCodexバックエンドの終了処理が作成し、MCPサーバーが継続ターンを送信した時点で削除する。待機の予定時刻や連鎖回数はMCPサーバーのメモリー内でのみ管理し、状態ファイルへは`api_error`の形式でのみ反映する。なお、API失敗時の合成メッセージは最終アクティビティ時刻を更新せず、状態ファイルの変更通知のみを発行する。`show`、`list`や各種CLIは共通のアクティビティ射影データから失敗の経過時間を算出し、その後の正常なassistantメッセージを受信した時点でエラー記録を削除する。Claudeの`api_retry`では、`error`の種別、`error_status`、および受信時刻に`retry_delay_ms`を加算したUTCの`retry_at`を記録し、同一通知が繰り返された場合でも`attempt`の値を`count`として保持する。Codexの再試行通知では、同一thread・ターン内の`codexErrorInfo`の種別と、存在する場合は`httpStatusCode`を記録し、後続のモデル応答やターンの終了時に削除する。また`retry_at`も共通の公開項目として反映する。生のエラーメッセージ本文は共有状態には保存しない。
 
-委譲sessionの文脈使用量（`context_tokens`と`context_window`）もMCPサーバーの`SessionState`を正とし、同じ書込主体が状態ファイルへ任意の数値として射影する。値は累計課金量ではなく直近のモデル文脈の観測値であり、当該sessionのengineを所有するbackendが`_agents_server/context_usage.py`の`record_context_usage`で置き換える。
-情報源はengineごとに次のとおりである。
+委譲セッションのコンテキストトークン使用量（`context_tokens`および`context_window`）についても、MCPサーバーの`SessionState`を基準とし、同一の書込主体が状態ファイルへ任意の数値として反映する。この値は累計の消費量ではなく、直近のモデルコンテキストの観測値であり、対象セッションのエンジンを所有するバックエンドが`_agents_server/context_usage.py`の`record_context_usage`を用いて更新する。
+情報源はエンジンごとに以下の通りである。
 
-- Claude: SDKの`get_context_usage()`の`totalTokens`と`rawMaxTokens`
-- Codex: 同じthread・turnの`thread/tokenUsage/updated`の`last.totalTokens`と`modelContextWindow`
-- Antigravity: 最新の`agent_response` stepの`total_tokens`と`cache_read_tokens`の和（上限は持たない）
+- Claude: SDKの`get_context_usage()`から取得する`totalTokens`および`rawMaxTokens`
+- Codex: 同一thread・ターンの`thread/tokenUsage/updated`イベントにおける`last.totalTokens`および`modelContextWindow`
+- Antigravity: 最新の`agent_response`ステップにおける`total_tokens`と`cache_read_tokens`の合計（上限値は保持しない）
 
-有限かつ非負の数値だけを受理し、未知の値は項目ごと省く。この更新は活動時刻を進めず、表示更新の通知だけを送る。終端後の再開情報（`SessionResumeState`）は表示のため最後の観測値を保持し、値は同じsessionの表示だけに使う。
-statuslineと`atk agents list`は`subagent.rs`の`format_tokens`と`context_usage.format_tokens`で同じ書式（小数1桁の`k`と整数の`%`）に描く。Rustのテストとリポジトリrootの`claude_statusline_invariant_test.py`が`rust/claude-statusline/testdata/agents_server_state.json`の同じ数値例を読む。
+有限の非負の数値のみを受け付け、不明な値は項目ごと省略する。この更新処理も最終アクティビティ時刻を進めることはなく、表示更新通知のみを発行する。終了後の再開情報（`SessionResumeState`）には、表示用途として最後の観測値が保持され、同一セッションの表示にのみ使用される。
+statuslineと`atk agents list`では、`subagent.rs`の`format_tokens`と`context_usage.format_tokens`を用いて統一した書式（小数第1位までの`k`表記と整数パーセント表示）で描画する。Rustのユニットテストおよびリポジトリルートの`claude_statusline_invariant_test.py`は、`rust/claude-statusline/testdata/agents_server_state.json`にある同一の数値例を検証に使用する。
 
-Claude CodeのWeekly limitと5時間の利用上限の解除待ちもMCPサーバーの`SessionState`を正とする。Claudeが報告した最後の利用枠（`usage_limit`）はClaude backendが`RateLimitEvent`から記録し、初期化より前に届いた報告もsessionの作成時に引き継ぐ。turnが待機対象の拒否で終わると、Claude backendが結果を保留し、`api_error`へ種別`usage_limit`、利用枠の種類（`limit_type`）と解除予定時刻（`resets_at`）を記録する。turn内の429の`api_retry`も、最後の`RateLimitEvent`が待機対象の拒否を示す場合は同じ種別・種類・解除予定時刻を記録し、解除時刻が無ければ`retry_at`を使う。その後の429以外の再試行は通常のAPI再試行へ置き換える。次の継続の時刻と待機の回数はメモリーだけに置く。MCPサーバーの常駐監視が予定時刻に同じsessionへ継続を送り、正常なモデル出力で利用枠の記録と`api_error`を削除する。保留中の結果は`auto_resume_deadline`と保持期限の対象にしない。状態ファイルと`show`・`list`・CLIへは`limit_type`と`resets_at`を`api_error`の公開項目として射影する。
-利用上限の解除待ちは`_atk/usage_limit_policy.py`の`should_wait`で判定し、engine別の`claude_usage_limit_wait`と`codex_usage_limit_wait`を読む。
-既定の`five-hour`は5時間枠だけ、`always`は週次枠なども待ち、`never`は待たない。
-Claudeの途中通知も待機と代替接続を評価し、利用枠が通知に無い場合だけ同じ会話・起動後の元記録を照合する。
-一般の429・529の記録は正常なassistant応答で解除する。
-委譲先の候補順は`claude_worker_api_first`が既定の`false`ならサブスクリプション、APIの順、`true`ならAPI、サブスクリプションの順とする。
-オーケストレーターは`claude_orchestrator_api_only`が既定の`true`ならAPIだけ、`false`ならサブスクリプションだけを使う。新キーを明示した役割にはAPI環境ファイルの有無にかかわらず方針を適用し、未指定・旧通常2モードはAPI環境未設定時の`inherit`を保つ。
-旧`claude_api_mode`は保存入力を保持し、通常2値を読取時にboolへ射影する。getは旧入力を新キーの明示保存へ変換しない。
-旧キーの`api-only`は互換設定として保持する。新boolの明示指定は当該役割の旧方針を上書きし、他方の役割の旧方針を保つ。
-候補順に後続の接続が残る場合は、同じ利用上限かAPIクレジットの不足の契機で結果を保留し、`claude_api_resume_pending`を常駐監視が消費して同じsessionを後続の接続で再開する。
-この予定はメモリーだけに置き、選択した接続とAPI接続のパスを既存の内部再開情報へ保存する。移行後の会話は設定変更・解除や資源解放の後も保持した接続を使い、新規sessionは候補順の先頭から始める。役割に現行のAPI固定・サブスクリプション固定がある場合は、次turn・再開時に同じ会話をその固定先へ移す。利用上限でサブスクリプションから移した委譲先だけは、サブスクリプションが先頭候補のままなら解除予定時刻の後の最初のturn（追送と自動再開）で同じ会話をサブスクリプションで再開する。CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）の間は所有タスクを止めない。資源解放の後は戻す時刻を持たないため保持した接続を使う。
-切替のログはsession IDと利用枠の種類だけを記録し、envの値や切替の情報を公開応答と継続指示へ加えない。
+Claude CodeのWeekly limit（週間制限）や5時間上限の解除待ち状態についても、MCPサーバーの`SessionState`を正として管理する。Claudeが報告した直近の利用可能枠（`usage_limit`）は、Claudeバックエンドが`RateLimitEvent`から取得して記録し、初期化前に届いた通知もセッション作成時に引き継ぐ。ターンが待機対象の拒否によって終了した場合、Claudeバックエンドは結果を保留し、`api_error`に種別`usage_limit`、制限種別（`limit_type`）と解除予定時刻（`resets_at`）を記録する。ターン内で発生した429の`api_retry`についても、直近の`RateLimitEvent`が待機対象の拒否を示していれば、同一の種別・制限種別・解除予定時刻を記録し、解除予定時刻が取得できなければ`retry_at`を用いる。その後に発生した429以外の再試行は、通常のAPI再試行として処理する。次回継続の実行時刻と待機回数はメモリー内でのみ管理する。MCPサーバーの常駐監視処理が予定時刻に該当セッションへ継続リクエストを送信し、正常なモデル出力が得られた時点で利用制限の記録と`api_error`を削除する。保留中の結果は`auto_resume_deadline`や保持期限の適用対象から除外される。状態ファイル、`show`、`list`、ならびに各種CLIに対しては、`limit_type`と`resets_at`を`api_error`の公開項目として反映する。
+利用上限の解除を待機するかどうかの判定は`_atk/usage_limit_policy.py`の`should_wait`が行い、エンジンごとの設定である`claude_usage_limit_wait`と`codex_usage_limit_wait`を参照する。
+既定値の`five-hour`は5時間枠のみ待機し、`always`は週次枠なども待機対象とし、`never`は待機しない。
+Claudeからの途中通知についても待機や代替接続への切り替えを評価し、利用枠情報が通知内に含まれていない場合に限り、同一会話・同一起動後の元ログと突き合わせる。
+一般的な429や529の一時的エラー記録は、その後の正常なassistant応答によって解除される。
+委譲先の接続候補順は、`claude_worker_api_first`が既定の`false`であればサブスクリプション→APIの順とし、`true`であればAPI→サブスクリプションの順とする。
+オーケストレーターは、`claude_orchestrator_api_only`が既定の`true`であればAPI接続のみを使用し、`false`であればサブスクリプション接続のみを使用する。新しい設定キーを明示したロールに対しては、API環境変数のファイルの有無に関わらずその方針を適用する。未指定の場合や旧来の通常2モードの場合は、API環境が未設定であれば`inherit`を維持する。
+旧設定キーの`claude_api_mode`は既存の入力値をそのまま保持し、従来の2値を読み取り時に真偽値へ射影する。getコマンドは旧入力を新キーの明示保存形式へ自動変換することはない。
+旧キーの`api-only`は互換設定として維持される。新しい真偽値キーを明示的に指定した場合は、該当ロールの旧方針が上書きされ、もう一方のロールの旧方針はそのまま維持される。
+候補順に後続の接続手段が残っている場合は、利用上限への到達またはAPIクレジット不足を検知したタイミングで処理結果を保留し、常駐監視処理が`claude_api_resume_pending`を検知して同一セッションを後続の接続手段で再開する。
+この再開予定はメモリー内のみに保持し、選択された接続方式とAPI環境ファイルのパスを既存の内部再開情報へ保存する。切り替え後の会話は、その後の設定変更・解除やリソース解放を経ても保持された接続方式を継続して使用し、新規セッションは常に候補順の先頭から開始する。ロールに対してAPI固定かサブスクリプション固定が明示されている場合は、次回ターンや再開時に同一会話をその固定先へ移行させる。利用上限によってサブスクリプションから切り替えられた委譲先に限り、サブスクリプションが依然として優先候補のままであれば、解除予定時刻を過ぎた最初のターン（プロンプト追送や自動再開）で同一会話をサブスクリプションへ戻す。なお、CLIが自律的に次のターンを開始する可能性がある待機状態（バックグラウンドタスク実行中など）においては、実行中のタスクを中断しない。リソース解放後は復帰すべき時刻情報が失われるため、保存されていた接続方式をそのまま使い続ける。
+接続切り替えのログにはセッションIDと利用制限の種類のみを記録し、環境変数の値や切り替えの詳細情報を公開レスポンスや継続指示プロンプトに含めることはしない。
 
-Codexの接続先選択順は`codex_model_providers`が持つ。先頭APIの不受理やサブスク利用上限で後続APIへ移す間も、既存の結果保留と監視を使う。空設定の会話は通常のCodex設定に従う。選択済みproviderは同じ会話の再開へ渡し、主接続先の設定変更と利用枠の回復は新規起動だけへ適用し、後続候補は次の代替試行で現行列から選ぶ。現在アカウントの利用可否は永続台帳へ記録せず、新規起動ごとにApp Serverへ照会する。人向けログへは候補の診断だけを記録する。ユーザー向けの接続先設定、料金、認証、復旧操作は`docs/guide/codex-guide.md`にある。cold resumeの内部契約は`docs/development/design-agents-server.md`にある。
-冷再開の前には`config/read`で実効providerを解決する。
-Codex backendは接続切替と旧記録の互換性を、`thread/read.path`か既存の記録解決で得たrolloutから確認する。
-確認する項目は`session_meta.id`とprovider、`response_item`のcompaction・`encrypted_content`、`compacted`の`replacement_history`・`compaction_response_id`である。
-不透明な値の内容は解釈しない。
-生成元が異なるか不明な不透明状態と、記録欠落・不正では`threadStateIncompatible`で終端し、元の記録と進捗を保持して引き継ぎを案内する。
-検査済み同providerへの通常再開は`codex_state_provider`を使う。
-生成元の印が無い旧移行記録では、選択先と初期`session_meta`のproviderが異なり不透明状態がある場合、現在の選択先へも再開せず引き継ぎを案内する。
+Codexの接続先プロバイダーの優先順位は`codex_model_providers`で管理する。先頭のAPIが受理されなかった場合やサブスクリプションの利用上限に達して後続のAPIへ切り替える際も、Claudeと同様の結果保留と常駐監視の仕組みを利用する。設定が空の会話は通常のCodex設定に従う。選択されたプロバイダー情報は同一会話の再開処理へ引き継がれ、主接続先の設定変更や利用枠の回復は新規起動に対してのみ適用される。後続候補の選択は、次回の代替試行時に現在の候補リストから順に行われる。現在のアカウントの利用可否は永続ファイルには記録せず、新規起動の都度App Serverへ問い合わせて確認する。ユーザー向けのログには候補の診断情報のみを記録する。ユーザー向けの設定方法、料金、認証、トラブル復旧手順は`docs/guide/codex-guide.md`に記載されている。cold resume（完全停止からの再開）の内部設計については`docs/development/design-agents-server.md`を参照のこと。
+停止状態からの再開前には、`config/read`を実行して有効なプロバイダーを特定する。
+Codexバックエンドは、接続切り替え時および過去ログからの再開時に、`thread/read.path`または既存ログの解決から得られるrollout情報を検証して互換性を確認する。
+検証対象となる項目は、`session_meta.id`、provider、`response_item`内のcompaction・`encrypted_content`、ならびに`compacted`内の`replacement_history`・`compaction_response_id`である。
+暗号化等の不透明なデータ値の内容自体は解釈しない。
+生成元が異なるか判別できない不透明なデータが含まれる場合、あるいはログの欠落や不正が認められる場合は、`threadStateIncompatible`エラーでセッションを終了し、元のログと進捗を保全した上で引き継ぎ手順を案内する。
+検証を通過した同一プロバイダーへの通常再開には`codex_state_provider`を使用する。
+生成元を示す識別子が存在しない古い移行ログにおいて、選択された接続先と初期`session_meta`のプロバイダーが異なり、かつ不透明なデータが存在する場合は、現在の選択先への再開は行わず、引き継ぎ手順を案内する。
 
-モデル候補の設定は`atk config get config_dir`が返すディレクトリ配下の`config.json`が持ち、MCPサーバーは起動ごとに読む。旧段位9キーまたは用途別engine順5キーが保存されている場合は、候補解決か`atk config show`・`get`を最初に行った主体（MCPサーバーまたは`atk`のCLI）が6工程の候補列へ合成し、廃止キーを除いて同じファイルを一括で書き換える。移行結果は保存値だけから決まるため、複数の主体が同時に移行しても同じ内容になる。移行の詳細は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」に従う。
+モデル候補の設定は、`atk config get config_dir`が返すディレクトリ内の`config.json`に保存されており、MCPサーバーは起動するたびにこれを読み込む。古い9段階キーや用途別・エンジン優先順の5キーが保存されている場合は、候補解決または`atk config show` / `get`を最初に実行した主体（MCPサーバーまたは`atk` CLI）が、これらを6工程の候補リストへと合成し、廃止された旧キーを除去して単一のファイルを一括で更新する。移行結果は保存されている値のみから一意に決定されるため、複数のプロセスが同時に移行処理を実行しても同一の内容となる。移行の詳しい仕様は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」を参照のこと。
 
-状態ディレクトリは`atk config get state_dir`が返すディレクトリ配下の`agents-server`とする。
-レーン資源の所有登録と回収結果への参照は、同じ`state_dir`配下の`lanes/<所有session>/`へ別に置く。`_atk/lane.py`が作成・明示再利用・回収を所有し、通常終了とprocess-loopの子終了後も同じ処理を使う。レーン管理はsession登録簿を`_common/session_registry.py`の`resolve`の解決結果（実行中かとcwd）で読むだけとし、状態と終端登録の更新はMCPサーバーが所有する。回収結果は専用worktreeの外のmanaged-tempへ保存し、その既存保持期限へ委ねる。未解決の資源登録は保持し、回収処理が除くのは解決済みのレーン登録だけとする。
-内部の保存項目と公開応答の項目は別に扱う。活動は`seconds_since_activity`、API失敗は種別・HTTP状態・経過時間（利用上限の解除待ちでは種類と解除予定時刻も）を公開し、集計回数と初回時刻は内部の保持に使う。CLI一覧は識別子・状態・ラベル・直近操作・結果保留・開始時刻・文脈使用量と活動診断へ限定する。MCPの通常応答には絶対活動時刻を載せず、`show(verbose=True)`で更新・出力時刻と実行条件を示す。結果のturn番号と確定時刻、通知の送信時刻は保存と整列に残し、回収する公開応答から除く。用途別の射影で内部追加の流入を防ぎ、所有者確認と耐久退避は従来の入力を使う。
-診断ログのディレクトリは`agents-server.log`を置く階層とし、`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
-AntigravityとOpenCodeのイベント処理を調査するときは、上表の公開イベントログを参照する。書き込みに失敗した場合はbackendの警告ログを参照し、イベント処理の終端状態はsession状態から判定する。
+状態ディレクトリは、`atk config get state_dir`が返すディレクトリ配下の`agents-server`を使用する。
+レーンリソースの所有登録や回収結果への参照情報は、同じ`state_dir`配下の`lanes/<所有session>/`に個別に配置する。`_atk/lane.py`が作成、明示的な再利用、ならびに回収処理を一括して管理し、通常の終了時やprocess-loopの子プロセス終了後も同一の処理を利用する。レーン管理側は、`_common/session_registry.py`の`resolve`による解決結果（実行中かどうかとcwd）を通じてセッション登録簿を読み取るのみにとどめ、状態の更新や終了登録はMCPサーバー側が担う。回収された結果データは専用worktree外のmanaged-tempへ保存され、既存の保持期限ポリシーに従って破棄される。なお、未解決のリソース登録は破棄せず保持し、回収処理が削除するのは解決済みのレーン登録のみとする。
+内部で保持するデータ項目と、公開APIのレスポンスに含める項目は明確に分離して扱う。アクティビティ情報としては`seconds_since_activity`、API失敗情報としてはエラー種別・HTTPステータスコード・経過時間（利用上限の解除待ち中であれば制限種別と解除予定時刻も含む）を公開し、内部管理用の集計回数や初回到達時刻は公開レスポンスには含めない。CLIの一覧表示では、識別子、状態、ラベル、直近の操作、保留状態、開始時刻、コンテキスト使用量、およびアクティビティ診断に必要な項目のみに絞り込んで出力する。MCPの通常レスポンスには絶対時刻を直接含めず、`show(verbose=True)`が指定された場合にのみ更新・出力時刻や実行条件を出力する。結果のターン番号、確定時刻、通知送信時刻は内部保存とソート用に保持し、外部へ返す公開レスポンスからは除外する。このように用途別の射影（Projection）を徹底することで内部管理項目の意図しない流出を防ぎ、所有者確認や安全な退避には既存のデータ構造を利用する。
+診断ログの出力先ディレクトリは`agents-server.log`が配置される階層とし、`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`がこれを解決する。
+AntigravityやOpenCodeのイベント処理を調査する際は、前述の表に記載された公開イベントログを確認する。書き込み失敗が発生している場合はバックエンドの警告ログを参照し、イベント処理の最終状態はセッション状態から判断する。
 
-索引を読むのは、現行のsession識別子からルートsession識別子を解決する主体だけである。
-MCPサーバーは`start`、`send_message`、`list`の応答へ、自身の状態ファイル書込先である`root_session_id`を明示する。`list`はsession一覧が空でも同じ項目を返す。PostToolUseフックは`root_session_id`を持つ応答であれば操作名によらずその項目を索引へ直接書き、子session識別子から状態ディレクトリを逆引きしない。`claude --resume`で起動した会話でもMCPサーバーと会話側の識別子が分かれ、最初のMCP操作が`send_message`になり得るためである。
-`atk agents list`と`atk agents wait`は索引または現行識別子自身の状態ディレクトリからルートsessionとの対応を確認する。対応を確認できず対象が0件の場合は、CLIが解決したrootを示し、MCPの`list`を1回呼んで同じCLIを再実行する復旧手順を返す。対応確認済みの空状態は通常の空状態として扱う。
-`atk agents notify`は委譲先から`AGENT_TOOLKIT_OWNER_SESSION`で所有者sessionを直接解決するため、索引の読み取りを省く。
-子から親へ通知する場合は宛先を所有者sessionから解決する。現行のsession識別子から解決すると、宛先が自分自身になるためである。
+索引ファイルを参照するのは、現在のセッション識別子からルートセッション識別子を特定する必要があるコンポーネントのみである。
+MCPサーバーは、`start`、`send_message`、`list`のレスポンスにおいて、自身の状態ファイルの書き込み先となる`root_session_id`を明示して返す。`list`はセッション一覧が空であっても同様にこの項目を含める。PostToolUseフックは、レスポンス内に`root_session_id`が含まれていれば操作名に関わらずその値を索引へ直接書き込み、子セッション識別子から状態ディレクトリを逆引きすることはしない。これは、`claude --resume`で起動した会話ではMCPサーバーと会話側の識別子が異なり、最初のMCP操作が`send_message`になる可能性があるためである。
+`atk agents list`および`atk agents wait`は、索引または現在のセッション識別子自身の状態ディレクトリを参照して、ルートセッションとの対応関係を確認する。対応が確認できず対象セッションが0件の場合は、CLIが特定したルート識別子を提示し、MCPの`list`を1回実行してから同じCLIを再実行するよう復旧手順を案内する。対応関係の確認が完了している状態での0件は、通常の空状態として処理する。
+`atk agents notify`は、委譲先から環境変数`AGENT_TOOLKIT_OWNER_SESSION`を通じて所有者セッションを直接特定できるため、索引の参照を省略する。
+子エージェントから親エージェントへ通知を送る際は、宛先を所有者セッションから解決する。現在のセッション識別子から解決してしまうと、自分自身を宛先として誤認してしまうためである。
 
-資源記録はsession開始・終端時に同じ状態ディレクトリの全rootを読み、重複sessionと失効した状態ファイルを一覧と同じ判定で除く。
-発生元が所有するsessionは最新のメモリー状態で上書きする。記録の保存先は既存のagents-server.logとする。
-集計は非原子的な観測であり、読取失敗は完全性の欠損として記録する。loadと利用可能メモリーはホスト全体の値であり、session固有の消費量との区別を保つ。
+リソース記録の処理は、セッションの開始時および終了時に同一状態ディレクトリ内のすべてのルートを走査し、一覧表示と同様の基準で重複セッションや失効した状態ファイルを除外する。
+自プロセスが所有するセッションについては、最新のメモリー状態を優先して上書きする。記録は既存の`agents-server.log`に保存される。
+なお、このリソース集計は非アトミックな観測処理であるため、読み取りに失敗した場合はデータの完全性欠損として記録する。ロードアベレージや利用可能メモリー量はホスト全体の値であり、セッション個別のリソース消費量とは明確に区別して扱う。
 
-子session・背景taskの完了待ちの保留中へ追送しても、待機対象の識別子と保存出力の対応は保持する。
-子session、Codexの子thread、Claudeの`local_agent`など終了上限の無い対象がある保留は、`auto_resume_deadline=None`とする。
-名目7800秒で最終化せず、対象の終端と再開turnを観測するまで保持する。
-有界の背景コマンドの通知欠落には既存の期限を適用する。
-旧turnの保留結果は公開せず、新しいturnと未完了作業の寿命を分ける。配送失敗時も観測対象を残して再試行できる。
-回収した対象だけを追跡から外し、同じ完了による自動再開は一度に限定する。kill・期限・ストリーム終端による明示確定と、利用上限・過負荷の継続は別の境界として扱う。期限を持たない利用上限・過負荷の保留への追送は従来どおり保留結果を確定し、待機対象が残れば`heldResultFinalized`を付ける。
+子セッションやバックグラウンドタスクの完了を待っている保留中の状態に対してプロンプトの追送が行われた場合でも、待機対象の識別子と保存済み出力との対応関係は維持する。
+子セッション、Codexの子スレッド、Claudeの`local_agent`など、明確な終了上限時間が存在しない対象を含む保留状態では、`auto_resume_deadline=None`とする。
+名目上の7800秒といった制限で強制的に最終化することはせず、対象の終了と再開ターンが実際に観測されるまで待機状態を維持する。
+一方で、明確な制限時間を持つバックグラウンドコマンドの通知欠落に対しては、既存のタイムアウト期限を適用する。
+過去ターンの保留結果は外部へ公開せず、新規ターンと未完了の作業の生存期間を適切に分離する。配送に失敗した場合でも観測対象を維持し、再試行可能な状態を保つ。
+回収が完了した対象のみを追跡リストから除外策し、同一の完了イベントによる自動再開処理は1回のみに制限する。kill、期限切れ、ストリーム終了による明示的な完了確定と、利用上限や過負荷による継続待機は、異なる処理境界として区別して扱う。期限を持たない利用上限や過負荷による保留状態に対してプロンプトが追送された場合は、従来通り保留結果を確定し、待機対象が残っていれば`heldResultFinalized`フラグを付与する。
 
 ## 判定を確定する前に確認すること
 
-- 外部所有の復元状態は`ManagerRegistry`の`_RegistryResumeState`として識別し、各消費側が共通の`_refresh_resume_state`で共有登録の現在のturnと状態を再解決する。
-- 外部の復元状態を読む`show`・`list`、停止済み・期限切れの解決と、そこからの停止・結果取得は、再解決した現在の状態に従う。新しいturnが稼働中なら過去turnの終端を現在の完了へ転用せず、過去の未回収結果は結果ファイルの契約で保持する。
-- 上表の「更新できる主体」が2つ以上ある状態は、全ての更新主体の処理の流れを読んで網羅を判定する。
-- MCPサーバーのメモリーにだけある状態はMCPサーバーだけが更新でき、`atk`のCLIとフックは更新できない。その状態を判定に用いる処理がCLI経由の操作でも成立するかを確かめる。
-- 新しい状態は1つの表現で保持する形へ設計する。未回収の終端結果は、そのファイルを書いた主体の公開台帳と結果ファイルの在否から`published`、`consumed`、`unpublished`へ区分する。CLIが回収途中の結果はrun別退避物を再開時の基準とし、原本が残る中断点では同じ本文を重ねて配送しない。`SessionState.result_delivered`はファイルを削除する契機を表す内部状態であり、ファイル表現を持たない処理に限り用いる。
-- MCP待機とCLI待機は`_agents_server/retained_results.py`の`take_result`で所有者の確認、排他取得、本文の読取および削除を1つの区間として実行する。CLI待機は同じ排他区間でrun別退避物を確定してから原本を削除する。MCP待機は退避先を渡さず、従来の回収結果を使う。
-- 待機所有権と待機対象の登録は、いずれも書込主体を単位とする名前空間で表す。読む側も同じ単位で読み、探す対象は書込主体を名前とするロックと登録とする。
-- `atk agents wait`の前景実行と背景実行は、書込主体ごとに同時に1つとする。ロック競合を観測した後発は`current.json`が示すrun IDを固定し、同じロックの取得後に固定runの状態を読み直す。`published`か`foreground-delivered`なら保存本文と終了コードを返し、返却後に`consumed`へ遷移させて結果の再演を1回に限る。`running`なら保存対象とrun別退避物の対象を引き継ぎ、lock待ち中の追加対象も含めて同じrunの待機を再開する。競合せずロック取得に成功した後続waitも、現在の対象集合が残存する`running` runと一致すれば退避物を引き継いで待機を再開する。原本の回収後にrun別退避物だけへ残るsessionも対象集合の一致確認へ含める。対象集合が一致し、`continuable`がfalseの`published` runは結果を1回返す。対象集合が変わったrunと継続可能な公開runは新規待機へ進む。`consumed`のrunは再利用せず、新規runを開始する。待機上限への到達または通知だけを返したrunは`continuable`をtrueとし、次の発行は新規runを開始する。run記録がない旧形式のlockだけを観測した場合は、旧形式との競合を示す診断で終了する。ロックの単位は書込主体とし、対象sessionごとのロックは除外する。
+- 外部所有の復元状態は`ManagerRegistry`の`_RegistryResumeState`として管理し、各利用側は共通の`_refresh_resume_state`を呼び出して共有登録情報の最新ターンと状態を再確認する。
+- 外部の復元状態を読み取る`show`や`list`、停止済み・期限切れの判定、ならびに停止実行や結果取得の処理は、再確認した最新の状態に基づいて行う。新しいターンが進行中である場合は、過去ターンの終了状態を現在の完了状態として流用してはならず、過去の未回収結果は結果ファイルのルールに従って保持する。
+- 前述の表で「更新できる主体」が2つ以上存在する状態については、関係するすべてのコンポーネントの処理フローを網羅して確認した上で挙動を確定する。
+- MCPサーバーのメモリー上にのみ存在する状態はMCPサーバー自身しか更新できず、`atk` CLIやフックから更新できない。そのため、その状態に依存する判定処理がCLI経由の操作でも破綻せずに成立するかを確認する。
+- 新しい状態を設計する際は、状態の表現形式を1つに集約する。未回収の終了結果は、結果ファイルを書き込んだ主体の公開台帳とファイルの存在有無から、`published`、`consumed`、`unpublished`のいずれかに分類する。CLIによる回収途中の結果については、run別退避ディレクトリのデータを再開時の基準とし、原本が残っている中断ポイントであっても同一のメッセージ本文を重複して配信しないようにする。なお、`SessionState.result_delivered`はファイルを削除するタイミングを管理するための内部フラグであり、ファイルを持たない処理でのみ使用する。
+- MCP側の待機処理とCLI側の待機処理は、いずれも`_agents_server/retained_results.py`の`take_result`を用いて、所有者確認、排他ロックの取得、本文の読み取り、およびファイルの削除を一連のアトミックな区間として実行する。CLI待機では同一の排他区間内でrun別退避ディレクトリへの保存を確定させてから原本ファイルを削除する。MCP待機では退避先を指定せず、従来の結果回収フローを使用する。
+- 待機処理の所有権と待機対象セッションの登録は、いずれも書込主体を単位とする名前空間で管理する。読み取り側も同じ書込主体単位で探索し、対象のロックファイルや登録情報を特定する。
+- `atk agents wait`の実行（フォアグラウンド実行およびバックグラウンド実行）は、書込主体ごとに同時に最大1つとする。ロック競合を検知した後発プロセスは、`current.json`に記録されたrun IDを固定し、ロック取得後にその固定したrunの状態を再読み込みする。その状態が`published`または`foreground-delivered`であれば保存済みの本文と終了コードを返し、返却完了後に`consumed`へ遷移させることで、同一結果の再演を1回のみに限定する。状態が`running`の場合は、保存対象およびrun別退避ディレクトリの対象を引き継ぎ、ロック待機中に追加された対象セッションも含めて同一runの待機処理を再開する。競合せずにロックを取得できた後続のwaitプロセスも、現在の対象セッション集合が残存する`running`状態のrunと一致していれば、退避データを引き継いで待機を再開する。この対象集合の一致確認には、原本の回収後にrun別退避ディレクトリにのみ残っているセッションも含める。対象集合が一致し、かつ`continuable`がfalseの`published` runについては、結果を1回のみ返却する。対象集合が変化したrunや、継続可能な公開状態（`continuable`がtrue）のrunについては新規待機を開始する。`consumed`に遷移済みのrunは再利用せず、常に新規runを開始する。待機時間の上限に達した場合や通知のみを返却したrunは`continuable`をtrueとし、次回実行時には新規runを開始する。なお、run情報の記録がない旧形式のロックファイルのみが存在する場合は、旧形式との競合を示すエラー診断を出力して終了する。ロックの取得単位は書込主体ごととし、対象セッション個別のロックは使用しない。
 
-CLI待機の配送は結果と通知の損失防止を優先する。runへ本文を保存してからstdoutまたはstderrへflushし、その後に配送済みのrun状態を保存する。後続waitが保存済みの本文を配送する場合も、flush後に`consumed`を保存する。どちらの場合でも、flush後かつ配送状態の保存前にプロセスが停止すると、次のwaitは保存本文を1回再出力してよい。強制終了を伴わない同時発行の合流では同じrunを1回だけ回収し、1回の再開処理で同じsessionの結果を重ねて出力しない。flushと状態ファイルの更新を受信確認の仕組みなしに原子化できないため、この中断点での再出力を許容する。
+CLI待機における結果配信は、結果や通知の取りこぼしを防ぐことを最優先とする。具体的には、runディレクトリへ本文を保存してから標準出力（stdout）または標準エラー出力（stderr）へフラッシュ（flush）し、その後に配信完了状態を保存する。後続のwaitプロセスが保存済みの本文を再配信する場合も、フラッシュ完了後に`consumed`状態を保存する。いずれのケースでも、フラッシュ後かつ状態保存前にプロセスが異常停止した場合は、次回のwait実行時に保存済み本文が1回再出力されることを許容する。プロセスの強制終了を伴わない通常の合流処理では同一runを1回のみ回収し、1回の再開処理の中で同一セッションの結果が重複して出力されるのを防ぐ。フラッシュと状態ファイルの更新は受信確認（ACK）の仕組みなしに完全アトミック化できないため、この停止点における安全側の再出力を許容する設計としている。
 
-`foreground-delivered`と`consumed`は標準出力への配送と後続waitでの再演だけを表し、受け取ったエージェントが読んだかは表さない。
-待機対象が0件の終了（終了コード10）と`consumed`の終了（終了コード8）では、`atk agents wait`が同じルートと書込主体の`current.json`が示す配送済みrunを読み、`run_path`、対象の`session_ids`と実在する`agent_message_paths`を診断へ加える。
-受け取った主体は`run_path`を読み、`output`にある終端結果本文へ戻る。本文ファイルが消えていても`output`から読める。
-runが無い、読めない、結果を含まない場合は`status`の`missing`・`unreadable`・`no-results`で区別する。復旧先は同じ所有者のrunに限る。
-保存runは受け取った主体が読み、`atk agents wait`は結果を再配送せずに1回だけ回収する契約を保つ。
+`foreground-delivered`や`consumed`の状態は、標準出力への配信が行われたこと、および後続のwaitによる再演が完了したことのみを示しており、受け取った側（エージェント）が実際に内容を読み取ったかどうかまでは保証しない。
+待機対象が0件で終了した場合（終了コード10）や、すでに消費済み（`consumed`）で終了した場合（終了コード8）の対応を定める。`atk agents wait`は同一ルートと書込主体の`current.json`に記録された配信済みrunを読み取り、`run_path`、対象の`session_ids`、ならびに実在する`agent_message_paths`を診断情報に追加する。
+結果を受け取ったコンポーネントは`run_path`を参照することで、`output`内に保存されている終了結果本文を再取得できる。これにより、個別のメッセージ本文ファイルがすでに削除されていても`output`から内容を復元できる。
+runファイルが存在しない、読み取れない、または結果データを含んでいない場合は、`status`をそれぞれ`missing`、`unreadable`、`no-results`として区別して報告する。復旧対象として参照できるのは同一所有者のrunに限られる。
+保存されたrunデータは受取側が直接読み取る運用とし、`atk agents wait`側では結果を再配信せず1回限りの回収とする契約を保つ。
 
-各MCPサーバーは、自身が所有する状態ファイルと対応する一時ファイルに加え、生存の印が失効した他の状態ファイルを削除できる。
-生存の印を持たない状態ファイルは保持する。
-起動時に同名の状態ファイルの生存の印が有効で、`writer_process`が自プロセス以外として実在する場合は、そのファイルを削除せず自身は`<書込主体>-p<pid>.json`へ書く。同じ会話で起動単位が交代し旧起動単位が残ると、削除は旧起動単位のsessionを書ける所有者がいないと誤って判定させるためである。
-生存の印は状態ファイルを書く起動単位が応答していることだけを示す。終端と所有の判定は記録プロセスの実在を一次の根拠とする。
-共有する`results`配下の削除は、委譲元への配送、CLIのrun別退避物への耐久保存、`stop`による明示的な破棄の後に限る。
-経過時間は結果削除の契機から外す。
-`notices`と`hosts`配下の共有ファイルは、各書込主体が保持期限の経過後に削除できる。
-`sessions`配下の登録簿を解放済みへ置換するのは、そのsessionを所有するMCPサーバーだけである。自プロセスが所有しない記録への`stop`は、記録プロセスが実在する間は記録と結果ファイルを保持したまま拒否を返す。
-`stop`または保持期限の経過で資源解放を完了した後に、理由・時刻と内部再開情報を保持するレコードへ置き換える。Codexの資源解放の完了は、所有するApp Serverと子孫の終了を確認した時点とする。
-APIへ移行した会話はCodexではprovider、Claudeでは`claude_resume_info`のenvファイルのパスを保持する。
-終端を観測した待機側は登録簿を保持する。
-解放済みレコードを残すことで、別のMCPサーバーは所有側による解放と記録の不在を区別できる。
-委譲元の項目は作成時に書き、状態更新と解放済みへの置換でも引き継ぐ。
+各MCPサーバーは、自身が所有する状態ファイルおよび関連する一時ファイルに加えて、ハートビート（生存シグナル）が失効した他の状態ファイルを削除できる。
+ハートビート情報を持たない状態ファイルについては、勝手に削除せず保持する。
+起動時に同名の状態ファイルのハートビートが有効であり、かつ`writer_process`で示されるプロセスが自プロセス以外としてOS上に存在する場合は、そのファイルを削除せずに自身は`<書込主体>-p<pid>.json`という個別ファイル名へ書き込む。同一の会話内で起動インスタンスが交代した際に古いインスタンスが残存している場合、ファイルを削除してしまうと古いインスタンスのセッションを管理できる所有者が存在しないと誤認されるのを防ぐためである。
+ハートビートは、状態ファイルを書き込んでいるインスタンスが現在応答可能であることのみを示す指標である。セッションの終了や所有権の判定は、登録簿に記録されたプロセスの実在性を第一の根拠とする。
+共有領域である`results`配下の結果ファイルを削除できるのは、委譲元への配送完了後、CLIのrun別退避ディレクトリへの保存完了後、または`stop`による明示的な破棄要求の受領後に限られる。
+単なる経過時間の長さだけを理由として結果ファイルを削除することはない。
+`notices`および`hosts`配下の共有ファイルは、保持期限が経過した後に各書込主体が削除できる。
+`sessions`配下の登録簿を「解放済み」レコードへ更新できるのは、そのセッションを所有するMCPサーバー自身のみである。自プロセスが所有していないセッションに対する`stop`要求に対しては、記録されたプロセスがOS上に存在する限り、登録簿と結果ファイルを保持したまま拒否レスポンスを返す。
+`stop`の実行または保持期限の経過によってリソース解放が完了した段階で、解放の理由、完了時刻、および内部再開情報を記録した「解放済み」レコードへと置き換える。Codexにおけるリソース解放の完了は、所有するApp Serverおよびその子孫プロセスの終了をOS上で確認できた時点とする。
+API接続へ移行した会話については、Codexでは利用プロバイダー名、Claudeでは`claude_resume_info`に含まれるenvファイルのパスを保持する。
+セッションの終了を観測した待機側プロセスは、登録簿を削除せず保持する。
+解放済みレコードを意図して残すことにより、他のMCPサーバーが「所有側によって正常に解放された状態」と「そもそも記録が存在しない状態」とを明確に判別できるようにしている。
+委譲元に関する情報はセッション作成時に書き込まれ、その後の状態更新や解放済みレコードへの移行時にも一貫して引き継がれる。
 
-lane回収の解放要求は`session_release.py`が登録簿の終端・cwdと所有プロセスを確認して作成する。
-所有MCPサーバーの常駐監視が要求を読み、現在の登録と所有を再検収して`stop(retain_result=True)`を実行する。
-明示的な`atk lane delete`はmainの待機期限から導出した共通deadline内で応答と資源終了を待ち、使用中判定をやり直す。
-自動回収は解放の待機をせず、その時点の登録簿と使用中判定から適格な資源を回収する。
-未解放・使用中・確認不能の資源は、未回収理由と再開操作を示して保持する。
-自身の要求・応答はCLIの完了時に回収し、異常終了で残ったファイルは既存のsessionファイルの7日掃引へ委ねる。
+レーン回収時のリソース解放要求は、`session_release.py`が登録簿の終了状態、作業ディレクトリ（cwd）、および所有プロセスを確認した上で作成する。
+所有MCPサーバーの常駐監視処理がこの要求を読み取り、現在の登録情報と所有関係を再確認した上で`stop(retain_result=True)`を実行する。
+ユーザー等から明示的に実行された`atk lane delete`は、メイン側の待機タイムアウトから算出した共通の期限（deadline）内で応答とリソースの終了を待ち、リソースが使用中かどうかの判定を再度行う。
+一方、バックグラウンド等による自動回収処理は解放完了をブロッキングして待つことはせず、その時点の登録簿と使用状況の判定結果に基づいて、即座に回収可能なリソースのみを回収する。
+未解放、使用中、または状態確認が取れないリソースについては、回収できなかった理由と再開手順を提示した上でそのまま保持する。
+CLI自身が生成した要求ファイルや応答ファイルは、CLI処理の完了時に自身で削除・回収する。プロセスの異常終了によって残されたファイルについては、既存のセッションファイルと同様に7日間の定期掃引処理に委ねる。
 
-MCPサーバーの起動時とSessionEndでは、配下の全ファイルの最終更新から7日を超えたrootディレクトリ、`sessions`の登録簿、および`compaction`の計測記録を掃引する。登録簿のうち終端しておらず記録プロセスが実在する記録は、更新が7日を超えても残す。現在の会話のrootは除外し、`compaction`のJSONLとlockは対として削除する。個別の削除失敗を記録し、後続対象の掃引と起動・終了処理を継続する。
-続けて起動単位の終了診断を回収する。参照元は掃引後に残る登録簿の`server_instance`・`interrupted_turns`と、各rootの終端結果ファイルの`error.diagnostics.server_instance`とし、参照元の無い7日超のファイルを削除する。ディレクトリ合計が64MiBを超える場合は、参照元の無いファイルを古い順に7日未満でも削除する。参照元のあるファイルと実行中のサーバー自身の起動単位は削除しない。
+MCPサーバーの起動時およびSessionEndイベント発生時には、配下の全ファイルの中で最終更新から7日を超えたルートディレクトリ、`sessions`登録簿、ならびに`compaction`の計測記録を自動的に掃引・削除する。ただし、登録簿の中でまだ終了しておらず記録されたプロセスが現在も生存しているものについては、最終更新から7日を超えていても削除対象から除外して保持する。現在の会話が使用しているルートディレクトリも除外対象とし、`compaction`のJSONLログとロックファイルは必ずペアで削除する。個別のファイル削除でエラーが発生した場合はその旨をログに記録し、後続のファイル掃引やサーバーの起動・終了処理は中断せずに継続する。
+続いて、インスタンスごとの終了診断ログを回収する。参照元となるのは、掃引処理後に残っている登録簿内の`server_instance`・`interrupted_turns`、および各ルートの終了結果ファイル内の`error.diagnostics.server_instance`である。これらの参照元が存在しない7日以上経過したログファイルを削除する。なお、ログディレクトリ全体の合計サイズが64MiBを超える場合は、参照元が存在しないログファイルを対象に、更新日時が古いものから順に7日未満であっても前倒しで削除する。有効な参照元が存在するログファイルや、現在稼働しているサーバー自身のインスタンスログは削除しない。
 
-backendを開始した後の保存は、開始の成否と別の成否として扱う。
-`manager.py`の`_save_started_session`は次の保存の失敗を個別に`persistence_warnings`へ集め、起動応答に`session_id`・cwd・委譲元を残す。
+バックエンドの起動処理が成功した後のデータ保存成否は、起動処理自体の成否とは独立して評価する。
+`manager.py`の`_save_started_session`は、以下の保存処理における失敗を個別に検知して`persistence_warnings`に集約し、起動レスポンスには`session_id`、作業ディレクトリ（cwd）、委譲元情報を確実に残す。
 
-- session登録簿の更新（`SessionState.publish_registration_async`）
-- 状態ファイルの射影（`StatusFileWriter.flush_async`）
-- 待機対象の登録（`wait_targets.retain_wait_targets`）。`flush`に失敗した起動だけが補う。`flush`が成功した起動は既存の状態ファイルとPostToolUseフックの登録を使う
+- セッション登録簿の更新（`SessionState.publish_registration_async`）
+- 状態ファイルの出力・反映（`StatusFileWriter.flush_async`）
+- 待機対象リストへの登録（`wait_targets.retain_wait_targets`。これは`flush`に失敗した場合のフェイルセーフとしてのみ実行される。`flush`が成功した場合は、既存の状態ファイルとPostToolUseフックの登録情報がそのまま利用される）
 
-登録簿の更新は成功した値だけを公開済みとして覚えるため、次の状態更新と`flush`で再試行される。表示用の状態ファイルの置換失敗は`status_file.ProjectionWriteError`として終端結果の保存失敗と区別する。予約した`flush`とheartbeatの保存失敗はログへ残して次回の更新へ進む。
-非同期の保存は、パス・本文・登録情報をloop上で確定し、ファイル操作だけを`file_operations.run_file_operation`からworkerへ渡す。成功したsnapshotの反映と保持タイマーの操作もloopが所有し、共有session辞書やwriterをworkerへ渡さない。同期CLIの`atomic_write`と有限再試行の契約は保つ。
-loop上の`SessionState.touch`は登録公開をsessionごとのtaskへ集約し、保存中に値が変わった場合も最新の登録まで進める。起動・追送・結果配送の応答は必要な保存を待つ。writerは保存と削除を直列化し、公開済みまたは回収済みの結果を再保存せず、旧turnの保存成功を新turnへ反映しない。
-MCPサーバーの停止（`AgentsServerManager.close`）では終端の公開で生じた`ProjectionWriteError`だけをログへ残して後始末を続ける。終端結果の保存の`OSError`は呼び出し元へ伝えたうえで、listenerの解除と`StatusFileWriter.deactivate`を`finally`で行う。
-停止は再開と同じ`turn_control_lock`で直列化し、所有SDK task・CLIの根プロセスと子孫のcleanup完了後に未終端turnを`interrupted`として公開する。cleanupの後も委譲先CLIが実在するturnは公開せず、登録簿を実行中のまま残す。
-cleanup失敗では所有handleと未解放の記録を保持し、同じ対象の停止を再試行できるようにする。
-停止が取り消されても、保存taskとworkerの終了を回収し、終端公開と予約解除を終えてから自身の状態ファイルを削除する。保存失敗を成功として扱わず、停止後にworkerが状態ファイルを再作成することを防ぐ。
-drainは並行した保存の一部が失敗しても対象workerの全終了を先に回収し、登録公開も終えてから保持した失敗を呼び出し元へ伝える。
-共通の`atomic_write`は置換に失敗した例外へ置換元と置換先のパスを注記（`add_note`）するため、呼び出し側が記録するスタックにも両パスが残る。
-起動済みとして登録するのはbackendを開始したsessionだけであり、入力検証、候補の解決、backendの開始失敗による不成立は起動前の失敗として返す。
+登録簿の更新処理は、正常に永続化できた値のみを「公開済み」として記録するため、保存に失敗した場合は次回以降の状態更新や`flush`のタイミングで自動的に再試行される。表示用の状態ファイルの書き込み失敗は`status_file.ProjectionWriteError`として扱われ、終了結果ファイルの保存失敗とは区別される。タイマー予約された`flush`やハートビート更新の失敗はログに出力した上で、次回の更新サイクルへと進む。
+非同期での保存処理では、対象パス、書き込み本文、登録用データをイベントループ側で確定させ、実際のファイルI/O操作のみを`file_operations.run_file_operation`経由でワーカースレッドへ委譲する。最新スナップショットの反映や保持タイマーの操作もイベントループ側で管理し、共有のセッション辞書やwriterオブジェクト自体をワーカースレッドへ渡すことはしない。同期CLIが提供する`atomic_write`によるアトミックな書き込みと、有限回数の再試行ルールはそのまま維持される。
+イベントループ上の`SessionState.touch`は、登録情報の公開タスクをセッションごとの単一タスクに集約し、保存処理の実行中に値が変化した場合でも最終的に最新の状態まで更新する。起動、プロンプト追送、結果配送などのレスポンスは、必要な永続化処理の完了を待ってから返却される。writer側は保存処理と削除処理を直列化（キューイング）して実行するため、すでに公開済みまたは回収済みの結果を重複して再保存することはなく、過去ターンの保存成功フラグが新しいターンへ誤って持ち越されることもない。
+MCPサーバーの停止処理（`AgentsServerManager.close`）では、終了情報の公開時に発生した`ProjectionWriteError`のみをログに残してクリーンアップ処理を続行する。一方で、終了結果ファイルの保存時に発生した`OSError`は呼び出し元へ例外として伝播させ、イベントリスナーの解除や`StatusFileWriter.deactivate`は`finally`節で確実に実行する。
+サーバー停止処理は、再開処理と同じ`turn_control_lock`を取得して直列に実行され、管理対象のSDKタスク、CLIのルートプロセス、およびその子孫プロセスのクリーンアップが完了した後に、未終了ターンを`interrupted`として外部へ公開する。クリーンアップ後も委譲先CLIのプロセスが依然として生存しているターンについては中断を公開せず、登録簿上は実行中（`running`）のまま保持する。
+クリーンアップ処理が失敗した場合は、プロセスハンドルや未解放のリソース記録をそのまま維持し、同一対象に対して停止処理を再試行できるようにする。
+停止要求がキャンセルされた場合でも、実行中の保存タスクやワーカースレッドの完了を待って回収し、終了情報の公開と予約タスクの解除を完了した上で自身の状態ファイルを削除する。保存の失敗を成功とみなすことはせず、停止処理が完了した後にワーカースレッドが状態ファイルを再作成してしまう事態を防ぐ。
+ドレイン処理（drain）は、並行して走る保存処理の一部が失敗した場合でも、すべての対象ワーカーの終了を確実に回収し、登録情報の公開まで完了した上で、保持していたエラーを呼び出し元へ報告する。
+共通ユーティリティの`atomic_write`は、ファイル置換に失敗した例外に対して置換元と置換先のパス情報を注記（`add_note`）するため、呼び出し側が記録するスタックトレースからも双方のパスを特定できる。
+起動済みとしてセッション登録簿に登録するのはバックエンドの起動に成功したセッションのみであり、入力パラメーターの検証エラー、候補モデルの解決失敗、バックエンド起動エラーなどの理由で起動に至らなかったものは、起動前の失敗として返却する。
 
-明示列で選択したAPI会話は、API主接続とサブスクからの移行のどちらでも、stopと保持期限の経過による解放後に解放済み記録の内部再開情報から復元する。
+明示的なモデル候補リストから選択されたAPI会話は、API直接接続およびサブスクリプションからの移行のいずれであっても、`stop`の実行や保持期限切れに伴うリソース解放が行われた後、解放済みレコードに保存されている内部再開情報を基に復元される。
 
-- 再起動をまたぐsessionの解決はsession登録簿に従う。statusline向け状態ファイルは書込主体を解決できる処理だけで作成されるため、解決の入力から外す。登録簿が終端を示さないsessionは、別プロセスがturnを実行している可能性を排除できないため再開しない。所有側は停止時に、backendの停止で終わった未終端のturnを`interrupted`として登録簿と結果ファイルへ公開し、記録を終端へ進める。それでも`running`のまま残った記録は、`session_registry.resolve`が記録されたプロセスの識別で判定する。記録された全プロセスが存在しない（pidが無いか、同じpidの起動時刻が異なる）記録は、登録簿を書き換えずに`interrupted`の終端と中断の理由として解決し、全ての読む主体が終端として扱う。プロセスが1つでも存在する記録と、識別を持たない記録（識別の導入前に書かれた記録）は実行中のままとする。照会したMCPサーバーは、生存の印が有効な状態ファイルがどれもそのsessionを載せていない場合に限り、この中断をengineを問わず登録簿へ公開して復元へ進む。Codexの記録は、同じ前提に加えて記録プロセスを持たない旧形式の記録か委譲先CLIが実在しない記録である場合に、`thread/read`の終端状態も公開する。公開するのは、自身のCodex App Serverへの`thread/read`が登録簿の`turn_id`のturn（項目の無い記録では全turn）の終端を示し、後続に進行中のturnが無い場合である。所有サーバーのプロセスだけが応答せずに残る記録もこの引き継ぎの対象とする。引き継ぐ側が行うのは終端の公開だけとし、解放済みへの置き換えは所有側に残す。
-- 生存の印が有効な状態ファイルがsessionを載せておらず、記録プロセスのうち委譲先CLIが実在する記録は、所有サーバーを失った実行中とする。この記録は`thread/read`の結果によらず実行中のまま保つ。判定は`session_registry.running_ownership`へ集約する。MCPの`show`と`atk agents show`は`running`に`ownership`・`recorded_processes`・`owner_root_session_id`・`stranded_notice_count`を加えて返す。`next_action`には終了を待つ操作と、`kill`の後に同じsessionへ`send_message`する操作を示す。`send_message`は再開を試みず同じ案内のエラーを返し、`atk agents wait`は実行中として待つ。MCPの`kill`は登録簿のpidと起動時刻が一致する委譲先CLIだけを子孫ごと停止し、停止を確かめてから`interrupted`を公開し、所有サーバーのプロセスは稼働させたまま残す。実装は`_agents_server/owner_lost.py`と`manager_registry.py`が持つ。
-- 登録簿のレコードが不在、解放済みまたは読取不能である場合は、同じ識別子の終端結果ファイルを確認し、そのファイルが終端を示す場合は終端として扱う。解放済みと不在は所有側の解放と7日超の掃引のいずれからも生じ、終端結果の在否と独立するため、終端結果の有無の判定には結果ファイルを用いる。解放済みの公開判定と待機対象の解放・実行中の判定は不在と同じに扱う。明示列で選択したAPI会話の復元だけは、解放済み記録の内部再開情報を消費し、同じproviderをbackendへ渡す。古い記録と他engineの復元条件は従来のままとする。
+- プロセスの再起動をまたぐセッション状態の解決は、セッション登録簿の記録に従って行う。statusline向けの状態ファイルは書込主体を特定できる処理でのみ作成されるため、この解決処理の入力としては使用しない。登録簿上で終了状態が示されていないセッションについては、別のプロセスが現在ターンを実行している可能性を否定できないため、自動再開は行わない。所有サーバー側は自身の停止時に、バックエンド停止に伴って終了した未完了ターンを`interrupted`として登録簿および結果ファイルへ書き込み、セッションを終了状態へ進める。それでもなお`running`のまま残されている記録については、`session_registry.resolve`が記録済みのプロセス識別情報を検証して状態を判定する。記録されたすべてのプロセスが存在しない（PIDが存在しない、または同一PIDでもプロセスの起動時刻が異なる）場合は、登録簿のファイル自体を書き換えることなく`interrupted`による終了および中断理由として解決し、すべての参照元が終了状態として扱う。プロセスが1つでも生存している場合や、プロセス識別情報を持たない記録（識別機能が導入される前の古い記録）については、実行中（running）として扱う。問い合わせたMCPサーバーは、有効なハートビートを持つ状態ファイルのいずれにもそのセッションが含まれていない場合に限り、エンジンの種類に関わらずこの中断情報を登録簿へ正式に書き込んで復元処理を進める。Codexのセッション記録については、上記の条件に加えて、プロセス識別情報を持たない旧形式の記録であるか、あるいは委譲先CLIプロセスが実在しない場合に、`thread/read`による終了状態の確認結果も登録簿へ公開する。公開するのは、自身のCodex App Serverに対して実行した`thread/read`が、登録簿に記録された`turn_id`のターン（ターンIDが記録されていない場合は全ターン）の終了を示しており、かつ後続に進行中のターンが存在しない場合である。所有MCPサーバーのプロセスのみが無応答で残存している記録についても、この引き継ぎ処理の対象となる。なお、引き継ぎ側のMCPサーバーが行うのは終了状態の公開のみであり、「解放済み」レコードへの書き換えは元の所有サーバー側の担当として残す。
+- 有効なハートビートを持つ状態ファイルにセッションが存在せず、かつ記録されたプロセスのうち委譲先CLIプロセスが現在も生存しているセッションは、「所有サーバーを失った実行中セッション」として扱う。このセッションは`thread/read`の結果に関わらず実行中として維持する。この判定ロジックは`session_registry.running_ownership`に集約されている。MCPツールの`show`と`atk agents show`は、状態が`running`の場合に`ownership`、`recorded_processes`、`owner_root_session_id`、`stranded_notice_count`を付与して返す。また`next_action`には、自然終了を待つ操作、ならびに`kill`を実行した後に同一セッションへ`send_message`を送る操作を案内として提示する。この状態のセッションに対して`send_message`が呼び出された場合は、再開を試みずに同様の案内を含むエラーを返し、`atk agents wait`は実行中セッションとして待機を継続する。MCPツールの`kill`は、登録簿に記録されたPIDおよび起動時刻と完全に一致する委譲先CLIプロセスのみをその子孫プロセスごと停止させ、プロセスの終了を確認した上で`interrupted`を公開する（所有サーバーのプロセスは稼働させたまま残す）。この実装は`_agents_server/owner_lost.py`と`manager_registry.py`が担当する。
+- 登録簿上にレコードが存在しない場合、すでに「解放済み」になっている場合、またはファイルが読み取れない場合は、同一識別子を持つ終了結果ファイルの有無を確認し、そのファイルが終了を示していれば終了状態として扱う。「解放済み」状態や「レコード不在」の状態は、所有サーバーによる明示的な解放だけでなく、7日間の定期掃引処理によっても発生し、終了結果ファイルの存在とは独立しているため、結果の有無の判定には常に結果ファイル自身を用いる。解放済みレコードに対する公開判定や、待機対象の解放判定・実行中判定は、レコードが存在しない場合と同様に扱う。明示的なモデル候補リストから選択されたAPI会話の復元に限っては、解放済みレコード内に保存されている内部再開情報を読み出して同一のプロバイダーをバックエンドへ引き渡す。古い記録形式や他のエンジンにおける復元条件は従来通りの動作を維持する。
 
 ## 本書の更新が必要になる変更
 
-同期操作のworker実装は`_common/async_operations.py`が持ち、agents_serverの`file_operations.py`は既存名を再exportする。監視の開始・終了でも同じ実装を使い、キャンセル後も所有threadを回収する。
+同期I/O操作を担うワーカーの実装は`_common/async_operations.py`が提供しており、agents_serverの`file_operations.py`は既存の関数名を再エクスポートして提供している。監視処理の開始や終了時にもこの共通実装を利用し、タスクのキャンセル後も所有スレッドを確実に回収する。
 
-非同期の共有状態操作は`file_operations.run_file_operation`で完了を待ち、結果と通知の一度だけの回収も排他区間全体をworkerで行う。Managerの照会・復元・結果回収は非同期APIを使う。射影、SessionState、タイマーと公開済み結果の台帳はloopが更新する。診断採取へ渡すsessionはloopで確定したsnapshotとする。永続ログは専用workerが順に出力し、サーバー終了の返却前に全記録とworkerの終了を回収する。
+非同期での共有状態操作は、`file_operations.run_file_operation`を用いて完了を待機し、結果や通知を1回限りで回収する処理も排他ロック区間全体をワーカースレッド内で実行する。Managerによる問い合わせ、復元、結果回収には非同期APIを使用する。状態の射影、`SessionState`、タイマー、および公開済み結果台帳の更新はイベントループ側で行う。診断情報の収集処理へ渡すセッション情報は、イベントループ側で確定したスナップショットデータとする。永続ログの書き込みは専用のワーカースレッドが順次出力し、サーバー終了処理の完了前に対象ログのフラッシュとワーカースレッドの終了を確実に回収する。
 
-- 上表のいずれかの状態について、基準となる保持先、読む主体または更新できる主体を変える変更。
-- 状態ディレクトリ配下へ新しい種類のファイルを置く変更。
-- MCPサーバー、`atk`のCLI、フックおよびstatuslineのいずれかへ、既存の共有状態を読み書きする処理を追加する変更。
+以下を変更する場合は、本書の記述を更新する必要がある。
+
+- 前述の各表に記載された状態について、基準となる保存場所、読み取りを担当する主体、または更新可能な主体を変更する場合。
+- 状態ディレクトリ配下に新しい種類のファイルを配置・追加する場合。
+- MCPサーバー、`atk` CLI、フック、statuslineのいずれかに対して、既存の共有状態を読み書きする処理を新たに追加する場合。

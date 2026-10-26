@@ -22,7 +22,8 @@ _BULLET_PREFIX = "- "
 _LABEL_DELIMITER_PATTERN = re.compile("[:\uff1a\u3002\uff08\uff09\u3001,\\s]")
 _INPUT_BULLET_PATTERN = re.compile(r"^- `(?P<name>[^`]+)`: ", flags=re.MULTILINE)
 # 固定の返却形式を持つ`<役割名>.subagent.md`が、返却をその形式の行に限ることを示す語。
-_FIXED_REPLY_LIMIT = "だけを返す"
+# 「形式だけを返す」「形式のみを返却する」などの言い換えを受け付ける。
+_FIXED_REPLY_LIMIT = re.compile("(?:形式|規定行)(?:だけ|のみ)(?:を返|で結果を返|とする)")
 
 
 def test_public_start_guidance_preserves_delegation_responsibilities() -> None:
@@ -30,9 +31,9 @@ def test_public_start_guidance_preserves_delegation_responsibilities() -> None:
     root = pathlib.Path(__file__).resolve().parent
     delegation = (root / "skills/delegation/SKILL.md").read_text(encoding="utf-8")
     sending = _h2_section(delegation, "送信")
-    assert "呼び元の契約から対象と実行時の値だけを渡す" in sending
-    assert "起動設定と必須入力の機械チェックはサーバーへ委ねる" in sending
-    assert "編集のための読取、委譲先自身の読取、返却後の書式確認" in sending
+    assert "委譲元は呼び出し元の契約に基づき、対象と実行時の値のみを渡す" in sending
+    assert "起動設定や必須入力の形式チェックはサーバーに任せる" in sending
+    assert "編集のための読取、委譲先自身による読取、完了後の形式確認" in sending
 
     properties = _start_tool().parameters["properties"]
     for name in ("mode", "extra_params"):
@@ -434,9 +435,10 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
     assert "レビューHEAD: " in review
     # 委譲元は返却の条件別判定行を受領確認し、JSON中のHEADの付替えを行わない。
     assert "## 完成条件証拠の受領確認" in parent and "agent_message_path" in parent
+    assert "判定結果と根拠を記述するのは実行レビュー担当のみ" in review
+    assert "判定とその根拠は、実行レビュー担当自身だけが記述する" in recording
     for content in (review, recording):
         assert "完成条件<N>: 達成|未達|根拠不足" in content
-        assert "レビュー担当だけ" in content or "実行レビュー担当だけ" in content
 
 
 def test_embedded_launch_contract_keeps_input_coverage(tmp_path: pathlib.Path) -> None:
@@ -491,9 +493,8 @@ def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> 
     assert all("鮮度" in content for content in (selection_text, lane))
     assert all("staleness" in content for content in (selection_text, review))
     assert all("notice" in content for content in (selection_text, lane, criteria))
-    assert all(
-        "不一致" in content and "充足済み" in content and "巻戻し" in content for content in (selection_text, lane, criteria)
-    )
+    assert all("不一致" in content and "充足済み" in content and "巻き戻し" in content for content in (selection_text, lane))
+    assert "食い違い" in criteria and "すでに充足されている" in criteria and "巻き戻し" in criteria
     assert "reviewer.md" in review
 
 
@@ -512,12 +513,12 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
 
     assert not (plugin_root / "share" / "pick-wi-explain.subagent.md").exists()
     assert _LAUNCH_TARGET_PREFIX not in explanation
-    assert "説明はメイン自身が行う" in explanation
+    assert "説明はメインエージェント自身が担当する" in explanation
     assert "`mode: explore`" in explanation
     assert "selection-explanation.md" in question_route
     assert "## 選定理由の説明" not in selection_text
     assert not re.search(r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explanation)
-    assert "selection-procedure.md" in lanes and "包含理由、除外理由" in lanes
+    assert "selection-procedure.md" in lanes and "含めた理由、除外した理由" in lanes
 
 
 def _declaration(task_document: pathlib.Path) -> task_documents.TaskDocumentDeclaration:
@@ -579,14 +580,15 @@ def test_same_lane_dependency_contract_reaches_parent_and_run_lanes() -> None:
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
-    for document in (selection_text, parent, lanes):
+    for document in (selection_text, parent):
         assert "同じレーン" in document
+    assert "同一レーン内のAWIは選定結果に示された依存順序を守り" in lanes
     assert "推移的な依存先" in _h2_section(selection_text, "処理対象の決定")
     assert "推移的にたどる" in _h2_section(parent, "保存後の意味検収")
-    assert "依存先が先行" in parent and "依存先から処理" in lanes
-    assert "候補と`選定`へ全項目を残す" in selection_text
-    assert "後続だけを開始せず依存待ちを維持" in selection_text
-    assert "後続を依存待ち" in lanes
+    assert "依存先が先行" in parent and "依存先から順に処理" in lanes
+    assert "候補および`選定`の双方に全項目を維持する" in selection_text
+    assert "後続項目のみを着手せず、依存待ちの状態を維持" in selection_text
+    assert "後続タスクを依存待ちの状態にし" in lanes
 
 
 def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
@@ -597,14 +599,14 @@ def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
     addition = _h2_section(parent, "処理対象WIの追加")
 
-    assert "後段の分割不能条件と同じ規則で`再開位置`の計画識別を比較" in selection_text
-    assert "同じ計画を持つ既存レーンの識別子と計画識別" in selection_text
-    assert "同じ再開計画を持つ既存レーンへの合流を費用比較より優先" in addition
+    assert "後段の分割不能条件と同じ規則に従って`再開位置`の計画識別情報を比較" in selection_text
+    assert "同一計画を持つ既存レーンの識別子と計画識別情報" in selection_text
+    assert "同一の再開計画を持つ既存レーンへの合流を費用比較よりも優先" in addition
     assert "atk run-script pick-wi-check" in addition
     assert "--output <元の選定結果の出力先ファイル>" in addition
     assert "--body-wi <追加WI名>" in addition
-    assert "そのレーンへの割当を分割不能条件として費用比較より先に確定" in lanes
-    assert "その計画を別レーンへ割り当てず" in lanes
+    assert "そのレーンへの割り当てを最優先の分割不能条件として確定し、費用比較よりも先行させる" in lanes
+    assert "該当計画を別レーンへ割り振ることはせず" in lanes
 
 
 def test_write_files_contract_reaches_selection_output_and_receipt() -> None:
@@ -650,7 +652,7 @@ def _fixed_reply_errors(share: pathlib.Path) -> list[str]:
         if "\n## 出力\n" not in content:
             continue
         output = _h2_section(content, "出力")
-        if _text_blocks(output.splitlines()) and _FIXED_REPLY_LIMIT not in output:
+        if _text_blocks(output.splitlines()) and not _FIXED_REPLY_LIMIT.search(output):
             errors.append(path.name)
     return errors
 
@@ -663,7 +665,9 @@ def test_fixed_reply_formats_limit_reply_to_declared_lines(tmp_path: pathlib.Pat
     """
     share = pathlib.Path(__file__).resolve().parent / "share"
 
-    assert not _fixed_reply_errors(share), "「だけを返す」を欠く固定返却形式: " + ", ".join(_fixed_reply_errors(share))
+    assert not _fixed_reply_errors(share), "返却を形式の行に限る語（「形式のみを返す」など）を欠く固定返却形式: " + ", ".join(
+        _fixed_reply_errors(share)
+    )
 
     (tmp_path / "limited.subagent.md").write_text(
         "# 委譲先\n\n## 出力\n\n次の形式だけを返す。\n\n```text\n状態: completed\n```\n", encoding="utf-8"
@@ -701,7 +705,7 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     prefix = "反映後の観測だけが残る"
     record = templates[kind_values.index(prefix)]
     fields = re.findall(r"^- ([^:]+): ", record, flags=re.MULTILINE)
-    assert f"`再開区分`が`{prefix}`の場合だけ" in _h2_section(selection_text, "処理対象の決定")
+    assert f"`再開区分`が`{prefix}`である場合に限り" in _h2_section(selection_text, "処理対象の決定")
     termination = _h2_section(lanes, "採否の確定と終端区分")
     assert all(f"`再開区分: {value}`" in termination for value in kind_values if value != prefix)
     # `atk serve`の一覧は同じ見出しと区分の行でneeds-verifyを表示する。書式の変更に判定が追随しないと失敗する。
@@ -726,11 +730,11 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     assert "再開記録" in _h2_section(lanes, "中断レーンの再開")
     # 計画パスの再開位置の検収は観測のみの値へ当てはめず、観測のみの書式は再開記録を読んだ項目だけに使う。
     receipt = _h2_section(parent, "保存後の意味検収")
-    assert f"再開位置を持ち、その値が`{prefix}`で始まらない項目では" in receipt
-    assert "前文の計画ファイルの確認に代えて" in receipt
+    assert f"再開位置が設定されており、その値が`{prefix}`で始まらない項目については" in receipt
+    assert "前述の計画ファイルの確認に代えて" in receipt
     progress_only = _h2_section(selection_text, "処理対象の決定")
-    assert "計画ファイルの絶対パスと残る工程の書式で`再開位置`へ記す" in progress_only
-    assert "観測のみの書式は、AWI本文の再開記録を読んだ項目だけに使う" in progress_only
+    assert "計画ファイルの絶対パスと残る工程の書式を用いて`再開位置`に記録する" in progress_only
+    assert "観測のみの書式は、AWI本文に記載された再開記録を読み取った項目に対してのみ使用する" in progress_only
 
 
 def test_staged_lane_contract_reaches_selection_and_execution() -> None:
@@ -744,8 +748,8 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
     assert "  段階:" in selection_text and "  先行レーン:" in selection_text
     assert "先行統合条件" in parent
-    assert "現行HEADを基点" in lanes
-    assert "統合完了を受領" in lanes
+    assert "統合先の最新HEADを基点" in lanes
+    assert "統合完了を確認した後に" in lanes
     output = _selection_format(plugin_root)
     yaml_block = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     top_fields = set(re.findall(r"^([^\s:]+):", yaml_block, flags=re.MULTILINE))
@@ -764,11 +768,11 @@ def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> Non
     contract = {row[0].split("`")[1]: row[1] for row in rows[1:] if len(row) == 3}
     assert contract == {"なし": "通常の`lane-NN`", "上流要求だけ": "`なし`", "混在": "通常の`lane-NN`"}
     assert "行の省略を含む" in output
-    assert "書き込み前" in output and "省略時の値と省略を解決" in output
+    assert "保存前には" in output and "3行について省略時の値を解決" in output
     generation = _h2_section(selection_text, "反映先と上流投入")
     receipt = _h2_section(parent, "保存後の意味検収")
     assert "selection-format.md" in generation
-    assert "組合せ条件も検収" in receipt and "修正して再チェック" in receipt
+    assert "組み合わせ条件を満たしているかを検収" in receipt and "修正して再チェック" in receipt
     assert "`上流要求だけ`（`レーン`が`なし`）" in _h2_section(lanes, "上流投入")
 
     def assert_no_blanket_exclusion(text: str) -> None:
@@ -805,7 +809,7 @@ def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
     assert "--selection-file" in lane_steps and "--lane" in lane_steps
     assert "計画作成完了" in lane_steps
     assert "計画検査完了" in lane_steps
-    assert "応答を待たず実装へ進む" in lane_steps
+    assert "応答を待たずに実装作業へ進む" in lane_steps
 
 
 def _h2_section(content: str, heading: str) -> str:
@@ -1245,20 +1249,20 @@ def test_post_approval_contract_waits_for_reviewed_implementation() -> None:
     approval = (root / "skills/user-confirmation-and-report/references/approval-scope.md").read_text(encoding="utf-8")
     executor = (root / "share/exec.subagent.md").read_text(encoding="utf-8")
     timing = _h2_section(lanes, "実装とレビュー")
-    assert "事後承認型UWIは受領時には発行せず" in timing
-    assert "事前承認の確認事項は受領時に直ちに発行する" in timing
-    assert "収束後・統合前" in timing
-    assert "収束した実装と一致する本文で発行する" in timing
-    assert "終端返却を受領した時点で発行する" in timing
+    assert "事後承認型のUWIは受領時には発行せず" in timing
+    assert "事前承認が必要な確認事項は受け取り次第速やかに発行する" in timing
+    assert "収束した後、かつ統合処理の前に" in timing
+    assert "最終的な実装内容と一致する本文で発行する" in timing
+    assert "終端返却を受け取った時点で発行する" in timing
     assert "実装なし" in timing and "マージなし" in timing
     assert "発行対象だけを直ちに発行する" not in timing
     post_approval = next(
         line for line in _h2_section(approval, "事前承認と事後承認").splitlines() if line.startswith("- 事後承認:")
     )
-    assert "実施内容が実行レビューを経る作業では" in post_approval
-    assert "実行レビューの収束後の内容" in post_approval
-    assert "確認手段を問わず適用する" in post_approval
-    assert re.search("通知済みの事後承認.*レビュー修正.*変更後の内容.*再びメインへ送る", executor)
+    assert "実行レビューを伴う作業では" in post_approval
+    assert "実行レビューが完了して内容が確定した時点の変更" in post_approval
+    assert "確認手段にかかわらず適用する" in post_approval
+    assert re.search("通知済みの事後承認.*レビュー修正.*変更後の内容.*再度同様の即時通知でメインへ送信する", executor)
 
 
 def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
@@ -1268,19 +1272,19 @@ def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
     finish = (root / "skills/process-wi/references/finish-session.md").read_text(encoding="utf-8")
     publish = (root / "skills/commit/references/publish.md").read_text(encoding="utf-8")
     receipt = _h2_section(parent, "受領と検収")
-    assert "公開後の操作" in receipt
-    assert "「公開工程の続行不能の回復と再開」へ渡す" in receipt
+    assert "公開後操作の前提不足" in receipt
+    assert "「公開工程の続行不能の回復と再開」へ処理を引き渡す" in receipt
     assert "push前の工程" in receipt
     assert "CI以外の続行不能は、失敗した工程の既存手順で回復" not in receipt
     restart = _h2_section(finish, "公開状態の検収と再起動")
-    unfinished = next(line for line in restart.splitlines() if "新しいcommitが無く公開後の操作が未完了の場合" in line)
-    assert "未完了工程だけを再開する" in unfinished
-    completed = next(line for line in restart.splitlines() if "再起動せず報告処理へ進む" in line)
-    assert "CIの検収と公開後の操作が完了している場合" in completed
+    unfinished = next(line for line in restart.splitlines() if "新たなコミットが存在せず、公開後操作のみが未完了の場合" in line)
+    assert "未完了の公開後操作のみを再開する" in unfinished
+    completed = next(line for line in restart.splitlines() if "再起動は行わず、そのまま報告処理へ進む" in line)
+    assert "CIの検収および公開後操作がすべて完了している場合" in completed
     recovery = _h2_section(publish, "公開工程の続行不能からの再開")
-    assert "CI結果と成功済みの公開後の操作を保持する" in recovery
-    assert "未完了工程だけを再開" in recovery
-    assert "成功済みの版数更新・push・公開後の操作" in recovery
+    assert "CI結果、および正常終了した公開後操作の内容は確実に保持する" in recovery
+    assert "未完了の工程のみを再開" in recovery
+    assert "すでに成功しているバージョン更新、push、公開後操作を重複して実行しない" in recovery
 
 
 def test_publication_recovery_references_resolve_to_shared_sections() -> None:

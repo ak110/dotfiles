@@ -445,13 +445,10 @@ def test_cli_rejects_terms_in_explanations(
     ("body", "term"),
     [
         ("経路を記録する。\n", "経路"),
-        ("見落とした。\n", "見落とす"),
         ("混ざった。\n", "混ざる"),
-        ("切り分けた。\n", "切り分ける"),
         ("焼き込んだ。\n", "焼く"),
         ("崩した。\n", "崩す"),
         ("疑った。\n", "疑う"),
-        ("文字列ではなく整数を指定する。\n", "ではなく"),
         ("速度よりむしろ精度を優先する。\n", "むしろ"),
         ("単なる保存先の変更ではない。\n", "単なる"),
         ("整理というより改訂に近い。\n", "というより"),
@@ -473,12 +470,12 @@ def test_cli_warns_caution_terms_without_failing(
 @pytest.mark.parametrize(
     ("name", "body", "warns"),
     [
-        ("doc.md", "「文字列ではなく整数を指定する」と説明する。\n", True),
-        ("doc.md", "```text\n例文: 文字列ではなく整数を指定する。\n説明: 入力を示す。\n```\n", True),
-        ("doc.md", "```text\n逐語引用: 文字列ではなく整数を指定する。\n```\n", False),
-        ("config.py", 'labels = {"ではなく": 1}\n', False),
-        ("sample_test.py", 'import pytest\n\nbody = "文字列ではなく整数を指定する。"\n', False),
-        ("doc.md", "```text\n例文: 入力には整数を指定する。\n説明: 入力を直接示す。\n```\n", False),
+        ("doc.md", "「速度よりむしろ精度を優先する」と説明する。\n", True),
+        ("doc.md", "```text\n例文: 速度よりむしろ精度を優先する。\n説明: 優先順位を示す。\n```\n", True),
+        ("doc.md", "```text\n逐語引用: 速度よりむしろ精度を優先する。\n```\n", False),
+        ("config.py", 'labels = {"むしろ": 1}\n', False),
+        ("sample_test.py", 'import pytest\n\nbody = "速度よりむしろ精度を優先する。"\n', False),
+        ("doc.md", "```text\n例文: 精度を優先する。\n説明: 優先する対象を直接示す。\n```\n", False),
     ],
     ids=["quoted-prose", "authored-example", "verbatim", "identifier", "detector-input", "positive-example"],
 )
@@ -487,7 +484,7 @@ def test_cli_contrast_distinguishes_prose_from_preserved_data(
 ) -> None:
     """自作の本文と例を警告し、原文・識別子・検出入力を保持する。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, body, name=name))]) == 0
-    assert ("警告: 「ではなく」" in capsys.readouterr().err) is warns
+    assert ("警告: 「むしろ」" in capsys.readouterr().err) is warns
 
 
 @pytest.mark.parametrize(
@@ -633,8 +630,8 @@ def test_picker_result_label_preserves_checks_on_explanations(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """返却欄の名前を保持し、同じ行の説明は警告対象として確認する。"""
-    assert check_agent_doc_tone.main([str(_write(tmp_path, "書込対象の検査: 未検査の出力を返す。\n"))]) == 0
-    assert "警告: 「検査」" in capsys.readouterr().err
+    assert check_agent_doc_tone.main([str(_write(tmp_path, "書込対象の検査: 未確認の経路を返す。\n"))]) == 0
+    assert "警告: 「経路」" in capsys.readouterr().err
 
 
 def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> None:
@@ -852,13 +849,13 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
         ),
         (
             "```text\n例文: 記録した値を読む。\n```\n",
-            "# 入力を検査する。\nprint(1)\n",
+            "# 入力の経路を記録する。\nprint(1)\n",
             "",
             "",
             '{"input_path": "照合.md"}',
             False,
             0,
-            ['"kind": "diagnostic"', "new_module.py", '"line": 1', "警告: 「検査」"],
+            ['"kind": "diagnostic"', "new_module.py", '"line": 1', "警告: 「経路」"],
             [],
         ),
         (

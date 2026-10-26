@@ -1,7 +1,7 @@
 # Xの投稿本文と添付写真の取得
 
-本書はXの投稿を調査資料として読む場合に、投稿を同定して本文・日時・写真を取得する手段を定める。
-引用と事実の裏付けは`investigation.md`に従う。
+本書は、X（旧Twitter）の投稿を調査資料として参照する際に、対象の投稿を一意に特定し、本文、投稿日時、添付写真を取得するための手順をまとめたものである。
+引用のルールや事実確認の裏付け手順は、`investigation.md`に従う。
 
 ## 名指し参照の読込方法
 
@@ -11,29 +11,29 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
 
-## 投稿の同定と本文
+## 投稿の同定と本文の取得
 
-- `x.com/<ユーザー名>/status/<投稿ID>`（`twitter.com`も同形式）からユーザー名と投稿IDを読む。`/photo/1`などの末尾は同じ投稿の写真表示である。`t.co`の短縮URLは公開されたWeb取得手段で転送先を確かめてから同定し、取得できなければURLを推測せず未取得として記録する
-- `https://api.fxtwitter.com/<ユーザー名>/status/<投稿ID>`を取得する（リダイレクトは転送先まで取得する）。最終HTTP状態が200かつJSONの`code`が数値の200の場合だけ、`tweet.text`を本文、`tweet.created_at`を投稿日時、`tweet.media.photos[].url`を添付写真の取得先として採用する。それ以外は未取得とし、取得手段、状態、診断と未取得の範囲を報告する。成功応答でも欠けた属性は未取得とし、写真の一覧が空か写真媒体が無い場合は「写真なし」として取得失敗と区別する
-- 本文の取得と写真の取得・読了は別々に記録する
+- 投稿URLの`x.com/<ユーザー名>/status/<投稿ID>`（`twitter.com`も同様）からユーザー名と投稿IDを抽出する。URL末尾の`/photo/1`などは同一投稿の写真表示画面である。`t.co`などの短縮URLは、Web取得ツールを用いてリダイレクト先を実際に確認した上で投稿を同定し、転送先を取得できない場合はURLを推測せず「未取得」として記録する
+- `https://api.fxtwitter.com/<ユーザー名>/status/<投稿ID>`へリクエストを送信してデータを取得する（リダイレクトが発生した場合は転送先まで追跡する）。最終的なHTTPステータスコードが200であり、かつ返却されたJSON内の`code`フィールドが数値の200である場合に限り、`tweet.text`を本文、`tweet.created_at`を投稿日時、`tweet.media.photos[].url`を添付写真のURLとして採用する。それ以外の応答は「未取得」として扱い、使用した取得手段、HTTPステータス、診断メッセージ、および取得できなかった範囲を報告する。成功応答であっても必要な属性が含まれていない場合は未取得とし、写真の配列が空である場合や写真メディアが存在しない場合は「写真なし」として記録し、通信自体の取得失敗と明確に区別する
+- 本文の取得状況と、写真の取得・確認状況は、それぞれ独立して記録する
 
-このURLはFxTwitterのv1形式であり、`/2/`を含むv2形式と区別してv1の属性で読む。
-参照先は[FxEmbedのAPI説明](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)と[応答実装](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)である。
+上記のURLはFxTwitterのv1形式であるため、`/2/`を含むv2形式とは区別し、v1の仕様に沿った属性名で取得する。
+詳細な仕様は[FxEmbedのAPIドキュメント](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)および[レスポンスの実装コード](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)を参照する。
 
-## 添付写真の保存と読取
+## 添付写真の保存と確認
 
-写真URLごとに実行環境が用意した一時領域へ保存する。
+取得した写真URLごとに、実行環境が提供する一時ディレクトリへ画像をダウンロードして保存する。
 
 ```sh
 curl -sS --max-time 60 -o <画像保存先の絶対パス> "<画像URL>"
 ```
 
-保存した内容が画像であることを確かめ（HTTPエラーの本文を写真として扱わない）、ホストのローカル画像の読取手段（Claude Codeの`Read`、Codexの`view_image`など）で実際に描画して読む。根拠に使うのは読み取れた範囲に限る。
+ダウンロードしたファイルが正常な画像データであることを確認し（HTTPエラーページのHTML等を画像として誤認しない）、ホスト環境の画像表示手段（Claude Codeの`Read`やCodexの`view_image`など）を用いて実際に表示して確認する。調査の根拠として利用できるのは、実際に画像から読み取れた情報の範囲に限定する。
 
-## ホストごとの注意
+## ホスト環境別の留意点
 
-元の調査ホストでは、Xへの直接のWeb取得が402、FxTwitter APIが307を返し、`pbs.twimg.com`の画像はcurlで取得できた。これはその環境での観測であり、他の環境では手段ごとの状態から代替取得を選ぶ。
+過去の調査環境では、Xへの直接的なWebアクセスでHTTP 402が返り、FxTwitter APIからはHTTP 307（一時リダイレクト）が返されたが、`pbs.twimg.com`上の画像はcurlで正常に取得できた。これは当時の特定環境における観測事実であり、他の環境で作業する場合は各手段の応答状況に応じて適切な代替手段を選択する。
 
-Windowsのcurlで証明書の失効確認のエラーが出た元ホストでは`--ssl-no-revoke`で回復した。同じ診断が出た環境だけで、失効確認を無効にする影響を確かめて選び、証明書本体の検証は維持する。
+Windows環境のcurlでSSL証明書の失効確認エラーが発生した過去の環境では、`--ssl-no-revoke`オプションを付与することで通信が成功した。同様のエラーが実際に発生した環境に限り、失効確認を無効化するセキュリティ上の影響を理解した上でこのオプションを選択する。その場合でも、証明書自体の検証処理は維持する。
 
-APIの参照先と元ホストの観測条件・再検証手段は、`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/x-posts.md：投稿の同定と本文：2026年10月10日」にある。
+APIの参照先仕様、過去環境での観測条件や再検証手順を記録している。詳細は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/x-posts.md：投稿の同定と本文の取得：2026年10月10日」を参照する。

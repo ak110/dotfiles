@@ -144,8 +144,8 @@ def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> N
         # 生成された最終本文で、軽量設定が省く規範を読まずに継続と終端を判断できることを確かめる。
         prompt = launch_prompts._explore_system_prompt(backend)  # pylint: disable=protected-access
         assert _shared_document_body("agents-server-explore.md") in prompt
-        assert "対象成果物・委譲入力・ユーザーデータ" in prompt
-        assert "自身による成果ファイルの作成を禁止する" in prompt
+        assert "対象となる成果物、委譲された入力、およびユーザーデータ" in prompt
+        assert "成果物ファイルを自身で新規作成することは禁止する" in prompt
         assert "キャッシュ・状態・保存出力" in prompt
         assert "省略や未読" in prompt
         for operation in ("sed -n '<開始行>,<終了行>p' -- <絶対パス>", "wc -l", "jq", "git grep", "rg"):
@@ -170,5 +170,5 @@ def test_all_launch_system_prompts_include_language_condition() -> None:
     for kind, prompt in launch_prompts.LAUNCH_SYSTEM_PROMPTS.items():
         assert "日本語" in prompt, kind
     for prompt in (launch_prompts.DELEGATE_SYSTEM_PROMPT, launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT):
-        assert "英語で挿入した指示" in prompt
+        assert "実行環境によって英語の指示が挿入された場合でも" in prompt
         assert "応答言語として引き継がない" in prompt

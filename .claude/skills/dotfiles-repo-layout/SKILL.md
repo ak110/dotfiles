@@ -2,20 +2,19 @@
 name: dotfiles-repo-layout
 user-invocable: false
 description: >
-  dotfilesリポジトリで`.chezmoi-source/`配下と配布先（`~/.claude/`・`~/.codex/`・`~/.gemini/`・`~/.config/`）の対応を
-  判定するとき、ファイルの削除と改名で`pytools/post_apply.py`の`_REMOVED_PATHS`と
-  `setup_codex_links.py`の`_LINKS`を扱うとき、および dotfilesユーザー・agent-toolkitユーザー・agent-basicsユーザー・全プロジェクト編集者・
-  dotfiles編集者のどのロール向けのファイル群かを判定するときに起動する。
+  dotfilesリポジトリで`.chezmoi-source/`配下と配布先（`~/.claude/`、`~/.codex/`、`~/.gemini/`、`~/.config/`）の
+  対応関係を判定するとき、ファイルの削除や改名に伴い`pytools/post_apply.py`の`_REMOVED_PATHS`や
+  `setup_codex_links.py`の`_LINKS`を更新するとき、および対象ファイルがどのロール向けのものかを判定するときに起動する。
 ---
 
-# dotfilesのロールと配置
+# dotfilesのロールとファイル配置
 
-本スキルは本リポジトリのファイル群とロールの対応と、配布元と配布先の対応を提供する。
-変更した規範の自セッション適用とメインが書く`プロジェクト規範の指定`は`dotfiles-norm-edit`が扱う。
+このスキルは、本リポジトリにおけるファイル群と各ロールの対応関係、および配布元と配布先の対応関係をまとめたものである。
+変更した規範を自身のセッションへ適用する手順や、メインエージェントが記述する`プロジェクト規範の指定`については`dotfiles-norm-edit`を参照する。
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+本文中の各参照について適用条件を確認し、選んだ資料の該当範囲を読み込んでから、その基準に基づく具体的な判断へ進む。起動時の表にある資料は、起動本文とともに提供される。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -23,14 +22,14 @@ description: >
 
 ## ロールとファイル群の対応
 
-ファイル群を編集する際は対象読者を意識する。
+各ファイルを編集する際は、その対象読者となるロールを意識して作業を進める。
 
-- dotfilesユーザー: chezmoiソース・`bin`・`pytools`等を自分の環境にインストールして使う人
-- agent-toolkitユーザー: `agent-toolkit`プラグインをマーケットプレイス経由で使う人（dotfilesユーザーを含む）
-- agent-basicsユーザー: `agent-basics`の品質スキルを使う人（agent-toolkitユーザーとdotfilesユーザーを含む）
-- 各ロールはエンドユーザーの部分集合であり、エージェントへ指示するユーザーを兼ねてよい。agent-toolkitの配布ルールを導入済みとする前提は、agent-toolkitユーザーへの案内に限る
-- 全プロジェクト編集者: あらゆるプロジェクトで編集作業をするエージェント。配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
-- dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するエージェント。加えてリポジトリ直下の`.claude/`と`AGENTS.md`をロードする。Claude Codeは`CLAUDE.md`と`CLAUDE.local.md`が無いプロジェクトで`AGENTS.md`を直接読む（観測は`docs/development/audit-records.md`「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」）
+- dotfilesユーザー: chezmoiのソースファイル、`bin`、`pytools`などを自身の環境にインストールして利用するユーザー。
+- agent-toolkitユーザー: マーケットプレイス経由で`agent-toolkit`プラグインを導入して利用するユーザー（dotfilesユーザーも含まれる）。
+- agent-basicsユーザー: `agent-basics`の品質管理スキルを利用するユーザー（agent-toolkitユーザーおよびdotfilesユーザーも含まれる）。
+- 各ロールはいずれもエンドユーザーの一部であり、エージェントへ直接指示を出すユーザーと兼ねる場合がある。agent-toolkitの配布ルールが導入済みであることを前提とする案内は、agent-toolkitユーザー向けのものに限定する。
+- 全プロジェクト編集者: さまざまなプロジェクトで編集作業するコーディングエージェント。配布された設定（`agent-toolkit`本体や`~/.claude/rules/agent-toolkit/`配下のルール）を実行時に読み込んで動作する。
+- dotfiles編集者: 本リポジトリや`agent-toolkit`本体の変更を担当するコーディングエージェント。全プロジェクト編集者の設定に加えて、リポジトリ直下の`.claude/`や`AGENTS.md`を読み込む。なお、Claude Codeは`CLAUDE.md`や`CLAUDE.local.md`が存在しないプロジェクトにおいて`AGENTS.md`を直接読み込む仕様となっている。観測記録は`docs/development/audit-records.md`「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」を参照する。
 
 | ファイル群 | 対象読者 | 役割 |
 | --- | --- | --- |
@@ -44,21 +43,21 @@ description: >
 | `AGENTS.md`（リポジトリ直下） | dotfiles編集者 | 本リポジトリの案内 |
 | `pytools/`・`bin/`・`scripts/` | dotfilesユーザー・dotfiles編集者 | コマンドラインツールと開発スクリプト |
 
-## ディレクトリ構造の注意
+## ディレクトリ構造に関する注意点
 
-Claude Code/Codexの設定ディレクトリが複数あり、取り違えると影響範囲の異なる障害になるため、指示の対象を確かめる。
+Claude CodeやCodexの設定ディレクトリは複数存在し、取り違えると影響範囲の異なる不具合につながるため、変更指示がどのディレクトリを対象としているかを事前に必ず確認する。
 
-成果物はLinux・Windowsの複数マシンへ配布される。設定・規範・ツールの変更は全環境への配布を前提に反映先を決め、配布先を直接編集せず配布原本（chezmoiソース・`share/`配下の`*_managed*.json`・agent-toolkitプラグイン）を編集する。例外はユーザーが単一環境限定と明示した対象と、既存規範が環境限定と定めた成果物（開発とCIだけで使う`scripts/`をLinux前提とする[architecture.md](../../../docs/development/architecture.md)の方針など）である。
-`libexec/`配下はchezmoiで配布せず`~/dotfiles`の作業ツリーからエンドユーザー環境で実行するため、LinuxとWindowsの両方で動く書き方とする。
+作成した成果物は、LinuxとWindowsの複数の環境へ配布される。設定、規範、ツールの変更はすべての環境へ配布されることを前提に反映先を決定し、配布先のファイルを直接編集するのではなく、必ず配布原本（chezmoiのソースファイル、`share/`配下の`*_managed*.json`、agent-toolkitプラグインなど）を編集する。ただし、ユーザーが特定の単一環境向けであると明示した場合や、既存の規範で環境が限定されている成果物（たとえば開発やCIでのみ使用する`scripts/`をLinux前提とする[architecture.md](../../../docs/development/architecture.md)の方針など）は例外とする。
+なお、`libexec/`配下のファイルはchezmoiで配布せず、`~/dotfiles`の作業ツリーからエンドユーザー環境で直接実行されるため、LinuxとWindowsの双方で正しく動作するように記述する。
 
-- `.chezmoi-source/dot_claude/`: chezmoiが`~/.claude/`へデプロイする配布元。`~/.claude/`は`chezmoi apply`で上書きされるため直接編集しない（「`~/.claude`の設定を変えて」は`.chezmoi-source/dot_claude/`の編集を指す）
-- `.claude/`（リポジトリルート）: 本リポジトリ自身のClaude Codeプロジェクト設定で、配布対象外。Codexにも検出させる場合は`.agents/skills`を`.claude/skills`へのシンボリックリンクにする
-- `.chezmoi-source/dot_codex/`: `~/.codex/`への配布元
-  - `AGENTS.md`はCodex向けアダプターで、`scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`が起動）が生成するため、変更は生成元へ行う。生成元は`agent-toolkit/share/rules-common.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`、`agent-toolkit/rules/`配下の常時規範である。この生成物は`.claude/settings.json`の`claudeMdExcludes`でClaude Codeの入れ子指示から除外する
-  - `setup_codex_links.py`が`~/.codex/`から`.chezmoi-source/dot_claude/`配下の共有スキルと`docs`の原本へリンクを作成する。リンクはLinux/macOSではシンボリックリンク、Windowsではディレクトリジャンクションとする（chezmoiの`symlink_`はWindowsで特権不足により失敗する）
-  - `agent-toolkit/rules/`は配布先で`atk-auto`の標識付きの本文へ書き換えるため、リンクではなく`sync_agent_toolkit_rules.py`が`~/.claude/rules/agent-toolkit/`と`~/.codex/agent-toolkit/rules/`へ同期する
-  - `~/.codex/skills`にはグローバルに使うスキルだけを置く
-- `.chezmoi-source/dot_gemini/`: 汎用コーディングエージェントとして使うAntigravity CLI向けに`~/.gemini/`へ配布する（`GEMINI.md`と`antigravity-cli/skills/`）。共有プラグインは`agent-toolkit/`から`agent-toolkit-agy/`、`agent-basics/`から`agent-basics-agy/`へ独立して生成し、`post_apply`が`~/.gemini/config/plugins.json`の登録へ追加する。toolkitの生成rootにはスキル、agents、常時規範、6イベントのhook、共有MCPと実行資源を含める。basicsの生成rootは品質スキルだけで単独利用でき、元の名前空間と品質本文を保持する
-- `.chezmoi-source/dot_config/`: XDG準拠ツール設定（`git`・`uv`・`pyfltr`等）の配布元（「`~/.config/<tool>`の設定を変えて」は`.chezmoi-source/dot_config/<tool>/`の編集を指す）
-- `.chezmoi-source/`配下を削除・改名した場合、chezmoiは配布先を自動削除しない。`pytools/post_apply.py`の`_REMOVED_PATHS`の`~/.claude`欄（Codex側にもリンクがある対象は`~/.codex`欄も）へ旧パスを登録日付きで追記し、改名なら`setup_codex_links.py`の`_LINKS`を新名へ更新する。登録日から6か月を過ぎた項目は外す（規則は`pytools/_internal/removal_registry.py`）
-- `AGENTS.md`（リポジトリルート）: dotfiles編集者向けの案内でClaude Code／Codex双方が読む。`CLAUDE.md`は置かず、ホスト共通で`AGENTS.md`に従う。手元に`CLAUDE.local.md`を置く場合は`atk setup-project`が追跡対象外のアダプターを置く
+- `.chezmoi-source/dot_claude/`: chezmoiによって`~/.claude/`へ展開される配布元のディレクトリ。`~/.claude/`配下のファイルは`chezmoi apply`によって上書きされるため、直接編集しない（「`~/.claude`の設定を変更して」という指示は、`.chezmoi-source/dot_claude/`の編集を意味する）。
+- `.claude/`（リポジトリ直下）: 本リポジトリ自身のClaude Code用プロジェクト設定であり、外部への配布対象外である。Codexにも同じスキルを検出させる場合は、`.agents/skills`から`.claude/skills`へのシンボリックリンクを作成して対応する。
+- `.chezmoi-source/dot_codex/`: `~/.codex/`への配布元ディレクトリ。
+  - ここにある`AGENTS.md`はCodex用のアダプターファイルであり、`scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`から起動される）によって自動生成されるため、変更は生成元に対して行う。生成元のファイルは、`agent-toolkit/share/rules-common.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`、および`agent-toolkit/rules/`配下の常時規範である。なお、この生成ファイルは`.claude/settings.json`の`claudeMdExcludes`に設定されており、Claude Codeが入れ子で読み込まないように除外されている。
+  - `setup_codex_links.py`は、`~/.codex/`から`.chezmoi-source/dot_claude/`配下にある共有スキルや`docs`の原本へのリンクを作成する。このリンクは、LinuxやmacOSではシンボリックリンク、Windowsではディレクトリジャンクションとして作成する（chezmoiの`symlink_`はWindows上で特権不足により失敗するためである）。
+  - `agent-toolkit/rules/`配下のファイルは、配布先で`atk-auto`タグが付いた本文へと変換される。そのため、リンクではなく`sync_agent_toolkit_rules.py`を用いて`~/.claude/rules/agent-toolkit/`および`~/.codex/agent-toolkit/rules/`へ同期する。
+  - `~/.codex/skills`には、グローバルに利用するスキルのみを配置する。
+- `.chezmoi-source/dot_gemini/`: 汎用コーディングエージェントとして利用するAntigravity CLI向けに、`~/.gemini/`へ配布するファイル群（`GEMINI.md`や`antigravity-cli/skills/`など）。共有プラグインは、`agent-toolkit/`から`agent-toolkit-agy/`へ、`agent-basics/`から`agent-basics-agy/`へと独立して生成され、`post_apply`によって`~/.gemini/config/plugins.json`の登録情報へ追加される。toolkitの生成ルートにはスキル、agents、常時規範、6つのイベントフック、共有MCP、実行リソースが含まれる。basicsの生成ルートは品質管理スキルのみで構成され単独で利用可能であり、元の名前空間と品質基準の本文を維持している。
+- `.chezmoi-source/dot_config/`: XDG仕様に準拠した各種ツール設定（`git`、`uv`、`pyfltr`など）の配布元ディレクトリ。「`~/.config/<tool>`の設定を変更して」という指示は、`.chezmoi-source/dot_config/<tool>/`の編集を意味する。
+- `.chezmoi-source/`配下のファイルを削除または改名した場合、chezmoiは配布先に残った古いファイルを自動的には削除しない。そのため、`pytools/post_apply.py`の`_REMOVED_PATHS`にある`~/.claude`の項目（Codex側にもリンクがある場合は`~/.codex`の項目も含む）へ、削除した旧パスを登録日とともに追記する。改名の場合は`setup_codex_links.py`の`_LINKS`も新しい名前に更新する。登録日から6か月が経過した項目は一覧から削除する（運用ルールは`pytools/_internal/removal_registry.py`を参照）。
+- `AGENTS.md`（リポジトリ直下）: dotfilesの編集者を対象とした案内文書であり、Claude CodeとCodexの双方が参照する。本リポジトリには`CLAUDE.md`を置かず、各ホスト共通で`AGENTS.md`に従う運用としている。ローカル環境用に`CLAUDE.local.md`を配置する場合は、`atk setup-project`を実行してGit追跡対象外のアダプターを配置する。

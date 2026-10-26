@@ -9,13 +9,13 @@ description: >
 
 # pytilpackの使い方
 
-pytilpackはPythonのユーティリティ集で、各種ライブラリ向けの拡張とフレームワーク非依存の汎用モジュールを`import pytilpack.<対象ライブラリ名または汎用モジュール名>`（`pytilpack.httpx`、`pytilpack.cache`など）で提供する。
+pytilpackはPythonのユーティリティ集であり、各種ライブラリ向けの拡張機能や、フレームワークに依存しない汎用モジュールを`import pytilpack.<対象ライブラリ名または汎用モジュール名>`（`pytilpack.httpx`、`pytilpack.cache`など）の形式で提供する。
 
-APIの確認には公式資料の取得手段、導入と動作確認には対象のPython環境を操作するCLIが必要である。資料だけを読める環境では、その資料が示す使い方を説明し、導入と試験はPythonとCLIを使えるClaude CodeまたはCodexで行う。資料も取得できない場合は版と必要なAPIを明示して未確認の点を残す。説明は[文章の品質基準](references/quality-standards.md)に従う。
+APIを確認するには公式ドキュメントの取得手段が必要であり、導入や動作確認には対象のPython環境を操作できるCLIが必要となる。ドキュメントの閲覧のみが可能な環境では、その資料に基づく使用方法を説明し、実際の導入やテストはPythonとCLIを利用できるClaude CodeまたはCodexで行う。資料を取得できない場合は、バージョンと必要なAPIを明記した上で未確認事項として残す。説明にあたっては[文章の品質基準](references/quality-standards.md)に従う。
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+本文に記載された各参照の適用条件を確認し、選んだ資料の指定範囲を取得してから、その基準に基づく具体的な判断へ進む。起動時の行に記載された資料は、起動本文とともに配送される。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -29,5 +29,5 @@ APIの確認には公式資料の取得手段、導入と動作確認には対�
 
 ## 導入とextras
 
-新規プロジェクトへは`uv add pytilpack`で追加する。
-ライブラリ用ユーティリティ（Babel・SQLAlchemyなど）はextrasを要するため、`uv add "pytilpack[babel,sqlalchemy]"`のように依存指定へextras名を含める。
+新規プロジェクトへ導入する際は`uv add pytilpack`で追加する。
+外部ライブラリ向けのユーティリティ（BabelやSQLAlchemyなど）を利用する場合はextrasが必要となるため、`uv add "pytilpack[babel,sqlalchemy]"`のように依存関係の指定にextras名を含める。

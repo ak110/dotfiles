@@ -1,12 +1,12 @@
 # エージェント宛てメッセージ
 
-品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks-messages.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks-messages.md`である。呼び出し元が指定した条件と読込範囲は、同名の品質資料へそのまま引き継ぐ。節の指定がある場合は移設先の実見出しを参照し、指定がない場合は全文を読む契約を維持する。
 
-以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
+以下はagent-toolkitが所有する運用条件である。呼び出し元の条件と読込範囲に従い、本書に残る運用節を参照する。
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+本文の各参照における適用条件を守り、選択した資料の指定範囲を取得した上で、その基準に基づく具体的な判断へ進む。起動時の資料は起動本文とともに届く。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -16,11 +16,11 @@
 
 ## エージェント宛てメッセージの標識
 
-エージェントに直接渡る出力（`reason` / `additionalContext` / exit 2のstderr）は、`atk-auto`要素で全体を囲む。hookの出力はユーザー発言と同じ形で会話へ注入されるため、機械判定できる境界と出所を設ける。
-`source`にはagent-toolkit自身なら接頭辞の無い生成元名、他の生成元は`<所有者>/<生成元>`を置き、`kind`へ通知種別を置く。
+エージェントに直接渡る出力（`reason`、`additionalContext`、終了コード2のstderr）は、全体を`atk-auto`要素で囲む。hookの出力はユーザーの発言と同じ形式で会話へ注入されるため、機械的に識別できる境界と出所を設定する。
+`source`には、agent-toolkit自身であれば接頭辞のない生成元名を指定し、他の生成元であれば`<所有者>/<生成元>`を指定する。`kind`には通知種別を設定する。
 
-種別は受領したエージェントが通知の原因を除去できるかで選ぶ。除去できる事象には`warn`、発話ごとの定型の配送には`notice`、遮断には`block`を使う。
-`atk run-script session-review-evidence`は`info`または`notice`を持つhook通知を問題候補から除くため、原因も対策も持たない通知へ`warn`を付けると発話のたびに候補判定が生じる。
+種別は、受け取ったエージェントが通知の原因を除去できるかどうかに応じて選定する。原因を除去できる事象には`warn`、発話ごとの定型配送には`notice`、遮断には`block`を使用する。
+`atk run-script session-review-evidence`は、`info`または`notice`を持つhook通知を問題候補から除外する。そのため、原因や対策を持たない通知に`warn`を付与すると、発話のたびに候補判定が発生する。
 
 ```xml
 <atk-auto source="pretooluse" kind="warn">
@@ -28,23 +28,23 @@ detected ...
 </atk-auto>
 ```
 
-`systemMessage` / `stopReason`などエージェントに届かないフィールドと、`permissionDecision: "allow"`で追加メッセージを持たない呼び出しは付与の対象外とする。
+`systemMessage`や`stopReason`などエージェントに届かないフィールド、および追加メッセージを持たない`permissionDecision: "allow"`の呼び出しには付与しない。
 
 ## hook以外で生成する本文の要素
 
-自動生成する本文はhook以外の生成元も`atk-auto`で囲み、`source`と`kind`で生成主体と用途を区別する。agent間の配送では、委譲先から委譲元への通知だけ`from`で送信元を示す。境界は最初の開始タグと最後の同名終了タグで確定する。保存済みの会話にある旧要素名は読み取り側が引き続き受け付ける。
+自動生成する本文は、hook以外の生成元であっても`atk-auto`で囲み、`source`と`kind`によって生成主体と用途を区別する。エージェント間のメッセージ配送では、委譲先から委譲元への通知に限り`from`で送信元を示す。境界は最初の開始タグと、それに対応する最後の同名終了タグによって確定する。保存済みの会話ログに含まれる古い要素名についても、読み取り側で引き続き受け付ける。
 
 | 要素 | 対象の本文 |
 | --- | --- |
 | `atk-auto` | hook通知、規範、agent間配送、機械生成の入力 |
 | `forwarded-user-input` | 自動生成本文の中に保持したユーザー自身の入力 |
 
-機械が生成した本文は、ユーザー発話の解釈規範を再読させる注記の対象から外れる。
-スラッシュコマンドはホストが1行目の先頭でだけ解釈するため、コマンドを伴う本文では引数の位置へ標識を置く。
+機械が生成した本文は、ユーザー発話の解釈規範を再読させる注記の対象から除外する。
+スラッシュコマンドはホストが1行目の先頭でのみ解釈するため、コマンドを含む本文では引数の位置に標識を配置する。
 
 ## ヘルパー関数
 
-共有formatterを発出箇所から呼び出す。
+共有formatterを呼び出し元から使用する。
 
 ```python
 from agent_toolkit._hooks.notice import formatter
@@ -55,10 +55,10 @@ _llm_notice = formatter("myplugin/myhook")
 
 ## 通知本文の整形
 
-本節は`_hooks.notice`が整形するblock・warn・noticeの通知本文の構成を定める。遮断か警告かの選択と反復時の昇格は`claude-hooks-block-warn.md`「遮断と警告の選択」が定める。
+本節では、`_hooks.notice`が整形するblock、warn、noticeの通知本文の構成を定める。遮断か警告かの選択、および反復時の昇格方針は`claude-hooks-block-warn.md`「遮断と警告の選択」に従う。
 
-- block通知はblock専用の整形関数（`block_formatter`）、warn通知は同モジュールの整形関数で生成し、どちらも解消手段を`fix`へ渡す。`fix`が空か空白だけなら`ValueError`となり、整形関数は本文の後へ`次の操作: <fix>`の行を置く
+- block通知は専用の整形関数（`block_formatter`）、warn通知は同モジュールの整形関数を用いて生成し、いずれも解消手段を`fix`引数へ渡す。`fix`が空または空白のみの場合は`ValueError`を送出する。整形関数は本文の末尾に`次の操作: <fix>`の行を追加する。
 
-- block・warnの本文はこれらの整形関数だけで組み立て、解消手段は本文へ混ぜず`fix`へ渡す（解消手段の欠落を機械的に検出するため）。文面の基準は`agent-basics:writing-standards/references/writing.md`「読み手別の追加注意点」のプログラムが出力するメッセージの項目に従う
+- blockおよびwarnの本文はこれらの整形関数のみを用いて組み立て、解消手段を本文に直接混ぜずに`fix`引数へ渡す（解消手段の欠落を機械的に検出するため）。文面の基準は、`agent-basics:writing-standards/references/writing.md`「読み手別の追加注意点」のプログラム出力メッセージの項目に従う。
 
-閾値と記録先は`agent-toolkit/agent_toolkit/_hooks/notice.py`が持つ。
+閾値および記録先は`agent-toolkit/agent_toolkit/_hooks/notice.py`で管理する。
