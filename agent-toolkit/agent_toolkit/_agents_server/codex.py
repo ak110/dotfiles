@@ -1576,17 +1576,21 @@ class AppServerManager:
 
         `retryable`が真の場合だけ、同じreplyを再試行できる内部状態にする。
         """
+        public_error = {"message": str(error) or error.__class__.__name__}
+        failure = public_error.copy()
+        if isinstance(error, JsonRpcResponseError) and isinstance(error.data, dict):
+            # RPCの追加dataは内部の切替判定だけへ渡し、公開結果へ保存しない。
+            failure.update(error.data)
+        # 読取中に届いた中断要求は、続く保留判定でも維持する。
+        session.interrupt_requested = False
+        limit = None if isinstance(error, StartCandidateUnavailable) else await self._read_usage_limit_failure(session, failure)
         session.turn_id = ""
         session.status = "failed"
         session.plan = []
         session.record_current_item_start(None)
         session.commentary = ""
         session.diff_changed = False
-        session.error = {"message": str(error) or error.__class__.__name__}
-        failure = session.error.copy()
-        if isinstance(error, JsonRpcResponseError) and isinstance(error.data, dict):
-            # RPCの追加dataは内部の切替判定だけへ渡し、公開結果へ保存しない。
-            failure.update(error.data)
+        session.error = public_error
         if (
             session.codex_model_provider
             and session.codex_model_provider != session.codex_subscription_provider
@@ -1598,10 +1602,9 @@ class AppServerManager:
         session.reply_turn_started = False
         session.reply_retryable = retryable
         session.turn_start_ambiguous = False
-        session.interrupt_requested = False
         session.turn_completed = True
         session.failure_pending_completion = False
-        if not isinstance(error, StartCandidateUnavailable) and not await self._hold_usage_limit_failure(session, failure):
+        if not isinstance(error, StartCandidateUnavailable) and not self._hold_usage_limit_failure(session, limit):
             self._hold_provider_failure(session, failure)
         session.touch()
         await self._notify_waiters()
@@ -1673,13 +1676,18 @@ class AppServerManager:
         async with self._condition:
             self._condition.notify_all()
 
-    async def _hold_usage_limit_failure(self, session: SessionState, error: Any = None) -> bool:
-        """利用枠を保存記録から読み、設定が対象とする上限だけ解除待ちへ保留する。"""
-        error = session.error if error is None else error
-        if session.status != "failed" or not isinstance(error, dict) or error.get("codexErrorInfo") != "usageLimitExceeded":
-            return False
+    @staticmethod
+    async def _read_usage_limit_failure(session: SessionState, error: Any) -> codex_usage_limit.UsageLimitState | None:
+        """終端を公開する前に、保留判定に必要な利用枠だけを読み取る。"""
+        if not isinstance(error, dict) or error.get("codexErrorInfo") != "usageLimitExceeded":
+            return None
         limit = await run_file_operation(codex_usage_limit.from_thread, session.session_id)
-        limit = limit or codex_usage_limit.UsageLimitState(None)
+        return limit or codex_usage_limit.UsageLimitState(None)
+
+    def _hold_usage_limit_failure(self, session: SessionState, limit: codex_usage_limit.UsageLimitState | None) -> bool:
+        """読取済みの利用枠を使い、終端反映と同じloop区間で保留を確定する。"""
+        if session.status != "failed" or limit is None:
+            return False
         error = {
             **(session.error if isinstance(session.error, dict) else {}),
             "codexErrorInfo": "usageLimitExceeded",
@@ -1835,24 +1843,29 @@ class AppServerManager:
                 await self._consume_items(session, turn.get("items"))
             await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
             failure_pending_completion = session.failure_pending_completion
+            status = session.status
+            error = session.error
             if isinstance(turn, dict):
                 turn_id = turn.get("id")
                 if isinstance(turn_id, str):
                     session.turn_id = turn_id
                 if not failure_pending_completion:
-                    session.status = _public_turn_status(turn.get("status"))
+                    status = _public_turn_status(turn.get("status"))
                 turn_error = turn.get("error")
                 if turn_error is not None or not failure_pending_completion:
-                    session.error = turn_error
-                session.turn_start_ambiguous = False
+                    error = turn_error
             else:
-                session.status = "failed"
-                session.error = "turn/completed did not contain turn"
-                session.turn_start_ambiguous = False
+                status = "failed"
+                error = "turn/completed did not contain turn"
+            if status not in TERMINAL_STATUSES:
+                status = "failed"
+            # 状態を終端へ進めた後にawaitすると、waitや状態保存が保留判定前の結果を回収できてしまう。
+            limit = await self._read_usage_limit_failure(session, error) if status == "failed" else None
+            session.status = status
+            session.error = error
+            session.turn_start_ambiguous = False
             session.turn_completed = True
             session.failure_pending_completion = False
-            if session.status not in TERMINAL_STATUSES:
-                session.status = "failed"
             if session.status == "completed":
                 session.codex_attempted_provider_ids = {session.codex_model_provider} if session.codex_model_provider else set()
             result = {"status": session.status, "agent_message": session.agent_message, "error": session.error}
@@ -1877,7 +1890,7 @@ class AppServerManager:
                 unobserved_session_ids = set(session.live_child_session_ids)
                 session.live_child_session_ids.clear()
                 resume_waits.record_unobserved_sessions(session, unobserved_session_ids)
-            elif await self._hold_usage_limit_failure(session) or self._hold_provider_failure(session):
+            elif self._hold_usage_limit_failure(session, limit) or self._hold_provider_failure(session):
                 pass
             elif not resume_waits.is_overload_failure(session):
                 resume_waits.clear_overload_resume(session)

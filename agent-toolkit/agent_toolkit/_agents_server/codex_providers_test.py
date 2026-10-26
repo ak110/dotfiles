@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import json
 import pathlib
 import subprocess
@@ -391,8 +392,9 @@ async def test_provider_registry_lifecycle_and_public_projection(monkeypatch, tm
             assert "paid-b" not in public and "codex_model_provider" not in public
 
 
+@pytest.mark.parametrize("failure_source", ["notification", "request"])
 @pytest.mark.asyncio
-async def test_provider_failover_result_collection(monkeypatch, tmp_path, provider_environment, caplog):
+async def test_provider_failover_result_collection(monkeypatch, tmp_path, provider_environment, caplog, failure_source):
     """公開startとwaitが内部失敗を返さず、監視後の最終結果だけを回収する。"""
     del provider_environment
     async with manager.AgentsServerManager() as root:
@@ -401,12 +403,39 @@ async def test_provider_failover_result_collection(monkeypatch, tmp_path, provid
             install_backend(root, "codex", backend)
             pending = []
             original_request = client.request
+            read_started = asyncio.Event()
+            read_release = asyncio.Event()
+            wait_blocked = asyncio.Event()
+            public_wait_context = contextvars.ContextVar("public_wait", default=False)
+            original_file_operation = codex.run_file_operation
+            original_wait = root._condition.wait
+
+            async def file_operation(function, *args: Any, **kwargs: Any):
+                if function is codex.codex_usage_limit.from_thread:
+                    read_started.set()
+                    await read_release.wait()
+                return await original_file_operation(function, *args, **kwargs)
+
+            async def condition_wait():
+                if public_wait_context.get():
+                    wait_blocked.set()
+                return await original_wait()
+
+            async def public_wait():
+                public_wait_context.set(True)
+                return await root.wait()
 
             async def finish_turn():
                 await asyncio.sleep(0)
                 session = backend.sessions["thread-codex"]
                 if client.connection == "openai":
-                    await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
+                    error = {"codexErrorInfo": "usageLimitExceeded"}
+                    if failure_source == "request":
+                        await backend._mark_failed(
+                            session, codex.JsonRpcResponseError("turn/start", -32600, "上限拒否", error), retryable=False
+                        )
+                    else:
+                        await complete(backend, session, error)
                 else:
                     await backend._handle_notification(
                         {
@@ -427,12 +456,25 @@ async def test_provider_failover_result_collection(monkeypatch, tmp_path, provid
                 return response
 
             monkeypatch.setattr(client, "request", request)
+            monkeypatch.setattr(codex, "run_file_operation", file_operation)
+            monkeypatch.setattr(root._condition, "wait", condition_wait)
             monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.01)
             root.activate()
             try:
-                started = await asyncio.wait_for(root.start("codex:gpt-6-sol/high", "元の作業", str(tmp_path)), 5)
+                start_task = asyncio.create_task(root.start("codex:gpt-6-sol/high", "元の作業", str(tmp_path)))
+                pending.append(start_task)
+                await asyncio.wait_for(read_started.wait(), 5)
                 root._wait_timeouts["main"] = 3
-                result = await asyncio.wait_for(root.wait(), 5)
+                wait_task = asyncio.create_task(public_wait())
+                pending.append(wait_task)
+                blocked_task = asyncio.create_task(wait_blocked.wait())
+                pending.append(blocked_task)
+                await asyncio.wait_for(asyncio.wait([wait_task, blocked_task], return_when=asyncio.FIRST_COMPLETED), 5)
+                returned_during_read = wait_task.done()
+                read_release.set()
+                started = await asyncio.wait_for(start_task, 5)
+                result = await asyncio.wait_for(wait_task, 5)
+                assert not returned_during_read, "利用上限の保留判定中に公開waitが復帰した"
                 assert result["status"] == "completed"
                 assert result["agent_message"] == "継続後の結果"
                 public = json.dumps([started, result, (await root.list_sessions()), (await root.show_session("thread-codex"))])
@@ -441,8 +483,12 @@ async def test_provider_failover_result_collection(monkeypatch, tmp_path, provid
                 assert "provider=paid-a" in caplog.text
                 assert len([1 for method, _ in client.requests if method == "thread/start"]) == 1
             finally:
+                read_release.set()
+                for task in pending:
+                    if not task.done():
+                        task.cancel()
                 await root.close()
-                await asyncio.gather(*pending)
+                await asyncio.gather(*pending, return_exceptions=True)
 
 
 @pytest.mark.asyncio
