@@ -54,7 +54,7 @@ def test_english_completion_report_requests_japanese_rewrite(capsys: pytest.Capt
     decision = json.loads(capsys.readouterr().out)
     assert decision["decision"] == "block"
     assert auto_message_opening_attributes(decision["reason"]) == {"source": "response-language", "kind": "block"}
-    assert "日本語で書いてから停止する" in decision["reason"]
+    assert "日本語で書いてから停止" in decision["reason"]
 
 
 def test_japanese_completion_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:

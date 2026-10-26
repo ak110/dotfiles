@@ -316,7 +316,7 @@ def test_target_repos_does_not_reparse_terminal_entries(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """直近7日の終端項目の判定は、変更の無いファイルの処理日時を再解析せず、境界より十分前に更新したファイルを解析しない。"""
+    """直近7日の終了項目の判定は、変更の無いファイルの処理日時を再解析せず、境界より十分前に更新したファイルを解析しない。"""
     now = datetime.datetime.now(datetime.UTC)
     recent = _write_entry(
         tmp_path,

@@ -973,7 +973,7 @@ async def test_remove_api_uses_user_permissions_for_terminal_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Web APIは実行環境変数にかかわらず人間主体として終端状態を削除する。"""
+    """Web APIは実行環境変数にかかわらず人間主体として終了状態を削除する。"""
 
     _disable_wi_git(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
@@ -1733,7 +1733,7 @@ async def test_user_comment_api_rejects_non_inbox_states_and_uwi(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """processing・終端状態およびUWIには操作を提供しない。"""
+    """processing・終了状態およびUWIには操作を提供しない。"""
     _patch_comment_edit_dependencies(monkeypatch)
     contents = {
         "processing": _session_review_awi("processing本文\n"),

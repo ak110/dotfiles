@@ -386,7 +386,7 @@ class TestRemoveAllScope:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """ユーザー環境ではstatus=allで終端状態も削除する。"""
+        """ユーザー環境ではstatus=allで終了状態も削除する。"""
         notes = _setup_notes(tmp_path)
         adopted = _write_entry(notes, "adopted", "adopted.md")
         rejected = _write_entry(notes, "rejected", "rejected.md")

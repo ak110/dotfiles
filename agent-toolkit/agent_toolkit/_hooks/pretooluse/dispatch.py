@@ -9,10 +9,6 @@ warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を
 
 統合しているチェック:
 
-任意ツール:
-
-- メインと委譲先の直前応答が英語主体の場合の書き直し要求 (block)
-
 AskUserQuestion / ExitPlanMode:
 
 - ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
@@ -344,8 +340,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
                     "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。",
                     tag=_WARN_TAG,
                     fix=(
-                        "読み取った途中経過は進捗の材料に限る。"
-                        "完了通知を受けた後に同じ出力ファイルを全量読み直してから結果として使う。"
+                        "読み取った途中経過は進捗の材料に限れ。"
+                        "完了通知を受けた後に同じ出力ファイルを全量読み直してから結果として使え。"
                     ),
                     removable_cause=True,
                     subject=command,
@@ -360,7 +356,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
                 _llm_notice(
                     "読取時点に観測したモデルと推論量の帰属行: "
                     + co_author_trailer(identity)
-                    + "。明示指定と無効化の方針を先に確認する。通常commit直前にも現在の観測を確認する。",
+                    + "。明示指定と無効化の方針を先に確認せよ。通常commit直前にも現在の観測を確認せよ。",
                     tag="notice",
                 )
             )

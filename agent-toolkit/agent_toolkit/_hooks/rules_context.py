@@ -31,15 +31,15 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.session_state import update_state
-lazy from agent_toolkit._hooks import plugin_resources, work_contract
+lazy from agent_toolkit._hooks import document_reads, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
 
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
-RESPONSE_LANGUAGE_NOTICE = "ユーザーへ向けた地の文は、最初の応答の1文目から日本語で書く。"
-QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従う。会話限定の指示を成果物へ混入させない。"
+RESPONSE_LANGUAGE_NOTICE = "ユーザーへ向けた地の文は、最初の応答の1文目から日本語で書け。"
+QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。会話限定の指示を成果物へ混入させるな。"
 
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
@@ -111,8 +111,8 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 OPERATION_SKILL_READY_KEY = "operation_skill_delivered_agents"
 """操作を起動の契機とするスキルの必須資料の識別子から、取得済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
 
-read_deliveryが本文を配送した時点と、PostToolUseが成功したSkill起動・必須範囲の読取を観測した時点で記録する。
-本文識別は実体・内容hash・指定範囲と主体に結び付ける。選択した資料、入力と文脈境界も同じ対応表へ保持する。
+PostToolUseが成功したSkill起動・資料全文の読取を観測した時点で記録する。
+分割読取は全文被覆を確認し、資料の実体・内容hash・主体に結び付ける。選択した資料、入力と文脈境界も同じ対応表へ保持する。
 キー名は既存の読み取り側との互換を保つ。本文を返さない未取得警告は取得済みとして記録しない。
 """
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
@@ -148,11 +148,7 @@ def reset_main_operation_skill_ready(
                 except KeyError, OSError, TypeError, ValueError:
                     continue
                 ready = f"read-trigger:{path}#sha256:{fingerprint}"
-                if (
-                    MAIN_AGENT_ID in recorded.get(ready, [])
-                    or heading
-                    and MAIN_AGENT_ID in recorded.get(ready + "#heading:" + heading, [])
-                ):
+                if MAIN_AGENT_ID in recorded.get(ready, []):
                     recovery.append((path, heading, fingerprint))
         updated = {
             name: (
@@ -186,78 +182,69 @@ def reset_main_operation_skill_ready(
     return recovery
 
 
-def _compact_recovery_context(
-    session_id: str, budget: int, recovery_targets: list[tuple[pathlib.Path, str, str]]
-) -> str | None:
-    """圧縮で失われたmain主体の選択済み資料を、SessionStartの残予算内で再配送する。"""
-    if budget <= 0:
-        return None
-    targets: list[tuple[read_triggers.ReadTarget, str]] = []
+def acquisition_failure(target: read_triggers.ReadTarget, error: Exception, *, shell: bool, agent: bool = False) -> str:
+    """資料読取または見出し解決の失敗を、主体に応じた取得または復旧へ導く。"""
+    path = target.path
+    if not path.is_file():
+        return (
+            f"資料`{path}`は存在しない。資料と読込宣言の参照先を復旧せよ。"
+            "復旧できない場合、委譲先は委譲元へ、それ以外はユーザーへ報告せよ"
+        )
+    prefix = f"`{target}`の読取または注目見出しの解決に失敗: {error}。"
+    if target.heading and isinstance(error, ValueError) and not isinstance(error, UnicodeError):
+        prefix += "読込宣言の見出しと資料を整合させよ。"
+    if shell:
+        return prefix + f"全文を`cat -- {shlex.quote(str(path))}`で読め"
+    skill = document_reads.skill_document(str(path))
+    if skill and skill[1] == "SKILL.md":
+        owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+        name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
+        step = f"`Skill`で`{name}`を起動せよ（資料: `{path}`）"
+        if agent:
+            step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
+        return prefix + step
+    return prefix + f"`{path}`をReadで全文読め"
+
+
+def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tuple[pathlib.Path, str, str]]) -> str | None:
+    """圧縮前に取得した選択資料を、ホスト本来の取得手段で案内する。"""
+    steps = []
     for path, heading, fingerprint in recovery_targets:
         target = read_triggers.ReadTarget(path, heading)
         try:
-            current_fingerprint = hashlib.sha256(target.path.read_bytes()).hexdigest()
-        except OSError:
-            continue
-        if target.path.is_file() and current_fingerprint == fingerprint:
-            targets.append((target, fingerprint))
-    if not targets:
+            if not path.is_file():
+                raise FileNotFoundError(str(path))
+            if hashlib.sha256(path.read_bytes()).hexdigest() != fingerprint:
+                continue
+            if heading:
+                target.body()
+            skill = document_reads.skill_document(str(path))
+            if host not in {"codex", "agy"} and skill and skill[1] == "SKILL.md":
+                owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+                name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
+                steps.append(f"`Skill`で`{name}`を起動せよ（資料: `{path}`）")
+                continue
+            focus = f"。特に`{heading}`に注目せよ" if heading else ""
+            if host in {"codex", "agy"}:
+                steps.append(f"`cat -- {shlex.quote(str(path))}`で全文読め" + focus)
+            else:
+                steps.append(f"Readで`{path}`を全文読め" + focus)
+        except (OSError, UnicodeError, ValueError) as error:
+            steps.append(acquisition_failure(target, error, shell=host in {"codex", "agy"}))
+    if not steps:
         return None
 
-    def context(
-        bodies: list[tuple[read_triggers.ReadTarget, bytes, str]], remaining: list[tuple[read_triggers.ReadTarget, str]]
-    ) -> str:
-        text = "会話圧縮後の次の判断前に、同一主体が選択済みの資料を再配送する。"
-        for target, raw, body in bodies:
-            text += (
-                '\n<atk-auto source="read-delivery" kind="document">\n'
-                f"資料: {target.path}\n本文識別子: {hashlib.sha256(raw).hexdigest()}\n"
-                f"相対参照の基点: {target.path.parent}\n{body}\n</atk-auto>\n"
-            )
-        if remaining:
-            text += "\n未取得: " + "、".join(
-                f"`{target.path}`" + (f"の{target.heading}" if target.heading else "") for target, _ in remaining
-            )
-            text += "。示した絶対パスから、次の判断前に指定範囲を取得する。"
-        return _llm_notice(
-            text, tag="notice", fix="再配送本文の基準を適用する。未取得の資料は示した絶対パスから指定範囲を読む。"
-        )
+    def notice(items: list[str], remaining: bool) -> str:
+        suffix = "。残る資料は次の操作で案内する" if remaining else ""
+        return _llm_notice("会話圧縮後の判断前に、選択済み資料を再取得せよ: " + "。".join(items) + suffix + "。")
 
-    included: list[tuple[read_triggers.ReadTarget, bytes, str]] = []
-    remaining = list(targets)
-    while remaining:
-        target, _fingerprint = remaining[0]
-        try:
-            raw = target.path.read_bytes()
-            owner = next(
-                (parent.parent for parent in target.path.parents if parent.name == "skills"), plugin_resources.plugin_root()
-            )
-            body = target.body(raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")).replace(
-                "${CLAUDE_PLUGIN_ROOT}", str(owner)
-            )
-        except OSError, UnicodeError, ValueError:
+    included: list[str] = []
+    for step in steps:
+        candidate = [*included, step]
+        if len(notice(candidate, len(candidate) < len(steps))) > budget:
             break
-        candidate = [*included, (target, raw, body)]
-        if len(context(candidate, remaining[1:])) > budget:
-            break
-        included, remaining = candidate, remaining[1:]
-    result = context(included, remaining)
-    if len(result) > budget:
-        return None
-
-    def _mark_delivered(current: dict) -> dict:
-        records = current.setdefault(OPERATION_SKILL_READY_KEY, {})
-        for target, raw, _body in included:
-            key = f"read-trigger:{target.path}#sha256:{hashlib.sha256(raw).hexdigest()}" + (
-                f"#heading:{target.heading}" if target.heading else ""
-            )
-            agents = records.setdefault(key, [])
-            if MAIN_AGENT_ID not in agents:
-                agents.append(MAIN_AGENT_ID)
-        return current
-
-    update_state(session_id, _mark_delivered)
-    return result
+        included = candidate
+    return notice(included, len(included) < len(steps)) if included else None
 
 
 def mark_user_confirmation_pending(session_id: str) -> None:
@@ -289,10 +276,10 @@ def session_temp_notice(session_temp: pathlib.Path | str) -> str:
     """
     return (
         f"このセッションのmanaged-temp: {session_temp}\n"
-        "一時ファイルはこの領域の直下へ置く。`/tmp`は使わない。"
+        "一時ファイルはこの領域の直下へ置け。`/tmp`は使うな。"
         "委譲時は、委譲先自身のmanaged-tempまたは専用一時領域の通知があればそちらの直下、"
-        "通知が無い場合だけこの絶対パスの直下へ置くよう伝える。"
-        "通知の有無が親から分からない場合は、委譲先が受信した通知から選ぶ条件付きの案内にする。"
+        "通知が無い場合だけこの絶対パスの直下へ置くよう伝えよ。"
+        "通知の有無が親から分からない場合は、委譲先が受信した通知から選ぶ条件付きの案内にせよ。"
         "入力や出力の個別ファイルを指定した場合は、そのファイルの読み書きを行ってよい。"
     )
 
@@ -324,7 +311,7 @@ def _conversation_identity_notice(session_id: object, transcript_path: object) -
     lines = [
         f"この会話のセッションID: {session_id}"
         if isinstance(session_id, str) and session_id
-        else "この会話のセッションID: 入力から取得できません。シェルのCLAUDE_CODE_SESSION_IDを使える場合はその値を使う。"
+        else "この会話のセッションID: 入力から取得できません。シェルのCLAUDE_CODE_SESSION_IDを使える場合はその値を使え。"
     ]
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is not None:
@@ -332,7 +319,7 @@ def _conversation_identity_notice(session_id: object, transcript_path: object) -
     else:
         lines.append(
             "この会話のtranscript: 絶対パスを入力から取得できません。特定済みIDをsession-review-evidenceの"
-            "--claude-session-idへ渡して記録を取得する。"
+            "--claude-session-idへ渡して記録を取得せよ。"
         )
     return "\n".join(lines)
 
@@ -356,7 +343,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
     """既存の証拠抽出CLIで全人間入力を保存し、会話の流れの取得先も通知する。"""
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
-        return "圧縮後の原文を抽出できない。特定済みIDをsession-review-evidenceの--claude-session-idへ渡して記録を解決する。"
+        return "圧縮後の原文を抽出できない。特定済みIDをsession-review-evidenceの--claude-session-idへ渡して記録を解決せよ。"
     command = [
         str(SHARE_DIR.parent / "scripts" / "atk"),
         "run-script",
@@ -377,7 +364,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
             "--conversation-only",
         ]
     )
-    lines = [f"会話全体の流れが必要な場合は`{conversation}`でconversation.mdとconversation_rangesを取得する。"]
+    lines = [f"会話全体の流れが必要な場合は`{conversation}`でconversation.mdとconversation_rangesを取得せよ。"]
     if delegated:
         return "\n".join(lines)
     output = session_temp / "compaction-user-events.jsonl" if session_temp is not None else None
@@ -410,15 +397,15 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         output.write_text(data, encoding="utf-8")
         lines.append(
             f"ユーザー発話の原文{len(users)}件: {output}。圧縮の要約で文言や範囲が変わり得るため、"
-            "ユーザーの要求と判断はこのファイルの原文で確かめる。"
+            "ユーザーの要求と判断はこのファイルの原文で確かめよ。"
         )
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         if output is not None:
             try:
                 output.unlink(missing_ok=True)
             except OSError:
-                lines.append("前回の抽出ファイルを削除できないため、そのファイルは使用しない。手動で原文を再取得する。")
-        lines.append(f"ユーザー発話の抽出に失敗した（{type(error).__name__}）。手動で`{shlex.join(command)}`を実行する。")
+                lines.append("前回の抽出ファイルを削除できないため、そのファイルは使用するな。手動で原文を再取得せよ。")
+        lines.append(f"ユーザー発話の抽出に失敗した（{type(error).__name__}）。手動で`{shlex.join(command)}`を実行せよ。")
     return "\n".join(lines)
 
 
@@ -431,7 +418,7 @@ def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
     child.mkdir(exist_ok=True)
     return (
         f"このサブエージェント専用の一時領域: {child}\n"
-        "一時ファイルはこの領域の直下へ置く。`/tmp`は使わない。"
+        "一時ファイルはこの領域の直下へ置け。`/tmp`は使うな。"
         f"親のセッションのmanaged-temp: {session_temp}\n"
         "親の領域は、委譲元が個別に指定した入力や出力のファイルの読み書きに使ってよい。"
     )
@@ -507,9 +494,9 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 )
                 content = f"{content}\n\n{compact}" if content else compact
             if source == "compact":
-                # PreToolUseを経ない最初の判断にも、圧縮前に選択した資料の本文を届ける。
+                # PreToolUseを経ない最初の判断にも、圧縮前の選択資料の取得を案内する。
                 recovery = _compact_recovery_context(
-                    session_id,
+                    host,
                     CLAUDE_CODE_OUTPUT_LIMIT - len(content or "") - 2,
                     recovery_targets,
                 )

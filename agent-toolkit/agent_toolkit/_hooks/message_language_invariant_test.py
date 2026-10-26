@@ -199,27 +199,22 @@ def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("file_name", "expected_notice"),
+    ("file_name", "commands"),
     [
         (
             "pyproject.toml",
-            "`Write`で`pyproject.toml`の依存の節を編集しようとしている。\n次の操作: "
-            "`[project.dependencies]`・`[project.optional-dependencies]`の編集は、"
-            "`uv.lock`を同期させるため`uv add`・`uv remove`を使う。"
-            "`[tool.*]`と版数の編集はそのまま進めてよい。",
+            ("uv add", "uv remove"),
         ),
         (
             "package.json",
-            "`Write`で`package.json`の依存の節を編集しようとしている。\n次の操作: "
-            "依存の編集は、`pnpm-lock.yaml`を同期させるため`pnpm add`・`pnpm remove`を使う。"
-            "`scripts`とメタデータの編集はそのまま進めてよい。",
+            ("pnpm add", "pnpm remove"),
         ),
     ],
 )
 def test_manifest_edit_warning_uses_confirmed_japanese_notice(
     tmp_path: pathlib.Path,
     file_name: str,
-    expected_notice: str,
+    commands: tuple[str, str],
 ) -> None:
     """manifest編集警告の確定訳を公開されたhookを起動して検証する。"""
     result = _run(
@@ -231,7 +226,8 @@ def test_manifest_edit_warning_uses_confirmed_japanese_notice(
     )
     assert result.returncode == 0
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert expected_notice in context
+    assert file_name in context and all(command in context for command in commands)
+    assert 'kind="warn"' in context
     assert _is_japanese_notice(context)
 
 
@@ -246,7 +242,7 @@ def test_direct_response_language_block_is_japanese(tmp_path: pathlib.Path, repe
     for _ in range(repetitions):
         result = _run(payload, tmp_path)
         assert result.returncode == 2
-        assert "日本語で書き直す" in result.stderr
+        assert "日本語で書き直" in result.stderr
         assert _is_japanese_notice(result.stderr)
 
 

@@ -20,7 +20,7 @@ from agent_toolkit._testing.agents_server_support import FakeBackend, exited_pro
 
 
 def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
-    """同じsessionの実行中状態を終端状態で置き換えて観測する。"""
+    """同じsessionの実行中状態を終了状態で置き換えて観測する。"""
     subject.publish("child-session", terminal=False, cwd=str(tmp_path), state_root=tmp_path)
     path = subject.registry_directory(tmp_path) / "child-session.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -67,7 +67,7 @@ def test_resume_info_carries_launch_info_and_activity_times_and_accepts_legacy_r
 
 
 def test_publish_and_observe_starting_state(tmp_path: pathlib.Path) -> None:
-    """起動処理中のsessionを非終端の再開情報として観測する。"""
+    """起動処理中のsessionを未終了の再開情報として観測する。"""
     subject.publish("child-session", terminal=False, status="starting", cwd=str(tmp_path), state_root=tmp_path)
 
     resolution = subject.resolve("child-session", state_root=tmp_path)
@@ -103,7 +103,7 @@ async def test_session_state_publishes_state_transitions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """session状態は進捗更新を重複書込せず、実行中と終端の遷移を公開する。"""
+    """session状態は進捗更新を重複書込せず、実行中と終了の遷移を公開する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState("published-session", str(tmp_path), publish_registry=True)
 
@@ -158,7 +158,7 @@ async def test_observing_wait_keeps_record_and_stop_releases_it(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終端を観測した待機処理はレコードを残し、所有主体による破棄だけが解放済みへ置き換える。"""
+    """終了を観測した待機処理はレコードを残し、所有主体による破棄だけが解放済みへ置き換える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(_wait_schedule, "get_wait_timeout", lambda _request_bucket: 0.0)
     subject.publish("child-session", terminal=True, engine="codex", cwd=str(tmp_path))
@@ -218,7 +218,7 @@ def test_registry_rejects_invalid_session_id(session_id: str, tmp_path: pathlib.
 
 
 def test_running_record_whose_recorded_processes_exited_resolves_as_interrupted(tmp_path: pathlib.Path) -> None:
-    """記録した全プロセスが存在しない`running`の記録は、登録簿を書き換えずに`interrupted`の終端と解決する。
+    """記録した全プロセスが存在しない`running`の記録は、登録簿を書き換えずに`interrupted`の終了と解決する。
 
     同じpidでも起動時刻が異なるプロセスは、記録したプロセスの再利用として不在に数える。
     """

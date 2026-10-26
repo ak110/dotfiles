@@ -1546,7 +1546,7 @@ def test_finalize_keeps_working_file_when_content_changed_after_check(tmp_path: 
 def test_public_save_all_then_restore_unfinished_plan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """順序付きの全計画保存を終えてから、未終端だけをcheckoutで再開できる場所へ戻す。"""
+    """順序付きの全計画保存を終えてから、未終了だけをcheckoutで再開できる場所へ戻す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)

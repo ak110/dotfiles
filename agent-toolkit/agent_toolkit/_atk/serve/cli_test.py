@@ -127,7 +127,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_allow_terminal_entry_editing_and_keep_decision_closed() -> None:
-    """終端済みの本文編集と削除を許可し、採否を閉じたままkind/state識別子を表示する。"""
+    """終了済みの本文編集と削除を許可し、採否を閉じたままkind/state識別子を表示する。"""
     result = _run_node_ui(
         """
 displayEntry({

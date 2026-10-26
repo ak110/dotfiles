@@ -66,7 +66,7 @@ def _event_text(payload: dict[str, Any]) -> str:
 
 
 def result_values(session: SessionState, payload: dict[str, Any]) -> dict[str, Any]:
-    """`result`イベントを終端結果へ変換する。"""
+    """`result`イベントを終了時の結果へ変換する。"""
     raw_status = payload.get("status")
     status = raw_status.lower() if isinstance(raw_status, str) else raw_status
     agent_message = _event_text(payload) or session.agent_message

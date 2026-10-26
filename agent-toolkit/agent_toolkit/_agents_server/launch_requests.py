@@ -988,7 +988,7 @@ def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
     return auto_message(
         record_line + f"{root / 'share/work-contract.md'}と{root / 'skills/delegation/references/handoff-record.md'}に従い、"
         "委譲先自身が新規・継続の指定に応じて記録を作成・更新する。"
-        "記録は割当範囲を所有し、委譲元は終端後の検収で読む。",
+        "記録は割当範囲を所有し、委譲元は終了後の検収で読む。",
         source="agents-server",
         kind="work-contract",
     )

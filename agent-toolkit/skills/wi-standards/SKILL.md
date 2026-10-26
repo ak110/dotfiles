@@ -11,7 +11,7 @@ description: >
 # AWIとUWIの共通規範
 
 ユーザーがWIを読む場面は、UWIへの回答、AWIの内容確認、処理後の結果確認の3つである。本文の先頭には、それぞれの場面で知りたいことに答える人間向けの説明を置き、その後にエージェント向けの詳細を続ける。
-AWIの冒頭に書く内容は`references/awi-body.md`「節の構成と分担」で定める。欠陥を起点とする場合は問題と処置を書き、それ以外の場合は目的、変更内容および結果を示す。
+AWIの冒頭に書く内容は`references/awi-body.md`「節の構成と分担」で定める。目的、変更の要点、変更後の結果を短く示す。
 UWIは`references/uwi-format.md`「構成」に従い、処理後は実際に何をどう変えたかを先に示す。
 文章表現は`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」に従う。
 
@@ -25,11 +25,11 @@ WI作成工程における入力、責務および出口は、`${CLAUDE_PLUGIN_R
 WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求をキューへ保存する操作であり、投入元のセッションの処理対象には加えない。現在の依頼と承認の範囲で必要な是正はそのセッション内で完遂し、後続の独立した作業要求が残る場合だけ別途WIを投入する。
 対象リポジトリはAWIの対象となる実装リポジトリを指し、private-notesはキューを保持するリポジトリを指す。WIはユーザーの手元に残す記録であるため、外部の読者が参照する成果物にこれらの識別子を記載することは避ける（`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」）。
 
-キューの取得・保存・状態変更するには、対象リポジトリとprivate-notesへのアクセス権、`atk`コマンド、および必要な委譲手段が必要である。これらを利用できない環境では、提示されたWIの読解と本文原稿の整理までに留め、取得していない既存項目や保存状態は未確認として扱う。正式な投入・更新・終端処理は、該当機能を利用できるClaude CodeまたはCodexで実施する。本文の説明は[文章の品質基準](references/quality-standards.md)に従う。
+キューの取得・保存・状態変更するには、対象リポジトリとprivate-notesへのアクセス権、`atk`コマンド、および必要な委譲手段が必要である。これらを利用できない環境では、提示されたWIの読解と本文原稿の整理までに留め、取得していない既存項目や保存状態は未確認として扱う。正式な投入・更新・終了処理は、該当機能を利用できるClaude CodeまたはCodexで実施する。本文の説明は[文章の品質基準](references/quality-standards.md)に従う。
 
 ## 名指し参照の読込方法
 
-本文の各参照に定められた適用条件を守り、選択した資料の指定範囲を取得したうえで、その基準に基づく具体的な判断へ進む。起動時の行に示された資料は、起動本文とともに配送される。
+本文の各参照に定められた適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行に示された資料は、起動本文とともに配送される。
 
 <!-- read-table-source: SKILL-delivery-1.md -->
 
@@ -37,23 +37,23 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 
 <!-- read-table-source: SKILL-delivery-2.md -->
 
-| 時点または条件 | 取得する範囲 |
+| 時点または条件 | 資料と注目箇所 |
 | --- | --- |
 | 対象リポジトリとprivate-notesを扱う前 | `references/repository-scope.md` |
 | 委譲先が`atk wi`でキュー項目の状態を変更する場合 | `references/subagent-queue-ops.md` |
-| 通常AWIを起草する前 | `references/awi-body.md`の冒頭の本文形式、「要求固有性と記載量」「節の構成と分担」「実現性の記述」「完成条件」「配置規約と導入目的の調査」 |
-| 通常AWIの要求を読解・採否判定する前 | `references/awi-body.md`の「節の構成と分担」「完成条件」 |
-| 欠陥を起点とするAWIを扱う前 | `references/awi-body.md`の「原因分析と適用範囲」 |
+| 通常AWIを起草する前 | `references/awi-body.md`の冒頭の本文形式、「要求固有性と記載量」「節の構成と分担」「調査結果と判断根拠の記述」「完成条件」「配置規約と導入目的の調査」 |
+| 通常AWIの要求を読解・採否判定する前 | `references/awi-body.md`の冒頭、「節の構成と分担」「完成条件」 |
+| 観測された不具合を起点としbugfixを起動して起草する前 | `references/awi-body.md`の「原因分析」 |
 | AWIの逐語引用を取り込む前 | `references/awi-body.md`の「逐語引用の対応付け」 |
 | 外部の既存挙動の再現を完成条件へ採る前 | `references/awi-body.md`の「外部の既存挙動の再現」 |
 | WI作成の調査に入る前 | `references/drafting-workflow.md`の冒頭、「出所と観測の取得」「投入条件の判定」「前提と観測の確認」「確定した要件と委譲元の判断」「未確定事項」。`references/drafting-completion.md`の「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「方針と判断の記録との比較」 |
-| 原稿を確定する前 | `references/drafting-workflow.md`の「本文の起草」「保存前の確認」。`references/drafting-completion.md`の「投入前の読み直し」。新しい通常AWIでは同資料の「重複判定」、欠陥起点のAWIでは「原因と定義の所有者」も読む |
+| 原稿を確定する前 | `references/drafting-workflow.md`の「本文の起草」「保存前の確認」。`references/drafting-completion.md`の「投入前の読み直し」。新しい通常AWIでは同資料の「重複判定」、観測された不具合を起点としbugfixを起動して起草する場合は「原因と定義の所有者」も読む |
 | 独立した確認に入る前 | `references/drafting-workflow.md`の「直接起草と独立した検収の選択」。選んだ手順の起動・検収・差戻しの契約 |
-| 保存操作に入る前 | `references/drafting-workflow.md`の「投入」。`references/drafting-completion.md`の「重複判定」（通常AWI）と「投入前の読み直し」の対象集合の一致確認 |
+| 保存操作に入る前 | `references/drafting-workflow.md`の「投入」。`references/drafting-completion.md`の「重複判定」（通常AWI）と「投入前の読み直し」の対象集合と除外の確認 |
 | UWIを起草する場合 | `references/uwi-format.md` |
 | WIの調査・要件分類・由来の検収に入る前 | `references/origin-and-approval.md`の「由来と`source`」「承認」「範囲語と程度」「ユーザー専用の記入欄と是正要求」 |
 | 逐語引用を扱う前 | `references/origin-and-approval.md`の「逐語転記」 |
-| WIの状態、状態遷移、依存、冷却時間、保留と終端を扱う前。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念を受けた時点（調査や認識合わせより先） | `references/states-and-dependencies.md` |
+| WIの状態、状態遷移、依存、冷却時間、保留と終了を扱う前。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念を受けた時点（調査や認識合わせより先） | `references/states-and-dependencies.md` |
 | 複数リポジトリへ投入する場合、および同じ成果の整合を要求する複数のAWIを登録する場合 | `references/cross-repository-submission.md` |
 | 同じ対象リポジトリの複数項目を一括取得する場合 | `references/wi-show-bulk.md` |
 | 通常AWIの投入、または投入済みAWIの内容の更新をWI投入担当へ委譲する前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` |
@@ -65,7 +65,7 @@ AWIの粒度は要求の同一性に基づいて判断する。既存または�
 
 ## 通常AWIの本文
 
-本文の書式、各節の役割分担、完成条件および実現性の記載基準は[references/awi-body.md](references/awi-body.md)が定める。必須となるH2見出しの構成と順序は、`atk wi add`が保存処理の前に確認する。
+本文の書式、各節の役割分担、完成条件および調査結果と判断根拠の記載基準は[references/awi-body.md](references/awi-body.md)が定める。必須となるH2見出しの構成と順序は、`atk wi add`が保存処理の前に確認する。
 `## 反映内容と反映先`においてWI処理の工程や運用を変更する通常AWIを起草する場合は、起草に着手する前に`agent-toolkit:workflow-overview`を起動する。
 
 ### 起草完了の条件
@@ -78,7 +78,7 @@ AWIの粒度は要求の同一性に基づいて判断する。既存または�
 
 | 起票の目的 | 登録前に満たす条件 | 後続工程へ渡す内容 |
 | --- | --- | --- |
-| 全経路に共通 | 要求または観測事実、期待との差、対象と期待結果、対応が必要な根拠を確かめ、既存実装・文書・未終端WIとの被覆を比較する | 確認した結論と再取得できる根拠 |
+| 全経路に共通 | 要求または観測事実、期待との差、対象と期待結果、対応が必要な根拠を確かめ、既存実装・文書・未終了WIとの被覆を比較する | 確認した結論と再取得できる根拠 |
 | ユーザーが手動作成で具体化を求めた要求 | 今回の対象ごとの採否、外部可視の仕様、必要なユーザー判断を投入元で確定する | 確定した変更の内部設計、実装単位、実装後の検証 |
 | 作業途中で発見した、現在の要求から独立した別件 | 共通条件を満たし、確定事実・原因仮説・未確定事項を区別する | 原因の解明や解法選定の残り、次に確定する問いと期待結果 |
 
@@ -105,7 +105,7 @@ WIの保存先は`private-notes/yyyy/MM/<filename>`に固定する。項目の�
 
 WIの保存状態には`inbox`、`processing`、`hold`、`adopted`、`rejected`があり、`agent-toolkit:process-wi`は`inbox`と`processing`のみを処理対象とする。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念が寄せられた時点では、詳細な調査や認識合わせに先立って対象項目を保留（`hold`）にする。
 処理中の項目の扱い: 別のセッションが処理している`processing`状態の項目については、保留や本文の置き換えを行わず、変更したい内容を新規項目として投入する。
-状態遷移、採否の操作、保留と本文の修正、終端処理、依存関係と冷却時間、事前承認型UWIに伴う元項目の保留、および「回答済みUWIの取り込み」の運用は[references/states-and-dependencies.md](references/states-and-dependencies.md)が定める。上流リポジトリへの投入手順は[references/cross-repository-submission.md](references/cross-repository-submission.md)が定める。
+状態遷移、採否の操作、保留と本文の修正、終了処理、依存関係と冷却時間、事前承認型UWIに伴う元項目の保留、および「回答済みUWIの取り込み」の運用は[references/states-and-dependencies.md](references/states-and-dependencies.md)が定める。上流リポジトリへの投入手順は[references/cross-repository-submission.md](references/cross-repository-submission.md)が定める。
 
 重要フラグはfrontmatterの`important: true`で設定し、キーの省略時はfalse、フラグの解除はキー自体の削除として扱う。
 一覧表示、検索、全件表示およびWeb画面の一覧では、`all`、`yes`、`no`の重要度フィルターを利用できる。
@@ -123,7 +123,7 @@ WIの保存状態には`inbox`、`processing`、`hold`、`adopted`、`rejected`�
 WIの投入前、および投入済みWIへの着手前には、対象リポジトリの回答済みUWIを`atk wi list --target-repo=<対象リポジトリの絶対パス> --type=uwi --answered=yes --skip-pull --summary-only`で取得する。同一の実装領域に関わる項目については`atk wi show`で回答内容を確認し、新しい要求と両立するかを確かめる。両立しない部分がある場合は投入や着手を控え、元の要求と回答内容を優先して本文を是正する。ユーザーだけが判断できる値が残る場合に限り、ユーザー確認する（`agent-toolkit:user-confirmation-and-report`「確認要否の判定」）。
 WIの追跡先と本文形式が同一工程で指定されているリポジトリでは、その規範が定める形式とタイミングに従って記載し、登録後に完了を確認する。
 依存関係を伴う要求については、`references/states-and-dependencies.md`の先行成果の必要性基準に基づいて確定した依存関係のみを、後続の本文と`depends_on`へ反映する。
-投入済みの項目に着手するエージェントは、`## 反映内容と反映先`、`## 完成条件`、`## 適用範囲`における対象集合の一致を`references/drafting-completion.md`「投入前の読み直し」と同じ基準で確認する。不一致がある場合は実装に着手せず、元の要求と現物の状態から内容を復元して本文を訂正する。
+投入済みの項目は、目的、変更内容、原因分析と固有の補足条件から完成状態を導き、旧形式の節も読んで対象を確定する。任意節や引用位置の記録を省いた本文も、その記載内容から着手できる。
 
 キュー原文の変化に対する過剰な追加対策は実用上の対象外とし、原文のスナップショット保存、ハッシュ比較、差分比較、変化時の処理遮断やUWI化などは追加しない。現行のキュー取得機能を利用し、追加の恒常的な状態を持たない設計とする。検収用の一時的な原本保存や既存の取得機能の利用は、この追加対策には当たらない。
 

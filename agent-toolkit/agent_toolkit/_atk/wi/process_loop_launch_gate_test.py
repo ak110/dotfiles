@@ -53,7 +53,7 @@ def test_unobserved_alerts_keep_record(tmp_path: pathlib.Path, monkeypatch: pyte
 
 
 class _Manager:
-    """担当の起動・終端だけを返し、終端時に候補を終端させる最小の担当管理。"""
+    """担当の起動・終了だけを返し、終了時に候補を終了させる最小の担当管理。"""
 
     def __init__(self, notes: pathlib.Path) -> None:
         self.notes = notes

@@ -1,4 +1,4 @@
-"""孫sessionの終端、過負荷と利用上限の解除を待った後の自動再開と、`send_message`による保存済みsessionの再開。"""
+"""孫sessionの終了、過負荷と利用上限の解除を待った後の自動再開と、`send_message`による保存済みsessionの再開。"""
 
 from __future__ import annotations
 
@@ -38,20 +38,20 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
 class ManagerResume(manager_registry.ManagerRegistry):
-    """孫sessionの終端と待機の解除を観測して自動で継続し、保存済みsessionを再開する。"""
+    """孫sessionの終了と待機の解除を観測して自動で継続し、保存済みsessionを再開する。"""
 
     async def _child_result_is_terminal(self, session_id: str) -> bool:
-        """孫sessionの共有された終端結果ファイルが終端を示すかを返す。
+        """孫sessionの共有された終了時の結果ファイルが終了を示すかを返す。
 
         このファイルは同じルートsessionの`results`配下を全ての書込主体が共有するため、
-        別プロセスが起動した孫sessionの終端も同じ処理で判定できる。
+        別プロセスが起動した孫sessionの終了も同じ処理で判定できる。
         """
         if self._status_writer is None or not shared_layout.valid_session_id(session_id):
             return False
         return (await run_file_operation(self._status_writer.read_result, session_id)) is not None
 
     async def _advance_child_session_wait(self, session: SessionState) -> None:
-        """保留中の結果を、孫sessionの終端・過負荷と利用上限の待機の経過または保持期限に応じて進める。"""
+        """保留中の結果を、孫sessionの終了・過負荷と利用上限の待機の経過または保持期限に応じて進める。"""
         if not session.awaiting_auto_resume or session.pending_result is None:
             return
         if session.interrupt_requested:
@@ -120,7 +120,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             if asyncio.get_running_loop().time() >= session.usage_limit_resume_at:
                 await self._resume_after_usage_limit(session)
             return
-        # 背景実行の`atk agents wait`で回収済みの孫sessionは、登録簿と終端結果ファイルが消えた後も未観測にしない。
+        # 背景実行の`atk agents wait`で回収済みの孫sessionは、登録簿と終了時の結果ファイルが消えた後も未観測にしない。
         await consume_agents_wait_background_outputs_async(session)
         # 照会の`await`の間に委譲先の出力の追跡が同じ集合を更新するため、開始時点の写しを回す。
         resolutions = {
@@ -140,7 +140,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session_registry.Resolution.UNREADABLE,
             }:
                 continue
-            # レコードの不在と解放済みは、所有側の解放と7日超の回収からも生じるため、終端結果ファイルを終端の第2の根拠とする。
+            # レコードの不在と解放済みは、所有側の解放と7日超の回収からも生じる。
+            # そのため、終了時の結果ファイルを終了の第2の根拠とする。
             if await self._child_result_is_terminal(session_id):
                 terminal.add(session_id)
                 continue
@@ -165,8 +166,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
             repair_message = session.codex_self_message_observed and not session.codex_self_message_repair_consumed
             prompt = wrap_delivery_body(
                 (
-                    "あなたが起動した子は終端した。\n"
-                    f"終端したsession/thread: {', '.join(identifiers)}\n"
+                    "あなたが起動した子は終了した。\n"
+                    f"終了したsession/thread: {', '.join(identifiers)}\n"
                     "各子の結果を受け取り、残る工程を続けて所定の返却形式を返せ。"
                     if identifiers
                     else "直前のturnの返却本文を確認せよ。"
@@ -215,7 +216,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 await self._status_writer.delete_result_async(session.session_id, collector="auto-resume")
             return
 
-        # 保留対象が背景taskの終端だけで消えた場合は確定しない。backendはその終端に続く再開turnの結果で
+        # 保留対象が背景taskの終了だけで消えた場合は確定しない。backendはその終了に続く再開turnの結果で
         # 保留中の結果を差し替えるため、ここで確定すると再開turnの結果より先に待機表明の結果を公開してしまう。
         # この場合の確定は再開turnの結果か保留期限の経過に委ねる。
         if not has_pending_auto_resume_targets(session) and unobserved:

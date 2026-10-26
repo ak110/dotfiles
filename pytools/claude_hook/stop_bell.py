@@ -35,7 +35,7 @@ _BELL = "\a"
 
 
 def _approve() -> None:
-    """ベルを鳴らさず空応答で終端する。共通のhook起動処理の例外フォールバックも本関数を呼ぶ。"""
+    """ベルを鳴らさず空応答で終了する。共通のhook起動処理の例外フォールバックも本関数を呼ぶ。"""
     print(json.dumps({}, ensure_ascii=False))
 
 

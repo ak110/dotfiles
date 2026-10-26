@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_atk/wi/auto_resume.py のテスト。
 
-候補表示・y応答・n応答・全拒否・候補なしの各終端を検証する。
+候補表示・y応答・n応答・全拒否・候補なしの各終了を検証する。
 """
 
 from __future__ import annotations

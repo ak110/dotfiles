@@ -1,6 +1,6 @@
 """task返却の続行不能区分検査を確認する。"""
 
-# backendの終端入口を直接検証し、外部CLIの起動を避ける。
+# backendが結果を確定する処理を直接検証し、外部CLIの起動を避ける。
 # pylint: disable=protected-access
 
 from __future__ import annotations
@@ -122,7 +122,7 @@ def test_non_completed_result_preserves_existing_recovery(tmp_path: pathlib.Path
 async def test_backend_terminal_boundary_checks_task_result(
     tmp_path: pathlib.Path, engine: str, launch_kind: state.LaunchKind, message: str, held: bool
 ) -> None:
-    """各backendの終端入口が通常・軽量taskを同じ公開前検査へ渡す。"""
+    """各backendが結果を確定するとき、通常・軽量taskを同じ公開前検査へ渡す。"""
     session = _task_session(tmp_path)
     session.launch_kind = launch_kind
     session.agent_message = message

@@ -5,6 +5,7 @@
 
 import ast
 import contextlib
+import functools
 import io
 import json
 import os
@@ -21,7 +22,7 @@ from agent_toolkit._common.session_state import state_path
 from agent_toolkit._testing import git_repository
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agent_id, rules_context
-lazy from agent_toolkit._hooks.pretooluse import read_delivery
+lazy from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 
@@ -330,13 +331,15 @@ def _codex_payload(patch_text: str, cwd: pathlib.Path, session_id: str = "codex-
 
 
 def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> None:
-    """他のチェックを試す前提として、宣言資料の配送と実本文の取得を完了する。"""
+    """他のチェックの前提として、宣言資料を主体の取得操作で読む。"""
     if not isinstance(payload, dict) or not payload.get("session_id"):
         return
 
     with pytest.MonkeyPatch.context() as patch:
         for name, value in (env_overrides or {}).items():
             patch.setenv(name, value)
+        # 準備中の操作は資料を変更しないため、同じhost・cwdの宣言を取得イベントごとに再解析しない。
+        patch.setattr(read_delivery, "declarations", functools.lru_cache(maxsize=None)(read_delivery.declarations))
         session_id = payload["session_id"]
         for _attempt in range(12):
             decision = read_delivery.deliver(payload, payload.get("tool_name", ""), payload.get("tool_input", {}), session_id)
@@ -361,11 +364,19 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
             if not targets:
                 return
             for target in targets:
+                subject = operation_skills.resolve_subject(payload)
+                skill = read_delivery.skill_name(target.path)
+                if subject != operation_skills.SUBJECT_CODEX and skill:
+                    tool_name, tool_input = "Skill", {"skill": skill}
+                elif subject == operation_skills.SUBJECT_CODEX:
+                    tool_name, tool_input = "Bash", {"command": "cat -- " + shlex.quote(str(target.path))}
+                else:
+                    tool_name, tool_input = "Read", {"file_path": str(target.path)}
                 event = {
                     **payload,
                     "hook_event_name": "PostToolUse",
-                    "tool_name": "Bash",
-                    "tool_input": {"command": "cat -- " + shlex.quote(str(target.path))},
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
                     "tool_response": {"stdout": target.path.read_text(encoding="utf-8"), "exit_code": 0},
                 }
                 assert _run_posttooluse(event, env_overrides or {}).returncode == 0

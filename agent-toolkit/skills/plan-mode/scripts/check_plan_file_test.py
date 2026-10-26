@@ -2050,10 +2050,10 @@ def _agent_wi_plan(repo: pathlib.Path, private_notes: pathlib.Path, wi_sections:
     return path
 
 
-def test_agent_wi_adopted_action_without_reason_is_error_on_creation(
+def test_agent_wi_adopted_action_without_reason_accepts_new_format(
     repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
 ) -> None:
-    """WI本文が`## 適用範囲`を持たないエージェント由来のWIの採用行は、新規作成でエラーに移す。"""
+    """新書式の反映内容を登録済みの調査として参照する。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     path = _agent_wi_plan(work_dir, private_notes, "## 反映内容と反映先\n\n対象。\n")
@@ -2065,8 +2065,8 @@ def test_agent_wi_adopted_action_without_reason_is_error_on_creation(
         reject_migration_warnings=True,
     )
     assert not read_errors, read_errors
-    assert any("適用範囲を再導出した結果と根拠" in warning for warning in read_warnings), read_warnings
-    assert any("適用範囲を再導出した結果と根拠" in error for error in errors), errors
+    assert not any("適用範囲を再導出した結果と根拠" in warning for warning in read_warnings), read_warnings
+    assert not any("適用範囲を再導出した結果と根拠" in error for error in errors), errors
     assert not any("適用範囲を再導出した結果と根拠" in warning for warning in warnings), warnings
 
 
@@ -2075,8 +2075,10 @@ def test_agent_wi_adopted_action_without_reason_is_error_on_creation(
     [
         "## 適用範囲\n\n",
         "```markdown\n## 適用範囲\n\n誤りの機構が依存する条件。\n```\n",
+        "## 反映内容と反映先\n\n",
+        "```markdown\n## 反映内容と反映先\n\n対象。\n```\n",
     ],
-    ids=["empty", "fenced"],
+    ids=["empty-scope", "fenced-scope", "empty-content", "fenced-content"],
 )
 def test_agent_wi_adopted_action_without_reason_rejected_when_wi_scope_empty(
     repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path, scope: str

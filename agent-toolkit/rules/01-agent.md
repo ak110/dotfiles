@@ -148,7 +148,7 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 
 委譲済みの主題について本文を読む、追加調査する、回答を準備する前は、`agent-toolkit:delegation`を起動して「継続と新規起動」に従う。委譲元は認可、全体調整と検収を担う。
 
-委譲の必要性、単位、実行手段、観測と巻き取りは`agent-toolkit:delegation`が定める。同等の権限と観測手段があるClaude Codeからの委譲は`agents_server`を標準とする。委譲しても、成果の所有と終端の観測は委譲元に残る。
+委譲の必要性、単位、実行手段、観測と巻き取りは`agent-toolkit:delegation`が定める。同等の権限と観測手段があるClaude Codeからの委譲は`agents_server`を標準とする。委譲しても、成果の所有と終了の観測は委譲元に残る。
 
 ## 使用言語
 

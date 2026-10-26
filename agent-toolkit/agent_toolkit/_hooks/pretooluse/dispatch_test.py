@@ -16,6 +16,7 @@ from agent_toolkit import hook
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.decision import Decision
+from agent_toolkit._testing import pretooluse_support
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 from agent_toolkit._testing.pretooluse_support import (
@@ -34,6 +35,28 @@ from agent_toolkit._testing.pretooluse_support import (
 
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
 _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
+
+
+def test_preparation_reuses_declarations_only_within_one_invocation(monkeypatch) -> None:
+    calls = []
+
+    def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> list:
+        calls.append((cwd, host, session_id))
+        return []
+
+    def deliver(_payload, _tool, _inputs, session_id):
+        pretooluse_support.read_delivery.declarations("/project", session_id=session_id)
+        pretooluse_support.read_delivery.declarations("/project", session_id=session_id)
+        return Decision()
+
+    monkeypatch.setattr(pretooluse_support.read_delivery, "declarations", declarations)
+    monkeypatch.setattr(pretooluse_support.read_delivery, "deliver", deliver)
+    monkeypatch.setattr(pretooluse_support, "read_state", lambda _session: {})
+    payload = {"session_id": "cache-test", "tool_name": "Read", "tool_input": {}}
+    pretooluse_support.prepare_read_delivery(payload)
+    pretooluse_support.prepare_read_delivery(payload)
+    assert calls == [("/project", "claude", "cache-test")] * 2
+    assert pretooluse_support.read_delivery.declarations is declarations
 
 
 @pytest.mark.parametrize("host", ["claude-code", "codex"])
@@ -806,7 +829,7 @@ class TestMojibakeCheck:
         assert result.returncode == 0
         context = _additional_context(result)
         assert "U+FFFD" in context
-        assert "U+FFFDを意図した文字へ置き換えて再実行する" in context
+        assert "U+FFFDを意図した文字へ置き換えて再実行" in context
 
     def test_write_with_mojibake(self):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": "hello \ufffd world"}})
@@ -815,7 +838,7 @@ class TestMojibakeCheck:
         assert "U+FFFD" in context
         # エージェント宛てメッセージの規約: XMLの開始境界と終了境界が付与されていること。
         assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
-        assert "\n次の操作: U+FFFDを意図した文字へ置き換えて再実行する" in context
+        assert "\n次の操作: U+FFFDを意図した文字へ置き換えて再実行" in context
         assert context.endswith("</atk-auto>")
 
     def test_edit_with_mojibake(self):
@@ -870,7 +893,7 @@ class TestPs1EolCheck:
             "\n次の操作: `agent-toolkit:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い"
             in context
         )
-        assert "既存ファイルには`Edit`ツールを使う" in context
+        assert "既存ファイルには`Edit`ツールを使" in context
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""

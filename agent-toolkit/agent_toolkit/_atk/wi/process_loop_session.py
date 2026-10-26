@@ -290,7 +290,7 @@ def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "")
 
 
 def cleanup_lane_session(lane_session_id: str, *, target_repo: str | None = None) -> dict[str, Any]:
-    """担当の終了を確定した後に、終端sessionの解放応答を待たず同じ適格判定でレーン資源を回収する。
+    """担当の終了を確定した後に、終了sessionの解放応答を待たず同じ適格判定でレーン資源を回収する。
 
     単一起動の子終了後と、all-reposで担当の所有を解放した後の両方でこの処理を実行する。
     結果はprocess-loopログの`lane_cleanup`へ残し、保持した資源と回収の失敗には同じ所有sessionで
@@ -462,7 +462,7 @@ def recording_orchestrator_child(identifier: str | None) -> Generator[None]:
     """区間の間、`identifier`を環境に持つ直下の子プロセスを探し、登録簿の記録プロセスへ委譲先CLIとして加える。
 
     登録簿の記録が所有プロセス（process-loop自身）だけを持つと、process-loopが強制終了して`claude`の子が
-    生存し続ける場合も、全プロセスの不在から終端と解決される。
+    生存し続ける場合も、全プロセスの不在から終了と解決される。
     子の起動は`subprocess.run`が所有するためpidを直接受け取れず、環境に渡したsession識別子の一致で子を特定する。
     識別子は起動ごとに生成した値であり、プロセス名の一致で対象を広げない。
     fork直後で起動前の子はprocess-loop自身の環境を持つため、一致しない子も次の巡回で読み直す。
@@ -563,7 +563,7 @@ def run_process_session(
     dotfiles_root: pathlib.Path | None,
     on_session_finished: Callable[[bool], None] | None = None,
 ) -> bool:
-    """子終端後・自己再起動前に所有を解放し、例外時も一度だけ通知する。"""
+    """子終了後・自己再起動前に所有を解放し、例外時も一度だけ通知する。"""
     notified = False
 
     def finished(completed: bool) -> None:

@@ -95,7 +95,7 @@ def _actionable_message(error: BaseException) -> str:
 
 
 def _complete(session: state.SessionState, *, message: str = "完了", error: Any = None) -> None:
-    """テスト用sessionを結果取得可能な終端状態へ進める。"""
+    """テスト用sessionを結果取得可能な終了状態へ進める。"""
     session.status = "failed" if error is not None else "completed"
     session.agent_message = message
     session.error = error
@@ -274,7 +274,7 @@ class FakeBackend:
 
 
 class UnavailableStartBackend(FakeBackend):
-    """起動応答の前にengineの可用性で終端する偽バックエンド。"""
+    """起動応答の前にengineの可用性で終了する偽バックエンド。"""
 
     def __init__(
         self,
@@ -292,7 +292,7 @@ class UnavailableStartBackend(FakeBackend):
 
 
 class DelayedUnavailableBackend(FakeBackend):
-    """起動応答を返した後にengineの可用性で終端する偽バックエンド。"""
+    """起動応答を返した後にengineの可用性で終了する偽バックエンド。"""
 
     def __init__(
         self,
@@ -326,7 +326,7 @@ class DelayedUnavailableBackend(FakeBackend):
 
 
 class OutputObservedBackend(FakeBackend):
-    """起動応答を返した後にモデル出力を受信し、終端しないまま実行を続ける偽バックエンド。"""
+    """起動応答を返した後にモデル出力を受信し、終了しないまま実行を続ける偽バックエンド。"""
 
     def __init__(self, sessions: dict[str, state.SessionState], engine: str, condition: asyncio.Condition) -> None:
         super().__init__(sessions, engine)
@@ -423,7 +423,7 @@ class ConcurrentOwnerGoneBackend(FakeBackend):
 
 
 def _without_body_path(result: dict[str, Any]) -> dict[str, Any]:
-    """`atk agents wait`の終端行から、本文ファイルの内容が`agent_message`と一致することを確かめて`agent_message_path`を除く。"""
+    """`atk agents wait`の終了行から、本文ファイルの内容が`agent_message`と一致することを確かめて`agent_message_path`を除く。"""
     body = dict(result)
     assert pathlib.Path(body.pop("agent_message_path")).read_text(encoding="utf-8") == body["agent_message"]
     return body
@@ -510,7 +510,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             f"統合先worktree: {root}",
             "統合先branch: develop",
             '計画ファイル名一覧: ["plan.md"]',
-            "AWI終端区分: 20260101-000000-001.md=adopt",
+            "AWI終了区分: 20260101-000000-001.md=adopt",
             '書込担当一覧: ["root-session", "lane-session"]',
         ]
     if task_name == "session-termination.subagent.md":
@@ -661,14 +661,14 @@ async def _resume_test_manager(
 
 
 def _expire_launched_session(manager: server_manager.AgentsServerManager, session: state.SessionState) -> None:
-    """保持期限を過ぎた終端sessionとして、同じmanagerの`send_message`で再開させる。"""
+    """保持期限を過ぎた終了sessionとして、同じmanagerの`send_message`で再開させる。"""
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
 
 
 def _restart_with_registry_record(manager: server_manager.AgentsServerManager, session: state.SessionState) -> None:
     """登録簿のレコードだけを残し、再起動したmanagerが登録簿から復元して再開させる。"""
-    del manager, session  # 再起動したmanagerは元のsessionを保持せず、登録簿は終端の公開で書かれている
+    del manager, session  # 再起動したmanagerは元のsessionを保持せず、登録簿は終了の公開で書かれている
 
 
 class FakeCodexClient:
@@ -785,7 +785,7 @@ class LostTurnStartClient(FakeCodexClient):
 
 
 class SteerRaceClient(FakeCodexClient):
-    """steer拒否とturn終端の競合を再現する偽クライアント。"""
+    """steer拒否とturn終了の競合を再現する偽クライアント。"""
 
     def __init__(self) -> None:
         super().__init__()
@@ -831,7 +831,7 @@ class InterruptErrorClient(FakeCodexClient):
 
 
 class CompletingInterruptClient(FakeCodexClient):
-    """中断要求の配送中に対象turnを終端させる偽クライアント。"""
+    """中断要求の配送中に対象turnを終了させる偽クライアント。"""
 
     def __init__(self, backend: codex_backend.AppServerManager, session: state.SessionState) -> None:
         super().__init__()
@@ -1413,7 +1413,7 @@ async def _show_through_tool(
 def _publish_orphaned_codex(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, session_id: str, turn_id: str | None
 ) -> None:
-    """所有者が終端を公開せずに終了したCodexの`running`記録を保存する。"""
+    """所有者が終了を公開せずに終了したCodexの`running`記録を保存する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         session_id, terminal=False, engine="codex", cwd=str(tmp_path), turn_seq=3, status="running", turn_id=turn_id
@@ -1436,17 +1436,17 @@ _OVERLOAD_ERROR = {
 
 
 async def _wait_until_terminal(manager: server_manager.AgentsServerManager, attempts: int = 50) -> dict[str, Any]:
-    """委譲元と同じく、`running`が返る間は`wait`を再発行して終端結果を受け取る。"""
+    """委譲元と同じく、`running`が返る間は`wait`を再発行して終了時の結果を受け取る。"""
     _set_wait_timeout(manager, 0.2)
     for _ in range(attempts):
         response = await manager.wait()
         if response.get("status") in state.TERMINAL_STATUSES:
             return response
-    raise AssertionError("終端結果を受け取れない")
+    raise AssertionError("終了時の結果を受け取れない")
 
 
 class OverloadingBackend(FakeBackend):
-    """起動応答の後のturnをCodexの過負荷で終端させる偽バックエンド。
+    """起動応答の後のturnをCodexの過負荷で終了させる偽バックエンド。
 
     Codex backendの`turn/completed`の処理（可用性確認後の過負荷の保留）を、共有状態の同じ関数で再現する。
     `overloads`回まで過負荷で終え、その後の継続turnは`final_message`で正常に終える。

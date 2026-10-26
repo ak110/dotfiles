@@ -37,7 +37,7 @@ _USER_COMMENT_EDIT_NEXT_ACTION = (
 _USER_COMMENT_BROKEN_NEXT_ACTION = "`atk wi show {name}`で保存済みのユーザーコメント節の構造を確認し、ユーザーへ報告する"
 _BROKEN_STORED_NEXT_ACTION = "`atk wi show {name}`で保存済み本文の構造を確認し、ユーザーへ報告する"
 _EDITABLE_STATE_NEXT_ACTION = (
-    "inbox・processing・holdの項目を指定する。終端した項目は"
+    "inbox・processing・holdの項目を指定する。終了した項目は"
     "`atk wi hold <ファイル名> --state <adopted|rejected>`（現在の状態を指定）でholdへ戻してから編集する"
 )
 _RESERVED_EDIT_KEY_NEXT_ACTIONS = {

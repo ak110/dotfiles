@@ -1,4 +1,4 @@
-"""孫sessionの終端、Codexの過負荷、Claudeの利用上限の解除を待って同じsessionを継続する自動再開の状態遷移。"""
+"""孫sessionの終了、Codexの過負荷、Claudeの利用上限の解除を待って同じsessionを継続する自動再開の状態遷移。"""
 
 from __future__ import annotations
 
@@ -34,9 +34,9 @@ UNFINISHED_BACKGROUND_TASKS_KEY = "unfinishedBackgroundTasks"
 
 
 UNOBSERVED_SESSIONS_KEY = "unobservedSessions"
-"""終端を観測していなかった孫sessionの識別子を`error`へ記録する項目名。
+"""終了を観測していなかった孫sessionの識別子を`error`へ記録する項目名。
 
-保留の確定に加え、自動再開を消費した後のturnの終端など保留と無関係な処理でも記録する。
+保留の確定に加え、自動再開を消費した後のturnの終了など保留と無関係な処理でも記録する。
 """
 
 
@@ -48,7 +48,7 @@ HELD_RESULT_FINALIZED_KEY = "heldResultFinalized"
 """
 
 
-# 起動の可用性確認を過ぎた後にCodexのturnがモデルの過負荷で終端した場合に、同じsessionへ継続を送るまでの待機秒数。
+# 起動の可用性確認を過ぎた後にCodexのturnがモデルの過負荷で終了した場合に、同じsessionへ継続を送るまでの待機秒数。
 # 要素数が1回の失敗の連鎖で行う自動継続の上限回数となる。値はユーザー指示（15秒・30秒・60秒）による。
 # 直後の再送では過負荷が解けなかった観測があるため待機を置き、間隔を広げる。上限に達しても解けない場合は
 # 最後の失敗を公開し、その候補を次回の起動の除外対象として記録して、委譲元の起動し直しで別のモデルへ移す。
@@ -153,9 +153,9 @@ def auto_resume_wait_deadline(session: SessionState) -> float | None:
     """待機対象自身の終了上限を根拠に適用できる通知期限だけを返す。
 
     子session・Codexの子thread・Claude背景エージェントの寿命にはBashの上限を適用できない。
-    種類が未判明のtaskと、task無しでCLIが継続を報告する間も、終端の観測まで追跡する。
-    上限の無い対象を観測した保留は、その対象の終端後に届く再開turnまで期限無しを維持する。
-    対象の終端通知から次のturnの開始通知までの間にも、古いBash期限を復活させない。
+    種類が未判明のtaskと、task無しでCLIが継続を報告する間も、終了の観測まで追跡する。
+    上限の無い対象を観測した保留は、その対象の終了後に届く再開turnまで期限無しを維持する。
+    対象の終了通知から次のturnの開始通知までの間にも、古いBash期限を復活させない。
     """
     if session.live_child_session_ids or session.codex_live_subagent_thread_ids:
         session.auto_resume_deadline = None
@@ -176,12 +176,12 @@ def finalize_pending_result(
     keep_resume_chain: bool = False,
     unobserved_sessions: Iterable[str] = (),
 ) -> None:
-    """保留したturn結果を公開可能な終端状態へ移す。
+    """保留したturn結果を公開可能な終了状態へ移す。
 
     過負荷の自動継続と利用上限の解除待ちの継続を送る処理だけが`keep_resume_chain`を真にし、連鎖の回数と開始時刻を引き継ぐ。
     それ以外（`kill`、期限を持たない利用上限・過負荷の保留への委譲元の`send_message`、期限到来、ストリーム終端）は連鎖を終える。
     子session・バックグラウンドタスクの完了待ちの保留への`send_message`は本関数で確定せず、待機対象を引き継いで新しいturnを開始する。
-    連鎖を終える確定では、確定の時点で稼働中のバックグラウンドタスクと終端を観測していない孫sessionを`error`へ記録し、
+    連鎖を終える確定では、確定の時点で稼働中のバックグラウンドタスクと終了を観測していない孫sessionを`error`へ記録し、
     待機対象が残ったまま確定したことを`heldResultFinalized`で示す。
     保留した結果は待機表明であり、待機対象が残るまま公開する結果は再開turnの結果ではないことを委譲元へ示すためである。
     追跡集合から既に外した未観測の孫sessionは`unobserved_sessions`で渡す。既存の`error`の内容は保つ。
@@ -233,7 +233,7 @@ def clear_overload_resume(session: SessionState) -> None:
 
 
 def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) -> bool:
-    """過負荷で終端したturnの結果を保留し、待機後の継続を予定する。
+    """過負荷で終了したturnの結果を保留し、待機後の継続を予定する。
 
     上限に達していれば保留せずに連鎖を終えて偽を返し、呼び出し元は結果をそのまま公開する。
     待機中は既存の`api_error`へ種別`serverOverloaded`とHTTP状態が不明であることを記録して状態の読者へ公開する。
@@ -425,7 +425,7 @@ def _record_usage_limit_error(session: SessionState, limit: claude_usage_limit.U
 
 
 def begin_auto_resume_wait(session: SessionState, result: dict[str, Any]) -> float | None:
-    """終端結果を保留し、対象自身の上限を根拠に適用できる通知期限を返す。"""
+    """終了時の結果を保留し、対象自身の上限を根拠に適用できる通知期限を返す。"""
     session.pending_result = result
     session.awaiting_auto_resume = True
     deadline = asyncio.get_running_loop().time() + AUTO_RESUME_DEADLINE_SECONDS

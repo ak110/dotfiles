@@ -14,7 +14,7 @@ all-reposの中継として起動した場合は`references/all-repos-orchestrat
 
 ## 名指し参照の読込方法
 
-本文の各参照における適用条件を守り、選択した資料の指定範囲を読み取ってから、その基準に基づく具体的な判断へ進む。起動時に該当する行の資料は、起動時のプロンプトとともに渡される。
+本文の各参照における適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時に該当する行の資料は、起動時のプロンプトとともに渡される。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -47,19 +47,19 @@ all-reposの中継として起動した場合は`references/all-repos-orchestrat
 | レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` | |
 | 不良またはユーザーの是正要求を受け取った時 | `references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
 | 公開工程を開始する前（実行順7） | `references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` | |
-| 終端担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.parent.md` | |
+| 公開担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.parent.md` | |
 
 ## 用語
 
 WIの作成、計画、実行、実行レビューの責務と引き渡し手順は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
 - **メイン**: `agent-toolkit/rules/01-agent.md`に定めるメインエージェントの略称
-- **選定工程、レーン工程、公開工程**: 本スキルにおける3つの主要工程。詳細な規定はそれぞれ`references/selection-procedure.md`、`references/run-lanes.md`、`references/finish-session.md`にある。公開工程の定義は`agent-toolkit:commit`の`references/publish.md`冒頭にあり、本スキルでは終端担当が受け持つ
+- **選定工程、レーン工程、公開工程**: 本スキルにおける3つの主要工程。詳細な規定はそれぞれ`references/selection-procedure.md`、`references/run-lanes.md`、`references/finish-session.md`にある。公開工程の定義は`agent-toolkit:commit`の`references/publish.md`冒頭にあり、本スキルでは公開担当が受け持つ
 - **処理対象WI**: メインが選定時に確定した、1回の実行で処理するAWIの集合。処理の進行中にユーザーが明示的に追加したAWIも含む
 - **レーン**: 処理対象を割り当てる作業単位。それぞれ1つの専用ブランチと専用worktree（git worktree）を持つ
 - **レーン担当**: 各レーンの計画、実装、レビュー指摘への修正、履歴統合、主作業ツリーへの統合を同一スレッドで担当するエージェント。担当種別にはレーン担当、レビュー修正担当、CI修正担当の3種類がある（区分は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の操作区分。所在参照）
 - **主作業ツリー**: マージ先ブランチをチェックアウトしている作業ツリー。`atk wi process-loop`から起動されたセッションでは、process-loopが用意して子セッションを立ち上げた起点作業ツリー（起動時の作業ディレクトリ）を指す
-- **終端担当**: 公開工程（push、CI、検証失敗時の修正、プロジェクト固有の公開後操作、延期adoptなど）を担当する委譲先エージェント。委譲範囲は`references/finish-session.md`「終端担当の起動と並行工程」に準拠する
+- **公開担当**: 公開工程（push、CI、検証失敗時の修正、プロジェクト固有の公開後操作、延期adoptなど）を担当する委譲先エージェント。委譲範囲は`references/finish-session.md`「公開担当の起動と並行工程」に準拠する
 - **即時対応**: 作業を進めるために必要な最小限の修正をその場で行い、抜本的な対応は次のセッション用のAWIへ引き継ぐ手順
 
 ## 不変条件
@@ -67,9 +67,9 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
 - 計画ファイルの作成要否は、`agent-toolkit:plan-mode`「計画ファイルの作成要否」に従って判定する。作成が必要なレーンでは実装前に起草し、処理中に追加されたAWIは確定済みの計画とは分けて追加計画として配置する。計画作成を省くレーンでは、WIに記載された要求と完成条件を実装およびレビューの判断基準とする
 - 計画自体の事前レビュー工程は設けず、実装完了後に各計画について最終実装HEADの状態で、要件および外部仕様の水準に沿った実行レビューを行う
 - 専用worktreeへの書き込み権限はレーン担当が保持し、主作業ツリーへの書き込みは統合のタイミングに限定する。担当範囲の一部をサブエージェントへ委譲する場合は、`agent-toolkit:delegation`の`references/mandatory-rules.md`「作業ツリーの保護」に従い、同一の専用worktree内での分担や、別ブランチ・別worktreeの内部グループを適切に使い分ける。計画の策定、検収、コミット対応の記録、統合、メインへの結果返却はレーン担当自身が責任を持つ
-- ユーザーに由来する要求の全部または一部を不採用とする場合は、事前にユーザーへの確認またはUWIの回答を得てから、該当項目を終了処理（終端）する
+- ユーザーに由来する要求の全部または一部を不採用とする場合は、事前にユーザーへの確認またはUWIの回答を得てから、該当項目の採否を確定する
 - 選定時に確定した処理対象WIを一貫して最後まで処理し、ready一覧を途中で再取得しない。例外的に追加できるのは、ユーザーが明示的に追加した項目や、処理中に届いた回答済みUWIとその元項目に限る。その場合の検収と割り当ては`references/selection-procedure.md`「処理対象WIの追加」および`references/run-lanes.md`「処理中に確定した必須是正レーン」に従い、元の選定結果へ追記した上でレーンへ渡す
-- 対象リポジトリへpushできるのは、公開工程を担当する終端担当だけとする。前回の公開完了後に同一セッション内で新たな成果がベースブランチへ統合された場合は、追加差分を入力として終端担当を再起動し、セッション終了前に最新HEADのpushとCIの通過を検収する（`references/finish-session.md`「公開状態の検収と再起動」）
+- 対象リポジトリへpushできるのは、公開工程を担当する公開担当だけとする。前回の公開完了後に同一セッション内で新たな成果がベースブランチへ統合された場合は、追加差分を入力として公開担当を再起動し、セッション終了前に最新HEADのpushとCIの通過を検収する（`references/finish-session.md`「公開状態の検収と再起動」）
 - 計画ファイルとレビュー指摘管理表は、それらを参照するすべての工程が完了した後にのみ片付ける。各レーンの専用ブランチおよび専用worktreeは統合完了後も維持し、全工程と外部プロセスが終了した段階で、所有登録とGit状態を再確認した上で回収する
 - メインの作業ディレクトリが実行環境の隔離worktree（Claude Codeの`EnterWorktree`など）の内部にある場合は、隔離を解除してから次の処理へ進む。これは、専用worktreeの作成や回収によって対象リポジトリのGit共通ディレクトリが変更されるためである。なお、`atk wi process-loop`が準備したworktreeは主作業ツリーそのものであるため、解除の対象外とする
 
@@ -113,12 +113,12 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
 
 具体的な手順、レーンの変更範囲に修正を加える際の認可、および対象外とした不良や是正要求の扱いについては、`references/immediate-fix.md`の定めに従う。
 
-## 終端
+## 終了
 
 工程の区切りそのものを確認の理由にしない。確認要否の判定に基づいて、ユーザーの判断が真に必要な事項だけを確認待ちとし、その判断を待たずに進められる工程はそのまま継続する。回答がすぐに得られない確認事項は、`agent-toolkit:user-confirmation-and-report`の手順に従ってUWIへ退避させ、`processing`状態の元項目を`atk wi hold --state=processing <元項目のファイル名>`で保留にする。
 作業完了の報告は`agent-toolkit:completion-report`に従って行い、本スキルの工程で作成したコミットを公開した上で報告する。
 
-### 終端工程の承認スコープ
+### 公開工程の承認スコープ
 
 環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`が`1`として起動された場合は自動常駐起動（`atk wi process-loop`が子セッション向けに設定）とみなし、それ以外を手動起動とする。この判別は選定工程で1回だけ行う。
 

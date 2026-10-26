@@ -2,7 +2,7 @@
 
 委譲元のagents_serverが別のルートの新しいプロセスへ替わった後も、旧サーバーの下で委譲先CLIが作業を続ける状況を再現する。
 記録プロセス（所有サーバーと委譲先CLI）は実プロセスで表し、旧サーバーの状態ファイルは生存の印が失効した形で残す。
-Codexの記録には、専用App Serverの`thread/read`が元turnを終端と返す偽backendを組み合わせる。
+Codexの記録には、専用App Serverの`thread/read`が元turnを終了と返す偽backendを組み合わせる。
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ def _publish_running(
     engine: str,
     processes: tuple[session_registry.ProcessIdentity, ...],
 ) -> pathlib.Path:
-    """旧サーバーが所有したまま終端を公開していない`running`の記録を保存し、そのパスを返す。"""
+    """旧サーバーが所有したまま終了を公開していない`running`の記録を保存し、そのパスを返す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         _SESSION_ID,
@@ -175,9 +175,9 @@ async def test_owner_lost_session_stays_running_on_every_entry(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """委譲先CLIが生存する記録は、`kill`前のどの照会でも`interrupted`・`failed`の終端を公開しない（完成条件1・4）。
+    """委譲先CLIが生存する記録は、`kill`前のどの照会でも`interrupted`・`failed`の終了を公開しない（完成条件1・4）。
 
-    `thread/read`が元turnを終端と返しても引き継がず、追送は`thread/resume`を呼ばずに案内付きのエラーを返す。
+    `thread/read`が元turnを終了と返しても引き継がず、追送は`thread/resume`を呼ばずに案内付きのエラーを返す。
     旧ルートに残った上り通知は、新しいサーバーの`show`・`send_message`と`atk agents wait`が回収して返す。
     """
     with _live_process() as (_executor_process, executor), contextlib.ExitStack() as stack:
@@ -224,7 +224,7 @@ async def test_owner_lost_session_stays_running_on_every_entry(
             assert not _old_notice_files(tmp_path)
             assert _wait_lines(capsys, monkeypatch, tmp_path)[0]["status"] == "running"
 
-            # 予防対象の自動再開も、所有サーバーを失った実行中の子を終端した子として扱わない。
+            # 予防対象の自動再開も、所有サーバーを失った実行中の子を終了した子として扱わない。
             parent = state.SessionState("parent-session", str(tmp_path), engine=engine)
             parent.live_child_session_ids.add(_SESSION_ID)
             resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
@@ -296,7 +296,7 @@ async def test_kill_does_not_stop_process_whose_start_time_differs(
 async def test_record_whose_executor_exited_under_hung_owner_is_taken_over(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """委譲先CLIが終了し所有サーバーだけが応答せずに残る記録は、`thread/read`の終端を公開して再開できる（完成条件3）。"""
+    """委譲先CLIが終了し所有サーバーだけが応答せずに残る記録は、`thread/read`の終了を公開して再開できる（完成条件3）。"""
     with _live_process() as (owner_process, owner):
         record = _publish_running(monkeypatch, tmp_path, "codex", (owner, exited_process_identity()))
         async with server_manager.AgentsServerManager(_new_writer(tmp_path)) as manager:
@@ -319,16 +319,16 @@ async def test_record_whose_executor_exited_under_hung_owner_is_taken_over(
 async def test_registry_resolved_send_message_collects_stranded_notices(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """登録簿から解決した終端sessionへの追送も、旧ルートに残る上り通知を回収して返す（完成条件4）。"""
+    """登録簿から解決した終了sessionへの追送も、旧ルートに残る上り通知を回収して返す（完成条件4）。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(_SESSION_ID, terminal=True, engine="claude", cwd=str(tmp_path), turn_seq=1, status="completed")
-    _write_old_root(tmp_path, "終端前の通知")
+    _write_old_root(tmp_path, "終了前の通知")
     async with server_manager.AgentsServerManager(_new_writer(tmp_path)) as manager:
         manager.activate()
         _backend(monkeypatch, manager, "claude", [])
         response = await mcp_tools.send_message(_SESSION_ID, "続行")
         assert response["delivery"] == "reply_started"
-        assert [notice["body"] for notice in response["notices"]] == ["終端前の通知"]
+        assert [notice["body"] for notice in response["notices"]] == ["終了前の通知"]
         assert not _old_notice_files(tmp_path)
 
 
@@ -336,7 +336,7 @@ async def test_registry_resolved_send_message_collects_stranded_notices(
 async def test_atk_agents_wait_collects_result_left_in_old_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """登録簿から解決した待機対象の終端結果が旧ルートに残る場合も、新しいルートの`atk agents wait`が回収する（反映内容5）。"""
+    """待機対象の終了時の結果が旧ルートに残る場合も、新しいルートの`atk agents wait`が回収する（反映内容5）。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(_SESSION_ID, terminal=True, engine="claude", cwd=str(tmp_path), turn_seq=1, status="completed")
     old_writer = status_file.StatusFileWriter(
@@ -470,7 +470,7 @@ async def test_activation_keeps_same_named_status_file_of_live_writer(
 
 
 def test_registry_sweep_keeps_running_record_with_live_process(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """7日を超えて更新されていない記録も、終端しておらず記録プロセスが実在すれば掃引しない（完成条件7）。"""
+    """7日を超えて更新されていない記録も、終了しておらず記録プロセスが実在すれば掃引しない（完成条件7）。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     with _live_process() as (_process, executor):
         live = "019a2c41-5b6e-7d10-8f21-000000000001"
@@ -498,7 +498,7 @@ def test_registry_sweep_keeps_running_record_with_live_process(monkeypatch: pyte
 def test_process_loop_record_stays_running_while_claude_child_survives(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """process-loopの記録は`claude`子プロセスの識別を持ち、process-loopの終了後も子の生存中は終端と解決されない（完成条件7）。"""
+    """process-loopの記録は`claude`子プロセスの識別を持ち、process-loopの終了後も子の生存中は終了と解決されない（完成条件7）。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     identifier = "019a2c41-5b6e-7d10-8f21-0000000000aa"
     owner = session_registry.owner_process()

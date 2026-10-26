@@ -196,7 +196,7 @@ def test_processing_candidates_and_lane_limit(tmp_path: pathlib.Path, monkeypatc
 
 
 class _Manager:
-    """外部モデルだけを代用し、公開delegate起動と終端の応答を記録する。"""
+    """外部モデルだけを代用し、公開delegate起動と終了の応答を記録する。"""
 
     def __init__(self, *, fail_repo: str = "") -> None:
         self.started: list[tuple[str, str]] = []
@@ -438,7 +438,7 @@ def test_start_conditions_compose(tmp_path: pathlib.Path, monkeypatch: pytest.Mo
 
 
 def test_control_and_updates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """2repo開始前の更新を1回に共有し、全担当の終端後に全体を1回だけ再起動する。"""
+    """2repo開始前の更新を1回に共有し、全担当の終了後に全体を1回だけ再起動する。"""
     repositories = _repositories(tmp_path, monkeypatch)
     notes = tmp_path / "notes"
     for repository in repositories[:2]:
@@ -664,7 +664,7 @@ def test_incomplete_delegate_is_continued(
 
 
 def test_completed_delegate_releases_ownership(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """候補の終端とprocessing・未統合レーンの空集合で完遂を確定する。"""
+    """候補の終了とprocessing・未統合レーンの空集合で完遂を確定する。"""
     repositories = _repositories(tmp_path, monkeypatch)
     notes = tmp_path / "notes"
     _write(notes, "task.md", repositories[0].repo_id)
@@ -1160,7 +1160,7 @@ def test_skipped_repository_relaunches_on_change(tmp_path: pathlib.Path, monkeyp
             (notes / "processing").mkdir(exist_ok=True)
             task.rename(notes / "processing" / task.name)
         elif change == "readiness":
-            # 依存先の終端で依存元の区分が内部依存待ちからreadyへ変わる。
+            # 依存先の終了で依存元の区分が内部依存待ちからreadyへ変わる。
             (notes / "adopted").mkdir(exist_ok=True)
             task.rename(notes / "adopted" / task.name)
         elif change == "new-alert":

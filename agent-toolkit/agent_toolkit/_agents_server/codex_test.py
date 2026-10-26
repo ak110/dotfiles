@@ -222,7 +222,7 @@ async def test_start_rejects_existing_thread_before_alias_and_client_registratio
 async def test_resume_retains_request_delivery(
     outcome: str, notification_first: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """実backendの配送結果は、開始応答と終端通知の前後を通じて一定である。"""
+    """実backendの配送結果は、開始応答と終了通知の前後を通じて一定である。"""
     async with subject.AppServerManager() as backend:
         client = _TierClient()
         original = client.request
@@ -589,7 +589,7 @@ async def test_completed_turn_after_consumed_auto_resume_publishes_unobserved_ch
 async def test_send_message_child_reactivation_holds_parent_until_child_terminates(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, turn_status: str
 ) -> None:
-    """再開した子が残る親の完了・失敗・中断をshowで保留し、子の終端後の再開結果をwaitへ公開する。"""
+    """再開した子が残る親の完了・失敗・中断をshowで保留し、子の終了後の再開結果をwaitへ公開する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     async with (
         server_manager.AgentsServerManager(None) as manager,
@@ -1125,7 +1125,7 @@ def _real_mcp_environment(
 
 
 def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3) -> None:
-    """所有プロセスの終端を待ち、PID待機が失敗した場合は同じidentityの生存を再確認する。"""
+    """所有プロセスの終了を待ち、PID待機が失敗した場合は同じidentityの生存を再確認する。"""
     try:
         _, alive = psutil.wait_procs(list(owned.values()), timeout=timeout)
     except OSError as error:
@@ -1702,7 +1702,7 @@ async def test_non_overload_completion_ends_overload_chain(tmp_path: pathlib.Pat
 
 @pytest.mark.asyncio
 async def test_kill_during_overload_wait_publishes_last_failure_without_new_turn(tmp_path: pathlib.Path) -> None:
-    """待機中の`kill`は新しいturnを始めず、保留した最後の失敗でsessionを終端する。"""
+    """待機中の`kill`は新しいturnを始めず、保留した最後の失敗でsessionを終了する。"""
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1", turn_seq=1)
     session.availability_checked = True
     async with _InspectableAppServerManager({session.session_id: session}) as manager:
@@ -1866,7 +1866,7 @@ async def test_manager_root_connects_codex_start_resume_and_notification(
 async def test_concurrent_kills_preserve_shared_request_when_turn_completes_before_lock_handoff(
     tmp_path: pathlib.Path,
 ) -> None:
-    """ロック待ち中にturnが終端しても並行killは要求済み状態を共有する。"""
+    """ロック待ち中にturnが終了しても並行killは要求済み状態を共有する。"""
     async with (
         server_manager.AgentsServerManager() as manager,
         subject.AppServerManager(manager.sessions, manager._condition) as backend,
@@ -2053,7 +2053,7 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """steer拒否後は同一turnの終端を待ってからreplyへ切り替える。"""
+    """steer拒否後は同一turnの終了を待ってからreplyへ切り替える。"""
     async with subject.AppServerManager() as manager:
         client = SteerRaceClient()
 
@@ -2233,7 +2233,7 @@ async def _fake_app_server_manager(
 
 
 async def _wait_terminal(manager: server_manager.AgentsServerManager, session_id: str) -> state.SessionState:
-    """模擬App Serverが通知したturnの終端を待つ。"""
+    """模擬App Serverが通知したturnの終了を待つ。"""
     async with asyncio.timeout(10):
         while not ((session := manager.sessions.get(session_id)) is not None and session.terminal):
             await asyncio.sleep(0.02)
@@ -2245,7 +2245,7 @@ async def _wait_terminal(manager: server_manager.AgentsServerManager, session_id
 async def test_stop_terminates_owned_app_server_and_mcp(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """終端したCodex委譲のstopは、成功時点で所有するApp ServerとthreadのMCPを終了させ、同じ回でレーンを回収できる。
+    """終了したCodex委譲のstopは、成功時点で所有するApp ServerとthreadのMCPを終了させ、同じ回でレーンを回収できる。
 
     模擬App Serverは実Codexと同じく、購読解除の後もMCPサーバー役の子プロセスを生存させる。
     """
@@ -2556,7 +2556,7 @@ async def test_codex_json_rpc_request_marks_sent_before_response(
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_codex_backend_send_supports_terminal_reply_without_result_flag(tmp_path: pathlib.Path) -> None:
-    """Codexの終端後のreplyは結果回収フラグなしで開始できる。"""
+    """Codexの終了後のreplyは結果回収フラグなしで開始できる。"""
     async with subject.AppServerManager() as manager:
         client = FakeCodexClient()
         session = state.SessionState("thread-codex", str(tmp_path), engine="codex")

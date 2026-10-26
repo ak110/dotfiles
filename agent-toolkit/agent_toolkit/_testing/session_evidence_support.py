@@ -180,7 +180,7 @@ def codex_tool_result_entry(
     *,
     engine: str | None = "codex",
 ) -> dict:
-    """Claude形式のagents_server終端結果を作成する。"""
+    """Claude形式のagents_server終了時の結果を作成する。"""
     result = {"threadId": thread_id}
     if engine is not None:
         result["engine"] = engine

@@ -70,7 +70,7 @@ def normalize_label(value: str) -> str:
 
 
 class ProjectionWriteError(OSError):
-    """終端結果の保存と区別する、表示用状態ファイルの置換不成立。"""
+    """終了時の結果の保存と区別する、表示用状態ファイルの置換不成立。"""
 
 
 class StatusFileWriter:
@@ -292,7 +292,7 @@ class StatusFileWriter:
     ) -> tuple[list[SessionState | SessionResumeState], float, dict[str, Any]]:
         now = asyncio.get_running_loop().time()
         # 稼働中の子孫を持つsessionは、自身の結果回収と表示期限によらず祖先の行として残す。
-        # 結果の再公開や期限の延長はせず、子孫の終端後の次回flushで通常の判定へ戻る。
+        # 結果の再公開や期限の延長はせず、子孫の終了後の次回flushで通常の判定へ戻る。
         if live_hosts is None:
             live_hosts = _live_descendant_hosts(self._directory, self._projection_path)
             host_session_id = self._resolve_host_session_id()
@@ -350,7 +350,7 @@ class StatusFileWriter:
             self._directory.rmdir()
 
     def retain_result(self, session: SessionState | SessionResumeState) -> None:
-        """保持中または退避済みsessionの未回収終端結果を残す。"""
+        """保持中または退避済みsessionの未回収終了時の結果を残す。"""
         if (
             session.finalized_at is not None
             and session.status in {"completed", "failed", "interrupted"}
@@ -359,7 +359,7 @@ class StatusFileWriter:
             self._write_terminal_result(session)
 
     async def retain_result_async(self, session: SessionState | SessionResumeState) -> None:
-        """登録解放後も未回収の終端結果を、他の保存と直列に残す。"""
+        """登録解放後も未回収の終了時の結果を、他の保存と直列に残す。"""
         async with self._write_lock:
             turn = session.turn_seq, session.finalized_at
             if (
@@ -423,7 +423,7 @@ class StatusFileWriter:
         self._published_results.clear()
 
     def delete_result(self, session_id: str, *, collector: str) -> None:
-        """回収済みまたは所有解除するsessionの終端結果を削除する。"""
+        """回収済みまたは所有解除するsessionの終了時の結果を削除する。"""
         if not valid_session_id(session_id):
             raise ValueError(f"invalid session_id: {session_id}")
         path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
@@ -445,13 +445,13 @@ class StatusFileWriter:
         release_wait_target(self.root_session_id, self._identity.file_name, session_id, self._state_root)
 
     def result_exists(self, session_id: str) -> bool:
-        """指定sessionの終端結果ファイルが存在するかを返す。"""
+        """指定sessionの終了時の結果ファイルが存在するかを返す。"""
         if not valid_session_id(session_id):
             raise ValueError(f"invalid session_id: {session_id}")
         return (results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json").is_file()
 
     def read_result(self, session_id: str) -> dict[str, Any] | None:
-        """指定sessionの保存済み終端結果を検証して返す。"""
+        """指定sessionの保存済み終了時の結果を検証して返す。"""
         if not valid_session_id(session_id):
             raise ValueError(f"invalid session_id: {session_id}")
         path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
@@ -471,7 +471,7 @@ class StatusFileWriter:
         return payload
 
     def take_result(self, session_id: str, *, collector: str) -> tuple[dict[str, Any] | None, str | None]:
-        """自身が公開した終端結果を一度だけ回収する。"""
+        """自身が公開した終了時の結果を一度だけ回収する。"""
         result = take_result(
             self.root_session_id,
             session_id,
@@ -484,7 +484,7 @@ class StatusFileWriter:
         return result
 
     def result_state(self, session_id: str) -> str:
-        """自プロセスが公開した終端結果の公開状態を返す。"""
+        """自プロセスが公開した終了時の結果の公開状態を返す。"""
         if session_id not in self._published_results:
             return "unpublished"
         return "published" if self.result_exists(session_id) else "consumed"
@@ -671,7 +671,7 @@ def _live_descendant_hosts(directory: pathlib.Path, own_path: pathlib.Path) -> s
     """他の書込主体の状態ファイルから、稼働中の子孫を持つsession識別子を集める。
 
     状態ファイルの`host_session_id`は、そのファイルのsessionを起動した親sessionを指す。
-    直下の子が終端していても、さらに先の子孫が稼働していれば祖先として数える。
+    直下の子が終了していても、さらに先の子孫が稼働していれば祖先として数える。
     生存の印が失効したファイルは稼働の根拠にしない。
     """
     cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=HEARTBEAT_EXPIRY_SECONDS)
@@ -730,7 +730,7 @@ def _read_live_status_file(path: pathlib.Path, cutoff: datetime.datetime) -> tup
 
 def _serialize_session(session: SessionState | SessionResumeState) -> dict[str, Any]:
     if isinstance(session, SessionResumeState):
-        # 本体を解放したsessionは進捗を持たないため、起動情報と終端状態だけを表示する。
+        # 本体を解放したsessionは進捗を持たないため、起動情報と終了状態だけを表示する。
         return {**_serialize_retained_session(session), "progress": "", "last_action": ""}
     serialized = {
         **_serialize_retained_session(session),

@@ -70,5 +70,5 @@ class TestCodexApplyPatchPlanFile:
         ):
             assert session_state.update_state(session_id, lambda _previous: env_state)
             result = _run(_codex_payload(patch_text, tmp_path, session_id), state_dir=tmp_path)
-            assert ("書き込み後に計画の構造を確かめる" in result.stdout) is expected
+            assert ("書き込み後に計画の構造を確かめ" in result.stdout) is expected
             assert _read_state(tmp_path, session_id).get("current_plan_file_path") is not None

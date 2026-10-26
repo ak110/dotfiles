@@ -1,15 +1,15 @@
-"""agents_serverが起動したsessionの終端状態をプロセス間で共有する。
+"""agents_serverが起動したsessionの終了状態をプロセス間で共有する。
 
 所有側のagents_serverがsessionを解放した場合は、レコードを削除せず解放済みレコードへ置き換える。
 照会した別プロセスが「所有側が正常に解放した」と「どのagents_serverにも記録が無い」を区別できるようにするためである。
 
 実行中のレコードは、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別（記録プロセス）を持つ。
-所有側が終端を公開せずに終了した場合、照会側は記録された全プロセスの不在から終端（`interrupted`）と解決する。
+所有側が終了を公開せずに終了した場合、照会側は記録された全プロセスの不在から終了（`interrupted`）と解決する。
 この判定はレコードを書き換えず解決の結果として返し、書込は所有側と引き継ぎの処理に残す。
 
-終端と所有の判定は記録プロセスの実在を一次の根拠とし、本モジュールの`resolve`と`running_ownership`へ集約する。
+終了と所有の判定は記録プロセスの実在を一次の根拠とし、本モジュールの`resolve`と`running_ownership`へ集約する。
 所有サーバーの起動単位が替わった後も、応答しない旧起動単位や委譲先CLIが生存し続ける場合があるためである。
-状態ファイルの生存の印や委譲先CLIへの外部照会だけで終端・所有不在を決めると、作業中の委譲先を中断と公開する。
+状態ファイルの生存の印や委譲先CLIへの外部照会だけで終了・所有不在を決めると、作業中の委譲先を中断と公開する。
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ def interruption_error(reason: InterruptionReason) -> dict[str, str]:
 
 @dataclasses.dataclass(frozen=True)
 class LaunchInfo:
-    """同じsessionの再開と引き継ぎに使う起動情報、追送と各turnの終端応答。
+    """同じsessionの再開と引き継ぎに使う起動情報、追送と各turnの終了応答。
 
     再開で`SessionState`を再生成する処理と、session登録簿の書込・復元は、この定義の項目を走査して値を写す。
     項目を個別に列挙すると、項目を追加したときに一部の処理が値を写さなくなり、型やテストでは検出されないためである。
@@ -197,7 +197,7 @@ class ResumeInfo:
     started_at: str | None = None
     session_updated_at: str | None = None
     # 最後に公開した時点のturnを表すengine固有の識別子（Codexのturn id）。
-    # 再起動後に残存記録の終端を委譲先CLIの記録と照らすために使う。項目を持たない記録とCodex以外では`None`とする。
+    # 再起動後に残存記録の終了を委譲先CLIの記録と照らすために使う。項目を持たない記録とCodex以外では`None`とする。
     turn_id: str | None = None
     fast_mode: bool | None = None
     codex_model_provider: str | None = None
@@ -213,7 +213,7 @@ class RunningOwnership(enum.StrEnum):
     """`running`の記録の所有状態。`running_ownership`が記録プロセスの実在と状態ファイルの生存の印から判定する。"""
 
     OWNED = "owned"
-    """生存の印が有効な状態ファイルがsessionを載せている。所有サーバーが終端を公開する。"""
+    """生存の印が有効な状態ファイルがsessionを載せている。所有サーバーが終了を公開する。"""
     OWNER_LOST = "owner_lost"
     """所有サーバーを失った実行中。生存の印が有効な状態ファイルが無く、記録プロセスのうち委譲先CLIが実在する。"""
     ORPHANED = "orphaned"
@@ -239,10 +239,10 @@ class SessionResolution:
     # `RELEASED`の場合だけ、解放の理由と時刻（UTCのISO 8601）を保持する。
     released_reason: ReleaseReason | None = None
     released_at: str | None = None
-    # 終端の理由が中断の判別値を持つ場合だけ保持する。記録上は`running`のまま実行プロセスの不在から
-    # 終端と解決した場合と、その終端を引き継いで公開した記録の両方で設定する。
+    # 終了の理由が中断の判別値を持つ場合だけ保持する。記録上は`running`のまま実行プロセスの不在から
+    # 終了と解決した場合と、その終了を引き継いで公開した記録の両方で設定する。
     interruption: InterruptionReason | None = None
-    # 記録上は`running`で、記録された全プロセスの不在から終端と解決した場合に真とする。登録簿へ未公開であることを示す。
+    # 記録上は`running`で、記録された全プロセスの不在から終了と解決した場合に真とする。登録簿へ未公開であることを示す。
     inferred_terminal: bool = False
     handoff_info: ResumeInfo | None = None
     # 記録を最後に書いた所有サーバーの起動単位。項目を持たない旧記録では`None`とする。
@@ -252,7 +252,7 @@ class SessionResolution:
     # 記録プロセス。`processes`の先頭が所有サーバー、以降が委譲先CLIである。項目を持たない記録では空とする。
     owner_process: ProcessIdentity | None = None
     executor_processes: tuple[ProcessIdentity, ...] = ()
-    # `running`の記録で、解決の時点で実在した委譲先CLI。終端の記録では照会しないため空とする。
+    # `running`の記録で、解決の時点で実在した委譲先CLI。終了の記録では照会しないため空とする。
     live_executors: tuple[ProcessIdentity, ...] = ()
     # 記録を書いた所有サーバーの状態ディレクトリのルート。項目を持たない旧記録では`None`とする。
     owner_root_session_id: str | None = None
@@ -264,7 +264,7 @@ def running_ownership(resolution: SessionResolution, *, writer_alive: bool) -> R
     `writer_alive`は、生存の印が有効な状態ファイルがそのsessionを載せているかを呼び出し側が照会した値である。
     状態ファイルを読む処理は`_agents_server`に属するため、層の順序に従い呼び出し側から受け取る。
     所有サーバーのプロセスが実在しても、生存の印を更新しない起動単位は所有者として扱わない。
-    委譲先CLIが実在する限りturnが進んでいる可能性を排除できないため、終端と推定する処理は`ORPHANED`に限る。
+    委譲先CLIが実在する限りturnが進んでいる可能性を排除できないため、終了と推定する処理は`ORPHANED`に限る。
     """
     if resolution.state is not Resolution.RUNNING:
         return None
@@ -314,11 +314,11 @@ def publish(
     result_contract_recovery_consumed: bool = False,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """sessionの終端可否と再開条件を原子的に公開する。
+    """sessionの終了可否と再開条件を原子的に公開する。
 
     `processes`は所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別で、`resolve`が実行中の記録の
-    終端を判定する入力になる。先頭を所有サーバー、以降を委譲先CLIとする（`resolve`と`session_release`がこの順序で読む）。
-    `interruption`は実行プロセスの不在から引き継いだ終端の理由を残す。
+    終了を判定する入力になる。先頭を所有サーバー、以降を委譲先CLIとする（`resolve`と`session_release`がこの順序で読む）。
+    `interruption`は実行プロセスの不在から引き継いだ終了の理由を残す。
     `owner_root_session_id`は所有サーバーの状態ディレクトリのルートで、所有サーバーを失った実行中の案内に使う。
     省略した場合は既存のレコードが持つ値を引き継ぐ。
     `launcher_session_id`はsessionを作成した時点の委譲元sessionの識別子である。
@@ -401,10 +401,10 @@ _recorded_launcher = _session_launchers.read_launcher
 
 
 def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> SessionResolution:
-    """登録済みsessionを終端・実行中・解放済み・不在・読取不能へ区分して返す。
+    """登録済みsessionを終了・実行中・解放済み・不在・読取不能へ区分して返す。
 
-    `running`の記録がプロセスの識別を持ち、記録された全プロセスが存在しない場合は、所有側が終端を公開せずに
-    終了したものとして`interrupted`の終端と解決する。1つでも存在する記録と識別を持たない記録は実行中とする。
+    `running`の記録がプロセスの識別を持ち、記録された全プロセスが存在しない場合は、所有側が終了を公開せずに
+    終了したものとして`interrupted`の終了と解決する。1つでも存在する記録と識別を持たない記録は実行中とする。
     実行中の解決は、実在した委譲先CLIを`live_executors`へ返す。所有状態の判定は`running_ownership`が行う。
     """
     _validate_session_id(session_id)
@@ -568,9 +568,9 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
 def record_interrupted_turn(
     session_id: str, *, turn_seq: int, reason: InterruptionReason, state_root: pathlib.Path | None = None
 ) -> None:
-    """所有側が中断として公開した終端の記録へ、中断の理由と中断turnの履歴を加える。
+    """所有側が中断として公開した終了の記録へ、中断の理由と中断turnの履歴を加える。
 
-    記録が無いか、同じturnの終端を示さない場合は書き換えない。
+    記録が無いか、同じturnの終了を示さない場合は書き換えない。
     """
     _validate_session_id(session_id)
     path = registry_directory(state_root) / f"{session_id}.json"

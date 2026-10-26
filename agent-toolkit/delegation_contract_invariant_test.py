@@ -686,7 +686,7 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     セッション終了でメインがAWI本文へ追記する節を、selectionとメインの受領、レーン担当が同じ節名で読まないと、
     計画が`~/.claude/plans`に無い項目は再開位置を失い、続行できない理由の返却か再実装へ進む。
     selectionが再開区分の値で観測のみの再開を判定しないと、再実装へ戻した項目を古い記録から観測だけで再開する。
-    テンプレートへ区分値を加えたときに採否の確定と終端区分がその値の扱いを持たないと、送った記録の扱いが定まらない。
+    テンプレートへ区分値を加えたときに採否の確定と終了区分がその値の扱いを持たないと、送った記録の扱いが定まらない。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
     finish = (plugin_root / "skills" / "process-wi" / "references" / "finish-session.md").read_text(encoding="utf-8")
@@ -706,7 +706,7 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     record = templates[kind_values.index(prefix)]
     fields = re.findall(r"^- ([^:]+): ", record, flags=re.MULTILINE)
     assert f"`再開区分`が`{prefix}`である場合に限り" in _h2_section(selection_text, "処理対象の決定")
-    termination = _h2_section(lanes, "採否の確定と終端区分")
+    termination = _h2_section(lanes, "採否の確定と終了区分")
     assert all(f"`再開区分: {value}`" in termination for value in kind_values if value != prefix)
     # `atk serve`の一覧は同じ見出しと区分の行でneeds-verifyを表示する。書式の変更に判定が追随しないと失敗する。
     assert heading == f"## {wi_constants.OBSERVATION_RESUME_HEADING}"
@@ -1253,7 +1253,7 @@ def test_post_approval_contract_waits_for_reviewed_implementation() -> None:
     assert "事前承認が必要な確認事項は受け取り次第速やかに発行する" in timing
     assert "収束した後、かつ統合処理の前に" in timing
     assert "最終的な実装内容と一致する本文で発行する" in timing
-    assert "終端返却を受け取った時点で発行する" in timing
+    assert "終了返却を受け取った時点で発行する" in timing
     assert "実装なし" in timing and "マージなし" in timing
     assert "発行対象だけを直ちに発行する" not in timing
     post_approval = next(

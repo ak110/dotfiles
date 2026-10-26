@@ -153,7 +153,7 @@ test("CronCreateの許可の判定がdenyなら作成せず、許可確認の案
   expect(recorded.calls).toEqual(["start", "CronList"]);
   expect(result.context?.[0]).toContain('kind="warn"');
   expect(result.context?.[0]).toContain("`CronCreate`の許可の判定が`deny`");
-  expect(result.context?.[0]).toContain("完了通知と終端観測で続ける");
+  expect(result.context?.[0]).toContain("完了通知と終了観測");
 });
 
 test("CronListの許可の判定がdenyなら一覧も作成も呼ばずに案内を届ける", async ($, on) => {
@@ -168,7 +168,7 @@ test("CronCreateが拒否されたら理由と案内を届ける", async ($, on)
   const result = await $.tool.call(START_INPUT);
   expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
   expect(result.context?.[0]).toContain("classifier denied");
-  expect(result.context?.[0]).toContain("必要な許可と公開状態を確認する");
+  expect(result.context?.[0]).toContain("必要な許可と公開状態");
 });
 
 test("cron式を得られなければCronCreateを呼ばずに案内を届ける", async ($, on) => {

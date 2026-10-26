@@ -245,7 +245,7 @@ class TestListSingle:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """廃止した計画ファイル付きの型の未終端項目は、計画ファイルが無くても待機理由なしで着手可能と表示する。"""
+        """廃止した計画ファイル付きの型の未終了項目は、計画ファイルが無くても待機理由なしで着手可能と表示する。"""
         notes = _setup_notes(tmp_path)
         entry = _write_awi_file(notes, "plan.md")
         entry.write_text(
@@ -1480,7 +1480,7 @@ class TestListJson:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """依存の未充足を、未終端の依存先が同じ出力へ現れるかで2値へ分けて報告する。"""
+        """依存の未充足を、未終了の依存先が同じ出力へ現れるかで2値へ分けて報告する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "leader.md")
         _write_awi_file(notes, "external.md", target_repo="github.com/example/bar")

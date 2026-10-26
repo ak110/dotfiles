@@ -1,19 +1,19 @@
 ---
 name: single-lane-process
 description: >
-  対象リポジトリのAWIを、レーンへ分けずメインが主作業ツリーでまとめて実装して終端するときに起動する。
+  対象リポジトリのAWIを、レーンへ分けずメインが主作業ツリーでまとめて実装して終了するときに起動する。
 disable-model-invocation: true
 ---
 
 # AWIの単一レーン処理
 
-メインエージェントがAWIを取得し、計画の作成、実装、実行レビュー、および終端処理までを単一の実行フローの中でまとめて行う。別レーンへ委譲して並列処理する場合は`../process-wi/SKILL.md`を使用する。実行中は自律モードで動作し、WIの共通契約は`../wi-standards/SKILL.md`、工程ごとの責務と受け渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
+メインエージェントがAWIを取得し、計画の作成、実装、実行レビュー、および終了処理までを単一の実行フローの中でまとめて行う。別レーンへ委譲して並列処理する場合は`../process-wi/SKILL.md`を使用する。実行中は自律モードで動作し、WIの共通契約は`../wi-standards/SKILL.md`、工程ごとの責務と受け渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
-本スキルの処理は、キューや対象worktreeを読み書きできるファイル操作環境、Gitおよび`atk`のCLI、独立したレビュー担当の起動・結果受領手段、および参照資料がすべてそろっている環境で実施する。これらの操作機能が備わっていない環境では、提示されたWIの実施内容と計画原稿を整理し、未実施の実装・レビュー・公開タスクを明示する。実際の終端処理はClaude CodeまたはCodexに委ね、原稿の記述には[文章の品質基準](references/quality-standards.md)を用いる。
+本スキルの処理は、キューや対象worktreeを読み書きできるファイル操作環境、Gitおよび`atk`のCLI、独立したレビュー担当の起動・結果受領手段、および参照資料がすべてそろっている環境で実施する。これらの操作機能が備わっていない環境では、提示されたWIの実施内容と計画原稿を整理し、未実施の実装・レビュー・公開タスクを明示する。実際の終了処理はClaude CodeまたはCodexに委ね、原稿の記述には[文章の品質基準](references/quality-standards.md)を用いる。
 
 ## 名指し参照の読込方法
 
-本文に記載された各参照の適用条件を確認し、選んだ資料の指定範囲を取得してから、その基準に基づく具体的な判断へ進む。起動時の行に記載された資料は、起動本文とともに配送される。
+本文に記載された各参照の適用条件を確認し、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行に記載された資料は、起動本文とともに配送される。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -54,7 +54,7 @@ disable-model-invocation: true
 
 ## agent-toolkit:process-wiの規定の読み替え
 
-`agent-toolkit:process-wi`を名指ししている条文は、本スキルの実行中にも適用する。ただし、レーン担当、終端担当、専用worktreeを前提とする契約は直接適用せず、本書で示す同等の工程をメインエージェント自身が担う。直接適用しない文書は次のとおりである。
+`agent-toolkit:process-wi`を名指ししている条文は、本スキルの実行中にも適用する。ただし、レーン担当、公開担当、専用worktreeを前提とする契約は直接適用せず、本書で示す同等の工程をメインエージェント自身が担う。直接適用しない文書は次のとおりである。
 
 - `agent-toolkit/skills/process-wi/`配下
 - `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`（所在参照）
@@ -72,7 +72,7 @@ disable-model-invocation: true
 
 - メインエージェントが作業ツリーの書き込み権限を所有し、担当範囲の一部の書き込みを委譲先へ分担させる場合は、`agent-toolkit:delegation`の`references/mandatory-rules.md`「作業ツリーの保護」に従う
 - 実行レビューは、実装を担当していない独立した担当者が実施する
-- 人間由来の変更で不採用とする範囲がある場合は、ユーザーの確認を得た後に終端する
+- 人間由来の変更で不採用とする範囲がある場合は、ユーザーの確認を得た後に終了する
 - 処理対象のWIは手順1の時点で固定し、処理途中での追加はユーザーから明示的に指示された項目に限る
 - 保存済み対応表において同一の対象worktreeに属する全計画対象と全直接実装対象の和を1件の実行レビューにまとめ、異なる対象worktreeの項目を同一の計画や実行レビューに混在させない
 
@@ -92,7 +92,7 @@ disable-model-invocation: true
 
 1. 処理可能なWI（processable）の一覧と各WIの本文を取得する。同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`を実行して回答済みUWIを取得する。
    対象worktreeごとに公開対象とベースブランチを明示し、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象の決定」に定める開始時のCI点検を実施する。実装に着手する前に実際のCI状況を照会し、失敗ログの取得と残工程への影響判定を行う。既存の失敗は「見つけた既存不良の扱い」に従って処理し、ユーザーのみが判断できる事項は確認手順へと回す。公開時のベースライン確認とCI検収も実行順8で実施する。
-   なお、`source`が`run-skill`であるUWIは次回の`atk run-skill`実行時に処理する。回答済みUWIは実装前に`agent-toolkit:wi-standards`「状態と依存」に従って終端するか処理対象へ加える。依存関係が未解決の項目は、依存元のWIがprocessableであり同一の`target_repo`を対象としている場合に限り、今回の実行に含めて報告する。
+   なお、`source`が`run-skill`であるUWIは次回の`atk run-skill`実行時に処理する。回答済みUWIは実装前に`agent-toolkit:wi-standards`「状態と依存」に従って終了するか処理対象へ加える。依存関係が未解決の項目は、依存元のWIがprocessableであり同一の`target_repo`を対象としている場合に限り、今回の実行に含めて報告する。
    依存元の状態変更や集合からの除外が必要な場合は、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」に従って確認の要否を判断する。各WIについて、ファイル名、保存されている`target_repo`、Git操作に使用するworktreeの絶対パス、そのworktreeの処理開始時のHEADの短縮OID、開始前の状態、計画対象か直接実装対象かの区分、完了済み工程と残工程を対応表にまとめる。処理を開始する前に、全件の内容を既存の引き継ぎ記録へ保存し、後続工程における比較の基準とする。
    同資料「集合確定直後の処理開始」に従い、`atk wi show`を用いて保存された`target_repo`と対応worktreeのoriginが一致していることを確認する。不一致がある場合は、同資料「処理対象の決定」の移転判定・編集ルールに従う。移転の根拠が得られない場合は、両方の識別子と不足している根拠を報告する。移転が確定した場合は、処理開始前に保存値と本文中の操作先を揃える。
    初回の`atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`に渡す引数は、保存済み対応表の中で開始前にinbox状態であった全件からworktreeごとに抽出する。すでに処理開始済みの項目を重複して状態遷移させない。途中で処理が失敗した場合は、CLIの診断メッセージと残存状態を同じ対応表に記録し、未完了の工程から再開する。ユーザーからの明示的な追加指示は対応表へ反映し、後続工程の比較基準を更新する。集合固定後にユーザーから指示された回答済みUWIやAWIの追加は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」の判断基準に従って扱う。

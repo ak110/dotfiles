@@ -236,12 +236,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, _next_action.ActionableError) as error:
         _next_action.report(
-            f"終端AWIの対応commitを保存できません: {error}。計画・引き継ぎ記録への追記は未実施",
+            f"終了AWIの対応commitを保存できません: {error}。計画・引き継ぎ記録への追記は未実施",
             next_action="private-notesの同期・保存エラーを解消し、同じ引数で再実行する。更新済みAWIは保持して残りを反映する",
         )
         return 1
     for name in updated_wis:
-        print(f"終端AWIの対応commitを更新: {name}")
+        print(f"終了AWIの対応commitを更新: {name}")
     for record, event in planned:
         if event is None:
             print(f"変更なし: {record.path}")

@@ -94,9 +94,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         f"現在のセッションが所有する計画バンドルが`~/.claude/plans`に残っている: {path_list}",
         fix=(
             "保存の契機に達したバンドルだけを"
-            "`atk plans commit <~/.claude/plans直下の計画ファイル（メイン）名>`で`private-notes`へ保存する。"
+            "`atk plans commit <~/.claude/plans直下の計画ファイル（メイン）名>`で`private-notes`へ保存せよ。"
             "契機は現在のセッションがどのスキルから起動したかに応じて`agent-toolkit:plan-mode`の`plan-file-storage.md`が定める。"
-            "残りのバンドルはその場に残してターンを終了する。"
+            "残りのバンドルはその場に残してターンを終了せよ。"
         ),
         removable_cause=True,
     )

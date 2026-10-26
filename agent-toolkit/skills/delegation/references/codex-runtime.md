@@ -64,7 +64,7 @@ Codex環境における初回起動を含む通常起動では、呼び出し側
 `functions.exec`の内部で`agents_server`を起動し、`PostToolUse`フックがMCPの応答を直接観測できない環境では、起動応答に含まれる`root_session_id`を保持し、`atk agents wait --root-session-id <値>`へ渡す。CLIは状態ディレクトリの実在性と、確認済みのルートセッションとの一致を検証する。
 
 `functions.exec`から`atk agents wait`を起動する場合も、`share/rules-common.codex.md`「Codex固有の入出力」に定めるコマンド回収契約に従い、外側セルの`cell_id`を`functions.wait`へ渡す。
-待機CLIへタスク固有timeoutを渡さず、CLI自身が待機上限に達したときに対象が未終端なら、その結果を確かめてから新しい待機コマンドを実行する。
+待機CLIへタスク固有timeoutを渡さず、CLI自身が待機上限に達したときに対象が未終了なら、その結果を確かめてから新しい待機コマンドを実行する。
 逐次待機やロック競合によって遅れて開始された後発待機の回収手順は、`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」に記載されている。
 

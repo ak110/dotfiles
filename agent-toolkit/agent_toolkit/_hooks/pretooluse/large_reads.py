@@ -433,11 +433,11 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
             "`atk run-script session-review-evidence --`へ、"
             "ファイルは`--transcript <原記録の絶対パス>`、"
             "本文の検索は`--grep <正規表現>`か`--fixed-string <文字列>`、指定位置は`--detail <record:line>`、"
-            "ツール入力は`--tool-calls --tool <名前> --input-regex <正規表現>`を渡す。"
+            "ツール入力は`--tool-calls --tool <名前> --input-regex <正規表現>`を渡せ。"
             "期間探索は`--catalog-claude-project <ディレクトリ>`か`--catalog-codex-history <ディレクトリ>`へ"
-            "`--since <時刻> --observation-boundary <時刻>`を加える。"
-            "発話後の呼出順は`--user-events`とツール一覧、または`--bundle`の抽出済み`conversation.jsonl`から集計する。"
-            f"入力の選択は{reference}に従い、抽出済みの結果を後処理する。"
+            "`--since <時刻> --observation-boundary <時刻>`を加えよ。"
+            "発話後の呼出順は`--user-events`とツール一覧、または`--bundle`の抽出済み`conversation.jsonl`から集計せよ。"
+            f"入力の選択は{reference}に従い、抽出済みの結果を後処理せよ。"
         ),
         removable_cause=False,
         escalate_on_repeat=False,
@@ -447,26 +447,26 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
 def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int) -> str:
     if _is_session_record(path):
         return _large_warning(
-            f"原セッション記録の全文取得の出力量を確認する（{plan.byte_count}バイト、"
+            f"原セッション記録の全文取得の出力量を確認せよ（{plan.byte_count}バイト、"
             f"通知の閾値: {byte_threshold}バイト）: {path}",
-            fix="まず取得の必要性と範囲を見直す。目的に不要なら取得を中止する。必要な場合は、"
-            "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加える。"
-            "`agent-toolkit:writing-standards`の`references/session-records.md`で入力と照会モードを選ぶ。",
+            fix="まず取得の必要性と範囲を見直せ。目的に不要なら取得を中止せよ。必要な場合は、"
+            "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加えよ。"
+            "`agent-toolkit:writing-standards`の`references/session-records.md`で入力と照会モードを選べ。",
         )
     # 1行あたりの平均バイト数から、閾値の半分程度に収まる行数を1回の取得単位として示す。
     chunk = max(1, plan.line_count * byte_threshold // (2 * max(plan.byte_count, 1)))
     quoted = shlex.quote(str(path))
     return _large_warning(
-        f"{plan.line_count}行、{plan.byte_count}バイトの全文取得の出力量を確認する"
+        f"{plan.line_count}行、{plan.byte_count}バイトの全文取得の出力量を確認せよ"
         f"（通知の閾値: {byte_threshold}バイト）: {path}",
         fix=(
-            "内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら、そのまま標準読取を使う。"
-            "予算を超える場合と本文が省略された場合は取得の範囲を選ぶ。"
-            "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使う。"
+            "内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら、そのまま標準読取を使え。"
+            "予算を超える場合と本文が省略された場合は取得の範囲を選べ。"
+            "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使え。"
             "全文が必要な場合だけ、"
             f"`sed -n '1,{chunk}p' -- {quoted}`から始め、"
             f"`sed -n '{chunk + 1},{2 * chunk}p' -- {quoted}`のように開始行と終了行を進めて"
-            f"末尾の{plan.line_count}行目まで別の呼び出しで取得する。出力が省略された範囲は行数を狭めて取り直す。"
+            f"末尾の{plan.line_count}行目まで別の呼び出しで取得せよ。出力が省略された範囲は行数を狭めて取り直せ。"
         ),
     )
 
@@ -474,22 +474,22 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
 def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan]], byte_threshold: int) -> str:
     if any(_is_session_record(path) for path, _plan in path_counts):
         return _large_warning(
-            "原セッション記録を含む複数ファイルの全文取得の出力量を確認する。",
-            fix="まず取得の必要性と範囲を見直す。目的に不要なら取得を中止する。必要な原記録を"
+            "原セッション記録を含む複数ファイルの全文取得の出力量を確認せよ。",
+            fix="まず取得の必要性と範囲を見直せ。目的に不要なら取得を中止せよ。必要な原記録を"
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`へ照会条件を渡し、"
-            "通常の本文は別の呼び出しで取得する。入力の選択は`agent-toolkit:writing-standards`の`references/session-records.md`に従う。",
+            "通常の本文は別の呼び出しで取得せよ。入力の選択は`agent-toolkit:writing-standards`の`references/session-records.md`に従え。",
             subject="\n".join(str(path) for path, _plan in path_counts),
         )
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)
     details = "、".join(f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト" for path, plan in path_counts)
     return _large_warning(
-        f"複数ファイルの全文取得の出力量を確認する（合計: {total_bytes}バイト、通知の閾値: {byte_threshold}バイト）: {details}",
-        fix="内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら標準読取を使う。"
-        "予算を超える場合と本文が省略された場合は、取得の必要性と範囲を選ぶ。"
-        "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使う。"
+        f"複数ファイルの全文取得の出力量を確認せよ（合計: {total_bytes}バイト、通知の閾値: {byte_threshold}バイト）: {details}",
+        fix="内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら標準読取を使え。"
+        "予算を超える場合と本文が省略された場合は、取得の必要性と範囲を選べ。"
+        "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使え。"
         "全文が必要なファイルだけ、ファイルごとに別の呼び出しで"
-        "`sed -n '<開始行>,<終了行>p' -- <必要なファイルの絶対パス>`を使い、行範囲を進めて末尾の行まで取得する。"
-        "出力が省略された範囲は行数を狭めて取り直す。",
+        "`sed -n '<開始行>,<終了行>p' -- <必要なファイルの絶対パス>`を使い、行範囲を進めて末尾の行まで取得せよ。"
+        "出力が省略された範囲は行数を狭めて取り直せ。",
     )
 
 

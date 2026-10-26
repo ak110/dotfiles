@@ -58,7 +58,7 @@ def _wait_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -
 def _running_body(response: dict[str, Any]) -> dict[str, Any]:
     """待機を続ける応答から、`atk agents wait`の再実行を示す次の操作を確かめて除いた本体を返す。
 
-    終端結果の行は次の操作を持たない場合があるため、そのまま返す。
+    終了時の結果の行は次の操作を持たない場合があるため、そのまま返す。
     """
     if response.get("status") != "running":
         return response
@@ -76,7 +76,7 @@ def _write_own_status(results_directory: pathlib.Path, sessions: list[object]) -
 
 
 def _publish_result_on_sleep(results_directory: pathlib.Path) -> Callable[[float], None]:
-    """sleepの代わりに`session-1`の終端結果を公開する関数を返す。"""
+    """sleepの代わりに`session-1`の終了時の結果を公開する関数を返す。"""
 
     def publish_result(_seconds: float) -> None:
         results_directory.mkdir(parents=True, exist_ok=True)
@@ -99,7 +99,7 @@ def _wait_for_session_1_result(results_directory: pathlib.Path) -> int:
 @pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
 @pytest.mark.parametrize("status", ["completed", "failed"])
 def test_cli_wait_reports_waiting_state_to_human_terminal(monkeypatch, wait_environment, capsys, agent, status):
-    """終端を公開する前に対象を表示し、公開後はJSON Linesを保つ。"""
+    """終了を公開する前に対象を表示し、公開後はJSON Linesを保つ。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 30)
     monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: not agent)
@@ -127,9 +127,9 @@ def test_agents_wait_outputs_every_retained_result(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """未回収の終端結果を識別子順のJSON Linesで全件返し、回収した結果ファイルを残さない。
+    """未回収の終了時の結果を識別子順のJSON Linesで全件返し、回収した結果ファイルを残さない。
 
-    作業の失敗で終端した結果には、同じsessionへの継続か巻き取りの次の操作が付く。
+    作業の失敗で終了した結果には、同じsessionへの継続か巻き取りの次の操作が付く。
     欠けると委譲元は失敗の結果だけを受け取り、同じ候補での再起動を繰り返し得る。
     """
     wait_environment.mkdir(parents=True)
@@ -197,7 +197,7 @@ def test_agents_wait_handoff_guidance_matches_backend_availability(
 
 
 def test_wait_result_preserves_started_model() -> None:
-    """終端回収でモデル指定と実際の起動属性を保持する。"""
+    """終了回収でモデル指定と実際の起動属性を保持する。"""
     session = state.SessionState(
         "session-1", "/workspace", engine="claude", model="opus", effort="high", model_type="claude:opus/high"
     )
@@ -219,7 +219,7 @@ def test_agents_wait_rows_carry_launch_label_and_body_file(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """終端行と`status: running`の行が起動時の`label`を持ち、終端行の本文ファイルは`agent_message`と一致する。
+    """終了行と`status: running`の行が起動時の`label`を持ち、終了行の本文ファイルは`agent_message`と一致する。
 
     `label`が無いと、呼び出し元は`session_id`から依頼名への対応表を自前で持つ。
     本文がJSON文字列にだけあると、呼び出し元はエスケープを解く処理を自前で持つ。
@@ -252,7 +252,7 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """本文ファイルを書けない待機は非0で終わり、再発行した待機が同じ終端行を配送する。
+    """本文ファイルを書けない待機は非0で終わり、再発行した待機が同じ終了行を配送する。
 
     配送前に終えずに失敗を無視すると本文ファイルの無い行が届き、退避物を削除してから失敗すると結果が失われる。
     """
@@ -395,7 +395,7 @@ def test_agents_wait_uses_explicit_root_without_environment(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """起動応答のルートを明示すれば環境の別名なしで終端結果を回収できる。"""
+    """起動応答のルートを明示すれば環境の別名なしで終了時の結果を回収できる。"""
     results = shared_layout.results_directory("mcp-root", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     results.mkdir(parents=True, exist_ok=True)
@@ -428,7 +428,7 @@ def test_agents_wait_delivers_collected_results_before_reporting_read_failure(
 
     assert _wait_for_session_1_result(wait_environment) == 6
     error = capsys.readouterr().err
-    assert "終端結果ファイルを読めません" in error
+    assert "終了時の結果ファイルを読めません" in error
     assert f"\n{NEXT_ACTION_PREFIX}" in error
     assert "`show`" in error
 
@@ -437,7 +437,7 @@ def test_agents_wait_outputs_terminal_result_with_notice_only_session(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """終端結果を持つsessionと通知だけを持つsessionが同時にある場合は双方の行を返す。"""
+    """終了時の結果を持つsessionと通知だけを持つsessionが同時にある場合は双方の行を返す。"""
     wait_environment.mkdir(parents=True)
     terminal = {"session_id": "session-1", "status": "completed"}
     (wait_environment / "session-1.json").write_text(json.dumps(terminal), encoding="utf-8")
@@ -584,7 +584,7 @@ def test_codex_delegate_wait_resolves_writer_alias_and_releases_target(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Codex threadと異なる書込主体の稼働状態と終端結果を同じ所有単位で回収する。"""
+    """Codex threadと異なる書込主体の稼働状態と終了時の結果を同じ所有単位で回収する。"""
     root = shared_layout.status_directory("root-session", tmp_path)
     root.mkdir(parents=True)
     (root / "writer-session.json").write_text(
@@ -1177,7 +1177,7 @@ def test_wait_continues_after_contended_owner_aborts(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """lock取得後も待機を続け、後から届く終端結果を受け取る。"""
+    """lock取得後も待機を続け、後から届く終了時の結果を受け取る。"""
     results = shared_layout.results_directory("root-session", tmp_path)
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 10.0)
     monkeypatch.setattr(agents_wait.time, "sleep", _publish_result_on_sleep(results))
@@ -1253,7 +1253,7 @@ def test_later_wait_uses_matching_current_run(
 
 
 def test_wait_recovers_abandoned_run(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """先行プロセスがいない未公開runから終端結果を回収する。"""
+    """先行プロセスがいない未公開runから終了時の結果を回収する。"""
     results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
@@ -1529,7 +1529,7 @@ def test_agents_wait_resolves_changed_conversation_session(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """会話のsession識別子が変わった後も索引先の終端結果を回収する。"""
+    """会話のsession識別子が変わった後も索引先の終了時の結果を回収する。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
@@ -1620,7 +1620,7 @@ def test_agents_wait_keeps_captured_session_after_projection_disappears(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """待機開始後に状態投影が消えても取得済みsessionを非終端として返す。"""
+    """待機開始後に状態投影が消えても取得済みsessionを未終了として返す。"""
     status_path = _write_own_status(wait_environment, [{"session_id": "session-1"}])
     monotonic_values = iter([0.0, 0.0, 2.0])
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 1.0)
@@ -1695,7 +1695,7 @@ def test_agents_wait_rejects_corrupted_result(
     capsys: pytest.CaptureFixture[str],
     result_body: str,
 ) -> None:
-    """破損した終端結果は待機上限と別の終了コードで停止する。"""
+    """破損した終了時の結果は待機上限と別の終了コードで停止する。"""
     wait_environment.mkdir(parents=True)
     (wait_environment / "session-1.json").write_text(result_body, encoding="utf-8")
 
@@ -1764,7 +1764,7 @@ def test_agents_wait_returns_notices_while_running(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """終端前の通知を回収し、running状態とともに1行で返す。"""
+    """終了前の通知を回収し、running状態とともに1行で返す。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
     notices = wait_environment.parent / "notices"
     notices.mkdir(parents=True)
@@ -1795,7 +1795,7 @@ def test_agents_wait_reissues_for_registered_session_after_notice(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """通知後に状態投影が消えても、再発行した待機が同じsessionの終端結果を回収する。"""
+    """通知後に状態投影が消えても、再発行した待機が同じsessionの終了時の結果を回収する。"""
     session_registry.publish("session-1", terminal=False, state_root=wait_environment.parents[2])
     status_path = _write_own_status(wait_environment, [{"session_id": "session-1"}])
     notices = wait_environment.parent / "notices"
@@ -1859,9 +1859,9 @@ def test_agents_wait_releases_registered_session_terminal_in_registry(
     capsys: pytest.CaptureFixture[str],
     record: str,
 ) -> None:
-    """登録簿が終端を示し、結果も状態ファイルの行も無い待機対象を解放して待たずに終える。
+    """登録簿が終了を示し、結果も状態ファイルの行も無い待機対象を解放して待たずに終える。
 
-    所有プロセスと委譲先CLIがともに終了した`running`の記録も、解決が示す中断の終端として同じく扱う。
+    所有プロセスと委譲先CLIがともに終了した`running`の記録も、解決が示す中断の終了として同じく扱う。
     """
     state_root = wait_environment.parents[2]
     wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
@@ -1889,9 +1889,9 @@ def test_agents_wait_ends_when_only_target_becomes_terminal_without_result(
     capsys: pytest.CaptureFixture[str],
     record: str,
 ) -> None:
-    """待機中に唯一の対象が結果を残さず終端した場合は、待機上限を待たずに対象不在で終える。
+    """待機中に唯一の対象が結果を残さず終了した場合は、待機上限を待たずに対象不在で終える。
 
-    所有プロセスと委譲先CLIがともに終了して`running`のまま残った記録も、同じく終端として扱う。
+    所有プロセスと委譲先CLIがともに終了して`running`のまま残った記録も、同じく終了として扱う。
     """
     state_root = wait_environment.parents[2]
     wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
@@ -1926,7 +1926,7 @@ def test_agents_wait_collects_registered_terminal_result_and_releases_target(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """PostToolUseが保持した対象の終端結果を回収し、待機対象登録を解除する。"""
+    """PostToolUseが保持した対象の終了時の結果を回収し、待機対象登録を解除する。"""
     state_root = wait_environment.parents[2]
     wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
     wait_environment.mkdir(parents=True)
@@ -2035,7 +2035,7 @@ def test_agents_wait_keeps_waiting_after_stall_threshold(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """停滞候補の診断後も待機を続け、次の周回で終端結果を回収する。"""
+    """停滞候補の診断後も待機を続け、次の周回で終了時の結果を回収する。"""
     _write_own_status(wait_environment, [{"session_id": "session-1", "updated_at": "2000-01-01T00:00:00+00:00"}])
     monotonic_values = iter((0.0, 1.0, state.STALL_NOTICE_SECONDS + 1.0))
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: state.STALL_NOTICE_SECONDS + 100.0)
@@ -2051,7 +2051,7 @@ def test_agents_wait_notices_response_reports_seconds_since_output(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """通知だけを回収する非終端応答にも活動時刻と最新テキスト出力時刻を付ける。"""
+    """通知だけを回収する未終了応答にも活動時刻と最新テキスト出力時刻を付ける。"""
     output_updated_at = "2026-09-09T00:00:00+00:00"
     updated_at = "2099-01-01T00:00:00+00:00"
     _write_own_status(
@@ -2102,7 +2102,7 @@ def test_agents_wait_adds_notices_to_terminal_result(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """同じ周回の通知を終端結果へ加える。"""
+    """同じ周回の通知を終了時の結果へ加える。"""
     wait_environment.mkdir(parents=True)
     payload = {"session_id": "session-1", "status": "completed", "turn_seq": 2}
     (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -2112,7 +2112,7 @@ def test_agents_wait_adds_notices_to_terminal_result(
         "version": 1,
         "session_id": "session-1",
         "sent_at": "2026-09-07T00:00:01+00:00",
-        "body": "終端時の通知",
+        "body": "終了時の通知",
     }
     (notices / "session-1.1.json").write_text(json.dumps(notice), encoding="utf-8")
 
@@ -2198,7 +2198,7 @@ def _observe_cli_wait_limit(
     capsys: pytest.CaptureFixture[str],
     probe_limit: float,
 ) -> float:
-    """終端しない委譲先を`atk agents wait`で待ち、終了コード3で戻った時点の経過秒数を返す。
+    """終了しない委譲先を`atk agents wait`で待ち、終了コード3で戻った時点の経過秒数を返す。
 
     最初の待機で`probe_limit`の0.5秒前まで時刻を進め、以降は待機した秒数だけ進める。
     実際の上限が`probe_limit`と一致する場合だけ、残り0.5秒の待機を経て同じ時刻に上限へ到達する。

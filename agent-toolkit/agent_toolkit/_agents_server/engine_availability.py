@@ -41,7 +41,7 @@ ENGINE_MODEL_REJECTED_REASON = "modelRejected"
 
 
 def failure_error(session: SessionState) -> Mapping[str, Any] | None:
-    """失敗で終端したsessionの`error`を返す。失敗でない場合と`error`が辞書でない場合は`None`を返す。"""
+    """失敗で終了したsessionの`error`を返す。失敗でない場合と`error`が辞書でない場合は`None`を返す。"""
     if session.status != "failed" or not isinstance(session.error, dict):
         return None
     return session.error
@@ -87,7 +87,7 @@ def unavailable_reason(
     api_status_reason: Callable[[Any], str] = str,
     other_reason: Callable[[Mapping[str, Any]], str | None] | None = None,
 ) -> str | None:
-    """失敗で終端したsessionが、engineの可用性を理由に失敗した場合の除外理由を返す。
+    """失敗で終了したsessionが、engineの可用性を理由に失敗した場合の除外理由を返す。
 
     `codexErrorInfo`の可用性の区分、利用上限（除外しない）、可用性のHTTPステータスの順に判定する。
     `api_status_reason`はHTTPステータスから除外理由を求め、`other_reason`はいずれにも当たらない失敗の`error`から

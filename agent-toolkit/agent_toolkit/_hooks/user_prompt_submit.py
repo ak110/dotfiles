@@ -102,11 +102,11 @@ _USER_CONFIRMATION_NOTICE_BODY = (
     "この発話は、セッション開始後か会話圧縮後で、`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態で届いた。"
 )
 _USER_CONFIRMATION_NOTICE_FIX = (
-    "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動する。"
-    "是正の認可は`agent-toolkit:user-confirmation-and-report`の「起動契機」から「認可を要する操作」へ進んで判定する。"
+    "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動せよ。"
+    "是正の認可は`agent-toolkit:user-confirmation-and-report`の「起動契機」から「認可を要する操作」へ進んで判定せよ。"
 )
 _BUGFIX_NOTICE_FIX = (
-    "不具合の有無・原因・直し方を回答や確認の案へ含める場合は、診断より前に`agent-toolkit:bugfix`を起動する。"
+    "不具合の有無・原因・直し方を回答や確認の案へ含める場合は、診断より前に`agent-toolkit:bugfix`を起動せよ。"
     "説明の補足や委譲・AWIの方針も対象とする。"
 )
 
@@ -223,7 +223,7 @@ def main(payload_text: str) -> int:
         _emit_hook_output(
             additional_context=_llm_notice(
                 "このターンは`Claude Code`のバックグラウンドタスク完了の自動通知で始まった。"
-                "ユーザーの発話ではない。応答と成果物は日本語で書く。",
+                "ユーザーの発話ではない。応答と成果物は日本語で書け。",
                 tag="notice",
             ),
         )

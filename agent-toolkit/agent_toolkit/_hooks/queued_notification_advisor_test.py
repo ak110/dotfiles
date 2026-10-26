@@ -64,7 +64,7 @@ def test_enqueued_notification_reports_task_id_and_output_file(tmp_path: pathlib
     assert _OUTPUT_FILE in body
     assert "出力ファイルを読んで結果を受け取り" in body
     assert "ターンを終えず" in body
-    assert "再発行しない" in body
+    assert "再発行するな" in body
 
 
 @pytest.mark.parametrize("stop_hook_active", [False, True])

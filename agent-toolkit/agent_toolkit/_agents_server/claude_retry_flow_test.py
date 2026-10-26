@@ -25,7 +25,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 class _RetryCLI:
-    """終端しない再試行と、停止後の遅延結果を所有する模擬CLI。"""
+    """終了しない再試行と、停止後の遅延結果を所有する模擬CLI。"""
 
     def __init__(self, session_id: str, *, initial: list[Any] | None = None, fail_on_interrupt: bool = False) -> None:
         self.messages: asyncio.Queue[Any] = asyncio.Queue()
@@ -240,7 +240,7 @@ async def test_weekly_api_resume_retains_request_followup_and_completed_work(
 async def test_retry_kill_reclaims_owner_without_rescheduling(
     late_failure: bool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """再試行中のkillは、終端未送出と停止後の失敗通知の双方で所有CLIを回収して停止を返す。"""
+    """再試行中のkillは、終了未送出と停止後の失敗通知の双方で所有CLIを回収して停止を返す。"""
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     cli = _RetryCLI("retry-flow", fail_on_interrupt=late_failure)

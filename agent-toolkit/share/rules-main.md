@@ -34,7 +34,7 @@
 
 ## ユーザー向け発話ルール
 
-本節の規定は、ユーザーが読む説明や質問の文面に適用する。ホスト固有の質問形式は、Claude Codeでは`rules-main.claude-code.md`「ユーザー確認（`AskUserQuestion`）」、Codexでは`rules-main.codex.md`「ユーザー確認と終端」が定める。
+本節の規定は、ユーザーが読む説明や質問の文面に適用する。ホスト固有の質問形式は、Claude Codeでは`rules-main.claude-code.md`「ユーザー確認（`AskUserQuestion`）」、Codexでは`rules-main.codex.md`「ユーザー確認と終了」が定める。
 
 発話は自然な日本語を用い、主題、結果、問い、現在の判断を冒頭で述べる。1つの段落には1つの主題を扱う。文脈や重複を省く場合も、省略した意味を一意に復元でき、主語と述語の関係が正しく成立する文構造を保つ。ユーザーの対応が必要な未完了事項については、`agent-toolkit:user-confirmation-and-report`の「手段の選択」に沿ってUWIへの登録要否を判定し、保存した場合はその所在を記載する。自明なユーザー操作の案内は、通常の報告に添えて伝える。
 

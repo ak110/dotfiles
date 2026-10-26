@@ -165,7 +165,7 @@ async def test_start_followup_and_auto_resume_generated_deliveries_reach_shared_
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """開始・追送・子孫終端・過負荷・利用上限の各生成元の送出値を、backend境界で取得する。"""
+    """開始・追送・子孫終了・過負荷・利用上限の各生成元の送出値を、backend境界で取得する。"""
     async with manager.AgentsServerManager() as owner:
         bodies: list[str] = []
 

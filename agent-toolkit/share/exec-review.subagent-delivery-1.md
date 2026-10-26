@@ -2,6 +2,8 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
+| AWIの形式を判断する前 | `agent-toolkit:wi-standards`の`references/awi-body.md`冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` | |
+| 条件表を検収する前 | `agent-toolkit:review-standards`の`references/exec-review-recording.md`「記録する行と要求単位」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「記録する行と要求単位」` | |
 | 初回レビューに入る前 | `agent-toolkit:review-standards`の`references/reviewer.md`の「初回レビュー」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「初回レビュー」` | |
 | 再レビュー・引き継ぎ再レビューに入る前 | `agent-toolkit:review-standards`の`references/reviewer.md`の「再レビューの場合」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「再レビューの場合」` | |
 | 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` | |

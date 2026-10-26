@@ -33,15 +33,15 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if outcome is not CheckOutcome.WARN:
         return "", ""
     recovery = (
-        "基準を満たさない場合は成果・判断・未達と指定の返却形式を含む完了本文を変更せず、そのまま再出力して停止する。"
+        "基準を満たさない場合は成果・判断・未達と指定の返却形式を含む完了本文を変更せず、そのまま再出力して停止せよ。"
         if is_codex_payload(payload) or not is_main_agent_context(payload)
-        else "基準を満たさない場合は`…`だけを出力して停止する。"
+        else "基準を満たさない場合は`…`だけを出力して停止せよ。"
     )
     return "block", _block_notice(
         response_language_check.BLOCK_BODY
-        + "判定基準: 検出した箇所が引用・入力素材・技術的な識別子か、エージェント自身の日本語以外の説明かを確かめる。"
-        f"検出した本文: {response_language_check._plain_text(text)[:200]}\n" + (body or "完了本文の説明を日本語で書く。"),  # pylint: disable=protected-access
-        fix="基準を満たす場合は成果・判断・未達と指定の返却形式、引用・入力素材を保ち、説明を日本語で書いてから停止する。"
+        + "判定基準: 検出した箇所が引用・入力素材・技術的な識別子か、エージェント自身の日本語以外の説明かを確かめよ。"
+        f"検出した本文: {response_language_check._plain_text(text)[:200]}\n" + (body or "完了本文の説明を日本語で書け。"),  # pylint: disable=protected-access
+        fix="基準を満たす場合は成果・判断・未達と指定の返却形式、引用・入力素材を保ち、説明を日本語で書いてから停止せよ。"
         + recovery
         + "再呼び出しは`stop_hook_active`で通過する。",
     )

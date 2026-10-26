@@ -33,7 +33,7 @@ async function statePath($: EngineInterface, sessionId: string, kind: "marker" |
 
 function cleanupWarning(reason: string): string {
   return automatedMessage("periodic-recheck", "warn", `定期再確認taskの自動回収を完了できなかった（理由: ${reason}）。` +
-    "taskは保持する。必要な許可とツールの公開状態を確認し、次のStopで全待機終了の判定が得られたときにmodが再評価する。");
+    "taskは保持する。必要な許可とツールの公開状態を確認せよ。次のStopで全待機終了の判定が得られたときにmodが再評価する。");
 }
 
 // Stopが同じターンの非同期判定を書き、ここで一度だけ消費する。欠落・不明は回収の許可にしない。

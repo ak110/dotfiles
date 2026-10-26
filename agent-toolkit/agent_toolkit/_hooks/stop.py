@@ -71,7 +71,7 @@ def _write_recheck_verdict(session_id: str, payload: dict, *, may_collect: bool)
     try:
         if marker.read_text(encoding="utf-8") != "ready":
             return
-        # 先に前回の判定を無効にする。読取失敗や判定例外から全終端を推定しない。
+        # 先に前回の判定を無効にする。読取失敗や判定例外から全終了を推定しない。
         path.write_text("unknown", encoding="utf-8")
         transcript = payload.get("transcript_path")
         if not may_collect or not isinstance(transcript, str) or not transcript:

@@ -1051,7 +1051,7 @@ def test_public_check_overlap_uses_integration_state(
 
 
 def test_public_command_records_integrated_lane(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
-    """統合・終端検収後の記録を公開された同じ保存コマンドへ渡し、反復と再入力も成功する。"""
+    """統合・終了検収後の記録を公開された同じ保存コマンドへ渡し、反復と再入力も成功する。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変える。")
     path = _write_selection(tmp_path / "state.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}])

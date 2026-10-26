@@ -59,7 +59,7 @@ _MACHINE_IDENTIFIER_PATTERN = re.compile(
 )
 
 # 機械可読な返却行。小文字のsnake_case識別子だけの行と、その識別子をキーとする`<キー>: <値>`行を対象とする。
-# `agent-toolkit/share/rules-subagent.md`「返却と終端」は、委譲先がチェックポイントまたは
+# `agent-toolkit/share/rules-subagent.md`「返却と終了」は、委譲先がチェックポイントまたは
 # 完了報告でターンを終える場合に指定形式の文面だけを出力し地の文を加えないことを求める。
 # これらの形式のうち英字だけで構成される行（`status: checkpoint`などのcheckpointブロック、
 # 英字の欄名で返す旧形式の返却、`condition_not_met`のような結果値の単独行）は、地の文へ残すと英語応答と判定され、
@@ -111,9 +111,9 @@ WARNING_BODY = (
 BLOCK_BODY = "英語主体の本文を日本語で書き直すまで、呼び出しまたは終了を止めた。"
 
 WARNING_FIX = (
-    "直前の文または入力本文を、内容を保って日本語で書き直す。"
-    "識別子と名前が対象の正式名と一致することを確かめてから、同じ呼び出しを再発行する。"
-    "通知への返信・訂正や謝罪の宣言は省く。"
+    "直前の文または入力本文を、内容を保って日本語で書き直せ。"
+    "識別子と名前が対象の正式名と一致することを確かめてから、同じ呼び出しを再発行せよ。"
+    "通知への返信・訂正や謝罪の宣言は省け。"
 )
 """表示と後続の操作の取り違えを防ぐ、モデル自身による書き直し。"""
 
@@ -134,7 +134,7 @@ def check_text(text: str) -> tuple[CheckOutcome, str | None]:
     if _has_foreign_word(plain_text):
         return (
             CheckOutcome.WARN,
-            "直前のアシスタント応答の説明に日本語以外の文字列が混入している。引用・素材を保ち、説明を日本語で書く。",
+            "直前のアシスタント応答の説明に日本語以外の文字列が混入している。引用・素材を保ち、説明を日本語で書け。",
         )
     japanese_count = len(_JAPANESE_CHAR_PATTERN.findall(plain_text))
     english_word_count = len(_ENGLISH_WORD_PATTERN.findall(plain_text))

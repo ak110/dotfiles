@@ -23,7 +23,7 @@
 | [規範の消失と陳腐化](incidents-validation.md#規範の消失と陳腐化) | 規範の削除・縮小・移設で条文や参照が失われた事例 | `incidents-validation.md` |
 | [レビューの発散と目的の変質](incidents-workflows.md#レビューの発散と目的の変質) | レビューの往復が発散したか、目的が変わった事例 | `incidents-workflows.md` |
 | [停滞と空転](incidents-workflows.md#停滞と空転) | 待機、応答停止、反復で工程が進まなかった事例 | `incidents-workflows.md` |
-| [公開とリリース工程の未完了](incidents-workflows.md#公開とリリース工程の未完了) | push、公開、終端工程の取りこぼし | `incidents-workflows.md` |
+| [公開とリリース工程の未完了](incidents-workflows.md#公開とリリース工程の未完了) | 公開工程とリリースの取りこぼし | `incidents-workflows.md` |
 | [並行実行の競合](incidents-workflows.md#並行実行の競合) | 複数の主体やレーンの書込と割当の競合 | `incidents-workflows.md` |
 | [要求と判断の脱落](incidents-workflows.md#要求と判断の脱落) | ユーザーが示した要件、指定、介入が工程から脱落した事例 | `incidents-workflows.md` |
 | [フックとセッション状態の不全](incidents-runtime.md#フックとセッション状態の不全) | hookとセッション状態ファイルの不全 | `incidents-runtime.md` |

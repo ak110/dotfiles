@@ -69,10 +69,10 @@ for (const env of DELEGATED_ENVS) {
     expect((await $.tool.check({ tool: TOOL, input: { message: MESSAGE } })).decision).toBe("deny");
     const called = await $.tool.call({ tool: TOOL, message: MESSAGE });
     expect(called.result).toBeUndefined();
-    // 拒否の本文は、結果本文を委譲元へ返すことと、終端の返却へ書くことを案内する。
+    // 拒否の本文は、結果本文を委譲元へ返すことと、終了の返却へ書くことを案内する。
     expect(called.deny).toMatch(/^<atk-auto source="main-only-tool" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
     expect(called.deny).toMatch("委譲元へ返す");
-    expect(called.deny).toMatch("終端の返却");
+    expect(called.deny).toMatch("終了の返却");
   });
 }
 
@@ -230,7 +230,7 @@ for (const [name, response, expected] of [
     const notice = called.context?.[0] ?? "";
     expect(notice).toMatch(/^<atk-auto source="response-language" kind="warn">\n[\s\S]*\n<\/atk-auto>$/);
     expect(notice).toContain(expected);
-    expect(notice).toContain("ユーザーへ報告する");
+    expect(notice).toContain("ユーザーへ報告");
     expect(notice).not.toContain(JAPANESE_MESSAGE);
     expect(notice).not.toContain(SECRET_STDERR);
     expect(notice).not.toContain("broken-json");

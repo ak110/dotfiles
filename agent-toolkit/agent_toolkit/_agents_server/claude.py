@@ -216,7 +216,7 @@ def rename_debug_file_for_session(debug_file: pathlib.Path, session_id: str, lau
     """診断ログの名前がsession識別子を持つ形へ改名し、確定後の絶対パスを返す。
 
     委譲先CLIが対象ファイルを開いたまま改名する。改名できない実行環境では元の名前を保ち、
-    session識別子との対応は終端結果の`debugFile`から解決する。
+    session識別子との対応は終了時の結果の`debugFile`から解決する。
     """
     stamp = debug_file.name.split("-", 1)[0]
     renamed = debug_file.with_name(f"{stamp}-{session_id}-{launch_kind}.log")
@@ -492,7 +492,7 @@ def consume_api_retry(session: SessionState, data: dict[str, Any]) -> None:
 
 
 def recover_api_retry(session: SessionState, data: dict[str, Any], *, record_notification: bool = True) -> None:
-    """途中通知と終端失敗を同じ接続選択へ渡し、下位CLIの再試行終了への依存を解く。"""
+    """途中通知と終了失敗を同じ接続選択へ渡し、下位CLIの再試行終了への依存を解く。"""
     if record_notification:
         consume_api_retry(session, data)
     elif session.api_error is not None and session.usage_limit is not None and session.usage_limit.is_wait_target:
@@ -526,7 +526,7 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
     ツール呼び出しの両方を持つ場合、後に発行したツール呼び出しを最後の行動とするためである。
 
     API失敗（429など）は`error`付きの合成メッセージとして`ResultMessage`より前に届くため、
-    モデル出力と活動時刻の更新から除く。数えると、可用性失敗を確定する前に`start`の終端待ちを打ち切り、
+    モデル出力と活動時刻の更新から除く。数えると、可用性失敗を確定する前に`start`の終了待ちを打ち切り、
     再試行が続く間も停滞を検出できなくなる。
     正常な起動では、完成したassistantメッセージより先に届くAPIの応答開始（`message_start`）で
     観測済みになる。完成したメッセージは思考と最初の内容ブロックの生成が終わるまで届かない。
@@ -577,7 +577,7 @@ class ClaudeServerManager:
     INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool] = False
     """中断の要求にturnの識別子を使わない。"""
     ORPHAN_TAKEOVER: typing.ClassVar[bool] = False
-    """所有者のいない登録簿の記録を、委譲先CLIの記録から終端として引き継がない。"""
+    """所有者のいない登録簿の記録を、委譲先CLIの記録から終了として引き継がない。"""
 
     async def __aenter__(self) -> ClaudeServerManager:
         return self
@@ -587,7 +587,7 @@ class ClaudeServerManager:
 
     @staticmethod
     def unavailable_reason(session: SessionState) -> str | None:
-        """終端したsessionがengineの可用性を理由に失敗した場合、その除外理由を返す。
+        """終了したsessionがengineの可用性を理由に失敗した場合、その除外理由を返す。
 
         429は利用枠の種類を付けて記録し、旧版が記録した`429`と区別する。
         """
@@ -933,7 +933,7 @@ class ClaudeServerManager:
         channel = self._channels.get(session.session_id)
         if channel is None:
             raise SessionOwnerGoneError("the Claude session owner task has ended")
-        # 通常の追送と、孫sessionの終端・利用上限・過負荷の後の自動再開は、いずれもここで次のturnを始める。
+        # 通常の追送と、孫sessionの終了・利用上限・過負荷の後の自動再開は、いずれもここで次のturnを始める。
         # 進行中のturnと、CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）では所有タスクを止めない。
         held_without_pending = session.awaiting_auto_resume and not resume_waits.has_pending_auto_resume_targets(session)
         role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
@@ -1021,7 +1021,7 @@ class ClaudeServerManager:
             session.touch()
             await self._notify_waiters()
             raise session_errors.DelegateBackendError(f"unexpected Claude interrupt delivery: {delivery}")
-        # control要求の受理とCLIの終端は別の事象である。所有タスクの後始末でCLIと子孫を回収してから停止を公開する。
+        # control要求の受理とCLIの終了は別の事象である。所有タスクの後始末でCLIと子孫を回収してから停止を公開する。
         await self._stop_owned_task(session.session_id)
         if session.pending_result is not None:
             resume_waits.finalize_pending_result(session, touch=False)
@@ -1612,10 +1612,10 @@ class ClaudeServerManager:
 
     @classmethod
     async def _finalize_pending_result(cls, session: SessionState) -> None:
-        """保留した終端結果を確定する。
+        """保留した終了時の結果を確定する。
 
-        Claude backendはタスク完了通知と孫sessionの終端によって同一sessionを再開できるため終端結果を保留する。
-        Codex backendは孫sessionの終端による再開だけを持ち、同じ保留をMCP層の監視が確定する。
+        Claude backendはタスク完了通知と孫sessionの終了によって同一sessionを再開できるため終了時の結果を保留する。
+        Codex backendは孫sessionの終了による再開だけを持ち、同じ保留をMCP層の監視が確定する。
         確定の時点で残るバックグラウンドタスクと孫sessionの`error`への記録は、確定の契機によらず共通処理が行う。
         """
         await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
@@ -1629,7 +1629,7 @@ class ClaudeServerManager:
         *,
         diagnostic: _InitializationDiagnostic | None = None,
     ) -> None:
-        """失敗を終端結果へ確定し、初期化の完了後に生じた失敗へは原因の特定に要する診断を添える。"""
+        """失敗を終了時の結果へ確定し、初期化の完了後に生じた失敗へは原因の特定に要する診断を添える。"""
         failure: dict[str, Any] = {"message": str(error) or error.__class__.__name__}
         if diagnostic is not None:
             stderr = diagnostic.stderr.strip()

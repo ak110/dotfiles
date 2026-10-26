@@ -30,13 +30,13 @@ H2は索引元のパスの文字コード順に並べ、同じパスでは日付
 - `CLAUDE_CODE_REMOTE_SESSION_ID`: `cse_`で始まる検証用の値
 - `CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2`: `true`
 
-変更前は2件の起動応答が同じ識別子を返し、`atk agents wait --root-session-id <応答のroot_session_id>`は終端1件を回収して終了コード0だった。
+変更前は2件の起動応答が同じ識別子を返し、`atk agents wait --root-session-id <応答のroot_session_id>`は終了1件を回収して終了コード0だった。
 変更後は2件の識別子が互いと親の識別子から分かれ、回収前の`show`は両方で`result_available=true`を返した。
-同じCLIで終端2件を回収し、終了コード0を得た。
+同じCLIで終了2件を回収し、終了コード0を得た。
 両観測ともstdio接続を閉じてMCPの終了を確認した。
 
 再検証では専用の状態ディレクトリを使い、上記の変数を与えた実MCPへ2件の並行`start`を送る。
-起動応答の識別子を互いと親について比較し、終端時の`show`とCLIによる回収件数・終了コードを記録する。
+起動応答の識別子を互いと親について比較し、終了時の`show`とCLIによる回収件数・終了コードを記録する。
 変更前の版でも同じ条件で実行し、識別子の重複と回収1件を対照にする。
 環境除去の単体検証は`_common/mcp_environment_test.py`と`_atk/orchestrator_test.py`を使う。
 全backendの登録前の重複拒否は`_agents_server/manager_test.py`の`test_start_rejects_duplicate_session_id`で再検証する。
@@ -77,7 +77,7 @@ marker保持側は終了0、除去側はzstandard 0.25.0のビルドに到達し
 
 2026年10月5日、GitHub CLI 2.101.0でPR #138のcheck登録順を確認した。run `37327087407`は同じPR headの`push`起点CIであり、run `37329129743`は`pull_request`起点CIであった。後者の`statusline-version`は先行するcheckの観測後に非同期で登録された。同じheadとcheck名だけでは起点を識別できず、PR起点checkの登録前に必須checkの集合を完全と判定できない。
 
-再検証では`gh version`を取得し、PR番号とその`headRefOid`を保持する。`gh pr checks <PR番号> --json event,workflow,name`でcheckを取得し、`event=pull_request`、`workflow=CI`、`name=statusline-version`の組合せを探す。run `37327087407`と`37329129743`を個別に取得し、event、head SHA、workflowとjob名を比較する。次に同じPRの必須check終端後の`headRefOid`と`mergeStateStatus`を取得し、headが不変でGitHubの評価が`CLEAN`になることを確認する。対象runが保持期限で取得できない場合は、新しいrelease PRで同じJSON項目を使って登録順を観測する。
+再検証では`gh version`を取得し、PR番号とその`headRefOid`を保持する。`gh pr checks <PR番号> --json event,workflow,name`でcheckを取得し、`event=pull_request`、`workflow=CI`、`name=statusline-version`の組合せを探す。run `37327087407`と`37329129743`を個別に取得し、event、head SHA、workflowとjob名を比較する。次に同じPRの必須check終了後の`headRefOid`と`mergeStateStatus`を取得し、headが不変でGitHubの評価が`CLEAN`になることを確認する。対象runが保持期限で取得できない場合は、新しいrelease PRで同じJSON項目を使って登録順を観測する。
 
 ## agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：2026年10月4日
 
@@ -95,7 +95,7 @@ Stop hookに0秒と5秒の待機を入れた2条件で、`receive_messages()`の
 ## agent-toolkit/agent_toolkit/_agents_server/codex.py：孫sessionの待機表明と自動再開：2026年10月1日
 
 2026年10月1日、codex-cli 0.159.3とClaude Code 2.1.286を同じホストで使い、変更後の作業ツリーで`agents_server_live_test.py::test_live_grandchild_wait_resumes_same_session`を実行した。委譲先は`agents_server`の起動ツールで`sleep 5`を実行する孫sessionを起動し、回収前に`待機中: <孫のsession_id>`を出力してターンを終える指示を受けた。
-Codexの委譲先（`codex:sol/medium`）とClaudeの委譲先（`claude:sonnet[1m]/medium`）のいずれも、待機表明の結果は呼び出し元へ配送されず、孫の終端後に同じsessionが手動の指示なしに再開した。再開したターンは`atk agents wait`で孫の結果を回収し、呼び出し元は`AUTO_RESUME_COMPLETED`と`turn_seq`2の完了結果を受け取った。2件とも成功し、所要時間は141秒だった。
+Codexの委譲先（`codex:sol/medium`）とClaudeの委譲先（`claude:sonnet[1m]/medium`）のいずれも、待機表明の結果は呼び出し元へ配送されず、孫の終了後に同じsessionが手動の指示なしに再開した。再開したターンは`atk agents wait`で孫の結果を回収し、呼び出し元は`AUTO_RESUME_COMPLETED`と`turn_seq`2の完了結果を受け取った。2件とも成功し、所要時間は141秒だった。
 変更前のCodex backendは、同じ待機表明を`completed`の結果として公開し、孫の識別子を`error.unobservedSessions`へ記録していた（同日の対照観測）。
 再検証は`make test-agents-live`と同じpytest引数（`-m live_agents`）を指定し、呼び出し元の会話と状態ディレクトリを分けるため別の`CLAUDE_CODE_SESSION_ID`を与えて同じテストを実行する。
 
@@ -169,7 +169,7 @@ Claude Code 2.1.296の非対話CLIで、goalなし・ありの専用sessionを1�
 各sessionはBashで固定文字列を1回だけ背景出力し、Read前に待機を表明した。
 両方でStopは終了0の`continue: false`を返した後、同じsessionがtask-notificationによる次ターンで再開した。
 Readは背景の出力ファイルの全量と`[exited with code 0]`を取得し、最終結果は`terminal_reason: completed`だった。
-goalありでは実際の`Goal set`、待機時の未充足評価、結果受領後の正常終端を保存した。
+goalありでは実際の`Goal set`、待機時の未充足評価、結果受領後の正常終了を保存した。
 追加のgoal観測では`--debug-file`を指定した。
 同じ条件の評価は待機時に`ok: false`、通知からの再開後に`ok: true`となり、その後にsessionのStop評価hookが除去された。
 この追加観測の実行記録は`atk-command-t1dania1/record.json`、詳細索引は`session-4bef2h87/goal-evaluation-observation.json`にある。
@@ -255,6 +255,223 @@ Claude Code 2.1.292のセッション`6ff8ab5b-235b-4bfc-b765-115d1486cd60`で�
 ## agent-toolkit/share/pick-wi.subagent.md：調査とレーン分け：2026年8月31日
 
 2026年8月31日から9月2日までの5セッションの観測で、出力トークン量はレーン数へほぼ比例し、レーン数を増やしたセッションで所要時間が短くなる傾向は観測されなかった。
+
+## agent-toolkit/share/read-trigger-bootstrap.md：操作を契機とする共有資料：2026年10月27日
+
+本節は、読込表の宣言と表外の資料参照を分類し、取得を案内する経路と対応付けた記録である。
+比較基準は2026年10月26日の`c31bea2b6`で、対象は`agent-toolkit/skills/`、`agent-toolkit/share/`、`.claude/skills/`、`agent-basics/skills/`の373 Markdownだった。
+原本の保存先はprivate-notesの`plans/2026/10/27-0550_process-wi_レーン05.read-delivery/`で、次の表のファイル名を使う。
+初回保存版はprivate-notesのcommit `0168b0a8e`にある。
+初回集計は、原因分析資料の宣言を読込表の先頭側へ動かした配送順の版に対応し、後続のdotfilesの版との一致は示さない。
+初回原本には取得時のdotfiles HEADの記録が無いため、各行の`現行sourceのSHA256`で取得対象の版を特定する。
+
+| 本節の呼称 | 原本ファイル | 主な列 |
+| --- | --- | --- |
+| 全宣言表 | `read-delivery-20261027-routes.tsv` | `種別`、`照合状態`、変更属性、`宣言位置`、`基準位置`、`現行sourceのSHA256` |
+| 表外指示の探索表 | `read-delivery-20261027-search.tsv` | `検索語`、`位置`、`形態分類` |
+| 参照経路表 | `read-delivery-20261027-references.tsv` | `検索語`、`位置`、`参照先`、`結果` |
+
+| 契機 | 宣言 | 行全文一致 | 一対一差分 | 条件変更 | 対象変更 | 契機・配送操作変更 | 行位置変化 | 意味上の移設 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 操作 | 34 | 34 | 0 | 0 | 0 | 0 | 5 | 0 |
+| 起動時 | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 判断 | 1732 | 1709 | 23 | 3 | 20 | 19 | 2 | 1 |
+| 合計 | 1781 | 1758 | 23 | 3 | 20 | 19 | 7 | 1 |
+
+宣言数は全宣言表の`種別`別の行数である。
+「行全文一致」「一対一差分」「手動対応」「新規」は、`照合状態`の`行全文一致`、`差分の一対一行`、`差分の行番号対応（手動確認）`、`新規追加（基準行なし）`を数える。
+「条件変更」「対象変更」「契機・配送操作変更」は、順に原本の`条件変更`、`対象変更`、`契機変更`が`変更あり`の行数である。
+「行位置変化」は`配置変更`が`行移動あり`の行数で、新規追加を含めない。
+属性は重複するため横方向に合計しない。
+一対一差分23行はすべて判断の行で、配送操作と対象がともに変わった19行、対象だけが変わった1行、条件だけが変わった3行である。
+契機・配送操作変更列は原本の両セルを比較した値で、この19行の契機の種別はいずれも判断のままである。
+行位置変化7行は前後の挿入・削除を含む。
+意味上の移設1行は、`agent-toolkit/share/read-trigger-bootstrap.md`の読込表で原因分析資料`agent-basics/skills/bugfix/references/root-cause-analysis.md`の宣言順を変えた手動比較の結果である。
+この移動は`read-trigger-bootstrap.md`の16行目から10行目への変更を示す。
+この旧配送順の変更は後述の撤回対象に含まれる。
+
+表外指示の探索表は、4対象根に対する固定文字列検索の1615一致行を保持する。
+検索語は`全文読`、`に従う`、`が定める`、`を参照`で、順に320、813、93、389行だった。
+取得時は語ごとに`git grep -n -F -e '<検索語>' -- agent-toolkit/skills/ agent-toolkit/share/ .claude/skills/ agent-basics/skills/`を実行し、4回とも終了0だった。
+参照経路表の1325行は、宣言経路731、同一資料5、名指し参照の短節22、常時規範18、所在参照9、正式資料への移譲10、コードフェンス内3、プログラム内文言37、実在資料の名指しなし490に分類された。経路照合不可は0行だった。
+この分類は取得時の静的な先行経路の照合であり、モデルが判断で本文を利用したことの実機観測ではない。
+
+再取得では、4対象根のMarkdownを`agent_toolkit._common.read_triggers.parse_tables`で解析し、sourceと行番号で重複を除く。
+宣言の契機・条件・対象・配送操作を同じsourceの比較基準版と対応付け、各属性を別々に数える。
+上記4語を各々の固定文字列検索で取得し、表の行・本文の規定参照・説明・コードフェンス・所在参照を分ける。
+本文の名指し資料は`validate_reference_routes`で、本文内とsidecarの宣言、常時規範、名指し参照の短節と対応させる。
+`read_triggers_invariant_test.py`で宣言・参照先・見出し・先行経路を確認する。
+
+廃止前の代表実機はClaude Code 2.1.311の新規会話で、Pythonの可変デフォルト引数の不具合調査と原因分析節を持つ短い報告書の新規作成を自然な入力で求めた。
+資料取得やhookの案内を探す指示は含めなかった。
+WriteのPreToolUseは原因分析資料の全文32,697文字を返し、ホストは追加文脈をtool-resultsの保存ファイルへ移した。保存本文は末尾改行を除きhook出力と一致した。
+順序はWrite入力の生成、hookの本文出力、Write成功、最終応答で、後続Readは観測されなかった。モデルが判断前に本文を利用したかは未検証である。
+この観測は廃止前の方式に限り、新方式の達成根拠にはしない。
+
+本文をhookで代替配送する方式は同月19日の既存判断に反した。宣言型読込表の導入時に再導入された本文配送と、その後の宣言順変更は、後続の全文取得方式で撤去した。
+40,000文字の内部配送予算とホスト保存先のRead分割取得案内を撤去した。
+案内方式へ戻した作業途中の版で、同じ自然入力を使った新規会話を観測した。この途中版は公開履歴の版として再取得する根拠に使わない。
+Claude Code 2.1.311では、`agent-toolkit:bugfix`のSkill起動をhookが取得済みと記録した。
+詳細資料へのRead案内も届いたが、会話全体にそのReadはなく、原因分析を含むWrite入力がWriteのhook案内より先に生成された。
+全11hookとプロセスの終了コードは0だったが、詳細資料の取得と判断前の利用は確認できなかった。
+この各1回の観測から、別会話での取得や全対象の判断前利用を保証しない。
+
+2回目の集計は、作業途中の案内方式の版で取得した原本に対応する。原本は保存先のGit履歴には保存されておらず、以下の件数とSHA256は比較用の参考値である。
+同じ4対象根と比較基準を使った。
+宣言1,783行の内訳は基準行との全文一致1,755、一対一差分21、旧新の表・条件・順序を比較した手動対応5、新規追加2で、未確定は0行だった。
+新規追加は`lane-planning.md`とレビュー担当の読込表からAWI本文形式の冒頭を読む宣言である。
+
+| 契機 | 宣言 | 行全文一致 | 一対一差分 | 手動対応 | 新規 | 条件変更 | 対象変更 | 契機・配送操作変更 | 行位置変化 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 操作 | 34 | 34 | 0 | 0 | 0 | 0 | 0 | 0 | 1 |
+| 起動時 | 15 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 判断 | 1734 | 1706 | 21 | 5 | 2 | 5 | 22 | 20 | 21 |
+| 合計 | 1783 | 1755 | 21 | 5 | 2 | 5 | 22 | 20 | 22 |
+
+変更属性は重複し、新規行は各変更属性の母集団から除く。契機・配送操作変更は原本の両セルを比較した値であり、契機の種別だけの変更数ではない。
+4検索語の一致は順に320、817、93、389行、合計1,619行で、各検索は終了0だった。
+参照経路表の1,332行は、初回と同じ分類名で宣言経路735、実在資料の名指しなし493、同一資料5、名指し参照の短節22、常時規範18、所在参照9、プログラム内文言37、正式資料への移譲10、コードフェンス内3だった。経路照合不可は0行だった。
+この参照分類は4検索語の候補範囲に限る。候補外の参照を含む宣言経路は、別途`read_triggers_invariant_test.py`のstrict検査で確認する。
+2回目の原本のSHA256は次のとおりである。
+
+| 原本ファイルの種別 | SHA256 |
+| --- | --- |
+| routes | `9652a6620d29dfcdddd184c42211d0ebdebb2ad80319f2b1c8309264182fc9d0` |
+| search | `6d40957f52c0f8c220ff4d875b269786a913e6d4ecdc5fda2d01b90e7ff0afc3` |
+| references | `5fc95ff9a197c87c1e3afd407859bc4d89dfd430712f5364ae1a922b9d5df988` |
+
+初回と2回目はそれぞれの取得版の履歴であり、次の集計とは分けて扱う。
+保存先のGit履歴にある初回原本と、後述の全文取得方式の最終原本は各版のSHA256で集計に対応付ける。2回目にはこの選択方法を適用できない。
+
+以下の1,790宣言の集計は同じ4対象根と比較基準を使った取得時版である。この中間原本は保存先のGit履歴に無く、数値とSHA256は参考値とする。
+373 Markdownのうち、宣言を含む249 sourceのSHA256を取得後の本文と比べ、不一致は0だった。
+全宣言表の1,790行は、判断1,741、操作34、起動時15である。
+`照合状態`は`行全文一致`が1,755、`差分の一対一行`が21、`差分の行番号対応（手動確認）`が5、`新規追加（基準行なし）`が9で、未確定は0だった。
+前回の1,783行から7宣言を追加した。
+`条件変更`が`変更あり`の行は5、`対象変更`は22、`契機変更`は20、`配置変更`が`行移動あり`の行は122である。
+`契機変更`は契機種別と配送操作の比較を含み、各属性は重複する。
+新規9行は変更属性の比較対象外とする。
+
+意味上の移設はこの取得時の集計では0行である。
+初回に基準16行から10行へ動いた原因分析の宣言は、その後16行へ戻り、この取得時には基準と同じ位置となった。
+移設は原本の`配置変更`列で比較し、条件・対象・契機と配送操作は別の列で比較する。
+
+同じ4語の検索は順に320、818、93、389行、計1,620行だった。
+参照分類1,333行は、宣言経路736、実在資料の名指しなし493、同一資料5、名指し参照の短節22、常時規範18、所在参照9、プログラム内文言37、正式資料への移譲10、コードフェンス内3である。
+照合不可は0行だった。
+2回目との差は検索・参照とも差引1行増で、行番号の移動も含む。
+この分類は4語の候補に限り、候補外を含むstrict検査とは区別する。
+
+中間取得時の3原本のSHA256は次の参考値である。中間版は保存されておらず、その版の再取得はできない。
+
+| 原本ファイル | 取得時のSHA256 |
+| --- | --- |
+| `read-delivery-20261027-routes.tsv` | `2673c834b16d897f008dba21f057f9694c3e138409d3d56bfd403fe0a7166901` |
+| `read-delivery-20261027-search.tsv` | `5e3cd922ec012cb74fa7fcd20eb5520bbf29f20111c1639899df99d86c5d2536` |
+| `read-delivery-20261027-references.tsv` | `5d21c313e6d0228524995601ac242de3e01582e0a6912a52e0504563a53fa9b8` |
+
+全文取得方式に合わせて再取得した分類は、同じ4対象根の373 Markdownを対象とする。
+全宣言1,790行の内訳は判断1,741、操作34、起動時15である。
+基準版との`照合状態`は行全文一致1,755、一対一差分21、手動対応5、新規追加9で、未確定は0だった。
+宣言を含む249 sourceのSHA256を分類取得時の作業ツリー本文と照合し、不一致は0だった。
+前述の中間取得時の1,790行から、`agents-server-explore.md`冒頭を指定した宣言1行が削除された。
+その後、`agent-toolkit/skills/writing-standards/references/writing.md`に宣言1行が追加された。
+追加行の参照先は`agent-basics/skills/writing-standards/references/textlint-violations.md`の「textlint指摘への修正方針」である。
+
+4語の検索結果は順に359、815、93、349行の計1,616行である。
+参照分類1,313行の内訳は宣言経路736、実在資料の名指しなし473、同一資料5、名指し参照の短節22、常時規範18、所在参照9である。
+残りはプログラム内文言37、正式資料への移譲10、コードフェンス内3で、照合不可は0だった。
+指定節は注目箇所であり、取得済みの判定単位はファイル全文とする。
+原本の節指定列は宣言の内容を表し、取得済み状態や実機での成功を示さない。
+
+全文取得方式の分類原本のSHA256を次に示す。保存先と版は前述のprivate-notesのディレクトリとGit履歴で確認する。
+再取得は比較基準`c31bea2b6`と、保存されたroutesのsource SHAが一致する公開履歴の版を選び、前述の4語の独立検索と宣言・参照の対応付けを実行する。
+3原本の行末はLFである。次のSHA256は取得時の値で、保存の有無は上記ディレクトリのGit履歴で確認する。
+
+| 原本ファイル | 全文取得方式の取得時SHA256 |
+| --- | --- |
+| `read-delivery-20261027-routes.tsv` | `42fbc98017b58b4a2db9965ba46714e23562803c9fba8d4a6d64b95a8723b7d6` |
+| `read-delivery-20261027-search.tsv` | `40c41efeadf4e63e72b1bb901306feb4724695b0fd2571787a4a1cfcc2992cde` |
+| `read-delivery-20261027-references.tsv` | `96a36680f1a74e5cad6656e7ae059cc0084f25ffa31ab65cc3e3deec7e0bbbc5` |
+
+旧節単位方式の代表実機は作業途中のクリーン版で行い、自然入力とReadを明示した制御は別会話である。途中版のcommitは公開履歴での再取得に使わない。
+自然会話では初回Writeの後に案内が届き、その後にSkill・Read・再Writeを観測したが、180秒上限で終了し最終応答はなかった。
+basics側原因分析資料の全文Readは出力省略があり、全文の取得済み状態は観測していない。
+制御会話ではtoolkit側の原因分析記録資料のRead、PostToolUse入力と取得済み状態の対応を確認し、終了0だった。
+この観測は当時の実装に限る。後述する分割Readの是正後の制御観測とは区別する。
+旧節単位方式の代表対象は`agent-toolkit/share/read-trigger-bootstrap.md`の原因分析に関する操作と判断の2宣言である。全宣言の個別実機成功やモデル内部の利用は確認していない。
+
+旧節単位方式の同日の後続観測ではClaude Code 2.1.311の自然入力で原因分析のWrite後に資料取得を案内し、Read後の再WriteとEditを観測した。
+180秒上限で最終応答はなく、モデル内部の利用は確認できない。
+非連続の選択節を分割Readした別会話の生PostToolUse入力を旧判定へ再生すると、前半は部分範囲の末尾LF省略を拒否して、取得範囲が本文と一致した証拠を記録できず、後半だけが記録された。
+LFを補った対照でも全文座標のままでは選択節の被覆を合成できなかった。
+当時の是正では本文・metadata・主体・hashと失敗・出力省略の検査を維持し、部分範囲の正常な末尾LF省略を扱った。Readとsedの取得範囲を、指定された非連続節を順に連結した文字列上の座標へ変換した。
+
+旧節単位方式の是正後の制御会話では、Python資料の「言語スタイル」「テストコード（pytest）」「Python新構文と導入バージョン」を2回のReadで取得した。
+対象は`agent-basics/skills/writing-standards/references/python.md`だった。
+本文SHA256は`05a0ae8503778ae9db2de4bcedf5c231360604ae0b5512e10a02d927345d3e78`である。
+Readの指定は前半がoffset 14・limit 63、後半がoffset 90・limit 40だった。
+非連続の3節を順に連結した文字列上の範囲は0:5195と5195:8183だった。
+前半だけでは指定節の取得済み状態がなく、後半の取得後に同じ主体とhashの指定節の取得済み状態を確認した。
+別の制御会話で全文末尾LFが1個と2個の2検体をReadし、どちらも全文が一致した証拠を得た。
+いずれも制御入力であり、自然会話の内部利用や他のホスト版全般を保証しない。
+これらは節ごとに取得済みを判定していた旧方式の観測である。後続の全文取得への方針変更では、節指定を注目箇所として保持し、全文被覆を判定する。
+旧方式の実装版は公開履歴から再現できないため、その観測の再実行はできない。現行方式の再検証は、後述の現行3実装sourceのSHAが一致する公開版を選ぶ。`read_delivery.py`と`read_delivery_test.py`で正常・省略・失敗・誤metadata・分割取得の全文被覆を比較する。
+
+全文取得方式の静的分類は宣言1790・検索候補1616・参照候補1313を扱い、これらの集合は重複し得る。
+代表自然観測は`agent-toolkit/share/read-trigger-bootstrap.md`の原因分析の操作と判断の2宣言に対応し、原因分析資料の取得を観測した。
+代表制御観測は`agent-basics/skills/writing-standards/SKILL-delivery-5.md`のPython資料を読む宣言に対応し、同資料の分割取得を観測した。
+これら3宣言以外の個別の取得順と、検索・参照候補の個別実機は観測していない。
+全文取得方式の代表実機はClaude Code 2.1.311で、自然入力と制御入力を別会話で観測した。実装はb28807ac95b2e7b2059bb6a670f4daf1ce098f7fに未commit変更を加えた版で、次の3 sourceのSHA256で取得時版を識別する。この取得時版の公開履歴からの再現は確認できず、観測は歴史的な参考として扱う。
+
+| 実装source | SHA256 |
+| --- | --- |
+| `agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py` | `0d3d86305b9e30d63782fa5ec120ea1e290e7ee884373ab144e591f38a407f8a` |
+| `agent-toolkit/agent_toolkit/_common/read_triggers.py` | `e89e28d67bde492d15516738cc347b174dd57440450627ab19cbd23a84cd0969` |
+| `agent-toolkit/agent_toolkit/_hooks/rules_context.py` | `9b00eba032e19e2c8d3575f41fb6e91dcfcadf9fe3bf205666d98408291e6b74` |
+
+自然入力はPythonの可変デフォルト引数によるリスト共有の原因と対策を短い報告書にまとめる依頼だった。Python資料は`agent-basics/skills/writing-standards/references/python.md`である。
+自然会話ではWrite後の全文取得案内、Read、再WriteとEditを観測したが、180秒上限で終了し最終応答はなかった。
+basics側原因分析資料は前半のReadが出力省略され、後半を取得しても全文取得済みの状態は記録されなかった。
+toolkit側原因分析資料とPython資料は、それぞれ全文Readと同じ主体・hashの全文取得済みの記録を確認した。
+自然会話では他にも未取得の資料が残り、モデル内部の利用は確認できない。
+別の制御会話では、同じPython資料の1〜50行、52行以降、51行を順にReadした。
+途中の未取得範囲がある状態では全文取得済みの記録がなく、51行の取得後に全文取得済みの記録となり、会話は終了0だった。
+節だけの取得済み記録を確認した旧方式の観測は、この全文取得済みの記録の証拠に使わない。
+公開イベントのないモデル内部の判断や利用順は観測対象から除く。
+
+全文取得方式の後続自然観測もClaude Code 2.1.311で、同じPythonの不具合調査と報告書作成を依頼した。会話は終了0で最終応答を得た。Write後の案内、資料のRead、再WriteとEditを観測した。basics側原因分析資料の前半は出力が省略され、後半だけが取得範囲に記録されたため全文取得済みにはならなかった。toolkit側原因分析資料は全文取得済みとなった。未取得の資料が残り、モデル内部の判断や利用は観測できない。
+全文取得方式の後続自然観測では、Claude Code 2.1.311に`/home/aki/dotfiles/.claude/worktrees/process-wi-lane-05/agent-toolkit`の2.228.0だけを`--plugin-dir`で指定した。インストール済み`agent-basics@ak110-dotfiles` 1.4.0は`/home/aki/dotfiles/agent-basics`に登録され、そのSkillを読み込んだ。Readは`/home/aki/dotfiles/.claude/worktrees/process-wi-lane-05/agent-basics`を対象とした。当時の登録元とRead先の本文の同一性は確認していない。
+
+後続自然観測時の`read_delivery.py` SHA256は`5401948b0b85a5e35f71c36506835e46a3985944cf064f35be6dda5fb08b92d6`である。`read_triggers.py`は`e89e28d67bde492d15516738cc347b174dd57440450627ab19cbd23a84cd0969`である。`rules_context.py`は`d57dfbd19f0e01e7a3d390f0b775ca0e2e22aebd4d7b191389f1e1fbd58c0364`である。観測後に例外案内と不在資料向け案内を変更したため、後述の現行版と完全同一ではない。正常資料の案内と全文被覆は変更せず、不在分岐は公開hook入力を用いた別の試験で確認した。
+
+全文取得方式の別の制御観測では、1つのworktree内の2 pluginを明示し、許可ツールをReadとSkill、上限を120秒としてClaude Code 2.1.311で実行した。終了0・result successだった。登録は同じworktreeのagent-toolkit 2.228.0とagent-basics 1.4.0である。`agent-basics:bugfix`のSkillと`agent-basics/skills/bugfix/SKILL.md`のReadの1資料を照合した。Readは121行中121行で省略なし、本文SHA256は`301587105fd4b30d287e954ef3d263007c7787d7cf78d44c383c3cffcc10d494`だった。Skill本文とRead本文は同じworktreeの資料と一致した。制御観測の3実装sourceは後述の現行SHAと一致した。自然会話や、同名pluginが複数登録された他の環境での優先順位は、この制御結果の対象外である。
+
+現行方式の再観測では、対象worktreeのcommit OIDと未commit差分、agent-toolkitとagent-basicsのmanifestにあるversion、3実装sourceのSHA256を起動前に記録する。後述の3 SHAと実装が一致することを確認する。後続自然観測時の3 SHAは上記の値であり、再観測で選ぶ現行版とは異なる。
+自然入力で取得を案内される資料は実行時に決まる。起動前にagent-toolkitとagent-basics配下の資料ファイルの絶対パスとSHA256を記録し、実際にReadした各資料について、同じ絶対パスの事前SHAと取得時のファイルSHAを比較する。Read本文は取得範囲を同じファイルの対応箇所と比較する。事前記録に無い資料は版の一致を確認できない。
+全文取得方式の代表自然観測と後続自然観測で対象となった資料の例を次に示す。
+事前に記録する集合はこの3資料に限らず、2 plugin配下を対象とする。
+
+- `agent-basics/skills/bugfix/references/root-cause-analysis.md`
+- `agent-toolkit/skills/bugfix/references/root-cause-analysis.md`
+- `agent-basics/skills/writing-standards/references/python.md`
+
+次は対象worktreeを`/home/aki/dotfiles/.claude/worktrees/process-wi-lane-05`とする例である。
+Pythonの可変デフォルト引数の不具合を調査し、原因分析節を持つ短い報告書を新規作成するよう依頼する。出力先は取得前に存在しない作業用パスを使う。`<入力>`は依頼本文に置き換える。
+
+```sh
+timeout 180 claude -p --no-session-persistence --plugin-dir /home/aki/dotfiles/.claude/worktrees/process-wi-lane-05/agent-toolkit --plugin-dir /home/aki/dotfiles/.claude/worktrees/process-wi-lane-05/agent-basics --allowedTools Write,Read --output-format stream-json --verbose --include-hook-events '<入力>'
+```
+
+streamのplugin登録path・version、SkillのBase directory、Readのpath・本文・hashが対象worktreeと一致することを確認する。初回Write入力、PreToolUseの全文取得・見直し案内、Write成功、SkillとRead、再Write・Editと各結果をイベントの順序で確認する。PostToolUseのRead結果では本文の範囲・省略の有無と、同じ主体・資料hashに対応する取得済み状態を確認する。未取得範囲、最終応答および終了状態も記録する。公開イベントからモデル内部の利用を推論しない。
+
+現行の再検証で選ぶ3 sourceのSHA256は次のとおりである。公開後に各ファイルのSHAが一致する版を確認する。
+
+| 現行実装source | SHA256 |
+| --- | --- |
+| `agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py` | `541dfa9f284eed60737344a2c860ceab721b898fd287f77efd4c7578d9a81153` |
+| `agent-toolkit/agent_toolkit/_common/read_triggers.py` | `e89e28d67bde492d15516738cc347b174dd57440450627ab19cbd23a84cd0969` |
+| `agent-toolkit/agent_toolkit/_hooks/rules_context.py` | `50361034a30c66546ad75331ec5b9667923147d634f7f55fee22678f6bedb72c` |
 
 ## agent-toolkit/share/rules-main.claude-code.md：ユーザー確認（`AskUserQuestion`）：2026年8月31日
 
@@ -346,7 +563,7 @@ tmux内の対話のClaude Code（Opus 5.5）では、ツールで送った見出
 2026年10月1日、LinuxのGitHub CLI 2.101.0で`ak110/dotfiles`を対象に確認した。
 run `36791008397`が進行中でjob `110143643856`が`completed/success`のとき、job logs APIを`--allow-escape-sequences`付きで取得すると終了コード0で454行の全jobログを保存できた。
 保存直後もrunは`in_progress`で、同runとjobを指定した`gh run view --log-failed`は終了コード1となり、進行中のため取得できない旨を返した。
-終端済みの失敗run `36786321272`とjob `110128462391`への`gh run view --log-failed`は終了コード0で保存できた。
+終了済みの失敗run `36786321272`とjob `110128462391`への`gh run view --log-failed`は終了コード0で保存できた。
 確認したAPIの成立範囲は進行中runの完了済みjobであり、進行中jobの取得可否は未確認である。
 
 再検証では`gh version`と両コマンドのヘルプを取得する。
@@ -354,13 +571,13 @@ run `36791008397`が進行中でjob `110143643856`が`completed/success`のと�
 進行中runに完了jobがある場合はrunとjobの状態をAPIで保存する。
 `gh api repos/<OWNER>/<REPO>/actions/jobs/<job ID>/logs --allow-escape-sequences`で全jobログを取得する。
 同じ対象へ`gh run view <run ID> --repo <OWNER>/<REPO> --job <job ID> --log-failed`を実行し、出力と終了コードを比較する。
-取得後もrunが進行中であることを確認し、終端済みの失敗runとjobにも後者を適用する。
+取得後もrunが進行中であることを確認し、終了済みの失敗runとjobにも後者を適用する。
 APIは全jobログ、`--log-failed`は失敗ステップを返すため、出力件数の一致は求めない。
 進行中runが無い場合はその条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
 
 ## agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月24日
 
-2026年10月24日、LinuxのGitHub CLI 2.102.0で`ak110/dotfiles`の終端済み失敗run `39987263957`とjob `120529624126`（pytest (3.15)）を対象に確認した。
+2026年10月24日、LinuxのGitHub CLI 2.102.0で`ak110/dotfiles`の終了済み失敗run `39987263957`とjob `120529624126`（pytest (3.15)）を対象に確認した。
 job logs APIを`--allow-escape-sequences`付きで取得すると終了コード0で29773行・6090534bytesを保存でき、最長行は600188bytes、外側の時間上限による終了の表示を含んだ。
 同じrunとjobへの`gh run view --log-failed`も終了コード0・標準エラー0bytesだったが、17833行・3430008bytesで、試験の進捗44%の行で終わり、時間上限の表示を含まなかった。
 APIの原本では、その次の行が600KB前後の試験名を持つ行だった。
@@ -550,7 +767,7 @@ HEAD 2026年10月4日「fix: 不変条件のテストを通常のcommitで自動
 保持記録から解決した値を`atk watch --worktree "$worktree_path"`と
 `atk watch --file "$artifact_path"`へ個別に渡し、両方の終了コード0を確認した。
 前者は作業ツリーのdirty件数とHEAD、後者はファイルのlinesとageを返した。
-Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状態と完了通知を用いる既存契約を保つ。
+Cronの発火や委譲sessionの終了はこの観測の対象へ含めず、状態と完了通知を用いる既存契約を保つ。
 再検証は同じ公開ヘルプを取得し、その回の読み取り可能な作業ツリーと通常ファイルを保持記録から解決して、
 上記の各コマンドへ渡す。cwd、コマンド、標準出力、標準エラーと終了コードを保存し、項目と受理形式を比べる。
 
@@ -558,11 +775,11 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 
 2026年10月9日10:49～10:50 JST、Claude Code 2.1.295で、メインが`Agent`を使って背景の委譲先1件を起動した。委譲先の作業は`sleep 5; echo`を4回実行するだけとした。稼働中の`output_file`へ`stat`と`stat -L`を対にして6秒間隔で3回実行した。リンク自体はサイズ153バイト・更新時刻10:49:55.606955323で固定だった。リンク先は通常ファイルで、サイズ231295、334100、337929バイト、更新時刻10:49:58、10:50:05、10:50:13へ進んだ。
 
-観測は対象worktreeのcleanなHEAD `6c062a92ac0be19953900a48b14337992fdda7ca`で`atk run-command`を使って保存され、子終了コード0、標準エラー0バイトだった。再検証ではClaude Codeの版を記録し、同じ背景作業を`Agent`で起動する。起動結果の`output_file`へ`stat -c '%s %y %F'`と`stat -L -c '%s %y %F'`を同じ間隔で対にして実行し、リンク自体とリンク先の値を比較する。補助観測の更新は終端判定へ代用しない。
+観測は対象worktreeのcleanなHEAD `6c062a92ac0be19953900a48b14337992fdda7ca`で`atk run-command`を使って保存され、子終了コード0、標準エラー0バイトだった。再検証ではClaude Codeの版を記録し、同じ背景作業を`Agent`で起動する。起動結果の`output_file`へ`stat -c '%s %y %F'`と`stat -L -c '%s %y %F'`を同じ間隔で対にして実行し、リンク自体とリンク先の値を比較する。補助観測の更新は終了判定へ代用しない。
 
 ## agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日
 
-2026年9月21日、Codex CLI 0.155.1で確認した。`spawn_agent`は`fork_turns`で会話履歴の引継ぎ範囲を選ぶ。起動した委譲先は対象worktreeの`AGENTS.md`と`SubagentStart` hookの追加本文を別入力として受け取る。`send_message`は稼働中の主体への追加配送、`followup_task`は同じ主体の継続、`wait_agent`は終端待機、`interrupt_agent`は中断を担う。agent-toolkitのCodex hookを実起動したテストでは共通の`rules-subagent.md`が追加され、Claude Code固有の`rules-subagent.claude-code.md`は追加されない。agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書込・shell promptは持たない。
+2026年9月21日、Codex CLI 0.155.1で確認した。`spawn_agent`は`fork_turns`で会話履歴の引継ぎ範囲を選ぶ。起動した委譲先は対象worktreeの`AGENTS.md`と`SubagentStart` hookの追加本文を別入力として受け取る。`send_message`は稼働中の主体への追加配送、`followup_task`は同じ主体の継続、`wait_agent`は終了待機、`interrupt_agent`は中断を担う。agent-toolkitのCodex hookを実起動したテストでは共通の`rules-subagent.md`が追加され、Claude Code固有の`rules-subagent.claude-code.md`は追加されない。agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書込・shell promptは持たない。
 再検証では`codex --version`で対象版を記録する。`rules_context_codex.main`へ`SubagentStart`を入力するテストと、`_agents_server/launch_prompts.py`の通常・軽量promptのテストを実行する。生成したCodex hook manifestの`SubagentStart`起動コマンドも実行し、共通規範、ホスト固有規範および軽量委譲の境界を確認する。
 
 ## agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日
@@ -591,7 +808,7 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 
 ## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月3日
 
-2026年9月3日から9月4日にかけて、`agents_server`の`start`で起動した委譲先が外部コマンドの完了待ちを表明し、`status: completed`で終端した。その後、待機対象のコマンドが終了しても委譲先は再開しなかった。
+2026年9月3日から9月4日にかけて、`agents_server`の`start`で起動した委譲先が外部コマンドの完了待ちを表明し、`status: completed`で終了した。その後、待機対象のコマンドが終了しても委譲先は再開しなかった。
 
 ## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月4日
 
@@ -603,9 +820,9 @@ Claude Code公式資料「Keep Claude working toward a goal」の「Background w
 
 2026年10月9日、Claude Code 2.1.295のセッションで次の順序を観測した。一次記録はリポジトリ外のセッション記録にある。Goal check-inの後、未完了の`atk agents wait`出力を`cat`で読み、同じ出力の2回目の読取がblockされて終了コード2となった。同じ応答で発行した`agents_server`の`list`は遮断の後に活動情報を返した。遮断後に新しく照会した因果にはしない。
 
-再検証は同じ公式節を取得する。hookの判定は`background_task_outputs_test.py`で、明示背景化・実行上限・手動移行の未完了出力を同一sessionで2回読む入力、完了通知を加えた入力、別パスを読む入力を比較する。2回とも警告でblockが空、完了後は警告も空であることを確認する。Goalの自然発生を待たず、進捗の照会を終端結果へ代用しない。
+再検証は同じ公式節を取得する。hookの判定は`background_task_outputs_test.py`で、明示背景化・実行上限・手動移行の未完了出力を同一sessionで2回読む入力、完了通知を加えた入力、別パスを読む入力を比較する。2回とも警告でblockが空、完了後は警告も空であることを確認する。Goalの自然発生を待たず、進捗の照会を終了時の結果へ代用しない。
 
-## agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終端」：所有資源の回収：2026年9月3日
+## agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終了」：所有資源の回収：2026年9月3日
 
 2026年9月3日にgit version 2.43.0で、upstreamを設定した専用branchをローカルの`develop`へ統合した直後に`branch -d`が未統合として拒否されることを確認した。再検証は`git branch -vv`で追跡先を確認して同じ状態の`branch -d`の終了コードを観測する。
 
@@ -972,7 +1189,7 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 ## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日
 
 2026年10月19日、Codex CLI 0.163.0で、戻り値の一部だけを表示すると識別子を失い、待機を重ねた。戻り値全体を表示した対照では、`write_stdin`で1つの待機を回収した。今回の文書追随では保存済みの観測記録を比較しており、実機では再現していない。
-再検証では、長時間コマンドのyield結果が`session_id`を持ち`exit_code`を持たないこと、`text(r)`で両欄と本文が保持されること、同じ識別子で終端を回収できることを比べる。一次記録はリポジトリ外の作業記録にある。
+再検証では、長時間コマンドのyield結果が`session_id`を持ち`exit_code`を持たないこと、`text(r)`で両欄と本文が保持されること、同じ識別子で終了を回収できることを比べる。一次記録はリポジトリ外の作業記録にある。
 
 ## docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日
 
@@ -1009,16 +1226,16 @@ ClaudeではJSの設定説明、Codexではfork_turnsのヘルプ文を含む全
 再検証は実体を同じ解決形で取得し、上記の語をdotfiles-developmentの一致行数と文脈取得の各コマンドへ渡す。
 ホスト版、検索ツール版、ロケール、所要時間と一致行数を保持し、文字列表より後ろにある文脈も使って判断する。
 
-## completion-report：最終報告送達後のターン終端：2026年10月9日
+## completion-report：最終報告送達後のターン終了：2026年10月9日
 
 出所はリポジトリ外に保存した対照の記録である。本記録の作成時にモデルは再実行していない。Claude Codeメインがモデル`claude-opus-5-5`へ、同じ短い最終報告の送達入力と、送達後の地の文を省略記号だけで閉じる指示を加えた入力を各3回渡した。起動形は`claude -p --model claude-opus-5-5 --allowedTools mcp__agent-toolkit__send_to_user --output-format json`で、各JSONの`result`（送達後の最終地の文）を比較した。
 
 | 入力 | 追加説明 | 省略記号 | 終了状態 |
 | --- | --- | --- | --- |
-| 終端の具体化なし、3回 | 1回 | 2回 | 全件success、num_turns=2 |
-| 終端の具体化あり、3回 | 0回 | 3回 | 全件success、num_turns=2 |
+| 終了の具体化なし、3回 | 1回 | 2回 | 全件success、num_turns=2 |
+| 終了の具体化あり、3回 | 0回 | 3回 | 全件success、num_turns=2 |
 
-再検証は同じ報告本文を固定し、後段の終端指示の有無だけを変えて上記起動形で各群を実行し、JSONのresult・success・num_turnsを保存する。モデルとホスト版も取得時に記録する。これは具体化が作用した限定条件の観測であり、元の長い文脈の内的判断、一般発生率、将来の出力保証を示さない。元事象のセッション記録（リポジトリ外）では、固定文付きの送達、表示の成功、追加の要約がこの順に並び、工程10の追加作業を限定する条文は同じ記録の送達より前に読み込まれていた。条文の不在を原因とはしない。
+再検証は同じ報告本文を固定し、後段の終了指示の有無だけを変えて上記起動形で各群を実行し、JSONのresult・success・num_turnsを保存する。モデルとホスト版も取得時に記録する。これは具体化が作用した限定条件の観測であり、元の長い文脈の内的判断、一般発生率、将来の出力保証を示さない。元事象のセッション記録（リポジトリ外）では、固定文付きの送達、表示の成功、追加の要約がこの順に並び、工程10の追加作業を限定する条文は同じ記録の送達より前に読み込まれていた。条文の不在を原因とはしない。
 
 ## dotfiles-development：Git動作テストの状態準備：2026年10月9日
 
@@ -1134,7 +1351,16 @@ atk run-script session-review-evidence -- --claude-session-id '<対象session ID
 
 ## agent-basics/skills/writing-standards/references/dependency-management.md：Python対応版の追加：2026年10月10日
 
-2026年10月10日の入力WIが保持する観測では、[pytilpackのCI run 38024857168・job 114133431911](https://github.com/ak110/pytilpack/actions/runs/38024857168/job/114133431911)が依存同期の終了1を記録した。停止した条件はcommit `1de178d2e7fb7e7cbf12135db690ae4a4c31b797`、CPython 3.15.0rc3、pydantic-core 2.46.5のsdistビルドとリンカー`cc`不在である。使用イメージは`ghcr.io/ak110/pyfltr`のdigest `sha256:224003f281050887c053eb24f14137970df5225b1b2c99af61b960fab43d8103`である。PyYAML 6.0.3のビルドは成功しており、ビルド発生だけを失敗と判定できない。同入力の更新commit 2026年10月10日「fix: 3.15用wheelのあるpydantic-coreへ依存を更新し、CIの3.15でソースビルドが走らないようにする」、`80d4be7`ではpydantic-core 2.50.0にcp315 wheelがある。この過去のCIの観測は入力WIに由来し、本レーンのローカル成功とは区別する。
+2026年10月10日の入力WIが保持する観測では、[pytilpackのCI run 38024857168・job 114133431911](https://github.com/ak110/pytilpack/actions/runs/38024857168/job/114133431911)が依存同期の終了1を記録した。
+停止した条件はcommit `1de178d2e7fb7e7cbf12135db690ae4a4c31b797`、CPython 3.15.0rc3、pydantic-core 2.46.5のsdistビルドとリンカー`cc`不在である。
+使用イメージは`ghcr.io/ak110/pyfltr`のdigest `sha256:224003f281050887c053eb24f14137970df5225b1b2c99af61b960fab43d8103`である。
+PyYAML 6.0.3のビルドは成功しており、ビルド発生だけを失敗と判定できない。
+同入力の更新commit `80d4be7`は2026年10月10日の以下の件名を持つ。
+
+> fix: 3.15用wheelのあるpydantic-coreへ依存を更新し、CIの3.15でソースビルドが走らないようにする
+
+同commitではpydantic-core 2.50.0にcp315 wheelがある。
+この過去のCIの観測は入力WIに由来し、本レーンのローカル成功とは区別する。
 
 [uvのビルド失敗の公式説明](https://docs.astral.sh/uv/reference/troubleshooting/build-failures/#why-does-uv-build-a-package)では、導入環境に合うwheelが無ければsdistをビルドする。[CIキャッシュの説明](https://docs.astral.sh/uv/concepts/cache/#caching-in-continuous-integration)では、ソースからビルドしたwheelもキャッシュする。ローカルでの成功は、別のCI環境のビルド用ツールとキャッシュの成立を保証しない。
 

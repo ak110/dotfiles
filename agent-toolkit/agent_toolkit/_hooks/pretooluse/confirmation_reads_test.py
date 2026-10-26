@@ -1,4 +1,4 @@
-"""agent-toolkit/agent_toolkit/_hooks/pretooluse/confirmation_reads.py のテスト。
+"""確認操作に伴う資料取得案内と取得観測のテスト。
 
 PreToolUseの統合フックをsubprocessで起動し、transcriptの読取の記録に応じた警告の有無を検証する。
 transcriptのエントリの形は、Claude Code 2.1.291の`~/.claude/projects`配下の記録（`tool_use`ブロックを持つ
@@ -17,7 +17,6 @@ import pytest
 from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 
 _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
-_SKILL = _SKILL_REFERENCES.parent / "SKILL.md"
 _APPROVAL = _SKILL_REFERENCES / "approval-scope.md"
 _CHOICE = _SKILL_REFERENCES / "choice-construction.md"
 _WARNING = "操作前に全文読む資料が未取得"
@@ -53,6 +52,23 @@ def _successful_read(path: pathlib.Path) -> list[dict]:
     return [_read(path), _result(f"read-{path.name}", content=path.read_text(encoding="utf-8"))]
 
 
+def _successful_skill() -> list[dict]:
+    call = {
+        "type": "assistant",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "skill",
+                    "name": "Skill",
+                    "input": {"skill": "agent-toolkit:user-confirmation-and-report"},
+                }
+            ]
+        },
+    }
+    return [call, _result("skill", content="スキルの起動に成功した")]
+
+
 def _successful_bash(command: str) -> list[dict]:
     arguments = shlex.split(command)
     base = _SKILL_REFERENCES
@@ -77,7 +93,7 @@ _COMPACT = {"type": "system", "subtype": "compact_boundary"}
 def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> dict:
     transcript = tmp_path / "transcript.jsonl"
     # 比較対象の2資料とは独立に、共有の読込方法を含む親スキル本文を圧縮後にも取得する。
-    entries = [*entries, *_successful_read(_SKILL)]
+    entries = [*entries, *_successful_skill()]
     transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
     return {
         "tool_name": "AskUserQuestion",
@@ -94,7 +110,7 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
     [
         pytest.param([], [_APPROVAL, _CHOICE], id="both-unread"),
         pytest.param(_successful_read(_CHOICE), [_APPROVAL], id="approval-unread"),
-        pytest.param(_successful_bash(f"cat {_APPROVAL}"), [_CHOICE], id="choice-unread"),
+        pytest.param(_successful_read(_APPROVAL), [_CHOICE], id="choice-unread"),
         pytest.param(
             [*_successful_read(_APPROVAL), *_successful_read(_CHOICE), _COMPACT],
             [_APPROVAL, _CHOICE],
@@ -146,7 +162,8 @@ def test_unread_reference_warns_without_blocking(
     ],
 )
 def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]) -> None:
-    result = _run(_payload(tmp_path, entries))
+    codex = any(entry.get("message", {}).get("content", [{}])[0].get("name") == "Bash" for entry in entries)
+    result = _run(_payload(tmp_path, entries, **({"turn_id": "turn"} if codex else {})))
     assert result.returncode == 0
     assert _WARNING not in _additional_context(result)
 

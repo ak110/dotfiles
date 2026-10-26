@@ -106,7 +106,7 @@ class OpenCodeManager(CliTurnManager):
         return False
 
     def finish_process(self, session: SessionState, returncode: int | None, stderr: str, finalized: bool) -> None:
-        """errorイベント・終了コードと最終本文からturnを終端させる。"""
+        """errorイベント・終了コードと最終本文からturnを終了させる。"""
         if finalized:
             return
         if returncode != 0 or not session.agent_message.strip():

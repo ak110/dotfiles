@@ -2,7 +2,7 @@
 
 初回選定を受け取ったレーン担当は、まず選定結果の各項目に記載された再開位置を確認する。そして、`再開位置`が指定されていないAWI群に対して`agent-toolkit:plan-mode`「計画ファイルの作成要否」を適用する。1件でも作成条件に該当する場合は、それらを1つの計画にまとめて起草する（計画を分割する条件は「計画の起草」の手順4を参照）。すでに`再開位置`を持つAWIは新規計画には含めず、「再開」の手順に従って作業を継続する。
 
-対象リポジトリのバージョン規約により更新が必要な場合は、レーン数にかかわらずバージョン更新の種別（bump種別）とその根拠を計画に記録する。同一実行内の変更がより上位の更新区分に該当する場合は、その上位区分を選択する。実際のバージョン更新作業は公開工程の終端担当が行う。
+対象リポジトリのバージョン規約により更新が必要な場合は、レーン数にかかわらずバージョン更新の種別（bump種別）とその根拠を計画に記録する。同一実行内の変更がより上位の更新区分に該当する場合は、その上位区分を選択する。実際のバージョン更新作業は公開工程の公開担当が行う。
 
 入力情報は、pick-wi-checkが検証・保存した完成版の選定YAMLとレーン識別子から取得する（メインエージェントの生成入力、候補JSONL、定型欄は委譲プロンプトへ転記されない）。選定時の分類と要求の採否は独立した判断として扱う。鮮度、省略値、担当モデルに不一致がある場合は、同一担当の引き継ぎ記録を通じてメインエージェントへ報告する。準備済みリソースの所有権登録は`atk lane create`が保持するため、レーン担当はカレントディレクトリのworktreeに対してのみ書き込みを行う。統合完了後もリソースは回収せず、同一スレッドで追加指示を受け付ける。
 
@@ -15,6 +15,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/SKILL.md#「計画ファイルの作成要否」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
+| 旧形式WIの節を現行の責務へ対応付ける前 | `../../wi-standards/references/awi-body.md`の冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「恒久化・リファクタリング」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「恒久化・リファクタリング」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/reviewer.md#「初回レビュー」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「初回レビュー」` |
@@ -26,7 +27,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-structure-check.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md#「延期adoptと反映後の観測」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「延期adoptと反映後の観測」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/lane-integration.subagent.md#「計画最終化」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「計画最終化」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「採否の確定と終端区分」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「採否の確定と終端区分」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「採否の確定と終了区分」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「採否の確定と終了区分」` |
 
 ## 作成要否と計画なしの準備
 
@@ -44,7 +45,7 @@ AWI: <AWIファイル名のASCIIカンマ区切り>
 
 1. `agent-toolkit:plan-mode`を起動して同スキルの読込表の資料を読み、AWI、プロジェクト規範、対象実装、既存テスト、生成・配布手段、類似実装を調査する。
    - 対象実装を読む前に、要求と公開契約から比較対象とする最も近い既存実装を選ぶ。境界の候補は、入力値、時間経過、操作順序、保持状態、反復、権限や環境の差異などの軸から選定する。
-   - 調査後は、採用案の前提を客観的に評価する観点から、変更箇所が責務を負う必要性、既存機構への統合、上流ツールや共有設定への移管、機構の削除や簡素化を比較検討して計画へ反映する。AWIの`## 実現性`に結論が示されている観点については、記述との明白な食い違いが観測されない限り再度の比較検討は行わない。「設計品質の劣化確認」（`agent-basics:writing-standards/references/design-heuristics.md`）は常に実施する。評価条件は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「恒久化・リファクタリング」に準拠する。不具合対策においては、`agent-toolkit:review-standards`の`references/reviewer.md`「初回レビュー」の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
+   - 調査後は、採用案の前提を客観的に評価する観点から、変更箇所が責務を負う必要性、既存機構への統合、上流ツールや共有設定への移管、機構の削除や簡素化を比較検討して計画へ反映する。AWI本文の`## 調査結果と判断根拠`（旧形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従う）に結論が示されている観点については、記述との明白な食い違いが観測されない限り再度の比較検討は行わない。「設計品質の劣化確認」（`agent-basics:writing-standards/references/design-heuristics.md`）は常に実施する。評価条件は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「恒久化・リファクタリング」に準拠する。不具合対策においては、`agent-toolkit:review-standards`の`references/reviewer.md`「初回レビュー」の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
    - `選定`の各項目における`鮮度`を計画の`## 変更履歴`へ記録する。`鮮度`が`notice`であることのみを理由として作業を中断することは避け、現行内容との不一致、既存実装による充足済み、巻き戻しの危険のいずれかが確認された項目に限定して関連履歴を調査し、確認条件、調査した履歴、および採否への影響を同一記録に残す。
    - レーン担当は、レーン数にかかわらず自身のレーン内の作業分担を`agent-toolkit:delegation`の`references/routing.md`「要否判定」「委譲単位の確定」に基づいて検討する。自身が直接実施する単位と委譲先を起動して委ねる単位を、その理由とともに`## 実施内容`（計画なしの場合は引き継ぎ記録）へ記録する。計画の起草はレーン担当自身が行う。内部担当へ計画起草や設計判断を委ねる運用は、明らかに独立した複数タスクを扱う場合に限る。分担の記載には、内容が確定した書き込み作業の単位ごとに、委譲先の工程または自ら行う理由を明記する（工程の区分は同スキルの`references/runtime-routing.md`「工程別モデル設定」の工程分担の段落を参照）。
    - 多数の対象へ同一作業を適用する要求では、`plan-file-standards.md`「実施内容」の実施方式も比較検討し、採用した方式と理由を記録する。
@@ -83,7 +84,7 @@ AWI: <AWIファイル名のASCIIカンマ区切り>
 1. AWI本文末尾の`## 反映後の観測の再開記録`から、`実装commit`、`残る完成条件`、`観測手段`（起動条件と根拠の所在を含む）、および`計画`の値を確認する。`~/.claude/plans`に該当の計画が存在しない場合は、`atk plans checkout <private-notes/plans/からの相対パス>`によって取得する。起動条件が不足している場合や変化が認められる場合は、`finish-session.md`「延期adoptと反映後の観測」に従って実際の実装や設定から情報を補い、実行可能性を確定させてから認可と操作内容を判断する。
 2. 残りの完成条件を、記録された手順に従って新規プロセスから観測し、その結果と報告時点からの差分を進捗ログ（`計画`が`計画なし`の場合は引き継ぎ記録）へ追記する。引き継ぎ記録には、観測のみの再開であること、取得した計画のパス、元の専用worktreeの回収状況も記録する。`計画なし`の項目については、再開記録の`実装commit`を検収済みの実装として引き継ぐ。取得した計画は`atk plans commit`による保存は行わずに`~/.claude/plans`に保持し、保存は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「計画最終化」の段階で一度だけ行う。
 3. 統合区分を`マージなし`に設定して「計画検査完了の通知」を送信する（計画なしの場合は`計画ファイル: なし`とする）。追加された処理対象WIの工程が残っている場合はそれを継続し、全計画の実装要否が確定した段階でメインエージェントからの統合指示を待つ。
-4. 観測の結果が完成条件を満たさなかった場合でも、再実装は行わずに`マージなし`として扱う。満たせなかった完成条件、観測時の操作と結果、観測ログの保存先を進捗ログ（計画なしの場合は引き継ぎ記録）および返却メッセージに記載する。終端区分は`終端しない`に設定し、`agent-toolkit:process-wi`の`references/run-lanes.md`「採否の確定と終端区分」に従う。
+4. 観測の結果が完成条件を満たさなかった場合でも、再実装は行わずに`マージなし`として扱う。満たせなかった完成条件、観測時の操作と結果、観測ログの保存先を進捗ログ（計画なしの場合は引き継ぎ記録）および返却メッセージに記載する。終了区分は`終了しない`に設定し、`agent-toolkit:process-wi`の`references/run-lanes.md`「採否の確定と終了区分」に従う。
 5. 完成条件を直接観測できない場合は、不足している反映状態と観測手段を「続行できない理由」として報告する。残存プロセスや環境状態が前提条件を阻害している場合は、それらの生成元、起動元、起動契機を実態（プロセスの親子関係、起動時刻、実行ログ、実装内容など）から調査し、未確定の事項と併せて記載する。OS上の実行ユーザー情報だけではエージェント、常駐プロセス、人間のユーザーを判別できないため、ユーザー名のみを生成元の根拠としない。
 
 ## 計画検査完了の通知

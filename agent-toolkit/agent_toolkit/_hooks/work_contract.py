@@ -27,5 +27,5 @@ def notice(session_id: str) -> str | None:
         return None
     return (
         f"現行の作業契約: {path}\n"
-        "記録と今回の原入力を読み、share/work-contract.mdに従って現在の目的・要件へ整理してから変更・追送・完了報告へ進む。"
+        "記録と今回の原入力を読み、share/work-contract.mdに従って現在の目的・要件へ整理してから変更・追送・完了報告へ進め。"
     )

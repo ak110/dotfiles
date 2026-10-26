@@ -449,7 +449,7 @@ def test_stats_omits_subagent_events_without_subagents_directory(tmp_path: pathl
 
 
 def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
-    """起動ツールの構造化終端結果からthreadIdを収集し、引用と既存session操作は除外する。
+    """起動ツールの構造化終了時の結果からthreadIdを収集し、引用と既存session操作は除外する。
 
     `mcpMeta.structuredContent`・JSON文字列型`toolUseResult`は起動`tool_result`へ対応付け、
     同一threadIdへ重複排除する。タスク通知の`<result>`要素だけで到達するthreadIdも収集する。
@@ -557,7 +557,7 @@ def test_stats_resolves_claude_session_from_codex_rollout_tool_result(
     monkeypatch,
     capsys,
 ) -> None:
-    """Codex rolloutのcustom tool call終端結果からClaude sessionを解決し、エンジン別に集計する。"""
+    """Codex rolloutのcustom tool call終了時の結果からClaude sessionを解決し、エンジン別に集計する。"""
     session_id = "claude-session-11111111"
     claude_home = tmp_path / "home"
     claude_transcript = claude_home / ".claude" / "projects" / "repo" / f"{session_id}.jsonl"

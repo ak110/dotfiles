@@ -273,7 +273,7 @@ async def test_start_rejects_duplicate_session_id(existing: str, tmp_path: pathl
 async def test_retention_expiry_releases_backend_once_without_tool_call(
     engine: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """終端の保持期限到達は照会なしで解放を呼び、後からstopしても重ねて解放しない。"""
+    """終了の保持期限到達は照会なしで解放を呼び、後からstopしても重ねて解放しない。"""
     async with _manager_with_fake(engine) as (manager, backend):
         released = asyncio.Event()
         original_release = backend.release_session
@@ -689,9 +689,9 @@ async def test_start_advances_candidate_when_engine_reports_unavailable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """利用上限で終端した候補を除外し、別engineの次候補で起動する。
+    """利用上限で終了した候補を除外し、別engineの次候補で起動する。
 
-    起動応答の前に終端した場合と、応答の後に終端した場合の双方を対象とする。
+    起動応答の前に終了した場合と、応答の後に終了した場合の双方を対象とする。
     """
     candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
@@ -801,7 +801,7 @@ async def test_agy_init_failure_reports_reason_when_candidates_exhausted(
 async def test_agy_exhaustion_does_not_return_abandoned_session(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """失敗による終端の後にinit前の例外が続いた場合は、放棄済みのsessionを返さない。"""
+    """失敗による終了の後にinit前の例外が続いた場合は、放棄済みのsessionを返さない。"""
     async with server_manager.AgentsServerManager() as manager:
         agy = UnavailableStartBackend(manager.sessions, "agy", {"message": "first failed"})
         original_start = agy.start
@@ -869,7 +869,7 @@ async def test_start_returns_failed_session_when_every_candidate_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """全候補が利用上限で終端した場合だけ、最後の候補の失敗を返す。"""
+    """全候補が利用上限で終了した場合だけ、最後の候補の失敗を返す。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with server_manager.AgentsServerManager() as manager:
@@ -1013,7 +1013,7 @@ async def test_start_returns_running_once_model_output_is_observed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終端しないsessionでも、最初のモデル出力を観測した時点で上限を待たずに実行中として返す。"""
+    """終了しないsessionでも、最初のモデル出力を観測した時点で上限を待たずに実行中として返す。"""
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "only", "high")]
     )
@@ -1177,7 +1177,7 @@ async def test_start_keeps_failure_that_does_not_depend_on_the_candidate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """engineの可用性以外で終端した候補では次候補へ進まない。"""
+    """engineの可用性以外で終了した候補では次候補へ進まない。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with server_manager.AgentsServerManager() as manager:
@@ -1200,7 +1200,7 @@ async def test_start_advances_candidate_when_codex_rejects_model(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """接続先がモデルIDを拒否して起動時の待機内に終端したCodex候補を除外し、次候補で起動する。"""
+    """接続先がモデルIDを拒否して起動時の待機内に終了したCodex候補を除外し、次候補で起動する。"""
     candidates = [("codex", "gpt-6.1-sol", "medium"), ("claude", "opus[1m]", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with _manager_with_fake("claude") as (manager, claude):
@@ -1228,7 +1228,7 @@ async def test_late_codex_model_rejection_is_carried_over_to_next_start(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """起動時の待機の後にモデルIDの拒否で終端した候補を除外記録へ残し、呼び直した`start`で次候補へ進む。"""
+    """起動時の待機の後にモデルIDの拒否で終了した候補を除外記録へ残し、呼び直した`start`で次候補へ進む。"""
     candidates = [("codex", "gpt-6.1-sol", "medium"), ("codex", "gpt-6-sol", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
@@ -1291,7 +1291,7 @@ async def test_start_advances_candidate_when_claude_reports_unavailable_status(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Claudeが可用性由来のHTTPステータスで終端した候補を除外し、次候補で起動する。"""
+    """Claudeが可用性由来のHTTPステータスで終了した候補を除外し、次候補で起動する。"""
     candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with _manager_with_fake("codex") as (manager, codex):
@@ -1319,7 +1319,7 @@ async def test_start_keeps_claude_failure_that_does_not_depend_on_the_candidate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Claudeが可用性由来でないHTTPステータスで終端した場合と、状態を持たない場合は次候補へ進まない。"""
+    """Claudeが可用性由来でないHTTPステータスで終了した場合と、状態を持たない場合は次候補へ進まない。"""
     candidates = [("claude", "first", "high"), ("claude", "second", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with server_manager.AgentsServerManager() as manager:
@@ -1527,7 +1527,7 @@ async def test_kill_includes_notices_only_when_available(
 
 @pytest.mark.asyncio
 async def test_kill_waits_for_terminal_result_and_preserves_request_marker(tmp_path: pathlib.Path) -> None:
-    """正のtimeoutを指定したkillは終端結果と要求済み状態を返す。"""
+    """正のtimeoutを指定したkillは終了時の結果と要求済み状態を返す。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
         manager.sessions[session.session_id] = session
@@ -1548,7 +1548,7 @@ async def test_kill_waits_for_terminal_result_and_preserves_request_marker(tmp_p
 
 @pytest.mark.asyncio
 async def test_kill_terminal_session_is_idempotent_without_backend_request(tmp_path: pathlib.Path) -> None:
-    """終端済みsessionへのkillは要求を送らず結果を返す。"""
+    """終了済みsessionへのkillは要求を送らず結果を返す。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
         _complete(session, message="既存結果")
@@ -1706,7 +1706,7 @@ async def test_send_message_timeout_covers_turn_control_lock(tmp_path: pathlib.P
 async def test_kill_timeout_after_delivery_distinguishes_terminal_wait(
     tmp_path: pathlib.Path,
 ) -> None:
-    """中断要求の配送後に終端待ちが上限を超えた場合を、未配送と区別する。"""
+    """中断要求の配送後に終了待ちが上限を超えた場合を、未配送と区別する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
         manager.sessions[session.session_id] = session
@@ -1765,7 +1765,7 @@ async def test_kill_timeout_before_codex_turn_id_reports_not_delivered(tmp_path:
 
 @pytest.mark.asyncio
 async def test_send_message_rejects_active_interrupt_without_backend_call(tmp_path: pathlib.Path) -> None:
-    """中断要求が有効な未終端turnへ継続入力を送らない。"""
+    """中断要求が有効な未終了turnへ継続入力を送らない。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
         session.interrupt_requested = True
@@ -1787,7 +1787,7 @@ async def test_send_message_terminal_session_returns_previous_result_without_int
     delivery: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終端後の継続入力は回収済みフラグを要求せず、直前本文を退避する。"""
+    """終了後の継続入力は回収済みフラグを要求せず、直前本文を退避する。"""
     async with _manager_with_fake(engine, delivery) as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine=engine)
         _complete(session, message="直前の結果")
@@ -1949,7 +1949,7 @@ async def test_send_message_keeps_previous_result_for_unwaited_second_turn(
 
 @pytest.mark.asyncio
 async def test_send_message_keeps_previous_result_after_wait_without_result(tmp_path: pathlib.Path) -> None:
-    """結果本文を含まないwaitは後続の終端結果を回収済みにしない。"""
+    """結果本文を含まないwaitは後続の終了時の結果を回収済みにしない。"""
     async with _manager_with_fake("codex") as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
         manager.sessions[session.session_id] = session
@@ -2037,7 +2037,7 @@ async def test_send_message_timeout_reports_undetermined_delivery(
 
 @pytest.mark.asyncio
 async def test_kill_stop_discards_only_after_terminal_result(tmp_path: pathlib.Path) -> None:
-    """stop=trueのkillがrunningを返す間はsessionを保持し、終端済みの応答を返した後だけ破棄する。"""
+    """stop=trueのkillがrunningを返す間はsessionを保持し、終了済みの応答を返した後だけ破棄する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("kill-stop", str(tmp_path), engine="codex")
         session.turn_id = "turn"

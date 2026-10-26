@@ -131,7 +131,7 @@ def test_action_detail_collapses_whitespace_and_truncates_at_limit() -> None:
 
 @pytest.mark.asyncio
 async def test_terminal_transition_logs_safe_fields_once(caplog: pytest.LogCaptureFixture) -> None:
-    """turn終端を一度だけ記録し、結果本文を含めない。"""
+    """turn終了を一度だけ記録し、結果本文を含めない。"""
     session = state.SessionState("session-1", "/tmp")
     session.status = "completed"
     session.agent_message = "秘密の結果本文"

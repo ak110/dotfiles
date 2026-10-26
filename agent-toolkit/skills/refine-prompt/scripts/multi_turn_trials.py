@@ -71,7 +71,7 @@ def _reference(turns: list[dict[str, Any]], reference: dict[str, Any], role: str
 def _dialogue(data: dict[str, Any], trial: dict[str, Any], condition: str) -> tuple[list[str], list[dict[str, Any]]]:
     turns = data.get("turns")
     if not isinstance(turns, list) or not turns:
-        raise ValueError("全対話のturnsが必要です。初期依頼から終端まで保存してください")
+        raise ValueError("全対話のturnsが必要です。初期依頼から終了まで保存してください")
     for number, turn in enumerate(turns):
         if (
             not isinstance(turn, dict)
@@ -101,11 +101,11 @@ def _dialogue(data: dict[str, Any], trial: dict[str, Any], condition: str) -> tu
     if termination == "error":
         errors.append("起動または実行障害")
     elif termination not in ("submitted", "turn-limit"):
-        raise ValueError("terminationはsubmitted・turn-limit・errorです。終端を観測して記録してください")
+        raise ValueError("terminationはsubmitted・turn-limit・errorです。終了を観測して記録してください")
     elif (termination == "turn-limit" and rounds != trial["max_rounds"]) or rounds > trial["max_rounds"]:
         errors.append("固定した往復数と終了条件の違反")
     if termination != "error" and turns[-1]["role"] != "candidate":
-        errors.append("評価対象の応答の終端が未観測")
+        errors.append("評価対象の最終応答が未観測。候補の最終応答まで記録し、同じ評価をやり直してください")
     requirements = {item["id"]: item for item in trial["requirements"]}
     disclosures = data.get("disclosures")
     if not isinstance(disclosures, list):

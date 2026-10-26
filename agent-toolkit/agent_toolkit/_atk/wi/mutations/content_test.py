@@ -130,7 +130,7 @@ def test_return_rejected_entry_to_inbox_strips_terminal_result(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """不採用項目をinboxへ戻す際に終端結果節だけを除去する。"""
+    """不採用項目をinboxへ戻す際に終了時の結果節だけを除去する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     _disable_transition_git(monkeypatch)
@@ -1309,7 +1309,7 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """回答マーカー重複時も終端側を基準に質問だけを更新する。"""
+        """回答マーカー重複時も終了側を基準に質問だけを更新する。"""
         notes = _setup_notes(tmp_path)
         path = _write_uwi_entry(
             notes,
@@ -1767,7 +1767,7 @@ def test_editor_failure_keeps_entry_and_names_retry_command(
 
 
 def test_terminal_state_edit_rejection_guides_to_accepted_hold_form(tmp_path: pathlib.Path) -> None:
-    """終端した項目の編集拒否は、`atk wi hold`が受理する`--state`の値付きの形を案内する。"""
+    """終了した項目の編集拒否は、`atk wi hold`が受理する`--state`の値付きの形を案内する。"""
     with pytest.raises(_wi_web_input.WebInputError) as raised:
         mutation_content.edit_entry_content(tmp_path, state="adopted", filename="20260930-000000-001.md", content="本文")
 

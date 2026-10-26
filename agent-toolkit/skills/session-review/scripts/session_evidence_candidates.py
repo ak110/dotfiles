@@ -133,7 +133,7 @@ _DELEGATE_COMPLETION_VALUES = frozenset(
         "対応完了",
         "対応完了（再レビュー不要）",
         "統合完了",
-        "終端完了",
+        "公開完了",
     }
 )
 """`<役割名>.subagent.md`が成功の返却値として定める固定の先頭行。各値が`agent-toolkit/share/`の`<役割名>.subagent.md`に現れることをテストが確かめる。"""
@@ -265,7 +265,7 @@ def _processed_wi_filenames(collected: list[_CollectedRecord]) -> set[str]:
 def _wi_entry(text: str, section: str) -> str:
     """WIの指定した節から、回答欄の注記行（HTMLコメントだけの行）を除いた記入を返す。
 
-    `## ユーザーコメント`は処理結果の節が後ろに続く終端済みの項目もあるため、節の位置を問わずに読む。
+    `## ユーザーコメント`は処理結果の節が後ろに続く終了済みの項目もあるため、節の位置を問わずに読む。
     """
     lines = [
         line

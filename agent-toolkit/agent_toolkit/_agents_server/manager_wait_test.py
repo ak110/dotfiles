@@ -40,7 +40,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.asyncio
 async def test_wait_does_not_redeliver_only_terminal_result_at_timeout(tmp_path: pathlib.Path) -> None:
-    """配送済みの終端結果だけが残る状態で待機上限に達した応答は、本文を含まない`running`を返す。"""
+    """配送済みの終了時の結果だけが残る状態で待機上限に達した応答は、本文を含まない`running`を返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
         _complete(session, message="最終結果", error={"message": "補足"})
@@ -83,7 +83,7 @@ async def test_wait_returns_first_available_session_and_retains_others(tmp_path:
 
 @pytest.mark.asyncio
 async def test_wait_delivers_each_terminal_result_to_single_waiter(tmp_path: pathlib.Path) -> None:
-    """同時に待つ2件へ同じ終端結果を重複配送しない。"""
+    """同時に待つ2件へ同じ終了時の結果を重複配送しない。"""
     async with _manager_with_fake("codex") as (manager, _):
         sessions = [state.SessionState(f"thread-{index}", str(tmp_path), engine="codex") for index in range(2)]
         for session in sessions:
@@ -97,7 +97,7 @@ async def test_wait_delivers_each_terminal_result_to_single_waiter(tmp_path: pat
 
 @pytest.mark.asyncio
 async def test_wait_does_not_redeliver_selected_terminal_result(tmp_path: pathlib.Path) -> None:
-    """配送済みの終端結果を避け、残る未終端sessionの状態を返す。"""
+    """配送済みの終了時の結果を避け、残る未終了sessionの状態を返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         completed = state.SessionState("thread-completed", str(tmp_path), engine="codex")
         running = state.SessionState("thread-running", str(tmp_path), engine="codex")
@@ -116,7 +116,7 @@ async def test_wait_does_not_redeliver_selected_terminal_result(tmp_path: pathli
 
 @pytest.mark.asyncio
 async def test_wait_does_not_return_unfinished_result(tmp_path: pathlib.Path) -> None:
-    """未終端sessionの待機上限応答は本文なしの現状態を返す。"""
+    """未終了sessionの待機上限応答は本文なしの現状態を返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
         manager.sessions[session.session_id] = session
@@ -162,7 +162,7 @@ async def test_wait_returns_running_notification_once(tmp_path: pathlib.Path) ->
 
 @pytest.mark.asyncio
 async def test_wait_returns_terminal_result_with_pending_notification(tmp_path: pathlib.Path) -> None:
-    """終端時に残る通知を結果本文と同じ応答へ載せる。"""
+    """終了時に残る通知を結果本文と同じ応答へ載せる。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -173,13 +173,13 @@ async def test_wait_returns_terminal_result_with_pending_notification(tmp_path: 
         _complete(session, message="最終結果")
         manager.sessions[session.session_id] = session
         notices = shared_layout.notices_directory("root-session", tmp_path)
-        _write_notice(notices, session.session_id, 1, "2026-09-06T00:00:01+00:00", "終端前の通知")
+        _write_notice(notices, session.session_id, 1, "2026-09-06T00:00:01+00:00", "終了前の通知")
 
         response = await manager.wait()
 
         assert response["status"] == "completed"
         assert response["agent_message"] == "最終結果"
-        assert response["notices"] == [{"body": "終端前の通知"}]
+        assert response["notices"] == [{"body": "終了前の通知"}]
         assert not any(notices.iterdir())
         await manager.close()
 
@@ -214,7 +214,7 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """前turnの結果を保持したまま、指定した次turnの終端だけを待つ。"""
+    """前turnの結果を保持したまま、指定した次turnの終了だけを待つ。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -262,7 +262,7 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
 
 @pytest.mark.asyncio
 async def test_wait_returns_current_registry_state_after_replacement(tmp_path: pathlib.Path) -> None:
-    """wait開始後に登録簿が更新された場合は新しい終端状態を返す。"""
+    """wait開始後に登録簿が更新された場合は新しい終了状態を返す。"""
     async with _manager_with_fake("claude") as (manager, _):
         original = state.SessionState("claude-replaced", str(tmp_path), engine="claude")
         manager.sessions[original.session_id] = original
@@ -351,7 +351,7 @@ async def test_mcp_wait_drains_finished_flush_before_its_done_callback(tmp_path:
         writer._flush_scheduled()
         tasks = tuple(writer._flush_tasks)
         assert tasks
-        # worker完了と集合更新callbackの間を確定し、drain自身による終端回収を検証する。
+        # worker完了と集合更新callbackの間を確定し、drain自身による終了回収を検証する。
         for task in tasks:
             assert task.remove_done_callback(writer._flush_tasks.discard) == 1
         await asyncio.gather(*tasks)
@@ -436,7 +436,7 @@ async def test_wait_keeps_the_session_after_returning_the_terminal_result(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """waitは破棄の指定を受け取らず、終端結果を返した後もsessionを保持する。"""
+    """waitは破棄の指定を受け取らず、終了時の結果を返した後もsessionを保持する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("wait-keep", str(tmp_path), engine="codex")
         manager.sessions[session.session_id] = session

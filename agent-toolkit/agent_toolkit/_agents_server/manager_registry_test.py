@@ -203,7 +203,7 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
 async def test_list_sessions_omits_terminated_sessions_without_pending_result(
     tmp_path: pathlib.Path,
 ) -> None:
-    """表示範囲を指定しない場合は未回収結果を持たない終端sessionだけを除く。"""
+    """表示範囲を指定しない場合は未回収結果を持たない終了sessionだけを除く。"""
     async with server_manager.AgentsServerManager(status_writer=None) as manager:
         active = state.SessionState("active", str(tmp_path))
         manager.sessions[active.session_id] = active
@@ -348,7 +348,7 @@ async def test_show_reports_activity_and_output_elapsed_with_activity_based_stal
 
 @pytest.mark.asyncio
 async def test_show_returns_error_of_terminal_session(tmp_path: pathlib.Path) -> None:
-    """保持中・期限切れ・破棄後の終端sessionが空でない`error`を持つ場合だけ、`show`が`error`を返す。
+    """保持中・期限切れ・破棄後の終了sessionが空でない`error`を持つ場合だけ、`show`が`error`を返す。
 
     `show`が`error`を返さないと、結果を回収できなかった委譲元は失敗の原因を確かめられず、
     利用上限で失敗したsessionへ継続を送り直す。
@@ -563,7 +563,7 @@ async def test_recovered_session_restores_persisted_result_once(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """再起動後の最初の待機だけが保存済みの終端結果本文を返す。"""
+    """再起動後の最初の待機だけが保存済みの終了時の結果本文を返す。"""
     session_id = "recovered-wait"
     _publish_recovered_session(monkeypatch, tmp_path, session_id, "failed")
     writer = status_file.StatusFileWriter(
@@ -638,7 +638,7 @@ async def test_recovered_session_kill_reports_terminal(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿から復元した終端sessionのkillはbackendへ触れない。"""
+    """登録簿から復元した終了sessionのkillはbackendへ触れない。"""
     _publish_recovered_session(monkeypatch, tmp_path, "recovered-kill", "failed")
     async with server_manager.AgentsServerManager(status_writer=None) as manager:
         backend = FakeBackend(manager.sessions, "codex")
@@ -704,7 +704,7 @@ async def test_recovered_session_restores_each_terminal_status(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿に記録した各終端種別を復元応答へ維持する。"""
+    """登録簿に記録した各終了種別を復元応答へ維持する。"""
     session_id = f"recovered-{terminal_status}"
     _publish_recovered_session(monkeypatch, tmp_path, session_id, terminal_status)
     async with server_manager.AgentsServerManager(status_writer=None) as manager:
@@ -721,7 +721,7 @@ async def test_stop_discards_terminal_session(
     model_type: str | None,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終端済みsessionを一覧と通常保持先から除き、backend資源を解放する。"""
+    """終了済みsessionを一覧と通常保持先から除き、backend資源を解放する。"""
     async with _manager_with_fake(engine) as (manager, backend):
         session = state.SessionState("terminal", str(tmp_path), engine=engine, model_type=model_type, turn_seq=3)
         _complete(session)
@@ -745,7 +745,7 @@ async def test_stop_removes_status_file_projection_and_retained_result(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """破棄したsessionをstatusLineの射影と終端結果ファイルから除く。"""
+    """破棄したsessionをstatusLineの射影と終了時の結果ファイルから除く。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -1146,7 +1146,7 @@ async def test_show_returns_terminal_session_restored_from_registry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿から復元できた終端sessionは通常の応答として返す。"""
+    """登録簿から復元できた終了sessionは通常の応答として返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         session_id = "9f2a37f4-40f8-4d38-9c1b-1f6f9f52a1c3"
         _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
@@ -1336,7 +1336,7 @@ async def test_identifier_resolution_precedes_scheme_classification(tmp_path: pa
 async def test_close_publishes_running_session_as_interrupted_for_restart(
     engine: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """実行中sessionを持つマネージャーの停止で登録簿と結果ファイルへ終端を公開し、別のマネージャーが再開できる。
+    """実行中sessionを持つマネージャーの停止で登録簿と結果ファイルへ終了を公開し、別のマネージャーが再開できる。
 
     停止時に公開しないと登録簿が`running`のまま残り、再起動後の`show`・`send_message`が実行中の可能性として拒否し続け、
     委譲元の`atk agents wait`も待機上限での終了を繰り返す。
@@ -1391,7 +1391,7 @@ async def test_orphaned_codex_record_is_taken_over_when_turn_has_ended(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """所有者が不在で`thread/read`が元turnの終端を示す残存記録は、`show`と`send_message`で終端として復元する。"""
+    """所有者が不在で`thread/read`が元turnの終了を示す残存記録は、`show`と`send_message`で終了として復元する。"""
     session_id = "01a0f920-43f0-7cb3-b1e6-e06cd9bb7cad"
     _publish_orphaned_codex(monkeypatch, tmp_path, session_id, turn_id)
     async with server_manager.AgentsServerManager(None) as manager:
@@ -1436,9 +1436,9 @@ def _publish_record_with_processes(
 async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_path(
     engine: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """所有プロセスと委譲先CLIがともに終了した`running`の記録は、次の照会のいずれでも`interrupted`の終端として扱う。
+    """所有プロセスと委譲先CLIがともに終了した`running`の記録は、次の照会のいずれでも`interrupted`の終了として扱う。
 
-    `atk agents show`は中断を返し、自動再開は終端した子として扱う。
+    `atk agents show`は中断を返し、自動再開は終了した子として扱う。
     MCPの`show`は終了の理由を`error`で返し、`send_message`は拒否せず通常の復元へ進む。
     """
     _publish_record_with_processes(monkeypatch, tmp_path, engine, (exited_process_identity(), exited_process_identity()))
@@ -1460,7 +1460,7 @@ async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_pa
         parent_manager.sessions[parent.session_id] = parent
         await parent_manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
         assert _ORPHANED_SESSION_ID not in parent.live_child_session_ids
-        assert any(f"終端したsession/thread: {_ORPHANED_SESSION_ID}" in prompt for prompt in parent_backend.prompts)
+        assert any(f"終了したsession/thread: {_ORPHANED_SESSION_ID}" in prompt for prompt in parent_backend.prompts)
         await parent_manager.close()
 
         async with server_manager.AgentsServerManager(None) as manager:
@@ -1536,7 +1536,7 @@ def _record_dead_server_diagnostics(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _publish_dead_owner_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, engine: str) -> None:
-    """起動単位を持つ所有者が終端を公開せずに終わった`running`の記録を残し、照会側を別の起動単位にする。"""
+    """起動単位を持つ所有者が終了を公開せずに終わった`running`の記録を残し、照会側を別の起動単位にする。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", _DEAD_SERVER)
     session_registry.publish(

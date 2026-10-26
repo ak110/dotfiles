@@ -640,7 +640,7 @@ def startup_documents(
     for target in dict.fromkeys(targets):
         owner = next((parent.parent for parent in target.path.parents if parent.name == "skills"), plugin_root)
         raw = target.path.read_bytes()
-        body = target.body(raw.decode("utf-8")).replace("${CLAUDE_PLUGIN_ROOT}", str(owner))
+        body = raw.decode("utf-8").replace("${CLAUDE_PLUGIN_ROOT}", str(owner))
         digest = hashlib.sha256(raw).hexdigest()
         metadata = json.dumps(
             {

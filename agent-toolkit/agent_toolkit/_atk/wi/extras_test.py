@@ -467,7 +467,7 @@ class TestListAwiStatusAll:
 
 
 class TestListAwiStatusActive:
-    """listサブコマンド `--status=active`: AWIのactive状態を表示し終端状態を除外する。"""
+    """listサブコマンド `--status=active`: AWIのactive状態を表示し終了状態を除外する。"""
 
     def test_active_excludes_adopted_and_rejected(
         self,

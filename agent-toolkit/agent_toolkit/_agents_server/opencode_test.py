@@ -1,4 +1,4 @@
-"""公開CLIを模した子プロセスでOpenCodeの開始・継続・終端・失敗と規範配送を検証する。"""
+"""公開CLIを模した子プロセスでOpenCodeの開始・継続・終了・失敗と規範配送を検証する。"""
 
 import asyncio
 import json
@@ -78,7 +78,7 @@ def _install_cli(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
 
 
 async def _finished(manager: opencode.OpenCodeManager, session: SessionState) -> None:
-    """backendの終端通知を、有限の待機で受け取る。"""
+    """backendの終了通知を、有限の待機で受け取る。"""
     async with manager._condition:  # pylint: disable=protected-access
         await asyncio.wait_for(manager._condition.wait_for(lambda: session.terminal), timeout=10)  # pylint: disable=protected-access
 

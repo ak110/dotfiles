@@ -20,7 +20,7 @@ result_next_action = handoff_next_action.result_next_action
 
 
 def availability_reason(engine: str, status: str, error: Any) -> str | None:
-    """候補除外と同じbackendの判定で、終端結果の可用性失敗を判定する。"""
+    """候補除外と同じbackendの判定で、終了時の結果の可用性失敗を判定する。"""
     backend = backends.backend_class(engine)
     if backend is None:
         return None
@@ -28,7 +28,7 @@ def availability_reason(engine: str, status: str, error: Any) -> str | None:
 
 
 def predecessor_error(session: SessionState | SessionResumeState) -> Any:
-    """結果回収後と再起動後も、保持した終端理由を使う。"""
+    """結果回収後と再起動後も、保持した終了理由を使う。"""
     if session.error is not None:
         return session.error
     return json.loads(session.terminal_error) if session.terminal_error is not None else None
@@ -128,8 +128,8 @@ def compose_prompt(
     lines += [
         f"前任session: {session.session_id}",
         f"前任engine: {session.engine}",
-        f"終端状態: {session.status}",
-        f"終端理由: {json.dumps(predecessor_error(session), ensure_ascii=False)}",
+        f"終了状態: {session.status}",
+        f"終了理由: {json.dumps(predecessor_error(session), ensure_ascii=False)}",
         f"会話の流れ: {conversation.resolve()}",
         "会話の流れ・追送・各turnの最終応答を読み、引き継ぎ記録がある場合はその記述とも比べ、現在の確定事項と残工程を復元する。",
         "完了済みの操作と作成済みの成果物を現物で確かめ、最新の指示で中止された範囲と既に完了・続行済みの範囲は再実行せず、"

@@ -138,7 +138,7 @@ pub(crate) fn read_state_files(directory: &Path) -> Vec<StateFile> {
     files
 }
 
-/// 終端sessionは未回収の結果があるか、稼働中の子孫へつながる場合だけ残す。
+/// 終了sessionは未回収の結果があるか、稼働中の子孫へつながる場合だけ残す。
 ///
 /// 子孫の判定は全状態ファイルの親子関係を解決した後に行う。
 /// 親自身の結果回収だけで行を除くと、稼働中の孫が親を失った行として残る。
@@ -348,7 +348,7 @@ pub(crate) fn render_state_files(
                 item.session.status.as_str(),
                 "completed" | "failed" | "interrupted"
             ) {
-                "対応不要: 委譲元の結果回収・子孫session終端後に非表示".to_string()
+                "対応不要: 委譲元の結果回収・子孫session終了後に非表示".to_string()
             } else if item.session.last_action.is_empty() {
                 item.session.progress.clone()
             } else {
@@ -1131,7 +1131,7 @@ mod tests {
             .find(|line| line.contains("completed"))
             .unwrap();
         assert!(terminal_line.contains("対応不要"));
-        assert!(terminal_line.contains("結果回収・子孫session終端後に非表示"));
+        assert!(terminal_line.contains("結果回収・子孫session終了後に非表示"));
     }
 
     #[test]
@@ -1516,13 +1516,13 @@ mod tests {
             assert!(lines[0].ends_with(&format!("1m0s · {status}")), "{lines:?}");
             assert!(lines[0].contains("対応不要"), "{lines:?}");
             assert!(
-                lines[0].contains("結果回収・子孫session終端後に非表示"),
+                lines[0].contains("結果回収・子孫session終了後に非表示"),
                 "{lines:?}"
             );
             assert!(lines[1].starts_with("└ grandchild (claude)"), "{lines:?}");
             assert!(lines[1].ends_with("30s · running"), "{lines:?}");
 
-            // 最後の孫が終端すると、親は通常の結果判定へ戻る。
+            // 最後の孫が終了すると、親は通常の結果判定へ戻る。
             let mut files = [parent(), grandchild("completed")];
             retain_displayed_sessions(&mut files, |_| false);
             assert!(displayed_ids(&files).is_empty());

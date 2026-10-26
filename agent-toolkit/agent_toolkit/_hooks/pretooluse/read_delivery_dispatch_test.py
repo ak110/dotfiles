@@ -36,21 +36,30 @@ def _payload(tmp_path, codex):
     return payload
 
 
+def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_path, capsys):
+    payload = _payload(tmp_path, False)
+    assert dispatch.main(json.dumps(payload)) == 0
+    context = _context(capsys.readouterr())
+    assert "root-cause-analysis.md" in context
+    assert "記録の粒度は" not in context
+    assert dispatch.main(json.dumps(payload)) == 0
+    _context(capsys.readouterr())
+    records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
+    root_cause = plugin_resources.skill_document_path("bugfix", "references/root-cause-analysis.md")
+    assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
+
+
 def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     payload = _payload(tmp_path, False)
-    bodies = []
-    for _ in range(12):
-        assert dispatch.main(json.dumps(payload)) == 0
-        context = _context(capsys.readouterr())
-        if not context:
-            break
-        bodies.append(context)
-    else:
-        pytest.fail("配送の再発行で取得が完了しなかった")
-    root_cause = plugin_resources.skill_document_path("bugfix", "references/root-cause-analysis.md")
-    assert root_cause.read_text(encoding="utf-8").strip() in "\n".join(bodies)
     assert dispatch.main(json.dumps(payload)) == 0
-    assert not _context(capsys.readouterr())
+    context = _context(capsys.readouterr())
+    root_cause = plugin_resources.skill_document_path("bugfix", "references/root-cause-analysis.md")
+    assert str(root_cause) in context
+    assert root_cause.read_text(encoding="utf-8").strip() not in context
+    assert dispatch.main(json.dumps(payload)) == 0
+    _context(capsys.readouterr())
+    records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
+    assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
     assert not (tmp_path / "plan.md").exists()
 
 

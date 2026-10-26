@@ -5,7 +5,7 @@
 
 ## 名指し参照の読込方法
 
-本文の各参照における適用条件を守り、選定した資料の指定範囲を取得してから、その基準に基づく具体的な判断へ進む。起動時の行に示された資料は、起動本文とともに配送される。
+本文の各参照における適用条件を守り、選定した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行に示された資料は、起動本文とともに配送される。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -130,7 +130,7 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が人間の実際の発話を受けたときにこの値を参照し、真であれば同スキルの起動を促す注記を返す（機械的に注入されたターンでは参照も変更も行わない）。
   注記を返した時点で偽に戻す。また、PostToolUse(Skill)が同スキルの起動を観測した場合や、UserPromptSubmitがユーザーによる同スキルのスラッシュコマンド実行を観測した場合も偽に戻す。
   生存期間はセッション状態ファイルと同一とする。
-- `operation_skill_delivered_agents`: 資料識別子から、その資料を取得した主体（エージェント）一覧へのマッピング情報。既存のキー構成を継承し、宣言型配送における識別子は`read-trigger:<絶対パス>#sha256:<本文hash>`、節指定がある場合は`#heading:<節指定>`、分割読み取りの範囲は`#range:<開始>:<終了>`を付与する。本文およびハッシュ値は同一の読み取り時点のものを使用する。主体はhookペイロードに含まれる`agent_id`とし、これを持たない会話では`main`とする。`selected-read-target:<JSON>`は選択済みのパスと見出しを保持し、`modified-agent-document:<絶対パス>`は変更されたエージェント向け文書のパスを保持する。`review-reference:<絶対パス>`はprepareで生成された資料のパス、`read-trigger-role:<絶対パス>`は受領した役割を保持する。これらの選択情報は会話圧縮時も保持され、本文の取得済み状態のみがリセットされる。SessionStartの`compact`時は、本文取得状態をリセットする直前に、選択済みであり、かつ同一のパス・見出し・本文ハッシュ値で`main`が取得済みだった資料を、同一呼び出し内の一時候補として抽出する。出力予算に収まる候補のみを再配送し、予算を超過した資料については未取得として絶対パスと指定範囲を明示する。候補情報自体は状態ファイルへ永続化しないため、`clear`や次回の`compact`時は、その時点の取得済み状態のみから再計算する。`startup-input-target:<JSON>`は起動時に受け取った入力資料のパス、見出し、selectors（入力名の配列）、本文ハッシュ値を保持し、圧縮後の再配送に使用する。`review-output:<絶対パス>`はprepareの未取得な保存JSONパス、`review-output-parsed:<資料識別子>`は末尾まで取得して解析済みのバージョンを示す。JSONから実在する参照資料を登録した後は、未取得な保存JSONの登録を解除する。
+- `operation_skill_delivered_agents`: 資料識別子から、その資料を取得した主体（エージェント）一覧へのマッピング情報。既存のキー構成を継承し、宣言型配送における識別子は`read-trigger:<絶対パス>#sha256:<本文hash>`とし、分割読み取りではファイル全体における文字位置を`#range:<開始>:<終了>`として付与する。節指定は注目箇所として選択情報に保持する。全行の被覆を確認して取得済みのキーを生成し、旧形式の`#heading:<節指定>`を持つキーがある場合も全文を再取得する。本文およびハッシュ値は同一の読み取り時点のものを使用する。主体はhookペイロードに含まれる`agent_id`とし、これを持たない会話では`main`とする。`selected-read-target:<JSON>`は選択済みのパスと見出しを保持し、`modified-agent-document:<絶対パス>`は変更されたエージェント向け文書のパスを保持する。`review-reference:<絶対パス>`はprepareで生成された資料のパス、`read-trigger-role:<絶対パス>`は受領した役割を保持する。これらの選択情報は会話圧縮時も保持され、本文の取得済み状態のみがリセットされる。SessionStartの`compact`時は、本文取得状態をリセットする直前に、選択済みであり、かつ同一のパス・本文ハッシュ値で`main`が全文取得済みだった資料を、同一呼び出し内の一時候補として抽出する。候補の絶対パス・注目箇所・本来の全文取得手段を出力予算内で案内し、残る資料は次の操作で案内する。取得済みの記録には、案内後に成功した本来の全文取得を要する。候補情報自体は状態ファイルへ永続化しないため、`clear`や次回の`compact`時は、その時点の取得済み状態のみから再計算する。`startup-input-target:<JSON>`は起動時に受け取った入力資料のパス、見出し、selectors（入力名の配列）、本文ハッシュ値を保持し、圧縮後の再配送に使用する。`review-output:<絶対パス>`はprepareの未取得な保存JSONパス、`review-output-parsed:<資料識別子>`は末尾まで取得して解析済みのバージョンを示す。JSONから実在する参照資料を登録した後は、未取得な保存JSONの登録を解除する。
   本文編集の検知対象は、編集ツール、Bashの静的なヒアドキュメント（heredoc）やヒアストリング（here-string）、インプレース置換、およびPythonスクリプトによる書き込みとし、生成出力の保存や単なるファイル複製は除外する。managed-temp配下の原稿に対してもこれと同じ基準を適用する。
   委譲先自身が使用する引き継ぎ記録ファイルについては、`AGENT_TOOLKIT_HANDOFF_PATH`が示す1件の絶対パスのみを、本文編集時のwriting-standards取得要求の対象から除外する。この除外で取得済み状態は付与されない。同一ディレクトリにある別ファイルや、環境変数が未設定の入力、引き継ぎ記録先以外を含む複数ファイルの編集については、通常の取得状態に基づいて判定する。
   `resolved-project-skill:<絶対パス>`は、実際の取得入力から確定したproject skillの宣言元パスを保持する。起動時の取得記録は、入力のメタデータと実際に配送された同一バージョンの本文が一致している場合に記録し、メタデータのみの抜粋は取得済みとしてはカウントしない。入力の識別情報と宣言元は会話圧縮時にも保持される。
@@ -200,9 +200,9 @@ Antigravity向けの6つのイベントアダプターは、共通のセッシ�
 | `antigravity_stop_continuing` | `bool` | 直前の`Stop`が`continue`を要求したという事実を保存し、共通入力における`stop_hook_active`の値へ正規化する |
 | `agy_cwd` | `str` | `SessionStart`が正規化されたワークスペースのcwdを保存し、`session_records`が記録ファイルのパス解決に使用する |
 | `agy_transcript_path` | `str` | `SessionStart`が`transcriptPath`を保存し、`session_records`が記録の読み取りに使用する |
-| `antigravity_subagent_ids` | `list[str]` | 親エージェントの`PostToolUse`が、`invoke_subagent`の返却値から作成済みの`conversationId`を登録する。件数が一致した`manage_subagents`のactive一覧、または`Stop`における`fullyIdle=true`によって終端を観測する |
+| `antigravity_subagent_ids` | `list[str]` | 親エージェントの`PostToolUse`が、`invoke_subagent`の返却値から作成済みの`conversationId`を登録する。件数が一致した`manage_subagents`のactive一覧、または`Stop`における`fullyIdle=true`によって終了を観測する |
 
 自身が所有するsubagentの起動については、共通の`background_task_ids`にも登録する。
-`background_task_ids`は起動したタスクの所有履歴としてTTL満了まで保持し、終端の観測時にも削除しない。
+`background_task_ids`は起動したタスクの所有履歴としてTTL満了まで保持し、終了の観測時にも削除しない。
 active一覧の照会結果や`fullyIdle`による状態の更新は、`antigravity_subagent_ids`へ反映する。
 なお、Antigravityには存在しないイベントである`SubagentStart`や`SubagentStop`の直接購読は行わない。

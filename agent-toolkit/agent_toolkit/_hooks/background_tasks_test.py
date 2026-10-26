@@ -445,7 +445,7 @@ _TEXT = "作業途中です。"
 
 
 def _bash_no_bg() -> dict:
-    """非同期でないBash tool_useブロックを返す（最終ターンの末尾を構造的にtool_useで終端するため）。"""
+    """非同期でないBash tool_useブロックを返す（最終ターンの末尾を構造的にtool_useで終了するため）。"""
     return {"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "echo done"}}
 
 

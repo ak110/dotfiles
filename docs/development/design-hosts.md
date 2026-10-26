@@ -8,7 +8,7 @@
 ### 共有原本とCodex固有の上書き
 
 Codexのコマンド回収は、外側の`functions.exec`のcellと内側の`exec_command`のsessionを別の実行識別子として扱う。
-返却本文とともに`exit_code`と`session_id`を保持し、cellは`functions.wait`、sessionは`write_stdin`で同じ起動の終端まで回収する。
+返却本文とともに`exit_code`と`session_id`を保持し、cellは`functions.wait`、sessionは`write_stdin`で同じ起動の終了まで回収する。
 `session_id`がある間に同じ待機コマンドを再発行すると、先行実行を回収する前に次の待機も開始するため採用しない。
 契約の定義元は`rules-common.codex.md`へ集約し、Codex向けAGENTSの正式生成で全主体へ届ける。
 

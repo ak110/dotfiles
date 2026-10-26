@@ -15,7 +15,7 @@ user-invocable: false
 
 ## 名指し参照の読込方法
 
-本文の各参照における適用条件を守り、選択した資料の指定範囲を取得してから、その基準に基づく具体的な判断へ進む。起動行に記載された資料は、起動時の本文とともに読み込まれる。
+本文の各参照における適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動行に記載された資料は、起動時の本文とともに読み込まれる。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -38,7 +38,7 @@ user-invocable: false
 | --- | --- | --- | --- | --- |
 | 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` | |
 | 登録した複数リポジトリの担当起動・制御・再開を扱う前 | `../process-wi/references/all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` | |
-| レーンの準備・統合・回復・回収を扱う前 | `../process-wi/references/run-lanes.md`の「レーンと資源」と「統合とAWI終端」 | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「レーンと資源」「統合とAWI終端」` | |
+| レーンの準備・統合・回復・回収を扱う前 | `../process-wi/references/run-lanes.md`の「レーンと資源」と「統合とAWI終了」 | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「レーンと資源」「統合とAWI終了」` | |
 
 ## 利用形態と起動主体
 

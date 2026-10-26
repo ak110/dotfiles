@@ -230,7 +230,7 @@ class StartGate:
 
 
 def _uwi_updates(private_notes: pathlib.Path, target_repo_ids: set[str]) -> tuple[int, float]:
-    """回答後の終端移動も含む更新時刻と、未終端の未回答数を得る。"""
+    """回答後の終了移動も含む更新時刻と、未終了の未回答数を得る。"""
     canonical_cache: dict[str, str | None] = {}
     targets = {_git_remote.canonical_repo(repo, canonical_cache) for repo in target_repo_ids}
     unanswered = 0

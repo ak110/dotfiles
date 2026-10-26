@@ -123,7 +123,7 @@ def test_filename_completion_includes_hold_entries(
 ) -> None:
     """holdを受け付けるサブコマンドの補完は、holdの項目を候補に含める。
 
-    `answer`はUWIだけを候補にする限定を保ち、終端状態の項目は候補に含めない。
+    `answer`はUWIだけを候補にする限定を保ち、終了状態の項目は候補に含めない。
     """
     private_notes = tmp_path / "private-notes"
     write_awi(private_notes, "inbox-awi.md", state="inbox")

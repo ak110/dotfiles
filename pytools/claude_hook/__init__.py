@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     標準入力は生バイト列として本関数で1回だけ読み、UTF-8で厳密にデコードして各モジュールへ渡す。
     符号化を指定せずPythonが環境から選ぶ文字コードに委ねると、UTF-8で送られたpayload内の非ASCII文字が
     別の符号化でデコードされ、判定対象の文字列が一致しなくなる。
-    デコードできない入力は判定処理へ渡さず通過扱いで終端する。
+    デコードできない入力は判定処理へ渡さず通過扱いで終了する。
     """
     arguments = sys.argv[1:] if argv is None else argv
     if not arguments or arguments[0] not in _SUBCOMMANDS:

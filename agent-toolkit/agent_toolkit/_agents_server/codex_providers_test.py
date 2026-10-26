@@ -32,7 +32,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 class ProviderClient(FakeCodexClient):
-    """0.162.0の応答形式で接続先・上限・確定終端を配送する。"""
+    """0.162.0の応答形式で接続先・上限・確定終了を配送する。"""
 
     def __init__(self) -> None:
         super().__init__()
@@ -215,7 +215,7 @@ async def test_provider_environment_start(
 async def test_manager_turn_start_failure_finishes_without_provider_details(
     monkeypatch, tmp_path, provider_environment, subscription
 ):
-    """RPC拒否を実監視から継続し、各API候補を一度だけ試して安全な終端を回収する。"""
+    """RPC拒否を実監視から継続し、各API候補を一度だけ試して安全な終了を回収する。"""
     del provider_environment
     async with manager.AgentsServerManager() as root:
         client = ProviderClient()

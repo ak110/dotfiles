@@ -31,7 +31,7 @@ pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
 
 
 async def _wait_now(manager: server_manager.AgentsServerManager) -> dict[str, typing.Any]:
-    """待機せずに現在の終端状態を返すwaitを発行する。"""
+    """待機せずに現在の終了状態を返すwaitを発行する。"""
     manager._wait_timeouts["main"] = 0.0  # pylint: disable=protected-access
     return await manager.wait()
 
@@ -365,7 +365,7 @@ def _write_descendant_file(
 
 
 def _terminal_parent(tmp_path: pathlib.Path, status: str) -> state.SessionState:
-    """turnが終端した親sessionを返す。"""
+    """turnが終了した親sessionを返す。"""
     session = state.SessionState("parent", str(tmp_path), announced=True, turn_seq=1, label="lane-01-exec")
     session.status = status
     session.agent_message = "待機中: grandchild"
@@ -383,7 +383,7 @@ def _shown_sessions(writer: subject.StatusFileWriter) -> dict[str, str]:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["completed", "failed", "interrupted"])
 async def test_writer_keeps_collected_parent_while_grandchild_runs(tmp_path: pathlib.Path, status: str) -> None:
-    """結果を回収した終端の親も、孫の稼働中は実際の終端状態のまま表示し、結果は再公開しない。"""
+    """結果を回収した終了の親も、孫の稼働中は実際の終了状態のまま表示し、結果は再公開しない。"""
     parent = _terminal_parent(tmp_path, status)
     writer = subject.StatusFileWriter(
         {parent.session_id: parent},
@@ -414,7 +414,7 @@ async def test_writer_keeps_collected_parent_while_grandchild_runs(tmp_path: pat
 
 @pytest.mark.asyncio
 async def test_writer_returns_uncollected_parent_to_normal_rules_after_grandchild_ends(tmp_path: pathlib.Path) -> None:
-    """結果を回収した場合の対照として、未回収かつ表示期限内の親は孫の終端後も従来どおり表示に残る。"""
+    """結果を回収した場合の対照として、未回収かつ表示期限内の親は孫の終了後も従来どおり表示に残る。"""
     parent = _terminal_parent(tmp_path, "completed")
     parent.retention_deadline = asyncio.get_running_loop().time() + 60
     writer = subject.StatusFileWriter(
@@ -463,7 +463,7 @@ async def test_writer_keeps_parent_past_retention_deadline_while_descendant_runs
 
 @pytest.mark.asyncio
 async def test_writer_keeps_parent_for_partial_and_deep_descendants(tmp_path: pathlib.Path) -> None:
-    """複数の孫の一部だけが終端した場合と、終端した孫の先で稼働が続く場合も親を残す。"""
+    """複数の孫の一部だけが終了した場合と、終了した孫の先で稼働が続く場合も親を残す。"""
     parent = _terminal_parent(tmp_path, "completed")
     parent.result_delivered = True
     writer = subject.StatusFileWriter(
@@ -823,7 +823,7 @@ async def test_manager_writes_only_last_failure_when_all_candidates_are_unavaila
 async def test_manager_removes_kill_result_but_keeps_uncollected_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """killで返した結果だけを除き、未回収の終端結果は表示に残す。"""
+    """killで返した結果だけを除き、未回収の終了時の結果は表示に残す。"""
     writer = _status_writer(tmp_path)
     async with server_manager.AgentsServerManager(writer) as manager:
         backend = _FakeStatusBackend(manager.sessions)
@@ -932,7 +932,7 @@ class _FakeStatusBackend:
 
 
 class _UnavailableStatusBackend(_FakeStatusBackend):
-    """指定モデルをengine利用不能として終端させる偽バックエンド。"""
+    """指定モデルをengine利用不能として終了させる偽バックエンド。"""
 
     def __init__(self, sessions: dict[str, state.SessionState], *, unavailable_models: set[str]) -> None:
         super().__init__(sessions)
@@ -967,7 +967,7 @@ class _UnavailableStatusBackend(_FakeStatusBackend):
 
 
 class _DelayedUnavailableStatusBackend(_FakeStatusBackend):
-    """起動応答後に指定モデルを利用不能として終端させる偽バックエンド。"""
+    """起動応答後に指定モデルを利用不能として終了させる偽バックエンド。"""
 
     def __init__(
         self,
@@ -1100,7 +1100,7 @@ async def test_flush_failures_preserve_diagnostics_and_heartbeat(
 
 
 class _TerminalBeforeResponseBackend(FakeBackend):
-    """起動応答を返す前にturnが終端し、登録簿へ公開するsessionを返す。"""
+    """起動応答を返す前にturnが終了し、登録簿へ公開するsessionを返す。"""
 
     async def start(self, *args: typing.Any, **kwargs: typing.Any) -> state.SessionState:
         session = await super().start(*args, **kwargs)
@@ -1116,7 +1116,7 @@ class _TerminalBeforeResponseBackend(FakeBackend):
 async def test_terminal_result_write_failure_is_not_reported_as_projection_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, diagnostic_log: pathlib.Path
 ) -> None:
-    """終端結果の保存失敗を、起動応答・直接flush・予約flushで表示失敗と区別し、解消後に結果を保存する。"""
+    """終了時の結果の保存失敗を、起動応答・直接flush・予約flushで表示失敗と区別し、解消後に結果を保存する。"""
     writer = subject.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),

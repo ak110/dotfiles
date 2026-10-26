@@ -661,7 +661,7 @@ def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolv
 def test_delete_treats_session_whose_recorded_processes_exited_as_finished(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """所有側が終端を公開せずに終了し、記録した全プロセスが存在しない担当は終了として回収する。"""
+    """所有側が終了を公開せずに終了し、記録した全プロセスが存在しない担当は終了として回収する。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     with subprocess.Popen([sys.executable, "-c", "pass"]) as exited:
@@ -698,7 +698,7 @@ def test_cleanup_uses_branch_refs_when_tags_have_the_same_names(
 def test_live_external_process_holds_worktree_until_it_ends(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """担当が終端しても、その作業先を使う外部プロセスを削除で巻き込まない。"""
+    """担当が終了しても、その作業先を使う外部プロセスを削除で巻き込まない。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     with subprocess.Popen(
         [sys.executable, "-c", "import sys;print('ready',flush=True);sys.stdin.read()"],
@@ -730,7 +730,7 @@ async def test_lane_releases_retained_executor_through_owner_monitor(
     entrypoint: str,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """cwd保持中の終端資源を所有側が解放し、公開CLI・終了時回収・再利用・移管を通して未回収結果を取得できる。"""
+    """cwd保持中の終了資源を所有側が解放し、公開CLI・終了時回収・再利用・移管を通して未回収結果を取得できる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(lane, "get_wait_timeout", lambda _bucket: 5.0)
     async with retained_executor(
@@ -799,7 +799,7 @@ async def test_lane_releases_retained_executor_through_owner_monitor(
 def test_lane_preserves_session_when_running_or_owner_unresponsive(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], terminal: bool
 ) -> None:
-    """実行中は終端・結果回収後のstopを案内し、無応答の所有側も資源を保持して再回収へ接続する。"""
+    """実行中は終了・結果回収後のstopを案内し、無応答の所有側も資源を保持して再回収へ接続する。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     owner = session_registry.owner_process()
     assert owner is not None
@@ -810,7 +810,7 @@ def test_lane_preserves_session_when_running_or_owner_unresponsive(
     reason = held["retained"][0]["reason"]
     assert "held-session" in reason and "stop" in reason and "lane delete" in reason
     if not terminal:
-        assert reason.index("自然終端") < reason.index("atk agents wait") < reason.index("stop") < reason.index("lane delete")
+        assert reason.index("自然終了") < reason.index("atk agents wait") < reason.index("stop") < reason.index("lane delete")
         assert session_registry.resolve("held-session").state is session_registry.Resolution.RUNNING
     assert pathlib.Path(record["worktree"]).is_dir()
     assert not list(session_registry.registry_directory().glob("*.release-*"))
@@ -905,7 +905,7 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
         session_registry.publish(f"unresponsive-{index}", terminal=True, cwd=record["worktree"], processes=(owner,))
 
     def unexpected_wait(_bucket: str) -> float:
-        pytest.fail("自動終了が終端資源の解放待機へ進んだ")
+        pytest.fail("自動終了が終了資源の解放待機へ進んだ")
 
     monkeypatch.setattr(lane, "get_wait_timeout", unexpected_wait)
     started = lane.time.monotonic()
@@ -1007,7 +1007,7 @@ def test_failed_preparation_recovers_using_the_same_registered_resource(
 def test_interrupted_lane_can_transfer_to_new_session_without_losing_uncommitted_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """終端済み担当の資源を新しい所有sessionへ再登録し、中断した成果を保持する。"""
+    """終了済み担当の資源を新しい所有sessionへ再登録し、中断した成果を保持する。"""
     repo, selected, original = _create(tmp_path, monkeypatch, capsys)
     unfinished = pathlib.Path(original["worktree"]) / "unfinished.txt"
     unfinished.write_text("再開する成果", encoding="utf-8")
@@ -1411,7 +1411,7 @@ def test_integrate_mixed_manifest_reviews_implemented_deferral_and_keeps_no_merg
 def test_integrate_resume_and_preservation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """最終化の途中失敗はGit統合と成功済み保存を繰り返さず、未完了のWI終端から再開する。"""
+    """最終化の途中失敗はGit統合と成功済み保存を繰り返さず、未完了のWI終了から再開する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])

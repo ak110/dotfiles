@@ -49,7 +49,7 @@ PowerShellでは`$env:DOTFILES_CODEX_DAEMON_AUTO_RESTART = "1"`を設定して�
 
 ## agents_serverによる委譲
 
-`agents_server`はClaude CodeとCodexが共有する委譲用MCPである。委譲の状態は`atk agents list`で確認し、`atk agents wait`で終端と結果を受け取る。委譲するエージェントの選択は[agent-toolkit導入ガイド](claude-code-guide.md#工程別モデル設定)を参照する。
+`agents_server`はClaude CodeとCodexが共有する委譲用MCPである。委譲の状態は`atk agents list`で確認し、`atk agents wait`で終了と結果を受け取る。委譲するエージェントの選択は[agent-toolkit導入ガイド](claude-code-guide.md#工程別モデル設定)を参照する。
 
 ### CodexのサブスクとAPI接続先
 
@@ -93,7 +93,9 @@ API料金は接続先の課金規則に従う。ChatGPTのtokenをAPIキーと�
 
 process-loopが起動したCodexの子は、上限で停止したことを親が検出して終了させ、次の反復の候補判定を経て作業を続ける。
 新しい会話で保持中のレーン・WI・計画を読み、残る工程から再開する。
-`agents_server`の委譲は前節の接続先移行と、終端後の引き継ぎ起動を使う。
+`agents_server`の委譲先が一時的なサービス障害で終了した場合も、ユーザーの操作は不要である。
+委譲元エージェントが後任を起動し、サーバーが作業記録と起動条件を引き継ぐ。
+エージェントが使う再開操作は[設計記録](../development/design-agents-runtime.md#api失敗過負荷利用上限の待機)にある。
 
 ユーザーが端末で`codex`を実行して開いた対話画面は、利用上限の解除後に自動では再開しない。
 解除後に`/goal resume`か新しい発話を送って続ける。

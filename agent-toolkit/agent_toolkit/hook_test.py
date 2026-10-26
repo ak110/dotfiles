@@ -766,9 +766,15 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
         assert not pretooluse("repeat-session", "grep -rn needle .")
     else:
         assert not pretooluse("repeat-session", "ls")
-        assert '<atk-auto source="read-delivery" kind="document">' in message
+        assert '<atk-auto source="read-delivery" kind="document">' not in message
+        assert "agent-toolkit:search" in message
         assert not pretooluse("repeat-session", "grep -rn needle .")
-    skill = {"session_id": "repeat-session", "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:search"}}
+    skill = {
+        "session_id": "repeat-session",
+        "tool_name": "Skill",
+        "tool_input": {"skill": "agent-toolkit:search"},
+        "tool_response": "起動成功",
+    }
     _call_hook_in_process(monkeypatch, "posttooluse", {"hook_event_name": "PostToolUse", **skill})
     assert not pretooluse("repeat-session", "grep -rn needle .")
     assert pretooluse("other-session", "grep -rn needle .") == context

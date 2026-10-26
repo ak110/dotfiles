@@ -117,8 +117,8 @@ CWD_DESCRIPTION = parameter_description(
 
 
 HANDOFF_FROM_DESCRIPTION = parameter_description(
-    "終端した前任のsession_id。指定時はこの引数だけを渡す。mode・model_type・用途・cwd・label・起動本文と進捗を復元して後任を起動する。"
-    "可用性失敗の前任候補は保持期限にかかわらず除外する。実行中の前任は終端を待つかkillしてから指定する。"
+    "終了した前任のsession_id。指定時はこの引数だけを渡す。mode・model_type・用途・cwd・label・起動本文と進捗を復元して後任を起動する。"
+    "可用性失敗の前任候補は保持期限にかかわらず除外する。実行中の前任は終了を待つかkillしてから指定する。"
     "応答のsession_idは後任であり、atk agents waitの待機対象になる。"
     "復元したcwdとmodel_typeも応答へ返す。"
 )
@@ -131,7 +131,7 @@ MODE_DESCRIPTION = parameter_description(
     "modeごとの必須・禁止の入力は各引数の説明に従い、欠落と混在は委譲先を起動せずに拒否する。\n"
     "選び方: `<役割名>.subagent.md`がある作業はtaskで渡す。"
     "手順、権限、検証方法、返却形式は同ファイルが定めるため、委譲プロンプトへ書き足さない。"
-    "taskの終端返却は共通契約に従い、続行不能には理由の直前に有効な区分を同じインデントで置く。"
+    "taskの終了返却は共通契約に従い、続行不能には理由の直前に有効な区分を同じインデントで置く。"
     "この構造検査は役割を持つtaskだけに適用し、自由本文のdelegateとexplore・write・shellは対象外とする。"
     "区分の欠落・集合外は同じsessionへ1回だけ自動継続し、再違反や継続の配送失敗では元の返却本文と"
     "error.resultContract・error.nextActionを公開する。"
@@ -292,10 +292,10 @@ START_MODE_EXAMPLES = {
 START_DESCRIPTION = "\n".join(
     (
         "委譲先sessionを開始し、`mode`で入力と起動条件を選ぶ。"
-        '引き継ぎ起動は`{"handoff_from": "<終端した前任session_id>"}`だけを渡す。通常起動の入力との混在は拒否する。',
+        '引き継ぎ起動は`{"handoff_from": "<終了した前任session_id>"}`だけを渡す。通常起動の入力との混在は拒否する。',
         DELEGATION_INPUT_GUIDANCE,
         "返した`session_id`は同じ応答で`atk agents wait`を単独実行して観測し、不要なら`kill`で破棄する。"
-        "waitは`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
+        "waitは`session_id`を引数に取らず、登録済みの全sessionの終了を待つ。",
         "exploreは対象成果物への書込禁止。読取ツール管理の保存出力を使え、成果ファイル生成の調査はdelegateへ。返却は委譲元が保存する。",
         EXPLORE_CAPABILITIES,
         "",
@@ -333,8 +333,8 @@ START_DESCRIPTION = "\n".join(
         "",
         "応答は`session_id`・`status`・担当名の`label`と、保持時の`root_session_id`。"
         "起動不能候補を除外して次を試す。切替時だけ除外候補と根拠、採用した`engine`・`model`・`effort`を加える。"
-        "この自動切替は起動時だけに行う。起動後の可用性失敗は終端結果のnext_actionに従いhandoff_from付きで起動する。"
-        "全候補が可用性の失敗かagyのturn失敗で終端すれば最後の終端応答を返す。"
+        "この自動切替は起動時だけに行う。起動後の可用性失敗は終了時の結果のnext_actionに従いhandoff_from付きで起動する。"
+        "全候補が可用性の失敗かagyのturn失敗で終了すれば最後の終了応答を返す。"
         "最後のagy候補のbackend開始例外は除外理由付きの例外で返す。起動条件の詳細は`show`で取得する。"
         "開始後の登録・保存が失敗した場合は`persistence_warnings`と、同じ`session_id`で続ける`next_action`を加える。",
     )

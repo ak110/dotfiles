@@ -1,4 +1,4 @@
-"""終端したAWIの対応commitを、状態と処理日時を保持して公開保存処理へ反映する。"""
+"""終了したAWIの対応commitを、状態と処理日時を保持して公開保存処理へ反映する。"""
 
 from __future__ import annotations
 
@@ -86,11 +86,11 @@ def rewrite_adopted_commits(
         if expected:
             sync.commit_and_push(
                 private_notes,
-                "chore: 終端AWIの対応commitを履歴書換えへ追随",
+                "chore: 終了AWIの対応commitを履歴書換えへ追随",
                 [str(path.relative_to(private_notes)) for path in expected],
             )
             if sync.has_remote(private_notes) and not git_sync.remote_contains_head(private_notes):
-                raise ActionableError("終端AWIの保存commitがupstreamへ反映されていません", next_action=_RETRY)
+                raise ActionableError("終了AWIの保存commitがupstreamへ反映されていません", next_action=_RETRY)
         for path, content in expected.items():
             if path.read_text(encoding="utf-8") != content:
                 raise ActionableError(f"保存後の本文が一致しません: {path}", next_action=_RETRY)

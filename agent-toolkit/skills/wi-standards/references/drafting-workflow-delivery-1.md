@@ -24,5 +24,5 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「投入前の読み直し」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「投入前の読み直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
 | 保存する本文の共通品質を判定する前 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「実現性の記述」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「実現性の記述」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「調査結果と判断根拠の記述」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「調査結果と判断根拠の記述」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |

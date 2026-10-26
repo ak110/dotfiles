@@ -343,8 +343,8 @@ def test_main_structure_requires_detail_metadata_field() -> None:
 
 
 def test_main_structure_rejects_empty_termination_section() -> None:
-    """`## 終端工程`は空欄を拒否する（無い場合は`なし`と書く）。"""
-    content = _VALID_MAIN_CONTENT.replace("## 終端工程\n\nなし\n", "## 終端工程\n\n")
+    """`## 公開工程`は空欄を拒否する（無い場合は`なし`と書く）。"""
+    content = _VALID_MAIN_CONTENT.replace("## 公開工程\n\nなし\n", "## 公開工程\n\n")
     _work_type, errors = plan_sections.check_plan_main_structure(content)
     assert any(f"`## {_plan_format.PLAN_H2_TERMINATION}`は" in error for error in errors), errors
 

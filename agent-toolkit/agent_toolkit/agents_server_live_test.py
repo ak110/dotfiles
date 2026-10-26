@@ -284,7 +284,7 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
 
 
 async def _wait_terminal(manager: server_manager.AgentsServerManager) -> dict[str, Any]:
-    """待機上限へ達した応答は`running`を返すため、終端まで同じ待機を繰り返す。"""
+    """待機上限へ達した応答は`running`を返すため、終了まで同じ待機を繰り返す。"""
     result = await manager.wait()
     for _ in range(10):
         if result["status"] != "running":
@@ -358,7 +358,7 @@ async def test_live_explore_reads_file_and_continues_same_session(
         assert result["agent_message"].strip() == "EXPLORE_CONTINUED_CONTENT", result
         assert session.turn_seq == 2
 
-    # 孫sessionの終端による自動再開を確かめる入力。MCPの起動ツールと`atk agents wait`の実行を要求するため、
+    # 孫sessionの終了による自動再開を確かめる入力。MCPの起動ツールと`atk agents wait`の実行を要求するため、
     # 組込ツールとMCPを制限しない通常起動へ渡す。
 
 
@@ -380,7 +380,7 @@ async def test_live_grandchild_wait_resumes_same_session(
     candidate: tuple[str, str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """委譲先が孫sessionを起動して待機を表明すると、孫の終端後に同じsessionが手動の指示なしに再開し完了報告を返す。
+    """委譲先が孫sessionを起動して待機を表明すると、孫の終了後に同じsessionが手動の指示なしに再開し完了報告を返す。
 
     待機表明の行を完了報告として配送せず、再開したturnの結果だけを委譲元へ返すことを確かめる。
     """
@@ -595,7 +595,7 @@ stream_max_retries = 0
                 model_type="chores_fast",
             )
             result = await manager.wait()
-            # 待機上限へ達した応答は`running`を返すため、終端まで同じ待機を繰り返す。
+            # 待機上限へ達した応答は`running`を返すため、終了まで同じ待機を繰り返す。
             for _ in range(10):
                 if result["status"] != "running":
                     break

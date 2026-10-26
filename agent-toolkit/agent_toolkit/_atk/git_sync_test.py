@@ -127,7 +127,7 @@ def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytes
 def _init_diverged_mq_repos(
     tmp_path: pathlib.Path, *, filename: str = "20260831-101752-001.md"
 ) -> tuple[pathlib.Path, pathlib.Path]:
-    """同じMQ項目を別々に終端できる2つのcloneを作成する。"""
+    """同じMQ項目を別々に終了できる2つのcloneを作成する。"""
     origin = tmp_path / "origin.git"
     seed = tmp_path / "seed"
     local = tmp_path / "local"
@@ -523,7 +523,7 @@ def test_mq_sync_recovers_duplicate_terminal_commit(
     agent_environment: bool,
     filename: str,
 ) -> None:
-    """処理日時だけが異なる同一終端はpull・pushのどちらでもupstreamへ揃える。"""
+    """処理日時だけが異なる同一終了はpull・pushのどちらでもupstreamへ揃える。"""
     if agent_environment:
         monkeypatch.setenv("AI_AGENT", "1")
     local, peer = _init_diverged_mq_repos(tmp_path, filename=filename)

@@ -140,7 +140,29 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
 
 _REPORT_DIRECTION_TERM = "ユーザー報告"
 
+_ENDING_TERM_ALLOWED = (
+    _AllowedLocation("retired_terms_invariant_test.py"),
+    # 今回の表記変更の対象から除外した、過去の条文・観測の保存記録。
+    _AllowedLocation("docs/development/norm-restructure*/*"),
+    # 保存済みの旧計画を読む際の見出し一覧。
+    _AllowedLocation("agent-toolkit/skills/plan-mode/references/legacy-plan-file-standards.md"),
+    # 保存済み記録の旧名を現行の役割・工程へ対応付ける説明だけを許容する。
+    _AllowedLocation("docs/development/concepts-principles.md", "旧記録の読み替え:"),
+)
+
 _RETIRED_TERMS = (
+    *(
+        _RetiredTerm(term=term, replacement=replacement, allowed=_ENDING_TERM_ALLOWED)
+        for term, replacement in (
+            ("終端担当", "公開担当"),
+            ("終端工程", "公開工程・公開後の操作・終了工程"),
+            ("終端結果", "終了時の結果"),
+            ("未終端", "未終了"),
+            ("終端済み", "終了済み"),
+            ("終端完了", "公開完了"),
+            ("終端区分", "終了区分"),
+        )
+    ),
     _RetiredTerm(
         term="近接検証",
         replacement="変更範囲の検証",
@@ -604,6 +626,13 @@ def test_reader_documents_do_not_use_end_user_term() -> None:
     files = [_ROOT / "README.md", _ROOT / "docs/index.md", *(_ROOT / "docs/guide").rglob("*.md")]
     violations = [str(path.relative_to(_ROOT)) for path in files if "エンドユーザー" in path.read_text(encoding="utf-8")]
     assert not violations, violations
+
+
+@pytest.mark.parametrize("term", [retired.term for retired in _RETIRED_TERMS if retired.allowed == _ENDING_TERM_ALLOWED])
+def test_ending_terms_written_back_to_current_document_are_rejected(tmp_path: pathlib.Path, term: str) -> None:
+    """終了の旧表記を現行文書へ戻すと、保存済み旧形式と区別して検出する。"""
+    _init_repo(tmp_path, {"agent-toolkit/share/example.md": f"処理の{term}を確認する。\n"})
+    assert any(f"名称「{term}」" in violation for violation in _find_violations(tmp_path))
 
 
 def test_retired_term_outside_allowed_location_is_reported(tmp_path: pathlib.Path) -> None:

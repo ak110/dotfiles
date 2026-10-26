@@ -1072,7 +1072,7 @@ class _RegisteredBackend(agents_server_support.FakeBackend):
 async def test_started_session_without_projection_is_waited_by_same_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """表示保存に失敗した公開startのIDを同じ作業の待機対象とし、wait判断の受理から終端本文の回収まで到達する。"""
+    """表示保存に失敗した公開startのIDを同じ作業の待機対象とし、wait判断の受理から終了本文の回収まで到達する。"""
     state_root = tmp_path / "state"
     monkeypatch.setattr(state_paths, "state_dir", lambda: state_root)
     supply_commit(tmp_path)

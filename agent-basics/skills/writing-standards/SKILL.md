@@ -27,7 +27,7 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文の各参照における適用条件を確認し、指定された資料の対象範囲を読み込んでから、その基準に基づく具体的な判断をする。起動時の条件に該当する資料は、起動時のプロンプトとともに渡される。
+本文の各参照における適用条件を確認し、指定された資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断をする。起動時の条件に該当する資料は、起動時のプロンプトとともに渡される。
 
 <!-- read-table-source: SKILL-delivery-1.md -->
 
@@ -35,7 +35,7 @@ description: >
 
 <!-- read-table-source: SKILL-delivery-2.md -->
 
-| 時点または条件 | 取得する範囲 |
+| 時点または条件 | 資料と注目箇所 |
 | --- | --- |
 | 既存ファイルを編集・上書きする時、スクリプトで複数ファイルを機械変換する時 | `references/file-editing.md` |
 | 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` |
@@ -60,7 +60,7 @@ description: >
 
 <!-- read-table-source: SKILL-delivery-3.md -->
 
-| 時点または条件 | 取得する範囲 |
+| 時点または条件 | 資料と注目箇所 |
 | --- | --- |
 | 並行処理・排他制御を設計・変更・レビューする前 | `references/design-heuristics.md`の「並行処理・排他制御の設計観点」 |
 | 検索・一覧画面を設計・変更・レビューする前 | `references/design-heuristics.md`の「検索・一覧画面の設計」 |
@@ -77,7 +77,7 @@ description: >
 
 <!-- read-table-source: SKILL-delivery-4.md -->
 
-| 時点または条件 | 取得する範囲 |
+| 時点または条件 | 資料と注目箇所 |
 | --- | --- |
 | textlintなど文章チェックの診断へ対応する時 | `references/textlint-violations.md` |
 | 文章の書き直しを委ねる時 | `references/textlint-violations.md`の「文の書き直しの委譲と検収」 |
@@ -98,7 +98,7 @@ description: >
 
 <!-- read-table-source: SKILL-delivery-5.md -->
 
-| 時点または条件 | 取得する範囲 |
+| 時点または条件 | 資料と注目箇所 |
 | --- | --- |
 | `py` | `references/python.md`の「言語スタイル」「テストコード（pytest）」「Python新構文と導入バージョン」 |
 | `ts`・`tsx` | `references/typescript.md` |
@@ -118,7 +118,7 @@ description: >
 
 <!-- read-table-source: SKILL-delivery-6.md -->
 
-| 時点または条件 | 取得する範囲 |
+| 時点または条件 | 資料と注目箇所 |
 | --- | --- |
 | 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `references/design-time.md` |
 | コードを編集する時と、依存の追加・更新をする時 | `references/implementation-time.md` |
@@ -143,7 +143,7 @@ description: >
 
 <!-- read-table-source: SKILL-delivery-7.md -->
 
-| 時点または条件 | 取得する範囲 |
+| 時点または条件 | 資料と注目箇所 |
 | --- | --- |
 | エージェント向け文書（AGENTS.md、CLAUDE.md、ルール、SKILL.md、サブエージェント定義、referencesなど）の編集前 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」と`references/agent-documents-basics.md` |
 | スキル編集 | `references/agent-skills.md`、`references/host-official-references.md` |

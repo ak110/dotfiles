@@ -49,7 +49,7 @@ class QueueEntry:
 class ReadinessResult:
     """対象リポジトリの`active`項目に対する着手可否と修復診断。
 
-    `internal_dependency_waits`は、未終端の依存先を1件以上持ち、その全てが引数`target_repo`の
+    `internal_dependency_waits`は、未終了の依存先を1件以上持ち、その全てが引数`target_repo`の
     `processable`集合の内側にある項目を保持する。
     """
 
@@ -348,7 +348,7 @@ def calculate_readiness(
     snapshot: tuple[_wi_entries.EntryRecord, ...] | None = None,
     texts: EntryTexts | None = None,
 ) -> ReadinessResult:
-    """`active`全件と参照された終端項目から対象リポジトリの着手可否を算出する。"""
+    """`active`全件と参照された終了項目から対象リポジトリの着手可否を算出する。"""
     if now is None:
         now = datetime.datetime.now(datetime.UTC)
     if now.tzinfo is None:

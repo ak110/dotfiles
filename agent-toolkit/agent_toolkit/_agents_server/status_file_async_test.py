@@ -36,7 +36,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_terminal_notification_finishes_io_before_result_becomes_available(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """終端通知の読取待機中にもwriterを動かし、終端結果と確定時刻の一貫性を保つ。"""
+    """終了通知の読取待機中にもwriterを動かし、終了時の結果と確定時刻の一貫性を保つ。"""
     session = state.SessionState("session", str(tmp_path), engine="codex", announced=True, status="running", turn_id="turn")
     sessions = {session.session_id: session}
     session.agents_wait_background_outputs.add(str(tmp_path / "output"))
@@ -249,7 +249,7 @@ async def test_registration_updates_during_retry_do_not_mark_new_turn_saved(
 async def test_close_after_cancelled_flush_waits_for_worker_and_removes_projection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, worker_fails: bool
 ) -> None:
-    """保存キャンセルはworkerの終端を待ち、close後に表示ファイルを再作成しない。"""
+    """保存キャンセルはworkerの終了を待ち、close後に表示ファイルを再作成しない。"""
     writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
     async with manager.AgentsServerManager(writer) as owner:
         await owner.activate_async()
@@ -609,7 +609,7 @@ async def test_candidate_save_failure_is_reported_by_started_response(
 async def test_close_propagates_candidate_failure_without_masking_terminal_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, terminal_save_fails: bool
 ) -> None:
-    """closeは候補保存の失敗を成功へ変えず、同時に終端保存が失敗した場合は元の例外を保持する。"""
+    """closeは候補保存の失敗を成功へ変えず、同時に終了保存が失敗した場合は元の例外を保持する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
     async with manager.AgentsServerManager(writer) as owner:
@@ -631,7 +631,7 @@ async def test_close_propagates_candidate_failure_without_masking_terminal_failu
             if destination == unavailable_candidates.unavailable_candidates_path(tmp_path):
                 raise PermissionError("候補記録を保存できない")
             if terminal_save_fails and destination.parent.name == "results":
-                raise PermissionError("終端結果を保存できない")
+                raise PermissionError("終了時の結果を保存できない")
             replace(source, destination)
 
         monkeypatch.setattr(atomic_file.os, "replace", reject)
@@ -639,7 +639,7 @@ async def test_close_propagates_candidate_failure_without_masking_terminal_failu
         session.turn_completed = True
         session.error = {"codexErrorInfo": "usageLimitExceeded"}
         session.touch()
-        expected = "終端結果を保存できない" if terminal_save_fails else "候補記録を保存できない"
+        expected = "終了時の結果を保存できない" if terminal_save_fails else "候補記録を保存できない"
         with pytest.raises(PermissionError, match=expected) as raised:
             await owner.close()
         if terminal_save_fails:

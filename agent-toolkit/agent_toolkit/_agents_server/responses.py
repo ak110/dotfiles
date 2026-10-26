@@ -66,17 +66,17 @@ EXPIRED_SESSION_NEXT_ACTION = (
 SESSION_ID_NEXT_ACTION = "`start`の応答か`list`が返した`session_id`を指定する"
 
 
-RUNNING_STOP_NEXT_ACTION = "中断が必要なら先に`kill`を発行し、終端を観測してから`stop`を再発行する"
+RUNNING_STOP_NEXT_ACTION = "中断が必要なら先に`kill`を発行し、終了を観測してから`stop`を再発行する"
 
 
 KILL_NOT_DELIVERED_NEXT_ACTION = "`atk agents wait`で状態を確認し、turnが続いていて中断が必要なら`kill`を再発行する"
 
 
-_START_FAILED_NEXT_ACTION = "`atk agents wait`で終端結果の`error`を受領し、`model_type`へ別の候補を指定して起動し直す"
+_START_FAILED_NEXT_ACTION = "`atk agents wait`で終了時の結果の`error`を受領し、`model_type`へ別の候補を指定して起動し直す"
 
 
 REPLY_NEXT_ACTIONS = {
-    "reply_failed": "新しいturnを開始できなかった。`atk agents wait`で終端結果を受領して原因を確かめてから次の操作を選ぶ",
+    "reply_failed": "新しいturnを開始できなかった。`atk agents wait`で終了時の結果を受領して原因を確かめてから次の操作を選ぶ",
     "reply_ambiguous": (
         "turnの開始を確定できなかった。`atk agents wait`で状態を確認し、turnが始まっていない場合だけ`send_message`を再送する"
     ),
@@ -116,7 +116,7 @@ def public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
     除外した候補のうち実際に作成したsessionは、その識別子も保持する。
     切り替えが起きない起動は`session_id`、`status`および起動したsessionが保持する担当名の`label`を返す。
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
-    起動直後に失敗で終端した応答は、委譲元が状態値だけで次の行動を決められるよう`next_action`を加える。
+    起動直後に失敗で終了した応答は、委譲元が状態値だけで次の行動を決められるよう`next_action`を加える。
     """
     public: dict[str, Any] = {key: response[key] for key in ("session_id", "status", "label")}
     if all(key in response for key in ("engine", "model", "effort")):
@@ -143,7 +143,8 @@ def public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
         public["persistence_warnings"] = response["persistence_warnings"]
         public["next_action"] = (
             "sessionは開始済みです。同じ`session_id`の`show`・`send_message`で状態確認と追送を行い、"
-            "保存の失敗原因を解消してから`atk agents wait`で終端結果を受け取る。保存失敗だけを理由に新しい委譲先を起動しない"
+            "保存の失敗原因を解消してから`atk agents wait`で終了時の結果を受け取る。"
+            "保存失敗だけを理由に新しい委譲先を起動しない"
         )
     return public
 
@@ -212,7 +213,7 @@ class ManagerResponses(manager_base.ManagerBase):
 
     @staticmethod
     def _recovered_result_response(resume_state: SessionResumeState) -> dict[str, Any]:
-        """再起動前の終端種別と結果本文を回収できない事実を返す。"""
+        """再起動前の終了種別と結果本文を回収できない事実を返す。"""
         return {"status": resume_state.status, "recovery": "result_unavailable"}
 
     @staticmethod
@@ -326,7 +327,7 @@ class ManagerResponses(manager_base.ManagerBase):
         observed_identity: dict[str, str] | None = None,
         identity_read: bool = False,
     ) -> dict[str, Any]:
-        """waitまたはkillの応答を組み立て、返した終端結果を回収済みにする。
+        """waitまたはkillの応答を組み立て、返した終了時の結果を回収済みにする。
 
         `elapsed_seconds`はturnの`started_at`起点である。
         最終活動時刻と停滞の印は`list`が返すため、本応答へは載せない。

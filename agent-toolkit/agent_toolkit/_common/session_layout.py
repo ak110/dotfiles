@@ -87,7 +87,7 @@ def valid_session_id(session_id: str) -> bool:
 
 
 def results_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """ルートsessionの終端結果ディレクトリを返す。"""
+    """ルートsessionの終了時の結果ディレクトリを返す。"""
     return status_directory(root_session_id, state_root) / "results"
 
 

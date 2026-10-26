@@ -129,7 +129,7 @@ def test_failed_extraction_keeps_resume_and_removes_stale_file(
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
     assert saved.exists() is cleanup_fails
     if cleanup_fails:
-        assert "前回の抽出ファイル" in output and "使用しない" in output
+        assert "前回の抽出ファイル" in output and "使用するな" in output
 
 
 @pytest.mark.parametrize("source", ["startup", "resume", "clear"])

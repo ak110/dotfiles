@@ -385,13 +385,13 @@ def _restore_session_listeners() -> Any:
 
 @pytest.fixture
 def _short_start_availability_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """起動直後の終端確認を短縮し、実行中のまま返るsessionでテストを待たせない。"""
+    """起動直後の終了確認を短縮し、実行中のまま返るsessionでテストを待たせない。"""
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.05)
 
 
 @pytest.fixture
 def _immediate_wait_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """待機上限の導出を省き、未終端sessionの待機でテストを待たせない。
+    """待機上限の導出を省き、未終了sessionの待機でテストを待たせない。
 
     `wait`は待機上限を入力として受け取らないため、上限の導出だけをテスト用の値へ差し替える。
     """

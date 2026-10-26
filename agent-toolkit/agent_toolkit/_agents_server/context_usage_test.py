@@ -73,7 +73,7 @@ async def test_public_cli_connects_shared_fixture_parent_ids_and_formats_usage(
             assert diagnostic in output
             assert "53.5k/5%" in output
         sessions[1].api_error = None
-        # 同じ公開一覧が終端と再描画後の新観測値を扱う。
+        # 同じ公開一覧が終了と再描画後の新観測値を扱う。
         sessions[0].status = "completed"
         sessions[0].turn_completed = True
         sessions[0].touch()
@@ -239,7 +239,7 @@ async def test_context_usage_reaches_public_cli_without_activity(
         retained = state.SessionResumeState.from_session(session)
         assert retained.context_tokens == 1000
         writer.flush()
-        # 状態ファイル消失後も、終端結果に保存した詳細へ同じ観測値を届ける。
+        # 状態ファイル消失後も、終了時の結果に保存した詳細へ同じ観測値を届ける。
         writer.path.unlink()
         with pytest.raises(SystemExit, match="0"):
             atk.main(["agents", "show", session.session_id])

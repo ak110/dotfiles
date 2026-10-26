@@ -130,9 +130,9 @@ export function register(on: On, session: { delegated: boolean }): void {
   });
   on("tool.call", { tool: /__compact_conversation$/ }, ($, e, next) => {
     if (e.tool !== `mcp__${$.plugin.name}__${TOOL_NAME}`) return next(e);
-    if (state.pending) return { result: "未完了の圧縮予約があるため追加していない。現在のターンを終えてホストの結果を待つ。" };
+    if (state.pending) return { result: "未完了の圧縮予約があるため追加していない。現在のターンを終えてホストの結果を待て。" };
     state.pending = true;
     schedule($, state);
-    return { result: "会話圧縮を予約した。まだ完了していない。現在のターンを終えてホストの圧縮結果を待つ。" };
+    return { result: "会話圧縮を予約した。まだ完了していない。現在のターンを終えてホストの圧縮結果を待て。" };
   });
 }

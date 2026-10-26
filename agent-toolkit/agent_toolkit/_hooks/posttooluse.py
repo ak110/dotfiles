@@ -90,17 +90,17 @@ USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
 # --- ユーザーが書いた文への注記 ---
 
 VERIFICATION_NOTICE_BODY = (
-    "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙する。"
-    "事実の裏付けを調べる前に、真の場合と偽の場合で次の行動、変更対象、成果物の前提、回答の結論が実質的に変わるか判断する。"
-    "変わらない事実は調べずにユーザーが述べた事実として受け取って依頼を進め、自ら確かめた事実として報告しない。"
-    "判断を変える事実と是正の対象は、現物（原文・実装・規範・実行結果・対象の目的を定める仕様・設計記録）と比べて確かめてから応答する。"
-    "是正を求める対象を含む発話では、対処の前に`agent-toolkit:bugfix`をスキル機能で起動する。"
-    "不具合の有無・原因・直し方を述べるか確認で提案する場合も、述べる前に起動する。"
+    "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙せよ。"
+    "事実の裏付けを調べる前に、真の場合と偽の場合で次の行動、変更対象、成果物の前提、回答の結論が実質的に変わるか判断せよ。"
+    "変わらない事実は調べずにユーザーが述べた事実として受け取って依頼を進め、自ら確かめた事実として報告するな。"
+    "判断を変える事実と是正の対象は、現物（原文・実装・規範・実行結果・対象の目的を定める仕様・設計記録）と比べて確かめてから応答せよ。"
+    "是正を求める対象を含む発話では、対処の前に`agent-toolkit:bugfix`をスキル機能で起動せよ。"
+    "不具合の有無・原因・直し方を述べるか確認で提案する場合も、述べる前に起動せよ。"
     "対処を委譲先やAWIへ委ねる場合も含む。"
-    "判断を変える事実を現物と比べて確かめられない場合は、同意も変更もしない。"
-    "確かめる事実も是正の対象も無いと判定した発話では、現物との比較を省いて次の工程へ進む。"
-    "稼働中の依頼がある場合は、未完了工程が元の依頼の目的に対応するか確かめてから次に実行する工程を確定する。"
-    "同じ論点で修正が続く場合は意図と要件への影響を確かめ、確定できないときだけユーザー確認する。"
+    "判断を変える事実を現物と比べて確かめられない場合は、同意も変更もするな。"
+    "確かめる事実も是正の対象も無いと判定した発話では、現物との比較を省いて次の工程へ進め。"
+    "稼働中の依頼がある場合は、未完了工程が元の依頼の目的に対応するか確かめてから次に実行する工程を確定せよ。"
+    "同じ論点で修正が続く場合は意図と要件への影響を確かめ、確定できないときだけユーザー確認せよ。"
 )
 """ユーザーが書いた文の内容を現物で確かめる手順を示す注記の本文。
 
@@ -114,7 +114,7 @@ importするため、循環importを避けて本モジュールに置く。
 
 _REALIGN_NOTICE_BODY = (
     "ユーザー発話に全角の連続した「！！」が含まれている。"
-    "次の操作: `agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめる。"
+    "次の操作: `agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめよ。"
 )
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
@@ -136,8 +136,8 @@ def _example_investigation_notice(prompt: str, source: str, *, subject: str) -> 
     body = (
         "この発話は例示の語と、調査・確認を求める語を含む。"
         "範囲語か開放列挙を併せ持つ調査、見直し、点検の依頼である場合は、自ら調査へ着手する前に"
-        f"{utterance}「原文の保持と取り込み」の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用する。"
-        f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従う。"
+        f"{utterance}「原文の保持と取り込み」の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用せよ。"
+        f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従え。"
     )
     return _notice_formatter(source)(body, tag="notice", subject=subject)
 
@@ -157,11 +157,11 @@ _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 _FREE_TEXT_ANSWER_PROCEDURE = (
     "この注記は`AskUserQuestion`への回答のうち、提示した選択肢と一致しない自由記述へ返している。"
     "回答が質問の前提や推奨案の根拠を否定する場合も前段の判断を適用し、"
-    "その前提の真偽で推奨案や次の行動が変わる場合だけ、前提を現物（コミット件名、実装、規範、実行結果など）で確かめる。"
+    "その前提の真偽で推奨案や次の行動が変わる場合だけ、前提を現物（コミット件名、実装、規範、実行結果など）で確かめよ。"
     "確かめた結果が回答と一致すれば、前提が誤っていたことと確定した事実だけを伝え、"
-    "質問本文と先の報告で述べた前提や懸念を再掲しない。"
-    "一致しなければ、確かめた手段と結果を示して回答と一致しない点を伝える。"
-    "行動を変えない前提は確かめずに回答を受け取り、回答に沿って進める。"
+    "質問本文と先の報告で述べた前提や懸念を再掲するな。"
+    "一致しなければ、確かめた手段と結果を示して回答と一致しない点を伝えよ。"
+    "行動を変えない前提は確かめずに回答を受け取り、回答に沿って進めよ。"
 )
 """`AskUserQuestion`の自由記述の回答への注記で、共通の本文に続ける手順。"""
 # Claude Codeが選択肢を選ばずに注記だけを残した質問へ入れる`answers`の値（2.1.283の記録で観測）。
@@ -458,11 +458,11 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     check_script = project_root / _run_script.SCRIPT_PATHS["plan-check"]
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
-        f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめる:"
+        f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめよ:"
         f" `{shlex.join(plugin_environment.launch_command(project_root, check_script))}{work_dir_option}"
         f" {shlex.quote(file_path)}`."
         "計画の対象リポジトリがこのセッションの作業ディレクトリと異なる場合は、"
-        "`--work-dir`を対象リポジトリへ置き換える。",
+        "`--work-dir`を対象リポジトリへ置き換えよ。",
         tag="notice",
     )
 
@@ -526,9 +526,9 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
     if not isinstance(command, str) or not termination_evidence.published_git_operations(command):
         return None
     operation = (
-        f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/SKILL.md'}`を読む"
+        f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/SKILL.md'}`を読め"
         if is_codex_payload(payload) or is_antigravity_payload(payload)
-        else "Skillで`agent-toolkit:completion-report`を起動する"
+        else "Skillで`agent-toolkit:completion-report`を起動せよ"
     )
     return _llm_notice(
         f"作業を完了してユーザーへ成果を報告するときは、報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
@@ -561,7 +561,7 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
             _llm_notice(
                 f"読込資料の取得を記録できない: {error}",
                 tag=_WARN_TAG,
-                fix="資料の実在と宣言を確認し、必要な本文を取得する。",
+                fix="資料の実在と宣言を確認し、必要な本文を取得せよ。",
                 removable_cause=True,
                 escalate_on_repeat=False,
             )

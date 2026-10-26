@@ -9,7 +9,7 @@ description: >
 
 # 計画モード
 
-本スキルは、事前調査から計画ファイルの作成、実装、そして`起動経路`に応じた完了（終端）までの一連の流れを定めている。
+本スキルは、事前調査から計画ファイルの作成、実装、そして`起動経路`に応じた完了までの一連の流れを定めている。
 各工程の役割分担は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`、計画ファイルが満たすべき仕様（成果物契約）は`references/plan-file-standards.md`で規定する。また、WI本文の要求や由来の扱いは`agent-toolkit:wi-standards`、実装や実行レビューの詳細な手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.subagent.md`に従う。
 計画は要件や外部仕様の粒度で記述し、起草したエージェントがそのまま実装を進める。レビューは実装が終わった後の実行レビューのみで実施する。
 
@@ -38,7 +38,7 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/codex-runtime.md` | |
-| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`の冒頭、「計画ファイルの構成」から「検証と終端工程」まで、「初回起草の雛形」「要件の成立性」 | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#冒頭`、`section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「計画ファイルの構成」から「検証と終端工程」まで`、`section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「初回起草の雛形」「要件の成立性」` | |
+| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`の冒頭、「計画ファイルの構成」から「検証と公開工程」まで、「初回起草の雛形」「要件の成立性」 | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#冒頭`、`section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「計画ファイルの構成」から「検証と公開工程」まで`、`section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「初回起草の雛形」「要件の成立性」` | |
 | WIの原因分析を補うか計画ファイル（バグ）を書く前 | `references/plan-file-standards.md`の「バグ調査」 | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「バグ調査」` | |
 | 進捗を記録する前と、中断後に再開する前 | `references/plan-file-standards.md`の「進捗ログ」 | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「進捗ログ」` | |
 | 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` | 操作 | `bash:atk plans commit` | |
@@ -74,14 +74,14 @@ description: >
 
 | `起動経路` | 手順4の後に実施すること |
 | --- | --- |
-| `agent-toolkit:plan-mode`のメインによる起動 | 「メインによる起動の実装と終端」に従う |
+| `agent-toolkit:plan-mode`のメインによる起動 | 「メインによる起動の実装と終了」に従う |
 | `agent-toolkit:process-wi`のレーン担当としての起動 | `agent-toolkit:process-wi`の`references/lane-planning.md`に定める待機条件と、その条件に応じた報告・通知・実装手順に従う |
 
 実装着手後の計画ファイルの扱いや要件判断の記録は`references/plan-file-standards.md`の計画凍結の規定に、中断後の再開手順は同書の「進捗ログ」に従う。
 
-## メインによる起動の実装と終端
+## メインによる起動の実装と終了
 
-実装、実行レビュー、および完了（終端）の処理は`references/main-launch.md`に従う。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`検証結果`は同書の冒頭の規定に沿って計画の進捗ログに記録する。
+実装、実行レビュー、および完了の処理は`references/main-launch.md`に従う。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`検証結果`は同書の冒頭の規定に沿って計画の進捗ログに記録する。
 記録の記述方法やレビュー指摘修正後の更新手順は、`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「完成条件証拠の検証記録」に従う。
 
 WIを入力とする計画の開始時は、WIの既存証拠の対象・版・前提との差だけを調べ、変化部分、残る問い、実装に必要な詳細を補う。一致する範囲の証拠と記述は再利用する。

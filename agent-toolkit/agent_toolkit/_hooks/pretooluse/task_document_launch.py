@@ -106,8 +106,8 @@ def _check_free_text_start(mode: str, prompt: str) -> Decision:
                 removable_cause=True,
                 fix=(
                     f"`agents_server`の`start`へ`mode`を指定せず、役割名の`subagent_md_path={role_name}`と、"
-                    "`<役割名>.subagent.md`が宣言した入力名だけを持つ`extra_params`を渡して起動する。"
-                    f"サーバー自身のプラグインルートと別の版の文書を使う場合だけ、`subagent_md_path`へ`{document}`を渡す。"
+                    "`<役割名>.subagent.md`が宣言した入力名だけを持つ`extra_params`を渡して起動せよ。"
+                    f"サーバー自身のプラグインルートと別の版の文書を使う場合だけ、`subagent_md_path`へ`{document}`を渡せ。"
                 ),
             ),
         )
@@ -147,7 +147,7 @@ def _check_agent_prompt(prompt: str) -> Decision:
                     str(error),
                     fix=(
                         "`atk run-script delegation-prompt -- --input <要求JSONの絶対パス>`で"
-                        "必須入力を持つ本文を生成し、その本文で起動し直す。"
+                        "必須入力を持つ本文を生成し、その本文で起動し直せ。"
                     ),
                 )
             )
@@ -162,9 +162,9 @@ def _check_agent_prompt(prompt: str) -> Decision:
                 removable_cause=True,
                 fix=(
                     f"1行目を`{expected_first}`とし、2行目以降は`<入力名>: <値>`の行と"
-                    "半角空白2字で字下げした続きの行だけにする。"
+                    "半角空白2字で字下げした続きの行だけにせよ。"
                     f"受理する入力名: {', '.join(sorted(accepted))}。"
-                    "手順、権限、返却形式は`<役割名>.subagent.md`が定めるため書かない。"
+                    "手順、権限、返却形式は`<役割名>.subagent.md`が定めるため書くな。"
                 ),
             ),
         )

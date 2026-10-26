@@ -15,7 +15,7 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を確認し、選んだ資料の指定範囲を取得してから、その基準に基づく具体的な判断へ進む。起動時の行で指定された資料は、起動時の本文とともに届く。
+本文の各参照の適用条件を確認し、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行で指定された資料は、起動時の本文とともに届く。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -99,7 +99,7 @@ description: >
 本節は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。詳細は`references/version-bump.md`を参照する。
 バージョン番号を更新しないままでは、`claude plugin update`を実行しても「最新です」と応答されて更新が配信されない。そのため、エンドユーザーに届く変更はプッシュ前に必ずバージョンを更新する。
 
-- バージョン番号は`scripts/agent_toolkit_bump.py {patch|minor|major}`で更新する。更新区分の判断は`references/version-bump.md`「判定基準」を、実行主体とタイミングは同文書「plan modeでの取り扱い」に従う（`agent-toolkit:process-wi`の各レーンでは計画に区分を記録するのみとし、終端担当が全レーンのマージ後に1回だけ実行する）。rebaseやmergeの競合は同文書「競合解決と統合後の確認」に従って解決する。
+- バージョン番号は`scripts/agent_toolkit_bump.py {patch|minor|major}`で更新する。更新区分の判断は`references/version-bump.md`「判定基準」を、実行主体とタイミングは同文書「plan modeでの取り扱い」に従う（`agent-toolkit:process-wi`の各レーンでは計画に区分を記録するのみとし、公開担当が全レーンのマージ後に1回だけ実行する）。rebaseやmergeの競合は同文書「競合解決と統合後の確認」に従って解決する。
 - `version`と`description`は2箇所の定義元で常に一致させる（`description`は手動で同期する）。定義元は、`agent-toolkit/.claude-plugin/plugin.json`と、`.claude-plugin/marketplace.json`の`plugins[]`内にある`name == "agent-toolkit"`のエントリである。この整合性は`manifest_ssot_invariant_test.py`によって検証される。
 - Agent Plugins向けの`plugin.json`・`mcp.json`やCodex向けマニフェストは、上記2ファイルと`agent-toolkit/.mcp.json`をもとに`scripts/sync_codex_plugin_manifests.py`が生成する。Antigravity向けの`agent-toolkit-agy/`および`agent-basics-agy/`は`scripts/sync_antigravity_plugin.py`が生成し、`post_apply`が`~/.gemini/config/plugins.json`へ登録する。`--plugin agent-basics`を指定すると品質プラグインのみを生成できる。元の名前空間と品質本文を保持したまま、両配布物の長文スキルを同一の短いSKILL.md・全文資料生成処理へ渡す。これらの生成ファイルは手動で編集せず、生成元ファイルを編集した上で再生成する。
 - 動作検証は、`dotfiles-development`「開発手順」に示された特定ファイル限定の実行形式を用い、SSOTテストを含めて実施する。

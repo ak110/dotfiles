@@ -12,7 +12,7 @@
 | 元担当の継続・回復・置換・再起動または役割引継ぎを選ぶ前 | `references/runtime-routing.md`の「継続と新規起動」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「継続と新規起動」` | |
 | Claude Codeで`Agent`ツールの委譲先かバックグラウンドタスクを最初に起動する前、定期再確認を自ら装着する前、装着・回収の失敗通知に対処する時、およびClaude Code固有の手順を確定する時（explore・shellの起動から受領までの操作は除き、本書の同名節に従う） | `references/claude-code-runtime.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md` | |
 | 完了通知および待機・停滞を確定する時 | `references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` | |
-| `atk agents wait`が終了コード4・8・10または待機対象0件の非0で終わった時、待機の呼び出しがホストの上限で失敗した時、ホストから背景待機の停止通知を受けた時、委譲先か自身のツール呼び出しが終端statusを返さずに終わった時、`agents_server`のMCPサーバーが再起動した後 | `references/wait-anomalies.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies.md` | |
+| `atk agents wait`が終了コード4・8・10または待機対象0件の非0で終わった時、待機の呼び出しがホストの上限で失敗した時、ホストから背景待機の停止通知を受けた時、委譲先か自身のツール呼び出しが終了statusを返さずに終わった時、`agents_server`のMCPサーバーが再起動した後 | `references/wait-anomalies.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies.md` | |
 | 稼働中の委譲先へ追送する前 | `references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` | |
 | 委譲済みの要求について自ら本文を読む、追加調査する、回答を作成する前 | 本書「継続と新規起動」、`references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
 | 同じworktreeへ後続または並列の書込担当を起動する前（shellを除く。shellは本書「explore・shellの起動」に従う） | `references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |

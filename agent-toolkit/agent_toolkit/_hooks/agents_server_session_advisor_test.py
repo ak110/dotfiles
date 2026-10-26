@@ -398,7 +398,7 @@ def test_response_without_waiting_declaration_still_warns(tmp_path: pathlib.Path
 
 
 def test_wait_response_resolves_pending_observation_for_unselected_sessions(tmp_path: pathlib.Path) -> None:
-    """終端1件を返した待機でも、同じ呼出主体の残るsessionの未観測状態を解消する。"""
+    """終了1件を返した待機でも、同じ呼出主体の残るsessionの未観測状態を解消する。"""
     local_session_id = "wait-unselected"
     for remote_session_id in ("remote-selected", "remote-unselected"):
         _record_start(tmp_path, local_session_id, remote_session_id)

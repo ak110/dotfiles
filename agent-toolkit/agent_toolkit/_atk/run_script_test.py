@@ -286,7 +286,7 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
 | --- | --- |
 | 変更範囲の検証 | `pytest` |
 
-## 終端工程
+## 公開工程
 
 なし
 

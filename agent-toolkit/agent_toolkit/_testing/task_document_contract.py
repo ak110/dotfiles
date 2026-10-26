@@ -20,7 +20,7 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
         try:
             end = lines.index("---", 1)
         except ValueError as error:
-            raise ValueError("frontmatterの終端がありません") from error
+            raise ValueError("frontmatterを閉じる`---`がありません。閉じる行を補って再検証してください") from error
         body = "\n".join(lines[1:end])
         node = yaml.compose(body)
         if not isinstance(node, yaml.MappingNode):

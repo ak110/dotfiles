@@ -68,7 +68,7 @@ lazy from agent_toolkit._hooks.transcript_scan import (
     tool_result_text_blocks,
 )
 
-# 非同期待機系ツール名。これらのtool_useで直前アシスタントターンが終端している場合は
+# 非同期待機系ツール名。これらのtool_useで直前アシスタントターンが終了している場合は
 # セッション継続中と判断する。
 # Bashはrun_in_backgroundフラグで別途判定するため、ここには含めない。
 _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "CronCreate", "Monitor"})
@@ -201,7 +201,7 @@ def is_pending_async_work(
       `CronCreate`・`Monitor`、または`Bash`かつ`input.run_in_background == true`）
     - 未完了のbackground task（Agent・Bash・SendMessage背景再開・MCP）が存在する
     - 最上位transcriptのキューへ投入され、モデルへまだ配送されていない完了通知が存在する
-    - 呼出主体がまだ回収していないagents_serverの終端結果がセッション状態に存在する
+    - 呼出主体がまだ回収していないagents_serverの終了時の結果がセッション状態に存在する
 
     Stop入力の`background_tasks`に有効な非`teammate` taskがあれば、無効な要素の混在に
     かかわらず真を返す。個別taskの`status`その他の任意フィールドは判定に使わない。

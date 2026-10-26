@@ -247,7 +247,7 @@ def _injections(contexts: list[str]) -> dict[str, Any]:
 
 
 def _native_children(payload: dict[str, Any], normalized: dict[str, Any]) -> None:
-    """親の起動応答と全件のactive一覧を使い、ネイティブ子の所有と終端を更新する。"""
+    """親の起動応答と全件のactive一覧を使い、ネイティブ子の所有と終了を更新する。"""
     call = payload.get("toolCall")
     if not isinstance(call, dict) or payload.get("error"):
         return
@@ -345,9 +345,15 @@ def _dispatch(payload: dict[str, Any], event: str) -> dict[str, Any]:
         response = _invoke("pretooluse", normalized)
         session_activity.record_activity(normalized)
         if response.code == 2 or response.body.get("decision") in {"block", "deny"}:
+            reason = response.body.get("reason")
             return {
                 "decision": "deny",
-                "reason": response.diagnostic.strip() or str(response.body.get("reason", "規範違反を修正する")),
+                "reason": response.diagnostic.strip()
+                or (reason if isinstance(reason, str) and reason.strip() else "")
+                or (
+                    "内部のpretooluse hookが理由を返さずに操作を拒否した。"
+                    "拒否された操作とこの事実を、委譲先は委譲元へ、それ以外はユーザーへ報告せよ。"
+                ),
             }
         _enqueue(session_id, response.contexts())
         overwrite = _native_subagent_context(payload)

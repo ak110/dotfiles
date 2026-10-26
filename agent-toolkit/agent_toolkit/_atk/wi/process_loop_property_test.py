@@ -64,7 +64,7 @@ class _LoopSnapshot:
 
 
 def _reference_loop_trace(events: list[str], *, resume_requested: bool, update_marker: bool) -> tuple[list[_LoopSnapshot], int]:
-    """要求仕様だけからprocess-loopの遷移列と終端codeを導く。"""
+    """要求仕様だけからprocess-loopの遷移列と終了codeを導く。"""
     launches = 0
     updates = 0
     preparations = 0

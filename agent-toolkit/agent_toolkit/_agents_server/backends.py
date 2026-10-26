@@ -44,11 +44,11 @@ class Backend(typing.Protocol):
     INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool]
     """中断の要求にturnの識別子を要するか。"""
     ORPHAN_TAKEOVER: typing.ClassVar[bool]
-    """所有者のいない登録簿の記録を、委譲先CLIの記録から終端として引き継げるか。"""
+    """所有者のいない登録簿の記録を、委譲先CLIの記録から終了として引き継げるか。"""
 
     @staticmethod
     def unavailable_reason(session: SessionState) -> str | None:
-        """終端したsessionがengineの可用性を理由に失敗した場合、その除外理由を返す。"""
+        """終了したsessionがengineの可用性を理由に失敗した場合、その除外理由を返す。"""
         ...
 
     @staticmethod
@@ -88,7 +88,7 @@ class Backend(typing.Protocol):
 
         成功した`prompt.deliver`が開始済みを保持する。backendが開始不能または開始不確定を
         捕捉して状態を返す場合は`prompt.record_delivery`でその結果を保持する。
-        戻り値のsessionは応答前に終端へ進み得るため、配送の判定には使用しない。
+        戻り値のsessionは応答前に終了へ進み得るため、配送の判定には使用しない。
         """
         ...
 
@@ -101,7 +101,7 @@ class Backend(typing.Protocol):
         ...
 
     async def release_session(self, session: SessionState) -> None:
-        """保持期限到達時とstopでmanagerが呼び、終端後に残るsession単位の全資源を解放する。
+        """保持期限到達時とstopでmanagerが呼び、終了後に残るsession単位の全資源を解放する。
 
         プロセス、接続、ロード済みthreadとその子孫を含む。共有一覧から除去した後も解放できるよう、
         解放対象のメモリ状態を渡す。保存済み会話の再開性と他sessionの資源は保つ。

@@ -1,4 +1,4 @@
-"""agents_serverが保存した終端結果または通知を待つ。"""
+"""agents_serverが保存した終了時の結果または通知を待つ。"""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.wait")
 
 # 次の操作の文面。待機の結果を受け取った主体が、再待機・調査・巻き取りのどれへ進むかを応答だけで決められるようにする。
 _RERUN_WAIT_NEXT_ACTION = "`atk agents wait`を再実行して待機を続ける"
-_NOTICE_NEXT_ACTION = "`notices`の通知を読んで対処し、終端を待つ場合は`atk agents wait`を再実行する"
+_NOTICE_NEXT_ACTION = "`notices`の通知を読んで対処し、終了を待つ場合は`atk agents wait`を再実行する"
 _CONSUMED_NEXT_ACTION = (
     "結果は別の`atk agents wait`が受領済みのため、その出力を参照する。後続の結果を待つ場合は`atk agents wait`を再実行する"
 )
@@ -58,7 +58,7 @@ _READ_FAILURE_NEXT_ACTION = (
 )
 _ABSENT_TARGETS_NEXT_ACTION = "委譲先を起動してから`atk agents wait`を実行する"
 _SAVED_RESULT_NEXT_ACTION = (
-    "`agent_message_paths`にある本文ファイルを読む。保存runの終端行は`jq -r .output -- <run_path>`で読める。"
+    "`agent_message_paths`にある本文ファイルを読む。保存runの終了行は`jq -r .output -- <run_path>`で読める。"
     "新しい結果の待機が必要な場合だけ`atk agents wait`を実行する"
 )
 _IDENTITY_NEXT_ACTION = "同じsessionで`atk agents list`と`atk agents wait`を実行する"
@@ -76,11 +76,11 @@ _BODY_DIRECTORY_NAME = "agents-wait"
 
 
 class _BodyFileWriter:
-    """終端結果の`agent_message`をエスケープを含まないMarkdownファイルへ書き、その絶対パスを返す。
+    """終了時の結果の`agent_message`をエスケープを含まないMarkdownファイルへ書き、その絶対パスを返す。
 
     呼び出し元がJSON文字列のエスケープを解く処理を持たずに結果本文を読めるようにするためである。
-    本文は終端ごとにこの1ファイルだけが持ち、run記録と標準出力の保存物へ重ねない。
-    同じsessionの次のturnの終端は、前の本文を上書きせずに番号付きの別ファイルへ書く。
+    本文は終了ごとにこの1ファイルだけが持ち、run記録と標準出力の保存物へ重ねない。
+    同じsessionの次のturnの終了は、前の本文を上書きせずに番号付きの別ファイルへ書く。
     """
 
     def __init__(self) -> None:
@@ -273,7 +273,7 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
         or not isinstance(output, str)
         or not isinstance(code, int)
     ):
-        return _fail(f"先行する待機の終端結果が公開されていません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
+        return _fail(f"先行する待機の終了時の結果が公開されていません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
     _print_public(_public_wait_output(output, stream), stream)
     value["status"] = "consumed"
     _write_json(run_path, value)
@@ -297,7 +297,7 @@ def _fail(message: str, code: int, *, next_action: str, session_id: str | None =
 
 
 def _with_result_next_action(result: dict[str, Any]) -> dict[str, Any]:
-    """委譲先が失敗または中断で終端した結果へ、受領した主体の次の操作を加える。"""
+    """委譲先が失敗または中断で終了した結果へ、受領した主体の次の操作を加える。"""
     status = result.get("status")
     if status == "failed":
         result = result_projection.append_result_next_action(
@@ -311,7 +311,7 @@ def _with_result_next_action(result: dict[str, Any]) -> dict[str, Any]:
 
 def _interrupted_sessions_text(interrupted_sessions: list[dict[str, Any]]) -> str:
     """中断と解決して解放した待機対象を、終了診断への参照とともに診断本文の一部へ変換する。"""
-    return "中断で終端した待機対象: interrupted_sessions=" + json.dumps(interrupted_sessions, ensure_ascii=False)
+    return "中断で終了した待機対象: interrupted_sessions=" + json.dumps(interrupted_sessions, ensure_ascii=False)
 
 
 def _interrupted_session(
@@ -350,8 +350,8 @@ def _target_origins(
     registered_ids, registry_error = wait_targets.read_wait_targets(root_session_id, owner_status_file, state_root)
     if registry_error is not None:
         return {}, (f"待機対象登録簿を読めません: {registry_error}", 9, _BROKEN_STATE_NEXT_ACTION)
-    # 状態ファイルにも結果ファイルにも無い登録は、登録簿が喪失か終端を示す場合に結果が生じないため解放する。
-    # 終端の公開から結果ファイルの書込までの間は状態ファイルに行が残るため、回収前の対象を解放しない。
+    # 状態ファイルにも結果ファイルにも無い登録は、登録簿が喪失か終了を示す場合に結果が生じないため解放する。
+    # 終了の公開から結果ファイルの書込までの間は状態ファイルに行が残るため、回収前の対象を解放しない。
     releasable = {
         session_registry.Resolution.MISSING,
         session_registry.Resolution.RELEASED,
@@ -359,7 +359,7 @@ def _target_origins(
     }
     for session_id in set(registered_ids) - listed_ids - result_ids:
         resolution = session_registry.resolve(session_id, state_root=state_root)
-        # 委譲元のサーバーが替わると、終端結果は旧ルートに残る。回収するまで待機対象を解放しない。
+        # 委譲元のサーバーが替わると、終了時の結果は旧ルートに残る。回収するまで待機対象を解放しない。
         if resolution.state in releasable and not owner_lost.has_stranded_result(session_id, root_session_id, state_root):
             wait_targets.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
             registered_ids.remove(session_id)
@@ -400,23 +400,23 @@ def _wait_for_result(
     state_root: pathlib.Path | None = None,
     root_session_id: str | None = None,
 ) -> int:
-    """自身が保持するsessionから、1回の巡回で回収できた終端結果と通知を全件返す。
+    """自身が保持するsessionから、1回の巡回で回収できた終了時の結果と通知を全件返す。
 
-    回収できたものは1件1行のJSON Linesで標準出力へ書く。1件ずつ返す形では、未回収の終端結果が
+    回収できたものは1件1行のJSON Linesで標準出力へ書く。1件ずつ返す形では、未回収の終了時の結果が
     残っている間は委譲元がその結果を消化する回数だけ起動を繰り返さないと、稼働中のsessionへ到達できない。
-    回収の途中で終端結果の読取に失敗した場合は、同じ巡回で回収済みの本文を先に配送してから終わる。
+    回収の途中で終了時の結果の読取に失敗した場合は、同じ巡回で回収済みの本文を先に配送してから終わる。
     回収は結果ファイルと通知ファイルの削除を伴うため、その失敗を理由に配送を取りやめると回収済みの本文が失われる。
     読取の失敗は次の起動でも同じ状態で現れるため、その回の診断を1回遅らせても失われない。
 
-    対象は、自身の書込主体の状態ファイルへ載るsessionと、終端結果ファイルが残るsessionの
+    対象は、自身の書込主体の状態ファイルへ載るsessionと、終了時の結果ファイルが残るsessionの
     双方とする。後者を含めるのは、保持期限で一覧から外れたsessionの結果本文も回収するためである。
     対象集合は最初の待機の発行時点で登録簿へ保存し、再発行時も同じ集合を引き継ぐ。
     待機中に開始または再稼働したsessionも、巡回ごとに取得して対象へ追加する。
     状態ファイルはsession状態の投影であり、そこに対象が無いことからsessionの喪失を判定できない。
-    終端結果と通知が無い場合は、投影が消失しても待機上限まで非終端として扱う。
+    終了時の結果と通知が無い場合は、投影が消失しても待機上限まで未終了として扱う。
     待機対象の登録も、`starting`を含む保持中sessionも0件の場合は、待機しても回収対象が生じないため、
     両方の不在を理由として標準エラーへ書き、即座に非0で終わる。
-    待機中に全対象が登録簿で終端を示したまま結果も状態も残さなくなった場合も、回収途中の退避物が無ければ同じ理由で終わる。
+    待機中に全対象が登録簿で終了を示したまま結果も状態も残さなくなった場合も、回収途中の退避物が無ければ同じ理由で終わる。
     """
     logging_config.configure_logging()
     env = os.environ if environment is None else environment
@@ -490,7 +490,7 @@ def _wait_for_result(
     )
     lock_directory = shared_layout.status_directory(root_session_id, state_root) / "wait-locks"
     if is_human_terminal():
-        print(f"終端結果・通知を待機中: {', '.join(ordered_ids) or identity.file_name}", file=sys.stderr, flush=True)
+        print(f"終了時の結果・通知を待機中: {', '.join(ordered_ids) or identity.file_name}", file=sys.stderr, flush=True)
     lock_directory.mkdir(parents=True, exist_ok=True)
     lock_path = lock_directory / f"{identity.file_name}.lock"
     with lock_path.open("a+b") as lock_file:
@@ -583,7 +583,7 @@ def _wait_for_result(
                 if target_error is not None:
                     message, code, next_action = target_error
                     return _publish_wait_result(run_path, with_next_action(message, next_action), code, stream="stderr")
-                # 待機中の対象不在は、全対象の登録簿が終端を示す場合だけ確定する。
+                # 待機中の対象不在は、全対象の登録簿が終了を示す場合だけ確定する。
                 # 状態投影の消失と登録簿の不在は待機開始後にsessionを喪失した根拠にならないため、その場合は待機上限まで待つ。
                 if (
                     ordered_ids
@@ -623,7 +623,7 @@ def _wait_for_result(
                     ordered_ids.append(session_id)
                     ordered_ids.sort()
                     if is_human_terminal():
-                        print(f"終端結果・通知の待機対象を追加: {session_id}", file=sys.stderr, flush=True)
+                        print(f"終了時の結果・通知の待機対象を追加: {session_id}", file=sys.stderr, flush=True)
                     wait_targets.retain_wait_targets(root_session_id, identity.file_name, [session_id], state_root)
                     recorded = _read_json(run_path) or {}
                     recorded["targets"] = ordered_ids
@@ -648,7 +648,7 @@ def _wait_for_result(
                         stash_path=run_path.with_suffix("") / "results" / f"{session_id}.json",
                     )
                     # 自身の状態ファイルに無いsessionは登録簿から解決した対象であり、委譲元のサーバーが替わると
-                    # 通知と終端結果が旧ルートに残るため、所有者のいない他のルートからも回収する。
+                    # 通知と終了時の結果が旧ルートに残るため、所有者のいない他のルートからも回収する。
                     registry_resolved = "status" not in current_origins.get(session_id, set())
                     if registry_resolved and stranded_roots is None:
                         stranded_roots = status_reader.ownerless_root_session_ids(root_session_id, state_root)
@@ -662,7 +662,7 @@ def _wait_for_result(
                             roots=stranded_roots,
                         )
                     if read_error is not None:
-                        read_failure = f"終端結果ファイルを読めません: {result_path}: {read_error}"
+                        read_failure = f"終了時の結果ファイルを読めません: {result_path}: {read_error}"
                         break
                     notices = notice_inbox.take_notices(
                         root_session_id,
@@ -742,7 +742,7 @@ def _wait_for_result(
 
 
 def _retained_result_session_ids(result_directory: pathlib.Path, *, owner_status_file: str) -> set[str]:
-    """自身の書込主体が公開した終端結果のsession識別子を返す。"""
+    """自身の書込主体が公開した終了時の結果のsession識別子を返す。"""
     try:
         paths = tuple(result_directory.iterdir())
     except OSError:
@@ -765,7 +765,7 @@ def _retained_result_session_ids(result_directory: pathlib.Path, *, owner_status
 
 
 def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]:
-    """終端結果を読み、不在と破損を区別して返す。"""
+    """終了時の結果を読み、不在と破損を区別して返す。"""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -812,7 +812,7 @@ def _session_output_activity(paths: list[pathlib.Path], session_id: str) -> dict
 
 
 def _add_session_label(response: dict[str, Any], paths: list[pathlib.Path], session_id: str) -> None:
-    """状態ファイルのsession一覧が持つ起動時の`label`を、非終端の待機応答へ加える。"""
+    """状態ファイルのsession一覧が持つ起動時の`label`を、未終了の待機応答へ加える。"""
     for path in paths:
         for session in _read_sessions(path) or ():
             if session["session_id"] == session_id:
@@ -872,7 +872,7 @@ def _with_body(row: dict[str, Any]) -> dict[str, Any]:
 def _print_public(output: str, stream: str | None) -> None:
     """待機結果を前景へ書く。エージェント環境では本文を重ねて保存しないよう、要約を標準出力へ直接書く。
 
-    要約は通知・終端の内訳と上限内の本文を示し、本文ファイルを`agent_message_path`で後続へ渡せるようにする。
+    要約は通知・終了の内訳と上限内の本文を示し、本文ファイルを`agent_message_path`で後続へ渡せるようにする。
     それ以外の行（`status: running`など）は通知を除いた1行のJSONとして続ける。
     人の端末では従来どおり本文を含むJSON Linesを書く。
     """
@@ -908,7 +908,7 @@ def _public_wait_response(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _running_response(session_id: str | None, output_activity: Mapping[str, Any]) -> dict[str, Any]:
-    """非終端の待機応答へ最後の活動からの経過を加える。
+    """未終了の待機応答へ最後の活動からの経過を加える。
 
     対象を1件も解決できない場合は`session_id`を省き、`status`だけを返す。
     """

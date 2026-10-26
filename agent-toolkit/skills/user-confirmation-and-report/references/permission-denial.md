@@ -40,7 +40,7 @@ auto modeのカスタムルールを追加・編集する手順は、`agent-tool
 | コンテナーまたはサービスの再作成 | Interfere With Workloads等 | 許可ルール`Reversible Change Approval`が、ユーザー本人の環境で変更前の構成を復元可能な再作成を対象に含んでいる |
 | 承認条件の緩和・規範改訂・設定原本変更を含むコミット | Self Modification | 許可ルール`Agent Workspace Writes`の対象に含まれる |
 | `atk agents-exit-session`による本人確認済みPIDの停止 | Interfere With Workloads | 許可ルール`Session And Delegation Control`の対象に含まれる |
-| 委譲先の状態・終端・通知・結果の観測と受領（`atk agents wait`・`list`・`show`等） | Self Modification | 許可ルール`Session And Delegation Control`が、委譲内容にかかわらず受領済み化および結果・通知ファイルの削除を含めて対象としている |
+| 委譲先の状態・終了・通知・結果の観測と受領（`atk agents wait`・`list`・`show`等） | Self Modification | 許可ルール`Session And Delegation Control`が、委譲内容にかかわらず受領済み化および結果・通知ファイルの削除を含めて対象としている |
 | 自ら新規に作成したtmuxセッションでの対話CLIの起動し直し、キー入力の送信、画面の取得 | Tmux Self Drive | 許可ルール`Session And Delegation Control`の対象に含まれる。拒否が解消しない場合は後述の偽陽性フローへ進む |
 | UWIの回答でエージェントに実行を任せたシステムへの永続的な変更（sudoによるパッケージ導入など） | Unauthorized Persistence | UWIの回答内容は分類器が参照する会話ログ上のユーザー発言には現れない。実行前に個別確認せずそのまま実行し、拒否された場合は設定ファイルの読み取りを省略して後述の偽陽性フローの`AskUserQuestion`へ進む |
 | 常時読み込む規範ファイル（`~/.claude/rules/`配下など）の編集 | Self Modification | 許可ルール`Agent Workspace Writes`の対象に含まれる |

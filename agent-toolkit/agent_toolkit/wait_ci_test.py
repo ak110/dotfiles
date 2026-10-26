@@ -241,7 +241,7 @@ def test_wait_sha_rejects_incompatible_failure_record(tmp_path, capsys, field, v
 def test_main_resumes_after_reported_failure_and_returns_all_failures(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], forge: str, mode: str, follow: bool
 ) -> None:
-    """同じ引数で再開し、既報失敗の再通知を省き新規失敗と全体終端を順に受け取る。"""
+    """同じ引数で再開し、既報失敗の再通知を省き新規失敗と全体終了を順に受け取る。"""
     record = tmp_path / "wait.json"
     if mode == "baseline":
         _write_test_baseline(record)
@@ -1459,7 +1459,7 @@ class TestNextActionOnNonZeroExit:
     def test_github_failure_guidance_matches_detected_target(
         self, capsys: pytest.CaptureFixture[str], follow: bool, grace: float, fail_at: int, record_type: str
     ) -> None:
-        """各待機段階で検出したjobとrunを取り違えず、終端待機を増やさず案内する。"""
+        """各待機段階で検出したjobとrunを取り違えず、終了待機を増やさず案内する。"""
         calls = 0
 
         def run_list(sha: str) -> list[dict]:
@@ -1503,7 +1503,7 @@ class TestNextActionOnNonZeroExit:
             assert "--log-failed" not in action
 
     def test_terminal_non_success_guidance_uses_failed_run(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """早期失敗に含まれない終端状態でも成功runのIDを案内しない。"""
+        """早期失敗に含まれない終了状態でも成功runのIDを案内しない。"""
         assert _run_wait(lambda _sha: [_run(db_id=301), _run(db_id=302, conclusion="skipped")]) == wait_ci.EXIT_CI_FAILED
         assert "gh run view 302 --repo owner/repository --json jobs" in _next_action(capsys.readouterr().err)
 
@@ -2344,7 +2344,7 @@ def test_port_endpoint_baseline_wait_resume(
 def test_port_endpoint_wait_sha_covers_downstream_states(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], repository: str, case: str
 ) -> None:
-    """ポート付きSHA待機が親・下流・jobを取得し、成功・終端失敗・部分失敗・未終端を区別する。"""
+    """ポート付きSHA待機が親・下流・jobを取得し、成功・終了失敗・部分失敗・未終了を区別する。"""
     expected_host = "10.230.22.47:40108" if repository.startswith("http:") else "gitlab.example.com:8443"
     project = "projects/AIWG%2Faitools" if repository.startswith("http:") else "projects/group%2Fsub%2Frepo"
     monkeypatch.setenv("GITLAB_HOST", "other.example.com:9443")

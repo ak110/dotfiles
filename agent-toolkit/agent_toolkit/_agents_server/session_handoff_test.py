@@ -1,4 +1,4 @@
-"""引き継ぎ起動が使う記録と、終端結果の候補除外・案内の契約を検証する。"""
+"""引き継ぎ起動が使う記録と、終了時の結果の候補除外・案内の契約を検証する。"""
 
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ async def test_start_handoff_rejects_running_predecessor_before_extracting_recor
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """実行中の前任へは終端待機・killを案内し、後任を生成しない。"""
+    """実行中の前任へは終了待機・killを案内し、後任を生成しない。"""
     monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("codex", "first", "medium")])
     async with _manager_with_fake("codex") as (manager, backend):
         started = await manager.start("execute", "作業", str(tmp_path))
@@ -194,7 +194,7 @@ def test_prompt_delivers_full_history_and_record_paths(
         prompt=f"元の起動本文\n引き継ぎ記録先: {handoff}（新規）",
         model_type="execute",
         status="failed",
-        error={"message": "終端理由"},
+        error={"message": "終了理由"},
         turn_seq=2,
         followup_prompts=("追送全文" * 2000,),
         final_responses=((1, "第1turn全文" * 2000),),
@@ -229,7 +229,7 @@ def test_prompt_delivers_full_history_and_record_paths(
 
 @pytest.mark.asyncio
 async def test_turn_history_survives_collection_release_and_registry_restart(tmp_path: pathlib.Path) -> None:
-    """回収・解放後も登録簿の同じ7日保持内で追送と応答と終端理由を引き継げる。"""
+    """回収・解放後も登録簿の同じ7日保持内で追送と応答と終了理由を引き継げる。"""
     predecessor = state.SessionState(
         "predecessor",
         str(tmp_path),

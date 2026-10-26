@@ -597,7 +597,7 @@ async def test_start_rejects_removed_wait_exception_input(monkeypatch: pytest.Mo
 
 @pytest.mark.asyncio
 async def test_start_rejects_removed_last_pushed_commit_input(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """終端担当はpush済みの範囲をベースbranchの追跡refから得るため、撤去した`直前にpushしたcommit`は宣言外の入力として拒否する。"""
+    """公開担当はpush済みの範囲をベースbranchの追跡refから得るため、撤去した`直前にpushしたcommit`は宣言外の入力として拒否する。"""
     task_document = launch_requests._SHARE_DIRECTORY / "session-termination.subagent.md"
     manager = TaskManager(start=AsyncMock())
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)

@@ -161,7 +161,7 @@ def test_explore_capabilities_are_shared_with_public_schema() -> None:
 def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> None:
     """保存結果の完全取得と成果物の読取専用境界を各backendへ配送する。"""
     for backend in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES:
-        # 生成された最終本文で、軽量設定が省く規範を読まずに継続と終端を判断できることを確かめる。
+        # 生成された最終本文で、軽量設定が省く規範を読まずに継続と終了を判断できることを確かめる。
         prompt = launch_prompts._explore_system_prompt(backend)  # pylint: disable=protected-access
         assert _shared_document_body("agents-server-explore.md") in prompt
         assert "対象となる成果物、委譲された入力、およびユーザーデータ" in prompt

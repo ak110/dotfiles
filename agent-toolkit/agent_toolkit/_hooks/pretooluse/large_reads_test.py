@@ -14,7 +14,7 @@ import types
 import pytest
 
 from agent_toolkit._hooks import pretooluse
-from agent_toolkit._hooks.pretooluse import confirmation_reads, dispatch, large_reads, operation_skills
+from agent_toolkit._hooks.pretooluse import dispatch, large_reads, operation_skills
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read, sed_read_range
 
 _THRESHOLD = 48 * 1024
@@ -38,13 +38,13 @@ _THRESHOLD = 48 * 1024
     ],
 )
 def test_sed_read_range_accepts_only_static_line_ranges(command, expected):
-    """終端の有無によらず静的な行範囲だけを読取として解析し、書込や複数ファイルを含む形を除く。"""
+    """終了の有無によらず静的な行範囲だけを読取として解析し、書込や複数ファイルを含む形を除く。"""
     assert sed_read_range(shlex.split(command)) == expected
 
 
 @pytest.mark.parametrize("separator", ["", "-- "])
 def test_sed_range_read_paths_share_operand_contract(tmp_path, separator):
-    """終端の有無によらず、行範囲の読取が同じ読取対象を返す。"""
+    """終了の有無によらず、行範囲の読取が同じ読取対象を返す。"""
     target = tmp_path / "note.md"
     command = f"sed -n '2,4p' {separator}{shlex.quote(str(target))}"
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
@@ -52,10 +52,8 @@ def test_sed_range_read_paths_share_operand_contract(tmp_path, separator):
 
 
 @pytest.mark.parametrize("separator", [[], ["--"]])
-def test_same_range_reads_reach_all_three_consumers(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, separator: list[str]
-) -> None:
-    """同じ行範囲の読取入力から大量読取・確認資料・commit資料の各消費側が対象パスを認識する。"""
+def test_same_range_reads_reach_consumers(tmp_path: pathlib.Path, separator: list[str]) -> None:
+    """同じ行範囲の読取入力を大量読取とcommit資料の消費側が認識する。"""
     root = pathlib.Path(large_reads.__file__).resolve().parents[3]
     targets = [
         root / "skills/user-confirmation-and-report/references/approval-scope.md",
@@ -66,26 +64,6 @@ def test_same_range_reads_reach_all_three_consumers(
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(path,) for path in targets]
     # この識別処理自体が指定された消費側であり、実在するcommit資料を渡して判定する。
     assert dispatch._reads_commit_message_rules(command, str(tmp_path))  # pylint: disable=protected-access
-    entries = [
-        {
-            "type": "assistant",
-            "message": {
-                "content": [{"type": "tool_use", "id": "read-references", "name": "Bash", "input": {"command": command}}]
-            },
-        },
-        {
-            "type": "user",
-            "message": {"content": [{"type": "tool_result", "tool_use_id": "read-references", "content": "取得済み"}]},
-        },
-    ]
-    transcript = tmp_path / "reads.jsonl"
-    transcript.write_text("\n".join(json.dumps(entry) for entry in entries), encoding="utf-8")
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    payload = {"transcript_path": str(transcript), "cwd": str(tmp_path)}
-    assert confirmation_reads.unread_reference_warning(payload, "AskUserQuestion") is None
-    transcript.write_text("", encoding="utf-8")
-    assert confirmation_reads.unread_reference_warning(payload, "AskUserQuestion") is not None
 
 
 @pytest.mark.parametrize(
@@ -197,10 +175,10 @@ def test_zero_metadata_size_uses_content(tmp_path: pathlib.Path, monkeypatch: py
     ],
 )
 def test_full_read_options_and_delivery(tmp_path: pathlib.Path, command: str) -> None:
-    """通常の表示指定でも、配送と警告の双方が終端・cwd・合計容量を解釈する。"""
+    """通常の表示指定でも、配送と警告の双方が終了・cwd・合計容量を解釈する。"""
     first = _sized_file(tmp_path / "nested", 30 * 1024, "-first.txt")
     second = _sized_file(first.parent, 20 * 1024, "second.txt")
-    # ハイフン始まりの名前には、指定済みならその終端を使う。
+    # ハイフン始まりの名前には、指定済みならその終了を使う。
     suffix = "" if command.endswith("--") else " --"
     value = f"cd {first.parent} && {command}{suffix} {first.name} {second.name}"
     assert list(bash_read_paths(value, str(tmp_path), include_partial=True)) == [(first, second)]

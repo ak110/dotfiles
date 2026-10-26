@@ -40,13 +40,13 @@ function messageOf(input: unknown): string | undefined {
 // `register.ts`の`session.start`が`$.tool.register`へ渡すツールの定義。
 export const SEND_TO_USER_TOOL = { name: TOOL_NAME, description: DESCRIPTION, inputSchema: INPUT_SCHEMA, isDeferred: false };
 
-// 委譲先からの呼び出しへ`register.ts`が返す拒否の本文。表示済みと応答すると委譲先が終端の返却を省くため、未表示であることと返却先を示す。
+// 委譲先からの呼び出しへ`register.ts`が返す拒否の本文。表示済みと応答すると委譲先が終了の返却を省くため、未表示であることと返却先を示す。
 export const SEND_TO_USER_DELEGATED_DENY =
   "委譲先・サブエージェントからの呼び出しではユーザーの画面へ表示していない。結果本文は委譲元へ返す必要があるため、" +
-  "このツールを使わず、報告する本文を全て最終応答（終端の返却）へ書く。";
+  "このツールを使わず、報告する本文を全て最終応答（終了の返却）へ書け。";
 
 const DISPLAYED = "ユーザーの画面へ表示した。";
-const INVALID_MESSAGE = automatedMessage("send-to-user", "block", "文字列のmessageが無いため、画面へ本文を表示していない。本文をmessageへ入れて呼び直す。");
+const INVALID_MESSAGE = automatedMessage("send-to-user", "block", "文字列のmessageが無いため、画面へ本文を表示していない。本文をmessageへ入れて呼び直せ。");
 
 export function register(on: On): void {
   // 判定に失敗した場合も、他のツールの呼び出しと本文の表示を止めない。判定不能の診断は会話ごとに1回だけ届ける。

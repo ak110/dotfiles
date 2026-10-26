@@ -44,10 +44,10 @@ HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
 # 「agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日」にある。
 SESSION_INITIALIZATION_TIMEOUT = 50.0
 SESSION_INITIALIZATION_ATTEMPTS = 2
-# 起動直後の可用性失敗を確定するために`start`が終端を待つ上限秒数。
+# 起動直後の可用性失敗を確定するために`start`が終了を待つ上限秒数。
 # Codex CLI 0.152.0で利用上限に達した状態のturnは、backendの起動応答から3.84〜4.27秒後に
 # `turn/completed`で失敗した（2026-09-02、`explore_fast`候補`gpt-5.6-terra/medium`で3回測定）。
-# 再検証は同じ失敗状態で`AppServerManager.start`を呼び、応答から終端までの経過を測る。
+# 再検証は同じ失敗状態で`AppServerManager.start`を呼び、応答から終了までの経過を測る。
 # 可用性失敗は最初のモデル出力より前に生じるため、正常起動ではモデル出力の観測で上限を待たずに打ち切る。
 # Claudeでは、失敗した要求では始まらないAPIの応答開始（`message_start`）をモデル出力の観測として扱う。
 START_AVAILABILITY_TIMEOUT = 15.0
@@ -83,7 +83,7 @@ def remove_touch_listener(listener: Callable[[], None]) -> None:
 
 
 def add_terminal_listener(listener: Callable[[SessionState], None]) -> None:
-    """turnの終端結果が確定したsessionの通知先を登録する。"""
+    """turnの終了時の結果が確定したsessionの通知先を登録する。"""
     _TERMINAL_LISTENERS.add(listener)
 
 
@@ -94,7 +94,7 @@ def notify_touch_listeners() -> None:
 
 
 def remove_terminal_listener(listener: Callable[[SessionState], None]) -> None:
-    """turnの終端結果が確定したsessionの通知先を解除する。"""
+    """turnの終了時の結果が確定したsessionの通知先を解除する。"""
     _TERMINAL_LISTENERS.discard(listener)
 
 
@@ -286,7 +286,7 @@ class SessionState:
     failure_pending_completion: bool = False
     # モデル由来の出力（テキスト、思考、ツール呼び出し）を1回以上受信したか。
     # Claudeでは、APIの応答開始（`message_start`）の受信で真とする。
-    # engineの可用性失敗は最初のモデル出力より前に生じるため、`start`はこの値で起動直後の終端待ちを打ち切る。
+    # engineの可用性失敗は最初のモデル出力より前に生じるため、`start`はこの値で起動直後の終了待ちを打ち切る。
     # `start`は新しいsessionだけを待つため、turnごとに初期化しない。
     model_output_observed: bool = False
     # Claude backendのバックグラウンドタスクだけを表し、Codex backendでは値を持たない。キーはtask識別子とする。
@@ -294,7 +294,7 @@ class SessionState:
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     # 背景実行へ移った`atk agents wait`の出力ファイルの絶対パス。結果本文がツール結果に現れないため、
-    # 孫sessionの終端判定と未観測の記録の直前にこのファイルを読み、回収済みの孫sessionを追跡から外す。
+    # 孫sessionの終了判定と未観測の記録の直前にこのファイルを読み、回収済みの孫sessionを追跡から外す。
     agents_wait_background_outputs: set[str] = dataclasses.field(default_factory=set)
     child_tool_uses: dict[str, tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=dict, repr=False)
     # 未完了のツール呼び出し。キーは`tool_use_id`、値はツール名、そのブロックを受信した時刻および入力の1行要約の組とする。
@@ -313,7 +313,7 @@ class SessionState:
     # sessionごとに1回だけ記録する。
     cli_turn_state_fallback_logged: bool = False
     # `auto_resume_consumed`を真にするのは、Claude backendのタスク完了通知による再開と、
-    # MCP層が孫sessionの終端を検出して発行する再開の2つの処理だけである。
+    # MCP層が孫sessionの終了を検出して発行する再開の2つの処理だけである。
     # Codex backendは孫sessionが残るturnの結果を保留し、後者の再開だけに到達する。
     auto_resume_consumed: bool = False
     result_contract_recovery_consumed: bool = False
@@ -323,14 +323,14 @@ class SessionState:
     # `start`の可用性確認を終えたか。確認を終える前の過負荷は起動時の候補切替が扱う。
     availability_checked: bool = False
     # 過負荷による自動継続。連鎖の中で行った継続の回数、次の継続を送る時刻（イベントループの時計）と、
-    # 連鎖の最初の過負荷の時刻を持つ。過負荷以外の終端、委譲元の`kill`・`send_message`および上限到達で初期化する。
+    # 連鎖の最初の過負荷の時刻を持つ。過負荷以外の終了、委譲元の`kill`・`send_message`および上限到達で初期化する。
     overload_resume_count: int = 0
     overload_resume_at: float | None = None
     overload_first_at: str | None = None
     # Claudeが最後に報告した利用枠の状態。待機の対象かの判定と解除予定時刻に使う。
     usage_limit: claude_usage_limit.UsageLimitState | None = None
     # 利用上限の解除待ち。次に同じsessionへ継続を送る時刻（イベントループの時計）、待機の回数と最初の拒否の時刻を持つ。
-    # 待機対象以外の終端と委譲元の`kill`・`send_message`で初期化し、回数では打ち切らない。
+    # 待機対象以外の終了と委譲元の`kill`・`send_message`で初期化し、回数では打ち切らない。
     usage_limit_resume_at: float | None = None
     usage_limit_wait_count: int = 0
     usage_limit_first_at: str | None = None
@@ -342,7 +342,7 @@ class SessionState:
     # 最新モデル文脈の観測値。未知は0で補完しない。
     context_tokens: int | float | None = None
     context_window: int | float | None = None
-    # backend資源の解放期限。未回収の終端結果はこの期限を過ぎても保持する。
+    # backend資源の解放期限。未回収の終了時の結果はこの期限を過ぎても保持する。
     retention_deadline: float | None = None
     turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
     _progress_text: str = dataclasses.field(default="", repr=False)
@@ -350,7 +350,7 @@ class SessionState:
     compaction_started_at_ms: dict[str, int] = dataclasses.field(default_factory=dict, repr=False)
     # Codex接続が購読した子孫thread。通知の振り分けと解放に使い、状態ファイルや再開記録へ射影しない。
     codex_subagent_thread_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
-    # 親turnの結果を保留する組み込みの子と、再開時に結果の回収を求める終端済みの子。
+    # 親turnの結果を保留する組み込みの子と、再開時に結果の回収を求める終了済みの子。
     codex_live_subagent_thread_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
     codex_terminal_subagent_thread_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
     # item/started・item/completed・turn/completedでの同じ活動の再掲を一度だけ反映する。
@@ -361,7 +361,7 @@ class SessionState:
     # sessionを作成した時点の委譲元sessionの識別子。登録簿へ公開し、`atk serve`の一覧が親子付けに使う。
     launcher_session_id: str | None = dataclasses.field(default=None, repr=False)
     # turnを実行する委譲先CLIのプロセスの識別。所有するagents_serverの識別とともに登録簿へ公開し、
-    # 所有側が終端を公開せずに終了した記録を、照会側が全プロセスの不在から終端と判定する入力にする。
+    # 所有側が終了を公開せずに終了した記録を、照会側が全プロセスの不在から終了と判定する入力にする。
     executor_process: session_registry.ProcessIdentity | None = dataclasses.field(default=None, repr=False)
     # 所有するMCPサーバーの状態ディレクトリのルート。登録簿へ公開し、所有サーバーを失った実行中の案内に使う。
     owner_root_session_id: str | None = dataclasses.field(default=None, repr=False)
@@ -381,12 +381,12 @@ class SessionState:
 
     @property
     def terminal(self) -> bool:
-        """最新turnが終端状態であるかを返す。"""
+        """最新turnが終了状態であるかを返す。"""
         return self.status in TERMINAL_STATUSES
 
     @property
     def result_available(self) -> bool:
-        """終端結果を返せる状態であるかを返す。"""
+        """終了時の結果を返せる状態であるかを返す。"""
         return self.terminal and self.turn_completed and not self.turn_start_ambiguous and not self.awaiting_auto_resume
 
     @property
@@ -491,8 +491,8 @@ class SessionState:
     def touch(self) -> None:
         """状態の更新時刻を現在時刻へ更新する。
 
-        turnの終端結果が確定した時点で、登録済みの終端通知先へこのsessionを1回だけ渡す。
-        turnを再開した後の終端では、同じ通知を改めて1回行う。
+        turnの終了時の結果が確定した時点で、登録済みの終了通知先へこのsessionを1回だけ渡す。
+        turnを再開した後の終了では、同じ通知を改めて1回行う。
         """
         self.updated_at = utc_now()
         message = (
@@ -695,7 +695,7 @@ class SessionState:
 
 @dataclasses.dataclass(frozen=True)
 class SessionResumeState:
-    """同じ会話の再開と未回収の終端結果の返却に必要な状態を保持する。"""
+    """同じ会話の再開と未回収の終了時の結果の返却に必要な状態を保持する。"""
 
     session_id: str
     cwd: str
@@ -736,7 +736,7 @@ class SessionResumeState:
 
     @classmethod
     def from_session(cls, session: SessionState) -> SessionResumeState:
-        """終端sessionから再開に必要な入力だけを退避する。"""
+        """終了sessionから再開に必要な入力だけを退避する。"""
         return cls(
             session_id=session.session_id,
             cwd=session.cwd,
@@ -783,7 +783,7 @@ def selected_candidate(session: SessionState | SessionResumeState) -> ModelCandi
 
 
 def has_uncollected_result(session: SessionState | SessionResumeState, result_consumed: bool | None) -> bool:
-    """終端結果が未回収かを返す。
+    """終了時の結果が未回収かを返す。
 
     結果ファイルを扱える消費側は回収状態を渡し、結果ファイルを扱えない処理だけは`None`を渡す。
     """
@@ -793,7 +793,7 @@ def has_uncollected_result(session: SessionState | SessionResumeState, result_co
 
 
 def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[str, Any]:
-    """終端結果ファイルへ保存する結果と復旧用の項目を返す。
+    """終了時の結果ファイルへ保存する結果と復旧用の項目を返す。
 
     保持中と退避済みのsessionが同じ結果本文を公開できるよう、必要な項目だけへ射影する。
     """
@@ -857,7 +857,7 @@ def initialize_turn(session: SessionState, *, reset_progress: bool = True, prese
 
 
 def begin_reply(session: SessionState, *, preserve_waits: bool = False) -> None:
-    """終端済みsessionの新しいturnを開始する準備をする。"""
+    """終了済みsessionの新しいturnを開始する準備をする。"""
     session.turn_seq += 1
     initialize_turn(session, reset_progress=False, preserve_waits=preserve_waits)
     session.reply_attempted = True

@@ -166,12 +166,12 @@ def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> st
     return (
         f"リポジトリ{target_repo}に新たに回答されたUWIがある: {filenames}。"
         "反映の対象はこのセッション（委譲先を含む）が投入したUWIに限る。"
-        "この通知に含まれる、このセッションが投入していないUWIは読まずに無視し、投入したprocess-wiの実行か次の実行の選定工程に任せる。"
-        "ユーザーがこのセッションへ回答を告げたUWIは明示指示として扱い、この限定の対象外とする。"
+        "この通知に含まれる、このセッションが投入していないUWIは読まずに無視し、投入したprocess-wiの実行か次の実行の選定工程に任せよ。"
+        "ユーザーがこのセッションへ回答を告げたUWIは明示指示として扱い、この限定の対象外とせよ。"
         "`agent-toolkit:process-wi`の実行中でないセッションでは、セッションを終える前に"
-        "`agent-toolkit:user-confirmation-and-report`を起動し、回答の反映から回答を待っていた作業の再開までを完了する。"
+        "`agent-toolkit:user-confirmation-and-report`を起動し、回答の反映から回答を待っていた作業の再開までを完了せよ。"
         "`agent-toolkit:process-wi`の実行中は、処理中の主題を保留していたUWIの回答だけを同じセッションで反映し、"
-        "保留していた工程を再開する。"
-        "それ以外の回答済みUWIは、ユーザーが告げた場合を除いてそのセッションで反映せず、"
+        "保留していた工程を再開せよ。"
+        "それ以外の回答済みUWIは、ユーザーが告げた場合を除いてそのセッションで反映するな。"
         "`agent-toolkit:wi-standards`「状態と依存」に従い、次のprocess-wiの実行の選定工程が取り込む。"
     )

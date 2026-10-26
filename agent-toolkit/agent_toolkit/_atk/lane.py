@@ -400,7 +400,7 @@ def _transfer(source: pathlib.Path, destination: pathlib.Path, args: argparse.Na
         raise ValueError("再利用するworktreeの登録が異なる。資源を確認する")
     activity = _worktree_activity(worktree)
     if activity:
-        raise ValueError(f"再利用元はまだ使用中: {activity}。担当と外部プロセスの終端を待つ")
+        raise ValueError(f"再利用元はまだ使用中: {activity}。担当と外部プロセスの終了を待つ")
     record.update(session_id=session_id, record_path=str(destination), selection_file=str(args.selection_file.resolve()))
     _require_selection(record)
     _save(source, record)
@@ -538,7 +538,7 @@ class _RunningSession:
 def _running_sessions(worktree: pathlib.Path) -> list[_RunningSession]:
     """session登録簿の解決結果から、その作業ツリーへ所属する稼働中の担当を全件返す。
 
-    終端の判定は`session_registry.resolve`に従い、所有側が終端を公開せずに終了して実行プロセスも
+    終了の判定は`session_registry.resolve`に従い、所有側が終了を公開せずに終了して実行プロセスも
     存在しない記録は終了した担当として扱う。解決できない登録は、未確認の担当を見逃さないよう例外にする。
     """
     state_root = state_paths.state_dir()
@@ -635,7 +635,7 @@ def _process_activity(worktree: pathlib.Path) -> str | None:
 
 
 def _worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> str | None:
-    """所有側へ終端資源の解放を要求してから、担当と外部プロセスの使用を再判定する。"""
+    """所有側へ終了資源の解放を要求してから、担当と外部プロセスの使用を再判定する。"""
     directory = session_registry.registry_directory()
     deadline: float | None = None
     released: list[str] = []
@@ -650,7 +650,7 @@ def _worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> 
         if resolution.state is session_registry.Resolution.RUNNING:
             return (
                 f"担当の終了を確認できない: session_id={path.stem}。"
-                "自然終端を確認し、atk agents waitで結果を回収して再開する予定が無ければ、"
+                "自然終了を確認し、atk agents waitで結果を回収して再開する予定が無ければ、"
                 f"{instruction}"
             )
         if resolution.state is session_registry.Resolution.TERMINAL:
@@ -662,7 +662,7 @@ def _worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> 
             if reason:
                 return f"session_id={path.stem}: {reason}。{instruction}"
             released.append(path.stem)
-    # 所有側の応答は要求対象の終端まで検収する。応答後の独立した使用は、その時点の保持理由にする。
+    # 所有側の応答は要求対象の終了まで検収する。応答後の独立した使用は、その時点の保持理由にする。
     activity = _session_activity(worktree) or _process_activity(worktree)
     if activity and released:
         identifiers = ",".join(released)
@@ -744,7 +744,7 @@ def cleanup_session(
     """全登録を先に判定し、安全な対象だけを回収する。結果は削除対象の外へ保持する。
 
     onlyを指定すると、その登録だけを同じ条件で判定・回収する。
-    自動終了ではwait_release=Falseを渡し、終端資源の解放が未確認なら理由付きで保持する。
+    自動終了ではwait_release=Falseを渡し、終了資源の解放が未確認なら理由付きで保持する。
     """
     result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": [], "recovered": [], "missing": []}
     if session_id is None or not _directory(session_id).exists():
@@ -1242,7 +1242,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 f"現在の書込所有に含まれない担当が稼働中: {len(writers)}件。"
                 + "; ".join(writer.describe() for writer in writers)
                 + "。各担当の担当範囲と統合への合意を確かめ、合意した担当は--writer-sessionへ反復指定し、"
-                "合意しない担当は終端を待ってから同じlane integrateを再実行する"
+                "合意しない担当は終了を待ってから同じlane integrateを再実行する"
             )
         manifest = _integration_input(args, record)
         if (
@@ -1478,7 +1478,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         "--worktree", type=pathlib.Path, help="作成先の絶対パス。省略すると主作業ツリーの固定作成先を使う。"
     )
     create_parser.add_argument("--commands-file", type=pathlib.Path, help="create・prepare・deleteのargvを持つJSON。")
-    create_parser.add_argument("--reuse-record", type=pathlib.Path, help="終端済みの担当が使っていた資源のrecord_path。")
+    create_parser.add_argument("--reuse-record", type=pathlib.Path, help="終了済みの担当が使っていた資源のrecord_path。")
     create_parser.add_argument(
         "--timeout",
         type=_positive_timeout,
@@ -1509,7 +1509,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
             "実装なしのplans/wisにはno_merge:trueを指定する。"
         ),
     )
-    integrate_parser.add_argument("--no-merge", action="store_true", help="Gitを変更せず計画保存・WI終端だけ行う。")
+    integrate_parser.add_argument("--no-merge", action="store_true", help="Gitを変更せず計画保存・WI終了だけ行う。")
     integrate_parser.add_argument("--accept-rebased-head", help="対応表と再検証の診断を受理したHEADの完全なOID。")
     integrate_parser.add_argument(
         "--restart-review",

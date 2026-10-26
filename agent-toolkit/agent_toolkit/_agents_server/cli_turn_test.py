@@ -20,7 +20,7 @@ async def test_large_jsonl_event_is_preserved_through_backend(
     manager_type: type[CliTurnManager],
     final_lf: bool,
 ) -> None:
-    """64 KiBを超える日本語のツール結果も、後続の終端とともに保存する。"""
+    """64 KiBを超える日本語のツール結果も、後続の終了とともに保存する。"""
     full_body = "資料の全文開始\n" + "日本語の規範本文。\n" * 10_000 + "資料の全文終了"
     if manager_type is antigravity.AntigravityManager:
         events = [

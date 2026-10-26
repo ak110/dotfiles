@@ -47,7 +47,7 @@ WI_STATES = (
 """frontmatterの`state`で受理する保存状態の全体。"""
 
 WI_ACTIVE_STATES = (WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_HOLD)
-"""未終端の項目を表示する一覧集合。項目の種別によらず同じ集合とする。"""
+"""未終了の項目を表示する一覧集合。項目の種別によらず同じ集合とする。"""
 
 WI_EDITABLE_STATES = (WI_STATE_HOLD, WI_STATE_PROCESSING, WI_STATE_INBOX)
 """本文の編集と追記が受理する保存状態の唯一の定義。
@@ -89,7 +89,7 @@ TRANSITION_EXPLICIT_STATES = {
 ファイル名指定の暗黙解決は各操作で指定を省いた場合の動作として別に扱い、本表は明示指定で受理する状態だけを定める。
 暗黙解決は多くの操作で`inbox`・`processing`を探索し、`adopt`・`reject`は`BULK_SOURCE_STATES`から導いた`inbox`・`processing`・`hold`を探索する。
 `hold`は自動処理からの除外だけを意味し、保留操作以外の操作を妨げないため各操作の遷移元へ含める。
-`remove`は終端状態（`adopted`・`rejected`）も受理し、状態を戻さずに削除できる。
+`remove`は終了状態（`adopted`・`rejected`）も受理し、状態を戻さずに削除できる。
 `hold`の`processing`は、エージェント環境で処理中の自項目を保留する場合の明示指定に使う。
 エージェント環境のファイル名指定は`processing`を暗黙に解決しない。
 """

@@ -19,7 +19,7 @@ class OwnedSession(Protocol):
 
     @property
     def terminal(self) -> bool:
-        """所有側の現在の終端状態。"""
+        """所有側の現在の終了状態。"""
         ...
 
     @property
@@ -51,7 +51,7 @@ def request_release(
     state_root: pathlib.Path | None = None,
     worktree_paths: tuple[pathlib.Path, ...] | None = None,
 ) -> str | None:
-    """終端済みの資源の解放応答を期限まで待ち、保持が必要なら理由を返す。
+    """終了済みの資源の解放応答を期限まで待ち、保持が必要なら理由を返す。
 
     所有者のプロセスは登録順の先頭であり、解放後も存続する。後続の実行プロセスと、
     worktreeのcwd保持は呼出側の再走査と合わせて検収する。
@@ -107,7 +107,7 @@ async def process_requests(
     *,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """自プロセスが所有する終端sessionの要求だけを検収し、結果を保持してstopする。"""
+    """自プロセスが所有する終了sessionの要求だけを検収し、結果を保持してstopする。"""
     owner = session_registry.owner_process()
     if owner is None:
         return
@@ -150,7 +150,7 @@ async def process_requests(
                 )
                 != pathlib.Path(payload["worktree"]).resolve()
             ):
-                response["error"] = "要求後に所有または終端状態が変わった"
+                response["error"] = "要求後に所有または終了状態が変わった"
             else:
                 try:
                     async with asyncio.timeout(remaining):

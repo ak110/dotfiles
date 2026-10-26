@@ -86,7 +86,7 @@ _AGENTS_SERVER_SESSION_STATE_KEY = "agents_server_sessions"
 
 
 _UNREGISTERED_WAIT_TARGET_FIX = (
-    "`atk agents wait`はこのセッションを待機対象として扱わないため、終端は`agents_server`の`show`で確認する。"
+    "`atk agents wait`はこのセッションを待機対象として扱わないため、終了は`agents_server`の`show`で確認せよ。"
 )
 """待機所有者を識別できず待機対象を登録できなかったsessionの次の操作。"""
 
@@ -278,7 +278,7 @@ def _record_agents_server_session_state(
             record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":
             delivery = structured.get("delivery")
-            # steerはturn_seqを変えず、そのturnの終端を既存の観測が待つ。
+            # steerはturn_seqを変えず、そのturnの終了を既存の観測が待つ。
             if delivery in {"reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
                 record["owner_agent_id"] = owner_agent_id
@@ -340,8 +340,8 @@ def _record_agents_server_session_state(
 def _remove_agents_server_session_record(session_id: str, remote_session_id: str | None) -> None:
     """破棄したsessionの記録を状態キーから除去する。
 
-    `stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、その成功応答は
-    そのsessionが終端済み、期限切れまたは既破棄のいずれかであることを含意する。
+    `stop`は実行中turnを持つsessionと未終了のsessionを拒否するため、その成功応答は
+    そのsessionが終了済み、期限切れまたは既破棄のいずれかであることを含意する。
     """
     if remote_session_id is None:
         return
@@ -357,7 +357,7 @@ def _remove_agents_server_session_record(session_id: str, remote_session_id: str
 
 
 def _log_tracked_session_end(session_id: str, structured: dict, remote_session_id: str | None = None) -> None:
-    """終端した計画実行系sessionの終了時刻をprocess-loopの観測ログへ記録する。
+    """終了した計画実行系sessionの終了時刻をprocess-loopの観測ログへ記録する。
 
     `model_type`は`start`応答にだけ現れるため、起動時に保持した記録から取得する。
     """
@@ -469,7 +469,7 @@ def observe_tool(
             ObservationWarning(
                 f"warn: `list`の応答で{', '.join(missing)}が欠落しているか不正である。"
                 "このセッションは別名索引へ記録されていない。",
-                "`show`で同じセッションを再取得する。欠落が続く場合は`agents_server`の不具合としてユーザーへ報告する。",
+                "`show`で同じセッションを再取得せよ。欠落が続く場合は`agents_server`の不具合としてユーザーへ報告せよ。",
             )
         ]
 
@@ -484,8 +484,8 @@ def observe_tool(
                 ObservationWarning(
                     f"warn: {operation}の応答で{', '.join(missing)}が欠落しているか不正である。"
                     "観測待ちの記録が欠けるため、ターン終了時の未観測警告が出ない。",
-                    "起動したセッションは`atk agents wait`で終端を観測するか、結果が不要なら`kill`で破棄する。"
-                    "欠落が続く場合は`agents_server`の不具合としてユーザーへ報告する。",
+                    "起動したセッションは`atk agents wait`で終了を観測するか、結果が不要なら`kill`で破棄せよ。"
+                    "欠落が続く場合は`agents_server`の不具合としてユーザーへ報告せよ。",
                 )
             )
     remote_session_id = _agents_server_remote_session_id(tool_input, structured, tool_name)

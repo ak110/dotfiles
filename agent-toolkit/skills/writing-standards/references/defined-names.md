@@ -1,12 +1,12 @@
 # 名前の方針と定義済みの名前の一覧
 
-品質基準の正式な提供元は`agent-basics:writing-standards`の`references/defined-names.md`である。呼び出し元が指定した条件と読込範囲は、同名の品質資料へそのまま引き継ぐ。節の指定がある場合は移設先の実見出しを参照し、指定がない場合は全文を読む契約を維持する。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/defined-names.md`である。呼び出し元の取得条件と注目箇所を引き継ぎ、本書と正式な資料を全文読む。節指定がある場合は、指定された見出しを持つ資料に注目する。両方に同名の見出しがあれば両方に注目する。
 
-以下はagent-toolkitが所有する運用条件である。呼び出し元の条件と読込範囲に従い、本書に残る運用節を参照する。
+以下はagent-toolkitが所有する運用条件である。
 
 ## 名指し参照の読込方法
 
-本文の各参照における適用条件を守り、選択した資料の指定範囲を取得した上で、その基準に基づく具体的な判断へ進む。起動時の資料は起動本文とともに届く。
+本文の各参照における適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の資料は起動本文とともに届く。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -29,7 +29,7 @@
 | レーン担当 | レーン工程の担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | レビュー修正担当 | レーン担当の担当種別 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | CI修正担当 | レーン担当の担当種別 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
-| 終端担当 | 公開工程の担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
+| 公開担当 | 公開工程の担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | 監査担当 | 自動コードレビュー監査の委譲先 | `agent-toolkit/skills/process-wi/references/review-audit-launch.md`「自動コードレビュー監査」 |
 | 自動コードレビュー | 外部サービスのレビュー | `agent-toolkit/skills/process-wi/SKILL.md`「自動コードレビュー監査」 |
 | WI作成 | 作業の工程 | `agent-toolkit/share/workflow-phases.md`「工程表」 |
@@ -42,7 +42,7 @@
 | 受入シナリオ検証 | 検証の種類 | `agent-toolkit/share/workflow-phases.md`「用語」 |
 | 公開工程判定 | 完成条件の判定 | `agent-toolkit/share/workflow-phases.md`「用語」 |
 | 直接影響範囲 | 変更の影響範囲 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |
-| 変更範囲の検証 | 検証の範囲 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「検証と終端工程」 |
+| 変更範囲の検証 | 検証の範囲 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「検証と公開工程」 |
 | 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit/skills/review-standards/references/exec-review-recording.md`「統合時の完成条件判定」 |
 | 初回レビュー | 実行レビューの回 | `agent-toolkit/share/exec-review.subagent.md` |
 | 再レビュー | 実行レビューの回 | `agent-toolkit/share/exec-review.subagent.md` |

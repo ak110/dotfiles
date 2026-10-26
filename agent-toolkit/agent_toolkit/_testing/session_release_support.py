@@ -50,7 +50,7 @@ async def retained_executor(
     *,
     keep_executor: bool = False,
 ) -> AsyncGenerator[RetainedExecutor]:
-    """終端結果を持つ実cwd保持子を準備し、所有監視と全資源の終了まで引き受ける。"""
+    """終了時の結果を持つ実cwd保持子を準備し、所有監視と全資源の終了まで引き受ける。"""
     root = state_paths.state_dir()
     writer = status_file.StatusFileWriter(
         {},

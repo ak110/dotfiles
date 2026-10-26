@@ -46,7 +46,7 @@ async def _complete(backend, session, items=()):
 @pytest.mark.parametrize("terminal", ["completed", "interrupted", "child-turn"])
 @pytest.mark.asyncio
 async def test_native_children_hold_and_resume_once(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, terminal: str):
-    """子が全て終端した後の同一sessionの継続結果を公開し、再掲と次世代の子も扱う。"""
+    """子が全て終了した後の同一sessionの継続結果を公開し、再掲と次世代の子も扱う。"""
     async with manager.AgentsServerManager(None) as owner, codex.AppServerManager(owner.sessions, owner._condition) as backend:
         install_backend(owner, "codex", backend)
         client = FakeCodexClient()
@@ -79,7 +79,7 @@ async def test_native_children_hold_and_resume_once(tmp_path: pathlib.Path, monk
         assert session.turn_seq == 2 and session.auto_resume_consumed
         prompts = [r[1]["input"] for r in client.requests if r[0] == "turn/start"]
         assert len(prompts) == 2 and "child-1" in str(prompts[-1]) and "child-2" in str(prompts[-1])
-        # 終端後に元turnの項目が再掲されても子を再稼働へ戻さない。
+        # 終了後に元turnの項目が再掲されても子を再稼働へ戻さない。
         await backend._handle_notification(
             {
                 "method": "item/completed",
@@ -103,7 +103,7 @@ async def test_native_children_hold_and_resume_once(tmp_path: pathlib.Path, monk
 
 @pytest.mark.asyncio
 async def test_all_children_terminal_before_parent_returns_result(tmp_path: pathlib.Path):
-    """親turnの完了より前に子が終端していれば、そのturnの結果を返す。"""
+    """親turnの完了より前に子が終了していれば、そのturnの結果を返す。"""
     session = state.SessionState("parent", str(tmp_path), engine="codex", turn_id="turn")
     async with codex.AppServerManager({session.session_id: session}) as backend:
         await _item(backend, session, _activity("child", "started", "start"))
@@ -194,7 +194,7 @@ async def test_deadline_and_lost_connection_report_unfinished_threads(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_self_message_and_child_share_resume_and_restore_rejected_delivery(tmp_path, monkeypatch):
-    """子の終端を待つ修復指示を一度にまとめ、配送拒否でも保留理由を保持する。"""
+    """子の終了を待つ修復指示を一度にまとめ、配送拒否でも保留理由を保持する。"""
     async with manager.AgentsServerManager(None) as owner, codex.AppServerManager(owner.sessions, owner._condition) as backend:
         install_backend(owner, "codex", backend)
         client = FakeCodexClient()

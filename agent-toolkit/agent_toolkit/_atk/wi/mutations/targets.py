@@ -266,7 +266,7 @@ def resolve_active_targets(
 ) -> list[pathlib.Path]:
     """対象を指定状態の優先順で解決する。
 
-    `rm`と`set-dependencies`のように、保存状態を変えずに未終端の項目へ作用する操作が使う。
+    `rm`と`set-dependencies`のように、保存状態を変えずに未終了の項目へ作用する操作が使う。
     `states`省略時は従来どおりprocessing、inbox、holdの順で解決する。
     """
     state_names = states or (WI_STATE_PROCESSING, WI_STATE_INBOX, WI_STATE_HOLD)

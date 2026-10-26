@@ -66,7 +66,7 @@ class CliTurnManager:
         raise NotImplementedError
 
     async def process_event(self, session: SessionState, payload: dict[str, Any]) -> bool:
-        """イベントを反映し、イベント自身で終端した場合に真を返す。"""
+        """イベントを反映し、イベント自身で終了した場合に真を返す。"""
         raise NotImplementedError
 
     def finish_process(self, session: SessionState, returncode: int | None, stderr: str, finalized: bool) -> None:
@@ -86,11 +86,11 @@ class CliTurnManager:
     INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool] = False
     """中断の要求にturnの識別子を使わない。"""
     ORPHAN_TAKEOVER: typing.ClassVar[bool] = False
-    """所有者のいない登録簿の記録を、委譲先CLIの記録から終端として引き継がない。"""
+    """所有者のいない登録簿の記録を、委譲先CLIの記録から終了として引き継がない。"""
 
     @staticmethod
     def unavailable_reason(session: SessionState) -> str | None:
-        """失敗で終端したsessionの除外理由として、CLIの標準エラー出力か失敗の本文を返す。"""
+        """失敗で終了したsessionの除外理由として、CLIの標準エラー出力か失敗の本文を返す。"""
         error = engine_availability.failure_error(session)
         if error is None:
             return None
@@ -182,7 +182,7 @@ class CliTurnManager:
         )
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
-        """終端済みturnの後続として、同じ会話識別子で新しいturnを開始する。"""
+        """終了済みturnの後続として、同じ会話識別子で新しいturnを開始する。"""
         validate_prompt(prompt)
         async with session.turn_control_lock:
             if not session.terminal:
@@ -518,7 +518,7 @@ def decode_event(line: bytes) -> dict[str, Any] | None:
 
 
 def finalize_turn(session: SessionState, result: dict[str, Any]) -> None:
-    """最新turnの終端結果を確定する。"""
+    """最新turnの終了時の結果を確定する。"""
     if result_contract.hold_invalid_result(session, result):
         return
     session.pending_result = None
@@ -531,7 +531,7 @@ def finalize_turn(session: SessionState, result: dict[str, Any]) -> None:
 
 
 def _record_failure(session: SessionState, error: BaseException, stderr_text: str) -> None:
-    """失敗を終端結果へ確定し、原因の特定に要する標準エラーを添える。"""
+    """失敗を終了時の結果へ確定し、原因の特定に要する標準エラーを添える。"""
     failure: dict[str, Any] = {
         "message": str(error) or error.__class__.__name__,
         "engine": session.engine,

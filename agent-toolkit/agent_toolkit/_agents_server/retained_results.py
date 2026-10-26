@@ -1,4 +1,4 @@
-"""ルートごとに保持した終端結果（`results/<session_id>.json`）の読取と、所有者を確かめて一度だけ行う回収。"""
+"""ルートごとに保持した終了時の結果（`results/<session_id>.json`）の読取と、所有者を確かめて一度だけ行う回収。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from agent_toolkit._common.file_lock import acquire_lock, release_lock
 def read_retained_result(
     root_session_id: str, session_id: str, state_root: pathlib.Path | None = None
 ) -> dict[str, Any] | None:
-    """同じルートsessionの未回収終端結果を削除せずに読む。"""
+    """同じルートsessionの未回収終了時の結果を削除せずに読む。"""
     if not valid_session_id(session_id):
         return None
     path = results_directory(root_session_id, state_root) / f"{session_id}.json"

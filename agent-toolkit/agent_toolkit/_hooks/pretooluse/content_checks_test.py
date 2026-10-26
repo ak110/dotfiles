@@ -82,7 +82,7 @@ class TestLanguageRewrite:
             saved = _read_session_state(tmp_path, sid)
             assert all(saved[key] == value for key, value in legacy.items())
             if expected == 2:
-                assert "日本語で書き直す" in result.stderr
+                assert "日本語で書き直" in result.stderr
                 assert "識別子と名前" in result.stderr
                 assert result.stderr.rstrip().endswith("</atk-auto>")
 

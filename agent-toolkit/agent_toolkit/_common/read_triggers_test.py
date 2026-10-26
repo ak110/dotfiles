@@ -218,7 +218,7 @@ def test_role_startup_receives_the_method_referenced_by_its_included_table(tmp_p
     role.write_text("# 役割\n<!-- read-table-source: reading.md -->\n", encoding="utf-8")
     context = read_triggers.startup_context(role, tmp_path, {})
     assert context.count("共通取得順") == 1
-    assert "別用途本文" not in context
+    assert "別用途本文" in context
 
 
 @pytest.mark.parametrize("defect", ["missing-heading", "outside-package", "cycle"])

@@ -60,7 +60,7 @@ def root_has_live_writer(
 def ownerless_root_session_ids(exclude: str | None, state_root: pathlib.Path | None = None) -> list[str]:
     """生存の印が有効な書込主体のいないルートを、`exclude`を除いて安定順で返す。
 
-    所有サーバーの起動単位が替わった後、旧起動単位のルートへ残った委譲先の通知と終端結果を回収する対象に使う。
+    所有サーバーの起動単位が替わった後、旧起動単位のルートへ残った委譲先の通知と終了時の結果を回収する対象に使う。
     """
     cutoff = heartbeat_cutoff()
     return [

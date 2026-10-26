@@ -49,8 +49,8 @@ def _check_read_predicate_stderr_discard(command: str) -> str | None:
                 tag=_WARN_TAG,
                 subject=command,
                 removable_cause=True,
-                fix="標準エラーの破棄を外して再実行する。出力量は標準出力の対象限定・保存で抑え、"
-                "標準エラーは呼び出し元へ残すか別ファイルへ保存し、別の呼び出しで読む。",
+                fix="標準エラーの破棄を外して再実行せよ。出力量は標準出力の対象限定・保存で抑え、"
+                "標準エラーは呼び出し元へ残すか別ファイルへ保存し、別の呼び出しで読め。",
             )
     return None
 
@@ -272,9 +272,9 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
     return _block_notice(
         "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
         fix=(
-            "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。"
+            "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使え。"
             "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
-            "`p[k]ill`のように文字クラスで書く。"
+            "`p[k]ill`のように文字クラスで書け。"
         ),
     )
 
@@ -387,16 +387,16 @@ def _git_commit_message_format_error(messages: Iterable[str]) -> str | None:
             return _block_notice(
                 f"公開するコミットメッセージに作業項目のファイル名（`{match.group()}`）が含まれている。",
                 fix=(
-                    "公開するコミットへ作業項目のファイル名を書かない。実装コミットとAWIの対応は"
+                    "公開するコミットへ作業項目のファイル名を書くな。実装コミットとAWIの対応は"
                     "`atk run-script plan-progress`が記録する対応記録ファイル（`<stem>.wi-commits.jsonl`）へ残し、"
-                    "メッセージから作業項目のファイル名を含む行を除いて再実行する。"
+                    "メッセージから作業項目のファイル名を含む行を除いて再実行せよ。"
                 ),
             )
         lines = message.splitlines()
         if len(lines) > 1 and lines[1].strip():
             return _block_notice(
                 "`commit`の件名と本文の間の空行が欠けている。",
-                fix="件名の次に空行を1行入れて再実行する。",
+                fix="件名の次に空行を1行入れて再実行せよ。",
             )
     return None
 
@@ -416,7 +416,7 @@ def _git_commit_attribution_error(
         if trailers != [expected]:
             return _block_notice(
                 f"通常`commit`の`Co-Authored-By:`が実行ターンで観測したモデルと異なる。必要な行: {expected}",
-                fix="観測したモデルに対応する上記の`Co-Authored-By:`を1行だけ入れて再実行する。",
+                fix="観測したモデルに対応する上記の`Co-Authored-By:`を1行だけ入れて再実行せよ。",
             )
     return None
 
@@ -432,7 +432,7 @@ def _commit_heredoc_body(command: str) -> str | None:
     for terminator, (original, masked) in enumerate(zip(original_lines, masked_lines, strict=True)):
         if original == masked or not masked.startswith(";") or masked[1:].strip():
             continue
-        # 本文は宣言行の直後から終端行の前までに連続し、置換後は空白だけの行になる。宣言行は空白だけにならない。
+        # 本文は宣言行の直後から終了行の前までに連続し、置換後は空白だけの行になる。宣言行は空白だけにならない。
         start = terminator
         while start > 0 and not masked_lines[start - 1].strip():
             start -= 1
@@ -533,7 +533,7 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
                 subject=command,
                 removable_cause=True,
                 fix="元の`--short`・`--short=<長さ>`・`--verify`などのオプションを保ち、リビジョンごとに"
-                "`git rev-parse <元のオプション> <revision>`を個別に実行して入力と出力の対応を保つ。",
+                "`git rev-parse <元のオプション> <revision>`を個別に実行して入力と出力の対応を保て。",
             )
     return None
 
@@ -630,8 +630,8 @@ def _check_bash_option_after_terminator(command: str) -> str | None:
             subject=command,
             removable_cause=True,
             fix=(
-                "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"
-                "`-`で始まるパスを渡す場合は`./`を前置する。"
+                "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行せよ。"
+                "`-`で始まるパスを渡す場合は`./`を前置せよ。"
             ),
         )
     return None
@@ -694,10 +694,10 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
             removable_cause=True,
             fix=(
                 "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
-                "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読む。"
-                "`atk agents wait`は`&`も外して単独で発行する。"
-                "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領する。"
-                "保存した本文の選別は別の呼び出しで行う。"
+                "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読め。"
+                "`atk agents wait`は`&`も外して単独で発行せよ。"
+                "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領せよ。"
+                "保存した本文の選別は別の呼び出しで行え。"
             ),
         )
     return None
@@ -731,9 +731,9 @@ def _check_bash_unquoted_heredoc_substitution(command: str) -> str | None:
         f"blocked: 区切り語を引用しないヒアドキュメントの本文にコマンド置換（{shown}）がある。"
         "`bash`はこの本文を展開し、置換の中のコマンドを実行する。",
         fix=(
-            "本文をそのまま書く場合は区切り語を引用する（`<<'EOF'`）。"
-            "置換の結果を本文へ入れる場合は、事前に変数へ代入して本文では`$VAR`で参照する。"
-            "リテラルのバッククォートと`$(`は直前に`\\`を置いてエスケープする（「\\`」・「\\$(」）。"
+            "本文をそのまま書く場合は区切り語を引用せよ（`<<'EOF'`）。"
+            "置換の結果を本文へ入れる場合は、事前に変数へ代入して本文では`$VAR`で参照せよ。"
+            "リテラルのバッククォートと`$(`は直前に`\\`を置いてエスケープせよ（「\\`」・「\\$(」）。"
         ),
     )
 
@@ -822,7 +822,7 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
         "そのディレクトリは検索されない。コマンドは実行済みであり、`PATH`の内容で決まった結果"
         "（`command -v`の出力、実行されたプログラム、計測値）は意図した構成のものではない。",
         tag=_WARN_TAG,
-        fix="`/c/Users/...`の形で書くか、`\"$(cygpath -u '<Windows形式のパス>')\"`で変換した値を`PATH`へ加えて再実行する。",
+        fix="`/c/Users/...`の形で書くか、`\"$(cygpath -u '<Windows形式のパス>')\"`で変換した値を`PATH`へ加えて再実行せよ。",
         removable_cause=True,
         subject=command,
     )

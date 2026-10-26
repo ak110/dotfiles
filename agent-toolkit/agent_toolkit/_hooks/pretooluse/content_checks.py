@@ -62,7 +62,7 @@ def _collect_edit_operation_warnings(
             boundary_warning = _llm_notice(
                 f"warn: `{display_path}`の末尾にツール境界タグ`</content>`と`</invoke>`が混入している。",
                 tag=_WARN_TAG,
-                fix="末尾のツール境界タグを削除する。",
+                fix="末尾のツール境界タグを削除せよ。",
                 removable_cause=True,
             )
     candidates = [
@@ -88,7 +88,7 @@ def _detect_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> tuple[str
         sample = value[start:end]
         return (
             f"`{tool_name}.{field}`にU+FFFD（文字化け）を検出した。文脈: {sample!r}",
-            "U+FFFDを意図した文字へ置き換えて再実行する。",
+            "U+FFFDを意図した文字へ置き換えて再実行せよ。",
         )
     return None
 
@@ -129,8 +129,8 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
             tag=_WARN_TAG,
             fix=(
                 "`agent-toolkit:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い、"
-                "既存ファイルには`Edit`ツールを使う。"
-                "新規ファイルを`Bash`で`UTF-8`の`BOM`と`CRLF`改行を指定して書き込む。"
+                "既存ファイルには`Edit`ツールを使え。"
+                "新規ファイルを`Bash`で`UTF-8`の`BOM`と`CRLF`改行を指定して書き込め。"
             ),
             removable_cause=True,
         )
@@ -141,16 +141,16 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
 
 # （label, regex, hint）のタプル。regexはfile_path全体に対するマッチ。
 _LOCKFILE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
-    ("uv.lock", re.compile(r"(^|/)uv\.lock$"), "依存の追加には`uv add`、削除には`uv remove`を使う。"),
+    ("uv.lock", re.compile(r"(^|/)uv\.lock$"), "依存の追加には`uv add`、削除には`uv remove`を使え。"),
     (
         "pnpm-lock.yaml",
         re.compile(r"(^|/)pnpm-lock\.yaml$"),
-        "依存の追加には`pnpm add`、削除には`pnpm remove`を使う。",
+        "依存の追加には`pnpm add`、削除には`pnpm remove`を使え。",
     ),
-    ("package-lock.json", re.compile(r"(^|/)package-lock\.json$"), "依存の追加には`npm install <pkg>`を使う。"),
-    ("yarn.lock", re.compile(r"(^|/)yarn\.lock$"), "依存の追加には`yarn add`を使う。"),
-    ("Cargo.lock", re.compile(r"(^|/)Cargo\.lock$"), "依存の追加には`cargo add`を使う。"),
-    ("mise.lock", re.compile(r"(^|/)mise\.lock$"), "ツール管理には`mise use`・`mise install`を使う。"),
+    ("package-lock.json", re.compile(r"(^|/)package-lock\.json$"), "依存の追加には`npm install <pkg>`を使え。"),
+    ("yarn.lock", re.compile(r"(^|/)yarn\.lock$"), "依存の追加には`yarn add`を使え。"),
+    ("Cargo.lock", re.compile(r"(^|/)Cargo\.lock$"), "依存の追加には`cargo add`を使え。"),
+    ("mise.lock", re.compile(r"(^|/)mise\.lock$"), "ツール管理には`mise use`・`mise install`を使え。"),
     (
         ".venv/",
         re.compile(r"(^|/)\.venv/"),
@@ -174,7 +174,7 @@ def _check_lockfiles(tool_name: str, file_path: str) -> str | None:
     normalized = file_path.replace("\\", "/")
     for label, pattern, hint in _LOCKFILE_RULES:
         if pattern.search(normalized):
-            fix = "このパスを直接編集せず、パッケージ管理ツールで再生成する。" if label in {".venv/", "node_modules/"} else hint
+            fix = "このパスを直接編集せず、パッケージ管理ツールで再生成せよ。" if label in {".venv/", "node_modules/"} else hint
             return _llm_notice(
                 f"{tool_name}による{label}の直接編集を検出した。対象: {file_path}",
                 tag=_WARN_TAG,
@@ -192,7 +192,7 @@ _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
         re.compile(r"(^|/)pyproject\.toml$"),
         (
             "`[project.dependencies]`・`[project.optional-dependencies]`の編集は、"
-            "`uv.lock`を同期させるため`uv add`・`uv remove`を使う。"
+            "`uv.lock`を同期させるため`uv add`・`uv remove`を使え。"
             "`[tool.*]`と版数の編集はそのまま進めてよい。"
         ),
     ),
@@ -200,7 +200,7 @@ _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
         "package.json",
         re.compile(r"(^|/)package\.json$"),
         (
-            "依存の編集は、`pnpm-lock.yaml`を同期させるため`pnpm add`・`pnpm remove`を使う。"
+            "依存の編集は、`pnpm-lock.yaml`を同期させるため`pnpm add`・`pnpm remove`を使え。"
             "`scripts`とメタデータの編集はそのまま進めてよい。"
         ),
     ),

@@ -8,8 +8,8 @@ export const USAGE_LIMIT_RESUME_PROMPT = automatedMessage(
   "usage-limit-resume",
   "notice",
   "利用上限で中断した作業を解除後に再開する発火である。" +
-    "agent-toolkit:user-confirmation-and-reportのreferences/usage-limit.mdに従って再開情報を読み、最初の未完了工程から続ける。" +
-    "未完了の作業が無い場合、既に続行済みの場合、ユーザーが中止を指示している場合は、何もせず終える。",
+    "agent-toolkit:user-confirmation-and-reportのreferences/usage-limit.mdに従って再開情報を読み、最初の未完了工程から続けよ。" +
+    "未完了の作業が無い場合、既に続行済みの場合、ユーザーが中止を指示している場合は、何もせず終えよ。",
 );
 
 function maximumWindow(windows: SessionRateLimit[]): SessionRateLimit | undefined {

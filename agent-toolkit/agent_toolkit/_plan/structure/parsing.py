@@ -250,7 +250,7 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)agent-basics/skills/[^/]+/references/.+\.md$"),
     re.compile(r"(^|/)agent-toolkit/agents/.+\.md$"),
     # chezmoi配布元のテンプレート（`<name>.md.tmpl`）も配布先ではエージェント向け文書として読み込まれるため、
-    # `.tmpl`終端を受理する。原本側だけが対象から外れると、テンプレートによる規範の改訂を判定できなくなる。
+    # `.tmpl`終了を受理する。原本側だけが対象から外れると、テンプレートによる規範の改訂を判定できなくなる。
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/rules/.+\.md(\.tmpl)?$"),
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/skills/.+\.md(\.tmpl)?$"),
     # ユーザーのプロジェクトが直接持つエージェント向け文書。配布元固有パスだけを対象にすると、

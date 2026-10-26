@@ -264,7 +264,7 @@ def test_adopted_action_rejects_non_queue_relation() -> None:
 
 
 def test_requirement_coverage_keeps_checking_adopted_requirement_outside_terminal_only() -> None:
-    """`終端工程のみ`で始まらない採用要求は除外の影響を受けず被覆の判定対象に残る。"""
+    """`公開工程のみ`で始まらない採用要求は除外の影響を受けず被覆の判定対象に残る。"""
     errors = plan_sections.check_plan_structure(_plan_with_uncovered_requirement("公開APIの維持"))
     assert any("採用要求を被覆しない: R-P-002-001" in error for error in errors), errors
 

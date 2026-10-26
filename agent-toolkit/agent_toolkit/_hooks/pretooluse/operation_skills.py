@@ -642,7 +642,7 @@ def record_document_read(session_id: str, read: _document_reads.DocumentRead, ag
     update_state(session_id, mark_ready(document_id(entry, read.relative_path), agent))
 
 
-def _subject(payload: dict) -> str:
+def resolve_subject(payload: dict) -> str:
     """主体の区分を返す。区分ごとの取得手段と記録する観測は`docs/development/design-hooks.md`の該当節が定める。"""
     if _delegated_session.is_lightweight_delegated(os.environ):
         return SUBJECT_LIGHTWEIGHT
