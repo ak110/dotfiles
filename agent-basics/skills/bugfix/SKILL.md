@@ -89,7 +89,7 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、`
 
 ## 対策の選定
 
-`references/root-cause-analysis.md`の「対策の選定」を適用する。
+`references/root-cause-analysis.md`の「対策の選定」を適用する。原因仮説に基づく改善の採否は、原因を事実として断定する条件と分ける。
 
 ## テストの原因調査
 

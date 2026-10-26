@@ -83,3 +83,5 @@ description: >
 
 実装、実行レビュー、および完了（終端）の処理は`references/main-launch.md`に従う。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`検証結果`は同書の冒頭の規定に沿って計画の進捗ログに記録する。
 記録の記述方法やレビュー指摘修正後の更新手順は、`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「完成条件証拠の検証記録」に従う。
+
+WIを入力とする計画の開始時は、WIの既存証拠の対象・版・前提との差だけを調べ、変化部分、残る問い、実装に必要な詳細を補う。一致する範囲の証拠と記述は再利用する。

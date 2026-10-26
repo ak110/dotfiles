@@ -19,9 +19,9 @@
 - 「全文読む資料」の列には、コード記法の資料名、Markdownリンク、または`agent-basics:writing-standards/SKILL.md`のような具体的なパスを記述する。単一の見出し名、複数の見出し、開始節から終了節までの範囲指定、および冒頭の指定を区別して記述できる。範囲指定では終了節の配下も含めて扱う（受理記法の所在参照）。
 - 純粋な互換参照ファイルでは、H1見出しの直後に`<!-- read-source: agent-basics:<skill>/references/<file>.md -->`を置いて正式な資料を明示する。元の条件や節指定は正式な資料へ引き継ぐ。運用ルールと品質基準が混在する参照ファイルにはこの標識を置かず、読込表から正式な資料を直接指定する。
 - 共通の`<役割名>.parent.md`を持たない役割は、役割文書内の`<!-- parent-read-source: agent-toolkit:/<資料>#<見出し> -->`によって起動・受領契約の定義元を宣言する。これは同一の役割を呼び出す全呼出元が共有する固定契約のみを指し、条件付きで参照する詳細資料は定義元文書の読込表に従う。
-- 「資料選択子」には`modified-agent-documents`、`role-contract`、`review-reference`、`external-pytilpack-index`を指定できる。ほかに`artifact-standards`、`same-document`、`project-skill`、`input:<入力名>`も指定できる。入力が不足している場合や未対応の取得対象がある場合は、診断情報として通知する。
+- 「資料選択子」には`role-contract`、`review-reference`、`external-pytilpack-index`を指定できる。ほかに`artifact-standards`、`same-document`、`project-skill`、`input:<入力名>`も指定できる。入力が不足している場合や未対応の取得対象がある場合は、診断情報として通知する。
 
-`input:作業契約`は、通常タスクや委譲の公開入力である`whole_contract_path`、または既存の正式な解決結果へ接続する。解決した現行の本文を委譲プロンプトに含め、実在するパス、本文のハッシュ値、入力識別子を共通のstartup-documentとして渡す。受領側は会話圧縮後も同じ入力から再配送する。
+`input:作業契約`は、通常タスクや委譲の公開入力である`whole_contract_path`、または既存の正式な解決結果へ接続する。起動入力が無いメインは自身のmanaged-temp直下のwork-contract.mdを解決元にする。解決した現行の本文を委譲プロンプトに含め、実在するパス、本文のハッシュ値、入力識別子を共通のstartup-documentとして渡す。受領側は会話圧縮後も同じ入力から再配送する。
 `project-skill`は、呼出側が確定させてReadツールや静的な全文読取へ渡した`SKILL.md`の実体を使用する。`.claude/skills/`や`.agents/skills/`からの取得入力を認識し、シンボリックリンク先の実体を共通の資料識別に利用する。最初の`SKILL.md`取得を再発行する前に起動時資料を配送し、取得したスキルの宣言を後続の操作へ適用する。指定された節や条件を保持し、実体の選択を自然文から推測することは避ける。`resolved-project-skill:<絶対パス>`は選択したスキルの実体を保持し、会話圧縮後も同一の宣言を読み込む。
 
 Antigravity向けの公式生成形式では、同階層の`agent-toolkit-agy`と`agent-basics-agy`を使用し、manifestの論理名を保つ。長大なSKILLの要約版である`SKILL.md`は、read-sourceによって生成元の全文資料へ接続する。生成全文資料の相対参照は元のSKILLディレクトリを起点とし、元のSKILLと同一の識別子で取得済み状態と指定節を確認する。ルートパスは、正式な生成配置においてmanifestの論理名と指定名が一致する実体へ解決する。

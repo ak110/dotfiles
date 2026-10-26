@@ -367,14 +367,13 @@ def undetermined_cause_rows(body: str) -> list[str]:
     return rows
 
 
-def require_confirmed_cause(body: str) -> None:
-    """エージェント環境から保存する本文が、直接的原因を未確定のまま宣言していないことを検証する。
+def require_confirmed_cause(body: str, *, entry_type: str) -> None:
+    """エージェント環境から保存するUWIが、直接的原因を未確定のまま宣言していないことを検証する。
 
-    原因が確定するまでWIを保存しないという起草の条件を、委譲の追送などで差し戻しが上書きされた場合も
-    保存処理自身で守る。判定するのは明示された未確定の宣言だけであり、原因として書かれた内容の妥当性は起草とレビューが確かめる。
-    種別（AWIとUWI）と`source`の有無で対象を分けない。人間の入力は拒否しない。
+    通常AWIは独立別件の原因仮説と次の問いを保存できる必要があるため、起草と意味検収で本文の妥当性を確認する。
+    UWIはユーザーへの判断依頼を未確定な原因分析で代用しない既存条件を保つ。人間の入力は拒否しない。
     """
-    if not is_agent_environment():
+    if entry_type != WI_TYPE_UWI or not is_agent_environment():
         return
     if rows := undetermined_cause_rows(body):
         raise WebInputError(
@@ -811,7 +810,7 @@ def cmd_add(
             except WebInputError as error:
                 validation_errors.append(error)
             try:
-                require_confirmed_cause(body)
+                require_confirmed_cause(body, entry_type=args.type)
             except WebInputError as error:
                 validation_errors.append(error)
         except WebInputError as error:

@@ -583,7 +583,7 @@ AWIが常時発生しないリポジトリでは、常駐実行を起動せず�
 起動したセッションの中で、調査から実装、レビュー、公開までが進む。
 計画を要するAWIが含まれる場合も、同じセッションの中で計画の作成から実装まで進む。
 複数の対象リポジトリを扱う場合は、計画と実行レビューを対象worktreeごとに分ける。同じ対象worktreeの計画対象と直接実装対象は、同じ実行レビューでまとめて確認する。
-Claude Codeではpush後のCI待機でも、独立した公開工程を先に開始し、対象commit・監視入力・baseline・保存出力と後続工程をparent-handoff.mdへ保存して同じ圧縮予約手順を使う。通知後も同じ監視対象と保存結果から続ける。
+Claude Codeではpush後のCI待機でも、独立した公開工程を先に開始して同じ圧縮予約手順を使う。通知後は注入された要約を起点に、必要に応じて既存のCI監視入力・保存出力・計画や状態照会を確認し、同じ監視対象から続ける。
 
 自律型とまとめ処理型は、AWIの発生頻度と常駐実行の要否で選ぶ。
 常駐実行を動かし続けるだけのAWIが継続して発生する場合は自律型を選ぶ。
@@ -640,6 +640,9 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 show形式の構造とは、直後にfrontmatterが続く`### <ファイル名>.md`の行を持ち、その行より前が空行と`# awi`・`# uwi`・`## target_repo: ...`の見出しだけで構成される本文を指す。
 このときtarget-repo欄とUWI用の入力欄の値は使わない。
 
+エージェントが手動作成するAWIでは、今回求められた対象別の採否・外部から見える結果と必要なユーザー判断を登録前に確定する。
+作業中に発見した独立した別件では、登録の必要性と既存の実装・文書・WIとの重複を確認し、確定事実・原因仮説・残る問いを分けて登録できる。
+既存の証拠は、対象・版・前提の変化を確認して再利用する。
 登録したAWIの計画、実装と実行レビューはエージェントが進める。登録者が行う操作は、UWIへの回答と、次に述べる登録済み項目の修正である。
 実行レビューの役割と証拠の扱いの設計は[design-review-evidence.md](../development/design-review-evidence.md)、実行時の手順は`agent-toolkit/share/exec-review.subagent.md`にある。
 
@@ -851,7 +854,7 @@ atk plans commit "<一覧で確認した計画ファイルの絶対パス>"
 - `atk agents-exit-session`: ユーザー指示時または自律モードのスキル完遂時に、現在のClaude CodeまたはCodexの対話セッションへ終了を要求するCLI。管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeでは、ターンの完了後に`/exit`を実行してセッション記録の末尾まで残す。moduleが読み込まれていないClaude CodeとCodexでは従来のプロセス停止方式を使う。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
   `all-repos`のリポジトリ担当は実行せず、常駐側への最終返却でターンを終える。常駐側が返却を受け取る前に担当を止めないためである
-- `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、引数は取らず追加指示なしでcompactを予約する。必要な再開状態はセッションのmanaged-temp直下のparent-handoff.mdへ保存し、圧縮後の領域通知からその記録を読む。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に同じ担当と保存結果から継続する
+- `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、引数は取らず追加指示なしでcompactを予約する。圧縮後は注入された要約から再開し、不足する情報だけを既存の担当記録・成果物・状態照会から取得する。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に同じ担当と保存結果から継続する
 - `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。途中報告と最後の回答を運び、画面へMarkdownとして表示する。完全名は`mcp__agent-toolkit__send_to_user`で、初回から読み込む定義を登録する。遅延一覧にだけ現れる場合は`ToolSearch`の`select:mcp__agent-toolkit__send_to_user`で読み込む。ツール呼び出しより前の地の文は要約に置き換わることがあるため、このツールで送る。確認質問には既存の質問手段を使う。moduleを読み込まないClaude CodeとCodexでは、ターンを終える本文へ書く
 - `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。適用するプロジェクト規範が本スキルを不要と定める場合は、スキルを起動せず`references/termination-evidence.md`を読む。`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ`omit-completion`の根拠を記録する。省略は指定した作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務（`all-repos`のリポジトリ担当を除く）は保つ。ClaudeのStopフックは起動忘れを非遮断で通知し、CodexのStopではこの通知を扱わない。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめる。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う

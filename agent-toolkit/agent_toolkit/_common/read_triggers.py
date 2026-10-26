@@ -28,7 +28,6 @@ OPERATIONS = frozenset(
 PREFIXES = ("skill:", "write:", "path:", "dependency:", "section:", "tool:", "bash:", "role:", "read:")
 DYNAMIC_SELECTORS = frozenset(
     {
-        "modified-agent-documents",
         "role-contract",
         "review-reference",
         "external-pytilpack-index",
@@ -37,6 +36,9 @@ DYNAMIC_SELECTORS = frozenset(
         "project-skill",
     }
 )
+# 役割文書以外の読込表で使える起動入力は、委譲入力が無い主体でも
+# 解決できる入力だけに限る。値は配送側の解決元を識別する。
+INPUT_SELECTOR_RESOLUTION_SOURCES = {"input:作業契約": "main-work-contract"}
 _CODE = re.compile(r"`([^`]+)`")
 _REFERENCE = re.compile(r"`([^`]+)`|\[[^\]]+\]\(([^)]+)\)")
 _REFERENCE_METHOD_HEADING = "名指し参照の読込方法"
@@ -464,7 +466,16 @@ def parse_tables(
         if any(not known_operation(value) for value in operations):
             raise ValueError(f"{source}:{number}: 未登録の配送操作: {operations}")
         selector = row.get("資料選択子", "").strip("` ")
-        if selector and selector not in DYNAMIC_SELECTORS and not (selector.startswith("input:") and selector != "input:"):
+        is_role_document = source.name.endswith(".subagent.md")
+        if (
+            selector
+            and selector not in DYNAMIC_SELECTORS
+            and not (
+                selector.startswith("input:")
+                and selector != "input:"
+                and (is_role_document or selector in INPUT_SELECTOR_RESOLUTION_SOURCES)
+            )
+        ):
             raise ValueError(f"{source}:{number}: 未登録の動的資料選択子: {selector}")
         material = row["全文読む資料"]
         if material.startswith("同スキル"):

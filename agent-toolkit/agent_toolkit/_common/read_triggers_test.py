@@ -104,6 +104,11 @@ def test_heading_containing_preamble_word_keeps_its_scope(tmp_path):
         ("| 条件 | 全文読む資料 | 契機 | 配送操作 |", "| 条件 | `rule.md` | 判断 | |", "配送操作が無い"),
         ("| 条件 | 全文読む資料 | 契機 | 配送操作 |", "| 条件 | `rule.md` | 操作 | `unknown:Do` |", "未登録の配送操作"),
         ("| 条件 | 全文読む資料 | 契機 | 配送操作 |", "| 条件 | `missing.md` | 操作 | `tool:Do` |", "資料が存在しない"),
+        (
+            "| 条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |",
+            "| 条件 | `rule.md` | 操作 | `tool:Do` | `modified-agent-documents` |",
+            "未登録の動的資料選択子",
+        ),
     ],
 )
 def test_invalid_table_rows_fail_the_ci_parser(tmp_path, header, row, diagnostic):
@@ -112,6 +117,53 @@ def test_invalid_table_rows_fail_the_ci_parser(tmp_path, header, row, diagnostic
     source = tmp_path / "SKILL.md"
     source.write_text(header + "\n" + row + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match=diagnostic):
+        read_triggers.parse_tables(source, tmp_path, strict=True)
+
+
+def test_registered_dynamic_selector_passes_the_ci_parser(tmp_path):
+    (tmp_path / "rule.md").write_text("# 基準\n", encoding="utf-8")
+    source = tmp_path / "SKILL.md"
+    source.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 操作時 | `rule.md` | 操作 | `tool:Do` | `same-document` |\n",
+        encoding="utf-8",
+    )
+    assert read_triggers.parse_tables(source, tmp_path, strict=True)[0].selector == "same-document"
+
+
+def test_input_selector_without_a_registered_main_resolution_source_fails_ci(tmp_path):
+    source = tmp_path / "SKILL.md"
+    source.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 起動時 | 起動入力 | 起動時 | `skill:example` | `input:未登録` |\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="未登録の動的資料選択子"):
+        read_triggers.parse_tables(source, tmp_path, strict=True)
+
+
+def test_role_document_accepts_its_startup_input_selector(tmp_path):
+    source = tmp_path / "example.subagent.md"
+    source.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 起動時 | 起動入力 | 起動時 | `role:example` | `input:委譲入力` |\n",
+        encoding="utf-8",
+    )
+    assert read_triggers.parse_tables(source, tmp_path, strict=True)[0].selector == "input:委譲入力"
+
+
+def test_role_document_rejects_an_empty_input_selector(tmp_path):
+    source = tmp_path / "example.subagent.md"
+    source.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 起動時 | 起動入力 | 起動時 | `role:example` | `input:` |\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="未登録の動的資料選択子"):
         read_triggers.parse_tables(source, tmp_path, strict=True)
 
 

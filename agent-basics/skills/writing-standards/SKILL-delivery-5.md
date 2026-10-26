@@ -11,9 +11,9 @@
 | `cmd`・`bat` | `references/windows-batch.md` | 操作 | `path:*.cmd`、`path:*.bat` | |
 | `Dockerfile` | `references/dockerfiles.md` | 操作 | `path:*Dockerfile` | |
 | `.github/workflows/*.yaml`・`.github/workflows/*.yml` | `references/github-actions.md` | 操作 | `path:*/.github/workflows/*.yaml`、`path:*/.github/workflows/*.yml` | |
-| `tailwindcss`（v4系） | `references/tailwindcss.md` | 操作 | `dependency:tailwindcss` | |
-| `alpinejs`（v3系。`<script>`読み込みを含む） | `references/alpinejs.md` | 操作 | `dependency:alpinejs` | |
-| `@playwright/test`・`playwright`（Playwright Test v1系とPythonバインディング） | `references/playwright.md` | 操作 | `dependency:playwright` | |
-| `sqlalchemy`（2.0系） | `references/sqlalchemy.md` | 操作 | `dependency:sqlalchemy` | |
-| `drizzle-orm`・`drizzle-kit`（0.x系） | `references/drizzle.md` | 操作 | `dependency:drizzle` | |
-| `svelte`・`@sveltejs/kit`（Svelte 5・SvelteKit 2） | `references/svelte.md` | 操作 | `dependency:svelte` | |
+| `tailwindcss`（v4系） | `references/tailwindcss.md` | 操作 | `dependency:tailwindcss`（実コードまたは依存定義の操作） | |
+| `alpinejs`（v3系。`<script>`読み込みを含む） | `references/alpinejs.md` | 操作 | `dependency:alpinejs`（実コードまたは依存定義の操作） | |
+| `@playwright/test`・`playwright`（Playwright Test v1系とPythonバインディング） | `references/playwright.md` | 操作 | `dependency:playwright`（実コードまたは依存定義の操作） | |
+| `sqlalchemy`（2.0系） | `references/sqlalchemy.md` | 操作 | `dependency:sqlalchemy`（実コードまたは依存定義の操作） | |
+| `drizzle-orm`・`drizzle-kit`（0.x系） | `references/drizzle.md` | 操作 | `dependency:drizzle`（実コードまたは依存定義の操作） | |
+| `svelte`・`@sveltejs/kit`（Svelte 5・SvelteKit 2） | `references/svelte.md` | 操作 | `dependency:svelte`（実コードまたは依存定義の操作） | |

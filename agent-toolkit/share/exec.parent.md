@@ -47,7 +47,7 @@
 
 ## 入力
 
-初回のレーン資源は、`skills/process-wi/references/run-lanes.md`「レーンと資源」に沿って実行する`atk lane create`から取得する。終了コード0、状態がreadyであること、ならびに環境準備の保存済み出力を確認したうえで担当者を起動する。失敗した場合は登録情報と成果物を保持し、同じcreate処理の再開へ戻る。セッションのmanaged-temp直下に置く`parent-handoff.md`には、選定原本、資源の`record_path`、担当thread、引き継ぎ記録、累積した計画、および工程境界の対応関係を記録する。担当者の`cwd`はその資源のworktreeとし、生成側が保持している資源情報や選定項目を委譲入力へ重複して記載しない。
+初回のレーン資源は、`skills/process-wi/references/run-lanes.md`「レーンと資源」に沿って実行する`atk lane create`から取得する。終了コード0、状態がreadyであること、ならびに環境準備の保存済み出力を確認したうえで担当者を起動する。失敗した場合は登録情報と成果物を保持し、同じcreate処理の再開へ戻る。担当者の`cwd`はその資源のworktreeとし、生成側が保持している資源情報や選定項目を委譲入力へ重複して記載しない。
 
 レーン担当は、`agents_server`の`start`を以下の引数で呼び出して起動する。
 

@@ -769,3 +769,7 @@
 - 2026年10月6日: Claude Codeのメインが、確認の前に全文読む2資料のどちらも読まずに`AskUserQuestion`を2回発行した。2資料は`agent-toolkit:user-confirmation-and-report`の読込表が定める`references/approval-scope.md`と`references/choice-construction.md`である。1回目は委譲先の未検証の件数を`共通前提:`行へ書き、ユーザーは回答でその前提を問い返した。同日、2026年10月6日「refactor(agent-toolkit): 確認・報告・WIの各スキルを読込表と工程の骨格へ整理し、領域内の矛盾を1つの判断へそろえる」、`f17c75b4f`の変更があった。その変更以後の記録では、`AskUserQuestion`4回のうち`choice-construction.md`の読取が先行したのは1回、`approval-scope.md`は0回だった。
   直接原因: 2資料を読む時点を定める読込表の2行が工程名だけで書かれ、`AskUserQuestion`を名指ししないため、確認を組む場面で行が想起されなかった。同じ場面で読まれる`description`と常時規範の箇条も、2資料を`AskUserQuestion`の前に読む指示を持たなかった。2026年10月6日「refactor(agent-toolkit): 確認・報告・WIの各スキルを読込表と工程の骨格へ整理し、領域内の矛盾を1つの判断へそろえる」、`f17c75b4f`が読込の指示を「確認要否の判定」節の本文から読込表へ移した後に、読取が減っていた。
   対策: 読込表の2行と`description`へ`AskUserQuestion`とCodexの構造化質問・固定形式の質問を名指しして会話圧縮後の読み直しを加え、`rules-main.claude-code.md`と`rules-main.codex.md`の確認の箇条へ2資料を全文読む指示を書いた。補助として、PreToolUseがメインの未読の`AskUserQuestion`を警告する。ユーザーの判断により遮断せず昇格もさせない
+
+- 2026年10月26日: 通常AWIの原因未確定語による保存拒否が、独立別件の仮説と次の問いの保存を妨げた
+  直接原因: 保存処理が種別ごとの起票目的を区別せず、通常AWIとUWIへ同じ語句検査を適用した
+  対策: 通常AWIの一律拒否を外し、意味検収で観測事実・被覆比較・未確定事項を確認する。UWIと移行・復元の既存条件は維持する

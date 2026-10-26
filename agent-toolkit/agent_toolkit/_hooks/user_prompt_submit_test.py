@@ -407,7 +407,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence"}
         evidence = state["termination_evidence"]
         assert not evidence["works"]
         assert evidence["inputs"][evidence["last_input"]] == {"text": "通常のユーザー発話です。", "human": True, "offset": 0}
@@ -415,10 +415,10 @@ class TestNonMatchingPrompts:
     @pytest.mark.parametrize(
         ("prompt", "expected_keys"),
         [
-            ("<cross-session-message>継続</cross-session-message>", {"work_contract_input_sequence"}),
+            ("<cross-session-message>継続</cross-session-message>", set()),
             (
                 "<automated-prompt>継続</automated-prompt>",
-                {"termination_evidence", "work_contract_input_sequence"},
+                {"termination_evidence"},
             ),
         ],
     )
@@ -440,7 +440,6 @@ class TestNonMatchingPrompts:
         self._assert_no_notice(result)
         assert set(_read_state(tmp_path, sid)) == {
             "termination_evidence",
-            "work_contract_input_sequence",
         }
 
     def test_automated_prompt_receives_no_notice(self, tmp_path: pathlib.Path):
@@ -469,7 +468,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence"}
 
     def test_codex_treats_claude_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "codex-slash-command"
@@ -485,7 +484,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence"}
 
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
         """空入力・prompt欠落payloadでexit 0、状態不変。"""
@@ -556,7 +555,6 @@ class TestRealignNoticeInjection:
             assert "次の操作:" in bodies[0]
             assert set(_read_state(tmp_path, sid)) == {
                 "termination_evidence",
-                "work_contract_input_sequence",
                 "notice_fingerprints",
             }
 

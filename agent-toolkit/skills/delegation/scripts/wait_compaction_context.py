@@ -1,27 +1,21 @@
 #!/usr/bin/env python3
-"""待機時の会話圧縮に必要な所有・起動区分・保存状態を一度だけ取得する。"""
+"""待機時の会話圧縮に必要な所有・起動区分を一度だけ取得する。"""
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import shared_roots, status_reader, wait_targets
-from agent_toolkit._atk import managed_temp
 from agent_toolkit._common.bash_invocations import extract_bash_invocations
 from agent_toolkit._common.shell_tokens import is_atk_command
 
 
-def wait_context(
-    session_id: str, command: str, not_before: float, environment: Mapping[str, str] | None = None
-) -> dict[str, Any]:
-    """実行位置のwaitと既存所有記録を使い、保存済みでexplore・shell以外の待機を返す。"""
-    if not math.isfinite(not_before) or not_before < 0:
-        raise ValueError("--not-beforeは有限で0以上のPOSIX秒で指定する")
+def wait_context(session_id: str, command: str, environment: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """実行位置のwaitと既存所有記録を使い、explore・shell以外の待機を返す。"""
     invocations = extract_bash_invocations(command)
     waits = [
         invocation.static_tokens
@@ -58,16 +52,7 @@ def wait_context(
     ]
     if not sessions:
         return {"eligible": False, "reason": "所有するexplore・shell以外の担当の待機がない"}
-    directory = managed_temp.find_session_temp(session_id)
-    handoff = directory / "parent-handoff.md" if directory is not None else None
-    if (
-        handoff is None
-        or not handoff.is_file()
-        or not handoff.read_text(encoding="utf-8").strip()
-        or handoff.stat().st_mtime < not_before
-    ):
-        return {"eligible": False, "reason": "現在のturnの作業状態が保存されていない"}
-    return {"eligible": True, "handoff": str(handoff), "sessions": sessions}
+    return {"eligible": True, "sessions": sessions}
 
 
 def main() -> None:
@@ -75,10 +60,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--session-id", required=True, help="Claudeメインのsession ID")
     parser.add_argument("--command", required=True, help="背景起動したBashのcommand原文")
-    parser.add_argument("--not-before", type=float, required=True, help="保存を要するturn開始のPOSIX秒")
     args = parser.parse_args()
     try:
-        result = wait_context(args.session_id, args.command, args.not_before)
+        result = wait_context(args.session_id, args.command)
     except (OSError, ValueError) as error:
         result = {"eligible": False, "reason": str(error)}
     print(json.dumps(result, ensure_ascii=False))

@@ -142,6 +142,150 @@ def test_whole_contract_body_and_compaction_use_the_resolved_input(tmp_path, mon
         assert "追加後の完成条件" in _notice_body(later)
 
 
+def test_main_resolves_work_contract_without_a_startup_input(tmp_path, monkeypatch):
+    contract = tmp_path / "work-contract.md"
+    contract.write_text("# 現行作業契約\n完成条件\n", encoding="utf-8")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:completion-report",), (), selector="input:作業契約")
+    monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
+    assert read_delivery.dynamic_targets(row, {}, "Skill", {}, {}, "main", "session") == [ReadTarget(contract)]
+
+
+def test_main_missing_work_contract_explains_its_expected_path(tmp_path, monkeypatch):
+    contract = tmp_path / "work-contract.md"
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:completion-report",), (), selector="input:作業契約")
+    monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
+    with pytest.raises(ValueError, match="work-contract.md.*作成と所有"):
+        read_delivery.dynamic_targets(row, {}, "Skill", {}, {}, "main", "session")
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [("document.md", False), ("module.py", True), ("pyproject.toml", True)],
+)
+def test_dependency_selection_requires_code_or_dependency_definition(tmp_path, path, expected):
+    target = tmp_path / path
+    assert (
+        read_delivery.matches(
+            "dependency:sqlalchemy", "Write", {"file_path": str(target), "content": "sqlalchemy"}, str(tmp_path)
+        )
+        is expected
+    )
+
+
+@pytest.mark.usefixtures("memory")
+def test_public_hook_delivers_main_work_contract_and_reuses_it_after_read(tmp_path, monkeypatch):
+    contract = tmp_path / "work-contract.md"
+    contract.write_text("# 現行作業契約\n完成条件\n", encoding="utf-8")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:completion-report",), (), selector="input:作業契約")
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
+    monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
+    first = _notice_body(read_delivery.deliver({}, "Skill", {"skill": "completion-report"}, "test"))
+    assert str(contract) in first
+    read_delivery.observe({"tool_response": contract.read_text()}, "Read", {"file_path": str(contract)}, "test")
+    assert not _guidance(read_delivery.deliver({}, "Skill", {"skill": "completion-report"}, "test"))
+
+
+@pytest.mark.usefixtures("memory")
+def test_public_hook_explains_missing_main_work_contract(tmp_path, monkeypatch):
+    contract = tmp_path / "work-contract.md"
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:completion-report",), (), selector="input:作業契約")
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
+    monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
+    assert str(contract) in _notice_body(read_delivery.deliver({}, "Skill", {"skill": "completion-report"}, "test"))
+
+
+@pytest.mark.usefixtures("memory")
+def test_public_hook_keeps_delegated_work_contract_input_preferred(tmp_path, monkeypatch, memory):
+    delegated = tmp_path / "delegated-contract.md"
+    delegated.write_text("# 委譲契約\n", encoding="utf-8")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:completion-report",), (), selector="input:作業契約")
+    memory[rules_context.OPERATION_SKILL_READY_KEY] = {
+        "startup-input-target:" + json.dumps({"path": str(delegated), "heading": "", "selectors": ["input:作業契約"]}): [
+            "child"
+        ]
+    }
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
+    monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: (_ for _ in ()).throw(AssertionError()))
+    notice = _notice_body(read_delivery.deliver({"agent_id": "child"}, "Skill", {"skill": "completion-report"}, "test"))
+    assert str(delegated) in notice
+
+
+@pytest.mark.parametrize(
+    ("dependency", "filename"),
+    [
+        ("tailwindcss", "styles.css"),
+        ("alpinejs", "page.html"),
+        ("playwright", "test.ts"),
+        ("sqlalchemy", "module.py"),
+        ("drizzle", "schema.ts"),
+        ("svelte", "Component.svelte"),
+    ],
+)
+@pytest.mark.usefixtures("memory")
+def test_public_hook_dependency_rows_exclude_markdown_and_select_code(tmp_path, monkeypatch, dependency, filename):
+    reference = tmp_path / f"{dependency}.md"
+    reference.write_text("# 技術資料\n", encoding="utf-8")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "操作", (f"dependency:{dependency}",), (reference,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
+    markdown = _guidance(
+        read_delivery.deliver(
+            {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / "note.md"), "content": dependency}, "test"
+        )
+    )
+    code = _notice_body(
+        read_delivery.deliver(
+            {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / filename), "content": dependency}, "test"
+        )
+    )
+    assert markdown is None
+    assert str(reference) in code
+
+
+def test_dependency_does_not_mix_markdown_content_with_an_unrelated_code_edit(tmp_path):
+    patch = "*** Begin Patch\n*** Add File: module.py\n+value = 1\n*** Add File: note.md\n+診断引用: sqlalchemy\n*** End Patch"
+    assert not read_delivery.matches("dependency:sqlalchemy", "apply_patch", {"command": patch}, str(tmp_path))
+
+
+@pytest.mark.usefixtures("memory")
+def test_public_hook_dependency_uses_existing_code_for_a_nameless_partial_edit(tmp_path, monkeypatch):
+    reference = tmp_path / "sqlalchemy.md"
+    reference.write_text("# 技術資料\n", encoding="utf-8")
+    code = tmp_path / "module.py"
+    code.write_text("import sqlalchemy\n", encoding="utf-8")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("dependency:sqlalchemy",), (reference,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
+    notice = _notice_body(
+        read_delivery.deliver({"cwd": str(tmp_path)}, "Write", {"file_path": str(code), "content": "value = 1\n"}, "test")
+    )
+    assert str(reference) in notice
+
+
+@pytest.mark.usefixtures("memory")
+def test_public_hook_artifact_standards_uses_code_operation_only(tmp_path, monkeypatch):
+    source = tmp_path / "skills/review-standards/SKILL.md"
+    author = tmp_path / "skills/writing-standards/SKILL.md"
+    reference = tmp_path / "python.md"
+    reference.write_text("# 作成規範\n", encoding="utf-8")
+    author.parent.mkdir(parents=True)
+    author.write_text("# 作成側\n", encoding="utf-8")
+    review = ReadTrigger(source, 1, "判断", ("tool:Write",), (), selector="artifact-standards")
+    declared = ReadTrigger(author, 1, "操作", ("dependency:sqlalchemy",), (reference,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [review, declared])
+    monkeypatch.setattr(read_delivery.read_triggers, "resolve_document", lambda *_args, **_kwargs: author)
+    markdown = _notice_body(
+        read_delivery.deliver(
+            {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / "note.md"), "content": "sqlalchemy"}, "test"
+        )
+    )
+    assert str(author) in markdown
+    assert str(reference) not in markdown
+    assert str(reference) in _notice_body(
+        read_delivery.deliver(
+            {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / "module.py"), "content": "sqlalchemy"}, "test"
+        )
+    )
+
+
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize("shell", [False, True])
 @pytest.mark.parametrize("linked", [False, True])

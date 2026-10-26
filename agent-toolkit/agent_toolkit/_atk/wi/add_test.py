@@ -832,31 +832,30 @@ def _with_direct_cause(body: str, value: str) -> str:
         ("** \u3000調査中**", False),
     ],
 )
-def test_add_rejects_undetermined_direct_cause(
+def test_add_accepts_undetermined_direct_cause_in_awi(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     value: str,
     dry_run: bool,
 ) -> None:
-    """エージェントが原因の未確定を宣言した通常AWIを、保存とcommitの前に拒否する。"""
+    """エージェントが原因の未確定を宣言した通常AWIを保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
 
-    with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(
-            _cmd_add_args(tmp_path, _with_direct_cause(_AGENT_AWI_BODY, value), source="test", dry_run=dry_run),
-            notes,
-            _FIXED_DT,
-            tmp_path,
-        )
+    _run_public_add(
+        _cmd_add_args(tmp_path, _with_direct_cause(_AGENT_AWI_BODY, value), source="test", dry_run=dry_run),
+        notes,
+        _FIXED_DT,
+        tmp_path,
+    )
 
-    assert exc_info.value.code == 1
-    error = capsys.readouterr().err
-    assert "直接的原因が未確定のまま保存しようとした" in error
-    assert "次の操作: 直接的原因を現物の観測で確定してから" in error
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    assert "直接的原因が未確定のまま保存しようとした" not in capsys.readouterr().err
+    if dry_run:
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    else:
+        assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
 def test_add_rejects_undetermined_direct_cause_in_uwi(

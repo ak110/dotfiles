@@ -14,6 +14,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `encoding.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/encoding.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「QCDと3段判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md#「コメントの再掲と重複」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「コメントの再掲と重複」` |
+| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics.md#「責務帰属（SRP）分析の観点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「責務帰属（SRP）分析の観点」` |
 
 ## 編集前の読解
 
@@ -22,6 +23,60 @@
 ## 記述順序と命名
 
 - 全体の構造を上位から自然にたどれる順序を意識し、関連する定義を近くに配置する。また、新しく追加する箇所の命名や用語は、既存コードの命名規則に合わせる（努力目標）。
+
+## コードの簡潔さ
+
+- 1か所からしか呼ばない補助関数を先回りで切り出さず、呼び出し箇所に書く。再利用される処理、複雑な境界を隠す処理、または実在の概念を名指しして呼び出し側を読みやすくする処理は切り出してよい。同じ理由で変更される重複は、`design-heuristics.md`「責務帰属（SRP）分析の観点」に従って共通化する。検証や補足の分岐が多い関数では、主処理を正常系の流れとして読み、補助関数は主処理の後ろに置く。
+
+```python
+# 良い例: 1か所でしか使わない処理を呼び出し箇所に置く。
+if config_path.exists():
+    config = json.loads(config_path.read_text())
+
+# 悪い例: 再利用も実在の概念もない処理を切り出す。
+def read_if_exists(path):
+    return json.loads(path.read_text()) if path.exists() else None
+
+config = read_if_exists(config_path)
+```
+
+- returnで抜けた分岐の後にelseを書かず、早期returnで分岐を平らにする。条件によって値を変えるだけの再代入より、三項演算子やif式で1回だけ束縛する形を優先する。Rustの`let value = if enabled { a } else { b };`のような式としてのif・elseは推奨する形に当たる。
+
+```typescript
+// 良い例
+if (!enabled) return;
+const label = debug ? "debug" : "normal";
+
+// 悪い例
+if (!enabled) return;
+else run();
+let label;
+if (debug) label = "debug";
+else label = "normal";
+```
+
+- 一度しか使わない値は、変数名が単位、役割、または判定の意図を式以上に加えない限り、変数にせず使う箇所に式を書く。
+
+```python
+# 良い例
+logger.info(response.status_code)
+
+# 悪い例
+status = response.status_code
+logger.info(status)
+```
+
+- 型の分からない外部の値は受け取る境界で一度だけ検証し、内側へは型の付いた値として渡す。スキーマ、コンストラクター、または内部の型が保証する値を防御的に検証し直さない。信頼境界と入力検証の詳細は「セキュリティ・ロギング・エラー処理」を参照する。
+
+```typescript
+// 良い例
+const settings = SettingsSchema.parse(await response.json());
+start(settings);
+
+// 悪い例
+const settings = await response.json();
+if (typeof settings === "object" && settings !== null && "port" in settings) start(settings);
+```
 
 ## 言語横断のツールと構文
 

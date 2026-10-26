@@ -25,7 +25,7 @@ from agent_toolkit._common.plugin_roots import PluginRootError, sibling_plugin_r
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command
-from agent_toolkit._hooks import agent_id, document_reads, plugin_resources, rules_context
+from agent_toolkit._hooks import agent_id, document_reads, plugin_resources, rules_context, work_contract
 from agent_toolkit._hooks import tool_input as tool_input_fields
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
@@ -185,13 +185,59 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
                 return True
         return False
     if prefix == "dependency":
-        fields = tool_input_fields.new_content_fields(tool_name, tool_input)
-        contents = [content for _name, content in fields or []]
-        for path in operation_skills.written_paths(tool_name, tool_input, cwd):
-            candidate = pathlib.Path(path)
+        paths = [pathlib.Path(path) for path in operation_skills.written_paths(tool_name, tool_input, cwd)]
+        dependency_files = {
+            "pyproject.toml",
+            "package.json",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "uv.lock",
+            "Cargo.toml",
+            "Cargo.lock",
+        }
+        code_suffixes = {
+            ".py",
+            ".js",
+            ".jsx",
+            ".mjs",
+            ".cjs",
+            ".ts",
+            ".tsx",
+            ".mts",
+            ".cts",
+            ".html",
+            ".htm",
+            ".css",
+            ".svelte",
+            ".rs",
+            ".cs",
+            ".sh",
+            ".bash",
+            ".ps1",
+            ".psm1",
+            ".psd1",
+            ".cmd",
+            ".bat",
+        }
+        operations = tool_input_fields.parse_operations(tool_name, tool_input, cwd) or []
+        for candidate in paths:
+            if (
+                pathlib.Path(candidate.name.removesuffix(".tmpl")).suffix not in code_suffixes
+                and candidate.name not in dependency_files
+            ):
+                continue
+            # 複数ファイルのpatchでも、文章中の引用をコードの使用として扱わない。
+            contents = [
+                fragment.after
+                for operation in operations
+                if pathlib.Path(operation.path) == candidate
+                for fragment in operation.fragments
+            ]
             if candidate.is_file():
                 contents.append(candidate.read_text(encoding="utf-8"))
-        return any(value in content for content in contents)
+            if any(value in content for content in contents):
+                return True
+        return False
     if prefix == "role":
         # 役割資料は受領した会話へstartup_contextが届ける。起動する親へは配送しない。
         return False
@@ -506,18 +552,21 @@ def dynamic_targets(
                 item = json.loads(key.removeprefix("startup-input-target:"))
                 if row.selector in item.get("selectors", [item.get("selector", "")]):
                     targets.append(read_triggers.ReadTarget(pathlib.Path(item["path"]), item["heading"]))
+        source = read_triggers.INPUT_SELECTOR_RESOLUTION_SOURCES.get(row.selector)
+        if not targets and source == "main-work-contract" and agent == "main":
+            path = work_contract.record_path(session_id)
+            if path is not None and path.is_file():
+                targets.append(read_triggers.ReadTarget(path))
+            elif path is not None:
+                raise ValueError(
+                    f"{row.source}:{row.line}: {row.selector}の作業契約が無い: {path}。"
+                    "agent-toolkit/share/work-contract.md「作成と所有」に従って作成する。"
+                )
         if not targets:
             raise ValueError(f"{row.source}:{row.line}: {row.selector}の起動時配送入力が無い")
         return targets
     if row.selector == "same-document":
         return [read_triggers.ReadTarget(row.source)]
-    if row.selector == "modified-agent-documents":
-        paths = [
-            key.removeprefix("modified-agent-document:")
-            for key, agents in records.items()
-            if key.startswith("modified-agent-document:") and agent in agents
-        ]
-        return [read_triggers.ReadTarget(pathlib.Path(path)) for path in paths if pathlib.Path(path).is_file()]
     if row.selector == "role-contract":
         role = tool_input.get("subagent_md_path")
         if not isinstance(role, str):
