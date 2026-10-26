@@ -354,3 +354,381 @@ def test_unknown_get_content_option_keeps_target_boundary_unresolved(
     call = unresolved["calls"][0]
     assert call["recorded_input"] == {"command": command} and call["line"] == 1
     assert call["operations"][0]["reason"] and unresolved["candidate_id"] in output["mandatory_candidates"]
+
+
+def _codex_execution(timestamp: str, command: str, item_id: str, turn_id: str) -> dict:
+    return support.codex_item(
+        timestamp,
+        {
+            "type": "item_completed",
+            "turn_id": turn_id,
+            "item": {
+                "type": "CommandExecution",
+                "id": item_id,
+                "command": ["bash", "-lc", command],
+                "result": {"exit_code": 0},
+            },
+        },
+    )
+
+
+def _codex_outer_result(timestamp: str, call_id: str, turn_id: str) -> dict:
+    return support.codex_item(
+        timestamp, {"type": "custom_tool_call_output", "call_id": call_id, "turn_id": turn_id, "output": "完了"}
+    )
+
+
+@pytest.mark.parametrize("tool_name", ["exec", "functions.exec"])
+def test_dynamic_outer_cell_uses_different_inner_execution_id_and_keeps_both_locations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tool_name: str
+) -> None:
+    """外側call_idと内側item.idが異なっても、同一turnの実値を公開prepareへ統合する。"""
+    turn_id = "turn-1"
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {
+                "type": "custom_tool_call",
+                "name": tool_name,
+                "call_id": "outer-call",
+                "turn_id": turn_id,
+                "input": "await Promise.all(cmds.map((cmd) => tools.exec_command({cmd})));",
+            },
+        ),
+        _codex_execution("2026-10-21T00:00:03Z", f"cat -- {_ROLE_PATH}", "execution-other-id", turn_id),
+        _codex_outer_result("2026-10-21T00:00:04Z", "outer-call", turn_id),
+    ]
+    output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
+    call = reads["calls"][0]
+    assert call["tool"] == tool_name
+    assert call["line"] == 1 and call["targets"] == [_ROLE_PATH]
+    assert call["operations"][0]["execution_line"] == 2
+    assert call["operations"][0]["execution_result_line"] == 2
+    assert reads["locators"] == [{"record": "codex:record", "line": 1}, {"record": "codex:record", "line": 2}]
+    assert not [row for row in candidates if row["candidate_kind"] == "definition-read-unresolved"]
+    assert reads["candidate_id"] in output["mandatory_candidates"]
+
+
+def test_parallel_outer_cells_keep_ambiguous_execution_attribution_unresolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同一turnの外側セルが複数なら、完了順から内側実行を割り当てない。"""
+    turn_id = "turn-parallel"
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "outer-a",
+                "turn_id": turn_id,
+                "input": "await tools.exec_command({cmd: dynamicA});",
+            },
+        ),
+        support.codex_item(
+            "2026-10-21T00:00:03Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "outer-b",
+                "turn_id": turn_id,
+                "input": "await tools.exec_command({cmd: dynamicB});",
+            },
+        ),
+        _codex_execution("2026-10-21T00:00:04Z", f"cat -- {_ROLE_PATH}", "completed-first", turn_id),
+        _codex_outer_result("2026-10-21T00:00:05Z", "outer-a", turn_id),
+        _codex_outer_result("2026-10-21T00:00:06Z", "outer-b", turn_id),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    assert reads["calls"][0]["line"] == 3 and reads["calls"][0]["targets"] == [_ROLE_PATH]
+    assert all("完結範囲が重なり" in call["operations"][0]["reason"] for call in unresolved["calls"])
+
+
+def test_missing_inner_execution_is_kept_as_unresolved_with_outer_location(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """途中終了で内側記録が無いセルは、実値を推測せず未確定候補へ残す。"""
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "outer",
+                "turn_id": "turn-missing",
+                "input": "await tools.exec_command({cmd: dynamicCommand});",
+            },
+        )
+    ]
+    output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    call = unresolved["calls"][0]
+    assert call["line"] == 1 and call["result_line"] is None
+    assert "結果記録が無く" in call["operations"][0]["reason"]
+    assert unresolved["candidate_id"] in output["mandatory_candidates"]
+
+
+def test_repeated_inner_executions_remain_one_candidate_with_all_source_locations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同じ外側セルの反復実行は、重複候補にせず全ての内側記録位置を保存する。"""
+    turn_id = "turn-repeat"
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "outer",
+                "turn_id": turn_id,
+                "input": "await cmds.map((cmd) => tools.exec_command({cmd}));",
+            },
+        ),
+        _codex_execution("2026-10-21T00:00:03Z", f"cat -- {_ROLE_PATH}", "first", turn_id),
+        _codex_execution("2026-10-21T00:00:04Z", f"cat -- {_ROLE_PATH}", "second", turn_id),
+        _codex_outer_result("2026-10-21T00:00:05Z", "outer", turn_id),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
+    assert reads["count"] == 3
+    assert reads["locators"] == [
+        {"record": "codex:record", "line": 1},
+        {"record": "codex:record", "line": 2},
+        {"record": "codex:record", "line": 3},
+    ]
+    assert [operation["execution_line"] for operation in reads["calls"][0]["operations"]] == [2, 3]
+
+
+def test_sequential_outer_cells_use_their_completed_cell_boundaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同一turnの逐次セルは、次の外側セルまでの実行だけを対応付ける。"""
+    turn_id = "turn-sequential"
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "first",
+                "turn_id": turn_id,
+                "input": "await tools.exec_command({cmd: dynamicFirst});",
+            },
+        ),
+        _codex_execution("2026-10-21T00:00:03Z", f"cat -- {_ROLE_PATH}", "first-execution", turn_id),
+        _codex_outer_result("2026-10-21T00:00:035Z", "first", turn_id),
+        support.codex_item(
+            "2026-10-21T00:00:04Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "second",
+                "turn_id": turn_id,
+                "input": "await tools.exec_command({cmd: dynamicSecond});",
+            },
+        ),
+        _codex_execution("2026-10-21T00:00:05Z", f"cat -- {_ROLE_PATH}", "second-execution", turn_id),
+        _codex_outer_result("2026-10-21T00:00:06Z", "second", turn_id),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
+    assert [call["line"] for call in reads["calls"]] == [1, 4]
+    assert [call["operations"][0]["execution_line"] for call in reads["calls"]] == [2, 5]
+
+
+def test_static_outer_read_survives_missing_inner_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """内側の記録が欠落しても、確定できる静的読取を未確定へ増幅しない。"""
+    turn_id = "turn-static-missing"
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "outer",
+                "turn_id": turn_id,
+                "input": f'await tools.exec_command({{cmd: "cat -- {_ROLE_PATH}"}});',
+            },
+        ),
+        _codex_outer_result("2026-10-21T00:00:03Z", "outer", turn_id),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
+    assert reads["calls"][0]["targets"] == [_ROLE_PATH]
+    assert not [row for row in candidates if row["candidate_kind"] == "definition-read-unresolved"]
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        'await tools.exec_command({cmd: "uv run --frozen pytest example_test.py"});',
+        'await tools.apply_patch("*** Begin Patch\\n*** End Patch");',
+        'await tools.mcp__agents_server__send_message({session_id: "child", prompt: "続行"});',
+    ],
+)
+def test_completed_outer_without_definition_read_does_not_require_inner_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], code: str
+) -> None:
+    """静的に読取を含まないセルは、内側実行が無くても必須候補にならない。"""
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {"type": "custom_tool_call", "name": "functions.exec", "call_id": "outer", "turn_id": "turn-1", "input": code},
+        ),
+        support.codex_item(
+            "2026-10-21T00:00:03Z",
+            {
+                "type": "custom_tool_call_output",
+                "call_id": "outer",
+                "turn_id": "turn-1",
+                "output": '{"session_id": 123, "output": "", "wall_time_seconds": 1.0}',
+            },
+        ),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    assert not [row for row in candidates if row["candidate_kind"].startswith("definition-")]
+
+
+def test_yielded_dynamic_execution_keeps_completion_uncertain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """継続中の動的入力は未確定に保ち、実行記録の不在とは断定しない。"""
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "outer",
+                "turn_id": "turn-1",
+                "input": "await tools.exec_command({cmd: dynamicCommand});",
+            },
+        ),
+        support.codex_item(
+            "2026-10-21T00:00:03Z",
+            {
+                "type": "custom_tool_call_output",
+                "call_id": "outer",
+                "turn_id": "turn-1",
+                "output": '{"session_id": 123, "output": "", "wall_time_seconds": 1.0}',
+            },
+        ),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    assert "実行の完了状態が未確定" in unresolved["calls"][0]["operations"][0]["reason"]
+
+
+def test_ambiguous_outer_keeps_inner_execution_as_its_own_read_material(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """外側との対応が曖昧な場合も、内側の静的読取を候補へ残す。"""
+    turn_id = "turn-ambiguous-inner"
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "a",
+                "turn_id": turn_id,
+                "input": "await tools.exec_command({cmd: dynamicA});",
+            },
+        ),
+        support.codex_item(
+            "2026-10-21T00:00:03Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "b",
+                "turn_id": turn_id,
+                "input": "await tools.exec_command({cmd: dynamicB});",
+            },
+        ),
+        _codex_execution("2026-10-21T00:00:04Z", f"cat -- {_ROLE_PATH}", "inner", turn_id),
+        _codex_outer_result("2026-10-21T00:00:05Z", "a", turn_id),
+        _codex_outer_result("2026-10-21T00:00:06Z", "b", turn_id),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
+    assert reads["calls"][0]["line"] == 3 and reads["calls"][0]["targets"] == [_ROLE_PATH]
+
+
+@pytest.mark.parametrize(
+    "cell",
+    ["const answer = 6 * 7;", "await tools.view_image({path: '/tmp/preview.png'});"],
+)
+def test_non_command_outer_cells_do_not_create_definition_read_candidates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], cell: str
+) -> None:
+    """内側コマンドを持たない外側セルを読取未確定候補にしない。"""
+    turn_id = "turn-non-command"
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {"type": "custom_tool_call", "name": "functions.exec", "call_id": "outer", "turn_id": turn_id, "input": cell},
+        ),
+        _codex_outer_result("2026-10-21T00:00:03Z", "outer", turn_id),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    assert not any(row["candidate_kind"] in {"definition-body-read", "definition-read-unresolved"} for row in candidates)
+
+
+def test_task_started_turn_id_is_inherited_by_following_codex_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """開始イベントだけのturn IDでも、同じタスク区間の実行を外側セルへ結び付ける。"""
+    # Codex rust-v0.164.0のprotocol/src/protocol.rsは、TurnStartedをtask_startedへ
+    # serializeし、TurnStartedEventがsnake_caseのturn_idを持つと定義する。
+    # https://github.com/openai/codex/blob/rust-v0.164.0/codex-rs/protocol/src/protocol.rs
+    turn_id = "turn-inherited"
+    entries = [
+        support.codex_item("2026-10-21T00:00:01Z", {"type": "task_started", "turn_id": turn_id}),
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "outer",
+                "input": "await tools.exec_command({cmd: dynamicCommand});",
+            },
+        ),
+        _codex_execution("2026-10-21T00:00:03Z", f"cat -- {_ROLE_PATH}", "inner", ""),
+        support.codex_item("2026-10-21T00:00:04Z", {"type": "custom_tool_call_output", "call_id": "outer", "output": "完了"}),
+        support.codex_item("2026-10-21T00:00:05Z", {"type": "task_complete"}),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
+    assert reads["locators"] == [{"record": "codex:record", "line": 2}, {"record": "codex:record", "line": 3}]
+
+
+def test_task_boundaries_do_not_reuse_a_previous_turn_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """終了後とID不明な次タスクでは、実行と前タスクの対応が確定しない。"""
+    entries = [
+        support.codex_item("2026-10-21T00:00:01Z", {"type": "task_started", "turn_id": "first"}),
+        support.codex_item("2026-10-21T00:00:02Z", {"type": "task_complete"}),
+        support.codex_item("2026-10-21T00:00:03Z", {"type": "task_started"}),
+        support.codex_item(
+            "2026-10-21T00:00:04Z",
+            {
+                "type": "custom_tool_call",
+                "name": "functions.exec",
+                "call_id": "outer",
+                "input": "await tools.exec_command({cmd: dynamicCommand});",
+            },
+        ),
+        _codex_execution("2026-10-21T00:00:05Z", f"cat -- {_ROLE_PATH}", "inner", ""),
+        support.codex_item("2026-10-21T00:00:06Z", {"type": "custom_tool_call_output", "call_id": "outer", "output": "完了"}),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    reads = next(row for row in candidates if row["candidate_kind"] == "definition-body-read")
+    unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
+    assert reads["calls"][0]["line"] == 5
+    assert unresolved["calls"][0]["line"] == 4

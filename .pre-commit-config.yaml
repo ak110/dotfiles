@@ -55,7 +55,9 @@ repos:
     hooks:
       - id: pyfltr
         name: pyfltr
-        entry: uv run --frozen pyfltr fast
+        entry: uv run --project . --frozen pyfltr fast
+        env:
+          UV_PROJECT_ENVIRONMENT: .venv
         always_run: true
         require_serial: true
         language: system

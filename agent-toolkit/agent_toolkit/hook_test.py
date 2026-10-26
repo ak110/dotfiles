@@ -31,7 +31,9 @@ from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._common import inherited_venv, session_activity, session_registry, state_paths
+from agent_toolkit._common import plugin_roots as resource_roots
 from agent_toolkit._common import wait_schedule as _wait_schedule
+from agent_toolkit._common.plugin_roots import _inventories, _plugin_inventory, _reusable
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
@@ -655,6 +657,77 @@ def _call_hook_in_process(
     result = _run_hook_in_process(subcommand, payload)
     assert result.returncode == expected_code
     return result.stderr if expected_code == 2 else result.stdout
+
+
+@pytest.mark.parametrize("host", ["claude", "codex", "agy", "opencode"])
+@pytest.mark.parametrize("command", ["pretooluse", "posttooluse", "stop", "permissionrequest"])
+def test_public_hook_owns_one_inventory_scope_per_session(tmp_path, monkeypatch, command, host):
+    """各handlerの消費側で一覧を共有し、別sessionと例外後の要求を混ぜない。"""
+    executable = tmp_path / "claude"
+    executable.touch()
+    monkeypatch.setattr(shutil, "which", lambda *_args, **_kwargs: str(executable))
+    monkeypatch.setattr(_hook, "_record_activity", lambda *_args, **_kwargs: None)
+    acquired = []
+    observed = []
+    fail = False
+
+    def inventory(args, **_kwargs):
+        acquired.append(args)
+        return subprocess.CompletedProcess(args, 0, '{"installed":[]}' if host == "codex" else "[]", "")
+
+    def native(_host):
+        acquired.append(_host)
+        return []
+
+    def consume(_module, _text, payload, _args):
+        _plugin_inventory(host, tmp_path)
+        _plugin_inventory(host, tmp_path)
+        cache = _reusable.get()
+        observed.append((payload["session_id"], cache is not None))
+        if fail:
+            raise RuntimeError("消費側の失敗")
+        return 0
+
+    monkeypatch.setattr(resource_roots.process_tree, "run_with_timeout", inventory)
+    monkeypatch.setattr(resource_roots, "_native_inventory", native)
+    monkeypatch.setattr(_hook, "_invoke_module", consume)
+    for session_id in ("one", "one", "two"):
+        _call_hook_in_process(monkeypatch, command, {"session_id": session_id, "hook_event_name": "PostToolUse"})
+    assert observed == [("one", True), ("one", True), ("two", True)]
+    assert len(acquired) == (2 if host == "claude" else 3)
+    fail = True
+    _call_hook_in_process(monkeypatch, command, {"session_id": "three", "hook_event_name": "PostToolUse"})
+    assert _inventories.get() is None and _reusable.get() is None
+    fail = False
+    _call_hook_in_process(monkeypatch, command, {"session_id": "four", "hook_event_name": "PostToolUse"})
+    assert len(acquired) == (4 if host == "claude" else 5)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {},
+        {"session_id": ""},
+        {"session_id": 1},
+        {"session_id": "../other"},
+        {"session_id": "one", "hook_event_name": "SessionStart"},
+    ],
+)
+def test_public_hook_does_not_attach_persistent_inventory_to_invalid_or_start_payload(monkeypatch, payload):
+    seen = []
+    monkeypatch.setattr(_hook, "_record_activity", lambda *_args, **_kwargs: None)
+
+    def consume(*_args):
+        seen.append(_reusable.get())
+        return 0
+
+    monkeypatch.setattr(_hook, "_invoke_module", consume)
+    result = _run_hook_in_process("pretooluse", payload)
+    assert result.returncode == 0
+    assert seen == [None]
+    assert _inventories.get() is None and _reusable.get() is None
 
 
 @pytest.mark.parametrize("codex", [False, True])

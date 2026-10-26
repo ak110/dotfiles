@@ -154,6 +154,17 @@ def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]
     assert "bin/update_dotfiles_launcher_test.py" in targets
 
 
+@pytest.mark.parametrize(
+    "target",
+    ["pytools/touch_file_test.py", "agent-toolkit/agent_toolkit/_common/plugin_environment_test.py"],
+)
+def test_windows_job_runs_link_and_prepare_lock_boundaries(workflow_data: dict[str, object], target: str) -> None:
+    """リンク非追跡と共有環境のlock境界をWindows上で検証する指定を保つ。"""
+    _, step = _windows_step(workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "Windows境界テスト")
+    targets = direct_pytest_targets({"jobs": {"test-windows": {"steps": [step]}}})
+    assert target in targets
+
+
 def test_windows_job_runs_pinned_codex_command_integration(workflow_data: dict[str, object]) -> None:
     """固定版CLIを導入した所有Windows jobが、探索の開始から通常コマンドへ到達することを検査する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["test-windows"])

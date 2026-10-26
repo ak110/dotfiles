@@ -562,6 +562,13 @@ def _candidate_events(
         start=1,
     ):
         locators: list[dict[str, Any]] = [{"record": str(event["record"]), "line": int(event["line"])} for event in events]
+        if key and key[0] in {"definition-body-read", "definition-read-unresolved"}:
+            for event in events:
+                for operation in event.get("operations", []):
+                    line = operation.get("execution_line") if isinstance(operation, dict) else None
+                    if isinstance(line, int):
+                        locators.append({"record": str(event["record"]), "line": line})
+        locators = list({(locator["record"], locator["line"]): locator for locator in locators}.values())
         locators.sort(key=lambda locator: (str(locator["record"]), int(locator["line"])))
         for locator in locators:
             locator_key = (str(locator["record"]), int(locator["line"]))

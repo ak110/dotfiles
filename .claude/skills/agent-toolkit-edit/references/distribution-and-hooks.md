@@ -62,7 +62,11 @@ PreToolUseをはじめとするフックは、配布先の構成や個人の命�
 
 - `pytools/claude_hook/pretooluse.py`（個人フック）: chezmoiを通じて自身のアカウントの`~/.claude/settings.json`にのみマージされる。新規のツール名を対象に含める場合は、`share/claude_settings_json_managed.posix.json`および`.win32.json`の`matcher`設定を確認する。
 - `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`を通じて他のユーザーにも広く配布されるため、変更を加える際は`SKILL.md`の「バージョン更新」の規定に従う。
-- agent-toolkitのCLI、フック、MCPサーバーは、`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py <対象>`というコマンドで起動する。`launch.py`は標準ライブラリのみを用いてプラグインルートとデータ領域を解決した上で、`uv run --project <plugin root> --locked --no-default-groups`を実行し、依存パッケージを配布ルートの外側で管理する。登録済みの`skills/*/scripts/`配下のスクリプトは、`atk run-script`を用いて同じ環境内から実行する。SSH接続先で実行する`atk_serve_*_remote_helper.py`のみは、独立したPEP 723スクリプトとして起動するため、PEP 723形式の宣言を維持する。
+- agent-toolkitのCLI、フック、MCPサーバーは、`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py <対象>`というコマンドで起動する。`launch.py`は標準ライブラリのみを用いてプラグインルートとデータ領域を解決し、準備済みの共有環境のPythonで対象を起動する。依存の準備には`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py --prepare agent_toolkit/atk.py`を実行する。
+
+  `--prepare`の後ろのtargetは配布root内に存在する起動対象を確認する必須引数であり、共有環境の選択には影響しない。依存に作用するpyproject設定、`uv.lock`、選択したPythonの実行ファイルパス、OS・アーキテクチャの組み合わせが未準備の場合に実行する。同じ組み合わせなら別の配布rootやworktreeでも準備済み環境を共有する。別worktreeを指定する場合の`<plugin root>`は、そのworktree内の`agent-toolkit`の絶対パスに置き換える。rootは`launch.py`の配置または`--project`から解決され、cwdの変更だけでは切り替わらない。
+- 登録済みの`skills/*/scripts/`配下のスクリプトは、`atk run-script`を用いて同じ環境内から実行する。SSH接続先で実行する`atk_serve_*_remote_helper.py`のみは、独立したPEP 723スクリプトとして起動するため、PEP 723形式の宣言を維持する。
+
 - `agent-toolkit/pyproject.toml`の`dependencies`を変更した場合は、同じプロジェクト配下の`uv.lock`も併せて更新する。
 - `hooks.json`や`share/claude_settings_json_managed.*.json`から参照されているスクリプトを改名・移動・削除する場合は、後方互換性を保つためのスクリプトを残してバージョン管理に含める。稼働中のセッションが古いパスを参照し続けるためである（詳細な規約は`agent-basics:writing-standards`のフック実装に関する規約を参照する）。古いスクリプトを完全に撤去できるのは、新しいエントリーポイントを含むバージョンを配布した後のバージョン更新以降であり、かつ古い定義を読み込んだセッションがすべて終了したことを確認できた場合に限る。なお、配布先環境でインストールエラーとなるような配置は新しい配布物に残さず、旧バージョンの実体を保持することや更新時の移行処理によって旧方式の呼び出しを維持する。
 - 同一のイベントに対してフックを追加する場合は、既存のエントリーポイントへ処理を統合することを推奨する（登録エントリを増やすとツール呼び出しごとのプロセス起動回数が増えるため）。入力契約の差異などにより統合が難しい場合は、理由を明記した上でエントリを分けて定義してよい。マッチャーの条件が互いに重複しない登録であれば、この方針を満たしているとみなす。

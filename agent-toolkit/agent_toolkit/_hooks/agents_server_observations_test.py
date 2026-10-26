@@ -16,6 +16,8 @@ from agent_toolkit._common import atomic_file, session_state, state_paths
 from agent_toolkit._hooks import agents_server_observations, posttooluse, pretooluse
 from agent_toolkit._testing import agents_server_support
 
+pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
+
 
 class _WindowsAccessDenied(PermissionError):
     """Windowsの`os.replace`が返すWinError 5と同じ識別値を持つ置換拒否。"""

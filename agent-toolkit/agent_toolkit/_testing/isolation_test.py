@@ -9,12 +9,51 @@ import subprocess
 import sys
 import textwrap
 import typing
+import venv
 
 import pytest
 from platformdirs import windows
 
 from agent_toolkit._testing import isolation
 from agent_toolkit._testing.loop_isolation_support import assert_loop_scope_isolation
+
+
+def _external_venv_sentinel(path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    """uvの同期先を誤指定した場合に削除される外部venvの識別物を作成する。"""
+    venv.EnvBuilder(with_pip=False).create(path)
+    python = path / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    location = subprocess.run(
+        [str(python), "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    package = pathlib.Path(location.stdout.strip()) / "isolation_sentinel"
+    package.mkdir()
+    (package / "__init__.py").write_text("VALUE = 'preserved'\n", encoding="utf-8")
+    distribution = package.parent / "isolation_sentinel-0.0.dist-info"
+    distribution.mkdir()
+    (distribution / "METADATA").write_text("Name: isolation-sentinel\nVersion: 0.0\n", encoding="utf-8")
+    (distribution / "RECORD").write_text(
+        "isolation_sentinel/__init__.py,,\nisolation_sentinel-0.0.dist-info/METADATA,,\n"
+        "isolation_sentinel-0.0.dist-info/RECORD,,\n",
+        encoding="utf-8",
+    )
+    marker = path / "sentinel.txt"
+    marker.write_text("external\n", encoding="utf-8")
+    return python, marker
+
+
+def _assert_sentinel_preserved(python: pathlib.Path, marker: pathlib.Path) -> None:
+    assert marker.read_text(encoding="utf-8") == "external\n"
+    result = subprocess.run(
+        [str(python), "-c", "import isolation_sentinel; print(isolation_sentinel.VALUE)"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "preserved"
 
 
 def test_development_state_isolated_by_default(tmp_path: pathlib.Path) -> None:
@@ -304,14 +343,17 @@ def test_parent_update_and_config_override_environment_removed(tmp_path: pathlib
     probe = tmp_path / "probe_test.py"
     probe.write_text(
         textwrap.dedent("""\
-            import os
+            import os, pathlib
             from agent_toolkit._testing import isolation
 
             def test_probe(tmp_path):
                 isolation.assert_development_state_isolated(tmp_path)
                 for name in ("UPDATE_DOTFILES_RUN_ID", "DOTFILES_PRUNE", "DOTFILES_CODEX_DAEMON_AUTO_RESTART",
-                             "AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "AGENT_TOOLKIT_CONFIG_EXAMPLE"):
+                             "AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "AGENT_TOOLKIT_CONFIG_EXAMPLE",
+                             "UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT",
+                             "AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT", "AGENT_TOOLKIT_LAUNCH_RESTORE"):
                     assert name not in os.environ, name
+                assert str(pathlib.Path(os.environ["PARENT_VENV_BIN"])) not in os.environ["PATH"].split(os.pathsep)
         """),
         encoding="utf-8",
     )
@@ -323,7 +365,14 @@ def test_parent_update_and_config_override_environment_removed(tmp_path: pathlib
         "DOTFILES_CODEX_DAEMON_AUTO_RESTART": "1",
         "AGENT_TOOLKIT_CONFIG_DOTFILES_MODE": "minimal",
         "AGENT_TOOLKIT_CONFIG_EXAMPLE": "parent",
+        "UV_PROJECT_ENVIRONMENT": str(tmp_path / "parent-venv"),
+        "VIRTUAL_ENV": str(tmp_path / "parent-venv"),
+        "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT": "parent-runtime",
+        "AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT": "parent-caller-venv",
+        "AGENT_TOOLKIT_LAUNCH_RESTORE": "parent-restore",
+        "PARENT_VENV_BIN": str(tmp_path / "parent-venv" / "bin"),
     }
+    environment["PATH"] = os.pathsep.join((environment["PARENT_VENV_BIN"], environment["PATH"]))
     environment.pop("PYTEST_ADDOPTS", None)
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-o", "addopts=", "-p", isolation.__name__, str(probe)],
@@ -336,3 +385,107 @@ def test_parent_update_and_config_override_environment_removed(tmp_path: pathlib
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_host_environ_excludes_parent_venv_operation_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ホスト環境の復元処理でも、親の仮想環境同期先を除外する。"""
+    names = (
+        "UV_PROJECT_ENVIRONMENT",
+        "VIRTUAL_ENV",
+        "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT",
+        "AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT",
+        "AGENT_TOOLKIT_LAUNCH_RESTORE",
+    )
+    for name in names:
+        monkeypatch.setenv(name, "parent-venv")
+    assert all(name not in isolation.build_host_environ() for name in names)
+
+
+def test_host_environ_excludes_parent_venv_bin_from_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """host復元でも親venvのbin/ScriptsをPATHへ戻さない。"""
+    monkeypatch.setattr(isolation, "_HOST_VENV_BINARIES", ("/parent/bin", "C:/parent/Scripts"))
+    monkeypatch.setitem(isolation._HOST_ENVIRON, "PATH", "/keep:/parent/bin:/other")  # pylint: disable=protected-access
+    assert "/parent/bin" not in isolation.build_host_environ()["PATH"].split(os.pathsep)
+
+
+def test_restore_host_environment_excludes_parent_venv_operation_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ホスト復元は親の仮想環境指定と実行ディレクトリを再導入しない。"""
+    monkeypatch.setattr(isolation, "_HOST_VENV_BINARIES", ("/parent/bin",))
+    monkeypatch.setitem(isolation._HOST_ENVIRON, "PATH", "/keep:/parent/bin:/other")  # pylint: disable=protected-access
+    for name in isolation._VENV_ENVIRONMENT_NAMES:  # pylint: disable=protected-access
+        monkeypatch.setenv(name, "parent-venv")
+
+    isolation.restore_host_environment(monkeypatch)
+
+    assert all(name not in os.environ for name in isolation._VENV_ENVIRONMENT_NAMES)  # pylint: disable=protected-access
+    assert "/parent/bin" not in os.environ["PATH"].split(os.pathsep)
+
+
+@pytest.mark.parametrize("route", ["fixture", "host_environ", "restore_host_environment"])
+def test_child_uv_uses_test_project_after_fixture_and_host_restoration(
+    tmp_path: pathlib.Path, host_environ: typing.Callable[[], dict[str, str]], route: str
+) -> None:
+    """親の指定を継承した子pytestでも、3つの復元経路から実行するuvは外部venvを変更しない。"""
+    external = tmp_path / "external"
+    sentinel_python, marker = _external_venv_sentinel(external)
+    executable = "uv.exe" if os.name == "nt" else "uv"
+    uv = next(
+        candidate
+        for directory in host_environ()["PATH"].split(os.pathsep)
+        if (candidate := pathlib.Path(directory) / executable).is_file() and candidate.resolve().stem != "mise"
+    )
+    probe = tmp_path / "uv_probe_test.py"
+    probe.write_text(
+        textwrap.dedent("""\
+            import os, pathlib, subprocess, sys
+            from agent_toolkit._testing import isolation
+
+            def test_uv(tmp_path, monkeypatch):
+                route = os.environ["ISOLATION_PROBE_ROUTE"]
+                if route == "host_environ":
+                    environment = isolation.build_host_environ()
+                elif route == "restore_host_environment":
+                    isolation.restore_host_environment(monkeypatch)
+                    environment = dict(os.environ)
+                else:
+                    environment = dict(os.environ)
+                project = tmp_path / "project"
+                project.mkdir()
+                (project / "pyproject.toml").write_text(
+                    '[project]\\nname = "probe"\\nversion = "0"\\nrequires-python = ">=3.15"\\n',
+                    encoding="utf-8",
+                )
+                result = subprocess.run(
+                    [os.environ["ISOLATION_PROBE_UV"], "sync", "--offline", "--no-install-project",
+                     "--project", str(project), "--python", sys.executable],
+                    cwd=project, env=environment, capture_output=True, text=True, check=False, timeout=60,
+                )
+                assert result.returncode == 0, result.stderr
+                assert (project / ".venv" / "pyvenv.cfg").is_file()
+        """),
+        encoding="utf-8",
+    )
+    environment = {
+        **os.environ,
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "ISOLATION_PROBE_UV": str(uv),
+        "ISOLATION_PROBE_ROUTE": route,
+        **dict.fromkeys(isolation._VENV_ENVIRONMENT_NAMES, str(external)),  # pylint: disable=protected-access
+    }
+    parent_bin = external / ("Scripts" if os.name == "nt" else "bin")
+    environment["PATH"] = str(parent_bin) + os.pathsep + environment["PATH"]
+    environment.pop("PYTEST_ADDOPTS", None)
+    pytest_options = ["-v", "-p", "no:cacheprovider", "-o", "addopts=", "-p", isolation.__name__]
+    command = [sys.executable, "-m", "pytest", *pytest_options, str(probe)]
+    result = subprocess.run(
+        command,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=90,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_sentinel_preserved(sentinel_python, marker)

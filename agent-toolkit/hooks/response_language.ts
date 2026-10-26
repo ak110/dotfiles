@@ -1,9 +1,10 @@
 import type { On, ProcessRunResult, ToolCallResult } from "claude-code";
 import { automatedMessage } from "./automated_message.ts";
+import { pluginLaunchCommand } from "./plugin_launch.ts";
 
 // Function hooksから同じPythonの判定CLIを起動する。本文は単一の値引数として渡す。
 export function languageCheckCommand(root: string, text: string): string[] {
-  return ["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python", `${root}/scripts/launch.py`, "agent_toolkit/_common/response_language_check.py", `--text=${text}`];
+  return pluginLaunchCommand(root, "agent_toolkit/_common/response_language_check.py", [`--text=${text}`]);
 }
 
 // 判定結果の区分。英語主体の検出だけを拒否とし、判定基盤の障害（判定不能）は元の操作を止めずに診断だけを届ける。

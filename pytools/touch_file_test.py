@@ -1,5 +1,6 @@
 """touch_file モジュールのテスト。"""
 
+import ctypes
 import datetime
 import os
 import pathlib
@@ -9,6 +10,7 @@ import sys
 import pytest
 
 from pytools import touch_file
+from pytools._internal import winutils
 
 
 def _set_mtime(path: pathlib.Path, time: datetime.datetime) -> None:
@@ -18,6 +20,10 @@ def _set_mtime(path: pathlib.Path, time: datetime.datetime) -> None:
 
 def _read_mtime(path: pathlib.Path) -> datetime.datetime:
     return datetime.datetime.fromtimestamp(path.stat().st_mtime)
+
+
+def _read_link_mtime(path: pathlib.Path) -> datetime.datetime:
+    return datetime.datetime.fromtimestamp(path.lstat().st_mtime)
 
 
 class TestTouchPath:
@@ -57,12 +63,14 @@ class TestTouchPath:
             touch_file.touch_path(missing, datetime.datetime(2024, 1, 1))
         assert any("存在しません" in r.message for r in caplog.records)
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="シンボリックリンクの作成に管理者権限が必要なため")
     def test_symlink_does_not_follow(self, tmp_path: pathlib.Path) -> None:
         real_file = tmp_path / "real.txt"
         real_file.touch()
         link = tmp_path / "link"
-        link.symlink_to(real_file)
+        try:
+            link.symlink_to(real_file)
+        except OSError as error:
+            pytest.skip(f"シンボリックリンクを作成できない環境: {error}")
 
         old_real = datetime.datetime(2000, 1, 1)
         _set_mtime(real_file, old_real)
@@ -72,6 +80,112 @@ class TestTouchPath:
 
         # リンク自身を touch してもリンク先のファイルは変更されない
         assert _read_mtime(real_file) == old_real
+        assert _read_link_mtime(link) == new_time
+
+    def test_symlink_uses_fallback_without_follow_symlinks(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real_file = tmp_path / "real.txt"
+        real_file.touch()
+        link = tmp_path / "link"
+        try:
+            link.symlink_to(real_file)
+        except OSError as error:
+            pytest.skip(f"シンボリックリンクを作成できない環境: {error}")
+
+        calls: list[tuple[str, float]] = []
+
+        def set_link_times(path: str, timestamp: float) -> None:
+            calls.append((path, timestamp))
+
+        monkeypatch.setattr(touch_file.os, "supports_follow_symlinks", set())
+        monkeypatch.setattr(touch_file.winutils, "set_link_times", set_link_times, raising=False)
+        new_time = datetime.datetime(2024, 6, 15, 12, 30, 45)
+        touch_file.touch_path(link, new_time)
+
+        assert calls == [(str(link), new_time.timestamp())]
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="ディレクトリジャンクションはWindows固有")
+    def test_junction_does_not_follow(self, tmp_path: pathlib.Path) -> None:
+        root = tmp_path / "root"
+        root.mkdir()
+        target = tmp_path / "target"
+        target.mkdir()
+        target_file = target / "inner.txt"
+        target_file.touch()
+        junction = root / "junction"
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(target)], check=True)
+        assert junction.is_junction()
+
+        old = datetime.datetime(2000, 1, 1)
+        _set_mtime(target, old)
+        _set_mtime(target_file, old)
+
+        new_time = datetime.datetime(2024, 6, 15, 12, 30, 45)
+        touch_file.touch_path(root, new_time)
+
+        assert _read_mtime(target) == old
+        assert _read_mtime(target_file) == old
+        assert _read_link_mtime(junction) == new_time
+
+
+class _FakeWin32Function:
+    """Win32関数の呼出しとctypes属性設定を再現する。"""
+
+    def __init__(self, result: object) -> None:
+        self.result = result
+        self.calls: list[tuple[object, ...]] = []
+        self.argtypes: object | None = None
+        self.restype: object | None = None
+
+    def __call__(self, *args: object) -> object:
+        self.calls.append(args)
+        return self.result
+
+
+class _FakeKernel32:
+    """`set_link_times`が使うWin32 APIだけを再現する。"""
+
+    def __init__(self, create_result: object, set_result: object) -> None:
+        self.CreateFileW = _FakeWin32Function(create_result)
+        self.SetFileTime = _FakeWin32Function(set_result)
+        self.CloseHandle = _FakeWin32Function(1)
+
+
+def _fake_win_error(code: int) -> OSError:
+    return OSError(code, f"fake Windows error {code}")
+
+
+class TestSetLinkTimes:
+    """Win32 API失敗時の診断とハンドル解放を検証する。"""
+
+    def test_create_file_failure_raises_last_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        invalid_handle = ctypes.c_void_p(-1).value
+        kernel32 = _FakeKernel32(invalid_handle, 1)
+        monkeypatch.setattr(winutils, "_load_kernel32", lambda _: kernel32)
+        monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+        monkeypatch.setattr(ctypes, "WinError", _fake_win_error, raising=False)
+
+        with pytest.raises(OSError, match="fake Windows error 5") as error:
+            winutils.set_link_times("link", 0)
+
+        assert error.value.errno == 5
+        assert not kernel32.SetFileTime.calls
+        assert not kernel32.CloseHandle.calls
+
+    def test_set_file_time_failure_closes_handle(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        handle = 123
+        kernel32 = _FakeKernel32(handle, 0)
+        monkeypatch.setattr(winutils, "_load_kernel32", lambda _: kernel32)
+        monkeypatch.setattr(ctypes, "get_last_error", lambda: 32, raising=False)
+        monkeypatch.setattr(ctypes, "WinError", _fake_win_error, raising=False)
+
+        with pytest.raises(OSError, match="fake Windows error 32") as error:
+            winutils.set_link_times("link", 0)
+
+        assert error.value.errno == 32
+        assert len(kernel32.SetFileTime.calls) == 1
+        assert kernel32.CloseHandle.calls == [(handle,)]
 
 
 class TestCli:
@@ -94,6 +208,23 @@ class TestCli:
         self._run("-t", "2024-06-15T12:30:45", str(target))
 
         assert _read_mtime(target) == datetime.datetime(2024, 6, 15, 12, 30, 45)
+
+    def test_cli_symlink_does_not_follow(self, tmp_path: pathlib.Path) -> None:
+        real_file = tmp_path / "real.txt"
+        real_file.touch()
+        link = tmp_path / "link"
+        try:
+            link.symlink_to(real_file)
+        except OSError as error:
+            pytest.skip(f"シンボリックリンクを作成できない環境: {error}")
+
+        old_real = datetime.datetime(2000, 1, 1)
+        _set_mtime(real_file, old_real)
+
+        self._run("-t", "2024-06-15T12:30:45", str(link))
+
+        assert _read_mtime(real_file) == old_real
+        assert _read_link_mtime(link) == datetime.datetime(2024, 6, 15, 12, 30, 45)
 
     def test_cli_with_multiple_targets_mixed(self, tmp_path: pathlib.Path) -> None:
         file1 = tmp_path / "f1.txt"

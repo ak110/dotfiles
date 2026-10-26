@@ -152,7 +152,7 @@ def _prepare_process_loop_environment(monkeypatch: pytest.MonkeyPatch, tmp_path:
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
-    monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _path: True)
+    monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _private_notes: True)
     monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
@@ -256,7 +256,7 @@ class TestSyncWorktreeWithUpstream:
         """既存worktreeに対しfetchと上流ブランチへのrebaseを実行する。"""
         worktree = self._make_worktree(tmp_path)
         calls: list[list[str]] = []
-        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _path: True)
+        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _local_path: True)
         monkeypatch.setattr(_pl_worktree, "_validate_existing_worktree", lambda *_args: True)
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -284,7 +284,7 @@ class TestSyncWorktreeWithUpstream:
         """origin/HEADが無くても現在ブランチの追跡先を使って追随する。"""
         worktree = self._make_worktree(tmp_path)
         calls: list[list[str]] = []
-        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _path: True)
+        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _local_path: True)
         monkeypatch.setattr(_pl_worktree, "_validate_existing_worktree", lambda *_args: True)
 
         def fake_git_output(args: list[str], cwd: pathlib.Path) -> str | None:
@@ -318,7 +318,7 @@ class TestSyncWorktreeWithUpstream:
         """origin以外の追跡remoteをfetchし、同じ追跡先へrebaseする。"""
         worktree = self._make_worktree(tmp_path)
         calls: list[list[str]] = []
-        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _path: True)
+        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _local_path: True)
         monkeypatch.setattr(_pl_worktree, "_validate_existing_worktree", lambda *_args: True)
 
         def fake_git_output(args: list[str], cwd: pathlib.Path) -> str | None:
@@ -386,7 +386,7 @@ class TestSyncWorktreeWithUpstream:
         """rebase失敗時は中断したうえで警告を発し、実装セッションを起動しない。"""
         self._make_worktree(tmp_path)
         calls: list[list[str]] = []
-        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _path: True)
+        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _local_path: True)
         monkeypatch.setattr(_pl_worktree, "_validate_existing_worktree", lambda *_args: True)
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -414,7 +414,7 @@ class TestSyncWorktreeWithUpstream:
         """上流ブランチを解決できない場合は、上流の設定コマンドを次の操作として返し実装セッションを起動しない。"""
         self._make_worktree(tmp_path)
         local_path = tmp_path / "repo"
-        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _path: True)
+        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _local_path: True)
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
             if cmd[1:2] in (["rev-parse"], ["symbolic-ref"]):
@@ -795,7 +795,7 @@ class TestProcessLoopSessionPreparation:
         monkeypatch.setattr(
             _pl_watch,
             "pull_private_notes",
-            lambda _path: pytest.fail("更新コマンド未解決では再pullしないこと"),
+            lambda _plugin_root: pytest.fail("更新コマンド未解決では再pullしないこと"),
         )
 
         assert _pl_update.update_before_session(  # pylint: disable=protected-access  # noqa: SLF001
@@ -819,7 +819,7 @@ class TestProcessLoopSessionPreparation:
             "run",
             lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 1),
         )
-        monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _path: True)
+        monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _private_notes: True)
 
         assert _pl_update.update_before_session(  # pylint: disable=protected-access  # noqa: SLF001
             tmp_path,
@@ -882,6 +882,54 @@ class TestProcessLoopSessionPreparation:
         assert exc_info.value.code == 7
         assert events == ["pull", "count", "update", "repull", "count", "count", "session"]
 
+    @pytest.mark.parametrize(
+        ("relative_path", "restarts"),
+        [
+            ("agent_toolkit/runtime.py", True),
+            ("scripts/launch.py", True),
+            ("agent_toolkit/runtime_test.py", False),
+            ("agent_toolkit/__pycache__/runtime.py", False),
+        ],
+    )
+    def test_before_session_update_detects_real_runtime_files(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, relative_path: str, restarts: bool
+    ) -> None:
+        """開始前更新は実走査対象の変更だけで再起動する。"""
+        plugin_root = tmp_path / "dotfiles" / "agent-toolkit"
+        package = plugin_root / "agent_toolkit"
+        scripts = plugin_root / "scripts"
+        package.mkdir(parents=True)
+        scripts.mkdir()
+        (package / "runtime.py").write_text("before = 1\n", encoding="utf-8")
+        (package / "runtime_test.py").write_text("before = 1\n", encoding="utf-8")
+        (scripts / "launch.py").write_text("before = 1\n", encoding="utf-8")
+        startup_hash = _pl_update.code_hash(plugin_root)
+        monkeypatch.setattr(_pl_env, "resolve_executable", lambda _name: "update-dotfiles")
+        monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _private_notes: True)
+        restart_spec = tmp_path / "restart-spec"
+        monkeypatch.setenv("AGENT_TOOLKIT_RESTART_SPEC", str(restart_spec))
+
+        def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            path = plugin_root / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("after = 2\n", encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        if restarts:
+            with pytest.raises(SystemExit) as restart:
+                _pl_update.update_before_session(
+                    tmp_path, tmp_path / "dotfiles", startup_hash, ["atk", "wi", "process-loop"], {}
+                )
+            expected = _pl_update._RESTART_EXIT_CODE  # pylint: disable=protected-access  # noqa: SLF001
+            assert restart.value.code == expected
+        else:
+            result = _pl_update.update_before_session(
+                tmp_path, tmp_path / "dotfiles", startup_hash, ["atk", "wi", "process-loop"], {}
+            )
+            assert result == (True, True)
+            assert not restart_spec.exists()
+
     def test_successful_ready_update_restart_skips_duplicate_update(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -897,7 +945,7 @@ class TestProcessLoopSessionPreparation:
         canonical_script.write_text("", encoding="utf-8")
         monkeypatch.setattr(_pl_update, "resolve_dotfiles_root", lambda: dotfiles_root)
         hashes = iter(("before-update", "after-update", "after-update"))
-        monkeypatch.setattr(_pl_update, "code_hash", lambda _path: next(hashes))
+        monkeypatch.setattr(_pl_update, "code_hash", lambda _plugin_root: next(hashes))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_args, **_kwargs: 1)
         update_calls: list[list[str]] = []
         base_fake_run = fake_run_with_remote_url(myrepo, [], 7)
@@ -1182,8 +1230,8 @@ class TestWorktreeWriterGate:
         local_path = tmp_path / "repo"
         (local_path / ".claude" / "worktrees" / "process-loop").mkdir(parents=True)
         worktree_path = local_path / ".claude" / "worktrees" / "process-loop"
-        monkeypatch.setattr(_pl_worktree, "_worktree_is_clean", lambda _path: True)
-        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _path: True)
+        monkeypatch.setattr(_pl_worktree, "_worktree_is_clean", lambda _worktree_path: True)
+        monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _local_path: True)
         failures: list[str] = []
 
         def fake_git_output(args: list[str], cwd: pathlib.Path) -> str:

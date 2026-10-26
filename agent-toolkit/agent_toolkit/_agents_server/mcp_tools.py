@@ -163,6 +163,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             params,
             whole_contract_path=whole_contract_path,
             launcher_session_id=launcher,
+            include_startup=False,
         )
         context = await run_file_operation(_MANAGER.launcher_record_context)
         task_prompt = launch_requests.with_launcher_record(task_prompt, context)
@@ -172,6 +173,8 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             cwd,
             launch_kind=launch_kind,
             label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
+            startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
+            startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
         )
         if handoff_path is not None:
             public = public_start_response(response)

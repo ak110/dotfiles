@@ -16,7 +16,8 @@ from pytools._internal import claude_common, common, install_codex_plugins, log_
 
 logger = logging.getLogger(__name__)
 
-_WARMUP_TIMEOUT = 600.0
+_WARMUP_TIMEOUT = 660.0
+_PYTHON_FIND_TIMEOUT = 60.0
 _CODEX_LIST_TIMEOUT = 60.0
 _AGENT_TOOLKIT_ID = f"agent-toolkit@{claude_common.MARKETPLACE_NAME}"
 
@@ -109,12 +110,16 @@ def run(
             ),
         )
         return post_apply_outcome.PostApplyOutcome()
+    python = _resolve_python(uv, tag)
+    if python is None:
+        return post_apply_outcome.PostApplyOutcome()
     startup_failures: list[str] = []
+    prepared: set[Path] = set()
     for target in resolved:
         if (
-            warmup(target, uv, tag=tag, arguments=arguments)
+            warmup(target, python, tag=tag, arguments=arguments, prepared=prepared)
             and readiness is not None
-            and not readiness([*_bootstrap(target, uv), str(target)])
+            and not readiness([*_bootstrap(target, python), str(target)])
         ):
             startup_failures.append(str(target))
     if startup_failures:
@@ -204,29 +209,51 @@ def claude_plugin_scripts(
 
 def warmup(
     path: Path,
-    uv: Path,
+    python: Path,
     *,
     tag: str,
     arguments: Sequence[str] = (),
+    prepared: set[Path] | None = None,
 ) -> bool:
-    """Plugin rootのuvプロジェクトで対象スクリプトを1回起動し、依存環境を構築する。構築できた場合は真を返す。"""
-    bootstrap = _bootstrap(path, uv)
-    prepared = run_command([*bootstrap, "--prepare", str(path)], target=log_format.home_short(path), tag=tag)
-    return prepared and run_command([*bootstrap, str(path), *arguments], target=log_format.home_short(path), tag=tag)
+    """同じ依存環境は一度だけ準備し、各対象の実起動確認は必ず実行する。"""
+    bootstrap = _bootstrap(path, python)
+    root = Path(bootstrap[-1])
+    key = plugin_environment.project_environment(root, os.environ, python_executable=python)
+    if prepared is None or key not in prepared:
+        if not run_command([*bootstrap, "--prepare", str(path)], target=log_format.home_short(path), tag=tag):
+            return False
+        if prepared is not None:
+            prepared.add(key)
+    return run_command([*bootstrap, str(path), *arguments], target=log_format.home_short(path), tag=tag)
 
 
-def _bootstrap(path: Path, uv: Path) -> list[str]:
-    """依存準備と実起動が共用するlauncherを返す。"""
+def _resolve_python(uv: Path, tag: str) -> Path | None:
+    """warmup全体で共有するPython実行ファイルを一度だけ解決する。"""
+    result = common.run_subprocess(
+        [str(uv), "python", "find", "--no-config", "--no-project", "3.15"],
+        timeout=_PYTHON_FIND_TIMEOUT,
+        tag=Path(uv).stem,
+    )
+    if result is not None and result.returncode == 0:
+        path = Path(result.stdout.strip())
+        if path.is_file():
+            return path.resolve()
+    logger.warning(
+        log_format.format_status(
+            tag,
+            "agent-toolkit用Pythonを解決できないため環境構築を除外: "
+            f"{common.format_cli_error(result)}。`update-dotfiles`を再実行する",
+        )
+    )
+    return None
+
+
+def _bootstrap(path: Path, python: Path) -> list[str]:
+    """解決済みPythonで依存準備と実起動が共用するlauncherを返す。"""
     root = next(parent.parent for parent in path.parents if parent.name == "agent_toolkit")
     launcher = Path(plugin_environment.__file__).resolve().parents[2] / "scripts" / "launch.py"
     return [
-        str(uv),
-        "run",
-        "--no-config",
-        "--no-project",
-        "--python",
-        "3.15",
-        "python",
+        str(python),
         str(launcher),
         "--project",
         str(root),

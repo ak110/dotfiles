@@ -125,6 +125,7 @@ description: >
 ## 候補の抽出
 
 問題候補のデータは`atk run-script session-review-evidence`によって生成され、`atk run-script session-review-prepare`が1件につき1行の要約と記録位置を付与して`candidates.md`へ出力する。各候補区分の判定基準は、`scripts/session_review_evidence.py`および`scripts/session_review_prepare.py`のdocstringに定義されている。
+Codexの`functions.exec`による定義本文の読取では、`atk run-script session-review-evidence`が外側セルと内側実行を対応付け、両方の入力・結果位置を候補の`calls`へ残す。対応付けられない内側実行も独立した要素として残す。用語、未確定理由、位置の項目は`references/analysis.md`「定義本文の読込の判定」で定義する。メインエージェントがその記録から取得の有無・目的・成否を判定する。
 各記録位置には、同一の証拠bundleに含まれる`record-provenance`から取得した記録の由来情報（役割文書、起動モード、起動元となった上位の記録とその役割文書）が付記される。取得できなかった記録については、取得不能である旨が明示される。候補となった操作の実行主体は、要約の表現から推測するのではなく、必ずこの由来情報に基づいて特定する。
 
 - ユーザー介入、WIの記入欄に対するユーザーからの修正（`wi-user-response`）、エスカレーションの全文、およびhook通知の前後に交わされた応答は、保存された証拠データから全文を取得する。索引に書かれた短い概要だけで趣旨や原因を判断しない。

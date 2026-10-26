@@ -241,7 +241,7 @@ def test_process_loop_event_sequences_match_reference_model(
     monkeypatch.setattr(process_loop, "resolve_local_worktree", lambda _target: repo)
     monkeypatch.setattr(process_loop, "resolve_repo_id", lambda *_args, **_kwargs: "github.com/example/project")
     monkeypatch.setattr(_pl_update, "resolve_dotfiles_root", lambda: case_root / "dotfiles")
-    monkeypatch.setattr(_pl_update, "code_hash", lambda _path: "startup")
+    monkeypatch.setattr(_pl_update, "code_hash", lambda _plugin_root: "startup")
     monkeypatch.setattr(_pl_session, "resolve_orchestrator_specs", lambda: ["codex:model/medium"])
     monkeypatch.setattr(
         _pl_session,

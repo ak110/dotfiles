@@ -533,9 +533,11 @@ def _git_operation_in_progress() -> str | bool:
                 if name in process_env:
                     env[name] = process_env[name]
             env["GIT_OPTIONAL_LOCKS"] = "0"
+            # 走査中に消える他プロセスのcwdはGit自身に検査させる。
+            # probeの起動cwdを固定し、消失をプロセス起動のOSErrorへ変換しない。
             result = subprocess.run(
-                ["git", *options, "rev-parse", "--absolute-git-dir"],
-                cwd=process.cwd(),
+                ["git", "-C", process.cwd(), *options, "rev-parse", "--absolute-git-dir"],
+                cwd=_DOTFILES_ROOT,
                 env=env,
                 capture_output=True,
                 text=True,

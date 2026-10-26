@@ -406,14 +406,14 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     native = 'set "UV=%USERPROFILE%\\.local\\bin\\uv.exe"'
     missing = 'if not exist "%UV%" goto missing_uv'
     update_state = 'set "UV_SELF_UPDATE_FAILED=0"'
-    process_loop_guard = 'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" ('
+    process_loop_guard = 'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" call :update_uv'
     update = 'powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\\libexec\\update_uv.ps1" "%UV%"'
     update_failure = 'if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"'
     run = '"%UV%" run --no-project --script "%SCRIPT_DIR%\\libexec\\update_dotfiles.py" %*'
     capture_run_exit = 'call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"'
     warning_state = f'set "UV_SELF_UPDATE_WARNING={_UPDATE_WARNING}"'
     warning = 'if "%UV_SELF_UPDATE_FAILED%"=="1" powershell.exe -NoLogo -NoProfile -Command '
-    return_run_exit = "call exit /b %%UPDATE_DOTFILES_EXIT%%"
+    return_run_exit = "exit /b !UPDATE_DOTFILES_EXIT!"
     assert native in content
     assert missing in content
     assert update_state in content
@@ -438,14 +438,13 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
         < content.index(missing)
         < content.index(update_state)
         < content.index(process_loop_guard)
-        < content.index(update)
-        < content.index(update_failure)
         < content.index(run)
         < content.index(capture_run_exit)
         < content.index(warning_state)
         < content.index(warning)
         < content.index(return_run_exit)
     )
+    assert content.index("\r\n:update_uv\r\n") < content.index(update) < content.index(update_failure)
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows PowerShellが必要")
@@ -466,3 +465,157 @@ def test_windows_warning_redirects_as_utf8_without_bom() -> None:
     assert result.returncode == 0
     assert not result.stdout
     assert result.stderr == f"{_UPDATE_WARNING}\r\n".encode()
+
+
+@_LINUX_ONLY
+def test_prune_runs_after_update_uv_process_exits() -> None:
+    """公開POSIX入口はuv実行を待ってから非uvのpost-apply CLIへpruneを渡す。"""
+    source = _LAUNCHER.read_text(encoding="utf-8")
+    assert "DOTFILES_PRUNE_OUTSIDE_UV=1" in source
+    assert '"$HOME/.local/bin/dotfiles-post-apply" --prune-only' in source
+    assert source.index('"$UV" run') < source.index('dotfiles-post-apply" --prune-only')
+
+
+@pytest.mark.parametrize("run_exit,prune_exit", [(0, 0), (23, 0), (0, 9)])
+@_LINUX_ONLY
+def test_prune_invokes_post_apply_after_successful_update(tmp_path: pathlib.Path, run_exit: int, prune_exit: int) -> None:
+    """--pruneはuv更新の成功後にだけ独立したpost-apply CLIへ渡す。"""
+    home = tmp_path / "home"
+    _write_fake_uv(home / ".local" / "bin" / "uv", "native")
+    post_apply = home / ".local" / "bin" / "dotfiles-post-apply"
+    post_apply.write_text(
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$PRUNE_CALL_LOG"\n' + f"exit {prune_exit}\n", encoding="utf-8"
+    )
+    post_apply.chmod(0o755)
+    path_dir = _make_path(tmp_path, with_uv=False)
+    environment = {
+        **os.environ,
+        "HOME": str(home),
+        "PATH": str(path_dir),
+        "UV_CALL_LOG": str(tmp_path / "uv-calls"),
+        "PRUNE_CALL_LOG": str(tmp_path / "prune-calls"),
+        "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
+        "UV_RUN_EXIT": str(run_exit),
+    }
+    bash = shutil.which("bash")
+    assert bash is not None
+
+    result = subprocess.run(
+        [bash, str(_LAUNCHER), "--prune", "--prune"], env=environment, capture_output=True, text=True, check=False, timeout=10
+    )
+
+    assert result.returncode == (run_exit or prune_exit), result.stderr
+    if run_exit:
+        assert not (tmp_path / "prune-calls").exists()
+    else:
+        assert (tmp_path / "prune-calls").read_text(encoding="utf-8") == "--prune-only\n"
+
+
+def test_windows_prune_checks_runtime_exit_status_with_delayed_expansion() -> None:
+    """Windowsの静的な構造契約。cmd実動作は公開入口のWindows CI試験が担う。"""
+    source = _WINDOWS_LAUNCHER.read_bytes().decode("cp932")
+    assert "call if " not in source.lower()
+    assert "call for " not in source.lower()
+    assert 'if "!UPDATE_DOTFILES_EXIT!"=="0" if "%DOTFILES_PRUNE_OUTSIDE_UV%"=="1" if "!PRUNE_REQUESTED!"=="1" (' in source
+    assert 'set "UPDATE_DOTFILES_EXIT=!ERRORLEVEL!"' in source
+    arguments_scanned = source.index("for %%A in (%*) do for %%H in (-h --help)")
+    delayed = source.index("setlocal EnableDelayedExpansion")
+    assert source.index("setlocal DisableDelayedExpansion") < source.index('"%UV%" run')
+    assert source.index('call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"') < arguments_scanned < delayed
+    assert delayed < source.index('"!USERPROFILE!\\.local\\bin\\dotfiles-post-apply.exe" --prune-only')
+    assert 'set "DOTFILES_PRUNE_OUTSIDE_UV=1"' in source
+    lines = source.splitlines()
+    assert lines.count("(") == 1
+    assert lines.index("(") < next(index for index, line in enumerate(lines) if line.startswith('"%UV%" run'))
+
+
+@pytest.mark.parametrize(
+    "run_exit,prune_exit,arguments",
+    [
+        (0, 0, ["--prune", "--prune"]),
+        (23, 0, ["--prune"]),
+        (0, 9, ["--prune"]),
+        (0, 0, []),
+        (0, 0, ["--help", "--prune"]),
+        (0, 0, ["--prune", "-h"]),
+    ],
+)
+def test_public_launcher_prune_boundary_with_real_uv(
+    tmp_path: pathlib.Path,
+    real_uv: str,
+    host_environ: Callable[[], dict[str, str]],
+    run_exit: int,
+    prune_exit: int,
+    arguments: list[str],
+) -> None:
+    """公開入口の制御を実uvで動かし、終了後のprune回数と失敗伝播を検証する。
+
+    削除先CLIだけを無害なPythonへ束縛する。POSIXではuvの共有cache lockも排他取得で確認する。
+    Windowsのcmd.exe制御はWindows CIで同じ試験を実行する。
+    """
+    home = tmp_path / "home with spaces !literal!"
+    native_uv = home / ".local/bin" / ("uv.exe" if os.name == "nt" else "uv")
+    native_uv.parent.mkdir(parents=True)
+    shutil.copy2(real_uv, native_uv)
+    libexec = tmp_path / "libexec"
+    libexec.mkdir()
+    calls = tmp_path / "calls"
+    (libexec / "update_dotfiles.py").write_text(
+        "import argparse, os, pathlib\n"
+        "assert os.environ.get('DOTFILES_PRUNE_OUTSIDE_UV') == '1'\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--prune', action='store_true')\n"
+        "parser.parse_args()\n"
+        f"pathlib.Path({str(calls)!r}).write_text('update\\n', encoding='utf-8')\n"
+        f"raise SystemExit({run_exit})\n",
+        encoding="utf-8",
+    )
+    probe = tmp_path / "prune.py"
+    probe.write_text(
+        "import os, pathlib, sys\n"
+        "assert sys.argv[1:] == ['--prune-only']\n"
+        "if os.name != 'nt':\n"
+        "    import fcntl\n"
+        "    with (pathlib.Path(os.environ['UV_CACHE_DIR']) / '.lock').open('a+b') as lock:\n"
+        "        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+        f"with pathlib.Path({str(calls)!r}).open('a', encoding='utf-8') as stream:\n"
+        "    stream.write('prune\\n')\n"
+        f"raise SystemExit({prune_exit})\n",
+        encoding="utf-8",
+    )
+    launcher = tmp_path / "bin" / ("update-dotfiles.cmd" if os.name == "nt" else "update-dotfiles")
+    launcher.parent.mkdir()
+    if os.name == "nt":
+        source = _WINDOWS_LAUNCHER.read_bytes().decode("cp932")
+        endpoint = '"!USERPROFILE!\\.local\\bin\\dotfiles-post-apply.exe"'
+        assert source.count(endpoint) == 1
+        source = source.replace(endpoint, '"!PRUNE_PROBE_PYTHON!" "!PRUNE_PROBE_SCRIPT!"')
+        launcher.write_bytes(source.encode("cp932"))
+        command = ["cmd.exe", "/d", "/c", str(launcher)]
+    else:
+        shutil.copy2(_LAUNCHER, launcher)
+        endpoint_script = home / ".local/bin/dotfiles-post-apply"
+        endpoint_script.write_text(f'#!/usr/bin/env bash\nexec "{sys.executable}" "{probe}" "$@"\n', encoding="utf-8")
+        endpoint_script.chmod(0o755)
+        command = [str(launcher)]
+    environment = host_environ()
+    environment.update(
+        {
+            "HOME": str(home),
+            "USERPROFILE": str(home),
+            "UV_PYTHON": sys.executable,
+            "UV_CACHE_DIR": str(tmp_path / "uv-cache"),
+            "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
+            "PRUNE_PROBE_PYTHON": sys.executable,
+            "PRUNE_PROBE_SCRIPT": str(probe),
+        }
+    )
+    command.extend(arguments)
+
+    result = subprocess.run(command, env=environment, capture_output=True, encoding="utf-8", timeout=45, check=False)
+
+    help_requested = "--help" in arguments or "-h" in arguments
+    prune = "--prune" in arguments and not help_requested
+    assert result.returncode == (run_exit or (prune_exit if prune else 0)), result.stdout + result.stderr
+    observed = calls.read_text(encoding="utf-8").splitlines() if calls.exists() else []
+    assert observed == ([] if help_requested else ["update", "prune"] if prune and not run_exit else ["update"])

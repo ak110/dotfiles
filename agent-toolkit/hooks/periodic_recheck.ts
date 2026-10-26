@@ -1,3 +1,4 @@
+import { pluginLaunchCommand } from "./plugin_launch.ts";
 import type { EngineInterface, On } from "claude-code";
 import { automatedMessage, changedWarning } from "./automated_message.ts";
 
@@ -105,16 +106,7 @@ async function mount($: EngineInterface): Promise<MountOutcome | undefined> {
 
   const root = $.plugin.root;
   const schedule = await $.process.run(
-    [
-      "uv",
-      "run",
-      "--project",
-      root,
-      "--locked",
-      "--no-default-groups",
-      `${root}/agent_toolkit/atk.py`,
-      "wait-schedule",
-    ],
+    pluginLaunchCommand(root, "agent_toolkit/atk.py", ["wait-schedule"]),
     { timeoutMs: WAIT_SCHEDULE_TIMEOUT_MS },
   );
   const parsed = schedule.exitCode === 0 ? parseSchedule(schedule.stdout) : undefined;

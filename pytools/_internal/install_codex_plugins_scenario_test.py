@@ -37,6 +37,75 @@ pathlib.Path(os.environ["HOOK_RESULT"]).write_text("|".join(sys.argv[1:]), encod
     (root / "version-marker").write_text(version, encoding="utf-8")
 
 
+@pytest.mark.parametrize("failure", [None, "disabled", "ambiguous", "missing", "cli-failure"])
+def test_external_hook_uses_effective_scope_and_reports_failed_resolution(tmp_path: Path, failure: str | None) -> None:
+    """単独複製shimから公開CLIを経由し、project/scopeを反映した実launcherを起動する。"""
+    wrapper = tmp_path / "bin/atk-hook"
+    wrapper.parent.mkdir()
+    shutil.copyfile(Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook", wrapper)
+    projects = [tmp_path / "project-a", tmp_path / "project-b"]
+    for project in projects:
+        project.mkdir()
+    installed = []
+    for scope in ("user", "project", "local", "unrelated"):
+        root = tmp_path / scope
+        _write_plugin(root, scope)
+        (root / "scripts/launch.py").write_text(
+            "import os,pathlib,sys\n"
+            f"pathlib.Path(os.environ['HOOK_RESULT']).write_text({scope!r} + '|' + '|'.join(sys.argv[1:]), encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+        if not (failure == "missing" and scope == "local"):
+            (root / "skills").mkdir()
+        # versionや更新日時では選ばないことを、別projectの新しい記録で検証する。
+        installed.append(
+            {
+                "id": "agent-toolkit@ak110-dotfiles",
+                "scope": "local" if scope == "unrelated" else scope,
+                "enabled": not (failure == "disabled" and scope == "local"),
+                "installPath": str(root),
+                "projectPath": str(tmp_path / "unrelated" if scope == "unrelated" else projects[0]),
+                "lastUpdated": "2099-01-01T00:00:00Z" if scope == "unrelated" else "2026-01-01T00:00:00Z",
+            }
+        )
+    if failure == "ambiguous":
+        installed.append(dict(installed[2]))
+    cli = wrapper.parent / "claude"
+    cli.write_text(
+        f"#!{sys.executable}\nimport json,sys\n"
+        "assert sys.argv[1:] == ['plugin', 'list', '--json']\n"
+        f"print({json.dumps(installed)!r})\nraise SystemExit({1 if failure == 'cli-failure' else 0})\n",
+        encoding="utf-8",
+    )
+    cli.chmod(0o755)
+    if os.name == "nt":
+        (wrapper.parent / "claude.cmd").write_text(f'@"{sys.executable}" "{cli}" %*\r\n', encoding="utf-8")
+    output = tmp_path / "hook-output"
+    environment = {**os.environ, "PATH": str(wrapper.parent), "HOOK_RESULT": str(output)}
+    environment.pop("PLUGIN_ROOT", None)
+    for index, project in enumerate(projects):
+        result = subprocess.run(
+            [sys.executable, str(wrapper), "pretooluse"],
+            cwd=project,
+            env=environment,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+            timeout=15,
+        )
+        if failure and index == 0 or failure == "cli-failure":
+            assert result.returncode == 1
+            assert {"disabled": "無効", "ambiguous": "一意", "missing": "実体またはskills", "cli-failure": "取得失敗"}[
+                failure
+            ] in result.stderr
+        else:
+            assert result.returncode == 0, result.stderr
+            # launcher自身の実行結果と、execへ渡された絶対パスの版を確認する。
+            assert (
+                output.read_text(encoding="utf-8") == ("local" if index == 0 else "user") + "|agent_toolkit/hook.py|pretooluse"
+            )
+
+
 def test_commit_time_auto_refresh_recovers_the_live_hook_from_claude_cache(tmp_path: Path) -> None:
     """commitを契機とする別processの自動導入後も、live sessionのhookを同版配布物から復旧する。"""
     version = "1.2.2"

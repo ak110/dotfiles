@@ -21,7 +21,7 @@ from collections.abc import Iterator
 lazy import subprocess
 
 from agent_toolkit._common import delegated_session, read_triggers, shell_cwd, transcript
-from agent_toolkit._common.plugin_roots import PluginRootError, sibling_plugin_root
+from agent_toolkit._common.plugin_roots import PluginRootError, plugin_resolution_scope, sibling_plugin_root
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command
@@ -42,7 +42,7 @@ CLAUDE_BODY_BUDGET = 40_000
 _PATH_PREFIX = "read-trigger:"
 
 
-def declarations(cwd: str, *, host: str = "claude") -> list[read_triggers.ReadTrigger]:
+def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> list[read_triggers.ReadTrigger]:
     """稼働版と対象プロジェクト・ユーザースキルの宣言を読む。"""
     root = plugin_resources.plugin_root()
     sources = read_triggers.document_sources(root, cwd)
@@ -50,7 +50,12 @@ def declarations(cwd: str, *, host: str = "claude") -> list[read_triggers.ReadTr
     sibling = sibling_plugin_root("agent-basics", root)
     if sibling is not None:
         sources.extend(sorted((sibling / "skills").rglob("*.md")))
-    entries = [(source.resolve(), read_triggers.parse_tables(source, root, host=host)) for source in dict.fromkeys(sources)]
+    # 宣言表ごとの入れ子scopeを、1回のhook要求が共有する一覧へ接続する。
+    with plugin_resolution_scope(session_id=session_id):
+        entries = [
+            (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd))
+            for source in dict.fromkeys(sources)
+        ]
     # 参照先の所有plugin全体は有効化しない。選択した実体の宣言は取得時に追加する。
     included = {row.source for source, rows in entries for row in rows if row.source != source}
     return list(dict.fromkeys(row for source, rows in entries if source not in included for row in rows))
@@ -412,7 +417,12 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                     roles.add(role)
                     update_state(session_id, operation_skills.mark_ready(prefix + str(role), agent))
                     with contextlib.suppress(OSError, UnicodeError, ValueError):
-                        startup_methods = read_triggers.reference_method_targets(role, plugin_resources.plugin_root())
+                        startup_methods = read_triggers.reference_method_targets(
+                            role,
+                            plugin_resources.plugin_root(),
+                            "codex" if is_codex_payload(payload) else "claude",
+                            project=payload.get("cwd"),
+                        )
                     context_seen = True
             for match in re.finditer(r'<atk-auto source="read-delivery" kind="startup-document">\n資料JSON: ([^\n]+)', text):
                 metadata = json.loads(match[1])
@@ -456,6 +466,7 @@ def _project_skill_rows(
     *,
     known_sources: set[pathlib.Path] | None = None,
     host: str = "claude",
+    project: str = "",
 ) -> list[read_triggers.ReadTrigger]:
     """選択した資料と、同じ主体が全文取得したplugin資料の宣言を使う。"""
     rows = []
@@ -481,7 +492,7 @@ def _project_skill_rows(
             continue
         explicit = "resolved-project-skill:" + str(path)
         if _document_owner(path) is not None or agent in records.get(explicit, []):
-            rows.extend(read_triggers.parse_tables(path, plugin_resources.plugin_root(), host=host))
+            rows.extend(read_triggers.parse_tables(path, plugin_resources.plugin_root(), host=host, project=project))
     return rows
 
 
@@ -538,8 +549,18 @@ def dynamic_targets(
         for path in _read_paths(tool_name, tool_input, str(payload.get("cwd", ""))):
             if path.name != "SKILL.md" or not path.is_file():
                 continue
-            source = read_triggers.resolve_read_source(path, plugin_resources.plugin_root())
-            declared = read_triggers.parse_tables(source, plugin_resources.plugin_root())
+            source = read_triggers.resolve_read_source(
+                path,
+                plugin_resources.plugin_root(),
+                "codex" if is_codex_payload(payload) else "claude",
+                project=payload.get("cwd"),
+            )
+            declared = read_triggers.parse_tables(
+                source,
+                plugin_resources.plugin_root(),
+                host="codex" if is_codex_payload(payload) else "claude",
+                project=payload.get("cwd"),
+            )
             if session_id:
                 update_state(session_id, operation_skills.mark_ready("resolved-project-skill:" + str(source), agent))
             targets.extend(target for item in declared if item.kind == "起動時" for target in item.targets)
@@ -571,7 +592,14 @@ def dynamic_targets(
         role = tool_input.get("subagent_md_path")
         if not isinstance(role, str):
             return []
-        return list(read_triggers.parent_contract_targets(role, plugin_resources.plugin_root()))
+        return list(
+            read_triggers.parent_contract_targets(
+                role,
+                plugin_resources.plugin_root(),
+                host="codex" if is_codex_payload(payload) else "claude",
+                project=payload.get("cwd"),
+            )
+        )
     if row.selector == "review-reference":
         outputs = [
             pathlib.Path(key.removeprefix("review-output:"))
@@ -595,7 +623,7 @@ def dynamic_targets(
         host = "codex" if is_codex_payload(payload) else "claude"
         provider = document_reads.document_plugin(str(row.source))
         selection = read_triggers.resolve_document(
-            f"{provider}:writing-standards", row.source, plugin_resources.plugin_root(), host
+            f"{provider}:writing-standards", row.source, plugin_resources.plugin_root(), host, project=cwd
         )
         if selection is not None and selection.is_file():
             targets.append(read_triggers.ReadTarget(selection))
@@ -870,7 +898,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         return Decision()
     warning_only = tool_name in {"AskUserQuestion", "ExitPlanMode", "request_user_input", "request_user_input_async"}
     try:
-        rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude")
+        rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude", session_id=session_id)
     except (OSError, UnicodeError, ValueError) as error:
         if warning_only:
             return Decision(
@@ -939,6 +967,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                         tuple(_read_paths(tool_name, tool_input, cwd)),
                         known_sources={row.source for row in rows},
                         host="codex" if is_codex_payload(payload) else "claude",
+                        project=cwd,
                     ),
                 ]
             )
@@ -965,7 +994,9 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             if path.suffix == ".md" and path.is_file():
                 pending.extend(
                     target
-                    for target in read_triggers.reference_method_targets(path, plugin_resources.plugin_root(), host)
+                    for target in read_triggers.reference_method_targets(
+                        path, plugin_resources.plugin_root(), host, project=cwd
+                    )
                     if target not in pending and not target_ready(records, target, agent)
                 )
         # スキル本文とともに届く共有の初動資料を、同じ受領単位へ含める。
@@ -975,7 +1006,9 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             cursor += 1
             pending.extend(
                 method
-                for method in read_triggers.reference_method_targets(target.path, plugin_resources.plugin_root(), host)
+                for method in read_triggers.reference_method_targets(
+                    target.path, plugin_resources.plugin_root(), host, project=cwd
+                )
                 if method not in pending and not target_ready(records, method, agent)
             )
             if not target.heading:
@@ -989,6 +1022,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                                 (target.path,),
                                 known_sources={row.source for row in rows},
                                 host="codex" if is_codex_payload(payload) else "claude",
+                                project=cwd,
                             ),
                         ]
                     )
@@ -1345,6 +1379,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     tuple(paths),
                     known_sources={row.source for row in rows},
                     host="codex" if is_codex_payload(payload) else "claude",
+                    project=cwd,
                 ),
             ]
         )

@@ -7,6 +7,7 @@ import contextlib
 import datetime
 import json
 import logging
+import pathlib
 from collections.abc import Mapping
 from typing import Any, Self
 
@@ -58,8 +59,9 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import codex_models, session_release
+from agent_toolkit._common import codex_models, read_triggers, session_release
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.plugin_roots import PluginRootError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
@@ -171,6 +173,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
         launch_kind: LaunchKind = "delegate",
         label: str | None = None,
         excluded_candidates: Mapping[ModelCandidate, str] | None = None,
+        startup_document: pathlib.Path | None = None,
+        startup_inputs: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         """モデル設定の候補を先頭から試し、起動できたturnを返す。
 
@@ -195,7 +199,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
         unavailable_session: SessionState | None = None
         excluded_session_ids: dict[ModelCandidate, str] = {}
         display_label = resolve_display_label(label, prompt)
-        delivery_body = wrap_delivery_body(prompt)
         for candidate_index, candidate in enumerate(candidates):
             if candidate in excluded:
                 continue
@@ -204,6 +207,26 @@ class AgentsServerManager(manager_wait.ManagerWait):
             if backend_type is None:
                 raise ActionableError(f"unsupported engine: {engine}", next_action=MODEL_TYPE_NEXT_ACTION)
             validate_model_effort(model, effort)
+            # 候補ごとに子のhost/cwdで資料を解決する。前候補の資料を別engineへ再利用しない。
+            try:
+                initial_documents = (
+                    await run_file_operation(
+                        read_triggers.startup_context,
+                        startup_document,
+                        startup_document.parent.parent,
+                        dict(startup_inputs or {}),
+                        host=engine,
+                        project=cwd,
+                    )
+                    if startup_document is not None and launch_kind == "delegate"
+                    else ""
+                )
+                delivery_body = wrap_delivery_body(launch_requests.with_startup_documents(prompt, initial_documents))
+            except PluginRootError as exc:
+                reason = str(exc)
+                excluded.update({item: reason for item in candidates if item[0] == engine})
+                _LOG.warning("startup_material_unavailable engine=%s reason=%s", engine, reason)
+                continue
             try:
                 session = await self._start_until_initialized(
                     engine,

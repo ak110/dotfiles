@@ -1971,6 +1971,49 @@ def _wait_process_ready(process: subprocess.Popen[str], ready: pathlib.Path) -> 
         time.sleep(0.02)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="使用中cwdの削除はPOSIX上で検証する")
+def test_update_ignores_unrelated_git_with_removed_cwd(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """別Gitのcwdが走査後に消えても、対象rootの所有取得を妨げない。"""
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    directory = tmp_path / "unrelated-git-cwd"
+    directory.mkdir()
+    ready, release = tmp_path / "ready", tmp_path / "release"
+    gate = tmp_path / "gate.py"
+    gate.write_text(
+        "import pathlib, sys, time\n"
+        "ready, release = map(pathlib.Path, sys.argv[1:])\n"
+        "ready.touch()\n"
+        "deadline = time.monotonic() + 30\n"
+        "while not release.exists() and time.monotonic() < deadline: time.sleep(0.02)\n",
+        encoding="utf-8",
+    )
+    alias = "!" + " ".join(shlex.quote(str(value)) for value in (sys.executable, gate, ready, release))
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+    monkeypatch.setattr(update_dotfiles, "_update_owned_git", lambda *_args, **_kwargs: 0)
+    with subprocess.Popen(
+        ["git", "-C", str(directory), "-c", f"alias.wait={alias}", "wait"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    ) as process:
+        try:
+            _wait_process_ready(process, ready)
+            snapshot = next(candidate for candidate in psutil.process_iter(["name", "cmdline"]) if candidate.pid == process.pid)
+            directory.rmdir()
+            assert snapshot.cwd() == str(directory)
+            # 最初の走査後、index取得までの間に消えたcwdを2回目の検査へ渡す。
+            scans = iter([[], [snapshot]])
+            monkeypatch.setattr(update_dotfiles.psutil, "process_iter", lambda *_args, **_kwargs: iter(next(scans)))
+
+            assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5) == 0
+        finally:
+            release.touch()
+            stdout, stderr = process.communicate(timeout=15)
+    assert process.returncode == 0, (stdout, stderr)
+    assert not list((local / ".git").glob("update-dotfiles-index-*"))
+
+
 @pytest.mark.parametrize("phase", ["pre-commit", "editor", "commit-a"])
 @pytest.mark.parametrize("scope", ["same", "other-worktree", "unrelated"])
 def test_update_skips_while_git_commit_in_progress(

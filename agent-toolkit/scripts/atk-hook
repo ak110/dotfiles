@@ -23,22 +23,40 @@ _COPY_IGNORE = shutil.ignore_patterns(
 
 def _installed_root() -> Path:
     """既存の名前だけのhook定義に対し、導入済みのCodex pluginを解決する。"""
-    result = subprocess.run(
-        ["codex", "plugin", "list", "--json"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["codex", "plugin", "list", "--json"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ValueError(f"Codex導入情報の取得失敗: {error}。codex plugin list --jsonを確認する") from error
     if result.returncode != 0:
-        raise ValueError(result.stderr or "Codex plugin一覧を取得できません")
-    installed = json.loads(result.stdout)["installed"]
+        raise ValueError(f"Codex plugin一覧を取得できません: {result.stderr}。codex plugin list --jsonを確認する")
+    try:
+        installed = json.loads(result.stdout)["installed"]
+    except (json.JSONDecodeError, KeyError, TypeError) as error:
+        raise ValueError("Codexの導入情報が不正。codex plugin list --jsonを確認する") from error
+    if not isinstance(installed, list) or any(not isinstance(item, dict) for item in installed):
+        raise ValueError("Codexのinstalled一覧の形式が不正。codex plugin list --jsonを確認する")
     matches = [item for item in installed if item.get("pluginId") == _PLUGIN_ID]
     if len(matches) != 1 or matches[0].get("enabled") is not True:
-        raise ValueError("agent-toolkitが有効ではありません")
+        raise ValueError("Codexのagent-toolkitが有効ではありません。codex plugin list --jsonを確認する")
     item = matches[0]
-    return (
+    for field in ("marketplaceName", "name", "version"):
+        value = item.get(field)
+        if (
+            not isinstance(value, str) or not value or value in {".", ".."}
+            or any(character in value for character in '/\\:\x00') or value.strip() != value
+        ):
+            raise ValueError(f"Codexの導入情報の{field}が欠落または不正。codex plugin list --jsonを確認する")
+    if item["name"] != "agent-toolkit":
+        raise ValueError("Codexの導入情報のnameとpluginIdが一致しない。codex plugin list --jsonを確認する")
+    root = (
         Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
         / "plugins"
         / "cache"
@@ -46,6 +64,9 @@ def _installed_root() -> Path:
         / item["name"]
         / item["version"]
     )
+    if not (root / "agent_toolkit/hook.py").is_file():
+        raise ValueError(f"Codexのhook実体が無い: {root}。codex plugin list --jsonで導入状態を確認し再導入する")
+    return root
 
 
 def _plugin_version(root: Path) -> str | None:
@@ -74,26 +95,91 @@ def _claude_cache_root(version: str) -> Path:
     return Path.home() / ".claude" / _CACHE_RELATIVE / version
 
 
+def select_claude_plugin(installed: object, plugin_id: str, project: Path) -> Path:
+    """公開plugin listの候補から、実効projectとscopeが一致する有効rootを返す。
+
+    単独複製されるshimでも使えるよう、選別は標準ライブラリだけで完結させる。
+    package側もこの関数を使い、互換hookと資料配送の選別条件を共有する。
+    """
+    if not isinstance(installed, list) or any(not isinstance(item, dict) for item in installed):
+        raise ValueError("Claude Codeの導入情報の形式が不正: claude plugin list --jsonを確認する")
+    project = project.resolve()
+    priorities = {"user": 0, "project": 1, "local": 2}
+    candidates = []
+    for item in installed:
+        if item.get("id") != plugin_id:
+            continue
+        scope = item.get("scope")
+        if not isinstance(scope, str):
+            raise ValueError(f"Claude Codeの{plugin_id}のscopeが不正: claude plugin list --jsonを確認する")
+        if scope not in priorities:
+            continue
+        if scope != "user":
+            owner = item.get("projectPath")
+            if not isinstance(owner, str) or Path(owner).resolve() != project:
+                continue
+        candidates.append(item)
+    if not candidates:
+        raise ValueError(
+            f"Claude Codeの{plugin_id}に適用される導入情報が無い: project={project}。"
+            "claude plugin list --jsonで導入scopeを確認する"
+        )
+    priority = max(priorities[item["scope"]] for item in candidates)
+    selected = [item for item in candidates if priorities[item["scope"]] == priority]
+    if len(selected) != 1:
+        raise ValueError(
+            f"Claude Codeの{plugin_id}の実効候補が一意でない: {len(selected)}件 project={project}。"
+            "claude plugin list --jsonで同じscopeの重複を確認する"
+        )
+    item = selected[0]
+    if item.get("enabled") is not True:
+        raise ValueError(f"Claude Codeの{plugin_id}は無効: claude plugin list --jsonで有効設定を確認する")
+    path = item.get("installPath")
+    if not isinstance(path, str) or not Path(path).is_absolute():
+        raise ValueError(f"Claude Codeの{plugin_id}のinstallPathが不正: claude plugin list --jsonを確認する")
+    root = Path(path).resolve()
+    if not root.is_dir() or not (root / "skills").is_dir():
+        raise ValueError(
+            f"Claude Codeの{plugin_id}の実体またはskillsが無い: {root}。"
+            "claude plugin list --jsonで導入scopeを確認し、同じscopeへ再導入する"
+        )
+    return root
+
+
 def _current_claude_root() -> Path | None:
-    """Claude Codeが現在導入しているagent-toolkitの配布物を返す。"""
-    registry = Path.home() / ".claude/plugins/installed_plugins.json"
+    """実行projectの公開導入情報から互換hook用の配布物を返す。"""
     try:
-        value = json.loads(registry.read_text(encoding="utf-8"))
-        entries = value["plugins"][_PLUGIN_ID]
-    except OSError, json.JSONDecodeError, KeyError, TypeError:
+        result = subprocess.run(
+            ["claude", "plugin", "list", "--json"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+            check=False,
+        )
+    except FileNotFoundError:
         return None
-    if not isinstance(entries, list):
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ValueError(f"Claude Codeの導入情報の取得失敗: {error}。claude plugin list --jsonを確認する") from error
+    if result.returncode:
+        raise ValueError(f"Claude Codeの導入情報の取得失敗: 終了コード{result.returncode}。claude plugin list --jsonを確認する")
+    try:
+        installed = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise ValueError("Claude Codeの導入情報のJSONが不正。claude plugin list --jsonを確認する") from error
+    if (
+        isinstance(installed, list)
+        and all(isinstance(item, dict) for item in installed)
+        and not any(item.get("id") == _PLUGIN_ID for item in installed)
+    ):
         return None
-    ordered = sorted(
-        (entry for entry in entries if isinstance(entry, dict)),
-        key=lambda entry: str(entry.get("lastUpdated", "")),
-        reverse=True,
-    )
-    for entry in ordered:
-        install_path = entry.get("installPath")
-        if isinstance(install_path, str) and _usable_root(root := Path(install_path)):
-            return root
-    return None
+    root = select_claude_plugin(installed, _PLUGIN_ID, Path.cwd())
+    if not _usable_root(root):
+        raise ValueError(
+            f"Claude Codeのhook実体が無い: {root}。"
+            "claude plugin list --jsonで導入scopeを確認し、同じscopeへ再導入する"
+        )
+    return root
 
 
 def _expected_codex_root(root: Path) -> bool:
@@ -168,12 +254,10 @@ def main() -> int:
         if not launcher.is_file():
             raise ValueError(f"hookの起動スクリプトがありません: {launcher}")
         os.execv(sys.executable, [sys.executable, str(launcher), "agent_toolkit/hook.py", *sys.argv[1:]])
-    except (OSError, KeyError, TypeError, ValueError, AttributeError) as error:
-        host_name = "Antigravity" if antigravity else "Codex"
-        print(f"{host_name} hookを起動できません: {error}", file=sys.stderr)
+    except (OSError, KeyError, TypeError, ValueError, AttributeError, subprocess.TimeoutExpired) as error:
+        print(f"hookを起動できません: {error}", file=sys.stderr)
         print(
-            f"次の操作: {host_name}のplugin一覧と配布物の導入状態を確かめ、"
-            f"agent-toolkitを再導入してから{host_name}を再起動する",
+            "次の操作: 上記の原因側の導入情報または配布物の起動スクリプトを復旧し、同じhookを再実行する",
             file=sys.stderr,
         )
         return 1

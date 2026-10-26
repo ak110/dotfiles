@@ -1,14 +1,17 @@
 """両ホストの宣言配送、取得範囲、主体と圧縮の境界を確かめる。"""
 
 import json
+import shutil
 import subprocess
 
 import pytest
 
+from agent_toolkit import hook as hook_entry
 from agent_toolkit._agents_server import launch_requests
+from agent_toolkit._common import plugin_roots
 from agent_toolkit._common.plugin_roots import PluginRootError
 from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger, parse_tables
-from agent_toolkit._hooks import rules_context
+from agent_toolkit._hooks import document_reads, rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.read_delivery import (
@@ -17,6 +20,122 @@ from agent_toolkit._hooks.pretooluse.read_delivery import (
     _project_skill_rows,
     _redundant_selection,
 )
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+
+
+@pytest.mark.parametrize("command", ["pretooluse", "posttooluse"])
+def test_public_hook_scope_reaches_dynamic_targets_and_document_read_consumers(tmp_path, monkeypatch, command):
+    """動的解決と直接の本文識別・読取記録も、payloadのsessionの一覧を使う。"""
+    toolkit = tmp_path / "cache/mine/agent-toolkit/9"
+    basics = tmp_path / "cache/mine/agent-basics/1"
+    (basics / ".claude-plugin").mkdir(parents=True)
+    (basics / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics","version":"1"}', encoding="utf-8")
+    author = basics / "skills/writing-standards/SKILL.md"
+    reference = author.parent / "references/writing.md"
+    reference.parent.mkdir(parents=True)
+    author.write_text("# 作成基準\n", encoding="utf-8")
+    reference.write_text("# 共通基準\n内容\n", encoding="utf-8")
+    skill = tmp_path / ".claude/skills/project/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        "| 起動時 | `agent-basics:writing-standards/references/writing.md` | 起動時 | |\n",
+        encoding="utf-8",
+    )
+    executable = tmp_path / "claude"
+    executable.touch()
+    monkeypatch.setattr(shutil, "which", lambda *_args, **_kwargs: str(executable))
+    monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", toolkit)
+    monkeypatch.setattr(hook_entry, "_record_activity", lambda *_args, **_kwargs: None)
+    declaration = ReadTrigger(author, 1, "操作", ("path:*.py",), (reference,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [declaration])
+    calls = []
+    seen = []
+
+    def inventory(args, **_kwargs):
+        calls.append(args)
+        data = [
+            {"id": f"{name}@mine", "scope": "user", "enabled": True, "installPath": str(root)}
+            for name, root in (("agent-toolkit", toolkit), ("agent-basics", basics))
+        ]
+        return subprocess.CompletedProcess(args, 0, json.dumps(data), "")
+
+    def consume(_module, _text, payload, _args):
+        session = payload["session_id"]
+        row = ReadTrigger(skill, 1, "操作", (), (), selector="project-skill")
+        project = read_delivery.dynamic_targets(row, payload, "Read", {"file_path": str(skill)}, {}, "main", session)
+        row = ReadTrigger(basics / "skills/review-standards/SKILL.md", 1, "判断", (), (), selector="artifact-standards")
+        artifact = read_delivery.dynamic_targets(
+            row, payload, "Write", {"file_path": str(tmp_path / "code.py")}, {}, "main", session
+        )
+        returned = document_reads.body_returned(
+            "writing-standards", "references/writing.md", "# 共通基準\n内容\n", plugin="agent-basics", project=tmp_path
+        )
+        read_delivery.observe(payload, "Read", payload["tool_input"], session)
+        seen.append((ReadTarget(reference) in project, ReadTarget(author) in artifact, returned))
+        return 0
+
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", inventory)
+    monkeypatch.setattr(hook_entry, "_invoke_module", consume)
+    for _ in range(2):
+        result = _run_hook_in_process(
+            command,
+            {
+                "session_id": "dynamic-session",
+                "cwd": str(tmp_path),
+                "hook_event_name": "PostToolUse",
+                "tool_input": {"file_path": str(reference)},
+                "tool_response": "# 共通基準\n内容\n",
+            },
+        )
+        assert result.returncode == 0
+    assert seen == [(True, True, True), (True, True, True)]
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_installed_declarations_share_one_inventory_per_request(tmp_path, monkeypatch, host):
+    """版別cache配置でも資料ごとの解決を要求全体で共有し、次の要求では更新する。"""
+    toolkit = tmp_path / "cache/mine/agent-toolkit/9.9.9"
+    basics = tmp_path / "cache/mine/agent-basics/1.0"
+    (basics / "skills/writing-standards").mkdir(parents=True)
+    (basics / "skills/writing-standards/SKILL.md").write_text("# 品質\n", encoding="utf-8")
+    sources = [toolkit / "share" / f"{index}.md" for index in range(2)]
+    for source in sources:
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(
+            "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+            "| 起動時 | `agent-basics:writing-standards/SKILL.md` | 起動時 | |\n",
+            encoding="utf-8",
+        )
+    claude = [
+        {"id": f"{name}@mine", "scope": "user", "enabled": True, "installPath": str(root)}
+        for name, root in (("agent-toolkit", toolkit), ("agent-basics", basics))
+    ]
+    codex = {
+        "installed": [
+            {"name": name, "marketplaceName": "mine", "enabled": True, "installed": True, "version": version}
+            for name, version in (("agent-toolkit", "9.9.9"), ("agent-basics", "1.0"))
+        ]
+    }
+    calls = []
+
+    def inventory(args, **kwargs):
+        calls.append((args[0], kwargs["cwd"]))
+        return subprocess.CompletedProcess(args, 0, json.dumps(claude if host == "claude" else codex), "")
+
+    # Codexの公開cache配置をそのまま使う。
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    codex_basics = tmp_path / "codex/plugins/cache/mine/agent-basics/1.0"
+    codex_basics.mkdir(parents=True)
+    shutil.copytree(basics / "skills", codex_basics / "skills")
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", inventory)
+    monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", toolkit)
+    monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: sources)
+    assert plugin_roots.sibling_plugin_root("agent-basics", toolkit) is None
+    for count in (1, 2):
+        assert len(read_delivery.declarations(str(tmp_path), host=host)) == 2
+        assert calls == [(host, str(tmp_path))] * count
 
 
 def test_included_table_keeps_marker_order_and_is_counted_once(tmp_path, monkeypatch):
@@ -1363,7 +1482,7 @@ def test_missing_skill_real_root_error_keeps_the_dependency_repair_route(tmp_pat
     with pytest.raises(PluginRootError) as observed:
         unresolved()
     assert isinstance(observed.value, ValueError)
-    assert str(observed.value) == "codexのagent-basics導入先が一意でない: 0件"
+    assert str(observed.value) == "codexのagent-basics導入先が一意でない: 0件。codex plugin list --jsonを確認する"
     monkeypatch.setattr(read_delivery, "declarations", unresolved)
     tool, inputs = "Grep", {"pattern": "x"}
     if operation == "install":

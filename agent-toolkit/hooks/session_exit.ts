@@ -1,3 +1,4 @@
+import { pluginLaunchCommand } from "./plugin_launch.ts";
 import type { EngineInterface, On } from "claude-code";
 import { automatedMessage, changedWarning } from "./automated_message.ts";
 import { isMarked, parseCronJobs, parseSchedule } from "./periodic_recheck.ts";
@@ -55,7 +56,7 @@ async function collectPeriodicRecheck($: EngineInterface, sessionId: string, abo
     if (marked.length === 0) return null;
     const root = $.plugin.root;
     const schedule = await $.process.run(
-      ["uv", "run", "--project", root, "--locked", "--no-default-groups", `${root}/agent_toolkit/atk.py`, "wait-schedule"],
+      pluginLaunchCommand(root, "agent_toolkit/atk.py", ["wait-schedule"]),
       { timeoutMs: 60_000 },
     );
     const common = schedule.exitCode === 0 ? parseSchedule(schedule.stdout) : undefined;

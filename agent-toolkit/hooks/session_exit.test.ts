@@ -22,10 +22,11 @@ const REQUEST_PATH = "/home/tester/.claude/agent-toolkit-function-hooks/request-
 const RECHECK_PATH = "/home/tester/.claude/agent-toolkit-function-hooks/recheck-sess-1.txt";
 const COMMON_PROMPT = `${PERIODIC_RECHECK_MARKER}\n共通の定期再確認\n</atk-auto>`;
 
-function engine(on: On, options: Options): { calls: string[]; writes: Map<string, string>; checks: string[] } {
+function engine(on: On, options: Options): { calls: string[]; writes: Map<string, string>; checks: string[]; argv: (readonly string[])[] } {
   const calls: string[] = [];
   const checks: string[] = [];
   const writes = new Map<string, string>();
+  const argv: (readonly string[])[] = [];
   on("session.id", () => ({ value: "sess-1" }));
   on("env.get", (_$, e) => ({ value: e.name === "HOME" ? "/home/tester" : undefined }));
   on("fs.read", (_$, e) => {
@@ -59,13 +60,13 @@ function engine(on: On, options: Options): { calls: string[]; writes: Map<string
     if (options.deleteResponse === "error") return { isError: true as const, result: "削除エラー", text: "削除エラー" };
     return { result: { id: e.id } };
   });
-  on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ cron: "*/30 * * * *", prompt: COMMON_PROMPT }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
+  on("process.run", (_$, e) => { argv.push(e.argv); return { value: { exitCode: 0, stdout: JSON.stringify({ cron: "*/30 * * * *", prompt: COMMON_PROMPT }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }; });
   on("command.run", (_$, e) => {
     calls.push(`command:${e.command}`);
     return {};
   });
   on("turn.complete", (_$, e) => ({ text: e.answer }));
-  return { calls, writes, checks };
+  return { calls, writes, checks, argv };
 }
 
 const MAIN_TURN = { answer: "", durationMs: 0, isAborted: false, turnId: "t1", reason: "answer" as const };
@@ -121,13 +122,17 @@ test("終了要求がrequestedでなければ一覧も/exitも呼ばない", asy
 });
 
 test("全待機終了の判定は共通promptのtaskだけを一度回収する", async ($, on) => {
-  const { calls, writes } = engine(on, {
+  const { calls, writes, argv } = engine(on, {
     recheck: "complete",
     jobs: [{ id: "common", prompt: COMMON_PROMPT }, { id: "other" }, { id: "durable", prompt: COMMON_PROMPT, durable: true }, { id: "obligation", prompt: COMMON_PROMPT.replace("</atk-auto>", "期限監視\n</atk-auto>") }],
   });
   await $.turn.complete(MAIN_TURN);
   expect(calls).toEqual(["CronList", "CronDelete:common"]);
   expect(writes.get(RECHECK_PATH)).toBe("consumed");
+  expect(argv[0]?.slice(0, 7)).toEqual(["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]);
+  expect(argv[0]?.[7]?.endsWith("/scripts/launch.py")).toBe(true);
+  expect(argv[0]?.[8]).toBe(argv[0]?.[7]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
+  expect(argv[0]?.slice(9)).toEqual(["wait-schedule"]);
   await $.turn.complete(MAIN_TURN);
   expect(calls).toEqual(["CronList", "CronDelete:common"]);
 });

@@ -263,12 +263,14 @@ jobs:
         run: >-
           uv run --python 3.15 pytest -v
           post_apply_template_test.py
+          pytools/touch_file_test.py
           pytools/_internal/prune_codex_packages_test.py
           pytools/prune_codex_packages_test.py
           agent-toolkit/agent_toolkit/_git/command_test.py
           libexec/update_dotfiles_stash_test.py
           agent-toolkit/agent_toolkit/_atk/managed_temp
           agent-toolkit/agent_toolkit/_common/plugin_root_leases_test.py
+          agent-toolkit/agent_toolkit/_common/plugin_environment_test.py
           agent-toolkit/agent_toolkit/_agents_server/codex_test.py::test_legacy_plugin_root_real_mcp_lifecycle
           agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
           agent-toolkit/agent_toolkit/_plan/structure

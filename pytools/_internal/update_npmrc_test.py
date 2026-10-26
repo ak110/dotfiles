@@ -101,7 +101,7 @@ class TestUpdatePnpmGlobal:
         path = tmp_path / ".npmrc"
         path.write_text("min-release-age=1\n", encoding="utf-8")
         _install_pnpm(monkeypatch, pnpm_calls, "undefined")
-        assert run(path).changed is True
+        assert update_npmrc.configure_pnpm().changed is True
         assert pnpm_calls[-1] == ["/opt/pnpm/bin/pnpm", "config", "set", "--location", "global", "minimum-release-age", "1440"]
 
     def test_pnpm_configured_value_is_noop(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pnpm_calls: list[list[str]]):
@@ -109,5 +109,27 @@ class TestUpdatePnpmGlobal:
         path = tmp_path / ".npmrc"
         path.write_text("min-release-age=1\n", encoding="utf-8")
         _install_pnpm(monkeypatch, pnpm_calls, "1440")
-        assert run(path).changed is False
+        assert update_npmrc.configure_pnpm().changed is False
         assert [cmd[1:3] for cmd in pnpm_calls] == [["config", "get"]]
+
+
+def test_npm_setup_does_not_use_pnpm_before_mise(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """npm設定の公開入口はpnpm実行を後段工程へ委ねる。"""
+    calls: list[list[str]] = []
+    _install_pnpm(monkeypatch, calls, "undefined")
+
+    result = run(tmp_path / ".npmrc")
+
+    assert result.failure is None
+    assert not calls
+
+
+def test_mise_shim_without_node_is_treated_as_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PATH上のmise shimだけではpnpm設定を失敗として扱わない。"""
+    monkeypatch.setattr(update_npmrc.shutil, "which", lambda _name: "/mise/shims/pnpm")
+    monkeypatch.setattr(
+        update_npmrc.common,
+        "run_subprocess",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 1, "", "mise ERROR No version is set for shim: pnpm"),
+    )
+    assert update_npmrc.configure_pnpm().failure is None

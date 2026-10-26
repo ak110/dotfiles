@@ -38,6 +38,8 @@ lazy import traceback
 
 from agent_toolkit._common import inherited_venv
 lazy from agent_toolkit._atk import outcome as _outcome
+lazy from agent_toolkit._common import session_launchers as _session_launchers
+lazy from agent_toolkit._common.plugin_roots import plugin_resolution_scope
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import notice as _notice
 lazy from agent_toolkit._hooks.notice import formatter as _notice_formatter
@@ -166,8 +168,15 @@ def main(argv: list[str]) -> int:
     cycle: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
     if isinstance(payload, dict) and payload.get("session_id") and argv[0] != "pretooluse":
         cycle = _notice.notice_cycle(str(payload.get("session_id", "")), argv[0], _agent_id.resolve_hook_agent_id(payload))
+    resolution: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
+    if isinstance(payload, dict) and payload.get("hook_event_name") != "SessionStart":
+        session_id = _session_launchers.valid_launcher(payload.get("session_id"))
+        if session_id is not None:
+            # 全handlerの宣言・動的参照・読取記録で、同じ要求とsessionの一覧を共有する。
+            # SessionStartは自身がcacheを消去するため、ここで保存済み一覧を読み戻さない。
+            resolution = plugin_resolution_scope(session_id=session_id)
     try:
-        with cycle:
+        with cycle, resolution:
             return _invoke_module(module, payload_text, payload, argv)
     except Exception as exc:  # noqa: BLE001 -- フックの破損によって編集できなくならないよう広範に捕捉
         tb = traceback.extract_tb(exc.__traceback__)

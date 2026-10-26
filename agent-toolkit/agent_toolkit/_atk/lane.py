@@ -670,6 +670,38 @@ def _worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> 
     return activity
 
 
+def _has_unignored_changes(worktree: pathlib.Path) -> bool:
+    """Gitの保護対象だけを返し、無視された生成物は固有撤去へ渡す。"""
+    # indexの列挙は作業木を読まない。ignore配下でも追跡済みファイルとその親は必ず保護する。
+    tracked: set[str] = set()
+    for name in _git(worktree, "ls-files", "--cached", "-z").split("\0"):
+        if name:
+            path = pathlib.PurePosixPath(name)
+            tracked.update(item.as_posix() for item in (path, *path.parents))
+
+    def ignored(path: pathlib.Path) -> bool:
+        relative = path.relative_to(worktree).as_posix()
+        if relative in tracked or relative == ".git":
+            return False
+        result = git_command.run(
+            ["check-ignore", "--quiet", "--no-index", "--", relative],
+            worktree,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_TIMEOUT,
+        )
+        if result.returncode not in {0, 1}:
+            raise ValueError(
+                f"git check-ignoreが終了{result.returncode}: {result.stderr.strip()}。"
+                f"{worktree}のGit設定と読取権限を確認し、表示された原因を解消して同じlane操作を再実行してください。"
+            )
+        return result.returncode == 0
+
+    temp_permissions.prepare_tree(worktree, skip=ignored)
+    return bool(_git(worktree, "status", "--porcelain=v1", "--untracked-files=all"))
+
+
 def _eligible(record: dict[str, typing.Any], *, wait_release: bool = True) -> str | None:
     repo = pathlib.Path(record["repo"])
     worktree = pathlib.Path(record["worktree"])
@@ -690,10 +722,8 @@ def _eligible(record: dict[str, typing.Any], *, wait_release: bool = True) -> st
             return "worktreeの登録が所有記録と異なる"
         if state.worktree_path and _common(worktree) != record["common_dir"]:
             return "worktreeのGit共通ディレクトリが所有記録と異なる"
-        if state.worktree_path:
-            temp_permissions.prepare_tree(worktree)
-            if _git(worktree, "status", "--porcelain=v1", "--untracked-files=all"):
-                return "未commitまたは未追跡の変更がある"
+        if state.worktree_path and _has_unignored_changes(worktree):
+            return "未commitまたは未追跡の変更がある"
     elif state.worktree_path:
         return "登録の無いworktreeが残っている"
     if state.branch:
@@ -798,8 +828,15 @@ def cleanup_session(
                         record["procedure_timeout"],
                         diagnostics_directory=_hook_diagnostics(record, "WorktreeRemove"),
                     )
+                    remaining = _resource_state(record)
+                    if remaining.worktree_path or remaining.worktree_registered:
+                        raise ValueError("WorktreeRemove hookの後にworktreeが残っている。hookを直して同じ回収操作を再実行する")
                 elif state.worktree_registered:
                     remove_args = ("--force",) if not state.worktree_path else ()
+                    if state.worktree_path:
+                        # Gitの保護判定は既に完了しているため、ここでだけ全木を準備する。
+                        # 固有手順が別所有者の生成物を撤去できなければ、所有記録を残して失敗する。
+                        temp_permissions.prepare_tree(pathlib.Path(record["worktree"]))
                     _git(repo, "worktree", "remove", *remove_args, record["worktree"])
                 if _resource_state(record).branch:
                     _branch_is_integrated(record, repo)
@@ -845,8 +882,7 @@ def _recover(record: dict[str, typing.Any], path: pathlib.Path) -> None:
             activity = _worktree_activity(worktree)
             if activity:
                 raise ValueError(activity)
-            temp_permissions.prepare_tree(worktree)
-            if _git(worktree, "status", "--porcelain=v1", "--untracked-files=all"):
+            if _has_unignored_changes(worktree):
                 raise ValueError("未commitまたは未追跡の変更がある。成果をcommitしてから再実行する")
     elif worktree.exists():
         raise ValueError("登録の無いworktreeが残っている。内容とGit登録を確認する")
@@ -866,7 +902,12 @@ def _recover(record: dict[str, typing.Any], path: pathlib.Path) -> None:
                 record["procedure_timeout"],
                 diagnostics_directory=_hook_diagnostics(record, "WorktreeRemove"),
             )
+            remaining = _resource_state(record)
+            if remaining.worktree_path or remaining.worktree_registered:
+                raise ValueError("WorktreeRemove hookの後にworktreeが残っている。hookを直して同じ回復操作を再実行する")
         elif worktree.exists():
+            # Gitのclean判定後にだけ全木を準備し、残る別所有者の内容は保持する。
+            temp_permissions.prepare_tree(worktree)
             _git(repo, "worktree", "remove", str(worktree))
         else:
             # 実体の無い登録は、その作業ツリーだけをGit登録から外す。

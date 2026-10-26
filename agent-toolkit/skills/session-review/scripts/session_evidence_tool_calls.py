@@ -242,6 +242,36 @@ def _definition_read_operations(
     return reads, unresolved
 
 
+def _inner_executions(call: _ToolCall, calls: list[_ToolCall]) -> tuple[list[_ToolCall] | None, str | None]:
+    """完結した外側execの結果範囲内にある内側実行だけを返す。"""
+    if (
+        call.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1] != "exec"
+        or call.turn_id is None
+        or not session_evidence_execution.command_input_observations(call.tool, call.text)
+    ):
+        return [], None
+    if call.result_line is None:
+        return None, "外側execの結果記録が無くセルの完結境界を確定できない"
+    outers = [
+        item for item in calls if item.turn_id == call.turn_id and item.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1] == "exec"
+    ]
+    executions = [
+        item
+        for item in calls
+        if item.turn_id == call.turn_id and item.tool == "CommandExecution" and call.line < item.line < call.result_line
+    ]
+    overlapping = [
+        other
+        for other in outers
+        if other is not call and other.line < call.result_line and (other.result_line is None or call.line < other.result_line)
+    ]
+    if overlapping:
+        return None, "同一turnの外側execの完結範囲が重なり内側実行の帰属が曖昧である"
+    if not executions:
+        return None, "外側execの範囲で完了済みCommandExecutionを確認できず、実行の完了状態が未確定"
+    return executions, None
+
+
 def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
     """正常終了も含む定義本文の取得を、目的未判定の材料と前後の起動・編集の位置付きで返す。"""
     events: list[dict[str, Any]] = []
@@ -250,6 +280,13 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
         calls = _record_tool_calls(item.records)
         role_document = _role_document(item)
         related = []
+        associations = {call.line: _inner_executions(call, calls) for call in calls}
+        linked_executions = {
+            execution.line
+            for executions, _reason in associations.values()
+            if executions is not None
+            for execution in executions
+        }
         for call in calls:
             name = call.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
             if name in {"Agent", "Task", "spawn_agent", "start", "Edit", "Write", "apply_patch"} or (
@@ -258,7 +295,26 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
                 related.append(call)
         for call in calls:
             inputs = _recorded_input(entries[call.line], call.call_id)
-            reads, unresolved = _definition_read_operations(call.tool, inputs, call.text)
+            executions, association_reason = associations[call.line]
+            if executions is not None and executions:
+                reads: list[dict[str, Any]] = []
+                unresolved: list[dict[str, Any]] = []
+                for execution in executions:
+                    resolved, unresolved_rows = _definition_read_operations(
+                        execution.tool, {"command": execution.text}, execution.text
+                    )
+                    for row in [*resolved, *unresolved_rows]:
+                        row["execution_line"] = execution.line
+                        row["execution_result_line"] = execution.result_line
+                    reads.extend(resolved)
+                    unresolved.extend(unresolved_rows)
+            else:
+                reads, unresolved = _definition_read_operations(call.tool, inputs, call.text)
+                if unresolved and association_reason is not None:
+                    # 入力だけでは読取の有無を決められない操作に、内側実行を使えない理由を付ける。
+                    unresolved = [{"input": call.text, "reason": association_reason, "outer_turn_id": call.turn_id}]
+            if call.tool == "CommandExecution" and call.line in linked_executions:
+                continue
             if not reads and not unresolved:
                 continue
             before = [other for other in related if other.line < call.line]
@@ -643,10 +699,23 @@ class _ToolCall(NamedTuple):
     timestamp: str | None
     tool: str
     call_id: str | None
+    turn_id: str | None
     text: str
     """代表入力。`_claude_call_input`・`_codex_call_input`が返す値を切り詰めずに持つ。"""
     result_line: int | None
     """同じ呼び出し識別子を持つ最初の結果の記録行。結果の記録が無い場合は`None`。"""
+
+
+def _record_turn_id(entry: dict[str, Any]) -> str | None:
+    """Codexの外側セルと内側実行記録を比較するため、記録済みturnだけを返す。"""
+    payload = entry.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get("turn_id")
+    if not isinstance(value, str):
+        metadata = payload.get("internal_chat_message_metadata_passthrough")
+        value = metadata.get("turn_id") if isinstance(metadata, dict) else None
+    return value if isinstance(value, str) else None
 
 
 def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
@@ -661,11 +730,19 @@ def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
         record._replace(entry=entry)
         for record, entry in zip(records, agy_records.normalize_entries([record.entry for record in records]), strict=True)
     ]
-    pending: list[tuple[int, str | None, str, str | None, str]] = []
+    pending: list[tuple[int, str | None, str, str | None, str | None, str]] = []
     result_lines: dict[str, list[int]] = {}
+    active_turn_id: str | None = None
     for record in records:
         raw_timestamp = record.entry.get("timestamp")
         timestamp = raw_timestamp if isinstance(raw_timestamp, str) else None
+        recorded_turn_id = _record_turn_id(record.entry)
+        payload = record.entry.get("payload")
+        payload_type = payload.get("type") if isinstance(payload, dict) else None
+        if payload_type == "task_started":
+            # 新しいタスクの開始時点で前タスクの識別子を必ず破棄する。
+            active_turn_id = recorded_turn_id
+        turn_id = recorded_turn_id or active_turn_id
         message = record.entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if isinstance(content, list):
@@ -681,16 +758,15 @@ def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
                             timestamp,
                             name,
                             call_id if isinstance(call_id, str) else None,
+                            turn_id,
                             _claude_call_input(name, block.get("input")),
                         )
                     )
                 elif block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str):
                     result_lines.setdefault(block["tool_use_id"], []).append(record.line)
             continue
-        payload = record.entry.get("payload")
         if not isinstance(payload, dict):
             continue
-        payload_type = payload.get("type")
         call_id = payload.get("call_id")
         item = payload.get("item")
         if payload_type == "item_completed" and isinstance(item, dict) and item.get("type") == "CommandExecution":
@@ -698,8 +774,10 @@ def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
             if isinstance(identity, str) and any(call[3] == identity for call in pending):
                 continue
             command = item.get("command", "")
-            text = " ".join(command) if isinstance(command, list) else str(command)
-            pending.append((record.line, timestamp, "CommandExecution", str(identity) if identity is not None else None, text))
+            text = session_evidence_execution.command_execution_input(command)
+            pending.append(
+                (record.line, timestamp, "CommandExecution", str(identity) if identity is not None else None, turn_id, text)
+            )
             if isinstance(identity, str):
                 result_lines.setdefault(identity, []).append(record.line)
             continue
@@ -714,6 +792,7 @@ def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
                     timestamp,
                     tool,
                     identity if isinstance(identity, str) else None,
+                    turn_id,
                     json.dumps(item.get("arguments", {}), ensure_ascii=False),
                 )
             )
@@ -723,23 +802,32 @@ def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
         if payload_type in {"function_call", "custom_tool_call"}:
             name = str(payload.get("name", ""))
             pending.append(
-                (record.line, timestamp, name, call_id if isinstance(call_id, str) else None, _codex_call_input(name, payload))
+                (
+                    record.line,
+                    timestamp,
+                    name,
+                    call_id if isinstance(call_id, str) else None,
+                    turn_id,
+                    _codex_call_input(name, payload),
+                )
             )
         elif payload_type in {"function_call_output", "custom_tool_call_output"} and isinstance(call_id, str):
             result_lines.setdefault(call_id, []).append(record.line)
+        if payload_type in {"task_complete", "turn_aborted"}:
+            active_turn_id = None
     calls: list[_ToolCall] = []
     completed_lines = {
         record.line
         for record in records
         if isinstance(record.entry.get("payload"), dict) and record.entry["payload"].get("type") == "item_completed"
     }
-    for line, timestamp, name, call_id, text in pending:
+    for line, timestamp, name, call_id, turn_id, text in pending:
         result_line = (
             next((value for value in result_lines.get(call_id, ()) if value >= line), None) if call_id is not None else None
         )
         if result_line is None and line in completed_lines:
             result_line = line
-        calls.append(_ToolCall(line, timestamp, name, call_id, text, result_line))
+        calls.append(_ToolCall(line, timestamp, name, call_id, turn_id, text, result_line))
     return calls
 
 

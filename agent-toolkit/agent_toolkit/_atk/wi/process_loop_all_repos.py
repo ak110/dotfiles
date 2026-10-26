@@ -476,7 +476,7 @@ def _run_loop(
         raise ValueError("all-reposの--resumeには担当session IDを指定する")
     gate = _watch.StartGate(private_notes)
     dotfiles_root = _update.resolve_dotfiles_root()
-    startup_hash = _update.code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
+    startup_hash = _update.code_hash(dotfiles_root / "agent-toolkit") if dotfiles_root else None
     last_alert_checks: dict[str, float | None] = {}
     print("atk wi process-loop all-repos 常駐モード開始。Ctrl+Cで終了。", flush=True)
     try:

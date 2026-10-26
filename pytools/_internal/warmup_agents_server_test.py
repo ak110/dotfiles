@@ -25,6 +25,9 @@ def _write_script(path: pathlib.Path) -> pathlib.Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("", encoding="utf-8")
     if path.name == "agents_server_mcp.py":
+        root = path.parents[1]
+        (root / "pyproject.toml").write_text('[project]\nname = "agent-toolkit"\n', encoding="utf-8")
+        (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
         launcher = path.parents[1] / "scripts" / "launch.py"
         launcher.parent.mkdir(parents=True, exist_ok=True)
         launcher.write_text("", encoding="utf-8")
@@ -47,7 +50,8 @@ def _setup(
     """対象パスと外部コマンドを差し替え、記録用のコマンド一覧を返す。
 
     `uv`・`codex`はPATH上に存在する扱いとし、`codex plugin list --json`は
-    `codex_entries`から組み立てた出力を返す。`uv run`の結果は`warmup_returncode`で指定し、
+    `codex_entries`から組み立てた出力を返す。`uv python find`はテスト専用のPython実行
+    ファイルを返す。launcherの結果は`warmup_returncode`で指定し、
     `None`は実行自体の失敗（タイムアウト等）を表す。
     """
     monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
@@ -67,12 +71,16 @@ def _setup(
         installed_path.write_text(json.dumps(installed_plugins, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setattr(_warmup, "_INSTALLED_PLUGINS_PATH", installed_path)
 
+    python = tmp_path / "python"
+    python.write_text("", encoding="utf-8")
     calls: list[list[str]] = []
 
     def fake_run_subprocess(cmd: list[str], **_kwargs: object) -> _FakeResult | None:
         calls.append(cmd)
         if command_matches(cmd, ["codex", "plugin", "list"]):
             return _FakeResult(returncode=codex_returncode, stdout=_codex_list_json(*codex_entries))
+        if command_matches(cmd, ["uv", "python", "find"]):
+            return _FakeResult(returncode=0, stdout=f"{python}\n")
         if warmup_returncode is None:
             return None
         return _FakeResult(returncode=warmup_returncode)
@@ -96,10 +104,13 @@ def _codex_script(codex_home: pathlib.Path, version: str) -> pathlib.Path:
 
 
 def _warmed(calls: list[list[str]]) -> list[str]:
-    """記録済みコマンドからprepare対象の起動スクリプトのパスを取り出す。"""
-    return [
-        cmd[-1] for cmd in calls if command_matches(cmd, ["uv", "run", "--no-config", "--no-project"]) and "--prepare" in cmd
-    ]
+    """記録済みコマンドから依存検査付きで起動したスクリプトのパスを取り出す。"""
+    return [cmd[-2] for cmd in calls if cmd[-1:] == ["--check-dependencies"]]
+
+
+def _prepared(calls: list[list[str]]) -> list[str]:
+    """記録済みコマンドから依存準備を試行したスクリプトのパスを取り出す。"""
+    return [cmd[-1] for cmd in calls if "--prepare" in cmd]
 
 
 class TestPrerequisites:
@@ -128,7 +139,7 @@ class TestTargets:
     """ウォームアップ対象の列挙。"""
 
     def test_warms_all_existing_targets_once(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """実在する2系統のpluginパスへ1回ずつ`uv run`を実行する。"""
+        """実在する2系統のpluginパスへ解決済みPythonで依存検査付きの起動確認を実行する。"""
         calls = _setup(monkeypatch, tmp_path)
         codex_script = _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
@@ -151,6 +162,19 @@ class TestTargets:
             ]
         )
         assert len(warmed) == len(set(warmed))
+
+    def test_resolves_python_once_before_warmup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """対象ごとのprepareと起動確認は、1回だけ解決したPythonを共用する。"""
+        calls = _setup(monkeypatch, tmp_path)
+        _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
+
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+
+        python_find = [call for call in calls if command_matches(call, ["uv", "python", "find"])]
+        launcher_calls = [call for call in calls if "--project" in call]
+        assert len(python_find) == 1
+        assert launcher_calls
+        assert {call[0] for call in launcher_calls} == {str(tmp_path / "python")}
 
     def test_missing_paths_are_excluded(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """存在しない対象パスは除外し、残る対象は実行する。"""
@@ -263,7 +287,7 @@ class TestFailureHandling:
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
-        assert len(_warmed(calls)) == 2
+        assert len(_prepared(calls)) == 2
 
     def test_continues_after_execution_error(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """実行自体の失敗（タイムアウト等でNone）でも残る対象を実行する。"""
@@ -271,7 +295,7 @@ class TestFailureHandling:
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
-        assert len(_warmed(calls)) == 2
+        assert len(_prepared(calls)) == 2
 
     def test_prepared_server_startup_failure_is_reported(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """依存準備の成功と起動失敗を区別し、残る対象を確認した後で失敗を返す。"""
@@ -341,7 +365,7 @@ class TestCoverage:
                 str(codex_root / "agent_toolkit" / "agents_server_mcp.py"),
             ]
         )
-        assert all(cmd[-1] == "--check-dependencies" for cmd in calls if command_matches(cmd, ["uv", "run", "--project"]))
+        assert all(cmd[-1] == "--check-dependencies" for cmd in calls if "--check-dependencies" in cmd)
 
     def test_worktree_script_is_target(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """作業ツリーの基盤CLIとserveが使う起動スクリプトもfull warmupで準備する。"""

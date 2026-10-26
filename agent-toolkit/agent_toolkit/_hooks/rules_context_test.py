@@ -7,18 +7,52 @@ import json
 import os
 import pathlib
 import shlex
+import subprocess
 from collections.abc import Callable
 
 import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log
-from agent_toolkit._common import plugin_environment
+from agent_toolkit._common import plugin_environment, plugin_roots
+from agent_toolkit._common.plugin_roots import _plugin_inventory
 from agent_toolkit._common.read_triggers import ReadTarget
-from agent_toolkit._common.session_state import read_state
+from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import posttooluse, pretooluse, rules_context, rules_context_codex
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
+
+
+@pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
+def test_session_start_reacquires_plugin_inventory_for_the_same_session(tmp_path, monkeypatch, capsys, source):
+    """同IDの再起動でも最初だけ再取得し、次hookは一覧を共有して他の状態を保つ。"""
+    session_id = "inventory-restart"
+    executable = tmp_path / "claude"
+    executable.touch()
+    monkeypatch.setattr(plugin_roots.shutil, "which", lambda *_args, **_kwargs: str(executable))
+    monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
+    monkeypatch.setattr(rules_context, "_compact_recovery_context", lambda *_args: None)
+    calls = []
+
+    def acquire(args, **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, json.dumps([{"generation": len(calls)}]), "")
+
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", acquire)
+    update_state(session_id, lambda _state: {"unrelated": {"preserved": True}})
+
+    def hook_request():
+        with plugin_roots.plugin_resolution_scope(session_id=session_id):
+            return _plugin_inventory("claude", tmp_path)
+
+    assert hook_request() == hook_request() == [{"generation": 1}]
+    assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": source, "session_id": session_id})) == 0
+    capsys.readouterr()
+    assert "plugin_inventory" not in read_state(session_id)
+    assert read_state(session_id)["unrelated"] == {"preserved": True}
+    assert hook_request() == hook_request() == [{"generation": 2}]
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("source", ("startup", "resume", "clear", "compact", "fork"))

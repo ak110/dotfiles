@@ -239,6 +239,16 @@ def with_launcher_record(body: str, context: Mapping[str, Any]) -> str:
     return source_line + "\n\n" + notice + separator + remainder
 
 
+def with_startup_documents(body: str, documents: str) -> str:
+    """役割の識別行を先頭に保ち、配送資料を名前付き入力欄より前へ挿入する。"""
+    if not documents:
+        return body
+    # 入力値も自由な本文を含むため、入力欄の文字列を探索して境界を推測しない。
+    # 起動元の記録と同様に、生成元が保証する先頭の役割識別行の直後へ挿入する。
+    source_line, separator, remainder = body.partition("\n")
+    return source_line + "\n\n" + documents + separator + remainder
+
+
 def _validate_required_prompt_inputs(
     task_document: pathlib.Path,
     extra_params: Mapping[str, str],
@@ -990,6 +1000,9 @@ def task_document_request(
     *,
     whole_contract_path: str | None = None,
     launcher_session_id: str | None = None,
+    host: str = "claude",
+    project: pathlib.Path | str | None = None,
+    include_startup: bool = True,
 ) -> tuple[str, str, LaunchKind, pathlib.Path | None]:
     """役割と名前付き入力からmodel種別、プロンプト、mode、サーバーが用意した引き継ぎ記録先を返す。
 
@@ -1066,8 +1079,10 @@ def task_document_request(
         _check_declared_inputs(task_document, declaration, extra_params)
     # 起動時の資料は、受領した役割の判断が始まる前に同じ会話へ届ける。
     initial_documents = (
-        read_triggers.startup_context(task_document, task_document.parent.parent, dict(extra_params))
-        if launch_kind == "delegate"
+        read_triggers.startup_context(
+            task_document, task_document.parent.parent, dict(extra_params), host=host, project=project
+        )
+        if launch_kind == "delegate" and include_startup
         else ""
     )
     prompt_lines = [task_documents.task_prompt_header(task_document), document_text]

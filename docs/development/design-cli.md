@@ -32,9 +32,13 @@ dotfilesの`bin/atk`はworktreeの選択だけを担い、配布物の実装、P
 プラグイン側で実装を自動で切り替える案は、dotfilesを使わない環境の実装選択まで変えるため採らない。
 
 プラグインのCLIは、Chat・Coworkがインストールを拒否する直下の`bin/`を避けて`scripts/`へ同梱する。
-`scripts/launch.py`は標準ライブラリだけで配布rootと書き込み可能なデータ領域を解決し、その後にlockfileを使うuvの依存導入を起動する。
+`scripts/launch.py`は標準ライブラリだけで配布rootと書き込み可能なデータ領域を解決し、準備済みの共有環境のPythonで対象を起動する。
+依存の準備には`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py --prepare agent_toolkit/atk.py`を実行する。
+
+`--prepare`の後ろのtargetは配布root内に存在する起動対象を確認する必須引数であり、共有環境の選択には影響しない。後述の組み合わせが未準備の場合に実行し、同じ組み合わせなら別の配布rootやworktreeでも準備済み環境を共有する。別worktreeを指定する場合の`<plugin root>`は、そのworktree内の`agent-toolkit`の絶対パスに置き換える。rootは`launch.py`の配置または`--project`から解決され、cwdの変更だけでは切り替わらない。
+
 CLI・hook・MCPはこのスクリプトから起動し、登録済みスキルスクリプトはCLIと同じ環境内で実行する。
-配布rootと依存宣言・lockfile・版数から環境の保存先を分け、更新前後や別worktreeの環境を取り違えない。
+依存に作用するpyproject設定、`uv.lock`、選択したPythonの実行ファイルパス、OS・アーキテクチャの組み合わせから環境の保存先を分ける。
 データ領域は`AGENT_TOOLKIT_RUNTIME_DATA`の明示指定を優先し、次にOSのユーザーデータ領域を使う。
 ホストが渡す`CLAUDE_PLUGIN_DATA`と`PLUGIN_DATA`はユーザーデータ領域へ書き込めない場合だけ使う。
 ホストごとのplugin dataを優先すると、導入後のウォームアップ・端末の`atk`・Claude Code・Codexが同じ版の環境を別々に構築し、初回のhookがウォームアップ済みの環境を使えないためである。

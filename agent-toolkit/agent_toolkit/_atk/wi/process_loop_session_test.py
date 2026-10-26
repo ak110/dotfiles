@@ -1920,7 +1920,7 @@ class TestConsoleTitleReset:
             return subprocess.CompletedProcess(cmd, 0, stdout, "")
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        monkeypatch.setattr(_pl_update, "code_hash", lambda _d: "same-hash")  # 再起動へ進ませない
+        monkeypatch.setattr(_pl_update, "code_hash", lambda _plugin_root: "same-hash")  # 再起動へ進ませない
         _pl_worktree._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
         _pl_update.check_and_restart_on_update(tmp_path, "same-hash", ["argv0"])  # pylint: disable=protected-access  # noqa: SLF001
         assert calls

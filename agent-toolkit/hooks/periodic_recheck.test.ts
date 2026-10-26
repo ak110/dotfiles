@@ -115,7 +115,10 @@ test("main start creates one task from json: taskを持たないメインのstar
   expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
   expect(recorded.created).toEqual([{ cron: "*/30 * * * *", prompt: SCHEDULE_PROMPT, recurring: true }]);
   const argv = recorded.argv[0] ?? [];
-  expect(argv.slice(-1)).toEqual(["wait-schedule"]);
+  expect(argv.slice(0, 7)).toEqual(["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]);
+  expect(argv[7]?.endsWith("/scripts/launch.py")).toBe(true);
+  expect(argv[8]).toBe(argv[7]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
+  expect(argv.slice(9)).toEqual(["wait-schedule"]);
   expect(result.context?.length).toBe(1);
   expect(result.context?.[0]).toContain("task ID: cron-main");
   expect(result.context?.[0]).toContain('kind="notice"');

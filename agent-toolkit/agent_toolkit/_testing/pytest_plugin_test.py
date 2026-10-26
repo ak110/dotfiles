@@ -1,5 +1,6 @@
 """実pytestの収集を通し、自動fixtureの登録とディレクトリ境界を確かめる。"""
 
+import asyncio
 import contextlib
 import json
 import os
@@ -9,11 +10,13 @@ import subprocess
 import sys
 import textwrap
 import time
-from typing import cast
+from typing import Any, cast
 
+import claude_agent_sdk
 import psutil
 import pytest
 
+from agent_toolkit._agents_server import backends
 from agent_toolkit._testing import pytest_plugin
 
 # 読込済みrootと公開設定から求める対象rootを正負で直接比較する。
@@ -28,6 +31,38 @@ class _Config:
 def _config(rootpath: pathlib.Path) -> pytest.Config:
     """rootpathだけを使う読込元比較へ、公開Configと同じ静的型で渡す。"""
     return cast(pytest.Config, _Config(rootpath))
+
+
+@pytest.mark.parametrize("engine", sorted(backends.SUPPORTED_ENGINES))
+@pytest.mark.asyncio
+async def test_forbid_backend_process_rejects_every_supported_backend(
+    tmp_path: pathlib.Path, _forbid_backend_process: None, engine: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """全engineのbackendを生成して、実CLIへ届く前に起動が遮断されることを確かめる。"""
+
+    def unexpected_client(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("遮断fixtureがSDKへ到達した")
+
+    async def unexpected_process(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("遮断fixtureがイベントループの子プロセス生成へ到達した")
+
+    # 検証対象のguardが壊れた場合も、さらに下層で実SDK/CLIへの到達を止める。
+    # 期待するAssertionErrorと異なる例外にして、guardの欠落を成功と数えない。
+    monkeypatch.setattr(claude_agent_sdk, "ClaudeSDKClient", unexpected_client)
+    monkeypatch.setattr(asyncio.get_running_loop(), "subprocess_exec", unexpected_process)
+    backend = backends.create_backend(
+        engine,
+        {},
+        asyncio.Condition(),
+        expire_session=lambda _session_id: None,
+        root_session_id=None,
+        log_directory=tmp_path,
+    )
+    try:
+        with pytest.raises(AssertionError, match="実backendの子プロセス"):
+            await backend.start("遮断確認", str(tmp_path), model="test/model", effort="low" if engine == "codex" else None)
+    finally:
+        await backend.close()
 
 
 def test_target_plugin_root_limits_import_check_to_public_target(tmp_path: pathlib.Path) -> None:

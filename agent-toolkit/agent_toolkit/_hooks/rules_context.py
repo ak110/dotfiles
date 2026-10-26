@@ -474,6 +474,16 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))
             content = f"{content}\n\n{identity_context}" if content else identity_context
         if isinstance(session_id, str) and session_id:
+            if host == "claude":
+                # registry/MDM変更も同IDのresume・再起動で反映する。配送記録など他の状態は保つ。
+                update_state(
+                    session_id,
+                    lambda state: (
+                        {key: value for key, value in state.items() if key != "plugin_inventory"}
+                        if "plugin_inventory" in state
+                        else None
+                    ),
+                )
             session_temp = None
             recovery_targets: list[tuple[pathlib.Path, str, str]] = []
             if source in _OPERATION_SKILL_RESET_SOURCES:

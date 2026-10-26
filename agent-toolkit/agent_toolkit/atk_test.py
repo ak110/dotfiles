@@ -1053,30 +1053,11 @@ def test_retained_run_scripts_are_exactly_the_kept_registrations() -> None:
     assert not set(_REMOVED_RUN_SCRIPTS) & set(run_script.SCRIPT_PATHS)
 
 
-class TestLegacyTopLevelCommandAlias:
-    """改名前のトップレベル名`mq`が現行名`wi`と同じ結果を返し、公開名として露出しないことを検証する。"""
-
-    def test_alias_lists_same_entries_as_current_command(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """`atk mq list`が`atk wi list`と同じ出力を返す。"""
-        notes = _setup_notes(tmp_path)
-        _write_awi_file(notes, "fb-001.md")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--no-jsonl", "--skip-pull"], home=tmp_path)
-        assert exc_info.value.code == 0
-        current_output = capsys.readouterr().out
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--no-jsonl", "--skip-pull"], home=tmp_path)
-        assert exc_info.value.code == 0
-        assert capsys.readouterr().out == current_output
-        assert "fb-001.md" in current_output
+def test_removed_mq_alias_is_rejected() -> None:
+    """廃止済みの`mq`は公開CLIの未知コマンドとして終了する。"""
+    with pytest.raises(SystemExit) as raised:
+        atk.main(["mq", "--help"])
+    assert raised.value.code == 2
 
 
 def test_set_dependencies_parser_accepts_repeated_dependencies() -> None:

@@ -1,3 +1,4 @@
+import { pluginLaunchCommand } from "./plugin_launch.ts";
 import type { EngineInterface, On } from "claude-code";
 import { automatedMessage } from "./automated_message.ts";
 
@@ -34,11 +35,10 @@ async function automatic($: EngineInterface, state: CompactState, wait: Backgrou
     if (state.automaticPaused) return;
     wait.used = true;
     const root = $.plugin.root;
-    const checked = await $.process.run([
-      "uv", "run", "--project", root, "--locked", "--no-default-groups", `${root}/agent_toolkit/atk.py`,
+    const checked = await $.process.run(pluginLaunchCommand(root, "agent_toolkit/atk.py", [
       "run-script", "wait-compaction-context", "--", "--session-id", await $.session.id(),
       `--command=${wait.command}`,
-    ], { timeoutMs: 30_000 });
+    ]), { timeoutMs: 30_000 });
     if (checked.exitCode !== 0 || checked.isStdoutTruncated || state.turnRunning || state.pending || !state.waits.has(wait.id)) return;
     const context: unknown = JSON.parse(checked.stdout);
     if (typeof context !== "object" || context === null || (context as { eligible?: unknown }).eligible !== true) return;

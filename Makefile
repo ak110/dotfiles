@@ -1,6 +1,7 @@
 # サプライチェーン攻撃対策としてlockfileを常に尊重する。依存を更新する場合のみ
 # `env --unset=UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
 export UV_FROZEN := 1
+export UV_PROJECT_ENVIRONMENT := $(CURDIR)/.venv
 
 # pytestを個別に起動するtargetの共通の起動形。`-v`でテストごとの成否を出力し、保存した出力を
 # 個別テストの合否の根拠に使えるようにする。`-o addopts=''`はpyproject.tomlの並列実行などの設定を外す。
@@ -49,7 +50,7 @@ setup:
 # ルートとagent-toolkitは別々のuv.lockを持ちplaywrightの版が異なり得るため、両方の環境の版に対応するChromiumを導入する
 setup-browser:
 	uv run playwright install --with-deps chromium
-	uv run --project agent-toolkit playwright install chromium
+	UV_PROJECT_ENVIRONMENT="$(CURDIR)/agent-toolkit/.venv" uv run --project agent-toolkit playwright install chromium
 
 # Ubuntu/Debian へ pwsh + PSScriptAnalyzer を一括インストールする。
 # prek の PSScriptAnalyzer / chezmoi template check (.ps1.tmpl) を
@@ -71,7 +72,7 @@ setup-pwsh:
 # `.python-version`を持たないagent-toolkitと、`UV_PYTHON`などで別の版を指定した環境では、既存の仮想環境のPython版も保つ（uv 0.13.1で確認）。
 sync:
 	uv sync --all-groups --all-extras --python "$$(cat .python-version)"
-	uv sync --project agent-toolkit --all-groups --all-extras --python "$$(cat .python-version)"
+	UV_PROJECT_ENVIRONMENT="$(CURDIR)/agent-toolkit/.venv" uv sync --project agent-toolkit --all-groups --all-extras --python "$$(cat .python-version)"
 
 # CIのcontainer jobと同じimageの中で、CIと同じ依存導入と各Python版の`uv sync`を実行する。
 # 作業ツリーは読み取り専用でマウントし、container内へ仮想環境とビルド生成物を除いて複製してから同期する。
@@ -105,7 +106,7 @@ test: sync
 # 実ブラウザーテストを日常実行
 test-browser:
 	uv run playwright install chromium
-	uv run --project agent-toolkit playwright install chromium
+	UV_PROJECT_ENVIRONMENT="$(CURDIR)/agent-toolkit/.venv" uv run --project agent-toolkit playwright install chromium
 	$(PYTEST_RUN) -m browser agent-toolkit/agent_toolkit/_atk/serve
 
 # agents_serverの実backendを使うライブ一体テスト

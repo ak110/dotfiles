@@ -27,6 +27,8 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import atomic_file, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
 
+pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
+
 
 async def _wait_now(manager: server_manager.AgentsServerManager) -> dict[str, typing.Any]:
     """待機せずに現在の終端状態を返すwaitを発行する。"""
