@@ -58,8 +58,9 @@ SUBAGENT_BASE_INSTRUCTIONS = _read_prompt("agents-server-base.md")
 
 
 RESULT_REPORT_INSTRUCTIONS = (
-    SUBAGENT_BASE_INSTRUCTIONS.split("<!-- quality-principles:result:start -->", maxsplit=1)[1]
-    .split("<!-- quality-principles:result:end -->", maxsplit=1)[0]
+    _read_share("rules-subagent.md")
+    .split("<!-- subagent-result-contract:start -->", maxsplit=1)[1]
+    .split("<!-- subagent-result-contract:end -->", maxsplit=1)[0]
     .strip()
 )
 """共通規範を省く軽量委譲にも渡す、同梱済みの結果返却短節。"""

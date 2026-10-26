@@ -12,6 +12,26 @@ from agent_toolkit._agents_server import launch_requests
 from agent_toolkit._atk import run_script
 
 
+def test_help_explains_initial_and_history_continuation_inputs(capsys: pytest.CaptureFixture[str]) -> None:
+    """公開helpだけで初回と履歴継続の有効な要求JSONを作成できる。"""
+    result = run_script.dispatch(argparse.Namespace(script_name="delegation-prompt", script_args=["--help"]))
+
+    assert result == 0
+    help_text = capsys.readouterr().out
+    for value in (
+        "initial",
+        "subagent_md_path",
+        "extra_params",
+        "continuation",
+        "session_id",
+        "history_file",
+        "instruction",
+        "prompt",
+    ):
+        assert value in help_text
+    assert "起動せず" in help_text
+
+
 def _generate(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], request: dict) -> tuple[int, dict]:
     input_path = tmp_path / "委譲 要求.json"
     input_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")

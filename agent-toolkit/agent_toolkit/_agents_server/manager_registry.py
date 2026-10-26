@@ -103,6 +103,7 @@ class ManagerRegistry(responses.ManagerResponses):
             launch_kind=info.launch_kind,
             status=info.status,
             turn_seq=info.turn_seq,
+            result_contract_recovery_consumed=info.result_contract_recovery_consumed,
             **info.launch_info.as_kwargs(),
         )
 
@@ -291,6 +292,7 @@ class ManagerRegistry(responses.ManagerResponses):
             turn_id=info.turn_id,
             interruption=interruption,
             preserve_server_instance=True,
+            result_contract_recovery_consumed=info.result_contract_recovery_consumed,
         )
 
     def _own_root_session_id(self) -> str | None:
@@ -482,6 +484,7 @@ class ManagerRegistry(responses.ManagerResponses):
             error=persisted_result.get("error") if persisted_result is not None else registry_error,
             finalized_at=persisted_result["finalized_at"] if persisted_result is not None else None,
             result_delivered=persisted_result is None,
+            result_contract_recovery_consumed=info.result_contract_recovery_consumed,
         )
         self.stopped_sessions[session_id] = resume_state
         return resume_state

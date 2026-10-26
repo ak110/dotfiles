@@ -16,8 +16,6 @@ writes_worktree: false
 コードの修正作業、対象リポジトリやキューへの書き込み、AWIの投入、ならびに委譲元自身の元作業の続行は担当せず、すべて委譲元が担う。
 作業着手時に、まず`agent-toolkit:bugfix`を起動する。
 
-完了報告および成果物は日本語で記述する。
-
 ## 名指し参照の読込方法
 
 名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
@@ -59,5 +57,4 @@ writes_worktree: false
 各欄の値は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直し」「処置の階層」「再発防止策の必須性」に基づいて判定し、`拡張原因分析`の要否にかかわらず、すべての欄を同一の基準で記載する。
 類似見直しの該当件数が0件の場合や、採用すべき再発防止策がないと判断した場合も、同書が求める記録内容を該当欄に記載する。
 
-続行不能となった場合は、`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の形式に従って返却する。
-想定外の事象が発生した場合の追加行についても、`agent-toolkit/share/rules-subagent.md`に従う。
+続行不能と追加報告行は、共通契約`rules-subagent.md`「返却形式の受け渡し」に従う。

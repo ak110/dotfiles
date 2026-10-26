@@ -69,7 +69,15 @@ def generate(request: PromptRequest) -> dict[str, str]:
 
 def main(argv: list[str] | None = None) -> int:
     """要求JSONの絶対パスから生成結果JSONを返す。"""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=(
+            (__doc__ or "")
+            + " 要求JSONはkindをinitialまたはcontinuationにする。initialはsubagent_md_pathと任意のextra_paramsを指定する。"
+            "continuationはsession_idまたはhistory_fileの一方を指定し、instructionとextra_params、またはpromptを指定する。"
+            "session_idとhistory_fileは併用できず、保持済みの役割があるcontinuationへsubagent_md_pathは指定できない。"
+            "生成結果は起動せず、startまたは既存の委譲手段へ渡す本文だけを返す。"
+        )
+    )
     parser.add_argument("--input", type=pathlib.Path, metavar="PATH", required=True, help="要求JSONの絶対パス")
     args = parser.parse_args(argv)
     try:

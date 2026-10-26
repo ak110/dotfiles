@@ -139,6 +139,10 @@ class AntigravityManager(CliTurnManager):
                 await self._notify_waiters()
         elif kind == "result":
             finalize_turn(session, result_values(session, body))
+            if session.result_contract_recovery_pending:
+                # 形式回復が保持した今回の本文を、孫待機用の旧状態で上書きしない。
+                await self._notify_waiters()
+                return True
             if resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
                 resume_waits.begin_auto_resume_wait(
                     session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}

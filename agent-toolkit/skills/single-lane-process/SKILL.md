@@ -20,8 +20,6 @@ disable-model-invocation: true
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/single-lane-process/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/session-termination.parent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/SKILL.md#「計画ファイルの作成要否」` |
@@ -90,7 +88,7 @@ disable-model-invocation: true
 
 ## 実行順
 
-計画作成、実装、独立した実行レビューの進行管理は、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`の共通契約に従う。以下では、本スキル固有の対象取得、worktreeの紐付け、公開の手順を定める。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`検証結果`は同書冒頭の規定に従って記録する。
+計画作成、実装、独立した実行レビューの進行管理は、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`の共通契約に従う。以下では、本スキル固有の対象取得、worktreeの紐付け、公開の手順を定める。実行レビューの起動と返却後の検収は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従い、`検証結果`は`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`に従って記録する。
 
 1. 処理可能なWI（processable）の一覧と各WIの本文を取得する。同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`を実行して回答済みUWIを取得する。
    対象worktreeごとに公開対象とベースブランチを明示し、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象の決定」に定める開始時のCI点検を実施する。実装に着手する前に実際のCI状況を照会し、失敗ログの取得と残工程への影響判定を行う。既存の失敗は「見つけた既存不良の扱い」に従って処理し、ユーザーのみが判断できる事項は確認手順へと回す。公開時のベースライン確認とCI検収も実行順8で実施する。
@@ -100,8 +98,7 @@ disable-model-invocation: true
    初回の`atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`に渡す引数は、保存済み対応表の中で開始前にinbox状態であった全件からworktreeごとに抽出する。すでに処理開始済みの項目を重複して状態遷移させない。途中で処理が失敗した場合は、CLIの診断メッセージと残存状態を同じ対応表に記録し、未完了の工程から再開する。ユーザーからの明示的な追加指示は対応表へ反映し、後続工程の比較基準を更新する。集合固定後にユーザーから指示された回答済みUWIやAWIの追加は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」の判断基準に従って扱う。
 2. `atk wi`の`adopt`や`reject`に`--commit`を渡す場合は、対象worktreeの絶対パスを`--target-repo`に指定し、それ以外の操作では保存されている`target_repo`を使用する。Gitの起点比較、実装、検証、コミット、レビューには対応表のworktreeと開始時のHEADを使用し、別のworktreeや複製元のHEADで代用しない。
 3. 計画対象が存在する場合は、対象worktreeごとに計画ファイルを起草する。計画メタ情報の対象リポジトリ、および計画構造の自動チェックに渡す`--work-dir`にはそのworktreeを指定し、対応表にあるすべての計画対象を`--expected-wi <WIファイル名>`で繰り返し指定して、実装前に過不足のない一致を確認する。全件が直接実装対象である場合は計画ファイルを新設せず、対応表とレビュー対象集合の和によって網羅性を検収する。
-4. 対応表のworktreeにおいて、計画対象は`## 要件・外部仕様`に従い、直接実装対象はWIの要求事項と完成条件に従って実装する。Git管理外のファイルを変更する場合は、最初の変更前に変更前のバックアップ複製を作成し、証拠要求がある場合は実装完了前に検証結果を記録する。複製の対応関係と保存した出力の絶対パスは、計画ファイルの`## 進捗ログ`、または直接実装の引き継ぎ記録に残す。検証は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`の受入シナリオ検証に従って実施し、シナリオごとのテスト名と合否結果を記録する。
-   計画を作成しない場合やレビュー指摘の修正時であっても、実装前に、公開された呼び出し手段、入力と初期状態、期待される正常な結果、検出対象のエラーを確定する。テストケースの選定は`agent-basics:writing-standards/references/testing.md`「検証単位の選定」に従う。公開された呼び出し手段による実際の結果を自ら検収し、検証結果として記録する。未実施の項目や条件変更の判断、メインエージェントが保持する残工程の担当区分と再開先を明確に分けた上で、独立した実行レビューへ渡す。テスト出力や手動観測記録の保存は、`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「手動観測の保存」に従う。
+4. 対応表のworktreeにおいて、計画対象は`## 要件・外部仕様`に従い、直接実装対象はWIの要求事項と完成条件に従って実装する。受入シナリオの具体化、検証単位の選定、検証結果の保存、独立文脈レビューへの受渡しは`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`「継続する工程」に従う。Git管理外のファイルを変更する場合は、最初の変更前に変更前のバックアップ複製を作成し、複製の対応関係は計画ファイルの`## 進捗ログ`、または直接実装の引き継ぎ記録に残す。
    コミット履歴の整理によって取得時の版が変わった記録の再利用については、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。互いの成果に依存しないworktree間では作業を並行して進めてよい。
    コミットの作成は`agent-toolkit:commit`に従い、WI実装コミットごとに同スキルの`SKILL.md`「WI実装commitの対応」に定める手段を用いて、計画（直接実装の場合は引き継ぎ記録）と同一stemの対応記録ファイルへ記録する。レビュー指摘修正、CI修正、コミット履歴の変更後も同様の手順に従い、実行順8の処理へ進む前に最新の対応関係を取得してadoptコマンドへ渡す。
 5. 保存済み対応表から、対象worktreeに属する全計画対象と全直接実装対象の和を導出し、1件の実行レビューを起動する。すべての対応表の所在と区分は、同一の引き継ぎ記録から辿れるように保持する。計画対象がある場合は計画ファイルの絶対パスを、直接実装対象がある場合はWIの記録を委譲プロンプトへ渡し、計画対象が存在しない場合はそのworktreeの「開始時のHEAD」を渡す。`cwd`、`開始時のHEAD`、レビュー指摘管理表、およびレビュー基準には、同一worktreeの値のみを使用する。

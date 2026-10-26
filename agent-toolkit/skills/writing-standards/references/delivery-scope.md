@@ -14,7 +14,7 @@ Codexの生成本文については`scripts/sync_codex_agents.py`も参照する
 | `share/rules-main.claude-code.md` | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/rules-main.codex.md` | 届かない | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/rules-common.codex.md` | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） |
-| `share/rules-subagent.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届く（developer指示） | 届く（指示の先頭） | 届かない | 届かない | 届かない | 届く（SubagentStart） |
+| `share/rules-subagent.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届く（developer指示） | 届く（指示の先頭） | 返却契約短節のみ届く | 返却契約短節のみ届く | 返却契約短節のみ届く | 届く（SubagentStart） |
 | `share/rules-subagent.claude-code.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/agents-server-delegate-notice.md` | 届かない | 届かない | 届かない | 届く | 届く | 届く | 届く | 届く | 届く | 届かない |
 | `share/agents-server-base.md` | 届かない | 届かない | 届かない | 届く（`system_prompt`のベース） | 届く（`baseInstructions`） | 届かない | 届かない | 届く（`baseInstructions`） | 届かない | 届かない |
@@ -25,6 +25,8 @@ Codexの生成本文については`scripts/sync_codex_agents.py`も参照する
 | agent-toolkitのスキル | 届く | 届く | 未確認 | 届く | 届く | 届く（有効なプラグイン） | 届かない（`skills=[]`） | `write`・`shell`へ届く。`explore`へは届かない（プラグイン無効） | 届く（有効なプラグイン） | 未確認 |
 
 OpenCodeの配送範囲は以下の表のとおりである。通常起動と軽量起動の区分は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。`task`は役割ごとのmodeを使用し、それぞれ対応する列に属する。
+
+返却契約短節は`rules-subagent.md`「返却形式の受け渡し」を単一の原本とし、`launch_prompts.py`が軽量起動の開始・再開本文へ加える。通常側は全文内の同じ節を受け取る。短節は完了・続行不能・通知・部分成果・追加行を自己完結して定め、既存の配送範囲とmodeごとの権限を保つ。OpenCodeも同節を1回だけ注入する。
 
 | 文書 | OpenCodeの通常起動 | OpenCodeの軽量起動 |
 | --- | --- | --- |

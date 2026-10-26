@@ -75,6 +75,22 @@ def test_launch_prompts_load_shared_documents() -> None:
     assert _shared_document_body("agents-server-auto-resume.md") in launch_prompts.AUTO_RESUME_NOTICE
 
 
+def test_public_descriptions_cover_shared_delivery_and_task_recovery() -> None:
+    """公開入力の説明から、固有指示と自動配送・有限回復の境界を判断できる。"""
+    for description in (tool_descriptions.MODE_DESCRIPTION, tool_descriptions.PROMPT_DESCRIPTION):
+        assert "共通返却契約の短節を自動配送" in description
+        assert "呼出元での再掲は不要" in description
+        assert "固有指示" in description
+        assert "全文は" in description
+    mode = tool_descriptions.MODE_DESCRIPTION
+    assert "役割を持つtaskだけ" in mode
+    assert "自由本文のdelegateとexplore・write・shellは対象外" in mode
+    assert "同じsessionへ1回だけ自動継続" in mode
+    assert "再違反や継続の配送失敗" in mode
+    assert "元の返却本文" in mode
+    assert "error.resultContract・error.nextAction" in mode
+
+
 def test_process_loop_launched_delegate_takes_main_role() -> None:
     """process-loopの常駐プログラムが起動した通常委譲を、system promptがメインの役割へ切り替える。
 
@@ -98,8 +114,12 @@ def test_process_loop_launched_delegate_takes_main_role() -> None:
 def test_lightweight_launches_receive_shared_result_contract_only() -> None:
     """共通規範を省く全区分へ同じ返却条件が届き、ベース実務規律の全文は追加しない。"""
     base = _shared_document_body("agents-server-base.md")
-    result_section = base.split("## 結果の返却\n\n", maxsplit=1)[1]
-    result_body = "\n".join(line for line in result_section.splitlines() if not line.startswith("<!--")).strip()
+    rules = (launch_prompts.SHARE_DIR / "rules-subagent.md").read_text(encoding="utf-8")
+    result_body = (
+        rules.split("<!-- subagent-result-contract:start -->", maxsplit=1)[1]
+        .split("<!-- subagent-result-contract:end -->", maxsplit=1)[0]
+        .strip()
+    )
     assert result_body
     for prompt in (
         launch_prompts.EXPLORE_SYSTEM_PROMPT,
@@ -110,7 +130,7 @@ def test_lightweight_launches_receive_shared_result_contract_only() -> None:
         assert result_body in prompt
         assert base not in prompt
         assert launch_prompts.SUBAGENT_RULES not in prompt
-    assert result_body in launch_prompts.SUBAGENT_BASE_INSTRUCTIONS
+    assert result_body in launch_prompts.SUBAGENT_RULES
 
 
 def test_launch_prompts_carry_normative_boundaries() -> None:

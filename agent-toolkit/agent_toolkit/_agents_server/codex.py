@@ -31,6 +31,7 @@ from agent_toolkit._agents_server import (
     compaction_metrics,  # pylint: disable=wrong-import-position
     context_usage,
     engine_availability,
+    result_contract,
     result_projection,
     resume_waits,
     session_errors,
@@ -1854,7 +1855,13 @@ class AppServerManager:
                 session.status = "failed"
             if session.status == "completed":
                 session.codex_attempted_provider_ids = {session.codex_model_provider} if session.codex_model_provider else set()
-            if (resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed) or (
+            result = {"status": session.status, "agent_message": session.agent_message, "error": session.error}
+            held_by_result_contract = result_contract.hold_invalid_result(session, result)
+            if not held_by_result_contract:
+                session.error = result["error"]
+            if held_by_result_contract:
+                pass
+            elif (resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed) or (
                 session.codex_self_message_observed and not session.codex_self_message_repair_consumed
             ):
                 # 未観測の孫sessionが残るturnは、待機表明を完了報告として公開せずに結果を保留する。

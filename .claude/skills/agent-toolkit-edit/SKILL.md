@@ -113,7 +113,8 @@ description: >
 - `install-claude.sh`の`FILES`、`install-claude.ps1`の`$files`、および`agent-toolkit/rules/`配下のMarkdownファイル一覧は完全一致を保つ。この整合性は`install_script_ssot_invariant_test.py`で検証し、`uv run python scripts/sync_generated_files.py`で同期する。
 - 配布物スキルの外部インターフェース（判定区分、出力フォーマット、後始末コマンドの分岐、サマリー表現など）を追加・削除・変更する場合は、呼び出し元を検索し、連携先の記述も同一の計画内で更新する。
 - `agent-toolkit/rules/01-agent.md`・`02-agent-operations.md`および`agent-toolkit/share/rules-common.codex.md`は、`.chezmoi-source/dot_codex/AGENTS.md`の生成元ファイルである。同期は`uv run python scripts/sync_generated_files.py`で行い、計画への記載は`references/version-bump.md`「plan modeでの取り扱い」の派生物の規則に従う。
-- `agent-toolkit/share/rules-main*.md`や`rules-subagent*.md`の編集はファイルの自動生成や配布一覧の変更を伴わないが、プラグインのバージョン更新は必要である。各起動区分へどの規範が届くかは、`agent-toolkit:writing-standards`の`references/delivery-scope.md`にある配送範囲表を参照する。軽量なagents_server委譲先へ`rules-subagent.md`を配信しない境界条件はテストで保持されている。
+- `agent-toolkit/share/rules-main*.md`や`rules-subagent*.md`の編集はファイルの自動生成や配布一覧の変更を伴わないが、プラグインのバージョン更新は必要である。各起動区分へどの規範が届くかは、`agent-toolkit:writing-standards`の`references/delivery-scope.md`にある配送範囲表を参照する。軽量なagents_server委譲先には`rules-subagent.md`の共通返却契約短節を自動配送し、全文を省く境界と各modeの権限を配送テストで保持する。
+- `agent-toolkit/`と`agent-basics/`配下の`*-delivery-*.md`は、本体の`<!-- read-table-source: ファイル名 -->`が接続する読込表の分離先である。生成元は無く、`scripts/sync_generated_files.py`も再生成しない。本体の参照や読込条件と同じ変更で直接編集し、委譲時にも編集対象として渡す。宣言と経路は`agent-toolkit/read_triggers_invariant_test.py`が検査する。書き方は`agent-basics:writing-standards`の`references/agent-documents-basics.md`「読込表」に従う。
 - 計画ファイルの見出し、固定H3、表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`の構造定数で定義されている。これらを改訂する場合は構造定数を変更し、同一名称を使用している以下の文書も同一の変更単位で揃える。
   - `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`
   - `agent-toolkit/share/`配下の`<役割名>.subagent.md`

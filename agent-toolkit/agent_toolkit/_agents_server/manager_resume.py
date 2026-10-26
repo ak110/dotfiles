@@ -12,6 +12,7 @@ from agent_toolkit._agents_server import (
     codex_providers,
     launch_requests,
     manager_registry,
+    result_contract,
     shared_layout,
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -54,6 +55,42 @@ class ManagerResume(manager_registry.ManagerRegistry):
         if not session.awaiting_auto_resume or session.pending_result is None:
             return
         if session.interrupt_requested:
+            return
+        if session.result_contract_recovery_pending:
+            pending = session.pending_result
+            assert pending is not None
+            reason = session.result_contract_recovery_reason or "返却形式を検査できません"
+            session.result_contract_recovery_pending = False
+            session.result_contract_recovery_reason = None
+            session.result_contract_recovery_consumed = True
+            auto_resume_consumed = session.auto_resume_consumed
+            finalize_pending_result(session, touch=False)
+            try:
+                await self._backend(session.engine).send_message(
+                    session,
+                    wrap_delivery_body(
+                        "直前の返却は続行不能の区分契約に適合しない。"
+                        f"診断: {reason}\n"
+                        "成果と残作業を確認し、担当内で補える作業を完遂した上で所定の返却形式を返せ。"
+                    ),
+                )
+            except Exception as exc:
+                session.awaiting_auto_resume = False
+                session.auto_resume_deadline = None
+                session.pending_result = None
+                session.status = "failed"
+                session.agent_message = pending["agent_message"]
+                session.error = {
+                    "message": f"{type(exc).__name__}: {exc}",
+                    "resultContract": reason,
+                    "nextAction": result_contract.RECOVERY_NEXT_ACTION,
+                }
+                session.turn_completed = True
+                session.turn_start_ambiguous = False
+                session.touch()
+            finally:
+                # 返却形式の回復は、孫完了による自動継続の回数を消費・再初期化しない。
+                session.auto_resume_consumed = auto_resume_consumed
             return
         if session.claude_api_resume_pending:
             await self._resume_claude_wait(
@@ -327,6 +364,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 **provider_args,
             )
             session_registry.LaunchInfo.of(resume_state).apply_to(session)
+            session.result_contract_recovery_consumed = resume_state.result_contract_recovery_consumed
             if self._status_writer is not None:
                 await self._status_writer.delete_result_async(session_id, collector="send-message")
             if session.status == "starting":
@@ -420,6 +458,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 excluded_candidates=resume_state.excluded_candidates,
                 announced=True,
                 turn_seq=resume_state.turn_seq + 1,
+                result_contract_recovery_consumed=resume_state.result_contract_recovery_consumed,
             )
             session_registry.LaunchInfo.of(resume_state).apply_to(session)
             self.sessions[session.session_id] = session

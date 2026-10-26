@@ -32,6 +32,7 @@ from agent_toolkit._agents_server import (
     claude_settings,
     context_usage,
     engine_availability,
+    result_contract,
     result_projection,
     resume_waits,
     session_errors,
@@ -1456,6 +1457,8 @@ class ClaudeServerManager:
             session.api_error = None
             session.usage_limit = None
         # 対象の利用上限では結果を保留し、MCP層の常駐監視がAPI移行または解除後の継続を進める。
+        if result_contract.hold_invalid_result(session, result):
+            return held_from_task_notification
         if resume_waits.begin_usage_limit_wait(session, result):
             return held_from_task_notification
         # 自動再開したturnもバックグラウンドタスクを残して待機を表明し得るため、`origin`によらず保留を判定する。

@@ -316,6 +316,9 @@ class SessionState:
     # MCP層が孫sessionの終端を検出して発行する再開の2つの処理だけである。
     # Codex backendは孫sessionが残るturnの結果を保留し、後者の再開だけに到達する。
     auto_resume_consumed: bool = False
+    result_contract_recovery_consumed: bool = False
+    result_contract_recovery_pending: bool = False
+    result_contract_recovery_reason: str | None = None
     auto_resume_deadline: float | None = None
     # `start`の可用性確認を終えたか。確認を終える前の過負荷は起動時の候補切替が扱う。
     availability_checked: bool = False
@@ -367,6 +370,7 @@ class SessionState:
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
     _published_registry_status: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_fast_mode: bool | None = dataclasses.field(default=None, repr=False)
+    _published_registry_result_contract_recovery_consumed: bool = dataclasses.field(default=False, repr=False)
     _published_registry_launch_info: session_registry.LaunchInfo | None = dataclasses.field(default=None, repr=False)
     _published_registry_executor: session_registry.ProcessIdentity | None = dataclasses.field(default=None, repr=False)
     _published_registry_owner_root: str | None = dataclasses.field(default=None, repr=False)
@@ -615,6 +619,7 @@ class SessionState:
                 or self.status != self._published_registry_status
                 or self.launcher_session_id != self._published_registry_launcher
                 or self.fast_mode != self._published_registry_fast_mode
+                or self.result_contract_recovery_consumed != self._published_registry_result_contract_recovery_consumed
                 or launch_info != self._published_registry_launch_info
                 or self.executor_process != self._published_registry_executor
                 or self.owner_root_session_id != self._published_registry_owner_root
@@ -639,6 +644,7 @@ class SessionState:
             "launch_kind": self.launch_kind,
             "turn_seq": self.turn_seq,
             "launch_info": launch_info,
+            "result_contract_recovery_consumed": self.result_contract_recovery_consumed,
             "started_at": self.started_at,
             "session_updated_at": self.updated_at,
             "turn_id": self.turn_id or None,
@@ -657,6 +663,7 @@ class SessionState:
         self._published_registry_turn_seq = parameters["turn_seq"]
         self._published_registry_status = parameters["status"]
         self._published_registry_fast_mode = parameters["fast_mode"]
+        self._published_registry_result_contract_recovery_consumed = parameters["result_contract_recovery_consumed"]
         self._published_registry_launch_info = parameters["launch_info"]
         self._published_registry_executor = executor
         self._published_registry_owner_root = parameters["owner_root_session_id"]
@@ -725,6 +732,7 @@ class SessionResumeState:
     finalized_at: str | None = None
     result_delivered: bool = False
     retention_deadline: float | None = None
+    result_contract_recovery_consumed: bool = False
 
     @classmethod
     def from_session(cls, session: SessionState) -> SessionResumeState:
@@ -758,6 +766,7 @@ class SessionResumeState:
             finalized_at=session.finalized_at,
             result_delivered=session.result_delivered,
             retention_deadline=session.retention_deadline,
+            result_contract_recovery_consumed=session.result_contract_recovery_consumed,
         )
 
 
@@ -838,6 +847,8 @@ def initialize_turn(session: SessionState, *, reset_progress: bool = True, prese
     session.auto_resume_deadline = None
     session.pending_result = None
     session.finalized_at = None
+    session.result_contract_recovery_pending = False
+    session.result_contract_recovery_reason = None
     session.retention_deadline = None
     session.started_at = utc_now()
     if reset_progress:

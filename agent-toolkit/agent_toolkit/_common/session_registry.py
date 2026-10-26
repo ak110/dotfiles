@@ -206,6 +206,7 @@ class ResumeInfo:
     claude_api_env_file: str | None = None
     claude_connection: str | None = None
     claude_role: str | None = None
+    result_contract_recovery_consumed: bool = False
 
 
 class RunningOwnership(enum.StrEnum):
@@ -310,6 +311,7 @@ def publish(
     launcher_session_id: str | None = None,
     preserve_server_instance: bool = False,
     owner_root_session_id: str | None = None,
+    result_contract_recovery_consumed: bool = False,
     state_root: pathlib.Path | None = None,
 ) -> None:
     """sessionの終端可否と再開条件を原子的に公開する。
@@ -374,6 +376,9 @@ def publish(
         payload["claude_role"] = claude_role
     path = registry_directory(state_root) / f"{session_id}.json"
     prior = _read_payload(path)
+    # session単位の回復上限は、別所有者の状態更新でも未消費へ戻さない。
+    if result_contract_recovery_consumed or prior.get("result_contract_recovery_consumed") is True:
+        payload["result_contract_recovery_consumed"] = True
     owner_root = owner_root_session_id if owner_root_session_id is not None else _recorded_owner_root(prior)
     if owner_root is not None:
         payload["owner_root_session_id"] = owner_root
@@ -684,6 +689,7 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         turn_seq=payload["turn_seq"],
         status=status,
         launch_info=LaunchInfo.from_record(payload),
+        result_contract_recovery_consumed=payload.get("result_contract_recovery_consumed") is True,
         started_at=payload.get("started_at") if isinstance(payload.get("started_at"), str) else None,
         session_updated_at=payload.get("session_updated_at") if isinstance(payload.get("session_updated_at"), str) else None,
         turn_id=payload.get("turn_id") if isinstance(payload.get("turn_id"), str) and payload.get("turn_id") else None,

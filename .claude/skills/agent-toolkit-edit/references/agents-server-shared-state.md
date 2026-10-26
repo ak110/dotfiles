@@ -9,6 +9,8 @@
 
 コンポーネント（実行主体）ごとに更新できる範囲が異なる。挙動を確認する際は、関係するすべての処理フローを網羅して確認する（単一の処理だけを追うと、別の処理がその状態を更新していることを見落としやすくなる）。
 
+task返却の形式回復を消費した状態は`SessionState.result_contract_recovery_consumed`が保持し、`state.py`の登録処理から`session_registry.py`の共有登録簿へ保存する。同一sessionで真になった値は後続の公開でも保持する。`manager_registry.py`が別所有者へ復元し、`SessionResumeState`と`manager_resume.py`を通して新しいturnへ引き継ぐ。回復待ちと診断はturn単位で初期化し、消費状態は初期化しない。
+
 ## 名指し参照の読込方法
 
 名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。

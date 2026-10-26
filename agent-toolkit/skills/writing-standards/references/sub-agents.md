@@ -86,7 +86,7 @@ continuations:
 
 - 行を省略可能な項目の定義方法は、`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」におけるデフォルト値の規定に従い、同一の要素は単一のデータ構造にのみ列挙させる。
 
-- 判断待ちの通知および処理の続行手順は、同書「返却形式の受け渡し」の記述に一本化し、個別の停止条件を重複して設けない。調査によって確定できる結論については、結果としての具体的な値を持たせる。
+- 完了・続行不能・通知・追加報告は、同書「返却形式の受け渡し」へ集約し、役割文書には固有の成功値・結果欄・工程境界と共通契約との差分だけを置く。同節は軽量起動にも自動配送される。調査によって確定できる結論は、結果としての具体的な値を持たせる。
 
 ## コンテキスト境界
 
@@ -95,6 +95,6 @@ fork以外の委譲についてはコンテキストが完全に独立する前�
 Codex環境で`agents_server`が利用できず組み込みの委譲機能で代替する場合は、`spawn_agent`に`fork_turns: "none"`を明示的に指定する。
 `agents_server`経由で起動した委譲先が受け取る情報は、委譲プロンプト、および`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める起動条件によって決定されるもののみである。
 
-Codexネイティブの`spawn_agent`で起動した委譲先では、`fork_turns`によって選択される会話履歴、対象worktreeから自動読み込みされる`AGENTS.md`、ならびに`SubagentStart` hookによって追加される委譲先規範を、それぞれ個別の入力として区別して扱う。会話履歴に規範が含まれていることをhook配送の代替とせず、共通の委譲先規範は`rules-subagent.md`を原本の定義として、Codex hookとagents_serverの通常委譲へ同期させる。また、Claude Code固有の委譲先規範はCodexへ配送せず、軽量な探索・書き込み・shellの各起動に対して共通規範を配送しない仕様を維持する。
+Codexネイティブの`spawn_agent`で起動した委譲先では、`fork_turns`によって選択される会話履歴、対象worktreeから自動読み込みされる`AGENTS.md`、ならびに`SubagentStart` hookによって追加される委譲先規範を、それぞれ個別の入力として区別して扱う。会話履歴に規範が含まれていることをhook配送の代替とせず、共通の委譲先規範は`rules-subagent.md`を原本の定義として、Codex hookとagents_serverの通常委譲へ同期させる。軽量起動には同書の返却契約短節だけを配送し、全文配送と区別する。Claude Code固有の委譲先規範はCodexへ配送しない。
 Codexでforkを選択する場合は、`spawn_agent`の`fork_turns`を省略するか`"all"`を指定する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月27日」に記載されている。
 役割文書を渡して起動する際は、`agent-toolkit:delegation`のSKILL.md「送信」に従い、会話履歴を引き継がずに実行する。

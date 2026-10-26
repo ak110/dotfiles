@@ -10,8 +10,8 @@ from typing import Any
 
 import pytest
 
+from agent_toolkit._agents_server import launch_prompts, mcp_tools, opencode, session_errors
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import mcp_tools, opencode, session_errors
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._atk import config
 from agent_toolkit._common import state_paths
@@ -19,6 +19,18 @@ from agent_toolkit._testing import agents_server_support
 from agent_toolkit._testing.isolation import restore_host_environment
 
 _CREATE_PROCESS = asyncio.create_subprocess_exec
+
+
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "write", "shell"])
+def test_shared_result_contract_is_delivered_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, launch_kind: opencode.LaunchKind
+) -> None:
+    """通常・軽量の役割権限を保ち、共通返却契約は各プロンプトに1回だけ含める。"""
+    monkeypatch.setattr(opencode.host_homes, "claude_config_dir", lambda: tmp_path / "claude")
+    prompt = opencode.system_prompt(launch_kind)
+    assert prompt.count(launch_prompts.RESULT_REPORT_INSTRUCTIONS) == 1
+    assert launch_prompts.LAUNCH_SYSTEM_PROMPTS[launch_kind].split(launch_prompts.RESULT_REPORT_INSTRUCTIONS)[0] in prompt
+
 
 _FAKE = """#!{python}
 import json

@@ -13,6 +13,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     engine_availability,
+    result_contract,
     result_projection,
     session_errors,
     session_identity,
@@ -518,6 +519,8 @@ def decode_event(line: bytes) -> dict[str, Any] | None:
 
 def finalize_turn(session: SessionState, result: dict[str, Any]) -> None:
     """最新turnの終端結果を確定する。"""
+    if result_contract.hold_invalid_result(session, result):
+        return
     session.pending_result = None
     session.status = result["status"]
     session.agent_message = result["agent_message"]
