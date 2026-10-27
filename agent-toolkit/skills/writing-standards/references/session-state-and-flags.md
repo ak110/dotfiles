@@ -125,11 +125,9 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 
 ## 進捗の点検系
 
-- `progress_self_check`: `agent-toolkit/agent_toolkit/_hooks/progress_self_check.py`が、呼出主体ごとの点検の時刻をepoch秒で保持する。呼出主体はhookペイロードの`agent_id`とし、これを持たない会話では`main`とする。
-  各主体の値は`started_at`（その主体を最初に観測した時刻）と`last_notified_at`（最後に点検を通知した時刻）である。
-  PostToolUseとUserPromptSubmitが`update_state`の排他区間で読み書きする。最初の観測では両方へ同じ時刻を記録するだけにする。
-  `last_notified_at`から1800秒以上たった観測で`source="progress-self-check"`の通知を1回返し、`last_notified_at`を更新する。UserPromptSubmitでは機械注入のターンも対象とする。
-  リセット処理は設けず、生存期間はセッション状態ファイルと同一とする。
+- `progress_self_check`: `_hooks/progress_self_check.py`が、呼出主体（`agent_id`、無ければ`main`）ごとに`started_at`（初回観測）と`last_notified_at`（最後の通知）をepoch秒で保持する。
+  PostToolUseとUserPromptSubmitが`update_state`で読み書きし、初回観測は記録だけにする。PostToolUseと機械注入のUserPromptSubmitは、`last_notified_at`から1800秒以上で`source="progress-self-check"`の通知を返して時刻を更新する。
+  実ユーザーの発話では通知せず`last_notified_at`を現在時刻へ進める。リセットは無く、生存期間はセッション状態ファイルと同一とする。
 
 ## 確認・操作スキル系
 
