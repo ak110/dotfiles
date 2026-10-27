@@ -147,6 +147,11 @@ HELP: dict[str, dict[str, str]] = {
         "description": "外部編集後の未コミット変更を確定してpushする。\n\n目的: 外部のエディターなどで直接編集したprivate-notesの未コミット変更を確定し、pushする。\n利用場面: `atk`以外の手段でキューのファイルや保存済みの計画ファイルを編集した後。push待ちのローカルcommitを送信するとき。\n対象と出力: private-notesの作業ツリーの変更をcommitしてpushする。差分が無い場合も滞留しているcommitをpushする。\n前提: private-notesがrebaseの途中でないこと。\n復元・後始末: commitの後の取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk wi commit",
     },
+    "atk wi pull": {
+        "summary": "private-notesを明示的に同期する",
+        "description": "private-notesを明示的に同期する。\n\n目的: private-notesをupstreamと明示的に同期する。\n利用場面: キュー本文を表示せず、後続操作の前に最新状態だけを取得するとき。\n対象と出力: private-notesへfast-forward同期と既存のlegacy予約移行を適用し、成功時は同期対象の絶対パスを1行だけ表示する。キュー項目の本文は表示しない。\n前提: private-notesが有効なGitリポジトリで、upstreamとfast-forward同期できること。\n復元・後始末: fast-forwardで取得した履歴は通常のGit履歴として残る。失敗時は既存のGit回復手順に従う。",
+        "epilog": "実行例:\n\n  atk wi pull",
+    },
     "atk wi check-alerts": {
         "summary": "CI失敗を1回確認して新規AWIを投入する",
         "description": "CI失敗を1回確認して新規AWIを投入する。\n\n目的: 常駐監視と共有するCI収集・重複除外・本文生成・保存を1回実行する。\n利用場面: エージェントがprocess-wiの実行途中などにCI失敗を確認するとき。\n対象と出力: --target-repoのローカル作業ツリー、未指定時は現在の作業ツリーを対象とする。GitHubのワークフローとイベント別の直近完了run、GitLabの最新pipelineと有効なPipeline Scheduleを確認し、未投入の失敗をsource=alert-monitor・alert_keys付きのAWIへ保存する。成功行へ投入件数を書き、0件を含め終了コード0で終わる。全体・一部の取得失敗は理由と投入件数を分けて示し、終了コード1で終わる。対象・引数の不正は終了コード2、保存失敗は非0で終わる。\n前提: private-notes、対象のorigin、追跡先またはorigin/HEADとforgeの認証が有効であること。\n復元・後始末: 実行後に終了する。保存したAWIは通常のキュー操作で扱う。process-loop・process-wi・Dependabot監査は起動せず、呼び出す時機は各環境が選ぶ。",

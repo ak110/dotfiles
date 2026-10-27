@@ -51,6 +51,7 @@ STATE_CHANGE_COMMANDS = frozenset(
         "atk wi set-dependencies",
         "atk wi answer",
         "atk wi commit",
+        "atk wi pull",
         "atk wi process-loop abort",
         "atk wi process-loop abort-cancel",
         "atk wi process-loop instruct",

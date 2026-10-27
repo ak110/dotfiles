@@ -1006,7 +1006,6 @@ _REMOVED_RUN_SCRIPTS = (
         ["read-file", "--", "/absolute/example"],
         ["run-command", "--", "true"],
         ["watch", "--file", "/absolute/example"],
-        ["wi", "pull"],
         ["plans", "rewrite-references"],
         ["serve", "logs"],
         ["serve", "--follow"],

@@ -861,6 +861,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     _add_target_repo_arg(answer)
 
     _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk wi commit"])
+    _atk_help.add_command(sub, "pull", **_atk_help.HELP["atk wi pull"])
 
 
 def _add_mq_process_loop_parser(sub: Any) -> None:
@@ -1136,6 +1137,15 @@ def _validate_add_args(args: argparse.Namespace) -> None:
         args.type = _wi_constants.WI_TYPE_AWI
 
 
+def _pull_command(private_notes: pathlib.Path) -> None:
+    """private-notesを排他ロック内で明示的に同期する。"""
+    with _wi_sync.repo_lock(private_notes):
+        _wi_sync.pull(private_notes)
+        has_remote = _atk_git_sync.has_remote(private_notes)
+    result = "remoteと同期した" if has_remote else "remoteかupstreamが無いため同期していない"
+    _outcome.report_success(f"private-notesを{result}: {private_notes.resolve()}")
+
+
 def prepare_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     """反復可能なフィルターの省略時の値、対象リポジトリおよびメモファイルを確定する。
 
@@ -1226,6 +1236,7 @@ def dispatch(
         "grep": lambda: _grep.cmd_grep(args, private_notes),
         "answer": lambda: _uwi.cmd_answer(args, private_notes),
         "commit": lambda: _mutation_targets.cmd_commit(private_notes),
+        "pull": lambda: _pull_command(private_notes),
         "process-loop": lambda: (
             _process_loop_all_repos.cmd_process_loop_all_repos(args, private_notes, manager_factory=repository_manager_factory)
             if process_loop_subcommand == "all-repos"
