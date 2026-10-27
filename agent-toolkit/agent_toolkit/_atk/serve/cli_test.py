@@ -1155,7 +1155,8 @@ def test_serve_logs_reads_atk_serve_journal(monkeypatch: pytest.MonkeyPatch, fol
     monkeypatch.setattr(subprocess, "run", run)
 
     assert serve.show_logs(follow=follow) == 7
-    [command] = commands
+    assert len(commands) == 1
+    command = commands[0]
     assert command[:2] == ["journalctl", "--user"]
     assert "_SYSTEMD_USER_UNIT=atk-serve.service" in command
     assert ("-f" in command) is follow
