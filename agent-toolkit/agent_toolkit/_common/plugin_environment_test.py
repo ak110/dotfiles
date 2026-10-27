@@ -322,6 +322,8 @@ def test_session_start_persists_before_uv_and_keeps_other_hooks_and_user_path(
     environment["PATH"] = "user-first::user-last"
     # Git Bash自身が追加するPATHも、hookが保持すべき呼出元の値に含める。
     command = 'before=$PATH; source "$1"; printf "%s\\n%s\\n%s\\n" "$before" "$PATH" "$OTHER_HOOK"'
+    # MSYSは一時領域を/tmpにもマウントするため、表記ではなくnative側のパス同一性を確かめる。
+    command += '; cygpath -aw "${PATH%%:*}"' if os.name == "nt" else '; printf "%s\\n" "${PATH%%:*}"'
     observed = subprocess.run(
         [bash, "--noprofile", "--norc", "-c", command, "bash", str(env_file)],
         env=environment,
@@ -346,11 +348,9 @@ def test_session_start_persists_before_uv_and_keeps_other_hooks_and_user_path(
         )
     )
     assert observed.returncode == 0, observed.stderr
-    before, after, other_hook = observed.stdout.splitlines()
-    scripts = (root / "scripts").as_posix()
-    if os.name == "nt":
-        scripts = "/" + scripts[0].lower() + scripts[2:]
-    assert after == scripts + ":other-hook:" + before
+    before, after, other_hook, native_scripts = observed.stdout.splitlines()
+    assert Path(native_scripts) == root / "scripts"
+    assert after.partition(":")[2] == "other-hook:" + before
     assert before.endswith("user-first::user-last")
     assert other_hook == "kept"
 
