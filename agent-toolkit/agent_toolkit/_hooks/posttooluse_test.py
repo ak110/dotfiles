@@ -1496,7 +1496,7 @@ class TestExitSessionResetsProcessAwisFlag:
 
     @staticmethod
     def _invoke(session_id: str, state_dir: pathlib.Path, command: str = "atk agents-exit-session") -> None:
-        _run(
+        result = _run(
             {
                 "session_id": session_id,
                 "tool_name": "Bash",
@@ -1505,6 +1505,8 @@ class TestExitSessionResetsProcessAwisFlag:
             },
             state_dir=state_dir,
         )
+        assert result.returncode == 0, result.stderr
+        assert "Traceback" not in result.stderr, result.stderr
 
     def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path) -> None:
         sid = "exit-cli"
@@ -1536,7 +1538,7 @@ class TestExitSessionResetsProcessAwisFlag:
         assert state.get("autonomous_exit_invoked") is True
 
     def test_no_rewrite_when_exit_and_reset_state_is_already_complete(self, tmp_path: pathlib.Path) -> None:
-        """終了CLI記録とリセット済み状態がそろう場合は再書き込みしない。"""
+        """進捗起点と終了CLI記録とリセット済み状態がそろう場合は再書き込みしない。"""
         sid = "exit-no-rewrite"
         path = session_state.state_path(sid)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1551,6 +1553,12 @@ class TestExitSessionResetsProcessAwisFlag:
             ),
             encoding="utf-8",
         )
+        # 終了処理と独立した進捗起点の初回記録を、測定の前に通常のhook経由で済ませる。
+        observed = _run({"session_id": sid, "tool_name": "Read", "tool_input": {}}, state_dir=tmp_path)
+        assert observed.returncode == 0, observed.stderr
+        assert "Traceback" not in observed.stderr, observed.stderr
+        # 更新精度が秒単位のファイルシステムでも、不要な書き込みを確実に検出する。
+        os.utime(path, ns=(0, 0))
         mtime_before = path.stat().st_mtime_ns
         self._invoke(sid, tmp_path)
         assert _read_state(tmp_path, sid)["marker"] == "keep"
