@@ -15,9 +15,9 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit._common import automated_prompt, session_state
-from agent_toolkit._hooks import posttooluse, user_prompt_submit
+from agent_toolkit._hooks import posttooluse, progress_self_check, user_prompt_submit
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import _read_state
+from agent_toolkit._testing.helpers import _read_state as _read_full_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 _SCRIPT = _SCRIPTS_DIR / "hook.py"
@@ -30,6 +30,18 @@ _NOTICE_BOUNDARY_PATTERN = re.compile(r"</?atk-auto\b[^>]*>")
 # 注記の文意は定義の読解で確かめ、ここでは通常発話へ同じ定義の本文がそのまま届くことを確かめる。
 # 本文を写した期待値は文面の変更に追随させるだけで、届いた判断の正しさを検出しないため使わない。
 _EXPECTED_VERIFICATION_NOTICE_BODY = posttooluse.VERIFICATION_NOTICE_BODY
+
+
+def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
+    """進捗のセルフチェックの時刻を除いたセッション状態を返す。
+
+    セルフチェックは発話の種類によらず全てのUserPromptSubmitで時刻を記録する。
+    本モジュールは発話の種類ごとの状態の違いを検証するため、その記録を比較の対象から外す。
+    セルフチェック自体の記録は`progress_self_check_test.py`が検証する。
+    """
+    state = _read_full_state(state_dir, session_id)
+    state.pop(progress_self_check.STATE_KEY, None)
+    return state
 
 
 def _write_state(session_id: str, state: dict) -> None:
@@ -166,7 +178,7 @@ class TestUserConfirmationSkillPrompt:
 
     @classmethod
     def _has_notice(cls, context: str) -> bool:
-        return f"次の操作: 応答と作業の着手より前に`{cls._SKILL}`をスキル機能で起動する。" in context
+        return f"次の操作: 応答と作業の着手より前に`{cls._SKILL}`をスキル機能で起動" in context
 
     @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
     def test_claude_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
@@ -174,7 +186,7 @@ class TestUserConfirmationSkillPrompt:
         self._session_start(source, tmp_path)
         context = self._prompt("表示が変わった原因は何か", tmp_path)
         assert self._has_notice(context)
-        assert "診断より前に`agent-toolkit:bugfix`を起動する" in context
+        assert "診断より前に`agent-toolkit:bugfix`を起動" in context
         assert "説明の補足や委譲・AWIの方針も対象" in context
         assert "「起動契機」から「認可を要する操作」" in context
         assert not self._has_notice(self._prompt("続けて", tmp_path))
@@ -224,7 +236,7 @@ class TestUserConfirmationSkillPrompt:
         assert not self._has_notice(self._prompt(prompt, tmp_path, host=host))
         context = self._prompt("依頼", tmp_path, host=host)
         assert self._has_notice(context)
-        assert "診断より前に`agent-toolkit:bugfix`を起動する" in context
+        assert "診断より前に`agent-toolkit:bugfix`を起動" in context
 
     def test_usage_limit_resume_prompt_is_machine_injected(
         self, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
@@ -271,7 +283,7 @@ class TestUserConfirmationSkillPrompt:
         self._session_start(source, tmp_path, host="codex")
         context = self._prompt("表示が変わった原因は何か", tmp_path, host="codex")
         assert self._has_notice(context)
-        assert "診断より前に`agent-toolkit:bugfix`を起動する" in context
+        assert "診断より前に`agent-toolkit:bugfix`を起動" in context
         assert "説明の補足や委譲・AWIの方針も対象" in context
         assert not self._has_notice(self._prompt("続けて", tmp_path, host="codex"))
 
@@ -348,7 +360,7 @@ class TestMachineInjectedTurn:
         result = _run({"session_id": sid, "prompt": "実際の依頼"}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "スキル機能で起動する" in context
+        assert "スキル機能で起動" in context
         assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
 
 
@@ -407,7 +419,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence"}
         evidence = state["termination_evidence"]
         assert not evidence["works"]
         assert evidence["inputs"][evidence["last_input"]] == {"text": "通常のユーザー発話です。", "human": True, "offset": 0}
@@ -415,10 +427,10 @@ class TestNonMatchingPrompts:
     @pytest.mark.parametrize(
         ("prompt", "expected_keys"),
         [
-            ("<cross-session-message>継続</cross-session-message>", {"work_contract_input_sequence"}),
+            ("<cross-session-message>継続</cross-session-message>", set()),
             (
                 "<automated-prompt>継続</automated-prompt>",
-                {"termination_evidence", "work_contract_input_sequence"},
+                {"termination_evidence"},
             ),
         ],
     )
@@ -440,7 +452,6 @@ class TestNonMatchingPrompts:
         self._assert_no_notice(result)
         assert set(_read_state(tmp_path, sid)) == {
             "termination_evidence",
-            "work_contract_input_sequence",
         }
 
     def test_automated_prompt_receives_no_notice(self, tmp_path: pathlib.Path):
@@ -469,7 +480,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence"}
 
     def test_codex_treats_claude_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "codex-slash-command"
@@ -485,7 +496,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
+        assert set(state) == {"termination_evidence"}
 
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
         """空入力・prompt欠落payloadでexit 0、状態不変。"""
@@ -556,7 +567,6 @@ class TestRealignNoticeInjection:
             assert "次の操作:" in bodies[0]
             assert set(_read_state(tmp_path, sid)) == {
                 "termination_evidence",
-                "work_contract_input_sequence",
                 "notice_fingerprints",
             }
 
@@ -585,15 +595,6 @@ class TestRealignNoticeInjection:
         assert "認識合わせ" not in result.stdout
         assert "この発話は" not in result.stdout
         assert set(_read_state(tmp_path, "realign-machine")) <= {"notice_fingerprints"}
-
-    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
-    def test_realign_does_not_include_timed_procedure(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
-        sid = "realign-verification"
-        result = _run({"session_id": sid, "prompt": "理解を確かめて！！", **host_fields}, state_dir=tmp_path)
-        assert result.returncode == 0
-        bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
-        assert len(bodies) == 1
-        assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[0]
 
 
 class TestExampleInvestigationNotice:
@@ -688,7 +689,7 @@ class TestExampleInvestigationNotice:
         output = json.loads(result.stdout)
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
         assert len(bodies) == 3
-        assert "agent-toolkit:user-confirmation-and-report`をスキル機能で起動する" in bodies[0]
+        assert "agent-toolkit:user-confirmation-and-report`をスキル機能で起動" in bodies[0]
         assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[1]
         assert str(self._UTTERANCE_PATH) in bodies[2]
 
@@ -751,5 +752,5 @@ def test_task_completion_notice_has_japanese_automated_boundary(tmp_path: pathli
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
     assert "<atk-auto" in context
     assert "ユーザーの発話ではない" in context
-    assert "日本語で書く" in context
+    assert "日本語で書" in context
     assert "この発話は" not in context

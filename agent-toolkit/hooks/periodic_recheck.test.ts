@@ -115,7 +115,10 @@ test("main start creates one task from json: taskを持たないメインのstar
   expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
   expect(recorded.created).toEqual([{ cron: "*/30 * * * *", prompt: SCHEDULE_PROMPT, recurring: true }]);
   const argv = recorded.argv[0] ?? [];
-  expect(argv.slice(-1)).toEqual(["wait-schedule"]);
+  expect(argv.slice(0, 7)).toEqual(["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]);
+  expect(argv[7]?.endsWith("/scripts/launch.py")).toBe(true);
+  expect(argv[8]).toBe(argv[7]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
+  expect(argv.slice(9)).toEqual(["wait-schedule"]);
   expect(result.context?.length).toBe(1);
   expect(result.context?.[0]).toContain("task ID: cron-main");
   expect(result.context?.[0]).toContain('kind="notice"');
@@ -150,7 +153,7 @@ test("CronCreateの許可の判定がdenyなら作成せず、許可確認の案
   expect(recorded.calls).toEqual(["start", "CronList"]);
   expect(result.context?.[0]).toContain('kind="warn"');
   expect(result.context?.[0]).toContain("`CronCreate`の許可の判定が`deny`");
-  expect(result.context?.[0]).toContain("完了通知と終端観測で続ける");
+  expect(result.context?.[0]).toContain("完了通知と終了観測");
 });
 
 test("CronListの許可の判定がdenyなら一覧も作成も呼ばずに案内を届ける", async ($, on) => {
@@ -165,7 +168,7 @@ test("CronCreateが拒否されたら理由と案内を届ける", async ($, on)
   const result = await $.tool.call(START_INPUT);
   expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
   expect(result.context?.[0]).toContain("classifier denied");
-  expect(result.context?.[0]).toContain("必要な許可と公開状態を確認する");
+  expect(result.context?.[0]).toContain("必要な許可と公開状態");
 });
 
 test("cron式を得られなければCronCreateを呼ばずに案内を届ける", async ($, on) => {

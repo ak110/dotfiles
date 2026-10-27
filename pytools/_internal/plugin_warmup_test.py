@@ -26,6 +26,9 @@ def _target(tmp_path: pathlib.Path) -> pathlib.Path:
     entry = tmp_path / "plugin-root" / "agent_toolkit" / "entry.py"
     entry.parent.mkdir(parents=True)
     entry.write_text("", encoding="utf-8")
+    root = entry.parents[1]
+    (root / "pyproject.toml").write_text("[project]\nname='plugin'\nversion='0'\n", encoding="utf-8")
+    (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
     launcher = entry.parents[1] / "scripts" / "launch.py"
     launcher.parent.mkdir()
     launcher.write_text("", encoding="utf-8")
@@ -55,21 +58,15 @@ def test_warmup_uses_current_launcher_for_each_installed_distribution(
         return _FakeResult(returncode=0)
 
     monkeypatch.setattr(_common, "run_subprocess", run)
-    assert _plugin_warmup.warmup(path, pathlib.Path("/host/uv"), tag="warmup", arguments=("--check-dependencies",))
+    assert _plugin_warmup.warmup(path, pathlib.Path("/host/python"), tag="warmup", arguments=("--check-dependencies",))
     args, options = calls[0]
     assert len(calls) == 2
-    assert options["timeout"] == 600.0
+    assert options["timeout"] == 660.0
     assert args[-2:] == ["--prepare", str(path)]
     assert calls[1][0][-2:] == [str(path), "--check-dependencies"]
     current_launcher = pathlib.Path(_plugin_warmup.plugin_environment.__file__).resolve().parents[2] / "scripts/launch.py"
     bootstrap = [
-        "/host/uv",
-        "run",
-        "--no-config",
-        "--no-project",
-        "--python",
-        "3.15",
-        "python",
+        "/host/python",
         str(current_launcher),
         "--project",
         str(root),
@@ -92,7 +89,7 @@ def test_nonzero_exit_reports_captured_output(
     path = _target(tmp_path)
 
     with caplog.at_level(logging.WARNING):
-        assert _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup") is False
+        assert _plugin_warmup.warmup(path, pathlib.Path("python"), tag="warmup") is False
 
     assert f"stderr: {_STDERR_BODY}" in caplog.text
     assert f"stdout: {_STDOUT_BODY}" in caplog.text
@@ -110,7 +107,7 @@ def test_missing_result_reports_execution_failure(
     expected = _common.format_cli_error(None)
 
     with caplog.at_level(logging.WARNING):
-        assert _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup") is False
+        assert _plugin_warmup.warmup(path, pathlib.Path("python"), tag="warmup") is False
 
     assert expected in caplog.text
     assert "exit codeなし" in caplog.text
@@ -130,6 +127,40 @@ def test_success_does_not_report_captured_output(
     path = _target(tmp_path)
 
     with caplog.at_level(logging.WARNING):
-        assert _plugin_warmup.warmup(path, pathlib.Path("uv"), tag="warmup") is True
+        assert _plugin_warmup.warmup(path, pathlib.Path("python"), tag="warmup") is True
 
     assert caplog.text == ""
+
+
+def test_run_prepares_shared_dependency_environment_once(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """同じ依存keyの複数rootではprepareだけを共有し、各rootの確認は保つ。"""
+    first = _target(tmp_path / "first")
+    second = _target(tmp_path / "second")
+    calls: list[list[str]] = []
+    bootstraps: list[tuple[pathlib.Path, pathlib.Path]] = []
+
+    monkeypatch.setattr(_plugin_warmup.common, "resolve_executable", lambda *_args, **_kwargs: pathlib.Path("/host/uv"))
+    monkeypatch.setattr(_plugin_warmup, "_resolve_python", lambda *_args: pathlib.Path("/host/python"))
+    monkeypatch.setattr(
+        _plugin_warmup.plugin_environment, "project_environment", lambda *_args, **_kwargs: pathlib.Path("/shared/environment")
+    )
+    original_bootstrap = _plugin_warmup._bootstrap
+
+    def record_bootstrap(path: pathlib.Path, python: pathlib.Path) -> list[str]:
+        bootstraps.append((path, python))
+        return original_bootstrap(path, python)
+
+    def run_subprocess(command: list[str], **_kwargs: object) -> _FakeResult:
+        calls.append(command)
+        return _FakeResult(returncode=0)
+
+    monkeypatch.setattr(_plugin_warmup, "_bootstrap", record_bootstrap)
+    monkeypatch.setattr(_plugin_warmup.common, "run_subprocess", run_subprocess)
+    result = _plugin_warmup.run(lambda: [first, second], tag="warmup")
+
+    assert result.failure is None
+    prepare_count = sum("--prepare" in command for command in calls)
+    check_count = sum("--prepare" not in command for command in calls)
+    assert bootstraps == [(first, pathlib.Path("/host/python")), (second, pathlib.Path("/host/python"))]
+    assert prepare_count == 1
+    assert check_count == 2

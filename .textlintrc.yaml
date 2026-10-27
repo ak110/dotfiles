@@ -19,6 +19,14 @@ rules:
       strict: false
     # 専門用語の複合語で閾値超過が頻発し修正の手間だけがかさむため無効化する
     max-kanji-continuous-len: false
+    # 読点で区切った列挙や条件の並記まで分割を求めると、中黒の連結や名詞の詰め込みで文が硬くなるため緩和する
+    max-ten:
+      max: 5
+    # dict6（「〜を実行する」）は「操作を実行する」など自然な言い回しまで冗長と判定するため無効化する
+    ja-no-redundant-expression:
+      dictOptions:
+        dict6:
+          disabled: true
   preset-jtf-style:
     "1.1.3.箇条書き":
       shouldUsePoint: false # 箇条書きは「。」を付けない

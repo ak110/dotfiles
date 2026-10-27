@@ -149,8 +149,8 @@ def test_pretooluse_warns_reading_pending_output_of_each_background_form(
     context = _pretooluse_bash_context(capsys, session_id, transcript, f"{read_command} {output_path}", tmp_path)
 
     assert _WARNING in context
-    assert "途中経過は進捗の材料に限る" in context
-    assert "完了通知を受けた後に同じ出力ファイルを全量読み直してから結果として使う" in context
+    assert "途中経過は進捗の材料に限" in context
+    assert "完了通知を受けた後に同じ出力ファイルを全量読み直" in context
     assert "唯一の再開契機" not in context
 
     repeated = _pretooluse_bash_context(capsys, session_id, transcript, f"{read_command} {output_path}", tmp_path)
@@ -162,7 +162,7 @@ def test_pretooluse_warns_reading_pending_output_of_each_background_form(
     transcript = _write_transcript(tmp_path / "changed-transcript.jsonl", entries + other_entries)
     changed = _pretooluse_bash_context(capsys, session_id, transcript, f"{read_command} {other_path}", tmp_path)
     assert _WARNING in changed
-    assert "完了通知を受けた後に同じ出力ファイルを全量読み直してから結果として使う" in changed
+    assert "完了通知を受けた後に同じ出力ファイルを全量読み直" in changed
 
 
 @pytest.mark.parametrize("delivery", ["queue", "user"])

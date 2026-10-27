@@ -1,7 +1,7 @@
 # Claude Code・Codex Hook実装ガイドライン
 
-Hook実装はホストごとの公式契約へ適合させ、Claude Code固有の上限値や出力契約にはホスト名を付ける。
-主題ごとに分けたhook実装の規定（遮断・警告の判定、出力フィールド、Stop/SubagentStop、メッセージの言語と標識）と読む時点は、`agent-basics:writing-standards`の`SKILL.md`の読込表が示す。
+hookの実装は各ホストの公式仕様に適合させ、Claude Code固有の上限値や出力契約にはホスト名を明記する。
+遮断や警告の判定基準、出力フィールド、StopおよびSubagentStopフック、メッセージの言語と標識など、主題ごとの詳細な規定と参照タイミングは、`agent-basics:writing-standards`の`SKILL.md`にある読込表で確認する。
 
 ## 名指し参照の読込方法
 
@@ -15,46 +15,46 @@ Hook実装はホストごとの公式契約へ適合させ、Claude Code固有�
 
 ## hookスクリプトの基本プロトコル
 
-一次資料はClaude Codeが<https://code.claude.com/docs/ja/hooks.md>（取得方法は`host-official-references.md`の「公式リファレンス（Claude Code）」）、Codexが<https://learn.chatgpt.com/docs/hooks>である。入力ペイロード（`transcript_path`・`last_assistant_message`・`agent_transcript_path`・`hookSpecificOutput`など）と出力形式はこれらから確定し、参照した節名を計画ファイルの実装者向け領域へ引用する（努力目標）。
+公式の一次資料は、Claude Code向けが<https://code.claude.com/docs/ja/hooks.md>（取得方法は`host-official-references.md`「公式リファレンス（Claude Code）」を参照）、Codex向けが<https://learn.chatgpt.com/docs/hooks>である。入力ペイロード（`transcript_path`、`last_assistant_message`、`agent_transcript_path`、`hookSpecificOutput`など）と出力形式はこれらに基づいて確定し、参照した節名を計画ファイルの実装者向け欄に引用する（努力目標）。
 
-- 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutにホスト別契約の応答JSONを出力する。exit codeは0で正常完了とする
-- 失敗時の扱い（Claude Code v2.1.295以降のcommand・HTTP hook）: hookが判定を返す前に失敗した場合に操作を続けるか遮断するかを、`onFailure`の`"continue"`（指定なしの場合）と`"block"`で選ぶ。失敗はホストが検出する起動不能、timeout、0と2以外の終了コード、解析または検証できない出力、HTTPの接続失敗と2xx以外の応答を指し、hookが正常に判定して遮断・警告を返す場合とは別に選ぶ。
-  `"block"`はhookが故障している間も操作を止める必要があるかで選ぶ。故障中に全ての対象操作が止まる費用と、判定なしで通す損失の比較は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」に従う。
-  hook自身が例外を捕捉して終了コード0を返す場合はホストが失敗を検出しないため、`onFailure`では遮断できない。`Stop`・`SubagentStop`・`TaskCompleted`・`TeammateIdle`と、`async`または`asyncRewake`の背景command hookでは効果が無い。対象と限界の詳細は公式の[Block the action when a hook fails](https://code.claude.com/docs/en/hooks#block-the-action-when-a-hook-fails)にある
-- `${CLAUDE_PLUGIN_ROOT}`: Claude Codeが現プラグインのルートへ置換する。Codexもplugin hookの`command`内では置換するが、通常のスキル実行では置換しないため、スキル本文から実行するコマンドには読み込んだSKILL.mdの絶対パスから確定したplugin rootを用いる
-- Codexの信頼確認: plugin同梱フックも定義の変更後は`/hooks`で内容を確認して信頼する。信頼するまでCodexはそのフックをスキップする
-- 呼出主体の判別: サブエージェントとメイン会話の区別には共通入力の`agent_id`を使う。`transcript_path`はサブエージェント内で発火したフックでもメインセッションの記録を指し、サブエージェント自身の記録を指すのは`SubagentStop`の`agent_transcript_path`だけである。監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日」にある
-- そのターンの地の文の可視性: `PreToolUse`の発火時点では、同じアシスタントターンのテキストブロックが`transcript_path`のJSONLへ未書き込みである。そのターンの地の文を入力とする判定は`PreToolUse`以外のイベントへ置く。また思考ブロックとツール呼び出しだけのターンも記録されるため、直近の地の文を対象とする判定はテキストブロックを持たないターンを走査の対象から除いて遡る。監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日」にある
-- 発火条件: フック追加を計画に含める場合は、対象イベントの発火条件を計画の実装者向け領域へ明示する。PostToolUseはツール成功時のみ発火する。PostToolUseFailureは実行を始めたツールの失敗時に発火して`additionalContext`を受理し、入力検証による拒否と権限拒否では発火しない。PermissionDeniedはauto modeの拒否だけで発火し（deny規則への一致、手動の拒否、`PreToolUse`の遮断は対象外）、出力は`hookSpecificOutput.retry`だけを受理するため、回復手順の本文は別の手段で届ける。監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある。PostToolUseFailureとPermissionDeniedの発火条件の記録は同ファイルの「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年10月7日」にある
-- CodexのPostToolUseは`tool_response`を任意のJSON値として渡す。シェル実行では終了コードを含まず出力文字列だけが届くため、状態記録の条件からコマンドの成否を外す。`apply_patch`は適用成功時だけ発火するため、編集成功後の状態記録へ利用できる
-- Bashコマンドを対象とするhookの判定方式と、出力有無を状態で切り替えるフックの計画への記載は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」が定める
-- 起動パスの互換: hook定義が`command`で参照するスクリプトを改名、移動または削除する場合は、旧パスへ新しいエントリーポイントを呼ぶだけの互換スクリプトを残す。稼働中のセッションは起動時に読んだ旧パスを参照し続け、実体が無いとツール呼び出しがフック実行の失敗で拒否される。共通エントリーポイントが未知のサブコマンドを終了コード0で通過させる構成では、サブコマンドの削除に互換は要らない。互換スクリプトのdocstringへ役割と撤去条件を書き、撤去は旧定義を読み込んだセッションの全終了を確認できた場合だけ行う（配布物では新エントリーポイントを含む版の配布後の版数更新以降が下限）
-- イベントごとのエントリーポイント: 同じイベントへの判定は新しい登録を並べず、既存のエントリーポイントへ加える（努力目標。ホストは登録の件数だけプロセスを起動し、実行時間と画面の行数が増える）。エントリーポイントは判定単位で例外を隔離して単一の応答へ集約し、matcherによる限定は各判定側の早期returnへ移す
+- 入出力: 標準入力（stdin）から呼び出しペイロードのJSONを受け取り、標準出力（stdout）へホストごとの仕様に沿った応答JSONを出力する。正常終了時は終了コード0を返す。
+- 失敗時の扱い（Claude Code v2.1.295以降のcommand・HTTP hook）: hookが判定結果を返す前に失敗した場合に、対象の操作を続行させるか遮断するかを`onFailure`設定（指定なし時は`"continue"`、遮断時は`"block"`）で指定する。ここでの失敗とは、起動不能、タイムアウト、0や2以外の終了コード、JSON解析や検証の失敗、HTTP接続エラーや2xx以外のレスポンスなど、ホスト側が検知した障害を指す。これはhookが正常に判定し遮断や警告を返す動作とは区別して設定する。
+  `"block"`は、hookが動作不良を起こしている際にも対象操作を確実に阻止すべきかどうかに基づいて選択する。hook停止中にすべての対象操作が中断するコストと、チェックなしで通過させるリスクの比較は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」に従う。
+  なお、hookスクリプト自身が例外を捕捉して終了コード0で終了した場合はホストが失敗を検知できないため、`onFailure`による遮断は機能しない。また、`Stop`、`SubagentStop`、`TaskCompleted`、`TeammateIdle`、および`async`や`asyncRewake`を指定したバックグラウンドのcommand hookではこの設定は効果を持たない。詳細な仕様と制約は公式の[Block the action when a hook fails](https://code.claude.com/docs/en/hooks#block-the-action-when-a-hook-fails)を参照する。
+- `${CLAUDE_PLUGIN_ROOT}`: Claude Codeでは現在のプラグインのルートパスへ自動置換される。Codexで置換されるのはプラグインhookの`command`内だけである。そのため、スキル本文から実行するコマンドでは、読み込んだSKILL.mdの絶対パスから特定したプラグインルートを使用する。
+- Codexの信頼確認: プラグイン同梱のhookであっても、定義を変更した後は`/hooks`コマンドで内容を確認して信頼設定を行う。信頼設定が完了するまで、Codexはそのhookの実行をスキップする。
+- 呼び出し主体の判別: サブエージェントとメイン会話セッションの区別には、共通入力の`agent_id`を使用する。`transcript_path`はサブエージェント内で発火した場合でもメインセッションの記録を指すため、サブエージェント自身の記録を参照するには`SubagentStop`の`agent_transcript_path`を用いる。監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日」にある。
+- 同一ターンの本文の可視性: `PreToolUse`が発火した時点では、同じアシスタントターン内のテキストブロックはまだ`transcript_path`のJSONLファイルに書き込まれていない。同一ターンの本文を入力として判定する処理は、`PreToolUse`以外のイベントに配置する。また、思考ブロックやツール呼び出しのみで構成されるターンも記録されるため、直近の本文を調べる判定では、テキストブロックを含まないターンを除外して過去へ遡る。監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日」にある。
+- 発火条件: hookの追加を計画に含める際は、対象イベントの発火条件を計画の実装者向け欄に明記する。`PostToolUse`はツール実行が成功したときにのみ発火する。`PostToolUseFailure`は実行が開始されたツールが失敗した際に発火して`additionalContext`を受け付けるが、入力検証による拒否や実行前の権限拒否では発火しない。`PermissionDenied`はauto modeによる拒否でのみ発火する（deny規則への一致、ユーザーによる手動拒否、`PreToolUse`による遮断では発火しない）。出力は`hookSpecificOutput.retry`のみを受け付けるため、回復手順の案内本文は別の手段で提供する。監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある。`PostToolUseFailure`と`PermissionDenied`の発火条件の記録は、同じ文書の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年10月7日」にある。
+- Codexの`PostToolUse`は、`tool_response`として任意のJSON値を渡す。シェル実行では終了コードが含まれず出力文字列のみが渡されるため、状態を記録する条件からコマンドの成否判定を外す。一方、`apply_patch`はパッチ適用が成功したときにのみ発火するため、ファイル編集が成功した後の状態記録に利用できる。
+- Bashコマンドを対象とするhookの判定方式、および状態に応じて出力の有無を切り替えるhookの計画への記載方法は、`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」で定める。
+- 起動パスの互換性維持: hook定義の`command`が参照しているスクリプトを改名、移動、または削除する場合は、旧パスに新しいエントリーポイントを呼び出す互換スクリプトを残す。実行中のセッションは起動時に読み込んだ旧パスを保持し続けるため、実体が存在しないとツール呼び出しがhookの実行エラーによって拒否される。なお、共通エントリーポイントが未知のサブコマンドを終了コード0で通過させる設計であれば、サブコマンド自体の削除に互換スクリプトは不要である。互換スクリプトのdocstringには役割と撤去条件を明記し、旧定義を読み込んだセッションがすべて終了したことを確認できた場合にのみ撤去する（配布物の場合は、新エントリーポイントを含むバージョンのリリース後のバージョン更新以降を最低限の基準とする）。
+- イベントごとのエントリーポイント集約: 同じイベントに対する複数の判定処理は、新しいhookを個別に登録せず既存のエントリーポイントに統合する（努力目標。個別に登録するとホストがその件数分プロセスを起動するため、実行時間や画面のログ行数が増加する）。エントリーポイント内では判定単位ごとに例外を隔離して1つの応答JSONに集約し、`matcher`による絞り込み処理は各判定ロジック内の早期リターンとして実装する。
 
 ## matcher設定
 
-ツール名で`matcher`を評価するイベントは`PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`PermissionRequest`、`PermissionDenied`の5つとする。
-`"*"`、空文字列およびキーの省略は全ツールへ一致する。英数字、`_`、`-`、空白、`,`、`|`だけからなる値は`|`または`,`で区切ったツール名の完全一致、それ以外の文字を含む値は先頭と末尾を固定しないJavaScriptの正規表現として評価する。
-全ツールへ一致させる新規の登録には`"*"`を書き（努力目標）、ツール名で評価しないイベントでは`matcher`キーを省く。
+ツール名に基づいて`matcher`を評価するイベントは、`PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`PermissionRequest`、`PermissionDenied`の5つである。
+`"*"`、空文字列、およびキー自体の省略はすべてのツールに一致する。英数字、`_`、`-`、空白、`,`、`|`のみで構成される文字列は、`|`または`,`で区切られたツール名の完全一致として評価される。それ以外の文字を含む文字列は、先頭と末尾を固定しないJavaScriptの正規表現として評価される。
+すべてのツールに一致させる新規登録では明示的に`"*"`を記述し（努力目標）、ツール名で評価しないイベントでは`matcher`キーを省略する。
 一次資料は<https://code.claude.com/docs/en/hooks.md>の`Matcher patterns`節である。監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日」にある。
 
-- `matcher`を広げた場合は、スクリプト側で`tool_name`を確認して対象外を早期returnする
-- Codexへはツール名を明示して限定したmatcherを配布する。Claude Code向けの全ツール一致のmatcherをそのまま渡すと、入力契約を確認していないツールでもhandlerが起動する
+- `matcher`の対象を広く設定した場合は、スクリプト側で`tool_name`を確認して対象外のツールを早期リターンする。
+- Codexに対しては、ツール名を明示して対象を絞り込んだmatcherを提供する。Claude Code向けの全ツール一致のmatcherをそのまま渡すと、入力仕様を確認していないツールでもハンドラーが意図せず起動してしまうためである。
 
 ## Codexの編集ツール入力
 
-Codexの`apply_patch`はmatcher上で`Edit`・`Write`の別名に一致するが、入力payloadの`tool_name`は`apply_patch`のままであり、変更本文は`tool_input.command`へ`*** Begin Patch`から`*** End Patch`までの構文で入る。
-1回の呼び出しに`Add File`・`Update File`・`Delete File`・`Move to`と`@@`区切りのhunkを複数ファイル分含む。
+Codexの`apply_patch`はmatcher上で`Edit`や`Write`の別名として一致する。ただし、入力payloadの`tool_name`は`apply_patch`のままであり、変更内容は`tool_input.command`内に`*** Begin Patch`から`*** End Patch`までの構文で渡される。
+1回の呼び出しの中に、`Add File`、`Update File`、`Delete File`、`Move to`、および`@@`区切りの差分（hunk）が複数ファイル分まとめて含まれる。
 
-ホスト差をチェック本体へ持ち込まないため、編集入力は次の2層で正規化する。
+ホスト間の差異をチェック処理本体へ持ち込まないようにするため、編集入力は以下の2層に正規化して扱う。
 
-- 操作記録: 入力だけから操作種別、対象パス、順序付き編集断片を求める。ファイルを読まないためPostToolUseからも使える
-- 変更前後像: 対象ファイルの現在内容へ操作記録を適用して全文を組み立てる。PreToolUseだけが使う
+- 操作記録: 入力データのみから操作種別、対象パス、順序付きの編集断片を抽出する。ファイルを読み取らないため、`PostToolUse`からも利用できる。
+- 変更前後像: 対象ファイルの現在内容に対して操作記録を適用し、変更後の全体像を構築する。これは`PreToolUse`でのみ使用する。
 
-相対パスはpayloadの`cwd`起点で解決する。patchを解釈できない場合はhook側で遮断せず、妥当性判定を`apply_patch`本体へ委ねる。
+相対パスはpayloadに含まれる`cwd`を起点として解決する。パッチ構文を解釈できない場合はhook側で遮断せず、妥当性の判定を`apply_patch`本体の処理に委ねる。
 
-ホスト判定は、Codexがターン単位hookへ付加する非空文字列の`turn_id`と、UserPromptSubmitでCodexだけが渡す`prompt`と`model`の組に限り、ツール名から推測しない。
+ホストの判定は、Codexがターン単位のhookに付与する空でない文字列の`turn_id`、および`UserPromptSubmit`でCodexのみが渡す`prompt`と`model`の組み合わせに基づいて行い、ツール名から推測することは避ける。
 
-複数ファイル・複数チェックの警告は1つの`hookSpecificOutput.additionalContext`へ結合して返す。stdout全体が1つのJSONとして解析されるためである。
+複数ファイルや複数チェックによる警告は、1つの`hookSpecificOutput.additionalContext`に統合して返す。標準出力全体が1つのJSONとして解析されるためである。
 
-Codexのシェル実行と統合実行（`exec_command`）はmatcher上で`Bash`に一致し、`tool_input.command`にコマンド文字列が入る。一次資料は<https://learn.chatgpt.com/docs/hooks>のTool coverageとし、matcherへ列挙する名前を`Bash`に限る。
+Codexのシェル実行および統合実行（`exec_command`）はmatcher上で`Bash`に一致し、`tool_input.command`に実行コマンド文字列が渡される。一次資料は<https://learn.chatgpt.com/docs/hooks>のTool coverageとし、matcherに指定する名前は`Bash`に限定する。

@@ -171,7 +171,7 @@ class TestApproveConditions:
         assert "decision" not in _parse_decision(result)
 
     def test_pending_agents_server_observation_approves(self, tmp_path: pathlib.Path):
-        """終端済みでも未回収のagents_server結果があれば、終了工程を促す遮断を保留する。"""
+        """終了済みでも未回収のagents_server結果があれば、終了工程を促す遮断を保留する。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         _write_state(
             tmp_path,
@@ -243,17 +243,6 @@ class TestBlockCondition:
         assert "\n次の操作: " in reason
         assert reason.startswith('<atk-auto source="autonomous_exit" kind="block">')
 
-    def test_reason_body_states_the_evaluated_input(self, tmp_path: pathlib.Path) -> None:
-        """本hookが実際に判定した入力だけを述べ、未完了工程を列挙しない。"""
-        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
-        result = _run(
-            {"session_id": "scope", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        reason = _parse_decision(result)["reason"]
-        assert "本判定の入力は" in reason
-        assert "どの工程が未完了かは判定していない" in reason
-
     def test_nested_session_id_approves(self, tmp_path: pathlib.Path):
         """親の印を継承した別会話は終了工程で遮断しない。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
@@ -309,7 +298,7 @@ _RUNNING_TASKS = [
 
 
 class TestExitRequestWithdrawal:
-    """バックグラウンドタスクが残る終了要求を取り下げ、終端の確認と終了工程の再実行を求める。"""
+    """バックグラウンドタスクが残る終了要求を取り下げ、終了の確認と終了工程の再実行を求める。"""
 
     def _run_with_request(
         self,

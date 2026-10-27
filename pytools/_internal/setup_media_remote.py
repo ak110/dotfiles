@@ -133,7 +133,7 @@ def _start(vbs: pathlib.Path, exe: pathlib.Path) -> None:
     """VBSラッパーがあればその経由で、無ければ実行ファイルを直接、非表示で起動する。
 
     起動したプロセスへ標準入出力を引き継がない。引き継ぐと、post-applyの出力を読む`update-dotfiles`が
-    media-remoteの終了までパイプの終端を待ち続ける。
+    media-remoteの終了までパイプの終了を待ち続ける。
     """
     command = [WSCRIPT_PATH, str(vbs)] if vbs.is_file() else [str(exe), "serve"]
     logger.info(log_format.format_status("media-remote", "dotfiles-media-remote を再起動"))

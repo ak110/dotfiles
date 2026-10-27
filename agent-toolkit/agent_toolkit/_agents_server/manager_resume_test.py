@@ -10,6 +10,7 @@ import datetime
 import json
 import logging
 import pathlib
+import time
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
@@ -20,6 +21,7 @@ from agent_toolkit import atk
 from agent_toolkit._agents_server import (
     agents_wait,
     child_environment,
+    claude_api_credits,
     launch_requests,
     result_projection,
     resume_waits,
@@ -358,9 +360,18 @@ async def test_api_credit_exhaustion_moves_to_subscription(
             assert (await _wait_until_terminal(manager))["status"] == "completed"
             assert not options_seen[-1].env.get("ANTHROPIC_API_KEY")
             assert options_seen[-1].resume == started["session_id"]
+            # 残高不足の観測から一定時間内に起動する新しい会話は、APIで失敗する往復を省いてサブスクリプションから始める。
+            launches = len(options_seen)
             fresh = await manager.start("claude:sonnet/high", "新規", str(tmp_path))
             assert (await _wait_until_terminal(manager))["status"] == "completed"
             assert fresh["session_id"] != started["session_id"]
+            assert len(options_seen) == launches + 1
+            assert not options_seen[-1].env.get("ANTHROPIC_API_KEY")
+            # 一定時間を過ぎた後に起動する新しい会話は、通常の接続順どおりAPIを再び試す。
+            claude_api_credits.record_shortage(now=time.monotonic() - claude_api_credits.CREDIT_SHORTAGE_TTL_SECONDS - 1)
+            later = await manager.start("claude:sonnet/high", "新規2", str(tmp_path))
+            assert (await _wait_until_terminal(manager))["status"] == "completed"
+            assert later["session_id"] != fresh["session_id"]
             assert options_seen[-1].env["ANTHROPIC_API_KEY"] == "test-api-key"
         finally:
             await manager.close()
@@ -511,7 +522,7 @@ async def test_resumed_session_keeps_every_launch_info_item(
 ) -> None:
     """再開の処理によらず、起動情報の定義の全項目を`start`時の値のまま保つ。
 
-    再開時に写されなかった項目は、`atk agents list`・`show`の状態と`atk agents wait`の終端行で空になり、
+    再開時に写されなかった項目は、`atk agents list`・`show`の状態と`atk agents wait`の終了行で空になり、
     labelで自sessionを探す手順と、`-review`の完了結果に付く採否確定の案内が成立しなくなる。
     再開後の登録簿にも同じ値を書き、もう一度再起動しても保たれることを確かめる。
     """
@@ -886,7 +897,7 @@ async def test_claude_resume_replaces_retained_terminal_state_while_new_turn_run
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """resumeは登録簿に残る前turnの終端状態を新しいturnへ引き継がない。"""
+    """resumeは登録簿に残る前turnの終了状態を新しいturnへ引き継がない。"""
     session_id = "claude-retained"
     client = BlockingResultClaudeClient(session_id)
     async with claude_backend.ClaudeServerManager(client_factory=lambda _options: client) as manager:
@@ -947,9 +958,9 @@ async def test_wait_delivers_child_session_result_without_kill(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """別プロセスが起動した子sessionの終端後、killを用いないwaitが委譲先の結果を配送する。
+    """別プロセスが起動した子sessionの終了後、killを用いないwaitが委譲先の結果を配送する。
 
-    子sessionの登録簿レコードが残らない場合も、共有の終端結果ファイルから終端を判定する。
+    子sessionの登録簿レコードが残らない場合も、共有の終了時の結果ファイルから終了を判定する。
     """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(
@@ -991,12 +1002,12 @@ async def test_wait_delivers_child_session_result_without_kill(
 
         _complete(child, message="子sessionの結果")
         child_writer.flush()
-        # 所有側が保持期限で解放した後も、終端結果ファイルを第2の根拠に終端と判定する。
+        # 所有側が保持期限で解放した後も、終了時の結果ファイルを第2の根拠に終了と判定する。
         session_registry.release(child.session_id, reason="retention_expired")
 
         pending = await manager.wait()
 
-        # 子sessionの終端を観測した待機が、killを伴わずに継続指示を1回配送する。
+        # 子sessionの終了を観測した待機が、killを伴わずに継続指示を1回配送する。
         assert pending["status"] == "running"
         assert backend.send_calls == 1
         assert (shared_layout.results_directory("root-session", tmp_path) / f"{child.session_id}.json").is_file()
@@ -1035,7 +1046,7 @@ async def test_send_message_resumes_stopped_session(
 
 @pytest.mark.asyncio
 async def test_resume_rejects_cwd_where_plugin_commands_fail(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """終端済みsessionの再開でも、起動コマンドが失敗する作業ディレクトリでは委譲先を再開しない。"""
+    """終了済みsessionの再開でも、起動コマンドが失敗する作業ディレクトリでは委譲先を再開しない。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("saved-session", str(tmp_path), engine="codex", turn_seq=1)
         _complete(session, message="前のturn")
@@ -1063,7 +1074,7 @@ async def test_child_collected_by_background_agents_wait_is_not_unobserved(
     status: str,
     expected_unobserved: list[str] | None,
 ) -> None:
-    """登録簿と終端結果ファイルが消えた後も、背景待機の出力ファイルに終端行がある孫sessionは未観測にしない。"""
+    """登録簿と終了時の結果ファイルが消えた後も、背景待機の出力ファイルに終了行がある孫sessionは未観測にしない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     async with server_manager.AgentsServerManager(status_writer=None) as manager:
         parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
@@ -1171,7 +1182,7 @@ async def test_overloaded_turn_resumes_same_session_and_publishes_resumed_result
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """起動後の過負荷は失敗を公開せず、待機の後に同じsessionで継続し、継続したturnの結果を終端結果として返す。"""
+    """起動後の過負荷は失敗を公開せず、待機の後に同じsessionで継続し、継続したturnの結果を終了時の結果として返す。"""
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: [("codex", "gpt-6.1-sol", "high")]
     )
@@ -1262,7 +1273,7 @@ async def test_overload_within_availability_check_switches_candidate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """起動の可用性確認の間に過負荷で終端した候補は、自動継続せず次の候補への切替で扱う。"""
+    """起動の可用性確認の間に過負荷で終了した候補は、自動継続せず次の候補への切替で扱う。"""
     candidates = [("codex", "gpt-6.1-sol", "high"), ("codex", "gpt-6-sol", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: candidates)
     async with server_manager.AgentsServerManager() as manager:

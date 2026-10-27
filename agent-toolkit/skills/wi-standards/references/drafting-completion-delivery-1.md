@@ -16,7 +16,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「要件・外部仕様」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「要件・外部仕様」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「確定した要件と委譲元の判断」「未確定事項」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」「未確定事項」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「未確定事項」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「未確定事項」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「原因分析・適用範囲・実現性」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「原因分析・適用範囲・実現性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「原因分析・調査結果と判断根拠」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「原因分析・調査結果と判断根拠」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |

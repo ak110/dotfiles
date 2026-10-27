@@ -569,7 +569,7 @@ def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, 
 
 
 def cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """holdサブコマンド: 処理可能または終端した項目をholdへ移動する。"""
+    """holdサブコマンド: 処理可能または終了した項目をholdへ移動する。"""
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="hold")
         if filenames:

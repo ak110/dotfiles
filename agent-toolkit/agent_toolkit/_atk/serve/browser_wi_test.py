@@ -771,7 +771,7 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
 async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """初期状態の条件で終端状態を検索し、少数結果だけを補助表示して条件を維持する。"""
+    """初期状態の条件で終了状態を検索し、少数結果だけを補助表示して条件を維持する。"""
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
@@ -936,7 +936,7 @@ async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: 
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harness: _BrowserHarness) -> None:
-    """既存回答の変更、終端状態の本文編集、削除および識別子表示を検証する。"""
+    """既存回答の変更、終了状態の本文編集、削除および識別子表示を検証する。"""
     harness = browser_harness
     harness.operations.persist_mutations = True
     page = harness.page
@@ -961,12 +961,12 @@ async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harne
     await detail.locator("#edit-button").click()
     editor = detail.locator("#edit-content")
     original = await editor.input_value()
-    await editor.fill(original + "\n終端後の追記\n")
+    await editor.fill(original + "\n終了後の追記\n")
     await detail.locator("#save-entry-button").click()
     await playwright.async_api.expect(detail).to_be_hidden()
     await page.locator('.entry-select[data-key="adopted.md"]').click()
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / adopted")
-    assert "終端後の追記" in _entry_path(harness.root, "adopted.md").read_text(encoding="utf-8")
+    assert "終了後の追記" in _entry_path(harness.root, "adopted.md").read_text(encoding="utf-8")
     await playwright.async_api.expect(detail.locator("#answer-button")).to_be_hidden()
     await playwright.async_api.expect(detail.locator("#delete-button")).to_be_visible()
     await playwright.async_api.expect(detail.locator("#hold-button")).to_be_visible()
@@ -1013,7 +1013,7 @@ async def test_hold_and_rejected_details_offer_recovery_operations(browser_harne
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_terminal_work_items_reopen_and_hold_through_browser(browser_harness: _BrowserHarness) -> None:
-    """両終端状態のWIを画面から再開・保留・削除し、結果まで確認する。"""
+    """両終了状態のWIを画面から再開・保留・削除し、結果まで確認する。"""
     harness = browser_harness
     harness.operations.persist_mutations = True
     page = harness.page
@@ -3121,7 +3121,7 @@ async def test_copy_all_work_items_reports_empty_and_clipboard_failure(browser_h
 async def test_work_item_important_toggle_badge_and_filter(
     browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch, filename: str
 ) -> None:
-    """AWI・UWI・終端項目の重要設定と解除が一覧と重要・非重要の条件指定へ反映される。"""
+    """AWI・UWI・終了項目の重要設定と解除が一覧と重要・非重要の条件指定へ反映される。"""
     _disable_wi_git(monkeypatch)
     page = browser_harness.page
     await page.set_viewport_size({"width": 320, "height": 800})

@@ -17,6 +17,7 @@ import re
 import subprocess
 import threading
 import time
+import types
 import typing
 from pathlib import Path
 
@@ -293,6 +294,24 @@ def test_linked_worktree_is_rejected_before_any_step_or_record(
     assert captured.out == ""
     assert str(root) in captured.err
     assert str(canonical_root) in captured.err
+
+
+def test_prune_only_rejects_linked_worktree_before_pruning(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """prune-onlyも通常更新と同じ正規root保護を先に通す。"""
+    root = tmp_path / "linked"
+    canonical_root = tmp_path / "main"
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
+    monkeypatch.setattr(
+        common,
+        "run_subprocess",
+        lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 0, f"{canonical_root / '.git'}\n", ""),
+    )
+    monkeypatch.setattr(post_apply.prune_installation, "run", lambda: pytest.fail("pruneへ到達した"))
+
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main(["--prune-only"])
+
+    assert exc_info.value.code == 2
 
 
 @pytest.mark.parametrize("allow_non_canonical", [False, True])
@@ -1409,6 +1428,7 @@ class TestDefaultSteps:
     # 共有資源と実行ファイルの前提から定めた先行工程。宣言の欠落は同時実行による競合を招く。
     _EXPECTED_PREDECESSORS: dict[str, set[str]] = {
         "mise セットアップ": {"npm/pnpm サプライチェーン対策", "bin PATH 登録 (Windows)"},
+        "pnpm サプライチェーン対策": {"mise セットアップ"},
         "Codex CLI の導入と更新": {"mise セットアップ", "Codex 診断ログの通常ストレージ復元 (Linux)"},
         "Codex 診断ログの通常ストレージ復元 (Linux)": {"Codex リンクの同期"},
         "Codex の Claude MCP 登録削除": {"Codex CLI の導入と更新"},
@@ -1871,3 +1891,95 @@ def test_normal_main_applies_host_settings_and_preserves_user_values(
         if previous is not None:
             assert current == previous
         previous = current
+
+
+def test_external_prune_is_not_repeated_inside_update_post_apply(monkeypatch: pytest.MonkeyPatch) -> None:
+    """外側ランチャーがpruneを担当する実行ではuv配下へpruneを追加しない。"""
+    monkeypatch.setenv("DOTFILES_PRUNE", "1")
+    monkeypatch.setenv("DOTFILES_PRUNE_OUTSIDE_UV", "1")
+    monkeypatch.setattr(post_apply, "_DEFAULT_STEPS", [])
+    monkeypatch.setattr(post_apply.prune_installation, "run", lambda: pytest.fail("uv配下でpruneへ到達した"))
+    steps, _ = post_apply.run()
+    assert not steps
+
+
+@pytest.mark.parametrize("platform", ["posix", "nt"])
+def test_standalone_prune_entry_runs_on_both_platforms(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, platform: str) -> None:
+    """単独の公開--pruneは両OSで通常工程の後に削除を1回行う。"""
+    calls: list[str] = []
+
+    def prune() -> post_apply_outcome.PostApplyOutcome:
+        calls.append("prune")
+        return post_apply_outcome.PostApplyOutcome()
+
+    monkeypatch.setattr(post_apply, "os", types.SimpleNamespace(name=platform, environ=os.environ, getpid=os.getpid))
+    monkeypatch.delenv("DOTFILES_PRUNE_OUTSIDE_UV", raising=False)
+    monkeypatch.setattr(post_apply, "_DEFAULT_STEPS", [])
+    monkeypatch.setattr(post_apply, "_home_is_substituted", lambda: False)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        common, "run_subprocess", lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 0, f"{tmp_path / '.git'}\n", "")
+    )
+    monkeypatch.setattr(post_apply.prune_installation, "run", prune)
+
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main(["--prune"])
+
+    assert exc_info.value.code == 0
+    assert calls == ["prune"]
+
+
+@pytest.mark.parametrize("arguments", [["--mode", "minimal"], ["--prune"], ["--mode", "minimal", "--prune"]])
+def test_prune_only_invalid_arguments_preserve_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, arguments: list[str]
+) -> None:
+    """排他的な引数は設定保存やpruneの前に拒否する。"""
+    configuration = tmp_path / "config.json"
+    configuration.write_text('{"dotfiles_mode": "full"}\n', encoding="utf-8")
+    monkeypatch.setattr(post_apply.dotfiles_mode, "configuration_path", lambda: configuration)
+    monkeypatch.setenv(post_apply.dotfiles_mode.MODE_ENV, "full")
+    monkeypatch.delenv("DOTFILES_PRUNE", raising=False)
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        common, "run_subprocess", lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 0, f"{tmp_path / '.git'}\n", "")
+    )
+    monkeypatch.setattr(post_apply.prune_installation, "run", lambda: pytest.fail("pruneへ到達した"))
+    before = configuration.read_bytes()
+
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main(["--prune-only", *arguments])
+
+    assert exc_info.value.code == 2
+    assert configuration.read_bytes() == before
+    assert os.environ[post_apply.dotfiles_mode.MODE_ENV] == "full"
+    assert "DOTFILES_PRUNE" not in os.environ
+
+
+@pytest.mark.parametrize("failure", [None, "削除に失敗した"])
+def test_prune_only_entry_runs_only_prune_and_propagates_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str], failure: str | None
+) -> None:
+    """正規rootのprune-onlyは通常の更新工程を起動せず削除結果を返す。"""
+    calls: list[str] = []
+
+    def prune() -> post_apply_outcome.PostApplyOutcome:
+        calls.append("prune")
+        return post_apply_outcome.PostApplyOutcome(failure=failure, next_action="権限を確認する" if failure else None)
+
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        common, "run_subprocess", lambda cmd, **_kwargs: subprocess.CompletedProcess(cmd, 0, f"{tmp_path / '.git'}\n", "")
+    )
+    monkeypatch.setattr(post_apply, "run", lambda: pytest.fail("通常の更新工程へ到達した"))
+    monkeypatch.setattr(post_apply.prune_installation, "run", prune)
+
+    if failure:
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(["--prune-only"])
+        assert exc_info.value.code == 1
+    else:
+        post_apply.main(["--prune-only"])
+    assert calls == ["prune"]
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert captured.err == (f"{failure}。次の操作: 権限を確認する\n" if failure else "")

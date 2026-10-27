@@ -20,6 +20,8 @@ from agent_toolkit._common import state_paths
 from agent_toolkit._testing import agents_server_support
 from agent_toolkit._testing.helpers import delivery_payload
 
+pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
+
 
 class _ObservedBackend(agents_server_support.FakeBackend):
     """モデルを呼ばず、taskの生成本文を受け取るbackend。"""

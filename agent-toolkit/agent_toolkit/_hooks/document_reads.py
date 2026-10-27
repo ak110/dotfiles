@@ -120,7 +120,15 @@ def read_tool_document(tool_input: dict, tool_response: object) -> DocumentRead 
     return DocumentRead(*document, partial=partial, plugin=plugin, path=path)
 
 
-def _identifying_line(skill: str, relative_path: str, plugin: str = "agent-toolkit", path: str = "") -> str | None:
+def _identifying_line(
+    skill: str,
+    relative_path: str,
+    plugin: str = "agent-toolkit",
+    path: str = "",
+    *,
+    host: str = "claude",
+    project: pathlib.Path | str | None = None,
+) -> str | None:
     """資料の本文を返したことの判定に使う行。`SKILL.md`はfrontmatterの`name:`行、他は稼働版の先頭のH1の行とする。"""
     if relative_path == "SKILL.md" and not (path and pathlib.Path(path).name == "antigravity-full-instructions.md"):
         return f"name: {skill}"
@@ -128,7 +136,7 @@ def _identifying_line(skill: str, relative_path: str, plugin: str = "agent-toolk
         target = (
             pathlib.Path(path)
             if path
-            else resolve_plugin_root(plugin, plugin_resources.plugin_root()) / "skills" / skill / relative_path
+            else resolve_plugin_root(plugin, plugin_resources.plugin_root(), host, project) / "skills" / skill / relative_path
         )
         text = target.read_text(encoding="utf-8")
     except OSError, UnicodeError, ValueError:
@@ -136,9 +144,18 @@ def _identifying_line(skill: str, relative_path: str, plugin: str = "agent-toolk
     return next((line for line in text.splitlines() if line.startswith("# ")), None)
 
 
-def body_returned(skill: str, relative_path: str, text: str | None, *, plugin: str = "agent-toolkit", path: str = "") -> bool:
+def body_returned(
+    skill: str,
+    relative_path: str,
+    text: str | None,
+    *,
+    plugin: str = "agent-toolkit",
+    path: str = "",
+    host: str = "claude",
+    project: pathlib.Path | str | None = None,
+) -> bool:
     """読取の結果が資料の本文を返したかを返す。パスの文字列だけを根拠にしない。"""
-    line = _identifying_line(skill, relative_path, plugin, path)
+    line = _identifying_line(skill, relative_path, plugin, path, host=host, project=project)
     return text is not None and line is not None and line in text
 
 

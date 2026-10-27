@@ -43,9 +43,9 @@ class _RegistryResumeState(SessionResumeState):
 def _terminal_turn_status(
     turns: Sequence[tuple[str, str]], turn_id: str | None
 ) -> Literal["completed", "failed", "interrupted"] | None:
-    """`thread/read`のturn一覧から、元turnが終端して後続の進行中turnが無い場合の終端状態を返す。
+    """`thread/read`のturn一覧から、元turnが終了して後続の進行中turnが無い場合の終了状態を返す。
 
-    元turnの識別子を持たない旧形式の記録では、全turnが終端している場合に最後のturnの状態を返す。
+    元turnの識別子を持たない旧形式の記録では、全turnが終了している場合に最後のturnの状態を返す。
     """
     if turn_id is None:
         if not turns or any(status not in TERMINAL_STATUSES for _, status in turns):
@@ -63,7 +63,7 @@ class ManagerRegistry(responses.ManagerResponses):
     """保持するsessionと、保持期限切れ・停止済み・登録簿のsessionを解決し、一覧・表示・停止に応答する。"""
 
     async def resolve_handoff_predecessor(self, session_id: str) -> SessionState | SessionResumeState:
-        """引き継ぎ元の終端を確認し、結果の回収状態を変えずに起動入力を返す。"""
+        """引き継ぎ元の終了を確認し、結果の回収状態を変えずに起動入力を返す。"""
         if not shared_layout.valid_session_id(session_id):
             raise ActionableError("前任session_idの形式が不正です", next_action=SESSION_ID_NEXT_ACTION)
         await self.take_over_orphaned_session(session_id)
@@ -73,7 +73,7 @@ class ManagerRegistry(responses.ManagerResponses):
         if isinstance(session, SessionResumeState):
             session = await self._refresh_resume_state(session)
         running_action = (
-            f"前任`{session_id}`の終端を`atk agents wait`で待つか、同じ前任へ`kill`で中断を要求して終端後に引き継ぐ"
+            f"前任`{session_id}`の終了を`atk agents wait`で待つか、同じ前任へ`kill`で中断を要求して終了後に引き継ぐ"
         )
         if session_id in self._pending_resumes or (
             session is not None
@@ -103,6 +103,7 @@ class ManagerRegistry(responses.ManagerResponses):
             launch_kind=info.launch_kind,
             status=info.status,
             turn_seq=info.turn_seq,
+            result_contract_recovery_consumed=info.result_contract_recovery_consumed,
             **info.launch_info.as_kwargs(),
         )
 
@@ -138,7 +139,7 @@ class ManagerRegistry(responses.ManagerResponses):
         return (await self._refresh_resume_state(resume_state)) if resume_state is not None else None
 
     async def _refresh_resume_state(self, resume_state: SessionResumeState) -> SessionResumeState:
-        """共有登録の現在turnを確認し、退避した終端を現在状態として使えるか判定する。"""
+        """共有登録の現在turnを確認し、退避した終了を現在状態として使えるか判定する。"""
         if (
             not isinstance(resume_state, _RegistryResumeState)
             or resume_state.session_id in self.sessions
@@ -150,7 +151,7 @@ class ManagerRegistry(responses.ManagerResponses):
             raise await self._running_elsewhere_error(
                 resume_state.session_id,
                 resolution,
-                next_action="そのsessionを起動したroot sessionで`atk agents wait`を実行して終端を観測する",
+                next_action="そのsessionを起動したroot sessionで`atk agents wait`を実行して終了を観測する",
             )
         info = resolution.resume_info
         if info is not None and (
@@ -197,19 +198,19 @@ class ManagerRegistry(responses.ManagerResponses):
         return resume_state
 
     async def take_over_orphaned_session(self, session_id: str) -> None:
-        """所有者のいない`running`の登録簿記録を、turnの終端を確かめられる場合だけ終端として公開する。
+        """所有者のいない`running`の登録簿記録を、turnの終了を確かめられる場合だけ終了として公開する。
 
-        登録簿が終端を示さない記録は、別のプロセスがturnを実行している可能性を排除できないため再開しない。
-        ただし所有側が終端を公開せずに終了した記録は、この拒否を続ける限り回収できない。
-        そこで次のいずれかの場合に終端を公開し、後続の`show`と`send_message`が通常の復元へ進めるようにする。
+        登録簿が終了を示さない記録は、別のプロセスがturnを実行している可能性を排除できないため再開しない。
+        ただし所有側が終了を公開せずに終了した記録は、この拒否を続ける限り回収できない。
+        そこで次のいずれかの場合に終了を公開し、後続の`show`と`send_message`が通常の復元へ進めるようにする。
         1つはengineを問わず、記録された所有プロセスと実行プロセスが全て存在せず、`resolve`が`interrupted`の
-        終端と解決した場合である。もう1つは`ORPHAN_TAKEOVER`のengine（Codex）で、所有状態が
+        終了と解決した場合である。もう1つは`ORPHAN_TAKEOVER`のengine（Codex）で、所有状態が
         `session_registry.RunningOwnership.ORPHANED`（記録プロセスを持たない旧形式の記録か、委譲先CLIが実在しない記録）
-        であり、`thread/read`が元turn（記録が無い場合は全turn）の終端を示し、それより後に進行中のturnが無い場合である。
+        であり、`thread/read`が元turn（記録が無い場合は全turn）の終了を示し、それより後に進行中のturnが無い場合である。
         委譲先CLIが実在する記録（所有サーバーを失った実行中を含む）は引き継がない。
-        別プロセスで実行中のturnを、専用App Serverの`thread/read`が終端と返すことを観測したためである。
+        別プロセスで実行中のturnを、専用App Serverの`thread/read`が終了と返すことを観測したためである。
         どちらも生存の印が有効な状態ファイルがそのsessionを載せていない（書ける所有者がいない）ことを前提とする。
-        経過時間だけでは終端と推定しない。照会の失敗と条件の不成立では何もせず、従来の拒否に委ねる。
+        経過時間だけでは終了と推定しない。照会の失敗と条件の不成立では何もせず、従来の拒否に委ねる。
         """
         if (
             not shared_layout.valid_session_id(session_id)
@@ -262,9 +263,9 @@ class ManagerRegistry(responses.ManagerResponses):
         *,
         interruption: session_registry.InterruptionReason | None,
     ) -> None:
-        """自プロセスが所有しない記録へ終端を公開する。元の所有サーバーの起動単位と所有ルートは保つ。
+        """自プロセスが所有しない記録へ終了を公開する。元の所有サーバーの起動単位と所有ルートは保つ。
 
-        記録プロセスは載せない。終端の記録はプロセスの実在で解決しないため、以後の照会は公開した終端に従う。
+        記録プロセスは載せない。終了の記録はプロセスの実在で解決しないため、以後の照会は公開した終了に従う。
         """
         await run_file_operation(
             session_registry.publish,
@@ -291,6 +292,7 @@ class ManagerRegistry(responses.ManagerResponses):
             turn_id=info.turn_id,
             interruption=interruption,
             preserve_server_instance=True,
+            result_contract_recovery_consumed=info.result_contract_recovery_consumed,
         )
 
     def _own_root_session_id(self) -> str | None:
@@ -330,7 +332,7 @@ class ManagerRegistry(responses.ManagerResponses):
     async def _raise_if_owner_lost(self, session_id: str) -> None:
         """所有サーバーを失った実行中のsessionなら、回収した通知と待つかkillの案内を持つエラーを送出する。
 
-        追送は新しいbackendで会話を再開せず、登録簿へ終端も公開しない。旧委譲先CLIが会話の書込主体を保持しており、
+        追送は新しいbackendで会話を再開せず、登録簿へ終了も公開しない。旧委譲先CLIが会話の書込主体を保持しており、
         再開は書込主体の競合で失敗するためである。
         """
         resolution = await run_file_operation(session_registry.resolve, session_id)
@@ -348,7 +350,7 @@ class ManagerRegistry(responses.ManagerResponses):
 
         所有サーバーを失った実行中でなければ`None`を返し、従来の`kill`へ委ねる。
         停止するのは登録簿のpidと起動時刻が一致する委譲先CLIだけとし、所有サーバーのプロセスは止めない。
-        停止を確かめられないプロセスが残る場合は終端を公開せず、その理由を返す。
+        停止を確かめられないプロセスが残る場合は終了を公開せず、その理由を返す。
         """
         resolution = await run_file_operation(session_registry.resolve, session_id)
         diagnosis = await self._diagnose_owner_lost(session_id, resolution)
@@ -384,7 +386,7 @@ class ManagerRegistry(responses.ManagerResponses):
             raise ActionableError(
                 f"kill stopped the delegate CLI but could not publish the terminal state of session {session_id}; "
                 f"registry={current.state}",
-                next_action="`show`で同じsessionの状態を確かめ、終端していれば同じ`session_id`へ`send_message`する",
+                next_action="`show`で同じsessionの状態を確かめ、終了していれば同じ`session_id`へ`send_message`する",
             )
         response: dict[str, Any] = {
             "status": current.resume_info.status,
@@ -410,7 +412,7 @@ class ManagerRegistry(responses.ManagerResponses):
         *,
         resolution: session_registry.SessionResolution | None = None,
     ) -> SessionResumeState | None:
-        """再起動前の終端sessionを登録簿から最小の再開状態へ復元する。
+        """再起動前の終了sessionを登録簿から最小の再開状態へ復元する。
 
         `resolution`は、呼び出し元が同じ識別子を既に解決している場合に渡す。
         登録簿のファイル読取を1回の照会へ収めるための入力であり、省略時は自ら解決する。
@@ -429,7 +431,7 @@ class ManagerRegistry(responses.ManagerResponses):
                 resolution,
                 next_action=(
                     "別のagents_serverプロセスがturnを実行中の可能性があるため、新しいstartでやり直さない。"
-                    "そのsessionを起動したroot sessionで`atk agents wait`を実行して終端を観測する"
+                    "そのsessionを起動したroot sessionで`atk agents wait`を実行して終了を観測する"
                 ),
             )
         if resolution.state is session_registry.Resolution.MISSING or (
@@ -482,6 +484,7 @@ class ManagerRegistry(responses.ManagerResponses):
             error=persisted_result.get("error") if persisted_result is not None else registry_error,
             finalized_at=persisted_result["finalized_at"] if persisted_result is not None else None,
             result_delivered=persisted_result is None,
+            result_contract_recovery_consumed=info.result_contract_recovery_consumed,
         )
         self.stopped_sessions[session_id] = resume_state
         return resume_state
@@ -513,7 +516,7 @@ class ManagerRegistry(responses.ManagerResponses):
     async def list_sessions(self, *, include_terminated: bool = False) -> dict[str, Any]:
         """保持中のsessionを開始時刻順の公開項目へ射影する。
 
-        一覧の範囲を指定しない場合も、未回収結果を持つsessionは終端済みまたは期限切れでも表示する。
+        一覧の範囲を指定しない場合も、未回収結果を持つsessionは終了済みまたは期限切れでも表示する。
         """
         loop_time = asyncio.get_running_loop().time()
         for session_id, session in tuple(self.sessions.items()):
@@ -684,7 +687,7 @@ class ManagerRegistry(responses.ManagerResponses):
             if diagnostics:
                 response["warnings"] = list(diagnostics)
         if status in TERMINAL_STATUSES and result_projection.nonempty_error(session.error):
-            # 失敗で終端したsessionの原因を、結果の回収とは別に照会できるようにする。
+            # 失敗で終了したsessionの原因を、結果の回収とは別に照会できるようにする。
             response["error"] = result_projection.refresh_error_diagnostics(session.error)
         interrupted_turns = await self._interrupted_turns(session_id)
         if interrupted_turns:
@@ -714,7 +717,7 @@ class ManagerRegistry(responses.ManagerResponses):
             if unresolved:
                 response["live_child_session_ids_without_cwd"] = unresolved
         if status == "running" and isinstance(session, SessionState) and session.awaiting_auto_resume:
-            # モデルのturnは終わり、バックグラウンドタスクか孫sessionの終端、
+            # モデルのturnは終わり、バックグラウンドタスクか孫sessionの終了、
             # または過負荷後の継続と利用上限の解除の待機のために結果を保留している。
             # 活動時刻が進まないため、委譲元が停滞と区別できるよう保留と待機対象を公開する。
             response["result_held"] = True
@@ -789,7 +792,7 @@ class ManagerRegistry(responses.ManagerResponses):
         return self._response_with_notices(response, await self._take_registry_notices(session_id))
 
     async def stop(self, session_id: str, *, retain_result: bool = False) -> dict[str, Any]:
-        """終端済みsessionを破棄し、会話再開用の最小状態だけを保持する。
+        """終了済みsessionを破棄し、会話再開用の最小状態だけを保持する。
 
         `stopped_sessions`への在籍は、このプロセスが解放すべきbackend資源を
         持たないことを表す。解放後の同期失敗では再発行が同期だけを再試行する。
@@ -813,13 +816,13 @@ class ManagerRegistry(responses.ManagerResponses):
         if session is None and isinstance(stopped_state, _RegistryResumeState):
             live = await run_file_operation(_foreign_live_processes, session_id)
             if live:
-                # 所有側が生存する記録を解放済みへ置き換えると、所有側の再開と終端の公開が別の記録を上書きする。
+                # 所有側が生存する記録を解放済みへ置き換えると、所有側の再開と終了の公開が別の記録を上書きする。
                 raise ActionableError(
                     f"session {session_id} is recorded by processes still alive outside this agents_server: "
                     + ",".join(str(process.pid) for process in live),
                     next_action=(
                         "そのsessionを起動したroot sessionのagents_serverで`stop`する。"
-                        "実行中なら`atk agents wait`で終端を待つか、`kill`で委譲先CLIを止めてから`stop`する"
+                        "実行中なら`atk agents wait`で終了を待つか、`kill`で委譲先CLIを止めてから`stop`する"
                     ),
                 )
         if (
@@ -885,16 +888,16 @@ class ManagerRegistry(responses.ManagerResponses):
         response: dict[str, Any],
         stop: bool,
     ) -> dict[str, Any]:
-        """要求された終端応答に限りsessionを破棄し、元の応答を維持する。"""
+        """要求された終了応答に限りsessionを破棄し、元の応答を維持する。"""
         if stop and response.get("status") in {*TERMINAL_STATUSES, "expired"} and session_id not in self.stopped_sessions:
             await self.stop(session_id, retain_result=True)
         return response
 
     async def _publish_closed_sessions(self) -> None:
-        """backendの停止で終わった未終端のturnを`interrupted`へ遷移させ、登録簿と結果ファイルへ公開する。
+        """backendの停止で終わった未終了のturnを`interrupted`へ遷移させ、登録簿と結果ファイルへ公開する。
 
         停止では所有側が自らturnを終了するため、ここで公開しないと登録簿が`running`のまま残る。
-        登録簿が終端を示さない記録は、再起動後のプロセスが別プロセスの実行中と区別できず回収できなくなる。
+        登録簿が終了を示さない記録は、再起動後のプロセスが別プロセスの実行中と区別できず回収できなくなる。
         遷移はbackendごとに書かず、全engineに共通の停止処理として本関数へ集約する。
         """
         interrupted: list[SessionState] = []
@@ -925,7 +928,7 @@ class ManagerRegistry(responses.ManagerResponses):
             session.interrupt_requested = False
             session.touch()
         if self._status_writer is not None:
-            # 集約予約を待たずに結果ファイルを書き、状態ファイルの無効化より前に終端結果を残す。
+            # 集約予約を待たずに結果ファイルを書き、状態ファイルの無効化より前に終了時の結果を残す。
             await self._status_writer.flush_async()
         for session in tuple(self.sessions.values()):
             await session.drain_registration()

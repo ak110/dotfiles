@@ -543,7 +543,7 @@ def test_verification_queries_do_not_require_check_execution(payload: dict) -> N
 def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: str) -> None:
     """資料不足を警告し、取得を観測するまで準備済みとして記録しない。"""
     env = _plan_file_state_env(tmp_path)
-    _record_skill(env, "ready", "delegation")
+    _record_skill(env, "ready", "agent-toolkit:delegation")
     payload = {"tool_name": tool, "tool_input": {"prompt": "調査する"}, "session_id": "ready"}
     assert "agent-toolkit:delegation" not in _additional_context(_run(payload, env))
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
@@ -584,6 +584,7 @@ def _record_skill(env: dict[str, str], session_id: str, skill: str, **extra: obj
             "hook_event_name": "PostToolUse",
             "tool_name": "Skill",
             "tool_input": {"skill": skill},
+            "tool_response": "起動成功",
             "session_id": session_id,
             **extra,
         },

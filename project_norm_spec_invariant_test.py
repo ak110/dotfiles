@@ -14,7 +14,7 @@ import typing
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 _SKILL = _ROOT / ".claude" / "skills" / "dotfiles-norm-edit" / "SKILL.md"
-# スキルの「変更後の規範の自セッション適用」が規範の範囲を列挙する文。
+# スキルの「変更した規範の自セッション適用」が規範の範囲を列挙する文。
 _TARGET_SENTENCE = re.compile(r"対象となる規範は、(?P<targets>.+?)である。")
 
 

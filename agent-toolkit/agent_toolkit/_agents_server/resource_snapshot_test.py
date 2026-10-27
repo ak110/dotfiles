@@ -60,7 +60,7 @@ async def test_resource_snapshot_follows_public_session_lifecycle(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """共通managerは全engineの新規・reply・登録簿からの再開と終端だけを既存の回転ログへ記録する。"""
+    """共通managerは全engineの新規・reply・登録簿からの再開と終了だけを既存の回転ログへ記録する。"""
     async with _manager(tmp_path, monkeypatch, engine) as manager:
         # loggerのhandlerの退避と回収は`pytest_plugin`の自動fixtureが行う。
         path = logging_config.configure_logging()
@@ -113,7 +113,7 @@ async def test_resource_snapshot_counts_shared_live_sessions(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """複数root・孫・重複・失効の一覧と同じ対象を数え、未flushの自sessionを開始と終端へ反映する。"""
+    """複数root・孫・重複・失効の一覧と同じ対象を数え、未flushの自sessionを開始と終了へ反映する。"""
     async with _manager(tmp_path, monkeypatch) as manager:
         caplog.set_level(logging.INFO, logger="agent-toolkit.agents-server.resources")
         now = datetime.datetime.now(datetime.UTC)

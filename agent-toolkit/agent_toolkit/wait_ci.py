@@ -4,8 +4,8 @@ push前に対象repository・destination ref・source refから解決したcommi
 GitHub ActionsまたはGitLab CIの実行一覧からbaselineに存在しないIDだけを待機する。
 一覧とジョブ取得の両方に明示的なrepositoryを指定し、一覧はdestination refとSHAで限定する。
 境界条件（run未登録・コマンド失敗・登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
-未報告の失敗を検出し未終端が残る場合は6を返す。同じbaselineまたは--failure-recordで再開すると、
-既報の失敗では返らず残りを待つ。全体終端では全失敗を出力し、成功0・失敗1を返す。
+未報告の失敗を検出し未終了が残る場合は6を返す。同じbaselineまたは--failure-recordで再開すると、
+既報の失敗では返らず残りを待つ。全体終了では全失敗を出力し、成功0・失敗1を返す。
 `agent-toolkit:commit`の`references/push-and-ci.md`から参照される。
 """
 
@@ -633,7 +633,7 @@ def _report_new_failures(
     reported: set[str],
     save: Callable[[set[str]], None] | None,
 ) -> int | None:
-    """未終端スナップショットの新規失敗を保存して返す。保存失敗を早期報告成功にしない。"""
+    """未終了スナップショットの新規失敗を保存して返す。保存失敗を早期報告成功にしない。"""
     if _snapshot_completed(runs, jobs):
         return None
     new = []
@@ -657,9 +657,9 @@ def _report_new_failures(
     for failure in new:
         _emit_failure_summary(*failure)
     resume = (
-        "同じ引数で呼び直すと残りのjobの終端まで待てる"
+        "同じ引数で呼び直すと残りのjobの終了まで待てる"
         if save is not None
-        else "`--failure-record <記録ファイル>`を付けて呼び直し、以降は同じ引数で残りのjobの終端まで待つ"
+        else "`--failure-record <記録ファイル>`を付けて呼び直し、以降は同じ引数で残りのjobの終了まで待つ"
     )
     actions = [_failure_next_action(record, kind, repository, forge) for record, kind in new]
     return _finish(EXIT_NEW_FAILURE, "。".join([*actions, resume]))
@@ -882,12 +882,12 @@ def wait_for_ci(
     reported_failures: frozenset[str] = frozenset(),
     save_failures: Callable[[set[str]], None] | None = None,
 ) -> int:
-    """未報告失敗と全体終端の早い方を待ち、部分結果6・成功0・失敗1を返す。
+    """未報告失敗と全体終了の早い方を待ち、部分結果6・成功0・失敗1を返す。
 
     - 毎pollでbaseline IDを除いたrun一覧とジョブ一覧を、通常は`_fetch_snapshot`、
       後続SHA追跡時は`_fetch_follow_snapshot`で不可分なスナップショットとして取得し、
-      `_failures`が未報告の確定失敗を検出した時点で保存し、未終端が残ればEXIT_NEW_FAILUREを返す。
-      再呼出では`reported_failures`を除いて待機し、全体終端では全失敗を出力する
+      `_failures`が未報告の確定失敗を検出した時点で保存し、未終了が残ればEXIT_NEW_FAILUREを返す。
+      再呼出では`reported_failures`を除いて待機し、全体終了では全失敗を出力する
     - 同じworkflow名・同じcommitでより後に登録されたrunに置き換えられて打ち切られたrunは、
       判定対象と期待run集合の双方から除く（`_superseded_cancelled_ids`）
     - 登録猶予期間全体でrun集合を継続収集し、期間末に1件以上あることを確認して完了待ちへ移る

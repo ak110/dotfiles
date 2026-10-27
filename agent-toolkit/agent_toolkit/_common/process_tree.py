@@ -1,8 +1,8 @@
 """起動した外部コマンドを子孫プロセスごと回収する。
 
 ラッパー、シェル、エージェントCLIは、自身の実行中に補助プロセスを起動する。
-終端処理が直接の子だけを終了させると、これらの子孫は親を失ったまま生存し続ける。
-`collect_descendants`と`reclaim_descendants`は、その残留をCLIのプロセスの終端に合わせて回収する。
+終了処理が直接の子だけを終了させると、これらの子孫は親を失ったまま生存し続ける。
+`collect_descendants`と`reclaim_descendants`は、その残留をCLIのプロセスの終了に合わせて回収する。
 
 `collect_descendants`はCLIのプロセスへ終了を要求する前に呼ぶ。
 CLIのプロセスが終了すると子孫の親が変わり、そのPIDを起点に辿れなくなるためである。
@@ -28,7 +28,7 @@ RECLAIM_TIMEOUT_SECONDS = 5.0
 
 委譲先が起動する子孫はMCPサーバーなどの短命な補助プロセスであり、
 終了要求の到達から資源の解放までに要する時間は秒未満である。
-既存のCodex App Serverの終了待機と同じ値を用い、委譲先セッションの終端が延びる上限をそろえる。
+既存のCodex App Serverの終了待機と同じ値を用い、委譲先セッションの終了が延びる上限をそろえる。
 """
 
 _POLL_INTERVAL_SECONDS = 0.05
@@ -196,7 +196,7 @@ def describe(process: psutil.Process) -> str:
 def log_residual(residual: list[str], *, context: str) -> None:
     """回収できなかった子孫プロセスを診断へ残す。
 
-    回収の失敗は委譲の失敗として扱わないため、呼び出し元の終端処理は継続する。
+    回収の失敗は委譲の失敗として扱わないため、呼び出し元の終了処理は継続する。
     """
     if residual:
         _LOG.warning("委譲先の子孫プロセスを回収できませんでした: context=%s residual=%s", context, residual)

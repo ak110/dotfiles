@@ -1,39 +1,42 @@
 # Hookの出力フィールド
 
-品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks-output.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks-output.md`である。呼び出し元の取得条件と注目箇所を引き継ぎ、本書と正式な資料を全文読む。節指定がある場合は、指定された見出しを持つ資料に注目する。両方に同名の見出しがあれば両方に注目する。
 
-以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
+以下はagent-toolkitが所有する運用条件である。
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+本文の各参照における適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の資料は起動本文とともに届く。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-output.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-output.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `session-state-and-flags.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/session-state-and-flags.md` |
 
 ## 出力フィールドの使い分け
 
-イベントごとの出力契約は`agent-toolkit/agent_toolkit/_testing/hook_output_contract.py`が公式のHooksリファレンスをJSON Schemaで写して定める。`agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が登録済みの全hookの出力がその契約に合うか確かめる。hookを追加または変更する場合は、契約とテストを同じ変更単位で更新する。
+イベントごとの出力契約は、`agent-toolkit/agent_toolkit/_testing/hook_output_contract.py`が公式のHooksリファレンスをJSON Schemaで定義している。また、`agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が登録済みの全hookの出力がその契約を満たしているかを検証する。hookを追加または変更する場合は、契約定義とテストを同一の変更単位で更新する。
 
-永続ログは`_hooks.stop_session.append_stop_log`等の専用APIに集約する。
+永続ログの出力は、`_hooks.stop_session.append_stop_log`などの専用APIに集約する。
 
 ## UserPromptSubmit
 
-Claude CodeのUserPromptSubmit payloadは現在名`session_title`を持つ。
-Pythonのコマンドhookは`hookSpecificOutput.sessionTitle`で名前を設定し、注記を同じオブジェクトの`additionalContext`へ返す。
-現在名が空か前回自動設定した名前と同じ場合だけ更新し、手動で付けた名前を保つ。
-命名用の種別はPostToolUse(Skill)と手動起動時のUserPromptSubmitが通常状態へ記録し、process-loopの環境印と計画名から名前を選ぶ。
-名前の設定はClaude Codeに限る。
+Claude Codeの`UserPromptSubmit` payloadは、セッションの現在名を表す`session_title`を保持する。
+Pythonのコマンドhookは`hookSpecificOutput.sessionTitle`でタイトルを設定し、注記は同じオブジェクトの`additionalContext`に含めて返す。
+現在名が空であるか、前回自動設定した名前と一致する場合にのみ更新し、ユーザーが手動で設定したタイトルを維持する。
+命名用の種別は`PostToolUse(Skill)`および手動起動時の`UserPromptSubmit`が通常状態に記録し、`process-loop`の環境印と計画名からタイトルを決定する。
+なお、セッションタイトルの設定はClaude Codeに限定する。
 
-開始・`clear`・会話圧縮後の最初の実ユーザー発話へ、`agent-toolkit:user-confirmation-and-report`の起動と、不具合の有無・原因・直し方を回答や確認へ含める場合の診断前の`agent-toolkit:bugfix`起動を案内する。両ホストで文脈1つにつき1回配送し、機械注入では配送待ちを消費しない。発話と現物の比較手順は同スキルの「原文の保持と取り込み」と「確認要否の判定」が定める。時間経過による固定手順の再注入は行わない。
+セッション開始時、`clear`実行後、および会話圧縮後の最初の実ユーザー発話に対して、`agent-toolkit:user-confirmation-and-report`の起動を案内する。また、不具合の有無・原因・修正方針を回答や確認に含める場合は、診断前に`agent-toolkit:bugfix`を起動するよう案内する。両ホストにおいて会話文脈ごとに1回配送し、機械的な注入処理では配送待ち状態を消費しない。発話内容と現物の突き合わせ作業は、同スキルの「原文の保持と取り込み」および「確認要否の判定」に従う。時間の経過のみを理由とした固定手順の再注入は行わない。
 
-対象の通常発話はユーザーが入力したスラッシュコマンドを含み、ハーネスが挿入した通知と機械注入のターンは対象外とする。成立した注記は1つの`additionalContext`へ結合し、Codex payloadでも同じく返す。
+案内の対象となる通常発話には、ユーザーが入力したスラッシュコマンドを含める。ハーネスが挿入した通知や機械注入によるターンは対象外とする。生成された注記は単一の`additionalContext`に統合し、Codex payloadにおいても同様に返却する。
 
-ユーザーが書いた文は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）としてPostToolUseにも届く。発話の内容を判定材料とする注記は両hookで同じ定義の本文を使い、原因・対象・対処の変化に応じた共通の新規性判定で配送する。
+進捗のセルフチェック通知（`source="progress-self-check"`）は、前段の案内と別に、呼出主体ごとに30分間隔でPostToolUseと機械注入のターンのUserPromptSubmitが返す。経過時間と短い点検項目だけを示す点検の契機であり、手順本文は含めないため、前段の固定手順の再注入とは別の扱いとする。長い委譲の往復の間も点検の契機を届けるため、この通知は機械注入のターン（定期再確認を含む）にも付ける。実ユーザーの発話（機械注入を除くUserPromptSubmit）を受けたターンには通知を付けず、その主体の次の点検を30分後へ送る。ユーザーが長く操作しなかった後の最初の発話や再開の直後に、待機時間だけで通知が出ることを防ぐためである。状態の扱いは`session-state-and-flags.md`の`progress_self_check`に従う。
+
+ユーザーが入力した文章は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）として`PostToolUse`にも届く。発話内容を判定材料とする注記は両hookで同一の定義本文を用い、原因・対象・対処の変化に応じた共通の新規性判定に基づいて配送する。
 
 ## 組織向け設定
 
-利用上限の`rate_limit`はStopFailureのコマンドhookが記録し、`turn.complete`が消費して既存の再開予約へ接続する。
+利用上限（`rate_limit`）は`StopFailure`のコマンドhookが記録し、`turn.complete`がそれを取得して既存の再開予約処理に接続する。

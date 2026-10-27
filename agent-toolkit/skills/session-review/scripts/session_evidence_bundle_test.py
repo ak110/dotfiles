@@ -221,7 +221,7 @@ def test_codex_failed_commands_without_diagnostic_or_command_use_record_position
 def test_agy_delegate_failures_become_candidates_and_stats(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """agyの委譲先の失敗したツール、エラー報告および失敗終端が候補へ現れ、件数とトークン数が集計へ現れる。"""
+    """agyの委譲先の失敗したツール、エラー報告および失敗終了が候補へ現れ、件数とトークン数が集計へ現れる。"""
     session_id = "a9244465-1577-44a9-a7b0-500b1f976b0e"
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))

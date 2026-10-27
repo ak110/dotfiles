@@ -1,11 +1,13 @@
 """ホストの保存先と版別依存環境を、配布rootへ書かずに解決する契約を検証する。"""
 
+import errno
 import json
 import os
 import shutil
 import subprocess
 import sys
 import sysconfig
+import types
 from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,16 @@ import pytest
 
 from agent_toolkit._common import inherited_venv
 from agent_toolkit._common import plugin_environment as subject
+
+
+def _hold_posix_prepare_lock(path: str, entered: Any, release: Any) -> None:
+    """別プロセスでprepare lockを保有してから正常終了する。"""
+    import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    with Path(path).open("a+b") as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        entered.set()
+        assert release.wait(5)
 
 
 def _root(directory: Path) -> Path:
@@ -308,8 +320,12 @@ def test_session_start_persists_before_uv_and_keeps_other_hooks_and_user_path(
     assert saved.startswith(original)
     assert "UV_PROJECT_ENVIRONMENT" not in saved
     environment["PATH"] = "user-first::user-last"
+    # Git Bash自身が追加するPATHも、hookが保持すべき呼出元の値に含める。
+    command = 'before=$PATH; source "$1"; printf "%s\\n%s\\n%s\\n" "$before" "$PATH" "$OTHER_HOOK"'
+    # MSYSは一時領域を/tmpにもマウントするため、表記ではなくnative側のパス同一性を確かめる。
+    command += '; cygpath -aw "${PATH%%:*}"' if os.name == "nt" else '; printf "%s\\n" "${PATH%%:*}"'
     observed = subprocess.run(
-        [bash, "--noprofile", "--norc", "-c", 'source "$1"; printf "%s\\n%s\\n" "$PATH" "$OTHER_HOOK"', "bash", str(env_file)],
+        [bash, "--noprofile", "--norc", "-c", command, "bash", str(env_file)],
         env=environment,
         capture_output=True,
         text=True,
@@ -332,11 +348,15 @@ def test_session_start_persists_before_uv_and_keeps_other_hooks_and_user_path(
         )
     )
     assert observed.returncode == 0, observed.stderr
-    assert observed.stdout.splitlines() == [str(root / "scripts") + ":other-hook:user-first::user-last", "kept"]
+    before, after, other_hook, native_scripts = observed.stdout.splitlines()
+    assert Path(native_scripts) == root / "scripts"
+    assert after.partition(":")[2] == "other-hook:" + before
+    assert before.endswith("user-first::user-last")
+    assert other_hook == "kept"
 
 
 def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
-    tmp_path: Path, host_environ: Callable[[], dict[str, str]]
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, host_environ: Callable[[], dict[str, str]]
 ) -> None:
     """実際のuvから起動し、root外の環境、argv、cwd、stdin、標準出力と標準エラー、子プロセスの終了コード7が保たれることを確認する。"""
     root = _root(tmp_path / "readonly-plugin")
@@ -345,7 +365,10 @@ def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
     assert uv is not None
     environment["UV_PYTHON"] = sys.executable
     environment["CLAUDE_PLUGIN_DATA"] = str(tmp_path / "host-data")
-    environment.update({"XDG_DATA_HOME": str(tmp_path / "writable-data"), "LOCALAPPDATA": str(tmp_path / "writable-data")})
+    # WindowsのCreateProcessは実行ファイルのパスにMAX_PATH制約があるため、
+    # テスト名を含まないfixture直下へ64桁の環境キーを持つruntimeを置く。
+    writable_data = tmp_path_factory.mktemp("rt")
+    environment.update({"XDG_DATA_HOME": str(writable_data), "LOCALAPPDATA": str(writable_data)})
     environment.pop(subject.RUNTIME_DATA_ENV, None)
     environment.pop(subject.RUNTIME_ENVIRONMENT_ENV, None)
     environment.pop("UV_PROJECT_ENVIRONMENT", None)
@@ -401,7 +424,7 @@ def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
         assert observed["argv"] == ["空 白", "--value", "literal"]
         assert observed["cwd"] == str(tmp_path)
         assert observed["input"] == "標準入力の本文"
-        assert Path(observed["environment"]).is_relative_to(tmp_path / "writable-data")
+        assert Path(observed["environment"]).is_relative_to(writable_data)
         assert "子の標準エラー" in result.stderr
         assert {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()} == original_files
         assert not (root / ".venv").exists()
@@ -531,3 +554,133 @@ def test_session_start_hook_separates_real_uv_and_restores_child_environment(
         assert Path(control["prefix"]) == caller
         assert not Path(control["prefix"]).is_relative_to(tmp_path / "runtime-data")
     print(json.dumps({"caller_setting": caller_setting, "hook": observed, "control": control}, ensure_ascii=False))
+
+
+def test_prepare_lock_reports_timeout_for_windows_lock_contention(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開prepare lockはWindowsの既知競合を有限時間で診断付き失敗へ変換する。"""
+    lock_error = OSError(errno.EDEADLK, "Resource deadlock avoided")
+    fake_msvcrt = types.SimpleNamespace(LK_NBLCK=1, LK_UNLCK=2, locking=lambda *_args: (_ for _ in ()).throw(lock_error))
+    monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
+    monkeypatch.setattr(subject.os, "name", "nt")
+    monkeypatch.setattr(subject, "_PREPARE_LOCK_TIMEOUT", 0.0, raising=False)
+    with pytest.raises(TimeoutError, match="prepare lock"), subject.prepare_lock(tmp_path / "environment"):
+        pytest.fail("競合時にlockを取得してはならない")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのflockを別プロセスから検証する")
+def test_prepare_lock_reacquires_after_posix_holder_exits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """POSIXでは保有者プロセスの終了後に同じprepare lockを取得できる。"""
+    import multiprocessing  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+    import threading  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    environment = tmp_path / "environment"
+    lock = environment.with_name(environment.name + ".prepare-lock")
+    context = multiprocessing.get_context("spawn")
+    entered = context.Event()
+    release = context.Event()
+    holder = context.Process(target=_hold_posix_prepare_lock, args=(str(lock), entered, release))
+    holder.start()
+    waiting = threading.Event()
+    acquired = threading.Event()
+    failures: list[BaseException] = []
+
+    def reacquire() -> None:
+        try:
+            with subject.prepare_lock(environment):
+                acquired.set()
+        except BaseException as error:  # pragma: no cover - 失敗時の検査用
+            failures.append(error)
+
+    original_sleep = subject.time.sleep
+
+    def observe_wait(interval: float) -> None:
+        waiting.set()
+        original_sleep(interval)
+
+    try:
+        assert entered.wait(5)
+        monkeypatch.setattr(subject.time, "sleep", observe_wait)
+        contender = threading.Thread(target=reacquire)
+        contender.start()
+        assert waiting.wait(5)
+        assert holder.is_alive()
+        release.set()
+        holder.join(5)
+        assert holder.exitcode == 0
+        contender.join(5)
+        assert not contender.is_alive()
+    finally:
+        release.set()
+        holder.join(5)
+        if holder.is_alive():
+            holder.terminate()
+            holder.join(5)
+    assert not failures
+    assert acquired.is_set()
+
+
+def test_prepare_lock_reacquires_after_windows_contention_is_released(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windowsの既知競合は10秒超の保持後でも解放時に再取得する。"""
+    logical_time = [0.0]
+    attempts = [OSError(errno.EDEADLK, "Resource deadlock avoided"), OSError(errno.EACCES, "Access is denied"), None]
+
+    def locking(*_args: object) -> None:
+        error = attempts.pop(0)
+        if error is not None:
+            raise error
+
+    def sleep(interval: float) -> None:
+        assert interval == subject._PREPARE_LOCK_INTERVAL  # pylint: disable=protected-access
+        logical_time[0] += 10.1
+
+    fake_msvcrt = types.SimpleNamespace(LK_NBLCK=1, LK_UNLCK=2, locking=locking)
+    monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
+    monkeypatch.setattr(subject.os, "name", "nt")
+    monkeypatch.setattr(subject.time, "monotonic", lambda: logical_time[0])
+    monkeypatch.setattr(subject.time, "sleep", sleep)
+    lock = tmp_path / "environment.prepare-lock"
+    with lock.open("a+b") as stream:
+        subject._lock_file(stream, lock)  # pylint: disable=protected-access
+    assert logical_time[0] > 10
+    assert not attempts
+
+
+@pytest.mark.parametrize(
+    "windows",
+    [
+        pytest.param(False, marks=pytest.mark.skipif(os.name == "nt", reason="POSIXのfcntlを実行する試験である")),
+        pytest.param(True),
+    ],
+)
+def test_prepare_lock_propagates_noncontention_error_without_waiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, windows: bool
+) -> None:
+    """POSIXとWindowsの容量不足は競合として待機せず、元の例外を返す。"""
+    error = OSError(errno.ENOSPC, "No space left on device")
+    monkeypatch.setattr(subject.time, "sleep", lambda _interval: pytest.fail("非競合例外では待機しない"))
+    lock = tmp_path / "environment.prepare-lock"
+    if windows:
+        fake_msvcrt = types.SimpleNamespace(LK_NBLCK=1, LK_UNLCK=2, locking=lambda *_args: (_ for _ in ()).throw(error))
+        monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
+        monkeypatch.setattr(subject.os, "name", "nt")
+    else:
+        import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        monkeypatch.setattr(fcntl, "flock", lambda *_args: (_ for _ in ()).throw(error))
+    with lock.open("a+b") as stream, pytest.raises(OSError) as caught:
+        subject._lock_file(stream, lock)  # pylint: disable=protected-access
+    assert caught.value is error
+
+
+def test_project_environment_uses_selected_python_for_warmup_key(tmp_path: Path) -> None:
+    """warmupの親Pythonではなくlauncherに渡すPythonで共有環境を識別する。"""
+    root = tmp_path / "plugin"
+    root.mkdir()
+    (root / "pyproject.toml").write_text("[project]\nname='plugin'\nversion='0'\n", encoding="utf-8")
+    (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    selected_python = tmp_path / "python"
+    selected_python.write_text("", encoding="utf-8")
+
+    expected = subject.project_environment(root, {}, python_executable=selected_python)
+    assert expected == subject.project_environment(root, {}, python_executable=selected_python)
+    assert expected != subject.project_environment(root, {})

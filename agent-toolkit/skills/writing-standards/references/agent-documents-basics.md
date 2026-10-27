@@ -1,12 +1,12 @@
 # エージェント向け文書品質（基本）
 
-品質基準の正式な提供元は`agent-basics:writing-standards`の`references/agent-documents-basics.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/agent-documents-basics.md`である。呼び出し元の取得条件と注目箇所を引き継ぎ、本書と正式な資料を全文読む。節指定がある場合は、指定された見出しを持つ資料に注目する。両方に同名の見出しがあれば両方に注目する。
 
-以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
+以下はagent-toolkitが所有する運用条件である。
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+本文の各参照における適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の資料は起動本文とともに届く。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -23,12 +23,12 @@
 
 ## 置き場所と配送
 
-- 役割別規範は読み手と読込契機で配置する。全エージェント共通は`rules/`、メイン限定は`share/rules-main.md`、委譲先限定は`share/rules-subagent.md`、ホスト固有の差分は同じ接頭辞のホスト別ファイルへ置く。Claude CodeとCodexのhook、agents_serverの通常委譲および生成manifestがこれらを配送するため、常時ロードと同じ拘束力を持つ。委譲元と委譲先の双方が守る受け渡し規定は全エージェント共通とし、片側だけの規定は読み手別のファイルへ置く。軽量委譲へ共通規範を配送しない場合は、軽量委譲の起動契約へ必要な制約を置く。agent-toolkitが読み手へ常に配送する規範（`rules/`配下と、読み手に応じて配送する`share/rules-main*.md`・`rules-common.codex.md`・`rules-subagent*.md`）を常時規範と呼ぶ
+- 役割別の規範は、想定する読み手と読み込む契機に応じて配置する。全エージェント共通の規定は`rules/`、メインエージェント限定の規定は`share/rules-main.md`、委譲先限定の規定は`share/rules-subagent.md`に配置し、ホスト固有の差分は同じ接頭辞を持つホスト別ファイルへ置く。Claude CodeやCodexのhook、agents_serverの通常委譲、ならびに生成manifestがこれらを配送するため、常時ロードと同等の拘束力を持つ。委譲元と委譲先の双方が守るべき受け渡し規定は全エージェント共通とし、片側のみに適用する規定は読み手別のファイルへ分ける。軽量委譲へ共通規範を配送しない場合は、軽量委譲の起動契約に必要な制約を記述する。agent-toolkitが読み手へ常に配送する規範（`rules/`配下、および読み手に応じて配送する`share/rules-main*.md`、`rules-common.codex.md`、`rules-subagent*.md`）を常時規範と呼ぶ。
 
-- 読込の階層: 常時ロードは`rules/`とfrontmatterの`description`、役割別注入は`share/`配下の`rules-`で始まるファイル、配送文は`share/agents-server-*.md`である。メイン起動時は`SKILL.md`本体、役割起動時は`share/<役割名>.parent.md`・`share/<役割名>.subagent.md`、明示Read時は`references/`、サブエージェント注入はagent定義とfrontmatterの`skills`である。明示Read時を除く階層は、読み手がその場面に入っていなくても起動とともに全文を読む
+- 読込の階層: 常時ロードは`rules/`とfrontmatterの`description`、役割別の注入は`share/`配下の`rules-`で始まるファイル、配送文は`share/agents-server-*.md`である。メイン起動時は`SKILL.md`本体、役割起動時は`share/<役割名>.parent.md`および`share/<役割名>.subagent.md`、明示的なRead時は`references/`、サブエージェント注入はagent定義とfrontmatterの`skills`が該当する。明示的なRead時を除き、読み手が該当する作業場面に入っていなくても起動時に全文を読み込む。
 
-- どの起動区分のエージェントへ届くかは`delivery-scope.md`の配送範囲表で確かめる
+- 各起動区分のエージェントへどの文書が届くかは、`delivery-scope.md`の配送範囲表で確認する。
 
 ## 読込表の宣言
 
-読込表の契機・配送操作・資料選択子は`agent-toolkit:/share/read-trigger-contract.md`に従って宣言する。条件と明示した節の範囲を保ち、判断前の到達手順と確定操作への補完配送を分ける。
+読込表の契機、配送操作、資料選択子は`agent-toolkit:/share/read-trigger-contract.md`に従って宣言する。条件と明示した節の範囲を守り、判断前の到達手順と確定操作への補完配送を区別して記述する。

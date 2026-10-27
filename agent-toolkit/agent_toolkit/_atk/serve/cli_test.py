@@ -127,7 +127,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_allow_terminal_entry_editing_and_keep_decision_closed() -> None:
-    """終端済みの本文編集と削除を許可し、採否を閉じたままkind/state識別子を表示する。"""
+    """終了済みの本文編集と削除を許可し、採否を閉じたままkind/state識別子を表示する。"""
     result = _run_node_ui(
         """
 displayEntry({
@@ -1141,6 +1141,25 @@ async def test_user_comment_api_appends_and_replaces_inbox_and_hold_session_revi
     )
     assert held.status_code == 200
     assert user_comment.extract_user_comment(held_path.read_text(encoding="utf-8")) == "保留中のコメント"
+
+
+@pytest.mark.parametrize("follow", [False, True])
+def test_serve_logs_reads_atk_serve_journal(monkeypatch: pytest.MonkeyPatch, follow: bool) -> None:
+    """atk serveのuser serviceのjournalを読み、追従は指定時だけ行い、journalctlの終了状態を返す。"""
+    commands: list[list[str]] = []
+
+    def run(command: list[str], **_kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 7)
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    assert serve.show_logs(follow=follow) == 7
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[:2] == ["journalctl", "--user"]
+    assert "_SYSTEMD_USER_UNIT=atk-serve.service" in command
+    assert ("-f" in command) is follow
 
 
 def _unused_local_port() -> int:

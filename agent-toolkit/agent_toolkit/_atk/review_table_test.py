@@ -1355,7 +1355,7 @@ def test_skill_review_table_commands_reject_incomplete_or_unsupported_forms(argv
     ("relative_path", "marker", "subcommand"),
     (
         ("review-standards/references/reviewer.md", "`atk review-table add", "add"),
-        ("review-standards/references/reviewee.md", "応答は`atk review-table respond", "respond"),
+        ("review-standards/references/reviewee.md", "応答の記録は、`atk review-table respond", "respond"),
     ),
 )
 def test_skill_review_table_options_match_accepted_cli_vectors(

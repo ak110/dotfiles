@@ -3,7 +3,6 @@ import type { EngineInterface, Register } from "claude-code";
 import { automatedMessage } from "./automated_message.ts";
 import { COMPACT_CONVERSATION_DELEGATED_DENY, COMPACT_CONVERSATION_TOOL, register as registerCompactConversation } from "./compact_conversation.ts";
 import { register as registerPeriodicRecheck } from "./periodic_recheck.ts";
-import { register as registerResponseLanguage } from "./response_language.ts";
 import { register as registerSendToUser, SEND_TO_USER_DELEGATED_DENY, SEND_TO_USER_TOOL } from "./send_to_user.tsx";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
 import { register as registerUsageLimitResume } from "./usage_limit_resume.ts";
@@ -80,7 +79,6 @@ export const register: Register = (on) => {
   registerSessionExit(on);
   registerCompactConversation(on, usageLimitSession);
   registerSendToUser(on);
-  registerResponseLanguage(on);
   registerPeriodicRecheck(on);
   registerUsageLimitResume(on, usageLimitSession);
 };

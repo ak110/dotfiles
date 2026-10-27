@@ -104,6 +104,16 @@ def command_input_observations(tool: str, text: str) -> list[dict[str, str | Non
     return commands
 
 
+def command_execution_input(command: object) -> str:
+    """CommandExecutionのargvから、シェルが受け取った実行文字列だけを返す。"""
+    if isinstance(command, list) and pathlib.PurePosixPath(str(command[0])).name in {"bash", "sh", "zsh"}:
+        for index, argument in enumerate(command[:-1]):
+            option = str(argument)
+            if option.startswith("-") and "c" in option[1:]:
+                return str(command[index + 1])
+    return " ".join(map(str, command)) if isinstance(command, list) else str(command)
+
+
 def command_file_inputs(name: str, args: tuple[str, ...]) -> list[str]:
     """加工ツールのオプションとプログラムを除いた明示入力を返す。"""
     values: list[str] = []

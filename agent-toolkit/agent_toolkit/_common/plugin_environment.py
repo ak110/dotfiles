@@ -4,13 +4,14 @@
 環境の指定はuv子プロセスに限り、Bashや対象リポジトリのuvへ永続化しない。
 """
 
+import errno
 import hashlib
 import json
 import os
 import platform
 import shlex
 import sys
-import sysconfig
+import time
 import tomllib
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
@@ -23,6 +24,8 @@ from agent_toolkit._common.shell_tokens import atk_launcher_name
 RUNTIME_DATA_ENV = "AGENT_TOOLKIT_RUNTIME_DATA"
 RUNTIME_ENVIRONMENT_ENV = inherited_venv.PLUGIN_RUNTIME_ENVIRONMENT_KEY
 _READY_FILE = ".agent-toolkit-dependencies-ready"
+_PREPARE_LOCK_TIMEOUT = 300.0
+_PREPARE_LOCK_INTERVAL = 0.1
 
 
 def runtime_data(environment: Mapping[str, str]) -> Path:
@@ -58,18 +61,15 @@ def _writable_directory(path: Path) -> bool:
     return os.access(path, os.W_OK)
 
 
-def project_environment(root: Path, environment: Mapping[str, str]) -> Path:
+def project_environment(root: Path, environment: Mapping[str, str], *, python_executable: Path | None = None) -> Path:
     """依存解決とPython実行条件が一致する実行だけが共有する環境を返す。"""
     root = root.resolve()
     payload = {
         "dependency_project": _dependency_project(root / "pyproject.toml"),
         "lock": hashlib.sha256((root / "uv.lock").read_bytes()).hexdigest(),
-        "python": {
-            "implementation": sys.implementation.name,
-            "version": list(sys.version_info),
-            "implementation_version": list(sys.implementation.version),
-            "abi": sysconfig.get_config_var("SOABI"),
-        },
+        # launcherとwarmupは別のPythonプロセスから起動されることがある。
+        # 選択済みの実行ファイルは両者で共有できる実行時の識別子である。
+        "python": str((python_executable or Path(sys.executable)).resolve()),
         "platform": {"os": sys.platform, "machine": platform.machine()},
     }
     encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -140,23 +140,46 @@ def prepare_lock(environment: Path) -> Generator[None]:
     lock = environment.with_name(environment.name + ".prepare-lock")
     lock.parent.mkdir(parents=True, exist_ok=True)
     with lock.open("a+b") as stream:
-        _lock_file(stream)
+        _lock_file(stream, lock)
         try:
             yield
         finally:
             _unlock_file(stream)
 
 
-def _lock_file(stream: BinaryIO) -> None:
-    """POSIXとWindowsでプロセス終了時にも解放される排他ロックを取得する。"""
+def _lock_file(stream: BinaryIO, lock: Path) -> None:
+    """既知の競合だけを有限時間待機して排他ロックを取得する。"""
+    deadline = time.monotonic() + _PREPARE_LOCK_TIMEOUT
+    stream.seek(0)
     if os.name == "nt":
         import msvcrt  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error
 
-        msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
-        return
+        while True:
+            try:
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+                return
+            except OSError as error:
+                if error.errno not in {errno.EACCES, errno.EDEADLK}:
+                    raise
+                _wait_for_prepare_lock(lock, deadline, error)
     import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error
 
-    fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+    while True:
+        try:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError as error:
+            _wait_for_prepare_lock(lock, deadline, error)
+
+
+def _wait_for_prepare_lock(lock: Path, deadline: float, error: OSError) -> None:
+    """ロック待機の上限を一箇所で判定し、競合以外を隠さない。"""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError(
+            f"共有依存環境のprepare lockが{_PREPARE_LOCK_TIMEOUT:.0f}秒以内に解放されませんでした: {lock}"
+        ) from error
+    time.sleep(min(_PREPARE_LOCK_INTERVAL, remaining))
 
 
 def _unlock_file(stream: BinaryIO) -> None:
@@ -183,7 +206,7 @@ def publish_prepared_environment(root: Path, environment: Mapping[str, str]) -> 
 def launch_command(root: Path, target: Path) -> list[str]:
     """配布root内のスクリプトを、配布root外の依存環境で起動するargvを返す。
 
-    `uv run --project <root>`を直接案内すると配布rootへ仮想環境が作成されるため、案内文もこの形を使う。
+    配布rootをuvのprojectに指定するとそこへ仮想環境が作成されるため、案内文もlaunch.pyを使う。
     """
     launcher = root.resolve() / "scripts" / "launch.py"
     return ["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher), str(target)]
@@ -205,6 +228,9 @@ def persist_claude_environment(root: Path, environment: Mapping[str, str]) -> No
     if not (value := environment.get("CLAUDE_ENV_FILE")):
         return
     scripts = shlex.quote(str(root.resolve() / "scripts"))
+    if os.name == "nt":
+        # BashのPATHではドライブのコロンも区切りになるため、Git Bashの表記へ変換する。
+        scripts = f'"$(cygpath -u {scripts})"'
     data = shlex.quote(str(runtime_data(environment)))
     with Path(value).open("a", encoding="utf-8", newline="\n") as output:
         output.write(f'\nexport PATH={scripts}:"$PATH"\nexport {RUNTIME_DATA_ENV}={data}\n')
@@ -218,5 +244,5 @@ def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
     return (
         f"agent-toolkitのCLI: {entry}\n"
         f"起動部分: {command}\n"
-        "この起動部分へサブコマンドと引数を続ける。CLIはこの配布物と、その版の依存環境を使う。"
+        "この起動部分へサブコマンドと引数を続けよ。CLIはこの配布物と、その版の依存環境を使う。"
     )

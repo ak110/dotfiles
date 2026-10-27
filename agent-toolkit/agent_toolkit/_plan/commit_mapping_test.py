@@ -218,7 +218,7 @@ def test_rebase_map_accepts_only_recorded_old_oids(repo: pathlib.Path) -> None:
     """WI対応のないcommitを含むrebaseでは、記録済み旧OIDだけの対応表で継承し、記録外OIDと記録済みOIDの欠落を失敗にする。
 
     この旧形式の内部操作は、公開history-compareが返す範囲全体のうち対応記録を持つ旧OIDだけを受け取る。
-    記録外OIDを含めると対応を確定できず失敗し、記録済み旧OIDが対応表に無いと終端前の取得が失敗する。
+    記録外OIDを含めると対応を確定できず失敗し、記録済み旧OIDが対応表に無いと終了前の取得が失敗する。
     """
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
     recorded = _commit(repo, "recorded")

@@ -73,6 +73,32 @@ def test_real_pretooluse_blocks_pattern_kill(tmp_path: pathlib.Path, capsys: pyt
     assert "pkill" in result["reason"]
 
 
+@pytest.mark.parametrize("response", [_Response(2, {}, ""), _Response(0, {"decision": "block", "reason": ""}, "")])
+def test_pretooluse_denial_without_reason_reports_next_action(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, response: _Response
+) -> None:
+    monkeypatch.setattr(antigravity, "_invoke", lambda *_: response)
+    result = _run(_payload(tmp_path), "PreToolUse", capsys)
+    assert result["decision"] == "deny"
+    assert "理由を返さず" in result["reason"]
+    assert "委譲元" in result["reason"] and "ユーザー" in result["reason"] and "報告せよ" in result["reason"]
+
+
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [(_Response(2, {"reason": "理由"}, "診断"), "診断"), (_Response(0, {"decision": "deny", "reason": "理由"}, ""), "理由")],
+)
+def test_pretooluse_denial_preserves_inner_reason(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    response: _Response,
+    expected: str,
+) -> None:
+    monkeypatch.setattr(antigravity, "_invoke", lambda *_: response)
+    assert _run(_payload(tmp_path), "PreToolUse", capsys) == {"decision": "deny", "reason": expected}
+
+
 def test_session_start_defers_context(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """SessionStartのstdoutを空objectに保ち、次のInvocationで共通文脈を配送する。"""
     raw = _payload(tmp_path)
@@ -180,8 +206,7 @@ def test_native_subagent_receives_rules(tmp_path: pathlib.Path, capsys: pytest.C
     initial = _run(raw, "PreToolUse", capsys)
     assert initial["decision"] == "allow"
     delivered = json.dumps(_run(raw, "PostInvocation", capsys), ensure_ascii=False)
-    assert "read-delivery" in delivered
-    assert str(skill) in delivered
+    assert f"cat -- {skill}" in delivered
     read = _payload(
         tmp_path,
         toolCall={

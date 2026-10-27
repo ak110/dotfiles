@@ -388,7 +388,7 @@ class TestReadiness:
         tmp_path: pathlib.Path,
         terminal_state: str,
     ) -> None:
-        """明示依存は回答済みUWIがactiveな間も成立せず、終端遷移後に成立する。"""
+        """明示依存は回答済みUWIがactiveな間も成立せず、終了遷移後に成立する。"""
         write_uwi(tmp_path, "answer.md", answer="回答済み")
         write_awi(tmp_path, "awi.md", depends_on=("answer.md",))
 
@@ -408,7 +408,7 @@ class TestReadiness:
         assert not terminal.blocked
 
     def test_explicit_dependency_blocks_again_when_terminal_target_is_retried(self, tmp_path: pathlib.Path) -> None:
-        """終端依存先をprocessingへ戻した再試行では依存元を再びblockedにする。"""
+        """終了依存先をprocessingへ戻した再試行では依存元を再びblockedにする。"""
         write_uwi(tmp_path, "answer.md", answer="回答済み")
         write_awi(tmp_path, "awi.md", depends_on=("answer.md",))
         answer = tmp_path / "2026/10/answer.md"
@@ -572,7 +572,7 @@ class TestUpstreamCrossRepoDependency:
     """着手できるかは、別の対象リポジトリにある依存先の状態でも決まる。"""
 
     def test_cross_repo_dependency_blocks_until_terminal(self, tmp_path: pathlib.Path) -> None:
-        """別target_repoの依存先がactiveの間はblockedで、終端でreadyへ戻る。"""
+        """別target_repoの依存先がactiveの間はblockedで、終了でreadyへ戻る。"""
         write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
         write_awi(tmp_path, "upstream.md", target_repo="github.com/example/upstream")
         readiness = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/downstream")
@@ -587,7 +587,7 @@ class TestUpstreamCrossRepoDependency:
         assert not readiness.blocked
 
     def test_unreferenced_terminal_entry_in_other_repo_does_not_release_wait(self, tmp_path: pathlib.Path) -> None:
-        """別リポジトリの未参照項目の終端は、指定した依存先の待機へ作用しない。"""
+        """別リポジトリの未参照項目の終了は、指定した依存先の待機へ作用しない。"""
         write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
         write_awi(tmp_path, "upstream.md", target_repo="github.com/example/downstream")
         write_awi(tmp_path, "other.md", state="adopted", target_repo="github.com/example/other")
@@ -599,7 +599,7 @@ class TestUpstreamCrossRepoDependency:
         assert not readiness.missing_dependencies
 
     def test_unreferenced_active_entry_in_other_repo_does_not_block_resolved_dependency(self, tmp_path: pathlib.Path) -> None:
-        """指定した依存先が終端していれば、別リポジトリの未参照項目が未終端でも着手できる。"""
+        """指定した依存先が終了していれば、別リポジトリの未参照項目が未終了でも着手できる。"""
         write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
         write_awi(tmp_path, "upstream.md", state="adopted", target_repo="github.com/example/downstream")
         write_awi(tmp_path, "other.md", target_repo="github.com/example/other")

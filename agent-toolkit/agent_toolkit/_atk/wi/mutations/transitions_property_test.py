@@ -102,7 +102,7 @@ def test_transition_sequences_match_reference_model(actions: list[str], monkeypa
 
 
 def test_reopening_terminal_entry_strips_previous_result(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """既知事例: 終端後の再開は前回の処理結果を次の処理へ渡さない。"""
+    """既知事例: 終了後の再開は前回の処理結果を次の処理へ渡さない。"""
     _disable_git(monkeypatch)
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
@@ -186,7 +186,7 @@ def test_dependency_order_matches_reference_model(
     terminal_state: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """依存鎖では終端済みの接頭辞に続く1件だけが処理可能になる。"""
+    """依存鎖では終了済みの接頭辞に続く1件だけが処理可能になる。"""
     with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
         notes = _setup_notes(pathlib.Path(directory))
         completed = min(completed, size)

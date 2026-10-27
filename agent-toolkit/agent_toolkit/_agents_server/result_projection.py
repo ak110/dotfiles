@@ -1,4 +1,4 @@
-"""sessionの進捗・活動・終端結果と上り通知を、MCPとCLIの公開応答の形へ射影する。"""
+"""sessionの進捗・活動・終了時の結果と上り通知を、MCPとCLIの公開応答の形へ射影する。"""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from typing import Any
 from agent_toolkit._agents_server import logging_config
 from agent_toolkit._common import session_registry
 
-RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終端を観測してから`send_message`を再送する"
-"""turnが中断中または未終端のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
+RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終了を観測してから`send_message`を再送する"
+"""turnが中断中または未終了のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
 
 
 # レビューを目的とするsessionのlabelの末尾。`start`のlabelの凡例と、`<役割名>.subagent.md`から生成するlabelがこの末尾を持つ。

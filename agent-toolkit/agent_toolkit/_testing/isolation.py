@@ -115,7 +115,20 @@ _GIT_LOCAL_ENVIRONMENT_NAMES = (
     "GIT_SHALLOW_FILE",
     "GIT_COMMON_DIR",
 )
+_VENV_ENVIRONMENT_NAMES = (
+    "UV_PROJECT_ENVIRONMENT",
+    "VIRTUAL_ENV",
+    "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT",
+    "AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT",
+    "AGENT_TOOLKIT_LAUNCH_RESTORE",
+)
 _HOST_RESTORED_ENVIRONMENT_NAMES = (*HOME_ENVIRONMENT_NAMES, *CONFIG_DIRECTORY_ENVIRONMENT_NAMES, "PATH", "MISE_CEILING_PATHS")
+_HOST_VENV_BINARIES = tuple(
+    str(path)
+    for root in (os.environ.get("VIRTUAL_ENV"),)
+    if root
+    for path in (pathlib.Path(root) / "bin", pathlib.Path(root) / "Scripts")
+)
 # 隔離する前の値。fixture適用後の`os.environ`からは取得できないため、conftestが本モジュールを
 # 読み込む時点（どのfixtureよりも先）で控える。`host_environ`と`restore_host_environment`が復元に使う。
 _HOST_ENVIRON = {
@@ -128,6 +141,11 @@ _HOST_PACKAGE_CACHE_ENVIRON = {
     for name in (*PACKAGE_CACHE_ENVIRONMENT_NAMES, "PNPM_HOME", "UV_CACHE_DIR")
     if (host_value := os.environ.get(name)) is not None
 }
+
+
+def without_parent_venv_path(path_value: str) -> str:
+    """親venvの実行ディレクトリを、復元用PATHから除く。"""
+    return os.pathsep.join(entry for entry in path_value.split(os.pathsep) if entry not in _HOST_VENV_BINARIES)
 
 
 def build_isolated_path(path_value: str, link_root: pathlib.Path) -> str:
@@ -176,7 +194,9 @@ def build_test_git_directory(git: str, link_root: pathlib.Path) -> pathlib.Path:
 @pytest.fixture(name="_isolated_path_value", scope="session")
 def isolated_path_value(tmp_path_factory: pytest.TempPathFactory) -> str:
     """テストへ渡すPATHの値をセッションで1回だけ組み立てる。"""
-    path_value = build_isolated_path(_HOST_ENVIRON.get("PATH", ""), tmp_path_factory.mktemp("isolated-path"))
+    path_value = build_isolated_path(
+        without_parent_venv_path(_HOST_ENVIRON.get("PATH", "")), tmp_path_factory.mktemp("isolated-path")
+    )
     if git := os.environ.get(TEST_GIT_ENVIRONMENT_NAME):
         directory = build_test_git_directory(git, tmp_path_factory.mktemp("test-git"))
         path_value = os.pathsep.join((str(directory), path_value))
@@ -222,7 +242,7 @@ def isolate_development_state(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     }
     for name, value in git_environment.items():
         monkeypatch.setenv(name, value)
-    for name in DEVELOPMENT_SESSION_ENVIRONMENT_NAMES:
+    for name in (*DEVELOPMENT_SESSION_ENVIRONMENT_NAMES, *_VENV_ENVIRONMENT_NAMES):
         monkeypatch.delenv(name, raising=False)
     for name in tuple(os.environ):
         if name.startswith(CONFIG_OVERRIDE_ENVIRONMENT_PREFIX):
@@ -234,9 +254,10 @@ def isolate_development_state(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
 def build_host_environ() -> dict[str, str]:
     """ホーム、設定、PATHとmiseの探索範囲だけを隔離前の値へ戻す。"""
     environ = dict(os.environ)
-    for name in _HOST_RESTORED_ENVIRONMENT_NAMES:
+    for name in (*_HOST_RESTORED_ENVIRONMENT_NAMES, *_VENV_ENVIRONMENT_NAMES):
         environ.pop(name, None)
     environ.update(_HOST_ENVIRON)
+    environ["PATH"] = without_parent_venv_path(environ.get("PATH", ""))
     return environ
 
 
@@ -339,11 +360,14 @@ def restore_host_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
     実際のCLIを同じプロセスから起動するテスト（`asyncio.create_subprocess_exec`を使うbackendなど）が使う。
     """
+    for name in _VENV_ENVIRONMENT_NAMES:
+        monkeypatch.delenv(name, raising=False)
     for name in _HOST_RESTORED_ENVIRONMENT_NAMES:
         if name in _HOST_ENVIRON:
             monkeypatch.setenv(name, _HOST_ENVIRON[name])
         else:
             monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("PATH", without_parent_venv_path(os.environ.get("PATH", "")))
 
 
 def assert_development_state_isolated(tmp_path: pathlib.Path) -> None:
@@ -373,6 +397,8 @@ def assert_development_state_isolated(tmp_path: pathlib.Path) -> None:
         if name != "GIT_CONFIG_COUNT":
             assert name not in os.environ, name
     for name in DEVELOPMENT_SESSION_ENVIRONMENT_NAMES:
+        assert name not in os.environ, name
+    for name in _VENV_ENVIRONMENT_NAMES:
         assert name not in os.environ, name
     assert not [name for name in os.environ if name.startswith(CONFIG_OVERRIDE_ENVIRONMENT_PREFIX)]
     for name in AGENT_CLI_NAMES:

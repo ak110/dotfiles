@@ -219,8 +219,8 @@ def test_action_decisions_accept_all_declared_values(decision: str) -> None:
 
 
 def test_requirement_coverage_excludes_terminal_only_adopted_requirement() -> None:
-    """`採用範囲`が`終端工程のみ`で始まる採用要求は被覆されていなくても受理する。"""
-    assert not plan_sections.check_plan_structure(_plan_with_uncovered_requirement("終端工程のみ適用する"))
+    """`採用範囲`が`公開工程のみ`で始まる採用要求は被覆されていなくても受理する。"""
+    assert not plan_sections.check_plan_structure(_plan_with_uncovered_requirement("公開工程のみ適用する"))
 
 
 def test_structured_material_contract_rejects_duplicate_material_id() -> None:

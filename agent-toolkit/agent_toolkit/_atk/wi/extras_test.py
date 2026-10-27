@@ -309,6 +309,31 @@ def test_local_only_commit_reports_skipped_remote_operations(
     assert "pushした" not in clean + edited
 
 
+def test_wi_pull_fast_forwards_remote_entry(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """別cloneが送った項目を`atk wi pull`で取り込み、同期先を1行で示す。"""
+    origin = git_repository.init_bare_repository(tmp_path / "origin.git")
+    seed = git_repository.init_repository(
+        tmp_path / "seed", initial_branch="main", origin=str(origin), files={".gitkeep": ""}, commit_message="base"
+    )
+    git_repository.run_git(seed, "push", "-u", "origin", "main")
+    notes = tmp_path / "private-notes"
+    peer = tmp_path / "peer"
+    git_repository.run_git(tmp_path, "clone", str(origin), str(notes))
+    git_repository.run_git(tmp_path, "clone", str(origin), str(peer))
+    _write_awi_file(peer, "remote.md")
+    git_repository.commit_all(peer, "remote entry")
+    git_repository.run_git(peer, "push")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "pull"], home=tmp_path)
+
+    assert (notes / "2026/10/remote.md").exists()
+    assert capsys.readouterr().out == f"成功: private-notesをremoteと同期した: {notes.resolve()}\n"
+
+
 def _write_processing_file(
     notes: pathlib.Path,
     filename: str,
@@ -442,7 +467,7 @@ class TestListAwiStatusAll:
 
 
 class TestListAwiStatusActive:
-    """listサブコマンド `--status=active`: AWIのactive状態を表示し終端状態を除外する。"""
+    """listサブコマンド `--status=active`: AWIのactive状態を表示し終了状態を除外する。"""
 
     def test_active_excludes_adopted_and_rejected(
         self,

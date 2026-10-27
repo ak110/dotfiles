@@ -20,7 +20,7 @@ from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
 import agent_toolkit
-from agent_toolkit._agents_server import launch_requests, state
+from agent_toolkit._agents_server import claude_api_credits, launch_requests, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import codex_models, plugin_environment, process_tree
@@ -206,6 +206,18 @@ def _reset_warning_context(request: pytest.FixtureRequest, monkeypatch: pytest.M
 
 
 @pytest.fixture(autouse=True)
+def _reset_claude_api_credit_observations(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """API残高不足の観測を保持する`claude_api_credits`の大域状態を各テストの開始時に空へ戻す。
+
+    本番ではagents_serverのプロセスごとに空から始まる。同じプロセスで複数のテストを実行すると、
+    先行テストが記録した観測が後続テストの委譲先の接続順を変えるため、テストごとに空の辞書へ差し替える。
+    """
+    if not request.path.is_relative_to(_PACKAGE_ROOT):
+        return
+    monkeypatch.setattr(claude_api_credits, "_observations", {})
+
+
+@pytest.fixture(autouse=True)
 def _fixed_codex_model_catalog(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """Codexの利用可能モデル一覧を固定値へ差し替え、実行環境の`codex` CLIの有無によらず同じ結果にする。
 
@@ -325,7 +337,17 @@ async def _skipped_plugin_preflight(_cwd: str) -> None:
 
 async def _forbidden_backend_process(*args: Any, **_kwargs: Any) -> Any:
     """実backendの子プロセス起動を拒否し、差し替えていない呼び出しを実行環境によらず失敗させる。"""
-    raise AssertionError(f"テストが実backendの子プロセスを起動しようとしました: {args}")
+    raise _backend_process_forbidden(args)
+
+
+def _backend_process_forbidden(args: tuple[Any, ...]) -> AssertionError:
+    """実backendの起動時に共通して返す例外を生成する。"""
+    return AssertionError(f"テストが実backendの子プロセスを起動しようとしました: {args}")
+
+
+def _forbidden_claude_client(*args: Any, **_kwargs: Any) -> Any:
+    """同期factoryからClaude SDK clientを返さず、実backend起動を拒否する。"""
+    raise _backend_process_forbidden(args)
 
 
 @pytest.fixture
@@ -339,13 +361,16 @@ def _skip_plugin_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def _forbid_backend_process(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Codex・Antigravityの実backendが子プロセスを起動する処理を通常は拒否する。
+    """全engineの実backendが実CLIを起動する処理を通常は拒否する。
 
     backendを差し替えたengineが候補のengineと一致しないと、実backendが`codex app-server`などを起動する。
     CLIを導入した開発機ではそれが成功して欠陥が隠れ、導入していないCIだけが失敗するため、
     起動そのものを失敗させて両環境の結果をそろえる。起動引数を確かめるテストはテスト内で改めて差し替える。
     """
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _forbidden_backend_process)
+    from agent_toolkit._agents_server import claude  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.setattr(claude.ClaudeServerManager, "_default_client_factory", _forbidden_claude_client)
 
 
 @pytest.fixture
@@ -372,13 +397,13 @@ def _restore_session_listeners() -> Any:
 
 @pytest.fixture
 def _short_start_availability_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """起動直後の終端確認を短縮し、実行中のまま返るsessionでテストを待たせない。"""
+    """起動直後の終了確認を短縮し、実行中のまま返るsessionでテストを待たせない。"""
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.05)
 
 
 @pytest.fixture
 def _immediate_wait_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """待機上限の導出を省き、未終端sessionの待機でテストを待たせない。
+    """待機上限の導出を省き、未終了sessionの待機でテストを待たせない。
 
     `wait`は待機上限を入力として受け取らないため、上限の導出だけをテスト用の値へ差し替える。
     """

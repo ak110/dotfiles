@@ -7,9 +7,6 @@ import re
 import pytest
 
 from agent_toolkit._common.response_language_check import (
-    BLOCK_BODY,
-    WARNING_BODY,
-    WARNING_FIX,
     CheckOutcome,
     check_text,
 )
@@ -242,18 +239,7 @@ class TestWarningBody:
         """
         _, body = check_text("Now、調査を続ける。")
         assert body is not None
-        assert "などの英語の語で始まる応答は同じ判定になる" in body
-        assert "内容を保って日本語で書き直す" in WARNING_FIX
-
-    @pytest.mark.parametrize("notice_body", [WARNING_BODY, BLOCK_BODY])
-    def test_bodies_do_not_ask_for_reply_or_correction_statement(self, notice_body):
-        """書き直しは本文へ適用し、通知への返信と訂正の宣言を省く。
-
-        応答し直しを求める本文を受領した実行主体は、通知への返信や訂正の宣言をユーザー向けの応答へ書いた。
-        """
-        assert "通知への返信・訂正や謝罪の宣言は省く" in WARNING_FIX
-        assert "応答し直" not in notice_body + WARNING_FIX
-        assert "遮断されない" not in notice_body
+        assert "英語の語" in body and "同じ判定" in body
 
 
 class TestDiscourseMarker:

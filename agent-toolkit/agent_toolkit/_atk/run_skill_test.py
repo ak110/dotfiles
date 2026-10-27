@@ -635,7 +635,7 @@ def test_descendant_holding_output_does_not_delay_result(
 ) -> None:
     """子セッションの終了後に出力のパイプを保持する子孫が残っても、上限付きの待ちの後に結果を返す。
 
-    出力の終端を待ち続けると、子孫が終わるまで`--timeout`の外で終了コードを返さない。
+    出力の終了を待ち続けると、子孫が終わるまで`--timeout`の外で終了コードを返さない。
     """
     monkeypatch.setattr(run_skill, "OUTPUT_DRAIN_SECONDS", 0.5)
     pid_file = tmp_path / "detached.pid"

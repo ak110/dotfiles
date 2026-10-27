@@ -8,7 +8,7 @@
 ### 共有原本とCodex固有の上書き
 
 Codexのコマンド回収は、外側の`functions.exec`のcellと内側の`exec_command`のsessionを別の実行識別子として扱う。
-返却本文とともに`exit_code`と`session_id`を保持し、cellは`functions.wait`、sessionは`write_stdin`で同じ起動の終端まで回収する。
+返却本文とともに`exit_code`と`session_id`を保持し、cellは`functions.wait`、sessionは`write_stdin`で同じ起動の終了まで回収する。
 `session_id`がある間に同じ待機コマンドを再発行すると、先行実行を回収する前に次の待機も開始するため採用しない。
 契約の定義元は`rules-common.codex.md`へ集約し、Codex向けAGENTSの正式生成で全主体へ届ける。
 
@@ -126,7 +126,7 @@ Codex backendの子のApp Serverへ`AGENT_TOOLKIT_DELEGATED_SESSION`を渡す案
 
 Claude Codeが自動で読み込む規範は、Codexでは次のいずれかの手段で届けるか、対象外とする理由を記録する。
 Codexへの配送手段を追加・変更する主体は、この対応で届かない規範が無いかを確かめる。
-読込指示は`agent-toolkit/share/rules-common.codex.md`「Claude Code向けに置かれた規範の読込」が定める。
+読込指示は`agent-toolkit/share/rules-common.codex.md`「Claude Code向けに配置された規範の読込」が定める。
 
 | Claude Codeの自動読込対象 | Codexでの届け方 |
 | --- | --- |

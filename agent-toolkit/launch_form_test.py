@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 import venv
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from types import ModuleType
 from typing import Any
 
@@ -266,15 +266,20 @@ def test_prepare_syncs_dependencies_only_and_publishes_after_success(
     environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path / "runtime")}
     observed: list[list[str]] = []
 
-    def run(arguments: list[str], *, env: dict[str, str], check: bool) -> subprocess.CompletedProcess[object]:
-        assert check is False
+    class PreparedProcess:
+        def wait(self, timeout: float) -> int:
+            assert 0 < timeout <= launcher._PREPARE_TIMEOUT
+            return 0
+
+    @contextlib.contextmanager
+    def lifetime(arguments: list[str], *, environment: dict[str, str], **_kwargs: Any) -> Generator[PreparedProcess]:
         observed.append(arguments)
-        executable = plugin_environment.python_path(pathlib.Path(env["UV_PROJECT_ENVIRONMENT"]))
+        executable = plugin_environment.python_path(pathlib.Path(environment["UV_PROJECT_ENVIRONMENT"]))
         executable.parent.mkdir(parents=True)
         executable.write_text("", encoding="utf-8")
-        return subprocess.CompletedProcess(arguments, 0)
+        yield PreparedProcess()
 
-    monkeypatch.setattr(launcher.subprocess, "run", run)
+    monkeypatch.setattr(launcher, "_server_lifetime", lifetime)
     assert launcher._prepare(root, "uv", environment) == 0
     assert observed == [
         [
@@ -290,3 +295,54 @@ def test_prepare_syncs_dependencies_only_and_publishes_after_success(
         ]
     ]
     assert plugin_environment.prepared_python(root, environment) is not None
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの所有process group回収を実プロセスで検証する")
+def test_prepare_timeout_reclaims_its_descendants(
+    launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, request: pytest.FixtureRequest
+) -> None:
+    """prepareの上限超過で、準備環境を公開せず所有する子孫も終了させる。"""
+    root = tmp_path / "plugin"
+    root.mkdir()
+    (root / "pyproject.toml").write_text('[project]\nname="probe"\ndependencies=[]\n', encoding="utf-8")
+    (root / "uv.lock").write_text("lock", encoding="utf-8")
+    environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path / "runtime")}
+    ready = tmp_path / "ready"
+    probe = tmp_path / "sync_probe.py"
+    probe.write_text(
+        "import pathlib, subprocess, sys\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        "pathlib.Path(sys.argv[1]).write_text(str(child.pid))\n"
+        "child.wait()\n",
+        encoding="utf-8",
+    )
+    original_lifetime = launcher._server_lifetime
+    children: list[psutil.Process] = []
+
+    @contextlib.contextmanager
+    def lifetime(_arguments: list[str], *, environment: dict[str, str], **kwargs: Any) -> Generator[subprocess.Popen]:
+        with original_lifetime([sys.executable, str(probe), str(ready)], {**os.environ, **environment}, **kwargs) as process:
+            deadline = time.monotonic() + 5
+            while not ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert ready.exists(), "準備プロセスが子の起動を通知していない"
+            children.append(psutil.Process(int(ready.read_text(encoding="utf-8"))))
+            request.addfinalizer(lambda: process_tree.reclaim_processes(children))
+            yield process
+
+    monkeypatch.setattr(launcher, "_server_lifetime", lifetime)
+    monkeypatch.setattr(launcher, "_PREPARE_TIMEOUT", 0.01)
+    assert launcher._prepare(root, "fake-uv", environment) == 1
+    assert plugin_environment.prepared_python(root, environment) is None
+    assert children
+    # SIGKILLの送信と子孫の終了状態への遷移は非同期なので、状態を有限時間待つ。
+    deadline = time.monotonic() + 5
+    for child in children:
+        while True:
+            try:
+                if child.status() == psutil.STATUS_ZOMBIE:
+                    break
+            except psutil.NoSuchProcess:
+                break
+            assert time.monotonic() < deadline, "準備プロセスの子孫が終了しませんでした"
+            time.sleep(0.01)

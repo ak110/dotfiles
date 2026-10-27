@@ -1,4 +1,4 @@
-"""MCPの待機操作で、保持するsessionの終端と保持期限内の結果を待って返す処理。"""
+"""MCPの待機操作で、保持するsessionの終了と保持期限内の結果を待って返す処理。"""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
 class ManagerWait(manager_resume.ManagerResume):
-    """保持するsessionの終端と保持期限内の結果を待ち、到着した結果と通知を返す。"""
+    """保持するsessionの終了と保持期限内の結果を待ち、到着した結果と通知を返す。"""
 
     async def _resolve_wait_timeout(self, request_bucket: str) -> float:
         """bucketごとに省略時に使う待機上限を導出し、同じbucketの以降の呼び出しへ再利用する。
@@ -38,7 +38,7 @@ class ManagerWait(manager_resume.ManagerResume):
     def _wait_target_ids(self) -> list[str]:
         """待機の対象となる保持中sessionを識別子順に返す。
 
-        未回収の終端結果を持つ破棄済みまたは期限切れsessionも対象へ含め、
+        未回収の終了時の結果を持つ破棄済みまたは期限切れsessionも対象へ含め、
         委譲元が回収する前に結果本文を失わないようにする。
         """
         targets = set(self.sessions) | set(self._pending_resumes)
@@ -48,7 +48,7 @@ class ManagerWait(manager_resume.ManagerResume):
         return sorted(targets)
 
     async def _retained_result_response(self, session_id: str, *, collector: str) -> dict[str, Any] | None:
-        """破棄済みまたは期限切れsessionの未回収の終端結果だけを返す。"""
+        """破棄済みまたは期限切れsessionの未回収の終了時の結果だけを返す。"""
         stopped_state = await self._resolve_stopped_session(session_id)
         if stopped_state is not None:
             response = await self._take_stopped_result(session_id, stopped_state, collector=collector)
@@ -63,26 +63,26 @@ class ManagerWait(manager_resume.ManagerResume):
         return self._response_with_notices(response, (await self._take_notices_async(session_id)))
 
     async def wait(self) -> dict[str, Any]:
-        """委譲先の終端を待ち、終端時だけ結果本文を返す。
+        """委譲先の終了を待ち、終了時だけ結果本文を返す。
 
-        引数を受け取らない。対象は本MCPサーバープロセスが保持する起動中のsession全体とし、最初に終端した1件の結果を返す。
-        残るsessionの終端結果は次の呼び出しまで保持する。
+        引数を受け取らない。対象は本MCPサーバープロセスが保持する起動中のsession全体とし、最初に終了した1件の結果を返す。
+        残るsessionの終了時の結果は次の呼び出しまで保持する。
         待機上限はプロンプトキャッシュの保持期間から導出した値とし、委譲先として起動されたセッションでは240秒を上限とする。
         この上限へ達した応答は`status`と`elapsed_seconds`を返す。
         保持中のsessionの最終活動時刻と停滞の印は`show`が返す。待機せずに現状態を確認する場合は`show`を発行する。
         完了通知で同じセッションへ再開できる待機は、goalの有無や対象の種類・件数によらず、
         `atk agents wait`をホストのバックグラウンドタスクとして起動する。
-        通知による再開が無い環境では、委譲元は公開された待機手段で終端を確定する。
+        通知による再開が無い環境では、委譲元は公開された待機手段で終了を確定する。
         起動と回収はdelegationの`references/waiting-and-monitoring.md`「待機区間の構成」に従う。
-        委譲先がバックグラウンドタスクを残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
+        委譲先がバックグラウンドタスクを残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終了まで待つ。
         委譲元はバックグラウンドタスクの完了後に`send_message`で再開を指示しない。
-        終端前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
-        終端結果は委譲元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
-        受領した終端結果のsessionを破棄する場合は`stop`を発行する。
-        終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
-        委譲先が実行中に`atk agents notify`で送った通知が未回収である場合は、終端前でもその通知を`notices`へ載せて復帰する。
+        終了前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
+        終了時の結果は委譲元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
+        受領した終了時の結果のsessionを破棄する場合は`stop`を発行する。
+        終了時の結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
+        委譲先が実行中に`atk agents notify`で送った通知が未回収である場合は、終了前でもその通知を`notices`へ載せて復帰する。
         再待機の要否は`status`で判定する。
-        `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
+        `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終了であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
         応答へ載せた通知は回収済みとして再び返さない。
         """
         await self._drain_diagnostics()
@@ -140,7 +140,7 @@ class ManagerWait(manager_resume.ManagerResume):
                             session.session_id, collector="mcp-wait"
                         )
                         if claim_error is not None:
-                            raise RuntimeError(f"終端結果を回収できません: {session.session_id}: {claim_error}")
+                            raise RuntimeError(f"終了時の結果を回収できません: {session.session_id}: {claim_error}")
                         if claimed is None:
                             session.result_delivered = True
                             continue

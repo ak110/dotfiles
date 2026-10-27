@@ -236,12 +236,7 @@ def body_is_effectively_empty(body: str) -> bool:
 
 _EMPTY_AWI_ERROR = "AWI本文が実質空です"
 _EMPTY_AWI_NEXT_ACTION = "本文を記入して再投入する"
-_REQUIRED_AWI_HEADINGS: tuple[str, ...] = (
-    "反映内容と反映先",
-    "適用範囲",
-    "実現性",
-    "完成条件",
-)
+_REQUIRED_AWI_HEADINGS: tuple[str, ...] = ("反映内容と反映先",)
 """`source`を持つ通常AWIが必須とするH2見出し。
 
 `agent-toolkit:wi-standards`の`## 通常AWIの本文`が定める必須節をそのまま写す。
@@ -260,6 +255,7 @@ _AWI_HEADING_ORDER: tuple[str, ...] = (
     _CAUSE_ANALYSIS_HEADING,
     "適用範囲",
     "実現性",
+    "調査結果と判断根拠",
     "完成条件",
     "ユーザー指摘の逐語引用",
 )
@@ -301,21 +297,24 @@ def require_agent_awi_sections(
     problems: list[str] = []
     if missing := [name for name in _REQUIRED_AWI_HEADINGS if name not in filled]:
         problems.append(f"非空の必須節がありません: {'、'.join(missing)}")
-    if _CAUSE_ANALYSIS_HEADING in appeared and _CAUSE_ANALYSIS_HEADING not in filled:
-        problems.append(f"本文が空の節があります: {_CAUSE_ANALYSIS_HEADING}")
+    if empty := [
+        name for name, has_body in sections if not has_body and name not in (*_REQUIRED_AWI_HEADINGS, "ユーザーコメント")
+    ]:
+        problems.append(f"本文が空の節があります: {'、'.join(empty)}")
     order_indexes = [_AWI_HEADING_ORDER.index(name) for name in appeared]
     if order_indexes != sorted(order_indexes):
         problems.append(f"H2の順序が規定と異なります: {'、'.join(appeared)}")
     if not problems:
         return
+    current_order = tuple(name for name in _AWI_HEADING_ORDER if name not in ("適用範囲", "実現性"))
     raise WebInputError(
         "。".join(problems)
-        + f"。agent-toolkit:wi-standardsの`## 通常AWIの本文`が、H2を{'、'.join(_AWI_HEADING_ORDER)}の順に置くこと、"
+        + f"。agent-toolkit:wi-standardsの`## 通常AWIの本文`が、H2を{'、'.join(current_order)}の順に置くこと、"
         + f"{'、'.join(_REQUIRED_AWI_HEADINGS)}を必須とすること、"
-        + f"{_CAUSE_ANALYSIS_HEADING}を置く場合は本文を書くことを定めます。",
+        + "設置した節には本文を書くことを定めます。",
         next_action=(
-            f"本文のH2を{'、'.join(_AWI_HEADING_ORDER)}の順に並べ、{'、'.join(_REQUIRED_AWI_HEADINGS)}へ本文を書いてから"
-            f"再投入する。{_CAUSE_ANALYSIS_HEADING}を置く場合はその節にも本文を書く"
+            f"本文のH2を{'、'.join(current_order)}の順に並べ、{'、'.join(_REQUIRED_AWI_HEADINGS)}へ本文を書いてから"
+            "再投入する。設置した節にも本文を書く"
         ),
     )
 
@@ -367,14 +366,13 @@ def undetermined_cause_rows(body: str) -> list[str]:
     return rows
 
 
-def require_confirmed_cause(body: str) -> None:
-    """エージェント環境から保存する本文が、直接的原因を未確定のまま宣言していないことを検証する。
+def require_confirmed_cause(body: str, *, entry_type: str) -> None:
+    """エージェント環境から保存するUWIが、直接的原因を未確定のまま宣言していないことを検証する。
 
-    原因が確定するまでWIを保存しないという起草の条件を、委譲の追送などで差し戻しが上書きされた場合も
-    保存処理自身で守る。判定するのは明示された未確定の宣言だけであり、原因として書かれた内容の妥当性は起草とレビューが確かめる。
-    種別（AWIとUWI）と`source`の有無で対象を分けない。人間の入力は拒否しない。
+    通常AWIは独立別件の原因仮説と次の問いを保存できる必要があるため、起草と意味検収で本文の妥当性を確認する。
+    UWIはユーザーへの判断依頼を未確定な原因分析で代用しない既存条件を保つ。人間の入力は拒否しない。
     """
-    if not is_agent_environment():
+    if entry_type != WI_TYPE_UWI or not is_agent_environment():
         return
     if rows := undetermined_cause_rows(body):
         raise WebInputError(
@@ -811,7 +809,7 @@ def cmd_add(
             except WebInputError as error:
                 validation_errors.append(error)
             try:
-                require_confirmed_cause(body)
+                require_confirmed_cause(body, entry_type=args.type)
             except WebInputError as error:
                 validation_errors.append(error)
         except WebInputError as error:

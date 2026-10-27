@@ -1,12 +1,12 @@
 # Claude Code・Codex Hook実装ガイドライン
 
-品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks.md`である。呼び出し元の取得条件と注目箇所を引き継ぎ、本書と正式な資料を全文読む。節指定がある場合は、指定された見出しを持つ資料に注目する。両方に同名の見出しがあれば両方に注目する。
 
-以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
+以下はagent-toolkitが所有する運用条件である。
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+本文の各参照における適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の資料は起動本文とともに届く。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -15,29 +15,29 @@
 
 ## hookスクリプトの基本プロトコル
 
-  `SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェントの起動時だけ発火する。`agent-toolkit/agent_toolkit/_hooks/rules_context.py`は前者で環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`により委譲先を判別し、メイン向け条文を除く。後者ではサブエージェント向け条文を追加する。`Stop`と`SubagentStop`の判別は`claude-hooks-stop.md`「委譲先での発火」が定める
+`SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェント起動時のみ発火する。`agent-toolkit/agent_toolkit/_hooks/rules_context.py`は、前者において環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`を参照する。これにより委譲先を判別し、メインエージェント向けの条文を除外する。後者ではサブエージェント向けの条文を追加する。なお、`Stop`と`SubagentStop`の判別は`claude-hooks-stop.md`「委譲先での発火」に従う。
 
 ## 環境変数の一覧
 
-配布物完結の環境変数（`AGENT_TOOLKIT_<PURPOSE>`形式）の一覧を示す。
-変数名を読み書きする処理は、private-notesを`agent_toolkit/_common/private_notes.py`、委譲先の印と委譲元の識別子を`agent_toolkit/_common/delegated_session.py`が持ち、他の処理はそれらの定数と関数を使う。
+配布物内で完結する環境変数（`AGENT_TOOLKIT_<PURPOSE>`形式）の一覧を示す。
+変数名の読み書き処理について、private-notesは`agent_toolkit/_common/private_notes.py`が管理する。委譲先を示す印と委譲元の識別子は`agent_toolkit/_common/delegated_session.py`が管理し、その他の処理はこれらが提供する定数や関数を利用する。
 
-- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk wi`管理repoのroot（指定がなければ`~/private-notes/`）
-- `AGENT_TOOLKIT_STOP_GATE_DEBUG`: デバッグ出力
-- `AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`: 受信payloadのダンプ先
-- `AGENT_TOOLKIT_RESTART_SPEC`: AWI処理の常駐実行で、次に起動するセッションの指定を起動側の処理へ渡す一時ファイルのパス
-- `AGENT_TOOLKIT_DELEGATED_SESSION`: Claude Code（backend）の委譲先として起動したセッションの印（値`1`）。委譲先かの判定（`is_delegated`）はこの印か次項の識別子のどちらかを持つ場合を委譲先とし、常駐実行の終了保証を最上位セッションへ限定する判定などに使う
-- `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得または作成した計画バンドルの所有として記録する委譲元セッションの識別子。`agents_server`が起動した子だけが持つため、Codex backendの委譲先を含めてメイン向け規範の追加を省く判定にも使う
-- `AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`: `agents_server`がClaude backendとCodex backendの委譲先へ渡す起動区分（`delegate`・`explore`・`shell`・`write`）。軽量起動の判定（`is_lightweight_delegated`）が読み、操作を起動の契機とするスキルの取得を軽量委譲先へ求めない判定に使う。Function hooks moduleは読まない
-- `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`: AWI処理の常駐実行が起動したセッションの印（値`1`）。次項のIDがある場合は、hook入力の会話IDとの一致も確認する
-- `AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`: process-loopがClaude会話の新規起動またはID指定再開で子へ渡す会話ID。hook入力の`session_id`と比べ、環境印を継承した入れ子の別会話を自律終了、空転ガード、計画保存通知、セッション名および観測ログの対象から外す
-- `AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`: 常駐実行がセッション起動時に渡す追加指示の本文。`rules_context`が委譲先を除くメインのセッション開始時の文脈へ置く
-- `AGENT_TOOLKIT_LARGE_READ_BYTES`: CodexのBashによる全文取得を分割読取へ誘導する`pretooluse/large_reads`のバイト数の閾値。正の整数だけを採用し、それ以外は省略時の値を使う
-- `AGENT_TOOLKIT_RUNTIME_DATA`: 配布rootの外に置く共有依存環境の保存先。起動処理が確定し、委譲先にも意図して渡す
-- `AGENT_TOOLKIT_RUNTIME_ENVIRONMENT`・`AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT`: 起動処理が選んだ依存環境と、呼出元の`UV_PROJECT_ENVIRONMENT`を保持する内部値。子へ渡す環境を整える処理が復元後に除く
-- `AGENT_TOOLKIT_LAUNCH_RESTORE`: 起動処理が変えた環境値の変更前後を保持する内部JSON。`plugin_environment`が記録し、`inherited_venv`が現在値と記録の一致する項目だけを復元して記録を除く。起動後に変更された値は保持する
+- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk wi`が管理するリポジトリのルートパス（未指定時は`~/private-notes/`）。
+- `AGENT_TOOLKIT_STOP_GATE_DEBUG`: デバッグ出力用フラグ。
+- `AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`: 受信したpayloadのダンプ出力先。
+- `AGENT_TOOLKIT_RESTART_SPEC`: AWI処理の常駐実行において、次に起動するセッションの指定情報を起動側処理へ渡すための一時ファイルパス。
+- `AGENT_TOOLKIT_DELEGATED_SESSION`: Claude Code（backend）の委譲先として起動したセッションであることを示す印（値`1`）。委譲先であるかの判定（`is_delegated`）は、この印または後述の`AGENT_TOOLKIT_OWNER_SESSION`のいずれかを保持している場合を対象とし、常駐実行の終了保証を最上位セッションに限定する判定などに使用する。
+- `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得または作成した計画バンドルの所有元として記録する、委譲元セッションの識別子。`agents_server`が起動した子セッションのみが保持するため、Codex backendの委譲先を含めてメイン向け規範の追加を省略する判定にも使用する。
+- `AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`: `agents_server`がClaude backendおよびCodex backendの委譲先へ渡す起動区分（`delegate`、`explore`、`shell`、`write`）。軽量起動の判定（`is_lightweight_delegated`）がこれを参照し、特定の操作を契機とするスキルの取得を軽量委譲先へ求めない判定に用いる。Function hooks moduleは参照しない。
+- `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`: AWI処理の常駐実行が起動したセッションであることを示す印（値`1`）。後述の`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`が存在する場合は、hook入力の会話IDとの一致も確認する。
+- `AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`: process-loopがClaude会話の新規起動またはID指定再開時に子セッションへ渡す会話ID。hook入力の`session_id`と突き合わせ、環境変数の印を継承した入れ子の別会話を、自律終了、空転防止ガード、計画保存通知、セッション名設定、および観測ログの対象から除外する。
+- `AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`: 常駐実行がセッション起動時に渡す追加指示の本文。`rules_context`が委譲先を除くメインセッション開始時のコンテキストへ配置する。
+- `AGENT_TOOLKIT_LARGE_READ_BYTES`: CodexのBash実行によるファイル全文取得を分割読取へ誘導する、`pretooluse/large_reads`のバイト数閾値。正の整数のみを採用し、それ以外はデフォルト値を使用する。
+- `AGENT_TOOLKIT_RUNTIME_DATA`: 配布ルートの外側に配置する共有依存環境の保存先。起動処理がパスを確定し、委譲先へも明示的に引き継ぐ。
+- `AGENT_TOOLKIT_RUNTIME_ENVIRONMENT`・`AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT`: 起動処理が選定した依存環境、および呼び出し元の`UV_PROJECT_ENVIRONMENT`を保持する内部値。子プロセスへ渡す環境を整える処理が、環境変数の復元後にこれらを除去する。
+- `AGENT_TOOLKIT_LAUNCH_RESTORE`: 起動処理によって変更された環境変数の変更前後の値を保持する内部JSON。`plugin_environment`が記録し、`inherited_venv`が現在値と記録値の一致する項目のみを復元した上で記録を除去する。起動後に外部から変更された値は維持する。
 
-ホストが定める次の環境変数は、`agent_toolkit/_common/host_homes.py`の関数だけが読む。
+ホストが規定する以下の環境変数は、`agent_toolkit/_common/host_homes.py`の関数のみが参照する。
 
-- `CLAUDE_CONFIG_DIR`: 空でない絶対パスならClaude Codeの設定ディレクトリとして使い、それ以外は`~/.claude`を使う。Function hooks module（`hooks/session_exit.ts`）も同じ規則で解決する
-- `CODEX_HOME`: 空でなければCodexのホームとして使い、空か未設定なら`~/.codex`を使う
+- `CLAUDE_CONFIG_DIR`: 空でない絶対パスが指定されている場合はClaude Codeの設定ディレクトリとして使用し、それ以外は`~/.claude`を使用する。Function hooks module（`hooks/session_exit.ts`）も同一の規則で解決する。
+- `CODEX_HOME`: 空でなければCodexのホームディレクトリとして使用し、空または未設定の場合は`~/.codex`を使用する。

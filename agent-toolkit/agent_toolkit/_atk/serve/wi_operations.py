@@ -62,7 +62,7 @@ _BACKGROUND_SYNC_LOCK_TIMEOUT = 2.0
 
 
 _RECENT_REPO_RETENTION = datetime.timedelta(days=7)
-"""状態を省略した対象リポジトリの候補へ、処理済みの終端エントリを含める期間。"""
+"""状態を省略した対象リポジトリの候補へ、処理済みの終了エントリを含める期間。"""
 
 
 # 別のホストで記録した処理日時と、このホストのファイル更新時刻の時計のずれを吸収する余裕。
@@ -523,7 +523,7 @@ class Operations:
         """指定状態のエントリに現れる対象リポジトリを昇順で返す。
 
         新規登録フォームの補完候補とフィルターの選択肢に用いる。
-        状態を省略した場合に使う`active`ではactiveエントリに加え、直近7日以内に処理した終端エントリを含める。
+        状態を省略した場合に使う`active`ではactiveエントリに加え、直近7日以内に処理した終了エントリを含める。
         他の状態を明示した場合はその状態の全エントリを返す。
         `git pull`は行わず、ローカルの保存済みエントリだけを走査する。
         """
@@ -537,7 +537,7 @@ class Operations:
         for indexed in indexed_entries:
             if status == "active" and indexed.state not in wi_constants.WI_ACTIVE_STATES:
                 # 処理日時は書込時に記録されるため、ファイルの更新時刻より後にならない。
-                # 更新時刻が境界より十分前の終端項目は本文を解析せずに除く。
+                # 更新時刻が境界より十分前の終了項目は本文を解析せずに除く。
                 if datetime.datetime.fromisoformat(indexed.updated_at) < cutoff - _PROCESSED_TIME_CLOCK_MARGIN:
                     continue
                 if _PROCESSED_AT_KEY not in indexed.derived:

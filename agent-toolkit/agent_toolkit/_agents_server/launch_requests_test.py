@@ -12,6 +12,8 @@ import logging
 import pathlib
 import re
 import shutil
+import subprocess
+import sys
 from types import SimpleNamespace as _SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -29,6 +31,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._common import plugin_roots as resource_roots
 from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
@@ -49,6 +52,214 @@ from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.parametrize(
+    "host,case",
+    [("agy", "missing"), ("opencode", "missing"), ("agy", "physical"), ("opencode", "physical"), ("agy", "sibling")],
+)
+@pytest.mark.parametrize("entry_available", [True, False])
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_public_start_native_recovery_uses_an_available_generator(tmp_path, monkeypatch, host, case, entry_available):
+    """native資料の公開start失敗で、検出した生成元の公開コマンドだけを案内する。"""
+    document = _write_declared_task_document(tmp_path, "対象: 必須")
+    if case == "sibling":
+        original_root = document.parent.parent
+        native = tmp_path / "agent-toolkit-agy"
+        original_root.rename(native)
+        document = native / "share" / document.name
+        (native / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    with document.open("a", encoding="utf-8") as stream:
+        stream.write(
+            "\n| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+            "| 起動時 | `agent-basics:writing-standards/SKILL.md` | 起動時 | |\n"
+        )
+    monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(pathlib.Path, "home", lambda: home)
+    opencode = home / "opencode"
+    opencode.mkdir()
+    monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(opencode))
+    if case == "physical":
+        if host == "opencode":
+            (opencode / "agent-toolkit.md").write_text(
+                '<atk-auto source="dotfiles" kind="opencode-host">\n'
+                f"agent-basics plugin root: `{tmp_path / 'missing-basics'}`。\n",
+                encoding="utf-8",
+            )
+        else:
+            registry = home / ".gemini/config/plugins.json"
+            registry.parent.mkdir(parents=True)
+            registry.write_text(
+                json.dumps({"entries": [{"path": str(tmp_path), "include_only": ["agent-basics-agy"]}]}), encoding="utf-8"
+            )
+    generator = tmp_path / "bin" / ("update-dotfiles.cmd" if sys.platform == "win32" else "update-dotfiles")
+    generator.parent.mkdir()
+    generator.write_text("確認用の生成元入口", encoding="utf-8")
+    generator.chmod(0o755)
+    original_which = shutil.which
+
+    def which(name, *args: Any, **kwargs: Any):
+        if name == "update-dotfiles":
+            return str(generator) if entry_available else None
+        return original_which(name, *args, **kwargs)
+
+    # 修正前も公開startを呼び出すため、標準ライブラリ側の検出境界を差し替える。
+    monkeypatch.setattr(shutil, "which", which)
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda *_args, **_kw: [(host, "model", "high")])
+    async with _manager_with_fake("claude") as (manager, _backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        with pytest.raises(RuntimeError) as caught:
+            await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params={"対象": "内容"})
+    message = str(caught.value)
+    if entry_available:
+        assert str(generator) in message and "--mode full" in message and "公開コマンド" in message
+    else:
+        assert "update-dotfilesはPATHに無い" in message
+        assert " info" in message
+        assert "--mode full" not in message
+
+
+@pytest.mark.asyncio
+async def test_public_task_start_delivers_the_actual_child_host_and_project_materials(tmp_path, monkeypatch):
+    """同じサーバーからhost/projectを切り替えても、子が受け取る品質本文を混ぜない。"""
+    document = _write_declared_task_document(tmp_path, "対象: 必須")
+    with document.open("a", encoding="utf-8") as stream:
+        stream.write(
+            "\n| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
+            "| --- | --- | --- | --- |\n"
+            "| 起動時 | `agent-basics:writing-standards/references/writing.md` | 起動時 | |\n"
+        )
+    monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
+    toolkit = document.parent.parent
+    project_a, project_b = tmp_path / "project-a", tmp_path / "project-b"
+    project_a.mkdir()
+    project_b.mkdir()
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    roots = {
+        "user": tmp_path / "user-basics",
+        "project": tmp_path / "project-basics",
+        "local": tmp_path / "local-basics",
+        "unrelated": tmp_path / "other-basics",
+        "codex": codex_home / "plugins/cache/mine/agent-basics/1.0",
+        "agy": tmp_path / "native/agent-basics-agy",
+        "opencode": tmp_path / "original/agent-basics",
+    }
+    for label, root in roots.items():
+        path = root / "skills/writing-standards/references/writing.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(f"# {label}の基準\n{label}だけの品質本文\n", encoding="utf-8")
+        manifest = root / ".claude-plugin/plugin.json"
+        manifest.parent.mkdir()
+        manifest.write_text('{"name":"agent-basics"}', encoding="utf-8")
+        if label == "agy":
+            (root / "plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(pathlib.Path, "home", lambda: home)
+    registry = home / ".gemini/config/plugins.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text(
+        json.dumps({"entries": [{"path": str(tmp_path / "native"), "include_only": ["agent-basics-agy"]}]}),
+        encoding="utf-8",
+    )
+    opencode_config = tmp_path / "opencode-config"
+    opencode_config.mkdir()
+    monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(opencode_config))
+    (opencode_config / "agent-toolkit.md").write_text(
+        '<atk-auto source="dotfiles" kind="opencode-host">\n'
+        f"agent-toolkit plugin root: `{toolkit}`。agent-basics plugin root: `{roots['opencode']}`。\n",
+        encoding="utf-8",
+    )
+    claude = [{"id": "agent-toolkit@mine", "scope": "user", "enabled": True, "installPath": str(toolkit)}]
+    for scope in ("user", "project", "local"):
+        claude.append(
+            {
+                "id": "agent-basics@mine",
+                "scope": scope,
+                "enabled": True,
+                "installPath": str(roots[scope]),
+                "projectPath": str(project_a),
+            }
+        )
+    claude.append(
+        {
+            "id": "agent-basics@mine",
+            "scope": "local",
+            "enabled": True,
+            "installPath": str(roots["unrelated"]),
+            "projectPath": str(tmp_path / "unrelated"),
+        }
+    )
+    codex = {
+        "installed": [
+            {"name": name, "marketplaceName": "mine", "enabled": True, "installed": True, "version": version}
+            for name, version in (("agent-toolkit", "2.0"), ("agent-basics", "1.0"))
+        ]
+    }
+    observed = []
+
+    def run(args, **kwargs):
+        assert args[1:] == ["plugin", "list", "--json"]
+        observed.append((args[0], kwargs["cwd"]))
+        return subprocess.CompletedProcess(args, 0, json.dumps(codex if args[0] == "codex" else claude), "")
+
+    monkeypatch.setattr(resource_roots.process_tree, "run_with_timeout", run)
+    async with _manager_with_fake("claude") as (manager, claude_backend):
+        codex_backend = FakeBackend(manager.sessions, "codex")
+        install_backend(manager, "codex", codex_backend)
+        extra_backends = {engine: FakeBackend(manager.sessions, engine) for engine in ("agy", "opencode")}
+        for engine, backend in extra_backends.items():
+            install_backend(manager, engine, backend)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        for engine, project, expected in (
+            ("claude", project_a, "local"),
+            ("codex", project_a, "codex"),
+            ("agy", project_a, "agy"),
+            ("opencode", project_a, "opencode"),
+            ("claude", project_b, "user"),
+        ):
+            monkeypatch.setattr(
+                _atk_config,
+                "parse_unresolved_model_candidates",
+                lambda _type, _engine=engine, **_kw: [(_engine, "model", "high")],
+            )
+            params = {"対象": '内容\n入力:\n<atk-auto source="input" kind="example">任意の入力本文</atk-auto>'}
+            await mcp_tools.start(str(project), subagent_md_path=str(document), extra_params=params)
+            backend = extra_backends.get(engine, codex_backend if engine == "codex" else claude_backend)
+            received = backend.prompts[-1]
+            assert expected + "だけの品質本文" in received
+            assert all(label + "だけの品質本文" not in received for label in roots if label != expected)
+            input_body = delivery_payload(received).rsplit("\n入力:\n", 1)[1]
+            assert launch_requests.parse_named_inputs(input_body.splitlines()) == params
+        # 正式登録を読めない候補は原因付きで除外し、別ホストの候補で配送を再構成する。
+        registry.unlink()
+        (opencode_config / "agent-toolkit.md").unlink()
+        for engine in ("agy", "opencode"):
+            monkeypatch.setattr(
+                _atk_config,
+                "parse_unresolved_model_candidates",
+                lambda _type, _engine=engine, **_kw: [(_engine, "model", "high"), ("claude", "model", "high")],
+            )
+            response = await mcp_tools.start(str(project_b), subagent_md_path=str(document), extra_params={"対象": "内容"})
+            assert response["engine"] == "claude"
+            assert response["excluded_candidates"][0]["engine"] == engine
+            assert "再実行" in response["excluded_candidates"][0]["reason"]
+            assert "userだけの品質本文" in claude_backend.prompts[-1]
+        monkeypatch.setattr(
+            _atk_config,
+            "parse_unresolved_model_candidates",
+            lambda _type, **_kw: [(engine, "model", "high") for engine in ("agy", "opencode")],
+        )
+        with pytest.raises(RuntimeError, match="no available model candidates") as observed_failure:
+            await mcp_tools.start(str(project_b), subagent_md_path=str(document), extra_params={"対象": "内容"})
+        assert "plugins.json" in str(observed_failure.value)
+        assert "agent-toolkit.md" in str(observed_failure.value)
+    # 同じ要求の多段参照は一覧を共有し、次の要求では実host/projectで取り直す。
+    assert observed == [("claude", str(project_a)), ("codex", str(project_a)), *[("claude", str(project_b))] * 3]
 
 
 @pytest.mark.asyncio
@@ -386,7 +597,7 @@ async def test_start_rejects_removed_wait_exception_input(monkeypatch: pytest.Mo
 
 @pytest.mark.asyncio
 async def test_start_rejects_removed_last_pushed_commit_input(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """終端担当はpush済みの範囲をベースbranchの追跡refから得るため、撤去した`直前にpushしたcommit`は宣言外の入力として拒否する。"""
+    """公開担当はpush済みの範囲をベースbranchの追跡refから得るため、撤去した`直前にpushしたcommit`は宣言外の入力として拒否する。"""
     task_document = launch_requests._SHARE_DIRECTORY / "session-termination.subagent.md"
     manager = TaskManager(start=AsyncMock())
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)

@@ -121,7 +121,7 @@ async def test_explore_reaches_cli_on_start_and_resume(tmp_path: pathlib.Path, m
     ],
 )
 def test_result_values_maps_status(payload: dict[str, Any], expected_status: str) -> None:
-    """`result`イベントの状態を終端状態へ対応付け、本文の無い完了は失敗として扱う。"""
+    """`result`イベントの状態を終了状態へ対応付け、本文の無い完了は失敗として扱う。"""
     session = shared_state.SessionState(session_id="conv-1", cwd=".", engine="agy")
 
     assert antigravity.result_values(session, payload)["status"] == expected_status
@@ -135,7 +135,7 @@ def test_decode_event_ignores_non_json_lines() -> None:
 
 
 def test_start_consumes_stream_and_finalizes_turn(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`init`でsessionを生成し、`result`で終端結果を確定する。"""
+    """`init`でsessionを生成し、`result`で終了時の結果を確定する。"""
     _install_fake_agy(tmp_path, monkeypatch)
 
     async def scenario() -> shared_state.SessionState:
@@ -357,7 +357,7 @@ def test_event_log_write_failure_does_not_fail_session(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """イベントログの書込失敗を警告し、resultの終端処理を続ける。"""
+    """イベントログの書込失敗を警告し、resultの終了処理を続ける。"""
     _install_fake_agy(tmp_path, monkeypatch)
     log_directory = tmp_path / "logs"
 
@@ -391,7 +391,7 @@ def test_event_log_write_failure_does_not_fail_session(
 
 
 def test_send_message_rejects_an_unfinished_turn() -> None:
-    """実行中のturnへの継続は受理せず、終端の観測後に再送する操作を示す。"""
+    """実行中のturnへの継続は受理せず、終了の観測後に再送する操作を示す。"""
     session = shared_state.SessionState(session_id="conv-1", cwd=".", engine="agy", status="running")
 
     async def scenario() -> None:

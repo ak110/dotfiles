@@ -183,13 +183,16 @@ Linux・Windowsとも`XDG_CONFIG_HOME`、未設定なら`~/.config`配下の`ope
 
 ### Python依存環境の共有
 
-`plugin_environment.py`は実Pythonの実装・版・ABI・OS・アーキテクチャ、依存導入に作用するpyproject設定と`uv.lock`を正規化して共有環境を識別する。
+`plugin_environment.py`は選択したPythonの実行ファイルパス、OS・アーキテクチャ、依存導入に作用するpyproject設定と`uv.lock`を正規化して共有環境を識別する。
 配布root、プラグイン版、文書・コード・lint設定の差は環境を分ける条件に含めない。
 依存だけを同期し、起動ごとのrootを`PYTHONPATH`の先頭へ置いて、その配布版のコードと資源を参照する。
 pyfltr MCPも`_common/pyfltr_entry.py`からlockfileで準備したconsole entry pointへ接続する。
 この境界でplugin専用のuv環境指定を解除し、pyfltrがチェック対象のリポジトリの依存環境を使えるようにする。
 
-準備は`launch.py --prepare`へ集約する。
+準備には`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py --prepare agent_toolkit/atk.py`を実行する。
+
+`--prepare`の後ろのtargetは配布root内に存在する起動対象を確認する必須引数であり、共有環境の選択には影響しない。上記の組み合わせが未準備の場合に実行し、同じ組み合わせなら別の配布rootやworktreeでも準備済み環境を共有する。別worktreeを指定する場合の`<plugin root>`は、そのworktree内の`agent-toolkit`の絶対パスに置き換える。rootは`launch.py`の配置または`--project`から解決され、cwdの変更だけでは切り替わらない。
+
 `update-dotfiles`の後処理は両ホストの実際の有効版と作業ツリー版を列挙し、公開インストーラーも同じ準備処理を使う。
 通常のCLI・hook・MCPは準備済み環境のPythonを直接起動するため、起動のたびに依存を照会しない。
 未準備時の診断は`update-dotfiles`または公開インストーラーでの再準備を案内する。

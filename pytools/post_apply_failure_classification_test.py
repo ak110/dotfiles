@@ -218,6 +218,20 @@ def _cleanup_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
 def _npm_config_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    npmrc = tmp_path / ".npmrc"
+    original_write_text = Path.write_text
+
+    def fail_npmrc_write(
+        self: Path, data: str, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+    ) -> int:
+        if self == npmrc:
+            raise PermissionError("EACCES")
+        return original_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "write_text", fail_npmrc_write)
+
+
+def _pnpm_config_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(update_npmrc.shutil, "which", lambda _name: str(tmp_path / "pnpm"))
     monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: _completed(1, stderr="EACCES"))
 
@@ -401,6 +415,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "旧配布物の削除": [(_cleanup_removal_fails, 1)],
     "npm/pnpm サプライチェーン対策": [(_npm_config_write_fails, 1)],
     "mise セットアップ": [(_mise_install_fails, 0)],
+    "pnpm サプライチェーン対策": [(_pnpm_config_write_fails, 1)],
     "Codex CLI の導入と更新": [(_codex_cli_installer_fails, 0)],
     "Codex の Claude MCP 登録削除": [(_codex_claude_mcp_removal_fails, 1)],
     "Claude Code CLI の導入と更新": [(_claude_cli_installer_fails, 0)],

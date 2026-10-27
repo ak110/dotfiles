@@ -1,8 +1,7 @@
-"""宣言された操作の前に、主体の文脈に未取得の資料を届ける。
+"""宣言された操作の前に、主体の文脈に未取得の資料を案内する。
 
 確認は関係する資料のパスを警告にまとめ、通常の操作を継続する。
-配送できた資料だけを取得へ記録する。
-Codexの配送本文の到達上限は未確認のため、資料から算出した行範囲の`sed -n`による取得を案内する。
+取得の観測だけを主体別の記録に反映する。
 取得後は出力と資料の該当行の一致を確かめ、分割した取得を区間の被覆として記録する。
 軽量委譲は起動契約がスキルを使わないため対象外とする。
 """
@@ -21,11 +20,11 @@ from collections.abc import Iterator
 lazy import subprocess
 
 from agent_toolkit._common import delegated_session, read_triggers, shell_cwd, transcript
-from agent_toolkit._common.plugin_roots import PluginRootError, sibling_plugin_root
+from agent_toolkit._common.plugin_roots import PluginRootError, plugin_resolution_scope, sibling_plugin_root
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command
-from agent_toolkit._hooks import agent_id, document_reads, plugin_resources, rules_context
+from agent_toolkit._hooks import agent_id, document_reads, plugin_resources, rules_context, work_contract
 from agent_toolkit._hooks import tool_input as tool_input_fields
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
@@ -36,13 +35,10 @@ from agent_toolkit._hooks.pretooluse.notices import _llm_notice
 lazy from agent_toolkit._common import process_tree, task_documents
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
 
-# WI原本のClaude Code 2.1.303の観測44,346文字より小さくし、標識とパス一覧の余地を取る。
-# 統合時に現在ホストで本文の到達を確認する。Codexには取得先のパスを案内する。
-CLAUDE_BODY_BUDGET = 40_000
 _PATH_PREFIX = "read-trigger:"
 
 
-def declarations(cwd: str, *, host: str = "claude") -> list[read_triggers.ReadTrigger]:
+def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> list[read_triggers.ReadTrigger]:
     """稼働版と対象プロジェクト・ユーザースキルの宣言を読む。"""
     root = plugin_resources.plugin_root()
     sources = read_triggers.document_sources(root, cwd)
@@ -50,7 +46,12 @@ def declarations(cwd: str, *, host: str = "claude") -> list[read_triggers.ReadTr
     sibling = sibling_plugin_root("agent-basics", root)
     if sibling is not None:
         sources.extend(sorted((sibling / "skills").rglob("*.md")))
-    entries = [(source.resolve(), read_triggers.parse_tables(source, root, host=host)) for source in dict.fromkeys(sources)]
+    # 宣言表ごとの入れ子scopeを、1回のhook要求が共有する一覧へ接続する。
+    with plugin_resolution_scope(session_id=session_id):
+        entries = [
+            (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd))
+            for source in dict.fromkeys(sources)
+        ]
     # 参照先の所有plugin全体は有効化しない。選択した実体の宣言は取得時に追加する。
     included = {row.source for source, rows in entries for row in rows if row.source != source}
     return list(dict.fromkeys(row for source, rows in entries if source not in included for row in rows))
@@ -121,37 +122,36 @@ def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[p
     return reads, only_reads and bool(reads)
 
 
-def _line_spans(target: read_triggers.ReadTarget, source: str) -> list[tuple[int, int]]:
-    """指定範囲が占める資料の行を、1始まりで両端を含む連続区間の列として返す。
-
-    指定範囲は資料の行を順に選んだ部分列であるため、先頭から順に行を比べて位置を求める。
-    """
-    lines = source.splitlines(keepends=True)
-    spans: list[tuple[int, int]] = []
-    cursor = 0
-    for line in target.body(source).splitlines(keepends=True):
-        while cursor < len(lines) and lines[cursor] != line:
-            cursor += 1
-        if cursor == len(lines):
-            raise ValueError(f"{target}: 指定範囲の行を資料内に特定できない")
-        cursor += 1
-        if spans and spans[-1][1] == cursor - 1:
-            spans[-1] = (spans[-1][0], cursor)
-        else:
-            spans.append((cursor, cursor))
-    return spans
-
-
 def _source_text(path: pathlib.Path) -> str:
     return path.read_bytes().decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _range_steps(target: read_triggers.ReadTarget) -> str:
-    """未取得の資料の取得に使う行範囲を、資料の現在の本文から算出して示す。"""
-    source = _source_text(target.path)
-    spans = _line_spans(target, source) if target.heading else [(1, len(source.splitlines()))]
-    quoted = shlex.quote(str(target.path))
-    return "と".join(f"`sed -n '{start},{end}p' -- {quoted}`" for start, end in spans)
+def skill_name(path: pathlib.Path) -> str | None:
+    """実体のmanifestを使い、配布スキルとローカルスキルを区別する。"""
+    document = document_reads.skill_document(str(path))
+    if document is None or document[1] != "SKILL.md":
+        return None
+    owner = _document_owner(path)
+    if owner is None:
+        return document[0]
+    return f"{document_reads.document_plugin(str(path))}:{document[0]}"
+
+
+def acquisition_step(target: read_triggers.ReadTarget, subject: str) -> str:
+    """主体に合う全文取得手段と注目する節を示す。"""
+    path = target.path
+    if target.heading:
+        target.body()
+    focus = f"。特に`{target.heading}`に注目せよ" if target.heading else ""
+    skill = skill_name(path)
+    if subject != operation_skills.SUBJECT_CODEX and skill:
+        step = f"`Skill`で`{skill}`を起動せよ（資料: `{path}`）"
+        if subject == operation_skills.SUBJECT_SUBAGENT:
+            step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
+        return step + focus
+    if subject == operation_skills.SUBJECT_CODEX:
+        return f"`cat -- {shlex.quote(str(path))}`で全文読め" + focus
+    return f"Readで`{path}`を全文読め" + focus
 
 
 def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
@@ -173,25 +173,66 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
         paths = operation_skills.written_paths(tool_name, tool_input, cwd)
         return any(fnmatch.fnmatch(path.replace("\\", "/"), value) for path in paths)
     if prefix == "section":
-        # 行範囲の読取が宣言した節の行を1行でも含めば、その節の取得とする。分割取得の被覆は取得後に記録する。
-        pattern, separator, heading = value.partition("#")
-        if not separator:
-            return False
-        for path, start, end in _sed_reads(tool_name, tool_input, cwd)[0]:
-            if not _matches_document_path(path, pattern) or not path.is_file():
-                continue
-            spans = _line_spans(read_triggers.ReadTarget(path, heading), _source_text(path))
-            if any(left <= (end or right) and start <= right for left, right in spans):
-                return True
-        return False
+        pattern, separator, _heading = value.partition("#")
+        return bool(separator) and any(
+            _matches_document_path(path, pattern)
+            for resolve in (True, False)
+            for path in _read_paths(tool_name, tool_input, cwd, resolve=resolve)
+        )
     if prefix == "dependency":
-        fields = tool_input_fields.new_content_fields(tool_name, tool_input)
-        contents = [content for _name, content in fields or []]
-        for path in operation_skills.written_paths(tool_name, tool_input, cwd):
-            candidate = pathlib.Path(path)
+        paths = [pathlib.Path(path) for path in operation_skills.written_paths(tool_name, tool_input, cwd)]
+        dependency_files = {
+            "pyproject.toml",
+            "package.json",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "uv.lock",
+            "Cargo.toml",
+            "Cargo.lock",
+        }
+        code_suffixes = {
+            ".py",
+            ".js",
+            ".jsx",
+            ".mjs",
+            ".cjs",
+            ".ts",
+            ".tsx",
+            ".mts",
+            ".cts",
+            ".html",
+            ".htm",
+            ".css",
+            ".svelte",
+            ".rs",
+            ".cs",
+            ".sh",
+            ".bash",
+            ".ps1",
+            ".psm1",
+            ".psd1",
+            ".cmd",
+            ".bat",
+        }
+        operations = tool_input_fields.parse_operations(tool_name, tool_input, cwd) or []
+        for candidate in paths:
+            if (
+                pathlib.Path(candidate.name.removesuffix(".tmpl")).suffix not in code_suffixes
+                and candidate.name not in dependency_files
+            ):
+                continue
+            # 複数ファイルのpatchでも、文章中の引用をコードの使用として扱わない。
+            contents = [
+                fragment.after
+                for operation in operations
+                if pathlib.Path(operation.path) == candidate
+                for fragment in operation.fragments
+            ]
             if candidate.is_file():
                 contents.append(candidate.read_text(encoding="utf-8"))
-        return any(value in content for content in contents)
+            if any(value in content for content in contents):
+                return True
+        return False
     if prefix == "role":
         # 役割資料は受領した会話へstartup_contextが届ける。起動する親へは配送しない。
         return False
@@ -366,7 +407,12 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                     roles.add(role)
                     update_state(session_id, operation_skills.mark_ready(prefix + str(role), agent))
                     with contextlib.suppress(OSError, UnicodeError, ValueError):
-                        startup_methods = read_triggers.reference_method_targets(role, plugin_resources.plugin_root())
+                        startup_methods = read_triggers.reference_method_targets(
+                            role,
+                            plugin_resources.plugin_root(),
+                            "codex" if is_codex_payload(payload) else "claude",
+                            project=payload.get("cwd"),
+                        )
                     context_seen = True
             for match in re.finditer(r'<atk-auto source="read-delivery" kind="startup-document">\n資料JSON: ([^\n]+)', text):
                 metadata = json.loads(match[1])
@@ -384,8 +430,15 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                         rendered = read_triggers.startup_documents(
                             [target], plugin_resources.plugin_root(), {target: set(selectors)}
                         )
-                        if rendered in text and agent not in records.get(rules_context.READ_CONTEXT_RESET_KEY, []):
-                            _mark(session_id, target.path, agent, target.heading, metadata["sha256"])
+                        if (
+                            rendered in text
+                            and agent not in records.get(rules_context.READ_CONTEXT_RESET_KEY, [])
+                            and not (
+                                operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_MAIN
+                                and skill_name(target.path)
+                            )
+                        ):
+                            _mark(session_id, target.path, agent, metadata["sha256"])
             # 保存済みsessionの正式な参照だけの配送も、同じ実体指定として受理する。
             legacy = re.search(
                 r'<atk-auto source="agents-server" kind="work-contract-reference">\n全体作業契約: ([^\n]+)\n', text
@@ -410,6 +463,7 @@ def _project_skill_rows(
     *,
     known_sources: set[pathlib.Path] | None = None,
     host: str = "claude",
+    project: str = "",
 ) -> list[read_triggers.ReadTrigger]:
     """選択した資料と、同じ主体が全文取得したplugin資料の宣言を使う。"""
     rows = []
@@ -435,7 +489,7 @@ def _project_skill_rows(
             continue
         explicit = "resolved-project-skill:" + str(path)
         if _document_owner(path) is not None or agent in records.get(explicit, []):
-            rows.extend(read_triggers.parse_tables(path, plugin_resources.plugin_root(), host=host))
+            rows.extend(read_triggers.parse_tables(path, plugin_resources.plugin_root(), host=host, project=project))
     return rows
 
 
@@ -492,8 +546,18 @@ def dynamic_targets(
         for path in _read_paths(tool_name, tool_input, str(payload.get("cwd", ""))):
             if path.name != "SKILL.md" or not path.is_file():
                 continue
-            source = read_triggers.resolve_read_source(path, plugin_resources.plugin_root())
-            declared = read_triggers.parse_tables(source, plugin_resources.plugin_root())
+            source = read_triggers.resolve_read_source(
+                path,
+                plugin_resources.plugin_root(),
+                "codex" if is_codex_payload(payload) else "claude",
+                project=payload.get("cwd"),
+            )
+            declared = read_triggers.parse_tables(
+                source,
+                plugin_resources.plugin_root(),
+                host="codex" if is_codex_payload(payload) else "claude",
+                project=payload.get("cwd"),
+            )
             if session_id:
                 update_state(session_id, operation_skills.mark_ready("resolved-project-skill:" + str(source), agent))
             targets.extend(target for item in declared if item.kind == "起動時" for target in item.targets)
@@ -506,23 +570,33 @@ def dynamic_targets(
                 item = json.loads(key.removeprefix("startup-input-target:"))
                 if row.selector in item.get("selectors", [item.get("selector", "")]):
                     targets.append(read_triggers.ReadTarget(pathlib.Path(item["path"]), item["heading"]))
+        source = read_triggers.INPUT_SELECTOR_RESOLUTION_SOURCES.get(row.selector)
+        if not targets and source == "main-work-contract" and agent == "main":
+            path = work_contract.record_path(session_id)
+            if path is not None and path.is_file():
+                targets.append(read_triggers.ReadTarget(path))
+            elif path is not None:
+                raise ValueError(
+                    f"{row.source}:{row.line}: {row.selector}の作業契約が無い: {path}。"
+                    "agent-toolkit/share/work-contract.md「作成と所有」に従って作成せよ。"
+                )
         if not targets:
             raise ValueError(f"{row.source}:{row.line}: {row.selector}の起動時配送入力が無い")
         return targets
     if row.selector == "same-document":
         return [read_triggers.ReadTarget(row.source)]
-    if row.selector == "modified-agent-documents":
-        paths = [
-            key.removeprefix("modified-agent-document:")
-            for key, agents in records.items()
-            if key.startswith("modified-agent-document:") and agent in agents
-        ]
-        return [read_triggers.ReadTarget(pathlib.Path(path)) for path in paths if pathlib.Path(path).is_file()]
     if row.selector == "role-contract":
         role = tool_input.get("subagent_md_path")
         if not isinstance(role, str):
             return []
-        return list(read_triggers.parent_contract_targets(role, plugin_resources.plugin_root()))
+        return list(
+            read_triggers.parent_contract_targets(
+                role,
+                plugin_resources.plugin_root(),
+                host="codex" if is_codex_payload(payload) else "claude",
+                project=payload.get("cwd"),
+            )
+        )
     if row.selector == "review-reference":
         outputs = [
             pathlib.Path(key.removeprefix("review-output:"))
@@ -533,7 +607,7 @@ def dynamic_targets(
         if unread:
             if any(path in _read_paths(tool_name, tool_input, str(payload.get("cwd", ""))) for path in unread):
                 return []
-            raise ValueError(f"prepareの保存JSONを末尾まで取得する: {unread}")
+            raise ValueError(f"prepareの保存JSONを末尾まで取得せよ: {unread}")
         paths = [
             key.removeprefix("review-reference:")
             for key, agents in records.items()
@@ -546,7 +620,7 @@ def dynamic_targets(
         host = "codex" if is_codex_payload(payload) else "claude"
         provider = document_reads.document_plugin(str(row.source))
         selection = read_triggers.resolve_document(
-            f"{provider}:writing-standards", row.source, plugin_resources.plugin_root(), host
+            f"{provider}:writing-standards", row.source, plugin_resources.plugin_root(), host, project=cwd
         )
         if selection is not None and selection.is_file():
             targets.append(read_triggers.ReadTarget(selection))
@@ -572,15 +646,15 @@ def dynamic_targets(
         ]
         if index_ready and pages:
             return []
-        raise ValueError(f"{row.source}:{row.line}: 外部資料の索引と対象モジュールをWebFetchで取得する。ローカル配送の対象外")
+        raise ValueError(f"{row.source}:{row.line}: 外部資料の索引と対象モジュールをWebFetchで取得せよ。ローカル配送の対象外")
     raise ValueError(f"未登録の資料選択子: {row.selector}")
 
 
-def _mark(session_id: str, path: pathlib.Path, agent: str, heading: str = "", fingerprint: str = "") -> None:
-    identifier = document_key(path, fingerprint) + ("#heading:" + heading if heading else "")
+def _mark(session_id: str, path: pathlib.Path, agent: str, fingerprint: str = "") -> None:
+    identifier = document_key(path, fingerprint)
     update_state(session_id, operation_skills.mark_ready(identifier, agent))
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    if not heading and agent in records.get("review-output:" + str(path), []):
+    if agent in records.get("review-output:" + str(path), []):
         raw = path.read_bytes()
         if fingerprint and hashlib.sha256(raw).hexdigest() != fingerprint:
             return
@@ -620,9 +694,7 @@ def target_ready(records: dict, target: read_triggers.ReadTarget, agent: str) ->
             target.body(raw.decode("utf-8"))
         except ValueError:
             return False
-    return (
-        agent in records.get(key, []) or bool(target.heading) and agent in records.get(key + "#heading:" + target.heading, [])
-    )
+    return agent in records.get(key, [])
 
 
 def selected_targets(records: dict, agent: str) -> list[read_triggers.ReadTarget]:
@@ -654,7 +726,6 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
     completed: dict[read_triggers.ReadTarget, str] = {}
     ranges: dict[tuple[read_triggers.ReadTarget, int, str], list[tuple[int, int]]] = {}
     paths = {target.path for target in targets}
-    sections = {target for target in targets if target.heading}
     boundary_seen = False
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     reset = isinstance(records, dict) and agent in records.get(rules_context.READ_CONTEXT_RESET_KEY, [])
@@ -688,7 +759,12 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                 continue
             if entry.get("type") == "assistant" and block.get("type") == "tool_use":
                 tool_id, name, inputs = block.get("id"), block.get("name"), block.get("input")
-                if isinstance(tool_id, str) and isinstance(name, str) and name in {"Read", "Bash"} and isinstance(inputs, dict):
+                if (
+                    isinstance(tool_id, str)
+                    and isinstance(name, str)
+                    and name in {"Read", "Bash", "Skill"}
+                    and isinstance(inputs, dict)
+                ):
                     cwd = entry.get("cwd", payload.get("cwd", ""))
                     pending[tool_id] = (name, inputs, cwd if isinstance(cwd, str) else "")
             elif entry.get("type") == "user" and block.get("type") == "tool_result":
@@ -700,6 +776,19 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                     continue
                 name, inputs, cwd = request
                 response = block.get("content")
+                if name == "Skill":
+                    if response and not any(
+                        marker in str(response) for marker in ("truncated output", "Output too large", "truncatedByTokenCap")
+                    ):
+                        qualified = inputs.get("skill")
+                        matched_targets = [target for target in targets if skill_name(target.path) == qualified]
+                        if isinstance(qualified, str) and qualified.startswith("agent-toolkit:"):
+                            active = plugin_resources.plugin_root().resolve()
+                            matched_targets = [target for target in matched_targets if _document_owner(target.path) == active]
+                        if len({target.path for target in matched_targets}) == 1:
+                            for target in matched_targets:
+                                completed[target] = hashlib.sha256(target.path.read_bytes()).hexdigest()
+                    continue
                 structured = entry.get("toolUseResult")
                 if isinstance(structured, dict):
                     response = structured
@@ -710,8 +799,18 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                 with contextlib.suppress(OSError, UnicodeError, ValueError, RuntimeError):
                     read_paths = [candidate for candidate in _read_paths(name, inputs, cwd) if candidate in paths]
                     for target, start, end, length, fingerprint in _read_body_proofs(
-                        name, inputs, response, read_paths, paths, sections, cwd
+                        name, inputs, response, read_paths, paths, cwd
                     ):
+                        if (
+                            name == "Bash"
+                            and operation_skills.resolve_subject(payload) != operation_skills.SUBJECT_CODEX
+                            and agent not in records.get("review-output:" + str(target.path), [])
+                        ):
+                            continue
+                        if operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_MAIN and skill_name(
+                            target.path
+                        ):
+                            continue
                         key = (target, length, fingerprint)
                         ranges.setdefault(key, []).append((start, end))
                         reached = 0
@@ -725,11 +824,7 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
     if reset and not boundary_seen:
         return
     for target, fingerprint in completed.items():
-        _mark(session_id, target.path, agent, target.heading, fingerprint)
-        if target.heading:
-            for selected in sections:
-                if selected.path == target.path and selected.body().strip() in target.body():
-                    _mark(session_id, selected.path, agent, selected.heading, fingerprint)
+        _mark(session_id, target.path, agent, fingerprint)
 
 
 def _codex_dependency_repair(tokens: tuple[str, ...], error: Exception) -> bool:
@@ -821,7 +916,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         return Decision()
     warning_only = tool_name in {"AskUserQuestion", "ExitPlanMode", "request_user_input", "request_user_input_async"}
     try:
-        rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude")
+        rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude", session_id=session_id)
     except (OSError, UnicodeError, ValueError) as error:
         if warning_only:
             return Decision(
@@ -829,7 +924,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     _llm_notice(
                         f"読込宣言を取得できない: {error}",
                         tag=_WARN_TAG,
-                        fix="回答に依存する次の操作の前に宣言を復旧し、質問の前提を確認する。",
+                        fix="回答に依存する次の操作の前に宣言を復旧し、質問の前提を確認せよ。",
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),
@@ -841,7 +936,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     _llm_notice(
                         f"読込宣言を取得できない: {error}",
                         tag=_WARN_TAG,
-                        fix="読取・導入診断と正規の依存追加で宣言を復旧し、取得結果を確かめてから判断・その他の変更へ進む。",
+                        fix="読取・導入診断と正規の依存追加で宣言を復旧し、取得結果を確かめてから判断・その他の変更へ進め。",
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),
@@ -856,7 +951,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     _llm_notice(
                         f"読込宣言の復旧対象を操作する: {error}",
                         tag=_WARN_TAG,
-                        fix="宣言を復旧した後に元の操作を再発行する。",
+                        fix="宣言を復旧した後に元の操作を再発行せよ。",
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),
@@ -867,7 +962,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                 _llm_notice(
                     f"読込宣言を取得できない: {error}",
                     tag=_WARN_TAG,
-                    fix="宣言と資料の所在を診断し、復旧後に必要な資料を読む。",
+                    fix="宣言と資料の所在を診断し、復旧後に必要な資料を読め。",
                     removable_cause=True,
                     escalate_on_repeat=False,
                 ),
@@ -890,6 +985,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                         tuple(_read_paths(tool_name, tool_input, cwd)),
                         known_sources={row.source for row in rows},
                         host="codex" if is_codex_payload(payload) else "claude",
+                        project=cwd,
                     ),
                 ]
             )
@@ -916,7 +1012,9 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             if path.suffix == ".md" and path.is_file():
                 pending.extend(
                     target
-                    for target in read_triggers.reference_method_targets(path, plugin_resources.plugin_root(), host)
+                    for target in read_triggers.reference_method_targets(
+                        path, plugin_resources.plugin_root(), host, project=cwd
+                    )
                     if target not in pending and not target_ready(records, target, agent)
                 )
         # スキル本文とともに届く共有の初動資料を、同じ受領単位へ含める。
@@ -926,7 +1024,9 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             cursor += 1
             pending.extend(
                 method
-                for method in read_triggers.reference_method_targets(target.path, plugin_resources.plugin_root(), host)
+                for method in read_triggers.reference_method_targets(
+                    target.path, plugin_resources.plugin_root(), host, project=cwd
+                )
                 if method not in pending and not target_ready(records, method, agent)
             )
             if not target.heading:
@@ -940,6 +1040,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                                 (target.path,),
                                 known_sources={row.source for row in rows},
                                 host="codex" if is_codex_payload(payload) else "claude",
+                                project=cwd,
                             ),
                         ]
                     )
@@ -957,13 +1058,26 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                         item for item in row.targets if item not in pending and not target_ready(records, item, agent)
                     )
     except (OSError, ValueError) as error:
+        if isinstance(error, FileNotFoundError) and isinstance(error.filename, str):
+            missing = read_triggers.ReadTarget(pathlib.Path(error.filename))
+            return Decision(
+                notices=(
+                    _llm_notice(
+                        f"資料`{missing.path}`は存在しない。",
+                        tag=_WARN_TAG,
+                        fix=rules_context.acquisition_failure(missing, error, shell=False),
+                        removable_cause=True,
+                        escalate_on_repeat=False,
+                    ),
+                )
+            )
         if warning_only:
             return Decision(
                 notices=(
                     _llm_notice(
                         f"動的資料を解決できない: {error}",
                         tag=_WARN_TAG,
-                        fix="回答に依存する次の操作の前に入力と資料を確定し、質問の前提を確認する。",
+                        fix="回答に依存する次の操作の前に入力と資料を確定し、質問の前提を確認せよ。",
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),
@@ -974,7 +1088,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                 _llm_notice(
                     f"動的資料を解決できない: {error}",
                     tag=_WARN_TAG,
-                    fix="実在する入力と取得対象を確定し、該当する資料を読む。",
+                    fix="実在する入力と取得対象を確定し、該当する資料を読め。",
                     removable_cause=True,
                     escalate_on_repeat=False,
                 ),
@@ -989,7 +1103,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         return Decision()
     acquisition_paths = _read_paths(tool_name, tool_input, cwd)
     if any(row.selector == "project-skill" and row_matches(row, tool_name, tool_input, cwd) for row in rows):
-        # SKILL.mdを返す取得より先に、その初動資料を届ける。確定したSKILL自体の取得はその再発行で行う。
+        # 選択したSKILLの初動資料を案内し、取得操作は遮らずPostToolUseで観測する。
         _select_targets(session_id, pending, agent)
         pending = [target for target in pending if target.path not in acquisition_paths]
         if not pending:
@@ -998,109 +1112,78 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         _select_targets(session_id, pending, agent)
         pending = [target for target in pending if target.path not in acquisition_paths]
         if not pending:
-            # 取得操作を許可し、PostToolUseで返却本文と資料の指定範囲が一致するか確かめる。
+            # 取得操作を許可し、PostToolUseで返却本文と資料の読取範囲が一致するか確かめる。
             # 次の依存操作では取得完了を確かめ、未取得なら関連資料を案内する。
             return Decision()
+    if warning_only and tool_name != "ExitPlanMode":
+        if not agent_id.is_main_agent_context(payload):
+            return Decision()
+        history_path = payload.get("transcript_path")
+        if isinstance(history_path, str) and history_path and transcript.read_transcript_lines(history_path) is None:
+            return Decision()
     shown = "、".join(f"`{path}`" for path in pending)
+    subject = operation_skills.resolve_subject(payload)
+    if subject == operation_skills.SUBJECT_CODEX:
+        methods = "指定されたシェルコマンド"
+    else:
+        has_skill = any(skill_name(target.path) for target in pending)
+        has_read = any(not skill_name(target.path) for target in pending) or subject == operation_skills.SUBJECT_SUBAGENT
+        methods = "指定されたSkill・Read" if has_skill and has_read else "指定されたSkill" if has_skill else "指定されたRead"
+    followup = (
+        "読んだ後に、書いた内容をその基準で見直し、必要なら直せ。"
+        if operation_skills.written_paths(tool_name, tool_input, cwd)
+        else ""
+    )
+    instruction = f"次の資料を、この操作の結果を使う前に{methods}で全文取得せよ。必須手順であり省略するな。{followup}"
+    steps = []
+    for target in pending:
+        try:
+            steps.append(acquisition_step(target, subject))
+        except (OSError, UnicodeError, ValueError) as error:
+            repairs = {row.source.resolve() for row in rows if target in row.targets} | {target.path}
+            writes = operation_skills.written_paths(tool_name, tool_input, cwd)
+            if not warning_only and writes and all(pathlib.Path(path).resolve() in repairs for path in writes):
+                return Decision(
+                    notices=(
+                        _llm_notice(
+                            f"読込宣言の範囲を復旧する操作を通す: {error}",
+                            tag=_WARN_TAG,
+                            fix="宣言と実見出しを整合させた後に元の操作を再発行せよ。",
+                            removable_cause=True,
+                            escalate_on_repeat=False,
+                        ),
+                    )
+                )
+            steps.append(
+                rules_context.acquisition_failure(
+                    target,
+                    error,
+                    shell=subject == operation_skills.SUBJECT_CODEX,
+                    agent=subject == operation_skills.SUBJECT_SUBAGENT,
+                )
+            )
+    acquisition = "。".join(steps) + "。出力が省略された範囲は分割して取得し、必要な全文を読め。"
     if warning_only:
-        if tool_name != "ExitPlanMode":
-            if not agent_id.is_main_agent_context(payload):
-                return Decision()
-            history_path = payload.get("transcript_path")
-            if isinstance(history_path, str) and history_path and transcript.read_transcript_lines(history_path) is None:
-                return Decision()
         return Decision(
             notices=(
                 _llm_notice(
-                    f"操作前に全文読む資料が未取得: {shown}。",
+                    f"{instruction}\n操作前に全文読む資料が未取得: {shown}。\n質問の前提と選択肢を資料の基準に合わせるため。",
                     tag=_WARN_TAG,
-                    fix="まず質問の必要性と資料の読込条件を見直す。不要な質問は取り下げる。"
-                    "質問を続ける場合は、条件に該当する資料を読み、質問の前提と選択肢を確かめ直す。",
+                    fix=acquisition + "質問の前提と選択肢を資料の基準で確かめ直せ。",
                     removable_cause=True,
                     escalate_on_repeat=False,
                 ),
             )
         )
     _select_targets(session_id, pending, agent)
-    if is_codex_payload(payload):
-        try:
-            steps = [f"`{target}`は{_range_steps(target)}" for target in pending]
-        except (OSError, UnicodeError, ValueError) as error:
-            steps = [f"行範囲を算出できない（{error}）。各資料を`cat -- <絶対パス>`で全文取得する"]
-        return Decision(
-            notices=(
-                _llm_notice(
-                    f"操作前に全文読む資料: {shown}。",
-                    tag=_WARN_TAG,
-                    removable_cause=True,
-                    escalate_on_repeat=False,
-                    fix="まず操作の必要性と資料の読込条件を見直す。不要な操作は中止する。"
-                    "続行する場合は、条件に該当する資料の指定範囲を取得する。"
-                    + "。".join(steps)
-                    + "。予算を超える範囲や出力が省略された範囲は、開始行と終了行を狭めて同じ形で分割取得する。"
-                    "全文必須の資料は検索だけで読了としない。",
-                ),
-            )
-        )
-    bodies: list[str] = []
-    fingerprints: list[str] = []
-    used = 0
-    read_failure = ""
-    for target in pending:
-        owner = next(
-            (parent.parent for parent in target.path.parents if parent.name == "skills"), plugin_resources.plugin_root()
-        )
-        try:
-            raw = target.path.read_bytes()
-            source_text = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
-            text = target.body(source_text).replace("${CLAUDE_PLUGIN_ROOT}", str(owner))
-        except (OSError, UnicodeError, ValueError) as error:
-            repairs = {row.source.resolve() for row in rows if target in row.targets} | {target.path}
-            writes = operation_skills.written_paths(tool_name, tool_input, cwd)
-            if writes and all(pathlib.Path(path).resolve() in repairs for path in writes):
-                return Decision(
-                    notices=(
-                        _llm_notice(
-                            f"読込宣言の範囲を復旧する操作を通す: {error}",
-                            tag=_WARN_TAG,
-                            fix="宣言と実見出しを整合させた後に元の操作を再発行する。",
-                            removable_cause=True,
-                            escalate_on_repeat=False,
-                        ),
-                    )
-                )
-            read_failure = f"\n資料本文を取得できない: {error}"
-            break
-        body = (
-            '\n<atk-auto source="read-delivery" kind="document">\n'
-            f"資料: {target}\n相対参照の基点: {target.path.parent}\n{text}\n</atk-auto>\n"
-        )
-        if used + len(body) > CLAUDE_BODY_BUDGET:
-            break
-        bodies.append(body)
-        fingerprints.append(hashlib.sha256(raw).hexdigest())
-        used += len(body)
-    # 読込失敗や上限を超える資料を配送済みにしない。再発行時は同じ順から再開する。
-    for target, fingerprint in zip(pending[: len(bodies)], fingerprints, strict=True):
-        try:
-            _mark(session_id, target.path, agent, target.heading, fingerprint)
-        except (OSError, UnicodeError, ValueError) as error:
-            read_failure += f"\n資料の取得結果を登録できない: {error}"
-    remaining = pending[len(bodies) :]
-    suffix = ""
-    if remaining:
-        try:
-            suffix = "\n未取得: " + "、".join(f"`{target}`（{_range_steps(target)}）" for target in remaining)
-        except OSError, UnicodeError, ValueError:
-            suffix = "\n未取得: " + "、".join(f"`{target}`" for target in remaining)
-        suffix += "\n行範囲はReadの`offset`（開始行）と`limit`（行数）でも同じ範囲を取得できる。"
-    suffix += read_failure
     return Decision(
         notices=(
             _llm_notice(
-                "操作に関係する資料を配送する。" + "".join(bodies) + suffix,
-                tag="notice",
-                fix="配送本文の基準を適用する。本文が収まらない資料は示した絶対パスから必要な範囲を読む。",
+                f"{instruction}\n未取得資料: {shown}。\n判断や記述を資料の基準に合わせるため。",
+                tag=_WARN_TAG,
+                removable_cause=True,
+                escalate_on_repeat=False,
+                fix=acquisition + followup,
             ),
         )
     )
@@ -1112,7 +1195,6 @@ def _read_body_proofs(
     response: object,
     paths: list[pathlib.Path],
     targets: set[pathlib.Path],
-    section_targets: set[read_triggers.ReadTarget],
     cwd: str,
 ) -> Iterator[tuple[read_triggers.ReadTarget, int, int, int, str]]:
     """本文と位置が実ファイルに一致する取得範囲を返す。履歴とPostToolUseで同じ本文一致の判定を使う。"""
@@ -1139,7 +1221,7 @@ def _read_body_proofs(
     sed_reads, only_reads = _sed_reads(tool_name, tool_input, cwd)
     if sed_reads:
         if only_reads:
-            yield from _sed_range_proofs(sed_reads, text, targets, section_targets)
+            yield from _sed_range_proofs(sed_reads, text, targets)
         return
     for path in paths:
         if path not in targets:
@@ -1153,44 +1235,38 @@ def _read_body_proofs(
         if tool_name == "Read" and isinstance(response, dict) and isinstance(response.get("file"), dict):
             file = response["file"]
             start, count, total = file.get("startLine"), file.get("numLines"), file.get("totalLines")
-            if all((isinstance(value, int) and not isinstance(value, bool)) for value in (start, count, total)):
+            if any(value is not None for value in (start, count, total)):
+                if not all(isinstance(value, int) and not isinstance(value, bool) for value in (start, count, total)):
+                    continue
                 lines = body.splitlines(keepends=True)
-                if not (total == len(lines) and 1 <= start <= total and count > 0):
+                # ClaudeのReadは末尾LFの後の空行もtotalLinesに含める。Pythonのsplitlinesは含めない。
+                valid_totals = {len(lines), len(lines) + int(body.endswith("\n"))}
+                if not (total in valid_totals and 1 <= start <= len(lines) and 0 < count <= total - start + 1):
                     continue
                 expected = "".join(lines[start - 1 : start - 1 + count])
-                if expected.rstrip("\n") != normalized.rstrip("\n"):
+                if normalized != expected and not (
+                    expected.endswith("\n")
+                    and (not expected.endswith("\n\n") or start + count - 1 < len(lines))
+                    and normalized == expected[:-1]
+                ):
                     continue
+                left = len("".join(lines[: start - 1]))
+                if left == 0 and len(expected) == len(body):
+                    yield read_triggers.ReadTarget(path), 0, len(body), len(body), fingerprint
+                    continue
+                yield read_triggers.ReadTarget(path), left, left + len(expected), len(body), fingerprint
+                continue
         if body.strip() and body.strip() in normalized:
             yield read_triggers.ReadTarget(path), 0, len(body), len(body), fingerprint
             continue
-        for target in section_targets:
-            if target.path == path and target.body(source_body).strip() in normalized:
-                yield target, 0, len(target.body(source_body)), len(target.body(source_body)), fingerprint
-        file = response.get("file") if isinstance(response, dict) else None
-        if tool_name == "Read" and isinstance(file, dict) and not file.get("truncatedByTokenCap"):
-            start, count, total = file.get("startLine"), file.get("numLines"), file.get("totalLines")
-            lines = body.splitlines(keepends=True)
-            if (
-                (isinstance(start, int) and not isinstance(start, bool))
-                and (isinstance(count, int) and not isinstance(count, bool))
-                and (isinstance(total, int) and not isinstance(total, bool))
-                and total == len(lines)
-                and 1 <= start <= total
-                and count > 0
-            ):
-                expected = "".join(lines[start - 1 : start - 1 + count])
-                if expected.rstrip("\n") == normalized.rstrip("\n"):
-                    left = len("".join(lines[: start - 1]))
-                    yield read_triggers.ReadTarget(path), left, left + len(expected), len(body), fingerprint
 
 
 def _sed_range_proofs(
     reads: list[tuple[pathlib.Path, int, int | None]],
     text: str,
     targets: set[pathlib.Path],
-    section_targets: set[read_triggers.ReadTarget],
 ) -> Iterator[tuple[read_triggers.ReadTarget, int, int, int, str]]:
-    """行範囲の連結が出力全体と一致した場合だけ、各範囲を資料と節の文字位置へ変換して返す。
+    """行範囲の連結が出力全体と一致した場合だけ、各範囲を資料の文字位置へ変換して返す。
 
     範囲が資料の行数を外れる場合と、出力の欠落・追加・相違がある場合は、どの範囲も取得済みにしない。
     """
@@ -1211,20 +1287,6 @@ def _sed_range_proofs(
         fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
         left = len("".join(lines[: start - 1]))
         yield read_triggers.ReadTarget(path), left, left + len("".join(lines[start - 1 : last])), len(source), fingerprint
-        for target in section_targets:
-            if target.path != path:
-                continue
-            # 節の本文は選ばれた行の連結であり、行範囲と重なる行は節の本文の中で連続する。
-            numbers = [
-                number for left_line, right_line in _line_spans(target, source) for number in range(left_line, right_line + 1)
-            ]
-            inside = [index for index, number in enumerate(numbers) if start <= number <= last]
-            if not inside:
-                continue
-            offset = len("".join(lines[number - 1] for number in numbers[: inside[0]]))
-            size = len("".join(lines[numbers[index] - 1] for index in inside))
-            length = len("".join(lines[number - 1] for number in numbers))
-            yield target, offset, offset + size, length, fingerprint
 
 
 def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> None:
@@ -1296,6 +1358,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     tuple(paths),
                     known_sources={row.source for row in rows},
                     host="codex" if is_codex_payload(payload) else "claude",
+                    project=cwd,
                 ),
             ]
         )
@@ -1303,37 +1366,49 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     chosen_targets = selected_targets(records if isinstance(records, dict) else {}, agent)
     targets = {path for row in rows for path in row.documents} | {target.path for target in chosen_targets}
     targets.update(path for path in paths if path.suffix == ".md" and _document_owner(path) is not None)
-    section_targets = {target for row in rows for target in row.targets if target.heading} | {
-        target for target in chosen_targets if target.heading
-    }
     if tool_name == "Skill":
-        qualified = str(tool_input.get("skill", ""))
-        name = qualified.rsplit(":", 1)[-1]
-        plugin = qualified.split(":", 1)[0] if ":" in qualified else "agent-toolkit"
-        for path in targets:
-            if path.name == "SKILL.md" and path.parent.name == name and document_reads.document_plugin(str(path)) == plugin:
-                _mark(session_id, path, agent)
+        qualified = tool_input.get("skill")
+        if not response or any(
+            marker in str(response) for marker in ("truncated output", "Output too large", "truncatedByTokenCap")
+        ):
+            return
+        targets.update(row.source for row in rows)
+        targets.update(read_triggers.document_sources(plugin_resources.plugin_root(), cwd))
+        targets.update(
+            pathlib.Path(key.removeprefix("resolved-project-skill:"))
+            for key, owners in records.items()
+            if key.startswith("resolved-project-skill:") and agent in owners
+        )
+        matched_paths = [path for path in targets if path.is_file() and skill_name(path) == qualified]
+        if isinstance(qualified, str) and qualified.startswith("agent-toolkit:"):
+            active = plugin_resources.plugin_root().resolve()
+            matched_paths = [path for path in matched_paths if _document_owner(path) == active]
+        if len(matched_paths) > 1:
+            active = plugin_resources.plugin_root().resolve()
+            matched_paths = [path for path in matched_paths if _document_owner(path) == active]
+        if len(matched_paths) == 1:
+            _mark(session_id, matched_paths[0], agent)
         return
-    for target, start, end, length, fingerprint in _read_body_proofs(
-        tool_name, tool_input, response, paths, targets, section_targets, cwd
-    ):
+    for target, start, end, length, fingerprint in _read_body_proofs(tool_name, tool_input, response, paths, targets, cwd):
+        if (
+            tool_name == "Bash"
+            and operation_skills.resolve_subject(payload) != operation_skills.SUBJECT_CODEX
+            and agent not in records.get("review-output:" + str(target.path), [])
+        ):
+            continue
+        if operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_MAIN and skill_name(target.path):
+            continue
         if start == 0 and end == length:
-            _mark(session_id, target.path, agent, target.heading, fingerprint)
-            complete = True
+            _mark(session_id, target.path, agent, fingerprint)
         else:
-            complete = _record_range(session_id, target.path, agent, start, end, length, target.heading, fingerprint)
-        if complete and target.heading:
-            body = target.body()
-            for selected in section_targets:
-                if selected.path == target.path and selected.body().strip() in body:
-                    _mark(session_id, selected.path, agent, selected.heading, fingerprint)
+            _record_range(session_id, target.path, agent, start, end, length, fingerprint)
 
 
 def _record_range(
-    session_id: str, path: pathlib.Path, agent: str, start: int, end: int, length: int, section: str = "", fingerprint: str = ""
+    session_id: str, path: pathlib.Path, agent: str, start: int, end: int, length: int, fingerprint: str = ""
 ) -> bool:
     """連続被覆が本文末尾に達したときだけ取得済みにする。圧縮では既存の主体別リセットが全区間を除く。"""
-    prefix = document_key(path, fingerprint) + ("#heading:" + section if section else "") + "#range:"
+    prefix = document_key(path, fingerprint) + "#range:"
     update_state(session_id, operation_skills.mark_ready(f"{prefix}{start}:{end}", agent))
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     intervals = sorted(
@@ -1347,6 +1422,6 @@ def _record_range(
             break
         reached = max(reached, right)
     if reached >= length:
-        _mark(session_id, path, agent, section, fingerprint)
+        _mark(session_id, path, agent, fingerprint)
         return True
     return False

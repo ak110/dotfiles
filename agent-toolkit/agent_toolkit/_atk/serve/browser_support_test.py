@@ -402,7 +402,7 @@ def _write_entries(root: Path) -> None:
     )
     for index in range(6):
         (rejected / f"many-terminal-{index}.md").write_text(
-            "---\nstate: rejected\ntype: awi\ntarget_repo: rejected/repo\nsource: browser\n---\n\n多数終端検索\n",
+            "---\nstate: rejected\ntype: awi\ntarget_repo: rejected/repo\nsource: browser\n---\n\n多数終了検索\n",
             encoding="utf-8",
         )
 

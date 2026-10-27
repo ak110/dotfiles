@@ -363,7 +363,7 @@ async def test_send_message_returns_label_of_delivered_session(
 ) -> None:
     """公開`send_message`の応答が、配送した宛先sessionの担当名を`label`で返す。
 
-    実行中turnへのsteer、終端後のreply、保持期限の経過後と破棄後の再開の各配送で、
+    実行中turnへのsteer、終了後のreply、保持期限の経過後と破棄後の再開の各配送で、
     宛先以外のsessionや追送本文から担当名を返すと、委譲元は誤送を応答から検出できない。
     """
     monkeypatch.setattr(
@@ -681,7 +681,7 @@ async def test_start_response_adds_next_action_only_for_failed_start(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """起動直後に失敗で終端した応答だけが、結果の受領と別候補での再起動を`next_action`で示す。"""
+    """起動直後に失敗で終了した応答だけが、結果の受領と別候補での再起動を`next_action`で示す。"""
     manager = SimpleNamespace(
         launcher_session_id=lambda: None,
         start=AsyncMock(return_value={"session_id": "session", "status": status, "label": "担当"}),
@@ -888,7 +888,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
 
 @pytest.mark.asyncio
 async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """未回収の結果を持つ終端済みsessionへ送ると、MCPの応答がその結果を返す。"""
+    """未回収の結果を持つ終了済みsessionへ送ると、MCPの応答がその結果を返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
@@ -1044,7 +1044,7 @@ async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytes
                 "統合先worktree": "/repo",
                 "統合先branch": "develop",
                 "計画ファイル名一覧": "[]",
-                "AWI終端区分": "adopt",
+                "AWI終了区分": "adopt",
             },
         ),
         ("add-wi", "保存開始", {"要求識別子": "request-1"}),

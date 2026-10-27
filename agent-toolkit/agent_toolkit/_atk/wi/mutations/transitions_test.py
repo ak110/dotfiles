@@ -89,10 +89,10 @@ def test_agent_reopens_terminal_entry_without_old_result(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """誤終端した項目をCLIから再開し、旧結果を次の処理へ持ち込まない。"""
+    """誤終了した項目をCLIから再開し、旧結果を次の処理へ持ち込まない。"""
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
-    source.write_text(source.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 誤った終端\n", encoding="utf-8")
+    source.write_text(source.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 誤った終了\n", encoding="utf-8")
     terminal = _set_state(source, terminal_state)
     monkeypatch.setenv("AI_AGENT", "1")
     _disable_transition_git(monkeypatch)
@@ -139,7 +139,7 @@ def test_filename_terminal_transition_reaches_every_bulk_source_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ファイル名だけの`adopt`・`reject`が、`--all`の候補となる全状態から終端できる。
+    """ファイル名だけの`adopt`・`reject`が、`--all`の候補となる全状態から終了できる。
 
     個別指定と`--all`で到達できる遷移元が一致することを固定し、状態を片方にだけ加える変更を検出する。
     """
@@ -148,7 +148,7 @@ def test_filename_terminal_transition_reaches_every_bulk_source_state(
     _disable_transition_git(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", action, "entry.md", "--note=終端する"], home=tmp_path)
+        atk.main(["wi", action, "entry.md", "--note=終了する"], home=tmp_path)
 
     assert exc_info.value.code == 0
     destination = _test_entry_path(notes, "entry.md")
@@ -520,7 +520,7 @@ def test_terminal_transition_prints_destination_path(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """完了報告用に終端状態の件数と絶対パスを出力する。"""
+    """完了報告用に終了状態の件数と絶対パスを出力する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -563,7 +563,7 @@ class TestRejectIfInbox:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """pull後にprocessingへ移った対象は終端しない。"""
+        """pull後にprocessingへ移った対象は終了しない。"""
         notes = _setup_notes(tmp_path)
         processing = notes / "2026" / "10"
         processing.mkdir(parents=True, exist_ok=True)
@@ -800,7 +800,7 @@ class TestStartProcessingMultiple:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """UWIをprocessingへ移し、続けてadoptで終端できること。"""
+        """UWIをprocessingへ移し、続けてadoptで終了できること。"""
         notes = _setup_notes(tmp_path)
         filename = "uwi-001.md"
         _test_entry_path(notes, filename).write_text(

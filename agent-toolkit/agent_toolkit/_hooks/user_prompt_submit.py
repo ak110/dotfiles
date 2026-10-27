@@ -23,6 +23,8 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 引用行を除いた本文の部分文字列の一致だけで行い、範囲語の有無は判定に含めない（範囲語は「など」「とか」のような
 一般的な語で表され、条件に加えても発火がほとんど減らないため）。発話がその項に当たるかの判断は受領側に残し、
 本フックは発話の意味を判断しない。
+一定間隔ごとの進捗のセルフチェック通知（`progress_self_check`が判定する）は機械注入ターンに付け、
+実ユーザー発話では通知せずに次の点検の起点をその時刻へ進める。
 成立した注記を1つの`additionalContext`へまとめる。
 
 注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
@@ -72,6 +74,7 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
     update_state,
 )
 lazy from agent_toolkit._hooks import message_format, session_title, termination_evidence, work_contract
+lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -102,11 +105,11 @@ _USER_CONFIRMATION_NOTICE_BODY = (
     "この発話は、セッション開始後か会話圧縮後で、`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態で届いた。"
 )
 _USER_CONFIRMATION_NOTICE_FIX = (
-    "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動する。"
-    "是正の認可は`agent-toolkit:user-confirmation-and-report`の「起動契機」から「認可を要する操作」へ進んで判定する。"
+    "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動せよ。"
+    "是正の認可は`agent-toolkit:user-confirmation-and-report`の「起動契機」から「認可を要する操作」へ進んで判定せよ。"
 )
 _BUGFIX_NOTICE_FIX = (
-    "不具合の有無・原因・直し方を回答や確認の案へ含める場合は、診断より前に`agent-toolkit:bugfix`を起動する。"
+    "不具合の有無・原因・直し方を回答や確認の案へ含める場合は、診断より前に`agent-toolkit:bugfix`を起動せよ。"
     "説明の補足や委譲・AWIの方針も対象とする。"
 )
 
@@ -215,18 +218,30 @@ def main(payload_text: str) -> int:
     except (OSError, ValueError, TypeError, KeyError) as error:
         print(f"終了工程の原入力を取得できない: {error}", file=sys.stderr)
 
+    # 進捗のセルフチェックは機械注入ターン（定期再確認を含む）で経過時間から判定する。
+    # 実ユーザーの発話では通知せず、次の点検をその時点から数え直す。
+    self_check_notice: str | None = None
+    if _is_machine_injected(payload, prompt):
+        self_check_notice = _progress_self_check.claim_notice(payload)
+    else:
+        _progress_self_check.postpone(payload)
+
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。
     if _is_harness_message(prompt):
-        if is_codex_payload(payload):
-            return 0
-        _emit_hook_output(
-            additional_context=_llm_notice(
-                "このターンは`Claude Code`のバックグラウンドタスク完了の自動通知で始まった。"
-                "ユーザーの発話ではない。応答と成果物は日本語で書く。",
-                tag="notice",
-            ),
-        )
+        harness_notices: list[str] = []
+        if not is_codex_payload(payload):
+            harness_notices.append(
+                _llm_notice(
+                    "このターンは`Claude Code`のバックグラウンドタスク完了の自動通知で始まった。"
+                    "ユーザーの発話ではない。応答と成果物は日本語で書け。",
+                    tag="notice",
+                )
+            )
+        if self_check_notice is not None:
+            harness_notices.append(self_check_notice)
+        if harness_notices := [notice for notice in harness_notices if notice]:
+            _emit_hook_output(additional_context="\n".join(harness_notices))
         return 0
 
     machine_injected = _is_machine_injected(payload, prompt)
@@ -254,6 +269,8 @@ def main(payload_text: str) -> int:
             if contract_notice is not None:
                 notices.append(_llm_notice(contract_notice))
         notices.extend(content_notices(prompt, "user_prompt_submit"))
+    if self_check_notice is not None:
+        notices.append(self_check_notice)
     additional_context = "\n".join(notice for notice in notices if notice) or None
 
     if first_line.startswith(command_prefix):

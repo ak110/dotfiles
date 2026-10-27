@@ -35,9 +35,9 @@ async function waitingEngine($: Engine, on: On, options: { percent?: number; eli
 
 const MAIN_TURN = { answer: "", durationMs: 0, isAborted: false, turnId: "waiting-turn", reason: "answer" as const };
 
-for (const mode of ["long", "low", "unsaved", "running", "delegated", "subagent", "skip", "failure"] as const) {
+for (const mode of ["long", "low", "ineligible-wait-owner", "running", "delegated", "subagent", "skip", "failure"] as const) {
   test(`背景waitの自動圧縮条件: ${mode}`, async ($, on) => {
-    const options = { percent: mode === "low" ? 49 : mode === "long" ? 50 : 60, eligible: mode !== "unsaved", delegated: mode === "delegated", ...(mode === "skip" || mode === "failure" ? { compact: mode } : {}) };
+    const options = { percent: mode === "low" ? 49 : mode === "long" ? 50 : 60, eligible: mode !== "ineligible-wait-owner", delegated: mode === "delegated", ...(mode === "skip" || mode === "failure" ? { compact: mode } : {}) };
     const { clock, calls } = await waitingEngine($, on, options);
     if (mode === "running") await $.turn.start({ text: "待機を開始", turnId: MAIN_TURN.turnId });
     await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true, ...(mode === "subagent" ? { agentId: "child" } : {}) });
@@ -52,8 +52,17 @@ for (const mode of ["long", "low", "unsaved", "running", "delegated", "subagent"
     await clock.advance(0);
     const eligible = ["long", "running", "skip", "failure"].includes(mode);
     expect(calls.compactions).toBe(eligible ? 1 : 0);
-    expect(calls.queries.length).toBe(eligible || mode === "unsaved" ? 1 : 0);
-    if (calls.queries.length) expect(calls.queries[0]).toContain("wait-compaction-context");
+    expect(calls.queries.length).toBe(eligible || mode === "ineligible-wait-owner" ? 1 : 0);
+    for (const query of calls.queries) {
+      expect(query.slice(0, 7)).toEqual(["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]);
+      expect(query[7]?.endsWith("/scripts/launch.py")).toBe(true);
+      expect(query[8]).toBe(query[7]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
+      expect(query.slice(9, 12)).toEqual(["run-script", "wait-compaction-context", "--"]);
+      expect(query).not.toContain("--not-before");
+      expect(query).toContain("--session-id");
+      expect(query[query.indexOf("--session-id") + 1]).toBe("wait-main");
+      expect(query).toContain("--command=atk agents wait");
+    }
     await $.turn.complete(MAIN_TURN);
     await clock.advance(5000);
     expect(calls.compactions).toBe(eligible ? 1 : 0);

@@ -7,6 +7,7 @@ import pytest
 from agent_toolkit._common import plugin_roots, read_triggers
 from agent_toolkit._hooks import document_reads
 from agent_toolkit._hooks.pretooluse import read_delivery
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 from pytools._internal import antigravity_plugin
 
@@ -81,21 +82,38 @@ def test_generated_root_keeps_logical_namespace_and_relative_base(generated, mon
     assert read_delivery.matches("skill:agent-basics:long", "Read", {"file_path": str(full)}, "")
 
 
-def test_generated_full_instructions_section_is_read_by_line_range(generated, monkeypatch):
-    """全文転送先の節の行範囲を資料から算出し、その行範囲の読取を論理名の節宣言へ結びつける。"""
+def test_generated_section_requires_full_native_read(generated, monkeypatch):
     toolkit, _native, full = generated
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", toolkit)
     target = read_triggers.ReadTarget(full, "必要節")
-    spans = read_delivery._line_spans(target, full.read_text(encoding="utf-8"))  # pylint: disable=protected-access
-    assert len(spans) == 1
-    start, end = spans[0]
-    command = ["sed", "-n", f"{start},{end}p", "--", str(full)]
-    output = subprocess.run(command, check=True, capture_output=True, encoding="utf-8").stdout
-    assert output == target.body()
-    assert "別用途の大きな本文" not in output
+    row = read_triggers.ReadTrigger(full, 1, "判断", ("tool:Do",), (full,), ("必要節",))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    memory: dict = {}
+    monkeypatch.setattr(read_delivery, "read_state", lambda _session: memory)
+    monkeypatch.setattr(read_delivery, "update_state", lambda _session, update: update(memory))
+    lines = full.read_text(encoding="utf-8").splitlines()
+    start = lines.index("## 必要節") + 1
+    end = start + 1
+    partial = ["sed", "-n", f"{start},{end}p", "--", str(full)]
+    output = subprocess.run(partial, check=True, capture_output=True, encoding="utf-8").stdout
+    command = f"sed -n \x27{start},{end}p\x27 -- {full}"
     assert read_delivery.matches(
-        "section:agent-basics:*/skills/long/SKILL.md#必要節",
-        "Bash",
-        {"command": f"sed -n '{start},{end}p' -- {full}"},
-        str(toolkit.parent),
+        "section:agent-basics:*/skills/long/SKILL.md#必要節", "Bash", {"command": command}, str(toolkit.parent)
     )
+    event = {
+        "session_id": "agy-full",
+        "turn_id": "turn",
+        "cwd": str(toolkit.parent),
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "tool_response": {"stdout": output, "exit_code": 0},
+    }
+    assert _run_hook_in_process("posttooluse", event).returncode == 0
+    records = memory.get(read_delivery.rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert not read_delivery.target_ready(records, target, "main")
+    whole = subprocess.run(["cat", "--", str(full)], check=True, capture_output=True, encoding="utf-8").stdout
+    event["tool_input"] = {"command": f"cat -- {full}"}
+    event["tool_response"] = {"stdout": whole, "exit_code": 0}
+    assert _run_hook_in_process("posttooluse", event).returncode == 0
+    records = memory.get(read_delivery.rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert read_delivery.target_ready(records, target, "main")

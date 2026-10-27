@@ -3,6 +3,7 @@
 待機ループがタイムアウト復帰した際の上流差分の反映・常駐コードのハッシュ比較・再起動を公開CLI経由で検証する。
 """
 
+import argparse
 import collections.abc
 import contextlib
 import os
@@ -14,6 +15,7 @@ from typing import Any
 
 import pytest
 
+import agent_toolkit
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import config as _config  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
@@ -43,16 +45,14 @@ _INTERNAL_DOTFILES_UPDATED_ARG = _pl_update._INTERNAL_DOTFILES_UPDATED_ARG  # py
 
 def _run_posix_launcher(
     tmp_path: pathlib.Path,
-    top_level: str,
-    subcommand: str,
-    *,
+    *argv: str,
     send_term: bool = False,
     return_code: int | None = None,
     omit_spec: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     """決定論的なuv代用品でPOSIXランチャーを実行する。"""
     fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
+    fake_bin.mkdir(parents=True)
     call_log = tmp_path / "uv-calls"
     fake_uv = fake_bin / "uv"
     fake_uv.write_text(
@@ -96,7 +96,7 @@ if spec and len(calls) == 1:
         env["FAKE_UV_OMIT_SPEC"] = "1"
     launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "scripts" / "atk"
     result = subprocess.run(
-        [str(launcher), top_level, subcommand],
+        [str(launcher), *argv],
         env=env,
         capture_output=True,
         text=True,
@@ -107,40 +107,53 @@ if spec and len(calls) == 1:
     return result, call_log.read_text(encoding="utf-8").splitlines()
 
 
-@pytest.mark.parametrize(
-    ("top_level", "subcommand", "expected_call_count"),
-    [
-        ("wi", "process-loop", 2),
-        ("mq", "process-loop", 2),
-        ("wi", "list", 1),
-        ("plans", "process-loop", 1),
-    ],
-)
-def test_posix_launcher_restarts_only_process_loop_aliases(
-    tmp_path: pathlib.Path,
-    top_level: str,
-    subcommand: str,
-    expected_call_count: int,
-) -> None:
-    """POSIXランチャーはwiと旧mqのprocess-loopだけを再起動対象にする。"""
-    result, uv_calls = _run_posix_launcher(tmp_path, top_level, subcommand)
+def _process_loop_subcommands() -> set[str]:
+    """公開CLIのパーサー定義からprocess-loop配下の部分コマンド集合を取得する。"""
+    # 公開CLIの登録との一致を調べるため、argparseの登録済みactionを参照する。
+    # pylint: disable=protected-access
+    parser = atk._build_parser("wi")
+    wi_parser = next(action.choices["wi"] for action in parser._actions if isinstance(action, argparse._SubParsersAction))
+    loop_parser = next(
+        action.choices["process-loop"] for action in wi_parser._actions if isinstance(action, argparse._SubParsersAction)
+    )
+    return next(set(action.choices) for action in loop_parser._actions if isinstance(action, argparse._SubParsersAction))
+
+
+def test_posix_launcher_supervises_all_process_loop_subcommands(tmp_path: pathlib.Path) -> None:
+    """CLI定義にある全process-loop部分コマンドをPOSIXランチャーが監督する。"""
+    for subcommand in _process_loop_subcommands():
+        result, uv_calls = _run_posix_launcher(tmp_path / subcommand, "wi", "process-loop", subcommand)
+
+        assert result.returncode == 0, result.stderr
+        assert len(uv_calls) == 2
+
+
+def test_posix_launcher_supervises_all_repos_after_options(tmp_path: pathlib.Path) -> None:
+    """部分コマンドの前に置いたオプションでも、ランチャーがall-reposを監督する。"""
+    result, uv_calls = _run_posix_launcher(tmp_path, "wi", "process-loop", "--no-alerts", "all-repos")
 
     assert result.returncode == 0, result.stderr
-    assert len(uv_calls) == expected_call_count
-    if expected_call_count == 2:
-        log = (tmp_path / "process-wi.log").read_text(encoding="utf-8")
-        assert "event=launcher_restart" in log
-        assert "event=launcher_exit" in log
+    assert len(uv_calls) == 2
+
+
+def test_posix_launcher_runs_other_commands_once(tmp_path: pathlib.Path) -> None:
+    """process-loop以外と廃止済みmqは監督せず一回だけ実行する。"""
+    for argv in (("mq", "process-loop"), ("wi", "list"), ("plans", "process-loop")):
+        result, uv_calls = _run_posix_launcher(tmp_path / "-".join(argv), *argv)
+
+        assert result.returncode == 0, result.stderr
+        assert len(uv_calls) == 1
 
 
 def test_windows_launcher_routes_same_process_loop_aliases() -> None:
-    """WindowsランチャーもPOSIX版と同じ2つのトップレベル名を受理する。"""
+    """WindowsランチャーもPOSIX版と同じ`wi process-loop`だけを監督する。"""
     launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "scripts" / "atk.cmd"
     data = launcher.read_bytes()
     text = data.decode("cp932")
 
     assert b"\n" not in data.replace(b"\r\n", b"")
-    assert 'if not "%~1"=="wi" if not "%~1"=="mq" goto :run_once' in text
+    assert 'if not "%~1"=="wi" goto :run_once' in text
+    assert '"%~1"=="mq"' not in text
     assert 'if not "%~2"=="process-loop" goto :run_once' in text
 
 
@@ -223,18 +236,22 @@ class TestWaitLoopAutoRestart:
         myrepo.mkdir()
         _setup_notes(tmp_path)
         fake_dotfiles_root = tmp_path / "dotfiles_root"
-        fake_scripts_dir = fake_dotfiles_root / "agent-toolkit" / "scripts"
+        fake_plugin_root = fake_dotfiles_root / "agent-toolkit"
+        fake_package_dir = fake_plugin_root / "agent_toolkit"
+        fake_scripts_dir = fake_plugin_root / "scripts"
+        fake_package_dir.mkdir(parents=True)
         fake_scripts_dir.mkdir(parents=True)
         initial_content = "b.py\nx = 1\n" if ambiguous_partition_change else "x = 1\n"
-        (fake_scripts_dir / "a.py").write_text(initial_content, encoding="utf-8")
-        (fake_scripts_dir / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
-        nested_file = fake_scripts_dir / "_atk" / "wi" / "nested.py"
+        (fake_package_dir / "runtime.py").write_text(initial_content, encoding="utf-8")
+        (fake_package_dir / "runtime_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
+        (fake_scripts_dir / "launch.py").write_text("print('launch')\n", encoding="utf-8")
+        nested_file = fake_package_dir / "_atk" / "wi" / "nested.py"
         if nested_change in {"change", "delete"}:
             nested_file.parent.mkdir(parents=True)
             nested_file.write_text("value = 1\n", encoding="utf-8")
         if create_canonical_entry:
             canonical_entry = fake_dotfiles_root / "agent-toolkit" / "agent_toolkit" / "atk.py"
-            canonical_entry.parent.mkdir(parents=True)
+            canonical_entry.parent.mkdir(parents=True, exist_ok=True)
             canonical_entry.write_text("# canonical entry point\n", encoding="utf-8")
         # `_resolve_dotfiles_root`は`~/dotfiles`を直接参照するため、
         # `atk`実行コード自体の物理配置（`__file__`）とは独立にテスト用ダミーへ差し替える。
@@ -263,10 +280,10 @@ class TestWaitLoopAutoRestart:
             if wait_calls["n"] > 1:
                 raise KeyboardInterrupt
             if changed_file_name is not None:
-                (fake_scripts_dir / changed_file_name).write_text("changed = True\n", encoding="utf-8")
+                (fake_plugin_root / changed_file_name).write_text("changed = True\n", encoding="utf-8")
             if ambiguous_partition_change:
-                (fake_scripts_dir / "a.py").write_text("", encoding="utf-8")
-                (fake_scripts_dir / "b.py").write_text("\nx = 1\n", encoding="utf-8")
+                (fake_package_dir / "runtime.py").write_text("", encoding="utf-8")
+                (fake_package_dir / "other.py").write_text("\nx = 1\n", encoding="utf-8")
             if nested_change == "add":
                 nested_file.parent.mkdir(parents=True)
                 nested_file.write_text("value = 1\n", encoding="utf-8")
@@ -278,7 +295,7 @@ class TestWaitLoopAutoRestart:
                 nested_file.parent.mkdir(parents=True)
                 nested_file.with_name("nested_test.py").write_text("value = 1\n", encoding="utf-8")
             elif nested_change == "cache":
-                cache_file = fake_scripts_dir / "_atk" / "__pycache__" / "cached.py"
+                cache_file = fake_package_dir / "_atk" / "__pycache__" / "cached.py"
                 cache_file.parent.mkdir(parents=True)
                 cache_file.write_text("value = 1\n", encoding="utf-8")
             return wait_return
@@ -307,9 +324,16 @@ class TestWaitLoopAutoRestart:
             tmp_path,
             wait_return=False,
             has_upstream_diff=False,
-            changed_file_name="a.py",
+            changed_file_name="agent_toolkit/runtime.py",
         )
         assert execv_calls, "ハッシュ差分検知時はos.execvが呼ばれる必要がある"
+
+    def test_launcher_change_on_timeout_restarts(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """待機復帰時に実行用launch.pyの変更を検出して再起動する。"""
+        _, execv_calls = self._run_until_stop(
+            monkeypatch, tmp_path, wait_return=False, has_upstream_diff=False, changed_file_name="scripts/launch.py"
+        )
+        assert execv_calls
 
     def test_different_file_partition_on_timeout_triggers_restart(
         self,
@@ -340,7 +364,7 @@ class TestWaitLoopAutoRestart:
             tmp_path,
             wait_return=False,
             has_upstream_diff=False,
-            changed_file_name="a.py",
+            changed_file_name="agent_toolkit/runtime.py",
             create_canonical_entry=True,
         )
 
@@ -360,7 +384,7 @@ class TestWaitLoopAutoRestart:
             tmp_path,
             wait_return=False,
             has_upstream_diff=False,
-            changed_file_name="a_test.py",
+            changed_file_name="agent_toolkit/runtime_test.py",
         )
         assert not execv_calls
 
@@ -405,7 +429,7 @@ class TestWaitLoopAutoRestart:
             tmp_path,
             wait_return=False,
             has_upstream_diff=True,
-            changed_file_name="a.py",
+            changed_file_name="agent_toolkit/runtime.py",
         )
 
         assert execv_calls
@@ -428,7 +452,7 @@ class TestWaitLoopAutoRestart:
             tmp_path,
             wait_return=False,
             has_upstream_diff=True,
-            changed_file_name="a.py",
+            changed_file_name="agent_toolkit/runtime.py",
             extra_argv=["--no-update"],
         )
         assert not _command_was_called(subprocess_calls, "update-dotfiles")
@@ -445,7 +469,7 @@ class TestWaitLoopAutoRestart:
             tmp_path,
             wait_return=True,
             has_upstream_diff=True,
-            changed_file_name="a.py",
+            changed_file_name="agent_toolkit/runtime.py",
         )
         assert not _command_was_called(subprocess_calls, "update-dotfiles")
         assert not execv_calls
@@ -461,7 +485,7 @@ class TestWaitLoopAutoRestart:
             tmp_path,
             wait_return=False,
             has_upstream_diff=True,
-            changed_file_name="a.py",
+            changed_file_name="agent_toolkit/runtime.py",
             dotfiles_root_missing=True,
         )
         assert not _command_was_called(subprocess_calls, "update-dotfiles")
@@ -480,7 +504,7 @@ class TestWaitLoopAutoRestart:
             tmp_path,
             wait_return=False,
             has_upstream_diff=False,
-            changed_file_name="a.py",
+            changed_file_name="agent_toolkit/runtime.py",
             extra_argv=resume_argv,
         )
 
@@ -587,6 +611,28 @@ def test_restart_writes_spec_and_exits_when_launcher_env_is_set(
     ]
 
 
+def test_code_hash_covers_loaded_runtime_modules() -> None:
+    """実importされた非テストのパッケージモジュールを更新検出の走査対象へ含める。"""
+    plugin_root = pathlib.Path(agent_toolkit.__file__).resolve().parent.parent
+    hashed_paths = {
+        path.resolve()
+        for directory in _pl_update._code_hash_directories(plugin_root)  # pylint: disable=protected-access
+        for path in directory.rglob("*.py")
+        if not path.name.endswith("_test.py") and "__pycache__" not in path.relative_to(plugin_root).parts
+    }
+    loaded_paths = {
+        pathlib.Path(module_file).resolve()
+        for module in sys.modules.values()
+        if getattr(module, "__name__", "").startswith("agent_toolkit")
+        and (module_file := getattr(module, "__file__", None)) is not None
+        and pathlib.Path(module_file).suffix == ".py"
+        and pathlib.Path(module_file).resolve().is_relative_to(plugin_root)
+        and not pathlib.Path(module_file).name.endswith("_test.py")
+    }
+
+    assert loaded_paths <= hashed_paths
+
+
 def test_restart_falls_back_to_exec_without_launcher_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """受け渡しファイルの指定が無い直接起動では実体を置き換える。"""
     calls: list[tuple[str, list[str]]] = []
@@ -607,10 +653,12 @@ def test_restart_falls_back_to_exec_without_launcher_env(monkeypatch: pytest.Mon
             [
                 "/resolved/uv",
                 "run",
-                "--project",
-                str(project_root),
-                "--locked",
-                "--no-default-groups",
+                "--no-config",
+                "--no-project",
+                "--python",
+                "3.15",
+                "python",
+                str(project_root / "scripts" / "launch.py"),
                 str(script.resolve()),
                 "wi",
                 "process-loop",
@@ -802,12 +850,14 @@ class TestProcessLoopUpdateAndRestart:
         assert execv_calls[0][0] == "/resolved/uv"
         assert pathlib.Path(execv_calls[0][1][0]).name == "uv"
         expected_script = pathlib.Path(sys.argv[0]).resolve()
-        assert execv_calls[0][1][1:7] == [
+        assert execv_calls[0][1][1:9] == [
             "run",
-            "--project",
-            str(expected_script.parent.parent),
-            "--locked",
-            "--no-default-groups",
+            "--no-config",
+            "--no-project",
+            "--python",
+            "3.15",
+            "python",
+            str(expected_script.parent.parent / "scripts" / "launch.py"),
             str(expected_script),
         ]
         assert _command_was_called(subprocess_calls, "update-dotfiles")

@@ -1,3 +1,4 @@
+import { pluginLaunchCommand } from "./plugin_launch.ts";
 import type { EngineInterface, On } from "claude-code";
 import { automatedMessage } from "./automated_message.ts";
 
@@ -23,7 +24,7 @@ export const COMPACT_CONVERSATION_TOOL = {
 export const COMPACT_CONVERSATION_DELEGATED_DENY = "メインの会話で使うツール。";
 
 type BackgroundWait = { id: string; command: string; ready: boolean; used: boolean };
-type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean; turnStartedAt: number; automaticPaused: boolean; waits: Map<string, BackgroundWait> };
+type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean; automaticPaused: boolean; waits: Map<string, BackgroundWait> };
 
 async function automatic($: EngineInterface, state: CompactState, wait: BackgroundWait): Promise<void> {
   if (wait.used || !wait.ready || state.turnRunning || state.pending || !state.waits.has(wait.id)) return;
@@ -34,11 +35,10 @@ async function automatic($: EngineInterface, state: CompactState, wait: Backgrou
     if (state.automaticPaused) return;
     wait.used = true;
     const root = $.plugin.root;
-    const checked = await $.process.run([
-      "uv", "run", "--project", root, "--locked", "--no-default-groups", `${root}/agent_toolkit/atk.py`,
+    const checked = await $.process.run(pluginLaunchCommand(root, "agent_toolkit/atk.py", [
       "run-script", "wait-compaction-context", "--", "--session-id", await $.session.id(),
-      `--command=${wait.command}`, "--not-before", String(state.turnStartedAt / 1000),
-    ], { timeoutMs: 30_000 });
+      `--command=${wait.command}`,
+    ]), { timeoutMs: 30_000 });
     if (checked.exitCode !== 0 || checked.isStdoutTruncated || state.turnRunning || state.pending || !state.waits.has(wait.id)) return;
     const context: unknown = JSON.parse(checked.stdout);
     if (typeof context !== "object" || context === null || (context as { eligible?: unknown }).eligible !== true) return;
@@ -75,11 +75,10 @@ function schedule($: EngineInterface, state: CompactState): void {
 
 export function register(on: On, session: { delegated: boolean }): void {
   // modはセッションごとに読み込まれる。予約中だけ状態を保持する。
-  const state: CompactState = { pending: false, turnRunning: false, scheduled: false, turnStartedAt: 0, automaticPaused: false, waits: new Map() };
+  const state: CompactState = { pending: false, turnRunning: false, scheduled: false, automaticPaused: false, waits: new Map() };
   on("turn.start", { turnId: /^/ }, async ($, e, next) => {
     if (e.agentId === undefined) {
       state.turnRunning = true;
-      state.turnStartedAt = await $.clock.now();
       if (state.automaticPaused) {
         try {
           const percent = (await $.session.usage()).context.percent;
@@ -131,9 +130,9 @@ export function register(on: On, session: { delegated: boolean }): void {
   });
   on("tool.call", { tool: /__compact_conversation$/ }, ($, e, next) => {
     if (e.tool !== `mcp__${$.plugin.name}__${TOOL_NAME}`) return next(e);
-    if (state.pending) return { result: "未完了の圧縮予約があるため追加していない。現在のターンを終えてホストの結果を待つ。" };
+    if (state.pending) return { result: "未完了の圧縮予約があるため追加していない。現在のターンを終えてホストの結果を待て。" };
     state.pending = true;
     schedule($, state);
-    return { result: "会話圧縮を予約した。まだ完了していない。現在のターンを終えてホストの圧縮結果を待つ。" };
+    return { result: "会話圧縮を予約した。まだ完了していない。現在のターンを終えてホストの圧縮結果を待て。" };
   });
 }

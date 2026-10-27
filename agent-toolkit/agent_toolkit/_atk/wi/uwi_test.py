@@ -932,7 +932,7 @@ class TestUwiAdopt:
         git_calls: list[_GitCall] = []
         base_fake = _make_subprocess_fake(git_calls)
         full_oid = "c" * 40
-        subject = "fix: UWI終端記録を安定化する"
+        subject = "fix: UWI終了記録を安定化する"
 
         def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             if cmd == ["git", "-C", str(worktree), "remote", "get-url", "origin"]:
@@ -1347,7 +1347,7 @@ def test_answer_uwi_auto_adopt_preserves_unrelated_terminal_entry(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """事後承認の採用は同じ保存パスで完結し、別の終端項目を保持する。"""
+    """事後承認の採用は同じ保存パスで完結し、別の終了項目を保持する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)

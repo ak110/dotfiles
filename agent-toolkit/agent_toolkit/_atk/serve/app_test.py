@@ -973,7 +973,7 @@ async def test_remove_api_uses_user_permissions_for_terminal_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Web APIは実行環境変数にかかわらず人間主体として終端状態を削除する。"""
+    """Web APIは実行環境変数にかかわらず人間主体として終了状態を削除する。"""
 
     _disable_wi_git(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
@@ -1733,7 +1733,7 @@ async def test_user_comment_api_rejects_non_inbox_states_and_uwi(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """processing・終端状態およびUWIには操作を提供しない。"""
+    """processing・終了状態およびUWIには操作を提供しない。"""
     _patch_comment_edit_dependencies(monkeypatch)
     contents = {
         "processing": _session_review_awi("processing本文\n"),
@@ -1856,7 +1856,7 @@ async def test_typeless_entries_keep_server_running(tmp_path: pathlib.Path, entr
     answered = await client.post("/api/entries/answer", json={"filename": "broken.md", "answer": "回答", "state": "inbox"})
     assert 400 <= answered.status_code < 600
     error = (await answered.get_json())["error"]
-    assert "処理に失敗" in error and "標準エラー" in error and "journalctl --user -u atk-serve.service" in error
+    assert "処理に失敗" in error and "標準エラー" in error and "atk serve logs" in error
     assert (await client.get("/")).status_code == 200
     assert (await client.get("/api/entries/inbox/normal.md")).status_code == 200
 

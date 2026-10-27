@@ -8,20 +8,6 @@
 `atk run-skill <スキル名>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
-- mq add/list/show: エントリの投入・一覧・本文表示。
-  `mq add --batch`は`mq show --all`の出力形式を原文保持で一括取り込みする（移行・復元用途）
-- mq grep: 本文全体を正規表現で検索し`<ファイル名>:<行番号>:<該当行>`形式で列挙する
-- mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
-- mq set-dependencies: 既存AWIの明示依存の更新
-- mq edit: `--body-file`による非対話編集または$EDITORによる保存ファイル全体の編集
-- mq answer: UWIへの回答
-- mq process-loop: orchestrate用途のモデル設定に従いClaude CodeまたはCodexの新規セッションへ
-  `/goal`で完遂条件を設定して常駐実行する。
-  初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
-  待機中と各セッションの開始前は無効化しない限りCI失敗（定期実行の失敗を含む）を自動検出してAWI投入し、
-  待機中に未判定のDependabotアラートがあればprocess-wiを1回実行させて監査させる（`--no-alerts`で無効化）
-- mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: process-loopへの中断要求と追加指示を操作する
-- mq submission begin/end: add-awi-by-userの投入先と作業期間を、process-loopの開始前の活動猶予へ記録する
 - config show/get/set/apply-preset: XDG関連パス・モデル設定の確認・変更
 - plans commit/list: 現行計画またはCI対応レビュー指摘管理表の保存と作業中計画の一覧
 - wait-schedule: 公開情報から委譲待機用のcron式と定期再確認のpromptをJSONで出力する
@@ -79,21 +65,6 @@ _MANAGED_TEMP_CHECK_NEXT_ACTION = (
     "本来の操作は継続した。表示した原因（所有者・権限など）を除去すると、1時間後以降の`atk`の起動で再び回収を試みる"
 )
 """managed-tempの期限切れの対象を自動削除できなかった場合に添える次の操作。"""
-
-
-_LEGACY_TOP_LEVEL_COMMANDS = {"mq": "wi"}
-"""改名前のトップレベルコマンド名と現行名の対応。"""
-
-
-def _resolve_legacy_top_level_command(argv: list[str]) -> list[str]:
-    """先頭のトップレベルコマンド名が改名前の名前であれば現行名へ置き換える。
-
-    稼働中の常駐プロセスは起動時のコマンド行を保持するため、配布後も改名前の名前で起動する。
-    ヘルプと補完には現行名だけを載せ、解決は解析前の生argvで行う。
-    """
-    if argv and argv[0] in _LEGACY_TOP_LEVEL_COMMANDS:
-        return [_LEGACY_TOP_LEVEL_COMMANDS[argv[0]], *argv[1:]]
-    return argv
 
 
 def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
@@ -383,7 +354,6 @@ def main(
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
     _outcome.force_utf8_stdio()
     raw_argv = argv if argv is not None else sys.argv[1:]
-    raw_argv = _resolve_legacy_top_level_command(raw_argv)
     parser = _build_parser(None if "_ARGCOMPLETE" in os.environ else (raw_argv[0] if raw_argv else ""))
     # argcomplete自身と同じ起動条件で読み込み、プラグイン単独で補完を実行する。
     if "_ARGCOMPLETE" in os.environ:

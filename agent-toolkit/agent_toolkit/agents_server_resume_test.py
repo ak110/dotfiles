@@ -144,7 +144,7 @@ class ControlledClaudeClient:
     async def interrupt(self) -> None:
         """実行中のturnだけを中断する。
 
-        Claude Code CLIはturnを終えた後に受けた中断要求へ`ResultMessage`もtaskの終端通知も返さない
+        Claude Code CLIはturnを終えた後に受けた中断要求へ`ResultMessage`もtaskの終了通知も返さない
         （claude_agent_sdk 0.2.161で背景Bashを残してturnを終えた後の`interrupt()`で68秒間観測した）。
         """
         self.interrupts += 1
@@ -259,7 +259,7 @@ async def _auto_resume_after_child_termination(
     session: state.SessionState,
     child_session_id: str,
 ) -> dict[str, Any]:
-    """孫sessionを終端させ、継続指示後の結果を返す。"""
+    """孫sessionを終了させ、継続指示後の結果を返す。"""
     wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
     await _await_state(lambda: session.awaiting_auto_resume)
     assert wait_task.done() is False
@@ -333,7 +333,7 @@ async def test_wait_defers_result_until_child_session_terminates(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """孫sessionが終端するまで初回結果を返さず、確認後の結果を返す。"""
+    """孫sessionが終了するまで初回結果を返さず、確認後の結果を返す。"""
     client = ControlledClaudeClient("claude-child-wait")
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = "child-wait"
@@ -401,7 +401,7 @@ async def test_wait_preserves_unobserved_child_sessions_after_auto_resume(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終端済みと未観測の孫sessionが混在しても未観測IDを再開結果へ残す。"""
+    """終了済みと未観測の孫sessionが混在しても未観測IDを再開結果へ残す。"""
     client = ControlledClaudeClient(f"claude-child-mixed-{unobserved_state}")
     async with _manager(client, monkeypatch) as (manager, _backend):
         terminal_session_id = f"child-terminal-{unobserved_state}"
@@ -476,7 +476,7 @@ async def test_wait_returns_last_result_after_chained_auto_resumes(
 ) -> None:
     """再開turnが背景taskを残して終わる間は結果を返さず、最後の再開turnの結果だけを返す。
 
-    最後のtaskの終端から再開turnの結果までの間に待機の刻みが到来しても、保留中の結果を確定しない。
+    最後のtaskの終了から再開turnの結果までの間に待機の刻みが到来しても、保留中の結果を確定しない。
     """
     client = ControlledClaudeClient("claude-chain")
     async with _manager(client, monkeypatch) as (manager, _backend):
@@ -547,7 +547,7 @@ async def test_live_claude_child_survives_notification_deadline(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """従来の通知期限を過ぎても生存中の子を待ち、子の終端後の最終結果を返す。"""
+    """従来の通知期限を過ぎても生存中の子を待ち、子の終了後の最終結果を返す。"""
     monkeypatch.setattr(resume_waits, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
     client = ControlledClaudeClient("claude-child-deadline")
     async with _manager(client, monkeypatch) as (manager, _backend):
@@ -687,7 +687,7 @@ async def test_codex_child_session_holds_result_until_single_auto_resume(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Codexは孫sessionが残るturnの待機表明を公開せず保留し、孫の終端後に同じsessionを一度だけ再開する。
+    """Codexは孫sessionが残るturnの待機表明を公開せず保留し、孫の終了後に同じsessionを一度だけ再開する。
 
     委譲元は手動の再開指示なしに、再開したturnの完了報告を受け取る。
     """
@@ -730,7 +730,7 @@ async def test_agents_wait_cli_keeps_target_until_child_termination_and_same_ses
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """公開CLIの実プロセスは子の終端まで待ち、同じsessionが続けた作業の結果を回収する。"""
+    """公開CLIの実プロセスは子の終了まで待ち、同じsessionが続けた作業の結果を回収する。"""
     isolated_state = tmp_path / "state" / "agent-toolkit"
     monkeypatch.setattr(state_paths, "state_dir", lambda: isolated_state)
     async with _codex_parent_with_child(isolated_state) as (manager, backend, session, writer):
@@ -794,7 +794,7 @@ async def test_agents_wait_cli_keeps_target_until_child_termination_and_same_ses
             assert session.awaiting_auto_resume and not session.result_available
             assert not writer.result_exists(session.session_id)
             await asyncio.sleep(0.15)
-            assert process.returncode is None, "子の未終端中はCLIが待機を続ける"
+            assert process.returncode is None, "子の未終了中はCLIが待機を続ける"
             assert not resumed
 
             session_registry.publish(child, terminal=True)
@@ -850,7 +850,7 @@ async def test_codex_auto_resume_failure_reports_unobserved_child(
 
 @pytest.mark.asyncio
 async def test_codex_live_child_survives_notification_deadline(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """子の生存中は期限を過ぎても保留し、終端後に同じ親を再開して最終結果を返す。"""
+    """子の生存中は期限を過ぎても保留し、終了後に同じ親を再開して最終結果を返す。"""
     async with _codex_parent_with_child(tmp_path) as (manager, backend, session, _writer):
         child_session_id = "codex-child"
         session_registry.publish(child_session_id, terminal=False)
@@ -981,7 +981,7 @@ async def test_result_without_background_task_is_immediately_available(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """バックグラウンドタスクが無いturnは従来どおり最初の結果で終端する。"""
+    """バックグラウンドタスクが無いturnは従来どおり最初の結果で終了する。"""
     client = ControlledClaudeClient()
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
@@ -1025,7 +1025,7 @@ async def test_pending_result_waits_for_background_task_up_to_bash_limit(
 async def test_background_agent_survives_bash_notification_deadline(
     task_type: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """Bashの期限を超えた背景エージェントも終端通知と再開turnの最終結果まで追跡する。"""
+    """Bashの期限を超えた背景エージェントも終了通知と再開turnの最終結果まで追跡する。"""
     client = ControlledClaudeClient("claude-unbounded-task", report_state=True)
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)

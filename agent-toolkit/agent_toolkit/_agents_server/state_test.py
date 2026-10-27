@@ -7,6 +7,25 @@ import pytest
 from agent_toolkit._agents_server import state, wait_output_tracking
 
 
+def test_result_contract_recovery_consumption_survives_turn_and_resume_state() -> None:
+    """返却形式の回復は新turnと保存復元をまたいで1回に制限する。"""
+    session = state.SessionState(
+        "parent-1",
+        "/tmp",
+        result_contract_recovery_consumed=True,
+        result_contract_recovery_pending=True,
+        result_contract_recovery_reason="形式違反",
+    )
+
+    state.initialize_turn(session)
+    resumed = state.SessionResumeState.from_session(session)
+
+    assert session.result_contract_recovery_consumed
+    assert not session.result_contract_recovery_pending
+    assert session.result_contract_recovery_reason is None
+    assert resumed.result_contract_recovery_consumed
+
+
 def test_pending_tool_uses_track_tools_outside_agents_server() -> None:
     """`agents_server`以外のツール呼び出しも未完了として記録し、結果の到着で除く。"""
     session = state.SessionState("parent-1", "/tmp")
@@ -112,7 +131,7 @@ def test_action_detail_collapses_whitespace_and_truncates_at_limit() -> None:
 
 @pytest.mark.asyncio
 async def test_terminal_transition_logs_safe_fields_once(caplog: pytest.LogCaptureFixture) -> None:
-    """turn終端を一度だけ記録し、結果本文を含めない。"""
+    """turn終了を一度だけ記録し、結果本文を含めない。"""
     session = state.SessionState("session-1", "/tmp")
     session.status = "completed"
     session.agent_message = "秘密の結果本文"

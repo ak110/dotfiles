@@ -7,6 +7,7 @@ import os
 import pathlib
 import stat
 import typing
+from collections.abc import Callable
 
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 
@@ -87,19 +88,21 @@ def _require_owner(metadata: os.stat_result, path: pathlib.Path | str) -> None:
         )
 
 
-def prepare_tree(root: pathlib.Path) -> None:
+def prepare_tree(root: pathlib.Path, *, skip: Callable[[pathlib.Path], bool] | None = None) -> None:
     """撤去する所有木のディレクトリに権限を補い、gitの再判定と撤去に備える。"""
     if os.name != "posix":
         return
     _require_owner(root.lstat(), root)
     with directory(root, restore=False) as opened:
         _require_owner(os.fstat(opened), root)
-        _prepare_children(opened, root)
+        _prepare_children(opened, root, skip)
 
 
-def _prepare_children(opened: int, root: pathlib.Path) -> None:
+def _prepare_children(opened: int, root: pathlib.Path, skip: Callable[[pathlib.Path], bool] | None = None) -> None:
     with os.scandir(opened) as children:
         for child in children:
+            if skip is not None and skip(root / child.name):
+                continue
             metadata = child.stat(follow_symlinks=False)
             _require_owner(metadata, root / child.name)
             if stat.S_ISDIR(metadata.st_mode):
@@ -107,6 +110,6 @@ def _prepare_children(opened: int, root: pathlib.Path) -> None:
                     child.name, dir_fd=opened, expected=metadata, restore=False, display_path=root / child.name
                 ) as nested:
                     try:
-                        _prepare_children(nested, root / child.name)
+                        _prepare_children(nested, root / child.name, skip)
                     except OSError as error:
                         raise ManagedTempError(f"回収対象を走査できない: {root / child.name}: {error}") from error

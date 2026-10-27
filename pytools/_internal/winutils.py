@@ -95,6 +95,69 @@ def broadcast_environment_change() -> None:
         logger.info("環境変数変更のブロードキャストに失敗: %s。変更を反映するため新しい端末を開き直す", e)
 
 
+def _load_kernel32(ctypes_module: typing.Any) -> typing.Any:
+    """Win32 APIを最後のエラーコードを保持する設定で取得する。"""
+    return ctypes_module.WinDLL("kernel32", use_last_error=True)
+
+
+def set_link_times(path: str, timestamp: float) -> None:
+    """Windowsのリンク自身の atime/mtime を設定する。"""
+    import ctypes  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    # Windows専用属性は、モジュールの方針に従って動的な型として扱う。
+    windows_ctypes = typing.cast(typing.Any, ctypes)
+
+    class _FileTime(ctypes.Structure):
+        _fields_ = [("dwLowDateTime", ctypes.c_uint32), ("dwHighDateTime", ctypes.c_uint32)]
+
+    filetime_value = int((timestamp + 11_644_473_600) * 10_000_000)
+    filetime = _FileTime(filetime_value & 0xFFFFFFFF, filetime_value >> 32)
+    file_write_attributes = 0x00000100
+    file_share_read = 0x00000001
+    file_share_write = 0x00000002
+    file_share_delete = 0x00000004
+    open_existing = 3
+    file_flag_backup_semantics = 0x02000000
+    file_flag_open_reparse_point = 0x00200000
+
+    # リパースポイントを開くことで、参照先でなくリンク自身へ時刻を設定する。
+    kernel32 = _load_kernel32(ctypes)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+    ]
+    create_file.restype = ctypes.c_void_p
+    handle = create_file(
+        path,
+        file_write_attributes,
+        file_share_read | file_share_write | file_share_delete,
+        None,
+        open_existing,
+        file_flag_backup_semantics | file_flag_open_reparse_point,
+        None,
+    )
+    if handle == ctypes.c_void_p(-1).value:
+        raise windows_ctypes.WinError(windows_ctypes.get_last_error())
+
+    set_file_time = kernel32.SetFileTime
+    set_file_time.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+    set_file_time.restype = ctypes.c_int
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [ctypes.c_void_p]
+    close_handle.restype = ctypes.c_int
+    try:
+        if not set_file_time(handle, None, ctypes.byref(filetime), ctypes.byref(filetime)):
+            raise windows_ctypes.WinError(windows_ctypes.get_last_error())
+    finally:
+        close_handle(handle)
+
+
 def path_key(entry: str) -> str:
     """PATHのエントリーを、登録済みかどうかの比較に使う正規化キーへ変換する。
 

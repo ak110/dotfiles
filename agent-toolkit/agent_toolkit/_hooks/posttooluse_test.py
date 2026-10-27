@@ -482,7 +482,7 @@ def test_wait_collects_posttooluse_registered_result_and_releases_target(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """開始直後の待機はPostToolUseの登録から終端結果を回収し、登録を解除する。"""
+    """開始直後の待機はPostToolUseの登録から終了時の結果を回収し、登録を解除する。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -789,7 +789,7 @@ def test_free_text_answer_receives_answer_specific_procedure(tmp_path: pathlib.P
     )
 
     assert "提示した選択肢と一致しない自由記述" in answer_body
-    assert "回答に沿って進める" in answer_body
+    assert "回答に沿って進め" in answer_body
 
 
 @pytest.mark.parametrize(
@@ -1360,7 +1360,7 @@ class TestPlanFilePostWriteNotice:
         assert result.returncode == 0
         payload = json.loads(result.stdout)
         message = payload["hookSpecificOutput"]["additionalContext"]
-        assert "書き込み後に計画の構造を確かめる" in message
+        assert "書き込み後に計画の構造を確かめ" in message
         assert "check_plan_file.py" in message
         assert auto_message_opening_attributes(message)["source"] == "posttooluse"
 
@@ -1496,7 +1496,7 @@ class TestExitSessionResetsProcessAwisFlag:
 
     @staticmethod
     def _invoke(session_id: str, state_dir: pathlib.Path, command: str = "atk agents-exit-session") -> None:
-        _run(
+        result = _run(
             {
                 "session_id": session_id,
                 "tool_name": "Bash",
@@ -1505,6 +1505,8 @@ class TestExitSessionResetsProcessAwisFlag:
             },
             state_dir=state_dir,
         )
+        assert result.returncode == 0, result.stderr
+        assert "Traceback" not in result.stderr, result.stderr
 
     def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path) -> None:
         sid = "exit-cli"
@@ -1536,7 +1538,7 @@ class TestExitSessionResetsProcessAwisFlag:
         assert state.get("autonomous_exit_invoked") is True
 
     def test_no_rewrite_when_exit_and_reset_state_is_already_complete(self, tmp_path: pathlib.Path) -> None:
-        """終了CLI記録とリセット済み状態がそろう場合は再書き込みしない。"""
+        """進捗起点と終了CLI記録とリセット済み状態がそろう場合は再書き込みしない。"""
         sid = "exit-no-rewrite"
         path = session_state.state_path(sid)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1551,6 +1553,12 @@ class TestExitSessionResetsProcessAwisFlag:
             ),
             encoding="utf-8",
         )
+        # 終了処理と独立した進捗起点の初回記録を、測定の前に通常のhook経由で済ませる。
+        observed = _run({"session_id": sid, "tool_name": "Read", "tool_input": {}}, state_dir=tmp_path)
+        assert observed.returncode == 0, observed.stderr
+        assert "Traceback" not in observed.stderr, observed.stderr
+        # 更新精度が秒単位のファイルシステムでも、不要な書き込みを確実に検出する。
+        os.utime(path, ns=(0, 0))
         mtime_before = path.stat().st_mtime_ns
         self._invoke(sid, tmp_path)
         assert _read_state(tmp_path, sid)["marker"] == "keep"
@@ -1684,7 +1692,7 @@ class TestAgentsServerSessionState:
         assert all(name in next_action for name in next_action_names)
 
     def test_reduced_terminal_start_status_is_recorded(self, tmp_path: pathlib.Path) -> None:
-        """全候補不可用のstartが返す終端statusをそのまま記録する。"""
+        """全候補不可用のstartが返す終了statusをそのまま記録する。"""
         sid = "terminal-start"
         remote_session_id = "remote-terminal-start"
         result = _run(
@@ -2263,7 +2271,7 @@ class TestAgentsServerSessionState:
 class TestAgentsServerProcessLoopLog:
     """計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の記録。
 
-    `model_type`は開始入力から解決するため、起動と終端を同じsessionへ通して記録の対応を確認する。
+    `model_type`は開始入力から解決するため、起動と終了を同じsessionへ通して記録の対応を確認する。
     """
 
     def _run_session(
@@ -2315,7 +2323,7 @@ class TestAgentsServerProcessLoopLog:
 
     @pytest.mark.parametrize("observe_tool", ("kill",))
     def test_terminal_status_logs_start_and_end(self, tmp_path: pathlib.Path, observe_tool: str) -> None:
-        """観測対象の工程は起動時刻を記録し、終端した観測で終了時刻を記録する。"""
+        """観測対象の工程は起動時刻を記録し、終了した観測で終了時刻を記録する。"""
         text = self._run_session(tmp_path, model_type="execute", observe_tool=observe_tool)
         assert "event=subagent_start" in text
         assert "event=subagent_end" in text
@@ -2326,7 +2334,7 @@ class TestAgentsServerProcessLoopLog:
         assert self._run_session(tmp_path, model_type="chores_fast") == ""
 
     def test_running_status_does_not_log_end(self, tmp_path: pathlib.Path) -> None:
-        """終端していない観測では終了時刻を記録しない。"""
+        """終了していない観測では終了時刻を記録しない。"""
         text = self._run_session(tmp_path, model_type="execute", final_status="running")
         assert "event=subagent_start" in text
         assert "event=subagent_end" not in text
@@ -2340,7 +2348,7 @@ class TestAgentsServerProcessLoopLog:
         assert self._run_session(tmp_path, model_type="execute", expected_session_id="parent") == ""
 
     def test_matching_session_id_logs(self, tmp_path: pathlib.Path) -> None:
-        """親会話のIDに一致すると起動と終端を記録する。"""
+        """親会話のIDに一致すると起動と終了を記録する。"""
         text = self._run_session(tmp_path, model_type="execute", expected_session_id="process-loop")
         assert "event=subagent_start" in text
         assert "event=subagent_end" in text

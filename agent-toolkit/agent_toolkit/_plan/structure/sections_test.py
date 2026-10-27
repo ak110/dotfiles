@@ -442,8 +442,8 @@ def test_detail_structure_rejects_dependency_not_preceding_integration_order() -
 
 
 def test_main_structure_accepts_termination_placeholder() -> None:
-    """`## 終端工程`は終端工程が無い場合`なし`の記載を受理する。"""
-    assert "\n## 終端工程\n\nなし\n" in _VALID_MAIN_CONTENT
+    """`## 公開工程`は公開工程が無い場合`なし`の記載を受理する。"""
+    assert "\n## 公開工程\n\nなし\n" in _VALID_MAIN_CONTENT
     _work_type, errors = plan_sections.check_plan_main_structure(_VALID_MAIN_CONTENT)
     assert not any(f"`## {_plan_format.PLAN_H2_TERMINATION}`は" in error for error in errors), errors
 

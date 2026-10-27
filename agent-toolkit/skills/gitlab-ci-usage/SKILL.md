@@ -8,11 +8,11 @@ description: >
 
 # GitLab CIの使い方
 
-設定の検討には対象版の公式資料とYAMLの読取、最終確認には対象GitLabのlintへ到達する手段が必要である。GitLabやCLIへ到達できない環境では、提示された設定の検討結果と本体lintへ渡す入力を返し、通過判定はGitLabへ接続できるClaude CodeまたはCodexで確かめる。読み手へ伝える説明には[文章の品質基準](references/quality-standards.md)を使う。
+設定を検討する際は、対象バージョンの公式資料とYAMLの読み取りが必要であり、最終確認には対象GitLabのlintを実行できる手段が必要となる。GitLabやCLIに接続できない環境では、提示された設定の検討結果と本体lintへ渡す入力を返し、構文通過の判定はGitLabへ接続できるClaude CodeまたはCodexで確認する。読み手へ説明を伝える際は、[文章の品質基準](references/quality-standards.md)を用いる。
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+本文に記載された各参照の適用条件を確認し、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行に記載された資料は、起動本文とともに配送される。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -27,15 +27,15 @@ description: >
 
 ## 基本方針
 
-新規に使うキーワード、改訂の多いキーワード、不確かな構文は、記憶に頼らず対象バージョンの公式ドキュメントで確かめてから採用する。
-起点は[キーワード全リファレンス](https://docs.gitlab.com/ci/yaml/)、変数は[事前定義変数](https://docs.gitlab.com/ci/variables/predefined_variables/)、外部からの検証は[CI Lint API](https://docs.gitlab.com/api/lint/)とする。
-機能ページの`Tier`・`Offering`を確かめ、YAMLで設定できる属性かAPI専用かを区別する。editionは対象ホストが確定している場合に`glab api version`の`enterprise`で判定する（`false`はCommunity Edition）。
+新しく使うキーワードや改訂頻度の高いキーワード、構文が不確かな項目は、記憶に頼らず対象バージョンの公式ドキュメントで確認してから採用する。
+参照の起点には[キーワード全リファレンス](https://docs.gitlab.com/ci/yaml/)、変数の確認には[事前定義変数](https://docs.gitlab.com/ci/variables/predefined_variables/)、外部からの構文検証には[CI Lint API](https://docs.gitlab.com/api/lint/)を用いる。
+機能説明ページの`Tier`や`Offering`を確認し、YAMLで設定できる項目なのかAPI専用なのかを区別する。エディションは、対象ホストが確定している場合に`glab api version`の`enterprise`の値で判定する（`false`の場合はCommunity Editionを表す）。
 
 ## `rules:changes`とスケジュール実行
 
-`compare_to`を指定しない`rules:changes`は、新規ブランチと、タグ・スケジュール・手動実行など比較元のGit pushイベントを伴わないパイプラインでは常にtrueと評価される（[公式仕様](https://docs.gitlab.com/ci/yaml/#ruleschanges)）。
-差分比較が必要なら`rules:changes:compare_to`で比較元を指定し、対象外としたいジョブは`rules`先頭で除外する。
-タグpushの`CI_PIPELINE_SOURCE`は`push`であり、タグの判定には`CI_COMMIT_TAG`を使う（[パイプライン種別の判定](https://docs.gitlab.com/ci/jobs/job_rules/#ci_pipeline_source-predefined-variable)）。
+`compare_to`を指定しない`rules:changes`は、新規ブランチでの実行時や、タグ・スケジュール・手動実行のように比較対象となるGit pushイベントを伴わないパイプラインにおいて、常にtrueと評価される（[公式仕様](https://docs.gitlab.com/ci/yaml/#ruleschanges)）。
+差分比較したい場合は`rules:changes:compare_to`で比較元を明示し、実行対象から外したいジョブは`rules`の先頭で除外する。
+なお、タグpush時の`CI_PIPELINE_SOURCE`は`push`となるため、タグの判定には`CI_COMMIT_TAG`を使用する（[パイプライン種別の判定](https://docs.gitlab.com/ci/jobs/job_rules/#ci_pipeline_source-predefined-variable)）。
 
 ```yaml
 job:
@@ -47,4 +47,4 @@ job:
 
 ## lint / 検証
 
-ローカルで完結する検証は[`gitlab-ci-local`](https://github.com/firecow/gitlab-ci-local)などで先に確認し、最終確認は`include`・`workflow`・変数を統合評価するGitLab本体のlint（`/api/v4/ci/lint`の`content`へYAML全文、または`/-/ci/lint`ページ）で行う。
+ローカル環境で完結する検証は、まず[`gitlab-ci-local`](https://github.com/firecow/gitlab-ci-local)などを活用して確認する。最終確認は、`include`や`workflow`、変数をまとめて評価できるGitLab本体のlint機能（`/api/v4/ci/lint`の`content`にYAML全文を渡すか、Web UIの`/-/ci/lint`ページ）で行う。

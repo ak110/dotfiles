@@ -26,7 +26,7 @@ def sweep_stale_shared_state(
 ) -> None:
     """7日を超えて更新されていない共有状態を個別失敗で停止せず回収する。
 
-    起動単位の終了診断は、登録簿と終端結果の掃引の後に残る参照元が指すものを保持する。
+    起動単位の終了診断は、登録簿と終了時の結果の掃引の後に残る参照元が指すものを保持する。
     """
     root = _state_paths.state_dir() if state_root is None else state_root
     cutoff = datetime.datetime.now(datetime.UTC).timestamp() if now is None else now
@@ -62,7 +62,7 @@ def sweep_stale_shared_state(
 
 
 def _result_server_instances(base: pathlib.Path) -> set[str]:
-    """各rootの終端結果ファイルが中断の診断参照で指す起動単位を返す。読めないファイルは除く。"""
+    """各rootの終了時の結果ファイルが中断の診断参照で指す起動単位を返す。読めないファイルは除く。"""
     instances: set[str] = set()
     try:
         paths = tuple(base.glob("*/results/*.json"))
@@ -82,7 +82,7 @@ def _result_server_instances(base: pathlib.Path) -> set[str]:
 
 
 def _registry_record_is_running(path: pathlib.Path, state_root: pathlib.Path) -> bool:
-    """登録簿の記録が終端しておらず、記録プロセスのいずれかが実在するかを返す。
+    """登録簿の記録が終了しておらず、記録プロセスのいずれかが実在するかを返す。
 
     更新時刻は所有側の公開の契機でしか進まないため、7日を超えて1つのturnを続ける委譲先の記録も期限切れと判定される。
     削除すると以後の照会は不在と解決するため、記録プロセスが実在する間は保持する。

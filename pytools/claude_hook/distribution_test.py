@@ -4,9 +4,11 @@
 """
 
 import json
+import os
 import pathlib
 import re
 import subprocess
+import sysconfig
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.posix.json"
@@ -32,13 +34,18 @@ def _registered_subcommands() -> list[str]:
 
 def _run_hook(subcommand: str, payload: object) -> subprocess.CompletedProcess[str]:
     """配布設定と同じ隔離実行の形でフックを起動する。"""
+    # 隔離fixtureは親venvをPATHから除くため、今回導入したconsole scriptを直接指定する。
+    executable = pathlib.Path(sysconfig.get_path("scripts")) / (
+        "dotfiles-claude-hook.exe" if os.name == "nt" else "dotfiles-claude-hook"
+    )
     return subprocess.run(
-        ["dotfiles-claude-hook", subcommand],
+        [str(executable), subcommand],
         input=json.dumps(payload, ensure_ascii=False),
         capture_output=True,
         check=False,
         cwd=_REPO_ROOT,
         encoding="utf-8",
+        timeout=15,
     )
 
 

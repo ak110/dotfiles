@@ -395,7 +395,7 @@ type = "linter"
 path = "scripts/check_statusline_version.py"
 pass-filenames = false
 # prekのpre-commitが実行する`pyfltr fast`で版数更新前の途中commitを遮断しないよう、fastにしない。
-# 終端担当が公開前のローカル検証で`--enable=statusline-version`を指定して起動する。
+# 公開担当が公開前のローカル検証で`--enable=statusline-version`を指定して起動する。
 # pyfltrのPath.matchは`**`を任意階層として扱わないため、Git管理下にある深さを明示する。
 targets = ["rust/claude-statusline/*", "rust/claude-statusline/src/*"]
 fast = false

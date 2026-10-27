@@ -17,7 +17,7 @@ def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
     section = markdown_section(reference, TWO_LAYER_WAIT_HEADING)
     assert {"`functions.exec`", "`atk agents wait`", "`cell_id`", "`functions.wait`"} <= set(re.findall(r"`[^`]+`", section))
     assert "タスク固有timeoutを渡さず" in section
-    assert "対象が未終端なら" in section
+    assert "対象が未終了なら" in section
     assert "`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」" in section
     waiting = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/waiting-and-monitoring.md").read_text(
         encoding="utf-8"

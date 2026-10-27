@@ -1,6 +1,6 @@
 # Hookの出力フィールド
 
-本書はhookの出力フィールドの選択方針と、`PermissionRequest`・`UserPromptSubmit`の出力の扱いを定める。
+本書では、hookが出力するフィールドの選択方針と、`PermissionRequest`および`UserPromptSubmit`における出力の扱いを定める。
 
 ## 名指し参照の読込方法
 
@@ -13,74 +13,74 @@
 
 ## 出力フィールドの使い分け
 
-本節は出力先の選択方針だけを定め、各フィールドのスキーマとイベント別の対応可否は`claude-hooks.md`「hookスクリプトの基本プロトコル」が挙げる公式ドキュメントに従う。
+本節では出力先の選択方針を定める。各フィールドのスキーマやイベントごとの対応状況は、`claude-hooks.md`「hookスクリプトの基本プロトコル」で挙げる公式ドキュメントに従う。
 
-イベントごとの出力契約を公式リファレンスからスキーマへ写し、登録したhookの応答を検証する。hook追加・変更時は契約と検証を同じ変更単位で更新する。
+イベントごとの出力契約は公式リファレンスからスキーマに反映し、登録したhookの応答を検証する。hookの追加や変更をする際は、出力契約と検証処理を同じ変更単位で更新する。
 
-Claude Codeの`Stop hook error: JSON validation failed`はプロンプト型hookの評価器がモデルの応答をJSONとして解析できなかった場合だけに出る。`/goal`はセッション限りのプロンプト型Stop hookを登録するため、`/goal`を設定したセッションではコマンド型hookの出力形式と無関係にこの表示が現れる。
+Claude Codeの`Stop hook error: JSON validation failed`は、プロンプト型hookの評価器がモデルの応答をJSONとして解析できなかった場合に発生する。`/goal`コマンドはセッション中のみ有効なプロンプト型Stop hookを登録するため、`/goal`を設定したセッションでは、コマンド型hookの出力形式にかかわらずこの表示が現れることがある。
 監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日」にある。
 
-PreToolUse・PostToolUse・UserPromptSubmitでエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一の通知手段として使う。各フィールドがターン継続を強制するかは後掲の表に従う。
-stderr出力は`exit 2`のblockと組み合わせる場合に限る。
-`systemMessage`はユーザーの判断・操作に影響する情報通知に限る（失敗しない自動補正の発動など対応を要しない反復事象は対象外）。
-Stop/SubagentStopでターン継続を強制する場合、エラーとしての遮断（振り返り誘導等）は`decision: "block"`＋`reason`、想定内の助言は`hookSpecificOutput.additionalContext`を使う。
+PreToolUse、PostToolUse、UserPromptSubmitでエージェントに行動を促す際は、`hookSpecificOutput.additionalContext`を第一の通知手段として用いる。各フィールドがターン継続を強制するかどうかは、以下の表に従う。
+標準エラー出力（stderr）は、終了コード2による遮断（block）と組み合わせる場合に限って使用する。
+`systemMessage`は、ユーザーの判断や操作に影響する重要な情報通知に限定する（失敗しない自動補正の発動など、ユーザーの対応を必要としない定常的な事象には使わない）。
+StopやSubagentStopでターン継続を強制する場合、振り返りの誘導といったエラー相当の遮断には`decision: "block"`と`reason`を使い、想定内の助言には`hookSpecificOutput.additionalContext`を使う。
 
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
-| `hookSpecificOutput.additionalContext` | エージェント | 行動を促す主要な通知手段。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
-| `hookSpecificOutput.updatedToolOutput` | エージェント | PostToolUseでモデルへ渡すツール結果の置き換え。同じイベントの複数のhookは元の出力に並行して動き、最後に返った置き換えが採られる |
-| `reason` | エージェント（`decision: "block"`時のみ） | blockを併用する場合の理由欄 |
+| `hookSpecificOutput.additionalContext` | エージェント | 行動を促す主要な通知手段。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop・SubagentStopでは継続を強制する |
+| `hookSpecificOutput.updatedToolOutput` | エージェント | PostToolUseでモデルへ渡すツール結果の置き換え。同じイベントの複数のhookは元の出力に対して並行して動作し、最後に返された置き換え結果が採用される |
+| `reason` | エージェント（`decision: "block"`時のみ） | blockと併用する場合の理由欄 |
 | `permissionDecisionReason` | deny時はエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
-| `systemMessage`・`stopReason` | ユーザーのみ | 情報通知と`continue: false`時の終了メッセージ |
-| `decision.*` | PermissionRequest専用 | 許可・拒否の決定。`hookSpecificOutput`直下に置く |
+| `systemMessage`・`stopReason` | ユーザーのみ | 情報通知および`continue: false`時の終了メッセージ |
+| `decision.*` | PermissionRequest専用 | 許可や拒否の決定。`hookSpecificOutput`の直下に配置する |
 
 deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもエージェントに届くため、片方に統一する（努力目標）。
 
-`decision: "block"`の挙動はイベント別に異なる。
-Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
-PreToolUse・PostToolUse・UserPromptSubmitで挙動の強制が不要であれば`additionalContext`単独で出力する。
+`decision: "block"`の動作はイベントごとに異なる。
+StopやSubagentStopではセッション停止を防いでターン継続を強制し、PostToolUseでは直前のツール結果にblock理由を添えて返す。
+PreToolUse、PostToolUse、UserPromptSubmitで挙動の強制が不要な場合は、`additionalContext`単独で出力する。
 
-block・warn・noticeの本文の整形（整形関数、`fix`の要否、種別、反復時の縮約と昇格）は`claude-hooks-messages.md`「通知本文の整形」に従う。
+block、warn、noticeの各通知本文の整形（整形関数の利用、`fix`の要否、種別、繰り返した際の要約や重要度引き上げ）は、`claude-hooks-messages.md`「通知本文の整形」に従う。
 
-警告専用のPreToolUse出力は`hookSpecificOutput.additionalContext`だけを返し、`permissionDecision`を省略する（通常の権限フローが適用される）。
+警告専用のPreToolUse出力では`hookSpecificOutput.additionalContext`のみを返し、`permissionDecision`は省略する（通常の権限判定フローが適用される）。
 
 ### 出力上限
 
-[公式HooksリファレンスのJSON output](https://code.claude.com/docs/en/hooks#json-output)は`additionalContext`・`systemMessage`・`initialUserMessage`の各文字列と、通常の標準出力に10,000文字の上限を定める。
-JSONはフィールドの値ごと、通常の標準出力は全体を測り、同じイベントで動く複数hookの値も個別に測る。
-超過するとClaude Codeは全文をセッション内のファイルへ保存し、ファイルパスと最大2,000文字の冒頭プレビューへ置き換える。
-Claude Code自身はモデルにファイルの読取を求めないため、必ず届く必要がある情報は上限内に収める。
+[公式HooksリファレンスのJSON output](https://code.claude.com/docs/en/hooks#json-output)では、`additionalContext`、`systemMessage`、`initialUserMessage`の各文字列、および通常の標準出力に10,000文字の上限が定められている。
+文字数は、JSONでは各フィールドの値ごとに、通常の標準出力では全体でカウントされ、同一イベントで動く複数のhookも個別にカウントされる。
+上限を超過した場合、Claude Codeは全文をセッション内の一時ファイルに保存し、ファイルパスと先頭最大2,000文字のプレビュー表示に置き換える。
+Claude Code自身がモデルにそのファイルの読み取りを促すことはないため、確実に届ける必要がある情報は10,000文字の上限内に収める。
 
-公式資料の10,000文字制限は、PreToolUseが終了コード2で返す標準エラーを対象に含めていない。
-標準エラー44,224文字が、接頭辞込み44,346文字のツール結果として全文届いた観測がある。
-この値は一条件の配送量であり、標準エラーの上限を保証する値ではない。
+公式資料の10,000文字制限には、PreToolUseが終了コード2で返す標準エラー出力は含まれていない。
+標準エラー出力44,224文字が、接頭辞を含めて44,346文字のツール結果として全文届いた観測記録がある。
+ただし、この数値は特定の条件下で観測された配送量であり、標準エラー出力の上限を恒久的に保証するものではない。
 監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力上限：2026年10月20日」にある。
 
 ### PermissionRequest
 
-確認ダイアログ表示時に発火し、ユーザーに代わって許可・拒否を決める。PreToolUseと異なり`hookSpecificOutput`直下に`decision`オブジェクトを置き、`hookEventName`は`"PermissionRequest"`とする。
+確認ダイアログの表示時に発火し、ユーザーに代わってツールの実行許可や拒否を判定する。PreToolUseとは異なり、`hookSpecificOutput`の直下に`decision`オブジェクトを配置し、`hookEventName`には`"PermissionRequest"`を指定する。
 
-組み込みのdeny / askルールはhookの戻り値に関わらず評価される。`.claude/`配下への書き込み確認等の組み込みaskルールはPreToolUseの`allow`では上書きできず、PermissionRequestの`decision.behavior: "allow"`でダイアログを抑制できる。組み込みdenyルールは`allow`を返しても適用される。
-`updatedInput`は入力値を変えるだけで確認ダイアログは残るため、ダイアログを伴う値を拒否するにはブロックで扱う。
+組み込みのdenyルールやaskルールは、hookの戻り値にかかわらず評価される。たとえば`.claude/`配下への書き込み確認といった組み込みのaskルールは、PreToolUseで`allow`を返しても上書きできないが、PermissionRequestで`decision.behavior: "allow"`を返すことでダイアログの表示を抑制できる。なお、組み込みのdenyルールは`allow`を返しても強制的に適用される。
+`updatedInput`は入力値を変更するだけで確認ダイアログ自体は残るため、確認ダイアログが表示されるような入力を拒否したい場合はブロックとして処理する。
 
-`Read`のdeny規則でディレクトリ指定を欠くglobは、gitignore構文に従って任意の深さで一致するため、ディレクトリを走査する読み取りコマンドを一律に確認ダイアログの対象へ変える。
-このダイアログは本イベントの`allow`でも抑止できないため、保護する対象はそのファイルを持つリポジトリの設定へ、走査対象を巻き込まない具体的なパスで書く。
+`Read`ツールのdeny規則でディレクトリの指定がないglobパターンを使うと、gitignore構文に従って任意の深さで一致するため、ディレクトリを走査する読み取りコマンドが一律で確認ダイアログの対象になる。
+このダイアログはPermissionRequestの`allow`でも抑制できないため、保護対象のファイルは走査対象全体を巻き込まないように具体的なパスでリポジトリの設定に記述する。
 
-`matcher`はツール名で評価する（`Bash` / `Edit|Write`等）。入力payloadは`tool_name` / `tool_input`に加え`permission_suggestions`配列を持つ。
+`matcher`はツール名（`Bash`、`Edit|Write`など）で評価する。入力payloadには`tool_name`や`tool_input`に加えて`permission_suggestions`配列が含まれる。
 
 ### UserPromptSubmit
 
-`hookSpecificOutput.additionalContext`をそのターンの応答生成前にユーザー発話へ前置注入する誘導に使う。
-Claude Codeでは`decision`と独立に注入でき、stdoutのプレーン出力もコンテキストへ加わる。Codexでは`hookSpecificOutput.hookEventName`を`UserPromptSubmit`として`additionalContext`を返す。
+エージェントがそのターンの応答を生成する前に、`hookSpecificOutput.additionalContext`を用いてユーザー発話の先頭にコンテキストを前置注入する。
+Claude Codeでは`decision`とは独立して注入でき、標準出力（stdout）へのテキスト出力もコンテキストに追加される。Codexでは`hookSpecificOutput.hookEventName`に`UserPromptSubmit`を指定して`additionalContext`を返す。
 
 ## 組織向け設定
 
-Claude Code 2.1.304以降の`cc-plugin-sec-default`が有効な管理設定・Team・Enterpriseの環境では、ユーザーが入れたプラグインの一部のFunction hooksの実行が省かれる。
-全配布先で必要な処理は、`hooks.json`のコマンドhookか、実行が省かれないFunction hooksのイベントへ置く。
-実行が省かれる対象は次のとおりで、これらへのFunction hooksの登録を避ける。
+Claude Code 2.1.304以降で`cc-plugin-sec-default`が有効になっている管理環境（Team・Enterpriseなど）では、ユーザーが導入したプラグインに含まれる一部のFunction hooksの実行が省略される。
+すべての配布先で確実に実行する必要がある処理は、`hooks.json`のコマンドhookか、実行が省略されないFunction hooksイベントに配置する。
+実行が省略される対象は以下のとおりであり、これらにFunction hooksを登録することは避ける。
 
 - `classic.`で始まるイベント
-- `prompt.section`・`prompt.context`・`prompt.attachment`・`prompt.compose`・`skill.prompt`・`attribution.text`・`session.compact`・`settings.read`
-- doorが`attachment`・`hook-context`・`compaction`の`session.append`
+- `prompt.section`、`prompt.context`、`prompt.attachment`、`prompt.compose`、`skill.prompt`、`attribution.text`、`session.compact`、`settings.read`
+- doorが`attachment`、`hook-context`、`compaction`である`session.append`
 
 監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks-output.md：組織向け設定：2026年10月20日」にある。

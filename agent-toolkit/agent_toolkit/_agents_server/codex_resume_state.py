@@ -83,7 +83,7 @@ def validate_resume(
 
 
 def handoff_failure(status: str, error: Any) -> bool:
-    """状態互換性の拒否と、旧版が通信切断として保持した終端を引き継ぎ対象とする。"""
+    """状態互換性の拒否と、旧版が通信切断として保持した終了を引き継ぎ対象とする。"""
     if status != "failed" or not isinstance(error, dict):
         return False
     message = error.get("message")

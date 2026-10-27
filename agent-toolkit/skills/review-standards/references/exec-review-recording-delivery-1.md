@@ -2,6 +2,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| AWIの形式を判断する前 | `../../wi-standards/references/awi-body.md`の冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md#「実行レビューの判定」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「実行レビューの判定」` |
 | 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/exec-review.subagent.md#「出力」` |

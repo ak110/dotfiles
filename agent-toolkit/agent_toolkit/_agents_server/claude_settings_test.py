@@ -258,7 +258,7 @@ async def test_usage_limit_api_migration_and_cold_resume(
                 assert result["session_id"] == identifier
                 return result
             await asyncio.sleep(0)
-        pytest.fail("会話が終端しない")
+        pytest.fail("会話が終了しない")
 
     async with open_manager() as manager:
         started = await manager.start("claude:sonnet/high", "作業する", str(tmp_path), launch_kind=launch_kind)
@@ -437,7 +437,7 @@ async def test_api_switched_delegate_returns_to_subscription_after_reset(
             if result["status"] in {"completed", "failed", "interrupted"}:
                 return result
             await asyncio.sleep(0)
-        pytest.fail("会話が終端しない")
+        pytest.fail("会話が終了しない")
 
     async with server_manager.AgentsServerManager() as manager:
         install_backend(
@@ -482,9 +482,9 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
     monkeypatch: pytest.MonkeyPatch,
     mode: str,
 ) -> None:
-    """孫sessionの終端による自動再開も、解除予定時刻の後なら同じ会話をサブスクリプションで再開する。
+    """孫sessionの終了による自動再開も、解除予定時刻の後なら同じ会話をサブスクリプションで再開する。
 
-    APIへ移した会話が孫sessionを待って結果を保留し、孫の終端で自動再開する。
+    APIへ移した会話が孫sessionを待って結果を保留し、孫の終了で自動再開する。
     解除予定時刻より前の自動再開はAPIの所有タスクへ送り、後の自動再開は通常の追送と同じくサブスクリプションへ戻す。
     戻したturnがなお上限で拒否された場合は、既存の切替で同じ会話を再びAPIで続ける。
     """
@@ -520,7 +520,7 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
         ) as backend:
             install_backend(manager, "claude", backend)
             session_registry.publish("child", terminal=False, cwd=str(tmp_path))
-            # 公開待機が呼ばれるかによらず、上限からのAPI移行と孫sessionの終端による自動再開を常駐監視で進める。
+            # 公開待機が呼ばれるかによらず、上限からのAPI移行と孫sessionの終了による自動再開を常駐監視で進める。
             manager.activate()
             try:
                 await manager.start("claude:sonnet/high", "作業する", str(tmp_path))

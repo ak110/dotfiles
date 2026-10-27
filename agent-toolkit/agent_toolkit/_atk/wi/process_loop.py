@@ -61,7 +61,7 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
     件数0の間はwatchdogによる変更検知と10分間隔のremote同期を含む待機ループへ進み、
     待機に入るたびに待機メッセージを1度出力する。
     待機ループがタイムアウト（変更未検知）で復帰した場合、上流差分があれば`update-dotfiles`を実行したうえで、
-    `~/dotfiles`チェックアウト内`agent-toolkit/scripts/`配下コードの起動時ハッシュと現在のハッシュを比較し、
+    `~/dotfiles`チェックアウト内`agent-toolkit/agent_toolkit/`と`agent-toolkit/scripts/`配下の実行コードの起動時ハッシュと現在のハッシュを比較し、
     差異があれば同じく`_pl_update.restart_process_loop`で再起動する。他プロセスが先に`update-dotfiles`を
     完了させていてもローカルコードの変更を独立して検知できる。`--no-update`指定時はこの待機中の
     更新反映・再起動チェックも抑止する。`~/dotfiles`チェックアウトが見つからない環境
@@ -83,7 +83,7 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
         args.resume = _auto_resume.select_session(target_repo_id, local_path)
     prompt = _pl_session.build_process_loop_prompt()
     dotfiles_root = _pl_update.resolve_dotfiles_root()
-    startup_hash = _pl_update.code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
+    startup_hash = _pl_update.code_hash(dotfiles_root / "agent-toolkit") if dotfiles_root else None
     mise_refresh_root = dotfiles_root if target_repo_id == _pl_worktree.DOTFILES_REPO_ID and not args.no_update else None
     mise_refreshed_at: float | None = None
     if mise_refresh_root is not None:

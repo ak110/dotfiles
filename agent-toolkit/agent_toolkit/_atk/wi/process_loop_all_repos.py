@@ -35,10 +35,10 @@ _TERMINAL_STATUSES = {"completed", "failed", "interrupted", "expired"}
 
 
 class RepositoryDelegateManager(Protocol):
-    """公開CLIから注入される、通常delegateの起動・再開・終端の契約。"""
+    """公開CLIから注入される、通常delegateの起動・再開・終了の契約。"""
 
     async def activate_async(self) -> None:
-        """登録と終端監視を有効にする。"""
+        """登録と終了監視を有効にする。"""
         ...
 
     async def start(
@@ -58,7 +58,7 @@ class RepositoryDelegateManager(Protocol):
         ...
 
     async def wait(self) -> dict[str, Any]:
-        """終端と通知を既存の回収形式で受け取る。"""
+        """終了と通知を既存の回収形式で受け取る。"""
         ...
 
     async def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
@@ -66,7 +66,7 @@ class RepositoryDelegateManager(Protocol):
         ...
 
     async def kill(self, session_id: str, timeout: float = 270, stop: bool = False) -> dict[str, Any]:
-        """待機上限を省略した場合は270秒で担当の終端を確認する。"""
+        """待機上限を省略した場合は270秒で担当の終了を確認する。"""
         ...
 
     async def close(self) -> None:
@@ -476,7 +476,7 @@ def _run_loop(
         raise ValueError("all-reposの--resumeには担当session IDを指定する")
     gate = _watch.StartGate(private_notes)
     dotfiles_root = _update.resolve_dotfiles_root()
-    startup_hash = _update.code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
+    startup_hash = _update.code_hash(dotfiles_root / "agent-toolkit") if dotfiles_root else None
     last_alert_checks: dict[str, float | None] = {}
     print("atk wi process-loop all-repos 常駐モード開始。Ctrl+Cで終了。", flush=True)
     try:

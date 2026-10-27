@@ -773,9 +773,9 @@ def _wi_has_scope(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> bool:
-    """`エージェント由来のWI`の本文が非空の`## 適用範囲`を持つかを返す。
+    """登録時に対象を確定したWI本文を持つかを返す。
 
-    WIが確定した適用範囲は計画で再導出せず参照するため、同節を持つWIの採用行は根拠を省略できる。
+    登録済みの反映内容または旧形式の適用範囲を参照し、計画で再導出しない。
     WIファイルを特定できない場合はWI本文との比較を省略した事実を`origin_skips`へ積んで真を返し、作成を遮断しない。
     """
     root = _plan_file.private_notes_root(private_notes, home=home)
@@ -792,11 +792,13 @@ def _wi_has_scope(
         origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。WI本文を取得できない: {name}: {error}")
         return True
     headings = extract_headings(content)
-    index = find_heading_index(headings, 2, PLAN_WI_SCOPE_HEADING)
-    if index is None:
-        return False
-    start, end = heading_subtree_range(headings, index)
-    return any(line.strip() for _lineno, line in lines_within(list(enumerate(content.splitlines(), 1)), start, end))
+    for heading in ("反映内容と反映先", PLAN_WI_SCOPE_HEADING):
+        index = find_heading_index(headings, 2, heading)
+        if index is not None:
+            start, end = heading_subtree_range(headings, index)
+            if any(line.strip() for _lineno, line in lines_within(list(enumerate(content.splitlines(), 1)), start, end)):
+                return True
+    return False
 
 
 def _check_human_action_table(  # pylint: disable=too-many-arguments
@@ -815,7 +817,7 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
     WIファイルのfrontmatterと本文に一致するか確かめる。`[対話由来]`注記のある行は機械判定できない明示由来を
     根拠とするためWI本文とは比較しない。`エージェント由来のWI`は採否にかかわらず根拠を必要とし、
     採用行の根拠が`-`の場合は`origin_notices`を渡した場合だけ移行の指摘を積む。
-    `origin_skips`も渡した場合はWI本文を読み、非空の`## 適用範囲`を持てば指摘を積まない。
+    `origin_skips`も渡した場合はWI本文を読み、非空の`## 反映内容と反映先`または`## 適用範囲`を持てば指摘を積まない。
     改名前の由来は読み取り互換で受理する。
 
     人間由来の2区分（`人間由来のWI`と`ユーザー指示`）は、採否にかかわらず原文の要求単位ごとの
@@ -899,7 +901,8 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
                         origin_notices.append(
                             f"`## {PLAN_H2_ACTION}`の`{PLAN_AGENT_WI_ORIGIN}`の採用行の`根拠`へ、"
                             "適用範囲を再導出した結果と根拠を記載する。"
-                            f"関連WIの本文が非空の`## {PLAN_WI_SCOPE_HEADING}`を持つ場合は`-`のままWIを参照する"
+                            "関連WIの本文が非空の`## 反映内容と反映先`または"
+                            f"`## {PLAN_WI_SCOPE_HEADING}`を持つ場合は`-`のままWIを参照する"
                         )
                 else:
                     errors.append(f"`## {PLAN_H2_ACTION}`の採用以外の`根拠`は理由を自足して記載する: {root}")
@@ -1252,13 +1255,13 @@ def _check_verification_section(
 def _check_termination_section(
     body: list[tuple[int, str]], headings: list[PlanHeading], termination_index: int | None
 ) -> list[str]:
-    """`## 終端工程`に記載があるかを確かめる（終端工程が無い場合は`なし`と書く運用を許容する）。"""
+    """`## 公開工程`に記載があるかを確かめる（公開工程が無い場合は`なし`と書く運用を許容する）。"""
     if termination_index is None:
         return []
     start, end = heading_subtree_range(headings, termination_index)
     section = lines_within(body, start, end)
     if not [line for _lineno, line in section if line.strip()]:
-        return [f"`## {PLAN_H2_TERMINATION}`は終端工程を記載する（無い場合は`なし`と書く）"]
+        return [f"`## {PLAN_H2_TERMINATION}`は公開工程を記載する（無い場合は`なし`と書く）"]
     return []
 
 

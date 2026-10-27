@@ -76,7 +76,7 @@ def _start_child(session: state.SessionState, tool_use_id: str, child_id: str) -
 @pytest.mark.parametrize("delivery", ["reply_started", "reply_ambiguous", "steered", "reply_failed"])
 @pytest.mark.parametrize("result_form", ["structured", "text"])
 def test_send_message_reactivates_terminal_child_until_observed(namespace: str, delivery: str, result_form: str) -> None:
-    """追送の配送結果で終端済みの子を再追跡し、曖昧な開始も終端観測まで保持する。"""
+    """追送の配送結果で終了済みの子を再追跡し、曖昧な開始も終了観測まで保持する。"""
     session = state.SessionState("parent-1", "/work")
     session.terminal_child_session_ids.add("child-1")
     session.auto_resume_consumed = True
@@ -130,7 +130,7 @@ def test_send_message_reactivates_terminal_child_until_observed(namespace: str, 
 )
 @pytest.mark.asyncio
 async def test_child_session_collected_by_agents_wait_leaves_auto_resume_targets(tool_name: str, command: str) -> None:
-    """委譲先が`atk agents wait`で回収した孫sessionは、終端を理由とする自動再開の対象から外れる。"""
+    """委譲先が`atk agents wait`で回収した孫sessionは、終了を理由とする自動再開の対象から外れる。"""
     session = state.SessionState("parent-1", "/tmp")
     _start_child(session, "toolu_1", "child-1")
     _start_child(session, "toolu_2", "child-2")
@@ -175,7 +175,7 @@ def test_child_session_collected_by_agents_wait_output_file(tmp_path: pathlib.Pa
     )
     wait_output_tracking.consume_claude_agents_server_message(
         session,
-        {"content": [{"tool_use_id": "toolu_2", "content": f"保存先: {output}\n行数: 1\n終端: 1件"}]},
+        {"content": [{"tool_use_id": "toolu_2", "content": f"保存先: {output}\n行数: 1\n終了: 1件"}]},
     )
 
     assert not session.live_child_session_ids
@@ -183,10 +183,10 @@ def test_child_session_collected_by_agents_wait_output_file(tmp_path: pathlib.Pa
 
 
 def test_agents_wait_body_lines_are_not_collection_evidence(tmp_path: pathlib.Path) -> None:
-    """要約が表示する本文の範囲にある終端行と保存先の行は、その行のsessionを回収済みにしない。
+    """要約が表示する本文の範囲にある終了行と保存先の行は、その行のsessionを回収済みにしない。
 
     委譲先の本文は自身の待機の出力を引用し得る。本文の行を根拠にすると、未回収の孫sessionを追跡から外し、
-    その終端を理由とする自動再開が起きなくなる。本文の範囲の外にある保存先は従来どおり読む。
+    その終了を理由とする自動再開が起きなくなる。本文の範囲の外にある保存先は従来どおり読む。
     """
     session = state.SessionState("parent-1", "/tmp")
     for index, child_id in enumerate(("child-1", "child-2", "child-3"), start=1):
@@ -196,8 +196,8 @@ def test_agents_wait_body_lines_are_not_collection_evidence(tmp_path: pathlib.Pa
     quoted = tmp_path / "quoted.jsonl"
     quoted.write_text('{"session_id": "child-3", "status": "completed"}\n', encoding="utf-8")
     output = (
-        f"保存先: {saved}\n行数: 1\n終端: 1件\n"
-        "終端行: session_id=child-1 label=なし status=completed agent_message_path=/body.md\n"
+        f"保存先: {saved}\n行数: 1\n終了: 1件\n"
+        "終了行: session_id=child-1 label=なし status=completed agent_message_path=/body.md\n"
         "本文開始: session_id=child-1\n"
         '{"session_id": "child-2", "status": "completed"}\n'
         f"保存先: {quoted}\n"
@@ -251,10 +251,10 @@ async def test_background_agents_wait_output_releases_collected_child_before_uno
     output_text: str | None,
     expected_unobserved: list[str] | None,
 ) -> None:
-    """背景実行の待機が出力ファイルへ書いた終端行の孫sessionは、未観測として記録しない。
+    """背景実行の待機が出力ファイルへ書いた終了行の孫sessionは、未観測として記録しない。
 
     背景起動のツール結果は起動の通知だけで、結果本文は出力ファイルへ後から書かれる。
-    出力ファイルに終端行が無い場合は、従来どおり未観測として記録する。
+    出力ファイルに終了行が無い場合は、従来どおり未観測として記録する。
     """
     from agent_toolkit._agents_server import claude  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
@@ -269,7 +269,7 @@ async def test_background_agents_wait_output_releases_collected_child_before_uno
         saved = tmp_path / "saved" / "output.txt"
         saved.parent.mkdir()
         saved.write_text('{"session_id": "child-1", "status": "completed", "agent_message": "長い本文"}\n', encoding="utf-8")
-        output_text = f"保存先: {saved}\n行数: 1\n終端: 1件\n"
+        output_text = f"保存先: {saved}\n行数: 1\n終了: 1件\n"
     if output_text is not None:
         output.parent.mkdir(parents=True)
         output.write_text(output_text, encoding="utf-8")
@@ -301,7 +301,7 @@ def test_unrelated_bash_output_does_not_release_child_session(command: str) -> N
 
 
 def test_stderr_saved_jsonl_is_not_wait_collection(tmp_path: pathlib.Path) -> None:
-    """stderrの保存先が終端JSONを含んでも、stdoutの回収結果へ混ぜない。"""
+    """stderrの保存先が終了JSONを含んでも、stdoutの回収結果へ混ぜない。"""
     session = state.SessionState("parent-1", str(tmp_path))
     session.live_child_session_ids.add("child-1")
     output = tmp_path / "stderr.jsonl"

@@ -1,38 +1,38 @@
 # Alpine.js記述スタイル
 
-本書はAlpine.jsを用いる実装の記述スタイル基準を定める。
-対象バージョン: Alpine.js v3系。公式ドキュメントは<https://alpinejs.dev/start-here>を参照する。
+本書は、Alpine.jsを使用する実装における記述スタイルの基準を定める。
+対象バージョン: Alpine.js v3系。公式ドキュメントは <https://alpinejs.dev/start-here> を参照する。
 
 ## 適用範囲の判断
 
-- Alpine.jsは既存HTMLへの軽量な振る舞い付与に限定して使う（ルーティング・状態管理基盤を要するSPA的用途ではVue/Reactを選ぶ）
-- x-dataは機能境界で分け、状態の依存を局所化する
+- Alpine.jsは、既存のHTMLに対して軽量な振る舞いを付加する用途に限定して採用する（ルーティングや高度な状態管理基盤を必要とするSPA用途では、VueやReactを選定する）。
+- `x-data`は機能の境界ごとに分割し、状態の依存関係をコンポーネント内に局所化する。
 
-## x-data・Alpine.data()の使い分け
+## x-dataとAlpine.data()の使い分け
 
-- 単発の局所状態はx-data、再利用や非自明な判定はAlpine.dataへ分け、ロジックの読解と検証を容易にする
+- 単一コンポーネントで完結する局所的な状態には`x-data`を使い、複数箇所で再利用するロジックや複雑な条件判断を含む場合は`Alpine.data()`に切り出して、コードの可読性とテスト容易性を高める。
 
-## x-if/x-showの使い分け
+## x-ifとx-showの使い分け
 
-- 表示の切替はx-show、DOMの生存期間を変える場合はx-ifを選ぶ
-- x-ifは対象要素へ直接付与せず、templateで囲む
+- 要素の表示・非表示を単に切り替える場合は`x-show`を使い、DOM要素自体の生成や破棄を制御する場合は`x-if`を選択する。
+- `x-if`は対象の要素へ直接付与せず、`<template>`タグで囲んで指定する。
 
-## x-forとkey指定
+## x-forとkeyの指定
 
-- `x-for`は`<template>`タグに付与し、直下に単一のルート要素を置く
-- 並び替え・挿入・削除が起こり得るループでは`:key`にID等の一意な値を指定する（未指定ではDOM要素が誤って再利用され、入力値やリスナーの紐付けがずれる）
+- `x-for`は`<template>`タグに付与し、その直下には単一のルート要素を配置する。
+- 並び替え、要素の挿入、削除が発生しうるループ処理では、`:key`にIDなどの一意な値を必ず指定する（キーを指定しないとDOM要素が予期せず再利用され、入力欄の値やイベントリスナーの対応関係がずれる恐れがある）。
 
-## CSP対応・セキュリティ
+## CSP対応とセキュリティ
 
-- Content Security Policyで`unsafe-eval`を許可できない環境では`@alpinejs/csp`ビルドを使う。標準ビルドはテンプレート式の評価に`eval`相当の機構を使うため、`script-src`に`nonce`ベースの`strict-dynamic`のみを許可する構成と両立しない
-- CSPビルド利用時は複雑なインライン式を避け、ロジックを`Alpine.data()`の関数・getterへ抽出する（CSPビルドの評価器はJavaScript式の安全なサブセットのみを解釈するため）
-- 信頼できないデータを`x-html`や`$el.insertAdjacentHTML()`等のHTML注入へ渡さない（XSS。後者はCSPビルドでもサポート対象外）。テキストは`x-text`・テキスト補間で表示し、HTML挿入はサニタイズ済みの信頼済み文字列に限る
+- Content Security Policy（CSP）で`unsafe-eval`を許可できない環境では、`@alpinejs/csp`ビルドを採用する。標準ビルドはテンプレート式の評価に`eval`相当の仕組みを使用するため、`script-src`に`nonce`ベースの`strict-dynamic`のみを許可する厳格なCSP構成では実行に失敗する。
+- CSPビルドを使用する場合は、テンプレート内の複雑なインライン式を避け、ロジックを`Alpine.data()`内の関数やgetterへ抽出する（CSPビルドの評価機能は、JavaScript式の安全なサブセットのみを解釈するため）。
+- 信頼できない外部データを`x-html`や`$el.insertAdjacentHTML()`などのHTML挿入処理へ直接渡すことは避ける（XSSの原因となる。なお`$el.insertAdjacentHTML()`はCSPビルドでもサポート対象外である）。テキストデータは`x-text`やテキスト補間（Mustache構文）で安全に描画し、HTMLを挿入する場合はサニタイズ済みの安全な文字列に限定する。
 
-## 初期化タイミングとFOUC対策
+## 初期化のタイミングとFOUC対策
 
-- deferでDOM解析後に初期化し、プラグイン・data・storeは初期化前のalpine:initで登録する
-- 未処理のDOMの露出はx-cloakで防ぐ。`[x-cloak] { display: none !important; }`のCSSも必要である
+- スクリプトに`defer`属性を付与してDOM解析完了後に初期化を実行し、プラグイン、コンポーネントデータ、ストアの登録は、初期化前に発火する`alpine:init`イベント内で行う。
+- 初期化完了前の未処理DOMが一瞬表示される現象（FOUC）は、`x-cloak`ディレクティブを用いて防ぐ。あわせてCSS側で`[x-cloak] { display: none !important; }`を定義しておく必要がある。
 
 ## ストア（Alpine.store）とコンポーネント間通信
 
-- 共有状態はAlpine.storeへ集約し、状態と更新操作の所有をそろえる。単一値で完結する状態は単一値登録でよい
+- 複数コンポーネント間で共有する状態は`Alpine.store`に集約し、状態データとその更新メソッドを一元的に管理する。単一の値のみで完結するシンプルな状態であれば、単一値としての登録で足りる。

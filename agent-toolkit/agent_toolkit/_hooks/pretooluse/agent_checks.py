@@ -85,17 +85,17 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
         f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
         "「停滞の検知と巻き取り」節が定める。"
         "進行が遅いことや、確認に手間がかかることだけでは停止の根拠にならない。"
-        "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
+        "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認せよ。"
         "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
         fix=(
-            "自セッションが起動した対象はバックグラウンドタスクの所有記録に一致する識別子を指定する。"
+            "自セッションが起動した対象はバックグラウンドタスクの所有記録に一致する識別子を指定せよ。"
             "その他の対象は"
             f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
             "「停滞の検知と巻き取り」節に従い、"
-            "対象別の停滞検知完了記録を作成してからTaskStopを実行する。"
+            "対象別の停滞検知完了記録を作成してからTaskStopを実行せよ。"
             "記録は`atk run-script record-stall-detection -- "
             "--session-id <現在のCLAUDE_CODE_SESSION_ID> --task-id <停止対象の完全なタスクID>`で作成し、"
-            "終了コード0を返した対象だけを5分以内に停止する。"
+            "終了コード0を返した対象だけを5分以内に停止せよ。"
         ),
     )
 
@@ -172,8 +172,8 @@ def _check_agents_server_continuation_target(session_id: str, tool_input: dict, 
                 f"blocked: {display_name}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。",
                 fix=(
                     "対象が自身の起動した対象でない場合は、その対象を起動した委譲先へ`send_message`で追送し、"
-                    "その委譲先に対象を打ち切らせる。"
-                    "自身が所有する作業を続ける場合は、絶対`cwd`を指定した`agents_server`の`start`で新しいセッションを開始する。"
+                    "その委譲先に対象を打ち切らせよ。"
+                    "自身が所有する作業を続ける場合は、絶対`cwd`を指定した`agents_server`の`start`で新しいセッションを開始せよ。"
                 ),
             )
         )

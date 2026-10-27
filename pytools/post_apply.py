@@ -430,6 +430,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec(_NPM_SUPPLY_CHAIN, update_npmrc.run),
     # Windowsでは bin PATH 登録と同じユーザーPATHを読んで書き戻す。
     _StepSpec(_MISE, setup_mise.run, after=(_NPM_SUPPLY_CHAIN, _BIN_PATH)),
+    _StepSpec("pnpm サプライチェーン対策", update_npmrc.configure_pnpm, after=(_MISE,)),
     # miseのinstalls・shimsを操作し、codexを起動するため診断ログの復元後に実行する。
     _StepSpec(_CODEX_CLI, setup_codex_cli.run, after=(_MISE, _CODEX_LOGS), full_only=True),
     _StepSpec(_CODEX_CLAUDE_MCP, remove_codex_claude_mcp.run, after=(_CODEX_CLI,), full_only=True),
@@ -516,7 +517,10 @@ def main(
     )
     parser.add_argument("--mode", choices=dotfiles_mode.MODES, help="導入モードを保存して適用する")
     parser.add_argument("--prune", action="store_true", help="現在のモードで不要な導入済みツールとキャッシュを削除する")
+    parser.add_argument("--prune-only", action="store_true", help="更新後に不要な導入済みツールとキャッシュだけを削除する")
     args = parser.parse_args([] if runner is not None and argv is None else argv)
+    if args.prune_only and (args.prune or args.mode is not None):
+        parser.error("--prune-onlyは--pruneおよび--modeと同時に指定できません")
     dotfiles_mode.select(args.mode)
     if args.prune:
         os.environ["DOTFILES_PRUNE"] = "1"
@@ -546,6 +550,12 @@ def main(
                 file=sys.stderr,
             )
             sys.exit(2)
+    if args.prune_only:
+        result = prune_installation.run()
+        if result.failure is not None:
+            print(f"{result.failure}。次の操作: {result.next_action}", file=sys.stderr)
+            sys.exit(1)
+        return
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
     with _configure_logging() as persistent_log_ready:
         logger.info("post-apply開始")
@@ -886,7 +896,7 @@ def run(
     `recommendations` は各ステップが`PostApplyOutcome.recommendations`で返した推奨コマンドを列挙順に並べたもの。
     """
     selected_steps = list(_DEFAULT_STEPS if steps is None else steps)
-    if steps is None and os.environ.get("DOTFILES_PRUNE") == "1":
+    if steps is None and os.environ.get("DOTFILES_PRUNE") == "1" and os.environ.get("DOTFILES_PRUNE_OUTSIDE_UV") != "1":
         selected_steps.append(
             _StepSpec("不要ツールとキャッシュの削除", prune_installation.run, after_all_preceding=True, host_resources=True)
         )

@@ -13,8 +13,8 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 1. process-loopが起動した会話でない: 常駐ループ外のセッションのため無条件approve
 2. hookの呼出主体が最上位でない: 常駐ループの最上位ではないため無条件approve
 3. 終了要求が`requested`で、Stop入力に有効な非`teammate`のバックグラウンドタスクが残る: 終了要求を`consumed`へ、
-   `autonomous_exit_invoked`を偽へ戻してblockし、作業の終端を確かめてから終了工程をやり直すよう求める
-4. `is_pending_async_work`が真: 非同期処理または未回収の終端結果が残るためapprove
+   `autonomous_exit_invoked`を偽へ戻してblockし、作業の終了を確かめてから終了工程をやり直すよう求める
+4. `is_pending_async_work`が真: 非同期処理または未回収の終了時の結果が残るためapprove
 5. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
 6. 上記いずれでもない: blockし、終了工程の実行を再び促す本文を返す
 
@@ -96,8 +96,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         reason = _block_notice(
             f"{_WITHDRAW_BODY}\n{listing}",
             fix=(
-                "各作業の完了を待つか、自身が起動した作業を停止して終端を確かめる。"
-                "その後に`atk agents-exit-session`を単独で再実行する。"
+                "各作業の完了を待つか、自身が起動した作業を停止して終了を確かめよ。"
+                "その後に`atk agents-exit-session`を単独で再実行せよ。"
             ),
         )
         return "block", reason
@@ -121,7 +121,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     append_stop_log(session_id, "block_autonomous_exit", {})
     reason = _block_notice(
         _REASON_BODY,
-        fix="`atk agents-exit-session`を単独で実行する。その実行の記録が本判定を通過させる。",
+        fix="`atk agents-exit-session`を単独で実行せよ。その実行の記録が本判定を通過させる。",
     )
     return "block", reason
 

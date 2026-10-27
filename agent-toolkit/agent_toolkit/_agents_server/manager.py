@@ -7,6 +7,7 @@ import contextlib
 import datetime
 import json
 import logging
+import pathlib
 from collections.abc import Mapping
 from typing import Any, Self
 
@@ -58,8 +59,9 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import codex_models, session_release
+from agent_toolkit._common import codex_models, read_triggers, session_release
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.plugin_roots import PluginRootError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
@@ -102,7 +104,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         self._auto_resume_task = asyncio.create_task(self._monitor_auto_resume())
 
     async def _monitor_auto_resume(self) -> None:
-        """公開待機操作が呼ばれるかによらず、孫session終端後の自動再開を進める。"""
+        """公開待機操作が呼ばれるかによらず、孫session終了後の自動再開を進める。"""
         while True:
             await session_release.process_requests(
                 self.sessions,
@@ -171,12 +173,14 @@ class AgentsServerManager(manager_wait.ManagerWait):
         launch_kind: LaunchKind = "delegate",
         label: str | None = None,
         excluded_candidates: Mapping[ModelCandidate, str] | None = None,
+        startup_document: pathlib.Path | None = None,
+        startup_inputs: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         """モデル設定の候補を先頭から試し、起動できたturnを返す。
 
         `model_type`は工程別設定または直接指定された候補列を表す。
 
-        起動直後にengineの可用性を理由として終端した候補とagyの失敗候補を
+        起動直後にengineの可用性を理由として終了した候補とagyの失敗候補を
         除外集合へ加えて次候補へ進む。Claudeの依存読込失敗も型付きの候補不成立として扱う。
         engine共通能力の不成立は同じ要求内の同engine候補を全て除外し、永続記録へ渡さない。
         Claude/Codexで候補を変えても結果が変わらない失敗は、そのまま委譲元へ返す。
@@ -195,7 +199,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
         unavailable_session: SessionState | None = None
         excluded_session_ids: dict[ModelCandidate, str] = {}
         display_label = resolve_display_label(label, prompt)
-        delivery_body = wrap_delivery_body(prompt)
         for candidate_index, candidate in enumerate(candidates):
             if candidate in excluded:
                 continue
@@ -204,6 +207,26 @@ class AgentsServerManager(manager_wait.ManagerWait):
             if backend_type is None:
                 raise ActionableError(f"unsupported engine: {engine}", next_action=MODEL_TYPE_NEXT_ACTION)
             validate_model_effort(model, effort)
+            # 候補ごとに子のhost/cwdで資料を解決する。前候補の資料を別engineへ再利用しない。
+            try:
+                initial_documents = (
+                    await run_file_operation(
+                        read_triggers.startup_context,
+                        startup_document,
+                        startup_document.parent.parent,
+                        dict(startup_inputs or {}),
+                        host=engine,
+                        project=cwd,
+                    )
+                    if startup_document is not None and launch_kind == "delegate"
+                    else ""
+                )
+                delivery_body = wrap_delivery_body(launch_requests.with_startup_documents(prompt, initial_documents))
+            except PluginRootError as exc:
+                reason = str(exc)
+                excluded.update({item: reason for item in candidates if item[0] == engine})
+                _LOG.warning("startup_material_unavailable engine=%s reason=%s", engine, reason)
+                continue
             try:
                 session = await self._start_until_initialized(
                     engine,
@@ -257,7 +280,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 session.status = "running"
             await self._save_started_session(session)
             await self._await_start_outcome(session)
-            # 以後に過負荷で終端したturnは同じsessionの自動継続で扱う。
+            # 以後に過負荷で終了したturnは同じsessionの自動継続で扱う。
             session.availability_checked = True
             response: dict[str, Any] = {
                 "session_id": session.session_id,
@@ -339,7 +362,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         )
 
     async def start_handoff(self, session_id: str) -> dict[str, Any]:
-        """終端した前任の起動条件と進捗を使い、明示操作1回で後任を開始する。"""
+        """終了した前任の起動条件と進捗を使い、明示操作1回で後任を開始する。"""
         current = await self.resolve_handoff_predecessor(session_id)
         predecessor = SessionResumeState.from_session(current) if isinstance(current, SessionState) else current
         reason = session_handoff.availability_reason(
@@ -485,7 +508,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         ) from last_timeout
 
     async def _abandon_unavailable_session(self, session: SessionState) -> None:
-        """次候補へ進む前に、可用性の失敗で終端したsessionの全資源を解放する。"""
+        """次候補へ進む前に、可用性の失敗で終了したsessionの全資源を解放する。"""
         await self._backend(session.engine).release_session(session)
         await session.drain_registration()
         self._cancel_retention_timer(session.session_id)
@@ -495,12 +518,12 @@ class AgentsServerManager(manager_wait.ManagerWait):
             self._status_writer.schedule()
 
     async def _await_start_outcome(self, session: SessionState) -> None:
-        """起動直後の可用性失敗を確定するため、上限付きで終端を待つ。
+        """起動直後の可用性失敗を確定するため、上限付きで終了を待つ。
 
         engineの可用性失敗は最初のモデル出力より前に生じるため、モデル出力を観測した時点で待機を打ち切る。
         Claudeでは、APIの応答開始（`message_start`）をモデル出力の観測とする。
         Weekly limitか5時間の利用上限の解除待ちへ入った時点でも打ち切り、`start`は`running`を返す。
-        上限内に終端もモデル出力もしないsessionと、打ち切ったsessionは通常の実行中として扱い、
+        上限内に終了もモデル出力もしないsessionと、打ち切ったsessionは通常の実行中として扱い、
         以降は`atk agents wait`が観測する。
         """
         if self._start_outcome_observed(session):
@@ -585,7 +608,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         instruction: str | None = None,
         extra_params: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
-        """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。
+        """実行中turnを継続し、終了済みなら同じsessionでreplyを開始する。
 
         状態ファイルの書込主体を持つ場合は、`start`・`list`と同じく`root_session_id`を応答へ加える。
         再起動した会話が既存sessionへの`send_message`から再開しても、PostToolUseがこの値で別名索引を書けるようにするためである。
@@ -735,7 +758,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         timeout: float = DEFAULT_KILL_TIMEOUT,
         stop: bool = False,
     ) -> dict[str, Any]:
-        """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
+        """実行中turnへ中断を要求し、指定時間まで終了を待つ。"""
         await self._drain_diagnostics()
         observed_session = self.sessions.get(session_id)
         observed_turn = (
@@ -828,7 +851,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     if timeout == 0:
                         raise ActionableError(
                             "the active Codex turn has no turn_id",
-                            next_action="`timeout`へ正の秒数を指定して`kill`を再発行するか、`atk agents wait`で終端を観測する",
+                            next_action="`timeout`へ正の秒数を指定して`kill`を再発行するか、`atk agents wait`で終了を観測する",
                         )
                     assert deadline is not None
                     try:
@@ -885,7 +908,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             except TimeoutError as exc:
                 raise ActionableTimeoutError(
                     f"kill timed out: {session_id}; the interrupt request was delivered but the turn did not terminate",
-                    next_action="中断要求は配送済みのため`kill`を再発行しない。`atk agents wait`で終端を観測する",
+                    next_action="中断要求は配送済みのため`kill`を再発行しない。`atk agents wait`で終了を観測する",
                 ) from exc
         await session.drain_registration()
         response = await self._kill_result_response_async(session, kill_requested=True)
@@ -937,7 +960,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             try:
                 await self._publish_closed_sessions()
             except status_file.ProjectionWriteError:
-                _LOG.exception("停止時の表示用状態保存に失敗しました。終端結果を保持して後始末を続けます")
+                _LOG.exception("停止時の表示用状態保存に失敗しました。終了時の結果を保持して後始末を続けます")
             except Exception as error:
                 errors.append(error)
         finally:

@@ -10,7 +10,7 @@ import re
 import urllib.parse
 from collections.abc import Iterator
 
-from agent_toolkit._common.plugin_roots import resolve_plugin_root
+from agent_toolkit._common.plugin_roots import plugin_resolution_scope, resolve_plugin_root
 
 KINDS = frozenset({"操作", "起動時", "判断"})
 OPERATIONS = frozenset(
@@ -28,7 +28,6 @@ OPERATIONS = frozenset(
 PREFIXES = ("skill:", "write:", "path:", "dependency:", "section:", "tool:", "bash:", "role:", "read:")
 DYNAMIC_SELECTORS = frozenset(
     {
-        "modified-agent-documents",
         "role-contract",
         "review-reference",
         "external-pytilpack-index",
@@ -37,6 +36,9 @@ DYNAMIC_SELECTORS = frozenset(
         "project-skill",
     }
 )
+# 役割文書以外の読込表で使える起動入力は、委譲入力が無い主体でも
+# 解決できる入力だけに限る。値は配送側の解決元を識別する。
+INPUT_SELECTOR_RESOLUTION_SOURCES = {"input:作業契約": "main-work-contract"}
 _CODE = re.compile(r"`([^`]+)`")
 _REFERENCE = re.compile(r"`([^`]+)`|\[[^\]]+\]\(([^)]+)\)")
 _REFERENCE_METHOD_HEADING = "名指し参照の読込方法"
@@ -196,7 +198,13 @@ def known_operation(operation: str) -> bool:
 
 
 def _direct_document(
-    value: str, source: pathlib.Path, plugin_root: pathlib.Path, host: str = "claude", *, allow_unique: bool = False
+    value: str,
+    source: pathlib.Path,
+    plugin_root: pathlib.Path,
+    host: str = "claude",
+    *,
+    allow_unique: bool = False,
+    project: pathlib.Path | str | None = None,
 ) -> pathlib.Path | None:
     """文書内の資料参照を絶対パスへ解決する。節指定は資料全体への到達に含める。"""
     value = value.split("#", 1)[0]
@@ -223,7 +231,7 @@ def _direct_document(
             owner
             if owner is not None and owner_name == plugin
             else resolve_plugin_root(
-                plugin, owner if owner is not None and owner_name == "agent-toolkit" else plugin_root, host
+                plugin, owner if owner is not None and owner_name == "agent-toolkit" else plugin_root, host, project
             )
         )
         if skill.endswith(".md"):
@@ -263,7 +271,12 @@ def _direct_document(
 
 
 def resolve_read_source(
-    path: pathlib.Path, plugin_root: pathlib.Path, host: str = "claude", seen: tuple[pathlib.Path, ...] = ()
+    path: pathlib.Path,
+    plugin_root: pathlib.Path,
+    host: str = "claude",
+    seen: tuple[pathlib.Path, ...] = (),
+    *,
+    project: pathlib.Path | str | None = None,
 ) -> pathlib.Path:
     """純粋な互換文書の明示写像を辿り、条件と節の指定を実体へ引き継ぐ。"""
     path = path.resolve()
@@ -288,21 +301,29 @@ def resolve_read_source(
     value = matched[1]
     if not value.startswith(("agent-toolkit:", "agent-basics:")) or not value.endswith(".md"):
         raise ValueError(f"{path}: read-sourceはプラグイン修飾した実ファイルを指定する")
-    target = _direct_document(value, path, plugin_root, host)
+    target = _direct_document(value, path, plugin_root, host, project=project)
     if target is None or not target.is_file():
         raise ValueError(f"{path}: read-sourceの実体が無い: {value}")
-    return resolve_read_source(target, plugin_root, host, (*seen, path))
+    return resolve_read_source(target, plugin_root, host, (*seen, path), project=project)
 
 
 def resolve_document(
-    value: str, source: pathlib.Path, plugin_root: pathlib.Path, host: str = "claude", *, allow_unique: bool = False
+    value: str,
+    source: pathlib.Path,
+    plugin_root: pathlib.Path,
+    host: str = "claude",
+    *,
+    allow_unique: bool = False,
+    project: pathlib.Path | str | None = None,
 ) -> pathlib.Path | None:
     """宣言された資料の正式な実体を、明示写像を含めて返す。"""
-    path = _direct_document(value, source, plugin_root, host, allow_unique=allow_unique)
-    return resolve_read_source(path, plugin_root, host) if path is not None else None
+    path = _direct_document(value, source, plugin_root, host, allow_unique=allow_unique, project=project)
+    return resolve_read_source(path, plugin_root, host, project=project) if path is not None else None
 
 
-def parent_contract_targets(role: str, plugin_root: pathlib.Path) -> tuple[ReadTarget, ...]:
+def parent_contract_targets(
+    role: str, plugin_root: pathlib.Path, *, host: str = "claude", project: pathlib.Path | str | None = None
+) -> tuple[ReadTarget, ...]:
     """役割が名指しした起動・受領契約を解決する。自由本文から所有者を推測しない。"""
     role = pathlib.Path(role).name.removesuffix(".subagent.md").removesuffix(".md")
     if not re.fullmatch(r"[a-z][a-z0-9-]*", role):
@@ -320,7 +341,7 @@ def parent_contract_targets(role: str, plugin_root: pathlib.Path) -> tuple[ReadT
     for value in values:
         if not value.startswith("agent-toolkit:"):
             raise ValueError(f"{source}: parent-read-sourceをtoolkit内の具体資料で指定する")
-        path = resolve_document(value, source, plugin_root)
+        path = resolve_document(value, source, plugin_root, host, project=project)
         if path is None or not path.is_file():
             raise ValueError(f"{source}: 起動・受領契約の実体が無い: {value}")
         target = ReadTarget(path, value.partition("#")[2])
@@ -330,7 +351,13 @@ def parent_contract_targets(role: str, plugin_root: pathlib.Path) -> tuple[ReadT
 
 
 def material_targets(
-    material: str, source: pathlib.Path, plugin_root: pathlib.Path, host: str = "claude", *, references_only: bool = False
+    material: str,
+    source: pathlib.Path,
+    plugin_root: pathlib.Path,
+    host: str = "claude",
+    *,
+    references_only: bool = False,
+    project: pathlib.Path | str | None = None,
 ) -> tuple[ReadTarget, ...]:
     """資料列の修飾スキル・Markdownリンク・日本語の節指定を保って解析する。"""
     matches = list(_REFERENCE.finditer(material))
@@ -341,7 +368,11 @@ def material_targets(
         if match.start() < scope_end:
             continue
         value = match[1] or match[2]
-        local = resolve_document(value, source, plugin_root, host) if "/" not in value and ":" not in value else None
+        local = (
+            resolve_document(value, source, plugin_root, host, project=project)
+            if "/" not in value and ":" not in value
+            else None
+        )
         local_skill = value != "SKILL.md" and local is not None and local.name == "SKILL.md" and local.is_file()
         if (
             references_only
@@ -352,7 +383,7 @@ def material_targets(
         ):
             continue
         if value.startswith(("agent-toolkit:", "agent-basics:")) or local_skill:
-            path = resolve_document(value, source, plugin_root, host)
+            path = resolve_document(value, source, plugin_root, host, project=project)
             if path is not None:
                 owner = path
             # 後ろに具体資料が続く場合、修飾名は所属の指定である。
@@ -374,6 +405,7 @@ def material_targets(
             plugin_root,
             host,
             allow_unique=references_only,
+            project=project,
         )
         if path is None:
             continue
@@ -412,12 +444,14 @@ def material_targets(
     return tuple(dict.fromkeys(result))
 
 
+@plugin_resolution_scope()
 def parse_tables(
     source: pathlib.Path,
     plugin_root: pathlib.Path,
     *,
     strict: bool = False,
     host: str = "claude",
+    project: pathlib.Path | str | None = None,
     _parents: frozenset[pathlib.Path] = frozenset(),
 ) -> list[ReadTrigger]:
     """資料列を持つ表から宣言を読む。strictでは未分類の表も拒否する。"""
@@ -433,10 +467,12 @@ def parse_tables(
             continue
         included = re.fullmatch(r"<!-- read-table-source: (.+) -->", line)
         if included:
-            target = resolve_document(included[1], source, plugin_root, host)
+            target = resolve_document(included[1], source, plugin_root, host, project=project)
             if target is None:
                 raise ValueError(f"{source}: read-table-sourceの実体が無い: {included[1]}")
-            result.extend(parse_tables(target, plugin_root, strict=strict, host=host, _parents=_parents | {source}))
+            result.extend(
+                parse_tables(target, plugin_root, strict=strict, host=host, project=project, _parents=_parents | {source})
+            )
             headers = []
             continue
         if not line.startswith("|"):
@@ -464,14 +500,23 @@ def parse_tables(
         if any(not known_operation(value) for value in operations):
             raise ValueError(f"{source}:{number}: 未登録の配送操作: {operations}")
         selector = row.get("資料選択子", "").strip("` ")
-        if selector and selector not in DYNAMIC_SELECTORS and not (selector.startswith("input:") and selector != "input:"):
+        is_role_document = source.name.endswith(".subagent.md")
+        if (
+            selector
+            and selector not in DYNAMIC_SELECTORS
+            and not (
+                selector.startswith("input:")
+                and selector != "input:"
+                and (is_role_document or selector in INPUT_SELECTOR_RESOLUTION_SOURCES)
+            )
+        ):
             raise ValueError(f"{source}:{number}: 未登録の動的資料選択子: {selector}")
         material = row["全文読む資料"]
         if material.startswith("同スキル"):
             owners = [value for value in _CODE.findall(cells[0]) if value.startswith(("agent-toolkit:", "agent-basics:"))]
             if len(owners) == 1:
                 material = f"`{owners[0]}`の" + material
-        targets = material_targets(material, source, plugin_root, host)
+        targets = material_targets(material, source, plugin_root, host, project=project)
         if selector:
             targets = tuple(target for target in targets if "<" not in str(target.path))
         documents = tuple(target.path for target in targets)
@@ -488,11 +533,14 @@ def parse_tables(
     return list(dict.fromkeys(result))
 
 
+@plugin_resolution_scope()
 def reference_method_targets(
     source: pathlib.Path,
     plugin_root: pathlib.Path,
     host: str = "claude",
     _parents: frozenset[pathlib.Path] = frozenset(),
+    *,
+    project: pathlib.Path | str | None = None,
 ) -> tuple[ReadTarget, ...]:
     """共通読込方法の明示参照を、同梱定義元の指定節へ解決する。"""
     source = source.resolve()
@@ -507,12 +555,12 @@ def reference_method_targets(
     owner = entry or (source.parent / "read-trigger-contract.md" if source.parent == plugin_root.resolve() / "share" else None)
     if owner is None:
         return ()
-    canonical = resolve_read_source(source, plugin_root, host)
+    canonical = resolve_read_source(source, plugin_root, host, project=project)
     if canonical != source:
-        return reference_method_targets(canonical, plugin_root, host, _parents)
+        return reference_method_targets(canonical, plugin_root, host, _parents, project=project)
     if source in _parents:
         raise ValueError(f"{source}: 名指し参照の読込方法の循環を検出した")
-    owner = resolve_read_source(owner, plugin_root, host)
+    owner = resolve_read_source(owner, plugin_root, host, project=project)
     text = source.read_text(encoding="utf-8")
     _lines, headings = _headings(text)
     method = (
@@ -524,7 +572,7 @@ def reference_method_targets(
     for _number, line, visible in document_lines(method):
         if not visible or not line.startswith("名指し参照は"):
             continue
-        targets = material_targets(line, source, plugin_root, host)
+        targets = material_targets(line, source, plugin_root, host, project=project)
         if len(targets) != 1 or urllib.parse.unquote(targets[0].heading).strip("「」") != _REFERENCE_METHOD_HEADING:
             raise ValueError(f"{source}: 名指し参照の読込方法の短節を明示する")
         target = targets[0]
@@ -533,21 +581,29 @@ def reference_method_targets(
         target = ReadTarget(target.path, _REFERENCE_METHOD_HEADING)
         target.body()
         result.append(target)
-        result.extend(reference_method_targets(target.path, plugin_root, host, _parents | {source}))
+        result.extend(reference_method_targets(target.path, plugin_root, host, _parents | {source}, project=project))
     for _number, line, visible in document_lines(text):
         included = re.fullmatch(r"<!-- read-table-source: (.+) -->", line) if visible else None
         if included is not None:
-            path = _direct_document(included[1], source, plugin_root, host)
+            path = _direct_document(included[1], source, plugin_root, host, project=project)
             if path is None:
                 raise ValueError(f"{source}: read-table-sourceの実体が無い: {included[1]}")
-            result.extend(reference_method_targets(path, plugin_root, host, _parents | {source}))
+            result.extend(reference_method_targets(path, plugin_root, host, _parents | {source}, project=project))
     return tuple(dict.fromkeys(result))
 
 
-def startup_context(source: pathlib.Path, plugin_root: pathlib.Path, inputs: dict[str, str]) -> str:
+@plugin_resolution_scope()
+def startup_context(
+    source: pathlib.Path,
+    plugin_root: pathlib.Path,
+    inputs: dict[str, str],
+    *,
+    host: str = "claude",
+    project: pathlib.Path | str | None = None,
+) -> str:
     """役割文書の受領と同時に必要な本文を、判断が始まる前に配送する。"""
-    rows = parse_tables(source, plugin_root)
-    targets = list(reference_method_targets(source, plugin_root))
+    rows = parse_tables(source, plugin_root, host=host, project=project)
+    targets = list(reference_method_targets(source, plugin_root, host, project=project))
     input_selectors: dict[ReadTarget, set[str]] = {}
     role = source.name.removesuffix(".subagent.md")
     for row in rows:
@@ -571,7 +627,7 @@ def startup_context(source: pathlib.Path, plugin_root: pathlib.Path, inputs: dic
                 targets.append(target)
                 input_selectors.setdefault(target, set()).add(row.selector)
     for target in tuple(targets):
-        targets.extend(reference_method_targets(target.path, plugin_root))
+        targets.extend(reference_method_targets(target.path, plugin_root, host, project=project))
     return startup_documents(targets, plugin_root, input_selectors)
 
 
@@ -584,7 +640,7 @@ def startup_documents(
     for target in dict.fromkeys(targets):
         owner = next((parent.parent for parent in target.path.parents if parent.name == "skills"), plugin_root)
         raw = target.path.read_bytes()
-        body = target.body(raw.decode("utf-8")).replace("${CLAUDE_PLUGIN_ROOT}", str(owner))
+        body = raw.decode("utf-8").replace("${CLAUDE_PLUGIN_ROOT}", str(owner))
         digest = hashlib.sha256(raw).hexdigest()
         metadata = json.dumps(
             {

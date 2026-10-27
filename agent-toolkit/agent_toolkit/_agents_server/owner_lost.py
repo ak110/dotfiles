@@ -1,10 +1,10 @@
-"""所有サーバーを失った実行中のsessionの診断と委譲先CLIの停止、所有者のいない他ルートからの通知・終端結果の回収。
+"""所有サーバーを失った実行中のsessionの診断と委譲先CLIの停止、所有者のいない他ルートからの通知・終了時の結果の回収。
 
 所有サーバーを失った実行中とは、生存の印が有効な状態ファイルがsessionを載せておらず、登録簿の記録プロセスのうち
 委譲先CLIが実在する状態である。判定は`session_registry.running_ownership`へ集約し、本モジュールはその結果を
 照会の応答・案内と停止の操作へ写す。
 
-通知と終端結果は、委譲先の起動時のルート（所有サーバーのルート）へ届く。Codexを親とするMCPサーバーは起動単位ごとに
+通知と終了時の結果は、委譲先の起動時のルート（所有サーバーのルート）へ届く。Codexを親とするMCPサーバーは起動単位ごとに
 別のルートへ結び付くため、委譲元のサーバーが替わると届いた先を新しいサーバーが読まなくなる。
 登録簿から解決したsessionに限り、生存の印が有効な書込主体のいない他のルートからも同じsessionの通知と結果を回収する。
 """
@@ -130,7 +130,7 @@ def take_stranded_notices(
 
 
 def has_stranded_result(session_id: str, own_root_session_id: str | None, state_root: pathlib.Path | None = None) -> bool:
-    """所有者のいない他のルートに、同じsessionの未回収の終端結果が残るかを返す。"""
+    """所有者のいない他のルートに、同じsessionの未回収の終了時の結果が残るかを返す。"""
     return any(
         retained_results.read_retained_result(root_session_id, session_id, state_root) is not None
         for root_session_id in status_reader.ownerless_root_session_ids(own_root_session_id, state_root)
@@ -146,7 +146,7 @@ def take_stranded_result(
     stash_path: pathlib.Path | None = None,
     roots: list[str] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """所有者のいない他のルートに残る同じsessionの終端結果を、記録された所有者として一度だけ回収する。"""
+    """所有者のいない他のルートに残る同じsessionの終了時の結果を、記録された所有者として一度だけ回収する。"""
     if roots is None:
         roots = status_reader.ownerless_root_session_ids(own_root_session_id, state_root)
     for root_session_id in roots:

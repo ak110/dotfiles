@@ -31,6 +31,7 @@ from agent_toolkit._agents_server import (
     compaction_metrics,  # pylint: disable=wrong-import-position
     context_usage,
     engine_availability,
+    result_contract,
     result_projection,
     resume_waits,
     session_errors,
@@ -637,7 +638,7 @@ class AppServerManager:
     INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool] = True
     """`turn/interrupt`はturnの識別子を要するため、中断の要求はturnの開始を待ってから送る。"""
     ORPHAN_TAKEOVER: typing.ClassVar[bool] = True
-    """所有者のいない`running`の登録簿の記録を、`thread/read`の結果から終端として引き継げる。"""
+    """所有者のいない`running`の登録簿の記録を、`thread/read`の結果から終了として引き継げる。"""
 
     async def __aenter__(self) -> typing.Self:
         return self
@@ -647,7 +648,7 @@ class AppServerManager:
 
     @staticmethod
     def unavailable_reason(session: SessionState) -> str | None:
-        """終端したsessionがengineの可用性を理由に失敗した場合、その除外理由を返す。
+        """終了したsessionがengineの可用性を理由に失敗した場合、その除外理由を返す。
 
         接続先がモデルIDを受け付けなかった失敗も、別の候補なら結果が変わるため除外理由にする。
         """
@@ -868,7 +869,7 @@ class AppServerManager:
     async def read_thread_turns(self, session_id: str) -> list[tuple[str, str]]:
         """保存済みthreadの全turnを、識別子と状態（`inProgress`・`completed`・`failed`・`interrupted`）の組で時系列順に返す。
 
-        再起動前のプロセスが終端を公開できなかった記録について、turnが終わったかを委譲先CLIの記録で確かめるために使う。
+        再起動前のプロセスが終了を公開できなかった記録について、turnが終わったかを委譲先CLIの記録で確かめるために使う。
         応答がthreadとturnの一覧を持たない場合は`AppServerError`を送出する。
         照会には専用のApp Serverを起動し、応答を得た後に終了させる。
         """
@@ -1094,7 +1095,7 @@ class AppServerManager:
         return session
 
     async def _cancel_resume(self, session: SessionState) -> None:
-        """再開取消時に配送済みturnを中断し、実作業の終端まで待つ。"""
+        """再開取消時に配送済みturnを中断し、実作業の終了まで待つ。"""
         if not session.turn_start_sent:
             session.status = "interrupted"
             session.turn_completed = True
@@ -1118,7 +1119,7 @@ class AppServerManager:
             await self._condition.wait_for(lambda: session.turn_completed)
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
-        """実行中turnへ追加指示を送り、終端競合時は同じthreadのreplyを開始する。"""
+        """実行中turnへ追加指示を送り、終了競合時は同じthreadのreplyを開始する。"""
         validate_prompt(prompt)
         async with session.turn_control_lock:
             if (
@@ -1249,7 +1250,7 @@ class AppServerManager:
         switched = False
         try:
             if switch_needed:
-                # cold resumeも追送の排他区間に含まれるため、kill/stopへ終端結果として渡さない。
+                # cold resumeも追送の排他区間に含まれるため、kill/stopへ終了時の結果として渡さない。
                 session.status = "starting"
                 session.touch()
             client = await self._acquire_owned_client(session.session_id, session.launch_kind)
@@ -1310,7 +1311,7 @@ class AppServerManager:
 
     @staticmethod
     def _provider_failure(session: SessionState, error: Any = None) -> bool:
-        """利用上限で終端した失敗と、移行済みAPIが受け付けなかった失敗だけを、代替の接続先での試行の対象と判定する。"""
+        """利用上限で終了した失敗と、移行済みAPIが受け付けなかった失敗だけを、代替の接続先での試行の対象と判定する。"""
         if not session.codex_model_provider or not session.turn_completed or session.turn_start_ambiguous:
             return False
         result = session.pending_result
@@ -1473,12 +1474,12 @@ class AppServerManager:
         *,
         new_reply: bool = False,
     ) -> None:
-        """元の会話・進捗を保持し、同threadの再送を終えて引き継げる終端を公開する。"""
+        """元の会話・進捗を保持し、同threadの再送を終えて引き継げる終了を公開する。"""
         if session.pending_result is not None:
             resume_waits.finalize_pending_result(session, touch=False)
         if new_reply:
             progress = (session.agent_message, session.plan, session.commentary, session.diff_changed, session.last_action)
-            # 拒否したreplyにも独立した終端を割り当て、回収済みの前turnと同一視させない。
+            # 拒否したreplyにも独立した終了を割り当て、回収済みの前turnと同一視させない。
             begin_reply(session, preserve_waits=True)
             session.agent_message, session.plan, session.commentary, session.diff_changed, session.last_action = progress
         session.codex_provider_resume_pending = False
@@ -1530,7 +1531,7 @@ class AppServerManager:
         expected_turn_id: str,
         client: Any,
     ) -> str:
-        """steer拒否後に終端競合だけを待ち、優先順位付きの判定結果を返す。"""
+        """steer拒否後に終了競合だけを待ち、優先順位付きの判定結果を返す。"""
         timed_out = False
 
         def _changed() -> bool:
@@ -1571,21 +1572,25 @@ class AppServerManager:
         *,
         retryable: bool,
     ) -> None:
-        """要求開始の失敗を終端状態へ反映し、待機者を起こす。
+        """要求開始の失敗を終了状態へ反映し、待機者を起こす。
 
         `retryable`が真の場合だけ、同じreplyを再試行できる内部状態にする。
         """
+        public_error = {"message": str(error) or error.__class__.__name__}
+        failure = public_error.copy()
+        if isinstance(error, JsonRpcResponseError) and isinstance(error.data, dict):
+            # RPCの追加dataは内部の切替判定だけへ渡し、公開結果へ保存しない。
+            failure.update(error.data)
+        # 読取中に届いた中断要求は、続く保留判定でも維持する。
+        session.interrupt_requested = False
+        limit = None if isinstance(error, StartCandidateUnavailable) else await self._read_usage_limit_failure(session, failure)
         session.turn_id = ""
         session.status = "failed"
         session.plan = []
         session.record_current_item_start(None)
         session.commentary = ""
         session.diff_changed = False
-        session.error = {"message": str(error) or error.__class__.__name__}
-        failure = session.error.copy()
-        if isinstance(error, JsonRpcResponseError) and isinstance(error.data, dict):
-            # RPCの追加dataは内部の切替判定だけへ渡し、公開結果へ保存しない。
-            failure.update(error.data)
+        session.error = public_error
         if (
             session.codex_model_provider
             and session.codex_model_provider != session.codex_subscription_provider
@@ -1597,16 +1602,15 @@ class AppServerManager:
         session.reply_turn_started = False
         session.reply_retryable = retryable
         session.turn_start_ambiguous = False
-        session.interrupt_requested = False
         session.turn_completed = True
         session.failure_pending_completion = False
-        if not isinstance(error, StartCandidateUnavailable) and not await self._hold_usage_limit_failure(session, failure):
+        if not isinstance(error, StartCandidateUnavailable) and not self._hold_usage_limit_failure(session, limit):
             self._hold_provider_failure(session, failure)
         session.touch()
         await self._notify_waiters()
 
     async def _mark_turn_start_ambiguous(self, session: SessionState, error: BaseException) -> None:
-        """turn/startの応答が失われたことを非終端状態へ反映する。"""
+        """turn/startの応答が失われたことを未終了状態へ反映する。"""
         if session.terminal:
             return
         session.status = "running"
@@ -1672,13 +1676,18 @@ class AppServerManager:
         async with self._condition:
             self._condition.notify_all()
 
-    async def _hold_usage_limit_failure(self, session: SessionState, error: Any = None) -> bool:
-        """利用枠を保存記録から読み、設定が対象とする上限だけ解除待ちへ保留する。"""
-        error = session.error if error is None else error
-        if session.status != "failed" or not isinstance(error, dict) or error.get("codexErrorInfo") != "usageLimitExceeded":
-            return False
+    @staticmethod
+    async def _read_usage_limit_failure(session: SessionState, error: Any) -> codex_usage_limit.UsageLimitState | None:
+        """終了を公開する前に、保留判定に必要な利用枠だけを読み取る。"""
+        if not isinstance(error, dict) or error.get("codexErrorInfo") != "usageLimitExceeded":
+            return None
         limit = await run_file_operation(codex_usage_limit.from_thread, session.session_id)
-        limit = limit or codex_usage_limit.UsageLimitState(None)
+        return limit or codex_usage_limit.UsageLimitState(None)
+
+    def _hold_usage_limit_failure(self, session: SessionState, limit: codex_usage_limit.UsageLimitState | None) -> bool:
+        """読取済みの利用枠を使い、終了反映と同じloop区間で保留を確定する。"""
+        if session.status != "failed" or limit is None:
+            return False
         error = {
             **(session.error if isinstance(session.error, dict) else {}),
             "codexErrorInfo": "usageLimitExceeded",
@@ -1829,38 +1838,49 @@ class AppServerManager:
             if not session.failure_pending_completion:
                 session.status = "running"
         elif method == "turn/completed":
-            # 結果を公開可能にする前に保存出力の読取を完了し、終端状態と確定時刻を同じloop区間で反映する。
+            # 結果を公開可能にする前に保存出力の読取を完了し、終了状態と確定時刻を同じloop区間で反映する。
             if isinstance(turn, dict):
                 await self._consume_items(session, turn.get("items"))
             await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
             failure_pending_completion = session.failure_pending_completion
+            status = session.status
+            error = session.error
             if isinstance(turn, dict):
                 turn_id = turn.get("id")
                 if isinstance(turn_id, str):
                     session.turn_id = turn_id
                 if not failure_pending_completion:
-                    session.status = _public_turn_status(turn.get("status"))
+                    status = _public_turn_status(turn.get("status"))
                 turn_error = turn.get("error")
                 if turn_error is not None or not failure_pending_completion:
-                    session.error = turn_error
-                session.turn_start_ambiguous = False
+                    error = turn_error
             else:
-                session.status = "failed"
-                session.error = "turn/completed did not contain turn"
-                session.turn_start_ambiguous = False
+                status = "failed"
+                error = "turn/completed did not contain turn"
+            if status not in TERMINAL_STATUSES:
+                status = "failed"
+            # 状態を終了へ進めた後にawaitすると、waitや状態保存が保留判定前の結果を回収できてしまう。
+            limit = await self._read_usage_limit_failure(session, error) if status == "failed" else None
+            session.status = status
+            session.error = error
+            session.turn_start_ambiguous = False
             session.turn_completed = True
             session.failure_pending_completion = False
-            if session.status not in TERMINAL_STATUSES:
-                session.status = "failed"
             if session.status == "completed":
                 session.codex_attempted_provider_ids = {session.codex_model_provider} if session.codex_model_provider else set()
-            if (resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed) or (
+            result = {"status": session.status, "agent_message": session.agent_message, "error": session.error}
+            held_by_result_contract = result_contract.hold_invalid_result(session, result)
+            if not held_by_result_contract:
+                session.error = result["error"]
+            if held_by_result_contract:
+                pass
+            elif (resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed) or (
                 session.codex_self_message_observed and not session.codex_self_message_repair_consumed
             ):
                 # 未観測の孫sessionが残るturnは、待機表明を完了報告として公開せずに結果を保留する。
                 # 監査記録は`docs/development/audit-records.md`の
                 # 「agent-toolkit/agent_toolkit/_agents_server/codex.py：孫sessionの待機表明と自動再開：2026年10月1日」にある。
-                # MCP層の常駐監視（`_monitor_auto_resume`）が孫の終端を観測し、同じsessionを一度だけ再開する。
+                # MCP層の常駐監視（`_monitor_auto_resume`）が孫の終了を観測し、同じsessionを一度だけ再開する。
                 # 期限到来・追跡先の喪失・再開失敗の確定と未観測識別子の記録も、同じ監視が既存の診断で行う。
                 resume_waits.begin_auto_resume_wait(
                     session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
@@ -1870,7 +1890,7 @@ class AppServerManager:
                 unobserved_session_ids = set(session.live_child_session_ids)
                 session.live_child_session_ids.clear()
                 resume_waits.record_unobserved_sessions(session, unobserved_session_ids)
-            elif await self._hold_usage_limit_failure(session) or self._hold_provider_failure(session):
+            elif self._hold_usage_limit_failure(session, limit) or self._hold_provider_failure(session):
                 pass
             elif not resume_waits.is_overload_failure(session):
                 resume_waits.clear_overload_resume(session)

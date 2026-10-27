@@ -1,4 +1,4 @@
-"""採用CLIから履歴書換え・保存・showまでの終端AWIの受入シナリオ。"""
+"""採用CLIから履歴書換え・保存・showまでの終了AWIの受入シナリオ。"""
 
 import argparse
 import json

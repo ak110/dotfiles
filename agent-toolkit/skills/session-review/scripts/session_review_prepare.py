@@ -547,7 +547,7 @@ def _candidates_document(
         f"原記録の全文は`{detail_command} --detail <記録位置>`で取得する。",
         "表示から省いた候補も全件対応付け、必須候補は全て評価する。"
         "探索の深さと対策の要否はbugfixの重大度判断に従う。"
-        "definition-body-readとdefinition-read-unresolvedは取得の有無・目的・結果の成否を別々に判定する。分類と起動準備の違反への対策必須化はsession-reviewのanalysis.mdに従う。",
+        "definition-body-readとdefinition-read-unresolvedは取得の有無・目的・結果の成否を別々に判定する。内側CommandExecutionを結び付けた候補は、外側セルと内側実行の両方の位置を保存索引で確認する。分類と起動準備の違反への対策必須化はsession-reviewのanalysis.mdに従う。",
         "",
         "## 記録の由来",
         "",

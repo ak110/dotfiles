@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # plugin cache の version 直下に全plugin共通で揃っている必要があるファイル。
 _PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = (".claude-plugin/plugin.json",)
 
-# Python実行pluginは起動スクリプトが`uv run --project <キャッシュ>`で依存を解決する。
+# Python実行pluginは起動スクリプトが共有環境の`launch.py`で依存を解決する。
 _PYTHON_RUNTIME_PLUGIN_NAMES: frozenset[str] = frozenset({"agent-toolkit", "agent-toolkit-agy", "agent-toolkit-codex"})
 _PYTHON_RUNTIME_PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = ("pyproject.toml", "uv.lock")
 
@@ -705,7 +705,7 @@ def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired",
 
     `claude plugin install/update` は同じ version の plugin を既に導入済みと判定した場合に
     キャッシュを検証せずスキップするため、CLI の終了コード 0 はキャッシュの完全性を含意しない。
-    必須ファイルを欠いたまま後続の工程が `uv run --project <キャッシュ>` を実行すると、
+    必須ファイルを欠いたまま後続の工程が共有環境の起動に必要なファイルを確認できないと、
     そのディレクトリがプロジェクトとして解決されず `ModuleNotFoundError` で終わる。
 
     導入先を解決できない場合と、導入先が plugin cache の外にある場合は、検査できなかったことと

@@ -29,7 +29,7 @@ UNAVAILABLE_MODEL = "fake-unavailable"
 _MCP_SCRIPT = "import time\nwhile True:\n    time.sleep(60)\n"
 
 TURN_DURATION_SECONDS = 0.3
-"""`turn/started`から`turn/completed`までの間隔。委譲元が開始の応答を受けてから終端を観測する順序を再現する。"""
+"""`turn/started`から`turn/completed`までの間隔。委譲元が開始の応答を受けてから終了を観測する順序を再現する。"""
 
 _WRITE_LOCK = threading.Lock()
 
@@ -120,7 +120,7 @@ class _Server:
         started: dict[str, object] = {"method": "turn/started", "params": {"threadId": thread_id, "turn": {"id": turn_id}}}
         model = _text(params.get("model")) or self.models.get(thread_id)
         if model == UNAVAILABLE_MODEL:
-            # 可用性の失敗はモデル出力より前に起き、起動直後の可用性確認の間に終端を観測できる。
+            # 可用性の失敗はモデル出力より前に起き、起動直後の可用性確認の間に終了を観測できる。
             failed = {
                 "id": turn_id,
                 "status": "failed",

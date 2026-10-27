@@ -176,7 +176,7 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """終端済み振り返りの検索対象は状態・投入元・対象リポジトリの積集合となる。"""
+        """終了済み振り返りの検索対象は状態・投入元・対象リポジトリの積集合となる。"""
         notes = _setup_notes(tmp_path)
         for filename, source, repo in (
             ("matched.md", "session-review", "github.com/example/foo"),
@@ -383,7 +383,7 @@ def _write_output_form_queue(tmp_path: pathlib.Path) -> None:
     _write_awi_file(notes, "other-repo.md", target_repo="github.com/example/other", body="# 別リポジトリ\n\nneedle")
     _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="needle unanswered")
     _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="needle answered", answer="回答あり\n")
-    adopted = _write_awi_file(notes, "adopted.md", body="# 終端済み\n\nneedle")
+    adopted = _write_awi_file(notes, "adopted.md", body="# 終了済み\n\nneedle")
     adopted.write_text(adopted.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8")
 
 

@@ -16,14 +16,14 @@ description: >
 
 # 成果物作成時のtoolkit運用
 
-品質基準と技術別の読込表は`agent-basics:writing-standards`が定義する。
-同じ版の取得済み本文は再利用し、次の読込表ではtoolkitに残る運用条件を補う。
-toolkitの公開スキルを使う既存の呼び出しは、このスキルで品質と運用の両方へ到達する。
+品質基準および技術別の読込表は`agent-basics:writing-standards`で定義する。
+同一バージョンで取得済みの本文がある場合は再利用し、以降の読込表ではtoolkitに残る運用条件を補う。
+toolkitの公開スキルを利用する呼び出しは、本スキルを通じて品質基準と運用条件の双方を参照できる。
 
 ## 運用の読込表
 
-次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
-品質の読込条件はagent-basicsの表へ直接従い、この表ではtoolkit固有の運用節だけを読む。旧公開参照の転送文書は互換導線として保持する。
+以下の時点または条件に該当する場合は、操作に着手する前に該当行の資料を全文読む。
+品質基準の読込条件はagent-basicsの読込表に直接従い、本表ではtoolkit固有の運用節のみを対象とする。旧公開参照の転送文書は互換導線として保持する。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
@@ -45,7 +45,7 @@ toolkitの公開スキルを使う既存の呼び出しは、このスキルで�
 | エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` | |
 | スキル編集 | `references/agent-skills.md#「スキル間操作」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/agent-skills.md#「スキル間操作」` | |
 | エージェント向け文書の置き場所を選ぶ時 | `references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/delivery-scope.md` | |
-| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md#「%60<役割名>.parent.md%60と%60<役割名>.subagent.md%60の組」「agents_serverのfrontmatter」「起動対象と入力の案内」「返却形式の設計」「コンテキスト境界」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/sub-agents.md#「%60<役割名>.parent.md%60と%60<役割名>.subagent.md%60の組」「agents_serverのfrontmatter」「起動対象と入力の案内」「返却形式の設計」「コンテキスト境界」` | |
+| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md#「%60<役割名>.parent.md%60と%60<役割名>.subagent.md%60の構成」「agents_serverのfrontmatter」「起動対象と入力の案内」「返却形式の設計」「コンテキスト境界」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/sub-agents.md#「%60<役割名>.parent.md%60と%60<役割名>.subagent.md%60の構成」「agents_serverのfrontmatter」「起動対象と入力の案内」「返却形式の設計」「コンテキスト境界」` | |
 | hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/claude-hooks.md#「hookスクリプトの基本プロトコル」「環境変数の一覧」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/claude-hooks.md#「hookスクリプトの基本プロトコル」「環境変数の一覧」` | |
 | 遮断・警告を返すhookの判定を新設・変更する時と、hookを置くか、遮断と警告のどちらにするかを判定する時 | `references/claude-hooks-block-warn.md#「遮断と警告の選択」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/claude-hooks-block-warn.md#「遮断と警告の選択」` | |
 | hookの出力フィールドを選ぶ時と、`PermissionRequest`・`UserPromptSubmit`のhookを新設・変更する時 | `references/claude-hooks-output.md#「出力フィールドの使い分け」「UserPromptSubmit」「組織向け設定」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/claude-hooks-output.md#「出力フィールドの使い分け」「UserPromptSubmit」「組織向け設定」` | |

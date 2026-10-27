@@ -90,12 +90,12 @@ mcp = AgentsServerMCP(
         f"{LIGHTWEIGHT_MODE_SELECTION}\n"
         "task・delegate: 独立した文脈での評価、モデルの使い分けまたは並列化の利益がある作業を委譲する。"
         "要否の判定は`agent-toolkit:delegation`の`references/routing.md`「要否判定」に従う。\n"
-        "終端と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
-        "`wait`はsession_idの位置引数を取らず、登録済みsessionの終端を待ち、応答の時点で終端したsessionの結果を返す。"
+        "終了と結果本文は引数なしの単独コマンド`atk agents wait`で受け取る。"
+        "`wait`はsession_idの位置引数を取らず、登録済みsessionの終了を待ち、応答の時点で終了したsessionの結果を返す。"
         "返った結果はその場で処理し、残りのsessionは同じコマンドを再発行して待つ。"
-        "全件の終端まで戻らないループやスクリプトで待機を包まない。"
+        "全件の終了まで戻らないループやスクリプトで待機を包まない。"
         "`list`は最小状態、`show`は個別の診断情報を返す。"
-        "継続は`send_message`、実行中turnの中断は`kill`、終端済みsessionの明示的な破棄は`stop`で行う。\n"
+        "継続は`send_message`、実行中turnの中断は`kill`、終了済みsessionの明示的な破棄は`stop`で行う。\n"
         "`start`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
         "実行ホストで`atk agents wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
         "観測を試みていない作業を残したままターンを終えると、その作業を観測する主体が残らない。",
@@ -163,6 +163,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             params,
             whole_contract_path=whole_contract_path,
             launcher_session_id=launcher,
+            include_startup=False,
         )
         context = await run_file_operation(_MANAGER.launcher_record_context)
         task_prompt = launch_requests.with_launcher_record(task_prompt, context)
@@ -172,6 +173,8 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             cwd,
             launch_kind=launch_kind,
             label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
+            startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
+            startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
         )
         if handoff_path is not None:
             public = public_start_response(response)
@@ -209,7 +212,7 @@ async def send_message(
         str | None,
         Field(
             description=parameter_description(
-                "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終端済みsessionへは新しい依頼として届く。"
+                "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終了済みsessionへは新しい依頼として届く。"
                 + DELEGATION_INPUT_GUIDANCE
             )
         ),
@@ -241,7 +244,7 @@ async def send_message(
         ),
     ] = None,
 ) -> dict[str, Any]:
-    """実行中turnへ追加指示を送り、終端済みなら同じsessionでreplyを開始する。
+    """実行中turnへ追加指示を送り、終了済みなら同じsessionでreplyを開始する。
 
     入力は委譲先が他から得られない確定済み要件・事実と実行時の値に限定し、参照可能な記録は絶対パスと対象IDで示す。
     必須入力とユーザー指定の手段を保つ。手段の指定はユーザー指定か要件達成に必要と確定した根拠を伴う場合に限る。
@@ -250,14 +253,14 @@ async def send_message(
     引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
     待つのは継続要求の配送結果が確定するまでとする。委譲先の応答生成の完了は待たない。
     上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
-    実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
+    実行中turnにはsteerし、終了済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     子session・背景taskの完了待ちの保留中には待機対象を引き継いで新しいturnを開始し、古い待機表明を結果として返さない。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
     応答は`delivery`と、指示を配送したsessionが保持する担当名の`label`を含み、
     サーバーがroot sessionの識別子を保持する場合は`root_session_id`も加える。
     `label`は起動時に確定した値であり、送信前に意図した担当へ配送したかを確かめる比較に使う。
     担当名を記録していない旧形式の登録簿から再開した場合は空文字列を返す。
-    終端済みsessionの未回収の終端結果を消費して新しいturnを開始した場合は、
+    終了済みsessionの未回収の終了時の結果を消費して新しいturnを開始した場合は、
     その結果を`previous_result`（`status`・`agent_message`と、ある場合は`error`）で返す。
     消費した結果は`atk agents wait`で受領できないため、委譲元は同じ応答から受け取る。
     回収済みの結果は含めない。
@@ -265,7 +268,7 @@ async def send_message(
     `steered`は実行中turnの配送キューへ指示を投入したことだけを示し、委譲先が読んだことは示さない。
     委譲先が単一の長時間コマンドを実行している間はturnの区切りに達しないため、指示はキューに残る。
     到達は、`show`が返す`seconds_since_activity`と`active_tool_uses`の変化で判定する。
-    `reply_started`は終端済みまたは完了待ちで保留中のsessionで新しいturnを開始したことを示す。
+    `reply_started`は終了済みまたは完了待ちで保留中のsessionで新しいturnを開始したことを示す。
     `reply_failed`は新しいturnを開始できなかったこと、`reply_ambiguous`は開始の成否を確定できなかったことを示し、
     いずれも`atk agents wait`で状態を確認してから次の操作を選ぶ。
     sessionの起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
@@ -286,7 +289,7 @@ async def kill(
         float,
         Field(
             description=parameter_description(
-                "中断要求後に終端を待つ上限秒数。"
+                "中断要求後に終了を待つ上限秒数。"
                 "固有のtimeout要件がなければ引数を省略して待機上限を270秒とする。"
                 "0を指定すると、中断要求を配送した直後の状態を返す。"
             )
@@ -294,10 +297,10 @@ async def kill(
     ] = DEFAULT_KILL_TIMEOUT,
     stop: Annotated[
         bool,
-        Field(description=parameter_description("終端結果を返した応答に限り、同じsessionを応答後に破棄する。")),
+        Field(description=parameter_description("終了時の結果を返した応答に限り、同じsessionを応答後に破棄する。")),
     ] = False,
 ) -> dict[str, Any]:
-    """実行中turnへ中断を要求し、指定時間まで終端を待つ。
+    """実行中turnへ中断を要求し、指定時間まで終了を待つ。
 
     停止は最終手段とする。実行中の委譲先には`send_message`で訂正を配送できるため、
     そちらで意図を満たせる場合は、停止によって失われる作業と再起動の費用の方が大きい。
@@ -306,8 +309,8 @@ async def kill(
     引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
     `timeout=0`を指定すると、中断要求を配送した直後の状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。
-    終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
-    `show`の`result_held`が真のsessionでは、保留中の結果をそのまま終端結果として返し、以後の`send_message`を受け付ける。
+    終了時の結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
+    `show`の`result_held`が真のsessionでは、保留中の結果をそのまま終了時の結果として返し、以後の`send_message`を受け付ける。
     `show`の`ownership`が`owner_lost`のsessionでは、登録簿のpidと起動時刻が一致する委譲先CLIだけを停止し、
     停止を確かめてから`interrupted`を返す。所有していたagents_serverのプロセスは止めない。以後の`send_message`は同じ会話を再開する。
     """
@@ -316,7 +319,7 @@ async def kill(
 
 @mcp.tool(name="stop", structured_output=True)
 async def stop_session(session_id: Annotated[str, Field(description=SESSION_ID_DESCRIPTION)]) -> dict[str, Any]:
-    """再開する予定の無い終端済みsessionを明示的に破棄する。
+    """再開する予定の無い終了済みsessionを明示的に破棄する。
 
     statusLineの表示対象と`list`の応答から除き、backendがsession専用に保持する資源を解放する。
     実行中turnを持つsessionは破棄しない。中断が必要な場合は先に`kill`を発行する。
@@ -332,7 +335,7 @@ async def list_sessions(
         bool,
         Field(
             description=parameter_description(
-                "真のとき、未回収結果を持たない終端済みと`expired`のsessionも返す。除いた件数があるときだけ`omitted`へ返す。"
+                "真のとき、未回収結果を持たない終了済みと`expired`のsessionも返す。除いた件数があるときだけ`omitted`へ返す。"
             )
         ),
     ] = False,
@@ -348,8 +351,8 @@ async def list_sessions(
     解除待ちのsessionは解除後に同じsessionで作業を続けるため、
     催促、巻き取りおよび別の候補での起動し直しの理由にしない。
     起動条件は`show`で取得する。
-    結果本文は返さないため、終端の観測と結果の受領には`atk agents wait`を使う。
-    表示範囲を指定しない場合は未回収結果を持たない終端済みまたは`expired`のsessionを除き、除いた件数を`omitted`へ返す。
+    結果本文は返さないため、終了の観測と結果の受領には`atk agents wait`を使う。
+    表示範囲を指定しない場合は未回収結果を持たない終了済みまたは`expired`のsessionを除き、除いた件数を`omitted`へ返す。
     全件が必要な場合は`include_terminated`へ真を渡す。除いた件数が0なら`omitted`は省く。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
     """
@@ -381,13 +384,13 @@ async def show_session(
     催促、巻き取りおよび別の候補での起動し直しの理由にしない。
     `status`が`running`で未完了のツール呼び出しがある場合は、`active_tool_uses`へ各呼び出しの種別、開始時刻および入力の要約を返す。
     前回の照会と同じ呼び出しが同じ開始時刻で続いている場合も、長時間のコマンドの実行中として扱う。
-    `status`が`running`で、このsessionが`start`で起動し終端をまだ観測していない子sessionがある場合は、
+    `status`が`running`で、このsessionが`start`で起動し終了をまだ観測していない子sessionがある場合は、
     安定した順序の`live_child_sessions`（`session_id`と`cwd`の対）を返す。
-    この一覧は子の終端を観測するまで残るため、子が稼働中である根拠にしない。
+    この一覧は子の終了を観測するまで残るため、子が稼働中である根拠にしない。
     子の状態は、子の`session_id`を渡した`show`の`status`と`seconds_since_activity`で判定する。
     `cwd`を解決できない識別子は`live_child_session_ids_without_cwd`へ分けて返し、その識別子へは追送と打ち切りを発行できない。
     `result_held`が真のsessionは、委譲先のモデルのturnが終わり、
-    バックグラウンドタスクまたは子sessionの終端か利用上限の解除を待って結果を保留している。
+    バックグラウンドタスクまたは子sessionの終了か利用上限の解除を待って結果を保留している。
     活動が止まるため`seconds_since_activity`が増えても停滞を意味しない。追跡中のバックグラウンドタスクは`live_background_tasks`
     （`task_id`・`task_type`・`description`・`seconds_since_start`）で返す。
     バックグラウンドタスクの後の結果が不要なら`kill`で保留中の結果を受け取れる。
@@ -396,9 +399,9 @@ async def show_session(
     打ち切り、`kill`、または期限を持たない利用上限の解除待ち・過負荷の継続待ちの保留への追送で確定した時点で
     待機対象が残った結果は`error`の`heldResultFinalized`が真で、再開したturnの結果ではない。残ったバックグラウンドタスクは`unfinishedBackgroundTasks`、子sessionは
     `unobservedSessions`に識別子を持つ。`unobservedSessions`だけでは保留の確定と区別できない。
-    終端したsessionが空でない`error`を保持する場合は、`error`を返す。失敗の原因と次の操作の判断に使える。
-    共有の登録簿だけから復元したsessionは`error`を保持しないため返さず、原因は`atk agents wait`の終端行で受け取る。
-    ただし所有するagents_serverが終端を公開せずに終了し、turnを実行するプロセスも存在しないsessionは、
+    終了したsessionが空でない`error`を保持する場合は、`error`を返す。失敗の原因と次の操作の判断に使える。
+    共有の登録簿だけから復元したsessionは`error`を保持しないため返さず、原因は`atk agents wait`の終了行で受け取る。
+    ただし所有するagents_serverが終了を公開せずに終了し、turnを実行するプロセスも存在しないsessionは、
     `status`を`interrupted`とし、`error`の`interruptionReason`が`owner_processes_exited`を示す。
     所有するagents_serverの停止で中断したturnは`interruptionReason`が`owner_server_stopped`を示す。
     所有するagents_serverが状態を公開しなくなった後も委譲先CLIが生存するsessionは`status`を`running`とし、
@@ -409,7 +412,7 @@ async def show_session(
     `not_collected`（終了診断の導入前の記録）、`missing`、`unreadable`のいずれかで、`next_action`が読み取り操作を示す。
     過去に中断したturnがあるsessionは、再開・解放の後も`interrupted_turns`へturn番号・理由・`diagnostics`の組を返す。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
-    終端結果本文は返さないため、受領には`atk agents wait`を使う。
+    終了時の結果本文は返さないため、受領には`atk agents wait`を使う。
     """
     await _MANAGER.take_over_orphaned_session(session_id)
     return await _MANAGER.show_session(session_id, verbose=verbose)

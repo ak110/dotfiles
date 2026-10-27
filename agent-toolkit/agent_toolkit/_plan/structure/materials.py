@@ -181,7 +181,7 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
                 errors.append(f"要求{requirement_id}の採否は採用または不採用にする: {decision}")
             elif decision == "採用":
                 adopted_requirement_ids.add(requirement_id)
-                if adopted.startswith("終端工程のみ"):
+                if adopted.startswith("公開工程のみ"):
                     terminal_only_requirement_ids.add(requirement_id)
             if decision == "採用" and (adopted == PLAN_NON_QUEUE_VALUE or excluded != PLAN_NON_QUEUE_VALUE):
                 errors.append(

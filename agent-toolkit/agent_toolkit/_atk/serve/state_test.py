@@ -1079,7 +1079,7 @@ async def test_remove_api_accepts_terminal_states_and_preserves_protected_states
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """終端状態とholdは削除し、processingの保護を維持する。"""
+    """終了状態とholdは削除し、processingの保護を維持する。"""
     _patch_comment_edit_dependencies(monkeypatch)
     contents: dict[str, str] = {}
     for state_name in ("adopted", "rejected", "hold", "processing"):

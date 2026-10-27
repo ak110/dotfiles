@@ -894,7 +894,7 @@ def _extract_agy(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[s
 
 
 def _agy_entry_events(entry: dict[str, Any]) -> list[dict[str, Any]]:
-    """agyの1イベントから、ツール失敗・エラー報告・失敗終端・返却本文の共通イベントを取得する。"""
+    """agyの1イベントから、ツール失敗・エラー報告・失敗終了・返却本文の共通イベントを取得する。"""
     event_type = entry.get("event")
     body = entry.get(event_type) if isinstance(event_type, str) else None
     if not isinstance(body, dict):
@@ -1094,7 +1094,7 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
 
 
 def _turn_finished(entry: dict[str, Any], runtime: _Runtime) -> bool:
-    """既存のホストの終端記録を使い、後続turnの作業を先行返却の分類から切り離す。"""
+    """既存のホストの終了記録を使い、後続turnの作業を先行返却の分類から切り離す。"""
     if runtime == "opencode":
         if entry.get("_opencode_sqlite") is True:
             message = entry.get("message")

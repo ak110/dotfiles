@@ -296,6 +296,9 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
     assert "# ワークフローCI失敗" in content
     assert "## 反映内容と反映先" in content
     assert "反映先は`github.com/owner/repo`とする。" in content
+    assert "## 調査結果と判断根拠" in content
+    assert "## 適用範囲" not in content
+    assert "## 実現性" not in content
     assert "## メリット" not in content
     assert "## デメリット" not in content
     assert "調査と変更の検証に作業が必要になる。" not in content

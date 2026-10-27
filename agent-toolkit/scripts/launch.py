@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ _AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
 _STDERR_TAIL_BYTES = 16 * 1024
 _FORWARDED_SIGNALS = ("SIGINT", "SIGTERM", "SIGHUP")
 _STOP_TIMEOUT = 5.0
+_PREPARE_TIMEOUT = 600.0
 
 
 def main() -> int:
@@ -96,13 +98,18 @@ def main() -> int:
 def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
     """依存だけを一時環境へ同期し、完了後に共有環境として公開する。"""
     target = plugin_environment.project_environment(root, environment)
+    started = time.monotonic()
     try:
         with plugin_environment.prepare_lock(target):
             if plugin_environment.prepared_python(root, environment) is not None:
                 return 0
+            remaining = _PREPARE_TIMEOUT - (time.monotonic() - started)
+            if remaining <= 0:
+                raise TimeoutError(f"共有依存環境のprepareが{_PREPARE_TIMEOUT:.0f}秒以内に完了しませんでした: {target}")
             prepare_environment = dict(environment)
             prepare_environment["UV_PROJECT_ENVIRONMENT"] = str(target)
-            result = subprocess.run(
+            # prepareもbootstrapが所有する子として扱い、時間切れではuvの子孫まで回収する。
+            with _server_lifetime(
                 [
                     uv,
                     "sync",
@@ -114,14 +121,16 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
                     "--no-default-groups",
                     "--no-install-project",
                 ],
-                env=prepare_environment,
-                check=False,
-            )
-            if result.returncode != 0:
-                return result.returncode
+                environment=prepare_environment,
+                received=[],
+                tail=bytearray(),
+            ) as process:
+                returncode = process.wait(timeout=remaining)
+            if returncode != 0:
+                return returncode
             plugin_environment.publish_prepared_environment(root, environment)
             return 0
-    except (OSError, TimeoutError) as exc:
+    except (OSError, TimeoutError, subprocess.TimeoutExpired) as exc:
         next_action.report(
             f"共有依存環境を準備できません: {exc}",
             next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行してください。",

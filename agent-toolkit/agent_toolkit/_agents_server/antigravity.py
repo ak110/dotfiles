@@ -66,7 +66,7 @@ def _event_text(payload: dict[str, Any]) -> str:
 
 
 def result_values(session: SessionState, payload: dict[str, Any]) -> dict[str, Any]:
-    """`result`イベントを終端結果へ変換する。"""
+    """`result`イベントを終了時の結果へ変換する。"""
     raw_status = payload.get("status")
     status = raw_status.lower() if isinstance(raw_status, str) else raw_status
     agent_message = _event_text(payload) or session.agent_message
@@ -139,6 +139,10 @@ class AntigravityManager(CliTurnManager):
                 await self._notify_waiters()
         elif kind == "result":
             finalize_turn(session, result_values(session, body))
+            if session.result_contract_recovery_pending:
+                # 形式回復が保持した今回の本文を、孫待機用の旧状態で上書きしない。
+                await self._notify_waiters()
+                return True
             if resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
                 resume_waits.begin_auto_resume_wait(
                     session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}

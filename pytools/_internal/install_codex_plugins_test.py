@@ -489,6 +489,97 @@ def test_post_apply_update_continues_with_new_warmup_version(
     assert "atk serve 自動起動セットアップ (Linux)" in reached
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "marketplaceName",
+        "name",
+        "version",
+        "not-list",
+        "not-item",
+        "null-version",
+        "path-version",
+        "missing-root",
+        "drive-marketplace",
+        "wrong-name",
+        "os-error",
+        "timeout",
+    ],
+)
+def test_external_hook_codex_inventory_failure_identifies_host_and_command(tmp_path, monkeypatch, capsys, failure):
+    """Claude側に対象が無い旧shimの公開入口でも、Codexの不足要素を診断できる。"""
+    script = Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook"
+    shim = runpy.run_path(str(script))
+    monkeypatch.setitem(shim["main"].__globals__, "__file__", str(tmp_path / "atk-hook"))
+    monkeypatch.setattr(sys, "argv", ["atk-hook", "PreToolUse"])
+    monkeypatch.delenv("PLUGIN_ROOT", raising=False)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    item = {
+        "pluginId": "agent-toolkit@ak110-dotfiles",
+        "enabled": True,
+        "marketplaceName": "ak110-dotfiles",
+        "name": "agent-toolkit",
+        "version": "1.0",
+    }
+    if failure in item:
+        item.pop(failure)
+    if failure == "null-version":
+        item["version"] = None
+    elif failure == "path-version":
+        item["version"] = "../outside"
+    elif failure == "drive-marketplace":
+        item["marketplaceName"] = "C:"
+    elif failure == "wrong-name":
+        item["name"] = "other"
+    installed: object = {} if failure == "not-list" else [None] if failure == "not-item" else [item]
+
+    def run(args, **_kwargs):
+        if args[0] == "codex" and failure == "os-error":
+            raise OSError("取得失敗")
+        if args[0] == "codex" and failure == "timeout":
+            raise subprocess.TimeoutExpired(args, 15)
+        return subprocess.CompletedProcess(args, 0, json.dumps([] if args[0] == "claude" else {"installed": installed}), "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert shim["main"]() == 1
+    message = capsys.readouterr().err
+    assert "Codex" in message
+    assert "codex plugin list --json" in message
+
+
+@pytest.mark.parametrize("failure", ["acquisition", "json", "scope", "disabled", "ambiguous", "missing"])
+def test_external_hook_reports_the_claude_cause_and_command(tmp_path, monkeypatch, capsys, failure):
+    """外部shimがClaude側で失敗した場合に、原因側の操作をそのまま示す。"""
+    script = Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook"
+    shim = runpy.run_path(str(script))
+    monkeypatch.setitem(shim["main"].__globals__, "__file__", str(tmp_path / "atk-hook"))
+    monkeypatch.setattr(sys, "argv", ["atk-hook", "PreToolUse"])
+    monkeypatch.delenv("PLUGIN_ROOT", raising=False)
+    item = {
+        "id": "agent-toolkit@ak110-dotfiles",
+        "scope": "user",
+        "enabled": failure != "disabled",
+        "installPath": str(tmp_path / "missing"),
+    }
+    if failure == "scope":
+        item.update(scope="project", projectPath=str(tmp_path / "other"))
+    installed = [item, item.copy()] if failure == "ambiguous" else [item]
+
+    def run(args, **_kwargs):
+        assert args == ["claude", "plugin", "list", "--json"]
+        return subprocess.CompletedProcess(
+            args, 1 if failure == "acquisition" else 0, "not-json" if failure == "json" else json.dumps(installed), ""
+        )
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert shim["main"]() == 1
+    message = capsys.readouterr().err
+    assert "Claude Code" in message
+    assert "claude plugin list --json" in message
+    assert "Codexのplugin一覧" not in message
+    assert "同じhookを再実行" in message
+
+
 @pytest.mark.parametrize("placement", ["bundled", "installed-new", "installed-legacy"])
 def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pytest.MonkeyPatch, placement: str) -> None:
     """配布内は自身の版、外側の旧呼出しは導入版を使い、イベントと終了状態を渡す。"""
@@ -508,6 +599,8 @@ def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pyt
     monkeypatch.setattr(sys, "argv", [str(wrapper), "pretooluse"])
 
     def run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if args[0] == "claude":
+            return subprocess.CompletedProcess(args, 0, "[]", "")
         calls.append(args)
         return subprocess.CompletedProcess(
             args,
@@ -572,6 +665,7 @@ def _write_claude_plugin_root(root: Path, version: str) -> None:
     (root / "agent_toolkit").mkdir()
     (root / "agent_toolkit/hook.py").write_text("# hook\n", encoding="utf-8")
     (root / "marker").write_text(version, encoding="utf-8")
+    (root / "skills").mkdir()
 
 
 def test_hook_wrapper_restores_missing_pinned_root_from_same_claude_version(
@@ -618,24 +712,7 @@ def test_hook_wrapper_uses_current_claude_install_when_same_version_is_unavailab
     shutil.copyfile(Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook", wrapper)
     current = home / ".claude/plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3"
     _write_claude_plugin_root(current, "1.2.3")
-    registry = home / ".claude/plugins/installed_plugins.json"
-    registry.parent.mkdir(parents=True, exist_ok=True)
-    registry.write_text(
-        json.dumps(
-            {
-                "plugins": {
-                    "agent-toolkit@ak110-dotfiles": [
-                        {
-                            "installPath": str(current),
-                            "version": "1.2.3",
-                            "lastUpdated": "2026-10-21T00:00:00Z",
-                        }
-                    ]
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
+    installed = [{"id": "agent-toolkit@ak110-dotfiles", "scope": "user", "enabled": True, "installPath": str(current)}]
     pinned = home / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2"
     calls: list[list[str]] = []
     monkeypatch.setenv("HOME", str(home))
@@ -648,7 +725,12 @@ def test_hook_wrapper_uses_current_claude_install_when_same_version_is_unavailab
         raise SystemExit(0)
 
     monkeypatch.setattr(os, "execv", execute)
-    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("現行Claude配布物を使える"))
+
+    def run(args, **_kwargs):
+        assert args == ["claude", "plugin", "list", "--json"]
+        return subprocess.CompletedProcess(args, 0, json.dumps(installed), "")
+
+    monkeypatch.setattr(subprocess, "run", run)
 
     with pytest.raises(SystemExit, match="0"):
         runpy.run_path(str(wrapper), run_name="__main__")

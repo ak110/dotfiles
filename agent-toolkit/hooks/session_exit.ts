@@ -1,3 +1,4 @@
+import { pluginLaunchCommand } from "./plugin_launch.ts";
 import type { EngineInterface, On } from "claude-code";
 import { automatedMessage, changedWarning } from "./automated_message.ts";
 import { isMarked, parseCronJobs, parseSchedule } from "./periodic_recheck.ts";
@@ -32,7 +33,7 @@ async function statePath($: EngineInterface, sessionId: string, kind: "marker" |
 
 function cleanupWarning(reason: string): string {
   return automatedMessage("periodic-recheck", "warn", `定期再確認taskの自動回収を完了できなかった（理由: ${reason}）。` +
-    "taskは保持する。必要な許可とツールの公開状態を確認し、次のStopで全待機終了の判定が得られたときにmodが再評価する。");
+    "taskは保持する。必要な許可とツールの公開状態を確認せよ。次のStopで全待機終了の判定が得られたときにmodが再評価する。");
 }
 
 // Stopが同じターンの非同期判定を書き、ここで一度だけ消費する。欠落・不明は回収の許可にしない。
@@ -55,7 +56,7 @@ async function collectPeriodicRecheck($: EngineInterface, sessionId: string, abo
     if (marked.length === 0) return null;
     const root = $.plugin.root;
     const schedule = await $.process.run(
-      ["uv", "run", "--project", root, "--locked", "--no-default-groups", `${root}/agent_toolkit/atk.py`, "wait-schedule"],
+      pluginLaunchCommand(root, "agent_toolkit/atk.py", ["wait-schedule"]),
       { timeoutMs: 60_000 },
     );
     const common = schedule.exitCode === 0 ? parseSchedule(schedule.stdout) : undefined;

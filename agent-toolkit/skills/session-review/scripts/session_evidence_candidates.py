@@ -133,7 +133,7 @@ _DELEGATE_COMPLETION_VALUES = frozenset(
         "対応完了",
         "対応完了（再レビュー不要）",
         "統合完了",
-        "終端完了",
+        "公開完了",
     }
 )
 """`<役割名>.subagent.md`が成功の返却値として定める固定の先頭行。各値が`agent-toolkit/share/`の`<役割名>.subagent.md`に現れることをテストが確かめる。"""
@@ -265,7 +265,7 @@ def _processed_wi_filenames(collected: list[_CollectedRecord]) -> set[str]:
 def _wi_entry(text: str, section: str) -> str:
     """WIの指定した節から、回答欄の注記行（HTMLコメントだけの行）を除いた記入を返す。
 
-    `## ユーザーコメント`は処理結果の節が後ろに続く終端済みの項目もあるため、節の位置を問わずに読む。
+    `## ユーザーコメント`は処理結果の節が後ろに続く終了済みの項目もあるため、節の位置を問わずに読む。
     """
     lines = [
         line
@@ -562,6 +562,13 @@ def _candidate_events(
         start=1,
     ):
         locators: list[dict[str, Any]] = [{"record": str(event["record"]), "line": int(event["line"])} for event in events]
+        if key and key[0] in {"definition-body-read", "definition-read-unresolved"}:
+            for event in events:
+                for operation in event.get("operations", []):
+                    line = operation.get("execution_line") if isinstance(operation, dict) else None
+                    if isinstance(line, int):
+                        locators.append({"record": str(event["record"]), "line": line})
+        locators = list({(locator["record"], locator["line"]): locator for locator in locators}.values())
         locators.sort(key=lambda locator: (str(locator["record"]), int(locator["line"])))
         for locator in locators:
             locator_key = (str(locator["record"]), int(locator["line"]))

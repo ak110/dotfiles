@@ -61,7 +61,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     notification_body.add_argument("--body-file", type=pathlib.Path, help="委譲元へ送る本文を保持するUTF-8ファイルの絶対パス。")
     list_ = _help.add_command(sub, "list", **_help.HELP["atk agents list"])
     list_.set_defaults(error_parser=list_)
-    list_.add_argument("--include-terminated", action="store_true", help="未回収結果を持たない終端済みsessionも含める。")
+    list_.add_argument("--include-terminated", action="store_true", help="未回収結果を持たない終了済みsessionも含める。")
     list_.add_argument(
         "--watch",
         action="store_true",
@@ -551,7 +551,7 @@ def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] |
 
 
 def _registry_session(session_id: str, root_session_id: str | None) -> dict[str, Any] | None:
-    """状態ファイルに無いsessionを、session登録簿の解決結果（実行中か終端）から表示する。
+    """状態ファイルに無いsessionを、session登録簿の解決結果（実行中か終了）から表示する。
 
     所有するagents_serverの状態ファイルが失われたsessionも、登録簿が実行中か、実行プロセスの不在による中断かを示せる。
     所有サーバーを失った実行中のsessionには、記録プロセス、記録時のルート、旧ルートに残る通知の件数と案内を加える。

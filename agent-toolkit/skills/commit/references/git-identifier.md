@@ -1,18 +1,18 @@
 # Git識別子の扱い
 
-`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」が委ねる、報告と操作で用いるGit識別子を定める。
+本書は、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に基づき、作業の報告やコマンド操作で使用するGit識別子の扱い方を定める。
 
-Git操作、内部比較、報告、記録、成果物では、人間が対象を判別できる識別子（日付、件名、branch名、tag名、PR・MR番号、run URL、計画名、WIファイル名、レーン識別子など）を優先する。
-人が読む記述での選び方は`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う。エージェントがcommitを再取得する記述では`git rev-parse --short=7 <revision>`が返す7文字以上の一意な短縮OIDで表す（`--short`だけの最小長は`core.abbrev`に従う）。観測結果は`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月14日」にある。
-`git rev-parse --short=7`へは1回に1件のrevisionだけを渡す。複数渡すと`fatal: Needed a single revision`で失敗する。
-peel式は実行shellで単一引数にする。PowerShellでは`git rev-parse --verify 'HEAD^{commit}'`のように単一引用符で囲む。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月20日」にある。
+Gitの操作、内部比較、作業報告、記録、および成果物の作成にあたっては、人間が対象を判別しやすい識別子（日付、コミット件名、ブランチ名、タグ名、PR・MR番号、実行ログのURL、計画名、WIファイル名、レーン識別子など）を優先して使用する。
+人間向けの記述における識別子の選び方は、`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う。一方、エージェントがコミットを機械的に再取得する記述では、`git rev-parse --short=7 <revision>`が返す7文字以上の一意な短縮OIDを用いる（`--short`のみを指定した場合の最小長はGit設定の`core.abbrev`に依存する）。この挙動の検証結果は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月14日」に記録されている。
+なお、`git rev-parse --short=7`には1回につき1件のリビジョンのみを渡す。複数のリビジョンを同時に渡すと`fatal: Needed a single revision`エラーで失敗する。
+また、リビジョンのpeel式をシェルで評価する際は、全体を単一の引数として渡す。たとえばPowerShellでは、`git rev-parse --verify 'HEAD^{commit}'`のようにシングルクォートで囲む。この監査記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月20日」にある。
 
-識別子は実行結果として得た値をそのまま使い、記憶や推測で組み立てた値は使用対象から除く。誤った識別子は別対象への操作を招き、受け取ったエージェントが実在しない対象を待つ。
+識別子には、コマンドの実行結果として実際に得られた値をそのまま利用する。記憶や推測によって組み立てた値は除外する。誤った識別子を指定すると、意図しない対象に対する操作につながったり、後続のエージェントが存在しない対象を待ち続けたりする原因となる。
 
-外部コマンドやAPIが40桁か64桁のOIDを要求する場合は、その操作の直前に同じ実行ホストで`$(git rev-parse <revision>)`のように解決して変数へ代入し、終了コード、空でないこと、形式を確かめてからその操作だけに使う。会話や過去の出力から書き写した値は使用対象から除く。置換の失敗が空文字列へ展開すると操作の意味が変わることがある。pushのrefspecでは空の送り元がremote refの削除を意味するため、解決した値を確かめてから渡す。
-完全OIDは工程間へ伝播させず、工程間には短縮OIDを渡す。`SKILL.md`「WI実装commitの対応」の各コマンドは対象worktreeで完全OIDへ解決してから比較する。
+外部コマンドやAPIが40桁または64桁の完全なOIDを要求する場合は、操作する直前に同じ実行環境で`$(git rev-parse <revision>)`のように解決して変数に代入する。そのうえで、コマンドの終了コードが正常であること、値が空でないこと、および形式が正しいことを確認してから、その操作にのみ使用する。過去の会話履歴や古い出力から手作業で書き写した値は除外する。コマンド置換に失敗して空文字列が渡されると、操作の意味が意図せず変化することがある。とくに`git push`のrefspecでは、送信元が空になるとリモート参照（remote ref）の削除を意味してしまうため、解決した値を確実に検証してから渡す。
+完全OIDの工程間への引き継ぎは避ける。工程間の受け渡しには短縮OIDを用いる。`SKILL.md`「WI実装commitの対応」に記載された各コマンドは、対象のworktree内で完全OIDに解決したうえで比較する。
 
-現在の作業ディレクトリと別のリポジトリを操作するGitコマンドは`git -C <解決済み絶対パス>`で対象を各コマンドに明示し、`cd`の結果を後続コマンドへ引き継がない。
+現在の作業ディレクトリとは異なるリポジトリを操作するGitコマンドは、`git -C <解決済み絶対パス>`を用いて対象ディレクトリを各コマンドへ明示的に渡す。`cd`の移動結果を後続のコマンドに引き継ぐ運用は避ける。
 
 ## 名指し参照の読込方法
 

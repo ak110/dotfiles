@@ -53,7 +53,8 @@ def main() -> None:
 
     # Windowsの「送る」経由実行ではコマンドプロンプトが自動で閉じるため、
     # 結果を確認できるようキー入力待ちで停止する (C# 版踏襲)。
-    if interactive and sys.platform == "win32":
+    # パイプ入力ではコンソールから次のキーを受け取れないため待機しない。
+    if interactive and sys.platform == "win32" and sys.stdin.isatty():
         _wait_keypress()
     sys.exit(0)
 
@@ -61,13 +62,13 @@ def main() -> None:
 def _print_targets(targets: list[pathlib.Path]) -> None:
     """対象一覧と現在 mtime を表示する。
 
-    シンボリックリンクは `touch_path` がリンク自身を処理するため、
-    表示側も `is_symlink()` を含めて判定する（参照先消失時の挙動を実処理と揃える）。
+    シンボリックリンクとジャンクションは `touch_path` がリンク自身を処理するため、
+    表示側も同じ判定を行う（参照先消失時の挙動を実処理と揃える）。
     `lstat` を使い、リンクの場合はリンク自身の mtime を表示する。
     """
     print("対象ファイル：")
     for target in targets:
-        if target.is_symlink() or target.exists():
+        if _is_link(target) or target.exists():
             mtime = datetime.datetime.fromtimestamp(target.lstat().st_mtime)
             print(f"{target.name}: {mtime}")
         else:
@@ -78,14 +79,14 @@ def _print_targets(targets: list[pathlib.Path]) -> None:
 def touch_path(path: pathlib.Path, time: datetime.datetime) -> None:
     """対象パスの mtime/atime を `time` に設定する。
 
-    ディレクトリ指定時は配下を再帰的に処理する。シンボリックリンクは追跡せず、
-    リンク自身の時刻を更新する。存在しないパスは警告ログのみで継続する。
+    ディレクトリ指定時は配下を再帰的に処理する。シンボリックリンクとジャンクションは
+    追跡せず、どのOSでもリンク自身の時刻を更新する。存在しないパスは警告ログのみで継続する。
     `pathlib` には任意時刻を指定する API が無いため `os.utime` を使う。
     """
     print(f"{path} . . .")
     timestamp = time.timestamp()
-    if path.is_symlink():
-        os.utime(path, (timestamp, timestamp), follow_symlinks=False)
+    if _is_link(path):
+        _touch_link(path, timestamp)
     elif path.is_file():
         os.utime(path, (timestamp, timestamp))
     elif path.is_dir():
@@ -96,6 +97,19 @@ def touch_path(path: pathlib.Path, time: datetime.datetime) -> None:
         logger.warning(
             ("対象が存在しません: %s。スキップして続行します。更新が必要なら存在するパスを指定して再実行してください。"), path
         )
+
+
+def _is_link(path: pathlib.Path) -> bool:
+    """シンボリックリンクまたはWindowsのディレクトリジャンクションかを返す。"""
+    return path.is_symlink() or path.is_junction()
+
+
+def _touch_link(path: pathlib.Path, timestamp: float) -> None:
+    """リンク自身の atime/mtime を設定する。"""
+    if os.utime in os.supports_follow_symlinks:
+        os.utime(path, (timestamp, timestamp), follow_symlinks=False)
+    else:
+        winutils.set_link_times(str(path), timestamp)
 
 
 def _wait_keypress() -> None:

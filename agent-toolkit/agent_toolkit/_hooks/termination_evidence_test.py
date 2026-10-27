@@ -26,6 +26,8 @@ from agent_toolkit._hooks import (
 )
 from agent_toolkit._testing import agents_server_support, git_repository
 
+pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
+
 WORK_COMPLETE = "## 作業完了報告\n\n完了した。\n\n### 成果\n\n- 変更した\n\n### 投入したWI\n\n- なし\n"
 CONTINUATION = '<atk-auto source="stop" kind="continuation">判断を記録する</atk-auto>'
 COMPLETION_SKILL_TEXT = "---\nname: completion-report\nuser-invocable: false\n---\n\n# 作業完了報告とセッションの完了処理\n"
@@ -1070,7 +1072,7 @@ class _RegisteredBackend(agents_server_support.FakeBackend):
 async def test_started_session_without_projection_is_waited_by_same_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """表示保存に失敗した公開startのIDを同じ作業の待機対象とし、wait判断の受理から終端本文の回収まで到達する。"""
+    """表示保存に失敗した公開startのIDを同じ作業の待機対象とし、wait判断の受理から終了本文の回収まで到達する。"""
     state_root = tmp_path / "state"
     monkeypatch.setattr(state_paths, "state_dir", lambda: state_root)
     supply_commit(tmp_path)

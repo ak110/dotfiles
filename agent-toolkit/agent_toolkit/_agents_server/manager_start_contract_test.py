@@ -337,7 +337,7 @@ class ReplaceRefusal:
 
 
 class TerminalBeforeResponseBackend(ObservedBackend):
-    """起動応答を返す前にturnが終端したsessionを返す。"""
+    """起動応答を返す前にturnが終了したsessionを返す。"""
 
     async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
         session = await super().start(*args, **kwargs)
@@ -361,10 +361,10 @@ async def test_nested_and_early_terminal_start_preserves_registration(
     host_session_id: str,
     terminal_before_response: bool,
 ) -> None:
-    """表示射影を一度も保存できない書込主体でも、起動結果・待機登録・終端本文の回収が同じsessionへ届く。
+    """表示射影を一度も保存できない書込主体でも、起動結果・待機登録・終了本文の回収が同じsessionへ届く。
 
-    root以外の書込主体（入れ子の委譲）と、応答前に終端したsessionの双方で、
-    公開応答のID・cwd・委譲元と、CLI待機の登録と終端結果を表示ファイルから独立して扱えることを確かめる。
+    root以外の書込主体（入れ子の委譲）と、応答前に終了したsessionの双方で、
+    公開応答のID・cwd・委譲元と、CLI待機の登録と終了時の結果を表示ファイルから独立して扱えることを確かめる。
     """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
@@ -423,7 +423,7 @@ async def test_nested_and_early_terminal_start_preserves_registration(
 async def test_close_during_projection_failure_still_releases_writer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """終了時の表示保存が失敗しても、終端結果を残したうえで書込主体の後始末まで進む。"""
+    """終了時の表示保存が失敗しても、終了時の結果を残したうえで書込主体の後始末まで進む。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     writer = status_file.StatusFileWriter(
         {},

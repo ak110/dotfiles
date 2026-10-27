@@ -1,4 +1,4 @@
-"""解放要求の配送と所有・終端の再検収を確かめる。"""
+"""解放要求の配送と所有・終了の再検収を確かめる。"""
 
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ async def test_process_requests_rejects_nested_worktree_cwd(
         await session_release.process_requests({"child": _Session(True, str(cwd))}, stop, state_root=tmp_path)
         reason = await task
         if registered_paths and nested:
-            assert reason and "要求後に所有または終端状態が変わった" in reason
+            assert reason and "要求後に所有または終了状態が変わった" in reason
             assert not calls
         else:
             assert reason is None and calls == ["child"]

@@ -31,7 +31,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 class _RetryClient(FakeClaudeClient):
-    """通知を受信し終えた時点で同期し、streamの終端を検証側が所有する。"""
+    """通知を受信し終えた時点で同期し、streamの終了を検証側が所有する。"""
 
     def __init__(self, messages: list[Any]):
         super().__init__([messages])
@@ -151,7 +151,7 @@ async def test_claude_retry_receive_and_public_projection(tmp_path, monkeypatch,
 @pytest.mark.parametrize("info,status", [("serverOverloaded", None), ({"httpConnectionFailed": {"httpStatusCode": 503}}, 503)])
 @pytest.mark.asyncio
 async def test_codex_retry_turn_and_activity_projection(tmp_path, monkeypatch, capsys, info, status, activity):
-    """Codexの再試行を対応turnへ記録し、モデル活動とturn終端で解除する。"""
+    """Codexの再試行を対応turnへ記録し、モデル活動とturn終了で解除する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState("retry-session", str(tmp_path), engine="codex", turn_id="turn-1", status="running")
     async with manager.AgentsServerManager(None) as owner, codex.AppServerManager(owner.sessions, owner._condition) as backend:

@@ -98,7 +98,7 @@ def test_non_git_read_only_queue_migrates_without_git_operations(tmp_path: pathl
 
 @pytest.mark.parametrize("same_result", [True, False])
 def test_concurrent_terminal_commits_compare_fixed_path_state_and_result(tmp_path: pathlib.Path, same_result: bool) -> None:
-    """日時だけ異なる同等終端を統合し、結果が異なる分岐は保持する。"""
+    """日時だけ異なる同等終了を統合し、結果が異なる分岐は保持する。"""
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")
     seed = git_repository.init_repository(tmp_path / "seed", initial_branch="main", commit_message="初期状態")
     names = add.add_entries(

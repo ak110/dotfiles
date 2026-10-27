@@ -130,7 +130,7 @@ def test_return_rejected_entry_to_inbox_strips_terminal_result(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """不採用項目をinboxへ戻す際に終端結果節だけを除去する。"""
+    """不採用項目をinboxへ戻す際に終了時の結果節だけを除去する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     _disable_transition_git(monkeypatch)
@@ -1093,13 +1093,13 @@ class TestEditBodyFile:
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8").endswith("\n編集後\n")
 
-    def test_edit_rejects_undetermined_direct_cause_even_for_legacy_body(
+    def test_edit_accepts_undetermined_direct_cause_in_awi_even_for_legacy_body(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """既存本文が必須節を欠く旧書式でも、原因の未確定を宣言する本文への置換を拒否し保存本文を保つ。"""
+        """既存本文が旧書式でも、通常AWIの原因仮説を本文置換で保存する。"""
         notes = _setup_notes(tmp_path)
         inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
         path = inbox_path
@@ -1112,11 +1112,10 @@ class TestEditBodyFile:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
 
-        assert exc_info.value.code == 1
-        error = capsys.readouterr().err
-        assert "編集を拒否した: 直接的原因が未確定のまま保存しようとした" in error
-        assert "保存済みの本文がそのまま残る" in error
-        assert path.read_text(encoding="utf-8") == original
+        assert exc_info.value.code == 0
+        assert "直接的原因が未確定のまま保存しようとした" not in capsys.readouterr().err
+        assert path.read_text(encoding="utf-8") != original
+        assert "| 直接的原因 | 調査中 |" in path.read_text(encoding="utf-8")
 
     def test_processing_hold_allows_agent_replacement(
         self,
@@ -1310,7 +1309,7 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """回答マーカー重複時も終端側を基準に質問だけを更新する。"""
+        """回答マーカー重複時も終了側を基準に質問だけを更新する。"""
         notes = _setup_notes(tmp_path)
         path = _write_uwi_entry(
             notes,
@@ -1768,7 +1767,7 @@ def test_editor_failure_keeps_entry_and_names_retry_command(
 
 
 def test_terminal_state_edit_rejection_guides_to_accepted_hold_form(tmp_path: pathlib.Path) -> None:
-    """終端した項目の編集拒否は、`atk wi hold`が受理する`--state`の値付きの形を案内する。"""
+    """終了した項目の編集拒否は、`atk wi hold`が受理する`--state`の値付きの形を案内する。"""
     with pytest.raises(_wi_web_input.WebInputError) as raised:
         mutation_content.edit_entry_content(tmp_path, state="adopted", filename="20260930-000000-001.md", content="本文")
 
@@ -1942,7 +1941,7 @@ def _prepare_missing_sections(notes: pathlib.Path, monkeypatch: pytest.MonkeyPat
 
 def _prepare_undetermined_cause(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
     monkeypatch.setenv("AI_AGENT", "1")
-    _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
+    _write_uwi_entry(notes, "fb-001.md")
     return "fb-001.md", "編集後\n\n| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | 調査中 |\n"
 
 

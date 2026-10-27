@@ -195,7 +195,7 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
                 raise
             raise ProgressLogError(
                 error.reason,
-                next_action="実装差分なしで終端するAWIを除いた対象を--awiで指定して再実行する。"
+                next_action="実装差分なしで終了するAWIを除いた対象を--awiで指定して再実行する。"
                 "実装commitを持つ項目は生成側が`atk run-script plan-progress --`で対応記録を補って再取得する",
             ) from error
         for wi, commits in result.items():

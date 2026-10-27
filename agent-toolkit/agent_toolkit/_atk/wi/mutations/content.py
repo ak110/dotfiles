@@ -37,7 +37,7 @@ _USER_COMMENT_EDIT_NEXT_ACTION = (
 _USER_COMMENT_BROKEN_NEXT_ACTION = "`atk wi show {name}`で保存済みのユーザーコメント節の構造を確認し、ユーザーへ報告する"
 _BROKEN_STORED_NEXT_ACTION = "`atk wi show {name}`で保存済み本文の構造を確認し、ユーザーへ報告する"
 _EDITABLE_STATE_NEXT_ACTION = (
-    "inbox・processing・holdの項目を指定する。終端した項目は"
+    "inbox・processing・holdの項目を指定する。終了した項目は"
     "`atk wi hold <ファイル名> --state <adopted|rejected>`（現在の状態を指定）でholdへ戻してから編集する"
 )
 _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
@@ -491,8 +491,10 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     try:
         _require_agent_edit_source(original, edited)
         if message is not None or tmp_path is not None:
-            # 既存本文が旧書式でも、置換後の本文の`直接的原因`行は必ず判定する。
-            _add.require_confirmed_cause(edited)
+            # 既存本文が旧書式でも、置換後のUWIの`直接的原因`行は判定する。
+            parsed_edited = _frontmatter.parse_frontmatter(edited)
+            entry_type = parsed_edited[0].get("type") if parsed_edited is not None else None
+            _add.require_confirmed_cause(edited, entry_type=entry_type if isinstance(entry_type, str) else WI_TYPE_AWI)
     except WebInputError as error:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)

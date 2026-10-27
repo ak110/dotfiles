@@ -122,6 +122,29 @@ def test_create_reuses_integrated_resources_then_delete_removes_only_owned_lane(
     assert json.loads(pathlib.Path(deleted["result_path"]).read_text(encoding="utf-8"))["removed"] == ["lane-01"]
 
 
+def test_delete_retains_resources_and_explains_retry_after_ignore_check_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ignore判定の失敗時は原診断と再開条件を返して成果を保持する。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "output").mkdir()
+    original = lane.git_command.run
+
+    def fail_ignore(arguments: Any, *args: Any, **kwargs: Any) -> Any:
+        if arguments[0] == "check-ignore":
+            return subprocess.CompletedProcess(arguments, 128, stdout="", stderr="fatal: invalid configuration")
+        return original(arguments, *args, **kwargs)
+
+    monkeypatch.setattr(lane.git_command, "run", fail_ignore)
+    code, held, _stderr = _invoke(capsys, "delete")
+    assert code == 1 and not held["removed"]
+    reason = held["retained"][0]["reason"]
+    assert "git check-ignoreが終了128: fatal: invalid configuration" in reason
+    assert str(worktree) in reason and "Git設定と読取権限を確認" in reason and "同じlane操作を再実行" in reason
+    assert worktree.is_dir() and pathlib.Path(record["record_path"]).is_file()
+
+
 def _cleanup_integration_manifest(tmp_path: pathlib.Path, *, handoff_text: str) -> pathlib.Path:
     """回収試験の実成果に対応する引継ぎと、WI最終化のmanifestを保存する。"""
     handoff = tmp_path / "handoff.md"
@@ -339,6 +362,211 @@ def test_delete_recovers_permissions_before_checking_untracked_work(
             locked.chmod(0o700)
 
 
+@pytest.mark.parametrize("operation", ["delete", "exit"])
+@pytest.mark.parametrize("output", ["data", "build/data"])
+def test_delete_runs_project_teardown_before_preparing_foreign_ignored_output(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    operation: str,
+    output: str,
+) -> None:
+    """固有deleteはGitの保護判定後、別所有者の無視出力を撤去してから全木回収へ進む。"""
+    commands = tmp_path / "commands.json"
+    commands.write_text(
+        json.dumps({"delete": [sys.executable, "-c", "import shutil,sys;shutil.rmtree(sys.argv[1])", "{worktree}/" + output]}),
+        encoding="utf-8",
+    )
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys, "--commands-file", str(commands))
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / ".gitignore").write_text(f"/{output}/\n", encoding="utf-8")
+    git_repository.commit_all(worktree, "生成物を無視する")
+    git_repository.run_git(repo, "merge", "--ff-only", record["branch"])
+    foreign = worktree / output / "mysql"
+    foreign.mkdir(parents=True)
+    (foreign / "payload").write_text("生成物", encoding="utf-8")
+    metadata = foreign.lstat()
+    original_scandir = os.scandir
+
+    @contextlib.contextmanager
+    def foreign_owner_entries(path: Any, **kwargs: Any) -> Generator[Iterator[Any]]:
+        with original_scandir(path, **kwargs) as entries:
+
+            def entry_with_owner(entry: os.DirEntry[str]) -> Any:
+                observed = entry.stat(follow_symlinks=False)
+                if (observed.st_dev, observed.st_ino) != (metadata.st_dev, metadata.st_ino):
+                    return entry
+                fields = list(observed)
+                fields[4] = observed.st_uid + 1
+                return types.SimpleNamespace(name=entry.name, stat=lambda **_kwargs: os.stat_result(fields))
+
+            yield (entry_with_owner(entry) for entry in entries)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "scandir", foreign_owner_entries)
+        if operation == "exit":
+            patch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
+            with pytest.raises(SystemExit) as ended:
+                atk.main(["agents-exit-session"])
+            code = ended.value.code
+            observed = capsys.readouterr()
+            deleted, stderr = json.loads(observed.out)["lane_cleanup"], observed.err
+        else:
+            code, deleted, stderr = _invoke(capsys, "delete")
+    assert code == 0, stderr
+    assert deleted["removed"] == ["lane-01"]
+    assert not foreign.exists() and not pathlib.Path(record["record_path"]).exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIXのディレクトリ権限を検証する")
+@pytest.mark.parametrize("tracked", [True, False])
+def test_delete_protects_git_content_before_project_teardown(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tracked: bool,
+) -> None:
+    """ignore配下の追跡対象と、読めない非ignoreの未追跡成果は固有deleteより前に保護する。"""
+    marker = tmp_path / "teardown-ran"
+    commands = tmp_path / "commands.json"
+    commands.write_text(
+        json.dumps({"delete": [sys.executable, "-c", "import pathlib,sys;pathlib.Path(sys.argv[1]).touch()", str(marker)]}),
+        encoding="utf-8",
+    )
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys, "--commands-file", str(commands))
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / ".gitignore").write_text("/data/\n", encoding="utf-8")
+    folder = worktree / ("data" if tracked else "untracked") / "nested"
+    folder.mkdir(parents=True)
+    payload = folder / "result.txt"
+    if tracked:
+        payload.write_text("保存前", encoding="utf-8")
+        git_repository.run_git(worktree, "add", "--force", "data/nested/result.txt")
+    git_repository.commit_all(worktree, "保護対象とignoreを保存")
+    git_repository.run_git(repo, "merge", "--ff-only", record["branch"])
+    payload.write_text("未保存の成果", encoding="utf-8")
+    folder.chmod(0)
+    try:
+        code, result, stderr = _invoke(capsys, "delete")
+        assert code == 1, stderr
+        assert "未commitまたは未追跡" in result["retained"][0]["reason"]
+        assert not marker.exists()
+        assert payload.read_text(encoding="utf-8") == "未保存の成果"
+        assert pathlib.Path(record["record_path"]).exists()
+    finally:
+        folder.chmod(0o700)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIXの所有者保護を検証する")
+@pytest.mark.parametrize("teardown", ["none", "failure", "leftover"])
+def test_delete_keeps_foreign_ignored_output_until_teardown_is_resolved(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    teardown: str,
+) -> None:
+    """固有撤去の未設定・失敗・撤去漏れは資源を保持し、原因解消後の同じdeleteで再開する。"""
+    script = tmp_path / "delete.py"
+    script.write_text("raise SystemExit(7)\n" if teardown == "failure" else "pass\n", encoding="utf-8")
+    commands = tmp_path / "commands.json"
+    commands.write_text(json.dumps({"delete": [sys.executable, str(script), "{worktree}/data"]}), encoding="utf-8")
+    extra = ("--commands-file", str(commands)) if teardown != "none" else ()
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys, *extra)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / ".gitignore").write_text("/data/\n", encoding="utf-8")
+    git_repository.commit_all(worktree, "生成物を無視する")
+    git_repository.run_git(repo, "merge", "--ff-only", record["branch"])
+    foreign = worktree / "data" / "mysql"
+    foreign.mkdir(parents=True)
+    (foreign / "payload").write_text("生成物", encoding="utf-8")
+    original_owner_check = lane.temp_permissions._require_owner  # noqa: SLF001  # pylint: disable=protected-access
+
+    def require_owner(metadata: os.stat_result, path: pathlib.Path | str) -> None:
+        if pathlib.Path(path) == foreign:
+            raise managed_temp.ManagedTempError(
+                "所有者が異なる: mysql (uid=999)", next_action="所有者uid=999で生成物を撤去する"
+            )
+        original_owner_check(metadata, path)
+
+    monkeypatch.setattr(lane.temp_permissions, "_require_owner", require_owner)
+    code, retained, stderr = _invoke(capsys, "delete")
+    assert code == 1, stderr
+    assert retained["retained"][0]["reason"]
+    assert retained["retained"][0]["next_action"]
+    assert foreign.exists() and pathlib.Path(record["record_path"]).exists()
+    assert record["branch"] in git_repository.git_output(repo, "branch", "--format=%(refname:short)").splitlines()
+    if teardown == "failure":
+        script.write_text("import shutil,sys\nshutil.rmtree(sys.argv[1])\n", encoding="utf-8")
+    else:
+        shutil.rmtree(worktree / "data")
+    code, deleted, stderr = _invoke(capsys, "delete")
+    assert code == 0, stderr
+    assert deleted["removed"] == ["lane-01"]
+    assert not worktree.exists() and not pathlib.Path(record["record_path"]).exists()
+
+
+def test_recover_reaches_remove_hook_with_foreign_ignored_output(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """旧登録の固有hookが生成物を撤去し、元branchとHEADを残して作業木を解放する。"""
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="基準")
+    destination = tmp_path / "hook-created"
+    script = tmp_path / "hook.py"
+    script.write_text(
+        "import json,pathlib,shutil,subprocess,sys\n"
+        "p=json.load(sys.stdin)\n"
+        "if p['hook_event_name']=='WorktreeCreate':\n"
+        " subprocess.run(['git','worktree','add','-b',p['name'],sys.argv[1]],check=True,stdout=sys.stderr)\n"
+        " print(sys.argv[1])\n"
+        "else:\n"
+        " shutil.rmtree(pathlib.Path(sys.argv[1],'data'))\n"
+        " subprocess.run(['git','worktree','remove',sys.argv[1]],check=True)\n",
+        encoding="utf-8",
+    )
+    argv = [sys.executable, str(script), str(destination)]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    settings = repo / ".claude/settings.local.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    event: [{"hooks": [{"type": "command", "command": command}]}]
+                    for event in ("WorktreeCreate", "WorktreeRemove")
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (repo / ".gitignore").write_text("/data/\n", encoding="utf-8")
+    git_repository.commit_all(repo, "撤去hookと無視対象を保存")
+    selected = tmp_path / "selection.yaml"
+    _selection(selected)
+    code, record, stderr = _create_in(capsys, monkeypatch, "lane-test-session", repo, selected)
+    assert code == 0, stderr
+    foreign = destination / "data" / "mysql"
+    foreign.mkdir(parents=True)
+    (foreign / "payload").write_text("生成物", encoding="utf-8")
+    _legacy(record)
+    # CIでは別uidの生成物を用意できないため、所有判定の境界で同じ保持理由を再現する。
+    original_owner_check = lane.temp_permissions._require_owner  # noqa: SLF001  # pylint: disable=protected-access
+
+    def require_owner(metadata: os.stat_result, path: pathlib.Path | str) -> None:
+        if pathlib.Path(path) == foreign:
+            raise managed_temp.ManagedTempError("所有者が異なる: mysql (uid=999)")
+        original_owner_check(metadata, path)
+
+    monkeypatch.setattr(lane.temp_permissions, "_require_owner", require_owner)
+    code, recovered, stderr = _invoke(capsys, "recover", "--session-id", "lane-test-session")
+    assert code == 0, stderr
+    assert not destination.exists()
+    assert recovered["recovered"][0]["head"] == record["initial_head"]
+    assert git_repository.git_output(repo, "rev-parse", f"refs/heads/{record['branch']}") == record["initial_head"]
+    assert pathlib.Path(record["record_path"]).exists()
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIXの所有者とmodeを検証する")
 @pytest.mark.parametrize("operation", ["delete", "recover"])
 def test_lane_keeps_foreign_os_owner_and_reports_owner_action(
@@ -433,7 +661,7 @@ def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolv
 def test_delete_treats_session_whose_recorded_processes_exited_as_finished(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """所有側が終端を公開せずに終了し、記録した全プロセスが存在しない担当は終了として回収する。"""
+    """所有側が終了を公開せずに終了し、記録した全プロセスが存在しない担当は終了として回収する。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     with subprocess.Popen([sys.executable, "-c", "pass"]) as exited:
@@ -470,7 +698,7 @@ def test_cleanup_uses_branch_refs_when_tags_have_the_same_names(
 def test_live_external_process_holds_worktree_until_it_ends(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """担当が終端しても、その作業先を使う外部プロセスを削除で巻き込まない。"""
+    """担当が終了しても、その作業先を使う外部プロセスを削除で巻き込まない。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     with subprocess.Popen(
         [sys.executable, "-c", "import sys;print('ready',flush=True);sys.stdin.read()"],
@@ -502,7 +730,7 @@ async def test_lane_releases_retained_executor_through_owner_monitor(
     entrypoint: str,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """cwd保持中の終端資源を所有側が解放し、公開CLI・終了時回収・再利用・移管を通して未回収結果を取得できる。"""
+    """cwd保持中の終了資源を所有側が解放し、公開CLI・終了時回収・再利用・移管を通して未回収結果を取得できる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(lane, "get_wait_timeout", lambda _bucket: 5.0)
     async with retained_executor(
@@ -571,7 +799,7 @@ async def test_lane_releases_retained_executor_through_owner_monitor(
 def test_lane_preserves_session_when_running_or_owner_unresponsive(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], terminal: bool
 ) -> None:
-    """実行中は終端・結果回収後のstopを案内し、無応答の所有側も資源を保持して再回収へ接続する。"""
+    """実行中は終了・結果回収後のstopを案内し、無応答の所有側も資源を保持して再回収へ接続する。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     owner = session_registry.owner_process()
     assert owner is not None
@@ -582,7 +810,7 @@ def test_lane_preserves_session_when_running_or_owner_unresponsive(
     reason = held["retained"][0]["reason"]
     assert "held-session" in reason and "stop" in reason and "lane delete" in reason
     if not terminal:
-        assert reason.index("自然終端") < reason.index("atk agents wait") < reason.index("stop") < reason.index("lane delete")
+        assert reason.index("自然終了") < reason.index("atk agents wait") < reason.index("stop") < reason.index("lane delete")
         assert session_registry.resolve("held-session").state is session_registry.Resolution.RUNNING
     assert pathlib.Path(record["worktree"]).is_dir()
     assert not list(session_registry.registry_directory().glob("*.release-*"))
@@ -677,7 +905,7 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
         session_registry.publish(f"unresponsive-{index}", terminal=True, cwd=record["worktree"], processes=(owner,))
 
     def unexpected_wait(_bucket: str) -> float:
-        pytest.fail("自動終了が終端資源の解放待機へ進んだ")
+        pytest.fail("自動終了が終了資源の解放待機へ進んだ")
 
     monkeypatch.setattr(lane, "get_wait_timeout", unexpected_wait)
     started = lane.time.monotonic()
@@ -779,7 +1007,7 @@ def test_failed_preparation_recovers_using_the_same_registered_resource(
 def test_interrupted_lane_can_transfer_to_new_session_without_losing_uncommitted_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """終端済み担当の資源を新しい所有sessionへ再登録し、中断した成果を保持する。"""
+    """終了済み担当の資源を新しい所有sessionへ再登録し、中断した成果を保持する。"""
     repo, selected, original = _create(tmp_path, monkeypatch, capsys)
     unfinished = pathlib.Path(original["worktree"]) / "unfinished.txt"
     unfinished.write_text("再開する成果", encoding="utf-8")
@@ -1183,7 +1411,7 @@ def test_integrate_mixed_manifest_reviews_implemented_deferral_and_keeps_no_merg
 def test_integrate_resume_and_preservation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """最終化の途中失敗はGit統合と成功済み保存を繰り返さず、未完了のWI終端から再開する。"""
+    """最終化の途中失敗はGit統合と成功済み保存を繰り返さず、未完了のWI終了から再開する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])

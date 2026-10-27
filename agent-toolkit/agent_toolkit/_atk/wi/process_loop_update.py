@@ -6,12 +6,14 @@ import pathlib
 import subprocess
 import sys
 
+import agent_toolkit
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.plugin_environment import launch_command
 from agent_toolkit._git import command as _git_command
 
 _INTERNAL_MISE_REFRESHED_ARG = "--internal-mise-refreshed"
@@ -22,6 +24,14 @@ _INTERNAL_DOTFILES_UPDATED_ARG = "--internal-dotfiles-updated"
 
 # ランチャーへ再起動を要求する終了コード。
 _RESTART_EXIT_CODE = 75
+
+_RUNTIME_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
+_PACKAGE_RELATIVE_PATH = pathlib.Path(agent_toolkit.__file__).resolve().parent.relative_to(_RUNTIME_PLUGIN_ROOT)
+
+
+def _code_hash_directories(plugin_root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    """実行中パッケージの相対配置と起動スクリプトの配置を対象rootへ対応付ける。"""
+    return plugin_root / _PACKAGE_RELATIVE_PATH, plugin_root / "scripts"
 
 
 def _without_resume_args(argv: list[str]) -> list[str]:
@@ -98,9 +108,9 @@ def restart_process_loop(
 
     セッション終了後と待機中の双方で呼ぶ共通ヘルパーとする。
     ランチャー経由で起動された場合は受け渡しファイルへ次の起動対象を書き、
-    専用の終了コードで終了する。ランチャーは同一プロセスで次の実体を`uv run`で起動するため、
-    plugin projectの依存解決が再実行され、かつプロセス階層が増えない。
-    受け渡しファイルの指定が無い直接起動でも、同じprojectを指定して自プロセスを置き換える。
+    専用の終了コードで終了する。ランチャーは同一プロセスで準備済み共有環境の`launch.py`を経て
+    次の実体を起動するため、仮想環境の配置先を配布rootの外に保ち、プロセス階層も維持する。
+    受け渡しファイルの指定が無い直接起動でも、同じ起動形で自プロセスを置き換える。
     """
     script, rest = _build_restart_target(
         argv,
@@ -123,21 +133,12 @@ def restart_process_loop(
         _process_loop_log.append("restart_unavailable", reason="uv_missing")
         return
     _process_loop_log.append("restart_request", method="exec", script=str(script))
-    restart_argv = [
-        executable,
-        "run",
-        "--project",
-        str(script.parent.parent),
-        "--locked",
-        "--no-default-groups",
-        str(script),
-        *rest,
-    ]
+    restart_argv = [executable, *launch_command(script.parent.parent, script)[1:], *rest]
     os.execv(executable, restart_argv)
 
 
-def code_hash(scripts_dir: pathlib.Path) -> str:
-    """`scripts_dir`配下を再帰走査した実装用`*.py`の内容から安定ハッシュを算出する。
+def code_hash(plugin_root: pathlib.Path) -> str:
+    """agent-toolkitの実装Pythonとscripts配下の内容から安定ハッシュを算出する。
 
     相対パスでソートして順序を固定し、相対パスと内容の各バイト列へ8byte長接頭辞を付けて
     境界を一意にしたうえでSHA-256を取る。
@@ -147,10 +148,11 @@ def code_hash(scripts_dir: pathlib.Path) -> str:
     digest = hashlib.sha256()
     for path in sorted(
         p
-        for p in scripts_dir.rglob("*.py")
-        if not p.name.endswith("_test.py") and "__pycache__" not in p.relative_to(scripts_dir).parts
+        for directory in _code_hash_directories(plugin_root)
+        for p in directory.rglob("*.py")
+        if not p.name.endswith("_test.py") and "__pycache__" not in p.relative_to(plugin_root).parts
     ):
-        name_bytes = path.relative_to(scripts_dir).as_posix().encode("utf-8")
+        name_bytes = path.relative_to(plugin_root).as_posix().encode("utf-8")
         content = path.read_bytes()
         for field in (name_bytes, content):
             digest.update(len(field).to_bytes(8, "big"))
@@ -236,7 +238,7 @@ def check_and_restart_on_update(
                     f"update-dotfilesに失敗しました（exit code {result.returncode}）。待機ループを続行します。",
                     next_action="対応不要（待機は継続した）。繰り返す場合は`update-dotfiles`を手作業で実行して原因を確認する",
                 )
-    current_hash = code_hash(dotfiles_root / "agent-toolkit" / "scripts")
+    current_hash = code_hash(dotfiles_root / "agent-toolkit")
     if current_hash != startup_hash:
         print("常駐コードの更新を検知したためprocess-loopを再起動します。")
         _process_loop_log.append("restart_on_wait_loop_update")
@@ -284,7 +286,7 @@ def update_before_session(
             next_action="対応不要（子セッションの起動は続行した）。同期結果の記録は子セッションが判定する",
         )
     if dotfiles_root is not None and startup_hash is not None:
-        current_hash = code_hash(dotfiles_root / "agent-toolkit" / "scripts")
+        current_hash = code_hash(dotfiles_root / "agent-toolkit")
         if current_hash != startup_hash:
             print("処理開始前に常駐コードの更新を検知したためprocess-loopを再起動します。")
             _process_loop_log.append("restart_before_session_update")

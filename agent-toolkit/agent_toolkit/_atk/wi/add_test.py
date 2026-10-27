@@ -43,10 +43,12 @@ from agent_toolkit._testing.wi_bodies import (  # noqa: E402  # pylint: disable=
 from agent_toolkit._testing.wi_bodies import (  # noqa: E402  # pylint: disable=wrong-import-position
     AGENT_AWI_SECTIONS as _AGENT_AWI_SECTIONS,
 )
-from agent_toolkit._testing.wi_bodies import (  # noqa: E402  # pylint: disable=wrong-import-position
-    agent_awi_body_without as _agent_awi_body_without,
+from agent_toolkit.atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
+    _FIXED_DT,
+    _make_subprocess_fake,
+    _setup_notes,
+    _write_awi_file,
 )
-from agent_toolkit.atk_test import _FIXED_DT, _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 @pytest.fixture(autouse=True)
@@ -232,7 +234,7 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
         errors.append(capsys.readouterr().err)
 
     assert errors[0] == errors[1]
-    for heading in ("反映内容と反映先", "適用範囲", "実現性", "完成条件"):
+    for heading in ("反映内容と反映先",):
         assert heading in errors[0]
     assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     after_head = git_repository.git_output(notes, "rev-parse", "HEAD")
@@ -383,235 +385,109 @@ def test_add_dry_run_rejects_batch(
     assert "--dry-runは--batchと併用できません" in capsys.readouterr().err
 
 
-def test_cmd_add_rejects_agent_awi_missing_one_required_section(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+@pytest.mark.parametrize("section", ["原因分析", "調査結果と判断根拠", "完成条件", "ユーザー指摘の逐語引用"])
+def test_add_rejects_empty_optional_section(
+    section: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """sourceを持つ通常AWIは必須節を1件欠くだけで拒否し、欠けた節名を示す。"""
+    """設けた任意節が空なら保存を拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-
+    message = f"{_AGENT_AWI_BODY}\n\n## {section}\n"
     with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(
-            _cmd_add_args(tmp_path, _agent_awi_body_without("適用範囲"), source="test"),
-            notes,
-            _FIXED_DT,
-            tmp_path,
-        )
-
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
     assert exc_info.value.code == 1
-    error = capsys.readouterr().err
-    assert "非空の必須節がありません: 適用範囲" in error
-    assert "順序" not in error
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    assert f"本文が空の節があります: {section}" in capsys.readouterr().err
 
 
-def test_cmd_add_lists_every_missing_required_section_at_once(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+def test_add_rejects_unordered_optional_sections(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """複数の必須節を欠く本文は、欠けた節名を1回の応答で全件示して拒否する。"""
+    """任意節が規定順でなければ保存を拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-
+    message = f"{_AGENT_AWI_BODY}\n\n## 完成条件\n結果\n\n## 原因分析\n原因"
     with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(
-            _cmd_add_args(tmp_path, _agent_awi_body_without("適用範囲", "完成条件"), source="test"),
-            notes,
-            _FIXED_DT,
-            tmp_path,
-        )
-
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
     assert exc_info.value.code == 1
-    assert "非空の必須節がありません: 適用範囲、完成条件" in capsys.readouterr().err
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    assert "H2の順序が規定と異なります" in capsys.readouterr().err
 
 
-def test_cmd_add_rejects_agent_awi_with_unordered_required_sections(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+def test_add_accepts_optional_sections_in_order(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """必須節をすべて持っても規定順序と異なる本文は拒否する。"""
+    """原因分析と調査結果などを正しい順で受理する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-    sections = _AGENT_AWI_SECTIONS.split("\n\n")
-    sections[1], sections[2] = sections[2], sections[1]
-    message = "本文\n\n" + "\n\n".join(sections)
-
-    with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
-
-    assert exc_info.value.code == 1
-    error = capsys.readouterr().err
-    assert "H2の順序が規定と異なります" in error
-    assert "非空の必須節がありません" not in error
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
-
-
-def test_cmd_add_reports_missing_and_unordered_sections_together(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """不足と順序の不一致がともに成立する本文は、双方を同じ応答へ含めて拒否する。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-    sections = _agent_awi_body_without("実現性").removeprefix("本文\n\n").split("\n\n")
-    sections[0], sections[1] = sections[1], sections[0]
-    message = "本文\n\n" + "\n\n".join(sections)
-
-    with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
-
-    assert exc_info.value.code == 1
-    error = capsys.readouterr().err
-    assert "非空の必須節がありません: 実現性" in error
-    assert "H2の順序が規定と異なります" in error
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
-
-
-def test_cmd_add_rejects_agent_awi_with_empty_required_section(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """sourceを持つ通常AWIは本文が空の必須節を欠落として拒否する。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-    message = _AGENT_AWI_BODY.replace("## 実現性\n対象実装を確認済み", "## 実現性\n")
-
-    with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
-
-    assert exc_info.value.code == 1
-    assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
-
-
-_CAUSE_ANALYSIS_SECTION = "## 原因分析\n直接的原因と根本原因\n\n"
-
-
-def test_add_dry_run_accepts_agent_awi_with_cause_analysis(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """`## 原因分析`を`## 反映内容と反映先`と`## 適用範囲`の間へ置いた本文を受理する。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-    message = _AGENT_AWI_BODY.replace("## 適用範囲\n", f"{_CAUSE_ANALYSIS_SECTION}## 適用範囲\n", 1)
-
+    message = (
+        f"{_AGENT_AWI_BODY}\n\n## 原因分析\n原因\n\n## 調査結果と判断根拠\n根拠"
+        "\n\n## 完成条件\n結果\n\n## ユーザー指摘の逐語引用\n原文"
+    )
     _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
-
     assert capsys.readouterr().err == ""
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
-def test_add_dry_run_rejects_cause_analysis_after_scope(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+@pytest.mark.parametrize("fence", ["```", "~~~"])
+def test_add_ignores_required_heading_in_code_fence(
+    fence: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`## 原因分析`を`## 適用範囲`より後へ置いた本文を順序の不一致で拒否する。"""
+    """コード例中の見出しは必須節に数えない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-    message = _AGENT_AWI_BODY.replace("## 実現性\n", f"{_CAUSE_ANALYSIS_SECTION}## 実現性\n", 1)
-
+    message = f"本文\n\n{fence}markdown\n## 反映内容と反映先\n見かけだけ\n{fence}"
     with pytest.raises(SystemExit) as exc_info:
         _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
-
     assert exc_info.value.code == 1
-    assert "H2の順序が規定と異なります: 反映内容と反映先、適用範囲、原因分析、実現性、完成条件" in capsys.readouterr().err
-
-
-def test_add_dry_run_rejects_empty_cause_analysis(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """本文が空の`## 原因分析`を拒否する。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-    message = _AGENT_AWI_BODY.replace("## 適用範囲\n", "## 原因分析\n\n## 適用範囲\n", 1)
-
-    with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
-
-    assert exc_info.value.code == 1
-    error = capsys.readouterr().err
-    assert "本文が空の節があります: 原因分析" in error
-    assert "非空の必須節がありません" not in error
+    assert "非空の必須節がありません: 反映内容と反映先" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
-    ("opening_fence", "closing_fence"),
-    [("```markdown", "```"), ("~~~markdown", "~~~")],
-)
-def test_cmd_add_rejects_agent_awi_with_feasibility_only_in_code_fence(
-    opening_fence: str,
-    closing_fence: str,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """コードフェンス内の同名行を固定書式の`## 実現性`節として数えない。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-
-    message = f"{_agent_awi_body_without('実現性')}\n\n{opening_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
-    with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
-
-    assert exc_info.value.code == 1
-    assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
-
-
-@pytest.mark.parametrize(
-    ("opening_fence", "non_closing_fence", "closing_fence"),
+    ("opening", "non_closing", "closing"),
     [("````markdown", "```", "````"), ("~~~markdown", "```", "~~~")],
 )
-def test_cmd_add_does_not_close_code_fence_with_shorter_or_different_marker(
-    opening_fence: str,
-    non_closing_fence: str,
-    closing_fence: str,
+def test_add_does_not_close_code_fence_with_shorter_or_different_marker(
+    opening: str,
+    non_closing: str,
+    closing: str,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """短いフェンスまたは異種文字のフェンスを閉じフェンスとして数えない。"""
+    """短いか異なるフェンスの後も必須見出しはコード内として扱う。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-
-    message = (
-        f"{_agent_awi_body_without('実現性')}\n\n"
-        f"{opening_fence}\nコード例\n{non_closing_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
-    )
-    with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
-
-    assert exc_info.value.code == 1
-    assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    message = f"本文\n\n{opening}\n例\n{non_closing}\n## 反映内容と反映先\n見かけだけ\n{closing}"
+    with pytest.raises(SystemExit) as result:
+        _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    assert result.value.code == 1
+    assert "非空の必須節がありません: 反映内容と反映先" in capsys.readouterr().err
 
 
-def test_cmd_add_accepts_feasibility_after_longer_closing_code_fence(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
+def test_add_accepts_required_heading_after_longer_closing_fence(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """開きフェンス以上の長さの同種フェンスで閉じた後の`## 実現性`節を数える。"""
+    """長い閉じフェンスの後の必須見出しを認識する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
+    message = f"本文\n\n```markdown\n例\n````\n\n{_AGENT_AWI_SECTIONS}"
+    _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    assert capsys.readouterr().err == ""
 
-    sections = _AGENT_AWI_SECTIONS.split("\n\n")
-    sections[2] = "```markdown\n## 実現性\n見かけだけ\n````\n" + sections[2]
-    message = "本文\n\n" + "\n\n".join(sections)
-    _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
-    assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
+def test_edit_accepts_minimal_agent_awi(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """旧形式から任意節を省いた本文へ編集できる。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setenv("CLAUDECODE", "1")
+    path = _write_awi_file(notes, "entry.md", body=f"{_AGENT_AWI_BODY}\n\n## 完成条件\n結果", source="test")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    body_path = tmp_path / "edit.md"
+    body_path.write_text(_AGENT_AWI_BODY, encoding="utf-8")
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "edit", "entry.md", "--body-file", str(body_path)], home=tmp_path)
+    assert result.value.code == 0, capsys.readouterr().err
+    assert "## 完成条件" not in path.read_text(encoding="utf-8")
 
 
 def test_cmd_add_accepts_agent_awi_with_all_required_sections(
@@ -680,8 +556,8 @@ def test_cmd_add_accepts_agent_awi_with_required_section_body_starting_with_quot
     _patch_cmd_add_operations(monkeypatch)
 
     message = _AGENT_AWI_BODY.replace(
-        "## 実現性\n対象実装を確認済み",
-        "## 実現性\n\n> ## 引用した規範の見出し\n>\n> 対象実装を確認済み",
+        "## 反映内容と反映先\n対象と反映先",
+        "## 反映内容と反映先\n\n> ## 引用した規範の見出し\n>\n> 対象と反映先",
     )
     _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
@@ -814,7 +690,7 @@ def test_cmd_add_accepts_uwi_without_required_sections(
 def _with_direct_cause(body: str, value: str) -> str:
     """通常AWIの本文へ`直接的原因`行を持つ原因分析を加える。"""
     section = f"## 原因分析\n\n| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | {value} |\n\n"
-    return body.replace("## 適用範囲\n", f"{section}## 適用範囲\n", 1)
+    return f"{body}\n\n{section}"
 
 
 @pytest.mark.parametrize(
@@ -832,31 +708,30 @@ def _with_direct_cause(body: str, value: str) -> str:
         ("** \u3000調査中**", False),
     ],
 )
-def test_add_rejects_undetermined_direct_cause(
+def test_add_accepts_undetermined_direct_cause_in_awi(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     value: str,
     dry_run: bool,
 ) -> None:
-    """エージェントが原因の未確定を宣言した通常AWIを、保存とcommitの前に拒否する。"""
+    """エージェントが原因の未確定を宣言した通常AWIを保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
 
-    with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(
-            _cmd_add_args(tmp_path, _with_direct_cause(_AGENT_AWI_BODY, value), source="test", dry_run=dry_run),
-            notes,
-            _FIXED_DT,
-            tmp_path,
-        )
+    _run_public_add(
+        _cmd_add_args(tmp_path, _with_direct_cause(_AGENT_AWI_BODY, value), source="test", dry_run=dry_run),
+        notes,
+        _FIXED_DT,
+        tmp_path,
+    )
 
-    assert exc_info.value.code == 1
-    error = capsys.readouterr().err
-    assert "直接的原因が未確定のまま保存しようとした" in error
-    assert "次の操作: 直接的原因を現物の観測で確定してから" in error
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    assert "直接的原因が未確定のまま保存しようとした" not in capsys.readouterr().err
+    if dry_run:
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    else:
+        assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
 def test_add_rejects_undetermined_direct_cause_in_uwi(
@@ -891,8 +766,9 @@ def test_add_rejects_undetermined_direct_cause_in_uwi(
         _with_direct_cause(_AGENT_AWI_BODY, "\u3000不明だった設定を特定した"),
         _with_direct_cause(_AGENT_AWI_BODY, "調査中の設定変更が旧値を残していたと特定した"),
         _AGENT_AWI_BODY.replace(
-            "## 適用範囲\n",
-            "## 原因分析\n\n確定した原因の説明。例示:\n\n```markdown\n| 直接的原因 | 未確定 |\n```\n\n## 適用範囲\n",
+            "## 反映内容と反映先\n対象と反映先",
+            "## 反映内容と反映先\n対象と反映先\n\n## 原因分析\n\n確定した原因の説明。例示:\n\n"
+            "```markdown\n| 直接的原因 | 未確定 |\n```",
             1,
         ),
     ],

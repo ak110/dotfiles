@@ -140,7 +140,7 @@ def test_loop_descendants_and_other_loop(tmp_path: pathlib.Path, monkeypatch: py
 
 
 def test_registry_active_child_and_terminal(tmp_path: pathlib.Path) -> None:
-    """hookがない委譲先も登録簿の親子と終端を使って判定する。"""
+    """hookがない委譲先も登録簿の親子と終了を使って判定する。"""
     session_registry.publish("child", terminal=False, launcher_session_id="loop", state_root=tmp_path)
     assert session_activity.scan_activity(state_root=tmp_path, processes=()).active_session_ids == {"child"}
     assert not session_activity.scan_activity(

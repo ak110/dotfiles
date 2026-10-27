@@ -42,7 +42,7 @@ from agent_toolkit._common.delegated_session import is_delegated
 # キャッシュTTLごとの再確認間隔。TTLが満了する前に必ず再確認するため、間隔はTTLより短く取る。
 _SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
 _SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
-# キャッシュTTLごとの委譲先の終端を待つ上限。TTLが満了する前に委譲元のターンが再開するよう、上限はTTLより短く取る。
+# キャッシュTTLごとの委譲先の終了を待つ上限。TTLが満了する前に委譲元のターンが再開するよう、上限はTTLより短く取る。
 # 1hのTTLでは、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分が先に働くため、この上限より60秒短い値とする。
 # この値はCLIの`atk agents wait`の上限（`get_cli_wait_timeout`）にも使う。
 # 同コマンドは外側の`timeout`を付けずにBashツールの背景実行で待つため、
@@ -168,7 +168,7 @@ def get_schedule(request_bucket: str) -> str:
 
 
 def get_cli_wait_timeout(request_bucket: str) -> float:
-    """CLIの`atk agents wait`が委譲先の終端を待つ上限秒数を、保持期間とホストの判定から導く。"""
+    """CLIの`atk agents wait`が委譲先の終了を待つ上限秒数を、保持期間とホストの判定から導く。"""
     timeout = _WAIT_TIMEOUT_FOR_1H_TTL if get_prompt_cache_ttl(request_bucket) == "1h" else _WAIT_TIMEOUT_FOR_5M_TTL
     if "CLAUDECODE" not in os.environ:
         timeout = min(timeout, _WAIT_TIMEOUT_FOR_UNKNOWN_HOST)

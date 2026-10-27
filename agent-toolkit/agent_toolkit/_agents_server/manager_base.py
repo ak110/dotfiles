@@ -1,4 +1,4 @@
-"""managerの各責務が共有するsession状態、engine別のbackendの保持と終端の通知先。"""
+"""managerの各責務が共有するsession状態、engine別のbackendの保持と終了の通知先。"""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
 class ManagerBase:
-    """managerの各責務が共有するsession状態とbackendを保持し、終端したsessionの記録を引き継ぐ。"""
+    """managerの各責務が共有するsession状態とbackendを保持し、終了したsessionの記録を引き継ぐ。"""
 
     def __init__(
         self,
@@ -132,7 +132,7 @@ class ManagerBase:
             self._cancel_retention_timer(session.session_id)
 
     def _schedule_session_expiry(self, session: SessionState) -> None:
-        """終端の確定時に期限通知を登録し、ツール照会の無いsessionも解放する。"""
+        """終了の確定時に期限通知を登録し、ツール照会の無いsessionも解放する。"""
         if self.sessions.get(session.session_id) is not session or session.retention_deadline is None:
             return
         self._cancel_retention_timer(session.session_id)
@@ -141,7 +141,7 @@ class ManagerBase:
         )
 
     def _expire_retained_session(self, session: SessionState) -> None:
-        """期限通知が指す同じ終端状態だけを解放し、再開後のturnを解放しない。"""
+        """期限通知が指す同じ終了状態だけを解放し、再開後のturnを解放しない。"""
         if self.sessions.get(session.session_id) is not session or session.retention_deadline is None:
             return
         if asyncio.get_running_loop().time() < session.retention_deadline:
@@ -226,7 +226,7 @@ class ManagerBase:
 
     @staticmethod
     def _unavailable_reason(session: SessionState) -> str | None:
-        """終端したsessionがengineの可用性を理由に失敗した場合、その除外理由をengineのbackendから得る。"""
+        """終了したsessionがengineの可用性を理由に失敗した場合、その除外理由をengineのbackendから得る。"""
         backend_type = backends.backend_class(session.engine)
         return None if backend_type is None else backend_type.unavailable_reason(session)
 
@@ -296,11 +296,11 @@ class ManagerBase:
         return {**context, "status": "resolved", "record_path": str(record.paths[0].resolve())}
 
     def _carry_over_unavailable_candidate(self, session: SessionState) -> None:
-        """可用性を理由に終端した候補を、同じ起動条件の次回へ引き継ぐ。
+        """可用性を理由に終了した候補を、同じ起動条件の次回へ引き継ぐ。
 
-        終端結果が確定した時点の通知として`SessionState.touch`から呼ぶ。
+        終了時の結果が確定した時点の通知として`SessionState.touch`から呼ぶ。
         結果本文の受領、`stop`による破棄、保持期限切れのいずれの場合も記録を保存できるよう、
-        記録の契機を終端の確定点だけに置く。共有の通知先は全managerへ届くため、
+        記録の契機を終了の確定点だけに置く。共有の通知先は全managerへ届くため、
         自身が保持するsessionだけを記録の対象とする。
         """
         if self.sessions.get(session.session_id) is not session:
@@ -341,7 +341,7 @@ class ManagerBase:
             self._candidate_tasks.difference_update(task for task in tasks if task.done())
 
     def _record_pending_unobserved_child_sessions(self, session: SessionState) -> None:
-        """自動再開をまたいで保持した未観測の孫sessionを終端結果へ併合する。"""
+        """自動再開をまたいで保持した未観測の孫sessionを終了時の結果へ併合する。"""
         if self.sessions.get(session.session_id) is not session:
             return
         pending = self._pending_unobserved_child_sessions.get(session.session_id)

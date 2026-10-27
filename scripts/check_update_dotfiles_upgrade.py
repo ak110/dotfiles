@@ -339,7 +339,7 @@ def run_upgrade_check(
     registry: UserEnvironmentRegistry | None = None,
     profile_env: Mapping[str, str] | None = None,
 ) -> None:
-    r"""ローカルremoteを用いて旧版から現行版への更新を終端まで検証する。
+    r"""ローカルremoteを用いて旧版から現行版への更新を終了まで検証する。
 
     検証はユーザーの永続状態を前後で変えないことも成功条件とする。
     Windowsでは`HKCU\\Environment`を検証前の状態へ戻し、両プラットフォームで通常profile側の監視ディレクトリの

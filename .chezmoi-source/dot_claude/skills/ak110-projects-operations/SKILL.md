@@ -183,7 +183,7 @@ Cargoで演算子を省略した版数指定（キャレット要件として扱
 ### 実施時機と前提
 
 一連の作業の公開（pushとCI成功）が終わった時点でリリース要否を判定する。
-`agent-toolkit:process-wi`では、公開工程の終端担当が返却し、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」の成立を確認した後、`agent-toolkit:completion-report`の起動前に判定する。
+`agent-toolkit:process-wi`では、公開工程の公開担当が返却し、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」の成立を確認した後、`agent-toolkit:completion-report`の起動前に判定する。
 process-wi以外の作業でも、作業の変更をpushしてCI成功を確認した時点で同じく判定する。
 
 ローカルのベースbranchがリポジトリのdefault branchであり、未pushのcommitと未コミットの変更が無いことを実施の前提とする。

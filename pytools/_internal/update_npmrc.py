@@ -27,24 +27,26 @@ _PNPM_TIMEOUT = 60.0
 
 
 def run(npmrc_path: Path | None = None) -> post_apply_outcome.PostApplyOutcome:
-    """`~/.npmrc`へnpmの公開待機を設定し、pnpmがあればpnpmのグローバル設定へも設定する。
+    """`~/.npmrc`へnpmの公開待機を設定する。
 
     Args:
         npmrc_path: 対象パス。None の場合は `~/.npmrc` を使用 (テスト時に差し替え可能)。
 
-    pnpmの設定の取得と書き換えの失敗は失敗と数える。
+    pnpmの設定はNodeとshimを準備した後に`configure_pnpm`で実行する。
     """
     path = npmrc_path if npmrc_path is not None else Path.home() / ".npmrc"
-    npmrc_changed = _update_npmrc(path)
+    return post_apply_outcome.PostApplyOutcome(changed=_update_npmrc(path))
+
+
+def configure_pnpm() -> post_apply_outcome.PostApplyOutcome:
+    """miseがNodeとshimを整えた後にpnpmの公開待機を設定する。"""
     try:
-        pnpm_changed = _update_pnpm_global()
+        return post_apply_outcome.PostApplyOutcome(changed=_update_pnpm_global())
     except _PnpmConfigError as error:
         return post_apply_outcome.PostApplyOutcome(
-            changed=npmrc_changed,
             failure=str(error),
             next_action="問題を解消した後に`update-dotfiles`を再実行する。",
         )
-    return post_apply_outcome.PostApplyOutcome(changed=npmrc_changed or pnpm_changed)
 
 
 class _PnpmConfigError(Exception):
@@ -90,8 +92,15 @@ def _update_pnpm_global() -> bool:
         [pnpm, "config", "get", "--location", "global", _PNPM_KEY], timeout=_PNPM_TIMEOUT, tag="pnpm"
     )
     if current is None or current.returncode != 0:
-        detail = "" if current is None else f": {current.stderr.strip()}"
-        raise _PnpmConfigError(f"pnpmの{_PNPM_KEY} の取得に失敗しました{detail}")
+        detail = "" if current is None else current.stderr.strip()
+        if "No version is set for shim: pnpm" in detail:
+            logger.info(
+                log_format.format_status(
+                    "pnpm", "mise shimが実体を解決できないため公開待機の設定を省略しました。pnpm未導入のため対応不要"
+                )
+            )
+            return False
+        raise _PnpmConfigError(f"pnpmの{_PNPM_KEY} の取得に失敗しました" + (f": {detail}" if detail else ""))
     # 更新通知などが先に出る場合があるため、最後の行を値として読む。
     lines = current.stdout.strip().splitlines()
     if lines and lines[-1].strip() == _PNPM_VALUE:

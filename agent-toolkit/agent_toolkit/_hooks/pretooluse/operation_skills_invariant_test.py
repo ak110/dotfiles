@@ -1,6 +1,6 @@
 """操作を起動の契機とするスキルの取得の契約を、表の全項目と主体の全区分の組で検証する。
 
-Claudeは未取得の本文を配送し、Codexは取得対象を案内して、成功した本文取得の後に同じ操作を許可する。
+各主体に本来の取得手段を案内し、成功した本文取得を観測する。
 全主体で通常操作を継続する。表へ項目を加えると、`_POSITIVE_OPERATIONS`へ正例が無い限り`test_positive_operations_cover_every_entry`が失敗する。
 """
 
@@ -183,12 +183,12 @@ async def test_codex_app_server_environment_carries_launch_kind(
         assert captured[0].get(_LAUNCH_KIND) == launch_kind
 
 
-def test_missing_skill_document_keeps_operation_blocked_without_record(
+def test_missing_skill_document_warns_without_record(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """案内する資料を取得できない間は診断付きで遮断し記録しない。復旧後は取得の案内で遮断する。"""
+    """資料の取得失敗は非遮断で案内し、復旧後も実取得まで未取得に保つ。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     skill_md = plugin_resources.skill_document_path("search", "SKILL.md")
     original = pathlib.Path.read_text
@@ -209,4 +209,9 @@ def test_missing_skill_document_keeps_operation_blocked_without_record(
             assert rules_context.OPERATION_SKILL_READY_KEY not in read_state("failure")
     assert dispatch.main(payload) == 0
     recovered = capsys.readouterr()
-    assert "操作に関係する資料を配送する" in recovered.out + recovered.err
+    notice = recovered.out + recovered.err
+    assert "必須手順であり省略" in notice
+    assert "未取得資料" in notice
+    assert "agent-toolkit:search" in notice
+    records = read_state("failure").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert not any(key.startswith("read-trigger:") for key in records)

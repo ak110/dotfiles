@@ -1,6 +1,6 @@
 """複数turnの返却を公開bundleから検証する。
 
-終端の形は2026年10月10日のWIの実記録のtask_complete・end_turn・resultを使う。
+終了の形は2026年10月10日のWIの実記録のtask_complete・end_turn・resultを使う。
 同じ先行返却へ後続の作業を加えたときの候補欠落と、正常返却の混入を検出する。
 """
 

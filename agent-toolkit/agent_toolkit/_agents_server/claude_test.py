@@ -558,7 +558,7 @@ async def test_start_aborts_when_init_message_never_arrives(
 
 @pytest.mark.asyncio
 async def test_auto_resume_deadline_is_independent_from_result_retention(monkeypatch: pytest.MonkeyPatch) -> None:
-    """自動再開の待機上限を終端結果の保持期限から独立して算出する。"""
+    """自動再開の待機上限を終了時の結果の保持期限から独立して算出する。"""
     monkeypatch.setattr(resume_waits, "AUTO_RESUME_DEADLINE_SECONDS", 5.0)
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.0)
     session = state.SessionState("claude-session", "/tmp", engine="claude")
@@ -593,7 +593,7 @@ async def test_claude_command_channel_resolves_pending_requests_when_closed() ->
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: pathlib.Path) -> None:
-    """投入後に終端した継続入力をreplyとして処理し、直前結果を退避する。"""
+    """投入後に終了した継続入力をreplyとして処理し、直前結果を退避する。"""
     client = FakeClaudeClient([[AssistantMessage("reply中"), ResultMessage("reply結果")]])
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         session = state.SessionState("claude-race", str(tmp_path), engine="claude")
@@ -952,7 +952,7 @@ async def test_claude_start_records_owner_and_cli_processes(
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """Claudeのinit、結果の受信、終端後のreplyを1つの長命タスクで処理する。"""
+    """Claudeのinit、結果の受信、終了後のreplyを1つの長命タスクで処理する。"""
     client = FakeClaudeClient(
         [
             [SystemMessage("claude-session"), AssistantMessage("途中経過"), ResultMessage("Claude結果")],
@@ -1129,7 +1129,7 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
         assert client.disconnected is True
         assert sessions[session.session_id] is session
         assert session.status == "failed"
-        # 初期化の完了後の失敗は、原因の特定に要する診断を終端結果へ添える。
+        # 初期化の完了後の失敗は、原因の特定に要する診断を終了時の結果へ添える。
         assert session.error["message"] == "stream failed"
         assert set(session.error) == {"message", "engine", "model", "stderr", "childPid", "debugFile"}
         assert session.error["engine"] == "claude"
@@ -1354,7 +1354,7 @@ async def test_claude_reply_drains_old_events_before_new_query(
 async def test_usage_limit_idle_keeps_shared_stream_result_pending(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """継続受信でCLIのidleが届いても、利用上限の解除待ちを終端結果にしない。"""
+    """継続受信でCLIのidleが届いても、利用上限の解除待ちを終了時の結果にしない。"""
     idle = SystemMessage("claude-limited-queue")
     idle.subtype = "session_state_changed"
     idle.data = {"state": "idle"}
@@ -1387,7 +1387,7 @@ async def test_usage_limit_idle_keeps_shared_stream_result_pending(
 async def test_send_message_reactivated_child_holds_claude_result_until_terminal(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, failed: bool
 ) -> None:
-    """Claudeの親も追送で再開した子の終端まで結果を保留し、自動再開の最終結果を公開する。"""
+    """Claudeの親も追送で再開した子の終了まで結果を保留し、自動再開の最終結果を公開する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("claude", "model", "high")]

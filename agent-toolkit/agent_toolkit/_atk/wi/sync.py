@@ -183,7 +183,7 @@ def _git_file_content(private_notes: pathlib.Path, revision_path: str) -> str:
 
 
 def _terminal_commit_is_redundant(private_notes: pathlib.Path, commit: str) -> bool:
-    """単一のローカルcommitがupstream上の同等なMQ終端だけを含むか判定する。"""
+    """単一のローカルcommitがupstream上の同等なMQ終了だけを含むか判定する。"""
     subject = _git_command.output(["show", "-s", "--format=%s", commit], private_notes)
     match = _TERMINAL_COMMIT_SUBJECT.fullmatch(subject)
     if match is None:
@@ -260,7 +260,7 @@ def _terminal_commit_is_redundant(private_notes: pathlib.Path, commit: str) -> b
 
 
 def _redundant_terminal_divergence(private_notes: pathlib.Path) -> bool:
-    """ローカル側の全commitがupstream反映済みの同等なMQ終端なら真を返す。"""
+    """ローカル側の全commitがupstream反映済みの同等なMQ終了なら真を返す。"""
     try:
         commits = _git_command.lines(["rev-list", "--reverse", "@{u}..HEAD"], private_notes)
         if not commits:
@@ -291,7 +291,7 @@ def pull(private_notes: pathlib.Path) -> None:
 
 
 def _pull_remote(private_notes: pathlib.Path) -> None:
-    """remoteをfetchし、同等終端の安全な回復を含めてupstreamへ統合する。"""
+    """remoteをfetchし、同等終了の安全な回復を含めてupstreamへ統合する。"""
     assert_repo_lock_held(private_notes)
     _atk_git_sync.pull(
         private_notes,
@@ -391,7 +391,7 @@ def commit_and_push(
 
 
 def push_pending_commits(private_notes: pathlib.Path) -> int | None:
-    """ローカルcommitをpushし、同等終端の回復またはrebase後に1回だけ再試行する。"""
+    """ローカルcommitをpushし、同等終了の回復またはrebase後に1回だけ再試行する。"""
     return _atk_git_sync.push_pending_commits(
         private_notes,
         run_git=run_git,

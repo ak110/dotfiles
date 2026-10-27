@@ -1,12 +1,12 @@
 # 名前の方針と定義済みの名前の一覧
 
-品質基準の正式な提供元は`agent-basics:writing-standards`の`references/defined-names.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/defined-names.md`である。呼び出し元の取得条件と注目箇所を引き継ぎ、本書と正式な資料を全文読む。節指定がある場合は、指定された見出しを持つ資料に注目する。両方に同名の見出しがあれば両方に注目する。
 
-以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
+以下はagent-toolkitが所有する運用条件である。
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+本文の各参照における適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の資料は起動本文とともに届く。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -14,8 +14,8 @@
 
 ## 一覧
 
-識別子で書く対象（スキル名、コマンド名、ファイル名など）は本書へ載せない。
-「指示対象」列は名前を見分ける短い見出し語であり、定義は定義元の列が示す所在だけが持つ。定義元の列は、先頭のリポジトリ相対パスと節名で示す。`defined_names_invariant_test.py`が各行の名前が定義元に現れることを確かめる。
+識別子として記述する対象（スキル名、コマンド名、ファイル名など）は本書には掲載しない。
+「指示対象」列は用語を識別するための短い見出し語であり、正式な定義は「定義元」列が示す参照先にのみ存在する。定義元の列は、リポジトリ相対パスと節名で示す。`defined_names_invariant_test.py`が、各行の名前が定義元の文書内に実際に現れることを検証する。
 
 | 名前 | 指示対象 | 定義元 |
 | --- | --- | --- |
@@ -29,7 +29,7 @@
 | レーン担当 | レーン工程の担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | レビュー修正担当 | レーン担当の担当種別 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | CI修正担当 | レーン担当の担当種別 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
-| 終端担当 | 公開工程の担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
+| 公開担当 | 公開工程の担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | 監査担当 | 自動コードレビュー監査の委譲先 | `agent-toolkit/skills/process-wi/references/review-audit-launch.md`「自動コードレビュー監査」 |
 | 自動コードレビュー | 外部サービスのレビュー | `agent-toolkit/skills/process-wi/SKILL.md`「自動コードレビュー監査」 |
 | WI作成 | 作業の工程 | `agent-toolkit/share/workflow-phases.md`「工程表」 |
@@ -42,7 +42,7 @@
 | 受入シナリオ検証 | 検証の種類 | `agent-toolkit/share/workflow-phases.md`「用語」 |
 | 公開工程判定 | 完成条件の判定 | `agent-toolkit/share/workflow-phases.md`「用語」 |
 | 直接影響範囲 | 変更の影響範囲 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |
-| 変更範囲の検証 | 検証の範囲 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「検証と終端工程」 |
+| 変更範囲の検証 | 検証の範囲 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「検証と公開工程」 |
 | 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit/skills/review-standards/references/exec-review-recording.md`「統合時の完成条件判定」 |
 | 初回レビュー | 実行レビューの回 | `agent-toolkit/share/exec-review.subagent.md` |
 | 再レビュー | 実行レビューの回 | `agent-toolkit/share/exec-review.subagent.md` |

@@ -13,6 +13,7 @@ import sys
 
 import pytest
 
+from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.pretooluse import shell_checks
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
@@ -26,13 +27,17 @@ from agent_toolkit._testing.pretooluse_support import (
 
 
 def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    """Skillの本文を受け取った状態で、シェル・MCP固有の判定を試す。"""
+    """主体に応じた取得を観測して、シェル・MCP固有の判定を試す。"""
+    path = plugin_resources.skill_document_path("delegation", "SKILL.md")
+    codex = "turn_id" in payload
     recorded = _run_posttooluse(
         {
             "hook_event_name": "PostToolUse",
-            "tool_name": "Skill",
-            "tool_input": {"skill": "agent-toolkit:delegation"},
+            "tool_name": "Bash" if codex else "Skill",
+            "tool_input": {"command": f"cat -- {path}"} if codex else {"skill": "agent-toolkit:delegation"},
+            "tool_response": path.read_text(encoding="utf-8"),
             "session_id": payload["session_id"],
+            **({"turn_id": payload["turn_id"]} if codex else {}),
         },
         env_overrides,
     )
@@ -1105,7 +1110,7 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
 
     assert result.returncode == 2
     assert result.stdout == ""
-    assert "公開するコミットへ作業項目のファイル名を書かない" in result.stderr
+    assert re.search(r"公開するコミットへ作業項目のファイル名を書(?:かない|くな)", result.stderr)
     assert "対応記録" in result.stderr and "plan-progress" in result.stderr
     assert "ファイル名を含む行を除いて再実行" in result.stderr
 
@@ -1315,7 +1320,7 @@ class TestBashAtkOutputLoss:
         """通知が案内するホスト管理の背景待機へ書き直すと通過する。"""
         blocked = _run({"tool_name": "Bash", "tool_input": {"command": "atk agents wait >/dev/null &"}})
         assert blocked.returncode == 0
-        assert "単独で発行する" in _additional_context(blocked)
+        assert "単独で発行" in _additional_context(blocked)
         allowed = _run({"tool_name": "Bash", "tool_input": {"command": "atk agents wait", "run_in_background": True}})
         assert allowed.returncode == 0
 
