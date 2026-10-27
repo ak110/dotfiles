@@ -10,6 +10,7 @@ import datetime
 import json
 import logging
 import pathlib
+import time
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
@@ -20,6 +21,7 @@ from agent_toolkit import atk
 from agent_toolkit._agents_server import (
     agents_wait,
     child_environment,
+    claude_api_credits,
     launch_requests,
     result_projection,
     resume_waits,
@@ -358,9 +360,18 @@ async def test_api_credit_exhaustion_moves_to_subscription(
             assert (await _wait_until_terminal(manager))["status"] == "completed"
             assert not options_seen[-1].env.get("ANTHROPIC_API_KEY")
             assert options_seen[-1].resume == started["session_id"]
+            # 残高不足の観測から一定時間内に起動する新しい会話は、APIで失敗する往復を省いてサブスクリプションから始める。
+            launches = len(options_seen)
             fresh = await manager.start("claude:sonnet/high", "新規", str(tmp_path))
             assert (await _wait_until_terminal(manager))["status"] == "completed"
             assert fresh["session_id"] != started["session_id"]
+            assert len(options_seen) == launches + 1
+            assert not options_seen[-1].env.get("ANTHROPIC_API_KEY")
+            # 一定時間を過ぎた後に起動する新しい会話は、通常の接続順どおりAPIを再び試す。
+            claude_api_credits.record_shortage(now=time.monotonic() - claude_api_credits.CREDIT_SHORTAGE_TTL_SECONDS - 1)
+            later = await manager.start("claude:sonnet/high", "新規2", str(tmp_path))
+            assert (await _wait_until_terminal(manager))["status"] == "completed"
+            assert later["session_id"] != fresh["session_id"]
             assert options_seen[-1].env["ANTHROPIC_API_KEY"] == "test-api-key"
         finally:
             await manager.close()

@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
-from agent_toolkit._agents_server import state
+from agent_toolkit._agents_server import claude_api_credits, state
 from agent_toolkit._agents_server.result_projection import nonempty_error
 from agent_toolkit._agents_server.state import SessionState, utc_now
 from agent_toolkit._atk import claude_connection, usage_limit_policy
@@ -312,6 +312,11 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         }
         return False
     reason = "authentication" if startup_auth_error else "api_credits" if credit_error else "usage_limit"
+    if current == "api" and claude_api_credits.is_credit_shortage(
+        str(result.get("error", "")) + str(result.get("agent_message", ""))
+    ):
+        # 同じプロセスで後から起動する委譲先がAPIで同じ失敗を繰り返さないよう、観測を一定時間共有する。
+        claude_api_credits.record_shortage()
     _LOG.info(
         "claude_connection_failed session_id=%s connection=%s phase=turn reason=%s",
         session.session_id,

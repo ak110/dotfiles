@@ -20,7 +20,7 @@ from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
 import agent_toolkit
-from agent_toolkit._agents_server import launch_requests, state
+from agent_toolkit._agents_server import claude_api_credits, launch_requests, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import codex_models, plugin_environment, process_tree
@@ -203,6 +203,18 @@ def _reset_warning_context(request: pytest.FixtureRequest, monkeypatch: pytest.M
     if not request.path.is_relative_to(_PACKAGE_ROOT):
         return
     monkeypatch.setattr(notice, "_warning_context", {"session_id": "", "blocks": []})
+
+
+@pytest.fixture(autouse=True)
+def _reset_claude_api_credit_observations(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """API残高不足の観測を保持する`claude_api_credits`の大域状態を各テストの開始時に空へ戻す。
+
+    本番ではagents_serverのプロセスごとに空から始まる。同じプロセスで複数のテストを実行すると、
+    先行テストが記録した観測が後続テストの委譲先の接続順を変えるため、テストごとに空の辞書へ差し替える。
+    """
+    if not request.path.is_relative_to(_PACKAGE_ROOT):
+        return
+    monkeypatch.setattr(claude_api_credits, "_observations", {})
 
 
 @pytest.fixture(autouse=True)

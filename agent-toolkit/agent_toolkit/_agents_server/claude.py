@@ -27,6 +27,7 @@ lazy import psutil
 
 from agent_toolkit._agents_server import (
     child_environment,
+    claude_api_credits,
     claude_mcp,
     claude_retry_record,
     claude_settings,
@@ -656,7 +657,13 @@ class ClaudeServerManager:
         role = "orchestrator" if model_type == "orchestrate" else "delegate"
         choices = claude_connection.candidates(role, env=child_environment.inherited())
         failures = list(choices.diagnostics)
-        for connection in choices.connections:
+        connections = choices.connections
+        if role == "delegate":
+            # 同じプロセスで直前に残高不足を観測した場合は、APIで失敗して切り替える往復を省く。
+            connections = claude_api_credits.order_connections(connections)
+            if connections != choices.connections:
+                _LOG.info("claude_connection_reordered reason=api_credits order=%s", ",".join(c.kind for c in connections))
+        for connection in connections:
             _LOG.info("claude_connection_attempt connection=%s role=%s resumed=false", connection.kind, role)
             try:
                 session = await self._start_owned_task(

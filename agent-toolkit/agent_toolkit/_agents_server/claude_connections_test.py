@@ -13,7 +13,15 @@ from unittest.mock import AsyncMock
 import claude_agent_sdk
 import pytest
 
-from agent_toolkit._agents_server import child_environment, claude, mcp_tools, responses, resume_waits, state
+from agent_toolkit._agents_server import (
+    child_environment,
+    claude,
+    claude_api_credits,
+    mcp_tools,
+    responses,
+    resume_waits,
+    state,
+)
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import claude_connection, config
 from agent_toolkit._common.claude_usage_limit import UsageLimitState
@@ -176,6 +184,61 @@ async def test_connection_turn_logs_record_reason_without_failure_body(
     assert f"connection={current} phase=turn reason={reason}" in caplog.text
     assert f"previous={current} selected={following} reason={reason}" in caplog.text
     assert secret not in caplog.text
+    # 残高不足だけを、同じプロセスで後から起動する委譲先へ共有する。
+    assert claude_api_credits.shortage_active() is (reason == "api_credits")
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.parametrize(
+    ("message", "shared"),
+    [
+        ("Credit balance is too low", True),
+        ('{"type": "billing_error"}', True),
+        ("API usage limit reached for this organization", False),
+    ],
+)
+def test_only_api_credit_shortage_is_shared_across_new_delegates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, message: str, shared: bool
+) -> None:
+    """API接続の失敗のうち残高不足だけを共有し、APIの利用上限など他の理由の失敗は共有しない。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "never")
+    session = state.SessionState(
+        "credit-share", str(tmp_path), engine="claude", claude_connection="api", claude_api_env_file="api.env"
+    )
+    session.availability_checked = True
+    monkeypatch.setattr(
+        claude_connection,
+        "candidates",
+        lambda *_args, **_kwargs: claude_connection.Candidates(
+            (claude_connection.Connection("api"), claude_connection.Connection("subscription"))
+        ),
+    )
+    resume_waits.begin_usage_limit_wait(session, {"status": "failed", "error": {"message": message}, "agent_message": ""})
+    assert claude_api_credits.shortage_active() is shared
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("model_type", "reordered"), [(None, True), ("orchestrate", False)])
+async def test_new_delegate_starts_from_subscription_while_credit_shortage_is_shared(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, model_type: str | None, reordered: bool
+) -> None:
+    """残高不足の共有中は新しい委譲先だけがAPIを後ろへ回し、オーケストレーターの接続順は変えない。"""
+    monkeypatch.setattr(
+        claude_connection,
+        "candidates",
+        lambda *_args, **_kwargs: claude_connection.Candidates(
+            (claude_connection.Connection("api"), claude_connection.Connection("subscription"))
+        ),
+    )
+    claude_api_credits.record_shortage()
+    session = state.SessionState("ordered", str(tmp_path), engine="claude")
+    async with claude.ClaudeServerManager() as backend:
+        start = AsyncMock(return_value=session)
+        monkeypatch.setattr(backend, "_start_owned_task", start)
+        assert await backend.start("開始", str(tmp_path), model_type=model_type) is session
+    assert start.await_args is not None
+    assert start.await_args.kwargs["connection_kind"] == ("subscription" if reordered else "api")
 
 
 class _DelayedMcpClient(_McpClient):
