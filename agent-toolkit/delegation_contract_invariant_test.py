@@ -173,9 +173,42 @@ def _pair_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
         return errors
 
     parent_content = parent.read_text(encoding="utf-8")
+    if isinstance(parent, pathlib.Path) and parent.name.endswith(".parent.md"):
+        headings = top_level_atx_headings(parent_content, 2)
+        inputs = [index for index, (_, title) in enumerate(headings) if title in ("入力", "渡す入力")]
+        if len(inputs) != 1:
+            errors.append(
+                f"入力専用節が一意でない: {parent.name} -> {recipient.name}"
+                "\n次の操作: 対象の`<役割名>.parent.md`の入力または渡す入力のH2節を1つにそろえる。"
+            )
+            parent_content = ""
+        else:
+            index = inputs[0]
+            token = headings[index][0]
+            assert token.map is not None
+            next_token = headings[index + 1][0] if index + 1 < len(headings) else None
+            end = next_token.map[0] if next_token is not None and next_token.map else len(parent_content.splitlines())
+            parent_content = "\n".join(parent_content.splitlines()[token.map[0] + 1 : end])
+            lines = [line for line in parent_content.splitlines() if line.startswith(f"- {_REQUIRED_INPUT_PREFIX}")]
+            names = re.findall(r"`([^`]+)`", lines[0]) if len(lines) == 1 else []
+            if len(lines) != 1 or len(names) != len(set(names)):
+                errors.append(
+                    f"必須入力名の一覧が不正: {parent.name} -> {recipient.name}"
+                    "\n次の操作: 入力専用節の必須入力名を重複のない1行の一覧にそろえる。"
+                )
+            for name in sorted(set(names) - set(required_names)):
+                errors.append(
+                    f"宣言外の必須入力名: {parent.name} -> {recipient.name}: {name}"
+                    "\n次の操作: 入力専用節の必須入力名を委譲先の宣言と一致させる。"
+                )
+            for name in required_names:
+                if name not in names:
+                    errors.append(f"必須入力名が欠けている: {parent.name} -> {recipient.name}: {name}")
     for name in required_names:
         if not _contains_exact_name(parent_content, name):
-            errors.append(f"必須入力名が欠けている: {parent.name} -> {recipient.name}: {name}")
+            error = f"必須入力名が欠けている: {parent.name} -> {recipient.name}: {name}"
+            if error not in errors:
+                errors.append(error)
     return errors
 
 
@@ -355,7 +388,23 @@ def _write_pair(root: pathlib.Path, *, parent_body: str, required_name: str = "�
 
 def _parent_body(*, marker: str = "起動対象: task.subagent.md", after_marker: str = "") -> str:
     """正規の起動対象ブロックを持つ`<役割名>.parent.md`のテスト入力を返す。"""
-    return f"# 委譲元\n\n```text\n{marker}\n```\n{after_marker}\n## 起動\n\n対象リポジトリ: 値\n"
+    return (
+        f"# 委譲元\n\n```text\n{marker}\n```\n{after_marker}\n## 入力\n\n"
+        "- 必須入力名: `対象リポジトリ`\n\n対象リポジトリ: 値\n\n## 起動\n"
+    )
+
+
+def _format_contract_error(error: str) -> str:
+    """入力専用節の新しい検出範囲へ案内を付け、他の既存診断は保つ。"""
+    if "\n次の操作:" in error:
+        return error + "\n修正できない場合は対象文書と診断を委譲元へ報告する。"
+    if error.startswith("必須入力名が欠けている:"):
+        return (
+            f"{error}\n次の操作: 入力専用節があれば必須入力名の一覧も確認し、"
+            "欠けた一覧または入力説明へ宣言どおりの名前を追加する。"
+            "\n修正できない場合は対象文書と診断を委譲元へ報告する。"
+        )
+    return error
 
 
 def test_distributed_delegation_contract_is_complete() -> None:
@@ -364,7 +413,83 @@ def test_distributed_delegation_contract_is_complete() -> None:
 
     errors = _contract_errors(share)
 
-    assert not errors, "\n".join(errors)
+    assert not errors, "\n".join(_format_contract_error(error) for error in errors)
+
+
+@pytest.mark.parametrize("case", ["section", "list", "undeclared", "required", "mode", "unassigned", "missing"])
+def test_contract_diagnostics_limit_input_guidance_to_input_errors(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """実際の集約診断で入力不一致の修復案内を、その修正が有効な種類へ限定する。"""
+    body = _parent_body()
+    if case == "section":
+        body = body.replace("## 入力", "## 入力以外")
+    elif case == "list":
+        body = body.replace("`対象リポジトリ`", "`対象リポジトリ`, `対象リポジトリ`")
+    elif case == "undeclared":
+        body = body.replace("`対象リポジトリ`", "`対象リポジトリ`, `追加`")
+    elif case == "required":
+        body = body.replace("- 必須入力名: `対象リポジトリ`", "- 必須入力名:")
+    share = tmp_path / "share"
+    _write_pair(share, parent_body=body)
+    if case == "unassigned":
+        (share / "task.parent.md").unlink()
+    elif case == "missing":
+        (share / "task.subagent.md").unlink()
+    elif case == "mode":
+        (share / "task.subagent.md").write_text(
+            "---\nmode: invalid\nmodel_type: review_fast\nrequired_inputs: [対象リポジトリ]\n"
+            "writes_worktree: false\n---\n# 委譲先\n",
+            encoding="utf-8",
+        )
+    monkeypatch.setitem(globals(), "__file__", str(tmp_path / "invariant_test.py"))
+
+    with pytest.raises(AssertionError) as captured:
+        test_distributed_delegation_contract_is_complete()
+
+    message = str(captured.value)
+    expected = {
+        "section": "入力専用節が一意でない",
+        "list": "必須入力名の一覧が不正",
+        "undeclared": "宣言外の必須入力名",
+        "required": "必須入力名が欠けている",
+        "mode": "必須入力名の構造が不正",
+        "unassigned": "委譲先の文書が未割当",
+        "missing": "委譲先の文書が実在しない",
+    }
+    assert expected[case] in message
+    if case in ("section", "list", "undeclared", "required"):
+        assert "委譲元へ報告" in message
+        assert "次の操作:" in message
+        if case == "required":
+            assert "一覧" in message
+            assert "入力説明" in message
+    else:
+        assert "次の操作:" not in message
+        assert "委譲元へ報告" not in message
+
+
+@pytest.mark.parametrize(
+    "diagnostic",
+    [
+        "起動対象が一致しない",
+        "必須入力名の構造が不正",
+        "起動手順の読込が欠けている",
+        "起動対象の構造が不正",
+        "起動対象の記載がない",
+        "委譲先の文書が実在しない",
+        "委譲先の文書が未割当",
+        "起動関係が重複",
+        "項目名の別名を列挙している",
+        "必須入力を確認できません: frontmatterが不正です",
+        "必須入力を確認できません: 任意入力名の書式が不正です",
+    ],
+)
+def test_contract_error_formatter_keeps_unmodified_diagnostics(diagnostic: str) -> None:
+    """入力専用節と必須名以外の検出結果へ新しい案内を追加しない。"""
+    error = f"{diagnostic}: task.parent.md -> task.subagent.md"
+    message = _format_contract_error(error)
+    assert message == error
 
 
 def _assert_role_models_registered(share: pathlib.Path) -> None:
@@ -453,7 +578,7 @@ def test_embedded_launch_contract_keeps_input_coverage(tmp_path: pathlib.Path) -
     embedded = "# 呼出側\n\n" + "\n".join("#" + line if line.startswith("#") else line for line in body.splitlines())
     caller.write_text(embedded, encoding="utf-8")
     assert not _contract_errors(share)
-    caller.write_text(embedded.replace("対象リポジトリ: 値", "現行対象: 値"), encoding="utf-8")
+    caller.write_text(embedded.replace("対象リポジトリ", "現行対象"), encoding="utf-8")
     assert any("必須入力名が欠けている" in error and "対象リポジトリ" in error for error in _contract_errors(share))
 
 
@@ -1086,6 +1211,40 @@ def test_changed_required_input_fails_without_parent_update(tmp_path: pathlib.Pa
     assert "必須入力名が欠けている: task.parent.md -> task.subagent.md: 新しい入力" in _contract_errors(tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [
+        ("対象リポジトリ,追加", "必須入力名が欠けている: task.parent.md -> task.subagent.md: 追加"),
+        ("追加", "必須入力名が欠けている: task.parent.md -> task.subagent.md: 追加"),
+        ("", "宣言外の必須入力名: task.parent.md -> task.subagent.md: 対象リポジトリ"),
+        ("改名", "必須入力名が欠けている: task.parent.md -> task.subagent.md: 改名"),
+    ],
+)
+def test_shared_parent_input_section_matches_declaration(tmp_path: pathlib.Path, declared: str, expected: str) -> None:
+    """別役割の必須入力の追加・削除・改名を対象と名前付きで検出する。"""
+    _write_pair(tmp_path, parent_body=_parent_body())
+    recipient = tmp_path / "task.subagent.md"
+    names = ", ".join(declared.split(","))
+    recipient.write_text(
+        f"---\nmode: explore\nmodel_type: review_fast\nrequired_inputs: [{names}]\nwrites_worktree: false\n---\n# 委譲先\n",
+        encoding="utf-8",
+    )
+    errors = _pair_errors(tmp_path / "task.parent.md", recipient)
+    assert expected in [error.splitlines()[0] for error in errors]
+
+
+def test_required_input_outside_shared_input_section_is_rejected(tmp_path: pathlib.Path) -> None:
+    """別の節に名前が残っていても入力専用節の欠落を検出する。"""
+    body = (
+        _parent_body()
+        .replace("必須入力名: `対象リポジトリ`", "必須入力名: `別名`")
+        .replace("対象リポジトリ: 値\n\n## 起動", "別名: 値\n\n## 起動\n\n対象リポジトリ: 値")
+    )
+    _write_pair(tmp_path, parent_body=body)
+    errors = _pair_errors(tmp_path / "task.parent.md", tmp_path / "task.subagent.md")
+    assert "必須入力名が欠けている: task.parent.md -> task.subagent.md: 対象リポジトリ" in errors
+
+
 def test_parent_and_recipient_versions_cannot_be_mixed(tmp_path: pathlib.Path) -> None:
     """旧版と新版は各組だけが整合し、別のplugin rootにある親子の文書を混在させない。"""
     old_root = tmp_path / "old"
@@ -1139,8 +1298,10 @@ def test_extended_bullet_label_is_reported(tmp_path: pathlib.Path) -> None:
 def test_exact_bullet_label_is_accepted(tmp_path: pathlib.Path, optional: bool) -> None:
     """必須入力名を含む長いラベルでも、必須・任意の宣言と完全一致すれば別名として報告しない。"""
     tmp_path.mkdir(parents=True, exist_ok=True)
+    required = "`対象`" if optional else "`対象`、`対象リポジトリ`"
     (tmp_path / "task.parent.md").write_text(
-        "# 委譲元\n\n```text\n起動対象: task.subagent.md\n```\n\n## 起動\n\n- `対象`: 値\n- `対象リポジトリ`: 値\n",
+        "# 委譲元\n\n```text\n起動対象: task.subagent.md\n```\n\n## 入力\n\n"
+        f"- 必須入力名: {required}\n\n- `対象`: 値\n- `対象リポジトリ`: 値\n",
         encoding="utf-8",
     )
     (tmp_path / "task.subagent.md").write_text(
