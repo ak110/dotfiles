@@ -56,11 +56,13 @@ async def test_start_resume_root_reaches_foreign_hook_and_acquisition(
             for source in ("startup", "compact"):
                 with notice.notice_cycle(f"root-{index}-{source}", "session-start", "main"):
                     context = rules_context.compose_session_start(source, delegated=True, host="codex")
-                assert context is not None
-                assert str(selected / "scripts/atk") in context
-                assert str(foreign) not in context
+                assert isinstance(context, str)
+                context_text = str(context)
+                assert str(selected / "scripts/atk") in context_text
+                assert str(foreign) not in context_text
+            session_id = "selected-root"
             payload = {
-                "session_id": "selected-root",
+                "session_id": session_id,
                 "turn_id": "turn",
                 "cwd": str(tmp_path),
                 "tool_name": "Judge",
@@ -81,9 +83,9 @@ async def test_start_resume_root_reaches_foreign_hook_and_acquisition(
                 == 0
             )
             capsys.readouterr()
-            records = read_delivery.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
+            records = read_delivery.read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
             assert read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(reference), "main")
             assert dispatch.main(json.dumps(payload)) == 0
             assert str(reference) not in capsys.readouterr().out
             # 次の開始・再開条件でも取得前から確認する。
-            read_delivery.update_state(payload["session_id"], lambda _state: {})
+            read_delivery.update_state(session_id, lambda _state: {})

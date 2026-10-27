@@ -1091,7 +1091,8 @@ async def test_child_collected_by_background_agents_wait_is_not_unobserved(
         await manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
 
         error = parent.error if isinstance(parent.error, dict) else {}
-        assert error.get("unobservedSessions") == expected_unobserved
+        assert "unobservedSessions" not in error
+        assert parent.live_child_session_ids == set(expected_unobserved or [])
         await manager.close()
 
 
@@ -1162,7 +1163,7 @@ async def test_orphaned_record_keeps_turn_unobserved_unless_takeover_conditions_
             encoding="utf-8",
         )
     else:
-        session_registry.publish(session_id, terminal=False, engine="claude", cwd=str(tmp_path), status="running")
+        session_registry.publish(session_id, terminal=False, engine="claude", cwd=str(tmp_path), status="running", turn_seq=3)
     async with server_manager.AgentsServerManager(None) as manager:
         backend = ThreadReadBackend(manager.sessions, turns, error)
         _install_backend(manager, "codex", backend)

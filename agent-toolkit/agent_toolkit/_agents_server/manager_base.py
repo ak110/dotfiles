@@ -245,13 +245,16 @@ class ManagerBase:
                 self._status_writer.schedule()
 
     async def _release_expired_session(self, session: SessionState, resume_state: SessionResumeState) -> None:
+        expected_owner = (session_registry.owner_server_instance(), session.turn_seq)
         try:
             await session.drain_registration()
             if self._status_writer is not None:
                 await self._status_writer.retain_result_async(resume_state)
             await self._backend(session.engine).release_session(session)
             if session.publish_registry:
-                await run_file_operation(session_registry.release, session.session_id, reason="retention_expired")
+                await run_file_operation(
+                    session_registry.release, session.session_id, reason="retention_expired", expected_owner=expected_owner
+                )
         except BaseException:
             # 解放に失敗したbackendを、公開stopが再試行できる所有状態へ戻す。
             # 期限の自動再発火は抑え、保存済みの結果と資源の登録を維持する。
