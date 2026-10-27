@@ -10,14 +10,14 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/testing.md#「検証単位の選定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` |
-| 独立した実行レビュー担当を起動する前 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 初回レビュー前に証拠を対応付ける前 | `verification-evidence.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence.md` |
+| 計画または実装の品質基準を適用する前 | `../skills/writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing.md#「検証単位の選定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` |
+| 実装に着手する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| 検証結果を記録する前 | `verification-evidence.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence.md` |
 | 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
 | 受入確認と通常検証を比較する前 | `agent-basics:check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md`の冒頭と「ラウンドの遷移」から「応答済みの判定」まで | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#冒頭`、`section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンドの遷移」から「応答済みの判定」まで` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
+| レビュー指摘への対応を開始する前 | `review-loop-coordination.md`の冒頭と「ラウンドの遷移」から「応答済みの判定」まで | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#冒頭`、`section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンドの遷移」から「応答済みの判定」まで` |
+| レーン専用資源を使い統合前の検収を行う前 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
 | レーン専用資源を使い、統合入力を確定する前 | `lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` |
 | 初期選定が複数レーンで`統合準備完了`を返す前 | `exec.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「出力」` |
 
@@ -28,6 +28,8 @@
 単一の書き込み担当者（単一writer）と、独立した実行レビュー体制を維持する。process-wiにおける専用資源の作成、統合、回収には既存のlane CLIを使用し、主作業ツリーへの書き込みは統合時にのみ行う。
 
 ## 継続する工程
+
+実行レビューの起動と返却後の検収、および既存不良の受領は`exec-review.parent.md`に従う。
 
 1. 計画の要否を判定し、必要な計画の起草、自己監査、および計画構造の自動チェックを完了する。採否の判定と既存認可への適合は自身で検収する。ユーザー固有の判断が必要な事項が残る場合は、委譲されたレーン担当者がメインエージェントへ直ちに通知し、直接実装を担当するメインエージェントは呼出側の確認手段を用いてユーザーへ確認する。計画を作成しない場合も同様の判定手順に従う。実装を伴う項目は手順2〜4へ進み、実装やマージを伴わない項目は採否を確定した上で手順5へ進む。
 2. 計画またはWIの要求に基づき、実装に着手する前に受入シナリオにおける公開された呼び出し手段、入力と初期状態、有効な期待結果、検出対象の失敗条件を具体化する。通常の変更範囲検証と受入確認について、対象、入力・環境条件、期待結果およびレビューで必要な出力を比較し、両方を観測できる実行を初回から選ぶ。両立しない条件、先行結果を失効させる差分、または別の結果そのものを要求する条件は別実行として残す。対象プロジェクトの定義と公開入力から起動形を選ぶ`agent-basics:check-execution/references/verification-scope.md`に従って適切なテストを選択し、実装、自己検収、commit、`検証結果`の作成を完了させる。計画を作成しない場合やレビュー指摘に基づく修正時にも同様に対応し、不具合は該当する入力を用いて再現させた上で修正する。呼び出し手段、入力、期待結果と実際の結果の対応関係、未実施や条件変更の判断、残る工程の担当と再開先を、既存の引き継ぎ記録および進捗ログの`検証結果`へ記録する。計画準備、実装開始、実装完了の各状態を保存し、同一の担当者が処理を継続する。
