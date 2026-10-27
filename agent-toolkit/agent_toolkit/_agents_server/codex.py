@@ -323,6 +323,7 @@ class JsonRpcProcess:
             environment.pop(_delegated_session.DELEGATED_SESSION_ENV, None)
             # 委譲先のhookが軽量起動を判別する。turnを実行しない照会用の接続は起動区分を持たない。
             environment.pop(_delegated_session.LAUNCH_KIND_ENV, None)
+            environment[_delegated_session.PLUGIN_ROOT_ENV] = str(plugin_roots.SERVER_PLUGIN_ROOT)
             if self._launch_kind is not None:
                 environment[_delegated_session.LAUNCH_KIND_ENV] = self._launch_kind
             environment.pop(_delegated_session.HANDOFF_PATH_ENV, None)
@@ -726,6 +727,7 @@ class AppServerManager:
                     "env": {
                         _delegated_session.OWNER_SESSION_ENV: owner_session_id,
                         "AGENT_TOOLKIT_STATUS_HOST_SESSION": writer_session_id,
+                        _delegated_session.PLUGIN_ROOT_ENV: str(plugin_root),
                         plugin_environment.RUNTIME_DATA_ENV: str(plugin_environment.runtime_data(os.environ)),
                     },
                     "env_vars": list(mcp_environment.runtime_environment_variable_names(parent_environment)),

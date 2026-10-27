@@ -1759,6 +1759,7 @@ def test_public_missing_selected_document_guides_repair_without_blocking(tmp_pat
     result = _run_hook_in_process("pretooluse", payload)
     assert result.returncode == 0 and not result.stderr
     assert str(missing) in result.stdout and "存在しない" in result.stdout and "復旧" in result.stdout
+    assert result.stdout.count("存在しない") == 1
     assert "委譲元" in result.stdout and "ユーザー" in result.stdout
     assert "permissionDecision" not in result.stdout
     assert not memory.get(rules_context.OPERATION_SKILL_READY_KEY, {})

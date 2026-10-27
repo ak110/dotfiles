@@ -1065,7 +1065,9 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     _llm_notice(
                         f"資料`{missing.path}`は存在しない。",
                         tag=_WARN_TAG,
-                        fix=rules_context.acquisition_failure(missing, error, shell=False),
+                        fix=(
+                            "資料と読込宣言の参照先を復旧せよ。復旧できない場合、委譲先は委譲元へ、それ以外はユーザーへ報告せよ"
+                        ),
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),

@@ -21,6 +21,9 @@ OWNER_SESSION_ENV = "AGENT_TOOLKIT_OWNER_SESSION"
 LAUNCH_KIND_ENV = "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND"
 """agents_serverが委譲先へ起動区分（`delegate`・`explore`・`shell`・`write`）を設定する環境変数の名前。"""
 
+PLUGIN_ROOT_ENV = "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT"
+"""委譲先のhookが資料とCLI案内に使う、起動側が選択した配布物の絶対パス。"""
+
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell", "write"})
 """スキルを使わない前提で起動する軽量起動の区分。
 

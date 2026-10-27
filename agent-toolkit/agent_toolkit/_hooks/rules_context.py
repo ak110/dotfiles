@@ -27,6 +27,7 @@ lazy from typing import Any
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import message_format, plugin_environment, read_triggers
+from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree
 lazy from agent_toolkit._common.delegated_session import is_delegated
@@ -41,7 +42,7 @@ _llm_notice = _notice_formatter(_HOOK_ID)
 RESPONSE_LANGUAGE_NOTICE = "ユーザーへ向けた地の文は、最初の応答の1文目から日本語で書け。"
 QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。会話限定の指示を成果物へ混入させるな。"
 
-SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
+SHARE_DIR = plugin_resources.plugin_root() / "share"
 MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
 MAIN_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-main.claude-code.md"
 MAIN_RULES_CODEX_PATH = SHARE_DIR / "rules-main.codex.md"
@@ -100,7 +101,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
             normative_parts.append(MAIN_RULES_CODEX_PATH.read_text(encoding="utf-8").rstrip("\n"))
     if normative_parts:
         parts.append(_normative_context("\n\n".join(normative_parts), kind=NORMATIVE_KIND_MAIN))
-    parts.append(_llm_notice(plugin_environment.cli_instructions(SHARE_DIR.parent)))
+    parts.append(_llm_notice(plugin_environment.cli_instructions(plugin_resources.plugin_root())))
     return "\n\n".join(parts) or None
 
 

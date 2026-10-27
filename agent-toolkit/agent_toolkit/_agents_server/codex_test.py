@@ -731,6 +731,7 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
         assert set(server["env"]) == {
             "AGENT_TOOLKIT_OWNER_SESSION",
             "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+            "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT",
             plugin_environment.RUNTIME_DATA_ENV,
         }
         assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
@@ -791,6 +792,7 @@ async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
         assert set(server["env"]) == {
             "AGENT_TOOLKIT_OWNER_SESSION",
             "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+            "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT",
             plugin_environment.RUNTIME_DATA_ENV,
         }
         assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
@@ -839,6 +841,7 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
         "UV_PROJECT_ENVIRONMENT": "caller-env",
         "CLAUDE_CODE_SESSION_ID": "parent-context",
         "AGENT_TOOLKIT_OWNER_SESSION": "parent-owner",
+        "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT": "stale-parent-plugin-root",
     }
     client = _TierClient()
     # App Serverの生成後に外側の環境が変わっても、実際の配送元は起動時のsnapshotである。
@@ -880,6 +883,7 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
                 **supplied,
                 "CLAUDE_CODE_SESSION_ID": None,
                 "AGENT_TOOLKIT_OWNER_SESSION": "chosen-owner",
+                "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT": str(plugin_roots.SERVER_PLUGIN_ROOT),
                 "MISSING_CUSTOM_SETTING": None,
             }
             encoded = json.dumps(server)
@@ -2523,9 +2527,13 @@ async def test_app_server_inherits_prepared_conversation_environment(monkeypatch
     async with subject.JsonRpcProcess(_ignore_message, _ignore_message, root_session_id="selected-owner") as client:
         with pytest.raises(RuntimeError, match="環境観測完了"):
             await client.start()
-        forbidden = subject.mcp_environment._NON_INHERITABLE_NAMES - {"agent_toolkit_owner_session"}
+        forbidden = subject.mcp_environment._NON_INHERITABLE_NAMES - {
+            "agent_toolkit_owner_session",
+            "agent_toolkit_delegated_plugin_root",
+        }
         assert not forbidden.intersection(name.casefold() for name in captured)
         assert captured["AGENT_TOOLKIT_OWNER_SESSION"] == "selected-owner"
+        assert captured["AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT"] == str(plugin_roots.SERVER_PLUGIN_ROOT)
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
