@@ -33,6 +33,7 @@ from agent_toolkit._agents_server import (
     claude_settings,
     context_usage,
     engine_availability,
+    lifetime,
     result_contract,
     result_projection,
     resume_waits,
@@ -71,6 +72,7 @@ from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 _ENV_EMIT_SESSION_STATE_EVENTS = "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"
+_DISCONNECT_TIMEOUT = 5.0
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 # 軽量起動の組込ツール。探索の読み取り専用性はプロンプトで指示する。
 _LAUNCH_TOOLS: dict[str, list[str]] = {
@@ -928,7 +930,9 @@ class ClaudeServerManager:
         self._disconnects.add(task)
         task.add_done_callback(self._disconnects.discard)
         with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.shield(task)
+            done, _ = await asyncio.wait({task}, timeout=_DISCONNECT_TIMEOUT)
+            if not done:
+                task.cancel()
 
     @staticmethod
     async def _close_client(client: Any) -> None:
@@ -1671,11 +1675,11 @@ class ClaudeServerManager:
             if not task.done():
                 task.cancel()
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await lifetime.wait_for_shutdown(tasks)
         # 切断taskは所有タスクの終了処理が登録するため、待機の対象は所有タスクの終了後に集める。
         disconnects = tuple(self._disconnects)
         if disconnects:
-            await asyncio.gather(*disconnects, return_exceptions=True)
+            await lifetime.wait_for_shutdown(disconnects, timeout=_DISCONNECT_TIMEOUT)
         for session_id in tuple(self._residual_processes):
             await self._reclaim_runtime(session_id)
         for session in tuple(self.sessions.values()):

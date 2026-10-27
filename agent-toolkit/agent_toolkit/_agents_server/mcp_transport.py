@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import inspect
 import logging
@@ -29,7 +30,7 @@ from mcp.types import (
     ToolAnnotations,
 )
 
-from agent_toolkit._agents_server import logging_config
+from agent_toolkit._agents_server import lifetime, logging_config
 from agent_toolkit._agents_server.session_errors import DelegateBackendError, SessionInitializationTimeoutError
 from agent_toolkit._agents_server.tool_descriptions import KIND_MCP_TOOL, schema_text
 from agent_toolkit._common.next_action import ActionableError, with_next_action
@@ -112,14 +113,18 @@ class _InitializationLoggingReceiveStream(ObjectReceiveStream[SessionMessage | E
         self,
         stream: _ReceiveStream,
         tracker: _InitializationLogTracker,
+        request_stop: Callable[[], None] | None = None,
     ) -> None:
         self._stream = stream
         self._tracker = tracker
+        self._request_stop = request_stop
 
     async def receive(self) -> SessionMessage | Exception:
         try:
             message = await self._stream.receive()
         except anyio.EndOfStream:
+            if self._request_stop is not None:
+                self._request_stop()
             # 親が標準入力を閉じた接続終了を、起動単位の終了診断へ残す。
             logging_config.record_instance_event("stdin_closed")
             raise
@@ -205,6 +210,7 @@ class AgentsServerMCP(MCPServer[None]):
         self._agents_lifespan = lifespan
         self._agents_name = name
         self._agents_instructions = instructions
+        self.server_lifetime: lifetime.ServerLifetime | None = None
 
     @typing.override
     def add_tool(  # noqa: PLR0913 -- 上位の署名をそのまま受け取る
@@ -262,16 +268,35 @@ class AgentsServerMCP(MCPServer[None]):
         )
         tracker = _InitializationLogTracker()
         # asyncioがSIGINTのhandlerを設置した後に包むため、実行中のloopの内側で設置する。
+        loop = asyncio.get_running_loop()
+        task = asyncio.current_task()
+        assert task is not None
+        guard = self.server_lifetime
+        owns_guard = guard is None
+        if guard is None:
+            guard = lifetime.ServerLifetime()
+            guard.start()
+
+        def cancel_transport() -> None:
+            loop.call_soon_threadsafe(task.cancel)
+
+        guard.set_stop_callback(cancel_transport)
         restore_signals = logging_config.install_signal_recording()
         try:
             async with stdio_server() as (read_stream, write_stream):
                 try:
                     await server.run(
-                        _InitializationLoggingReceiveStream(read_stream, tracker),
+                        _InitializationLoggingReceiveStream(
+                            read_stream, tracker, lambda: guard.request_stop(cancel_transport=False)
+                        ),
                         _InitializationLoggingSendStream(write_stream, tracker),
                         server.create_initialization_options(),
                     )
                 finally:
                     tracker.transport_closed()
         finally:
+            guard.request_stop(cancel_transport=False)
+            guard.set_stop_callback(None)
             restore_signals()
+            if owns_guard:
+                guard.finish()

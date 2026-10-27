@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -15,6 +16,7 @@ from pydantic import Field
 from agent_toolkit._agents_server import (
     child_environment,
     launch_requests,
+    lifetime,
     logging_config,
 )
 from agent_toolkit._agents_server import claude as claude_backend
@@ -60,6 +62,7 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
         await _MANAGER.activate_async()
     except BaseException:
         _LOG.exception("manager activateに失敗しました: stage=manager_activate")
+        await _MANAGER.close()
         await run_file_operation(logging_config.flush_logging)
         raise
     _LOG.info("manager activateが完了しました")
@@ -439,6 +442,34 @@ def _configure_logging() -> pathlib.Path:
 
 
 def serve(*, check_dependencies: bool = False) -> int:
+    """診断や初期化が停止しても起動単位の有限回収を維持する。"""
+    if check_dependencies:
+        return _serve(check_dependencies=True)
+    guard = lifetime.ServerLifetime()
+    guard.start()
+    mcp.server_lifetime = guard
+    try:
+        try:
+            _serve()
+        except BaseException as error:
+            # signal終了の状態は保持し、EOF等の取消しでは終了処理と無関係な実装例外を隠さない。
+            if guard.exitcode == 0:
+                if isinstance(error, BaseExceptionGroup):
+                    _, remaining = error.split(asyncio.CancelledError)
+                    if remaining is not None:
+                        raise
+                elif not isinstance(error, asyncio.CancelledError):
+                    raise
+            if not guard.stopping:
+                raise
+        return guard.exitcode
+    finally:
+        guard.request_stop()
+        guard.finish()
+        mcp.server_lifetime = None
+
+
+def _serve(*, check_dependencies: bool = False) -> int:
     """委譲先の環境を整え、依存の確認またはMCP stdio transportの起動を行う。
 
     stdio起動では起動単位を開始し、正常・例外の終了を起動単位の終了診断へ記録する。

@@ -6,6 +6,8 @@ agents_serverのMCPサーバーだけは子プロセスとして起動して終�
 
 import argparse
 import contextlib
+import ctypes
+import ctypes.wintypes
 import datetime
 import os
 import shutil
@@ -15,7 +17,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,8 @@ _STDERR_TAIL_BYTES = 16 * 1024
 _FORWARDED_SIGNALS = ("SIGINT", "SIGTERM", "SIGHUP")
 _STOP_TIMEOUT = 5.0
 _PREPARE_TIMEOUT = 600.0
+_PARENT_PID = os.getppid()
+_SERVER_SHUTDOWN_TIMEOUT = 30.0
 
 
 def main() -> int:
@@ -144,18 +148,19 @@ def _run_agents_server(arguments: list[str], environment: dict[str, str], *, rec
     標準入力と標準出力は継承してMCPのstdio通信を中継しない。呼出元へは従来のuv起動と同じ終了コードを返す。
     """
     if not record_diagnostics:
-        with _server_lifetime(arguments, environment, [], bytearray()) as process:
-            returncode = process.wait()
+        received: list[dict[str, str]] = []
+        with _server_lifetime(arguments, environment, received, bytearray()) as process:
+            returncode = _wait_server(process, received)
         return _relay_server_exit(returncode)
     with contextlib.ExitStack() as lifetime:
         with tempfile.NamedTemporaryFile(prefix="agent-toolkit-agents-server-launch-", suffix=".json", delete=False) as record:
             record_path = Path(record.name)
             lifetime.callback(record_path.unlink, missing_ok=True)
         environment = {**environment, logging_config.LAUNCH_RECORD_ENV: str(record_path)}
-        received: list[dict[str, str]] = []
+        received = []
         tail = bytearray()
         with _server_lifetime(arguments, environment, received, tail) as process:
-            returncode = process.wait()
+            returncode = _wait_server(process, received)
         diagnostics = logging_config.read_launch_record(record_path)
         terminated_by = signal.Signals(-returncode).name if returncode < 0 else None
         if diagnostics is None:
@@ -184,6 +189,51 @@ def _relay_server_exit(returncode: int) -> int:
     if returncode < 0 and os.name != "nt":
         return 128 - returncode
     return returncode
+
+
+def _wait_server(process: subprocess.Popen[bytes], received: list[dict[str, str]]) -> int:
+    """親消滅と停止要求を監視し、自発終了しない子も有限な回収へ進める。"""
+    with _parent_monitor() as parent_alive:
+        return _wait_owned_server(process, received, parent_alive)
+
+
+def _wait_owned_server(
+    process: subprocess.Popen[bytes], received: list[dict[str, str]], parent_alive: Callable[[], bool]
+) -> int:
+    while process.poll() is None:
+        if received or not parent_alive():
+            # サーバー自身の独立した子孫handle回収（猶予15秒とTERM/KILL各5秒）を先に完走させる。
+            _stop_server_process(
+                process,
+                signum=getattr(signal, received[0]["signal"]) if received else signal.SIGTERM,
+                graceful_timeout=_SERVER_SHUTDOWN_TIMEOUT,
+            )
+            break
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            return process.wait(timeout=0.1)
+    assert process.returncode is not None
+    return process.returncode
+
+
+@contextlib.contextmanager
+def _parent_monitor() -> Generator[Callable[[], bool]]:
+    if sys.platform != "win32":
+        yield lambda: 1 < _PARENT_PID == os.getppid()
+        return
+    # WindowsのPPIDは親の終了後も変わらないため、親のkernel handleを保持する。
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.restype = ctypes.wintypes.HANDLE
+    kernel.OpenProcess.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.BOOL, ctypes.wintypes.DWORD]
+    kernel.WaitForSingleObject.argtypes = [ctypes.wintypes.HANDLE, ctypes.wintypes.DWORD]
+    kernel.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+    handle = kernel.OpenProcess(0x00100000, False, _PARENT_PID)
+    if not handle and ctypes.get_last_error() != 87:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        yield lambda: bool(handle) and kernel.WaitForSingleObject(handle, 0) == 258
+    finally:
+        if handle:
+            kernel.CloseHandle(handle)
 
 
 @contextlib.contextmanager
@@ -219,8 +269,15 @@ def _join_reader(reader: threading.Thread) -> None:
             raise TimeoutError("agents_serverの標準エラーreaderを終了できませんでした")
 
 
-def _stop_server_process(process: subprocess.Popen[bytes]) -> None:
+def _stop_server_process(
+    process: subprocess.Popen[bytes], *, signum: int | None = None, graceful_timeout: float | None = None
+) -> None:
     """自ら起動したbootstrap子のprocess groupを有限時間で回収する。"""
+    if signum is not None and process.poll() is None:
+        with contextlib.suppress(ProcessLookupError):
+            process.send_signal(signum)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=_STOP_TIMEOUT if graceful_timeout is None else graceful_timeout)
     if os.name == "nt":
         if process.poll() is not None:
             return
@@ -242,6 +299,8 @@ def _stop_server_process(process: subprocess.Popen[bytes]) -> None:
         os.killpg(process.pid, signal.SIGTERM)
     try:
         process.wait(timeout=_STOP_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        pass
     finally:
         # 親が先に終了しても同じ所有groupに残る子孫と、そのstderr writerを回収する。
         with contextlib.suppress(ProcessLookupError):
@@ -250,11 +309,9 @@ def _stop_server_process(process: subprocess.Popen[bytes]) -> None:
             process.wait(timeout=_STOP_TIMEOUT)
 
 
-def _forwarding_handler(process: subprocess.Popen[bytes], received: list[dict[str, str]]) -> Any:
+def _forwarding_handler(_process: subprocess.Popen[bytes], received: list[dict[str, str]]) -> Any:
     def handler(signum: int, _frame: Any) -> None:
         received.append({"signal": signal.Signals(signum).name, "at": datetime.datetime.now(datetime.UTC).isoformat()})
-        if process.poll() is None:
-            process.send_signal(signum)
 
     return handler
 

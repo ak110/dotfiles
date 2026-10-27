@@ -1134,7 +1134,8 @@ async def test_declared_role_continuations_keep_required_inputs(
                 assert session.followup_prompts == history
 
 
-def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("stop_requested", [False, True])
+def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, stop_requested: bool) -> None:
     """stdio起動が例外で終わると、起動単位の終了診断へ例外型とメッセージを記録し、例外を呼出元へ伝える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
@@ -1143,6 +1144,9 @@ def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path:
         monkeypatch.delenv(name, raising=False)
 
     def fail(**_kwargs: Any) -> None:
+        if stop_requested:
+            assert mcp_tools.mcp.server_lifetime is not None
+            mcp_tools.mcp.server_lifetime.request_stop()
         raise RuntimeError("transport broke")
 
     monkeypatch.setattr(mcp_tools.mcp, "run", fail)

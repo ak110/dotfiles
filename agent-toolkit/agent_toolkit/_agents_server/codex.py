@@ -31,6 +31,7 @@ from agent_toolkit._agents_server import (
     compaction_metrics,  # pylint: disable=wrong-import-position
     context_usage,
     engine_availability,
+    lifetime,
     result_contract,
     result_projection,
     resume_waits,
@@ -599,14 +600,14 @@ class JsonRpcProcess:
                     process.terminate()
             if process.returncode is None:
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(process.wait(), timeout=5)
+                    await lifetime.wait_for_shutdown((asyncio.create_task(process.wait()),), timeout=5)
             if process.returncode is None:
                 with contextlib.suppress(OSError, ProcessLookupError):
                     process.kill()
                 with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(process.wait(), timeout=5)
+                    await lifetime.wait_for_shutdown((asyncio.create_task(process.wait()),), timeout=5)
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await lifetime.wait_for_shutdown(tasks)
         if process is not None:
             _LOG.info("Codex App Serverを終了しました: returncode=%s", process.returncode)
         self._residual = await asyncio.to_thread(process_tree.reclaim_processes, self._residual)
@@ -2231,22 +2232,15 @@ class AppServerManager:
     async def _close(self) -> None:
         current_task = asyncio.current_task()
         tasks = tuple(task for task in self._background_tasks if task is not current_task)
+        # 監視taskや先行clientの待機に依存させず、所有する全接続の停止を開始する。
+        releases = [
+            asyncio.create_task(self._discard_client(client)) for client in tuple(self._unassigned_clients.values())
+        ] + [asyncio.create_task(self._release_owned_client(session_id)) for session_id in tuple(self._clients)]
         for task in tasks:
             if not task.done():
                 task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        failures: list[Exception] = []
-        for client in tuple(self._unassigned_clients.values()):
-            try:
-                await self._discard_client(client)
-            except Exception as error:
-                failures.append(error)
-        for session_id in tuple(self._clients):
-            try:
-                await self._release_owned_client(session_id)
-            except Exception as error:
-                failures.append(error)
+        outcomes = await lifetime.wait_for_shutdown((*tasks, *releases))
+        failures = [outcome for outcome in outcomes if isinstance(outcome, Exception)]
         for session in self._codex_sessions():
             try:
                 await session.drain_registration()

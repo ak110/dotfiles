@@ -367,33 +367,44 @@ def _record_name(path: pathlib.Path) -> str:
 
 
 def install_signal_recording(signals: Iterable[signal.Signals] | None = None) -> Callable[[], None]:
-    """受信シグナルを診断へ記録してから、設置前と同じ処理へ渡すhandlerを設置する。
+    """受信シグナルの記録を別threadへ渡し、設置前と同じ処理へ進むhandlerを設置する。
 
-    設置前のhandler（asyncioのSIGINT処理など）は記録後にそのまま呼ぶ。設置前が`SIG_DFL`のシグナルは`SIG_DFL`へ戻して自身へ再送する。
+    設置前のhandler（asyncioのSIGINT処理など）は記録完了を待たずに呼ぶ。設置前が`SIG_DFL`のシグナルは`SIG_DFL`へ戻して自身へ再送する。
     終了の経過と呼出元へ返す終了状態を変えないためである。設置前のhandlerへ戻す関数を返す。
     """
     if signals is None:
         names = ("SIGINT",) if os.name == "nt" else ("SIGINT", "SIGTERM", "SIGHUP")
         signals = tuple(getattr(signal, name) for name in names if hasattr(signal, name))
     recorded = [0]
+    events: queue.SimpleQueue[int | None] = queue.SimpleQueue()
+
+    def record_signals() -> None:
+        while (received := events.get()) is not None:
+            record_instance_event("signal_received", signal=signal.Signals(received).name)
+
+    # SimpleQueue.putは同じthreadからの再入が可能であり、handlerで診断ロックやI/Oを実行しない。
+    threading.Thread(target=record_signals, name="agents-server-signals", daemon=True).start()
     previous_handlers: dict[signal.Signals, Any] = {}
     for signum in signals:
         previous = signal.getsignal(signum)
         previous_handlers[signum] = previous
-        signal.signal(signum, _recording_handler(signum, previous, recorded))
+        signal.signal(signum, _recording_handler(signum, previous, recorded, events))
 
     def restore() -> None:
         for signum, previous in previous_handlers.items():
             signal.signal(signum, previous)
+        events.put(None)
 
     return restore
 
 
-def _recording_handler(signum: signal.Signals, previous: Any, recorded: list[int]) -> Callable[[int, Any], None]:
+def _recording_handler(
+    signum: signal.Signals, previous: Any, recorded: list[int], events: queue.SimpleQueue[int | None]
+) -> Callable[[int, Any], None]:
     def handler(received: int, frame: Any) -> None:
         if recorded[0] < SIGNAL_EVENT_LIMIT:
             recorded[0] += 1
-            record_instance_event("signal_received", signal=signal.Signals(received).name)
+            events.put(received)
         if callable(previous):
             previous(received, frame)
         elif previous != signal.SIG_IGN:
