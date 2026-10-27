@@ -20,7 +20,7 @@
 | 振り返り・知見集約・原因分析・監査 | session-reviewは作業終了時の振り返り。候補の抽出、完了報告との関係、AWIなどから得た知見の集約、欠陥の原因分析の機構、自動コードレビュー監査の判定済み記録を扱う | [design-session-review.md](design-session-review.md) |
 | 計画と実行レビューへの受渡し | 作業項目から計画を作成し、実装結果が要件に沿うか確認する実行レビューへ渡す工程。review_contractとレビュー指摘管理表、レビュー修正の履歴統合、複数レーンの統合、計画ファイルの構成、WI実装commitの対応を扱う | [design-planning.md](design-planning.md) |
 | 検収根拠とレビュー担当間の知識境界 | 完成条件を満たす証拠を保存し、実行レビューと画面の使いやすさを確認するレビューへ渡す仕組み。レビュー担当とレビューイーの知識境界、完成条件証拠と証拠検査を扱う | [design-review-evidence.md](design-review-evidence.md) |
-| フックの責務・通知・セッション状態 | hookはエージェントの操作前後などに自動で起動する処理。責務境界、遮断・警告の存廃判定、Stopフック、通知の整形、複数ホスト向けの配布、イベントごとの個別設計、セッション状態の共有を扱う | [design-hooks.md](design-hooks.md) |
+| フックの責務・通知・セッション状態 | hookはエージェントの操作前後などに自動で起動する処理。責務境界、遮断・警告の存廃判定、Stopフック、通知の整形、複数ホスト向けの配布、イベントごとの個別設計、進捗のセルフチェック通知、セッション状態の共有を扱う | [design-hooks.md](design-hooks.md) |
 | 一時成果物とキューリポジトリの回復 | managed-tempは一時成果物の管理領域。MQはWIキューの管理層で、項目を保存するGitリポジトリの分岐回復を扱う | [design-storage.md](design-storage.md) |
 | branch・CI所有権・公開・終了 | developは開発用、masterはリリース用のGit branch。CIは変更の自動検証。CIの実処理所有権、rulesetとマージ後の同期、公開と検証、公開状態の観測を含む公開工程を扱う | [design-release.md](design-release.md) |
 | CLIの入力・結果・公開境界 | atkはagent-toolkitのコマンド。CLIはコマンドラインからの呼び出し口。引数の拒否、結果行と出力の内容、次の操作、長い出力の保存、`atk run-skill`を扱う | [design-cli.md](design-cli.md) |

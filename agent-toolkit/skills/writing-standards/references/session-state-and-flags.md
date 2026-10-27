@@ -123,6 +123,14 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 - `stop_no_tool_turn_count`: `agent-toolkit/agent_toolkit/_hooks/busy_loop_guard.py`が、自セッションでツール呼び出しをしなかったターンの連続回数を記録し、常駐ループの停止判定に使用する。ツール呼び出しを観測したターン、委譲先やバックグラウンドタスクの完了を待つターン、停止工程の実行時は0に戻す。セッション終了まで保持する
 - `stop_observed_entry_count`: 同フックが、Stop判定時点で観測済みだったセッション記録のエントリ数を記録し、次のターンで差分配信分のみを走査する起点として参照する。セッション終了まで保持する
 
+## 進捗の点検系
+
+- `progress_self_check`: `agent-toolkit/agent_toolkit/_hooks/progress_self_check.py`が、呼出主体ごとの点検の時刻をepoch秒で保持する。呼出主体はhookペイロードの`agent_id`とし、これを持たない会話では`main`とする。
+  各主体の値は`started_at`（その主体を最初に観測した時刻）と`last_notified_at`（最後に点検を通知した時刻）である。
+  PostToolUseとUserPromptSubmitが`update_state`の排他区間で読み書きする。最初の観測では両方へ同じ時刻を記録するだけにする。
+  `last_notified_at`から1800秒以上たった観測で`source="progress-self-check"`の通知を1回返し、`last_notified_at`を更新する。UserPromptSubmitでは機械注入のターンも対象とする。
+  リセット処理は設けず、生存期間はセッション状態ファイルと同一とする。
+
 ## 確認・操作スキル系
 
 - `user_confirmation_skill_pending`: 各文脈における`agent-toolkit:user-confirmation-and-report`の起動案内が配送待ちであるかを示す真偽値

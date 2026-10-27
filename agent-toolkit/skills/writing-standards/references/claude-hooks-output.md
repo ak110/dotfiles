@@ -13,6 +13,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-output.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-output.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `session-state-and-flags.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/session-state-and-flags.md` |
 
 ## 出力フィールドの使い分け
 
@@ -30,7 +31,9 @@ Pythonのコマンドhookは`hookSpecificOutput.sessionTitle`でタイトルを�
 
 セッション開始時、`clear`実行後、および会話圧縮後の最初の実ユーザー発話に対して、`agent-toolkit:user-confirmation-and-report`の起動を案内する。また、不具合の有無・原因・修正方針を回答や確認に含める場合は、診断前に`agent-toolkit:bugfix`を起動するよう案内する。両ホストにおいて会話文脈ごとに1回配送し、機械的な注入処理では配送待ち状態を消費しない。発話内容と現物の突き合わせ作業は、同スキルの「原文の保持と取り込み」および「確認要否の判定」に従う。時間の経過のみを理由とした固定手順の再注入は行わない。
 
-案内の対象となる通常発話には、ユーザーが入力したスラッシュコマンドを含める。ハーネスが挿入した通知や機械注入によるターンは対象外とする。生成された注記は単一の`additionalContext`に統合し、Codex payloadにおいても同様に返却する。
+案内の対象となる通常発話には、ユーザーが入力したスラッシュコマンドを含める。ハーネスが挿入した通知や機械注入によるターンは対象外とする。
+
+進捗のセルフチェック通知（`source="progress-self-check"`）は、前段の案内と別に、呼出主体ごとに30分間隔でPostToolUseとUserPromptSubmitが返す。経過時間と短い点検項目だけを示す点検の契機であり、手順本文は含めないため、前段の固定手順の再注入とは別の扱いとする。長い委譲の往復の間も点検の契機を届けるため、この通知は機械注入のターン（定期再確認を含む）にも付ける。状態の扱いは`session-state-and-flags.md`の`progress_self_check`に従う。生成された注記は単一の`additionalContext`に統合し、Codex payloadにおいても同様に返却する。
 
 ユーザーが入力した文章は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）として`PostToolUse`にも届く。発話内容を判定材料とする注記は両hookで同一の定義本文を用い、原因・対象・対処の変化に応じた共通の新規性判定に基づいて配送する。
 

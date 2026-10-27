@@ -98,6 +98,7 @@ App Serverはthreadごとのstdio MCPサーバーを子孫プロセスとして�
 | Claude起動別の合成settings | `<状態ディレクトリ>/<ルートsession識別子>/claude-settings/settings-<一意な値>.json`（ルート識別子を受け取らない直接構築時は`settings-<一意な値>`をルート名として使用） | 該当の起動におけるClaude CLI | Claudeバックエンドの`claude_settings.py`。親設定がファイルで与えられている場合や、API環境変数を合成する場合に、実行ユーザーのみ読み取り可能な起動別設定ファイルを生成する。各起動プロセスは、接続終了時・起動失敗時・依存確認の終了時に自身のファイルを削除・回収する |
 | Antigravityの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、セッションのイベント推移を調査する処理 | Antigravityバックエンド（公開stream-jsonイベントを追記） |
 | OpenCodeの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/opencode/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、推定利用料金の集計処理 | OpenCodeバックエンドおよび共通モジュールの`cli_turn.py`。公開JSONイベントとともに、入力内容や要求モデルを示す`agent_toolkit_input`を追記する。要求モデルの情報は、実際の観測モデル名とは区別して記録する |
+| Claude APIの残高不足の観測時刻 | MCPサーバーのメモリー（`_agents_server/claude_api_credits.py`。`time.monotonic()`の値） | 新しい委譲先の接続順を決めるClaudeバックエンド | 同じMCPサーバーのClaudeバックエンドが、API接続のturnが残高不足で失敗した時に記録する。観測から1時間（`CREDIT_SHORTAGE_TTL_SECONDS`）以内に起動する委譲先では、API候補をサブスクリプションの後ろへ回す（候補からは外さない）。オーケストレーターの接続順は変えない。ファイルへ永続化せず、他のMCPサーバーとは共有しない。期限切れかMCPサーバーの再起動で通常の接続順に戻る。API残高は月1回の付与などで外部から回復するため、永続化せずに定期的に再確認するというユーザー要件による |
 | engineの可用性を理由に除外した候補（解除待ちの対象のClaude利用上限は記録せず、旧版の理由`429`のClaude候補は読み込み時に除外の根拠から外す） | `<状態ディレクトリ>/unavailable-candidates.json` | 起動候補リストを解決するMCPサーバー | 当該の状態ディレクトリを共有する各MCPサーバー（ファイルロックを取得した上で読み書きを行う） |
 
 process-loop、レーン操作、配布物保持が共有する状態は、前述のagents-server領域と同じ`state_dir`の下で次のように保持する。
