@@ -96,7 +96,10 @@ class ManagerResume(manager_registry.ManagerRegistry):
             await self._resume_claude_wait(
                 session,
                 wrap_delivery_body(
-                    "直前のturnは中断した。完了済みの操作と成果物を確認し、残る作業を続けて所定の返却形式を返せ。"
+                    "直前のturnはClaudeの接続の失敗で止まったため、接続先を切り替えて同じ会話を再開した。"
+                    "この会話に残っている操作と成果物が実際の進み具合である。それを確かめて残る作業を続け、所定の返却形式を返せ。"
+                    "この会話に操作と成果物が残っていなければ、依頼を最初から実行せよ。"
+                    "接続の切替と最初からの実行は想定外事象として報告するな。"
                 ),
             )
             return
