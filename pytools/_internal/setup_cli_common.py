@@ -181,10 +181,6 @@ def is_windows_cli_running(cli_name: str, package_name: str, launchers: Iterable
                 if inaccessible_name in {
                     cli_name.lower(),
                     f"{cli_name.lower()}.exe",
-                    "node",
-                    "node.exe",
-                    "mise",
-                    "mise.exe",
                 }:
                     return True
             except psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess:
@@ -358,7 +354,40 @@ def _process_matches(cli_name: str, tokens: set[str], haystacks: list[str]) -> b
         return True
     if Path(haystacks[0]).name not in {"node", "node.exe", "mise", "mise.exe", cli_name, f"{cli_name}.exe"}:
         return False
-    return any(token in value for token in tokens for value in haystacks)
+    command = haystacks[2:]
+    if not command:
+        return False
+    command = command[1:]
+    if Path(haystacks[0]).name in {"mise", "mise.exe"}:
+        # miseの--より前は導入するtool指定であり、起動するコマンドではない。
+        if not command or command[0] not in {"exec", "x"} or "--" not in command:
+            return False
+        command = command[command.index("--") + 1 :]
+        if not command:
+            return False
+        if Path(command[0]).name in {"node", "node.exe"}:
+            command = command[1:]
+    index = 0
+    while index < len(command) and command[index].startswith("-"):
+        option = command[index]
+        if option == "--":
+            index += 1
+            break
+        if option in {"-e", "--eval", "-p", "--print"} or option.startswith(("--eval=", "--print=")):
+            return False
+        index += (
+            2
+            if option in {"-r", "--require", "--import", "--loader", "--experimental-loader", "-C", "--conditions", "--title"}
+            else 1
+        )
+    launcher_names = {cli_name, *(f"{cli_name}{suffix}" for suffix in (".exe", ".cmd", ".ps1", ".js"))}
+    return any(
+        Path(value).name in launcher_names
+        or value in tokens - {cli_name}
+        or any(f"/node_modules/{token}/" in value for token in tokens if token.startswith("@"))
+        for value in command[index : index + 1]
+        if not value.startswith("-")
+    )
 
 
 def _cmd_referenced_paths(content: str, launcher_dir: Path) -> Iterable[Path]:

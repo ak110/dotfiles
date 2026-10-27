@@ -276,9 +276,9 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 | キー | 用途 | 初期値 |
 | --- | --- | --- |
 | `execute_model` | 複雑な作業・計画・実装・原因分析・統合 | `claude:opus[1m]/medium,codex:sol/medium` |
-| `review_model` | 実行レビュー等 | `codex:terra/medium,claude:sonnet[1m]/medium` |
+| `review_model` | 実行レビュー等 | `codex:sol/low,claude:sonnet[1m]/medium` |
 | `review_fast_model` | 小規模レビュー | `codex:luna/medium,claude:haiku/medium` |
-| `chores_model` | 確定済み作業・単発コーディング・中規模走査 | `codex:terra/medium,claude:sonnet[1m]/medium` |
+| `chores_model` | 確定済み作業・単発コーディング・中規模走査 | `codex:sol/low,claude:sonnet[1m]/medium` |
 | `chores_fast_model` | 定型走査・軽微な作業・コマンド実行 | `codex:luna/medium,claude:haiku/medium` |
 | `orchestrate_model` | process-loop・run-skill・最上位 | `claude:opus[1m]/medium,codex:sol/medium` |
 | `write_model` | 文章起草 | `agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium` |
@@ -309,8 +309,8 @@ apply-presetはwrite_modelを保ち、他の6工程を一括保存する。次�
 | `codex-balanced` | 初期値と同一 |
 | `codex-near-primary` | executeを`codex:sol/medium,claude:opus[1m]/medium`へ変更 |
 | `codex-primary` | executeとorchestrateを`codex:sol/medium,claude:opus[1m]/medium`へ変更 |
-| `claude-balanced` | choresを`claude:sonnet[1m]/medium,codex:terra/medium`、chores_fastを`claude:haiku/medium,codex:luna/medium`へ変更 |
-| `claude-primary` | review・choresを`claude:sonnet[1m]/medium,codex:terra/medium`、review_fast・chores_fastを`claude:haiku/medium,codex:luna/medium`へ変更 |
+| `claude-balanced` | choresを`claude:sonnet[1m]/medium,codex:sol/low`、chores_fastを`claude:haiku/medium,codex:luna/medium`へ変更 |
+| `claude-primary` | review・choresを`claude:sonnet[1m]/medium,codex:sol/low`、review_fast・chores_fastを`claude:haiku/medium,codex:luna/medium`へ変更 |
 
 `atk config apply-preset show`か引数を省略したapply-presetは、5プリセット各6キーを保存せずに表示する。未知名は終了コード2になる。
 OpenCodeは工程別キーへ直接指定する。

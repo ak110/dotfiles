@@ -120,7 +120,7 @@ def _definition_read_operations(
         path = inputs.get("file_path", inputs.get("filePath", inputs.get("path", inputs.get("Path"))))
         direct_reads = [{"input": inputs, "targets": [path]}] if isinstance(path, str) and path.endswith(".subagent.md") else []
         return direct_reads, []
-    if name not in {"Bash", "bash", "shell", "exec", "exec_command", "CommandExecution", "run_command"}:
+    if name.casefold() != "exec" and name not in {"Bash", "bash", "shell", "exec_command", "CommandExecution", "run_command"}:
         return [], []
     if name in {"Bash", "bash", "shell", "exec_command", "run_command"} and not any(
         key in inputs for key in ("command", "cmd", "CommandLine")
@@ -245,7 +245,7 @@ def _definition_read_operations(
 def _inner_executions(call: _ToolCall, calls: list[_ToolCall]) -> tuple[list[_ToolCall] | None, str | None]:
     """完結した外側execの結果範囲内にある内側実行だけを返す。"""
     if (
-        call.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1] != "exec"
+        call.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1].casefold() != "exec"
         or call.turn_id is None
         or not session_evidence_execution.command_input_observations(call.tool, call.text)
     ):
@@ -253,7 +253,9 @@ def _inner_executions(call: _ToolCall, calls: list[_ToolCall]) -> tuple[list[_To
     if call.result_line is None:
         return None, "外側execの結果記録が無くセルの完結境界を確定できない"
     outers = [
-        item for item in calls if item.turn_id == call.turn_id and item.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1] == "exec"
+        item
+        for item in calls
+        if item.turn_id == call.turn_id and item.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1].casefold() == "exec"
     ]
     executions = [
         item
@@ -290,7 +292,7 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
         for call in calls:
             name = call.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
             if name in {"Agent", "Task", "spawn_agent", "start", "Edit", "Write", "apply_patch"} or (
-                name == "exec" and re.search(r"(?:start|spawn_agent|apply_patch)\s*\(", call.text)
+                name.casefold() == "exec" and re.search(r"(?:start|spawn_agent|apply_patch)\s*\(", call.text)
             ):
                 related.append(call)
         for call in calls:
