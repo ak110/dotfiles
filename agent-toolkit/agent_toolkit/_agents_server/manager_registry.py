@@ -855,7 +855,6 @@ class ManagerRegistry(responses.ManagerResponses):
             if session is not None:
                 await self._backend(resume_state.engine).release_session(session)
         self._cancel_retention_timer(session_id)
-        self._pending_unobserved_child_sessions.pop(session_id, None)
         self.sessions.pop(session_id, None)
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions[session_id] = resume_state

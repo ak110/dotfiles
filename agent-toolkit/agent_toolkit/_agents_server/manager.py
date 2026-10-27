@@ -965,7 +965,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 errors.append(error)
         finally:
             remove_terminal_listener(self._carry_over_unavailable_candidate)
-            remove_terminal_listener(self._record_pending_unobserved_child_sessions)
             remove_lifecycle_listener(self._record_resources)
             try:
                 await self._drain_diagnostics()

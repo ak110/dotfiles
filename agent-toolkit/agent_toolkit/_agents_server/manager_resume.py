@@ -194,7 +194,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
                         session.codex_self_message_repair_consumed = False
                     return
             except Exception as exc:
-                self._pending_unobserved_child_sessions.pop(session.session_id, None)
                 session.awaiting_auto_resume = False
                 session.auto_resume_deadline = None
                 session.pending_result = None

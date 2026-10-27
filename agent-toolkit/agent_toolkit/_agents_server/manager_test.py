@@ -2193,7 +2193,6 @@ async def test_close_runs_required_cleanup_after_failure(
 
             assert other_closed.is_set()
             assert manager._carry_over_unavailable_candidate not in state._TERMINAL_LISTENERS
-            assert manager._record_pending_unobserved_child_sessions not in state._TERMINAL_LISTENERS
             assert manager._record_resources not in state._LIFECYCLE_LISTENERS
             assert writer.schedule not in state._TOUCH_LISTENERS
             assert not writer._active
