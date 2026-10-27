@@ -47,7 +47,7 @@ def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> lis
     if sibling is not None:
         sources.extend(sorted((sibling / "skills").rglob("*.md")))
     # 宣言表ごとの入れ子scopeを、1回のhook要求が共有する一覧へ接続する。
-    with plugin_resolution_scope(session_id=session_id):
+    with plugin_resolution_scope(session_id=session_id), read_triggers.resolution_scope():
         entries = [
             (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd))
             for source in dict.fromkeys(sources)

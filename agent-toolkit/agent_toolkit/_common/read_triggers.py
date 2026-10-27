@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import dataclasses
+import functools
 import hashlib
 import json
 import pathlib
 import re
 import urllib.parse
-from collections.abc import Iterator
+from collections.abc import Callable, Generator, Iterator
+from typing import cast
 
 from agent_toolkit._common.plugin_roots import plugin_resolution_scope, resolve_plugin_root
 
@@ -42,6 +46,35 @@ INPUT_SELECTOR_RESOLUTION_SOURCES = {"input:作業契約": "main-work-contract"}
 _CODE = re.compile(r"`([^`]+)`")
 _REFERENCE = re.compile(r"`([^`]+)`|\[[^\]]+\]\(([^)]+)\)")
 _REFERENCE_METHOD_HEADING = "名指し参照の読込方法"
+_RESOLUTION_CACHE: contextvars.ContextVar[dict[tuple, object] | None] = contextvars.ContextVar(
+    "read_trigger_resolution_cache", default=None
+)
+
+
+@contextlib.contextmanager
+def resolution_scope() -> Generator[None]:
+    """1回の宣言解析内でだけ解決を共有し、次の要求ではファイルの変更を読み直す。"""
+    token = _RESOLUTION_CACHE.set({})
+    try:
+        yield
+    finally:
+        _RESOLUTION_CACHE.reset(token)
+
+
+def _scope_cached[**P, R](function: Callable[P, R]) -> Callable[P, R]:
+    """循環検出用の訪問済み資料を含む全入力が同じ解決だけを、解析中に保存する。"""
+
+    @functools.wraps(function)
+    def resolve(*args: P.args, **kwargs: P.kwargs) -> R:
+        cache = _RESOLUTION_CACHE.get()
+        if cache is None:
+            return function(*args, **kwargs)
+        key = (function, args, tuple(sorted(kwargs.items())))
+        if key not in cache:
+            cache[key] = function(*args, **kwargs)
+        return cast(R, cache[key])
+
+    return resolve
 
 
 def _scope_selector(text: str) -> str:
@@ -197,6 +230,7 @@ def known_operation(operation: str) -> bool:
     return operation in OPERATIONS or any(operation.startswith(prefix) and operation != prefix for prefix in PREFIXES)
 
 
+@_scope_cached
 def _direct_document(
     value: str,
     source: pathlib.Path,
@@ -270,6 +304,7 @@ def _direct_document(
     return resolved
 
 
+@_scope_cached
 def resolve_read_source(
     path: pathlib.Path,
     plugin_root: pathlib.Path,
