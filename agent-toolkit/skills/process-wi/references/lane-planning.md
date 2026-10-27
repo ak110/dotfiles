@@ -15,6 +15,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/SKILL.md#「計画ファイルの作成要否」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象の決定」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象の決定」` |
 | 旧形式WIの節を現行の責務へ対応付ける前 | `../../wi-standards/references/awi-body.md`の冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「恒久化・リファクタリング」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「恒久化・リファクタリング」` |
@@ -43,6 +44,8 @@ AWI: <AWIファイル名のASCIIカンマ区切り>
 
 ## 計画の起草
 
+計画中に同じ要求の重複が判明した場合は、`selection-procedure.md`「処理対象の決定」に従って元担当・計画・成果へ接続し、残差の採否と各AWIの処置を記録する。同一ファイルへの書込競合は要求の重複とは別に扱う。
+
 1. `agent-toolkit:plan-mode`を起動して同スキルの読込表の資料を読み、AWI、プロジェクト規範、対象実装、既存テスト、生成・配布手段、類似実装を調査する。
    - 対象実装を読む前に、要求と公開契約から比較対象とする最も近い既存実装を選ぶ。境界の候補は、入力値、時間経過、操作順序、保持状態、反復、権限や環境の差異などの軸から選定する。
    - 調査後は、採用案の前提を客観的に評価する観点から、変更箇所が責務を負う必要性、既存機構への統合、上流ツールや共有設定への移管、機構の削除や簡素化を比較検討して計画へ反映する。AWI本文の`## 調査結果と判断根拠`（旧形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従う）に結論が示されている観点については、記述との明白な食い違いが観測されない限り再度の比較検討は行わない。「設計品質の劣化確認」（`agent-basics:writing-standards/references/design-heuristics.md`）は常に実施する。評価条件は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「恒久化・リファクタリング」に準拠する。不具合対策においては、`agent-toolkit:review-standards`の`references/reviewer.md`「初回レビュー」の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
@@ -54,7 +57,7 @@ AWI: <AWIファイル名のASCIIカンマ区切り>
    - 変更対象を確定する前に全文を確認する文書は、原則として候補ファイルと名指しされた基準文書（計画・WI・エージェント向け文書など）に限定する（努力目標。コンテキスト消費を抑制するため）。候補の絞り込みや横断的な列挙は、探索委譲や検索を用いて結論のみを取得する。他の役割の`<役割名>.subagent.md`や変更対象を含まないスキル本体は、検索によって必要な箇所のみを確認する。
    - 採否を確定する前に、変更対象パスに対応する必須スキル（対応表はプロジェクト規範に記載）を起動し、変更対象の成立条件と禁止条件を定める節を検索で特定して読んだ上で、要求内容と比較する。衝突する要求がある場合は、`## 実施内容`において不採用または手段変更とし、人間由来の要求であれば手順2に従って通知する。編集段階で衝突に気付く事態を防ぎ、後からの判断要請や実装済み差分の取り消しを回避する。
    - `上流投入結果`を受け取った場合は、`結果`が`completed`となっている要求を採用範囲に含めず、`移管`として投入先の`ファイル名`とともに記録する。
-2. 人間由来の要求を不採用または部分採用とする判断は、`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」に従い、計画の確定前にメインエージェントへ通知する。計画確定前にエージェント由来の完成条件を除外するメインエージェントの技術判断を受け取った場合は、`review-loop-coordination.md`「技術判断で外せる完成条件」の境界を遵守し、実施内容の根拠欄に対象AWI、対象条件、`メインの技術判断`、および除外の根拠を記録する。実装着手後の判断は、計画凍結の原則に従ってレビュー指摘管理表へ記録する。
+2. 人間由来の要求を不採用・部分採用とする判断は、`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」に従い、計画の確定前にメインエージェントへ通知する。完成条件の変更・除外に関するメインの技術判断は`review-loop-coordination.md`「技術判断で外せる完成条件」に従い、旧条件、新条件または除外範囲、技術的制約、保持する要求と根拠を実施内容の根拠欄に記録する。実装着手後の判断はレビュー指摘管理表へ記録する。
 3. 通知した確認事項の回答をすべて受け取って採否へ反映するまでは、回答待ちの間でも進められる調査や下書きの作成にとどめる。
 4. `agent-toolkit:plan-mode`の`references/plan-file-standards.md`「初回起草の雛形」に該当案件の値を記入し、同書に従って計画本文を起草してmanaged-temp配下のファイルへ保存する。単一の計画では`plan-check`の行数警告（1200行）を回避できない見込みである場合は、実装着手前に分析単位と依存関係順序に基づいて自己完結した複数の計画へ分割し、すべての計画を同一レーン、専用worktree、書き込み所有者のままで管理する（確定後の計画の事後分割やレーンの再配分は行わない）。バグ調査用計画ファイルを作成する場合（同書「バグ調査」）は、本文を別ファイルへ保存する。各計画は、`atk run-script plan-create -- --main-source <計画本文の絶対パス> --lane <レーン識別子> --work-dir <計画メタ情報の対象リポジトリ>`を実行して`~/.claude/plans`に作成する。バグ調査用計画ファイルが存在する場合は、`--bugs-source <計画ファイル（バグ）の本文の絶対パス>`も併せて渡す。stemには該当処理が生成した値を使用する。
 5. 計画全体から、編集・新設・移動の対象となるエージェント向け文書の集合を確定し、すべてのパスをリポジトリ相対パスとして計画本文に明記する。この集合は、書き込み認可の境界（WIの要求）の範囲内で着手時に想定した書き込み先の記録であり、実装中の追加は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」に従う。確認にあたっては以下のコマンドを単独実行し、集合内のすべてのパスを`--agent-rule-path <リポジトリ相対パス>`で反復指定する。
