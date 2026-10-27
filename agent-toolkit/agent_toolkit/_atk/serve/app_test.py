@@ -1856,7 +1856,7 @@ async def test_typeless_entries_keep_server_running(tmp_path: pathlib.Path, entr
     answered = await client.post("/api/entries/answer", json={"filename": "broken.md", "answer": "回答", "state": "inbox"})
     assert 400 <= answered.status_code < 600
     error = (await answered.get_json())["error"]
-    assert "処理に失敗" in error and "標準エラー" in error and "journalctl --user -u atk-serve.service" in error
+    assert "処理に失敗" in error and "標準エラー" in error and "atk serve logs" in error
     assert (await client.get("/")).status_code == 200
     assert (await client.get("/api/entries/inbox/normal.md")).status_code == 200
 

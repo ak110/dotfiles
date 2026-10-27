@@ -5,18 +5,48 @@ import contextlib
 import logging
 import pathlib
 import signal
+import subprocess
 
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import hypercorn.asyncio
 lazy import hypercorn.config
 
 from agent_toolkit._common import console_title as _console_title
+from agent_toolkit._common import next_action as _next_action
 lazy from agent_toolkit._atk.serve import app as _atk_serve_app
 lazy from agent_toolkit._atk.serve import config as _atk_serve_config
 lazy from agent_toolkit._atk.serve import state as _atk_serve_state
 lazy from agent_toolkit._atk.wi import sync as _wi_sync
 
 logger = logging.getLogger(__name__)
+
+
+def show_logs(*, follow: bool = False) -> int:
+    """Atk serveのuser serviceに属するjournalを表示する。"""
+    command = [
+        "journalctl",
+        "--user",
+        "_SYSTEMD_USER_UNIT=atk-serve.service",
+        "+",
+        "USER_UNIT=atk-serve.service",
+        "+",
+        "SYSLOG_IDENTIFIER=atk-serve-setup",
+        "-n",
+        "100",
+    ]
+    if follow:
+        command.append("-f")
+    try:
+        return subprocess.run(command, check=False).returncode
+    except OSError as error:
+        _next_action.report(
+            f"atk serveのログを開けません: {error}",
+            next_action=(
+                "ログの表示にはsystemdのuser環境（journalctl）が必要。"
+                "使えない環境では`atk serve`を前景で起動し、標準エラーへ出るログを読む"
+            ),
+        )
+        return 1
 
 
 async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeConfig) -> None:

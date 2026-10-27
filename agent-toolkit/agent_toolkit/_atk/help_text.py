@@ -247,9 +247,9 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk plans list",
     },
     "atk serve": {
-        "summary": "WI・計画・セッションのWebサーバーを起動する",
-        "description": "WI・計画・セッションのWebサーバーを起動する。\n\n目的: ワークアイテム、計画ファイル、セッションをブラウザーから扱うWebサーバーを起動する。\n利用場面: ユーザーがAWIの投入、編集、採否、計画ファイルとセッションの閲覧をブラウザーで行うとき。\n対象と出力: 指定したホストとポートで待機し、private-notesを読み書きする。user serviceとして導入した場合の運用ログは`journalctl --user -u atk-serve.service -n 100`（追従は`-f`）、導入時のログは`journalctl --user -t atk-serve-setup`で読む。\n前提: 待受のホストとポートは、オプション、環境変数`AGENT_TOOLKIT_SERVE_HOST`と`AGENT_TOOLKIT_SERVE_PORT`、`atk config`の`serve_host`・`serve_port`の順に解決する。参照元も`atk config`の`serve_*`キーで指定し、旧`serve.toml`は自動で移行する。\n復元・後始末: 停止はそのプロセスの終了で行う。ブラウザーから行った変更はprivate-notesへcommitする。",
-        "epilog": "実行例:\n\n  atk serve --port=28766",
+        "summary": "WI・計画・セッションのWebサーバーを起動しログを表示する",
+        "description": "WI・計画・セッションのWebサーバーを起動しログを表示する。\n\n目的: ワークアイテム、計画ファイル、セッションをブラウザーから扱うWebサーバーを起動し、運用ログを参照する。\n利用場面: ユーザーがAWIの投入、編集、採否、計画ファイルとセッションの閲覧をブラウザーで行うとき、または障害を調査するとき。\n対象と出力: 通常は指定したホストとポートで待機し、private-notesを読み書きする。`logs`はuser serviceのjournal直近100行を表示し、`--follow`では追従する。\n前提: 待受のホストとポートは、オプション、環境変数`AGENT_TOOLKIT_SERVE_HOST`と`AGENT_TOOLKIT_SERVE_PORT`、`atk config`の`serve_host`・`serve_port`の順に解決する。参照元も`atk config`の`serve_*`キーで指定し、旧`serve.toml`は自動で移行する。ログ表示にはjournalctlが必要である。\n復元・後始末: 停止はそのプロセスの終了で行う。ブラウザーから行った変更はprivate-notesへcommitする。",
+        "epilog": "実行例:\n\n  atk serve --port=28766\n  atk serve logs --follow",
     },
     "atk config": {
         "summary": "XDG関連パスとモデル設定を確認・変更する",

@@ -1143,6 +1143,24 @@ async def test_user_comment_api_appends_and_replaces_inbox_and_hold_session_revi
     assert user_comment.extract_user_comment(held_path.read_text(encoding="utf-8")) == "保留中のコメント"
 
 
+@pytest.mark.parametrize("follow", [False, True])
+def test_serve_logs_reads_atk_serve_journal(monkeypatch: pytest.MonkeyPatch, follow: bool) -> None:
+    """atk serveのuser serviceのjournalを読み、追従は指定時だけ行い、journalctlの終了状態を返す。"""
+    commands: list[list[str]] = []
+
+    def run(command: list[str], **_kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 7)
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    assert serve.show_logs(follow=follow) == 7
+    [command] = commands
+    assert command[:2] == ["journalctl", "--user"]
+    assert "_SYSTEMD_USER_UNIT=atk-serve.service" in command
+    assert ("-f" in command) is follow
+
+
 def _unused_local_port() -> int:
     import socket  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 

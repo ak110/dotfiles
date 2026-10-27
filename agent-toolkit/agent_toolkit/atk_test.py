@@ -1007,8 +1007,6 @@ _REMOVED_RUN_SCRIPTS = (
         ["run-command", "--", "true"],
         ["watch", "--file", "/absolute/example"],
         ["plans", "rewrite-references"],
-        ["serve", "logs"],
-        ["serve", "--follow"],
         ["worktree-stash", "protect", "refs/worktree/example"],
         ["wait-schedule", "--request-bucket", "main"],
         *(["run-script", name, "--"] for name in _REMOVED_RUN_SCRIPTS),
