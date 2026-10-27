@@ -17,11 +17,32 @@ from unittest import mock
 import pytest
 
 from agent_toolkit._atk.lane_test import prepare_lane_verification
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import atomic_file, process_tree
 from agent_toolkit._testing import verification_acceptance_support
 
 _DRIVER = pathlib.Path(verification_acceptance_support.__file__)
 _PLUGIN = _DRIVER.parents[2]
+
+
+@pytest.mark.asyncio
+async def test_ready_is_published_after_complete_json(tmp_path, monkeypatch):
+    """置換直前までreadyは不在で、公開する一時ファイルは完全なJSONを保持する。"""
+    replace = atomic_file._replace
+    observed = []
+
+    def observe(source, destination):
+        if destination.name == "serve.ready":
+            assert not destination.exists()
+            observed.append(json.loads(pathlib.Path(source).read_text(encoding="utf-8")))
+            (tmp_path / "serve.release").touch()
+        replace(source, destination)
+
+    monkeypatch.setattr(atomic_file, "_replace", observe)
+    await verification_acceptance_support._serve(tmp_path, failure=False)
+    assert len(observed) == 1 and observed[0]["port"] > 0
+    assert json.loads((tmp_path / "serve.ready").read_text(encoding="utf-8")) == observed[0]
+
+
 _PROBE = """\
 import json, pathlib, sys, time
 from pyfltr.command import execution_slot
@@ -52,7 +73,7 @@ def _wait(path: pathlib.Path, process: subprocess.Popen[str]) -> None:
 @contextlib.contextmanager
 def _process(argv: list[str], environment: dict[str, str], cwd: pathlib.Path) -> Generator[subprocess.Popen[str]]:
     # 停止確認が失敗した場合も、Popen.__exit__の無期限waitで診断を妨げない。
-    process = subprocess.Popen(  # pylint: disable=consider-using-with
+    with process_tree.process_scope(
         argv,
         cwd=cwd,
         env=environment,
@@ -61,16 +82,8 @@ def _process(argv: list[str], environment: dict[str, str], cwd: pathlib.Path) ->
         text=True,
         encoding="utf-8",
         errors="replace",
-    )
-    with contextlib.ExitStack() as streams:
-        for stream in (process.stdout, process.stderr):
-            if stream is not None:
-                streams.callback(stream.close)
-        try:
-            yield process
-        finally:
-            residual = process_tree.stop_process_tree(process) if process.poll() is None else []
-            assert not residual, residual
+    ) as process:
+        yield process
 
 
 @pytest.mark.parametrize("failing_stream", ["stdout", "stderr"])
