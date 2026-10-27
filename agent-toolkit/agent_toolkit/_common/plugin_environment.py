@@ -228,6 +228,9 @@ def persist_claude_environment(root: Path, environment: Mapping[str, str]) -> No
     if not (value := environment.get("CLAUDE_ENV_FILE")):
         return
     scripts = shlex.quote(str(root.resolve() / "scripts"))
+    if os.name == "nt":
+        # BashのPATHではドライブのコロンも区切りになるため、Git Bashの表記へ変換する。
+        scripts = f'"$(cygpath -u {scripts})"'
     data = shlex.quote(str(runtime_data(environment)))
     with Path(value).open("a", encoding="utf-8", newline="\n") as output:
         output.write(f'\nexport PATH={scripts}:"$PATH"\nexport {RUNTIME_DATA_ENV}={data}\n')

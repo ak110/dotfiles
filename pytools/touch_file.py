@@ -53,7 +53,8 @@ def main() -> None:
 
     # Windowsの「送る」経由実行ではコマンドプロンプトが自動で閉じるため、
     # 結果を確認できるようキー入力待ちで停止する (C# 版踏襲)。
-    if interactive and sys.platform == "win32":
+    # パイプ入力ではコンソールから次のキーを受け取れないため待機しない。
+    if interactive and sys.platform == "win32" and sys.stdin.isatty():
         _wait_keypress()
     sys.exit(0)
 

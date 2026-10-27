@@ -6,6 +6,7 @@ import os
 import pathlib
 import subprocess
 import sys
+from unittest.mock import Mock
 
 import pytest
 
@@ -198,7 +199,28 @@ class TestCli:
             text=True,
             input=stdin,
             check=True,
+            timeout=15,
         )
+
+    @pytest.mark.parametrize("terminal", [False, True])
+    def test_windows_interactive_waits_only_for_terminal(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, terminal: bool
+    ) -> None:
+        target = tmp_path / "f.txt"
+        target.touch()
+        wait = Mock()
+        monkeypatch.setattr(sys, "argv", ["touch-file", str(target)])
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: terminal)
+        monkeypatch.setattr("builtins.input", lambda _: "2024-06-15T12:30:45")
+        monkeypatch.setattr(touch_file, "_wait_keypress", wait)
+
+        with pytest.raises(SystemExit) as exited:
+            touch_file.main()
+
+        assert exited.value.code == 0
+        assert _read_mtime(target) == datetime.datetime(2024, 6, 15, 12, 30, 45)
+        assert wait.call_count == int(terminal)
 
     def test_cli_t_option_with_single_file(self, tmp_path: pathlib.Path) -> None:
         target = tmp_path / "f.txt"

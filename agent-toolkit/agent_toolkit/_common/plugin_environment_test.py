@@ -320,8 +320,10 @@ def test_session_start_persists_before_uv_and_keeps_other_hooks_and_user_path(
     assert saved.startswith(original)
     assert "UV_PROJECT_ENVIRONMENT" not in saved
     environment["PATH"] = "user-first::user-last"
+    # Git Bash自身が追加するPATHも、hookが保持すべき呼出元の値に含める。
+    command = 'before=$PATH; source "$1"; printf "%s\\n%s\\n%s\\n" "$before" "$PATH" "$OTHER_HOOK"'
     observed = subprocess.run(
-        [bash, "--noprofile", "--norc", "-c", 'source "$1"; printf "%s\\n%s\\n" "$PATH" "$OTHER_HOOK"', "bash", str(env_file)],
+        [bash, "--noprofile", "--norc", "-c", command, "bash", str(env_file)],
         env=environment,
         capture_output=True,
         text=True,
@@ -344,11 +346,17 @@ def test_session_start_persists_before_uv_and_keeps_other_hooks_and_user_path(
         )
     )
     assert observed.returncode == 0, observed.stderr
-    assert observed.stdout.splitlines() == [str(root / "scripts") + ":other-hook:user-first::user-last", "kept"]
+    before, after, other_hook = observed.stdout.splitlines()
+    scripts = (root / "scripts").as_posix()
+    if os.name == "nt":
+        scripts = "/" + scripts[0].lower() + scripts[2:]
+    assert after == scripts + ":other-hook:" + before
+    assert before.endswith("user-first::user-last")
+    assert other_hook == "kept"
 
 
 def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
-    tmp_path: Path, host_environ: Callable[[], dict[str, str]]
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, host_environ: Callable[[], dict[str, str]]
 ) -> None:
     """実際のuvから起動し、root外の環境、argv、cwd、stdin、標準出力と標準エラー、子プロセスの終了コード7が保たれることを確認する。"""
     root = _root(tmp_path / "readonly-plugin")
@@ -357,7 +365,10 @@ def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
     assert uv is not None
     environment["UV_PYTHON"] = sys.executable
     environment["CLAUDE_PLUGIN_DATA"] = str(tmp_path / "host-data")
-    environment.update({"XDG_DATA_HOME": str(tmp_path / "writable-data"), "LOCALAPPDATA": str(tmp_path / "writable-data")})
+    # WindowsのCreateProcessは実行ファイルのパスにMAX_PATH制約があるため、
+    # テスト名を含まないfixture直下へ64桁の環境キーを持つruntimeを置く。
+    writable_data = tmp_path_factory.mktemp("rt")
+    environment.update({"XDG_DATA_HOME": str(writable_data), "LOCALAPPDATA": str(writable_data)})
     environment.pop(subject.RUNTIME_DATA_ENV, None)
     environment.pop(subject.RUNTIME_ENVIRONMENT_ENV, None)
     environment.pop("UV_PROJECT_ENVIRONMENT", None)
@@ -413,7 +424,7 @@ def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
         assert observed["argv"] == ["空 白", "--value", "literal"]
         assert observed["cwd"] == str(tmp_path)
         assert observed["input"] == "標準入力の本文"
-        assert Path(observed["environment"]).is_relative_to(tmp_path / "writable-data")
+        assert Path(observed["environment"]).is_relative_to(writable_data)
         assert "子の標準エラー" in result.stderr
         assert {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()} == original_files
         assert not (root / ".venv").exists()
