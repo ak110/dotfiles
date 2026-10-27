@@ -33,6 +33,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 12. ホストの上限を超えて退避した出力の抜粋を、未読と保存先、次の操作を示す本文へ置き換える
     `updatedToolOutput` (Bash / PowerShell。`persisted_output`が判定する)
 13. メインが成功した前景Bashでcommit・pushを行った後に、completion-reportの起動条件を通知する
+14. 一定間隔ごとの進捗のセルフチェック通知（全ツール共通。`progress_self_check`が判定する）
 """
 
 import json
@@ -57,6 +58,7 @@ lazy from agent_toolkit._hooks import background_tasks as _background_tasks
 lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
+lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks import session_title, termination_evidence
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
@@ -634,6 +636,8 @@ def main(payload_text: str) -> int:
         payload, session_id, tool_name, tool_input, cwd, event_name = parsed
         set_warning_session_id(session_id)
         notices = _observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name)
+        if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
+            notices.append(self_check_notice)
     try:
         termination_evidence.observe_tool(payload_text, after=True)
     except (OSError, ValueError, TypeError, KeyError) as error:

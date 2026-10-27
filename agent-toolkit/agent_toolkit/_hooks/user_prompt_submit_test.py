@@ -15,9 +15,9 @@ from collections.abc import Callable
 import pytest
 
 from agent_toolkit._common import automated_prompt, session_state
-from agent_toolkit._hooks import posttooluse, user_prompt_submit
+from agent_toolkit._hooks import posttooluse, progress_self_check, user_prompt_submit
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import _read_state
+from agent_toolkit._testing.helpers import _read_state as _read_full_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 _SCRIPT = _SCRIPTS_DIR / "hook.py"
@@ -30,6 +30,18 @@ _NOTICE_BOUNDARY_PATTERN = re.compile(r"</?atk-auto\b[^>]*>")
 # 注記の文意は定義の読解で確かめ、ここでは通常発話へ同じ定義の本文がそのまま届くことを確かめる。
 # 本文を写した期待値は文面の変更に追随させるだけで、届いた判断の正しさを検出しないため使わない。
 _EXPECTED_VERIFICATION_NOTICE_BODY = posttooluse.VERIFICATION_NOTICE_BODY
+
+
+def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
+    """進捗のセルフチェックの時刻を除いたセッション状態を返す。
+
+    セルフチェックは発話の種類によらず全てのUserPromptSubmitで時刻を記録する。
+    本モジュールは発話の種類ごとの状態の違いを検証するため、その記録を比較の対象から外す。
+    セルフチェック自体の記録は`progress_self_check_test.py`が検証する。
+    """
+    state = _read_full_state(state_dir, session_id)
+    state.pop(progress_self_check.STATE_KEY, None)
+    return state
 
 
 def _write_state(session_id: str, state: dict) -> None:
