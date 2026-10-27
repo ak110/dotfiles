@@ -334,4 +334,15 @@ def test_prepare_timeout_reclaims_its_descendants(
     monkeypatch.setattr(launcher, "_PREPARE_TIMEOUT", 0.01)
     assert launcher._prepare(root, "fake-uv", environment) == 1
     assert plugin_environment.prepared_python(root, environment) is None
-    assert children and all(not child.is_running() or child.status() == psutil.STATUS_ZOMBIE for child in children)
+    assert children
+    # SIGKILLの送信と子孫の終了状態への遷移は非同期なので、状態を有限時間待つ。
+    deadline = time.monotonic() + 5
+    for child in children:
+        while True:
+            try:
+                if child.status() == psutil.STATUS_ZOMBIE:
+                    break
+            except psutil.NoSuchProcess:
+                break
+            assert time.monotonic() < deadline, "準備プロセスの子孫が終了しませんでした"
+            time.sleep(0.01)

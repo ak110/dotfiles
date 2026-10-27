@@ -458,7 +458,9 @@ def test_child_uv_uses_test_project_after_fixture_and_host_restoration(
                 result = subprocess.run(
                     [os.environ["ISOLATION_PROBE_UV"], "sync", "--offline", "--no-install-project",
                      "--project", str(project), "--python", sys.executable],
-                    cwd=project, env=environment, capture_output=True, text=True, check=False, timeout=60,
+                    # 新規fixtureにはlockが無い。CIの凍結条件をこの初期同期だけ解除する。
+                    cwd=project, env={**environment, "UV_FROZEN": "0"},
+                    capture_output=True, text=True, check=False, timeout=60,
                 )
                 assert result.returncode == 0, result.stderr
                 assert (project / ".venv" / "pyvenv.cfg").is_file()
@@ -468,6 +470,7 @@ def test_child_uv_uses_test_project_after_fixture_and_host_restoration(
     environment = {
         **os.environ,
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "UV_FROZEN": "1",
         "ISOLATION_PROBE_UV": str(uv),
         "ISOLATION_PROBE_ROUTE": route,
         **dict.fromkeys(isolation._VENV_ENVIRONMENT_NAMES, str(external)),  # pylint: disable=protected-access
