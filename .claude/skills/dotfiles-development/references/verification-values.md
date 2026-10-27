@@ -33,8 +33,8 @@
   - リポジトリ直下および`agent-toolkit/`の`pyproject.toml`にある`dependencies`
   - `.chezmoi-source/`のインストール・更新処理がパッケージマネージャーへ渡すバージョン指定
 - パッケージ外からの呼び出し元: `agent-toolkit/`の外部から`agent_toolkit`パッケージをimportしているのは`pytools/`と`scripts/`である。そのため、`agent-toolkit/agent_toolkit/`配下にあるPythonファイル（`*_test.py`を除く）を変更した場合は、`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`を実行する。
-- Function hooksモジュール: `agent-toolkit/hooks/`配下の`*.ts`および`*.tsx`（`*.test.ts`や`*.test.tsx`を含む）を変更した場合は、次の2つのチェックを含める。ローカルの`make test`では`tsc`が有効化されておらず、CI環境にもClaude Codeは導入されないため、通常のテストではどちらも実行されない。
-  - 型チェック: `npx --yes -p typescript@5.9.3 tsc --project <設定ファイル> --pretty false`を実行する。型定義ファイルは、Claude Code環境で`plugin-authoring`スキルを起動した際に基準ディレクトリへ出力される`types/claude-code.d.ts`、またはプラグイン読み込み済みの`.claude-plugin/types/`から取得する。設定ファイルはmanaged-temp内に作成し、`include`に型定義ファイルと`agent-toolkit/hooks/`の`*.ts`・`*.tsx`を指定する。`compilerOptions`には型定義ファイルの先頭に記載されている設定値を指定し、さらに`allowImportingTsExtensions: true`を追加する。なお、この設定ファイルと型定義ファイルはリポジトリへコミットしない。
+- Function hooksモジュール: `agent-toolkit/hooks/`配下の`*.ts`および`*.tsx`（テストを含む）の変更は、既存の`make test`とコミットフックの`pyfltr fast`から`function-hooks-types`を起動し、全モジュールを一括型検査する。
+  - 型チェック: TypeScript 5.9.3を使用する。Claude Codeの`plugin-authoring`で生成した`claude-code.d.ts`を環境変数`FUNCTION_HOOKS_TYPES`へ絶対パスで指定する。未指定時はworktree直下または`agent-toolkit/`の`.claude-plugin/types/`と`types/claude-code.d.ts`を参照する。型定義不足は非0終了する。一時設定と生成型定義はコミットしない。CIはClaude Code生成型を用意しないため、このコマンドを明示無効化する。
   - モジュールテスト: `claude plugin test <worktree>/agent-toolkit`を実行する（引数にはプラグインのルートパスを渡す。`agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからずエラーとなる）。
 - 名前の削除や改名に伴う全体静的チェック: `uv run --frozen pyfltr run --commands=ty`を実行する。対象ファイルを絞らずリポジトリ全体を対象として実行し、Pythonファイルを変更するレーンでは計画書の「変更範囲の検証」欄に必ず含める。
 - CIのコンテナージョブにおいて`uv sync`が読み込む入力設定を変更した場合: `make ci-deps-check`を実行する。対象となるのは、Pythonバージョンの指定（`.python-version`、`.github/workflows/ci.yaml`のmatrixにおけるPythonバージョン）や、同ファイル内の「ネイティブ依存インストール」ステップである。また、リポジトリ直下の`uv.lock`や、同じ場所の`pyproject.toml`内の依存関係宣言・`[tool.uv]`設定の変更も含む。lockファイルのみの依存関係追加・削除・更新や、`agent-toolkit/pyproject.toml`の依存変更に伴う直下のlock更新も対象となる。`make update`では、lock更新の後にコンテナー依存のインストール確認を常に実施する。CIと同一のコンテナーイメージ内でmatrixの各Pythonバージョンにおける依存関係の導入と`uv sync`を再現することで、ローカル環境ではビルドできてもCIで失敗するようなsdistパッケージの問題などをpush前に検知できる。使用するコンテナーイメージや導入パッケージ、バージョン情報は`Makefile`内の変数で管理されており、`ci_workflow_test.py`によってCI定義との整合性が検証される。なお、このチェックにはDockerが必要であり、1バージョンあたり約1分を要する。
@@ -50,12 +50,14 @@
 公開前の全体検証は、`agent-toolkit:commit`が公開工程で参照する資料「検証とCI」の定めに従い、CIでは実行されないチェックや、変更ファイル単体では検知できない複数ファイル間の問題をリポジトリ全体で確認する。本リポジトリでは以下の手順を実行する。
 
 - 最初に環境を同期する: `make sync`を実行する。仮想環境を`uv.lock`および`.python-version`の内容に合わせ、CIのクリーンな実行環境と同様の条件で後続のチェックを動かす
-- CIのpyfltrで無効化されているチェックを実行する: `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version --enable=statusline-version`
+- CIのpyfltrで無効化されているチェックを実行する。
+  `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version,function-hooks-types --enable=statusline-version`
 - 複数レーンにまたがる重複実装を検査する: `uv run --frozen pyfltr run --commands=arid`
 - 型定義と静的参照の整合性を検証する: `uv run --frozen pyfltr run --commands=ty`
 - 複数ファイル間にまたがる循環importを検査する: `uv run --frozen pyfltr run --no-fix --commands=pylint --pylint-args='--disable=all --enable=cyclic-import'`
 
-ローカルの`make test`とCIの`python-lint (3.15)`ジョブとの違いは、CIジョブ側が`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version`によって一部のチェックを無効化している点にある。Python 3.15環境でのpytestは`pytest (3.15)`ジョブが担当している。また、以下のジョブはローカルの`make test`では実行されない。
+CIの`python-lint (3.15)`ジョブは、ローカルの`make test`から一部のチェックを除外する。
+実行コマンドは`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,function-hooks-types`である。Python 3.15環境でのpytestは`pytest (3.15)`ジョブが担当している。また、以下のジョブはローカルの`make test`では実行されない。
 
 - `test-windows`ジョブ: Windows実機環境でのchezmoi適用、Windows固有のテスト、および公開ランチャーの動作確認
 - `update-dotfiles-upgrade (windows)`ジョブ: Windows環境における旧バージョンからのupdate-dotfilesによるアップデート検証

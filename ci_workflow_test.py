@@ -254,7 +254,7 @@ def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str,
     steps = workflow_steps(job)
     lint = next(step for step in steps if step.get("name") == "Python 3.15 pytest以外の検査")
     pytest_step = next(step for step in steps if step.get("name") == "Python 3.15 pytest")
-    assert lint["run"] == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version"
+    assert lint["run"] == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,function-hooks-types"
     assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"
     cache = next(step for step in steps if str(step.get("uses", "")).startswith("actions/cache@"))
     cache_with = workflow_mapping(cache["with"])

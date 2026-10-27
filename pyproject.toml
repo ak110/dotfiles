@@ -165,6 +165,7 @@ check-templates-subproject-aware = false
 require-ps1-bom-subproject-aware = false
 powershell-analyzer-subproject-aware = false
 claude-plugin-validate-subproject-aware = false
+function-hooks-types-subproject-aware = false
 agent-doc-tone-subproject-aware = false
 writing-check-dash-subproject-aware = false
 # rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
@@ -321,6 +322,14 @@ targets = [
     "**/.claude-plugin/marketplace.json",
 ]
 fast = true
+
+[tool.pyfltr.custom-commands.function-hooks-types]
+type = "linter"
+path = "uv"
+args = ["run", "--frozen", "python", "scripts/check_function_hooks_types.py"]
+targets = ["agent-toolkit/hooks/*.ts", "agent-toolkit/hooks/*.tsx", "pyproject.toml", "scripts/check_function_hooks_types.py"]
+fast = true
+pass-filenames = false
 
 [tool.pyfltr.custom-commands.agent-doc-tone]
 type = "linter"
