@@ -277,16 +277,9 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     if session.interrupt_requested:
         return False
     limit = session.usage_limit
-    credit_error = session.claude_api_env_file is not None and any(
-        marker in str(result.get("error", "")).casefold() + str(result.get("agent_message", "")).casefold()
-        for marker in (
-            "credit balance is too low",
-            "credit balance too low",
-            "billing_error",
-            "insufficient credits",
-            "usage limit",
-        )
-    )
+    failure_text = str(result.get("error", "")) + str(result.get("agent_message", ""))
+    credit_shortage = claude_api_credits.is_credit_shortage(failure_text)
+    credit_error = session.claude_api_env_file is not None and (credit_shortage or "usage limit" in failure_text.casefold())
     failure = result.get("error")
     startup_auth_error = (
         not session.availability_checked
@@ -312,9 +305,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         }
         return False
     reason = "authentication" if startup_auth_error else "api_credits" if credit_error else "usage_limit"
-    if current == "api" and claude_api_credits.is_credit_shortage(
-        str(result.get("error", "")) + str(result.get("agent_message", ""))
-    ):
+    if current == "api" and credit_shortage:
         # 同じプロセスで後から起動する委譲先がAPIで同じ失敗を繰り返さないよう、観測を一定時間共有する。
         claude_api_credits.record_shortage()
     _LOG.info(
@@ -333,11 +324,13 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     )
     session.claude_connection_failures[current] = str(original_error or result.get("agent_message") or "利用不能")
     order = [connection.kind for connection in choices.connections]
-    following = choices.connections[order.index(current) + 1 :] if current in order else choices.connections
+    # 後続は、候補順のうち現在以外でこのsessionがまだ失敗していない接続とする。
+    # 起動時の接続順は残高不足の共有などで設定上の順序と異なりうるため、設定上の順序で現在より前の候補も含める。
     following = tuple(
         choice
-        for choice in following
-        if choice.kind != "inherit"
+        for choice in choices.connections
+        if choice.kind != current
+        and choice.kind != "inherit"
         and choice.kind not in session.claude_connection_failures
         and (current != "inherit" or api_only)
     )

@@ -124,13 +124,12 @@ _POSTTOOLUSE_PAYLOAD = {
     ("subcommand", "payload"),
     [
         ("posttooluse", _POSTTOOLUSE_PAYLOAD),
-        ("user_prompt_submit", {"hook_event_name": "UserPromptSubmit", "prompt": "続けて"}),
         (
             "user_prompt_submit",
             {"hook_event_name": "UserPromptSubmit", "prompt": f"{PERIODIC_RECHECK_MARKER}\n確認する。\n</atk-auto>"},
         ),
     ],
-    ids=["posttooluse", "user-prompt", "periodic-recheck"],
+    ids=["posttooluse", "periodic-recheck"],
 )
 def test_hooks_attach_notice_only_after_interval(subcommand: str, payload: dict) -> None:
     sid = _session_id()
@@ -146,3 +145,29 @@ def test_hooks_attach_notice_only_after_interval(subcommand: str, payload: dict)
 
     third = _additional_context(_run_hook(subcommand, {**payload, "session_id": sid}))
     assert _OPENING not in third
+
+
+def test_postpone_moves_next_check_without_notice() -> None:
+    """実ユーザーの発話は次の点検の起点を進め、経過時間の起点は変えない。"""
+    sid = _session_id()
+    payload = {"session_id": sid}
+    progress_self_check.postpone(payload, now=1000.0)
+    assert _entries(sid)["main"] == {"started_at": 1000.0, "last_notified_at": 1000.0}
+
+    later = 1000.0 + 26 * 3600
+    progress_self_check.postpone(payload, now=later)
+    assert _entries(sid)["main"] == {"started_at": 1000.0, "last_notified_at": later}
+    assert progress_self_check.claim_notice(payload, now=later + _INTERVAL - 1) is None
+    notice = progress_self_check.claim_notice(payload, now=later + _INTERVAL)
+    assert notice is not None and "セッション開始から26時間30分たった。" in notice
+
+
+def test_real_user_prompt_postpones_instead_of_notifying() -> None:
+    """長く操作が無かった後の実ユーザー発話では通知せず、次の点検をその時点から数える。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
+    payload = {"hook_event_name": "UserPromptSubmit", "prompt": "続けて", "session_id": sid}
+    context = _additional_context(_run_hook("user_prompt_submit", payload))
+    assert _OPENING not in context
+    entry = _entries(sid)["main"]
+    assert entry["started_at"] == 0.0 and entry["last_notified_at"] > 0.0

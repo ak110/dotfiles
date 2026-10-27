@@ -12,6 +12,8 @@ in-processのサブエージェントはpayloadの`agent_id`）ごとに次の2�
 
 最初の観測では記録だけを行い通知しない。前回の通知から`SELF_CHECK_INTERVAL_SECONDS`以上たった
 観測で通知を1回返し、`last_notified_at`を更新する。
+実ユーザーの発話を受けた時点は`postpone`で`last_notified_at`を現在時刻へ進め、次の点検をその30分後にする。
+ユーザーが長く操作しなかった後の最初の発話や再開の直後に、待機時間だけで通知が出ることを防ぐ。
 フックは最初のツール実行か発話で初めて観測するため、`started_at`はセッション開始よりわずかに遅れる。
 """
 
@@ -66,6 +68,29 @@ def _number(value: object) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
     return float(value)
+
+
+def postpone(payload: dict, *, now: float | None = None) -> None:
+    """実ユーザーの発話を受けた時刻を、その主体の最後の通知時刻として記録する。最初の観測なら開始時刻も記録する。"""
+    session_id = payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return
+    agent_id = resolve_hook_agent_id(payload)
+    current_time = time.time() if now is None else now
+
+    def _mutate(state: dict) -> dict:
+        entries = state.get(STATE_KEY)
+        entries = dict(entries) if isinstance(entries, dict) else {}
+        entry = entries.get(agent_id)
+        entry = dict(entry) if isinstance(entry, dict) else {}
+        if _number(entry.get(_STARTED_AT_KEY)) is None:
+            entry[_STARTED_AT_KEY] = current_time
+        entry[_LAST_NOTIFIED_AT_KEY] = current_time
+        entries[agent_id] = entry
+        state[STATE_KEY] = entries
+        return state
+
+    update_state(session_id, _mutate)
 
 
 def claim_notice(payload: dict, *, now: float | None = None) -> str | None:

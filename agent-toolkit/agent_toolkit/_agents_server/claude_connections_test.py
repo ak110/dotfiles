@@ -189,6 +189,33 @@ async def test_connection_turn_logs_record_reason_without_failure_body(
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
+def test_delegate_started_on_subscription_moves_to_api_on_usage_limit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """残高不足の共有でサブスクリプションから始めた委譲先も、turn中の利用上限ではAPIへ切り替える。
+
+    設定上の接続順（api, subscription）で現在より前にあるAPIを、このsessionで未失敗の後続として選ぶ。
+    """
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "never")
+    session = state.SessionState("started-on-subscription", str(tmp_path), engine="claude", claude_connection="subscription")
+    session.availability_checked = True
+    session.usage_limit = UsageLimitState("rejected", "five_hour", None)
+    monkeypatch.setattr(
+        claude_connection,
+        "candidates",
+        lambda *_args, **_kwargs: claude_connection.Candidates(
+            (claude_connection.Connection("api", "api.env", "api.env"), claude_connection.Connection("subscription"))
+        ),
+    )
+    assert resume_waits.begin_usage_limit_wait(
+        session, {"status": "failed", "error": {"message": "limit"}, "agent_message": ""}
+    )
+    assert session.claude_connection == "api"
+    assert session.claude_api_env_file == "api.env"
+    assert session.claude_api_resume_pending
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.parametrize(
     ("message", "shared"),
     [

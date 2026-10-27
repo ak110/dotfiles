@@ -23,7 +23,8 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 引用行を除いた本文の部分文字列の一致だけで行い、範囲語の有無は判定に含めない（範囲語は「など」「とか」のような
 一般的な語で表され、条件に加えても発火がほとんど減らないため）。発話がその項に当たるかの判断は受領側に残し、
 本フックは発話の意味を判断しない。
-一定間隔ごとの進捗のセルフチェック通知（`progress_self_check`が判定する）は、機械注入ターンを含む全ての発話に付ける。
+一定間隔ごとの進捗のセルフチェック通知（`progress_self_check`が判定する）は機械注入ターンに付け、
+実ユーザー発話では通知せずに次の点検の起点をその時刻へ進める。
 成立した注記を1つの`additionalContext`へまとめる。
 
 注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
@@ -217,8 +218,13 @@ def main(payload_text: str) -> int:
     except (OSError, ValueError, TypeError, KeyError) as error:
         print(f"終了工程の原入力を取得できない: {error}", file=sys.stderr)
 
-    # 進捗のセルフチェックは発話の出所によらず経過時間だけで判定し、機械注入ターンにも付ける。
-    self_check_notice = _progress_self_check.claim_notice(payload)
+    # 進捗のセルフチェックは機械注入ターン（定期再確認を含む）で経過時間から判定する。
+    # 実ユーザーの発話では通知せず、次の点検をその時点から数え直す。
+    self_check_notice: str | None = None
+    if _is_machine_injected(payload, prompt):
+        self_check_notice = _progress_self_check.claim_notice(payload)
+    else:
+        _progress_self_check.postpone(payload)
 
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。
