@@ -7,6 +7,9 @@
 
 ## 名指し参照の読込方法
 
-本文にある各参照の適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準を用いた具体的な判断へ進む。起動時に指定された行の資料は、起動本文と一緒に渡される。
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: exec-review-recording-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `reviewer.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `reviewee.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee.md` |

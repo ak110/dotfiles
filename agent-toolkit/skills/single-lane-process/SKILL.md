@@ -13,7 +13,7 @@ disable-model-invocation: true
 
 ## 名指し参照の読込方法
 
-本文に記載された各参照の適用条件を確認し、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行に記載された資料は、起動本文とともに配送される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -32,6 +32,7 @@ disable-model-invocation: true
 | 取得時の版が変わった記録を再利用する前 | `../review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
 | WI実装commitの対応を記録する前 | `../commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
 | 公開時の常時稼働サーバー反映または終了処理の前 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
@@ -97,4 +98,4 @@ disable-model-invocation: true
 8. 各WIを`adopt`または`reject`し（`adopt`時は`agent-toolkit:wi-standards`「状態と依存」に定めるコミット対応付けを用いる）、worktreeごとに`references/publish.md`に従って公開する。複数のリポジトリを対象とする場合は成果物間の依存順序を守り、互いに独立したリポジトリのpushを先にすべて完了させてからCI監視を並行して開始し、すべての実行識別子の終了を待って結果を個別に回収する。CIの成功を前提とする公開後操作はその対象の成功が確認されてから行い、CI成功を前提とせず排他リソースも占有しない操作は待機時間中に進めてよい。
    開発マシン上で動作する常時稼働サーバーへの反映は、`agent-toolkit:completion-report`の`SKILL.md`「工程」内の「常時稼働サーバーへの反映」段落に記載された条件を満たす場合に、CI待機と並行して開始する。反映したHEADの一意な短縮OID、反映コマンドの終了ステータス、および稼働確認の結果を完了報告へ渡す。
    Claude Code環境では、独立したpush群の監視や並行するサーバー反映処理などを開始した後に、CI待機に伴う会話圧縮を予約する。中断や会話圧縮の後は、注入された要約を起点に計画、WI、資源登録、CI監視出力、担当別引き継ぎ記録から状態を復元し、要約文に書かれた作業順などで選定集合を勝手に置き換えない。予約と通知後の復元処理は、`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」に従う。起動済みのwait_ci.pyバックグラウンドタスクを維持し、Monitorツール等で前景を占有することなくターンを終え、完了通知を受信した後に同一の入力と保存出力からCI結果を回収する。CIが定義されていない対象にはこの圧縮境界を設けず、Codexや会話圧縮ツールが存在しない環境では既存の待機契約に従う。
-9. 一時的に作成したレビュー指摘管理表を正式な保存または回収契約に従って処理し、`agent-toolkit:completion-report`を実行して完了報告を行う。
+9. 一時的に作成したレビュー指摘管理表を正式な保存または回収契約に従って処理し、成果・検証・公開結果を`agent-toolkit:completion-report`の作業完了報告へ一度集約して送達する。公開結果の受領だけで終了せず、同スキルが定める終了処理まで行う。同期の振り返りは終了工程の対象外とする。

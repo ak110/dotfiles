@@ -107,7 +107,8 @@ def test_probe_uses_low_tier_model_and_lightweight_startup(
     argv_file = tmp_path / "argv.json"
     binary.write_text(
         f"#!{sys.executable}\nimport json, pathlib, sys\n"
-        f"pathlib.Path({str(argv_file)!r}).write_text(json.dumps(sys.argv[1:]))\n",
+        f"pathlib.Path({str(argv_file)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+        f"if {engine!r} == 'codex' and '--skip-git-repo-check' not in sys.argv: sys.exit(1)\n",
         encoding="utf-8",
     )
     binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
@@ -117,6 +118,7 @@ def test_probe_uses_low_tier_model_and_lightweight_startup(
     candidate = (engine, "opus[1m]" if engine == "claude" else "gpt-6.1-sol", "high")
     context = orchestrator.ProbeContext(title="test", prompt="可用性の確認")
 
+    assert not (tmp_path / ".git").exists()
     assert orchestrator.select_available([candidate], env, tmp_path, context) == candidate
 
     argv = json.loads(argv_file.read_text(encoding="utf-8"))
@@ -133,4 +135,5 @@ def test_probe_uses_low_tier_model_and_lightweight_startup(
         assert argv[argv.index("--model") + 1] == "gpt-6-luna"
         assert "model_reasoning_effort=low" in argv
         assert "--ignore-user-config" in argv and "--ignore-rules" in argv
+        assert "--skip-git-repo-check" in argv
         assert argv[-1] == "可用性の確認"

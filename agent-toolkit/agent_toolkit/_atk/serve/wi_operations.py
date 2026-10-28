@@ -604,6 +604,34 @@ class Operations:
             )
             return True
 
+    def clear_cooldown(self, filename: str, expected_content: str) -> bool:
+        """冷却中のinbox AWIから期限だけを削除する。"""
+        with wi_sync.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
+            wi_sync.ensure_mutation_allowed(self.private_notes)
+            records, missing = wi_entries.read_named_entries(
+                self.private_notes, wi_entries.validate_named_filenames(self.private_notes, [filename]), target_repo=None
+            )
+            if missing:
+                raise FileNotFoundError(filename)
+            path, _, text, state, kind = records[0]
+            if text != expected_content:
+                raise RuntimeError(EDIT_CONFLICT_MESSAGE)
+            parsed = entry_text.parse_frontmatter(text)
+            if parsed is None:
+                raise WebApiInputError("frontmatterを解析できません")
+            metadata, body = parsed
+            cooldown = wi_readiness.applicable_cooldown_until(kind, metadata.get("cooldown_until"))
+            if state != "inbox" or cooldown is None or cooldown <= datetime.datetime.now(datetime.UTC):
+                raise WebApiInputError(
+                    "冷却解除の対象は冷却中のinbox AWIだけです。"
+                    "詳細を閉じて開き直し、最新の状態を確認してください。"
+                    "解消しない場合は、このエラーと対象ファイル名を管理者へ報告してください。"
+                )
+            metadata.pop("cooldown_until")
+            frontmatter.write_entry_text(path, frontmatter.serialize_frontmatter(metadata, body))
+            wi_sync.commit_and_push(self.private_notes, "chore: clear wi cooldown", [str(path.relative_to(self.private_notes))])
+            return True
+
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
         """エージェント由来のinboxまたはhold項目へユーザーコメントを追記、置換または削除する。
 

@@ -311,6 +311,7 @@ function refreshCooldownDisplays() {
   for (const {entry, button, badge} of entryStateDisplays.values()) updateEntryStateDisplay(entry, button, badge);
   if (currentEntry) {
     byId('detail-state').textContent = entryStateText(currentEntry);
+    if (displayStateLabel(currentEntry) !== 'cooldown') byId('clear-cooldown-button').hidden = true;
     if (byId('delete-dialog').open) byId('delete-state').textContent = entryStateText(currentEntry);
   }
   const remaining = [...entries, ...(currentEntry ? [currentEntry] : [])]
@@ -922,6 +923,7 @@ function setDetailMode(mode) {
   if (decisionAction) byId('decision-heading').textContent = decisionAction === 'adopt' ? '採用' : '却下';
   byId('edit-button').hidden = mutating || !currentEntry || !EDITABLE_STATES.has(currentEntry.state);
   byId('important-button').hidden = mutating || !currentEntry;
+  byId('clear-cooldown-button').hidden = mutating || !currentEntry || currentEntry.kind !== 'awi' || displayStateLabel(currentEntry) !== 'cooldown';
   byId('important-button').textContent = currentEntry?.important === true ? '重要解除' : '重要設定';
   byId('answer-button').hidden = mutating || !currentEntry ||
     currentEntry.kind !== 'uwi' || !mutable;
@@ -948,7 +950,7 @@ function setDetailMode(mode) {
 
 function syncDetailMutationAvailability() {
   for (const id of [
-    'edit-button', 'answer-button', 'user-comment-button', 'delete-button', 'important-button',
+    'edit-button', 'answer-button', 'user-comment-button', 'delete-button', 'important-button', 'clear-cooldown-button',
     'save-entry-button', 'save-answer-button', 'save-user-comment-button',
     'adopt-button', 'reject-button', 'hold-button', 'unhold-button', 'return-to-inbox-button',
     'confirm-adopt-button', 'confirm-reject-button'
@@ -1716,6 +1718,17 @@ function bindEvents() {
   });
   byId('edit-button').addEventListener('click', enterEdit);
   byId('important-button').addEventListener('click', () => { void toggleImportant(); });
+  byId('clear-cooldown-button').addEventListener('click', async () => {
+    if (!currentEntry || detailRefreshRequired) return;
+    const payload = {filename: currentEntry.filename, expected_content: currentEntry.content};
+    try {
+      await runDetailMutation('clear-cooldown', {
+        container: byId('detail-shell'), button: byId('clear-cooldown-button'), busyLabel: '保存中'
+      }, () => api('/api/entries/clear-cooldown', {method: 'POST', body: JSON.stringify(payload)}), '冷却を解除しました。');
+    } catch (error) {
+      deliverOperationMessage(mutationFailureMessage(entryKey(currentEntry), `冷却を解除できませんでした。 ${error.message}`, error), true);
+    }
+  });
   byId('answer-button').addEventListener('click', enterAnswer);
   byId('user-comment-button').addEventListener('click', enterUserComment);
   byId('save-entry-button').addEventListener('click', saveEntry);

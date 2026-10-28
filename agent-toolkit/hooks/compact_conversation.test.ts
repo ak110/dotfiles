@@ -1,5 +1,43 @@
 import type { On } from "claude-code";
 import { type Engine, expect, mock, test } from "claude-code/testing";
+import { register } from "./register.ts";
+
+function registrationViolations(event: unknown, matcher: unknown): string[] {
+  const matches = (matcher: unknown, value: string): boolean => {
+    if (matcher === undefined) return true;
+    if (typeof matcher === "string") return matcher === value;
+    if (matcher instanceof RegExp) { matcher.lastIndex = 0; return matcher.test(value); }
+    throw new Error(`未対応のmatcher: ${String(matcher)}`);
+  };
+  const protectedEvents = ["prompt.section", "prompt.context", "prompt.attachment", "prompt.compose", "skill.prompt", "attribution.text", "session.compact", "settings.read"];
+  const violations = protectedEvents.filter(name => matches(event, name));
+  if (typeof event === "string" && event.startsWith("classic.")) violations.push(event);
+  if (matches(event, "session.append")) {
+    const door = typeof matcher === "object" && matcher !== null ? (matcher as { door?: unknown }).door : undefined;
+    violations.push(...["attachment", "hook-context", "compaction"].filter(name => matches(door, name)));
+  }
+  return violations;
+}
+
+test("全機能の実登録matcherは組織ガードの保護対象を購読しない", () => {
+  let count = 0;
+  const capture = ((event: unknown, matcher: unknown) => {
+    count++;
+    expect(registrationViolations(event, matcher)).toEqual([]);
+    return { catch: () => undefined };
+  }) as unknown as On;
+  register(capture, {});
+  expect(count > 0).toBe(true);
+});
+
+test("他機能への保護door・無条件・広域イベント登録の持込みを検出する", () => {
+  for (const matcher of [{ door: "attachment" }, { door: /^(delivery|queue|attachment)$/ }, { door: /hook-context/ }, { door: /compaction/g }, {}]) {
+    expect(registrationViolations("session.append", matcher).length > 0).toBe(true);
+  }
+  expect(registrationViolations("session.append", () => undefined).length > 0).toBe(true);
+  expect(registrationViolations(/.*/, {}).length > 0).toBe(true);
+  expect(registrationViolations("session.append", { door: /^(delivery|queue)$/ })).toEqual([]);
+});
 
 const TOOL = "mcp__agent-toolkit__compact_conversation";
 
@@ -70,14 +108,18 @@ for (const mode of ["long", "low", "ineligible-wait-owner", "running", "delegate
   });
 }
 
-test("5秒前の完了通知で同じ背景waitの自動圧縮を取り消す", async ($, on) => {
-  const { clock, calls } = await waitingEngine($, on);
-  await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
-  await $.session.append({ door: "delivery", origin: { kind: "engine" }, uuid: "done", message: { type: "user", role: "user", content: [{ type: "text", text: "<task-notification><task-id>wait-task</task-id><status>completed</status></task-notification>" }] } });
-  await clock.advance(5000);
-  expect(calls.queries.length).toBe(0);
-  expect(calls.compactions).toBe(0);
-});
+for (const door of ["delivery", "queue"] as const) {
+  for (const status of ["completed", "failed", "killed"]) {
+    test(`5秒前の${door}の${status}通知で同じ背景waitの自動圧縮を取り消す`, async ($, on) => {
+      const { clock, calls } = await waitingEngine($, on);
+      await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
+      await $.session.append({ door, origin: { kind: "engine" }, uuid: "done", message: { type: "user", role: "user", content: [{ type: "text", text: `<task-notification><task-id>wait-task</task-id><status>${status}</status></task-notification>` }] } });
+      await clock.advance(5000);
+      expect(calls.queries.length).toBe(0);
+      expect(calls.compactions).toBe(0);
+    });
+  }
+}
 
 test("高利用率の新しい待機でも反復せず、閾値未満を観測した後の新作業で再開する", async ($, on) => {
   const { clock, calls, usage, task } = await waitingEngine($, on);

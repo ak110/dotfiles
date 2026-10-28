@@ -124,6 +124,7 @@ _MUTABLE_KEY_DEFAULTS = {
     "claude_usage_limit_wait": "five-hour",
     "codex_usage_limit_wait": "five-hour",
     "process_loop_repositories": "[]",
+    "session_review_auto_start": "true",
     "dotfiles_mode": "full",
     **_SERVE_KEY_DEFAULTS,
 }
@@ -312,7 +313,7 @@ def _validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("受理可能値: never, five-hour, always")
     elif key == "process_loop_repositories":
         parse_process_loop_repositories(value)
-    elif key in {"codex_fast_mode", *_CLAUDE_CONNECTION_KEYS}:
+    elif key in {"codex_fast_mode", "session_review_auto_start", *_CLAUDE_CONNECTION_KEYS}:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
     elif key == "codex_model_providers":

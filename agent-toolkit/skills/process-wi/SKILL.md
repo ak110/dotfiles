@@ -8,13 +8,13 @@ description: >
 
 選定時に確定したAWIをレーンごとに分割し、各レーンで同じ担当スレッドが一貫して計画（必要な場合）から統合までを担当する。メインエージェントは選定、ユーザー判断の中継、公開工程、およびセッション終了を担う。レーンの数にかかわらず、各レーン担当は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`に従って、計画から独立した実行レビューの調整・統合までを進める。複数レーンが存在する場合は、メインがレーン間の書き込み競合や依存関係を調停し、主作業ツリーへの統合を1レーンずつ許可する。
 AWIとUWIの共通契約は`../wi-standards/SKILL.md`に、確認の要否と手順は`agent-toolkit:user-confirmation-and-report`に従う。なお、本スキルの実行中は自律モードで動作する。
-all-reposの中継として起動した場合は`references/all-repos-orchestration.md`へ進み、後述の実行順は各対象ディレクトリ（cwd）のリポジトリ担当へ引き継ぐ。
+`agent-toolkit:process-wi-all-repos`からリポジトリ担当として取得済み候補を受領した場合は、`references/all-repos-orchestration.md`の受渡し契約を確認し、対象worktreeで後述の実行順を進める。
 
 レーン処理を進めるには、キュー、対象リポジトリ、プラグイン全体の参照資料、Gitおよび`atk`を実行できるCLI、担当エージェントの起動と終了結果を受け取る手段が必要となる。これらがそろわない環境では、提示されたWIから要求事項、依存関係、確認事項を整理した下書きを作成して返す。キューの状態更新、実装、検証、統合、公開といった作業は、必要な機能がそろっているClaude CodeまたはCodexで実行する。下書きを作成する際は[文章の品質基準](references/quality-standards.md)に従う。
 
 ## 名指し参照の読込方法
 
-本文の各参照における適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時に該当する行の資料は、起動時のプロンプトとともに渡される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -35,12 +35,13 @@ all-reposの中継として起動した場合は`references/all-repos-orchestrat
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec-review.parent.md#「返却に含まれる既存不良の受領」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「返却に含まれる既存不良の受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| `all-repos`の中継、またはそのリポジトリ担当として取得済み候補を受領した時 | `references/all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` | |
+| `process-wi-all-repos`のリポジトリ担当として取得済み候補を受領した時 | `references/all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` | |
 | メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `references/selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` | |
 | 選定YAMLを生成または消費する前 | `references/selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` | |
 | 専用worktreeとレーンを作成する前（実行順3） | `references/run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
@@ -58,7 +59,7 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
 - **処理対象WI**: メインが選定時に確定した、1回の実行で処理するAWIの集合。処理の進行中にユーザーが明示的に追加したAWIも含む
 - **レーン**: 処理対象を割り当てる作業単位。それぞれ1つの専用ブランチと専用worktree（git worktree）を持つ
 - **レーン担当**: 各レーンの計画、実装、レビュー指摘への修正、履歴統合、主作業ツリーへの統合を同一スレッドで担当するエージェント。担当種別にはレーン担当、レビュー修正担当、CI修正担当の3種類がある（区分は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の操作区分。所在参照）
-- **主作業ツリー**: マージ先ブランチをチェックアウトしている作業ツリー。`atk wi process-loop`から起動されたセッションでは、process-loopが用意して子セッションを立ち上げた起点作業ツリー（起動時の作業ディレクトリ）を指す
+- **主作業ツリー**: マージ先ブランチをチェックアウトしている作業ツリー。常駐起動では、process-loopが対象リポジトリごとに準備して統括へ渡した作業ツリーを指す。統括自身の起動cwdとは区別する
 - **公開担当**: 公開工程（push、CI、検証失敗時の修正、プロジェクト固有の公開後操作、延期adoptなど）を担当する委譲先エージェント。委譲範囲は`references/finish-session.md`「公開担当の起動と並行工程」に準拠する
 - **即時対応**: 作業を進めるために必要な最小限の修正をその場で行い、抜本的な対応は次のセッション用のAWIへ引き継ぐ手順
 
@@ -75,8 +76,8 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
 
 ## 実行順
 
-1. `## 直前の同期結果の検分`および`references/selection-procedure.md`「処理対象の決定」の開始時CI点検に従って、このセッションでAWIの処理を最後まで完遂できるか判定する。手動起動、process-loop起動、all-repos起動のいずれであっても、実装に入る前に公開対象とベースブランチのCI状態を確認する。
-2. `references/selection-procedure.md`に従い、対象ディレクトリ（cwd）のメインエージェント自身が対象を選定し、対象集合を確定した直後に処理を開始する。all-reposのリポジトリ担当は受け取った初回候補を利用する。意味判断と取得済み候補を`pick-wi-check`へ渡し、定型項目の生成・確認・保存を1回で済ませる。選定作業を別の担当者へ委譲しない。あわせて`## 自動コードレビュー監査`も実施する。
+1. `## 直前の同期結果の検分`および`references/selection-procedure.md`「処理対象の決定」の開始時CI点検に従って、このセッションでAWIの処理を最後まで完遂できるか判定する。手動起動と常駐の統括からの受領のいずれでも、実装に入る前に公開対象とベースブランチのCI状態を確認する。
+2. `## 自動コードレビュー監査`に従って監査の要否を判定し、必要な監査を起動する。その終了を待たずに`references/selection-procedure.md`へ進み、対象ディレクトリ（cwd）のメインエージェント自身が対象を選定し、対象集合を確定した直後に処理を開始する。統括から受領したリポジトリ担当は初回候補を利用する。意味判断と取得済み候補を`pick-wi-check`へ渡し、定型項目の生成・確認・保存を1回で済ませる。選定作業を別の担当者へ委譲しない。監査結果が一部候補の判断に必要な場合は、その判断だけを待機し、独立した候補の選定と開始可能なレーンの起動を進める。
 3. `references/run-lanes.md`に従い、選定結果の「段階」と「先行レーン」の情報に基づいて`atk lane create`に対象を渡し、準備されたリソースを受け取ってレーン担当を起動する。後続のレーンは、先行レーンの統合と書き込み主体の解放を確認した後に、現行HEADを起点として作成する。Claude Codeでは、各段階の最初の起動がすべて完了した後に、共通の会話圧縮予約手順へ進む。
 4. 各レーンは単一担当の実行契約のもとで、計画、実装、独立した実行レビューの調整、および指摘への対応を進める。メインエージェントはユーザー判断の通知を中継し、レーン間の書き込み競合や依存関係を調停する。
 5. 初期選定で複数レーンが存在する場合は、`統合準備完了`を返したレーンに対して、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の許可」に従い1レーンずつ`統合許可`を出す。各レーンは`atk lane integrate`を実行して、統合から計画の最終確定、AWIの終了、選定結果への統合済み記録までを完了させる。メインは返却された`統合完了`を、同資料「統合の指示と受領」の受領条件に沿って検収する。
@@ -92,7 +93,10 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
 
 ## 自動コードレビュー監査
 
-対象リポジトリがGitHub上にある場合は、読込表にある監査契約に従って未判定（pending）の有無を確認し、必要な監査を起動してその結果を受け取る。
+対象リポジトリがGitHub上にある場合は、選定を始める前に読込表の監査契約に従って未判定（pending）の有無を確認し、必要な監査を起動する。
+監査の終了と追加WI投入の完了は、独立した既存候補の選定・レーン起動と並行して待つ。
+同じprocess-wiの実行へ追加するWIは、保存結果の正式ファイル名を受領した直後に`references/selection-procedure.md`「処理対象WIの追加」へ渡す。
+監査を省略する条件、候補0件時の受領、公開前に確定する処置は監査契約に従う。
 
 ## 同一主題の追加指示
 

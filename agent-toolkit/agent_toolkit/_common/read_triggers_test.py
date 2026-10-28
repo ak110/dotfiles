@@ -7,36 +7,25 @@ import pytest
 from agent_toolkit._common import read_triggers
 
 
-def test_external_reading_table_keeps_targets_and_scope(tmp_path):
+def test_body_reading_table_keeps_targets_and_scope(tmp_path):
     owner = tmp_path / "SKILL.md"
-    table = tmp_path / "reading-references.md"
     target = tmp_path / "rule.md"
     target.write_text("# 資料\n## 対象\n判断基準\n## 別節\n別用途\n", encoding="utf-8")
-    table.write_text(
+    owner.write_text(
+        "# 本体\n\n"
         "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
         "| --- | --- | --- | --- |\n"
         "| 選択時 | `rule.md#対象` | 判断 | `read:*/rule.md` |\n",
         encoding="utf-8",
     )
-    owner.write_text("# 本体\n<!-- read-table-source: reading-references.md -->\n", encoding="utf-8")
     rows = read_triggers.parse_tables(owner, tmp_path, strict=True)
     assert len(rows) == 1
-    assert rows[0].source == table
+    assert rows[0].source == owner
     assert rows[0].documents == (target,)
     assert rows[0].headings == ("対象",)
     assert "判断基準" in rows[0].targets[0].body()
     assert "別用途" not in rows[0].targets[0].body()
     read_triggers.validate_reference_routes(owner, tmp_path, rows)
-    table.write_text("<!-- read-table-source: SKILL.md -->\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="循環"):
-        read_triggers.parse_tables(owner, tmp_path, strict=True)
-
-
-def test_external_reading_table_missing_target_is_diagnosed(tmp_path):
-    owner = tmp_path / "SKILL.md"
-    owner.write_text("<!-- read-table-source: missing.md -->\n", encoding="utf-8")
-    with pytest.raises((ValueError, OSError), match="missing"):
-        read_triggers.parse_tables(owner, tmp_path, strict=True)
 
 
 def test_dynamic_document_identity_is_canonical(tmp_path):
@@ -204,18 +193,16 @@ def test_common_reference_method_has_a_scoped_same_package_route(tmp_path, packa
         read_triggers.validate_reference_routes(source, tmp_path, [])
 
 
-def test_role_startup_receives_the_method_referenced_by_its_included_table(tmp_path):
+def test_role_startup_receives_the_common_reference_method(tmp_path):
     share = tmp_path / "share"
     share.mkdir()
     owner = share / "read-trigger-contract.md"
     owner.write_text("# 定義\n## 名指し参照の読込方法\n共通取得順\n## 別用途\n別用途本文\n", encoding="utf-8")
-    table = share / "reading.md"
-    table.write_text(
-        "# 宣言\n## 名指し参照の読込方法\n名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。\n",
+    role = share / "example.subagent.md"
+    role.write_text(
+        "# 役割\n## 名指し参照の読込方法\n名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。\n",
         encoding="utf-8",
     )
-    role = share / "example.subagent.md"
-    role.write_text("# 役割\n<!-- read-table-source: reading.md -->\n", encoding="utf-8")
     context = read_triggers.startup_context(role, tmp_path, {})
     assert context.count("共通取得順") == 1
     assert "別用途本文" in context
@@ -250,7 +237,7 @@ def test_invalid_common_reference_method_is_not_an_implicit_route(tmp_path, defe
 def test_common_reference_method_does_not_read_documents_outside_its_package(tmp_path, location):
     source = tmp_path / location
     source.parent.mkdir(parents=True, exist_ok=True)
-    source.write_bytes(b"<!-- read-table-source: missing.md -->\n\xff")
+    source.write_bytes(b"# note\n\xff")
     assert read_triggers.reference_method_targets(source, tmp_path / "plugin") == ()
 
 

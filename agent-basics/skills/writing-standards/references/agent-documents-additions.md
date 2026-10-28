@@ -7,7 +7,24 @@
 
 名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: agent-documents-additions-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「QCDと3段判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-heuristics.md#「案の採否と実施順の判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「案の採否と実施順の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「規定の区分と標示」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「規定の区分と標示」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics.md#「置き場所と配送」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「置き場所と配送」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「再発防止策」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics.md#「条件と範囲の記述」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「条件と範囲の記述」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `investigation.md#「エージェント向け文書の技術的条文」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「エージェント向け文書の技術的条文」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-heuristics.md#「設計品質の劣化確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sub-agents.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%81%A8%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.subagent.md%60%E3%81%AE%E6%A7%8B%E6%88%90%E3%80%8D` | 判断 | `section:agent-basics:*/skills/writing-standards/references/sub-agents.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%81%A8%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.subagent.md%60%E3%81%AE%E6%A7%8B%E6%88%90%E3%80%8D` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「日本語の書き方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「日本語の書き方」` |
 
 ## 規範追記時の判定
 
@@ -30,7 +47,7 @@
 ### 失敗時の回復手順
 
 - 失敗、拒否、上限超過、遮断といった異常時にのみ実行する手順（失敗時の回復手順）は、異常が発生した際に読み手に届く手段へ配置する。具体的には、ホストやCLIのエラー出力、hookの遮断通知に含まれる`fix`、`PostToolUseFailure`の`additionalContext`、異常発生を条件とする読込表が指す`references/`などがある。
-  異常の有無にかかわらず全文が読まれる階層（`agent-documents-basics.md`「置き場所と配送」の読込階層のうち、常時ロード、役割別注入、配送文、メイン起動時、役割起動時）には、異常の種類と参照先を示す起動契機のみを記載する（努力目標。平常時の判断に不要な影響を与えないため）。
+  異常の有無にかかわらず全文が読まれる階層（`agent-documents-basics.md`「置き場所と配送」の読込階層のうち、常時ロード、役割別注入、スキル起動時、役割起動時）には、異常の種類と参照先を示す起動契機のみを記載する（努力目標。平常時の判断に不要な影響を与えないため）。
   既存の仕組みで同様の手順がすでに通知される場合は、文書側の記述を削除する。読み手が異常を直接観測できない場合（エラー出力なしに成果物が破損する場合など）は事前防止の規定として記載し、手順の分量が起動契機と同等以下であれば移設せずにその場に残す。
 
 ### 工程と検証の追記
@@ -85,6 +102,10 @@
 スキルの統廃合はエージェントの起動手順に影響を与えるため、起動時の判断精度を向上させる場合に限って採用する。
 
 ### 削減の判定根拠
+
+大きな削減では、同じ課題、初期状態、モデル、effort、起動パラメーター、評価基準で、削る前・削った後・対象文書なしの3条件を新しい文脈で試す（努力目標。課題の準備と複数回の実行に費用がかかるため）。
+比較を実施した場合は、削った後が要件の充足と判断内容の両方で削る前と同等以上のときだけ採用し、劣った判断に対応する記述は戻す。
+文書なしでも同等だった記述は、課題がその記述の対象状況を含むことを確かめて削除の候補にし、未試行の状況のための記述は残す。
 
 ユーザーから常時規範の記述量削減を求められた場合は、指定されたファイル名にかかわらず、自動ロードされる常時規範全体を対象とし、努力目標の表記がない条文の削除も検討に含める。
 移設先のスキルが存在しない場合は、新設して構わない。削減目標の数値は、ユーザーから具体的な指定があった場合のみ採用する。

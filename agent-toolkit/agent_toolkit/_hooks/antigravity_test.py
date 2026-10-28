@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit import hook
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import antigravity, host
+from agent_toolkit._hooks import antigravity, host, plugin_resources
 from agent_toolkit._hooks.antigravity import _Response
 
 
@@ -202,7 +202,7 @@ def test_native_subagent_receives_rules(tmp_path: pathlib.Path, capsys: pytest.C
     """invoke_subagentのPromptへ委譲先の規範を追加し、引数の符号化を保つ。"""
     prompt = json.dumps("調査せよ") if encoded else "調査せよ"
     raw = _payload(tmp_path, toolCall={"name": "invoke_subagent", "args": {"Prompt": prompt}})
-    skill = pathlib.Path(antigravity.__file__).resolve().parents[2] / "skills/delegation/SKILL.md"
+    skill = plugin_resources.skill_document_path("delegation", "SKILL.md")
     initial = _run(raw, "PreToolUse", capsys)
     assert initial["decision"] == "allow"
     delivered = json.dumps(_run(raw, "PostInvocation", capsys), ensure_ascii=False)

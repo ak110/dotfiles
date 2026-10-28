@@ -6,6 +6,9 @@
 
 from agent_toolkit._testing import dependency_logging, isolation
 
+# Codex投影の同一テストは原本で実行し、投影自体は専用の不変条件テストで検証する。
+collect_ignore = ["agent-toolkit-codex"]
+
 isolated_path_value = isolation.isolated_path_value
 isolate_development_state = isolation.isolate_development_state
 host_environ = isolation.host_environ

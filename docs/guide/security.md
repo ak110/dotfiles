@@ -2,21 +2,17 @@
 
 ## サプライチェーン保護
 
-パッケージマネージャーに対するサプライチェーン攻撃を緩和するため、
-公開から一定期間が経っていないパッケージのインストールをブロックする。
-`chezmoi apply` / `update-dotfiles` 実行時にグローバルへ自動適用される。
+パッケージマネージャーへのサプライチェーン攻撃を緩和するため、公開から一定期間が経っていないパッケージのインストールをブロックする。
+`chezmoi apply`・`update-dotfiles`の実行時に、次の設定がグローバルへ自動で適用される。
 
-| ツール | 設定 | スコープ |
+| ツール | 設定 | 設定先 |
 | ------------------------ | ----------------------------------- | --------------------------------------- |
-| uv（uvx含む） | `exclude-newer = "1 day"` | グローバル（`~/.config/uv/uv.toml`） |
-| npm（npx含む） | `min-release-age=1`（日数。1日） | グローバル（`~/.npmrc`） |
-| pnpm（pnpx含む） | `minimum-release-age=1440`（分。1日） | pnpmのグローバル設定（`pnpm config set --location global`） |
-| mise | `minimum_release_age = "168h"`（7日） | グローバル（`~/.config/mise/config.toml`） |
+| uv（uvx含む） | `exclude-newer = "1 day"` | `~/.config/uv/uv.toml` |
+| npm（npx含む） | `min-release-age=1`（日数。1日） | `~/.npmrc` |
+| pnpm（pnpx含む） | `minimum-release-age=1440`（分。1日） | pnpmのグローバル設定（pnpmが導入済みの場合だけ設定） |
+| mise | `minimum_release_age = "168h"`（7日） | `~/.config/mise/config.toml` |
 
-npmとpnpmは公開待機のキー名と単位が異なるため、設定先を分けている。
-pnpmのグローバル設定は、`update-dotfiles`の実行時にpnpmが導入済みの場合だけ設定される。
-
-一時的に無効化する場合は以下のコマンドを実行。
+公開直後の版が必要な場合は、次のように一時的に無効化して実行する。
 
 ```bash
 # uv

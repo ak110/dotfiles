@@ -54,6 +54,77 @@ from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+def _prepare_exec_review_plan(root: pathlib.Path) -> None:
+    """既存の入力名テストへ、関連WIのない読取可能な計画を用意する。"""
+    (root / "plan.md").write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "defect", ["omitted", "direct", "columns", "major", "supplement", "duplicate", "missing-wi", "valid", "old"]
+)
+@pytest.mark.parametrize("input_kind", ["record", "record-file", "plan"])
+@pytest.mark.asyncio
+async def test_exec_review_condition_table_preflight(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, defect: str, input_kind: str
+) -> None:
+    """公開された役割入力検査で新形式AWIの不足を拒否し、完全表と旧形式を受理する。"""
+    name = "20261028-130047-001.md"
+    notes = tmp_path / "notes"
+    directory = notes / "2026" / "10"
+    directory.mkdir(parents=True)
+    body = (
+        "---\ntype: awi\nsource: fix\nstate: inbox\ntarget_repo: github.com/ak110/dotfiles\n---\n# 要求\n## 完成条件\n- 条件\n"
+    )
+    if defect == "old":
+        body += "## 実現性\n可能\n"
+    (directory / name).write_text(body, encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    contract = tmp_path / "contract.md"
+    header = "| WI | 条件番号 | 区分 | 内容 | 出典 |\n| --- | --- | --- | --- | --- |\n"
+    major = f"| {name} | 1 | 主要完成状態 | 完了 | 本文 |\n"
+    supplement = f"| {name} | 2 | 補足条件 | 条件 | 完成条件 |\n"
+    content = header + major + supplement
+    if defect == "columns":
+        content = "条件表なし"
+    elif defect == "major":
+        content = header + supplement
+    elif defect == "supplement":
+        content = header + major
+    elif defect == "duplicate":
+        content = header + major + supplement.replace("| 2 |", "| 1 |")
+    contract.write_text(content, encoding="utf-8")
+    params = {"レビュー基準": "計画", "引き継ぎ記録先": f"{tmp_path / 'handoff.md'}（新規）", "WI記録": name}
+    if input_kind == "record-file":
+        record = tmp_path / "wi-record.md"
+        record.write_text(name, encoding="utf-8")
+        params["WI記録"] = str(record)
+    elif input_kind == "plan":
+        plan = tmp_path / "plan.md"
+        plan.write_text(f"# 計画\n## 概要\n### 計画メタ情報\n- 関連WI:\n  - {name}: 要求\n", encoding="utf-8")
+        params.pop("WI記録")
+        params["計画"] = str(plan)
+    if defect != "omitted":
+        params["review_contract"] = "直接契約" if defect == "direct" else str(contract)
+    if defect == "missing-wi":
+        other = "20261028-130047-002.md"
+        (directory / other).write_text(body, encoding="utf-8")
+        plan = tmp_path / "other-plan.md"
+        plan.write_text(f"# 計画\n## 概要\n### 計画メタ情報\n- 関連WI:\n  - {other}: 別の要求\n", encoding="utf-8")
+        params["計画"] = str(plan)
+    document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
+    sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
+    if defect in {"valid", "old"}:
+        response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=params)
+        assert response["session_id"] == "review"
+        sender.assert_awaited_once()
+    else:
+        with pytest.raises(ActionableError, match="review_contract") as rejected:
+            await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=params)
+        assert "exec-review-recording.md" in str(rejected.value)
+        sender.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "host,case",
     [("agy", "missing"), ("opencode", "missing"), ("agy", "physical"), ("opencode", "physical"), ("agy", "sibling")],
@@ -406,6 +477,7 @@ async def test_start_accepts_exec_review_prompt_with_documented_input_names(
     """startは実行レビュー文書が列挙する通常の入力名を受理する。"""
     task_document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
     called = False
+    _prepare_exec_review_plan(tmp_path)
 
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
         nonlocal called
@@ -719,6 +791,8 @@ def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp
     """実運用で観測した最小の委譲プロンプトが必須入力の確認処理を通過する。"""
     task_document = launch_requests._SHARE_DIRECTORY / task_name
     extra_params = _observed_input_params(task_name, tmp_path)
+    if task_name == "exec-review.subagent.md":
+        _prepare_exec_review_plan(tmp_path)
 
     assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
 
@@ -756,6 +830,7 @@ async def test_exec_review_public_start_accepts_previous_revision(
 ) -> None:
     """引き継ぎ再レビューの比較元を宣言済み入力として委譲プロンプトへ配送する。"""
     task = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
+    _prepare_exec_review_plan(tmp_path)
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "exec-review"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     params = {
@@ -1199,6 +1274,8 @@ def test_every_task_role_has_engineering_model_type() -> None:
 )
 @pytest.mark.asyncio
 async def test_public_start_resolves_all_fourteen_roles_to_required_engineering_stage(tmp_path, monkeypatch, role, expected):
+    if role == "exec-review":
+        _prepare_exec_review_plan(tmp_path)
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "role", "status": "running", "label": role}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     additional_inputs = {

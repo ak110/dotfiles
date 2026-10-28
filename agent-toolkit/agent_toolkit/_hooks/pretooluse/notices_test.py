@@ -6,6 +6,9 @@ subprocessで起動しexit code・stderr・stdoutを検証する。
 import json
 import pathlib
 
+import pytest
+
+from agent_toolkit._hooks import work_contract
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _codex_payload,
@@ -16,6 +19,14 @@ from agent_toolkit._testing.pretooluse_support import (
 from agent_toolkit._testing.pretooluse_support import (
     run_after_read_delivery as _run,
 )
+
+
+@pytest.fixture(autouse=True)
+def _existing_work_contract(tmp_path, monkeypatch):
+    """編集固有の通知を、作業契約を作成済みの状態で検証する。"""
+    path = tmp_path / "work-contract.md"
+    path.write_text("目的: 編集通知の検証\n", encoding="utf-8")
+    monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
 
 
 class TestCodexApplyPatchEditChecks:

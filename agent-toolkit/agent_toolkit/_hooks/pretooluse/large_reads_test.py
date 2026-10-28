@@ -13,11 +13,19 @@ import types
 
 import pytest
 
-from agent_toolkit._hooks import pretooluse
+from agent_toolkit._hooks import pretooluse, work_contract
 from agent_toolkit._hooks.pretooluse import dispatch, large_reads, operation_skills
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read, sed_read_range
 
 _THRESHOLD = 48 * 1024
+
+
+@pytest.fixture(autouse=True)
+def _existing_work_contract(tmp_path, monkeypatch):
+    """読取固有の通知を、作業契約を作成済みの状態で検証する。"""
+    path = tmp_path / "work-contract.md"
+    path.write_text("目的: 読取通知の検証\n", encoding="utf-8")
+    monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
 
 
 @pytest.mark.parametrize(

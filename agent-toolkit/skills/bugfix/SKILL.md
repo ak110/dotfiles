@@ -13,7 +13,7 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文の各参照で定めた適用条件に従い、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行に記載された資料は、起動時のプロンプトとともに提供される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -28,6 +28,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 計画・実装・レビュー・CI失敗の原因分析を始める前 | `agent-basics:bugfix/references/root-cause-analysis.md#「初動と拡張原因分析の判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「初動と拡張原因分析の判定」` |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
@@ -48,7 +49,7 @@ description: >
 対処の候補は`agent-toolkit/rules/01-agent.md`「判断指針」の3段判定で選別し、構造の比較には`agent-basics:writing-standards/references/design-heuristics.md`「設計案の予備選別」を使う。
 
 - 既存の不具合を発見した場合も、原則として同じセッション内で類似箇所の見直しや再発防止策の策定まで完遂する。先送りの判断や担当外の不具合の扱いは`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従い、実行中のスキルに固有の手順（`agent-toolkit:process-wi`など）がある場合はそちらを優先する。拡張原因分析、類似箇所の見直し、再発防止策の策定のいずれかを要する調査は、`${CLAUDE_PLUGIN_ROOT}/skills/bugfix/references/investigation-delegation.md`へ委譲する。修正作業は、調査担当から返却された対策をもとに、不具合を見つけたエージェント自身が行う。根本原因と類似見直しの母集団を自力で確定でき、すべての対象と再発防止策をその場で処置できる場合は、委譲せずにその場で修正してよい
-- 不自然な実装、非効率な処理、不要な反復などの改善点は、その場で直接的原因と影響を最低限調査する。作業の続行や品質に影響する問題、または規範の欠陥が確定した場合は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従って対処する。メインエージェントは`agent-toolkit/share/rules-main.md`「作業中の改善点の報告」に従い、委譲先エージェントは`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`気付いた改善点:`に記載して報告する
+- 不自然な実装、非効率な処理、不要な反復などの改善点は、その場で観測事象と期待との差、直接的原因の手掛かり、品質や作業への影響、担当範囲と必要な処置を判断するために最低限調査する。本題外の調査は再委譲の権限内でagents_serverのサブエージェントへ切り離し、受領済みの調査結果は再利用して不足分だけを補う。単純な効率改善もQCDで採否を決め、担当外の処置は調査結果とともに委譲元へ返す。作業の続行や品質に影響する問題、または規範の欠陥が確定した場合は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従って対処する。メインエージェントは`agent-toolkit/share/rules-main.md`「作業中の改善点の報告」に従い、委譲先エージェントは`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`気付いた改善点:`に記載して報告する
 - 完成条件に含まれないエンドユーザー向け機能の不足については、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「認可を要する操作」に基づいて要否を判定する。ドキュメントを既存機能の制約に合わせて修正した場合も不足している機能を評価し、新たな挙動を追加する場合は同スキルの「確認を要する事項」に従ってユーザーへ確認する
 - 終了コードが0であっても、出力された警告の内容と意味を確認する。設定や処理の未適用・未完了を示す警告には適切に対処し、今回の作業と無関係であると判断した警告については、その判断根拠を報告に記録する
 - ユーザーが指定した要件を変更する場合や、「認可を要する操作」に該当する対処をする場合は、事前にユーザーの合意を得てから着手する。確認が必要かどうかの判断は`agent-toolkit:user-confirmation-and-report`「確認要否の判定」に従う。内部実装だけで完結する対処については、確認を挟まず自律的に完遂する

@@ -272,7 +272,6 @@ jobs:
           agent-toolkit/agent_toolkit/_common/plugin_root_leases_test.py
           agent-toolkit/agent_toolkit/_common/plugin_environment_test.py
           agent-toolkit/agent_toolkit/_agents_server/codex_test.py::test_legacy_plugin_root_real_mcp_lifecycle
-          agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
           agent-toolkit/agent_toolkit/_plan/structure
       - name: Codex CLI 0.163.0の導入
         if: needs.common-ci-owner.outputs.owns == 'true'

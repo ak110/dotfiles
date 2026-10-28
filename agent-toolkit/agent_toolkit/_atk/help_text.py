@@ -32,11 +32,6 @@ CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以�
 """
 
 HELP: dict[str, dict[str, str]] = {
-    "atk wi process-loop all-repos": {
-        "summary": "登録した全リポジトリの担当を起動する",
-        "epilog": '実行例:\n\n  atk config set process_loop_repositories \'["/absolute/repository-one","/absolute/repository-two"]\'\n  atk wi list --configured-repos --with-staleness\n  atk wi process-loop all-repos\n  atk wi process-loop --no-update all-repos',
-        "description": "登録した全リポジトリの担当を起動する。\n\n目的: process_loop_repositoriesで登録した対象を一括取得し、各対象cwdの通常delegateがprocess-wiの全工程を担う。\n利用場面: ホームから登録集合の処理を常駐で受け付けるとき。\n対象と出力: 対象ごとの候補・処理上限・所有session・終了記録を保持する。オーケストレーターは対象の選定・実装・Git操作を直接行わない。\n前提: `atk config set process_loop_repositories <JSON文字列配列>`で絶対パスを登録する。空配列の場合は待機し、同じoriginの登録は登録順の先頭へまとめる。不正登録は修正操作を示して停止する。共通オプションはall-reposの前へ指定する。\n復元・後始末: Ctrl+Cまたはabortで終了する。失敗した担当の成果を保持し、all-repos担当だけを再開する。status・instructなどの制御はOSアカウント共通で、追加指示は次の1起動集合で1回受領し、各担当が自分の対象に関する内容を適用する。",
-    },
     "atk lane integrate": {
         "summary": "レビュー済みレーンを統合し最終化する",
         "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2 --accept-rebased-head 0123456789abcdef0123456789abcdef01234567",
@@ -64,7 +59,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk run-skill": {
         "summary": "定期実行から任意のスキルを自律モードで1回実行する",
-        "description": "定期実行から任意のスキルを自律モードで1回実行する。\n\n目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_model`の候補列から可用な候補を選び（利用上限の待機はengine別設定に従う）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と、`orchestrate_model`の設定の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 30日を超えたログは各実行の開始時に削除する。ロックは実行の終了時に解放する。",
+        "description": "定期実行から任意のスキルを自律モードで1回実行する。\n\n目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_model`の候補列から可用な候補を選び（利用上限の待機はengine別設定に従う）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。--work-dirで実行cwdを指定した場合は--target-repoに報告先repo URLも受理する。session-review-batchはauto/manual引数でアカウント共通排他・非活動対象の固定・対象別準備・報告同期後の範囲確定を行い、対象0件ではモデルを起動しない。報告先は対象最多のrepo、全対象不明なら実行pluginの配布元とする。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と、`orchestrate_model`の設定の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 30日を超えたログは各実行の開始時に削除する。ロックは実行の終了時に解放する。",
         "epilog": "実行例:\n\n  atk run-skill --target-repo /absolute/path/to/repo my-skill\n  atk run-skill --args '対象: web' --timeout 7200 agent-toolkit:process-wi\n\ncronへ登録する例（標準出力を破棄し、失敗行だけをcronのメール通知へ渡す）:\n\n  PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin\n  0 3 */3 * * atk run-skill --target-repo /home/user/repo my-skill >/dev/null",
     },
     "atk wi": {
@@ -173,31 +168,9 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi submission end",
     },
     "atk wi process-loop": {
-        "summary": "AWIを消化し続けるprocess-loopを開始する",
-        "description": "AWIを消化し続けるprocess-loopを開始する。\n\n目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行するprocess-loopを開始する。"
-        "\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。"
-        "\n対象と出力: `atk config`のorchestrate_modelの候補列で指定するオーケストレーターを起動する。"
-        "待機中はCIの失敗を検出してAWIを投入する。未判定のDependabotアラートがあればAWIを起票せずprocess-wiを1回実行させ、"
-        "その実行の自動コードレビュー監査が判定する。対象リポジトリの作業ツリーは起動したセッションが変更する。"
-        "`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、"
-        "初回のセッション起動をその再開へ差し替える。"
-        "子セッションの開始前は、WI投入作業の活動猶予と未回答UWIによる抑止を同時に判定する。"
-        "活動は`atk wi submission begin`で記録した投入先が対象リポジトリ集合と交わる会話とその委譲先に限る。"
-        "同じoriginの別worktreeと別表記URLは同じ投入先とし、同repoの別作業・別repoへの投入・会話の無いプロセスは理由にしない。"
-        "活動猶予は処理可能WIの検出から10分で、共有private-notesへの新規WI到着の検出ごとに10分へ延長する。"
-        "自ループとその子孫・終了session・稼働中の子エージェントを持たずユーザーの応答を待つsessionは活動から除く。"
-        "活動がなくなった時か期限の到来で解除し、既存WIの編集・状態移動では延長しない。"
-        "対象集合に未回答UWIがあれば、保存済みUWIの最終更新から600秒経過するか全件回答されるまで開始を抑止する。"
-        "holdとrun-skill由来のUWIも含み、回答後adoptedへ移ったUWIの更新も最終更新へ反映する。"
-        "両条件の解除後に候補を再評価し、待機理由・期限・延長・開始を端末とログへ示す。"
-        "入力可能な端末のEnterは今回の両待機を解除して候補の再評価へ進める。解除は次回へ持ち越さず、"
-        "非TTY・EOF・バックグラウンドジョブなど入力できない実行では自動の待機を続ける。"
-        "\n前提: 対象リポジトリの現在branchが追跡先を持つこと。"
-        "`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。"
-        "`--auto-resume`と`--resume`は同時指定できない。"
-        "\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。"
-        "作成したworktreeと起動したセッションの成果物は自動では削除しない。",
-        "epilog": "実行例:\n\n  atk wi process-loop --worktree",
+        "summary": "登録リポジトリ全体のAWI処理を常駐実行する",
+        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: process_loop_repositoriesの対象をprocess-wiの実行ごとに1つの統括会話へ渡す。\n利用場面: 登録した全対象を継続的に処理するとき、または--onceで1回だけ処理するとき。\n対象と出力: 起動cwdでorchestrateのprocess-wi-all-reposを起動する。少数候補の対象は統括自身が処理し、多数候補だけを対象cwdの担当へ委譲する。所有・進捗・worktree準備・レーン回収は対象別に管理する。--onceは1集合を処理して終了し、対象0件でも待機しない。未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config set process_loop_repositoriesでローカルworktreeのJSON配列を登録する。空配列では通常は変更待機し、--onceでは終了する。--resume SESSION_IDは統括会話を再開し、--auto-resumeとは同時指定できない。--worktreeは対象別に適用し、対象がdotfilesの場合は無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは現在のセッション終了後に停止し、abort-cancelで取り消す。停止未確認・未統合・dirtyの資源は保持する。",
+        "epilog": "実行例:\n\n  atk config set process_loop_repositories '[\"/absolute/repository\"]'\n  atk wi process-loop\n  atk wi process-loop --once\n  atk wi process-loop --worktree --no-update",
     },
     "atk wi process-loop abort": {
         "summary": "process-loopへ1セッションの終了時点で止まるよう要求する",
@@ -632,6 +605,12 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
                 ]
                 accepted = "・".join(positionals) if positionals else "なし"
                 self.error(f"余った位置引数: {rejected}。{self.prog}が受け取る位置引数は{accepted}")
+            if self.prog.endswith(" wi grep") and "-E" in remaining:
+                self.error(
+                    f"解釈できない引数: -E。{self._accepted_form()}。"
+                    "オプションを指定しない場合は正規表現で検索します。次の操作: -Eを外して再実行する。"
+                    "固定文字列を検索する場合は-Fを指定する"
+                )
             self.error(f"解釈できない引数: {remaining[0]}。{self._accepted_form()}")
         return parsed, remaining
 

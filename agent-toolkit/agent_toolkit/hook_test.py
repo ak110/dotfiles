@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Any, NoReturn, cast
+from typing import Any, cast
 
 import pytest
 
@@ -28,12 +28,14 @@ from agent_toolkit import atk
 from agent_toolkit import hook as _hook
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk import config as _config
+from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
-from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._common import inherited_venv, session_activity, session_registry, state_paths
 from agent_toolkit._common import plugin_roots as resource_roots
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._common.plugin_roots import _inventories, _plugin_inventory, _reusable
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
@@ -467,14 +469,30 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
 ) -> None:
     """公開hookで子のStopを処理した後も、公開CLIが次のセッションを起動する。"""
     monkeypatch.setattr(session_activity, "scan_activity", lambda **_kwargs: session_activity.ActivitySnapshot())
-    _setup_notes(tmp_path)
-    myrepo = tmp_path / "myrepo"
-    myrepo.mkdir()
+    notes = _setup_notes(tmp_path)
+    myrepo = git_repository.init_repository(tmp_path / "myrepo", origin="https://github.com/example/myrepo.git")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(myrepo)]))
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    entries: list[pathlib.Path] = []
+
+    def add_entry(number: int) -> None:
+        path = notes / "2026/10" / f"native-stop-{number}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "---\nstate: inbox\ntype: awi\ntarget_repo: github.com/example/myrepo\n---\n\n# 作業\n",
+            encoding="utf-8",
+        )
+        entries.append(path)
+
+    add_entry(1)
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _path: True)
+    monkeypatch.setattr(_pl_watch, "wait_for_start_permission", lambda *_args: True)
+    monkeypatch.setattr(_pl_session, "resolve_orchestrator_specs", lambda: [("claude", "model", "medium")])
+    monkeypatch.setattr(_pl_session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "model", "medium"))
     monkeypatch.setattr(_wait_schedule, "get_prompt_cache_ttl", lambda _bucket: "1h")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -507,37 +525,49 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
 
     monkeypatch.setattr(_agents_exit_session, "request_termination", fake_termination)
 
-    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-        if cmd[:1] == ["claude"] and "-p" not in cmd:
-            if not session_calls:
-                for count in range(1, 4):
-                    response = invoke_stop("agent-review", count)
-                    assert response.get("decision") != "block"
-                    child_responses.append(response)
-                assert not abort_path.exists()
-            session_calls.append(cmd)
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
-        if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-            remote = (
-                "https://github.com/example/myrepo.git\n" if kwargs.get("text") else b"https://github.com/example/myrepo.git\n"
-            )
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=remote, stderr="" if kwargs.get("text") else b"")
-        empty: Any = "" if kwargs.get("text") else b""
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+    def fake_cli_session(
+        cmd: list[str], _env: dict[str, str], cwd: pathlib.Path, **_kwargs: Any
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert cmd[0] == "claude" and cwd == pathlib.Path.cwd()
+        prompt = next(argument for argument in cmd if argument.startswith("/goal "))
+        start = prompt.index("は ") + len("は ")
+        manifest = pathlib.Path(prompt[start : prompt.index(" を読む", start)])
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        assert len(data["repositories"]) == 1
+        target = data["repositories"][0]
+        assert pathlib.Path(target["worktree"]) == myrepo
+        candidates = json.loads(pathlib.Path(target["candidate_file"]).read_text(encoding="utf-8"))
+        assert [candidate["filename"] for candidate in candidates] == [entries[-1].name]
+        if not session_calls:
+            for count in range(1, 4):
+                response = invoke_stop("agent-review", count)
+                assert response.get("decision") != "block"
+                child_responses.append(response)
+            assert not abort_path.exists()
+        session_calls.append(cmd)
+        entry = entries[-1]
+        entry.write_text(entry.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8")
+        records = {target["target_repo"]: {"status": "completed", "writer_sessions": []}}
+        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": records}), encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: 1 if len(session_calls) < 2 else 0)
+    monkeypatch.setattr(_pl_session, "_run_cli_session", fake_cli_session)
 
-    def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
+    def stop_wait(*_args: object, **_kwargs: object) -> bool:
+        if len(session_calls) == 1:
+            add_entry(2)
+            return True
         raise KeyboardInterrupt
 
     monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
 
     with pytest.raises(SystemExit) as loop_exit:
-        atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
+        atk.main(["wi", "process-loop", "--no-update", "--no-alerts"], home=tmp_path)
 
     assert loop_exit.value.code == 0
     assert len(session_calls) == 2
+    identifiers = [command[command.index("--session-id") + 1] for command in session_calls]
+    assert identifiers[0] != identifiers[1]
     assert len(child_responses) == 3
     assert all("systemMessage" not in response for response in child_responses)
     assert not abort_path.exists()
@@ -632,6 +662,8 @@ class TestLazyDependencyLoading:
         used_modules: tuple[str, ...],
     ) -> None:
         target = tmp_path / "read-target.txt"
+        directory = managed_temp.resolve_session_temp("lazy-session")
+        (directory / "work-contract.md").write_text("目的: 依存読込の検証\n", encoding="utf-8")
         target.write_text("内容\n", encoding="utf-8")
         resolved_input = {key: str(target) if key == "file_path" else value for key, value in tool_input.items()}
         payload = json.dumps(
@@ -741,6 +773,9 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     empty_transcript = tmp_path / "empty.jsonl"
     empty_transcript.write_text("", encoding="utf-8")
+    for session in ("repeat-session", "other-session"):
+        directory = managed_temp.resolve_session_temp(session)
+        (directory / "work-contract.md").write_text("目的: 操作反復の検証\n", encoding="utf-8")
 
     def pretooluse(session_id: str, command: str, expected_code: int = 0) -> str:
         return _call_hook_in_process(

@@ -6,7 +6,16 @@
 
 名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: textlint-violations-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `notation-rules.md#「表記の一括置換」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「表記の一括置換」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `notation-rules.md#「日本語の表記ルール」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「日本語の表記ルール」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lint-relax-criteria.md#「緩和判断のフレーム」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/lint-relax-criteria.md#「緩和判断のフレーム」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「要件と認可」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「要件と認可」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `tone-examples.md#「冗長表現」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/tone-examples.md#「冗長表現」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `notation-rules.md#「Markdown記述スタイル」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「Markdown記述スタイル」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `tone-examples.md#「ら抜き言葉と可能表現」「カタカナ動詞比喩」「比喩動詞」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/tone-examples.md#「ら抜き言葉と可能表現」「カタカナ動詞比喩」「比喩動詞」` |
 
 ## textlint指摘への修正方針
 
@@ -51,7 +60,7 @@
 ```
 
 ```text
-例文: 計画メタ情報の`起動経路`へ値を記録する。
+例文: 設定ファイルの`log_level`へ値を記録する。
 説明: 保存形式の識別子は、コードと一致する名前を保って示す。
 ```
 
@@ -71,7 +80,7 @@
 原文との意味の比較には`writing.md`「ユーザー入力素材の取扱い」を適用する。主体を補う際は原文、依頼、資料に根拠がある担当、通知先、責任を保ち、既存人物への作業の再割当も確認する。
 
 - 依頼文には、読者の種別（人間向けかエージェント向けか）、対象ファイルと該当段落、指摘されたルール名と対象の語句、維持すべき事実や契約、前節で示した禁止事項を明記する。読者が異なる文書は依頼を分けて作成する
-- 返ってきた文は原文と比較して事実や契約が保たれているか確認し、textlint、口語表現チェック、ダッシュチェックを実行する。変更箇所の比較には`git diff --word-diff=plain --word-diff-regex=.`を使い、空白で区切られない日本語の差分を文字単位で把握する。語句の置換だけでは意味や自然さを保てない場合は、述語や文構造まで含めて見直す
+- 返ってきた文は原文と比較して事実や契約が保たれているか確認し、textlintと、プロジェクトが導入している表記チェック（口語表現、ダッシュなど）を実行する。チェッカーが無い環境では`notation-rules.md`の各規定で手動の自己点検をする。変更箇所の比較には`git diff --word-diff=plain --word-diff-regex=.`を使い、空白で区切られない日本語の差分を文字単位で把握する。語句の置換だけでは意味や自然さを保てない場合は、述語や文構造まで含めて見直す
 - 見出しに含まれる指摘語を修正した場合は、その節名を参照しているすべてのドキュメントやコードも同時に更新する。定義済みの用語に指摘語が含まれる場合も、用語の定義と使用箇所の表記を統一する。語句の出現頻度の記録など、指摘語そのものをデータとして扱う箇所は変更せず、インラインコードで表記する
 - 書き直しを終えた後は、インラインコード、見出し、コードブロックの内容が変わっていないかを機械的に突き合わせ、意味や契約が維持されているかは別の担当者が差分をレビューして確認する
 
@@ -114,7 +123,7 @@
   `ja-technical-writing/no-doubled-conjunction`は、1つの文の中だけでなく連続する文の間でも同一の接続詞を検出する
 - 同じ階層に同名の見出しがあるとmarkdownlintのMD024違反になるため、区別するための語を括弧書きなどで添えて見出し名を一意にする
 - 日本語と半角文字が隣接する節名（半角スペースで区切られた節名など）を参照する場合は、バッククォートで囲む。
-  かぎ括弧（`「」`）で囲むとJTF 3.1.1の自動修正によって隣接スペースが削除され、計画構造の自動チェックで節名が一致せず誤検出される原因になる
+  かぎ括弧（`「」`）で囲むとJTF 3.1.1の自動修正によって隣接スペースが削除され、節名を突き合わせる自動チェックで名前が一致せず誤検出される原因になる
 
 ## typosの誤検出への対処
 

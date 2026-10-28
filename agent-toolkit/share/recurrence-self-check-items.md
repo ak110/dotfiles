@@ -14,9 +14,13 @@
 - 確認内容: 不具合の症状が観測された特定の値・入力・処理系統・フィールド種別のみを対象とする分岐や個別列挙に修正を限定せず、同一の共通機構を利用する他の対象へも適切に対策を行き渡らせていること。対策が行き届かない対象がある場合は、該当する対象を具体的に列挙する。入力契約、ユーザーが明示した適用範囲、またはWIや計画書で根拠を持って適用範囲を限定している場合は対象外とする。
 - 根拠規範: `agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」における、直接的原因となった機構を共有する対象全体へ対策を適用する項。
 
+## 名指し参照の読込方法
+
+名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+
 ## 根拠規範の取得
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 失敗・警告の文面に次の操作があるかを判定する前 | `agent-basics:writing-standards/references/writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
-| 共通機構の是正が作用する全種類に届くかを判定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
+| 項目「失敗・警告の文面に次の操作がある」の対象条件に該当すると判定した後、確認内容を判定する前 | `agent-basics:writing-standards/references/writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
+| 項目「共通機構の是正が作用する全種類に届く」の対象条件に該当すると判定した後、確認内容を判定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |

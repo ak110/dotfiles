@@ -13,9 +13,17 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文に記載された各参照の適用条件を確認し、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行に記載された資料は、起動本文とともに配送される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
-<!-- read-table-source: SKILL-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/search/references/quality-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../secret-files/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/secret-files/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/routing.md#「コンテキスト消費が大きい調査の切り出し」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「コンテキスト消費が大きい調査の切り出し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md#「不在の主張」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「不在の主張」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「読込表」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「読込表」` |
+| 判断対象と検索の母集団を決める時 | `agent-basics:writing-standards/references/quality-principles.md#「事実と推論」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「事実と推論」` |
 
 ## 手段の選定
 
@@ -44,6 +52,9 @@ Claude CodeのBash環境では、`grep`がugrepへ転送するシェル関数と
 件数・ファイル名・要約を確認した結果、本文の読み取りを含む調査がコンテキストを大きく消費すると見込まれる場合は、委譲が可能なエージェントであれば、自ら検索を続ける前に読み取り専用の探索委譲（`agents_server`の`start`による`explore`など）へ切り出すかどうかを判定する。その条件と手順は`agent-toolkit:delegation`の`references/routing.md`「コンテキスト消費が大きい調査の切り出し」に従う。
 
 ## 検索の範囲と母集団
+
+検索結果を判断へ用いる前に、`agent-basics:writing-standards/references/quality-principles.md`「事実と推論」に従って、要件や公開契約から定めた判断対象が検索の母集団に含まれるかを確認する。
+検索可能な対象の一覧だけで判断対象を置き換えない。
 
 通常の検索は、リポジトリのルートディレクトリから`.gitignore`やツール固有の除外設定を維持した状態で実行する。依存パッケージやビルド成果物は自動的に除外されるため、ルートから検索しても出力量はほとんど増えない。
 検索範囲を特定のディレクトリやglobで絞り込むのは、対象がその範囲内にしか存在しないことが別の観測によって確定している場合に限る。推測で見込みをつけて範囲を狭めると、テストコードなど範囲外の一致箇所を見落としたまま結論を出してしまい、同一の値や識別子を持つコードが未修正のまま残る原因となる。

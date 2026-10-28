@@ -19,7 +19,7 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を満たす場合は、資料を読み込み、指定箇所に注目し、そこに示された基準をもとに具体的な判断を進める。起動時に指定された資料は、起動時のプロンプトとともに渡される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -28,6 +28,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md#「暫定回避と結果報告」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「暫定回避と結果報告」` |
 | 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
 | 取得版の異なる結果をレビューへ渡す前 | `../review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 

@@ -363,13 +363,26 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
                 ]
             if not targets:
                 return
+            subject = operation_skills.resolve_subject(payload)
+            if subject == operation_skills.SUBJECT_CODEX:
+                paths = list(dict.fromkeys(target.path for target in targets))
+                event = {
+                    **payload,
+                    "hook_event_name": "PostToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "cat -- " + shlex.join(map(str, paths))},
+                    "tool_response": {
+                        "stdout": "".join(path.read_text(encoding="utf-8") for path in paths),
+                        "exit_code": 0,
+                    },
+                }
+                assert _run_posttooluse(event, env_overrides or {}).returncode == 0
+                continue
             for target in targets:
                 subject = operation_skills.resolve_subject(payload)
                 skill = read_delivery.skill_name(target.path)
                 if subject != operation_skills.SUBJECT_CODEX and skill:
                     tool_name, tool_input = "Skill", {"skill": skill}
-                elif subject == operation_skills.SUBJECT_CODEX:
-                    tool_name, tool_input = "Bash", {"command": "cat -- " + shlex.quote(str(target.path))}
                 else:
                     tool_name, tool_input = "Read", {"file_path": str(target.path)}
                 event = {

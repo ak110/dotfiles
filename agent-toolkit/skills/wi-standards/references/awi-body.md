@@ -36,7 +36,32 @@
 
 名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: awi-body-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「逐語転記」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「逐語転記」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「範囲語と程度」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「範囲語と程度」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/analysis-records.md#「原因分析の記録先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「自作機構の兆候と自問」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「自作機構の兆候と自問」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「要件・外部仕様」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「要件・外部仕様」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination.md#「技術判断で外せる完成条件」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「技術判断で外せる完成条件」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/approval-scope.md#「承認源と適用範囲」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md#「承認源と適用範囲」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「未確定事項と確認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「未確定事項と確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-restoration-contracts.md#「復元・巻き戻し型の変更」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md#「復元・巻き戻し型の変更」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「方針と判断の記録との比較」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` |
 
 ## 要求固有性と記載量
 
@@ -75,7 +100,9 @@ H1のタイトルは目的と変更が一目で短く分かる表現とし、発
 
 ### 原因分析
 
-`## 原因分析`は、計画ファイルからWIファイル名で参照される原因分析の記録である。具体的な書き方は、`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」に従う。
+`## 原因分析`は、計画ファイルからWIファイル名で参照される原因分析の記録である。
+具体的な書き方は、`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」に従い、表の常時掲載と必要な確認の完了を検収する。
+表の掲載と分析確定に必要な確認は、分析の深さや重大度の全区分で行う。
 
 `## 原因分析`には、誤りの仕組みが成立する条件（`agent-toolkit:bugfix`の`references/root-cause-analysis.md`の基準）とともに、観測された事象とは表面的な構造が異なる該当例を1件以上記載する。成立条件が観測事象のファイル名、工程名、識別子のみで構成されている本文は投入せず、誤りを生じさせる仕組みの条件を導き直す。類似見直しの母集団、是正対象と予防対象の選定は、同資料の「類似見直し」（根本原因から導出し、時間軸や他リポジトリも考慮に入れる）と「QとC・Dの区別」に従う。軽微な問題に対して探索範囲を限定する場合は、実際の探索範囲、その限界、許容する残存リスクを明示する。
 是正の対象範囲は、同スキルの「QとC・Dの区別」が定める保持対象全体に従う。

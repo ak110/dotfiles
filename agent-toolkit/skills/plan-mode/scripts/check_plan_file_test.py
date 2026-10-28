@@ -2212,6 +2212,50 @@ def test_cli_origin_skip_reports_one_next_action(
     assert "解消できない" in actions[0] and "報告" in actions[0]
 
 
+@pytest.mark.parametrize("read_failure", [False, True])
+def test_cli_transfer_skip_reports_recovery(
+    repo: tuple[pathlib.Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    read_failure: bool,
+) -> None:
+    """移管先だけをWI本文と比べられない場合にも、原因の解消と解消不能時の報告を案内する。"""
+    work_dir, _base = repo
+    queue = work_dir / "queue"
+    if read_failure:
+        (queue / "inbox").mkdir(parents=True)
+        source = queue / "inbox" / "20261027-162634-999.md"
+        source.write_text("# 後続要求\n", encoding="utf-8")
+        original = pathlib.Path.is_file
+
+        def is_file(file: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> bool:
+            if file == source:
+                raise PermissionError("検証用の読取拒否")
+            return original(file, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "is_file", is_file)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
+    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(
+        _plan_fixture.USER_ACTION_ROW,
+        "| 公開契約に必要な変更を実装する | ユーザー指示 | 移管 | 20261027-162634-999.mdへ移管する。 |",
+        1,
+    )
+    start = content.index("### 受入シナリオ")
+    end = content.index("\n## ", start)
+    path = work_dir / "transfer.md"
+    path.write_text(content[:start] + "### 受入シナリオ\n\nなし\n" + content[end:], encoding="utf-8")
+    assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == 0
+    lines = capsys.readouterr().err.splitlines()
+    assert any(line.startswith("[warn]") and "移管先をWI本文と比べられなかった" in line for line in lines)
+    assert not any("由来をWI本文と比べられなかった" in line for line in lines)
+    actions = [line for line in lines if line.startswith("次の操作: ")]
+    assert len(actions) == 1
+    expected = "エラーの原因を解消" if read_failure else "AGENT_TOOLKIT_PRIVATE_NOTES"
+    assert expected in actions[0]
+    assert "解消できない" in actions[0] and "報告" in actions[0]
+
+
 def test_cli_origin_read_failure_reports_recovery(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

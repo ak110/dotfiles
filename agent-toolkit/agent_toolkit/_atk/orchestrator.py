@@ -262,6 +262,7 @@ def _probe_argv(orchestrator: str, model: str, prompt: str) -> list[str]:
     return [
         "codex",
         "exec",
+        "--skip-git-repo-check",
         "--model",
         model,
         "-c",

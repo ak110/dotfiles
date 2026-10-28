@@ -15,12 +15,14 @@ from typing import Any
 import yaml
 from session_evidence_catalog import _workflow_evidence
 from session_evidence_extract import _CollectedRecord, _load_records, _parse_timestamp, _record_timestamp, _Runtime
+from session_evidence_hook_notices import _hook_notice_events
 from session_evidence_records import _agents_server_call_ids, _collect_records, _thread_ids_from_record
 from session_evidence_stats import _add_tokens, _codex_normalized_tokens, _parse_cli_timestamp, _stats_summary_data
 
 from agent_toolkit._agents_server import record_paths
 from agent_toolkit._atk import review_table, session_record_format
 from agent_toolkit._atk.wi import layout as wi_layout
+from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._common import model_pricing, private_notes, session_cost
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
@@ -48,6 +50,7 @@ def _new_week(day: str) -> dict[str, Any]:
         "kind": "cost-metrics-week",
         "week": day,
         "adopted_awi_count": 0,
+        "hook_notices": [],
         "tokens": {
             scope: {"total": _empty_tokens(), "by_runtime": {runtime: _empty_tokens() for runtime in ("claude", "codex")}}
             for scope in ("all", "process-wi")
@@ -103,18 +106,28 @@ def _queue_metrics(
     states: dict[str, str] = {}
     for path, commit, timestamp in history:
         first_additions.setdefault(path, timestamp)
-        if not path.endswith(".md"):
+        location = Path(path)
+        # WI共通の列挙契約と同じ年月配置・旧状態配置だけを解析する。
+        # 期間前の状態も必要なため、候補の履歴は全期間を解析する。
+        if not path.endswith(".md") or not (
+            len(location.parts) == 2
+            and location.parts[0] in WI_STATES
+            or len(location.parts) == 3
+            and location.match("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")
+        ):
             continue
         text = _git(repo, "show", f"{commit}:{path}")
         if text.startswith("---\n") and "\n---" in text[4:]:
             frontmatter = text[4:].split("\n---", 1)[0]
-            metadata = yaml.safe_load(frontmatter)
+            try:
+                metadata = yaml.safe_load(frontmatter)
+            except yaml.YAMLError as error:
+                raise ValueError(f"WI履歴のfrontmatterが不正: {path} (commit={commit}): {error}") from error
             if isinstance(metadata, dict) and metadata.get("type") == "awi":
-                location = Path(path)
                 try:
                     state = wi_layout.entry_state_from_metadata(location, metadata)
-                except ActionableError:
-                    continue
+                except ActionableError as error:
+                    raise ValueError(f"AWI履歴の状態が不正: {path} (commit={commit}): {error}") from error
                 name = location.name
                 if state == "adopted" and states.get(name) != "adopted" and since <= timestamp <= until:
                     adopted[_week(timestamp)].add(name)
@@ -303,6 +316,10 @@ def _session_metrics(
             if physical in seen or item.runtime is None:
                 continue
             seen.add(physical)
+            if item.runtime in {"claude", "codex"}:
+                for notice in _hook_notice_events(item.records):
+                    if notice["kind"] == "hook-notice":
+                        week["hook_notices"].append({**notice, "runtime": item.runtime})
             summary = _stats_summary_data(item.records, item.runtime)
             raw = summary.get("tokens", {})
             if item.runtime not in roots:
@@ -388,6 +405,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     for week in weeks.values():
+        notices = week.pop("hook_notices")
+        notice_counts: collections.Counter[tuple[Any, ...]] = collections.Counter()
+        for notice in notices:
+            notice_counts[tuple(notice[key] for key in ("runtime", "hook", "hook_name", "tag", "kind_text"))] += notice["count"]
+        for key, notice_count in sorted(notice_counts.items(), key=lambda item: str(item[0])):
+            print(
+                json.dumps(
+                    {
+                        "kind": "cost-metrics-hook-notice",
+                        "week": week["week"],
+                        **dict(zip(("runtime", "hook", "hook_name", "tag", "kind_text"), key, strict=True)),
+                        "count": notice_count,
+                    },
+                    ensure_ascii=False,
+                )
+            )
         count = week["adopted_awi_count"]
         week["tokens_per_awi"] = {
             scope: {key: value / count for key, value in week["tokens"][scope]["total"].items()} if count else None

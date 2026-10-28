@@ -4,9 +4,28 @@
 
 ## 名指し参照の読込方法
 
-本文に記載された各参照の適用条件に従い、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時に読む資料は、起動時のプロンプトとともに提供される。
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: reviewer-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「日本語の書き方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「日本語の書き方」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-recording.md#「判定の値」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「判定の値」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/acceptance-scenarios.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「通常AWIの本文」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「通常AWIの本文」` |
+| AWIの新旧形式を判断する前 | `../../wi-standards/references/awi-body.md`の冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-recording.md#「公開後に成立する条件と任意の判断材料」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「公開後に成立する条件と任意の判断材料」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「レビュー指摘管理表の共通操作」` | 判断 | `section:agent-toolkit:*/skills/review-standards/SKILL.md#「レビュー指摘管理表の共通操作」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md#「適用契約」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「適用契約」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md#「基本方針」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「基本方針」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md#「初回レビュー」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「初回レビュー」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md#「再レビューの場合」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「再レビューの場合」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md#「実行レビューの判定」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「実行レビューの判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md#「ユーザビリティレビューの判定」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「ユーザビリティレビューの判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md#「指摘内容」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「指摘内容」` |
 
 ## 専用レビュータスク契約
 
@@ -82,6 +101,8 @@
 ## 実行レビューの判定
 
 品質の定義については、`agent-basics:review-standards`の`references/reviewer.md`「実行レビューの判定」に従う。
+
+agent-toolkitの計画ファイルでは、同節の「計画の検証欄」は計画の`## 検証`にある`変更範囲の検証`行、計画がない場合の検証コマンドは引き継ぎ記録の検証コマンド、リファクタリングの検討結果は計画の`### リファクタリング`を指す。CI失敗の調査記録はCI記録の各項目（「原因分析結果」「公開契約」を含む）を指す。進捗の記録は計画の`## 進捗ログ`である。
 
 ## ユーザビリティレビューの判定
 

@@ -35,7 +35,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import usage_limit_policy
 from agent_toolkit._atk.run_skill_progress import Progress
 from agent_toolkit._atk.wi import add as _wi_add
-from agent_toolkit._atk.wi.repo import resolve_local_worktree
+from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id_or_raise
 from agent_toolkit._common import antigravity_cli as _antigravity
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
@@ -44,6 +44,7 @@ from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import process_tree as _process_tree
+from agent_toolkit._common import session_review
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
 
@@ -94,6 +95,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="対象リポジトリの作業ツリーのパス。省略時は現在の作業リポジトリとする。セッションはその作業ツリーのrootで起動する。",
     )
+    parser.add_argument("--work-dir", metavar="PATH", help="実行cwd。指定時は--target-repoに報告先repo URLも受理する。")
     parser.add_argument(
         "--timeout",
         metavar="SECONDS",
@@ -114,6 +116,15 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 
 def dispatch(args: argparse.Namespace) -> int:
     """スキルを1回実行し、終了コードを返す。"""
+    if args.skill == session_review.BATCH_SKILL:
+        from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        return run_skill_batch.dispatch(args, _dispatch_once)
+    return _dispatch_once(args)
+
+
+def _dispatch_once(args: argparse.Namespace) -> int:
+    """batchと通常起動で共有する既存の1回分を実行する。"""
     if args.timeout <= 0:
         _outcome.report_failure(
             f"--timeoutは正の秒数で指定する（指定値: {args.timeout}）",
@@ -121,11 +132,27 @@ def dispatch(args: argparse.Namespace) -> int:
         )
         return 2
     candidates = _orchestrator.resolve_specs(rerun_action="`atk run-skill`を再実行する")
-    repo_root = _resolve_repo_root(resolve_local_worktree(args.target_repo))
+    work_dir = getattr(args, "work_dir", None)
+    if work_dir is not None:
+        repo_root = pathlib.Path(work_dir).expanduser()
+        if not repo_root.is_absolute() or not repo_root.is_dir() or not args.target_repo:
+            _outcome.report_failure(
+                "--work-dirは既存の絶対ディレクトリを--target-repoと併せて指定する",
+                next_action="報告先repoと実行cwdを確認して再実行する",
+            )
+            return 2
+        repo_root = repo_root.resolve()
+        args.target_repo = resolve_repo_id_or_raise(args.target_repo)
+    else:
+        repo_root = _resolve_repo_root(resolve_local_worktree(args.target_repo))
     log_dir = _state_paths.state_dir() / _LOG_DIRNAME
     log_dir.mkdir(parents=True, exist_ok=True)
     _remove_expired_logs(log_dir, now=time.time())
     log_path = _new_log_path(log_dir, args.skill)
+    if manifest_path := getattr(args, "batch_manifest", None):
+        manifest = session_review.read(pathlib.Path(manifest_path))
+        manifest["log_path"] = str(log_path)
+        session_review.write(pathlib.Path(manifest_path), manifest)
     with log_path.open("w", encoding="utf-8") as log:
         progress = Progress(log, sys.stderr)
         progress.message(f"ログ: {log_path.resolve()}")
@@ -176,8 +203,12 @@ def _run_locked(
             _orchestrator.PROCESS_LOOP_SESSION_ID_ENV,
         )
     )
-    run_id = uuid.uuid4().hex
+    run_id = getattr(args, "run_id", None) or uuid.uuid4().hex
     env["AGENT_TOOLKIT_RUN_SKILL_ID"] = run_id
+    if getattr(args, "work_dir", None) is not None:
+        env[session_review.TARGET_ENV] = args.target_repo
+    if manifest := getattr(args, "batch_manifest", None):
+        env[session_review.BATCH_ENV] = manifest
     _log_line(log, f"実行識別子: {run_id}")
 
     def record_wait(candidate: str, usage_limit: _orchestrator.UsageLimitState, delay: float) -> None:
@@ -200,6 +231,7 @@ def _run_locked(
     try:
         orchestrator, model, effort = _orchestrator.select_available(candidates, env, repo_root, context)
     except _orchestrator.NoAvailableCandidateError as error:
+        args.batch_failure = f"availability-{error.orchestrator}-{error.returncode}: {error.detail}"
         _log_line(log, f"終了状態: 全てのモデル候補の可用性判定に失敗した（{error.orchestrator}: {error.detail}）")
         _outcome.report_failure(
             f"全てのモデル候補の可用性判定に失敗したため起動しなかった（ログ: {log_path}）",
@@ -209,7 +241,10 @@ def _run_locked(
     candidate = f"{orchestrator}:{model}/{effort}"
     _log_line(log, f"採用した候補: {candidate}")
     goal = _automated_prompt.wrap(
-        build_goal(args.skill, args.args), source=_automated_prompt.SOURCE_RUN_SKILL, kind=_automated_prompt.KIND_GOAL
+        build_goal(args.skill, args.args)
+        + (f"\n報告先target_repo: {args.target_repo}" if getattr(args, "work_dir", None) is not None else ""),
+        source=_automated_prompt.SOURCE_RUN_SKILL,
+        kind=_automated_prompt.KIND_GOAL,
     )
     session_id: str | None = None
     if orchestrator == "claude":
@@ -241,6 +276,10 @@ def _run_locked(
     codex_home = _host_homes.codex_home(env)
     remaining = float(args.timeout)
     while True:
+        if manifest := getattr(args, "batch_manifest", None):
+            marker = f"\nbatch manifest: {manifest}"
+            if marker not in argv[-1]:
+                argv[-1] += marker
         output = _SessionOutput()
         started_at = time.monotonic()
         with contextlib.ExitStack() as resources:
@@ -257,11 +296,16 @@ def _run_locked(
                     )
                 )
             except OSError as error:
+                args.batch_failure = f"spawn-{orchestrator}: {error}"
                 _log_line(log, f"終了状態: {orchestrator}を起動できなかった（{error}）")
                 _outcome.report_failure(
                     f"{orchestrator}を起動できなかった: {error}（ログ: {log_path}）", next_action=_PATH_ACTION
                 )
                 return 1
+            if getattr(args, "batch_manifest", None):
+                from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+                run_skill_batch.record_executor(args, process.pid)
             code = _wait_session(
                 process,
                 orchestrator=orchestrator,
@@ -528,7 +572,10 @@ def _new_log_path(log_dir: pathlib.Path, skill: str) -> pathlib.Path:
 
 def _remove_expired_logs(log_dir: pathlib.Path, *, now: float) -> None:
     """保持期間を超えたログを削除する。削除できないログは次回の実行で再び試す。"""
+    protected = session_review.protected_logs()
     for path in log_dir.glob("*.log"):
+        if path in protected:
+            continue
         try:
             if now - path.stat().st_mtime > LOG_RETENTION_SECONDS:
                 path.unlink()

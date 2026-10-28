@@ -26,6 +26,37 @@ def _task_session(tmp_path: pathlib.Path) -> state.SessionState:
     return state.SessionState("task", str(tmp_path), prompt=task_documents.task_prompt_header(document))
 
 
+@pytest.mark.parametrize("ending", ["状態: completed", "続行できない理由: 対象に到達できない"])
+def test_explore_final_line_is_accepted(tmp_path: pathlib.Path, ending: str) -> None:
+    """自由本文のexploreは正当な最終行をそのまま公開する。"""
+    session = state.SessionState("explore", str(tmp_path), launch_kind="explore")
+    result = {"status": "completed", "agent_message": f"観測結果\n{ending}\n", "error": None}
+    assert not result_contract.hold_invalid_result(session, result)
+
+
+def test_explore_missing_final_line_fails_after_one_recovery(tmp_path: pathlib.Path) -> None:
+    """固定行のない返却は1回保留し、再発時に本文を保った失敗にする。"""
+    session = state.SessionState("explore", str(tmp_path), launch_kind="explore")
+    result: dict[str, Any] = {"status": "completed", "agent_message": "未読が残る", "error": None}
+    assert result_contract.hold_invalid_result(session, result)
+    session.result_contract_recovery_consumed = True
+    assert not result_contract.hold_invalid_result(session, result)
+    assert result["status"] == "failed"
+    assert result["agent_message"] == "未読が残る"
+    error = result["error"]
+    assert isinstance(error, dict)
+    details = dict(error)
+    assert "返却が完了を示しません" in details["resultContract"]
+    assert "小さく分け" in details["nextAction"]
+
+
+@pytest.mark.parametrize("message", ["続行できない理由:", "続行できない理由:   "])
+def test_explore_empty_reason_is_held(tmp_path: pathlib.Path, message: str) -> None:
+    """未読範囲・理由・再開入力を示す行には非空の値を求め、意味は判定しない。"""
+    session = state.SessionState("explore", str(tmp_path), launch_kind="explore")
+    assert result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
+
+
 @pytest.mark.parametrize(
     "message",
     [
@@ -108,10 +139,12 @@ def test_non_completed_result_preserves_existing_recovery(tmp_path: pathlib.Path
 
 @pytest.mark.parametrize("engine", ["codex", "claude", "agy", "opencode"])
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "write", "shell"])
+@pytest.mark.parametrize("recovered", [False, True])
 @pytest.mark.parametrize(
     ("message", "held"),
     [
         ("状態: completed\n結果: 完了\n根拠: 検証済み", False),
+        ("結果: 完了\n状態: completed", False),
         ("続行できない区分: owner_input\n続行できない理由: 入力が必要", False),
         ("続行できない理由: 入力が必要", True),
         ("続行できない区分: unknown\n続行できない理由: 入力が必要", True),
@@ -120,12 +153,19 @@ def test_non_completed_result_preserves_existing_recovery(tmp_path: pathlib.Path
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
 async def test_backend_terminal_boundary_checks_task_result(
-    tmp_path: pathlib.Path, engine: str, launch_kind: state.LaunchKind, message: str, held: bool
+    tmp_path: pathlib.Path, engine: str, launch_kind: state.LaunchKind, message: str, held: bool, recovered: bool
 ) -> None:
     """各backendが結果を確定するとき、通常・軽量taskを同じ公開前検査へ渡す。"""
     session = _task_session(tmp_path)
     session.launch_kind = launch_kind
+    session.result_contract_recovery_consumed = recovered
+    if launch_kind == "explore":
+        held = held or not (
+            message.splitlines()[-1] == "状態: completed" or message.splitlines()[-1].startswith("続行できない理由:")
+        )
     session.agent_message = message
+    fails = recovered and held and launch_kind == "explore"
+    held = held and not recovered
     if engine == "codex":
         async with codex.AppServerManager() as backend:
             backend.sessions[session.session_id] = session
@@ -154,23 +194,32 @@ async def test_backend_terminal_boundary_checks_task_result(
         assert session.pending_result["agent_message"] == message
     else:
         assert session.agent_message == message
+        if fails:
+            assert session.status == "failed"
+            assert session.error is not None and "resultContract" in session.error
 
 
 @pytest.mark.parametrize("delivery_failure", [False, True])
 @pytest.mark.parametrize("background_consumed", [False, True])
+@pytest.mark.parametrize("explore", [False, True])
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
 async def test_manager_recovers_once_and_preserves_delivery_failure(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, delivery_failure: bool, background_consumed: bool
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, delivery_failure: bool, background_consumed: bool, explore: bool
 ) -> None:
     """同じsessionへ1回だけ継続し、成功後の最終結果と配送失敗時の本文を保持する。"""
     session = _task_session(tmp_path)
+    if explore:
+        session.launch_kind = "explore"
+        session.prompt = "調査せよ"
     session.auto_resume_consumed = background_consumed
-    message = "続行できない理由: 分割読取が残る"
+    message = "未読が残る" if explore else "続行できない理由: 分割読取が残る"
     assert result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
 
     async def reply(current: state.SessionState, prompt: str) -> dict[str, str]:
         assert current is session and "診断:" in prompt
+        if explore:
+            assert "未読・未走査" in prompt and "状態: completed" in prompt
         state.begin_reply(current)
         return {"delivery": "reply_started"}
 
@@ -188,8 +237,9 @@ async def test_manager_recovers_once_and_preserves_delivery_failure(
             assert session.error is not None
             assert session.error["nextAction"] == result_contract.RECOVERY_NEXT_ACTION
         else:
-            cli_turn.finalize_turn(session, {"status": "completed", "agent_message": "結果: 完了", "error": None})
-            assert session.result_available and session.agent_message == "結果: 完了"
+            final = "結果: 完了\n状態: completed" if explore else "結果: 完了"
+            cli_turn.finalize_turn(session, {"status": "completed", "agent_message": final, "error": None})
+            assert session.result_available and session.agent_message == final
         await owner._advance_child_session_wait(session)  # noqa: SLF001
         assert sender.await_count == 1
 

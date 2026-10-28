@@ -35,7 +35,10 @@
 - パッケージ外からの呼び出し元: `agent-toolkit/`の外部から`agent_toolkit`パッケージをimportしているのは`pytools/`と`scripts/`である。そのため、`agent-toolkit/agent_toolkit/`配下にあるPythonファイル（`*_test.py`を除く）を変更した場合は、`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`を実行する。
 - Function hooksモジュール: `agent-toolkit/hooks/`配下の`*.ts`および`*.tsx`（テストを含む）の変更は、既存の`make test`とコミットフックの`pyfltr fast`から`function-hooks-types`を起動し、全モジュールを一括型検査する。
   - 型チェック: TypeScript 5.9.3を使用する。Claude Codeの`plugin-authoring`で生成した`claude-code.d.ts`を環境変数`FUNCTION_HOOKS_TYPES`へ絶対パスで指定する。未指定時はworktree直下または`agent-toolkit/`の`.claude-plugin/types/`と`types/claude-code.d.ts`を参照する。型定義不足は非0終了する。一時設定と生成型定義はコミットしない。CIはClaude Code生成型を用意しないため、このコマンドを明示無効化する。
-  - モジュールテスト: `claude plugin test <worktree>/agent-toolkit`を実行する（引数にはプラグインのルートパスを渡す。`agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからずエラーとなる）。
+  - 未指定かつworktree内に生成型がない場合は、OS一時領域（`TMPDIR`などを反映）の直下および`claude-*`ディレクトリ内の`bundled-skills/<版>/*/plugin-authoring/types/claude-code.d.ts`を探索する。PATH上の`claude --version`とディレクトリ版・先頭行の`// Written by Claude Code <版>.`が一致する型を1件使う。不足時は対象版を含む診断と終了2を返す。`--types`は環境変数より優先し、両者の明示指定時は自動探索しない。チェックはモデルを呼び出さない。
+  - モジュールテスト: 型の自動探索時と同じPATH上の実行ファイルで`claude plugin test <worktree>/agent-toolkit`を実行する。
+    引数にはプラグインのルートパスを渡す。
+    `agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからずエラーとなる。
 - 名前の削除や改名に伴う全体静的チェック: `uv run --frozen pyfltr run --commands=ty`を実行する。対象ファイルを絞らずリポジトリ全体を対象として実行し、Pythonファイルを変更するレーンでは計画書の「変更範囲の検証」欄に必ず含める。
 - CIのコンテナージョブにおいて`uv sync`が読み込む入力設定を変更した場合: `make ci-deps-check`を実行する。対象となるのは、Pythonバージョンの指定（`.python-version`、`.github/workflows/ci.yaml`のmatrixにおけるPythonバージョン）や、同ファイル内の「ネイティブ依存インストール」ステップである。また、リポジトリ直下の`uv.lock`や、同じ場所の`pyproject.toml`内の依存関係宣言・`[tool.uv]`設定の変更も含む。lockファイルのみの依存関係追加・削除・更新や、`agent-toolkit/pyproject.toml`の依存変更に伴う直下のlock更新も対象となる。`make update`では、lock更新の後にコンテナー依存のインストール確認を常に実施する。CIと同一のコンテナーイメージ内でmatrixの各Pythonバージョンにおける依存関係の導入と`uv sync`を再現することで、ローカル環境ではビルドできてもCIで失敗するようなsdistパッケージの問題などをpush前に検知できる。使用するコンテナーイメージや導入パッケージ、バージョン情報は`Makefile`内の変数で管理されており、`ci_workflow_test.py`によってCI定義との整合性が検証される。なお、このチェックにはDockerが必要であり、1バージョンあたり約1分を要する。
   再検証の記録は`docs/development/audit-records.md`「.claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月18日」にある。

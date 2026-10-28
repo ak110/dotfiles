@@ -11,6 +11,7 @@ import time
 import pytest
 
 from agent_toolkit._common import session_state
+from agent_toolkit._hooks import work_contract
 from agent_toolkit._testing.pretooluse_support import (
     _EXECUTE_REVIEW_TASK_NAMES,
     _additional_context,
@@ -26,6 +27,14 @@ from agent_toolkit._testing.pretooluse_support import (
     _write_session_state,
     run_after_read_delivery,
 )
+
+
+@pytest.fixture(autouse=True)
+def _existing_work_contract(tmp_path, monkeypatch):
+    """エージェント操作固有の通知を、作業契約を作成済みの状態で比較する。"""
+    path = tmp_path / "work-contract.md"
+    path.write_text("目的: エージェント操作の検証\n", encoding="utf-8")
+    monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
 
 
 def _run_after_skill_acquisition(

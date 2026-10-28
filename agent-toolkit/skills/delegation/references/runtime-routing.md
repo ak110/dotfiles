@@ -6,7 +6,21 @@
 
 名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: runtime-routing-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「会話を引き継ぐ委譲」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「会話を引き継ぐ委譲」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime.md#「後続操作の共通先行条件」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「後続操作の共通先行条件」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination.md#「ラウンド番号の保持先」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンド番号の保持先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-code-runtime.md#「完了通知と中継の実行順」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md#「完了通知と中継の実行順」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime.md#「agents_serverの二層待機」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「agents_serverの二層待機」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「委譲単位の確定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「委譲単位の確定」` |
+| 作業を分担するかと総費用を比較する時 | `routing.md#「要否判定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「要否判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sending.md#「起動と観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/sending.md#「起動と観測」` |
 
 ## 実行手段
 
@@ -22,7 +36,7 @@
   - `agents_server`のexplore・delegate・taskに同等の手段がない専用agent定義を使う作業（プロジェクト固有の定義など）。Explore・general-purpose・Planなど、同等の作業を行えるホスト組み込みの汎用定義はこの例外に含めない
   - ユーザーから明示的な指示がある場合
   - `routing.md`「会話を引き継ぐ委譲」によりforkを選択する場合。このときは`subagent_type: "fork"`で起動し、親と同一のモデルおよびeffortを使用する
-- Codexから別のエージェントへ委譲する場合も`agents_server`を標準とし、`spawn_agent`は`agents_server`を呼び出せない場合、または`routing.md`「会話を引き継ぐ委譲」によりforkを選択する場合に限る。forkでは`fork_turns`を省略するか`"all"`を指定し、モデルやeffortを上書きしない
+- Codexから別のエージェントへ委譲する場合も`agents_server`を標準とし、`spawn_agent`の選択にも前述の共通の例外条件を適用する。専用定義の例外は実際にその定義を使用できる場合に限る。forkでは`fork_turns`を省略するか`"all"`を指定し、モデルやeffortを上書きしない
 - 汎用のAgent機能にも、前述のClaude Codeの`Agent`ツールを使用する条件を適用する
 - 役割文書が用意されている工程にはその文書を渡す。読み取りのみの調査、参照実装に準拠した定型的な書き込み、出力行数が多いコマンド実行などは、それぞれの専用ツールの公開説明を確認した上で適切に割り当てる。なお、切り詰めや上限到達が報告された調査結果を、網羅性、件数、または不在の根拠としては扱わない
 - 起動時の可用性トラブル（一時的な障害など）に伴う候補の切り替えはサーバー側に任せる。Claudeの`api_error.type`が`usage_limit`である場合は、後述の「代替起動」に従い同一セッションでの継続を優先する。起動後のターンでそれ以外の可用性トラブルが確定したときは、前任が終了し書込所有権が解放されたことを確認した上で、終了結果の`next_action`に従って`start`に`handoff_from`のみを渡して1回起動する。この後任の`session_id`を追加入力の送信先および待機対象とする。同様の障害が続く場合は自身で実施可能な範囲を進め、委譲が不可欠な工程については未完了として委譲元へ返す。なお、実行中の担当者を経過時間や無応答の長さだけで途中で置き換えることは避ける

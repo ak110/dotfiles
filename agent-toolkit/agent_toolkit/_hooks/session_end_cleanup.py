@@ -22,6 +22,7 @@ SessionStartが作成するセッションのmanaged-tempも、同じ理由でSe
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
@@ -46,6 +47,9 @@ def main(payload_text: str) -> int:
         return 0
     if not isinstance(payload, dict) or payload.get("hook_event_name") != "SessionEnd":
         return 0
+    from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    run_skill_batch.hook_request(payload, host="codex" if os.environ.get("CODEX_THREAD_ID") else "claude")
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         session_id = None

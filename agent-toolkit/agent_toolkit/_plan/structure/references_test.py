@@ -57,6 +57,8 @@ def test_human_readable_review_origin_applies_root_rule_before_decision(tmp_path
     root = f"{review_path.as_posix()}のround 2"
     if decision != "採用":
         root += "。実施しない範囲と理由を記録する。"
+    if decision == "移管":
+        root += "20261027-162634-998.mdへ移管する。"
     content = _HUMAN_MAIN_CONTENT.replace(
         _HUMAN_PARTIAL_ROW,
         f"| 入力の境界を追加確認する | 計画レビュー第2ラウンド | {decision} | {root} |",
@@ -202,6 +204,8 @@ def test_action_decisions_accept_all_declared_values(decision: str) -> None:
     """実施内容表が定義する7種類の採否値を受理する。"""
     relation = "指示どおり" if decision in {"採用", "部分採用"} else "非該当"
     root = "R-P-001-001" if decision in {"採用", "部分採用"} else "R-P-001-002を採用しない理由を記載する。"
+    if decision == "移管":
+        root += "20261027-162634-999.mdへ移管する。"
     row = f"| 診断件数を2件から1件へ減らす | {decision} | {relation} | {root} |"
     content = _VALID_CONTENT.replace(
         _plan_fixture.TWO_FILE_ACTION_ROW,

@@ -7,7 +7,6 @@ import pathlib
 import subprocess
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import atomic_file, state_paths, worktree_hooks
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import next_action as _next_action
@@ -385,6 +384,11 @@ def prepare_session_target(
 ) -> tuple[pathlib.Path, str] | None:
     """worktreeを必要とする新規セッションの実行先とpromptを返す。"""
     if resume_pending:
+        if not local_path.is_dir() or not _git_output(["rev-parse", "--show-toplevel"], cwd=local_path):
+            _warn_worktree_preparation_failure(
+                "再開先のworktreeを確認できない", local_path, next_action=_worktree_status_next_action(local_path)
+            )
+            return None
         return local_path, prompt
     if worktree_name is None and target_repo_id != DOTFILES_REPO_ID:
         try:
@@ -401,4 +405,4 @@ def prepare_session_target(
     prepared = _sync_worktree_with_upstream(local_path, effective_name)
     if prepared is None:
         return None
-    return prepared, _pl_session.build_process_loop_prompt()
+    return prepared, prompt

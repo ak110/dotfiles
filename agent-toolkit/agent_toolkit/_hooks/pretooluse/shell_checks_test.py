@@ -13,7 +13,7 @@ import sys
 
 import pytest
 
-from agent_toolkit._hooks import plugin_resources
+from agent_toolkit._hooks import plugin_resources, work_contract
 from agent_toolkit._hooks.pretooluse import shell_checks
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
@@ -24,6 +24,14 @@ from agent_toolkit._testing.pretooluse_support import (
     _run_posttooluse,
     _write_session_state,
 )
+
+
+@pytest.fixture(autouse=True)
+def _existing_work_contract(tmp_path, monkeypatch):
+    """シェル固有の無通知契約を、作業契約を作成済みの状態で検証する。"""
+    path = tmp_path / "work-contract.md"
+    path.write_text("目的: シェル操作の検証\n", encoding="utf-8")
+    monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
 
 
 def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:

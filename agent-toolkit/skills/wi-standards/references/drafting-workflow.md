@@ -9,7 +9,32 @@ WIの作成主体には、専念型メイン（WI作成専用セッションの�
 
 名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: drafting-workflow-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md#「起動方法」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「起動方法」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「対象集合の仕分け」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「対象集合の仕分け」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「方針と判断の記録との比較」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「ユーザー専用の記入欄と是正要求」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「ユーザー専用の記入欄と是正要求」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「採否と実現方式の確定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「採否と実現方式の確定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「外部の既存挙動の再現」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「外部の既存挙動の再現」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」`、`../../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」`、`section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「重複判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「投入前の読み直し」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「投入前の読み直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
+| 保存する本文の共通品質を判定する前 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「調査結果と判断根拠の記述」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「調査結果と判断根拠の記述」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
 
 ## 直接起草と独立した検収の選択
 
@@ -60,6 +85,9 @@ atk run-script session-review-evidence -- --user-events-file <元の保存ファ
 `投入条件`が`無条件`ではない要求では、その条件を観測可能な判定基準へと具体化し、投入先を読み取り専用で調査する。条件が不成立の場合はWIを投入せず、`condition_not_met`および調査対象と結果を`条件判定`として返す。判定が不可能な場合や投入先の現状を確認できない場合は、「続行できない理由」を返す。
 
 ### 前提と観測の確認
+
+現行の規範・実装と必要な変更履歴で欠陥と修正方針を判断できる場合は、セッション記録の照会を追加しない。
+以下の`確定済みの観測`の記録位置の照会は、過去の実行結果や認可・解釈の確定に記録が必要な場合に適用する。
 
 処理実行時点での対象集合の判定を求める要求は、`drafting-completion.md`「対象集合の仕分け」に従う。
 投入前に完了すべき調査とは、分類軸、到達手段、判定時点、完成条件を確定させることであり、後続の処理側へ委ねた個別の採否判断は実際の処理実行時点で行う。

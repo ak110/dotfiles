@@ -98,10 +98,10 @@
     <section class="entry-pane card" aria-labelledby="entry-heading">
       <div class="pane-heading">
         <h2 id="entry-heading">一覧</h2>
+        <button id="copy-all-button" class="button-secondary" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
         <div class="entry-heading-meta">
           <span id="entry-count" class="secondary-text">0件（未回答UWI 0件）</span>
           <span id="entry-period" class="secondary-text">直近2週間に作成</span>
-          <button id="copy-all-button" class="button-secondary" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
         </div>
       </div>
       <div id="copy-all-status" class="secondary-text" role="status" hidden></div>
@@ -192,6 +192,7 @@
           <button id="return-to-inbox-button" class="button-secondary" type="button" hidden>受信へ戻す</button>
         </div>
         <div class="detail-footer-right">
+          <button id="clear-cooldown-button" class="button-secondary" type="button" hidden>冷却解除</button>
           <button id="important-button" class="button-secondary" type="button" hidden>重要設定</button>
           <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
           <button id="user-comment-button" class="button-primary" type="button" hidden>ユーザーコメント</button>

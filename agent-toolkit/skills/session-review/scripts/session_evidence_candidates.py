@@ -57,6 +57,9 @@ from agent_toolkit._common.shell_quoting import QuotingScanner as _QuotingScanne
 from agent_toolkit._common.shell_segments import extract_execution_segments as _extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
 
+# 過去の単一対象と現在の登録全体の起動を、後続の人間の介入を探すための初期要求として扱う。
+_PROCESS_WI_GOAL_BODIES = (_PROCESS_WI_GOAL_BODY, "agent-toolkit:process-wi-all-reposを完遂する")
+
 _PERMISSION_DENIAL_MARKER = "denied by the Claude Code auto mode classifier"
 """auto mode classifierの拒否本文に現れる定型句。実行環境が返す本文をそのまま用いる。"""
 
@@ -902,7 +905,7 @@ def _initial_request_locator(timeline: list[dict[str, Any]], *, main_record_id: 
             continue
         if not isinstance(text, str):
             continue
-        if _PROCESS_WI_GOAL_BODY in text:
+        if any(body in text for body in _PROCESS_WI_GOAL_BODIES):
             return (main_record_id, line)
         if _user_candidate_exclusion(event, main_record_id, line, None, main_record_id=main_record_id) is None:
             return (main_record_id, line)

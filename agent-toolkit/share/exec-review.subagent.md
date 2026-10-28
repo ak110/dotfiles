@@ -47,29 +47,37 @@ continuations:
 
 ## 名指し参照の読込方法
 
-<!-- read-table-source: exec-review-reading-references.md -->
+名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文でこの資料の基準を参照・取得する時 | `workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
+| 本文でこの資料の基準を参照・取得する時 | `exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/secret-files/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/secret-files/SKILL.md` |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
+| 本文でこの資料の基準を参照・取得する時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
+| 本文でこの資料の基準を参照・取得する時 | `recurrence-self-check-items.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check-items.md` |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
+| 再発防止セルフチェック担当の返却を受け取り、結果を観点へ対応付ける時 | `recurrence-self-check.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/recurrence-self-check.subagent.md#「出力」` |
 
 ## 読込表
 
-<!-- read-table-source: exec-review.subagent-delivery-1.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| 初回レビューに入る前 | `agent-toolkit:review-standards`の`references/reviewer.md`の「初回レビュー」 |
-| 再レビュー・引き継ぎ再レビューに入る前 | `agent-toolkit:review-standards`の`references/reviewer.md`の「再レビューの場合」 |
-| 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` |
-| 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 |
-| 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` |
-| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md` |
-| `計画`を受領し、条項を生成する前 | `agent-toolkit:plan-mode`の`references/plan-file-standards.md` |
-| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:plan-mode`の`references/plan-restoration-contracts.md` |
-| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` |
-| AWIの形式を判断する前 | `agent-toolkit:wi-standards`の`references/awi-body.md`冒頭 |
-| 条件表を検収する前 | `agent-toolkit:review-standards`の`references/exec-review-recording.md`「記録する行と要求単位」 |
-| 指摘を登録するか完成条件証拠を書く直前 | `agent-toolkit:review-standards`の[references/exec-review-recording.md](../skills/review-standards/references/exec-review-recording.md) |
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
+| AWIの形式を判断する前 | `agent-toolkit:wi-standards`の`references/awi-body.md`冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` | |
+| 条件表を検収する前 | `agent-toolkit:review-standards`の`references/exec-review-recording.md`「記録する行と要求単位」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「記録する行と要求単位」` | |
+| 初回レビューに入る前 | `agent-toolkit:review-standards`の`references/reviewer.md`の「初回レビュー」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「初回レビュー」` | |
+| 再レビュー・引き継ぎ再レビューに入る前 | `agent-toolkit:review-standards`の`references/reviewer.md`の「再レビューの場合」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「再レビューの場合」` | |
+| 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` | |
+| 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
+| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md` | |
+| `計画`を受領し、条項を生成する前 | `agent-toolkit:plan-mode`の`references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md` | |
+| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:plan-mode`の`references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md` | |
+| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
+| 指摘を登録するか完成条件証拠を書く直前 | `agent-toolkit:review-standards`の[references/exec-review-recording.md](../skills/review-standards/references/exec-review-recording.md) | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md`、`read:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md` | |
 | 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md`の「適用契約」「基本方針」「指摘内容」「実行レビューの判定」「完了報告」 | 起動時 | `role:exec-review` | |
 | 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` | |
 
@@ -188,7 +196,7 @@ Git履歴が書き換えられた後の開始時点には、書き換え後の�
 - 公開工程で判定する条件は`判定工程: 公開工程`、並行して実施中の画面レビューで判定する条件は`判定工程: ユーザビリティレビュー`かつ`進行状態: 並行中`
 
 この記録によって許容された未達成事項は、管理表への登録や別台帳への転記をしない。記録が存在することだけでなく、判断の妥当性が十分に確認されているかを確かめる。
-返却情報の分類は、残っている処理の担当主体と、不足している判断・入力・権限の内容に基づいて決定する。
+返却可否と不足の分類は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従い、残っている処理の担当主体と、不足している判断・入力・権限の内容に基づいて決定する。
 判定行の記入、検証の実行、読者別探索の起動・リカバリ・受領、申告内容の補正、新しいHEADでの全条件の再判定など、本担当の権限範囲で完結できる処理は、すべて返却前に完了させる。
 委譲元による最終判断や認可、取得不可能な入力、権限や外部状態の不足など、本担当の作業範囲では解消できない問題が残っている場合に限り、その不足内容と再開すべき位置を「続行できない理由」に記載して返す。
 

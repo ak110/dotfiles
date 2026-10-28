@@ -1,4 +1,4 @@
-"""task委譲の続行不能返却を公開前に検査する。"""
+"""exploreの最終行とtaskの続行不能返却を公開前に検査する。"""
 
 from __future__ import annotations
 
@@ -30,9 +30,17 @@ _VALID_CLASSIFICATIONS = frozenset(
 
 
 def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str | None:
-    """taskの未分類な続行不能返却だけを、同じsessionで回復すべき理由として返す。"""
+    """exploreの最終行欠落とtaskの未分類な続行不能返却の回復理由を返す。"""
     if result.get("status") != "completed":
         return None
+    if session.launch_kind == "explore":
+        message = result.get("agent_message")
+        lines = message.rstrip().splitlines() if isinstance(message, str) else []
+        if not lines or not (
+            lines[-1] == "状態: completed"
+            or (lines[-1].startswith(_REASON_PREFIX) and lines[-1].removeprefix(_REASON_PREFIX).strip())
+        ):
+            return "exploreの返却が完了を示しません。最終行に状態: completedまたは値のある続行できない理由:が必要です"
     document = task_documents.launched_task_document(session.prompt)
     if document is None or not task_documents.is_agent_toolkit_task_document(document):
         return None
@@ -57,7 +65,7 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
 
 
 def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
-    """違反したtask結果を1回だけ保留し、監視側の同一session継続へ渡す。"""
+    """契約に違反した結果を1回だけ保留し、監視側の同一session継続へ渡す。"""
     reason = invalid_result_reason(session, result)
     if reason is None:
         return False
@@ -67,6 +75,9 @@ def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
         details["resultContract"] = reason
         details["nextAction"] = RECOVERY_NEXT_ACTION
         result["error"] = details
+        if session.launch_kind == "explore":
+            result["status"] = "failed"
+            details["nextAction"] = "未読範囲を小さく分けて渡し直す"
         return False
     session.pending_result = result
     session.awaiting_auto_resume = True

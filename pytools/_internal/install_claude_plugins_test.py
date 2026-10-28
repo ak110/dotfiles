@@ -32,6 +32,25 @@ _REAL_VERIFY_TARGET_PLUGINS = _install_claude_plugins._verify_target_plugins
 _REAL_SCAN = _claude_plugin_references.scan
 
 
+def test_plugin_mutations_use_management_commands_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """更新の管理操作は会話開始やモデルへの問い合わせを含まない引数で起動する。"""
+    calls: list[list[str]] = []
+
+    def run(arguments: list[str], **_kwargs: object) -> _FakeResult:
+        calls.append(arguments)
+        return _FakeResult()
+
+    monkeypatch.setattr(_claude_common, "run_claude", run)
+    assert _install_claude_plugins._install_plugin("sample")
+    assert _install_claude_plugins._update_plugin("sample")
+    assert _install_claude_plugins._disable_plugin("sample@example")
+    assert calls == [
+        ["plugin", "install", "sample@ak110-dotfiles", "--scope=user", "-y"],
+        ["plugin", "update", "sample@ak110-dotfiles", "--scope=user"],
+        ["plugin", "disable", "sample@example", "--scope=user"],
+    ]
+
+
 @pytest.fixture(name="fake_which_present")
 def _fake_which_present(monkeypatch: pytest.MonkeyPatch) -> None:
     """claude と uv の両方が存在する状態に見せかける。"""

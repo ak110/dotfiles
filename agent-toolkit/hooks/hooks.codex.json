@@ -24,7 +24,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show|mcp__pyfltr__run",
+        "matcher": "Bash|Edit|Write|spawn_agent|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show|mcp__pyfltr__run",
         "hooks": [
           {
             "type": "command",
@@ -50,17 +50,6 @@
           {
             "type": "command",
             "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py stop || exit 1"
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py permissionrequest_codex || exit 1"
           }
         ]
       }

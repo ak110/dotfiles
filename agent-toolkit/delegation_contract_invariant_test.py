@@ -1054,22 +1054,6 @@ def test_parent_launch_section_without_role_is_reported(tmp_path: pathlib.Path) 
 
 # 時点を限らない定型の読込条件。起動契約がこの条件で委譲先の手順書を挙げると、委譲元は起動前にそれを読む。
 _GENERIC_READ_CONDITION = "本文がこの資料の基準を使う場面で、資料を選択して取得する時"
-_READ_TABLE_SOURCE_PATTERN = re.compile(r"<!-- read-table-source: (\S+) -->")
-
-
-def _read_table_files(source: pathlib.Path) -> list[pathlib.Path]:
-    """文書と、その`read-table-source`で接続した読込表の資料を返す。"""
-    files: list[pathlib.Path] = []
-    pending = [source.resolve()]
-    while pending:
-        path = pending.pop(0)
-        if path in files or not path.is_file():
-            continue
-        files.append(path)
-        pending.extend(
-            (path.parent / name).resolve() for name in _READ_TABLE_SOURCE_PATTERN.findall(path.read_text(encoding="utf-8"))
-        )
-    return files
 
 
 def _launch_read_errors(share: pathlib.Path) -> list[str]:
@@ -1085,16 +1069,15 @@ def _launch_read_errors(share: pathlib.Path) -> list[str]:
         if not valid_structure:
             continue
         source = contract if isinstance(contract, pathlib.Path) else contract.source
-        for path in _read_table_files(source):
-            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                cells = [cell.strip() for cell in line.strip().strip("|").split("|")] if line.startswith("|") else []
-                if len(cells) < 2 or cells[0] != _GENERIC_READ_CONDITION:
-                    continue
-                errors.extend(
-                    f"起動する委譲先の手順書を定型の条件で読ませる: {path.name}:{number} -> {target}"
-                    for target in targets
-                    if re.search(rf"(?<![A-Za-z0-9_.-]){re.escape(target)}(?=[`#])", cells[1])
-                )
+        for number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")] if line.startswith("|") else []
+            if len(cells) < 2 or cells[0] != _GENERIC_READ_CONDITION:
+                continue
+            errors.extend(
+                f"起動する委譲先の手順書を定型の条件で読ませる: {source.name}:{number} -> {target}"
+                for target in targets
+                if re.search(rf"(?<![A-Za-z0-9_.-]){re.escape(target)}(?=[`#])", cells[1])
+            )
     return list(dict.fromkeys(errors))
 
 

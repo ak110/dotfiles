@@ -11,6 +11,7 @@ IMPROVEMENT_MARKER = "気付いた改善点:"
 """メインと委譲先が改善機会を報告する行の先頭。長い本文の短縮でも実際の行を保持する。"""
 
 _RUNTIME_INSERTED_PREFIXES = (
+    "You are Codex, an agent based on GPT-6.",
     "<system-reminder>",
     "[COMPACTION RECOVERY]",
     "This session is being continued",

@@ -416,6 +416,23 @@ def written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
     return [str(pathlib.Path(operation.path).resolve()) for operation in operations or [] if operation.path]
 
 
+def is_existing_file_edit(tool_name: str, tool_input: dict, cwd: str) -> bool:
+    """新規の全文作成と、現行本文を前提とする編集・上書きを区別する。"""
+    operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
+    if operations is not None and any(not operation.is_whole_write for operation in operations):
+        return True
+    for path in written_paths(tool_name, tool_input, cwd):
+        try:
+            pathlib.Path(path).stat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            # 調査不能を新規作成とみなして、既存本文の確認を免除しない。
+            return True
+        return True
+    return False
+
+
 def _is_agent_document_writing(tool_name: str, tool_input: dict) -> bool:
     """編集ツールとBashの書込先がエージェント向け文書なら真を返す。"""
     if tool_name == "Bash":
@@ -489,7 +506,7 @@ def _bash_body_writing(command: str) -> bool:
 
 def _is_delegation_operation(tool_name: str, _tool_input: dict) -> bool:
     """既存の委譲ツール集合から、起動・追送・観測・巻取りの操作を判定する。"""
-    return tool_name in AGENT_TOOL_NAMES | AGENTS_SERVER_HOOK_TOOL_NAMES
+    return tool_name in AGENT_TOOL_NAMES | AGENTS_SERVER_HOOK_TOOL_NAMES | {"spawn_agent"}
 
 
 _VERIFICATION_MCP_TOOL_NAMES = frozenset({"mcp__plugin_agent-toolkit_pyfltr__run", "mcp__pyfltr__run"})
@@ -679,7 +696,7 @@ def _acquisition_steps(subject: str, entry: OperationSkill, missing: list[str]) 
     return steps
 
 
-def operation_matches(operation: str, tool_name: str, tool_input: dict) -> bool | None:
+def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str = "") -> bool | None:
     """共通語彙の操作を判定し、担当外の語彙はNoneを返す。"""
     predicates = {
         "delegation": _is_delegation_operation,
@@ -687,6 +704,10 @@ def operation_matches(operation: str, tool_name: str, tool_input: dict) -> bool 
         "root-cause-writing": _is_root_cause_writing,
         "managed-temp-create": _is_temp_directory_create,
         "body-writing": _is_body_writing,
+        "existing-file-edit": lambda name, data: is_existing_file_edit(name, data, cwd),
+        "claude-existing-file-edit": lambda name, data: (
+            name in {"Edit", "MultiEdit", "Write"} and is_existing_file_edit(name, data, cwd)
+        ),
         "verification": _is_verification_operation,
         "agent-document-writing": _is_agent_document_writing,
         "confirmation": lambda name, _input: name in {"AskUserQuestion", "request_user_input", "request_user_input_async"},

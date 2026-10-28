@@ -3,6 +3,7 @@
 import argparse
 import dataclasses
 import json
+import os
 import pathlib
 import re
 from typing import Any
@@ -20,6 +21,60 @@ from agent_toolkit._testing import git_repository
 WI_A = "20261007-040310-002.md"
 WI_B = "20261007-040310-003.md"
 WI_S = "20261007-040310-004.md"
+
+
+@pytest.mark.parametrize("location", ["working", "legacy", "saved", "handoff"])
+def test_public_discovery_visits_only_record_locations(
+    rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], location: str
+) -> None:
+    """公開操作で未指定の実記録を検出し、成果物内の同名記録は探索しない。"""
+    root = rebased.repo.parent
+    config = root / "bounded-config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    session = managed_temp.create_managed_temp("session")
+    working = config / "plans"
+    saved = root / "private-notes/plans"
+    places = {
+        "working": working,
+        "legacy": working / "2026/10",
+        "saved": saved / "2026/10",
+        "handoff": session,
+    }
+    directory = places[location]
+    directory.mkdir(parents=True, exist_ok=True)
+    omitted = _handoff(directory / "omitted.md") if location == "handoff" else _plan(directory / "07-omitted.md", [WI_A])
+    commit_mapping.append_event(omitted, {"commit": rebased.old["a"], "awi": [WI_A]})
+    # 同じ有効OIDを持つ記録を配置し、単に不正記録として除外する実装との差を観測する。
+    ignored = []
+    for area in (session / "artifacts", session / "agents-server-plugin-root", working / ".venv", saved / "artifacts"):
+        area.mkdir(parents=True, exist_ok=True)
+        record = _handoff(area / "hidden.md")
+        commit_mapping.append_event(record, {"commit": rebased.old["a"], "awi": [WI_A]})
+        ignored.append(record)
+    scan = os.scandir
+    forbidden = {record.parent for record in ignored}
+
+    def bounded_scan(path: Any = ".", **kwargs: Any) -> Any:
+        if isinstance(path, (str, os.PathLike)) and pathlib.Path(path) in forbidden:
+            pytest.fail(f"記録所在外への走査: {path}")
+        return scan(path, **kwargs)
+
+    monkeypatch.setattr(os, "scandir", bounded_scan)
+    before = _snapshot([rebased.plan, rebased.handoff, omitted, *ignored])
+    argv = rebased.argv(rebased.range_map("a", "u", "b"))
+    with pytest.raises(SystemExit) as ended:
+        atk.main(["run-script", "plan-rewrite", "--", *argv])
+    assert ended.value.code == 1
+    error = capsys.readouterr().err
+    assert str(omitted) in error
+    assert all(str(record) not in error for record in ignored)
+    assert _snapshot([rebased.plan, rebased.handoff, omitted, *ignored]) == before
+    # 実記録を明示すれば探索による拒否が解除され、成果物内の候補へ入力追加を要求しない。
+    flag = "--handoff" if location == "handoff" else "--plan"
+    if location != "saved":
+        with pytest.raises(SystemExit) as resumed:
+            atk.main(["run-script", "plan-rewrite", "--", *argv, flag, str(omitted)])
+        assert resumed.value.code == 0
 
 
 @pytest.mark.parametrize("missing", [False, True])

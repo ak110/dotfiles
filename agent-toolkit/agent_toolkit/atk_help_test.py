@@ -160,6 +160,16 @@ def test_command_without_subcommand_prints_help(
     assert captured.err == ""
 
 
+def test_wi_grep_rejects_extended_regex_option_with_recovery(capsys: pytest.CaptureFixture[str]) -> None:
+    """不要な-Eの拒否を維持し、同じ検索を実行する方法を示す。"""
+    with pytest.raises(SystemExit) as rejected:
+        atk.main(["wi", "grep", "-E", "alpha|beta"])
+    assert rejected.value.code == 2
+    diagnostic = capsys.readouterr().err
+    assert "-Eを外して再実行する" in diagnostic
+    assert "固定文字列を検索する場合は-Fを指定する" in diagnostic
+
+
 def test_every_argument_has_help() -> None:
     for command, parser, _summary in _walk_commands():
         for action in parser._actions:  # pylint: disable=protected-access
@@ -523,3 +533,12 @@ def test_check_alerts_help_exposes_finite_operation_without_saving(
     assert "--forge {auto,github,gitlab}" in output.out
     assert output.err == ""
     assert set(tmp_path.rglob("*")) == before
+
+
+def test_run_skill_explains_batch_and_work_directory(capsys) -> None:
+    """既存run-skillからbatchと報告先・cwdの分離を発見できる。"""
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["run-skill", "--help"])
+    output = capsys.readouterr().out
+    assert "--work-dir" in output and "session-review-batch" in output
+    assert "auto/manual" in output and "報告先" in output

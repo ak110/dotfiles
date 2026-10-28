@@ -31,18 +31,21 @@ continuations:
 
 名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: add-wi.subagent-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion.md#「重複判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」` |
 
 ## 読込表
 
-<!-- read-table-source: add-wi.subagent-delivery-2.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表で同一の時点に対応する行。writing-standardsについては、実施する調査や執筆の条件に該当する行 |
-| AWIの本文を起草・判定する前 | `agent-toolkit:wi-standards`の読込表において、AWIの種別・引用・外部再現の各条件に対応付けられている`references/awi-body.md`の節 |
-| 受領した要求にUWIが含まれる場合 | `agent-toolkit:wi-standards`の`references/uwi-format.md` |
-| 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合 | `agent-toolkit:bugfix`の読込表のうち、原因分析の条件を満たす行の資料 |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表で同一の時点に対応する行。writing-standardsについては、実施する調査や執筆の条件に該当する行 | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
+| AWIの本文を起草・判定する前 | `agent-toolkit:wi-standards`の読込表において、AWIの種別・引用・外部再現の各条件に対応付けられている`references/awi-body.md`の節 | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
+| 受領した要求にUWIが含まれる場合 | `agent-toolkit:wi-standards`の`references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
+| 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合 | `agent-toolkit:bugfix`の読込表のうち、原因分析の条件を満たす行の資料 | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` | |
 
 ## 入力
 
@@ -55,6 +58,7 @@ continuations:
   - `確定した要件`: ユーザーが明示した要件と、確認への回答などで合意に至った要件。要件ごとに由来（ユーザー自身の指定か、エージェント案の採択か）と根拠となる発話・回答の出所を保持し、`agent-toolkit:wi-standards`の`references/drafting-workflow.md`「確定した要件と委譲元の判断」に従って取り扱う
   - `委譲元の判断`: 委譲元が技術的判断として決定した前提とその理由。観測された問題への対策の方向性は、直接的原因を確認した観測結果が`確定済みの観測`に対応付けられている場合に限り、候補として受け入れる。原因が未確認の要求については、観測された事象、期待される契約、および確定すべき問いに基づいて独自に調査する。この判断は、調査によって得られた事実に基づいて覆してよい
   - `他の要求単位の割当`: 渡された逐語本文のうち、その要求では扱わない単位ごとの割当先（投入済みAWIのファイル名とH1見出し、「」付きの説明、または`分割元の依頼全体`のいずれか）を指定する
+  - `冷却期間`: `登録時刻から24時間`を受領したbatch振り返り由来AWIは、保存直前の登録時計から24時間後を算出し、`atk wi add`の`--cooldown-until`へ渡す。値は準備開始時点に固定しない。省略時は冷却期間の追加指定なしとして扱う。既存項目の再利用では新規登録時計を作らない
   - `source`: 委譲元が決定した値であり、そのまま原稿に付与する
   - `確定済みの観測`: 観測ごとの内容、手段、日時、および取得済みの記録位置または保存された出力のパス。位置が未取得の場合は、入力の特徴と日時を手がかりに直接の委譲元の記録を照会する。transcriptの絶対パスの受け渡しは不要である
   - 発話: 対象となる逐語本文を受け取り、認可や解釈の判断に必要な場合は出所を確認する

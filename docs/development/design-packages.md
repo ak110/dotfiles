@@ -30,7 +30,7 @@ Gitリポジトリの作成とGitコマンドの実行は`_testing/git_repositor
 直下のスクリプトを含む全てのモジュールをサブパッケージへ移す案は、これらの外部契約を同時に変えるため採らない。
 
 直下に置く公開ファイルは接頭辞`_`を付けずに命名する。
-Codex側の許可判定がパスで解決していた`_managed_temp.py`は、2026年10月25日に許可対象を`rm -rf -- <1パス>`へ替えて撤去した（ユーザー指示）。
+旧`_managed_temp.py`は、標準コマンドで一時領域を扱う2026年10月25日のユーザー指示に従って撤去した。
 
 サブパッケージ内のimportには相対importを使わず絶対importを使う。
 `scripts/check_script_imports.py`は`sys.path.insert`の静的評価と絶対importの解決によりPEP 723スクリプトのimport到達性を確かめる。

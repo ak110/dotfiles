@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import pathlib
 import re
 
+from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan.structure.constants import (
     PLAN_ACTION_DECISIONS,
     PLAN_ACTION_NON_ADOPTED_DECISIONS,
@@ -257,3 +259,31 @@ def _check_action_relations(table: MarkdownTable) -> list[str]:
         if row[column] not in allowed:
             errors.append(f"`## 実施内容`の`ユーザー指示との関係`は{list(allowed)}のいずれかにする: {row[column]}")
     return errors
+
+
+def _check_transfer_root(
+    value: str,
+    *,
+    origin_skips: list[str] | None,
+    private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
+) -> list[str]:
+    """移管先の登録済みWIの実在を確かめ、登録前の移管をエラーにする。"""
+    names = re.findall(r"(?<![0-9A-Za-z_-])[0-9]{8}-[0-9]{6}-[0-9]{3,}\.md(?![0-9A-Za-z_.-])", value)
+    if not names:
+        return ["`## 実施内容`の`移管`行の`根拠`にWIファイル名が無い。移管先を登録し、そのWIファイル名を記載する"]
+    root = _plan_file.private_notes_root(private_notes, home=home)
+    try:
+        if not root.is_dir():
+            if origin_skips is not None:
+                origin_skips.append(f"`## 実施内容`の移管先をWI本文と比べられなかった。private-notesが実在しない: {root}")
+            return []
+        return [
+            f"`## 実施内容`の移管先WIが実在しない: {name}。移管先を登録し、登録済みWIファイル名へ直す"
+            for name in dict.fromkeys(names)
+            if _plan_file.find_wi_source(name, root) is None
+        ]
+    except OSError as error:
+        if origin_skips is not None:
+            origin_skips.append(f"`## 実施内容`の移管先をWI本文と比べられなかった。WI本文を取得できない: {error}")
+        return []

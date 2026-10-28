@@ -14,6 +14,7 @@ import shlex
 
 import pytest
 
+from agent_toolkit._hooks import work_contract
 from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 
 _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
@@ -23,6 +24,15 @@ _WARNING = "操作前に全文読む資料が未取得"
 _QUESTION_INPUT = {
     "questions": [{"question": "どちらにしますか？", "header": "方針", "options": [{"label": "A"}, {"label": "B"}]}]
 }
+
+
+@pytest.fixture(autouse=True)
+def _local_plugin_root(tmp_path, monkeypatch):
+    """読取を記録する資料と警告が指す資料を、この作業ツリーへそろえる。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
+    path = tmp_path / "work-contract.md"
+    path.write_text("目的: 確認操作固有の通知の検証\n", encoding="utf-8")
+    monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
 
 
 def _read(path: pathlib.Path) -> dict:

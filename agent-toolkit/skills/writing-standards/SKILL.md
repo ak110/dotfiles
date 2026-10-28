@@ -20,6 +20,14 @@ description: >
 同一バージョンで取得済みの本文がある場合は再利用し、以降の読込表ではtoolkitに残る運用条件を補う。
 toolkitの公開スキルを利用する呼び出しは、本スキルを通じて品質基準と運用条件の双方を参照できる。
 
+## 名指し参照の読込方法
+
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
+
 ## 運用の読込表
 
 以下の時点または条件に該当する場合は、操作に着手する前に該当行の資料を全文読む。

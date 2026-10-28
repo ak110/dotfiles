@@ -7,7 +7,43 @@ AWIのみに適用される規定にはその旨を明記している。「重�
 
 名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: drafting-completion-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 観測事象を契機とする要求の採用を確定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」「対策の選定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「自作機構の兆候と自問」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「自作機構の兆候と自問」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「設計案の予備選別」「問題と手段の比例性」「案の採否と実施順の判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」「問題と手段の比例性」「案の採否と実施順の判定」` |
+| 一連の処理全体の成立を判定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「対策の影響範囲」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「対策の影響範囲」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「配置規約と導入目的の調査」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「配置規約と導入目的の調査」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「要件・外部仕様」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「要件・外部仕様」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「確定した要件と委譲元の判断」「未確定事項」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」「未確定事項」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「未確定事項」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「未確定事項」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「原因分析・調査結果と判断根拠」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「原因分析・調査結果と判断根拠」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
+| 類似見直しの限定探索と是正範囲を判定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「要求固有性と記載量」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「要求固有性と記載量」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「確定した要件と委譲元の判断」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「節の構成と分担」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「節の構成と分担」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/analysis-records.md#「原因分析の記録先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策の必須性」「類似見直しと再発防止の完了」「再発防止としてのテスト」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策の必須性」「類似見直しと再発防止の完了」「再発防止としてのテスト」` |
+| 原因分析の記録が推定だけに依拠していないことを判定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md#「命名の方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/defined-names.md#「命名の方針」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「逐語引用の対応付け」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「逐語引用の対応付け」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../search/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/search/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「ユーザー専用の記入欄と是正要求」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「ユーザー専用の記入欄と是正要求」` |
 
 ## 採否と実現方式の確定
 
@@ -86,6 +122,16 @@ bugfixスキルの重大度判定に基づいて終了した類似見直しの�
 
 ## 投入前の読み直し
 
+まず`awi-body.md`「完成条件」に従い、起草者が加えた条件を含めて元の目的に対する必要性と由来を判定する。
+不要なエージェント起草条件は除き、有効な条件について以下の網羅性・観測可能性を確認する。
+ユーザーの明示要求や必要な品質を変える場合は既存の確認手順へ渡す。
+
+不具合を起点とする通常AWIでは、原因分析の表の掲載と確定を`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」の確認完了基準で判定する。
+本文の対象範囲（旧形式の`## 適用範囲`を含む）と証拠にある探索範囲の各限定（期間、場所、対象の種類、リポジトリ）を確認し、根本原因の成立条件から導けるか判定する。
+限定の根拠が成立条件か`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」の履歴の期間規定から導けない原稿は投入しない。
+履歴の期間規定によらない探索が起点の現存対象を含まない場合は、成立条件と限定が合わない兆候として扱う。
+重大と判定した原稿では、同書「類似見直し」の「起点の問題を伏せた走査」の記録も証拠で確認する。
+
 類似見直しの限定探索であっても、`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」が定める是正範囲全体を確実に確認する。
 後述するユーザー明示集合の保護対象には、同節に示される既知の欠陥や、追加・強化された規定の既存対象も含める。
 ユーザーが確定した判断を複数の通常AWIへ展開する場合は、判断ごとに各本文の反映箇所または非該当理由を対応付け、判断の一部が抜け落ちている集合は投入しない。
@@ -100,7 +146,7 @@ bugfixスキルの重大度判定に基づいて終了した類似見直しの�
 - 採用案が「実現方式の成立」の各項目を満たし、確認した結論と再取得先が本文の適切な箇所および成立性の証拠に記録されていること
   - 観測事象を契機とする要求では、「採否と実現方式の確定」に従い、対策が直接的原因と主要な害に確実に作用することも確認する
   - 採否や適用範囲を左右する技術的主張は、`agent-basics:writing-standards`の`references/investigation.md`「根拠と主張の一致」に従い、入力の生成・変換手順と、実際の観測から保証できる範囲とを突き合わせて判定する
-- 観測された不具合を起点としbugfixを起動して起草する通常AWIでは、`## 原因分析`を`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」に沿った構成で記述する。同スキルの`references/root-cause-analysis.md`（「QとC・Dの区別」「類似見直し」「処置の階層」「再発防止策の必須性」「類似見直しと再発防止の完了」「再発防止としてのテスト」）に照らし、以下の条件を満たしていること。Qualityへの影響と重大度の判定に明確な根拠があること。調査母集団が根本原因から論理的に導かれ、探索の深さ、0件時の再検討、調査の終了が重大度ごとの基準を満たしていること。限定探索する場合は、範囲、限界、許容する残存リスクを明示し、ユーザーが指定した対象集合を確実に網羅していること。「再発防止策」と表記した処置には、作用対象となる根本原因の単位を併記し、その単位に直接作用する内容であること（テストであれば再発防止テストであること）。`直接的原因`行が根拠とする値ごとに、`原因分析の根拠`行に生成元との比較が示されていること。それらの値が`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」における推定の条件に該当しないこと。推測のみに基づく原因は確定とみなさず、調査を継続するか、あるいは「続行できない理由」として報告すること
+- 観測された不具合を起点としbugfixを起動して起草する通常AWIでは、`## 原因分析`を`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」に沿った構成で記述し、分析の確定を同資料の確認完了基準で判定する。同スキルの`references/root-cause-analysis.md`（「QとC・Dの区別」「類似見直し」「処置の階層」「再発防止策の必須性」「類似見直しと再発防止の完了」「再発防止としてのテスト」）に照らし、以下の条件を満たしていること。Qualityへの影響と重大度の判定に明確な根拠があること。調査母集団が根本原因から論理的に導かれ、探索の深さ、0件時の再検討、調査の終了が重大度ごとの基準を満たしていること。限定探索する場合は、範囲、限界、許容する残存リスクを明示し、ユーザーが指定した対象集合を確実に網羅していること。「再発防止策」と表記した処置には、作用対象となる根本原因の単位を併記し、その単位に直接作用する内容であること（テストであれば再発防止テストであること）。`直接的原因`行が根拠とする値ごとに、`原因分析の根拠`行に生成元との比較が示されていること。それらの値が`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」における推定の条件に該当しないこと。推測のみに基づく原因は確定とみなさず、調査を継続するか、あるいは「続行できない理由」として報告すること
 - 指示語の参照先が同一本文内に存在し、変更対象、根拠、対応内容、完成条件を本文単体から一意に特定できること
 - タイトルおよび本文で既存の要素（スキル、工程、担当、hook通知など）を指す名詞句について、定義元の実在性と、読者が本文からその定義に到達できることを確認したこと。会話やコミットメッセージなど参照した記録における呼称も確認対象とする。別文書の節名・用語・略号の表記法は`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」に従う。新しい名称の命名は`references/defined-names.md`「命名の方針」に従い、長い正式名称であってもタイトルで不当に省略しないこと。ユーザーが読む箇所はwi-standards冒頭の合否基準を満たすこと
 - 逐語引用と反映内容を原文と読み比べ、要求の脱落・追加・意味の変化と、ユーザーの回答とエージェントの説明の混同がないこと。分割した場合は要求内容と割当先が対応していること。`wi-quote-check`は複雑な取り込みに任意で使用できる

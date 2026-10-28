@@ -841,12 +841,15 @@ def check_plan_set(
     return errors, warnings
 
 
-def _origin_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
-    """由来をWI本文と比べられなかった場合に限り、原因ごとの解消手段を一度ずつ案内する。"""
+def _wi_comparison_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
+    """由来や移管先をWI本文と比べられなかった場合に、原因ごとの解消手段を一度ずつ案内する。"""
     skips = [
         message
         for kind, message in warnings
-        if kind == "advisory" and message.startswith("`## 実施内容`の由来をWI本文と比べられなかった。")
+        if kind == "advisory"
+        and message.startswith(
+            ("`## 実施内容`の由来をWI本文と比べられなかった。", "`## 実施内容`の移管先をWI本文と比べられなかった。")
+        )
     ]
     if not skips:
         return None
@@ -861,7 +864,7 @@ def _origin_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
     if any("WI本文を取得できない:" in message for message in skips):
         actions.append("表示された権限・文字コードのエラーの原因を解消して再実行する")
     actions.append(
-        "解消できない場合は、由来をWI本文と比べられなかったWIファイル名と原因を委譲元（メインから起動した場合はユーザー）へ報告する"
+        "解消できない場合は、WI本文との比較を省略した対象と原因を委譲元（メインから起動した場合はユーザー）へ報告する"
     )
     return "。".join(actions)
 
@@ -963,7 +966,7 @@ def main(argv: list[str] | None = None) -> int:
         print(error, file=sys.stderr)
     for warning in warnings:
         print(f"[warn] {warning}", file=sys.stderr)
-    if (next_action := _origin_skip_next_action(warning_details)) is not None:
+    if (next_action := _wi_comparison_skip_next_action(warning_details)) is not None:
         print(_next_action.next_action_line(next_action), file=sys.stderr)
     if errors:
         if all(

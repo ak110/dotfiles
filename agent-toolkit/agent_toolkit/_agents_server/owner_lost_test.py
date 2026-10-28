@@ -515,14 +515,12 @@ def test_process_loop_record_stays_running_while_claude_child_survives(
     )
     record = session_registry.registry_directory() / f"{identifier}.json"
     environment = {**os.environ, _pl_env.PROCESS_LOOP_SESSION_ID_ENV: identifier}
-    with (
-        process_loop_session.recording_orchestrator_child(identifier),
-        subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"], env=environment) as child,
-    ):
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"], env=environment) as child:
         try:
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline and not session_registry.resolve(identifier).executor_processes:
-                time.sleep(0.05)
+            identity = session_registry.ProcessIdentity.of(child.pid)
+            assert identity is not None
+            # runnerはPopenから受け取ったPIDをそのまま登録する。
+            process_loop_session._attach_orchestrator_child(identifier, identity)  # pylint: disable=protected-access
             assert [process.pid for process in session_registry.resolve(identifier).executor_processes] == [child.pid]
 
             # process-loopが強制終了した後を、記録の所有プロセスを終了済みの識別へ置き換えて表す。

@@ -1,29 +1,33 @@
 ---
 name: session-review
 description: >
-  最上位セッションのメインエージェント（atk wi process-loop all-reposのリポジトリ担当を含む）が、
-  ユーザーによる手動起動、agent-toolkit:completion-reportからの明示的な呼び出し、または
-  agent-toolkit:process-wiの公開工程からの明示的な呼び出しによって起動する。
+  ユーザーが現在のセッションの振り返りを手動で依頼したときに起動する。
+  非同期の複数セッション分析ではsession-review-batchが本スキルの分析基準を共用する。
+  通常の作業完了や公開工程から同期起動しない。
 ---
 
 # セッション振り返り
 
 過去に生じたユーザーからの介入、レビューの反復、手戻り、無駄な作業の再発を防ぐため、対象セッションで発生した問題を特定し、原因と対策を確定させた通常AWIを登録する。
-原因と対策の最終的な判断および統合は、元の実行記録を保持しているメインエージェントが同一セッション内で行う。客観的な事実の収集については、`agent-toolkit:bugfix`の`references/investigation-delegation.md`「事象単位の並列調査委譲」に定める条件に従って独立したサブエージェントへ委譲できる。その際、メインエージェントは取得済みの証拠を委譲先へ渡す。
+手動起動では、引数に書かれたユーザーが気になっている事項を追加の着眼点として扱う。
+その事項だけに対象を限定せず、現在のセッション全体を振り返り、本スキルの準備・分析・投入・結果報告の一連の手順を実施する。
+原因と対策の最終判断は振り返りを担当するメインが行い、取得済みの根拠と判断は再利用する。
+非同期の複数セッション分析は`agent-toolkit:session-review-batch`が対象集合を固定して行い、本スキルの工程2〜5と`references/analysis.md`を対象ごとに共用する。
+対象セッションのリポジトリ・参照文書とbatch全体の報告先を区別し、対象IDと候補IDを組にして保持する。
+客観的な事実の収集は、`agent-toolkit:bugfix`の`references/investigation-delegation.md`に沿って独立した担当へ分担できる。
 `atk run-script session-review-prepare`コマンドは、セッションに関わった全担当の発話やツール呼び出しの入力を時系列に並べ、各実行結果の成否、データ量、記録位置をまとめたセッション全体の流れ（会話の流れ）を出力する。同時に、あらかじめ除外対象と定められた結果を機械的に取り除いた問題候補ファイル（`candidates.md`）も作成する。候補ファイルだけに目を通すと、定義済みの観点に当てはまらない問題を見落とす恐れがある。そのため、まずは会話の流れの全体から問題を探し、`candidates.md`はその調査で拾いきれなかった事象を補うために活用する。
 
 全記録の抽出やAWIの登録には、元の記録や参照資料、作業キューにアクセスできるファイル操作権限とCLI環境が必要である。これらの機能が利用できない環境では、提示された会話ログの範囲内で問題候補と確認に必要な証拠を整理するにとどめ、セッション全体を対象とした正式な振り返りとは区別して扱う。全記録の検収および正式なAWI登録は、必要な機能を利用できるホスト環境において、最上位のメインエージェントが実施する。問題候補の記述内容については、[文章の品質基準](references/quality-standards.md)に適合しているかを確認する。
 
 ## 名指し参照の読込方法
 
-本文に記載された各参照資料の適用条件を確認し、指定された資料をあらかじめ読み込んでから、該当する基準に基づく具体的な判断へ進む。スキルの起動契機に指定されている資料は、起動時のプロンプトとともに届けられる。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../session-review-batch/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review-batch/SKILL.md` |
 | 本文の参照基準を適用する前 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/session-review/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/completion-report/SKILL.md#「工程」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/report-formats.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
@@ -31,7 +35,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/references/report-formats.md#「振り返り結果報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「振り返り結果報告のフォーマット」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
@@ -48,9 +52,11 @@ description: >
 
 ## 起動するエージェント
 
-本スキルは、最上位セッションのメインエージェントが自身のセッションを対象として起動する。ただし、`atk wi process-loop all-repos`のリポジトリ担当エージェントは例外とする。委譲元が常駐プロセスであるため、自身と配下のサブエージェントの記録を統括する最上位エージェントとして本スキルを起動する（詳細は`agent-toolkit:process-wi`の`references/all-repos-orchestration.md`「担当の役割」を参照）。
-他のエージェントからタスクを委譲されたエージェントは自ら起動せず、起動の判断を委譲元へ返す。これは、1つのエージェントが全記録を一括して抽出しないと、問題候補の重複や欠落が発生するためである。
-振り返りの最終報告を出力する前に終了し、その後再開されなかったセッションは、終了の経緯（ユーザーによる手動中断や利用制限による打ち切りなど）にかかわらず、ユーザーが意図して終了させたものとみなす。そうしたセッションは後続セッションの振り返り対象には含めず、記録が振り返られていないこと自体も問題視しない。一方、作業が続行されたセッション（同一会話の再開や自動継続、または別のセッションやホスト上でユーザーが明示的に続きを指示した場合）では、未完了の振り返りを残工程として引き継いで実施する（`agent-toolkit:completion-report`の`SKILL.md`「工程」を参照）。
+手動の本スキルは、現在のセッションを統括するメインが起動する。
+通常委譲先は独自に重複した振り返りを起動せず、観測した事象と調査結果を委譲元へ返す。
+各セッションの終了時には本スキルを呼ばず、SessionStartで登録された待ちを`agent-toolkit:session-review-batch`が非活動時にまとめて処理する。
+中断・利用上限・未再開の記録も、最終報告の有無にかかわらず待ち集合と実際の処理範囲で扱う。
+作業完了報告・公開・ホスト停止は元作業のメインが担い、非同期振り返りとは独立して進める。
 再発防止策となるAWIの本文起草とキューへの登録は、`agent-toolkit:wi-standards`「投入と取得」に従い、WI投入担当へ委譲して行う。
 振り返りのメインは原因分析と類似見直しを実施し、具体策を選定して結果をWI投入担当へ渡す。投入担当と実行担当は確定済みの調査を繰り返さず、対象の変化や新たな証拠がある場合に必要な範囲を再確認する。
 
@@ -71,7 +77,7 @@ description: >
    データベースやセッションが存在しない場合、スキーマが未対応の場合、あるいはデータ取得に失敗した場合は終了コード2となる。その際は、対象の記録を保持しているホスト上で同じIDを指定して`atk run-script session-review-prepare`を再実行する。
    取得できなかった範囲は未確認領域として管理し、セッション全体の取得、分析、および報告がすべて完了した段階で振り返りの完了を判定する。
 
-   `atk run-script session-review-prepare`が出力するJSONの`work_dir`から、確保された出力先ディレクトリのパスを取得する。生成された成果物は処理後もそのまま保持され、セッション用managed-tempの規定に従って7日間保存される。なお、呼び出し側が`--work-dir`で既存の絶対パスを明示的に指定した場合は、そのディレクトリの保持と削除を呼び出し側自身で管理する。
+   成功した1行JSONを自身のmanaged-tempへ保存し、`host`、`session_id`、`generation`、`scope_path`を工程6の範囲確定まで保持する。`work_dir`から確保された出力先ディレクトリを取得する。生成された成果物は処理後もそのまま保持され、セッション用managed-tempの規定に従って7日間保存される。なお、呼び出し側が`--work-dir`で既存の絶対パスを明示的に指定した場合は、そのディレクトリの保持と削除を呼び出し側自身で管理する。
 
    指定した作業ディレクトリ内には、会話の流れ（`conversation.md`）、比較材料（`comparison-materials.md`）、問題候補（`candidates.md`）、セッション統計（`stats.md`）の4つの文書が出力される。
    - `conversation.md`: 実際のユーザー発話ごとの時系列に沿って、メインエージェントの動きや各委譲先の目的、返却内容、操作量を記録位置とともに原則100,000バイト以下でまとめた文書である。本文には実際の作業概要を記載し、全体の詳細テキストは記録位置を`--detail`オプションに渡すことで取得できる。
@@ -84,7 +90,7 @@ description: >
 
    標準出力に出力される1行のJSONには、各生成文書のパス（`conversation_path`、`comparison_materials_path`、`candidates_path`、`stats_path`）および参照文書のパス`reference_document`（存在しない場合はnull）が含まれる。
    このほか、`prepared_at`、`utterance_counts`、`candidate_total`、`candidate_counts`、`excluded_counts`、`failure_ledger_skipped`が格納される。
-   さらに、`mandatory_candidates`、`similar_records`、`elapsed_seconds`、`compaction_count`も含まれる。これらの候補を振り返り結果報告のどの項目に記載するかは、`agent-toolkit:completion-report`の`references/report-formats.md`に従う。
+   さらに、`mandatory_candidates`、`similar_records`、`elapsed_seconds`、`compaction_count`と、実際に抽出した記録の範囲を示す`scope_path`も含まれる。これらの候補を振り返り結果報告のどの項目に記載するかは、`agent-toolkit:completion-report`の`references/report-formats.md`に従う。
    `conversation_utf8_bytes`、`candidates_utf8_bytes`、`stats_utf8_bytes`は生成された各文書のUTF-8バイト数を示し、`conversation_limit_bytes`は会話の流れの原則上限である100,000バイトを示す。候補文書と統計文書のサイズは、合計で100,000バイト以下に収める。
    `improvement_lines`には、セッション記録の全文から抽出された実際の改善提案行が格納される。候補文書には先頭10件の概要と総件数が表示され、全行の内容は`bundle/timeline.jsonl`の`reported_improvements`から確認できる。また、未解決の記録全件は`bundle/unconfirmed.jsonl`に保存される。
 2. `candidates.md`を読む前に、メインエージェントが`conversation.md`の全体を一連の流れとして通読し、特定の観点にとらわれずに問題点や改善の機会を洗い出す。全体像の把握と最終的な判断は、メインエージェント単独で行う。
@@ -111,16 +117,14 @@ description: >
    登録対象となるAWIが1件以上ある場合は、WI投入担当を起動する前にユーザーへ`## 振り返り結果の予告`（登録予定のAWIを`AWI登録予定`行として記載）を通知し、同じターンでWI投入担当を起動する。
    予告のフォーマットは、`agent-toolkit:completion-report`の`references/report-formats.md`「振り返り結果報告のフォーマット」に従う。
    メッセージの送達は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に規定された手段（Claude Code環境では`mcp__agent-toolkit__send_to_user`）を用いて行う。
-   要求の`source`には`session-review`を指定し、要求間に依存関係がある場合は先行する成果物が必要となる理由を趣旨欄に明記する（同書「渡す入力」を参照）。ユーザーの発話を逐語引用して作成する要求には、原文が記録されているファイル（`conversation.md`や`atk run-script session-review-evidence`の出力ファイルなど）の絶対パスを出所として記載する。作成されたAWIの検収は、同書「受領と検収」に従って行う。
-6. AWIの検収を終えた後、工程1の準備処理以降に新たに届いたユーザー発話や、準備データに含まれていなかった実際の`気付いた改善点:`の記載がないかを確認する。
-   - 確認対象となるユーザー発話には、作業キュー経由で届いたメッセージを含め、自動プロンプトや実行環境が自動生成したテキストは除外する。振り返り処理自体の起動、待機、検収、および保存処理は、前回の実行の続きとして扱う。
-   - 改善点には、メインエージェントが画面表示やメッセージ送信した本文、および委譲先から正常に返却された結果に含まれる行を対象とする。正常に完了した準備処理のJSONに含まれる`improvement_lines`に、前後の空白を除いて同一の行が存在する場合、または既存の分析結果にその行と記録位置の取り込み・判定の記録が残っている場合は、すでに取り込み済みと判断し、同じ行の転記や再掲だけを理由に追加の分析を繰り返すことはしない。ドキュメントやコードからの引用、ツールで取得した資料の本文、通知メッセージ内に単に現れた文字列などは、実際の改善点報告と明確に区別する。
-   - 失敗した準備処理で取得できなかった追加分を、直前に成功した準備処理に含まれていたものとみなさない。初回および再実行のいずれで準備処理が失敗した場合も、`references/analysis-failure.md`の手順に従って対処する。
-
-   新たなユーザー発話または改善点のいずれかが存在する場合、`atk run-script session-review-prepare`は再実行しない。該当する発話や改善点の行、その後に続く記録を`atk run-script session-review-evidence`の`--detail`や`--tool-calls`でピンポイントに取得し、工程3〜5の追加分析へ進める。すでに確認済みの証拠データや生成済みの索引はそのまま再利用し、前回登録したAWIや保存済みの更新内容については、未完了の既存項目として重複判定の対象に含める。未保存のAWI作成タスクが残っている場合は、その検収とファイル保存を完了させてから追加分析に着手する。振り返り処理自体の起動、待機、検収、保存の過程で新たに生じた改善点についても同様に扱う。最終報告を送達した後に新たな改善点が発生した場合でも、本工程へ戻って取り込み、追加分析、および結果報告の更新を完了させてからセッションを終了する。
-   新たな発話や改善点がいずれも存在しない場合は、起動元の種別に応じて処理を進める。`agent-toolkit:completion-report`から呼び出された場合は、振り返りの結果とAWIの登録状況（登録の有無、作成されたファイル名、予告からの差分）を同スキルへ引き渡す。手動で起動された場合は、同スキルに定められたフォーマットと送達手段を用いて最終報告を出力する。最終報告の形式と末尾に付与する定型文は、同スキルの冒頭に記載された規定に従う（事前の予告通知には定型文を付与しない）。Stop hookによる処理遮断への対応や、中断・待機に関する判断の記録は、`agent-toolkit:completion-report`の工程末尾の規定に従って処理する。
-
+   要求の`source`には`session-review`を指定し、batchではAWIごとに保存直前の登録時刻から24時間後の`cooldown_until`を設定するよう投入担当へ渡す。この期限の自動適用はbatchに限る。要求間に依存関係がある場合は先行する成果物が必要となる理由を趣旨欄に明記する（同書「渡す入力」を参照）。ユーザーの発話を逐語引用して作成する要求には、原文が記録されているファイル（`conversation.md`や`atk run-script session-review-evidence`の出力ファイルなど）の絶対パスを出所として記載する。作成されたAWIの検収は、同書「受領と検収」に従って行う。
+6. AWIの保存と検収、全候補と未確認範囲の判定を終え、今回分析した範囲と残る範囲を確定する。
+   その場で調査済みの改善点は根拠と判断を再利用し、未調査・変更・不一致の部分だけを補う。標識の転記や同じ行の再掲には既存の分析結果を対応付ける。
+   準備結果の`scope_path`と、準備後の追記や再開による増分を区別する。今回の要求に必要な追加対応は既存証拠とピンポイントの照会で進め、未処理の増分は次の振り返り待ちとして保持する。
    最終報告を送達する前（通常のAWIの保存・検収を完了した後。登録件数が0件の場合や、最終報告の作成作業中に初めて制限時間を超過した場合も含む）に、本スキルの起動時刻からの経過時間を確認する。所要時間が300秒を超過しており、まだ対応が行われていない場合は、手元にある統計情報や証拠データ、準備完了後の追加照会結果を用いて、工程3と工程4に沿って所要時間の超過原因を分析する。判断に必要な情報がどうしても不足する場合に限り、完了したWI投入担当の記録も含めた最新のセッションログを用いて統計データを再準備する。同じ超過事象について原因の特定、必要な全処置、報告内容がすでに確定している場合は、単に秒数を再計算するためだけのログ再収集や分析の反復を省略する。時間超過の判定には振り返り処理そのものに要した経過時間を用い、セッション全体の経過時間（`elapsed_seconds`）と混同しないよう注意する。時間超過に伴って追加のAWI登録が必要となった場合は、工程5と同様に追加分の予告を出力した上で、既存のWI投入担当による起草、メインエージェントによる検収、ファイル保存を実施する。既存のAWIで対処済みであるという結論や、再発防止策を策定しないという判断に至った場合も、その妥当な根拠とともに今回の最終報告に記載する。今回のセッションにおける処理の律速要因に対する対応は、AWI起草基準の見直しといった別の課題に対する事前の回答とは明確に区別して確定させる（詳細は`references/duration-analysis.md`「所要時間の分析と改善」を参照）。
+   手動起動では分析・必要なAWI保存・結果本文の確定を終え、準備時の1行JSONを保存した絶対パスを`atk run-script session-review-state -- complete --prepared <準備結果JSONの絶対パス>`へ渡す。成功と残る待ち件数を確認し、結果本文を送達する前に必要なツール処理を終える。この操作の確定対象は準備済み範囲の分析に限る。本文の送達は実際の送達結果で確かめ、分析に失敗した範囲は未処理として保持する。
+   結果本文は`agent-toolkit:completion-report`の`references/report-formats.md`に従う。AWIを1件以上投入した場合は「AWI投入結果報告のフォーマット」、それ以外は「振り返り結果報告のフォーマット」を使う。送達は`agent-toolkit:user-confirmation-and-report`に従う。本スキルは結果報告の送達で終え、通常作業の完了処理と同期振り返りの再起動は対象外とする。
+   batchから共用する場合は、対象ごとの分析結果と準備範囲をbatchへ返す。batchは報告用UWIの保存検収後に`atk run-script session-review-state -- finish`で分析完了を記録する。報告同期の検収後の範囲確定は起動元のrun-skillだけが担当し、分析側の操作は`finish`までに限る。
 
 振り返り工程全体の所要時間目標は300秒とする。この所要時間の計測は、本スキルの起動時点から最終報告（AWIを1件以上登録した場合は`## AWI投入結果報告`、0件の場合は`## 振り返り結果報告`）を出力するまでの時間を対象とし、事前の予告通知を出力した時点は終了点とみなさない。この目標時間は振り返り処理の完了条件そのものではなく、時間を超過した場合は工程6に従って原因を分析し、必要な処置を行い報告する。
 

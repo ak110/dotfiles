@@ -268,6 +268,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="Codexコンパクションの計測記録ディレクトリ。省略時はagent-toolkitのstate_dir配下を使う。",
     )
+    parser.add_argument("--after", metavar="PATH", help="前回のscope JSON。bundleの分析範囲を処理済み位置より後へ限定する。")
     parser.add_argument(
         "--observation-boundary",
         metavar="TIMESTAMP",
@@ -790,7 +791,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.bundle is not None:
-        events, exit_code = _bundle_events(collected, unresolved, Path(args.bundle), compaction_record_dir)
+        events, exit_code = _bundle_events(
+            collected,
+            unresolved,
+            Path(args.bundle),
+            compaction_record_dir,
+            after=Path(args.after) if args.after else None,
+        )
         provenance = _referenced_provenance_events(collected, events)
         _print_events([*provenance, *(_summary_events(events) if args.summary_only else events)])
         return exit_code

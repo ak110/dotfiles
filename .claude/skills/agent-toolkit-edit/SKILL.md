@@ -15,7 +15,7 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を確認し、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行で指定された資料は、起動時の本文とともに届く。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -25,6 +25,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「責務と構成」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「責務と構成」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/investigation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/agent-documents-basics.md#「読込表の宣言」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/agent-documents-basics.md#「読込表の宣言」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-skills.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「定義の所有者」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「定義の所有者」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
@@ -33,6 +34,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/delivery-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/session-state-and-flags.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/session-state-and-flags.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
@@ -114,7 +116,7 @@ description: >
 - 配布物スキルの外部インターフェース（判定区分、出力フォーマット、後始末コマンドの分岐、サマリー表現など）を追加・削除・変更する場合は、呼び出し元を検索し、連携先の記述も同一の計画内で更新する。
 - `agent-toolkit/rules/01-agent.md`・`02-agent-operations.md`および`agent-toolkit/share/rules-common.codex.md`は、`.chezmoi-source/dot_codex/AGENTS.md`の生成元ファイルである。同期は`uv run python scripts/sync_generated_files.py`で行い、計画への記載は`references/version-bump.md`「plan modeでの取り扱い」の派生物の規則に従う。
 - `agent-toolkit/share/rules-main*.md`や`rules-subagent*.md`の編集はファイルの自動生成や配布一覧の変更を伴わないが、プラグインのバージョン更新は必要である。各起動区分へどの規範が届くかは、`agent-toolkit:writing-standards`の`references/delivery-scope.md`にある配送範囲表を参照する。軽量なagents_server委譲先には`rules-subagent.md`の共通返却契約短節を自動配送し、全文を省く境界と各modeの権限を配送テストで保持する。
-- `agent-toolkit/`と`agent-basics/`配下の`*-delivery-*.md`は、本体の`<!-- read-table-source: ファイル名 -->`が接続する読込表の分離先である。生成元は無く、`scripts/sync_generated_files.py`も再生成しない。本体の参照や読込条件と同じ変更で直接編集し、委譲時にも編集対象として渡す。宣言と経路は`agent-toolkit/read_triggers_invariant_test.py`が検査する。書き方は`agent-basics:writing-standards`の`references/agent-documents-basics.md`「読込表」に従う。
+- 読込表の宣言は各文書の本文の表に置く。宣言と参照先への読込行は`agent-toolkit/read_triggers_invariant_test.py`で確かめる。読込表の別ファイル化の再発は`agent_basics_standalone_invariant_test.py`で確かめる。書き方は`agent-basics:writing-standards`の`references/agent-documents-basics.md`「読込表」に従う。agent-toolkitの文書では、`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「読込表の宣言」にも従う。
 - 計画ファイルの見出し、固定H3、表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`の構造定数で定義されている。これらを改訂する場合は構造定数を変更し、同一名称を使用している以下の文書も同一の変更単位で揃える。
   - `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`
   - `agent-toolkit/share/`配下の`<役割名>.subagent.md`
@@ -130,5 +132,7 @@ description: >
 ## agent-basicsとの責務境界
 
 成果物の品質基準は`agent-basics/skills/`へ配置し、toolkit側からは品質スキルと自身の運用契約を参照する。basics側には常駐フック、MCP、ホームディレクトリ向けの運用規範を含めない。basicsのオリジナルマニフェストは`agent-basics/.claude-plugin/plugin.json`であり、掲載原本は同一marketplace内のagent-basicsエントリである。独立したバージョン番号と説明文（description）の2箇所を揃え、ルートマニフェストおよびCodexマニフェストは既存の生成スクリプトで再生成する。toolkitのClaude依存関係の配列を、Agent Pluginsのルートマニフェストへ複製することは避ける。
+
+`agent-basics/`の文書を編集したときは、agent-basicsだけを導入したエージェントを読者として単体利用を確かめる。本文中の用語、手順、参照先が、agent-basicsの中で定義されているか一般的な語であるかを1つずつ確かめる。agent-toolkitの工程名、WI系の語、`atk`の操作、役割文書や`share/`の名前などを前提なしに使っていれば、一般的な語へ置き換えるか、プロジェクトがその運用を定める場合に従う条件付きの記述にする。agent-toolkitの判断に今も使う内容は、agent-toolkit側の同名スキルの参照資料へ移す。参照先の実在とagent-toolkitの名前空間・コマンドへの依存は`agent_basics_standalone_invariant_test.py`で確かめられる。新しく持ち込んだ未定義の用語は、この確認で捉える。
 
 agent-toolkitのリソースを編集する前は`agent-toolkit:writing-standards`も適用し、同スキルの読込表から配送、状態、起動、記録に関する運用条件を確認する。すでに取得済みの品質に関する記述は再利用する。

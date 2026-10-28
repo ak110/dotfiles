@@ -11,18 +11,17 @@ from session_evidence_detail import (
     _tool_hint,
 )
 from session_evidence_extract import (
-    _BODY_KEYS,
     _HOOK_NOTICE_MARKER,
     _LINE_NUMBER_PREFIX,
     _clip,
     _CollectedRecord,
     _events_with_record,
-    _is_hook_record,
     _Record,
     _scannable_records,
     _unresolved_events,
     _UnresolvedRecord,
 )
+from session_evidence_hook_notices import _hook_notice_bodies, _hook_notice_keys, _hook_records
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._common import message_format as _message_format
@@ -150,25 +149,6 @@ def _structured_warning_value_texts(value: Any) -> list[str]:
     ]
 
 
-def _warning_hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
-    """入力本文を除外してhook通知の記録だけを集める。"""
-    found: list[dict[str, Any]] = []
-
-    def collect(value: Any, *, in_body: bool = False) -> None:
-        if isinstance(value, dict):
-            if not in_body and _is_hook_record(value):
-                found.append(value)
-                return
-            for key, item in value.items():
-                collect(item, in_body=in_body or key in _BODY_KEYS)
-        elif isinstance(value, list):
-            for item in value:
-                collect(item, in_body=in_body)
-
-    collect(entry)
-    return found
-
-
 def _is_execution_tool_name(name: str | None) -> bool:
     """非構造化の実行時警告を返し得るツール名かを判定する。"""
     if not isinstance(name, str):
@@ -256,7 +236,7 @@ def _warning_result_values(entry: dict[str, Any], tool_names: dict[str, str]) ->
         if isinstance(item, dict) and item.get("type") == "CommandExecution":
             values.extend((item.get(key), False, True) for key in ("aggregated_output", "output", "stdout", "stderr"))
 
-    values.extend((hook_record, True, True) for hook_record in _warning_hook_records(entry))
+    values.extend((hook_record, True, True) for hook_record in _hook_records(entry))
     return values
 
 
@@ -323,6 +303,12 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
     ]
     seen: set[str] = set()
     result: list[str] = []
+    for hook_record in _hook_records(entry):
+        for body in _hook_notice_bodies(hook_record):
+            for key in _hook_notice_keys(body, hook_record.get("hookName")):
+                if key.tag == "block" and key.kind_text not in seen:
+                    seen.add(key.kind_text)
+                    result.append(key.kind_text)
     for body_index, (text, marker_only, from_hook_record) in enumerate(bodies):
         normalized_text = " ".join(text.split())
         xml_marker = _HOOK_NOTICE_MARKER.match(normalized_text)
@@ -385,7 +371,7 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
 def _warning_hook_identities(entry: dict[str, Any]) -> dict[str, list[str]]:
     """hook記録の警告本文ごとにツール呼び出し識別子を出現順で返す。"""
     identities: dict[str, list[str]] = {}
-    for hook_record in _warning_hook_records(entry):
+    for hook_record in _hook_records(entry):
         tool_use_id = hook_record.get("toolUseID")
         if not isinstance(tool_use_id, str):
             continue

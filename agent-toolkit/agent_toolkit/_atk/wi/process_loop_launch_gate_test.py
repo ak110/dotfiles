@@ -1,22 +1,23 @@
 """無進捗記録による起動の見送りと、記録の保持・比較・削除の契約を検証する。"""
 
 import argparse
-import asyncio
 import json
 import pathlib
 import subprocess
 import sys
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
 from agent_toolkit._atk import config, review_audit
 from agent_toolkit._atk.wi import alerts as wi_alerts
 from agent_toolkit._atk.wi import listing
-from agent_toolkit._atk.wi import process_loop_all_repos as all_repos
+from agent_toolkit._atk.wi import process_loop as loop
 from agent_toolkit._atk.wi import process_loop_launch_gate as gate
+from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._atk.wi import process_loop_update as update_module
 from agent_toolkit._atk.wi import process_loop_watch as watch
+from agent_toolkit._atk.wi.process_loop_test import _manifest
 from agent_toolkit._testing import git_repository as git
 
 _REPO = "example.test/team/one"
@@ -55,31 +56,6 @@ def test_unobserved_alerts_keep_record(tmp_path: pathlib.Path, monkeypatch: pyte
     assert gate.decide(_REPO, current.with_alerts(frozenset({5, 6}))).launch
 
 
-class _Manager:
-    """担当の起動・終了だけを返し、終了時に候補を終了させる最小の担当管理。"""
-
-    def __init__(self, notes: pathlib.Path) -> None:
-        self.notes = notes
-        self.started: list[str] = []
-
-    async def activate_async(self) -> None:
-        await asyncio.sleep(0)
-
-    async def start(self, model_type: str, prompt: str, cwd: str, **kwargs: Any) -> dict[str, Any]:
-        del model_type, prompt, kwargs
-        self.started.append(cwd)
-        return {"session_id": "session-one"}
-
-    async def wait(self) -> dict[str, Any]:
-        await asyncio.sleep(0)
-        for path in self.notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/task.md"):
-            path.unlink()
-        return {"session_id": "session-one", "status": "completed", "agent_message": "完了"}
-
-    async def close(self) -> None:
-        await asyncio.sleep(0)
-
-
 def test_record_survives_restart_and_is_cleared(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """記録は別プロセスの起動後も読まれ、見送らずに起動した時点と起動入力が空になった時点で削除される。"""
     notes, repository = _setup(tmp_path, monkeypatch)
@@ -98,17 +74,24 @@ def test_record_survives_restart_and_is_cleared(tmp_path: pathlib.Path, monkeypa
     assert restarted.returncode == 0, restarted.stderr
     assert restarted.stdout.strip() == "True"
 
-    manager = _Manager(notes)
-    asyncio.run(
-        all_repos.run_repository_delegates(
-            argparse.Namespace(resume=None, worktree=None),
-            listing.configured_repo_snapshot(notes, (repository,)),
-            manager=cast(all_repos.RepositoryDelegateManager, manager),
-            audit_repositories={_REPO},
-            launch_inputs={_REPO: current},
-        )
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, env: dict[str, str], **kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt).read_text())
+        for path in notes.glob("2026/10/task.md"):
+            path.unlink()
+        env["AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"] = "session-one"
+        kwargs["on_session_started"]("session-one")
+        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": {_REPO: {"status": "completed"}}}))
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    monkeypatch.setattr(session, "resolve_orchestrator_specs", lambda: [("claude", "model", "medium")])
+    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_a, **_k: ("claude", "model", "medium"))
+    results = loop.run_coordinator(
+        argparse.Namespace(resume=None, worktree=None),
+        listing.configured_repo_snapshot(notes, (repository,)),
+        launch_inputs={_REPO: current},
     )
-    assert len(manager.started) == 1
+    assert results[_REPO]["status"] == "completed"
     assert not list(gate.record_directory().glob("*.json"))
 
     # 候補・診断が無く、アラートの取得に成功して0件になった反復で記録を削除する。
@@ -133,7 +116,5 @@ def test_record_survives_restart_and_is_cleared(tmp_path: pathlib.Path, monkeypa
         alert_forge="github",
         internal_dotfiles_updated=False,
     )
-    all_repos.cmd_process_loop_all_repos(
-        args, notes, manager_factory=lambda: cast(all_repos.RepositoryDelegateManager, manager)
-    )
+    loop.cmd_process_loop(args, notes)
     assert not list(gate.record_directory().glob("*.json"))

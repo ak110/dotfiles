@@ -281,7 +281,7 @@ async def test_explore_options_construction_owns_settings_until_handoff(
         return original_options(**kwargs)
 
     monkeypatch.setattr(claude_agent_sdk, "ClaudeAgentOptions", options)
-    client = FakeClaudeClient([[SystemMessage("settings-handoff"), ResultMessage("完了")]])
+    client = FakeClaudeClient([[SystemMessage("settings-handoff"), ResultMessage("完了\n状態: completed")]])
     expected = pytest.raises(RuntimeError, match="options生成失敗") if failed else contextlib.nullcontext()
     with expected:
         async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:

@@ -1181,10 +1181,10 @@ def test_exit_entrypoint_cleans_resources_even_when_interactive_host_is_unidenti
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("exit_code", [0, 7])
-def test_process_loop_child_exit_cleans_before_normal_or_abnormal_classification(
+def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, exit_code: int
 ) -> None:
-    """Claude・Codexのどちらでもprocess-loopの子セッションの終了時に同じ回収を実行し、異常終了でも終了の判定より前にレーン資源を回収して、対象リポジトリと選定ファイルは残す。"""
+    """CLIの正常・異常終了後も対象別所有者が回収を判断でき、起点と選定原本を維持する。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
     selected = tmp_path / "selection.yaml"
     snapshot = tmp_path / "created.json"
@@ -1196,7 +1196,8 @@ def test_process_loop_child_exit_cleans_before_normal_or_abnormal_classification
         "stream=io.StringIO()\n"
         "with contextlib.redirect_stdout(stream):\n"
         "    try:\n"
-        "        atk.main(['lane','create','--repo',sys.argv[1],'--base-branch','main',"
+        "        atk.main(['lane','create','--session-id','process-loop-repository',"
+        "'--repo',sys.argv[1],'--base-branch','main',"
         "'--lane','lane-01','--selection-file',sys.argv[2]])\n"
         "    except SystemExit as result:\n"
         "        if result.code: raise\n"
@@ -1222,16 +1223,12 @@ def test_process_loop_child_exit_cleans_before_normal_or_abnormal_classification
             model="test-model",
             effort="low",
             resume_pending=False,
-            dotfiles_root=None,
         )
 
-    if exit_code:
-        with pytest.raises(SystemExit) as ended:
-            execute()
-        assert ended.value.code == exit_code
-    else:
-        assert not execute()
+    assert execute() is (exit_code == 0)
     created = json.loads(snapshot.read_text(encoding="utf-8"))
+    assert pathlib.Path(created["worktree"]).exists() and pathlib.Path(created["record_path"]).exists()
+    process_loop_session.cleanup_lane_session(created["session_id"])
     assert not pathlib.Path(created["worktree"]).exists() and not pathlib.Path(created["record_path"]).exists()
     assert repo.is_dir() and selected.is_file()
 
@@ -1728,6 +1725,25 @@ def test_integrate_additional_wi_uses_current_review_and_collection(
     assert (repo / "feature-0").exists() and (repo / "feature-1").exists()
 
 
+def _write_empty_finalization_manifest(tmp_path: pathlib.Path) -> pathlib.Path:
+    """最終化操作なし・単純検証ありの統合入力を作成する。"""
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "plans": [],
+                "wis": [{"name": "20261023-000000-001.md", "commands": []}],
+                "handoff": str(handoff),
+                "verification": [[sys.executable, "-c", "pass"]],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return manifest
+
+
 def test_integrate_refreshes_publication_before_rewriting(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1743,20 +1759,7 @@ def test_integrate_refreshes_publication_before_rewriting(
     git_repository.run_git(repo, "update-ref", "-d", f"refs/remotes/publication/{record['branch']}")
     (repo / "upstream").write_text("先行統合", encoding="utf-8")
     before = git_repository.commit_all(repo, "先行統合")
-    handoff = tmp_path / "handoff.md"
-    handoff.touch()
-    manifest = tmp_path / "integration.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "plans": [],
-                "wis": [{"name": "20261023-000000-001.md", "commands": []}],
-                "handoff": str(handoff),
-                "verification": [[sys.executable, "-c", "pass"]],
-            }
-        ),
-        encoding="utf-8",
-    )
+    manifest = _write_empty_finalization_manifest(tmp_path)
     code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
     assert code == 2 and "push済みcommit" in stderr
     assert git_repository.git_output(worktree, "rev-parse", "HEAD") == head
@@ -1970,6 +1973,46 @@ def test_integrate_restart_review_keeps_rebase_validation(
     code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", original["new_head"])
     assert code == 0 and final["phase"] == "finalized", stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == original["new_head"]
+
+
+def test_integrate_resumes_failed_history_compare_without_rebasing_again(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """比較コマンド失敗後は保存した旧新端点を再検収し、受理まで統合先を保持する。"""
+    original_script = lane._atk_script  # pylint: disable=protected-access
+
+    def failed_compare(*arguments: str, **_kwargs: Any) -> list[str]:
+        if arguments[:2] == ("run-script", "history-compare"):
+            return [sys.executable, "-c", "raise SystemExit(3)"]
+        return original_script(*arguments)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(lane, "_atk_script", failed_compare)
+        repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+        _integration_selection(selected, monkeypatch, repo)
+        worktree = pathlib.Path(record["worktree"])
+        (worktree / "feature").write_text("成果", encoding="utf-8")
+        reviewed = git_repository.commit_all(worktree, "成果")
+        (repo / "upstream").write_text("先行統合", encoding="utf-8")
+        before = git_repository.commit_all(repo, "先行統合")
+        manifest = _write_empty_finalization_manifest(tmp_path)
+        args = _integration_args(record, repo, manifest, reviewed)
+        code, _result, stderr = _invoke(capsys, *args)
+        assert code == 2 and "history-compare" in stderr
+    state = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))["integration"]
+    assert state["phase"] == "rebased"
+    assert "history-compare" not in state["completed"]
+    reflog = git_repository.git_output(worktree, "reflog", "--format=%H %gs")
+    code, pending, stderr = _invoke(capsys, *args)
+    assert code == 1 and pending["phase"] == "awaiting-validation", stderr
+    for endpoint in ("old_base", "old_head", "new_base", "new_head"):
+        assert pending[endpoint] == state[endpoint]
+    assert git_repository.git_output(worktree, "reflog", "--format=%H %gs") == reflog
+    assert json.loads(pathlib.Path(pending["rewrite_map"]).read_text(encoding="utf-8")) == {reviewed: pending["new_head"]}
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
+    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
+    assert code == 0 and final["phase"] == "finalized", stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == pending["new_head"]
 
 
 def test_integrate_restart_review_after_failed_rebased_verification(

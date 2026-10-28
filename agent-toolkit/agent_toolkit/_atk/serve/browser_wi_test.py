@@ -8,14 +8,15 @@ import pathlib
 import re
 import socket
 import threading
+import types
 import urllib.parse
-from typing import Any
+from typing import Any, Self
 
 import playwright.async_api
 import pytest
 
 from agent_toolkit._atk import git_sync
-from agent_toolkit._atk.serve import wi_operations
+from agent_toolkit._atk.serve import entry_index, wi_operations
 
 # pytestがテストの引数名で参照するfixtureを、このモジュールへ登録する。
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
@@ -34,12 +35,207 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
 )
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.serve_support import _disable_wi_git
 
 pytestmark = [
     pytest.mark.browser,
 ]
 _SAVE_RELEASE_DELAY_SEC = 1.0
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_clear_cooldown_public_api_commits_and_pushes(
+    browser_harness: _BrowserHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """画面の1クリックが期限削除commit・pushと冷却表示の解除へ到達する。"""
+    # 隔離HOMEはfixtureのroot配下に生成されるため、WIを別のリポジトリへ配置する。
+    root = browser_harness.root / "wi-repository"
+    monkeypatch.setattr(browser_harness.operations, "private_notes", root)
+    monkeypatch.setattr(browser_harness.operations, "_entry_index", entry_index.EntryIndex(root))
+    path = _entry_path(root, "cooldown-git.md")
+    content = "---\ntype: awi\nstate: inbox\ncooldown_until: '2099-01-01T00:00:00+00:00'\nimportant: true\n---\n\n本文\n"
+    path.write_text(content, encoding="utf-8")
+    remote = git_repository.init_bare_repository(root.parent / (root.name + "-remote.git"))
+    git_repository.init_repository(root, initial_branch="main", origin=str(remote), commit_message="試験の初期状態")
+    git_repository.run_git(root, "push", "--set-upstream", "origin", "main")
+    before = git_repository.git_output(root, "rev-parse", "HEAD")
+
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/?filename=" + path.name)
+    button = page.get_by_role("button", name="冷却解除", exact=True)
+    await playwright.async_api.expect(button).to_be_visible()
+    async with page.expect_response("**/api/entries/clear-cooldown") as pending_response:
+        await button.click()
+    response = await pending_response.value
+    assert response.ok, await response.text()
+    await playwright.async_api.expect(page.get_by_role("dialog", name="詳細", exact=True)).to_be_hidden()
+    badge = page.locator(f'.entry-select[data-key="{path.name}"] .state-badge')
+    await playwright.async_api.expect(badge).to_have_text("inbox")
+    await playwright.async_api.expect(badge).to_have_attribute("data-cooldown", "false")
+    after = git_repository.git_output(root, "rev-parse", "HEAD")
+    assert after != before
+    assert git_repository.git_output(root, "rev-parse", "HEAD^") == before
+    assert git_repository.git_output(remote, "rev-parse", "refs/heads/main") == after
+    relative = path.relative_to(root).as_posix()
+    assert git_repository.git_output(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD") == relative
+    committed = git_repository.run_git(root, "show", f"HEAD:{relative}").stdout
+    old = wi_frontmatter.parse_frontmatter(content)
+    new = wi_frontmatter.parse_frontmatter(committed)
+    assert old is not None and new is not None
+    expected, body = old
+    expected.pop("cooldown_until")
+    assert new == (expected, body)
+    assert path.read_text(encoding="utf-8") == committed
+    assert not git_repository.git_output(root, "status", "--porcelain")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_clear_cooldown_expiry_after_detail_guides_refresh(
+    browser_harness: _BrowserHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """表示後に期限が到来したAPIエラーから再取得と報告先を案内し、本文を保存しない。"""
+    _disable_wi_git(monkeypatch)
+    path = _entry_path(browser_harness.root, "cooldown-expiry.md")
+    content = "---\ntype: awi\nstate: inbox\ncooldown_until: '2099-01-01T00:00:00+00:00'\n---\n\n本文\n"
+    path.write_text(content, encoding="utf-8")
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/?filename=" + path.name)
+    button = page.get_by_role("button", name="冷却解除", exact=True)
+    await playwright.async_api.expect(button).to_be_visible()
+
+    class ExpiredDateTime(datetime.datetime):
+        @classmethod
+        def now(cls, tz: datetime.tzinfo | None = None) -> Self:
+            return cls(2100, 1, 1, tzinfo=datetime.UTC).astimezone(tz)
+
+    async def expire_before_request(route: playwright.async_api.Route) -> None:
+        # ブラウザーの時計と表示本文を保ったまま、API側の期限判定だけを境界の先へ進める。
+        monkeypatch.setattr(wi_operations, "datetime", types.SimpleNamespace(**{**vars(datetime), "datetime": ExpiredDateTime}))
+        await route.continue_()
+
+    await page.route("**/api/entries/clear-cooldown", expire_before_request)
+    async with page.expect_response("**/api/entries/clear-cooldown") as pending_response:
+        await button.click()
+    response = await pending_response.value
+    assert response.status == 400
+    guidance = "詳細を閉じて開き直し、最新の状態を確認してください"
+    escalation = "解消しない場合は、このエラーと対象ファイル名を管理者へ報告してください"
+    payload = await response.json()
+    assert guidance in payload["error"]
+    assert escalation in payload["error"]
+    alert = page.get_by_role("dialog", name="詳細", exact=True).get_by_role("alert")
+    await playwright.async_api.expect(alert).to_contain_text(guidance)
+    await playwright.async_api.expect(alert).to_contain_text(escalation)
+    assert path.read_text(encoding="utf-8") == content
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_clear_cooldown_click_updates_screen_and_syncs(
+    browser_harness: _BrowserHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本文競合では期限と最新本文を保ち、同期を実行しない。"""
+    _disable_wi_git(monkeypatch)
+    calls: list[dict[str, Any]] = []
+
+    def sync(*args: Any, **kwargs: Any) -> None:
+        calls.append({"args": args, **kwargs})
+
+    monkeypatch.setattr(wi_operations.wi_sync, "commit_and_push", sync)
+    path = _entry_path(browser_harness.root, "cooldown-click.md")
+    content = "---\ntype: awi\nstate: inbox\ncooldown_until: '2099-01-01T00:00:00+00:00'\n---\n\n本文\n"
+    path.write_text(content, encoding="utf-8")
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/?filename=" + path.name)
+    button = page.get_by_role("button", name="冷却解除", exact=True)
+    await playwright.async_api.expect(button).to_be_visible()
+
+    async def update(route: playwright.async_api.Route) -> None:
+        path.write_text(content + "外部更新\n", encoding="utf-8")
+        await route.continue_()
+
+    await page.route("**/api/entries/clear-cooldown", update)
+    await button.click()
+    await playwright.async_api.expect(page.get_by_role("dialog", name="詳細", exact=True).get_by_role("alert")).to_contain_text(
+        "詳細を閉じて開き直して"
+    )
+    assert path.read_text(encoding="utf-8") == content + "外部更新\n"
+    assert not calls
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_clear_cooldown_public_route(browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開APIで期限だけを削除し、古い本文の保存を拒否する。"""
+    _disable_wi_git(monkeypatch)
+    page = browser_harness.page
+    path = _entry_path(browser_harness.root, "cooldown-public.md")
+    content = "---\ntype: awi\nstate: inbox\ncooldown_until: '2099-01-01T00:00:00+00:00'\nimportant: true\n---\n\n本文\n"
+    path.write_text(content, encoding="utf-8")
+    await page.goto(browser_harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#copy-all-button")).to_be_visible()
+    assert await page.locator("#copy-all-button").evaluate(
+        "element => element.parentElement.classList.contains('pane-heading')"
+    )
+    response = await page.request.post(
+        browser_harness.base_url + "/api/entries/clear-cooldown",
+        data={
+            "filename": path.name,
+            "expected_content": content + "古い本文",
+        },
+    )
+    assert not response.ok
+    assert path.read_text(encoding="utf-8") == content
+    response = await page.request.post(
+        browser_harness.base_url + "/api/entries/clear-cooldown",
+        data={
+            "filename": path.name,
+            "expected_content": content,
+        },
+    )
+    assert response.ok
+    parsed = wi_frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    metadata, body = parsed
+    assert "cooldown_until" not in metadata
+    assert metadata["important"] is True
+    assert metadata["state"] == "inbox"
+    assert body.strip() == "本文"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize(
+    "kind,state,deadline",
+    [
+        ("uwi", "inbox", "2099-01-01T00:00:00+00:00"),
+        ("awi", "hold", "2099-01-01T00:00:00+00:00"),
+        ("awi", "inbox", ""),
+        ("awi", "inbox", "2000-01-01T00:00:00+00:00"),
+    ],
+)
+async def test_clear_cooldown_rejects_ineligible_entries(
+    browser_harness: _BrowserHarness,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    state: str,
+    deadline: str,
+) -> None:
+    """対象外の種別・状態・期限は公開APIでも保存しない。"""
+    _disable_wi_git(monkeypatch)
+    path = _entry_path(browser_harness.root, "cooldown-ineligible.md")
+    content = f"---\ntype: {kind}\nstate: {state}\ncooldown_until: '{deadline}'\n---\n\n本文\n"
+    path.write_text(content, encoding="utf-8")
+    response = await browser_harness.page.request.post(
+        browser_harness.base_url + "/api/entries/clear-cooldown",
+        data={
+            "filename": path.name,
+            "expected_content": content,
+        },
+    )
+    assert not response.ok
+    assert path.read_text(encoding="utf-8") == content
 
 
 def _entry_path(root: pathlib.Path, filename: str) -> pathlib.Path:

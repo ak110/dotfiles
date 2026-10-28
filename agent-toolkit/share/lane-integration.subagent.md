@@ -36,6 +36,7 @@ writes_worktree: true
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/check-execution/SKILL.md#「統合実行ツール経由の起動」` | 判断 | `section:agent-toolkit:*/skills/check-execution/SKILL.md#「統合実行ツール経由の起動」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
+| 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/references/plan-file-standards.md#「進捗ログ」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「進捗ログ」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body.md#「節の構成と分担」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「節の構成と分担」` |
 
@@ -104,7 +105,11 @@ plansやwisのargvでは、確定値のプレースホルダーを利用でき�
 
 統合先ブランチのHEADの子孫になっている場合は、rebaseを行わずにfast-forwardマージへ進む。分岐している場合は、書き換え対象となる全コミットがリモート追跡ブランチへ未到達であることを確認し、旧ベースとHEADを保存したうえでrebaseを実行する。親コミットのみを操作するrebase、およびその続行や中断の処理では、呼び出しごとに`git -c submodule.recurse=false`を適用し、初期化済みのサブモジュールのHEAD、ブランチ、作業内容を保護する。すでにpush済みである場合、競合が発生した場合、内容に不一致がある場合、または検証に失敗した場合は、続行できない理由と所有記録を返す。競合が発生した場合は`lane-integration-failure.md`に従って処置し、再度同一のCLI操作に戻る。
 
-rebaseの完了後は、history-compareによる一意な全件1対1対応表と、変更範囲の再検証結果を保存し、`phase: awaiting-validation`とともに終了コード1を返す。対応表、後述する警告の判定、WI実装commitの対応更新、および完成条件証拠の再判定の要否を検収したうえで、同一の入力に`--accept-rebased-head <返された完全new_head>`を追加して処理を再開する。受理するまでの間は、統合先を作業前の状態のまま保つ。
+rebaseの完了後は、history-compareによる旧commit全件の一意な対応表と、変更範囲の再検証結果を保存し、`phase: awaiting-validation`とともに終了コード1を返す。
+部分省略・全件省略された変更の保持とWI継承は、`agent-toolkit:commit`の`references/history-rewrite.md`「WI実装commitの対応の継承」に従って検収する。
+対応表、後述する警告の判定、WI実装commitの対応更新、および完成条件証拠の再判定の要否を検収したうえで、同一の入力に`--accept-rebased-head <返された完全new_head>`を追加して処理を再開する。
+受理するまでの間は、統合先を作業前の状態のまま保つ。
+比較処理自体が失敗した場合も、保存された旧新の端点を保持して同一のCLI操作から再開し、完了済みのrebaseを繰り返さない。
 
 Git統合の前に検証argv、最終化argv、あるいはhandoffを修正し、マニフェストの内容のみが変更された場合は、レビュー済みHEADと更新後のマニフェストに`--restart-review`を指定して同一のCLIから再開する。現在のHEADが記録された`new_head`と一致するrebase結果については、記録内の`old_head`または`new_head`を`--reviewed-head`に渡す。このとき新たな独立文脈レビューは不要であり、引き継いだ対応表と再実行した検証結果の`awaiting-validation`を検収したうえで、`--restart-review`を外し、`--accept-rebased-head`を指定して再開する。受理後に`verified`状態となった後の再開も、検収待ちの状態に戻る。HEADそのものが変化した場合は、独立文脈レビューを受理した現在のHEADと更新後のマニフェストに対して`--restart-review`を指定する。直前の進捗と実行結果は`previous_integration`に保持される。Git統合が完了している場合は、レビューHEADと対象の集合を維持し、残りの最終化処理のみを再開する。
 
@@ -151,7 +156,7 @@ rebaseによってOIDのみが変化した計画の完成条件証拠につい�
 
 計画または引き継ぎ記録で確定した採否と、受け取った終了区分を適用する。
 
-- メモの先頭の1文は、`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`「終了」の基準（用語は同スキルの冒頭に定める基準）に従って記述する。`adopt`の場合は、同スキルの`references/awi-body.md`「節の構成と分担」に定めるH1直下の変更内容を、実際に実施した結果に合わせて記述する。
+- メモの先頭の1文は、`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`「終了」の基準（用語は同スキルの冒頭に定める基準）に従って記述する。`adopt`の場合は、同スキルの`references/awi-body.md`「節の構成と分担」に定めるH1直下の変更内容を、実際に実施した結果に合わせて記述する。`移管`行を持つ計画のAWIを`adopt`するときは、ユーザーが実施範囲を確認できるよう、後続へ分けた要求単位と移管先の登録済みWIのファイル名をメモへ書き、実施した範囲と分けた範囲を区別する。
 - 採用および充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終了する。adoptにおけるコミットの紐付けは、`agent-toolkit:wi-standards`「状態と依存」の遷移表に従って行い、開始時や統合時のHEADを一律に機械的複製しないようにする。複数のコミットが存在する場合は`--commit <OID>`を繰り返し指定する。コミットの説明などの補足メモは`--note-file`で記録する。
 - 対応コミットは、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に定める取得手順に従い、計画または引き継ぎ記録と同一のstemを持つ対応記録ファイルから取得し、`--worktree`に統合後のworktreeを渡す。
 - コミットを記録する採否操作では、統合先worktreeの絶対パスを`--target-repo`に渡す（同節の共通前提）。

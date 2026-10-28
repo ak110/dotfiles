@@ -287,6 +287,12 @@ main > .toolbar {
 #screen-wi #entry-heading {
   flex-shrink: 0;
 }
+#screen-wi #copy-all-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 0.2rem 0.5rem;
+  font-size: var(--font-size-secondary);
+}
 /* 件数と期間は1つのまとまりとして右端に置き、狭い幅では見出しを縮めずに折り返す。 */
 #screen-wi .entry-heading-meta {
   display: flex;

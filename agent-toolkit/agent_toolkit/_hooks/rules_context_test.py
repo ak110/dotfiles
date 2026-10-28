@@ -24,6 +24,12 @@ from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
+@pytest.fixture(autouse=True)
+def _disable_review_model_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """規範配送の試験はモデルを起動せず、起動要求自体はbatchの結合試験で検証する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
+
+
 @pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
 def test_session_start_reacquires_plugin_inventory_for_the_same_session(tmp_path, monkeypatch, capsys, source):
     """同IDの再起動でも最初だけ再取得し、次hookは一覧を共有して他の状態を保つ。"""
@@ -143,6 +149,9 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
     assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
+    assert "思考を除いてエージェントが書く全ての文" in output
+    assert "ツール呼び出しの前後の短い状態行" in output
+    assert "英語の文は1文も書くな" in output
     normative_start = (
         f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
         f'kind="{rules_context.NORMATIVE_KIND_MAIN}">'
@@ -325,6 +334,18 @@ def test_compact_skill_guidance_uses_host_acquisition(host: str, tmp_path: pathl
     assert str(skill) in output
     assert ("`Skill`で`local`" in output) is (host == "claude")
     assert ("cat --" in output) is (host in {"codex", "agy"})
+
+
+def test_compact_guidance_presents_candidates_for_remaining_steps(tmp_path: pathlib.Path) -> None:
+    """圧縮前の選択資料は候補として示し、残る工程の判断に使う資料だけを使う前に全文再取得させる。"""
+    reference = tmp_path / "reference.md"
+    reference.write_text("# 見出し\n本文\n", encoding="utf-8")
+    digest = hashlib.sha256(reference.read_bytes()).hexdigest()
+    output = rules_context._compact_recovery_context("claude", 10000, [(reference, "", digest)])
+    assert output is not None
+    assert "候補" in output and "残る工程の判断に使う資料だけ" in output and "使う前に" in output
+    assert "全文再取得" in output
+    assert "選択済み資料を再取得せよ" not in output
 
 
 @pytest.mark.parametrize("host", ["claude", "codex", "agy"])
@@ -831,5 +852,5 @@ def test_session_start_resets_operation_skill_ready_for_main(
 
     _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
 
-    assert (_operation_context(None) != "") is main_warns
+    assert (f"agent-toolkit:{skill_name}" in _operation_context(None)) is main_warns
     assert _operation_context("sub-1") == ""

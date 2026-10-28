@@ -122,7 +122,7 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | `queued_notification_advisor.py` | 既存結果の配送、yield・notify | 他のblockが無ければホスト配送へ戻す。blockが残る場合だけ未配送対象の受領を一度案内する |
 | 旧`pending_question_advisor.py` | 意味判断、文書へ移管して撤去 | 疑問符・定型表現から質問の意味を推測する終了判定を撤去した。確認の要否と手段は`user-confirmation-and-report`が定める |
 | `subagent_stop_advisor.py` | 返却契約と言語の保護、block | 空の返却で委譲元が成果を失うことを防ぎ、非空本文は共通の言語判定へ渡す |
-| `permissionrequest.py`・`permissionrequest_codex.py` | 権限応答 | Claude Codeは設定済みの自動許可、Codexは所有確認済みmanaged-temp回収に限定した許可を返す。新たな遮断・反復通知を持たない |
+| `permissionrequest.py` | 権限応答 | Claude Codeの設定済みの自動許可を返す。新たな遮断・反復通知を持たない |
 | `session_end_cleanup.py`・`session_activity.py`・`stopfailure_notifier.py` | 記録と回収 | 状態の寿命、活動、API失敗を記録する。StopFailureは出力で遮断・通知できず、利用上限の再開予約だけを既存modへ渡す |
 | TS `register.ts`・`send_to_user.tsx` | 公開範囲・入力・言語の保護 | 自moduleのメイン専用toolと文字列入力を守り、言語checker障害は許可して一度通知する |
 | TS `response_language.ts` | 言語例外、deny・支援通知 | 言語違反を差し戻し、checker利用不能は継続する。同じ障害の再送を抑止する |
@@ -262,6 +262,8 @@ LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ�
 
 ### 終了工程の証拠
 
+2026年10月28日の改訂では、同期振り返りを通常終了から外し、必要な作業完了報告をcompletion-reportの共通の報告本文へ統合する。起動・通読やWI登録の成功は送達の証拠にしない。効果は新規の行動試験で確認し、新たなStopや固定句・見出し・自己申告の機械判定は追加しない。以下の旧判定の記録は、その当時の経緯として保持する。
+
 2026年10月3日のCodexで、振り返りの準備と通読の後に応答を終え、分析と最終報告の再開にユーザーの指示を要した。同じ日に、構造確認に合格した振り返り結果を最終回答へ載せず、AWI登録の説明だけで終えた事象もあった。どちらも続行と発話の規範は配送されていた。ユーザーは対策を文書の追記だけに頼る再発防止を否定し、Stopフックでの対策を提案した。
 既存の`termination_order_advisor`は起動順だけを再入時に判定して初回Stopを許可し、`user_response_advisor`は可視本文の有無だけを調べるため、どちらの不足も検出できなかった。
 本機構が判定するのは、実際の準備結果と可視発話から機械的に確定する不足である。現行の判定基準は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にあり、旧基準からの変更の経緯は「全件確認の経緯（2026年9月26日）」にある。
@@ -276,7 +278,7 @@ private-notesとGitリポジトリ外の書込は成果作業の編集へ含め�
 2026年10月11日のユーザー指示で、Stopが可視発話の報告見出しと報告本文（区切り、区分、候補ID、予定を示す語）を判定する方式を撤去した。送達後の報告が区切りの差でも遮断され、全文の再出力を往復させたためである。報告の内容と書式は`agent-toolkit:completion-report`の`references/report-formats.md`と既存の完成形の例へ集約し、報告を書くメインが確かめる。同じ判断のユーザー指示で、Stopは`agent-toolkit:completion-report`の呼び忘れの検出へ限定した。
 `termination_order_advisor`は成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、計画の保存、WIの保存、commit・push）を行った作業を対象とする。同じ作業に起動証拠も有効な省略判断も無ければ、Claude Codeでは非遮断通知で起動と残工程への続行を案内する。CodexはStopの非遮断通知を受け取れないため、関連操作の案内とcompletion-reportの文書に従う。適用するプロジェクト規範が起動を不要と定める場合は、メインが意味と優先順位を判断して`termination-evidence --decision-file`へ`omit-completion`を記録する。記録処理は識別子から現在の人間入力と作業対象を確かめ、指定した絶対パスから規範全文を読んで保存する。省略した`input_id`は現在の直近の人間入力へ対応付ける。有効な判断は対応する作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務は保つ。規範の変更、新しい人間入力後の作業、開始・再開後の次判断では適用を確かめ直し、古い省略を流用しない。省略の記録手順は、completion-reportを起動する前に読める`agent-toolkit/skills/completion-report/references/termination-evidence.md`が持つ。起動証拠はClaude Codeでは成功したSkill呼び出し、CodexではBashへ正規化された読取コマンドの入力が同スキルの`SKILL.md`を指し、結果が本文を返した読取である。Codexの`tool_response`は終了コードを含まないため、結果にfrontmatterの`name`が現れることを本文の取得とみなし、パスの文字列やPostToolUseの発火だけを起動証拠にしない。読了は工程の開始証拠として扱う。起動後の工程の完遂と報告の送達はメインが実際の結果から確かめる。
 2026年10月15日の終了フック案では、起動済み作業への意味点検を一度blockし、最終報告の固定句で抑止していた。2026年10月23日の方針整理で、送達と残工程の判断を`completion-report`の終了前の工程へ統合した。判断を求めるためのStop通知、`stop_review_notice`の書込と固定句による完了の推定を撤去し、元要求・実際の送達・未達・新指摘の処置をメインが確かめる目的を保つ。
-撤去した方式を別名の判定器、事前の本文の判定、別のフックへの移設で温存する案は、同じ再出力の往復を残すため採らない。起動済みフラグや完了の自己申告を加える案は、セッション途中の欠落で誤警告を反復させ、根拠の無い申告が判定を代替するため採らない。process-wiの`atk agents-exit-session`の起動順は同じ限定に従って本判定から外す。実行の時機はcompletion-reportの手順9が定め、常駐ループでの実行忘れは`autonomous_exit.py`が判定する。
+撤去した方式を別名の判定器、事前の本文の判定、別のフックへの移設で温存する案は、同じ再出力の往復を残すため採らない。起動済みフラグや完了の自己申告を加える案は、セッション途中の欠落で誤警告を反復させ、根拠の無い申告が判定を代替するため採らない。process-wiの`atk agents-exit-session`の起動順は同じ限定に従って本判定から外す。実行の時機はcompletion-reportの手順7が定め、常駐ループでの実行忘れは`autonomous_exit.py`が判定する。
 作業の同一性は入力、呼び出し、開始と判断記録で区切る。起動証拠を得た作業の後に新しい人間の入力があり、続けて成果作業が届いた場合は新しい作業とし、前の起動証拠を流用しない。同じ作業の開始後に得た起動証拠は、その後の成果作業（振り返りで実装した対策など）にも有効とする。
 協調モードのClaude Codeメインの一般の変更は、成功した編集ツールと静的に確定したBash書込先を同じ作業の証拠へ接続する。起動不足を案内する通知には、公開範囲の指定・回答・適用済み認可が無い未コミットの自編集を添え、公開範囲の確認へ戻れるようにする。
 意味判断はメインへ保ち、現在の原入力を返す`termination-evidence --context`と同じ所有者のJSON記録で確定した公開範囲を渡す。commitしない範囲も確定済みとし、未コミットだけを理由にcommitを求めない。
@@ -681,7 +683,7 @@ transcriptから可視本文を読むStop判定、言語判定と振り返りの
 
 ## フックごとの処理とCodexの対応範囲
 
-`docs/guide/claude-code-guide.md`「常時有効な仕組み」の一覧がエンドユーザーの観測できる働きを示し、本節は各フックの判定条件とCodexでの対応範囲を保持する。
+`docs/guide/claude-code-guide.md`「常時有効な仕組み」はエンドユーザーが観測できる主な働きだけを示し、本節は各フックの判定条件とCodexでの対応範囲を保持する。
 
 agent-toolkitは以下のフックを常時有効化する。
 識別子はイベント名と処理名の組で示し、`plugin`はagent-toolkitプラグインの配布分、
@@ -698,12 +700,17 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop` | 言語保護、常駐ループの終了保証、所有計画・未観測委譲先・可視本文・completion-report起動不足の非遮断通知、未配送通知のホスト配送を集約する。送達・残工程・質問の意味は文書へ委ねる。実在する待機を除き、同じ原因・対象・対処の反復を共通noticeで抑止する | 対応 | 部分対応。`response_language_advisor`で説明言語を判定し、`decision`と`reason`だけを返す。非遮断の終了支援は関連操作と文書で扱う |
 | plugin `UserPromptSubmit/user_prompt_submit` | 実入力・手動スキル起動を記録し、開始・clear・圧縮後の最初の実入力へ一度だけ起動を案内する。固定手順の時間再注入と時刻追跡は持たない。全角記号と例示・調査語の関連案内は既存共通noticeで反復を抑止する。機械注入は実入力向けの案内を消費しない | 対応 | 対応。文脈ごとの一度の案内と入力観測を同じ条件で行い、sessionTitleは付けない |
-| plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
-| plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
+| plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。`approvalPolicy: "never"`では危険と判定するコマンドを承認なしに拒否し、PermissionRequest hookを呼ばない。Codex委譲先の標準手順は承認を要しないコマンドで組む |
 | plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した応答にもタスク識別子が含まれる場合は、バックグラウンドタスクの所有記録へ保存する。失敗を成功済み検証として記録しない | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `StopFailure/stopfailure_notifier` | メインの利用上限によるターン終了時に、再開要求を既存modへ渡す | 対応 | 非対応。対応するイベントが存在しない |
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前のチェック | 対応 | 非対応。dotfiles固有の配布構成を前提とするため、プラグインへ移さない |
+
+Codexはplugin同梱フックの定義が変わると、ユーザーが変更後の定義を再び信頼するまでそのフックを実行しない。
+対象はagent-toolkitの9イベント（`SessionStart`、`SubagentStart`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、`UserPromptSubmit`、`Stop`、`SubagentStop`、`SessionEnd`）である。
+`pytools/_internal/install_codex_plugins.py`の更新処理は、app-serverの`hooks/list`で9イベントが全て登録済みかつ有効で、`trustStatus`だけが`untrusted`の場合に限り、`/hooks`で信頼する案内を出す。
+登録が0件または不足する場合はmanifest・配布rootの問題であり、信頼不足として案内しない。
+再信頼の操作だけではSessionStartの規範注入を検収できないため、案内は信頼後に新しいセッションを開始して注入を確かめることも求める。
 
 ### セッション種別が分かる短い名前
 

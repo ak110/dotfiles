@@ -95,10 +95,10 @@ def _dataset(tmp_path: Path) -> tuple[Path, Path, Path]:
     write_jsonl(codex / "2026/10/06/rollout-other.jsonl", _codex(time, "other"))
     repo = git_repository.init_repository(tmp_path / "notes")
     for target, kind in (
-        ("one/adopted/same.md", "awi"),
+        ("adopted/same.md", "awi"),
         ("two/adopted/same.md", "awi"),
-        ("one/adopted/question.md", "uwi"),
-        ("one/rejected/no.md", "awi"),
+        ("adopted/question.md", "uwi"),
+        ("rejected/no.md", "awi"),
     ):
         path = repo / target
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -298,11 +298,11 @@ def test_agy_delegate_keeps_runtime_coverage(
 def test_adoption_counts_rename_into_adopted(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:
     """Gitが改名と判定するキューからの移動も、その週の採用AWIへ数える。"""
     _, _, repo = dataset
-    source = repo / "one/pending/moved.md"
+    source = repo / "pending/moved.md"
     source.parent.mkdir(parents=True)
     source.write_text("---\ntype: awi\n---\n# 採用の移動\n", encoding="utf-8")
     _commit(repo, "2026-10-06T13:00:00Z")
-    source.rename(repo / "one/adopted/moved.md")
+    source.rename(repo / "adopted/moved.md")
     _commit(repo, "2026-10-07T13:00:00Z")
     week = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")[0]
     assert week["adopted_awi_count"] == 2
@@ -322,7 +322,7 @@ def test_current_adoption_ignores_migration_and_body_edits(
     for item in (path, question):
         item.write_text(item.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8")
     _commit(repo, "2026-10-08T12:00:00Z")
-    legacy = repo / "one/adopted/same.md"
+    legacy = repo / "adopted/same.md"
     moved = path.with_name("same.md")
     legacy.rename(moved)
     moved.write_text("---\ntype: awi\nstate: adopted\n---\n# 移設\n", encoding="utf-8")
@@ -345,3 +345,99 @@ def test_invalid_period_has_next_action(period: tuple[str, ...], capsys: pytest.
     error = json.loads(capsys.readouterr().out)
     assert error["kind"] == "error"
     assert "次の操作" in error["next_action"]
+
+
+def test_weekly_hook_notices_follow_root_week(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:
+    """委譲先の期間後の遮断も親の開始週へ帰属する。"""
+    claude, codex, _ = dataset
+    body = '<atk-auto source="response-language" kind="block">英語主体と判定</atk-auto>'
+    child = codex / f"2026/10/06/rollout-child-{_CHILD}.jsonl"
+    entries = _codex("2026-10-14T12:00:00+00:00", _CHILD)
+    entries.append(
+        {
+            "timestamp": "2026-10-14T12:00:00+00:00",
+            "type": "response_item",
+            "payload": {
+                "type": "custom_tool_call_output",
+                "call_id": "blocked",
+                "output": [
+                    {"type": "input_text", "text": f"Script error:\nCommand blocked by PreToolUse hook: {body}"},
+                ],
+            },
+        }
+    )
+    write_jsonl(child, entries)
+    parent = claude / "project-a" / "parent.jsonl"
+    entries = _claude("2026-10-06T12:00:00+00:00", child=_CHILD)
+    entries.append(
+        {
+            "timestamp": "2026-10-06T12:00:00+00:00",
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "blocked",
+                        "is_error": True,
+                        "content": f"<tool_use_error>{body}</tool_use_error>",
+                    },
+                ],
+            },
+        }
+    )
+    write_jsonl(parent, entries)
+    events = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-13")
+    notices = [event for event in events if event["kind"] == "cost-metrics-hook-notice"]
+    assert [(event["week"], event["runtime"], event["hook"], event["tag"], event["count"]) for event in notices] == [
+        ("2026-10-05", "claude", "response-language", "block", 1),
+        ("2026-10-05", "codex", "response-language", "block", 1),
+    ]
+
+
+def test_history_ignores_non_wi_yaml_and_keeps_prior_adoption(
+    dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """旧feedbackの不正YAMLを除外し、期間前の採用を本文更新で再計上しない。"""
+    _, _, repo = dataset
+    legacy = repo / "feedback/inbox/20260616-212930-001.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("---\ncreated: 2026-06-16\ntarget: `plan-mode`\n---\n旧feedback\n", encoding="utf-8")
+    adopted = repo / "adopted/same.md"
+    adopted.write_text(adopted.read_text(encoding="utf-8") + "本文更新\n", encoding="utf-8")
+    _commit(repo, "2026-10-13T12:00:00Z")
+    events = _run(dataset, capsys, "--since", "2026-10-12", "--until", "2026-10-19")
+    assert events[0]["adopted_awi_count"] == 0
+    assert events[-1]["kind"] == "cost-metrics-coverage"
+
+
+@pytest.mark.parametrize("invalid", ["type: awi\nstate: `adopted`", "type: awi\nstate: broken"])
+def test_history_invalid_wi_identifies_path_and_commit(
+    dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str], invalid: str
+) -> None:
+    """WI配置のYAML・状態の不正は所在付きで失敗し、正常な集計と誤認させない。"""
+    claude, codex, repo = dataset
+    relative = "2026/10/20261013-120000-001.md"
+    path = repo / relative
+    path.parent.mkdir(parents=True)
+    path.write_text(f"---\n{invalid}\n---\nAWI\n", encoding="utf-8")
+    _commit(repo, "2026-10-13T12:00:00Z")
+    arguments = [
+        "--",
+        "--since",
+        "2026-10-12",
+        "--until",
+        "2026-10-19",
+        "--claude-projects-dir",
+        str(claude),
+        "--codex-sessions-dir",
+        str(codex),
+        "--private-notes",
+        str(repo),
+    ]
+    assert run_script.dispatch(argparse.Namespace(script_name="cost-metrics", script_args=arguments)) == 2
+    event = json.loads(capsys.readouterr().out)
+    assert event["kind"] == "error"
+    assert relative in event["text"]
+    commit = git_repository.run_git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert f"commit={commit}" in event["text"]

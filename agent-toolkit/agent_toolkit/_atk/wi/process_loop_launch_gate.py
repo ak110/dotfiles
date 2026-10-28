@@ -1,6 +1,6 @@
 """process-loopの担当の起動要否を、直前に進捗なしで終わった起動入力との差分で判定する。
 
-単一起動とall-reposの両方が、担当を起動する前に本モジュールの`decide`を通す。
+登録全体の統括ループが、対象別の担当を起動する前に本モジュールの`decide`を通す。
 担当が進捗なしで終わった時点の起動入力をホストの状態ディレクトリへ対象リポジトリごとに記録し、
 同じWI入力の間は起動を見送る。記録をWIの`cooldown_until`や`hold`で表すと、同じWIを処理できる
 別ホストの起動まで止めるため、記録はこのホストだけが読む。時間経過による再試行は置かず、
@@ -17,7 +17,6 @@ from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import listing as _listing
 from agent_toolkit._atk.wi import process_loop_log as _log
 from agent_toolkit._atk.wi import readiness as _readiness
-from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.next_action import ActionableError
@@ -96,16 +95,6 @@ def repository_input(snapshot: _listing.RepositorySnapshot, alerts: frozenset[in
             "processing" if state == "processing" else "ready" if name in readiness.ready else "internal-dependency-wait"
         )
     return LaunchInput(_items(snapshot.entries, kinds), alerts)
-
-
-def target_input(private_notes: pathlib.Path, target_repo: str, alerts: frozenset[int] | None) -> LaunchInput:
-    """単一起動の起動条件（着手可能な項目と対処を要する診断）と同じ集合から起動入力を作成する。"""
-    readiness = _readiness.calculate_readiness(private_notes, target_repo)
-    kinds = _repair_kinds(readiness)
-    for name in readiness.ready:
-        kinds[name] = "ready"
-    entries = list(_wi_entries.iter_entries(private_notes, WI_STATES, target_repo))
-    return LaunchInput(_items(entries, kinds), alerts)
 
 
 def record_directory() -> pathlib.Path:

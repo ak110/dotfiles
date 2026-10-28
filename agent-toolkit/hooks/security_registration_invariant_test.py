@@ -5,7 +5,7 @@ import re
 
 
 def test_registered_events_survive_organization_security_defaults() -> None:
-    """本体のPASSED_OVER_EVENTS・PASSED_OVER_DOORSとclassic prefixを登録時に避ける。"""
+    """保護イベントの直接登録を検出する。実matcherの一致判定はTS側の全機能登録試験で検証する。"""
     skipped = {
         "prompt.section",
         "prompt.context",
@@ -24,6 +24,4 @@ def test_registered_events_survive_organization_security_defaults() -> None:
         for event in re.findall(r'\bon\("([^"]+)"', text):
             if event.startswith("classic.") or event in skipped:
                 violations.append(f"{path.name}: {event}")
-        if re.search(r'\bon\("session.append"[^;]*door:\s*"(?:attachment|hook-context|compaction)"', text, re.DOTALL):
-            violations.append(f"{path.name}: session.appendの保護対象door")
     assert not violations, violations

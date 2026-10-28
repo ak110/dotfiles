@@ -1,8 +1,14 @@
 """配布物とdotfilesの全読込表・他資料参照をCIで検査する。"""
 
+import json
 import pathlib
+import shutil
+import subprocess
+import typing
 
-from agent_toolkit._common import read_triggers
+import pytest
+
+from agent_toolkit._common import plugin_roots, read_triggers
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent
 
@@ -20,6 +26,7 @@ def test_all_read_tables_have_valid_declarations_and_routes():
         try:
             rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
             read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
+            read_triggers.validate_plugin_relative_references(source)
         except ValueError as error:
             errors.append(f"{source}: {error}")
     assert not errors, "\n".join(errors)
@@ -33,3 +40,68 @@ def test_every_role_has_explicit_parent_read_source():
         targets = read_triggers.parent_contract_targets(source.name, _PLUGIN_ROOT)
         assert targets
         assert all(target.body().strip() for target in targets)
+
+
+# 配布版で届かない参照が報告された文書（20261028-161251-001）。
+_CROSS_PLUGIN_DOCUMENTS = (
+    "skills/bugfix/SKILL.md",
+    "skills/bugfix/references/analysis-records.md",
+    "skills/bugfix/references/root-cause-analysis.md",
+    "skills/user-confirmation-and-report/references/communication-methods.md",
+    "skills/user-confirmation-and-report/references/user-utterance.md",
+    "skills/wi-standards/references/draft-semantic-review.md",
+)
+
+
+def test_cross_plugin_references_resolve_in_codex_cache_layout(tmp_path, monkeypatch):
+    """Codexの配布キャッシュ（版ごとの別ディレクトリ）でも、agent-basicsの資料へ不在の診断なく届く。"""
+    cache = tmp_path / "codex/plugins/cache/mine"
+    toolkit = cache / "agent-toolkit/9.9.9"
+    basics = cache / "agent-basics/1.0.0"
+    for name in ("skills", "share", ".claude-plugin"):
+        shutil.copytree(_PLUGIN_ROOT / name, toolkit / name)
+    for name in ("skills", ".claude-plugin"):
+        shutil.copytree(_PLUGIN_ROOT.parent / "agent-basics" / name, basics / name)
+    installed = [
+        {"name": "agent-toolkit", "marketplaceName": "mine", "version": "9.9.9", "installed": True, "enabled": True},
+        {"name": "agent-basics", "marketplaceName": "mine", "version": "1.0.0", "installed": True, "enabled": True},
+    ]
+
+    def _run(args: typing.Any, **_kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 0, json.dumps({"installed": installed}), "")
+
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", _run)
+    resolved_basics: list[pathlib.Path] = []
+    for relative in _CROSS_PLUGIN_DOCUMENTS:
+        rows = read_triggers.parse_tables(toolkit / relative, toolkit, host="codex", project=tmp_path)
+        documents = [path for row in rows for path in row.documents]
+        assert all(path.is_file() for path in documents), relative
+        assert not [path for path in documents if not (path.is_relative_to(toolkit) or path.is_relative_to(basics))]
+        resolved_basics.extend(path for path in documents if path.is_relative_to(basics.resolve()))
+    assert resolved_basics
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "| 原因を分析する前 | `../../../agent-basics/skills/bugfix/SKILL.md` | 判断 |"
+        " `read:agent-basics:*/skills/bugfix/SKILL.md` |",
+        "詳細は[原因分析](../../../agent-basics/skills/bugfix/SKILL.md)に従う。",
+    ],
+)
+def test_relative_reference_outside_owner_plugin_is_rejected(tmp_path, line):
+    """所有プラグインのrootの外を指す相対パスを、読込表の行でも本文のリンクでも拒否し、論理名表記を案内する。"""
+    toolkit = tmp_path / "agent-toolkit"
+    (toolkit / ".claude-plugin").mkdir(parents=True)
+    (toolkit / ".claude-plugin/plugin.json").write_text('{"name": "agent-toolkit"}', encoding="utf-8")
+    skill = toolkit / "skills/sample"
+    skill.mkdir(parents=True)
+    (tmp_path / "agent-basics/skills/bugfix").mkdir(parents=True)
+    (tmp_path / "agent-basics/skills/bugfix/SKILL.md").write_text("# 原因分析\n", encoding="utf-8")
+    source = skill / "SKILL.md"
+    header = "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+    source.write_text("# 例\n\n" + (header if line.startswith("|") else "") + line + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="所有プラグインのrootの外") as caught:
+        read_triggers.validate_plugin_relative_references(source)
+    assert "agent-basics:<スキル>/<パス>" in str(caught.value)

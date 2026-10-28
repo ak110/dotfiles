@@ -17,7 +17,7 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文中の参照先に定められた適用条件を確認し、対象資料を読み込み、指定箇所に注目してから具体的に判断する。起動時の行に指定された資料は、起動本文と一緒に提供される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -34,6 +34,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` |
 | 評価担当の返却を受け取った後に形式を確かめる時 | `../../share/refine-prompt.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/refine-prompt.subagent.md#「出力」` |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
@@ -57,7 +58,7 @@ Plan modeの外で実行する（Claude Codeでは`ExitPlanMode`で終了する�
 2. 評価対象を確定し、目的に応じて手法を選択する。選択肢には、シナリオに基づく読み取り専用の単発評価、シナリオを用いない批判的通読、実際の操作・対話・成果物を採点する多ターン試行がある。単発評価は指摘の返却をもって完了とする。改訂前後の評価を公平に比較するため、シナリオは反復評価の間も初回と同じ内容を維持する。
 3. 対象プロンプトの分量や論点の数に応じて評価担当の人数を決定し、起動して指摘を受け取る。
 4. 受け取った指摘をまとめ、改善案を作成する。採否の判断と反映は「指摘の集約と改善案作成」に従って実施する。
-5. ユーザーが対話形式での採否判断や反復を求めて起動した場合は、作業を続行するか終了するかをユーザーに確認する。続行する場合は、新しい評価担当を起動して再評価する。エージェント自身が品質確認のために起動した場合は、必要な評価と反映が完了した時点で確認を挟まず、元の依頼の残余工程へ進む。反映完了後は、対象ファイルの編集手順を定めたスキル、`agent-toolkit:check-execution`、`agent-toolkit:completion-report`の各工程へ進む。
+5. ユーザーが対話形式での採否判断や反復を求めて起動した場合は、作業を続行するか終了するかをユーザーに確認する。続行する場合は、新しい評価担当を起動して再評価する。エージェント自身が品質確認のために起動した場合は、必要な評価と反映が完了した時点で確認を挟まず、元の依頼の残余工程へ進む。反映完了後は、対象ファイルの編集手順を定めたスキルと`agent-toolkit:check-execution`に従う。元の依頼を完了するときは、成果・検証結果を`agent-toolkit:completion-report`の1つの作業完了報告へ集約して送達する。評価結果の受領だけで全体を終了せず、同期の振り返りは起動しない。
 
 委譲手段（`agent-toolkit:delegation`）を利用できない環境では、同一セッション内で直接評価を実施し、結果を提示する際に「プロンプト評価担当を起動できないため直接評価」と明記する。
 多ターン試行は、`references/multi-turn-trials.md`に従い、独立した2つの役割を起動できる環境で手動実行する。結果の差異は、同一事例における観測事実として受け取る。

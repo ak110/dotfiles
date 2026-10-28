@@ -551,7 +551,10 @@ def test_runtime_inserted_events(tmp_path: pathlib.Path) -> None:
     codex = _write(
         tmp_path / "codex" / "sessions" / "2026" / "09" / "01" / "rollout-injected.jsonl",
         [
-            {"type": "response_item", "payload": {"role": "user", "content": [{"text": "<multi_agent_mode>自動本文"}]}},
+            {
+                "type": "response_item",
+                "payload": {"role": "user", "content": [{"text": "You are Codex, an agent based on GPT-6."}]},
+            },
             {
                 "type": "response_item",
                 "payload": {"role": "developer", "content": [{"text": "<permissions instructions>自動本文"}]},

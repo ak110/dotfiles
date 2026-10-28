@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import hook
+from agent_toolkit._hooks import work_contract
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.decision import Decision
@@ -35,6 +36,14 @@ from agent_toolkit._testing.pretooluse_support import (
 
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
 _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
+
+
+@pytest.fixture(autouse=True)
+def _existing_work_contract(tmp_path, monkeypatch):
+    """個別チェックの通知契約を、作業契約を作成済みの状態で検証する。"""
+    path = tmp_path / "work-contract.md"
+    path.write_text("目的: 個別チェックの検証\n", encoding="utf-8")
+    monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
 
 
 def test_preparation_reuses_declarations_only_within_one_invocation(monkeypatch) -> None:

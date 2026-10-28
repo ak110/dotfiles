@@ -11,9 +11,109 @@ import types
 import check_update_dotfiles_upgrade as upgrade
 import pytest
 
-from pytools._internal import setup_codex_cli, setup_herdr_cli
+from pytools._internal import antigravity_plugin, setup_codex_cli, setup_herdr_cli
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
+
+
+@pytest.mark.parametrize("level", ["WARNING", "ERROR", "CRITICAL"])
+def test_update_warning_fails_even_when_command_succeeded(tmp_path: pathlib.Path, level: str) -> None:
+    """終了0で継続する警告も永続ログから検証失敗へ接続する。"""
+    log = tmp_path / "update-dotfiles.log"
+    log.write_text(f"2026-10-28 12:00:00 run=check {level} warmup failed\n", encoding="utf-8")
+    with pytest.raises(upgrade.UpgradeCheckError, match="warmup failed"):
+        upgrade.verify_update_logs(tmp_path)
+
+
+def test_update_info_log_succeeds(tmp_path: pathlib.Path) -> None:
+    """通常の進捗とメッセージ中のWARNINGという単語は警告扱いにしない。"""
+    (tmp_path / "update-dotfiles.log").write_text("2026-10-28 12:00:00 run=check INFO WARNING設定を確認\n", encoding="utf-8")
+    upgrade.verify_update_logs(tmp_path)
+
+
+def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
+    """正常な更新の案内、隔離homeへ展開されたPATH項目、uvの複製切替は検証失敗にしない。"""
+    missing = tmp_path / ".dotnet" / "tools"
+    (tmp_path / "update-dotfiles.log").write_text(
+        f"2026-10-28 12:00:00,000 run=check WARNING {antigravity_plugin.UPDATED_NOTICE}\n"
+        "2026-10-28 12:00:00,000 run=check WARNING     PATH 整理: ユーザー PATH に存在しないエントリーを検出: "
+        f"%USERPROFILE%\\.dotnet\\tools (展開: {missing})。"
+        "再導入の予定が無ければWindowsの「環境変数」でユーザーのPathからこのエントリーを削除する\n",
+        encoding="utf-8",
+    )
+    upgrade.verify_update_logs(
+        tmp_path,
+        stderr="warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.\n",
+    )
+
+
+def test_allowed_notice_matches_post_apply_source() -> None:
+    """許容する更新案内は、post-applyが実際に出す文言と一致する。"""
+    assert upgrade._ANTIGRAVITY_UPDATED_NOTICE == antigravity_plugin.UPDATED_NOTICE  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "pytoolsの再インストールに失敗しました。失敗理由を確認してupdate-dotfilesを再実行してください。",
+        "PATH 整理: ユーザー PATH に存在しないエントリーを検出: C:\\outside\\bin (展開: C:\\outside\\bin)。削除する",
+        f"{antigravity_plugin.UPDATED_NOTICE} 追加の文言",
+    ],
+)
+def test_other_update_warnings_still_fail(tmp_path: pathlib.Path, message: str) -> None:
+    """個別に許容した出力以外の警告は、失敗を伝える案内や隔離home外のPATH項目を含めて検出する。"""
+    (tmp_path / "update-dotfiles.log").write_text(f"2026-10-28 12:00:00,000 run=check WARNING {message}\n", encoding="utf-8")
+    with pytest.raises(upgrade.UpgradeCheckError, match="警告以上"):
+        upgrade.verify_update_logs(tmp_path)
+
+
+def test_allowed_notice_error_level_fails(tmp_path: pathlib.Path) -> None:
+    """許容はWARNINGに限り、同じ文言でもERROR以上は検出する。"""
+    (tmp_path / "update-dotfiles.log").write_text(
+        f"2026-10-28 12:00:00,000 run=check ERROR {antigravity_plugin.UPDATED_NOTICE}\n", encoding="utf-8"
+    )
+    with pytest.raises(upgrade.UpgradeCheckError, match="警告以上"):
+        upgrade.verify_update_logs(tmp_path)
+
+
+def test_other_uv_warning_still_fails(tmp_path: pathlib.Path) -> None:
+    """uvの複製切替以外のuv警告は検出する。"""
+    (tmp_path / "update-dotfiles.log").write_text("run=test INFO 更新完了\n", encoding="utf-8")
+    with pytest.raises(upgrade.UpgradeCheckError, match="Failed to build"):
+        upgrade.verify_update_logs(tmp_path, stderr="warning: Failed to build package\n")
+
+
+def test_missing_update_log_fails(tmp_path: pathlib.Path) -> None:
+    """更新の警告観測が成立しない場合を成功にしない。"""
+    with pytest.raises(upgrade.UpgradeCheckError, match="永続ログが作成されず"):
+        upgrade.verify_update_logs(tmp_path)
+
+
+@pytest.mark.parametrize("platform_name", ["linux", "windows"])
+def test_public_upgrade_rejects_child_stderr_warning(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, platform_name: str
+) -> None:
+    """公開更新が終了0でも子ツールの標準エラーの警告を検証失敗へ伝える。"""
+    uv = tmp_path / "uv"
+    uv.write_bytes(b"fake-uv")
+    monkeypatch.setenv("UV", str(uv))
+
+    def runner(arguments, **_kwargs):
+        result = _git_answers(arguments)
+        if arguments[0] in {"bash", "cmd.exe"}:
+            result.stderr = "warning: child tool could not initialize\n"
+        return result
+
+    with pytest.raises(upgrade.UpgradeCheckError, match="child tool could not initialize"):
+        upgrade.run_upgrade_check(
+            tmp_path, platform_name, runner=runner, registry=_FakeRegistry(), profile_env=_profile_env(tmp_path)
+        )
+
+
+def test_normal_child_progress_is_not_warning(tmp_path: pathlib.Path) -> None:
+    """標準エラーの通常進捗と警告機能の説明はseverity診断として扱わない。"""
+    (tmp_path / "update-dotfiles.log").write_text("run=test INFO 更新完了\n", encoding="utf-8")
+    upgrade.verify_update_logs(tmp_path, stdout="warning settings enabled", stderr="Downloading package (1/2)\n")
 
 
 class _FakeRegistry:
@@ -53,9 +153,17 @@ def _profile_env(tmp_path: pathlib.Path) -> dict[str, str]:
 
 def _git_answers(arguments: list[str]) -> subprocess.CompletedProcess[str]:
     """検証が問い合わせるGitの値を返す。"""
+    _write_update_log(arguments)
     values = {"rev-parse": "current-oid", "show": "1000000", "rev-list": "old-oid"}
     output = next((value for option, value in values.items() if option in arguments), "")
     return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
+
+
+def _write_update_log(arguments: list[str]) -> None:
+    """偽の公開更新も実更新と同じ永続ログを残す。"""
+    if arguments[0] in {"bash", "cmd.exe"}:
+        home = pathlib.Path(arguments[-1]).parents[2]
+        (home / "update-dotfiles.log").write_text("run=test INFO 更新完了\n", encoding="utf-8")
 
 
 def test_cli_outputs_japanese_when_default_stream_encoding_is_not_utf8() -> None:
@@ -146,6 +254,7 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
     observations: list[tuple[dict[str, str], pathlib.Path, pathlib.Path]] = []
 
     def runner(arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _write_update_log(arguments)
         env = kwargs.get("env")
         if env is not None:
             assert isinstance(env, dict)

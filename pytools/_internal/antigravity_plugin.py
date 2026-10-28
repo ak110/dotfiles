@@ -14,6 +14,8 @@ PLUGIN_DIRECTORY = "agent-toolkit-agy"
 PLUGIN_NAMES = ("agent-toolkit", "agent-basics")
 RULE_FILE_BYTES = 24_000
 RULE_BUDGET_TOKENS = 20_000
+# 更新時に必ず表示する案内。旧版からの更新検証（scripts/check_update_dotfiles_upgrade.py）も同じ文言だけを許容する。
+UPDATED_NOTICE = "Antigravityのプラグインを更新しました。新しいagyセッションで反映を確認してください。"
 EVENTS = ("SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop")
 _ALWAYS_ON = "---\ntrigger: always_on\n---\n\n"
 _SOURCE_DIRECTORIES = ("skills", "agents", "share", "agent_toolkit", "scripts")
@@ -284,13 +286,5 @@ def run(plugins: tuple[str, ...] = PLUGIN_NAMES) -> post_apply_outcome.PostApply
         if not common.atomic_write_text(registry, _json(value).decode("utf-8"), tag="Antigravity plugins"):
             raise OSError(f"Antigravity plugin登録の書き込みに失敗: {registry}")
         changed = True
-    notices = (
-        (
-            post_apply_outcome.PostApplyNotice(
-                message="Antigravityのプラグインを更新しました。新しいagyセッションで反映を確認してください。"
-            ),
-        )
-        if changed
-        else ()
-    )
+    notices = (post_apply_outcome.PostApplyNotice(message=UPDATED_NOTICE),) if changed else ()
     return post_apply_outcome.PostApplyOutcome(changed=changed, notices=notices)

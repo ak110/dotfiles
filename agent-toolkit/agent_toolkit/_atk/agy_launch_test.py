@@ -52,35 +52,39 @@ def test_process_loop_agy_interactive_and_resume(
         return subprocess.CompletedProcess(argv, 0)
 
     monkeypatch.setattr(process_loop_session.subprocess, "run", execute)
+
+    def launch(argv: list[str], env: dict[str, str], cwd: pathlib.Path, **_kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        return execute(argv, env=env, cwd=cwd)
+
+    monkeypatch.setattr(process_loop_session, "_run_cli_session", launch)
     monkeypatch.setattr(process_loop_session, "cleanup_lane_session", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(process_loop_env, "reset_console", lambda: None)
     monkeypatch.setattr(process_loop_log, "append", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(process_loop_log, "consume_instructions", lambda: "")
     args = argparse.Namespace(resume=resume, no_update=True)
+    manifest = tmp_path / "current-manifest.json"
     process_loop_session.run_process_session(
         args,
         tmp_path,
-        process_loop_session.build_process_loop_prompt(),
+        process_loop_session.build_process_loop_prompt(manifest),
         {},
         orchestrator="agy",
         model="gemini-4-argon",
         effort="medium",
         resume_pending=resume is not None,
-        dotfiles_root=None,
     )
     argv = calls[0]
     assert argv[0] == "agy"
     assert argv[argv.index("--model") + 1] == "gemini-4-argon"
     assert argv[argv.index("--effort") + 1] == "medium"
-    if resume is None:
-        assert "agent-toolkit:process-wi" in argv[argv.index("-i") + 1]
-        assert not argv[argv.index("-i") + 1].startswith("/goal ")
-    elif resume:
+    delivered = argv[argv.index("-i") + 1]
+    assert "agent-toolkit:process-wi-all-repos" in delivered
+    assert str(manifest) in delivered
+    assert not delivered.startswith("/goal ")
+    if resume:
         assert argv[argv.index("--conversation") + 1] == resume
-        assert "-i" not in argv
-    else:
+    elif resume is not None:
         assert "--continue" in argv
-        assert "-i" not in argv
 
 
 def test_run_skill_agy_noninteractive(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -831,3 +831,96 @@ def test_hook_record_scan_tolerates_non_string_type_values(
     assert evidence.main([str(transcript), "--warn"]) == 0
     warn_events = read_jsonl(capsys)
     assert [event["text"] for event in warn_events if event["kind"] == "warning"] == [notice]
+
+
+@pytest.mark.parametrize("runtime", ["claude", "claude-prefix", "codex", "codex-tool"])
+def test_result_only_block_notice(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str) -> None:
+    """2026年10月のホスト遮断形式は結果のみでも抽出し、標準出力の引用は除く。"""
+    body = '<atk-auto source="response-language" kind="block">英語主体と判定</atk-auto>'
+    if runtime.startswith("claude"):
+        wrapped = (
+            f"<tool_use_error>{body}</tool_use_error>"
+            if runtime == "claude"
+            else f"PreToolUse:Bash hook error: [hook-command]: {body}"
+        )
+        entries = [
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "blocked", "is_error": True, "content": wrapped},
+                        {"type": "tool_result", "tool_use_id": "quote", "content": body},
+                    ],
+                },
+            }
+        ]
+    else:
+        blocked_name = "Command" if runtime == "codex" else "Tool call"
+        entries = [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "blocked",
+                    "output": [
+                        {"type": "input_text", "text": f"Script error:\n{blocked_name} blocked by PreToolUse hook: {body}"},
+                        {"type": "input_text", "text": f"Script completed\nOutput:\n{body}"},
+                    ],
+                },
+            }
+        ]
+    transcript = _write_transcript(tmp_path, entries)
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+    events = read_jsonl(capsys)
+    assert events[-1] == {"kind": "summary", "count": 1}
+    assert events[0]["hook"] == "response-language"
+    assert events[0]["tag"] == "block"
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    assert any("英語主体と判定" in event.get("text", "") for event in read_jsonl(capsys))
+
+
+def test_parallel_rejected_notices_keep_occurrences(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """同じ呼出の独立した並列遮断はそれぞれ数え、fulfilled本文は数えない。"""
+    body = '<agent-toolkit-auto-inserted source="response-language" kind="block">英語主体と判定</agent-toolkit-auto-inserted>'
+    results = [{"result": {"status": "rejected", "reason": f"Command blocked by PreToolUse hook: {body}"}} for _ in range(2)]
+    results.append({"result": {"status": "fulfilled", "reason": f"Command blocked by PreToolUse hook: {body}"}})
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "parallel",
+                    "output": [
+                        {"type": "input_text", "text": json.dumps(results)},
+                    ],
+                },
+            }
+        ],
+    )
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+    assert read_jsonl(capsys)[-1] == {"kind": "summary", "count": 2}
+
+
+def test_result_and_hook_record_are_one_notice(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """同一呼出の結果とhook記録の二重保存を除く。"""
+    body = '<atk-auto source="response-language" kind="block">英語主体と判定</atk-auto>'
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            hook_attachment(
+                {"type": "hook_system_message", "hookName": "PreToolUse:Bash", "toolUseID": "same", "content": body}
+            ),
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "is_error": True, "tool_use_id": "same", "content": body}],
+                },
+            },
+        ],
+    )
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+    assert read_jsonl(capsys)[-1] == {"kind": "summary", "count": 1}

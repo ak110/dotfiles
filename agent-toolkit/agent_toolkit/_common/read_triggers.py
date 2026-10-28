@@ -24,6 +24,8 @@ OPERATIONS = frozenset(
         "root-cause-writing",
         "managed-temp-create",
         "body-writing",
+        "existing-file-edit",
+        "claude-existing-file-edit",
         "verification",
         "agent-document-writing",
         "confirmation",
@@ -487,27 +489,14 @@ def parse_tables(
     strict: bool = False,
     host: str = "claude",
     project: pathlib.Path | str | None = None,
-    _parents: frozenset[pathlib.Path] = frozenset(),
 ) -> list[ReadTrigger]:
     """資料列を持つ表から宣言を読む。strictでは未分類の表も拒否する。"""
     source = source.resolve()
-    if source in _parents:
-        raise ValueError(f"{source}: read-table-sourceの循環を検出した")
     text = source.read_text(encoding="utf-8")
     result: list[ReadTrigger] = []
     headers: list[str] = []
     for number, line, visible in document_lines(text):
         if not visible:
-            headers = []
-            continue
-        included = re.fullmatch(r"<!-- read-table-source: (.+) -->", line)
-        if included:
-            target = resolve_document(included[1], source, plugin_root, host, project=project)
-            if target is None:
-                raise ValueError(f"{source}: read-table-sourceの実体が無い: {included[1]}")
-            result.extend(
-                parse_tables(target, plugin_root, strict=strict, host=host, project=project, _parents=_parents | {source})
-            )
             headers = []
             continue
         if not line.startswith("|"):
@@ -617,13 +606,6 @@ def reference_method_targets(
         target.body()
         result.append(target)
         result.extend(reference_method_targets(target.path, plugin_root, host, _parents | {source}, project=project))
-    for _number, line, visible in document_lines(text):
-        included = re.fullmatch(r"<!-- read-table-source: (.+) -->", line) if visible else None
-        if included is not None:
-            path = _direct_document(included[1], source, plugin_root, host, project=project)
-            if path is None:
-                raise ValueError(f"{source}: read-table-sourceの実体が無い: {included[1]}")
-            result.extend(reference_method_targets(path, plugin_root, host, _parents | {source}, project=project))
     return tuple(dict.fromkeys(result))
 
 
@@ -729,3 +711,30 @@ def document_sources(plugin_root: pathlib.Path, cwd: str = "", user_skills: path
         roots.extend(parent / ".claude" / "skills" for parent in [project, *project.parents])
     roots.append(user_skills or pathlib.Path.home() / ".claude" / "skills")
     return list(dict.fromkeys(path.resolve() for root in roots if root.is_dir() for path in sorted(root.rglob("*.md"))))
+
+
+def validate_plugin_relative_references(source: pathlib.Path) -> None:
+    """プラグイン文書の相対パス参照が、所有プラグインのrootの外を指していないことを確かめる。
+
+    リポジトリではagent-toolkitとagent-basicsが隣り合うが、配布キャッシュでは版ごとの別ディレクトリに置かれる。
+    rootの外を指す相対パスはリポジトリ内の検査では解決しても配布物では届かないため、論理名表記へ誘導する。
+    コードフェンスの内側は例示として扱い、検査しない。
+    """
+    source = source.resolve()
+    owner = next((parent for parent in source.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+    if owner is None:
+        return
+    for number, line, visible in document_lines(source.read_text(encoding="utf-8")):
+        if not visible:
+            continue
+        for matched in _REFERENCE.finditer(line):
+            value = (matched[1] or matched[2] or "").split("#", 1)[0].strip()
+            if not value.startswith("../"):
+                continue
+            resolved = (source.parent / value).resolve()
+            if not resolved.is_relative_to(owner):
+                raise ValueError(
+                    f"{source}:{number}: 相対パスが所有プラグインのrootの外を指す: {value}。"
+                    "配布時はプラグインごとに別ディレクトリへ置かれ届かないため、"
+                    "`agent-basics:<スキル>/<パス>`や`agent-toolkit:<スキル>/<パス>`の論理名表記で書く"
+                )

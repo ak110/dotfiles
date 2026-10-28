@@ -39,7 +39,11 @@ lazy from agent_toolkit._hooks.message_format import xml_message
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
-RESPONSE_LANGUAGE_NOTICE = "ユーザーへ向けた地の文は、最初の応答の1文目から日本語で書け。"
+RESPONSE_LANGUAGE_NOTICE = (
+    "思考を除いてエージェントが書く全ての文は、最初の応答の1文目から日本語で書け。"
+    "ツール呼び出しの前後の短い状態行、送達後の本文、委譲プロンプト、返却、成果物も含む。"
+    "英語の文は1文も書くな。識別子、コマンド、引用はこの禁止の対象外とする。"
+)
 QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。会話限定の指示を成果物へ混入させるな。"
 
 SHARE_DIR = plugin_resources.plugin_root() / "share"
@@ -237,7 +241,14 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
 
     def notice(items: list[str], remaining: bool) -> str:
         suffix = "。残る資料は次の操作で案内する" if remaining else ""
-        return _llm_notice("会話圧縮後の判断前に、選択済み資料を再取得せよ: " + "。".join(items) + suffix + "。")
+        # 圧縮前の選択資料は候補として示し、全件の一括再取得は求めない。
+        # 残る工程で使わない資料まで読み直すと、圧縮直後に出力上限を超える複合取得が起きるため。
+        return _llm_notice(
+            "会話圧縮前に選んだ資料の候補を示す。残る工程の判断に使う資料だけを、使う前に次の手段で全文再取得せよ: "
+            + "。".join(items)
+            + suffix
+            + "。"
+        )
 
     included: list[str] = []
     for step in steps:
@@ -457,6 +468,11 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             raise ValueError("sourceは文字列である必要がある")
         delegated = is_delegated(os.environ)
         content = compose_session_start(source, delegated=delegated, host=host)
+        from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        review_notice = run_skill_batch.hook_request(payload, host=host) if host in {"claude", "codex"} else None
+        if review_notice is not None:
+            content = f"{content}\n\n{_llm_notice(review_notice)}" if content else _llm_notice(review_notice)
         session_id = payload.get("session_id")
         if not delegated and host == "claude":
             identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))
@@ -478,6 +494,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 recovery_targets = reset_main_operation_skill_ready(session_id, retain_for_compact=source == "compact")
             if not delegated and source in _CONTEXT_LOSING_SOURCES:
                 mark_user_confirmation_pending(session_id)
+            if source == "compact" and not delegated:
+                work_contract.reset_notice(session_id)
             try:
                 session_temp = managed_temp.resolve_session_temp(session_id)
             except managed_temp.ManagedTempError, OSError:

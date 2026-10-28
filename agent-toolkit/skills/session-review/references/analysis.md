@@ -1,6 +1,6 @@
 # 振り返りの判断基準
 
-`agent-toolkit:session-review`の`SKILL.md`「工程」において、メインエージェントが通読で見つけた問題や問題候補を選別し、原因と対策を確定するときの判断基準を定める。工程と入出力は同スキルの`SKILL.md`、振り返り結果報告の書式は`agent-toolkit:completion-report`が定める。
+`agent-toolkit:session-review`の`SKILL.md`「工程」において、メインエージェントが通読で見つけた問題や問題候補を選別し、原因と対策を確定するときの判断基準を定める。手動の工程と入出力は同スキルの`SKILL.md`、非同期の対象固定と範囲確定は`agent-toolkit:session-review-batch`、振り返り結果報告の書式は`agent-toolkit:completion-report`の`references/report-formats.md`が定める。複数対象でも分析基準を変えず、対象IDと記録位置を保持する。
 
 ## 名指し参照の読込方法
 
@@ -8,6 +8,8 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/report-formats.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review-batch/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review-batch/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/session-review/SKILL.md#「工程」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
@@ -84,7 +86,7 @@ Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を
   委譲先の拒否は委譲元の記録で判定する。条件を満たしたのに適用されなかった拒否は、作業進行への影響を問わず「原因と対策」へ送り、未適用の原因と必要な処置を判定する。パーミッションルールを変える案は、拒否時の文面と分類名を証拠に添え、`agent-toolkit:writing-standards`の`references/auto-mode.md`のワークフローへ送る。
 - 手順書の作業を一時スクリプトで代替した箇所: 有効期限のある資格情報の更新、設定の再登録、別環境の構築、定期的な運用作業など、将来再実行される手順かを手順書の本文と扱う値から判定する。再実行されるなら、スクリプトを手順を所有するリポジトリのスクリプト配置場所へ移して手順書から呼ぶ対策を、そのリポジトリを`target_repo`とする通常AWIとして「原因と対策」へ送る（同じセッションで是正済みなら除く）。1回限りの使い捨て作業は対象外とする。
 - その場のコードによる加工: `adhoc-processing`の候補、通読で見つけた後加工、同じ目的のコマンドの反復について、呼び出しごとの目的（どの出力から何を取ったか）を特定し、反復性を判定する。同じセッションで同じ目的の加工が2回以上あれば反復とする。スキルや規範の手順が実行のたびに求める工程（逐語引用の文字位置の算出など）のための加工と、`agent-toolkit`のコマンド出力形式の制約で要った加工は、1回の観測でも反復とする。反復する加工は「原因と対策」へ送り、比較する代替案と評価順は`agent-basics:bugfix`の`references/root-cause-scenarios.md`「反復する加工の問題」に従う。反復しない1回限りの調査は、目的と反復しない根拠を「対策を見送った問題」に書いて除外する。
-- `気付いた改善点:`で始まる行: その場の調査と是正の結果を確認し、既に得た根拠と判断を再利用して、残る分析を「原因と対策」へ送る。その場でユーザーへ伝えた行も対象に含める。
+- `気付いた改善点:`で始まる行: その場の直接的原因・影響調査と必要な処置を確認し、根拠と判断を再利用する。未調査、変更、不一致の部分だけを補って残る分析を「原因と対策」へ送る。単純な効率改善もQCDで採否を決め、担当外の処置と引き継ぎ先を保持する。その場でユーザーへ伝えた行も対象に含め、非同期分析まで初動調査を延期したり、既調査事項を最初からやり直したりしない。
 
 ### ユーザー介入の判定規則
 

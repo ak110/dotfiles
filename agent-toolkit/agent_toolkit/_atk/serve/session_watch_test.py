@@ -89,6 +89,10 @@ def test_summary_skips_runtime_inserted(tmp_path: pathlib.Path) -> None:
     ]
     codex_records = [
         {"type": "session_meta", "payload": {"cwd": "/work", "timestamp": "2026-09-01"}},
+        {
+            "type": "response_item",
+            "payload": {"role": "user", "content": [{"text": "You are Codex, an agent based on GPT-6."}]},
+        },
         {"type": "response_item", "payload": {"role": "user", "content": [{"text": "<skills_instructions>自動本文"}]}},
         {"type": "response_item", "payload": {"role": "user", "content": [{"text": "Codexの本当の発話"}]}},
     ]
