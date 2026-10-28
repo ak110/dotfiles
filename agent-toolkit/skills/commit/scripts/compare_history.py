@@ -1,7 +1,8 @@
 """履歴操作の検収と完全OID対応表の生成。検収しない対応は保存しない。
 
 本スクリプトは履歴を読み取るだけで、認可・公開済みの確認・操作の実行は呼出側が所有する。
-rebaseは変更内容の一意な全1対1対応を検収し、明示した競合解消commitは件名・相対順・変更パスで対応付ける。
+rebaseは変更内容の一意な対応を検収する。統合先に既にある同一変更はその既存commitへ対応付け、
+明示した競合解消commitは件名・相対順・変更パスで対応付ける。
 autosquashはtree・件数・制御件名・fixup対象以外の変更内容の不変を検収する。
 amendは内容の変更を前提とし、旧新が同じbaseの直上の異なる1commitどうしであることだけを検収する。
 """
@@ -151,6 +152,47 @@ def _same_content(work_dir: pathlib.Path, old_oid: str, new_oid: str) -> bool:
     return written.stdout.strip() == _git(work_dir, "rev-parse", f"{new_oid}^{{tree}}").strip()
 
 
+def _upstream_mapping(
+    work_dir: pathlib.Path, old: list[str], new: list[str], old_base: str, new_base: str, conflicts: set[str]
+) -> dict[str, str]:
+    """省略された旧変更を、統合先で追加された同一変更へ一意に対応付ける。
+
+    空白も区別する既存の内容識別を使い、変更した全パスの内容が新baseでも保持される場合に限る。
+    後続の同パス編集は安全側で拒否し、履歴内に同一変更があるだけでは受理しない。
+    """
+    if len(old) <= len(new):
+        return {}
+    old_ids = {oid: _content_id(work_dir, oid) for oid in old}
+    if len(set(old_ids.values())) != len(old):
+        raise ValueError("変更内容が重複し、commitの対応が一意ではありません")
+    new_ids = {_content_id(work_dir, oid) for oid in new}
+    upstream = _git(work_dir, "rev-list", "--no-merges", f"{old_base}..{new_base}").splitlines()
+    upstream_ids = {oid: _content_id(work_dir, oid) for oid in upstream}
+    mapping = {}
+    for oid, content in old_ids.items():
+        if oid in conflicts or content in new_ids:
+            continue
+        matches = [target for target, candidate in upstream_ids.items() if candidate == content]
+        if len(matches) > 1:
+            raise ValueError(f"統合先の既存変更との対応が一意ではありません: {oid}")
+        if matches:
+            target = matches[0]
+            paths = _git(work_dir, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", target)
+            if paths and not _git(
+                work_dir,
+                "--literal-pathspecs",
+                "diff",
+                "--no-ext-diff",
+                "--name-only",
+                target,
+                new_base,
+                "--",
+                *paths.rstrip("\0").split("\0"),
+            ):
+                mapping[oid] = target
+    return mapping
+
+
 def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str], conflicts: set[str]) -> dict[str, str]:
     old_ids = [_content_id(work_dir, oid) for oid in old]
     new_ids = [_content_id(work_dir, oid) for oid in new]
@@ -279,7 +321,9 @@ def main(argv: list[str] | None = None) -> int:
                 _git(args.work_dir, "rev-parse", "--verify", "--end-of-options", f"{value}^{{commit}}").strip()
                 for value in args.resolved_conflict or []
             }
-            mapping = _rebase(args.work_dir, old, new, conflicts)
+            upstream = _upstream_mapping(args.work_dir, old, new, old_base, new_base, conflicts)
+            mapping = _rebase(args.work_dir, [oid for oid in old if oid not in upstream], new, conflicts)
+            mapping.update(upstream)
         elif args.operation == "autosquash":
             mapping = _autosquash(args.work_dir, old, new)
         else:
