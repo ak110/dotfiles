@@ -282,7 +282,10 @@ def test_compound_cell_keeps_each_operation_and_unresolved_acquisition(
     assert [operation["operation"] for operation in call["operations"]] == [2, 4]
     assert all(operation["input"] and operation["reason"] for operation in call["operations"])
     assert call["purpose"] == "未判定" and call["result_observation"] == "結果記録なし"
-    assert {reads["candidate_id"], unresolved["candidate_id"]} <= set(output["mandatory_candidates"])
+    # 後続に同じ役割の起動が無い読取は準備で判定済みになり、未確定の材料だけが評価必須に残る。
+    assert reads["calls"][0]["launch_check"]["status"] == "cleared"
+    assert reads["candidate_id"] not in output["mandatory_candidates"]
+    assert unresolved["candidate_id"] in output["mandatory_candidates"]
     index = [json.loads(line) for line in Path(output["review_index_path"]).read_text(encoding="utf-8").splitlines()]
     assert next(row for row in index if row["candidate_id"] == unresolved["candidate_id"])["mandatory"] is True
     evidence = [
@@ -407,7 +410,8 @@ def test_dynamic_outer_cell_uses_different_inner_execution_id_and_keeps_both_loc
     assert call["operations"][0]["execution_result_line"] == 2
     assert reads["locators"] == [{"record": "codex:record", "line": 1}, {"record": "codex:record", "line": 2}]
     assert not [row for row in candidates if row["candidate_kind"] == "definition-read-unresolved"]
-    assert reads["candidate_id"] in output["mandatory_candidates"]
+    assert call["launch_check"]["status"] == "cleared"
+    assert reads["candidate_id"] not in output["mandatory_candidates"]
 
 
 @pytest.mark.parametrize("tool_name", ["functions.exec", "functions.Exec", "functions.EXEC"])
@@ -733,3 +737,185 @@ def test_task_boundaries_do_not_reuse_a_previous_turn_id(
     unresolved = next(row for row in candidates if row["candidate_kind"] == "definition-read-unresolved")
     assert reads["calls"][0]["line"] == 5
     assert unresolved["calls"][0]["line"] == 4
+
+
+# 手順書を読む可能性が無いと静的に言える操作。実記録で多い代入、作業ファイル、環境の表示、構文語を並べる。
+_NO_DEFINITION_READS = [
+    "rc=$?; echo $rc",
+    'W=/tmp/x && cat "$W/out.log"',
+    "env",
+    "command -v codex",
+    "env -u X uv run pytest -q",
+    '{ git status; } > "$W/o.txt"',
+    "[ -f a ] && echo ok",
+    'cat "$PWD/docs/guide.md"',
+]
+# 手順書を読み得るが、対象やコマンドを静的に確定できない操作。
+_POSSIBLE_DEFINITION_READS = [
+    'cat "$ROLE_PATH"',
+    "cat docs/$f.md",
+    "cat $(resolve /p/x.subagent.md)",
+    'cat "$W/agent-toolkit/share/add-wi.subagent.md"',
+    'x=$(cat "$f")',
+    'env -u X cat "$f"',
+    "$CAT /p/x.subagent.md",
+    "timeout --foreground 10s cat /p/x.subagent.md",
+]
+# コマンド置換と複合コマンドの内側で手順書を読む操作。
+_NESTED_DEFINITION_READS = [
+    "for f in a; do cat /p/x.subagent.md; done",
+    "if true; then cat /p/x.subagent.md; fi",
+    'echo "$(cat /p/x.subagent.md)"',
+    "x=$(cat /p/x.subagent.md)",
+    "{ cat /p/x.subagent.md; } > o",
+]
+
+
+def _bash_candidates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], command: str
+) -> list[dict]:
+    entries = [
+        {"type": "user", "message": {"role": "user", "content": "作業依頼"}},
+        support.claude_call("2026-10-21T00:00:02Z", "shell", "Bash", {"command": command}),
+        support.claude_result("2026-10-21T00:00:03Z", "shell", "出力"),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    return [row for row in candidates if row["candidate_kind"] in {"definition-body-read", "definition-read-unresolved"}]
+
+
+@pytest.mark.parametrize("command", _NO_DEFINITION_READS)
+def test_operations_that_cannot_read_a_definition_are_not_candidates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    """手順書を読む可能性が無い操作は、読込とも読込未確定とも扱わず、評価必須の候補にしない。"""
+    assert _bash_candidates(tmp_path, monkeypatch, capsys, command) == []
+
+
+@pytest.mark.parametrize("command", _POSSIBLE_DEFINITION_READS)
+def test_operations_that_may_read_a_definition_remain_unresolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    """手順書を読み得る動的な操作と、前置語の値境界や実行コマンドが未知の区間は、読込未確定に残す。"""
+    kinds = [row["candidate_kind"] for row in _bash_candidates(tmp_path, monkeypatch, capsys, command)]
+    assert kinds == ["definition-read-unresolved"]
+
+
+@pytest.mark.parametrize("command", _NESTED_DEFINITION_READS)
+def test_reads_inside_substitutions_and_compound_commands_are_detected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    """コマンド置換と複合コマンドの内側の読取も、外側と同じ基準で読込と判定する。"""
+    rows = _bash_candidates(tmp_path, monkeypatch, capsys, command)
+    assert [row["candidate_kind"] for row in rows] == ["definition-body-read"]
+    assert rows[0]["calls"][0]["targets"] == ["/p/x.subagent.md"]
+
+
+def test_outer_cell_without_inner_execution_has_no_candidate_for_operations_that_cannot_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """内側の実行を対応付けられない外側セルでも、操作が手順書を読み得なければ読込未確定の候補を出さない。"""
+    turn_id = "turn-no-read"
+    cell = "".join(f"await tools.exec_command({{cmd: {json.dumps(command)}}});" for command in _NO_DEFINITION_READS)
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {"type": "custom_tool_call", "name": "functions.exec", "call_id": "outer", "turn_id": turn_id, "input": cell},
+        ),
+        _codex_outer_result("2026-10-21T00:00:03Z", "outer", turn_id),
+    ]
+    _output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries, kind=None)
+    assert not [row for row in candidates if row["candidate_kind"] in {"definition-body-read", "definition-read-unresolved"}]
+
+
+def _launch_entry(route: str) -> dict:
+    """読取の後に`reader-fit-review`を起動する呼出しを返す。"""
+    if route == "start":
+        return support.claude_call(
+            "2026-10-21T00:00:04Z", "launch", "mcp__agents_server__start", {"subagent_md_path": "reader-fit-review"}
+        )
+    if route == "agent":
+        return support.claude_call(
+            "2026-10-21T00:00:04Z",
+            "launch",
+            "Agent",
+            {"description": "読者別探索", "prompt": "reader-fit-review.subagent.md の手順で探索せよ"},
+        )
+    cell = (
+        'await tools.spawn_agent({message: "reader-fit-review.subagent.md の手順で探索せよ"});'
+        if route == "exec-spawn"
+        else 'await tools.mcp__agents_server__start({cwd: "/repo", subagent_md_path: "reader-fit-review"});'
+    )
+    return support.codex_item(
+        "2026-10-21T00:00:04Z",
+        {"type": "custom_tool_call", "name": "functions.exec", "call_id": "launch", "input": cell},
+    )
+
+
+@pytest.mark.parametrize(
+    ("context", "suspected"),
+    [
+        ("no-launch", False),
+        ("own-definition", False),
+        ("other-role-launch", False),
+        ("launch-before-read", False),
+        ("start", True),
+        ("exec-start", True),
+        ("exec-spawn", True),
+        ("agent", True),
+    ],
+)
+def test_definition_read_is_mandatory_only_when_the_same_role_is_launched_after_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], context: str, suspected: bool
+) -> None:
+    """読んだ後に同じ役割を起動した読取だけを起動準備の疑いありとし、その候補だけを評価必須にする。
+
+    後続に同じ役割の起動が無い読取と、読む主体の役割文書の読取は、禁止事項が成立しないため準備で判定済みにする。
+    """
+    message = f"次の文書の手順を実行せよ（出所: {_ROLE_PATH}）。" if context == "own-definition" else "作業依頼"
+    entries = [{"type": "user", "message": {"role": "user", "content": message}}]
+    if context == "launch-before-read":
+        entries.append(_launch_entry("start"))
+    entries.extend(_read_call("Read"))
+    if context == "other-role-launch":
+        entries.append(
+            support.claude_call("2026-10-21T00:00:04Z", "launch", "mcp__agents_server__start", {"subagent_md_path": "add-wi"})
+        )
+    elif context in {"start", "agent", "own-definition"}:
+        entries.append(_launch_entry("agent" if context == "agent" else "start"))
+    elif context in {"exec-start", "exec-spawn"}:
+        entries.append(_launch_entry("exec-spawn" if context == "exec-spawn" else "exec"))
+    output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries)
+    assert len(candidates) == 1
+    check = candidates[0]["calls"][0]["launch_check"]
+    assert check["status"] == ("suspected" if suspected else "cleared") and check["reason"]
+    assert (candidates[0]["candidate_id"] in output["mandatory_candidates"]) is suspected
+    index = [json.loads(line) for line in Path(output["review_index_path"]).read_text(encoding="utf-8").splitlines()]
+    assert next(row for row in index if row["candidate_id"] == candidates[0]["candidate_id"])["mandatory"] is suspected
+    evidence = [
+        json.loads(line)
+        for line in (Path(output["work_dir"]) / "bundle/candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    row = next(row for row in evidence if row.get("candidate_id") == candidates[0]["candidate_id"])
+    detail = json.loads((Path(output["work_dir"]) / "bundle" / row["path"]).read_text(encoding="utf-8"))
+    assert detail["definition_reads"][0]["launch_check"] == check
+
+
+def test_read_and_launch_in_the_same_codex_cell_remain_suspected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Codexの同じセルで手順書を読み、同じ役割を`start(`で起動した読取は、前後を決められないため疑いありに残す。"""
+    turn_id = "turn-same-cell"
+    cell = (
+        f'await tools.exec_command({{cmd: "cat -- {_ROLE_PATH}"}});'
+        'await tools.mcp__agents_server__start({cwd: "/repo", subagent_md_path: "reader-fit-review"});'
+    )
+    entries = [
+        support.codex_item(
+            "2026-10-21T00:00:02Z",
+            {"type": "custom_tool_call", "name": "functions.exec", "call_id": "outer", "turn_id": turn_id, "input": cell},
+        ),
+        _codex_outer_result("2026-10-21T00:00:03Z", "outer", turn_id),
+    ]
+    output, candidates = _prepare(tmp_path, monkeypatch, capsys, entries)
+    assert candidates[0]["calls"][0]["launch_check"]["status"] == "suspected"
+    assert candidates[0]["candidate_id"] in output["mandatory_candidates"]

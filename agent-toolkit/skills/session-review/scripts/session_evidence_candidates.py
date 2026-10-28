@@ -54,7 +54,7 @@ from agent_toolkit._atk.wi.frontmatter import parse_frontmatter as _parse_wi_fro
 from agent_toolkit._common import response_language_check as _response_language_check
 from agent_toolkit._common.bash_invocations import extract_bash_invocations, is_read_predicate
 from agent_toolkit._common.shell_quoting import QuotingScanner as _QuotingScanner
-from agent_toolkit._common.shell_segments import extract_execution_segments as _extract_execution_segments
+from agent_toolkit._common.shell_segments import resolve_execution_segment as _resolve_execution_segment
 from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
 
 # 過去の単一対象と現在の登録全体の起動を、後続の人間の介入を探すための初期要求として扱う。
@@ -244,24 +244,40 @@ _YES_NO_CHOICES = ("はい", "いいえ")
 """`question_type: yes-no`のUWIで回答画面が示す選択肢。"""
 
 
+def _loop_expansion(token: str, loop_values: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
+    """`$<変数>`・`${<変数>}`の語を、`for`の固定の値へ展開する。それ以外の語はそのまま返す。"""
+    name = token[2:-1] if token.startswith("${") and token.endswith("}") else token[1:] if token.startswith("$") else None
+    return loop_values.get(name, (token,)) if name is not None else (token,)
+
+
 def _processed_wi_filenames(collected: list[_CollectedRecord]) -> set[str]:
     """メインと全ての委譲先が実行したシェルコマンドから、処理したWIのファイル名を返す。
 
     コマンドの実行位置にある`atk wi <サブコマンド>`だけを対象とし、引用や説明文の中の文字列は対象から外す。
+    複合コマンド（`for`・`if`・`{ }`など）とコマンド置換の内側の実行も同じ基準で数え、`for <変数> in <値…>`の本体にある
+    `$<変数>`・`${<変数>}`の引数は各値へ展開する。
+    入力ファイルから値を読む`while read`の変数は値を静的に求められないため数えない。
     """
     names: set[str] = set()
     for item in collected:
         for call in _record_tool_calls(item.records):
             if call.tool.casefold().rsplit("__", maxsplit=1)[-1].rsplit(".", maxsplit=1)[-1] not in _ADHOC_SHELL_TOOLS:
                 continue
-            for segment in _extract_execution_segments(call.text):
+            loop_values: dict[str, tuple[str, ...]] = {}
+            for simple in session_evidence_execution.shell_simple_commands(call.text):
+                words = simple.words
+                if len(words) >= 3 and words[0] == "for" and words[2] == "in":
+                    loop_values[words[1]] = words[3:]
+                    continue
+                segment = _resolve_execution_segment(list(words))
                 tokens = list(segment.tokens)
                 if not segment.resolved or len(tokens) < 3:
                     continue
                 if not _is_atk_command(tokens) or tokens[1] != "wi":
                     continue
                 if tokens[2] in _WI_PROCESSING_OPERATIONS:
-                    names.update(Path(token).name for token in tokens[3:] if _WI_FILENAME.fullmatch(Path(token).name))
+                    arguments = [value for token in tokens[3:] for value in _loop_expansion(token, loop_values)]
+                    names.update(Path(token).name for token in arguments if _WI_FILENAME.fullmatch(Path(token).name))
     return names
 
 
@@ -627,9 +643,11 @@ def _candidate_events(
                     "acquisition",
                     "operations",
                     "recorded_input",
+                    "launch_check",
                 )
                 for row, event in zip(candidate["calls"], ordered, strict=True):
-                    row.update({field: event[field] for field in fields})
+                    # `launch_check`は読込と確定した読取（definition-body-read）だけが持つ。
+                    row.update({field: event[field] for field in fields if field in event})
         candidates.append(candidate)
     included_locators.sort(key=lambda locator: (locator["record"], locator["line"]))
     return [
