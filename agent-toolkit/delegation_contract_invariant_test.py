@@ -601,6 +601,8 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     contract_names = {name for name, content in markdown.items() if "## 多段工程の引き継ぎ記録" in content}
     # 現行要求の記録仕様は、役割別の起動契約と共通の引き継ぎ記録先を使う。
     contract_names.add("work-contract.md")
+    # Codexの文脈切替は既存の引き継ぎ記録へ保存・復元を接続する。
+    contract_names.add("rules-common.codex.md")
     expected_names = parent_names | recipient_names | contract_names
     actual_names = {name for name, content in markdown.items() if "引き継ぎ記録先" in content}
 
