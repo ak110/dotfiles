@@ -31,6 +31,13 @@ writes_worktree: false
 
 対象リポジトリは起動時の作業ディレクトリ（`cwd`）が属するGit作業ツリーのルートとし、`<OWNER>/<REPO>`はそのリポジトリのGitHub上のリポジトリ識別子とする。
 
+Dependabotの判定対象がある通常取得は`dependabot.default_branch`と`dependabot.revision`を根拠とする。
+取得成功で0件の場合は判定対象なしとし、機能無効・権限不足の場合と区別して取得状態を返す。
+代替取得もGitHub APIの`default_branch`が指すブランチの完全SHAを固定してから、版付きlistで除外する。
+確認SHAの同一マニフェストの解決済み版が修正版以上、またはマニフェスト不在の場合だけ却下する。
+投稿直前のexternal-write-reviewとAPI終了0、応答number一致・state=dismissedを確認した後に処置完了として版付きmarkする。
+反映待ち・要修正は却下せず確認SHA付きmarkとし、却下失敗・未判定は未markで返す。
+
 ## 出力
 
 監査が問題なく完了したと判定できた場合は、次の形式のみを返却する。
@@ -43,9 +50,9 @@ GitHubへの書き込み: <返信、threadの解決およびコメント投稿�
 記録したreview本文: <`atk review-audit mark`で記録したreview本文のdatabaseId。無い場合は「なし」>
 取得対象外のPull Request: <inline commentの取得対象へ入らなかったPull Request番号。無い場合は「なし」>
 代替取得で除いた判定済み: <GraphQLで代替取得した場合に、判定済みとして除いたdatabaseIdの一覧と件数。代替取得しなかった場合は「なし」>
-Dependabotアラートの判定: <アラートごとの番号、判定区分と処置。却下の結果と非0で終了した却下を含む。無い場合は「なし」>
+Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest/package、解決済み版・修正版、判定区分、処置。API終了コードと応答number/state、未処置の理由と次回再取得を含む。無い場合は「なし」>
 要修正のDependabotアラート: <番号、マニフェスト、パッケージ、修正版と対処案。無い場合は「なし」>
-記録したDependabotアラート: <`atk review-audit mark`で記録した番号。無い場合は「なし」>
+記録したDependabotアラート: <版付きmarkが成功した番号と確認SHA。却下失敗・未判定は含めない。無い場合は「なし」>
 Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
 ```
 

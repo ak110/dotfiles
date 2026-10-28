@@ -2,10 +2,10 @@
 
 単一起動とall-reposの両方が、担当を起動する前に本モジュールの`decide`を通す。
 担当が進捗なしで終わった時点の起動入力をホストの状態ディレクトリへ対象リポジトリごとに記録し、
-同じ入力の間は起動を見送る。記録をWIの`cooldown_until`や`hold`で表すと、同じWIを処理できる
+同じWI入力の間は起動を見送る。記録をWIの`cooldown_until`や`hold`で表すと、同じWIを処理できる
 別ホストの起動まで止めるため、記録はこのホストだけが読む。時間経過による再試行は置かず、
-入力の変化（WIの到着・本文や状態の変更・着手可否の区分の変化・新しい未判定アラート）と
-`--resume`・`--auto-resume`の明示指定だけが起動を再開する。
+入力の変化（WIの到着・本文や状態の変更・着手可否の区分の変化）、未判定アラート、および
+`--resume`・`--auto-resume`の明示指定が起動を再開する。アラートの判定済み除外はreview-auditへ集約する。
 """
 
 import dataclasses
@@ -25,7 +25,7 @@ from agent_toolkit._git import remote as _remote
 
 RESTART_CHANGES = (
     "新しいWIの到着、既存WIの本文・状態・依存・冷却期限の変更、着手可否の区分の変化、"
-    "ユーザーコメントやUWI回答の記入、新しい未判定のDependabotアラート、`--resume`の指定"
+    "ユーザーコメントやUWI回答の記入、新しい未判定のDependabotアラート、却下未完了の再試行、`--resume`の指定"
 )
 
 type Item = tuple[str, str, str]
@@ -134,7 +134,6 @@ def _load(repo_id: str) -> LaunchInput | None:
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
         items = frozenset((str(name), str(digest), str(kind)) for name, digest, kind in record["items"])
-        alerts = None if record["alerts"] is None else frozenset(int(number) for number in record["alerts"])
     except FileNotFoundError:
         return None
     except (OSError, ValueError, KeyError, TypeError) as error:
@@ -142,7 +141,7 @@ def _load(repo_id: str) -> LaunchInput | None:
             f"process-loopの無進捗記録を解釈できない: {path}: {error}",
             next_action=f"{path}を削除してからprocess-loopを再起動する（次の反復は記録なしで担当を起動する）",
         ) from error
-    return LaunchInput(items, alerts)
+    return LaunchInput(items, None)
 
 
 def clear(repo_id: str) -> None:
@@ -156,17 +155,17 @@ def clear(repo_id: str) -> None:
 def decide(repo_id: str, current: LaunchInput, *, explicit: bool = False) -> Decision:
     """担当を起動する仕事（候補・診断・未判定アラート）がある反復で、起動するか見送るかを返す。
 
-    無進捗記録が無いか、記録に無い要素が起動入力にあるときだけ起動する。明示指定（`--resume`・`--auto-resume`の
-    対象）は記録によらず起動する。アラートを観測していない反復はWI部分だけを比べ、記録のアラート部分は
-    比較にも削除にも使わずに残す。起動入力が空の反復の記録の削除は呼び出し側が`clear`で行う。
+    無進捗記録が無いか、記録に無いWI要素または未判定アラートが起動入力にあれば起動する。
+    明示指定（`--resume`・`--auto-resume`の対象）は記録によらず起動する。アラート未観測時はWI部分を比べる。
+    起動入力が空の反復の記録の削除は呼び出し側が`clear`で行う。
     """
     if explicit:
         return Decision(launch=True)
     record = _load(repo_id)
     if record is None:
         return Decision(launch=True)
-    new_alerts = frozenset() if current.alerts is None else current.alerts - (record.alerts or frozenset())
-    if current.items - record.items or new_alerts:
+    # 判定済み除外はreview-auditが確認版に限定して行う。未markの却下失敗をここで再び抑止しない。
+    if current.items - record.items or current.alerts:
         return Decision(launch=True)
     return Decision(launch=False, skipped=True)
 
@@ -175,17 +174,16 @@ def record_no_progress(repo_id: str, start: LaunchInput, end: LaunchInput) -> No
     """担当の起動時と終了時の両方に存在した要素だけを無進捗記録へ保存する。
 
     稼働中に加わった要素と変わった要素は記録に含まれず、次の反復で起動の対象になる。
-    アラート部分は起動時の観測を使う（担当が判定した番号は以後の未判定集合に現れない）。
+    アラートの除外は確認版付きの判定記録が担うため、番号をこの記録へ複製しない。
     """
     items = start.items & end.items
-    if not items and not start.alerts:
+    if not items:
         return
     path = _path(repo_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     body = {
         "repo_id": repo_id,
         "items": sorted(list(item) for item in items),
-        "alerts": None if start.alerts is None else sorted(start.alerts),
     }
     atomic_write(path, json.dumps(body, ensure_ascii=False) + "\n")
 

@@ -41,4 +41,13 @@ WI選定の開始前に、対象リポジトリがGitHub上にあれば`atk revi
 
 ### 受領
 
+通常・代替取得とも、Dependabotの判定対象がある場合はdefault_branchと確認SHAを受け取り、取得・比較・markが同じSHAに基づくことを確かめる。
+判定対象が0件なら版情報は不要で、判定欄の「なし」と取得状態を受領する。
+機能無効・権限不足の場合は、その状態と理由を受領する。
+却下はAPI終了0、応答number一致、state=dismissedを確認できた番号だけ処置済みとする。
+反映待ち・要修正の確認版付きmarkと、却下失敗・未判定の未markを区別する。
+未markアラートは単一・all-reposの既存確認間隔で再取得し、古い番号だけの無進捗記録で抑止しない。
+同版の判定済み除外はreview-auditが担い、GitHub APIの`default_branch`が指すブランチの更新後は同番号も再監査する。
+WI部分の無進捗抑止は維持し、未観測Noneを取得成功0件と解釈しない。
+
 実行結果は引数なしの`atk agents wait`で受け取り、`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`「出力」に規定された固定形式を満たしていることを確認する。修正を要する指摘事項やDependabotアラートについては、同一セッション内で修正するか、AWIに記録して後続へ回すかを確定する。機能の無効化や権限不足などによってDependabotアラートを取得できなかった状態は、完了報告へ引き継ぐ。

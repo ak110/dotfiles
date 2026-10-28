@@ -301,7 +301,7 @@ class TestAlertMonitoring:
         assert not claude_calls
 
 
-@pytest.mark.parametrize("case", ["observed", "failed", "interval", "no-alerts", "not-counted"])
+@pytest.mark.parametrize("case", ["observed", "failed", "unauthorized", "interval", "no-alerts", "not-counted"])
 def test_dependabot_observation_distinguishes_unobserved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
@@ -311,6 +311,8 @@ def test_dependabot_observation_distinguishes_unobserved(
     def pending(_repository: str) -> dict[str, Any]:
         if case == "failed":
             raise _next_action.ActionableError("APIの応答が不正", next_action="再試行する")
+        if case == "unauthorized":
+            return {"status": "unauthorized", "alerts": [], "message": "権限不足"}
         return {"status": "available", "alerts": [{"number": 3}, {"number": 9}]}
 
     monkeypatch.setattr(_review_audit_module, "dependabot_pending", pending)

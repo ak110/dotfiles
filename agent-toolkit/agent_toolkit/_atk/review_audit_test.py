@@ -355,6 +355,7 @@ def test_pending_does_not_report_zero_after_gh_failure(
 
 
 _EMPTY_PULL_REQUESTS = {"data": {"repository": {"pullRequests": {"nodes": [], "pageInfo": {"hasNextPage": False}}}}}
+_REVISION = "a" * 40
 
 
 def _alert(number: int, manifest_path: str, patched: str | None) -> dict:
@@ -369,6 +370,7 @@ def _alert(number: int, manifest_path: str, patched: str | None) -> dict:
 def _fake_gh(monkeypatch: pytest.MonkeyPatch, responses: dict[str, tuple[int, str]]) -> list[list[str]]:
     """`gh`の呼び出しを、引数の最後の要素（APIパス）に対応する終了コードと標準出力で置き換える。"""
     calls: list[list[str]] = []
+    responses.setdefault("repos/owner/repo/commits/main", (0, json.dumps({"sha": _REVISION})))
 
     def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         calls.append(command)
@@ -398,8 +400,8 @@ def test_pending_classifies_dependabot_alerts_by_default_branch_manifest(
         {
             _ALERTS_PATH: (0, json.dumps(pages)),
             "repos/owner/repo": (0, json.dumps({"default_branch": "main"})),
-            "repos/owner/repo/contents/uv.lock?ref=main": (0, json.dumps({"type": "file"})),
-            "repos/owner/repo/contents/old/uv.lock?ref=main": (
+            f"repos/owner/repo/contents/uv.lock?ref={_REVISION}": (0, json.dumps({"type": "file"})),
+            f"repos/owner/repo/contents/old/uv.lock?ref={_REVISION}": (
                 1,
                 json.dumps({"message": "Not Found", "status": "404"}),
             ),
@@ -413,6 +415,8 @@ def test_pending_classifies_dependabot_alerts_by_default_branch_manifest(
     assert output["counts"] == {"reviews": 0, "threads": 0, "dependabot": 3}
     assert output["dependabot"] == {
         "status": "available",
+        "default_branch": "main",
+        "revision": _REVISION,
         "alerts": [
             {
                 "number": 7,
@@ -441,23 +445,26 @@ def test_pending_classifies_dependabot_alerts_by_default_branch_manifest(
         ],
     }
     assert ["gh", "api", "--paginate", "--slurp", _ALERTS_PATH] in calls
-    assert sum(call[-1] == "repos/owner/repo/contents/old/uv.lock?ref=main" for call in calls) == 1
+    assert sum(call[-1] == f"repos/owner/repo/contents/old/uv.lock?ref={_REVISION}" for call in calls) == 1
 
 
 def test_marked_dependabot_alerts_leave_pending_without_mixing_with_reviews(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`dependabot:<番号>`で記録したアラートはpendingから除かれ、reviewの識別子と区別して列挙される。"""
+    """確認版を記録したアラートは同版のpendingから除かれ、reviewの識別子と区別して列挙される。"""
     pages = [[_alert(40, "old/uv.lock", "2.14.0"), _alert(41, "old/uv.lock", "2.14.0")]]
     _fake_gh(
         monkeypatch,
         {
             _ALERTS_PATH: (0, json.dumps(pages)),
             "repos/owner/repo": (0, json.dumps({"default_branch": "main"})),
-            "repos/owner/repo/contents/old/uv.lock?ref=main": (1, json.dumps([{"message": "Not Found", "status": "404"}])),
+            f"repos/owner/repo/contents/old/uv.lock?ref={_REVISION}": (
+                1,
+                json.dumps([{"message": "Not Found", "status": "404"}]),
+            ),
         },
     )
-    assert _dispatch("mark", "owner/repo", "dependabot:40", "41") == 0
+    assert _dispatch("mark", "owner/repo", "--revision", _REVISION, "dependabot:40", "41") == 0
     assert capsys.readouterr().out == "41\ndependabot:40\n"
 
     assert _dispatch("pending", "owner/repo") == 0
@@ -506,14 +513,17 @@ def test_pending_fails_when_dependabot_state_cannot_be_determined(
     responses = {
         _ALERTS_PATH: (0, pages),
         "repos/owner/repo": (0, json.dumps({"default_branch": "main"})),
-        "repos/owner/repo/contents/old/uv.lock?ref=main": (1, json.dumps({"message": "Not Found", "status": "404"})),
+        f"repos/owner/repo/contents/old/uv.lock?ref={_REVISION}": (1, json.dumps({"message": "Not Found", "status": "404"})),
     }
     if failure == "invalid-json":
         responses[_ALERTS_PATH] = (0, "[[{broken")
     elif failure == "server-error":
         responses[_ALERTS_PATH] = (1, json.dumps({"message": "Server Error", "status": "502"}))
     elif failure == "manifest-check-error":
-        responses["repos/owner/repo/contents/old/uv.lock?ref=main"] = (1, json.dumps({"message": "Error", "status": "500"}))
+        responses[f"repos/owner/repo/contents/old/uv.lock?ref={_REVISION}"] = (
+            1,
+            json.dumps({"message": "Error", "status": "500"}),
+        )
     _fake_gh(monkeypatch, responses)
     if failure == "timeout":
 
@@ -551,3 +561,56 @@ def test_record_lock_is_created_under_state_lock_dir(capsys: pytest.CaptureFixtu
 
     assert (tmp_path / "state" / "locks" / "review-audit" / "review-audit.lock").is_file()
     assert not list((tmp_path / "home" / ".claude").glob(".atk-*"))
+
+
+def test_public_revision_records_recheck_legacy_and_default_branch_updates(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開CLIで旧記録、同版の抑止、同じ番号の版更新、無版追記の順を検証する。"""
+    revision_b = "b" * 40
+    responses = {
+        _ALERTS_PATH: (0, json.dumps([[_alert(40, "uv.lock", "2.14.0")]])),
+        "repos/owner/repo": (0, json.dumps({"default_branch": "main"})),
+        f"repos/owner/repo/contents/uv.lock?ref={_REVISION}": (0, json.dumps({"type": "file"})),
+        f"repos/owner/repo/contents/uv.lock?ref={revision_b}": (0, json.dumps({"type": "file"})),
+    }
+    calls = _fake_gh(monkeypatch, responses)
+    assert _dispatch("mark", "owner/repo", "dependabot:40", "40") == 0
+    capsys.readouterr()
+    assert _dispatch("pending", "owner/repo") == 0
+    first = json.loads(capsys.readouterr().out)["dependabot"]
+    assert first["revision"] == _REVISION
+    assert [alert["number"] for alert in first["alerts"]] == [40]
+
+    assert _dispatch("mark", "owner/repo", "--revision", _REVISION.upper(), "dependabot:40") == 0
+    capsys.readouterr()
+    assert _dispatch("mark", "owner/repo", "dependabot:40") == 0
+    capsys.readouterr()
+    assert _dispatch("list", "owner/repo", "--revision", _REVISION) == 0
+    assert capsys.readouterr().out == "40\ndependabot:40\n"
+    assert _dispatch("pending", "owner/repo") == 0
+    assert not json.loads(capsys.readouterr().out)["dependabot"]["alerts"]
+
+    responses["repos/owner/repo/commits/main"] = (0, json.dumps({"sha": revision_b}))
+    assert _dispatch("list", "owner/repo", "--revision", revision_b) == 0
+    assert capsys.readouterr().out == "40\n"
+    assert _dispatch("pending", "owner/repo") == 0
+    changed = json.loads(capsys.readouterr().out)["dependabot"]
+    assert changed["revision"] == revision_b
+    assert [alert["number"] for alert in changed["alerts"]] == [40]
+    assert ["gh", "api", f"repos/owner/repo/contents/uv.lock?ref={revision_b}"] in calls
+    # 却下が失敗してmarkしなければ、同じ版でも次の取得へ残る。
+    assert _dispatch("pending", "owner/repo") == 0
+    assert [alert["number"] for alert in json.loads(capsys.readouterr().out)["dependabot"]["alerts"]] == [40]
+    assert _dispatch("mark", "owner/repo", "--revision", revision_b, "dependabot:40") == 0
+    capsys.readouterr()
+    assert _dispatch("pending", "owner/repo") == 0
+    assert not json.loads(capsys.readouterr().out)["dependabot"]["alerts"]
+
+
+@pytest.mark.parametrize("revision", ("main", "../main", "a" * 39, "g" * 40))
+@pytest.mark.parametrize("command", ("mark", "list"))
+def test_public_revision_rejects_non_commit_values(command: str, revision: str) -> None:
+    """branch名や不正SHAを判定根拠として保存・適用しない。"""
+    identifiers = ("dependabot:40",) if command == "mark" else ()
+    assert _dispatch(command, "owner/repo", "--revision", revision, *identifiers) != 0

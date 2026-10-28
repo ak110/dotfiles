@@ -81,7 +81,14 @@ def _dependabot_pending(args: argparse.Namespace, target_repo_id: str) -> frozen
     if forge != "github" or not repo_path:
         return frozenset()
     try:
-        return frozenset(int(alert["number"]) for alert in _review_audit.dependabot_pending(repo_path)["alerts"])
+        result = _review_audit.dependabot_pending(repo_path)
+        if result["status"] == "unauthorized":
+            _next_action.report(
+                f"警告: Dependabotアラートの取得権限がありません: {result.get('message', '')}",
+                next_action=_alerts.ALERT_FAILURE_NEXT_ACTION,
+            )
+            return None
+        return frozenset(int(alert["number"]) for alert in result["alerts"])
     except _next_action.ActionableError as exc:
         _next_action.report(
             f"警告: Dependabotアラートの確認に失敗しました: {exc}",

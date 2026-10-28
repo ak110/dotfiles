@@ -728,7 +728,7 @@ def test_skipped_target_relaunches_on_change(monkeypatch: pytest.MonkeyPatch, tm
     """見送り中に起動入力が変われば次の反復で起動し、起動した時点で記録を削除する。"""
     notes = _setup_notes(tmp_path)
     task = _awi(notes, "task.md")
-    alerts: list[dict[str, Any]] = [{"number": 1}]
+    alerts: list[dict[str, Any]] = []
     monkeypatch.setattr(_wi_alerts, "check_and_submit_alerts", lambda *_a, **_k: _wi_alerts.AlertCheckResult(0, ()))
     monkeypatch.setattr(_review_audit, "dependabot_pending", lambda _repository: {"status": "available", "alerts": alerts})
 
@@ -743,8 +743,70 @@ def test_skipped_target_relaunches_on_change(monkeypatch: pytest.MonkeyPatch, tm
             alerts.append({"number": 2})
 
     # 1回目の子は何も解消せず、見送りの待機中に入力が変わり、2回目の子の後は再び見送る。
-    calls = _run_single_loop(tmp_path, monkeypatch, on_wait=(apply,), extra_argv=("--alert-interval=0",))
+    def child(call: int) -> None:
+        if call == 2:
+            alerts.clear()
+            if change == "new-alert":
+                task.unlink()
+
+    calls = _run_single_loop(tmp_path, monkeypatch, on_child=child, on_wait=(apply,), extra_argv=("--alert-interval=0",))
     assert len(calls) == 2
+
+
+def test_unmarked_alert_retries_with_empty_queue(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """却下失敗で同じ番号が未markなら、正常終了と無進捗記録の後もキュー空で再監査する。"""
+    _setup_notes(tmp_path)
+    alerts: list[dict[str, Any]] = [{"number": 1}]
+    monkeypatch.setattr(_wi_alerts, "check_and_submit_alerts", lambda *_a, **_k: _wi_alerts.AlertCheckResult(0, ()))
+    monkeypatch.setattr(_review_audit, "dependabot_pending", lambda _repository: {"status": "available", "alerts": alerts})
+
+    def child(call: int) -> None:
+        if call == 2:
+            alerts.clear()
+
+    assert len(_run_single_loop(tmp_path, monkeypatch, on_child=child, extra_argv=("--alert-interval=0",))) == 2
+
+
+def test_default_revision_reaudits_same_alert_with_empty_queue(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """公開markの同版除外から版更新を経て、同番号を単一起動の空キューで再監査する。"""
+    _setup_notes(tmp_path)
+    revision = "a" * 40
+    manifests: list[str] = []
+    launched: list[str] = []
+
+    def rest(path: str, **_kwargs: Any) -> Any:
+        if "/dependabot/alerts?" in path:
+            return [[{"number": 40, "dependency": {"manifest_path": "uv.lock"}}]]
+        if path.endswith("/commits/main"):
+            return {"sha": revision}
+        if "/contents/" in path:
+            assert path.endswith(f"?ref={revision}")
+            manifests.append(path)
+            return {"type": "file"}
+        return {"default_branch": "main"}
+
+    monkeypatch.setattr(_review_audit, "_gh_rest", rest)
+    monkeypatch.setattr(_wi_alerts, "check_and_submit_alerts", lambda *_a, **_k: _wi_alerts.AlertCheckResult(0, ()))
+
+    def mark() -> None:
+        with pytest.raises(SystemExit) as ended:
+            atk.main(["review-audit", "mark", "--repo", "example/myrepo", "--revision", revision, "dependabot:40"])
+        assert ended.value.code == 0
+
+    mark()
+
+    def advance() -> None:
+        nonlocal revision
+        assert not launched and not manifests
+        revision = "b" * 40
+
+    def child(_call: int) -> None:
+        launched.append(revision)
+        mark()
+
+    calls = _run_single_loop(tmp_path, monkeypatch, on_child=child, on_wait=(advance,), extra_argv=("--alert-interval=0",))
+    assert len(calls) == 1 and launched == ["b" * 40]
+    assert manifests and all(path.endswith(f"?ref={revision}") for path in manifests)
 
 
 def test_wi_added_during_session_is_launched_next(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
