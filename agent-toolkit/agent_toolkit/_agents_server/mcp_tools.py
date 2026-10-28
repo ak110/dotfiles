@@ -86,8 +86,9 @@ mcp = AgentsServerMCP(
     "agents_server",
     instructions=schema_text(
         "Codex、Claude、AntigravityまたはOpenCodeへの非同期委譲。承認操作は公開しない。\n"
-        "Claude Codeからの委譲は本サーバーを標準とする。"
-        "`Agent`ツールを使う場合は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める。\n"
+        "Claude Code・Codexからの委譲は本サーバーを標準とする。"
+        "組み込みの委譲機能（`Agent`・`spawn_agent`等）を使える例外は、"
+        "`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。\n"
         "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業、自由本文の委譲、読み取り専用の探索、"
         "確定済みの書込、コマンド実行を選ぶ。入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
         f"{LIGHTWEIGHT_MODE_SELECTION}\n"
