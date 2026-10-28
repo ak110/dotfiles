@@ -19,7 +19,13 @@ def _run_cli_route(route: str, tmp_path: pathlib.Path, monkeypatch: pytest.Monke
             [("claude", "model", "low")], environment, tmp_path, orchestrator.ProbeContext("test", "確認")
         )
     else:
-        monkeypatch.setattr(process_loop_session, "cleanup_lane_session", lambda *_args, **_kwargs: {})
+
+        def launch(
+            argv: list[str], env: dict[str, str], cwd: pathlib.Path, **_kwargs: Any
+        ) -> subprocess.CompletedProcess[bytes]:
+            return subprocess.run(argv, env=env, cwd=cwd, check=False)
+
+        monkeypatch.setattr(process_loop_session, "_run_cli_session", launch)
         monkeypatch.setattr(process_loop_env, "create_hook_debug_log", lambda *_args, **_kwargs: tmp_path / "hooks.log")
         process_loop_session.run_process_session(
             argparse.Namespace(resume=None, no_update=True),
@@ -30,7 +36,6 @@ def _run_cli_route(route: str, tmp_path: pathlib.Path, monkeypatch: pytest.Monke
             model="model",
             effort="low",
             resume_pending=False,
-            dotfiles_root=None,
         )
 
 

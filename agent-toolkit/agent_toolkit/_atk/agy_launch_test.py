@@ -52,6 +52,11 @@ def test_process_loop_agy_interactive_and_resume(
         return subprocess.CompletedProcess(argv, 0)
 
     monkeypatch.setattr(process_loop_session.subprocess, "run", execute)
+
+    def launch(argv: list[str], env: dict[str, str], cwd: pathlib.Path, **_kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        return execute(argv, env=env, cwd=cwd)
+
+    monkeypatch.setattr(process_loop_session, "_run_cli_session", launch)
     monkeypatch.setattr(process_loop_session, "cleanup_lane_session", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(process_loop_env, "reset_console", lambda: None)
     monkeypatch.setattr(process_loop_log, "append", lambda *_args, **_kwargs: None)
@@ -66,7 +71,6 @@ def test_process_loop_agy_interactive_and_resume(
         model="gemini-4-argon",
         effort="medium",
         resume_pending=resume is not None,
-        dotfiles_root=None,
     )
     argv = calls[0]
     assert argv[0] == "agy"

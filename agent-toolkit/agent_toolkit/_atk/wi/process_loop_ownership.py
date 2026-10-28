@@ -1,4 +1,4 @@
-"""origin単位の処理所有を専用起動とall-reposで共有する。"""
+"""統括の処理所有をorigin単位で保持し、未完了成果を再開へ渡す。"""
 
 import dataclasses
 import hashlib
@@ -10,6 +10,7 @@ from typing import Any
 
 import filelock
 
+from agent_toolkit._common import session_launchers as _launchers
 from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
@@ -57,16 +58,63 @@ def _read(path: pathlib.Path) -> dict[str, Any] | None:
 def _live(record: dict[str, Any]) -> bool:
     if record.get("completed") is True or record.get("released") is True:
         return False
+    if _executor_live(record):
+        return True
     pid, created = record.get("pid"), record.get("create_time")
     if not isinstance(pid, int) or not isinstance(created, (int, float)):
         raise ValueError("処理所有記録のプロセス識別が不正")
     if record.get("held") is not True and _registry.ProcessIdentity(pid, created).exists():
         return True
-    session_id = record.get("session_id")
-    if isinstance(session_id, str):
-        resolution = _registry.resolve(session_id)
-        return resolution.state in {_registry.Resolution.RUNNING, _registry.Resolution.UNREADABLE}
+    sessions = {value for value in [record.get("session_id"), *record.get("writer_sessions", [])] if isinstance(value, str)}
+    for writer in descendant_sessions(sessions):
+        if _registry.resolve(writer).state in {
+            _registry.Resolution.RUNNING,
+            _registry.Resolution.UNREADABLE,
+        }:
+            return True
     return False
+
+
+def descendant_sessions(roots: set[str]) -> set[str]:
+    """統括と申告済みwriterに属する配下sessionを、既存の起動元記録から取得する。"""
+    paths = tuple(_registry.registry_directory().glob("*.json"))
+    descendants = set(roots)
+    while True:
+        children = {path.stem for path in paths if _launchers.read_launcher(path) in descendants}
+        if children <= descendants:
+            return descendants
+        descendants.update(children)
+
+
+def _executor_live(record: dict[str, Any]) -> bool:
+    executor = record.get("executor_process")
+    if executor is None:
+        return False
+    if (
+        not isinstance(executor, dict)
+        or not isinstance(executor.get("pid"), int)
+        or not isinstance(executor.get("create_time"), (int, float))
+    ):
+        raise ValueError("統括CLIのプロセス識別が不正")
+    return _registry.ProcessIdentity(executor["pid"], executor["create_time"]).exists()
+
+
+def executor_running(ownership: Ownership) -> bool:
+    """会話IDの検出前でも、保存済みの統括CLIの生存を確認する。"""
+    record = _read(ownership.path)
+    if record is None or record["token"] != ownership.token:
+        raise ValueError("処理所有者が変更されたため統括CLIを確認できない")
+    return _executor_live(record)
+
+
+def update_process(ownership: Ownership, process: _registry.ProcessIdentity) -> None:
+    """Popenが開始した実行主体の寿命を取得済み所有へ結び付ける。"""
+    with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
+        record = _read(ownership.path)
+        if record is None or record["token"] != ownership.token:
+            raise ValueError("処理所有者が変更されたため統括CLIを保存しなかった")
+        record["executor_process"] = _registry.process_payload(process)
+        atomic_write(ownership.path, json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def _unfinished_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -75,7 +123,11 @@ def _unfinished_record(record: dict[str, Any]) -> dict[str, Any]:
     if isinstance(previous, dict) and (
         record.get("session_id") is None or record.get("session_id") == previous.get("session_id")
     ):
-        return _unfinished_record(previous)
+        retained = dict(_unfinished_record(previous))
+        for key in ("manifest", "prepared_worktree"):
+            if key in record:
+                retained[key] = record[key]
+        return retained
     return record
 
 
@@ -129,18 +181,31 @@ def try_acquire(
         return Ownership(repo_id, token, path, session_id, previous)
 
 
-def resume_repository(session_id: str, repositories: tuple[str, ...]) -> str:
-    """指定sessionを登録集合内のall-repos担当へ対応付ける。"""
-    for repo_id in repositories:
-        record = _read(_path(_remote.normalize_remote_url(repo_id)))
-        if (
-            record is not None
-            and record.get("mode") == "all-repos"
-            and record.get("session_id") == session_id
-            and record.get("completed") is not True
-        ):
-            return repo_id
-    raise ValueError(f"登録集合内のall-repos担当として再開できないsession: {session_id}")
+def coordinator_session(repo_id: str) -> str | None:
+    """未完了の統括会話だけを返し、旧リポジトリ担当を区別する。"""
+    record = _read(_path(repo_id))
+    if record is not None and record.get("mode") == "coordinator" and record.get("completed") is not True:
+        value = record.get("session_id")
+        return value if isinstance(value, str) else None
+    return None
+
+
+def resume_repositories(session_id: str, repositories: tuple[str, ...]) -> set[str]:
+    """指定した統括会話に属する登録済みの未完了集合を返す。"""
+    result = {repo for repo in repositories if coordinator_session(repo) == session_id}
+    if not result:
+        raise ValueError(f"登録集合の統括会話として再開できないsession: {session_id}")
+    return result
+
+
+def update_prepared(ownership: Ownership, worktree: pathlib.Path, manifest: pathlib.Path) -> None:
+    """準備済み実体と配送原本を、取得済みの所有tokenへ結び付ける。"""
+    with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
+        record = _read(ownership.path)
+        if record is None or record["token"] != ownership.token:
+            raise ValueError("処理所有者が変更されたため準備結果を保存しなかった")
+        record.update(prepared_worktree=str(worktree), manifest=str(manifest))
+        atomic_write(ownership.path, json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def unfinished_repository_ids(repositories: tuple[str, ...]) -> set[str]:
@@ -148,7 +213,7 @@ def unfinished_repository_ids(repositories: tuple[str, ...]) -> set[str]:
     unfinished: set[str] = set()
     for repo_id in repositories:
         record = _read(_path(_remote.normalize_remote_url(repo_id)))
-        if record is not None and record.get("mode") == "all-repos" and record.get("completed") is not True:
+        if record is not None and record.get("mode") in {"all-repos", "coordinator"} and record.get("completed") is not True:
             unfinished.add(repo_id)
     return unfinished
 
@@ -214,11 +279,13 @@ def release(ownership: Ownership, *, completed: bool = True) -> None:
                 path.unlink(missing_ok=True)
 
 
-def hold(ownership: Ownership) -> None:
+def hold(ownership: Ownership, *, writers: list[str] | None = None) -> None:
     """停止を確認できない担当の所有を保持し、生存照会を担当sessionへ切り替える。"""
     with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
         record = _read(ownership.path)
         if record is None or record["token"] != ownership.token:
             raise ValueError("処理所有者が変更されたため保持しなかった")
         record.update(held=True, completed=False, released=False)
+        if writers is not None:
+            record["writer_sessions"] = writers
         atomic_write(ownership.path, json.dumps(record, ensure_ascii=False) + "\n")

@@ -22,20 +22,15 @@ from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_exit_session_command
 
 # Claude Codeのハーネスが、`Skill`ツールの起動の`tool_result`として記録する起動確認文言。
-_CLAUDE_PROCESS_WI_MARKER = "Launching skill: agent-toolkit:process-wi"
+_CLAUDE_PROCESS_WI_MARKERS = (
+    "Launching skill: agent-toolkit:process-wi",
+    "Launching skill: agent-toolkit:process-wi-all-repos",
+)
 _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 
-# `atk wi process-loop`が`_build_process_loop_prompt`でCodexへ渡す最初のプロンプトの本体。
-# 最初のプロンプトは`/goal`とautomated-prompt要素の境界を伴うため、本体だけを判定に用いる。
-#
-# 包含で判定する。2026年9月10日に実物を確認した結果（監査記録参照）で、このプロンプト本文との
-# 完全一致は実記録2169件に対して0件だった。記録される`text`は実行環境が挿入する前置き
-# （``# AGENTS.md instructions``または``<recommended_plugins>``で始まる）を含むため、完全一致では
-# 成立しない。期待する契約は、`atk wi process-loop`がCodexへ渡す最初のプロンプトを含むuser役
-# レコードを持つセッションを候補とすることであり、包含判定でこの契約を満たす。
-# 監査記録は`docs/development/audit-records.md`の
-# 「agent-toolkit/skills/writing-standards/references/session-records.md：スキル起動の判定：2026年9月10日」にある。
-_CODEX_PROCESS_WI_PROMPT = PROCESS_WI_GOAL_BODY
+# 記録にはホストの前置きや/goalの境界が含まれるため、目的文本体の包含で判定する。
+# 登録全体の統括へ移行した後も、手動process-wiと過去の記録を検出対象に残す。
+_PROCESS_WI_GOAL_BODIES = (PROCESS_WI_GOAL_BODY, "agent-toolkit:process-wi-all-reposを完遂する")
 
 _TEXT_EXCERPT_LIMIT = 200
 
@@ -93,12 +88,11 @@ def resolved_repo(cwd: str, cache: dict[str, str | None]) -> str | None:
 def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
     """実行系固有の保存形式にprocess-wiの起動標識があれば真を返す。
 
-    Codexでは`_CODEX_PROCESS_WI_PROMPT`の包含で判定する。この定数の説明が持つ
-    確定した現象・期待する契約・直接的原因を根拠とする。
+    CodexとAntigravityでは、ホストの前置きを許容する目的文本体の包含で判定する。
     """
     if engine == "agy":
         return any(
-            event.kind in {"user", "injected"} and event.text and _CODEX_PROCESS_WI_PROMPT in event.text
+            event.kind in {"user", "injected"} and event.text and any(body in event.text for body in _PROCESS_WI_GOAL_BODIES)
             for event in session_record_format.agy_events([record])
         )
     if engine == "claude":
@@ -107,7 +101,7 @@ def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
             return False
         content = message.get("content")
         return isinstance(content, list) and any(
-            isinstance(item, dict) and item.get("type") == "tool_result" and item.get("content") == _CLAUDE_PROCESS_WI_MARKER
+            isinstance(item, dict) and item.get("type") == "tool_result" and item.get("content") in _CLAUDE_PROCESS_WI_MARKERS
             for item in content
         )
 
@@ -123,7 +117,7 @@ def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
             isinstance(item, dict)
             and item.get("type") == "input_text"
             and isinstance(item.get("text"), str)
-            and _CODEX_PROCESS_WI_PROMPT in item["text"]
+            and any(body in item["text"] for body in _PROCESS_WI_GOAL_BODIES)
             for item in content
         )
     )

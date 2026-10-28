@@ -1181,10 +1181,10 @@ def test_exit_entrypoint_cleans_resources_even_when_interactive_host_is_unidenti
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("exit_code", [0, 7])
-def test_process_loop_child_exit_cleans_before_normal_or_abnormal_classification(
+def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, exit_code: int
 ) -> None:
-    """Claude・Codexのどちらでもprocess-loopの子セッションの終了時に同じ回収を実行し、異常終了でも終了の判定より前にレーン資源を回収して、対象リポジトリと選定ファイルは残す。"""
+    """CLIの正常・異常終了後も対象別所有者が回収を判断でき、起点と選定原本を維持する。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
     selected = tmp_path / "selection.yaml"
     snapshot = tmp_path / "created.json"
@@ -1196,7 +1196,8 @@ def test_process_loop_child_exit_cleans_before_normal_or_abnormal_classification
         "stream=io.StringIO()\n"
         "with contextlib.redirect_stdout(stream):\n"
         "    try:\n"
-        "        atk.main(['lane','create','--repo',sys.argv[1],'--base-branch','main',"
+        "        atk.main(['lane','create','--session-id','process-loop-repository',"
+        "'--repo',sys.argv[1],'--base-branch','main',"
         "'--lane','lane-01','--selection-file',sys.argv[2]])\n"
         "    except SystemExit as result:\n"
         "        if result.code: raise\n"
@@ -1222,16 +1223,12 @@ def test_process_loop_child_exit_cleans_before_normal_or_abnormal_classification
             model="test-model",
             effort="low",
             resume_pending=False,
-            dotfiles_root=None,
         )
 
-    if exit_code:
-        with pytest.raises(SystemExit) as ended:
-            execute()
-        assert ended.value.code == exit_code
-    else:
-        assert not execute()
+    assert execute() is (exit_code == 0)
     created = json.loads(snapshot.read_text(encoding="utf-8"))
+    assert pathlib.Path(created["worktree"]).exists() and pathlib.Path(created["record_path"]).exists()
+    process_loop_session.cleanup_lane_session(created["session_id"])
     assert not pathlib.Path(created["worktree"]).exists() and not pathlib.Path(created["record_path"]).exists()
     assert repo.is_dir() and selected.is_file()
 

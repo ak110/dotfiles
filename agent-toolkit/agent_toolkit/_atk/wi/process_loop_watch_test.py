@@ -2,6 +2,7 @@
 
 import collections
 import contextlib
+import json
 import os
 import pathlib
 import select
@@ -25,14 +26,15 @@ from agent_toolkit._atk.wi import process_loop_all_repos_test as all_repos_test
 from agent_toolkit._atk.wi import process_loop_control as _pl_control
 from agent_toolkit._atk.wi import process_loop_log as _pl_log
 from agent_toolkit._atk.wi import process_loop_ownership as _pl_ownership
+from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
-from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.process_loop_test import _start_entry
 from agent_toolkit._common import process_tree, session_activity, session_registry
-from agent_toolkit._testing.process_loop_support import fake_run_with_remote_url, isolate_process_loop_commands
+from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
 from agent_toolkit.atk_test import _setup_notes
 
 _SUBMISSION_ACTIVE = _pl_watch._submission_active  # pylint: disable=protected-access  # noqa: SLF001
@@ -266,15 +268,9 @@ class TestProcessLoopWaitMessage:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """0件検知時に`_wait_for_changes`呼び出し直前で待機メッセージが出力されること。"""
-        myrepo = tmp_path / "repo"
-        myrepo.mkdir()
+        myrepo = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/myrepo.git")
         _setup_notes(tmp_path)
-        monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, [], 0))
-        monkeypatch.setattr(
-            _wi_readiness,
-            "count_pending_entries",
-            lambda *_a, **_kw: 0,
-        )
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(myrepo)]))
 
         def fake_wait(*_a: object, **_kw: object) -> None:
             raise KeyboardInterrupt
@@ -282,7 +278,7 @@ class TestProcessLoopWaitMessage:
         monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait)
         with pytest.raises(SystemExit):
             atk.main(
-                ["wi", "process-loop", "--target-repo", str(myrepo), "--no-update"],
+                ["wi", "process-loop", "--no-update", "--no-alerts"],
                 home=tmp_path,
             )
         captured = capsys.readouterr()
@@ -433,13 +429,11 @@ def _enter_then_stop(console: _Console) -> Callable[..., bool]:
 
 
 @pytest.mark.parametrize("reason", ["activity", "uwi", "both"])
-@pytest.mark.parametrize("entry", ["single", "all-repos"])
 def test_enter_releases_start_wait(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     reason: str,
-    entry: str,
 ) -> None:
     """活動猶予・UWI猶予・両者の併存で、期限を待たずにEnterから候補の再評価と起動へ進む。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
@@ -448,33 +442,20 @@ def test_enter_releases_start_wait(
     console = _Console()
     _use_windows_console(monkeypatch, console)
     monkeypatch.setattr(_pl_watch, "wait_for_changes", _enter_then_stop(console))
-    if entry == "single":
-        notes = _setup_notes(tmp_path)
-        target = "github.com/example/myrepo"
-        repo = tmp_path / "repo"
-        repo.mkdir()
-        children: list[dict[str, Any]] = []
-        fake_run = fake_run_with_remote_url(repo, children, 0)
+    _setup_notes(tmp_path)
+    notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
+    repositories = all_repos_test._repositories(tmp_path, monkeypatch)  # pylint: disable=protected-access
+    target = repositories[0].repo_id
+    monkeypatch.setattr(_pl_update, "resolve_dotfiles_root", lambda: None)
+    launched_calls: list[object] = []
 
-        def run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-            result = fake_run(cmd, *args, **kwargs)
-            if children:
-                raise KeyboardInterrupt
-            return result
+    def run_round(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        launched_calls.append(object())
+        raise KeyboardInterrupt
 
-        monkeypatch.setattr(subprocess, "run", run)
-        command = ["wi", "process-loop", "--target-repo", str(repo), "--no-update", "--no-alerts"]
-        launched = children.copy
-    else:
-        _setup_notes(tmp_path)
-        notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
-        repositories = all_repos_test._repositories(tmp_path, monkeypatch)  # pylint: disable=protected-access  # noqa: SLF001
-        target = repositories[0].repo_id
-        manager = all_repos_test._Manager()  # pylint: disable=protected-access  # noqa: SLF001
-        monkeypatch.setattr(_pl_update, "resolve_dotfiles_root", lambda: None)
-        monkeypatch.setattr("agent_toolkit.atk._agents_manager.AgentsServerManager", lambda **_kwargs: manager)
-        launched = manager.started.copy
-        command = ["wi", "process-loop", "--no-update", "--no-alerts", "all-repos"]
+    monkeypatch.setattr("agent_toolkit._atk.wi.process_loop.run_coordinator", run_round)
+    launched = launched_calls.copy
+    command = ["wi", "process-loop", "--no-update", "--no-alerts"]
     _start_entry(notes, "ready.md", repo=target, kind="awi")
     if reason != "activity":
         _start_entry(notes, "question.md", repo=target)
@@ -595,14 +576,19 @@ def test_enter_release_keeps_start_conditions(
 ) -> None:
     """Enter解除後も候補・所有・準備・同期の既存の起動条件を通り、その再試行の待機はEnterで解除しない。"""
     notes = _setup_notes(tmp_path)
-    repo = tmp_path / "repo"
-    repo.mkdir()
+    repo = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/myrepo.git")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(repo)]))
     monkeypatch.setattr(_pl_watch.time, "time", lambda: 1000.0)
     monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: True)
     console = _Console()
     _use_windows_console(monkeypatch, console)
     children: list[dict[str, Any]] = []
-    monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(repo, children, 0))
+
+    def unexpected_session(*_args: Any, **kwargs: Any) -> bool:
+        children.append(kwargs)
+        raise AssertionError("開始条件を満たしていない対象を起動した")
+
+    monkeypatch.setattr(_pl_session, "run_process_session", unexpected_session)
     ready = _start_entry(notes, "ready.md", kind="awi")
     pulls: list[bool] = []
 
@@ -632,7 +618,7 @@ def test_enter_release_keeps_start_conditions(
 
     monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
     with pytest.raises(SystemExit) as exc:
-        atk.main(["wi", "process-loop", "--target-repo", str(repo), "--no-update", "--no-alerts"], home=tmp_path)
+        atk.main(["wi", "process-loop", "--no-update", "--no-alerts"], home=tmp_path)
     assert exc.value.code == 0
     assert len(waits) == stop_at
     assert not children

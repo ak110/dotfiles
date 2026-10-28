@@ -6,7 +6,6 @@ add・本文要約切り詰めなど基本サブコマンドの単体テスト�
 UWI共通ヘルパーは本ファイルと他のテストの双方から使うため本ファイルに残置する。
 """
 
-import argparse
 import contextlib
 import datetime
 import json
@@ -22,7 +21,6 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._agents_server import manager as agents_manager
 from agent_toolkit._atk import config as _config  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import git_sync as _git_sync
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
@@ -35,7 +33,7 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
-from agent_toolkit._common import codex_models, inherited_venv, mcp_environment
+from agent_toolkit._common import codex_models, inherited_venv
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._hooks import user_prompt_submit  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing import git_repository, wi_entry_files
@@ -98,41 +96,6 @@ _GitCall = dict[str, Any]
 
 _ATK_PATH = pathlib.Path(atk.__file__).resolve()
 _PROJECT_ROOT = _ATK_PATH.parents[1]
-
-
-def test_all_repos_manager_factory_strips_context_and_preserves_launcher_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
-    """all-reposの各managerが除去前の同じlauncherを持ち、全backendの継承元を整える。"""
-    for name in mcp_environment._NON_INHERITABLE_NAMES:  # pylint: disable=protected-access
-        monkeypatch.setenv(name.upper(), "parent-session")
-    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
-    monkeypatch.setenv("VIRTUAL_ENV", "/launcher/venv")
-    monkeypatch.setenv("PATH", os.pathsep.join(("/launcher/venv/bin", "/usr/bin")))
-    managers: list[dict[str, str]] = []
-
-    def create_manager(*, launcher_environment: dict[str, str] | None = None, **_kwargs: Any) -> object:
-        managers.append(dict(os.environ) if launcher_environment is None else launcher_environment)
-        return object()
-
-    monkeypatch.setattr(agents_manager, "AgentsServerManager", create_manager)
-    factories: list[Callable[[], object]] = []
-
-    def dispatch(_args: argparse.Namespace, *, repository_manager_factory: Callable[[], object], **_kwargs: Any) -> int:
-        factories.append(repository_manager_factory)
-        return 0
-
-    monkeypatch.setattr(atk._wi_cli, "dispatch", dispatch)  # pylint: disable=protected-access
-    with pytest.raises(SystemExit) as exit_info:
-        atk.main(["wi", "list"])
-    assert exit_info.value.code == 0
-    assert os.environ["CLAUDE_CODE_SESSION_ID"] == "parent-session"
-    factories[0]()
-    factories[0]()
-    assert len(managers) == 2
-    assert all(snapshot["CLAUDE_CODE_SESSION_ID"] == "parent-session" for snapshot in managers)
-    assert not {name.casefold() for name in os.environ} & mcp_environment._NON_INHERITABLE_NAMES  # pylint: disable=protected-access
-    assert "VIRTUAL_ENV" not in os.environ
-    assert os.environ["PATH"] == "/usr/bin"
-    assert os.environ["ANTHROPIC_AUTH_TOKEN"] == "test-token"
 
 
 def _install_myrepo_git_fake(monkeypatch: pytest.MonkeyPatch, myrepo: pathlib.Path) -> list[_GitCall]:

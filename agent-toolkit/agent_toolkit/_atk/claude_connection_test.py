@@ -162,7 +162,6 @@ def test_process_loop_reclaims_settings_when_session_start_log_fails(
                 model="model",
                 effort="low",
                 resume_pending=False,
-                dotfiles_root=None,
             )
         assert not pathlib.Path(owned).exists()
 
@@ -195,7 +194,6 @@ def test_process_loop_preparation_failure_leaves_no_settings(
             model="model",
             effort="low",
             resume_pending=False,
-            dotfiles_root=None,
         )
     assert not list(state_paths.state_dir().glob("agents-server/**/settings-*.json"))
 

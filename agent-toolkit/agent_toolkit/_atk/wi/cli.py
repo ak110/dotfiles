@@ -25,7 +25,6 @@ lazy from agent_toolkit._atk.wi import filenames as _wi_filenames
 lazy from agent_toolkit._atk.wi import grep as _grep
 lazy from agent_toolkit._atk.wi import listing as _listing
 lazy from agent_toolkit._atk.wi import process_loop as _process_loop
-lazy from agent_toolkit._atk.wi import process_loop_all_repos as _process_loop_all_repos
 lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
 lazy from agent_toolkit._atk.wi import repo as _wi_repo
 lazy from agent_toolkit._atk.wi import show as _show
@@ -881,13 +880,6 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         help="CI取得先。autoはgithub.comならGitHub、それ以外はGitLabを使う。",
     )
     loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk wi process-loop"])
-    loop.add_argument(
-        "--target-repo",
-        metavar="REPO",
-        default=None,
-        help="対象リポジトリ（パスまたは正規化リモートURL）。省略時は現在の作業リポジトリを対象とする。",
-    )
-    # process-loopはローカル作業ツリーのパスを必要とするため、未指定時の解決を自身で行う。
     loop.set_defaults(_target_repo_multiple=False, _target_repo_allow_all=False, _target_repo_resolved_by_consumer=True)
     loop.add_argument(
         "--worktree",
@@ -941,26 +933,22 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     resume_group = loop.add_mutually_exclusive_group()
     resume_group.add_argument(
         "--resume",
-        nargs="?",
-        const="",
         default=None,
         metavar="SESSION_ID",
         help=(
-            "初回にorchestrate用途のモデル設定で決まったオーケストレーターの過去セッションを再開する。"
-            "SESSION_ID省略時はセッション選択画面を開き、指定時は該当セッションを直接再開する。"
-            "2回目以降は新規セッションとして起動する。"
+            "指定した統括SESSION_IDに属する登録先の未完了処理を初回に再開する。"
+            "IDは必須。同じprocess-wiの実行の未完了対象は同じ会話で継続する。"
         ),
     )
     resume_group.add_argument(
         "--auto-resume",
         action="store_true",
         help=(
-            "対象リポジトリでagent-toolkit:process-wiを起動した直近の中断セッションを自動特定し、"
-            "候補情報を表示して確認のうえ再開する。--resumeとは同時指定できない。初回のみ有効。"
+            "登録先の未完了所有記録を初回に再開する。統括IDが1つなら同じ会話を使い、"
+            "複数なら新しい統括へ対象別の履歴を渡す。--resumeとは同時指定できない。"
         ),
     )
     loop_sub = _atk_help.add_subcommands(loop, dest="process_loop_subcommand", required=False)
-    _atk_help.add_command(loop_sub, "all-repos", **_atk_help.HELP["atk wi process-loop all-repos"])
     _atk_help.add_command(loop_sub, "abort", **_atk_help.HELP["atk wi process-loop abort"])
     _atk_help.add_command(loop_sub, "abort-cancel", **_atk_help.HELP["atk wi process-loop abort-cancel"])
     _atk_help.add_command(loop_sub, "status", **_atk_help.HELP["atk wi process-loop status"])
@@ -1198,12 +1186,11 @@ def dispatch(
     *,
     home: pathlib.Path,
     now: datetime.datetime,
-    repository_manager_factory: _process_loop_all_repos.RepositoryManagerFactory | None = None,
 ) -> int:
     """`atk wi`のサブコマンドを実行し、終了コードを返す。"""
     sub = args.wi_subcommand
     process_loop_subcommand = getattr(args, "process_loop_subcommand", None)
-    if sub == "process-loop" and process_loop_subcommand not in (None, "all-repos"):
+    if sub == "process-loop" and process_loop_subcommand is not None:
         # これらの操作はprivate-notesを必要としないため、環境の用意より前で処理する。
         process_loop_state_dispatch = {
             "abort": _process_loop_control.cmd_process_loop_abort,
@@ -1237,11 +1224,7 @@ def dispatch(
         "answer": lambda: _uwi.cmd_answer(args, private_notes),
         "commit": lambda: _mutation_targets.cmd_commit(private_notes),
         "pull": lambda: _pull_command(private_notes),
-        "process-loop": lambda: (
-            _process_loop_all_repos.cmd_process_loop_all_repos(args, private_notes, manager_factory=repository_manager_factory)
-            if process_loop_subcommand == "all-repos"
-            else _process_loop.cmd_process_loop(args, private_notes)
-        ),
+        "process-loop": lambda: _process_loop.cmd_process_loop(args, private_notes),
         "check-alerts": lambda: _alerts.cmd_check_alerts(args, private_notes, now),
     }
     try:

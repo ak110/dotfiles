@@ -93,11 +93,20 @@ class TestParsedRecords:
 
 
 class TestInvokedProcessWi:
-    def test_claude_marker_detected(self, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize(
+        ("marker", "expected"),
+        [
+            ("Launching skill: agent-toolkit:process-wi", True),
+            ("Launching skill: agent-toolkit:process-wi-all-repos", True),
+            ("Launching skill: agent-toolkit:process-wi-all-repos extra", False),
+            ("説明: Launching skill: agent-toolkit:process-wi-all-repos", False),
+        ],
+    )
+    def test_claude_marker_detected(self, tmp_path: pathlib.Path, marker: str, expected: bool) -> None:
         path = tmp_path / "records.jsonl"
-        _write_record(path, [_claude_tool_result_record("Launching skill: agent-toolkit:process-wi")])
+        _write_record(path, [_claude_tool_result_record(marker)])
 
-        assert session_records.invoked_process_wi(path, "claude") is True
+        assert session_records.invoked_process_wi(path, "claude") is expected
 
     def test_codex_prompt_contained_in_larger_text_is_detected(self, tmp_path: pathlib.Path) -> None:
         """Codexの起動判定は包含で行う。
@@ -141,18 +150,24 @@ class TestInvokedProcessWi:
 
         assert session_records.invoked_process_wi(path, "codex") is False
 
-    def test_codex_prompt_constant_is_pinned_to_process_loop_builder(self) -> None:
-        """判定文の定数は`atk wi process-loop`が渡す最初のプロンプトと一致し続ける。
-
-        確定した現象: 判定文を保持する定数`_CODEX_PROCESS_WI_PROMPT`は、`_build_process_loop_prompt`
-        が返す値と別々に保持されている。
-        期待する契約: 判定文の定数と最初のプロンプトの実体は同じ文字列を保つ。
-        直接的原因: 一方だけを変更すると判定が無効化されるため、自動チェックで双方の一致を確認する。
-        """
-        assert (
-            session_records._CODEX_PROCESS_WI_PROMPT  # pylint: disable=protected-access
-            in _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access
+    @pytest.mark.parametrize("engine", ["codex", "agy"])
+    @pytest.mark.parametrize("role", ["user", "assistant"])
+    def test_process_loop_goal_is_detected_only_as_input(self, tmp_path: pathlib.Path, engine: str, role: str) -> None:
+        """常駐が実際に渡す新Goalを検出し、モデル自身の発言を起動の根拠にしない。"""
+        text = "# AGENTS.md instructions\n" + _pl_session.build_process_loop_prompt(tmp_path / "targets.json")
+        record = (
+            _codex_message_record(role=role, item_type="input_text", text=text)
+            if engine == "codex"
+            else {
+                "step_index": 0,
+                "source": "USER_EXPLICIT" if role == "user" else "MODEL",
+                "type": "USER_INPUT" if role == "user" else "PLANNER_RESPONSE",
+                "content": text,
+            }
         )
+        path = tmp_path / "records.jsonl"
+        _write_record(path, [record])
+        assert session_records.invoked_process_wi(path, engine) is (role == "user")
 
     def test_missing_marker_returns_false(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "records.jsonl"

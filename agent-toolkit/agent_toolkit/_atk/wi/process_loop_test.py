@@ -1,393 +1,327 @@
-"""`atk wi process-loop`の常駐ループの制御（処理対象の件数、対象リポジトリの解決、URL形式の入力）のテスト。"""
+"""隔離したGit・キューで、登録全体の統括と対象別の所有・継続を検証する。"""
 
+import argparse
+import json
 import os
 import pathlib
-import subprocess
-from typing import Any, NoReturn
+from typing import Any
 
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import lane as _lane
-from agent_toolkit._atk import review_audit as _review_audit
-from agent_toolkit._atk.wi import alerts as _wi_alerts
-from agent_toolkit._atk.wi import process_loop as _process_loop
-from agent_toolkit._atk.wi import process_loop_launch_gate as _pl_gate
-from agent_toolkit._atk.wi import process_loop_log as _loop_log
-from agent_toolkit._atk.wi import process_loop_session as _pl_session
-from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
-from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
-from agent_toolkit._atk.wi import readiness as _wi_readiness
-from agent_toolkit._atk.wi import repo as _repo
-from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._atk.wi import uwi as _uwi
+from agent_toolkit._atk.wi import listing
+from agent_toolkit._atk.wi import process_loop as loop
+from agent_toolkit._atk.wi import process_loop_control as control
+from agent_toolkit._atk.wi import process_loop_env as env
+from agent_toolkit._atk.wi import process_loop_launch_gate as gate
+from agent_toolkit._atk.wi import process_loop_log as log
+from agent_toolkit._atk.wi import process_loop_ownership as ownership
+from agent_toolkit._atk.wi import process_loop_session as session
+from agent_toolkit._common import session_registry
+from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing import wi_entry_files
-from agent_toolkit._testing.process_loop_support import fake_run_with_remote_url, hook_debug_log, isolate_process_loop_commands
-from agent_toolkit.atk_test import _setup_notes
 
 
-@pytest.fixture(autouse=True)
-def _isolate_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """外部コマンド・Claude設定・初期値のTTLをユーザー環境から分離する。"""
-    isolate_process_loop_commands(monkeypatch, tmp_path)
-
-
-class TestProcessLoopIncludesProcessingInCount:
-    """`process-loop`がAWIの`inbox`・`processing`双方を検知件数に含めることを公開CLI経由で検証する。"""
-
-    def test_inbox_and_processing_entries_are_both_counted(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """inbox・processing双方に`.md`を配置した状態でprocess-loopを起動し、
-        検知メッセージ`{count}件のAWI/回答済みUWIを検知`の件数が合算値になること。
-        """
-        _setup_notes(tmp_path)
-        private_notes = tmp_path / "private-notes"
-        inbox_dir = wi_entry_files.entry_path(private_notes, "a.md").parent
-        processing_dir = inbox_dir
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        # `fake_run_with_remote_url`が返す正規化後IDと一致させる。
-        target_repo_id = "github.com/example/myrepo"
-        (inbox_dir / "a.md").write_text(
-            f"---\nstate: inbox\ntarget_repo: {target_repo_id}\ntype: awi\n---\n\n本文A\n",
-            encoding="utf-8",
-        )
-        (processing_dir / "b.md").write_text(
-            f"---\nstate: processing\ntarget_repo: {target_repo_id}\ntype: awi\n---\n\n本文B\n",
-            encoding="utf-8",
-        )
-
-        base_fake_run = fake_run_with_remote_url(myrepo, [], 0)
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            # claude実行を模したのちファイルを削除し、次反復で件数0とすることで
-            # `_wait_for_changes`を呼び出してループを終了させる。
-            if cmd[:1] == ["claude"]:
-                (inbox_dir / "a.md").unlink(missing_ok=True)
-                (processing_dir / "b.md").unlink(missing_ok=True)
-            return base_fake_run(cmd, *_args, **kwargs)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        def fake_wait(*_a: object, **_kw: object) -> None:
-            raise KeyboardInterrupt
-
-        monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait)
-
-        with pytest.raises(SystemExit):
-            atk.main(
-                ["wi", "process-loop", "--target-repo", str(myrepo), "--no-update"],
-                home=tmp_path,
+def _targets(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, counts: tuple[int, ...] = (1, 1)
+) -> tuple[pathlib.Path, tuple[listing.RepositorySnapshot, ...]]:
+    notes = tmp_path / "notes"
+    directory = notes / "2026/10"
+    directory.mkdir(parents=True)
+    paths = []
+    for index, count in enumerate(counts):
+        repo_id = f"example.test/team/repo-{index}"
+        paths.append(git.init_repository(tmp_path / f"repo-{index}", origin=f"https://{repo_id}.git"))
+        for number in range(count):
+            (directory / f"repo-{index}-{number}.md").write_text(
+                f"---\nstate: inbox\ntype: awi\ntarget_repo: {repo_id}\n---\n\n# 作業\n",
+                encoding="utf-8",
             )
-
-        captured = capsys.readouterr()
-        assert "2件のAWI/回答済みUWIを検知" in captured.out
-
-    def test_cooldown_only_waits_without_starting_child_cli(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """期限待ちだけなら子CLIを起動せず変更待機へ進む。"""
-        notes = _setup_notes(tmp_path)
-        inbox = wi_entry_files.entry_path(notes, "cooldown.md").parent
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        target_repo = "github.com/example/myrepo"
-        (inbox / "cooldown.md").write_text(
-            f"---\nstate: inbox\ntarget_repo: {target_repo}\ntype: awi\n"
-            "cooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
-            encoding="utf-8",
-        )
-        child_calls: list[dict[str, Any]] = []
-        monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, child_calls, 0))
-
-        def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
-            raise KeyboardInterrupt
-
-        monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "process-loop", "--target-repo", str(myrepo), "--no-update", "--no-alerts"],
-                home=tmp_path,
-            )
-
-        assert exc_info.value.code == 0
-        assert not child_calls
-
-    def test_ready_entry_beside_cooldown_starts_child_cli(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """通常ready項目が混在すれば期限待ちを除外したまま子CLIを起動する。"""
-        notes = _setup_notes(tmp_path)
-        inbox = wi_entry_files.entry_path(notes, "cooldown.md").parent
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        target_repo = "github.com/example/myrepo"
-        (inbox / "cooldown.md").write_text(
-            f"---\nstate: inbox\ntarget_repo: {target_repo}\ntype: awi\n"
-            "cooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
-            encoding="utf-8",
-        )
-
-        ready = inbox / "ready.md"
-        ready.write_text(
-            f"---\nstate: inbox\ntarget_repo: {target_repo}\ntype: awi\n---\n\n本文\n",
-            encoding="utf-8",
-        )
-        child_calls: list[dict[str, Any]] = []
-        base_fake_run = fake_run_with_remote_url(myrepo, child_calls, 0)
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            result = base_fake_run(cmd, *_args, **kwargs)
-            if cmd[:1] == ["claude"] and "-p" not in cmd:
-                ready.unlink()
-            return result
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
-            raise KeyboardInterrupt
-
-        monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "process-loop", "--target-repo", str(myrepo), "--no-update", "--no-alerts"],
-                home=tmp_path,
-            )
-
-        assert exc_info.value.code == 0
-        assert len(child_calls) == 1
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(path) for path in paths]))
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "model", "medium"))
+    monkeypatch.setattr(session, "resolve_orchestrator_specs", lambda: [("claude", "model", "medium")])
+    return notes, listing.configured_repo_snapshot(notes)
 
 
-@pytest.mark.parametrize("deprecated_option", ["--orchestrator=claude", "--model=opus"])
-def test_process_loop_rejects_removed_options(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    deprecated_option: str,
+def _manifest(prompt: str) -> pathlib.Path:
+    start = prompt.index("は ") + len("は ")
+    return pathlib.Path(prompt[start : prompt.index(" を読む", start)])
+
+
+@pytest.mark.parametrize("counts", [(1, 1), (0, 9, 10, 11, 12)])
+def test_one_coordinator_receives_every_repository(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, counts: tuple[int, ...]
 ) -> None:
-    """廃止したオーケストレーター・モデル指定を公開CLI境界でexit 2にする。"""
-    handler_calls: list[object] = []
-    monkeypatch.setattr(_process_loop, "cmd_process_loop", lambda *_args: handler_calls.append(True))
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "process-loop", deprecated_option], home=tmp_path)
-    assert exc_info.value.code == 2
-    assert not handler_calls
+    """1回の統括に全候補を渡し、Nとworktree・所有・候補本文を対象別に保持する。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch, counts)
+    observed: list[tuple[pathlib.Path, dict[str, Any]]] = []
+
+    def execute(_args: argparse.Namespace, cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt).read_text(encoding="utf-8"))
+        observed.append((cwd, data))
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "coordinator"
+        kwargs["on_session_started"]("coordinator")
+        records = {}
+        for target in data["repositories"]:
+            candidates = json.loads(pathlib.Path(target["candidate_file"]).read_text(encoding="utf-8"))
+            assert len(candidates) == counts[int(target["target_repo"].rsplit("-", 1)[1])]
+            assert pathlib.Path(target["worktree"]).is_dir()
+            stored = json.loads(pathlib.Path(target["ownership_record"]).read_text(encoding="utf-8"))
+            assert stored["session_id"] == "coordinator" and stored["token"] == target["ownership_token"]
+            records[target["target_repo"]] = {"status": "completed", "writer_sessions": []}
+        for path in notes.glob("2026/10/*.md"):
+            path.unlink()
+        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": records}), encoding="utf-8")
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    results = loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+    assert len(observed) == 1 and observed[0][0] == pathlib.Path.cwd()
+    assert len(results) == len(counts)
+    assert [target["lane_limit"] for target in observed[0][1]["repositories"]] == [(count + 9) // 10 for count in counts]
+    assert all(result["status"] == "completed" for result in results.values())
+    assert all(json.loads(path.read_text())["released"] for path in ownership.ownership_directory().glob("*.json"))
 
 
-class TestResolveRepoId:
-    """_resolve_repo_id: URL・ローカルパス・Noneの各入力からリポジトリIDを取得する。"""
+def test_continue_only_unfinished_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """部分完了後は同一統括会話へ未完了対象だけを渡す。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch)
+    rounds: list[tuple[str | None, list[str]]] = []
 
-    def test_url_input_resolved_directly(self) -> None:
-        """URL形式の入力はgit呼び出しなしで正規化されること。"""
-        result = _repo.resolve_repo_id(  # pylint: disable=protected-access  # noqa: SLF001
-            "https://github.com/owner/repo.git",
+    def execute(args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt).read_text())
+        targets = data["repositories"]
+        rounds.append((args.resume, [target["target_repo"] for target in targets]))
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "same-coordinator"
+        kwargs["on_session_started"]("same-coordinator")
+        selected = targets[0]
+        for path in notes.glob(f"2026/10/{selected['target_repo'].rsplit('/', 1)[1]}-*.md"):
+            path.unlink()
+        records = {target["target_repo"]: {"status": "completed" if target is selected else "incomplete"} for target in targets}
+        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": records}))
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+    assert rounds == [
+        (None, [item.repository.repo_id for item in snapshots]),
+        ("same-coordinator", [snapshots[1].repository.repo_id]),
+    ]
+
+
+@pytest.mark.parametrize("status", ["incomplete", "completed", "blocked", "pending", None])
+def test_no_progress_and_blocking_are_repository_scoped(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, status: str | None
+) -> None:
+    _notes, snapshots = _targets(tmp_path, monkeypatch)
+    calls = 0
+
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "same-coordinator"
+        kwargs["on_session_started"]("same-coordinator")
+        data = json.loads(_manifest(prompt).read_text())
+        records = {target["target_repo"]: {"status": status} for target in data["repositories"]} if status else {}
+        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": records}))
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+    assert calls == (1 if status == "blocked" else 3)
+    for snapshot in snapshots:
+        assert gate.decide(snapshot.repository.repo_id, gate.repository_input(snapshot, None)).skipped
+
+
+def test_owner_wait_keeps_other_repository_running(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _notes, snapshots = _targets(tmp_path, monkeypatch)
+    first = snapshots[0].repository
+    held = ownership.try_acquire(first.repo_id, worktree=first.worktree)
+    assert held is not None
+    targets: list[str] = []
+
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, _env: dict[str, str], **_kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt).read_text())
+        targets.extend(target["target_repo"] for target in data["repositories"])
+        return False
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    results = loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+    assert targets == [snapshots[1].repository.repo_id]
+    assert results[first.repo_id]["status"] == "owner_wait"
+    ownership.release(held)
+
+
+def test_running_descendant_keeps_ownership(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
+
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, _prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "coordinator"
+        kwargs["on_session_started"]("coordinator")
+        identity = session_registry.ProcessIdentity.of(os.getpid())
+        assert identity is not None
+        session_registry.publish(
+            "worker",
+            terminal=False,
+            cwd=str(snapshots[0].repository.worktree),
+            launcher_session_id="coordinator",
+            processes=(identity,),
         )
-        assert result == "github.com/owner/repo"
+        return False
 
-    def test_normalized_url_input_resolved_directly(self) -> None:
-        """`host/owner/repo`形式の入力はgit呼び出しなしで正規化されること。"""
-        result = _repo.resolve_repo_id("github.com/owner/repo")  # pylint: disable=protected-access  # noqa: SLF001
-        assert result == "github.com/owner/repo"
-
-    def test_local_path_resolved_via_git(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """ローカルパスはgit remote get-urlでURLを取得して正規化されること。"""
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = "git@github.com:owner/repo.git\n" if kwargs.get("text") else b"git@github.com:owner/repo.git\n"
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        result = _repo.resolve_repo_id(str(myrepo))  # pylint: disable=protected-access  # noqa: SLF001
-        assert result == "github.com/owner/repo"
-
-    def test_none_resolved_from_cwd_via_git(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """Noneはgit rev-parseとgit remote get-urlでCWDのリモートURLを取得すること。"""
-        myrepo = tmp_path / "cwdrepo"
-        myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout = "https://github.com/cwd/repo\n" if kwargs.get("text") else b"https://github.com/cwd/repo\n"
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        result = _repo.resolve_repo_id(None)  # pylint: disable=protected-access  # noqa: SLF001
-        assert result == "github.com/cwd/repo"
-
-    def test_local_path_git_remote_failure_exits(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """ローカルパスが存在するがgit remote get-urlが失敗するとexit 2すること。"""
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo.resolve()), "remote", "get-url", "origin"]:
-                empty: Any = "" if kwargs.get("text") else b""
-                return subprocess.CompletedProcess(cmd, returncode=128, stdout=empty, stderr=empty)
-            empty = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        with pytest.raises(SystemExit) as exc_info:
-            _repo.resolve_repo_id(str(myrepo))  # pylint: disable=protected-access  # noqa: SLF001
-        assert exc_info.value.code == 2
-
-    def test_none_git_rev_parse_failure_exits(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """value=Noneのとき、git rev-parseが失敗するとexit 2すること。"""
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                empty: Any = "" if kwargs.get("text") else b""
-                return subprocess.CompletedProcess(cmd, returncode=128, stdout=empty, stderr=empty)
-            empty = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        with pytest.raises(SystemExit) as exc_info:
-            _repo.resolve_repo_id(None)  # pylint: disable=protected-access  # noqa: SLF001
-        assert exc_info.value.code == 2
-
-    def test_none_git_remote_failure_exits(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """value=Noneのとき、rev-parseは成功するがgit remote get-urlが失敗するとexit 2すること。"""
-        myrepo = tmp_path / "cwdrepo"
-        myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                empty: Any = "" if kwargs.get("text") else b""
-                return subprocess.CompletedProcess(cmd, returncode=128, stdout=empty, stderr=empty)
-            empty = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        with pytest.raises(SystemExit) as exc_info:
-            _repo.resolve_repo_id(None)  # pylint: disable=protected-access  # noqa: SLF001
-        assert exc_info.value.code == 2
+    monkeypatch.setattr(session, "run_process_session", execute)
+    results = loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+    assert results[snapshots[0].repository.repo_id]["status"] == "owner_wait"
+    assert ownership.try_acquire(snapshots[0].repository.repo_id, worktree=snapshots[0].repository.worktree) is None
 
 
-class TestProcessLoopUrlInput:
-    """process-loop: --target-repoにURLを渡した場合はexit 2すること。"""
+@pytest.mark.parametrize("argv", [["all-repos"], ["--target-repo", "somewhere"], ["--resume"]])
+def test_removed_public_forms_are_rejected(argv: list[str]) -> None:
+    with pytest.raises(SystemExit) as raised:
+        atk.main(["wi", "process-loop", *argv])
+    assert raised.value.code == 2
 
-    def test_url_input_exits_with_code_2(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """--target-repoにURL文字列（存在しないパス）を渡すとexit 2すること。
 
-        _resolve_local_worktreeは実在しないパスをURL/不正パスとして判別し、
-        ローカルパスを指定する必要があるとstderrへ出力してexit 2する。
-        """
-        _setup_notes(tmp_path)
+def test_explicit_resume_uses_frozen_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """中断後の新WIは次のprocess-wiの実行へ残し、明示再開の候補原本は前回のまま使う。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
+    first_candidate: str | None = None
 
-        monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: subprocess.CompletedProcess([], 0, "", ""))
+    def interrupted(
+        _args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any
+    ) -> bool:
+        nonlocal first_candidate
+        data = json.loads(_manifest(prompt).read_text())
+        first_candidate = data["repositories"][0]["candidate_file"]
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "frozen-coordinator"
+        kwargs["on_session_started"]("frozen-coordinator")
+        return False
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "process-loop", "--target-repo", "github.com/example/foo"], home=tmp_path)
-        assert exc_info.value.code == 2
+    args = argparse.Namespace(resume=None, auto_resume=False, worktree=None)
+    monkeypatch.setattr(session, "run_process_session", interrupted)
+    loop.run_coordinator(args, snapshots)
+    new_item = notes / "2026/10/new.md"
+    new_item.write_text(
+        "---\nstate: inbox\ntype: awi\ntarget_repo: example.test/team/repo-0\n---\n\n# 新WI\n", encoding="utf-8"
+    )
 
-    def test_prompt_keeps_dotfiles_goal_free_of_internal_publish_steps(self) -> None:
-        prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
-        assert "git worktree内で起動" not in prompt
-        assert "現在のHEADを`origin/master`へ反映" not in prompt
-        assert "git push" not in prompt
-        assert "push" not in prompt
-
-    @pytest.mark.parametrize("remote_url", ["https://github.com/ak110/dotfiles.git\n", "https://github.com/example/repo.git\n"])
-    def test_worktree_cwd_depends_on_target_repo(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        remote_url: str,
-    ) -> None:
-        """dotfilesでは作成済みworktreeをcwdに使い、CLIのworktree指定を使わない。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        claude_calls: list[dict[str, Any]] = []
-        counts = iter([1, 1, 0])
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd[:1] == ["claude"] and "-p" in cmd:
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout="OK\n", stderr="")
-            if cmd[:1] == ["claude"]:
-                claude_calls.append({"cmd": list(cmd), "cwd": kwargs.get("cwd")})
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=remote_url, stderr="")
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
-
-        def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
-            del private_notes, target_repo_id
-            raise KeyboardInterrupt
-
-        monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait_for_changes)
-        worktree_path = myrepo / ".claude" / "worktrees" / "process-loop"
-        sync_calls: list[tuple[pathlib.Path, str]] = []
-
-        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path:
-            sync_calls.append((local_path, worktree_name))
-            return worktree_path
-
-        monkeypatch.setattr(
-            _pl_worktree,
-            "_sync_worktree_with_upstream",
-            fake_sync,
+    def resumed(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt).read_text())
+        target = data["repositories"][0]
+        assert target["candidate_file"] == first_candidate
+        assert len(json.loads(pathlib.Path(target["candidate_file"]).read_text())) == 1
+        (notes / "2026/10/repo-0-0.md").unlink()
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "frozen-coordinator"
+        kwargs["on_session_started"]("frozen-coordinator")
+        pathlib.Path(data["result_file"]).write_text(
+            json.dumps({"repositories": {target["target_repo"]: {"status": "completed"}}})
         )
+        return True
 
-        with pytest.raises(SystemExit):
-            atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+    monkeypatch.setattr(session, "run_process_session", resumed)
+    args.resume = "frozen-coordinator"
+    result = loop.run_coordinator(args, listing.configured_repo_snapshot(notes))
+    assert result[snapshots[0].repository.repo_id]["status"] == "completed"
+    assert new_item.exists()
 
-        assert len(claude_calls) == 1
-        hook_debug_log(claude_calls[0]["cmd"])
-        assert "--worktree=process-loop" not in claude_calls[0]["cmd"]
-        expected_cwd = worktree_path if "ak110/dotfiles" in remote_url else myrepo
-        assert claude_calls[0]["cwd"] == expected_cwd
-        expected_sync_calls = [(myrepo, "process-loop")] if "ak110/dotfiles" in remote_url else []
-        assert sync_calls == expected_sync_calls
+
+def test_declared_writer_holds_only_its_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """対象別の申告で生存writerを区別し、独立して終了した対象は回収へ進む。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch)
+
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt).read_text())
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "coordinator"
+        kwargs["on_session_started"]("coordinator")
+        identity = session_registry.ProcessIdentity.of(os.getpid())
+        assert identity is not None
+        session_registry.publish("writer-0", terminal=False, processes=(identity,), launcher_session_id="coordinator")
+        session_registry.publish("writer-1", terminal=True, launcher_session_id="coordinator")
+        for path in notes.glob("2026/10/*.md"):
+            path.unlink()
+        records = {
+            target["target_repo"]: {"status": "completed", "writer_sessions": [f"writer-{index}"]}
+            for index, target in enumerate(data["repositories"])
+        }
+        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": records}))
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    result = loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+    assert result[snapshots[0].repository.repo_id]["status"] == "owner_wait"
+    assert result[snapshots[1].repository.repo_id]["status"] == "completed"
+    for record in result.values():
+        assert json.loads(pathlib.Path(record["result_path"]).read_text())["status"] == record["status"]
+
+
+def test_resume_recovers_saved_completion_before_launch(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """終了処理前に中断しても、申告と実体の一致した完了済み対象を継続へ再配送しない。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch)
+    first, second = [item.repository.repo_id for item in snapshots]
+
+    def interrupted(
+        _args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any
+    ) -> bool:
+        data = json.loads(_manifest(prompt).read_text())
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "interrupted-root"
+        kwargs["on_session_started"]("interrupted-root")
+        (notes / "2026/10/repo-0-0.md").unlink()
+        pathlib.Path(data["result_file"]).write_text(
+            json.dumps({"repositories": {first: {"status": "completed"}, second: {"status": "incomplete"}}})
+        )
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(session, "run_process_session", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+
+    def resumed(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt).read_text())
+        assert [target["target_repo"] for target in data["repositories"]] == [second]
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "interrupted-root"
+        kwargs["on_session_started"]("interrupted-root")
+        (notes / "2026/10/repo-1-0.md").unlink()
+        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": {second: {"status": "completed"}}}))
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", resumed)
+    result = loop.run_coordinator(
+        argparse.Namespace(resume="interrupted-root", auto_resume=False, worktree=None), listing.configured_repo_snapshot(notes)
+    )
+    assert result[first]["recovered"] is True
+    assert all(item["status"] == "completed" for item in result.values())
+    assert json.loads(pathlib.Path(result[first]["result_path"]).read_text())["status"] == "completed"
+
+
+def test_control_storage_is_independent_of_repository() -> None:
+    control.cmd_process_loop_instruct("今回だけの追加指示")
+    assert log.read_instructions() == ["今回だけの追加指示"]
+    control.cmd_process_loop_abort()
+    assert control.consume_process_loop_abort()
+    assert not control.consume_process_loop_abort()
+    control.cmd_process_loop_instruct_cancel()
+    assert not log.read_instructions()
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        [],
+        {"repositories": []},
+        {"repositories": {"foreign": {"status": "completed"}}},
+        {"repositories": {"repo": {"status": []}}},
+        {"repositories": {"repo": {"status": "incomplete", "writer_sessions": "writer"}}},
+        {"repositories": {"repo": {"status": "incomplete", "writer_sessions": [1]}}},
+    ],
+)
+def test_invalid_result_is_rejected(tmp_path: pathlib.Path, record: Any) -> None:
+    """外部の返却の型・対象・状態・writer配列が不正なら、完了と扱う前に診断する。"""
+    path = tmp_path / "result.json"
+    path.write_text(json.dumps(record), encoding="utf-8")
+    owner = ownership.Ownership("repo", "token", tmp_path / "owner.json", None)
+    with pytest.raises(ValueError):
+        loop._read_results(path, {"repo": owner})  # pylint: disable=protected-access
 
 
 def _start_entry(
@@ -405,428 +339,3 @@ def _start_entry(
     path.write_text(f"---\nstate: {state}\ntype: {kind}\ntarget_repo: {repo}\n---\n\n質問\n{body}", encoding="utf-8")
     os.utime(path, (timestamp, timestamp))
     return path
-
-
-@pytest.mark.parametrize("state", ["inbox", "processing", "hold"])
-@pytest.mark.parametrize("release", ["deadline", "all-answered", "abort", "candidate-removed"])
-def test_uwi_start_deadline(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    state: str,
-    release: str,
-) -> None:
-    """公開CLIは期限前の未回答を待ち、全回答・期限・中断を再評価する。"""
-    notes = _setup_notes(tmp_path)
-    ready = _start_entry(notes, "ready.md", kind="awi")
-    question = _start_entry(notes, "question.md", state=state)
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    clock = [1599.0]
-    monkeypatch.setattr(_pl_watch.time, "time", lambda: clock[0])
-    monkeypatch.setattr(_uwi, "is_agent_environment", lambda: False)
-    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_a, **_kw: None)
-    children: list[dict[str, Any]] = []
-    fake_run = fake_run_with_remote_url(repo, children, 0)
-
-    def run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-        result = fake_run(cmd, *args, **kwargs)
-        if children:
-            raise KeyboardInterrupt
-        return result
-
-    monkeypatch.setattr(subprocess, "run", run)
-    waited = False
-
-    def wait(*_args: Any, **_kwargs: Any) -> bool:
-        nonlocal waited
-        assert not children
-        if waited:
-            raise KeyboardInterrupt
-        waited = True
-        if release == "deadline":
-            clock[0] = 1600.0
-        elif release == "all-answered":
-            with pytest.raises(SystemExit) as answer_exit:
-                atk.main(["wi", "answer", question.name, "承認"], home=tmp_path)
-            assert answer_exit.value.code == 0
-        elif release == "candidate-removed":
-            ready.unlink()
-            question.unlink()
-        else:
-            raise KeyboardInterrupt
-        return True
-
-    monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
-    with pytest.raises(SystemExit) as exc:
-        atk.main(["wi", "process-loop", "--target-repo", str(repo), "--no-update", "--no-alerts"], home=tmp_path)
-    assert exc.value.code == 0
-    assert waited
-    assert len(children) == int(release in {"deadline", "all-answered"})
-
-
-def test_uwi_updates_across_states(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """一部回答とadopted移動後の更新を期限へ含め、再起動でmtimeを更新しない。"""
-    notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(_uwi, "is_agent_environment", lambda: False)
-    monkeypatch.setattr(_wi_sync, "pull", lambda *_a, **_kw: None)
-    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_a, **_kw: None)
-    monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(tmp_path, [], 0))
-    _start_entry(notes, "remaining.md", state="hold")
-    answered = _start_entry(notes, "answered.md", state="hold")
-    with pytest.raises(SystemExit) as answer_exit:
-        atk.main(["wi", "answer", answered.name, "承認"], home=tmp_path)
-    assert answer_exit.value.code == 0
-    os.utime(answered, (1100, 1100))
-    gate = _pl_watch.StartGate(notes)
-    decision = gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1600)
-    assert decision.deadline == 1700
-    adopted = answered
-    answered.write_text(
-        answered.read_text(encoding="utf-8").replace("type: uwi", "type: uwi\nquestion_type: post-approval"),
-        encoding="utf-8",
-    )
-    with pytest.raises(SystemExit) as adopted_exit:
-        atk.main(["wi", "answer", answered.name, "その対応で問題無い"], home=tmp_path)
-    assert adopted_exit.value.code == 0
-    assert "state: adopted" in answered.read_text(encoding="utf-8")
-    os.utime(adopted, (1200, 1200))
-    assert gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1700).deadline == 1800
-    restarted = _pl_watch.StartGate(notes)
-    assert restarted.evaluate({"github.com/example/myrepo"}, activity=False, now=1799).deadline == 1800
-    assert not restarted.evaluate({"github.com/example/myrepo"}, activity=False, now=1800).reasons
-    assert adopted.stat().st_mtime == 1200
-
-
-def test_activity_grace_extends_on_new_wi(tmp_path: pathlib.Path) -> None:
-    """対象外を含む新規到着ごとに検出から猶予を延長し、累計上限を置かない。"""
-    notes = _setup_notes(tmp_path)
-    gate = _pl_watch.StartGate(notes)
-    assert gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1000).deadline == 1600
-    for index, now in enumerate([1599, 2198, 2797]):
-        _start_entry(notes, f"arrival-{index}.md", repo="github.com/other/repo", timestamp=now, kind="awi")
-        decision = gate.evaluate({"github.com/example/myrepo"}, activity=True, now=now)
-        assert decision.extended
-        assert decision.deadline == now + 600
-    assert not gate.evaluate({"github.com/example/myrepo"}, activity=True, now=3397).reasons
-    gate.started()
-    assert gate.evaluate({"github.com/example/myrepo"}, activity=True, now=3400).deadline == 4000
-
-
-def test_grace_ignores_edits_and_recounts(tmp_path: pathlib.Path) -> None:
-    """編集・状態移動・同名の再出現は到着と数えず、無活動なら早期解除する。"""
-    notes = _setup_notes(tmp_path)
-    entry = _start_entry(notes, "existing.md", kind="awi")
-    gate = _pl_watch.StartGate(notes)
-    gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1000)
-    entry.write_text(entry.read_text(encoding="utf-8") + "編集\n", encoding="utf-8")
-    moved = entry
-    moved.write_text(moved.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
-    decision = gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1500)
-    assert not decision.extended
-    assert decision.deadline == 1600
-    moved.unlink()
-    gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1510)
-    _start_entry(notes, "existing.md", kind="awi")
-    assert not gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1520).extended
-    assert not gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1520).reasons
-
-
-def test_start_scope_excludes_foreign_uwi(tmp_path: pathlib.Path) -> None:
-    """登録集合の外の未回答UWIは抑止せず、対象内run-skillは抑止する。"""
-    notes = _setup_notes(tmp_path)
-    _start_entry(notes, "foreign.md", repo="github.com/other/repo")
-    gate = _pl_watch.StartGate(notes)
-    assert not gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1000).reasons
-    skill = _start_entry(notes, "skill.md", state="hold")
-    skill.write_text(skill.read_text(encoding="utf-8").replace("type: uwi", "type: uwi\nsource: run-skill"), encoding="utf-8")
-    os.utime(skill, (1000, 1000))
-    decision = gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1000)
-    assert decision.reasons
-    assert decision.deadline == 1600
-
-
-@pytest.mark.parametrize("abort", [False, True])
-def test_grace_abort_and_output(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    abort: bool,
-) -> None:
-    """公開CLIで到着延長を表示し、中断なら子を起動せず期限なら開始する。"""
-    notes = _setup_notes(tmp_path)
-    _start_entry(notes, "ready.md", kind="awi")
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    clock = [1000.0]
-    monkeypatch.setattr(_pl_watch.time, "time", lambda: clock[0])
-    monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: True)
-    children: list[dict[str, Any]] = []
-    fake_run = fake_run_with_remote_url(repo, children, 0)
-
-    def run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-        result = fake_run(cmd, *args, **kwargs)
-        if children:
-            raise KeyboardInterrupt
-        return result
-
-    monkeypatch.setattr(subprocess, "run", run)
-    waits = 0
-
-    def wait(*_args: Any, **_kwargs: Any) -> bool:
-        nonlocal waits
-        assert not children
-        waits += 1
-        assert waits <= 2
-        if waits == 1:
-            clock[0] = 1599
-            _start_entry(notes, "new.md", kind="awi", timestamp=1599)
-        elif abort:
-            with pytest.raises(SystemExit) as abort_exit:
-                atk.main(["wi", "process-loop", "abort"], home=tmp_path)
-            assert abort_exit.value.code == 0
-        else:
-            clock[0] = 2199
-        return True
-
-    monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
-    with pytest.raises(SystemExit) as exc:
-        atk.main(["wi", "process-loop", "--target-repo", str(repo), "--no-update", "--no-alerts"], home=tmp_path)
-    assert exc.value.code == 0
-    assert waits == 2
-    assert len(children) == int(not abort)
-    output = capsys.readouterr().out
-    assert "活動" in output and "期限" in output and "延長" in output
-    if not abort:
-        assert "委譲" in output
-
-
-@pytest.mark.parametrize("returncode", [0, 1])
-@pytest.mark.parametrize("outcome", ["retained", "error"])
-def test_session_end_uses_common_lane_cleanup(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    returncode: int,
-    outcome: str,
-) -> None:
-    """単一起動の子終了後も、all-reposと同じ共通の終了後処理で回収・記録・再回収の案内を行い、終了判定より前に済ませる。"""
-    notes = _setup_notes(tmp_path)
-    myrepo = tmp_path / "myrepo"
-    myrepo.mkdir()
-    ready = _start_entry(notes, "ready.md", kind="awi")
-    base_fake_run = fake_run_with_remote_url(myrepo, [], returncode)
-
-    def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-        if cmd[:1] == ["claude"] and "-p" not in cmd:
-            ready.unlink(missing_ok=True)
-        return base_fake_run(cmd, *args, **kwargs)
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    judged: list[str | None] = []
-
-    def cleanup(session_id: str | None, **_kwargs: Any) -> dict[str, Any]:
-        judged.append(session_id)
-        if outcome == "error":
-            raise OSError("回収先へ書けない")
-        return {"session_id": session_id, "removed": [], "retained": [{"reason": "未統合"}], "recovered": []}
-
-    monkeypatch.setattr(_lane, "cleanup_session", cleanup)
-    recorded: list[tuple[str, dict[str, Any]]] = []
-    original_append = _loop_log.append
-
-    def append(event: str, *, session_id: str | None = None, **fields: Any) -> None:
-        recorded.append((event, fields))
-        original_append(event, session_id=session_id, **fields)
-
-    monkeypatch.setattr(_loop_log, "append", append)
-
-    def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
-    with pytest.raises(SystemExit) as ended:
-        atk.main(["wi", "process-loop", "--target-repo", str(myrepo), "--no-update", "--no-alerts"], home=tmp_path)
-    assert ended.value.code == returncode
-    assert len(judged) == 1 and judged[0]
-    cleanups = [fields for event, fields in recorded if event == "lane_cleanup"]
-    assert len(cleanups) == 1 and cleanups[0]["lane_session_id"] == judged[0] and "target_repo" not in cleanups[0]
-    assert ("error" in cleanups[0]) is (outcome == "error")
-    assert f"atk lane delete --session-id {judged[0]}" in capsys.readouterr().err
-    events = [event for event, _fields in recorded]
-    assert events.index("lane_cleanup") < events.index("session_classified")
-
-
-_TARGET = "github.com/example/myrepo"
-
-
-def _awi(notes: pathlib.Path, name: str, body: str = "本文", *, state: str = "inbox") -> pathlib.Path:
-    path = wi_entry_files.entry_path(notes, name)
-    path.write_text(f"---\nstate: {state}\ntarget_repo: {_TARGET}\ntype: awi\n---\n\n{body}\n", encoding="utf-8")
-    return path
-
-
-def _run_single_loop(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    on_child: Any = None,
-    on_wait: tuple[Any, ...] = (),
-    extra_argv: tuple[str, ...] = ("--no-alerts",),
-) -> list[dict[str, Any]]:
-    """公開CLIの単一起動を`--no-update`で回し、変更待機ごとに`on_wait`を順に適用し、尽きたら終了させる。"""
-    myrepo = tmp_path / "myrepo"
-    myrepo.mkdir(exist_ok=True)
-    child_calls: list[dict[str, Any]] = []
-    base_fake_run = fake_run_with_remote_url(myrepo, child_calls, 0)
-
-    def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-        result = base_fake_run(cmd, *args, **kwargs)
-        if cmd[:1] == ["claude"] and "-p" not in cmd and on_child is not None:
-            on_child(len(child_calls))
-        return result
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    waits = iter(on_wait)
-
-    def fake_wait(*_args: object, **_kwargs: object) -> bool:
-        action = next(waits, None)
-        if action is None:
-            raise KeyboardInterrupt
-        action()
-        return True
-
-    monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait)
-    with pytest.raises(SystemExit) as ended:
-        atk.main(["wi", "process-loop", "--target-repo", str(myrepo), "--no-update", *extra_argv], home=tmp_path)
-    assert ended.value.code == 0
-    return child_calls
-
-
-@pytest.mark.parametrize("resolution", ["none", "partial"])
-def test_unresolved_session_skips_relaunch(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], resolution: str
-) -> None:
-    """正常終了した子セッションが候補を1件も解消しなければ、同じ入力の間は次のセッションを起動しない。"""
-    notes = _setup_notes(tmp_path)
-    first = _awi(notes, "first.md")
-    _awi(notes, "second.md")
-
-    def child(call: int) -> None:
-        if resolution == "partial" and call == 1:
-            first.unlink()
-
-    calls = _run_single_loop(tmp_path, monkeypatch, on_child=child)
-    # 一部を解消した回は記録せずに次の反復で起動し、その次の無進捗の回で見送りへ移る。
-    assert len(calls) == (2 if resolution == "partial" else 1)
-    out = capsys.readouterr().out
-    assert "担当の起動を見送ります" in out and "新しいWIの到着" in out
-    assert "起動を見送ったため変更検知を待機します。" in out
-
-
-@pytest.mark.parametrize("change", ["new-wi", "body", "state", "new-alert"])
-def test_skipped_target_relaunches_on_change(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, change: str) -> None:
-    """見送り中に起動入力が変われば次の反復で起動し、起動した時点で記録を削除する。"""
-    notes = _setup_notes(tmp_path)
-    task = _awi(notes, "task.md")
-    alerts: list[dict[str, Any]] = []
-    monkeypatch.setattr(_wi_alerts, "check_and_submit_alerts", lambda *_a, **_k: _wi_alerts.AlertCheckResult(0, ()))
-    monkeypatch.setattr(_review_audit, "dependabot_pending", lambda _repository: {"status": "available", "alerts": alerts})
-
-    def apply() -> None:
-        if change == "new-wi":
-            _awi(notes, "added.md")
-        elif change == "body":
-            task.write_text(task.read_text(encoding="utf-8") + "\n## ユーザーコメント\n\n回答\n", encoding="utf-8")
-        elif change == "state":
-            task.write_text(task.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
-        else:
-            alerts.append({"number": 2})
-
-    # 1回目の子は何も解消せず、見送りの待機中に入力が変わり、2回目の子の後は再び見送る。
-    def child(call: int) -> None:
-        if call == 2:
-            alerts.clear()
-            if change == "new-alert":
-                task.unlink()
-
-    calls = _run_single_loop(tmp_path, monkeypatch, on_child=child, on_wait=(apply,), extra_argv=("--alert-interval=0",))
-    assert len(calls) == 2
-
-
-def test_unmarked_alert_retries_with_empty_queue(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """却下失敗で同じ番号が未markなら、正常終了と無進捗記録の後もキュー空で再監査する。"""
-    _setup_notes(tmp_path)
-    alerts: list[dict[str, Any]] = [{"number": 1}]
-    monkeypatch.setattr(_wi_alerts, "check_and_submit_alerts", lambda *_a, **_k: _wi_alerts.AlertCheckResult(0, ()))
-    monkeypatch.setattr(_review_audit, "dependabot_pending", lambda _repository: {"status": "available", "alerts": alerts})
-
-    def child(call: int) -> None:
-        if call == 2:
-            alerts.clear()
-
-    assert len(_run_single_loop(tmp_path, monkeypatch, on_child=child, extra_argv=("--alert-interval=0",))) == 2
-
-
-def test_default_revision_reaudits_same_alert_with_empty_queue(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """公開markの同版除外から版更新を経て、同番号を単一起動の空キューで再監査する。"""
-    _setup_notes(tmp_path)
-    revision = "a" * 40
-    manifests: list[str] = []
-    launched: list[str] = []
-
-    def rest(path: str, **_kwargs: Any) -> Any:
-        if "/dependabot/alerts?" in path:
-            return [[{"number": 40, "dependency": {"manifest_path": "uv.lock"}}]]
-        if path.endswith("/commits/main"):
-            return {"sha": revision}
-        if "/contents/" in path:
-            assert path.endswith(f"?ref={revision}")
-            manifests.append(path)
-            return {"type": "file"}
-        return {"default_branch": "main"}
-
-    monkeypatch.setattr(_review_audit, "_gh_rest", rest)
-    monkeypatch.setattr(_wi_alerts, "check_and_submit_alerts", lambda *_a, **_k: _wi_alerts.AlertCheckResult(0, ()))
-
-    def mark() -> None:
-        with pytest.raises(SystemExit) as ended:
-            atk.main(["review-audit", "mark", "--repo", "example/myrepo", "--revision", revision, "dependabot:40"])
-        assert ended.value.code == 0
-
-    mark()
-
-    def advance() -> None:
-        nonlocal revision
-        assert not launched and not manifests
-        revision = "b" * 40
-
-    def child(_call: int) -> None:
-        launched.append(revision)
-        mark()
-
-    calls = _run_single_loop(tmp_path, monkeypatch, on_child=child, on_wait=(advance,), extra_argv=("--alert-interval=0",))
-    assert len(calls) == 1 and launched == ["b" * 40]
-    assert manifests and all(path.endswith(f"?ref={revision}") for path in manifests)
-
-
-def test_wi_added_during_session_is_launched_next(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """子セッションの稼働中に加わったWIは記録に含めず、次の反復の起動対象にする。"""
-    notes = _setup_notes(tmp_path)
-    _awi(notes, "task.md")
-
-    def child(call: int) -> None:
-        if call == 1:
-            _awi(notes, "arrived.md")
-
-    assert len(_run_single_loop(tmp_path, monkeypatch, on_child=child)) == 2
-
-
-def test_resume_bypasses_skip(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """無進捗記録があっても`--resume`の指定は起動する。"""
-    notes = _setup_notes(tmp_path)
-    _awi(notes, "task.md")
-    current = _pl_gate.target_input(notes, _TARGET, None)
-    _pl_gate.record_no_progress(_TARGET, current, current)
-    assert not _pl_gate.decide(_TARGET, current).launch
-    calls = _run_single_loop(tmp_path, monkeypatch, extra_argv=("--no-alerts", "--resume"))
-    assert len(calls) == 1 and "--resume" in calls[0]["cmd"]

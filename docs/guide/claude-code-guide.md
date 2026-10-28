@@ -533,16 +533,16 @@ atk wi process-loop
 dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk wi process-loop --worktree[=NAME]`を指定する。
 `NAME`を省略すると`process-loop`を使い、dotfilesリポジトリではオプションを指定しなくても自動的にworktreeを使う。
 
-複数リポジトリのWIを`atk wi process-loop`で継続して処理する場合は、ローカルworktreeの絶対パスをJSON配列で登録し、ホームから起動する。
+継続して処理するリポジトリのローカルworktreeを絶対パスのJSON配列で登録し、ホームなどから起動する。
 
 ```bash
 atk config set process_loop_repositories '["/home/user/project-a", "/home/user/project-b"]'
 atk wi list --configured-repos
-atk wi process-loop all-repos
+atk wi process-loop
 ```
 
-共通オプションは`atk wi process-loop --no-update all-repos`のように`all-repos`の前へ指定する。
-通常の`atk wi process-loop`は現在のリポジトリだけを処理する。
+オプションは`atk wi process-loop --no-update`のように指定する。
+処理対象は`process_loop_repositories`の登録全体となる。
 
 停止要求の有無は`status`で確認する。停止要求と次回の処理への指示も同じOSアカウントで実行する。
 

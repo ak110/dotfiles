@@ -18,7 +18,10 @@ import pytest
 import agent_toolkit
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import config as _config  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import listing
+from agent_toolkit._atk.wi import process_loop as loop
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
+from agent_toolkit._atk.wi import process_loop_ownership as ownership
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
@@ -128,9 +131,9 @@ def test_posix_launcher_supervises_all_process_loop_subcommands(tmp_path: pathli
         assert len(uv_calls) == 2
 
 
-def test_posix_launcher_supervises_all_repos_after_options(tmp_path: pathlib.Path) -> None:
-    """部分コマンドの前に置いたオプションでも、ランチャーがall-reposを監督する。"""
-    result, uv_calls = _run_posix_launcher(tmp_path, "wi", "process-loop", "--no-alerts", "all-repos")
+def test_posix_launcher_supervises_registered_loop_options(tmp_path: pathlib.Path) -> None:
+    """登録全体の起動オプションを指定した常駐をランチャーが監督する。"""
+    result, uv_calls = _run_posix_launcher(tmp_path, "wi", "process-loop", "--no-alerts")
 
     assert result.returncode == 0, result.stderr
     assert len(uv_calls) == 2
@@ -181,11 +184,10 @@ def test_posix_launcher_logs_non_restart_exit(
 
 
 _RESUME_ARGV_CASES = [
-    ["--resume"],
     ["--resume", "00000000-0000-0000-0000-000000000000"],
     ["--resume=00000000-0000-0000-0000-000000000000"],
 ]
-"""再開指定の書き方（値なし、空白区切りの値、等号区切りの値）。"""
+"""公開CLIが受理する、空白区切りと等号区切りの再開指定。"""
 
 
 @pytest.fixture(autouse=True)
@@ -198,6 +200,45 @@ def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
     monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: False)
     monkeypatch.delenv(_RESTART_SPEC_ENV, raising=False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
+
+
+@pytest.fixture(autouse=True)
+def _registered_update_boundary(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """更新試験は取得と統括を隔離し、更新・再起動と対話CLI構築を実行する。"""
+    repository = _config.ConfiguredRepository("github.com/example/myrepo", tmp_path / "repo", tmp_path / "repo/.git")
+    monkeypatch.setattr(_config, "resolve_configured_repositories", lambda: (repository,))
+    monkeypatch.setattr(ownership, "resume_repositories", lambda _session, targets: set(targets))
+    monkeypatch.setattr(_pl_watch, "wait_for_start_permission", lambda *_args: True)
+    monkeypatch.setattr(_pl_session, "select_available_orchestrator", lambda specs, *_args, **_kwargs: specs[0])
+
+    def snapshot(notes: pathlib.Path, _repositories: object = None) -> tuple[listing.RepositorySnapshot, ...]:
+        count = _wi_readiness.count_pending_entries(notes, repository.repo_id)
+        entries = tuple((notes / f"item-{index}.md", repository.repo_id, "# 要求", "inbox", "awi") for index in range(count))
+        ready = _wi_readiness.ReadinessResult(ready=tuple(entry[0].name for entry in entries))
+        return (listing.RepositorySnapshot(repository, entries, ready, notes),)
+
+    def run_cli(argv: list[str], env: dict[str, str], cwd: pathlib.Path, **_kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(argv, env=env, cwd=cwd, check=False)
+
+    def coordinate(
+        args: argparse.Namespace, snapshots: tuple[listing.RepositorySnapshot, ...], **_kwargs: Any
+    ) -> dict[str, dict[str, str]]:
+        engine, model, effort = _pl_session.resolve_orchestrator_specs()[0]
+        _pl_session.run_process_session(
+            args,
+            pathlib.Path.cwd(),
+            "goal",
+            _pl_env.child_env(),
+            orchestrator=engine,
+            model=model,
+            effort=effort,
+            resume_pending=False,
+        )
+        return {snapshot.repository.repo_id: {"status": "completed"} for snapshot in snapshots}
+
+    monkeypatch.setattr(listing, "configured_repo_snapshot", snapshot)
+    monkeypatch.setattr(_pl_session, "_run_cli_session", run_cli)
+    monkeypatch.setattr(loop, "run_coordinator", coordinate)
 
 
 def _command_was_called(calls: list[list[str]], command: str) -> bool:
@@ -265,8 +306,10 @@ class TestWaitLoopAutoRestart:
             return base_fake_run(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        monkeypatch.setattr(_pl_session, "_run_codex_session", lambda argv, env, cwd: fake_run(argv, env=env, cwd=cwd))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: pending_count)
+        monkeypatch.setattr(
+            ownership, "resume_repositories", lambda _session, targets: set(targets) if pending_count else set()
+        )
         monkeypatch.setattr(
             _pl_session,
             "select_available_orchestrator",
@@ -311,7 +354,7 @@ class TestWaitLoopAutoRestart:
 
         monkeypatch.setattr(os, "execv", fake_execv)
 
-        argv = ["wi", "process-loop", "--target-repo", str(myrepo), *(extra_argv or [])]
+        argv = ["wi", "process-loop", "--no-alerts", *(extra_argv or [])]
         monkeypatch.setattr(sys, "argv", [str(pathlib.Path(atk.__file__)), *argv])
         with pytest.raises((SystemExit, KeyboardInterrupt)):
             atk.main(argv, home=tmp_path)
@@ -512,7 +555,7 @@ class TestWaitLoopAutoRestart:
         _, restart_argv = execv_calls[0]
         for arg in resume_argv:
             assert arg in restart_argv
-        assert "--target-repo" in restart_argv
+        assert "--target-repo" not in restart_argv
 
     @pytest.mark.parametrize("resume_argv", _RESUME_ARGV_CASES)
     def test_session_restart_drops_resume_option_and_value(
@@ -536,7 +579,7 @@ class TestWaitLoopAutoRestart:
         assert not any(arg.startswith("--resume") for arg in restart_argv)
         assert "00000000-0000-0000-0000-000000000000" not in restart_argv
         assert _INTERNAL_DOTFILES_UPDATED_ARG not in restart_argv
-        assert "--target-repo" in restart_argv
+        assert "--target-repo" not in restart_argv
 
     def test_codex_session_restart_uses_configuration_without_removed_options(
         self,
@@ -560,7 +603,7 @@ class TestWaitLoopAutoRestart:
         assert "--model" not in restart_argv
         assert "--resume" not in restart_argv
         assert "session-id" not in restart_argv
-        assert "--target-repo" in restart_argv
+        assert "--target-repo" not in restart_argv
 
     def test_pending_session_uses_isolated_hook_debug_log(
         self,
@@ -843,7 +886,7 @@ class TestProcessLoopUpdateAndRestart:
         monkeypatch.setattr(os, "execv", fake_execv)
         with pytest.raises(SystemExit):
             atk.main(
-                ["wi", "process-loop", "--target-repo", str(myrepo)],
+                ["wi", "process-loop"],
                 home=tmp_path,
             )
         assert execv_calls
@@ -896,7 +939,7 @@ class TestProcessLoopUpdateAndRestart:
         monkeypatch.setattr(os, "execv", raise_system_exit_0)
 
         with pytest.raises(SystemExit):
-            atk.main(["wi", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+            atk.main(["wi", "process-loop"], home=tmp_path)
 
         assert len(update_envs) == 1
         for child_env in update_envs:
@@ -966,7 +1009,7 @@ class TestProcessLoopUpdateAndRestart:
         )
         with pytest.raises(SystemExit):
             atk.main(
-                ["wi", "process-loop", "--target-repo", str(myrepo), "--no-update"],
+                ["wi", "process-loop", "--no-update"],
                 home=tmp_path,
             )
         assert not execv_calls
@@ -997,7 +1040,7 @@ class TestProcessLoopUpdateAndRestart:
         monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+            atk.main(["wi", "process-loop"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert "update-dotfilesコマンドを利用できない" in capsys.readouterr().err
@@ -1028,7 +1071,7 @@ class TestProcessLoopUpdateAndRestart:
         monkeypatch.setattr(os, "execv", lambda *_a, **_kw: pytest.fail("uv未解決時はexecvを呼ばないこと"))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+            atk.main(["wi", "process-loop"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert "uvコマンドを利用できない" in capsys.readouterr().err

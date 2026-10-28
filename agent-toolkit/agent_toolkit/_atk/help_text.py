@@ -32,11 +32,6 @@ CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以�
 """
 
 HELP: dict[str, dict[str, str]] = {
-    "atk wi process-loop all-repos": {
-        "summary": "登録した全リポジトリの担当を起動する",
-        "epilog": '実行例:\n\n  atk config set process_loop_repositories \'["/absolute/repository-one","/absolute/repository-two"]\'\n  atk wi list --configured-repos --with-staleness\n  atk wi process-loop all-repos\n  atk wi process-loop --no-update all-repos',
-        "description": "登録した全リポジトリの担当を起動する。\n\n目的: process_loop_repositoriesで登録した対象を一括取得し、各対象cwdの通常delegateがprocess-wiの全工程を担う。\n利用場面: ホームから登録集合の処理を常駐で受け付けるとき。\n対象と出力: 対象ごとの候補・処理上限・所有session・終了記録を保持する。オーケストレーターは対象の選定・実装・Git操作を直接行わない。\n前提: `atk config set process_loop_repositories <JSON文字列配列>`で絶対パスを登録する。空配列の場合は待機し、同じoriginの登録は登録順の先頭へまとめる。不正登録は修正操作を示して停止する。共通オプションはall-reposの前へ指定する。\n復元・後始末: Ctrl+Cまたはabortで終了する。失敗した担当の成果を保持し、all-repos担当だけを再開する。status・instructなどの制御はOSアカウント共通で、追加指示は次の1起動集合で1回受領し、各担当が自分の対象に関する内容を適用する。",
-    },
     "atk lane integrate": {
         "summary": "レビュー済みレーンを統合し最終化する",
         "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2 --accept-rebased-head 0123456789abcdef0123456789abcdef01234567",
@@ -173,31 +168,9 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi submission end",
     },
     "atk wi process-loop": {
-        "summary": "AWIを消化し続けるprocess-loopを開始する",
-        "description": "AWIを消化し続けるprocess-loopを開始する。\n\n目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行するprocess-loopを開始する。"
-        "\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。"
-        "\n対象と出力: `atk config`のorchestrate_modelの候補列で指定するオーケストレーターを起動する。"
-        "待機中はCIの失敗を検出してAWIを投入する。未判定のDependabotアラートがあればAWIを起票せずprocess-wiを1回実行させ、"
-        "その実行の自動コードレビュー監査が判定する。対象リポジトリの作業ツリーは起動したセッションが変更する。"
-        "`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、"
-        "初回のセッション起動をその再開へ差し替える。"
-        "子セッションの開始前は、WI投入作業の活動猶予と未回答UWIによる抑止を同時に判定する。"
-        "活動は`atk wi submission begin`で記録した投入先が対象リポジトリ集合と交わる会話とその委譲先に限る。"
-        "同じoriginの別worktreeと別表記URLは同じ投入先とし、同repoの別作業・別repoへの投入・会話の無いプロセスは理由にしない。"
-        "活動猶予は処理可能WIの検出から10分で、共有private-notesへの新規WI到着の検出ごとに10分へ延長する。"
-        "自ループとその子孫・終了session・稼働中の子エージェントを持たずユーザーの応答を待つsessionは活動から除く。"
-        "活動がなくなった時か期限の到来で解除し、既存WIの編集・状態移動では延長しない。"
-        "対象集合に未回答UWIがあれば、保存済みUWIの最終更新から600秒経過するか全件回答されるまで開始を抑止する。"
-        "holdとrun-skill由来のUWIも含み、回答後adoptedへ移ったUWIの更新も最終更新へ反映する。"
-        "両条件の解除後に候補を再評価し、待機理由・期限・延長・開始を端末とログへ示す。"
-        "入力可能な端末のEnterは今回の両待機を解除して候補の再評価へ進める。解除は次回へ持ち越さず、"
-        "非TTY・EOF・バックグラウンドジョブなど入力できない実行では自動の待機を続ける。"
-        "\n前提: 対象リポジトリの現在branchが追跡先を持つこと。"
-        "`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。"
-        "`--auto-resume`と`--resume`は同時指定できない。"
-        "\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。"
-        "作成したworktreeと起動したセッションの成果物は自動では削除しない。",
-        "epilog": "実行例:\n\n  atk wi process-loop --worktree",
+        "summary": "登録リポジトリ全体のAWI処理を常駐実行する",
+        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: process_loop_repositoriesの対象をprocess-wiの実行ごとに1つの統括会話へ渡す。\n利用場面: 登録した全対象を継続的に処理するとき。\n対象と出力: 常駐cwdでorchestrateのprocess-wi-all-reposを起動する。少数候補の対象は統括自身が処理し、多数候補だけを対象cwdの担当へ委譲する。所有・進捗・worktree準備・レーン回収は対象別に管理する。\n前提: atk config set process_loop_repositoriesでローカルworktreeのJSON配列を登録する。空配列では変更待機する。--resume SESSION_IDは統括会話を再開し、--auto-resumeとは同時指定できない。--worktreeは対象別に適用し、対象がdotfilesの場合は無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは現在のセッション終了後に停止し、abort-cancelで取り消す。停止未確認・未統合・dirtyの資源は保持する。",
+        "epilog": "実行例:\n\n  atk config set process_loop_repositories '[\"/absolute/repository\"]'\n  atk wi process-loop\n  atk wi process-loop --worktree --no-update",
     },
     "atk wi process-loop abort": {
         "summary": "process-loopへ1セッションの終了時点で止まるよう要求する",

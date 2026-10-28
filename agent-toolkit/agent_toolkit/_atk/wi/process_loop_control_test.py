@@ -1,18 +1,18 @@
 """`atk wi process-loop`への追加指示の状態ファイルのテスト。"""
 
+import json
 import pathlib
-import subprocess
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import process_loop_control as _pl_control
 from agent_toolkit._atk.wi import process_loop_log
+from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
-from agent_toolkit._atk.wi import readiness as _wi_readiness
-from agent_toolkit._testing.process_loop_support import fake_run_with_remote_url, isolate_process_loop_commands
-from agent_toolkit.atk_test import _setup_notes
+from agent_toolkit._atk.wi.process_loop_test import _manifest, _targets
+from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
 
 
 @pytest.fixture(autouse=True)
@@ -97,40 +97,39 @@ def test_instruction_is_consumed_only_when_a_session_launches(
     tmp_path: pathlib.Path,
 ) -> None:
     """セッションを起動する反復だけが追加指示を消費し、0件で待機する反復は保持する。"""
-    _setup_notes(tmp_path)
-    myrepo = tmp_path / "myrepo"
-    myrepo.mkdir()
+    notes, snapshots = _targets(tmp_path, monkeypatch, (0,))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     process_loop_log.append_instruction("既存のテストコードを先に読む")
-    claude_calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
-
-    count_calls: list[int] = []
-
-    def fake_count_pending_entries(private_notes: pathlib.Path, target_repo: str | None = None) -> int:
-        del private_notes, target_repo
-        count_calls.append(len(count_calls))
-        # 最初は0件で待機し、次の取得と起動直前の再取得で1件を保つ。
-        return 1 if len(count_calls) in {2, 3} else 0
-
+    instructions: list[str] = []
     held_during_wait: list[list[str]] = []
 
-    def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
-        del private_notes, target_repo_id
+    def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None, **_kwargs: Any) -> bool:
+        del target_repo_id
         held_during_wait.append(process_loop_log.read_instructions())
         if len(held_during_wait) >= 2:
             raise KeyboardInterrupt
+        (private_notes / "2026/10/arrived.md").write_text(
+            f"---\ntype: awi\nstate: inbox\ntarget_repo: {snapshots[0].repository.repo_id}\n---\n\n# 作業\n", encoding="utf-8"
+        )
+        return True
 
-    monkeypatch.setattr(_wi_readiness, "count_pending_entries", fake_count_pending_entries)
+    def execute(_args: Any, _cwd: pathlib.Path, prompt: str, _env: dict[str, str], **_kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt).read_text(encoding="utf-8"))
+        instructions.append(data["instruction"])
+        (notes / "2026/10/arrived.md").unlink()
+        result = {snapshots[0].repository.repo_id: {"status": "completed", "writer_sessions": []}}
+        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": result}), encoding="utf-8")
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    monkeypatch.setattr(_pl_watch, "wait_for_start_permission", lambda *_args: True)
     monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait_for_changes)
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+        atk.main(["wi", "process-loop", "--no-update", "--no-alerts"], home=tmp_path)
 
     assert exc_info.value.code == 0
     assert held_during_wait[0] == ["既存のテストコードを先に読む"]
-    assert len(claude_calls) == 1
-    launch_env = cast(dict[str, str], claude_calls[0]["env"])
-    assert launch_env[_PROCESS_LOOP_INSTRUCTION_ENV] == "既存のテストコードを先に読む"
+    assert instructions == ["既存のテストコードを先に読む"]
     assert held_during_wait[1] == []
     assert process_loop_log.read_instructions() == []

@@ -15,25 +15,21 @@ from typing import Any, NoReturn
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk import config, managed_temp
 from agent_toolkit._atk import git_sync as _atk_git_sync
-from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
-from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._common import codex_models, state_paths
 from agent_toolkit._git import worktrees as _git_worktrees
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.process_loop_support import (
-    DOTFILES_REPO_ID,
-    fake_run_with_remote_url,
     isolate_process_loop_commands,
-    raise_system_exit_0,
     set_orchestrate_model,
 )
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
@@ -188,8 +184,9 @@ def _run_public_process_loop(
     worktree_args: list[str],
     *,
     git_override: Callable[[list[str], pathlib.Path], subprocess.CompletedProcess[Any] | None] | None = None,
+    update_flags: tuple[str, ...] = ("--no-update",),
 ) -> tuple[list[dict[str, Any]], list[list[str]]]:
-    """公開CLIを1反復だけ実行し、セッションとGit呼び出しを返す。"""
+    """登録対象を公開CLIで準備し、常駐cwd・manifest・Git呼び出しを返す。"""
     if not (tmp_path / "private-notes").exists():
         _setup_notes(tmp_path)
     session_calls: list[dict[str, Any]] = []
@@ -212,15 +209,43 @@ def _run_public_process_loop(
         return real_run(cmd, *args, **kwargs)  # pylint: disable=subprocess-run-check  # 実Git実行へそのまま委譲する
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr(_pl_session, "_run_codex_session", lambda argv, env, cwd: fake_run(argv, env=env, cwd=cwd))
-    monkeypatch.setattr(_process_loop, "resolve_repo_id", lambda *_args, **_kwargs: "github.com/example/repo")
+    repository = config.ConfiguredRepository("github.com/example/repo", local_path, local_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda: (repository,))
+    notes = tmp_path / "private-notes"
+    entry = notes / "2026/10/worktree.md"
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    entry.write_text("---\ntype: awi\nstate: inbox\ntarget_repo: github.com/example/repo\n---\n\n# 作業\n", encoding="utf-8")
+
+    def execute(_args: Any, cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        start = prompt.index("は ") + len("は ")
+        manifest = pathlib.Path(prompt[start : prompt.index(" を読む", start)])
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        target = data["repositories"][0]
+        session_calls.append(
+            {
+                "cmd": [kwargs["orchestrator"], prompt],
+                "cwd": cwd,
+                "worktree": pathlib.Path(target["worktree"]),
+                "target": target,
+            }
+        )
+        assert cwd == pathlib.Path.cwd()
+        kwargs["on_session_started"]("worktree-coordinator")
+        child_env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = "worktree-coordinator"
+        entry.unlink()
+        pathlib.Path(data["result_file"]).write_text(
+            json.dumps({"repositories": {repository.repo_id: {"status": "completed", "writer_sessions": []}}}), encoding="utf-8"
+        )
+        return True
+
+    monkeypatch.setattr(_pl_session, "run_process_session", execute)
     monkeypatch.setattr(
         _pl_session,
         "select_available_orchestrator",
         lambda candidates, _env, _cwd, **_kwargs: candidates[0],
     )
-    counts = iter((1, 1, 0))
-    monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_args, **_kwargs: next(counts))
+    monkeypatch.setattr(_pl_watch, "wait_for_start_permission", lambda *_args: True)
+    monkeypatch.setattr(_pl_update, "restart_process_loop", lambda *_args, **_kwargs: None)
 
     def stop_wait(*_args: object, **_kwargs: object) -> None:
         raise KeyboardInterrupt
@@ -231,8 +256,7 @@ def _run_public_process_loop(
             [
                 "wi",
                 "process-loop",
-                f"--target-repo={local_path}",
-                "--no-update",
+                *update_flags,
                 "--no-alerts",
                 *worktree_args,
             ],
@@ -449,7 +473,7 @@ class TestPublicWorktreePreparation:
         sessions, _git_calls = _run_public_process_loop(monkeypatch, tmp_path, local, ["--worktree=custom"])
         assert len(sessions) == 1
         assert sessions[0]["cmd"][0] == "codex"
-        assert sessions[0]["cwd"] == local / ".claude/worktrees/custom"
+        assert sessions[0]["worktree"] == local / ".claude/worktrees/custom"
 
     def test_unignored_path_is_added_to_info_exclude_and_worktree_created(
         self,
@@ -470,7 +494,7 @@ class TestPublicWorktreePreparation:
 
         worktree_path = local_path / ".claude" / "worktrees" / "custom"
         assert len(session_calls) == 1
-        assert session_calls[0]["cwd"] == worktree_path
+        assert session_calls[0]["worktree"] == worktree_path
         assert "現在のHEADを`origin/main`へ反映" not in session_calls[0]["cmd"][-1]
         assert exclude_path.read_text(encoding="utf-8") == "# existing\n/.claude/worktrees/\n"
         assert exclude_path.read_text(encoding="utf-8").splitlines().count("/.claude/worktrees/") == 1
@@ -485,7 +509,7 @@ class TestPublicWorktreePreparation:
             ["--worktree=custom"],
         )
         assert len(second_session_calls) == 1
-        assert second_session_calls[0]["cwd"] == worktree_path
+        assert second_session_calls[0]["worktree"] == worktree_path
         assert any(command[:2] == ["git", "fetch"] and command[-1] == "origin" for command in second_git_calls)
         assert exclude_path.read_text(encoding="utf-8").splitlines().count("/.claude/worktrees/") == 1
 
@@ -672,36 +696,11 @@ class TestPublicWorktreePreparation:
         git_repository.run_git(local_path, "commit", "-m", "negate worktree ignore")
         exclude_path = local_path / ".git" / "info" / "exclude"
         before = exclude_path.read_text(encoding="utf-8")
-        _setup_notes(tmp_path)
         session_calls: list[dict[str, Any]] = []
-        real_run: Any = subprocess.run
-
-        def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-            if cmd[:1] in (["claude"], ["codex"]):
-                session_calls.append({"cmd": list(cmd), "cwd": kwargs.get("cwd")})
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
-            return real_run(cmd, *args, **kwargs)  # pylint: disable=subprocess-run-check  # 実Git実行へそのまま委譲する
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        monkeypatch.setattr(_process_loop, "resolve_repo_id", lambda *_args, **_kwargs: "github.com/example/repo")
-        monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
 
         def run_once() -> None:
-            counts = iter((1, 1))
-            monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
-            with pytest.raises(SystemExit) as exc_info:
-                atk.main(
-                    [
-                        "wi",
-                        "process-loop",
-                        f"--target-repo={local_path}",
-                        "--worktree=custom",
-                        "--no-update",
-                        "--no-alerts",
-                    ],
-                    home=tmp_path,
-                )
-            assert exc_info.value.code == 0
+            sessions, _calls = _run_public_process_loop(monkeypatch, tmp_path, local_path, ["--worktree=custom"])
+            session_calls.extend(sessions)
 
         run_once()
         after_first = exclude_path.read_text(encoding="utf-8")
@@ -830,57 +829,26 @@ class TestProcessLoopSessionPreparation:
         ) == (True, False)
         assert "exit code 1" in capsys.readouterr().err
 
-    def test_initial_ready_session_runs_pull_update_repull_before_codex(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
+    def test_registered_start_updates_before_worktree_and_session(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """初回ready処理はpull・update・再pull・再集計後にCodexを起動すること。"""
-        _setup_notes(tmp_path)
-        set_orchestrate_model(tmp_path, "codex:gpt-5.6-sol/medium")
-        myrepo = tmp_path / "repo"
-        myrepo.mkdir()
+        """登録全体の開始前更新がworktree準備と統括起動に先行する。"""
+        local = _make_remote_repository(tmp_path, "target")
         events: list[str] = []
-        counts = iter((1, 1, 1))
+        prepare = _pl_worktree.prepare_session_target
 
-        def fake_pull(_path: pathlib.Path) -> bool:
-            events.append("pull")
-            return True
-
-        def fake_count(*_args: object, **_kwargs: object) -> int:
-            events.append("count")
-            return next(counts)
-
-        def fake_update(*_args: object, **_kwargs: object) -> tuple[bool, bool]:
-            events.extend(("update", "repull"))
+        def update(*_args: Any, **_kwargs: Any) -> tuple[bool, bool]:
+            events.append("update")
             return True, True
 
-        monkeypatch.setattr(_pl_watch, "pull_private_notes", fake_pull)
-        monkeypatch.setattr(_wi_readiness, "count_pending_entries", fake_count)
-        monkeypatch.setattr(_pl_update, "update_before_session", fake_update)
-        base_fake_run = fake_run_with_remote_url(myrepo, [], 7)
+        def preparing(*args: Any, **kwargs: Any) -> Any:
+            events.append("prepare")
+            return prepare(*args, **kwargs)
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd[:1] == ["codex"] and cmd[:2] != ["codex", "exec"]:
-                events.append("session")
-            return base_fake_run(cmd, *_args, **kwargs)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        monkeypatch.setattr(_pl_session, "_run_codex_session", lambda argv, env, cwd: fake_run(argv, env=env, cwd=cwd))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                [
-                    "wi",
-                    "process-loop",
-                    f"--target-repo={myrepo}",
-                    "--no-alerts",
-                ],
-                home=tmp_path,
-            )
-
-        assert exc_info.value.code == 7
-        assert events == ["pull", "count", "update", "repull", "count", "count", "session"]
+        monkeypatch.setattr(_pl_update, "update_before_session", update)
+        monkeypatch.setattr(_pl_worktree, "prepare_session_target", preparing)
+        sessions, _calls = _run_public_process_loop(monkeypatch, tmp_path, local, ["--worktree=custom"], update_flags=())
+        assert events == ["update", "prepare"] and len(sessions) == 1
 
     @pytest.mark.parametrize(
         ("relative_path", "restarts"),
@@ -930,86 +898,30 @@ class TestProcessLoopSessionPreparation:
             assert result == (True, True)
             assert not restart_spec.exists()
 
-    def test_successful_ready_update_restart_skips_duplicate_update(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
+    def test_registered_updated_marker_skips_duplicate_update(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """開始前更新で再起動しても、同じ上流状態への更新は1回に限定する。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "repo"
-        myrepo.mkdir()
-        dotfiles_root = tmp_path / "dotfiles"
-        canonical_script = dotfiles_root / "agent-toolkit" / "agent_toolkit" / "atk.py"
-        canonical_script.parent.mkdir(parents=True)
-        canonical_script.write_text("", encoding="utf-8")
-        monkeypatch.setattr(_pl_update, "resolve_dotfiles_root", lambda: dotfiles_root)
-        hashes = iter(("before-update", "after-update", "after-update"))
-        monkeypatch.setattr(_pl_update, "code_hash", lambda _plugin_root: next(hashes))
-        monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_args, **_kwargs: 1)
-        update_calls: list[list[str]] = []
-        base_fake_run = fake_run_with_remote_url(myrepo, [], 7)
+        """開始前更新済みの印を引き継いだ反復は同じ更新を繰り返さない。"""
+        local = _make_remote_repository(tmp_path, "target")
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if pathlib.Path(cmd[0]).stem.lower() == "update-dotfiles":
-                update_calls.append(cmd)
-                return subprocess.CompletedProcess(cmd, 0, "", "")
-            return base_fake_run(cmd, *_args, **kwargs)
+        def unexpected(*_args: Any, **_kwargs: Any) -> Any:
+            pytest.fail("更新済みの反復でupdate_before_sessionを呼び出した")
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        restart_spec = tmp_path / "restart-spec"
-        monkeypatch.setenv("AGENT_TOOLKIT_RESTART_SPEC", str(restart_spec))
-        initial_argv = [str(canonical_script), "wi", "process-loop", f"--target-repo={myrepo}", "--no-alerts"]
-        monkeypatch.setattr(sys, "argv", initial_argv)
+        monkeypatch.setattr(_pl_update, "update_before_session", unexpected)
+        sessions, _calls = _run_public_process_loop(
+            monkeypatch, tmp_path, local, [], update_flags=("--internal-dotfiles-updated",)
+        )
+        assert len(sessions) == 1
 
-        with pytest.raises(SystemExit) as restart_exit:
-            atk.main(initial_argv[1:], home=tmp_path)
-
-        assert restart_exit.value.code == _pl_update._RESTART_EXIT_CODE  # pylint: disable=protected-access  # noqa: SLF001
-        restart_argv = restart_spec.read_text(encoding="utf-8").splitlines()
-        assert "--internal-dotfiles-updated" in restart_argv
-        monkeypatch.setattr(sys, "argv", restart_argv)
-
-        with pytest.raises(SystemExit) as session_exit:
-            atk.main(restart_argv[1:], home=tmp_path)
-
-        assert session_exit.value.code == 7
-        assert len(update_calls) == 1
-
-    def test_worktree_preparation_failure_returns_to_wait(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
+    def test_registered_preparation_failure_returns_to_wait(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """dotfiles用worktreeを準備できない場合はプロセスを異常終了せず待機へ戻る。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "dotfiles"
-        myrepo.mkdir()
-        session_calls: list[dict[str, Any]] = []
-        monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, session_calls, 0))
-        monkeypatch.setattr(_process_loop, "resolve_local_worktree", lambda _value: myrepo)
-        monkeypatch.setattr(_process_loop, "resolve_repo_id", lambda *_args, **_kwargs: DOTFILES_REPO_ID)
-        monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_args, **_kwargs: 1)
-        monkeypatch.setattr(_pl_worktree, "_sync_worktree_with_upstream", lambda *_args: None)
-        wait_calls: list[pathlib.Path] = []
-
-        def stop_wait(private_notes: pathlib.Path, _target_repo_id: str | None) -> None:
-            wait_calls.append(private_notes)
-            raise KeyboardInterrupt
-
-        monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"],
-                home=tmp_path,
-            )
-
-        assert exc_info.value.code == 0
-        assert wait_calls == [tmp_path / "private-notes"]
-        assert not session_calls
-        assert "worktree準備を再試行するまで変更検知を待機します。" in capsys.readouterr().out
+        """準備失敗時は統括を起動せず、キューと対象作業を保持して待機する。"""
+        local = _make_remote_repository(tmp_path, "target")
+        monkeypatch.setattr(_pl_worktree, "prepare_session_target", lambda *_args, **_kwargs: None)
+        sessions, _calls = _run_public_process_loop(monkeypatch, tmp_path, local, ["--worktree"])
+        assert not sessions
+        assert (tmp_path / "private-notes/2026/10/worktree.md").is_file()
 
 
 @pytest.mark.usefixtures("process_loop_commands_isolated")
@@ -1057,102 +969,17 @@ def test_process_loop_rejects_invalid_worktree_name(
 
 @pytest.mark.usefixtures("process_loop_commands_isolated")
 class TestProcessLoopWorktreeOption:
-    """公開CLIのworktree指定とセッションの実行先を検証する。"""
+    """対象worktree名と、常駐cwdで起動する統括への受渡しを確認する。"""
 
-    @pytest.mark.parametrize(
-        ("worktree_argv", "expected_name"),
-        [(["--worktree"], "process-loop"), (["--worktree=custom"], "custom")],
-    )
-    def test_non_dotfiles_worktree_option_changes_session_cwd_and_prompt(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        worktree_argv: list[str],
-        expected_name: str,
+    @pytest.mark.parametrize(("flags", "name"), [(["--worktree"], "process-loop"), (["--worktree=custom"], "custom")])
+    def test_registered_worktree_option(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, flags: list[str], name: str
     ) -> None:
-        """非dotfiles対象でもworktree指定が同期先とcwdへ反映され、公開先の指示文を目的文へ加えないこと。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        claude_calls: list[dict[str, Any]] = []
-        monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
-        counts = iter((1, 1, 0))
-        monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
-
-        def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
-            raise KeyboardInterrupt
-
-        monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
-        worktree_path = myrepo / ".claude" / "worktrees" / expected_name
-        sync_calls: list[tuple[pathlib.Path, str]] = []
-
-        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path:
-            sync_calls.append((local_path, worktree_name))
-            return worktree_path
-
-        monkeypatch.setattr(_pl_worktree, "_sync_worktree_with_upstream", fake_sync)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts", *worktree_argv],
-                home=tmp_path,
-            )
-
-        assert exc_info.value.code == 0
-        assert sync_calls == [(myrepo, expected_name)]
-        assert len(claude_calls) == 1
-        assert claude_calls[0]["cwd"] == worktree_path
-        assert "現在のHEADを`origin/main`へ反映" not in claude_calls[0]["cmd"][-1]
-        assert "--worktree=" not in " ".join(claude_calls[0]["cmd"])
-
-    def test_dotfiles_worktree_name_can_be_overridden(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """dotfilesの自動worktree名が明示指定だけで上書きされること。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "dotfiles"
-        myrepo.mkdir()
-        claude_calls: list[dict[str, Any]] = []
-        base_fake_run = fake_run_with_remote_url(myrepo, claude_calls, 0)
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                empty: Any = (
-                    "https://github.com/ak110/dotfiles.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/ak110/dotfiles.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, 0, empty, "" if kwargs.get("text") else b"")
-            return base_fake_run(cmd, *_args, **kwargs)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        counts = iter((1, 1, 0))
-        monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
-        monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
-        worktree_path = myrepo / ".claude" / "worktrees" / "custom"
-        sync_calls: list[tuple[pathlib.Path, str]] = []
-
-        def fake_sync(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path:
-            sync_calls.append((local_path, worktree_name))
-            return worktree_path
-
-        monkeypatch.setattr(
-            _pl_worktree,
-            "_sync_worktree_with_upstream",
-            fake_sync,
-        )
-
-        with pytest.raises(SystemExit):
-            atk.main(
-                ["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts", "--worktree=custom"],
-                home=tmp_path,
-            )
-
-        assert sync_calls == [(myrepo, "custom")]
-        assert claude_calls[0]["cwd"] == worktree_path
-        assert "現在のHEADを`origin/master`へ反映" not in claude_calls[0]["cmd"][-1]
+        local = _make_remote_repository(tmp_path, "target")
+        sessions, _calls = _run_public_process_loop(monkeypatch, tmp_path, local, flags)
+        assert sessions[0]["worktree"] == local / ".claude/worktrees" / name
+        assert sessions[0]["cwd"] == pathlib.Path.cwd()
+        assert sessions[0]["target"]["target_repo"] == "github.com/example/repo"
 
 
 @pytest.mark.usefixtures("process_loop_commands_isolated")
@@ -1267,14 +1094,10 @@ class TestWorktreeWriterGate:
         assert failed_step in failures
 
     def test_title_set_at_start_and_after_runs(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """process-loop開始時にタイトルを設定し、claude起動・update-dotfiles実行の直後にも再設定すること。"""
-        myrepo = tmp_path / "repo"
-        myrepo.mkdir()
+        """登録が空の待機でも、統括ループ全体にprocess-loopのタイトルを適用する。"""
         _setup_notes(tmp_path)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", "[]")
         entered: list[str] = []
-        title_calls: list[str] = []
-        monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, [], 0))
-        monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: 1)
 
         @contextlib.contextmanager
         def fake_console_title(title: str) -> Generator[None]:
@@ -1282,10 +1105,11 @@ class TestWorktreeWriterGate:
             yield
 
         monkeypatch.setattr(_process_loop._console_title, "console_title", fake_console_title)  # pylint: disable=protected-access  # noqa: SLF001
-        monkeypatch.setattr(_process_loop._console_title, "set_console_title", title_calls.append)  # pylint: disable=protected-access  # noqa: SLF001
-        monkeypatch.setattr(os, "execv", raise_system_exit_0)
+
+        def stop_wait(*_args: object, **_kwargs: object) -> bool:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
         with pytest.raises(SystemExit):
-            atk.main(["wi", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+            atk.main(["wi", "process-loop", "--no-update", "--no-alerts"], home=tmp_path)
         assert entered == ["atk wi process-loop"]
-        # 処理前更新・可用性判定・claude起動の各subprocess.runの直後に1回ずつ続く。
-        assert title_calls == ["atk wi process-loop"] * 3
