@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import dataclasses
 import fnmatch
 import functools
 import hashlib
@@ -948,7 +949,114 @@ def _declaration_recovery_operation(tool_name: str, tool_input: dict, error: Exc
 
 @_input_scope()
 def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
-    """現在の操作に関係する宣言資料を配送または案内し、通常操作の進行を保つ。"""
+    """現在の操作に関係する宣言資料を配送または案内し、他の担当の手順書の取得へ警告を加え、通常操作の進行を保つ。"""
+    decision = _deliver_documents(payload, tool_name, tool_input, session_id)
+    if decision.block is not None:
+        return decision
+    notice = _foreign_task_document_notice(payload, tool_name, tool_input, session_id)
+    return dataclasses.replace(decision, notices=(*decision.notices, notice)) if notice else decision
+
+
+def _subagent_task_documents(payload: dict) -> set[pathlib.Path]:
+    """Claude Codeの`Agent`ツールで起動したサブエージェントが受領した役割文書を、自身の記録の最初の依頼本文から返す。
+
+    `transcript_path`はサブエージェント内のhookでもセッション本体の記録を指すため、`agent_id`から自身の記録を求める。
+    起動見出しの1行目か、依頼本文が絶対パスで指すagent-toolkitの役割文書を、そのサブエージェントの担当とみなす。
+    """
+    transcript_path = payload.get("transcript_path")
+    agent = payload.get("agent_id")
+    session_id = payload.get("session_id")
+    if not all(isinstance(value, str) and value for value in (transcript_path, agent, session_id)):
+        return set()
+    record = pathlib.Path(str(transcript_path)).parent / str(session_id) / "subagents" / f"agent-{agent}.jsonl"
+    lines = transcript.read_transcript_lines(str(record)) if record.is_file() else None
+    for raw in lines or ():
+        try:
+            entry = json.loads(raw)
+        except ValueError:
+            continue
+        for text in _user_texts(entry) if isinstance(entry, dict) else ():
+            launched = task_documents.launched_task_document(text)
+            documents = [launched] if launched is not None else task_documents.find_task_documents(text)
+            return {document.resolve() for document in documents}
+    return set()
+
+
+def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str | None:
+    """Plugin root配下の他の担当の手順書（`share/<役割名>.subagent.md`）を取得する操作に、非遮断の警告を返す。
+
+    `agent-toolkit:delegation`の`SKILL.md`「送信」は委譲元が起動準備のために手順書の本文を読むことを禁じるが、
+    事後の振り返りだけでは読んだ時点に作用しないため、読取の直前に起動契約へ誘導する。
+    読む主体の担当がその役割である場合と、主体が取得済みの資料（または自身の役割文書）の読込表にその手順書を資料とする
+    行がある場合は警告しない。plugin root外の同名ファイル（作業ツリーの編集対象）は対象外とする。
+    編集と返却後の検収を目的の判定なしには区別できないため、遮断せずに続行の条件を示す。
+    """
+    if not session_id or delegated_session.is_lightweight_delegated(os.environ):
+        return None
+    cwd = payload.get("cwd", "")
+    cwd = cwd if isinstance(cwd, str) else ""
+    try:
+        root = plugin_resources.plugin_root().resolve()
+    except OSError, PluginRootError:
+        return None
+    share = root / "share"
+    paths = [
+        path
+        for path in dict.fromkeys(_read_paths(tool_name, tool_input, cwd))
+        if path.parent == share and path.name.endswith(task_documents.TASK_DOCUMENT_SUFFIX) and path.is_file()
+    ]
+    if not paths:
+        return None
+    agent = agent_id.resolve_hook_agent_id(payload)
+    records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    records = records if isinstance(records, dict) else {}
+    own = active_roles(payload, session_id, records, agent) if agent == agent_id.MAIN_AGENT_ID else set()
+    own |= _subagent_task_documents(payload) if agent != agent_id.MAIN_AGENT_ID else set()
+    try:
+        rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude", session_id=session_id)
+    except OSError, UnicodeError, ValueError:
+        rows = []
+    designated: set[pathlib.Path] = set()
+    for row in rows:
+        listed = {target.path.resolve() for target in row.targets} & set(paths)
+        if not listed:
+            continue
+        source = row.source.resolve()
+        with contextlib.suppress(OSError, ValueError):
+            if source in own or target_ready(records, read_triggers.ReadTarget(row.source), agent):
+                designated |= listed
+    foreign = [path for path in paths if path not in own and path not in designated]
+    if not foreign:
+        return None
+    contracts: list[str] = []
+    for path in foreign:
+        try:
+            targets = read_triggers.parent_contract_targets(path.name, root)
+        except OSError, ValueError:
+            targets = ()
+        contracts.extend(
+            f"`{target.path}`" + (f"「{target.heading}」" if target.heading else "")
+            for target in targets
+            if f"`{target.path}`" not in contracts
+        )
+    shown = "、".join(f"`{path}`" for path in foreign)
+    guidance = f"起動契約: {'、'.join(contracts)}。" if contracts else ""
+    return _llm_notice(
+        f"他の担当の手順書{shown}を取得しようとしている。`agent-toolkit:delegation`の`SKILL.md`「送信」は、"
+        "委譲元が起動準備のために`<役割名>.subagent.md`の本文を読むことを禁じている。",
+        tag=_WARN_TAG,
+        fix=(
+            "その担当を起動するなら、手順書ではなく起動契約（`起動対象:`でその手順書を宣言する`<役割名>.parent.md`、"
+            f"または呼び出し元へ統合した契約）を読め。{guidance}"
+            "手順書自体の編集と、返却を受け取った後の受領確認であれば、このまま続行してよい。"
+        ),
+        removable_cause=True,
+        escalate_on_repeat=False,
+    )
+
+
+def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
+    """現在の操作に関係する宣言資料を配送または案内する。"""
     if not session_id or delegated_session.is_lightweight_delegated(os.environ):
         return Decision()
     cwd = payload.get("cwd", "")

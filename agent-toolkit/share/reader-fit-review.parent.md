@@ -17,6 +17,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
 | 説明の追加の要否を判定する前 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 返却を受け取った後に受領確認する時 | `reader-fit-review.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/reader-fit-review.subagent.md#「出力」` |
 
 ## 起動
 

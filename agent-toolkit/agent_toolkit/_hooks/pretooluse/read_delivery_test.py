@@ -1827,3 +1827,126 @@ def test_public_missing_selected_document_guides_repair_without_blocking(tmp_pat
     assert "委譲元" in result.stdout and "ユーザー" in result.stdout
     assert "permissionDecision" not in result.stdout
     assert not memory.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+
+
+def _role_plugin(tmp_path, monkeypatch):
+    """他の担当の手順書、その起動契約、読込表で自身の工程として手順書を指定する役割を持つplugin rootを用意する。"""
+    root = tmp_path / "plugin"
+    share = root / "share"
+    share.mkdir(parents=True)
+    method = share / "read-trigger-contract.md"
+    method.write_text("# 共通契約\n## 名指し参照の読込方法\n起動共通取得順\n", encoding="utf-8")
+    other = share / "reviewer.subagent.md"
+    other.write_text("# 読者別探索\n## 出力\n返却形式\n", encoding="utf-8")
+    contract = share / "reviewer.parent.md"
+    contract.write_text("# 読者別探索の起動契約\n起動対象: `reviewer.subagent.md`\n", encoding="utf-8")
+    lane = share / "lane.subagent.md"
+    lane.write_text(
+        "# レーン担当\n## 名指し参照の読込方法\n"
+        "名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。\n\n"
+        "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
+        "| --- | --- | --- | --- |\n"
+        "| 統合入力を確定するとき | `integration.subagent.md` | 判断 | "
+        "`read:agent-toolkit:*/share/integration.subagent.md` |\n",
+        encoding="utf-8",
+    )
+    integration = share / "integration.subagent.md"
+    integration.write_text("# 統合の手順\n", encoding="utf-8")
+    monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
+    rows = parse_tables(lane, root)
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    return root, other, contract, lane, integration
+
+
+def _read_request(host: str, path):
+    """ホストごとの本文取得の操作を返す。CodexのexecセルのシェルはCodexのhookへBashとして届く。"""
+    if host == "claude-read":
+        return {}, "Read", {"file_path": str(path)}
+    payload = {"turn_id": "turn"} if host == "codex-exec" else {}
+    return payload, "Bash", {"command": f"cat -- {path}"}
+
+
+def _write_transcript(path, text: str, *, codex: bool = False) -> None:
+    entry = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": text}]}}
+    if codex:
+        entry = {
+            "type": "response_item",
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+        }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize("host", ["claude-read", "claude-bash", "codex-exec"])
+@pytest.mark.usefixtures("memory")
+def test_reading_another_roles_task_document_warns_and_points_to_the_launch_contract(tmp_path, monkeypatch, host):
+    """plugin root配下の他の担当の手順書を取得すると、起動契約へ誘導する警告を出し、操作は遮らない。"""
+    _root, other, contract, _lane, _integration = _role_plugin(tmp_path, monkeypatch)
+    payload, tool, inputs = _read_request(host, other)
+    log = tmp_path / "transcript.jsonl"
+    _write_transcript(log, "読者別探索を起動する", codex=host == "codex-exec")
+    decision = read_delivery.deliver({**payload, "cwd": str(tmp_path), "transcript_path": str(log)}, tool, inputs, "test")
+    body = _notice_body(decision)
+    assert f"他の担当の手順書`{other}`を取得しようとしている" in body
+    assert "`agent-toolkit:delegation`の`SKILL.md`「送信」" in body
+    assert f"`{contract}`" in body
+    assert "返却を受け取った後の受領確認であれば、このまま続行してよい" in body
+
+
+@pytest.mark.parametrize("host", ["claude-read", "claude-bash", "codex-exec"])
+@pytest.mark.parametrize("case", ["own-role", "designated", "designated-by-own-role", "outside-root", "subagent-own-role"])
+@pytest.mark.usefixtures("memory")
+def test_legitimate_task_document_reads_do_not_warn(tmp_path, monkeypatch, host, case):
+    """自身の担当、取得済みの資料の読込表が指定する手順書、plugin root外の同名ファイルの取得には警告しない。"""
+    _root, other, _contract, lane, integration = _role_plugin(tmp_path, monkeypatch)
+    log = tmp_path / "transcript.jsonl"
+    target = other
+    payload: dict = {"cwd": str(tmp_path), "transcript_path": str(log)}
+    header = read_delivery.task_documents.task_prompt_header
+    if case == "own-role":
+        _write_transcript(log, header(other), codex=host == "codex-exec")
+    elif case == "designated":
+        _write_transcript(log, "統合へ進む", codex=host == "codex-exec")
+        _mark("test", lane, "main")
+        target = integration
+    elif case == "designated-by-own-role":
+        _write_transcript(log, header(lane), codex=host == "codex-exec")
+        target = integration
+    elif case == "outside-root":
+        _write_transcript(log, "作業ツリーの手順書を編集する", codex=host == "codex-exec")
+        target = tmp_path / "worktree/agent-toolkit/share/reviewer.subagent.md"
+        target.parent.mkdir(parents=True)
+        target.write_text("# 編集対象\n", encoding="utf-8")
+    else:
+        if host == "codex-exec":
+            pytest.skip("Agentツールのサブエージェントは Claude Code だけの起動形")
+        _write_transcript(log, "親の依頼")
+        _write_transcript(tmp_path / "test/subagents/agent-child.jsonl", header(other))
+        payload |= {"agent_id": "child", "session_id": "test"}
+    host_payload, tool, inputs = _read_request(host, target)
+    decision = read_delivery.deliver({**payload, **host_payload}, tool, inputs, "test")
+    assert "他の担当の手順書" not in (_guidance(decision) or "")
+
+
+@pytest.mark.usefixtures("memory")
+def test_agent_subagent_reading_another_roles_task_document_still_warns(tmp_path, monkeypatch):
+    """Agentツールのサブエージェントの担当は自身の記録から解決し、別の役割の手順書の取得には警告する。"""
+    _root, other, _contract, lane, _integration = _role_plugin(tmp_path, monkeypatch)
+    log = tmp_path / "transcript.jsonl"
+    _write_transcript(log, read_delivery.task_documents.task_prompt_header(other))
+    _write_transcript(tmp_path / "test/subagents/agent-child.jsonl", read_delivery.task_documents.task_prompt_header(lane))
+    payload = {"cwd": str(tmp_path), "transcript_path": str(log), "agent_id": "child", "session_id": "test"}
+    decision = read_delivery.deliver(payload, "Read", {"file_path": str(other)}, "test")
+    assert f"他の担当の手順書`{other}`を取得しようとしている" in _notice_body(decision)
+
+
+@pytest.mark.usefixtures("memory")
+def test_task_document_listed_by_an_unread_declaration_still_warns(tmp_path, monkeypatch):
+    """読込表に行があっても、その所在文書を主体が取得していなければ自身の工程として扱わず警告する。"""
+    _root, _other, _contract, _lane, integration = _role_plugin(tmp_path, monkeypatch)
+    log = tmp_path / "transcript.jsonl"
+    _write_transcript(log, "統合へ進む")
+    decision = read_delivery.deliver(
+        {"cwd": str(tmp_path), "transcript_path": str(log)}, "Read", {"file_path": str(integration)}, "test"
+    )
+    assert f"他の担当の手順書`{integration}`を取得しようとしている" in _notice_body(decision)
