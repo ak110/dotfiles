@@ -731,3 +731,30 @@ def document_sources(plugin_root: pathlib.Path, cwd: str = "", user_skills: path
         roots.extend(parent / ".claude" / "skills" for parent in [project, *project.parents])
     roots.append(user_skills or pathlib.Path.home() / ".claude" / "skills")
     return list(dict.fromkeys(path.resolve() for root in roots if root.is_dir() for path in sorted(root.rglob("*.md"))))
+
+
+def validate_plugin_relative_references(source: pathlib.Path) -> None:
+    """プラグイン文書の相対パス参照が、所有プラグインのrootの外を指していないことを確かめる。
+
+    リポジトリではagent-toolkitとagent-basicsが隣り合うが、配布キャッシュでは版ごとの別ディレクトリに置かれる。
+    rootの外を指す相対パスはリポジトリ内の検査では解決しても配布物では届かないため、論理名表記へ誘導する。
+    コードフェンスの内側は例示として扱い、検査しない。
+    """
+    source = source.resolve()
+    owner = next((parent for parent in source.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+    if owner is None:
+        return
+    for number, line, visible in document_lines(source.read_text(encoding="utf-8")):
+        if not visible:
+            continue
+        for matched in _REFERENCE.finditer(line):
+            value = (matched[1] or matched[2] or "").split("#", 1)[0].strip()
+            if not value.startswith("../"):
+                continue
+            resolved = (source.parent / value).resolve()
+            if not resolved.is_relative_to(owner):
+                raise ValueError(
+                    f"{source}:{number}: 相対パスが所有プラグインのrootの外を指す: {value}。"
+                    "配布時はプラグインごとに別ディレクトリへ置かれ届かないため、"
+                    "`agent-basics:<スキル>/<パス>`や`agent-toolkit:<スキル>/<パス>`の論理名表記で書く"
+                )
