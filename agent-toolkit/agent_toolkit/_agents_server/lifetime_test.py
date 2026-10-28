@@ -19,6 +19,15 @@ import pytest
 from agent_toolkit._agents_server import lifetime
 from agent_toolkit._common import process_tree
 
+
+def _holds_resources(process: psutil.Process) -> bool:
+    """対象が資源を保持しているかを返す。生存確認と状態取得の間に終了した対象は解放済みとして扱う。"""
+    try:
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
 _SCRIPT = """
 import asyncio, contextlib, importlib.util, json, os, pathlib, signal, subprocess, sys, time
 
@@ -193,7 +202,7 @@ def test_stdio_shutdown_reclaims_owned_hierarchy(
             returncode = process.wait(timeout=15)
             assert returncode == expected
             deadline = time.monotonic() + 15
-            while any(target.is_running() and target.status() != psutil.STATUS_ZOMBIE for target in targets):
+            while any(_holds_resources(target) for target in targets):
                 assert time.monotonic() < deadline, "所有階層の資源が解放されない"
                 time.sleep(0.02)
             if "lock" not in failure and "blocked" not in failure:

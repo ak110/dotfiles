@@ -18,6 +18,14 @@ import pytest
 from pytools._internal import common
 
 
+def _holds_resources(process: psutil.Process) -> bool:
+    """対象が資源を保持しているかを返す。生存確認と状態取得の間に終了した対象は解放済みとして扱う。"""
+    try:
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
 def test_process_scope_reports_residual_identifier_and_recovery(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -242,7 +250,7 @@ def test_run_subprocess_timeout_stops_grandchildren(monkeypatch, tmp_path):
     try:
         assert common.run_subprocess([sys.executable, "-c", parent], timeout=0.05) is None
         assert started
-        assert not [p for p in started if p.is_running() and p.status() != psutil.STATUS_ZOMBIE]
+        assert not [p for p in started if _holds_resources(p)]
     finally:
         for process in started:
             if process.is_running():

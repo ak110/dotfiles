@@ -18,6 +18,14 @@ from agent_toolkit._atk import run_command
 from agent_toolkit._common import process_tree
 
 
+def _holds_resources(process: psutil.Process) -> bool:
+    """対象が資源を保持しているかを返す。生存確認と状態取得の間に終了した対象は解放済みとして扱う。"""
+    try:
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
 @pytest.fixture(autouse=True)
 def _agent_output(monkeypatch: pytest.MonkeyPatch) -> None:
     """既存の結果検証はエージェント向けの出力を使う。"""
@@ -89,7 +97,7 @@ def test_execute_timeout_stops_grandchildren_before_recording(monkeypatch, tmp_p
         metadata, code, failure = run_command.execute(argv, tmp_path, 1)
         assert code == 124 and failure is None
         assert started
-        assert not [p for p in started if p.is_running() and p.status() != psutil.STATUS_ZOMBIE]
+        assert not [p for p in started if _holds_resources(p)]
         output = pathlib.Path(metadata["stdout_path"])
         before = output.read_bytes()
         time.sleep(5)
