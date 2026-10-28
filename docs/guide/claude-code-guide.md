@@ -247,6 +247,7 @@ envファイルは新しい会話の開始・再開時に読む。
 API認証や残高で失敗した場合は、認証・接続先・課金設定を確認してから同じ会話へ再送する。
 委譲先は利用枠かAPI残高が尽きると、同じ会話のまま次の接続へ切り替わる。
 `AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE`の環境変数を設定している場合は保存値より優先するため、解除時はこの変数も外す。
+ユーザー設定（`~/.claude/settings.json`）などのsettingsの`env`へ接続関連の変数（`ANTHROPIC_API_KEY`、`AWS_PROFILE`など）を書いた場合、委譲先とオーケストレーターが実行するコマンドにはその変数が空の値で渡る。
 切替と保持の詳細は[design-agents-runtime.md](../development/design-agents-runtime.md#api失敗過負荷利用上限の待機)を参照。
 
 ## Claude Codeの推奨設定
