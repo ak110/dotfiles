@@ -444,6 +444,35 @@ def _run_isolated_upgrade(
         print(f"旧版更新経路を確認した: {old_oid} -> {actual_oid}")
 
 
+_ANTIGRAVITY_UPDATED_NOTICE = "Antigravityのプラグインを更新しました。新しいagyセッションで反映を確認してください。"
+"""`pytools/_internal/antigravity_plugin.py`の`UPDATED_NOTICE`と同じ文言。
+
+PEP 723スクリプトからpytoolsをimportできないため、文言の一致は試験で確かめる。
+"""
+
+_UV_HARDLINK_FALLBACK = "warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance."
+"""uvがhardlinkできず複製へ切り替えたときの診断。導入は完了しており、更新の失敗ではない。"""
+
+_MISSING_PATH_ENTRY = re.compile(r"PATH 整理: ユーザー PATH に存在しないエントリーを検出: \S.* \(展開: (?P<expanded>.+?)\)。")
+
+
+def _is_expected_log_warning(message: str, home: pathlib.Path) -> bool:
+    """正常な更新でも出る警告と、検証の隔離環境が作り出す警告だけを個別に許容する。
+
+    許容しない警告は全て検証失敗とし、警告一般の検出は保つ。
+    """
+    # 旧版から現行版への更新では配布物の版が必ず変わるため、dotfilesユーザー向けの更新案内が毎回出る。
+    if message == _ANTIGRAVITY_UPDATED_NOTICE:
+        return True
+    # 隔離homeへUSERPROFILE等を差し替えると、ランナー本来のユーザーPATHの`%USERPROFILE%`などを含む項目が
+    # 隔離home配下へ展開され、実在しない項目として報告される。展開先が隔離home配下の項目だけを許容する。
+    if (match := _MISSING_PATH_ENTRY.match(message)) is not None:
+        expanded = os.path.normcase(os.path.normpath(match["expanded"]))
+        root = os.path.normcase(os.path.normpath(home))
+        return expanded == root or expanded.startswith(root + os.sep)
+    return False
+
+
 def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = "") -> None:
     """隔離homeの永続ログから、更新が警告として継続した失敗も検出する。"""
     diagnostics: list[str] = []
@@ -454,11 +483,16 @@ def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = ""
         if not path.is_file():
             continue
         for line in path.read_text(encoding="utf-8").splitlines():
-            if re.search(r" run=\S+ (?:WARNING|ERROR|CRITICAL) ", line):
-                diagnostics.append(f"{path}: {line}")
+            if (match := re.search(r" run=\S+ (?P<level>WARNING|ERROR|CRITICAL) (?P<message>.*)$", line)) is None:
+                continue
+            if match["level"] == "WARNING" and _is_expected_log_warning(match["message"].strip(), home):
+                continue
+            diagnostics.append(f"{path}: {line}")
     # severityを明示するCLIの診断だけを拾い、進捗や説明中の単語を誤検出しない。
     for stream, output in (("stdout", stdout), ("stderr", stderr)):
         for line in output.splitlines():
+            if line.strip() == _UV_HARDLINK_FALLBACK:
+                continue
             if re.match(r"\s*(?:warning|error|critical):\s|\s*\[(?:WARNING|ERROR|CRITICAL)\]\s", line, re.IGNORECASE):
                 diagnostics.append(f"{stream}: {line}")
     if diagnostics:

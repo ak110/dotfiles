@@ -11,7 +11,7 @@ import types
 import check_update_dotfiles_upgrade as upgrade
 import pytest
 
-from pytools._internal import setup_codex_cli, setup_herdr_cli
+from pytools._internal import antigravity_plugin, setup_codex_cli, setup_herdr_cli
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 
@@ -29,6 +29,58 @@ def test_update_info_log_succeeds(tmp_path: pathlib.Path) -> None:
     """通常の進捗とメッセージ中のWARNINGという単語は警告扱いにしない。"""
     (tmp_path / "update-dotfiles.log").write_text("2026-10-28 12:00:00 run=check INFO WARNING設定を確認\n", encoding="utf-8")
     upgrade.verify_update_logs(tmp_path)
+
+
+def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
+    """正常な更新の案内、隔離homeへ展開されたPATH項目、uvの複製切替は検証失敗にしない。"""
+    missing = tmp_path / ".dotnet" / "tools"
+    (tmp_path / "update-dotfiles.log").write_text(
+        f"2026-10-28 12:00:00,000 run=check WARNING {antigravity_plugin.UPDATED_NOTICE}\n"
+        "2026-10-28 12:00:00,000 run=check WARNING     PATH 整理: ユーザー PATH に存在しないエントリーを検出: "
+        f"%USERPROFILE%\\.dotnet\\tools (展開: {missing})。"
+        "再導入の予定が無ければWindowsの「環境変数」でユーザーのPathからこのエントリーを削除する\n",
+        encoding="utf-8",
+    )
+    upgrade.verify_update_logs(
+        tmp_path,
+        stderr="warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.\n",
+    )
+
+
+def test_allowed_notice_matches_post_apply_source() -> None:
+    """許容する更新案内は、post-applyが実際に出す文言と一致する。"""
+    assert upgrade._ANTIGRAVITY_UPDATED_NOTICE == antigravity_plugin.UPDATED_NOTICE  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "pytoolsの再インストールに失敗しました。失敗理由を確認してupdate-dotfilesを再実行してください。",
+        "PATH 整理: ユーザー PATH に存在しないエントリーを検出: C:\\outside\\bin (展開: C:\\outside\\bin)。削除する",
+        f"{antigravity_plugin.UPDATED_NOTICE} 追加の文言",
+    ],
+)
+def test_other_update_warnings_still_fail(tmp_path: pathlib.Path, message: str) -> None:
+    """個別に許容した出力以外の警告は、失敗を伝える案内や隔離home外のPATH項目を含めて検出する。"""
+    (tmp_path / "update-dotfiles.log").write_text(f"2026-10-28 12:00:00,000 run=check WARNING {message}\n", encoding="utf-8")
+    with pytest.raises(upgrade.UpgradeCheckError, match="警告以上"):
+        upgrade.verify_update_logs(tmp_path)
+
+
+def test_allowed_notice_error_level_fails(tmp_path: pathlib.Path) -> None:
+    """許容はWARNINGに限り、同じ文言でもERROR以上は検出する。"""
+    (tmp_path / "update-dotfiles.log").write_text(
+        f"2026-10-28 12:00:00,000 run=check ERROR {antigravity_plugin.UPDATED_NOTICE}\n", encoding="utf-8"
+    )
+    with pytest.raises(upgrade.UpgradeCheckError, match="警告以上"):
+        upgrade.verify_update_logs(tmp_path)
+
+
+def test_other_uv_warning_still_fails(tmp_path: pathlib.Path) -> None:
+    """uvの複製切替以外のuv警告は検出する。"""
+    (tmp_path / "update-dotfiles.log").write_text("run=test INFO 更新完了\n", encoding="utf-8")
+    with pytest.raises(upgrade.UpgradeCheckError, match="Failed to build"):
+        upgrade.verify_update_logs(tmp_path, stderr="warning: Failed to build package\n")
 
 
 def test_missing_update_log_fails(tmp_path: pathlib.Path) -> None:
