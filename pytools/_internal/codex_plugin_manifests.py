@@ -89,7 +89,6 @@ def _local_codex_hook_manifest(content: str) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
 
-CODEX_PERMISSION_REQUEST_COMMAND = _hook_command("permissionrequest_codex")
 CODEX_USER_PROMPT_SUBMIT_COMMAND = _hook_command("user_prompt_submit")
 CODEX_PRE_TOOL_USE_COMMAND = _hook_command("pretooluse")
 CODEX_POST_TOOL_USE_COMMAND = _hook_command("posttooluse")
@@ -156,7 +155,7 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "PreToolUse": CodexHookProjection(
         (CODEX_PRE_TOOL_USE_COMMAND,),
         output_command=_codex_hook_command("pretooluse"),
-        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show|mcp__pyfltr__run",
+        matcher="Bash|Edit|Write|spawn_agent|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show|mcp__pyfltr__run",
     ),
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),
@@ -164,11 +163,6 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
         matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
     ),
     "Stop": CodexHookProjection((CODEX_STOP_COMMAND,), output_command=_codex_hook_command("stop")),
-    "PermissionRequest": CodexHookProjection(
-        (_hook_command("permissionrequest"),),
-        matcher="Bash",
-        output_command=_codex_hook_command("permissionrequest_codex"),
-    ),
     "UserPromptSubmit": CodexHookProjection(
         (CODEX_USER_PROMPT_SUBMIT_COMMAND,), output_command=_codex_hook_command("user_prompt_submit")
     ),

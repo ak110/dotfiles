@@ -366,17 +366,6 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "posttooluse" + subject.HOOK_FAILURE_SUFFIX}],
                 }
             ],
-            "PermissionRequest": [
-                {
-                    "matcher": "Bash",
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": _CODEX_HOOK_PREFIX + "permissionrequest_codex" + subject.HOOK_FAILURE_SUFFIX,
-                        }
-                    ],
-                }
-            ],
             "UserPromptSubmit": [
                 {
                     "hooks": [
@@ -437,7 +426,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             ],
         }
     }
-    assert len(generated_hooks["hooks"]) == 10
+    assert len(generated_hooks["hooks"]) == 9
     assert (
         generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"]
         == _CODEX_HOOK_PREFIX + "rules_context_codex" + subject.HOOK_FAILURE_SUFFIX
@@ -611,6 +600,7 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
     generated = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))["hooks"]
 
     assert generated["PreToolUse"][0]["matcher"] == subject.CODEX_HOOK_ALLOWLIST["PreToolUse"].matcher
+    assert "spawn_agent" in generated["PreToolUse"][0]["matcher"].split("|")
     assert generated["PostToolUse"][0]["matcher"] == subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher
     assert generated["SessionEnd"][0]["hooks"][0]["timeout"] <= 3
     assert "matcher" not in generated["SubagentStop"][0]
@@ -748,7 +738,7 @@ def test_sync_replaces_stale_outputs(manifest_root: Path) -> None:
         json.loads((manifest_root / subject.AGENT_MCP_TARGET).read_text(encoding="utf-8"))["$schema"]
         == subject.AGENT_MCP_SCHEMA
     )
-    assert json.loads(stale_hooks.read_text(encoding="utf-8"))["hooks"]["PermissionRequest"][0]["matcher"] == "Bash"
+    assert "PermissionRequest" not in json.loads(stale_hooks.read_text(encoding="utf-8"))["hooks"]
 
 
 def test_check_accepts_current_outputs_without_changes(manifest_root: Path) -> None:
@@ -840,7 +830,7 @@ def test_check_reports_codex_root_difference_without_repairing(manifest_root: Pa
 
 def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
-    hooks["hooks"]["PermissionRequest"][0]["hooks"][0]["command"] = "unknown"
+    hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"] = "unknown"
     (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
     with pytest.raises(ValueError, match="許可済みハンドラー"):
         subject.sync(manifest_root)

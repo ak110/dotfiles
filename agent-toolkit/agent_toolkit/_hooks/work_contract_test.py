@@ -22,3 +22,13 @@ def test_existing_contract_is_not_a_input_ledger(tmp_path: pathlib.Path, monkeyp
 def test_missing_contract_has_no_notice(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(work_contract, "record_path", lambda _session: tmp_path / "work-contract.md")
     assert work_contract.notice("session") is None
+
+
+def test_missing_notice_resolves_path_before_temp_exists(tmp_path, monkeypatch):
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setattr(work_contract, "record_path", lambda *_args: None)
+    monkeypatch.setattr(work_contract.managed_temp, "session_temp_path", lambda *_args: tmp_path)
+    assert str(tmp_path / "work-contract.md") in (work_contract.missing_notice("missing-directory") or "")
+    assert work_contract.missing_notice("missing-directory") is None
+    assert work_contract.missing_notice("subagent", agent_id="child") is None

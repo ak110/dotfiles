@@ -209,7 +209,7 @@
 
 現行の規定は[design-storage.md](design-storage.md#managed-temp)の「managed-temp」と`agent-toolkit:managed-temp`にある。
 
-- エージェントの一時領域は、通知されたセッションのmanaged-tempの中へ`mktemp -d`で作成し、作成者が`rm -rf --`で回収する。
+- エージェントの一時領域は、通知されたセッションのmanaged-tempの中へ`mktemp -d`で作成し、作成者が`rm -r --`で回収する。
   `.git`を含む領域と通知が無い場合は一時root直下へ同じ標準手段で作成し、別名前空間との共有は`mktemp -d -p <共有先>`と作成者の明示回収を使う。
   公開の`atk managed-temp`は持たない。
   この方針は2026年10月25日のユーザー指示による。独自コマンドの用途を各セッション・各エージェントが毎回学び直す費用が大きく、一時領域の登録簿とロックも作成ごとに増え続けていた。

@@ -32,6 +32,12 @@ _NOTICE_BOUNDARY_PATTERN = re.compile(r"</?atk-auto\b[^>]*>")
 _EXPECTED_VERIFICATION_NOTICE_BODY = posttooluse.VERIFICATION_NOTICE_BODY
 
 
+@pytest.fixture(autouse=True)
+def _local_plugin_root(monkeypatch):
+    """この作業ツリーのhookと、その資料を同じ版で検証する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
+
+
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
     """進捗のセルフチェックの時刻を除いたセッション状態を返す。
 
@@ -419,7 +425,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence"}
+        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
         evidence = state["termination_evidence"]
         assert not evidence["works"]
         assert evidence["inputs"][evidence["last_input"]] == {"text": "通常のユーザー発話です。", "human": True, "offset": 0}
@@ -439,7 +445,7 @@ class TestNonMatchingPrompts:
         result = _run({"session_id": sid, "prompt": prompt}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert set(_read_state(tmp_path, sid)) == expected_keys
+        assert set(_read_state(tmp_path, sid)) == expected_keys | {"work_contract_input_sequence"}
 
     def test_unrelated_slash_is_treated_as_user_utterance(self, tmp_path: pathlib.Path):
         """対応スキル以外のスラッシュコマンドもユーザー自身の発話として注記の対象にする。"""
@@ -452,6 +458,7 @@ class TestNonMatchingPrompts:
         self._assert_no_notice(result)
         assert set(_read_state(tmp_path, sid)) == {
             "termination_evidence",
+            "work_contract_input_sequence",
         }
 
     def test_automated_prompt_receives_no_notice(self, tmp_path: pathlib.Path):
@@ -480,7 +487,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence"}
+        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
 
     def test_codex_treats_claude_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "codex-slash-command"
@@ -496,7 +503,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         self._assert_no_notice(result)
         state = _read_state(tmp_path, sid)
-        assert set(state) == {"termination_evidence"}
+        assert set(state) == {"termination_evidence", "work_contract_input_sequence"}
 
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
         """空入力・prompt欠落payloadでexit 0、状態不変。"""
@@ -568,6 +575,7 @@ class TestRealignNoticeInjection:
             assert set(_read_state(tmp_path, sid)) == {
                 "termination_evidence",
                 "notice_fingerprints",
+                "work_contract_input_sequence",
             }
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])

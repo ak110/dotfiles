@@ -12,7 +12,9 @@ import re
 import subprocess
 import uuid
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Never
+
+from markdown_it import MarkdownIt
 
 from agent_toolkit._agents_server import (
     launch_prompts,
@@ -24,10 +26,13 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import read_triggers, session_registry, task_documents
+from agent_toolkit._atk.wi import entries as wi_entries
+from agent_toolkit._atk.wi import frontmatter, headings
+from agent_toolkit._common import private_notes, read_triggers, session_registry, task_documents
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
+from agent_toolkit._plan import commit_mapping
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
@@ -717,6 +722,9 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
 def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, str]) -> None:
     """読取と検索だけで動く担当の保存資料を、起動要求の境界で検査する。"""
     role = task_document.name.removesuffix(_TASK_DOCUMENT_SUFFIX)
+    if role == "exec-review":
+        _check_exec_review_materials(params)
+        return
     if role == "reader-fit-review":
         _check_reader_materials(params)
         return
@@ -730,6 +738,77 @@ def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, s
         evidence = params["根拠の所在"].strip()
         if evidence.startswith(("/", "`/", "[")) or pathlib.PureWindowsPath(evidence).is_absolute():
             _material_paths("根拠の所在", evidence)
+
+
+def _check_exec_review_materials(params: Mapping[str, str]) -> None:
+    """新形式AWIの条件表を起動前に構造だけ検査する。内容の評価はレビュー担当が担う。"""
+    names: set[str] = set()
+    if plan := params.get("計画"):
+        for path in _material_paths("計画", plan):
+            names.update(commit_mapping.plan_allowed_wis(path.read_text(encoding="utf-8"), path))
+    record = params.get("WI記録", "")
+    if record and "\n" not in record and pathlib.Path(record).is_absolute():
+        record = _material_paths("WI記録", record)[0].read_text(encoding="utf-8")
+    names.update(re.findall(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md", record))
+    if not names:
+        return
+    selected, missing = wi_entries.read_named_entries(
+        private_notes.default_private_notes(pathlib.Path.home()),
+        [(name, name) for name in sorted(names)],
+        target_repo=None,
+    )
+    if missing:
+        raise _material_error("WI記録", f"AWI本文を取得できません: {', '.join(missing)}")
+    required: dict[str, int] = {}
+    for path, _repo, text, _state, kind in selected:
+        parsed = frontmatter.parse_frontmatter(text)
+        sections = {name for name, _body in headings.h2_sections(text)}
+        if kind != "awi" or parsed is None or not parsed[0].get("source") or sections & {"適用範囲", "実現性"}:
+            continue
+        body = "\n".join(headings.last_h2_section_lines(text, "完成条件") or [])
+        required[path.name] = sum(token.type == "list_item_open" and token.level == 1 for token in MarkdownIt().parse(body))
+    if not required:
+        return
+    reference = "skills/review-standards/references/exec-review-recording.md「記録する行と要求単位」"
+
+    def reject(reason: str) -> Never:
+        raise _material_error("review_contract", f"{', '.join(required)}: {reason}。条件表の書式: {reference}")
+
+    value = params.get("review_contract", "")
+    if not value or "\n" in value or not pathlib.Path(value).is_absolute():
+        reject("条件表の実在するファイルの絶対パスが必要")
+    try:
+        paths = _material_paths("review_contract", value)
+    except ActionableError as error:
+        reject(str(error))
+    tokens = MarkdownIt("commonmark").enable("table").parse(paths[0].read_text(encoding="utf-8"))
+    rows: list[list[str]] = []
+    row: list[str] | None = None
+    header: list[str] = []
+    columns = ["WI", "条件番号", "区分", "内容", "出典"]
+    for token in tokens:
+        if token.type == "table_open":
+            header = []
+        elif token.type == "tr_open":
+            row = []
+        elif token.type == "inline" and row is not None:
+            row.append(token.content.strip().strip("`"))
+        elif token.type == "tr_close" and row is not None:
+            if not header:
+                header = row
+            elif set(columns).issubset(header) and len(row) == len(header):
+                current_row = list(row)
+                rows.append([current_row[header.index(column)] for column in columns])
+            row = None
+    for name, count in required.items():
+        own = [row for row in rows if len(row) == 5 and row[0] == name]
+        major = sum(row[2] == "主要完成状態" for row in own)
+        supplements = sum(row[2] == "補足条件" for row in own)
+        if major < 1 or supplements < count:
+            reject(f"{name}: 主要完成状態 {major}/1件、補足条件 {supplements}/{count}件")
+        numbers = [row[1] for row in own]
+        if any(not number for number in numbers) or len(set(numbers)) != len(numbers):
+            reject(f"{name}: 条件番号が不正または重複")
 
 
 def _check_git_reader_materials(materials: dict[str, Any], current: list[pathlib.Path]) -> None:

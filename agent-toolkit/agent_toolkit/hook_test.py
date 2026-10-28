@@ -28,6 +28,7 @@ from agent_toolkit import atk
 from agent_toolkit import hook as _hook
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk import config as _config
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._common import inherited_venv, session_activity, session_registry, state_paths
@@ -632,6 +633,8 @@ class TestLazyDependencyLoading:
         used_modules: tuple[str, ...],
     ) -> None:
         target = tmp_path / "read-target.txt"
+        directory = managed_temp.resolve_session_temp("lazy-session")
+        (directory / "work-contract.md").write_text("目的: 依存読込の検証\n", encoding="utf-8")
         target.write_text("内容\n", encoding="utf-8")
         resolved_input = {key: str(target) if key == "file_path" else value for key, value in tool_input.items()}
         payload = json.dumps(
@@ -741,6 +744,9 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     empty_transcript = tmp_path / "empty.jsonl"
     empty_transcript.write_text("", encoding="utf-8")
+    for session in ("repeat-session", "other-session"):
+        directory = managed_temp.resolve_session_temp(session)
+        (directory / "work-contract.md").write_text("目的: 操作反復の検証\n", encoding="utf-8")
 
     def pretooluse(session_id: str, command: str, expected_code: int = 0) -> str:
         return _call_hook_in_process(

@@ -34,6 +34,8 @@
 
 ## ユーザー向け発話ルール
 
+記述言語は`agent-toolkit/rules/01-agent.md`「使用言語」に従い、送達手段にかかわらず思考以外の全ての文へ適用する。
+
 本節の規定は、ユーザーが読む説明や質問の文面に適用する。ホスト固有の質問形式は、Claude Codeでは`rules-main.claude-code.md`「ユーザー確認（`AskUserQuestion`）」、Codexでは`rules-main.codex.md`「ユーザー確認と終了」が定める。
 説明、報告、確認質問には`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」と「日本語の書き方」を適用し、結論から述べて理解に必要な補足を残す。
 

@@ -489,7 +489,7 @@ def _bash_body_writing(command: str) -> bool:
 
 def _is_delegation_operation(tool_name: str, _tool_input: dict) -> bool:
     """既存の委譲ツール集合から、起動・追送・観測・巻取りの操作を判定する。"""
-    return tool_name in AGENT_TOOL_NAMES | AGENTS_SERVER_HOOK_TOOL_NAMES
+    return tool_name in AGENT_TOOL_NAMES | AGENTS_SERVER_HOOK_TOOL_NAMES | {"spawn_agent"}
 
 
 _VERIFICATION_MCP_TOOL_NAMES = frozenset({"mcp__plugin_agent-toolkit_pyfltr__run", "mcp__pyfltr__run"})

@@ -49,7 +49,7 @@ description: >
 ### 作業ツリーの準備
 
 - 専用worktreeや回収予定の検証用複製を用意する際は、`mise trust`を実行した後に依存関係を同期し、正しく完了したことを確認してから後続へ渡す。同期時は対象作業ツリーのルートで`make sync`を実行し、リポジトリ直下と`agent-toolkit/`の`.venv`を`uv.lock`に記載されたパッケージ一覧および`.python-version`のバージョンに合わせる。
-  - 回収予定の検証用複製には`.git`が含まれる。そのため、managed-tempの一時ルート直下に`mktemp -d '<一時ルート>/<用途>-XXXXXXXX'`で作業領域を作成する。その領域へ`git worktree add --detach`で複製を作成し、`make sync`で環境を整える。通常のファイルコピーで作業ツリーを複製すると、内部にある`.claude/worktrees/`や`.venv`まで実容量で複製してしまう。作業完了時および起動したプロセスの終了後は、`git worktree remove`を実行したうえで`rm -rf -- <作成した絶対パス>`により確実に回収する。
+  - 回収予定の検証用複製には`.git`が含まれる。そのため、managed-tempの一時ルート直下に`mktemp -d '<一時ルート>/<用途>-XXXXXXXX'`で作業領域を作成する。その領域へ`git worktree add --detach`で複製を作成し、`make sync`で環境を整える。通常のファイルコピーで作業ツリーを複製すると、内部にある`.claude/worktrees/`や`.venv`まで実容量で複製してしまう。作業完了時および起動したプロセスの終了後は、`git worktree remove`を実行したうえで`rm -r -- <作成した絶対パス>`により確実に回収する。
   - 回収予定の作業領域ではローカル依存関係の同期のみを行い、Git hookやテンプレートには既存の設定を利用する。共有CLIのインストール元や共通のGit設定は、作業領域の回収後も残す必要があるためである。`mise run bootstrap`、`mise bootstrap`、`make setup`、`uv tool install --editable`、`prek install`、`git config --local commit.template`の実行は、恒久的に使う作業ツリーの初期設定時に限定する。観測と再検証の手順は`docs/development/audit-records.md`「dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日」に記載がある。
 - miseの信頼登録は設定ファイルの絶対パスに紐づいており、状態ディレクトリの配下に保存される。このため、複製元と異なる絶対パスで`mise.toml`を参照する作業領域や、`XDG_STATE_HOME`などで状態ディレクトリを切り替える作業領域では、作成したエージェントが検証を開始する前に`mise trust`を実行しておく。
   - linked worktreeは複製元の信頼設定を共有するため、複製元リポジトリのルートにある`mise.toml`に対して1回実行すれば足りる。検証用の複製では複製先の`mise.toml`の絶対パスを指定し、状態ディレクトリを差し替えた環境では自動チェック時と同じ環境変数を渡して実行する。

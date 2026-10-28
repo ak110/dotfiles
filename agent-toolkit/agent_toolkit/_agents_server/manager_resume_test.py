@@ -1439,6 +1439,7 @@ async def test_legacy_claude_rate_limit_record_does_not_skip_candidate(
 @pytest.mark.asyncio
 async def test_minimal_followup_uses_restored_launch_history(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """登録簿から戻した役割でも、余分な継続入力を配送前に拒否し必要なroundを保持する。"""
+    (tmp_path / "計画.md").write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
     async with _resume_test_manager(monkeypatch, tmp_path) as (manager, _):
         _, prompt, _, _ = launch_requests.task_document_request(
             "exec-review",

@@ -7,9 +7,8 @@ import os
 import pathlib
 import time
 from collections.abc import Generator
-from multiprocessing.connection import Connection
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
@@ -18,7 +17,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._agents_server import agents_wait, codex, responses, resume_waits, shared_sweep, state, wait_output_tracking
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._common import file_lock, session_registry, state_paths
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
@@ -27,6 +26,7 @@ from agent_toolkit._testing.agents_server_support import (
     _resume_test_manager,
     install_backend,
 )
+from agent_toolkit._testing.lock_probe import probe_lock
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -209,30 +209,26 @@ async def test_unobserved_child_stays_pending_until_terminal(
         assert backend.send_calls == 1
 
 
-def _probe_lock(path: str, connection: Connection) -> None:
-    """別OSプロセスから同じロックの即時取得可否を返す。"""
-    with connection, pathlib.Path(path).open("a+", encoding="utf-8") as handle:
-        try:
-            file_lock.acquire_lock(handle, blocking=False)
-        except OSError:
-            connection.send(False)
-        else:
-            file_lock.release_lock(handle)
-            connection.send(True)
-
-
 def _lock_is_available(path: pathlib.Path) -> bool:
     context = multiprocessing.get_context("spawn")
     receiver, sender = context.Pipe(duplex=False)
     with receiver, sender:
-        process = context.Process(target=_probe_lock, args=(str(path), sender))
+        process = context.Process(target=probe_lock, args=(str(path), sender))
         process.start()
+        sender.close()
         try:
-            assert receiver.poll(10), "別プロセスのロック照会が終了しなかった"
-            available = receiver.recv()
+            for expected in ("ready", "result"):
+                assert receiver.poll(10), f"ロック照会の{expected}が未到達: exitcode={process.exitcode}"
+                try:
+                    kind, value = receiver.recv()
+                except EOFError as error:
+                    process.join(10)
+                    raise AssertionError(f"ロック照会が{expected}の前に終了: exitcode={process.exitcode}") from error
+                assert kind == expected, f"ロック照会の{expected}で{kind}: {value}"
+            assert isinstance(value, bool)
             process.join(10)
             assert process.exitcode == 0
-            return available
+            return value
         finally:
             if process.is_alive():
                 process.terminate()
@@ -241,6 +237,53 @@ def _lock_is_available(path: pathlib.Path) -> bool:
                 process.kill()
                 process.join(10)
             process.close()
+
+
+@pytest.mark.parametrize("phase", ["ready", "result"])
+def test_lock_probe_timeout_identifies_phase(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, phase: str) -> None:
+    """起動未完了と、起動後の無応答を時間経過なしで識別する。"""
+    receiver, sender = MagicMock(), MagicMock()
+    receiver.poll.side_effect = [False] if phase == "ready" else [True, False]
+    receiver.recv.return_value = ("ready", None)
+    process = Mock(exitcode=None)
+    process.is_alive.return_value = False
+    context = Mock()
+    context.Pipe.return_value = (receiver, sender)
+    context.Process.return_value = process
+    monkeypatch.setattr(multiprocessing, "get_context", Mock(return_value=context))
+    with pytest.raises(AssertionError, match=f"{phase}が未到達"):
+        _lock_is_available(tmp_path / "lock")
+    sender.close.assert_called_once()
+    process.close.assert_called_once()
+
+
+def test_lock_probe_early_exit_reports_child_status(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """準備通知前の子の終了をロック取得不能として扱わない。"""
+    receiver, sender = MagicMock(), MagicMock()
+    receiver.poll.return_value = True
+    receiver.recv.side_effect = EOFError
+    process = Mock(exitcode=1)
+    process.is_alive.return_value = False
+    context = Mock()
+    context.Pipe.return_value = (receiver, sender)
+    context.Process.return_value = process
+    monkeypatch.setattr(multiprocessing, "get_context", Mock(return_value=context))
+    with pytest.raises(AssertionError, match="readyの前に終了: exitcode=1"):
+        _lock_is_available(tmp_path / "lock")
+    process.close.assert_called_once()
+
+
+def test_lock_probe_io_error_is_not_contention(tmp_path: pathlib.Path) -> None:
+    """子が報告したファイル到達不能を、排他保持中のFalseと区別する。"""
+    with pytest.raises(AssertionError, match="resultでerror: FileNotFoundError"):
+        _lock_is_available(tmp_path / "missing" / "lock")
+
+
+def test_lock_probe_spawn_exception_before_ready(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """子のtargetへ不適合な引数を渡し、実際の起動後例外と終了コードを観測する。"""
+    monkeypatch.setattr(f"{__name__}.probe_lock", os.stat)
+    with pytest.raises(AssertionError, match="readyの前に終了: exitcode=1"):
+        _lock_is_available(tmp_path / "lock")
 
 
 @pytest.mark.parametrize("operation", ["publish", "release", "interrupted", "sweep"])

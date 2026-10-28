@@ -39,7 +39,11 @@ lazy from agent_toolkit._hooks.message_format import xml_message
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
-RESPONSE_LANGUAGE_NOTICE = "ユーザーへ向けた地の文は、最初の応答の1文目から日本語で書け。"
+RESPONSE_LANGUAGE_NOTICE = (
+    "思考を除いてエージェントが書く全ての文は、最初の応答の1文目から日本語で書け。"
+    "ツール呼び出しの前後の短い状態行、送達後の本文、委譲プロンプト、返却、成果物も含む。"
+    "英語の文は1文も書くな。識別子、コマンド、引用はこの禁止の対象外とする。"
+)
 QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。会話限定の指示を成果物へ混入させるな。"
 
 SHARE_DIR = plugin_resources.plugin_root() / "share"
@@ -478,6 +482,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 recovery_targets = reset_main_operation_skill_ready(session_id, retain_for_compact=source == "compact")
             if not delegated and source in _CONTEXT_LOSING_SOURCES:
                 mark_user_confirmation_pending(session_id)
+            if source == "compact" and not delegated:
+                work_contract.reset_notice(session_id)
             try:
                 session_temp = managed_temp.resolve_session_temp(session_id)
             except managed_temp.ManagedTempError, OSError:

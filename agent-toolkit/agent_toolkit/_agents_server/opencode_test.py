@@ -180,6 +180,9 @@ async def test_public_start_uses_configured_candidate_and_fallback(
     """公開startで候補の有無と順序を保ち、認証失敗なら次engineへ進む。"""
     capture = _install_cli(tmp_path, monkeypatch)
     script = capture.parent / "bin" / "opencode"
+    source = script.read_text(encoding="utf-8")
+    assert source.count("text=prompt[-8:]") == 1
+    script.write_text(source.replace("text=prompt[-8:]", 'text=prompt[-8:] + "\\n状態: completed"'), encoding="utf-8")
 
     async def launch_fake(*args: str, **kwargs: Any) -> asyncio.subprocess.Process:
         if args[0] == sys.executable:

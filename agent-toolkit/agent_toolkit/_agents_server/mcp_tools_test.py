@@ -55,11 +55,17 @@ from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+def _write_review_plan(root: pathlib.Path) -> None:
+    """継続配送の検査が使う計画を、関連WIのない通常ファイルとして用意する。"""
+    (root / "plan.md").write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
+
+
 @pytest.mark.asyncio
 async def test_new_request_and_handoff_preserve_required_context(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """新要求を配送し、後任にも原要求と追送を保持したまま定型継続できる。"""
+    _write_review_plan(tmp_path)
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -906,6 +912,7 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
 
 async def _start_exec_review_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
     """実行レビュー担当の役割文書で偽のcodex sessionを公開`start`から起動し、継続入力の検証に使う。"""
+    _write_review_plan(tmp_path)
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)

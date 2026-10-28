@@ -197,6 +197,9 @@ def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path
 def test_exec_review_previous_revision_passes_task_document_hook(tmp_path: pathlib.Path) -> None:
     """引き継ぎで前回確認版を渡しても宣言外入力として遮断しない。"""
     task = _SHARE_DIR / "exec-review.subagent.md"
+    for name in ("plan.md", "handoff.md", "previous.md"):
+        (tmp_path / name).write_text("# レビュー資料\n", encoding="utf-8")
+    (tmp_path / "plan.md").write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
     prompt = (
         f"{task}の手順を実行せよ。\nレビュー基準: 計画\n計画: {tmp_path / 'plan.md'}\n"
         f"引き継ぎ記録先: {tmp_path / 'handoff.md'}\n"

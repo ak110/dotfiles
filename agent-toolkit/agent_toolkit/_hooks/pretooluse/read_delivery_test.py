@@ -26,6 +26,12 @@ from agent_toolkit._hooks.pretooluse.read_delivery import (
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 
+@pytest.fixture(autouse=True)
+def _local_plugin_root(monkeypatch):
+    """資料rootを差し替える各試験へ、起動元の固定rootを持ち込まない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
+
+
 @pytest.mark.parametrize(
     "payload,expected", [({}, "Readで全文読"), ({"agent_id": "child"}, "Readで全文読"), ({"turn_id": "turn"}, "cat --")]
 )
@@ -686,7 +692,7 @@ def test_startup_input_target_survives_compaction(tmp_path, monkeypatch, memory,
     assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
     assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
-    rules_context.reset_main_operation_skill_ready("test")
+    rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
     restored = _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
     assert "起動入力の本文" not in restored
     assert str(original) in restored

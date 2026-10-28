@@ -27,6 +27,7 @@ _WARN_OPENING = '<atk-auto source="pretooluse" kind="block">'
 _DELEGATION_TOOLS = (
     "Agent",
     "Task",
+    "spawn_agent",
     "mcp__plugin_agent-toolkit_agents_server__start",
     "mcp__plugin_agent-toolkit_agents_server__send_message",
     "mcp__plugin_agent-toolkit_agents_server__kill",

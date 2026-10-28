@@ -12,7 +12,6 @@ from collections.abc import Callable
 
 import pytest
 
-from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import session_state
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
@@ -57,13 +56,11 @@ def _build_fixture(
     event_name: str,
     fixture_name: str,
     tmp_path: pathlib.Path,
-) -> tuple[dict[str, object], dict[str, str], pathlib.Path | None]:
+) -> tuple[dict[str, object], dict[str, str]]:
     session_id = f"contract-{fixture_name}"
     payload: dict[str, object] = {"hook_event_name": event_name, "session_id": session_id}
     env = os.environ.copy()
     env.update({"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)})
-
-    managed_temp: pathlib.Path | None = None
 
     if fixture_name == "rules_context_session_start":
         payload["source"] = "startup"
@@ -101,23 +98,6 @@ def _build_fixture(
             env.pop(name, None)
     elif fixture_name == "subagent_stop_advisor":
         payload["last_assistant_message"] = ""
-    elif fixture_name == "permissionrequest_codex":
-        # 子プロセスのhookへ、隔離済みの同じ一時rootを指す環境変数を渡す。
-        for name in ("LOCALAPPDATA",) if os.name == "nt" else ("XDG_CACHE_HOME",):
-            if name in os.environ:
-                env[name] = os.environ[name]
-        target = _managed_temp.create_managed_temp("hook-test")
-        command_tokens = ["rm", "-rf", "--", str(target)]
-        command = subprocess.list2cmdline(command_tokens) if os.name == "nt" else shlex.join(command_tokens)
-        payload.update(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": command},
-            }
-        )
-        env["PLUGIN_ROOT"] = str(_PLUGIN_ROOT)
-
-        managed_temp = target
     elif fixture_name == "user_prompt_submit":
         home = tmp_path / "home-prompt"
         plan = home / ".claude" / "plans" / "draft.md"
@@ -128,7 +108,7 @@ def _build_fixture(
         )
         payload["prompt"] = "続行します"
         env.update({"HOME": str(home), "USERPROFILE": str(home)})
-    return payload, env, managed_temp
+    return payload, env
 
 
 @pytest.mark.parametrize(("event_name", "subcommand"), sorted(_FIXTURES))
@@ -138,21 +118,17 @@ def test_registered_hook_output_matches_event_contract(
     tmp_path: pathlib.Path,
 ) -> None:
     fixture_name, expects_output = _FIXTURES[(event_name, subcommand)]
-    payload, env, managed_temp = _build_fixture(event_name, fixture_name, tmp_path)
-    try:
-        if subcommand == "pretooluse":
-            prepare_read_delivery(payload, env)
-        result = subprocess.run(
-            [sys.executable, str(_HOOK_SCRIPT), subcommand],
-            input=json.dumps(payload, ensure_ascii=False),
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-        )
-    finally:
-        if managed_temp is not None:
-            _managed_temp.cleanup_managed_temp(managed_temp)
+    payload, env = _build_fixture(event_name, fixture_name, tmp_path)
+    if subcommand == "pretooluse":
+        prepare_read_delivery(payload, env)
+    result = subprocess.run(
+        [sys.executable, str(_HOOK_SCRIPT), subcommand],
+        input=json.dumps(payload, ensure_ascii=False),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
 
     assert result.returncode == 0
     assert bool(result.stdout.strip()) is expects_output
@@ -381,7 +357,7 @@ def test_codex_stop_rejects_claude_only_output(output: dict[str, object]) -> Non
 
 
 def test_codex_stop_public_entry_returns_host_output(tmp_path: pathlib.Path) -> None:
-    payload, environment, _managed = _build_fixture("Stop", "stop", tmp_path)
+    payload, environment = _build_fixture("Stop", "stop", tmp_path)
     environment.pop("AGENT_TOOLKIT_OWNER_SESSION", None)
     payload.update({"turn_id": "codex-turn", "last_assistant_message": "完了した。"})
     result = subprocess.run(
@@ -455,7 +431,7 @@ def test_pretooluse_public_entry_returns_host_output(
     tmp_path: pathlib.Path, host: str, scenario: str, host_environ: Callable[[], dict[str, str]]
 ) -> None:
     """登録された公開hookで通過・追加文脈・終了2の遮断を確認する。"""
-    payload, environment, _managed = _build_fixture("PreToolUse", "pretooluse", tmp_path)
+    payload, environment = _build_fixture("PreToolUse", "pretooluse", tmp_path)
     if host == "codex":
         manifest = json.loads((_PLUGIN_ROOT / "hooks/hooks.codex.json").read_text(encoding="utf-8"))
         assert any(

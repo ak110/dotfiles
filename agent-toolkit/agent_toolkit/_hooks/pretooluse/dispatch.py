@@ -91,6 +91,7 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
+lazy from agent_toolkit._hooks import work_contract
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, notice_cycle, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
@@ -197,7 +198,8 @@ def main(payload_text: str) -> int:
     operations = [entry.operation for entry in _operation_skills.OPERATION_SKILLS if entry.matches(tool_name, tool_input)]
     scope = "pretooluse:" + str(tool_name) + ":" + ",".join(operations)
     with notice_cycle(session_id, scope, _agent_id.resolve_hook_agent_id(payload)):
-        pending_notices: list[str] = []
+        contract_notice = work_contract.missing_notice(session_id, agent_id=payload.get("agent_id"))
+        pending_notices: list[str] = [_llm_notice(contract_notice, tag="notice")] if contract_notice else []
         decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
         if decision.block is None:
             delivery = read_delivery(payload, tool_name, tool_input, session_id)

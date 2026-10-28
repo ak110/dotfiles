@@ -175,6 +175,11 @@ def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> N
         assert "完成条件" in prompt
         assert "担当内で完了" in prompt
         assert "自身で解消できない" in prompt
+        assert "返却の最終行" in prompt
+        assert "状態: completed" in prompt
+        assert "続行できない理由:" in prompt
+        assert "1回だけ自動継続" in prompt
+        assert "保存先の無い出力" in prompt
     assert "atk read-file" not in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
     assert "pyfltr grep" in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
 

@@ -53,7 +53,6 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "session_end_cleanup",
         "stopfailure_notifier",
         "permissionrequest",
-        "permissionrequest_codex",
         "rules_context",
         "rules_context_codex",
         "user_prompt_submit",

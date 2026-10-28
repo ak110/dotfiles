@@ -143,6 +143,9 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
     assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
+    assert "思考を除いてエージェントが書く全ての文" in output
+    assert "ツール呼び出しの前後の短い状態行" in output
+    assert "英語の文は1文も書くな" in output
     normative_start = (
         f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
         f'kind="{rules_context.NORMATIVE_KIND_MAIN}">'
@@ -831,5 +834,5 @@ def test_session_start_resets_operation_skill_ready_for_main(
 
     _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
 
-    assert (_operation_context(None) != "") is main_warns
+    assert (f"agent-toolkit:{skill_name}" in _operation_context(None)) is main_warns
     assert _operation_context("sub-1") == ""

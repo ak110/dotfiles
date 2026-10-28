@@ -93,13 +93,16 @@ def test_build_command_omits_absent_options() -> None:
 @pytest.mark.asyncio
 async def test_explore_reaches_cli_on_start_and_resume(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """探索も同じCLIを開始・再開し、共通の読取責務と調査要求を届ける。"""
-    _install_fake_agy(tmp_path, monkeypatch)
+    fake = _install_fake_agy(tmp_path, monkeypatch)
+    source = fake.read_text(encoding="utf-8")
+    assert source.count("prompt[-20:]") == 1
+    fake.write_text(source.replace("prompt[-20:]", 'prompt[-20:] + "\\n状態: completed"'), encoding="utf-8")
     async with antigravity.AntigravityManager() as backend:
         session = await backend.start("GitとPythonと読取MCPで調査", str(tmp_path), launch_kind="explore")
         async with asyncio.timeout(10):
             while not session.terminal:
                 await asyncio.sleep(0.01)
-        assert session.agent_message.endswith("GitとPythonと読取MCPで調査")
+        assert session.agent_message.endswith("GitとPythonと読取MCPで調査\n状態: completed")
         resumed = await backend.resume(
             session.session_id, shared_state.ResumePrompt("同じ調査を継続"), str(tmp_path), launch_kind="explore"
         )
@@ -107,7 +110,7 @@ async def test_explore_reaches_cli_on_start_and_resume(tmp_path: pathlib.Path, m
             while not resumed.terminal:
                 await asyncio.sleep(0.01)
         assert resumed.session_id == session.session_id
-        assert resumed.agent_message.endswith("同じ調査を継続")
+        assert resumed.agent_message.endswith("同じ調査を継続\n状態: completed")
 
 
 @pytest.mark.parametrize(

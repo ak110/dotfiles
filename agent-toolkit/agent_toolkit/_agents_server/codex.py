@@ -973,6 +973,8 @@ class AppServerManager:
         params: dict[str, Any] = {
             "cwd": cwd,
             "baseInstructions": SUBAGENT_BASE_INSTRUCTIONS,
+            # Codexが承認を要すると判定するコマンドは拒否され、PermissionRequest hookは呼ばれない。
+            # 委譲先の標準手順は承認を要しない操作で構成し、ホストの権限制約を維持する。
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
             "serviceTier": await run_file_operation(_current_service_tier),
@@ -1874,6 +1876,7 @@ class AppServerManager:
             result = {"status": session.status, "agent_message": session.agent_message, "error": session.error}
             held_by_result_contract = result_contract.hold_invalid_result(session, result)
             if not held_by_result_contract:
+                session.status = result["status"]
                 session.error = result["error"]
             if held_by_result_contract:
                 pass

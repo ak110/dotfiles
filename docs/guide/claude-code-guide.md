@@ -780,7 +780,6 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する | 対応 | 対応 |
 | plugin `Stop/stop` | 説明言語を確認し、英語主体の最終応答は日本語への書き直しを求める。Claudeでは未観測の委譲・背景処理や終了工程の記録も確認し、completion-reportの起動忘れを非遮断で通知する。報告本文の意味や固定句は判定しない。Codexでは説明言語だけを判定する | 対応 | 部分対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | 発話の内容を現物で確かめる手順や、発話に応じて適用する規範の所在を示す注記を返す | 対応 | 対応 |
-| plugin `PermissionRequest/permissionrequest_codex` | managed-tempの一時root配下の作業領域を回収する`rm -rf -- <1パス>`だけを許可する。一時root自身、シンボリックリンクを含むパス、使用中の保持配布物は対象外とする | 非対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をログへ記録する | 対応 | 非対応 |
 | plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した場合も、そのタスクをバックグラウンドタスクの記録へ残す | 対応 | 非対応 |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応 |
@@ -813,7 +812,7 @@ turn終了時にも残るため、同じ会話の再開や委譲先の結果確�
 
 抽出した配布物、cloneとGit fixtureなどの再生成可能な作業用複製は、保存証拠と分けて置く。
 作業用複製は`mktemp -d`で作成する。cloneなど`.git`を含む領域はmanaged-tempの一時root直下、それ以外は通知されたセッションのmanaged-tempの中に置く。
-作成した工程は、全消費工程と外部プロセスの終了後に`rm -rf -- <作成した絶対パス>`で回収する（worktreeは先に`git worktree remove`する）。後続turnで読む証拠と再開入力は残す。
+作成した工程は、全消費工程と外部プロセスの終了後に`rm -r -- <作成した絶対パス>`で回収する（worktreeは先に`git worktree remove`する）。後続turnで読む証拠と再開入力は残す。
 配置と回収の手順は`agent-toolkit:managed-temp`、寿命を分ける理由は[design-storage.md](../development/design-storage.md#managed-temp)を参照。
 
 版付きプラグインから起動する`agents_server`は同じ配布元・版の保持実体を複数プロセスで共有する。

@@ -69,9 +69,15 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 await self._backend(session.engine).send_message(
                     session,
                     wrap_delivery_body(
-                        "直前の返却は続行不能の区分契約に適合しない。"
+                        "直前の返却は返却形式の契約に適合しない。"
                         f"診断: {reason}\n"
                         "成果と残作業を確認し、担当内で補える作業を完遂した上で所定の返却形式を返せ。"
+                        + (
+                            "未読・未走査の範囲を読み終え、最終行を状態: completedまたは"
+                            "続行できない理由: <未読の範囲、理由、再開に必要な入力>として返せ。"
+                            if session.launch_kind == "explore"
+                            else ""
+                        )
                     ),
                 )
             except Exception as exc:

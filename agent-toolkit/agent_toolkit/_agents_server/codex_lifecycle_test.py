@@ -32,6 +32,8 @@ async def _item(backend, session, item):
 
 
 async def _complete(backend, session, items=()):
+    if session.launch_kind == "explore" and not session.agent_message.endswith("状態: completed"):
+        session.agent_message += "\n状態: completed"
     await backend._handle_notification(
         {
             "method": "turn/completed",
@@ -166,9 +168,10 @@ async def test_self_message_repairs_final_response_once(tmp_path: pathlib.Path, 
         assert session.codex_self_message_repair_consumed
         assert "全文を最終応答" in str(client.requests)
         await _item(backend, session, _activity(session.session_id, "interacted", "self-again"))
-        await _item(backend, session, {"id": "answer", "type": "agentMessage", "text": "修復後の全文"})
+        completed = "修復後の全文" + ("\n状態: completed" if launch_kind == "explore" else "")
+        await _item(backend, session, {"id": "answer", "type": "agentMessage", "text": completed})
         await _complete(backend, session)
-        assert (await owner.wait())["agent_message"] == "修復後の全文"
+        assert (await owner.wait())["agent_message"] == completed
         assert len([r for r in client.requests if r[0] == "turn/start"]) == 2
 
 

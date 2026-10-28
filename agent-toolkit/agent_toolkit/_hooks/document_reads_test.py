@@ -35,6 +35,7 @@ def test_basics_acquisition_does_not_mark_legacy_toolkit_skill(monkeypatch):
 
 
 def test_hook_declarations_and_body_identity_use_the_effective_project(tmp_path, monkeypatch):
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
     root = tmp_path / "toolkit"
     source = root / "skills/example/SKILL.md"
     source.parent.mkdir(parents=True)
