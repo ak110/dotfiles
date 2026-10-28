@@ -75,6 +75,8 @@ def test_user_origin_requires_requirement_decomposition(decision: str) -> None:
     """
     original = _plan_fixture.USER_ACTION_ROW
     decomposed = "原文の「公開契約を直して」が示す要求単位は1つであり、例示の範囲を閉じずに実施範囲とする。"
+    if decision == "移管":
+        decomposed += f"移管先は{_plan_fixture.WI_FILES[0][0]}。"
     accepted = _HUMAN_MAIN_CONTENT.replace(
         original,
         f"| 公開契約に必要な変更を実装する | ユーザー指示 | {decision} | {decomposed} |",
@@ -90,7 +92,11 @@ def test_user_origin_requires_requirement_decomposition(decision: str) -> None:
         1,
     )
     notices = []
-    assert not plan_sections.check_plan_main_structure(rejected, origin_notices=notices)[1]
+    errors = plan_sections.check_plan_main_structure(rejected, origin_notices=notices)[1]
+    if decision == "移管":
+        assert any("WIファイル名が無い" in error for error in errors), errors
+    else:
+        assert not errors, errors
     assert any("分解結果" in notice for notice in notices), notices
 
 
@@ -517,3 +523,53 @@ def test_progress_log_rows_missing_table_states_next_action(content: str) -> Non
     with pytest.raises(_next_action.ActionableError) as raised:
         _plan_format.progress_log_rows(content)
     assert f"`## {_plan_format.PLAN_H2_PROGRESS}`見出しと、表頭" in raised.value.next_action
+
+
+@pytest.mark.parametrize("human_format", [False, True])
+@pytest.mark.parametrize(
+    ("reason", "registered", "notes_exist", "rejected"),
+    [
+        ("後続計画で扱う", False, True, True),
+        ("後続WIへ移管する", False, True, True),
+        ("20261027-162634-999.mdへ移管する", False, True, True),
+        ("20261027-162634-999.mdへ移管する", True, True, False),
+        ("20261027-162634-999.mdへ移管する", False, False, False),
+    ],
+)
+def test_transferred_action_requires_registered_wi(
+    tmp_path: pathlib.Path, reason: str, registered: bool, notes_exist: bool, rejected: bool, *, human_format: bool
+) -> None:
+    """移管にはWI名と実在が必要で、notes不在時は実在を確認できなかった旨を通知する。"""
+    notes = tmp_path / "notes"
+    if notes_exist:
+        notes.mkdir()
+    if registered:
+        directory = notes / "2026" / "10"
+        directory.mkdir(parents=True)
+        (directory / "20261027-162634-999.md").write_text("# 後続要求\n", encoding="utf-8")
+    if human_format:
+        content = _plan_fixture.current_plan().replace(
+            _plan_fixture.USER_ACTION_ROW,
+            f"| 公開契約に必要な変更を実装する | ユーザー指示 | 移管 | {reason} |",
+            1,
+        )
+        start = content.index("### 受入シナリオ")
+        end = content.index("\n## ", start)
+        content = content[:start] + "### 受入シナリオ\n\nなし\n" + content[end:]
+    else:
+        content = _VALID_MAIN_CONTENT.replace(
+            _plan_fixture.TWO_FILE_ACTION_ROW,
+            f"| 診断件数を2件から1件へ減らす | 移管 | 非該当 | {reason} |",
+            1,
+        )
+        content = content.replace(
+            "| R-P-001-001 | P-001 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 |",
+            "| R-P-001-001 | P-001 | 診断件数を2件から1件へ減らす。 | 不採用 | 非該当 | 後続へ移管する |",
+            1,
+        )
+    skips: list[str] = []
+    check = plan_sections.check_plan_single_file_structure if human_format else plan_sections.check_plan_main_structure
+    errors = check(content, private_notes=notes, origin_skips=skips)[1]
+    assert bool(errors) is rejected, errors
+    if not notes_exist:
+        assert any("private-notesが実在しない" in skip for skip in skips), skips

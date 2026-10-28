@@ -127,6 +127,7 @@ from agent_toolkit._plan.structure.references import (
     _check_history_rows,
     _check_reference_ids,
     _check_requirement_coverage,
+    _check_transfer_root,
 )
 from agent_toolkit._plan.structure.verification import commands_from_cell
 
@@ -658,6 +659,14 @@ def _check_action_section(
     section = lines_within(body, start, end)
     table, table_errors = _check_action_table(extract_tables(section))
     errors.extend(table_errors)
+    if table is not None and table.header in (PLAN_ACTION_TABLE_HEADER, PLAN_HUMAN_ACTION_TABLE_HEADER):
+        decision_index = table.header.index("採否")
+        root_index = table.header.index("根拠")
+        for row in table.rows:
+            if len(row) == len(table.header) and row[decision_index] == "移管":
+                errors.extend(
+                    _check_transfer_root(row[root_index], origin_skips=origin_skips, private_notes=private_notes, home=home)
+                )
     if table is not None and table.header == PLAN_HUMAN_ACTION_TABLE_HEADER:
         errors.extend(
             _check_human_action_table(

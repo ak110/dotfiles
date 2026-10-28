@@ -100,14 +100,17 @@ def test_human_readable_partial_user_instruction_counts_as_adopted() -> None:
 def test_human_readable_agent_proposal_requires_reason_for_every_decision(decision: str) -> None:
     """エージェント提案は全採否で空でもハイフンでもない根拠を持つ。"""
     original = _plan_fixture.PROPOSAL_ACTION_ROW
+    reason = "観測可能な根拠。"
+    if decision == "移管":
+        reason += "20261027-162634-998.mdへ移管する。"
     accepted = _HUMAN_MAIN_CONTENT.replace(
         original,
-        f"| 類似するが対象外の記述は変更しない | エージェント提案 | {decision} | 観測可能な根拠。 |",
+        f"| 類似するが対象外の記述は変更しない | エージェント提案 | {decision} | {reason} |",
         1,
     )
     assert not plan_sections.check_plan_main_structure(accepted)[1]
 
-    rejected = accepted.replace("| 観測可能な根拠。 |", "| - |", 1)
+    rejected = accepted.replace(f"| {reason} |", "| - |", 1)
     errors = plan_sections.check_plan_main_structure(rejected)[1]
     assert any("エージェント提案行" in error for error in errors), errors
 
