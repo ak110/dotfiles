@@ -1,7 +1,7 @@
 # Web画面の実装とレビューで確認する規則
 
 本書は、HTML、CSS、JavaScriptを用いてエンドユーザー向け画面を実装またはレビューするエージェントに向けて、ソースコードから判定できる確認項目をまとめたものである。
-エンドユーザーの操作によって生じる動作結果の正しさはE2Eテストで確認し、操作の分かりやすさは`ui-ux.md`の「完了前の実描画確認」およびユーザビリティレビューを通じて確認する。
+エンドユーザーの操作によって生じる動作結果の正しさは`testing.md`「検証単位の選定」で選んだ層の自動テストで確認し、操作の分かりやすさは`ui-ux.md`の「完了前の実描画確認」およびユーザビリティレビューを通じて確認する。
 
 主な参考資料: [Vercel Web Interface Guidelinesの取得時点の原文](https://github.com/vercel-labs/web-interface-guidelines/blob/e3d624baaf29dc1fc645aff3e38f03e564d2d6b1/command.md)（commit `e3d624baaf29dc1fc645aff3e38f03e564d2d6b1`）。作業時に原文を毎回再取得するのではなく、本書にまとめた規則に基づいて判断する。英語の文章表記に固有の規則は、日本語画面の判定対象から除外する。
 
@@ -11,6 +11,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 機能の正しさを確認するテスト層を選ぶ時 | `testing.md#「検証単位の選定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux-patterns.md#「フォームと入力」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md#「フォームと入力」` |
 

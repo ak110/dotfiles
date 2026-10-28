@@ -51,6 +51,8 @@ description: >
 | 論文・調査報告を書く時 | `references/writing.md`の「論文・調査報告」 |
 | 脚本・台本を書く時 | `references/writing.md`の「脚本・台本」 |
 | ユーザーの入力素材を整理して取り込む時 | `references/writing.md`の「ユーザー入力素材の取扱い」 |
+| エンドユーザーが操作する画面の新設・変更、その計画・AWIの起草またはレビューの時 | `references/ui-ux.md` |
+| エンドユーザーが操作する画面の新設・変更、その計画・AWIの起草またはレビューで、フォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` |
 | 配布物がエンドユーザーの環境でパッケージマネージャーへ渡す版指定（`uvx --from`の引数、`pyproject.toml`の`dependencies`、`uv run --with`の引数、PEP 723の`dependencies`など）を変える作業の起草、計画、実装、レビューの時 | `references/dependency-management.md` |
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
@@ -134,9 +136,7 @@ description: >
 | Pythonの静的解析（ruff・pylint・pyright・mypyなど）の診断へ対処する時と、抑制を追加する時 | `references/python.md`の「静的解析の誤検出と抑制」 |
 | 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化など） | `references/encoding.md` |
 | 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボードなど）の作成・修正時 | `references/independent-html.md` |
-| エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `references/ui-ux.md` |
 | エンドユーザーが操作する画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` |
-| エンドユーザーが操作する画面がフォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` |
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
