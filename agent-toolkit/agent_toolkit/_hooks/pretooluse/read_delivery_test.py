@@ -68,6 +68,7 @@ def test_range_failure_skill_fallback_and_missing_target(tmp_path, agent):
 @pytest.mark.parametrize("command", ["pretooluse", "posttooluse"])
 def test_public_hook_scope_reaches_dynamic_targets_and_document_read_consumers(tmp_path, monkeypatch, command):
     """動的解決と直接の本文識別・読取記録も、payloadのsessionの一覧を使う。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
     toolkit = tmp_path / "cache/mine/agent-toolkit/9"
     basics = tmp_path / "cache/mine/agent-basics/1"
     (basics / ".claude-plugin").mkdir(parents=True)
@@ -138,6 +139,7 @@ def test_public_hook_scope_reaches_dynamic_targets_and_document_read_consumers(t
 @pytest.mark.parametrize("host", ["claude", "codex"])
 def test_installed_declarations_share_one_inventory_per_request(tmp_path, monkeypatch, host):
     """版別cache配置でも資料ごとの解決を要求全体で共有し、次の要求では更新する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
     toolkit = tmp_path / "cache/mine/agent-toolkit/9.9.9"
     basics = tmp_path / "cache/mine/agent-basics/1.0"
     (basics / "skills/writing-standards").mkdir(parents=True)
@@ -181,6 +183,8 @@ def test_installed_declarations_share_one_inventory_per_request(tmp_path, monkey
 
 
 def test_included_table_keeps_marker_order_and_is_counted_once(tmp_path, monkeypatch):
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
+
     def table(name):
         return (
             "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n"

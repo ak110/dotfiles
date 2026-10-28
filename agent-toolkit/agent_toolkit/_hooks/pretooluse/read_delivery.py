@@ -9,14 +9,17 @@
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import fnmatch
+import functools
 import hashlib
 import json
 import os
 import pathlib
 import re
 import shlex
-from collections.abc import Iterator
+from collections.abc import Callable, Generator, Iterator
+from typing import cast
 lazy import subprocess
 
 from agent_toolkit._common import delegated_session, read_triggers, shell_cwd, transcript
@@ -38,6 +41,36 @@ lazy from agent_toolkit._hooks.pretooluse import shell_checks
 _PATH_PREFIX = "read-trigger:"
 
 
+_INPUT_CACHE: contextvars.ContextVar[dict[tuple, object] | None] = contextvars.ContextVar(
+    "read_delivery_input_cache", default=None
+)
+
+
+@contextlib.contextmanager
+def _input_scope() -> Generator[None]:
+    """同じhook内の不変入力だけを共有し、次の操作では資料・cwd・主体を再評価する。"""
+    token = _INPUT_CACHE.set({})
+    try:
+        yield
+    finally:
+        _INPUT_CACHE.reset(token)
+
+
+def _input_cached[**P, R](function: Callable[P, R]) -> Callable[P, R]:
+    @functools.wraps(function)
+    def cached(*args: P.args, **kwargs: P.kwargs) -> R:
+        cache = _INPUT_CACHE.get()
+        if cache is None:
+            return function(*args, **kwargs)
+        key = (function, json.dumps((args, kwargs), sort_keys=True, default=os.fspath))
+        if key not in cache:
+            cache[key] = function(*args, **kwargs)
+        return cast(R, cache[key])
+
+    return cached
+
+
+@_input_cached
 def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> list[read_triggers.ReadTrigger]:
     """稼働版と対象プロジェクト・ユーザースキルの宣言を読む。"""
     root = plugin_resources.plugin_root()
@@ -64,6 +97,7 @@ def _skill(source: pathlib.Path) -> str | None:
     return None
 
 
+@_input_cached
 def _read_paths(tool_name: str, tool_input: dict, cwd: str, *, resolve: bool = True) -> list[pathlib.Path]:
     if tool_name == "Read" and isinstance(tool_input.get("file_path"), str):
         path = pathlib.Path(tool_input["file_path"]).expanduser()
@@ -79,6 +113,7 @@ def _read_paths(tool_name: str, tool_input: dict, cwd: str, *, resolve: bool = T
     return []
 
 
+@_input_cached
 def _read_path_variants(tool_name: str, tool_input: dict, cwd: str) -> list[pathlib.Path]:
     """資料の取得を始める読取のパスを、リンク経由の名前でも宣言へ一致させるため解決前後の両方で返す。
 
@@ -154,9 +189,10 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str) -> str:
     return f"Readで`{path}`を全文読め" + focus
 
 
+@_input_cached
 def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
     """共通語彙を既存の静的な操作判定へ結びつける。"""
-    matched = operation_skills.operation_matches(operation, tool_name, tool_input)
+    matched = operation_skills.operation_matches(operation, tool_name, tool_input, cwd)
     if matched is not None:
         return matched
     prefix, value = operation.split(":", 1)
@@ -278,9 +314,15 @@ def _matches_document_path(path: pathlib.Path, pattern: str) -> bool:
     return any(fnmatch.fnmatch(candidate.as_posix(), pattern) for candidate in candidates)
 
 
+@_input_cached
 def _document_owner(path: pathlib.Path) -> pathlib.Path | None:
     """選択された実体のmanifestを持つ所有rootを返す。別版の探索はしない。"""
     return next((parent for parent in path.resolve().parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+
+
+@_input_cached
+def _document_plugin(path: str) -> str:
+    return document_reads.document_plugin(path)
 
 
 def _bound_operation_matches(
@@ -290,7 +332,7 @@ def _bound_operation_matches(
     if not matches(operation, tool_name, tool_input, cwd):
         return False
     owner = _document_owner(row.source)
-    plugin = document_reads.document_plugin(str(row.source))
+    plugin = _document_plugin(str(row.source))
     if owner is not None and operation.startswith((f"read:{plugin}:", f"section:{plugin}:", f"skill:{plugin}:")):
         requests = [tool_input]
         if tool_name == "Bash" and isinstance(tool_input.get("command"), str):
@@ -325,7 +367,7 @@ def _bound_operation_matches(
 
 
 def row_matches(row: read_triggers.ReadTrigger, tool_name: str, tool_input: dict, cwd: str) -> bool:
-    plugin = document_reads.document_plugin(str(row.source))
+    plugin = _document_plugin(str(row.source))
     operations = tuple(
         "skill:" + plugin + ":" + operation.removeprefix("skill:")
         if operation.startswith("skill:") and ":" not in operation.removeprefix("skill:")
@@ -904,6 +946,7 @@ def _declaration_recovery_operation(tool_name: str, tool_input: dict, error: Exc
     return False
 
 
+@_input_scope()
 def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
     """現在の操作に関係する宣言資料を配送または案内し、通常操作の進行を保つ。"""
     if not session_id or delegated_session.is_lightweight_delegated(os.environ):
@@ -1291,6 +1334,7 @@ def _sed_range_proofs(
         yield read_triggers.ReadTarget(path), left, left + len("".join(lines[start - 1 : last])), len(source), fingerprint
 
 
+@_input_scope()
 def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> None:
     """成功した全文・分割読取を資料単位・主体単位に記録する。"""
     if payload.get("hook_event_name") in {"PostToolUseFailure", "PermissionDenied"}:

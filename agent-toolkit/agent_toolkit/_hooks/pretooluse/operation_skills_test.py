@@ -674,3 +674,55 @@ def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, tool: str, target: s
     assert ("/skills/writing-standards/SKILL.md" in _additional_context(result)) is (target != "own")
     assert result.returncode == 0
     assert result.stderr == ""
+
+
+@pytest.mark.parametrize("exists", [False, True])
+@pytest.mark.parametrize("tool", ["Write", "apply_patch", "Bash"])
+def test_existing_file_edit_distinguishes_creation(tmp_path, tool, exists):
+    target = tmp_path / "memo.md"
+    if exists:
+        target.write_text("旧本文\n", encoding="utf-8")
+    inputs = {
+        "Write": {"file_path": str(target), "content": "新本文\n"},
+        "apply_patch": {"command": f"*** Begin Patch\n*** Add File: {target}\n+新本文\n*** End Patch"},
+        "Bash": {"command": f"cat > {target} <<'EOF'\n新本文\nEOF"},
+    }
+    assert operation_skills.is_existing_file_edit(tool, inputs[tool], str(tmp_path)) is exists
+    assert operation_skills.operation_matches("body-writing", tool, inputs[tool])
+
+
+@pytest.mark.parametrize("tool", ["Edit", "MultiEdit", "apply_patch"])
+def test_partial_edit_requires_current_body_even_when_missing(tmp_path, tool):
+    target = tmp_path / "missing.md"
+    inputs: dict[str, dict] = {
+        "Edit": {"file_path": str(target), "old_string": "旧", "new_string": "新"},
+        "MultiEdit": {"file_path": str(target), "edits": [{"old_string": "旧", "new_string": "新"}]},
+        "apply_patch": {"command": f"*** Begin Patch\n*** Update File: {target}\n@@\n-旧\n+新\n*** End Patch"},
+    }
+    assert operation_skills.is_existing_file_edit(tool, inputs[tool], str(tmp_path))
+
+
+def test_existing_file_edit_uses_command_cwd(tmp_path):
+    folder = tmp_path / "sub"
+    folder.mkdir()
+    (folder / "memo.md").write_text("旧", encoding="utf-8")
+    assert operation_skills.is_existing_file_edit("Bash", {"command": "cd sub && sed -i 's/旧/新/' memo.md"}, str(tmp_path))
+    assert not operation_skills.is_existing_file_edit("Bash", {"command": "cat memo.md"}, str(folder))
+
+
+def test_missing_file_is_rechecked_between_requests(tmp_path):
+    target = tmp_path / "memo.md"
+    data = {"file_path": str(target), "content": "新"}
+    assert not operation_skills.is_existing_file_edit("Write", data, str(tmp_path))
+    target.write_text("旧", encoding="utf-8")
+    assert operation_skills.is_existing_file_edit("Write", data, str(tmp_path))
+
+
+def test_unreadable_path_does_not_count_as_creation(tmp_path, monkeypatch):
+    def denied(_path, **_kwargs):
+        raise PermissionError("読取不可")
+
+    monkeypatch.setattr(pathlib.Path, "stat", denied)
+    assert operation_skills.is_existing_file_edit(
+        "Write", {"file_path": str(tmp_path / "memo.md"), "content": "新"}, str(tmp_path)
+    )

@@ -2,7 +2,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 既存ファイルを編集・上書きする時、スクリプトで複数ファイルを機械変換する時 | `references/file-editing.md` | 操作 | `body-writing` | |
+| 既存ファイルを編集・上書きする時、スクリプトで複数ファイルを機械変換する時 | `references/file-editing.md` | 操作 | `existing-file-edit` | |
 | 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` | |
 | Xの投稿本文・日時・添付写真を資料として読む前 | `references/x-posts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/x-posts.md` | |
 | ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |

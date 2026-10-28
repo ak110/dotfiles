@@ -7,6 +7,7 @@ import pytest
 
 from agent_toolkit._hooks import plugin_resources, posttooluse
 from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
+from agent_toolkit._testing import git_repository, pretooluse_support
 
 
 def _context(captured):
@@ -130,3 +131,102 @@ def test_pattern_process_termination_stays_blocked_before_document_delivery(tmp_
     captured = capsys.readouterr()
     assert "pkill" in captured.err
     assert "read-delivery" not in captured.err
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("exists", [False, True])
+@pytest.mark.parametrize("temporary", [False, True])
+@pytest.mark.parametrize("filename", ["memo.md", "wait.sh"])
+def test_new_body_keeps_writing_standards_without_existing_edit_materials(
+    tmp_path, monkeypatch, capsys, codex, exists, temporary, filename
+):
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
+    folder = tmp_path / ("managed-temp" if temporary else "project")
+    folder.mkdir()
+    if not temporary:
+        git_repository.init_repository(folder)
+    target = folder / filename
+    content = "sleep 1\n" if filename.endswith(".sh") else "新本文\n"
+    if exists:
+        target.write_text("旧本文\n", encoding="utf-8")
+    payload: dict = {"session_id": "edit-materials", "cwd": str(folder)}
+    if codex:
+        payload.update(
+            {
+                "turn_id": "turn",
+                "tool_name": "apply_patch",
+                "tool_input": {"command": f"*** Begin Patch\n*** Add File: {target}\n+{content}*** End Patch"},
+            }
+        )
+    else:
+        payload.update({"tool_name": "Write", "tool_input": {"file_path": str(target), "content": content}})
+    assert dispatch.main(json.dumps(payload)) == 0
+    context = _context(capsys.readouterr())
+    assert "references/writing.md" in context
+    if filename.endswith(".sh"):
+        assert "references/bash.md" in context
+    assert ("references/file-editing.md" in context) is exists
+    assert ("references/file-editing-claude.md" in context) is (exists and not codex)
+
+
+def test_request_reuses_read_parsing_and_rechecks_the_next_request(tmp_path, monkeypatch):
+    target = tmp_path / "source.md"
+    target.write_text("# 節\n本文\n", encoding="utf-8")
+    rows = [
+        read_delivery.read_triggers.ReadTrigger(target, number, "判断", ("section:*/source.md#節",), (target,))
+        for number in range(40)
+    ]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
+    original = read_delivery.bash_read_paths
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(read_delivery, "bash_read_paths", counted)
+    payload = {"cwd": str(tmp_path), "turn_id": "turn"}
+    data = {"command": f"cat -- {target}"}
+    read_delivery.deliver(payload, "Bash", data, "parsing-first")
+    first = len(calls)
+    assert 0 < first <= 3
+    target.write_text("# 節\n変更後\n", encoding="utf-8")
+    read_delivery.deliver(payload, "Bash", data, "parsing-second")
+    assert len(calls) == first * 2
+
+
+def test_prepare_batches_complete_reads_and_reacquires_changed_body(tmp_path, monkeypatch):
+    first, second = tmp_path / "first.md", tmp_path / "second.md"
+    first.write_text("# 第一\n本文\n", encoding="utf-8")
+    second.write_text("# 第二\n別本文\n", encoding="utf-8")
+    row = read_delivery.read_triggers.ReadTrigger(first, 1, "操作", ("body-writing",), (first, second))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    # 取得イベントを実際のPostToolUseへ通し、準備処理の被覆判定を監視する。
+    original = pretooluse_support._run_posttooluse  # pylint: disable=protected-access
+    events = []
+
+    def recorded(payload, env, **_kwargs):
+        events.append(payload)
+        return original(payload, env)
+
+    monkeypatch.setattr(pretooluse_support, "_run_posttooluse", recorded)
+    payload: dict = {
+        "cwd": str(tmp_path),
+        "turn_id": "turn",
+        "session_id": "batched-reads",
+        "tool_name": "apply_patch",
+        "tool_input": {"command": f"*** Begin Patch\n*** Add File: {tmp_path / 'new.md'}\n+本文\n*** End Patch"},
+    }
+    pretooluse_support.prepare_read_delivery(payload)
+    assert len(events) == 1
+    assert events[0]["tool_name"] == "Bash"
+    records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
+    assert all(
+        read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(path), "main") for path in (first, second)
+    )
+    first.write_text("# 第一\n更新された本文\n", encoding="utf-8")
+    assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(first), "main")
+    pretooluse_support.prepare_read_delivery(payload)
+    assert len(events) == 2
+    records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
+    assert read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(first), "main")

@@ -61,6 +61,7 @@ def _generated(tmp_path):
 
 
 def test_generated_root_keeps_logical_namespace_and_relative_base(generated, monkeypatch):
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
     toolkit, native, full = generated
     assert plugin_roots.resolve_plugin_root("agent-basics", toolkit) == native
     entry = native / "skills/long/SKILL.md"

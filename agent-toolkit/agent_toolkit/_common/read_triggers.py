@@ -24,6 +24,8 @@ OPERATIONS = frozenset(
         "root-cause-writing",
         "managed-temp-create",
         "body-writing",
+        "existing-file-edit",
+        "claude-existing-file-edit",
         "verification",
         "agent-document-writing",
         "confirmation",
