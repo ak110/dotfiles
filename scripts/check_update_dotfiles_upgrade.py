@@ -177,9 +177,7 @@ def _parent_mise_data_dirs(environ: Mapping[str, str], platform_name: str) -> li
     elif xdg_data_home := environ.get("XDG_DATA_HOME"):
         dirs = [pathlib.Path(xdg_data_home) / "mise"]
     else:
-        home_value = environ.get("USERPROFILE" if platform_name == "windows" else "HOME")
-        home = pathlib.Path(home_value) if home_value else pathlib.Path.home()
-        dirs = [home / ".local" / "share" / "mise"]
+        dirs = [_parent_home(environ, platform_name) / ".local" / "share" / "mise"]
     if platform_name == "windows" and (local_app_data := environ.get("LOCALAPPDATA")):
         dirs.append(pathlib.Path(local_app_data) / "mise")
     return dirs
@@ -198,8 +196,31 @@ def _without_mise_entries(path_value: str, mise_dirs: Sequence[pathlib.Path]) ->
     return os.pathsep.join(entry for entry in path_value.split(os.pathsep) if not (entry and is_excluded(entry)))
 
 
-def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name: str) -> dict[str, str]:
-    """ユーザー環境から状態を分離し、ランチャーが参照するuvを配置する。
+def _parent_home(environ: Mapping[str, str], platform_name: str) -> pathlib.Path:
+    """差し替える前の親プロセスの実ホームを返す。"""
+    home_value = environ.get("USERPROFILE" if platform_name == "windows" else "HOME")
+    return pathlib.Path(home_value) if home_value else pathlib.Path.home()
+
+
+def _without_entries_under(path_value: str, base: pathlib.Path) -> str:
+    """`PATH`の値から、`base`配下（`base`自身を含む）の要素を除く。"""
+    excluded = os.path.normcase(os.path.abspath(base))
+
+    def is_excluded(entry: str) -> bool:
+        normalized = os.path.normcase(os.path.abspath(entry))
+        return normalized == excluded or normalized.startswith(excluded.rstrip(os.sep) + os.sep)
+
+    return os.pathsep.join(entry for entry in path_value.split(os.pathsep) if not (entry and is_excluded(entry)))
+
+
+def _isolated_env(
+    home: pathlib.Path, uv_executable: pathlib.Path, platform_name: str, verification_root: pathlib.Path
+) -> dict[str, str]:
+    """ユーザー環境から状態を分離し、ランチャーが参照するuvとchezmoiを配置する。
+
+    検証homeの中の処理は、実ホームのユーザー設定とツール配置を読み書きせず、
+    一時ディレクトリの置き場所や実ホームの中身によらず同じ結果になる必要がある。
+    そのため、実ホームを探索起点・参照先とする経路（祖先探索、親から引き継ぐ`PATH`、配置先を示す環境変数）を遮断する。
 
     `XDG_DATA_HOME`の差し替えで、子の中のmiseは親が導入したツールを認識しない。
     親のmiseのshimやツールを子が名前で起動すると、shimと検証homeの実行ファイルの間でexecが往復して止まらないため、
@@ -209,16 +230,27 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
     uv_target = home / ".local" / "bin" / uv_name
     uv_target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(uv_executable, uv_target)
+    # 更新処理は`uvx`も名前で起動する。実ホーム配下を`PATH`から外すと見つからなくなるため、uv本体と同じ配布物の`uvx`も複製する。
+    uvx_name = "uvx.exe" if platform_name == "windows" else "uvx"
+    if (uvx_source := uv_executable.with_name(uvx_name)).is_file():
+        shutil.copy2(uvx_source, uv_target.parent / uvx_name)
     codex_home = home / ".codex"
     codex_home.mkdir(parents=True, exist_ok=True)
     # Windowsのinstallerは可視binのdirectory全体をjunctionへ置き換えるため、uvの共有binと分ける。
     # 専用binはinstallerが作成するため、ここでは作成しない。
     codex_bin = home / ".local" / "share" / "codex" / "bin" if platform_name == "windows" else uv_target.parent
     env = os.environ.copy()
-    # 差し替える前の親の環境変数から、親のmiseのデータディレクトリを求める。
+    # 差し替える前の親の環境変数から、親のmiseのデータディレクトリと実ホームを求める。
     mise_dirs = _parent_mise_data_dirs(env, platform_name)
+    parent_home = _parent_home(env, platform_name)
     # 可視binの上書きを継承すると、installerが検証home外のjunctionを作成・更新する。
     env.pop("HERDR_INSTALL_DIR", None)
+    # 親の値（実ホームの`~/.nvm`）を継承すると、更新処理のランチャー整理が実ホームのnvmのbinを走査し、
+    # 条件次第では実ホームのnpmでグローバルパッケージを削除する。外すと消費側は検証homeの`~/.nvm`を見る。
+    env.pop("NVM_DIR", None)
+    # 親が全体導入先を指定していると、検証homeのnpmも実ホーム配下へ導入する。
+    for name in ("NPM_CONFIG_PREFIX", "npm_config_prefix"):
+        env.pop(name, None)
     visible_bins = [str(codex_bin), str(uv_target.parent)]
     if platform_name == "windows":
         # Windowsの消費側は可視binをAppData配下へ置くため、HOMEと同じ検証homeへそろえる。
@@ -230,6 +262,11 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
         env["LOCALAPPDATA"] = str(local_app_data)
         env["APPDATA"] = str(roaming_app_data)
         visible_bins.append(str(local_app_data / "Programs" / "Herdr" / "bin"))
+    else:
+        # npmの全体導入先は、実ホーム配下のNode（nvmなど）を`PATH`から外すとシステムのNodeの`/usr`などになり、
+        # 書き込めずに導入が失敗する。実ホームのNodeのままでは実ホームへ導入する。検証homeの可視binへ導入先を向ける。
+        # Windowsの既定の導入先は`APPDATA`配下で、前段で検証homeへ差し替えている。
+        env["NPM_CONFIG_PREFIX"] = str(home / ".local")
     env.update(
         {
             "HOME": str(home),
@@ -246,9 +283,27 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
             "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
             "GIT_CONFIG_GLOBAL": os.devnull,
             "PYTHONIOENCODING": "utf-8",
+            # miseは作業ディレクトリの祖先から設定を探す。一時ディレクトリが実ホーム配下にあると、
+            # 祖先の`~/.config/mise/config.toml`を未信頼のプロジェクト設定として読み終了コード1になるため、
+            # 探索を検証rootで止める。グローバル設定は`XDG_CONFIG_HOME`経由で検証home内を読むため影響しない。
+            "MISE_CEILING_PATHS": str(verification_root),
         }
     )
     parent_path = _without_mise_entries(env.get("PATH", ""), mise_dirs)
+    # 検証自身が名前で起動するchezmoiは実ホームの`~/.local/bin`に導入されることが多いため、
+    # 実ホーム配下を`PATH`から外す前に、uvと同じく検証homeへ複製する。
+    # 解決にmise配下を除いた`PATH`を使うのは、shimを複製すると検証homeとの間でexecが往復するためである。
+    chezmoi = shutil.which("chezmoi", path=parent_path)
+    if chezmoi is None:
+        raise UpgradeCheckError(
+            "chezmoiが見つからない（親のmise配下を除いた`PATH`で解決した）。"
+            "chezmoiを導入し、`PATH`から起動できることを確かめて検証を再実行する。"
+            "miseでだけ導入している場合は、chezmoiの実体があるディレクトリを`PATH`へ加えて再実行する。"
+            "CIでは`.github/actions/install-chezmoi`の導入ステップが成功し、導入先が`PATH`にあることを確かめる。"
+        )
+    shutil.copy2(chezmoi, uv_target.parent / pathlib.Path(chezmoi).name)
+    # 実ホームの`~/.local/bin`や`~/.nvm/...`を残すと、更新処理が実ホームのツール配置を走査する。
+    parent_path = _without_entries_under(parent_path, parent_home)
     env["PATH"] = os.pathsep.join((*dict.fromkeys(visible_bins), parent_path))
     return env
 
@@ -424,7 +479,7 @@ def _run_isolated_upgrade(
         home.mkdir(parents=True)
         create_local_remote(source_repo, bare_repo, old_oid, runner=runner)
         _run(("git", "clone", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
-        env = _isolated_env(home, pathlib.Path(uv_path), platform_name)
+        env = _isolated_env(home, pathlib.Path(uv_path), platform_name, temp_root)
         # 検証を起動したuvが導入したPython（現行の`.python-version`の版）は検証homeからも選択できる。
         # 版を固定しない旧版のuv環境構築はその中で最新の版を選ぶため、旧版のlockがwheelを持たない新しい版で
         # 旧版を構築してしまう。旧版を使っていた時点の状態を再現するため、初期適用だけ旧版の基準版へ固定する。

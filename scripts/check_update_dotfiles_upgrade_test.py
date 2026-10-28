@@ -16,6 +16,20 @@ from pytools._internal import antigravity_plugin, setup_codex_cli, setup_herdr_c
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 
 
+@pytest.fixture(name="chezmoi_bin", autouse=True)
+def _chezmoi_bin(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """検証が検証homeへ複製するchezmoiを、実ホームの外のディレクトリから`PATH`で解決できるようにする。
+
+    CIのpytestジョブにはchezmoiが無く、実機のchezmoiを複製の元にすると試験が実行環境に依存するため、偽の実行ファイルを置く。
+    """
+    directory = tmp_path_factory.mktemp("chezmoi-bin")
+    chezmoi = directory / "chezmoi"
+    chezmoi.write_bytes(b"fake-chezmoi")
+    chezmoi.chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join((str(directory), os.environ.get("PATH", ""))))
+    return directory
+
+
 @pytest.mark.parametrize("level", ["WARNING", "ERROR", "CRITICAL"])
 def test_update_warning_fails_even_when_command_succeeded(tmp_path: pathlib.Path, level: str) -> None:
     """終了0で継続する警告も永続ログから検証失敗へ接続する。"""
@@ -581,7 +595,7 @@ def _fake_mise_shim(mise_dir: pathlib.Path) -> pathlib.Path:
 
 @pytest.mark.parametrize("location", ["MISE_DATA_DIR", "XDG_DATA_HOME", "HOME", "LOCALAPPDATA"])
 def test_upgrade_check_ignores_parent_mise_shims(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, location: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, location: str, chezmoi_bin: pathlib.Path
 ) -> None:
     """親のmiseのshimが`PATH`の先頭にあっても、検証homeへ`UV`のuv本体を置き、子の`PATH`から親のmise配下を除く。
 
@@ -609,7 +623,7 @@ def test_upgrade_check_ignores_parent_mise_shims(
     installs_bin = mise_dir / "installs" / "uv" / "1.0.0" / "bin"
     native_bin = tmp_path / "native-bin"
     native_bin.mkdir()
-    monkeypatch.setenv("PATH", os.pathsep.join((str(shims), str(installs_bin), str(native_bin))))
+    monkeypatch.setenv("PATH", os.pathsep.join((str(shims), str(installs_bin), str(native_bin), str(chezmoi_bin))))
     real_uv = tmp_path / "real-uv"
     real_uv.write_bytes(b"real-uv-binary")
     monkeypatch.setenv("UV", str(real_uv))
@@ -650,3 +664,85 @@ def test_cli_without_uv_variable_asks_to_restart_with_uv_run(tmp_path: pathlib.P
     assert result.stdout == ""
     assert len(result.stderr.splitlines()) == 1
     assert "uv run --script" in result.stderr
+
+
+@pytest.mark.parametrize("platform_name", ["linux", "windows"])
+def test_upgrade_check_cuts_routes_to_real_home(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, platform_name: str
+) -> None:
+    """検証homeの子へ、実ホームを探索起点・参照先とする経路を渡さない。
+
+    実ホーム配下の一時領域から祖先探索したmiseが実ホームの設定を読むこと、
+    親の`PATH`と`NVM_DIR`を通して更新処理が実ホームのツール配置を走査することを防ぐ。
+    実ホームの`~/.local/bin`にだけあるchezmoiは、検証homeへ複製して名前で起動できるようにする。
+    """
+    real_home = tmp_path / "real-home"
+    home_bin = real_home / ".local" / "bin"
+    home_bin.mkdir(parents=True)
+    (home_bin / "chezmoi").write_bytes(b"real-home-chezmoi")
+    (home_bin / "chezmoi").chmod(0o755)
+    nvm_bin = real_home / ".nvm" / "versions" / "node" / "v1" / "bin"
+    nvm_bin.mkdir(parents=True)
+    system_bin = tmp_path / "system-bin"
+    system_bin.mkdir()
+    for name in ("MISE_DATA_DIR", "XDG_DATA_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(real_home))
+    monkeypatch.setenv("USERPROFILE", str(real_home))
+    monkeypatch.setenv("NVM_DIR", str(real_home / ".nvm"))
+    # 親の値を引き継いだだけで探索上限が検証rootの外を指す状態を作り、検証rootへの設定を区別する。
+    monkeypatch.setenv("MISE_CEILING_PATHS", str(real_home))
+    monkeypatch.setenv("PATH", os.pathsep.join((str(home_bin), str(nvm_bin), str(system_bin))))
+    uv_dir = tmp_path / "uv-dist"
+    uv_dir.mkdir()
+    uv_suffix = ".exe" if platform_name == "windows" else ""
+    (uv_dir / f"uv{uv_suffix}").write_bytes(b"uv")
+    (uv_dir / f"uvx{uv_suffix}").write_bytes(b"uvx")
+    monkeypatch.setenv("UV", str(uv_dir / f"uv{uv_suffix}"))
+    monkeypatch.setenv("NPM_CONFIG_PREFIX", str(real_home / ".nvm" / "versions" / "node" / "v1"))
+    child_envs: list[dict[str, str]] = []
+
+    def runner(arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        env = kwargs.get("env")
+        if isinstance(env, dict):
+            child_envs.append(dict(env))
+            shared_bin = pathlib.Path(env["HOME"]) / ".local" / "bin"
+            assert (shared_bin / "chezmoi").read_bytes() == b"real-home-chezmoi"
+            assert (shared_bin / f"uvx{uv_suffix}").read_bytes() == b"uvx"
+        return _git_answers(arguments)
+
+    upgrade.run_upgrade_check(
+        tmp_path, platform_name, runner=runner, registry=_FakeRegistry(), profile_env=_profile_env(tmp_path)
+    )
+
+    assert len(child_envs) == 2
+    for env in child_envs:
+        verification_home = pathlib.Path(env["HOME"])
+        ceiling = pathlib.Path(env["MISE_CEILING_PATHS"])
+        assert verification_home.is_relative_to(ceiling)
+        assert not ceiling.is_relative_to(real_home)
+        entries = [pathlib.Path(entry) for entry in env["PATH"].split(os.pathsep) if entry]
+        assert not any(entry.is_relative_to(real_home) for entry in entries), entries
+        assert system_bin in entries
+        assert "NVM_DIR" not in env
+        if platform_name == "linux":
+            assert env["NPM_CONFIG_PREFIX"] == str(verification_home / ".local")
+        else:
+            assert "NPM_CONFIG_PREFIX" not in env
+            assert pathlib.Path(env["APPDATA"]).is_relative_to(verification_home)
+
+
+def test_upgrade_check_reports_missing_chezmoi(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """複製元のchezmoiを解決できない場合は、導入とPATHの確認を案内して止まる。"""
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    uv = tmp_path / "uv-binary"
+    uv.write_bytes(b"uv")
+    monkeypatch.setenv("UV", str(uv))
+
+    def runner(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return _git_answers(arguments)
+
+    with pytest.raises(upgrade.UpgradeCheckError, match="chezmoiが見つからない"):
+        upgrade.run_upgrade_check(tmp_path, "linux", runner=runner, registry=None, profile_env=_profile_env(tmp_path))
