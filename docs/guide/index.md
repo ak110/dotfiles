@@ -1,8 +1,8 @@
 # 利用者向けガイド
 
-dotfilesユーザーが導入、設定、通常操作、確認、復旧に使う手順を解説する。
+dotfilesユーザーが導入と日常の操作で使う手順を解説する。
 
-- [docs/guide/claude-code-guide.md](claude-code-guide.md): Claude CodeとCodexを組み合わせるagent-toolkitの統合導入・更新・削除（ファイル名は`claude-code-guide.md`だが、内容はagent-toolkit導入ガイドである）
-- [docs/guide/codex-guide.md](codex-guide.md): Codex単独セッションとdotfiles固有配布の詳細
-- [docs/guide/ssh-config.md](ssh-config.md): SSH設定管理（`update-ssh-config`の使い方）
-- [docs/guide/security.md](security.md): サプライチェーン攻撃対策の仕組みと設定
+- [docs/guide/claude-code-guide.md](claude-code-guide.md): agent-toolkit（Claude Code・Codex）の導入、設定、AWIの登録と処理、UWIへの回答、更新と削除
+- [docs/guide/codex-guide.md](codex-guide.md): Codexに固有の操作（プラグイン更新の反映、フックの信頼、API接続先、Codex本体の更新）
+- [docs/guide/ssh-config.md](ssh-config.md): `update-ssh-config`によるSSH設定と公開鍵の生成
+- [docs/guide/security.md](security.md): パッケージの公開待機期間と一時的な解除方法

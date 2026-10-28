@@ -1,15 +1,6 @@
 # SSH設定管理（`update-ssh-config`）
 
-`update-ssh-config`はSSH configとauthorized_keysを分割ファイルから生成するコマンド。
-
-## 概要
-
-- `~/.ssh/config`
-  - 入力: `conf.d/*.conf`と`localconfig`
-  - 動作: 毎回上書き生成（初回バックアップあり）
-- `~/.ssh/authorized_keys`
-  - 入力: `conf.d/authorized_keys`と`local_authorized_keys`
-  - 動作: 既存にない鍵のみ追加（削除しない）
+`update-ssh-config`は、分割した設定ファイルから`~/.ssh/config`と`~/.ssh/authorized_keys`を生成するコマンドである。
 
 ## ファイル配置
 
@@ -18,35 +9,24 @@
 ├── conf.d/
 │   ├── 10_main.conf          # SSH config（chezmoi管理）
 │   └── authorized_keys       # 公開鍵（chezmoi管理）
+├── localconfig                # ローカル専用SSH config（任意、chezmoi管理外）
+├── local_authorized_keys      # ローカル専用公開鍵（任意、chezmoi管理外）
 ├── config                     # 生成物（直接編集しない）
 ├── config.bk                  # 初回バックアップ
-├── authorized_keys            # 生成物（手動追加分も保持される）
-├── localconfig                # ローカル専用SSH config（任意、chezmoi管理外）
-└── local_authorized_keys      # ローカル専用公開鍵（任意、chezmoi管理外）
+└── authorized_keys            # 生成物（手動追加分も保持される）
 ```
 
-## SSH config生成
+## 生成のしかた
 
-`~/.ssh/conf.d/*.conf`をファイル名順に結合し、
-`~/.ssh/localconfig`があれば末尾に追加して
-`~/.ssh/config`を生成する。
+- `~/.ssh/config`: `conf.d/*.conf`をファイル名順に結合し、`localconfig`があれば末尾に追加して毎回上書きする。初回だけ（`config.bk`が無い場合）既存のconfigを`config.bk`へ退避する。上書きされるため、configは直接編集せず`localconfig`を使う
+- `~/.ssh/authorized_keys`: `conf.d/authorized_keys`と`local_authorized_keys`の鍵のうち、未登録のものだけを追加する。鍵はbase64部分で比べ、コメントの違いは無視する。既存の鍵（クラウドプロバイダや手動で追加した鍵を含む）は削除しない
 
-- 初回実行時（`~/.ssh/config.bk`が存在しない場合）、既存のconfigをバックアップする
-- 毎回上書きされるため、configを直接編集せずlocalconfigを使用
-
-## authorized_keys生成
-
-`conf.d/authorized_keys`と`local_authorized_keys`の鍵を、
-既存の`authorized_keys`に含まれていなければ追加する。
-
-- 追加のみ: 既存の鍵は削除されない。クラウドプロバイダや手動で追加した鍵も保持される
-- 重複判定: base64鍵データ部分で比較する（コメントの違いは無視）
-- 鍵の削除: `~/.ssh/authorized_keys`を手動で編集して行を削除
+鍵を削除する場合は、`~/.ssh/authorized_keys`を手動で編集して行を削除する。
 
 ## 実行
 
-chezmoi apply時に`conf.d/`内のファイルが変更されると自動的に`update-ssh-config`が実行される。
-`localconfig`や`local_authorized_keys`はchezmoi管理外のため、変更時は手動で実行。
+`chezmoi apply`で`conf.d/`内のファイルが変わると、`update-ssh-config`が自動で実行される。
+`localconfig`や`local_authorized_keys`を変更した場合は、手動で実行する。
 
 ```bash
 update-ssh-config

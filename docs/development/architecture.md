@@ -220,6 +220,37 @@ Claude Agent SDKはCodex実行時の依存と起動コストを増やさない�
 プラグイン導入後のウォームアップは、導入済み版のlaunch.pyへ`--check-dependencies`を渡し、
 PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。外部Claude/Codex sessionは開始しない。
 
+### `atk`の解決とセッションへの受け渡し
+
+`atk`の実体は`agent-toolkit/scripts/atk`であり、マーケットプレイス経由の導入では`~/.claude/plugins/cache/<marketplace>/agent-toolkit/<version>/scripts/atk`に置かれる。
+版ディレクトリは更新ごとに変わるため、インストーラーは`~/.local/bin/atk`（Windowsでは`atk.cmd`）へ最新版を動的に解決するラッパーを置く。
+dotfiles導入では`chezmoi apply`が`~/dotfiles/agent-toolkit/scripts`をPATHへ加える。
+
+Claude CodeのSessionStartは、`CLAUDE_ENV_FILE`が提供される場合にCLIのPATHとデータ領域を後続のBashへ渡し、別hookの設定と既存PATHを保持する。
+このファイルが提供されない場合も、開始時のコンテキストにCLIの絶対パスを表示する。
+MCPと`agents_server`の委譲先には、起動設定で同じ配布物のCLIとデータ領域を渡す。
+
+### Codex向けの配布構成
+
+dotfiles導入はCodex向けに次を配置する。
+単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、これらを配置しない。
+
+- `~/.codex/AGENTS.md`: Codex向けの基本記述と、agent-toolkitの基本原則・製品横断の実行運用を埋め込む（`scripts/sync_codex_agents.py`が生成）
+- `~/.codex/agent-toolkit/rules`: agent-toolkitのルール原本を`atk-auto`の境界付き本文としてコピーで同期する
+- `~/.codex/skills/ak110-projects-operations`と`~/.codex/docs`: dotfiles固有スキルと`.chezmoi-source/dot_claude/docs`へのリンク
+
+`agent-toolkit/rules`は配布先で境界を付けた本文へ書き換えるためコピーで同期し、書き換えを要さない共有対象はリンクで配布する。
+chezmoiの`symlink_`はWindowsで特権不足により失敗するため、`chezmoi apply`後処理（`pytools.post_apply`）の専用ステップがリンクを生成する（Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション）。
+`~/.codex/rules`はCodexの承認ルール用ディレクトリでありMarkdownルールと互換性がないため、Markdownルールは`~/.codex/agent-toolkit/rules`へ置く。
+
+Codexはプロジェクト直下の`.claude/rules/`と`.claude/skills/`を自動では読まない。
+プロジェクト専用スキルは`.agents/skills -> .claude/skills`のシンボリックリンクで共有する。
+`.claude/rules/`、`~/.claude/CLAUDE.md`、`~/.claude/rules/`直下の`*.local.md`、プロジェクト直下の`CLAUDE.local.md`は、`~/.codex/AGENTS.md`の読込指示に従ってCodexが作業の開始時に読む。
+
+プロジェクト規範は`AGENTS.md`を実体ファイルとし、`CLAUDE.md`は置かない（コピー欠落やシンボリックリンク非対応環境での障害を避けるため）。
+Claude Codeは`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まない。
+このため個人用の`CLAUDE.local.md`を置いたプロジェクトでは、`atk setup-project`が`@AGENTS.md`を取り込むだけの`CLAUDE.md`アダプターを置き、`.git/info/exclude`で追跡対象から外す。
+
 ## ホーム配下のファイルを編集する前の確認
 
 `~/.config/`・`~/.claude/`などホーム直下のファイルを編集する場合、

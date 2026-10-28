@@ -683,7 +683,7 @@ transcriptから可視本文を読むStop判定、言語判定と振り返りの
 
 ## フックごとの処理とCodexの対応範囲
 
-`docs/guide/claude-code-guide.md`「常時有効な仕組み」の一覧がエンドユーザーの観測できる働きを示し、本節は各フックの判定条件とCodexでの対応範囲を保持する。
+`docs/guide/claude-code-guide.md`「常時有効な仕組み」はエンドユーザーが観測できる主な働きだけを示し、本節は各フックの判定条件とCodexでの対応範囲を保持する。
 
 agent-toolkitは以下のフックを常時有効化する。
 識別子はイベント名と処理名の組で示し、`plugin`はagent-toolkitプラグインの配布分、
@@ -705,6 +705,12 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `StopFailure/stopfailure_notifier` | メインの利用上限によるターン終了時に、再開要求を既存modへ渡す | 対応 | 非対応。対応するイベントが存在しない |
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前のチェック | 対応 | 非対応。dotfiles固有の配布構成を前提とするため、プラグインへ移さない |
+
+Codexはplugin同梱フックの定義が変わると、ユーザーが変更後の定義を再び信頼するまでそのフックを実行しない。
+対象はagent-toolkitの9イベント（`SessionStart`、`SubagentStart`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、`UserPromptSubmit`、`Stop`、`SubagentStop`、`SessionEnd`）である。
+`pytools/_internal/install_codex_plugins.py`の更新処理は、app-serverの`hooks/list`で9イベントが全て登録済みかつ有効で、`trustStatus`だけが`untrusted`の場合に限り、`/hooks`で信頼する案内を出す。
+登録が0件または不足する場合はmanifest・配布rootの問題であり、信頼不足として案内しない。
+再信頼の操作だけではSessionStartの規範注入を検収できないため、案内は信頼後に新しいセッションを開始して注入を確かめることも求める。
 
 ### セッション種別が分かる短い名前
 
