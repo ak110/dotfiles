@@ -13,6 +13,8 @@
 
 ## ツール名の読み替え
 
+Codex組み込み委譲の使用条件は`runtime-routing.md`「実行手段」に従う。以下の操作説明にも同じ条件を適用する。
+
 agent-toolkitの文書に登場するClaude Code向けのツール名は、Codex環境では次の相当機能に読み替えて処理する。
 
 | Claude Code | Codex相当 |

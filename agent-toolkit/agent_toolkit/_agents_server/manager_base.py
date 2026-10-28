@@ -22,7 +22,6 @@ from agent_toolkit._agents_server import (
     unavailable_candidates,
 )
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
-from agent_toolkit._agents_server.resume_waits import record_unobserved_sessions
 from agent_toolkit._agents_server.state import (
     ResumePrompt,
     SessionResumeState,
@@ -89,7 +88,6 @@ class ManagerBase:
         self._resume_lock = asyncio.Lock()
         self._backends: dict[str, backends.Backend] = {}
         self._wait_timeouts: dict[str, float] = {}
-        self._pending_unobserved_child_sessions: dict[str, tuple[int, set[str]]] = {}
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._auto_resume_task: asyncio.Task[None] | None = None
         self._retention_timers: dict[str, asyncio.TimerHandle] = {}
@@ -115,7 +113,6 @@ class ManagerBase:
         if self._status_writer is not None:
             add_touch_listener(self._status_writer.schedule)
         add_terminal_listener(self._carry_over_unavailable_candidate)
-        add_terminal_listener(self._record_pending_unobserved_child_sessions)
         add_terminal_listener(self._schedule_session_expiry)
         add_lifecycle_listener(self._record_resources)
         add_lifecycle_listener(self._cancel_expiry_on_start)
@@ -232,7 +229,6 @@ class ManagerBase:
 
     def _expire_session(self, session_id: str) -> None:
         """期限に到達したsession本体を解放し、再開状態と未回収結果を保持する。"""
-        self._pending_unobserved_child_sessions.pop(session_id, None)
         self._cancel_retention_timer(session_id)
         session = self.sessions.pop(session_id, None)
         if session is not None:
@@ -245,13 +241,16 @@ class ManagerBase:
                 self._status_writer.schedule()
 
     async def _release_expired_session(self, session: SessionState, resume_state: SessionResumeState) -> None:
+        expected_owner = (session_registry.owner_server_instance(), session.turn_seq)
         try:
             await session.drain_registration()
             if self._status_writer is not None:
                 await self._status_writer.retain_result_async(resume_state)
             await self._backend(session.engine).release_session(session)
             if session.publish_registry:
-                await run_file_operation(session_registry.release, session.session_id, reason="retention_expired")
+                await run_file_operation(
+                    session_registry.release, session.session_id, reason="retention_expired", expected_owner=expected_owner
+                )
         except BaseException:
             # 解放に失敗したbackendを、公開stopが再試行できる所有状態へ戻す。
             # 期限の自動再発火は抑え、保存済みの結果と資源の登録を維持する。
@@ -339,17 +338,6 @@ class ManagerBase:
                         raise result
         finally:
             self._candidate_tasks.difference_update(task for task in tasks if task.done())
-
-    def _record_pending_unobserved_child_sessions(self, session: SessionState) -> None:
-        """自動再開をまたいで保持した未観測の孫sessionを終了時の結果へ併合する。"""
-        if self.sessions.get(session.session_id) is not session:
-            return
-        pending = self._pending_unobserved_child_sessions.get(session.session_id)
-        if pending is None or pending[0] != session.turn_seq:
-            return
-        _, unobserved = self._pending_unobserved_child_sessions.pop(session.session_id)
-        if unobserved:
-            record_unobserved_sessions(session, unobserved)
 
     async def _notify_waiters(self) -> None:
         async with self._condition:

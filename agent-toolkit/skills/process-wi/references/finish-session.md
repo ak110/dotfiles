@@ -17,6 +17,7 @@ all-reposから起動された対象リポジトリ担当エージェントも�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/push-and-ci.md#「公開状態の4項目」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開状態の4項目」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/session-termination.parent.md#「起動前の前提」` | 判断 | `section:agent-toolkit:*/share/session-termination.parent.md#「起動前の前提」` |
@@ -25,10 +26,10 @@ all-reposから起動された対象リポジトリ担当エージェントも�
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/completion-report/SKILL.md#「工程」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「長時間待機前の会話圧縮」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「採否の確定と終了区分」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「採否の確定と終了区分」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/publish.md#「公開工程の続行不能からの再開」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「公開工程の続行不能からの再開」` |
@@ -71,7 +72,7 @@ all-reposから起動された対象リポジトリ担当エージェントも�
 
 Claude Codeのメインエージェントは、公開担当を起動するたびに前述の並行工程（投入担当、読み取り調査担当、追加公開工程、常時稼働サーバーへの反映）を先に開始し、長時間の待機に入る前に会話圧縮を予約する。
 予約後の復元では、注入された要約を起点に対象worktree、公開入力コミット、担当別引き継ぎ記録、保存出力と既存の資源登録から必要な情報を取得する。
-予約と復元の手順は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「長時間待機前の会話圧縮」に従い、引数を指定せずに予約し、通知を受け取った後に同一の公開工程へ復帰する。
+予約と復元の手順は`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」に従い、引数を指定せずに予約し、通知を受け取った後に同一の公開工程へ復帰する。
 公開対象が存在しないため公開担当の起動を省略した場合は、この会話圧縮予約のステップも省略する。
 
 ## 延期adoptと反映後の観測
@@ -155,7 +156,7 @@ completion-reportによる報告の前に、公開状態の4項目（`agent-tool
 公開工程が完了した後、`agent-toolkit:completion-report`を起動する。完了報告と振り返りの内容を報告用UWIとして保存し、`atk wi add`および`atk wi edit`の成功報告と警告の検収（`agent-toolkit:wi-standards`の`SKILL.md`「投入と取得」）が成立したことを確認してからセッションを終了する。振り返り処理が失敗した場合であっても、未完了の部分を同一のUWIへ明記し、重複したUWIを二重に投入しない。
 自律モードにおけるユーザーへの伝達は、報告用UWIの保存検収をもって完了とする。メインエージェントは同スキルの「工程」に従い、終了前に元の要求と実際の伝達・対応結果から未達事項や残存工程がないかを自ら点検し、報告用UWIが実際に保存されたことの検収、振り返りの結果報告と新たな指摘に対する残余処置までを確認する。すべての条件を満たしている場合は、本文を再出力することなく終了する。
 
-通常終了時に呼び出される`atk agents-exit-session`は、所有セッションに属するレーンリソースを`atk lane delete`と同等の条件で回収する。process-loopにおいては、子セッションが終了した後、正常・異常の判定や再起動の判断前に同一条件でリソースを回収する。返却された回収結果の保存先と未回収のリソースを検収し、保持理由を解消できない対象については成果物を保ったまま報告へ記録する。回収の失敗をホストの終了要求成功で覆い隠すことはせず、次回の起動時における`atk lane delete --list`へ引き継ぐ。
+通常終了時に呼び出される`atk agents-exit-session`は、所有セッションに属するレーンリソースを`atk lane delete`と同等の条件で回収する。process-loopにおいては、子セッションが終了した後、正常・異常の判定や再起動の判断前に同一条件でリソースを回収する。メインは終了要求前にも既知の残存資源と誤変更を`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」で調べ、解消できる保持理由を是正して既存の回収操作へ戻す。返却結果に未回収の対象があれば、`references/run-lanes.md`「未回収レーンの再回収」に従う。保持が必要な対象は、保護する成果や現在の担当、残るユーザー判断と再開条件を報告へ記録する。回収の失敗をホストの終了要求成功で覆い隠さず、次回の`atk lane delete --list`へ引き継ぐ。
 all-reposから起動されたリポジトリ担当エージェントは`atk agents-exit-session`を実行せず、常駐プログラムへの最終返却を出力してターンを終了する（[all-repos-orchestration.md](all-repos-orchestration.md)「担当の役割」を参照）。その担当のレーンリソースは、常駐プログラムが担当の終了を確認し、同一担当への続行予定がないと判断した時点で、同一条件に基づいて`lane_session_id`ごとに回収される。リソースを保持した理由と、`atk lane delete --session-id <lane_session_id>`による再回収手順は、常駐プログラムの端末出力およびprocess-loopのログに記録される。
 対象worktreeを保持している終了済みの委譲セッションについては、所有側の`agents_server`に対して結果を保持した上での解放を要求し、その後に現在使用中であるかを判定する。
 自動終了時の回収処理は`lane delete`と同じ適格判定を用い、終了セッションからの解放応答を待たずに、未確認のセッションを保持理由と結果保存先の情報付きで残す。

@@ -2193,10 +2193,40 @@ async def test_close_runs_required_cleanup_after_failure(
 
             assert other_closed.is_set()
             assert manager._carry_over_unavailable_candidate not in state._TERMINAL_LISTENERS
-            assert manager._record_pending_unobserved_child_sessions not in state._TERMINAL_LISTENERS
             assert manager._record_resources not in state._LIFECYCLE_LISTENERS
             assert writer.schedule not in state._TOUCH_LISTENERS
             assert not writer._active
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked", ["claude", "codex", "agy", "opencode", "release"])
+async def test_close_starts_all_backends_before_waiting(blocked: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """1つのbackendか資源解放taskが停止しても、全backendへ停止開始を配送する。"""
+    release = asyncio.Event()
+    started = {engine: asyncio.Event() for engine in ("claude", "codex", "agy", "opencode")}
+    async with server_manager.AgentsServerManager(None) as manager:
+        for engine, event in started.items():
+            backend = FakeBackend(manager.sessions, engine)
+
+            async def close(*, name: str = engine, ready: asyncio.Event = event, **_kwargs: Any) -> None:
+                ready.set()
+                if name == blocked:
+                    await release.wait()
+
+            monkeypatch.setattr(backend, "close", close)
+            install_backend(manager, engine, backend)
+        if blocked == "release":
+
+            async def wait_release() -> None:
+                await release.wait()
+
+            manager._resource_release_tasks["test"] = asyncio.create_task(wait_release())
+        closing = asyncio.create_task(manager.close())
+        try:
+            await asyncio.wait_for(asyncio.gather(*(event.wait() for event in started.values())), 2)
+        finally:
+            release.set()
+            await closing
 
 
 @pytest.mark.asyncio

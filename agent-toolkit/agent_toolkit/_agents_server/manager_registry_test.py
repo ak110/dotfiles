@@ -1005,12 +1005,12 @@ async def test_stop_reports_registry_failure_after_releasing_resources(
         release = session_registry.release
         calls = 0
 
-        def fail_once(*args: Any, **kwargs: Any) -> None:
+        def fail_once(*args: Any, **kwargs: Any) -> bool:
             nonlocal calls
             calls += 1
             if calls == 1:
                 raise OSError("registry failed once")
-            release(*args, **kwargs)
+            return release(*args, **kwargs)
 
         monkeypatch.setattr(session_registry, "release", fail_once)
         with pytest.raises(RuntimeError, match="backend resources released; state synchronization incomplete") as caught:

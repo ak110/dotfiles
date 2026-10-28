@@ -50,9 +50,32 @@ def sweep_stale_shared_state(
             if latest < cutoff:
                 shutil.rmtree(directory)
         except OSError as exc:
-            _LOG.warning("stale root状態を回収できませんでした: path=%s error=%s", directory, exc)
+            _LOG.warning(
+                "stale root状態を回収できませんでした: path=%s error=%s。"
+                "次の操作: root状態の使用状況と書込権限を確認し、使用中なら保持する。"
+                "解消できない場合はこのログを添えて管理者へ報告する。",
+                directory,
+                exc,
+            )
+    for path in session_registry.registry_directory(root).glob("*.json"):
+        if not valid_session_id(path.stem):
+            continue
+        try:
+            with session_registry.registry_lock(path.stem, state_root=root):
+                if path.is_file() and path.stat().st_mtime < cutoff and not _registry_record_is_running(path, root):
+                    path.unlink()
+        except OSError as exc:
+            _LOG.warning(
+                "期限切れ登録簿を回収できませんでした: path=%s error=%s。"
+                "次の操作: 対象の使用状況と書込権限を確認し、使用中なら保持する。"
+                "解消できない場合はこのログを添えて管理者へ報告する。",
+                path,
+                exc,
+            )
     _sweep_stale_files(
-        session_registry.registry_directory(root), cutoff, keep=lambda path: _registry_record_is_running(path, root)
+        session_registry.registry_directory(root),
+        cutoff,
+        keep=lambda path: path.suffix == ".json" and valid_session_id(path.stem),
     )
     _sweep_stale_compaction(compaction_metrics.record_directory(root), cutoff)
     referenced = session_registry.recorded_server_instances(root) | _result_server_instances(base)
@@ -106,7 +129,13 @@ def _sweep_stale_files(directory: pathlib.Path, cutoff: float, *, keep: Callable
             if path.is_file() and path.stat().st_mtime < cutoff and (keep is None or not keep(path)):
                 path.unlink()
         except OSError as exc:
-            _LOG.warning("期限切れ共有状態を回収できませんでした: path=%s error=%s", path, exc)
+            _LOG.warning(
+                "期限切れ共有状態を回収できませんでした: path=%s error=%s。"
+                "次の操作: 共有状態ファイルの使用状況と書込権限を確認し、使用中なら保持する。"
+                "解消できない場合はこのログを添えて管理者へ報告する。",
+                path,
+                exc,
+            )
 
 
 def _sweep_stale_compaction(directory: pathlib.Path, cutoff: float) -> None:
@@ -128,7 +157,13 @@ def _sweep_stale_compaction(directory: pathlib.Path, cutoff: float) -> None:
                 for path in members:
                     path.unlink(missing_ok=True)
         except OSError as exc:
-            _LOG.warning("期限切れコンパクション記録を回収できませんでした: path=%s error=%s", record, exc)
+            _LOG.warning(
+                "期限切れコンパクション記録を回収できませんでした: path=%s error=%s。"
+                "次の操作: コンパクション記録と対応するlockの使用状況と書込権限を確認し、使用中なら保持する。"
+                "解消できない場合はこのログを添えて管理者へ報告する。",
+                record,
+                exc,
+            )
 
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.status-file")

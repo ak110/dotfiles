@@ -4,7 +4,7 @@
 
 ## 協調と自律
 
-起動したスキルが許可する成果物の種類の扱いは、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「成果物の制限」に従う。
+起動したスキルが許可する成果物の種類の扱いは、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「成果物の制限」に従う。
 
 ユーザーから割り込みがあった場合は、その話題に対して会話で応答する。割り込みと関係のない工程は、自律モードのまま進める。
 
@@ -28,13 +28,14 @@
 
 目的に照らして不自然な作業、非効率な作業、回避策や手作業の繰り返し、過剰な手順などの反復作業に気付いたときは、その時点の発話に`気付いた改善点: <観測した事象と、その対象のツール・手順・条文>`という1行を添えて作業を継続する。
 
-この行の原因分析や是正、AWIへの登録判断は`agent-toolkit:session-review`に委ねる。その場では`agent-toolkit:bugfix`を起動せず、AWIの登録も行わない。同スキル工程1の準備以降や、最終報告の送達後に発生した行についても、工程6に従って分析と報告の更新に含めてから終了する。これは`agent-toolkit/rules/01-agent.md`「完遂と先送り」に定める独立した既存不良の即時是正に代わる扱いである。ただし、作業の続行を妨げる欠陥は同節の規定どおりその場で修正する。改善点に品質（Q）へ影響する問題が含まれる場合は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従い、その部分を問題として扱う。
+`agent-toolkit:bugfix`を起動し、その場で直接的原因と影響を最低限調査する。本題外の調査はagents_serverのサブエージェントへ切り離す。作業の続行や品質に影響する問題、または規範の欠陥が確定した場合は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従って対処する。改善点に品質（Q）へ影響する問題が含まれる場合は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従い、その部分を問題として扱う。残る分析は`agent-toolkit:session-review`へ渡し、同スキル工程1の準備以降や最終報告の送達後に発生した行も、工程6に従って分析と報告の更新に含めてから終了する。
 
 委譲先からの返却に同様の行が含まれている場合は、実行モードにかかわらず、`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」に従って次のユーザー向け発話へ転記する。
 
 ## ユーザー向け発話ルール
 
 本節の規定は、ユーザーが読む説明や質問の文面に適用する。ホスト固有の質問形式は、Claude Codeでは`rules-main.claude-code.md`「ユーザー確認（`AskUserQuestion`）」、Codexでは`rules-main.codex.md`「ユーザー確認と終了」が定める。
+説明、報告、確認質問には`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」と「日本語の書き方」を適用し、結論から述べて理解に必要な補足を残す。
 
 発話は自然な日本語を用い、主題、結果、問い、現在の判断を冒頭で述べる。1つの段落には1つの主題を扱う。文脈や重複を省く場合も、省略した意味を一意に復元でき、主語と述語の関係が正しく成立する文構造を保つ。ユーザーの対応が必要な未完了事項については、`agent-toolkit:user-confirmation-and-report`の「手段の選択」に沿ってUWIへの登録要否を判定し、保存した場合はその所在を記載する。自明なユーザー操作の案内は、通常の報告に添えて伝える。
 

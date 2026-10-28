@@ -561,7 +561,9 @@ def test_prepare_lock_reports_timeout_for_windows_lock_contention(tmp_path: Path
     lock_error = OSError(errno.EDEADLK, "Resource deadlock avoided")
     fake_msvcrt = types.SimpleNamespace(LK_NBLCK=1, LK_UNLCK=2, locking=lambda *_args: (_ for _ in ()).throw(lock_error))
     monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
-    monkeypatch.setattr(subject.os, "name", "nt")
+    host_os_name = os.name
+    monkeypatch.setattr(subject, "os", types.SimpleNamespace(name="nt"))
+    assert os.name == host_os_name
     monkeypatch.setattr(subject, "_PREPARE_LOCK_TIMEOUT", 0.0, raising=False)
     with pytest.raises(TimeoutError, match="prepare lock"), subject.prepare_lock(tmp_path / "environment"):
         pytest.fail("競合時にlockを取得してはならない")
@@ -635,7 +637,9 @@ def test_prepare_lock_reacquires_after_windows_contention_is_released(tmp_path: 
 
     fake_msvcrt = types.SimpleNamespace(LK_NBLCK=1, LK_UNLCK=2, locking=locking)
     monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
-    monkeypatch.setattr(subject.os, "name", "nt")
+    host_os_name = os.name
+    monkeypatch.setattr(subject, "os", types.SimpleNamespace(name="nt"))
+    assert os.name == host_os_name
     monkeypatch.setattr(subject.time, "monotonic", lambda: logical_time[0])
     monkeypatch.setattr(subject.time, "sleep", sleep)
     lock = tmp_path / "environment.prepare-lock"
@@ -662,7 +666,9 @@ def test_prepare_lock_propagates_noncontention_error_without_waiting(
     if windows:
         fake_msvcrt = types.SimpleNamespace(LK_NBLCK=1, LK_UNLCK=2, locking=lambda *_args: (_ for _ in ()).throw(error))
         monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
-        monkeypatch.setattr(subject.os, "name", "nt")
+        host_os_name = os.name
+        monkeypatch.setattr(subject, "os", types.SimpleNamespace(name="nt"))
+        assert os.name == host_os_name
     else:
         import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 

@@ -4,7 +4,7 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/quality-standards.md` |

@@ -14,8 +14,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `publish-scope.md#「公開範囲の確認」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md#「公開範囲の確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md#「命名の方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/defined-names.md#「命名の方針」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` |
 
 ## 確認対象
@@ -31,11 +31,11 @@ WI作成工程（`agent-toolkit:add-awi-by-user`などでAWIを登録する時�
 
 判断ごとに独立した質問を作成し、他の未回答事項に依存せず単独で回答できる質問を同じラウンドで提示する。ユーザーから回答を得た後に質問同士の依存関係を更新し、その回答を前提とする質問を次のラウンドへ進める。調査完了を待って保留するのは、その調査結果を直接必要とする質問だけに限定する。
 概念名、画面ラベル、説明用語などの候補は`agent-basics:writing-standards/references/defined-names.md`「命名の方針」に従って提示し、既存の用例、意味、検索範囲を併記する。命名、用語、表記の方針を定める依頼では、対象範囲にある既存の名称も列挙し、方針に反するものにも適用するかどうかを「確認対象」の基準で判定する。
-指定された語句を変更する場合は`SKILL.md`「原文の保持と取り込み」に従って確認する。別の質問文に掲載された例示に対して異論がなかったことだけを、その変更への合意とみなさない。
+指定された語句を変更する場合は`references/user-utterance.md`「原文の保持と取り込み」に従って確認する。別の質問文に掲載された例示に対して異論がなかったことだけを、その変更への合意とみなさない。
 
 ## 質問表示
 
-`SKILL.md`「手段の選択」に定める手段を用いて提示し、そのラウンドの回答を受領してから次のラウンドへ進む。
+`references/communication-methods.md`「手段の選択」に定める手段を用いて提示し、そのラウンドの回答を受領してから次のラウンドへ進む。
 
 ## 終了条件
 

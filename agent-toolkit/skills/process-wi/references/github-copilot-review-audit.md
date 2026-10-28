@@ -105,7 +105,8 @@ gh pr comment <PR> --repo <OWNER>/<REPO> --body-file <BODY_FILE>
 
 ## Dependabotアラート
 
-対象GitHubリポジトリにおいてopen状態にあるDependabotアラートのうち、まだ判定済みとして記録されていないものを判定し、すでに削除されたマニフェストファイルに紐づく誤検知アラートを却下（Dismiss）する。
+対象GitHubリポジトリのopenなDependabotアラートを、GitHub APIの`default_branch`が指すブランチの確認版ごとに判定する。
+確認版で修正済みのアラートと、マニフェストが存在しないアラートを`inaccurate`で却下する。
 
 ### 取得と判定区分
 
@@ -114,31 +115,47 @@ gh pr comment <PR> --repo <OWNER>/<REPO> --body-file <BODY_FILE>
 pendingのJSONを受け取れない環境では直接取得する。各レスポンスはmanaged-temp内のJSONファイルへ保存し、件数や値は保存したファイルから確認する。
 
 1. `gh api --paginate --slurp 'repos/<OWNER>/<REPO>/dependabot/alerts?state=open&per_page=100'`を実行して全ページを取得する。HTTP 403のエラー本文が「Dependabot alerts are disabled for this repository.」であれば機能無効、それ以外の403であれば権限不足と判断し、判定しない
-2. `atk review-audit list --repo <OWNER>/<REPO>`が返却する`dependabot:<番号>`を判定済みとして一覧から除外する
-3. `gh api 'repos/<OWNER>/<REPO>'`の`default_branch`フィールドからデフォルトブランチ名を取得する
-4. 残った各アラートの`dependency.manifest_path`について`gh api 'repos/<OWNER>/<REPO>/contents/<manifest_path>?ref=<branch名>'`を実行し、HTTP 404であれば不在、終了コード0であれば実在と判定する。それ以外のエラーが発生した場合は監査を未完了として扱う
+2. `gh api 'repos/<OWNER>/<REPO>'`の`default_branch`からブランチ名を取得し、URLエンコードした名前で`gh api 'repos/<OWNER>/<REPO>/commits/<branch名>'`を実行する。応答の`sha`を40桁16進SHAとして検証し、小文字に正規化して確認版`<SHA>`へ固定する
+3. `atk review-audit list --repo <OWNER>/<REPO> --revision <SHA>`が返す`dependabot:<番号>`を判定済みとして除外する。無版の旧記録は再判定の対象とする
+4. 残った各アラートの`dependency.manifest_path`をURLエンコードし、`gh api 'repos/<OWNER>/<REPO>/contents/<manifest_path>?ref=<SHA>'`で取得する。HTTP 404だけを不在とし、他の失敗は未完了とする。存在する場合は同じSHAの同一マニフェストと対応するロックファイルから、対象パッケージの解決済み版を確認する
+
+通常取得でopenのアラートが1件以上ある場合、`dependabot.default_branch`は対象ブランチ名、`dependabot.revision`はマニフェスト取得にも使った固定SHAである。
+openが0件なら版取得を省き、取得状態と0件を返す。
+代替取得でもopenが0件なら、以降の版取得・判定・markを省いて取得済み0件を記録する。
+判定済み除外に先立ってこのSHAを解決し、以降の取得・比較・記録に同じSHAを使う。
+通常取得・代替取得とも、未観測、取得失敗、機能無効、権限不足、取得成功0件を区別する。
 
 ベースブランチとは、対象リポジトリ（起動時の作業ディレクトリ`cwd`）においてprocess-wiが処理対象としているブランチを指す。
 
 | 区分 | 条件 | 処置 |
 | --- | --- | --- |
-| 誤検知 | `manifest_path`が`default_branch`で指定されたブランチに実在しない（`category`が`inaccurate`） | 後述の却下処理を行う |
-| 是正済み | マニフェストは`default_branch`で指定されたブランチに実在するが、process-wiの実行対象であるベースブランチの同一マニフェストにおいて対象パッケージが修正版以上へ更新済みであるか、あるいはそのマニフェスト自体がベースブランチに存在しない | GitHub上へは書き込まない。`default_branch`で指定されたブランチへの反映に伴い、アラートが自動的に`fixed`へ遷移するのを待つ |
-| 要修正 | 上記のいずれの条件にも該当しない。修正版が提供されていない場合もこの区分とする | アラート番号、マニフェスト、パッケージ、修正版、および対処案（依存関係の更新。修正版がない場合はその旨）を委譲元へ報告する |
+| 誤検知 | 固定SHAの`manifest_path`が存在しない | 後述の却下処理を行う |
+| 是正済み | 固定SHAの同一マニフェストで対象パッケージの解決済み版が修正版以上 | 後述の却下処理を行う |
+| 反映待ち | `default_branch`の確認版は未修正で、ベースブランチだけが修正済み | openを維持し、確認版付きで判定を記録して対象ブランチ更新後に再判定する |
+| 要修正 | 脆弱版が残る、修正版がない、または解決済み版を比較できない | 却下せず、番号、マニフェスト、パッケージ、確認版、修正版と対処案を報告し、確認版付きで判定を記録する |
 
-是正済みかどうかの確認では、`git show <ベースbranch>:<manifest_path>`を実行してマニフェスト内のバージョンを修正版と比較し、比較できない場合は「要修正」として扱う。
+修正版との比較は各ecosystemの版規則に従う。
+依存指定の範囲だけで修正済みとは判断せず、固定SHAの解決済み版を確認する。
+ベースブランチだけの修正は反映待ちとして扱う。
 
 ### 却下
 
-誤検知と判定したアラートは`state=dismissed`、`dismissed_reason=inaccurate`を指定して却下し、`dismissed_comment`（280文字以内）に`default_branch`のブランチに対象マニフェストが存在しないことを根拠として記載する。
+誤検知と是正済みのアラートは`state=dismissed`、`dismissed_reason=inaccurate`で却下する。
+`dismissed_comment`（280文字以内）にはmanifest、package、確認SHA、解決済み版と修正版を記載する。不在の場合は確認SHAでmanifestが存在しないことを記す。
 
 ```sh
 gh api --method PATCH 'repos/<OWNER>/<REPO>/dependabot/alerts/<番号>' -f state=dismissed -f dismissed_reason=inaccurate -F dismissed_comment=@<COMMENT_FILE>
 ```
 
-`dismissed_comment`は第三者が閲覧するため、文面をファイルへ保存した上で送信直前に`agent-toolkit:external-write-review`を起動し、レビュー結果を反映した適切な文面のみを送信する。コメント文面にはキュー項目の識別子を含めず、アラート却下の根拠のみを簡潔に記載する。非0で失敗した却下操作は判定済みの記録から除外して結果を報告する（次回の実行サイクルで再び取得される）。なお、誤って却下したアラートは`state=open`へ更新することで再オープンできる。
+`dismissed_comment`をファイルへ保存し、投稿直前に`agent-toolkit:external-write-review`を起動して指摘を反映する。
+APIの終了コード0に加え、応答の`number`が対象番号、`state`が`dismissed`であることを確認して処置完了とする。
+非0終了、番号不一致、状態不一致の却下と未判定の番号はmarkせず、失敗内容と次回再取得を返す。
+キュー項目の識別子をコメントの対象から除く。
+誤って却下したアラートは`state=open`へ更新することで再オープンできる。
 
-この却下操作は、公開済みのユーザー発言および確認回答によって承認されており、監査ごとの個別確認は不要である。承認範囲は`default_branch`のブランチに実在しないマニフェストに紐づくアラートを`inaccurate`として却下することに限定され、「是正済み」や「要修正」のアラートに対してGitHub上へ書き込みを行うことはない。該当するユーザー発言と確認回答は以下のとおりである。
+却下の認可は全プロジェクトの`default_branch`が指すブランチで修正済みのアラートと、不在マニフェストのアラートに適用する。
+反映待ち・要修正はopenのまま維持する。継続対応についてユーザーは「要らないのは閉じちゃって」「今後も＆他プロジェクトも同様の対応をするようにしといてね」と指示した。
+従来の集約に関するユーザー発言と確認回答は以下のとおりである。
 
 ```text
 dotfiles向けDependabot alertsが出てる気がするんだけどこれって自動で対応されないんだっけ？ (対応して＆対応する仕掛け入れて）
@@ -156,4 +173,13 @@ PRレビュー指摘を拾うスクリプトにそっちもチェックして拾
 
 ### 判定したアラートの記録
 
-却下が成功したアラート、是正済みのアラート、および要修正として報告したアラートの番号を、`atk review-audit mark --repo <OWNER>/<REPO> dependabot:<番号>...`を用いて記録する。記録されたアラートは次回以降のpending一覧から除外され、`atk wi process-loop`が同一のアラートを理由にprocess-wiを再起動することを防止する。「要修正」のアラートも記録対象に含める理由は、修正内容が`default_branch`へ反映されればGitHub側で自動的にアラートが`fixed`状態となるため再判定が不要であり、記録から除外するとprocess-loopが同じアラートを検知して起動し続けてしまうためである。「要修正」と判定されたアラートについては、委譲元エージェントが同一セッション内で修正を完了するか、あるいは新たなAWIとして記録する。
+処置完了を確認した却下と、判定を完了した反映待ち・要修正の番号を`atk review-audit mark --repo <OWNER>/<REPO> --revision <SHA> dependabot:<番号>...`で記録する。
+確認時に固定した`<SHA>`をmarkへそのまま渡す。
+同版ではpendingから除外し、`default_branch`が指すブランチの更新後は同じ番号も再判定する。
+list/markの`--revision`は任意引数で、40桁16進SHAを受理して小文字へ正規化する。
+無revisionの呼出形式も受理する。無版のDependabot記録は再判定の対象とし、無版追記時も既存の版付き記録を維持する。
+Copilot本文の日時記録と未解決threadの取得契約は維持する。
+却下失敗・未判定の番号は未markのまま、単一・all-reposとも既存のアラート確認間隔で再起動する。
+古い番号だけの無進捗記録がある場合も、pendingに残るアラートを起動対象にする。
+WI部分の無進捗抑止を維持し、未観測はNone、取得成功0件は空集合として区別する。
+要修正の是正またはAWIへの記録は委譲元が判断する。

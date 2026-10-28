@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import time
+import types
 import typing
 
 import psutil
@@ -81,8 +82,13 @@ def test_rechecked_target_is_terminated(
     killed: list[tuple[int, int]] = []
     monkeypatch.setattr(agents_exit_session, "identify_current_host", lambda: target)
     monkeypatch.setattr(agents_exit_session, "_same_process", lambda _target: True)
-    monkeypatch.setattr(agents_exit_session.os, "name", "posix")
-    monkeypatch.setattr(agents_exit_session.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    host_os_name = os.name
+    monkeypatch.setattr(
+        agents_exit_session,
+        "os",
+        types.SimpleNamespace(name="posix", environ=os.environ, kill=lambda pid, sig: killed.append((pid, sig))),
+    )
+    assert os.name == host_os_name
 
     assert agents_exit_session.main() == 0
     assert killed and killed[0][0] == 123

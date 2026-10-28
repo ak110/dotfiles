@@ -14,6 +14,7 @@ from typing import Any, Self
 from agent_toolkit._agents_server import (
     backends,
     launch_requests,
+    lifetime,
     logging_config,
     manager_wait,
     result_projection,
@@ -927,18 +928,20 @@ class AgentsServerManager(manager_wait.ManagerWait):
         for timer in self._retention_timers.values():
             timer.cancel()
         self._retention_timers.clear()
+        # 監視・記録taskや他backendの待機が停止要求の配送を妨げないよう、先に全backendを開始する。
+        backend_tasks = [asyncio.create_task(backend.close()) for backend in tuple(self._backends.values())]
         errors: list[Exception] = []
         if self._resource_release_tasks:
-            outcomes = await asyncio.gather(*self._resource_release_tasks.values(), return_exceptions=True)
+            outcomes = await lifetime.wait_for_shutdown(self._resource_release_tasks.values())
             errors.extend(outcome for outcome in outcomes if isinstance(outcome, Exception))
             self._resource_release_tasks.clear()
         if self._auto_resume_task is not None:
             self._auto_resume_task.cancel()
-            await asyncio.gather(self._auto_resume_task, return_exceptions=True)
+            await lifetime.wait_for_shutdown((self._auto_resume_task,))
             self._auto_resume_task = None
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
-            await asyncio.gather(self._heartbeat_task, return_exceptions=True)
+            await lifetime.wait_for_shutdown((self._heartbeat_task,))
             self._heartbeat_task = None
         pending_resumes = tuple(self._pending_resumes.values())
         for pending in pending_resumes:
@@ -948,15 +951,12 @@ class AgentsServerManager(manager_wait.ManagerWait):
             if not task.done():
                 task.cancel()
         if resume_tasks:
-            await asyncio.gather(*resume_tasks, return_exceptions=True)
+            await lifetime.wait_for_shutdown(resume_tasks)
         try:
             # 1つのbackendの停止失敗で、他のbackendの停止と後段の結果公開・listener解除・writer停止を止めない。
-            for backend in tuple(self._backends.values()):
-                try:
-                    await backend.close()
-                except Exception as error:
-                    _LOG.exception("backendの停止に失敗しました。他のbackendの停止と後始末を続けます")
-                    errors.append(error)
+            if backend_tasks:
+                outcomes = await lifetime.wait_for_shutdown(backend_tasks)
+                errors.extend(outcome for outcome in outcomes if isinstance(outcome, Exception))
             try:
                 await self._publish_closed_sessions()
             except status_file.ProjectionWriteError:
@@ -965,7 +965,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 errors.append(error)
         finally:
             remove_terminal_listener(self._carry_over_unavailable_candidate)
-            remove_terminal_listener(self._record_pending_unobserved_child_sessions)
             remove_lifecycle_listener(self._record_resources)
             try:
                 await self._drain_diagnostics()

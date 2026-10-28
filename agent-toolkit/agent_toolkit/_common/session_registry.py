@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import datetime
 import enum
@@ -21,11 +22,12 @@ import json
 import os
 import pathlib
 import re
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from typing import Any, Literal
 
 import psutil
 
+from agent_toolkit._common import file_lock
 from agent_toolkit._common import session_launchers as _session_launchers
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
@@ -247,6 +249,8 @@ class SessionResolution:
     handoff_info: ResumeInfo | None = None
     # 記録を最後に書いた所有サーバーの起動単位。項目を持たない旧記録では`None`とする。
     server_instance: str | None = None
+    # 解放済み記録にも残る世代。世代を持たない旧記録との比較更新に用いる。
+    recorded_turn_seq: int | None = None
     # 中断で終わったturnの履歴（新しい順）。再開・所有者の交代・解放の後も引き継ぐ。
     interrupted_turns: tuple[InterruptedTurn, ...] = ()
     # 記録プロセス。`processes`の先頭が所有サーバー、以降が委譲先CLIである。項目を持たない記録では空とする。
@@ -281,6 +285,33 @@ def process_payload(process: ProcessIdentity) -> dict[str, Any]:
 def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
     """session登録簿のディレクトリを返す。"""
     return _session_launchers.registry_directory(_state_paths.state_dir() if state_root is None else state_root)
+
+
+@contextlib.contextmanager
+def registry_lock(session_id: str, *, state_root: pathlib.Path | None = None) -> Generator[None]:
+    """公開・比較更新・掃引をsession単位で直列化する。ロック実体は削除せず同じinodeを共有する。"""
+    _validate_session_id(session_id)
+    directory = registry_directory(state_root) / ".locks"
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with (directory / f"{session_id}.lock").open("a+", encoding="utf-8") as handle:
+        file_lock.acquire_lock(handle)
+        try:
+            yield
+        finally:
+            file_lock.release_lock(handle)
+
+
+def _recorded_turn(payload: dict[str, Any]) -> int | None:
+    value = payload.get("turn_seq")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    for key in ("handoff_info", "codex_resume_info", "claude_resume_info"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            value = nested.get("turn_seq")
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+    return None
 
 
 def publish(
@@ -375,26 +406,30 @@ def publish(
         payload["claude_connection"] = claude_connection
         payload["claude_role"] = claude_role
     path = registry_directory(state_root) / f"{session_id}.json"
-    prior = _read_payload(path)
-    # session単位の回復上限は、別所有者の状態更新でも未消費へ戻さない。
-    if result_contract_recovery_consumed or prior.get("result_contract_recovery_consumed") is True:
-        payload["result_contract_recovery_consumed"] = True
-    owner_root = owner_root_session_id if owner_root_session_id is not None else _recorded_owner_root(prior)
-    if owner_root is not None:
-        payload["owner_root_session_id"] = owner_root
-    instance = prior.get("server_instance") if preserve_server_instance else _OWNER_SERVER_INSTANCE
-    if isinstance(instance, str) and instance:
-        payload["server_instance"] = instance
-    turns = _recorded_interrupted_turns(prior)
-    if interruption is not None:
-        recorded_instance = instance if isinstance(instance, str) and instance else None
-        turns = _with_interrupted_turn(turns, InterruptedTurn(turn_seq, interruption, recorded_instance, updated_at))
-    if turns:
-        payload["interrupted_turns"] = _interrupted_turns_payload(turns)
-    launcher = launcher_session_id if launcher_session_id is not None else _recorded_launcher(path)
-    if launcher is not None:
-        payload[LAUNCHER_KEY] = launcher
-    atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
+    with registry_lock(session_id, state_root=state_root):
+        prior = _read_payload(path)
+        previous_turn = _recorded_turn(prior)
+        if previous_turn is not None and (previous_turn > turn_seq or prior.get("version") == 3 and previous_turn == turn_seq):
+            return
+        # session単位の回復上限は、別所有者の状態更新でも未消費へ戻さない。
+        if result_contract_recovery_consumed or prior.get("result_contract_recovery_consumed") is True:
+            payload["result_contract_recovery_consumed"] = True
+        owner_root = owner_root_session_id if owner_root_session_id is not None else _recorded_owner_root(prior)
+        if owner_root is not None:
+            payload["owner_root_session_id"] = owner_root
+        instance = prior.get("server_instance") if preserve_server_instance else _OWNER_SERVER_INSTANCE
+        if isinstance(instance, str) and instance:
+            payload["server_instance"] = instance
+        turns = _recorded_interrupted_turns(prior)
+        if interruption is not None:
+            recorded_instance = instance if isinstance(instance, str) and instance else None
+            turns = _with_interrupted_turn(turns, InterruptedTurn(turn_seq, interruption, recorded_instance, updated_at))
+        if turns:
+            payload["interrupted_turns"] = _interrupted_turns_payload(turns)
+        launcher = launcher_session_id if launcher_session_id is not None else _recorded_launcher(path)
+        if launcher is not None:
+            payload[LAUNCHER_KEY] = launcher
+        atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 _recorded_launcher = _session_launchers.read_launcher
@@ -438,6 +473,7 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
             released_at=payload["updated_at"],
             handoff_info=_resume_info(handoff) if isinstance(handoff, dict) else None,
             server_instance=_recorded_server_instance(payload),
+            recorded_turn_seq=_recorded_turn(payload),
             interrupted_turns=_recorded_interrupted_turns(payload),
         )
     if payload.get("version") == 1:
@@ -462,6 +498,7 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
             info,
             interruption=interruption if interruption in _INTERRUPTION_MESSAGES else None,
             server_instance=instance,
+            recorded_turn_seq=_recorded_turn(payload),
             interrupted_turns=turns,
             owner_process=owner,
             executor_processes=executors,
@@ -475,6 +512,7 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
             interruption=OWNER_PROCESSES_EXITED,
             inferred_terminal=True,
             server_instance=instance,
+            recorded_turn_seq=_recorded_turn(payload),
             interrupted_turns=turns,
             owner_process=owner,
             executor_processes=executors,
@@ -484,6 +522,7 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
         Resolution.RUNNING,
         info,
         server_instance=instance,
+        recorded_turn_seq=_recorded_turn(payload),
         interrupted_turns=turns,
         owner_process=owner,
         executor_processes=executors,
@@ -512,57 +551,66 @@ def _recorded_processes(payload: dict[str, Any]) -> tuple[ProcessIdentity, ...]:
     return tuple(processes)
 
 
-def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path | None = None) -> None:
+def release(
+    session_id: str,
+    *,
+    reason: ReleaseReason,
+    state_root: pathlib.Path | None = None,
+    expected_owner: tuple[str | None, int | None] | None = None,
+) -> bool:
     """所有側の解放を記録し、APIを使う会話の内部再開条件を保つ。
 
     解放済みの公開区分は保持し、7日超の掃引で他のレコードと同じく回収する。
+    `expected_owner`を渡した場合は起動単位とturn番号が一致する記録だけを置換し、変更済みなら偽を返す。
     """
     _validate_session_id(session_id)
     if reason not in _RELEASE_REASONS:
         raise ValueError(f"invalid release reason: {reason}")
-    path = registry_directory(state_root) / f"{session_id}.json"
-    payload: dict[str, Any] = {
-        "version": 3,
-        "session_id": session_id,
-        "released_reason": reason,
-        "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
-    }
-    launcher = _recorded_launcher(path)
-    resolution = resolve(session_id, state_root=state_root)
-    info = resolution.resume_info or resolution.handoff_info
-    if info is not None and info.launch_info.prompt:
-        prior = json.loads(path.read_text(encoding="utf-8"))
-        payload["handoff_info"] = prior.get(
-            "handoff_info", prior.get("codex_resume_info", prior.get("claude_resume_info", prior))
-        )
-    if (
-        info is not None
-        and info.engine == "codex"
-        and (
-            info.codex_state_provider
-            or info.codex_model_provider
-            and info.codex_model_provider != info.codex_subscription_provider
-        )
-    ):
-        try:
-            prior = json.loads(path.read_text(encoding="utf-8"))
-        except OSError, UnicodeError, json.JSONDecodeError:
-            prior = {}
-        # 初回解放のv2と、既に解放したv3の両方で同じ内部再開条件を引き継ぐ。
-        payload["codex_resume_info"] = prior.get("codex_resume_info", prior)
-    if info is not None and info.engine == "claude" and (info.claude_api_env_file or info.claude_connection):
-        prior = json.loads(path.read_text(encoding="utf-8"))
-        payload["claude_resume_info"] = prior.get("claude_resume_info", prior)
-    prior_payload = _read_payload(path)
-    instance = _recorded_server_instance(prior_payload)
-    if instance is not None:
-        payload["server_instance"] = instance
-    turns = _recorded_interrupted_turns(prior_payload)
-    if turns:
-        payload["interrupted_turns"] = _interrupted_turns_payload(turns)
-    if launcher is not None:
-        payload[LAUNCHER_KEY] = launcher
-    atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
+    with registry_lock(session_id, state_root=state_root):
+        path = registry_directory(state_root) / f"{session_id}.json"
+        prior_payload = _read_payload(path)
+        if expected_owner is not None and expected_owner != (
+            _recorded_server_instance(prior_payload),
+            _recorded_turn(prior_payload),
+        ):
+            return False
+        payload: dict[str, Any] = {
+            "version": 3,
+            "session_id": session_id,
+            "released_reason": reason,
+            "turn_seq": _recorded_turn(prior_payload),
+            "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        }
+        launcher = _recorded_launcher(path)
+        resolution = resolve(session_id, state_root=state_root)
+        info = resolution.resume_info or resolution.handoff_info
+        if info is not None and info.launch_info.prompt:
+            payload["handoff_info"] = prior_payload.get(
+                "handoff_info", prior_payload.get("codex_resume_info", prior_payload.get("claude_resume_info", prior_payload))
+            )
+        if (
+            info is not None
+            and info.engine == "codex"
+            and (
+                info.codex_state_provider
+                or info.codex_model_provider
+                and info.codex_model_provider != info.codex_subscription_provider
+            )
+        ):
+            # 初回解放のv2と、既に解放したv3の両方で同じ内部再開条件を引き継ぐ。
+            payload["codex_resume_info"] = prior_payload.get("codex_resume_info", prior_payload)
+        if info is not None and info.engine == "claude" and (info.claude_api_env_file or info.claude_connection):
+            payload["claude_resume_info"] = prior_payload.get("claude_resume_info", prior_payload)
+        instance = _recorded_server_instance(prior_payload)
+        if instance is not None:
+            payload["server_instance"] = instance
+        turns = _recorded_interrupted_turns(prior_payload)
+        if turns:
+            payload["interrupted_turns"] = _interrupted_turns_payload(turns)
+        if launcher is not None:
+            payload[LAUNCHER_KEY] = launcher
+        atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
+        return True
 
 
 def record_interrupted_turn(
@@ -573,20 +621,21 @@ def record_interrupted_turn(
     記録が無いか、同じturnの終了を示さない場合は書き換えない。
     """
     _validate_session_id(session_id)
-    path = registry_directory(state_root) / f"{session_id}.json"
-    payload = _read_payload(path)
-    if payload.get("version") != 2 or payload.get("terminal") is not True or payload.get("turn_seq") != turn_seq:
-        return
-    payload["interruption"] = reason
-    payload["interrupted_turns"] = _interrupted_turns_payload(
-        _with_interrupted_turn(
-            _recorded_interrupted_turns(payload),
-            InterruptedTurn(
-                turn_seq, reason, _recorded_server_instance(payload), datetime.datetime.now(datetime.UTC).isoformat()
-            ),
+    with registry_lock(session_id, state_root=state_root):
+        path = registry_directory(state_root) / f"{session_id}.json"
+        payload = _read_payload(path)
+        if payload.get("version") != 2 or payload.get("terminal") is not True or payload.get("turn_seq") != turn_seq:
+            return
+        payload["interruption"] = reason
+        payload["interrupted_turns"] = _interrupted_turns_payload(
+            _with_interrupted_turn(
+                _recorded_interrupted_turns(payload),
+                InterruptedTurn(
+                    turn_seq, reason, _recorded_server_instance(payload), datetime.datetime.now(datetime.UTC).isoformat()
+                ),
+            )
         )
-    )
-    atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
+        atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 def recorded_server_instances(state_root: pathlib.Path | None = None) -> set[str]:

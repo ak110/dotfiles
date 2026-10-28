@@ -25,7 +25,7 @@
 | 配送操作の語彙と記法を選ぶ前 | `read-trigger-contract.md#「表と取得方法」` | 判断 | `section:agent-toolkit:*/share/read-trigger-contract.md#「表と取得方法」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/codex-runtime.md#「後続操作の共通先行条件」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「後続操作の共通先行条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
@@ -33,7 +33,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/choice-construction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/codex-format.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/codex-format.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「成果物の制限」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/SKILL.md#「継続と新規起動」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「継続と新規起動」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |

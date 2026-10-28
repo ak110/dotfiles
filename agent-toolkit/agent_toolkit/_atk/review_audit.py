@@ -26,6 +26,7 @@ from agent_toolkit._common.atomic_file import atomic_write
 
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _IDENTIFIER_RE = re.compile(r"^(?:dependabot:)?[1-9][0-9]*$")
+_REVISION_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 DEPENDABOT_PREFIX = "dependabot:"
 """判定済み記録でDependabotアラート番号をreviewの`databaseId`と区別する接頭辞。"""
 _DEPENDABOT_DISABLED_MESSAGE = "Dependabot alerts are disabled for this repository."
@@ -79,7 +80,7 @@ def _validate_identifiers(identifiers: list[str]) -> None:
         )
 
 
-def _read_records(path: Path) -> dict[str, dict[str, str]]:
+def _read_records(path: Path) -> dict[str, dict[str, Any]]:
     """記録を読み、解釈できないファイルと最上位が辞書でないファイルを空として扱う。"""
     try:
         records = json.loads(path.read_text(encoding="utf-8"))
@@ -90,7 +91,7 @@ def _read_records(path: Path) -> dict[str, dict[str, str]]:
     return records
 
 
-def _repository_records(records: dict[str, dict[str, str]], repository: str) -> dict[str, str]:
+def _repository_records(records: dict[str, dict[str, Any]], repository: str) -> dict[str, Any]:
     repository_records = records.get(repository, {})
     return repository_records if isinstance(repository_records, dict) else {}
 
@@ -101,7 +102,7 @@ def _identifier_sort_key(identifier: str) -> tuple[bool, int]:
     return is_dependabot, int(identifier.removeprefix(DEPENDABOT_PREFIX))
 
 
-def _print_identifiers(records: dict[str, str]) -> None:
+def _print_identifiers(records: dict[str, Any]) -> None:
     for identifier in sorted(records, key=_identifier_sort_key):
         print(identifier)
 
@@ -119,9 +120,29 @@ def _record_lock() -> Generator[None]:
             _file_lock.release_lock(lock_file)
 
 
-def _list(repository: str) -> int:
+def _validate_revision(revision: str | None) -> str | None:
+    if revision is not None and _REVISION_RE.fullmatch(revision) is None:
+        raise _next_action.ActionableError(
+            "default_branchのrevisionが完全なcommit SHAではない",
+            next_action="--revisionへ監査で確認した40桁の16進commit SHAを指定する",
+        )
+    return revision.lower() if revision is not None else None
+
+
+def _effective_records(records: dict[str, Any], revision: str) -> dict[str, Any]:
+    """Dependabotの判定だけを確認版に限定する。日時だけの旧記録は再判定する。"""
+    return {
+        identifier: record
+        for identifier, record in records.items()
+        if not identifier.startswith(DEPENDABOT_PREFIX) or isinstance(record, dict) and record.get("revision") == revision
+    }
+
+
+def _list(repository: str, revision: str | None = None) -> int:
     _validate_repository(repository)
-    _print_identifiers(_repository_records(_read_records(_record_path()), repository))
+    revision = _validate_revision(revision)
+    records = _repository_records(_read_records(_record_path()), repository)
+    _print_identifiers(records if revision is None else _effective_records(records, revision))
     return 0
 
 
@@ -261,8 +282,12 @@ def dependabot_pending(repository: str) -> dict[str, Any]:
         return {"status": "unauthorized", "alerts": [], "message": forbidden.message}
     if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
         raise _dependabot_error("Dependabotアラートの応答形状が不正である")
-    recorded = _repository_records(_read_records(_record_path()), repository)
     items = [item for page in pages for item in page]
+    if not items:
+        return {"status": "available", "alerts": []}
+    default_branch = _default_branch(repository)
+    revision = _default_revision(repository, default_branch)
+    recorded = _effective_records(_repository_records(_read_records(_record_path()), repository), revision)
     unjudged: list[dict[str, Any]] = []
     for item in items:
         number = item.get("number") if isinstance(item, dict) else None
@@ -272,7 +297,6 @@ def dependabot_pending(repository: str) -> dict[str, Any]:
             unjudged.append(item)
     alerts: list[dict[str, Any]] = []
     if unjudged:
-        default_branch = _default_branch(repository)
         presence: dict[str, bool] = {}
         for item in sorted(unjudged, key=lambda alert: alert["number"]):
             dependency = _mapping(item.get("dependency"))
@@ -280,7 +304,7 @@ def dependabot_pending(repository: str) -> dict[str, Any]:
             if not isinstance(manifest_path, str) or not manifest_path:
                 raise _dependabot_error(f"Dependabotアラート{item['number']}のmanifest_pathが不正である")
             if manifest_path not in presence:
-                presence[manifest_path] = _manifest_exists(repository, manifest_path, default_branch)
+                presence[manifest_path] = _manifest_exists(repository, manifest_path, revision)
             package = _mapping(dependency.get("package"))
             patched = _mapping(_mapping(item.get("security_vulnerability")).get("first_patched_version"))
             alerts.append(
@@ -293,7 +317,21 @@ def dependabot_pending(repository: str) -> dict[str, Any]:
                     "category": "manifest_present" if presence[manifest_path] else "inaccurate",
                 }
             )
-    return {"status": "available", "alerts": alerts}
+    return {"status": "available", "alerts": alerts, "default_branch": default_branch, "revision": revision}
+
+
+def _default_revision(repository: str, branch: str) -> str:
+    """マニフェスト照会と判定記録が同じ不変の版を参照するため、branchをSHAへ解決する。"""
+    try:
+        response = _gh_rest(
+            f"repos/{repository}/commits/{urllib.parse.quote(branch, safe='')}", operation="default_branchのrevision取得"
+        )
+    except _Forbidden as forbidden:
+        raise _dependabot_error(f"default_branchのrevision取得が拒否された: {forbidden.message}") from forbidden
+    revision = response.get("sha") if isinstance(response, dict) else None
+    if not isinstance(revision, str) or _REVISION_RE.fullmatch(revision) is None:
+        raise _dependabot_error("default_branchのrevisionを応答から取得できない")
+    return revision.lower()
 
 
 def _default_branch(repository: str) -> str:
@@ -393,9 +431,10 @@ def summarize_saved_pending(path: Path) -> None:
     print(json.dumps({"counts": counts, "dependabot_status": result["dependabot"]["status"]}, ensure_ascii=False))
 
 
-def _mark(repository: str, identifiers: list[str]) -> int:
+def _mark(repository: str, identifiers: list[str], revision: str | None = None) -> int:
     _validate_repository(repository)
     _validate_identifiers(identifiers)
+    revision = _validate_revision(revision)
     path = _record_path()
     with _record_lock():
         records = _read_records(path)
@@ -403,7 +442,10 @@ def _mark(repository: str, identifiers: list[str]) -> int:
         records[repository] = repository_records
         recorded_at = datetime.datetime.now(datetime.UTC).isoformat()
         for identifier in identifiers:
-            repository_records.setdefault(identifier, recorded_at)
+            if identifier.startswith(DEPENDABOT_PREFIX) and revision is not None:
+                repository_records[identifier] = {"recorded_at": recorded_at, "revision": revision}
+            else:
+                repository_records.setdefault(identifier, recorded_at)
         atomic_write(path, json.dumps(records, ensure_ascii=False, indent=2, sort_keys=True) + "\n", fsync=True)
     _outcome.report_success(
         f"判定済みの識別子を記録した: {repository}（{len(identifiers)}件）", _outcome.ResultKind.VALUE_OUTPUT
@@ -423,10 +465,12 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     )
     list_parser = _atk_help.add_command(subcommands, "list", **_atk_help.HELP["atk review-audit list"])
     list_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
+    list_parser.add_argument("--revision", help="このcommit SHAで有効なDependabot判定だけを列挙する。")
     pending_parser = _atk_help.add_command(subcommands, "pending", **_atk_help.HELP["atk review-audit pending"])
     pending_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
     mark_parser = _atk_help.add_command(subcommands, "mark", **_atk_help.HELP["atk review-audit mark"])
     mark_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
+    mark_parser.add_argument("--revision", help="Dependabotの監査で確認したdefault_branchのcommit SHA。")
     mark_parser.add_argument(
         "identifiers",
         nargs="+",
@@ -437,9 +481,9 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
 def dispatch(args: argparse.Namespace) -> int:
     """argparse結果を判定済み記録と未判定対象の操作へ振り分ける。"""
     if args.review_audit_subcommand == "list":
-        return _list(args.repo)
+        return _list(args.repo, args.revision)
     if args.review_audit_subcommand == "pending":
         return _pending(args.repo)
     if args.review_audit_subcommand == "mark":
-        return _mark(args.repo, args.identifiers)
+        return _mark(args.repo, args.identifiers, args.revision)
     raise ValueError(f"未知のreview-auditサブコマンド: {args.review_audit_subcommand}")

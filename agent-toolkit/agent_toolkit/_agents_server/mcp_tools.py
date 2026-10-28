@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -15,6 +16,7 @@ from pydantic import Field
 from agent_toolkit._agents_server import (
     child_environment,
     launch_requests,
+    lifetime,
     logging_config,
 )
 from agent_toolkit._agents_server import claude as claude_backend
@@ -60,6 +62,7 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
         await _MANAGER.activate_async()
     except BaseException:
         _LOG.exception("manager activateに失敗しました: stage=manager_activate")
+        await _MANAGER.close()
         await run_file_operation(logging_config.flush_logging)
         raise
     _LOG.info("manager activateが完了しました")
@@ -83,8 +86,9 @@ mcp = AgentsServerMCP(
     "agents_server",
     instructions=schema_text(
         "Codex、Claude、AntigravityまたはOpenCodeへの非同期委譲。承認操作は公開しない。\n"
-        "Claude Codeからの委譲は本サーバーを標準とする。"
-        "`Agent`ツールを使う場合は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める。\n"
+        "Claude Code・Codexからの委譲は本サーバーを標準とする。"
+        "組み込みの委譲機能（`Agent`・`spawn_agent`等）を使える例外は、"
+        "`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。\n"
         "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業、自由本文の委譲、読み取り専用の探索、"
         "確定済みの書込、コマンド実行を選ぶ。入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
         f"{LIGHTWEIGHT_MODE_SELECTION}\n"
@@ -439,6 +443,34 @@ def _configure_logging() -> pathlib.Path:
 
 
 def serve(*, check_dependencies: bool = False) -> int:
+    """診断や初期化が停止しても起動単位の有限回収を維持する。"""
+    if check_dependencies:
+        return _serve(check_dependencies=True)
+    guard = lifetime.ServerLifetime()
+    guard.start()
+    mcp.server_lifetime = guard
+    try:
+        try:
+            _serve()
+        except BaseException as error:
+            # signal終了の状態は保持し、EOF等の取消しでは終了処理と無関係な実装例外を隠さない。
+            if guard.exitcode == 0:
+                if isinstance(error, BaseExceptionGroup):
+                    _, remaining = error.split(asyncio.CancelledError)
+                    if remaining is not None:
+                        raise
+                elif not isinstance(error, asyncio.CancelledError):
+                    raise
+            if not guard.stopping:
+                raise
+        return guard.exitcode
+    finally:
+        guard.request_stop()
+        guard.finish()
+        mcp.server_lifetime = None
+
+
+def _serve(*, check_dependencies: bool = False) -> int:
     """委譲先の環境を整え、依存の確認またはMCP stdio transportの起動を行う。
 
     stdio起動では起動単位を開始し、正常・例外の終了を起動単位の終了診断へ記録する。

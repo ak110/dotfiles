@@ -17,38 +17,28 @@ disable-model-invocation: true
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/single-lane-process/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/SKILL.md#「計画ファイルの作成要否」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/SKILL.md#「即時対応」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/root-cause-analysis.md#「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「類似見直し」「類似見直しと再発防止の完了」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md#「状態と依存」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「状態と依存」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/testing.md#「検証単位の選定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/verification-evidence.md#「手動観測の保存」` | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「手動観測の保存」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/review-loop-coordination.md`の冒頭と「ラウンドの遷移」から「応答済みの判定」まで | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#冒頭`、`section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンドの遷移」から「応答済みの判定」まで` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/completion-report/SKILL.md#「工程」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 本文の参照基準を適用する前 | `../delegation/references/waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
+| 工程の責務と受け渡しを確認する前 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
+| 操作機能がなく計画原稿を整理する前 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/single-lane-process/references/quality-standards.md` |
+| 複数レーンへ処理を切り替える前、または既存不良の即時対応を判断する前 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| ユーザー確認の要否と手段を選ぶ前 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 書き込みを委譲先へ分担させる前 | `../delegation/references/mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
+| 不良の類似見直しと再発防止を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` |
+| 不良を発見し対処を判断する前 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| WIの共通契約を適用する前 | `../wi-standards/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
+| 対象WIの選定と処理開始を判断する前 | `../process-wi/references/selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
+| 既存不良の正式対応を登録する前 | `../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
+| 回答済みUWIの処理またはWIを終了する前 | `../wi-standards/SKILL.md#「状態と依存」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「状態と依存」` |
+| 取得時の版が変わった記録を再利用する前 | `../review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
+| WI実装commitの対応を記録する前 | `../commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
+| 公開時の常時稼働サーバー反映または終了処理の前 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 計画または直接実装に着手する前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
-| 計画対象がある場合に計画を起草する前（実行順3） | `agent-toolkit:plan-mode`のSKILL.mdと、同書の初版起草の行が指定する範囲 | 判断 | `skill:plan-mode` | |
-| 検証結果を記録する前 | `${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` | |
-| 計画あり・なしのどちらでも、メインが自ら実装に着手する直前（実行順4） | `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`検証結果`の段落と「起動」の`Git管理外の変更`の段落 | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#冒頭` | |
+| 既存不良の受領、計画または直接実装に着手する前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
+| 計画の要否を判定する前 | `agent-toolkit:plan-mode`のSKILL.md。計画対象がある場合は、計画の起草前（実行順3）に同書の初版起草の行が指定する範囲も読む | 判断 | `skill:plan-mode` | |
 | 対象worktreeごとに公開する前（実行順8） | `agent-toolkit:commit`を起動し、同スキルの`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
 | Claude Codeでpush後のCI監視の待機へ入る前（実行順8） | `agent-toolkit:delegation`の`references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` | |
 
@@ -78,7 +68,7 @@ disable-model-invocation: true
 
 ## 見つけた既存不良の扱い
 
-実行レビューから指摘として返された、今回の変更差分外にある既存不良は、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「返却に含まれる既存不良の受領」に従って専任のWI投入担当へ渡し、本節の手順や今回の処理対象への追加からは除外する。ただし、同節で例外とされている、残りの工程を停止・遮断してしまう不良やその他の不良については、次のように取り扱う。
+実行レビューから指摘として返された、今回の変更差分外にある既存不良は、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`「継続する工程」にある既存不良の受領契約に従って専任のWI投入担当へ渡し、本節の手順や今回の処理対象への追加からは除外する。ただし、その受領契約で例外とされている、残りの工程を停止・遮断してしまう不良やその他の不良については、次のように取り扱う。
 今回の実行の中で修正するかどうかは、`agent-toolkit:process-wi`の`SKILL.md`「即時対応」に従って判定する。メインエージェントは処理の進行に必要な範囲に限定して修正し、安全に利用できることを確認した上で、正式対応のためのAWIを次回セッション用として登録する。この正式対応AWIは、今回の処理対象や対応表には追加しない。
 公開工程の開始前には、発見した不良が今回の作業で混入したものなのか、それとも残る工程へ具体的に影響するものなのかをあらかじめ判定する。即時対応に該当する不良を、「工程が完全に停止しているわけではない」という理由や不良の種別だけを根拠にして次回へ先送りしない。
 
@@ -88,7 +78,7 @@ disable-model-invocation: true
 
 ## 実行順
 
-計画作成、実装、独立した実行レビューの進行管理は、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`の共通契約に従う。以下では、本スキル固有の対象取得、worktreeの紐付け、公開の手順を定める。実行レビューの起動と返却後の検収は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従い、`検証結果`は`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`に従って記録する。
+計画作成、実装、独立した実行レビューの進行管理、起動と返却後の検収、および`検証結果`の記録は、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`の共通契約に従う。以下では、本スキル固有の対象取得、worktreeの紐付け、公開の手順を定める。
 
 1. 処理可能なWI（processable）の一覧と各WIの本文を取得する。同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`を実行して回答済みUWIを取得する。
    対象worktreeごとに公開対象とベースブランチを明示し、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象の決定」に定める開始時のCI点検を実施する。実装に着手する前に実際のCI状況を照会し、失敗ログの取得と残工程への影響判定を行う。既存の失敗は「見つけた既存不良の扱い」に従って処理し、ユーザーのみが判断できる事項は確認手順へと回す。公開時のベースライン確認とCI検収も実行順8で実施する。
@@ -102,9 +92,9 @@ disable-model-invocation: true
    コミット履歴の整理によって取得時の版が変わった記録の再利用については、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。互いの成果に依存しないworktree間では作業を並行して進めてよい。
    コミットの作成は`agent-toolkit:commit`に従い、WI実装コミットごとに同スキルの`SKILL.md`「WI実装commitの対応」に定める手段を用いて、計画（直接実装の場合は引き継ぎ記録）と同一stemの対応記録ファイルへ記録する。レビュー指摘修正、CI修正、コミット履歴の変更後も同様の手順に従い、実行順8の処理へ進む前に最新の対応関係を取得してadoptコマンドへ渡す。
 5. 保存済み対応表から、対象worktreeに属する全計画対象と全直接実装対象の和を導出し、1件の実行レビューを起動する。すべての対応表の所在と区分は、同一の引き継ぎ記録から辿れるように保持する。計画対象がある場合は計画ファイルの絶対パスを、直接実装対象がある場合はWIの記録を委譲プロンプトへ渡し、計画対象が存在しない場合はそのworktreeの「開始時のHEAD」を渡す。`cwd`、`開始時のHEAD`、レビュー指摘管理表、およびレビュー基準には、同一worktreeの値のみを使用する。
-6. worktreeごとに`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従ってレビュー指摘を収束させる。指摘に対する修正作業はメインエージェント自身が行い、同一の「開始時のHEAD」とレビュー指摘管理表を引き続き使用する。
+6. worktreeごとに`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`「継続する工程」に従ってレビュー指摘を収束させる。指摘に対する修正作業はメインエージェント自身が行い、同一の「開始時のHEAD」とレビュー指摘管理表を引き続き使用する。
 7. 各計画について`atk run-script plan-progress --`を実行して完了判定を`## 進捗ログ`へ記録し、計画構造の自動チェックが成功することを確認した上で計画バンドルを保存する。
 8. 各WIを`adopt`または`reject`し（`adopt`時は`agent-toolkit:wi-standards`「状態と依存」に定めるコミット対応付けを用いる）、worktreeごとに`references/publish.md`に従って公開する。複数のリポジトリを対象とする場合は成果物間の依存順序を守り、互いに独立したリポジトリのpushを先にすべて完了させてからCI監視を並行して開始し、すべての実行識別子の終了を待って結果を個別に回収する。CIの成功を前提とする公開後操作はその対象の成功が確認されてから行い、CI成功を前提とせず排他リソースも占有しない操作は待機時間中に進めてよい。
    開発マシン上で動作する常時稼働サーバーへの反映は、`agent-toolkit:completion-report`の`SKILL.md`「工程」内の「常時稼働サーバーへの反映」段落に記載された条件を満たす場合に、CI待機と並行して開始する。反映したHEADの一意な短縮OID、反映コマンドの終了ステータス、および稼働確認の結果を完了報告へ渡す。
-   Claude Code環境では、独立したpush群の監視や並行するサーバー反映処理などを開始した後に、CI待機に伴う会話圧縮を予約する。中断や会話圧縮の後は、注入された要約を起点に計画、WI、資源登録、CI監視出力、担当別引き継ぎ記録から状態を復元し、要約文に書かれた作業順などで選定集合を勝手に置き換えない。予約と通知後の復元処理は、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「長時間待機前の会話圧縮」に従う。起動済みのwait_ci.pyバックグラウンドタスクを維持し、Monitorツール等で前景を占有することなくターンを終え、完了通知を受信した後に同一の入力と保存出力からCI結果を回収する。CIが定義されていない対象にはこの圧縮境界を設けず、Codexや会話圧縮ツールが存在しない環境では既存の待機契約に従う。
+   Claude Code環境では、独立したpush群の監視や並行するサーバー反映処理などを開始した後に、CI待機に伴う会話圧縮を予約する。中断や会話圧縮の後は、注入された要約を起点に計画、WI、資源登録、CI監視出力、担当別引き継ぎ記録から状態を復元し、要約文に書かれた作業順などで選定集合を勝手に置き換えない。予約と通知後の復元処理は、`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」に従う。起動済みのwait_ci.pyバックグラウンドタスクを維持し、Monitorツール等で前景を占有することなくターンを終え、完了通知を受信した後に同一の入力と保存出力からCI結果を回収する。CIが定義されていない対象にはこの圧縮境界を設けず、Codexや会話圧縮ツールが存在しない環境では既存の待機契約に従う。
 9. 一時的に作成したレビュー指摘管理表を正式な保存または回収契約に従って処理し、`agent-toolkit:completion-report`を実行して完了報告を行う。

@@ -13,7 +13,7 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/choice-construction.md#「本文の語」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md#「本文の語」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/approval-scope.md#「新しい挙動と準備の提示」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md#「新しい挙動と準備の提示」` |
 
 ## 構成

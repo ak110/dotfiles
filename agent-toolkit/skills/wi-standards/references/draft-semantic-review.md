@@ -8,8 +8,11 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../../../../agent-basics/skills/bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「成果物の制限」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「節の構成と分担」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「節の構成と分担」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md#「構成」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「構成」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「投入前の読み直し」「方針と判断の記録との比較」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「投入前の読み直し」「方針と判断の記録との比較」` |
@@ -17,7 +20,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「投入」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「投入」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「処置の階層」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「処置の階層」` |
 
 ## ユーザーが読む部分
 
@@ -32,19 +35,19 @@
 
 ## 原稿全体と返却の検収
 
-原稿全体に対して、`drafting-completion.md`の「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「投入前の読み直し」「方針と判断の記録との比較」を適用する。新規の通常AWIには「重複判定」を、観測された不具合を起点としbugfixを起動して起草するAWIには「原因と定義の所有者」と同資料が参照するbugfixの基準も併せて適用する。原文、実際の回答、現物の状態、ならびに取得済みの証拠をもとに、要件の分類、処置の妥当性と必要性、一連の処理全体の一貫性、根本原因と対象範囲の網羅、過去の判断との整合性、ならびに未確認範囲の有無を独立して判定する。原稿が課している操作上の制約が、原文で指定された工程に正しく対応しているかも確認する。
-原文と反映内容を読み比べ、要求の脱落・追加・意味の変化を確かめる。任意節や引用位置の記録がないこと、`wi-quote-check`の未実行だけを理由に差し戻さない。
+原稿全体に対して、`drafting-completion.md`の「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「投入前の読み直し」「方針と判断の記録との比較」を適用する。「重複判定」は同節の起点別の適用条件に従い、免除された既存項目との比較を実施していないことだけを理由に検収を止めない。観測された不具合を起点としbugfixを起動して起草するAWIには「原因と定義の所有者」と同資料が参照するbugfixの基準も併せて適用する。原文、実際の回答、現物の状態、ならびに取得済みの証拠をもとに、要件の分類、処置の妥当性と必要性、一連の処理全体の一貫性、根本原因と対象範囲の網羅、過去の判断との整合性、ならびに未確認範囲の有無を独立して判定する。原稿が課している操作上の制約が、原文で指定された工程に正しく対応しているかも確認する。
+原文と反映内容を読み比べ、`agent-basics:writing-standards`の`references/writing.md`「ユーザー入力素材の取扱い」に従って要求の脱落・追加・意味の変化を確かめる。任意節や引用位置の記録がないこと、`wi-quote-check`の未実行だけを理由に差し戻さない。
 
 - 渡した要求の集合と、返却された要求識別子が重複なく完全に一致していることを確認する。複数の原稿が存在する場合も、各要求に対して個別に基準を適用する。
 - 調査の先送りを含まないことを確認する。調査や棚卸しの実施自体を作業要求とした原稿や、判断基準のみを提示して対象ごとの具体的な判断を後続作業に残した原稿は、`drafting-completion.md`「確定の判定」に基づき修正が必要な原稿として差し戻す。手動作成の原稿では、`../SKILL.md`「起票目的別の調査出口」を適用する。
 - 付随型における`起草結果`の状態、結果、続行できない理由、および省略値が、`share/add-wi.subagent.md`「起草の返却」の仕様と一致していることを確認する。専念型による結果は、`share/wi-draft-review.subagent.md`「出力」の仕様と一致していることを確認する。
 - 原稿および証拠ファイルの絶対パスが実在して読み取り可能であり、AWIは`awi-body.md`の基準を、UWIは`uwi-format.md`の基準を満たしていることを確認する。分割した要求について、受け取った割当先と内容の説明が対応することを確認する。
-- 既存項目の再利用や部分的な包含関係については、既存の本文と共通基準の「重複判定」に基づいて独立に根拠を確認する。再利用を決定した項目については新規保存せず、既存項目をそのまま投入結果として扱う。
+- 既存項目との比較を実施する場合は、再利用や部分的な包含関係を既存の本文と共通基準の「重複判定」に基づいて独立に確認する。再利用を決定した項目については新規保存せず、既存項目をそのまま投入結果として扱う。
 - `判断の変更`を行う場合は、確定要件の対象、範囲、および外部から観測可能な結果と矛盾せず、追加する手段や条件が共通基準に照らして必要性を満たしていることを確認する。
 - `condition_not_met`を返す場合は、投入が不要であると判断した結論と明確な根拠を示す。人間由来の要求を投入対象外とする場合は、`origin-and-approval.md`「承認」に従って確定したうえで、後続の保存対象から除外する。
 - 先行項目の正式なファイル名が未確定であっても、要求内容や証拠から参照先および参照箇所が一意に特定できる状態であれば、意味の検収を進めてよい。正式なファイル名への置き換え、および保存後の一致確認は、作成主体が`drafting-workflow.md`「投入」の手順に従って実施する。
 
-委譲元および専念型の投入前レビュー担当は、原稿と成立性の証拠を確認し、`再発防止策`の行に挙げられた問題が通常の対策範囲の外にあることを確かめ、`agent-basics:bugfix`の`references/root-cause-analysis.md`「処置の階層」における持ち込み試験を実施する。成立しない原稿については、処置の内容を`対策`に書き直すか、再発防止策を選定し直すよう作成主体へ差し戻す。
+委譲元および専念型の投入前レビュー担当は、原稿と成立性の証拠を確認し、`再発防止策`の行に挙げられた問題が通常の対策範囲の外にあることを確かめ、`agent-basics:bugfix`の`references/root-cause-remediation.md`「処置の階層」における持ち込み試験を実施する。成立しない原稿については、処置の内容を`対策`に書き直すか、再発防止策を選定し直すよう作成主体へ差し戻す。
 
 ## 初回と再判定・差戻し
 

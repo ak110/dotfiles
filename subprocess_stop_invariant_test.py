@@ -15,6 +15,7 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "_stop_repository",
     ): "agents_serverのsession停止。子プロセスを直接止めず、終了の所有はkillの実装側にある",
     ("agent-toolkit/agent_toolkit/_common/process_tree.py", "reclaim_processes"): "子孫回収の共通実装",
+    ("agent-toolkit/agent_toolkit/_common/process_tree.py", "process_scope"): "停止処理の例外時にも所有Popenを回収する共通実装",
     ("pytools/_internal/common.py", "stop_process_tree"): "pytoolsの子孫回収の共通実装",
     (
         "agent-toolkit/agent_toolkit/_agents_server/cli_turn.py",

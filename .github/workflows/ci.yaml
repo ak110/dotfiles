@@ -450,7 +450,8 @@ jobs:
         # Claude plugin manifest検査を無効化する。
         # statusline-versionは浅いcheckoutではmasterとの共通祖先を解決できず、同じ判定を
         # statusline-version jobが所有するため無効化する。
-        run: pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version
+        # Claude Code生成型を用意しないCIではローカル専用の型検査を除外する。
+        run: pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,function-hooks-types
 
       - name: Git 2.34.1の導入
         id: minimum-git

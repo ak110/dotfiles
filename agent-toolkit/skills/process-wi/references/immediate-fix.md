@@ -15,7 +15,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「処理中に確定した必須是正レーン」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「処理中に確定した必須是正レーン」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md#%E3%80%8C%60review_contract%60%E3%81%AE%E7%94%9F%E6%88%90%E3%80%8D` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#%E3%80%8C%60review_contract%60%E3%81%AE%E7%94%9F%E6%88%90%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
@@ -28,6 +28,7 @@
 1. 発生した事象、期待する結果、現在および後続セッションへの影響を確認し、作業進行に必要な直接修正の対象と修正方針を定める。安全に修正できる程度まで原因を特定し、本格的な原因分析は正式対応へ委ねる。
 2. メインエージェントまたは書き込み権限を持つ担当者が、必要な範囲に絞って修正し、修正箇所が安全に動作することを確認する。修正対象、方針、認可内容、観測結果を既存の引き継ぎ記録へ記録する。
 3. `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従って正式対応用のAWIを起草し、投入する。暫定修正のコミットや差分、観測結果と検証結果、未確認事項、残りのテスト、独立した文脈でのレビュー、原因分析、類似箇所の見直し、再発防止策の情報を引き継ぐ。既存のAWIを再利用する場合は、これらの情報がすべて含まれていることを確認する。登録したAWIは今回の選定対象には加えずに後続のセッションへ引き継ぐ。
+   未実施の正式な分析、類似見直し、恒久対策は未実施と明示する。これは通常投入で調査済み事項を引き渡す手順の例外である。
 4. 直接修正と正式対応AWIの対応関係を引き継ぎ記録に残した上で、元の作業工程を再開する。ユーザーから明示的に追加された要求や、今回の作業で混入した不良については、元の要求や完成条件に従って対処する。
 
 正式対応を引き継いだ後続セッションでは、暫定修正を完了とみなさず、AWIに記載されたすべての要求と`agent-toolkit:bugfix`の基準に沿って検証する。

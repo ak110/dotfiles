@@ -17,6 +17,8 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../../../agent-basics/skills/bugfix/references/root-cause-scenarios.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md` |
+| 本文の参照基準を適用する前 | `../../../agent-basics/skills/bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「設計案の予備選別」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
@@ -46,7 +48,7 @@ description: >
 対処の候補は`agent-toolkit/rules/01-agent.md`「判断指針」の3段判定で選別し、構造の比較には`agent-basics:writing-standards/references/design-heuristics.md`「設計案の予備選別」を使う。
 
 - 既存の不具合を発見した場合も、原則として同じセッション内で類似箇所の見直しや再発防止策の策定まで完遂する。先送りの判断や担当外の不具合の扱いは`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従い、実行中のスキルに固有の手順（`agent-toolkit:process-wi`など）がある場合はそちらを優先する。拡張原因分析、類似箇所の見直し、再発防止策の策定のいずれかを要する調査は、`${CLAUDE_PLUGIN_ROOT}/skills/bugfix/references/investigation-delegation.md`へ委譲する。修正作業は、調査担当から返却された対策をもとに、不具合を見つけたエージェント自身が行う。根本原因と類似見直しの母集団を自力で確定でき、すべての対象と再発防止策をその場で処置できる場合は、委譲せずにその場で修正してよい
-- 作業の続行を妨げない不自然な実装、非効率な処理、不要な反復などは、その場ですぐに是正せず改善点として報告する。メインエージェントは`agent-toolkit/share/rules-main.md`「作業中の改善点の報告」に従い、委譲先エージェントは`agent-toolkit/share/rules-subagent.md`「返却と終了」の`気付いた改善点:`に記載して報告する
+- 不自然な実装、非効率な処理、不要な反復などの改善点は、その場で直接的原因と影響を最低限調査する。作業の続行や品質に影響する問題、または規範の欠陥が確定した場合は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従って対処する。メインエージェントは`agent-toolkit/share/rules-main.md`「作業中の改善点の報告」に従い、委譲先エージェントは`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`気付いた改善点:`に記載して報告する
 - 完成条件に含まれないエンドユーザー向け機能の不足については、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「認可を要する操作」に基づいて要否を判定する。ドキュメントを既存機能の制約に合わせて修正した場合も不足している機能を評価し、新たな挙動を追加する場合は同スキルの「確認を要する事項」に従ってユーザーへ確認する
 - 終了コードが0であっても、出力された警告の内容と意味を確認する。設定や処理の未適用・未完了を示す警告には適切に対処し、今回の作業と無関係であると判断した警告については、その判断根拠を報告に記録する
 - ユーザーが指定した要件を変更する場合や、「認可を要する操作」に該当する対処をする場合は、事前にユーザーの合意を得てから着手する。確認が必要かどうかの判断は`agent-toolkit:user-confirmation-and-report`「確認要否の判定」に従う。内部実装だけで完結する対処については、確認を挟まず自律的に完遂する
@@ -81,7 +83,7 @@ description: >
 
 ## 再発防止策の必須性
 
-品質基準の詳細は、`agent-basics:bugfix/references/root-cause-analysis.md`「再発防止策の必須性」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」を参照して適用する。
 
 ## 対策の選定
 
@@ -89,11 +91,11 @@ description: >
 
 ## テストの原因調査
 
-品質基準の詳細は、`agent-basics:bugfix/references/root-cause-analysis.md`「テストの原因調査」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix/references/root-cause-scenarios.md`「テストの原因調査」を参照して適用する。
 
 ## 所要の原因調査
 
-品質基準の詳細は、`agent-basics:bugfix/references/root-cause-analysis.md`「所要の原因調査」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix/references/root-cause-scenarios.md`「所要の原因調査」を参照して適用する。
 
 ## 対策の影響範囲
 
@@ -101,16 +103,16 @@ description: >
 
 ## 母集団と件数を数える層
 
-品質基準の詳細は、`agent-basics:bugfix/references/root-cause-analysis.md`「母集団と件数を数える層」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix/references/root-cause-scenarios.md`「母集団と件数を数える層」を参照して適用する。
 
 ## 外部からの不具合報告
 
-品質基準の詳細は、`agent-basics:bugfix/references/root-cause-analysis.md`「外部からの不具合報告」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix/references/root-cause-scenarios.md`「外部からの不具合報告」を参照して適用する。
 
 ## 作業途中で発見した事象
 
-品質基準の詳細は、`agent-basics:bugfix/references/root-cause-analysis.md`「作業途中で発見した事象」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix/references/root-cause-scenarios.md`「作業途中で発見した事象」を参照して適用する。
 
 ## 同一症状の修正反復
 
-品質基準の詳細は、`agent-basics:bugfix/references/root-cause-analysis.md`「同一症状の修正反復」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix/references/root-cause-scenarios.md`「同一症状の修正反復」を参照して適用する。

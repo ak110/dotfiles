@@ -40,13 +40,16 @@ def _record(notes: pathlib.Path, repository: config.ConfiguredRepository, alerts
 
 
 def test_unobserved_alerts_keep_record(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """アラートを観測しない反復は記録のアラート部分を比較にも削除にも使わず、観測した反復だけで新しい番号を判定する。"""
+    """未観測時はWIの抑止を保持し、未markのアラートは過去の無進捗記録があっても再試行する。"""
     notes, repository = _setup(tmp_path, monkeypatch)
     current = _record(notes, repository, frozenset({5}))
     assert gate.decide(_REPO, current.with_alerts(None)).skipped
     stored = json.loads(next(gate.record_directory().glob("*.json")).read_text(encoding="utf-8"))
-    assert stored["alerts"] == [5]
-    assert gate.decide(_REPO, current.with_alerts(frozenset({5}))).skipped
+    assert "alerts" not in stored
+    # 旧版が保存した番号だけの記録でも、未markアラートを抑止しない。
+    stored["alerts"] = [5]
+    next(gate.record_directory().glob("*.json")).write_text(json.dumps(stored), encoding="utf-8")
+    assert gate.decide(_REPO, current.with_alerts(frozenset({5}))).launch
     # 判定済みで未判定から外れた番号は新しい入力に当たらない。
     assert gate.decide(_REPO, current.with_alerts(frozenset())).skipped
     assert gate.decide(_REPO, current.with_alerts(frozenset({5, 6}))).launch

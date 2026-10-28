@@ -32,16 +32,17 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../session-review/SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/session-review/SKILL.md#「工程」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../single-lane-process/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/single-lane-process/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「割り込み・訂正・中止」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「割り込み・訂正・中止」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance.md#「割り込み・訂正・中止」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「割り込み・訂正・中止」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
@@ -68,6 +69,10 @@ description: >
 確認できていない範囲があることだけを理由として、個別のUWIやユーザーへの操作依頼を追加することは控える。
 既知の不具合や未達成の明示要件は、未達事項として区別して記載する。
 
+要求された結果と十分な検証がそろったら、完了報告・振り返り・必要な終了処理を完了してセッションを終了する。
+完了済みの作業は、新しい要求、結果に影響する変更、新しい失敗、未検証の完成条件を根拠に再開する。
+報告の不足は保存済みの証拠で補い、状況確認だけを理由に検証済みの作業を繰り返さない。
+
 ## 工程
 
 各番号の手順は必要な入力が揃い次第進める。前の手順の出力に依存しない作業は、`agent-toolkit:session-review`の実行中も含めて並行して進めてよい。
@@ -75,9 +80,9 @@ description: >
 
 1. 常時稼働サーバーへの反映: 対象プロジェクトが開発機上で常時稼働するサーバーを持ち、そのプロジェクト規範やタスクランナー定義で反映手順と稼働確認手順の両方が定められている場合に実施する。起動元の工程が先行して反映した結果（反映済みHEADの一意な短縮OID、反映コマンドの終了ステータス、稼働確認結果）があり、報告時点の主作業ツリーで短縮OIDを解決した結果がHEADと一致し、両方の処理が成功していれば再反映を省略する。それ以外の場合は現行のHEADを反映し、稼働を確認する。報告には再反映の有無と稼働確認の結果を含める。反映しない場合はその理由と未反映の状態を報告し、ユーザーの対応が必要な残作業については`agent-toolkit:user-confirmation-and-report`「手段の選択」に沿って個別UWIの登録要否を判定する。自明な反映手順の案内は報告に添える。
    起動元の工程が反映を先行して開始できるのは、反映処理が対象リポジトリへの書き込みを行わず、公開向けの入力を生成せず、公開操作や成果物・排他リソースと競合しない場合に限る。
-2. メインエージェント自身が作成した作業用領域は、`agent-toolkit:managed-temp`に定められた寿命に従って回収する。元資料から再生成できる抽出・比較用の一時複製や検証環境は、すべての消費工程と外部プロセスの終了後に`rm -rf -- <作成した絶対パス>`で回収する（worktreeは事前に`git worktree remove`で削除する）。セッションのmanaged-temp本体や、後続ターンへの入力・証拠・引き継ぎ記録は、7日間保持する領域に残す。
-   process-wiの登録済みレーンリソースはこの時点では回収せず、追加作業や振り返り後の工程に備えて保持する。全工程と外部プロセスの終了後に、通常終了であれば`atk agents-exit-session`が、process-loopであれば子プロセスの終了後処理が、`atk lane delete`と同等の条件で回収する。未統合、未コミット差分（dirty）、稼働中、状態不明、または部分的に失敗した対象は、成果、理由、および残る操作を記録して保持し、次回開始時の`atk lane delete --list`で再判定する。
-3. 当該セッションでユーザーが確定した判断事項を`agent-toolkit/rules/01-agent.md`「協調と自律」の保存対象と照らし合わせ、未保存の判断の保存またはAWIの投入を完了する。保存する前に、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」に記載されている、程度の限定や確度を保持する規定、および確度を伴う発話の保存に関する規定を適用する。
+2. メインエージェント自身が作成した作業用領域は、`agent-toolkit:managed-temp`に定められた寿命に従って回収する。元資料から再生成できる抽出・比較用の一時複製や検証環境は、すべての消費工程と外部プロセスの終了後に`rm -rf -- <作成した絶対パス>`で回収する（worktreeは事前に`git worktree remove`で削除する）。セッションのmanaged-temp本体や、後続ターンへの入力・証拠・引き継ぎ記録は、7日間保持する領域に残す。過去のエージェントが残した資源と誤変更も、`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」で調査し、不要な範囲を回収・是正する。
+   process-wiの登録済みレーンリソースはこの時点では回収せず、追加作業や振り返り後の工程に備えて保持する。全工程と外部プロセスの終了後に、通常終了であれば`atk agents-exit-session`が、process-loopであれば子プロセスの終了後処理が、`atk lane delete`と同等の条件で回収する。未回収の場合はメインが共通判断で保持理由を調べ、解消できた対象を同じ回収操作で再判定する。保持が必要な対象は、保護する成果や現在の担当、残るユーザー判断、および再開条件を報告する。
+3. 当該セッションでユーザーが確定した判断事項を`agent-toolkit/rules/01-agent.md`「協調と自律」の保存対象と照らし合わせ、未保存の判断の保存またはAWIの投入を完了する。保存する前に、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」に記載されている、程度の限定や確度を保持する規定、および確度を伴う発話の保存に関する規定を適用する。
 4. 協調モードで作成したコミットがあり、確認済みの公開範囲がコミットよりも先まで及ぶ場合は、`agent-toolkit:commit`の`references/publish.md`に従ってその範囲の公開を完了する。`agent-toolkit:process-wi`および`agent-toolkit:single-lane-process`は、それぞれの工程内で公開する。
 5. 実施した公開範囲とリリース判定の結果を含む作業完了報告を、`references/report-formats.md`「作業完了報告のフォーマット」に従って1回届け、同一の応答内で手順6に進む。
 6. `agent-toolkit:session-review`を起動する。起動を省略できるのは次の3つの場合に限られ、その理由は`references/report-formats.md`に定義されている所定の値を用いて手順8の報告に記載する。個別の指摘やユーザー発話への対応が完了していること、追加の調査コストや所要時間、実装変更の有無などは、起動を省略する根拠にならない。
@@ -97,7 +102,8 @@ description: >
 
    続いて最終報告を1回届ける（自律モードでは報告用UWIの保存を検収してから届ける）。`send_to_user`が成功した時点で本文の送達は完了したものとし、要約や受領確認のメッセージを追加することなく、同一の応答内で手順9に進む。ツールが利用できない環境では、最終報告の内容自体をターンの最終出力とする。
 9. 起動元の工程が報告完了後に実行する処理（`agent-toolkit:process-wi`の`atk agents-exit-session`など）を定めている場合は、最終報告と同一の応答内でその処理を実行する。別の応答へ持ち越すと、処理が実行されないまま`atk wi process-loop`が停止してしまう。新たな改善点がない場合、報告後に実行する処理はこの指定工程のみとし、通常の作業ターンへは次の指示を受けてから戻る。
-   送達後に実際の新たな改善点が生じた場合は、`agent-toolkit:session-review`の工程6に戻って内容を取り込み・分析し、手順8を再実行して報告用UWIと結果を更新したうえで、更新後の最終報告を届けてから本手順へ進む。
+   送達後に実際の新たな改善点が生じた場合は、「完了の到達水準」の再開根拠と`agent-toolkit:user-confirmation-and-report`「問い・提案・疑問形の扱い」で必要な対応を判定する。
+   対応が必要なら`agent-toolkit:session-review`の工程6に戻って内容を取り込み・分析し、手順8を再実行して報告用UWIと結果を更新し、更新後の最終報告を届けてから本手順へ進む。
    すべての工程を完了して通常のターンのみを終了する場合、`send_to_user`で最終報告を送達済みであれば`…`のみを出力する。`atk agents-exit-session`でセッションを停止した分岐では、出力もそこで終了する。送達の失敗、実害防止のためのStop hookによる遮断、あるいは新しいユーザー指示があった場合は、それぞれの復旧・続行手順に従う。セッションを終了する前に、元の要求と実際の送達・対応結果を突き合わせて未達事項や残工程を確認し、不足している工程があれば継続して実施する。
 
 最終送達後の終了指示の突き合わせおよび再検証手順は、`docs/development/audit-records.md`の「completion-report：最終報告送達後のターン終了：2026年10月9日」を参照する。

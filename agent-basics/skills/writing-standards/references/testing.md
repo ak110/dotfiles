@@ -11,10 +11,10 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「処置の階層」「再発防止としてのテスト」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「処置の階層」「再発防止としてのテスト」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「テストの原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「テストの原因調査」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「処置の階層」「再発防止としてのテスト」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「処置の階層」「再発防止としてのテスト」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「テストの原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「テストの原因調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/diagnostics.md#「読む出力」` | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「所要の原因調査」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「所要の原因調査」` |
 
 ## 検証単位の優先順位
 
@@ -124,7 +124,7 @@ OSの種別判定による分岐（`os.name`、`sys.platform`、OSごとの設�
 
 この確認作業は一時的なコード変更によって行い、変更前の未コミットの差分やGitのインデックス（ステージング状態）を確実に保持して、確認完了後に元の状態へ正確に復元する。復元の手段は、対象リポジトリのバージョン管理システムおよび作業ツリーの契約に従って選択し、作業対象外のサブモジュールのHEAD、ブランチ、および作業内容も保持する。
 
-不具合の再発防止を目的としてテストを追加する場合は、そのテストが「直接的な対策」であるのか「根本的な再発防止策」であるのかを区分する。そして今回の条件下での有効性を、`agent-basics:bugfix`の`references/root-cause-analysis.md`「処置の階層」と「再発防止としてのテスト」に従って評価する。不具合修正前のバージョンにおいてテストが確実に失敗することの確認は同節の規定に従って行い、前述の費用便益評価による省略の対象外とする。
+不具合の再発防止を目的としてテストを追加する場合は、そのテストが「直接的な対策」であるのか「根本的な再発防止策」であるのかを区分する。そして今回の条件下での有効性を、`agent-basics:bugfix`の`references/root-cause-remediation.md`「処置の階層」と「再発防止としてのテスト」に従って評価する。不具合修正前のバージョンにおいてテストが確実に失敗することの確認は同節の規定に従って行い、前述の費用便益評価による省略の対象外とする。
 
 ## 状態遷移の性質確認
 
@@ -132,7 +132,7 @@ OSの種別判定による分岐（`os.name`、`sys.platform`、OSごとの設�
 
 ## 安定性: flakyテスト防止
 
-非決定的な（実行ごとに結果が変わる）テスト失敗の原因調査や修正方針の選定は、`agent-basics:bugfix/references/root-cause-analysis.md`「テストの原因調査」に従う。本節では、特定された原因に対して適用すべき同期処理、環境隔離、および決定論的入力の基準を定める。
+非決定的な（実行ごとに結果が変わる）テスト失敗の原因調査や修正方針の選定は、`agent-basics:bugfix/references/root-cause-scenarios.md`「テストの原因調査」に従う。本節では、特定された原因に対して適用すべき同期処理、環境隔離、および決定論的入力の基準を定める。
 
 - 現在時刻、乱数、UUIDなどの非決定的な値は、外部から注入可能な設計にし、テスト実行時には固定値を渡す
 - テストのアサーション判定と並行して動作する主体（子プロセス、別スレッド、ファイル監視、ブラウザ、タイマーなど）の状態到達を前提とする場合は、その前提条件に到達したこと（最初の出力の検知、準備完了シグナル、シグナルハンドラの登録完了、メッセージ購読の成立など）を明確な同期ポイントによって確認する。その確認が取れた後に、時間経過を伴う操作（計測の開始、シグナルの送信、一定時間経過後の状態観測、非発生を確認するための観測ウィンドウなど）を開始する。タイムアウト時間そのものを検証するテストにおいても同様とする。前提条件に到達しない場合は、タイムアウト上限を設けた待機処理によって明示的にテストを失敗させる。同期ポイントの実装にはイベント、コールバック、またはポーリングを使用し、固定時間の`sleep`は他に手段がない最終手段としてのみ用いる
@@ -147,4 +147,4 @@ OSの種別判定による分岐（`os.name`、`sys.platform`、OSごとの設�
 ## 速度
 
 - テストケース間の独立性を維持しつつセットアップ処理を適切に共有し、生成するデータ量や外部プロセスの起動回数を必要最小限に抑える
-- テストの所要時間を、そのテストが保証する契約の重要性、必要な処理量・データ量に照らして評価し、テストの合否にかかわらず、不要なデータ取得、事前準備、待機時間、外部プロセスの起動などの反復を排除する。テスト実行ごとの個別および全体の所要時間の比較・分析は、`agent-basics:check-execution`の`references/diagnostics.md`「読む出力」に従う。実行時間が疑わしい区間の原因調査は、`agent-basics:bugfix/references/root-cause-analysis.md`「所要の原因調査」に従う。なお、所要時間に対する画一的な固定上限値や、そのための機械的チェックは設けない
+- テストの所要時間を、そのテストが保証する契約の重要性、必要な処理量・データ量に照らして評価し、テストの合否にかかわらず、不要なデータ取得、事前準備、待機時間、外部プロセスの起動などの反復を排除する。テスト実行ごとの個別および全体の所要時間の比較・分析は、`agent-basics:check-execution`の`references/diagnostics.md`「読む出力」に従う。実行時間が疑わしい区間の原因調査は、`agent-basics:bugfix/references/root-cause-scenarios.md`「所要の原因調査」に従う。なお、所要時間に対する画一的な固定上限値や、そのための機械的チェックは設けない

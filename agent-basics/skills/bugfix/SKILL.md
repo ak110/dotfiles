@@ -48,12 +48,15 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、`
 | --- | --- | --- | --- | --- |
 | QCD・3段判定、事実と推論、硬い制約・努力目標を判断へ用いる前 | `agent-basics:writing-standards/references/quality-principles.md`の「QCDと3段判定」「事実と推論」「規定の区分と標示」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」「事実と推論」「規定の区分と標示」` | |
 | 期待・実際と直接的原因を確定する前（他担当へ引き渡す場合も含む） | `references/root-cause-analysis.md`の「問題を見つけたときの対処」「初動と拡張原因分析の判定」「直接的原因と事象時点の確定」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」「初動と拡張原因分析の判定」「直接的原因と事象時点の確定」` | |
-| 根本原因と重大度を確定する前 | `references/root-cause-analysis.md`の「原因分析の品質確認」「QとC・Dの区別」「前提の再検討」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「原因分析の品質確認」「QとC・Dの区別」「前提の再検討」` | |
-| 類似見直しの範囲・観点を定め、処置の採否と完了を判断する前 | `references/root-cause-analysis.md`の「類似見直し」「処置の階層」「再発防止策」「再発防止策の必須性」「対策の選定」「対策の影響範囲」「類似見直しと再発防止の完了」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「類似見直し」「処置の階層」「再発防止策」「再発防止策の必須性」「対策の選定」「対策の影響範囲」「類似見直しと再発防止の完了」` | |
-| 同じ指摘や症状が反復した時 | `references/root-cause-analysis.md`の「反復した指摘の原因判定」「同一症状の修正反復」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「反復した指摘の原因判定」「同一症状の修正反復」` | |
-| テストの失敗を調べる時 | `references/root-cause-analysis.md`の「テストの原因調査」「再発防止としてのテスト」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「テストの原因調査」「再発防止としてのテスト」` | |
-| 所要の増大や不要仕事を調べる時 | `references/root-cause-analysis.md`の「所要の原因調査」「反復する加工の問題」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「所要の原因調査」「反復する加工の問題」` | |
-| 外部の不具合報告、母集団の件数、作業途中の発見を扱う時 | `references/root-cause-analysis.md`の「外部からの不具合報告」「母集団と件数を数える層」「作業途中で発見した事象」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「外部からの不具合報告」「母集団と件数を数える層」「作業途中で発見した事象」` | |
+| 根本原因と重大度を確定する前 | `references/root-cause-analysis.md`の「原因分析の品質確認」「QとC・Dの区別」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「原因分析の品質確認」「QとC・Dの区別」` | |
+| 根本原因と重大度を確定する前 | `references/root-cause-scenarios.md`の「前提の再検討」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「前提の再検討」` | |
+| 類似見直しの範囲・観点を定め、処置の採否と完了を判断する前 | `references/root-cause-remediation.md`の「類似見直し」「処置の階層」「再発防止策」「再発防止策の必須性」「類似見直しと再発防止の完了」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策」「再発防止策の必須性」「類似見直しと再発防止の完了」` | |
+| 類似見直しの範囲・観点を定め、処置の採否と完了を判断する前 | `references/root-cause-analysis.md`の「対策の選定」「対策の影響範囲」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「対策の選定」「対策の影響範囲」` | |
+| 同じ指摘や症状が反復した時 | `references/root-cause-scenarios.md`の「反復した指摘の原因判定」「同一症状の修正反復」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」「同一症状の修正反復」` | |
+| テストの失敗を調べる時 | `references/root-cause-scenarios.md`の「テストの原因調査」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「テストの原因調査」` | |
+| テストの失敗を調べる時 | `references/root-cause-remediation.md`の「再発防止としてのテスト」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止としてのテスト」` | |
+| 所要の増大や不要仕事を調べる時 | `references/root-cause-scenarios.md`の「所要の原因調査」「反復する加工の問題」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「所要の原因調査」「反復する加工の問題」` | |
+| 外部の不具合報告、母集団の件数、作業途中の発見を扱う時 | `references/root-cause-scenarios.md`の「外部からの不具合報告」「母集団と件数を数える層」「作業途中で発見した事象」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「外部からの不具合報告」「母集団と件数を数える層」「作業途中で発見した事象」` | |
 | 拡張原因分析へ進む時、または原因確定に履歴・記録の探索や2系統の分析を用いる前 | `references/causal-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/causal-analysis.md` | |
 | 再発防止セルフチェックへの追加を選ぶ前 | `references/recurrence-self-check.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/recurrence-self-check.md` | |
 | 原因分析の記録を作成する前 | `references/analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/analysis-records.md` | |
@@ -85,7 +88,7 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、`
 
 ## 再発防止策の必須性
 
-`references/root-cause-analysis.md`の「再発防止策の必須性」を適用する。
+`references/root-cause-remediation.md`の「再発防止策の必須性」を適用する。
 
 ## 対策の選定
 
@@ -93,11 +96,11 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、`
 
 ## テストの原因調査
 
-`references/root-cause-analysis.md`の「テストの原因調査」を適用する。
+`references/root-cause-scenarios.md`の「テストの原因調査」を適用する。
 
 ## 所要の原因調査
 
-`references/root-cause-analysis.md`の「所要の原因調査」を適用する。
+`references/root-cause-scenarios.md`の「所要の原因調査」を適用する。
 
 ## 対策の影響範囲
 
@@ -105,16 +108,16 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、`
 
 ## 母集団と件数を数える層
 
-`references/root-cause-analysis.md`の「母集団と件数を数える層」を適用する。
+`references/root-cause-scenarios.md`の「母集団と件数を数える層」を適用する。
 
 ## 外部からの不具合報告
 
-`references/root-cause-analysis.md`の「外部からの不具合報告」を適用する。
+`references/root-cause-scenarios.md`の「外部からの不具合報告」を適用する。
 
 ## 作業途中で発見した事象
 
-`references/root-cause-analysis.md`の「作業途中で発見した事象」を適用する。
+`references/root-cause-scenarios.md`の「作業途中で発見した事象」を適用する。
 
 ## 同一症状の修正反復
 
-`references/root-cause-analysis.md`の「同一症状の修正反復」を適用する。
+`references/root-cause-scenarios.md`の「同一症状の修正反復」を適用する。

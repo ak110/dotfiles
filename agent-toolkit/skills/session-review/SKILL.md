@@ -20,6 +20,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/session-review/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/completion-report/SKILL.md#「工程」` |
@@ -27,9 +28,9 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/report-formats.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/references/report-formats.md#「振り返り結果報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「振り返り結果報告のフォーマット」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 
 ## 読込表
@@ -51,6 +52,7 @@ description: >
 他のエージェントからタスクを委譲されたエージェントは自ら起動せず、起動の判断を委譲元へ返す。これは、1つのエージェントが全記録を一括して抽出しないと、問題候補の重複や欠落が発生するためである。
 振り返りの最終報告を出力する前に終了し、その後再開されなかったセッションは、終了の経緯（ユーザーによる手動中断や利用制限による打ち切りなど）にかかわらず、ユーザーが意図して終了させたものとみなす。そうしたセッションは後続セッションの振り返り対象には含めず、記録が振り返られていないこと自体も問題視しない。一方、作業が続行されたセッション（同一会話の再開や自動継続、または別のセッションやホスト上でユーザーが明示的に続きを指示した場合）では、未完了の振り返りを残工程として引き継いで実施する（`agent-toolkit:completion-report`の`SKILL.md`「工程」を参照）。
 再発防止策となるAWIの本文起草とキューへの登録は、`agent-toolkit:wi-standards`「投入と取得」に従い、WI投入担当へ委譲して行う。
+振り返りのメインは原因分析と類似見直しを実施し、具体策を選定して結果をWI投入担当へ渡す。投入担当と実行担当は確定済みの調査を繰り返さず、対象の変化や新たな証拠がある場合に必要な範囲を再確認する。
 
 ## 工程
 
@@ -104,7 +106,7 @@ description: >
 4. 選別した問題ごとに、メインエージェント自身が`agent-toolkit:bugfix`を起動し、発生した事象、期待されていた本来の契約、実際の結果、発生条件を入力情報として適用する。同一セッション内で過去に起動していた場合でも、振り返りごとに改めて適用する。WI投入担当による分析を、メインエージェント自身が行うべき原因分析の代替にしない。
    1. 当該事項が、既存の上位規範（`agent-toolkit/rules/01-agent.md`のQCDや「完遂と先送り」など）や対象の目的、技術的な常識から自ずと導き出せるものであるかを検討する。詳細は`agent-basics:bugfix/references/root-cause-analysis.md`「原因分析の品質確認」を参照する。ルールや条文を追加する前に、既存ルールの削除、緩和、または一般化によって目的を達成できるかを検証する。
    2. 初動対応、拡張原因分析の要否判定、根本原因、類似事例の調査結果、具体的な対策、横展開の処置、および再発防止策を実際の証拠と突き合わせ、原因と対策を1つの明確な案として確定する。
-   3. 工程2と工程3で実施したコスト比較の検討結果を活用し、欠陥の有無に関する判定と、具体的な実施方法についての判断をそれぞれ確定させる。対応を見送ると判断した問題についても原因と比較検討の内容を明確に記録し、見送りの根拠を要求の不成立、判明した原因、コスト比較の結果と整合させる。その見送り理由が、`agent-basics:bugfix/references/root-cause-analysis.md`「再発防止策の必須性」で禁止されている不当な根拠に該当しないことを、`references/analysis.md`の基準に照らして確認する。
+   3. 工程2と工程3で実施したコスト比較の検討結果を活用し、欠陥の有無に関する判定と、具体的な実施方法についての判断をそれぞれ確定させる。対応を見送ると判断した問題についても原因と比較検討の内容を明確に記録し、見送りの根拠を要求の不成立、判明した原因、コスト比較の結果と整合させる。その見送り理由が、`agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」で禁止されている不当な根拠に該当しないことを、`references/analysis.md`の基準に照らして確認する。
 5. 確定した原因と対策を要求事項として整理し、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動方法」に定める単位でWI投入担当エージェントへ渡す。
    登録対象となるAWIが1件以上ある場合は、WI投入担当を起動する前にユーザーへ`## 振り返り結果の予告`（登録予定のAWIを`AWI登録予定`行として記載）を通知し、同じターンでWI投入担当を起動する。
    予告のフォーマットは、`agent-toolkit:completion-report`の`references/report-formats.md`「振り返り結果報告のフォーマット」に従う。

@@ -8,6 +8,7 @@ description: >
 # 外部サービスへの投稿前レビュー
 
 第三者に届く文面は、投稿する前に、起草者とは独立した読み取り専用の担当者に検証させる。
+原文や資料から起草・推敲した文面の意味保持には`agent-basics:writing-standards`の`references/writing.md`「ユーザー入力素材の取扱い」を適用する。
 対象かどうかの判定、レビューの依頼、指摘の採否、および実際の投稿は、投稿を担当するエージェントが行う。投稿操作に必要な認可は`agent-toolkit:user-confirmation-and-report`に従って判定する。
 
 投稿前レビューは、独立した担当者を起動できる手段とプラグイン全体の参照資料がそろっている環境で実施する。担当者を起動できない環境では、提示された文面と根拠を読み、検討結果を下書きとして返す。独立したレビューと認可を経た投稿はClaude CodeまたはCodexで行い、下書きの説明には[文章の品質基準](references/quality-standards.md)を用いる。
@@ -18,6 +19,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/external-write-review/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |

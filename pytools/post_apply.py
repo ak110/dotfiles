@@ -253,17 +253,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("profile_default/startup"), datetime.date(2026, 8, 14), empty_dir_only=True),
         cleanup_paths.RemovedPath(Path("profile_default"), datetime.date(2026, 8, 14), empty_dir_only=True),
     ],
-    Path.home() / "bin": [
-        # pytools/ パッケージ化 (fe09fa3) 以降 .chezmoi-source/bin/ の配布対象外となった旧配布物。
-        # 現在は pytools/ の CLI として uv tool install 経由で ~/.local/bin 等に配置される。
-        cleanup_paths.RemovedPath(Path("check-image-sizes.py"), datetime.date(2026, 4, 27)),
-        cleanup_paths.RemovedPath(Path("dpkg-licenses"), datetime.date(2026, 4, 27)),
-        cleanup_paths.RemovedPath(Path("git-justify.py"), datetime.date(2026, 4, 27)),
-        cleanup_paths.RemovedPath(Path("mvdir.py"), datetime.date(2026, 4, 27)),
-        cleanup_paths.RemovedPath(Path("update-ssh-config"), datetime.date(2026, 4, 27)),
-        cleanup_paths.RemovedPath(Path("update-ssh-config.cmd"), datetime.date(2026, 4, 27)),
-        cleanup_paths.RemovedPath(Path("update-ssh-config.py"), datetime.date(2026, 4, 27)),
-    ],
     Path.home() / ".local" / "bin": [
         # 計画ファイル閲覧は atk serve へ統合したため、旧 CLI の配布先を除去する。
         cleanup_paths.RemovedPath(Path("claude-plans-viewer"), datetime.date(2026, 9, 2)),

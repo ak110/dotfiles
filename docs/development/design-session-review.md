@@ -364,4 +364,31 @@ UWI終了の判断基準は`agent-toolkit:bugfix`が定める。書式と自動�
 
 判定結果は`atk review-audit`の判定記録（`review-audit.json`）に加えて対象GitHubリポジトリへも残す。目的は判定の妥当性をユーザーと後続のセッションがGitHubのPull Request画面だけで確認できるようにすることである。構造の理由は、分類と根拠を保持する主体を、判定を再導出できる索引である`review-audit.json`と、人間向けの基準となる記録であるGitHubの本文へ分けた点にある。未解決のreview threadへは`addPullRequestReviewThreadReply`で分類と根拠を返信してから`resolveReviewThread`で解決し、threadを伴わないreview本文へは`gh pr comment`で投稿する。知識境界として、書き込みの手順と承認の扱いは`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持つ。監査担当の実行範囲は`agent-toolkit/skills/process-wi/references/review-audit-launch.md`が持つ。`dismissPullRequestReview`で分類を残す案は、Copilotのreviewが`COMMENTED`状態で到着し、`dismissPullRequestReview`が`COMMENTED`状態を受理しないため採用しない。`resolveReviewThread`の`resolutionReason`で分類を保持する案は、読み取り型`PullRequestReviewThread`が`resolutionReason`を返さず、後続のセッションが機械的に取得できないため採用しない。
 
-Dependabotアラートも同じ監査へ集約する。`atk review-audit pending`が取得と判定区分の付与を担い、監査担当が判定と処置を担う。目的は対象GitHubリポジトリにopenのアラートが出たとき、キューの状態にかかわらずprocess-wiの実行ごとに取得して対応することである。以前は`atk wi process-loop`の待機中確認だけがアラートを取得してAWIを起票していた。このためキューが空にならない間は取得処理へ到達せず、アラートが検出されない区間が生じた。構造の理由は外部サービス上の未処置状態を取り込む時点をprocess-wiの実行ごとの1実装へまとめ、取り込み時点がキューの状態に左右されないようにした点にある。待機中確認は同じ取得関数で未判定件数を調べ、1件以上ならAWIを起票せずにprocess-wiの実行を起動するだけとし、待機中の監視の空白を埋める役割を保つ。判定済みのアラートは`review-audit.json`へ`dependabot:<番号>`の形でreviewの`databaseId`と区別して記録し、待機中確認が同じアラートでprocess-wiの実行を繰り返し起動しないようにする。判定区分のうち、マニフェストがGitHubのdefault branchに実在するかは`atk review-audit pending`が決め、process-wiの実行のベースbranchで修正済みかは監査担当が決める。前者はGitHub APIだけで決まるが、後者は対象リポジトリの作業ツリーと版の比較を要するためである。知識境界として、取得・区分・記録の形式は`agent-toolkit/agent_toolkit/_atk/review_audit.py`が持つ。判定と却下の手順と承認の扱いは`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持つ。process-wiの実行を起動する条件は`agent-toolkit/agent_toolkit/_atk/wi/process_loop_alerts.py`が持つ。待機中確認を撤去して監査だけで取得する案は、キューが空の間はprocess-wiの実行が起動せず、次のAWIが入るまでアラートが放置されるため採用しない。待機中確認と監査の両方で取得する案は、同じアラートがAWIと監査で二重に扱われ、要修正のAWIが重複するため採用しない。既存の待機中確認をprocess-wiの実行の開始時にも実行する案は、Copilot由来のレビュー指摘の取得と別系統に残り、取り込み時点を1か所で定める構造にならないため採用しない。
+Dependabotアラートも同じ監査へ集約する。
+目的は対象GitHubリポジトリにopenのアラートが出たとき、キューの状態にかかわらずprocess-wiの実行ごとに取得して対応することである。
+以前は`atk wi process-loop`の待機中確認だけがアラートを取得してAWIを起票していたため、キューが空にならない間は取得処理へ到達せず、検出されない区間が生じた。
+取り込みをprocess-wiの実行ごとの共通取得へまとめ、待機中確認も同じ関数で未判定件数を調べる。
+待機中は1件以上ならAWIを起票せずprocess-wiを起動し、キューが空の間の監視を補う。
+
+取得・判定区分・版付き記録の形式は`agent-toolkit/agent_toolkit/_atk/review_audit.py`が持つ。
+GitHub APIの`default_branch`が指すブランチの完全SHAを、判定済み除外より先に解決する。
+マニフェスト取得のref、pendingのrevision、list/markの`--revision`を同じSHAへ固定する。
+pendingはそのSHAでのマニフェストの実在を判定し、監査担当は同一マニフェストの解決済み版を各ecosystemの規則で修正版と比較する。
+版の比較を要する判定は監査担当が担い、新しいAPI版比較器は設けない。
+判定と却下・投稿直前レビューの手順と認可は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が定める。
+返却は`agent-toolkit/share/copilot-review-audit.subagent.md`が定める。
+起動と受領は`agent-toolkit/skills/process-wi/references/review-audit-launch.md`が定める。
+process-loopのアラート確認は`agent-toolkit/agent_toolkit/_atk/wi/process_loop_alerts.py`が持つ。
+
+判定済み番号は`review-audit.json`へ`dependabot:<番号>`として確認SHAとともに記録し、同版での反復監査を抑止する。
+既定ブランチ更新後は同番号も再評価し、無版の旧記録はpending除外に使わない。
+既定ブランチで修正済みかマニフェスト不在ならinaccurateで却下し、API終了0と応答number/stateの一致後だけ処置完了とする。
+ベースブランチだけ修正済みなら反映待ち、未修正・比較不能・修正版なしは要修正として、却下せず確認版付きで記録する。
+却下失敗・未判定は未markとし、単一・all-reposとも既存確認間隔で再取得する。
+`process_loop_launch_gate`はWI部分の無進捗抑止を維持し、pendingに残るアラートを起動対象にする。
+Copilot本文の日時記録と未解決threadの取得契約は維持する。
+
+待機中確認を撤去する案は、キューが空の間に次のAWIまでアラートを放置するため採らない。
+待機中確認でもAWIを起票する案は、同じアラートをAWIと監査で二重に扱い、要修正のAWIが重複するため採らない。
+待機中確認をセッション開始時にも別系統のまま実行する案は、Copilotレビューの取得と取り込み時点を共通化できないため採らない。
+全openを毎回監査担当へ渡す案は同版の要修正まで反復し、起動署名に別のrevision台帳を加える案は判定の有効性を重複管理するため採らない。

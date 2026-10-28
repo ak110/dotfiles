@@ -149,15 +149,13 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 terminal.add(session_id)
                 continue
             unobserved.add(session_id)
-        pending_unobserved = self._pending_unobserved_child_sessions.get(session.session_id)
-        if pending_unobserved is not None:
-            unobserved.update(pending_unobserved[1])
+        # 照会のawait中にCLIが回収した子は、照会前の写しから追跡・再配送へ戻さない。
+        terminal.intersection_update(session.live_child_session_ids)
+        unobserved.intersection_update(session.live_child_session_ids)
         for session_id in terminal:
             session.live_child_session_ids.discard(session_id)
             session.terminal_child_session_ids.add(session_id)
-        session.live_child_session_ids.difference_update(unobserved)
-        if unobserved and has_pending_auto_resume_targets(session):
-            self._pending_unobserved_child_sessions[session.session_id] = (session.turn_seq, unobserved)
+        # 観測不能は終了の証拠にならない。次の監視でも同じ識別子を再解決する。
 
         if not has_pending_auto_resume_targets(session) and (
             (session.terminal_child_session_ids or session.codex_terminal_subagent_thread_ids)
@@ -188,8 +186,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session.codex_self_message_repair_consumed = True
             pending_result = session.pending_result
             assert pending_result is not None
-            if unobserved:
-                self._pending_unobserved_child_sessions[session.session_id] = (session.turn_seq + 1, unobserved)
             try:
                 delivery = await self._backend(session.engine).send_message(session, prompt)
                 if delivery.get("delivery") == "reply_failed":
@@ -198,7 +194,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
                         session.codex_self_message_repair_consumed = False
                     return
             except Exception as exc:
-                self._pending_unobserved_child_sessions.pop(session.session_id, None)
                 session.awaiting_auto_resume = False
                 session.auto_resume_deadline = None
                 session.pending_result = None
@@ -222,10 +217,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
         # 保留対象が背景taskの終了だけで消えた場合は確定しない。backendはその終了に続く再開turnの結果で
         # 保留中の結果を差し替えるため、ここで確定すると再開turnの結果より先に待機表明の結果を公開してしまう。
         # この場合の確定は再開turnの結果か保留期限の経過に委ねる。
-        if not has_pending_auto_resume_targets(session) and unobserved:
-            finalize_pending_result(session, unobserved_sessions=unobserved)
-            return
-
         deadline = auto_resume_wait_deadline(session)
         if deadline is not None and asyncio.get_running_loop().time() >= deadline:
             finalize_pending_result(session, unobserved_sessions=unobserved)

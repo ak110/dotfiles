@@ -378,7 +378,7 @@ def _codex_outer_result(timestamp: str, call_id: str, turn_id: str) -> dict:
     )
 
 
-@pytest.mark.parametrize("tool_name", ["exec", "functions.exec"])
+@pytest.mark.parametrize("tool_name", ["exec", "functions.exec", "Exec", "functions.EXEC"])
 def test_dynamic_outer_cell_uses_different_inner_execution_id_and_keeps_both_locations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tool_name: str
 ) -> None:
@@ -410,8 +410,9 @@ def test_dynamic_outer_cell_uses_different_inner_execution_id_and_keeps_both_loc
     assert reads["candidate_id"] in output["mandatory_candidates"]
 
 
+@pytest.mark.parametrize("tool_name", ["functions.exec", "functions.Exec", "functions.EXEC"])
 def test_parallel_outer_cells_keep_ambiguous_execution_attribution_unresolved(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tool_name: str
 ) -> None:
     """同一turnの外側セルが複数なら、完了順から内側実行を割り当てない。"""
     turn_id = "turn-parallel"
@@ -420,7 +421,7 @@ def test_parallel_outer_cells_keep_ambiguous_execution_attribution_unresolved(
             "2026-10-21T00:00:02Z",
             {
                 "type": "custom_tool_call",
-                "name": "functions.exec",
+                "name": tool_name,
                 "call_id": "outer-a",
                 "turn_id": turn_id,
                 "input": "await tools.exec_command({cmd: dynamicA});",
@@ -430,7 +431,7 @@ def test_parallel_outer_cells_keep_ambiguous_execution_attribution_unresolved(
             "2026-10-21T00:00:03Z",
             {
                 "type": "custom_tool_call",
-                "name": "functions.exec",
+                "name": tool_name,
                 "call_id": "outer-b",
                 "turn_id": turn_id,
                 "input": "await tools.exec_command({cmd: dynamicB});",

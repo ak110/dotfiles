@@ -15,7 +15,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Iterable
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
@@ -72,7 +72,7 @@ from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES,
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
-_CLEANUP_ENTRY_SOURCE = """\"\"\"内部の回収APIへ1件の対象を渡し、拒否を終了コード2で返す試験用の入口。\"\"\"
+_CLEANUP_ENTRY_SOURCE = """\"\"\"内部の回収APIへ1件の対象を渡し、拒否を終了コード2で返す試験用スクリプト。\"\"\"
 import sys
 
 from agent_toolkit._atk import managed_temp
@@ -86,7 +86,7 @@ except managed_temp.ManagedTempError as error:
 
 
 def _cleanup_entry(directory: pathlib.Path) -> pathlib.Path:
-    """公開CLIを持たない回収APIを、別プロセスから実物のまま呼ぶ入口を作成する。"""
+    """公開CLIを持たない回収APIを、別プロセスから実物のまま呼ぶスクリプトを作成する。"""
     entry = directory / "cleanup_entry.py"
     entry.write_text(_CLEANUP_ENTRY_SOURCE, encoding="utf-8")
     return entry
@@ -731,6 +731,7 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
         assert set(server["env"]) == {
             "AGENT_TOOLKIT_OWNER_SESSION",
             "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+            "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT",
             plugin_environment.RUNTIME_DATA_ENV,
         }
         assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
@@ -791,6 +792,7 @@ async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
         assert set(server["env"]) == {
             "AGENT_TOOLKIT_OWNER_SESSION",
             "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+            "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT",
             plugin_environment.RUNTIME_DATA_ENV,
         }
         assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
@@ -839,6 +841,7 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
         "UV_PROJECT_ENVIRONMENT": "caller-env",
         "CLAUDE_CODE_SESSION_ID": "parent-context",
         "AGENT_TOOLKIT_OWNER_SESSION": "parent-owner",
+        "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT": "stale-parent-plugin-root",
     }
     client = _TierClient()
     # App Serverの生成後に外側の環境が変わっても、実際の配送元は起動時のsnapshotである。
@@ -880,6 +883,7 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
                 **supplied,
                 "CLAUDE_CODE_SESSION_ID": None,
                 "AGENT_TOOLKIT_OWNER_SESSION": "chosen-owner",
+                "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT": str(plugin_roots.SERVER_PLUGIN_ROOT),
                 "MISSING_CUSTOM_SETTING": None,
             }
             encoded = json.dumps(server)
@@ -966,6 +970,51 @@ async def test_close_attempts_other_connections_after_one_connection_fails(
         await manager.close()
     assert first_close.await_count == 2
     second_close.assert_awaited_once()
+
+
+@pytest.mark.parametrize("blocked", ["background", "client"])
+@pytest.mark.asyncio
+async def test_close_starts_all_clients_before_waiting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, blocked: str
+) -> None:
+    """background taskと1つの接続が停止していても、他の所有接続の停止を先に開始する。"""
+    release = asyncio.Event()
+    clients = [FakeCodexClient(), FakeCodexClient()]
+    started = [asyncio.Event(), asyncio.Event()]
+    async with subject.AppServerManager() as manager:
+        monkeypatch.setattr(manager, "_ensure_client", AsyncMock(side_effect=clients))
+        for name in ("first", "second"):
+            prompt = state.ResumePrompt("停止試験")
+            try:
+                await manager.resume(name, prompt, str(tmp_path))
+            finally:
+                prompt.close()
+        for index, client in enumerate(clients):
+            original_close = client.close
+
+            async def close(*, position: int = index, original: Any = original_close) -> list[str]:
+                started[position].set()
+                if blocked == "client" and position == 0:
+                    await release.wait()
+                return await original()
+
+            monkeypatch.setattr(client, "close", close)
+
+        async def background() -> None:
+            while not release.is_set():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await release.wait()
+
+        if blocked == "background":
+            task = asyncio.create_task(background())
+            manager._background_tasks.add(task)
+            await asyncio.sleep(0)
+        closing = asyncio.create_task(manager.close())
+        try:
+            await asyncio.wait_for(asyncio.gather(*(event.wait() for event in started)), 2)
+        finally:
+            release.set()
+            await closing
 
 
 @pytest.mark.asyncio
@@ -2338,6 +2387,65 @@ async def test_other_release_paths_terminate_owned_resources(
         assert not any(fake.alive(pid) for pid in mcp_pids)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGTERM無視と実子孫回収を観測する")
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_close_reclaims_app_server_and_mcp_when_reader_and_term_stall(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """readerが取消しを無視し、App ServerがTERMを無視しても所有MCPの回収まで終了する。"""
+    wrapper = tmp_path / "stubborn_app_server.py"
+    wrapper.write_text(
+        "import runpy, signal, sys\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        "sys.argv = sys.argv[1:]\n"
+        "runpy.run_path(sys.argv[0], run_name='__main__')\n",
+        encoding="utf-8",
+    )
+    async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, backend, fake):
+        monkeypatch.setattr(
+            subject,
+            "APP_SERVER_COMMAND",
+            (
+                sys.executable,
+                str(wrapper),
+                str(codex_app_server_support.FAKE_APP_SERVER),
+                str(fake.log_path),
+            ),
+        )
+        session_id = (await manager.start("plan", "停止試験", str(tmp_path)))["session_id"]
+        await _wait_terminal(manager, session_id)
+        server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
+        assert fake.alive(server_pid) and mcp_pids
+        client = backend._clients[session_id]
+        original_reader = client._reader_task
+        assert original_reader is not None
+        original_reader.cancel()
+        await asyncio.gather(original_reader, return_exceptions=True)
+        release = asyncio.Event()
+
+        async def stuck_reader() -> None:
+            while not release.is_set():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await release.wait()
+
+        reader = asyncio.create_task(stuck_reader())
+        client._reader_task = reader
+        wait = subject.lifetime.wait_for_shutdown
+
+        async def bounded_wait(tasks: Iterable[asyncio.Task[Any]], *, timeout: float = 15) -> list[Any]:
+            return await wait(tasks, timeout=0.05 if timeout == 15 else timeout)
+
+        monkeypatch.setattr(subject.lifetime, "wait_for_shutdown", bounded_wait)
+        try:
+            await asyncio.wait_for(manager.stop(session_id), 20)
+            assert not fake.alive(server_pid)
+            assert not any(fake.alive(pid) for pid in mcp_pids)
+        finally:
+            release.set()
+            await reader
+
+
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2523,9 +2631,13 @@ async def test_app_server_inherits_prepared_conversation_environment(monkeypatch
     async with subject.JsonRpcProcess(_ignore_message, _ignore_message, root_session_id="selected-owner") as client:
         with pytest.raises(RuntimeError, match="環境観測完了"):
             await client.start()
-        forbidden = subject.mcp_environment._NON_INHERITABLE_NAMES - {"agent_toolkit_owner_session"}
+        forbidden = subject.mcp_environment._NON_INHERITABLE_NAMES - {
+            "agent_toolkit_owner_session",
+            "agent_toolkit_delegated_plugin_root",
+        }
         assert not forbidden.intersection(name.casefold() for name in captured)
         assert captured["AGENT_TOOLKIT_OWNER_SESSION"] == "selected-owner"
+        assert captured["AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT"] == str(plugin_roots.SERVER_PLUGIN_ROOT)
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

@@ -18,6 +18,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import claude_agent_sdk
+import psutil
 import pytest
 from claude_agent_sdk import ToolResultBlock, UserMessage
 
@@ -1248,6 +1249,55 @@ async def test_claude_server_close_disconnects_and_retains_result(
         await backend.close()
         assert client.disconnected is True
         assert sessions[session.session_id].agent_message == "完了"
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_close_reclaims_cli_when_sdk_disconnect_never_returns(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """SDK切断が返らない場合も、切断前に確保した実CLIと子孫を回収する。"""
+    script = tmp_path / "runtime.py"
+    script.write_text(
+        "import pathlib, subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        "pathlib.Path(sys.argv[1]).write_text(str(child.pid))\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    disconnect_started = asyncio.Event()
+
+    class StalledClient(QueueClaudeClient):
+        _transport: Any
+
+        async def disconnect(self) -> None:
+            disconnect_started.set()
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(claude, "_DISCONNECT_TIMEOUT", 0.05)
+    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    with process_tree.process_scope([sys.executable, str(script), str(tmp_path / "child.pid")], env=host_environ()) as process:
+        targets = [psutil.Process(process.pid)]
+        client = StalledClient([[SystemMessage("claude-stalled-disconnect"), ResultMessage("完了")]])
+        client._transport = SimpleNamespace(_process=process)
+        try:
+
+            async def ready() -> None:
+                while not (tmp_path / "child.pid").exists():
+                    await asyncio.sleep(0.01)
+
+            await asyncio.wait_for(ready(), 10)
+            targets += process_tree.collect_descendants(process.pid)
+            assert len(targets) == 2
+            async with claude.ClaudeServerManager({}, client_factory=lambda _options: client) as backend:
+                await backend.start("停止試験", str(tmp_path))
+                await asyncio.wait_for(backend.close(), 10)
+            assert disconnect_started.is_set()
+            await asyncio.to_thread(process.wait, timeout=2)
+            assert all(not target.is_running() or target.status() == psutil.STATUS_ZOMBIE for target in targets)
+        finally:
+            await asyncio.to_thread(process_tree.reclaim_processes, targets, timeout=0.5)
+            await asyncio.to_thread(process.wait, timeout=2)
 
 
 @contextlib.asynccontextmanager

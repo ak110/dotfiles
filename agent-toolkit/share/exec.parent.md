@@ -26,7 +26,7 @@
 | 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec.subagent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「入力」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
 | 計画準備の返却を受領し、書込対象の追加を判断する時 | `exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#冒頭` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
@@ -48,6 +48,8 @@
 
 ## 入力
 
+- 必須入力名: `担当種別`、`引き継ぎ記録先`、`書込担当一覧`
+
 初回のレーン資源は、`skills/process-wi/references/run-lanes.md`「レーンと資源」に沿って実行する`atk lane create`から取得する。終了コード0、状態がreadyであること、ならびに環境準備の保存済み出力を確認したうえで担当者を起動する。失敗した場合は登録情報と成果物を保持し、同じcreate処理の再開へ戻る。担当者の`cwd`はその資源のworktreeとし、生成側が保持している資源情報や選定項目を委譲入力へ重複して記載しない。
 
 レーン担当は、`agents_server`の`start`を以下の引数で呼び出して起動する。
@@ -67,6 +69,7 @@
 - `固有指示`: AWI固有の処理順序、公開、確認、検証に関する個別指示。選定結果に含まれる`プロジェクト規範の指定`および上流投入に関する3行は除外する。該当指示がない場合は省略する
 - `上流投入結果`: `上流投入`に`混在`の項目が含まれるレーンにのみ渡す。`skills/process-wi/references/run-lanes.md`「上流投入」で受け取った要求ごとの要求内容、投入先、`ファイル名`、`結果`の組み合わせを指定する（選定結果には含まれないため）
 - `再開位置`: 中断したレーンを再開する際に、`~/.claude/plans`に残されている計画ファイルの絶対パス。複数計画を持つレーンの場合は、全計画、対応AWI、保存状態を保持した引き継ぎ記録も併せて渡す。初回起動時や、初回選定の項目別再開（`反映後の観測だけが残る`で始まる観測のみの再開を含む）では、担当者が選定結果から直接読み取るため入力から除外する
+- `レビュー指摘管理表`: レビュー修正担当を新規起動する場合に、未解決の指摘を含む全計画の管理表の絶対パスを指定する。複数の場合はJSON配列とする
 - `環境構築`: 専用worktreeにおける環境の準備状況。`atk lane create`の準備処理と保存済み出力から`完了済み`、または準備不要と判断した場合はその旨を記載する。作成および準備の完了を確実に確認できない場合は担当者を起動せず、登録済み資源の準備状態を回復する。CI修正などで既存の専用worktreeに対して起動し、環境構築を担当者に委ねる場合は`レーン担当が実行`と指定する
 - `書込担当一覧`: 重複のない実session IDを格納したJSON配列。統合先メインエージェントと合意済みの担当者を初回入力に含め、起動直後に返された現在のレーン担当者のIDを追加して追送する。担当範囲との対応関係を維持し、担当者の交代、再開、および単一レーンへの追送のタイミングで更新する
 - `引き継ぎ記録先`: `agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う。`再開位置`を指定する再開時、`レビュー修正担当`の起動時、ならびに統合するレーン担当を新規起動する際は、先行する記録をそのまま引き継ぐため`（継続）`と指定する

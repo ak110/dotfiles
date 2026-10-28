@@ -1,6 +1,7 @@
 """両ホストの宣言配送、取得範囲、主体と圧縮の境界を確かめる。"""
 
 import json
+import pathlib
 import shutil
 import subprocess
 
@@ -1741,6 +1742,61 @@ def test_split_full_document_requires_no_gap_and_same_actor(tmp_path, monkeypatc
         assert read_delivery.target_ready(records, ReadTarget(path), "main") is (start == 2 and agent == "main")
 
 
+def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_boundary(monkeypatch, memory):
+    root = pathlib.Path(__file__).resolve().parents[3]
+    sources = (root / "skills/single-lane-process/SKILL.md", root / "share/single-lane-execution.md")
+    rows = [row for source in sources for row in parse_tables(source, root, strict=True)]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
+    monkeypatch.setattr(read_delivery, "_project_skill_rows", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(read_delivery.read_triggers, "reference_method_targets", lambda *_args, **_kwargs: ())
+    monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
+    payload = {"cwd": str(root), "turn_id": "turn"}
+    phases = (
+        ("選定", root / "skills/process-wi/references/selection-procedure.md", ""),
+        ("計画", root / "skills/plan-mode/SKILL.md", ""),
+        ("共通工程", root / "share/single-lane-execution.md", ""),
+        ("確認", root / "skills/user-confirmation-and-report/SKILL.md", ""),
+        ("実装と実行レビュー", root / "share/exec-review.parent.md", ""),
+        ("要件検収", root / "share/verification-evidence.md", ""),
+        ("レビュー収束", root / "share/review-loop-coordination.md", "冒頭「ラウンドの遷移」から「応答済みの判定」まで"),
+        ("公開前検証", root / "skills/commit/references/publish.md", ""),
+        ("終了", root / "skills/completion-report/SKILL.md", ""),
+    )
+    for phase, path, heading in phases:
+        target = ReadTarget(path, heading)
+        inputs = {"file_path": str(path)}
+        assert any(read_delivery.row_matches(row, "Read", inputs, str(root)) and target in row.targets for row in rows), phase
+        read_delivery.deliver(payload, "Read", inputs, "test")
+        records = memory[rules_context.OPERATION_SKILL_READY_KEY]
+        assert target in read_delivery.selected_targets(records, "main"), phase
+        assert not read_delivery.target_ready(records, target, "main"), phase
+        body = path.read_text(encoding="utf-8")
+        for expected in {
+            "選定": ("処理対象の決定",),
+            "計画": ("計画ファイルの作成要否",),
+            "共通工程": ("独立した実行レビュー", "採否"),
+            "確認": ("確認要否の判定",),
+            "実装と実行レビュー": ("起動", "返却に含まれる既存不良の受領"),
+            "要件検収": ("完成条件証拠の検証記録",),
+            "レビュー収束": ("ラウンドの遷移", "応答済みの判定"),
+            "公開前検証": ("公開工程", "CI"),
+            "終了": ("終了処理",),
+        }[phase]:
+            assert expected in target.body(body), phase
+        if phase == "要件検収":
+            read_delivery.observe({**payload, "tool_response": body.splitlines()[0]}, "Read", {**inputs, "limit": 1}, "test")
+            assert not read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], target, "main")
+            read_delivery.observe({**payload, "agent_id": "child", "tool_response": body}, "Read", inputs, "test")
+            assert not read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], target, "main")
+        read_delivery.observe({**payload, "tool_response": body}, "Read", inputs, "test")
+        records = memory[rules_context.OPERATION_SKILL_READY_KEY]
+        assert read_delivery.target_ready(records, target, "main"), phase
+        assert str(path) not in (_guidance(read_delivery.deliver(payload, "Read", inputs, "test")) or ""), phase
+        if phase == "要件検収":
+            assert read_delivery.target_ready(records, ReadTarget(path, "完成条件証拠の検証記録"), "main")
+            assert not read_delivery.target_ready(records, target, "independent")
+
+
 @pytest.mark.parametrize("context", [{}, {"agent_id": "child"}, {"turn_id": "turn"}])
 def test_public_missing_selected_document_guides_repair_without_blocking(tmp_path, monkeypatch, memory, context):
     source = tmp_path / "SKILL.md"
@@ -1759,6 +1815,7 @@ def test_public_missing_selected_document_guides_repair_without_blocking(tmp_pat
     result = _run_hook_in_process("pretooluse", payload)
     assert result.returncode == 0 and not result.stderr
     assert str(missing) in result.stdout and "存在しない" in result.stdout and "復旧" in result.stdout
+    assert result.stdout.count("存在しない") == 1
     assert "委譲元" in result.stdout and "ユーザー" in result.stdout
     assert "permissionDecision" not in result.stdout
     assert not memory.get(rules_context.OPERATION_SKILL_READY_KEY, {})

@@ -22,3 +22,5 @@
 | 実行工程を委譲するときの受領の取り決めを確定する時（explore・shellを除く） | `../process-wi/references/run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
 | 実行工程を委譲するときの受領の取り決めを確定する時（explore・shellを除く） | `../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` | |
 | 指摘の採否と修正を確定する時 | `agent-toolkit:review-standards`を起動し、同スキルの`references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/reviewee.md` | |
+| Claude Codeで長時間待機前の会話圧縮、またはバックグラウンドタスクの起動形を判断する時 | `references/waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` | |
+| 停滞の検知と巻き取りを判断する時 | `references/waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` | |

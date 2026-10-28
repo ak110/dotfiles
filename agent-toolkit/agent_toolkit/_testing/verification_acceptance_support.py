@@ -16,6 +16,7 @@ import watchdog.utils
 from pyfltr.command import execution_slot
 
 from agent_toolkit._atk.serve import app, config, plans, sessions, state, wi_operations
+from agent_toolkit._common.atomic_file import atomic_write
 
 
 def _wait_release(root: pathlib.Path, label: str) -> None:
@@ -57,6 +58,7 @@ class _OfflineOperations(wi_operations.Operations):
 
 
 async def _serve(root: pathlib.Path, failure: bool) -> None:
+    existing_threads = set(threading.enumerate())
     notes = root / "notes"
     plan_root = root / "plans"
     plan_root.mkdir()
@@ -80,10 +82,12 @@ async def _serve(root: pathlib.Path, failure: bool) -> None:
 
             async def shutdown() -> None:
                 observed_threads.extend(
-                    thread for thread in threading.enumerate() if isinstance(thread, watchdog.utils.BaseThread)
+                    thread
+                    for thread in threading.enumerate()
+                    if thread not in existing_threads and isinstance(thread, watchdog.utils.BaseThread)
                 )
                 assert all(thread.is_alive() for thread in observed_threads)
-                (root / "serve.ready").write_text(json.dumps({"port": port}), encoding="utf-8")
+                atomic_write(root / "serve.ready", json.dumps({"port": port}))
                 deadline = asyncio.get_running_loop().time() + 40
                 while not (root / "serve.release").exists():
                     if asyncio.get_running_loop().time() >= deadline:

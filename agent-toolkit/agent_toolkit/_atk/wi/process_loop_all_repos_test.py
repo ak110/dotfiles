@@ -1135,7 +1135,7 @@ def test_no_progress_repository_is_skipped(
     assert "担当の起動を見送ります" in out and "新しい未判定のDependabotアラート" in out
 
 
-@pytest.mark.parametrize("change", ["new-wi", "body", "state", "readiness", "new-alert", "during-run"])
+@pytest.mark.parametrize("change", ["new-wi", "body", "state", "readiness", "new-alert", "during-run", "unmarked-alert"])
 def test_skipped_repository_relaunches_on_change(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, change: str) -> None:
     """見送り中に起動入力が変われば次の反復で同じ対象の担当を起動する。稼働中に加わったWIも次の起動対象になる。"""
     repositories = _repositories(tmp_path, monkeypatch)
@@ -1169,16 +1169,61 @@ def test_skipped_repository_relaunches_on_change(tmp_path: pathlib.Path, monkeyp
     recorded = _run_loop_rounds(
         monkeypatch, notes, manager, on_wait=(apply,), no_alerts=False, alert_interval=0, alert_forge="github"
     )
-    # 未判定アラートだけを持つ他の対象は、1回目の担当の後は入力が変わらない限り見送られる。
+    # 未markのアラートは却下失敗を含むため、WIの変化によらず次回の監査へ残す。
     launched = [pathlib.Path(cwd).name for cwd, _prompt in manager.started] + [
         session_id.removeprefix("session-") for session_id, prompt in manager.sent if "repository-delegate" in prompt
     ]
-    # 2回目は保持したall-repos担当への再開の配送で起動する。新しいアラートは全対象の入力を変える。
-    relaunched = ["one", "two", "empty"] if change == "new-alert" else ["one"]
+    # 2回目は保持したall-repos担当への再開の配送で起動する。
+    relaunched = ["one", "two", "empty"]
     assert launched == ["one", "two", "empty", *relaunched]
-    assert {fields["target_repo"] for fields in _events(recorded, "launch_skipped_no_progress")} == (
-        set() if change == "new-alert" else {repositories[1].repo_id, repositories[2].repo_id}
-    )
+    assert not _events(recorded, "launch_skipped_no_progress")
+
+
+def test_default_revision_reaudits_same_alert_with_empty_queues(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """公開markで同版を抑止した後、default更新で同じ番号をall-reposの空キューから再監査する。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    revision = "a" * 40
+    manifests: list[str] = []
+
+    def rest(path: str, **_kwargs: Any) -> Any:
+        if "/dependabot/alerts?" in path:
+            return [
+                [
+                    {
+                        "number": 40,
+                        "dependency": {"manifest_path": "uv.lock", "package": {"name": "PyJWT", "ecosystem": "pip"}},
+                        "security_vulnerability": {"first_patched_version": {"identifier": "2.14.0"}},
+                    }
+                ]
+            ]
+        if path.endswith("/commits/main"):
+            return {"sha": revision}
+        if "/contents/" in path:
+            assert path.endswith(f"?ref={revision}")
+            manifests.append(path)
+            return {"type": "file"}
+        return {"default_branch": "main"}
+
+    monkeypatch.setattr(review_audit, "_gh_rest", rest)
+    monkeypatch.setattr(wi_alerts, "check_and_submit_alerts", lambda *_a, **_k: wi_alerts.AlertCheckResult(0, ()))
+    for repository in repositories:
+        repo = repository.repo_id.partition("/")[2]
+        with pytest.raises(SystemExit) as ended:
+            atk.main(["review-audit", "mark", "--repo", repo, "--revision", revision, "dependabot:40"])
+        assert ended.value.code == 0
+
+    def advance() -> None:
+        nonlocal revision
+        revision = "b" * 40
+
+    manager = _UnresolvedManager(blocked=True)
+    _run_loop_rounds(monkeypatch, notes, manager, on_wait=(advance,), no_alerts=False, alert_interval=0, alert_forge="github")
+    assert sorted(pathlib.Path(cwd).name for cwd, _prompt in manager.started) == ["empty", "one", "two"]
+    assert manifests and all(path.endswith(f"?ref={revision}") for path in manifests)
 
 
 @pytest.mark.parametrize("mode", ["resume", "auto-resume"])

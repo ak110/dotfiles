@@ -30,6 +30,7 @@ from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.cli-turn")
 _STDERR_LIMIT_CHARS = 4000
+_STOP_TIMEOUT = 5.0
 
 
 def _child_env(root_session_id: str | None) -> dict[str, str]:
@@ -561,14 +562,16 @@ async def _terminate_process(process: asyncio.subprocess.Process) -> None:
     if process.returncode is not None:
         return
     descendants = await run_file_operation(process_tree.collect_descendants, process.pid)
-    with contextlib.suppress(ProcessLookupError):
-        process.terminate()
-    with contextlib.suppress(Exception):
-        await asyncio.wait_for(process.wait(), timeout=5.0)
-    if process.returncode is None:
+    try:
         with contextlib.suppress(ProcessLookupError):
-            process.kill()
+            process.terminate()
         with contextlib.suppress(Exception):
-            await process.wait()
-    residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
-    process_tree.log_residual(residual, context=f"CLI pid={process.pid}")
+            await asyncio.wait_for(process.wait(), timeout=_STOP_TIMEOUT)
+        if process.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(process.wait(), timeout=_STOP_TIMEOUT)
+    finally:
+        residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
+        process_tree.log_residual(residual, context=f"CLI pid={process.pid}")

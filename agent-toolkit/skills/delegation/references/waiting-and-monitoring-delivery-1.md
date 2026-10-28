@@ -12,3 +12,5 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime.md#「後続操作の共通先行条件」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「後続操作の共通先行条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-code-runtime.md#「待機中の定期再確認と背景転換」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md#「待機中の定期再確認と背景転換」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime.md#「agents_serverの二層待機」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「agents_serverの二層待機」` |
+| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
+| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` |

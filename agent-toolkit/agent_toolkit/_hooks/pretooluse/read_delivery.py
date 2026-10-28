@@ -47,7 +47,7 @@ def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> lis
     if sibling is not None:
         sources.extend(sorted((sibling / "skills").rglob("*.md")))
     # 宣言表ごとの入れ子scopeを、1回のhook要求が共有する一覧へ接続する。
-    with plugin_resolution_scope(session_id=session_id):
+    with plugin_resolution_scope(session_id=session_id), read_triggers.resolution_scope():
         entries = [
             (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd))
             for source in dict.fromkeys(sources)
@@ -1065,7 +1065,9 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     _llm_notice(
                         f"資料`{missing.path}`は存在しない。",
                         tag=_WARN_TAG,
-                        fix=rules_context.acquisition_failure(missing, error, shell=False),
+                        fix=(
+                            "資料と読込宣言の参照先を復旧せよ。復旧できない場合、委譲先は委譲元へ、それ以外はユーザーへ報告せよ"
+                        ),
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),

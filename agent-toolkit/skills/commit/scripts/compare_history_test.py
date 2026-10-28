@@ -556,3 +556,47 @@ def test_autosquash_cli_validates_invariants_and_many_to_one_mapping(
     assert _compare(repo, invalid, "autosquash", (base, old_head, base, wrong_tree)) != 0
     assert not control.exists() and not invalid.exists()
     assert "次の操作:" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("upstream_text", ["依存変更\n", "別変更\n", "依存変更 \n"])
+def test_rebase_keeps_mapping_for_dependency_already_upstream(
+    repo: pathlib.Path, tmp_path: pathlib.Path, upstream_text: str
+) -> None:
+    """省略された依存変更は、統合先の同一変更だけへ対応付ける。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    dependency = _commit(repo, "dependency.txt", "依存変更\n", "依存更新")
+    old_head = _commit(repo, "implementation.txt", "実装\n", "実装")
+    _git(repo, "checkout", "-b", "upstream", base)
+    new_base = _commit(repo, "dependency.txt", upstream_text, "上流の依存更新")
+    new_head = _commit(repo, "implementation.txt", "実装\n", "実装")
+    output = tmp_path / "dependency-map.json"
+
+    result = _compare(repo, output, "rebase", (base, old_head, new_base, new_head))
+
+    if upstream_text == "依存変更\n":
+        assert result == 0
+        assert json.loads(output.read_text()) == {dependency: new_base, old_head: new_head}
+    else:
+        assert result == 1
+        assert not output.exists()
+
+
+@pytest.mark.parametrize("loss", ["revert", "merge-discard"])
+def test_rebase_rejects_upstream_dependency_not_retained_at_base(repo: pathlib.Path, tmp_path: pathlib.Path, loss: str) -> None:
+    """履歴内の同一変更が新baseで失われている場合は、省略を受理しない。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    _commit(repo, "dependency.txt", "依存変更\n", "依存更新")
+    old_head = _commit(repo, "implementation.txt", "実装\n", "実装")
+    _git(repo, "checkout", "-b", "upstream", base)
+    dependency = _commit(repo, "dependency.txt", "依存変更\n", "上流の依存更新")
+    if loss == "revert":
+        _git(repo, "revert", "--no-edit", dependency)
+    else:
+        _git(repo, "checkout", "-b", "integration", base)
+        _git(repo, "merge", "--no-ff", "-s", "ours", "upstream", "-m", "依存変更を不採用とする統合")
+    new_base = _git(repo, "rev-parse", "HEAD")
+    new_head = _commit(repo, "implementation.txt", "実装\n", "実装")
+    output = tmp_path / "lost-dependency-map.json"
+
+    assert _compare(repo, output, "rebase", (base, old_head, new_base, new_head)) == 1
+    assert not output.exists()

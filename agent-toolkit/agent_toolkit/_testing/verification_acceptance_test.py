@@ -15,13 +15,43 @@ from collections.abc import Callable, Generator
 from unittest import mock
 
 import pytest
+import watchdog.observers
 
 from agent_toolkit._atk.lane_test import prepare_lane_verification
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import atomic_file, process_tree
 from agent_toolkit._testing import verification_acceptance_support
 
 _DRIVER = pathlib.Path(verification_acceptance_support.__file__)
 _PLUGIN = _DRIVER.parents[2]
+
+
+@pytest.mark.asyncio
+async def test_ready_is_published_after_complete_json(tmp_path, monkeypatch):
+    """置換直前までreadyは不在で、公開する一時ファイルは完全なJSONを保持する。"""
+    replace = atomic_file._replace
+    observed = []
+
+    def observe(source, destination):
+        if destination.name == "serve.ready":
+            assert not destination.exists()
+            observed.append(json.loads(pathlib.Path(source).read_text(encoding="utf-8")))
+            (tmp_path / "serve.release").touch()
+        replace(source, destination)
+
+    monkeypatch.setattr(atomic_file, "_replace", observe)
+    unrelated = watchdog.observers.Observer()
+    unrelated.start()
+    try:
+        await verification_acceptance_support._serve(tmp_path, failure=False)  # pylint: disable=protected-access  # ready公開直前の内部境界を観測する。
+        assert unrelated.is_alive()
+    finally:
+        unrelated.stop()
+        unrelated.join(timeout=5)
+        assert not unrelated.is_alive()
+    assert len(observed) == 1 and observed[0]["port"] > 0
+    assert json.loads((tmp_path / "serve.ready").read_text(encoding="utf-8")) == observed[0]
+
+
 _PROBE = """\
 import json, pathlib, sys, time
 from pyfltr.command import execution_slot
@@ -52,7 +82,7 @@ def _wait(path: pathlib.Path, process: subprocess.Popen[str]) -> None:
 @contextlib.contextmanager
 def _process(argv: list[str], environment: dict[str, str], cwd: pathlib.Path) -> Generator[subprocess.Popen[str]]:
     # 停止確認が失敗した場合も、Popen.__exit__の無期限waitで診断を妨げない。
-    process = subprocess.Popen(  # pylint: disable=consider-using-with
+    with process_tree.process_scope(
         argv,
         cwd=cwd,
         env=environment,
@@ -61,16 +91,8 @@ def _process(argv: list[str], environment: dict[str, str], cwd: pathlib.Path) ->
         text=True,
         encoding="utf-8",
         errors="replace",
-    )
-    with contextlib.ExitStack() as streams:
-        for stream in (process.stdout, process.stderr):
-            if stream is not None:
-                streams.callback(stream.close)
-        try:
-            yield process
-        finally:
-            residual = process_tree.stop_process_tree(process) if process.poll() is None else []
-            assert not residual, residual
+    ) as process:
+        yield process
 
 
 @pytest.mark.parametrize("failing_stream", ["stdout", "stderr"])
@@ -100,6 +122,34 @@ def _environment(root: pathlib.Path) -> dict[str, str]:
 
 def _driver(mode: str, root: pathlib.Path, label: str, *argv: str) -> list[str]:
     return [sys.executable, str(_DRIVER), mode, str(root), label, *argv]
+
+
+@pytest.mark.parametrize("failure", ["exit-before-ready", "body"])
+def test_process_reclaims_real_child_and_pipes_on_failure(tmp_path: pathlib.Path, failure: str) -> None:
+    """ready待機中の終了とwith本体の例外でも、元の診断と実子・両パイプの回収を保持する。"""
+    script = tmp_path / "child.py"
+    script.write_text(
+        "import pathlib, sys, time\n"
+        "print('child-stdout', flush=True)\n"
+        "print('child-stderr', file=sys.stderr, flush=True)\n"
+        "if sys.argv[1] == 'exit-before-ready':\n"
+        "    sys.exit(7)\n"
+        "pathlib.Path(sys.argv[2]).touch()\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    ready = tmp_path / "child.ready"
+    expected = "同期点より前に終了した.*child-stdout.*child-stderr" if failure == "exit-before-ready" else "本体の例外"
+    with (
+        pytest.raises(RuntimeError, match=expected),
+        _process([sys.executable, str(script), failure, str(ready)], _environment(tmp_path), tmp_path) as process,
+    ):
+        _wait(ready, process)
+        raise RuntimeError("本体の例外")
+    assert process.poll() is not None
+    assert process.returncode == 7 if failure == "exit-before-ready" else process.returncode != 0
+    assert process.stdout is not None and process.stdout.closed
+    assert process.stderr is not None and process.stderr.closed
 
 
 def test_public_verification_entries_share_one_execution_interval(

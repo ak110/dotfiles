@@ -12,7 +12,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「配置規約と導入目的の調査」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「配置規約と導入目的の調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「要件・外部仕様」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「要件・外部仕様」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「確定した要件と委譲元の判断」「未確定事項」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」「未確定事項」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「未確定事項」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「未確定事項」` |
@@ -27,12 +27,12 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「節の構成と分担」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「節の構成と分担」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/analysis-records.md#「原因分析の記録先」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「処置の階層」「再発防止策の必須性」「類似見直しと再発防止の完了」「再発防止としてのテスト」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「処置の階層」「再発防止策の必須性」「類似見直しと再発防止の完了」「再発防止としてのテスト」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策の必須性」「類似見直しと再発防止の完了」「再発防止としてのテスト」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策の必須性」「類似見直しと再発防止の完了」「再発防止としてのテスト」` |
 | 原因分析の記録が推定だけに依拠していないことを判定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md#「命名の方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/defined-names.md#「命名の方針」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「逐語引用の対応付け」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「逐語引用の対応付け」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../search/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/search/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |

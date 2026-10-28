@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Generator
+from unittest import mock
 
 import psutil
 import pytest
@@ -18,6 +19,30 @@ import pytest
 from agent_toolkit._common import process_tree
 
 _CHILD_SOURCE = "import time; time.sleep(120)"
+
+
+def test_process_scope_reaps_child_after_stop_failure(monkeypatch):
+    """停止処理が例外を返しても、所有する子の終了状態とパイプを回収する。"""
+    process = mock.Mock()
+    process.poll.return_value = None
+    monkeypatch.setattr(subprocess, "Popen", mock.Mock(return_value=process))
+    monkeypatch.setattr(process_tree, "stop_process_tree", mock.Mock(side_effect=RuntimeError("停止失敗")))
+    with pytest.raises(RuntimeError, match="停止失敗"), process_tree.process_scope([]):
+        pass
+    process.kill.assert_called_once_with()
+    process.wait.assert_called_once_with(timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
+    for stream in (process.stdin, process.stdout, process.stderr):
+        stream.close.assert_called_once_with()
+
+
+def test_stop_process_tree_waits_for_owned_exit_status(monkeypatch):
+    """資源の解放が先に観測されても、Popenの終了状態を上限付きで回収する。"""
+    process = mock.Mock(pid=123)
+    monkeypatch.setattr(process_tree, "collect_descendants", mock.Mock(return_value=[]))
+    monkeypatch.setattr(process_tree, "reclaim_descendants", mock.Mock(return_value=[]))
+    monkeypatch.setattr(psutil, "Process", mock.Mock())
+    assert process_tree.stop_process_tree(process) == []
+    process.wait.assert_called_once_with(timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
 
 
 def _stubborn_child_source(ready_marker: pathlib.Path) -> str:

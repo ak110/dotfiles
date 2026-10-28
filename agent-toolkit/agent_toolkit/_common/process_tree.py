@@ -44,7 +44,7 @@ def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
         targets = descendants
     residual = reclaim_descendants(targets)
     try:
-        process.wait(timeout=0)
+        process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         if not residual:
             residual.append(f"{process.pid}: {process.args!r}")
@@ -65,7 +65,12 @@ def process_scope(
     finally:
         try:
             if process.poll() is None:
-                log_residual(stop_process_tree(process), context="process_scope")
+                try:
+                    log_residual(stop_process_tree(process), context="process_scope")
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
         finally:
             if close_streams:
                 with contextlib.ExitStack() as cleanup:

@@ -19,11 +19,11 @@
 - 起動手段は、その手段が提供する終了観測手段とセットで選定する。機能と権限が同等であれば、`atk agents wait`によって機械的に終了を観測できる`agents_server`を選択する。ホスト組み込みの委譲機能を選んだ場合は、そのホストの委譲一覧におけるステータスや指定した成果物の状態によって終了を観測する
 - Claude Codeからの委譲では、工程別モデル設定のeffortを指定できるため`agents_server`を標準とする。組み込みの`Agent`ツールを使用するのは次のケースに限る
   - `agents_server`のMCPツールを呼び出せない場合。このときは切り替えた工程、本来の設定値（engine、モデル、effort）、および切り替え理由を報告に記録する
-  - 専用のagent定義が存在する作業（`agent-toolkit`では専用agent定義を配布していないため、ホスト組み込み定義またはプロジェクト固有の定義に限る）
-  - ユーザーまたは上位エージェントから明示的な指示がある場合
+  - `agents_server`のexplore・delegate・taskに同等の手段がない専用agent定義を使う作業（プロジェクト固有の定義など）。Explore・general-purpose・Planなど、同等の作業を行えるホスト組み込みの汎用定義はこの例外に含めない
+  - ユーザーから明示的な指示がある場合
   - `routing.md`「会話を引き継ぐ委譲」によりforkを選択する場合。このときは`subagent_type: "fork"`で起動し、親と同一のモデルおよびeffortを使用する
-- Codexから別のエージェントへ委譲する場合は、利用可能であれば`agents_server`を使用する。forkを選択する場合は、`spawn_agent`の`fork_turns`を省略するか`"all"`を指定し、モデルやeffortを上書きしない
-- 専用定義もCodexの委譲手段も利用できない場合に限り、汎用のAgent機能を使用する
+- Codexから別のエージェントへ委譲する場合も`agents_server`を標準とし、`spawn_agent`は`agents_server`を呼び出せない場合、または`routing.md`「会話を引き継ぐ委譲」によりforkを選択する場合に限る。forkでは`fork_turns`を省略するか`"all"`を指定し、モデルやeffortを上書きしない
+- 汎用のAgent機能にも、前述のClaude Codeの`Agent`ツールを使用する条件を適用する
 - 役割文書が用意されている工程にはその文書を渡す。読み取りのみの調査、参照実装に準拠した定型的な書き込み、出力行数が多いコマンド実行などは、それぞれの専用ツールの公開説明を確認した上で適切に割り当てる。なお、切り詰めや上限到達が報告された調査結果を、網羅性、件数、または不在の根拠としては扱わない
 - 起動時の可用性トラブル（一時的な障害など）に伴う候補の切り替えはサーバー側に任せる。Claudeの`api_error.type`が`usage_limit`である場合は、後述の「代替起動」に従い同一セッションでの継続を優先する。起動後のターンでそれ以外の可用性トラブルが確定したときは、前任が終了し書込所有権が解放されたことを確認した上で、終了結果の`next_action`に従って`start`に`handoff_from`のみを渡して1回起動する。この後任の`session_id`を追加入力の送信先および待機対象とする。同様の障害が続く場合は自身で実施可能な範囲を進め、委譲が不可欠な工程については未完了として委譲元へ返す。なお、実行中の担当者を経過時間や無応答の長さだけで途中で置き換えることは避ける
 - 委譲先からの即時通知の手段は`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」が定め、通知を受領した後の待機手順は`references/waiting-and-monitoring.md`「待機区間の構成」に従う
@@ -50,7 +50,7 @@ fork機能に関する監査記録は、`docs/development/audit-records.md`の�
 
 - 候補列は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`の形式をASCIIカンマで区切って記述し、先頭から順に試行する。effortを省略した場合は`medium`が適用される。OpenCodeのmodel指定に含まれる`/`は維持し、末尾の`@`以降をvariantとして扱う。なお、`orchestrate_model`にはOpenCodeを指定できない
 - 可用性の問題による障害が発生した場合は、次の候補へ進む。OpenCodeのCLIが存在しない場合や、接続・認証に失敗した場合も可用性の障害として処理する。Claudeの利用上限に伴う待機手順は、後述の「代替起動」に従う
-- 初期設定として、executeとorchestrateはClaude Opusを最優先、Codex solを予備とする。reviewとchoresはCodex terraを最優先、Claude Sonnetを予備とし、review_fastとchores_fastはCodex lunaを最優先、Claude Haikuを予備とする。writeはAntigravity Gemini Flash、Claude Opusの順とする
+- 初期設定として、executeとorchestrateはClaude Opusを最優先、Codex solを予備とする。reviewとchoresはCodex sol/lowを最優先、Claude Sonnetを予備とし、review_fastとchores_fastはCodex lunaを最優先、Claude Haikuを予備とする。writeはAntigravity Gemini Flash、Claude Opusの順とする
 - `atk config apply-preset <名前>`を実行すると、writeの設定を維持したまま他の6つのキーを一括で更新できる。用意されている5種類のプリセットは次の通りである。`codex-balanced`は初期設定、`codex-near-primary`はexecuteの先頭をCodexに変更、`codex-primary`はexecuteとorchestrateの先頭をCodexに変更する。`claude-balanced`はchoresとchores_fastの先頭もClaudeに変更し、`claude-primary`は全6工程の先頭をClaudeへ変更する。OpenCodeを使用する場合は各キーに直接指定する
 - Codexの`astra`、`sol`、`terra`、`luna`という指定は、起動時にApp Serverの`model/list`を参照して同一系列の最新の完全IDへ解決する。指定されたeffortが利用できない場合、該当系列が存在しない場合、あるいは一覧取得に失敗した場合は、理由を提示して処理を停止する。完全IDは固定指定として扱い、Claudeやagyの候補を受理できるかどうかは各engineの処理に委ねる
 - 環境変数`AGENT_TOOLKIT_CONFIG_<キー名の大文字>`に空でない値が設定されている間は、保存された設定値よりも環境変数を優先し、その値を設定ファイルへ保存することはない。`set`コマンドは設定ファイルの保存先を更新し、参考一覧に含まれないモデルやeffortであっても警告を表示した上で受理する。`show`や`get`コマンドは参考一覧外の値もそのまま表示する
@@ -120,10 +120,10 @@ WIの`担当モデル`において担当者、モデル、effortが明記され�
 | レベル | `codex` | `claude` |
 | --- | --- | --- |
 | 上位 | `gpt-6-sol/medium` | `opus/medium` |
-| 中位 | `terra/medium` | 用途に応じて`opus/medium`または`sonnet/medium` |
+| 中位 | `sol/low` | 用途に応じて`opus/medium`または`sonnet/medium` |
 | 軽量 | `gpt-6-luna/medium` | `haiku/medium` |
 
-- 同一行に記載された`codex`と`claude`を相互の代替候補とみなし、effortは表内の値を使用する。`terra`は系列名として扱い、同系列の最新版へ解決する。なお、各行の間で世代を統一することは前提としない
+- 同一行に記載された`codex`と`claude`を相互の代替候補とみなし、effortは表内の値を使用する。なお、各行の間で世代を統一することは前提としない
 - 通常は上位の行を選択し、中位や軽量の行を選択するのは、工程別モデル設定の値がその行に該当する場合、または作業内容がすでに確定しておりリスクの低い機械的な作業に限る
 - 表に記載されていないモデルは、表内の組み合わせと同等以上の能力を持つことが確認できる場合に限って代替として使用してよい
 - effortを指定できない実行環境で表の組み合わせを満たせない場合は、`codex`列へ切り替えるか上位の行を選択する。なお、Claudeのeffortはエージェント定義のfrontmatterで確定するため、frontmatterを持たない起動方法では指定できない

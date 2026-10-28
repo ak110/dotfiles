@@ -9,13 +9,14 @@ import json
 import os
 import pathlib
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import time
 import venv
 from collections.abc import Callable, Generator
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import psutil
@@ -82,7 +83,7 @@ def test_agents_server_launcher_reclaims_resources_on_failure(
             rescue.callback(process_tree.stop_process_tree, self)
 
         def wait(self, timeout: float | None = None) -> int:
-            if stage == "wait" and timeout is None:
+            if stage == "wait" and timeout == 0.1:
                 raise RuntimeError("wait失敗")
             return super().wait(timeout=timeout)
 
@@ -97,8 +98,8 @@ def test_agents_server_launcher_reclaims_resources_on_failure(
             raise RuntimeError("signal失敗")
         return original_signal(signum, handler)
 
-    def stop(process: subprocess.Popen) -> None:
-        original_stop(process)
+    def stop(process: subprocess.Popen, **kwargs: Any) -> None:
+        original_stop(process, **kwargs)
         if stage == "stop":
             raise RuntimeError("stop失敗")
 
@@ -133,11 +134,10 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
     if orphaned:
         source = f"import subprocess,sys; subprocess.Popen([sys.executable, '-c', {source!r}])"
     monkeypatch.setattr(launcher, "_STOP_TIMEOUT", 0.1)
-    outcome = contextlib.nullcontext() if orphaned else pytest.raises(subprocess.TimeoutExpired)
     acquired: list[subprocess.Popen] = []
     children: list[psutil.Process] = []
     with contextlib.ExitStack() as rescue:
-        with outcome, launcher._server_lifetime([sys.executable, "-c", source], dict(os.environ), [], bytearray()) as process:
+        with launcher._server_lifetime([sys.executable, "-c", source], dict(os.environ), [], bytearray()) as process:
             acquired.append(process)
             deadline = time.monotonic() + 5
             while not marker.exists():
@@ -160,6 +160,72 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
                 break
             assert time.monotonic() < deadline, "子プロセスの終了状態へ到達しませんでした"
             time.sleep(0.01)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの停止無視と所有groupの強制回収を観測する")
+@pytest.mark.parametrize("diagnostics", [True, False], ids=["diagnostics", "plain"])
+def test_launcher_signal_reaches_bounded_reclaim(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], diagnostics: bool
+) -> None:
+    """bootstrap子がsignalを無視しても、診断あり・なしの両起動形式で有限回収する。"""
+    script = tmp_path / "launcher_probe.py"
+    ready = tmp_path / "ready.json"
+    script.write_text(
+        "import importlib.util, json, os, pathlib, signal, subprocess, sys, time\n"
+        "if len(sys.argv) > 1:\n"
+        "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        f"    pathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
+        "    time.sleep(60)\n"
+        "else:\n"
+        f"    spec = importlib.util.spec_from_file_location('probe_launch', {str(_PROJECT_ROOT / 'scripts/launch.py')!r})\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n"
+        "    module._SERVER_SHUTDOWN_TIMEOUT = .1\n"
+        "    module._STOP_TIMEOUT = .1\n"
+        "    sys.exit(module._run_agents_server([sys.executable, __file__, 'child'],\n"
+        f"        dict(os.environ), record_diagnostics={diagnostics!r}))\n",
+        encoding="utf-8",
+    )
+    targets: list[psutil.Process] = []
+    with process_tree.process_scope([sys.executable, str(script)], env=host_environ(), start_new_session=True) as process:
+        try:
+            deadline = time.monotonic() + 10
+            while not ready.exists():
+                assert process.poll() is None and time.monotonic() < deadline
+                time.sleep(0.01)
+            targets = process_tree.collect_descendants(process.pid)
+            assert len(targets) == 1
+            process.send_signal(signal.SIGTERM)
+            assert process.wait(timeout=5) == 128 + signal.SIGKILL
+            assert all(not target.is_running() or target.status() == psutil.STATUS_ZOMBIE for target in targets)
+        finally:
+            process_tree.reclaim_processes(targets, timeout=0.5)
+
+
+@pytest.mark.parametrize("parent_alive", [True, False])
+def test_windows_launcher_observes_parent_handle(
+    launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, parent_alive: bool
+) -> None:
+    """Windowsの固定PPIDへ依存せず、保持した親handleの終了状態と解放を判定する。"""
+    closed: list[int] = []
+
+    def open_process(_access: int, _inherit: bool, pid: int) -> int:
+        assert pid == launcher._PARENT_PID
+        return 123
+
+    def wait_handle(handle: int, timeout: int) -> int:
+        assert handle == 123 and timeout == 0
+        return 258 if parent_alive else 0
+
+    def close_handle(handle: int) -> None:
+        closed.append(handle)
+
+    kernel = SimpleNamespace(OpenProcess=open_process, WaitForSingleObject=wait_handle, CloseHandle=close_handle)
+    monkeypatch.setattr(launcher, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(launcher.ctypes, "WinDLL", lambda *_args, **_kwargs: kernel, raising=False)
+    with launcher._parent_monitor() as alive:
+        assert alive() is parent_alive
+    assert closed == [123]
 
 
 @pytest.mark.usefixtures("share_package_caches")

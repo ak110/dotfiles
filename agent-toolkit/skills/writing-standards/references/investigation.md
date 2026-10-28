@@ -14,7 +14,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/pending-decisions.md#「未確定判断の保留と暫定判断」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md#「未確定判断の保留と暫定判断」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 
 ## 裏付け手段の回復と前提の相違
 
@@ -32,4 +32,4 @@
   記録には、再現条件としての観測日、観測時のバージョン、および再検証手段の3項目のみを記載し、見出しは`<ファイルパス>：<節名>：<日付>`とする。条文本文には観測環境やモデルのバージョンは記載せず、条文の末尾に記録の所在を示す文を1文置く。ただし、適用範囲を定める対象バージョン（参照資料の冒頭に掲げる対象バージョンなど）は条文本文に記載する。
   常時規範（`AGENTS.md`や`CLAUDE.md`など）では、全エージェントの読み込み量を抑えるため、記録の見出しのみを索引として記載する。条文を別の場所へ移動した場合は、見出しのファイルパスと節名も移動先の位置へ修正する。
   再検証の結果が条文の記述と異なっていた場合は、再現条件をそろえた上で再検証し、そろえられなかった条件の差異を記録する。条文の失効は、条件をそろえて実施した再検証の結果に基づいて判定する。
-  エンドユーザー向け文書、README、設定ファイル、コードコメント、ならびにユーザーの指示に由来する規範、運用手順、確認時の選択肢の説明は、この記録義務の対象外とする。既存の記述は現行のまま維持する（努力目標）。ただし、既存の条文の誤りが品質（Q）に悪影響を及ぼす場合の是正要否と対応範囲は、この限定にかかわらず`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直し」に従う。
+  エンドユーザー向け文書、README、設定ファイル、コードコメント、ならびにユーザーの指示に由来する規範、運用手順、確認時の選択肢の説明は、この記録義務の対象外とする。既存の記述は現行のまま維持する（努力目標）。ただし、既存の条文の誤りが品質（Q）に悪影響を及ぼす場合は、この限定にかかわらず是正要否と対応範囲を判定する。判定は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」に従う。

@@ -275,7 +275,7 @@ def test_windows_access_denied_for_possible_cli_process_defers(monkeypatch, proc
     monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
     monkeypatch.setattr(setup_cli_common.psutil, "process_iter", lambda: [InaccessibleProcess()])
 
-    assert setup_cli_common.is_windows_cli_running("codex", "@openai/codex")
+    assert setup_cli_common.is_windows_cli_running("codex", "@openai/codex") is (process_name == "codex.exe")
 
 
 def test_migrate_excludes_canonical_prefix_and_launcher(monkeypatch, tmp_path: Path) -> None:
@@ -536,9 +536,21 @@ def test_migrate_windows_mise_shim_rejects_wrong_target(monkeypatch, tmp_path: P
     ("name", "exe", "cmdline", "expected"),
     [
         ("codex.exe", "C:/node/codex.exe", [], True),
+        ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "exec", "codex"], False),
+        ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "exec", "--", "codex"], True),
+        ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "exec", "--", "server", "codex"], False),
+        ("node.exe", "C:/node/node.exe", ["node.exe", "--no-warnings", "C:/node_modules/@openai/codex/bin/codex.js"], True),
+        ("node.exe", "C:/node/node.exe", ["node.exe", "--require", "C:/bin/codex.js", "server.js"], False),
+        ("node.exe", "C:/node/node.exe", ["node.exe", "--title", "codex", "server.js"], False),
+        ("mise.exe", "C:/bin/mise.exe", ["mise.exe", "x", "--", "node", "--no-warnings", "C:/bin/codex.js"], True),
+        ("node.exe", "C:/node/node.exe", ["node.exe", "--eval", "codex", "C:/bin/codex.js"], False),
+        ("node.exe", "C:/node/node.exe", ["node.exe", "--", "C:/bin/codex.js", "prompt"], True),
         ("node.exe", "C:/node/node.exe", ["node.exe", "C:/bin/codex.cmd"], True),
         ("node.exe", "C:/node/node.exe", ["node.exe", r"C:\node_modules\@openai\codex\vendor\codex.exe"], True),
         ("python.exe", "C:/python/python.exe", ["python.exe", "codex"], False),
+        ("node.exe", "C:/node/node.exe", ["node.exe", "C:/work/codex-project/server.js"], False),
+        ("node.exe", "C:/node/node.exe", ["node.exe", "server.js", "--prompt=codex"], False),
+        ("node.exe", "C:/node/node.exe", ["node.exe", "server.js", "C:/bin/codex.cmd"], False),
     ],
 )
 def test_windows_process_classification(

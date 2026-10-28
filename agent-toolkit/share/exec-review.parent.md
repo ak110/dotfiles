@@ -24,47 +24,46 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 形式判別前 | `../skills/wi-standards/references/awi-body.md`冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
-| 本文でこの資料の基準を参照・取得する時 | `exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
+| 基準の参照時 | `../skills/review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+| 基準の参照時 | `exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
 | 検証結果を記録する前 | `verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` |
 | 手動観測を保存する前 | `verification-evidence.md`の「手動観測の保存」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「手動観測の保存」` |
 | 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/SKILL.md#「検証」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「検証」` |
 | 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution`の`references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/review-standards/references/exec-review-recording.md#「受理済み判定への参照」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「受理済み判定への参照」` |
-| 本文でこの資料の基準を参照・取得する時 | `workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
-| 本文でこの資料の基準を参照・取得する時 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
-| 本文でこの資料の基準を参照・取得する時 | `reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
-| 本文でこの資料の基準を参照・取得する時 | `workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
-| 本文でこの資料の基準を参照・取得する時 | `review-loop-coordination.md#「ラウンド番号の保持先」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンド番号の保持先」` |
-| 本文でこの資料の基準を参照・取得する時 | `reader-fit-review.parent.md#「起動」` | 判断 | `section:agent-toolkit:*/share/reader-fit-review.parent.md#「起動」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/secret-files/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/secret-files/SKILL.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| 本文でこの資料の基準を参照・取得する時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
+| 基準の参照時 | `../skills/review-standards/references/exec-review-recording.md#「受理済み判定への参照」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「受理済み判定への参照」` |
+| 基準の参照時 | `workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
+| 基準の参照時 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
+| 基準の参照時 | `reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` |
+| 基準の参照時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 基準の参照時 | `../skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` |
+| 基準の参照時 | `../skills/bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
+| 基準の参照時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
+| 基準の参照時 | `review-loop-coordination.md#「ラウンド番号の保持先」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンド番号の保持先」` |
+| 基準の参照時 | `reader-fit-review.parent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/reader-fit-review.parent.md#「入力」` |
+| 基準の参照時 | `../skills/secret-files/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/secret-files/SKILL.md` |
+| 基準の参照時 | `../skills/delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
+| 基準の参照時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
+| 基準の参照時 | `../skills/wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
 | 返却を受け取った後に受領確認する時 | `exec-review.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/exec-review.subagent.md#「出力」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` |
+| 基準の参照時 | `../skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` |
 | 返却の`達成`行の根拠を受領確認する前 | `../skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
-| 本文でこの資料の基準を参照・取得する時 | `review-loop-coordination.md#「技術判断で外せる完成条件」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「技術判断で外せる完成条件」` |
-| 本文でこの資料の基準を参照・取得する時 | `add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文でこの資料の基準を参照・取得する時 | `add-wi.parent.md#「続行できない理由の扱い」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「続行できない理由の扱い」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「類似見直しと再発防止の完了」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` |
-| 本文でこの資料の基準を参照・取得する時 | `review-loop-coordination.md`の冒頭と「ラウンドの遷移」から「応答済みの判定」まで | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#冒頭`、`section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンドの遷移」から「応答済みの判定」まで` |
-| 本文でこの資料の基準を参照・取得する時 | `exec.parent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「入力」` |
-| 本文でこの資料の基準を参照・取得する時 | `review-loop-coordination.md#「応答済みの判定」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「応答済みの判定」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/review-standards/references/reviewee.md#「完了報告」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「完了報告」` |
+| 基準の参照時 | `review-loop-coordination.md#「技術判断で外せる完成条件」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「技術判断で外せる完成条件」` |
+| 基準の参照時 | `add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
+| 基準の参照時 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 基準の参照時 | `../skills/wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
+| 基準の参照時 | `../skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` |
+| 基準の参照時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 基準の参照時 | `add-wi.parent.md#「続行できない理由の扱い」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「続行できない理由の扱い」` |
+| 基準の参照時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` |
+| 基準の参照時 | `../skills/delegation/references/sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` |
+| 基準の参照時 | `review-loop-coordination.md`の冒頭と「ラウンドの遷移」から「応答済みの判定」まで | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#冒頭`、`section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンドの遷移」から「応答済みの判定」まで` |
+| 基準の参照時 | `exec.parent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「入力」` |
+| 基準の参照時 | `review-loop-coordination.md#「応答済みの判定」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「応答済みの判定」` |
+| 基準の参照時 | `../skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
+| 基準の参照時 | `../skills/review-standards/references/reviewee.md#「完了報告」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「完了報告」` |
 | 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee.md#「方式見直しと再レビュー」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewee.md#「方式見直しと再レビュー」` |
-| 本文でこの資料の基準を参照・取得する時 | `lane-integration.subagent.md#「マージありの統合」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「マージありの統合」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/plan-mode/references/plan-file-storage.md#「計画ファイルの保存と参照」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md#「計画ファイルの保存と参照」` |
+| 基準の参照時 | `lane-integration.subagent.md#「マージありの統合」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「マージありの統合」` |
+| 基準の参照時 | `../skills/plan-mode/references/plan-file-storage.md#「計画ファイルの保存と参照」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md#「計画ファイルの保存と参照」` |
 
 ## 読込表
 
@@ -135,6 +134,16 @@ AWIの形式は`../skills/wi-standards/references/awi-body.md`冒頭に従って
 レビューを起動する前に、全条項に「条項」「内容」「出典」が揃っていることと、判定対象外commitの各OIDが`git rev-parse --verify <OID>^{commit}`で解決できることを確かめる。委譲プロンプトの`review_contract`には、直接契約のテキストか、作成したMarkdownファイルの絶対パスのどちらか一方だけを指定する。
 `review_contract`は同じ実行レビュー担当のthreadで保持し続ける（再レビューで更新したら最新のファイル）。更新時は過去のファイルを残して別の新規ファイルに保存する。threadが継続不能と分かったら、同じ元情報から契約ファイルを作り直して新しい担当へ渡す。単一計画で始めて初回は作成を省いたthreadで、後から別の基準で認可されたコミットが累積差分に加わった場合は、「レビュー修正」と同じ判定手順で最新OIDに対する判定対象外commitを書く。
 
+## 入力
+
+- 必須入力名: `レビュー基準`、`引き継ぎ記録先`
+
+必須の`レビュー基準`には「起動方法別のレビュー基準」で決めた基準を指定する。必須の`引き継ぎ記録先`は`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従って決める。
+`計画`は対応する計画ファイルの絶対パスを渡す。`CI記録`はCI失敗に対応する場合に記録項目を渡す。`WI記録`は計画にない対象WIのファイル名、要求、完成条件、由来、採否を渡し、計画がない場合は全対象を含める。
+基準ごとの要否と関連する開始時点は「起動方法別のレビュー基準」、`review_contract`の要否と値は「`review_contract`の生成」に従う。
+`修正系列の開始時のHEAD`、`原因commitOID`、`開始時のHEAD`、`レーン識別子`、`レビュー種別`、`round`、`対象ファイル限定`、`Git管理外の変更`、`前回確認版`の要否と値は「起動」の説明に従って決める。
+`担当モデル`は「起動方法別のレビュー基準」、`rewrite_map`は「レビュー修正」、`受理済みの完成条件証拠`は本書冒頭の規則に従う。
+
 ## 起動
 
 証拠の引渡しは`verification-evidence.md`「完成条件証拠の検証記録」に従う。
@@ -145,7 +154,7 @@ AWIの形式は`../skills/wi-standards/references/awi-body.md`冒頭に従って
 | --- | --- |
 | `cwd` | 対象worktreeの絶対パス |
 | `subagent_md_path` | `exec-review` |
-| `extra_params` | 本節で述べる入力パラメーター |
+| `extra_params` | 「入力」に示す入力パラメーター |
 | `model_type` | `担当モデル.実行レビュー担当`の指定があればその値。なければ省略する |
 
 初回起動の`extra_params`には、レビュー基準と、複数計画、計画外の条項または新形式AWIにより作った`review_contract`を含める。`引き継ぎ記録先`の扱い（引き継ぎ再レビューでの`（継続）`表記を含む）は、`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う。
@@ -153,11 +162,11 @@ AWIの形式は`../skills/wi-standards/references/awi-body.md`冒頭に従って
 `CI記録`を渡す場合は、`ci-failure-handling.md`の項目に加えて`修正系列の開始時のHEAD`と`原因commitOID`を書く。`原因commitOID`はCI失敗が再帰するたびにCI記録と一緒に更新し、`修正系列の開始時のHEAD`は同じ修正系列で引き継ぐ。CI記録には、メインエージェントが原因コミットを作ったときに持っていた情報を直接書く。
 初回レビューでは、デフォルト値の`レビュー種別: 初回レビュー`と`round: 1`を省く。再レビューの指示と引き継ぎ再レビューでは、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の「ラウンド番号の保持先」に記録した値で`round: <ラウンド番号>`を含める。
 任意入力の`対象ファイル限定`を使う場合は対象ファイルも指定する。対象リポジトリ、レビュー対象のHEAD、変更ファイル一覧、検証結果、レビュー指摘管理表はレビュー担当が自ら解決するので渡さなくてよい。
-メインエージェントが読者別探索を起動する場合も、Git管理下の比較対象資料は`reader-fit-review.parent.md`「起動」のGit参照形式で渡す。再レビューの比較元には前回のレビューHEADを指定し、計画ごとの判定範囲は同節の`判定範囲差分`で渡す。
+メインエージェントが読者別探索を起動する場合も、Git管理下の比較対象資料は`reader-fit-review.parent.md`「入力」のGit参照形式で渡す。再レビューの比較元には前回のレビューHEADを指定し、計画ごとの判定範囲は同節の`判定範囲差分`で渡す。
 
 Git管理外ファイルの変更前後の複製のペアがあれば、レーンの引き継ぎ記録にある全ペアを任意入力`Git管理外の変更`で渡し、無ければ省く。メインエージェント自身が実装した場合は、`exec.subagent.md`「実装」のGit管理外ファイルの手順に従って最初の変更の前に複製を作り、そのペアを計画の`## 進捗ログ`（計画がなければ直接実装の引き継ぎ記録）に残す。作業ツリー内の`.env`などの設定ファイルは通常の全文差分として扱う。作業ツリー外で`agent-toolkit:secret-files`の対象となるファイルのペアは、キー名の一覧とキーごとの値の一致だけを比べる（同スキルの全文読み取りと出力の禁止を守るため）。
 
-引き継ぎ再レビューを起動するときは、`レビュー種別: 引き継ぎ再レビュー`とともに次の情報を渡す。`review_contract`は前節の継続不能時の再作成手順に、継続不能の判定と引き継ぎ手順は`agent-toolkit:delegation`のSKILL.md「継続と新規起動」に従う。
+引き継ぎ再レビューを起動するときは、`レビュー種別: 引き継ぎ再レビュー`とともに次の情報を渡す。`review_contract`は「`review_contract`の生成」の継続不能時の再作成手順に、継続不能の判定と引き継ぎ手順は`agent-toolkit:delegation`のSKILL.md「継続と新規起動」に従う。
 
 - `前回確認版`: 前担当の引き継ぎ記録に保存された記録ファイルの絶対パス。前回レビューしたHEADのほか、Git管理外の文章成果物ごとの識別子と前回本文の複製パスを含む。記録ファイルと比較元の実在を確かめてから起動し、取得できない情報があれば、欠けたHEADや本文の取得元を委譲元へ報告する
 - 基準ごとの追加入力: 「起動方法別のレビュー基準」と本節の`CI記録`・`開始時のHEAD`の説明で定めた各値
@@ -179,7 +188,7 @@ Git管理外ファイルの変更前後の複製のペアがあれば、レー�
 
 内容の検収では、対象WI集合の本文にある完成条件や原文要求と、返却の判定行を突き合わせる。原文要求は`## ユーザーコメント`、UWIの`## 回答`、完成条件の見出しを持たないAWI本文から抽出し、対応済みの`## ユーザー指摘の逐語引用`（`agent-toolkit:wi-standards`の`references/origin-and-approval.md`参照）は除く。補足のコードブロックは背景情報として扱う。計画書の`ユーザー指示`の行も要求単位に分ける（計画書にだけある要求行は計画ファイル名を`<WI>`とする）。原文要求行の突き合わせは、元になるユーザーの発言がある場合だけ行う。
 `達成`の行は、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」の後続工程の予定と代替観測の基準に合うかを確かめ、合わない行は再判定を指示する。
-`失効`の行は、根拠の所在が同書の「失効の根拠」が認めるユーザー判断か、メインエージェントの技術判断の記録を正しく指していることを本文を読んで確かめる。技術判断の記録として受理できるのは、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「技術判断で外せる完成条件」に当たる完成条件行に限り、所在は計画確定前の実施内容の根拠記述か、実装着手後のレビュー指摘管理表の該当行とする。計画書に対象AWI、条件、判断主体、除外根拠があれば指摘管理表へ二重に転記しない。それ以外の行や`review_contract`の記述はユーザー判断の代わりにならない。要求の取り下げや不採用の根拠との対応は本文で確かめ、根拠の足りない条件変更は同書の「エスカレーションの事由別の扱い」で差し戻す。
+`失効`の行は、根拠の所在が同書の「失効の根拠」が認めるユーザー判断か、メインまたはレーン担当の技術判断の記録を正しく指していることを本文を読んで確かめる。レーン担当の不要条件の除外は、計画の記録か引き継ぎ記録とAWIの処理結果を確認する。計画確定後は進捗ログ、レビュー指摘管理表、`review_contract`の条件番号と判断記録も確認する。いずれの技術判断も`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「技術判断で外せる完成条件」の境界を満たすことを確かめる。`review_contract`の記述だけをユーザー判断の代わりにせず、要求の取り下げや不採用の根拠との対応を本文で確認する。根拠の足りない条件変更は同書の「エスカレーションの事由別の扱い」で差し戻す。
 受領確認と内容の検収を通った返却の`agent_message_path`は、計画書の進捗ログへ`受理済みの完成条件証拠`として記録し、以降のレビューで同名の任意入力に指定する。レビュー完了後にHEADが更新された場合は、「起動方法別のレビュー基準」で影響がないと確かめた計画を除き、最新HEADで全条件を再判定した返却を受理してから後続へ進む。
 
 ## 返却に含まれる既存不良の受領
@@ -198,7 +207,7 @@ Git管理外ファイルの変更前後の複製のペアがあれば、レー�
 
 この運用は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」の「発見した独立の既存不良は同一セッション内で是正する」という一般原則の例外であり、先送りに要る事象の記録、根本原因、対応案は投入担当が保存するAWIが担保する。
 ただし、本セッションに残る後続工程（レビュー修正、統合、公開）の進行を止める不具合は、同節の「進行を妨げる欠陥」としてその場で対処する。この判定は工程が実際に止まる観測に基づき、事前の詳細な原因分析を前提にしない。
-その不具合は`agent-toolkit:bugfix`と同節の規定に従って直す。`process-wi`の実行中は同スキルの「即時対応」に従って当面の進行に必要な最小限の修正にとどめ、根本的な正式対応は次のセッション用のAWIへ引き継ぐ。通常の正式対応では、品質（Q）影響、レビュー対象との根本原因の同一性、処置完了の有無を判定し、判定基準は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直し」「類似見直しと再発防止の完了」に従う。認可が要る場合は`agent-toolkit:user-confirmation-and-report`に従う。
+その不具合は`agent-toolkit:bugfix`と同節の規定に従って直す。`process-wi`の実行中は同スキルの「即時対応」に従って当面の進行に必要な最小限の修正にとどめ、根本的な正式対応は次のセッション用のAWIへ引き継ぐ。正式対応では、品質（Q）影響、レビュー対象との根本原因の同一性、処置完了の有無を判定する。基準は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従う。`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」「類似見直しと再発防止の完了」も適用する。認可が要る場合は`agent-toolkit:user-confirmation-and-report`に従う。
 レーン担当が自レーンの検証を妨げるとして報告した既存不良は、実行レビューの返却と区別し、`process-wi`の処理中は同スキルの「即時対応」として扱う。
 
 対象の不具合ごとに、引き渡し済みの担当、是正結果、根拠付きの非該当判定、判断待ちの引き渡し先のいずれかを既存の引き継ぎ記録へ対応付けてから、レビュー収束後の工程へ進む。

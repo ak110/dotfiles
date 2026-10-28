@@ -841,6 +841,11 @@ class ManagerRegistry(responses.ManagerResponses):
             if resume_state is None:
                 raise await self._unresolved_session_error(session_id, label="session")
         result_state = None if self._status_writer is None else (await self._status_writer.result_state_async(session_id))
+        registration = await run_file_operation(session_registry.resolve, session_id)
+        expected_owner = (
+            registration.server_instance,
+            None if registration.recorded_turn_seq is None else resume_state.turn_seq,
+        )
         keep_result = retain_result and resume_state.finalized_at is not None and result_state != "consumed"
         resume_state = dataclasses.replace(resume_state, result_delivered=not keep_result)
         if session is not None:
@@ -850,15 +855,16 @@ class ManagerRegistry(responses.ManagerResponses):
             if session is not None:
                 await self._backend(resume_state.engine).release_session(session)
         self._cancel_retention_timer(session_id)
-        self._pending_unobserved_child_sessions.pop(session_id, None)
         self.sessions.pop(session_id, None)
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions[session_id] = resume_state
         try:
             if session is not None:
                 await session.drain_registration()
-            await run_file_operation(session_registry.release, session_id, reason="stopped")
-            if self._status_writer is not None:
+            released = await run_file_operation(
+                session_registry.release, session_id, reason="stopped", expected_owner=expected_owner
+            )
+            if released and self._status_writer is not None:
                 if not keep_result:
                     (await run_file_operation(self._status_writer.delete_wait_target, session_id))
                 if (
@@ -880,6 +886,14 @@ class ManagerRegistry(responses.ManagerResponses):
                     "結果は`list`で確認する"
                 ),
             ) from exc
+        if not released:
+            self.stopped_sessions.pop(session_id, None)
+            if self._status_writer is not None:
+                self._status_writer.schedule()
+            raise ActionableError(
+                f"停止対象の所有者またはturnが現在の登録簿と一致しないため、現在の記録と結果を保持した: {session_id}",
+                next_action="同じ`session_id`を`show`で再確認し、実行中なら`atk agents wait`で終了を観測する",
+            )
         return {}
 
     async def _stop_after_terminal_response(

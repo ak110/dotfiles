@@ -29,7 +29,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewee.md#「修正要否の立証」「安全な修正」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「修正要否の立証」「安全な修正」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「初動と拡張原因分析の判定」「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「初動と拡張原因分析の判定」「直接的原因と事象時点の確定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/push-and-ci.md#「pushと監視」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「pushと監視」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/check-execution/SKILL.md#「保存した実行出力の取得」` | 判断 | `section:agent-toolkit:*/skills/check-execution/SKILL.md#「保存した実行出力の取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |

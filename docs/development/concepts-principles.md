@@ -143,6 +143,11 @@
 レーン分けは`agent-toolkit/skills/process-wi/references/selection-procedure.md`が定める。
 所要時間の分析の現行の規定は`agent-toolkit/skills/session-review/references/duration-analysis.md`の「所要時間の分析と改善」にある。
 
+- 速度や資源使用量の改善を主目的とする作業は、変更前のボトルネックと、同じ負荷・比較可能な条件での変更前後の数値を測定し、挙動の維持とトレードオフを報告する。
+  一般的な手順整理やコスト削減は推定による判断を保つ。
+  2026年10月27日、ユーザーは性能改善の比較測定を求める提案を採用した。
+  現行の基準は`agent-basics/skills/writing-standards/references/investigation.md`と`agent-basics/skills/check-execution/references/diagnostics.md`にある
+
 - セッションの所要時間目標は、処理したAWIの件数によらず1セッション3時間以内とする。
   この値は対象リポジトリ`github.com/ak110/dotfiles`で`agent-toolkit:process-wi`を起動したセッションだけへ適用する。
   他のリポジトリの作業と、本リポジトリでの他の起動方法による作業へは適用しない。
