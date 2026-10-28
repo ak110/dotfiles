@@ -11,14 +11,14 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認を要する事項」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認を要する事項」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 
 ## 未確定判断の保留と暫定判断
 
-`SKILL.md`「確認を要する事項」に該当する論点は、実行モードにかかわらずユーザー確認へ送る。自律モードで回答が得られない場合は、`agent-toolkit:wi-standards`を起動してUWIへ記録する。無回答と判定するタイミングや、最初からUWIを利用する環境については、`SKILL.md`「手段の選択」の対応表に従う。
+`SKILL.md`「確認を要する事項」に該当する論点は、実行モードにかかわらずユーザー確認へ送る。自律モードで回答が得られない場合は、`agent-toolkit:wi-standards`を起動してUWIへ記録する。無回答と判定するタイミングや、最初からUWIを利用する環境については、`references/communication-methods.md`「手段の選択」の対応表に従う。
 `SKILL.md`「確認要否の判定」項目3で定める曖昧さについては、自律モードであっても事前承認型UWIへ記録し、回答を必要とする元の作業項目を`agent-toolkit:wi-standards`「状態と依存」の規定に従って保留とする。エージェント側の暫定判断で勝手に埋めることは避け、その回答を待たずに進められる成果物や工程のみを継続する（無回答のまま確定させて進めると、意図と異なる成果物の作成や手戻りの原因となるためである）。
 回答を得られないまま確認処理が終了した場合（協調モードのセッション終了を含む）は、モードを問わず未解決の判断事項をUWIへ移管する。同じセッションで無回答による終了を観測した自律モードのエージェントは、以降の確認事項をUWIへ記録し、回答が必要な元の作業項目のみを`atk wi hold`（処理中であれば`atk wi hold --state=processing <元項目のファイル名>`）で保留にする。工程を停止する前に、確認事項を必ず記録する。
 

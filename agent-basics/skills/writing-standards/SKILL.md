@@ -67,16 +67,16 @@ description: >
 
 | 時点または条件 | 資料と注目箇所 |
 | --- | --- |
-| 並行処理・排他制御を設計・変更・レビューする前 | `references/design-heuristics.md`の「並行処理・排他制御の設計観点」 |
-| 検索・一覧画面を設計・変更・レビューする前 | `references/design-heuristics.md`の「検索・一覧画面の設計」 |
-| 閾値と表示段階を設計・変更・レビューする前 | `references/design-heuristics.md`の「閾値と表示段階の設計」 |
-| キャッシュを設計・変更・レビューする前 | `references/design-heuristics.md`の「キャッシュ設計」 |
-| 非同期ジョブ・リトライを設計・変更・レビューする前 | `references/design-heuristics.md`の「非同期ジョブ・リトライ設計」 |
-| DBスキーマ・マイグレーションを設計・変更・レビューする前 | `references/design-heuristics.md`の「DBスキーマ・マイグレーション設計」 |
-| APIを設計・変更・レビューする前 | `references/design-heuristics.md`の「API設計」 |
-| 認証・認可を設計・変更・レビューする前 | `references/design-heuristics.md`の「認証・認可設計」 |
-| ファイルアップロードを設計・変更・レビューする前 | `references/design-heuristics.md`の「ファイルアップロード設計」 |
-| 状態を変える多段手順の工程順を設計・変更・レビューする前 | `references/design-heuristics.md`の「状態を変える多段手順の工程順」 |
+| 並行処理・排他制御を設計・変更・レビューする前 | `references/design-runtime.md`の「並行処理・排他制御の設計観点」 |
+| 検索・一覧画面を設計・変更・レビューする前 | `references/design-display.md`の「検索・一覧画面の設計」 |
+| 閾値と表示段階を設計・変更・レビューする前 | `references/design-display.md`の「閾値と表示段階の設計」 |
+| キャッシュを設計・変更・レビューする前 | `references/design-runtime.md`の「キャッシュ設計」 |
+| 非同期ジョブ・リトライを設計・変更・レビューする前 | `references/design-runtime.md`の「非同期ジョブ・リトライ設計」 |
+| DBスキーマ・マイグレーションを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「DBスキーマ・マイグレーション設計」 |
+| APIを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「API設計」 |
+| 認証・認可を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「認証・認可設計」 |
+| ファイルアップロードを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「ファイルアップロード設計」 |
+| 状態を変える多段手順の工程順を設計・変更・レビューする前 | `references/design-runtime.md`の「状態を変える多段手順の工程順」 |
 
 ## 文章の作成時に読む資料
 

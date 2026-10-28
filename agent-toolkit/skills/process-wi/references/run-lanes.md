@@ -13,7 +13,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-planning.md#「計画の起草」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lane-planning.md#「計画の起草」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「長時間待機前の会話圧縮」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
@@ -65,7 +65,7 @@ atk lane create --repo <対象リポジトリの絶対パス> --base-branch <統
 
 ## 各段階の全初期通常レーン起動後の会話圧縮
 
-Claude Code環境では、各段階（複数段階の場合は中間の段階も含む）において、すべての初期通常レーンの初回起動が完了した直後、その時点で並行開始できる独立工程を先行して開始した上で、待機状態に入る前に会話圧縮を予約する。通常レーンが0件の場合や処理中に追加されたレーンでは予約せず、実行レビュー待機時にも修正作業に必要な文脈を保持する。Codex環境では予約処理を省略して通常の待機へ進む。圧縮の予約および通知後の文脈復元手順は、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「長時間待機前の会話圧縮」に従う。
+Claude Code環境では、各段階（複数段階の場合は中間の段階も含む）において、すべての初期通常レーンの初回起動が完了した直後、その時点で並行開始できる独立工程を先行して開始した上で、待機状態に入る前に会話圧縮を予約する。通常レーンが0件の場合や処理中に追加されたレーンでは予約せず、実行レビュー待機時にも修正作業に必要な文脈を保持する。Codex環境では予約処理を省略して通常の待機へ進む。圧縮の予約および通知後の文脈復元手順は、`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」に従う。
 
 予約後の復元では、注入された要約を起点に、必要に応じて次の既存記録と状態照会から情報を取得する。
 

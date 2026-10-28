@@ -30,9 +30,9 @@ all-reposの中継として起動した場合は`references/all-repos-orchestrat
 | 選定前、対象がGitHub上にある場合 | `references/review-audit-launch.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/review-audit-launch.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/SKILL.md#「継続と新規起動」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「継続と新規起動」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/references/reviewee.md#「指摘発生時の扱い」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「指摘発生時の扱い」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直しと再発防止の完了」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec-review.parent.md#「返却に含まれる既存不良の受領」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「返却に含まれる既存不良の受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 
@@ -101,7 +101,7 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
 - レーンに割り当てていない主題: メインが別のworktreeで修正し、主作業ツリーへの統合は他のレーンと同じく`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の許可」の直列条件で行う。現在の作業を進めるための最小限の修正は`references/immediate-fix.md`「即時対応の手順」に従う
 - レーンの主題: レーン担当へ追加指示として返すのを基本とする。レーン担当の終了を確認した後は、メインがそのレーンの専用worktreeを引き取ってよい。引き取ったら`exec.parent.md`「入力」の`書込担当一覧`を更新し、統合は同書「統合の指示と受領」の検収条件をメイン自身がCLIを実行する場合として適用する
 
-本スキルの実行中にユーザーから追加指示があった場合は、既存の処理条件と比較して採否を決めた差分のみを処理条件に反映する。比較と採否は`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」に、範囲や論理関係の解釈は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」に従う。公開工程に入る前に届いた直接的な実装要求も、同じ主題である限り本スキルの処理を継続するための追加条件として扱う。なお、公開工程の開始後に届いた指示は`references/immediate-fix.md`「対象外の不良と是正要求」に従って処理する。主題が継続しているかどうかは元の要求・現物・既存の認可から自ら判断し、ユーザー自身しか決められない目的・範囲・認可が残っている場合に限って変更前に確認する。
+本スキルの実行中にユーザーから追加指示があった場合は、既存の処理条件と比較して採否を決めた差分のみを処理条件に反映する。比較と採否は`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」に従う。範囲や論理関係の解釈は`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」に従う。公開工程に入る前に届いた直接的な実装要求も、同じ主題である限り本スキルの処理を継続するための追加条件として扱う。なお、公開工程の開始後に届いた指示は`references/immediate-fix.md`「対象外の不良と是正要求」に従って処理する。主題が継続しているかどうかは元の要求・現物・既存の認可から自ら判断し、ユーザー自身しか決められない目的・範囲・認可が残っている場合に限って変更前に確認する。
 
 追加の指示によって既存の要件が変わる場合は、変更前の要件に基づいて作業ツリーの外へ作成済みの成果物（キュー項目、IssueやMRの本文など）を確認し、終了・改訂・取り消しなどの対応方針を決めて追送指示に含める。技術的な判断や既存の認可内で完結する処置は自ら確定して報告する。作業ツリーの状態に関係なく編集できる外部成果物はメインが中継に合わせて編集し、作業ツリー内の差分についてはレーン担当が計画や実装を通じて追随させる（前段でメインが専用worktreeを引き取った場合はメインが追随させる）。
 

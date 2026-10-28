@@ -204,7 +204,7 @@ _RETIRED_TERMS = (
             _AllowedLocation("docs/development/concepts-principles.md", "新しい説明文に使わず"),
             # 過去のcommitの正式件名だけを引用する行。説明への書き戻しは許容しない。
             _AllowedLocation(
-                "docs/development/concepts-workflows.md",
+                "docs/development/concepts-workflows-wi.md",
                 line_exact=(
                     "  対応commitは2026年10月4日"
                     "「fix: UWIの本文を利用者が必要とする情報へそろえ取消操作の案内や不要な詳細を減らす」、"
@@ -248,7 +248,7 @@ _RETIRED_TERMS = (
                 # 廃止を決めたユーザーの方針記録
                 _AllowedLocation("docs/development/concepts-principles.md"),
                 # 廃止を記す方針記録の行
-                _AllowedLocation("docs/development/concepts-workflows.md", "2026年9月13日のユーザー指示で廃止した"),
+                _AllowedLocation("docs/development/concepts-workflows-wi.md", "2026年9月13日のユーザー指示で廃止した"),
                 # 撤去の不在を確かめるテスト
                 _AllowedLocation("*_test.py"),
             ),

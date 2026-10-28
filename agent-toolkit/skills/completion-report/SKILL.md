@@ -32,16 +32,17 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../session-review/SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/session-review/SKILL.md#「工程」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../single-lane-process/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/single-lane-process/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「割り込み・訂正・中止」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「割り込み・訂正・中止」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance.md#「割り込み・訂正・中止」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「割り込み・訂正・中止」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
@@ -81,7 +82,7 @@ description: >
    起動元の工程が反映を先行して開始できるのは、反映処理が対象リポジトリへの書き込みを行わず、公開向けの入力を生成せず、公開操作や成果物・排他リソースと競合しない場合に限る。
 2. メインエージェント自身が作成した作業用領域は、`agent-toolkit:managed-temp`に定められた寿命に従って回収する。元資料から再生成できる抽出・比較用の一時複製や検証環境は、すべての消費工程と外部プロセスの終了後に`rm -rf -- <作成した絶対パス>`で回収する（worktreeは事前に`git worktree remove`で削除する）。セッションのmanaged-temp本体や、後続ターンへの入力・証拠・引き継ぎ記録は、7日間保持する領域に残す。過去のエージェントが残した資源と誤変更も、`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」で調査し、不要な範囲を回収・是正する。
    process-wiの登録済みレーンリソースはこの時点では回収せず、追加作業や振り返り後の工程に備えて保持する。全工程と外部プロセスの終了後に、通常終了であれば`atk agents-exit-session`が、process-loopであれば子プロセスの終了後処理が、`atk lane delete`と同等の条件で回収する。未回収の場合はメインが共通判断で保持理由を調べ、解消できた対象を同じ回収操作で再判定する。保持が必要な対象は、保護する成果や現在の担当、残るユーザー判断、および再開条件を報告する。
-3. 当該セッションでユーザーが確定した判断事項を`agent-toolkit/rules/01-agent.md`「協調と自律」の保存対象と照らし合わせ、未保存の判断の保存またはAWIの投入を完了する。保存する前に、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」に記載されている、程度の限定や確度を保持する規定、および確度を伴う発話の保存に関する規定を適用する。
+3. 当該セッションでユーザーが確定した判断事項を`agent-toolkit/rules/01-agent.md`「協調と自律」の保存対象と照らし合わせ、未保存の判断の保存またはAWIの投入を完了する。保存する前に、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」に記載されている、程度の限定や確度を保持する規定、および確度を伴う発話の保存に関する規定を適用する。
 4. 協調モードで作成したコミットがあり、確認済みの公開範囲がコミットよりも先まで及ぶ場合は、`agent-toolkit:commit`の`references/publish.md`に従ってその範囲の公開を完了する。`agent-toolkit:process-wi`および`agent-toolkit:single-lane-process`は、それぞれの工程内で公開する。
 5. 実施した公開範囲とリリース判定の結果を含む作業完了報告を、`references/report-formats.md`「作業完了報告のフォーマット」に従って1回届け、同一の応答内で手順6に進む。
 6. `agent-toolkit:session-review`を起動する。起動を省略できるのは次の3つの場合に限られ、その理由は`references/report-formats.md`に定義されている所定の値を用いて手順8の報告に記載する。個別の指摘やユーザー発話への対応が完了していること、追加の調査コストや所要時間、実装変更の有無などは、起動を省略する根拠にならない。

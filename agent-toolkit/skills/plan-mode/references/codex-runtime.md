@@ -9,11 +9,11 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「問い・提案・疑問形の扱い」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「問い・提案・疑問形の扱い」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「問い・提案・疑問形の扱い」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「問い・提案・疑問形の扱い」` |
 
 ## 計画ファイルの起草開始条件
 
-初版の計画ファイルは、ネイティブPlan modeの有効・無効にかかわらず、関連する調査を完了して未確定の事項を解消した段階で起草する。外部仕様や実行時の挙動は、公式の一次情報源または実機での検証を通じて確認する。ユーザー自身の判断が必要な事項については、`agent-toolkit:user-confirmation-and-report`に沿って確認を済ませてから起草に進む（提案的な表現の扱いは同スキルの`SKILL.md`「問い・提案・疑問形の扱い」に従う）。自律モードで同期的に回答を得られない場合は、常時規範に従ってUWIへ記録し、暫定的な判断を完了した事項のみを計画の対象に含める。
+初版の計画ファイルは、ネイティブPlan modeの有効・無効にかかわらず、関連する調査を完了して未確定の事項を解消した段階で起草する。外部仕様や実行時の挙動は、公式の一次情報源または実機での検証を通じて確認する。ユーザー自身の判断が必要な事項については、`agent-toolkit:user-confirmation-and-report`に沿って確認を済ませてから起草に進む（提案的な表現の扱いは同スキルの`references/user-utterance.md`「問い・提案・疑問形の扱い」に従う）。自律モードで同期的に回答を得られない場合は、常時規範に従ってUWIへ記録し、暫定的な判断を完了した事項のみを計画の対象に含める。
 `update_plan`ツールを使う際は、「調査」と「計画ファイル起草」のステップを分離し、調査を`completed`にする時点で`explanation`に確認対象、確認手段、確定事項、および未確定事項の有無を記述することを推奨する。
 起草の途中で事実関係の不足が判明した場合は、調査工程へ戻って確認する。レビュー指摘への対応や進捗ログの追記は、この起草開始条件の対象外とする。
 

@@ -10,6 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 再レビューの指摘を受領し修正指示を確定する前 | `review-loop-coordination.md#「反復原因の判定」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「反復原因の判定」` |
 | 判断要請を受領し対処を確定する前 | `review-loop-coordination.md#「エスカレーションの事由別の扱い」「技術判断で外せる完成条件」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「エスカレーションの事由別の扱い」「技術判断で外せる完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
@@ -19,12 +20,12 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「完成条件証拠の受領確認」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「完成条件証拠の受領確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewee.md#「実行レビュー反復での記録」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「実行レビュー反復での記録」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewee.md#「同じ指摘の反復」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「同じ指摘の反復」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「反復した指摘の原因判定」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「反復した指摘の原因判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewee.md#「レビュー指摘の位置付け」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「レビュー指摘の位置付け」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#「状態と依存」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「状態と依存」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直しと再発防止の完了」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/exec-review-recording.md#「失効の根拠」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「失効の根拠」` |
 
 ## ラウンドの遷移
@@ -66,7 +67,7 @@
 現行ラウンドのサマリーに示されている過去ラウンド番号と行番号は、詳細な情報を取得するための参照先として活用する。
 `agent-toolkit:review-standards`の`references/reviewee.md`「同じ指摘の反復」に従い、違反規定および発生条件の一致、修正不足、新たな要件の発生、レビュー契約自体の不備を判定したうえで追送する。
 完成条件の一致や指摘件数のみを根拠として同一の指摘であると判定することは避ける。
-同一性が確認された場合は、局所的に修正する前に`agent-toolkit:bugfix`を起動し、`references/root-cause-analysis.md`「反復した指摘の原因判定」に従って原因を特定する。
+同一性が確認された場合は、局所的に修正する前に`agent-toolkit:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-scenarios.md`「反復した指摘の原因判定」に従って原因を特定する。
 既存設計の維持と置換を比較検討した根拠、ならびに採否の理由を、指摘管理表の応答欄へ記録させる。
 新たな要件や認可範囲の変更に該当する結果が得られた場合は、エスカレーションへ回送する。
 
@@ -100,7 +101,7 @@
 - 変更または除外する部分がユーザー自身の指定ではなく、エージェントによる具体化であること。対応する要求が明示由来でも、その目的、対象範囲、期待結果、明示された検証水準を維持すること。
 - 条件の変更または除外が、`agent-toolkit/rules/01-agent.md`「協調と自律」に定められた「ユーザーが確定した判断の変更」に該当しないこと。
 - `agent-toolkit:user-confirmation-and-report`「確認要否の判定」の3に規定された、ユーザーのみが保持する判断情報を必要としないこと（資料の不足については、同節の2において技術判断の対象外と整理されたものに限る）。
-- 重大度に応じた類似見直しおよび再発防止に不可欠な結果と品質を維持すること（`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直しと再発防止の完了」）。確認手段は同じ必要水準を満たす別の手段へ変更できる。
+- 重大度に応じた類似見直しおよび再発防止に不可欠な結果と品質を維持すること。基準は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直しと再発防止の完了」に従う。確認手段は同じ必要水準を満たす別の手段へ変更できる。
 
 この判定は完成条件の意味に対する実質的な評価である。`source`を持つAWIで目的達成に不要なエージェント起草条件は、レーン担当が上記の境界を確認して除外し、その判断を記録して報告する。それ以外の変更・除外の判断要請はメインエージェントが判定する。統合時にはメインエージェントが記録と境界を確認する。変更・除外の根拠として、エージェントによる具体化であることに加え、上記すべての条件を満たすことを示す。
 

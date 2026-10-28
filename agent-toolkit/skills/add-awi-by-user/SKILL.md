@@ -32,7 +32,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-completion.md#「対象集合の仕分け」「確定の判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「対象集合の仕分け」「確定の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「成果物の制限」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 
 ## 読込表
@@ -47,7 +47,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 ## 手順
 
 1. `agent-toolkit:wi-standards`を起動する。AWIの適切な粒度、由来の管理、投入および取得の手順は同スキルの基準に従う。ユーザーからの依頼が未完了の既存AWIの更新や既存AWIに対する具体的な懸念を含む場合は、質問や調査をする前にwi-standardsの状態遷移ルールを適用する。`inbox`や`hold`にある項目はステータスを保留にして更新し、`processing`にある項目への変更要求は新しいAWIとして切り出す。
-2. `agent-toolkit:user-confirmation-and-report`を起動し、`references/grilling.md`に基づく質問ラウンドを実施する。認識の不一致によって要件や結果が変動する未確定事項が完全になくなるまで対話を通じて確認する。ユーザーからすでに明示・合意されている要件は、同スキルの`SKILL.md`「原文の保持と取り込み」に従い、理由説明に含まれる主観的な評価と区別した上で確定済み要件として扱う。質問ラウンドの終了時報告を出力した後に、要求単位ごとの投入先リポジトリ、種別、趣旨、および確定した要件を整理する。
+2. `agent-toolkit:user-confirmation-and-report`を起動し、`references/grilling.md`に基づく質問ラウンドを実施する。認識の不一致によって要件や結果が変動する未確定事項が完全になくなるまで対話を通じて確認する。ユーザーからすでに明示・合意されている要件は、同スキルの`references/user-utterance.md`「原文の保持と取り込み」に従い、理由説明に含まれる主観的な評価と区別した上で確定済み要件として扱う。質問ラウンドの終了時報告を出力した後に、要求単位ごとの投入先リポジトリ、種別、趣旨、および確定した要件を整理する。
    - 投入先リポジトリを確定した段階で、すべての投入先を`--target-repo`引数に列挙して`atk wi submission begin`を実行する。`begin`コマンドはこの対話セッションの投入記録を渡されたリポジトリ集合で更新するため、投入先を追加・変更した際も、WI投入担当エージェントの稼働状況や原稿の返却状況にかかわらず、未保存の要求の投入先をすべて並べて再実行する。この記録が保持されている間、該当リポジトリを対象とする`atk wi process-loop`は処理を開始せずに投入の完了を待機する。
    - 質問する前に、具体的に分かっている既存AWIがある場合はその本文を取得して比較する。新規主題で未知の既存項目を探す照会は省略する。既存AWIで網羅された要求は確定済みとして扱い、新規の要求や既存要件との不整合を議論する。問い合わせ先のリポジトリが一意に特定できない場合は、その点のみを先にユーザーへ確認する。
    - 引数なしでスキルが起動され、直前の会話の応答で各項目の対応方針がすでに示されている場合は、その内容を登録対象の入力として受け入れ、提示済みの基準でも判断がつかない項目のみを質問する。
@@ -67,7 +67,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 
 ## セッション境界
 
-成果物をAWIの登録と更新に限定する契約には、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「成果物の制限」を適用する。
+成果物をAWIの登録と更新に限定する契約には、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「成果物の制限」を適用する。
 
 追加で受け取ったユーザー発話は、作業途中か完了報告後かを問わず、文章の書き方に対する指示や行動の是正も含めて要求単位に分解する。単位ごとに、`agent-toolkit:wi-standards`冒頭の要求の同一性基準に基づいて、既存・起草中のAWIへ合流させるか独立した要求として扱うかを判定する。同一ファイル、同一節、同一文章に対する部分的な重複は、編集上の競合として扱う。発話の一部が既存AWIの更新に該当する場合でも、残りの要求単位は個別に判定する。独立した要求と判定したものは、手順3の担当選定に戻す。合流させる要求単位は確定済みの作業範囲と比較し、ユーザー発話が範囲の一部のみに言及している場合であっても、確定済みの作業範囲を勝手に縮小しない。明示的に範囲の縮小が指示された場合や意図が曖昧な場合は、現在の範囲を`共通前提`として明示して確認する。
 ユーザーによる依頼の取り下げ等で投入作業を中止する場合も、必ず`atk wi submission end`を実行する。完了後に追加の発話を受けて投入を再開する場合は、投入先リポジトリの確定時に手順2の記録処理を再度行い、再開した投入が完了した際や再度中止となった際にも`atk wi submission end`を実行する。

@@ -24,7 +24,7 @@ writes_worktree: false
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「処置の階層」「再発防止策の必須性」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「処置の階層」「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策の必須性」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策の必須性」` |
 
 ## 入力
 
@@ -54,7 +54,7 @@ writes_worktree: false
 再発防止策: <処置と、その処置が作用する根本原因の単位>
 ```
 
-各欄の値は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直し」「処置の階層」「再発防止策の必須性」に基づいて判定し、`拡張原因分析`の要否にかかわらず、すべての欄を同一の基準で記載する。
+各欄の値は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に基づいて判定する。`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」「処置の階層」「再発防止策の必須性」も適用する。`拡張原因分析`の要否にかかわらず、すべての欄を同一の基準で記載する。
 類似見直しの該当件数が0件の場合や、採用すべき再発防止策がないと判断した場合も、同書が求める記録内容を該当欄に記載する。
 
 続行不能と追加報告行は、共通契約`rules-subagent.md`「返却形式の受け渡し」に従う。

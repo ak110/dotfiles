@@ -41,21 +41,21 @@
 
 ## [developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)
 
-## [WIの状態と遷移](concepts-workflows.md#wiの状態と遷移)
+## [WIの状態と遷移](concepts-workflows-wi.md#wiの状態と遷移)
 
 ## [`atk`の出力と操作](concepts-workflows.md#atkの出力と操作)
 
-## [AWI・UWIの本文と投入](concepts-workflows.md#awiuwiの本文と投入)
+## [AWI・UWIの本文と投入](concepts-workflows-wi.md#awiuwiの本文と投入)
 
-## [確認と承認](concepts-workflows.md#確認と承認)
+## [確認と承認](concepts-workflows-wi.md#確認と承認)
 
-## [process-wiとレーン](concepts-workflows.md#process-wiとレーン)
+## [process-wiとレーン](concepts-workflows-lanes.md#process-wiとレーン)
 
-## [工程と検証の名前](concepts-workflows.md#工程と検証の名前)
+## [工程と検証の名前](concepts-workflows-lanes.md#工程と検証の名前)
 
-## [多数の単純作業の分担](concepts-workflows.md#多数の単純作業の分担)
+## [多数の単純作業の分担](concepts-workflows-lanes.md#多数の単純作業の分担)
 
-## [計画ファイルの体裁の扱い](concepts-workflows.md#計画ファイルの体裁の扱い)
+## [計画ファイルの体裁の扱い](concepts-workflows-lanes.md#計画ファイルの体裁の扱い)
 
 ## [フックのホスト間共通化](concepts-runtime.md#フックのホスト間共通化)
 

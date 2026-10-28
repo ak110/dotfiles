@@ -10,22 +10,23 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../../../../agent-basics/skills/bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/analysis-operations.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis-operations.md#「ユーザー介入と確認の判定」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/analysis-operations.md#「ユーザー介入と確認の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis-operations.md#「規範の未適用と目的逸脱」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/analysis-operations.md#「規範の未適用と目的逸脱」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「前提の再検討」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「前提の再検討」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「反復した指摘の原因判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「情報探索の問題」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「情報探索の問題」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「反復する加工の問題」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「反復する加工の問題」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「類似見直し」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「処置の階層」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「再発防止策」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「類似見直しと再発防止の完了」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「再発防止としてのテスト」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止としてのテスト」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「前提の再検討」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「前提の再検討」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「情報探索の問題」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「情報探索の問題」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復する加工の問題」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復する加工の問題」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「処置の階層」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止としてのテスト」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止としてのテスト」` |
 
 ## 原因分析の品質確認
 
@@ -45,40 +46,40 @@
 
 ## 前提の再検討
 
-品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「前提の再検討」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-scenarios.md`「前提の再検討」を参照して適用する。
 
 ## 反復した指摘の原因判定
 
-品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「反復した指摘の原因判定」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-scenarios.md`「反復した指摘の原因判定」を参照して適用する。
 
 ## 情報探索の問題
 
-品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「情報探索の問題」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-scenarios.md`「情報探索の問題」を参照して適用する。
 
 ## 反復する加工の問題
 
-品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「反復する加工の問題」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-scenarios.md`「反復する加工の問題」を参照して適用する。
 
 ## 類似見直し
 
-品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「類似見直し」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」を参照して適用する。
 
 ## 処置の階層
 
-品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「処置の階層」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「処置の階層」を参照して適用する。
 
 ## 再発防止策
 
-品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「再発防止策」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「再発防止策」を参照して適用する。
 
 ## 再発防止策の必須性
 
-品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「再発防止策の必須性」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「再発防止策の必須性」を参照して適用する。
 
 ## 類似見直しと再発防止の完了
 
-品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「類似見直しと再発防止の完了」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直しと再発防止の完了」を参照して適用する。
 
 ## 再発防止としてのテスト
 
-品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「再発防止としてのテスト」を参照して適用する。
+品質基準の詳細は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「再発防止としてのテスト」を参照して適用する。

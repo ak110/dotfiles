@@ -1,6 +1,6 @@
 # 再発防止セルフチェック観点の追加とメンテナンス
 
-[root-cause-analysis.md](root-cause-analysis.md)「再発防止策」に記載されている最終防衛ラインとしての採用条件をすべて満たす場合に、チェック観点を追加する。
+[root-cause-remediation.md](root-cause-remediation.md)「再発防止策」に記載されている最終防衛ラインとしての採用条件をすべて満たす場合に、チェック観点を追加する。
 なお、再発防止の第1段階から第6段階までの定義も同節に従う。
 観点を採用するかどうかの判断や、既存の規範が適用されていなかった原因への対処方針は、同書で定義されている。
 
@@ -10,7 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `root-cause-analysis.md#「再発防止策」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `root-cause-remediation.md#「再発防止策」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策」` |
 
 ## 観点の書き方
 

@@ -37,7 +37,6 @@
 | 基準の参照時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
 | 基準の参照時 | `../skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` |
 | 基準の参照時 | `../skills/bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
-| 基準の参照時 | `workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 基準の参照時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
 | 基準の参照時 | `review-loop-coordination.md#「ラウンド番号の保持先」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンド番号の保持先」` |
 | 基準の参照時 | `reader-fit-review.parent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/reader-fit-review.parent.md#「入力」` |
@@ -55,7 +54,7 @@
 | 基準の参照時 | `../skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` |
 | 基準の参照時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 基準の参照時 | `add-wi.parent.md#「続行できない理由の扱い」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「続行できない理由の扱い」` |
-| 基準の参照時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「類似見直しと再発防止の完了」` |
+| 基準の参照時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` |
 | 基準の参照時 | `../skills/delegation/references/sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` |
 | 基準の参照時 | `review-loop-coordination.md`の冒頭と「ラウンドの遷移」から「応答済みの判定」まで | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#冒頭`、`section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンドの遷移」から「応答済みの判定」まで` |
 | 基準の参照時 | `exec.parent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「入力」` |
@@ -208,7 +207,7 @@ Git管理外ファイルの変更前後の複製のペアがあれば、レー�
 
 この運用は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」の「発見した独立の既存不良は同一セッション内で是正する」という一般原則の例外であり、先送りに要る事象の記録、根本原因、対応案は投入担当が保存するAWIが担保する。
 ただし、本セッションに残る後続工程（レビュー修正、統合、公開）の進行を止める不具合は、同節の「進行を妨げる欠陥」としてその場で対処する。この判定は工程が実際に止まる観測に基づき、事前の詳細な原因分析を前提にしない。
-その不具合は`agent-toolkit:bugfix`と同節の規定に従って直す。`process-wi`の実行中は同スキルの「即時対応」に従って当面の進行に必要な最小限の修正にとどめ、根本的な正式対応は次のセッション用のAWIへ引き継ぐ。通常の正式対応では、品質（Q）影響、レビュー対象との根本原因の同一性、処置完了の有無を判定し、判定基準は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直し」「類似見直しと再発防止の完了」に従う。認可が要る場合は`agent-toolkit:user-confirmation-and-report`に従う。
+その不具合は`agent-toolkit:bugfix`と同節の規定に従って直す。`process-wi`の実行中は同スキルの「即時対応」に従って当面の進行に必要な最小限の修正にとどめ、根本的な正式対応は次のセッション用のAWIへ引き継ぐ。正式対応では、品質（Q）影響、レビュー対象との根本原因の同一性、処置完了の有無を判定する。基準は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従う。`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」「類似見直しと再発防止の完了」も適用する。認可が要る場合は`agent-toolkit:user-confirmation-and-report`に従う。
 レーン担当が自レーンの検証を妨げるとして報告した既存不良は、実行レビューの返却と区別し、`process-wi`の処理中は同スキルの「即時対応」として扱う。
 
 対象の不具合ごとに、引き渡し済みの担当、是正結果、根拠付きの非該当判定、判断待ちの引き渡し先のいずれかを既存の引き継ぎ記録へ対応付けてから、レビュー収束後の工程へ進む。

@@ -43,9 +43,9 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-additions.md#「文書記述量の管理」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「文書記述量の管理」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「類似見直し」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/verification-scope.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/verification-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/analysis-records.md#「原因分析の記録先」` |
@@ -181,7 +181,7 @@ WIの確定内容を計画側で導出し直すのは、WIがない計画（`関
 - WIを入力とする計画でも、WI本文の調査結果と判断根拠に設計品質劣化の評価がなければ、WIで確定した実現方式を同節の基準で評価する。旧形式の対応節は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従う。劣化があればその是正を`## 実施内容`に計上する
 - エージェント向け文書を新設・改訂する計画では、`agent-basics:writing-standards/references/agent-documents-additions.md`「文書記述量の管理」を確認する。同じ文書への変更全体についてファイルサイズの上限、責務の範囲、読込の時点、既存記述との重複などを比べ、整理の結論を書く
 - 本計画で行うリファクタリングは`## 実施内容`の表に行として計上する。テストの更新、直接影響範囲の同期、生成物の再生成など実装に付随する作業は`## 要件・外部仕様`に書き、`## 実施内容`の行にしない
-- 同じ根本原因を持つ類似箇所の見直しは、作業種別を問わず`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「類似見直し」の母集団と「類似見直しと再発防止の完了」の判定基準に従う。通常変更の計画では結果を`### リファクタリング`に記録し、専用の見出しは設けない
+- 同じ根本原因を持つ類似箇所の見直しは、作業種別を問わず`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」の母集団と「類似見直しと再発防止の完了」の判定基準に従う。通常変更の計画では結果を`### リファクタリング`に記録し、専用の見出しは設けない
 - 本計画の変更範囲外で是正の必要も生じない既存の不備を見つけた場合は、`agent-toolkit:bugfix`を起動し、`agent-toolkit/skills/bugfix/SKILL.md`「問題を見つけたときの対処」に従う
 
 ## 変更履歴
@@ -191,7 +191,7 @@ WIの確定内容を計画側で導出し直すのは、WIがない計画（`関
 - 記録するユーザー発言は、`### ユーザー発言<1から始まる連番>`のH3見出しの下に、原文を変えない`text`コードブロックと、その発言で確定した現在の結論を書く。`ユーザー指示`由来の行を`採用`か`部分採用`とした計画では、`### ユーザー発言1`と空でない`text`コードブロックを1件以上必ず置く
 - 記録対象は、計画の目的、対象範囲、外部から観測できる結果、実行上の制約、承認状態を変える、実際に届いたユーザーメッセージの逐語引用に限る。委譲先エージェントでは、委譲プロンプトや追加メッセージのうち`<forwarded-user-input>`で囲まれた逐語テキストだけを対象とする（タグの扱いは`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」に従う）
 - ユーザー発言以外の経緯は、内容が分かる任意のH3見出しの下に書く
-- ユーザーの発話から導いた要求範囲を書く場合は、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」の記録書式（原文の逐語と出所、該当する具体例、追加事項、承認出所を明記した除外事項）に従う。`## 実施内容`の要求単位ごとの分解と`部分採用`の規定も適用する
+- ユーザーの発話から導いた要求範囲を書く場合は、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」の記録書式に従う。原文の逐語と出所、該当する具体例、追加事項、承認出所を明記した除外事項を記録する。`## 実施内容`の要求単位ごとの分解と`部分採用`の規定も適用する
 
 ## 検証と公開工程
 

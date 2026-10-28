@@ -13,13 +13,13 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/completion-report/SKILL.md#「工程」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/SKILL.md#「統合実行ツール経由の起動」「保存した実行出力の取得」` | 判断 | `section:agent-toolkit:*/skills/check-execution/SKILL.md#「統合実行ツール経由の起動」「保存した実行出力の取得」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/references/analysis.md#「入力と照会」「一次選別」「原因と対策」` | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#「入力と照会」「一次選別」「原因と対策」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/references/analysis.md#「コストの無駄の確認」` | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#「コストの無駄の確認」` |
@@ -69,7 +69,7 @@
 - `### 成果`: 元の依頼における要求単位に対応させ、元の作業による成果全体を1件1行で記載する（同一セッションで再報告する場合でも、すでに報告済みの内容を含めて記載する）。別の事象に対する処置をした場合は、区別して書き添える。形式的な完成条件にかかわらず、要求単位で未達となった事項があればその結果と理由を記載し、協調モードではその場で伝える
 - `### 検証結果`: 前述の「検証結果と実行記録」に従い、各検証結果と参照先を記載する。検証を実施した項目がない場合は「未実行」と記載する
 - `### 投入したWI`: 当該セッションにおいて報告前に投入したWI（AWIおよびUWI）のうち、報告時点で未完了（終了していない）の項目を記載する。処理対象として取得した項目や、`adopted`や`rejected`として完了した項目は除外する（ユーザーが終了時に確認済みであるため）。報告の直前に、投入したすべてのファイル名を`atk wi show <ファイル名>... --summary-only --target-repo=<対象リポジトリの絶対パス> --skip-pull`に渡して実行する。出力された`### <ファイル名> [<状態>]`の見出し行から状態を確認し、続く行からAWIのH1タイトル、またはUWIの質問本文の先頭行を取得する。ユーザーに対応が委ねられている判断や行動を保存した個別UWIの所在も、ここで伝える。表示形式は`- <ファイル名>: <H1タイトル>`（UWIの場合は質問本文の先頭行）とし、`target_repo`が現在の対象リポジトリと異なる場合にのみ、末尾に半角スペース1文字と`(target_repo=<正規化リモートURLか絶対パス>)`を追加する。該当する項目が0件の場合は`- なし`とする
-- `### 自ら確定した判断`: ユーザーに質問せず自ら確定した判断のうち、別の合理的なエージェントであれば異なる判断をする可能性があるものについてのみ、`### 成果`の後に配置し、ユーザーが異論を持ちそうな順に次の書式で記載する。ユーザー要求の対象範囲を定める決定事項については、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」に定められた範囲記録の書式に従う。`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」により言及が定められている「ドキュメントと既存コードの不一致」については、ドキュメントを修正せず残したものを、従った側とともに本節へ1件ずつ記載する（ドキュメント側を修正したものは`### 成果`に記載する）
+- `### 自ら確定した判断`: ユーザーに質問せず自ら確定した判断のうち、別の合理的なエージェントであれば異なる判断をする可能性があるものについてのみ、`### 成果`の後に配置し、ユーザーが異論を持ちそうな順に次の書式で記載する。ユーザー要求の対象範囲を定める決定事項については、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」に定められた範囲記録の書式に従う。`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」により言及が定められている「ドキュメントと既存コードの不一致」については、ドキュメントを修正せず残したものを、従った側とともに本節へ1件ずつ記載する（ドキュメント側を修正したものは`### 成果`に記載する）
 
 ```text
 ### 自ら確定した判断
@@ -115,7 +115,7 @@
 
 `### 確定した問題と対策`には、原因と対策を確定した問題ごとに1行ずつ記載する。区分には、`AWI登録予定`（WI投入担当を起動する前の予告）、`AWI登録`（新しく投入したAWI）、`AWI登録済み`（対策を網羅している既存の未完了項目）、`実装済み`（同一セッション内で実装した対策）のいずれかを用いる。H1タイトルだけでは問題と対策の内容を読み取れない場合に限り、タイトルの後ろに`; 要旨: <補足内容>`を書き添える。複数の問題を1件のAWIで対応する場合は、各行に同じAWIを記載するか、候補IDの括弧内に複数のIDを並べて記載する。
 
-`### 対策を見送った問題`には、候補一覧や会話の経緯の中で見つかった問題のうち、対策を見送ったものを記載する。`判定済み`の根拠には確認済みの観測結果を簡潔に記載し、「欠陥ではないとの判定」「原因が未確定」「処置を採用しない判断」のいずれであるかが読み取れるようにする。原因や対策が未確定の場合は`未確定`の行に記載し、原因を分析したうえで再発防止策を採用しないと判断した問題は`再発防止策なし`の行に記載する。`再発防止策なし`で処理を終了するかどうかは、`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」に基づいて判定し、品質（Q）への影響、重大度、探索範囲・限界、および許容する残存リスクを客観的に記録する。`判定済み`や`再発防止策なし`の根拠として利用できない理由には、「規範や案内がすでに存在していたが適用が漏れたこと」「後段の確認工程や再実行によって回復したこと」「別の論点で下された判断でありユーザーの判断が必要であること」「問題への寄与が未確定であること」の4点がある。これらの定義は`agent-basics:bugfix/references/root-cause-analysis.md`「再発防止策の必須性」に定められている。重大な問題に対して有効な手段が見出せない場合は、未達事項として`未確定`の行に記載する。対策を見送ることができる条件は、`agent-toolkit:session-review`の`references/analysis.md`「入力と照会」「一次選別」「原因と対策」に従う。実施方法の見送り根拠は、同資料「コストの無駄の確認」に示された比較結果に対応付け、欠陥の有無に関する結論と、費用対効果の観点による採否とを明確に区別して記載する。
+`### 対策を見送った問題`には、候補一覧や会話の経緯の中で見つかった問題のうち、対策を見送ったものを記載する。`判定済み`の根拠には確認済みの観測結果を簡潔に記載し、「欠陥ではないとの判定」「原因が未確定」「処置を採用しない判断」のいずれであるかが読み取れるようにする。原因や対策が未確定の場合は`未確定`の行に記載し、原因を分析したうえで再発防止策を採用しないと判断した問題は`再発防止策なし`の行に記載する。`再発防止策なし`で処理を終了するかどうかは、`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」に基づいて判定し、品質（Q）への影響、重大度、探索範囲・限界、および許容する残存リスクを客観的に記録する。`判定済み`や`再発防止策なし`の根拠として利用できない理由には、「規範や案内がすでに存在していたが適用が漏れたこと」「後段の確認工程や再実行によって回復したこと」「別の論点で下された判断でありユーザーの判断が必要であること」「問題への寄与が未確定であること」の4点がある。これらの定義は`agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」に定められている。重大な問題に対して有効な手段が見出せない場合は、未達事項として`未確定`の行に記載する。対策を見送ることができる条件は、`agent-toolkit:session-review`の`references/analysis.md`「入力と照会」「一次選別」「原因と対策」に従う。実施方法の見送り根拠は、同資料「コストの無駄の確認」に示された比較結果に対応付け、欠陥の有無に関する結論と、費用対効果の観点による採否とを明確に区別して記載する。
 
 候補一覧に含まれる候補に対応する行には、行末の括弧内に候補ID（`c0006`の形式。複数の場合は読点で区切る）を記載する。
 

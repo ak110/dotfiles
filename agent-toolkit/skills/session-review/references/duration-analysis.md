@@ -8,6 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis.md#「一次選別」「コストの無駄の確認」「原因と対策」` | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#「一次選別」「コストの無駄の確認」「原因と対策」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/session-records.md#「集計値の典拠」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/session-records.md#「集計値の典拠」` |
@@ -16,7 +17,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「反復する加工の問題」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「反復する加工の問題」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復する加工の問題」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復する加工の問題」` |
 
 ## 所要時間の分析と改善
 
@@ -32,7 +33,7 @@
 - 外部サービスの利用上限、レート制限、課金枠による待機の扱いを変える対策は、AWIとして確定する前に`agent-toolkit:wi-standards`「由来と承認」の裁量と変更程度の判定を適用する。
   待機やモデル・実行環境の切り替えは、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」を適用し、指定された費用、サービス、待機条件を保つ技術判断は自ら確定する。比較では、停止、実行先の切り替え、打ち切り、上限到達の事前回避に加え、現行の待機を続ける案も残す。
 - 短時間に反復したコマンドも、呼び出しごとの所要時間と律速区間への寄与を踏まえて見直す（努力目標。無駄な呼び出しの削減）。入力形式の誤りによる反復は最下層のヘルプや仕様の取得を先にし、成功した同種操作の反復は複数対象の指定でまとめられるかを比べる。
-- 複雑なシェル実行を専用ツールへ置き換える候補は、`analysis.md`「一次選別」のその場のコードによる加工の反復判定で決め、比較する代替案、評価順、採用条件は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「反復する加工の問題」に従う。手順書の作業を一時スクリプトで代替した箇所は、「一次選別」の同じ項目で将来の再実行性を判定する。Claude CodeとCodexに同じ基準を適用する。
+- 複雑なシェル実行を専用ツールへ置き換える候補は、`analysis.md`「一次選別」のその場のコードによる加工の反復判定で決め、比較する代替案、評価順、採用条件は`agent-basics:bugfix`の`references/root-cause-scenarios.md`「反復する加工の問題」に従う。手順書の作業を一時スクリプトで代替した箇所は、「一次選別」の同じ項目で将来の再実行性を判定する。Claude CodeとCodexに同じ基準を適用する。
 - コンテキストの圧縮（コンパクション）は発生回数と合計所要時間を記録し、取得範囲の限定や調査の分離など、コンテキスト消費自体を抑える案を比べる。発生閾値を上げるだけの案は候補から外す。
 - 改善につながった事例が少ない候補区分は、抽出条件を絞る対象として検討する。
 - 各改善案の採否は、品質への影響の有無と、トークンコストや保守コストを大きく増やさないかで判定する。

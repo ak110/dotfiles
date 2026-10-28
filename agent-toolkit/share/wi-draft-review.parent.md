@@ -14,12 +14,13 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion.md#「実現方式の成立」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「実現方式の成立」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「反復した指摘の原因判定」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「反復した指摘の原因判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md#「投入」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「投入」` |
 
 ## 起動
@@ -45,4 +46,4 @@
 レビュー結果として返却された要求識別子と原稿の集合が、入力した集合と一致することを確認する。要求ごとの意味判定に加え、検収者による冒頭部分の判定、条件付きで起動した読者確認の識別子、結果、証拠を追跡する。合格した原稿は、他の原稿の修正完了を待たずに個別に保存できる。追加の原稿がある場合は、新しい識別子を割り当てて既存の担当へ渡し、取得済みの共通資料を再利用する。
 各判定の`読者別探索:`欄を確認する。識別子が記録されている場合は返却内容を読み、その判定がユーザー向け部分に対する確認結果であることを確かめる。再利用時は前回の抽出内容との一致を確認し、起動条件に当てはまらない場合は条件と自己確認の根拠を確かめる。行の欠落や無効な省略がある場合は、合格判定であっても同じ担当へ差し戻して確認を求める。
 サブエージェントの終了と報告を受け取ったら、review-standardsを適用して各指摘の採否と必要な再調査の要否を作成主体が確定する。要件との不一致を指摘された場合は、その指摘が前提としている値の出所を、元の要求、実際の回答、ならびに`agent-toolkit:wi-standards`の`references/origin-and-approval.md`「由来と`source`」に照らして採否を判断する。質問や選択肢の説明を要件として扱っている指摘については、その由来を示した上で同じ担当へ再判定を依頼し、ユーザー自身の決定を要する事項のみを確認へ回す。
-修正する際は、部分的な追記だけで済ませるのではなく、変更した方式全体の整合性を確かめてから再提出する。確認の対象は、開始、終了、途中の失敗から再開に至る一連の流れとし、基準には`agent-toolkit:wi-standards`の`references/drafting-completion.md`「実現方式の成立」を用いる。修正のたびに新たな状態管理や照会手段を追加するような指摘が続く場合は、方式の維持、縮小、または代替案への切り替えを比較検討する。比較の基準には`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」を用いる。指摘が繰り返される原因は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「反復した指摘の原因判定」に従って分析する。成立性に関する未解決事項は、指摘が繰り返された場合でも確実に解消した上で合格とする。修正後は、変更した要求識別子、現行の原稿、差分、直接の影響範囲を同じレビュー担当へ渡して再判定を依頼する。変更のない共通資料や合格済みの要求結果はそのまま保持し、変更のない抽出内容は読者別探索の再点検省略条件に従って再利用する。検収済みの参照関係に基づく正式名への置換のみの差分については、再判定へ戻すことなく、`agent-toolkit:wi-standards`の`references/drafting-workflow.md`「投入」に従って作成主体が先行項目の保存結果と突き合わせた上で保存処理へ進める。未解決の指摘が0件であることと、原稿と証拠の対応関係を確認した上で、共通のWI保存手順を実行する。ユーザー自身の判断が必要な事項は、確認が取れるまで保留する。
+修正する際は、部分的な追記だけで済ませるのではなく、変更した方式全体の整合性を確かめてから再提出する。確認の対象は、開始、終了、途中の失敗から再開に至る一連の流れとし、基準には`agent-toolkit:wi-standards`の`references/drafting-completion.md`「実現方式の成立」を用いる。修正のたびに新たな状態管理や照会手段を追加するような指摘が続く場合は、方式の維持、縮小、または代替案への切り替えを比較検討する。比較の基準には`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」を用いる。指摘が繰り返される原因は、`agent-basics:bugfix`の`references/root-cause-scenarios.md`「反復した指摘の原因判定」に従って分析する。成立性に関する未解決事項は、指摘が繰り返された場合でも確実に解消した上で合格とする。修正後は、変更した要求識別子、現行の原稿、差分、直接の影響範囲を同じレビュー担当へ渡して再判定を依頼する。変更のない共通資料や合格済みの要求結果はそのまま保持し、変更のない抽出内容は読者別探索の再点検省略条件に従って再利用する。検収済みの参照関係に基づく正式名への置換のみの差分については、再判定へ戻すことなく、`agent-toolkit:wi-standards`の`references/drafting-workflow.md`「投入」に従って作成主体が先行項目の保存結果と突き合わせた上で保存処理へ進める。未解決の指摘が0件であることと、原稿と証拠の対応関係を確認した上で、共通のWI保存手順を実行する。ユーザー自身の判断が必要な事項は、確認が取れるまで保留する。

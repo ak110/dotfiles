@@ -13,6 +13,6 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `testing.md#「状態遷移の性質確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「状態遷移の性質確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「再発防止策」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「再発防止策」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time.md#「セキュリティ・ロギング・エラー処理」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/implementation-time.md#「セキュリティ・ロギング・エラー処理」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-time.md#「エンドユーザーデータの移行」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-time.md#「エンドユーザーデータの移行」` |

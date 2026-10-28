@@ -14,7 +14,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「ユーザー発話の解釈」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「ユーザー発話の解釈」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「ユーザー発話の解釈」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「ユーザー発話の解釈」` |
 
 ## 旧形式の判別
 
@@ -64,6 +64,6 @@ detailファイルが存在しない場合は、旧単一ファイル形式と�
 ## 現行規範の所在
 
 旧形式の列名に直接結びつかない規範については、現行書式の規定に従う。
-実施内容を記述する粒度、採否の値、ユーザー合意との整合性の確認、参照元の検索と計上の基準は`plan-file-standards.md`で規定する。ユーザー発話の解釈手順は、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「ユーザー発話の解釈」以降の各節に従う。
+実施内容を記述する粒度、採否の値、ユーザー合意との整合性の確認、参照元の検索と計上の基準は`plan-file-standards.md`で規定する。ユーザー発話の解釈手順は、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「ユーザー発話の解釈」以降の各節に従う。
 旧書式を扱う際は、`plan-file-standards.md`が指定する計上先を、`## 実装資料`内のファイル群別の変更説明と`## 完了条件`へと読み替える。
 レビュー指摘管理表の列の定義（列契約）は、`agent-toolkit/agent_toolkit/_atk/review_table.py`およびそのテストコードで規定する。

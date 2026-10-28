@@ -9,7 +9,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「所要の原因調査」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「所要の原因調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/testing.md#「速度」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「速度」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` |
 | 所要の増大や不要仕事を原因調査へ渡す前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
@@ -29,7 +29,7 @@
 - 過去の保存記録が存在しない初回実行時は、必要な処理内容、データ規模、外部プロセスの起動回数、契約上不可欠な待機時間などから所要時間の見込み根拠を整理し、今回の観測値と比較する。必要な待機処理や実プロセス・実環境の担保に要する時間も比較基準に含める。
 - pytestのduration表示やpyfltrの`slow_tests`といった既存の所要時間出力、保存された過去の実行記録、およびツールの経過時間情報を活用する。各区間の内訳を判別するための情報が不足している不審な処理に限り、追加で計測する。
 
-仕事量や条件の差異では説明がつかない実行時間の増大や、不要なセットアップ・データ取得・プロセス起動・待機処理の反復を検知した場合は、`agent-basics:bugfix`を起動する。そして、`agent-basics:bugfix/references/root-cause-analysis.md`の「所要の原因調査」に処理を引き渡す。単独で再実行して成功したという事実は、仕事量の妥当性を示す根拠にはならない。観測された個別および全体の所要時間、比較基準と実行条件、妥当性の評価結果、ならびに改善や追加調査に関する判断を、既存の検証結果記録に明記する。
+仕事量や条件の差異では説明がつかない実行時間の増大や、不要なセットアップ・データ取得・プロセス起動・待機処理の反復を検知した場合は、`agent-basics:bugfix`を起動する。そして、`agent-basics:bugfix/references/root-cause-scenarios.md`の「所要の原因調査」に処理を引き渡す。単独で再実行して成功したという事実は、仕事量の妥当性を示す根拠にはならない。観測された個別および全体の所要時間、比較基準と実行条件、妥当性の評価結果、ならびに改善や追加調査に関する判断を、既存の検証結果記録に明記する。
 設計段階における不要な仕事の排除やハング検出用のタイムアウト設定については、`agent-basics:writing-standards`の`references/testing.md`「速度」に従う。ハング検知のためのタイムアウトと処理所要時間の妥当性評価とは目的が異なるため、固定の許容秒数を設けて機械的にチェックしたり、専用の管理台帳や常時監視機構を追加したり、毎回全件を再計測したりするような過剰な仕組みは追加しない。
 
 ## 基準版と変更行への帰属

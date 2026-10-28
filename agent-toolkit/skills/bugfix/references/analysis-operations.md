@@ -13,7 +13,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/runtime-routing.md#「代替時の組合せの目安」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「代替時の組合せの目安」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details.md#「検収手段の到達可能性」` | 判断 | `section:agent-basics:*/skills/review-standards/references/judgment-details.md#「検収手段の到達可能性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
@@ -59,7 +59,7 @@
 
 1. 条文から特徴的な1行を選び、`atk run-script session-review-evidence --`の`--context-at <事象の記録位置> --phrase=<文字列>`を実行してコンテキスト内の存在を照会する。得られた判定結果と、条文がコンテキストへ読み込まれた経路を示す`channel`をAWIの`直接的原因`行に記録する。phraseには事象発生時点の条文から文字列を選ぶ（事象後に改訂されている場合は`git log -S`で当時の文面を特定する）。
 2. 判定結果を各区分に対応付ける。`absent`は起動契機の欠落や参照時点の問題（条文を含む資料が読み込まれなかった）とする。`dropped-by-compaction`はコンテキスト圧縮時の問題（会話圧縮によって除外され、再読み込みの対象外だったか切り詰めによって欠落した）、`present`は条文の判定条件、責務の所在、または想起性の問題とする。一致した`channel`が`user`と`assistant`のみである場合は、会話の中での単なる言及として扱う。
-3. `agent-basics:bugfix/references/root-cause-analysis.md`「再発防止策の必須性」の未適用規範に関する是正原則に従って原因を特定する。条文の想起性を改善する案と、改善後の条文によって誤りの発生を未然に防げる見込みの根拠をAWIへ記録する。その見込みは、`agent-basics:writing-standards/references/agent-documents-basics.md`に示されている読み手（LLM）の特性に基づいて評価する。
+3. `agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」の未適用規範に関する是正原則に従って原因を特定する。条文の想起性を改善する案と、改善後の条文によって誤りの発生を未然に防げる見込みの根拠をAWIへ記録する。その見込みは、`agent-basics:writing-standards/references/agent-documents-basics.md`に示されている読み手（LLM）の特性に基づいて評価する。
 
 目的逸脱には、規範に従ったことによる処理の停止、差し戻し、空転、不要な反復、条文間の矛盾、前提の欠落、あるいは要求を満たさない成果物の生成などが含まれる。正常に完了した工程であっても、資料の読み込み、照会、事前準備、確認に要した作業量を、本来達成すべき目的の操作と比較して評価する。
 規範に従って実行される工程は適用されるたびに発生するため、1セッション内で1回発生しただけでも反復的な負担として評価する。ツールの呼び出し回数、資料の読み込み量、所要時間、適用の頻度を考慮し、必読範囲の縮小や集約、準備処理を呼び出される側へ移管する案、または探索自体を不要にする案などを比較検討する。
