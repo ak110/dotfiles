@@ -235,6 +235,10 @@ JSON Linesの`cost-metrics-week`は月曜0時から始まる週ごとの次の�
 各記録は1回だけ数え、委譲先はルートの開始週へ合算する。
 Codexのreasoning_output_tokensは出力に内包される。
 週の`tokens`はトークンのまま示し、金額は`cost-metrics-session`の別行へ出力する。
+`cost-metrics-hook-notice`の別行には、同じルートと委譲先のhook通知を、ルートの開始週・runtime・規則ごとに数えて出力する。
+`hook`は通知元、`hook_name`は記録されたhook名、`tag`は`block`・`warn`・`notice`などの重要度、`kind_text`は可変部分を正規化した本文の冒頭、`count`は件数である。
+ツール結果だけにある遮断も数え、同一呼び出しの重複と通常の標準出力・会話中の引用を除く。
+同じ分類軸の週別件数から、hookや規範の改訂後の増減を確認できる。
 レビュー表の旧trackであるimplementation-reviewはexec-reviewとして読み、他のtrackは対象外とする。
 `~/.claude/plans`だけにある未保存の表は集計から除き、`unsaved_table_count`で件数を示す。
 

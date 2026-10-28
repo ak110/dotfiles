@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import collections
+import json
 import re
 from typing import Any, NamedTuple
 
 from session_evidence_extract import (
+    _BODY_KEYS,
     _CANDIDATE_VARIABLE,
     _CANDIDATE_VARIABLE_PLACEHOLDER,
     _HOOK_FAILURE_PREFIX,
@@ -40,17 +42,23 @@ class _HookNoticeKey(NamedTuple):
 def _hook_notice_events(records: list[_Record]) -> list[dict[str, Any]]:
     """hook実行の記録から通知本文だけを集計し、分類軸ごとの件数を件数降順で返す。
 
-    母集団はhook実行の記録4種であり、`--warn`のような本文への文字列一致は用いない。
+    母集団はhook実行記録とホストが遮断結果として格納した本文である。
     hookの発動を伴わない本文（ソースの引用、会話中の言及）は記録の種別で除かれる。
     同一ツール呼び出しの通知は実行成功記録の標準出力と追加コンテキストの双方へ格納されるため、
     分類軸とツール呼び出し識別子の組で重複を除いてから数える。
     """
     seen: set[tuple[str | None, _HookNoticeKey]] = set()
     counts: collections.Counter[_HookNoticeKey] = collections.Counter()
+    hook_names = {
+        item.get("toolUseID"): item["hookName"]
+        for record in records
+        for item in _hook_records(record.entry)
+        if isinstance(item.get("toolUseID"), str) and isinstance(item.get("hookName"), str)
+    }
     for record in records:
         for hook_record in _hook_records(record.entry):
             tool_use_id = hook_record.get("toolUseID")
-            hook_name = hook_record.get("hookName")
+            hook_name = hook_record.get("hookName") or hook_names.get(tool_use_id)
             for body in _hook_notice_bodies(hook_record):
                 for key in _hook_notice_keys(body, hook_name if isinstance(hook_name, str) else None):
                     identity = (tool_use_id if isinstance(tool_use_id, str) else None, key)
@@ -110,6 +118,68 @@ def _hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     """
     found: list[dict[str, Any]] = []
     _collect_hook_records(entry, found)
+    found.extend(_result_hook_records(entry))
+    return found
+
+
+def _result_hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """ホストの遮断結果だけをhook記録へ揃え、コマンド標準出力の引用を除く。"""
+    found: list[dict[str, Any]] = []
+
+    def append(body: str, identity: Any, hook_name: str | None = None) -> None:
+        found.append({"type": "hook_system_message", "content": body, "toolUseID": identity, "hookName": hook_name})
+
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    for block in content if isinstance(content, list) else []:
+        if not isinstance(block, dict) or block.get("type") != "tool_result" or block.get("is_error") is not True:
+            continue
+        value = block.get("content")
+        texts = (
+            [value]
+            if isinstance(value, str)
+            else [item.get("text", "") for item in value if isinstance(item, dict)]
+            if isinstance(value, list)
+            else []
+        )
+        for text in texts:
+            if not isinstance(text, str):
+                continue
+            body = text.removeprefix("<tool_use_error>").removesuffix("</tool_use_error>").strip()
+            prefix = _HOOK_FAILURE_PREFIX.match(body)
+            if prefix:
+                append(body[prefix.end() :], block.get("tool_use_id"), body.split(" hook error:", 1)[0])
+            elif _HOOK_NOTICE_MARKER.match(body):
+                append(body, block.get("tool_use_id"))
+
+    payload = entry.get("payload")
+    if not isinstance(payload, dict) or payload.get("type") not in {"custom_tool_call_output", "function_call_output"}:
+        return found
+    output = payload.get("output")
+    elements = output if isinstance(output, list) else [output]
+    for index, element in enumerate(elements):
+        text = element.get("text") if isinstance(element, dict) else element
+        if not isinstance(text, str):
+            continue
+        identity = payload.get("call_id") if index == 0 else f"{payload.get('call_id')}:{index}"
+        if re.match(r"^Script error:\s*\n(?:Command|Tool call) blocked by PreToolUse hook", text):
+            append(text.split("hook", 1)[1].lstrip(": \n"), identity)
+            continue
+        try:
+            parsed = json.loads(text)
+        except ValueError, TypeError:
+            continue
+        items = parsed if isinstance(parsed, list) else [parsed]
+        # 並列結果の外側には結果配列を持つオブジェクトもある。
+        if isinstance(parsed, dict) and isinstance(parsed.get("results"), list):
+            items = parsed["results"]
+        for position, item in enumerate(items):
+            result = item.get("result") if isinstance(item, dict) else None
+            if not isinstance(result, dict) or result.get("status") != "rejected":
+                continue
+            reason = result.get("reason")
+            if isinstance(reason, str) and re.match(r"^(?:Command|Tool call) blocked by PreToolUse hook", reason):
+                append(reason.split("hook", 1)[1].lstrip(": \n"), identity if position == 0 else f"{identity}:{position}")
     return found
 
 
@@ -117,8 +187,9 @@ def _collect_hook_records(value: Any, found: list[dict[str, Any]]) -> None:
     if isinstance(value, dict):
         if _is_hook_record(value):
             found.append(value)
-        for item in value.values():
-            _collect_hook_records(item, found)
+        for key, item in value.items():
+            if key not in _BODY_KEYS:
+                _collect_hook_records(item, found)
     elif isinstance(value, list):
         for item in value:
             _collect_hook_records(item, found)
