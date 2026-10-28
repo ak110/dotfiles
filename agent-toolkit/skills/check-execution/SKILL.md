@@ -19,6 +19,7 @@ description: >
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/references/report-formats.md#「検証結果と実行記録」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「検証結果と実行記録」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
@@ -40,6 +41,7 @@ description: >
 - 同一のOSアカウント内で同時に1プロセスのみ実行を許可する実行枠（スロット）に参加する検証処理は、先行する他の検証が完了するのを待ってから実際の処理を開始する。この実行枠に参加する対象は、pyfltrを起動するすべての手段（CLI、MCPの`run`、pyfltrを呼び出すタスクランナー、commit hookが動く`git commit`など）と、プロジェクトでこの実行枠へ参加するよう設定されたpytestプラグインを読み込むpytestである。以下の起動方法と3つの分類基準は、この対象群に限定して適用する。
   - シェルからコマンドを起動する場合は、ツール自体に組み込まれているタイムアウト機能（スロット待ち時間を除き、実際の処理時間のみに適用される）を活用し、コマンドの先頭に`timeout <秒>`を付与しない。背景実行で起動する場合は、実行ホスト側の背景実行タイムアウトを最大値にするか、他の検証による待機時間を見込んだ十分な長さに設定する。スロットの待機中は、pyfltrの`execution-slot`警告、またはpytestプラグインによる待機通知が標準エラー出力に1回出力される。
   - 待機中を含め現在実行中の検証処理は、プロセス起動時に取得した識別子と公開されている待機機能を用いて完了を回収する。同一の対象範囲に対する多重起動は避け、常に1つの実行プロセスを維持する。
+  - 待機の通知を受けた後も検証対象や直接の利用側の編集を続ける場合は、待機中の実行を止める。書込を終えてから、同じ対象集合で1回だけ起動し直す。待機を終えた実行は待機開始時点の内容を検証しないため、編集を続けたまま待つと、古い状態の検証が実行枠を占有したうえで結果も使えなくなる。検証中の編集の一時停止は`agent-basics:check-execution`の`references/verification-scope.md`「実行条件と再実行」に従う。
   - ホスト側のタイムアウト上限によって途中で強制終了された検証は、標準エラー出力に待機通知が出ているかどうか、および最終行のメッセージを確認して、スロット待機中のタイムアウトか処理実行中のタイムアウトかを判別する。待機中のタイムアウトであれば実際のテスト処理は開始されていないため、同じ対象集合に対して初回実行として再度コマンドを起動する。
   - 処理実行中のタイムアウトであった場合は、`references/diagnostics.md`の診断および再実行の規則に従って対処し、実際の処理時間に対する上限はスロット待ち時間とは切り離して管理する。
   - 過去に保存した結果と検証対象のファイル集合は、これら3つの分類のいずれの場合であっても、変更を加えずにそのまま再利用する。
