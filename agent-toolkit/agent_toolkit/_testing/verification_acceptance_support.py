@@ -58,6 +58,7 @@ class _OfflineOperations(wi_operations.Operations):
 
 
 async def _serve(root: pathlib.Path, failure: bool) -> None:
+    existing_threads = set(threading.enumerate())
     notes = root / "notes"
     plan_root = root / "plans"
     plan_root.mkdir()
@@ -81,7 +82,9 @@ async def _serve(root: pathlib.Path, failure: bool) -> None:
 
             async def shutdown() -> None:
                 observed_threads.extend(
-                    thread for thread in threading.enumerate() if isinstance(thread, watchdog.utils.BaseThread)
+                    thread
+                    for thread in threading.enumerate()
+                    if thread not in existing_threads and isinstance(thread, watchdog.utils.BaseThread)
                 )
                 assert all(thread.is_alive() for thread in observed_threads)
                 atomic_write(root / "serve.ready", json.dumps({"port": port}))

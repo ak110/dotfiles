@@ -15,6 +15,7 @@ from collections.abc import Callable, Generator
 from unittest import mock
 
 import pytest
+import watchdog.observers
 
 from agent_toolkit._atk.lane_test import prepare_lane_verification
 from agent_toolkit._common import atomic_file, process_tree
@@ -38,7 +39,15 @@ async def test_ready_is_published_after_complete_json(tmp_path, monkeypatch):
         replace(source, destination)
 
     monkeypatch.setattr(atomic_file, "_replace", observe)
-    await verification_acceptance_support._serve(tmp_path, failure=False)
+    unrelated = watchdog.observers.Observer()
+    unrelated.start()
+    try:
+        await verification_acceptance_support._serve(tmp_path, failure=False)
+        assert unrelated.is_alive()
+    finally:
+        unrelated.stop()
+        unrelated.join(timeout=5)
+        assert not unrelated.is_alive()
     assert len(observed) == 1 and observed[0]["port"] > 0
     assert json.loads((tmp_path / "serve.ready").read_text(encoding="utf-8")) == observed[0]
 
