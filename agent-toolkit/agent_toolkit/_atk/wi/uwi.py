@@ -46,15 +46,26 @@ ANSWER_HEADING = "## 回答"
 _RESERVED_MARKUP_HEADINGS = (QUESTION_HEADING, ANSWER_HEADING)
 
 
-def _looks_like_question(message: str) -> bool:
-    """メッセージ本文に疑問文らしき表現が含まれるかを簡易判定する。
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[。．.!！])|\n")
+_TRAILING_QUESTION = re.compile(r"か[。．]?(?:[（(][^（）()]*[）)])?[」』）)]*[。．]?$")
 
-    `？`・`?`を部分文字列として含む場合、または末尾（句点除去後）が`か`で終わる場合を問いとみなす。
+
+def _looks_like_question(message: str) -> bool:
+    """UWIの質問本文の冒頭に問い（疑問文）があるかを簡易判定する。
+
+    判定条件の定義元は`agent-toolkit/skills/wi-standards/references/uwi-format.md`「構成」であり、
+    同節は冒頭に疑問文を置き、末尾を`## 判断材料`とすることを質問の種類によらず定める。
+    このため最初の行頭`## `より前（見出しが無ければ全体）だけを判定範囲とし、範囲内に`？`・`?`を含む文、
+    または「か」で終わる文（後ろに句点、閉じ括弧、括弧書きの補足が続く場合を含む）が1つ以上あれば問いとみなす。
+    規定の位置や対象の種類を変える改訂では、本関数と`warn_question_quality`も同じ変更単位で直す。
     高度な自然言語処理は導入せず、誤検知は許容してユーザーが目視で気づける警告にとどめる。
     """
-    if "？" in message or "?" in message:
-        return True
-    return message.rstrip().rstrip("。").endswith("か")
+    lead = re.split(r"^## ", message, maxsplit=1, flags=re.MULTILINE)[0]
+    for sentence in _SENTENCE_BOUNDARY.split(lead):
+        stripped = sentence.strip()
+        if "？" in stripped or "?" in stripped or _TRAILING_QUESTION.search(stripped):
+            return True
+    return False
 
 
 def _detect_self_containment_deficiency(message: str) -> str | None:
@@ -116,11 +127,16 @@ def warn_question_quality(filename: str, message: str, question_type: str | None
 
     書式上の予約要素（回答欄マーカー・自動付与の見出し）の混入は
     `reject_reserved_uwi_markup`が拒否で扱い、本関数は内容面の品質のみを警告で扱う。
+    問いの有無は`question_type`によらず判定する（定義元と判定範囲は`_looks_like_question`を参照）。
     """
-    if question_type != "choice" and not _looks_like_question(message):
+    del question_type  # noqa
+    if not _looks_like_question(message):
         _outcome.report_warning(
-            f"{filename}の質問本文に問い（疑問文）が含まれていない。",
-            next_action=f"回答者が何に答えるべきか分かる文面か確認し、直す場合は`atk wi edit {filename}`で本文を置き換える",
+            f"{filename}の質問本文の冒頭（最初のH2見出しより前）に問い（疑問文）が無い。",
+            next_action=(
+                "最初のH2見出しより前に、回答者が何に答えるべきか分かる疑問文を置く。"
+                f"直す場合は`atk wi edit {filename}`で本文を置き換える"
+            ),
         )
     reason = _detect_self_containment_deficiency(message)
     if reason is not None:
