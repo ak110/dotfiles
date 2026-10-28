@@ -1728,6 +1728,25 @@ def test_integrate_additional_wi_uses_current_review_and_collection(
     assert (repo / "feature-0").exists() and (repo / "feature-1").exists()
 
 
+def _write_empty_finalization_manifest(tmp_path: pathlib.Path) -> pathlib.Path:
+    """最終化操作なし・単純検証ありの統合入力を作成する。"""
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "plans": [],
+                "wis": [{"name": "20261023-000000-001.md", "commands": []}],
+                "handoff": str(handoff),
+                "verification": [[sys.executable, "-c", "pass"]],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return manifest
+
+
 def test_integrate_refreshes_publication_before_rewriting(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1743,20 +1762,7 @@ def test_integrate_refreshes_publication_before_rewriting(
     git_repository.run_git(repo, "update-ref", "-d", f"refs/remotes/publication/{record['branch']}")
     (repo / "upstream").write_text("先行統合", encoding="utf-8")
     before = git_repository.commit_all(repo, "先行統合")
-    handoff = tmp_path / "handoff.md"
-    handoff.touch()
-    manifest = tmp_path / "integration.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "plans": [],
-                "wis": [{"name": "20261023-000000-001.md", "commands": []}],
-                "handoff": str(handoff),
-                "verification": [[sys.executable, "-c", "pass"]],
-            }
-        ),
-        encoding="utf-8",
-    )
+    manifest = _write_empty_finalization_manifest(tmp_path)
     code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
     assert code == 2 and "push済みcommit" in stderr
     assert git_repository.git_output(worktree, "rev-parse", "HEAD") == head
@@ -1970,6 +1976,46 @@ def test_integrate_restart_review_keeps_rebase_validation(
     code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", original["new_head"])
     assert code == 0 and final["phase"] == "finalized", stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == original["new_head"]
+
+
+def test_integrate_resumes_failed_history_compare_without_rebasing_again(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """比較コマンド失敗後は保存した旧新端点を再検収し、受理まで統合先を保持する。"""
+    original_script = lane._atk_script  # pylint: disable=protected-access
+
+    def failed_compare(*arguments: str, **_kwargs: Any) -> list[str]:
+        if arguments[:2] == ("run-script", "history-compare"):
+            return [sys.executable, "-c", "raise SystemExit(3)"]
+        return original_script(*arguments)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(lane, "_atk_script", failed_compare)
+        repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+        _integration_selection(selected, monkeypatch, repo)
+        worktree = pathlib.Path(record["worktree"])
+        (worktree / "feature").write_text("成果", encoding="utf-8")
+        reviewed = git_repository.commit_all(worktree, "成果")
+        (repo / "upstream").write_text("先行統合", encoding="utf-8")
+        before = git_repository.commit_all(repo, "先行統合")
+        manifest = _write_empty_finalization_manifest(tmp_path)
+        args = _integration_args(record, repo, manifest, reviewed)
+        code, _result, stderr = _invoke(capsys, *args)
+        assert code == 2 and "history-compare" in stderr
+    state = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))["integration"]
+    assert state["phase"] == "rebased"
+    assert "history-compare" not in state["completed"]
+    reflog = git_repository.git_output(worktree, "reflog", "--format=%H %gs")
+    code, pending, stderr = _invoke(capsys, *args)
+    assert code == 1 and pending["phase"] == "awaiting-validation", stderr
+    for endpoint in ("old_base", "old_head", "new_base", "new_head"):
+        assert pending[endpoint] == state[endpoint]
+    assert git_repository.git_output(worktree, "reflog", "--format=%H %gs") == reflog
+    assert json.loads(pathlib.Path(pending["rewrite_map"]).read_text(encoding="utf-8")) == {reviewed: pending["new_head"]}
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
+    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
+    assert code == 0 and final["phase"] == "finalized", stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == pending["new_head"]
 
 
 def test_integrate_restart_review_after_failed_rebased_verification(

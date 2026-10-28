@@ -115,7 +115,7 @@ export function register(on: On, session: { delegated: boolean }): void {
     });
     return result;
   });
-  on("session.append", { door: /^(delivery|queue|attachment)$/ }, ($, e, next) => {
+  on("session.append", { door: /^(delivery|queue)$/ }, ($, e, next) => {
     if (e.agentId === undefined) {
       for (const block of e.message.content) {
         if (block.type !== "text" || typeof block.text !== "string") continue;

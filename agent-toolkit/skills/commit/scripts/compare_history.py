@@ -42,7 +42,9 @@ def _git(work_dir: pathlib.Path, *args: str, data: str | None = None) -> str:
     return result.stdout
 
 
-def _series(work_dir: pathlib.Path, base: str, head: str) -> list[str]:
+def _series(work_dir: pathlib.Path, base: str, head: str, *, allow_empty: bool = False) -> list[str]:
+    if allow_empty and base == head:
+        return []
     commits = _git(work_dir, "rev-list", "--first-parent", "--reverse", f"{base}..{head}").splitlines()
     lineage = [base, *commits]
     for previous, current in zip(lineage, lineage[1:], strict=False):
@@ -313,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
             for value in (args.old_base, args.old_head, args.new_base, args.new_head)
         )
         old = _series(args.work_dir, old_base, old_head)
-        new = _series(args.work_dir, new_base, new_head)
+        new = _series(args.work_dir, new_base, new_head, allow_empty=args.operation == "rebase")
         if args.resolved_conflict and args.operation != "rebase":
             raise ValueError("--resolved-conflictは--operation rebaseだけで指定できます")
         if args.operation == "rebase":

@@ -12,6 +12,7 @@ import importlib
 import io
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -432,10 +433,36 @@ def _run_isolated_upgrade(
             initial_env["UV_PYTHON"] = pin
         _run(("chezmoi", "init", f"--source={checkout}", "--apply"), cwd=checkout, env=initial_env, runner=runner)
         _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
-        _run(platform_entrypoint(checkout, platform_name), cwd=checkout, env=env, runner=runner)
+        # 初期適用した旧版の警告は、現行版の更新の判定から分離する。
+        for log in home.rglob("update-dotfiles.log*"):
+            if log.is_file():
+                log.unlink()
+        updated = _run(platform_entrypoint(checkout, platform_name), cwd=checkout, env=env, runner=runner)
+        verify_update_logs(home, stdout=updated.stdout, stderr=updated.stderr)
         actual_oid = _git_value(checkout, "rev-parse", "HEAD", runner=runner)
         verify_updated_oid(actual_oid, current_oid)
         print(f"旧版更新経路を確認した: {old_oid} -> {actual_oid}")
+
+
+def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = "") -> None:
+    """隔離homeの永続ログから、更新が警告として継続した失敗も検出する。"""
+    diagnostics: list[str] = []
+    logs = [path for path in sorted(home.rglob("update-dotfiles.log*")) if path.is_file()]
+    if not logs:
+        raise UpgradeCheckError("更新処理の永続ログが作成されず、警告以上の有無を確認できない")
+    for path in logs:
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if re.search(r" run=\S+ (?:WARNING|ERROR|CRITICAL) ", line):
+                diagnostics.append(f"{path}: {line}")
+    # severityを明示するCLIの診断だけを拾い、進捗や説明中の単語を誤検出しない。
+    for stream, output in (("stdout", stdout), ("stderr", stderr)):
+        for line in output.splitlines():
+            if re.match(r"\s*(?:warning|error|critical):\s|\s*\[(?:WARNING|ERROR|CRITICAL)\]\s", line, re.IGNORECASE):
+                diagnostics.append(f"{stream}: {line}")
+    if diagnostics:
+        raise UpgradeCheckError("更新処理が警告以上を記録した:\n" + "\n".join(diagnostics))
 
 
 def main() -> int:

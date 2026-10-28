@@ -58,7 +58,12 @@ def _missing_records(worktree: pathlib.Path, records: list[_Record], previous: s
     for root in roots:
         if not root.is_dir():
             continue
-        for path in sorted(root.rglob("*.wi-commits.jsonl")):
+        # 記録は計画root直下・旧年月階層・保存済み年月階層と、一時領域直下に置かれる。
+        # 成果物や保持配布物の任意階層は記録探索の対象にしない。
+        patterns = ("*.wi-commits.jsonl",)
+        if root in (working, saved):
+            patterns += ("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.wi-commits.jsonl",)
+        for path in sorted(path for pattern in patterns for path in root.glob(pattern)):
             record = path.with_name(path.name.removesuffix(".wi-commits.jsonl") + ".md")
             if record.resolve() in seen or record.resolve() in provided:
                 continue

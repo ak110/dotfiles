@@ -58,6 +58,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         return post_apply_outcome.PostApplyOutcome()
     # 同じ起動形は同じツール環境を使うため、定義ファイルをまとめて1回だけ起動する。
     launches: dict[tuple[str, ...], list[Path]] = {}
+    shared_entries: list[Path] = []
     for definition in definitions:
         try:
             data = json.loads(definition.read_text(encoding="utf-8"))
@@ -73,10 +74,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 entry = definition.parent / "agent_toolkit/_common/pyfltr_entry.py"
                 if not entry.is_file():
                     raise ValueError(f"共有pyfltr起動スクリプトが存在しない: {entry}")
-                uv = common.resolve_executable("uv", preferred_directories=(Path.home() / ".local/bin",))
-                if uv is None:
-                    raise ValueError("共有pyfltr起動スクリプトに必要なuvが見つからない")
-                plugin_warmup.warmup(entry, uv, tag=_TAG, arguments=("--version",))
+                shared_entries.append(entry)
                 continue
             arguments = _warmup_arguments(definition)
         except (OSError, ValueError) as exc:
@@ -89,6 +87,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             )
             continue
         launches.setdefault(arguments, []).append(definition)
+    if shared_entries:
+        plugin_warmup.run(lambda: shared_entries, tag=_TAG, arguments=("--version",))
     for arguments, sources in launches.items():
         target = f"uvx {' '.join(arguments)} ({', '.join(log_format.home_short(path) for path in sources)})"
         plugin_warmup.run_command([str(uvx), *arguments], target=target, tag=_TAG)

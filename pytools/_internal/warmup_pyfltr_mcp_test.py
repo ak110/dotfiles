@@ -136,6 +136,37 @@ def test_missing_definitions_skip(env: _Env, caplog: pytest.LogCaptureFixture) -
     assert not env.uvx_calls()
 
 
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_shared_launcher_command_starts_with_python(env: _Env, monkeypatch: pytest.MonkeyPatch, host: str) -> None:
+    """両ホストの公開定義から実際に生成するlauncher引数の先頭を検証する。"""
+    definition = env.claude_definition if host == "claude" else env.codex_definition
+    source = _REAL_CLAUDE_DEFINITION if host == "claude" else _REAL_CODEX_DEFINITION
+    definition.write_bytes(source.read_bytes())
+    # 共有環境の識別には配布版の依存定義とlockが必要になる。
+    for name in ("pyproject.toml", "uv.lock"):
+        (definition.parent / name).write_bytes((_PLUGIN_ROOT / name).read_bytes())
+    entry = definition.parent / "agent_toolkit/_common/pyfltr_entry.py"
+    entry.parent.mkdir(parents=True)
+    entry.touch()
+    python = definition.parent / "python"
+    python.touch()
+    commands: list[list[str]] = []
+    monkeypatch.setattr(_warmup.plugin_warmup, "_resolve_python", lambda _uv, _tag: python)
+
+    def run_command(command, **_kwargs):
+        commands.append(command)
+        return True
+
+    monkeypatch.setattr(_warmup.plugin_warmup, "run_command", run_command)
+    _warmup.run()
+    shared = [command for command in commands if str(entry) in command]
+    assert len(shared) == 2
+    assert all(command[0] == str(python) for command in shared)
+    assert all(pathlib.Path(command[1]).name == "launch.py" for command in shared)
+    assert shared[0][-2:] == ["--prepare", str(entry)]
+    assert shared[1][-2:] == [str(entry), "--version"]
+
+
 @pytest.mark.parametrize(
     ("definition", "message"),
     [
@@ -183,8 +214,13 @@ def test_shared_pyfltr_uses_selected_root_and_lock_environment(env: _Env, monkey
         entry.parent.mkdir(parents=True)
         entry.write_text("# 配布入口\n")
 
-    def warmup(path, uv, *, tag, arguments):
-        del uv, tag
+    python = env.claude_definition.parent / "python"
+    python.touch()
+    monkeypatch.setattr(_warmup.plugin_warmup, "_resolve_python", lambda _uv, _tag: python)
+
+    def warmup(path, executable, *, tag, arguments, prepared):
+        del tag, prepared
+        assert executable == python
         calls.append((path, arguments))
         return True
 

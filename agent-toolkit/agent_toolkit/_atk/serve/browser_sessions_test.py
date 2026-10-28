@@ -435,7 +435,7 @@ async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> Non
     original_codex = codex_path.read_text(encoding="utf-8").splitlines(keepends=True)
     codex_injected = {
         "type": "response_item",
-        "payload": {"type": "message", "role": "developer", "content": [{"text": "<permissions instructions>自動指示"}]},
+        "payload": {"type": "message", "role": "developer", "content": [{"text": "You are Codex, an agent based on GPT-6."}]},
     }
     codex_path.write_text(
         original_codex[0] + json.dumps(codex_injected, ensure_ascii=False) + "\n" + "".join(original_codex[1:]),
@@ -754,7 +754,14 @@ async def test_session_assistant_markdown_scrolls_wide_blocks(
         body = page.locator("#detail .event.kind-assistant .event-markdown")
         overflow = "element => [element.scrollWidth, element.clientWidth]"
         for selector in ("pre", "table"):
-            scroll_width, client_width = await body.locator(selector).evaluate(overflow)
+            target = body.locator(selector)
+            await playwright.async_api.expect(target).to_be_visible()
+            await page.wait_for_function(
+                "selector => { const element = document.querySelector(selector); "
+                "return element && element.clientWidth > 0 && element.scrollWidth > element.clientWidth; }",
+                arg=f"#detail .event.kind-assistant .event-markdown {selector}",
+            )
+            scroll_width, client_width = await target.evaluate(overflow)
             assert scroll_width > client_width, selector
         detail_scroll, detail_client = await page.locator("#detail").evaluate(overflow)
         assert detail_scroll <= detail_client

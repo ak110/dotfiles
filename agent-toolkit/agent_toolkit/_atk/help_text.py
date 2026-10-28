@@ -632,6 +632,12 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
                 ]
                 accepted = "・".join(positionals) if positionals else "なし"
                 self.error(f"余った位置引数: {rejected}。{self.prog}が受け取る位置引数は{accepted}")
+            if self.prog.endswith(" wi grep") and "-E" in remaining:
+                self.error(
+                    f"解釈できない引数: -E。{self._accepted_form()}。"
+                    "オプションを指定しない場合は正規表現で検索します。次の操作: -Eを外して再実行する。"
+                    "固定文字列を検索する場合は-Fを指定する"
+                )
             self.error(f"解釈できない引数: {remaining[0]}。{self._accepted_form()}")
         return parsed, remaining
 

@@ -16,6 +16,54 @@ from pytools._internal import setup_codex_cli, setup_herdr_cli
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 
 
+@pytest.mark.parametrize("level", ["WARNING", "ERROR", "CRITICAL"])
+def test_update_warning_fails_even_when_command_succeeded(tmp_path: pathlib.Path, level: str) -> None:
+    """終了0で継続する警告も永続ログから検証失敗へ接続する。"""
+    log = tmp_path / "update-dotfiles.log"
+    log.write_text(f"2026-10-28 12:00:00 run=check {level} warmup failed\n", encoding="utf-8")
+    with pytest.raises(upgrade.UpgradeCheckError, match="warmup failed"):
+        upgrade.verify_update_logs(tmp_path)
+
+
+def test_update_info_log_succeeds(tmp_path: pathlib.Path) -> None:
+    """通常の進捗とメッセージ中のWARNINGという単語は警告扱いにしない。"""
+    (tmp_path / "update-dotfiles.log").write_text("2026-10-28 12:00:00 run=check INFO WARNING設定を確認\n", encoding="utf-8")
+    upgrade.verify_update_logs(tmp_path)
+
+
+def test_missing_update_log_fails(tmp_path: pathlib.Path) -> None:
+    """更新の警告観測が成立しない場合を成功にしない。"""
+    with pytest.raises(upgrade.UpgradeCheckError, match="永続ログが作成されず"):
+        upgrade.verify_update_logs(tmp_path)
+
+
+@pytest.mark.parametrize("platform_name", ["linux", "windows"])
+def test_public_upgrade_rejects_child_stderr_warning(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, platform_name: str
+) -> None:
+    """公開更新が終了0でも子ツールの標準エラーの警告を検証失敗へ伝える。"""
+    uv = tmp_path / "uv"
+    uv.write_bytes(b"fake-uv")
+    monkeypatch.setenv("UV", str(uv))
+
+    def runner(arguments, **_kwargs):
+        result = _git_answers(arguments)
+        if arguments[0] in {"bash", "cmd.exe"}:
+            result.stderr = "warning: child tool could not initialize\n"
+        return result
+
+    with pytest.raises(upgrade.UpgradeCheckError, match="child tool could not initialize"):
+        upgrade.run_upgrade_check(
+            tmp_path, platform_name, runner=runner, registry=_FakeRegistry(), profile_env=_profile_env(tmp_path)
+        )
+
+
+def test_normal_child_progress_is_not_warning(tmp_path: pathlib.Path) -> None:
+    """標準エラーの通常進捗と警告機能の説明はseverity診断として扱わない。"""
+    (tmp_path / "update-dotfiles.log").write_text("run=test INFO 更新完了\n", encoding="utf-8")
+    upgrade.verify_update_logs(tmp_path, stdout="warning settings enabled", stderr="Downloading package (1/2)\n")
+
+
 class _FakeRegistry:
     """`HKCU\\Environment`の代わりに値を保持し、操作を記録する偽の実装。"""
 
@@ -53,9 +101,17 @@ def _profile_env(tmp_path: pathlib.Path) -> dict[str, str]:
 
 def _git_answers(arguments: list[str]) -> subprocess.CompletedProcess[str]:
     """検証が問い合わせるGitの値を返す。"""
+    _write_update_log(arguments)
     values = {"rev-parse": "current-oid", "show": "1000000", "rev-list": "old-oid"}
     output = next((value for option, value in values.items() if option in arguments), "")
     return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
+
+
+def _write_update_log(arguments: list[str]) -> None:
+    """偽の公開更新も実更新と同じ永続ログを残す。"""
+    if arguments[0] in {"bash", "cmd.exe"}:
+        home = pathlib.Path(arguments[-1]).parents[2]
+        (home / "update-dotfiles.log").write_text("run=test INFO 更新完了\n", encoding="utf-8")
 
 
 def test_cli_outputs_japanese_when_default_stream_encoding_is_not_utf8() -> None:
@@ -146,6 +202,7 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
     observations: list[tuple[dict[str, str], pathlib.Path, pathlib.Path]] = []
 
     def runner(arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        _write_update_log(arguments)
         env = kwargs.get("env")
         if env is not None:
             assert isinstance(env, dict)

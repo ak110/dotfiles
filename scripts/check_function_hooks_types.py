@@ -7,11 +7,33 @@ import io
 import json
 import os
 import pathlib
+import re
 import shutil
 import sys
 import tempfile
 
 from pytools._internal.common import run_subprocess
+
+
+def _bundled_types() -> tuple[list[pathlib.Path], str]:
+    """PATH上の検証対象と生成元が一致する同梱型を一度だけ選ぶ。"""
+    claude = shutil.which("claude")
+    result = run_subprocess([claude, "--version"], timeout=15) if claude else None
+    match = re.match(r"(\d+\.\d+\.\d+)\b", result.stdout.strip()) if result and result.returncode == 0 else None
+    if match is None:
+        return [], "取得不能（PATH上のclaude --versionを確認）"
+    version = match[1]
+    temporary = pathlib.Path(tempfile.gettempdir())
+    # UnixではClaude専用のユーザー別ディレクトリを一時領域の下に置く。
+    bases = [temporary, *sorted(temporary.glob("claude-*"))]
+    for base in bases:
+        bundled = base / "bundled-skills" / version
+        for path in sorted(bundled.glob("*/plugin-authoring/types/claude-code.d.ts")):
+            with path.open(encoding="utf-8") as stream:
+                header = stream.readline().strip()
+            if header == f"// Written by Claude Code {version}.":
+                return [path.resolve()], version
+    return [], version
 
 
 def main() -> int:
@@ -24,15 +46,27 @@ def main() -> int:
     args = parser.parse_args()
     root = pathlib.Path.cwd()
     plugin = root / "agent-toolkit"
+    version = "明示指定またはworktree内生成型"
     if args.types is not None:
         definitions = [args.types.resolve()]
     else:
         definitions = sorted((plugin / ".claude-plugin/types").rglob("*.d.ts"))
         definitions += sorted((root / ".claude-plugin/types").rglob("*.d.ts"))
         definitions += [path for path in (plugin / "types/claude-code.d.ts", root / "types/claude-code.d.ts") if path.is_file()]
+        if not definitions:
+            try:
+                definitions, version = _bundled_types()
+            except (OSError, UnicodeError) as error:
+                print(
+                    f"同梱型の読取に失敗した: {error}。ファイルの権限とUTF-8形式を確認し、"
+                    "再実行するか、--typesまたはFUNCTION_HOOKS_TYPESで読み取れる型を指定する。",
+                    file=sys.stderr,
+                )
+                return 2
+    definitions = list(dict.fromkeys(path.resolve() for path in definitions))
     if not definitions or any(not path.is_file() for path in definitions):
         print(
-            "Claude Code生成型が見つからない。plugin-authoringで生成し、"
+            f"Claude Code生成型が見つからない（対象版: {version}）。plugin-authoringで生成し、"
             "FUNCTION_HOOKS_TYPESへclaude-code.d.tsの絶対パスを指定して再実行する。"
             "生成または指定ができない場合は、この出力を添えて開発担当へ報告する。",
             file=sys.stderr,

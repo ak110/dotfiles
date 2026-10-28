@@ -338,6 +338,16 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
             )
         )
 
+    @app.post("/api/entries/clear-cooldown")
+    async def clear_cooldown() -> quart.Response:
+        data = _json_object(
+            await _request_json(), allowed={"filename", "expected_content"}, required={"filename", "expected_content"}
+        )
+        for name in ("filename", "expected_content"):
+            if not isinstance(data[name], str) or not data[name].strip():
+                raise _wi_operations.WebApiInputError(f"{name}は空でない文字列で指定してください")
+        return quart.jsonify(changed=await workers.run(ops.clear_cooldown, data["filename"], data["expected_content"]))
+
     @app.post("/api/entries/user-comment")
     async def save_user_comment() -> quart.Response:
         data = _json_object(

@@ -33,6 +33,37 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 class TestGrepBasic:
     """grepサブコマンド: 複数エントリ・複数行にまたがるマッチを検索する。"""
 
+    def test_rejected_extended_option_recovers_to_regex_and_fixed_search(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """拒否後の案内に従って正規表現と固定文字列を検索できる。"""
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "regex.md", body="alpha")
+        _write_awi_file(notes, "literal.md", body="alpha|beta")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as rejected:
+            atk.main(["wi", "grep", "-E", "alpha|beta", "--skip-pull"], home=tmp_path)
+        assert rejected.value.code == 2
+        assert "-Eを外して再実行する" in capsys.readouterr().err
+
+        with pytest.raises(SystemExit) as regex:
+            atk.main(["wi", "grep", "alpha|beta", "--skip-pull"], home=tmp_path)
+        assert regex.value.code == 0
+        output = capsys.readouterr().out
+        assert "regex.md:" in output
+        assert "literal.md:" in output
+
+        with pytest.raises(SystemExit) as literal:
+            atk.main(["wi", "grep", "-F", "alpha|beta", "--skip-pull"], home=tmp_path)
+        assert literal.value.code == 0
+        output = capsys.readouterr().out
+        assert "literal.md:" in output
+        assert "regex.md:" not in output
+
     def test_grep_finds_match_in_single_file(
         self,
         monkeypatch: pytest.MonkeyPatch,

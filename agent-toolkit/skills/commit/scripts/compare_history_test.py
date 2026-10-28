@@ -75,6 +75,34 @@ def _compare(repo: pathlib.Path, output: pathlib.Path, operation: str, bases: tu
     return raised.value.code
 
 
+def _rewrite_records(
+    repo: pathlib.Path, previous: str, mapping: pathlib.Path, plan: pathlib.Path, *handoffs: pathlib.Path
+) -> int:
+    argv = [
+        "run-script",
+        "plan-rewrite",
+        "--",
+        "--worktree",
+        str(repo),
+        "--previous-head",
+        previous,
+        "--rewrite-map",
+        str(mapping),
+        "--completed-step",
+        "履歴検収",
+        "--result",
+        "公開対応表を消費",
+        "--plan",
+        str(plan),
+    ]
+    for handoff in handoffs:
+        argv.extend(("--handoff", str(handoff)))
+    with pytest.raises(SystemExit) as ended:
+        atk.main(argv)
+    assert isinstance(ended.value.code, int)
+    return ended.value.code
+
+
 @pytest.mark.parametrize("violation", ["none", "unspecified", "unchanged", "outside", "subject", "paths", "order"])
 def test_conflict_resolution_requires_explicit_and_unique_mapping(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], violation: str
@@ -505,27 +533,7 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
     before = mapping.read_bytes()
     pairs = json.loads(before)
     assert set(pairs) == {target, old_head}
-    with pytest.raises(SystemExit) as raised:
-        atk.main(
-            [
-                "run-script",
-                "plan-rewrite",
-                "--",
-                "--worktree",
-                str(repo),
-                "--previous-head",
-                old_head,
-                "--rewrite-map",
-                str(mapping),
-                "--completed-step",
-                "履歴検収",
-                "--result",
-                "公開対応表を消費",
-                "--plan",
-                str(plan),
-            ]
-        )
-    assert raised.value.code == 0
+    assert _rewrite_records(repo, old_head, mapping, plan) == 0
     events = commit_mapping.read_events(plan, plan.read_text(encoding="utf-8"))
     expected = [_git(repo, "rev-parse", "--short", value) for value in dict.fromkeys(pairs.values())]
     assert commit_mapping.get_commits(repo, events, [wi], {wi}) == {wi: expected}
@@ -581,6 +589,25 @@ def test_rebase_keeps_mapping_for_dependency_already_upstream(
         assert not output.exists()
 
 
+@pytest.mark.parametrize("upstream_text", ["依存変更\n", "依存変更 \n"])
+def test_rebase_all_commits_already_upstream(repo: pathlib.Path, tmp_path: pathlib.Path, upstream_text: str) -> None:
+    """全件省略でも保持された同一変更だけを既存commitへ対応付ける。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    old_head = _commit(repo, "dependency.txt", "依存変更\n", "依存更新")
+    _git(repo, "checkout", "-b", "upstream", base)
+    new_base = _commit(repo, "dependency.txt", upstream_text, "上流の依存更新")
+    output = tmp_path / "all-upstream-map.json"
+
+    result = _compare(repo, output, "rebase", (base, old_head, new_base, new_base))
+
+    if upstream_text == "依存変更\n":
+        assert result == 0
+        assert json.loads(output.read_text(encoding="utf-8")) == {old_head: new_base}
+    else:
+        assert result == 1
+        assert not output.exists()
+
+
 @pytest.mark.parametrize("loss", ["revert", "merge-discard"])
 def test_rebase_rejects_upstream_dependency_not_retained_at_base(repo: pathlib.Path, tmp_path: pathlib.Path, loss: str) -> None:
     """履歴内の同一変更が新baseで失われている場合は、省略を受理しない。"""
@@ -600,3 +627,107 @@ def test_rebase_rejects_upstream_dependency_not_retained_at_base(repo: pathlib.P
 
     assert _compare(repo, output, "rebase", (base, old_head, new_base, new_head)) == 1
     assert not output.exists()
+
+
+def test_rebase_rejects_ambiguous_upstream_mapping(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """同一変更の追加・取消・再追加は新baseで保持されても対応を推測しない。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    old_head = _commit(repo, "dependency.txt", "依存変更\n", "依存更新")
+    _git(repo, "checkout", "-b", "upstream", base)
+    first = _commit(repo, "dependency.txt", "依存変更\n", "最初の追加")
+    _git(repo, "revert", "--no-edit", first)
+    new_base = _commit(repo, "dependency.txt", "依存変更\n", "再追加")
+    output = tmp_path / "ambiguous-map.json"
+    assert _compare(repo, output, "rebase", (base, old_head, new_base, new_base)) == 1
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("same_path", [False, True])
+@pytest.mark.parametrize("all_skipped", [False, True])
+def test_upstream_retention_bounds_independent_later_edits(
+    repo: pathlib.Path, tmp_path: pathlib.Path, same_path: bool, all_skipped: bool
+) -> None:
+    """省略変更を残す独立編集でも同pathのtree差は拒否し、別pathの編集は許容する。"""
+    base = _commit(repo, "shared.txt", "変更前\n中間\n末尾\n", "準備")
+    omitted = _commit(repo, "shared.txt", "変更後\n中間\n末尾\n", "対象変更")
+    old_head = omitted if all_skipped else _commit(repo, "feature.txt", "成果\n", "実装")
+    _git(repo, "checkout", "-b", "upstream", base)
+    upstream = _commit(repo, "shared.txt", "変更後\n中間\n末尾\n", "上流対象変更")
+    new_base = _commit(
+        repo,
+        "shared.txt" if same_path else "unrelated.txt",
+        "変更後\n中間\n独立した末尾編集\n" if same_path else "独立編集\n",
+        "独立した後続編集",
+    )
+    new_head = new_base if all_skipped else _commit(repo, "feature.txt", "成果\n", "実装")
+    output = tmp_path / "retention-map.json"
+    code = _compare(repo, output, "rebase", (base, old_head, new_base, new_head))
+    if same_path:
+        assert code == 1
+        assert not output.exists()
+    else:
+        assert code == 0
+        expected = {omitted: upstream}
+        if not all_skipped:
+            expected[old_head] = new_head
+        assert json.loads(output.read_text(encoding="utf-8")) == expected
+
+
+@pytest.mark.parametrize("all_skipped", [False, True])
+def test_skipped_changes_merge_wis_in_plan_and_handoff(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    all_skipped: bool,
+) -> None:
+    """省略変更のWIを上流の既存WIへ合併し、WIなし依存変更を含む比較表を消費する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
+    wis = ["20261009-043608-001.md", "20261009-043608-002.md"]
+    plan = tmp_path / "09-skipped-1a2b.md"
+    plan.write_text(
+        "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n"
+        + "".join(f"  - {wi}: 対応\n" for wi in wis)
+        + "\n## 進捗ログ\n\n| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
+        encoding="utf-8",
+    )
+    handoff = tmp_path / "handoff.md"
+    handoff.write_text("# 引き継ぎ\n", encoding="utf-8")
+    base = _git(repo, "rev-parse", "HEAD")
+    dependency = _commit(repo, "dependency.txt", "依存\n", "依存変更")
+    skipped = _commit(repo, "feature.txt", "成果\n", "実装")
+    old_head = skipped if all_skipped else _commit(repo, "extra.txt", "追加\n", "追加実装")
+    _git(repo, "checkout", "-b", "upstream", base)
+    upstream_dependency = _commit(repo, "dependency.txt", "依存\n", "上流依存")
+    new_base = _commit(repo, "feature.txt", "成果\n", "上流実装")
+    new_head = new_base if all_skipped else _commit(repo, "extra.txt", "追加\n", "追加実装")
+    for record in (plan, handoff):
+        commit_mapping.append_event(record, {"commit": skipped, "awi": [wis[0]]})
+        commit_mapping.append_event(record, {"commit": new_base, "awi": [wis[1]]})
+    mapping = tmp_path / "skipped-map.json"
+    assert _compare(repo, mapping, "rebase", (base, old_head, new_base, new_head)) == 0
+    pairs = json.loads(mapping.read_text(encoding="utf-8"))
+    assert pairs[dependency] == upstream_dependency
+    assert pairs[skipped] == new_base
+    # 部分省略では新baseがHEADの親である。消費側がHEADの親以前への対応を拒否する変異は、
+    # 比較成功を維持したまま次の公開plan-rewriteの成功検査で検出する。
+    if not all_skipped:
+        assert _git(repo, "rev-parse", "HEAD^") == new_base
+    assert _rewrite_records(repo, old_head, mapping, plan, handoff) == 0
+    for record in (plan, handoff):
+        events = commit_mapping.read_events(record, record.read_text(encoding="utf-8"))
+        inherited = commit_mapping.read_mapping(repo, events, set(wis))
+        assert inherited == {new_base: set(wis)}
+        capsys.readouterr()
+        argv = ["run-script", "plan-commits", "--", str(record), "--worktree", str(repo)]
+        if record == handoff:
+            argv.append("--handoff")
+            for wi in wis:
+                argv.extend(("--allowed-awi", wi))
+        with pytest.raises(SystemExit) as queried:
+            atk.main(argv)
+        assert queried.value.code == 0
+        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert {row["awi"]: row["commits"] for row in rows} == {
+            wi: [_git(repo, "rev-parse", "--short", new_base)] for wi in wis
+        }

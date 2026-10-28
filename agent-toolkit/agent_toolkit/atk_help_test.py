@@ -160,6 +160,16 @@ def test_command_without_subcommand_prints_help(
     assert captured.err == ""
 
 
+def test_wi_grep_rejects_extended_regex_option_with_recovery(capsys: pytest.CaptureFixture[str]) -> None:
+    """不要な-Eの拒否を維持し、同じ検索を実行する方法を示す。"""
+    with pytest.raises(SystemExit) as rejected:
+        atk.main(["wi", "grep", "-E", "alpha|beta"])
+    assert rejected.value.code == 2
+    diagnostic = capsys.readouterr().err
+    assert "-Eを外して再実行する" in diagnostic
+    assert "固定文字列を検索する場合は-Fを指定する" in diagnostic
+
+
 def test_every_argument_has_help() -> None:
     for command, parser, _summary in _walk_commands():
         for action in parser._actions:  # pylint: disable=protected-access

@@ -46,7 +46,7 @@ writes_worktree: true
 
 ## 生成物とpush
 
-バージョン更新、生成物同期、push前に実行するチェックの選定と実行、push、CI確認、公開状態の判定は、`agent-toolkit:commit`を起動し、読込表に記載の`references/publish.md`に従って実施する。受領した`bump種別`を入力値として使用し、CIの成功（または有効な不在証拠）とローカル全体検証の成功を確認する。
+バージョン更新、生成物同期、push前に実行するチェックの選定と実行、push、CI確認、公開状態の判定は、`agent-toolkit:commit`を起動し、読込表に記載の`references/publish.md`に従って実施する。受領した`bump種別`を入力値として使用し、全体検証の判定には同資料「検証とCI」の分岐を適用する。
 
 ## プロジェクト固有の公開後の操作
 

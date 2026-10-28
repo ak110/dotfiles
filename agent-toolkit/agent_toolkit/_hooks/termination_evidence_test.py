@@ -727,6 +727,14 @@ def test_context_without_human_input_returns_work_ids(
 ) -> None:
     """自動起動の会話でも識別子を取得でき、生成入力を人間入力として返さない。"""
     automated_session(tmp_path, monkeypatch)
+    termination_evidence.observe_user(
+        json.dumps(
+            {
+                "session_id": "evidence-test",
+                "prompt": "You are Codex, an agent based on GPT-6.",
+            }
+        )
+    )
     status, context = public_context(capsys)
     assert status == 0
     assert context == {"session_id": "evidence-test", "input_id": None, "quote": None, "work_id": "work-1"}
