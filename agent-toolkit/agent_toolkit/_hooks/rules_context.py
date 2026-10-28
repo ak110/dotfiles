@@ -241,7 +241,14 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
 
     def notice(items: list[str], remaining: bool) -> str:
         suffix = "。残る資料は次の操作で案内する" if remaining else ""
-        return _llm_notice("会話圧縮後の判断前に、選択済み資料を再取得せよ: " + "。".join(items) + suffix + "。")
+        # 圧縮前の選択資料は候補として示し、全件の一括再取得は求めない。
+        # 残る工程で使わない資料まで読み直すと、圧縮直後に出力上限を超える複合取得が起きるため。
+        return _llm_notice(
+            "会話圧縮前に選んだ資料の候補を示す。残る工程の判断に使う資料だけを、使う前に次の手段で全文再取得せよ: "
+            + "。".join(items)
+            + suffix
+            + "。"
+        )
 
     included: list[str] = []
     for step in steps:

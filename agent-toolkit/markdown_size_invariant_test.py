@@ -14,12 +14,15 @@ def _codex_read(command: str, cwd: pathlib.Path) -> str | None:
 
 
 def test_agent_toolkit_markdown_fits_full_read_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
-    """agent-toolkitの規範Markdownは、Codexが遮断されずに1回の全文取得で読める容量に収める。
+    """全文取得を求める規範Markdownは、Codexが遮断されずに1回の全文取得で読める容量に収める。
 
     閾値を超える文書は読むたびに遮断と分割取得を要するため、`references/`への分割で閾値以下へ戻す。
+    対象はagent-toolkitの`skills`・`share`・`rules`とagent-basicsの`skills`である。
+    全文取得を求める規範の配布元を新しく加える場合は、この対象も見直す。
     """
     monkeypatch.delenv("AGENT_TOOLKIT_LARGE_READ_BYTES", raising=False)
     roots = [_REPO_ROOT / "agent-toolkit" / name for name in ("skills", "share", "rules")]
+    roots.append(_REPO_ROOT / "agent-basics" / "skills")
     paths = [path for root in roots for path in sorted(root.rglob("*.md"))]
     assert paths
     oversized = [

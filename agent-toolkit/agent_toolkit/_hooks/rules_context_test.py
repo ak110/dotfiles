@@ -336,6 +336,18 @@ def test_compact_skill_guidance_uses_host_acquisition(host: str, tmp_path: pathl
     assert ("cat --" in output) is (host in {"codex", "agy"})
 
 
+def test_compact_guidance_presents_candidates_for_remaining_steps(tmp_path: pathlib.Path) -> None:
+    """圧縮前の選択資料は候補として示し、残る工程の判断に使う資料だけを使う前に全文再取得させる。"""
+    reference = tmp_path / "reference.md"
+    reference.write_text("# 見出し\n本文\n", encoding="utf-8")
+    digest = hashlib.sha256(reference.read_bytes()).hexdigest()
+    output = rules_context._compact_recovery_context("claude", 10000, [(reference, "", digest)])
+    assert output is not None
+    assert "候補" in output and "残る工程の判断に使う資料だけ" in output and "使う前に" in output
+    assert "全文再取得" in output
+    assert "選択済み資料を再取得せよ" not in output
+
+
 @pytest.mark.parametrize("host", ["claude", "codex", "agy"])
 def test_compact_missing_heading_guides_full_acquisition(host: str, tmp_path: pathlib.Path) -> None:
     reference = tmp_path / "reference.md"

@@ -7,6 +7,7 @@ Codex固有の公開機能と、常時規範との差分事項を規定する。
 
 - agent-toolkitの各種規範、手順、またはCLIが指定するMCPツールは、Codex環境では`functions.exec`の内部から`tools.mcp__<サーバー名>__<ツール名>(...)`の形式で呼び出す。対象となるツールには、agents_serverの`start`、`send_message`、`kill`、`stop`、`list`、`show`や、pyfltrの`run`などが含まれる。直接的な関数一覧の確認とは別に、同一の`exec`内にある`ALL_TOOLS`の各要素の`name`および`description`を参照して、ツールの存在と引数仕様を確認する。stdio形式のMCPサーバーは起動から登録完了までに数秒を要する場合があるため、起動直後に見つからない場合は一定時間待機したうえで、別の`exec`から再度照会して存在の有無を判定する。観測結果と再検証手順は、`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月22日」に記載されている。
 - コマンド出力の取得と待機処理は、`02-agent-operations.md`「出力の保持と観測」「待機と背景実行」の結果契約に従う。ファイルの読み取りには`cat -- <絶対パス>`または`sed -n '<開始行>,<終了行>p' -- <絶対パス>`を使用し、JSONには`jq`を使用する。資料の取得範囲は`02-agent-operations.md`「標準の読取・実行・一時領域」に従う。全体を読む資料の出力が切り詰められた場合は、行範囲を進めて末尾まで取得する。
+- 全体を読む資料は、取得の前に合計の行数とバイト数を確かめ、内側の`exec_command`と外側の`functions.exec`のセルの両方の`max_output_tokens`へ全量が収まる取得単位を選ぶ。少量の資料は1回のコマンドにまとめ、収まらない資料はファイルごとか行範囲ごとに分ける。1つのセルで複数の`exec_command`を呼ぶ場合は、外側の予算を内側の予算の合計以上にする。予算の値は資料と版に応じて選び、配布設定の`tool_output_token_limit`（`share/codex_config.toml`の20000）は参考値とする。互いの結果に依存しない取得は並列に呼ぶ。
 - `functions.exec`から`exec_command`を呼び出す場合は、返却されたオブジェクト全体を`text(r)`へ渡し、本文、診断情報、`exit_code`、`session_id`を保持する。外側の`cell_id`は`functions.wait`、内側の`session_id`は`write_stdin`を用いて同一ターン内に終了まで回収する。`exit_code`が存在せず`session_id`が存在する結果は実行中として扱い、同一実行のコマンドを重複して再発行することは避ける。
 - 明示的な指示がない限り、Officeファイルは原本を直接変更せずに取り扱う。CSVファイルは利用側の要求仕様に従って処理し、仕様が不明な場合はUTF-8（BOM付き）で保存する。
 - `apply_patch`を用いて既存ファイルを全面的に置換する場合も、同一パスに対するUpdate操作を使用する。1つのpatch内で同一パスをDelete操作とAdd操作に分割して指定すると適用に失敗する。
