@@ -21,24 +21,22 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文に記載された各参照の適用条件に従い、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時に読む資料は、起動時のプロンプトとともに提供される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
-<!-- read-table-source: SKILL-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 成果物の作成規範を選び、品質を評価する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
-<!-- read-table-source: SKILL-delivery-2.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| 専用レビュータスク契約を受領し、判定と返却する前 | `references/reviewer.md`の「専用レビュータスク契約」「完了報告」 |
-| 読者別探索を起動・検収する前 | `references/reviewer.md`の「読者別探索」 |
-| 計画・WIの要件と証拠を判定する前 | `references/reviewer.md`の「計画と表の優先」 |
-| レビューイーとして採否と修正を確定する前 | `references/reviewee.md` |
-| 実行レビューの指摘登録・完成条件の判定と証拠記入の前 | `references/exec-review-recording.md` |
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
+| 専用レビュータスク契約を受領し、判定と返却する前 | `references/reviewer.md`の「専用レビュータスク契約」「完了報告」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「専用レビュータスク契約」「完了報告」` | |
+| 読者別探索を起動・検収する前 | `references/reviewer.md`の「読者別探索」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「読者別探索」` | |
+| 計画・WIの要件と証拠を判定する前 | `references/reviewer.md`の「計画と表の優先」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「計画と表の優先」` | |
+| レビューイーとして採否と修正を確定する前 | `references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/reviewee.md` | |
+| 実行レビューの指摘登録・完成条件の判定と証拠記入の前 | `references/exec-review-recording.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md` | |
 | 起動時 | `agent-basics:review-standards/SKILL.md` | 起動時 | `skill:review-standards` | |
 
 ## レビュー指摘管理表の共通操作

@@ -42,6 +42,10 @@ _VERBATIM_REFERENCE_SOURCES = frozenset(
     )
 )
 _SOURCE_MANIFEST = pathlib.Path("docs/development/norm-restructure-20261022/source-manifest.json")
+# 読込表の別ファイル（`*-delivery-<n>.md`、`*reading-references.md`）は本文の読込表へ統合して廃止した。
+# 規範再構成の記録は作成時点の配置を保持するため、記録が指すこれらの参照には現在の実体を求めない。
+_NORM_RESTRUCTURE_RECORDS = pathlib.Path("docs/development/norm-restructure-20261022")
+_RETIRED_READING_TABLE_PATTERN = re.compile(r"(?:-delivery-\d+|reading-references)\.md$")
 _INCIDENTS_RUNTIME = pathlib.Path("docs/development/incidents-runtime.md")
 _INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-validation.md")
 _INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-workflows.md")
@@ -260,6 +264,8 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
     for reference, source in _collect_references(root, sources):
         if _reference_exists(root, reference):
             continue
+        if source.is_relative_to(_NORM_RESTRUCTURE_RECORDS) and _RETIRED_READING_TABLE_PATTERN.search(reference):
+            continue
         key = (reference, source)
         if captured_versions.get(key):
             captured_version = captured_versions[key].pop()
@@ -345,6 +351,18 @@ def test_agent_toolkit_references_resolve() -> None:
     assert any(path.parts[0] == ".claude" for path in sources)
     unresolved = _unresolved_references(root, sources)
     assert not unresolved, _format_unresolved(unresolved)
+
+
+def test_retired_reading_table_is_allowed_only_in_restructure_records(tmp_path: pathlib.Path) -> None:
+    """廃止した読込表の別ファイルへの参照は、規範再構成の記録でだけ許し、現行文書では検出する。"""
+    reference = f"{_PLUGIN_PREFIX}/skills/example/SKILL-delivery-1.md"
+    record = _NORM_RESTRUCTURE_RECORDS / "public-compatibility.json"
+    current = pathlib.Path(".claude/skills/example/SKILL.md")
+    for relative in (record, current):
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relative).write_text(reference, encoding="utf-8")
+
+    assert _unresolved_references(tmp_path, [record, current]) == [(reference, current)]
 
 
 def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:

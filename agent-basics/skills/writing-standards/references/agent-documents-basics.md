@@ -1,6 +1,6 @@
 # エージェント向け文書品質（基本）
 
-本書は、エージェント向け文書の責務、記述内容、条件の書き方、語調の基準を定める。エージェント向け文書とは、エージェントが直接読み込む文書（`AGENTS.md`、`CLAUDE.md`、ルール、`SKILL.md`、サブエージェント定義、`references/`、`<役割名>.subagent.md`や`<役割名>.parent.md`、hook関連の文書など）を指す。
+本書は、エージェント向け文書の責務、記述内容、条件の書き方、語調の基準を定める。エージェント向け文書とは、エージェントが直接読み込む文書（`AGENTS.md`、`CLAUDE.md`、ルール、`SKILL.md`、サブエージェント定義、`references/`、委譲先の手順書や委譲元の契約文書、hook関連の文書など）を指す。
 規定の追記と記述量の管理基準は、`agent-documents-additions.md`に従う。
 本書が理由として挙げる読み手（LLM）の傾向は、運用の中で観測された傾向に基づくリスクモデルであり、個別の実行環境やモデルで実際に当てはまるかは実際の観測を通じて確認する。
 
@@ -8,13 +8,29 @@
 
 名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: agent-documents-basics-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-skills.md#「YAML frontmatter」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-skills.md#「YAML frontmatter」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sub-agents.md#「Claude Codeのfrontmatter」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/sub-agents.md#「Claude Codeのfrontmatter」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-skills.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sub-agents.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sub-agents.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%81%A8%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.subagent.md%60%E3%81%AE%E6%A7%8B%E6%88%90%E3%80%8D` | 判断 | `section:agent-basics:*/skills/writing-standards/references/sub-agents.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%81%A8%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.subagent.md%60%E3%81%AE%E6%A7%8B%E6%88%90%E3%80%8D` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-additions.md#「常時規範への追記条件」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「常時規範への追記条件」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「日本語の書き方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「日本語の書き方」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `defined-names.md#「命名の方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/defined-names.md#「命名の方針」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「規定の区分と標示」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「規定の区分と標示」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「読込表の読み方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 責務と構成
 
 ### 冒頭の責務と目的
 
-- 特定の役割が読む文書（agent定義、スキル、`<役割名>.subagent.md`、`<役割名>.parent.md`など）では、担当する責務、担当しない責務、最初に行う行動を冒頭で明示する。読み手は文書内に登場する他者の役割を自身の役割と混同することがあるため、読み手自身の責務を冒頭で明確にする。
+- 特定の役割が読む文書（agent定義、スキル、委譲先の手順書、委譲元の契約文書など）では、担当する責務、担当しない責務、最初に行う行動を冒頭で明示する。読み手は文書内に登場する他者の役割を自身の役割と混同することがあるため、読み手自身の責務を冒頭で明確にする。
 - 冒頭の1〜2文で、適用判断の基準となる中核的な目的を述べる。`description`に記載する範囲は、スキルでは`agent-skills.md`「YAML frontmatter」、サブエージェント定義では`sub-agents.md`「Claude Codeのfrontmatter」に従う。
 
 ### 置き場所と配送
@@ -39,11 +55,8 @@
 
 ### 読込表
 
-配送操作の宣言が長くなる場合は、固定資料の宣言表を同じディレクトリ内の別ファイルへ切り出し、`<!-- read-table-source: ファイル名 -->`で接続できる。本文側には、条件と取得すべき資料・節を同じ文言で残し、資料の選択から具体的な判断に至るまでの順序を保つ。起動時や役割の起動、動的な資料や自文書の解決に使う行は、本体側に保持する。機械が解析する配送宣言と、エージェントが判断に用いる本文の取得範囲を区別し、宣言の分離前後で解決先、節、契機を検証する。
-
-操作を機械的に判定できる行には「操作」、スキルや役割の受領ごとに成立する行には「起動時」、判断内容に応じて成立する行には「判断」を指定する。「配送操作」には、編集対象の`path:*.py`、スキル起動の`skill:writing-standards`、資料の選択取得を行う`read:agent-basics:*/skills/writing-standards/references/python.md`などをコード形式で記述する。「判断」の行では、起動時の簡潔な選択基準と、具体的な判断をする前に詳細資料を取得する操作とを組み合わせる。使用可能な語彙全体、動的資料や節指定の入力形式の所在参照は`agent-toolkit:/share/read-trigger-contract.md`である。
-
-- 読込表はスキル本体や`<役割名>.parent.md`、`<役割名>.subagent.md`の冒頭に配置する表であり、各行の時点や条件を満たしたときに、対象の操作をする前に該当行の資料を全文読むことを示す。列構成は「時点または条件」「全文読む資料」「契機」「配送操作」とし、動的資料を扱う場合は「資料選択子」を追加する。契機は「操作」「起動時」「判断」に分類し、判断に必要な詳細は起動時の選択基準と、判断前の観測可能な取得操作によって届ける。確定操作への配送は補完的な位置づけとし、条件は観測可能な操作や入力内容で記述する。条件付きの読み込み指示は、条件の成立を判定する工程が明確になるよう読込表に集約する。常時規範の記述方法は、`agent-documents-additions.md`「常時規範への追記条件」に従う。
+- 読込表はスキル本体や、委譲先の手順書・委譲元の契約文書の冒頭に配置する表であり、各行の時点や条件を満たしたときに、対象の操作をする前に該当行の資料を全文読むことを示す。必須の列は「時点または条件」と「全文読む資料」である。読み手による各列の使い方は`quality-principles.md`「読込表の読み方」が定める。条件は観測可能な操作や入力内容で記述し、条件付きの読み込み指示は、条件の成立を判定する工程が明確になるよう読込表に集約する。常時規範の記述方法は、`agent-documents-additions.md`「常時規範への追記条件」に従う。
+- 読込を自動化する仕組み（hookなど）を持つプロジェクトでは、その仕組みの受理契約に従って「契機」「配送操作」「資料選択子」などの列を加える。加えた列も同じ表に置き、読み手向けの表と仕組み向けの表へ同じ条件を分けて書かない。同じ条件が2か所にあると、片方だけを改訂したときに内容が一致しなくなるためである。
 - 起動のたびに常に成立する行（起動時、着手時など）について、その文書でのみ読み込ませる資料であれば表の行には含めず、内容を文書本体に直接記述する。共有資料については、毎回の判断で必要な資料を指定した行を残し、注目する節があればその節を指定する。要求の種類によって要否が分かれる資料は、その種別を条件とする独立した行に分ける。本文内で全文読み込みを指示する場合も同様の基準を適用する。「冒頭の責務と目的」には、作業開始時に最初に必要な読み込みを明記する。
 - 全文を読むと定めた資料は、見出しや節の名前で特定の箇所が参照されている場合でも、資料全体を読み込む。指定された節は注目箇所であり、読込量を減らす指定ではない。起動ごとに成立する行や本文中の無条件の全文読み込み指示は、共有資料を含め、毎回の判断で使用する資料を対象とする。要求の種別によって要否が分かれる資料は、その種別を観測できる条件と紐付けた行に分割する。
 

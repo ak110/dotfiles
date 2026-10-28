@@ -6,7 +6,7 @@
 
 ## 名指し参照の読込方法
 
-本文の各参照における適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の資料は起動本文とともに届く。
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -48,7 +48,6 @@ detected ...
 
 ```python
 from agent_toolkit._hooks.notice import formatter
-
 
 _llm_notice = formatter("myplugin/myhook")
 ```

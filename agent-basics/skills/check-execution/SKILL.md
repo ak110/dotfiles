@@ -18,22 +18,19 @@ QCDの観点、3段判定、事実と推論の区別、硬い制約と努力目�
 
 ## 名指し参照の読込方法
 
-本文内の各参照における適用条件を確認し、選択した資料を読み込み、指定箇所に注目してから、その基準を用いた具体的な判断に進む。起動時の行に指定された資料は、起動時の本文とともに提供される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
-<!-- read-table-source: SKILL-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/quality-standards.md` |
 
 ## 読込表
 
-<!-- read-table-source: SKILL-delivery-2.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| 実装に着手する直前（基準版を記録する時点）と、テストや検証を実行した後に結果を判定する前（個別および全体の所要時間の比較を含む） | `references/diagnostics.md`（「読む出力」に所要時間の評価を集約） |
-| 変更範囲の検証で動かすチェックとテストを選ぶ前（計画の検証コマンドを書くとき、実装後に検証する前、計画の検証行・前回の実行・CI記録の検証コマンドを再利用して実行する前、実行レビューで直接影響範囲を求めるとき） | `references/verification-scope.md` |
-| 受入シナリオ検証を実施する前（文書の試行、操作・故障注入・自動終了の失敗が使用する資源の所有者と共有範囲を判定するとき、本番の起動単位からの公開前観測を含む） | `references/acceptance-scenarios.md` |
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
+| 実装に着手する直前（基準版を記録する時点）と、テストや検証を実行した後に結果を判定する前（個別および全体の所要時間の比較を含む） | `references/diagnostics.md`（「読む出力」に所要時間の評価を集約） | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` | |
+| 変更範囲の検証で動かすチェックとテストを選ぶ前（計画の検証コマンドを書くとき、実装後に検証する前、計画の検証行・前回の実行・CI失敗の調査記録にある検証コマンドを再利用して実行する前、実行レビューで直接影響範囲を求めるとき） | `references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` | |
+| 受入シナリオ検証を実施する前（文書の試行、操作・故障注入・自動終了の失敗が使用する資源の所有者と共有範囲を判定するとき、本番の起動単位からの公開前観測を含む） | `references/acceptance-scenarios.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/acceptance-scenarios.md` | |
 | 起動時 | `agent-basics:writing-standards/references/quality-principles.md` | 起動時 | `skill:check-execution` | |
 
 ## 実行条件と結果

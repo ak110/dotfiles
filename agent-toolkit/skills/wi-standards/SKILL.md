@@ -29,34 +29,47 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 
 ## 名指し参照の読込方法
 
-本文の各参照に定められた適用条件を守り、選択した資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行に示された資料は、起動本文とともに配送される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
-<!-- read-table-source: SKILL-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/quality-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/analysis-records.md#「原因分析の記録先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../workflow-overview/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/workflow-overview/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/waiting-and-monitoring.md#「外部サービスの状態変化を待つ場合」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「外部サービスの状態変化を待つ場合」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
-<!-- read-table-source: SKILL-delivery-2.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| 対象リポジトリとprivate-notesを扱う前 | `references/repository-scope.md` |
-| 委譲先が`atk wi`でキュー項目の状態を変更する場合 | `references/subagent-queue-ops.md` |
-| 通常AWIを起草する前 | `references/awi-body.md`の冒頭の本文形式、「要求固有性と記載量」「節の構成と分担」「調査結果と判断根拠の記述」「完成条件」「配置規約と導入目的の調査」 |
-| 通常AWIの要求を読解・採否判定する前 | `references/awi-body.md`の冒頭、「節の構成と分担」「完成条件」 |
-| 観測された不具合を起点としbugfixを起動して起草する前 | `references/awi-body.md`の「原因分析」 |
-| AWIの逐語引用を取り込む前 | `references/awi-body.md`の「逐語引用の対応付け」 |
-| 外部の既存挙動の再現を完成条件へ採る前 | `references/awi-body.md`の「外部の既存挙動の再現」 |
-| WI作成の調査に入る前 | `references/drafting-workflow.md`の冒頭、「出所と観測の取得」「投入条件の判定」「前提と観測の確認」「確定した要件と委譲元の判断」「未確定事項」。`references/drafting-completion.md`の「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「方針と判断の記録との比較」 |
-| 原稿を確定する前 | `references/drafting-workflow.md`の「本文の起草」「保存前の確認」。`references/drafting-completion.md`の「投入前の読み直し」。新しい通常AWIでは同資料の「重複判定」、観測された不具合を起点としbugfixを起動して起草する場合は「原因と定義の所有者」も読む |
-| 独立した確認に入る前 | `references/drafting-workflow.md`の「直接起草と独立した検収の選択」。選んだ手順の起動・検収・差戻しの契約 |
-| 保存操作に入る前 | `references/drafting-workflow.md`の「投入」。`references/drafting-completion.md`の「重複判定」（通常AWI）と「投入前の読み直し」の対象集合と除外の確認 |
-| UWIを起草する場合 | `references/uwi-format.md` |
-| WIの調査・要件分類・由来の検収に入る前 | `references/origin-and-approval.md`の「由来と`source`」「承認」「範囲語と程度」「ユーザー専用の記入欄と是正要求」 |
-| 逐語引用を扱う前 | `references/origin-and-approval.md`の「逐語転記」 |
-| WIの状態、状態遷移、依存、冷却時間、保留と終了を扱う前。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念を受けた時点（調査や認識合わせより先） | `references/states-and-dependencies.md` |
-| 複数リポジトリへ投入する場合、および同じ成果の整合を要求する複数のAWIを登録する場合 | `references/cross-repository-submission.md` |
-| 同じ対象リポジトリの複数項目を一括取得する場合 | `references/wi-show-bulk.md` |
-| 通常AWIの投入、または投入済みAWIの内容の更新をWI投入担当へ委譲する前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 対象リポジトリとprivate-notesを扱う前 | `references/repository-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/repository-scope.md` | |
+| 委譲先が`atk wi`でキュー項目の状態を変更する場合 | `references/subagent-queue-ops.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/subagent-queue-ops.md` | |
+| 通常AWIを起草する前 | `references/awi-body.md`の冒頭の本文形式、「要求固有性と記載量」「節の構成と分担」「調査結果と判断根拠の記述」「完成条件」「配置規約と導入目的の調査」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭「要求固有性と記載量」「節の構成と分担」「調査結果と判断根拠の記述」「完成条件」「配置規約と導入目的の調査」` | |
+| 通常AWIの要求を読解・採否判定する前 | `references/awi-body.md`の冒頭、「節の構成と分担」「完成条件」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭「節の構成と分担」「完成条件」` | |
+| 観測された不具合を起点としbugfixを起動して起草する前 | `references/awi-body.md`の「原因分析」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「原因分析」` | |
+| AWIの逐語引用を取り込む前 | `references/awi-body.md`の「逐語引用の対応付け」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「逐語引用の対応付け」` | |
+| 外部の既存挙動の再現を完成条件へ採る前 | `references/awi-body.md`の「外部の既存挙動の再現」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「外部の既存挙動の再現」` | |
+| WI作成の調査に入る前 | `references/drafting-workflow.md`の冒頭、「出所と観測の取得」「投入条件の判定」「前提と観測の確認」「確定した要件と委譲元の判断」「未確定事項」。`references/drafting-completion.md`の「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「方針と判断の記録との比較」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#冒頭「出所と観測の取得」「投入条件の判定」「前提と観測の確認」「確定した要件と委譲元の判断」「未確定事項」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「方針と判断の記録との比較」` | |
+| 原稿を確定する前 | `references/drafting-workflow.md`の「本文の起草」「保存前の確認」。`references/drafting-completion.md`の「投入前の読み直し」。新しい通常AWIでは同資料の「重複判定」、観測された不具合を起点としbugfixを起動して起草する場合は「原因と定義の所有者」も読む | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「本文の起草」「保存前の確認」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「投入前の読み直し」` | |
+| 独立した確認に入る前 | `references/drafting-workflow.md`の「直接起草と独立した検収の選択」。選んだ手順の起動・検収・差戻しの契約 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | |
+| 保存操作に入る前 | `references/drafting-workflow.md`の「投入」。`references/drafting-completion.md`の「重複判定」（通常AWI）と「投入前の読み直し」の対象集合と除外の確認 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「投入」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」` | |
+| 投入済みWIへ着手する前の対象集合と除外の確認 | `references/drafting-completion.md`の「投入前の読み直し」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「投入前の読み直し」` | |
+| UWIを起草する場合 | `references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
+| WIの調査・要件分類・由来の検収に入る前 | `references/origin-and-approval.md`の「由来と`source`」「承認」「範囲語と程度」「ユーザー専用の記入欄と是正要求」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D%E3%80%8C%E6%89%BF%E8%AA%8D%E3%80%8D%E3%80%8C%E7%AF%84%E5%9B%B2%E8%AA%9E%E3%81%A8%E7%A8%8B%E5%BA%A6%E3%80%8D%E3%80%8C%E3%83%A6%E3%83%BC%E3%82%B6%E3%83%BC%E5%B0%82%E7%94%A8%E3%81%AE%E8%A8%98%E5%85%A5%E6%AC%84%E3%81%A8%E6%98%AF%E6%AD%A3%E8%A6%81%E6%B1%82%E3%80%8D` | |
+| 逐語引用を扱う前 | `references/origin-and-approval.md`の「逐語転記」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「逐語転記」` | |
+| WIの状態、状態遷移、依存、冷却時間、保留と終了を扱う前。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念を受けた時点（調査や認識合わせより先） | `references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
+| 複数リポジトリへ投入する場合、および同じ成果の整合を要求する複数のAWIを登録する場合 | `references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
+| 同じ対象リポジトリの複数項目を一括取得する場合 | `references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
+| 通常AWIの投入、または投入済みAWIの内容の更新をWI投入担当へ委譲する前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
 
 本文は`agent-basics:writing-standards`に従い、引き継いだエージェントが対象と期待する結果を正確に理解して完了まで作業を進められる粒度で書く。
 AWIの粒度は要求の同一性に基づいて判断する。既存・起草中のAWIの目的、対象、完成条件の具体化や変更は、該当AWIの更新として扱う。元の不具合を解消するために必要な追随修正は元AWIへ含め、類似見直しで発見した独立した別件は根本原因を共有していても別AWIへ引き渡す。元の事象への寄与が判明した対象は元の修正範囲へ戻す。是正対象を所有するリポジトリが異なる場合は、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動前の前提」に従って投入先との組み合わせへ展開する。1件のAWI内でのバグの扱い単位は、`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」に従う。

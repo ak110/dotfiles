@@ -5,7 +5,7 @@ description: >
   ドキュメント・コメント・コード・テストコード・エージェント向け文書
   （`AGENTS.md`・`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルなど）の
   新規作成・修正・計画・レビュー時に最初に必ず呼び出す。
-  AWI・UWIの本文起草時、成果物へ書く事実主張の裏付け調査時、ホスト機能の可否・入出力契約の調査時、
+  作業項目の本文の起草時、成果物へ書く事実主張の裏付け調査時、ホスト機能の可否・入出力契約の調査時、
   記録の集計・分析時も呼び出す。
   規範・基準・手順・目標値の妥当性、到達性、有無、置き場所を確認する場面でも呼び出す。
   理解のためコードを読むだけの場合はトリガー不要。
@@ -27,141 +27,126 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文の各参照における適用条件を確認し、指定された資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断をする。起動時の条件に該当する資料は、起動時のプロンプトとともに渡される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`references/quality-principles.md`「読込表の読み方」に従う。
 
-<!-- read-table-source: SKILL-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 
 ## 成果物種別ごとの必読資料
 
-<!-- read-table-source: SKILL-delivery-2.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| 既存ファイルを編集・上書きする時、スクリプトで複数ファイルを機械変換する時 | `references/file-editing.md` |
-| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` |
-| Xの投稿本文・日時・添付写真を資料として読む前 | `references/x-posts.md` |
-| ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` |
-| 計画の起草、実現方式の確定、実装の完了前と実行レビューで、変更後の設計品質を評価する時（エージェント向け文書だけの変更を含む）と、外部資料（論文、ベンチマーク、他プロジェクトの事例など）に基づく改善案を提案・評価する時 | `references/design-heuristics.md`の「設計案の予備選別」から「設計品質の劣化確認」まで（各節の適用条件を保つ） |
-| 技術記事・操作手順などの技術文書を書く時 | `references/writing.md`の「技術文書」 |
-| 業務・仕様文書を書く時（変更説明、障害報告、提案書、議事録、規程、AWI・UWIなどを含む） | `references/writing.md`の「業務・仕様文書」 |
-| 体験を述べる文章を書く時 | `references/writing.md`の「体験を述べる文章」 |
-| スライドを書く時 | `references/writing.md`の「スライド」 |
-| 紹介・宣伝文を書く時 | `references/writing.md`の「紹介・宣伝文」 |
-| メール・チャットを書く時 | `references/writing.md`の「メール・チャット」 |
-| 論文・調査報告を書く時 | `references/writing.md`の「論文・調査報告」 |
-| 脚本・台本を書く時 | `references/writing.md`の「脚本・台本」 |
-| ユーザーの入力素材を整理して取り込む時 | `references/writing.md`の「ユーザー入力素材の取扱い」 |
-| エンドユーザーが操作する画面の新設・変更、その計画・AWIの起草またはレビューの時 | `references/ui-ux.md` |
-| エンドユーザーが操作する画面の新設・変更、その計画・AWIの起草またはレビューで、フォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` |
-| 配布物がエンドユーザーの環境でパッケージマネージャーへ渡す版指定（`uvx --from`の引数、`pyproject.toml`の`dependencies`、`uv run --with`の引数、PEP 723の`dependencies`など）を変える作業の起草、計画、実装、レビューの時 | `references/dependency-management.md` |
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
+| 既存ファイルを編集・上書きする時、スクリプトで複数ファイルを機械変換する時 | `references/file-editing.md` | 操作 | `existing-file-edit` | |
+| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` | |
+| Xの投稿本文・日時・添付写真を資料として読む前 | `references/x-posts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/x-posts.md` | |
+| ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
+| 計画の起草、実現方式の確定、実装の完了前と実行レビューで、変更後の設計品質を評価する時（エージェント向け文書だけの変更を含む）と、外部資料（論文、ベンチマーク、他プロジェクトの事例など）に基づく改善案を提案・評価する時 | `references/design-heuristics.md`の「設計案の予備選別」から「設計品質の劣化確認」まで（各節の適用条件を保つ） | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」から「設計品質の劣化確認」まで` | |
+| 技術記事・操作手順などの技術文書を書く時 | `references/writing.md`の「技術文書」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「技術文書」` | |
+| 業務・仕様文書を書く時（変更説明、障害報告、提案書、議事録、規程、作業項目などを含む） | `references/writing.md`の「業務・仕様文書」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「業務・仕様文書」` | |
+| 体験を述べる文章を書く時 | `references/writing.md`の「体験を述べる文章」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「体験を述べる文章」` | |
+| スライドを書く時 | `references/writing.md`の「スライド」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「スライド」` | |
+| 紹介・宣伝文を書く時 | `references/writing.md`の「紹介・宣伝文」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「紹介・宣伝文」` | |
+| メール・チャットを書く時 | `references/writing.md`の「メール・チャット」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「メール・チャット」` | |
+| 論文・調査報告を書く時 | `references/writing.md`の「論文・調査報告」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「論文・調査報告」` | |
+| 脚本・台本を書く時 | `references/writing.md`の「脚本・台本」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「脚本・台本」` | |
+| ユーザーの入力素材を整理して取り込む時 | `references/writing.md`の「ユーザー入力素材の取扱い」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | |
+| 配布物がエンドユーザーの環境でパッケージマネージャーへ渡す版指定（`uvx --from`の引数、`pyproject.toml`の`dependencies`、`uv run --with`の引数、PEP 723の`dependencies`など）を変える作業の起草、計画、実装、レビューの時 | `references/dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` | |
+| エンドユーザーが操作する画面の新設・変更、その計画・作業項目の起草またはレビューの時 | `references/ui-ux.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux.md` | |
+| エンドユーザーが操作する画面の新設・変更、その計画・作業項目の起草またはレビューで、フォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
 | 起動時 | `references/quality-principles.md` | 起動時 | `skill:writing-standards` | |
-| 人間が読む文章（ドキュメント、コメント、AWI・UWIの本文など）を書く時 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」 | 起動時 | `skill:writing-standards` | |
+| 人間が読む文章（ドキュメント、コメント、作業項目の本文など）を書く時 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」 | 起動時 | `skill:writing-standards` | |
 | コード・テストコードを書く時 | 「コードの編集時に読む資料」の各行 | 判断 | `skill:writing-standards` | `same-document` |
 | エージェント向け文書を書く時 | 「エージェント向け文書の編集時に読む資料」の各行 | 判断 | `skill:writing-standards` | `same-document` |
 | Claude CodeでEditを使う時と、Writeで既存ファイルを上書きする前 | `references/file-editing-claude.md` | 操作 | `claude-existing-file-edit` | |
 
 領域別の資料を選ぶときは、依頼が求める結果と変更対象のインターフェースや仕様から該当する領域を特定する。ここでの特定は読むべき資料を決めるためのものであり、具体的な設計案の比較や採用は該当節を読んだ後に行う。入力内容だけから領域を判断できない場合は、対象ファイルの実物を読み取って確認してから該当節に進む。文書の構成のみを判断する場合のように領域の条件に当てはまらないときは、共通の設計基準を用いる。資料の取得には通常の読取操作を使い、読込表で指定された節を読んでから設計の検討に戻る。
 
-<!-- read-table-source: SKILL-delivery-3.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| 並行処理・排他制御を設計・変更・レビューする前 | `references/design-runtime.md`の「並行処理・排他制御の設計観点」 |
-| 検索・一覧画面を設計・変更・レビューする前 | `references/design-display.md`の「検索・一覧画面の設計」 |
-| 閾値と表示段階を設計・変更・レビューする前 | `references/design-display.md`の「閾値と表示段階の設計」 |
-| キャッシュを設計・変更・レビューする前 | `references/design-runtime.md`の「キャッシュ設計」 |
-| 非同期ジョブ・リトライを設計・変更・レビューする前 | `references/design-runtime.md`の「非同期ジョブ・リトライ設計」 |
-| DBスキーマ・マイグレーションを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「DBスキーマ・マイグレーション設計」 |
-| APIを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「API設計」 |
-| 認証・認可を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「認証・認可設計」 |
-| ファイルアップロードを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「ファイルアップロード設計」 |
-| 状態を変える多段手順の工程順を設計・変更・レビューする前 | `references/design-runtime.md`の「状態を変える多段手順の工程順」 |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 並行処理・排他制御を設計・変更・レビューする前 | `references/design-runtime.md`の「並行処理・排他制御の設計観点」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「並行処理・排他制御の設計観点」` | |
+| 検索・一覧画面を設計・変更・レビューする前 | `references/design-display.md`の「検索・一覧画面の設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-display.md#「検索・一覧画面の設計」` | |
+| 閾値と表示段階を設計・変更・レビューする前 | `references/design-display.md`の「閾値と表示段階の設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-display.md#「閾値と表示段階の設計」` | |
+| キャッシュを設計・変更・レビューする前 | `references/design-runtime.md`の「キャッシュ設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「キャッシュ設計」` | |
+| 非同期ジョブ・リトライを設計・変更・レビューする前 | `references/design-runtime.md`の「非同期ジョブ・リトライ設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「非同期ジョブ・リトライ設計」` | |
+| DBスキーマ・マイグレーションを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「DBスキーマ・マイグレーション設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「DBスキーマ・マイグレーション設計」` | |
+| APIを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「API設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「API設計」` | |
+| 認証・認可を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「認証・認可設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「認証・認可設計」` | |
+| ファイルアップロードを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「ファイルアップロード設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「ファイルアップロード設計」` | |
+| 状態を変える多段手順の工程順を設計・変更・レビューする前 | `references/design-runtime.md`の「状態を変える多段手順の工程順」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「状態を変える多段手順の工程順」` | |
 
 ## 文章の作成時に読む資料
 
-<!-- read-table-source: SKILL-delivery-4.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| textlintなど文章チェックの診断へ対応する時 | `references/textlint-violations.md` |
-| 文章の書き直しを委ねる時 | `references/textlint-violations.md`の「文の書き直しの委譲と検収」 |
-| 独立したレビューを経ずに成果物を完成させる時（再レビューを省く修正、独立したレビューを起動しない修正経路を含む）と、レビュー限定基準の指摘を受けて採否を判断する時 | `references/review-only-criteria.md` |
-| lint設定の緩和・無効化・除外指定を追加する時 | `references/lint-relax-criteria.md` |
-| 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む）。正しい例と説明から、元の意味と条件を保つ書き方を選ぶ | `references/tone-examples.md`、`references/tone-examples-llm-tone.md` |
-| 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` |
-| 新しい概念名または識別子を導入する時 | `references/referent-table.md` |
-| 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` |
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
+| textlintなど文章チェックの診断へ対応する時 | `references/textlint-violations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/textlint-violations.md` | |
+| 文章の書き直しを委ねる時 | `references/textlint-violations.md`の「文の書き直しの委譲と検収」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/textlint-violations.md#「文の書き直しの委譲と検収」` | |
+| 独立したレビューを経ずに成果物を完成させる時（再レビューを省く修正、独立したレビューを起動しない修正経路を含む）と、レビュー限定基準の指摘を受けて採否を判断する時 | `references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` | |
+| lint設定の緩和・無効化・除外指定を追加する時 | `references/lint-relax-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/lint-relax-criteria.md` | |
+| 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む）。正しい例と説明から、元の意味と条件を保つ書き方を選ぶ | `references/tone-examples.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples.md` | |
+| 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む）。正しい例と説明から、元の意味と条件を保つ書き方を選ぶ | `references/tone-examples-llm-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples-llm-tone.md` | |
+| 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/document-types.md` | |
+| 新しい概念名または識別子を導入する時 | `references/referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` | |
+| 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/defined-names.md` | |
 | 文章を書く時と表記をチェックする時（他の行より先に読む） | `references/notation-rules.md` | 起動時 | `skill:writing-standards` | |
 
 ## コードの編集時に読む資料
 
 コードの編集やコードレビュー（変更差分の確認）に着手する前に、`references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」と、以降の技術別・工程別の表で該当する資料を読む。
 
-<!-- read-table-source: SKILL-delivery-5.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| `py` | `references/python.md`の「言語スタイル」「テストコード（pytest）」「Python新構文と導入バージョン」 |
-| `ts`・`tsx` | `references/typescript.md` |
-| `rs` | `references/rust.md` |
-| `cs` | `references/csharp.md` |
-| `sh`・`bash`・`sh.tmpl` | `references/bash.md` |
-| `ps1`・`ps1.tmpl`・`psm1`・`psd1` | `references/powershell.md` |
-| `cmd`・`bat` | `references/windows-batch.md` |
-| `Dockerfile` | `references/dockerfiles.md` |
-| `.github/workflows/*.yaml`・`.github/workflows/*.yml` | `references/github-actions.md` |
-| `tailwindcss`（v4系） | `references/tailwindcss.md` |
-| `alpinejs`（v3系。`<script>`読み込みを含む） | `references/alpinejs.md` |
-| `@playwright/test`・`playwright`（Playwright Test v1系とPythonバインディング） | `references/playwright.md` |
-| `sqlalchemy`（2.0系） | `references/sqlalchemy.md` |
-| `drizzle-orm`・`drizzle-kit`（0.x系） | `references/drizzle.md` |
-| `svelte`・`@sveltejs/kit`（Svelte 5・SvelteKit 2） | `references/svelte.md` |
-
-<!-- read-table-source: SKILL-delivery-6.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `references/design-time.md` |
-| コードを編集する時と、依存の追加・更新をする時 | `references/implementation-time.md` |
-| 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時 | `references/design-heuristics.md`の「設計案の予備選別」から「設計品質の劣化確認」まで（各節の適用条件を保つ） |
-| 依存の追加・更新、またはPythonの対応版を追加する時（CI・開発環境の版指定変更を含む） | `references/dependency-management.md` |
-| MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` |
-| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md` |
-| Pythonの静的解析（ruff・pylint・pyright・mypyなど）の診断へ対処する時と、抑制を追加する時 | `references/python.md`の「静的解析の誤検出と抑制」 |
-| 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化など） | `references/encoding.md` |
-| 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボードなど）の作成・修正時 | `references/independent-html.md` |
-| エンドユーザーが操作する画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` |
+| 時点または条件（対象の拡張子・ファイル名・パス・依存名） | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| `py` | `references/python.md`の「言語スタイル」「テストコード（pytest）」「Python新構文と導入バージョン」 | 操作 | `path:*.py` | |
+| `ts`・`tsx` | `references/typescript.md` | 操作 | `path:*.ts`、`path:*.tsx` | |
+| `rs` | `references/rust.md` | 操作 | `path:*.rs` | |
+| `cs` | `references/csharp.md` | 操作 | `path:*.cs` | |
+| `sh`・`bash`・`sh.tmpl` | `references/bash.md` | 操作 | `path:*.sh`、`path:*.bash`、`path:*.sh.tmpl` | |
+| `ps1`・`ps1.tmpl`・`psm1`・`psd1` | `references/powershell.md` | 操作 | `path:*.ps1`、`path:*.ps1.tmpl`、`path:*.psm1`、`path:*.psd1` | |
+| `cmd`・`bat` | `references/windows-batch.md` | 操作 | `path:*.cmd`、`path:*.bat` | |
+| `Dockerfile` | `references/dockerfiles.md` | 操作 | `path:*Dockerfile` | |
+| `.github/workflows/*.yaml`・`.github/workflows/*.yml` | `references/github-actions.md` | 操作 | `path:*/.github/workflows/*.yaml`、`path:*/.github/workflows/*.yml` | |
+| `tailwindcss`（v4系） | `references/tailwindcss.md` | 操作 | `dependency:tailwindcss`（実コードまたは依存定義の操作） | |
+| `alpinejs`（v3系。`<script>`読み込みを含む） | `references/alpinejs.md` | 操作 | `dependency:alpinejs`（実コードまたは依存定義の操作） | |
+| `@playwright/test`・`playwright`（Playwright Test v1系とPythonバインディング） | `references/playwright.md` | 操作 | `dependency:playwright`（実コードまたは依存定義の操作） | |
+| `sqlalchemy`（2.0系） | `references/sqlalchemy.md` | 操作 | `dependency:sqlalchemy`（実コードまたは依存定義の操作） | |
+| `drizzle-orm`・`drizzle-kit`（0.x系） | `references/drizzle.md` | 操作 | `dependency:drizzle`（実コードまたは依存定義の操作） | |
+| `svelte`・`@sveltejs/kit`（Svelte 5・SvelteKit 2） | `references/svelte.md` | 操作 | `dependency:svelte`（実コードまたは依存定義の操作） | |
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| hookスクリプトと機械チェックスクリプトを書く時 | 「エージェント向け文書の編集時に読む資料」の表のうち、hook、セッション状態および機械チェックスクリプトに関する行で条件が成立する行の資料 | 判断 | `skill:writing-standards` | `same-document` |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `references/design-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time.md` | |
+| コードを編集する時と、依存の追加・更新をする時 | `references/implementation-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time.md` | |
+| 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時 | `references/design-heuristics.md`の「設計案の予備選別」から「設計品質の劣化確認」まで（各節の適用条件を保つ） | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」から「設計品質の劣化確認」まで` | |
+| 依存の追加・更新、またはPythonの対応版を追加する時（CI・開発環境の版指定変更を含む） | `references/dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` | |
+| MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/mcp-server-design.md` | |
+| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md` | |
+| Pythonの静的解析（ruff・pylint・pyright・mypyなど）の診断へ対処する時と、抑制を追加する時 | `references/python.md`の「静的解析の誤検出と抑制」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/python.md#「静的解析の誤検出と抑制」` | |
+| 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化など） | `references/encoding.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/encoding.md` | |
+| 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボードなど）の作成・修正時 | `references/independent-html.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/independent-html.md` | |
+| エンドユーザーが操作する画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md` | |
+| hookスクリプトと機械チェックスクリプトを書く時 | 「エージェント向け文書の編集時に読む資料」の表のうち、hookおよび機械チェックスクリプトに関する行で条件が成立する行の資料 | 判断 | `skill:writing-standards` | `same-document` |
 
 ## エージェント向け文書の編集時に読む資料
 
 エージェント向け文書の種類や行う操作に応じて、次の読込表を適用する。
 
-<!-- read-table-source: SKILL-delivery-7.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| エージェント向け文書（AGENTS.md、CLAUDE.md、ルール、SKILL.md、サブエージェント定義、referencesなど）の編集前 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」と`references/agent-documents-basics.md` |
-| スキル編集 | `references/agent-skills.md`、`references/host-official-references.md` |
-| エージェント向け文書の置き場所を選ぶ時 | `references/agent-documents-basics.md` |
-| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md` |
-| hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/claude-hooks.md`、`references/host-official-references.md` |
-| 遮断・警告を返すhookの判定を新設・変更する時と、hookを置くか、遮断と警告のどちらにするかを判定する時 | `references/claude-hooks-block-warn.md` |
-| hookの出力フィールドを選ぶ時と、`PermissionRequest`・`UserPromptSubmit`のhookを新設・変更する時 | `references/claude-hooks-output.md` |
-| `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `references/claude-hooks-stop.md` |
-| 遮断・警告・定型の通知を出力するhookを新設・変更する時と、hookなどの生成元がエージェントへ直接渡す本文（記述言語と`atk-auto`の標識）を新設・改訂する時 | `references/claude-hooks-messages.md` |
-| auto modeのカスタムルール編集 | `references/auto-mode.md`、`references/host-official-references.md` |
-| 機械チェックスクリプトの新設・改修 | `references/check-script-design.md` |
-| エージェント向け文書へ新しい規定を追記する時と、文書の記述量を管理する時 | `references/agent-documents-additions.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| エージェント向け文書（AGENTS.md、CLAUDE.md、ルール、SKILL.md、サブエージェント定義、referencesなど）の編集前 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」と`references/agent-documents-basics.md` | 操作 | `agent-document-writing` | |
+| スキル編集 | `references/agent-skills.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills.md` | |
+| スキル編集 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
+| エージェント向け文書の置き場所を選ぶ時 | `references/agent-documents-basics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md` | |
+| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents.md` | |
+| hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` | |
+| hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
+| 遮断・警告を返すhookの判定を新設・変更する時と、hookを置くか、遮断と警告のどちらにするかを判定する時 | `references/claude-hooks-block-warn.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn.md` | |
+| hookの出力フィールドを選ぶ時と、`PermissionRequest`・`UserPromptSubmit`のhookを新設・変更する時 | `references/claude-hooks-output.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-output.md` | |
+| `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `references/claude-hooks-stop.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop.md` | |
+| 遮断・警告・定型の通知を出力するhookを新設・変更する時と、hookなどの生成元がエージェントへ直接渡す本文（記述言語と出所を示す標識）を新設・改訂する時 | `references/claude-hooks-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md` | |
+| auto modeのカスタムルール編集 | `references/auto-mode.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/auto-mode.md` | |
+| auto modeのカスタムルール編集 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
+| 機械チェックスクリプトの新設・改修 | `references/check-script-design.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/check-script-design.md` | |
+| エージェント向け文書へ新しい規定を追記する時と、文書の記述量を管理する時 | `references/agent-documents-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md` | |
 
 ## 導入と適用
 

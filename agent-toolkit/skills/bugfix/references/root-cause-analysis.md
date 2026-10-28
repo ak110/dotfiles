@@ -6,7 +6,7 @@
 
 ## 名指し参照の読込方法
 
-本文の各参照で定めた適用条件に従い、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行に記載された資料は、起動時のプロンプトとともに提供される。
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -27,6 +27,10 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止としてのテスト」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止としてのテスト」` |
+
+## 初動と拡張原因分析の判定
+
+独立別件を通常AWIとして引き渡す場合も、`agent-basics:bugfix`の`references/root-cause-analysis.md`「初動と拡張原因分析の判定」の記録条件に従い、実装または対策選定を引き継ぐ前に同節の内容を完了させる。
 
 ## 原因分析の品質確認
 

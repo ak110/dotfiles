@@ -1,14 +1,20 @@
 # 名前の方針と定義済みの名前の一覧
 
 本書では、各種の名称を選定する際の基本方針を定める。
-本書の読者は、規範、設計文書、WI、計画書、コミットメッセージ、コードなどにおいて名前を定義・記述するすべての主体である。
+本書の読者は、規範、設計文書、作業項目、計画書、コミットメッセージ、コードなどにおいて名前を定義・記述するすべての主体である。
 個々の用語定義そのものは本来の定義元にのみ配置し、複数の資料で共通して使われる名前については、定義元を参照するための索引を設ける（`agent-documents-basics.md`「主要用語の初出定義先」を参照）。
 
 ## 名指し参照の読込方法
 
 名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: defined-names-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics.md#「主要用語の初出定義先」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「主要用語の初出定義先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「要件と認可」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「要件と認可」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux.md#「判断の順序」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/ui-ux.md#「判断の順序」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` |
 
 ## 命名の方針
 

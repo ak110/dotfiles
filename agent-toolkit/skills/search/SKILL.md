@@ -13,12 +13,16 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文に記載された各参照の適用条件を確認し、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時の行に記載された資料は、起動本文とともに配送される。
-
-<!-- read-table-source: SKILL-delivery-1.md -->
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/search/references/quality-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../secret-files/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/secret-files/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/routing.md#「コンテキスト消費が大きい調査の切り出し」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「コンテキスト消費が大きい調査の切り出し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md#「不在の主張」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「不在の主張」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「読込表」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「読込表」` |
 | 判断対象と検索の母集団を決める時 | `agent-basics:writing-standards/references/quality-principles.md#「事実と推論」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「事実と推論」` |
 
 ## 手段の選定

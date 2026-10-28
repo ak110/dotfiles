@@ -489,27 +489,14 @@ def parse_tables(
     strict: bool = False,
     host: str = "claude",
     project: pathlib.Path | str | None = None,
-    _parents: frozenset[pathlib.Path] = frozenset(),
 ) -> list[ReadTrigger]:
     """資料列を持つ表から宣言を読む。strictでは未分類の表も拒否する。"""
     source = source.resolve()
-    if source in _parents:
-        raise ValueError(f"{source}: read-table-sourceの循環を検出した")
     text = source.read_text(encoding="utf-8")
     result: list[ReadTrigger] = []
     headers: list[str] = []
     for number, line, visible in document_lines(text):
         if not visible:
-            headers = []
-            continue
-        included = re.fullmatch(r"<!-- read-table-source: (.+) -->", line)
-        if included:
-            target = resolve_document(included[1], source, plugin_root, host, project=project)
-            if target is None:
-                raise ValueError(f"{source}: read-table-sourceの実体が無い: {included[1]}")
-            result.extend(
-                parse_tables(target, plugin_root, strict=strict, host=host, project=project, _parents=_parents | {source})
-            )
             headers = []
             continue
         if not line.startswith("|"):
@@ -619,13 +606,6 @@ def reference_method_targets(
         target.body()
         result.append(target)
         result.extend(reference_method_targets(target.path, plugin_root, host, _parents | {source}, project=project))
-    for _number, line, visible in document_lines(text):
-        included = re.fullmatch(r"<!-- read-table-source: (.+) -->", line) if visible else None
-        if included is not None:
-            path = _direct_document(included[1], source, plugin_root, host, project=project)
-            if path is None:
-                raise ValueError(f"{source}: read-table-sourceの実体が無い: {included[1]}")
-            result.extend(reference_method_targets(path, plugin_root, host, _parents | {source}, project=project))
     return tuple(dict.fromkeys(result))
 
 

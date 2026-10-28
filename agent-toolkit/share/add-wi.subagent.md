@@ -31,18 +31,21 @@ continuations:
 
 名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: add-wi.subagent-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion.md#「重複判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」` |
 
 ## 読込表
 
-<!-- read-table-source: add-wi.subagent-delivery-2.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表で同一の時点に対応する行。writing-standardsについては、実施する調査や執筆の条件に該当する行 |
-| AWIの本文を起草・判定する前 | `agent-toolkit:wi-standards`の読込表において、AWIの種別・引用・外部再現の各条件に対応付けられている`references/awi-body.md`の節 |
-| 受領した要求にUWIが含まれる場合 | `agent-toolkit:wi-standards`の`references/uwi-format.md` |
-| 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合 | `agent-toolkit:bugfix`の読込表のうち、原因分析の条件を満たす行の資料 |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表で同一の時点に対応する行。writing-standardsについては、実施する調査や執筆の条件に該当する行 | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
+| AWIの本文を起草・判定する前 | `agent-toolkit:wi-standards`の読込表において、AWIの種別・引用・外部再現の各条件に対応付けられている`references/awi-body.md`の節 | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
+| 受領した要求にUWIが含まれる場合 | `agent-toolkit:wi-standards`の`references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
+| 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合 | `agent-toolkit:bugfix`の読込表のうち、原因分析の条件を満たす行の資料 | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` | |
 
 ## 入力
 

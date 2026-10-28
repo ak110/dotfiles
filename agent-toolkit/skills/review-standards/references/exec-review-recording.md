@@ -6,9 +6,24 @@
 
 ## 名指し参照の読込方法
 
-本文に記載された各参照の適用条件に従い、選んだ資料を読み込み、指定箇所に注目してから、その基準に基づく具体的な判断へ進む。起動時に読む資料は、起動時のプロンプトとともに提供される。
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
-<!-- read-table-source: exec-review-recording-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| AWIの形式を判断する前 | `../../wi-standards/references/awi-body.md`の冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md#「実行レビューの判定」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「実行レビューの判定」` |
+| 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/exec-review.subagent.md#「出力」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/verification-evidence.md#「完成条件証拠の検証記録」` | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` |
+| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination.md#「技術判断で外せる完成条件」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「技術判断で外せる完成条件」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/lane-integration.subagent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「入力」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `reviewer.md#「公開後に成立する条件と任意の判断材料」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「公開後に成立する条件と任意の判断材料」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md#「レビュー修正」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「レビュー修正」` |
 
 ## レビュー指摘管理表への登録
 

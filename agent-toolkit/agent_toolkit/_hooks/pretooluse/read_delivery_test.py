@@ -182,7 +182,7 @@ def test_installed_declarations_share_one_inventory_per_request(tmp_path, monkey
         assert calls == [(host, str(tmp_path))] * count
 
 
-def test_included_table_keeps_marker_order_and_is_counted_once(tmp_path, monkeypatch):
+def test_body_tables_keep_document_order(tmp_path, monkeypatch):
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
 
     def table(name):
@@ -192,16 +192,14 @@ def test_included_table_keeps_marker_order_and_is_counted_once(tmp_path, monkeyp
             f"| 取得時 | `{name}.md` | 判断 | `read:*/{name}.md` |\n"
         )
 
-    for name in ("before", "outside", "after"):
+    for name in ("before", "after"):
         (tmp_path / f"{name}.md").write_text(f"# {name}\n基準\n", encoding="utf-8")
-    external = tmp_path / "reading.md"
-    external.write_text(table("outside"), encoding="utf-8")
     owner = tmp_path / "SKILL.md"
-    owner.write_text(table("before") + "\n<!-- read-table-source: reading.md -->\n\n" + table("after"), encoding="utf-8")
+    owner.write_text(table("before") + "\n本文\n\n" + table("after"), encoding="utf-8")
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", tmp_path)
-    monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [external, owner])
+    monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [owner])
     rows = read_delivery.declarations(str(tmp_path))
-    assert [row.documents[0].name for row in rows] == ["before.md", "outside.md", "after.md"]
+    assert [row.documents[0].name for row in rows] == ["before.md", "after.md"]
 
 
 def _guidance(decision: Decision) -> str | None:
@@ -1242,7 +1240,7 @@ def test_section_and_full_read_in_one_call_keep_the_full_read(tmp_path, section_
     [
         ("Read", {"file_path": "/source/criteria.md"}, True),
         ("Glob", {"pattern": "*.md"}, True),
-        ("Grep", {"pattern": "read-table-source"}, True),
+        ("Grep", {"pattern": "全文読む資料"}, True),
         ("Bash", {"command": "cat -- /source/criteria.md"}, True),
         ("Bash", {"command": "sed -n '1,20p' -- /source/criteria.md"}, True),
         ("Bash", {"command": "sed -n '1,20w /source/out.md' /source/criteria.md"}, False),

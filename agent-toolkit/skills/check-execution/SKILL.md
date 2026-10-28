@@ -13,24 +13,23 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文内の各参照における適用条件を確認し、選択した資料を読み込み、指定箇所に注目してから、その基準を用いた具体的な判断に進む。起動時の行に指定された資料は、起動時の本文とともに提供される。
+本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
-<!-- read-table-source: SKILL-delivery-1.md -->
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/references/report-formats.md#「検証結果と実行記録」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「検証結果と実行記録」` |
+| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
-<!-- read-table-source: SKILL-delivery-2.md -->
-
-| 時点または条件 | 資料と注目箇所 |
-| --- | --- |
-| 実装着手直前と検証結果の判定前 | `references/diagnostics.md` |
-| 検証対象の選定と計画・保存結果の実行・取得前（実行レビューで直接影響範囲だけを求める場合を除く） | `references/verification-scope.md` |
-| 実行レビューで直接影響範囲を求める前 | `references/verification-scope.md`の「直接影響範囲の類型」「範囲の決め方」 |
-| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `references/acceptance-scenarios.md` |
-| Claude Codeのシェルから時間を要するCLIを直接起動する前 | `agent-toolkit:delegation`の`references/waiting-and-monitoring.md` |
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
+| 実装着手直前と検証結果の判定前 | `references/diagnostics.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/diagnostics.md` | |
+| 検証対象の選定と計画・保存結果の実行・取得前（実行レビューで直接影響範囲だけを求める場合を除く） | `references/verification-scope.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/verification-scope.md` | |
+| 実行レビューで直接影響範囲を求める前 | `references/verification-scope.md`の「直接影響範囲の類型」「範囲の決め方」 | 判断 | `section:agent-toolkit:*/skills/check-execution/references/verification-scope.md#「直接影響範囲の類型」「範囲の決め方」` | |
+| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/acceptance-scenarios.md` | |
+| Claude Codeのシェルから時間を要するCLIを直接起動する前 | `agent-toolkit:delegation`の`references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` | |
 | 起動時 | `agent-basics:check-execution/SKILL.md` | 起動時 | `skill:check-execution` | |
 
 ## 統合実行ツール経由の起動
