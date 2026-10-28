@@ -69,12 +69,6 @@ def _comma_separated_values(value: str) -> tuple[str, ...]:
 _HEADING_PATTERN = re.compile(r"^(#{1,6}) +(.*?)\s*$")
 
 
-"""`scripts/agent_toolkit_bump.py`が更新するmanifestファイルの相対パス集合。
-
-`agent_toolkit_bump.py`側のリテラルとの一致は`scripts/agent_toolkit_bump_test.py`が検証する。
-"""
-
-
 def markdown_body_start_index(content: str) -> int:
     """先頭フロントマターの直後にあるMarkdown本文の0始まり行番号を返す。"""
     lines = content.removeprefix("\ufeff").splitlines()

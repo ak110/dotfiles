@@ -26,8 +26,10 @@ Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホス�
 
 ### plugin manifestと生成物
 
-公開動作を追加または変更するpluginは、`agent-toolkit/.claude-plugin/plugin.json`を版数の基準とし、`agent_toolkit_bump.py minor`などの正式な手順で版数を更新する。
-`.claude-plugin/marketplace.json`のplugin記述は基準の版数と一致させる。
+公開動作を追加または変更するpluginは、各pluginの`.claude-plugin/plugin.json`（`agent-toolkit/`と`agent-basics/`のそれぞれ）を版数の基準とする。
+版数は`agent_toolkit_bump.py --plugin <plugin名> minor`などの正式な手順で更新する。
+`.claude-plugin/marketplace.json`の各plugin記述は、同名pluginの基準の版数と一致させる。
+対象にできるpluginは`marketplace.json`の`plugins[]`から導き、pluginを追加しても版数更新の手段を別に用意しない。
 `agent-toolkit/plugin.json`と`agent-toolkit/.codex-plugin/plugin.json`は`sync_generated_files.py`で生成する。
 `agent-toolkit-codex/`はGitで追跡せず、post-applyがCodex plugin導入の直前に`pytools/_internal/codex_plugin_manifests.py`で生成する。
 同ディレクトリは`agent-toolkit/`を原本とする自己完結型の通常ディレクトリであり、Agent Plugins用の直下`plugin.json`と`mcp.json`を除外する。

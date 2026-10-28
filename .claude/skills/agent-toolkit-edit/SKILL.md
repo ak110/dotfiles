@@ -98,11 +98,11 @@ description: >
 
 ## バージョン更新
 
-本節は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。詳細は`references/version-bump.md`を参照する。
-バージョン番号を更新しないままでは、`claude plugin update`を実行しても「最新です」と応答されて更新が配信されない。そのため、エンドユーザーに届く変更はプッシュ前に必ずバージョンを更新する。
+本節は`.claude-plugin/marketplace.json`の`plugins[]`に載る配布プラグイン（`agent-toolkit/`と`agent-basics/`）を対象とし、各プラグインの版数を同じ判定基準と同じスクリプトで更新する。詳細は`references/version-bump.md`を参照する。
+バージョン番号を更新しないままでは、`claude plugin update`を実行しても「最新です」と応答されて更新が配信されない。そのため、エンドユーザーに届く変更はプッシュ前に、変更のあるプラグインごとに必ずバージョンを更新する。
 
-- バージョン番号は`scripts/agent_toolkit_bump.py {patch|minor|major}`で更新する。更新区分の判断は`references/version-bump.md`「判定基準」を、実行主体とタイミングは同文書「plan modeでの取り扱い」に従う（`agent-toolkit:process-wi`の各レーンでは計画に区分を記録するのみとし、公開担当が全レーンのマージ後に1回だけ実行する）。rebaseやmergeの競合は同文書「競合解決と統合後の確認」に従って解決する。
-- `version`と`description`は2箇所の定義元で常に一致させる（`description`は手動で同期する）。定義元は、`agent-toolkit/.claude-plugin/plugin.json`と、`.claude-plugin/marketplace.json`の`plugins[]`内にある`name == "agent-toolkit"`のエントリである。この整合性は`manifest_ssot_invariant_test.py`によって検証される。
+- バージョン番号は`scripts/agent_toolkit_bump.py --plugin <プラグイン名> {patch|minor|major}`で更新する。`--plugin`を省略するとagent-toolkitを対象とする。更新区分の判断は`references/version-bump.md`「判定基準」を、実行主体とタイミングは同文書「plan modeでの取り扱い」に従う。`agent-toolkit:process-wi`の各レーンでは計画にプラグインごとの区分を記録するのみとし、公開担当が全レーンのマージ後に変更のあるプラグインごとに1回ずつ実行する。rebaseやmergeの競合は同文書「競合解決と統合後の確認」に従って解決する。
+- `version`と`description`は、プラグインごとに2箇所の定義元で常に一致させる（`description`は手動で同期する）。定義元は、`<プラグインのディレクトリ>/.claude-plugin/plugin.json`と、`.claude-plugin/marketplace.json`の`plugins[]`内にある同名のエントリである。agent-toolkitなら`agent-toolkit/.claude-plugin/plugin.json`と`name == "agent-toolkit"`のエントリを指す。この整合性は`manifest_ssot_invariant_test.py`によって検証される。
 - Agent Plugins向けの`plugin.json`・`mcp.json`やCodex向けマニフェストは、上記2ファイルと`agent-toolkit/.mcp.json`をもとに`scripts/sync_codex_plugin_manifests.py`が生成する。Antigravity向けの`agent-toolkit-agy/`および`agent-basics-agy/`は`scripts/sync_antigravity_plugin.py`が生成し、`post_apply`が`~/.gemini/config/plugins.json`へ登録する。`--plugin agent-basics`を指定すると品質プラグインのみを生成できる。元の名前空間と品質本文を保持したまま、両配布物の長文スキルを同一の短いSKILL.md・全文資料生成処理へ渡す。これらの生成ファイルは手動で編集せず、生成元ファイルを編集した上で再生成する。
 - 動作検証は、`dotfiles-development`「開発手順」に示された特定ファイル限定の実行形式を用い、SSOTテストを含めて実施する。
 
@@ -131,7 +131,7 @@ description: >
 
 ## agent-basicsとの責務境界
 
-成果物の品質基準は`agent-basics/skills/`へ配置し、toolkit側からは品質スキルと自身の運用契約を参照する。basics側には常駐フック、MCP、ホームディレクトリ向けの運用規範を含めない。basicsのオリジナルマニフェストは`agent-basics/.claude-plugin/plugin.json`であり、掲載原本は同一marketplace内のagent-basicsエントリである。独立したバージョン番号と説明文（description）の2箇所を揃え、ルートマニフェストおよびCodexマニフェストは既存の生成スクリプトで再生成する。toolkitのClaude依存関係の配列を、Agent Pluginsのルートマニフェストへ複製することは避ける。
+成果物の品質基準は`agent-basics/skills/`へ配置し、toolkit側からは品質スキルと自身の運用契約を参照する。basics側には常駐フック、MCP、ホームディレクトリ向けの運用規範を含めない。basicsのオリジナルマニフェストは`agent-basics/.claude-plugin/plugin.json`であり、掲載原本は同一marketplace内のagent-basicsエントリである。独立したバージョン番号と説明文（description）の2箇所を揃え（版数は「バージョン更新」の手順で`--plugin agent-basics`を指定して更新する）、ルートマニフェストおよびCodexマニフェストは既存の生成スクリプトで再生成する。toolkitのClaude依存関係の配列を、Agent Pluginsのルートマニフェストへ複製することは避ける。
 
 `agent-basics/`の文書を編集したときは、agent-basicsだけを導入したエージェントを読者として単体利用を確かめる。本文中の用語、手順、参照先が、agent-basicsの中で定義されているか一般的な語であるかを1つずつ確かめる。agent-toolkitの工程名、WI系の語、`atk`の操作、役割文書や`share/`の名前などを前提なしに使っていれば、一般的な語へ置き換えるか、プロジェクトがその運用を定める場合に従う条件付きの記述にする。agent-toolkitの判断に今も使う内容は、agent-toolkit側の同名スキルの参照資料へ移す。参照先の実在とagent-toolkitの名前空間・コマンドへの依存は`agent_basics_standalone_invariant_test.py`で確かめられる。新しく持ち込んだ未定義の用語は、この確認で捉える。
 
