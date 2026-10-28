@@ -461,6 +461,11 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             raise ValueError("sourceは文字列である必要がある")
         delegated = is_delegated(os.environ)
         content = compose_session_start(source, delegated=delegated, host=host)
+        from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        review_notice = run_skill_batch.hook_request(payload, host=host) if host in {"claude", "codex"} else None
+        if review_notice is not None:
+            content = f"{content}\n\n{_llm_notice(review_notice)}" if content else _llm_notice(review_notice)
         session_id = payload.get("session_id")
         if not delegated and host == "claude":
             identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))

@@ -91,6 +91,9 @@ def _record_activity(payload: object, *, output: str = "", returncode: int = 0) 
     with contextlib.suppress(Exception):
         activity = importlib.import_module("agent_toolkit._common.session_activity")
         activity.record_activity(payload, output=output, returncode=returncode)
+        if payload.get("hook_event_name") == "UserPromptSubmit":
+            review = importlib.import_module("agent_toolkit._atk.run_skill_batch")
+            review.hook_request(payload, host="codex" if os.environ.get("CODEX_THREAD_ID") else "claude")
 
 
 def main(argv: list[str]) -> int:

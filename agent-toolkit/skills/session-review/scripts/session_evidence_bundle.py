@@ -40,6 +40,8 @@ from session_evidence_warn import (
     _warning_collection_events,
 )
 
+from agent_toolkit._common import session_review
+
 _BUNDLE_SCAN_FILENAMES = (
     "timeline.jsonl",
     "warnings.jsonl",
@@ -68,6 +70,8 @@ def _bundle_events(
     unresolved: list[_UnresolvedRecord],
     directory: Path,
     compaction_record_dir: Path,
+    *,
+    after: Path | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """4走査を1回の記録読み込みで行い、走査ごとの全量をファイルへ書いて要約だけを返す。
 
@@ -89,29 +93,46 @@ def _bundle_events(
             )
         ], 2
     resolved = directory.resolve()
+    try:
+        scope = session_review.scope_records(collected, after=after)
+    except (OSError, ValueError, KeyError) as error:
+        return [_error_event(str(error), next_action="処理済みscopeと元記録を確認し、範囲を復元して再実行する")], 2
+    session_review.write(resolved / "scope.json", scope)
+    incremental = (
+        [
+            item._replace(records=[row for row in item.records if row.line > scope["records"][item.record_id]["after_line"]])
+            for item in collected
+        ]
+        if after is not None
+        else collected
+    )
     timeline = _default_events(collected, [])
+    if after is not None:
+        timeline = [event for event in timeline if _in_scope(event, scope)]
     metadata = _collection_events(collected, [], recoveries=False)
     warnings = [*metadata, *_warning_collection_events(collected, [])]
-    stats = [*metadata, *_stats_events(collected, compaction_record_dir)]
-    hook_notices = [*metadata, *_hook_notice_events([record for item in collected for record in item.records])]
+    if after is not None:
+        warnings = [event for event in warnings if _in_scope(event, scope)]
+    stats = [*metadata, *_stats_events(incremental, compaction_record_dir)]
+    hook_notices = [*metadata, *_hook_notice_events([record for item in incremental for record in item.records])]
     main_record = next(item for item in collected if item.role == "main")
     candidates = _candidate_events(
         timeline,
         warnings,
-        _hook_notice_candidate_events(collected),
+        _hook_notice_candidate_events(incremental),
         main_record_id=main_record.record_id,
-        adhoc_processing=_adhoc_processing_events(collected),
+        adhoc_processing=_adhoc_processing_events(incremental),
         wi_events=_wi_candidate_events(
-            collected, main_record.record_id.split(":", 1)[1] if main_record.runtime == "opencode" else main_record.path.stem
+            incremental, main_record.record_id.split(":", 1)[1] if main_record.runtime == "opencode" else main_record.path.stem
         ),
-        definition_reads=definition_body_read_events(collected),
+        definition_reads=definition_body_read_events(incremental),
     )
 
     candidate_evidence = _write_candidate_evidence_files(
         resolved, _candidate_evidence_events(collected, candidates, timeline, warnings, hook_notices)
     )
     events: list[dict[str, Any]] = []
-    scans = (timeline, warnings, stats, hook_notices, candidates, candidate_evidence, _conversation_events(collected))
+    scans = (timeline, warnings, stats, hook_notices, candidates, candidate_evidence, _conversation_events(incremental))
     for filename, scan_events in zip(_BUNDLE_SCAN_FILENAMES, scans, strict=True):
         path = resolved / filename
         path.write_text(
@@ -121,10 +142,12 @@ def _bundle_events(
         events.append({"kind": "bundle-file", "path": str(path), "count": len(scan_events)})
     comparison_path = resolved / "comparison-materials.jsonl"
     comparison = comparison_material_events(collected)
+    if after is not None:
+        comparison = [event for event in comparison if _in_scope(event, scope)]
     comparison_path.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n" for event in comparison), encoding="utf-8")
     events.append({"kind": "bundle-file", "path": str(comparison_path), "count": len(comparison)})
     resource_path = resolved / "resource-usage.jsonl"
-    resources = resource_usage_events(collected)
+    resources = resource_usage_events(incremental)
     resource_path.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n" for event in resources), encoding="utf-8")
     events.append({"kind": "bundle-file", "path": str(resource_path), "count": len(resources)})
     candidate_items = [item for item in candidates if item.get("kind") == "candidate"]
@@ -148,6 +171,20 @@ def _bundle_events(
     events.extend(_unresolved_events(unresolved))
     events.extend(_recovery_events(collected))
     return events, 0
+
+
+def _in_scope(event: dict[str, Any], scope: dict[str, Any]) -> bool:
+    """過去の入力を文脈に残し、元行または結果行が新しい事象だけを分析する。"""
+    record = event.get("record")
+    entry = scope["records"].get(record) if isinstance(record, str) else None
+    if entry is not None:
+        positions = [event.get(name) for name in ("line", "result_line")]
+        return any(isinstance(line, int) and line > entry["after_line"] for line in positions)
+    if event.get("kind") == "record-provenance":
+        return True
+    return any(
+        _in_scope(item, scope) for name in ("locators", "calls") for item in event.get(name, []) if isinstance(item, dict)
+    )
 
 
 def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:

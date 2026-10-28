@@ -118,7 +118,7 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 - `last_hook_session_title`: UserPromptSubmitのコマンドhookが設定したセッション名。現在のセッション名が空であるか、この値と一致している場合に限り、新しい種別や計画名への更新を許可する。同hookが通常状態ファイルへ排他ロック下で保存する。通常状態ファイルと同様の保持期限および`clear`のタイミングで消去される
 - `session_title_kind`: PostToolUse(Skill)、およびスキルの手動起動を受け取ったUserPromptSubmitが記録する命名用の種別（`process-wi`、`single-lane`、`add-awi`）。UserPromptSubmitのコマンドhookがセッション名を選択する際に参照する。process-loopの環境識別印と会話IDが一致している場合は`process-wi`を優先する。生存期間は通常状態ファイルと同一とする
 
-## 振り返り・モード系
+## [振り返り](../../session-review-batch/SKILL.md)・モード系
 
 - `process_wi_skill_invoked`: process-wiスキルの起動状態を示すフラグ。PostToolUse(Skill)およびUserPromptSubmitが記録し、`atk agents-exit-session`の機械可読な応答を受け取った時点で偽に戻す。セッション終了まで保持する
 - `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が、`atk agents-exit-session`の実行およびその機械可読な応答を記録する。

@@ -24,6 +24,12 @@ from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
+@pytest.fixture(autouse=True)
+def _disable_review_model_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """規範配送の試験はモデルを起動せず、起動要求自体はbatchの結合試験で検証する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
+
+
 @pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
 def test_session_start_reacquires_plugin_inventory_for_the_same_session(tmp_path, monkeypatch, capsys, source):
     """同IDの再起動でも最初だけ再取得し、次hookは一覧を共有して他の状態を保つ。"""

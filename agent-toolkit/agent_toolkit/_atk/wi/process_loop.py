@@ -5,6 +5,7 @@ import dataclasses
 import json
 import os
 import pathlib
+import shlex
 import sys
 import time
 import uuid
@@ -416,7 +417,8 @@ def _run_loop(
     startup_hash = _update.code_hash(dotfiles_root / "agent-toolkit") if dotfiles_root else None
     last_alert_checks: dict[str, float | None] = {}
     mise_refreshed: float | None = None
-    print("atk wi process-loop 常駐モード開始。Ctrl+Cで終了。", flush=True)
+    once = getattr(args, "once", False)
+    print("atk wi process-loop 1回処理開始。" if once else "atk wi process-loop 常駐モード開始。Ctrl+Cで終了。", flush=True)
     try:
         while not _control.consume_process_loop_abort():
             repositories = _config.resolve_configured_repositories()
@@ -432,6 +434,8 @@ def _run_loop(
                 mise_refreshed = time.monotonic()
             print(f"private-notesを同期し、登録した{len(repositories)}件のリポジトリのWIを取得しています。", flush=True)
             if not _watch.pull_private_notes(private_notes):
+                if once:
+                    raise SystemExit(1)
                 print("同期を再試行するまで変更検知を待機します。", flush=True)
                 _wait_for_changes(private_notes)
                 continue
@@ -464,12 +468,32 @@ def _run_loop(
                         print(f"アラート監視により{repository.repo_id}へ{submitted}件のAWIを投入しました。", flush=True)
                         snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
                 except (OSError, ValueError) as error:
-                    _log.append("repository_alert_failed", target_repo=repository.repo_id, detail=str(error))
-                    print(f"{repository.repo_id}のアラート確認に失敗しました: {error}", flush=True)
+                    retry = (
+                        "`atk wi process-loop --once`でDependabotを含む確認を再試行する"
+                        if once
+                        else "Dependabotを含む自動確認は常駐の次の取得時に再試行する"
+                    )
+                    next_action = (
+                        f"{_log.log_path()}のrepository_alert_failedを確認し、原因の解消後に"
+                        f"`atk wi check-alerts --target-repo {shlex.quote(str(repository.worktree))} "
+                        f"--forge {args.alert_forge}`でCI失敗を再確認する。"
+                        f"{retry}"
+                    )
+                    _log.append(
+                        "repository_alert_failed", target_repo=repository.repo_id, detail=str(error), next_action=next_action
+                    )
+                    _next_action.report(
+                        f"{repository.repo_id}のアラート確認に失敗しました: {error}",
+                        next_action=next_action,
+                        stream=sys.stdout,
+                    )
             launch_inputs, skipped = _launch_plan(snapshots, explicit, alerts)
             for repo_id in skipped:
                 _gate.report_skip(repo_id)
             if not launch_inputs:
+                if once:
+                    print("今回処理できる対象は0件です。", flush=True)
+                    raise SystemExit(1 if skipped else 0)
                 print(
                     "起動を見送った対象を除き処理対象が0件のため変更検知を待機します。"
                     if skipped
@@ -481,6 +505,8 @@ def _run_loop(
                     _update.check_and_restart_on_update(dotfiles_root, startup_hash, sys.argv)
                 continue
             if not _watch.wait_for_start_permission(private_notes, target_ids, gate):
+                if once:
+                    raise SystemExit(1)
                 return
             if _config.resolve_configured_repositories() != repositories:
                 # 起動前の登録変更は次の取得へ渡し、新集合の同期・監査・A/B判定をやり直す。
@@ -495,6 +521,8 @@ def _run_loop(
                 if _updated:
                     mise_refreshed = time.monotonic()
                 if not ready:
+                    if once:
+                        raise SystemExit(1)
                     print("同期を再試行するまで変更検知を待機します。", flush=True)
                     _wait_for_changes(private_notes)
                     continue
@@ -502,7 +530,7 @@ def _run_loop(
             if _config.resolve_configured_repositories() != repositories:
                 print("登録先の変更を検知したため、WIを取得し直します。", flush=True)
                 continue
-            launch_inputs, _skipped = _launch_plan(snapshots, explicit, alerts)
+            launch_inputs, skipped = _launch_plan(snapshots, explicit, alerts)
             for repo_id, current in tuple(launch_inputs.items()):
                 if current.alerts is None:
                     # 起動時の未判定アラートを基準に記録し、終了後に増えたアラートだけを新しい入力として扱う。
@@ -511,6 +539,9 @@ def _run_loop(
             if args.resume is not None:
                 launching = [snapshot for snapshot in launching if snapshot.repository.repo_id in explicit]
             if not launching:
+                if once:
+                    print("開始待機の間に処理対象が無くなったため終了します。", flush=True)
+                    return
                 print("開始待機の間に処理対象が無くなったため、WIを取得し直します。", flush=True)
                 continue
             names = [snapshot.repository.repo_id for snapshot in launching]
@@ -521,8 +552,21 @@ def _run_loop(
             # --auto-resumeも既存の共通CLI契約どおり初回だけ有効とする。
             args.auto_resume = False
             if "abort" in results:
+                if once:
+                    raise SystemExit(1)
                 return
             print("今回起動した全担当が終了しました。", flush=True)
+            if once:
+                failed = {repo_id: result["status"] for repo_id, result in results.items() if result["status"] != "completed"}
+                if failed:
+                    _next_action.report(
+                        f"未完了の対象があります: {json.dumps(failed, ensure_ascii=False)}",
+                        next_action=(
+                            f"{_ownership.ownership_directory()}の対象別の所有記録とrounds配下の結果を確認し、原因の解消後に"
+                            "`atk wi process-loop --once --auto-resume`で再開する"
+                        ),
+                    )
+                raise SystemExit(1 if failed or skipped else 0)
             if not args.no_update:
                 print("process-loopを再起動します。", flush=True)
                 _update.restart_process_loop(
@@ -531,6 +575,8 @@ def _run_loop(
             _wait_for_changes(private_notes, owner_wait=any(result["status"] == "owner_wait" for result in results.values()))
     except KeyboardInterrupt:
         print("Ctrl+Cを検知しました。process-loopを終了します。")
+        if once:
+            raise SystemExit(1) from None
 
 
 def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:

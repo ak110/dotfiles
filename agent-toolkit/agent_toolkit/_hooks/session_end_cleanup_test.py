@@ -23,6 +23,7 @@ def _isolated_state_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     """親の状態準備とSessionEnd子プロセスが使う固定保存先をそろえる。"""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "state"))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
 
 
 def _run(payload_text: str, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:

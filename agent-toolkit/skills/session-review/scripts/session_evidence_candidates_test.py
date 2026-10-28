@@ -1333,12 +1333,16 @@ def test_human_intervention_after_process_loop_start_remains_candidate(
     assert candidates[-1]["excluded"] == expected_excluded
 
 
-def test_process_loop_goal_matches_launch_prompt_body() -> None:
-    """起動の判定に使う目的文が、process-loopが子セッションへ渡す目的文と一致する。"""
-
-    prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access
-
-    assert PROCESS_WI_GOAL_BODY in prompt
+@pytest.mark.parametrize("prompt", [PROCESS_WI_GOAL_BODY, _pl_session.build_process_loop_prompt()])
+def test_process_loop_goal_matches_launch_prompt_body(prompt: str) -> None:
+    """旧目的文と新統括の目的文を初期要求として扱い、後続の人間の介入を保持する。"""
+    timeline = [
+        {"kind": "user", "record": "main", "line": 1, "text": "<atk-auto>規範", "runtime_inserted": True},
+        {"kind": "user", "record": "main", "line": 2, "text": "# AGENTS.md instructions\n" + prompt},
+        {"kind": "user", "record": "main", "line": 3, "text": "途中で割り込んだ人間の指摘"},
+    ]
+    candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+    assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
 
 
 @pytest.mark.parametrize(

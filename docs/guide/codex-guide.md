@@ -11,6 +11,12 @@ Codex向け`AGENTS.md`、共有ルールの同期、共有スキルのリンク�
 ## `atk wi process-loop`によるAWIの継続処理
 
 共通の起動、複数リポジトリ登録、待機、状態確認、停止、次回への指示、UWI回答は[agent-toolkit導入ガイド](claude-code-guide.md#推奨ワークフロー)を参照する。
+`atk wi process-loop`は登録全体の統括担当を1つ起動し、`agent-toolkit:process-wi-all-repos`を実行する。
+少数WIのリポジトリは統括が直接処理し、候補が11件以上のリポジトリだけをprocess-wi担当へ委譲する。
+
+登録全体を非常駐で1回処理する場合は`agent-toolkit:process-wi-all-repos`を手動起動する。同スキルは公開CLIの`atk wi process-loop --once`へ接続する。端末から直接実行しても、通常常駐と同じ対象取得・所有・worktree準備・結果検収・回収を1集合に対して行う。
+対象が0件なら待機せず終了する。未完了・所有待ち・準備失敗が残れば非0で終了するため、表示された記録を確認してから`atk wi process-loop --once --auto-resume`で再開する。
+手動起動元はCLIの終了を観測して結果を返し、完了報告とUWIの保存は統括が1回行う。対象リポジトリの規範とフックの信頼確認は通常常駐と同じ条件で適用する。
 
 Codexで処理する場合は、起動前に候補列を設定する。
 
@@ -129,7 +135,11 @@ CodexのStopは説明言語を判定する。
 completion-reportの起動忘れ通知と報告本文の判定は対象外である。
 工程の完遂と報告は`agent-toolkit:completion-report`の規範に従ってエージェントが確かめる。
 手動で振り返る場合は`$agent-toolkit:session-review`を実行する。
-通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
+通常の作業完了時は`agent-toolkit:completion-report`で作業結果を報告する。
+振り返り待ちはSessionStartで記録され、非活動になった対象を`agent-toolkit:session-review-batch`が非同期でまとめて処理する。
+自動起動は既定で有効であり、`atk config set session_review_auto_start false`で停止できる。
+停止中も待ち記録は保持され、`$agent-toolkit:session-review-batch`で手動処理できる。
+手動session-reviewの引数は、セッション全体の分析へ追加する着眼点として扱う。
 
 ## Codex CLI本体
 

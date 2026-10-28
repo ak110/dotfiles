@@ -16,7 +16,7 @@
    - `## 検証`に記載されたコマンドを実行し、`agent-toolkit:commit`の規定に従ってコミットを作成する。
 2. `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って実行レビューを起動し、その結果を受領する。完成条件の証拠は、レビュー担当者が返却内の条件別判定行として記述する。画面表示に変更がある場合は、同一の対象HEADに対してユーザビリティレビューを並列で起動し、指摘修正後も同様に並列で再判定する。指摘事項はメインエージェント自身が修正し、修正コミットの履歴統合は`agent-toolkit:commit`の`references/history-rewrite.md`「修正方法の選択」に従って処理する。
 3. 完了へ進む前に、実行レビューにおける未解決の指摘が0件であること（画面差分がある場合はユーザビリティレビューの結果が`合格`または`未確定`であることも含む）を確認する。レビュー返却の`想定外事象:`で報告された変更差分外の既存不良についても、同parentの手順に沿って適切な処置工程へ引き渡す。リポジトリ全体の自動チェックやCIの判定は、後続の公開工程で実施する。
-4. `atk run-script plan-progress --`を実行して完了判定を進捗ログに記録し、`atk plans commit <計画ファイル名>`で計画バンドルを保存する。合意済みの公開範囲に基づき、`agent-toolkit:commit`の`references/publish.md`に従って変更を公開し、`agent-toolkit:completion-report`を用いて完了報告を行う。
+4. `atk run-script plan-progress --`を実行して完了判定を進捗ログに記録し、`atk plans commit <計画ファイル名>`で計画バンドルを保存する。合意済みの公開範囲に基づき、`agent-toolkit:commit`の`references/publish.md`に従って変更を公開し、`agent-toolkit:completion-report`へ成果・検証・公開結果を集約して作業完了報告を送達し、同スキルが定める終了処理まで行う。計画保存や公開成功の要約だけで終了せず、同期の振り返りは起動しない。
 
 ## 名指し参照の読込方法
 

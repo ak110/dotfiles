@@ -99,6 +99,11 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
         if mode == "other":
             subprocess.run(["git", "-C", str(notes), "add", "."], check=True, stdout=subprocess.DEVNULL)
             subprocess.run(["git", "-C", str(notes), "commit", "-qm", "other report"], check=True)
+if os.environ.get("AGENT_TOOLKIT_SESSION_REVIEW_BATCH"):
+    manifest_path = pathlib.Path(os.environ["AGENT_TOOLKIT_SESSION_REVIEW_BATCH"])
+    manifest = json.loads(manifest_path.read_text())
+    manifest["analysis_succeeded"] = True
+    manifest_path.write_text(json.dumps(manifest))
 if os.environ.get("FAKE_SESSION_LIMIT_COUNT"):
     counter = record_dir / "session-count"
     count = int(counter.read_text()) if counter.exists() else 0
@@ -868,3 +873,34 @@ def test_usage_limit_outside_wait_policy_returns_failure(
     assert "異常終了" in err
     assert len(_records(engine_env, "session")) == 1
     assert not sleeps
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, monkeypatch, capsys, engine) -> None:
+    """2会話の実prepareから偽ホスト・同期済み報告・範囲確定まで公開CLIで検証する。"""
+    from agent_toolkit._common import session_review  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
+    for name in ("one", "two"):
+        transcript = tmp_path / f"{name}.jsonl"
+        transcript.write_text(
+            json.dumps({"type": "user", "message": {"role": "user", "content": "初期要求"}}) + "\n", encoding="utf-8"
+        )
+        session_review.record(
+            {
+                "hook_event_name": "SessionStart",
+                "session_id": name,
+                "transcript_path": str(transcript),
+                "cwd": str(engine_env.repo),
+            },
+            host="claude",
+            target_repo="https://example.com/team/repo",
+        )
+    code, _out, error = _run(["--args", "manual", session_review.BATCH_SKILL], capsys)
+    assert code == 0, error
+    assert not session_review.pending()
+    assert len(_records(engine_env, "session")) == 1
+    manifests = list((session_review.directory() / "runs").glob("*.json"))
+    assert len(manifests) == 1
+    value = session_review.read(manifests[0])
+    assert value["status"] == "completed" and len(value["prepared"]) == 2

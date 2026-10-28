@@ -14,6 +14,7 @@ optional_inputs:
 - レビュー指摘管理表
 - CI記録
 - 環境構築
+- 先行調査記録
 writes_worktree: true
 continuations:
 - instruction: 実装開始
@@ -86,6 +87,10 @@ continuations:
 | ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
 
 ## 入力
+
+`先行調査記録`を受け取ったレーン担当は、取得版、対象パス、事実と仮定、未確認部分を読み、専用worktreeの現行版との差分から更新する調査を確定する。
+計画下書きは`agent-toolkit:process-wi`の`references/lane-planning.md`「計画の起草」に従って正式化し、自己監査と構造検査を終えてから実装する。
+記録の省略時は先行調査なしとして扱い、取得失敗や未完了部分は通常の調査で補う。
 
 `レーン担当`は、`選定結果の出力先ファイル`から`レーン`が自身の`レーン識別子`と一致する`選定`項目のみを読み取り、AWIファイル名、順序、`鮮度`、`担当モデル`、`プロジェクト規範の指定`、上流投入に関する3行、および`プロジェクト固有の公開後の操作の順序`を入力として受け取る。書式とデフォルト値は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-format.md`の`## 選定結果の書式`に従い、省略されている行はデフォルト値として処理する。該当項目が存在しない場合、同一AWIが重複している場合、あるいは必須フィールドが所定の形式から外れている場合は、推測で処理を進めずに「続行できない理由」を返す。
 

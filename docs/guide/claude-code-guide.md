@@ -347,9 +347,9 @@ APIキー、Claude Codeの設定、Bedrock・Vertexなどをそのまま利用�
 
 新キーを`atk config set`または対応する環境変数で明示した役割には、envファイルの有無にかかわらず以下の方針を適用する。
 新キーが未指定でも、envファイルを設定した会話には役割別接続管理を適用する。
-通常の`atk wi process-loop`のオーケストレーター、`all-repos`のリポジトリ担当、および`agents_server`のClaude委譲へ適用する。
+`atk wi process-loop`の統括担当と、`agents_server`のClaude委譲へ適用する。
 ユーザーが直接起動するClaude Code、組み込みAgentとfork、`atk run-skill`、`atk commit`、Codexの接続先は対象外である。
-`all-repos`のリポジトリ担当はオーケストレーターとして扱う。
+統括から起動するprocess-wi担当もオーケストレーターとして扱う。
 
 | 設定 | `true` | `false` |
 | --- | --- | --- |
@@ -465,9 +465,11 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 ## 推奨ワークフロー
 
 `/agent-toolkit:process-wi`を会話から起動する場合も、`atk wi process-loop`から起動する場合も、初期選定が1レーンなら、専用worktreeを持つ1人の担当エージェントが計画・実装・独立した実行レビューの調整・統合を続ける。
-`all-repos`で複数リポジトリを扱う場合は、リポジトリごとにこの担当を置く。
+`atk wi process-loop`は登録全体を処理する統括担当を1つ起動する。
+統括は少数WIのリポジトリを直接処理し、既存のレーン数上限が2以上のリポジトリだけを別担当へ委譲する。
 ユーザーと会話する起動元のエージェントが、判断を要する事項と最終結果をユーザーへ届ける。
-`all-repos`では起動元がエージェントではないprocess-loop（`atk wi process-loop`）のため、各リポジトリ担当がその役を担い、確認のUWIと完了報告・振り返りの報告用UWIでユーザーへ届ける。
+登録全体の処理では統括が確認のUWIを整理し、process-wiの1回の実行について完了報告と報告用UWIを1回届ける。
+振り返りは作業の終了後に別の非同期バッチがまとめて行う。
 各利用形態で、エージェントは実装前に使う操作・入力・期待する結果を決め、実装担当がその操作で結果を確かめる。
 実装担当は確認できた結果と未確認事項、要求が変わった場合の判断を、実装を担当していないレビュー担当へ渡す。
 初回の独立した実行レビューは詳細点検を担い、レビュー限定基準の違反も指摘として受け取る。再レビューは前回指摘、修正差分と直接影響範囲を確認する。
@@ -543,6 +545,16 @@ atk wi process-loop
 
 オプションは`atk wi process-loop --no-update`のように指定する。
 処理対象は`process_loop_repositories`の登録全体となる。
+常駐で処理しないリポジトリへWIを投入する場合は、そのリポジトリを登録する必要はない。
+非常駐で登録全体を1回処理する場合は`/agent-toolkit:process-wi-all-repos`を実行する。同スキルは次の公開CLIへ接続し、常駐と同じ対象取得・所有・worktree準備・結果検収・回収を1集合に対して行う。端末から直接実行してもよい。
+
+```bash
+atk wi process-loop --once
+```
+
+対象が0件なら待機せず終了する。未完了・所有待ち・準備失敗が残る場合は非0で終了するため、表示された記録を確認してから`atk wi process-loop --once --auto-resume`で再開する。
+手動スキルの起動元はCLIの終了を観測して結果を返し、完了報告とUWIの保存は統括が1回行う。
+対象リポジトリだけを処理する場合は`/agent-toolkit:process-wi`または`/agent-toolkit:single-lane-process`を実行する。
 
 停止要求の有無は`status`で確認する。停止要求と次回の処理への指示も同じOSアカウントで実行する。
 
@@ -553,22 +565,23 @@ atk wi process-loop instruct '次の処理へ適用する指示'
 ```
 
 `abort`は処理中のセッションが終わった時点でループを止める要求を保存する。
-`instruct`は単一リポジトリの起動では次の処理会話へ1回だけ指示を渡す。
-all-reposでは常駐プログラムが次の起動集合の開始時に1回だけ指示を受け取り、その集合で起動する各リポジトリ担当へ同じ指示を渡す。
-各担当は自分の対象リポジトリに関する部分を適用する。
+`instruct`は次の統括担当へ1回だけ指示を渡す。
+統括は対象リポジトリに関する部分を適用し、委譲が必要な担当へ該当部分を引き継ぐ。
 
-中断した処理を再開する場合は、`atk wi process-loop --resume`を実行し、選択画面から会話を選ぶ。session IDが分かる場合は`--resume <session-ID>`で直接指定できる。all-reposでは対象ごとの担当session IDを指定する。
-登録が空配列なら待機し、登録外のリポジトリへのWI投入はできる。
+中断した処理を再開する場合は、`atk wi process-loop --resume <session-ID>`へ統括の会話IDを指定する。
+`--auto-resume`では保持された未完了の対象を再開する。
+登録が空配列なら通常常駐は待機し、`--once`は終了する。登録外のリポジトリへのWI投入はできる。
 登録先を解決できない場合は表示された対象を直して再実行する。
 同じoriginの登録は先頭へまとめ、登録変更は次の取得へ反映する。
 
-all-reposは一括取得した候補を各対象cwdの通常delegateへ渡し、担当の起動・所有・完遂判定・続行指示を行う。
-各担当は対象リポジトリのprocess-wiのメインとして、ユーザーへの確認、完了報告と振り返りまで自ら行う。
-対象の規範・準備・監査・実装・Git・公開は各担当が扱い、レーン上限もリポジトリごとの候補数から求める。
-開始前の猶予は登録対象全体に作用し、開始後は1担当の失敗や所有待ちで別担当を止めない。
+常駐は一括取得した候補と準備先worktreeを統括へ渡し、所有・完遂判定・続行をリポジトリごとに管理する。
+統括は処理前に対象の規範とスキルを明示的に読み、少数WIを直接処理する。
+候補が11件以上のリポジトリは、そのworktreeのprocess-wi担当へ委譲する。
+計画・監査・実装・検証・レビュー・Git操作・公開は、リポジトリごとに分離する。
+開始前の猶予は登録対象全体に作用し、開始後の失敗や所有待ちは対象リポジトリごとに扱う。
 通常起動と同じoriginの処理所有を共有し、対象のWorktreeCreate/Removeがあれば作成先と撤去へ反映する。
 設定済みhookが失敗した場合は診断と途中資源を保持する。
-再開は記録されたall-repos担当のsession IDを`--resume`へ指定する。
+再開は記録された統括担当のsession IDを`--resume`へ指定する。
 詳細は[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)を参照。
 
 CI失敗だけを1回確認してAWIへ投入する場合は、エージェントが次のコマンドを呼べる。対象を省略すると現在の作業ツリーを使う。
@@ -864,12 +877,13 @@ atk plans commit "<一覧で確認した計画ファイルの絶対パス>"
 - `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
 - `atk agents-exit-session`: ユーザー指示時または自律モードのスキル完遂時に、現在のClaude CodeまたはCodexの対話セッションへ終了を要求するCLI。管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeでは、ターンの完了後に`/exit`を実行してセッション記録の末尾まで残す。moduleが読み込まれていないClaude CodeとCodexでは従来のプロセス停止方式を使う。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
-  `all-repos`のリポジトリ担当は実行せず、常駐側への最終返却でターンを終える。常駐側が返却を受け取る前に担当を止めないためである
+  統括から委譲されたリポジトリ担当は実行せず、統括への最終返却でターンを終える
 - `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、引数は取らず追加指示なしでcompactを予約する。圧縮後は注入された要約から再開し、不足する情報だけを既存の担当記録・成果物・状態照会から取得する。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に同じ担当と保存結果から継続する
 - `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。途中報告と最後の回答を運び、画面へMarkdownとして表示する。完全名は`mcp__agent-toolkit__send_to_user`で、初回から読み込む定義を登録する。遅延一覧にだけ現れる場合は`ToolSearch`の`select:mcp__agent-toolkit__send_to_user`で読み込む。ツール呼び出しより前の地の文は要約に置き換わることがあるため、このツールで送る。確認質問には既存の質問手段を使う。moduleを読み込まないClaude CodeとCodexでは、ターンを終える本文へ書く
-- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。適用するプロジェクト規範が本スキルを不要と定める場合は、スキルを起動せず`references/termination-evidence.md`を読む。`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ`omit-completion`の根拠を記録する。省略は指定した作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務（`all-repos`のリポジトリ担当を除く）は保つ。ClaudeのStopフックは起動忘れを非遮断で通知し、CodexのStopではこの通知を扱わない。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめる。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
+- `agent-toolkit:completion-report`: メインの作業完了時に、成果・検証結果・未達事項を固定形式で報告し、公開と必要な終了操作まで完遂する。振り返りは別の非同期バッチが行う。適用するプロジェクト規範が本スキルを不要と定める場合は、スキルを起動せず`references/termination-evidence.md`を読む。`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ`omit-completion`の根拠を記録する。省略は指定した作業だけへ作用し、別作業の起動不足と、process-loopの統括が終了時に`atk agents-exit-session`を実行する義務は保つ。ClaudeのStopフックは起動忘れを非遮断で通知し、CodexのStopではこの通知を扱わない。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめる。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う
-- `agent-toolkit:session-review`: セッションで交わされた会話の流れと問題候補を調べ、原因と恒久対策を確定して、対策を作業依頼（AWI）として投入する。手動または`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
+- `agent-toolkit:session-review`: 現在のセッション全体を手動で振り返り、原因と恒久対策を確定してAWIとして投入する。引数は全体の分析へ追加する着眼点とする
+- `agent-toolkit:session-review-batch`: 振り返り待ちのうち非活動のセッションをまとめて分析し、共通原因を整理して対策AWIと1件の報告UWIを保存する。自動起動は既定で有効で、`atk config set session_review_auto_start false`で停止できる。停止中も待ちを保持し、SessionStartに待ち件数と手動操作を表示する。手動では`/agent-toolkit:session-review-batch`を実行する。自動・手動とも同じOSアカウントで同時に1担当だけが実行される。失敗対象は未回答の失敗報告UWIがある間、自動処理から外れ、手動では再実行できる。投入AWIは登録から24時間後に処理可能となる
 
 ## 更新と削除
 

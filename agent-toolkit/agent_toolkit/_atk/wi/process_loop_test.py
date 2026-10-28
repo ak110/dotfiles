@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import pathlib
+import subprocess
 from typing import Any
 
 import pytest
@@ -302,6 +303,166 @@ def test_control_storage_is_independent_of_repository() -> None:
     assert not control.consume_process_loop_abort()
     control.cmd_process_loop_instruct_cancel()
     assert not log.read_instructions()
+
+
+@pytest.mark.parametrize("failure", [OSError("照会用ファイルを読めない"), ValueError("応答の形式が不正")])
+@pytest.mark.parametrize("once", [False, True])
+def test_public_loop_alert_failure_has_diagnostics_and_retry(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: Exception, once: bool
+) -> None:
+    """アラート照会例外でも常駐を継続し、対象付きの診断取得と再確認を案内する。"""
+    _notes, snapshots = _targets(tmp_path, monkeypatch, (0,))
+    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    checks = iter((False, True))
+    monkeypatch.setattr(control, "consume_process_loop_abort", lambda: next(checks))
+    monkeypatch.setattr(loop, "_wait_for_changes", lambda *_args, **_kwargs: False)
+
+    def fail(*_args: Any, **_kwargs: Any) -> None:
+        raise failure
+
+    monkeypatch.setattr(loop._alerts, "check_process_loop_alerts", fail)  # pylint: disable=protected-access
+    with pytest.raises(SystemExit) as exited:
+        atk.main(["wi", "process-loop", "--no-update", *(["--once"] if once else [])], home=tmp_path)
+    assert exited.value.code == 0
+    output = capsys.readouterr()
+    text = output.out + output.err
+    assert str(failure) in text
+    assert "次の操作:" in text
+    assert str(log.log_path()) in text
+    assert "atk wi check-alerts --target-repo" in text
+    assert str(snapshots[0].repository.worktree) in text
+    assert "再確認" in text
+    assert ("今回処理できる対象は0件" if once else "変更検知を待機") in text
+    assert "repository_alert_failed" in log.log_path().read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("status", ["completed", "incomplete", "blocked", "owner_wait", "prepare_failed"])
+def test_public_once_finishes_one_collection(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, status: str) -> None:
+    """1集合の未完了継続と所有判定を保ち、次のWI集合を起動しない。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
+    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    calls = 0
+
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        data = json.loads(_manifest(prompt).read_text(encoding="utf-8"))
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "once-coordinator"
+        kwargs["on_session_started"]("once-coordinator")
+        if status == "completed":
+            (notes / "2026/10/repo-0-0.md").unlink()
+            (notes / "2026/10/new.md").write_text(
+                "---\nstate: inbox\ntype: awi\ntarget_repo: example.test/team/repo-0\n---\n\n# 次の集合\n", encoding="utf-8"
+            )
+        pathlib.Path(data["result_file"]).write_text(
+            json.dumps({"repositories": {snapshots[0].repository.repo_id: {"status": status}}}), encoding="utf-8"
+        )
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    if status == "prepare_failed":
+        monkeypatch.setattr(loop._worktree, "prepare_session_target", lambda *_args, **_kwargs: None)  # pylint: disable=protected-access
+    owner = (
+        ownership.try_acquire(snapshots[0].repository.repo_id, worktree=snapshots[0].repository.worktree)
+        if status == "owner_wait"
+        else None
+    )
+    try:
+        with pytest.raises(SystemExit) as exited:
+            atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update"], home=tmp_path)
+        assert exited.value.code == (0 if status == "completed" else 1)
+        assert calls == (0 if status in {"owner_wait", "prepare_failed"} else 3 if status == "incomplete" else 1)
+    finally:
+        if owner is not None:
+            ownership.release(owner)
+
+
+@pytest.mark.parametrize("counts", [(), (0, 0)])
+def test_public_once_empty_does_not_wait(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, counts: tuple[int, ...]
+) -> None:
+    """登録対象の候補0件ではモデル・待機・所有を開始しない。"""
+    _targets(tmp_path, monkeypatch, counts)
+    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+
+    def unexpected(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("候補0件で待機または起動した")
+
+    monkeypatch.setattr(loop, "_wait_for_changes", unexpected)
+    monkeypatch.setattr(session, "run_process_session", unexpected)
+    with pytest.raises(SystemExit) as exited:
+        atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update"], home=tmp_path)
+    assert exited.value.code == 0
+
+
+def test_public_agy_resume_delivers_current_manifest(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """明示再開でも今回の配送原本と結果保存先を使用し、対象別の完了を検収する。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
+    repository = snapshots[0].repository
+    owner = ownership.try_acquire(repository.repo_id, worktree=repository.worktree, mode="coordinator")
+    assert owner is not None
+    owner = ownership.update_session(owner, "saved-agy-conversation")
+    ownership.release(owner, completed=False)
+    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_args, **_kwargs: ("agy", "model", "medium"))
+    manifests: list[dict[str, Any]] = []
+
+    def execute(
+        argv: list[str], _env: dict[str, str], _cwd: pathlib.Path, **_kwargs: Any
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert argv[argv.index("--conversation") + 1] == "saved-agy-conversation"
+        prompt = argv[argv.index("-i") + 1]
+        manifest = _manifest(prompt)
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        manifests.append(data)
+        target = data["repositories"][0]
+        stored = json.loads(pathlib.Path(target["ownership_record"]).read_text(encoding="utf-8"))
+        assert stored["manifest"] == str(manifest)
+        (notes / "2026/10/repo-0-0.md").unlink()
+        pathlib.Path(data["result_file"]).write_text(
+            json.dumps({"repositories": {repository.repo_id: {"status": "completed"}}}), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(session, "_run_cli_session", execute)
+    with pytest.raises(SystemExit) as exited:
+        atk.main(
+            ["wi", "process-loop", "--once", "--resume", "saved-agy-conversation", "--no-alerts", "--no-update"], home=tmp_path
+        )
+    assert exited.value.code == 0
+    assert len(manifests) == 1
+    assert pathlib.Path(manifests[0]["result_file"]).is_file()
+    stored = json.loads(owner.path.read_text(encoding="utf-8"))
+    assert stored["released"] and stored["completed"]
+
+
+@pytest.mark.parametrize("failure", ["sync", "start_abort", "interrupt"])
+def test_public_once_failure_does_not_wait(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
+    """1回処理の同期失敗・開始前中断・Ctrl+Cは成功にせず、再試行待機も始めない。"""
+    _targets(tmp_path, monkeypatch, (1,))
+    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+
+    def pull(*_args: Any, **_kwargs: Any) -> bool:
+        if failure == "interrupt":
+            raise KeyboardInterrupt
+        return failure != "sync"
+
+    def unexpected(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("失敗・中断後に待機またはモデルを起動した")
+
+    monkeypatch.setattr(loop._watch, "pull_private_notes", pull)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: False)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop, "_wait_for_changes", unexpected)
+    monkeypatch.setattr(session, "run_process_session", unexpected)
+    with pytest.raises(SystemExit) as exited:
+        atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update"], home=tmp_path)
+    assert exited.value.code == 1
 
 
 @pytest.mark.parametrize(

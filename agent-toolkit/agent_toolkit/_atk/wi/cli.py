@@ -882,6 +882,11 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk wi process-loop"])
     loop.set_defaults(_target_repo_multiple=False, _target_repo_allow_all=False, _target_repo_resolved_by_consumer=True)
     loop.add_argument(
+        "--once",
+        action="store_true",
+        help="登録全体の対象集合を1回処理して終了する。対象0件なら待機せず終了し、未完了対象が残れば非0で終了する。",
+    )
+    loop.add_argument(
         "--worktree",
         nargs="?",
         const="process-loop",

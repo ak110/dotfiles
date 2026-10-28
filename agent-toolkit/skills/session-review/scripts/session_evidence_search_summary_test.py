@@ -97,6 +97,28 @@ def test_summary_only_bundle_keeps_saved_files(tmp_path: pathlib.Path, capsys: p
     assert [event for event in summary if event["kind"] in kinds] == [event for event in normal if event["kind"] in kinds]
 
 
+@pytest.mark.parametrize("summary_only", [False, True])
+def test_bundle_scope_tracks_appended_records(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], summary_only: bool
+) -> None:
+    """表示の要約指定によらず、元記録の追記を新しい完全行とdigestへ反映する。"""
+    transcript = _record(tmp_path)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    arguments = [str(transcript), "--bundle", str(bundle)]
+    if summary_only:
+        arguments.append("--summary-only")
+    _query(capsys, arguments)
+    before = json.loads((bundle / "scope.json").read_text(encoding="utf-8"))["records"]["claude:parent"]
+    with transcript.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(timestamped_entry("2026-10-01T00:00:05Z", "追記した要求"), ensure_ascii=False) + "\n")
+    _query(capsys, arguments)
+    after = json.loads((bundle / "scope.json").read_text(encoding="utf-8"))["records"]["claude:parent"]
+    assert before["through_line"] == 4
+    assert after["through_line"] == 5
+    assert after["digest"] != before["digest"]
+
+
 def test_summary_only_warning_deduplication(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """hookの成功記録と追加文脈にある同じ警告を1件と数える。"""
     path = tmp_path / "warnings.jsonl"

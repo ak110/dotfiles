@@ -14,7 +14,6 @@ Stop hookが同スキルの起動不足を理由に処理を遮断した場合�
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/completion-report/SKILL.md#「工程」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 
 ## プロジェクト規範による省略
@@ -44,8 +43,8 @@ Claude Code環境では、`atk run-script termination-evidence -- --context`を�
 規範の解釈と優先順位の適用は、メインエージェントが判断する。
 規範の内容が変更された場合、新たな判断をする場合、あるいは新しい人間入力の後に成果作業が発生した場合は、過去の省略記録を流用せず、改めて判断する。
 省略の記録は指定した作業の起動不足に対してのみ有効であり、別の作業における起動不足や、process-loopにおける`atk agents-exit-session`の実行義務はそのまま残る。
-all-reposのリポジトリ担当は、`agent-toolkit:process-wi`の`references/all-repos-orchestration.md`「担当の役割」に従い、同コマンドを実行する代わりに最終返却してターンを終了する。
-振り返りを起動するかどうかは、適用するプロジェクト規範が振り返りに関して定めている内容に従う（起動しない条件は`SKILL.md`「工程」手順6の列挙を参照）。
+process-wi-all-reposのリポジトリ担当は成果と残工程を統括へ返し、統括が報告を集約し、必要な手順でホストを終了する。
+振り返りは別担当の非同期処理であり、本書の省略判断と通常の終了条件の対象外とする。手動の振り返りを依頼された場合は、その独立した要求を保持する。
 
 ## 中止・置換・待機・技術的不成立
 
@@ -65,4 +64,4 @@ Claude Code環境では、`atk run-script termination-evidence -- --context`を�
 判断の記録は指定した作業にのみ作用し、ユーザーの割り込みと直接関係しない他の作業に関する起動不足は解消されない。
 生成されたStop hookの継続入力や注記はユーザーの元の入力として受理されず、完了の自己申告を記録する操作も用意されていない。
 証拠が取得できない場合、Stop hookは遮断せず、判定不能であった旨を記録する。
-自律モードにおける報告用UWIの保存検収と`atk agents-exit-session`の実行は、Stop hookの判定とは別に、同スキルの手順8と手順9によって定められている。
+自律モードにおける報告用UWIの保存検収と`atk agents-exit-session`の実行は、Stop hookの判定とは別に、同スキルの手順6と手順7によって定められている。

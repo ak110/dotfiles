@@ -654,3 +654,20 @@ def submission_activity(
         tuple(dict.fromkeys(active.values())),
         bool(scan.uncertain_ids & active.keys()),
     )
+
+
+def review_activity(session_ids: Collection[str], *, state_root: pathlib.Path | None = None) -> ActivitySnapshot:
+    """振り返り対象とその子孫の活動だけを、既存の走査結果から返す。"""
+    scan = _scan(
+        excluded_session_ids=None,
+        excluded_pids=None,
+        root=state_paths.state_dir() if state_root is None else state_root,
+        processes=None,
+    )
+    members = session_parents.descendants(set(session_ids), scan.links)
+    active = {session_id: reason for session_id, reason in scan.active.items() if session_id in members}
+    return ActivitySnapshot(
+        frozenset(active),
+        tuple((*scan.general_reasons, *active.values())),
+        bool(scan.general_reasons or scan.uncertain_ids & members),
+    )

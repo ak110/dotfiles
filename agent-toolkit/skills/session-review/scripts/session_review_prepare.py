@@ -34,7 +34,7 @@ from agent_toolkit._atk import managed_temp, run_script
 from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
-from agent_toolkit._common import atomic_file, file_lock
+from agent_toolkit._common import atomic_file, file_lock, session_review
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
@@ -113,6 +113,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="引き継ぎ用の会話の流れと証拠bundleを生成して終了する。候補文書・統計・failure ledgerは更新しない。",
     )
+    parser.add_argument("--after", metavar="PATH", help="前回のscope JSON。処理済み位置より後だけをbatchの分析対象にする。")
     return parser
 
 
@@ -1089,6 +1090,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     if transcript_path is not None and not transcript_path.is_file():
         return _missing("transcript_path")
     target_repo = pathlib.Path(args.target_repo).expanduser().resolve() if args.target_repo is not None else None
+    session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id or args.opencode_session_id)
+    identity = session_review.prepare_identity(
+        "claude" if transcript_path is not None else "codex" if args.codex_thread_id else "opencode", session_id
+    )
     if args.work_dir is not None:
         work_dir = pathlib.Path(args.work_dir).expanduser()
         if not work_dir.is_absolute() or not work_dir.is_dir():
@@ -1111,6 +1116,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
             session_arguments.extend(["--opencode-db", str(pathlib.Path(args.opencode_db).expanduser().resolve())])
     else:
         session_arguments = ["--codex-thread-id", args.codex_thread_id]
+    if args.after is not None:
+        session_arguments.extend(["--after", args.after])
     bundle_dir = work_dir / "bundle"
     bundle_dir.mkdir(exist_ok=True)
     failure, scope_events = _extract_bundle(session_arguments, bundle_dir)
@@ -1246,6 +1253,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         str(item["role"]) for item in conversation if item.get("kind", "utterance") == "utterance"
     )
     record = {
+        **identity,
+        "scope_path": str(bundle_dir / "scope.json"),
         "work_dir": str(work_dir),
         "conversation_path": str(conversation_path),
         "conversation_utf8_bytes": conversation_bytes,

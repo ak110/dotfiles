@@ -533,3 +533,12 @@ def test_check_alerts_help_exposes_finite_operation_without_saving(
     assert "--forge {auto,github,gitlab}" in output.out
     assert output.err == ""
     assert set(tmp_path.rglob("*")) == before
+
+
+def test_run_skill_explains_batch_and_work_directory(capsys) -> None:
+    """既存run-skillからbatchと報告先・cwdの分離を発見できる。"""
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["run-skill", "--help"])
+    output = capsys.readouterr().out
+    assert "--work-dir" in output and "session-review-batch" in output
+    assert "auto/manual" in output and "報告先" in output

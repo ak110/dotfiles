@@ -222,9 +222,8 @@ def _build_session_argv(
             env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
         elif resume_pending:
             argv.append("--continue")
-        else:
-            # /goalはClaude専用のため、境界付き目的文を対話起動へ渡す。
-            argv.extend(("-i", prompt.removeprefix("/goal ")))
+        # 再開時も今回のmanifest・結果保存先を配送する。/goalはClaude専用。
+        argv.extend(("-i", prompt.removeprefix("/goal ")))
         return argv, None
 
     argv = ["codex"]

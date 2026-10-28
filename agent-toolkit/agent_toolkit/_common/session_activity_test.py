@@ -499,3 +499,20 @@ def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatc
         finally:
             resumed.kill()
     assert not list(session_activity.submission_directory(state_paths.state_dir()).glob("*.json"))
+
+
+def test_review_activity_limits_to_target_and_descendants(tmp_path, monkeypatch) -> None:
+    """無関係な会話の活動を除き、対象の実ターン終了と子の活動を既存判定で扱う。"""
+    parent = _transcript(tmp_path, "claude", "root")
+    session_activity.record_activity(
+        {"hook_event_name": "Stop", "session_id": "root", "transcript_path": str(parent)},
+        process=_host("claude"),
+        state_root=tmp_path,
+    )
+    assert not session_activity.review_activity({"root"}, state_root=tmp_path).has_activity
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root")
+    session_activity.record_activity(
+        {"hook_event_name": "SessionStart", "session_id": "child"}, process=_host("claude"), state_root=tmp_path
+    )
+    assert session_activity.review_activity({"root"}, state_root=tmp_path).has_activity
+    assert not session_activity.review_activity({"other"}, state_root=tmp_path).has_activity

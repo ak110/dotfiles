@@ -19,7 +19,7 @@
 
 ## 手段の選択
 
-工程の定義は`agent-toolkit/rules/01-agent.md`「役割分担」に従い、後述の個別UWIの条件と、権限拒否の偽陽性に対する`permission-denial.md`の手順は下表より優先する。表の「発話本文」はユーザーへのメッセージである。Claude Codeでは`agent-toolkit/share/rules-main.claude-code.md`「ツールの入出力」に従って`mcp__agent-toolkit__send_to_user`で、Codexでは途中経過を`commentary`、最終応答を`final`で届ける。Codexの命令や公開機能は`agent-toolkit/share/rules-common.codex.md`「Codexホスト契約の適用」に従う。
+工程の定義は`agent-toolkit/rules/01-agent.md`「役割分担」に従い、後述の個別UWIの条件と、権限拒否の偽陽性に対する`permission-denial.md`の手順は下表より優先する。表の「発話本文」はユーザーへのメッセージである。Claude Codeでは`agent-toolkit/share/rules-main.claude-code.md`「ツールの入出力」に従って`mcp__agent-toolkit__send_to_user`で届ける。Codexでは途中経過を`commentary`、通常の最終応答を必要なツール処理後の`final`で届ける。成果作業ではcompletion-reportで確定した作業完了報告の本文をそのまま用いる。ホスト本体を停止する場合、必要な可視報告は停止前の`commentary`で届ける。自律モードの伝達は報告用UWIの保存検収によって完了する。報告の送達を終えてからホストを停止する。Codexの命令や公開機能は`agent-toolkit/share/rules-common.codex.md`「Codexホスト契約の適用」に従う。
 
 | 工程 | 協調モード | 自律モード |
 | --- | --- | --- |
