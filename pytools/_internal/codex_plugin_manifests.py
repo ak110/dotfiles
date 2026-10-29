@@ -160,7 +160,6 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),
         output_command=_codex_hook_command("posttooluse"),
-        additional_context_limit=0,
         matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
     ),
     "Stop": CodexHookProjection((CODEX_STOP_COMMAND,), output_command=_codex_hook_command("stop")),

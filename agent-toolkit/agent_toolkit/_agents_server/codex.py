@@ -753,27 +753,6 @@ class AppServerManager:
         config: dict[str, Any] = {"bypass_hook_trust": True}
         if lightweight:
             config["project_doc_max_bytes"] = 0
-            # plugins無効の探索・shellにも、native資料読取の捕捉と全量配送を残す。
-            root = plugin_roots.SERVER_PLUGIN_ROOT
-            manifest = json.loads((root / "hooks/hooks.codex.json").read_text(encoding="utf-8"))["hooks"]
-            config["features"] = {"hooks": True}
-            config["hooks"] = {
-                event: [
-                    {
-                        "matcher": "Bash",
-                        "hooks": [
-                            {
-                                **handler,
-                                "command": handler["command"].replace("${PLUGIN_ROOT}", str(root)),
-                                "additionalContextLimit": 0,
-                            }
-                            for group in manifest[event]
-                            for handler in group["hooks"]
-                        ],
-                    }
-                ]
-                for event in ("PreToolUse", "PostToolUse")
-            }
         return config
 
     def _thread_config(

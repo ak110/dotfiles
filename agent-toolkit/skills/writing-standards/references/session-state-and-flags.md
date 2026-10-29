@@ -111,16 +111,6 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 - `work_contract_input_sequence`: UserPromptSubmitが実ユーザー入力ごとに進める整数。初期値は0で、機械注入の間は値を保つ。PreToolUseが未作成通知の入力区切りとして参照する。セッション状態と同じ寿命で保持する。
 - `work_contract_notified_sequence`: PreToolUseが未作成のメインへ通知した入力連番。排他ロック下で比較・更新し、同じ入力では1回だけ通知する。SessionStartの`compact`時に削除して、圧縮後の最初の操作で再通知する。他はセッション状態と同じ寿命で保持する。
 
-## Codexの標準読取
-
-- Codexの標準読取の捕捉物はセッションmanaged-tempの`codex-read-<実行別ID>/`へ置く。
-  PreToolUseが元操作と補正操作を保存し、同じnative実行がstdout・stderr・終了コードを書く。
-  PostToolUseは実行終了と操作の一致を確認し、全量配送後または配送失敗の確定後に実行別ディレクトリを回収する。終了未確認は保持する。
-  同領域の`codex-read-budget.json`は最新モデル応答の識別値と配送済みUTF-8バイト数だけを持ち、`.lock`下で並列読取を合算する。
-  最新の`token_usage_record`と`task_started`（旧記録では`token_count`）の文脈枠・使用量から配送枠を求める。
-  UTF-8バイト数をトークン数の保守的上界とし、枠の1割を他の通知と次応答に残す。本文全量の合計が枠を超える場合と文脈情報を取得できない場合は未読として通知する。
-  次のモデル応答で配送合計を更新し、一時記録はセッションmanaged-tempと同じ寿命で回収する
-
 ## plan系
 
 - `plan_mode_skill_invoked`: plan-modeスキルの起動を記録し、計画ファイルの構造に対する自動チェックを適用するかどうかの判定に使用する
@@ -130,16 +120,9 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 
 ## [振り返り](../../session-review-batch/SKILL.md)・モード系
 
-- `AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH`: hookが子のrun-skillへ渡す起動試行ID。
-  `session-review/launches/<ID>.json`と同名`.log`に、host・イベント・プロセス同一性・診断ログ・受付状態を対応付ける。
-  `starting`は未受付、`accepted`はmanifestへの責任移管、`settled`は正常終了・見送り、`notified`は次SessionStartで通知済みを表す。
-  受付前の終了だけを一度通知し、実行中と未報告失敗を保持する。
-  それ以外の記録とログは既存sweepで30日後に回収する
-- `process_wi_skill_invoked`: process-wiスキルの起動状態を示すフラグ。PostToolUse(Skill)およびUserPromptSubmitが記録し、`atk agents-exit-session`の機械可読な応答を受け取った時点で偽に戻す。セッション終了まで保持する
-- `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が、`atk agents-exit-session`の実行およびその機械可読な応答を記録する。
-  `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がprocess-loopのStop判定時にこの値を参照する。
-  同フックが、未完了のバックグラウンドタスクが残存していることを理由に終了要求を取り下げた時点で偽へ戻し、その後`atk agents-exit-session`が再実行された際に再び真となる。
-  セッション状態の有効期間中だけ保持し、通常のスキル完了処理では再利用しない
+- `AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH`: hook→run-skill試行ID。`session-review/launches/`のID別JSON/logは起動元・プロセス同一性・診断・状態を持つ。`starting`=未受付、`accepted`=manifest移管、`settled`=正常終了/見送り、`notified`=次SessionStart通知済み。受付前終了を一度通知。実行中・未報告失敗以外は30日後sweepで回収
+- `process_wi_skill_invoked`: process-wi起動フラグ。PostToolUse(Skill)・UserPromptSubmitが記録、`atk agents-exit-session`の機械可読応答で偽へ戻す。セッション終了まで保持する
+- `autonomous_exit_invoked`: `_hooks/posttooluse.py`が`atk agents-exit-session`の実行・機械可読応答を記録。`_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照し、未完了バックグラウンドタスクによる終了取消で偽、再実行で真とする。セッション中だけ保持し、スキル完了では再利用しない
 - `stop_no_tool_turn_count`: `agent-toolkit/agent_toolkit/_hooks/busy_loop_guard.py`が、自セッションでツール呼び出しをしなかったターンの連続回数を記録し、常駐ループの停止判定に使用する。ツール呼び出しを観測したターン、委譲先やバックグラウンドタスクの完了を待つターン、停止工程の実行時は0に戻す。セッション終了まで保持する
 - `stop_observed_entry_count`: 同フックが、Stop判定時点で観測済みだったセッション記録のエントリ数を記録し、次のターンで差分配信分のみを走査する起点として参照する。セッション終了まで保持する
 

@@ -22,4 +22,3 @@ class Decision:
     context: str | None = None
     notices: tuple[str, ...] = ()
     allow: bool = False
-    updated_input: dict | None = None

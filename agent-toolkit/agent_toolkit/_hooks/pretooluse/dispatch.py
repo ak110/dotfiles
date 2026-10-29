@@ -94,7 +94,6 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks import work_contract
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, notice_cycle, set_warning_session_id
-lazy from agent_toolkit._hooks.pretooluse import codex_read_capture
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
@@ -211,10 +210,6 @@ def main(payload_text: str) -> int:
                 decision = delivery
             elif delivery.notices:
                 decision = dataclasses.replace(decision, notices=decision.notices + delivery.notices)
-        if decision.block is None:
-            updated_input = codex_read_capture.prepare(payload, tool_input)
-            if updated_input is not None:
-                decision = dataclasses.replace(decision, updated_input=updated_input)
         return _emit(decision, pending_notices, is_codex=is_codex)
 
 
@@ -257,15 +252,12 @@ def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> 
     force_allow = decision.allow and not is_codex
     if force_allow:
         hook_output["permissionDecision"] = "allow"
-    if decision.updated_input is not None:
-        hook_output["permissionDecision"] = "allow"
-        hook_output["updatedInput"] = decision.updated_input
     contexts = [decision.context] if decision.context else []
     contexts.extend(notice for notice in pending_notices if notice)
     pending_notices.clear()
     if contexts:
         hook_output["additionalContext"] = format_warning_context(contexts)
-    if force_allow or contexts or decision.updated_input is not None:
+    if force_allow or contexts:
         print(json.dumps({"hookSpecificOutput": hook_output}, ensure_ascii=False))
     return exit_with(0, pending_notices)
 
@@ -335,9 +327,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     if record_warning is not None:
         if record_warning:
             warnings.append(record_warning)
-    elif not (is_codex and codex_read_capture.standard_read(command)) and (
-        read_warning := check_large_bash_read(command, cwd, is_codex=is_codex)
-    ):
+    elif read_warning := check_large_bash_read(command, cwd, is_codex=is_codex):
         warnings.append(read_warning)
     drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)
     if drive_letter_path_warning is not None:

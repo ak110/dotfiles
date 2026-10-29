@@ -27,7 +27,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
+| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md` |
@@ -71,13 +71,13 @@ H1の主題に続けて、次のH2見出しを順に置く。
 8. `## 進捗ログ`
 
 任意名のH3見出しは`## 要件・外部仕様`と`## 変更履歴`の配下だけに置き、H4以下は使わない。
-事実・数値・要約は1箇所に書いて節名で参照する（努力目標。記述間の矛盾を防ぐため）。規範の適用範囲は文書パスと節名で参照する。
+事実・数値・要約は1箇所に集約し節名で参照する（努力目標。矛盾防止）。規範の適用範囲は文書パス・節名で示す。
 
-関連WIはファイル名と1行要約を記し、確定済みの目的・要件・原因分析・適用範囲・方式・成立根拠はWIを参照する。
-代表AWIによる共通本文参照は`agent-toolkit:wi-standards`の`references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従い、採否・計画確定前に指定箇所とユーザー記入欄を読む。計画対象は固有本文と共通要求を合わせて確定する。
-完成状態は目的・反映内容・原因分析・補足条件から導き、任意節や引用位置の省略は再起草・再調査の理由から除く。
-計画では変更対象の分解、外部仕様、受入シナリオ、テスト、検証コマンド、恒久化・リファクタリング、公開工程を具体化する。
-WIの確定内容を計画側で導出し直すのは、WIがない計画（`関連WI: なし`）、WIに対応する節がない場合、WIの記述とリポジトリの実態の乖離を確認した場合に限る。乖離は、確認した事実と結論を`## 変更履歴`に記録し、影響する項目だけを導出し直す。人間由来の要求範囲を変える乖離は`agent-toolkit:wi-standards`「由来と承認」の確認手順、原因分析の乖離は「バグ調査」で扱う。類似見直しの母集団、QとC・Dの区別、対応の適用レイヤー、完了判定が`agent-toolkit:bugfix`の`references/root-cause-analysis.md`の基準を満たさない場合も、原因分析の乖離とする。
+関連WIはファイル名・1行要約を記し、確定済みの目的・要件・原因分析・範囲・方式・成立根拠を参照する。
+共通参照は読込表に従い指定箇所・ユーザー記入欄を読み、固有本文と採否・計画を確定する。
+完成状態は目的・反映内容・原因分析・補足条件から導く。任意節・引用位置の省略だけで再起草・再調査しない。
+計画で変更対象の分解・外部仕様・受入シナリオ・テスト・検証コマンド・恒久化・リファクタリング・公開工程を具体化する。
+WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認時に限り、影響項目だけに行う。乖離の事実・結論を`## 変更履歴`へ記録する。人間由来の要求範囲変更は`agent-toolkit:wi-standards`「由来と承認」、原因分析の乖離は「バグ調査」で扱う。母集団・QとC・D・適用レイヤー・完了判定の`agent-toolkit:bugfix`の`references/root-cause-analysis.md`への不適合も後者に含む。
 
 キューにない素材の原文とユーザーの回答全文は計画外入力の原本として保持し、調査、起草、初回レビュー、再レビューの各工程へ原文の参照を渡す。計画本文へは全文を転記しない。変更履歴に記録するユーザー発言は同節の書式に従う。
 

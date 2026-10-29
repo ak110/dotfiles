@@ -2,12 +2,11 @@
 
 import json
 import shlex
-import subprocess
 
 import pytest
 
 from agent_toolkit._hooks import plugin_resources, posttooluse
-from agent_toolkit._hooks.pretooluse import codex_read_capture, dispatch, read_delivery
+from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
 from agent_toolkit._testing import git_repository, pretooluse_support
 
 
@@ -15,7 +14,7 @@ def _context(captured):
     assert not captured.err
     if not captured.out.strip():
         return ""
-    return json.loads(captured.out)["hookSpecificOutput"].get("additionalContext", "")
+    return json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
 
 
 def _payload(tmp_path, codex):
@@ -65,8 +64,7 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     assert not (tmp_path / "plan.md").exists()
 
 
-def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(codex_read_capture, "_capacity", lambda _payload: ("response", 1_000_000))
+def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_path, capsys):
     payload = _payload(tmp_path, True)
     assert dispatch.main(json.dumps(payload)) == 0
     assert "root-cause-analysis.md" in _context(capsys.readouterr())
@@ -87,17 +85,11 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
         if paths:
             read = {**payload, "tool_name": "Bash", "tool_input": {"command": "cat -- " + shlex.join(map(str, paths))}}
             assert dispatch.main(json.dumps(read)) == 0
-            capture = capsys.readouterr()
-            rewritten = json.loads(capture.out)["hookSpecificOutput"]["updatedInput"]
-            native = subprocess.run(
-                ["bash", "-c", rewritten["command"]], capture_output=True, text=True, timeout=30, check=False
-            )
-            assert native.returncode == 0, native.stderr
+            _context(capsys.readouterr())
             result = {
                 **read,
-                "tool_input": rewritten,
                 "hook_event_name": "PostToolUse",
-                "tool_response": {"stdout": "切り詰め済みの表示", "exit_code": 0},
+                "tool_response": {"stdout": "".join(path.read_text(encoding="utf-8") for path in paths), "exit_code": 0},
             }
             assert posttooluse.main(json.dumps(result)) == 0
             capsys.readouterr()
