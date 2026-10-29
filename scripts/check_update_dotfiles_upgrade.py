@@ -202,12 +202,15 @@ def _parent_home(environ: Mapping[str, str], platform_name: str) -> pathlib.Path
     return pathlib.Path(home_value) if home_value else pathlib.Path.home()
 
 
-def _without_entries_under(path_value: str, base: pathlib.Path) -> str:
-    """`PATH`の値から、`base`配下（`base`自身を含む）の要素を除く。"""
+def _without_entries_under(path_value: str, base: pathlib.Path, kept: Sequence[pathlib.Path] = ()) -> str:
+    """`PATH`の値から、`base`配下（`base`自身を含む）の要素を除く。`kept`と一致する要素は残す。"""
     excluded = os.path.normcase(os.path.abspath(base))
+    kept_entries = {os.path.normcase(os.path.abspath(path)) for path in kept}
 
     def is_excluded(entry: str) -> bool:
         normalized = os.path.normcase(os.path.abspath(entry))
+        if normalized in kept_entries:
+            return False
         return normalized == excluded or normalized.startswith(excluded.rstrip(os.sep) + os.sep)
 
     return os.pathsep.join(entry for entry in path_value.split(os.pathsep) if not (entry and is_excluded(entry)))
@@ -243,6 +246,14 @@ def _isolated_env(
     # 差し替える前の親の環境変数から、親のmiseのデータディレクトリと実ホームを求める。
     mise_dirs = _parent_mise_data_dirs(env, platform_name)
     parent_home = _parent_home(env, platform_name)
+    # 更新処理はWindowsでmise本体の導入にwingetを名前で起動する。wingetなどのapp execution aliasは実ホームの
+    # `%LOCALAPPDATA%\Microsoft\WindowsApps`にあり、OSが管理する起動口でユーザーのツール配置ではないため、
+    # 実ホーム配下を`PATH`から除く対象から外す。
+    kept_path_entries = (
+        [pathlib.Path(parent_local_app_data) / "Microsoft" / "WindowsApps"]
+        if platform_name == "windows" and (parent_local_app_data := env.get("LOCALAPPDATA"))
+        else []
+    )
     # 可視binの上書きを継承すると、installerが検証home外のjunctionを作成・更新する。
     env.pop("HERDR_INSTALL_DIR", None)
     # 親の値（実ホームの`~/.nvm`）を継承すると、更新処理のランチャー整理が実ホームのnvmのbinを走査し、
@@ -262,10 +273,15 @@ def _isolated_env(
         env["LOCALAPPDATA"] = str(local_app_data)
         env["APPDATA"] = str(roaming_app_data)
         visible_bins.append(str(local_app_data / "Programs" / "Herdr" / "bin"))
+        # Windowsのnpmは全体導入先の直下へランチャーを置く。親の導入先を外すと既定の`%APPDATA%\npm`（検証home内）になるが、
+        # 通常のユーザー環境と異なり`PATH`に無いため、導入したツールを名前で起動できない。
+        # 導入先を明示して可視binへ加え、Nodeの導入時にユーザーの`PATH`へ加わる通常の配置を再現する。
+        npm_prefix = roaming_app_data / "npm"
+        env["NPM_CONFIG_PREFIX"] = str(npm_prefix)
+        visible_bins.append(str(npm_prefix))
     else:
         # npmの全体導入先は、実ホーム配下のNode（nvmなど）を`PATH`から外すとシステムのNodeの`/usr`などになり、
         # 書き込めずに導入が失敗する。実ホームのNodeのままでは実ホームへ導入する。検証homeの可視binへ導入先を向ける。
-        # Windowsの既定の導入先は`APPDATA`配下で、前段で検証homeへ差し替えている。
         env["NPM_CONFIG_PREFIX"] = str(home / ".local")
     env.update(
         {
@@ -303,7 +319,7 @@ def _isolated_env(
         )
     shutil.copy2(chezmoi, uv_target.parent / pathlib.Path(chezmoi).name)
     # 実ホームの`~/.local/bin`や`~/.nvm/...`を残すと、更新処理が実ホームのツール配置を走査する。
-    parent_path = _without_entries_under(parent_path, parent_home)
+    parent_path = _without_entries_under(parent_path, parent_home, kept_path_entries)
     env["PATH"] = os.pathsep.join((*dict.fromkeys(visible_bins), parent_path))
     return env
 

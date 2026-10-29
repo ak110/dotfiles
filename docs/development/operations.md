@@ -43,8 +43,8 @@ HOMEを差し替えて子プロセスを起動する隔離は、2か所に独立
 どちらも、一時領域が実ホーム配下にあっても実ホームの設定とツール配置を読み書きしないよう、実ホームを探索起点・参照先とする経路を遮断する。
 
 - 祖先探索: miseは作業ディレクトリの祖先から設定を探す。一時領域が実ホーム配下にあると、HOMEを差し替えた子のmiseが祖先の`~/.config/mise/config.toml`を未信頼のプロジェクト設定として読んで終了コード1になる。テストは`MISE_CEILING_PATHS`を各テストの`tmp_path`へ、旧版更新検証は検証rootへ設定して探索を止める。この失敗のため、エージェントは一時領域を実ホーム配下へ置いたテストの失敗を避けようとして`/tmp`を選んでいた
-- 親から引き継ぐ`PATH`: 旧版更新検証は子の`PATH`から実ホーム配下の要素を除き、検証と更新処理が名前で起動する`uv`、`uvx`、`chezmoi`を検証homeの`~/.local/bin`へ複製する。実ホームの`~/.local/bin`や`~/.nvm/...`が残ると、更新処理のランチャー整理が実ホームのツール配置を走査する
-- 配置先を示す環境変数: `NVM_DIR`、`HERDR_INSTALL_DIR`、npmの全体導入先（`NPM_CONFIG_PREFIX`）のように実ホームの配置先を指す値は子へ引き継がない。旧版更新検証はLinuxでnpmの全体導入先を検証homeの`~/.local`へ向ける。実ホームのNodeを外すとシステムのNodeの書き込めない導入先が選ばれるためである
+- 親から引き継ぐ`PATH`: 旧版更新検証は子の`PATH`から実ホーム配下の要素を除き、検証と更新処理が名前で起動する`uv`、`uvx`、`chezmoi`を検証homeの`~/.local/bin`へ複製する。実ホームの`~/.local/bin`や`~/.nvm/...`が残ると、更新処理のランチャー整理が実ホームのツール配置を走査する。Windowsの`%LOCALAPPDATA%\Microsoft\WindowsApps`は残す。更新処理がmise本体の導入に使うwingetのapp execution aliasがあり、OSが管理する起動口でユーザーのツール配置ではないためである
+- 配置先を示す環境変数: `NVM_DIR`、`HERDR_INSTALL_DIR`、npmの全体導入先（`NPM_CONFIG_PREFIX`）のように実ホームの配置先を指す値は子へ引き継がない。旧版更新検証はnpmの全体導入先を、Linuxでは検証homeの`~/.local`、Windowsでは検証homeの`%APPDATA%\npm`へ向ける。Linuxでは実ホームのNodeを外すとシステムのNodeの書き込めない導入先が選ばれるためである。Windowsのnpmは導入先の直下へランチャーを置くため、導入先を`PATH`へ加えて通常のユーザー環境を再現する
 
 ホストの設定を使うテストは`host_environ`と`restore_host_environment`で、`MISE_CEILING_PATHS`もホストの値へ戻す。
 

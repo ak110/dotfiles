@@ -675,6 +675,8 @@ def test_upgrade_check_cuts_routes_to_real_home(
     実ホーム配下の一時領域から祖先探索したmiseが実ホームの設定を読むこと、
     親の`PATH`と`NVM_DIR`を通して更新処理が実ホームのツール配置を走査することを防ぐ。
     実ホームの`~/.local/bin`にだけあるchezmoiは、検証homeへ複製して名前で起動できるようにする。
+    Windowsでは、更新処理がwingetを起動するapp execution aliasの`WindowsApps`だけを実ホーム配下でも残し、
+    npmの全体導入先を検証homeの`%APPDATA%\npm`へ向けて`PATH`へ加える。
     """
     real_home = tmp_path / "real-home"
     home_bin = real_home / ".local" / "bin"
@@ -692,7 +694,9 @@ def test_upgrade_check_cuts_routes_to_real_home(
     monkeypatch.setenv("NVM_DIR", str(real_home / ".nvm"))
     # 親の値を引き継いだだけで探索上限が検証rootの外を指す状態を作り、検証rootへの設定を区別する。
     monkeypatch.setenv("MISE_CEILING_PATHS", str(real_home))
-    monkeypatch.setenv("PATH", os.pathsep.join((str(home_bin), str(nvm_bin), str(system_bin))))
+    windows_apps = real_home / "AppData" / "Local" / "Microsoft" / "WindowsApps"
+    monkeypatch.setenv("LOCALAPPDATA", str(real_home / "AppData" / "Local"))
+    monkeypatch.setenv("PATH", os.pathsep.join((str(home_bin), str(nvm_bin), str(windows_apps), str(system_bin))))
     uv_dir = tmp_path / "uv-dist"
     uv_dir.mkdir()
     uv_suffix = ".exe" if platform_name == "windows" else ""
@@ -722,14 +726,17 @@ def test_upgrade_check_cuts_routes_to_real_home(
         assert verification_home.is_relative_to(ceiling)
         assert not ceiling.is_relative_to(real_home)
         entries = [pathlib.Path(entry) for entry in env["PATH"].split(os.pathsep) if entry]
-        assert not any(entry.is_relative_to(real_home) for entry in entries), entries
         assert system_bin in entries
         assert "NVM_DIR" not in env
         if platform_name == "linux":
+            assert not any(entry.is_relative_to(real_home) for entry in entries), entries
             assert env["NPM_CONFIG_PREFIX"] == str(verification_home / ".local")
         else:
-            assert "NPM_CONFIG_PREFIX" not in env
-            assert pathlib.Path(env["APPDATA"]).is_relative_to(verification_home)
+            assert [entry for entry in entries if entry.is_relative_to(real_home)] == [windows_apps]
+            npm_prefix = pathlib.Path(env["APPDATA"]) / "npm"
+            assert npm_prefix.is_relative_to(verification_home)
+            assert env["NPM_CONFIG_PREFIX"] == str(npm_prefix)
+            assert npm_prefix in entries
 
 
 def test_upgrade_check_reports_missing_chezmoi(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
