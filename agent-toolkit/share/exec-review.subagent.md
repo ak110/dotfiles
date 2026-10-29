@@ -40,7 +40,7 @@ continuations:
 
 実装済みの差分を対象に、要件や外部仕様の水準で1段階レビューする。作業開始時にまず`agent-toolkit:review-standards`と`agent-basics:writing-standards`を起動し、読込表に示す資料を読んでから判定する。
 判定は`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`の「実行レビューの判定」に従う。
-`agent-basics:writing-standards`の資料は、同書における指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠として用いる。初回レビューでは、適用対象となる`references/review-only-criteria.md`の全基準を同一の実行レビュー内でまとめて点検し、基準ごとに個別の担当者を分けることはしない。本担当の役割はレビューおよび判定に必要な検証の実行にとどめ、実装や修正の作業は委譲元が別のエージェントへ割り当てる。
+`agent-basics:writing-standards`の資料は、同書における指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠として用いる。初回レビューでは、適用対象となる`agent-basics:writing-standards`の`references/review-only-criteria.md`の全基準を同一の実行レビュー内でまとめて点検し、基準ごとに個別の担当者を分けることはしない。本担当の役割はレビューおよび判定に必要な検証の実行にとどめ、実装や修正の作業は委譲元が別のエージェントへ割り当てる。
 実行レビューの入力、責務、出口の各条件は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
 担当工程へ着手する前に、`share/work-contract.md`「工程境界での要求と成果の確認」に従って`全体作業契約`を読み、判定結果を自身の記録に残す。

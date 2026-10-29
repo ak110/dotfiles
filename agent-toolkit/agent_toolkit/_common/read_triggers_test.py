@@ -297,6 +297,45 @@ def test_material_qualifier_and_japanese_selector(tmp_path):
     assert "後段本文" not in targets[0].body()
 
 
+@pytest.mark.parametrize(
+    "text,foreign",
+    [
+        ("`agent-toolkit:search`の`references/rule.md`", True),
+        ("`agent-toolkit:search`を起動し、`references/rule.md`", True),
+        ("`agent-toolkit:search`の`references/other.md`と`references/rule.md`", True),
+        ("`agent-toolkit:search`を使う。同スキルの`references/rule.md`", True),
+        ("`agent-toolkit:search`を使う。`references/rule.md`に従う。", False),
+        ("`agent-toolkit:search`を使い、`references/rule.md`を読む。", False),
+    ],
+)
+def test_body_reference_owner_requires_connection(tmp_path, text, foreign):
+    """所属は接続された名指しだけから決め、無関係な名指しの後も自スキルを保つ。"""
+    source = tmp_path / "skills/current/SKILL.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# 現在\n", encoding="utf-8")
+    targets = read_triggers.material_targets(text, source, tmp_path, references_only=True)
+    target = next(item for item in targets if item.path.name == "rule.md")
+    assert target.path == tmp_path / "skills" / ("search" if foreign else "current") / "references/rule.md"
+
+
+def test_body_reference_same_skill_across_lines_and_no_unique_fallback(tmp_path):
+    """前行の名指しを同スキルで参照し、一意の別所属ファイルへは補完しない。"""
+    source = tmp_path / "share/review.subagent.md"
+    only = tmp_path / "skills/search/references/rule.md"
+    only.parent.mkdir(parents=True)
+    only.write_text("# 基準\n", encoding="utf-8")
+    target = read_triggers.material_targets(
+        "同スキルの`references/rule.md`",
+        source,
+        tmp_path,
+        references_only=True,
+        context="`agent-toolkit:search`を起動する。\n",
+    )[0]
+    assert target.path == only
+    unowned = read_triggers.material_targets("`references/rule.md`", source, tmp_path, references_only=True)[0]
+    assert unowned.path == source.parent / "references/rule.md"
+
+
 def test_startup_delivery_is_part_of_role_reception(tmp_path):
     source = tmp_path / "search.subagent.md"
     reference = tmp_path / "rule.md"

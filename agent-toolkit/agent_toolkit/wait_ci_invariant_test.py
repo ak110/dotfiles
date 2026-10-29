@@ -34,7 +34,12 @@ def _documented_wait_ci_examples() -> list[str]:
 
 def _parse_documented_example(example: str, tmp_path: pathlib.Path) -> argparse.Namespace:
     """起動例の`<…>`を実在する形の値へ置き換え、wait_ciの引数解析と引数の組合せの判定だけを通す。"""
-    replacements = {"<owner/repo>": "owner/repository", "<destination-ref>": "refs/heads/main", "<source-ref>": "HEAD"}
+    replacements = {
+        "<owner/repo>": "owner/repository",
+        "<destination-ref>": "refs/heads/main",
+        "<source-ref>": "HEAD",
+        "<40桁のSHA>": "a" * 40,
+    }
     tokens = []
     for token in shlex.split(example.removeprefix("atk run-script wait-ci --")):
         for placeholder, value in replacements.items():
@@ -83,3 +88,20 @@ def test_documented_examples_are_accepted_by_parser(tmp_path: pathlib.Path) -> N
     assert len(examples) >= 3, examples
     for example in examples:
         _parse_documented_example(example, tmp_path)
+
+
+def test_documented_examples_cover_all_modes() -> None:
+    """相互排他で宣言した各起動形式に、引数解析へ渡せる実行例がある。"""
+    modes: set[str] = set()
+
+    def inspect_parser(parser: argparse.ArgumentParser, *_args: Any, **_kwargs: Any) -> NoReturn:
+        for group in parser._mutually_exclusive_groups:  # pylint: disable=protected-access
+            for action in group._group_actions:  # pylint: disable=protected-access
+                modes.update(action.option_strings)
+        raise _ParsedExample
+
+    with mock.patch.object(argparse.ArgumentParser, "parse_args", inspect_parser), pytest.raises(_ParsedExample):
+        wait_ci.main([])
+    documented = {token for example in _documented_wait_ci_examples() for token in shlex.split(example)}
+    assert modes
+    assert not modes - documented, f"完全な実行例が無い起動形式: {modes - documented}"

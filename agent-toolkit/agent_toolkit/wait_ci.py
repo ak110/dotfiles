@@ -1250,11 +1250,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--ref",
-        help="対象destination ref（例: refs/heads/main）。--baselineでは省略するとbaselineの保存値を使う",
+        help=(
+            "対象destination ref（例: refs/heads/main）。--write-baselineと--wait-shaでは必須。"
+            "--baselineでは省略するとbaselineの保存値を使う"
+        ),
     )
     parser.add_argument(
         "--source-ref",
-        help="push元のローカルsource ref（例: HEAD）。--baselineでは省略するとbaselineの保存値を使う",
+        help=(
+            "push元のローカルsource ref（例: HEAD）。--write-baselineと--wait-shaでは必須。"
+            "--baselineでは省略するとbaselineの保存値を使う"
+        ),
     )
     parser.add_argument(
         "--sha",

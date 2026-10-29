@@ -27,7 +27,14 @@ import psutil
 from agent_toolkit._atk import config, orchestrator, outcome, run_script
 from agent_toolkit._atk.wi import add, frontmatter, layout, repo, sync, uwi_scan
 from agent_toolkit._atk.wi.web_input import WebInputError
-from agent_toolkit._common import delegated_session, private_notes, session_activity, session_registry, session_review
+from agent_toolkit._common import (
+    delegated_session,
+    plugin_environment,
+    private_notes,
+    session_activity,
+    session_registry,
+    session_review,
+)
 
 _LOG = logging.getLogger(__name__)
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -59,7 +66,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     if session_activity.host_process() is None:
         # ホスト外で再生したhook入力は記録だけにとどめ、実在するホストの開始・終了から起動する。
         return None
-    env = orchestrator.child_env(drop=(session_review.BATCH_ENV,))
+    env = plugin_environment.direct_environment(PLUGIN_ROOT, orchestrator.child_env(drop=(session_review.BATCH_ENV,)))
     # セッションのstdin/stdoutを保持しない。以後の終了検収はrun-skill自身が所有する。
     flags: dict[str, Any]
     if sys.platform == "win32":

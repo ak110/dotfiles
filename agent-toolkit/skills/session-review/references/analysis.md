@@ -231,6 +231,6 @@ Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を
 
 ## 規範適用による目的逸脱
 
-事象、原因、対策は、bugfixスキルの`references/root-cause-analysis.md`「規範の未適用と目的逸脱」と、`agent-basics:bugfix/references/root-cause-scenarios.md`「前提の再検討」で判定する。対象条文の所在（ファイル名と節）、観測された処理停止、採用する改善案と根拠を記録する。
+事象、原因、対策は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「規範の未適用と目的逸脱」と、`agent-basics:bugfix/references/root-cause-scenarios.md`「前提の再検討」で判定する。対象条文の所在（ファイル名と節）、観測された処理停止、採用する改善案と根拠を記録する。
 正常に完了した作業でも、読込、準備、検収、後始末の作業量と成果を比べ、規範が求める工程を簡略化できないかを検討する。
 条文を改訂せず現状維持とするなら、再現条件と許容する理由を「対策を見送った問題」に書く。改訂を採るなら、対象条文を改訂するAWIへ渡す。`agent-toolkit:review-standards`の`references/judgment-details.md`「規定の適用可否」が求める規範改訂の提案は、このAWI投入で行う。

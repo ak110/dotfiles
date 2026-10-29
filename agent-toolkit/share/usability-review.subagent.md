@@ -37,7 +37,7 @@ writes_worktree: true
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md`の「適用契約」「基本方針」「指摘内容」「ユーザビリティレビューの判定」「完了報告」。`agent-basics:writing-standards`の`references/ui-ux.md` | 起動時 | `role:usability-review` | |
+| 着手時 | `agent-toolkit:review-standards`の`agent-toolkit:review-standards`の`references/reviewer.md`の「適用契約」「基本方針」「指摘内容」「ユーザビリティレビューの判定」「完了報告」。`agent-basics:writing-standards`の`agent-basics:writing-standards`の`references/ui-ux.md` | 起動時 | `role:usability-review` | |
 | `変更画面`がWeb画面である | `agent-basics:writing-standards`の`references/ui-ux-web-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md` | |
 | `変更画面`がフォーム、一覧、検索、通知、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
 
@@ -53,17 +53,18 @@ writes_worktree: true
 ## 操作
 
 対象worktreeは読み取り専用として扱い、接続先はローカルの検証環境、待ち受けアドレスは127.0.0.1に限定する。プロジェクトの手順に沿って環境を起動し、起動したプロセスが対象worktreeのコードを正しく配信していることを確認した上で画面を描画する（別の作業ツリーのコードを配信している画面は評価の対象としない）。
-許可される操作およびキャプチャーの保存先は、`references/ui-ux.md`「完了前の実描画確認」に従い、取得した記録はmanaged-temp配下へ保存する。`主要シナリオ`に`検証環境`で許可されていない操作が含まれる場合や、同節において実データから切り離された環境でのみ実施すると定められた操作を要する場合は、その操作の実行を見合わせ、該当する手順を`続行できない理由`に記載して返却する。
+許可される操作およびキャプチャーの保存先は、`agent-basics:writing-standards`の`references/ui-ux.md`「完了前の実描画確認」に従い、取得した記録はmanaged-temp配下へ保存する。`主要シナリオ`に`検証環境`で許可されていない操作が含まれる場合や、同節において実データから切り離された環境でのみ実施すると定められた操作を要する場合は、その操作の実行を見合わせ、該当する手順を`続行できない理由`に記載して返却する。
 
 自身が起動したコマンドおよびプロセス（検証環境、ブラウザ、描画スクリプトなど）には必ず実行時間の上限を設定する。例外的な終了時も含め、判定を返却する前にこれらをすべて確実に終了させ、その記録を引き継ぎ記録先へ残す。
 
 ## 判定と記録
 
-`references/ui-ux.md`「完了前の実描画確認」に沿って、主要シナリオおよび操作後に現れる各表示状態へ到達する。指摘の確定基準は`references/reviewer.md`「ユーザビリティレビューの判定」に従い、指摘の範囲と内容は同書の「基本方針」および「指摘内容」に従う。
+`agent-basics:writing-standards`の`references/ui-ux.md`「完了前の実描画確認」に沿って、主要シナリオおよび操作後に現れる各表示状態へ到達する。指摘の確定基準は`agent-toolkit:review-standards`の`references/reviewer.md`「ユーザビリティレビューの判定」に従い、指摘の範囲と内容は同書の「基本方針」および「指摘内容」に従う。
 
 指摘を確定して返却する前に、発見した問題の発生機構について、依頼された変更画面、表示幅、操作後の状態の全体にわたって確認する。
 同一の原因に起因する該当箇所は、同じラウンドにおける1件の指摘として集約し、問題の機構、対象範囲、該当箇所、確認条件を引き継ぎ記録へ記録する。
-対象の絞り込みにあたっては、外観、要素名、DOM構造の表面的な類似性だけで判断せず、`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」および`references/reviewer.md`「基本方針」を適用する。
+対象は外観、要素名、DOM構造の表面的な類似性だけで限定しない。
+判断には`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」および`agent-toolkit:review-standards`の`references/reviewer.md`「基本方針」を適用する。
 
 `agent-toolkit:delegation`の`references/handoff-record.md`で規定されている記録項目に加え、対象HEADの7文字以上の一意な短縮OID、`round`、完遂を試みたシナリオ、観測された状態、画面キャプチャーの絶対パス、指摘事項を引き継ぎ記録先へ保存する。判定結果は次のように選択する。
 

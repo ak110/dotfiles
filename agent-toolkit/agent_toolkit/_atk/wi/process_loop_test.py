@@ -5,6 +5,8 @@ import json
 import os
 import pathlib
 import subprocess
+import threading
+import time
 from typing import Any
 
 import pytest
@@ -303,6 +305,78 @@ def test_control_storage_is_independent_of_repository() -> None:
     assert not control.consume_process_loop_abort()
     control.cmd_process_loop_instruct_cancel()
     assert not log.read_instructions()
+
+
+def test_public_loop_checks_eight_repositories_with_bounded_concurrency(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """8対象を最大3並行で確認し、結果は登録順で表示して候補を一度だけ再取得する。"""
+    _notes, snapshots = _targets(tmp_path, monkeypatch, (0,) * 8)
+    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    lock = threading.Lock()
+    group = threading.Barrier(3)
+    active = maximum = 0
+    seen = []
+    durations = []
+    timings = []
+    parallel = False
+
+    def check(_args, _notes, repo_id, _worktree, _last, **kwargs):
+        nonlocal active, maximum
+        assert kwargs["count_dependabot"]
+        with lock:
+            active += 1
+            maximum = max(maximum, active)
+            seen.append(repo_id)
+            ordinal = len(seen)
+        started = time.monotonic()
+        timings.append(started)
+        if parallel and ordinal <= 6:
+            group.wait(timeout=5)
+        # 同じAPI待機を逐次実行した場合の総待機時間と比較する。
+        time.sleep(0.05)
+        with lock:
+            active -= 1
+            durations.append(time.monotonic() - started)
+            timings.append(time.monotonic())
+        return 1.0, 1, frozenset()
+
+    monkeypatch.setattr(loop._alerts, "check_process_loop_alerts", check)  # pylint: disable=protected-access
+    original = listing.configured_repo_snapshot
+    reads = []
+
+    def snapshot(*args, **kwargs):
+        reads.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(listing, "configured_repo_snapshot", snapshot)
+    pool = loop.concurrent.futures.ThreadPoolExecutor
+    elapsed = []
+    for parallel in (False, True):
+        seen.clear()
+        timings.clear()
+        durations.clear()
+        reads.clear()
+        maximum = 0
+        with monkeypatch.context() as scoped:
+            scoped.setattr(
+                loop.concurrent.futures,
+                "ThreadPoolExecutor",
+                lambda workers=3 if parallel else 1, **_kwargs: pool(max_workers=workers),
+            )
+            with pytest.raises(SystemExit) as exited:
+                atk.main(["wi", "process-loop", "--no-update", "--once"], home=tmp_path)
+        elapsed.append(max(timings) - min(timings))
+        assert exited.value.code == 0
+        assert maximum == (3 if parallel else 1)
+        assert set(seen) == {item.repository.repo_id for item in snapshots} and len(seen) == 8
+        assert len(reads) == 2
+        output = capsys.readouterr().out
+        positions = [output.index(f"アラート監視により{item.repository.repo_id}") for item in snapshots]
+        assert positions == sorted(positions)
+    assert elapsed[1] < elapsed[0]
+    print(f"同じ8対象の照会区間: 逐次={elapsed[0]:.3f}秒、最大3並行={elapsed[1]:.3f}秒")
 
 
 @pytest.mark.parametrize("failure", [OSError("照会用ファイルを読めない"), ValueError("応答の形式が不正")])

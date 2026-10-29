@@ -652,8 +652,16 @@ def _unresolved_heading_references(
             ]
             contextual = [
                 item
-                for item in read_triggers.material_targets(line, root / source, root / _PLUGIN_PREFIX, references_only=True)
-                if match.group("name") in item.heading
+                for item in read_triggers.material_targets(
+                    line,
+                    root / source,
+                    root / _PLUGIN_PREFIX,
+                    references_only=True,
+                    context=read_triggers.reference_context(
+                        content[: content.rfind("\n", 0, match.start())], root / source, root / _PLUGIN_PREFIX
+                    ),
+                )
+                if match.group("name") in item.heading and item.path.is_file()
             ]
             if len({item.path for item in contextual}) == 1:
                 target = contextual[0].path
