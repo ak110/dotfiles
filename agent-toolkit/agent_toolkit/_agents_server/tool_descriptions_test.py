@@ -105,3 +105,30 @@ async def test_tool_input_schema_is_unchanged_by_error_wrapping() -> None:
     }
     assert tools["send_message"].input_schema["required"] == ["session_id"]
     assert "reply_failed" in (tools["send_message"].description or "")
+
+
+@pytest.mark.asyncio
+async def test_tool_list_publishes_title_and_side_effect_annotations() -> None:
+    """`tools/list`の応答が全ツールの表示名と、副作用の性質を示す注釈をホストへ渡す。
+
+    期待値はMCP仕様2025-11-25の`ToolAnnotations`の定義と各ツールの副作用から決めた。
+    Claude Code 2.1.312は`readOnlyHint`が真のツールを、実行済みの可能性がある接続断の後にも再試行する。
+    読み取り専用でないツールで`destructiveHint`を省略すると仕様上は真として扱うため、追加だけを行うツールには偽を明示する。
+    """
+    expected = {
+        "start": (None, False),
+        "send_message": (None, False),
+        "kill": (None, True),
+        "stop": (None, True),
+        "list": (True, None),
+        "show": (True, None),
+    }
+    tools = {tool.name: tool for tool in await mcp_tools.mcp.list_tools()}
+
+    assert set(tools) == set(expected)
+    for name, (read_only, destructive) in expected.items():
+        tool = tools[name]
+        assert tool.title, name
+        assert tool.annotations is not None, name
+        assert tool.annotations.read_only_hint is read_only, name
+        assert tool.annotations.destructive_hint is destructive, name

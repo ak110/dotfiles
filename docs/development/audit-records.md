@@ -1036,7 +1036,8 @@ agents_server（`agent-toolkit/agent_toolkit/agents_server_mcp.py`、MCP Python 
 
 - 適用済み: 起動操作は`start`の`mode`へ統合し、modeを列挙型でスキーマへ示し、modeごとの必須・禁止の入力を説明と`_validate_start_inputs`の双方に置く。応答は`session_id`と次の操作を返し、`list`は除いた件数を`omitted`へ、`show`は`verbose`で詳細を選ぶ。例外は`_actionable_tool`が`next_action`付きの`ToolError`へ変え、SDKがツール実行エラーとして返す。全ツールが構造化応答を返し、`outputSchema`は任意の項目を許すobjectである。stdio transportのログは標準エラーとファイルへ出力する
 - 是正済み（同書の「単体での利用」とホスト固有の条件による）: 適用前の`start`の説明は2,932文字で、Claude Codeの設定を変えない状態では後半の結果受領・起動前の準備・応答の説明が切り詰められていた。結果受領を先頭へ移し、modeの選び方を`mode`の引数説明へ移して1,962文字とした。`send_message`・`kill`・`stop`・`show`の`session_id`、`send_message`の`prompt`、`list`の`include_terminated`、`show`の`verbose`は引数説明を持たなかったため説明を加えた。`_agents_server/tool_descriptions_test.py::test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`が説明長と全引数の説明を確かめる。instructionsは690文字である
-- 任意の改善候補: annotationsは全ツールで未設定である。`show`は保持中の状態を読むだけで`readOnlyHint`を付与できる。`list`は保持期限に達したsessionの本体の解放を内部で進めるため、付与はその扱いを決めてから判断する。`outputSchema`は応答の項目を列挙していない
+- 任意の改善候補: `outputSchema`は応答の項目を列挙していない。応答は`mode`や状態で項目が変わり、列挙の保守負担が大きいため、2026年10月29日の見直しでも列挙しない
+- 適用済み（2026年10月29日）: 全ツールへ日本語の`title`と注釈を付けた。`list`と`show`は`readOnlyHint`、`start`と`send_message`は`destructiveHint: false`、`kill`と`stop`は`destructiveHint: true`である。`list`が内部で行う保持期限到来sessionの失効は、保持期限のタイマーが同じ時刻に行う失効を先に反映するだけで、呼び出しの有無と回数で観測できる状態が変わらないため、`readOnlyHint`を付けた。`_agents_server/tool_descriptions_test.py::test_tool_list_publishes_title_and_side_effect_annotations`が`tools/list`の応答の値を確かめる
 - 仕様上の是正: 該当なし
 
 pyfltrの公開ツールは`build_server`が登録する11件である。対象は`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`で、対応する変更は2026年10月1日「fix: 置換失敗時の復旧とMCPの応答性を改善し、公開前の動作確認を追加する」、`c5aa7e2`である。観測環境のMCP Python SDKは2.2.0だった。読み取り専用で`list_tools()`の結果と各ツールの直接の応答生成を読んだ。
