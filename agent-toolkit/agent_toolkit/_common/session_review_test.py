@@ -14,6 +14,44 @@ import pytest
 from agent_toolkit._common import session_review
 
 
+@pytest.mark.parametrize("status", ["starting", "accepted", "settled", "notified"])
+def test_launch_sweep_preserves_unreported_attempts(status: str) -> None:
+    path = session_review.directory() / "launches" / ("a" * 32 + ".json")
+    session_review.write(path, {"status": status})
+    path.with_suffix(".log").write_text("診断", encoding="utf-8")
+    session_review.sweep(now=time.time() + 31 * 24 * 60 * 60)
+    assert path.exists() is (status == "starting")
+    assert path.with_suffix(".log").exists() is (status == "starting")
+
+
+def test_launch_receipt_transfers_failure_ownership(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    launch_id = "a" * 32
+    path = session_review.directory() / "launches" / f"{launch_id}.json"
+    session_review.write(path, {"status": "starting", "exited": True})
+    monkeypatch.setenv(session_review.LAUNCH_ENV, launch_id)
+    manifest = tmp_path / "run.json"
+    session_review.launch_result(manifest=manifest)
+    assert session_review.read(path)["manifest_path"] == str(manifest)
+    assert session_review.launch_notice() is None
+
+
+def test_launch_owner_interruption_is_reported_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    path = session_review.directory() / "launches" / ("a" * 32 + ".json")
+    session_review.write(
+        path,
+        {
+            "status": "starting",
+            "owner": {"pid": 1, "create_time": 0},
+            "host": "codex",
+            "event": "SessionEnd",
+            "log_path": "診断.log",
+        },
+    )
+    monkeypatch.setattr(session_review.session_registry.ProcessIdentity, "exists", lambda _self: False)
+    assert "受付前に終了" in (session_review.launch_notice() or "")
+    assert session_review.launch_notice() is None
+
+
 def _transcript(path: pathlib.Path, text: str, *, append: bool = False) -> None:
     with path.open("a" if append else "w", encoding="utf-8") as stream:
         stream.write(

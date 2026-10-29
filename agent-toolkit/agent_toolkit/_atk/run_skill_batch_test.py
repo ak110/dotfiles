@@ -61,7 +61,7 @@ def test_hook_requests_existing_cli_without_wait(tmp_path, monkeypatch) -> None:
 
     def spawn(argv, **kwargs):
         calls.append((argv, kwargs))
-        return types.SimpleNamespace(wait=lambda: 0)
+        return types.SimpleNamespace(pid=None, wait=lambda: 0)
 
     monkeypatch.setattr(run_skill_batch.repo, "resolve_repo_id_or_raise", lambda *args, **kwargs: "example.com/team/repo")
     monkeypatch.setattr(session_activity, "host_process", object)
@@ -95,7 +95,7 @@ def test_hook_cli_resolves_package_without_editable_install(tmp_path, monkeypatc
         ) as child:
             stdout, stderr = child.communicate(timeout=30)
             results.append((child.returncode, stdout, stderr))
-        return types.SimpleNamespace(wait=lambda: 0)
+        return types.SimpleNamespace(pid=None, wait=lambda: 0)
 
     monkeypatch.setattr(run_skill_batch.subprocess, "Popen", spawn)
     run_skill_batch.hook_request({"hook_event_name": event, "session_id": "main", "cwd": str(tmp_path)}, host=host)
@@ -103,6 +103,39 @@ def test_hook_cli_resolves_package_without_editable_install(tmp_path, monkeypatc
     code, stdout, stderr = results[0]
     assert code == 0, stderr.decode("utf-8", errors="replace")
     assert "atk run-skill" in stdout.decode("utf-8")
+
+
+@pytest.mark.parametrize("condition", ["empty", "active", "locked", "running"])
+def test_hook_launch_normal_outcomes_do_not_report_failure(tmp_path, monkeypatch, condition):
+    """対象なし・活動中のみ・排他・実行中を受付前失敗から区別する。"""
+    launch_id = "a" * 32
+    path = session_review.directory() / "launches" / f"{launch_id}.json"
+    session_review.write(
+        path, {"status": "starting", "exited": True, "host": "codex", "event": "SessionEnd", "log_path": "log"}
+    )
+    monkeypatch.setenv(session_review.LAUNCH_ENV, launch_id)
+
+    def unexpected(args):
+        raise AssertionError("モデルは起動しない")
+
+    if condition == "active":
+        _target(tmp_path, "active")
+        monkeypatch.setattr(
+            session_activity, "review_activity", lambda *args, **kwargs: types.SimpleNamespace(has_activity=True)
+        )
+    if condition == "running":
+        identity = run_skill_batch.session_registry.ProcessIdentity.of(os.getpid())
+        assert identity is not None
+        value = session_review.read(path)
+        value["process"] = {"pid": identity.pid, "create_time": identity.create_time}
+        session_review.write(path, value)
+    elif condition == "locked":
+        with filelock.FileLock(str(session_review.directory() / "batch.lock")):
+            assert run_skill_batch.dispatch(_args(), unexpected) == 1
+    else:
+        assert run_skill_batch.dispatch(_args(), unexpected) == 0
+    assert session_review.launch_notice() is None
+    assert bool(session_review.pending()) == (condition == "active")
 
 
 def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeypatch) -> None:

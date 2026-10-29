@@ -130,6 +130,11 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 
 ## [振り返り](../../session-review-batch/SKILL.md)・モード系
 
+- `AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH`: hookが子のrun-skillへ渡す起動試行ID。
+  `session-review/launches/<ID>.json`と同名`.log`に、host・イベント・プロセス同一性・診断ログ・受付状態を対応付ける。
+  `starting`は未受付、`accepted`はmanifestへの責任移管、`settled`は正常終了・見送り、`notified`は次SessionStartで通知済みを表す。
+  受付前の終了だけを一度通知し、実行中と未報告失敗を保持する。
+  それ以外の記録とログは既存sweepで30日後に回収する
 - `process_wi_skill_invoked`: process-wiスキルの起動状態を示すフラグ。PostToolUse(Skill)およびUserPromptSubmitが記録し、`atk agents-exit-session`の機械可読な応答を受け取った時点で偽に戻す。セッション終了まで保持する
 - `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が、`atk agents-exit-session`の実行およびその機械可読な応答を記録する。
   `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がprocess-loopのStop判定時にこの値を参照する。
