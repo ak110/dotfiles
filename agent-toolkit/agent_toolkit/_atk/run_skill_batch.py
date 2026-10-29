@@ -25,7 +25,8 @@ import filelock
 import psutil
 
 from agent_toolkit._atk import config, orchestrator, outcome, run_script
-from agent_toolkit._atk.wi import add, frontmatter, layout, repo, sync, uwi_scan
+from agent_toolkit._atk.wi import add, frontmatter, layout, repo, sync
+from agent_toolkit._atk.wi.constants import WI_STATE_HOLD, WI_STATE_INBOX, WI_STATE_PROCESSING, WI_TYPE_AWI
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import (
     delegated_session,
@@ -121,29 +122,34 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     return notice
 
 
-def _reports() -> list[tuple[pathlib.Path, dict[str, Any], str]]:
+_FAILURE_SOURCE = "session-review-batch"
+"""失敗報告AWIの`source`。起動中のスキル名からプラグイン名の接頭辞を除いた値とする。"""
+
+_ACTIVE_FAILURE_STATES = frozenset({WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_HOLD})
+"""失敗報告AWIが未完了で、同じ原因の対象の自動再試行を止める状態。"""
+
+
+def _active_failure(failure_key: str) -> tuple[pathlib.Path, dict[str, Any]] | None:
+    """同じ原因の未完了の失敗報告AWIを返す。"""
     root = private_notes.default_private_notes()
-    found = []
     for path in layout.iter_entry_paths(root):
         if path.is_file():
-            content = path.read_text(encoding="utf-8")
-            parsed = frontmatter.parse_frontmatter(content)
+            parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
             if parsed is not None:
                 data, _body = parsed
                 if (
-                    data.get("type") == "uwi"
-                    and data.get("source") == "run-skill"
-                    and data.get("scope") == session_review.BATCH_SKILL
+                    data.get("type") == WI_TYPE_AWI
+                    and data.get("session_review_failure_key") == failure_key
+                    and data.get("state") in _ACTIVE_FAILURE_STATES
                 ):
-                    found.append((path, data, content))
-    return found
+                    return path, data
+    return None
 
 
 def _blocked(target: dict[str, Any]) -> bool:
     key = target.get("failure_key")
-    return bool(key) and any(
-        data.get("session_review_failure_key") == key and not uwi_scan.is_uwi_answered(text) for _path, data, text in _reports()
-    )
+    # 是正を担うAWIの終了（採用・不採用）までは同じ失敗を繰り返さず、終了後の次回起動で再試行する。
+    return isinstance(key, str) and bool(key) and _active_failure(key) is not None
 
 
 def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
@@ -162,11 +168,7 @@ def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
 
 def _report_target(targets: list[dict[str, Any]]) -> tuple[str, pathlib.Path]:
     counts = collections.Counter(target["target_repo"] for target in targets if target.get("target_repo"))
-    chosen = (
-        min(counts, key=lambda item: (-counts[item], item))
-        if counts
-        else json.loads((PLUGIN_ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["repository"]
-    )
+    chosen = min(counts, key=lambda item: (-counts[item], item)) if counts else _plugin_repository()
     cwd = next(
         (
             pathlib.Path(target["cwd"])
@@ -204,6 +206,37 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any]:
     return prepared
 
 
+def _plugin_repository() -> str:
+    """実行中の配布物のリポジトリ識別子を返す。振り返りの仕組みの不具合はこの配布元で直す。"""
+    return json.loads((PLUGIN_ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["repository"]
+
+
+def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest: dict[str, Any]) -> str:
+    """配布元で是正するための失敗報告AWIを組み立てる。ユーザー判断が要る点は処理担当がUWIで確認する。"""
+    targets = ", ".join(item["session_id"] for item in manifest["targets"])
+    body = (
+        "# 非同期振り返り（session-review-batch）の失敗の是正\n\n"
+        "非同期振り返りが下記の対象セッションを処理できなかった。"
+        "このAWIが終了するまで、同じ原因で失敗した対象の自動振り返りを止めている。"
+        "原因を是正し、対象の振り返りが自動で再開できる状態へ戻す。\n\n"
+        "## 反映内容と反映先\n\n"
+        "失敗理由と実行記録から原因を特定し、振り返りの前後処理または準備処理を是正する。"
+        f"反映先は`{_plugin_repository()}`とする。"
+        "是正にユーザーの判断が要る点があれば、UWIで確認する。\n\n"
+        "## 調査結果と判断根拠\n\n"
+        "失敗理由は振り返りの起動元が記録した値である。"
+        "実行記録には固定した対象、準備結果、失敗の記録があり、対象のセッション記録の所在は待ち記録にある。\n\n"
+        "## 完成条件\n\n"
+        "失敗理由の原因が是正され、対象セッションで振り返りの準備が成功する。"
+        "このAWIの終了後、次のセッション開始・終了時に、止めていた対象の振り返りが自動で再試行される。\n\n"
+        "## 詳細\n\n"
+        f"失敗理由: {reason}\n"
+        f"実行記録: {path}\n"
+        f"対象: {targets}\n"
+    )
+    return f"---\nsession_review_failure_key: {json.dumps(failure_key)}\n---\n\n{body}"
+
+
 def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
     signature: list[Any] = [reason.split(":", 1)[0]]
     if signature[0].startswith("run-skill-exit-"):
@@ -214,74 +247,28 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
         normalized = re.sub(r"\d{4}-\d\d-\d\dT[0-9:.+-]+Z?", "<timestamp>", normalized)
         signature.append(normalized)
     failure_key = hashlib.sha256(json.dumps(signature, ensure_ascii=False).encode()).hexdigest()
-    reports = _reports()
-    existing = next(
-        (
-            entry
-            for entry in reports
-            if entry[1].get("session_review_failure_key") == failure_key and not uwi_scan.is_uwi_answered(entry[2])
-        ),
-        None,
-    )
-    # 同一実行の成功報告が保存されていれば、その報告の同期・範囲確定を次回に継続する。
-    own = next((entry for entry in reports if entry[1].get("run_skill_run_id") == manifest["run_id"]), None)
+    existing = _active_failure(failure_key)
     manifest.update(status="failed", failure_key=failure_key, error=reason)
     session_review.write(path, manifest)
     saved = False
-    found = existing or own
-    if found is not None:
-        report_path, _data, text = found
+    if existing is not None:
+        report_path, _data = existing
         try:
-            if own is not None and existing is None:
-                parsed = frontmatter.parse_frontmatter(text)
-                assert parsed is not None
-                data, body = parsed
-                data["session_review_failure_key"] = failure_key
-                updated = frontmatter.serialize_frontmatter(data, body + f"\n## 実行失敗\n\n{reason}\n実行記録: {path}\n")
-                repo.append_entry(
-                    private_notes.default_private_notes(),
-                    directory=report_path.parent,
-                    filename=report_path.name,
-                    content=updated.encode(),
-                    target_repo=None,
-                    lock_timeout=30,
-                    expected_content=text.encode(),
-                    commit_message="chore: 振り返りの実行失敗を報告",
-                )
-            else:
-                notes = private_notes.default_private_notes()
-                with sync.repo_lock(notes, timeout=30):
-                    sync.commit_and_push(notes, "chore: 振り返りの失敗報告を同期", [str(report_path.relative_to(notes))])
+            # 同じ原因の是正AWIが未完了なら重複投入せず、保存済みの報告の同期だけを確かめる。
+            notes = private_notes.default_private_notes()
+            with sync.repo_lock(notes, timeout=30):
+                sync.commit_and_push(notes, "chore: 振り返りの失敗報告を同期", [str(report_path.relative_to(notes))])
             saved = True
         except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
             _LOG.exception("既存の失敗報告を同期できない: %s", report_path)
     else:
-        message = (
-            "---\nsession_review_failure_key: "
-            + json.dumps(failure_key)
-            + "\n---\n# 非同期振り返りの失敗\n\n"
-            + "下記の対象セッションの振り返りを完了できなかったため、"
-            + "この報告に回答が保存されるまで対象の自動振り返りを止めている。"
-            + "この扱いで問題ないか？\n\n"
-            + "回答を保存すると、次のセッション開始・終了時に対象の振り返りを再試行する。"
-            + "原因の調査や修正を求める場合は「問題がある」を選び、回答欄に求める対応を書く。\n\n"
-            + f"失敗理由: {reason}\n"
-            + f"実行記録: {path}\n対象: "
-            + ", ".join(item["session_id"] for item in manifest["targets"])
-            + "\n"
-        )
-        saved_details: dict[str, dict[str, object | None]] = {}
         try:
             add.add_entries(
                 private_notes.default_private_notes(),
-                messages=[message],
-                target_repo=manifest["target_repo"],
-                source="run-skill",
+                messages=[_failure_message(failure_key, reason, path, manifest)],
+                target_repo=_plugin_repository(),
+                source=_FAILURE_SOURCE,
                 now=datetime.datetime.now(datetime.UTC),
-                entry_type="uwi",
-                scope=session_review.BATCH_SKILL,
-                question_type="post-approval",
-                saved_details=saved_details,
             )
             saved = True
         except OSError, ValueError, subprocess.SubprocessError:
