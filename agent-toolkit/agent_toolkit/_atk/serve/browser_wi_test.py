@@ -3228,7 +3228,9 @@ async def test_copy_all_is_summary_column_header(browser_harness: _BrowserHarnes
     """全てコピーは要約ラベルの右側、個別コピーの上に表示される。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": width, "height": 900})
+    await _observe_screen_requests(page)
     await page.goto(browser_harness.base_url + "/")
+    await _wait_screen_requests_consumed(page, ("/api/events",))
     button = page.get_by_role("button", name="全てコピー", exact=True)
     label = page.locator(".summary-column-label")
     individual = page.locator("#entry-list .entry-copy").first
