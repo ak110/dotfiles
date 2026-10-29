@@ -336,6 +336,25 @@ def test_body_reference_same_skill_across_lines_and_no_unique_fallback(tmp_path)
     assert unowned.path == source.parent / "references/rule.md"
 
 
+@pytest.mark.parametrize("foreign_plugin", [False, True])
+def test_body_reference_rejects_moved_and_cross_plugin_unique_targets(tmp_path, foreign_plugin):
+    """移動先や別プラグインの一意な資料があっても、所属なしの本文参照を拒否する。"""
+    toolkit = tmp_path / "agent-toolkit"
+    basics = tmp_path / "agent-basics"
+    for root in (toolkit, basics):
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin/plugin.json").write_text(f'{{"name": "{root.name}"}}', encoding="utf-8")
+    owner = basics if foreign_plugin else toolkit
+    source = owner / "skills/current/SKILL.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# 現在\n判定は`references/rule.md`に従う。\n", encoding="utf-8")
+    destination = toolkit / "skills/moved/references/rule.md"
+    destination.parent.mkdir(parents=True)
+    destination.write_text("# 基準\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="参照先が存在しない"):
+        read_triggers.validate_reference_routes(source, toolkit, [])
+
+
 def test_startup_delivery_is_part_of_role_reception(tmp_path):
     source = tmp_path / "search.subagent.md"
     reference = tmp_path / "rule.md"
