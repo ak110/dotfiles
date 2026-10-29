@@ -129,6 +129,7 @@ def test_failed_or_unidentified_execution_is_not_replayed(tmp_path, monkeypatch,
 
 
 @pytest.mark.parametrize("position", ["start", "end"])
+@pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FDへ固定した再取得はLinuxで検証する")
 def test_changed_output_is_not_delivered(tmp_path, monkeypatch, position):
     """元の先頭または末尾と異なるファイルを配送しない。"""
     path = tmp_path / "note"
@@ -147,6 +148,8 @@ def test_scope_and_special_files_are_not_replayed(tmp_path, monkeypatch, kind):
     path = tmp_path / "outside"
     path.write_text("境界の検証\n" * 40, encoding="utf-8")
     if kind == "symlink":
+        if not pathlib.Path("/proc/self/fd").is_dir():
+            pytest.skip("再取得時のsymlink境界はLinuxで検証する")
         link = root / "link"
         link.symlink_to(path)
         path = link
@@ -214,6 +217,28 @@ def test_malformed_transcript_does_not_deliver(tmp_path, monkeypatch, value):
     assert delivery.collect(payload) is None
 
 
+@pytest.mark.parametrize("reason", ["mismatch", "capacity"])
+def test_public_unread_notice_provides_next_read(tmp_path, monkeypatch, capsys, reason):
+    """公開Postの未取得通知へ、保護判定を維持した次の取得操作を添える。"""
+    if reason == "mismatch" and not pathlib.Path("/proc/self/fd").is_dir():
+        pytest.skip("FDへ固定した再取得はLinuxで検証する")
+    body = "照合対象の本文\n" * 100
+    path = tmp_path / "notice.md"
+    path.write_text("変更" + body if reason == "mismatch" else body, encoding="utf-8")
+    payload = _payload(
+        tmp_path,
+        monkeypatch,
+        f"cat {path}",
+        _cut(body) if reason == "mismatch" else body,
+        limit=1000000 if reason == "mismatch" else 1000,
+    )
+    assert posttooluse.main(json.dumps(payload)) == 0
+    output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "未取得" in output
+    assert ("同じ読取を再実行" if reason == "mismatch" else "次の応答で必要な行範囲へ限定") in output
+    assert json.dumps(body, ensure_ascii=False)[1:-1] not in output
+
+
 @pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FDへ固定した再取得はLinuxで検証する")
 def test_additional_writable_root_and_actual_workdir(tmp_path, monkeypatch):
     """追加の書込rootを許可し、相対パスを元の実行cwdから解決する。"""
@@ -239,6 +264,7 @@ def test_additional_writable_root_and_actual_workdir(tmp_path, monkeypatch):
     assert result is not None and result.body == body
 
 
+@pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FDへ固定した再取得はLinuxで検証する")
 def test_oversized_replay_remains_unread(tmp_path, monkeypatch):
     """巨大な資料は再取得枠で止め、追加本文から読了にしない。"""
     body = "本文\n" * 1000
@@ -248,20 +274,27 @@ def test_oversized_replay_remains_unread(tmp_path, monkeypatch):
     assert result is not None and result.body is None and "未取得" in result.context
 
 
-@pytest.mark.parametrize("exit_code", [0, 1])
+@pytest.mark.parametrize("exit_code", [0, 1, None])
 @pytest.mark.parametrize("truncated", [False, True])
-@pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FDへ固定した再取得はLinuxで検証する")
-def test_document_read_state_follows_successful_full_delivery(tmp_path, monkeypatch, capsys, exit_code, truncated):
-    """識別行を含む本文でも、元の失敗を実際のセッション取得記録へ反映しない。"""
+@pytest.mark.parametrize("outside", [False, True])
+def test_document_read_state_follows_successful_full_delivery(tmp_path, monkeypatch, capsys, exit_code, truncated, outside):
+    """対象内の配送と対象外の全量手動読取を観測し、失敗・未確認・省略は読了にしない。"""
+    if truncated and not outside and exit_code == 0 and not pathlib.Path("/proc/self/fd").is_dir():
+        pytest.skip("FDへ固定した再取得はLinuxで検証する")
     path = plugin_resources.skill_document_path("bugfix", "references/root-cause-analysis.md")
     body = path.read_text(encoding="utf-8")
     payload = _payload(tmp_path, monkeypatch, f"cat -- {path}", _cut(body) if truncated else body, exit_code=exit_code)
     transcript = pathlib.Path(payload["transcript_path"])
     records = [json.loads(line) for line in transcript.read_text().splitlines()]
-    records[2]["payload"]["cwd"] = str(path.parent)
+    if not outside:
+        records[2]["payload"]["cwd"] = str(path.parent)
+    else:
+        monkeypatch.setattr(delivery, "_replay", lambda *_args, **_kwargs: pytest.fail("範囲外は再取得しない"))
+    if exit_code is None:
+        records = []
     transcript.write_text("".join(json.dumps(record) + "\n" for record in records))
     assert posttooluse.main(json.dumps(payload)) == 0
     capsys.readouterr()
     recorded = session_state.read_state("session").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     target = read_delivery.read_triggers.ReadTarget(path)
-    assert read_delivery.target_ready(recorded, target, "main") == (exit_code == 0)
+    assert read_delivery.target_ready(recorded, target, "main") == (exit_code == 0 and (not outside or not truncated))

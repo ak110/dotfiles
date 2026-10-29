@@ -2468,28 +2468,54 @@ def test_read_records_operation_skill_acquisition_only_for_full_body(
 
 
 @pytest.mark.parametrize(
-    ("command", "output", "expected"),
+    ("command", "output", "expected", "exit_code"),
     [
-        (f"cat {_SEARCH_SKILL_MD}", _SEARCH_SKILL_MD.read_text(encoding="utf-8"), {"agent-toolkit:search": ["main"]}),
-        (f"cat {_SEARCH_SKILL_MD}", f"cat: {_SEARCH_SKILL_MD}: No such file or directory", None),
-        (f"ls {_SEARCH_SKILL_MD}", str(_SEARCH_SKILL_MD), None),
-        (f"head -n 5 {_SEARCH_SKILL_MD}", _SEARCH_SKILL_MD.read_text(encoding="utf-8"), None),
-        (f"cat {_SCOPE_REFERENCE}", _SCOPE_REFERENCE.read_text(encoding="utf-8"), {_SCOPE_ID: ["main"]}),
+        (f"cat {_SEARCH_SKILL_MD}", _SEARCH_SKILL_MD.read_text(encoding="utf-8"), {"agent-toolkit:search": ["main"]}, 0),
+        (f"cat {_SEARCH_SKILL_MD}", f"cat: {_SEARCH_SKILL_MD}: No such file or directory", None, 1),
+        (f"ls {_SEARCH_SKILL_MD}", str(_SEARCH_SKILL_MD), None, 0),
+        (f"head -n 5 {_SEARCH_SKILL_MD}", _SEARCH_SKILL_MD.read_text(encoding="utf-8"), None, 0),
+        (f"cat {_SCOPE_REFERENCE}", _SCOPE_REFERENCE.read_text(encoding="utf-8"), {_SCOPE_ID: ["main"]}, 0),
     ],
     ids=["cat", "failed", "path-only", "head", "reference"],
 )
 def test_codex_bash_read_records_operation_skill_acquisition(
-    tmp_path: pathlib.Path, command: str, output: str, expected: dict | None
+    tmp_path: pathlib.Path, command: str, output: str, expected: dict | None, exit_code: int
 ) -> None:
     """CodexはBashの全文の読取が資料の本文を返した場合だけ取得を記録する。"""
     payload = {
         "hook_event_name": "PostToolUse",
         "session_id": "codex-read",
         "turn_id": "turn-1",
+        "tool_use_id": "read-1",
         "tool_name": "Bash",
         "tool_input": {"command": command},
         "tool_response": output,
     }
+    cwd = _SEARCH_SKILL_MD.parents[2]
+    transcript = tmp_path / "native-read.jsonl"
+    records = [
+        {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "turn-1", "model_context_window": 1000000}},
+        {"type": "token_usage_record", "payload": {"usage": {"input_tokens": 0, "output_tokens": 0}}},
+        {"type": "turn_context", "payload": {"turn_id": "turn-1", "cwd": str(cwd), "permission_profile": {"type": "disabled"}}},
+        {
+            "type": "event_msg",
+            "payload": {
+                "type": "item_completed",
+                "turn_id": "turn-1",
+                "thread_id": "codex-read",
+                "item": {
+                    "type": "CommandExecution",
+                    "id": "read-1",
+                    "status": "completed" if exit_code == 0 else "failed",
+                    "exit_code": exit_code,
+                    "cwd": cwd.as_uri(),
+                    "command": ["/bin/bash", "-lc", command],
+                },
+            },
+        },
+    ]
+    transcript.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+    payload["transcript_path"] = str(transcript)
     assert _run(payload, state_dir=tmp_path).returncode == 0
     state = _read_state(tmp_path, "codex-read")
     assert _legacy_operation_readiness(state) == expected
