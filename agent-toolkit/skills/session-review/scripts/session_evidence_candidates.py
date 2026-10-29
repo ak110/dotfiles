@@ -46,6 +46,7 @@ from session_evidence_tool_calls import (
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import constants as _wi_constants
+from agent_toolkit._atk.wi import layout as _wi_layout
 from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
@@ -321,31 +322,28 @@ def _wi_candidate_events(collected: list[_CollectedRecord], session_id: str) -> 
         return []
     processed = _processed_wi_filenames(collected)
     events: list[dict[str, Any]] = []
-    for state in _wi_constants.WI_STATES:
-        directory = root / state
-        if not directory.is_dir():
+    for path in _wi_layout.iter_entry_paths(root):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError, UnicodeError:
             continue
-        for path in sorted(directory.glob("*.md")):
-            try:
-                text = path.read_text(encoding="utf-8")
-            except OSError, UnicodeError:
-                continue
-            parsed = _parse_wi_frontmatter(text)
-            metadata = parsed[0] if parsed is not None else {}
-            is_uwi = _wi_constants.normalized_wi_type(metadata.get("type")) == _wi_constants.WI_TYPE_UWI
-            submitted = is_uwi and metadata.get("submitter_session") == session_id
-            question = _wi_sections.title(text) if is_uwi else ""
-            if submitted and _REPORT_UWI_QUESTION.search(question):
-                continue
-            location = {"record": f"wi:{path.name}", "line": 0, "wi_file": path.name, "wi_state": state}
-            if submitted:
-                events.append({"kind": "submitted-uwi", **location, "tag": "submitted-uwi", "text": question})
-            if not submitted and path.name not in processed:
-                continue
-            section = "回答" if is_uwi else "ユーザーコメント"
-            entry = _wi_entry(text, section)
-            if entry and not (is_uwi and entry in _wi_choices(metadata)):
-                events.append({"kind": "wi-user-response", **location, "tag": section, "wi_section": section, "text": entry})
+        state = _wi_layout.entry_state_of(path, text)
+        parsed = _parse_wi_frontmatter(text)
+        metadata = parsed[0] if parsed is not None else {}
+        is_uwi = _wi_constants.normalized_wi_type(metadata.get("type")) == _wi_constants.WI_TYPE_UWI
+        submitted = is_uwi and metadata.get("submitter_session") == session_id
+        question = _wi_sections.title(text) if is_uwi else ""
+        if submitted and _REPORT_UWI_QUESTION.search(question):
+            continue
+        location = {"record": f"wi:{path.name}", "line": 0, "wi_file": path.name, "wi_state": state}
+        if submitted:
+            events.append({"kind": "submitted-uwi", **location, "tag": "submitted-uwi", "text": question})
+        if not submitted and path.name not in processed:
+            continue
+        section = "回答" if is_uwi else "ユーザーコメント"
+        entry = _wi_entry(text, section)
+        if entry and not (is_uwi and entry in _wi_choices(metadata)):
+            events.append({"kind": "wi-user-response", **location, "tag": section, "wi_section": section, "text": entry})
     return events
 
 

@@ -19,6 +19,7 @@ import session_evidence_candidates as evidence_candidates  # pylint: disable=imp
 import session_review_evidence as evidence  # pylint: disable=import-error
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
+from agent_toolkit._atk.wi import layout, uwi_scan
 from agent_toolkit._common import response_language_check, state_paths
 from agent_toolkit._testing import delegated_threads, git_repository
 from agent_toolkit._testing import session_evidence_support as support
@@ -678,6 +679,18 @@ def _uwi_body(question: str, answer: str) -> str:
     )
 
 
+def test_past_records_keep_future_state_from_common_layout(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """共通layoutが追加した状態をprepareの独自状態一覧で除外しない。"""
+    path = tmp_path / "2026" / "10" / "20261001-163353-001.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("# 過去の対策\n\n## ユーザーコメント\n\n同じ問題が再発したので原因を調べてほしい\n", encoding="utf-8")
+    monkeypatch.setattr(uwi_scan, "private_notes_root", lambda: tmp_path)
+    monkeypatch.setattr(layout, "iter_entry_paths", lambda *_args, **_kwargs: iter([path]))
+    monkeypatch.setattr(layout, "entry_state_of", lambda *_args, **_kwargs: "future-state")
+    records = prepare._past_wi_sections()  # pylint: disable=protected-access
+    assert records[0][:3] == (path.name, "future-state", "過去の対策")
+
+
 def _bash_entry(timestamp: str, call_id: str, command: str) -> dict[str, object]:
     return {
         "type": "assistant",
@@ -689,8 +702,9 @@ def _bash_entry(timestamp: str, call_id: str, command: str) -> dict[str, object]
     }
 
 
+@pytest.mark.parametrize("dated", [False, True], ids=["legacy-layout", "dated-layout"])
 def test_prepare_marks_wi_candidates_and_similar_past_records(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], dated: bool
 ) -> None:
     """投入したUWIを確認の候補、WIの記入欄の是正を是正の候補として載せ、ユーザーの是正へ過去の同種記録を添える。
 
@@ -729,6 +743,14 @@ def test_prepare_marks_wi_candidates_and_similar_past_records(
         f"\n# 過去の同種の是正への対策\n\n## ユーザー指摘の逐語引用\n\n```text\n{correction}。\n```\n",
     )
     _write_wi(root, "adopted", "20261001-163353-002.md", awi, f"\n# 本文だけに同じ文を持つ項目\n\n{correction}\n")
+    if dated:
+        destination = root / "2026" / "10"
+        destination.mkdir(parents=True)
+        for path in sorted(root.glob("*/*.md")):
+            text = path.read_text(encoding="utf-8")
+            text = text.replace("---\n", f"---\nstate: {path.parent.name}\n", 1)
+            (destination / path.name).write_text(text, encoding="utf-8")
+            path.unlink()
     entries = [
         {"type": "user", "timestamp": "2026-10-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
         _bash_entry("2026-10-06T12:00:10Z", "toolu_show", "atk wi show --skip-pull 20261006-100000-004.md"),
