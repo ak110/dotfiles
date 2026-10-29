@@ -209,7 +209,7 @@ def _registered_update_boundary(monkeypatch: pytest.MonkeyPatch, tmp_path: pathl
     monkeypatch.setattr(_config, "resolve_configured_repositories", lambda: (repository,))
     monkeypatch.setattr(ownership, "resume_repositories", lambda _session, targets: set(targets))
     monkeypatch.setattr(_pl_watch, "wait_for_start_permission", lambda *_args: True)
-    monkeypatch.setattr(_pl_session, "select_available_orchestrator", lambda specs, *_args, **_kwargs: specs[0])
+    monkeypatch.setattr(_pl_session, "select_available_orchestrator", lambda specs, *_args, **_kwargs: (*specs[0], None))
 
     def snapshot(notes: pathlib.Path, _repositories: object = None) -> tuple[listing.RepositorySnapshot, ...]:
         count = _wi_readiness.count_pending_entries(notes, repository.repo_id)
@@ -313,7 +313,7 @@ class TestWaitLoopAutoRestart:
         monkeypatch.setattr(
             _pl_session,
             "select_available_orchestrator",
-            lambda candidates, _env, _cwd, **_kwargs: candidates[0],
+            lambda candidates, _env, _cwd, **_kwargs: (*candidates[0], None),
         )
 
         wait_calls = {"n": 0}

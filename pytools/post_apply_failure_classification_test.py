@@ -98,9 +98,8 @@ def _agy_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
 
 
 def _opencode_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(
-        setup_opencode_cli.common, "resolve_executable", lambda name: None if name == "opencode" else tmp_path / name
-    )
+    monkeypatch.setattr(setup_opencode_cli, "find_launcher", lambda: None)
+    monkeypatch.setattr(setup_opencode_cli.shutil, "which", lambda name: str(tmp_path / name))
     monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: _completed(1, stderr="registry unreachable"))
 
 
@@ -111,7 +110,7 @@ def _herdr_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
 
 def _opencode_toolkit_cli_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     del tmp_path
-    monkeypatch.setattr(common, "resolve_executable", lambda _name: None)
+    monkeypatch.setattr(setup_opencode_cli, "find_launcher", lambda: None)
 
 
 def _tmux_clone_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -254,7 +253,7 @@ def _rules_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 def _opencode_toolkit_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
-    monkeypatch.setattr(common, "resolve_executable", lambda _name: tmp_path / "opencode")
+    monkeypatch.setattr(setup_opencode_cli, "find_launcher", lambda: tmp_path / "opencode")
     monkeypatch.setattr(install_opencode_toolkit, "sync", _raise(OSError("配布ファイルの書き込みに失敗")))
 
 

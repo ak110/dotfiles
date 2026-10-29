@@ -44,7 +44,7 @@ def codex_plugin_script(*, plugin_id: str, plugin_name: str, relative_path: Path
         )
         return None
     result = common.run_subprocess(
-        [str(codex), "plugin", "list", "--json"],
+        [str(codex), *install_codex_plugins.plugin_list_args(plugin_id.rpartition("@")[2])],
         timeout=_CODEX_LIST_TIMEOUT,
         tag="codex",
     )

@@ -12,6 +12,7 @@
 | 本文の参照基準を適用する前 | `quality-principles.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles.md` |
 | 本文の参照基準を適用する前 | `design-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time.md` |
 | 本書の基準を適用する前 | `design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `public-service-obligations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/public-service-obligations.md` |
 
 ## DBスキーマ・マイグレーション設計
 
@@ -44,3 +45,4 @@ DDLの変更内容を事前にテスト用テーブルで検証する場合は�
 
 設計観点として、ファイルサイズ上限値の各層（アプリケーション、リバースプロキシ、ストレージサービス）間での整合性確保、ストリーミング処理によるメモリー消費の抑制、拡張子のみに依存しない内容検証（マジックバイトの検査など）を網羅する。また中間ファイルの適切な生存期間管理（`design-runtime.md`「並行処理・排他制御の設計観点」に従い、再生成可能な一時ファイルは処理失敗時に削除する）も含める。
 保存領域の隔離、ダウンロード配信時における実行防止、パストラバーサル攻撃への対策は、それぞれ独立した必須の防御策としてすべて適用する。ファイルの保存先は公開Webルート外（署名付きURLや認可済み配信エンドポイントを経由してのみアクセス可能な領域）とし、保存ファイル名やパスはサーバーアプリケーション側で一意に生成する。HTMLやSVGなど能動的コンテンツ（実行可能スクリプトを含み得るファイル）のブラウザー上での不正実行を防止するため、安全な静的形式へ変換するか、以下の3点を確実に設定する。ダウンロード専用のMIMEタイプ（`application/octet-stream`など）の指定、`X-Content-Type-Options: nosniff`ヘッダーの付与、および`Content-Disposition: attachment`ヘッダーの付与である。
+不特定のエンドユーザーがアップロードした投稿を公開するサービスでは、権利侵害の通報窓口と削除手順を扱う`public-service-obligations.md`も読む。

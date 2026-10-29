@@ -78,6 +78,21 @@ def _codex_json(args: list[str]) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def plugin_list_args(marketplace: str) -> list[str]:
+    """対象を指定したmarketplaceに限定してplugin一覧をJSONで取得する`codex`の引数を返す。
+
+    marketplaceを指定しない`codex plugin list`はリモートカタログ（chatgpt.com）へ接続して応答を待つ。
+    codex-cli 0.165.0では、応答しないプロキシ経由で約30秒かかり、`--marketplace`を付けると接続せず0.1秒で終わった。
+    導入状態の確認に必要なのは対象marketplaceのローカル状態だけなので、引数にmarketplace名を必須とする。
+    """
+    return ["plugin", "list", "--json", "--marketplace", marketplace]
+
+
+def _marketplace_of(plugin_id: str) -> str:
+    """`<plugin>@<marketplace>`形式のplugin IDからmarketplace名を返す。"""
+    return plugin_id.rpartition("@")[2]
+
+
 def _command(args: list[str]) -> bool:
     result = common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
     return result is not None and result.returncode == 0
@@ -394,7 +409,7 @@ def _append_exception_message(error: BaseException, message: str) -> None:
 
 
 def _verify_expected_state(plugin_id: str, version: str) -> None:
-    after = _codex_json(["plugin", "list", "--json"])
+    after = _codex_json(plugin_list_args(_marketplace_of(plugin_id)))
     after_known, installed = _installed(after, plugin_id) if after is not None else (False, None)
     if not after_known or installed is None or installed.get("version") != version or installed.get("enabled") is not True:
         raise RuntimeError("Codex plugin更新後の状態が期待値と一致しない")
@@ -538,7 +553,7 @@ def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
     deferred = False
     notices: list[post_apply_outcome.PostApplyNotice] = []
     for plugin_id in _UNUSED_PLUGINS:
-        installed_data = _codex_json(["plugin", "list", "--json"])
+        installed_data = _codex_json(plugin_list_args(_marketplace_of(plugin_id)))
         if installed_data is None:
             logger.warning(
                 log_format.format_status(
@@ -697,7 +712,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 )
                 return _outcome(changed, notices, deferred=unused_deferred)
 
-        before = _codex_json(["plugin", "list", "--json"])
+        before = _codex_json(plugin_list_args(marketplace_name))
         if before is None:
             logger.error(
                 log_format.format_status(

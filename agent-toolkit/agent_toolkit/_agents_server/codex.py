@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_toolkit._agents_server import (
+    api_credits,
     child_environment,
     codex_providers,
     codex_resume_state,
@@ -67,6 +68,7 @@ from agent_toolkit._agents_server.state import (
     utc_now,
 )
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_server_tool_result
+from agent_toolkit._atk import codex_connection
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk.usage_limit_policy import should_wait
 from agent_toolkit._common import (
@@ -917,7 +919,7 @@ class AppServerManager:
             client = await self._ensure_client(launch_kind, prompt)
             resources.push_async_callback(self._discard_client, client)
             thread_response, selection, attempted, owner_session_id, writer_session_id = await self._start_thread(
-                client, cwd, model, launch_kind
+                client, cwd, model, launch_kind, role=codex_connection.role_of(model_type)
             )
             session_id = thread_response["thread"]["id"]
             await session_identity.validate_identity(self._validate_session_id, session_id, None)
@@ -962,12 +964,12 @@ class AppServerManager:
         return session
 
     async def _start_thread(
-        self, client: JsonRpcProcess, cwd: str, model: str | None, launch_kind: LaunchKind
+        self, client: JsonRpcProcess, cwd: str, model: str | None, launch_kind: LaunchKind, *, role: str = "delegate"
     ) -> tuple[dict[str, Any], codex_providers.ProviderSelection | None, set[str], str | None, str | None]:
         """新しい接続でthreadを開始し、応答・接続先の選択・試行した接続先・内側MCPの所有者と書込主体を返す。"""
         selection = None
         if codex_providers.has_provider_configuration():
-            selection = await codex_providers.select(client.request, cwd)
+            selection = await codex_providers.select(client.request, cwd, role=role)
             if not codex_providers.has_provider_configuration():
                 selection = None
         params: dict[str, Any] = {
@@ -1316,8 +1318,13 @@ class AppServerManager:
 
     @staticmethod
     def _provider_failure(session: SessionState, error: Any = None) -> bool:
-        """利用上限で終了した失敗と、移行済みAPIが受け付けなかった失敗だけを、代替の接続先での試行の対象と判定する。"""
+        """利用上限で終了した失敗と、移行済みAPIが受け付けなかった失敗だけを、代替の接続先での試行の対象と判定する。
+
+        統括担当は会話の中で接続を切り替えないため対象にしない。
+        """
         if not session.codex_model_provider or not session.turn_completed or session.turn_start_ambiguous:
+            return False
+        if codex_connection.role_of(session.model_type) == "orchestrator":
             return False
         result = session.pending_result
         status = result["status"] if result is not None else session.status
@@ -1336,7 +1343,9 @@ class AppServerManager:
         """新しいturnを開始する前に、同じthreadを独立API認証の次候補へcold resumeする。"""
         if session.turn_start_ambiguous or session.turn_start_sent and not session.turn_completed:
             return False
-        selection = await codex_providers.select(client.request, session.cwd, primary=session.codex_model_provider)
+        selection = await codex_providers.select(
+            client.request, session.cwd, primary=session.codex_model_provider, role=codex_connection.role_of(session.model_type)
+        )
         if session.codex_model_provider:
             session.codex_attempted_provider_ids.add(session.codex_model_provider)
         if session.codex_subscription_provider:
@@ -1408,6 +1417,7 @@ class AppServerManager:
         writer_session_id: str | None = None,
     ) -> str | None:
         """保存済みCodex threadを現在の実行条件で再開する。"""
+        await self._apply_connection_order(session, client)
         try:
             target = await self._compatible_resume_provider(session, client)
         except (AppServerError, TimeoutError, OSError) as error:
@@ -1445,6 +1455,22 @@ class AppServerManager:
         if owner_session_id is not None and writer_session_id is not None:
             await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session.session_id)
         return writer_session_id
+
+    @staticmethod
+    async def _apply_connection_order(session: SessionState, client: Any) -> None:
+        """保持したproviderの種別を使用順から外した会話を、使用順の先頭の利用可能な候補へ移す。
+
+        移した後の種別は使用順に含まれるため、使用順から外れた種別へは戻らない。
+        """
+        role = codex_connection.role_of(session.model_type)
+        if not codex_connection.outside_order(
+            session.codex_model_provider, role, subscription_provider=session.codex_subscription_provider
+        ):
+            return
+        selection = await codex_providers.select(client.request, session.cwd, role=role)
+        _LOG.info("Codex接続先を使用順の先頭へ移しました: session_id=%s provider=%s", session.session_id, selection.primary)
+        session.codex_model_provider = selection.primary
+        session.codex_subscription_provider = selection.primary if selection.subscription else None
 
     async def _compatible_resume_provider(self, session: SessionState, client: Any) -> str:
         """通常設定も含めて今回の再開先を確定し、同threadの状態を再利用できることを確かめる。"""
@@ -1731,6 +1757,12 @@ class AppServerManager:
         resume_waits.begin_auto_resume_wait(
             session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
         )
+        # App Serverは残高不足を区別した値を返さないため、クレジットの候補の不受理を残高不足として扱う。
+        kind = codex_connection.provider_kind(
+            session.codex_model_provider, subscription_provider=session.codex_subscription_provider
+        )
+        if kind == "credits":
+            api_credits.record_shortage("codex")
         session.auto_resume_deadline = None
         session.codex_provider_resume_pending = True
         session.status = "running"

@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
-from agent_toolkit._agents_server import claude_api_credits, state
+from agent_toolkit._agents_server import api_credits, state
 from agent_toolkit._agents_server.result_projection import nonempty_error
 from agent_toolkit._agents_server.state import SessionState, utc_now
 from agent_toolkit._atk import claude_connection, usage_limit_policy
@@ -267,7 +267,7 @@ def clear_usage_limit_wait(session: SessionState) -> None:
 
 
 def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> bool:
-    """利用枠・API残高・起動前認証の失敗を、次の接続または解除待ちへ進める。
+    """利用枠・API残高・認証の失敗を、次の接続または解除待ちへ進める。
 
     最後に報告された利用枠が待機の対象でなければ保留せずに連鎖を終えて偽を返し、呼び出し元は従来どおり扱う。
     通常の委譲先は役割別の後続接続を選び、その接続とAPI環境ファイルの所在だけを保持して再開を予定する。
@@ -278,61 +278,60 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         return False
     limit = session.usage_limit
     failure_text = str(result.get("error", "")) + str(result.get("agent_message", ""))
-    credit_shortage = claude_api_credits.is_credit_shortage(failure_text)
-    credit_error = session.claude_api_env_file is not None and (credit_shortage or "usage limit" in failure_text.casefold())
+    credit_shortage = api_credits.is_credit_shortage(failure_text)
+    current = session.claude_connection or ("api" if session.claude_api_env_file else "inherit")
+    # API接続（クレジット・従量課金）の不受理として、残高不足と利用上限の応答を次の候補へ移す根拠にする。
+    credit_error = (current in claude_connection.API_KINDS or current == "api") and (
+        credit_shortage or "usage limit" in failure_text.casefold()
+    )
     failure = result.get("error")
-    startup_auth_error = (
-        not session.availability_checked
+    # 認証・権限の不受理は同じ接続での再試行では解消しない。起動前の認証失敗に加え、API接続では
+    # 一度成功した後のturnの不受理も次の候補へ移す根拠にする（使用順の次の候補での継続）。
+    auth_error = (
+        (not session.availability_checked or current in claude_connection.API_KINDS or current == "api")
         and isinstance(failure, dict)
         and (
             failure.get("apiErrorStatus") in {401, 403}
             or any(marker in str(failure).casefold() for marker in ("authentication_error", "invalid_api_key", "not logged in"))
         )
     )
-    if result.get("status") != "failed" or not (
-        startup_auth_error or credit_error or limit is not None and limit.is_wait_target
-    ):
+    if result.get("status") != "failed" or not (auth_error or credit_error or limit is not None and limit.is_wait_target):
         clear_usage_limit_wait(session)
         return False
     original_error = result.get("error")
     role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
-    current = session.claude_connection or ("api" if session.claude_api_env_file else "inherit")
-    if claude_connection.api_only(role) and current == "api":
-        clear_usage_limit_wait(session)
-        result["error"] = {
-            "message": "API接続が失敗した。claude_api_env_fileの認証・接続先とAPI残高を確認し、同じ会話へ再送する。",
-            "cause": original_error,
-        }
-        return False
-    reason = "authentication" if startup_auth_error else "api_credits" if credit_error else "usage_limit"
-    if current == "api" and credit_shortage:
-        # 同じプロセスで後から起動する委譲先がAPIで同じ失敗を繰り返さないよう、観測を一定時間共有する。
-        claude_api_credits.record_shortage()
+    reason = "authentication" if auth_error else "api_credits" if credit_error else "usage_limit"
+    if current == "credits" and credit_shortage:
+        # 同じプロセスで後から起動する委譲先がクレジットで同じ失敗を繰り返さないよう、観測を一定時間共有する。
+        api_credits.record_shortage("claude")
     _LOG.info(
         "claude_connection_failed session_id=%s connection=%s phase=turn reason=%s",
         session.session_id,
         current,
         reason,
     )
-    api_only = claude_connection.api_only(role)
-    if current == "inherit" and startup_auth_error and not api_only:
+    if current == "inherit" and auth_error:
         return False
     choices = (
         claude_connection.Candidates((claude_connection.Connection("inherit"),))
-        if current == "inherit" and not api_only
+        if current == "inherit"
         else claude_connection.candidates(role)
     )
     session.claude_connection_failures[current] = str(original_error or result.get("agent_message") or "利用不能")
     order = [connection.kind for connection in choices.connections]
-    # 後続は、候補順のうち現在以外でこのsessionがまだ失敗していない接続とする。
+    connections = choices.connections
+    if role == "delegate":
+        # 新規の会話の開始順と同じ実効順序で後続を選び、残高不足で後ろへ回した`credits`を先に再試行しない。
+        connections = api_credits.order(connections, lambda connection: connection.kind, engine="claude")
+    # 後続は、実効順序のうち現在以外でこのsessionがまだ失敗していない接続とする。
     # 起動時の接続順は残高不足の共有などで設定上の順序と異なりうるため、設定上の順序で現在より前の候補も含める。
     following = tuple(
         choice
-        for choice in choices.connections
+        for choice in connections
         if choice.kind != current
         and choice.kind != "inherit"
         and choice.kind not in session.claude_connection_failures
-        and (current != "inherit" or api_only)
+        and current != "inherit"
     )
     wait_for_subscription = (
         current == "subscription"
@@ -344,7 +343,12 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         following = ()
     if role == "delegate" and following:
         selected = following[0]
-        if current == "subscription" and selected.kind == "api" and limit is not None and limit.is_wait_target:
+        if (
+            current == "subscription"
+            and selected.kind in claude_connection.API_KINDS
+            and limit is not None
+            and limit.is_wait_target
+        ):
             # 上限の解除後に始まるturnでサブスクリプションへ戻すため、解除予定時刻を保持する。
             # 不明な場合は解除待ちと同じ再確認の時刻を使う。
             now = time.time()
@@ -369,7 +373,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         state.notify_touch_listeners()
         return True
     if (
-        startup_auth_error
+        auth_error
         or not choices.connections
         or credit_error
         and role == "orchestrator"

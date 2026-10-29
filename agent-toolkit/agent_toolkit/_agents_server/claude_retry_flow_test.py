@@ -19,7 +19,12 @@ from claude_agent_sdk._internal.message_parser import parse_message
 from agent_toolkit._agents_server import claude, manager, state
 from agent_toolkit._atk import claude_connection
 from agent_toolkit._common import host_homes, process_tree
-from agent_toolkit._testing.agents_server_support import AssistantMessage, ResultMessage, install_backend
+from agent_toolkit._testing.agents_server_support import (
+    AssistantMessage,
+    ResultMessage,
+    configure_claude_payg,
+    install_backend,
+)
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -106,7 +111,7 @@ async def test_weekly_retry_continues_same_session_on_api(
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "five-hour")
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
+    configure_claude_payg(monkeypatch, str(api))
     monkeypatch.setattr(claude_connection, "subscription_available", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)
@@ -149,7 +154,7 @@ async def test_weekly_retry_continues_same_session_on_api(
             while not resumed.queries:
                 await asyncio.sleep(0)
         assert cli.disconnected
-        assert owner.sessions[session_id].claude_connection == "api"
+        assert owner.sessions[session_id].claude_connection == "payg"
         completed = "APIで残る作業を完了した" + ("\n状態: completed" if launch_kind == "explore" else "")
         resumed.messages.put_nowait(ResultMessage(completed))
         owner._wait_timeouts["main"] = 5  # pylint: disable=protected-access
@@ -165,7 +170,7 @@ async def test_weekly_api_resume_retains_request_followup_and_completed_work(
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "five-hour")
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
+    configure_claude_payg(monkeypatch, str(api))
     monkeypatch.setattr(claude_connection, "subscription_available", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     request = "一覧の素材を完成させてから、配布用の索引を作る"
@@ -332,7 +337,7 @@ async def test_api_switch_serializes_kill_and_reports_switch_failure(
     """接続交換中の停止は同じ所有境界で受け付け、交換の失敗は元の拒否とともに公開する。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
+    configure_claude_payg(monkeypatch, str(api))
     monkeypatch.setattr(claude_connection, "subscription_available", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)

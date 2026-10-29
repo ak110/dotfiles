@@ -8,6 +8,7 @@ GitHubは見出しのIDを、描画した見出しの文字列（強調・リン
 フェンス付きコードブロックとインラインコードの内側、およびスキームを持つリンク先（`https:`など）は描画されたリンクにならないか、
 リンク先の見出しをリポジトリ内で取得できないため対象から外す。
 対象が追跡中の全Markdown（リポジトリ直下の`README.md`を含む）であるため、リポジトリ直下へ置く。
+`atk`のヘルプが案内するリポジトリの公開URLのフラグメントも、同じ見出しIDの規則で検査する。
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import unicodedata
 import urllib.parse
 
 import pytest
+from agent_toolkit import atk
 from markdown_it import MarkdownIt
 
 _FENCE_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})")
@@ -159,6 +161,28 @@ def test_markdown_link_anchors_resolve() -> None:
         "リンク先の見出しIDへ解決しないフラグメント（ファイル:行: #フラグメント -> リンク先）:\n"
         + "\n".join(map(str, unresolved))
     )
+
+
+_REPOSITORY_URL_PATTERN = re.compile(r"https://github\.com/ak110/dotfiles/blob/master/(?P<path>[^\s#]+)#(?P<fragment>\S+)")
+
+
+@pytest.mark.parametrize("arguments", [["config", "--help"], ["config", "set", "--help"]])
+def test_cli_help_repository_urls_resolve_to_guide_headings(arguments: list[str], capsys: pytest.CaptureFixture[str]) -> None:
+    """`atk config --help`と`atk config set --help`が案内するガイドのURLは、実在する見出しのIDを指す。
+
+    ガイドはプラグインの配布物に含まれないため、ヘルプは既定ブランチの公開URLで案内する。
+    """
+    root = pathlib.Path(__file__).resolve().parent
+    with pytest.raises(SystemExit) as exited:
+        atk.main(arguments)
+    assert exited.value.code == 0
+    matches = list(_REPOSITORY_URL_PATTERN.finditer(capsys.readouterr().out))
+    assert matches, "接続の使い分けを案内するURLがヘルプに無い"
+    for match in matches:
+        target = root / match.group("path")
+        assert target.is_file(), match.group(0)
+        fragment = urllib.parse.unquote(match.group("fragment"))
+        assert fragment in _heading_ids(target.read_text(encoding="utf-8")), match.group(0)
 
 
 _TARGET_DOCUMENT = """# 索引の対象

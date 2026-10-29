@@ -14,6 +14,8 @@ from collections.abc import Callable
 from typing import Any
 
 from agent_toolkit._atk import claude_connection as _connection
+from agent_toolkit._atk import codex_connection as _codex_connection
+from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk.wi import listing as _listing
@@ -104,15 +106,19 @@ def select_available_orchestrator(
     cwd: pathlib.Path,
     *,
     resume_session_id: str | None = None,
-) -> tuple[str, str, str]:
-    """候補を先頭から事前に試し、最初に可用な3つ組を返す。全候補が失敗した場合は異常終了する。"""
+) -> tuple[str, str, str, str | None]:
+    """候補を先頭から事前に試し、最初に可用な3つ組とCodexのprovider IDを返す。全候補が失敗した場合は異常終了する。
+
+    Codexの統括担当は使用順の先頭から利用可能なproviderを判定し、本起動と再開へ同じproviderを渡す。
+    再開では保存したproviderを使い、その種別を使用順から外した場合だけ使用順の先頭の利用可能な候補へ移す。
+    """
     info = _registry.resolve(resume_session_id).resume_info if resume_session_id else None
     if info is not None:
         if info.model is None or info.effort is None:
             raise ValueError("統括の再開に必要なモデル設定が無い。セッション登録を確認する")
         candidates = [(info.engine, info.model, info.effort)]
     selected = (
-        _connection.Connection(info.claude_connection or "api", info.claude_api_env_file)
+        _connection.Connection(info.claude_connection or _claude_settings.LEGACY_API_KIND, info.claude_api_env_file)
         if info is not None and (info.claude_api_env_file or info.claude_connection)
         else None
     )
@@ -123,12 +129,37 @@ def select_available_orchestrator(
         prompt=_AVAILABILITY_PROBE_PROMPT,
         record_wait=_record_usage_limit_wait,
         claude_connection=selected,
+        codex_providers=_codex_orchestrator_providers(candidates, env, info),
     )
     try:
-        return _orchestrator.select_available(candidates, env, cwd, context)
+        return _orchestrator.select_available_with_provider(candidates, env, cwd, context)
     except _orchestrator.NoAvailableCandidateError as error:
         _exit_abnormal_session(error.orchestrator, error.returncode, error.detail)
         raise AssertionError("到達不能") from error
+
+
+def _codex_orchestrator_providers(
+    candidates: list[tuple[str, str, str]], env: dict[str, str], info: _registry.ResumeInfo | None
+) -> tuple[str, ...]:
+    """Codexの統括担当で可用性を判定するprovider IDを順に返す。接続を管理しない環境では空を返す。"""
+    if not any(engine == "codex" for engine, _, _ in candidates) or not _codex_connection.managed():
+        return ()
+    saved = info.codex_model_provider if info is not None and info.engine == "codex" else None
+    if saved is not None and not _codex_connection.outside_order(
+        saved, "orchestrator", subscription_provider=info.codex_subscription_provider if info is not None else None
+    ):
+        return (saved,)
+    entries, diagnostics = _codex_connection.orchestrator_providers(env)
+    for diagnostic in diagnostics:
+        print(diagnostic, file=sys.stderr)
+    if not entries:
+        key = _config.connection_order_key("codex", "orchestrator")
+        raise ValueError(
+            "Codexの統括担当に使える接続がありません。"
+            + "".join(f"{message}。" for message in diagnostics)
+            + f"`atk config set {key} <種別列>`と各種別のprovider設定を確認する"
+        )
+    return tuple(provider for _, provider in entries)
 
 
 def _build_session_argv(
@@ -141,6 +172,7 @@ def _build_session_argv(
     effort: str,
     resume_pending: bool,
     cwd: pathlib.Path,
+    codex_provider: str | None = None,
 ) -> tuple[list[str], pathlib.Path | None]:
     """選択したオーケストレーターの対話セッション用argvを構築する。"""
     env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
@@ -148,14 +180,15 @@ def _build_session_argv(
         info = _registry.resolve(args.resume).resume_info if resume_pending and args.resume else None
         if info is not None:
             connection = _connection.Connection(
-                info.claude_connection or ("api" if info.claude_api_env_file else "inherit"), info.claude_api_env_file
+                info.claude_connection or (_claude_settings.LEGACY_API_KIND if info.claude_api_env_file else "inherit"),
+                info.claude_api_env_file,
             )
         else:
-            choices = _connection.candidates("orchestrator", env=env)
+            choices = _connection.candidates("orchestrator", env=env, cli=True)
             for diagnostic in choices.warnings:
                 print(diagnostic, file=sys.stderr)
             connection = choices.require_first()
-        connection = _connection.with_current_isolation(connection, role="orchestrator", env=env)
+        connection = _connection.apply_current_settings(connection, role="orchestrator", env=env, cli=True)
         prepared = _connection.connection_environment(env, connection)
         # 対話起動は未承認の環境APIキーで確認画面を表示するため、helperから取得する。
         if connection.kind != "inherit":
@@ -230,6 +263,8 @@ def _build_session_argv(
     if resume_pending:
         argv.append("resume")
     argv.extend(("--model", model, "-c", f"model_reasoning_effort={effort}"))
+    if codex_provider is not None:
+        argv.extend(_codex_connection.provider_arguments(codex_provider))
     if resume_pending and args.resume:
         argv.append(args.resume)
         env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
@@ -296,6 +331,7 @@ def _run_process_session(
     on_session_finished: Callable[[bool], None],
     on_session_started: Callable[[str], None] | None,
     on_process_started: Callable[[_registry.ProcessIdentity], None] | None,
+    codex_provider: str | None = None,
 ) -> bool:
     """起動引数が作成した設定の寿命を、準備・実行・終了処理の全体へ結び付ける。"""
     with contextlib.ExitStack() as settings_owner:
@@ -308,6 +344,7 @@ def _run_process_session(
             effort=effort,
             resume_pending=resume_pending,
             cwd=session_path,
+            codex_provider=codex_provider,
         )
         for argument in session_argv:
             if isinstance(argument, _claude_settings.SettingsFile):
@@ -323,6 +360,7 @@ def _run_process_session(
             on_session_finished=on_session_finished,
             on_session_started=on_session_started,
             on_process_started=on_process_started,
+            codex_provider=codex_provider,
         )
 
 
@@ -338,6 +376,7 @@ def _run_started_process_session(
     on_session_finished: Callable[[bool], None],
     on_session_started: Callable[[str], None] | None,
     on_process_started: Callable[[_registry.ProcessIdentity], None] | None,
+    codex_provider: str | None = None,
 ) -> bool:
     """統括CLIを1回実行し、正常終了したかを返す。"""
     if hook_debug_log is not None:
@@ -360,6 +399,7 @@ def _run_started_process_session(
             effort=effort,
             on_session_started=on_session_started,
             on_process_started=on_process_started,
+            codex_provider=codex_provider,
         )
         if identifier := launch_env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
             env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = identifier
@@ -380,6 +420,8 @@ def _run_started_process_session(
                 claude_api_env_file=info.claude_api_env_file,
                 claude_connection=info.claude_connection,
                 claude_role="orchestrator",
+                codex_model_provider=info.codex_model_provider,
+                codex_subscription_provider=info.codex_subscription_provider,
                 status="completed" if result.returncode == 0 else "interrupted",
             )
     _pl_env.reset_console()
@@ -428,8 +470,12 @@ def _run_cli_session(
     effort: str | None = None,
     on_session_started: Callable[[str], None] | None = None,
     on_process_started: Callable[[_registry.ProcessIdentity], None] | None = None,
+    codex_provider: str | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
-    """既存のCLI待機で実行主体を保持し、上限停止と無出力停止を監視する。"""
+    """既存のCLI待機で実行主体を保持し、上限停止と無出力停止を監視する。
+
+    Codexの`codex_provider`は再開時に同じ接続を使うため、セッション記録へ保存する。
+    """
     started_at = time.time()
     rollout: pathlib.Path | None = None
     published: str | None = None
@@ -466,6 +512,8 @@ def _run_cli_session(
                             effort=effort,
                             cwd=str(cwd),
                             model_type="orchestrate",
+                            codex_model_provider=codex_provider,
+                            codex_subscription_provider=_codex_connection.subscription_provider_for(codex_provider),
                             processes=tuple(item for item in (_registry.owner_process(), identity) if item),
                         )
                     if on_session_started is not None:
@@ -510,6 +558,7 @@ def run_process_session(
     on_session_finished: Callable[[bool], None] | None = None,
     on_session_started: Callable[[str], None] | None = None,
     on_process_started: Callable[[_registry.ProcessIdentity], None] | None = None,
+    codex_provider: str | None = None,
 ) -> bool:
     """統括CLIの終了または例外を、呼出元へ一度だけ通知する。"""
     notified = False
@@ -535,6 +584,7 @@ def run_process_session(
             on_session_finished=finished,
             on_session_started=on_session_started,
             on_process_started=on_process_started,
+            codex_provider=codex_provider,
         )
     finally:
         finished(False)

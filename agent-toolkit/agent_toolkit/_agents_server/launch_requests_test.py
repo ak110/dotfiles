@@ -47,6 +47,7 @@ from agent_toolkit._testing.agents_server_support import (
     _write_failing_uv,
     install_backend,
 )
+from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 from agent_toolkit._testing.git_repository import commit_all, git_output, init_repository
 from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
@@ -273,10 +274,18 @@ async def test_public_task_start_delivers_the_actual_child_host_and_project_mate
     }
     observed = []
 
-    def run(args, **kwargs):
+    def claude_inventory(args, **kwargs):
         assert args[1:] == ["plugin", "list", "--json"]
         observed.append((args[0], kwargs["cwd"]))
-        return subprocess.CompletedProcess(args, 0, json.dumps(codex if args[0] == "codex" else claude), "")
+        return subprocess.CompletedProcess(args, 0, json.dumps(claude), "")
+
+    codex_cli = codex_plugin_cli(codex["installed"], other=claude_inventory)
+
+    def run(args, **kwargs):
+        # Codexは設定済みmarketplaceの一覧から照会を始めるため、一覧の取得を1回の導入情報の取得と数える。
+        if args[0] == "codex" and args[1:3] == ["plugin", "marketplace"]:
+            observed.append((args[0], kwargs["cwd"]))
+        return codex_cli(args, **kwargs)
 
     monkeypatch.setattr(resource_roots.process_tree, "run_with_timeout", run)
     async with _manager_with_fake("claude") as (manager, claude_backend):

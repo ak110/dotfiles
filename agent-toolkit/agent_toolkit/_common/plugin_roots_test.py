@@ -11,6 +11,7 @@ import pytest
 
 from agent_toolkit._common import plugin_roots
 from agent_toolkit._common.plugin_roots import _managed_settings_directories, _plugin_inventory
+from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 
 
 @pytest.mark.parametrize(
@@ -28,15 +29,41 @@ def test_codex_missing_required_field_has_an_actionable_host_diagnostic(tmp_path
         item.pop(field)
     else:
         item[field] = value
-    monkeypatch.setattr(
-        plugin_roots.process_tree,
-        "run_with_timeout",
-        lambda args, **_kwargs: subprocess.CompletedProcess(args, 0, json.dumps({"installed": installed}), ""),
-    )
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", codex_plugin_cli(installed, marketplaces=["mine"]))
     with pytest.raises(plugin_roots.PluginRootError) as caught:
         plugin_roots.resolve_plugin_root("agent-basics", tmp_path / "toolkit", "codex", tmp_path)
     assert "Codex" in str(caught.value) and field in str(caught.value)
     assert "codex plugin list --json" in str(caught.value)
+
+
+@pytest.mark.parametrize("duplicated", [False, True])
+def test_codex_inventory_queries_each_configured_marketplace_and_keeps_uniqueness(tmp_path, monkeypatch, duplicated):
+    """リモートカタログへ接続する無指定の一覧を使わず、設定済みmarketplaceの全件から導入元の一意性を判定する。"""
+    home = tmp_path / "codex"
+    root = home / "plugins/cache/mine/agent-basics/1"
+    (root / "skills").mkdir(parents=True)
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    installed = [
+        {"name": "agent-toolkit", "marketplaceName": "mine", "installed": True, "enabled": True, "version": "2"},
+        {"name": "agent-basics", "marketplaceName": "mine", "installed": True, "enabled": True, "version": "1"},
+    ]
+    if duplicated:
+        installed.append(
+            {"name": "agent-toolkit", "marketplaceName": "other", "installed": True, "enabled": True, "version": "2"}
+        )
+    calls: list[list[str]] = []
+    cli = codex_plugin_cli(installed, marketplaces=["mine", "other"], calls=calls)
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", cli)
+    if duplicated:
+        with pytest.raises(plugin_roots.PluginRootError, match="一意でない"):
+            plugin_roots.resolve_plugin_root("agent-basics", tmp_path / "toolkit", "codex", tmp_path)
+    else:
+        assert plugin_roots.resolve_plugin_root("agent-basics", tmp_path / "toolkit", "codex", tmp_path) == root
+    assert calls == [
+        ["codex", "plugin", "marketplace", "list", "--json"],
+        ["codex", "plugin", "list", "--json", "--marketplace", "mine"],
+        ["codex", "plugin", "list", "--json", "--marketplace", "other"],
+    ]
 
 
 def test_codex_does_not_require_unused_versions_from_other_candidates(tmp_path, monkeypatch):
@@ -49,11 +76,7 @@ def test_codex_does_not_require_unused_versions_from_other_candidates(tmp_path, 
         for name, marketplace in (("agent-toolkit", "mine"), ("agent-basics", "mine"), ("agent-basics", "other"))
     ]
     installed[1]["version"] = "1"
-    monkeypatch.setattr(
-        plugin_roots.process_tree,
-        "run_with_timeout",
-        lambda args, **_kwargs: subprocess.CompletedProcess(args, 0, json.dumps({"installed": installed}), ""),
-    )
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", codex_plugin_cli(installed))
     assert plugin_roots.resolve_plugin_root("agent-basics", tmp_path / "toolkit", "codex", tmp_path) == root
 
 
@@ -116,11 +139,13 @@ def test_hook_inventory_reuses_only_unchanged_file_inputs(tmp_path, monkeypatch,
     monkeypatch.setattr(plugin_roots, "update_state", lambda _session, mutate: state.update(mutate(state)))
     calls = []
 
-    def acquire(args, **_kwargs):
+    def claude_inventory(args, **_kwargs):
         calls.append(args)
         return subprocess.CompletedProcess(args, 0, json.dumps([{"generation": len(calls)}]), "")
 
-    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", acquire)
+    monkeypatch.setattr(
+        plugin_roots.process_tree, "run_with_timeout", codex_plugin_cli([], calls=calls, other=claude_inventory)
+    )
 
     def request():
         with plugin_roots.plugin_resolution_scope(session_id="hook"):
@@ -153,7 +178,10 @@ def test_hook_inventory_reuses_only_unchanged_file_inputs(tmp_path, monkeypatch,
     count = len(calls)
     with plugin_roots.plugin_resolution_scope(session_id="hook"):
         _plugin_inventory("codex", project)
-    assert len(calls) == count + 1
+    assert calls[count:] == [
+        ["codex", "plugin", "marketplace", "list", "--json"],
+        ["codex", "plugin", "list", "--json", "--marketplace", "mine"],
+    ]
 
 
 @pytest.mark.parametrize("failure", ["failed", "json", "timeout", "changed-during-fetch", "corrupt-state"])
@@ -371,9 +399,10 @@ def test_codex_root_uses_enabled_same_marketplace_version(tmp_path, monkeypatch,
         {"name": "agent-basics", "marketplaceName": "mine", "installed": True, "enabled": enabled, "version": "1.0.0"},
     ]
 
-    def run(*args, **_kwargs):
-        assert args == (["codex", "plugin", "list", "--json"],)
-        assert _kwargs == {
+    cli = codex_plugin_cli(installed)
+
+    def run(args, **kwargs):
+        assert kwargs == {
             "capture_output": True,
             "encoding": "utf-8",
             "errors": "replace",
@@ -381,7 +410,7 @@ def test_codex_root_uses_enabled_same_marketplace_version(tmp_path, monkeypatch,
             "check": False,
             "cwd": str(pathlib.Path.cwd()),
         }
-        return subprocess.CompletedProcess(args[0], 0, json.dumps({"installed": installed}), "")
+        return cli(args, **kwargs)
 
     monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", run)
     if enabled:

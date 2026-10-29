@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from agent_toolkit._atk import codex_connection as _codex_connection
 from agent_toolkit._atk import lane
 from agent_toolkit._atk.wi import process_loop as _process_loop
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
@@ -56,13 +57,13 @@ def _run_claude_session(
 def _connection_launch(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    mode: str,
+    order: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """本起動境界へ渡されたargv・環境と、起動時に読めるsettingsを取得する。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=selected-test-key\nANTHROPIC_BASE_URL=https://api.example.test\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(api))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", order)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-test-key")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "parent-test-token")
     observed: dict[str, Any] = {}
@@ -85,7 +86,7 @@ def test_unconfigured_process_session_preserves_parent_auth(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, resume: str | None
 ) -> None:
     """未設定時とその会話の再開では、親のAPIキーと設定による通常の認証解決を保つ。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-test-key")
     monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
@@ -97,9 +98,6 @@ def test_unconfigured_process_session_preserves_parent_auth(
             cwd=str(tmp_path),
             claude_connection="inherit" if resume == "inherit" else None,
         )
-        path = tmp_path / "later.env"
-        path.write_text("ANTHROPIC_API_KEY=later-key\n", encoding="utf-8")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
     observed: dict[str, Any] = {}
 
     def launch(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
@@ -132,8 +130,8 @@ def test_invalid_env_file_warning_reaches_process_loop_stderr(
     path = tmp_path / "invalid.env"
     if content is not None:
         path.write_text(content, encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription,payg")
     observed: dict[str, Any] = {}
 
     def launch(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
@@ -143,13 +141,13 @@ def test_invalid_env_file_warning_reaches_process_loop_stderr(
     _run_claude_session(tmp_path, monkeypatch, launch)
     stderr = capsys.readouterr().err
     assert str(path) in stderr
-    assert "atk config set claude_api_env_file" in stderr
+    assert "atk config set claude_payg_env_file" in stderr
     assert observed["env"]["CLAUDE_CODE_OAUTH_TOKEN"]
 
 
-def test_pay_as_you_go_orchestrator_uses_api_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """APIを固定し、対話確認を避けるhelperへ鍵の所在だけを渡す。"""
-    observed, settings = _connection_launch(tmp_path, monkeypatch, "pay-as-you-go")
+def test_payg_orchestrator_uses_api_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """従量課金だけの使用順はAPIを使い、対話確認を避けるhelperへ鍵の所在だけを渡す。"""
+    observed, settings = _connection_launch(tmp_path, monkeypatch, "payg")
     assert "ANTHROPIC_API_KEY" not in observed["env"]
     assert not observed["env"].get("CLAUDE_CODE_OAUTH_TOKEN")
     assert observed["env"]["ANTHROPIC_BASE_URL"] == "https://api.example.test"
@@ -157,9 +155,9 @@ def test_pay_as_you_go_orchestrator_uses_api_only(tmp_path: pathlib.Path, monkey
     assert "selected-test-key" not in str(observed["argv"])
 
 
-def test_api_credits_orchestrator_uses_subscription_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_subscription_orchestrator_uses_subscription_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """API環境ファイルを適用せずサブスクリプションの認証を渡す。"""
-    observed, settings = _connection_launch(tmp_path, monkeypatch, "api-credits")
+    observed, settings = _connection_launch(tmp_path, monkeypatch, "subscription")
     assert observed["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "test-subscription"
     assert not settings["apiKeyHelper"]
     assert "api.example.test" not in str(observed) + str(settings)
@@ -167,7 +165,7 @@ def test_api_credits_orchestrator_uses_subscription_only(tmp_path: pathlib.Path,
 
 def test_subscription_orchestrator_drops_inherited_api_auth(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """親のAPIキー・トークンを本起動の環境とsettingsへ流入させない。"""
-    observed, settings = _connection_launch(tmp_path, monkeypatch, "api-credits")
+    observed, settings = _connection_launch(tmp_path, monkeypatch, "subscription")
     assert "ANTHROPIC_API_KEY" not in observed["env"]
     assert "ANTHROPIC_AUTH_TOKEN" not in observed["env"]
     assert "ANTHROPIC_API_KEY" not in settings["env"]
@@ -178,7 +176,7 @@ def test_orchestrator_resume_probe_keeps_selected_connection(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """モード変更後も、明示再開するAPI会話の可用性を同じAPI接続で確認する。"""
+    """使用順の変更後も、保存した種別が使用順に含まれる会話は同じAPI接続で可用性を確認する。"""
     path = tmp_path / "selected.env"
     path.write_text("ANTHROPIC_API_KEY=selected-key\n", encoding="utf-8")
     session_registry.publish(
@@ -192,7 +190,7 @@ def test_orchestrator_resume_probe_keeps_selected_connection(
         claude_connection="api",
         claude_role="orchestrator",
     )
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-credits")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription,payg")
     observed: list[dict[str, Any]] = []
 
     def probe(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -207,9 +205,118 @@ def test_orchestrator_resume_probe_keeps_selected_connection(
         tmp_path,
         resume_session_id="resume-api",
     )
-    assert selected == candidate
+    assert selected == (*candidate, None)
     assert observed[0]["ANTHROPIC_API_KEY"] == "selected-key"
     assert not observed[0].get("CLAUDE_CODE_OAUTH_TOKEN")
+
+
+def _configure_codex_orchestrator(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, order: str) -> dict[str, str]:
+    """Codexの統括担当の接続設定と、`config.toml`だけに定義したproviderを用意する。"""
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir(exist_ok=True)
+    (codex_home / "config.toml").write_text(
+        '[model_providers.my-credits]\nname = "my-credits"\nbase_url = "https://credits.example.test/v1"\n'
+        'env_key = "MY_CREDITS_KEY"\nrequires_openai_auth = false\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:gpt-6-luna/medium")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_CREDITS_PROVIDER", "my-credits")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_ORCHESTRATOR_CONNECTIONS", order)
+    return {**os.environ, "CODEX_HOME": str(codex_home)}
+
+
+def _codex_probes(monkeypatch: pytest.MonkeyPatch, *, chatgpt: bool) -> list[list[str]]:
+    """有効なアカウントがChatGPTログインかどうかを与え、可用性判定のargvを記録する。"""
+    probes: list[list[str]] = []
+
+    def run(argv: list[str], *_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        probes.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "OK\n", "")
+
+    def login(_env: Any) -> bool:
+        return chatgpt
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(_codex_connection, "chatgpt_login", login)
+    return probes
+
+
+def _provider_option(argv: list[str]) -> str | None:
+    """argvの`-c model_provider=<ID>`の値を返す。"""
+    values = [argv[index + 1] for index, item in enumerate(argv[:-1]) if item == "-c"]
+    return next((json.loads(value.partition("=")[2]) for value in values if value.startswith("model_provider=")), None)
+
+
+def test_codex_orchestrator_probe_start_and_resume_use_selected_provider(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """可用性判定・本起動・再開の起動引数へ同じproviderを渡し、判定へ`config.toml`の定義も渡す。"""
+    env = _configure_codex_orchestrator(monkeypatch, tmp_path, "subscription,credits")
+    probes = _codex_probes(monkeypatch, chatgpt=False)
+    candidate = ("codex", "gpt-5.6-sol", "medium")
+    selected = _pl_session.select_available_orchestrator([candidate], env, tmp_path)
+    # APIキーのアカウントではsubscriptionを除いて診断を出し、使用順の次のクレジットを選ぶ。
+    assert selected == (*candidate, "my-credits")
+    assert "codex_payg_provider openai" in capsys.readouterr().err
+    assert len(probes) == 1 and "--ignore-user-config" in probes[0]
+    assert _provider_option(probes[0]) == "my-credits"
+    assert any(item.startswith("model_providers.my-credits={") and "credits.example.test" in item for item in probes[0])
+    for resume_pending, resume in ((False, None), (True, "orchestrator-thread")):
+        argv, _ = _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
+            argparse.Namespace(resume=resume),
+            "/goal 作業",
+            dict(env),
+            orchestrator="codex",
+            model="gpt-5.6-sol",
+            effort="medium",
+            resume_pending=resume_pending,
+            cwd=tmp_path,
+            codex_provider="my-credits",
+        )
+        assert (argv[1] == "resume") is resume_pending
+        assert _provider_option(argv) == "my-credits"
+
+
+def test_codex_orchestrator_session_record_keeps_provider(tmp_path: pathlib.Path) -> None:
+    """統括担当の起動中に公開するセッション記録へ、選んだproviderを保存する。"""
+    env = {**os.environ, _pl_env.PROCESS_LOOP_SESSION_ID_ENV: "orchestrator-thread", "CODEX_HOME": str(tmp_path)}
+    result = _ORIGINAL_CODEX_SESSION(
+        [sys.executable, "-c", "import time; time.sleep(1.5)"],
+        env,
+        tmp_path,
+        orchestrator="codex",
+        model="gpt-5.6-sol",
+        effort="medium",
+        codex_provider="my-credits",
+    )
+    assert result.returncode == 0
+    info = session_registry.resolve("orchestrator-thread").resume_info
+    assert info is not None and info.codex_model_provider == "my-credits"
+    assert info.codex_subscription_provider is None
+
+
+@pytest.mark.parametrize(("order", "expected"), [("subscription,credits", "my-credits"), ("subscription", "openai")])
+def test_codex_orchestrator_resume_keeps_saved_provider_until_removed_from_order(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, order: str, expected: str
+) -> None:
+    """保存した接続で再開し、その種別を使用順から外した場合だけ使用順の先頭の利用可能な候補へ移る。"""
+    env = _configure_codex_orchestrator(monkeypatch, tmp_path, order)
+    probes = _codex_probes(monkeypatch, chatgpt=True)
+    session_registry.publish(
+        "orchestrator-thread",
+        terminal=True,
+        engine="codex",
+        model="gpt-5.6-sol",
+        effort="medium",
+        cwd=str(tmp_path),
+        model_type="orchestrate",
+        codex_model_provider="my-credits",
+    )
+    selected = _pl_session.select_available_orchestrator(
+        [("codex", "other-model", "high")], env, tmp_path, resume_session_id="orchestrator-thread"
+    )
+    assert selected == ("codex", "gpt-5.6-sol", "medium", expected)
+    assert [_provider_option(argv) for argv in probes] == [expected]
 
 
 @pytest.fixture(autouse=True)
@@ -312,7 +419,7 @@ class TestProcessLoopPromptAndEnv:
             tmp_path,
         )
 
-        assert selected == ("claude", "sonnet", "high")
+        assert selected == ("claude", "sonnet", "high", None)
         assert [call[0] for call in calls] == ["codex", "claude"]
 
     def test_all_unstartable_candidates_use_abnormal_exit(

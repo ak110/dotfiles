@@ -47,9 +47,16 @@ AUTH_ENV = frozenset(
 )
 
 
+API_KINDS = frozenset({"credits", "payg"})
+"""API環境ファイルで接続する種別（有限のAPIクレジットと従量課金API）。"""
+
+LEGACY_API_KIND = "api"
+"""種別を区別する前の版が登録簿へ保存したAPI接続の種別。再開時に`credits`か`payg`へ読み替える。"""
+
+
 @dataclasses.dataclass(frozen=True)
 class Connection:
-    """登録簿へ保存できる接続種別と、API環境ファイルの所在。"""
+    """登録簿へ保存できる接続種別（`subscription`・`credits`・`payg`・`inherit`）と、API環境ファイルの所在。"""
 
     kind: str
     api_env_file: str | None = None
@@ -228,14 +235,14 @@ def isolation_keys(connection: Connection) -> frozenset[str]:
         return frozenset()
     path = connection.isolation_env_file or connection.api_env_file
     keys = AUTH_ENV | (read_api_env_file(path).keys() if path else frozenset())
-    if connection.kind == "api":
+    if connection.kind in API_KINDS:
         keys |= {"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"}
     return frozenset(keys)
 
 
 def connection_overrides(connection: Connection) -> dict[str, str]:
     """選択したAPI接続が明示する値だけを返す。"""
-    if connection.kind == "api" and connection.api_env_file:
+    if connection.kind in API_KINDS and connection.api_env_file:
         return {
             key: value
             for key, value in read_api_env_file(connection.api_env_file).items()

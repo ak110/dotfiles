@@ -86,8 +86,33 @@ def removal_paths() -> tuple[Path, ...]:
     return tuple(dict.fromkeys(paths))
 
 
+# uvの排他ロックを待つ上限（秒）。uvの既定は300秒で、他のuvプロセスが共有ロックを保持し続ける間は
+# 既定の上限まで待ってから失敗する。使用中なら短時間で保留へ切り替え、dotfilesユーザーへ次の操作を早く示す。
+_UV_LOCK_TIMEOUT_SECONDS = "30"
+
+# uv 0.13.6のロック待ちタイムアウトの診断（`error: Timeout (30s) when waiting for lock on <cache> at <cache>/.lock, ...`）。
+_UV_LOCK_TIMEOUT_MARKER = "when waiting for lock on"
+
+
+class _InUseError(Exception):
+    """他のプロセスが使用中のため、削除を保留した。"""
+
+
 def _command(command: list[str]) -> None:
-    result = common.run_subprocess(command, timeout=600, cwd=Path.home(), tag="prune", env_overrides={"MISE_AUTO_INSTALL": "0"})
+    """コマンドを実行し、失敗を例外へ変換する。
+
+    排他ロックを取るuvの操作（`uv cache prune`など）がロック待ちで失敗した場合は、
+    他のuvプロセスがキャッシュを使用中と判定して`_InUseError`を送出する。
+    """
+    result = common.run_subprocess(
+        command,
+        timeout=600,
+        cwd=Path.home(),
+        tag="prune",
+        env_overrides={"MISE_AUTO_INSTALL": "0", "UV_LOCK_TIMEOUT": _UV_LOCK_TIMEOUT_SECONDS},
+    )
+    if result is not None and result.returncode != 0 and _UV_LOCK_TIMEOUT_MARKER in (result.stderr or ""):
+        raise _InUseError(f"{command[0]}: {common.format_cli_error(result)}")
     if result is None or result.returncode != 0:
         raise RuntimeError(f"{command[0]}: {common.format_cli_error(result)}")
 
@@ -209,6 +234,16 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             if uv is None:
                 raise RuntimeError("uvが見つからずキャッシュ整理を実行できません")
             _command([str(uv), "cache", "prune"])
+    except _InUseError as error:
+        logger.warning(
+            "prune: 他のuvプロセスがキャッシュを使用中のため整理を保留した: %s\n"
+            "uvを使う他のプロセス（エディター、MCPサーバー、`uv run`で起動した常駐プロセスなど）を終了してから"
+            "`update-dotfiles --prune`を再実行する。"
+            "それらを終了できない場合は再実行を見送ってよい（uvキャッシュの整理は最後の工程であり、"
+            "それより前の削除は完了している。未整理のキャッシュがディスク容量を使い続けるだけである）",
+            error,
+        )
+        return post_apply_outcome.PostApplyOutcome(changed=changed, deferred=True)
     except (OSError, ValueError, RuntimeError, psutil.Error) as error:
         return post_apply_outcome.PostApplyOutcome(
             changed=changed,

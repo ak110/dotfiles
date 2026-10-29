@@ -132,16 +132,18 @@ CLI・hook・MCP・warmup・process-loop再起動・生成定義はこの起動�
 
 ### 起動候補と観測identity
 
-Codexの接続先は工程別モデル候補と別に扱う。`codex_model_providers`が主接続先と後続APIの優先順を持つ。
-空設定はCodexの通常設定へ従い、冷再開の前に`config/read`から実効providerを解決する。
-指定列がある場合は`codex_providers.py`がcwdを含む`config/read`の定義と`account/read`の認証種別を評価し、
-列の先頭を明示する。API主接続はChatGPTを先に試さず、未定義・認証不備は後続候補へ進める。
-独立したAPI認証がある後続だけを使い、全候補が使えなければ指定外の通常接続へ戻さず失敗する。
+Codexの接続先は工程別モデル候補と別に扱う。
+役割別の使用順（`codex_orchestrator_connections`・`codex_worker_connections`）と種別ごとのprovider IDが、主接続先と後続の順を持つ。
+provider IDは`codex_credits_provider`・`codex_payg_provider`が持ち、`subscription`は`openai`とする。種別とprovider IDの対応は`_atk/codex_connection.py`が設定から解決し、クレジットと従量課金へ同じIDを設定することは拒否する。保持したproviderから種別を一意に判定するためである。
+4キーのどれも設定しない場合はCodexの通常設定へ従い、冷再開の前に`config/read`から実効providerを解決する。
+設定がある場合は`codex_providers.py`がcwdを含む`config/read`の定義と`account/read`の認証種別を評価し、
+使用順の先頭の利用可能な候補を明示する。`subscription`はChatGPTログインの場合だけ使い、APIキーのアカウントでは除いて`openai`をAPI種別へ設定する方法を診断へ出す。未定義・認証不備のAPIは後続候補へ進める。
+全候補が使えなければ指定外の通常接続へ戻さず失敗する。
 現在アカウントの`ordinaryUsageAllowed`と終了した`usageLimitExceeded`だけがサブスクからの移行を発火する。
 疎な通知、使用率、解除予定時刻は回復の代用にしない。APIの認証・モデル不受理等は後続APIへ有限に進む。
 サブスクの一般的な失敗はAPI課金への移行にしない。
 
-接続先の入力は`codex_model_providers`と対応する環境変数だけが持ち、保存形式の移行や旧入力の解釈は行わない。2026年10月10日のユーザー回答により旧設定を撤去した。通常のget/setは他の未知キーと同じ診断を使い、無関係な保存設定の保持と実ユーザーの設定・認証を変更しない境界を保つ。
+接続先の入力は前記の4キーと対応する環境変数だけが持つ。旧`codex_model_providers`の保存値は設定読込時に1回だけ新キーへ移し（`openai`は`subscription`、それ以外のIDは1つに限り`codex_payg_provider`）、旧キーを削除する（2026年10月29日、ユーザー回答）。`openai`以外のIDが2つ以上ある場合は移行先を一意に決められないため、新キーの設定を求めて止める。
 定義・認証をatkへ複製する案は秘密の保持先と同期費用を増やし、Codex設定だけへ順序も移す案は
 atkの1キーで選ぶ操作を成立させないため採らない。選択順と接続先定義をそれぞれの所有者へ分ける。
 
@@ -176,22 +178,21 @@ Codex backendの観測identityは`turn_context`を観測元とし、表示名は
 
 選定結果の担当モデル、起動候補および終了後の観測identityを別の値として扱う。観測値を候補や設定から補わない。
 
-Claudeの接続先は共通の役割判定で選ぶ。`claude_api_env_file`はenvファイルの所在を持つ。
-envファイルが未設定の新規会話は`inherit`を登録し、親の環境変数とClaude Codeの通常の認証解決を使う。
+Claudeの接続先は共通の役割判定で選ぶ。`claude_credits_env_file`・`claude_payg_env_file`はenvファイルの所在、`claude_orchestrator_connections`・`claude_worker_connections`は役割別の使用順を持つ。
+4キーのどれも設定しない新規会話は`inherit`を登録し、親の環境変数とClaude Codeの通常の認証解決を使う。
 SDKの環境継承と親settingsの認証設定を保ち、認証検出で起動を拒否せず、接続を切り替えない。
-再開時も`inherit`を保持する。接続情報もAPIパスも持たない旧形式の登録は同じ通常の認証解決で読み、後から設定したenvファイルを適用しない。
-以下の役割別接続管理はenvファイルを設定した会話に適用する。
-`claude_worker_api_first`は既定の`false`でサブスクリプション、APIの順、`true`でAPI、サブスクリプションの順にする。
-`orchestrate`用途はオーケストレーターとして、`claude_orchestrator_api_only`が既定の`true`ならAPIだけ、`false`ならサブスクリプションだけを使う。
-委譲先は利用可能な認証から選び、オーケストレーターの指定接続が使えない場合は起動を止める。
+接続を管理しない間は再開時も`inherit`を保持する。接続情報もAPIパスも持たない旧形式の登録は同じ通常の認証解決で読む。接続を管理し始めた後は、これらの会話も使用順の種別ではないため次の継続で使用順の先頭の利用可能な候補へ移す。
+以下の役割別接続管理はいずれかのキーを設定した環境に適用する。
+委譲先は`claude_worker_connections`（既定`credits,subscription`）、`orchestrate`用途はオーケストレーターとして`claude_orchestrator_connections`（既定`subscription,credits`）の順に、認証のある種別を使う。
+使える候補が無い場合は起動を止める。
 空か無効なAPI環境ファイルは候補から除き、非空の無効パスを修正操作とともに返す。
-通常の委譲先は起動前の利用不能や利用枠・API残高の不足で次の接続へ進み、同じsession ID・model・effortで継続する。
+通常の委譲先は起動前の利用不能や利用枠・API残高の不足で使用順の次の接続へ進み、同じsession ID・model・effortで継続する。
 利用枠超過の解除待ちは`claude_usage_limit_wait`で判定する。
 待機対象外の上限で全候補が尽きた場合と認証手段が無い場合は、候補ごとの理由と復旧操作を返して終了する。
 新規sessionは毎回先頭から評価する。
-サブスクリプション優先で利用上限によりAPIへ移した委譲先は、上限の解除予定時刻の後の最初の追送か自動再開で同じ会話をサブスクリプションへ戻す（理由は[design-agents-runtime.md](design-agents-runtime.md)）。
-役割と選択済みのAPIまたはサブスクリプション接続、APIの絶対パスを登録簿の再開情報へ保持し、設定変更・解除、stop・保持期限、サーバー再起動後も同じ接続を使う。
-旧形式のAPIパスだけを持つ登録もAPI会話として読む。
+利用上限によりサブスクリプションからAPIへ移した委譲先は、使用順でサブスクリプションが現在の種別より前にあれば、上限の解除予定時刻の後の最初の追送か自動再開で同じ会話をサブスクリプションへ戻す（理由は[design-agents-runtime.md](design-agents-runtime.md)）。
+役割と選択済みの接続（`credits`・`payg`・`subscription`・`inherit`）、APIの絶対パスを登録簿の再開情報へ保持し、設定変更・解除、stop・保持期限、サーバー再起動後も同じ接続を使う。保持した種別を使用順から外した場合だけ、次の継続で使用順の先頭の利用可能な候補へ移す。
+旧形式のAPIパスだけを持つ登録と種別`api`の登録は、保存済みのenvファイルがクレジットのものと一致すれば`credits`、それ以外は`payg`の会話として読む。
 値は切替と再開の起動ごとに読み、登録簿へ複製しない。
 起動環境と合成settingsの`env`の両方へ渡すのは、通常のClaude Codeではsettingsの同名変数が起動環境より優先されるためである。
 合成settingsは所有者だけが読める起動別ファイルで渡し、接続終了・起動失敗時に回収する。

@@ -39,7 +39,7 @@ case "$command_name $*" in
         exit 9
         ;;
 esac
-if [ "$command_name $*" = "codex plugin list --json" ]; then
+if [ "$command_name $*" = "codex plugin list --json --marketplace ak110-dotfiles" ]; then
     state_index=0
     if [ -f "$CODEX_PLUGIN_STATE_FILE" ]; then
         state_index=$(cat "$CODEX_PLUGIN_STATE_FILE")
@@ -71,6 +71,12 @@ if [ "$command_name $*" = "codex plugin list --json" ]; then
     fi
     exit 0
 fi
+case "$command_name $*" in
+    "codex plugin list --json --marketplace "*)
+        printf '{"installed":[]}\\n'
+        exit 0
+        ;;
+esac
 if [ "$command_name $*" = "codex plugin marketplace list --json" ]; then
     printf '{"marketplaces":[{"name":"ak110-dotfiles","root":"%s"}]}\n' "$STUB_MARKETPLACE_ROOT"
     exit 0

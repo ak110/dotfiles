@@ -40,7 +40,7 @@ def _targets(
             )
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(path) for path in paths]))
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
-    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "model", "medium"))
+    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "model", "medium", None))
     monkeypatch.setattr(session, "resolve_orchestrator_specs", lambda: [("claude", "model", "medium")])
     return notes, listing.configured_repo_snapshot(notes)
 
@@ -410,7 +410,7 @@ def test_public_agy_resume_delivers_current_manifest(tmp_path: pathlib.Path, mon
     monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
     monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
     monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
-    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_args, **_kwargs: ("agy", "model", "medium"))
+    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_args, **_kwargs: ("agy", "model", "medium", None))
     manifests: list[dict[str, Any]] = []
 
     def execute(

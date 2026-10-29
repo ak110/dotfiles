@@ -129,7 +129,7 @@ _install_agent_basics() {
 
 _codex_plugin_state() {
     local plugin_json
-    if ! plugin_json=$(codex plugin list --json); then
+    if ! plugin_json=$(codex plugin list --json --marketplace ak110-dotfiles); then
         return 1
     fi
     "${CODEX_JSON_PYTHON[@]}" - "${1:-$CODEX_PLUGIN_ID}" "$plugin_json" <<'PY'

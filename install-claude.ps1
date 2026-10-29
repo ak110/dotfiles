@@ -95,7 +95,7 @@ function Install-AgentBasicsPlugin {
 
 function Get-CodexPluginState {
     param([string]$pluginId = $codexPluginId)
-    $jsonLines = & codex plugin list --json 2>$null
+    $jsonLines = & codex plugin list --json --marketplace ak110-dotfiles 2>$null
     if ($LASTEXITCODE -ne 0) { return $null }
     try {
         $data = ($jsonLines -join "`n") | ConvertFrom-Json -ErrorAction Stop

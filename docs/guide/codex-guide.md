@@ -54,40 +54,42 @@ CodexのStopフックは説明言語だけを判定し、完了報告の起動�
 
 ## CodexのサブスクとAPI接続先
 
-`agents_server`がCodexの委譲先を起動する時の接続先の選択順は、`atk config`の`codex_model_providers`で指定する。
-未設定または空文字列では、Codexの通常の`model_provider`と認証を使う。
-ChatGPTサブスクリプションだけを使う場合はCodexへログインし、通常設定のproviderを省略するか`"openai"`にする。
+`agents_server`のCodex委譲先と、Codexで動く`atk wi process-loop`の統括担当は、サブスクリプション・APIクレジット・従量課金APIを役割ごとの使用順で使い分けられる。
+使用順と設定例は、Claudeと共通の[接続の使い分け](claude-code-guide.md#接続の使い分け)を参照する。
+本節はCodex固有のprovider定義だけを扱う。
 
-APIを併用する場合は、Codexの`config.toml`に接続先とAPIキーの環境変数名を定義し、APIキーをその環境変数へ設定してから候補の順序を設定する。
+サブスクリプション（`subscription`）ではCodexへ`codex login`でChatGPTログインし、provider `openai`を使う。
+APIクレジット（`credits`）と従量課金API（`payg`）ではCodexの`config.toml`に接続先とAPIキーの環境変数名をproviderとして定義し、APIキーをその環境変数へ設定する。
+2つのAPIは接続先とキーが別のため、providerも別の名前で定義する。
 
 ```toml
-[model_providers.custom]
-name = "my-server"
-base_url = "https://my-server.example.com/v1"
+[model_providers.my-credits]
+name = "my-credits"
+base_url = "https://credits.example.com/v1"
 wire_api = "responses"
-env_key = "MY_SERVER_API_KEY"
+env_key = "MY_CREDITS_API_KEY"
+requires_openai_auth = false
+
+[model_providers.my-payg]
+name = "my-payg"
+base_url = "https://payg.example.com/v1"
+wire_api = "responses"
+env_key = "MY_PAYG_API_KEY"
 requires_openai_auth = false
 ```
 
 ```bash
-export MY_SERVER_API_KEY='<APIキー>'
-atk config set codex_model_providers 'openai,custom'
-atk config get codex_model_providers
+export MY_CREDITS_API_KEY='<APIクレジットのキー>'
+export MY_PAYG_API_KEY='<従量課金APIのキー>'
+atk config set codex_credits_provider my-credits
+atk config set codex_payg_provider my-payg
 ```
 
-`openai`はChatGPTログイン、`custom`は`config.toml`で定義したAPI接続先を表す。
-APIだけを使う場合は`'custom'`を指定し、通常設定へ戻す場合は空文字列を保存する。
-
-```bash
-atk config set codex_model_providers ''
-```
-
+APIキーでCodexへログインしている場合は、`openai`を`codex_payg_provider`（クレジットなら`codex_credits_provider`）へ設定する。
 API料金は接続先の課金規則に従い、同じ会話の継続にも発生する。
 ChatGPTのtokenをAPIキーとして使わない。
-`AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS`に空でない値を設定している場合は保存値より優先するため、設定解除時はこの環境変数も解除する。
-接続先の変更は新しい会話から適用される。
 候補が使えない場合は診断を確認し、`config.toml`の接続先定義または認証を修正してから再試行する。
-この設定は`agents_server`の委譲先だけに作用し、直接起動したCodex、`atk run-skill`、`atk wi process-loop`の接続先は変えない。
+直接起動したCodexと`atk run-skill`の接続先は変えない。
 
 ## 利用上限後の再開
 

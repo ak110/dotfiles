@@ -7,7 +7,7 @@ import pytilpack.jsonc
 import yaml
 
 from pytools import post_apply
-from pytools._internal import common, install_opencode_toolkit
+from pytools._internal import common, install_opencode_toolkit, setup_opencode_cli
 
 
 def _source(root: Path) -> None:
@@ -68,7 +68,7 @@ def test_post_apply_sync_preserves_settings_and_updates_owned_skills(
     else:
         monkeypatch.delenv("OPENCODE_CONFIG_DIR", raising=False)
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
-    monkeypatch.setattr(common, "resolve_executable", lambda _name: tmp_path / "opencode")
+    monkeypatch.setattr(setup_opencode_cli, "find_launcher", lambda: tmp_path / "opencode")
 
     results, _ = post_apply.run([("OpenCode toolkit", install_opencode_toolkit.run)])
     assert results[0].ok and results[0].changed
@@ -112,14 +112,14 @@ def test_missing_cli_and_owned_path_conflict_do_not_overwrite_user_files(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.delenv("OPENCODE_CONFIG_DIR", raising=False)
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
-    monkeypatch.setattr(common, "resolve_executable", lambda _name: None)
+    monkeypatch.setattr(setup_opencode_cli, "find_launcher", lambda: None)
     assert not install_opencode_toolkit.run().changed
     destination = tmp_path / "config" / "opencode"
     assert not destination.exists()
     conflict = destination / "skills" / "agent-toolkit-manual-task" / "SKILL.md"
     conflict.parent.mkdir(parents=True)
     conflict.write_text("ユーザーのスキル", encoding="utf-8")
-    monkeypatch.setattr(common, "resolve_executable", lambda _name: tmp_path / "opencode")
+    monkeypatch.setattr(setup_opencode_cli, "find_launcher", lambda: tmp_path / "opencode")
     results, _ = post_apply.run([("OpenCode toolkit", install_opencode_toolkit.run)])
     assert not results[0].ok and not results[0].changed
     assert conflict.read_text(encoding="utf-8") == "ユーザーのスキル"

@@ -1049,7 +1049,7 @@ async def test_late_engine_unavailability_carries_over_to_next_start(
 
 
 @pytest.mark.parametrize(
-    ("providers", "expected_model", "expected_effort"), [("", "second", "medium"), ("chatgpt,api", "first", "high")]
+    ("providers", "expected_model", "expected_effort"), [("", "second", "medium"), ("subscription,payg", "first", "high")]
 )
 @pytest.mark.asyncio
 async def test_carried_over_exclusion_survives_a_successful_start(
@@ -1060,7 +1060,8 @@ async def test_carried_over_exclusion_survives_a_successful_start(
     expected_effort: str,
 ) -> None:
     """API設定ありの旧利用上限は再確認し、未設定の候補除外は成功後も保持する。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", providers)
+    if providers:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_WORKER_CONNECTIONS", providers)
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
     async with _carry_over_late_unavailability(monkeypatch, tmp_path, candidates) as (manager, available):
         recovered = await manager.start("plan", "再試行", str(tmp_path))
@@ -1125,7 +1126,7 @@ async def test_shell_launch_carries_over_candidate_within_shell_launch_kind(
 
 
 @pytest.mark.parametrize(
-    ("providers", "expected_model", "expected_effort"), [("", "second", "medium"), ("chatgpt,api", "first", "high")]
+    ("providers", "expected_model", "expected_effort"), [("", "second", "medium"), ("subscription,payg", "first", "high")]
 )
 @pytest.mark.asyncio
 async def test_stop_without_wait_carries_over_unavailable_candidate(
@@ -1136,7 +1137,8 @@ async def test_stop_without_wait_carries_over_unavailable_candidate(
     expected_effort: str,
 ) -> None:
     """stop後の旧利用上限はAPI設定ありなら再確認し、未設定なら候補除外を保持する。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", providers)
+    if providers:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_WORKER_CONNECTIONS", providers)
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
     async with _start_late_unavailability(monkeypatch, tmp_path, candidates) as (manager, failed):
         assert await manager.stop(failed["session_id"]) == {}

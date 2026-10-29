@@ -582,7 +582,9 @@ stream_max_retries = 0
         isolation.restore_host_environment(monkeypatch)
         monkeypatch.setenv("CODEX_HOME", str(codex_home))
         monkeypatch.setenv(_PSEUDO_API_KEY_ENV, "pseudo-api-key")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", f"{_PRIMARY_PROVIDER},{_FALLBACK_PROVIDER}")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_CREDITS_PROVIDER", _PRIMARY_PROVIDER)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_PAYG_PROVIDER", _FALLBACK_PROVIDER)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_WORKER_CONNECTIONS", "credits,payg")
         monkeypatch.setattr(
             _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "gpt-5.4", "low")]
         )

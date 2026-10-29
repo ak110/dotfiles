@@ -829,3 +829,51 @@ class TestNonInteractiveEnvInjection:
         assert mise_stub.calls_for("install"), "mise install が呼ばれていない"
         for record in mise_stub.records:
             assert record["env_overrides"] == _expected_env(record)
+
+
+# mise 2026.10.17の`mise install`をネットワーク遮断下で失敗させた標準エラー出力（CI=1、非TTY）の抜粋。
+# 進捗表示、ANSI色付きの`WARN`行、`mise ERROR`行とツールごとの失敗理由を含む。
+_MISE_INSTALL_FAILURE_STDERR = (
+    "\x1b[2mmise\x1b[0m \x1b[2mby @jdx\x1b[0m – installing 2 tools\n"
+    "\x1b[33mmise\x1b[0m \x1b[33mWARN\x1b[0m  mise-versions endpoint=version_list tool=jq outcome=failed "
+    'status=0 fallback=true error="error sending request"\n'
+    "\x1b[2mmise\x1b[0m \x1b[38;5;9m✗\x1b[0m \x1b[34mnode\x1b[0m@24.22.1                   12ms · failed: "
+    "error sending request\n"
+    "\x1b[2mmise\x1b[0m \x1b[36m\x1b[0m\x1b[31m████\x1b[0m\x1b[2m░░\x1b[0m 1/2 · 3.0s\n"
+    "  \x1b[34mgcloud\x1b[0m@590.0.0                 installing  3.0s\n"
+    "\x1b[31mmise\x1b[0m \x1b[31mERROR\x1b[0m Failed to install tools: core:node@lts, vfox:jdx/vfox-gcloud@latest\n"
+    "\n"
+    "core:node@lts: error sending request\n"
+    "\n"
+    "vfox:jdx/vfox-gcloud@latest: error sending request for url "
+    "(https://storage.googleapis.com/cloud-sdk-release/google-cloud-sdk-590.0.0-linux-x86_64.tar.gz)\n"
+)
+
+
+def test_install_failure_is_skipped_warning_with_separate_next_action(
+    mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`mise install`の失敗は警告で出し、進捗行を除いた失敗理由と次の操作の文を分け、工程をスキップと数える。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "minimal")
+    # パッケージマネージャー経由で導入したmiseでは`self-update`が失敗し、更新と数えない。
+    mise_stub.handlers[("self-update",)] = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="disabled")
+    mise_stub.handlers[("install",)] = subprocess.CompletedProcess(
+        args=[], returncode=1, stdout="", stderr=_MISE_INSTALL_FAILURE_STDERR
+    )
+    with caplog.at_level("INFO"):
+        outcome = _setup_mise.run()
+
+    assert not outcome.changed
+    assert outcome.failure is None
+    [record] = [record for record in caplog.records if "`install` に失敗" in record.getMessage()]
+    assert record.levelname == "WARNING"
+    first_line, *output_lines = record.getMessage().splitlines()
+    assert "ネットワーク到達" in first_line
+    assert first_line.endswith("へ報告する")
+    assert "Failed to install tools" not in first_line
+    output = "\n".join(output_lines)
+    assert "mise ERROR Failed to install tools: core:node@lts" in output
+    assert "core:node@lts: error sending request" in output
+    assert "storage.googleapis.com" in output
+    for progress in ("installing", "WARN", "1/2", "\x1b"):
+        assert progress not in record.getMessage()
