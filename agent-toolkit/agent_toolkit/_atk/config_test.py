@@ -147,9 +147,9 @@ _LEGACY_KEYS = ("high_tier_model", "medium_tier_model", "low_tier_model")
 
 _DEFAULTS = {
     "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
-    "review_model": "codex:sol/low,claude:sonnet[1m]/medium",
+    "review_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "review_fast_model": "codex:luna/medium,claude:haiku/medium",
-    "chores_model": "codex:sol/low,claude:sonnet[1m]/medium",
+    "chores_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "chores_fast_model": "codex:luna/medium,claude:haiku/medium",
     "orchestrate_model": "claude:opus[1m]/medium,codex:sol/medium",
     "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
@@ -194,10 +194,10 @@ def test_presets_save_exact_six_stage_values_and_preserve_write(tmp_path, capsys
     if preset == "codex-primary":
         expected["orchestrate_model"] = "codex:sol/medium,claude:opus[1m]/medium"
     if preset.startswith("claude-"):
-        expected["chores_model"] = "claude:sonnet[1m]/medium,codex:sol/low"
+        expected["chores_model"] = "claude:sonnet[1m]/medium,codex:sol/medium"
         expected["chores_fast_model"] = "claude:haiku/medium,codex:luna/medium"
     if preset == "claude-primary":
-        expected["review_model"] = "claude:sonnet[1m]/medium,codex:sol/low"
+        expected["review_model"] = "claude:sonnet[1m]/medium,codex:sol/medium"
         expected["review_fast_model"] = "claude:haiku/medium,codex:luna/medium"
     kept = {"write_model": "agy:gemini-4-argon/high", "codex_fast_mode": "true", "other_setting": "keep"}
     _write_config(tmp_path, kept)
@@ -425,7 +425,7 @@ def test_partial_legacy_configuration_uses_defaults_and_opencode_variant(tmp_pat
     _write_config(tmp_path, {"review_engine": "opencode,codex", "opencode_medium_tier_model": "local/org/model@high"})
     assert config_module.parse_unresolved_model_candidates("review") == [
         ("opencode", "local/org/model", "high"),
-        ("codex", "sol", "low"),
+        ("codex", "sol", "medium"),
     ]
     assert config_module.parse_unresolved_model_candidates("review_fast") == [("codex", "luna", "medium")]
     assert set(_saved(tmp_path)) == set(_DEFAULTS) - {"write_model"}

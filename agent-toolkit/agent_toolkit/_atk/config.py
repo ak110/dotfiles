@@ -34,9 +34,9 @@ MODEL_TYPES = ("execute", "review", "review_fast", "chores", "chores_fast", "orc
 
 _MODEL_DEFAULTS = {
     "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
-    "review_model": "codex:sol/low,claude:sonnet[1m]/medium",
+    "review_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "review_fast_model": "codex:luna/medium,claude:haiku/medium",
-    "chores_model": "codex:sol/low,claude:sonnet[1m]/medium",
+    "chores_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "chores_fast_model": "codex:luna/medium,claude:haiku/medium",
     "orchestrate_model": "claude:opus[1m]/medium,codex:sol/medium",
     "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
@@ -58,14 +58,14 @@ _PRESET_MODELS = {
     },
     "claude-balanced": {
         **{key: value for key, value in _MODEL_DEFAULTS.items() if key != "write_model"},
-        "chores_model": "claude:sonnet[1m]/medium,codex:sol/low",
+        "chores_model": "claude:sonnet[1m]/medium,codex:sol/medium",
         "chores_fast_model": "claude:haiku/medium,codex:luna/medium",
     },
     "claude-primary": {
         **{key: value for key, value in _MODEL_DEFAULTS.items() if key != "write_model"},
-        "review_model": "claude:sonnet[1m]/medium,codex:sol/low",
+        "review_model": "claude:sonnet[1m]/medium,codex:sol/medium",
         "review_fast_model": "claude:haiku/medium,codex:luna/medium",
-        "chores_model": "claude:sonnet[1m]/medium,codex:sol/low",
+        "chores_model": "claude:sonnet[1m]/medium,codex:sol/medium",
         "chores_fast_model": "claude:haiku/medium,codex:luna/medium",
     },
 }
@@ -142,7 +142,7 @@ _LEGACY_TIER_DEFAULTS = {
     "claude_medium_tier_model": "sonnet[1m]/medium",
     "claude_low_tier_model": "haiku/medium",
     "codex_high_tier_model": "sol/medium",
-    "codex_medium_tier_model": "sol/low",
+    "codex_medium_tier_model": "sol/medium",
     "codex_low_tier_model": "luna/medium",
     "opencode_high_tier_model": "",
     "opencode_medium_tier_model": "",

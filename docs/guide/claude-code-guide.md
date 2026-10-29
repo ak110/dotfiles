@@ -155,9 +155,9 @@ atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
 | キー | 用途 | 初期値 |
 | --- | --- | --- |
 | `execute_model` | 計画・設計判断・原因分析・統合 | `claude:opus[1m]/medium,codex:sol/medium` |
-| `review_model` | 実行レビュー | `codex:sol/low,claude:sonnet[1m]/medium` |
+| `review_model` | 実行レビュー | `codex:sol/medium,claude:sonnet[1m]/medium` |
 | `review_fast_model` | 小規模レビュー | `codex:luna/medium,claude:haiku/medium` |
-| `chores_model` | 確定済みの作業・中規模の読取 | `codex:sol/low,claude:sonnet[1m]/medium` |
+| `chores_model` | 確定済みの作業・中規模の読取 | `codex:sol/medium,claude:sonnet[1m]/medium` |
 | `chores_fast_model` | 定型の走査・軽微な作業・コマンド実行 | `codex:luna/medium,claude:haiku/medium` |
 | `orchestrate_model` | process-loop・run-skillの最上位 | `claude:opus[1m]/medium,codex:sol/medium` |
 | `write_model` | 文章起草 | `agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium` |
@@ -183,8 +183,8 @@ atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonn
 | `codex-balanced` | 初期値と同一 |
 | `codex-near-primary` | executeを`codex:sol/medium,claude:opus[1m]/medium`へ変更 |
 | `codex-primary` | executeとorchestrateを`codex:sol/medium,claude:opus[1m]/medium`へ変更 |
-| `claude-balanced` | choresを`claude:sonnet[1m]/medium,codex:sol/low`、chores_fastを`claude:haiku/medium,codex:luna/medium`へ変更 |
-| `claude-primary` | review・choresを`claude:sonnet[1m]/medium,codex:sol/low`、review_fast・chores_fastを`claude:haiku/medium,codex:luna/medium`へ変更 |
+| `claude-balanced` | choresを`claude:sonnet[1m]/medium,codex:sol/medium`、chores_fastを`claude:haiku/medium,codex:luna/medium`へ変更 |
+| `claude-primary` | review・choresを`claude:sonnet[1m]/medium,codex:sol/medium`、review_fast・chores_fastを`claude:haiku/medium,codex:luna/medium`へ変更 |
 
 その他の主な設定は次のとおりである。
 
