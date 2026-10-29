@@ -38,6 +38,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
@@ -64,6 +65,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「方針と判断の記録との比較」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` |
 
 ## 要求固有性と記載量
+
+複数repoへの投入で共有する本文は`cross-repository-submission.md`「独立したAWIへの分割と依存」に従う。原因分析表や逐語引用も、代表AWIの明示参照によって満たせる。各AWIの冒頭は、それだけで目的と変更が分かるようにする。
 
 1つの事実は1箇所にのみ記載し、他の節からは節名や項目名で参照する。同じ識別子を説明ごとに繰り返し記載することは避ける。ただし、`## 原因分析`における表や行の構造は維持する。
 
@@ -102,7 +105,7 @@ H1のタイトルは目的と変更が一目で短く分かる表現とし、発
 
 `## 原因分析`は、計画ファイルからWIファイル名で参照される原因分析の記録である。
 具体的な書き方は、`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」に従い、表の常時掲載と必要な確認の完了を検収する。
-表の掲載と分析確定に必要な確認は、分析の深さや重大度の全区分で行う。
+表の掲載と分析確定に必要な確認は、分析の深さや重大度の全区分で行う。前述の代表AWI参照を使う場合は、参照先の表と確認結果を検収する。
 
 `## 原因分析`には、誤りの仕組みが成立する条件（`agent-toolkit:bugfix`の`references/root-cause-analysis.md`の基準）とともに、観測された事象とは表面的な構造が異なる該当例を1件以上記載する。成立条件が観測事象のファイル名、工程名、識別子のみで構成されている本文は投入せず、誤りを生じさせる仕組みの条件を導き直す。類似見直しの母集団、是正対象と予防対象の選定は、同資料の「類似見直し」（根本原因から導出し、時間軸や他リポジトリも考慮に入れる）と「QとC・Dの区別」に従う。軽微な問題に対して探索範囲を限定する場合は、実際の探索範囲、その限界、許容する残存リスクを明示する。
 是正の対象範囲は、同スキルの「QとC・Dの区別」が定める保持対象全体に従う。

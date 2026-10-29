@@ -9,6 +9,7 @@ AWIのみに適用される規定にはその旨を明記している。「重�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
 | 観測事象を契機とする要求の採用を確定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」「対策の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
@@ -121,6 +122,8 @@ bugfixスキルの重大度判定に基づいて終了した類似見直しの�
 部分網羅、衝突、網羅元項目の終了が発生した場合、付随型のエージェントは保存処理を進めず、生じた変化と必要な本文修正の内容を「続行できない理由」として委譲元へ報告する。
 
 ## 投入前の読み直し
+
+代表AWIを参照する原稿では、`cross-repository-submission.md`「独立したAWIへの分割と依存」に従って参照先を取得する。共通本文と固有本文を合わせて検収し、冒頭の独立可読性、自repoだけの完成判定、不要な依存待ちと他repo固有要求の混入がないことを確かめる。
 
 まず`awi-body.md`「完成条件」に従い、起草者が加えた条件を含めて元の目的に対する必要性と由来を判定する。
 不要なエージェント起草条件は除き、有効な条件について以下の網羅性・観測可能性を確認する。
