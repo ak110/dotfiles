@@ -162,8 +162,11 @@ def test_named_reference_without_route_fails_ci(tmp_path):
     reference.parent.mkdir()
     reference.write_text("# 基準\n", encoding="utf-8")
     source.write_text("判定は`references/rule.md`に従う。\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="参照先へ届く経路が無い"):
+    with pytest.raises(ValueError, match="参照先へ届く経路が無い") as caught:
         read_triggers.validate_reference_routes(source, tmp_path, [])
+    assert f"{source}:1:" in str(caught.value)
+    assert str(reference) in str(caught.value)
+    assert "読込表に参照先を指定し、読む時点・条件を記載" in str(caught.value)
 
 
 @pytest.mark.parametrize("package", ["skill", "share"])

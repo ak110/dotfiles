@@ -742,7 +742,10 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
                 and ReadTarget(path, _REFERENCE_METHOD_HEADING) in methods
             )
             if path not in routed and not method_route:
-                raise ValueError(f"{source}:{number}: 参照先へ届く経路が無い: {path}")
+                raise ValueError(
+                    f"{source}:{number}: 参照先へ届く経路が無い: {path}。"
+                    "この文書の読込表に参照先を指定し、読む時点・条件を記載してください。"
+                )
 
 
 def document_sources(plugin_root: pathlib.Path, cwd: str = "", user_skills: pathlib.Path | None = None) -> list[pathlib.Path]:
