@@ -51,9 +51,11 @@ CODE_SUFFIXES = frozenset(
     }
 )
 
-# 読込記述は言語ごとの書式だけを抽出する。行頭から始まる記述に限ることで、文字列やコメントの中の名前を使用に数えない。
-# 別の言語の書式（Pythonの文字列に書いた`<script src>`など）は、その言語のファイルでだけ判定する。
-_PYTHON_IMPORT = re.compile(r"^[ \t]*(?:from[ \t]+([\w.]+)[ \t]+import\b|import[ \t]+([\w., \t]+))", re.MULTILINE)
+# 読込記述は言語ごとの書式だけを抽出し、別の言語の書式（Pythonの文字列に書いた`<script src>`など）は
+# その言語のファイルでだけ判定する。コメントと文字列リテラルの中身は`_mask`で伏せてから正規表現を当てる。
+_PYTHON_IMPORT = re.compile(
+    r"^[ \t]*(?:lazy[ \t]+)?(?:from[ \t]+([\w.]+)[ \t]+import\b|import[ \t]+([\w., \t]+))", re.MULTILINE
+)
 _SCRIPT_IMPORTS = (
     re.compile(r"^[ \t]*(?:import|export)\b[^'\"`;]*?['\"]([^'\"\n]+)['\"]", re.MULTILINE),
     re.compile(r"\brequire\(\s*['\"]([^'\"\n]+)['\"]\s*\)"),
@@ -90,7 +92,8 @@ def uses(path: pathlib.Path, text: str, dependency: str) -> bool:
 
 def _loaded_specifiers(suffix: str, text: str):
     if suffix == ".py":
-        for match in _PYTHON_IMPORT.finditer(text):
+        masked = _mask(text, line_comment="#", block_comments=(), quotes="'\"", triple=True)
+        for match in _PYTHON_IMPORT.finditer(masked):
             if match[1]:
                 yield match[1]
             else:
@@ -103,9 +106,63 @@ def _loaded_specifiers(suffix: str, text: str):
         patterns += _CSS_IMPORTS
     if suffix in _MARKUP_SUFFIXES:
         patterns += _MARKUP_SOURCES
+    if suffix == ".css":
+        masked = _mask(text, line_comment="", block_comments=(("/*", "*/"),), quotes="'\"")
+    else:
+        # MarkupはHTMLコメントに加え、script要素の中のJavaScriptのコメントと文字列も伏せる。
+        comments = (("<!--", "-->"), ("/*", "*/")) if suffix in _MARKUP_SUFFIXES else (("/*", "*/"),)
+        masked = _mask(text, line_comment="//", block_comments=comments, quotes="'\"`")
     for pattern in patterns:
-        for match in pattern.finditer(text):
-            yield match[1]
+        for match in pattern.finditer(masked):
+            # 読込先は文字列の中身なので、伏せる前の本文の同じ位置から取り出す。
+            yield text[match.start(1) : match.end(1)]
+
+
+def _mask(
+    text: str, *, line_comment: str, block_comments: tuple[tuple[str, str], ...], quotes: str, triple: bool = False
+) -> str:
+    """コメントを空白へ、文字列リテラルの中身を`x`へ置き換えた同じ長さの本文を返す。
+
+    改行と引用符は残すため、伏せた本文で一致した読込記述の位置を、元の本文の位置へそのまま対応付けられる。
+    文字列やコメントの中に書かれた読込記述は、伏せた後の本文では読込記述の書式に一致しない。
+    """
+    result = list(text)
+    index = 0
+    length = len(text)
+
+    def blank(start: int, end: int, fill: str) -> None:
+        for position in range(start, end):
+            if result[position] != "\n":
+                result[position] = fill
+
+    while index < length:
+        char = text[index]
+        if line_comment and text.startswith(line_comment, index):
+            end = text.find("\n", index)
+            end = length if end < 0 else end
+            blank(index, end, " ")
+            index = end
+            continue
+        block = next(((start, stop) for start, stop in block_comments if text.startswith(start, index)), None)
+        if block is not None:
+            end = text.find(block[1], index + len(block[0]))
+            end = length if end < 0 else end + len(block[1])
+            blank(index, end, " ")
+            index = end
+            continue
+        if char in quotes:
+            delimiter = char * 3 if triple and text.startswith(char * 3, index) else char
+            position = index + len(delimiter)
+            while position < length and not text.startswith(delimiter, position):
+                # 1文字の引用符による文字列は行をまたがない。テンプレート文字列と三重引用符はまたぐ。
+                if text[position] == "\n" and len(delimiter) == 1 and char != "`":
+                    break
+                position += 2 if text[position] == "\\" else 1
+            blank(index + len(delimiter), min(position, length), "x")
+            index = min(position + len(delimiter), length) if text.startswith(delimiter, position) else position
+            continue
+        index += 1
+    return "".join(result)
 
 
 def _names(specifier: str, dependency: str) -> bool:

@@ -445,6 +445,40 @@ def _declared_dependencies() -> list[str]:
     return names
 
 
+@pytest.mark.parametrize(
+    ("filename", "content", "dependency", "expected"),
+    [
+        ("module.py", 'sample = """\nimport sqlalchemy\n"""\nvalue = 1\n', "sqlalchemy", False),
+        ("module.ts", "// require('playwright')\nconst value = 1;\n", "playwright", False),
+        ("module.ts", "const sample = \"require('playwright')\";\n", "playwright", False),
+        ("styles.css", '/*\n@import "tailwindcss";\n*/\np { color: red; }\n', "tailwindcss", False),
+        (
+            "page.html",
+            '<!-- <script src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script> -->\n',
+            "alpinejs",
+            False,
+        ),
+        ("module.py", "lazy from sqlalchemy import select\n", "sqlalchemy", True),
+        ("module.py", "from sqlalchemy import select\n", "sqlalchemy", True),
+        ("module.ts", "const p = require('playwright');\n", "playwright", True),
+    ],
+    ids=["py-string", "js-comment", "js-string", "css-comment", "html-comment", "py-lazy", "py-import", "js-require"],
+)
+@pytest.mark.usefixtures("memory")
+def test_public_hook_dependency_ignores_loading_syntax_inside_comments_and_strings(
+    tmp_path, monkeypatch, filename, content, dependency, expected
+):
+    """コメントや文字列リテラルの中に書いた読込記述は使用に数えず、実際の読込記述（Pythonの遅延読込を含む）は数える。"""
+    reference = tmp_path / f"{dependency}.md"
+    reference.write_text("# 技術資料\n", encoding="utf-8")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "操作", (f"dependency:{dependency}",), (reference,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
+    decision = read_delivery.deliver(
+        {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / filename), "content": content}, "test"
+    )
+    assert (str(reference) in (_guidance(decision) or "")) is expected
+
+
 @pytest.mark.parametrize("tool", ["Edit", "Bash"])
 @pytest.mark.usefixtures("memory")
 def test_public_hook_dependency_ignores_names_in_strings_comments_and_test_data(tmp_path, monkeypatch, tool):

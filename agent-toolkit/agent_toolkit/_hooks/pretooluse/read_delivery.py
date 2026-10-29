@@ -13,7 +13,6 @@ import contextvars
 import dataclasses
 import fnmatch
 import functools
-import hashlib
 import json
 import os
 import pathlib
@@ -514,7 +513,7 @@ def _project_skill_rows(
                 if (
                     path.is_file()
                     and _document_owner(path) is not None
-                    and hashlib.sha256(path.read_bytes()).hexdigest() == fingerprint
+                    and document_reads.content_fingerprint(path) == fingerprint
                 ):
                     selected.add(path)
     for path in sorted(selected):
@@ -528,7 +527,7 @@ def _project_skill_rows(
 
 
 def document_key(path: pathlib.Path, fingerprint: str = "") -> str:
-    return document_reads.read_trigger_key(path, fingerprint or hashlib.sha256(path.read_bytes()).hexdigest())
+    return document_reads.read_trigger_key(path, fingerprint or document_reads.content_fingerprint(path))
 
 
 def dynamic_targets(
@@ -658,7 +657,7 @@ def _mark(session_id: str, path: pathlib.Path, agent: str, fingerprint: str = ""
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     if agent in records.get("review-output:" + str(path), []):
         raw = path.read_bytes()
-        if fingerprint and hashlib.sha256(raw).hexdigest() != fingerprint:
+        if fingerprint and document_reads.bytes_fingerprint(raw) != fingerprint:
             return
         _review_reference(session_id, json.loads(raw), agent)
         update_state(session_id, operation_skills.mark_ready("review-output-parsed:" + document_key(path, fingerprint), agent))
@@ -695,7 +694,7 @@ def target_ready(records: dict, target: read_triggers.ReadTarget, agent: str) ->
             target.body(raw.decode("utf-8"))
         except ValueError:
             return False
-    return document_reads.content_ready(records, hashlib.sha256(raw).hexdigest(), agent)
+    return document_reads.content_ready(records, document_reads.content_fingerprint(target.path), agent)
 
 
 def selected_targets(records: dict, agent: str) -> list[read_triggers.ReadTarget]:
@@ -725,10 +724,10 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
         return
     pending: dict[str, tuple[str, dict, str]] = {}
     completed: dict[read_triggers.ReadTarget, str] = {}
-    ranges: dict[tuple[int, str], list[tuple[int, int]]] = {}
+    ranges: dict[str, list[tuple[int, int]]] = {}
     paths = {target.path for target in targets}
     # 案内対象と同じ内容の写しを別の場所で読んだ履歴も、同じ資料の取得として復元する。
-    fingerprints = {hashlib.sha256(target.path.read_bytes()).hexdigest() for target in targets if target.path.is_file()}
+    fingerprints = {document_reads.content_fingerprint(target.path) for target in targets if target.path.is_file()}
     boundary_seen = False
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     reset = isinstance(records, dict) and agent in records.get(rules_context.READ_CONTEXT_RESET_KEY, [])
@@ -786,7 +785,7 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                         resolved = resolve_skill_document(inputs.get("skill"), [target.path for target in targets])
                         for target in targets:
                             if target.path == resolved:
-                                completed[target] = hashlib.sha256(target.path.read_bytes()).hexdigest()
+                                completed[target] = document_reads.content_fingerprint(target.path)
                     continue
                 structured = entry.get("toolUseResult")
                 if isinstance(structured, dict):
@@ -800,7 +799,7 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                         candidate
                         for candidate in _read_paths(name, inputs, cwd)
                         if candidate in paths
-                        or (candidate.is_file() and hashlib.sha256(candidate.read_bytes()).hexdigest() in fingerprints)
+                        or (candidate.is_file() and document_reads.content_fingerprint(candidate) in fingerprints)
                     ]
                     for target, start, end, length, fingerprint in _read_body_proofs(
                         name, inputs, response, read_paths, paths | set(read_paths), cwd
@@ -815,14 +814,8 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                             target.path
                         ):
                             continue
-                        key = (length, fingerprint)
-                        ranges.setdefault(key, []).append((start, end))
-                        reached = 0
-                        for left, right in sorted(ranges[key]):
-                            if left > reached:
-                                break
-                            reached = max(reached, right)
-                        if reached >= length:
+                        ranges.setdefault(fingerprint, []).append((start, end))
+                        if document_reads.covers_whole(ranges[fingerprint], length):
                             completed[target] = fingerprint
     # clear/compact直後に境界の位置をまだ確かめられない履歴は再計上しない。
     if reset and not boundary_seen:
@@ -1330,7 +1323,7 @@ def _read_body_proofs(
         if path not in targets:
             continue
         raw = path.read_bytes()
-        fingerprint = hashlib.sha256(raw).hexdigest()
+        fingerprint = document_reads.bytes_fingerprint(raw)
         source_body = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
         body = source_body
         # 本文全体が結果に含まれる取得だけを全取得とする。保存先の本文を読む行為は別の取得である。
@@ -1387,7 +1380,7 @@ def _sed_range_proofs(
     for path, source, lines, start, last in pieces:
         if path not in targets:
             continue
-        fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
+        fingerprint = document_reads.content_fingerprint(path)
         left = len("".join(lines[: start - 1]))
         yield read_triggers.ReadTarget(path), left, left + len("".join(lines[start - 1 : last])), len(source), fingerprint
 
@@ -1506,22 +1499,13 @@ def _record_range(
     session_id: str, path: pathlib.Path, agent: str, start: int, end: int, length: int, fingerprint: str = ""
 ) -> bool:
     """連続被覆が本文末尾に達したときだけ取得済みにする。圧縮では既存の主体別リセットが全区間を除く。"""
-    fingerprint = fingerprint or hashlib.sha256(path.read_bytes()).hexdigest()
-    update_state(session_id, operation_skills.mark_ready(f"{document_key(path, fingerprint)}#range:{start}:{end}", agent))
+    fingerprint = fingerprint or document_reads.content_fingerprint(path)
+    update_state(
+        session_id, operation_skills.mark_ready(document_reads.read_trigger_range_key(path, fingerprint, start, end), agent)
+    )
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     # 同じ内容の写しを別の場所で分割して読んだ区間も、同じ資料の被覆として合算する。
-    marker = f"#sha256:{fingerprint}#range:"
-    intervals = sorted(
-        tuple(map(int, key.rpartition(marker)[2].split(":")))
-        for key, agents in records.items()
-        if key.startswith(document_reads.READ_TRIGGER_PREFIX) and marker in key and agent in agents
-    )
-    reached = 0
-    for left, right in intervals:
-        if left > reached:
-            break
-        reached = max(reached, right)
-    if reached >= length:
+    if document_reads.covers_whole(document_reads.recorded_ranges(records, fingerprint, agent), length):
         _mark(session_id, path, agent, fingerprint)
         return True
     return False

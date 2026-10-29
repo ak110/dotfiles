@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-lazy import hashlib
 lazy import re
 lazy import shlex
 lazy import subprocess
@@ -149,7 +148,7 @@ def reset_main_operation_skill_ready(
                     selected = json.loads(name.removeprefix("selected-read-target:"))
                     path = pathlib.Path(selected["path"]).resolve()
                     heading = selected["heading"]
-                    fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
+                    fingerprint = document_reads.content_fingerprint(path)
                 except KeyError, OSError, TypeError, ValueError:
                     continue
                 # 同じ内容の写しを別の場所で読んだ取得も、選択済み資料の取得として候補に含める。
@@ -219,7 +218,7 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
         try:
             if not path.is_file():
                 raise FileNotFoundError(str(path))
-            if hashlib.sha256(path.read_bytes()).hexdigest() != fingerprint:
+            if document_reads.content_fingerprint(path) != fingerprint:
                 continue
             if heading:
                 target.body()
