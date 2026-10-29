@@ -461,8 +461,30 @@ def _declared_dependencies() -> list[str]:
         ("module.py", "lazy from sqlalchemy import select\n", "sqlalchemy", True),
         ("module.py", "from sqlalchemy import select\n", "sqlalchemy", True),
         ("module.ts", "const p = require('playwright');\n", "playwright", True),
+        (
+            "page.html",
+            '<p>Don\'t wait</p><script src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>\n',
+            "alpinejs",
+            True,
+        ),
+        ("module.ts", "const p = `${import('playwright')}`;\n", "playwright", True),
+        ("module.ts", "const pattern = /'/; const p = require('playwright');\n", "playwright", True),
+        ("module.ts", "const ratio = a / b; const s = 'x';\nconst p = require('playwright');\n", "playwright", True),
     ],
-    ids=["py-string", "js-comment", "js-string", "css-comment", "html-comment", "py-lazy", "py-import", "js-require"],
+    ids=[
+        "py-string",
+        "js-comment",
+        "js-string",
+        "css-comment",
+        "html-comment",
+        "py-lazy",
+        "py-import",
+        "js-require",
+        "html-apostrophe",
+        "js-template-expression",
+        "js-regex-quote",
+        "js-division",
+    ],
 )
 @pytest.mark.usefixtures("memory")
 def test_public_hook_dependency_ignores_loading_syntax_inside_comments_and_strings(
@@ -510,6 +532,22 @@ def test_public_hook_dependency_ignores_names_in_strings_comments_and_test_data(
         row.documents[0].write_text("# 技術資料\n", encoding="utf-8")
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
     assert _guidance(read_delivery.deliver({"cwd": str(tmp_path)}, tool, tool_input, "test")) is None
+
+
+@pytest.mark.usefixtures("memory")
+def test_public_hook_dependency_uses_existing_markup_for_a_nameless_partial_edit(tmp_path, monkeypatch):
+    """本文にアポストロフィを含む既存HTMLがscript要素で依存を読み込んでいれば、名前の無い部分編集でも案内する。"""
+    reference = tmp_path / "alpinejs.md"
+    reference.write_text("# 技術資料\n", encoding="utf-8")
+    page = tmp_path / "page.html"
+    page.write_text(
+        '<p>Don\'t wait</p><script src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>\n',
+        encoding="utf-8",
+    )
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("dependency:alpinejs",), (reference,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
+    tool_input = {"file_path": str(page), "old_string": "Don't wait", "new_string": "Don't wait here"}
+    assert str(reference) in _notice_body(read_delivery.deliver({"cwd": str(tmp_path)}, "Edit", tool_input, "test"))
 
 
 @pytest.mark.usefixtures("memory")

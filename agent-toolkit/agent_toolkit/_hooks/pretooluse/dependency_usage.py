@@ -107,61 +107,149 @@ def _loaded_specifiers(suffix: str, text: str):
     if suffix in _MARKUP_SUFFIXES:
         patterns += _MARKUP_SOURCES
     if suffix == ".css":
-        masked = _mask(text, line_comment="", block_comments=(("/*", "*/"),), quotes="'\"")
+        masked = _mask_css(text)
+    elif suffix in _MARKUP_SUFFIXES:
+        masked = _mask_markup(text)
     else:
-        # MarkupはHTMLコメントに加え、script要素の中のJavaScriptのコメントと文字列も伏せる。
-        comments = (("<!--", "-->"), ("/*", "*/")) if suffix in _MARKUP_SUFFIXES else (("/*", "*/"),)
-        masked = _mask(text, line_comment="//", block_comments=comments, quotes="'\"`")
+        masked = _mask_script(text)
     for pattern in patterns:
         for match in pattern.finditer(masked):
             # 読込先は文字列の中身なので、伏せる前の本文の同じ位置から取り出す。
             yield text[match.start(1) : match.end(1)]
 
 
-def _mask(
-    text: str, *, line_comment: str, block_comments: tuple[tuple[str, str], ...], quotes: str, triple: bool = False
+def _mask_css(text: str) -> str:
+    return _mask(text, line_comment="", block_comments=(("/*", "*/"),), quotes="'\"")
+
+
+def _mask_script(text: str) -> str:
+    return _mask(text, line_comment="//", block_comments=(("/*", "*/"),), quotes="'\"`", script=True)
+
+
+_ELEMENT = re.compile(r"<(script|style)\b[^>]*>(.*?)</\1\s*>", re.IGNORECASE | re.DOTALL)
+
+
+def _mask_markup(text: str) -> str:
+    """HTMLコメントを伏せ、script要素とstyle要素の中身だけをそれぞれの言語の規則で伏せる。
+
+    要素の外の本文（`Don't`のようなアポストロフィなど）は文字列として扱わない。
+    """
+    masked = _mask(text, line_comment="", block_comments=(("<!--", "-->"),), quotes="")
+    result = list(masked)
+    for element in _ELEMENT.finditer(masked):
+        body = text[element.start(2) : element.end(2)]
+        inner = _mask_script(body) if element[1].lower() == "script" else _mask_css(body)
+        result[element.start(2) : element.end(2)] = inner
+    return "".join(result)
+
+
+# この直後の`/`は除算ではなく正規表現リテラルの開始になる文字と予約語。
+_REGEX_PRECEDING = frozenset("(,=:[!&|?{};+-*%<>~^")
+_REGEX_KEYWORDS = frozenset({"return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw"})
+
+
+def _mask(  # noqa: C901 -- 字句の種類ごとの分岐を1つの走査に保つ
+    text: str,
+    *,
+    line_comment: str,
+    block_comments: tuple[tuple[str, str], ...],
+    quotes: str,
+    triple: bool = False,
+    script: bool = False,
 ) -> str:
     """コメントを空白へ、文字列リテラルの中身を`x`へ置き換えた同じ長さの本文を返す。
 
     改行と引用符は残すため、伏せた本文で一致した読込記述の位置を、元の本文の位置へそのまま対応付けられる。
     文字列やコメントの中に書かれた読込記述は、伏せた後の本文では読込記述の書式に一致しない。
+    `script`ではJavaScriptのテンプレート文字列の`${...}`をコードとして走査し、正規表現リテラルの中身も伏せる。
     """
     result = list(text)
-    index = 0
     length = len(text)
 
     def blank(start: int, end: int, fill: str) -> None:
-        for position in range(start, end):
+        for position in range(start, min(end, length)):
             if result[position] != "\n":
                 result[position] = fill
 
-    while index < length:
+    def regex_allowed(index: int) -> bool:
+        position = index - 1
+        while position >= 0 and text[position] in " \t\r\n":
+            position -= 1
+        if position < 0 or text[position] in _REGEX_PRECEDING:
+            return True
+        word_end = position + 1
+        while position >= 0 and (text[position].isalnum() or text[position] in "_$"):
+            position -= 1
+        return text[position + 1 : word_end] in _REGEX_KEYWORDS
+
+    def skip_regex(index: int) -> int:
+        position = index + 1
+        in_class = False
+        while position < length and text[position] != "\n":
+            char = text[position]
+            if char == "\\":
+                position += 2
+                continue
+            if char == "[":
+                in_class = True
+            elif char == "]":
+                in_class = False
+            elif char == "/" and not in_class:
+                blank(index + 1, position, "x")
+                return position + 1
+            position += 1
+        return index + 1
+
+    def skip_string(index: int) -> int:
         char = text[index]
-        if line_comment and text.startswith(line_comment, index):
-            end = text.find("\n", index)
-            end = length if end < 0 else end
-            blank(index, end, " ")
-            index = end
-            continue
-        block = next(((start, stop) for start, stop in block_comments if text.startswith(start, index)), None)
-        if block is not None:
-            end = text.find(block[1], index + len(block[0]))
-            end = length if end < 0 else end + len(block[1])
-            blank(index, end, " ")
-            index = end
-            continue
-        if char in quotes:
-            delimiter = char * 3 if triple and text.startswith(char * 3, index) else char
-            position = index + len(delimiter)
-            while position < length and not text.startswith(delimiter, position):
-                # 1文字の引用符による文字列は行をまたがない。テンプレート文字列と三重引用符はまたぐ。
-                if text[position] == "\n" and len(delimiter) == 1 and char != "`":
-                    break
-                position += 2 if text[position] == "\\" else 1
-            blank(index + len(delimiter), min(position, length), "x")
-            index = min(position + len(delimiter), length) if text.startswith(delimiter, position) else position
-            continue
-        index += 1
+        delimiter = char * 3 if triple and text.startswith(char * 3, index) else char
+        position = segment = index + len(delimiter)
+        while position < length and not text.startswith(delimiter, position):
+            # 1文字の引用符による文字列は行をまたがない。テンプレート文字列と三重引用符はまたぐ。
+            if text[position] == "\n" and len(delimiter) == 1 and char != "`":
+                break
+            if script and char == "`" and text.startswith("${", position):
+                blank(segment, position, "x")
+                position = scan(position + 2, closing="}") + 1
+                segment = position
+                continue
+            position += 2 if text[position] == "\\" else 1
+        blank(segment, position, "x")
+        return position + len(delimiter) if text.startswith(delimiter, position) else position
+
+    def scan(index: int, closing: str = "") -> int:
+        depth = 0
+        while index < length:
+            char = text[index]
+            if closing and char == closing and depth == 0:
+                return index
+            if closing and char == "{":
+                depth += 1
+            elif closing and char == "}":
+                depth -= 1
+            if line_comment and text.startswith(line_comment, index):
+                end = text.find("\n", index)
+                end = length if end < 0 else end
+                blank(index, end, " ")
+                index = end
+                continue
+            block = next(((start, stop) for start, stop in block_comments if text.startswith(start, index)), None)
+            if block is not None:
+                end = text.find(block[1], index + len(block[0]))
+                end = length if end < 0 else end + len(block[1])
+                blank(index, end, " ")
+                index = end
+                continue
+            if script and char == "/" and regex_allowed(index):
+                index = skip_regex(index)
+                continue
+            if quotes and char in quotes:
+                index = skip_string(index)
+                continue
+            index += 1
+        return index
+
+    scan(0)
     return "".join(result)
 
 
