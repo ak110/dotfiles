@@ -7,6 +7,12 @@
 .inputrc
 .tmux.conf
 .config/user-tmpfiles.d
+.config/herdr
+{{ end }}
+
+# Windows以外: Windowsの%APPDATA%向け配置をスキップ
+{{ if ne .chezmoi.os "windows" }}
+AppData
 {{ end }}
 
 # run scripts: OS別に除外（ターゲットパスはプレフィックス除去後の名前）

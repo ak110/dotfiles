@@ -13,6 +13,7 @@
 ## 公式リファレンス（Claude Code）
 
 公式マーケットプレイス（`anthropics/claude-plugins-official`）の`skill-creator:skill-creator`や`plugin-dev`の各スキルを参照する。これらの`references/`に記載がない仕様や、手元の認識と記述内容が一致しない点については、公式ドキュメントで確認する。
+両プラグインは導入や有効化をしなくても、Claude Codeが複製したマーケットプレイスの`~/.claude/plugins/marketplaces/claude-plugins-official/plugins/<プラグイン名>/`配下から資料として読める。
 参照先のドキュメントは、`https://code.claude.com/docs/ja/`配下の各ページ（`memory.md`、`skills.md`、`sub-agents.md`、`hooks.md`、`plugins.md`、`plugins-reference.md`など）である。
 上記に記載のないページは、ドキュメントのインデックス（`https://code.claude.com/docs/llms.txt`）から探す。インデックス内のURLは英語版（`https://code.claude.com/docs/en/<page>.md`）となっているため、日本語版を参照するときは言語パスの`en`を`ja`に置き換えてアクセスする。
 

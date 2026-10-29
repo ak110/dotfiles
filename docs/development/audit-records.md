@@ -1036,7 +1036,8 @@ agents_server（`agent-toolkit/agent_toolkit/agents_server_mcp.py`、MCP Python 
 
 - 適用済み: 起動操作は`start`の`mode`へ統合し、modeを列挙型でスキーマへ示し、modeごとの必須・禁止の入力を説明と`_validate_start_inputs`の双方に置く。応答は`session_id`と次の操作を返し、`list`は除いた件数を`omitted`へ、`show`は`verbose`で詳細を選ぶ。例外は`_actionable_tool`が`next_action`付きの`ToolError`へ変え、SDKがツール実行エラーとして返す。全ツールが構造化応答を返し、`outputSchema`は任意の項目を許すobjectである。stdio transportのログは標準エラーとファイルへ出力する
 - 是正済み（同書の「単体での利用」とホスト固有の条件による）: 適用前の`start`の説明は2,932文字で、Claude Codeの設定を変えない状態では後半の結果受領・起動前の準備・応答の説明が切り詰められていた。結果受領を先頭へ移し、modeの選び方を`mode`の引数説明へ移して1,962文字とした。`send_message`・`kill`・`stop`・`show`の`session_id`、`send_message`の`prompt`、`list`の`include_terminated`、`show`の`verbose`は引数説明を持たなかったため説明を加えた。`_agents_server/tool_descriptions_test.py::test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`が説明長と全引数の説明を確かめる。instructionsは690文字である
-- 任意の改善候補: annotationsは全ツールで未設定である。`show`は保持中の状態を読むだけで`readOnlyHint`を付与できる。`list`は保持期限に達したsessionの本体の解放を内部で進めるため、付与はその扱いを決めてから判断する。`outputSchema`は応答の項目を列挙していない
+- 任意の改善候補: `outputSchema`は応答の項目を列挙していない。応答は`mode`や状態で項目が変わり、列挙の保守負担が大きいため、2026年10月29日の見直しでも列挙しない
+- 適用済み（2026年10月29日）: 全ツールへ日本語の`title`と注釈を付けた。`list`と`show`は`readOnlyHint`、`start`と`send_message`は`destructiveHint: false`、`kill`と`stop`は`destructiveHint: true`である。`list`が内部で行う保持期限到来sessionの失効は、保持期限のタイマーが同じ時刻に行う失効を先に反映するだけで、呼び出しの有無と回数で観測できる状態が変わらないため、`readOnlyHint`を付けた。`_agents_server/tool_descriptions_test.py::test_tool_list_publishes_title_and_side_effect_annotations`が`tools/list`の応答の値を確かめる
 - 仕様上の是正: 該当なし
 
 pyfltrの公開ツールは`build_server`が登録する11件である。対象は`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`で、対応する変更は2026年10月1日「fix: 置換失敗時の復旧とMCPの応答性を改善し、公開前の動作確認を追加する」、`c5aa7e2`である。観測環境のMCP Python SDKは2.2.0だった。読み取り専用で`list_tools()`の結果と各ツールの直接の応答生成を読んだ。
@@ -1069,6 +1070,27 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 - `mcp_tools_test.py::test_public_start_schema_delivers_explore_capabilities`
 
 再検証は同じコマンドで後続版のリリースノートからMCPの説明とinstructionsの上限の変更項目を探し、公式MCPガイドの「For MCP server authors」と比べる。値が変わった場合は同書の「ホスト固有の条件」、`tool_descriptions.py`の`START_DESCRIPTION`直前のコメントと前記のテストを改める。
+
+## agent-basics/skills/writing-standards/references/mcp-server-design.md：典拠：2026年10月29日
+
+2026年10月29日、公式マーケットプレイス`anthropics/claude-plugins-official`の複製`~/.claude/plugins/marketplaces/claude-plugins-official/`から`mcp-server-dev`の資料を読んだ。
+複製の版は、同ディレクトリの`.gcs-sha`が`f8c5e7a1dcb71b10cb74586224b5401f3de5db28`、`~/.claude/plugins/known_marketplaces.json`の`lastUpdated`が`2026-10-29T07:27:00.345Z`である。
+`build-mcp-server/references/tool-design.md`の「Tool annotations」は、`readOnlyHint`・`destructiveHint`・`idempotentHint`・`openWorldHint`の意味とホストの扱いを表で示す。
+同節は、全読取ツールへ`readOnlyHint: true`を付けるよう勧める。
+同書冒頭の「Anthropic Directory hard requirements」は、Directoryへ提出するサーバーの合否条件として、全ツールの`readOnlyHint`・`destructiveHint`・`title`、読み書きのツール分割、説明文での行動指示の禁止などを挙げる。
+`server-capabilities.md`は`instructions`、sampling、roots、logging、progress、cancellation、completionを扱う。
+
+再検証は同じ複製かGitHubの同じパスから各資料を取得し、注釈の推奨とDirectoryの条件を同書の「ツール注釈」と典拠表の注記と比べる。推奨が変わった場合は同書を改める。
+
+## agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月29日
+
+2026年10月29日、Claude Code 2.1.312の本体（`~/.local/share/claude/versions/2.1.312`）を`rg -a -o`で検索した。
+MCPツールの呼び出しで`mayHaveRun`を持つ接続断の例外が起きた場合、本体は実行前の失敗か、ツールの`readOnlyHint===!0`のときに再試行する分岐を持つ。
+別の再試行経路は、実行前の失敗、`isConcurrencySafe`、`annotations?.idempotentHint===!0`のいずれかで再試行する。
+MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すため、`readOnlyHint: true`のツールは並行呼び出しの対象にもなる。
+権限の自動許可への注釈の作用は確認していない。
+
+再検証は後続版の本体を`dotfiles-development`「ホスト本体のバイナリの検索」の手順で`mayHaveRun`と`isConcurrencySafe(){return`を検索し、再試行と並行実行の条件を比べる。条件が変わった場合は同書の「ホスト固有の条件」を改める。
 
 ## agent-basics/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
 

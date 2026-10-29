@@ -383,6 +383,7 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 
 - 推奨: `context7`・`typescript-lsp`（`npm install -g typescript-language-server typescript`が必要）
 - 任意: `skill-creator`
+- 参照のみ（有効化しない）: `plugin-dev`・`mcp-server-dev`（エージェントが品質基準の案内に従って資料として読むため導入は不要。有効化するとスキルが自動で起動し、質問が増える）
 - 無効: `pyright-lsp`（Claude Codeがインストールを推奨するが誤動作が発生するため、インストール後に`Disable`）
 - 無効: `claude-md-management`（`CLAUDE.local.md`を`.claude.local.md`と誤認し、`AGENTS.md`を走査しないため、インストール済みなら自動で無効化）
 

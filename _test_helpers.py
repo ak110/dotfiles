@@ -364,3 +364,20 @@ def direct_pytest_targets(workflow: dict[str, object]) -> list[str]:
                 if not token.startswith("-") and ("/" in token or token.endswith(".py"))
             )
     return targets
+
+
+def render_chezmoi_modify_template(template: pathlib.Path, content: str, environment: dict[str, str] | None = None) -> str:
+    """chezmoiのmodifyテンプレートへ既存の配布先本文を標準入力で渡し、評価結果を返す。"""
+    result = subprocess.run(
+        ["chezmoi", "execute-template", "--file", str(template), "--with-stdin", "--working-tree", str(REPO_ROOT)],
+        input=content,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=environment,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout

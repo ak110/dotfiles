@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator
 from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from agent_toolkit._agents_server import (
@@ -109,7 +110,14 @@ mcp = AgentsServerMCP(
 )
 
 
-@mcp.tool(name="start", description=START_DESCRIPTION, structured_output=True)
+@mcp.tool(
+    name="start",
+    title="委譲sessionの開始",
+    description=START_DESCRIPTION,
+    # 新しいsessionを起動するだけで、既存のsessionと結果を変えない。
+    annotations=ToolAnnotations(destructive_hint=False),
+    structured_output=True,
+)
 async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数として受け取る
     cwd: Annotated[str | None, Field(description=CWD_DESCRIPTION)] = None,
     mode: Annotated[StartMode | None, Field(description=MODE_DESCRIPTION)] = None,
@@ -209,7 +217,13 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     return public_start_response(response)
 
 
-@mcp.tool(name="send_message", structured_output=True)
+@mcp.tool(
+    name="send_message",
+    title="委譲sessionへの指示の追送",
+    # 指示を追加で配送して新しいturnを始めうるが、既存の結果や会話は消さない。
+    annotations=ToolAnnotations(destructive_hint=False),
+    structured_output=True,
+)
 async def send_message(
     session_id: Annotated[str, Field(description=SESSION_ID_DESCRIPTION)],
     prompt: Annotated[
@@ -286,7 +300,13 @@ async def send_message(
     return public_send_message_response(response)
 
 
-@mcp.tool(name="kill", structured_output=True)
+@mcp.tool(
+    name="kill",
+    title="実行中turnの中断",
+    # 実行中turnを中断し、`stop=true`ではsessionも破棄する。
+    annotations=ToolAnnotations(destructive_hint=True),
+    structured_output=True,
+)
 async def kill(
     session_id: Annotated[str, Field(description=SESSION_ID_DESCRIPTION)],
     timeout: Annotated[
@@ -321,7 +341,12 @@ async def kill(
     return await _MANAGER.kill(session_id, timeout, stop)
 
 
-@mcp.tool(name="stop", structured_output=True)
+@mcp.tool(
+    name="stop",
+    title="終了済みsessionの破棄",
+    annotations=ToolAnnotations(destructive_hint=True),
+    structured_output=True,
+)
 async def stop_session(session_id: Annotated[str, Field(description=SESSION_ID_DESCRIPTION)]) -> dict[str, Any]:
     """再開する予定の無い終了済みsessionを明示的に破棄する。
 
@@ -333,7 +358,15 @@ async def stop_session(session_id: Annotated[str, Field(description=SESSION_ID_D
     return await _MANAGER.stop(session_id)
 
 
-@mcp.tool(name="list", structured_output=True)
+@mcp.tool(
+    name="list",
+    title="委譲sessionの一覧",
+    # 内部で保持期限に達したsessionを失効させるが、保持期限のタイマーが同じ時刻に行う失効を先に反映するだけで、
+    # 呼び出しの有無や回数によって観測できる状態は変わらない。Claude Codeは読み取り専用のツールを、
+    # 実行済みの可能性がある接続断の後も再試行する。
+    annotations=ToolAnnotations(read_only_hint=True),
+    structured_output=True,
+)
 async def list_sessions(
     include_terminated: Annotated[
         bool,
@@ -363,7 +396,13 @@ async def list_sessions(
     return await _MANAGER.list_sessions(include_terminated=include_terminated)
 
 
-@mcp.tool(name="show", structured_output=True)
+@mcp.tool(
+    name="show",
+    title="委譲sessionの詳細",
+    # `list`と同じく、期限に達したsessionの失効を先に反映するだけである。
+    annotations=ToolAnnotations(read_only_hint=True),
+    structured_output=True,
+)
 async def show_session(
     session_id: Annotated[str, Field(description=SESSION_ID_DESCRIPTION)],
     verbose: Annotated[

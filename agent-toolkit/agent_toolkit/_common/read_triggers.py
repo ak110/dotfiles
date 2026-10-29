@@ -707,10 +707,45 @@ def document_sources(plugin_root: pathlib.Path, cwd: str = "", user_skills: path
     """配布物・プロジェクト・ユーザーの宣言を安定した順序で列挙する。"""
     roots = [plugin_root / "skills", plugin_root / "share"]
     if cwd:
-        project = pathlib.Path(cwd).resolve()
-        roots.extend(parent / ".claude" / "skills" for parent in [project, *project.parents])
+        roots.extend(project_skill_dirs(pathlib.Path(cwd)))
     roots.append(user_skills or pathlib.Path.home() / ".claude" / "skills")
     return list(dict.fromkeys(path.resolve() for root in roots if root.is_dir() for path in sorted(root.rglob("*.md"))))
+
+
+def project_skill_dirs(cwd: pathlib.Path) -> list[pathlib.Path]:
+    """Claude Codeがcwdから探すプロジェクトスキルの`.claude/skills`を、近い順に返す。
+
+    公式資料（https://code.claude.com/docs/en/skills）の規則に合わせる。cwdからGit作業ツリーのrootまでの各ディレクトリを探し、
+    rootより上の祖先は探さない。`git worktree add`で作ったlinked worktreeのrootに`.claude/skills`が無い場合は、
+    主checkoutのrootの`.claude/skills`を探す（Claude Code 2.1.277以降）。
+    主checkoutの配下に置いた入れ子のworktreeで、主checkout側の同名スキルを候補に含めないためである。
+    Git作業ツリーの外では全祖先を探す。
+    """
+    project = cwd.resolve()
+    chain = [project, *project.parents]
+    root = next((parent for parent in chain if (parent / ".git").exists()), None)
+    if root is None:
+        return [parent / ".claude" / "skills" for parent in chain]
+    dirs = [parent / ".claude" / "skills" for parent in chain[: chain.index(root) + 1]]
+    if not (root / ".claude" / "skills").is_dir():
+        main = _main_checkout_root(root)
+        if main is not None:
+            dirs.append(main / ".claude" / "skills")
+    return dirs
+
+
+def _main_checkout_root(worktree_root: pathlib.Path) -> pathlib.Path | None:
+    """主checkoutのrootを、linked worktreeの`.git`ファイルから返す。主checkoutや解決できない構成ではNoneを返す。"""
+    marker = worktree_root / ".git"
+    if not marker.is_file():
+        return None
+    try:
+        value = marker.read_text(encoding="utf-8").strip().removeprefix("gitdir:").strip()
+        gitdir = (worktree_root / value).resolve()
+        common = (gitdir / (gitdir / "commondir").read_text(encoding="utf-8").strip()).resolve()
+    except OSError, UnicodeError:
+        return None
+    return common.parent if common.name == ".git" else None
 
 
 def validate_plugin_relative_references(source: pathlib.Path) -> None:
