@@ -10,25 +10,16 @@ import tomllib
 
 import pytest
 
+import _test_helpers
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
 
 
 def _render_config(content: str, environment: dict[str, str]) -> str:
     """既存設定を実テンプレートで評価し、再適用できる本文を返す。"""
-    template = REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
-    result = subprocess.run(
-        ["chezmoi", "execute-template", "--file", str(template), "--with-stdin", "--working-tree", str(REPO_ROOT)],
-        input=content,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=environment,
-        check=False,
-        timeout=30,
+    return _test_helpers.render_chezmoi_modify_template(
+        REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml", content, environment
     )
-    assert result.returncode == 0, result.stderr
-    return result.stdout
 
 
 @pytest.mark.parametrize("enabled", [False, True, None])
@@ -150,3 +141,21 @@ def test_config_template_removes_reasoning_overrides(reasoning_config: str) -> N
     assert "hide_agent_reasoning" not in rendered
     assert rendered["model"] == "gpt-test"
     assert rendered["features"]["user_feature"] is True
+
+
+@pytest.mark.parametrize("existing", ["", "[tui]\nmouse_scroll_speed = 1.0\nstatus_line_use_colors = true\n"])
+def test_config_template_sets_mouse_scroll_speed_and_keeps_tui_keys(
+    existing: str, host_environ: collections.abc.Callable[[], dict[str, str]]
+) -> None:
+    """マウスホイールの移動量を浮動小数点数の5.0にし、Codexが書いた他の`tui`キーを再適用後も保持する。
+
+    codex 0.165.0では値が1イベントあたりの行数になり、正の有限数でない値は起動時に拒否される。
+    """
+    content = existing
+    for _ in range(2):
+        content = _render_config(content, host_environ())
+        tui = tomllib.loads(content)["tui"]
+        assert tui["mouse_scroll_speed"] == 5.0
+        assert isinstance(tui["mouse_scroll_speed"], float)
+        if existing:
+            assert tui["status_line_use_colors"] is True

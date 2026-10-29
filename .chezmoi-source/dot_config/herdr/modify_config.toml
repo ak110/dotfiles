@@ -1,0 +1,14 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /*
+herdrの設定ファイルのmodify処理。herdrは初回設定の完了時や設定画面の操作で同じファイルへ書き込むため、
+ファイル全体を置き換えず、配布する値だけを上書きして他のキーを保持する。
+配置先はLinux・macOSが`dot_config/herdr/`、Windowsが`AppData/Roaming/herdr/`（`%APPDATA%`）で、`.chezmoiignore`がOSごとに片方を除外する。
+chezmoi 2.73.3のmodifyテンプレートからは`.chezmoitemplates`の共有テンプレートを呼べなかった（`template ... not defined`）ため、両方の配置先へ同じ本文を置く。
+*/ -}}
+{{- $config := dict -}}
+{{- if ne (trim .chezmoi.stdin) "" -}}
+{{-   $config = fromToml .chezmoi.stdin -}}
+{{- end -}}
+{{- /* シェル履歴のマウスホイール1ノッチの移動量を、tmuxのcopy-modeの既定（5行）とそろえる。 */ -}}
+{{- $config = setValueAtPath "ui.mouse_scroll_lines" 5 $config -}}
+{{ toToml $config }}

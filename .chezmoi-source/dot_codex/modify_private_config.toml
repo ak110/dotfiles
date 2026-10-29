@@ -9,6 +9,8 @@
 {{- $config = setValueAtPath "tool_output_token_limit" $codexConfig.tool_output_token_limit $config -}}
 {{- /* 応答方針は常時規範が定めるため、追加のパーソナリティを無効にする。 */ -}}
 {{- $config = setValueAtPath "personality" "none" $config -}}
+{{- /* マウスホイール1ノッチで会話画面を5行動かし、tmuxとherdrのシェル履歴（1ノッチ5行）とそろえる。 */ -}}
+{{- $config = setValueAtPath "tui.mouse_scroll_speed" 5.0 $config -}}
 {{- /* コンテキスト長と自動圧縮の境界は、選択モデルの標準設定を使う。 */ -}}
 {{- $config = deleteValueAtPath "model_context_window" $config -}}
 {{- $config = deleteValueAtPath "model_auto_compact_token_limit" $config -}}
