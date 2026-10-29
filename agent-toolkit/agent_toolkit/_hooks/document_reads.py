@@ -178,3 +178,27 @@ def response_text(response: object) -> str | None:
             if isinstance(value, str):
                 return value
     return None
+
+
+READ_TRIGGER_PREFIX = "read-trigger:"
+"""読込案内の取得記録のキーの接頭辞。キーは`read-trigger:<絶対パス>#sha256:<内容ハッシュ>`の形をとる。"""
+
+
+def read_trigger_key(path: pathlib.Path, fingerprint: str) -> str:
+    """取得を観測した資料の記録キーを返す。パスは圧縮後の候補案内で取得手段を示すために残す。"""
+    return READ_TRIGGER_PREFIX + str(path.resolve()) + "#sha256:" + fingerprint
+
+
+def content_ready(records: dict, fingerprint: str, agent: str) -> bool:
+    """同じ主体が同じ内容ハッシュの資料を全文取得した記録があるかを返す。
+
+    取得状態は主体と資料の内容ハッシュの組で管理し、記録時のパスを条件に含めない
+    （`share/read-trigger-contract.md`「取得とチェック」）。主checkoutと配下のworktreeのように
+    同じ内容の写しが別の場所にあっても、どちらを読んだかで判定を変えない。
+    案内要否、分割読取の集計、履歴の復元、会話圧縮時の候補抽出はこの判定だけを使う。
+    """
+    suffix = "#sha256:" + fingerprint
+    return any(
+        key.startswith(READ_TRIGGER_PREFIX) and key.endswith(suffix) and isinstance(actors, list) and agent in actors
+        for key, actors in records.items()
+    )

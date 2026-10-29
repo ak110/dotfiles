@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit import hook as hook_entry
 from agent_toolkit._agents_server import launch_requests
-from agent_toolkit._common import plugin_roots
+from agent_toolkit._common import plugin_roots, read_triggers
 from agent_toolkit._common.plugin_roots import PluginRootError
 from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger, parse_tables
 from agent_toolkit._hooks import document_reads, rules_context
@@ -21,9 +21,9 @@ from agent_toolkit._hooks.pretooluse.read_delivery import (
     _mark,
     _project_skill_rows,
     _read_body_proofs,
-    _redundant_selection,
 )
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
+from agent_toolkit._testing.git_repository import init_repository, run_git
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 
@@ -328,15 +328,18 @@ def test_main_missing_work_contract_explains_its_expected_path(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize(
-    ("path", "expected"),
-    [("document.md", False), ("module.py", True), ("pyproject.toml", True)],
+    ("path", "content", "expected"),
+    [
+        ("document.md", "import sqlalchemy\n", False),
+        ("module.py", "import sqlalchemy\n", True),
+        ("pyproject.toml", '[project]\ndependencies = ["SQLAlchemy>=2"]\n', True),
+        ("pyproject.toml", '[project]\ndescription = "sqlalchemy helpers"\n', False),
+    ],
 )
-def test_dependency_selection_requires_code_or_dependency_definition(tmp_path, path, expected):
+def test_dependency_selection_requires_code_or_dependency_definition(tmp_path, path, content, expected):
     target = tmp_path / path
     assert (
-        read_delivery.matches(
-            "dependency:sqlalchemy", "Write", {"file_path": str(target), "content": "sqlalchemy"}, str(tmp_path)
-        )
+        read_delivery.matches("dependency:sqlalchemy", "Write", {"file_path": str(target), "content": content}, str(tmp_path))
         is expected
     )
 
@@ -380,30 +383,34 @@ def test_public_hook_keeps_delegated_work_contract_input_preferred(tmp_path, mon
 
 
 @pytest.mark.parametrize(
-    ("dependency", "filename"),
+    ("dependency", "filename", "usage"),
     [
-        ("tailwindcss", "styles.css"),
-        ("alpinejs", "page.html"),
-        ("playwright", "test.ts"),
-        ("sqlalchemy", "module.py"),
-        ("drizzle", "schema.ts"),
-        ("svelte", "Component.svelte"),
+        ("tailwindcss", "styles.css", '@import "tailwindcss";\n'),
+        (
+            "alpinejs",
+            "page.html",
+            '<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>\n',
+        ),
+        ("playwright", "test.ts", "import { test } from '@playwright/test';\n"),
+        ("sqlalchemy", "module.py", "from sqlalchemy import select\n"),
+        ("drizzle", "schema.ts", "import { pgTable } from 'drizzle-orm/pg-core';\n"),
+        ("svelte", "Component.svelte", "<p>hello</p>\n"),
     ],
 )
 @pytest.mark.usefixtures("memory")
-def test_public_hook_dependency_rows_exclude_markdown_and_select_code(tmp_path, monkeypatch, dependency, filename):
+def test_public_hook_dependency_rows_exclude_markdown_and_select_code(tmp_path, monkeypatch, dependency, filename, usage):
     reference = tmp_path / f"{dependency}.md"
     reference.write_text("# 技術資料\n", encoding="utf-8")
     row = ReadTrigger(tmp_path / "SKILL.md", 1, "操作", (f"dependency:{dependency}",), (reference,))
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     markdown = _guidance(
         read_delivery.deliver(
-            {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / "note.md"), "content": dependency}, "test"
+            {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / "note.md"), "content": usage}, "test"
         )
     )
     code = _notice_body(
         read_delivery.deliver(
-            {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / filename), "content": dependency}, "test"
+            {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / filename), "content": usage}, "test"
         )
     )
     assert markdown is None
@@ -429,6 +436,48 @@ def test_public_hook_dependency_uses_existing_code_for_a_nameless_partial_edit(t
     assert str(reference) in notice
 
 
+def _declared_dependencies() -> list[str]:
+    """品質資料の読込表が`dependency:`で宣言する依存名を全件返す。将来追加された行も検査対象に入る。"""
+    basics = pathlib.Path(__file__).resolve().parents[4] / "agent-basics"
+    rows = parse_tables(basics / "skills/writing-standards/SKILL.md", basics)
+    names = sorted({op.split(":", 1)[1] for row in rows for op in row.operations if op.startswith("dependency:")})
+    assert names
+    return names
+
+
+@pytest.mark.parametrize("tool", ["Edit", "Bash"])
+@pytest.mark.usefixtures("memory")
+def test_public_hook_dependency_ignores_names_in_strings_comments_and_test_data(tmp_path, monkeypatch, tool):
+    """名前が文字列・コメント・テストデータにあるだけのコードを、名前と無関係な箇所で編集しても案内しない。
+
+    2026年10月29日に、6種類の名前をテストパラメーターに持つテストファイルの無関係な行の編集で全種類が案内された。
+    """
+    dependencies = _declared_dependencies()
+    code = tmp_path / "module_test.py"
+    code.write_text(
+        "import pytest\n\n"
+        "# svelte対応は未定\n"
+        f"@pytest.mark.parametrize('name', {dependencies!r})\n"
+        "def test_name(name):\n"
+        "    value = 1\n"
+        "    assert name\n",
+        encoding="utf-8",
+    )
+    tool_input = (
+        {"file_path": str(code), "old_string": "    value = 1\n", "new_string": "    value = 2\n"}
+        if tool == "Edit"
+        else {"command": f"sed -i 's/value = 1/value = 2/' {code}"}
+    )
+    rows = [
+        ReadTrigger(tmp_path / "SKILL.md", index, "操作", (f"dependency:{name}",), (tmp_path / f"{name}.md",))
+        for index, name in enumerate(dependencies, 1)
+    ]
+    for row in rows:
+        row.documents[0].write_text("# 技術資料\n", encoding="utf-8")
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    assert _guidance(read_delivery.deliver({"cwd": str(tmp_path)}, tool, tool_input, "test")) is None
+
+
 @pytest.mark.usefixtures("memory")
 def test_public_hook_artifact_standards_uses_code_operation_only(tmp_path, monkeypatch):
     source = tmp_path / "skills/review-standards/SKILL.md"
@@ -450,7 +499,10 @@ def test_public_hook_artifact_standards_uses_code_operation_only(tmp_path, monke
     assert str(reference) not in markdown
     assert str(reference) in _notice_body(
         read_delivery.deliver(
-            {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / "module.py"), "content": "sqlalchemy"}, "test"
+            {"cwd": str(tmp_path)},
+            "Write",
+            {"file_path": str(tmp_path / "module.py"), "content": "import sqlalchemy\n"},
+            "test",
         )
     )
 
@@ -1603,26 +1655,80 @@ def test_only_current_full_actor_proof_activates_plugin_declarations(tmp_path, m
     assert active != foreign
 
 
-@pytest.mark.parametrize("case", ["duplicate", "version", "changed", "actor", "explicit", "modified", "startup"])
-def test_obsolete_duplicate_selection_does_not_impersonate_an_explicit_source_read(tmp_path, monkeypatch, memory, case):
-    active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
-    counterpart = ReadTarget(active / "skills/search/SKILL.md")
-    old = ReadTarget(foreign / "skills/search/SKILL.md")
-    _mark("test", counterpart.path, "other" if case == "actor" else "main")
-    records = memory[rules_context.OPERATION_SKILL_READY_KEY]
-    if case == "version":
-        (foreign / ".claude-plugin/plugin.json").write_text(
-            json.dumps({"name": "agent-toolkit", "version": "2.225.0"}), encoding="utf-8"
-        )
-    elif case == "changed":
-        old.path.write_text(old.path.read_text() + "別の本文\n", encoding="utf-8")
-    elif case in {"explicit", "modified"}:
-        prefix = "resolved-project-skill:" if case == "explicit" else "modified-agent-document:"
-        records[prefix + str(old.path)] = ["main"]
-    elif case == "startup":
-        records["startup-input-target:" + json.dumps({"path": str(old.path)})] = ["main"]
-    assert _redundant_selection(old, {counterpart}, records, "main") is (case == "duplicate")
-    assert read_delivery.document_key(old.path) not in records
+def _copies(tmp_path, monkeypatch, *, same=True):
+    """主checkoutと配下のworktreeのように、同じ内容の資料を2か所へ置き、片方だけを案内対象にする。"""
+    body = "# 資料\n\n一行目\n二行目\n三行目\n"
+    checkout = tmp_path / "repo/references/rule.md"
+    worktree = tmp_path / "repo/.claude/worktrees/lane/references/rule.md"
+    for path in (checkout, worktree):
+        path.parent.mkdir(parents=True)
+        path.write_text(body, encoding="utf-8")
+    if not same:
+        worktree.write_text(body + "worktreeだけの変更\n", encoding="utf-8")
+    rows = [
+        ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (checkout,)),
+        ReadTrigger(tmp_path / "SKILL.md", 2, "操作", ("tool:Other",), (worktree,)),
+    ]
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    return checkout, worktree
+
+
+@pytest.mark.parametrize(
+    ("case", "ready"),
+    [("same", True), ("different", False), ("other-actor", False), ("partial", False), ("split-copies", True)],
+)
+@pytest.mark.usefixtures("memory")
+def test_public_hook_treats_a_same_content_copy_read_as_acquired(tmp_path, monkeypatch, case, ready):
+    """同じ主体が同じ内容の資料を別の場所で全文取得していれば、案内対象の場所を問わず取得済みとする。"""
+    checkout, worktree = _copies(tmp_path, monkeypatch, same=case != "different")
+    lines = worktree.read_text(encoding="utf-8").splitlines(keepends=True)
+    payload = {"agent_id": "child"} if case == "other-actor" else {}
+
+    def read(path, start, count):
+        text = "".join(lines[start - 1 : start - 1 + count])
+        response = {"file": {"content": text, "startLine": start, "numLines": count, "totalLines": len(lines)}}
+        read_delivery.observe({**payload, "tool_response": response}, "Read", {"file_path": str(path)}, "test")
+
+    if case == "partial":
+        read(worktree, 1, 2)
+    elif case == "split-copies":
+        read(worktree, 1, 2)
+        read(checkout, 3, len(lines) - 2)
+    else:
+        read(worktree, 1, len(lines))
+    assert (_guidance(read_delivery.deliver({}, "Do", {}, "test")) is None) is ready
+
+
+@pytest.mark.usefixtures("memory")
+def test_history_restore_counts_a_same_content_copy_read(tmp_path, monkeypatch):
+    """セッション記録に残る別の場所の同じ内容の取得も、案内対象の取得として復元する。"""
+    _checkout, worktree = _copies(tmp_path, monkeypatch)
+    entries = [
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "tool_use", "id": "read", "name": "Read", "input": {"file_path": str(worktree)}}]},
+        },
+        {
+            "type": "user",
+            "message": {"content": [{"type": "tool_result", "tool_use_id": "read", "content": worktree.read_text()}]},
+        },
+    ]
+    log = tmp_path / "history.jsonl"
+    log.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    assert _guidance(read_delivery.deliver({"transcript_path": str(log)}, "Do", {}, "test")) is None
+
+
+def test_compaction_recovery_lists_a_selected_document_read_through_a_same_content_copy(tmp_path, monkeypatch, memory):
+    """会話圧縮時は、選択済み資料を同じ内容の別の場所で読んだ場合も、選択済み資料のパスを再取得の候補に挙げる。"""
+    checkout, worktree = _copies(tmp_path, monkeypatch)
+    read_delivery.observe({"tool_response": worktree.read_text()}, "Read", {"file_path": str(worktree)}, "test")
+    memory[rules_context.OPERATION_SKILL_READY_KEY][
+        "selected-read-target:" + json.dumps({"path": str(checkout), "heading": ""}, ensure_ascii=False, separators=(",", ":"))
+    ] = ["main"]
+    monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
+    recovery = rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+    assert [path for path, _heading, _fingerprint in recovery] == [checkout.resolve()]
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
 @pytest.mark.parametrize("failure", ["root", "io", "missing", "unicode", "root-text-only"])
@@ -1954,3 +2060,72 @@ def test_task_document_listed_by_an_unread_declaration_still_warns(tmp_path, mon
         {"cwd": str(tmp_path), "transcript_path": str(log)}, "Read", {"file_path": str(integration)}, "test"
     )
     assert f"他の担当の手順書`{integration}`を取得しようとしている" in _notice_body(decision)
+
+
+_TABLE_HEADER = "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+
+
+def _project_skill_files(name: str) -> dict[str, str]:
+    """`proj-skill`の`SKILL.md`を、別のスキルの読込表が`tool:Do`で案内する配置を返す。"""
+    return {
+        f".claude/skills/{name}/SKILL.md": "# 対象スキル\n\n対象スキル本文\n",
+        ".claude/skills/caller/SKILL.md": (
+            f"# 呼出側\n\n{_TABLE_HEADER}| 操作の前 | `../{name}/SKILL.md` | 操作 | `tool:Do` |\n"
+        ),
+    }
+
+
+def _project_declarations(monkeypatch, plugin_root):
+    """稼働版の配布物を除き、実際の配置から列挙したプロジェクト・ユーザースキルの宣言だけを読む。"""
+
+    def declarations(cwd, **_kwargs):
+        sources = [path for path in read_triggers.document_sources(plugin_root, cwd) if not path.is_relative_to(plugin_root)]
+        return [row for source in sources for row in parse_tables(source, plugin_root, project=cwd)]
+
+    monkeypatch.setattr(read_delivery, "declarations", declarations)
+
+
+@pytest.mark.usefixtures("memory")
+def test_public_hook_records_the_worktree_project_skill_invoked_in_a_nested_worktree(tmp_path, monkeypatch):
+    """主checkoutと配下のlinked worktreeに同名のプロジェクトスキルがあっても、worktree側の起動を読了として記録する。
+
+    Claude Codeはlinked worktreeのrootで探索を止め、worktree側の`SKILL.md`を読み込む（2026年10月29日のセッション記録の
+    `Base directory for this skill:`行で確認）。
+    """
+
+    main = init_repository(tmp_path / "repo", files=_project_skill_files("proj-skill"), commit_message="初期")
+    worktree = main / ".claude/worktrees/lane"
+    run_git(main, "worktree", "add", "--quiet", "--detach", str(worktree))
+    _project_declarations(monkeypatch, read_delivery.plugin_resources.plugin_root().resolve())
+    payload = {"cwd": str(worktree)}
+    before = _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
+    assert str((worktree / ".claude/skills/proj-skill/SKILL.md").resolve()) in before
+    assert str((main / ".claude/skills/proj-skill/SKILL.md").resolve()) not in before
+    read_delivery.observe(
+        {**payload, "tool_response": {"success": True, "commandName": "proj-skill"}}, "Skill", {"skill": "proj-skill"}, "test"
+    )
+    assert _guidance(read_delivery.deliver(payload, "Do", {}, "test")) is None
+
+
+@pytest.mark.usefixtures("memory")
+def test_public_hook_prefers_the_user_skill_over_a_same_named_project_skill(tmp_path, monkeypatch):
+    """同名のユーザースキルとプロジェクトスキルでは、Claude Codeの優先順位どおりユーザースキルの起動として記録する。"""
+
+    project = init_repository(tmp_path / "repo", files=_project_skill_files("proj-skill"), commit_message="初期")
+    user = pathlib.Path.home() / ".claude/skills/proj-skill/SKILL.md"
+    user.parent.mkdir(parents=True)
+    user.write_text("# ユーザースキル\n\nユーザー本文\n", encoding="utf-8")
+    caller = pathlib.Path.home() / ".claude/skills/user-caller/SKILL.md"
+    caller.parent.mkdir(parents=True)
+    caller.write_text(
+        f"# 呼出側\n\n{_TABLE_HEADER}| 操作の前 | `../proj-skill/SKILL.md` | 操作 | `tool:Judge` |\n", encoding="utf-8"
+    )
+    _project_declarations(monkeypatch, read_delivery.plugin_resources.plugin_root().resolve())
+    payload = {"cwd": str(project)}
+    read_delivery.observe(
+        {**payload, "tool_response": {"success": True, "commandName": "proj-skill"}}, "Skill", {"skill": "proj-skill"}, "test"
+    )
+    assert _guidance(read_delivery.deliver(payload, "Judge", {}, "test")) is None
+    assert str((project / ".claude/skills/proj-skill/SKILL.md").resolve()) in _notice_body(
+        read_delivery.deliver(payload, "Do", {}, "test")
+    )

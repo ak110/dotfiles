@@ -152,8 +152,8 @@ def reset_main_operation_skill_ready(
                     fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
                 except KeyError, OSError, TypeError, ValueError:
                     continue
-                ready = f"read-trigger:{path}#sha256:{fingerprint}"
-                if MAIN_AGENT_ID in recorded.get(ready, []):
+                # 同じ内容の写しを別の場所で読んだ取得も、選択済み資料の取得として候補に含める。
+                if document_reads.content_ready(recorded, fingerprint, MAIN_AGENT_ID):
                     recovery.append((path, heading, fingerprint))
         updated = {
             name: (

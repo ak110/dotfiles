@@ -36,15 +36,12 @@ from agent_toolkit._hooks import agent_id, document_reads, plugin_resources, rul
 from agent_toolkit._hooks import tool_input as tool_input_fields
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
-from agent_toolkit._hooks.pretooluse import operation_skills
+from agent_toolkit._hooks.pretooluse import dependency_usage, operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, sed_read_range
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
 lazy from agent_toolkit._common import task_documents
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
-
-_PATH_PREFIX = "read-trigger:"
-
 
 _INPUT_CACHE: contextvars.ContextVar[dict[tuple, object] | None] = contextvars.ContextVar(
     "read_delivery_input_cache", default=None
@@ -177,6 +174,28 @@ def skill_name(path: pathlib.Path) -> str | None:
     return f"{document_reads.document_plugin(str(path))}:{document[0]}"
 
 
+def resolve_skill_document(qualified: object, candidates) -> pathlib.Path | None:
+    """`Skill`起動の名前から、ホストが読み込んだ`SKILL.md`を1件に決める。決まらなければNoneを返す。
+
+    `agent-toolkit:`付きの名前は、稼働中のagent-toolkitのplugin rootが所有する候補に限る。
+    プラグイン名の無い名前に同名の候補が複数あれば、Claude Codeの優先順位に従ってユーザースキル（`~/.claude/skills`）を
+    プロジェクトスキルより優先する（https://code.claude.com/docs/en/skills）。プロジェクトスキルの探索範囲は
+    `read_triggers.project_skill_dirs`がホストの規則に合わせて決める。PostToolUseの応答は実体のパスを含まないため、
+    観測時とセッション記録からの復元の両方でこの規則から実体を導く。
+    """
+    if not isinstance(qualified, str):
+        return None
+    matched = list(dict.fromkeys(path for path in candidates if path.is_file() and skill_name(path) == qualified))
+    if qualified.startswith("agent-toolkit:"):
+        active = plugin_resources.plugin_root().resolve()
+        matched = [path for path in matched if _document_owner(path) == active]
+    elif ":" not in qualified and len(matched) > 1:
+        user = (pathlib.Path.home() / ".claude" / "skills").resolve()
+        preferred = [path for path in matched if path.resolve().is_relative_to(user)]
+        matched = preferred or matched
+    return matched[0] if len(matched) == 1 else None
+
+
 def acquisition_step(target: read_triggers.ReadTarget, subject: str) -> str:
     """主体に合う全文取得手段と注目する節を示す。"""
     path = target.path
@@ -221,57 +240,25 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
             for path in _read_paths(tool_name, tool_input, cwd, resolve=resolve)
         )
     if prefix == "dependency":
-        paths = [pathlib.Path(path) for path in operation_skills.written_paths(tool_name, tool_input, cwd)]
-        dependency_files = {
-            "pyproject.toml",
-            "package.json",
-            "package-lock.json",
-            "pnpm-lock.yaml",
-            "uv.lock",
-            "Cargo.toml",
-            "Cargo.lock",
-        }
-        code_suffixes = {
-            ".py",
-            ".js",
-            ".jsx",
-            ".mjs",
-            ".cjs",
-            ".ts",
-            ".tsx",
-            ".mts",
-            ".cts",
-            ".html",
-            ".htm",
-            ".css",
-            ".svelte",
-            ".rs",
-            ".cs",
-            ".sh",
-            ".bash",
-            ".ps1",
-            ".psm1",
-            ".psd1",
-            ".cmd",
-            ".bat",
-        }
+        # 名前の出現ではなく、読込記述と依存定義の項目だけを使用として扱う。編集後の本文と既存の本文の両方を見るため、
+        # 変更断片にライブラリ名が無い部分編集でも、既存のコードが依存を読み込んでいれば成立する。
         operations = tool_input_fields.parse_operations(tool_name, tool_input, cwd) or []
-        for candidate in paths:
-            if (
-                pathlib.Path(candidate.name.removesuffix(".tmpl")).suffix not in code_suffixes
-                and candidate.name not in dependency_files
-            ):
+        for raw in operation_skills.written_paths(tool_name, tool_input, cwd):
+            candidate = pathlib.Path(raw)
+            if not dependency_usage.is_target(candidate):
                 continue
-            # 複数ファイルのpatchでも、文章中の引用をコードの使用として扱わない。
-            contents = [
-                fragment.after
-                for operation in operations
-                if pathlib.Path(operation.path) == candidate
-                for fragment in operation.fragments
-            ]
+            texts = []
+            for edit in operations:
+                if pathlib.Path(edit.path) != candidate:
+                    continue
+                materialized = tool_input_fields.materialize(edit)
+                if materialized is not None and materialized.after_image:
+                    texts.append(materialized.after_image)
+                else:
+                    texts.extend(fragment.after for fragment in edit.fragments)
             if candidate.is_file():
-                contents.append(candidate.read_text(encoding="utf-8"))
-            if any(value in content for content in contents):
+                texts.append(candidate.read_text(encoding="utf-8", errors="replace"))
+            if any(dependency_usage.uses(candidate, text, value) for text in texts):
                 return True
         return False
     if prefix == "role":
@@ -520,8 +507,8 @@ def _project_skill_rows(
             continue
         if key.startswith("resolved-project-skill:"):
             selected.add(pathlib.Path(key.removeprefix("resolved-project-skill:")))
-        elif key.startswith(_PATH_PREFIX):
-            value, separator, fingerprint = key.removeprefix(_PATH_PREFIX).rpartition("#sha256:")
+        elif key.startswith(document_reads.READ_TRIGGER_PREFIX):
+            value, separator, fingerprint = key.removeprefix(document_reads.READ_TRIGGER_PREFIX).rpartition("#sha256:")
             if separator and len(fingerprint) == 64:
                 path = pathlib.Path(value)
                 if (
@@ -541,39 +528,7 @@ def _project_skill_rows(
 
 
 def document_key(path: pathlib.Path, fingerprint: str = "") -> str:
-    fingerprint = fingerprint or hashlib.sha256(path.read_bytes()).hexdigest()
-    return _PATH_PREFIX + str(path.resolve()) + "#sha256:" + fingerprint
-
-
-def _redundant_selection(target, declared, records: dict, agent: str) -> bool:
-    """選択待ちと現行宣言の資料で、plugin名・相対パス・版・本文・取得主体の一致を調べる。"""
-    path = target.path.resolve()
-    for prefix in ("resolved-project-skill:", "modified-agent-document:", "read-trigger-role:"):
-        if agent in records.get(prefix + str(path), []):
-            return False
-    for key, actors in records.items():
-        if key.startswith("startup-input-target:") and agent in actors:
-            metadata = json.loads(key.removeprefix("startup-input-target:"))
-            if pathlib.Path(metadata["path"]).resolve() == path:
-                return False
-    owner = _document_owner(path)
-    if owner is None:
-        return False
-    identity = json.loads((owner / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
-    if not identity.get("name") or not identity.get("version"):
-        return False
-    for candidate in declared:
-        other = _document_owner(candidate.path)
-        if other is None or other == owner or candidate.path.relative_to(other) != path.relative_to(owner):
-            continue
-        peer = json.loads((other / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
-        if (
-            all(peer.get(key) == identity[key] for key in ("name", "version"))
-            and candidate.path.read_bytes() == path.read_bytes()
-            and target_ready(records, read_triggers.ReadTarget(candidate.path, target.heading), agent)
-        ):
-            return True
-    return False
+    return document_reads.read_trigger_key(path, fingerprint or hashlib.sha256(path.read_bytes()).hexdigest())
 
 
 def dynamic_targets(
@@ -735,13 +690,12 @@ def _review_reference(session_id: str, prepared: object, agent: str) -> None:
 
 def target_ready(records: dict, target: read_triggers.ReadTarget, agent: str) -> bool:
     raw = target.path.read_bytes()
-    key = document_key(target.path, hashlib.sha256(raw).hexdigest())
     if target.heading:
         try:
             target.body(raw.decode("utf-8"))
         except ValueError:
             return False
-    return agent in records.get(key, [])
+    return document_reads.content_ready(records, hashlib.sha256(raw).hexdigest(), agent)
 
 
 def selected_targets(records: dict, agent: str) -> list[read_triggers.ReadTarget]:
@@ -771,8 +725,10 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
         return
     pending: dict[str, tuple[str, dict, str]] = {}
     completed: dict[read_triggers.ReadTarget, str] = {}
-    ranges: dict[tuple[read_triggers.ReadTarget, int, str], list[tuple[int, int]]] = {}
+    ranges: dict[tuple[int, str], list[tuple[int, int]]] = {}
     paths = {target.path for target in targets}
+    # 案内対象と同じ内容の写しを別の場所で読んだ履歴も、同じ資料の取得として復元する。
+    fingerprints = {hashlib.sha256(target.path.read_bytes()).hexdigest() for target in targets if target.path.is_file()}
     boundary_seen = False
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     reset = isinstance(records, dict) and agent in records.get(rules_context.READ_CONTEXT_RESET_KEY, [])
@@ -827,13 +783,9 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                     if response and not any(
                         marker in str(response) for marker in ("truncated output", "Output too large", "truncatedByTokenCap")
                     ):
-                        qualified = inputs.get("skill")
-                        matched_targets = [target for target in targets if skill_name(target.path) == qualified]
-                        if isinstance(qualified, str) and qualified.startswith("agent-toolkit:"):
-                            active = plugin_resources.plugin_root().resolve()
-                            matched_targets = [target for target in matched_targets if _document_owner(target.path) == active]
-                        if len({target.path for target in matched_targets}) == 1:
-                            for target in matched_targets:
+                        resolved = resolve_skill_document(inputs.get("skill"), [target.path for target in targets])
+                        for target in targets:
+                            if target.path == resolved:
                                 completed[target] = hashlib.sha256(target.path.read_bytes()).hexdigest()
                     continue
                 structured = entry.get("toolUseResult")
@@ -844,9 +796,14 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                         part["text"] for part in response if isinstance(part, dict) and isinstance(part.get("text"), str)
                     )
                 with contextlib.suppress(OSError, UnicodeError, ValueError, RuntimeError):
-                    read_paths = [candidate for candidate in _read_paths(name, inputs, cwd) if candidate in paths]
+                    read_paths = [
+                        candidate
+                        for candidate in _read_paths(name, inputs, cwd)
+                        if candidate in paths
+                        or (candidate.is_file() and hashlib.sha256(candidate.read_bytes()).hexdigest() in fingerprints)
+                    ]
                     for target, start, end, length, fingerprint in _read_body_proofs(
-                        name, inputs, response, read_paths, paths, cwd
+                        name, inputs, response, read_paths, paths | set(read_paths), cwd
                     ):
                         if (
                             name == "Bash"
@@ -858,7 +815,7 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                             target.path
                         ):
                             continue
-                        key = (target, length, fingerprint)
+                        key = (length, fingerprint)
                         ranges.setdefault(key, []).append((start, end))
                         reached = 0
                         for left, right in sorted(ranges[key]):
@@ -1526,15 +1483,9 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             for key, owners in records.items()
             if key.startswith("resolved-project-skill:") and agent in owners
         )
-        matched_paths = [path for path in targets if path.is_file() and skill_name(path) == qualified]
-        if isinstance(qualified, str) and qualified.startswith("agent-toolkit:"):
-            active = plugin_resources.plugin_root().resolve()
-            matched_paths = [path for path in matched_paths if _document_owner(path) == active]
-        if len(matched_paths) > 1:
-            active = plugin_resources.plugin_root().resolve()
-            matched_paths = [path for path in matched_paths if _document_owner(path) == active]
-        if len(matched_paths) == 1:
-            _mark(session_id, matched_paths[0], agent)
+        resolved = resolve_skill_document(qualified, sorted(targets))
+        if resolved is not None:
+            _mark(session_id, resolved, agent)
         return
     for target, start, end, length, fingerprint in _read_body_proofs(tool_name, tool_input, response, paths, targets, cwd):
         if (
@@ -1555,13 +1506,15 @@ def _record_range(
     session_id: str, path: pathlib.Path, agent: str, start: int, end: int, length: int, fingerprint: str = ""
 ) -> bool:
     """連続被覆が本文末尾に達したときだけ取得済みにする。圧縮では既存の主体別リセットが全区間を除く。"""
-    prefix = document_key(path, fingerprint) + "#range:"
-    update_state(session_id, operation_skills.mark_ready(f"{prefix}{start}:{end}", agent))
+    fingerprint = fingerprint or hashlib.sha256(path.read_bytes()).hexdigest()
+    update_state(session_id, operation_skills.mark_ready(f"{document_key(path, fingerprint)}#range:{start}:{end}", agent))
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    # 同じ内容の写しを別の場所で分割して読んだ区間も、同じ資料の被覆として合算する。
+    marker = f"#sha256:{fingerprint}#range:"
     intervals = sorted(
-        tuple(map(int, key[len(prefix) :].split(":")))
+        tuple(map(int, key.rpartition(marker)[2].split(":")))
         for key, agents in records.items()
-        if key.startswith(prefix) and agent in agents
+        if key.startswith(document_reads.READ_TRIGGER_PREFIX) and marker in key and agent in agents
     )
     reached = 0
     for left, right in intervals:
