@@ -1,6 +1,6 @@
 {
   "name": "agent-toolkit",
-  "version": "2.233.0",
+  "version": "2.234.0",
   "description": "WI・委譲・承認・記録・完了報告の運用を提供するプラグイン。成果物の品質判断にはagent-basicsを使う。",
   "author": {
     "name": "aki",

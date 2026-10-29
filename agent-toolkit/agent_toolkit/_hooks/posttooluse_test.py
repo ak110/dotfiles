@@ -790,6 +790,13 @@ def test_free_text_answer_receives_answer_specific_procedure(tmp_path: pathlib.P
 
     assert "提示した選択肢と一致しない自由記述" in answer_body
     assert "回答に沿って進め" in answer_body
+    assert "現行の結論や設計の根拠を記録からすべて挙げ" in answer_body
+    assert "提案で失われるものと一つずつ比べよ" in answer_body
+    assert "新しい事実が出た場合" in answer_body
+    assert "既知の根拠を比べ忘れたことや推論の誤り" in answer_body
+    assert "どれに当たるかを示せ" in answer_body
+    assert "ユーザーが目的や選好を変えた場合は、要件の変更として扱え" in answer_body
+    assert "いずれにも当たらなければ結論を維持し、根拠を返せ" in answer_body
 
 
 @pytest.mark.parametrize(
