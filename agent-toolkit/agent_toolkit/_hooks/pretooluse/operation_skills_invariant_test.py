@@ -20,7 +20,13 @@ from agent_toolkit._common import delegated_session
 from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import plugin_resources, rules_context
 from agent_toolkit._hooks.pretooluse import dispatch, operation_skills, read_delivery
-from agent_toolkit._testing.pretooluse_support import _additional_context, _plan_file_state_env, _run, _run_posttooluse
+from agent_toolkit._testing.pretooluse_support import (
+    _additional_context,
+    _plan_file_state_env,
+    _run,
+    _run_posttooluse,
+    codex_execution_payload,
+)
 
 _POSITIVE_OPERATIONS: dict[str, tuple[str, dict]] = {
     "delegation": ("Agent", {"prompt": "調査する"}),
@@ -73,6 +79,8 @@ def _acquire(env: dict[str, str], entry: operation_skills.OperationSkill, subjec
         else:
             payload = _read_payload(plugin_resources.skill_document_path(entry.short_name, relative), extra)
         event = {"hook_event_name": "PostToolUse", "session_id": session_id, **payload, **extra}
+        if "turn_id" in extra:
+            event = codex_execution_payload(event, pathlib.Path(env["TMPDIR"]), exit_code=0)
         assert _run_posttooluse(event, env).returncode == 0
 
 
@@ -130,7 +138,10 @@ def test_operation_skill_contract_for_every_entry_and_subject(
                     **_read_payload(target.path, extra),
                     **extra,
                 }
+                event = codex_execution_payload(event, tmp_path, exit_code=0)
                 assert _run_posttooluse(event, env).returncode == 0
+                acquired = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
+                assert read_delivery.target_ready(acquired, target, extra.get("agent_id", "main"))
         result = _run(payload, env)
         observed.append(result.stderr + _additional_context(result))
         assert result.returncode == 0

@@ -91,6 +91,40 @@ def _run_posttooluse(payload: object, env_overrides: dict[str, str]) -> subproce
     return _run_hook_in_process("posttooluse", payload, env_overrides)
 
 
+def codex_execution_payload(payload: dict, directory: pathlib.Path, *, exit_code: int) -> dict:
+    """元の呼出しと同一のnative終了記録を添え、成功・失敗を本文と独立に指定する。"""
+    payload = {"tool_use_id": "native-read", **payload}
+    transcript = pathlib.Path(payload.get("transcript_path", directory / "native-read.jsonl"))
+    turn = payload["turn_id"]
+    records = [
+        {"type": "event_msg", "payload": {"type": "task_started", "turn_id": turn, "model_context_window": 1000000}},
+        {"type": "token_usage_record", "payload": {"usage": {"input_tokens": 0, "output_tokens": 0}}},
+        {
+            "type": "turn_context",
+            "payload": {"turn_id": turn, "cwd": str(directory), "permission_profile": {"type": "disabled"}},
+        },
+        {
+            "type": "event_msg",
+            "payload": {
+                "type": "item_completed",
+                "turn_id": turn,
+                "thread_id": payload["session_id"],
+                "item": {
+                    "type": "CommandExecution",
+                    "id": payload["tool_use_id"],
+                    "status": "completed" if exit_code == 0 else "failed",
+                    "exit_code": exit_code,
+                    "cwd": directory.as_uri(),
+                    "command": ["/bin/bash", "-lc", payload["tool_input"]["command"]],
+                },
+            },
+        },
+    ]
+    with transcript.open("a", encoding="utf-8") as stream:
+        stream.writelines(json.dumps(record) + "\n" for record in records)
+    return {**payload, "transcript_path": str(transcript)}
+
+
 def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
     """stdoutのJSONから`hookSpecificOutput.additionalContext`を取り出す。"""
     stdout = result.stdout.strip()

@@ -12,6 +12,7 @@ from agent_toolkit._common import delegated_session, read_triggers
 from agent_toolkit._hooks import notice, plugin_resources, posttooluse, rules_context
 from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
 from agent_toolkit._testing.agents_server_support import FakeCodexClient
+from agent_toolkit._testing.pretooluse_support import codex_execution_payload
 
 
 @pytest.mark.asyncio
@@ -77,7 +78,11 @@ async def test_start_resume_root_reaches_foreign_hook_and_acquisition(
             assert (
                 posttooluse.main(
                     json.dumps(
-                        {**read, "hook_event_name": "PostToolUse", "tool_response": reference.read_text(encoding="utf-8")}
+                        codex_execution_payload(
+                            {**read, "hook_event_name": "PostToolUse", "tool_response": reference.read_text(encoding="utf-8")},
+                            tmp_path,
+                            exit_code=0,
+                        )
                     )
                 )
                 == 0

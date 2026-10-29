@@ -23,6 +23,7 @@ from agent_toolkit._testing.pretooluse_support import (
     _run,
     _run_posttooluse,
     _write_session_state,
+    codex_execution_payload,
 )
 
 
@@ -38,17 +39,17 @@ def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subpr
     """主体に応じた取得を観測して、シェル・MCP固有の判定を試す。"""
     path = plugin_resources.skill_document_path("delegation", "SKILL.md")
     codex = "turn_id" in payload
-    recorded = _run_posttooluse(
-        {
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Bash" if codex else "Skill",
-            "tool_input": {"command": f"cat -- {path}"} if codex else {"skill": "agent-toolkit:delegation"},
-            "tool_response": path.read_text(encoding="utf-8"),
-            "session_id": payload["session_id"],
-            **({"turn_id": payload["turn_id"]} if codex else {}),
-        },
-        env_overrides,
-    )
+    acquisition = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash" if codex else "Skill",
+        "tool_input": {"command": f"cat -- {path}"} if codex else {"skill": "agent-toolkit:delegation"},
+        "tool_response": path.read_text(encoding="utf-8"),
+        "session_id": payload["session_id"],
+        **({"turn_id": payload["turn_id"]} if codex else {}),
+    }
+    if codex:
+        acquisition = codex_execution_payload(acquisition, pathlib.Path(env_overrides["TMPDIR"]), exit_code=0)
+    recorded = _run_posttooluse(acquisition, env_overrides)
     assert recorded.returncode == 0
     return _run(payload, env_overrides=env_overrides)
 
