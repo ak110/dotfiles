@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import html.parser
 import json
 import pathlib
 import re
@@ -62,7 +63,6 @@ _SCRIPT_IMPORTS = (
     re.compile(r"\bimport\(\s*['\"]([^'\"\n]+)['\"]\s*\)"),
 )
 _CSS_IMPORTS = (re.compile(r"^[ \t]*@(?:import|plugin|reference)[ \t]+(?:url\()?['\"]?([^'\"\s);]+)", re.MULTILINE),)
-_MARKUP_SOURCES = (re.compile(r"<(?:script|link)\b[^>]*?\b(?:src|href)\s*=\s*['\"]([^'\"]+)['\"]", re.IGNORECASE),)
 _SCRIPT_SUFFIXES = frozenset({".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"})
 _MARKUP_SUFFIXES = frozenset({".html", ".htm", ".svelte"})
 _REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9@][A-Za-z0-9._/@-]*)")
@@ -99,23 +99,77 @@ def _loaded_specifiers(suffix: str, text: str):
             else:
                 yield from (part.split()[0] for part in match[2].split(",") if part.strip())
         return
-    patterns: tuple[re.Pattern[str], ...] = ()
-    if suffix in _SCRIPT_SUFFIXES or suffix in _MARKUP_SUFFIXES:
-        patterns += _SCRIPT_IMPORTS
-    if suffix == ".css" or suffix in _MARKUP_SUFFIXES:
-        patterns += _CSS_IMPORTS
     if suffix in _MARKUP_SUFFIXES:
-        patterns += _MARKUP_SOURCES
-    if suffix == ".css":
-        masked = _mask_css(text)
-    elif suffix in _MARKUP_SUFFIXES:
-        masked = _mask_markup(text)
+        yield from _markup_specifiers(text)
+    elif suffix == ".css":
+        yield from _matched(text, _mask_css(text), _CSS_IMPORTS)
     else:
-        masked = _mask_script(text)
+        yield from _matched(text, _mask_script(text), _SCRIPT_IMPORTS)
+
+
+def _matched(text: str, masked: str, patterns: tuple[re.Pattern[str], ...]):
     for pattern in patterns:
         for match in pattern.finditer(masked):
             # 読込先は文字列の中身なので、伏せる前の本文の同じ位置から取り出す。
             yield text[match.start(1) : match.end(1)]
+
+
+class _MarkupScanner(html.parser.HTMLParser):
+    """HTMLの文脈を標準の解析器で分け、読込記述になり得る箇所だけを集める。
+
+    `script`の`src`と`link`の`href`だけを読込先とし、他の属性値とコメントは読込記述に数えない。
+    script要素とstyle要素の中身は生のテキストとして受け取り、それぞれJavaScriptとCSSの規則で判定する。
+    解析器はHTMLの規則どおり、script要素の中の`<!--`をコメントとして扱わない。
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.sources: list[str] = []
+        self.scripts: list[str] = []
+        self.styles: list[str] = []
+        self._element = ""
+        self._chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._sources(tag, attrs)
+        if tag in {"script", "style"}:
+            self._element, self._chunks = tag, []
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._sources(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == self._element:
+            self._flush()
+
+    def handle_data(self, data: str) -> None:
+        if self._element:
+            self._chunks.append(data)
+
+    def close(self) -> None:
+        super().close()
+        # 編集途中の断片で閉じタグが無い場合も、受け取った中身を判定に使う。
+        self._flush()
+
+    def _sources(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        name = {"script": "src", "link": "href"}.get(tag)
+        self.sources.extend(value for key, value in attrs if key == name and value)
+
+    def _flush(self) -> None:
+        if self._element:
+            (self.scripts if self._element == "script" else self.styles).append("".join(self._chunks))
+        self._element, self._chunks = "", []
+
+
+def _markup_specifiers(text: str):
+    scanner = _MarkupScanner()
+    scanner.feed(text)
+    scanner.close()
+    yield from scanner.sources
+    for body in scanner.scripts:
+        yield from _matched(body, _mask_script(body), _SCRIPT_IMPORTS)
+    for body in scanner.styles:
+        yield from _matched(body, _mask_css(body), _CSS_IMPORTS)
 
 
 def _mask_css(text: str) -> str:
@@ -124,23 +178,6 @@ def _mask_css(text: str) -> str:
 
 def _mask_script(text: str) -> str:
     return _mask(text, line_comment="//", block_comments=(("/*", "*/"),), quotes="'\"`", script=True)
-
-
-_ELEMENT = re.compile(r"<(script|style)\b[^>]*>(.*?)</\1\s*>", re.IGNORECASE | re.DOTALL)
-
-
-def _mask_markup(text: str) -> str:
-    """HTMLコメントを伏せ、script要素とstyle要素の中身だけをそれぞれの言語の規則で伏せる。
-
-    要素の外の本文（`Don't`のようなアポストロフィなど）は文字列として扱わない。
-    """
-    masked = _mask(text, line_comment="", block_comments=(("<!--", "-->"),), quotes="")
-    result = list(masked)
-    for element in _ELEMENT.finditer(masked):
-        body = text[element.start(2) : element.end(2)]
-        inner = _mask_script(body) if element[1].lower() == "script" else _mask_css(body)
-        result[element.start(2) : element.end(2)] = inner
-    return "".join(result)
 
 
 # この直後の`/`は除算ではなく正規表現リテラルの開始になる文字と予約語。

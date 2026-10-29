@@ -470,6 +470,11 @@ def _declared_dependencies() -> list[str]:
         ("module.ts", "const p = `${import('playwright')}`;\n", "playwright", True),
         ("module.ts", "const pattern = /'/; const p = require('playwright');\n", "playwright", True),
         ("module.ts", "const ratio = a / b; const s = 'x';\nconst p = require('playwright');\n", "playwright", True),
+        ("page.html", "<div title=\"require('playwright')\"></div>\n", "playwright", False),
+        ("page.html", "<div data-example=\"import('playwright')\"></div>\n", "playwright", False),
+        ("page.html", "<script>const marker = \"<!--\"; const p = require('playwright');</script>\n", "playwright", True),
+        ("page.html", "<script type=\"module\">import { test } from '@playwright/test';</script>\n", "playwright", True),
+        ("Component.svelte", "<script>\n// import('playwright')\nconst p = 1;\n</script>\n", "playwright", False),
     ],
     ids=[
         "py-string",
@@ -484,6 +489,11 @@ def _declared_dependencies() -> list[str]:
         "js-template-expression",
         "js-regex-quote",
         "js-division",
+        "html-title-attribute",
+        "html-data-attribute",
+        "html-script-comment-marker",
+        "html-module-script",
+        "svelte-script-comment",
     ],
 )
 @pytest.mark.usefixtures("memory")
@@ -577,6 +587,16 @@ def test_public_hook_artifact_standards_uses_code_operation_only(tmp_path, monke
             "test",
         )
     )
+    attribute = _notice_body(
+        read_delivery.deliver(
+            {"cwd": str(tmp_path)},
+            "Write",
+            {"file_path": str(tmp_path / "page.html"), "content": "<div title=\"require('sqlalchemy')\"></div>\n"},
+            "test",
+        )
+    )
+    assert str(author) in attribute
+    assert str(reference) not in attribute
 
 
 @pytest.mark.parametrize("codex", [False, True])
