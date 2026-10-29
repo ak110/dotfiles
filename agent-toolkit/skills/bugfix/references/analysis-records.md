@@ -8,6 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「バグ調査」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「バグ調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md` |
@@ -18,6 +19,7 @@
 ## 原因分析の記録先
 
 確定したバグ単位は、観測された不具合を起点とする通常AWIの`## 原因分析`節に記録し、計画ファイルからはその節をWIファイル名で参照する。これにより、分析内容の記述をWI側の1箇所に集約して一元管理する。
+複数repoで共通する分析は、`agent-toolkit:wi-standards`の`references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従い代表AWIへ集約できる。固有AWIにある正式名・target_repo・指定箇所から表と確認結果を取得し、repo固有の事実と対策の適用は個別に確認する。
 計画ファイル（バグ）の作成条件と見出し構成は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「バグ調査」に従い、保存先および参照行の記述形式は同スキルの`references/plan-file-storage.md`に従う。
 
 原因分析表は、`要因系統`、`L1 現象`、`L2 判断`、`L3 構造`、`L4 システム`の5列で構成し、`作り込み要因`、`見逃し要因`の2行をこの順序で記載する。各段位では必要な確認を終えた結論、または根拠のある`該当なし`を記載する。判断の具体的な検討過程は根拠資料やログへ残す。

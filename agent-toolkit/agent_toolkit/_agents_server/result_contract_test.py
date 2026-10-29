@@ -159,10 +159,6 @@ async def test_backend_terminal_boundary_checks_task_result(
     session = _task_session(tmp_path)
     session.launch_kind = launch_kind
     session.result_contract_recovery_consumed = recovered
-    if launch_kind == "explore":
-        held = held or not (
-            message.splitlines()[-1] == "状態: completed" or message.splitlines()[-1].startswith("続行できない理由:")
-        )
     session.agent_message = message
     fails = recovered and held and launch_kind == "explore"
     held = held and not recovered
@@ -202,24 +198,33 @@ async def test_backend_terminal_boundary_checks_task_result(
 @pytest.mark.parametrize("delivery_failure", [False, True])
 @pytest.mark.parametrize("background_consumed", [False, True])
 @pytest.mark.parametrize("explore", [False, True])
+@pytest.mark.parametrize("role", [False, True])
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
 async def test_manager_recovers_once_and_preserves_delivery_failure(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, delivery_failure: bool, background_consumed: bool, explore: bool
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    delivery_failure: bool,
+    background_consumed: bool,
+    explore: bool,
+    role: bool,
 ) -> None:
     """同じsessionへ1回だけ継続し、成功後の最終結果と配送失敗時の本文を保持する。"""
     session = _task_session(tmp_path)
     if explore:
         session.launch_kind = "explore"
-        session.prompt = "調査せよ"
+        if not role:
+            session.prompt = "調査せよ"
     session.auto_resume_consumed = background_consumed
-    message = "未読が残る" if explore else "続行できない理由: 分割読取が残る"
+    message = "未読が残る" if explore and not role else "続行できない理由: 分割読取が残る"
     assert result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
 
     async def reply(current: state.SessionState, prompt: str) -> dict[str, str]:
         assert current is session and "診断:" in prompt
-        if explore:
+        if explore and not role:
             assert "未読・未走査" in prompt and "状態: completed" in prompt
+        else:
+            assert "未読・未走査" not in prompt
         state.begin_reply(current)
         return {"delivery": "reply_started"}
 
@@ -237,7 +242,7 @@ async def test_manager_recovers_once_and_preserves_delivery_failure(
             assert session.error is not None
             assert session.error["nextAction"] == result_contract.RECOVERY_NEXT_ACTION
         else:
-            final = "結果: 完了\n状態: completed" if explore else "結果: 完了"
+            final = "結果: 完了\n状態: completed" if explore and not role else "結果: 完了"
             cli_turn.finalize_turn(session, {"status": "completed", "agent_message": final, "error": None})
             assert session.result_available and session.agent_message == final
         await owner._advance_child_session_wait(session)  # noqa: SLF001

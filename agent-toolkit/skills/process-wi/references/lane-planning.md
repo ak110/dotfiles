@@ -12,6 +12,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/SKILL.md#「計画ファイルの作成要否」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
@@ -43,6 +44,8 @@ AWI: <AWIファイル名のASCIIカンマ区切り>
 禁止条件が存在しない場合は、「計画検査完了の通知」を`計画ファイル: なし`として送信し、応答を待たずに`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」へ進む（`マージなし`の場合は実装せず、メインエージェントからの統合指示を待つ）。調査の過程で設計判断、バグ対応、または人間由来の要求の縮小が必要と判明した場合は、「計画の起草」へ切り替える。
 
 ## 計画の起草
+
+AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:wi-standards`の`references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従い、採否と計画を確定する前に指定箇所とユーザー記入欄を取得する。自repoの要求と共通要求を合わせ、代表AWIの終了だけを理由に読取を省かない。
 
 `先行調査記録`を受け取った場合は、取得版・対象パス・事実と仮定・残る問いを確認する。
 先行統合後の専用worktreeと取得版の差分に照らして、影響する箇所と未確認部分だけを調査し直す。

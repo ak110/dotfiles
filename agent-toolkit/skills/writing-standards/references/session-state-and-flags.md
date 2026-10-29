@@ -120,11 +120,9 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 
 ## [振り返り](../../session-review-batch/SKILL.md)・モード系
 
-- `process_wi_skill_invoked`: process-wiスキルの起動状態を示すフラグ。PostToolUse(Skill)およびUserPromptSubmitが記録し、`atk agents-exit-session`の機械可読な応答を受け取った時点で偽に戻す。セッション終了まで保持する
-- `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が、`atk agents-exit-session`の実行およびその機械可読な応答を記録する。
-  `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がprocess-loopのStop判定時にこの値を参照する。
-  同フックが、未完了のバックグラウンドタスクが残存していることを理由に終了要求を取り下げた時点で偽へ戻し、その後`atk agents-exit-session`が再実行された際に再び真となる。
-  セッション状態の有効期間中だけ保持し、通常のスキル完了処理では再利用しない
+- `AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH`: hook→run-skill試行ID。`session-review/launches/`のID別JSON/logは起動元・プロセス同一性・診断・状態を持つ。`starting`=未受付、`accepted`=manifest移管、`settled`=正常終了/見送り、`notified`=次SessionStart通知済み。受付前終了を一度通知。実行中・未報告失敗以外は30日後sweepで回収
+- `process_wi_skill_invoked`: process-wi起動フラグ。PostToolUse(Skill)・UserPromptSubmitが記録、`atk agents-exit-session`の機械可読応答で偽へ戻す。セッション終了まで保持する
+- `autonomous_exit_invoked`: `_hooks/posttooluse.py`が`atk agents-exit-session`の実行・機械可読応答を記録。`_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照し、未完了バックグラウンドタスクによる終了取消で偽、再実行で真とする。セッション中だけ保持し、スキル完了では再利用しない
 - `stop_no_tool_turn_count`: `agent-toolkit/agent_toolkit/_hooks/busy_loop_guard.py`が、自セッションでツール呼び出しをしなかったターンの連続回数を記録し、常駐ループの停止判定に使用する。ツール呼び出しを観測したターン、委譲先やバックグラウンドタスクの完了を待つターン、停止工程の実行時は0に戻す。セッション終了まで保持する
 - `stop_observed_entry_count`: 同フックが、Stop判定時点で観測済みだったセッション記録のエントリ数を記録し、次のターンで差分配信分のみを走査する起点として参照する。セッション終了まで保持する
 

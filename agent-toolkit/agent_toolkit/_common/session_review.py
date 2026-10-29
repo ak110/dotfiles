@@ -17,11 +17,19 @@ from typing import Any
 
 import filelock
 
-from agent_toolkit._common import atomic_file, delegated_session, session_family, session_launchers, state_paths
+from agent_toolkit._common import (
+    atomic_file,
+    delegated_session,
+    session_family,
+    session_launchers,
+    session_registry,
+    state_paths,
+)
 
 BATCH_SKILL = "agent-toolkit:session-review-batch"
 BATCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_BATCH"
 TARGET_ENV = "AGENT_TOOLKIT_RUN_SKILL_TARGET_REPO"
+LAUNCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH"
 
 
 def directory() -> pathlib.Path:
@@ -66,6 +74,52 @@ def locked() -> Generator[None]:
 def pending() -> list[dict[str, Any]]:
     """待ち記録を全件返す。読取不能を不在と扱わない。"""
     return [read(path) for path in sorted((directory() / "pending").glob("*.json"))]
+
+
+def launch_result(*, manifest: pathlib.Path | None = None) -> None:
+    """受付前の試行を正常見送り、または既存の実行記録の責任へ移す。"""
+    launch_id = os.environ.get(LAUNCH_ENV)
+    if launch_id is None:
+        return
+    # 環境から任意パスを指定できないよう、生成したUUIDの形式だけを受け付ける。
+    if len(launch_id) != 32 or any(character not in "0123456789abcdef" for character in launch_id):
+        raise ValueError("振り返りの起動試行IDが不正")
+    with locked():
+        path = directory() / "launches" / f"{launch_id}.json"
+        value = read(path)
+        value.update(
+            status="accepted" if manifest is not None else "settled", manifest_path=str(manifest) if manifest else None
+        )
+        write(path, value)
+
+
+def launch_notice() -> str | None:
+    """次の開始時に、受付されず終了した起動試行だけを一度通知する。"""
+    failures = []
+    with locked():
+        for path in sorted((directory() / "launches").glob("*.json")):
+            value = read(path)
+            if value["status"] != "starting":
+                continue
+            process = value.get("process")
+            if process is not None and session_registry.ProcessIdentity(**process).exists():
+                continue
+            if process is None and not value.get("exited"):
+                owner = value.get("owner")
+                if owner is None or session_registry.ProcessIdentity(**owner).exists():
+                    continue
+                # PID保存前に親も終了した試行は、受付記録の無い起動中断である。
+            failures.append(f"{value['host']} {value['event']}: {value['log_path']}")
+            value["status"] = "notified"
+            write(path, value)
+    if not failures:
+        return None
+    return (
+        "振り返りの自動起動が実行受付前に終了し、振り返りを実行できなかった。診断ログ: "
+        + "、".join(failures)
+        + "。ログの原因を確認・是正して /agent-toolkit:session-review-batch を実行する。"
+        "pendingは保持している。この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝える。"
+    )
 
 
 def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = None) -> bool:
@@ -207,6 +261,11 @@ def protected_logs() -> set[pathlib.Path]:
 def sweep(*, now: float) -> None:
     """完了済み実行だけを30日で回収し、参照を失った処理済み範囲を回収する。"""
     with locked():
+        for path in (directory() / "launches").glob("*.json"):
+            value = read(path)
+            if value["status"] != "starting" and now - path.stat().st_mtime > 30 * 24 * 60 * 60:
+                path.with_suffix(".log").unlink(missing_ok=True)
+                path.unlink()
         runs = list((directory() / "runs").glob("*.json"))
         waiting = {target["key"] for target in pending()}
         referenced: set[str] = set()

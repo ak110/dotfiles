@@ -4,6 +4,7 @@ user-invocable: false
 description: >
   dotfilesリポジトリで`develop`から`master`へのリリースPRを作成・マージするとき、
   日次リリースの判定と実施を`agent-toolkit:process-wi`または公開まで認可された協調モードで行うとき、
+  主checkoutをfast-forwardした後に常時稼働する`atk serve`へ反映するとき、
   `rust/claude-statusline/`の変更に伴う`Cargo.toml`のバージョン更新を判定するときに起動する。
 ---
 
@@ -31,6 +32,13 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | branch初期化、GitHubの保護設定またはマージ後の詳細手順が要る時 | [developとmasterのリリース運用](../../../docs/development/concepts-workflows.md#developとmasterのリリース運用)、[branchとリリースの設計](../../../docs/development/design-release.md#developとmasterのbranchリリース設計) | 判断 | `section:*/docs/development/concepts-workflows.md#developとmasterのリリース運用`、`section:*/docs/development/design-release.md#developとmasterのbranchリリース設計` | |
+| 主checkoutのfast-forward後に常時稼働サーバーへ反映する時 | [atk serveへの反映](../../../docs/development/operations.md#fast-forward後のatk-serveへの反映) | 判断 | `section:*/docs/development/operations.md#fast-forward後のatk-serveへの反映` | |
+
+## 常時稼働サーバーへの反映
+
+主checkoutをfast-forwardした後は、稼働中の`atk-serve.service`を再起動する。
+反映と稼働確認は[atk serveへの反映](../../../docs/development/operations.md#fast-forward後のatk-serveへの反映)に従う。
+反映したHEAD、再起動の終了コード、active/runningとHTTPの確認結果を公開担当の完了報告へ残す。
 
 ## developとmasterのリリース運用
 

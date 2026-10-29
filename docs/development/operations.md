@@ -471,6 +471,22 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
    既存の`/atk/`を開くエンドユーザーのアクセス先と表示は変わらない
 4. `sudo apachectl configtest`で構文を確認してから`sudo systemctl reload apache2`を実行する
 
+### fast-forward後のatk serveへの反映
+
+主checkoutのfast-forward後は、そのcheckoutを参照する稼働中の`atk-serve.service`を再起動する。
+対象は前節の`linux_server`ホストであり、unitが未導入の環境では実施しない。
+`systemctl --user show atk-serve.service --property=LoadState --property=ActiveState --property=SubState`で導入と稼働状態を確認する。
+停止中のunitを新たに起動する必要がある場合は、そのホストの運用判断を確認する。
+
+1. `git -C /home/aki/dotfiles rev-parse --short HEAD`で反映対象を記録する。
+2. `systemctl --user restart atk-serve.service`を実行し、終了コードを確認する。
+3. `systemctl --user show atk-serve.service --property=ActiveState --property=SubState`で`active`と`running`を確認する。
+4. `curl --fail --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}\n' http://127.0.0.1:28766/`でHTTP 200を確認する。
+
+ホストや設定でcheckoutと待受が異なる場合は、unitの`ExecStart`と`atk config`の設定に合わせる。
+再起動や稼働確認に失敗した場合は、`systemctl --user status atk-serve.service --no-pager`と`journalctl --user -u atk-serve.service -n 50 --no-pager`で診断を取得する。
+反映HEAD、各終了コード、状態とHTTP応答、失敗時の診断を記録して公開担当へ返す。
+
 ## euryaleでの上流更新の自動反映
 
 対象は役割`linux_server`のホストであり、`.chezmoi-source/.chezmoidata.toml`が定める（現在は`euryale`）。

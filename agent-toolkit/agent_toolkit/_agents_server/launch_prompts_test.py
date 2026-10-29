@@ -168,8 +168,10 @@ def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> N
         assert "成果物ファイルを自身で新規作成することは禁止する" in prompt
         assert "キャッシュ・状態・保存出力" in prompt
         assert "省略や未読" in prompt
-        for operation in ("sed -n '<開始行>,<終了行>p' -- <絶対パス>", "wc -l", "jq", "git grep", "rg"):
+        for operation in ("sed -n '<開始行>,<終了行>p' -- <絶対パス>", "jq", "git grep", "rg"):
             assert operation in prompt, (backend, operation)
+        for reading_rule in ("取得単位の選択にだけ", "読んだ本文で判定", "wc -c", "test -s", "改行文字の数", "'<開始行>,$p'"):
+            assert reading_rule in prompt, (backend, reading_rule)
         assert "行範囲を分けて最後まで読む" in prompt
         assert "内側コマンドと外側セル" in prompt
         assert "完成条件" in prompt

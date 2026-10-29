@@ -239,7 +239,6 @@ def _direct_document(
     plugin_root: pathlib.Path,
     host: str = "claude",
     *,
-    allow_unique: bool = False,
     project: pathlib.Path | str | None = None,
 ) -> pathlib.Path | None:
     """文書内の資料参照を絶対パスへ解決する。節指定は資料全体への到達に含める。"""
@@ -299,10 +298,6 @@ def _direct_document(
         resolved = (source.parent.parent / path).resolve()
     else:
         resolved = (path if path.is_absolute() else source.parent / path).resolve()
-    if allow_unique and not resolved.is_file() and value.startswith("references/"):
-        candidates = [candidate.resolve() for candidate in (plugin_root / "skills").glob("*/" + value) if candidate.is_file()]
-        if len(candidates) == 1:
-            return candidates[0]
     return resolved
 
 
@@ -350,11 +345,10 @@ def resolve_document(
     plugin_root: pathlib.Path,
     host: str = "claude",
     *,
-    allow_unique: bool = False,
     project: pathlib.Path | str | None = None,
 ) -> pathlib.Path | None:
     """宣言された資料の正式な実体を、明示写像を含めて返す。"""
-    path = _direct_document(value, source, plugin_root, host, allow_unique=allow_unique, project=project)
+    path = _direct_document(value, source, plugin_root, host, project=project)
     return resolve_read_source(path, plugin_root, host, project=project) if path is not None else None
 
 
@@ -387,6 +381,19 @@ def parent_contract_targets(
     return tuple(dict.fromkeys(targets))
 
 
+def reference_context(text: str, source: pathlib.Path, plugin_root: pathlib.Path) -> str:
+    """本文の直前の名指しスキルだけを保ち、表・フェンスの宣言を文脈へ混ぜない。"""
+    context = ""
+    for _number, line, visible in document_lines(text):
+        if not visible or line.startswith("|"):
+            continue
+        for name in re.findall(r"`((?:agent-toolkit:|agent-basics:)?[\w-]+)`", line):
+            candidate = resolve_document(name, source, plugin_root)
+            if candidate is not None and candidate.name == "SKILL.md" and candidate.is_file():
+                context = f"`{name}`\n"
+    return context
+
+
 def material_targets(
     material: str,
     source: pathlib.Path,
@@ -394,6 +401,7 @@ def material_targets(
     host: str = "claude",
     *,
     references_only: bool = False,
+    context: str = "",
     project: pathlib.Path | str | None = None,
 ) -> tuple[ReadTarget, ...]:
     """資料列の修飾スキル・Markdownリンク・日本語の節指定を保って解析する。"""
@@ -432,6 +440,33 @@ def material_targets(
             ):
                 continue
         location = owner if value.startswith(("references/", "SKILL.md")) else source
+        if references_only and value.startswith(("references/", "SKILL.md")):
+            # 本文の名指しだけを所属として使う。無関係な先行文や同名ファイルから補完しない。
+            prefix = context + material[: match.start()]
+            named = [
+                item
+                for item in _REFERENCE.finditer(prefix)
+                if re.fullmatch(r"(?:agent-toolkit|agent-basics):[\w-]+", item[1] or item[2])
+                or (
+                    "/" not in (item[1] or item[2])
+                    and ":" not in (item[1] or item[2])
+                    and (candidate := resolve_document(item[1] or item[2], source, plugin_root, host, project=project))
+                    is not None
+                    and candidate.name == "SKILL.md"
+                    and candidate.is_file()
+                    and item[1] != "SKILL.md"
+                )
+            ]
+            location = source
+            if named:
+                last = named[-1]
+                gap = prefix[last.end() :]
+                connected = re.fullmatch(
+                    r"\s*(?:の|を起動し、)\s*(?:`references/[^`]+`(?:の)?(?:「[^」]+」)*\s*(?:と|および|ならびに|、|・)\s*)*",
+                    gap,
+                )
+                if connected or re.search(r"同スキルの[^。]*$", prefix):
+                    location = resolve_document(last[1] or last[2], source, plugin_root, host, project=project) or source
         if value == "SKILL.md" and index:
             gap = material[matches[index - 1].end() : match.start()]
             if "。" in gap or not (gap.strip().startswith(("の", "を起動")) or "同スキル" in gap):
@@ -441,7 +476,6 @@ def material_targets(
             location,
             plugin_root,
             host,
-            allow_unique=references_only,
             project=project,
         )
         if path is None:
@@ -688,11 +722,19 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
     bootstrap = plugin_root / "share/read-trigger-bootstrap.md"
     if source.name.startswith("rules-") and bootstrap.is_file():
         routed.update(path for row in parse_tables(bootstrap, plugin_root, strict=True) for path in row.documents)
+    context = ""
     for number, line, visible in document_lines(source.read_text(encoding="utf-8")):
         if not visible or line.startswith("|") or "所在参照" in line:
             continue
-        for target in material_targets(line, source, plugin_root, references_only=True):
+        targets = material_targets(line, source, plugin_root, references_only=True, context=context)
+        context = reference_context(line, source, plugin_root) or context
+        for target in targets:
             path = target.path
+            if not path.is_file():
+                raise ValueError(
+                    f"{source}:{number}: 参照先が存在しない: {path}。"
+                    "所属スキルを`agent-toolkit:<スキル>`の`references/...`の形で明記してください。"
+                )
             if path.name.startswith("rules-") or path.parent.name == "rules":
                 continue
             method_route = (
@@ -700,7 +742,10 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
                 and ReadTarget(path, _REFERENCE_METHOD_HEADING) in methods
             )
             if path not in routed and not method_route:
-                raise ValueError(f"{source}:{number}: 参照先へ届く経路が無い: {path}")
+                raise ValueError(
+                    f"{source}:{number}: 参照先へ届く経路が無い: {path}。"
+                    "この文書の読込表に参照先を指定し、読む時点・条件を記載してください。"
+                )
 
 
 def document_sources(plugin_root: pathlib.Path, cwd: str = "", user_skills: pathlib.Path | None = None) -> list[pathlib.Path]:

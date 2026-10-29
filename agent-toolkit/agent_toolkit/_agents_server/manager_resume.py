@@ -32,7 +32,7 @@ from agent_toolkit._agents_server.resume_waits import (
 )
 from agent_toolkit._agents_server.state import ResumePrompt, SessionResumeState, SessionState
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs_async
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import session_registry, task_documents
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
@@ -76,6 +76,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                             "未読・未走査の範囲を読み終え、最終行を状態: completedまたは"
                             "続行できない理由: <未読の範囲、理由、再開に必要な入力>として返せ。"
                             if session.launch_kind == "explore"
+                            and task_documents.launched_task_document(session.prompt) is None
                             else ""
                         )
                     ),

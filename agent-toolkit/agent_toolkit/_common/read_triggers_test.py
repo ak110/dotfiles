@@ -162,8 +162,11 @@ def test_named_reference_without_route_fails_ci(tmp_path):
     reference.parent.mkdir()
     reference.write_text("# 基準\n", encoding="utf-8")
     source.write_text("判定は`references/rule.md`に従う。\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="参照先へ届く経路が無い"):
+    with pytest.raises(ValueError, match="参照先へ届く経路が無い") as caught:
         read_triggers.validate_reference_routes(source, tmp_path, [])
+    assert f"{source}:1:" in str(caught.value)
+    assert str(reference) in str(caught.value)
+    assert "読込表に参照先を指定し、読む時点・条件を記載" in str(caught.value)
 
 
 @pytest.mark.parametrize("package", ["skill", "share"])
@@ -295,6 +298,66 @@ def test_material_qualifier_and_japanese_selector(tmp_path):
     assert len(targets) == 1
     assert targets[0].path == reference
     assert "後段本文" not in targets[0].body()
+
+
+@pytest.mark.parametrize(
+    "text,foreign",
+    [
+        ("`agent-toolkit:search`の`references/rule.md`", True),
+        ("`agent-toolkit:search`を起動し、`references/rule.md`", True),
+        ("`agent-toolkit:search`の`references/other.md`と`references/rule.md`", True),
+        ("`agent-toolkit:search`を使う。同スキルの`references/rule.md`", True),
+        ("`agent-toolkit:search`を使う。`references/rule.md`に従う。", False),
+        ("`agent-toolkit:search`を使い、`references/rule.md`を読む。", False),
+    ],
+)
+def test_body_reference_owner_requires_connection(tmp_path, text, foreign):
+    """所属は接続された名指しだけから決め、無関係な名指しの後も自スキルを保つ。"""
+    source = tmp_path / "skills/current/SKILL.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# 現在\n", encoding="utf-8")
+    targets = read_triggers.material_targets(text, source, tmp_path, references_only=True)
+    target = next(item for item in targets if item.path.name == "rule.md")
+    assert target.path == tmp_path / "skills" / ("search" if foreign else "current") / "references/rule.md"
+
+
+def test_body_reference_same_skill_across_lines_and_no_unique_fallback(tmp_path):
+    """前行の名指しを同スキルで参照し、一意の別所属ファイルへは補完しない。"""
+    source = tmp_path / "share/review.subagent.md"
+    only = tmp_path / "skills/search/references/rule.md"
+    only.parent.mkdir(parents=True)
+    only.write_text("# 基準\n", encoding="utf-8")
+    target = read_triggers.material_targets(
+        "同スキルの`references/rule.md`",
+        source,
+        tmp_path,
+        references_only=True,
+        context="`agent-toolkit:search`を起動する。\n",
+    )[0]
+    assert target.path == only
+    unowned = read_triggers.material_targets("`references/rule.md`", source, tmp_path, references_only=True)[0]
+    assert unowned.path == source.parent / "references/rule.md"
+
+
+@pytest.mark.parametrize("foreign_plugin", [False, True])
+def test_body_reference_rejects_moved_and_cross_plugin_unique_targets(tmp_path, foreign_plugin):
+    """移動先や別プラグインの一意な資料があっても、所属なしの本文参照を拒否する。"""
+    toolkit = tmp_path / "agent-toolkit"
+    basics = tmp_path / "agent-basics"
+    for root in (toolkit, basics):
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin/plugin.json").write_text(f'{{"name": "{root.name}"}}', encoding="utf-8")
+    owner = basics if foreign_plugin else toolkit
+    source = owner / "skills/current/SKILL.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# 現在\n判定は`references/rule.md`に従う。\n", encoding="utf-8")
+    destination = toolkit / "skills/moved/references/rule.md"
+    destination.parent.mkdir(parents=True)
+    destination.write_text("# 基準\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="参照先が存在しない") as caught:
+        read_triggers.validate_reference_routes(source, toolkit, [])
+    assert str(source) in str(caught.value)
+    assert "`agent-toolkit:<スキル>`の`references/...`" in str(caught.value)
 
 
 def test_startup_delivery_is_part_of_role_reception(tmp_path):

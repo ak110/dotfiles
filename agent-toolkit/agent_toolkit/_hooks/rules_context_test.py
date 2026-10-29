@@ -9,13 +9,14 @@ import os
 import pathlib
 import shlex
 import subprocess
+import types
 from collections.abc import Callable
 
 import pytest
 
-from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk import managed_temp, run_skill_batch
 from agent_toolkit._atk.wi import process_loop_log
-from agent_toolkit._common import plugin_environment, plugin_roots
+from agent_toolkit._common import plugin_environment, plugin_roots, session_activity, session_review
 from agent_toolkit._common.plugin_roots import _plugin_inventory
 from agent_toolkit._common.read_triggers import ReadTarget
 from agent_toolkit._common.session_state import read_state, update_state
@@ -854,3 +855,38 @@ def test_session_start_resets_operation_skill_ready_for_main(
 
     assert (f"agent-toolkit:{skill_name}" in _operation_context(None)) is main_warns
     assert _operation_context("sub-1") == ""
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])
+@pytest.mark.parametrize("error", ["ModuleNotFoundError('agent_toolkit')", "RuntimeError('initialization-failed')"])
+def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypatch, capsys, host, event, error):
+    """実native子の受付前失敗を、次の規範配送で一度報告しpendingを保持する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "true")
+    session_review.record({"hook_event_name": "SessionStart", "session_id": "pending-main", "cwd": str(tmp_path)}, host=host)
+    monkeypatch.setattr(session_activity, "host_process", object)
+    original_popen = subprocess.Popen
+
+    def spawn(argv, **kwargs):
+        with original_popen([argv[0], "-c", f"raise {error}"], **kwargs) as child:
+            assert child.wait(timeout=30) == 1
+        return types.SimpleNamespace(pid=None, wait=lambda: 1)
+
+    monkeypatch.setattr(run_skill_batch.subprocess, "Popen", spawn)
+    run_skill_batch.hook_request({"hook_event_name": event, "session_id": "source-main"}, host=host)
+    assert session_review.pending()
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
+    monkeypatch.setattr(rules_context, "compose_session_start", lambda *args, **kwargs: None)
+    payload = json.dumps({"hook_event_name": "SessionStart", "source": "startup"})
+    assert rules_context.main(payload, host=host) == 0
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "実行受付前に終了" in context
+    assert f"{host} {event}" in context
+    assert "ユーザーへ伝える" in context
+    assert "/agent-toolkit:session-review-batch" in context
+    log_path = next((session_review.directory() / "launches").glob("*.log"))
+    assert str(log_path) in context
+    assert error.split("(", 1)[0] in log_path.read_text(encoding="utf-8")
+    assert rules_context.main(payload, host=host) == 0
+    assert "実行受付前に終了" not in capsys.readouterr().out
+    assert session_review.pending()

@@ -66,7 +66,7 @@ Plan modeの外で実行する（Claude Codeでは`ExitPlanMode`で終了する�
 
 ## 指摘の集約と改善案作成
 
-メインエージェントは、元の意図を損なわないように重複や関連する指摘をまとめ、`agent-toolkit:review-standards`および`references/reviewee.md`に基づいて採否を判定する。定義元からの転記を求める指摘については、`agent-basics:writing-standards/references/agent-documents-basics.md`「定義の所有者」に沿って妥当性を評価する。
+メインエージェントは、元の意図を損なわないように重複や関連する指摘をまとめ、`agent-toolkit:review-standards`および同スキルの`references/reviewee.md`に基づいて採否を判定する。定義元からの転記を求める指摘については、`agent-basics:writing-standards/references/agent-documents-basics.md`「定義の所有者」に沿って妥当性を評価する。
 採用する指摘に対しては、改善案をdiff形式で作成する。評価担当の出力はユーザーの画面に直接表示されないため、指摘の文面は元の表現をできる限り尊重して保持する。
 
 - エージェントが品質確認のために起動した場合は、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」に沿って技術的な指摘の採否を自ら判断する。目的や期待される結果の変更、あるいはユーザー固有の好みや認可が必要な事項に限ってユーザーに確認する。

@@ -31,7 +31,7 @@ import session_evidence_candidates  # pylint: disable=import-error
 import session_review_evidence  # pylint: disable=import-error
 
 from agent_toolkit._atk import managed_temp, run_script
-from agent_toolkit._atk.wi import constants as _wi_constants
+from agent_toolkit._atk.wi import layout as _wi_layout
 from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
 from agent_toolkit._common import atomic_file, file_lock, session_review
@@ -514,19 +514,16 @@ def _past_wi_sections() -> list[tuple[str, str, str, list[set[str]]]]:
     if root is None:
         return []
     records: list[tuple[str, str, str, list[set[str]]]] = []
-    for state in _wi_constants.WI_STATES:
-        directory = root / state
-        if not directory.is_dir():
+    for path in _wi_layout.iter_entry_paths(root):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError, UnicodeError:
             continue
-        for path in sorted(directory.glob("*.md")):
-            try:
-                text = path.read_text(encoding="utf-8")
-            except OSError, UnicodeError:
-                continue
-            sections = _wi_sections.h2_sections(text)
-            grams = [_ngrams(_normalize_for_similarity(sections[name])) for name in _SIMILAR_SECTIONS if sections.get(name)]
-            if grams:
-                records.append((path.name, state, _wi_sections.title(text), grams))
+        state = _wi_layout.entry_state_of(path, text)
+        sections = _wi_sections.h2_sections(text)
+        grams = [_ngrams(_normalize_for_similarity(sections[name])) for name in _SIMILAR_SECTIONS if sections.get(name)]
+        if grams:
+            records.append((path.name, state, _wi_sections.title(text), grams))
     return records
 
 

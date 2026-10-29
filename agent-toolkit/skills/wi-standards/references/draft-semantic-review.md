@@ -8,6 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
@@ -34,6 +35,8 @@
 再判定は、変更が加えられた抽出内容とその直接的な影響範囲を対象として行い、本文と契約境界に変更がない抽出内容については、親契約に定められた再点検省略条件を適用してそのまま再利用する。資料不足や処理の失敗は要求と読者ごとに記録し、親契約が定める補完、回復、終了観測の手順によって回収する。
 
 ## 原稿全体と返却の検収
+
+代表AWIによる共通本文の参照は`cross-repository-submission.md`「独立したAWIへの分割と依存」に従い、参照先と固有本文を合わせて検収する。共通原因分析や引用の表は、明示された代表AWIの指定箇所から取得できれば充足とする。
 
 完成条件の網羅性・観測可能性を確認する前に、`drafting-completion.md`「投入前の読み直し」の必要性判定を適用し、起草者が加えた条件も独立して判定する。
 原因と被覆の判定では、同節に従い、探索範囲の各限定を根本原因の成立条件から導けるか確認する。

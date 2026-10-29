@@ -26,7 +26,14 @@ def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
     """将来の役割も共通契約へ接続し、理由の区分欠落・集合外・インデント違反を検出する。"""
     body = path.read_text(encoding="utf-8").split("## 出力", 1)[1]
     assert "rules-subagent.md" in body and "返却形式の受け渡し" in body
-    session = state.SessionState("role-form", str(path.parent), prompt=task_documents.task_prompt_header(path))
+    declaration = task_documents.read_declaration(path)
+    assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
+    session = state.SessionState(
+        "role-form",
+        str(path.parent),
+        prompt=task_documents.task_prompt_header(path),
+        launch_kind=declaration.launch_kind,
+    )
     example = body.replace("<共通契約の区分>", "owner_input")
     assert result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": example}) is None
 

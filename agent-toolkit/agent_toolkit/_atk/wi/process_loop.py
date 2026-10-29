@@ -1,6 +1,7 @@
 """登録全体のprocess-loop。統括会話の実行とリポジトリ別の処理所有を管理する。"""
 
 import argparse
+import concurrent.futures
 import dataclasses
 import json
 import os
@@ -450,24 +451,32 @@ def _run_loop(
             alerts: dict[str, frozenset[int] | None] = {}
             # 候補WIだけで起動する対象はアラートを数えない。見送る対象と候補の無い対象は数え、新しい未判定アラートを観測する。
             item_launches, _skipped = _launch_plan(snapshots, explicit, alerts)
+            # APIの同時要求を少数に保つ。キュー保存はadd_entriesの既存repo_lockで直列化される。
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                checks = {
+                    snapshot.repository.repo_id: executor.submit(
+                        _alerts.check_process_loop_alerts,
+                        args,
+                        private_notes,
+                        snapshot.repository.repo_id,
+                        snapshot.repository.worktree,
+                        last_alert_checks.get(snapshot.repository.repo_id),
+                        count_dependabot=snapshot.repository.repo_id not in item_launches,
+                    )
+                    for snapshot in snapshots
+                }
+            submitted_any = False
             for snapshot in snapshots:
                 repository = snapshot.repository
                 try:
-                    checked, submitted, pending = _alerts.check_process_loop_alerts(
-                        args,
-                        private_notes,
-                        repository.repo_id,
-                        repository.worktree,
-                        last_alert_checks.get(repository.repo_id),
-                        count_dependabot=repository.repo_id not in item_launches,
-                    )
+                    checked, submitted, pending = checks[repository.repo_id].result()
                     last_alert_checks[repository.repo_id] = checked
                     alerts[repository.repo_id] = pending
                     if pending:
                         print(f"{repository.repo_id}に未判定のDependabotアラートが{len(pending)}件あります。", flush=True)
                     if submitted:
                         print(f"アラート監視により{repository.repo_id}へ{submitted}件のAWIを投入しました。", flush=True)
-                        snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
+                        submitted_any = True
                 except (OSError, ValueError) as error:
                     retry = (
                         "`atk wi process-loop --once`でDependabotを含む確認を再試行する"
@@ -488,6 +497,8 @@ def _run_loop(
                         next_action=next_action,
                         stream=sys.stdout,
                     )
+            if submitted_any:
+                snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
             launch_inputs, skipped = _launch_plan(snapshots, explicit, alerts)
             for repo_id in skipped:
                 _gate.report_skip(repo_id)

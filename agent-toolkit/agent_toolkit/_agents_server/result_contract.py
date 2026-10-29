@@ -33,7 +33,8 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
     """exploreの最終行欠落とtaskの未分類な続行不能返却の回復理由を返す。"""
     if result.get("status") != "completed":
         return None
-    if session.launch_kind == "explore":
+    document = task_documents.launched_task_document(session.prompt)
+    if session.launch_kind == "explore" and document is None:
         message = result.get("agent_message")
         lines = message.rstrip().splitlines() if isinstance(message, str) else []
         if not lines or not (
@@ -41,7 +42,6 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
             or (lines[-1].startswith(_REASON_PREFIX) and lines[-1].removeprefix(_REASON_PREFIX).strip())
         ):
             return "exploreの返却が完了を示しません。最終行に状態: completedまたは値のある続行できない理由:が必要です"
-    document = task_documents.launched_task_document(session.prompt)
     if document is None or not task_documents.is_agent_toolkit_task_document(document):
         return None
     message = result.get("agent_message")

@@ -64,6 +64,7 @@ def example_argv(command: str) -> list[str]:
     """例のプレースホルダーとシェルの値展開だけを固定値へ置き換える。引数名と区切りは保つ。"""
     command = re.sub(r"\$\([^()]*\)", "/absolute/example", command)
     command = re.sub(r"<(?:round|ラウンド番号|正の有限秒数|秒数|N)>", "1", command)
+    command = command.replace("<40桁のSHA>", "a" * 40)
     command = re.sub(r"<[^<>]+>", "example", command)
     # シェルのリダイレクトとパイプの先はatkへの入力ではない。
     tokens = shlex.split(command, comments=True)

@@ -27,7 +27,14 @@ import psutil
 from agent_toolkit._atk import config, orchestrator, outcome, run_script
 from agent_toolkit._atk.wi import add, frontmatter, layout, repo, sync, uwi_scan
 from agent_toolkit._atk.wi.web_input import WebInputError
-from agent_toolkit._common import delegated_session, private_notes, session_activity, session_registry, session_review
+from agent_toolkit._common import (
+    delegated_session,
+    plugin_environment,
+    private_notes,
+    session_activity,
+    session_registry,
+    session_review,
+)
 
 _LOG = logging.getLogger(__name__)
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -46,46 +53,72 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     session_review.record(payload, host=host, target_repo=target_repo)
     if event not in {"SessionStart", "SessionEnd"}:
         return None
+    notice = session_review.launch_notice() if event == "SessionStart" else None
     count = len(session_review.pending())
     if not count:
-        return None
+        return notice
     if config.resolve_mutable_setting("session_review_auto_start") == "false":
         if event == "SessionStart":
-            return (
+            waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
                 "まとめて振り返るには /agent-toolkit:session-review-batch を実行する。"
             )
-        return None
+            return "\n".join(part for part in (notice, waiting) if part)
+        return notice
     if session_activity.host_process() is None:
         # ホスト外で再生したhook入力は記録だけにとどめ、実在するホストの開始・終了から起動する。
-        return None
-    env = orchestrator.child_env(drop=(session_review.BATCH_ENV,))
-    # セッションのstdin/stdoutを保持しない。以後の終了検収はrun-skill自身が所有する。
+        return notice
+    env = plugin_environment.direct_environment(PLUGIN_ROOT, orchestrator.child_env(drop=(session_review.BATCH_ENV,)))
+    # セッションのstdin/stdoutを保持せず、受付前の試行と受付後の実行記録で責任を分ける。
     flags: dict[str, Any]
     if sys.platform == "win32":
         flags = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
     else:
         flags = {"start_new_session": True}
-    with (session_review.directory() / "launch.log").open("ab") as log:
-        # hookを待たせずに戻すため、Popenの終了回収を直後の待機スレッドへ渡す。
-        process = subprocess.Popen(  # pylint: disable=consider-using-with
-            [
-                sys.executable,
-                str(PLUGIN_ROOT / "agent_toolkit" / "atk.py"),
-                "run-skill",
-                "--args",
-                "auto",
-                session_review.BATCH_SKILL,
-            ],
-            cwd=PLUGIN_ROOT,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=log,
-            stderr=log,
-            **flags,
-        )
+    launch_id = uuid.uuid4().hex
+    env[session_review.LAUNCH_ENV] = launch_id
+    launch_path = session_review.directory() / "launches" / f"{launch_id}.json"
+    log_path = launch_path.with_suffix(".log")
+    with session_review.locked():
+        owner = session_registry.ProcessIdentity.of(os.getpid())
+        value: dict[str, Any] = {
+            "host": host,
+            "event": event,
+            "status": "starting",
+            "log_path": str(log_path),
+            "owner": {"pid": owner.pid, "create_time": owner.create_time} if owner else None,
+        }
+        session_review.write(launch_path, value)
+        with log_path.open("ab") as log:
+            # hook終了後も生存確認できるようPIDを保存し、親が存続する間はスレッドで回収する。
+            try:
+                process = subprocess.Popen(  # pylint: disable=consider-using-with
+                    [
+                        sys.executable,
+                        str(PLUGIN_ROOT / "agent_toolkit" / "atk.py"),
+                        "run-skill",
+                        "--args",
+                        "auto",
+                        session_review.BATCH_SKILL,
+                    ],
+                    cwd=PLUGIN_ROOT,
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    stdout=log,
+                    stderr=log,
+                    **flags,
+                )
+            except OSError as error:
+                log.write(str(error).encode("utf-8"))
+                value["exited"] = True
+                session_review.write(launch_path, value)
+                return notice
+        identity = session_registry.ProcessIdentity.of(process.pid)
+        value["process"] = {"pid": identity.pid, "create_time": identity.create_time} if identity else None
+        value["exited"] = identity is None
+        session_review.write(launch_path, value)
     threading.Thread(target=process.wait, daemon=True).start()
-    return None
+    return notice
 
 
 def _reports() -> list[tuple[pathlib.Path, dict[str, Any], str]]:
@@ -305,6 +338,7 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
         return 2
     manual = args.args != "auto"
     if not manual and config.resolve_mutable_setting("session_review_auto_start") == "false":
+        session_review.launch_result()
         return 0
     root = session_review.directory()
     root.mkdir(parents=True, exist_ok=True)
@@ -313,6 +347,7 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
             session_review.sweep(now=time.time())
             return _run_batches(args, execute, manual=manual)
     except filelock.Timeout:
+        session_review.launch_result()
         print(
             "同じOSアカウントでagent-toolkit:session-review-batchが実行中。既存の実行終了後に残る対象を処理する。",
             file=sys.stderr,
@@ -328,6 +363,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         if old["status"] in {"completed", "resolved"}:
             continue
         if old["status"] == "running" and _live(old):
+            session_review.launch_result()
             return 1
         if old.get("analysis_succeeded") and add.has_synced_run_report(
             private_notes.default_private_notes(), run_id=old["run_id"], skill=session_review.BATCH_SKILL
@@ -341,6 +377,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             for item in session_review.pending()
         ):
             _failure(old, path, old.get("error", "interrupted: 実行プロセスが終了し成功を確認できない"))
+            session_review.launch_result(manifest=path)
             return 1
     while targets := _targets(manual=manual):
         target_repo, cwd = _report_target(targets)
@@ -355,6 +392,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             "prepared": [],
         }
         session_review.write(path, manifest)
+        session_review.launch_result(manifest=path)
         try:
             for target in targets:
                 prepared = _prepare(target)
@@ -390,4 +428,5 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             _failure(manifest, path, f"prepare-or-state: {error}")
             return 1
+    session_review.launch_result()
     return 0
