@@ -1,14 +1,12 @@
 """配布物とdotfilesの全読込表・他資料参照をCIで検査する。"""
 
-import json
 import pathlib
 import shutil
-import subprocess
-import typing
 
 import pytest
 
 from agent_toolkit._common import plugin_roots, read_triggers
+from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent
 
@@ -67,11 +65,8 @@ def test_cross_plugin_references_resolve_in_codex_cache_layout(tmp_path, monkeyp
         {"name": "agent-basics", "marketplaceName": "mine", "version": "1.0.0", "installed": True, "enabled": True},
     ]
 
-    def _run(args: typing.Any, **_kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(args, 0, json.dumps({"installed": installed}), "")
-
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
-    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", _run)
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", codex_plugin_cli(installed))
     resolved_basics: list[pathlib.Path] = []
     for relative in _CROSS_PLUGIN_DOCUMENTS:
         rows = read_triggers.parse_tables(toolkit / relative, toolkit, host="codex", project=tmp_path)

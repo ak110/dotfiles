@@ -36,6 +36,7 @@ from agent_toolkit._common import plugin_roots as resource_roots
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._common.plugin_roots import _inventories, _plugin_inventory, _reusable
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
@@ -703,9 +704,14 @@ def test_public_hook_owns_one_inventory_scope_per_session(tmp_path, monkeypatch,
     observed = []
     fail = False
 
-    def inventory(args, **_kwargs):
+    # 設定済みmarketplaceが無いCodexでは、marketplace一覧の取得だけで導入情報の取得を終える。
+    codex_cli = codex_plugin_cli([], marketplaces=[])
+
+    def inventory(args, **kwargs):
         acquired.append(args)
-        return subprocess.CompletedProcess(args, 0, '{"installed":[]}' if host == "codex" else "[]", "")
+        if host == "codex":
+            return codex_cli(args, **kwargs)
+        return subprocess.CompletedProcess(args, 0, "[]", "")
 
     def native(_host):
         acquired.append(_host)

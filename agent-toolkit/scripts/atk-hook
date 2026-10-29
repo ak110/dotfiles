@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 _PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
+_MARKETPLACE = _PLUGIN_ID.partition("@")[2]
 _CACHE_RELATIVE = Path("plugins/cache/ak110-dotfiles/agent-toolkit")
 _COPY_IGNORE = shutil.ignore_patterns(
     ".hypothesis",
@@ -25,7 +26,8 @@ def _installed_root() -> Path:
     """既存の名前だけのhook定義に対し、導入済みのCodex pluginを解決する。"""
     try:
         result = subprocess.run(
-            ["codex", "plugin", "list", "--json"],
+            # marketplaceを指定しない一覧はリモートカタログへ接続し、接続先が応答しないと時間上限まで待つ。
+            ["codex", "plugin", "list", "--json", "--marketplace", _MARKETPLACE],
             capture_output=True,
             text=True,
             encoding="utf-8",

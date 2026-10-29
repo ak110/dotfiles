@@ -152,24 +152,11 @@ def _plugin_inventory(host: str, project: pathlib.Path) -> object:
         if cache is not None:
             cache[key] = data
         return data
-    try:
-        result = process_tree.run_with_timeout(
-            [host, "plugin", "list", "--json"],
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=15,
-            check=False,
-            cwd=str(project),
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise PluginRootError(f"{host}の導入情報の取得失敗: {error}。{host} plugin list --jsonを確認する") from error
-    if result.returncode:
-        raise PluginRootError(f"{host}の導入情報の取得失敗: 終了コード{result.returncode}。{host} plugin list --jsonを確認する")
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError as error:
-        raise PluginRootError(f"{host}の導入情報のJSONが不正。{host} plugin list --jsonを確認する") from error
+    data = (
+        {"installed": codex_installed_plugins(host, project)}
+        if host == "codex"
+        else _host_json(host, [host, "plugin", "list", "--json"], project)
+    )
     if cache is not None:
         cache[key] = data
     if (
@@ -181,6 +168,58 @@ def _plugin_inventory(host: str, project: pathlib.Path) -> object:
         reusable.clear()
         reusable.update(signature=signature, data=data)
     return data
+
+
+def codex_installed_plugins(executable: str, project: pathlib.Path | None = None) -> list[object]:
+    """Codexに設定済みのmarketplaceごとに導入済みpluginを取得し、連結した`installed`の一覧を返す。
+
+    marketplaceを指定しない`codex plugin list`は、設定済みmarketplaceに加えてリモートカタログ（chatgpt.com）へ接続する。
+    codex-cli 0.165.0では、応答しないプロキシ経由でこの照会が約30秒かかり、`--disable remote_plugin`を付けても接続は続いた。
+    marketplaceごとの照会と`codex plugin marketplace list`は接続せず、それぞれ0.1秒程度で終わった。
+    リモートカタログ由来のplugin（`openai-curated-remote`）は設定済みmarketplaceの一覧に現れず、配布物の導入元にならない。
+    そのため設定済みmarketplaceの全件を照会すれば、導入元のmarketplaceが一意かどうかの判定を保てる。
+    """
+    listing = _host_json("codex", [executable, "plugin", "marketplace", "list", "--json"], project)
+    marketplaces = listing.get("marketplaces") if isinstance(listing, dict) else None
+    if not isinstance(marketplaces, list) or any(
+        not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"] for item in marketplaces
+    ):
+        raise PluginRootError("codexのmarketplace一覧の形式が不正。codex plugin marketplace list --jsonを確認する")
+    installed: list[object] = []
+    for marketplace in marketplaces:
+        command = [executable, "plugin", "list", "--json", "--marketplace", marketplace["name"]]
+        data = _host_json("codex", command, project)
+        items = data.get("installed") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise PluginRootError(f"Codexの導入情報の形式が不正。{shlex.join(['codex', *command[1:]])}を確認する")
+        installed.extend(items)
+    return installed
+
+
+def _host_json(host: str, command: list[str], project: pathlib.Path | None) -> object:
+    """ホストCLIの照会を時間上限付きで実行し、JSONを返す。
+
+    失敗は、`host`をコマンド名にした照会の起動形を次の操作として示す`PluginRootError`にする。
+    """
+    shown = shlex.join([host, *command[1:]])
+    try:
+        result = process_tree.run_with_timeout(
+            command,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+            check=False,
+            cwd=str(project) if project is not None else None,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise PluginRootError(f"{host}の導入情報の取得失敗: {error}。{shown}を確認する") from error
+    if result.returncode:
+        raise PluginRootError(f"{host}の導入情報の取得失敗: 終了コード{result.returncode}。{shown}を確認する")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise PluginRootError(f"{host}の導入情報のJSONが不正。{shown}を確認する") from error
 
 
 def _native_recovery(host: str) -> str:

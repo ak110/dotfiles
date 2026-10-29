@@ -23,6 +23,7 @@ from agent_toolkit._hooks.pretooluse.read_delivery import (
     _read_body_proofs,
     _redundant_selection,
 )
+from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 
@@ -164,9 +165,17 @@ def test_installed_declarations_share_one_inventory_per_request(tmp_path, monkey
     }
     calls = []
 
-    def inventory(args, **kwargs):
+    def claude_inventory(args, **kwargs):
         calls.append((args[0], kwargs["cwd"]))
-        return subprocess.CompletedProcess(args, 0, json.dumps(claude if host == "claude" else codex), "")
+        return subprocess.CompletedProcess(args, 0, json.dumps(claude), "")
+
+    codex_cli = codex_plugin_cli(codex["installed"], other=claude_inventory)
+
+    def inventory(args, **kwargs):
+        # Codexは設定済みmarketplaceの一覧から照会を始めるため、一覧の取得を1回の導入情報の取得と数える。
+        if args[0] == "codex" and args[1:3] == ["plugin", "marketplace"]:
+            calls.append((args[0], kwargs["cwd"]))
+        return codex_cli(args, **kwargs)
 
     # Codexの公開cache配置をそのまま使う。
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -1403,29 +1412,29 @@ def test_dependency_recovery_is_limited_to_the_existing_toolkit_marketplace(
             raise ValueError("読込表の列数が一致しない")
         raise PluginRootError("Codexのagent-basics導入先が一意でない: 0件")
 
-    calls = []
+    calls: list[list[str]] = []
+    installed = [
+        {"name": "agent-toolkit", "installed": True, "enabled": True, "marketplaceName": name} for name in marketplaces
+    ]
+    cli = codex_plugin_cli(installed, marketplaces=[*marketplaces, "unrelated"], calls=calls)
 
-    def plugin_list(argv, **_kwargs):
-        calls.append(argv)
+    def plugin_list(argv, **kwargs):
         if error == "timeout":
             raise subprocess.TimeoutExpired(argv, 15)
-        installed = [
-            {"name": "agent-toolkit", "installed": True, "enabled": True, "marketplaceName": name} for name in marketplaces
-        ]
-        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({"installed": installed}), stderr="")
+        return cli(argv, **kwargs)
 
     monkeypatch.setattr(read_delivery, "declarations", unresolved)
-    monkeypatch.setattr(read_delivery.process_tree, "run_with_timeout", plugin_list)
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", plugin_list)
     result = read_delivery.deliver({}, "Bash", {"command": command}, "test")
     assert result.block is None
     assert result.notices
+    assert all(argv[1:3] == ["plugin", "marketplace"] or "--marketplace" in argv for argv in calls)
     reason = (
         ValueError("読込表の列数が一致しない")
         if error == "syntax"
         else PluginRootError("Codexのagent-basics導入先が一意でない: 0件")
     )
     assert _declaration_recovery_operation("Bash", {"command": command}, reason) is allowed
-    assert all(argv == ["codex", "plugin", "list", "--json"] for argv in calls)
     assert memory == {}
 
 
@@ -1698,14 +1707,9 @@ def test_missing_skill_read_failure_preserves_existing_actor_and_role_state(tmp_
 
 @pytest.mark.parametrize("operation", ["search", "install"])
 def test_missing_skill_real_root_error_keeps_the_dependency_repair_route(tmp_path, monkeypatch, memory, operation):
-    calls = []
-
-    def plugin_list(argv, **_kwargs):
-        calls.append(argv)
-        installed = [{"name": "agent-toolkit", "installed": True, "enabled": True, "marketplaceName": "fixture-market"}]
-        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({"installed": installed}), stderr="")
-
-    monkeypatch.setattr(read_delivery.process_tree, "run_with_timeout", plugin_list)
+    calls: list[list[str]] = []
+    installed = [{"name": "agent-toolkit", "installed": True, "enabled": True, "marketplaceName": "fixture-market"}]
+    monkeypatch.setattr(plugin_roots.process_tree, "run_with_timeout", codex_plugin_cli(installed, calls=calls))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     root = tmp_path / "toolkit"
 
@@ -1722,7 +1726,7 @@ def test_missing_skill_real_root_error_keeps_the_dependency_repair_route(tmp_pat
         tool, inputs = "Bash", {"command": "codex plugin add agent-basics@fixture-market --json"}
     result = read_delivery.deliver({}, tool, inputs, "test")
     assert result.block is None and result.notices
-    assert calls and all(argv == ["codex", "plugin", "list", "--json"] for argv in calls)
+    assert ["codex", "plugin", "list", "--json", "--marketplace", "fixture-market"] in calls
     assert memory == {}
 
 

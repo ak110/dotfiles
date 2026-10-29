@@ -21,10 +21,14 @@ import re
 import shlex
 from collections.abc import Callable, Generator, Iterator
 from typing import cast
-lazy import subprocess
 
 from agent_toolkit._common import delegated_session, read_triggers, shell_cwd, transcript
-from agent_toolkit._common.plugin_roots import PluginRootError, plugin_resolution_scope, sibling_plugin_root
+from agent_toolkit._common.plugin_roots import (
+    PluginRootError,
+    codex_installed_plugins,
+    plugin_resolution_scope,
+    sibling_plugin_root,
+)
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command
@@ -36,7 +40,7 @@ from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, sed_read_range
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
-lazy from agent_toolkit._common import process_tree, task_documents
+lazy from agent_toolkit._common import task_documents
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
 
 _PATH_PREFIX = "read-trigger:"
@@ -879,19 +883,8 @@ def _codex_dependency_repair(tokens: tuple[str, ...], error: Exception) -> bool:
     if not tokens[3].startswith("agent-basics@"):
         return False
     try:
-        result = process_tree.run_with_timeout(
-            [tokens[0], "plugin", "list", "--json"],
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=15,
-            check=False,
-        )
-        data = json.loads(result.stdout) if result.returncode == 0 else None
-    except OSError, ValueError, subprocess.TimeoutExpired:
-        return False
-    installed = data.get("installed") if isinstance(data, dict) else None
-    if not isinstance(installed, list):
+        installed = codex_installed_plugins(tokens[0])
+    except PluginRootError:
         return False
     marketplaces = {
         item["marketplaceName"]

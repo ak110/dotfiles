@@ -639,7 +639,7 @@ def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pyt
     if placement == "bundled":
         assert len(calls) == 1
     else:
-        assert calls[0] == ["codex", "plugin", "list", "--json"]
+        assert calls[0] == ["codex", "plugin", "list", "--json", "--marketplace", "ak110-dotfiles"]
         assert len(calls) == 2
     if placement == "installed-legacy":
         assert calls[-1] == [
