@@ -4,6 +4,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,13 @@ logger = logging.getLogger(__name__)
 
 # 短時間で終わる外部コマンドの呼び出しに使う既定のタイムアウト（秒）
 COMMAND_TIMEOUT = 30
+
+# 所有する子へ終了要求と強制終了を送った後に、それぞれ回収を待つ上限（秒）。
+# agent-toolkitの`process_tree.RECLAIM_TIMEOUT_SECONDS`と同じ値にそろえる。
+_REAP_TIMEOUT_SECONDS = 5
+
+# CLIが色付けや装飾に使うANSIエスケープシーケンス（CSIとOSC）。診断へ埋め込む前に除く。
+_ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
 
 
 def stop_process_tree(process: subprocess.Popen[typing.Any], *, stdin_grace_seconds: float = 0) -> list[str]:
@@ -56,18 +64,25 @@ def stop_process_tree(process: subprocess.Popen[typing.Any], *, stdin_grace_seco
         with contextlib.suppress(psutil.Error, OSError):
             target.kill()
     alive = _wait_process_resources(alive)
-    residual = [descriptions.get(target.pid, str(target.pid)) for target in alive]
+    # 所有する子はzombie表示でも回収済みとは限らない。スレッドグループのリーダーだけが先に終了し、
+    # 他のスレッドが生存する多スレッドの子はzombieと表示され、`_wait_process_resources`の対象から外れる。
+    # そのためzombie判定に頼らず回収を上限付きで待ち、終わらなければ強制終了を重ねる。
     try:
-        process.wait(timeout=0)
+        process.wait(timeout=_REAP_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        if not residual:
-            residual.append(f"{process.pid}: {process.args!r}")
+        with contextlib.suppress(OSError):
+            process.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=_REAP_TIMEOUT_SECONDS)
+    residual = [descriptions.get(target.pid, str(target.pid)) for target in alive if target.pid != process.pid]
+    if process.poll() is None:
+        residual.append(descriptions.get(process.pid, f"{process.pid}: {process.args!r}"))
     return residual
 
 
 def _wait_process_resources(targets: list[psutil.Process]) -> list[psutil.Process]:
     """親の回収待ちだけになったzombieを除き、資源の解放を上限付きで待つ。"""
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + _REAP_TIMEOUT_SECONDS
     while targets:
         alive = []
         for target in targets:
@@ -180,17 +195,23 @@ def find_dotfiles_root() -> Path | None:
     return None
 
 
+def strip_ansi(text: str) -> str:
+    """CLIの出力からANSIエスケープシーケンスを除く。"""
+    return _ANSI_ESCAPE.sub("", text)
+
+
 def format_cli_error(result: subprocess.CompletedProcess[str] | None) -> str:
     """CLI 失敗時のログに付ける stderr/stdout の簡潔な連結文字列を返す。
 
     Claude Code CLI は本質的なエラーメッセージを stdout に書き込むことがあり、
     stderr のみでは原因特定が難しい。双方を併記してログに載せる。
+    非TTYでも色付けするCLI（miseなど）があるため、ANSIエスケープシーケンスは除く。
     """
     if result is None:
         return "(実行に失敗)"
     parts: list[str] = []
-    stderr = (result.stderr or "").strip()
-    stdout = (result.stdout or "").strip()
+    stderr = strip_ansi(result.stderr or "").strip()
+    stdout = strip_ansi(result.stdout or "").strip()
     if stderr:
         parts.append(f"stderr: {stderr}")
     if stdout:
@@ -211,6 +232,7 @@ def run_subprocess(
 
     タイムアウト・OSError・SubprocessError を吸収して None を返す。非ゼロ終了は
     そのまま呼び出し元に返す。`tag` を指定すると失敗時のログラベルに使用する。
+    タイムアウトは起動の失敗と原因も次の操作も異なるため、別の診断を出す。
 
     Windowsでは `text=True` で `encoding` を指定しないとロケールのエンコーディング（cp932）を使い、CLIのUTF-8出力で
     UnicodeDecodeErrorが発生するため、エンコーディングをUTF-8に明示し、
@@ -240,6 +262,19 @@ def run_subprocess(
         ) as process:
             stdout, stderr = process.communicate(timeout=timeout)
             return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
+    except subprocess.TimeoutExpired as e:
+        label = tag or cmd[0]
+        rest = " ".join(cmd[1:])
+        logger.info(
+            log_format.format_status(
+                label,
+                f"`{rest}` が{e.timeout:g}秒以内に終わらず中断した。"
+                "呼び出し元へ失敗を返して処理を継続した。"
+                "外部と通信するコマンドなら接続先へのネットワーク到達（プロキシ設定を含む）を、"
+                "それ以外なら同じ資源を使う他のプロセスが無いかを確かめてから`update-dotfiles`を再実行する",
+            ),
+        )
+        return None
     except (OSError, subprocess.SubprocessError) as e:
         label = tag or cmd[0]
         rest = " ".join(cmd[1:])

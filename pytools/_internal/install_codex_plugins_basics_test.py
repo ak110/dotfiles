@@ -26,7 +26,12 @@ if args[:3] == ["plugin", "marketplace", "list"]:
 elif args[:3] == ["plugin", "marketplace", "add"]:
     registered.touch()
 elif args[:2] == ["plugin", "list"]:
-    print(json.dumps({"installed": list(state.values())}))
+    # marketplaceを指定しない一覧はリモートカタログへ接続するため、不達の経路を模して失敗させる。
+    if "--marketplace" not in args:
+        print("Warning: failed to list remote marketplace plugins", file=sys.stderr)
+        raise SystemExit(1)
+    marketplace = args[args.index("--marketplace") + 1]
+    print(json.dumps({"installed": [item for item in state.values() if item["marketplaceName"] == marketplace]}))
 elif args[:2] == ["plugin", "add"]:
     assert registered.exists(), "marketplace登録が必要"
     name = args[2].split("@")[0]
@@ -114,6 +119,18 @@ def test_run_registers_before_install_and_preserves_both_caches(
     if basics_only:
         assert not (codex_fixture / "bin").exists()
         assert all(args[0] != "app-server" for args in calls)
+
+
+def test_plugin_list_queries_are_limited_to_marketplace(codex_fixture: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """全てのplugin一覧の照会を対象marketplaceに限定し、リモートカタログへ依存せず導入を完了する。"""
+    monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ("compact-plus@compact-plus",))
+    outcome = install_codex_plugins.run()
+    assert outcome.changed
+    calls = [json.loads(line) for line in (codex_fixture / "calls").read_text().splitlines()]
+    lists = [args for args in calls if args[:2] == ["plugin", "list"]]
+    assert ["plugin", "list", "--json", "--marketplace", "compact-plus"] in lists
+    assert ["plugin", "list", "--json", "--marketplace", "ak110-dotfiles"] in lists
+    assert all("--marketplace" in args for args in lists)
 
 
 @pytest.mark.parametrize("fault", ["add", "version", "enabled", "skills"])

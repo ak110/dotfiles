@@ -231,6 +231,10 @@ def find_mise_binary() -> Path | None:
     return None
 
 
+# `mise self-update`は公式インストーラーで導入したmiseだけが使える。手動でも失敗する場合の代替手段。
+_SELF_UPDATE_FALLBACK = "手動でも失敗する場合は、miseを導入した手段（パッケージマネージャーや公式インストーラー）で更新する"
+
+
 def _ensure_mise_up_to_date(mise_bin: Path) -> bool:
     """`mise self-update -y` で mise 本体を最新版へ更新する。
 
@@ -240,17 +244,23 @@ def _ensure_mise_up_to_date(mise_bin: Path) -> bool:
     """
     result = _run_mise(mise_bin, ["self-update", "-y"], timeout=_MISE_INSTALL_TIMEOUT)
     if result is None:
-        logger.info(
+        logger.warning(
             log_format.format_status(
                 "mise",
-                "`self-update` がタイムアウトまたは例外で中断。`mise self-update -y`を手動実行する",
+                "`self-update` がタイムアウトまたは例外で中断（処理は継続した）。`mise self-update -y`を手動実行する。"
+                f"{_SELF_UPDATE_FALLBACK}",
             ),
         )
         return False
     if result.returncode != 0:
-        stderr = result.stderr.strip()
-        logger.info(
-            log_format.format_status("mise", f"`self-update` に失敗: {stderr}。`mise self-update -y`を手動実行する"),
+        logger.warning(
+            log_format.format_status(
+                "mise",
+                _with_mise_output(
+                    f"`self-update` に失敗（処理は継続した）。`mise self-update -y`を手動実行する。{_SELF_UPDATE_FALLBACK}",
+                    result,
+                ),
+            ),
         )
         return False
     logger.info(log_format.format_status("mise", "`self-update` を実行しました"))
@@ -302,8 +312,7 @@ def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
 
     result = _run_mise(mise_bin, ["trust", str(mise_toml)])
     if result is None or result.returncode != 0:
-        stderr = result.stderr.strip() if result else ""
-        raise _SettingError(f"`mise trust` に失敗: {stderr}")
+        raise _SettingError(_with_mise_output("`mise trust` に失敗", result))
 
     logger.info(log_format.format_status("mise", f"{mise_toml} を trust しました"))
     return True
@@ -317,13 +326,14 @@ def _ensure_global_node(mise_bin: Path) -> bool:
     """
     result = _run_mise(mise_bin, ["ls", "--global", "--json"])
     if result is None or result.returncode != 0:
-        stderr = result.stderr.strip() if result else ""
-        logger.info(
+        logger.warning(
             log_format.format_status(
                 "mise",
-                "`ls --global --json` に失敗したため node 設定をスキップ: "
-                f"{stderr}。"
-                "`mise use --global node@lts`を手動実行する",
+                _with_mise_output(
+                    "`ls --global --json` に失敗したため node 設定をスキップ（処理は継続した）。"
+                    f"`mise use --global node@lts`を手動実行する。{_MISE_REPORT_FALLBACK}",
+                    result,
+                ),
             ),
         )
         return False
@@ -345,11 +355,16 @@ def _ensure_global_node(mise_bin: Path) -> bool:
 
     install_result = _run_mise(mise_bin, ["use", "--global", "node@lts"])
     if install_result is None or install_result.returncode != 0:
-        stderr = install_result.stderr.strip() if install_result else ""
-        logger.info(
+        logger.warning(
             log_format.format_status(
                 "mise",
-                f"`use --global node@lts` に失敗: {stderr}。`mise use --global node@lts`を手動実行する",
+                _with_mise_output(
+                    "`use --global node@lts` に失敗（処理は継続した）。"
+                    "表示された接続先へのネットワーク到達を確かめてから`update-dotfiles`を再実行する"
+                    "（手動で設定する場合は`mise use --global node@lts`を実行する）。"
+                    f"{_MISE_REPORT_FALLBACK}",
+                    install_result,
+                ),
             ),
         )
         return False
@@ -388,6 +403,19 @@ def _list_item_is_node(item: object) -> bool:
 # 作業ツリーを実行位置とする`mise install`だけへ与える環境変数。
 _LOCKED_INSTALL_ENV = {"MISE_LOCKED": "1", "MISE_LOCKED_SCOPES": "project"}
 
+# 案内した手動操作や再実行でも失敗が続く場合の報告先。dotfiles側で対処できない失敗は
+# miseの出力が原因を示すため、その出力を添えてmiseの開発元へ報告する。
+_MISE_REPORT_FALLBACK = "手動でも同じ失敗が続く場合は、表示されたmiseの出力を添えてmiseの開発元（GitHubの`jdx/mise`）へ報告する"
+
+# `mise install`の失敗時の次の操作。失敗の大半はツール取得時のネットワーク不達のため到達確認を先に案内し、
+# 手動導入する場合はlockを書き戻さないlockedモードの起動形を示す。
+_INSTALL_NEXT_ACTION = (
+    "表示された接続先へのネットワーク到達（プロキシ設定を含む）を確かめてから`update-dotfiles`を再実行する"
+    "（手動で導入する場合は、chezmoiの作業ツリーで`MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install`を実行する。"
+    "Windowsでは両環境変数を設定して`mise install`を実行する）。"
+    f"{_MISE_REPORT_FALLBACK}"
+)
+
 
 def _ensure_tools_installed(mise_bin: Path) -> bool:
     """`mise install` で global/working-tree 設定のツールを取得する。
@@ -403,9 +431,9 @@ def _ensure_tools_installed(mise_bin: Path) -> bool:
     ツールを含むため対象外とする。lockedモードで失敗しても、lockの書き戻しを招くため
     lockedを外した再実行はしない。
 
-    終了コード非ゼロ・タイムアウト・例外はすべて吸収し、後続ステップを止めない。
-    インストール差分の厳密判定は出力からは行えないため、`changed` は実行事実を
-    記録する設計とし、結果に関わらず常に True を返す。
+    終了コード非ゼロ・タイムアウト・例外は警告して吸収し、後続ステップを止めない。
+    取得・導入の失敗は`PostApplyOutcome`の契約どおりスキップと数えるためFalseを返す。
+    インストール差分の厳密判定は出力からは行えないため、成功時の`changed`は実行事実を記録してTrueを返す。
     """
     result = _run_mise(
         mise_bin,
@@ -415,27 +443,22 @@ def _ensure_tools_installed(mise_bin: Path) -> bool:
         extra_env=_LOCKED_INSTALL_ENV,
     )
     if result is None:
-        logger.info(
+        logger.warning(
             log_format.format_status(
                 "mise",
-                "`install` がタイムアウトまたは例外で中断。"
-                "chezmoiの作業ツリーで`MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install`を実行する"
-                "（Windowsでは両環境変数を設定して`mise install`を実行する）",
+                f"`install` が{_MISE_INSTALL_TIMEOUT}秒以内に終わらないか起動できず中断した（処理は継続した）。"
+                f"{_INSTALL_NEXT_ACTION}",
             ),
         )
-        return True
+        return False
     if result.returncode != 0:
-        stderr = result.stderr.strip()
-        logger.info(
+        logger.warning(
             log_format.format_status(
                 "mise",
-                f"`install` に失敗: {stderr}。"
-                "chezmoiの作業ツリーで`MISE_LOCKED=1 MISE_LOCKED_SCOPES=project "
-                "mise install`を実行する（Windowsでは両環境変数を設定して`mise "
-                "install`を実行する）",
+                _with_mise_output(f"`install` に失敗（処理は継続した）。{_INSTALL_NEXT_ACTION}", result),
             ),
         )
-        return True
+        return False
     logger.info(log_format.format_status("mise", "`install` を実行しました"))
     return True
 
@@ -502,7 +525,12 @@ def _ensure_tool_bin_paths_present(mise_bin: Path) -> bool:
             logger.warning(
                 log_format.format_status(
                     "mise",
-                    f"`install --force {spec}` に失敗: {result.stderr.strip()}。手動で`mise install --force {spec}`を実行する",
+                    _with_mise_output(
+                        f"`install --force {spec}` に失敗（処理は継続した）。"
+                        "表示された接続先へのネットワーク到達を確かめてから"
+                        f"手動で`mise install --force {spec}`を実行する。{_MISE_REPORT_FALLBACK}",
+                        result,
+                    ),
                 ),
             )
             continue
@@ -548,8 +576,11 @@ def _missing_bin_paths(mise_bin: Path, cwd: Path | None) -> list[Path] | None:
         logger.warning(
             log_format.format_status(
                 "mise",
-                "`bin-paths` に失敗したため配置先の確認を省いた（処理は継続した）。"
-                f"`update-dotfiles`を再実行する: {result.stderr.strip()}",
+                _with_mise_output(
+                    "`bin-paths` に失敗したため配置先の確認を省いた（処理は継続した）。"
+                    f"`update-dotfiles`を再実行する。{_MISE_REPORT_FALLBACK}",
+                    result,
+                ),
             ),
         )
         return None
@@ -575,8 +606,11 @@ def _installed_tool_paths(mise_bin: Path, cwd: Path | None) -> dict[Path, tuple[
         logger.warning(
             log_format.format_status(
                 "mise",
-                "`ls --current --installed --json` に失敗したため再導入を省いた（処理は継続した）。"
-                f"`update-dotfiles`を再実行する: {result.stderr.strip()}",
+                _with_mise_output(
+                    "`ls --current --installed --json` に失敗したため再導入を省いた（処理は継続した）。"
+                    f"`update-dotfiles`を再実行する。{_MISE_REPORT_FALLBACK}",
+                    result,
+                ),
             ),
         )
         return None
@@ -625,35 +659,43 @@ def _ensure_orphan_shims_removed(mise_bin: Path) -> bool:
     """
     prune = _run_mise(mise_bin, ["prune", "-y"], timeout=_MISE_INSTALL_TIMEOUT)
     if prune is None:
-        logger.info(
+        logger.warning(
             log_format.format_status(
                 "mise",
-                "`prune -y` がタイムアウトまたは例外で中断。`mise prune -y`を手動実行する",
+                "`prune -y` がタイムアウトまたは例外で中断（処理は継続した）。`mise prune -y`を手動実行する。"
+                f"{_MISE_REPORT_FALLBACK}",
             ),
         )
         return False
     if prune.returncode != 0:
-        logger.info(
+        logger.warning(
             log_format.format_status(
                 "mise",
-                f"`prune -y` に失敗: {prune.stderr.strip()}。`mise prune -y`を手動実行する",
+                _with_mise_output(
+                    f"`prune -y` に失敗（処理は継続した）。`mise prune -y`を手動実行する。{_MISE_REPORT_FALLBACK}",
+                    prune,
+                ),
             ),
         )
         return False
     result = _run_mise(mise_bin, ["reshim", "--force"])
     if result is None:
-        logger.info(
+        logger.warning(
             log_format.format_status(
                 "mise",
-                "`reshim --force` がタイムアウトまたは例外で中断。`mise reshim --force`を手動実行する",
+                "`reshim --force` がタイムアウトまたは例外で中断（処理は継続した）。`mise reshim --force`を手動実行する。"
+                f"{_MISE_REPORT_FALLBACK}",
             ),
         )
         return False
     if result.returncode != 0:
-        logger.info(
+        logger.warning(
             log_format.format_status(
                 "mise",
-                f"`reshim --force` に失敗: {result.stderr.strip()}。`mise reshim --force`を手動実行する",
+                _with_mise_output(
+                    f"`reshim --force` に失敗（処理は継続した）。`mise reshim --force`を手動実行する。{_MISE_REPORT_FALLBACK}",
+                    result,
+                ),
             ),
         )
         return False
@@ -728,11 +770,37 @@ def _run_mise(
     mise内部の版一覧取得上限も延長する。
     Windowsではシステム版`dotnet.exe`が先行しても、miseのSDK検証が共有ルートを
     参照するよう子プロセスだけの`PATH`を設定する。
+
+    失敗時の標準エラー出力は`_mise_error_lines`で失敗理由の行だけに限定する。
+    呼び出し元の診断へ進捗表示が混入しないよう、整形をここへ集約する。
     """
-    return common.run_subprocess(
+    result = common.run_subprocess(
         [str(mise_bin), *args],
         timeout=timeout,
         cwd=cwd,
         tag="mise",
         env_overrides=_mise_env_overrides() | (extra_env or {}),
     )
+    if result is None or result.returncode == 0:
+        return result
+    return subprocess.CompletedProcess(result.args, result.returncode, result.stdout, _mise_error_lines(result.stderr))
+
+
+def _mise_error_lines(stderr: str) -> str:
+    """miseの失敗出力から、色指定を除いた`mise ERROR`行以降を返す。該当行が無ければ色指定だけを除く。
+
+    miseは非TTYかつ`CI=1`でも進捗表示と`WARN`行を標準エラー出力へ書く。
+    mise 2026.10.17をネットワーク遮断下で失敗させた観測では、`mise ERROR`行以降は
+    `--quiet`を付けた場合の出力と一致し、ツールごとの失敗理由を含む。
+    """
+    lines = common.strip_ansi(stderr).splitlines()
+    start = next((index for index, line in enumerate(lines) if line.startswith("mise ERROR")), 0)
+    return "\n".join(lines[start:]).strip()
+
+
+def _with_mise_output(message: str, result: subprocess.CompletedProcess[str] | None) -> str:
+    """dotfilesが書く案内の後へ、miseの出力を独立した行として続けた診断を返す。
+
+    miseの出力は複数行で句点を持たないため、案内と同じ行へ連結すると文の境界が読めなくなる。
+    """
+    return f"{message}\n{common.format_cli_error(result)}"

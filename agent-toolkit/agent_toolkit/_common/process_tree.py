@@ -42,12 +42,21 @@ def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
         targets = [psutil.Process(process.pid), *descendants]
     except psutil.NoSuchProcess:
         targets = descendants
-    residual = reclaim_descendants(targets)
+    descriptions = {target.pid: describe(target) for target in targets}
+    alive = reclaim_processes(targets)
+    # 所有する子はzombie表示でも回収済みとは限らない。スレッドグループのリーダーだけが先に終了し、
+    # 他のスレッドが生存する多スレッドの子はzombieと表示され、`reclaim_processes`の強制終了の対象から外れる。
+    # そのためzombie判定に頼らず回収を上限付きで待ち、終わらなければ強制終了を重ねる。
     try:
         process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        if not residual:
-            residual.append(f"{process.pid}: {process.args!r}")
+        with contextlib.suppress(OSError):
+            process.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
+    residual = [descriptions[target.pid] for target in alive if target.pid != process.pid]
+    if process.poll() is None:
+        residual.append(descriptions.get(process.pid, f"{process.pid}: {process.args!r}"))
     return residual
 
 

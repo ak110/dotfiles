@@ -199,3 +199,31 @@ def test_mise_only_npm_prune_keeps_order_and_mode_boundary(tmp_path, monkeypatch
             assert result.failure is None
             assert calls[1][:3] == ["/fixture/mise", "ls", "--installed"]
             assert ["/fixture/mise", "uninstall", "--all", "node"] in calls
+
+
+def test_uv_cache_lock_timeout_defers_prune_with_guidance(tmp_path, monkeypatch, caplog):
+    """他のuvプロセスがキャッシュを使用中なら、短いロック待ちの後に保留し、uvを使うプロセスの終了と再実行を案内する。"""
+    _prepare(tmp_path, monkeypatch, "minimal")
+    monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
+    uv_calls = []
+
+    def run(command, **kwargs):
+        if command[1:] == ["cache", "prune"]:
+            uv_calls.append(kwargs)
+            # uv 0.13.6が共有ロックを保持する`uv run`の実行中に出した診断と同じ形式。
+            stderr = (
+                f"error: Timeout (30s) when waiting for lock on `{tmp_path}/.cache/uv` at `.cache/uv/.lock`, "
+                "is another uv process running? You can set `UV_LOCK_TIMEOUT` to increase the timeout.\n"
+            )
+            return subprocess.CompletedProcess(command, 2, "", stderr)
+        output = json.dumps({"node": [{"version": "24"}]}) if command[1:4] == ["ls", "--installed", "--json"] else ""
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    monkeypatch.setattr(common, "run_subprocess", run)
+    with caplog.at_level("WARNING"):
+        result = prune_installation.run()
+    assert result.deferred
+    assert result.failure is None
+    assert uv_calls[0]["env_overrides"]["UV_LOCK_TIMEOUT"] == "30"
+    assert "uvを使う他のプロセス" in caplog.text
+    assert "update-dotfiles --prune" in caplog.text

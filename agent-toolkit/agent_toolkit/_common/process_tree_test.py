@@ -38,11 +38,46 @@ def test_process_scope_reaps_child_after_stop_failure(monkeypatch):
 def test_stop_process_tree_waits_for_owned_exit_status(monkeypatch):
     """資源の解放が先に観測されても、Popenの終了状態を上限付きで回収する。"""
     process = mock.Mock(pid=123)
+    process.poll.return_value = 0
     monkeypatch.setattr(process_tree, "collect_descendants", mock.Mock(return_value=[]))
-    monkeypatch.setattr(process_tree, "reclaim_descendants", mock.Mock(return_value=[]))
-    monkeypatch.setattr(psutil, "Process", mock.Mock())
+    monkeypatch.setattr(process_tree, "reclaim_processes", mock.Mock(return_value=[]))
+    owned = mock.Mock(pid=123)
+    owned.cmdline.return_value = ["cmd"]
+    monkeypatch.setattr(psutil, "Process", mock.Mock(return_value=owned))
     assert process_tree.stop_process_tree(process) == []
     process.wait.assert_called_once_with(timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
+
+
+# 主スレッドだけを`pthread_exit`で終了し、作業スレッドを残す子。SIGTERMを無視するため、
+# スレッドグループのリーダーはzombieと表示されたまま、強制終了するまで回収できない。
+_LEADER_EXITED_CHILD = """
+import ctypes, pathlib, signal, sys, threading, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+threading.Thread(target=time.sleep, args=(120,)).start()
+pathlib.Path(sys.argv[1]).touch()
+ctypes.CDLL(None).pthread_exit(None)
+"""
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="pthread_exitで主スレッドだけを終了させる再現はLinux限定")
+def test_stop_process_tree_reaps_owned_child_whose_leader_is_zombie(tmp_path: pathlib.Path) -> None:
+    """リーダーがzombie表示でも作業スレッドが残る所有する子を、強制終了して回収し、残存を報告しない。"""
+    ready = tmp_path / "ready"
+    with subprocess.Popen([sys.executable, "-c", _LEADER_EXITED_CHILD, str(ready)]) as process:
+        try:
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline and not (
+                ready.exists() and psutil.Process(process.pid).status() == psutil.STATUS_ZOMBIE
+            ):
+                time.sleep(0.01)
+            assert psutil.Process(process.pid).status() == psutil.STATUS_ZOMBIE, "リーダーがzombie表示にならなかった"
+            assert process.poll() is None
+
+            assert process_tree.stop_process_tree(process) == []
+            assert process.poll() is not None
+        finally:
+            if process.poll() is None:
+                process.kill()
 
 
 def _stubborn_child_source(ready_marker: pathlib.Path) -> str:

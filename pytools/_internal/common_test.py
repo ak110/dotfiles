@@ -257,6 +257,47 @@ def test_run_subprocess_timeout_stops_grandchildren(monkeypatch, tmp_path):
                 process.kill()
 
 
+def test_run_subprocess_timeout_reports_limit_and_network_check(caplog: pytest.LogCaptureFixture) -> None:
+    """時間上限の診断は上限秒数とネットワーク到達などの確認を示し、起動失敗向けのアクセス権の確認を案内しない。"""
+    with caplog.at_level("INFO"):
+        assert common.run_subprocess([sys.executable, "-c", "import time; time.sleep(60)"], timeout=0.5, tag="fixture") is None
+    assert "0.5秒以内に終わらず中断した" in caplog.text
+    assert "ネットワーク到達" in caplog.text
+    assert "アクセス権" not in caplog.text
+
+
+# 主スレッドだけを`pthread_exit`で終了し、作業スレッドを残す子。SIGTERMを無視するため、
+# スレッドグループのリーダーはzombieと表示されたまま、強制終了するまで回収できない。
+_LEADER_EXITED_CHILD = """
+import ctypes, pathlib, signal, sys, threading, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+threading.Thread(target=time.sleep, args=(120,)).start()
+pathlib.Path(sys.argv[1]).touch()
+ctypes.CDLL(None).pthread_exit(None)
+"""
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="pthread_exitで主スレッドだけを終了させる再現はLinux限定")
+def test_stop_process_tree_reaps_child_whose_leader_is_zombie(tmp_path: Path) -> None:
+    """リーダーがzombie表示でも作業スレッドが残る子を、強制終了して回収し、残存を報告しない。"""
+    ready = tmp_path / "ready"
+    with subprocess.Popen([sys.executable, "-c", _LEADER_EXITED_CHILD, str(ready)]) as process:
+        try:
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline and not (
+                ready.exists() and psutil.Process(process.pid).status() == psutil.STATUS_ZOMBIE
+            ):
+                time.sleep(0.01)
+            assert psutil.Process(process.pid).status() == psutil.STATUS_ZOMBIE, "リーダーがzombie表示にならなかった"
+            assert process.poll() is None
+
+            assert common.stop_process_tree(process) == []
+            assert process.poll() is not None
+        finally:
+            if process.poll() is None:
+                process.kill()
+
+
 class TestCollectValueOnlyUpdates:
     """`_collect_value_only_updates` の分岐テスト。"""
 

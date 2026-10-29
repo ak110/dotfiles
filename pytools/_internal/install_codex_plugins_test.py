@@ -304,7 +304,7 @@ def test_running_codex_updates_and_preserves_previous_caches(
         return True
 
     def run_subprocess(args: list[str], **_kwargs: object) -> _FakeResult:
-        assert args[1:] == ["plugin", "list", "--json"]
+        assert args[1:] == ["plugin", "list", "--json", "--marketplace", "ak110-dotfiles"]
         if current["version"] == "1.2.3":
             shutil.rmtree(older, ignore_errors=True)
             if old_version != "1.2.3":

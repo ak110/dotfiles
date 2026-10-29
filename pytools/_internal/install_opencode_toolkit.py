@@ -13,7 +13,7 @@ from pathlib import Path
 import pytilpack.jsonc
 import yaml
 
-from pytools._internal import common, log_format, post_apply_outcome, sync_agent_toolkit_rules
+from pytools._internal import common, log_format, post_apply_outcome, setup_opencode_cli, sync_agent_toolkit_rules
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ def sync(root: Path, destination: Path) -> bool:
 
 def run() -> post_apply_outcome.PostApplyOutcome:
     """OpenCode CLIの導入後にグローバルスキルと規範を同期する。"""
-    if common.resolve_executable("opencode") is None:
+    if setup_opencode_cli.find_launcher() is None:
         logger.info(log_format.format_status("OpenCode toolkit", "CLIが無いためスキップ。`update-dotfiles`で導入を再試行する"))
         return post_apply_outcome.PostApplyOutcome()
     root = common.find_dotfiles_root()
