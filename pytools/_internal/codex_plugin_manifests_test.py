@@ -363,7 +363,13 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             "PostToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "posttooluse" + subject.HOOK_FAILURE_SUFFIX}],
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": _CODEX_HOOK_PREFIX + "posttooluse" + subject.HOOK_FAILURE_SUFFIX,
+                            "additionalContextLimit": 0,
+                        }
+                    ],
                 }
             ],
             "UserPromptSubmit": [
@@ -608,6 +614,7 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
         {"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "stop" + subject.HOOK_FAILURE_SUFFIX}]}
     ]
     assert "Bash" in generated["PostToolUse"][0]["matcher"].split("|")
+    assert all(handler["additionalContextLimit"] == 0 for handler in generated["PostToolUse"][0]["hooks"])
     assert all("timeout" not in handler for handler in generated["PreToolUse"][0]["hooks"])
 
 

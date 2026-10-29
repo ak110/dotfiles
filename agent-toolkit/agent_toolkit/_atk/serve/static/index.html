@@ -98,7 +98,6 @@
     <section class="entry-pane card" aria-labelledby="entry-heading">
       <div class="pane-heading">
         <h2 id="entry-heading">一覧</h2>
-        <button id="copy-all-button" class="button-secondary" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
         <div class="entry-heading-meta">
           <span id="entry-count" class="secondary-text">0件（未回答UWI 0件）</span>
           <span id="entry-period" class="secondary-text">直近2週間に作成</span>
@@ -108,11 +107,12 @@
       <div id="list-fallback-notice" class="list-fallback-notice" role="status" hidden></div>
       <div id="result-status" class="visually-hidden" role="status"></div>
       <div id="list-warning" class="list-warning" role="alert" hidden></div>
-      <div class="entry-columns" aria-hidden="true">
-        <span>ファイル名</span>
-        <span>target-repo</span>
-        <span>type・state</span>
-        <span>要約</span>
+      <div class="entry-columns">
+        <span class="entry-metadata-label" aria-hidden="true">ファイル名</span>
+        <span class="entry-metadata-label" aria-hidden="true">target-repo</span>
+        <span class="entry-metadata-label" aria-hidden="true">type・state</span>
+        <span class="summary-column-label" aria-hidden="true">要約</span>
+        <button id="copy-all-button" class="entry-copy button-secondary" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
       </div>
       <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
       <nav id="pagination" class="pagination" aria-label="一覧ページ">

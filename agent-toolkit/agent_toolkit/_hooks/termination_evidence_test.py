@@ -25,6 +25,7 @@ from agent_toolkit._hooks import (
     user_prompt_submit,
 )
 from agent_toolkit._testing import agents_server_support, git_repository
+from agent_toolkit._testing.pretooluse_support import codex_execution_payload
 
 pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
 
@@ -146,7 +147,16 @@ def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     (tmp_path / "transcript.jsonl").touch()
 
 
-def _tool(directory: pathlib.Path, call_id: str, tool_name: str, tool_input: dict, response: object, *, codex: bool) -> None:
+def _tool(
+    directory: pathlib.Path,
+    call_id: str,
+    tool_name: str,
+    tool_input: dict,
+    response: object,
+    *,
+    codex: bool,
+    native_exit_code: int | None = None,
+) -> None:
     """公開hookのPreToolUseとPostToolUseへ、同じ呼び出しの入力と応答を供給する。"""
     payload: dict[str, Any] = {
         "session_id": "evidence-test",
@@ -160,6 +170,8 @@ def _tool(directory: pathlib.Path, call_id: str, tool_name: str, tool_input: dic
         payload["turn_id"] = "codex-turn"
     with contextlib.redirect_stdout(io.StringIO()):
         pretooluse.main(json.dumps(payload))
+    if native_exit_code is not None:
+        payload = codex_execution_payload(payload, directory, exit_code=native_exit_code)
     payload["tool_response"] = response
     with contextlib.redirect_stdout(io.StringIO()):
         posttooluse.main(json.dumps(payload))
@@ -1166,26 +1178,42 @@ def test_legacy_stop_review_notice_is_not_completion_evidence():
 
 
 @pytest.mark.parametrize(
-    ("command", "response", "accepted"),
+    ("command", "response", "accepted", "exit_code"),
     [
-        ("cat /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True),
-        ("sed -n '1,$p' -- /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True),
-        ("cat /plugin/skills/{skill}/SKILL.md", "cat: /plugin/skills/{skill}/SKILL.md: No such file", False),
-        ("echo /plugin/skills/{skill}/SKILL.md", "/plugin/skills/{skill}/SKILL.md", False),
-        ("grep -n name /plugin/skills/{skill}/SKILL.md", "2:name: {skill}", False),
+        ("cat /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True, 0),
+        ("sed -n '1,$p' -- /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True, 0),
+        ("cat /plugin/skills/{skill}/SKILL.md", "cat: /plugin/skills/{skill}/SKILL.md: No such file", False, 1),
+        ("echo /plugin/skills/{skill}/SKILL.md", "/plugin/skills/{skill}/SKILL.md", False, 0),
+        ("grep -n name /plugin/skills/{skill}/SKILL.md", "2:name: {skill}", False, 0),
     ],
     ids=["cat", "sed", "failed", "path-only", "grep"],
 )
 def test_termination_evidence_and_operation_skills_share_read_judgment(
-    tmp_path: pathlib.Path, command: str, response: str, *, accepted: bool
+    tmp_path: pathlib.Path, command: str, response: str, *, accepted: bool, exit_code: int
 ) -> None:
     """completion-reportの起動証拠と操作を起動の契機とするスキルの取得の記録は、同じ読取を同じく受理・拒否する。"""
     supply_commit(tmp_path, codex=True)
     skill = "completion-report"
-    _tool(tmp_path, "read", "Bash", {"command": command.format(skill=skill)}, response.format(skill=skill), codex=True)
+    _tool(
+        tmp_path,
+        "read",
+        "Bash",
+        {"command": command.format(skill=skill)},
+        response.format(skill=skill),
+        codex=True,
+        native_exit_code=exit_code,
+    )
     assert (not _missing_completion(tmp_path)) is accepted
 
     skill = "search"
-    _tool(tmp_path, "search", "Bash", {"command": command.format(skill=skill)}, response.format(skill=skill), codex=True)
+    _tool(
+        tmp_path,
+        "search",
+        "Bash",
+        {"command": command.format(skill=skill)},
+        response.format(skill=skill),
+        codex=True,
+        native_exit_code=exit_code,
+    )
     recorded = session_state.read_state("evidence-test").get("operation_skill_delivered_agents") or {}
     assert ("agent-toolkit:search" in recorded) is accepted

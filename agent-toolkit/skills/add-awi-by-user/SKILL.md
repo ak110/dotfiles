@@ -4,6 +4,7 @@ description: >
   ユーザーが本スキルを明示的に手動起動し、AWI（エージェントワークアイテム）の
   具体化と登録を依頼したときだけ、要件の裏付けと対話による確定を経て登録する。
 disable-model-invocation: true
+argument-hint: "[carefully] <要求>"
 ---
 
 # AWI投入
@@ -14,6 +15,9 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 
 手動作成の登録条件は、`agent-toolkit:wi-standards`「起票目的別の調査出口」に従う。
 本スキルでは、同条件を満たす調査、対話による確定および登録をメインエージェントが担当する。
+
+スキル引数の先頭の語が`carefully`のときは、その語を除いた残りを要求として扱い、「carefully指定時の方針確認」を適用する。
+それ以外の起動では、通常の手順に従う。
 
 正式なAWI登録には、対象リポジトリと既存キューの読み取り権限、`atk`コマンド、参照資料が必要である。これらが利用できない環境では、対話によって要求を整理した原稿を作成して返却し、登録前の下書きとして取り扱う。既存項目との比較、保留処理、登録実行、保存結果の検収は、それらの機能が備わっているClaude CodeまたはCodex環境で実施する。要求の文章表現は、[文章の品質基準](references/quality-standards.md)に沿って確認する。
 
@@ -27,6 +31,8 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+| 考慮漏れの指摘を受けて原因を分析する前 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-completion.md#「対象集合の仕分け」「確定の判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「対象集合の仕分け」「確定の判定」` |
@@ -41,7 +47,11 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 手順2で質問ラウンドを始める前 | `agent-toolkit:user-confirmation-and-report`の`references/grilling.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/grilling.md` | |
-| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表の同じ時点に指定された節 | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
+| WI作成の調査に入る前 | `../wi-standards/references/drafting-workflow.md`の冒頭、「出所と観測の取得」「投入条件の判定」「前提と観測の確認」「確定した要件と委譲元の判断」「未確定事項」。`../wi-standards/references/drafting-completion.md`の「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「方針と判断の記録との比較」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#冒頭「出所と観測の取得」「投入条件の判定」「前提と観測の確認」「確定した要件と委譲元の判断」「未確定事項」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「方針と判断の記録との比較」`、`bash:atk wi submission begin` | |
+| 原稿を確定する前 | `../wi-standards/references/drafting-workflow.md`の「本文の起草」「保存前の確認」。`../wi-standards/references/drafting-completion.md`の「投入前の読み直し」。新しい通常AWIでは同資料の「重複判定」、観測された不具合を起点としbugfixを起動して起草する場合は「原因と定義の所有者」も読む | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「本文の起草」「保存前の確認」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「投入前の読み直し」`、`bash:atk wi add`、`bash:atk wi edit` | |
+| 独立した確認に入る前 | `../wi-standards/references/drafting-workflow.md`の「直接起草と独立した検収の選択」。選んだ手順の起動・検収・差戻しの契約 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」`、`bash:atk wi add`、`bash:atk wi edit` | |
+| 保存操作に入る前 | `../wi-standards/references/drafting-workflow.md`の「投入」。`../wi-standards/references/drafting-completion.md`の「重複判定」（通常AWI）と「投入前の読み直し」の対象集合と除外の確認 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「投入」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」`、`bash:atk wi add`、`bash:atk wi edit` | |
+| 原稿の意味を確認する前 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`bash:atk wi add`、`bash:atk wi edit` | |
 | 文脈を分けるためWI投入担当へ委譲する場合 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
 | 完成条件や採否を決める値を測定する前 | `references/measurement.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/measurement.md` | |
 
@@ -66,8 +76,32 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
    - ユーザーの原文、情報の出所、確定した要件、および技術的な判断を明確に区別し、取得済みの証拠を再利用する。複数の要求を混同せずに個別管理し、同一要求の更新は同じ作成主体が現在の要件と差分情報に基づいて行う。新しく登録すべき要求が存在しない場合は、既存の再利用、回答による解決、または取り下げの結果を整理して手順4へ進む。
    - 本来の作業に付随する別件の登録など、作業の文脈を分ける明確な理由がある場合は、`add-wi.parent.md`に従って委譲を選択する。判断基準が明確な大量の走査処理には軽量な読み取り探索を利用してよく、起草と保存の最終責任はメインエージェントが保持する。
    - 検収の構成は`agent-toolkit:wi-standards`の`references/drafting-workflow.md`「直接起草と独立した検収の選択」に従う。原文と反映内容を読み比べて構造を確認し、同スキルの`references/draft-semantic-review.md`に基づいて文脈を再確認する。独立した検収が必要な場合は、同時に準備した原稿、要求内容、出所、証拠を要求識別子で紐付けて`share/wi-draft-review.parent.md`へ一括して引き渡し、作成主体がレビュー指摘の採否を確定した上で保存する。
-   - ユーザー自身しか決定できない未確定事項のみを手順2の質問に戻す。委譲した調査に不足がある場合は元の調査担当へ差し戻す。AWI登録の認可はスキル起動の時点で成立しているため、本文全文を提示して登録可否を一律で確認するような不要なやり取りは追加しない。
+   - ユーザー自身しか決定できない未確定事項のみを手順2の質問に戻す。委譲した調査に不足がある場合は元の調査担当へ差し戻す。AWI登録の認可はスキル起動の時点で成立しているため、本文全文を提示して登録可否を一律で確認するような不要なやり取りは追加しない。`carefully`指定時は本文を書く前に次節の手順で方針を確認する。
 4. `atk wi submission end`を実行して投入作業のセッション記録を削除し、出力された`ファイル名`、登録・再利用の結果、検収結果、未達事項を`agent-toolkit:completion-report`の作業完了報告へ集約して送達する。投入成功の要約を別の最終応答にせず、同スキルが定める終了処理まで終える。同期の振り返りは起動しない。
+
+## carefully指定時の方針確認
+
+質問ラウンドと手順3の調査で要件と方針が固まったら、本文を書く前に、対象、変更後の挙動、範囲、除外、完成条件、自ら確定した判断をユーザーへ示して確認する。
+回答に依存する質問は次のラウンドへ回し、最終承認は他のユーザー判断がすべて確定してから単独の質問で求める。
+`agent-toolkit:wi-standards`の`references/drafting-workflow.md`「直接起草と独立した検収の選択」の条件に当たる要求では、最終承認の前にも、独立した担当へ方針、要求と出所、調査の根拠を渡して検収する。
+この検収は方針を対象とし、手順3の本文の検収も維持する。
+
+確認で受けた指摘を要求単位に分け、次のいずれかへ分類して、次の確認で報告する。
+
+- 考慮漏れ: 原文、取得済みの調査結果、現物、適用中の規範から導けたのに方針へ反映しなかったもの。`agent-toolkit:bugfix`を起動して原因を分析し、同じ仕組みで漏れうる観点を全方針で見直す。再発防止策を検討してから方針へ反映し、再確認する。
+- ユーザーだけが持つ新しい情報: 選好、未開示の制約など、登録前の調査では導けなかったもの。要件として反映し、再発防止策は設けない。
+- 前提の誤り: 指摘の技術的前提が現物と一致しないもの。根拠と代替案を示す。
+- 採用しない提案: 検討の結果採らない提案。根拠を示す。
+
+再発防止策は本スキルの成果物制限に従い、`## 原因分析`付きの別AWIとして起草し、元のAWIと一緒に登録する。
+投入先は対策の対象を所有するリポジトリとする。
+投入先が元の投入先と異なる場合は、手順2に従い、全投入先を指定して`atk wi submission begin`を再実行する。
+確認の往復中も投入作業のセッション記録を維持する。
+
+承認後に本文を書き、手順3の検収を経て全要求を保存してから手順4へ進む。
+起草や検収で新しい判断が出た場合は、その点だけを再確認する。
+中止を求められた場合は保存せずに`atk wi submission end`を実行する。
+作業完了報告には、ユーザーが確認経緯と再発防止策を追跡できるよう、確認の往復回数、指摘ごとの分類、登録した再発防止策のAWIを記載する。
 
 ## セッション境界
 

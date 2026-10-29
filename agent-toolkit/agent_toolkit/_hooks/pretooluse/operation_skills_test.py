@@ -19,6 +19,7 @@ from agent_toolkit._testing.pretooluse_support import (
     _read_session_state,
     _run,
     _run_posttooluse,
+    codex_execution_payload,
 )
 
 _SEARCH_SKILL = "agent-toolkit:search"
@@ -604,17 +605,15 @@ def _acquire(env: dict[str, str], payload: dict, skill: str) -> None:
         _record_skill(env, payload["session_id"], f"agent-toolkit:{skill}", **extra)
         return
     path = plugin_resources.skill_document_path(skill, "SKILL.md")
-    result = _run_posttooluse(
-        {
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": f"cat {path}"},
-            "tool_response": path.read_text(encoding="utf-8"),
-            "session_id": payload["session_id"],
-            **extra,
-        },
-        env,
-    )
+    acquisition = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": f"cat {path}"},
+        "tool_response": path.read_text(encoding="utf-8"),
+        "session_id": payload["session_id"],
+        **extra,
+    }
+    result = _run_posttooluse(codex_execution_payload(acquisition, pathlib.Path(env["TMPDIR"]), exit_code=0), env)
     assert result.returncode == 0
 
 
