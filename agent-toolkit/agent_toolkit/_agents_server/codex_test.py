@@ -1614,6 +1614,10 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
     (source / ".mcp.json").write_text(
         (plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"), encoding="utf-8"
     )
+    (source / "hooks").mkdir()
+    (source / "hooks/hooks.codex.json").write_text(
+        (plugin_roots.SERVER_PLUGIN_ROOT / "hooks/hooks.codex.json").read_text(encoding="utf-8"), encoding="utf-8"
+    )
     (source / "skills" / "sample").mkdir(parents=True)
     (source / "skills" / "sample" / "SKILL.md").write_text("# 手順\n", encoding="utf-8")
     plugin_root = plugin_roots.resolve_stable_plugin_root(source)
@@ -1996,7 +2000,12 @@ async def test_codex_explore_commands_reach_start_resume_and_followup(
             assert normal_thread["developerInstructions"] == subject._developer_instructions("delegate")  # noqa: SLF001
             assert explore_thread["config"]["bypass_hook_trust"] is True
             assert explore_thread["config"]["project_doc_max_bytes"] == 0
-            assert explore_thread["config"]["features"] == {"plugins": False}
+            assert explore_thread["config"]["features"] == {"plugins": False, "hooks": True}
+            for event in ("PreToolUse", "PostToolUse"):
+                configured = explore_thread["config"]["hooks"][event][0]
+                assert configured["matcher"] == "Bash"
+                assert all(handler["additionalContextLimit"] == 0 for handler in configured["hooks"])
+                assert all("${PLUGIN_ROOT}" not in handler["command"] for handler in configured["hooks"])
             pyfltr = explore_thread["config"]["mcp_servers"]["pyfltr"]
             definition = json.loads((subject.plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))[
                 "mcpServers"
@@ -2033,7 +2042,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
         await manager.start("make test", str(tmp_path), "model", "high", launch_kind="shell")
 
         thread_params = client.requests[0][1]
-        assert thread_params["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
+        assert thread_params["config"] == subject.AppServerManager._base_thread_config(lightweight=True)
         assert thread_params["developerInstructions"] == subject._developer_instructions("shell")  # noqa: SLF001
 
 
@@ -2058,13 +2067,13 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
         assert normal_resume["config"] == {"bypass_hook_trust": True}
         assert explore_resume["developerInstructions"] == subject._developer_instructions("explore")  # noqa: SLF001
         assert explore_resume["config"]["project_doc_max_bytes"] == 0
-        assert explore_resume["config"]["features"] == {"plugins": False}
+        assert explore_resume["config"]["features"] == {"plugins": False, "hooks": True}
         definition = json.loads((subject.plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))[
             "mcpServers"
         ]["pyfltr"]
         assert explore_resume["config"]["mcp_servers"]["pyfltr"]["command"] == definition["command"]
         assert shell_resume["developerInstructions"] == subject._developer_instructions("shell")  # noqa: SLF001
-        assert shell_resume["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
+        assert shell_resume["config"] == subject.AppServerManager._base_thread_config(lightweight=True)
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

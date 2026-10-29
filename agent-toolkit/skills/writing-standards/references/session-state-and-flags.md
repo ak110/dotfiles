@@ -111,6 +111,16 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 - `work_contract_input_sequence`: UserPromptSubmitが実ユーザー入力ごとに進める整数。初期値は0で、機械注入の間は値を保つ。PreToolUseが未作成通知の入力区切りとして参照する。セッション状態と同じ寿命で保持する。
 - `work_contract_notified_sequence`: PreToolUseが未作成のメインへ通知した入力連番。排他ロック下で比較・更新し、同じ入力では1回だけ通知する。SessionStartの`compact`時に削除して、圧縮後の最初の操作で再通知する。他はセッション状態と同じ寿命で保持する。
 
+## Codexの標準読取
+
+- Codexの標準読取の捕捉物はセッションmanaged-tempの`codex-read-<実行別ID>/`へ置く。
+  PreToolUseが元操作と補正操作を保存し、同じnative実行がstdout・stderr・終了コードを書く。
+  PostToolUseは実行終了と操作の一致を確認し、全量配送後または配送失敗の確定後に実行別ディレクトリを回収する。終了未確認は保持する。
+  同領域の`codex-read-budget.json`は最新モデル応答の識別値と配送済みUTF-8バイト数だけを持ち、`.lock`下で並列読取を合算する。
+  最新の`token_usage_record`と`task_started`（旧記録では`token_count`）の文脈枠・使用量から配送枠を求める。
+  UTF-8バイト数をトークン数の保守的上界とし、枠の1割を他の通知と次応答に残す。本文全量の合計が枠を超える場合と文脈情報を取得できない場合は未読として通知する。
+  次のモデル応答で配送合計を更新し、一時記録はセッションmanaged-tempと同じ寿命で回収する
+
 ## plan系
 
 - `plan_mode_skill_invoked`: plan-modeスキルの起動を記録し、計画ファイルの構造に対する自動チェックを適用するかどうかの判定に使用する

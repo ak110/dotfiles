@@ -2,32 +2,23 @@
 
 import pathlib
 
-import pytest
-
-from agent_toolkit._hooks.pretooluse.large_reads import check_large_bash_read
+from agent_toolkit._hooks.pretooluse.codex_read_capture import standard_read
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
-def _codex_read(command: str, cwd: pathlib.Path) -> str | None:
-    return check_large_bash_read(command, str(cwd), is_codex=True)
+def test_agent_toolkit_markdown_fits_full_read_threshold() -> None:
+    """全文取得を求める規範Markdownを、通常のnative全量配送が識別できる。
 
-
-def test_agent_toolkit_markdown_fits_full_read_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
-    """全文取得を求める規範Markdownは、Codexが遮断されずに1回の全文取得で読める容量に収める。
-
-    閾値を超える文書は読むたびに遮断と分割取得を要するため、`references/`への分割で閾値以下へ戻す。
+    実容量は実行時のモデル文脈と同時配送の合計で判定する。
     対象はagent-toolkitの`skills`・`share`・`rules`とagent-basicsの`skills`である。
     全文取得を求める規範の配布元を新しく加える場合は、この対象も見直す。
     """
-    monkeypatch.delenv("AGENT_TOOLKIT_LARGE_READ_BYTES", raising=False)
     roots = [_REPO_ROOT / "agent-toolkit" / name for name in ("skills", "share", "rules")]
     roots.append(_REPO_ROOT / "agent-basics" / "skills")
     paths = [path for root in roots for path in sorted(root.rglob("*.md"))]
     assert paths
     oversized = [
-        f"{path.relative_to(_REPO_ROOT)}: {path.stat().st_size}バイト"
-        for path in paths
-        if _codex_read(f"cat {path}", _REPO_ROOT) is not None
+        f"{path.relative_to(_REPO_ROOT)}: {path.stat().st_size}バイト" for path in paths if not standard_read(f"cat -- {path}")
     ]
-    assert not oversized, f"Codexの全文取得の閾値を超える: {oversized}"
+    assert not oversized, f"Codexの全文配送で識別できない: {oversized}"

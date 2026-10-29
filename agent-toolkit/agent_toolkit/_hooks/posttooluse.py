@@ -64,6 +64,7 @@ lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks.pretooluse import codex_read_capture
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
 lazy from agent_toolkit._hooks.pretooluse import read_delivery as _read_delivery
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import _PLAN_MODE_SKILL_NAMES
@@ -635,7 +636,13 @@ def main(payload_text: str) -> int:
     if parsed is not None:
         payload, session_id, tool_name, tool_input, cwd, event_name = parsed
         set_warning_session_id(session_id)
-        notices = _observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name)
+        delivery = codex_read_capture.collect(payload, tool_input)
+        if delivery is not None:
+            notices.append(delivery.context)
+            if delivery.tool_input is not None:
+                tool_input = delivery.tool_input
+                payload = {**payload, "tool_input": tool_input, "tool_response": delivery.response}
+        notices.extend(_observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name))
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
             notices.append(self_check_notice)
     try:
