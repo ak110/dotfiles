@@ -1,6 +1,6 @@
 interface:
   display_name: "add-awi-by-user"
-  short_description: "要件の裏付けと対話による確定を経てAWIを登録する"
+  short_description: "AWIを登録する。carefully <要求>で本文起草前に方針を確認する"
 
 policy:
   allow_implicit_invocation: false

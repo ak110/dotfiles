@@ -497,12 +497,18 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 | `atk wi add` | 依頼内容が既に固まっており、本文をそのまま登録したい |
 | `atk wi add --batch` | 別環境の`atk wi show --all`の出力を複数件まとめて移行・復元したい |
 | `/agent-toolkit:add-awi-by-user` | 依頼内容を対話で確定してから登録したい |
+| `/agent-toolkit:add-awi-by-user carefully <要求>` | 考慮漏れを洗い出したい要求を、本文を書く前に方針から確認したい |
 | `atk serve`の新規追加 | 画面から登録したい。種別「一括登録（show形式）」で移行・復元もできる |
 
 通常の登録は、本文を書いたファイルを渡して`atk wi add --body-file <本文ファイル>`を実行する。
 `atk wi add --cooldown-until '2026-10-11T12:00:00+09:00' --body-file <本文ファイル>`のように、指定時刻まで処理を始めないAWIも登録できる。
 登録済みのAWIを直したい場合は、`atk wi hold <ファイル名>`で自動処理から外し、本文を直してから`atk wi unhold <ファイル名>`で戻す。
 処理中の項目は保留せず、変更内容を新しいAWIとして登録する。
+
+`carefully`を付けると、エージェントは本文を書く前に方針の承認を求める。
+考慮漏れを指摘するたびに原因を分析し、ほかの方針にも同じ理由の見落としがないか確認する。
+その結果を方針へ反映して再確認し、再発防止策も別AWIとして登録する。
+通常の起動では、要件の確定後に登録する。
 
 ### UWIへの回答と状態確認
 
@@ -596,6 +602,7 @@ Codexでフックを信頼する操作は[Codex利用ガイド](codex-guide.md#�
 ユーザーが手動で起動する主なスキルは次のとおりである（Claude Codeでは`/`、Codexでは`$`を付けて起動する）。
 
 - `agent-toolkit:add-awi-by-user`: 要件を対話で確定し、AWIまたはUWIを登録する
+  - 考慮漏れを洗い出したい要求では、先頭に`carefully`を付けて起動する（Claude Codeでは`/agent-toolkit:add-awi-by-user carefully <要求>`）。本文を書く前に方針を確認し、考慮漏れの指摘ごとに原因分析して再確認する。通常の起動では要件の確定後に登録する
 - `agent-toolkit:process-wi`: 対象リポジトリのAWIをレーンへ分けて計画・実装・レビュー・公開する
 - `agent-toolkit:single-lane-process`: AWIをレーンへ分けずに1回の起動でまとめて処理する
 - `agent-toolkit:process-wi-all-repos`: `process_loop_repositories`の登録全体を1回処理する
