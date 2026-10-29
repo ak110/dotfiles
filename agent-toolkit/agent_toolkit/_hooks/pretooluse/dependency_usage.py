@@ -103,8 +103,10 @@ def _loaded_specifiers(suffix: str, text: str):
         yield from _markup_specifiers(text)
     elif suffix == ".css":
         yield from _matched(text, _mask_css(text), _CSS_IMPORTS)
-    else:
+    elif suffix in _SCRIPT_SUFFIXES:
         yield from _matched(text, _mask_script(text), _SCRIPT_IMPORTS)
+    # 規則を持たない言語（Rust、C#、シェル、PowerShell、バッチ）は、どの記述も読込として数えない。
+    # 別の言語の規則を当てるとコメントや文字列の書式の違いで誤検出するため、拡張子ごとに明示した規則だけを当てる。
 
 
 def _matched(text: str, masked: str, patterns: tuple[re.Pattern[str], ...]):

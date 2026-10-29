@@ -14,7 +14,7 @@ from agent_toolkit._common.plugin_roots import PluginRootError
 from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger, parse_tables
 from agent_toolkit._hooks import document_reads, rules_context
 from agent_toolkit._hooks import notice as notice_module
-from agent_toolkit._hooks.pretooluse import read_delivery
+from agent_toolkit._hooks.pretooluse import dependency_usage, read_delivery
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.read_delivery import (
     _declaration_recovery_operation,
@@ -509,6 +509,47 @@ def test_public_hook_dependency_ignores_loading_syntax_inside_comments_and_strin
         {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / filename), "content": content}, "test"
     )
     assert (str(reference) in (_guidance(decision) or "")) is expected
+
+
+_FOREIGN_LOADING_IN_COMMENTS = {
+    ".py": "# import playwright\n# require('playwright')\n",
+    ".js": "// require('playwright')\n/* import 'playwright'; */\n",
+    ".css": '/* @import "playwright"; */\n',
+    ".html": '<!-- <script src="https://cdn.jsdelivr.net/npm/playwright/x.js"></script> -->\n',
+}
+_FOREIGN_LOADING_LINES = (
+    "# require('playwright')\n"
+    "// import 'playwright'\n"
+    "import playwright\n"
+    '@import "playwright";\n'
+    '<script src="https://cdn.jsdelivr.net/npm/playwright/x.js"></script>\n'
+)
+
+
+@pytest.mark.parametrize("suffix", sorted(dependency_usage.CODE_SUFFIXES))
+@pytest.mark.usefixtures("memory")
+def test_public_hook_dependency_applies_only_the_language_rules_of_each_suffix(tmp_path, monkeypatch, suffix):
+    """拡張子ごとの言語の規則だけを当て、コメントや別の言語の書式だけでは案内と資料選択を成立させない。
+
+    JavaScript・Python・CSS・マークアップはその言語のコメント内の読込記述を数えない。
+    読込の規則を持たない言語（シェル、PowerShell、Rust、C#、バッチ）は、どの言語の書式の行も数えない。
+    """
+    family = {".jsx": ".js", ".mjs": ".js", ".cjs": ".js", ".ts": ".js", ".tsx": ".js", ".mts": ".js", ".cts": ".js"}
+    family |= {".htm": ".html", ".svelte": ".html"}
+    content = _FOREIGN_LOADING_IN_COMMENTS.get(family.get(suffix) or suffix, _FOREIGN_LOADING_LINES)
+    reference = tmp_path / "playwright.md"
+    reference.write_text("# 技術資料\n", encoding="utf-8")
+    author = tmp_path / "skills/writing-standards/SKILL.md"
+    author.parent.mkdir(parents=True)
+    author.write_text("# 作成側\n", encoding="utf-8")
+    review = ReadTrigger(
+        tmp_path / "skills/review-standards/SKILL.md", 1, "判断", ("tool:Write",), (), selector="artifact-standards"
+    )
+    declared = ReadTrigger(author, 1, "操作", ("dependency:playwright",), (reference,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [review, declared])
+    monkeypatch.setattr(read_delivery.read_triggers, "resolve_document", lambda *_args, **_kwargs: author)
+    tool_input = {"file_path": str(tmp_path / f"example{suffix}"), "content": content}
+    assert str(reference) not in (_guidance(read_delivery.deliver({"cwd": str(tmp_path)}, "Write", tool_input, "test")) or "")
 
 
 @pytest.mark.parametrize("tool", ["Edit", "Bash"])
