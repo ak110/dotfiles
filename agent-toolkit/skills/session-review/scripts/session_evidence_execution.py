@@ -21,7 +21,6 @@ _SYNTAX_WORDS = frozenset(
     {"{", "}", "(", ")", "!", "do", "then", "else", "elif", "if", "while", "until", "done", "fi", "esac", "time"}
 )
 """単純コマンドの先頭で実行コマンドの位置を占めない構文語。"""
-_COMMAND_SEPARATORS = frozenset({"&&", "||", ";", ";;", ";&", ";;&", "|", "|&", "&"})
 
 
 class SimpleCommand(NamedTuple):
@@ -353,7 +352,7 @@ def shell_simple_commands(command: str) -> list[SimpleCommand]:
     """シェル文字列を、置換の本体と複合コマンドの本体まで含めた単純コマンドへ分ける。
 
     置換の本体は外側のコマンドより先に実行されるため先に並べる。外側では置換を`SUBSTITUTION_MARK`の語へ置き換え、
-    `&&`・`||`・`;`・`|`などの区切りと先頭の構文語で区切る。構文を解析できない区間は`parsed`が偽の要素で返す。
+    引用外の`&&`・`||`・`;`・`|`などの区切りで区間へ分け、先頭の構文語を除く。構文を解析できない区間は`parsed`が偽の要素で返す。
     `shell_segments`の公開挙動は変えずに、その区間と生のトークンだけを使う。
     """
     masked = mask_substitutions(heredocs.mask_heredoc_bodies(command))
@@ -367,13 +366,9 @@ def shell_simple_commands(command: str) -> list[SimpleCommand]:
             if not segment.resolved:
                 result.append(SimpleCommand((), text, False))
             continue
-        current: list[str] = []
-        for token in (*tokens, ";"):
-            if token not in _COMMAND_SEPARATORS:
-                current.append(token)
-                continue
-            words = _strip_syntax_words(current)
-            if words:
-                result.append(SimpleCommand(tuple(words), text, True))
-            current = []
+        # 区間は引用外の区切りで分割済みである。引数の`';'`のような引用された区切り文字は語として残るため、
+        # トークンで再分割せずに区間全体を1件の単純コマンドとして扱う。
+        words = _strip_syntax_words(list(tokens))
+        if words:
+            result.append(SimpleCommand(tuple(words), text, True))
     return result
