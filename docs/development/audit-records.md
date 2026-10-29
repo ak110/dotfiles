@@ -1070,6 +1070,27 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 
 再検証は同じコマンドで後続版のリリースノートからMCPの説明とinstructionsの上限の変更項目を探し、公式MCPガイドの「For MCP server authors」と比べる。値が変わった場合は同書の「ホスト固有の条件」、`tool_descriptions.py`の`START_DESCRIPTION`直前のコメントと前記のテストを改める。
 
+## agent-basics/skills/writing-standards/references/mcp-server-design.md：典拠：2026年10月29日
+
+2026年10月29日、公式マーケットプレイス`anthropics/claude-plugins-official`の複製`~/.claude/plugins/marketplaces/claude-plugins-official/`から`mcp-server-dev`の資料を読んだ。
+複製の版は、同ディレクトリの`.gcs-sha`が`f8c5e7a1dcb71b10cb74586224b5401f3de5db28`、`~/.claude/plugins/known_marketplaces.json`の`lastUpdated`が`2026-10-29T07:27:00.345Z`である。
+`build-mcp-server/references/tool-design.md`の「Tool annotations」は、`readOnlyHint`・`destructiveHint`・`idempotentHint`・`openWorldHint`の意味とホストの扱いを表で示す。
+同節は、全読取ツールへ`readOnlyHint: true`を付けるよう勧める。
+同書冒頭の「Anthropic Directory hard requirements」は、Directoryへ提出するサーバーの合否条件として、全ツールの`readOnlyHint`・`destructiveHint`・`title`、読み書きのツール分割、説明文での行動指示の禁止などを挙げる。
+`server-capabilities.md`は`instructions`、sampling、roots、logging、progress、cancellation、completionを扱う。
+
+再検証は同じ複製かGitHubの同じパスから各資料を取得し、注釈の推奨とDirectoryの条件を同書の「ツール注釈」と典拠表の注記と比べる。推奨が変わった場合は同書を改める。
+
+## agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月29日
+
+2026年10月29日、Claude Code 2.1.312の本体（`~/.local/share/claude/versions/2.1.312`）を`rg -a -o`で検索した。
+MCPツールの呼び出しで`mayHaveRun`を持つ接続断の例外が起きた場合、本体は実行前の失敗か、ツールの`readOnlyHint===!0`のときに再試行する分岐を持つ。
+別の再試行経路は、実行前の失敗、`isConcurrencySafe`、`annotations?.idempotentHint===!0`のいずれかで再試行する。
+MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すため、`readOnlyHint: true`のツールは並行呼び出しの対象にもなる。
+権限の自動許可への注釈の作用は確認していない。
+
+再検証は後続版の本体を`dotfiles-development`「ホスト本体のバイナリの検索」の手順で`mayHaveRun`と`isConcurrencySafe(){return`を検索し、再試行と並行実行の条件を比べる。条件が変わった場合は同書の「ホスト固有の条件」を改める。
+
 ## agent-basics/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
 
 本表は2026年9月5日に実際に動かして確かめた結果である。次の1文を地の文、引用ブロック、フェンス付きコードブロックへ置いた3つのサンプルファイルを作成し、pyfltr 3.17.8の`textlint`・`colloquial-check`にかけた。

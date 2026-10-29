@@ -18,6 +18,7 @@ MCP仕様が求める要件は、遵守すべき硬い制約として扱う。MC
 
 本書は、2026年10月2日時点で取得した以下の公式一次資料に基づいている。MCP仕様としてはバージョン`2025-11-25`を対象としている。実際に利用するSDKが対応している仕様バージョンは、実装前に確認する。
 監査記録と再検証手順は、`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：典拠：2026年10月2日」を参照する。
+公式プラグイン`mcp-server-dev`の資料は2026年10月29日に取得した。取得した版と再検証手順は同書の「agent-basics/skills/writing-standards/references/mcp-server-design.md：典拠：2026年10月29日」を参照する。
 
 | 区分 | 資料 | 本書で参照している主なセクション |
 | --- | --- | --- |
@@ -27,8 +28,15 @@ MCP仕様が求める要件は、遵守すべき硬い制約として扱う。MC
 | 仕様 | [MCP Transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) | stdio、Streamable HTTPのSecurity Warning |
 | 開発元の推奨 | [MCP Security Best Practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices) | Attacks and Mitigations |
 | 開発元の推奨 | [Anthropic: Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents) | Running an evaluation、Choosing the right tools for agents、Namespacing your tools、Returning meaningful context from your tools、Optimizing tool responses for token efficiency、Prompt-engineering your tool descriptions |
+| 開発元の推奨 | `mcp-server-dev`の[build-mcp-server/references/tool-design.md](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/mcp-server-dev/skills/build-mcp-server/references/tool-design.md) | Descriptions、Tool annotations、Structured output |
+| 開発元の推奨 | `mcp-server-dev`の[build-mcp-server/references/server-capabilities.md](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/mcp-server-dev/skills/build-mcp-server/references/server-capabilities.md) | 進捗通知、中断、elicitation、samplingなどを使う設計をする時に読む（本書には条文を置かない） |
+| 開発元の推奨 | `mcp-server-dev`の[build-mcp-server/references/auth.md](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/mcp-server-dev/skills/build-mcp-server/references/auth.md)、[build-mcp-server/references/remote-http-scaffold.md](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/mcp-server-dev/skills/build-mcp-server/references/remote-http-scaffold.md) | リモートHTTPサーバーを作る時に読む |
+| 開発元の推奨 | `mcp-server-dev`の`build-mcpb`、`build-mcp-app`の各スキルと、[build-mcp-server/references/deploy-cloudflare-workers.md](https://github.com/anthropics/claude-plugins-official/blob/main/plugins/mcp-server-dev/skills/build-mcp-server/references/deploy-cloudflare-workers.md) | MCPB（実行環境を同梱した配布形式）、MCP Apps（チャット画面内に表示するUI）、Cloudflare Workersへの配備を採用するサーバーを作る時に読む（本書には条文を置かない） |
 | ホスト固有 | [Anthropic: Introducing advanced tool use](https://www.anthropic.com/engineering/advanced-tool-use) | Tool Search Tool、Programmatic Tool Calling、Tool Use Examples、Best practices（Claude Developer PlatformのBeta機能） |
 | ホスト固有 | [Claude Code: Connect Claude Code to tools via MCP](https://code.claude.com/docs/en/mcp) | MCP output limits and warnings、Scale with MCP tool search、For MCP server authors |
+
+`mcp-server-dev`は公式マーケットプレイス（`anthropics/claude-plugins-official`）のプラグインである。プラグインを有効化しなくても、Claude Codeが複製したマーケットプレイスの`~/.claude/plugins/marketplaces/claude-plugins-official/plugins/mcp-server-dev/skills/`配下か、[GitHubの同じ配下](https://github.com/anthropics/claude-plugins-official/tree/main/plugins/mcp-server-dev/skills)から読める。
+前掲のツール設計資料（`build-mcp-server`）の冒頭にある「Anthropic Directory hard requirements」は、Anthropic Directoryへ提出するサーバーだけの審査条件である。読み書きのツール分割の必須化や説明文での行動指示の禁止などを含むが、本書の推奨には含めない。
 
 ## 仕様が要求する契約
 
@@ -51,6 +59,14 @@ MCP仕様が求める要件は、遵守すべき硬い制約として扱う。MC
 
 関連する一連の操作や、連続して頻繁に呼び出される処理は、目的が明確な少数のツールへまとめる。その目的は、用途の区別や入力パラメーターの分かりやすさを維持しつつ適切に集約することであり、必要なアクセス権限や副作用の境界もツールの境界と一致させる。
 列挙値の引数（`action`や`mode`など）を使って複数の操作を1つのツールにまとめる場合は、取り得る値をenumとしてスキーマに定義し、操作ごとに必須となる引数や禁止される引数の条件を、説明文と実行時の入力バリデーションの双方に明記する。操作ごとに必須引数や副作用の性質が大きく異なる場合は、無理にまとめずに別のツールとして分割する。
+
+### ツール注釈
+
+`ToolAnnotations`でツールの副作用をホストへ伝え、全ツールへ表示名`title`を付ける。ホストは注釈を自動承認、確認表示、再試行の判断に使う。
+
+- 環境を変更しないツールに`readOnlyHint: true`を付ける。
+- 読み取り専用でないツールのうち、追加だけを行うもの（新規作成、追送など）には`destructiveHint: false`を付け、削除・上書き・中断を伴うものには`destructiveHint: true`を付ける。MCP仕様では、読み取り専用でないツールで`destructiveHint`を省略すると`true`として扱う。
+- 同じ引数で繰り返し呼んでも2回目以降が環境へ追加の効果を与えない、読み取り専用でないツールには`idempotentHint: true`を付ける。
 
 ### 発見と説明
 
@@ -87,4 +103,5 @@ MCP仕様が求める要件は、遵守すべき硬い制約として扱う。MC
 
 - Claude Codeは、初期起動時に送信される各ツールの説明文および各サーバーのinstructionsを、デフォルト状態で4,096文字に切り詰める。ツール検索によって後からオンデマンドで読み込まれる説明文の上限は16,384文字である。初期読み込み時と検索後の読み込み時のどちらであっても説明が欠落しないよう、すべての説明文を初期送信の上限（4,096文字）以内に収めることが望ましい。2026年10月2日時点の公式資料では、この上限を環境変数`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で変更可能とされているが、新バージョンにおける変数名は未確認である。なお、引数の説明文にも同様の文字数制限が適用されるかどうかは、参照したリリースノートに記載がなく未確定である。バージョンと典拠の記録は、`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日」を参照する。
 - ツール検索機能が有効になっている場合、セッション開始時に読み込まれる情報はツール名とserver instructionsのみとなる。そのためinstructionsには、扱う対象のタスク種別、どのような場面でツールを検索すべきか、および提供する主な機能を明記しておく。
+- Claude Codeは、`readOnlyHint: true`のツールと`idempotentHint: true`のツールを、接続断などでツールが実行済みの可能性がある失敗の後にも再試行する。`readOnlyHint: true`のツールは並行して呼び出す場合もある。観測した版と再検証手順は、`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月29日」を参照する。
 - MCPツールの出力データが10,000トークンを超えると警告が表示され、デフォルト設定では最大25,000トークンに制限される（環境変数`MAX_MCP_OUTPUT_TOKENS`で変更可能）。仕様上どうしても大きなデータを返却する必要があるツールについては、`tools/list`の`_meta["anthropic/maxResultSizeChars"]`メタデータを設定することで上限を引き上げることができる（画像データを返すツールには適用されない）。
