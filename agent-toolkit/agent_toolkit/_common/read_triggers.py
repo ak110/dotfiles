@@ -731,7 +731,10 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
         for target in targets:
             path = target.path
             if not path.is_file():
-                raise ValueError(f"{source}:{number}: 参照先が存在しない: {path}")
+                raise ValueError(
+                    f"{source}:{number}: 参照先が存在しない: {path}。"
+                    "所属スキルを`agent-toolkit:<スキル>`の`references/...`の形で明記してください。"
+                )
             if path.name.startswith("rules-") or path.parent.name == "rules":
                 continue
             method_route = (

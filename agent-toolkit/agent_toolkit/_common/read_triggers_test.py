@@ -351,8 +351,10 @@ def test_body_reference_rejects_moved_and_cross_plugin_unique_targets(tmp_path, 
     destination = toolkit / "skills/moved/references/rule.md"
     destination.parent.mkdir(parents=True)
     destination.write_text("# 基準\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="参照先が存在しない"):
+    with pytest.raises(ValueError, match="参照先が存在しない") as caught:
         read_triggers.validate_reference_routes(source, toolkit, [])
+    assert str(source) in str(caught.value)
+    assert "`agent-toolkit:<スキル>`の`references/...`" in str(caught.value)
 
 
 def test_startup_delivery_is_part_of_role_reception(tmp_path):
