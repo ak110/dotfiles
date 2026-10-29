@@ -227,3 +227,46 @@ def test_public_provenance_keeps_initial_delivery_role(
     events = support.read_jsonl(capsys, raw=True)
     role = next(event for event in events if event["kind"] == "record-provenance")
     assert role["role_document"] == initial_role
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        # agents_serverが起動前に拒否した応答。2026年10月29日の記録の形を使う。
+        ({"content": [{"type": "text", "text": "Error executing tool start: 委譲先は起動していない"}], "isError": True}, 0),
+        ({"content": [{"type": "text", "text": "応答"}]}, 1),
+    ],
+)
+def test_public_rejected_start_is_not_unresolved_delegation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    result: dict,
+    expected: int,
+) -> None:
+    """拒否された起動は委譲先が無いため未解決に数えず、識別子を欠く成功応答は未解決として残す。"""
+    parent = support.tool_call_session(tmp_path, monkeypatch, "needle")
+    codex = next((tmp_path / "codex").rglob("*.jsonl"))
+    entries = [json.loads(line) for line in codex.read_text(encoding="utf-8").splitlines()]
+    entries.append(
+        {
+            "type": "event_msg",
+            "timestamp": "2026-10-06T00:00:12Z",
+            "payload": {
+                "type": "item_completed",
+                "item": {
+                    "type": "McpToolCall",
+                    "id": "rejected-start",
+                    "server": "agents_server",
+                    "tool": "start",
+                    "arguments": {"cwd": "/repo", "subagent_md_path": "reader-fit-review"},
+                    "status": "failed" if result.get("isError") else "completed",
+                    "result": result,
+                },
+            },
+        }
+    )
+    support.write_jsonl(codex, entries)
+    assert evidence.main([str(parent)]) == 0
+    events = support.read_jsonl(capsys, raw=True)
+    assert sum(event["kind"] == "unresolved-delegation" for event in events) == expected

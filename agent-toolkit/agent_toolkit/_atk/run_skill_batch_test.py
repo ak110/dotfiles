@@ -306,3 +306,72 @@ def test_orphan_executor_prevents_new_model_before_pid_publish() -> None:
         finally:
             child.terminate()
             child.wait(timeout=10)
+
+
+def _fail_prepare_for(monkeypatch, names: set[str]) -> list[str]:
+    """指定した対象の準備だけを、実記録で観測した未確認範囲の失敗と同じ形で失敗させる。"""
+    original = run_skill_batch._prepare  # pylint: disable=protected-access
+    calls: list[str] = []
+
+    def prepare(target):
+        calls.append(target["session_id"])
+        if target["session_id"] in names:
+            raise ValueError(f"prepareに未確認範囲がある: {target['session_id']}")
+        return original(target)
+
+    monkeypatch.setattr(run_skill_batch, "_prepare", prepare)
+    return calls
+
+
+def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monkeypatch, capsys) -> None:
+    """1対象の準備失敗でも残りの対象でモデルを起動し、失敗対象だけを問い付きの失敗報告とともに待ちへ残す。"""
+    notes = _notes()
+    _target(tmp_path, "one")
+    _target(tmp_path, "bad")
+    _fail_prepare_for(monkeypatch, {"bad"})
+    calls = []
+
+    def execute(args):
+        manifest = session_review.read(pathlib.Path(args.batch_manifest))
+        calls.append([target["session_id"] for target in manifest["targets"]])
+        monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", args.run_id)
+        monkeypatch.setenv(session_review.BATCH_ENV, args.batch_manifest)
+        add.add_entries(
+            notes,
+            messages=["---\nrun_skill_report: true\n---\n# 振り返り結果\n\n1件を確認した。"],
+            target_repo=args.target_repo,
+            source="run-skill",
+            now=datetime.datetime.now(datetime.UTC),
+            entry_type="uwi",
+            scope=session_review.BATCH_SKILL,
+            question_type="post-approval",
+        )
+        assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
+        return 0
+
+    assert run_skill_batch.dispatch(_args(), execute) == 1
+    assert calls == [["one"]]
+    assert [target["session_id"] for target in session_review.pending()] == ["bad"]
+    failures = [
+        path for path in layout.iter_entry_paths(notes) if "session_review_failure_key:" in path.read_text(encoding="utf-8")
+    ]
+    assert len(failures) == 1
+    text = failures[0].read_text(encoding="utf-8")
+    assert "対象: bad\n" in text and "この扱いで問題ないか？" in text
+    # 投入時の問いの品質警告は、失敗報告に対しては出ない。
+    warnings = [line for line in capsys.readouterr().err.splitlines() if "問い（疑問文）が無い" in line]
+    assert all(failures[0].name not in line for line in warnings)
+
+
+def test_manual_prepare_failure_does_not_retry_same_target(tmp_path, monkeypatch) -> None:
+    """失敗中の対象も選ぶ手動実行で、同じ呼び出しの中では準備の失敗を繰り返さない。"""
+    _notes()
+    _target(tmp_path, "bad")
+    calls = _fail_prepare_for(monkeypatch, {"bad"})
+
+    def unexpected(args):
+        raise AssertionError("準備できた対象が無いためモデルは起動しない")
+
+    assert run_skill_batch.dispatch(_args("manual"), unexpected) == 1
+    assert calls == ["bad"]
+    assert session_review.pending()

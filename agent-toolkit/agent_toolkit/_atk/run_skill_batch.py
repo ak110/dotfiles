@@ -146,9 +146,12 @@ def _blocked(target: dict[str, Any]) -> bool:
     )
 
 
-def _targets(*, manual: bool) -> list[dict[str, Any]]:
+def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
     selected = []
     for target in session_review.pending():
+        # 同じ呼び出しで準備に失敗した対象は、manualでも再選定せず同じ失敗の反復を避ける。
+        if target["key"] in attempted:
+            continue
         if not manual and (_blocked(target) or target.get("failure_unreported")):
             continue
         activity = session_activity.review_activity({target["session_id"]})
@@ -257,8 +260,13 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
             "---\nsession_review_failure_key: "
             + json.dumps(failure_key)
             + "\n---\n# 非同期振り返りの失敗\n\n"
-            + reason
-            + f"\n\n実行記録: {path}\n対象: "
+            + "下記の対象セッションの振り返りを完了できなかったため、"
+            + "この報告に回答が保存されるまで対象の自動振り返りを止めている。"
+            + "この扱いで問題ないか？\n\n"
+            + "回答を保存すると、次のセッション開始・終了時に対象の振り返りを再試行する。"
+            + "原因の調査や修正を求める場合は「問題がある」を選び、回答欄に求める対応を書く。\n\n"
+            + f"失敗理由: {reason}\n"
+            + f"実行記録: {path}\n対象: "
             + ", ".join(item["session_id"] for item in manifest["targets"])
             + "\n"
         )
@@ -379,7 +387,10 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             _failure(old, path, old.get("error", "interrupted: 実行プロセスが終了し成功を確認できない"))
             session_review.launch_result(manifest=path)
             return 1
-    while targets := _targets(manual=manual):
+    attempted: set[str] = set()
+    prepare_failed = False
+    while targets := _targets(manual=manual, attempted=attempted):
+        attempted.update(target["key"] for target in targets)
         target_repo, cwd = _report_target(targets)
         run_id = uuid.uuid4().hex
         path = runs / f"{run_id}.json"
@@ -394,13 +405,33 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         session_review.write(path, manifest)
         session_review.launch_result(manifest=path)
         try:
+            failed: list[tuple[dict[str, Any], str]] = []
             for target in targets:
-                prepared = _prepare(target)
+                try:
+                    prepared = _prepare(target)
+                except ValueError as error:
+                    # 1対象の準備失敗で残りの対象と、回答済みの過去UWIを取り込むモデル起動を止めない。
+                    failed.append((target, str(error)))
+                    continue
                 # scopeは行位置とdigestだけなので、未確定manifestと同じ寿命で保つ。
                 scope_path = runs / f"{run_id}-{target['key']}.scope"
                 session_review.write(scope_path, session_review.read(pathlib.Path(prepared["scope_path"])))
                 prepared["scope_path"] = str(scope_path)
                 manifest["prepared"].append(prepared)
+                session_review.write(path, manifest)
+            if failed:
+                prepare_failed = True
+                _prepare_failure(runs, target_repo, failed)
+                failed_keys = {target["key"] for target, _ in failed}
+                manifest["targets"] = [target for target in targets if target["key"] not in failed_keys]
+                if not manifest["targets"]:
+                    # 失敗は失敗記録へ移したため、対象の残らない実行は解決済みとする。
+                    manifest["status"] = "resolved"
+                    session_review.write(path, manifest)
+                    continue
+                # 報告先は実際にモデルへ渡す対象から決め直す。
+                target_repo, cwd = _report_target(manifest["targets"])
+                manifest["target_repo"] = target_repo
                 session_review.write(path, manifest)
             run_args = argparse.Namespace(**vars(args))
             run_args.target_repo, run_args.work_dir = target_repo, str(cwd)
@@ -429,4 +460,20 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             _failure(manifest, path, f"prepare-or-state: {error}")
             return 1
     session_review.launch_result()
-    return 0
+    return 1 if prepare_failed else 0
+
+
+def _prepare_failure(runs: pathlib.Path, target_repo: str, failed: list[tuple[dict[str, Any], str]]) -> None:
+    """準備に失敗した対象群だけを独立した失敗記録へ移し、既存の失敗報告と抑止へ渡す。"""
+    run_id = uuid.uuid4().hex
+    path = runs / f"{run_id}.json"
+    manifest: dict[str, Any] = {
+        "run_id": run_id,
+        "manifest_path": str(path),
+        "status": "running",
+        "targets": [target for target, _ in failed],
+        "target_repo": target_repo,
+        "prepared": [],
+    }
+    session_review.write(path, manifest)
+    _failure(manifest, path, "prepare-or-state: " + "; ".join(reason for _, reason in failed))
