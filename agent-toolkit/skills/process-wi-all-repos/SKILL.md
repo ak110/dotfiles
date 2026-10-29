@@ -47,7 +47,7 @@ WorktreeCreate/WorktreeRemoveは対象設定を読む既存atk操作で実行し
 `model_type`は`orchestrate`とし、目的は対象の[process-wi](../process-wi/SKILL.md)の完遂とする。
 候補・readiness・所有・準備先・前回情報を対象ごとに渡し、担当は統括へ結果を返す。
 それ以外の対象は統括自身が[single-lane-process](../single-lane-process/SKILL.md)と同じ契約で処理する。
-対象worktreeごとに計画・独立した実行レビュー・公開を分ける。
+対象worktreeごとに計画・実行レビュー・公開を分ける。
 対象別の開始時CI点検、監査、UWI、公開とCI検収を実施する。
 
 ## 結果と終了
