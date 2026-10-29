@@ -1,4 +1,4 @@
-"""CodexのBashによる大量の全文取得を、行範囲を分割した標準読取へ誘導する。
+"""Post自動配送の対象外にある大量読取を、行範囲の分割取得へ誘導する。
 
 Codexでは出力予算を超えた取得が本文の省略を招くため、容量と行範囲の分割取得の手段を警告する。
 Claude Codeはホストが上限超過を`PARTIAL view`または退避ファイルとして返し、残りを続けて取得できるため対象外とする。
@@ -23,7 +23,7 @@ lazy from collections.abc import Iterator, Sequence
 from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._common import host_homes, shell_cwd
 lazy from agent_toolkit._common.uv_arguments import is_python_token
-lazy from agent_toolkit._hooks import plugin_resources
+lazy from agent_toolkit._hooks import codex_read_delivery, plugin_resources
 
 # Codexの配布設定の出力上限`tool_output_token_limit = 20000`（トークン）と、
 # agent-toolkitのMarkdownで測った1トークンあたりバイト数の最小値3.10の積は約62,000バイトである。
@@ -496,6 +496,8 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
 def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> str | None:
     """Codexの単純なBash全文取得で、通知の閾値を超える容量を警告する。"""
     if not is_codex:
+        return None
+    if codex_read_delivery.can_deliver(command, cwd):
         return None
     byte_threshold = _byte_threshold()
     for paths in bash_read_paths(command, cwd):

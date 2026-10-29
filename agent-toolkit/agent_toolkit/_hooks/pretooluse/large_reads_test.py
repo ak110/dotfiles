@@ -1,4 +1,4 @@
-"""大量の全文読取をPreToolUseで警告する条件を検証する。
+"""自動配送の適用外で、大量の全文読取をPreToolUseが警告する条件を検証する。
 
 警告はCodexのBash実行だけへ適用し、Claude Codeの`Read`と`Bash`は補正も警告もしない。
 """
@@ -22,10 +22,11 @@ _THRESHOLD = 48 * 1024
 
 @pytest.fixture(autouse=True)
 def _existing_work_contract(tmp_path, monkeypatch):
-    """読取固有の通知を、作業契約を作成済みの状態で検証する。"""
+    """既存の手動フォールバックを検証し、自動配送の公開経路は別試験で扱う。"""
     path = tmp_path / "work-contract.md"
     path.write_text("目的: 読取通知の検証\n", encoding="utf-8")
     monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
+    monkeypatch.setattr(large_reads.codex_read_delivery, "can_deliver", lambda *_args: False)
 
 
 @pytest.mark.parametrize(

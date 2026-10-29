@@ -55,6 +55,7 @@ lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_e
 lazy from agent_toolkit._common.task_stop_state import consume_completion, target_ids
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
+lazy from agent_toolkit._hooks import codex_read_delivery as _codex_read_delivery
 lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
@@ -480,6 +481,8 @@ def _observe_document_reads(payload: dict, session_id: str, tool_name: str, tool
         return
     agent = resolve_hook_agent_id(payload)
     if is_codex_payload(payload) or is_antigravity_payload(payload):
+        if is_codex_payload(payload) and _codex_read_delivery.response_is_truncated(payload.get("tool_response")):
+            return
         command = tool_input.get("command")
         if tool_name in ATK_SHELL_TOOLS and isinstance(command, str):
             text = _document_reads.response_text(payload.get("tool_response"))
@@ -635,7 +638,20 @@ def main(payload_text: str) -> int:
     if parsed is not None:
         payload, session_id, tool_name, tool_input, cwd, event_name = parsed
         set_warning_session_id(session_id)
-        notices = _observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name)
+        delivery = _codex_read_delivery.collect(payload)
+        if delivery is not None:
+            notices.append(delivery.context)
+            payload = {**payload, "tool_response": delivery.body or ""}
+        elif (
+            is_codex_payload(payload)
+            and tool_name == "Bash"
+            and isinstance(payload.get("tool_response"), str)
+            and isinstance(tool_input.get("command"), str)
+            and _codex_read_delivery.read_plan(tool_input.get("command", ""))
+        ):
+            # nativeの失敗・不明な終了状態を、旧来の識別行だけで読了にしない。
+            payload = {**payload, "tool_response": ""}
+        notices.extend(_observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name))
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
             notices.append(self_check_notice)
     try:

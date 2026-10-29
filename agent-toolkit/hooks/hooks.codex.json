@@ -39,7 +39,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py posttooluse || exit 1"
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py posttooluse || exit 1",
+            "additionalContextLimit": 0
           }
         ]
       }
