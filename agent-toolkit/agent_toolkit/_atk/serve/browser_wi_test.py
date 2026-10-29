@@ -175,10 +175,6 @@ async def test_clear_cooldown_public_route(browser_harness: _BrowserHarness, mon
     content = "---\ntype: awi\nstate: inbox\ncooldown_until: '2099-01-01T00:00:00+00:00'\nimportant: true\n---\n\n本文\n"
     path.write_text(content, encoding="utf-8")
     await page.goto(browser_harness.base_url + "/")
-    await playwright.async_api.expect(page.locator("#copy-all-button")).to_be_visible()
-    assert await page.locator("#copy-all-button").evaluate(
-        "element => element.parentElement.classList.contains('pane-heading')"
-    )
     response = await page.request.post(
         browser_harness.base_url + "/api/entries/clear-cooldown",
         data={
@@ -502,7 +498,7 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
         await page.set_viewport_size({"width": width, "height": height})
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         assert await page.locator(".entry-copy").first.evaluate("element => element.scrollWidth <= element.clientWidth")
-        assert await page.locator(".entry-columns").is_visible() is columns_visible
+        assert await page.locator(".entry-metadata-label").first.is_visible() is columns_visible
         row = await _open_question(page)
         dialog = page.get_by_role("dialog", name="詳細")
         await playwright.async_api.expect(dialog.locator("#detail-metadata")).to_contain_text("priority")
@@ -2820,7 +2816,7 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
         }""")
         assert metrics["width"] >= metrics["prefixWidth"], metrics
         assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-        columns_visible = await page.locator(".entry-columns").is_visible()
+        columns_visible = await page.locator(".entry-metadata-label").first.is_visible()
         assert columns_visible is (width == 1920 and list_width != 1168)
         if not columns_visible:
             assert metrics["summaryTop"] < metrics["statusTop"]
@@ -3224,6 +3220,31 @@ async def test_work_item_list_failure_names_server_and_operation(screen_harness:
     notice = page.locator("#operation-notice")
     await playwright.async_api.expect(notice).to_contain_text(f"WI / browser-test / {harness.root.parent} / 一覧取得")
     await playwright.async_api.expect(notice).to_contain_text("同じ取得失敗")
+
+
+@pytest.mark.parametrize("width", [320, 1920])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_copy_all_is_summary_column_header(browser_harness: _BrowserHarness, width: int) -> None:
+    """全てコピーは要約ラベルの右側、個別コピーの上に表示される。"""
+    page = browser_harness.page
+    await page.set_viewport_size({"width": width, "height": 900})
+    await page.goto(browser_harness.base_url + "/")
+    button = page.get_by_role("button", name="全てコピー", exact=True)
+    label = page.locator(".summary-column-label")
+    individual = page.locator("#entry-list .entry-copy").first
+    await playwright.async_api.expect(button).to_be_visible()
+    await playwright.async_api.expect(label).to_be_visible()
+    await playwright.async_api.expect(individual).to_be_visible()
+    button_box = await button.bounding_box()
+    label_box = await label.bounding_box()
+    individual_box = await individual.bounding_box()
+    assert button_box is not None and label_box is not None and individual_box is not None
+    assert label_box["x"] + label_box["width"] <= button_box["x"]
+    assert label_box["y"] < button_box["y"] + button_box["height"]
+    assert button_box["y"] < label_box["y"] + label_box["height"]
+    assert button_box["y"] + button_box["height"] <= individual_box["y"]
+    assert abs(button_box["x"] - individual_box["x"]) <= 1
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 @pytest.mark.asyncio(loop_scope="session")

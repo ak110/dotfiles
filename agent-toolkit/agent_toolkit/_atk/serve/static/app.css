@@ -473,7 +473,7 @@ main > .toolbar {
 }
 #screen-wi .entry-columns {
   margin-top: var(--space-3);
-  padding: 0 var(--space-2);
+  padding: 0 0 0 var(--space-2);
   color: var(--color-secondary-text);
   font-size: var(--font-size-secondary);
   font-weight: 700;
@@ -891,6 +891,9 @@ main > .toolbar {
    サイドバーとカードの余白を除いた一覧自身の幅で切り替える。 */
 @container wi-list (max-width: 73rem) {
   #screen-wi .entry-columns {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  #screen-wi .entry-metadata-label {
     display: none;
   }
   #screen-wi .entry-row {
@@ -932,7 +935,7 @@ main > .toolbar {
   #screen-wi .entry-row {
     grid-template-columns: minmax(0, 1fr);
   }
-  #screen-wi .entry-copy {
+  #screen-wi .entry-row .entry-copy {
     grid-column: 1;
     justify-self: end;
   }
