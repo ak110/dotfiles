@@ -453,9 +453,14 @@ PLAN_PLACEHOLDER_WORDS: frozenset[str] = frozenset({"なし", "不要", "該当�
 """検討結果として成立しない結論語。これだけの記載は検討の省略として拒否する。"""
 
 PLUGIN_MANIFEST_PATH: str = "agent-toolkit/.claude-plugin/plugin.json"
-"""`scripts/agent_toolkit_bump.py`が更新するagent-toolkitプラグインmanifestの相対パス。"""
+"""`scripts/agent_toolkit_bump.py`が`--plugin`省略時に更新するagent-toolkitプラグインmanifestの相対パス。"""
 
 MARKETPLACE_MANIFEST_PATH: str = ".claude-plugin/marketplace.json"
-"""`scripts/agent_toolkit_bump.py`が更新するmarketplace manifestの相対パス。"""
+"""`scripts/agent_toolkit_bump.py`が対象プラグインによらず更新するmarketplace manifestの相対パス。"""
 
 BUMP_MANIFEST_PATHS: frozenset[str] = frozenset({PLUGIN_MANIFEST_PATH, MARKETPLACE_MANIFEST_PATH})
+"""`scripts/agent_toolkit_bump.py`が`--plugin`省略時に更新するmanifestの集合。
+
+他のプラグインを指定した場合は、marketplaceエントリの`source`が指す`.claude-plugin/plugin.json`と
+`MARKETPLACE_MANIFEST_PATH`を更新する。
+"""

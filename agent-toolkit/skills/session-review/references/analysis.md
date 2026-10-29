@@ -53,7 +53,13 @@ OpenCodeでは`--opencode-session-id`と任意の`--opencode-db`で元の記録�
 
 ## 定義本文の読込の判定
 
-`definition-body-read`は明示的な読取操作か、静的に読取操作と対象を対応付けた材料である。`definition-read-unresolved`は取得の有無を静的に決められない材料で、`calls`や個別証拠の`definition_reads`に元の記録位置、入力、結果の位置、操作ごとの理由を持つ。両方の候補とも全発生位置を確認する。
+`definition-body-read`は明示的な読取操作か、静的に読取操作と対象を対応付けた材料である。`definition-read-unresolved`は取得の有無を静的に決められない材料で、`calls`や個別証拠の`definition_reads`に元の記録位置、入力、結果の位置、操作ごとの理由を持つ。
+準備は`definition-body-read`の各読取を`launch_check`で判定する。
+同じ記録で読取より後に同じ役割を起動した読取を起動準備の疑いあり（`suspected`）とする。
+後続に同じ役割の起動が無い読取と、読む主体の役割文書と同じ手順書の読取は判定済み（`cleared`）とする。
+起動の判定には`start`の`subagent_md_path`、Codexの外側セルの`start(`呼出しの同じ引数、手順書のファイル名を入力に含む`Agent`などの起動を使う。
+メインエージェントが分類するのは、`suspected`の読取と`definition-read-unresolved`の全発生位置である。
+`cleared`の読取は判定理由（`reason`）を確かめれば足り、`suspected`の読取を含まない`definition-body-read`の候補は評価必須から外れる。
 
 Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を「外側セル」、その中で起動したコマンドの`CommandExecution`記録を「内側実行」と呼ぶ。`atk run-script session-review-evidence`は、同じturnで外側セルの呼出しから結果までの区間にあり、帰属が一意に決まる内側実行の実際のコマンド文字列を解析する。外側の`call_id`と内側の`item.id`は別の識別子として扱い、一致や完了順を対応付けの根拠にしない。
 候補の`calls`の各要素を`tool`で区別して位置を読む。名前空間を除いた`tool`の末尾の名前が`exec`なら、その要素の`line`・`result_line`は外側セル、`operations`の各要素の`execution_line`・`execution_result_line`は対応付けた内側実行の位置である。これには実記録の`exec`と名前空間付きの`functions.exec`を含む。対応付けられない内側実行は、`tool`が`CommandExecution`である独立した`calls`要素となり、その`line`・`result_line`が内側実行を指す。個別証拠の`definition_reads`も同じ構造である。メインエージェントは各位置から入力と結果を確認し、対応付けがない場合は同じturnの外側セルの原記録も確認する。この対応付けはCodexの外側セルの記録だけに適用する。

@@ -72,7 +72,31 @@ MANDATORY_KINDS = frozenset(
 `references/root-cause-analysis.md`「ユーザー介入と確認の判定」で確かめる。探索の深さと再発防止策の要否・終了は同書「QとC・Dの区別」の重大度判断に従う。
 参照資料を読み込まなくても必須だと分かるよう候補一覧と1行JSONへ示し、
 振り返り結果報告は各候補の扱いを候補IDで示す（書式は`agent-toolkit:completion-report`の`references/report-formats.md`）。
+`definition-body-read`は、準備が起動準備の疑いあり（`launch_check`の`status`が`suspected`）と判定した読取を
+1件以上含む候補だけを必須とする。判定の条件は`is_mandatory`が持つ。
 """
+
+
+def is_mandatory(candidate: dict[str, Any]) -> bool:
+    """候補の評価が必須かを返す。候補一覧、保存索引、1行JSONはいずれも本関数で判定する。
+
+    `definition-body-read`の候補は、後続に同じ役割の起動が無い読取と、読む主体の役割文書の読取を準備で判定済みにするため、
+    起動準備の疑いがある読取を含む候補だけを必須とする。禁止事項（別の担当を起動する前にその手順書を読むこと）は
+    読んだ主体がその役割を起動して初めて成立するためである。
+    """
+    kind = candidate["candidate_kind"]
+    if kind not in MANDATORY_KINDS:
+        return False
+    if kind != "definition-body-read":
+        return True
+    return any(
+        isinstance(call, dict)
+        and isinstance(call.get("launch_check"), dict)
+        and call["launch_check"].get("status") == "suspected"
+        for call in candidate.get("calls", [])
+    )
+
+
 _SIMILAR_RECORD_KINDS = frozenset({"user-intervention", "wi-user-response"})
 """過去の同種記録を添える候補種別。ユーザーの発話を本文に持つ種別に限る。"""
 _SIMILAR_SECTIONS = ("ユーザー指摘の逐語引用", "回答", "ユーザーコメント")
@@ -534,7 +558,7 @@ def _candidates_document(
 ) -> str:
     """候補の全量を保存索引へ委ね、初回には種別・必須性・代表位置と短い概要を示す。"""
     counts = collections.Counter(str(item["candidate_kind"]) for item in candidates)
-    mandatory = [item for item in candidates if item["candidate_kind"] in MANDATORY_KINDS]
+    mandatory = [item for item in candidates if is_mandatory(item)]
     lines = [
         "# 問題候補",
         "",
@@ -548,7 +572,8 @@ def _candidates_document(
         f"原記録の全文は`{detail_command} --detail <記録位置>`で取得する。",
         "表示から省いた候補も全件対応付け、必須候補は全て評価する。"
         "探索の深さと対策の要否はbugfixの重大度判断に従う。"
-        "definition-body-readとdefinition-read-unresolvedは取得の有無・目的・結果の成否を別々に判定する。内側CommandExecutionを結び付けた候補は、外側セルと内側実行の両方の位置を保存索引で確認する。分類と起動準備の違反への対策必須化はsession-reviewのanalysis.mdに従う。",
+        "definition-body-readは、準備が起動準備の疑いあり（calls[].launch_check.status=suspected）と判定した読取だけを分類し、判定済み（cleared）の読取は判定理由を確かめるだけでよい。"
+        "definition-read-unresolvedは取得の有無・目的・結果の成否を別々に判定する。内側CommandExecutionを結び付けた候補は、外側セルと内側実行の両方の位置を保存索引で確認する。分類と起動準備の違反への対策必須化はsession-reviewのanalysis.mdに従う。",
         "",
         "## 記録の由来",
         "",
@@ -574,7 +599,7 @@ def _candidates_document(
         contexts = candidate.get("assistant_context")
         if isinstance(contexts, list) and contexts and isinstance(contexts[0], dict):
             readable = contexts[0].get("question", readable)
-        required = "、評価が必須" if kind in MANDATORY_KINDS else ""
+        required = "、評価が必須" if is_mandatory(candidate) else ""
         sessions = f"、{candidate['failure_session_count']}セッション" if "failure_session_count" in candidate else ""
         prefix = (
             f"- {candidate['candidate_id']} {kind}（発生"
@@ -1208,7 +1233,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
                 {
                     "candidate_id": item["candidate_id"],
                     "candidate_kind": item["candidate_kind"],
-                    "mandatory": item["candidate_kind"] in MANDATORY_KINDS,
+                    "mandatory": is_mandatory(item),
                     "state": state,
                     "locators": item.get("locators", []),
                     "evidence_path": evidence_paths.get(str(item["candidate_id"])),
@@ -1271,7 +1296,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "candidate_total": len(candidates),
         "candidate_counts": dict(sorted(collections.Counter(str(item["candidate_kind"]) for item in candidates).items())),
         "excluded_counts": dict(sorted(summary.get("excluded", {}).items())),
-        "mandatory_candidates": [str(item["candidate_id"]) for item in candidates if item["candidate_kind"] in MANDATORY_KINDS],
+        "mandatory_candidates": [str(item["candidate_id"]) for item in candidates if is_mandatory(item)],
         "similar_records": {
             candidate_id: [filename for filename, _state, _title in records] for candidate_id, records in similar_by_id.items()
         },

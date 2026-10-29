@@ -3,17 +3,19 @@
 # requires-python = ">=3.15"
 # dependencies = []
 # ///
-"""agent-toolkitプラグインのバージョンbumpツール。
+"""配布プラグインのバージョンbumpツール。
 
-Claude Code向けの版数を定める`agent-toolkit/.claude-plugin/plugin.json`と
-`.claude-plugin/marketplace.json`の`version`を同時に更新する。
+指定したプラグインのClaude Code向けの版数を定める`<source>/.claude-plugin/plugin.json`と、
+`.claude-plugin/marketplace.json`の同名エントリの`version`を同時に更新する。
+対象にできるプラグインは`marketplace.json`の`plugins[]`から導き、プラグイン名を個別に固定しない。
 Codex向けmanifestはこの2ファイルから同期スクリプトで生成する。
 
 使い方:
-    scripts/agent_toolkit_bump.py [patch|minor|major]
+    scripts/agent_toolkit_bump.py [--plugin NAME] [patch|minor|major]
 """
 
 import argparse
+import dataclasses
 import json
 import subprocess
 import sys
@@ -21,17 +23,41 @@ from pathlib import Path
 from typing import Literal
 
 _REPO_ROOT = Path(__file__).parent.parent
-_PLUGIN_MANIFEST = _REPO_ROOT / "agent-toolkit" / ".claude-plugin" / "plugin.json"
 _MARKETPLACE_MANIFEST = _REPO_ROOT / ".claude-plugin" / "marketplace.json"
-_PLUGIN_NAME = "agent-toolkit"
+DEFAULT_PLUGIN = "agent-toolkit"
+"""`--plugin`省略時の対象。既存の規範・計画・手順書が`scripts/agent_toolkit_bump.py minor`の形で呼ぶため維持する。"""
 
 BumpKind = Literal["patch", "minor", "major"]
 BUMP_RANKS: dict[BumpKind, int] = {"patch": 1, "minor": 2, "major": 3}
 
 
+@dataclasses.dataclass(frozen=True)
+class PluginTarget:
+    """版数を更新するプラグインの名前と、Claude Code向けplugin manifestのパス。"""
+
+    name: str
+    manifest: Path
+
+
+def plugin_targets() -> dict[str, PluginTarget]:
+    """`marketplace.json`の`plugins[]`から、名前ごとの更新対象を返す。"""
+    data = json.loads(_MARKETPLACE_MANIFEST.read_text(encoding="utf-8"))
+    return {
+        entry["name"]: PluginTarget(entry["name"], _REPO_ROOT / entry["source"] / ".claude-plugin" / "plugin.json")
+        for entry in data["plugins"]
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
-    """agent-toolkitプラグインのバージョンをbumpする。"""
-    parser = argparse.ArgumentParser(description="agent-toolkitプラグインのバージョンbumpツール。")
+    """指定プラグインのバージョンをbumpする。"""
+    targets = plugin_targets()
+    parser = argparse.ArgumentParser(description="配布プラグインのバージョンbumpツール。")
+    parser.add_argument(
+        "--plugin",
+        default=DEFAULT_PLUGIN,
+        choices=sorted(targets),
+        help=f"版数を上げるプラグイン（marketplace.jsonのplugins[].name）。省略時は{DEFAULT_PLUGIN}。",
+    )
     parser.add_argument(
         "kind",
         nargs="?",
@@ -39,11 +65,12 @@ def main(argv: list[str] | None = None) -> int:
         help="bump種別。省略時は現在の状態を表示するのみで終了する。",
     )
     args = parser.parse_args(argv)
+    target = targets[args.plugin]
 
-    current = _read_current_version()
-    resolved = resolve_base_version()
+    current = _read_current_version(target)
+    resolved = resolve_base_version(target)
     if resolved is None:
-        print(f"current version: {current}")
+        print(f"{target.name} current version: {current}")
         print(
             "基準版を確定できなかった（上流ブランチも origin/HEAD も解決できない）。既往のbumpを検出できないため増分しない。"
             "git branch -vvで上流を確認し、git remote set-head origin --autoでorigin/HEADを設定してから"
@@ -55,27 +82,30 @@ def main(argv: list[str] | None = None) -> int:
     existing = infer_bump_kind(base, current)
 
     if args.kind is None:
-        _print_status(current, base, base_ref, existing)
+        _print_status(target, current, base, base_ref, existing)
         return 0
 
     requested: BumpKind = args.kind
 
     if existing is None:
         new_version = compute_new_version(current, requested)
-        _write_version(new_version)
-        print(f"bump: {current} -> {new_version} ({requested}, 基準: {base} [{base_ref}])")
+        _write_version(target, new_version)
+        print(f"{target.name} bump: {current} -> {new_version} ({requested}, 基準: {base} [{base_ref}])")
         return 0
 
     if BUMP_RANKS[requested] <= BUMP_RANKS[existing]:
-        print(f"既存の未プッシュbump種別（{existing}）が指定種別（{requested}）と同等以上のため何もしない。対応不要。")
+        print(
+            f"{target.name}: 既存の未プッシュbump種別（{existing}）が指定種別（{requested}）と同等以上のため何もしない。"
+            "対応不要。"
+        )
         print(f"  基準: {base}（{base_ref}）")
         print(f"  現在: {current}（既存bump: {existing}）")
         return 0
 
     # 上書き格上げ。基準は公開済み時点のバージョン。
     new_version = compute_new_version(base, requested)
-    _write_version(new_version)
-    print(f"upgrade bump: {current} -> {new_version} ({existing} -> {requested}, 基準: {base} [{base_ref}])")
+    _write_version(target, new_version)
+    print(f"{target.name} upgrade bump: {current} -> {new_version} ({existing} -> {requested}, 基準: {base} [{base_ref}])")
     return 0
 
 
@@ -132,8 +162,8 @@ def infer_bump_kind(base: str, current: str) -> BumpKind | None:
     )
 
 
-def _read_current_version() -> str:
-    return json.loads(_PLUGIN_MANIFEST.read_text(encoding="utf-8"))["version"]
+def _read_current_version(target: PluginTarget) -> str:
+    return json.loads(target.manifest.read_text(encoding="utf-8"))["version"]
 
 
 BASE_VERSION_REFS: tuple[str, ...] = ("@{u}", "origin/HEAD")
@@ -144,22 +174,22 @@ BASE_VERSION_REFS: tuple[str, ...] = ("@{u}", "origin/HEAD")
 """
 
 
-def resolve_base_version() -> tuple[str, str] | None:
+def resolve_base_version(target: PluginTarget) -> tuple[str, str] | None:
     """公開済み時点のplugin.jsonから`version`と、取得に使った参照名を返す。
 
     `BASE_VERSION_REFS`の順に試し、いずれからも取得できない場合は`None`を返す。
     呼び出し元は`None`を「既往のbumpを検出できない」状態として扱い、増分しない。
     """
     for ref in BASE_VERSION_REFS:
-        version = _read_version_at(ref)
+        version = _read_version_at(ref, target)
         if version is not None:
             return version, ref
     return None
 
 
-def _read_version_at(ref: str) -> str | None:
-    """指定参照上のplugin.jsonから`version`を取得する。解決できない場合は`None`を返す。"""
-    rel = _PLUGIN_MANIFEST.relative_to(_REPO_ROOT)
+def _read_version_at(ref: str, target: PluginTarget) -> str | None:
+    """指定参照上の対象plugin.jsonから`version`を取得する。解決できない場合は`None`を返す。"""
+    rel = target.manifest.relative_to(_REPO_ROOT)
     result = subprocess.run(
         ["git", "show", f"{ref}:{rel.as_posix()}"],
         capture_output=True,
@@ -177,20 +207,24 @@ def _read_version_at(ref: str) -> str | None:
         return None
 
 
-def _write_version(new_version: str) -> None:
-    plugin_data = json.loads(_PLUGIN_MANIFEST.read_text(encoding="utf-8"))
+def _write_version(target: PluginTarget, new_version: str) -> None:
+    plugin_data = json.loads(target.manifest.read_text(encoding="utf-8"))
     marketplace_data = json.loads(_MARKETPLACE_MANIFEST.read_text(encoding="utf-8"))
-    matched = [entry for entry in marketplace_data["plugins"] if entry.get("name") == _PLUGIN_NAME]
+    matched = [entry for entry in marketplace_data["plugins"] if entry.get("name") == target.name]
     if len(matched) != 1:
-        raise RuntimeError(f"marketplace.jsonに{_PLUGIN_NAME}のエントリが1件ではない（{len(matched)}件）")
+        raise RuntimeError(
+            f"marketplace.jsonに{target.name}のエントリが1件ではない（{len(matched)}件）。"
+            f"`.claude-plugin/marketplace.json`の`plugins[]`で`name`が{target.name}のエントリを1件にそろえて再実行する。"
+        )
 
     plugin_data["version"] = new_version
     matched[0]["version"] = new_version
-    _PLUGIN_MANIFEST.write_text(json.dumps(plugin_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    target.manifest.write_text(json.dumps(plugin_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     _MARKETPLACE_MANIFEST.write_text(json.dumps(marketplace_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _print_status(current: str, base: str, base_ref: str, existing: BumpKind | None) -> None:
+def _print_status(target: PluginTarget, current: str, base: str, base_ref: str, existing: BumpKind | None) -> None:
+    print(f"plugin: {target.name}")
     print(f"current version: {current}")
     print(f"base version: {base}（{base_ref}）")
     if existing is None:

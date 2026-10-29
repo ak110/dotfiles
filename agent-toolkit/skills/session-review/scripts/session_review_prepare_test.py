@@ -785,6 +785,42 @@ def test_prepare_marks_wi_candidates_and_similar_past_records(
 
 
 @pytest.mark.parametrize(
+    "command",
+    [
+        "for f in 20261006-100000-006.md; do atk wi adopt $f; done",
+        'for f in 20261006-100000-006.md; do atk wi adopt "${f}"; done',
+        "{ atk wi adopt 20261006-100000-006.md; } > o",
+        "if true; then atk wi adopt 20261006-100000-006.md; fi",
+    ],
+    ids=["for-loop", "for-loop-braced", "group", "if"],
+)
+def test_prepare_counts_wi_processed_inside_compound_commands(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    """複合コマンドとグループの中で処理したWIも処理済みとして扱い、ユーザーの記入を評価の候補へ載せる。
+
+    数え漏れると、処理したWIへのユーザーの是正が振り返りの評価から抜ける。
+    """
+    root = tmp_path / "private-notes"
+    awi = {"target_repo": "github.com/example/repo", "type": "awi"}
+    _write_wi(
+        root, "processing", "20261006-100000-006.md", awi, "\n# 処理したAWI\n\n本文\n\n## ユーザーコメント\n\nコメントの是正\n"
+    )
+    entries = [
+        {"type": "user", "timestamp": "2026-10-06T12:00:00Z", "message": {"role": "user", "content": "初期要求"}},
+        _bash_entry("2026-10-06T12:00:10Z", "toolu_adopt", command),
+    ]
+    transcript = tmp_path / "11111111-2222-3333-4444-555555555555.jsonl"
+    transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
+
+    record = json.loads(capsys.readouterr().out)
+    responses = [item for item in _bundle_rows(record, "candidates.jsonl") if item.get("candidate_kind") == "wi-user-response"]
+    assert [item["wi_file"] for item in responses] == ["20261006-100000-006.md"]
+
+
+@pytest.mark.parametrize(
     ("first_text", "expected_candidates", "expected_initial_request"),
     [
         (

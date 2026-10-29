@@ -269,13 +269,16 @@ class TestUwiAdd:
         assert result.code == 0
         assert "警告" not in capsys.readouterr().err
 
-    def test_choice_without_question_mark_no_warning(
+    def test_choice_without_question_mark_warns(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """question-type=choice時は疑問文を含まない本文でも警告が出力されない。"""
+        """question-type=choiceでも冒頭に問いが無い本文は警告され、保存は成功する。
+
+        `uwi-format.md`「構成」は冒頭の疑問文を質問の種類によらず求めるため、choiceを判定から外さない。
+        """
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -293,7 +296,62 @@ class TestUwiAdd:
             "バランスを考慮した経緯を踏まえて判断してほしい。",
         )
         assert result.code == 0
-        assert "警告" not in capsys.readouterr().err
+        stderr = capsys.readouterr().err
+        assert "冒頭（最初のH2見出しより前）に問い（疑問文）が無い" in stderr
+
+    @pytest.mark.parametrize(
+        ("question_type", "choices", "body", "warned"),
+        [
+            # 観測されたUWIと同じ構成: 冒頭の問い、選択肢の節、平叙文で終わる判断材料。
+            *(
+                (
+                    kind,
+                    extra,
+                    "既定の実行レビュー担当を`sol/medium`へ変えてよいですか。\n\n"
+                    "## 選択肢と帰結\n\n- 変える: 次回から使う。\n- 変えない: 現状を保つ。\n\n"
+                    "## 判断材料\n\n- 所要時間の差は未計測です。",
+                    False,
+                )
+                for kind, extra in (("yes-no", ()), ("post-approval", ()), ("choice", ("--choices", "変える,変えない")))
+            ),
+            # 冒頭は平叙文で、判断材料の中だけに「か」で終わる文がある本文は、冒頭に問いが無いため警告する。
+            (
+                "yes-no",
+                (),
+                "既定の実行レビュー担当を`sol/medium`へ変える提案。\n\n## 判断材料\n\n- 所要時間が縮むかは不明か。",
+                True,
+            ),
+            # 問いの「か」の直後に括弧書きの補足が続く本文も問いとみなす。
+            (
+                "choice",
+                ("--choices", "A,B"),
+                "この方針で回答してもらえますか（既存の判断を保つ場合はBを選ぶ）\n\n## 判断材料\n\n- 既存の判断の記録がある。",
+                False,
+            ),
+        ],
+        ids=["yes-no", "post-approval", "choice", "question-only-in-materials", "parenthetical"],
+    )
+    def test_question_is_judged_in_the_lead_before_the_first_heading(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        question_type: str,
+        choices: tuple[str, ...],
+        body: str,
+        warned: bool,
+    ) -> None:
+        """問いの有無は最初のH2見出しより前で判定し、本文末尾の文や質問の種類に左右されない。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
+
+        result = _invoke_uwi_add(tmp_path, str(myrepo), "--question-type", question_type, *choices, body=body)
+        assert result.code == 0
+        stderr = capsys.readouterr().err
+        # 警告の有無は文言の改訂に左右されない共通部分で判定する。
+        assert ("問い（疑問文）が" in stderr) is warned, stderr
 
 
 class TestUwiAddEditorBeforePull:

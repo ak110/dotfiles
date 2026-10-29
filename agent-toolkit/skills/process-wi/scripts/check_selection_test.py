@@ -704,7 +704,17 @@ def test_public_extend_adds_records_without_write_targets(
 
 @pytest.mark.parametrize(
     "problem",
-    ["unknown-wi", "unknown-field", "type", "invalid-path", "invalid-yaml", "invalid-encoding", "missing-file", "other-wi"],
+    [
+        "unknown-wi",
+        "unknown-field",
+        "type",
+        "norm-spec-type",
+        "invalid-path",
+        "invalid-yaml",
+        "invalid-encoding",
+        "missing-file",
+        "other-wi",
+    ],
 )
 @pytest.mark.parametrize("in_place", [False, True])
 def test_public_extend_failure_preserves_selection(
@@ -733,6 +743,8 @@ def test_public_extend_failure_preserves_selection(
         update["レーン"] = "lane-02"
     elif problem == "type":
         update["書込対象"] = "src/model.py"
+    elif problem == "norm-spec-type":
+        update["プロジェクト規範の指定"] = ["README.md"]
     elif problem == "invalid-path":
         update["書込対象"] = ["src/../escape.py"]
     addition.write_text(
@@ -3193,6 +3205,88 @@ def test_agent_doc_reflection_requires_read_request(
     decisions = [{"WI": "rules.md", "レーン": "lane-01", "書込対象": [original]}]
     _norm_spec_selection(tmp_path, decisions, {"rules.md": f"{original}。{_READ_REQUEST}"})
     assert _dispatch("--work-dir", str(repo), str(tmp_path / "selection.yaml")) == 0, capsys.readouterr().err
+
+
+@pytest.mark.parametrize("with_spec", [True, False])
+def test_public_extend_updates_project_norm_spec_with_the_added_agent_document(
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], with_spec: bool
+) -> None:
+    """本リポジトリの設定で、エージェント向け文書の追加と同じ入力で規範指定を更新すれば保存される。
+
+    規範指定を受け取れない追加操作は全体検査で拒否され、メインが選定YAMLを手で書き換えて再実行するしかなかった。
+    規範指定を渡さない同じ追加は、規範指定の不足（終了コード1）で拒否し、選定YAMLを変えない。
+    """
+    repo, notes = env
+    (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
+    _write_files(repo, "agent-toolkit/share/exec.parent.md", ".claude/skills/edit/SKILL.md")
+    _awi(notes, "norm.md", "`agent-toolkit/share/exec.parent.md`を変える。")
+    decisions: list[dict[str, typing.Any]] = [
+        {"WI": "norm.md", "レーン": "lane-01", "書込対象": ["agent-toolkit/share/exec.parent.md"]}
+    ]
+    path = _norm_spec_selection(tmp_path, decisions, {"norm.md": f"agent-toolkit/share/exec.parent.md。{_READ_REQUEST}"})
+    assert _dispatch("--work-dir", str(repo), str(path)) == 0, capsys.readouterr().err
+    before = path.read_bytes()
+    spec = f"agent-toolkit/share/exec.parent.md、.claude/skills/edit/SKILL.md。{_READ_REQUEST}"
+    update: dict[str, typing.Any] = {"WI": "norm.md", "書込対象": [".claude/skills/edit/SKILL.md"]}
+    if with_spec:
+        update["プロジェクト規範の指定"] = spec
+    addition = tmp_path / "extend.yaml"
+    addition.write_text(yaml.safe_dump({"選定": [update]}, allow_unicode=True), encoding="utf-8")
+    capsys.readouterr()
+    code = _dispatch(str(path), "--work-dir", str(repo), "--extend-write-targets", str(addition), "--output", str(path))
+    error = capsys.readouterr().err
+    if with_spec:
+        assert code == 0, error
+        item = yaml.safe_load(path.read_text(encoding="utf-8"))["選定"][0]
+        assert item["書込対象"] == ["agent-toolkit/share/exec.parent.md", ".claude/skills/edit/SKILL.md"]
+        assert item["プロジェクト規範の指定"] == spec
+        assert _dispatch("--work-dir", str(repo), str(path)) == 0
+    else:
+        assert code == 1
+        assert (
+            "norm.md: プロジェクト規範の指定の不足: 規範変更の対象ファイル: 欠けた記載: .claude/skills/edit/SKILL.md" in error
+        )
+        assert "追加入力の該当項目へ更新後の`プロジェクト規範の指定`" in error
+        assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("reflected", "excluded", "added", "kept"),
+    [
+        ("`README.md`を変更し、`src/model.py`を参照する。", "src/model.py", "src/model.py", []),
+        ("`README.md`を変更し、`docs/`は変更しない。", "docs/", "docs/development/design.md", ["docs/"]),
+    ],
+    ids=["same-path", "enclosing-range"],
+)
+def test_public_extend_removes_the_added_path_from_non_write_targets(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    reflected: str,
+    excluded: str,
+    added: str,
+    kept: list[str],
+) -> None:
+    """非書込に分類済みのパスを書込対象へ加えると、同じ保存で非書込から除く。
+
+    追加入力はその項目がパスを書き込む宣言であり、非書込の分類を残すと区分間の重複になって手で直すしかない。
+    非書込の範囲が追加パスを真に含む組は、全体検査が受理する選定なので範囲を残す。
+    """
+    repo, notes = env
+    _awi(notes, "a.md", reflected)
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"], "書き込まない反映先": [excluded]}],
+    )
+    assert _dispatch("--work-dir", str(repo), str(path)) == 0, capsys.readouterr().err
+    addition = tmp_path / "extend.yaml"
+    addition.write_text(yaml.safe_dump({"選定": [{"WI": "a.md", "書込対象": [added]}]}, allow_unicode=True), encoding="utf-8")
+    code = _dispatch(str(path), "--work-dir", str(repo), "--extend-write-targets", str(addition), "--output", str(path))
+    assert code == 0, capsys.readouterr().err
+    item = yaml.safe_load(path.read_text(encoding="utf-8"))["選定"][0]
+    assert item["書込対象"] == ["README.md", added]
+    assert item["書き込まない反映先"] == kept
+    assert _dispatch("--work-dir", str(repo), str(path)) == 0
 
 
 @pytest.mark.parametrize("config", ["absent", "custom"])

@@ -23,12 +23,12 @@ from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_t
 from agent_toolkit._common import file_lock, plugin_root_leases
 
 _SCHEDULE_NAME = ".sweep/schedule"
-_SCHEDULE_VERSION = 3
+_SCHEDULE_VERSION = 4
 _NANOSECONDS_PER_SECOND = 1_000_000_000
 _RETRY_NS = 3600 * _NANOSECONDS_PER_SECOND
 """使用中・ロック保持中・削除失敗の対象を次に調べるまでの間隔。"""
 _GIT_RECHECK_NS = 86_400 * _NANOSECONDS_PER_SECOND
-"""`.git`を含む期限切れの対象を次に調べるまでの間隔。worktreeの撤去後は次の調査で回収する。"""
+"""登録済みworktreeを含む期限切れの対象の再調査間隔。登録解除後は次の調査で回収する。"""
 _LEGACY_INTERVAL_NS = 86_400 * _NANOSECONDS_PER_SECOND
 """旧版の状態を調べる間隔。数万件に及ぶ旧ロックを起動ごとに走査しない。"""
 _DESCRIPTOR_WALK = os.scandir in os.supports_fd and os.open in os.supports_dir_fd
@@ -105,45 +105,68 @@ def _now_ns(now: datetime.datetime) -> int:
     return int(reference.timestamp() * _NANOSECONDS_PER_SECOND)
 
 
-def _latest_update_and_git(path: pathlib.Path) -> tuple[int, bool]:
-    """領域自身と配下の最終更新時刻（ナノ秒）と、配下に`.git`があるかを返す。リンクは辿らない。
+def _update_time(metadata: os.stat_result, now_ns: int) -> int:
+    """未来の更新時刻は状態変更時刻へ置き換え、現在以前の値だけを採用する。"""
+    stamp = metadata.st_mtime_ns if metadata.st_mtime_ns <= now_ns else metadata.st_ctime_ns
+    return stamp if stamp <= now_ns else 0
+
+
+def _registered_worktree(git_file: pathlib.Path, area: pathlib.Path) -> bool:
+    """領域外のgitdirと逆参照が一致するworktreeだけを保護する。"""
+    try:
+        content = git_file.read_text(encoding="utf-8").strip()
+        if not content.startswith("gitdir: "):
+            return False
+        gitdir = (git_file.parent / content.removeprefix("gitdir: ")).resolve()
+        if gitdir.is_relative_to(area.resolve()) or not gitdir.is_dir():
+            return False
+        reference = (gitdir / "gitdir").read_text(encoding="utf-8").strip()
+        return bool(reference) and os.path.samefile(gitdir / reference, git_file)
+    except OSError, UnicodeError, ValueError:
+        return False
+
+
+def _latest_update_and_worktree(path: pathlib.Path, now_ns: int) -> tuple[int, bool]:
+    """領域自身と配下の最終更新時刻（ナノ秒）と、登録済みworktreeがあるかを返す。リンクは辿らない。
 
     配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
     記述子で辿れる環境では親の記述子からの相対名で走査し、連結長がPATH_MAXを超える木も調べる。
     """
-    latest = path.lstat().st_mtime_ns
+    latest = _update_time(path.lstat(), now_ns)
+    registered = False
     if _DESCRIPTOR_WALK:
         with permissions.descriptor(path, _DIRECTORY_FLAGS) as opened:
-            return _latest_under(opened, latest)
+            return _latest_under(opened, latest, path, path, now_ns)
     pending = [path]
     while pending:
         directory = pending.pop()
         with os.scandir(directory) as children:
             for child in children:
-                if child.name == ".git":
-                    return latest, True
                 metadata = child.stat(follow_symlinks=False)
-                latest = max(latest, metadata.st_mtime_ns)
+                latest = max(latest, _update_time(metadata, now_ns))
+                if child.name == ".git" and stat.S_ISREG(metadata.st_mode):
+                    registered |= _registered_worktree(pathlib.Path(child.path), path)
                 if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata):
                     pending.append(pathlib.Path(child.path))
-    return latest, False
+    return latest, registered
 
 
-def _latest_under(directory: int, latest: int) -> tuple[int, bool]:
-    """記述子が指すディレクトリの配下を相対名で辿り、`_latest_update_and_git`と同じ値を返す。"""
+def _latest_under(directory: int, latest: int, current: pathlib.Path, area: pathlib.Path, now_ns: int) -> tuple[int, bool]:
+    """記述子が指すディレクトリの配下を相対名で辿り、`_latest_update_and_worktree`と同じ値を返す。"""
+    registered = False
     with os.scandir(directory) as children:
         listed = list(children)
     for child in listed:
-        if child.name == ".git":
-            return latest, True
         metadata = child.stat(follow_symlinks=False)
-        latest = max(latest, metadata.st_mtime_ns)
+        latest = max(latest, _update_time(metadata, now_ns))
+        child_path = current / child.name
+        if child.name == ".git" and stat.S_ISREG(metadata.st_mode):
+            registered |= _registered_worktree(child_path, area)
         if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata):
             with permissions.descriptor(child.name, _DIRECTORY_FLAGS, dir_fd=directory) as nested:
-                latest, has_git = _latest_under(nested, latest)
-            if has_git:
-                return latest, True
-    return latest, False
+                latest, nested_registered = _latest_under(nested, latest, child_path, area, now_ns)
+            registered |= nested_registered
+    return latest, registered
 
 
 def _legacy_lock_path(state_root: pathlib.Path, path: pathlib.Path) -> pathlib.Path:
@@ -270,9 +293,9 @@ def _examine(
 ) -> int | None:
     """1件を調べ、保持する場合は次に調べる時刻を返す。削除した場合はNoneを返す。"""
     if stat.S_ISDIR(metadata.st_mode):
-        latest, has_git = _latest_update_and_git(child)
+        latest, has_git = _latest_update_and_worktree(child, now_ns)
     else:
-        latest, has_git = metadata.st_mtime_ns, False
+        latest, has_git = _update_time(metadata, now_ns), False
     if latest >= cutoff_ns:
         return latest + max_age_ns
     if has_git:
@@ -291,7 +314,7 @@ def _examine(
 def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_AGE_DAYS) -> SweepResult:
     """一時root直下で配下を含む最終更新から`max_age_days`を超えた対象を削除し、削除結果と失敗を返す。
 
-    通常ファイルも同じ期限の対象とする。`.git`を含む対象（git worktreeやリポジトリの複製）、
+    通常ファイルも同じ期限の対象とする。外部gitdirと逆参照が一致する登録済みworktree、
     使用中の保持配布物、リンクは削除しない。旧版のmarkerを持つ領域は旧版のcleanupロックを取れた場合だけ削除する。
     一時rootを指定しない場合に使う場所は`atk`だけが作成する場所であり、所有の検証なしに回収しても
     ユーザーのディレクトリを巻き込まない（2026年10月2日のユーザーの判断）。

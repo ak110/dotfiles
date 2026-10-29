@@ -49,11 +49,12 @@ def _legacy_lock(target: pathlib.Path) -> pathlib.Path:
 
 
 def test_sweep_removes_expired_files_and_directories_and_keeps_protected(tmp_path: pathlib.Path) -> None:
-    """期限切れの通常ファイルとディレクトリは消え、期限内・`.git`・リンク・リンク先は残る。"""
+    """期限切れの通常ファイルとディレクトリは消え、期限内・リンク・リンク先は残る。"""
     expired = _area("expired-abc", days=8)
     fresh = _area("fresh-abc", days=1)
     nested_fresh = _area("nested-abc", days=8)
     (nested_fresh / "recent.txt").write_text("recent", encoding="utf-8")
+    _set_times(nested_fresh / "recent.txt", _NOW.timestamp())
     worktree = _area("worktree-abc", days=8, files={".git": "gitdir: /nowhere\n", "src.py": ""})
     clone = _area("clone-abc", days=8, files={"repo/.git/HEAD": "ref: refs/heads/main\n"})
     old_file = paths.temp_root() / "stray.txt"
@@ -68,10 +69,10 @@ def test_sweep_removes_expired_files_and_directories_and_keeps_protected(tmp_pat
 
     result = managed_temp.sweep_managed_temp(now=_NOW)
 
-    assert sorted(result.deleted) == sorted([expired, old_file])
+    assert sorted(result.deleted) == sorted([expired, old_file, worktree, clone])
     assert not result.failed
     assert not expired.exists() and not old_file.exists()
-    for kept in (fresh, nested_fresh, worktree, clone, link):
+    for kept in (fresh, nested_fresh, link):
         assert os.path.lexists(kept), kept
     assert (outside / "keep.txt").read_text(encoding="utf-8") == "keep"
 
@@ -93,7 +94,7 @@ def test_sweep_keeps_plugin_root_in_use(monkeypatch: pytest.MonkeyPatch) -> None
 )
 @pytest.mark.parametrize("has_git", [False, True])
 def test_sweep_handles_tree_longer_than_path_max(has_git: bool) -> None:
-    """連結長がPATH_MAXを超える木も調べ、期限切れなら回収し、深い位置の`.git`があれば残す。"""
+    """連結長がPATH_MAXを超える木も調べ、期限切れなら回収し、深い位置に無効な`.git`があっても回収する。"""
     area = _area("deep-abc", days=8)
     stamp = int((_NOW - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
     with contextlib.ExitStack() as stack:
@@ -115,8 +116,8 @@ def test_sweep_handles_tree_longer_than_path_max(has_git: bool) -> None:
     result = managed_temp.sweep_managed_temp(now=_NOW)
 
     assert not result.failed
-    assert (area in result.deleted) is not has_git
-    assert os.path.lexists(area) is has_git
+    assert area in result.deleted
+    assert not os.path.lexists(area)
 
 
 def test_sweep_keeps_legacy_area_while_old_cleanup_lock_is_held() -> None:
@@ -177,13 +178,13 @@ def test_schedule_avoids_rescanning_until_due(monkeypatch: pytest.MonkeyPatch) -
     _area("fresh-abc", days=1)
     managed_temp.sweep_managed_temp(now=_NOW)
     walks: list[pathlib.Path] = []
-    original = sweep._latest_update_and_git  # pylint: disable=protected-access
+    original = sweep._latest_update_and_worktree  # pylint: disable=protected-access
 
-    def counting(path: pathlib.Path) -> tuple[int, bool]:
+    def counting(path: pathlib.Path, now_ns: int) -> tuple[int, bool]:
         walks.append(path)
-        return original(path)
+        return original(path, now_ns)
 
-    monkeypatch.setattr(sweep, "_latest_update_and_git", counting)
+    monkeypatch.setattr(sweep, "_latest_update_and_worktree", counting)
     managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(minutes=5))
     assert not walks
     root = paths.temp_root()
@@ -232,3 +233,67 @@ def test_cleanup_rejects_root_outside_and_links(tmp_path: pathlib.Path) -> None:
     assert area.exists() and not child.exists()
     managed_temp.cleanup_managed_temp(area)
     assert not area.exists()
+
+
+@pytest.mark.parametrize("descriptor_walk", [False, True])
+def test_sweep_removes_expired_area_with_future_file(monkeypatch: pytest.MonkeyPatch, descriptor_walk: bool) -> None:
+    """未来のmtimeを持つファイルも、古いctimeなら期限切れとして回収する。"""
+    monkeypatch.setattr(
+        sweep, "_DESCRIPTOR_WALK", descriptor_walk and os.scandir in os.supports_fd and os.open in os.supports_dir_fd
+    )
+    area = _area("future-abc", days=8)
+    _set_times(area / "payload.txt", 2_000_000_000)
+    # ctimeはutimeで設定できないため、作成から8日後の判定で期限切れを再現する。
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+    result = managed_temp.sweep_managed_temp(now=now)
+    assert area in result.deleted
+    assert not result.failed and not area.exists()
+
+
+def test_sweep_removes_expired_git_directory() -> None:
+    """独立リポジトリを含む期限切れの領域を回収する。"""
+    area = _area("git-directory-abc", days=8, files={"repo/.git/HEAD": "ref: refs/heads/main\n"})
+    assert area in managed_temp.sweep_managed_temp(now=_NOW).deleted
+    assert not area.exists()
+
+
+@pytest.mark.parametrize("descriptor_walk", [False, True])
+@pytest.mark.parametrize("registered", [False, True])
+def test_sweep_preserves_only_registered_external_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, registered: bool, descriptor_walk: bool
+) -> None:
+    """外部gitdirの逆参照が自身なら保持し、別のworktreeを指す複製なら回収する。"""
+    monkeypatch.setattr(
+        sweep, "_DESCRIPTOR_WALK", descriptor_walk and os.scandir in os.supports_fd and os.open in os.supports_dir_fd
+    )
+    gitdir = tmp_path / "external-gitdir"
+    gitdir.mkdir()
+    area = _area("registered-abc", days=8, files={"repo/.git": f"gitdir: {gitdir}\n"})
+    reference = area / "repo/.git" if registered else tmp_path / "other.git"
+    reference.touch(exist_ok=True)
+    (gitdir / "gitdir").write_text(str(reference), encoding="utf-8")
+    _age(area, 8)
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+    assert not result.failed
+    assert (area in result.deleted) is not registered
+    assert area.exists() is registered
+
+
+def test_sweep_invalidates_old_future_schedule() -> None:
+    """旧版が未来まで延期した領域も、初回の掃引で再調査する。"""
+    area = _area("old-schedule-abc", days=8)
+    schedule = paths.state_root() / ".sweep/schedule"
+    schedule.parent.mkdir(exist_ok=True)
+    schedule.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "temp_root": str(paths.temp_root()),
+                "root_mtime_ns": paths.temp_root().stat().st_mtime_ns,
+                "legacy_checked_ns": int(_NOW.timestamp() * 1_000_000_000),
+                "entries": {area.name: [area.stat().st_mtime_ns, 2_000_000_000_000_000_000]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert area in managed_temp.sweep_managed_temp(now=_NOW).deleted

@@ -11,6 +11,17 @@ from agent_toolkit._plan import selection as _selection
 
 _Rows = list[dict[str, object]]
 _SECONDS = {"implementation_seconds": "実装秒数", "integration_seconds": "統合秒数"}
+_NORM_SPEC_KEY = "プロジェクト規範の指定"
+# 追加入力の`選定`の各項目が持てる欄。追加操作は「自身の追記で成立し得る全体検査の違反を、同じ追加入力で解消できる」
+# ことを不変条件とするため、`check_selection.py`のうち`書込対象`に連動して別の欄を求める検査
+# （導出記録、レーン間の重なり、プロジェクト規範の指定、区分間の重複）の解消手段をここで受け付ける。
+# `書込対象`に連動する検査を`check_selection.py`へ加えるときは、この集合と`extend_write_targets`も見直す。
+_EXTEND_FIELDS = frozenset({_selection.WI_KEY, _selection.WRITE_FILES_KEY, _selection.DERIVED_NEW_PATHS_KEY, _NORM_SPEC_KEY})
+
+
+def _covers(entry: str, path: str) -> bool:
+    """`check_selection.py`の同名の判定と同じく、`entry`が`path`と同じか、末尾`/`の範囲として配下に含むかを返す。"""
+    return entry == path or (entry.endswith("/") and path.startswith(entry))
 
 
 def _rows(data: dict[str, object], *, costs: bool = False) -> _Rows:
@@ -48,14 +59,37 @@ def extend_write_targets(existing: dict[str, object], addition: object) -> dict[
     by_wi = {str(item.get(_selection.WI_KEY, item.get("awi"))): item for item in items}
     fields = (_selection.WRITE_FILES_KEY, _selection.DERIVED_NEW_PATHS_KEY)
     for update in updates:
-        if not isinstance(update, dict) or set(update) - {_selection.WI_KEY, *fields}:
-            raise ValueError("追加入力の`選定`の各項目は`WI`・`書込対象`・`導出した新設先`だけを持つ写像とする")
+        if not isinstance(update, dict) or set(update) - _EXTEND_FIELDS:
+            raise ValueError(
+                "追加入力の`選定`の各項目は`WI`・`書込対象`・`導出した新設先`・`プロジェクト規範の指定`だけを持つ写像とする"
+            )
         name = update.get(_selection.WI_KEY)
         if not isinstance(name, str) or name not in by_wi:
             raise ValueError(f"書込対象の追加先WIが保存済み選定に無い: {name}")
         item = by_wi[name]
         if item.get(_selection.LANE_KEY, item.get("lane")) == "なし":
             raise ValueError(f"{name}: レーンが`なし`の項目へ書込対象を追加できない")
+        if _NORM_SPEC_KEY in update:
+            spec = update[_NORM_SPEC_KEY]
+            if not isinstance(spec, str):
+                raise ValueError(f"{name}: 追加入力の`{_NORM_SPEC_KEY}`は文字列とする")
+            # 旧欄名で保存された項目は旧欄名のまま置き換え、同じ意味の欄を二重に持たせない。
+            item["project_notes" if "project_notes" in item and _NORM_SPEC_KEY not in item else _NORM_SPEC_KEY] = spec
+        added = update.get(_selection.WRITE_FILES_KEY, [])
+        excluded_key = next(
+            (key for key in (_selection.EXCLUDED_PATHS_KEY, "excluded_paths") if key in item), _selection.EXCLUDED_PATHS_KEY
+        )
+        excluded = item.get(excluded_key)
+        if isinstance(added, list) and isinstance(excluded, list):
+            # 追加入力は「この項目がそのパスを書き込む」宣言なので、同じパスか追加パスの配下を非書込に分類したままにしない。
+            # 非書込の範囲が追加パスを真に含む組は、全体検査が重複に数えない受理済みの選定なので残す。
+            item[excluded_key] = [
+                non_write
+                for non_write in excluded
+                if not any(
+                    isinstance(write, str) and isinstance(non_write, str) and _covers(write, non_write) for write in added
+                )
+            ]
         for field in fields:
             if field not in update:
                 continue
