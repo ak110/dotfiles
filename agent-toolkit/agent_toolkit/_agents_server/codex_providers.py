@@ -2,6 +2,7 @@
 
 Codex CLI 0.162.0のconfig/read・account/read・account/rateLimits/readの
 公開schemaを入力契約とする。資格情報を複製せず、Codexが持つprovider定義を使う。
+種別とprovider IDの対応は`agent_toolkit._atk.codex_connection`が設定から解決する。
 """
 
 from __future__ import annotations
@@ -12,7 +13,8 @@ import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from agent_toolkit._agents_server import engine_availability
+from agent_toolkit._agents_server import api_credits, engine_availability
+from agent_toolkit._atk import codex_connection
 from agent_toolkit._atk import config as atk_config
 from agent_toolkit._common import codex_usage_limit
 
@@ -22,23 +24,22 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
 @dataclasses.dataclass(frozen=True)
 class ProviderSelection:
-    """実効接続先と、通常接続がChatGPT認証を使うかの判定。"""
+    """実効接続先と、通常接続がChatGPT認証を使うかの判定。
+
+    `candidates`は使用順で`primary`より後ろにある利用可能なprovider ID、`diagnostics`は候補から除いた理由である。
+    """
 
     primary: str
     subscription: bool
     candidates: tuple[str, ...]
     ordinary_usage_allowed: bool | None = None
     usage_limit_type: str | None = None
-
-
-def configured_candidates() -> tuple[str, ...]:
-    """atkの変更可能設定を接続先列として解決する。"""
-    return atk_config.parse_codex_provider_candidates(atk_config.resolve_mutable_setting("codex_model_providers"))
+    diagnostics: tuple[str, ...] = ()
 
 
 def has_provider_configuration() -> bool:
-    """明示した接続先列がある場合だけCodex設定を評価する。"""
-    return bool(configured_candidates())
+    """接続設定を明示した場合だけ、使用順と種別からproviderを選ぶ。"""
+    return codex_connection.managed()
 
 
 def independent_api_auth(provider: dict[str, Any]) -> bool:
@@ -63,45 +64,72 @@ def independent_api_auth(provider: dict[str, Any]) -> bool:
     )
 
 
+def _entry_kind(entry: tuple[str, str]) -> str:
+    """残高不足の並べ替えへ渡す候補の種別を返す。"""
+    return entry[0]
+
+
 async def select(
-    request: Callable[..., Awaitable[dict[str, Any]]], cwd: str, *, primary: str | None = None
+    request: Callable[..., Awaitable[dict[str, Any]]],
+    cwd: str,
+    *,
+    primary: str | None = None,
+    role: str = "delegate",
 ) -> ProviderSelection:
-    """cwdを含むCodex設定と現在の認証種別から接続先を選ぶ。"""
+    """cwdを含むCodex設定と現在の認証種別から、役割の使用順に沿って接続先を選ぶ。
+
+    `primary`を渡す継続の会話はそのproviderを使い続け、後続候補だけを使用順から求める。
+    委譲先では、APIクレジットの残高不足を観測してから1時間は`credits`を使用順の後ろへ回す。
+    新規の会話の開始順と、失敗した会話が次に試す後続候補の順を同じ実効順序にそろえ、
+    並べ替えで後ろへ回した`credits`を後続候補で先に再試行しないようにする。
+    """
     response = await request("config/read", {"cwd": cwd, "includeLayers": False})
     effective = response.get("config")
     if not isinstance(effective, dict):
         raise ValueError("Codexの実効接続先設定を取得できません")
-    default = effective.get("model_provider") or "openai"
-    configured = configured_candidates()
-    selected = primary or (configured[0] if configured else default)
     providers = effective.get("model_providers", {})
     providers = providers if isinstance(providers, dict) else {}
     auth = await request("account/read", {"refreshToken": False})
     account = auth.get("account")
+    account_type = account.get("type") if isinstance(account, dict) else None
+    entries = codex_connection.provider_entries(role)
+    if role == "delegate":
+        entries = api_credits.order(entries, _entry_kind, engine="codex")
+    diagnostics: list[str] = []
+
+    def usable(kind: str, candidate: str) -> bool:
+        if kind == "subscription":
+            if account_type != "chatgpt":
+                if account_type is not None and codex_connection.API_KEY_SUBSCRIPTION_DIAGNOSTIC not in diagnostics:
+                    diagnostics.append(codex_connection.API_KEY_SUBSCRIPTION_DIAGNOSTIC)
+                    _LOG.warning(codex_connection.API_KEY_SUBSCRIPTION_DIAGNOSTIC)
+                return False
+            return True
+        definition = providers.get(candidate)
+        if candidate == "openai" and account_type == "apiKey":
+            return True
+        if isinstance(definition, dict) and independent_api_auth(definition):
+            return True
+        _LOG.info("Codex接続先を除外しました: provider=%s reason=undefined_or_no_independent_api_auth", candidate)
+        return False
+
+    available = [candidate for kind, candidate in entries if usable(kind, candidate)]
+    if primary is None:
+        if not available:
+            key = atk_config.connection_order_key("codex", role)
+            raise ValueError(
+                "Codexの使用順に利用可能な接続がありません。"
+                + "".join(f"{message}。" for message in diagnostics)
+                + f"`atk config set {key} <種別列>`と各種別のprovider設定・認証を確認する"
+            )
+        selected = available[0]
+        remainder = available[1:]
+    else:
+        selected = primary
+        remainder = [candidate for candidate in available if candidate != primary]
     definition = providers.get(selected, {})
     requires_auth = definition.get("requires_openai_auth", selected == "openai") if isinstance(definition, dict) else False
-    subscription = bool(requires_auth and isinstance(account, dict) and account.get("type") == "chatgpt")
-
-    def usable_api(candidate: str) -> bool:
-        definition = providers.get(candidate)
-        if candidate == "openai" and isinstance(account, dict) and account.get("type") == "apiKey":
-            return True
-        return isinstance(definition, dict) and independent_api_auth(definition)
-
-    if primary is None and configured and not subscription and not usable_api(selected):
-        _LOG.info("Codex接続先を除外しました: provider=%s reason=undefined_or_no_independent_api_auth", selected)
-        selected = next((candidate for candidate in configured[1:] if usable_api(candidate)), "")
-        if not selected:
-            raise ValueError("Codexの指定した接続先に利用可能なAPI認証がありません")
-    remainder = configured[configured.index(selected) + 1 :] if primary is None and selected in configured else configured
-    candidates = []
-    for candidate in remainder:
-        if candidate == selected:
-            continue
-        if not usable_api(candidate):
-            _LOG.info("Codex接続先を除外しました: provider=%s reason=undefined_or_no_independent_api_auth", candidate)
-            continue
-        candidates.append(candidate)
+    subscription = bool(requires_auth and account_type == "chatgpt")
     allowed = None
     usage_limit_type = None
     if subscription:
@@ -118,7 +146,7 @@ async def select(
             value = usage.get("ordinaryUsageAllowed")
             allowed = value if isinstance(value, bool) else None
             usage_limit_type = codex_usage_limit.from_rate_limits(usage.get("rateLimits")).limit_type
-    return ProviderSelection(selected, subscription, tuple(candidates), allowed, usage_limit_type)
+    return ProviderSelection(selected, subscription, tuple(remainder), allowed, usage_limit_type, tuple(diagnostics))
 
 
 def fallback_failure(error: Any, *, subscription: bool) -> bool:

@@ -19,7 +19,7 @@ def _recovery_old_values(*, multiple=False):
         "opencode_medium_tier_model": "openai/gpt-4.1",
         "write_model": "agy:gemini-4-argon/high",
         "codex_fast_mode": "true",
-        "claude_api_mode": "api-only",
+        "dotfiles_mode": "minimal",
         "other_setting": "keep",
         "review_fast_model": "claude:stale",
     }
@@ -46,7 +46,7 @@ def test_config_recovery_preset_repairs_all_missing_stages_atomically(tmp_path, 
     capsys.readouterr()
     saved = _saved(tmp_path)
     assert len(writes) == 1
-    for key in ("write_model", "codex_fast_mode", "claude_api_mode", "other_setting"):
+    for key in ("write_model", "codex_fast_mode", "dotfiles_mode", "other_setting"):
         assert saved[key] == old[key]
     assert not any(key.endswith("_engine") or "tier_model" in key for key in saved)
     assert all(
@@ -67,7 +67,7 @@ def test_config_recovery_set_repairs_missing_stage_without_replacing_other_candi
     assert saved["review_model"] == "opencode:openai/gpt-4.1"
     assert saved["write_model"] == old["write_model"]
     assert saved["codex_fast_mode"] == old["codex_fast_mode"]
-    assert saved["claude_api_mode"] == old["claude_api_mode"]
+    assert saved["dotfiles_mode"] == old["dotfiles_mode"]
     assert saved["other_setting"] == old["other_setting"]
     assert "review_engine" not in saved
     assert _main(tmp_path, "config", "get", "review_fast_model") == 0
@@ -523,178 +523,205 @@ def test_pre_tier_configuration_is_cleaned_without_reintroducing_old_migration(t
     assert not _saved(tmp_path)
 
 
-def test_claude_api_mode_accepts_values_and_env_override(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """show・get・setと環境上書きで接続方針の保存と不正値拒否を観測する。"""
+_CONNECTION_KEYS = (
+    "claude_credits_env_file",
+    "claude_payg_env_file",
+    "claude_orchestrator_connections",
+    "claude_worker_connections",
+    "codex_credits_provider",
+    "codex_payg_provider",
+    "codex_orchestrator_connections",
+    "codex_worker_connections",
+)
+
+
+def test_connection_keys_show_get_set_and_validate(tmp_path, capsys):
+    """新しい接続設定8キーの初期値表示、保存、正規化、検証を公開CLIで確かめる。"""
     assert _main(tmp_path, "config", "show") == 0
-    assert "claude_orchestrator_api_only true" in capsys.readouterr().out
-    for mode in ("api-credits", "pay-as-you-go", "api-only"):
-        assert _main(tmp_path, "config", "set", "claude_api_mode", mode) == 0
-        capsys.readouterr()
-        assert _main(tmp_path, "config", "get", "claude_api_mode") == 0
-        assert capsys.readouterr().out.strip() == mode
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-only")
-    assert _main(tmp_path, "config", "get", "claude_api_mode") == 0
-    assert capsys.readouterr().out.strip() == "api-only"
-    assert _main(tmp_path, "config", "set", "claude_api_mode", "invalid") == 2
-    error = capsys.readouterr().err
-    assert "pay-as-you-go" in error and "api-credits" in error
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "invalid")
-    assert _main(tmp_path, "config", "get", "claude_api_mode") == 2
-
-
-def test_claude_api_env_file_accepts_missing_path(tmp_path: pathlib.Path) -> None:
-    """将来作成するファイルのパスを設定CLIから保存できる。"""
-    path = str(tmp_path / "future.env")
-    assert _main(tmp_path, "config", "set", "claude_api_env_file", path) == 0
-    assert config_module.resolve_mutable_setting("claude_api_env_file") == path
-
-
-@pytest.mark.parametrize("mode,expected", [("pay-as-you-go", ("true", "false")), ("api-credits", ("false", "true"))])
-def test_legacy_claude_mode_retains_source_after_get_and_partial_set(tmp_path, capsys, mode, expected):
-    """公開getは旧入力の出所を保ち、新設定の片方だけを明示保存できる。"""
-    _write_config(tmp_path, {"claude_api_mode": mode, "write_model": "claude:sonnet"})
-    keys = ("claude_orchestrator_api_only", "claude_worker_api_first")
-    assert _main(tmp_path, "config", "get", *keys) == 0
-    assert capsys.readouterr().out.splitlines() == list(expected)
-    assert _saved(tmp_path) == {"claude_api_mode": mode, "write_model": "claude:sonnet"}
-    assert all(not config_module.claude_role_setting_is_explicit(key) for key in keys)
-    assert claude_connection.candidates("orchestrator").require_first().kind == "inherit"
-    assert claude_connection.candidates("delegate").require_first().kind == "inherit"
-    assert _main(tmp_path, "config", "set", keys[0], "false") == 0
-    capsys.readouterr()
-    assert config_module.resolve_mutable_setting(keys[1]) == expected[1]
-    assert _saved(tmp_path) == {"claude_api_mode": mode, "write_model": "claude:sonnet", keys[0]: "false"}
-    assert config_module.claude_role_setting_is_explicit(keys[0])
-    assert not config_module.claude_role_setting_is_explicit(keys[1])
-
-
-def test_legacy_api_only_is_exclusive_until_new_setting_is_written(tmp_path, capsys):
-    """新bool更新は指定した役割を変更し、他方の旧API固定を維持する。"""
-    assert _main(tmp_path, "config", "set", "claude_api_mode", "api-only") == 0
-    capsys.readouterr()
-    assert _saved(tmp_path) == {"claude_api_mode": "api-only"}
-    assert config_module.claude_legacy_api_only()
-    assert _main(tmp_path, "config", "set", "claude_worker_api_first", "false") == 0
-    capsys.readouterr()
-    assert _saved(tmp_path) == {"claude_api_mode": "api-only", "claude_worker_api_first": "false"}
-    assert not config_module.claude_legacy_api_only()
-    assert config_module.claude_legacy_api_only("claude_orchestrator_api_only")
-
-
-def test_new_claude_environment_overrides_legacy_mode(tmp_path, capsys, monkeypatch):
-    """新しい環境設定を旧環境入力より優先し、保存設定を変更しない。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-only")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_API_FIRST", "false")
-    assert _main(tmp_path, "config", "get", "claude_worker_api_first", "claude_orchestrator_api_only") == 0
-    assert capsys.readouterr().out == "false\ntrue\n"
-    assert not config_module.claude_legacy_api_only()
-    assert config_module.claude_legacy_api_only("claude_orchestrator_api_only")
-    assert not _config_file(tmp_path).exists()
-
-
-@pytest.mark.parametrize("source", ["saved", "environment"])
-@pytest.mark.parametrize("role", ["orchestrator", "delegate"])
-@pytest.mark.parametrize("value", ["true", "false"])
-@pytest.mark.parametrize("api_file", ["unset", "invalid", "valid"])
-def test_explicit_claude_role_policy_with_optional_api_file(tmp_path, capsys, monkeypatch, source, role, value, api_file):
-    """公開設定入力から候補と子環境まで、明示した役割の固定・順序と認証隔離を確認する。"""
-    key = "claude_orchestrator_api_only" if role == "orchestrator" else "claude_worker_api_first"
-    if source == "saved":
+    shown = dict(line.split(" ", 1) for line in capsys.readouterr().out.splitlines())
+    assert {key: shown[key] for key in _CONNECTION_KEYS} == {
+        "claude_credits_env_file": "",
+        "claude_payg_env_file": "",
+        "claude_orchestrator_connections": "subscription,credits",
+        "claude_worker_connections": "credits,subscription",
+        "codex_credits_provider": "",
+        "codex_payg_provider": "",
+        "codex_orchestrator_connections": "subscription,credits",
+        "codex_worker_connections": "credits,subscription",
+    }
+    assert not config_module.connections_configured("claude")
+    assert not config_module.connections_configured("codex")
+    for key, value, expected in (
+        ("claude_credits_env_file", "~/credits.env", str(pathlib.Path.home() / "credits.env")),
+        ("claude_payg_env_file", "/missing/payg.env", "/missing/payg.env"),
+        ("claude_orchestrator_connections", " subscription , payg ", "subscription,payg"),
+        ("claude_worker_connections", "payg", "payg"),
+        ("codex_credits_provider", "openai", "openai"),
+        ("codex_payg_provider", "my-payg", "my-payg"),
+        ("codex_orchestrator_connections", "credits,subscription,payg", "credits,subscription,payg"),
+        ("codex_worker_connections", "subscription", "subscription"),
+    ):
         assert _main(tmp_path, "config", "set", key, value) == 0
-        capsys.readouterr()
-    else:
-        monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", value)
-    if api_file != "unset":
-        path = tmp_path / "api.env"
-        path.write_text("ANTHROPIC_API_KEY=selected-api\n" if api_file == "valid" else "invalid", encoding="utf-8")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    parent = {"ANTHROPIC_API_KEY": "parent-api", "CLAUDE_CODE_OAUTH_TOKEN": "parent-oauth"}
-    choices = claude_connection.candidates(role, env=parent)
-    if role == "orchestrator" and value == "true" and api_file != "valid":
-        assert not choices.connections
-        with pytest.raises(ValueError, match="atk config set claude_api_env_file"):
-            choices.require_first()
-        return
-    expected = ["subscription"]
-    if api_file == "valid":
-        expected = (
-            (["api"] if value == "true" else ["subscription"])
-            if role == "orchestrator"
-            else (["api", "subscription"] if value == "true" else ["subscription", "api"])
-        )
-    assert [item.kind for item in choices.connections] == expected
-    for selected in choices.connections:
-        child = claude_connection.connection_environment(parent, selected)
-        if selected.kind == "subscription":
-            assert "ANTHROPIC_API_KEY" not in child
-            assert child["CLAUDE_CODE_OAUTH_TOKEN"] == "parent-oauth"
-        else:
-            assert child["ANTHROPIC_API_KEY"] == "selected-api"
-            assert "CLAUDE_CODE_OAUTH_TOKEN" not in child
+        assert not capsys.readouterr().err
+        assert _main(tmp_path, "config", "get", key) == 0
+        assert capsys.readouterr().out == expected + "\n"
+    assert config_module.connections_configured("claude")
+    assert config_module.connections_configured("codex")
+    before = _config_file(tmp_path).read_bytes()
+    for key, value in (
+        ("claude_worker_connections", ""),
+        ("claude_worker_connections", "api"),
+        ("codex_worker_connections", "credits,credits"),
+        ("codex_payg_provider", "my payg"),
+        ("codex_credits_provider", "a,b"),
+    ):
+        assert _main(tmp_path, "config", "set", key, value) == 2
+        assert "設定値の書式が不正" in capsys.readouterr().err
+    assert _config_file(tmp_path).read_bytes() == before
 
 
-@pytest.mark.parametrize("mode", [None, "pay-as-you-go", "api-credits"])
-def test_unconfigured_claude_roles_preserve_inherit_after_public_get(tmp_path, capsys, mode):
-    """未指定と旧2モードは、公開get後もAPI環境未設定の認証継承を保持する。"""
-    if mode is not None:
-        _write_config(tmp_path, {"claude_api_mode": mode})
-    assert _main(tmp_path, "config", "get", "claude_orchestrator_api_only", "claude_worker_api_first") == 0
+@pytest.mark.parametrize(
+    ("old", "expected"),
+    [
+        # この環境の保存値（統括担当サブスク固定・委譲先API優先）。
+        (
+            {
+                "claude_api_env_file": "/home/user/claude-api.env",
+                "claude_orchestrator_api_only": "false",
+                "claude_worker_api_first": "true",
+                "codex_model_providers": "",
+            },
+            {
+                "claude_credits_env_file": "/home/user/claude-api.env",
+                "claude_orchestrator_connections": "subscription",
+                "claude_worker_connections": "credits,subscription",
+            },
+        ),
+        # 旧設定の初期値（pay-as-you-go）: 統括担当API固定、委譲先サブスク優先。
+        (
+            {"claude_api_env_file": "/api.env"},
+            {
+                "claude_payg_env_file": "/api.env",
+                "claude_orchestrator_connections": "payg",
+                "claude_worker_connections": "subscription,payg",
+            },
+        ),
+        (
+            {"claude_api_mode": "api-credits", "claude_api_env_file": "/api.env"},
+            {
+                "claude_credits_env_file": "/api.env",
+                "claude_orchestrator_connections": "subscription",
+                "claude_worker_connections": "credits,subscription",
+            },
+        ),
+        (
+            {"claude_api_mode": "api-only", "claude_api_env_file": "/api.env"},
+            {
+                "claude_payg_env_file": "/api.env",
+                "claude_orchestrator_connections": "payg",
+                "claude_worker_connections": "payg",
+            },
+        ),
+        # 新boolを明示した役割は旧api-onlyの固定より優先する。
+        (
+            {"claude_api_mode": "api-only", "claude_worker_api_first": "false", "claude_api_env_file": "/api.env"},
+            {
+                "claude_payg_env_file": "/api.env",
+                "claude_orchestrator_connections": "payg",
+                "claude_worker_connections": "subscription,payg",
+            },
+        ),
+        # envファイルが無い場合はAPIの種別を除き、空になる役割は書かない。
+        ({"claude_api_mode": "api-only"}, {}),
+        (
+            {"claude_orchestrator_api_only": "false"},
+            {"claude_orchestrator_connections": "subscription", "claude_worker_connections": "subscription"},
+        ),
+        # 既に保存した移行先のキーは上書きしない。
+        (
+            {"claude_api_env_file": "/api.env", "claude_worker_connections": "payg"},
+            {
+                "claude_payg_env_file": "/api.env",
+                "claude_orchestrator_connections": "payg",
+                "claude_worker_connections": "payg",
+            },
+        ),
+        ({"codex_model_providers": ""}, {}),
+        (
+            {"codex_model_providers": "openai"},
+            {"codex_orchestrator_connections": "subscription", "codex_worker_connections": "subscription"},
+        ),
+        (
+            {"codex_model_providers": "openai,custom"},
+            {
+                "codex_payg_provider": "custom",
+                "codex_orchestrator_connections": "subscription,payg",
+                "codex_worker_connections": "subscription,payg",
+            },
+        ),
+        (
+            {"codex_model_providers": "custom,openai"},
+            {
+                "codex_payg_provider": "custom",
+                "codex_orchestrator_connections": "payg,subscription",
+                "codex_worker_connections": "payg,subscription",
+            },
+        ),
+    ],
+)
+def test_retired_connection_settings_migrate_once_and_are_removed(tmp_path, capsys, old, expected):
+    """旧接続設定の保存値を最初の読込で移行先へ移し、旧キーを設定ファイルから消す。"""
+    _write_config(tmp_path, {**old, "codex_fast_mode": "true"})
+    assert _main(tmp_path, "config", "show") == 0
+    assert not capsys.readouterr().err
+    assert _saved(tmp_path) == {**expected, "codex_fast_mode": "true"}
+    assert _main(tmp_path, "config", "show") == 0
+    assert _saved(tmp_path) == {**expected, "codex_fast_mode": "true"}
+
+
+def test_codex_migration_with_multiple_api_providers_requires_new_keys(tmp_path, capsys):
+    """openai以外のproviderが2つ以上ある旧設定は自動移行せず、新キーの保存で置き換える。"""
+    path = _write_config(tmp_path, {"codex_model_providers": "openai,paid-a,paid-b"})
+    before = path.read_bytes()
+    assert _main(tmp_path, "config", "show") == 2
+    err = capsys.readouterr().err
+    assert "自動移行できません" in err and "codex_payg_provider" in err
+    assert path.read_bytes() == before
+    assert _main(tmp_path, "config", "set", "codex_payg_provider", "paid-b") == 0
     capsys.readouterr()
-    parent = {"ANTHROPIC_API_KEY": "parent-api", "CLAUDE_CODE_OAUTH_TOKEN": "parent-oauth"}
-    for role in ("orchestrator", "delegate"):
-        selected = claude_connection.candidates(role, env=parent).require_first()
-        assert selected.kind == "inherit"
-        assert claude_connection.connection_environment(parent, selected) == parent
-    if mode is not None:
-        assert _saved(tmp_path) == {"claude_api_mode": mode}
-    else:
-        assert not _config_file(tmp_path).exists()
+    assert _saved(tmp_path) == {"codex_payg_provider": "paid-b"}
 
 
-@pytest.mark.parametrize("new_role", ["orchestrator", "delegate"])
-@pytest.mark.parametrize("source", ["saved", "environment"])
-def test_partial_new_role_keeps_other_legacy_api_only(tmp_path, capsys, monkeypatch, new_role, source):
-    """片役割の明示変更後も、他役割の保存会話は旧API固定で再開する。"""
-    assert _main(tmp_path, "config", "set", "claude_api_mode", "api-only") == 0
-    capsys.readouterr()
-    key = "claude_orchestrator_api_only" if new_role == "orchestrator" else "claude_worker_api_first"
-    if source == "saved":
-        assert _main(tmp_path, "config", "set", key, "false") == 0
-        capsys.readouterr()
-    else:
-        monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", "false")
-    path = tmp_path / "api.env"
-    path.write_text("ANTHROPIC_API_KEY=selected-api\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    other_role = "delegate" if new_role == "orchestrator" else "orchestrator"
-    assert not claude_connection.api_only(new_role)
-    assert claude_connection.api_only(other_role)
-    selected = claude_connection.with_current_isolation(
-        claude_connection.Connection("subscription"), role=other_role, env={"CLAUDE_CODE_OAUTH_TOKEN": "parent-oauth"}
-    )
-    assert selected.kind == "api"
-    assert selected.api_env_file == str(path)
+@pytest.mark.parametrize("key", list(config_module._RETIRED_CONNECTION_KEYS))  # pylint: disable=protected-access  # noqa: SLF001
+def test_retired_connection_keys_are_rejected_with_targets(tmp_path, capsys, monkeypatch, key):
+    """旧接続設定キーのget・setと環境変数は、移行先のキー名を示すエラーで終わる。"""
+    targets = config_module._RETIRED_CONNECTION_KEYS[key]  # pylint: disable=protected-access  # noqa: SLF001
+    for arguments in (("get", key), ("set", key, "value")):
+        assert _main(tmp_path, "config", *arguments) == 2
+        err = capsys.readouterr().err
+        assert all(target in err for target in targets)
+    assert not _config_file(tmp_path).exists()
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", "value")
+    assert _main(tmp_path, "config", "show") == 2
+    err = capsys.readouterr().err
+    assert all(f"AGENT_TOOLKIT_CONFIG_{target.upper()}" in err for target in targets)
+    with pytest.raises(_next_action.ActionableError, match=f"AGENT_TOOLKIT_CONFIG_{key.upper()}"):
+        config_module.resolve_mutable_setting("claude_worker_connections")
 
 
-def test_legacy_environment_preserves_inherit_over_saved_new_role(tmp_path, capsys, monkeypatch):
-    """保存済み新キーより優先する旧環境入力を、ユーザーの新キー指定として扱わない。"""
-    assert _main(tmp_path, "config", "set", "claude_orchestrator_api_only", "true") == 0
-    capsys.readouterr()
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
-    assert claude_connection.candidates("orchestrator").require_first().kind == "inherit"
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
-    selected = claude_connection.candidates("orchestrator", env={"CLAUDE_CODE_OAUTH_TOKEN": "oauth"}).require_first()
-    assert selected.kind == "subscription"
-    assert _saved(tmp_path) == {"claude_orchestrator_api_only": "true"}
+def test_connection_order_resolution_per_engine_and_role(monkeypatch):
+    """使用順をエンジンと役割ごとに解決し、環境変数を保存値より優先する。"""
+    assert config_module.connection_order("claude", "orchestrator") == ("subscription", "credits")
+    assert config_module.connection_order("codex", "delegate") == ("credits", "subscription")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_WORKER_CONNECTIONS", "payg,subscription")
+    assert config_module.connection_order("codex", "delegate") == ("payg", "subscription")
+    assert config_module.connections_configured("codex")
+    assert not config_module.connections_configured("claude")
 
 
 def test_explicit_subscription_requires_oauth_without_api_file(tmp_path, capsys, monkeypatch):
-    """親にAPI認証だけがある場合、公開保存したサブスク固定はログインの復旧操作を返す。"""
-    assert _main(tmp_path, "config", "set", "claude_orchestrator_api_only", "false") == 0
+    """親にAPI認証だけがある場合、公開保存したサブスクリプションだけの使用順はログインの復旧操作を返す。"""
+    assert _main(tmp_path, "config", "set", "claude_orchestrator_connections", "subscription") == 0
     capsys.readouterr()
     available = claude_connection.subscription_available
     # 空の資格情報ディレクトリを使うファイル認証の分岐で、OSのKeychainと実CLIを呼ばずに確認する。
@@ -715,7 +742,7 @@ def _isolate_platformdirs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(config_module.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(config_module.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
     monkeypatch.setattr(config_module.platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
-    for key in (*config_module._MUTABLE_KEY_DEFAULTS, "claude_api_mode", *_LEGACY_KEYS):  # pylint: disable=protected-access  # noqa: SLF001
+    for key in (*config_module._MUTABLE_KEY_DEFAULTS, *config_module._RETIRED_CONNECTION_KEYS, *_LEGACY_KEYS):  # pylint: disable=protected-access  # noqa: SLF001
         monkeypatch.delenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", raising=False)
     monkeypatch.setattr(
         codex_models,
@@ -768,88 +795,6 @@ def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.C
         capsys.readouterr()
         assert _main(tmp_path, "config", "get", key) == 0
         assert capsys.readouterr().out.rstrip("\n") == value
-
-
-@pytest.mark.parametrize(("value", "expected"), [("", ""), ("  ", ""), (" a, b,a ", "a,b")])
-def test_codex_provider_config_cli(tmp_path, capsys, monkeypatch, value, expected):
-    """provider列を公開CLIで正規化・保存・取得・解除し、モデルの警告を適用しない。"""
-    key = "codex_model_providers"
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["config", "set", key, value], home=tmp_path)
-    assert not capsys.readouterr().err
-    assert json.loads((tmp_path / "config" / "config.json").read_text(encoding="utf-8"))[key] == expected
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["config", "get", key], home=tmp_path)
-    assert capsys.readouterr().out == expected + "\n"
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", " b, c,b ")
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["config", "get", key], home=tmp_path)
-    assert capsys.readouterr().out == "b,c\n"
-    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS")
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["config", "set", key, ""], home=tmp_path)
-    capsys.readouterr()
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["config", "get", key], home=tmp_path)
-    assert capsys.readouterr().out == "\n"
-
-
-@pytest.mark.parametrize("value", [",a", "a,", "a,,b", "a, ,b"])
-def test_codex_provider_empty_element_rejected(tmp_path, capsys, monkeypatch, value):
-    """保存値と環境変数の空候補を拒否し、設定ファイルの不在を保つ。"""
-    key = "codex_model_providers"
-    with pytest.raises(SystemExit, match="2"):
-        atk.main(["config", "set", key, value], home=tmp_path)
-    assert not (tmp_path / "config" / "config.json").exists()
-    capsys.readouterr()
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", value)
-    with pytest.raises(SystemExit, match="2"):
-        atk.main(["config", "get", key], home=tmp_path)
-    assert not capsys.readouterr().out
-
-
-def test_codex_provider_setting_clear_preserves_other_settings(tmp_path, capsys):
-    """公開操作で接続先列を解除し、独立した速度設定を保持する。"""
-    path = tmp_path / "config" / "config.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"codex_model_providers": "paid-a", "codex_fast_mode": "true"}), encoding="utf-8")
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["config", "get", "codex_model_providers"], home=tmp_path)
-    initial = capsys.readouterr()
-    assert initial.out == "paid-a\n"
-    assert not initial.err
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["config", "set", "codex_model_providers", ""], home=tmp_path)
-    assert not capsys.readouterr().err
-    assert json.loads(path.read_text(encoding="utf-8")) == {"codex_model_providers": "", "codex_fast_mode": "true"}
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["config", "show"], home=tmp_path)
-    assert not capsys.readouterr().err
-
-
-def test_claude_api_env_config_cli(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """存在しないパスを保存・表示でき、環境上書きと解除を解釈する。"""
-    for arguments, expected in [
-        (["set", "claude_api_env_file", "~/missing.env"], ""),
-        (["get", "claude_api_env_file"], str(pathlib.Path.home() / "missing.env")),
-        (["show"], "claude_api_env_file"),
-        (["set", "claude_api_env_file", ""], ""),
-        (["get", "claude_api_env_file"], ""),
-    ]:
-        assert _main(tmp_path, "config", *arguments) == 0
-        output = capsys.readouterr()
-        if expected:
-            assert expected in output.out
-        elif arguments[0] == "get":
-            assert output.out == "\n"
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "~/override.env")
-    assert config_module.resolve_mutable_setting("claude_api_env_file") == str(pathlib.Path.home() / "override.env")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
-    assert config_module.resolve_mutable_setting("claude_api_env_file") == ""
 
 
 class TestCodexFastMode:

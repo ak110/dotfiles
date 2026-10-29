@@ -24,6 +24,7 @@ from agent_toolkit._testing.agents_server_support import (
     ResultMessage,
     SystemMessage,
     _rejected_stream,
+    configure_claude_payg,
     install_backend,
 )
 
@@ -42,7 +43,7 @@ async def test_subscription_launch_drops_parent_api_auth(
     """親の環境変数と親settingsにあるAPI認証を遮断し、OAuth接続を保持する。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=configured-key\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
+    configure_claude_payg(monkeypatch, str(api))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-key")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "parent-token")
     monkeypatch.setattr(
@@ -76,8 +77,8 @@ async def test_explicit_subscription_orchestrator_without_api_file_isolates_sdk_
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """API環境未設定でも、明示したサブスク固定を新規SDK起動の環境とsettingsへ適用する。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
+    configure_claude_payg(monkeypatch, "")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
     monkeypatch.setattr(child_environment, "_INHERITED", {})
     child_environment.prepare(os.environ)
@@ -105,20 +106,19 @@ async def test_explicit_subscription_orchestrator_without_api_file_isolates_sdk_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("initial", ["inherit", "api"])
+@pytest.mark.parametrize("initial", ["inherit", "payg"])
 async def test_explicit_subscription_orchestrator_reselects_same_conversation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, initial: str
 ) -> None:
     """明示した固定を既存会話の次turnと冷再開へ適用し、同じSDK会話をサブスクで続ける。"""
     monkeypatch.setattr(child_environment, "_INHERITED", {})
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
-    if initial == "api":
+    configure_claude_payg(monkeypatch, "")
+    if initial == "payg":
         path = tmp_path / "api.env"
         path.write_text("ANTHROPIC_API_KEY=selected-api\n", encoding="utf-8")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "true")
+        configure_claude_payg(monkeypatch, str(path))
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "payg")
     child_environment.prepare(os.environ)
     seen: list[Any] = []
     environments: list[dict[str, str]] = []
@@ -132,9 +132,9 @@ async def test_explicit_subscription_orchestrator_reselects_same_conversation(
         session = await backend.start("当初の要求", str(tmp_path), model_type="orchestrate")
         await _until(lambda: session.terminal)
         assert session.claude_connection == initial
-        assert environments[0].get("ANTHROPIC_API_KEY") == ("selected-api" if initial == "api" else "parent-api")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
+        assert environments[0].get("ANTHROPIC_API_KEY") == ("selected-api" if initial == "payg" else "parent-api")
+        configure_claude_payg(monkeypatch, "")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription")
         await backend.send_message(session, "次の作業")
         await _until(lambda: session.terminal)
         assert len(seen) == 2
@@ -159,7 +159,7 @@ async def test_unconfigured_start_and_cold_resume_preserve_parent_auth(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """公開startと保存済み会話の再開で、APIキー・Bedrock・親settingsの認証を引き継ぐ。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+    configure_claude_payg(monkeypatch, "")
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-key")
     monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
@@ -194,9 +194,6 @@ async def test_unconfigured_start_and_cold_resume_preserve_parent_auth(
         await manager.stop("inherited-auth")
         info = session_registry.resolve("inherited-auth").resume_info
         assert info is not None and info.claude_connection == "inherit"
-    api = tmp_path / "later.env"
-    api.write_text("ANTHROPIC_API_KEY=later-key\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
     async with server_manager.AgentsServerManager() as manager:
         install_backend(
             manager, "claude", claude.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
@@ -216,7 +213,7 @@ async def test_usage_limit_api_migration_and_cold_resume(
     """起動直後の上限から同じ会話を移し、追送・stop・再起動でも保持したファイルを読み直す。"""
     env_file = tmp_path / "api.env"
     env_file.write_text("# 接続\nexport ANTHROPIC_AUTH_TOKEN='dummy-secret'\nCUSTOM_API_NAME=\"one=two\"\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(env_file))
+    configure_claude_payg(monkeypatch, str(env_file))
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
     options_seen: list[Any] = []
     settings_seen: list[str] = []
@@ -282,7 +279,7 @@ async def test_usage_limit_api_migration_and_cold_resume(
         assert "dummy-secret" not in shown and "claude_api_env_file" not in shown
         public = json.dumps([result, (await manager.list_sessions(include_terminated=True))], ensure_ascii=False)
         assert "dummy-secret" not in public and "claude_api_env_file" not in public
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+        configure_claude_payg(monkeypatch, "")
         await manager.send_message("api-session", "追送")
         assert (await terminal(manager, "api-session"))["status"] == "completed"
         await manager.stop("api-session")
@@ -295,7 +292,7 @@ async def test_usage_limit_api_migration_and_cold_resume(
             if record.getMessage().startswith("claude_api_switch session_id=api-session ")
         ]
         assert len(switches) == 1
-        assert "previous=subscription selected=api reason=usage_limit limit_type=seven_day" in switches[0]
+        assert "previous=subscription selected=payg reason=usage_limit limit_type=seven_day" in switches[0]
         assert "dummy-secret" not in caplog.text
 
     env_file.write_text("ANTHROPIC_AUTH_TOKEN=rotated-secret\n", encoding="utf-8")
@@ -350,8 +347,8 @@ async def test_api_migration_holds_result_until_old_connection_closes(
     """常駐監視が旧接続の切断を待つ間も、公開waitへ中断前の失敗を渡さない。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "never")
     env_file = tmp_path / "api.env"
-    env_file.write_text("TOKEN=dummy\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(env_file))
+    env_file.write_text("ANTHROPIC_API_KEY=dummy\n", encoding="utf-8")
+    configure_claude_payg(monkeypatch, str(env_file))
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
     disconnecting = asyncio.Event()
     release = asyncio.Event()
@@ -398,8 +395,7 @@ def _pay_as_you_go_with_clock(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "never")
     env_file = tmp_path / "api.env"
     env_file.write_text("ANTHROPIC_AUTH_TOKEN=dummy-secret\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(env_file))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
+    configure_claude_payg(monkeypatch, str(env_file))
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
     clock = {"now": 1_000_000.0}
     fake_time = types.SimpleNamespace(time=lambda: clock["now"])
@@ -448,13 +444,13 @@ async def test_api_switched_delegate_returns_to_subscription_after_reset(
         assert len(options_seen) == 2
         assert options_seen[1].env["ANTHROPIC_AUTH_TOKEN"] == "dummy-secret"
         session = manager.sessions["return-session"]
-        assert session.claude_connection == "api"
+        assert session.claude_connection == "payg"
 
         clock["now"] += 50
         await manager.send_message("return-session", "解除前の追送")
         assert (await terminal(manager))["status"] == "completed"
         assert len(options_seen) == 2
-        assert manager.sessions["return-session"].claude_connection == "api"
+        assert manager.sessions["return-session"].claude_connection == "payg"
 
         clock["now"] += 100
         await manager.send_message("return-session", "解除後の追送")
@@ -526,7 +522,7 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
                 await manager.start("claude:sonnet/high", "作業する", str(tmp_path))
                 await _until(lambda: len(options_seen) == 2 and "auto-session" in manager.sessions and bool(api_client.queries))
                 session = manager.sessions["auto-session"]
-                assert session.claude_connection == "api"
+                assert session.claude_connection == "payg"
                 tool_use = AssistantMessage("")
                 tool_use.content = [
                     SimpleNamespace(
@@ -567,10 +563,10 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
                     assert options_seen[2].resume == "auto-session" and not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
                     assert options_seen[3].resume == "auto-session"
                     assert options_seen[3].env["ANTHROPIC_AUTH_TOKEN"] == "dummy-secret"
-                    assert session.claude_connection == "api"
+                    assert session.claude_connection == "payg"
                 else:
                     assert result["agent_message"] == "APIの最終結果"
                     assert len(options_seen) == 2
-                    assert session.claude_connection == "api"
+                    assert session.claude_connection == "payg"
             finally:
                 await manager.close()

@@ -85,7 +85,7 @@ def test_record_survives_restart_and_is_cleared(tmp_path: pathlib.Path, monkeypa
 
     monkeypatch.setattr(session, "run_process_session", execute)
     monkeypatch.setattr(session, "resolve_orchestrator_specs", lambda: [("claude", "model", "medium")])
-    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_a, **_k: ("claude", "model", "medium"))
+    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_a, **_k: ("claude", "model", "medium", None))
     results = loop.run_coordinator(
         argparse.Namespace(resume=None, worktree=None),
         listing.configured_repo_snapshot(notes, (repository,)),

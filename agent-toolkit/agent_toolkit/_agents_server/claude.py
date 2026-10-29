@@ -26,8 +26,8 @@ from typing import Any, Literal, cast
 lazy import psutil
 
 from agent_toolkit._agents_server import (
+    api_credits,
     child_environment,
-    claude_api_credits,
     claude_mcp,
     claude_retry_record,
     claude_settings,
@@ -415,7 +415,7 @@ def _build_options(
     if (cli_path := shutil.which("claude")) is not None:
         options["cli_path"] = cli_path
     # 起動時に継承環境から除いた接続値は、選択した接続へだけ明示的に戻す。
-    connection = connection_settings.Connection("api" if api_env_file else connection_kind, api_env_file, isolation_env_file)
+    connection = connection_settings.Connection(connection_kind, api_env_file, isolation_env_file)
     isolate_auth = connection.kind != "inherit"
     selected_environment = connection_settings.connection_environment(child_environment.inherited(), connection)
     env.update({key: value for key, value in selected_environment.items() if key not in os.environ})
@@ -562,14 +562,21 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
 
 
 def _returns_to_subscription(session: SessionState) -> bool:
-    """利用上限でAPIへ移した委譲先が、解除予定時刻を過ぎてサブスクリプションを先頭候補に持つかを返す。"""
+    """利用上限でAPIへ移した委譲先が、解除予定時刻を過ぎ、使用順で現在の種別より前にサブスクリプションを持つかを返す。"""
     retry_at = session.claude_subscription_retry_at
-    if retry_at is None or session.claude_connection != "api" or session.claude_role != "delegate":
+    if retry_at is None or session.claude_connection not in claude_connection.API_KINDS or session.claude_role != "delegate":
         return False
     if time.time() < retry_at:
         return False
-    connections = claude_connection.candidates("delegate", env=child_environment.inherited()).connections
-    return bool(connections) and connections[0].kind == "subscription"
+    kinds = [item.kind for item in claude_connection.candidates("delegate", env=child_environment.inherited()).connections]
+    if "subscription" not in kinds:
+        return False
+    return session.claude_connection not in kinds or kinds.index("subscription") < kinds.index(session.claude_connection)
+
+
+def _connection_kind(connection: claude_connection.Connection) -> str:
+    """残高不足の並べ替えへ渡す接続の種別を返す。"""
+    return connection.kind
 
 
 class ClaudeServerManager:
@@ -661,8 +668,8 @@ class ClaudeServerManager:
         failures = list(choices.diagnostics)
         connections = choices.connections
         if role == "delegate":
-            # 同じプロセスで直前に残高不足を観測した場合は、APIで失敗して切り替える往復を省く。
-            connections = claude_api_credits.order_connections(connections)
+            # 同じプロセスで直前に残高不足を観測した場合は、クレジットで失敗して切り替える往復を省く。
+            connections = api_credits.order(connections, _connection_kind, engine="claude")
             if connections != choices.connections:
                 _LOG.info("claude_connection_reordered reason=api_credits order=%s", ",".join(c.kind for c in connections))
         for connection in connections:
@@ -727,7 +734,7 @@ class ClaudeServerManager:
         `fast_mode`はCodexの速度の指定であり、本backendは受け取って使わない。
         """
         del fast_mode
-        selected_connection = claude_connection.with_current_isolation(
+        selected_connection = claude_connection.apply_current_settings(
             connection_settings.Connection(
                 existing_session.claude_connection or "inherit" if existing_session else connection_kind,
                 api_env_file or (existing_session.claude_api_env_file if existing_session else None),
@@ -825,7 +832,7 @@ class ClaudeServerManager:
         """新規または保存済みsessionを所有する長命タスクを開始する。"""
         diagnostic = _InitializationDiagnostic()
         if connection_kind == "subscription" and isolation_env_file is None:
-            isolation_env_file = claude_connection.with_current_isolation(
+            isolation_env_file = claude_connection.apply_current_settings(
                 connection_settings.Connection(connection_kind),
                 role="orchestrator" if model_type == "orchestrate" else "delegate",
                 env=child_environment.inherited(),
@@ -948,8 +955,8 @@ class ClaudeServerManager:
         # 進行中のturnと、CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）では所有タスクを止めない。
         held_without_pending = session.awaiting_auto_resume and not resume_waits.has_pending_auto_resume_targets(session)
         role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
-        fixed_kind = claude_connection.fixed_kind(role)
-        if (session.terminal or held_without_pending) and fixed_kind and session.claude_connection != fixed_kind:
+        # 保持した接続の種別を使用順から外した会話は、次のturnで使用順の先頭の利用可能な候補へ移す。
+        if (session.terminal or held_without_pending) and claude_connection.outside_order(session.claude_connection, role):
             previous = session.previous_result() if session.terminal and not session.awaiting_auto_resume else None
             await self._resume_next_turn(session, prompt)
             return {"delivery": "reply_started", "previous_result": previous}
@@ -1117,12 +1124,13 @@ class ClaudeServerManager:
                 turn_seq=turn_seq,
                 publish_registry=self._publish_registry,
                 claude_api_env_file=api_env_file or None,
-                claude_connection="api" if api_env_file else connection_kind,
+                claude_connection=connection_kind,
                 claude_role="orchestrator" if model_type == "orchestrate" else "delegate",
             )
-            session.claude_connection = "api" if api_env_file else connection_kind
+            session.claude_connection = connection_kind
             session.claude_api_env_file = api_env_file
-            if connection_kind == "api" and claude_connection.api_only(session.claude_role or "delegate"):
+            # 使用順にサブスクリプションが無い会話は、上限解除後もサブスクリプションへ戻さない。
+            if not claude_connection.order_includes("subscription", session.claude_role or "delegate"):
                 session.claude_subscription_retry_at = None
             self.sessions[session_id] = session
             session.claude_mcp_diagnostics = ()

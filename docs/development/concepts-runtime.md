@@ -84,32 +84,31 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
   対象は`agents_server`、メインのセッション、`atk wi process-loop`の可用性判定、`atk run-skill`の本作業と`atk commit`であり、`overage`、他の429、529、認証・権限の失敗は従来の切替のままとする。
   待機は回数と総時間で打ち切らない。実装契約は[design-agents-runtime.md](design-agents-runtime.md#api失敗過負荷利用上限の待機)の「API失敗・過負荷・利用上限の待機」にあり、委譲元の扱いは`agent-toolkit/skills/delegation/references/waiting-stalls.md`「停滞の検知と巻き取り」が定める
 
-- `agents_server`のCodex接続先はatk configの`codex_model_providers`へ優先順で並べ、先頭を主接続先とする。未設定ならconfig.tomlに従い代替試行しない。接続先の定義と認証はCodexが持つ
-  （2026年10月10日、ユーザー回答。主接続先と移行先の選択設定が2カ所へ分散する運用を避けるため）。
-  サブスクを先頭とする環境で利用上限に達した場合、後続の独立APIへ同じ会話を移す。
-  回復後は新規sessionだけサブスクへ戻し、既にAPIへ移った会話はAPIを維持する。
-  切替の事実とprovider名を委譲元の応答・通知・公開状態や継続指示へ加えない。
-  サブスクのみ、サブスク＋API、APIのみの3環境に対応し、API主接続とその認証選択は尊重する。
-  対象は`agents_server`の全起動種別のCodexとその継続であり、直接起動とClaudeの解除待ちは対象外とする
-  （2026年10月9日、ユーザー指示。既存API会話を維持する理由はキャッシュ効率、通知を増やさない理由は委譲先の混乱を避けるため）
-
-- Claudeの接続方針は`claude_api_mode`で指定する（2026年10月17日、ユーザー回答）。
-  `api-only`は両役割でAPIだけを使い、既存のsubscription・inheritも次の継続から同じ会話をAPIへ移す（2026年10月22日、ユーザー指示）。
-  保存後再開とサーバー再起動後も評価し、API環境の未設定・空・不正では設定の修正を求め、API失敗でサブスクリプションへ移らない。
-  api-onlyの間は上限解除後のサブスクリプション復帰を抑止する。
-  以下の通常認証と既存接続の保持はpay-as-you-goとapi-creditsに適用する。
-  `claude_api_env_file`が未設定なら親環境とClaude Codeの通常の認証解決を維持し、APIキーやBedrock・Vertexなどを利用できる。
-  認証検出による起動拒否、認証環境の隔離、役割別割当と接続切替は行わない。
-  未設定時に開始した会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時の通常の認証解決を維持する。
-  以下の役割別接続管理はenvファイルを設定した会話に適用する。
-  既定の`pay-as-you-go`はprocess-loopとall-reposのオーケストレーターをAPIへ固定し、通常の委譲先をサブスクリプション、APIの順にする。
-  `api-credits`はオーケストレーターをサブスクリプションへ固定し、通常の委譲先をAPI、サブスクリプションの順にする。
-  一方だけの認証環境はその接続を使い、API環境ファイルが空か無効な場合はAPI候補を除く。
-  接続先とAPI環境ファイルの所在を再開情報へ保持し、設定変更・解除と解放後の再開でも選択済みの接続を使う。
-  通常の委譲先は利用枠・API残高の不足で同じ会話を次の接続へ移し、新規sessionは毎回先頭候補から評価する。
-  `pay-as-you-go`で利用上限によりサブスクリプションからAPIへ移した委譲先は、上限の解除予定時刻の後に始まる最初のturnで同じ会話をサブスクリプションへ戻す（2026年10月18日、ユーザー指示「すぐAPIに切り替えつつ上限解除されたらまたサブスク優先に戻る動作がいい」）。戻す時刻は所有MCPサーバーのメモリーだけに置き、解放後の再開は保持した接続を使う。
-  親環境と親settingsからAPI認証を隔離し、選択したenvの値は起動ごとに読み直す。
-  ユーザーの直接起動、組み込みAgentとfork、run-skill、commit、Codexの接続先は対象外である
+- Claude・Codexの接続は、サブスクリプション（`subscription`）、有限のAPIクレジット（`credits`）、従量課金API（`payg`）の3種別とする。
+  認証の所在は種別ごとの設定キー（Claudeは`claude_credits_env_file`・`claude_payg_env_file`、Codexは`codex_credits_provider`・`codex_payg_provider`）に置く。
+  役割（統括担当・委譲先）ごとの使用順は、エンジン別の4キーに置く（2026年10月29日、ユーザー回答「役割別×エンジン別」）。
+  4キーは`claude_orchestrator_connections`・`claude_worker_connections`・`codex_orchestrator_connections`・`codex_worker_connections`である。
+  組み合わせで意味が決まっていた旧キーは自動移行して撤去する（同日、ユーザー回答「自動移行して撤去」）。
+  旧キーは`claude_api_env_file`・`claude_orchestrator_api_only`・`claude_worker_api_first`・`claude_api_mode`・`codex_model_providers`である。
+  従量課金は使用順へ`payg`を明記した役割だけで使い、既定の使用順（統括担当`subscription,credits`、委譲先`credits,subscription`）に含めない（同日、ユーザー回答「明示したときだけ使う」。追加料金が発生するため）。
+  委譲先の既定値は、失効する前払いのクレジットを先に使い、サブスクリプションを次に使う順とする。
+  使用順は先頭から評価し、認証が未設定の種別は除く。使える接続が1〜2種しかない環境でも同じ使用順のまま設定済みの接続だけを使うためである。
+  エンジンごとに認証キー2つと使用順2つのどれも設定しない場合は、親環境と通常の認証解決を引き継ぐ（Claudeは`inherit`接続でAPIキーやBedrock・Vertexなども使え、Codexは`config.toml`の通常設定に従い代替試行しない）。
+  接続を管理しない環境で開始した`inherit`の会話と、接続情報もAPIパスも持たない旧形式の会話は、接続を管理しない間は再開時も通常の認証解決を維持する。
+  接続を管理し始めた後は、これらの会話も使用順の種別ではないため、次の継続で使用順の先頭の利用可能な候補へ移す（旧`api-only`と統括担当の接続固定が`inherit`の会話を移していた挙動による）。
+  Codexのprovider定義と認証は`config.toml`が持ち、新キーは種別とprovider IDの対応だけを持つ。主接続先と移行先の選択設定を2カ所へ分散させない2026年10月10日のユーザー回答の目的は、選択順を役割ごとの使用順1キーに置くことで保つ。
+  Codexの`subscription`はprovider `openai`をChatGPTログインで使う場合だけを指し、APIキーのアカウントでは候補から除いて`codex_payg_provider`か`codex_credits_provider`への`openai`の設定を案内する。従量課金が明記した役割だけで使われることを、アカウント種別によらず保つためである。
+  APIクレジットはClaude APIとAgent SDKを対象とし、Claude Codeを対象外とするため、`claude` CLIで起動するClaudeの統括担当（process-loop）は`credits`を除く。
+  委譲先は、`subscription`の待機対象外の利用上限、`credits`の残高不足、`payg`の不受理で、同じ会話を使用順の次の候補へ移す。統括担当は起動時に先頭の利用可能な候補を選び、会話の中で切り替えない。
+  継続・再開する会話は保持した接続を使い、その種別を使用順から外した場合だけ、次の継続（追送・自動再開・保存後再開）で使用順の先頭の利用可能な候補へ移して戻さない。
+  旧`api-only`（2026年10月22日、ユーザー指示。既存会話も次の継続からAPIへ移し、サブスクリプションへ戻さない）と統括担当の接続固定の挙動は、この規則で表す。
+  `credits`の残高不足の観測から1時間は、新規の委譲先で`credits`を使用順の後ろへ回し、観測は永続化しない（ユーザー要件。APIクレジットは月1回の付与などで外部から回復するため）。両エンジンへ適用する。
+  Claudeは利用上限で`subscription`から移した委譲先を、使用順で`subscription`が現在の種別より前にあれば、上限の解除予定時刻の後に始まる最初のturnで同じ会話を`subscription`へ戻す（2026年10月18日、ユーザー指示「すぐAPIに切り替えつつ上限解除されたらまたサブスク優先に戻る動作がいい」）。戻す時刻は所有MCPサーバーのメモリーだけに置き、解放後の再開は保持した接続を使う。
+  Codexは新規の会話だけを使用順の先頭から評価し、移った会話は移行先を維持する（2026年10月9日、ユーザー指示。既存API会話を維持する理由はキャッシュ効率）。
+  切替の事実とprovider名を委譲元の応答・通知・公開状態や継続指示へ加えない（同日、ユーザー指示。委譲先の混乱を避けるため）。
+  Claudeは親環境と親settingsからAPI認証を隔離し、選択したenvの値は起動ごとに読み直す。
+  ユーザーの直接起動、組み込みAgentとfork、run-skill、commitは対象外である。
+  エンドユーザー向けの説明と条件ごとの設定例は`docs/guide/claude-code-guide.md`「接続の使い分け」にあり、`atk config --help`からその節のURLを案内する（2026年10月29日、ユーザー指示）。実装契約は[design-agents-runtime.md](design-agents-runtime.md#api失敗過負荷利用上限の待機)にある
 - 利用上限後の再開は、次の起動形態ごとに扱う。
   解除待ちのagents_serverの委譲先と背景wait・定期再確認は保持する。
   Codexの候補判定は次候補を優先し、全候補失敗かつ上限失敗がある場合だけ解除を待つ

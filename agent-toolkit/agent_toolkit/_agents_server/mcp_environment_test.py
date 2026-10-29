@@ -23,13 +23,14 @@ def test_mcp_setting_names_follow_public_config_keys(
         config.resolve_mutable_setting(key)
     for name in setting_names:
         key = name.removeprefix("AGENT_TOOLKIT_CONFIG_").lower()
-        if key == "claude_api_mode":
+        if key in config._RETIRED_CONNECTION_KEYS:  # pylint: disable=protected-access  # noqa: SLF001
+            # 旧接続設定キーの環境変数は子へ渡し、移行先を示す拒否を子でも保つ。
             assert name in names
-            monkeypatch.setenv(name, "api-credits")
+            monkeypatch.setenv(name, "legacy-value")
             with pytest.raises(SystemExit) as exited:
-                atk.main(["config", "get", key, "claude_orchestrator_api_only", "claude_worker_api_first"])
-            assert exited.value.code == 0
-            assert capsys.readouterr().out.splitlines() == ["api-credits", "false", "true"]
+                atk.main(["config", "show"])
+            assert exited.value.code == 2
+            assert "旧接続設定" in capsys.readouterr().err
             monkeypatch.delenv(name)
         elif key not in keys:
             with pytest.raises(SystemExit) as exited:

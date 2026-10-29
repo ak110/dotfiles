@@ -20,6 +20,7 @@ import time
 from collections.abc import Callable, Iterable
 
 from agent_toolkit._atk import claude_connection as _connection
+from agent_toolkit._atk import codex_connection as _codex_connection
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import usage_limit_policy
 from agent_toolkit._common import claude_connection as _claude_settings
@@ -81,6 +82,9 @@ class ProbeContext:
 
     claude_connection: _connection.Connection | None = None
     """process-loopの再開対象が既に選んだ接続。新規起動では役割別候補を解決する。"""
+
+    codex_providers: tuple[str, ...] = ()
+    """Codexの候補で順に可用性を判定するprovider ID。空の場合はproviderを指定せず`config.toml`の通常設定に従う。"""
 
 
 def _notify(context: ProbeContext, message: str, next_action: str | None = None) -> None:
@@ -156,8 +160,17 @@ def _format_candidates(candidates: list[tuple[str, str, str]]) -> str:
 def select_available(
     candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path, context: ProbeContext
 ) -> tuple[str, str, str]:
-    """候補を先頭から事前に試し、最初に可用な3つ組を返す。
+    """候補を先頭から事前に試し、最初に可用な3つ組を返す。詳細は`select_available_with_provider`に従う。"""
+    orchestrator, model, effort, _ = select_available_with_provider(candidates, env, cwd, context)
+    return orchestrator, model, effort
 
+
+def select_available_with_provider(
+    candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path, context: ProbeContext
+) -> tuple[str, str, str, str | None]:
+    """候補を先頭から事前に試し、最初に可用な3つ組と、Codexで判定したprovider IDを返す。
+
+    `context.codex_providers`を渡したCodexの候補は、providerごとに使用順で判定し、最初に成功したproviderを返す。
     engine別の設定が待機対象とする上限では解除後に候補を試し直す。
     Codexの上限は次候補を先に試し、全候補失敗時に最も早い解除まで待って先頭から判定する。
     待機の回数と総時間に上限を置かない。上限を含まない全候補の失敗は`NoAvailableCandidateError`を送出する。
@@ -166,12 +179,17 @@ def select_available(
     while True:
         last_failure = (candidates[-1][0], 1, "")
         codex_limits: list[tuple[str, UsageLimitState]] = []
-        for orchestrator, model, effort in candidates:
-            candidate = f"{orchestrator}:{model}/{effort}"
+        attempts = [
+            (orchestrator, model, effort, provider)
+            for orchestrator, model, effort in candidates
+            for provider in ((context.codex_providers or (None,)) if orchestrator == "codex" else (None,))
+        ]
+        for orchestrator, model, effort, provider in attempts:
+            candidate = f"{orchestrator}:{model}/{effort}" + (f" (provider: {provider})" if provider else "")
             while True:
-                outcome = _probe_candidate(orchestrator, probe_models, env, cwd, candidate, context)
+                outcome = _probe_candidate(orchestrator, probe_models, env, cwd, candidate, context, codex_provider=provider)
                 if outcome is None:
-                    return orchestrator, model, effort
+                    return orchestrator, model, effort, provider
                 usage_limit, failure = outcome
                 if orchestrator == "codex" and usage_limit is not None:
                     codex_limits.append((candidate, usage_limit))
@@ -212,7 +230,7 @@ def _probe_model(orchestrator: str) -> str:
     return _config.resolve_catalog([(orchestrator, model, _PROBE_EFFORT)])[0][1]
 
 
-def _probe_argv(orchestrator: str, model: str, prompt: str) -> list[str]:
+def _probe_argv(orchestrator: str, model: str, prompt: str, *, codex_provider_arguments: tuple[str, ...] = ()) -> list[str]:
     """軽量工程のモデルとeffort `low`で軽量起動する、副作用のない可用性判定用argvを返す。
 
     Claudeはセッションを保存せず、ユーザーとプロジェクトの設定・ツール・MCP・スキルを読まず、最小のシステムプロンプトで起動する。
@@ -220,6 +238,7 @@ def _probe_argv(orchestrator: str, model: str, prompt: str) -> list[str]:
     `--tools ""`が後続の位置引数を値として消費しないよう、プロンプトは`--`の後ろへ置く。
     Codexはユーザー設定とrulesを読まない。利用上限はClaudeは`stream-json`、Codexは`--json`から得るthread IDとrolloutで判定し、
     rolloutを残さない`--ephemeral`は利用上限の判定と両立を確かめていないため使わない。
+    `codex_provider_arguments`は本起動と同じproviderを評価させる`-c`オプションで、Codexだけへ加える。
     """
     if orchestrator == "claude":
         return [
@@ -269,6 +288,7 @@ def _probe_argv(orchestrator: str, model: str, prompt: str) -> list[str]:
         f"model_reasoning_effort={_PROBE_EFFORT}",
         "--ignore-user-config",
         "--ignore-rules",
+        *codex_provider_arguments,
         "--json",
         prompt,
     ]
@@ -313,10 +333,14 @@ def _probe_candidate(
     cwd: pathlib.Path,
     candidate: str,
     context: ProbeContext,
+    *,
+    codex_provider: str | None = None,
 ) -> tuple[UsageLimitState | None, tuple[str, int, str] | None] | None:
     """可用性確認で作成する設定を、確認と診断が終わるまで所有する。"""
     with contextlib.ExitStack() as settings_owner:
-        return _probe_candidate_owned(orchestrator, probe_models, env, cwd, candidate, context, settings_owner)
+        return _probe_candidate_owned(
+            orchestrator, probe_models, env, cwd, candidate, context, settings_owner, codex_provider=codex_provider
+        )
 
 
 def _probe_candidate_owned(
@@ -327,6 +351,8 @@ def _probe_candidate_owned(
     candidate: str,
     context: ProbeContext,
     settings_owner: contextlib.ExitStack,
+    *,
+    codex_provider: str | None = None,
 ) -> tuple[UsageLimitState | None, tuple[str, int, str] | None] | None:
     """1候補の可用性を判定する。可用なら`None`、失敗なら解除待ちの対象と失敗の内容の組を返す。
 
@@ -338,15 +364,25 @@ def _probe_candidate_owned(
         probe_env = _probe_env(env, orchestrator)
         if orchestrator not in probe_models:
             probe_models[orchestrator] = _probe_model(orchestrator)
-        probe_argv = _probe_argv(orchestrator, probe_models[orchestrator], context.prompt)
+        provider_arguments = (
+            (
+                *_codex_connection.provider_arguments(codex_provider),
+                *_codex_connection.probe_definition_arguments(codex_provider, env),
+            )
+            if codex_provider
+            else ()
+        )
+        probe_argv = _probe_argv(
+            orchestrator, probe_models[orchestrator], context.prompt, codex_provider_arguments=provider_arguments
+        )
         if orchestrator == "claude" and env.get(PROCESS_LOOP_SESSION_ENV):
             connection = context.claude_connection
             if connection is None:
-                choices = _connection.candidates("orchestrator", env=env)
+                choices = _connection.candidates("orchestrator", env=env, cli=True)
                 for diagnostic in choices.warnings:
                     _notify(context, diagnostic, "Claude接続設定を確認する")
                 connection = choices.require_first()
-            connection = _connection.with_current_isolation(connection, role="orchestrator", env=env)
+            connection = _connection.apply_current_settings(connection, role="orchestrator", env=env, cli=True)
             probe_env = _connection.connection_environment(probe_env, connection)
             settings = _claude_settings.merge_settings(
                 None,

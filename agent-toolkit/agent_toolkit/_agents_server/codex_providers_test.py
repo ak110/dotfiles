@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit._agents_server import (
+    api_credits,
     codex,
     codex_providers,
     manager,
@@ -21,7 +22,7 @@ from agent_toolkit._agents_server import (
     session_handoff,
     state,
 )
-from agent_toolkit._atk import config
+from agent_toolkit._atk import codex_connection, config
 from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import FakeCodexClient, install_backend
 
@@ -118,12 +119,31 @@ class ProviderClient(FakeCodexClient):
         return result
 
 
+_CODEX_CONNECTION_KEYS = (
+    "codex_credits_provider",
+    "codex_payg_provider",
+    "codex_orchestrator_connections",
+    "codex_worker_connections",
+)
+
+
+def set_connections(monkeypatch, order: str, *, credits_provider: str = "paid-a", payg: str = "paid-b") -> None:
+    """Codexの接続設定を、クレジット・従量課金のproviderと委譲先の使用順で与える。"""
+    monkeypatch.setenv(config._config_env_name("codex_credits_provider"), credits_provider)
+    monkeypatch.setenv(config._config_env_name("codex_payg_provider"), payg)
+    monkeypatch.setenv(config._config_env_name("codex_worker_connections"), order)
+
+
+def clear_connections(monkeypatch) -> None:
+    """Codexの接続設定を全て外し、config.tomlの通常設定へ戻す。"""
+    for key in _CODEX_CONNECTION_KEYS:
+        monkeypatch.delenv(config._config_env_name(key), raising=False)
+
+
 @pytest.fixture(name="provider_environment")
 def configure_provider_environment(monkeypatch):
     """資格情報は架空のAPI値だけとし、開発機の設定を使わない。"""
-    monkeypatch.setenv(
-        config._config_env_name("codex_model_providers"), "openai,missing,no-auth,shared-token,paid-a,paid-a,paid-b"
-    )
+    set_connections(monkeypatch, "subscription,credits,payg")
     monkeypatch.setenv("TEST_PROVIDER_KEY", "isolated-fake-api-key")
     monkeypatch.delenv("UNSET_PROVIDER_KEY", raising=False)
 
@@ -185,7 +205,8 @@ async def fail_subscription(backend, tmp_path):
         ("openai", "chatgpt", False, "paid-a"),
         ("openai", "chatgpt", None, "openai"),
         ("paid-b", "chatgpt", False, "paid-b"),
-        ("openai", "apiKey", False, "openai"),
+        # APIキーのアカウントではopenaiをサブスクリプションとして使わず、使用順の次のAPIへ進む。
+        ("openai", "apiKey", False, "paid-a"),
     ],
 )
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
@@ -195,9 +216,7 @@ async def test_provider_environment_start(
     del provider_environment
     client = ProviderClient()
     client.primary, client.account_type, client.allowed = primary, account, allowed
-    monkeypatch.setenv(
-        config._config_env_name("codex_model_providers"), f"{primary},missing,no-auth,shared-token,paid-a,paid-b"
-    )
+    set_connections(monkeypatch, "payg,subscription,credits" if primary == "paid-b" else "subscription,credits,payg")
     async with backend_with_client(monkeypatch, client) as backend:
         session = await backend.start("元の作業", str(tmp_path), None, None, launch_kind=launch_kind)
         assert session.codex_model_provider == expected
@@ -498,7 +517,7 @@ async def test_restored_api_provider_ignores_changed_configuration(monkeypatch, 
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     publish_api_session(tmp_path)
     session_registry.release("provider-thread", reason="stopped")
-    monkeypatch.setenv(config._config_env_name("codex_model_providers"), "")
+    clear_connections(monkeypatch)
     async with manager.AgentsServerManager() as root:
         client = ProviderClient()
         async with backend_with_client(monkeypatch, client, root) as backend:
@@ -554,8 +573,8 @@ async def test_cancel_before_api_resume_keeps_provider(monkeypatch, tmp_path):
 async def test_empty_provider_configuration_keeps_current_resume_settings(
     monkeypatch, tmp_path, provider_response, resume_provider_response
 ):
-    """移行設定が空なら応答の接続先を固定せず、再開時の通常設定を使う。"""
-    monkeypatch.setenv(config._config_env_name("codex_model_providers"), "")
+    """接続設定が無ければ応答の接続先を固定せず、再開時の通常設定を使う。"""
+    clear_connections(monkeypatch)
     client = ProviderClient()
     original_request = client.request
 
@@ -631,41 +650,42 @@ async def test_provider_order_overrides_codex_default(monkeypatch, tmp_path, pro
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("next_order", ["paid-a,openai,paid-b", "paid-b,paid-a"])
-async def test_api_primary_uses_ordered_api_candidates(monkeypatch, tmp_path, provider_environment, next_order):
-    """先頭のAPI接続先で失敗が確定した場合は後続のAPIへ進み、ChatGPTへ戻らない。"""
+@pytest.mark.parametrize(("next_order", "expected"), [("credits,subscription,payg", "openai"), ("payg,credits", "paid-b")])
+async def test_api_primary_uses_ordered_api_candidates(monkeypatch, tmp_path, provider_environment, next_order, expected):
+    """先頭のクレジットで失敗が確定した場合は、現在の使用順でクレジット以外の最初の候補へ同じ会話を移す。"""
     del provider_environment
-    monkeypatch.setenv(config._config_env_name("codex_model_providers"), "paid-a,openai,paid-b")
+    set_connections(monkeypatch, "credits,subscription,payg")
     client = ProviderClient()
     async with backend_with_client(monkeypatch, client) as backend:
         session = await backend.start("API優先の作業", str(tmp_path))
         assert client.connection == "paid-a" and session.codex_subscription_provider is None
         assert not any(method == "account/rateLimits/read" for method, _ in client.requests)
-        monkeypatch.setenv(config._config_env_name("codex_model_providers"), next_order)
+        set_connections(monkeypatch, next_order)
         await complete(backend, session, {"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 401}}})
         assert session.codex_provider_resume_pending
         response = await backend.send_message(session, "続き")
-        assert response["delivery"] == "reply_started" and client.connection == "paid-b"
-        assert [params["modelProvider"] for method, params in client.requests if method == "thread/resume"] == ["paid-b"]
+        assert response["delivery"] == "reply_started" and client.connection == expected
+        assert [params["modelProvider"] for method, params in client.requests if method == "thread/resume"] == [expected]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("order", ["paid-a", "missing,paid-a,paid-b"])
+@pytest.mark.parametrize("order", ["credits", "credits,payg"])
 async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, provider_environment, order):
-    """無効な候補と開始を拒否した候補があっても指定順の候補だけを試し、通常接続へ戻らない。"""
+    """無効な候補と開始を拒否した候補があっても使用順の候補だけを試し、通常接続へ戻らない。"""
     del provider_environment
-    monkeypatch.setenv(config._config_env_name("codex_model_providers"), order)
+    # 未定義のproviderを持つ従量課金は候補から外れ、クレジットだけの使用順では後続が無い。
+    set_connections(monkeypatch, order, payg="paid-b" if order == "credits,payg" else "missing")
     client = ProviderClient()
     client.reject.add("paid-a")
     async with backend_with_client(monkeypatch, client) as backend:
-        if order == "paid-a":
+        if order == "credits":
             with pytest.raises(codex.AppServerError, match="candidates were rejected"):
                 await backend.start("拒否するAPI", str(tmp_path))
         else:
             session = await backend.start("後続のAPI", str(tmp_path))
             assert session.codex_model_provider == "paid-b"
         assert [params["modelProvider"] for method, params in client.requests if method == "thread/start"] == (
-            ["paid-a"] if order == "paid-a" else ["paid-a", "paid-b"]
+            ["paid-a"] if order == "credits" else ["paid-a", "paid-b"]
         )
 
 
@@ -713,7 +733,11 @@ def write_resume_rollout(path: pathlib.Path, identifier: str, provider: str | No
 async def test_opaque_state_switch_collects_result_and_hands_off(monkeypatch, tmp_path, provider_environment, item, primary):
     """公開の追送・結果回収・引き継ぎ起動を経て、元会話と進捗を保持した後任を起動する。"""
     del provider_environment
-    monkeypatch.setenv(config._config_env_name("codex_model_providers"), f"{primary},paid-b")
+    # API主接続は従量課金に置き、残高不足の並べ替えが後任の接続を変えないようにする。
+    if primary == "openai":
+        set_connections(monkeypatch, "subscription,payg")
+    else:
+        set_connections(monkeypatch, "payg,credits", credits_provider="paid-b", payg="paid-a")
     monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     record = tmp_path / "rollout.jsonl"
     client = ProviderClient()
@@ -805,7 +829,7 @@ async def test_opaque_state_resume_uses_origin_in_every_lifecycle(monkeypatch, t
         session_registry.release("provider-thread", reason="stopped")
     if lifecycle == "settings":
         client.primary = "paid-b"
-        monkeypatch.setenv(config._config_env_name("codex_model_providers"), "")
+        clear_connections(monkeypatch)
     async with manager.AgentsServerManager() as root, backend_with_client(monkeypatch, client, root) as backend:
         install_backend(root, "codex", backend)
         if lifecycle == "retained":
@@ -858,7 +882,7 @@ async def test_opaque_state_created_after_safe_switch_resumes_on_selected_connec
 @pytest.mark.asyncio
 async def test_legacy_resume_requires_observed_state_compatibility(monkeypatch, tmp_path, record_kind):
     """記録欠損・未知生成元と、同一接続で再開できる旧形式の暗号化会話を区別する。"""
-    monkeypatch.setenv(config._config_env_name("codex_model_providers"), "")
+    clear_connections(monkeypatch)
     client = ProviderClient()
     record = tmp_path / "rollout.jsonl"
     client.rollout_path = record
@@ -966,3 +990,136 @@ async def test_known_subscription_exhaustion_obeys_wait_policy_before_start(
     async with backend_with_client(monkeypatch, client) as backend:
         await backend.start("上限時の起動", str(tmp_path))
         assert client.connection == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("credits_provider", "payg", "account", "expected"),
+    [
+        # 使える種別が1つ・2つ・3つの環境で、同じ使用順のまま未設定の種別だけを除く。
+        ("", "", "chatgpt", ["openai"]),
+        ("paid-a", "", "apiKey", ["paid-a"]),
+        ("", "paid-b", "apiKey", ["paid-b"]),
+        ("paid-a", "", "chatgpt", ["paid-a", "openai"]),
+        ("paid-a", "paid-b", "apiKey", ["paid-a", "paid-b"]),
+        ("paid-a", "paid-b", "chatgpt", ["paid-a", "openai", "paid-b"]),
+    ],
+)
+async def test_select_follows_order_and_skips_unconfigured_kinds(
+    monkeypatch, tmp_path, provider_environment, credits_provider, payg, account, expected
+):
+    del provider_environment
+    set_connections(monkeypatch, "credits,subscription,payg", credits_provider=credits_provider, payg=payg)
+    client = ProviderClient()
+    client.account_type = account
+    selection = await codex_providers.select(client.request, str(tmp_path))
+    assert [selection.primary, *selection.candidates] == expected
+
+
+@pytest.mark.asyncio
+async def test_payg_is_selected_only_when_listed(monkeypatch, tmp_path, provider_environment):
+    """従量課金のproviderを設定しても、初期値の使用順（paygを含まない）では候補にしない。"""
+    del provider_environment
+    clear_connections(monkeypatch)
+    monkeypatch.setenv(config._config_env_name("codex_payg_provider"), "paid-b")
+    client = ProviderClient()
+    selection = await codex_providers.select(client.request, str(tmp_path))
+    assert (selection.primary, selection.candidates) == ("openai", ())
+    client.account_type = "apiKey"
+    with pytest.raises(ValueError, match="codex_worker_connections"):
+        await codex_providers.select(client.request, str(tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_api_key_account_excludes_subscription_with_diagnostic(monkeypatch, tmp_path, provider_environment, caplog):
+    """APIキーのアカウントではsubscriptionを除き、openaiをAPI種別へ設定する方法を診断へ出す。"""
+    del provider_environment
+    set_connections(monkeypatch, "subscription,payg")
+    client = ProviderClient()
+    client.account_type = "apiKey"
+    selection = await codex_providers.select(client.request, str(tmp_path))
+    assert selection.primary == "paid-b" and not selection.subscription
+    assert selection.diagnostics == (codex_connection.API_KEY_SUBSCRIPTION_DIAGNOSTIC,)
+    assert "codex_payg_provider openai" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_credit_rejection_moves_session_and_reorders_new_sessions(monkeypatch, tmp_path, provider_environment):
+    """クレジットの不受理で同じ会話を使用順の次へ移し、1時間は新しい会話でクレジットを後ろへ回す。"""
+    del provider_environment
+    set_connections(monkeypatch, "credits,subscription")
+    client = ProviderClient()
+    async with backend_with_client(monkeypatch, client) as backend:
+        session = await backend.start("クレジットの作業", str(tmp_path))
+        assert session.codex_model_provider == "paid-a"
+        await complete(backend, session, {"codexErrorInfo": {"responseStreamConnectionFailed": {"httpStatusCode": 429}}})
+        assert session.codex_provider_resume_pending
+        assert api_credits.shortage_active("codex")
+        assert not api_credits.shortage_active("claude")
+        response = await backend.send_message(session, "続き")
+        assert response["delivery"] == "reply_started" and session.codex_model_provider == "openai"
+    fresh = await codex_providers.select(ProviderClient().request, str(tmp_path))
+    assert (fresh.primary, fresh.candidates) == ("openai", ("paid-a",))
+    continuing = await codex_providers.select(ProviderClient().request, str(tmp_path), primary="paid-a")
+    assert continuing.primary == "paid-a"
+    api_credits.clear()
+    restored = await codex_providers.select(ProviderClient().request, str(tmp_path))
+    assert restored.primary == "paid-a"
+
+
+@pytest.mark.asyncio
+async def test_subscription_limit_after_credit_shortage_follows_effective_order(monkeypatch, tmp_path, provider_environment):
+    """残高不足の観測中に3種別で始めた会話は、サブスクの利用上限で後ろへ回したクレジットより先に従量課金へ移る。"""
+    del provider_environment
+    set_connections(monkeypatch, "credits,subscription,payg")
+    api_credits.record_shortage("codex")
+    client = ProviderClient()
+    async with backend_with_client(monkeypatch, client) as backend:
+        session = await backend.start("元の作業", str(tmp_path))
+        assert session.codex_model_provider == "openai"
+        await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
+        response = await backend.send_message(session, codex_providers.CONTINUE_PROMPT)
+        assert response["delivery"] == "reply_started"
+        assert session.codex_model_provider == "paid-b"
+    continuing = await codex_providers.select(ProviderClient().request, str(tmp_path), primary="openai")
+    assert continuing.candidates == ("paid-b", "paid-a")
+
+
+@pytest.mark.asyncio
+async def test_session_moves_when_its_kind_leaves_the_order_and_does_not_return(monkeypatch, tmp_path, provider_environment):
+    """保持した種別を使用順から外した会話は次の継続で先頭の候補へ移り、使用順を戻しても元の種別へ戻らない。"""
+    del provider_environment
+    set_connections(monkeypatch, "credits,subscription")
+    client = ProviderClient()
+    async with backend_with_client(monkeypatch, client) as backend:
+        session = await backend.start("クレジットの作業", str(tmp_path))
+        assert session.codex_model_provider == "paid-a"
+        await complete(backend, session)
+        set_connections(monkeypatch, "subscription")
+        response = await backend.send_message(session, "続き")
+        assert response["delivery"] == "reply_started"
+        assert session.codex_model_provider == "openai" and session.codex_subscription_provider == "openai"
+        await complete(backend, session)
+        set_connections(monkeypatch, "credits,subscription")
+        response = await backend.send_message(session, "さらに続き")
+        assert response["delivery"] == "reply_started" and session.codex_model_provider == "openai"
+    assert [params["modelProvider"] for method, params in client.requests if method == "thread/resume"] == [
+        "openai",
+        "openai",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_role_uses_its_order_and_does_not_switch_on_failure(monkeypatch, tmp_path, provider_environment):
+    """統括担当は統括担当の使用順で起動し、利用上限などの失敗では会話の中で次の候補へ切り替えない。"""
+    del provider_environment
+    set_connections(monkeypatch, "credits,subscription")
+    monkeypatch.setenv(config._config_env_name("codex_orchestrator_connections"), "subscription,credits")
+    monkeypatch.setenv(config._config_env_name("codex_usage_limit_wait"), "never")
+    client = ProviderClient()
+    async with backend_with_client(monkeypatch, client) as backend:
+        session = await backend.start("統括の作業", str(tmp_path), model_type="orchestrate")
+        assert session.codex_model_provider == "openai"
+        await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
+        assert not session.codex_provider_resume_pending
+        assert session.status == "failed"

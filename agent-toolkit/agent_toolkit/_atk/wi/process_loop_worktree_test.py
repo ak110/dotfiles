@@ -242,7 +242,7 @@ def _run_public_process_loop(
     monkeypatch.setattr(
         _pl_session,
         "select_available_orchestrator",
-        lambda candidates, _env, _cwd, **_kwargs: candidates[0],
+        lambda candidates, _env, _cwd, **_kwargs: (*candidates[0], None),
     )
     monkeypatch.setattr(_pl_watch, "wait_for_start_permission", lambda *_args: True)
     monkeypatch.setattr(_pl_update, "restart_process_loop", lambda *_args, **_kwargs: None)

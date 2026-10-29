@@ -20,8 +20,8 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._agents_server import (
     agents_wait,
+    api_credits,
     child_environment,
-    claude_api_credits,
     launch_requests,
     result_projection,
     resume_waits,
@@ -202,21 +202,21 @@ async def test_reply_delivery_is_independent_of_turn_terminal(
         assert bool(session.followup_prompts) is (expected != "reply_failed")
 
 
-@pytest.mark.parametrize("mode,api_first", [("pay-as-you-go", False), ("api-credits", True)])
+@pytest.mark.parametrize("order,api_first", [("subscription,credits", False), ("credits,subscription", True)])
 @pytest.mark.parametrize("unavailable", [False, True])
 @pytest.mark.asyncio
 async def test_delegate_candidate_order_follows_mode(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    mode: str,
+    order: str,
     api_first: bool,
     unavailable: bool,
 ) -> None:
-    """新規起動と継続・冷再開でモード順と選択済み接続を維持する。"""
+    """新規起動は使用順に従い、使用順の並びを変えても継続・冷再開は選択済み接続を維持する。"""
     path = tmp_path / "api.env"
     path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", order)
     options_seen: list[Any] = []
 
     def factory(options: Any) -> FakeClaudeClient:
@@ -239,7 +239,10 @@ async def test_delegate_candidate_order_follows_mode(
             started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
             assert (await _wait_until_terminal(manager))["status"] == "completed"
             assert bool(options_seen[0].env.get("ANTHROPIC_API_KEY")) is api_first
-            monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go" if api_first else "api-credits")
+            monkeypatch.setenv(
+                "AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS",
+                "subscription,credits" if api_first else "credits,subscription",
+            )
             await manager.send_message(started["session_id"], "継続")
             assert (await _wait_until_terminal(manager))["status"] == "completed"
             await manager.stop(started["session_id"])
@@ -263,8 +266,7 @@ async def test_invalid_env_file_warning_reaches_start_response(
     path = tmp_path / "invalid.env"
     if content is not None:
         path.write_text(content, encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-credits")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", str(path))
     options_seen: list[Any] = []
 
     def factory(options: Any) -> FakeClaudeClient:
@@ -278,25 +280,25 @@ async def test_invalid_env_file_warning_reaches_start_response(
         install_backend(manager, "claude", backend)
         try:
             started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
-            assert any(str(path) in item and "atk config set claude_api_env_file" in item for item in started["warnings"])
+            assert any(str(path) in item and "atk config set claude_credits_env_file" in item for item in started["warnings"])
             assert (await _wait_until_terminal(manager))["status"] == "completed"
             assert not options_seen[0].env.get("ANTHROPIC_API_KEY")
         finally:
             await manager.close()
 
 
-@pytest.mark.parametrize("mode", ["pay-as-you-go", "api-credits"])
+@pytest.mark.parametrize("kind", ["credits", "payg"])
 @pytest.mark.asyncio
 async def test_single_api_connection_keeps_usage_limit_wait(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    mode: str,
+    kind: str,
 ) -> None:
     """API認証だけを持つ会話は残高不足の解除を待ち、接続先を変えない。"""
     path = tmp_path / "api.env"
     path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_CLAUDE_{kind.upper()}_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", f"subscription,{kind}")
     # 起動時に保持したOAuthも除き、他の試験でprepareした接続値を持ち越さない。
     monkeypatch.setattr(child_environment, "_INHERITED", {})
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
@@ -314,7 +316,7 @@ async def test_single_api_connection_keeps_usage_limit_wait(
         install_backend(manager, "claude", backend)
         try:
             started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
-            assert manager.sessions[started["session_id"]].claude_connection == "api"
+            assert manager.sessions[started["session_id"]].claude_connection == kind
             assert started["status"] == "running"
             shown = await manager.show_session(started["session_id"])
             assert shown["status"] == "running" and shown["result_held"]
@@ -331,8 +333,8 @@ async def test_api_credit_exhaustion_moves_to_subscription(
     """API残高不足の同一会話をサブスクリプションで続け、停止後もその接続を保持する。"""
     path = tmp_path / "api.env"
     path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-credits")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "credits,subscription")
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
     options_seen: list[Any] = []
 
@@ -368,7 +370,7 @@ async def test_api_credit_exhaustion_moves_to_subscription(
             assert len(options_seen) == launches + 1
             assert not options_seen[-1].env.get("ANTHROPIC_API_KEY")
             # 一定時間を過ぎた後に起動する新しい会話は、通常の接続順どおりAPIを再び試す。
-            claude_api_credits.record_shortage(now=time.monotonic() - claude_api_credits.CREDIT_SHORTAGE_TTL_SECONDS - 1)
+            api_credits.record_shortage("claude", now=time.monotonic() - api_credits.CREDIT_SHORTAGE_TTL_SECONDS - 1)
             later = await manager.start("claude:sonnet/high", "新規2", str(tmp_path))
             assert (await _wait_until_terminal(manager))["status"] == "completed"
             assert later["session_id"] != fresh["session_id"]

@@ -493,7 +493,9 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
     monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _path: True)
     monkeypatch.setattr(_pl_watch, "wait_for_start_permission", lambda *_args: True)
     monkeypatch.setattr(_pl_session, "resolve_orchestrator_specs", lambda: [("claude", "model", "medium")])
-    monkeypatch.setattr(_pl_session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "model", "medium"))
+    monkeypatch.setattr(
+        _pl_session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "model", "medium", None)
+    )
     monkeypatch.setattr(_wait_schedule, "get_prompt_cache_ttl", lambda _bucket: "1h")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

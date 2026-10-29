@@ -14,7 +14,7 @@ from agent_toolkit._agents_server import child_environment, claude, codex, launc
 from agent_toolkit._atk import claude_connection
 from agent_toolkit._common import delegated_session
 from agent_toolkit._common.claude_usage_limit import UsageLimitState
-from agent_toolkit._testing.agents_server_support import AssistantMessage, QueueClaudeClient
+from agent_toolkit._testing.agents_server_support import AssistantMessage, QueueClaudeClient, configure_claude_payg
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
@@ -22,7 +22,7 @@ async def _ignore_message(_value: dict[str, Any]) -> None:
     """起動失敗までの試験で使う非同期受信先。"""
 
 
-@pytest.mark.parametrize("kind", ["subscription", "api", "inherit"])
+@pytest.mark.parametrize("kind", ["subscription", "payg", "inherit"])
 @pytest.mark.parametrize("configured", [False, True])
 @pytest.mark.asyncio
 async def test_sdk_child_environment(
@@ -31,8 +31,7 @@ async def test_sdk_child_environment(
     """SDK環境とsettingsを合成した子環境で、設定ファイルが指定するキーだけが空になる。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=api-key\nAWS_PROFILE=api-profile\nCUSTOM_CONNECTION=api-value\n")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
+    configure_claude_payg(monkeypatch, str(api))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "user"))
     if configured:
         (tmp_path / "user").mkdir()
@@ -42,7 +41,7 @@ async def test_sdk_child_environment(
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth")
     monkeypatch.setattr(child_environment, "_INHERITED", {})
     child_environment.prepare(os.environ)
-    selected = claude_connection.Connection(kind, str(api) if kind == "api" else None, str(api))
+    selected = claude_connection.Connection(kind, str(api) if kind == "payg" else None, str(api))
     monkeypatch.setattr(claude_connection, "candidates", lambda *_args, **_kwargs: claude_connection.Candidates((selected,)))
     effective: list[dict[str, str]] = []
 
@@ -62,7 +61,7 @@ async def test_sdk_child_environment(
         assert "CUSTOM_CONNECTION" not in values
         assert values.get("AWS_PROFILE") == ("" if configured else None)
         assert values["CLAUDE_CODE_OAUTH_TOKEN"] == "oauth"
-    elif kind == "api":
+    elif kind == "payg":
         assert values["AWS_PROFILE"] == "api-profile"
         assert values["CUSTOM_CONNECTION"] == "api-value"
         assert "CLAUDE_CODE_OAUTH_TOKEN" not in values
@@ -77,11 +76,10 @@ async def test_sdk_child_environment(
 async def test_api_only_continues_same_conversation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, initial: str, cold: bool
 ) -> None:
-    """既存接続と保存済み会話の両方を、同じIDのresumeでAPIへ移す。"""
+    """従量課金だけの使用順では、既存接続と保存済み会話の両方を同じIDのresumeでAPIへ移す（旧api-only相当）。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=api-key\n")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-only")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
+    configure_claude_payg(monkeypatch, str(api), worker="payg")
     options: list[Any] = []
 
     def factory(value: Any) -> QueueClaudeClient:
@@ -103,17 +101,17 @@ async def test_api_only_continues_same_conversation(
                 existing_session=None if cold else old,
             )
         assert resumed.session_id == "existing"
-        assert resumed.claude_connection == "api"
+        assert resumed.claude_connection == "payg"
         assert resumed.claude_api_env_file == str(api)
         assert resumed.claude_subscription_retry_at is None
         assert options[0].resume == "existing"
         assert options[0].env["ANTHROPIC_API_KEY"] == "api-key"
         resumed.usage_limit = UsageLimitState("rejected", "five_hour", None)
         result: dict[str, Any] = {"status": "failed", "error": {"apiErrorStatus": 429}, "agent_message": ""}
-        assert not resume_waits.begin_usage_limit_wait(resumed, result)
+        # 使用順に他の接続が無いため、API失敗でもサブスクリプションへ移らない。
+        resume_waits.begin_usage_limit_wait(resumed, result)
         assert not resumed.claude_api_resume_pending
-        assert isinstance(result["error"]["message"], str)
-        assert "同じ会話へ再送" in result["error"]["message"]
+        assert resumed.claude_connection == "payg"
 
 
 @pytest.mark.parametrize("record", ["server", "parent", "continued", "none"])
@@ -136,8 +134,7 @@ async def test_handoff_path_reaches_both_backends(tmp_path: pathlib.Path, monkey
     if record == "continued":
         previous = state.SessionState("previous", str(tmp_path), engine="claude", prompt=prompt)
         prompt = session_handoff.compose_prompt(previous, tmp_path / "conversation.md", ())
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+    configure_claude_payg(monkeypatch, "")
     monkeypatch.setattr(
         claude,
         "_parent_settings",
@@ -173,7 +170,7 @@ async def test_codex_receives_original_connection_values(tmp_path: pathlib.Path,
     """サーバーが保持した接続値をApp Serverの起動環境へ戻す。"""
     api = tmp_path / "api.env"
     api.write_text("CUSTOM_CONNECTION=api\nAWS_PROFILE=api-profile\n")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
+    configure_claude_payg(monkeypatch, str(api))
     monkeypatch.setenv("AWS_PROFILE", "original-profile")
     monkeypatch.setenv("CUSTOM_CONNECTION", "original-option")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "original-oauth")

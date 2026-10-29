@@ -1543,3 +1543,28 @@ async def _usage_limited_manager(
         codex = FakeBackend(manager.sessions, "codex")
         _install_backend(manager, "codex", codex)
         yield manager, client, codex
+
+
+_CLAUDE_CONNECTION_ENVIRONMENT = (
+    "AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE",
+    "AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE",
+    "AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS",
+    "AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS",
+)
+
+
+def configure_claude_payg(
+    monkeypatch: pytest.MonkeyPatch, env_file: str, *, orchestrator: str = "payg", worker: str = "subscription,payg"
+) -> None:
+    """Claudeの従量課金APIのenvファイルと役割別の使用順を環境変数で与える。
+
+    使用順の省略時は、統括担当をAPIだけ、委譲先をサブスクリプション、APIの順にする。
+    `env_file`が空文字列の場合は接続設定を全て外し、親環境を引き継ぐ`inherit`接続にする。
+    """
+    for name in _CLAUDE_CONNECTION_ENVIRONMENT:
+        monkeypatch.delenv(name, raising=False)
+    if not env_file:
+        return
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", env_file)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", orchestrator)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", worker)

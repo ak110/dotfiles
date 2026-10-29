@@ -15,36 +15,107 @@ from agent_toolkit._common import claude_connection as settings
 from agent_toolkit._common import state_paths
 
 
-@pytest.mark.parametrize("mode", ["pay-as-you-go", "api-credits"])
+def _write_env(path: pathlib.Path) -> str:
+    path.write_text("ANTHROPIC_API_KEY=test-key\n", encoding="utf-8")
+    return str(path)
+
+
+def _configure(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    credits_file: str = "",
+    payg: str = "",
+    orchestrator_order: str | None = None,
+    worker_order: str | None = None,
+    subscription: bool = True,
+) -> None:
+    """Claudeの接続設定とサブスクリプションの認証を環境変数で与える。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", credits_file)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", payg)
+    for name, value in (
+        ("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", orchestrator_order),
+        ("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", worker_order),
+    ):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription" if subscription else "")
+
+
 @pytest.mark.parametrize("role", ["orchestrator", "delegate"])
-@pytest.mark.parametrize("api,subscription", [(False, False), (True, False), (False, True), (True, True)])
-def test_candidate_matrix_by_environment_and_role(
+@pytest.mark.parametrize(
+    ("available", "orchestrator_expected", "delegate_expected"),
+    [
+        # 使える種別が1つ・2つ・3つの環境で、同じ使用順のまま未設定の種別だけが除かれる。
+        ({"subscription"}, ["subscription"], ["subscription"]),
+        ({"credits"}, ["credits"], ["credits"]),
+        ({"payg"}, ["payg"], ["payg"]),
+        ({"subscription", "credits"}, ["subscription", "credits"], ["credits", "subscription"]),
+        ({"subscription", "payg"}, ["subscription", "payg"], ["subscription", "payg"]),
+        ({"credits", "payg"}, ["credits", "payg"], ["credits", "payg"]),
+        ({"subscription", "credits", "payg"}, ["subscription", "credits", "payg"], ["credits", "subscription", "payg"]),
+    ],
+)
+def test_candidates_skip_unconfigured_kinds(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    mode: str,
     role: str,
-    api: bool,
-    subscription: bool,
+    available: set[str],
+    orchestrator_expected: list[str],
+    delegate_expected: list[str],
 ) -> None:
-    """一方だけの認証・両認証・認証なしを、両モードの両役割で評価する。"""
-    path = tmp_path / "api.env"
-    if api:
-        path.write_text("ANTHROPIC_API_KEY=test-key\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription" if subscription else "")
+    """3種別を並べた使用順から、認証を設定していない種別を診断なしで除く。"""
+    _configure(
+        monkeypatch,
+        credits_file=_write_env(tmp_path / "credits.env") if "credits" in available else "",
+        payg=_write_env(tmp_path / "payg.env") if "payg" in available else "",
+        orchestrator_order="subscription,credits,payg",
+        worker_order="credits,subscription,payg",
+        subscription="subscription" in available,
+    )
     choices = connection.candidates(role)
-    order = {
-        ("pay-as-you-go", "orchestrator"): ["api"],
-        ("api-credits", "orchestrator"): ["subscription"],
-        ("pay-as-you-go", "delegate"): ["subscription", "api"],
-        ("api-credits", "delegate"): ["api", "subscription"],
-    }[(mode, role)]
-    expected = [name for name in order if {"api": api, "subscription": subscription}[name]]
+    expected = orchestrator_expected if role == "orchestrator" else delegate_expected
     assert [item.kind for item in choices.connections] == expected
-    if not expected:
-        with pytest.raises(ValueError, match="Claude接続候補がありません"):
-            choices.require_first()
+    assert not choices.warnings
+    paths = {item.kind: item.api_env_file for item in choices.connections}
+    assert paths.get("credits") in {None, str(tmp_path / "credits.env")}
+    assert paths.get("payg") in {None, str(tmp_path / "payg.env")}
+
+
+@pytest.mark.parametrize("role", ["orchestrator", "delegate"])
+def test_payg_is_used_only_when_listed(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, role: str) -> None:
+    """従量課金のenvファイルを設定しても、初期値の使用順（paygを含まない）では候補にしない。"""
+    _configure(monkeypatch, payg=_write_env(tmp_path / "payg.env"), subscription=False)
+    choices = connection.candidates(role)
+    assert not choices.connections
+    with pytest.raises(ValueError, match="Claude接続候補がありません"):
+        choices.require_first()
+    key = "claude_orchestrator_connections" if role == "orchestrator" else "claude_worker_connections"
+    with pytest.raises(ValueError, match=key):
+        choices.require_first()
+
+
+def test_cli_orchestrator_excludes_credits(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`claude` CLIで起動する統括担当はクレジットを除いて診断を出し、SDKの会話はクレジットを使う。"""
+    _configure(monkeypatch, credits_file=_write_env(tmp_path / "credits.env"), orchestrator_order="credits,subscription")
+    cli = connection.candidates("orchestrator", cli=True)
+    assert [item.kind for item in cli.connections] == ["subscription"]
+    assert connection.CLI_CREDITS_EXCLUDED in cli.warnings
+    assert [item.kind for item in connection.candidates("orchestrator").connections] == ["credits", "subscription"]
+
+
+def test_unmanaged_environment_inherits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """認証キーと使用順のどれも設定していない環境は、親環境を引き継ぐ接続だけを返す。"""
+    for key in (
+        "CLAUDE_CREDITS_ENV_FILE",
+        "CLAUDE_PAYG_ENV_FILE",
+        "CLAUDE_ORCHESTRATOR_CONNECTIONS",
+        "CLAUDE_WORKER_CONNECTIONS",
+    ):
+        monkeypatch.delenv(f"AGENT_TOOLKIT_CONFIG_{key}", raising=False)
+    assert [item.kind for item in connection.candidates("delegate").connections] == ["inherit"]
+    assert [item.kind for item in connection.candidates("orchestrator", cli=True).connections] == ["inherit"]
 
 
 @pytest.mark.parametrize("invalid", ["missing", "directory", "malformed", "unreadable", "empty-file", "comments-only"])
@@ -69,46 +140,48 @@ def test_invalid_env_file_disables_api_candidate(
             raise PermissionError("権限なし")
 
         monkeypatch.setattr(settings, "read_api_env_file", denied)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path) if invalid else "")
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription")
+    _configure(monkeypatch, credits_file=str(path))
     choices = connection.candidates("delegate")
     assert [item.kind for item in choices.connections] == ["subscription"]
-    if invalid:
-        assert str(path) in choices.diagnostics[0]
-        assert "atk config set claude_api_env_file" in choices.diagnostics[0]
+    assert str(path) in choices.warnings[0]
+    assert "atk config set claude_credits_env_file" in choices.warnings[0]
 
 
-@pytest.mark.parametrize("orchestrator_api", [True, False])
-@pytest.mark.parametrize("worker_api_first", [True, False])
-def test_role_settings_are_independent(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, orchestrator_api: bool, worker_api_first: bool
+@pytest.mark.parametrize(
+    ("saved", "order", "expected"),
+    [
+        # 保持した種別が使用順に含まれる間は、その接続を使い続ける。
+        ("subscription", "credits,subscription", "subscription"),
+        ("credits", "credits,subscription", "credits"),
+        # 使用順から外した種別は、使用順の先頭の利用可能な候補へ移す（旧api-only相当）。
+        ("subscription", "payg", "payg"),
+        ("credits", "subscription,payg", "subscription"),
+        # 接続を管理する前に開始したinheritの会話も、使用順の種別ではないため先頭の候補へ移す。
+        ("inherit", "credits,subscription", "credits"),
+    ],
+)
+def test_saved_connection_moves_only_when_outside_order(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, saved: str, order: str, expected: str
 ) -> None:
-    """2設定の全組合せでオーケストレーターの固定と委譲先の優先順を独立に解決する。"""
-    path = tmp_path / "api.env"
-    path.write_text("ANTHROPIC_API_KEY=test-key\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", str(orchestrator_api).lower())
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_API_FIRST", str(worker_api_first).lower())
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription")
-    assert [item.kind for item in connection.candidates("orchestrator").connections] == [
-        "api" if orchestrator_api else "subscription"
-    ]
-    assert [item.kind for item in connection.candidates("delegate").connections] == (
-        ["api", "subscription"] if worker_api_first else ["subscription", "api"]
-    )
+    credits_file = _write_env(tmp_path / "credits.env")
+    payg = _write_env(tmp_path / "payg.env")
+    _configure(monkeypatch, credits_file=credits_file, payg=payg, worker_order=order)
+    path = {"credits": credits_file, "payg": payg}.get(saved)
+    resolved = connection.apply_current_settings(connection.Connection(saved, path), role="delegate")
+    assert resolved.kind == expected
+    assert connection.outside_order(saved, "delegate") is (saved != expected)
 
 
-def test_subscription_only_orchestrator_rejects_api_only_environment(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(("path_name", "expected"), [("credits.env", "credits"), ("other.env", "payg")])
+def test_legacy_api_connection_resumes_with_saved_env_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, path_name: str, expected: str
 ) -> None:
-    """明示したサブスク固定はAPIだけ使える環境でも維持する。"""
-    path = tmp_path / "api.env"
-    path.write_text("ANTHROPIC_API_KEY=test-key\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
-    monkeypatch.setattr(connection, "subscription_available", lambda *_args, **_kwargs: False)
-    with pytest.raises(ValueError, match="claude auth login"):
-        connection.candidates("orchestrator").require_first()
+    """種別を区別する前に保存した`api`の会話は、保存済みのenvファイルのパスで同じ接続を続ける。"""
+    credits_file = _write_env(tmp_path / "credits.env")
+    saved = _write_env(tmp_path / path_name)
+    _configure(monkeypatch, credits_file=credits_file, worker_order="credits,payg,subscription")
+    resolved = connection.apply_current_settings(connection.Connection("api", saved), role="delegate")
+    assert (resolved.kind, resolved.api_env_file) == (expected, saved)
 
 
 @pytest.mark.parametrize("platform", ["linux", "win32", "darwin"])
@@ -174,7 +247,7 @@ def test_process_loop_preparation_failure_leaves_no_settings(
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=key\nCUSTOM_CONNECTION=selected\n", encoding="utf-8")
     monkeypatch.setattr(
-        connection, "candidates", lambda *_args, **_kwargs: connection.Candidates((connection.Connection("api", str(api)),))
+        connection, "candidates", lambda *_args, **_kwargs: connection.Candidates((connection.Connection("payg", str(api)),))
     )
 
     def failed_debug(*_args: Any, **_kwargs: Any) -> None:
@@ -203,7 +276,7 @@ def test_probe_settings_are_reclaimed_on_interrupt(monkeypatch: pytest.MonkeyPat
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=key\nCUSTOM_CONNECTION=selected\n", encoding="utf-8")
     monkeypatch.setattr(
-        connection, "candidates", lambda *_args, **_kwargs: connection.Candidates((connection.Connection("api", str(api)),))
+        connection, "candidates", lambda *_args, **_kwargs: connection.Candidates((connection.Connection("payg", str(api)),))
     )
     monkeypatch.setattr(orchestrator, "_probe_model", lambda *_args: "model")
     captured: list[pathlib.Path] = []

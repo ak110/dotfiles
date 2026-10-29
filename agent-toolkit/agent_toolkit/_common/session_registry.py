@@ -757,8 +757,9 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         claude_api_env_file=payload.get("claude_api_env_file")
         if payload["engine"] == "claude" and isinstance(payload.get("claude_api_env_file"), str)
         else None,
+        # `api`は種別を区別する前の版の保存値で、Claudeバックエンドが再開時に`credits`か`payg`へ読み替える。
         claude_connection=payload.get("claude_connection")
-        if payload.get("claude_connection") in {"api", "subscription", "inherit"}
+        if payload.get("claude_connection") in {"api", "credits", "payg", "subscription", "inherit"}
         else "api"
         if payload.get("claude_api_env_file")
         else None,

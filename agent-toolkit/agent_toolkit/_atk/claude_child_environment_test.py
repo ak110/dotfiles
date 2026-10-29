@@ -40,7 +40,7 @@ def _run_cli_route(route: str, tmp_path: pathlib.Path, monkeypatch: pytest.Monke
 
 
 @pytest.mark.parametrize("route", ["probe", "session"])
-@pytest.mark.parametrize("kind", ["subscription", "api"])
+@pytest.mark.parametrize("kind", ["subscription", "payg"])
 @pytest.mark.parametrize("source", ["none", "user", "project", "local"])
 def test_cli_descendants_receive_only_configured_empty_keys(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, route: str, kind: str, source: str
@@ -59,7 +59,7 @@ def test_cli_descendants_receive_only_configured_empty_keys(
     }
     if source != "none":
         locations[source].write_text(json.dumps({"env": {"AWS_PROFILE": "source-profile"}}))
-    selected = claude_connection.Connection(kind, str(api) if kind == "api" else None, str(api))
+    selected = claude_connection.Connection(kind, str(api) if kind == "payg" else None, str(api))
     monkeypatch.setattr(claude_connection, "candidates", lambda *_args, **_kwargs: claude_connection.Candidates((selected,)))
     monkeypatch.setattr(orchestrator, "_probe_model", lambda *_args, **_kwargs: "model")
     effective: list[dict[str, str]] = []
@@ -84,32 +84,34 @@ def test_cli_descendants_receive_only_configured_empty_keys(
     _run_cli_route(route, tmp_path, monkeypatch, environment)
     assert len(effective) == 1
     values = effective[0]
-    assert values.get("AWS_PROFILE") == ("profile" if kind == "api" else "" if source != "none" else None)
-    assert values.get("CUSTOM_CONNECTION") == ("api" if kind == "api" else None)
+    assert values.get("AWS_PROFILE") == ("profile" if kind == "payg" else "" if source != "none" else None)
+    assert values.get("CUSTOM_CONNECTION") == ("api" if kind == "payg" else None)
     assert not any(value == "" for key, value in values.items() if key in {"CUSTOM_CONNECTION", "ANTHROPIC_API_KEY"})
 
 
-@pytest.mark.parametrize("role,policy", [("delegate", "legacy"), ("orchestrator", "legacy"), ("orchestrator", "explicit")])
+@pytest.mark.parametrize("role", ["delegate", "orchestrator"])
 @pytest.mark.parametrize("content", [None, "", "# empty\n", "invalid", "ANTHROPIC_API_KEY=\n", "ANTHROPIC_API_KEY=key\n"])
 def test_api_only_has_no_implicit_authentication(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, role: str, policy: str, content: str | None
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, role: str, content: str | None
 ) -> None:
-    """親認証があっても、api-onlyはAPI設定だけを候補にする。"""
+    """親認証があっても、従量課金だけの使用順はAPI設定だけを候補にする。"""
     api = tmp_path / "api.env"
     if content is not None:
         api.write_text(content)
-    if policy == "legacy":
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-only")
-    else:
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api) if content is not None else "")
+    order = (
+        "AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS"
+        if role == "orchestrator"
+        else "AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS"
+    )
+    monkeypatch.setenv(order, "payg")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(api) if content is not None else "")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "parent-oauth")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
     choices = claude_connection.candidates(role)
     if content == "ANTHROPIC_API_KEY=key\n":
-        assert [value.kind for value in choices.connections] == ["api"]
+        assert [value.kind for value in choices.connections] == ["payg"]
     else:
-        with pytest.raises(ValueError, match="API"):
+        with pytest.raises(ValueError, match="Claude接続候補がありません"):
             choices.require_first()
 
 
@@ -118,8 +120,7 @@ def test_explicit_subscription_without_api_file_reaches_cli_isolated(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, route: str
 ) -> None:
     """明示したサブスク固定はAPI環境未設定でも、プローブと本起動の実候補選択へ届く。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription")
     monkeypatch.setattr(orchestrator, "_probe_model", lambda *_args, **_kwargs: "model")
     observed: list[dict[str, str]] = []
 
