@@ -454,6 +454,39 @@ def test_prepare_exit_two_preserves_both_diagnostic_streams(tmp_path, monkeypatc
     assert session_review.pending()
 
 
+@pytest.mark.parametrize("reason", ["prepare-or-state: prepareが終了2: 不足", "run-skill-exit-1: 子の回収失敗"])
+def test_failure_awi_requires_success_through_failed_phase(tmp_path, reason) -> None:
+    """準備成功だけで準備以降の失敗を完了扱いしない完成条件を保存する。"""
+    # pylint: disable-next=protected-access
+    message = run_skill_batch._failure_message(  # noqa: SLF001
+        "failure", reason, tmp_path / "run.json", {"targets": [{"session_id": "one"}]}
+    )
+    assert "準備から失敗した工程までの成功を確認する" in message
+    assert "子の結果回収、振り返り、報告の同期とsession-review-state finishまで完了する" in message
+
+
+def test_child_failure_keeps_scope_unprocessed(tmp_path) -> None:
+    """準備後の子回収失敗は具体理由を保存し、対象範囲を未処理のまま保持する。"""
+    notes = _notes()
+    _target(tmp_path, "one")
+    reason = "run-skill-exit-1: 子の結果回収に失敗した"
+
+    def execute(args, **kwargs):
+        del kwargs
+        args.batch_failure = reason
+        return 1
+
+    assert run_skill_batch.dispatch(_args(), execute) == 1
+    pending = session_review.pending()
+    assert len(pending) == 1 and pending[0]["session_id"] == "one"
+    assert session_review.previous_scope(pending[0]) is None
+    records = [session_review.read(path) for path in (session_review.directory() / "runs").glob("*.json")]
+    assert len(records) == 1 and records[0]["status"] == "failed"
+    assert len(records[0]["prepared"]) == 1 and not records[0].get("analysis_succeeded")
+    assert records[0]["error"] == reason
+    assert reason in _failure_awis(notes)[0].read_text(encoding="utf-8")
+
+
 def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path) -> None:
     """準備失敗の是正AWIが未完了の間は再試行を止め、終了後の自動起動で再試行して再失敗すれば診断付きの新AWIを投入する。"""
     notes = _notes()

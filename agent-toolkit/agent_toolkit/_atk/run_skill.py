@@ -248,6 +248,9 @@ def _run_locked(
     )
     session_id: str | None = None
     if orchestrator == "claude":
+        # 非対話CLIは最終応答で終了するため、子の結果を同じターンで回収させる。
+        # このenvは利用上限解除後の同一会話の再開でも使う。
+        env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"
         session_id = str(uuid.uuid4())
         progress.message(f"Claudeのセッション識別子: {session_id}")
         argv = [

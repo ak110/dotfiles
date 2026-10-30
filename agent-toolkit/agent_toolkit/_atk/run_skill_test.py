@@ -52,6 +52,7 @@ record = {{
         "AGENT_TOOLKIT_DELEGATED_SESSION",
         "AGENT_TOOLKIT_RESTART_SPEC",
         "AGENT_TOOLKIT_RUN_SKILL_ID",
+        "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS",
     )}},
 }}
 (record_dir / f"{{time.time_ns()}}-{{uuid.uuid4().hex}}.json").write_text(json.dumps(record), encoding="utf-8")
@@ -430,6 +431,7 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
     sessions = _records(engine_env, "session")
     assert len(sessions) == 1
     argv = sessions[0]["argv"]
+    assert sessions[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert argv[:2] == ["claude", "-p"]
     for option, value in (
         ("--permission-mode", "auto"),
@@ -469,6 +471,21 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
         "終了状態: exit code 0",
     ):
         assert expected in log
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_background_setting_is_limited_to_claude_child(engine_env, monkeypatch, capsys, engine) -> None:
+    """同期実行設定はClaudeの子へ限定し、起動元と他engineの設定を維持する。"""
+    monkeypatch.setenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "0")
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
+
+    code, _out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
+
+    assert code == 0, err
+    assert os.environ["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "0"
+    assert _records(engine_env, "session")[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == (
+        "1" if engine == "claude" else "0"
+    )
 
 
 def test_codex_session_receives_goal_without_slash_command(
@@ -826,6 +843,8 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     assert sleeps == [10, 300]
     sessions = _records(engine_env, "session")
     assert len(sessions) == 3
+    if engine == "claude":
+        assert all(session["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1" for session in sessions)
     first = sessions[0]["argv"]
     for session in sessions[1:]:
         argv = session["argv"]
