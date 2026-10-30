@@ -79,7 +79,7 @@ disable-model-invocation: true
 
 ## 実行順
 
-計画作成、実装、独立した実行レビューの進行管理、起動と返却後の検収、および`検証結果`の記録は、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`の共通契約に従う。以下では、本スキル固有の対象取得、worktreeの紐付け、公開の手順を定める。
+計画作成、実装、実行レビューの進行管理、起動と返却後の検収、および`検証結果`の記録は、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`の共通契約に従う。以下では、本スキル固有の対象取得、worktreeの紐付け、公開の手順を定める。
 
 1. 処理可能なWI（processable）の一覧と各WIの本文を取得する。同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`を実行して回答済みUWIを取得する。
    対象worktreeごとに公開対象とベースブランチを明示し、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象の決定」に定める開始時のCI点検を実施する。実装に着手する前に実際のCI状況を照会し、失敗ログの取得と残工程への影響判定を行う。既存の失敗は「見つけた既存不良の扱い」に従って処理し、ユーザーのみが判断できる事項は確認手順へと回す。公開時のベースライン確認とCI検収も実行順8で実施する。

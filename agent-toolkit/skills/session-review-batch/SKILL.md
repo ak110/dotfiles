@@ -32,7 +32,7 @@ atk run-skill --args manual agent-toolkit:session-review-batch
 
 実際の分析はrun-skillが起動する別セッションで行う。
 進行中の担当がある場合は、分析をその実行へ引き続き委ねる。
-手動起動は自動停止設定と未回答の失敗UWIによる抑止を迂回するが、活動判定とアカウント共通排他は維持する。
+手動起動は自動停止設定と未完了の失敗報告AWIによる抑止を迂回するが、活動判定とアカウント共通排他は維持する。
 
 ## 分析と保存
 
@@ -64,7 +64,7 @@ atk run-skill --args manual agent-toolkit:session-review-batch
 `finish` は分析完了の記録だけを行う。
 起動元run-skillが報告の同期を検収した後に、今回準備した範囲を処理済みにし、次の対象があれば次回を起動する。
 失敗時はfinishを実行せず、原因と未完了対象を最終応答に残す。
-待ち記録、失敗UWIの重複確認、未回答中の自動抑止は起動元が所有する。
+待ち記録、失敗報告AWIの重複確認、AWIが未完了の間の自動抑止は起動元が所有する。
 
 ## 状態定義
 
@@ -75,7 +75,7 @@ atk run-skill --args manual agent-toolkit:session-review-batch
 - `runs/`: 実行ID別manifestに固定対象・報告先・準備範囲・分析結果・プロセス・失敗を保持し、中断後の報告同期と未確定範囲を検収する。成功確定済み、または報告同期済み失敗の全対象がpendingから除かれたmanifestとログはrun-skillと同じ30日保持とし、未確定・報告未達は確定まで保持する
 - `state.lock`: モデル起動・利用上限待機・WI保存を除く、登録・状態更新・成功確定を短時間排他する
 - `batch.lock`: 自動・手動の全リポジトリで対象選定から報告同期検収・成功確定まで共有する。親中断時もプロセス識別と子の起動引数に含めた固有manifestパスで生存を確認し、二重起動を防ぐ
-- pendingとmanifestの失敗UWI対応により、同原因の未回答対象を自動選定から外し、手動再試行時も既存の報告を再利用する
+- 失敗は配布元リポジトリへの是正AWI（`source: session-review-batch`）として報告し、ユーザーの回答を待たずに処理担当が是正する。pendingとmanifestの失敗キーにより、同原因のAWIが未完了（inbox・processing・hold）の対象を自動選定から外し、AWIの終了後の次回起動で再試行する。手動再試行時も未完了の既存AWIを再利用する。準備に失敗した対象だけを切り離し、残りの対象はモデル起動へ進める
 
 batchはrun-skillの報告同期検収後、手動振り返りは全体分析後の`atk run-script session-review-state -- complete --prepared <準備結果JSON>`で準備済み範囲を確定し、新世代・準備後の追記はpendingに残す。
 `AGENT_TOOLKIT_SESSION_REVIEW_BATCH`はmanifest、`AGENT_TOOLKIT_RUN_SKILL_TARGET_REPO`は報告先を子へ渡す。

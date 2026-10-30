@@ -332,6 +332,12 @@ def _codex_mcp_start_item(entry: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _codex_mcp_start_rejected(item: dict[str, Any]) -> bool:
+    """agents_serverがエラー応答で拒否した起動項目かを返す。拒否された起動には委譲先が存在しない。"""
+    result = item.get("result")
+    return isinstance(result, dict) and result.get("isError") is True
+
+
 def _thread_ids_from_record(
     record: _Record,
     agents_server_call_ids: set[str],
@@ -572,7 +578,8 @@ def _collect_records(
             if call_id and not thread_ids and call_id not in unresolved_delegation_calls:
                 unresolved.append(_UnresolvedRecord(source.record_id, record.line, "unresolved-delegation"))
                 unresolved_delegation_calls.add(call_id)
-            if _codex_mcp_start_item(record.entry) is not None and not thread_ids:
+            start_item = _codex_mcp_start_item(record.entry)
+            if start_item is not None and not thread_ids and not _codex_mcp_start_rejected(start_item):
                 unresolved.append(_UnresolvedRecord(source.record_id, record.line, "unresolved-delegation"))
             for session_id in thread_ids:
                 if session_id in seen_sessions:

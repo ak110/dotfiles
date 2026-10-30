@@ -16,7 +16,7 @@ import filelock
 import pytest
 
 from agent_toolkit._atk import config, run_script, run_skill_batch
-from agent_toolkit._atk.wi import add, layout
+from agent_toolkit._atk.wi import add, frontmatter, layout
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository
 
@@ -196,8 +196,8 @@ def test_global_lock_prevents_different_repo_execution(tmp_path) -> None:
         assert run_skill_batch.dispatch(_args(), unexpected) == 1
 
 
-def test_missing_finish_reuses_own_report_and_suppresses_auto_retry(tmp_path, monkeypatch) -> None:
-    """報告だけ保存した中断でも、その報告へ失敗を追記して未回答中の再起動を抑える。"""
+def test_missing_finish_keeps_report_and_suppresses_auto_retry(tmp_path, monkeypatch) -> None:
+    """報告だけ保存した中断でも報告は残し、配布元への是正AWIが未完了の間は再起動を抑える。"""
     notes = _notes()
     _target(tmp_path, "one")
     calls = []
@@ -220,10 +220,10 @@ def test_missing_finish_reuses_own_report_and_suppresses_auto_retry(tmp_path, mo
     assert run_skill_batch.dispatch(_args(), execute) == 1
     assert run_skill_batch.dispatch(_args(), execute) == 0
     assert len(calls) == 1
-    reports = list(layout.iter_entry_paths(notes))
-    assert len(reports) == 1
-    text = reports[0].read_text(encoding="utf-8")
-    assert "session_review_failure_key:" in text and "## 実行失敗" in text
+    assert len(list(layout.iter_entry_paths(notes))) == 2
+    failures = _failure_awis(notes)
+    assert len(failures) == 1
+    assert "analysis-incomplete" in failures[0].read_text(encoding="utf-8")
 
 
 def test_active_target_is_not_prepared(tmp_path, monkeypatch) -> None:
@@ -250,8 +250,8 @@ def test_config_boolean_contract() -> None:
         config.save_mutable_settings({"session_review_auto_start": "yes"})
 
 
-def test_batch_reply_releases_failed_target_after_user_answer(tmp_path) -> None:
-    """未回答中は同じ対象を起動せず、回答が保存されると次の自動起動で対象へ戻す。"""
+def test_failure_awi_close_releases_failed_target(tmp_path) -> None:
+    """是正AWIが未完了の間は同じ対象を起動せず、AWIが終了すると次の自動起動で対象へ戻す。"""
     notes = _notes()
     _target(tmp_path, "one")
     calls = []
@@ -261,9 +261,11 @@ def test_batch_reply_releases_failed_target_after_user_answer(tmp_path) -> None:
         return 124
 
     assert run_skill_batch.dispatch(_args(), fail) == 124
+    assert run_skill_batch.dispatch(_args(), fail) == 0
+    assert len(calls) == 1
     report = next(layout.iter_entry_paths(notes))
     text = report.read_text(encoding="utf-8")
-    report.write_text(text.replace("## 回答\n", "## 回答\n\n再実行する。\n", 1), encoding="utf-8")
+    report.write_text(text.replace("state: inbox\n", "state: adopted\n", 1), encoding="utf-8")
     assert run_skill_batch.dispatch(_args(), fail) == 124
     assert len(calls) == 2
     assert len(list(layout.iter_entry_paths(notes))) == 2
@@ -306,3 +308,81 @@ def test_orphan_executor_prevents_new_model_before_pid_publish() -> None:
         finally:
             child.terminate()
             child.wait(timeout=10)
+
+
+def _failure_awis(notes: pathlib.Path) -> list[pathlib.Path]:
+    """失敗報告として保存されたAWIを返す。"""
+    return [
+        path
+        for path in layout.iter_entry_paths(notes)
+        if "session_review_failure_key:" in path.read_text(encoding="utf-8") and "type: awi" in path.read_text(encoding="utf-8")
+    ]
+
+
+def _fail_prepare_for(monkeypatch, names: set[str]) -> list[str]:
+    """指定した対象の準備だけを、実記録で観測した未確認範囲の失敗と同じ形で失敗させる。"""
+    original = run_skill_batch._prepare  # pylint: disable=protected-access
+    calls: list[str] = []
+
+    def prepare(target):
+        calls.append(target["session_id"])
+        if target["session_id"] in names:
+            raise ValueError(f"prepareに未確認範囲がある: {target['session_id']}")
+        return original(target)
+
+    monkeypatch.setattr(run_skill_batch, "_prepare", prepare)
+    return calls
+
+
+def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monkeypatch) -> None:
+    """1対象の準備失敗でも残りの対象でモデルを起動し、失敗対象だけを配布元への是正AWIとともに待ちへ残す。"""
+    notes = _notes()
+    _target(tmp_path, "one")
+    _target(tmp_path, "bad")
+    _fail_prepare_for(monkeypatch, {"bad"})
+    calls = []
+
+    def execute(args):
+        manifest = session_review.read(pathlib.Path(args.batch_manifest))
+        calls.append([target["session_id"] for target in manifest["targets"]])
+        monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", args.run_id)
+        monkeypatch.setenv(session_review.BATCH_ENV, args.batch_manifest)
+        add.add_entries(
+            notes,
+            messages=["---\nrun_skill_report: true\n---\n# 振り返り結果\n\n1件を確認した。"],
+            target_repo=args.target_repo,
+            source="run-skill",
+            now=datetime.datetime.now(datetime.UTC),
+            entry_type="uwi",
+            scope=session_review.BATCH_SKILL,
+            question_type="post-approval",
+        )
+        assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
+        return 0
+
+    assert run_skill_batch.dispatch(_args(), execute) == 1
+    assert calls == [["one"]]
+    assert [target["session_id"] for target in session_review.pending()] == ["bad"]
+    failures = _failure_awis(notes)
+    assert len(failures) == 1
+    data, body = frontmatter.parse_frontmatter(failures[0].read_text(encoding="utf-8")) or ({}, "")
+    # ユーザーの回答を待たず、振り返りの仕組みの配布元で処理担当が是正できるAWIとして登録する。
+    assert data["type"] == "awi" and data["source"] == "session-review-batch"
+    assert data["target_repo"] == run_skill_batch.repo.resolve_repo_id(
+        json.loads((run_skill_batch.PLUGIN_ROOT / ".claude-plugin/plugin.json").read_text())["repository"]
+    )
+    assert "対象: bad\n" in body and "## 完成条件" in body
+
+
+def test_manual_prepare_failure_does_not_retry_same_target(tmp_path, monkeypatch) -> None:
+    """失敗中の対象も選ぶ手動実行で、同じ呼び出しの中では準備の失敗を繰り返さない。"""
+    _notes()
+    _target(tmp_path, "bad")
+    calls = _fail_prepare_for(monkeypatch, {"bad"})
+
+    def unexpected(args):
+        raise AssertionError("準備できた対象が無いためモデルは起動しない")
+
+    assert run_skill_batch.dispatch(_args("manual"), unexpected) == 1
+    assert calls == ["bad"]
+    assert session_review.pending()

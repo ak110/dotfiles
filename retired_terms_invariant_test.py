@@ -237,6 +237,18 @@ _RETIRED_TERMS = (
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),
     ),
+    # 定義名（レビュー形態の独立文脈レビュー、工程名の実行レビュー）でない呼称（2026年10月30日、ユーザー指示で是正）。
+    # 現行文書から写した書き手が同じ呼称を報告へ書き戻したため登録する。
+    _RetiredTerm(
+        term="独立した実行レビュー",
+        replacement="実行レビュー（レビューの形態を指す場合は独立文脈レビュー）",
+        allowed=(
+            # 是正前の条文・観測の保存記録
+            _AllowedLocation("docs/development/norm-restructure*/*"),
+            # 登録した語の不在を確かめる本テスト
+            _AllowedLocation("retired_terms_invariant_test.py"),
+        ),
+    ),
     # 計画実装型AWIと計画化の手順は後継なし（2026年9月13日に廃止）。
     *(
         _RetiredTerm(

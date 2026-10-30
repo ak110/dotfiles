@@ -65,7 +65,7 @@ process-loopの起動・待機・制御を扱う際は、事前に`atk wi proces
 対象リポジトリの単発処理は`agent-toolkit:process-wi`または`agent-toolkit:single-lane-process`を使う。
 登録や再開の条件は`../process-wi/references/all-repos-orchestration.md`に従う。
 
-process-wiのメインセッションは対象の選定・配分とユーザー確認を担当し、レーン担当が計画、実装、独立した実行レビューの調整、統合を順次進める。初回の独立した実行レビューでは詳細に点検し、レビュー限定基準への違反があれば指摘として通知する。再レビューでは、前回の指摘事項、修正差分、および直接影響範囲を確認する。レーン数によらない継続契約は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`に準拠し、複数レーンを運用する場合はメインセッションが1レーンずつ統合を許可する。準備は`atk lane create`、統合は`atk lane integrate`、回収は`atk lane delete`の順で進め、各操作の実行前に`../process-wi/references/run-lanes.md`の該当節を確認する。保持された資源の回復は、同書ならびに`atk lane delete --help`、`atk lane recover --help`に記載された条件や診断に従って再開する。
+process-wiのメインセッションは対象の選定・配分とユーザー確認を担当し、レーン担当が計画、実装、実行レビューの調整、統合を順次進める。初回の実行レビューでは詳細に点検し、レビュー限定基準への違反があれば指摘として通知する。再レビューでは、前回の指摘事項、修正差分、および直接影響範囲を確認する。レーン数によらない継続契約は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`に準拠し、複数レーンを運用する場合はメインセッションが1レーンずつ統合を許可する。準備は`atk lane create`、統合は`atk lane integrate`、回収は`atk lane delete`の順で進め、各操作の実行前に`../process-wi/references/run-lanes.md`の該当節を確認する。保持された資源の回復は、同書ならびに`atk lane delete --help`、`atk lane recover --help`に記載された条件や診断に従って再開する。
 
 `run-skill`に由来するUWIは、`source`が`run-skill`、`scope`がスキル名となり、process-wiの選定対象やprocess-loopの起動件数の計算から除外する。
 
