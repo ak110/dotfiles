@@ -211,8 +211,21 @@ def test_parent_operand_preserves_original_file(tmp_path, monkeypatch, capsys, k
     assert (json.dumps(body, ensure_ascii=False)[1:-1] in output) is allowed
 
 
+@pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FDへ固定した再取得はLinuxで検証する")
 def test_same_response_capacity_is_accumulated(tmp_path, monkeypatch):
     """個別には入る複数本文も、同じモデル応答の合計枠で管理する。"""
+    path = tmp_path / "note"
+    body = "a" * 500
+    path.write_text(body)
+    payload = _payload(tmp_path, monkeypatch, f"cat {path}", _cut(body), limit=1000)
+    first = delivery.collect(payload)
+    second = delivery.collect(payload)
+    assert first is not None and first.body == body
+    assert second is not None and second.body is None and "合計" in second.context
+
+
+def test_untruncated_read_stays_acquired_when_capacity_is_exhausted(tmp_path, monkeypatch):
+    """省略の無いnative応答は、重複配送の枠不足でも全文取得として観測する。"""
     path = tmp_path / "note"
     body = "a" * 500
     path.write_text(body)
@@ -220,7 +233,7 @@ def test_same_response_capacity_is_accumulated(tmp_path, monkeypatch):
     first = delivery.collect(payload)
     second = delivery.collect(payload)
     assert first is not None and first.body == body
-    assert second is not None and second.body is None and "合計" in second.context
+    assert second is not None and second.body == body and body not in second.context
 
 
 @pytest.mark.parametrize(
@@ -253,18 +266,15 @@ def test_malformed_transcript_does_not_deliver(tmp_path, monkeypatch, value):
 @pytest.mark.parametrize("reason", ["mismatch", "capacity"])
 def test_public_unread_notice_provides_next_read(tmp_path, monkeypatch, capsys, reason):
     """公開Postの未取得通知へ、保護判定を維持した次の取得操作を添える。"""
-    if reason == "mismatch" and not pathlib.Path("/proc/self/fd").is_dir():
+    if not pathlib.Path("/proc/self/fd").is_dir():
         pytest.skip("FDへ固定した再取得はLinuxで検証する")
     body = "照合対象の本文\n" * 100
     path = tmp_path / "notice.md"
     path.write_text("変更" + body if reason == "mismatch" else body, encoding="utf-8")
-    payload = _payload(
-        tmp_path,
-        monkeypatch,
-        f"cat {path}",
-        _cut(body) if reason == "mismatch" else body,
-        limit=1000000 if reason == "mismatch" else 1000,
-    )
+    payload = _payload(tmp_path, monkeypatch, f"cat {path}", _cut(body))
+    if reason == "capacity":
+        # 再取得は成功させ、同じ応答の配送枠だけが残っていない状態にする。
+        monkeypatch.setattr(delivery, "_reserve", lambda *_args: False)
     assert posttooluse.main(json.dumps(payload)) == 0
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "未取得" in output

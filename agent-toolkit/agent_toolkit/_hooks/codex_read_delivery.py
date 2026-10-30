@@ -422,6 +422,10 @@ def collect(payload: dict) -> Delivery | None:
                     )
             packet = json.dumps({"command": command, "output": body, "exit_code": 0}, ensure_ascii=False)
             if not _reserve(root, generation, limit, len(packet.encode("utf-8"))):
+                # 省略の包絡が無いnative応答は既に全文をモデルへ返している。重複配送の枠不足だけで
+                # 取得を取り消すと、小さな正規の読取でも再書込の遮断を解除できなくなる。
+                if not response_is_truncated(response):
+                    return Delivery("元のnative読取が終了0で全文を返したため、追加配送を省く。", response)
                 return Delivery(
                     "全文は未取得。同じ応答から配送する本文の合計がモデル文脈の残容量を超える。次の応答で必要な行範囲へ限定して読むこと。",
                     None,
