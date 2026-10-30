@@ -33,8 +33,28 @@ _SESSION = codex_processes.CodexProcess(pid=4242, label="codex app-server", role
 _REAL_HOOKS_LIST = install_codex_plugins._hooks_list  # pylint: disable=protected-access
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
-# 生成器の許可表と同じ9イベント。install_codex_pluginsはこの集合が全て登録済みかを判定する。
-_EXPECTED_HOOK_EVENTS = install_codex_plugins._EXPECTED_HOOK_EVENTS  # pylint: disable=protected-access
+
+
+def _hook_entry(**overrides: Any) -> dict[str, Any]:
+    """Codex 0.166.0のHooksListResponse・HookMetadataの公開schemaに沿う登録を返す。"""
+    # 出所: codex app-server generate-json-schemaのv2/HooksListResponse.json。
+    hook: dict[str, Any] = {
+        "handlerType": "command",
+        "command": "atk-hook pretooluse",
+        "currentHash": "declaration/content",
+        "displayOrder": 0,
+        "enabled": True,
+        "eventName": "preToolUse",
+        "isManaged": False,
+        "key": "plugin-hook",
+        "pluginId": "agent-toolkit@ak110-dotfiles",
+        "source": "plugin",
+        "sourcePath": str(Path.cwd() / "hooks/hooks.codex.json"),
+        "timeoutSec": 30,
+        "trustStatus": "untrusted",
+    }
+    hook.update(overrides)
+    return hook
 
 
 @pytest.fixture(autouse=True)
@@ -52,9 +72,8 @@ def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda: {
             "data": [
                 {
-                    "hooks": [
-                        {"eventName": event, "enabled": True, "trustStatus": "untrusted"} for event in _EXPECTED_HOOK_EVENTS
-                    ],
+                    "cwd": str(Path.cwd()),
+                    "hooks": [_hook_entry()],
                     "warnings": [],
                     "errors": [],
                 }
@@ -957,6 +976,120 @@ def test_plugin_update_omits_trust_notice_when_hooks_are_not_registered(
     assert not outcome.notices
 
 
+@pytest.mark.parametrize(
+    ("hooks", "expected"),
+    [
+        pytest.param([_hook_entry()], True, id="untrusted"),
+        pytest.param([_hook_entry(trustStatus="modified")], True, id="modified"),
+        pytest.param([_hook_entry(trustStatus="trusted"), _hook_entry(trustStatus="modified")], True, id="trusted-modified"),
+        pytest.param([_hook_entry(trustStatus="trusted"), _hook_entry()], True, id="trusted-untrusted"),
+        pytest.param([_hook_entry(eventName="interrupt")], True, id="additional-event"),
+        pytest.param([_hook_entry(trustStatus="trusted")], False, id="trusted"),
+        pytest.param([_hook_entry(trustStatus="managed", isManaged=True)], False, id="managed"),
+        pytest.param([_hook_entry(enabled=False)], False, id="disabled"),
+        pytest.param([_hook_entry(pluginId="other@market")], False, id="other-plugin"),
+        pytest.param([_hook_entry(source="user", pluginId=None)], False, id="user-hook"),
+        pytest.param([_hook_entry(trustStatus=[])], False, id="invalid-status"),
+        pytest.param([_hook_entry(pluginId="other@market"), _hook_entry(trustStatus="modified")], True, id="other-with-target"),
+        pytest.param(
+            [_hook_entry(trustStatus="trusted"), _hook_entry(trustStatus="modified", enabled=False)],
+            False,
+            id="trusted-disabled-modified",
+        ),
+    ],
+)
+def test_plugin_hook_trust_notice_filters_registered_hooks(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, hooks: list[dict[str, Any]], expected: bool
+) -> None:
+    """対象pluginの有効な未信頼・変更済みhookが1件でもあれば正規承認を案内する。"""
+    calls: list[list[str]] = []
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
+    monkeypatch.setattr(
+        install_codex_plugins,
+        "_hooks_list",
+        lambda: {"data": [{"cwd": str(plugin_env), "hooks": hooks, "warnings": [], "errors": []}]},
+    )
+
+    outcome = install_codex_plugins.run()
+
+    assert [notice.command for notice in outcome.notices] == (["/hooks"] if expected else [])
+    assert outcome.changed
+
+
+@pytest.mark.parametrize("version", [None, "1.2.2", "1.2.3"], ids=["initial", "update", "same-version"])
+def test_hook_trust_notice_for_each_install_state(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, version: str | None
+) -> None:
+    """初回・更新・同版起動で、承認済みと変更済みの混在を同じ案内へ接続する。"""
+    before = {"installed": []} if version is None else _installed_state(version=version)
+    responses: list[dict[str, Any] | None] = [_local_marketplace(plugin_env), before]
+    if version != "1.2.3":
+        responses.append(_installed_state())
+    _set_json_responses(monkeypatch, responses)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
+    monkeypatch.setattr(
+        install_codex_plugins,
+        "_hooks_list",
+        lambda: {
+            "data": [
+                {
+                    "cwd": str(plugin_env),
+                    "hooks": [_hook_entry(trustStatus="trusted"), _hook_entry(trustStatus="modified")],
+                    "warnings": [],
+                    "errors": [],
+                }
+            ]
+        },
+    )
+
+    outcome = install_codex_plugins.run()
+
+    assert [notice.command for notice in outcome.notices] == ["/hooks"]
+    assert outcome.changed is (version != "1.2.3")
+    assert calls == (
+        [["plugin", "add", "agent-toolkit@ak110-dotfiles"], ["app-server", "daemon", "version"]] if version != "1.2.3" else []
+    )
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        pytest.param(None, False, id="unavailable"),
+        pytest.param({"data": []}, False, id="empty"),
+        pytest.param({"data": {}}, False, id="invalid-data"),
+        pytest.param({"data": [None, {"hooks": None}]}, False, id="invalid-entries"),
+        pytest.param(
+            {
+                "data": [
+                    {"cwd": "/first", "hooks": [_hook_entry(trustStatus="trusted")], "warnings": [], "errors": []},
+                    {
+                        "cwd": "/second",
+                        "hooks": [None, _hook_entry(trustStatus="modified")],
+                        "warnings": ["別hookの警告"],
+                        "errors": ["別hookの登録エラー"],
+                    },
+                ]
+            },
+            True,
+            id="multiple-cwds-with-diagnostics",
+        ),
+    ],
+)
+def test_hook_trust_notice_handles_response_entries(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, result: dict[str, Any] | None, expected: bool
+) -> None:
+    """取得不能を未承認扱いせず、登録診断と同居する対象の案内は維持する。"""
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_hooks_list", lambda: result)
+
+    outcome = install_codex_plugins.run()
+
+    assert [notice.command for notice in outcome.notices] == (["/hooks"] if expected else [])
+    assert outcome.changed is False
+
+
 def test_same_version_enabled_is_unchanged(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """版数一致かつ有効なpluginは導入せず変更しない。"""
     calls: list[list[str]] = []
@@ -964,6 +1097,13 @@ def test_same_version_enabled_is_unchanged(plugin_env: Path, monkeypatch: pytest
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), state])
     monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+    monkeypatch.setattr(
+        install_codex_plugins,
+        "_hooks_list",
+        lambda: {
+            "data": [{"cwd": str(plugin_env), "hooks": [_hook_entry(trustStatus="trusted")], "warnings": [], "errors": []}]
+        },
+    )
     monkeypatch.setattr(
         install_codex_plugins.common,
         "run_subprocess",
@@ -1261,7 +1401,7 @@ def test_removes_installed_unused_plugin_and_returns_notice(plugin_env: Path, mo
 
     assert outcome.changed is True
     assert ["plugin", "remove", "compact-plus@compact-plus"] in calls
-    assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
+    assert [notice.command for notice in outcome.notices] == ["/hooks", "codex app-server daemon restart"]
 
 
 def test_running_codex_session_defers_unused_plugin_removal(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1300,7 +1440,7 @@ def test_skips_uninstalled_unused_plugin(plugin_env: Path, monkeypatch: pytest.M
     outcome = install_codex_plugins.run()
 
     assert outcome.changed is False
-    assert not outcome.notices
+    assert [notice.command for notice in outcome.notices] == ["/hooks"]
     assert ["plugin", "remove", "compact-plus@compact-plus"] not in calls
 
 
@@ -1314,7 +1454,7 @@ def test_skips_unused_plugin_when_list_fails(plugin_env: Path, monkeypatch: pyte
     outcome = install_codex_plugins.run()
 
     assert outcome.changed is False
-    assert not outcome.notices
+    assert [notice.command for notice in outcome.notices] == ["/hooks"]
     assert ["plugin", "remove", "compact-plus@compact-plus"] not in calls
 
 
@@ -1343,7 +1483,7 @@ def test_continues_when_unused_plugin_remove_fails(
     outcome = install_codex_plugins.run()
 
     assert outcome.changed is False
-    assert not outcome.notices
+    assert [notice.command for notice in outcome.notices] == ["/hooks"]
     assert ["plugin", "remove", "compact-plus@compact-plus"] in calls
     assert "plugin除去に失敗したため続行" in caplog.text
 
