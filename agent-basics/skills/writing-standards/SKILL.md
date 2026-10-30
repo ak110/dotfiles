@@ -77,6 +77,12 @@ description: >
 | 状態を変える多段手順の工程順を設計・変更・レビューする前 | `references/design-runtime.md`の「状態を変える多段手順の工程順」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「状態を変える多段手順の工程順」` | |
 | テストの網羅範囲の管理方法を設計・変更・レビューする前 | `references/test-coverage-ledger.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/test-coverage-ledger.md` | |
 | 画面を操作する探索的な試行の実施要否を決める前 | `references/testing.md`の「検証単位の選定」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` | |
+| DBトランザクションを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「DBトランザクション設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「DBトランザクション設計」` | |
+| クエリ性能を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「クエリ性能設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「クエリ性能設計」` | |
+| DB更新と外部送信の整合性を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「DB更新と外部送信の整合性設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「DB更新と外部送信の整合性設計」` | |
+| Webhook受信を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「Webhook受信設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「Webhook受信設計」` | |
+| 常駐サービスを設計・変更・レビューする前 | `references/design-runtime.md`の「常駐サービス設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「常駐サービス設計」` | |
+| 負荷制御と外部呼び出しを設計・変更・レビューする前 | `references/design-runtime.md`の「負荷制御と外部呼び出しの設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「負荷制御と外部呼び出しの設計」` | |
 
 ## 文章の作成時に読む資料
 
