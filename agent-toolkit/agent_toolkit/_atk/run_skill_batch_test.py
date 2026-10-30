@@ -427,6 +427,33 @@ def test_prepare_success_keeps_json_and_forwards_stderr(tmp_path, monkeypatch, c
     assert "警告: 補足" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("detail", ["記録が存在しない", "作業領域を準備できない", "bundleが不正", "表示予算を超えた"])
+def test_prepare_exit_two_preserves_both_diagnostic_streams(tmp_path, monkeypatch, detail) -> None:
+    """準備の失敗原因と次操作を、batchの失敗記録と是正AWIまで保持する。"""
+    notes = _notes()
+    _target(tmp_path, "one")
+
+    def dispatch(args, **kwargs):
+        del args, kwargs
+        print(f"不足: {detail}。次の操作: 対象入力を確認する", file=sys.stderr)
+        print("対象入力の補足")
+        return 2
+
+    def unexpected(args, **kwargs):
+        del args, kwargs
+        raise AssertionError("準備失敗時にモデルを起動しない")
+
+    monkeypatch.setattr(run_skill_batch.run_script, "dispatch", dispatch)
+    assert run_skill_batch.dispatch(_args(), unexpected) == 1
+    records = [session_review.read(path) for path in (session_review.directory() / "runs").glob("*.json")]
+    errors = [record["error"] for record in records if record.get("error")]
+    assert len(errors) == 1
+    body = _failure_awis(notes)[0].read_text(encoding="utf-8")
+    for expected in ("prepareが終了2:", detail, "次の操作: 対象入力を確認する", "対象入力の補足"):
+        assert expected in errors[0] and expected in body
+    assert session_review.pending()
+
+
 def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path) -> None:
     """準備失敗の是正AWIが未完了の間は再試行を止め、終了後の自動起動で再試行して再失敗すれば診断付きの新AWIを投入する。"""
     notes = _notes()
