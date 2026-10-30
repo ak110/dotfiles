@@ -930,8 +930,7 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
 
     `agent-toolkit:delegation`の`SKILL.md`「送信」は委譲元が起動準備のために手順書の本文を読むことを禁じるが、
     事後の振り返りだけでは読んだ時点に作用しないため、読取の直前に起動契約へ誘導する。
-    読む主体の担当がその役割である場合と、主体が取得済みの資料（または自身の役割文書）の読込表にその手順書を資料とする
-    行がある場合は警告しない。plugin root外の同名ファイル（作業ツリーの編集対象）は対象外とする。
+    読む主体の担当がその役割である場合は警告しない。plugin root外の同名ファイルは対象外とする。
     編集と返却後の検収を目的の判定なしには区別できないため、遮断せずに続行の条件を示す。
     """
     if not session_id or delegated_session.is_lightweight_delegated(os.environ):
@@ -955,20 +954,7 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
     records = records if isinstance(records, dict) else {}
     own = active_roles(payload, session_id, records, agent) if agent == agent_id.MAIN_AGENT_ID else set()
     own |= _subagent_task_documents(payload) if agent != agent_id.MAIN_AGENT_ID else set()
-    try:
-        rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude", session_id=session_id)
-    except OSError, UnicodeError, ValueError:
-        rows = []
-    designated: set[pathlib.Path] = set()
-    for row in rows:
-        listed = {target.path.resolve() for target in row.targets} & set(paths)
-        if not listed:
-            continue
-        source = row.source.resolve()
-        with contextlib.suppress(OSError, ValueError):
-            if source in own or target_ready(records, read_triggers.ReadTarget(row.source), agent):
-                designated |= listed
-    foreign = [path for path in paths if path not in own and path not in designated]
+    foreign = [path for path in paths if path not in own]
     if not foreign:
         return None
     contracts: list[str] = []
@@ -990,8 +976,9 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
         tag=_WARN_TAG,
         fix=(
             "その担当を起動するなら、手順書ではなく起動契約（`起動対象:`でその手順書を宣言する`<役割名>.parent.md`、"
-            f"または呼び出し元へ統合した契約）を読め。{guidance}"
-            "手順書自体の編集と、返却を受け取った後の受領確認であれば、このまま続行してよい。"
+            f"または呼び出し元へ統合した契約）と、その生成済みの返却契約を読め。{guidance}"
+            "起動準備なら、手順書の分割読取の続きを行わず呼出側契約へ進め。"
+            "手順書自体の編集と、返却を受け取った後の固有手順の検収であれば、このまま続行してよい。"
         ),
         removable_cause=True,
         escalate_on_repeat=False,

@@ -41,9 +41,9 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         filter_repo = resolve_repo_id(args.target_repo)
     flags = re.IGNORECASE if args.ignore_case else 0
     # 固定文字列は正規表現へエスケープし、`--ignore-case`と行単位の一致判定を`-F`を指定しない場合と同じ処理で使う。
-    pattern = re.escape(args.pattern) if args.fixed_strings else args.pattern
+    patterns = args.regexp if args.regexp is not None else [args.pattern]
     try:
-        compiled = re.compile(pattern, flags)
+        compiled = [re.compile(re.escape(pattern) if args.fixed_strings else pattern, flags) for pattern in patterns]
     except re.error as error:
         # argparseの使い方の表示と終了コード2は保ち、直し方を1行に続ける。
         args.subparser.error(
@@ -66,7 +66,7 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     ):
         match_count = 0
         for line_no, line in enumerate(text.splitlines(), start=1):
-            if compiled.search(line):
+            if any(pattern.search(line) for pattern in compiled):
                 match_count += 1
                 if lines_only:
                     print(f"{path.name}:{line_no}:{line}")

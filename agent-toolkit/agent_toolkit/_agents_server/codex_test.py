@@ -1603,6 +1603,29 @@ async def test_agents_server_config_uses_the_stable_plugin_root() -> None:
     assert (expected_root / args[-1]).is_file()
 
 
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+@pytest.mark.parametrize("owner", [None, "owner"])
+@pytest.mark.asyncio
+async def test_all_start_and_resume_requests_disable_experimental_context_management(
+    launch_kind: state.LaunchKind, owner: str | None, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """初回依頼と追送変更を保持するため、全起動・再開リクエストで実験方式の継承を止める。"""
+    client = _TierClient()
+    async with subject.AppServerManager(root_session_id=owner) as manager:
+        monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+        await manager.start("初回依頼", str(tmp_path), launch_kind=launch_kind)
+        await manager.resume("tier-thread", state.ResumePrompt("追送変更"), str(tmp_path), launch_kind=launch_kind)
+        requests = [(method, params) for method, params in client.requests if method in {"thread/start", "thread/resume"}]
+        assert [method for method, _params in requests] == ["thread/start", "thread/resume"]
+        for _method, params in requests:
+            features = params["config"]["features"]
+            assert features["context_management"]["experimental_mode"] is False
+            if launch_kind != "delegate":
+                assert features["hooks"] is True
+            if launch_kind == "explore":
+                assert features["plugins"] is False
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
 @pytest.mark.parametrize("windows", [False, True])
@@ -1996,11 +2019,18 @@ async def test_codex_explore_commands_reach_start_resume_and_followup(
 
             normal_thread = normal_client.requests[0][1]
             explore_thread = explore_client.requests[0][1]
-            assert normal_thread["config"] == {"bypass_hook_trust": True}
+            assert normal_thread["config"] == {
+                "bypass_hook_trust": True,
+                "features": {"context_management": {"experimental_mode": False}},
+            }
             assert normal_thread["developerInstructions"] == subject._developer_instructions("delegate")  # noqa: SLF001
             assert explore_thread["config"]["bypass_hook_trust"] is True
             assert explore_thread["config"]["project_doc_max_bytes"] == 0
-            assert explore_thread["config"]["features"] == {"plugins": False, "hooks": True}
+            assert explore_thread["config"]["features"] == {
+                "plugins": False,
+                "hooks": True,
+                "context_management": {"experimental_mode": False},
+            }
             configured = explore_thread["config"]["hooks"]["PostToolUse"][0]
             assert configured["matcher"] == "Bash"
             assert all(handler["additionalContextLimit"] == 0 for handler in configured["hooks"])
@@ -2043,7 +2073,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
         thread_params = client.requests[0][1]
         assert thread_params["config"]["bypass_hook_trust"] is True
         assert thread_params["config"]["project_doc_max_bytes"] == 0
-        assert thread_params["config"]["features"] == {"hooks": True}
+        assert thread_params["config"]["features"] == {"hooks": True, "context_management": {"experimental_mode": False}}
         assert set(thread_params["config"]["hooks"]) == {"PostToolUse"}
         assert thread_params["developerInstructions"] == subject._developer_instructions("shell")  # noqa: SLF001
 
@@ -2066,10 +2096,17 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
             params for method, params in client.requests if method == "thread/resume"
         ]
         assert normal_resume["developerInstructions"] == subject._developer_instructions("delegate")  # noqa: SLF001
-        assert normal_resume["config"] == {"bypass_hook_trust": True}
+        assert normal_resume["config"] == {
+            "bypass_hook_trust": True,
+            "features": {"context_management": {"experimental_mode": False}},
+        }
         assert explore_resume["developerInstructions"] == subject._developer_instructions("explore")  # noqa: SLF001
         assert explore_resume["config"]["project_doc_max_bytes"] == 0
-        assert explore_resume["config"]["features"] == {"plugins": False, "hooks": True}
+        assert explore_resume["config"]["features"] == {
+            "plugins": False,
+            "hooks": True,
+            "context_management": {"experimental_mode": False},
+        }
         definition = json.loads((subject.plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))[
             "mcpServers"
         ]["pyfltr"]
@@ -2077,7 +2114,7 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
         assert shell_resume["developerInstructions"] == subject._developer_instructions("shell")  # noqa: SLF001
         assert shell_resume["config"]["bypass_hook_trust"] is True
         assert shell_resume["config"]["project_doc_max_bytes"] == 0
-        assert shell_resume["config"]["features"] == {"hooks": True}
+        assert shell_resume["config"]["features"] == {"hooks": True, "context_management": {"experimental_mode": False}}
         assert set(shell_resume["config"]["hooks"]) == {"PostToolUse"}
 
 
@@ -2826,7 +2863,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
                 "serviceTier": "default",
                 "model": "gpt-test",
                 "modelProvider": "openai",
-                "config": {"bypass_hook_trust": True},
+                "config": {"bypass_hook_trust": True, "features": {"context_management": {"experimental_mode": False}}},
                 "developerInstructions": subject._developer_instructions("delegate"),  # noqa: SLF001
             },
         )

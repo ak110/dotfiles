@@ -75,7 +75,12 @@ def build_process_loop_prompt(manifest: pathlib.Path | None = None) -> str:
     """登録全体の処理を依頼し、長い候補本文は配送ファイルで渡す。"""
     body = "agent-toolkit:process-wi-all-reposを完遂する"
     if manifest is not None:
-        body += f"。取得済み候補・所有・準備先と結果保存先は {manifest} を読む"
+        body += (
+            f"。開始時入力のmanifest {manifest} で取得済み候補・所有・準備先を確認する。"
+            "スキル所定の処理と終了準備を終え、manifestのresult_fileへ実態に即した対象別結果を保存した時点を"
+            "統括自身の到達点とする。続行不能時も理由と残工程を保存して制御を常駐へ返す。"
+            "常駐による結果の受理・所有解放・回収は統括CLI終了後に行う"
+        )
     goal = _automated_prompt.wrap(
         body,
         source=_automated_prompt.SOURCE_PROCESS_LOOP,

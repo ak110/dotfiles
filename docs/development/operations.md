@@ -398,6 +398,12 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 `features.context_management.experimental_mode`を`true`に設定する。
 2026年9月6日に`codex-cli 0.153.4`の`codex features list`で、有効化前の値が`false`であることを確認した。
 
+`agents_server`のCodex委譲先は、threadの開始・再開時に同設定を`false`で上書きする。
+通常のdelegateと軽量なexplore・shell・writeのすべてに適用し、所有ルート識別子がない起動にも適用する。
+依頼と追送変更の保持の信頼性を優先し、通常の会話圧縮と既存の作業記録を使うためである。
+ホーム向けの有効化は維持する。
+通常圧縮による所要時間の変化は未測定である。
+
 有効化前の基準はセッション`cd6180fe-097a-4d97-bc6b-ea5c9bdc159c`で計測し、
 コンパクションは合計69回だった。内訳は次のとおりである。
 

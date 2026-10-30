@@ -750,13 +750,18 @@ class AppServerManager:
         `bypass_hook_trust`は`codex app-server`のコマンドラインオプションとしても`-c`による設定上書きとしても受理されず、
         `thread/start`系リクエストの`config`だけが受理する。
         """
-        config: dict[str, Any] = {"bypass_hook_trust": True}
+        # 依頼の保持を通常の会話圧縮へ統一し、要約なし切替を提供するホーム設定を上書きする。
+        features: dict[str, Any] = {"context_management": {"experimental_mode": False}}
+        config: dict[str, Any] = {
+            "bypass_hook_trust": True,
+            "features": features,
+        }
         if lightweight:
             config["project_doc_max_bytes"] = 0
             # plugins無効の探索でも、元の操作を変えないPost配送を有効にする。
             root = plugin_roots.SERVER_PLUGIN_ROOT
             groups = json.loads((root / "hooks/hooks.codex.json").read_text(encoding="utf-8"))["hooks"]["PostToolUse"]
-            config["features"] = {"hooks": True}
+            features["hooks"] = True
             config["hooks"] = {
                 "PostToolUse": [
                     {

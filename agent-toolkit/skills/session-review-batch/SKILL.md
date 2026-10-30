@@ -45,8 +45,8 @@ atk run-skill --args manual agent-toolkit:session-review-batch
    同じ原因をセッション横断で整理し、対象IDと候補IDの組で出典を保持する。
    未確認の対象を成功とせず、既存の失敗対応に沿って原因と未完了範囲を報告する。
 3. 原因と対策を確定したAWIを `agent-toolkit:wi-standards` と `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` の契約で登録する。
-   sourceは `session-review` とし、投入担当へ、各AWIの保存直前の時刻から24時間後を `atk wi add --cooldown-until` へ指定するよう渡す。
-   冷却期限の基準は各AWIの保存直前とする。
+   sourceは `session-review` とし、投入担当へ入力 `確認状態` に `required` を渡し、各AWIの本文frontmatterへ `confirmation: required` を記載させる。
+   ユーザーが内容を確認済みにするまで、登録したAWIは自動着手されない。
    所要時間目標と超過分析は対象1件あたり300秒として適用する。
 4. `agent-toolkit:completion-report` の振り返り結果報告書式で、今回の結果を事後承認型UWIへ1件保存する。
    対象一覧、登録AWI・見送り・費用確認を対象IDと対応付ける。
@@ -75,7 +75,7 @@ atk run-skill --args manual agent-toolkit:session-review-batch
 - `runs/`: 実行ID別manifestに固定対象・報告先・準備範囲・分析結果・プロセス・失敗を保持し、中断後の報告同期と未確定範囲を検収する。成功確定済み、または報告同期済み失敗の全対象がpendingから除かれたmanifestとログはrun-skillと同じ30日保持とし、未確定・報告未達は確定まで保持する
 - `state.lock`: モデル起動・利用上限待機・WI保存を除く、登録・状態更新・成功確定を短時間排他する
 - `batch.lock`: 自動・手動の全リポジトリで対象選定から報告同期検収・成功確定まで共有する。親中断時もプロセス識別と子の起動引数に含めた固有manifestパスで生存を確認し、二重起動を防ぐ
-- 失敗は配布元リポジトリへの是正AWI（`source: session-review-batch`）として報告し、ユーザーの回答を待たずに処理担当が是正する。pendingとmanifestの失敗キーにより、同原因のAWIが未完了（inbox・processing・hold）の対象を自動選定から外し、AWIの終了後の次回起動で再試行する。手動再試行時も未完了の既存AWIを再利用する。準備に失敗した対象だけを切り離し、残りの対象はモデル起動へ進める
+- 失敗は配布元リポジトリへの是正AWI（`source: session-review-batch`、`confirmation: required`）として報告し、ユーザーが内容を確認済みにした後に処理担当が是正する。UWIでの回答は待たない。pendingとmanifestの失敗キーにより、同原因のAWIが未完了（inbox・processing・hold）の対象を自動選定から外し、AWIの終了後の次回起動で再試行する。手動再試行時も未完了の既存AWIを再利用する。準備に失敗した対象だけを切り離し、残りの対象はモデル起動へ進める
 
 batchはrun-skillの報告同期検収後、手動振り返りは全体分析後の`atk run-script session-review-state -- complete --prepared <準備結果JSON>`で準備済み範囲を確定し、新世代・準備後の追記はpendingに残す。
 `AGENT_TOOLKIT_SESSION_REVIEW_BATCH`はmanifest、`AGENT_TOOLKIT_RUN_SKILL_TARGET_REPO`は報告先を子へ渡す。

@@ -487,6 +487,7 @@ def test_operations_reads_local_entries_and_detail_without_pull(
         "cooldown_until": None,
         "plan": False,
         "important": False,
+        "confirmation": None,
         "target_repo": "example/repo",
         "source": "test",
         "summary": "要約本文",

@@ -77,7 +77,7 @@ process-wiのメインセッションは対象の選定・配分とユーザー�
 
 作業完了後は`agent-toolkit:completion-report`で作業結果を報告して終了する。
 Claude CodeとCodexの最上位セッションは振り返り待ちとして記録され、非活動になった対象を`agent-toolkit:session-review-batch`が非同期でまとめて分析する。
-バッチが投入したAWIは登録時点から24時間後に処理可能となる。
+バッチが投入したAWIは要確認として登録され、ユーザーが`atk serve`のWI画面で確認済みにするまで処理されない。
 手動の`agent-toolkit:session-review`は現在のセッション全体を対象とし、引数は追加の着眼点として扱う。
 自動起動は`session_review_auto_start`で切り替え、無効時も待ち記録を保持して手動のbatchで処理できる。
 

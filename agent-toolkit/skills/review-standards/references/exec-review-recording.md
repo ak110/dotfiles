@@ -1,6 +1,6 @@
 # 実行レビューの指摘と完成条件証拠の記録
 
-本書では、実行レビュー担当が指摘をレビュー指摘管理表へ登録し、完成条件の証拠を記録する手順と、判定値および根拠の記述方法を定める。判定基準は`agent-basics:review-standards`の`references/reviewer.md`「実行レビューの判定」に従い、返却前の処理手順は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`「出力」に従う。
+本書では、実行レビュー担当が指摘をレビュー指摘管理表へ登録し、完成条件の証拠を記録する手順と、判定値および根拠の記述方法を定める。判定基準は`agent-basics:review-standards`の`references/reviewer.md`「実行レビューの判定」に従い、返却形式は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「実行レビューの返却契約」に従う。
 
 完成条件証拠とは、実行レビュー担当が返却メッセージに記述する、各条件の判定結果をまとめた行の集まりである。判定とその根拠は、実行レビュー担当自身だけが記述する。レビューイーに追加の確認や証拠の補完を求めた場合でも、補完された情報をもとに判定し記入するのは実行レビュー担当である。実装担当やメインエージェントが提示する`検証結果`（`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「完成条件証拠の検証記録」）は判定材料に過ぎず、最終的な判定は実行レビュー担当自身が下す。
 
@@ -10,10 +10,10 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 返却形式を確認する時 | `../../../share/exec-review.parent.md#「実行レビューの返却契約」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「実行レビューの返却契約」` |
 | AWIの形式を判断する前 | `../../wi-standards/references/awi-body.md`の冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md#「実行レビューの判定」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「実行レビューの判定」` |
 | 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/exec-review.subagent.md#「出力」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/verification-evidence.md#「完成条件証拠の検証記録」` | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` |
 | 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
@@ -58,7 +58,7 @@
 
 ## 条件別判定行の形式
 
-完成条件証拠の各行は次の形式で記述し、`exec-review.subagent.md`「出力」の返却メッセージ内に条件の数だけ並べる。
+完成条件証拠の各行は次の形式で記述し、`exec-review.parent.md`「実行レビューの返却契約」の返却メッセージ内に条件の数だけ並べる。
 
 ```text
 <WI> 完成条件<N>: 達成|未達|根拠不足 — 根拠: <実行結果またはパス:行>
@@ -120,7 +120,7 @@
 | `割当外` | `未達` | `reviewer.md`「割当外・背景」により割当外と判断した原文要求の行 | 割当が記録されている箇所（WIのファイル名と`反映内容と反映先`節、または計画ファイルの絶対パスと`実施内容`節）と、記録通りの割当先（計画の`移管`行では登録済みWIのファイル名。WI本文ではWIファイル名のほか、同時起草の分割起票の組を指す`「」`で囲んだタイトルや説明も可。背景に属する単位は`分割元の依頼全体`）。引受の記録を用いる場合は、割当先AWIのファイル名と`反映内容と反映先`節（保存済み形式では`ユーザー指摘の逐語引用`） |
 | `背景` | `未達` | `reviewer.md`「割当外・背景」により背景と判断した原文要求の行 | 分類の記録の所在（WIのファイル名と`反映内容と反映先`節、計画ファイルの絶対パスと`実施内容`節、レビュー指摘管理表の絶対パスのいずれか）と、要求を含まない理由 |
 | `reject` | `未達` | 全体が不採用となり`reject`で完了するWIの完成条件。初回からこの判定を用いる | 計画ファイルまたは入力記録の`実施内容`にある不採用根拠の所在（絶対パスと節名） |
-| `延期` | `根拠不足` | `exec-review.subagent.md`「出力」の延期または未完了の記録を持つ行 | その記録の所在、後続工程、および検収のタイミング |
+| `延期` | `根拠不足` | `exec-review.parent.md`「実行レビューの返却契約」の延期または未完了の記録を持つ行 | その記録の所在、後続工程、および検収のタイミング |
 | `公開後` | `根拠不足` | 「公開後に成立する条件と任意の判断材料」に該当する、バージョン更新や公開・配布・実ホストへの反映後にのみ成立する条件 | 同節の記入事項 |
 | `任意の判断材料` | `根拠不足` | 行全体が任意の判断材料であると明記されている完成条件のうち、観測結果が得られていない行 | 同節の記入事項 |
 

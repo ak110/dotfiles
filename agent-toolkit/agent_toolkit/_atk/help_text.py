@@ -495,6 +495,13 @@ for _command in ("atk wi list", "atk wi show", "atk wi grep"):
         "--important allと省略時は全項目を対象とする。"
     )
 HELP["atk wi show"]["description"] += "重要フラグの限定は--all指定時に適用する。"
+HELP["atk wi grep"]["description"] += (
+    "\n複数パターン: -e PATTERN・--regexp PATTERNを反復指定すると、各Python正規表現を独立に評価し、"
+    "いずれかに一致する行を1回だけ出力・計上する。-Fと-iは全パターンへ適用する。"
+    "位置引数PATTERNと-eは併用できないため、複数語はすべて-eで渡す。"
+    "空パターンは各行に一致する。パターン未指定・-eの値欠落・不正な正規表現は終了コード2となる。"
+)
+HELP["atk wi grep"]["epilog"] += '\n  atk wi grep -F -e "worktree-stash" -e "stash-pop" --state=active'
 
 _STATE_CHANGE_RESULT_LINE = "状態変更が成立した実行は標準出力の1行目へ`成功: `で始まる行を書く。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
 _VALUE_OUTPUT_RESULT_LINE = (

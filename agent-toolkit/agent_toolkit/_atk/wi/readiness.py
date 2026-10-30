@@ -9,6 +9,9 @@ from typing import Literal
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi.constants import (
+    CONFIRMATION_CONFIRMED,
+    CONFIRMATION_KEY,
+    CONFIRMATION_REQUIRED,
     WI_PROCESSABLE_STATES,
     WI_STATE_ADOPTED,
     WI_STATE_REJECTED,
@@ -43,6 +46,7 @@ class QueueEntry:
     repair_target_filename: str | None
     repair_kind: RepairKind | None
     source: str | None = None
+    confirmation: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -65,6 +69,7 @@ class ReadinessResult:
     cooldown_pending: tuple[str, ...] = ()
     invalid_cooldowns: tuple[str, ...] = ()
     cooldown_values: tuple[tuple[str, str], ...] = ()
+    confirmation_pending: tuple[str, ...] = ()
 
     @property
     def actionable_count(self) -> int:
@@ -158,6 +163,7 @@ def _queue_entry(
         repair_target_filename=repair_target if isinstance(repair_target, str) else None,
         repair_kind=repair_kind,
         source=data.get("source") if isinstance(data.get("source"), str) else None,
+        confirmation=applicable_confirmation(entry_type, data),
     )
 
 
@@ -239,6 +245,18 @@ def applicable_cooldown_until(kind: str | None, value: object) -> datetime.datet
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None
+
+
+def applicable_confirmation(kind: str | None, metadata: dict[str, object]) -> str | None:
+    """AWIのfrontmatterから内容確認の状態を返す。
+
+    キーを持たない項目とAWI以外は`None`を返し、確認を待たない。
+    `confirmed`以外の値は`required`として扱う。手書きの誤記でユーザーの確認前に自動着手しないためである。
+    着手可否判定と`atk serve`の画面はこの判定を共有する。
+    """
+    if kind != WI_TYPE_AWI or CONFIRMATION_KEY not in metadata:
+        return None
+    return CONFIRMATION_CONFIRMED if metadata[CONFIRMATION_KEY] == CONFIRMATION_CONFIRMED else CONFIRMATION_REQUIRED
 
 
 def _legacy_dependency_is_satisfied(
@@ -391,11 +409,16 @@ def calculate_readiness(
     entries_by_name = _entries_by_filename((*all_active, *terminal))
     active_pairs = {(entry.filename, entry.target_repo) for entry in all_active}
     target_pairs = {(entry.filename, entry.target_repo) for entry in active}
+    # 要確認の項目はユーザーが確認するまで時間経過でも修復でも着手しない。
+    # 冷却中の項目と同じく、修復対象の判定からも除いて処理セッションの起動理由にしない。
+    confirmation_pending = {
+        entry.filename for entry in active if not entry.frontmatter_broken and entry.confirmation == CONFIRMATION_REQUIRED
+    }
     cooldown_values: dict[str, str] = {}
     invalid_cooldowns: set[str] = set()
     cooldown_pending: set[str] = set()
     for entry in active:
-        if entry.frontmatter_broken or not entry.cooldown_present:
+        if entry.frontmatter_broken or not entry.cooldown_present or entry.filename in confirmation_pending:
             continue
         parsed_cooldown = applicable_cooldown_until(entry.kind, entry.cooldown_until)
         if parsed_cooldown is None:
@@ -405,6 +428,7 @@ def calculate_readiness(
             assert isinstance(entry.cooldown_until, str)
             cooldown_values[entry.filename] = entry.cooldown_until
 
+    deferred = cooldown_pending | confirmation_pending
     broken = tuple(sorted(entry.filename for entry in active if entry.frontmatter_broken))
     broken_needs_uwi = tuple(name for name in broken if (name, "frontmatter") not in existing_repairs)
 
@@ -426,12 +450,12 @@ def calculate_readiness(
     invalid = tuple(
         sorted(
             ({name for name, dependencies in dependency_map.items() if dependencies is None} | invalid_external_user_targets)
-            - cooldown_pending
+            - deferred
         )
     )
     graph = {name: dependencies for name, dependencies in dependency_map.items() if dependencies is not None}
     self_dependencies = tuple(
-        sorted(name for name, dependencies in graph.items() if name in dependencies and name not in cooldown_pending)
+        sorted(name for name, dependencies in graph.items() if name in dependencies and name not in deferred)
     )
     missing_dependencies = tuple(
         sorted(
@@ -439,13 +463,13 @@ def calculate_readiness(
                 entry.filename
                 for entry in active
                 if entry.filename in graph
-                and entry.filename not in cooldown_pending
+                and entry.filename not in deferred
                 and any(not _dependency_targets(entry, dependency, entries_by_name) for dependency in graph[entry.filename])
             }
         )
     )
     all_graph = {name: dependencies for name, dependencies in all_dependency_map.items() if dependencies is not None}
-    cyclic = tuple(sorted((set(_cycle_members(all_graph)) & set(dependency_map)) - cooldown_pending))
+    cyclic = tuple(sorted((set(_cycle_members(all_graph)) & set(dependency_map)) - deferred))
     permanently_blocked = set((*broken, *invalid, *self_dependencies, *missing_dependencies, *cyclic, *invalid_cooldowns))
     ready: list[str] = []
     blocked: list[str] = []
@@ -455,7 +479,7 @@ def calculate_readiness(
             # `atk run-skill`のUWIは同じ対象リポジトリと同じスキルの次回の実行が扱い、process-wiは選定から除く。
             # readyへ含めると、process-loopが選定で除かれるUWIのために子セッションの起動を繰り返す。
             continue
-        if entry.filename in cooldown_pending:
+        if entry.filename in deferred:
             blocked.append(entry.filename)
             continue
         if entry.filename in permanently_blocked or (entry.kind == WI_TYPE_UWI and entry.uwi_answered is False):
@@ -500,4 +524,5 @@ def calculate_readiness(
         cooldown_pending=tuple(sorted(cooldown_pending)),
         invalid_cooldowns=tuple(sorted(invalid_cooldowns)),
         cooldown_values=tuple(sorted(cooldown_values.items())),
+        confirmation_pending=tuple(sorted(confirmation_pending)),
     )

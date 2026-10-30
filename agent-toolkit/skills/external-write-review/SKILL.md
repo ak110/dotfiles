@@ -42,7 +42,7 @@ private-notesのWI本文も対象外であり、これらは`agent-toolkit:wi-st
 ```
 
 `agent-toolkit:external-write-review`の対象となる文面を投稿するエージェントは、本書に従って投稿前レビュー担当を起動し、その結果を受け取る。
-レビュー担当の確認観点と返却形式は、`${CLAUDE_PLUGIN_ROOT}/share/external-write-review.subagent.md`で定めている（所在参照）。
+レビュー担当の確認観点は、`${CLAUDE_PLUGIN_ROOT}/share/external-write-review.subagent.md`で定めている（所在参照）。返却形式は後述の「投稿前レビューの返却契約」を使用する。
 
 ### 起動
 
@@ -68,3 +68,18 @@ private-notesのWI本文も対象外であり、これらは`agent-toolkit:wi-st
 レビューは投稿前に1回実施することを原則とし、反映によって事実の主張や対象範囲が変わった場合に限って、再レビューが必要かどうかを判断する。
 
 レビュー結果を得られない場合（同じ入力で再起動しても結果を返さずに終了し続ける、あるいは`start`や同等の読み取り専用の委譲手段が使えない場合）は、投稿を中断する。原因と同等のレビュー手段を調査し、認可の範囲内で復旧できる場合は自ら処理を再開する。レビューの省略や公開結果の変更に追加の認可やユーザーの選好が必要となる場合に限り、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」に従い、文面と理由を示してユーザーに確認する。
+
+<!-- return-contract:external-write-review:start -->
+<!-- 生成元: share/external-write-review.subagent.md「出力」。手動編集しない。 -->
+### 投稿前レビューの返却契約
+
+次の固定形式のみで結果を返す。根拠を読み取れなかった主張や、根拠との対応を確認できなかった主張は、`未解決の指摘数`に算入し、観点2の指摘としてその範囲を明記する。
+
+```text
+状態: completed
+未解決の指摘数: <0以上の整数>
+<指摘ごとの該当行、観点の番号、問題点、修正案。0件なら3観点それぞれの「指摘なし」>
+```
+
+続行不能と追加報告行は、共通契約`../../share/rules-subagent.md`「返却形式の受け渡し」に従う。
+<!-- return-contract:external-write-review:end -->

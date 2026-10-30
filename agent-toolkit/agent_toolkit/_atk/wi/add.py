@@ -691,6 +691,17 @@ def _validate_add_entries(
                     f"frontmatterから{key}を除き、{_RESERVED_ADD_KEY_NEXT_ACTIONS[key]}" for key in rejected_keys
                 ),
             )
+        # 投入時に指定できるのは要確認だけとする。確認済みはユーザーが画面で内容を確認した結果として記録する。
+        if _constants.CONFIRMATION_KEY in frontmatter and (
+            entry_type != WI_TYPE_AWI or frontmatter[_constants.CONFIRMATION_KEY] != _constants.CONFIRMATION_REQUIRED
+        ):
+            raise WebInputError(
+                f"{_constants.CONFIRMATION_KEY}はAWIへ{_constants.CONFIRMATION_REQUIRED}だけを指定できる",
+                next_action=(
+                    f"本文frontmatterの{_constants.CONFIRMATION_KEY}を{_constants.CONFIRMATION_REQUIRED}にするか除き、"
+                    "UWIでは指定せずに再投入する"
+                ),
+            )
         require_agent_awi_sections(
             body,
             frontmatter,

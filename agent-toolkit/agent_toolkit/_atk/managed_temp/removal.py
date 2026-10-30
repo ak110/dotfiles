@@ -78,6 +78,9 @@ def _retry_writable(function: typing.Callable[[str], object], path: str, error: 
         return
     if not isinstance(error, PermissionError):
         raise error
+    # rmtreeはopenやscandirの失敗も渡す。走査関数の再実行はprepare_treeによる木全体の補修へ任せる。
+    if function not in (os.unlink, os.remove, os.rmdir):
+        raise error
     target = path if os.name == "nt" else os.path.dirname(path)
     metadata = os.lstat(target)
     if os.name == "posix" and metadata.st_uid != os.geteuid():

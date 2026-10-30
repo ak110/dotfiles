@@ -27,7 +27,7 @@
 ```
 
 本書冒頭の基準に従って候補置換を適用したエージェントは、以下の手順で一括置換後レビュー担当を起動して結果を受け取る。
-レビュー担当の観点および返却形式は、`${CLAUDE_PLUGIN_ROOT}/share/bulk-replace-review.subagent.md`に従う（所在参照）。
+レビュー担当の観点は、`${CLAUDE_PLUGIN_ROOT}/share/bulk-replace-review.subagent.md`に従う（所在参照）。返却形式は後述の「一括置換後レビューの返却契約」を使用する。
 
 ### 起動
 
@@ -46,3 +46,19 @@
 ### 受領
 
 結果は引数なしの`atk agents wait`で受け取る。問題が報告された文や置換候補外の文は、本書冒頭の基準に従って書き直す。
+
+<!-- return-contract:bulk-replace-review:start -->
+<!-- 生成元: share/bulk-replace-review.subagent.md「出力」。手動編集しない。 -->
+### 一括置換後レビューの返却契約
+
+次の固定形式のみを返却する。`未解決の指摘数`には、問題が見つかった箇所の件数を指定する。
+
+```text
+状態: completed
+未解決の指摘数: <0以上の整数>
+読んだ変更箇所数: <件数>
+<問題のある箇所ごとのファイルと行、観点、問題点、修正案。0件なら全件で問題が無いこと>
+```
+
+続行不能と追加報告行は、共通契約`../../../share/rules-subagent.md`「返却形式の受け渡し」に従う。
+<!-- return-contract:bulk-replace-review:end -->

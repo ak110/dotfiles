@@ -26,7 +26,14 @@ import psutil
 
 from agent_toolkit._atk import config, orchestrator, outcome, run_script
 from agent_toolkit._atk.wi import add, frontmatter, layout, repo, sync
-from agent_toolkit._atk.wi.constants import WI_STATE_HOLD, WI_STATE_INBOX, WI_STATE_PROCESSING, WI_TYPE_AWI
+from agent_toolkit._atk.wi.constants import (
+    CONFIRMATION_KEY,
+    CONFIRMATION_REQUIRED,
+    WI_STATE_HOLD,
+    WI_STATE_INBOX,
+    WI_STATE_PROCESSING,
+    WI_TYPE_AWI,
+)
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import (
     delegated_session,
@@ -194,10 +201,16 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any]:
     if previous is not None:
         arguments.extend(["--after", str(previous)])
     output = io.StringIO()
-    with contextlib.redirect_stdout(output):
+    diagnostics = io.StringIO()
+    # prepareは成功JSONをstdout、不足項目などの失敗診断をstderrへ出す。分けて捕捉しないと失敗理由が空になる。
+    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(diagnostics):
         code = run_script.dispatch(argparse.Namespace(script_name="session-review-prepare", script_args=arguments))
     if code:
-        raise ValueError(f"prepareが終了{code}: {output.getvalue()}")
+        detail = "\n".join(part for part in (diagnostics.getvalue().strip(), output.getvalue().strip()) if part)
+        raise ValueError(f"prepareが終了{code}: {detail}")
+    if diagnostics.getvalue():
+        # 成功時の警告は捕捉前と同じく呼び出し元のstderrへ残す。
+        print(diagnostics.getvalue(), end="", file=sys.stderr)
     prepared = json.loads(output.getvalue())
     if prepared.get("unconfirmed_scope"):
         raise ValueError(f"prepareに未確認範囲がある: {target['session_id']}")
@@ -212,7 +225,10 @@ def _plugin_repository() -> str:
 
 
 def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest: dict[str, Any]) -> str:
-    """配布元で是正するための失敗報告AWIを組み立てる。ユーザー判断が要る点は処理担当がUWIで確認する。"""
+    """配布元で是正するための失敗報告AWIを組み立てる。ユーザー判断が要る点は処理担当がUWIで確認する。
+
+    振り返りの成果と同じく要確認として投入し、ユーザーが内容を確認するまで自動処理へ渡さない。
+    """
     targets = ", ".join(item["session_id"] for item in manifest["targets"])
     body = (
         "# 非同期振り返り（session-review-batch）の失敗の是正\n\n"
@@ -234,7 +250,8 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
         f"実行記録: {path}\n"
         f"対象: {targets}\n"
     )
-    return f"---\nsession_review_failure_key: {json.dumps(failure_key)}\n---\n\n{body}"
+    metadata = f"session_review_failure_key: {json.dumps(failure_key)}\n{CONFIRMATION_KEY}: {CONFIRMATION_REQUIRED}\n"
+    return f"---\n{metadata}---\n\n{body}"
 
 
 def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
