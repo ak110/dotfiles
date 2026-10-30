@@ -183,25 +183,12 @@ def _pure_bash_read(command: str, cwd: str) -> bool:
     ):
         return False
     # 元の演算子を検証し、構文を省いた呼出し列だけから純粋読取と推定しない。
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()<>\n")
-    lexer.whitespace = " \t\r"
-    lexer.whitespace_split = True
-    lexer.commenters = ""
-    groups: list[list[str]] = [[]]
-    try:
-        for token in lexer:
-            if token in {";", "&&", "\n"}:
-                if groups[-1]:
-                    groups.append([])
-            elif token and all(char in ";&|()<>\n" for char in token):
-                return False
-            else:
-                groups[-1].append(token)
-    except ValueError:
+    groups = codex_read_delivery.read_command_groups(command)
+    if groups is None:
         return False
     current = shell_cwd.CwdResolution(cwd, bool(cwd))
     reads = False
-    for tokens in filter(None, groups):
+    for tokens in groups:
         if tokens[0] == "cd":
             changed = shell_cwd.resolve_cwd_change(tokens, current)
             if changed is None or not changed.resolved:

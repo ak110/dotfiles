@@ -36,11 +36,8 @@ class Read:
     operands: tuple[int, ...]
 
 
-def read_plan(command: str) -> list[Read]:
-    """展開・副作用・外部入力参照を含まない表示だけを受理する。"""
-    unquoted = re.sub(r"'[^']*'", "", command)
-    if any(value in unquoted for value in ("$", "`", "\\\n")):
-        return []
+def read_command_groups(command: str) -> list[list[str]] | None:
+    """読取計画と取得案内で同じ演算子の境界を使う。"""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()<>\n")
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
@@ -52,13 +49,24 @@ def read_plan(command: str) -> list[Read]:
                 if groups[-1]:
                     groups.append([])
             elif token and all(char in ";&|()<>\n" for char in token):
-                return []
+                return None
             else:
                 groups[-1].append(token)
     except ValueError:
+        return None
+    return [group for group in groups if group]
+
+
+def read_plan(command: str) -> list[Read]:
+    """展開・副作用・外部入力参照を含まない表示だけを受理する。"""
+    unquoted = re.sub(r"'[^']*'", "", command)
+    if any(value in unquoted for value in ("$", "`", "\\\n")):
+        return []
+    groups = read_command_groups(command)
+    if groups is None:
         return []
     result = []
-    for group in filter(None, groups):
+    for group in groups:
         name = pathlib.PurePath(group[0]).name
         if group[0] not in {name, f"/bin/{name}", f"/usr/bin/{name}"}:
             return []
