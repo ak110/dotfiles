@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+import shlex
 import shutil
 import subprocess
 
@@ -2318,6 +2319,7 @@ def test_repeated_write_requires_complete_read(tmp_path, monkeypatch, codex):
     assert first.returncode == 0 and str(path) in first.stdout
     second = _run_hook_in_process("pretooluse", operation)
     assert second.returncode == 2 and str(path) in second.stderr
+    assert "全文取得後に元の書込操作を再発行せよ" in second.stderr
     failed = {
         **payload,
         "hook_event_name": "PostToolUseFailure",
@@ -2369,3 +2371,424 @@ def test_parallel_acquisition_guidance(tmp_path, monkeypatch, tool):
     assert observed.returncode == 0
     following = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Do", "tool_input": {}})
     assert following.returncode == 0 and str(paths[0]) not in following.stdout and str(paths[1]) in following.stdout
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("tool", ["cat", "sed"])
+@pytest.mark.parametrize("result", ["full", "partial", "failed", "truncated"])
+@pytest.mark.usefixtures("memory")
+def test_cd_acquisition_defers_guidance_until_non_read(tmp_path, monkeypatch, codex, tool, result):
+    """cd後の静的取得では全依存案内を保留し、次の操作で成功全文取得だけを除く。"""
+    paths = _rows(tmp_path, monkeypatch, "tool:Do", count=2)
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Bash", "tool:Do"), tuple(paths))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    payload = {"session_id": "cd-acquisition", "cwd": str(tmp_path.parent), **({"turn_id": "turn"} if codex else {})}
+    source = paths[0].read_text()
+    body = source.splitlines(keepends=True)[0] if result == "partial" else source
+    script = "1p" if result == "partial" else "1,$p"
+    read = f"cat -- {paths[0].name}" if tool == "cat" else f"sed -n '{script}' -- {paths[0].name}"
+    inputs = {"command": f"cd -- {shlex.quote(str(tmp_path))} && {read}"}
+    initial = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Bash", "tool_input": inputs})
+    assert initial.returncode == 0 and all(str(path) not in initial.stdout for path in paths)
+    observed = _run_hook_in_process(
+        "posttooluse",
+        {
+            **payload,
+            "hook_event_name": "PostToolUseFailure" if result == "failed" else "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": inputs,
+            "tool_response": {
+                "stdout": body + ("\nOutput too large" if result == "truncated" else ""),
+                "exit_code": int(result == "failed"),
+            },
+        },
+    )
+    assert observed.returncode == 0
+    following = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Do", "tool_input": {}})
+    assert following.returncode == 0 and str(paths[1]) in following.stdout
+    assert (str(paths[0]) not in following.stdout) is (result == "full")
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "; touch output",
+        "; printf data > output",
+        "; sed -i 's/a/b/' output",
+        " > output",
+        " | tee output",
+        " & touch output",
+        "; echo $(touch output)",
+    ],
+)
+@pytest.mark.usefixtures("memory")
+def test_cd_read_with_side_effects_keeps_dependency_guidance(tmp_path, monkeypatch, suffix):
+    """cd付き読取に書込や置換内の副作用を加えた操作では依存案内を保留しない。"""
+    paths = _rows(tmp_path, monkeypatch, "tool:Do", count=2)
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Bash",), tuple(paths))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    command = f"cd {shlex.quote(str(tmp_path))} && cat -- {paths[0].name}{suffix}"
+    result = _run_hook_in_process(
+        "pretooluse",
+        {"session_id": "cd-side-effect", "cwd": str(tmp_path.parent), "tool_name": "Bash", "tool_input": {"command": command}},
+    )
+    assert result.returncode == 0 and str(paths[1]) in result.stdout
+
+
+@pytest.mark.parametrize("subject", ["main", "child", "codex"])
+@pytest.mark.parametrize("separator", ["; ", " && ", "\n"])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.usefixtures("memory")
+def test_mixed_cat_sed_public_acquisition_preserves_actor_and_hash(tmp_path, monkeypatch, subject, separator, reverse):
+    """連結全体の一致だけで取得を解除し、他主体と更新後の本文へ取得を流用しない。"""
+    paths = _rows(tmp_path, monkeypatch, "path:*.py", count=2)
+    actor = {"agent_id": "child"} if subject == "child" else {"turn_id": "turn"} if subject == "codex" else {}
+    operation = {
+        "session_id": "mixed",
+        "cwd": str(tmp_path),
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "code.py"), "content": "value = 1\n"},
+        **actor,
+    }
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and all(str(path) in first.stdout for path in paths)
+    commands = [f"cat -- {paths[0]}", f"sed -n '1,$p' -- {paths[1]}"]
+    bodies = [path.read_text() for path in paths]
+    if reverse:
+        commands.reverse()
+        bodies.reverse()
+    observed = _run_hook_in_process(
+        "posttooluse",
+        {
+            **operation,
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": separator.join(commands)},
+            "tool_response": {"stdout": "".join(bodies), "exit_code": 0},
+        },
+    )
+    assert observed.returncode == 0
+    final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 0 and all(str(path) not in final.stdout for path in paths)
+    other = {**operation, "agent_id": "other"}
+    pending = _run_hook_in_process("pretooluse", other)
+    assert pending.returncode == 0 and all(str(path) in pending.stdout for path in paths)
+    paths[0].write_text("# 更新した資料\n更新後の本文\n", encoding="utf-8")
+    changed = _run_hook_in_process("pretooluse", operation)
+    assert changed.returncode == 0 and str(paths[0]) in changed.stdout and str(paths[1]) not in changed.stdout
+
+
+@pytest.mark.parametrize("subject", ["main", "child", "codex"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "partial",
+        "missing",
+        "changed",
+        "extra",
+        "swapped",
+        "failed",
+        "interrupted",
+        "truncated",
+        "pipe",
+        "redirect",
+        "numbered",
+        "other-command",
+    ],
+)
+@pytest.mark.usefixtures("memory")
+def test_mixed_cat_sed_public_rejects_unproven_output(tmp_path, monkeypatch, subject, case):
+    """未取得を初回Preと再Preで観測し、候補を無効にした場合との差を維持する。"""
+    paths = _rows(tmp_path, monkeypatch, "path:*.py", count=2)
+    actor = {"agent_id": "child"} if subject == "child" else {"turn_id": "turn"} if subject == "codex" else {}
+    operation = {
+        "session_id": "mixed-reject",
+        "cwd": str(tmp_path),
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "code.py"), "content": "value = 1\n"},
+        **actor,
+    }
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and all(str(path) in first.stdout for path in paths)
+    commands = [f"cat -- {paths[0]}", f"sed -n '1,$p' -- {paths[1]}"]
+    bodies = [path.read_text() for path in paths]
+    output = "".join(bodies)
+    response: dict[str, object] = {"exit_code": 0}
+    if case == "partial":
+        commands[1] = f"sed -n '1p' -- {paths[1]}"
+        output = bodies[0] + bodies[1].splitlines(keepends=True)[0]
+    elif case == "missing":
+        output = bodies[0]
+    elif case == "changed":
+        output = output.replace("必須基準1", "別の基準")
+    elif case == "extra":
+        output += "追加出力\n"
+    elif case == "swapped":
+        output = "".join(reversed(bodies))
+    elif case == "failed":
+        response["exit_code"] = 1
+    elif case == "interrupted":
+        response["interrupted"] = True
+    elif case == "truncated":
+        output += "\nOutput too large"
+    elif case == "pipe":
+        commands[0] += " | cat"
+    elif case == "redirect":
+        commands[0] += " > ignored"
+    elif case == "numbered":
+        commands[0] = f"cat -n -- {paths[0]}"
+    elif case == "other-command":
+        commands.insert(0, "echo 前置き")
+        output = "前置き\n" + output
+    observed = _run_hook_in_process(
+        "posttooluse",
+        {
+            **operation,
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "; ".join(commands)},
+            "tool_response": {"stdout": output, **response},
+        },
+    )
+    assert observed.returncode == 0
+    final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 2 and str(paths[1]) in final.stderr
+    assert (str(paths[0]) not in final.stderr) is (case == "partial")
+    if case == "partial":
+        remainder = _run_hook_in_process(
+            "posttooluse",
+            {
+                **operation,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": "sed -n '2,$p' -- " + str(paths[1])},
+                "tool_response": {"stdout": "".join(bodies[1].splitlines(keepends=True)[1:]), "exit_code": 0},
+            },
+        )
+        assert remainder.returncode == 0
+        ready = _run_hook_in_process("pretooluse", operation)
+        assert ready.returncode == 0 and all(str(path) not in ready.stdout for path in paths)
+
+
+@pytest.mark.parametrize("subject", ["main", "child", "codex"])
+@pytest.mark.parametrize("joined", [False, True])
+@pytest.mark.usefixtures("memory")
+def test_cat_only_preserves_full_body_acquisition_with_surrounding_output(tmp_path, monkeypatch, subject, joined):
+    """sedがない取得では、結果内の全文を受理する従来契約を維持する。"""
+    paths = _rows(tmp_path, monkeypatch, "path:*.py", count=2 if joined else 1)
+    actor = {"agent_id": "child"} if subject == "child" else {"turn_id": "turn"} if subject == "codex" else {}
+    operation = {
+        "session_id": "cat-only",
+        "cwd": str(tmp_path),
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "code.py"), "content": "value = 1\n"},
+        **actor,
+    }
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and all(str(path) in first.stdout for path in paths)
+    observed = _run_hook_in_process(
+        "posttooluse",
+        {
+            **operation,
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "; ".join(f"cat -- {path}" for path in paths)},
+            "tool_response": {
+                "stdout": "結果の前置き\n" + "".join(path.read_text() for path in paths) + "結果の後記\n",
+                "exit_code": 0,
+            },
+        },
+    )
+    assert observed.returncode == 0
+    final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 0 and all(str(path) not in final.stdout for path in paths)
+
+
+@pytest.mark.parametrize("subject", ["main", "child", "codex"])
+@pytest.mark.parametrize("case", ["exact", "missing-operand", "swapped-operands", "extra-output"])
+@pytest.mark.usefixtures("memory")
+def test_mixed_reads_resolve_cd_and_all_cat_operands(tmp_path, monkeypatch, subject, case):
+    """cd後の相対operandを出力順に解決し、どのoperandの不一致も取得済みにしない。"""
+    paths = _rows(tmp_path, monkeypatch, "path:*.py", count=3)
+    actor = {"agent_id": "child"} if subject == "child" else {"turn_id": "turn"} if subject == "codex" else {}
+    operation = {
+        "session_id": "mixed-cd",
+        "cwd": str(tmp_path.parent),
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "code.py"), "content": "value = 1\n"},
+        **actor,
+    }
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and all(str(path) in first.stdout for path in paths)
+    command = f"cd {shlex.quote(str(tmp_path))} && cat -- {paths[0].name} {paths[1].name}; sed -n '1,$p' -- {paths[2].name}"
+    bodies = [path.read_text() for path in paths]
+    if case == "missing-operand":
+        bodies.pop(1)
+    elif case == "swapped-operands":
+        bodies[0], bodies[1] = bodies[1], bodies[0]
+    elif case == "extra-output":
+        bodies.append("追加の出力\n")
+    observed = _run_hook_in_process(
+        "posttooluse",
+        {
+            **operation,
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "tool_response": {"stdout": "".join(bodies), "exit_code": 0},
+        },
+    )
+    assert observed.returncode == 0
+    final = _run_hook_in_process("pretooluse", operation)
+    if case == "exact":
+        assert final.returncode == 0 and all(str(path) not in final.stdout for path in paths)
+    else:
+        assert final.returncode == 2 and all(str(path) in final.stderr for path in paths)
+
+
+@pytest.mark.parametrize("subject", ["main", "child", "codex"])
+@pytest.mark.parametrize("case", ["exact", "partial", "failed", "truncated", "other-actor", "compacted", "changed-file"])
+@pytest.mark.usefixtures("memory")
+def test_mixed_history_restoration_preserves_acquisition_boundaries(tmp_path, monkeypatch, subject, case):
+    """履歴の混在出力全体と現在の資料の一致、主体・hash・圧縮境界を確かめる。"""
+    paths = _rows(tmp_path, monkeypatch, "path:*.py", count=2)
+    actor = {"agent_id": "child"} if subject == "child" else {"turn_id": "turn"} if subject == "codex" else {}
+    operation = {
+        "session_id": "mixed-history",
+        "cwd": str(tmp_path),
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "code.py"), "content": "value = 1\n"},
+        **actor,
+    }
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and all(str(path) in first.stdout for path in paths)
+    script = "1p" if case == "partial" else "1,$p"
+    command = f"cat -- {paths[0]}; sed -n '{script}' -- {paths[1]}"
+    body = paths[0].read_text() + (
+        paths[1].read_text().splitlines(keepends=True)[0] if case == "partial" else paths[1].read_text()
+    )
+    response = {"stdout": body + ("\nOutput too large" if case == "truncated" else ""), "exit_code": int(case == "failed")}
+    entries: list[dict] = [
+        {
+            "type": "assistant",
+            "cwd": str(tmp_path),
+            "message": {
+                "content": [
+                    {"type": "tool_use", "id": "mixed-read", "name": "Bash", "input": {"command": command}},
+                ]
+            },
+        },
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "mixed-read", "content": json.dumps(response)},
+                ]
+            },
+        },
+    ]
+    if subject == "child" or case == "other-actor":
+        for entry in entries:
+            entry["agentId"] = "other" if case == "other-actor" else "child"
+    if case == "compacted":
+        boundary = {"type": "system", "subtype": "compact_boundary"}
+        if subject == "child":
+            boundary["agentId"] = "child"
+        entries.append(boundary)
+    if case == "changed-file":
+        paths[1].write_text("# 更新後の本文\n別の基準\n", encoding="utf-8")
+    log = tmp_path / "mixed-history.jsonl"
+    log.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    final = _run_hook_in_process("pretooluse", {**operation, "transcript_path": str(log)})
+    if case == "exact":
+        assert final.returncode == 0 and all(str(path) not in final.stdout for path in paths)
+    else:
+        assert final.returncode == 2 and str(paths[1]) in final.stderr
+        # 資料の一方が更新されても、未更新資料の同hashに対する初回書込案内は残る。
+        assert (str(paths[0]) not in final.stderr) is (case == "partial")
+
+
+@pytest.mark.parametrize("subject", ["main", "child", "codex"])
+@pytest.mark.parametrize("history", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.usefixtures("memory")
+def test_mixed_skill_body_does_not_replace_main_skill_invocation(tmp_path, monkeypatch, subject, history, reverse):
+    """メインは混在Bash取得後もSkill起動を要し、参照資料と他主体の通常取得を妨げない。"""
+    root = tmp_path / "plugin"
+    manifest = root / ".claude-plugin/plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"example-plugin"}', encoding="utf-8")
+    skill = root / "skills/example/SKILL.md"
+    reference = skill.parent / "references/rule.md"
+    reference.parent.mkdir(parents=True)
+    skill.write_text("# スキル固有本文\n", encoding="utf-8")
+    reference.write_text("# 参照資料\n参照の基準\n", encoding="utf-8")
+    row = ReadTrigger(skill, 1, "操作", ("path:*.py",), (skill, reference))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    monkeypatch.setattr(read_delivery.read_triggers, "reference_method_targets", lambda *_args, **_kwargs: ())
+    actor = {"agent_id": "child"} if subject == "child" else {"turn_id": "turn"} if subject == "codex" else {}
+    operation = {
+        "session_id": "mixed-skill",
+        "cwd": str(tmp_path),
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "code.py"), "content": "value = 1\n"},
+        **actor,
+    }
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and str(skill) in first.stdout and str(reference) in first.stdout
+    paths = [reference, skill] if reverse else [skill, reference]
+    command = f"cat -- {paths[0]}; sed -n '1,$p' -- {paths[1]}"
+    response = {"stdout": "".join(path.read_text() for path in paths), "exit_code": 0}
+    if history:
+        entries = [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "tool_use", "id": "mixed-skill", "name": "Bash", "input": {"command": command}},
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "mixed-skill", "content": json.dumps(response)},
+                    ]
+                },
+            },
+        ]
+        if subject == "child":
+            for entry in entries:
+                entry["agentId"] = "child"
+        log = tmp_path / "mixed-skill.jsonl"
+        log.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+        operation["transcript_path"] = str(log)
+    else:
+        observed = _run_hook_in_process(
+            "posttooluse",
+            {
+                **operation,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "tool_response": response,
+            },
+        )
+        assert observed.returncode == 0
+    final = _run_hook_in_process("pretooluse", operation)
+    if subject == "main":
+        assert final.returncode == 2 and str(skill) in final.stderr and str(reference) not in final.stderr
+        invoked = _run_hook_in_process(
+            "posttooluse",
+            {
+                **operation,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Skill",
+                "tool_input": {"skill": "example-plugin:example"},
+                "tool_response": "起動成功",
+            },
+        )
+        assert invoked.returncode == 0
+        final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 0 and str(skill) not in final.stdout and str(reference) not in final.stdout

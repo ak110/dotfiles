@@ -128,7 +128,7 @@ def _read_path_variants(tool_name: str, tool_input: dict, cwd: str) -> list[path
 
 
 def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[pathlib.Path, int, int | None]], bool]:
-    """Bashの静的な`sed -n '<開始行>,<終了行>p'`を出力順に返す。
+    """Bashの静的なcat全文読取とsed行範囲読取を出力順に返す。
 
     2番目の値は、移動以外の全ての呼出しが行範囲の読取であり、出力全体を範囲の連結と比べられるかを示す。
     """
@@ -137,25 +137,81 @@ def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[p
         return [], False
     reads: list[tuple[pathlib.Path, int, int | None]] = []
     only_reads = True
+    has_sed = False
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         tokens = invocation.segment.tokens
         if invocation.arguments_known and tokens and pathlib.PurePath(tokens[0]).name == "cd":
             continue
         sed = sed_read_range(tokens) if invocation.arguments_known else None
+        has_sed = has_sed or sed is not None
+        ranges = [sed] if sed is not None else []
+        if invocation.arguments_known and tokens and pathlib.PurePath(tokens[0]).name == "cat":
+            # 出力変換オプションを許さない既存の静的計画で全operandの出力を連結し、結果本文との一致を確かめる。
+            plan = codex_read_delivery.read_plan(shlex.join(tokens))
+            if len(plan) == 1:
+                ranges = [(plan[0].argv[index], 1, None) for index in plan[0].operands]
         if (
-            sed is None
-            or any(marker in sed[0] for marker in ("$", "`", "<", ">", "*", "?"))
+            not ranges
+            or any(any(marker in operand for marker in ("$", "`", "<", ">", "*", "?")) for operand, _, _ in ranges)
             or invocation.output_pipe
             or invocation.output_redirected
             or invocation.captured
-            or not (pathlib.Path(sed[0]).expanduser().is_absolute() or current.resolved)
+            or any(not (pathlib.Path(operand).expanduser().is_absolute() or current.resolved) for operand, _, _ in ranges)
         ):
             only_reads = False
             continue
-        operand, start, end = sed
-        path = pathlib.Path(operand).expanduser()
-        reads.append(((path if path.is_absolute() else pathlib.Path(current.path) / path).resolve(), start, end))
-    return reads, only_reads and bool(reads)
+        for operand, start, end in ranges:
+            path = pathlib.Path(operand).expanduser()
+            reads.append(((path if path.is_absolute() else pathlib.Path(current.path) / path).resolve(), start, end))
+    # catだけの呼出しは従来の全文取得判定へ渡し、sedを含む場合だけ全出力と範囲連結の一致を確かめる。
+    return (reads, only_reads and bool(reads)) if has_sed else ([], False)
+
+
+def _pure_bash_read(command: str, cwd: str) -> bool:
+    """既存の静的読取と、解決済みcdだけを連結した取得操作を判定する。"""
+    if codex_read_delivery.read_plan(command):
+        return True
+    invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
+    if not invocations or any(
+        not invocation.arguments_known
+        or invocation.output_pipe
+        or invocation.output_redirected
+        or invocation.captured
+        or invocation.background
+        or invocation.inline_input
+        for invocation, _current in invocations
+    ):
+        return False
+    # 元の演算子を検証し、構文を省いた呼出し列だけから純粋読取と推定しない。
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()<>\n")
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    groups: list[list[str]] = [[]]
+    try:
+        for token in lexer:
+            if token in {";", "&&", "\n"}:
+                if groups[-1]:
+                    groups.append([])
+            elif token and all(char in ";&|()<>\n" for char in token):
+                return False
+            else:
+                groups[-1].append(token)
+    except ValueError:
+        return False
+    current = shell_cwd.CwdResolution(cwd, bool(cwd))
+    reads = False
+    for tokens in filter(None, groups):
+        if tokens[0] == "cd":
+            changed = shell_cwd.resolve_cwd_change(tokens, current)
+            if changed is None or not changed.resolved:
+                return False
+            current = changed
+        elif codex_read_delivery.read_plan(shlex.join(tokens)):
+            reads = True
+        else:
+            return False
+    return reads
 
 
 def _source_text(path: pathlib.Path) -> str:
@@ -1194,9 +1250,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     if not pending:
         return Decision()
     command = tool_input.get("command")
-    if tool_name in {"Read", "Skill"} or (
-        tool_name == "Bash" and isinstance(command, str) and codex_read_delivery.read_plan(command)
-    ):
+    if tool_name in {"Read", "Skill"} or (tool_name == "Bash" and isinstance(command, str) and _pure_bash_read(command, cwd)):
         _select_targets(session_id, pending, agent)
         return Decision()
     acquisition_paths = _read_paths(tool_name, tool_input, cwd)
@@ -1266,7 +1320,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             return Decision(
                 block=_block_notice(
                     f"案内済み資料が未取得のため再書込を停止する。未取得資料: {shown}。",
-                    fix=acquisition,
+                    fix=acquisition + "全文取得後に元の書込操作を再発行せよ。",
                 )
             )
         for target in pending:
