@@ -425,7 +425,7 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
         paths = _bash_session_record_paths(tool_input["command"], cwd)
     if not paths:
         return None
-    reference = plugin_resources.skill_reference("writing-standards", "references/session-records.md")
+    reference = plugin_resources.skill_reference("session-review", "references/session-records.md")
     return _notice(
         "セッションの原記録の本文を、汎用ツールで直接参照しようとしている。\n対象: " + "、".join(str(path) for path in paths),
         tag="warn",
@@ -451,7 +451,7 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
             f"通知の閾値: {byte_threshold}バイト）: {path}",
             fix="まず取得の必要性と範囲を見直せ。目的に不要なら取得を中止せよ。必要な場合は、"
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加えよ。"
-            "`agent-toolkit:writing-standards`の`references/session-records.md`で入力と照会モードを選べ。",
+            "`agent-toolkit:session-review`の`references/session-records.md`で入力と照会モードを選べ。",
         )
     # 1行あたりの平均バイト数から、閾値の半分程度に収まる行数を1回の取得単位として示す。
     chunk = max(1, plan.line_count * byte_threshold // (2 * max(plan.byte_count, 1)))
@@ -481,7 +481,7 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
             "原セッション記録を含む複数ファイルの全文取得の出力量を確認せよ。",
             fix="まず取得の必要性と範囲を見直せ。目的に不要なら取得を中止せよ。必要な原記録を"
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`へ照会条件を渡し、"
-            "通常の本文は別の呼び出しで取得せよ。入力の選択は`agent-toolkit:writing-standards`の`references/session-records.md`に従え。",
+            "通常の本文は別の呼び出しで取得せよ。入力の選択は`agent-toolkit:session-review`の`references/session-records.md`に従え。",
             subject="\n".join(str(path) for path, _plan in path_counts),
         )
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)

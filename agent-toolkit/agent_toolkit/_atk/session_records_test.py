@@ -97,9 +97,10 @@ class TestInvokedProcessWi:
         ("marker", "expected"),
         [
             ("Launching skill: agent-toolkit:process-wi", True),
+            ("Launching skill: agent-toolkit:process-wi all-repos", True),
             ("Launching skill: agent-toolkit:process-wi-all-repos", True),
-            ("Launching skill: agent-toolkit:process-wi-all-repos extra", False),
-            ("説明: Launching skill: agent-toolkit:process-wi-all-repos", False),
+            ("Launching skill: agent-toolkit:process-wi all-repos extra", False),
+            ("説明: Launching skill: agent-toolkit:process-wi all-repos", False),
         ],
     )
     def test_claude_marker_detected(self, tmp_path: pathlib.Path, marker: str, expected: bool) -> None:

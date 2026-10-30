@@ -363,7 +363,7 @@ class TestProcessLoopPromptAndEnv:
         """新規セッションの目的文がスキルの完遂だけを伝え、機械生成を示す`atk-auto`要素を持つこと。"""
         prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
         assert prompt.startswith("/goal ")
-        assert "agent-toolkit:process-wi-all-reposを完遂する" in prompt
+        assert "agent-toolkit:process-wi all-reposを完遂する" in prompt
         assert _automated_prompt.contains(prompt)
         assert "agent-toolkit:exit-session" not in prompt
 

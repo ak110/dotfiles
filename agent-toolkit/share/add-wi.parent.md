@@ -25,7 +25,7 @@ AWIやUWIの作成・更新にあたって成立性調査や起草をWI投入担
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「返却に含まれる既存不良の受領」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「返却に含まれる既存不良の受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/pending-decisions.md#「未確定判断の保留と暫定判断」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md#「未確定判断の保留と暫定判断」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
@@ -72,7 +72,7 @@ AWIやUWIの作成・更新にあたって成立性調査や起草をWI投入担
   - `投入前に確定すべき事項`: 確定が必要な項目だけを記載し、委譲元が想定している回答や案は渡す対象から外す
   - `他の要求単位の割当`: 渡す逐語本文のうち、その要求では扱わない単位ごとの割当先を記載する。値には、投入済みAWIのファイル名とH1見出し、同じ委譲内で別の担当者へ渡した要求を特定する「」付きの説明、または`分割元の依頼全体`のいずれかを指定し、割当先が決まっている単位だけを渡す。該当がなければ`なし`とする
   - 要求間の依存関係は、`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`にある先行成果の必要性の根拠を添えて渡す
-  - `確認状態`: 自動のsession-review-batchで新規投入するAWIでは`required`を渡し、frontmatterに`confirmation: required`を付ける。人間がWI画面で確認済みにするまで自動処理しない。省略時は確認状態の指定なしとして扱い、要確認を付与しない。手動振り返りには一律適用せず、既存AWIを再利用する場合は要確認を付け直さない
+  - `確認状態`: session-reviewのbatchモードで新規投入するAWIでは`required`を渡し、frontmatterに`confirmation: required`を付ける。人間がWI画面で確認済みにするまで自動処理しない。省略時は確認状態の指定なしとして扱い、要確認を付与しない。手動振り返りには一律適用せず、既存AWIを再利用する場合は要確認を付け直さない
   - `source`: 委譲元が`agent-toolkit:wi-standards`の「由来と承認」に基づいて決定した値（`add-awi-by-user`、`session-review`、`process-wi`、`agent`など）を指定する
   - ユーザー発話: 対象の逐語本文を渡し、必要な場合は日時や文脈を添える。構造化確認ではユーザーの回答とエージェントの質問・説明を区別する
   - 出所の記録: 認可や解釈の判断に再取得が必要な場合に限り、判断に必要な所在情報を渡す

@@ -32,27 +32,27 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-structure-check.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/reviewee.md#「安全な修正」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「安全な修正」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「安全な修正」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「安全な修正」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/notation-rules.md#「表記の一括置換」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「表記の一括置換」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/testing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/exec-review-recording.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` | 判断 | `section:agent-toolkit:*/skills/check-execution/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/design-time.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/design-time.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-recording.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-additions.md#「文書記述量の管理」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「文書記述量の管理」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/verification-scope.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/verification-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/analysis-records.md#「原因分析の記録先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
 
 ## 計画ファイルの構成
@@ -77,12 +77,12 @@ H1の主題に続けて、次のH2見出しを順に置く。
 共通参照は読込表に従い指定箇所・ユーザー記入欄を読み、固有本文と採否・計画を確定する。
 完成状態は目的・反映内容・原因分析・補足条件から導く。任意節・引用位置の省略だけで再起草・再調査しない。
 計画で変更対象の分解・外部仕様・受入シナリオ・テスト・検証コマンド・恒久化・リファクタリング・公開工程を具体化する。
-WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認時に限り、影響項目だけに行う。乖離の事実・結論を`## 変更履歴`へ記録する。人間由来の要求範囲変更は`agent-toolkit:wi-standards`「由来と承認」、原因分析の乖離は「バグ調査」で扱う。母集団・QとC・D・適用レイヤー・完了判定の`agent-toolkit:bugfix`の`references/root-cause-analysis.md`への不適合も後者に含む。
+WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認時に限り、影響項目だけに行う。乖離の事実・結論を`## 変更履歴`へ記録する。人間由来の要求範囲変更は`agent-toolkit:wi-standards`「由来と承認」、原因分析の乖離は「バグ調査」で扱う。母集団・QとC・D・適用レイヤー・完了判定の`agent-basics:bugfix`の`references/root-cause-analysis.md`への不適合も後者に含む。
 
 キューにない素材の原文とユーザーの回答全文は計画外入力の原本として保持し、調査、起草、初回レビュー、再レビューの各工程へ原文の参照を渡す。計画本文へは全文を転記しない。変更履歴に記録するユーザー発言は同節の書式に従う。
 
 実装着手前の指摘対応・要件追加・方針変更は各節へ統合し、最終結論を残して経緯を`## 変更履歴`へ書く。
-`ユーザー指示`・`人間由来のWI`の`実施内容`欄は、`agent-toolkit:review-standards`の`references/reviewee.md`「安全な修正」に従って原文を保ち、修正案を別行へ加える。
+`ユーザー指示`・`人間由来のWI`の`実施内容`欄は、`agent-toolkit:/share/exec-review-responses.md`「安全な修正」に従って原文を保ち、修正案を別行へ加える。
 実装着手後は計画ファイルを変更しない（以下「計画凍結」）。実装中に確定した要件変更と、記述の不整合に採った解釈はレビュー指摘管理表に記録する。実行工程で直すと実行レビューの指摘になり、不要な往復が生じるためである。例外は`## 進捗ログ`への追記だけとする。
 凍結後に検証条件を訂正するときは、「検証と公開工程」の訂正済み検証表に反映する。
 
@@ -139,12 +139,12 @@ AWIは原則1ファイル1行とし、実装手順やテスト項目は`## 要�
 - 要件と、消費主体が観測する外部仕様（入出力、表示、公開契約、状態遷移、分岐条件、異常系、運用手順）
 - 変更対象のファイルと識別子、変更する仕様（契約）、生成と配布の流れ、直接影響範囲。同じ値や挙動を生む別の発生源（以下「別発生源」。デフォルト値、プリセット、設定ファイル、環境変数、別の呼び出し手段、同じ操作を制約する他の規定など）も、保持先、利用先、エンドユーザーが観測する結果まで追い、該当しないものは理由を添えて除外する。多数の対象に同時に作用する挙動（共通CSSクラスのレイアウト、関数や設定のデフォルト値など）を変える場合は、その挙動を前提とする指定を検索で網羅し、変更後も同じ結果になるか確かめる（手元のデータでの測定は代わりにならない）。機能の追加や統合で成果物の役割が変わる場合は、名称、利用案内、ナビゲーション、運用ログ、配布用メタデータ、既存テストなど意味が変わる箇所も網羅する
 - 完了条件。消費主体が観測できる成果と、合否を判定する観測値かコマンドを、他の記述を参照せずに実行できる形で書く
-- テストを新設・変更する場合は、保証する契約と検出する主な失敗様態。期待値は要求仕様や契約から導く（選定と導出は`agent-basics:writing-standards/references/testing.md`に従う）
+- テストを新設・変更する場合は、保証する契約と検出する主な失敗様態。期待値は要求仕様や契約から導く（選定と導出は`agent-toolkit:commit/references/testing.md`に従う）
 - 事象を起こさないことを求める要求では、発生件数0件を客観的に観測する手段
 - エンドユーザーが観測できる公開インターフェース（設定キー、CLIオプション、環境変数、サブコマンドなど）を新設する場合は、新設の理由と、既存のインターフェースやデフォルト値の変更では目的を達成できない理由
 - ユーザー確認の回答（公開範囲を含む）と、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文からの具体化を要する軸」の判定結果
 - 実行環境の動作条件を前提とする設計方針では、実機で再現を確かめた典拠
-- 永続化されるデータや増え続けるデータを扱う場合は、保持期間、容量上限、上限到達時の外部仕様、保守の契機と所有者、長期的な動作条件の検証方法（基準は`agent-basics:writing-standards/references/design-time.md`に従う）
+- 永続化されるデータや増え続けるデータを扱う場合は、保持期間、容量上限、上限到達時の外部仕様、保守の契機と所有者、長期的な動作条件の検証方法（基準は`agent-toolkit:commit/references/design-time.md`に従う）
 
 `### 受入シナリオ`には`シナリオ | 由来 | 消費主体と入口 | 利用目的と後続行動 | 操作 | 期待結果 | テスト`の7列の表を置く。旧6列表（利用目的の列なし）は保存済みの計画ファイルを読むときだけ受理する。
 
@@ -152,7 +152,7 @@ AWIは原則1ファイル1行とし、実装手順やテスト項目は`## 要�
 - `## 実施内容`に`採用`か`部分採用`の行があれば、人間由来の各要求単位と、「実施内容」で必要性を評価した後の各WIの有効な完成条件を1つ以上の受入シナリオ行に対応付ける。
   除外した条件は採否記録の対象条件と根拠を参照し、残る有効条件で完成を判定する。採用行がなければ本文を`なし`とする
 - `テスト`には、公開された呼び出し手段（コマンド、画面操作、API、フックなど）を通じて同じ契約違反を検出する結合テストかE2Eテストの名前を書く。同じ操作と期待結果で各要求の合否を判定できる場合に限り、複数の要求を1行にまとめてよい。「一連の完成条件を後でテスト化する」のような参照だけの記述は具体化の完了にならない。自動テスト化が難しいシナリオに限り、その理由と、手動観測の入力値、操作手順、合否基準を書く
-- 手動観測は、実装担当者が専用worktree内の成果物へ直接実行できる入力と操作で定め、公開、配布、稼働中の`atk wi process-loop`への反映の後にしか得られない観測を統合後へ先送りしない。WIの完成条件そのものが公開後にしか観測できない場合の判定は、実行レビュー担当者が`agent-toolkit:review-standards`の`references/exec-review-recording.md`に従って行い、計画ファイルには公開前に再現できる代替観測を置く。`atk wi process-loop`など本番の常駐プロセスから起動される対象は、`agent-toolkit:check-execution`の`references/acceptance-scenarios.md`「常駐サービスの公開前の観測」に従う
+- 手動観測は、実装担当者が専用worktree内の成果物へ直接実行できる入力と操作で定め、公開、配布、稼働中の`atk wi process-loop`への反映の後にしか得られない観測を統合後へ先送りしない。WIの完成条件そのものが公開後にしか観測できない場合の判定は、実行レビュー担当者が`agent-toolkit:/share/exec-review-recording.md`に従って行い、計画ファイルには公開前に再現できる代替観測を置く。`atk wi process-loop`など本番の常駐プロセスから起動される対象は、`agent-toolkit:delegation/references/acceptance-scenarios.md`「常駐サービスの公開前の観測」に従う
 - 操作、障害注入、擬似故障、自動終了の失敗などを含むシナリオは、同書の「検証資源の分離」に従って実行環境と利用の調整方法を定める
 - 処理時間など負荷や並行状況で変わる測定値は、`agent-toolkit:wi-standards`の`references/awi-body.md`の完成条件と同じく、同じマシンで同時に実行する対照群との比較で書く
 
@@ -200,7 +200,7 @@ AWIは原則1ファイル1行とし、実装手順やテスト項目は`## 要�
 - エージェント向け文書を新設・改訂する計画では、`agent-basics:writing-standards/references/agent-documents-additions.md`「文書記述量の管理」を確認する。同じ文書への変更全体についてファイルサイズの上限、責務の範囲、読込の時点、既存記述との重複などを比べ、整理の結論を書く
 - 本計画で行うリファクタリングは`## 実施内容`の表に行として計上する。テストの更新、直接影響範囲の同期、生成物の再生成など実装に付随する作業は`## 要件・外部仕様`に書き、`## 実施内容`の行にしない
 - 同じ根本原因を持つ類似箇所の見直しは、作業種別を問わず`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」の母集団と「類似見直しと再発防止の完了」の判定基準に従う。通常変更の計画では結果を`### リファクタリング`に記録し、専用の見出しは設けない
-- 本計画の変更範囲外で是正の必要も生じない既存の不備を見つけた場合は、`agent-toolkit:bugfix`を起動し、`agent-toolkit/skills/bugfix/SKILL.md`「問題を見つけたときの対処」に従う
+- 本計画の変更範囲外で是正の必要も生じない既存の不備を見つけた場合は、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/SKILL.md`「問題を見つけたときの対処」に従う
 
 ## 変更履歴
 
@@ -213,13 +213,13 @@ AWIは原則1ファイル1行とし、実装手順やテスト項目は`## 要�
 
 ## 検証と公開工程
 
-受入と通常検証の比較・統合は`../../check-execution/references/verification-scope.md`に従う。
+受入と通常検証の比較・統合は`agent-toolkit:/share/verification-operations.md`に従う。
 
 完成条件と検証手段を具体化するときは、`agent-toolkit:wi-standards`の`references/awi-body.md`「完成条件」の自己観測と未確認範囲の規定を適用する。
 
 `## 検証`には、`区分`と`検証コマンド`の2列で`変更範囲の検証`の1行だけを持つ固定表を置き、変更対象に応じた検証（対象ファイルを限定したformat、lint、対象テストなど）を書く。リポジトリ全体の検証とCIの判定は後続の公開工程で行う。過去の計画の旧名「近接検証」の1行表、旧2行表、旧名を含む実装単位表の列は読み取り互換のために受理するが、新規作成と計画改訂では現行形式で書く。
 
-- 検証の対象は変更ファイルとその直接影響範囲に限り、ファイル単位で指定する（努力目標）。直接影響範囲の分類と範囲は`agent-toolkit:check-execution`の`references/verification-scope.md`に従い、選んだテストファイルや検証単位をコマンド引数に明記する。直接影響範囲のうち検証から外すものは、理由を直接影響範囲の記述欄に書く。検証表は起草時点の選定なので、実行者が実行直前に同書に沿って実差分から補正する
+- 検証の対象は変更ファイルとその直接影響範囲に限り、ファイル単位で指定する（努力目標）。直接影響範囲の分類と範囲は`agent-toolkit:/share/verification-operations.md`に従い、選んだテストファイルや検証単位をコマンド引数に明記する。直接影響範囲のうち検証から外すものは、理由を直接影響範囲の記述欄に書く。検証表は起草時点の選定なので、実行者が実行直前に同書に沿って実差分から補正する
 - タスクランナーのターゲット単位でコマンドを分けて書く（努力目標。失敗したターゲットだけを再実行できるようにするため）
 - 表のセルには、1つのインラインコード（code span）に1つの完全なコマンドを書く。複数のコマンドは`<br>`で区切り、説明は表の外に書く。パイプライン、リダイレクト、環境変数の代入などシェル固有の処理は実行可能なスクリプトファイルへ移し、そのスクリプトを実行する引数配列（argv）を書く（統合時に`atk lane integrate`がmanifestの`verification`へargv配列として渡し、シェルを介さず直接実行するため）
 - 実装担当者は対象のworktreeで各コマンドを順に標準実行する。1つが失敗しても残りを実行し、各コマンドの終了コードと出力を個別に確かめて合否を判定する
@@ -227,7 +227,7 @@ AWIは原則1ファイル1行とし、実装手順やテスト項目は`## 要�
 計画凍結後に検証条件を訂正した場合は、レビュー指摘管理表の現在の結論を反映した全コマンドを別ファイルへ保存し、「訂正済み検証表」とする。このファイルには本節と同じ`## 検証`の固定表を1つ置き、計画メタ情報は置かず、凍結した計画ファイルの検証表全体を差し替える内容を書く。
 訂正後の検証は訂正済み検証表のコマンドで行う。計画ファイル、訂正の結論、訂正済み検証表の対応と絶対パスは引き継ぎ記録に書き、実装、実行レビュー、統合の各工程へ渡す。引き継いだ内容は確実に保持し、訂正済み検証表を更新したら更新後の条件で検証を最初からやり直す。
 
-計画・訂正済み検証表・実行記録には、`../../check-execution/references/verification-scope.md`に従って選んだ起動形を記す。対象到達・完了・終了状態・診断を確かめる。
+計画・訂正済み検証表・実行記録には、`agent-toolkit:/share/verification-operations.md`に従って選んだ起動形を記す。対象到達・完了・終了状態・診断を確かめる。
 
 `## 公開工程`には、合意した公開範囲と、コミット・プッシュ後に行う操作（PR/MRの作成とタイトル・本文の指定、リリース作成、タグ付けなど）を書く。公開範囲の確認が不要で公開後の固有操作もない計画は`なし`とする。
 
@@ -235,7 +235,7 @@ AWIは原則1ファイル1行とし、実装手順やテスト項目は`## 要�
 
 作業種別が`バグ対応`の計画では、原因分析を記録した関連WIの`## 原因分析`を参照する。
 計画ファイル（バグ）を作るのは、入力WIがない計画（`関連WI: なし`）か、起草時にWIの原因分析を訂正・追加した計画に限る（`## 原因分析`を持たない登録済みAWIを処理する計画もこの追加に当たる）。訂正・追加では対象のバグ単位だけを完全な表で書き、実態との乖離の観測結果と導いた結論を`## 変更履歴`に記録する。
-計画ファイル（バグ）には計画の主題のH1見出しを置き、バグ単位ごとのH3見出しの下に原因分析表と調査表をこの順に置いて全セルに値を書く（見出しはH1とH3だけ、各H3配下の表はこの2つだけとする）。行名、列名、並び順、統合・分割の規則、恒久化の参照規約は`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」に従い、類似箇所の見直し結果も同所に沿って調査表に記録する。
+計画ファイル（バグ）には計画の主題のH1見出しを置き、バグ単位ごとのH3見出しの下に原因分析表と調査表をこの順に置いて全セルに値を書く（見出しはH1とH3だけ、各H3配下の表はこの2つだけとする）。行名、列名、並び順、統合・分割の規則、恒久化の参照規約は`agent-toolkit:wi-standards/references/analysis-records.md`「原因分析の記録先」に従い、類似箇所の見直し結果も同所に沿って調査表に記録する。
 `check_plan_file.py`は、作業種別が`バグ対応`でメタ情報に`計画ファイル（バグ）`行を持つ計画について、ファイルの実在、計画ファイル名（stem）との一致、計画ファイル（バグ）の構造を検証する。`関連WI`が`なし`のバグ対応計画ではこのメタ情報行を必須とする。
 
 ## 進捗ログ
@@ -334,3 +334,7 @@ AWIは原則1ファイル1行とし、実装手順やテスト項目は`## 要�
 
 仕様の整合性を確かめる主な観点は、データの送受信、条件分岐、制約、機能廃止、外部から観測される挙動、配布形態である。共有されるインターフェース仕様（契約）は呼び出し側と提供側の双方を同じ計画内で確定し、変更する分岐の入力パターンと変更前後の動作結果を正しく対応付ける。
 制約の追加などで既存の正常動作シナリオが成り立たなくなる場合は、ユーザーとの合意内容と根拠を記録する。機能廃止に伴う完成条件、チェックリスト、テストコードの更新方針、外部挙動を実機で確かめた根拠、プロジェクト規範が定める配布手順、バージョン更新、同期対象ドキュメントの修正も漏れなく計上する。
+
+## 計画した検証の実行
+
+- 確定した計画に基づく変更範囲の検証は、計画ファイルの`## 検証`（訂正済み検証表が存在する場合はその表）に記載された各コマンドを、対象のworktree内で上から順に実行する。実行前には、コマンドの検証対象に実際のGit差分が含まれていることを確認する。途中で1件が失敗した場合も残りのコマンドを最後まで実行し、すべてのコマンドの終了コードと出力を確認して結果を総合的に判定する。検証コマンド行や訂正済み検証表の書式、引き継ぎ方法、およびpyfltrの完了検収基準は、`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と公開工程」に従う。

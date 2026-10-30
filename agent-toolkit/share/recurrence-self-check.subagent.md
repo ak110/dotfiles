@@ -25,7 +25,7 @@ writes_worktree: false
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewer.md#「再レビューの場合」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「再レビューの場合」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-criteria.md#「再レビューの場合」` | 判断 | `section:agent-toolkit:*/share/exec-review-criteria.md#「再レビューの場合」` |
 
 ## 入力
 
@@ -49,7 +49,7 @@ writes_worktree: false
 観点ファイルに定義されていない通常のレビュー観点については評価対象外とする。
 
 再レビューおよび引き継ぎ再レビューにおいても、今回差分に対して全項目の判定を実施する。あわせて前回の未解決指摘について、変更後のファイル内容、提出された応答、検証証拠に基づいて解消または未解消を確認する。
-今回の差分に直接現れていない既存の未解決指摘についても、判定結果に対応付ける。前回指摘への応答の扱い（範囲外として別タスクへの割り当てを表明している場合を含む）は、`agent-toolkit:review-standards`の`references/reviewer.md`「再レビューの場合」に従う。新たな要件は前回指摘の未解消とは区別し、根拠を添えて返却する。
+今回の差分に直接現れていない既存の未解決指摘についても、判定結果に対応付ける。前回指摘への応答の扱い（範囲外として別タスクへの割り当てを表明している場合を含む）は、`agent-toolkit:/share/exec-review-criteria.md`「再レビューの場合」に従う。新たな要件は前回指摘の未解消とは区別し、根拠を添えて返却する。
 
 ## 出力
 
@@ -67,3 +67,13 @@ writes_worktree: false
 ```
 
 続行不能と追加報告行は、共通契約`rules-subagent.md`「返却形式の受け渡し」に従う。資料不足の場合は、影響する項目、欠けた資料と補完に必要な値を記す。
+
+## 観点の配置と収集
+
+agent-toolkitにおけるチェック観点は、`${CLAUDE_PLUGIN_ROOT}/share/recurrence-self-check-items.md`に配置する。観点ファイルのH1見出しは`# 再発防止セルフチェック観点`で開始し、この見出し宣言は観点ファイルにのみ使用する。ファイルを分割した先のファイルも同一のH1宣言を持つ。実行レビューにおける観点の収集は、配置されているディレクトリにかかわらず同一の手順で実施する。
+
+## 参照資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/recurrence-self-check-items.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check-items.md` |

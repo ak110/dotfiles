@@ -9,7 +9,7 @@ writes_worktree: false
 
 # 一括置換後レビュー担当タスク
 
-<!-- parent-read-source: agent-toolkit:/skills/writing-standards/references/bulk-replacement.md#一括置換後レビュー担当の起動と受領 -->
+<!-- parent-read-source: agent-toolkit:delegation/references/bulk-replacement.md#一括置換後レビュー担当の起動と受領 -->
 
 多数の箇所で語句を置き換えた文字単位の差分をすべて読み込み、置換によって元の意味や対応関係が意図せず変化してしまった箇所を検出して報告する。
 差分の修正や文章の書き直しは行わず、それらは委譲元が担当する。

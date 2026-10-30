@@ -60,3 +60,13 @@ forkを利用する際の入力は作業対象、役割分担、完了条件、�
 担当者は自身で必要な原本を直接読み込み、割り当てられた範囲の調査を自力で完了させる。委譲元は調査対象の全体像と統合責任を維持し、未確認の対象や結論間の矛盾を解消した上で最終的な判断を下す。なお、読み取り探索の分割は、既存の書込所有権やレーンの境界を守った上で実施する。
 全文を読んで判定する対象は`wc -c`で合計バイト数を確認し、トークン量の見積りと委譲先の文脈上限を比較する。上限は、起動済みの同じ`model_type`のsessionについて`atk agents list`か`atk agents show`が返す`context_window`、またはbackendの公開仕様から取得する。
 入力や返却に必要な文脈も考慮し、全文の判定に必要な量が上限を超える群は、上限に収まる重複のない群へ分ける。バイト数とトークン数の換算は推定として扱う。
+
+## 検索結果に基づく探索の分担
+
+件数・ファイル名・要約を確認した結果、本文の読み取りを含む調査がコンテキストを大きく消費すると見込まれる場合は、委譲が可能なエージェントであれば、自ら検索を続ける前に読み取り専用の探索委譲（`agents_server`の`start`による`explore`など）へ切り出すかどうかを判定する。その条件と手順は`agent-toolkit:delegation`の`references/routing.md`「コンテキスト消費が大きい調査の切り出し」に従う。
+
+全体点検の対象処理と担当範囲の対応付けも、本書「コンテキスト消費が大きい調査の切り出し」に従う。
+
+## 実行結果の検証
+
+- 応答内容自体を必要とせず、実機確認や対照実験、識別子の観測のみを目的としてエージェントCLI（`claude -p`や`codex exec`など）や`agents_server`の委譲を起動する場合がある。このとき、検証対象がモデルやeffort、設定、ツールによって左右されない限り、軽量工程向けのモデル別名とeffort `low`を指定する。モデルはバージョン付きの古いIDに固定しない。`agents_server`では`model_type`に`claude:haiku/low`か`codex:luna/low`を渡す。検証対象が`delegate`や`task`の起動そのものでない限り、軽量起動である`explore`または`shell`の`mode`で起動する。CLIを直接起動する場合はセッションを保存せず、設定・ツール・MCPを読み込まず、最小限のシステムプロンプトで起動する。Claude Codeでは`--model haiku --effort low`に加えて`--no-session-persistence --setting-sources "" --tools ""`を指定する。さらに`--strict-mcp-config --disable-slash-commands --system-prompt <文>`も指定する。プロンプトは`--`の後ろに配置する（`--tools ""`が後続の位置引数を値として消費してしまうのを防ぐため）。なお`--bare`はOAuth認証を読み込まない。Codexでは`-c model_reasoning_effort=low --ignore-user-config --ignore-rules`を指定し、記録が不要な場合は`--ephemeral`も加える。`codex exec`はChatGPT認証において系列名`luna`を拒否するため、直接起動するときは`luna`系列の最新の完全なIDを指定する。起動回数は判定に必要な最小限に抑える。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/user-confirmation-and-report/references/investigation.md：実行結果の検証：2026年10月18日（2）」にある。

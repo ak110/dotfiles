@@ -1,6 +1,6 @@
 # 振り返りの判断基準
 
-`agent-toolkit:session-review`の`SKILL.md`「工程」において、メインエージェントが通読で見つけた問題や問題候補を選別し、原因と対策を確定するときの判断基準を定める。手動の工程と入出力は同スキルの`SKILL.md`、非同期の対象固定と範囲確定は`agent-toolkit:session-review-batch`、振り返り結果報告の書式は`agent-toolkit:completion-report`の`references/report-formats.md`が定める。複数対象でも分析基準を変えず、対象IDと記録位置を保持する。
+`agent-toolkit:session-review`の`references/session-analysis.md`「分析と投入」において、メインエージェントが通読で見つけた問題や問題候補を選別し、原因と対策を確定するときの判断基準を定める。手動の工程と入出力は同スキルの`SKILL.md`、非同期の対象固定と範囲確定は`agent-toolkit:session-review batch`、振り返り結果報告の書式は`agent-toolkit:completion-report`の`references/report-formats.md`が定める。複数対象でも分析基準を変えず、対象IDと記録位置を保持する。
 
 ## 名指し参照の読込方法
 
@@ -9,25 +9,25 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/report-formats.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review-batch/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review-batch/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/session-review/SKILL.md#「工程」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/references/batch.md` | 判断 | `read:agent-toolkit:*/skills/session-review/references/batch.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `session-analysis.md#「分析と投入」` | 判断 | `section:agent-toolkit:*/skills/session-review/references/session-analysis.md#「分析と投入」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/SKILL.md#「送信」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「送信」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「ユーザー介入と確認の判定」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「ユーザー介入と確認の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md#「ユーザー介入と確認の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md#「ユーザー介入と確認の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-block-warn.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/permission-denial.md#「偽陽性と判断できる拒否への対応」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md#「偽陽性と判断できる拒否への対応」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/auto-mode.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/auto-mode.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/auto-mode.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復する加工の問題」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復する加工の問題」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「情報探索の問題」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「情報探索の問題」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/drafting-completion.md#「重複判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「規範の未適用と目的逸脱」`、`agent-basics:bugfix/references/root-cause-scenarios.md#「前提の再検討」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「規範の未適用と目的逸脱」`、`section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「前提の再検討」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:session-review/references/analysis-operations.md#「規範の未適用と目的逸脱」`、`agent-basics:bugfix/references/root-cause-scenarios.md#「前提の再検討」` | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis-operations.md#「規範の未適用と目的逸脱」`、`section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「前提の再検討」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details.md#「規定の適用可否」` | 判断 | `section:agent-basics:*/skills/review-standards/references/judgment-details.md#「規定の適用可否」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/session-review/references/duration-analysis.md` |
 
@@ -79,7 +79,7 @@ Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を
 必要な裏付け調査、出力上限に合わせた分割読取、起動時のスキル展開、変更後の再確認、用途に応じた過去資料の参照などは、契約不成立が観測されない限り、回数、日付、ロールだけで誤りとしない。規範が求める工程の量が過大かは「規範適用による目的逸脱」で判定する。
 契約不成立という欠陥と、品質を保って費用や時間を減らせる改善機会とを分ける。正常、必須、回復済みといった分類は欠陥の有無の結論であり、実施方法の採否は「コストの無駄の確認」の比較で決める。成功した通常操作、正常な返却、良い手段の再利用も、準備から後始末までの全工程を同じ比較へ送る。
 情報探索や参照の問題は、選別の段階から「情報探索の問題」に従い、探していた情報と得た証拠を対応付ける。
-除外するのは、恒久対策が要らないと明らかな候補に限り、その根拠を「対策を見送った問題」に書く。原因探索の深さと再発防止策の要否・完了基準は重大度で決める（`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」）。資格情報の発見と報告の発話は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」の手順を終えていれば判定済みとする。その除外区分には`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「ユーザー介入と確認の判定」の`credential-report`を使う。ただし過剰反応自体の是正をユーザーが求めた発話は分析対象とする。作業中に既存の規範が適用されなかった問題は、条文があることで除外せず、確証の無い候補も分析へ送る。
+除外するのは、恒久対策が要らないと明らかな候補に限り、その根拠を「対策を見送った問題」に書く。原因探索の深さと再発防止策の要否・完了基準は重大度で決める（`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」）。資格情報の発見と報告の発話は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」の手順を終えていれば判定済みとする。その除外区分には`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」の`credential-report`を使う。ただし過剰反応自体の是正をユーザーが求めた発話は分析対象とする。作業中に既存の規範が適用されなかった問題は、条文があることで除外せず、確証の無い候補も分析へ送る。
 過去の振り返りやキュー処理で不採用と確定した案は、新しい観測や要件の変更がある場合に限って再評価する。
 資格情報の存在を指摘する`気付いた改善点:`も、所在ごとの報告に対応付け、報告後に`credential-report`として判定済みとする。
 
@@ -89,7 +89,7 @@ Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を
   発生源ごとに`agent-basics:writing-standards/references/claude-hooks-block-warn.md`で、事前に防ぐ型か遮断後に対処する型かを判定する。遮断後に対処する型の発火は想定どおりの動作とする。ただし1回の対処で解消しない場合、同じ呼び出しで反復した場合、発生頻度で同文書の費用比較の結論が変わる場合に限って見直す。
   事前に防ぐ型には、規範の改訂、判定条件の見直し、フックの撤去、遮断後に対処する型への移行から1件以上の改善案を対応付け、現状維持ならその発火が規範どおり不正な操作を止めた根拠を書く。事前チェック工程を足す案では、操作ごとに増える呼び出し回数を費用として明記する。
 - 権限拒否: `agent-toolkit:user-confirmation-and-report`の`references/permission-denial.md`「偽陽性と判断できる拒否への対応」の適用条件を満たしていたか、満たしていればその対応が適用されたかを判定する。
-  委譲先の拒否は委譲元の記録で判定する。条件を満たしたのに適用されなかった拒否は、作業進行への影響を問わず「原因と対策」へ送り、未適用の原因と必要な処置を判定する。パーミッションルールを変える案は、拒否時の文面と分類名を証拠に添え、`agent-toolkit:writing-standards`の`references/auto-mode.md`のワークフローへ送る。
+  委譲先の拒否は委譲元の記録で判定する。条件を満たしたのに適用されなかった拒否は、作業進行への影響を問わず「原因と対策」へ送り、未適用の原因と必要な処置を判定する。パーミッションルールを変える案は、拒否時の文面と分類名を証拠に添え、`agent-toolkit:user-confirmation-and-report/references/auto-mode.md`のワークフローへ送る。
 - 手順書の作業を一時スクリプトで代替した箇所: 有効期限のある資格情報の更新、設定の再登録、別環境の構築、定期的な運用作業など、将来再実行される手順かを手順書の本文と扱う値から判定する。再実行されるなら、スクリプトを手順を所有するリポジトリのスクリプト配置場所へ移して手順書から呼ぶ対策を、そのリポジトリを`target_repo`とする通常AWIとして「原因と対策」へ送る（同じセッションで是正済みなら除く）。1回限りの使い捨て作業は対象外とする。
 - その場のコードによる加工: `adhoc-processing`の候補、通読で見つけた後加工、同じ目的のコマンドの反復について、呼び出しごとの目的（どの出力から何を取ったか）を特定し、反復性を判定する。同じセッションで同じ目的の加工が2回以上あれば反復とする。スキルや規範の手順が実行のたびに求める工程（逐語引用の文字位置の算出など）のための加工と、`agent-toolkit`のコマンド出力形式の制約で要った加工は、1回の観測でも反復とする。反復する加工は「原因と対策」へ送り、比較する代替案と評価順は`agent-basics:bugfix`の`references/root-cause-scenarios.md`「反復する加工の問題」に従う。反復しない1回限りの調査は、目的と反復しない根拠を「対策を見送った問題」に書いて除外する。
 - `気付いた改善点:`で始まる行: その場の直接的原因・影響調査と必要な処置を確認し、根拠と判断を再利用する。未調査、変更、不一致の部分だけを補って残る分析を「原因と対策」へ送る。単純な効率改善もQCDで採否を決め、担当外の処置と引き継ぎ先を保持する。その場でユーザーへ伝えた行も対象に含め、非同期分析まで初動調査を延期したり、既調査事項を最初からやり直したりしない。
@@ -98,7 +98,7 @@ Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を
 
 ローカルな終了操作と、それに付随する訂正・続行の指示は、共通判定の`non-changing-request`により分析と報告の対象から外す。通読や候補一覧に残っていても、問題、再発防止の要求、見送り理由の説明と読み替えない。終了操作の語句を含んでも別の要求や方針変更を伴うときは、その趣旨どおり扱う。この扱いは「一次選別」と「原因と対策」の報告にも適用する。
 
-介入、WI記入欄の是正、ユーザー確認の必須性、除外区分の判定は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「ユーザー介入と確認の判定」に従い、元の発話と構造化確認の全項目を判断材料にする。
+介入、WI記入欄の是正、ユーザー確認の必須性、除外区分の判定は、`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」に従い、元の発話と構造化確認の全項目を判断材料にする。
 介入として抽出された発話がシステムの自動生成テキストだった場合、人間の入力と誤分類した事象も共通分析へ送る。自動生成テキストかの判定基準は、`agent-toolkit/agent_toolkit/_common/runtime_inserted.py`と`session-review-evidence --user-events`の抽出条件に従う。
 
 ## 比較して探す観点
@@ -208,7 +208,7 @@ Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を
 
 ## 原因と対策
 
-「コストの無駄の確認」の採否と根拠を再利用し、品質面の判断と費用比較の結論をそれぞれ保持する。改善機会の見送りは、維持すべき成果、作業量、代替案、採否の比較に対応付ける。選別した問題と所要時間分析で得た律速条件は、発見元の分類や過去事例の有無を問わず`agent-toolkit:bugfix`を起動して共通手順へ渡す。選別と見送りの判断（QualityとCost・Deliveryの区別、重大度、再発防止策の必須性、採用できない根拠）は、同スキルの起動時に届く`SKILL.md`の初動基準で行う。原因分析での介入の判定、規範の未適用や目的逸脱、反復性、類似事例の見直し、処置の階層は同スキルの`references/root-cause-analysis.md`で行う。
+「コストの無駄の確認」の採否と根拠を再利用し、品質面の判断と費用比較の結論をそれぞれ保持する。改善機会の見送りは、維持すべき成果、作業量、代替案、採否の比較に対応付ける。選別した問題と所要時間分析で得た律速条件は、発見元の分類や過去事例の有無を問わず`agent-basics:bugfix`を起動して共通手順へ渡す。選別と見送りの判断（QualityとCost・Deliveryの区別、重大度、再発防止策の必須性、採用できない根拠）は、同スキルの起動時に届く`SKILL.md`の初動基準で行う。原因分析での介入の判定、規範の未適用や目的逸脱、反復性、類似事例の見直し、処置の階層は同スキルの`references/root-cause-analysis.md`で行う。
 
 過去の対応項目は、`candidates.md`の同種記録と、由来や状態を限定しない`atk wi grep --summary-only --state=all --target-repo=<対象リポジトリの絶対パス> --skip-pull -F -- '<語>'`が返す候補から取る。本文は`atk wi show`で確かめる。記号を正規表現として扱うときだけ`-F`を外し、`'<Pythonの正規表現>'`を渡す（終了コード1は一致0件の正常終了）。同種記録の検索は文章の大半の一致を基準にするため、言い回しの違う是正事例は本文検索で補う。取得した記録と今回の状況を同スキルの「過去対策との比較」へ渡し、比較の根拠は証拠に、結論と再取得先は原因分析と振り返り結果報告に記録する。反復した問題では、過去の項目名、前回適用した階層、解消されずに残った条件も書く。未完了のAWIへの投入要否は「既存キュー項目との重複確認」で個別に判定する。
 
@@ -240,6 +240,6 @@ Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を
 
 ## 規範適用による目的逸脱
 
-事象、原因、対策は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「規範の未適用と目的逸脱」と、`agent-basics:bugfix/references/root-cause-scenarios.md`「前提の再検討」で判定する。対象条文の所在（ファイル名と節）、観測された処理停止、採用する改善案と根拠を記録する。
+事象、原因、対策は、`analysis-operations.md`「規範の未適用と目的逸脱」で判定する。前提の評価には`agent-basics:bugfix/references/root-cause-scenarios.md`「前提の再検討」を適用する。対象条文の所在（ファイル名と節）、観測された処理停止、採用する改善案と根拠を記録する。
 正常に完了した作業でも、読込、準備、検収、後始末の作業量と成果を比べ、規範が求める工程を簡略化できないかを検討する。
-条文を改訂せず現状維持とするなら、再現条件と許容する理由を「対策を見送った問題」に書く。改訂を採るなら、対象条文を改訂するAWIへ渡す。`agent-toolkit:review-standards`の`references/judgment-details.md`「規定の適用可否」が求める規範改訂の提案は、このAWI投入で行う。
+条文を改訂せず現状維持とするなら、再現条件と許容する理由を「対策を見送った問題」に書く。改訂を採るなら、対象条文を改訂するAWIへ渡す。`agent-basics:review-standards`の`references/judgment-details.md`「規定の適用可否」が求める規範改訂の提案は、このAWI投入で行う。

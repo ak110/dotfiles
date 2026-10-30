@@ -386,7 +386,12 @@ def test_report_mode_prints_metrics_without_judging(tmp_path: pathlib.Path, caps
 @pytest.mark.parametrize("name", ["tone-examples.md", "tone-examples-llm-tone.md", "textlint-violations.md"])
 def test_norm_example_paths_are_checked(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
     """例を置く各ファイルも密度の判定へ到達し、超過した指標を報告する。"""
-    example = tmp_path / "agent-toolkit/skills/writing-standards/references" / name
+    owner = (
+        "agent-toolkit/skills/delegation/references"
+        if name == "textlint-violations.md"
+        else "agent-basics/skills/writing-standards/references"
+    )
+    example = tmp_path / owner / name
     example.parent.mkdir(parents=True)
     example.write_text("その値を根拠にしない。\n" * 20, encoding="utf-8")
 
@@ -636,7 +641,7 @@ def test_picker_result_label_preserves_checks_on_explanations(
 
 def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> None:
     """例のファイルとテストのファイルでも、説明文への再使用を検出する。"""
-    example = tmp_path / "agent-toolkit/skills/writing-standards/references/tone-examples.md"
+    example = tmp_path / "agent-basics/skills/writing-standards/references/tone-examples.md"
     example.parent.mkdir(parents=True)
     example.write_text("```text\n例文: 正本を読む。\n説明: 「照合」を用いる。\n```\n", encoding="utf-8")
     test_file = _write(tmp_path, '# 正本を参照する。\nvalue = "照合"\n', name="app_test.py")
@@ -924,7 +929,13 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
     repository = pathlib.Path(__file__).resolve().parents[1]
     settings = tomllib.loads((repository / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["pyfltr"]
     command = settings["custom-commands"]["agent-doc-tone"]
-    arguments_for_check = [str(repository / "scripts/check_agent_doc_tone.py"), "--term-root", str(tmp_path / "agent-toolkit")]
+    arguments_for_check = [
+        str(repository / "scripts/check_agent_doc_tone.py"),
+        "--term-root",
+        str(tmp_path / "agent-toolkit"),
+        "--term-root",
+        str(tmp_path / "agent-basics"),
+    ]
     config = (
         "[tool.pyfltr]\nagent-doc-tone-subproject-aware = false\n"
         f"extend-exclude = {json.dumps(settings['extend-exclude'])}\n"
@@ -935,7 +946,7 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
         f"error-pattern = {json.dumps(command['error-pattern'])}\n"
     )
     (tmp_path / "pyproject.toml").write_text(config, encoding="utf-8")
-    example = tmp_path / "agent-toolkit/skills/writing-standards/references/tone-examples.md"
+    example = tmp_path / "agent-basics/skills/writing-standards/references/tone-examples.md"
     application = tmp_path / "agent-toolkit" / "agent_toolkit" / "new_module.py"
     helper = application.parent / "_testing" / "helper.py"
     path_config = tmp_path / "agent-toolkit" / "config.json"

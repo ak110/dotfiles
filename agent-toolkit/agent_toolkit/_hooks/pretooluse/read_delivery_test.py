@@ -549,11 +549,16 @@ def test_public_hook_dependency_applies_only_the_language_rules_of_each_suffix(t
     content = _FOREIGN_LOADING_IN_COMMENTS.get(family.get(suffix) or suffix, _FOREIGN_LOADING_LINES)
     reference = tmp_path / "playwright.md"
     reference.write_text("# 技術資料\n", encoding="utf-8")
-    author = tmp_path / "skills/writing-standards/SKILL.md"
+    author = tmp_path / "agent-basics/skills/writing-standards/SKILL.md"
     author.parent.mkdir(parents=True)
     author.write_text("# 作成側\n", encoding="utf-8")
     review = ReadTrigger(
-        tmp_path / "skills/review-standards/SKILL.md", 1, "判断", ("tool:Write",), (), selector="artifact-standards"
+        tmp_path / "agent-basics/skills/review-standards/SKILL.md",
+        1,
+        "判断",
+        ("tool:Write",),
+        (),
+        selector="artifact-standards",
     )
     declared = ReadTrigger(author, 1, "操作", ("dependency:playwright",), (reference,))
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [review, declared])
@@ -613,8 +618,8 @@ def test_public_hook_dependency_uses_existing_markup_for_a_nameless_partial_edit
 
 @pytest.mark.usefixtures("memory")
 def test_public_hook_artifact_standards_uses_code_operation_only(tmp_path, monkeypatch, memory):
-    source = tmp_path / "skills/review-standards/SKILL.md"
-    author = tmp_path / "skills/writing-standards/SKILL.md"
+    source = tmp_path / "agent-basics/skills/review-standards/SKILL.md"
+    author = tmp_path / "agent-basics/skills/writing-standards/SKILL.md"
     reference = tmp_path / "python.md"
     reference.write_text("# 作成規範\n", encoding="utf-8")
     author.parent.mkdir(parents=True)
@@ -783,9 +788,10 @@ def test_external_index_requires_the_selected_page(monkeypatch, tmp_path):
 
 
 @pytest.mark.usefixtures("memory")
-def test_artifact_standards_use_the_author_declaration(monkeypatch, tmp_path):
-    source = tmp_path / "skills/review-standards/SKILL.md"
-    author = tmp_path / "skills/writing-standards/SKILL.md"
+@pytest.mark.parametrize("owner", ["agent-basics/skills/writing-standards", "agent-toolkit/skills/delegation"])
+def test_artifact_standards_use_the_author_declaration(monkeypatch, tmp_path, owner):
+    source = tmp_path / "agent-basics/skills/review-standards/SKILL.md"
+    author = tmp_path / owner / "SKILL.md"
     reference = tmp_path / "python.md"
     reference.write_text("# 作成規範\n## 対象節\n対象言語の基準\n", encoding="utf-8")
     author.parent.mkdir(parents=True)
@@ -820,14 +826,14 @@ def test_same_skill_name_keeps_plugin_boundary(tmp_path, monkeypatch):
         manifest = root / ".claude-plugin/plugin.json"
         manifest.parent.mkdir(parents=True)
         manifest.write_text(json.dumps({"name": plugin}), encoding="utf-8")
-        source = root / "skills/writing-standards/SKILL.md"
+        source = root / "skills/sample/SKILL.md"
         source.parent.mkdir(parents=True)
         source.write_text("# 基準\n", encoding="utf-8")
-        rows.append(ReadTrigger(source, 1, "起動時", ("skill:writing-standards",), (source,)))
-    assert read_delivery.row_matches(rows[0], "Skill", {"skill": "agent-toolkit:writing-standards"}, str(tmp_path))
-    assert not read_delivery.row_matches(rows[1], "Skill", {"skill": "agent-toolkit:writing-standards"}, str(tmp_path))
-    assert read_delivery.row_matches(rows[1], "Skill", {"skill": "agent-basics:writing-standards"}, str(tmp_path))
-    assert not read_delivery.row_matches(rows[0], "Skill", {"skill": "agent-basics:writing-standards"}, str(tmp_path))
+        rows.append(ReadTrigger(source, 1, "起動時", ("skill:sample",), (source,)))
+    assert read_delivery.row_matches(rows[0], "Skill", {"skill": ":".join(("agent-toolkit", "sample"))}, str(tmp_path))
+    assert not read_delivery.row_matches(rows[1], "Skill", {"skill": ":".join(("agent-toolkit", "sample"))}, str(tmp_path))
+    assert read_delivery.row_matches(rows[1], "Skill", {"skill": "agent-basics:sample"}, str(tmp_path))
+    assert not read_delivery.row_matches(rows[0], "Skill", {"skill": "agent-basics:sample"}, str(tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -1754,7 +1760,7 @@ def test_explicit_foreign_skill_keeps_startup_and_followup_declarations(tmp_path
         read_delivery.observe({**payload, "tool_response": skill.read_text()}, "Read", inputs, "test")
     else:
         read_delivery.observe(
-            {**payload, "tool_response": skill.read_text()}, "Skill", {"skill": "agent-toolkit:search"}, "test"
+            {**payload, "tool_response": skill.read_text()}, "Skill", {"skill": "agent-basics:search"}, "test"
         )
     selected = read_delivery.deliver(payload, "Do", {}, "test")
     if not codex:
@@ -2020,7 +2026,7 @@ def test_split_full_document_requires_no_gap_and_same_actor(tmp_path, monkeypatc
 
 def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_boundary(monkeypatch, memory):
     root = pathlib.Path(__file__).resolve().parents[3]
-    sources = (root / "skills/single-lane-process/SKILL.md", root / "share/single-lane-execution.md")
+    sources = (root / "skills/process-wi/references/single-lane.md", root / "share/single-lane-execution.md")
     rows = [row for source in sources for row in parse_tables(source, root, strict=True)]
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     monkeypatch.setattr(read_delivery, "_project_skill_rows", lambda *_args, **_kwargs: [])

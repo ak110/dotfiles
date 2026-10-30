@@ -31,7 +31,10 @@ def test_basics_acquisition_does_not_mark_legacy_toolkit_skill(monkeypatch):
     monkeypatch.setattr(operation_skills, "update_state", lambda *args, **kwargs: writes.append(args))
     observed = document_reads.DocumentRead("writing-standards", "SKILL.md", partial=False, plugin="agent-basics")
     operation_skills.record_document_read("session", observed, "main")
-    assert not writes
+    assert len(writes) == 1
+    legacy = document_reads.DocumentRead("writing-standards", "SKILL.md", partial=False, plugin="agent-toolkit")
+    operation_skills.record_document_read("session", legacy, "main")
+    assert len(writes) == 1
 
 
 def test_hook_declarations_and_body_identity_use_the_effective_project(tmp_path, monkeypatch):

@@ -540,5 +540,5 @@ def test_run_skill_explains_batch_and_work_directory(capsys) -> None:
     with pytest.raises(SystemExit, match="0"):
         atk.main(["run-skill", "--help"])
     output = capsys.readouterr().out
-    assert "--work-dir" in output and "session-review-batch" in output
-    assert "auto/manual" in output and "報告先" in output
+    assert "--work-dir" in output and "session-review batch" in " ".join(output.split())
+    assert "完全一致" in output and "報告先" in output

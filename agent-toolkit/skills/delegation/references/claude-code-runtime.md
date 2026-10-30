@@ -140,3 +140,11 @@
 ## 計画ファイル作成のplan mode下委譲
 
 サンドボックスパスへの書き込み内容をメインエージェントが検収した上で、正規パス（`~/.claude/plans/`配下）へ反映する。正規パスに存在するファイルの削除や移動は、メインエージェントのみが実行する。
+
+## 委譲先での発火
+
+- `Stop`は、対象セッション自身のターン終了で発火する。`agents_server`が起動した委譲先かどうかは環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`で判定する。
+
+- `SubagentStop`は、`Agent`ツールのサブエージェントのターン終了でのみ発火し、入力の`agent_id`で判別する。前述の環境変数は`agents_server`が起動したセッションにのみ付与される。`SubagentStop`に登録する処理は、サブエージェントが実行可能な処置に限定する。
+
+区分の詳細は`agent-toolkit:delegation`の`references/claude-code-runtime.md`「実行時能力と通信scope」に従う。

@@ -14,12 +14,12 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/repository-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/repository-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/reviewee.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination.md#「エスカレーションの事由別の扱い」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「エスカレーションの事由別の扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
 
 ## 受領手段と報告様式の選択
 
@@ -80,9 +80,9 @@ agents_serverの役割文書によるtaskは、backendが正常終了本文を�
 
 - 保存済みの実行結果（`atk agents wait`の`agent_message_path`、CLIの出力保存先、MCPの結果を保存したファイル、`session-review-evidence`の出力など）を後続の担当者、検査処理、またはCLIへ引き渡す場合は、そのファイルのパスを直接渡す。モデルが本文を別ファイルや次のプロンプトへ書き写すと、同一の文章がコンテキスト内へ重複して取り込まれ、書き写しの誤りも発生しやすくなるためである。受け取り側は判断に必要な部分のみを読み込み、原本ファイルは後続の参照が終わった後に回収する。
 - 委譲先が稼働している間は、その担当範囲に含まれるファイルを編集しない（並行して編集できる条件は`references/mandatory-rules.md`「作業ツリーの保護」に従う。worktree全体を任せた担当の稼働中は、そのworktreeへ書き込まない）。どうしても編集する必要がある場合は、委譲先が終了したことを確認した上で作業ツリーとコミット履歴を点検してから実施する。万一競合が発生した場合は、採用する版を確定して統合し、破棄した内容を委譲先へ伝達する。
-- 受け取った返却や通知の`想定外事象:`のうち、ツールや実行基盤の異常を示すもの（turnの中断、接続失敗、hookの警告、同じ操作の再実行など）が同じ種類で2回現れたら、その時点で原因の調査に着手する（調査は委譲してよい）。`agent-toolkit:session-review`への先送りでは調査を始めるのが遅れ、同じ異常が反復し続けるためである。通知機構自体の欠陥を示す場合の処置は`agent-toolkit:bugfix`の`SKILL.md`「問題を見つけたときの対処」に従う。
+- 受け取った返却や通知の`想定外事象:`のうち、ツールや実行基盤の異常を示すもの（turnの中断、接続失敗、hookの警告、同じ操作の再実行など）が同じ種類で2回現れたら、その時点で原因の調査に着手する（調査は委譲してよい）。`agent-toolkit:session-review`への先送りでは調査を始めるのが遅れ、同じ異常が反復し続けるためである。通知機構自体の欠陥を示す場合の処置は`agent-basics:bugfix`の`SKILL.md`「問題を見つけたときの対処」に従う。
 - 完了報告において退避識別子やバックアップ用の複製パスが開示された場合は、その内容も点検し、`agent-toolkit:commit`の`references/stash-cleanup.md`に従って適切に処置する。
-- レビューの指摘事項と、委譲先から追加の対策や残作業について判断を求められた内容の採否は、`agent-toolkit:review-standards`の`references/reviewee.md`を読み込んで確定する。元の要求、公開契約、および利用場面からその処理が属する契約上の位置付けを確認し、`agent-toolkit/rules/01-agent.md`「QCDと3段判定」の必要性判定を適用した上で対策を選定する。完成条件の変更や除外へ進むかどうかの判断は、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「エスカレーションの事由別の扱い」に従う。裏付けを取得できなかった旨が記録されている行の扱いについては同スキルが定める。
+- レビューの指摘事項と、委譲先から追加の対策や残作業について判断を求められた内容の採否は、`agent-toolkit:/share/exec-review-responses.md`を読み込んで確定する。元の要求、公開契約、および利用場面からその処理が属する契約上の位置付けを確認し、`agent-toolkit/rules/01-agent.md`「QCDと3段判定」の必要性判定を適用した上で対策を選定する。完成条件の変更や除外へ進むかどうかの判断は、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「エスカレーションの事由別の扱い」に従う。裏付けを取得できなかった旨が記録されている行の扱いについては同スキルが定める。
 - 返却内容（`Agent`ツールの戻り値を含む）や`agents_server`の実行結果に`気付いた改善点:`で始まる行が存在する場合は、該当するすべての行を役割に応じて上位のエージェントへ引き渡す。調査結果と必要な処置を受け取り、観測事象と期待との差、直接的原因の手掛かり、品質や作業への影響、担当範囲の判断に不足する部分だけを補う。取得済みの調査は再利用し、追加調査の要求は不足分に限る。本題外の調査はagents_serverのサブエージェントへ切り離す。作業の続行や品質に影響する問題、または規範の欠陥が確定した場合は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従って対処する。担当外の処置は調査結果とともに委譲元へ返す。単純な効率改善もQCDで採否を判断する。残る分析は証拠とともに非同期の振り返りへ引き継ぎ、元作業の終了とは独立して進める。
   - メインエージェント: 動作モードにかかわらず、次回のユーザー向け発話へ識別子と原文を保持したまま転記し、識別子はインデントを除いた行頭に配置する。報告元の情報とメインエージェントが確認できた範囲を引用の外側に補足し、未確認の主張については委譲先からの未検証報告であることが分かる形で明示する。作業完了を報告するための報告用UWIは、`agent-toolkit:completion-report`の規約に従って作成する。
   - 委譲先: `agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従って処理する。

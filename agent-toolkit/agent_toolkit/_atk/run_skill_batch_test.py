@@ -21,6 +21,12 @@ from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository
 
 
+@pytest.fixture(autouse=True)
+def _isolate_launch_identity(monkeypatch):
+    monkeypatch.setenv(session_review.LAUNCH_ENV, "f" * 32)
+    monkeypatch.delenv(session_review.LAUNCH_ENV, raising=False)
+
+
 def _target(tmp_path, name, target_repo: str | None = "https://example.com/team/repo"):
     transcript = tmp_path / f"{name}.jsonl"
     transcript.write_text(
@@ -36,7 +42,14 @@ def _target(tmp_path, name, target_repo: str | None = "https://example.com/team/
 
 
 def _args(mode="auto"):
-    return argparse.Namespace(skill=session_review.BATCH_SKILL, args=mode, timeout=60, target_repo=None, work_dir=None)
+    if mode == "auto":
+        os.environ.setdefault(session_review.LAUNCH_ENV, "a" * 32)
+        path = session_review.directory() / "launches" / f"{os.environ[session_review.LAUNCH_ENV]}.json"
+        if not path.exists():
+            session_review.write(path, {"status": "starting", "host": "codex", "event": "SessionStart"})
+    else:
+        os.environ.pop(session_review.LAUNCH_ENV, None)
+    return argparse.Namespace(skill="agent-toolkit:session-review", args="batch", timeout=60, target_repo=None, work_dir=None)
 
 
 def _notes():
@@ -45,13 +58,53 @@ def _notes():
     return path
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_recovers_finished_analysis_with_saved_report_scope(tmp_path, monkeypatch, legacy):
+    notes = _notes()
+    _target(tmp_path, "old-session")
+    target = session_review.pending()[0]
+    prepared = run_skill_batch._prepare(target)  # noqa: SLF001  # pylint: disable=protected-access
+    run_id = "b" * 32
+    scope = session_review.LEGACY_BATCH_SCOPE if legacy else session_review.BATCH_SCOPE
+    monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", run_id)
+    add.add_entries(
+        notes,
+        messages=["---\nrun_skill_report: true\n---\n# 結果\n\n準備済み範囲を分析した。"],
+        target_repo=target["target_repo"],
+        source="run-skill",
+        now=datetime.datetime.now(datetime.UTC),
+        entry_type="uwi",
+        scope=scope,
+        question_type="post-approval",
+    )
+    path = session_review.directory() / "runs" / f"{run_id}.json"
+    value = {
+        "run_id": run_id,
+        "manifest_path": str(path),
+        "status": "running",
+        "targets": [target],
+        "prepared": [prepared],
+        "analysis_succeeded": True,
+    }
+    if not legacy:
+        value["report_scope"] = scope
+    session_review.write(path, value)
+
+    def unexpected(args):
+        raise AssertionError("保存済みの分析を回復し、モデルは再起動しない")
+
+    assert run_skill_batch.dispatch(_args("manual"), unexpected) == 0
+    assert not session_review.pending()
+    assert session_review.read(path)["status"] == "completed"
+
+
 def test_hook_disabled_records_and_announces_pending(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
     notice = run_skill_batch.hook_request(
         {"hook_event_name": "SessionStart", "session_id": "main", "cwd": str(tmp_path)}, host="codex"
     )
     assert notice is not None
-    assert "1件" in notice and "/agent-toolkit:session-review-batch" in notice
+    assert "1件" in notice and "/agent-toolkit:session-review batch" in notice
     assert session_review.pending()[0]["host"] == "codex"
     assert run_skill_batch.hook_request({"hook_event_name": "SessionEnd", "session_id": "main"}, host="codex") is None
 
@@ -68,7 +121,7 @@ def test_hook_requests_existing_cli_without_wait(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(run_skill_batch.subprocess, "Popen", spawn)
     run_skill_batch.hook_request({"hook_event_name": "SessionStart", "session_id": "main", "cwd": str(tmp_path)}, host="claude")
     assert len(calls) == 1
-    assert calls[0][0][-4:] == ["run-skill", "--args", "auto", session_review.BATCH_SKILL]
+    assert calls[0][0][-4:] == ["run-skill", "--args", "batch", "agent-toolkit:session-review"]
     assert calls[0][1]["stdin"] == run_skill_batch.subprocess.DEVNULL
 
 
@@ -158,7 +211,7 @@ def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeyp
             source="run-skill",
             now=datetime.datetime.now(datetime.UTC),
             entry_type="uwi",
-            scope=session_review.BATCH_SKILL,
+            scope=session_review.BATCH_SCOPE,
             question_type="post-approval",
         )
         assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
@@ -212,7 +265,7 @@ def test_missing_finish_keeps_report_and_suppresses_auto_retry(tmp_path, monkeyp
             source="run-skill",
             now=datetime.datetime.now(datetime.UTC),
             entry_type="uwi",
-            scope=session_review.BATCH_SKILL,
+            scope=session_review.BATCH_SCOPE,
             question_type="post-approval",
         )
         return 0
@@ -354,7 +407,7 @@ def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monke
             source="run-skill",
             now=datetime.datetime.now(datetime.UTC),
             entry_type="uwi",
-            scope=session_review.BATCH_SKILL,
+            scope=session_review.BATCH_SCOPE,
             question_type="post-approval",
         )
         assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
@@ -367,7 +420,7 @@ def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monke
     assert len(failures) == 1
     data, body = frontmatter.parse_frontmatter(failures[0].read_text(encoding="utf-8")) or ({}, "")
     # ユーザーの回答を待たず、振り返りの仕組みの配布元で処理担当が是正できるAWIとして登録する。
-    assert data["type"] == "awi" and data["source"] == "session-review-batch"
+    assert data["type"] == "awi" and data["source"] == "session-review"
     # 振り返りの成果と同じく、ユーザーが内容を確認するまで自動着手しない。
     assert data["confirmation"] == "required"
     assert readiness.calculate_readiness(notes, None).confirmation_pending == (failures[0].name,)

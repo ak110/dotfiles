@@ -22,7 +22,7 @@ from agent_toolkit._testing.pretooluse_support import (
 def _writing_ready_env(tmp_path: pathlib.Path, session_id: str) -> dict[str, str]:
     """執筆基準を取得済みの主体で、編集内容の判定を確かめる。"""
     _write_session_state(
-        tmp_path, session_id, {"operation_skill_delivered_agents": {"agent-toolkit:writing-standards": ["main"]}}
+        tmp_path, session_id, {"operation_skill_delivered_agents": {"agent-basics:writing-standards": ["main"]}}
     )
     return _plan_file_state_env(tmp_path)
 

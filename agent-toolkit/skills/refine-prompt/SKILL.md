@@ -22,14 +22,14 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../check-execution/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/reviewee.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「定義の所有者」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「定義の所有者」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` |
@@ -46,8 +46,8 @@ description: >
 ## 使用条件
 
 frontmatterに記載した条件に加えて、利用頻度の高いスキルや、自動化の中核となるプロンプトを堅牢化したい場合にも本スキルを使用する。
-起動コストに見合わない単発のプロンプトや、作成者の主観的な好みを反映するだけの作業は、本スキルの適用対象から除外する。この除外は本スキルという手段の選択に限定する。プロンプトの欠陥が品質（Quality）に影響する場合は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従って処置の要否を判断する。
-指示と挙動の不一致を問題として調査するときは、原因を指示の曖昧さに限定せず、評価や追記案の検討に先立って`agent-toolkit:bugfix`を起動する。初動対応・原因分析・対策選定を進めた結果、指示文の改訂が必要と判断された場合に本スキルを適用する。通常のプロンプト改善は、この不具合調査の流れとは区別して進める。
+起動コストに見合わない単発のプロンプトや、作成者の主観的な好みを反映するだけの作業は、本スキルの適用対象から除外する。この除外は本スキルという手段の選択に限定する。プロンプトの欠陥が品質（Quality）に影響する場合は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従って処置の要否を判断する。
+指示と挙動の不一致を問題として調査するときは、原因を指示の曖昧さに限定せず、評価や追記案の検討に先立って`agent-basics:bugfix`を起動する。初動対応・原因分析・対策選定を進めた結果、指示文の改訂が必要と判断された場合に本スキルを適用する。通常のプロンプト改善は、この不具合調査の流れとは区別して進める。
 
 ## ワークフロー
 
@@ -57,7 +57,7 @@ Plan modeの外で実行する（Claude Codeでは`ExitPlanMode`で終了する�
 2. 評価対象を確定し、目的に応じて手法を選択する。選択肢には、シナリオに基づく読み取り専用の単発評価、シナリオを用いない批判的通読、実際の操作・対話・成果物を採点する多ターン試行がある。単発評価は指摘の返却をもって完了とする。改訂前後の評価を公平に比較するため、シナリオは反復評価の間も初回と同じ内容を維持する。
 3. 対象プロンプトの分量や論点の数に応じて評価担当の人数を決定し、起動して指摘を受け取る。
 4. 受け取った指摘をまとめ、改善案を作成する。採否の判断と反映は「指摘の集約と改善案作成」に従って実施する。
-5. ユーザーが対話形式での採否判断や反復を求めて起動した場合は、作業を続行するか終了するかをユーザーに確認する。続行する場合は、新しい評価担当を起動して再評価する。エージェント自身が品質確認のために起動した場合は、必要な評価と反映が完了した時点で確認を挟まず、元の依頼の残余工程へ進む。反映完了後は、対象ファイルの編集手順を定めたスキルと`agent-toolkit:check-execution`に従う。元の依頼を完了するときは、成果・検証結果を`agent-toolkit:completion-report`の1つの作業完了報告へ集約して送達する。評価結果の受領だけで全体を終了せず、同期の振り返りは起動しない。
+5. ユーザーが対話形式での採否判断や反復を求めて起動した場合は、作業を続行するか終了するかをユーザーに確認する。続行する場合は、新しい評価担当を起動して再評価する。エージェント自身が品質確認のために起動した場合は、必要な評価と反映が完了した時点で確認を挟まず、元の依頼の残余工程へ進む。反映完了後は、対象ファイルの編集手順を定めたスキルと`agent-basics:check-execution`に従う。元の依頼を完了するときは、成果・検証結果を`agent-toolkit:completion-report`の1つの作業完了報告へ集約して送達する。評価結果の受領だけで全体を終了せず、同期の振り返りは起動しない。
 
 委譲手段（`agent-toolkit:delegation`）を利用できない環境では、同一セッション内で直接評価を実施し、結果を提示する際に「プロンプト評価担当を起動できないため直接評価」と明記する。
 多ターン試行は、`references/multi-turn-trials.md`に従い、独立した2つの役割を起動できる環境で手動実行する。結果の差異は、同一事例における観測事実として受け取る。
@@ -65,7 +65,7 @@ Plan modeの外で実行する（Claude Codeでは`ExitPlanMode`で終了する�
 
 ## 指摘の集約と改善案作成
 
-メインエージェントは、元の意図を損なわないように重複や関連する指摘をまとめ、`agent-toolkit:review-standards`および同スキルの`references/reviewee.md`に基づいて採否を判定する。定義元からの転記を求める指摘については、`agent-basics:writing-standards/references/agent-documents-basics.md`「定義の所有者」に沿って妥当性を評価する。
+メインエージェントは、元の意図を損なわないように重複や関連する指摘をまとめ、`agent-basics:review-standards`および同スキルの`references/reviewee.md`に基づいて採否を判定する。定義元からの転記を求める指摘については、`agent-basics:writing-standards/references/agent-documents-basics.md`「定義の所有者」に沿って妥当性を評価する。
 採用する指摘に対しては、改善案をdiff形式で作成する。評価担当の出力はユーザーの画面に直接表示されないため、指摘の文面は元の表現をできる限り尊重して保持する。
 
 - エージェントが品質確認のために起動した場合は、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」に沿って技術的な指摘の採否を自ら判断する。目的や期待される結果の変更、あるいはユーザー固有の好みや認可が必要な事項に限ってユーザーに確認する。
@@ -142,3 +142,9 @@ Plan modeの外で実行する（Claude Codeでは`ExitPlanMode`で終了する�
 
 続行不能と追加報告行は、共通契約`../../share/rules-subagent.md`「返却形式の受け渡し」に従う。入力不足の場合は、対象プロンプトの不足情報と取得不能の根拠を記す。
 <!-- return-contract:refine-prompt:end -->
+
+## 参照資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewee.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee.md` |

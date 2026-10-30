@@ -59,6 +59,18 @@ _SESSION_RECORDS_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_r
 _PROCESS_LOOP_SESSION_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/process_loop_session_test.py")
 _READ_METHODS = {"read_text", "read_bytes"}
 _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
+    # 保存済みの起動標識とscopeを読むための旧名。現行入口としては提供しない。
+    (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS): 2,
+    (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS_TEST): 1,
+    (
+        f"{_PLUGIN_PREFIX}:process-wi-all-repos",
+        pathlib.Path("agent-toolkit/skills/session-review/scripts/session_evidence_candidates.py"),
+    ): 1,
+    (f"{_PLUGIN_PREFIX}:session-review-batch", pathlib.Path("agent-toolkit/agent_toolkit/_common/session_review.py")): 1,
+    (
+        f"{_PLUGIN_PREFIX}:session-review-batch",
+        pathlib.Path("agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md"),
+    ): 1,
     (f"{_PLUGIN_PREFIX}:agent-standards", _INCIDENTS_VALIDATION): 1,
     (f"{_PLUGIN_PREFIX}:feedback-standards", _INCIDENTS_WORKFLOWS): 1,
     (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS_VALIDATION): 1,
@@ -105,9 +117,9 @@ def _allowed_unresolved_reference_counts(
 
 
 def _tracked_source_paths(root: pathlib.Path, suffixes: frozenset[str] = _SOURCE_SUFFIXES) -> list[pathlib.Path]:
-    """Git追跡ファイルのうち検査対象の拡張子を持つ相対パスを返す。"""
+    """追跡済みとignore対象外の新規ファイルから、検査対象の相対パスを返す。"""
     result = subprocess.run(
-        ["git", "ls-files", "-z"],
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
         cwd=root,
         check=True,
         capture_output=True,
@@ -265,6 +277,25 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
         if _reference_exists(root, reference):
             continue
         if source.is_relative_to(_NORM_RESTRUCTURE_RECORDS) and _RETIRED_READING_TABLE_PATTERN.search(reference):
+            continue
+        # 再構成時点の固定台帳では、品質・技術・検索の移設前の公開名と配置を保持する。
+        retired = (
+            "bugfix",
+            "check-execution",
+            "review-standards",
+            "writing-standards",
+            "gitlab-ci-usage",
+            "pytilpack-usage",
+            "search",
+            "secret-files",
+            "single-lane-process",
+            "process-wi-all-repos",
+            "session-review-batch",
+        )
+        if source.is_relative_to(_NORM_RESTRUCTURE_RECORDS) and any(
+            reference == f"{_PLUGIN_PREFIX}:{skill}" or reference.startswith(f"{_PLUGIN_PREFIX}/skills/{skill}/")
+            for skill in retired
+        ):
             continue
         key = (reference, source)
         if captured_versions.get(key):
@@ -461,11 +492,12 @@ def test_codex_snapshot_requires_exact_known_legacy_references(tmp_path: pathlib
     target = tmp_path / source
     target.parent.mkdir(parents=True)
     legacy = f"{_PLUGIN_PREFIX}:exit-session"
-    target.write_text(legacy, encoding="utf-8")
+    startup = f"{_PLUGIN_PREFIX}:process-wi-all-repos\n" * 2
+    target.write_text(startup + legacy, encoding="utf-8")
 
     assert not _unresolved_references(tmp_path, [source])
 
-    target.write_text(f"{legacy}\n{legacy}\n", encoding="utf-8")
+    target.write_text(f"{startup}{legacy}\n{legacy}\n", encoding="utf-8")
     assert _unresolved_references(tmp_path, [source]) == [(legacy, source)]
 
 
@@ -718,14 +750,14 @@ def test_heading_reference_follows_explicit_compatibility_source(tmp_path: pathl
     actual = basics / "skills/writing-standards/references/rule.md"
     actual.parent.mkdir(parents=True)
     actual.write_text("# 品質\n## 判定\n本文\n", encoding="utf-8")
-    wrapper = toolkit / "skills/writing-standards/references/rule.md"
+    wrapper = toolkit / "skills/sample/references/rule.md"
     wrapper.parent.mkdir(parents=True)
     wrapper.write_text(
         "# 入口\n\n<!-- read-source: agent-basics:writing-standards/references/rule.md -->\n\n判定を引き継ぐ。\n",
         encoding="utf-8",
     )
     source = pathlib.Path("source.md")
-    (tmp_path / source).write_text("`agent-toolkit:writing-standards`の`references/rule.md`「判定」\n", encoding="utf-8")
+    (tmp_path / source).write_text("`agent-basics:writing-standards`の`references/rule.md`「判定」\n", encoding="utf-8")
     paths = [actual.relative_to(tmp_path), wrapper.relative_to(tmp_path), source]
     assert not _unresolved_heading_references(tmp_path, [source], paths)
     actual.write_text("# 品質\n節を撤去した。\n", encoding="utf-8")
@@ -734,15 +766,18 @@ def test_heading_reference_follows_explicit_compatibility_source(tmp_path: pathl
 
 def test_heading_reference_keeps_same_skill_context(tmp_path: pathlib.Path) -> None:
     """直前に起動した同スキルのSKILLを、参照元自身のSKILLと区別する。"""
-    root = tmp_path / "agent-toolkit/skills"
+    root = tmp_path / "agent-basics/skills"
+    manifest = root.parent / ".claude-plugin/plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"agent-basics"}', encoding="utf-8")
     bugfix = root / "bugfix/SKILL.md"
     bugfix.parent.mkdir(parents=True)
     bugfix.write_text("# 不具合\n## 所要の原因調査\n基準\n", encoding="utf-8")
-    source = pathlib.Path("agent-toolkit/skills/review-standards/references/reviewee.md")
+    source = pathlib.Path("agent-toolkit/share/exec-review-responses.md")
     (tmp_path / source).parent.mkdir(parents=True)
     (tmp_path / source).parent.parent.joinpath("SKILL.md").write_text("# レビュー\n", encoding="utf-8")
     (tmp_path / source).write_text(
-        "`agent-toolkit:bugfix`を起動し、同スキルの`SKILL.md`「所要の原因調査」へ渡す。\n", encoding="utf-8"
+        "`agent-basics:bugfix`を起動し、同スキルの`SKILL.md`「所要の原因調査」へ渡す。\n", encoding="utf-8"
     )
     assert not _unresolved_heading_references(tmp_path, [source], [bugfix.relative_to(tmp_path), source])
 
@@ -1056,3 +1091,67 @@ def test_verbatim_ledger_references_preserve_current_document_checks(tmp_path: p
     unresolved = _unresolved_references(tmp_path, [*historical, *current])
 
     assert unresolved == [(reference, source) for source in current for reference in references]
+
+
+def test_ci_failure_read_row_delivers_quality_and_operations() -> None:
+    """同じ失敗受領条件で、品質と工程の二資料が資料列・配送列の両方から取得される。"""
+    root = pathlib.Path(__file__).resolve().parent
+    plugin = root / "agent-toolkit"
+    source = root / ".claude/skills/merge-pr/SKILL.md"
+    quality = root / "agent-basics/skills/bugfix/references/ci-failure-handling.md"
+    operations = plugin / "skills/commit/references/ci-failure-handling.md"
+    rows = read_triggers.parse_tables(source, plugin, strict=True)
+    row = next(row for row in rows if quality in row.documents)
+    assert set(row.documents) == {quality, operations}
+    assert set(row.operations) == {
+        "read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md",
+        "read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md",
+    }
+    assert all(target.body() for target in row.targets)
+
+
+def test_session_state_design_reference_reaches_local_development_rule() -> None:
+    """配布実装の開発用docstringから、実在するローカル規約の設計節に到達する。"""
+    root = pathlib.Path(__file__).resolve().parent
+    source = root / "agent-toolkit/agent_toolkit/_common/session_state.py"
+    docstring = ast.get_docstring(ast.parse(source.read_text(encoding="utf-8")))
+    assert docstring is not None
+    reference = re.search(r"`([^`]+session-state-and-flags\.md)`", docstring)
+    assert reference is not None
+    target = root / reference[1]
+    assert target == root / ".claude/skills/agent-toolkit-edit/references/session-state-and-flags.md"
+    assert read_triggers.ReadTarget(target, "状態ファイルの設計").body()
+
+
+def test_all_repos_recipient_condition_reaches_candidate_handoff() -> None:
+    """現行all-repos統括から取得済み候補を受け取る担当へ、受渡し契約を接続する。"""
+    root = pathlib.Path(__file__).resolve().parent
+    source = root / "agent-toolkit/skills/process-wi/references/lanes.md"
+    row_text = next(
+        line for line in source.read_text(encoding="utf-8").splitlines() if "| `all-repos-orchestration.md` |" in line
+    )
+    assert "`agent-toolkit:process-wi all-repos`の統括から" in row_text
+    rows = read_triggers.parse_tables(source, root / "agent-toolkit", strict=True)
+    expected = source.with_name("all-repos-orchestration.md")
+    row = next(row for row in rows if expected in row.documents)
+    assert row.operations == ("read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md",)
+    assert row.targets[0].body()
+
+
+def test_quality_definition_forwarders_reach_distinct_basics_documents() -> None:
+    """移設後の品質定義の転送が自己循環せず、正式提供元の実在する節へ到達する。"""
+    root = pathlib.Path(__file__).resolve().parent
+    plugin = root / "agent-toolkit"
+    found = []
+    for source in sorted((plugin / "share").glob("*.md")):
+        for line in source.read_text(encoding="utf-8").splitlines():
+            if not line.startswith("品質の定義については、"):
+                continue
+            reference = re.search(r"`([^`]+)`「([^」]+)」", line)
+            assert reference is not None, (source, line)
+            target = read_triggers.resolve_document(reference[1], source, plugin)
+            assert target is not None and target != source
+            assert target.is_relative_to(root / "agent-basics")
+            assert read_triggers.ReadTarget(target, reference[2]).body()
+            found.append((source.name, reference[2]))
+    assert {name for name, _heading in found} == {"exec-review-responses.md", "exec-review-criteria.md"}

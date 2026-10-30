@@ -73,7 +73,7 @@ def repository_input(
 
 def build_process_loop_prompt(manifest: pathlib.Path | None = None) -> str:
     """登録全体の処理を依頼し、長い候補本文は配送ファイルで渡す。"""
-    body = "agent-toolkit:process-wi-all-reposを完遂する"
+    body = "agent-toolkit:process-wi all-reposを完遂する"
     if manifest is not None:
         body += (
             f"。開始時入力のmanifest {manifest} で取得済み候補・所有・準備先を確認する。"

@@ -35,7 +35,7 @@ agents_serverが起動設定と必須入力を解決し、呼び元の文脈へ�
 本節は委譲元のコンテキストへ大量の出力を載せないことを目的とし、探索委譲は所在の特定と
 候補の列挙を別コンテキストへ移すことを目的とする。
 知識境界として、1件の探索を自ら行うかを決める量の目安はagents_serverのserver instructionsが持ち、作業全体の分業は`agent-toolkit:delegation`のrouting.md「要否判定」「委譲単位の確定」が定める。
-起動から受領までの義務は同スキルのSKILL.md「explore・shellの起動」へまとめる。裏付けの品質基準は`agent-toolkit:writing-standards`のreferences/investigation.mdが定め、
+起動から受領までの義務は同スキルのSKILL.md「explore・shellの起動」へまとめる。裏付けの品質基準は`agent-basics:writing-standards`のreferences/investigation.mdが定め、
 仕様・挙動を確定する段階では対象ファイルの全体読解を維持する。
 却下した代替案は、本節の分離手段へ探索委譲を併記する案である。
 同じ場面で2つの分離手段が並び、選択基準が目的から手段の一覧へ移るため採用しない。

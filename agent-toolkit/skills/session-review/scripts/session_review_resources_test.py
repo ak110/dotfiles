@@ -112,7 +112,7 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
     parent = tmp_path / "parent.jsonl"
     initial = [support.timestamped_entry("2026-10-10T00:00:00Z", "依頼の本文")]
     child = [*_read_entries("child-read", "子供", offset=2)]
-    child.append(support.claude_call("2026-10-10T00:00:03Z", "child-skill", "Skill", {"skill": "agent-toolkit:bugfix"}))
+    child.append(support.claude_call("2026-10-10T00:00:03Z", "child-skill", "Skill", {"skill": "agent-basics:bugfix"}))
     support.write_subagent(parent.with_suffix("") / "subagents", "agent-child", child)
     support.write_jsonl(parent, [*initial, *_read_entries("first", "親", offset=1)])
     baseline_work = tmp_path / "baseline"
@@ -132,7 +132,7 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
         expanded.extend(reads)
     for index in range(2):
         expanded.append(
-            support.claude_call("2026-10-10T00:00:03Z", f"skill-{index}", "Skill", {"skill": "agent-toolkit:bugfix"})
+            support.claude_call("2026-10-10T00:00:03Z", f"skill-{index}", "Skill", {"skill": "agent-basics:bugfix"})
         )
     for index in range(11):
         for repetition in range(2):
@@ -165,7 +165,7 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
         "claude:parent": 12,
         "claude:parent/agent-child": 1,
     }
-    assert summary["skills_by_name"][0]["target"] == "agent-toolkit:bugfix"
+    assert summary["skills_by_name"][0]["target"] == "agent-basics:bugfix"
     assert summary["skills_by_name"][0]["count"] == 3
     assert summary["shell_paths_by_target"][0]["target"] == "/repo/rules.md"
     assert summary["shell_paths_by_target"][0]["count"] == 22
@@ -175,7 +175,7 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
     assert main["omitted_repeat_count"] == 3
     stats = pathlib.Path(result["stats_path"]).read_text(encoding="utf-8")
     assert "/repo/rules.md: 合計13回、観測結果13件・14字・42バイト" in stats
-    assert "agent-toolkit:bugfix: 合計3回" in stats
+    assert "agent-basics:bugfix: 合計3回" in stats
     assert "上位一覧の省略: 結果7件、反復8組" in stats
     assert '範囲={"offset": 1, "limit": 8}、claude:parent:2' in stats
     assert '範囲={"offset": 2, "limit": 8}、claude:parent/agent-child:1' in stats

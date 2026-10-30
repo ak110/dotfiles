@@ -44,7 +44,7 @@ from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import process_tree as _process_tree
-from agent_toolkit._common import session_review
+from agent_toolkit._common import session_review, skill_modes
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
 
@@ -106,7 +106,12 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
             "可用性判定と利用上限の解除待ちの時間は含めない。"
         ),
     )
-    parser.add_argument("--args", metavar="TEXT", default=None, help="スキルへ渡す任意の文字列。")
+    parser.add_argument(
+        "--args",
+        metavar="TEXT",
+        default=None,
+        help="スキルへ渡す任意の文字列。process-wiは先頭語single-lane/all-repos、session-reviewはbatchの完全一致でモードを選び、残りを自由記述として保持する。",
+    )
     parser.add_argument(
         "skill",
         metavar="SKILL",
@@ -116,7 +121,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 
 def dispatch(args: argparse.Namespace) -> int:
     """スキルを1回実行し、終了コードを返す。"""
-    if args.skill == session_review.BATCH_SKILL:
+    if skill_modes.invocation_scope(args.skill, args.args) == session_review.BATCH_SCOPE:
         from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         return run_skill_batch.dispatch(args, _dispatch_once)
@@ -148,7 +153,7 @@ def _dispatch_once(args: argparse.Namespace) -> int:
     log_dir = _state_paths.state_dir() / _LOG_DIRNAME
     log_dir.mkdir(parents=True, exist_ok=True)
     _remove_expired_logs(log_dir, now=time.time())
-    log_path = _new_log_path(log_dir, args.skill)
+    log_path = _new_log_path(log_dir, skill_modes.invocation_scope(args.skill, args.args))
     if manifest_path := getattr(args, "batch_manifest", None):
         manifest = session_review.read(pathlib.Path(manifest_path))
         manifest["log_path"] = str(log_path)
@@ -157,7 +162,7 @@ def _dispatch_once(args: argparse.Namespace) -> int:
         progress = Progress(log, sys.stderr)
         progress.message(f"ログ: {log_path.resolve()}")
         _write_header(log, repo_root=repo_root, args=args)
-        lock = filelock.FileLock(str(_lock_path(repo_root, args.skill)))
+        lock = filelock.FileLock(str(_lock_path(repo_root, skill_modes.invocation_scope(args.skill, args.args))))
         with contextlib.ExitStack() as resources:
             try:
                 resources.enter_context(lock.acquire(timeout=0))
@@ -176,13 +181,18 @@ def _dispatch_once(args: argparse.Namespace) -> int:
 
 def build_goal(skill: str, skill_args: str | None) -> str:
     """子セッションへ渡す目的文の本体を返す。"""
+    mode, free_text = skill_modes.split_mode(skill, skill_args)
     goal = (
         f"スキル`{skill}`を完遂し、`agent-toolkit:completion-report`の報告用UWIを保存してください。"
         "作業の前に`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`"
         "「`atk run-skill`の過去の実行のUWI」を適用してください。"
     )
+    if mode is not None:
+        goal += f"\n起動モード: {mode}"
     if skill_args is not None:
         goal += f"\nスキルへ渡す引数: {skill_args}"
+    if mode is not None:
+        goal += f"\nモード語を除いた自由記述: {free_text}"
     return goal
 
 
@@ -319,7 +329,7 @@ def _run_locked(
                 output=output,
                 codex_home=codex_home,
                 run_id=run_id,
-                skill=args.skill,
+                skill=skill_modes.invocation_scope(args.skill, args.args),
             )
         remaining = max(0.0, remaining - (time.monotonic() - started_at))
         if code == TIMEOUT_EXIT_CODE or output.usage_limit is None:

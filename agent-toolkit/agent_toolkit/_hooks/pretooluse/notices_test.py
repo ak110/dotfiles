@@ -36,7 +36,7 @@ class TestCodexApplyPatchEditChecks:
     def _ready_env(tmp_path: pathlib.Path) -> dict[str, str]:
         """執筆基準の取得を前提とする編集判定の状態を用意する。"""
         _write_session_state(
-            tmp_path, "codex-edit", {"operation_skill_delivered_agents": {"agent-toolkit:writing-standards": ["main"]}}
+            tmp_path, "codex-edit", {"operation_skill_delivered_agents": {"agent-basics:writing-standards": ["main"]}}
         )
         return _plan_file_state_env(tmp_path)
 

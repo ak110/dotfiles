@@ -19,7 +19,7 @@ _SKILLS = _BASICS / "skills"
 _DISTRIBUTED_DOCUMENTS = sorted(_SKILLS.rglob("*.md"))
 
 # agent-toolkitを導入していないと解決・実行できない参照。
-# 条件付きの言及として許す形は設けず、agent-toolkitに固有の手順はagent-toolkit側の同名スキルへ置く。
+# 条件付きの言及として許す形は設けず、agent-toolkitに固有の手順は該当工程のスキルへ置く。
 _TOOLKIT_DEPENDENCIES = {
     "agent-toolkitの名前空間": re.compile(r"agent-toolkit:"),
     "agent-toolkitの共有文書": re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/share/"),
@@ -88,6 +88,30 @@ def test_agent_basics_references_resolve_inside_distribution() -> None:
     """配布物の本文が指す資料は、監査記録を除いてagent-basicsの中に実在する。"""
     unresolved = [line for path in _DISTRIBUTED_DOCUMENTS for line in _unresolved_references(path, _SKILLS)]
     assert not unresolved, "\n".join(unresolved)
+
+
+@pytest.mark.parametrize(
+    ("reference", "conditions"),
+    [
+        ("gitlab-ci.md", ("編集", "確認", "参照")),
+        ("pytilpack.md", ("読み書き", "参照")),
+    ],
+)
+def test_technical_materials_keep_read_only_decision_triggers(reference: str, conditions: tuple[str, ...]) -> None:
+    """書込操作が無い確認・コード読取・API参照にも、判断行から技術資料へ届く。"""
+    text = (_SKILLS / "writing-standards/SKILL.md").read_text(encoding="utf-8")
+    rows = [line for line in text.splitlines() if line.startswith("|") and f"`references/{reference}`" in line]
+    assert rows
+    assert any("| 判断 |" in row and all(condition in row for condition in conditions) for row in rows)
+    description = text.split("---", 2)[1]
+    assert all(condition in description for condition in conditions)
+
+
+@pytest.mark.parametrize("skill", ["search", "secret-files"])
+def test_search_skills_are_only_published_from_basics(skill: str) -> None:
+    """検索の2スキルはbasicsに実在し、toolkit側に旧公開スキルを残さない。"""
+    assert (_SKILLS / skill / "SKILL.md").is_file()
+    assert not (_REPO_ROOT / "agent-toolkit/skills" / skill / "SKILL.md").exists()
 
 
 def test_reading_tables_are_not_split_into_other_files() -> None:

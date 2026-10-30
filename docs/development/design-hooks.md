@@ -87,7 +87,7 @@ heredoc本文のマスクを除く案も採らない。本文の文字列への�
 hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻りの便益を比べて決める（2026年10月2日、ユーザー指示）。
 誤検出、発火ごとのトークンと実行時間、保守費用が便益に見合わないチェックは置かず、明らかなエージェントの行動誤りを入力から機械的に判定でき費用が小さいチェックは、元へ戻せる誤りを防ぐものでも置く。
 不可逆な操作の防止、データ破損の防止、常駐運用の終了保証は、1回の発火でも結果が残るため置く理由になる。規範の配送と権限の自動許可も、発火・重複・受信量・再取得と保守の費用を比較する。
-現行の規定は`agent-toolkit/skills/writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
+現行の規定は`.claude/skills/agent-toolkit-edit/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にある。
 
 操作の後に対象の公開仕様が定める手段で元の状態へ戻せないことを不可逆と呼ぶ。
 操作の種類の名前や過去の分類表の語に頼らず、その手段の有無を公開仕様で確かめて判定する。
@@ -136,7 +136,7 @@ UserPromptSubmitの180秒ごとの固定手順の再配送は撤去した。新�
 
 ### 事前に防ぐ型と遮断後に対処する型
 
-blockとwarnは、実行主体が操作の前に条件を満たす事前に防ぐ型と、hookが判定を担い通知が解消手段を示す遮断後に対処する型に分け、費用の小さい型を選ぶ。規定の本文は`agent-toolkit/skills/writing-standards/references/claude-hooks-block-warn.md`にある。
+blockとwarnは、実行主体が操作の前に条件を満たす事前に防ぐ型と、hookが判定を担い通知が解消手段を示す遮断後に対処する型に分け、費用の小さい型を選ぶ。規定の本文は`.claude/skills/agent-toolkit-edit/references/claude-hooks-block-warn.md`にある。
 事前に防ぐ型の費用は、対象の操作のたびに規範が求める事前工程の呼び出しの合計である。遮断後に対処する型の費用は、実際の遮断回数に、遮断された呼び出しと通知に従った取得の分を掛けた量である。
 CodexのBash全文取得は、閾値が出力上限から導かれていなかった間、SKILL.mdなどを読む前に`wc -l`・`wc -c`で行数と容量を測る事前工程を操作のたびに生んでいた。事前計測の呼び出しは失敗しないため振り返りの候補にも現れず、費用が観測されなかった。閾値を出力上限から導いた48KiBへ上げると、agent-toolkitの規範Markdownはすべて閾値以下に収まり、遮断は実際に上限を超え得るファイルだけで発火する。このため同hookを遮断後に対処する型とし、規範から事前計測を撤去した（2026年9月29日、ユーザー指示）。規範Markdownが閾値を超えないことは`agent-toolkit/markdown_size_invariant_test.py`の容量のテストが保つ。
 全文取得の共有解析は、cat・less・moreの既知の本文表示オプションとその値、終端をファイル引数から区別し、配送と容量判定の双方へ同じ対象を渡す。
@@ -442,7 +442,7 @@ hookの実装は契約を参照せず、テストだけが両者の一致を確�
 | 案 | 採らない理由 |
 | --- | --- |
 | `user-utterance.md`の項を書き換えるか常時規範へ移す | 同項は発話の受領直後に全文読まれたが適用されなかった。同じ層へ文を加えても、当該発話に当てはまる手掛かりが無い状態は変わらない |
-| 調査の着手時に起動するスキル（`agent-toolkit:bugfix`、`agent-toolkit:search`など）へ参照を置く | 2026年10月2日の対策が`agent-toolkit:add-awi-by-user`へ置いた参照は、同スキルを起動しない調査の依頼に届かなかった。見直しや点検はこれらのスキルを起動しないことがある |
+| 調査の着手時に起動するスキル（`agent-basics:bugfix`、`agent-basics:search`など）へ参照を置く | 2026年10月2日の対策が`agent-toolkit:add-awi-by-user`へ置いた参照は、同スキルを起動しない調査の依頼に届かなかった。見直しや点検はこれらのスキルを起動しないことがある |
 | 全ての通常発話へ`user-utterance.md`の読込を求める注記を返す | 該当する発話は計測で約0.8%であり、残りの発話へ毎回同じ本文を載せる。手掛かりが当該発話に当てはまることも示せない |
 | PreToolUseで、例示を含む発話の後の最初の検索コマンドへ通知する | 発話ごとの状態の記録と調査の着手の判定を要し、最初のツール呼び出しより前に届くUserPromptSubmitの注記より遅く複雑になる |
 | hookが発話の意味から範囲語と例示を併せた依頼かを判別する | 前段の退けた判別と同じく、会話の意味をhookが判断する |
@@ -718,7 +718,7 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 
 ### セッション種別が分かる短い名前
 
-PostToolUseのSkill観測と手動起動のUserPromptSubmitは、process-wi・single-lane-process・add-awi-by-userの種別を通常session stateへ保存する。
+PostToolUseのSkill観測と手動起動のUserPromptSubmitは、process-wi・process-wi single-lane・add-awi-by-userの種別を通常session stateへ保存する。
 UserPromptSubmitのコマンドhookは`hookSpecificOutput.sessionTitle`を返す。
 先頭は`process-wi`・`single-lane`・`add-awi`とし、計画があればstemの日時接頭辞を除いた名称を続ける。
 process-loopの環境印と会話IDが一致する場合はprocess-wiとする。

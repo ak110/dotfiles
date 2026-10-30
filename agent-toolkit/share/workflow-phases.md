@@ -13,7 +13,7 @@ WI作成から実行レビューに至る一連の成果物を連携させ、消
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文が起票目的別の登録条件を判定する時 | `../skills/wi-standards/SKILL.md#「起票目的別の調査出口」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「起票目的別の調査出口」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion.md#「重複判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/check-execution/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/acceptance-scenarios.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/publish.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#冒頭` |
 
@@ -39,7 +39,7 @@ WI作成専用セッションの担当は、要求の件数にかかわらず原
 工程表の各行は「<工程名>工程」（計画工程、実行工程など）とも呼ぶ。計画担当は計画工程を担うエージェント（`agent-toolkit:process-wi`ではレーン担当、対話型セッションではメインエージェント）を指す。実装担当は実行工程を担うエージェント（`agent-toolkit:process-wi`ではレーン担当、レビュー修正担当、CI修正担当、対話型セッションではメインエージェント）を指す。全体検証はリポジトリ全体を対象とする自動チェックやテストの実行を指し、`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の`全体検証`欄にその判定結果を記録する（所在参照）。
 
 実行工程における「受入シナリオ検証」とは、計画内の`### 受入シナリオ`の各行に対応し、公開された呼び出し手段（コマンド、画面、API、hookなど）を経由する結合テストやE2Eテストを実装単位に含め、変更範囲の検証として実行することを指す。
-検証用リソースの分離、エージェント向け文書の改訂試行による検証、および本番の起動単位から呼び出す対象の公開前における動作確認については、`agent-toolkit:check-execution`の`references/acceptance-scenarios.md`に従う。
+検証用リソースの分離、エージェント向け文書の改訂試行による検証、および本番の起動単位から呼び出す対象の公開前における動作確認については、`agent-toolkit:delegation/references/acceptance-scenarios.md`に従う。
 自動化できない項目については、実装担当が入力内容、観測結果、期待される結果との比較、合否判定をmanaged-temp内に保存する。
 
 「画面差分」とは、エンドユーザーが操作する画面の追加や変更を指す。対象にはHTML、CSS、UIコンポーネント、単独のHTML成果物が含まれる。「並列画面レビュー」とは、画面差分が存在する場合に同一の対象HEADに対してユーザビリティレビュー担当と実行レビュー担当を並行して起動し、修正後も並行して再判定する運用を指す。統合する前には、双方のレビューが収束していること（ユーザビリティレビューが`合格`または`未確定`であり、実行レビューの未解決指摘が0件であること）を確認する。ユーザビリティレビューは実装担当から独立したthreadで自動テストでは判定できないUXを評価し、機能面での正確性はE2Eテストと実行レビューで確認する。起動および検収の手順は、`${CLAUDE_PLUGIN_ROOT}/share/usability-review.parent.md`に従う。

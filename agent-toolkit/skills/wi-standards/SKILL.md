@@ -13,7 +13,7 @@ description: >
 ユーザーがWIを読む場面は、UWIへの回答、AWIの内容確認、処理後の結果確認の3つである。本文の先頭には、それぞれの場面で知りたいことに答える人間向けの説明を置き、その後にエージェント向けの詳細を続ける。
 AWIの冒頭に書く内容は`references/awi-body.md`「節の構成と分担」で定める。目的、変更の要点、変更後の結果を短く示す。
 UWIは`references/uwi-format.md`「構成」に従い、処理後は実際に何をどう変えたかを先に示す。
-文章表現は`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」に従う。
+文章表現は`agent-toolkit:delegation/references/writing.md`「文章の共通規定」に従う。
 
 ユーザーが読む部分は、AWIのタイトルとH1直下、UWIの本文、`adopt`や`reject`のメモ、および報告用UWIの冒頭である。タイトルと冒頭を読むだけで目的・処置・結果が分かる状態を合格とする。UWIでは問い・理由・推奨する回答を、処理後であれば実際の変更と結果をこの基準で判定する。起草者、検収者および読者別探索担当は、ユーザーがすでに知っている語彙から理解できるかを読み取り、説明不足な語や多義的な語をすべて指摘する。内部の役割・工程・識別子についても、その箇所で指示対象の種類と役割が分かるように説明する。一般語を内部の呼称として使う場合や、未説明の別の語へ言い換えた場合も同様の基準で判定する。保存前の確認手順や、原稿全体に先立って冒頭だけを先に判定する順序は`references/draft-semantic-review.md`が定める。
 
@@ -23,7 +23,7 @@ UWIには、回答が得られるまで元の作業を再開・確定できな�
 WI作成工程における入力、責務および出口は、`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 自律モードでのユーザーへの報告と回答はUWIへ記録し、UWIの保存をもって伝達の完了とする（保存する条件と手段は`agent-toolkit:user-confirmation-and-report`「手段の選択」を参照）。別項目の完了待ちや時間経過待ちはUWIとして扱わず、依存関係や冷却時間で管理する。
 WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求をキューへ保存する操作であり、投入元のセッションの処理対象には加えない。現在の依頼と承認の範囲で必要な是正はそのセッション内で完遂し、後続の独立した作業要求が残る場合だけ別途WIを投入する。
-対象リポジトリはAWIの対象となる実装リポジトリを指し、private-notesはキューを保持するリポジトリを指す。WIはユーザーの手元に残す記録であるため、外部の読者が参照する成果物にこれらの識別子を記載することは避ける（`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」）。
+対象リポジトリはAWIの対象となる実装リポジトリを指し、private-notesはキューを保持するリポジトリを指す。WIはユーザーの手元に残す記録であるため、外部の読者が参照する成果物にこれらの識別子を記載することは避ける（`agent-toolkit:delegation/references/writing.md`「文章の共通規定」）。
 
 キューの取得・保存・状態変更するには、対象リポジトリとprivate-notesへのアクセス権、`atk`コマンド、および必要な委譲手段が必要である。これらを利用できない環境では、提示されたWIの読解と本文原稿の整理までに留め、取得していない既存項目や保存状態は未確認として扱う。正式な投入・更新・終了処理は、該当機能を利用できるClaude CodeまたはCodexで実施する。本文の説明は[文章の品質基準](references/quality-standards.md)に従う。
 
@@ -33,14 +33,14 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`bash:atk wi add`、`bash:atk wi edit` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/analysis-records.md#「原因分析の記録先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../workflow-overview/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/workflow-overview/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/waiting-and-monitoring.md#「外部サービスの状態変化を待つ場合」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「外部サービスの状態変化を待つ場合」` |
@@ -72,7 +72,7 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 | 通常AWIの投入、または投入済みAWIの内容の更新をWI投入担当へ委譲する前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
 
 本文は`agent-basics:writing-standards`に従い、引き継いだエージェントが対象と期待する結果を正確に理解して完了まで作業を進められる粒度で書く。
-AWIの粒度は要求の同一性に基づいて判断する。既存・起草中のAWIの目的、対象、完成条件の具体化や変更は、該当AWIの更新として扱う。元の不具合を解消するために必要な追随修正は元AWIへ含め、類似見直しで発見した独立した別件は根本原因を共有していても別AWIへ引き渡す。元の事象への寄与が判明した対象は元の修正範囲へ戻す。是正対象を所有するリポジトリが異なる場合は、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動前の前提」に従って投入先との組み合わせへ展開する。1件のAWI内でのバグの扱い単位は、`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」に従う。
+AWIの粒度は要求の同一性に基づいて判断する。既存・起草中のAWIの目的、対象、完成条件の具体化や変更は、該当AWIの更新として扱う。元の不具合を解消するために必要な追随修正は元AWIへ含め、類似見直しで発見した独立した別件は根本原因を共有していても別AWIへ引き渡す。元の事象への寄与が判明した対象は元の修正範囲へ戻す。是正対象を所有するリポジトリが異なる場合は、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動前の前提」に従って投入先との組み合わせへ展開する。1件のAWI内でのバグの扱い単位は、`agent-toolkit:wi-standards/references/analysis-records.md`「原因分析の記録先」に従う。
 これら以外の独立した要求は、別の目的を持ち、単独で採否・実装・完成判定が成立する場合に別AWIとする。同じファイル、節、文を編集することは統合の理由とせず、独立性を判定したうえでの書込競合として扱う。独立した要求はそれぞれの目的を維持し、先行成果が必須でない組み合わせであれば、どちらの順序で実施してもその時点の成果物に適用して完了できる本文構成にする。先行成果の必要性は`references/states-and-dependencies.md`で、既存項目による包含関係は`references/drafting-completion.md`「重複判定」でそれぞれ個別に判定する。
 反映内容と反映先の調査は投入前に完了させる。記述を短縮する際は、重複表現や判断に影響しない記述を削ることで行い、略語は本文または参照先で定義してから使用する。文字数や行数の機械的な上限は設けない。
 
@@ -146,3 +146,10 @@ WIの追跡先と本文形式が同一工程で指定されているリポジト
 4. 登録するAWIの対象ファイルが現在のセッションの変更対象と重複する場合は、別の作業ツリーで並行着手される利点と着手の遅延を比較考量したうえで、登録のタイミングを選択する（努力目標）。
 5. エージェントが投入する場合は、ユーザーの指示による起票も含め、`references/origin-and-approval.md`「由来と`source`」で確定した`source`を付与する。ユーザーが自分で直接登録した項目には`source`が無く、その状態を人間由来の初期値として扱う。
 6. `atk wi add`および`atk wi edit`は、送信元と保存本文の一致確認、private-notesのコミット、およびリモートへの反映までを実行する。終了コードが0であれば、保存された本文を再取得する必要はない。口語表現やダッシュに関する表記警告については、起草者が行番号をもとに確認すれば完了扱いとし、その他の警告やエラーは修正する。未プッシュのコミット通知がある場合のみ、`atk wi commit`でリモートへ反映する。
+
+## 工程で参照する運用資料
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` | |
+| エージェント向け文書へ新しい規定を追記する時と、文書の記述量を管理する時 | `agent-toolkit:wi-standards/references/agent-documents-additions.md#「常時規範への追記条件」「既存対象への波及」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/agent-documents-additions.md#「常時規範への追記条件」「既存対象への波及」` | |

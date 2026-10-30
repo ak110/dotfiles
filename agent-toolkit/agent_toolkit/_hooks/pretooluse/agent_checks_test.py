@@ -503,7 +503,7 @@ class TestPlanFileDoesNotRequireSelfPath:
             session_id,
             {
                 "plan_mode_skill_invoked": True,
-                "operation_skill_delivered_agents": {"agent-toolkit:writing-standards": ["main"]},
+                "operation_skill_delivered_agents": {"agent-basics:writing-standards": ["main"]},
             },
         )
 
@@ -668,7 +668,7 @@ class TestWorkflowSkillInvocation:
             "process-wi",
             "agent-toolkit:session-review",
             "session-review",
-            "agent-toolkit:bugfix",
+            "agent-basics:bugfix",
             "bugfix",
         ],
     )
@@ -690,7 +690,7 @@ class TestWorkflowSkillInvocation:
         result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:writing-standards"},
+                "tool_input": {"skill": "agent-basics:writing-standards"},
                 "session_id": "reminder-other",
             },
             env_overrides=_plan_file_state_env(tmp_path),

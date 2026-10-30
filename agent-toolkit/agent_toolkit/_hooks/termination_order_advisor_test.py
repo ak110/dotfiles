@@ -79,7 +79,7 @@ def _commit(session_id: str, trace: pathlib.Path, tool_use_id: str = "toolu_comm
 def test_approves_session_without_deliverable(tmp_path: pathlib.Path) -> None:
     """成果作業の無い回答・調査のセッションでは起動証拠を求めない。"""
     trace = _write_transcript(tmp_path, [])
-    _start_skill("sess-unrelated", trace, "agent-toolkit:writing-standards")
+    _start_skill("sess-unrelated", trace, "agent-basics:writing-standards")
     assert termination_order_advisor.evaluate(_payload("sess-unrelated", str(trace))) == ("approve", "")
 
 

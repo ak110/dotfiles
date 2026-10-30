@@ -388,7 +388,7 @@ PLAN_QUEUE_ID_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9]{3,}\.md$")
 PLAN_BUG_TABLE_HEADER: tuple[str, ...] = ("項目", "内容")
 PLAN_BUG_CAUSE_TABLE_HEADER: tuple[str, ...] = ("要因系統", "L1 現象", "L2 判断", "L3 構造", "L4 システム")
 PLAN_BUG_CAUSE_TABLE_ROWS: tuple[str, ...] = ("作り込み要因", "見逃し要因")
-"""バグ単位の原因分析表の固定5列2行。`agent-toolkit:bugfix`の原因分析の段階と対応させる。"""
+"""バグ単位の原因分析表の固定5列2行。`agent-basics:bugfix`の原因分析の段階と対応させる。"""
 
 PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
     "現象",
@@ -400,7 +400,7 @@ PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
     "類似見直し結果",
     "再発防止策",
 )
-"""バグ調査表の固定行。行名と順序を`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」と対応させる。
+"""バグ調査表の固定行。行名と順序を`agent-toolkit:wi-standards/references/analysis-records.md`「原因分析の記録先」と対応させる。
 
 根本原因は原因分析表の到達した最深段のセルへ、原因分析の品質確認は原因分析の工程へ、
 設計意図の記録は`再発防止策`の記載内容へ統合したため、いずれも独立した行を持たない。

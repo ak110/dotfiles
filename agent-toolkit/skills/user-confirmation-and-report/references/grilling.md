@@ -12,7 +12,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `publish-scope.md#「公開範囲の確認」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md#「公開範囲の確認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md#「命名の方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/defined-names.md#「命名の方針」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |

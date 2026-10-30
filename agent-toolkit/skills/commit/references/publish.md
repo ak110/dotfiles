@@ -11,11 +11,11 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/publish-scope.md#「公開範囲の確認」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md#「公開範囲の確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../single-lane-process/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/single-lane-process/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `push-and-ci.md#「公開先に対応するCI定義の判定」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開先に対応するCI定義の判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/termination-ci-failure.md#「検証またはCIの失敗」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/termination-ci-failure.md#「検証またはCIの失敗」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `push-and-ci.md#「公開工程の続行不能の受渡し」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開工程の続行不能の受渡し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
@@ -35,7 +35,7 @@
 | push・CIまで | コミットまでの工程に加えて、push、CI通過の確認、および公開状態の確認まで完了させる |
 | 既存の判断基準どおり | push・CIまでの工程に続けて、プロジェクト規範に基づくリリース判定と、認可済みのプロジェクト固有の公開後操作を実施する |
 
-`agent-toolkit:process-wi`および`agent-toolkit:single-lane-process`では、各スキルがあらかじめ定めた自律モード用の公開範囲を適用する。
+`agent-toolkit:process-wi`および`agent-toolkit:process-wi single-lane`では、各スキルがあらかじめ定めた自律モード用の公開範囲を適用する。
 
 ## 版数と生成物
 
@@ -59,8 +59,8 @@ push前のチェックを実行する前には、ロックファイルの変更�
 
 push前のチェックやローカルの全体検証はログ出力が膨大になりやすいため、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に定める分離実行（`agents_server`の`start`による`shell`実行など）を用いて行う。
 `shell`実行時には、対象リポジトリを`cwd`に、実行コマンドをそのまま`command`に、managed-temp内の一時出力先を`summary_policy`に渡す。
-公開を担当するエージェントは、保存された出力ファイルの実在とその内容、および終了コードが0であることを確認して検収する。警告メッセージについてはその内容と影響を精査し（`agent-toolkit:bugfix`の`SKILL.md`「問題を見つけたときの対処」を参照）、設定の未適用や処理の未完了を示す警告は作業を続けられない原因として対処する。
-チェックや検証が失敗した場合は、公開担当エージェントが`agent-toolkit:bugfix`を用いて原因を特定し、認可された範囲内で修正する。`agent-toolkit:process-wi`の完了担当者によるCI修正の手順は、同スキルの`references/termination-ci-failure.md`「検証またはCIの失敗」の定めに従う。
+公開を担当するエージェントは、保存された出力ファイルの実在とその内容、および終了コードが0であることを確認して検収する。警告メッセージについてはその内容と影響を精査し（`agent-basics:bugfix`の`SKILL.md`「問題を見つけたときの対処」を参照）、設定の未適用や処理の未完了を示す警告は作業を続けられない原因として対処する。
+チェックや検証が失敗した場合は、公開担当エージェントが`agent-basics:bugfix`を用いて原因を特定し、認可された範囲内で修正する。`agent-toolkit:process-wi`の完了担当者によるCI修正の手順は、同スキルの`references/termination-ci-failure.md`「検証またはCIの失敗」の定めに従う。
 
 ## pushと公開状態
 
@@ -90,4 +90,4 @@ process-wiにおける元項目の取り込み手順は、`agent-toolkit:wi-stan
 認可済みのプルリクエスト（PR）やマージリクエスト（MR）の作成、リリースの作成、タグ打ち、パッケージ配布などの操作は、それぞれの依存関係に沿って順次実行する。CIの成功を前提条件とする操作は、対象コミットに対するCIが正常に通過したことを確認してから実行する。他のエージェントへすでに分担されている作業工程は、その担当エージェントに任せる。
 公開範囲が「既存の判断基準どおり」に設定された協調モードや、公開工程まで自動で進める自律モードでは、CIが成功したあとにプロジェクト規範に沿ったリリース判定処理を起動する。リリースの認可状態やバージョンの種類は、プロジェクト規範と本書の「版数と生成物」に基づいて決定する。実施した公開範囲、CI結果、公開後操作の内容、およびリリース判定の結果は、最終的な完了報告に含める。
 
-公開後の操作やリリース判定で起動した手順が前提条件の不足によって続行できなくなった場合は、確認済みの公開工程と正常終了した操作の内容を保持したまま、前述の「公開工程の続行不能からの再開」へ進む。実装の欠陥やCIの失敗が判明した場合は、`agent-toolkit:bugfix`を起動して修正する。
+公開後の操作やリリース判定で起動した手順が前提条件の不足によって続行できなくなった場合は、確認済みの公開工程と正常終了した操作の内容を保持したまま、前述の「公開工程の続行不能からの再開」へ進む。実装の欠陥やCIの失敗が判明した場合は、`agent-basics:bugfix`を起動して修正する。

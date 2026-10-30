@@ -10,8 +10,10 @@ from __future__ import annotations
 import pathlib
 import re
 
+from agent_toolkit._common import read_triggers
+
 _ROOT = pathlib.Path(__file__).resolve().parent
-_LIST_PATH = pathlib.PurePosixPath("agent-toolkit/skills/writing-standards/references/defined-names.md")
+_LIST_PATH = pathlib.PurePosixPath("agent-toolkit/skills/workflow-overview/references/defined-names.md")
 _LIST_HEADING = "## 一覧"
 _HEADER = ("名前", "指示対象", "定義元")
 _SOURCE_PATH_PATTERN = re.compile(r"`([^`]+)`")
@@ -42,10 +44,15 @@ def _find_violations(repo_root: pathlib.Path) -> list[str]:
     for name, _target, source in rows:
         match = _SOURCE_PATH_PATTERN.search(source)
         if match is None:
-            violations.append(f"{name}: 定義元の列の先頭にリポジトリ相対パスが無い: {source}")
+            violations.append(f"{name}: 定義元の列の先頭に資料パスが無い: {source}")
             continue
-        source_path = repo_root / match.group(1)
-        if not source_path.is_file():
+        value = match.group(1)
+        source_path = (
+            read_triggers.resolve_document(value, repo_root / _LIST_PATH, repo_root / "agent-toolkit")
+            if value.startswith(("agent-toolkit:", "agent-basics:"))
+            else repo_root / value
+        )
+        if source_path is None or not source_path.is_file():
             violations.append(f"{name}: 定義元のファイルが無い: {match.group(1)}")
             continue
         if name not in source_path.read_text(encoding="utf-8"):

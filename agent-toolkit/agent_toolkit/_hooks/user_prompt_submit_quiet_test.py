@@ -25,7 +25,7 @@ def test_simultaneous_prompt_notices_deliver_bugfix_once(
     output = capsys.readouterr().out
     if pending:
         body = json.loads(output)["hookSpecificOutput"]["additionalContext"]
-        assert body.count("`agent-toolkit:bugfix`") == 1
+        assert body.count("`agent-basics:bugfix`") == 1
         assert "認可を要する操作" in body
     else:
         assert not output
@@ -34,4 +34,4 @@ def test_simultaneous_prompt_notices_deliver_bugfix_once(
     session_state.update_state(session_id, lambda state: {**state, USER_CONFIRMATION_PENDING_KEY: True})
     assert user_prompt_submit.main(payload) == 0
     renewed = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert renewed.count("`agent-toolkit:bugfix`") == 1
+    assert renewed.count("`agent-basics:bugfix`") == 1

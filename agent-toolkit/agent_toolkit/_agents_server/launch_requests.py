@@ -802,7 +802,7 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
         required[path.name] = sum(token.type == "list_item_open" and token.level == 1 for token in MarkdownIt().parse(body))
     if not required:
         return
-    reference = "skills/review-standards/references/exec-review-recording.md「記録する行と要求単位」"
+    reference = "share/exec-review-recording.md「記録する行と要求単位」"
 
     def reject(reason: str) -> Never:
         raise _material_error("review_contract", f"{', '.join(required)}: {reason}。条件表の書式: {reference}")

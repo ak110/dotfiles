@@ -10,11 +10,11 @@ writes_worktree: false
 
 # 既存不良の調査担当タスク
 
-<!-- parent-read-source: agent-toolkit:/skills/bugfix/references/investigation-delegation.md#既存不良の調査担当の起動と受領 -->
+<!-- parent-read-source: agent-toolkit:delegation/references/investigation-delegation.md#既存不良の調査担当の起動と受領 -->
 
 受け取った既存不良について原因分析や類似見直しを行い、対策、横展開処置、および再発防止策の確定までを実施して、その結果を返却する。
 コードの修正作業、対象リポジトリやキューへの書き込み、AWIの投入、ならびに委譲元自身の元作業の続行は担当せず、すべて委譲元が担う。
-作業着手時に、まず`agent-toolkit:bugfix`を起動する。
+作業着手時に、まず`agent-basics:bugfix`を起動する。
 
 ## 名指し参照の読込方法
 
@@ -22,9 +22,9 @@ writes_worktree: false
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策の必須性」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「処置の階層」「再発防止策の必須性」` |
 
 ## 入力
 
@@ -33,7 +33,7 @@ writes_worktree: false
 
 ## 調査
 
-`agent-toolkit:bugfix`に従い、初動対応から対策・横展開処置・再発防止策の確定までを一貫して実施する。対象リポジトリやキューの操作は読み取り専用に限定し、作業用の一時ファイルはmanaged-temp（`agent-toolkit:managed-temp`）に配置する。対策は、委譲元がそのまま修正作業へ適用できる粒度（変更対象のファイル、変更内容、修正後に確認すべき観測項目）で確定させる。
+`agent-basics:bugfix`に従い、初動対応から対策・横展開処置・再発防止策の確定までを一貫して実施する。対象リポジトリやキューの操作は読み取り専用に限定し、作業用の一時ファイルはmanaged-temp（`agent-toolkit:managed-temp`）に配置する。対策は、委譲元がそのまま修正作業へ適用できる粒度（変更対象のファイル、変更内容、修正後に確認すべき観測項目）で確定させる。
 詳細な分析内容（探索の経緯、母集団に含まれる各対象の判定、対照実験の結果、独立走査の記録など）は、自身のセッションのmanaged-tempへ`分析記録`ファイルとして保存する。返却フォーマットの各欄には結論を記載し、その根拠が書かれている分析記録内の該当箇所を示す。委譲元が同じ探索や分析をゼロからやり直すことなく、根拠と適用条件をスムーズに検収できるようにするためである。
 
 認識の食い違いによって要件や結果が左右される未確定事項がある場合は、回答を待たずに進められる調査を先にすべて完了させた上で、「続行できない理由」として返却する。
@@ -54,7 +54,7 @@ writes_worktree: false
 再発防止策: <処置と、その処置が作用する根本原因の単位>
 ```
 
-各欄の値は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に基づいて判定する。`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」「処置の階層」「再発防止策の必須性」も適用する。`拡張原因分析`の要否にかかわらず、すべての欄を同一の基準で記載する。
+各欄の値は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に基づいて判定する。`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」「処置の階層」「再発防止策の必須性」も適用する。`拡張原因分析`の要否にかかわらず、すべての欄を同一の基準で記載する。
 類似見直しの該当件数が0件の場合や、採用すべき再発防止策がないと判断した場合も、同書が求める記録内容を該当欄に記載する。
 
 続行不能と追加報告行は、共通契約`rules-subagent.md`「返却形式の受け渡し」に従う。

@@ -102,7 +102,10 @@ def test_unknown_session_record_cwd_is_not_replaced():
     root = pathlib.Path.home() / ".claude/projects/project"
     root.mkdir(parents=True)
     (root / "record.jsonl").write_text("{}\n", encoding="utf-8")
-    assert large_reads.session_record_reference_warning("Bash", {"command": "cat record.jsonl"}, str(root))
+    notice = large_reads.session_record_reference_warning("Bash", {"command": "cat record.jsonl"}, str(root))
+    assert notice is not None and "`agent-toolkit:session-review`" in notice
+    source = pathlib.Path(__file__).resolve().parents[3] / "skills/session-review/references/session-records.md"
+    assert source.is_file() and str(source) in notice
     assert large_reads.session_record_reference_warning("Bash", {"command": 'cd "$D" && cat record.jsonl'}, str(root)) is None
 
 
@@ -439,6 +442,7 @@ def test_large_original_record_is_guided_to_evidence_query(
     captured = capsys.readouterr()
     assert not captured.err
     assert "session-review-evidence" in captured.out
+    assert "`agent-toolkit:session-review`" in captured.out
     assert "--transcript" in captured.out
     assert "sed -n '" not in captured.out
 
@@ -459,6 +463,7 @@ def test_large_read_notice_keeps_recovery_without_generic_fallback(tmp_path, mon
     assert "委譲元へ返し" not in notice
     if original:
         assert "session-review-evidence" in notice
+        assert "`agent-toolkit:session-review`" in notice
         assert "--transcript" in notice
     else:
         assert "sed -n '" in notice and "末尾の" in notice

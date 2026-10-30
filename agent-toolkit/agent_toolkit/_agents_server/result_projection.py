@@ -22,7 +22,7 @@ REVIEW_LABEL_SUFFIX = "-review"
 
 # レビューを目的とするsessionの完了結果を受け取った主体へ示す次の操作。
 REVIEW_RESULT_NEXT_ACTION = (
-    "レビューの指摘を受領した。採否を確定する前に`agent-toolkit:review-standards`を起動し、"
+    "レビューの指摘を受領した。採否を確定する前に`agent-basics:review-standards`を起動し、"
     "同スキルの`references/reviewee.md`に従って採否と修正を確定する。"
     "ユーザーの合意を見送りの根拠にする場合は、合意を示すユーザー発話を特定してから根拠にする"
 )
@@ -30,7 +30,7 @@ REVIEW_RESULT_NEXT_ACTION = (
 
 # 読者別探索の結果はレビュー担当が受領し、同担当向けの契約で採否を確定する。
 READER_FIT_REVIEW_RESULT_NEXT_ACTION = (
-    "読者別探索の指摘を受領した。採否を確定する前に`agent-toolkit:review-standards`を起動し、"
+    "読者別探索の指摘を受領した。採否を確定する前に`agent-basics:review-standards`を起動し、"
     "`reader-fit-review.parent.md`「受領」に従って、指摘ごとの採否と根拠を確定する"
 )
 

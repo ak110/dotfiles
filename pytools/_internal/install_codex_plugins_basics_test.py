@@ -48,7 +48,8 @@ elif args[:2] == ["plugin", "add"]:
         "version": installed_version, "enabled": fault != "enabled",
     }
     state_path.write_text(json.dumps(state))
-    resource = cache / version / ("skills/writing-standards/SKILL.md" if name == "agent-basics" else "agent_toolkit/hook.py")
+    relative = "skills/writing-standards/SKILL.md" if name == "agent-basics" else "agent_toolkit/hook.py"
+    resource = cache / version / relative
     if name != "agent-basics" or fault != "skills":
         resource.parent.mkdir(parents=True)
         resource.write_text("# 配布実体\n")

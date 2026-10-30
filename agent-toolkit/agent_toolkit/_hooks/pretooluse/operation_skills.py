@@ -15,7 +15,7 @@ import re
 lazy from collections.abc import Callable, Sequence
 
 lazy from agent_toolkit._common import delegated_session as _delegated_session
-lazy from agent_toolkit._common import shell_cwd
+lazy from agent_toolkit._common import plugin_roots, shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
@@ -106,7 +106,7 @@ def _is_search_segment(segment: _shell_segments.ExecutionSegment) -> bool:
 
 
 def _is_search_operation(tool_name: str, tool_input: dict) -> bool:
-    """`agent-toolkit:search`の起動の契機とする検索の呼び出しかを返す。
+    """`agent-basics:search`の起動の契機とする検索の呼び出しかを返す。
 
     パイプラインの2番目以降の区間は標準入力を検索するため対象から外す。
     """
@@ -125,7 +125,7 @@ _ROOT_CAUSE_HEADING = re.compile(r"^## 原因分析[ \t]*$", re.MULTILINE)
 
 
 def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
-    """`agent-toolkit:bugfix`の起動の契機とする原因分析の記述かを返す。
+    """`agent-basics:bugfix`の起動の契機とする原因分析の記述かを返す。
 
     編集ツールは変更後の断片（Claude Codeの`Write`・`Edit`・`MultiEdit`とCodexの`apply_patch`）、
     Bashはコマンド文字列に、`## 原因分析`だけから成る行がある場合を対象とする。
@@ -600,7 +600,7 @@ def _is_verification_tokens(tokens: Sequence[str]) -> bool:
 
 
 def _is_verification_operation(tool_name: str, tool_input: dict) -> bool:
-    """`agent-toolkit:check-execution`の起動の契機とする検証の実行かを返す。
+    """`agent-basics:check-execution`の起動の契機とする検証の実行かを返す。
 
     複合文と置換の内側も共通のBash解析から実行位置を得て判定する。保存ログの表示と状態の照会は対象外とする。
     """
@@ -616,12 +616,12 @@ def _is_verification_operation(tool_name: str, tool_input: dict) -> bool:
 
 OPERATION_SKILLS: tuple[OperationSkill, ...] = (
     OperationSkill("agent-toolkit:delegation", "delegation", "委譲操作", _is_delegation_operation),
-    OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),
-    OperationSkill("agent-toolkit:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
+    OperationSkill("agent-basics:search", "search", "検索", _is_search_operation),
+    OperationSkill("agent-basics:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
     OperationSkill("agent-toolkit:managed-temp", "managed-temp", "個別の一時ディレクトリの作成", _is_temp_directory_create),
-    OperationSkill("agent-toolkit:writing-standards", "writing-standards", "本文の作成・更新", _is_body_writing),
+    OperationSkill("agent-basics:writing-standards", "writing-standards", "本文の作成・更新", _is_body_writing),
     OperationSkill(
-        "agent-toolkit:check-execution",
+        "agent-basics:check-execution",
         "check-execution",
         "検証の実行",
         _is_verification_operation,
@@ -689,7 +689,7 @@ def record_document_read(session_id: str, read: _document_reads.DocumentRead, ag
         entry is None
         or not session_id
         or read.partial
-        or read.plugin != "agent-toolkit"
+        or read.plugin != entry.skill_name.split(":", 1)[0]
         or read.relative_path not in entry.documents
     ):
         return
@@ -721,7 +721,8 @@ def _acquisition_steps(subject: str, entry: OperationSkill, missing: list[str]) 
     """区分ごとに、未取得の資料をホスト本来の手段で取得する操作を返す。"""
     steps = []
     for relative in missing:
-        path = _plugin_resources.skill_document_path(entry.short_name, relative)
+        root = plugin_roots.resolve_plugin_root(entry.skill_name.split(":", 1)[0], _plugin_resources.plugin_root())
+        path = root / "skills" / entry.short_name / relative
         if subject == SUBJECT_CODEX:
             steps.append(f"`{path}`の全文を読む（`cat`など。`head`や範囲指定の読取は取得にならない）")
         elif relative != SKILL_DOCUMENT:

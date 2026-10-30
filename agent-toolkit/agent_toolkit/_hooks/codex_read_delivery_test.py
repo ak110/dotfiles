@@ -314,7 +314,7 @@ def test_document_read_state_follows_successful_full_delivery(tmp_path, monkeypa
     """disabledでcwd内外の配送を観測し、失敗・未確認は読了にしない。"""
     if truncated and exit_code == 0 and not pathlib.Path("/proc/self/fd").is_dir():
         pytest.skip("FDへ固定した再取得はLinuxで検証する")
-    path = plugin_resources.skill_document_path("bugfix", "references/root-cause-analysis.md")
+    path = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
     body = path.read_text(encoding="utf-8")
     payload = _payload(tmp_path, monkeypatch, f"cat -- {path}", _cut(body) if truncated else body, exit_code=exit_code)
     transcript = pathlib.Path(payload["transcript_path"])

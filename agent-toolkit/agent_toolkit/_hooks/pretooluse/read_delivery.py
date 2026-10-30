@@ -673,13 +673,9 @@ def dynamic_targets(
         if selection is not None and selection.is_file():
             targets.append(read_triggers.ReadTarget(selection))
         for candidate in declarations(cwd, host=host):
-            if (
-                _skill(candidate.source) == "writing-standards"
-                and candidate.kind == "操作"
-                and any(
-                    operation.startswith(("path:", "write:", "dependency:")) and matches(operation, tool_name, tool_input, cwd)
-                    for operation in candidate.operations
-                )
+            if candidate.kind == "操作" and any(
+                operation.startswith(("path:", "write:", "dependency:")) and matches(operation, tool_name, tool_input, cwd)
+                for operation in candidate.operations
             ):
                 targets.extend(candidate.targets)
         return list(dict.fromkeys(targets))

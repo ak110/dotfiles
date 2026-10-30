@@ -1,6 +1,6 @@
 # 報告のフォーマット
 
-本書は、`agent-toolkit:completion-report`が出力する作業完了報告、振り返り結果報告、AWI投入結果報告、および自律モードで投入する報告用UWIの本文書式を定める。作業完了報告の送達は同スキルの`SKILL.md`「工程」、振り返りの報告は`agent-toolkit:session-review`と`agent-toolkit:session-review-batch`の工程に従う。
+本書は、`agent-toolkit:completion-report`が出力する作業完了報告、振り返り結果報告、AWI投入結果報告、および自律モードで投入する報告用UWIの本文書式を定める。作業完了報告の送達は同スキルの`SKILL.md`「工程」、振り返りの報告は`agent-toolkit:session-review`と`agent-toolkit:session-review batch`の工程に従う。
 
 これら4種類の報告は、ユーザーが結論と判断に必要な要点（作業結果、未達事項、対応状況）を簡潔に把握できるように作成する。報告の内容や書式はStop hookによる自動判定の対象外であるため、報告を作成するメインエージェント自身が、送達前に本書の書式と照らし合わせて確認する。原因分析や調査の経緯、AWIのH1タイトルと重複する概要などは本文中に展開せず、AWIや証拠記録側に残す。一方で、確定済みの観測根拠、未確定の照会・再現状況、理由が残っている事項、および未達事項は要約して報告に残す。
 ユーザーによる対応が必要な未完了事項については、`agent-toolkit:user-confirmation-and-report`「手段の選択」に沿って個別UWIの登録要否を判定し、保存した場合は既存の見出し（`### 投入したWI`など）でその所在を明記する。自明な取得・再実行・実機確認の手順案内は、必要に応じて成果や検証結果に添える。各報告の見出しは規定の構成を使用し、ユーザーの判断や行動を促すための独自の追加見出しは設けない。
@@ -11,18 +11,18 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review-batch/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review-batch/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/references/batch.md` | 判断 | `read:agent-toolkit:*/skills/session-review/references/batch.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/completion-report/SKILL.md#「工程」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/SKILL.md#「統合実行ツール経由の起動」「保存した実行出力の取得」` | 判断 | `section:agent-toolkit:*/skills/check-execution/SKILL.md#「統合実行ツール経由の起動」「保存した実行出力の取得」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/check-execution-operations.md#「統合実行ツール経由の起動」「保存した実行出力の取得」` | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「統合実行ツール経由の起動」「保存した実行出力の取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/references/analysis.md#「入力と照会」「一次選別」「原因と対策」` | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#「入力と照会」「一次選別」「原因と対策」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/references/analysis.md#「コストの無駄の確認」` | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#「コストの無駄の確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
@@ -35,7 +35,7 @@
 
 検証結果を記載する行には、対象と合否に加えて、実際に返されたpyfltrのrun_id、外部コマンドの終了ステータスと保存された標準出力・標準エラー出力の所在、または保存済みの手動観測記録の所在を添える。
 作業完了報告と報告用UWIに同じ結果と参照先を記載し、振り返り結果報告やAWI投入結果報告の中で検証結果に言及する場合にも同様に適用する。
-記録の取得と保存済み出力の読み取りは、`agent-toolkit:check-execution`の「統合実行ツール経由の起動」「保存した実行出力の取得」に従う。
+記録の取得と保存済み出力の読み取りは、`agent-basics:check-execution`の「統合実行ツール経由の起動」「保存した実行出力の取得」に従う。
 
 メインエージェントは送達前に保存された記録を実際に確認し、具体的な対象、入力、操作、観測結果、終了ステータス、または合否に基づいて結果を記載する。
 記録ファイルが存在していることだけでは内容の正しさは保証されないため、検証結果や完成条件の判定行を参照する場合でも、元の実行・観測記録まで辿れることを確認する。
@@ -120,7 +120,7 @@
 
 候補一覧に含まれる候補に対応する行には、行末の括弧内に候補ID（`c0006`の形式。複数の場合は読点で区切る）を記載する。
 
-ローカルな終了操作とそれに関連する訂正・続行について、`agent-toolkit:bugfix`の`non-changing-request`に基づいて除外された事象は、候補一覧に残っている場合でも報告から除外する。この除外規定は`mandatory_candidates`の報告義務よりも優先され、問題内容、見送り理由、除外理由のいずれも報告に記載しない。
+ローカルな終了操作とそれに関連する訂正・続行について、`agent-basics:bugfix`の`non-changing-request`に基づいて除外された事象は、候補一覧に残っている場合でも報告から除外する。この除外規定は`mandatory_candidates`の報告義務よりも優先され、問題内容、見送り理由、除外理由のいずれも報告に記載しない。
 
 この除外規定に該当せず、`atk run-script session-review-prepare`によって評価が必須と示された候補（1行JSONの`mandatory_candidates`）は、必ず次のいずれかの行で取り扱う。
 
@@ -225,3 +225,13 @@ Codexの`functions.exec`の記録を扱う場合は、記載する区分にか�
 - `### 自ら確定した判断`: `### 自ら確定した判断`にそのまま反映する
 
 予告を出力した場合でも、振り返りの確定結果（確定した問題と対策、見送った問題と理由、投入したAWIのファイル名とH1タイトル）を記録し、予告時の`AWI登録予定`の行は投入結果に応じて`AWI登録`または`AWI登録済み`に置き換える。セッション終了前に確定した振り返り自体の所要時間超過に関する結論と根拠も、同様の区分を用いて`### 振り返り`に記録する。
+
+## 参照資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
+
+## 検証記録の引き渡し
+
+- 実際に取得したrun_id、保存したログ出力、および手動観測の記録は、完了報告の送信前確認へ引き渡す。報告する検証結果と保存ログの対応関係は、`agent-toolkit:completion-report`の`references/report-formats.md`「検証結果と実行記録」の規定に従う。

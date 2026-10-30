@@ -97,7 +97,7 @@ VERIFICATION_NOTICE_BODY = (
     "事実の裏付けを調べる前に、真の場合と偽の場合で次の行動、変更対象、成果物の前提、回答の結論が実質的に変わるか判断せよ。"
     "変わらない事実は調べずにユーザーが述べた事実として受け取って依頼を進め、自ら確かめた事実として報告するな。"
     "判断を変える事実と是正の対象は、現物（原文・実装・規範・実行結果・対象の目的を定める仕様・設計記録）と比べて確かめてから応答せよ。"
-    "是正を求める対象を含む発話では、対処の前に`agent-toolkit:bugfix`をスキル機能で起動せよ。"
+    "是正を求める対象を含む発話では、対処の前に`agent-basics:bugfix`をスキル機能で起動せよ。"
     "不具合の有無・原因・直し方を述べるか確認で提案する場合も、述べる前に起動せよ。"
     "対処を委譲先やAWIへ委ねる場合も含む。"
     "判断を変える事実を現物と比べて確かめられない場合は、同意も変更もするな。"
@@ -607,7 +607,8 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         _record_skill_use(session_id, tool_input.get("skill"))
         skill = tool_input.get("skill")
         if not payload.get("agent_id") and isinstance(skill, str):
-            session_title.observe_skill(session_id, skill)
+            arguments = tool_input.get("args")
+            session_title.observe_skill(session_id, skill, arguments if isinstance(arguments, str) else None)
         _operation_skills.record_skill_ready(session_id, tool_input.get("skill"), resolve_hook_agent_id(payload))
     elif tool_name in ("Agent", "Task"):
         # AgentとTask: 背景起動の応答が返した`agentId`だけをバックグラウンドタスクの所有記録へ残す

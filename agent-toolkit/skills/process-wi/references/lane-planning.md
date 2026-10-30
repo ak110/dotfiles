@@ -20,11 +20,11 @@
 | 旧形式WIの節を現行の責務へ対応付ける前 | `../../wi-standards/references/awi-body.md`の冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「恒久化・リファクタリング」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「恒久化・リファクタリング」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/reviewer.md#「初回レビュー」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「初回レビュー」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-criteria.md#「初回レビュー」` | 判断 | `section:agent-toolkit:*/share/exec-review-criteria.md#「初回レビュー」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/routing.md#「要否判定」「委譲単位の確定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「要否判定」「委譲単位の確定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/investigation.md#「実行結果の検証」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/investigation.md#「実行結果の検証」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/verification-scope.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/verification-scope.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md#「実行結果の検証」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「実行結果の検証」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「初回起草の雛形」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「初回起草の雛形」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-structure-check.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md#「延期adoptと反映後の観測」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「延期adoptと反映後の観測」` |
@@ -56,12 +56,12 @@ AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:wi
 
 1. `agent-toolkit:plan-mode`を起動して同スキルの読込表の資料を読み、AWI、プロジェクト規範、対象実装、既存テスト、生成・配布手段、類似実装を調査する。
    - 対象実装を読む前に、要求と公開契約から比較対象とする最も近い既存実装を選ぶ。境界の候補は、入力値、時間経過、操作順序、保持状態、反復、権限や環境の差異などの軸から選定する。
-   - 調査後は、採用案の前提を客観的に評価する観点から、変更箇所が責務を負う必要性、既存機構への統合、上流ツールや共有設定への移管、機構の削除や簡素化を比較検討して計画へ反映する。AWI本文の`## 調査結果と判断根拠`（旧形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従う）に結論が示されている観点については、記述との明白な食い違いが観測されない限り再度の比較検討は行わない。「設計品質の劣化確認」（`agent-basics:writing-standards/references/design-heuristics.md`）は常に実施する。評価条件は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「恒久化・リファクタリング」に準拠する。不具合対策においては、`agent-toolkit:review-standards`の`references/reviewer.md`「初回レビュー」の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
+   - 調査後は、採用案の前提を客観的に評価する観点から、変更箇所が責務を負う必要性、既存機構への統合、上流ツールや共有設定への移管、機構の削除や簡素化を比較検討して計画へ反映する。AWI本文の`## 調査結果と判断根拠`（旧形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従う）に結論が示されている観点については、記述との明白な食い違いが観測されない限り再度の比較検討は行わない。「設計品質の劣化確認」（`agent-basics:writing-standards/references/design-heuristics.md`）は常に実施する。評価条件は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「恒久化・リファクタリング」に準拠する。不具合対策においては、`agent-toolkit:/share/exec-review-criteria.md`「初回レビュー」の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
    - `選定`の各項目における`鮮度`を計画の`## 変更履歴`へ記録する。`鮮度`が`notice`であることのみを理由として作業を中断することは避け、現行内容との不一致、既存実装による充足済み、巻き戻しの危険のいずれかが確認された項目に限定して関連履歴を調査し、確認条件、調査した履歴、および採否への影響を同一記録に残す。
    - レーン担当は、レーン数にかかわらず自身のレーン内の作業分担を`agent-toolkit:delegation`の`references/routing.md`「要否判定」「委譲単位の確定」に基づいて検討する。自身が直接実施する単位と委譲先を起動して委ねる単位を、その理由とともに`## 実施内容`（計画なしの場合は引き継ぎ記録）へ記録する。計画の起草はレーン担当自身が行う。内部担当へ計画起草や設計判断を委ねる運用は、明らかに独立した複数タスクを扱う場合に限る。分担の記載には、内容が確定した書き込み作業の単位ごとに、委譲先の工程または自ら行う理由を明記する（工程の区分は同スキルの`references/runtime-routing.md`「工程別モデル設定」の工程分担の段落を参照）。
    - 多数の対象へ同一作業を適用する要求では、`plan-file-standards.md`「実施内容」の実施方式も比較検討し、採用した方式と理由を記録する。
-   - 独立した複製環境での対照実験など時間を要する比較調査は、入力と版を固定でき独立複製へ出力可能であれば、`agent-toolkit:writing-standards`の`references/investigation.md`「実行結果の検証」の準備確認を終えた後に、通常の修正作業と並行して開始する。結果の到着を待つ工程のみを直列化する。作業順序は、先行成果、書き込み先、観測リソースの競合状況を考慮して決定し、`## 実施内容`へ明記する。
-   - 検証コマンドを確定する前に`agent-toolkit:check-execution`を起動し、`references/verification-scope.md`の類型に基づいて変更範囲の検証対象を確定した上で、`## 検証`の`変更範囲の検証`へ追加する。追加しない対象がある場合は、その理由を`## 要件・外部仕様`の追随範囲へ記載する。
+   - 独立した複製環境での対照実験など時間を要する比較調査は、入力と版を固定でき独立複製へ出力可能であれば、`agent-basics:writing-standards/references/investigation.md`「実行結果の検証」の準備確認を終えた後に、通常の修正作業と並行して開始する。結果の到着を待つ工程のみを直列化する。作業順序は、先行成果、書き込み先、観測リソースの競合状況を考慮して決定し、`## 実施内容`へ明記する。
+   - 検証コマンドを確定する前に`agent-basics:check-execution`を起動し、`references/verification-scope.md`の類型に基づいて変更範囲の検証対象を確定した上で、`## 検証`の`変更範囲の検証`へ追加する。追加しない対象がある場合は、その理由を`## 要件・外部仕様`の追随範囲へ記載する。
    - 変更対象を確定する前に全文を確認する文書は、原則として候補ファイルと名指しされた基準文書（計画・WI・エージェント向け文書など）に限定する（努力目標。コンテキスト消費を抑制するため）。候補の絞り込みや横断的な列挙は、探索委譲や検索を用いて結論のみを取得する。他の役割の`<役割名>.subagent.md`や変更対象を含まないスキル本体は、検索によって必要な箇所のみを確認する。
    - 採否を確定する前に、変更対象パスに対応する必須スキル（対応表はプロジェクト規範に記載）を起動し、変更対象の成立条件と禁止条件を定める節を検索で特定して読んだ上で、要求内容と比較する。衝突する要求がある場合は、`## 実施内容`において不採用または手段変更とし、人間由来の要求であれば手順2に従って通知する。編集段階で衝突に気付く事態を防ぎ、後からの判断要請や実装済み差分の取り消しを回避する。
    - 要求の一部を後続へ分ける場合は、対象、分ける理由、後続で実施する内容を`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」に従ってメインへ渡す。人間由来の要求は手順2のユーザー確認を経てから投入する。メインは`agent-toolkit/share/add-wi.parent.md`の付随型で投入し、返ったファイル名をレーン担当へ渡す。レーン担当はそのファイル名を`移管`行の根拠へ書いてから計画を確定する。
@@ -109,3 +109,9 @@ AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:wi
 統合区分: <マージあり|マージなし>
 AWI: <AWIファイル名のASCIIカンマ区切り>
 ```
+
+## 参照資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` |

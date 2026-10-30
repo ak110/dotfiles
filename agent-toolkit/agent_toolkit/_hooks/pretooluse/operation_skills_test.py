@@ -23,7 +23,7 @@ from agent_toolkit._testing.pretooluse_support import (
     codex_execution_payload,
 )
 
-_SEARCH_SKILL = "agent-toolkit:search"
+_SEARCH_SKILL = "agent-basics:search"
 _WARN_OPENING = '<atk-auto source="pretooluse" kind="block">'
 
 _DELEGATION_TOOLS = (
@@ -412,7 +412,7 @@ def test_perl_document_write_option_and_program_boundaries(options: str, writes:
     )
 
 
-_BUGFIX_SKILL = "agent-toolkit:bugfix"
+_BUGFIX_SKILL = "agent-basics:bugfix"
 _ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n| 要因系統 | L1 現象 |\n"
 
 
@@ -482,8 +482,7 @@ def test_other_commands_do_not_warn_managed_temp(command: str) -> None:
     assert not operation_skills.operation_matches("managed-temp-create", "Bash", {"command": command})
 
 
-_CHECK_EXECUTION_SKILL = "agent-toolkit:check-execution"
-_SCOPE_REFERENCE = plugin_resources.skill_document_path("check-execution", "references/verification-scope.md")
+_CHECK_EXECUTION_SKILL = "agent-basics:check-execution"
 
 
 _VERIFICATION_PAYLOADS = [

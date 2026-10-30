@@ -192,7 +192,7 @@ class TestUserConfirmationSkillPrompt:
         self._session_start(source, tmp_path)
         context = self._prompt("表示が変わった原因は何か", tmp_path)
         assert self._has_notice(context)
-        assert "診断より前に`agent-toolkit:bugfix`を起動" in context
+        assert "診断より前に`agent-basics:bugfix`を起動" in context
         assert "説明の補足や委譲・AWIの方針も対象" in context
         assert "「起動契機」から「認可を要する操作」" in context
         assert not self._has_notice(self._prompt("続けて", tmp_path))
@@ -242,7 +242,7 @@ class TestUserConfirmationSkillPrompt:
         assert not self._has_notice(self._prompt(prompt, tmp_path, host=host))
         context = self._prompt("依頼", tmp_path, host=host)
         assert self._has_notice(context)
-        assert "診断より前に`agent-toolkit:bugfix`を起動" in context
+        assert "診断より前に`agent-basics:bugfix`を起動" in context
 
     def test_usage_limit_resume_prompt_is_machine_injected(
         self, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
@@ -289,7 +289,7 @@ class TestUserConfirmationSkillPrompt:
         self._session_start(source, tmp_path, host="codex")
         context = self._prompt("表示が変わった原因は何か", tmp_path, host="codex")
         assert self._has_notice(context)
-        assert "診断より前に`agent-toolkit:bugfix`を起動" in context
+        assert "診断より前に`agent-basics:bugfix`を起動" in context
         assert "説明の補足や委譲・AWIの方針も対象" in context
         assert not self._has_notice(self._prompt("続けて", tmp_path, host="codex"))
 

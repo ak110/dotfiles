@@ -14,9 +14,9 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion.md#「実現方式の成立」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「実現方式の成立」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
@@ -52,7 +52,7 @@
 
 以下は本文段階の検収に適用する。
 
-元の要求の解釈についてレビュー担当と作成主体で見解が分かれ、結果や作業範囲が変わる場合は、`agent-toolkit:review-standards`の共通規定に立ち返る。
+元の要求の解釈についてレビュー担当と作成主体で見解が分かれ、結果や作業範囲が変わる場合は、`agent-basics:review-standards`の共通規定に立ち返る。
 原文、実際の回答、および現物を確認しても解決せず、ユーザー自身の判断に委ねる事項が残る場合は、その判断を要する修正を保留し、双方の解釈と結果をユーザー確認できるメインエージェントへ報告する。
 レビュー結果として返却された要求識別子と原稿の集合が、入力した集合と一致することを確認する。要求ごとの意味判定に加え、検収者による冒頭部分の判定、条件付きで起動した読者確認の識別子、結果、証拠を追跡する。合格した原稿は、他の原稿の修正完了を待たずに個別に保存できる。追加の原稿がある場合は、新しい識別子を割り当てて既存の担当へ渡し、取得済みの共通資料を再利用する。
 各判定の`読者別探索:`欄を確認する。識別子が記録されている場合は返却内容を読み、その判定がユーザー向け部分に対する確認結果であることを確かめる。再利用時は前回の抽出内容との一致を確認し、起動条件に当てはまらない場合は条件と自己確認の根拠を確かめる。行の欠落や無効な省略がある場合は、合格判定であっても同じ担当へ差し戻して確認を求める。

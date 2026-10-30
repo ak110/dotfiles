@@ -14,6 +14,7 @@ import urllib.parse
 from collections.abc import Callable, Generator, Iterator
 from typing import cast
 
+from agent_toolkit._common import skill_modes
 from agent_toolkit._common.plugin_roots import plugin_resolution_scope, resolve_plugin_root
 
 KINDS = frozenset({"操作", "起動時", "判断"})
@@ -269,9 +270,12 @@ def _direct_document(
                 plugin, owner if owner is not None and owner_name == "agent-toolkit" else plugin_root, host, project
             )
         )
-        if skill.endswith(".md"):
+        name, *arguments = skill.split(maxsplit=1)
+        mode, _ = skill_modes.split_mode(name, arguments[0] if arguments else None)
+        if mode is None and skill.endswith(".md") and (not arguments or "/" in name):
             return ((root / skill.lstrip("/")) if skill.startswith("/") else (root / "skills" / skill)).resolve()
-        return (root / "skills" / skill / "SKILL.md").resolve()
+        target = pathlib.Path("references", f"{mode}.md") if mode else pathlib.Path("SKILL.md")
+        return (root / "skills" / name / target).resolve()
     owner_root = next(
         (
             parent.parent

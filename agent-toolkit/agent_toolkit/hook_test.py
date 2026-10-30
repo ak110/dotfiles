@@ -809,7 +809,7 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
     assert "未取得資料" in json.loads(pending)["hookSpecificOutput"]["additionalContext"]
     assert '<atk-auto source="read-delivery" kind="document">' not in message
     if not codex:
-        assert "agent-toolkit:search" in message
+        assert "agent-basics:search" in message
     pretooluse("repeat-session", "grep -rn needle .")
     for _attempt in range(12):
         records = session_state.read_state("repeat-session")[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]

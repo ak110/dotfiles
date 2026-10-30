@@ -12,11 +12,11 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%82%92%E6%8C%81%E3%81%A4%E5%A7%94%E8%AD%B2%E3%81%AE%E8%B5%B7%E5%8B%95%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%82%92%E6%8C%81%E3%81%A4%E5%A7%94%E8%AD%B2%E3%81%AE%E8%B5%B7%E5%8B%95%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/git-identifier.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/git-identifier.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/SKILL.md#「統合実行ツール経由の起動」` | 判断 | `section:agent-toolkit:*/skills/check-execution/SKILL.md#「統合実行ツール経由の起動」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/check-execution-operations.md#「統合実行ツール経由の起動」` | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「統合実行ツール経由の起動」` |
 
 ## 用語
 

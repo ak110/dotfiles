@@ -1119,7 +1119,7 @@ def test_cli_plan_set_accepts_agent_rule_path_in_any_plan(
     """返却予定のエージェント向け文書は、その文書を変更する計画にだけあれば受理し、どの計画にも無ければ失敗にする。"""
     work_dir, _base = repo
     plans = [_write_set_plan(work_dir, f"plan-{index}.md", awi) for index, awi in enumerate(_SET_AWIS[:2])]
-    documented = "agent-toolkit/skills/search/SKILL.md"
+    documented = "agent-basics/skills/search/SKILL.md"
     text = plans[1].read_text(encoding="utf-8")
     plans[1].write_text(text.replace("対象の公開契約を更新する。", f"`{documented}`を更新する。", 1), encoding="utf-8")
     decisions = _set_decisions(*_SET_AWIS[:2])

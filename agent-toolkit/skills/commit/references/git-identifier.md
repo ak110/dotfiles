@@ -3,7 +3,7 @@
 本書は、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に基づき、作業の報告やコマンド操作で使用するGit識別子の扱い方を定める。
 
 Gitの操作、内部比較、作業報告、記録、および成果物の作成にあたっては、人間が対象を判別しやすい識別子（日付、コミット件名、ブランチ名、タグ名、PR・MR番号、実行ログのURL、計画名、WIファイル名、レーン識別子など）を優先して使用する。
-人間向けの記述における識別子の選び方は、`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う。一方、エージェントがコミットを機械的に再取得する記述では、`git rev-parse --short=7 <revision>`が返す7文字以上の一意な短縮OIDを用いる（`--short`のみを指定した場合の最小長はGit設定の`core.abbrev`に依存する）。この挙動の検証結果は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月14日」に記録されている。
+人間向けの記述における識別子の選び方は、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」に従う。一方、エージェントがコミットを機械的に再取得する記述では、`git rev-parse --short=7 <revision>`が返す7文字以上の一意な短縮OIDを用いる（`--short`のみを指定した場合の最小長はGit設定の`core.abbrev`に依存する）。この挙動の検証結果は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月14日」に記録されている。
 なお、`git rev-parse --short=7`には1回につき1件のリビジョンのみを渡す。複数のリビジョンを同時に渡すと`fatal: Needed a single revision`エラーで失敗する。
 また、リビジョンのpeel式をシェルで評価する際は、全体を単一の引数として渡す。たとえばPowerShellでは、`git rev-parse --verify 'HEAD^{commit}'`のようにシングルクォートで囲む。この監査記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/git-identifier.md：Git識別子の扱い：2026年9月20日」にある。
 
@@ -20,5 +20,5 @@ Gitの操作、内部比較、作業報告、記録、および成果物の作�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |

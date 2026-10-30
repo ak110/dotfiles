@@ -716,7 +716,7 @@ def _check_bash_unquoted_heredoc_substitution(command: str) -> str | None:
     コマンドを実行する。Markdownのコード表記とシェルの置換は同じ記号であり、書き手が置換に気付かないまま
     外部への保存、プロセスの終了、ファイルの上書きなど復元できない結果が残るため、実行前に遮断する。
     判定はコマンド文字列だけから確定し、遮断された主体は区切り語の引用、事前の変数代入またはエスケープへ
-    書き直して同じターンで再実行できる。遮断とする根拠は`agent-toolkit:writing-standards`の
+    書き直して同じターンで再実行できる。遮断とする根拠は`agent-basics:writing-standards`の
     `references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
     本文の範囲と展開の有無は`agent_toolkit._common.heredocs.heredoc_bodies`の1つの定義から得る。
     """
@@ -794,7 +794,7 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
     Git Bash（MSYS2）のPATHはコロン区切りでドライブ文字形式を変換しないため、`C:/x`は`C`と`/x`の2要素に分かれ、
     意図したディレクトリが検索されない。その結果を根拠に結論を下す前に気付けるよう、実行の直前に判定する。
 
-    判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
+    判定の結論は警告とする。根拠は`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`
     「遮断と警告の選択」にある。誤ったPATHはコマンドを失敗させずに誤った結果を返し、
     その結果が誤った結論の根拠になる。判定はコマンド文字列から機械的に確定でき、実行を止めないため誤検出の費用も小さい。
     影響はそのコマンドのプロセス環境に閉じ、正しい形式で再実行すれば是正できるため遮断はしない。

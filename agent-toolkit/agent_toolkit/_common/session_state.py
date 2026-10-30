@@ -9,7 +9,7 @@
 状態ディレクトリの固定1個のロックで、短いJSONの更新と回収を直列化する。
 ロックは削除せず、書き込みは同一ディレクトリの一時ファイル経由`os.replace`で反映する。
 
-パス規則は`agent-toolkit/skills/writing-standards/references/session-state-and-flags.md`の
+dotfilesでの開発用パス規則は`.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md`の
 「状態ファイルの設計」節に記載がある。
 """
 

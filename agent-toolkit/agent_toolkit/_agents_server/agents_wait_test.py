@@ -327,11 +327,11 @@ def test_agents_wait_guides_review_result_before_deciding_findings(
         assert next_action is None
     elif expected == "review":
         assert next_action == result_projection.REVIEW_RESULT_NEXT_ACTION
-        for fragment in ("`agent-toolkit:review-standards`", "`references/reviewee.md`", "合意を示すユーザー発話を特定"):
+        for fragment in ("`agent-basics:review-standards`", "`references/reviewee.md`", "合意を示すユーザー発話を特定"):
             assert fragment in next_action
     elif expected == "reader-fit-review":
         assert next_action == result_projection.READER_FIT_REVIEW_RESULT_NEXT_ACTION
-        assert "`agent-toolkit:review-standards`" in next_action
+        assert "`agent-basics:review-standards`" in next_action
         assert "`reader-fit-review.parent.md`「受領」" in next_action
         assert "reviewee.md" not in next_action
     else:

@@ -22,7 +22,7 @@ writes_worktree: false
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文の起動指定に従って作成規範を取得する前 | `../skills/writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 
 ## 入力
@@ -34,7 +34,7 @@ writes_worktree: false
 
 1. `シナリオ`の指定内容に応じて読み方を選択する。
    - `シナリオ`が`なし`以外の場合は、事前知識を持たない読者として対象プロンプトを提示された状況に適用し、解釈に迷った箇所や独自の裁量で補った箇所を指摘する。評価は文面の読み取りと論理的推論のみで完結させる。対象の指示を実際に実行する試行は、別途行われる複数ターンの検証が担う。作成規範はあえて読まない。規範を読むと、指示文に書かれていない前提を知識で補ってしまい、指示側の曖昧さを正しく指摘できなくなるためである。
-   - `シナリオ`が`なし`の場合は、対象プロンプトの全文を通読し、不明瞭な箇所、冗長な表現、不足している情報、誤り、過剰な制約を洗い出す。この際、`agent-toolkit:writing-standards`を起動し、`agent-basics:writing-standards`の「エージェント向け文書の編集時に読む資料」に定められた基準も適用する。
+   - `シナリオ`が`なし`の場合は、対象プロンプトの全文を通読し、不明瞭な箇所、冗長な表現、不足している情報、誤り、過剰な制約を洗い出す。この際、`agent-basics:writing-standards`を起動し、`agent-basics:writing-standards`の「エージェント向け文書の編集時に読む資料」に定められた基準も適用する。
 2. 発動条件、本文の論理構造、記述の正確さ、冗長性、命名規則、例示の妥当性、整合性などを幅広く検証し、検出した指摘をすべて重要度（実害の大きさ、改善効果、適用頻度）の高い順に並べて返却する。指摘の採否決定は委譲元が行うため、重要度が低い指摘も含めて報告する。各指摘は単体で理解できる粒度とし、問題の所在と内容を簡潔に記述する。
 
 ## 出力

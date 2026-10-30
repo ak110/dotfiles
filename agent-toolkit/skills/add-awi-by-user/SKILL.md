@@ -30,8 +30,8 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
-| 考慮漏れの指摘を受けて原因を分析する前 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
+| 考慮漏れの指摘を受けて原因を分析する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「対策の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
@@ -69,7 +69,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
    - 引数なしでスキルが起動され、直前の会話の応答で各項目の対応方針がすでに示されている場合は、その内容を登録対象の入力として受け入れ、提示済みの基準でも判断がつかない項目のみを質問する。
    - ユーザーの依頼が範囲を示す表現や網羅的な列挙と、具体例や理由の説明を兼ね備えている場合は、要求単位を確定する前に`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」の該当規定を適用する。事前の調査結果が必要な質問への回答は、手順3の作成主体が調査と根拠の確定を終えた後に送信する。
    - ユーザーがモデル、ツール、担当エージェント、操作手順などの具体的な手段を指定した場合は、その指定が`workflow-phases.md`で定義されているどの開発工程（WI作成・計画・実行・実行レビュー）に向けられたものかを原文から正確に対応付ける。現在のセッションに対する指定はWI作成工程のみに適用し、後続の開発工程に対する要件には含めない。後続工程への適用範囲が原文から一意に定まらず、要件や完成条件に影響を与える場合は、工程ごとの適用範囲を個別の質問で確認し、その回答結果のみを根拠として扱う。
-   - 論文、ベンチマーク結果、他プロジェクトの実績など外部資料を根拠とする改善案を提案・確定する前に、`agent-toolkit:review-standards`を起動し、外部資料に基づく改善案の評価基準を適用する。
+   - 論文、ベンチマーク結果、他プロジェクトの実績など外部資料を根拠とする改善案を提案・確定する前に、`agent-basics:review-standards`を起動し、外部資料に基づく改善案の評価基準を適用する。
    - 対象リポジトリの外部へ成果を反映させる要求については、反映先ごとの終了状態（コミットまでかプッシュまでか）を`agent-toolkit:wi-standards`の`references/awi-body.md`「完成条件」に基づいて判定する。質問ラウンドで確認するのは、反映先の規範や取得済みの認可では決まらず、ユーザー自身の判断が必要な事項に限定する。
    - 観測された問題（失敗、不具合、未対応など）を起点とする要求では、対処方針の選定は原因分析を完了させた後に行う。wi-standardsの共通手順に沿って投入先を確定し、手順3の作成主体が初期調査、原因分析、および類似箇所の見直しを実施して具体的な対策を確定する。対処方針についてユーザー確認するのは、原因が特定された後もユーザー自身の選択が必要な事項が残る場合に限る。要求の目的や対象範囲の確認は本手順の段階で行う。
 3. wi-standardsにおける要求の同一性基準に基づいて独立した要求を分割する。件数の多寡にかかわらず、メインエージェント自身が調査、対策の確定、起草、検収、および保存までを一貫して担当することを原則とする。
@@ -93,7 +93,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 
 確認で受けた指摘を要求単位に分け、次のいずれかへ分類して、次の確認で報告する。
 
-- 考慮漏れ: 原文、取得済みの調査結果、現物、適用中の規範から導けたのに方針へ反映しなかったもの。`agent-toolkit:bugfix`を起動して原因を分析し、同じ仕組みで漏れうる観点を全方針で見直す。再発防止策を検討してから方針へ反映し、再確認する。
+- 考慮漏れ: 原文、取得済みの調査結果、現物、適用中の規範から導けたのに方針へ反映しなかったもの。`agent-basics:bugfix`を起動して原因を分析し、同じ仕組みで漏れうる観点を全方針で見直す。再発防止策を検討してから方針へ反映し、再確認する。
 - ユーザーだけが持つ新しい情報: 選好、未開示の制約など、登録前の調査では導けなかったもの。要件として反映し、再発防止策は設けない。
 - 前提の誤り: 指摘の技術的前提が現物と一致しないもの。根拠と代替案を示す。
 - 採用しない提案: 検討の結果採らない提案。根拠を示す。

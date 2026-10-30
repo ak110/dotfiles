@@ -24,13 +24,13 @@ description: 「PRをマージして」などの明示的な依頼を受けた�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-toolkit:bugfix`の`references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` | |
+| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-basics:bugfix/references/ci-failure-handling.md`、`agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md`、`read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` | |
 | マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md` | |
 
 ## 失敗時の対応
 
 - CIやリリース以外の工程が失敗した場合は、すでに完了した外部の状態を保持したまま、失敗した工程、現在の外部状態、runのURL、および再開に必要な情報を報告して停止する。PR作成やマージの再試行、auto-mergeの有効化、自動修復、自動ロールバックなどは行わない。
-- CIやリリースの実行（run）が失敗した場合は、run全体の終了状態と失敗ログを確認し、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「再現性」に沿って原因を分類する。ネットワーク障害、配布元のタイムアウト、レート制限、ランナー障害といった一時的な外部要因が疑われる場合は、同ドキュメントの手順に従って広域障害の有無を確認したうえで、同一の原因について失敗したジョブを1回だけ再実行して検収を続行する。
+- CIやリリースの実行（run）が失敗した場合は、run全体の終了状態と失敗ログを確認し、`agent-basics:bugfix`の`references/ci-failure-handling.md`「再現性」に沿って原因を分類する。ネットワーク障害、配布元のタイムアウト、レート制限、ランナー障害といった一時的な外部要因が疑われる場合は、同ドキュメントの手順に従って広域障害の有無を確認したうえで、同一の原因について失敗したジョブを1回だけ再実行して検収を続行する。
 - 再実行しても再度失敗した場合、初回のログで一時的な外部要因が疑われない場合、またはログを取得できない場合は、元のrunの失敗状態を維持したまま、上記と同様の内容を報告して処理を停止する。
 
 ## 対象PRの選択

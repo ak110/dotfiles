@@ -78,7 +78,7 @@ def test_process_loop_agy_interactive_and_resume(
     assert argv[argv.index("--model") + 1] == "gemini-4-argon"
     assert argv[argv.index("--effort") + 1] == "medium"
     delivered = argv[argv.index("-i") + 1]
-    assert "agent-toolkit:process-wi-all-repos" in delivered
+    assert "agent-toolkit:process-wi all-repos" in delivered
     assert str(manifest) in delivered
     assert not delivered.startswith("/goal ")
     if resume:

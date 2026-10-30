@@ -10,11 +10,19 @@ from agent_toolkit._hooks import posttooluse, user_prompt_submit
 
 
 @pytest.mark.parametrize(
-    "skill,kind", [("process-wi", "process-wi"), ("single-lane-process", "single-lane"), ("add-awi-by-user", "add-awi")]
+    "skill,arguments,kind",
+    [
+        ("process-wi", "", "process-wi"),
+        ("process-wi", "single-lane 追記", "single-lane"),
+        ("process-wi", "all-repos", "all-repos"),
+        ("process-wi", "single-lanex", "process-wi"),
+        ("add-awi-by-user", "", "add-awi"),
+    ],
 )
 @pytest.mark.parametrize("manual", [False, True])
 def test_command_hooks_name_session(
     skill: str,
+    arguments: str,
     kind: str,
     manual: bool,
     tmp_path: pathlib.Path,
@@ -32,7 +40,7 @@ def test_command_hooks_name_session(
                     "session_id": session,
                     "hook_event_name": "PostToolUse",
                     "tool_name": "Skill",
-                    "tool_input": {"skill": f"agent-toolkit:{skill}"},
+                    "tool_input": {"skill": f"agent-toolkit:{skill}", "args": arguments},
                 }
             )
         )
@@ -40,7 +48,7 @@ def test_command_hooks_name_session(
     # 一時ディレクトリが変わる再開でも種別を保持する。
     (tmp_path / "after-restart").mkdir()
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path / "after-restart"))
-    payload = {"session_id": session, "prompt": f"/agent-toolkit:{skill}" if manual else "続ける"}
+    payload = {"session_id": session, "prompt": f"/agent-toolkit:{skill} {arguments}" if manual else "続ける"}
     user_prompt_submit.main(json.dumps(payload))
     title = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["sessionTitle"]
     assert title == f"{kind} 画像整理"

@@ -25,11 +25,11 @@ writes_worktree: false
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewer.md#「再レビューの場合」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「再レビューの場合」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-criteria.md#「再レビューの場合」` | 判断 | `section:agent-toolkit:*/share/exec-review-criteria.md#「再レビューの場合」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「日本語の書き方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「日本語の書き方」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body.md#「節の構成と分担」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「節の構成と分担」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/uwi-format.md#「構成」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「構成」` |
@@ -62,18 +62,18 @@ Git管理下の比較資料は、`repository`、`base`、`head`、`paths`を持�
 資料の形式、あるいは本文・差分・判定範囲の対応関係に不備がある場合でも、受け取った保存資料から読み取れる本文と差分のうち範囲が広い側（今回差分または全文）を採用して判定し、検出した不備と採用した範囲を`想定外事象:`として報告する。
 判定に必要な本文や差分をどの資料からも取得できない場合に限り、補完に必要な保存ファイルを`続行できない理由`として返却する。
 全文は文脈を把握するために通読し、指摘候補は初回・再レビューのいずれにおいても修正箇所および変更された契約の直接影響範囲から抽出する。範囲外に存在する既存の不良は`想定外事象:`として報告し、WIの反映範囲を超える新たな仕様変更や網羅的な要求は、新規要件として未達の指摘とは区別して返却する。
-再レビューにおける前回指摘への応答は、`agent-toolkit:review-standards`の`references/reviewer.md`「再レビューの場合」に従って処理する。指摘候補は「修正によって新たに発生した欠陥」「前回未走査だった直接影響範囲の欠陥」「同一の違反規定・発生条件が未解消のまま残っている問題」に分類する。今回の対象範囲に含まれており初回レビューの時点で判断可能だった問題については、初回レビュー時の確認不足として通常の指摘候補と区別して返却する。
+再レビューにおける前回指摘への応答は、`agent-toolkit:/share/exec-review-criteria.md`「再レビューの場合」に従って処理する。指摘候補は「修正によって新たに発生した欠陥」「前回未走査だった直接影響範囲の欠陥」「同一の違反規定・発生条件が未解消のまま残っている問題」に分類する。今回の対象範囲に含まれており初回レビューの時点で判断可能だった問題については、初回レビュー時の確認不足として通常の指摘候補と区別して返却する。
 
 ## 観点
 
-冒頭の1文が、読者が最初に抱く疑問へ的確に答えているかを確認する。見出しの表現や主語の選び方は、`agent-basics:writing-standards`の`references/writing.md`にある共通基準に基づいて判定する。
+冒頭の1文が、読者が最初に抱く疑問へ的確に答えているかを確認する。見出しの表現や主語の選び方は、`agent-toolkit:delegation/references/writing.md`にある共通基準に基づいて判定する。
 
 読者への適合性の観点として、想定読者が文面のみから行為者と対象を一意に特定し、判断・操作・検証へ正しく進めるかを判定する。
 日本語の表現については、`agent-basics:writing-standards/references/writing.md`「日本語の書き方」を参照し、執筆時と同一の基準で判定する。
 
-- 既知と未知の整理: 読者がすでに知っている情報の重複記載を省き、未習熟の用語、内部的な呼称、作業環境固有の識別子には簡潔な説明を添えて用いる。既存の対象を指す名詞句については、定義元の実体が存在すること、および読者が対象文書からその実体へ到達できることを確認する。別文書の節名・用語・事例の略記の示し方は、`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」に従う。
+- 既知と未知の整理: 読者がすでに知っている情報の重複記載を省き、未習熟の用語、内部的な呼称、作業環境固有の識別子には簡潔な説明を添えて用いる。既存の対象を指す名詞句については、定義元の実体が存在すること、および読者が対象文書からその実体へ到達できることを確認する。別文書の節名・用語・事例の略記の示し方は、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」に従う。
 - 情報の充足と到達性: 判断、操作、検証に必要な情報（目的、対象、条件、後続の手順、参照先）をすべて網羅し、根拠や出所として参照する対象は読者がアクセス可能なものに限定する（個人の作業メモ、進行中の計画ファイル、会話ログなどは読者が到達できるか確認する）。
-- 情報の必要性: `agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」の情報を追加する前の判定基準に従い、書き手のみが共有している文脈を読者の前提から除外する。
+- 情報の必要性: `agent-toolkit:delegation/references/writing.md`「文章の共通規定」の情報を追加する前の判定基準に従い、書き手のみが共有している文脈を読者の前提から除外する。
 - 指示先の一意性: 行為者と対象が一意に識別可能であり、指示語や相対的な表現が指す対象が本文のみから明確に定まることを確認する。
 
 文書の種別がエージェント向け文書または委譲関連文書である場合は、役割への適合性についても判定する。

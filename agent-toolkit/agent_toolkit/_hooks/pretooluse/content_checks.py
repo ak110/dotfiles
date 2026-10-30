@@ -50,7 +50,7 @@ def _collect_edit_operation_warnings(
 ) -> list[str]:
     """1操作分の警告本文を順に集める。
 
-    いずれも後続の編集で復元できる結果を対象とするため、`agent-toolkit:writing-standards`の
+    いずれも後続の編集で復元できる結果を対象とするため、`agent-basics:writing-standards`の
     `references/claude-hooks-block-warn.md`「遮断と警告の選択」により警告で返す。
     """
     fields = [(fragment.label, fragment.after) for fragment in operation.fragments]
@@ -128,7 +128,7 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
             f"`.gitattributes`の`*.ps1 text eol=crlf`規約とも一致しない。対象: {file_path}",
             tag=_WARN_TAG,
             fix=(
-                "`agent-toolkit:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い、"
+                "`agent-basics:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い、"
                 "既存ファイルには`Edit`ツールを使え。"
                 "新規ファイルを`Bash`で`UTF-8`の`BOM`と`CRLF`改行を指定して書き込め。"
             ),

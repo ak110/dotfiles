@@ -8,7 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/lane-integration.subagent.md#「マージありの統合」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「マージありの統合」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/history-rewrite.md#「履歴確認の起動形」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「履歴確認の起動形」` |

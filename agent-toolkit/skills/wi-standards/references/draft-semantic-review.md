@@ -11,7 +11,7 @@
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「ユーザー入力素材の取扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「節の構成と分担」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「節の構成と分担」` |
@@ -43,7 +43,7 @@
 原因と被覆の判定では、同節に従い、探索範囲の各限定を根本原因の成立条件から導けるか確認する。
 
 原稿全体に対して、`drafting-completion.md`の「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「投入前の読み直し」「方針と判断の記録との比較」を適用する。「重複判定」は同節の起点別の適用条件に従い、免除された既存項目との比較を実施していないことだけを理由に検収を止めない。観測された不具合を起点としbugfixを起動して起草するAWIには「原因と定義の所有者」と同資料が参照するbugfixの基準も併せて適用する。原文、実際の回答、現物の状態、ならびに取得済みの証拠をもとに、要件の分類、処置の妥当性と必要性、一連の処理全体の一貫性、根本原因と対象範囲の網羅、過去の判断との整合性、ならびに未確認範囲の有無を独立して判定する。原稿が課している操作上の制約が、原文で指定された工程に正しく対応しているかも確認する。
-原文と反映内容を読み比べ、`agent-basics:writing-standards`の`references/writing.md`「ユーザー入力素材の取扱い」に従って要求の脱落・追加・意味の変化を確かめる。認可や解釈のため出所の再取得が必要な場合は、`drafting-workflow.md`「出所と観測の取得」に従い、取得済みの出所ファイルと記録位置を優先し、不足時に指定された会話IDから取得する。通常の転記は取得済みの原文で確認する。任意節や引用位置の記録がないこと、`wi-quote-check`の未実行だけを理由に差し戻さない。
+原文と反映内容を読み比べ、`agent-toolkit:delegation/references/writing.md`「ユーザー入力素材の取扱い」に従って要求の脱落・追加・意味の変化を確かめる。認可や解釈のため出所の再取得が必要な場合は、`drafting-workflow.md`「出所と観測の取得」に従い、取得済みの出所ファイルと記録位置を優先し、不足時に指定された会話IDから取得する。通常の転記は取得済みの原文で確認する。任意節や引用位置の記録がないこと、`wi-quote-check`の未実行だけを理由に差し戻さない。
 
 - 渡した要求の集合と、返却された要求識別子が重複なく完全に一致していることを確認する。複数の原稿が存在する場合も、各要求に対して個別に基準を適用する。
 - 調査の先送りを含まないことを確認する。調査や棚卸しの実施自体を作業要求とした原稿や、判断基準のみを提示して対象ごとの具体的な判断を後続作業に残した原稿は、`drafting-completion.md`「確定の判定」に基づき修正が必要な原稿として差し戻す。手動作成の原稿では、`../SKILL.md`「起票目的別の調査出口」を適用する。

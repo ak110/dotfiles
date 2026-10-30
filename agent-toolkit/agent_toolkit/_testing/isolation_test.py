@@ -14,6 +14,7 @@ import venv
 import pytest
 from platformdirs import windows
 
+from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._testing import isolation
 from agent_toolkit._testing.loop_isolation_support import assert_loop_scope_isolation
 
@@ -59,6 +60,17 @@ def _assert_sentinel_preserved(python: pathlib.Path, marker: pathlib.Path) -> No
 def test_development_state_isolated_by_default(tmp_path: pathlib.Path) -> None:
     """この起動範囲のテストは、何も設定しなくても開発機の状態から隔離される。"""
     isolation.assert_development_state_isolated(tmp_path)
+
+
+def test_import_time_home_omits_delegated_plugin_root_and_restores_it(tmp_path, monkeypatch):
+    """収集時に製品定数へ委譲元の資料rootを混ぜず、区間を抜けたら起動環境へ戻す。"""
+    name = "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT"
+    value = str(tmp_path / "parent-plugin")
+    monkeypatch.setenv(name, value)
+    with isolation.import_time_home(tmp_path / "collection"):
+        assert name not in os.environ
+        assert plugin_resources.plugin_root() == pathlib.Path(__file__).resolve().parents[2]
+    assert os.environ[name] == value
 
 
 @pytest.mark.parametrize("scope", [None, "session"])
