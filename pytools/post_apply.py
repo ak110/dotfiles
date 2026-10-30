@@ -165,9 +165,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
     Path.home() / ".claude": [
         # `references/`はスキル配下だけの名前としたため、旧配布先のディレクトリを削除する。
         cleanup_paths.RemovedPath(Path("references"), datetime.date(2026, 9, 18)),
-        # 再レビューは careful-spec-reviewer / careful-impl-reviewer の followup モードが担うため、
-        # 配布先から旧エージェント定義を削除する。
-        cleanup_paths.RemovedPath(Path("agents/careful-followup-reviewer.md"), datetime.date(2026, 4, 30)),
         # 現在のスキル名は refine-prompt。配布先から旧スキルディレクトリを削除する。
         cleanup_paths.RemovedPath(Path("skills/empirical-prompt-tuning"), datetime.date(2026, 5, 1)),
         # 2つのスキルはagent-toolkit pluginへ移設したため、dotfiles側の旧配布先を削除する。
