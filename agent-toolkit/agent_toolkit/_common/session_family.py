@@ -9,7 +9,8 @@ from __future__ import annotations
 import datetime
 import json
 import re
-from collections.abc import Callable
+from collections import deque
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, cast
 
@@ -184,42 +185,175 @@ def _superseding_line(broken: bytes, following: list[tuple[int, bytes]]) -> _Rec
     return None
 
 
-def _load_records_checked(raw_path: str | None) -> _RecordLoad:
-    """絶対パスのJSONLを行番号付きで読み、回復した行と読めない理由を併せて返す。
+class _RecordReadError(ValueError):
+    """逐行読込の失敗を、通常読込とメタ走査へ同じ形で渡す。"""
 
-    行は改行（LF）だけで分ける。JSONの文字列はU+2028などの区切り文字をそのまま含められるため、
-    `str.splitlines`で分けると1つのレコードが複数行に分かれる。
+    def __init__(self, failure: _RecordLoadFailure) -> None:
+        super().__init__(failure.reason)
+        self.failure = failure
+
+
+def _iter_record_lines(raw_path: str | None, recoveries: list[_RecordRecovery]) -> Iterator[_Record]:
+    """JSONLをLF単位で読み、部分書込みの直後の完全行だけで回復する。
+
+    バイナリ反復を使い、JSON文字列内のU+2028を行区切りとしない。
+    途中の失敗では呼出側がそれまでの結果を破棄し、ファイル全体を不成立にする。
     """
     if not raw_path:
-        return _RecordLoad(None, failure=_RecordLoadFailure("記録のパスが指定されていない"))
+        raise _RecordReadError(_RecordLoadFailure("記録のパスが指定されていない"))
     path = Path(raw_path)
     if not path.is_absolute():
-        return _RecordLoad(None, failure=_RecordLoadFailure(f"記録のパスが絶対パスでない: {raw_path}"))
+        raise _RecordReadError(_RecordLoadFailure(f"記録のパスが絶対パスでない: {raw_path}"))
     try:
-        data = path.read_bytes()
+        with path.open("rb") as stream:
+            lines = enumerate(stream, start=1)
+            for number, raw in lines:
+                raw = raw.removesuffix(b"\n").removesuffix(b"\r")
+                if not raw.strip():
+                    continue
+                try:
+                    line = raw.decode("utf-8")
+                    parsed = json.loads(line)
+                except ValueError as error:
+                    following = next(
+                        ((n, value.removesuffix(b"\n").removesuffix(b"\r")) for n, value in lines if value.strip()), None
+                    )
+                    recovery = _superseding_line(raw, [following] if following is not None else [])
+                    if recovery is None:
+                        raise _RecordReadError(_RecordLoadFailure(f"{number}行目を読めない: {error}", number)) from error
+                    recoveries.append(recovery._replace(line=number))
+                    assert following is not None
+                    number, raw = following
+                    del following
+                    line = raw.decode("utf-8")
+                    parsed = json.loads(line)
+                if isinstance(parsed, dict):
+                    yield _Record(number, line, _analysis_entry(parsed))
     except OSError as error:
-        return _RecordLoad(None, failure=_RecordLoadFailure(f"記録を読み取れない: {error}"))
+        raise _RecordReadError(_RecordLoadFailure(f"記録を読み取れない: {error}")) from error
 
-    lines = [(number, raw.removesuffix(b"\r")) for number, raw in enumerate(data.split(b"\n"), start=1)]
-    records: list[_Record] = []
+
+def _load_records_checked(raw_path: str | None) -> _RecordLoad:
+    """絶対パスのJSONLを行番号付きで読み、回復した行と読めない理由を併せて返す。"""
     recoveries: list[_RecordRecovery] = []
-    for index, (number, raw) in enumerate(lines):
-        if not raw.strip():
-            continue
-        try:
-            line = raw.decode("utf-8")
-            parsed = json.loads(line)
-        except ValueError as error:
-            recovery = _superseding_line(raw, lines[index + 1 :])
-            if recovery is None:
-                return _RecordLoad(None, failure=_RecordLoadFailure(f"{number}行目を読めない: {error}", number))
-            recoveries.append(recovery._replace(line=number))
-            continue
-        if isinstance(parsed, dict):
-            records.append(_Record(number, line, _analysis_entry(parsed)))
+    try:
+        records = list(_iter_record_lines(raw_path, recoveries))
+    except _RecordReadError as error:
+        return _RecordLoad(None, failure=error.failure)
     normalized = normalize_entries([record.entry for record in records])
     return _RecordLoad(
         [record._replace(entry=entry) for record, entry in zip(records, normalized, strict=True)], tuple(recoveries)
+    )
+
+
+class _RecordMetadata(NamedTuple):
+    """全期間索引に残す識別子・時刻・参照。本文と解析エントリを所有しない。"""
+
+    path: Path
+    runtime: _Runtime | None = None
+    record_id: str = ""
+    thread_id: str | None = None
+    start: datetime.datetime | None = None
+    end: datetime.datetime | None = None
+    start_value: Any = None
+    end_value: Any = None
+    child_ids: tuple[str, ...] = ()
+    is_subagent: bool = False
+    record_count: int = 0
+    recoveries: tuple[_RecordRecovery, ...] = ()
+    failure: _RecordLoadFailure | None = None
+
+
+def _metadata_records(path: Path, recoveries: list[_RecordRecovery]) -> Iterator[_Record]:
+    """メタ走査用にAGYの呼出と結果を対応させ、待機中はIDとツール名だけを保つ。"""
+    pending: deque[dict[str, str]] = deque()
+    for index, record in enumerate(_iter_record_lines(str(path), recoveries)):
+        entry = record.entry
+        if not is_agy_entry(entry) or "_agy_original" in entry:
+            yield record
+            continue
+        body = entry.get("step_update")
+        body = body if isinstance(body, dict) else entry
+        prefix = []
+        if body.get("type", body.get("step_type")) == "GENERIC" and pending:
+            prefix = [{"step_index": 0, "source": "metadata", "type": "PLANNER_RESPONSE", "tool_calls": [pending.popleft()]}]
+        normalized = normalize_entries([*prefix, {**entry, "step_index": entry.get("step_index", index)}])[-1]
+        if body.get("type", body.get("step_type")) in {"PLANNER_RESPONSE", "agent_response"}:
+            for block in normalized["message"]["content"]:
+                if block.get("type") == "tool_use":
+                    pending.append({"id": block["id"], "name": block["name"]})
+        yield record._replace(entry=normalized)
+
+
+def _scan_record_metadata(path: Path) -> _RecordMetadata:
+    """全期間の関係と期間判定に必要な値を逐行抽出し、読込失敗時は途中結果を破棄する。"""
+    recoveries: list[_RecordRecovery] = []
+    runtime: _Runtime | None = None
+    priority: dict[_Runtime | None, int] = {None: 0, "claude": 1, "codex": 2, "agy": 3, "opencode": 4}
+    thread_id = None
+    start = end = None
+    start_value = end_value = None
+    calls: set[str] = set()
+    references: list[tuple[set[str], tuple[str, ...], tuple[str, ...]]] = []
+    is_subagent = path.parent.name == "subagents"
+    count = 0
+    try:
+        for record in _metadata_records(path, recoveries):
+            count += 1
+            detected = _detect_runtime([record.entry])
+            if priority[detected] > priority[runtime]:
+                runtime = detected
+            if thread_id is None:
+                thread_id = _codex_thread_id_from_records([record])
+            timestamp = _record_timestamp(record)
+            if timestamp is not None:
+                if start is None or timestamp < start:
+                    start, start_value = timestamp, record.entry["timestamp"]
+                if end is None or timestamp > end:
+                    end, end_value = timestamp, record.entry["timestamp"]
+            calls.update(_agents_server_call_ids([record]))
+            payload = record.entry.get("payload")
+            source = payload.get("source") if isinstance(payload, dict) else None
+            is_subagent |= isinstance(source, dict) and "subagent" in source
+            message = record.entry.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            result_ids = (
+                {
+                    block["tool_use_id"]
+                    for block in content
+                    if isinstance(block, dict)
+                    and block.get("type") == "tool_result"
+                    and isinstance(block.get("tool_use_id"), str)
+                }
+                if isinstance(content, list)
+                else set()
+            )
+            if isinstance(payload, dict) and isinstance(payload.get("call_id"), str):
+                result_ids.add(payload["call_id"])
+            direct = tuple(_thread_ids_from_record(record, set()))
+            conditional = tuple(_thread_ids_from_record(record, result_ids))
+            if direct or conditional:
+                references.append((result_ids, direct, conditional))
+    except _RecordReadError as error:
+        return _RecordMetadata(path, failure=error.failure)
+    # 呼出より前の結果も通常読込と同じく解決する。保留するのは候補IDだけである。
+    children = tuple(
+        dict.fromkeys(child for ids, direct, conditional in references for child in (conditional if ids & calls else direct))
+    )
+    identity_records = [_Record(0, "", {"type": "session_meta", "payload": {"id": thread_id}})] if thread_id else []
+    return _RecordMetadata(
+        path,
+        runtime,
+        _physical_record_id(path, identity_records, runtime),
+        thread_id,
+        start,
+        end,
+        start_value,
+        end_value,
+        children,
+        is_subagent,
+        count,
+        tuple(recoveries),
     )
 
 

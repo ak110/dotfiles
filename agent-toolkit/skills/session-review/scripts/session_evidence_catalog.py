@@ -13,7 +13,7 @@ from session_evidence_extract import (
     _ENV_ASSIGNMENT,
     _basename,
     _CollectedRecord,
-    _detect_runtime,
+    _collection_events,
     _error_event,
     _extract_records,
     _json_object,
@@ -28,12 +28,7 @@ from session_evidence_extract import (
     _unresolved_events,
     _UnresolvedRecord,
 )
-from session_evidence_records import (
-    _agents_server_call_ids,
-    _codex_record_thread_id,
-    _collect_records,
-    _thread_ids_from_record,
-)
+from session_evidence_records import _collect_records
 from session_evidence_stats import (
     _add_tokens,
     _stats_summary_data,
@@ -46,6 +41,8 @@ from session_evidence_tool_calls import (
 from session_evidence_user_events import _query_user_events
 
 from agent_toolkit._agents_server import record_paths as _record_paths
+from agent_toolkit._common import agents_server_tools as _agents_server_tool_names
+from agent_toolkit._common.session_family import _RecordMetadata, _scan_record_metadata
 from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
 
 CATALOG_PARENT_FIELDS = (
@@ -81,14 +78,6 @@ class _CatalogSelection(NamedTuple):
             and (not self.known_workflow or event["workflow"] != "unknown")
             and (self.cwd_contains is None or self.cwd_contains in event["cwd"])
         )
-
-
-def _catalog_session_id(path: Path, records: list[_Record], runtime: _Runtime) -> str:
-    """カタログ内記録のセッション識別子を返す。"""
-    if runtime == "claude":
-        return path.stem
-    item = _CollectedRecord("main", path, records, runtime, None, None, None, "main")
-    return _codex_record_thread_id(item) or path.stem.removeprefix("rollout-")
 
 
 def _catalog_value(records: list[_Record], *keys: str) -> str:
@@ -253,7 +242,7 @@ def _catalog_family_tokens(family: list[_CollectedRecord]) -> dict[str, int] | s
 
 
 def _catalog_agy_child(session_id: str) -> _CollectedRecord | None:
-    """走査rootの外にあるAntigravityの委譲先ログを、カタログの子として読み込む。
+    """走査rootの外にあるAntigravityの委譲先ログの本文なし所在を返す。
 
     agyの委譲先の記録はClaude CodeとCodexの履歴ディレクトリに置かれないため、走査rootだけからは子を検索できない。
     ClaudeとCodexの子は指定root内だけの比較一覧という前提を保つため、走査rootの記録からだけ取得する。
@@ -261,16 +250,15 @@ def _catalog_agy_child(session_id: str) -> _CollectedRecord | None:
     found = _record_paths.find_session_record(session_id)
     if found is None or found.engine not in {"agy", "opencode"}:
         return None
-    records = _load_records(str(found.paths[0]))
-    if records is None:
+    if _scan_record_metadata(found.paths[0]).failure is not None:
         return None
     return _CollectedRecord(
-        session_id, found.paths[0], records, "opencode" if found.engine == "opencode" else "agy", None, None, None, "session"
+        session_id, found.paths[0], [], "opencode" if found.engine == "opencode" else "agy", None, None, None, "session"
     )
 
 
 class _CatalogParent(NamedTuple):
-    """カタログの窓の中の親セッションと、走査rootの中で組み立てた子孫を含む記録群。"""
+    """窓内の親とroot内の子孫の本文なし所在。本文の所有は各照会の家族処理に限る。"""
 
     item: _CollectedRecord
     family: list[_CollectedRecord]
@@ -306,21 +294,22 @@ def _catalog_scan(
         )
     loaded: dict[str, _CollectedRecord] = {}
     path_items: dict[Path, _CollectedRecord] = {}
+    metadata: dict[str, _RecordMetadata] = {}
     unresolved_loads = 0
     unresolved = []
     for path in paths:
-        records = _load_records(str(path))
-        if records is None:
+        meta = _scan_record_metadata(path)
+        if meta.failure is not None:
             unresolved_loads += 1
             identity = f"claude:{path.parent.parent.name}/{path.stem}" if path.parent.name == "subagents" else str(path)
             unresolved.append(_UnresolvedRecord(identity, 0))
             continue
-        detected = _detect_runtime([record.entry for record in records])
-        if detected != runtime:
+        if meta.runtime != runtime:
             continue
-        session_id = _catalog_session_id(path, records, runtime)
-        item = _CollectedRecord(session_id, path, records, runtime, None, None, None, "main")
+        session_id = path.stem if runtime == "claude" else meta.thread_id or path.stem.removeprefix("rollout-")
+        item = _CollectedRecord(session_id, path, [], runtime, None, None, None, "main")
         loaded.setdefault(session_id, item)
+        metadata.setdefault(session_id, meta)
         path_items[path.resolve()] = item
     if not loaded:
         return _error_event(
@@ -331,18 +320,16 @@ def _catalog_scan(
     referenced: set[str] = set()
     unresolved_references: set[tuple[str, str]] = set()
     for session_id, item in list(loaded.items()):
-        call_ids = _agents_server_call_ids(item.records)
-        for record in item.records:
-            for child_id in _thread_ids_from_record(record, call_ids):
-                if child_id not in loaded and (agy_child := _catalog_agy_child(child_id)) is not None:
-                    loaded[child_id] = agy_child
-                    children[child_id] = []
-                if child_id in loaded:
-                    if child_id not in children[session_id]:
-                        children[session_id].append(child_id)
-                    referenced.add(child_id)
-                else:
-                    unresolved_references.add((session_id, child_id))
+        for child_id in metadata[session_id].child_ids:
+            if child_id not in loaded and (agy_child := _catalog_agy_child(child_id)) is not None:
+                loaded[child_id] = agy_child
+                children[child_id] = []
+            if child_id in loaded:
+                if child_id not in children[session_id]:
+                    children[session_id].append(child_id)
+                referenced.add(child_id)
+            else:
+                unresolved_references.add((session_id, child_id))
         if runtime == "claude":
             subagent_dir = item.path.with_suffix("") / "subagents"
             for path, child in path_items.items():
@@ -363,9 +350,9 @@ def _catalog_scan(
     parents: list[_CatalogParent] = []
     for parent_id in sorted(set(parent_ids)):
         parent = loaded[parent_id]
-        stats = _stats_summary_data(parent.records, runtime)
-        start_text = stats.get("start")
-        end_text = stats.get("end")
+        meta = metadata[parent_id]
+        start_text = meta.start_value
+        end_text = meta.end_value
         start = _parse_timestamp(start_text) if isinstance(start_text, str) else None
         end = _parse_timestamp(end_text) if isinstance(end_text, str) else None
         if end is not None and end <= since:
@@ -392,6 +379,38 @@ def _catalog_scan(
     return _CatalogScan(resolved_root, parents, unresolved_loads + len(unresolved_references), unresolved)
 
 
+def _catalog_read_item(item: _CollectedRecord) -> _CollectedRecord:
+    """選ばれた家族の所在から本文を再取得する。索引作成後の消失は照会失敗とする。"""
+    records = _load_records(str(item.path))
+    if records is None:
+        raise ValueError(f"索引作成後に記録を読み取れない: {item.path}")
+    return item._replace(records=records)
+
+
+def _catalog_parent_event(parent: _CatalogParent, runtime: _Runtime) -> dict[str, Any]:
+    """一家族の本文から表示行だけを返し、次の家族の読込前に本文を解放する。"""
+    family = [_catalog_read_item(item) for item in parent.family]
+    item = family[0]
+    workflow, workflow_locator = _workflow_evidence(item)
+    operations = [operation for member in family for operation in _successful_wi_operations(member)]
+    return {
+        "kind": "catalog-parent",
+        "runtime": runtime,
+        "session_id": item.record_id,
+        "role_document": _role_document(item),
+        "started_at": parent.start_text or "unknown",
+        "finished_at": parent.end_text or "unknown",
+        "cwd": _catalog_value(item.records, "cwd", "originalCwd"),
+        "branch": _catalog_value(item.records, "gitBranch", "originalBranch", "branch"),
+        "workflow": workflow,
+        "workflow_locator": workflow_locator,
+        "tokens": _catalog_family_tokens(family),
+        "descendant_count": len(family) - 1,
+        "successful_wi_operations": operations,
+        "successful_wi_operation_count": len(operations),
+    }
+
+
 def _catalog_events(
     root: Path,
     runtime: _Runtime,
@@ -403,28 +422,10 @@ def _catalog_events(
     scan = _catalog_scan(root, runtime, since, boundary)
     if isinstance(scan, dict):
         return [scan], 2
-    events: list[dict[str, Any]] = []
-    for parent in scan.parents:
-        workflow, workflow_locator = _workflow_evidence(parent.item)
-        operations = [operation for item in parent.family for operation in _successful_wi_operations(item)]
-        events.append(
-            {
-                "kind": "catalog-parent",
-                "runtime": runtime,
-                "session_id": parent.item.record_id,
-                "role_document": _role_document(parent.item),
-                "started_at": parent.start_text or "unknown",
-                "finished_at": parent.end_text or "unknown",
-                "cwd": _catalog_value(parent.item.records, "cwd", "originalCwd"),
-                "branch": _catalog_value(parent.item.records, "gitBranch", "originalBranch", "branch"),
-                "workflow": workflow,
-                "workflow_locator": workflow_locator,
-                "tokens": _catalog_family_tokens(parent.family),
-                "descendant_count": len(parent.family) - 1,
-                "successful_wi_operations": operations,
-                "successful_wi_operation_count": len(operations),
-            }
-        )
+    try:
+        events = [_catalog_parent_event(parent, runtime) for parent in scan.parents]
+    except ValueError as error:
+        return [_error_event(str(error), next_action=_CATALOG_ROOT_NEXT_ACTION)], 2
     events.sort(key=lambda event: (str(event["started_at"]), str(event["session_id"])))
     summary: dict[str, Any] = {
         "kind": "catalog-summary",
@@ -462,31 +463,90 @@ def _catalog_tool_call_events(
         return [scan], 2
     events: list[dict[str, Any]] = []
     unresolved: list[_UnresolvedRecord] = list(scan.unresolved)
-    all_collected: dict[str, _CollectedRecord] = {}
+    owners: dict[str, tuple[_CollectedRecord, dict[str, Any]]] = {}
     for parent in scan.parents:
-        collected, parent_unresolved = _collect_records(str(parent.item.path), parent.item.records, None, boundary)
+        try:
+            parent_events, parent_unresolved, provenance = _catalog_tool_family(parent, boundary, tools, pattern, since)
+        except ValueError as error:
+            return [_error_event(str(error), next_action=_CATALOG_ROOT_NEXT_ACTION)], 2
         unresolved.extend(parent_unresolved)
-        for item in collected:
-            all_collected.setdefault(item.record_id, item)
-            for event in _tool_call_events(item, tools, pattern):
-                try:
-                    timestamp = _parse_timestamp(event["timestamp"]) if isinstance(event["timestamp"], str) else None
-                except ValueError:
-                    timestamp = None
-                if timestamp is not None and since < timestamp <= boundary:
-                    events.append({**event, "session_id": parent.item.record_id})
+        for item, source in provenance:
+            owners.setdefault(item.record_id, (item, source))
+        events.extend(parent_events)
     events = _sorted_tool_call_events(events)
-    collected_records = list(all_collected.values())
+    collected_records = [item for item, _source in owners.values()]
     resolved_ids = {identity for item in collected_records for identity in (item.record_id, item.record_id.partition(":")[2])}
     unresolved = [item for item in unresolved if item.record_id not in resolved_ids]
-    summary = _tool_call_summary(events, collected_records)
+    summary = _tool_call_summary(events)
+    groups: dict[str, dict[str, Any]] = {}
+    for event in events:
+        source = owners[str(event["record"])][1]
+        document = source["role_document"]
+        key = f"document:{document}" if document else f"record:{source['role']}"
+        group = groups.setdefault(key, {"count": 0, "by_tool": {}, "by_mode": {}})
+        group["count"] += 1
+        tool = str(event["tool"])
+        group["by_tool"][tool] = group["by_tool"].get(tool, 0) + 1
+        leaf = tool.rsplit("__", 1)[-1]
+        if leaf in _agents_server_tool_names.RECORDED_START_OPERATIONS:
+            inputs = _json_object(event["text"])
+            mode = _agents_server_tool_names.start_mode(leaf, inputs) if inputs is not None else None
+            if mode is not None:
+                group["by_mode"][mode] = group["by_mode"].get(mode, 0) + 1
+    summary["by_role"] = groups
     summary["by_session"] = dict(sorted(collections.Counter(str(event["session_id"]) for event in events).items()))
     summary["scan_root"] = str(scan.root)
     summary["since"] = since.isoformat()
     summary["observation_boundary"] = boundary.isoformat()
     summary["parent_record_count"] = len(scan.parents)
     summary["unresolved_record_count"] = len(set(unresolved))
-    return [*events, *_referenced_provenance_events(collected_records, events), *_unresolved_events(unresolved), summary], 0
+    provenance_events = [owners[event["record"]][1] for event in _referenced_provenance_events(collected_records, events)]
+    return [*events, *provenance_events, *_unresolved_events(unresolved), summary], 0
+
+
+def _catalog_tool_family(
+    parent: _CatalogParent,
+    boundary: datetime.datetime,
+    tools: list[str] | None,
+    pattern: re.Pattern[str] | None,
+    since: datetime.datetime,
+) -> tuple[list[dict[str, Any]], list[_UnresolvedRecord], list[tuple[_CollectedRecord, dict[str, Any]]]]:
+    """root外の子孫も一家族内で抽出し、本文を持たない由来だけを返す。"""
+    main = _catalog_read_item(parent.item)
+    collected, unresolved = _collect_records(str(main.path), main.records, None, boundary)
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        for event in _tool_call_events(item, tools, pattern):
+            try:
+                timestamp = _parse_timestamp(event["timestamp"]) if isinstance(event["timestamp"], str) else None
+            except ValueError:
+                timestamp = None
+            if timestamp is not None and since < timestamp <= boundary:
+                events.append({**event, "session_id": parent.item.record_id})
+    provenance = _collection_events(collected, [], recoveries=False)
+    return events, unresolved, [(item._replace(records=[]), source) for item, source in zip(collected, provenance, strict=True)]
+
+
+def _catalog_user_parent(
+    parent: _CatalogParent,
+    since: datetime.datetime,
+    boundary: datetime.datetime,
+    selection: _CatalogSelection | None,
+    pattern: re.Pattern[str] | None,
+    preceding_assistant: bool,
+) -> list[dict[str, Any]] | None:
+    """親本文だけを照会し、選別結果と出力以外の参照を呼出側へ渡さない。"""
+    item = _catalog_read_item(parent.item)
+    workflow, _locator = _workflow_evidence(item)
+    if selection is not None and not selection.matches(
+        {"workflow": workflow, "cwd": _catalog_value(item.records, "cwd", "originalCwd")}
+    ):
+        return None
+    collected, _unresolved = _collect_records(str(item.path), item.records, None, boundary, main_only=True)
+    return [
+        {**event, "session_id": parent.item.record_id}
+        for event in _query_user_events(collected[0], since, boundary, pattern, preceding_assistant=preceding_assistant)
+    ]
 
 
 def _catalog_user_event_events(
@@ -506,15 +566,14 @@ def _catalog_user_event_events(
     events: list[dict[str, Any]] = []
     selected = 0
     for parent in scan.parents:
-        workflow, _locator = _workflow_evidence(parent.item)
-        if selection is not None and not selection.matches(
-            {"workflow": workflow, "cwd": _catalog_value(parent.item.records, "cwd", "originalCwd")}
-        ):
+        try:
+            results = _catalog_user_parent(parent, since, boundary, selection, pattern, preceding_assistant)
+        except ValueError as error:
+            return [_error_event(str(error), next_action=_CATALOG_ROOT_NEXT_ACTION)], 2
+        if results is None:
             continue
         selected += 1
-        collected, _unresolved = _collect_records(str(parent.item.path), parent.item.records, None, boundary, main_only=True)
-        results = _query_user_events(collected[0], since, boundary, pattern, preceding_assistant=preceding_assistant)
-        events.extend({**event, "session_id": parent.item.record_id} for event in results)
+        events.extend(results)
     events.sort(
         key=lambda event: (
             _parse_timestamp(event["timestamp"]) if isinstance(event.get("timestamp"), str) else boundary,

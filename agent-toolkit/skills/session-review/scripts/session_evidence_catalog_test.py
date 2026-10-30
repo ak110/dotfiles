@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import gc
 import json
+import os
 import pathlib
+import weakref
 from typing import Any
 
 import pytest
 import session_review_evidence as evidence
 
+from agent_toolkit._common import session_family
+from agent_toolkit._common.session_family import _load_records_checked, _RecordLoad
 from agent_toolkit._testing.session_evidence_support import (
     TOOL_CALL_THREAD,
     agy_step,
+    assistant_usage_entry,
     claude_call,
+    codex_item,
     codex_tool_result_entry,
     codex_tool_use_entry,
     local_time_transcript,
@@ -557,3 +564,290 @@ def test_catalog_still_rejects_other_query_modes(tmp_path: pathlib.Path, capsys:
     (event,) = read_jsonl(capsys, raw=True)
     assert event["kind"] == "error"
     assert "--tool-calls" in event["next_action"] and "--user-events" in event["next_action"]
+
+
+class _TrackedEntry(dict[str, Any]):
+    """本文の生存を弱参照だけで観測する。"""
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+@pytest.mark.parametrize("query", [[], ["--user-events"], ["--tool-calls"]])
+def test_catalog_releases_previous_family_before_next_load(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    runtime: str,
+    query: list[str],
+) -> None:
+    """公開3照会が選外本文を読まず、次家族の読込時に処理済み本文を保持しない。"""
+    argv = _catalog_fixture(tmp_path, runtime)
+    old = pathlib.Path(argv[1]) / ("rollout-old.jsonl" if runtime == "codex" else "old.jsonl")
+    entry = timestamped_entry("2026-08-01T00:00:00Z", "期間外本文" * 1000)
+    if runtime == "codex":
+        entry = codex_item(entry["timestamp"], {"type": "message", "role": "user", "content": entry["message"]["content"]})
+    write_jsonl(old, [entry])
+    original = _load_records_checked
+    references: list[weakref.ReferenceType[_TrackedEntry]] = []
+    loaded_paths: list[str] = []
+
+    def tracked(path: str | None, **_kwargs: Any) -> _RecordLoad:
+        gc.collect()
+        assert not any(reference() is not None for reference in references), "処理済み家族の本文が次の家族へ残った"
+        assert path != str(old), "期間外の独立家族の本文を再取得した"
+        loaded = original(path)
+        assert loaded.records is not None
+        records = []
+        for record in loaded.records:
+            entry = _TrackedEntry(record.entry)
+            references.append(weakref.ref(entry))
+            records.append(record._replace(entry=entry))
+        loaded_paths.append(str(path))
+        return loaded._replace(records=records)
+
+    monkeypatch.setattr(session_family, "_load_records_checked", tracked)
+    assert evidence.main([*argv, *query]) == 0
+    events = read_jsonl(capsys, raw=True)
+    assert events[-1]["parent_record_count"] == 3
+    assert len(loaded_paths) == 3
+    gc.collect()
+    assert not any(reference() is not None for reference in references)
+
+
+def _period_record(root: pathlib.Path, runtime: str, identity: str, timestamp: str, child: str | None = None) -> pathlib.Path:
+    """既存ホストfixtureと同じ構造で、親自身と子の時刻を独立に設定する。"""
+    if runtime == "claude":
+        path = root / f"{identity}.jsonl"
+        entries = [timestamped_entry(timestamp, identity), assistant_usage_entry(timestamp, identity, {"input_tokens": 7})]
+        entries.append(claude_call(timestamp, identity, "Read", {"file_path": f"/{identity}"}))
+        if child:
+            entries.extend(
+                [codex_tool_use_entry(timestamp, "start", child), codex_tool_result_entry(timestamp, "start", child)]
+            )
+    else:
+        path = root / f"rollout-test-{identity}.jsonl"
+        entries = [
+            {"type": "session_meta", "timestamp": timestamp, "payload": {"id": identity}},
+            codex_item(timestamp, {"type": "message", "role": "user", "content": [{"type": "input_text", "text": identity}]}),
+            codex_item(
+                timestamp,
+                {"type": "function_call", "name": "exec_command", "call_id": identity, "arguments": '{"cmd":"pwd"}'},
+            ),
+        ]
+        if child:
+            entries.extend(
+                [
+                    codex_item(
+                        timestamp,
+                        {
+                            "type": "function_call",
+                            "name": "mcp__agents_server__start",
+                            "call_id": "start",
+                            "arguments": "{}",
+                        },
+                    ),
+                    codex_item(
+                        timestamp,
+                        {
+                            "type": "function_call_output",
+                            "call_id": "start",
+                            "output": json.dumps({"session_id": child}),
+                        },
+                    ),
+                ]
+            )
+    write_jsonl(path, entries)
+    return path
+
+
+def _period_catalog(
+    root: pathlib.Path, runtime: str, query: list[str], capsys: pytest.CaptureFixture[str]
+) -> list[dict[str, Any]]:
+    """期間参照テストで共通する観測窓の公開照会を実行する。"""
+    option = "--catalog-claude-project" if runtime == "claude" else "--catalog-codex-history"
+    assert (
+        evidence.main(
+            [
+                option,
+                str(root),
+                "--since",
+                "2026-10-05T00:00:00Z",
+                "--observation-boundary",
+                "2026-10-07T00:00:00Z",
+                *query,
+            ]
+        )
+        == 0
+    )
+    return read_jsonl(capsys, raw=True)
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+@pytest.mark.parametrize("query", [[], ["--user-events"], ["--tool-calls"]])
+def test_catalog_keeps_cross_period_parent_child_relations(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    runtime: str,
+    query: list[str],
+) -> None:
+    """期間外親の子を独立させず、期間内親の期間外子を家族に残し、mtimeで選別しない。"""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    root = tmp_path / "home/.claude/projects/project" if runtime == "claude" else tmp_path / "codex/sessions/2026/10/06"
+    ids = [f"{digit * 8}-{digit * 4}-4{digit * 3}-8{digit * 3}-{digit * 12}" for digit in "1234"]
+    old_parent, new_child, new_parent, old_child = ids
+    old = "2026-09-01T00:00:00Z"
+    current = "2026-10-06T00:00:00Z"
+    for identity, timestamp, child in [
+        (old_parent, old, new_child),
+        (new_child, current, None),
+        (new_parent, current, old_child),
+        (old_child, old, None),
+    ]:
+        path = _period_record(root, runtime, identity, timestamp, child)
+        os.utime(path, (0, 0))
+    events = _period_catalog(root, runtime, query, capsys)
+    assert events[-1]["parent_record_count"] == 1
+    assert events[-1]["unresolved_record_count"] == 0
+    results = [event for event in events if event["kind"] in {"catalog-parent", "user", "tool-call"}]
+    assert results and {event["session_id"] for event in results} == {new_parent}
+    if not query:
+        assert results[0]["descendant_count"] == 1
+        if runtime == "claude":
+            assert results[0]["tokens"]["input_tokens"] == 14
+    elif query == ["--user-events"]:
+        assert [event["text"] for event in results] == [new_parent]
+    else:
+        assert any(event["call_id"] == new_parent for event in results)
+        assert all(event["call_id"] not in {old_parent, new_child, old_child} for event in results)
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+@pytest.mark.parametrize("query", [[], ["--user-events"], ["--tool-calls"]])
+def test_catalog_unresolved_counts_keep_query_specific_scope(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    runtime: str,
+    query: list[str],
+) -> None:
+    """全期間の読込失敗と親ごとの参照を数え、tool-callsだけroot外の解決済み診断を除く。"""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    base = tmp_path / "home/.claude/projects" if runtime == "claude" else tmp_path / "codex/sessions"
+    root = base / ("selected" if runtime == "claude" else "2026/10/06")
+    child = "55555555-5555-4555-8555-555555555555"
+    timestamp = "2026-10-06T00:00:00Z"
+    for parent in ("a-parent", "b-parent"):
+        path = _period_record(root, runtime, parent, timestamp, child)
+        duplicate = path.read_bytes().split(b"\n")[-2] + b"\n"
+        with path.open("ab") as stream:
+            stream.write(duplicate)
+    _period_record(base / ("outside" if runtime == "claude" else "2026/10/07"), runtime, child, timestamp)
+    broken = root / ("rollout-broken.jsonl" if runtime == "codex" else "broken.jsonl")
+    broken.write_bytes(b"\xff")
+    os.utime(broken, (0, 0))
+    events = _period_catalog(root, runtime, query, capsys)
+    assert events[-1]["parent_record_count"] == 2
+    assert events[-1]["unresolved_record_count"] == (1 if query == ["--tool-calls"] else 3)
+    diagnostics = [event for event in events if event["kind"] == "unresolved-record"]
+    assert sum(event["record"] == str(broken) for event in diagnostics) == 1
+    assert sum(event["record"] == child for event in diagnostics) == (0 if query == ["--tool-calls"] else 2)
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_catalog_period_edges_and_timestamp_ties(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str
+) -> None:
+    """since一致の終了を除き、boundary一致・未知時刻を含め、同時刻の元表記と順不同を保つ。"""
+    root = tmp_path / "edges"
+    entries: list[tuple[str, list[str | None]]] = [
+        ("ended", ["2026-10-05T00:00:00Z"]),
+        ("boundary", ["2026-10-07T00:00:00Z"]),
+        ("unknown", [None]),
+        ("unordered", ["2026-10-06T09:00:00+09:00", "2026-10-05T23:00:00Z", "2026-10-06T00:00:00Z"]),
+    ]
+    for identity, times in entries:
+        path = root / (f"{identity}.jsonl" if runtime == "claude" else f"rollout-{identity}.jsonl")
+        records = [timestamped_entry(timestamp, identity) for timestamp in times]
+        if runtime == "codex":
+            records = [
+                {
+                    "type": "response_item",
+                    **({"timestamp": record["timestamp"]} if "timestamp" in record else {}),
+                    "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": identity}]},
+                }
+                for record in records
+            ]
+        write_jsonl(path, records)
+    option = "--catalog-claude-project" if runtime == "claude" else "--catalog-codex-history"
+    assert (
+        evidence.main(
+            [
+                option,
+                str(root),
+                "--since",
+                "2026-10-05T00:00:00Z",
+                "--observation-boundary",
+                "2026-10-07T00:00:00Z",
+            ]
+        )
+        == 0
+    )
+    events = read_jsonl(capsys, raw=True)
+    parents = {event["session_id"]: event for event in events if event["kind"] == "catalog-parent"}
+    assert set(parents) == {"boundary", "unknown", "unordered"}
+    assert parents["unknown"]["started_at"] == "unknown"
+    assert parents["unordered"]["started_at"] == "2026-10-05T23:00:00Z"
+    assert parents["unordered"]["finished_at"] == "2026-10-06T09:00:00+09:00"
+
+
+def test_catalog_duplicate_ids_and_cycles_keep_first_record(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """重複IDは最初のpathを採用し、子の自己循環を一度だけ集約して閉じた循環を親にしない。"""
+    root = tmp_path / "graph"
+    timestamp = "2026-10-06T00:00:00Z"
+    for name, identity, child, amount in [
+        ("0", "parent", "child", 0),
+        ("1", "child", "child", 7),
+        ("2", "child", None, 999),
+        ("3", "cycle-a", "cycle-b", 100),
+        ("4", "cycle-b", "cycle-a", 100),
+    ]:
+        usage = {
+            "input_tokens": amount,
+            "cached_input_tokens": 0,
+            "output_tokens": 0,
+            "reasoning_output_tokens": 0,
+            "total_tokens": amount,
+        }
+        entries = [
+            {"type": "session_meta", "timestamp": timestamp, "payload": {"id": identity}},
+            {
+                "type": "event_msg",
+                "timestamp": timestamp,
+                "payload": {"type": "token_count", "info": {"last_token_usage": usage, "total_token_usage": usage}},
+            },
+        ]
+        if child:
+            entries.append(
+                {"type": "event_msg", "timestamp": timestamp, "payload": {"type": "SubAgentActivity", "agent_thread_id": child}}
+            )
+        write_jsonl(root / f"rollout-{name}.jsonl", entries)
+    assert (
+        evidence.main(
+            [
+                "--catalog-codex-history",
+                str(root),
+                "--since",
+                "2026-10-05T00:00:00Z",
+                "--observation-boundary",
+                "2026-10-07T00:00:00Z",
+            ]
+        )
+        == 0
+    )
+    parent, summary = read_jsonl(capsys, raw=True)
+    assert parent["session_id"] == "parent"
+    assert parent["descendant_count"] == 1
+    assert parent["tokens"]["input_tokens"] == 7
+    assert summary["parent_record_count"] == 1 and summary["unresolved_record_count"] == 0

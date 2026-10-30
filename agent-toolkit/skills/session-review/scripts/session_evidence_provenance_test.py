@@ -270,3 +270,46 @@ def test_public_rejected_start_is_not_unresolved_delegation(
     assert evidence.main([str(parent)]) == 0
     events = support.read_jsonl(capsys, raw=True)
     assert sum(event["kind"] == "unresolved-delegation" for event in events) == expected
+
+
+def test_catalog_shared_child_keeps_first_owner_and_duplicate_events(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """複数親の共有子は各家族の呼出を返し、由来と役割は最初の所有者から決定する。"""
+    parent = _family(tmp_path, monkeypatch)
+    launch = support.codex_tool_use_entry("2026-10-06T00:00:05Z", "shared", support.TOOL_CALL_THREAD)
+    launch["message"]["content"][0]["input"]["mode"] = "shell"
+    support.write_jsonl(
+        parent.with_name("a-parent.jsonl"),
+        [
+            support.timestamped_entry("2026-10-06T00:00:00Z", "別の親"),
+            launch,
+            support.codex_tool_result_entry("2026-10-06T00:00:06Z", "shared", support.TOOL_CALL_THREAD),
+        ],
+    )
+    assert (
+        evidence.main(
+            [
+                "--catalog-claude-project",
+                str(parent.parent),
+                "--since",
+                "2026-10-06T00:00:00Z",
+                "--observation-boundary",
+                "2026-10-06T00:00:30Z",
+                "--tool-calls",
+            ]
+        )
+        == 0
+    )
+    events = support.read_jsonl(capsys, raw=True)
+    provenance = _provenance(events)
+    assert provenance[_TASK]["source_record"] == "claude:a-parent"
+    assert provenance[_TASK]["source_line"] == 3
+    assert provenance[_TASK]["mode"] == "shell"
+    assert provenance[_TASK]["role_document"] == "exec"
+    calls = [event for event in events if event["kind"] == "tool-call" and event["record"] == _TASK]
+    assert len(calls) == 6
+    assert {event["session_id"] for event in calls} == {"a-parent", "parent-session"}
+    assert events[-1]["by_role"]["document:exec"]["count"] == 6
+    assert events[-1]["by_role"]["document:exec"]["by_mode"] == {"shell": 2}
+    assert events[-1]["unresolved_record_count"] == 0
