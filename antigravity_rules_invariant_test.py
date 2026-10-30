@@ -13,7 +13,7 @@ _TOOLKIT = _ROOT / "agent-toolkit"
 def test_current_rules_fit_budget_without_losing_text() -> None:
     """現物の規範が既存の予算内に収まり、分割後にも全文が同じ順序で残る。"""
     assert antigravity_plugin.RULE_BUDGET_TOKENS == 20_000
-    outputs = antigravity_plugin._rules(_TOOLKIT)
+    outputs = {path: data for path, (data, _) in antigravity_plugin.outputs(_ROOT).items() if path.parts[0] == "rules"}
     ordered = sorted(outputs.items(), key=lambda item: (item[0].name != "AGENTS.md", item[0].name))
     estimated = sum((len(data) + 1) // 2 for _, data in ordered)
     assert estimated <= antigravity_plugin.RULE_BUDGET_TOKENS
