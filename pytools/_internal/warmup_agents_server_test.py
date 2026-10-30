@@ -4,8 +4,10 @@
 ウォームアップ対象の列挙と、構築の失敗をスキップと数えることを検証する。実際の`uv`は起動しない。
 """
 
+import asyncio
 import json
 import pathlib
+import subprocess
 import sys
 
 import pytest
@@ -14,6 +16,8 @@ from pytools._internal import common as _common
 from pytools._internal import post_apply_outcome
 from pytools._internal import warmup_agents_server as _warmup
 from pytools._internal.warmup_agents_server import _check_startup as _CHECK_STARTUP
+from pytools._internal.warmup_agents_server import _check_targets as _CHECK_TARGETS
+from pytools._internal.warmup_agents_server import _StartupOutcome as _STARTUP_OUTCOME
 
 from ._test_helpers import _FakeResult, command_matches
 
@@ -56,7 +60,11 @@ def _setup(
     """
     monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
     monkeypatch.setattr(_common, "find_dotfiles_root", lambda: None)
-    monkeypatch.setattr(_warmup, "_check_startup", lambda _command: True)
+
+    async def ready(_command):
+        return _STARTUP_OUTCOME(True, "起動確認済み")
+
+    monkeypatch.setattr(_warmup, "_check_startup", ready)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
     plugin_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
@@ -86,6 +94,17 @@ def _setup(
         return _FakeResult(returncode=warmup_returncode)
 
     monkeypatch.setattr(_common, "run_subprocess", fake_run_subprocess)
+
+    async def check_command(command):
+        result = fake_run_subprocess(list(command))
+        completed = (
+            None
+            if result is None
+            else subprocess.CompletedProcess(list(command), result.returncode, result.stdout, result.stderr)
+        )
+        return _warmup.plugin_warmup.CommandOutcome(list(command), completed, 0)
+
+    monkeypatch.setattr(_warmup.plugin_warmup, "check_command", check_command)
     return calls
 
 
@@ -287,7 +306,7 @@ class TestFailureHandling:
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
-        assert len(_prepared(calls)) == 2
+        assert len(_prepared(calls)) == 1
 
     def test_continues_after_execution_error(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """実行自体の失敗（タイムアウト等でNone）でも残る対象を実行する。"""
@@ -295,16 +314,16 @@ class TestFailureHandling:
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
-        assert len(_prepared(calls)) == 2
+        assert len(_prepared(calls)) == 1
 
     def test_prepared_server_startup_failure_is_reported(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """依存準備の成功と起動失敗を区別し、残る対象を確認した後で失敗を返す。"""
         _setup(monkeypatch, tmp_path)
         observed = []
 
-        def fail_startup(command: list[str]) -> bool:
+        async def fail_startup(command: list[str]):
             observed.append(command)
-            return False
+            return _STARTUP_OUTCOME(False, "起動確認に失敗")
 
         monkeypatch.setattr(_warmup, "_check_startup", fail_startup)
         outcome = _warmup.run()
@@ -317,7 +336,7 @@ class TestFailureHandling:
 
 @pytest.mark.parametrize("behavior", ["ready", "empty", "timeout", "exit"])
 def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, behavior: str
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, behavior: str
 ) -> None:
     """公開MCPのinitializeとtools/listを使い、0件・停止・異常終了を起動成功へ混ぜない。"""
     server = tmp_path / "server.py"
@@ -339,12 +358,60 @@ def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
         encoding="utf-8",
     )
     monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 0.5)
-    assert _CHECK_STARTUP([sys.executable, str(server)]) is (behavior == "ready")
+    outcome = asyncio.run(_CHECK_STARTUP([sys.executable, str(server)]))
+    assert outcome.ok is (behavior == "ready")
     if behavior != "ready":
-        assert "MCP起動確認に失敗" in caplog.text
-        assert str(server) in caplog.text
+        assert "MCP起動確認に失敗" in outcome.message
+        assert str(server) in outcome.message
     if behavior == "exit":
-        assert "startup failed" in caplog.text
+        assert "startup failed" in outcome.message
+
+
+@pytest.mark.parametrize("failed", [None, "dependency", "startup", "exception"])
+def test_parallel_checks_keep_order_and_collect_other_roots(monkeypatch, failed):
+    """独立rootを重ね、1root失敗でも残るrootの確認を終了まで回収する。"""
+    commands = [["python", name] for name in ("first", "second", "third")]
+    observed = []
+
+    async def exercise():
+        all_started = asyncio.Event()
+
+        async def dependency(command):
+            name = command[-2]
+            observed.append((name, "dependency"))
+            if len(observed) == 3:
+                all_started.set()
+            await asyncio.wait_for(all_started.wait(), 5)
+            if name == "second" and failed == "exception":
+                raise RuntimeError("確認の例外")
+            code = 7 if name == "second" and failed == "dependency" else 0
+            return _warmup.plugin_warmup.CommandOutcome(command, subprocess.CompletedProcess(command, code, "", ""), 0)
+
+        async def startup(command):
+            observed.append((command[-1], "startup"))
+            return _STARTUP_OUTCOME(not (command[-1] == "second" and failed == "startup"), command[-1])
+
+        monkeypatch.setattr(_warmup.plugin_warmup, "check_command", dependency)
+        monkeypatch.setattr(_warmup, "_check_startup", startup)
+        return await _CHECK_TARGETS(commands)
+
+    outcomes = asyncio.run(exercise())
+    assert len(outcomes) == 3
+    first, second, third = outcomes
+    assert not isinstance(first, BaseException)
+    assert not isinstance(third, BaseException)
+    assert first[1] is not None and first[1].ok
+    assert third[1] is not None and third[1].ok
+    assert ("first", "startup") in observed and ("third", "startup") in observed
+    if failed == "exception":
+        assert isinstance(second, RuntimeError)
+    else:
+        assert not isinstance(second, BaseException)
+        if failed == "dependency":
+            assert second[1] is None
+        else:
+            assert second[1] is not None
+            assert second[1].ok is (failed is None)
 
 
 class TestCoverage:

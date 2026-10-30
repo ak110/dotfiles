@@ -6,6 +6,7 @@
 """
 
 import ast
+import asyncio
 import dataclasses
 import inspect
 import io
@@ -137,6 +138,52 @@ def test_exception_prints_one_line_and_keeps_traceback_in_log(tmp_path, capsys):
     log = (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
     assert "Traceback (most recent call last)" in log
     assert 'raise RuntimeError("受入の例外")' in log
+
+
+@pytest.mark.parametrize("fail_second", [False, True])
+def test_parallel_warmup_keeps_root_order_and_worker_log_capture(monkeypatch, tmp_path, capsys, fail_second):
+    """非同期のroot別診断を親workerで捕捉し、工程とrootの列挙順に1回だけ表示する。"""
+    warmup = post_apply.warmup_agents_server
+    commands = [["python", str(tmp_path / name)] for name in ("first", "second")]
+    monkeypatch.setattr(warmup.plugin_warmup, "prepare_targets", lambda *_args, **_kwargs: commands)
+
+    async def dependency(command):
+        return warmup.plugin_warmup.CommandOutcome(command, subprocess.CompletedProcess(command, 0, "", ""), 0)
+
+    async def check_targets():
+        second_done = asyncio.Event()
+
+        async def startup(command):
+            name = Path(command[-1]).name
+            if name == "first":
+                await asyncio.wait_for(second_done.wait(), 5)
+            else:
+                second_done.set()
+            return warmup._StartupOutcome(not (name == "second" and fail_second), f"{name}-root-detail")
+
+        monkeypatch.setattr(warmup, "_check_startup", startup)
+        return await original_check_targets(commands)
+
+    original_check_targets = warmup._check_targets
+    monkeypatch.setattr(warmup.plugin_warmup, "check_command", dependency)
+
+    async def checks(_commands):
+        return await check_targets()
+
+    monkeypatch.setattr(warmup, "_check_targets", checks)
+
+    def independent():
+        logging.getLogger("independent-test").info("independent-detail")
+        return post_apply_outcome.PostApplyOutcome()
+
+    with pytest.raises(SystemExit) as ended:
+        post_apply.main(runner=lambda: post_apply.run([("warmup", warmup.run), ("independent", independent)]))
+    assert ended.value.code == int(fail_second)
+    captured = capsys.readouterr()
+    screen = captured.out + captured.err
+    log = (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
+    assert log.index("first-root-detail") < log.index("second-root-detail") < log.index("independent-detail")
+    assert screen.count("first-root-detail") == screen.count("second-root-detail") == 1
 
 
 @pytest.mark.parametrize("via_update_dotfiles", [False, True], ids=["standalone", "via-update-dotfiles"])

@@ -7,9 +7,12 @@ warmup の失敗経路が、外部コマンドの標準エラーと標準出力�
 
 # pylint: disable=protected-access
 
+import asyncio
 import logging
 import pathlib
+import sys
 
+import psutil
 import pytest
 
 from pytools._internal import common as _common
@@ -164,3 +167,91 @@ def test_run_prepares_shared_dependency_environment_once(tmp_path: pathlib.Path,
     assert bootstraps == [(first, pathlib.Path("/host/python")), (second, pathlib.Path("/host/python"))]
     assert prepare_count == 1
     assert check_count == 2
+
+
+@pytest.mark.parametrize("count", [0, 1, 3])
+@pytest.mark.parametrize("different_keys", [False, True])
+def test_prepare_targets_groups_dependencies_and_preserves_roots(tmp_path, monkeypatch, count, different_keys):
+    """準備は依存keyごとに1回、起動コマンドは全rootを列挙順に保持する。"""
+    paths = [_target(tmp_path / str(index)) for index in range(count)]
+    monkeypatch.setattr(_plugin_warmup, "resolve_targets", lambda *_args, **_kwargs: (paths, pathlib.Path(sys.executable)))
+    monkeypatch.setattr(
+        _plugin_warmup.plugin_environment,
+        "project_environment",
+        lambda root, *_args, **_kwargs: root if different_keys else pathlib.Path("shared"),
+    )
+    calls = []
+
+    def prepare(command, **_kwargs):
+        calls.append(command)
+        return True
+
+    monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
+    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
+    assert [command[-1] for command in commands] == list(map(str, paths))
+    assert len(calls) == (count if different_keys else min(count, 1))
+    assert all(command[-2] == "--prepare" for command in calls)
+
+
+def test_failed_prepare_does_not_retry_same_key_or_skip_other_environment(tmp_path, monkeypatch):
+    """共有環境の準備失敗は同じkeyのrootだけを除外し、独立環境は確認できる。"""
+    paths = [_target(tmp_path / str(index)) for index in range(3)]
+    monkeypatch.setattr(_plugin_warmup, "resolve_targets", lambda *_args, **_kwargs: (paths, pathlib.Path(sys.executable)))
+    monkeypatch.setattr(
+        _plugin_warmup.plugin_environment,
+        "project_environment",
+        lambda root, *_args, **_kwargs: pathlib.Path("other" if root == paths[-1].parents[1] else "shared"),
+    )
+    calls = []
+
+    def prepare(command, **_kwargs):
+        calls.append(command)
+        return command[-1] == str(paths[-1])
+
+    monkeypatch.setattr(_plugin_warmup, "run_command", prepare)
+    commands = _plugin_warmup.prepare_targets(lambda: paths, tag="test")
+    assert len(calls) == 2
+    assert [command[-1] for command in commands] == [str(paths[-1])]
+
+
+def test_async_command_preserves_output_and_failure_diagnostic(caplog):
+    """非同期コマンドの出力は対象順に報告でき、両ストリームを失わない。"""
+    command = [sys.executable, "-c", "import sys; print('output'); print('failure', file=sys.stderr); sys.exit(7)"]
+    outcome = asyncio.run(_plugin_warmup.check_command(command))
+    assert not outcome.ok
+    assert outcome.result is not None and outcome.result.returncode == 7
+    assert "output" in outcome.result.stdout and "failure" in outcome.result.stderr
+    assert not outcome.report(target="root-1", tag="test")
+    assert "root-1" in caplog.text and "failure" in caplog.text and "output" in caplog.text
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_async_command_timeout_or_cancellation_reclaims_child_tree(tmp_path, monkeypatch, cancel):
+    """時間切れと取消しの双方で、停止前に列挙した子孫を回収する。"""
+    pid_file = tmp_path / "child.pid"
+    script = tmp_path / "parent.py"
+    script.write_text(
+        "import pathlib, subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid))\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(_plugin_warmup, "_WARMUP_TIMEOUT", 1.0)
+
+    async def check():
+        task = asyncio.create_task(_plugin_warmup.check_command([sys.executable, str(script)]))
+        if cancel:
+            async with asyncio.timeout(5):
+                while not pid_file.exists():
+                    await asyncio.sleep(0.01)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            outcome = await task
+            assert not outcome.ok and "TimeoutError" in outcome.error
+
+    asyncio.run(check())
+    pid = int(pid_file.read_text())
+    assert not psutil.pid_exists(pid) or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE

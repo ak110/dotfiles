@@ -1,5 +1,7 @@
 """agent-toolkit pluginの有効版選択とuv環境ウォームアップを共有する。"""
 
+import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -8,9 +10,11 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
-from agent_toolkit._common import plugin_environment
+import psutil
+from agent_toolkit._common import plugin_environment, process_tree
 
 from pytools._internal import claude_common, common, install_codex_plugins, log_format, post_apply_outcome
 
@@ -90,32 +94,13 @@ def run(
     uv環境の構築は導入に当たるため、構築できない場合は警告だけを出力してスキップと数える。
     uvのキャッシュだけへ作用し設定を変えないため、変更なしを返す。
     """
-    uv = common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
-    if uv is None:
-        logger.warning(
-            log_format.format_status(
-                tag,
-                "uv CLI が見つからず環境構築を開始できない。"
-                "https://docs.astral.sh/uv/getting-started/installation/ "
-                "の手順でuvを導入して`update-dotfiles`を再実行する",
-            ),
-        )
+    resolved = resolve_targets(targets, tag=tag)
+    if resolved is None:
         return post_apply_outcome.PostApplyOutcome()
-    resolved = targets()
-    if not resolved:
-        logger.warning(
-            log_format.format_status(
-                tag,
-                "対象スクリプトが見つからず環境構築を開始できない。`update-dotfiles`を再実行する",
-            ),
-        )
-        return post_apply_outcome.PostApplyOutcome()
-    python = _resolve_python(uv, tag)
-    if python is None:
-        return post_apply_outcome.PostApplyOutcome()
+    paths, python = resolved
     startup_failures: list[str] = []
     prepared: set[Path] = set()
-    for target in resolved:
+    for target in paths:
         if (
             warmup(target, python, tag=tag, arguments=arguments, prepared=prepared)
             and readiness is not None
@@ -128,6 +113,58 @@ def run(
             next_action="`update-dotfiles logs`の起動段階・標準エラーを確認し、`update-dotfiles`を再実行する",
         )
     return post_apply_outcome.PostApplyOutcome()
+
+
+def resolve_targets(targets: Callable[[], list[Path]], *, tag: str) -> tuple[list[Path], Path] | None:
+    """有効な対象と全対象で共用するPythonを解決する。"""
+    uv = common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
+    if uv is None:
+        logger.warning(
+            log_format.format_status(
+                tag,
+                "uv CLI が見つからず環境構築を開始できない。"
+                "https://docs.astral.sh/uv/getting-started/installation/ "
+                "の手順でuvを導入して`update-dotfiles`を再実行する",
+            ),
+        )
+        return None
+    resolved = targets()
+    if not resolved:
+        logger.warning(
+            log_format.format_status(
+                tag,
+                "対象スクリプトが見つからず環境構築を開始できない。`update-dotfiles`を再実行する",
+            ),
+        )
+        return None
+    python = _resolve_python(uv, tag)
+    if python is None:
+        return None
+    return resolved, python
+
+
+def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> list[list[str]]:
+    """依存keyごとに一度準備し、成功したrootの起動コマンドを列挙順に返す。"""
+    resolved = resolve_targets(targets, tag=tag)
+    if resolved is None:
+        return []
+    paths, python = resolved
+    prepared: dict[Path, bool] = {}
+    commands: list[list[str]] = []
+    for target in paths:
+        bootstrap = _bootstrap(target, python)
+        key = plugin_environment.project_environment(Path(bootstrap[-1]), os.environ, python_executable=python)
+        if key not in prepared:
+            prepared[key] = run_command([*bootstrap, "--prepare", str(target)], target=log_format.home_short(target), tag=tag)
+        if prepared[key]:
+            commands.append([*bootstrap, str(target)])
+        else:
+            logger.warning(
+                log_format.format_status(
+                    tag, f"共有依存環境を準備できず対象の確認を省略: {target}。`update-dotfiles`を再実行する"
+                )
+            )
+    return commands
 
 
 def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Path]:
@@ -267,18 +304,67 @@ def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:
     """
     started = time.monotonic()
     result = common.run_subprocess(list(cmd), timeout=_WARMUP_TIMEOUT, tag=Path(cmd[0]).stem)
-    elapsed = time.monotonic() - started
-    if result is not None and result.returncode == 0:
-        logger.info(log_format.format_status(tag, f"環境構築を確認 (exit 0、{elapsed:.1f}秒): {target}"))
-        return True
-    # 失敗時は構築コマンドの標準エラーと標準出力を必ず伝播させる。
-    # 終了コードと経過時間だけの診断では、依存解決の失敗本文が永続ログにもtracebackにも現れず、
-    # ユーザーと後続の調査主体が原因へ到達できない。
-    if result is None:
-        summary = f"環境構築に失敗 (exit codeなし、{elapsed:.1f}秒): {target}"
-    else:
-        summary = f"環境構築が異常終了 (exit {result.returncode}、{elapsed:.1f}秒): {target}"
-    command = subprocess.list2cmdline(cmd) if sys.platform == "win32" else shlex.join(cmd)
-    message = f"{summary} / {common.format_cli_error(result)}。手動で`{command}`を実行する"
-    logger.warning(log_format.format_status(tag, message))
-    return False
+    return CommandOutcome(list(cmd), result, time.monotonic() - started).report(target=target, tag=tag)
+
+
+@dataclass(frozen=True)
+class CommandOutcome:
+    """並列実行中の診断を保持し、親workerで対象順に表示する。"""
+
+    command: list[str]
+    result: subprocess.CompletedProcess[str] | None
+    elapsed: float
+    error: str = ""
+
+    @property
+    def ok(self) -> bool:
+        """コマンドが正常終了したかを返す。"""
+        return self.result is not None and self.result.returncode == 0
+
+    def report(self, *, target: str, tag: str) -> bool:
+        """標準出力・標準エラーを対象と対応付け、成功と失敗の診断を表示する。"""
+        if self.ok:
+            logger.info(log_format.format_status(tag, f"環境構築を確認 (exit 0、{self.elapsed:.1f}秒): {target}"))
+            return True
+        summary = (
+            f"環境構築に失敗 (exit codeなし、{self.elapsed:.1f}秒): {target}"
+            if self.result is None
+            else f"環境構築が異常終了 (exit {self.result.returncode}、{self.elapsed:.1f}秒): {target}"
+        )
+        command = subprocess.list2cmdline(self.command) if sys.platform == "win32" else shlex.join(self.command)
+        message = f"{summary} / {self.error or common.format_cli_error(self.result)}。手動で`{command}`を実行する"
+        logger.warning(log_format.format_status(tag, message))
+        return False
+
+
+async def check_command(command: Sequence[str]) -> CommandOutcome:
+    """依存確認を非同期に待ち、取消し・時間切れでも所有する子孫を回収する。"""
+    started = time.monotonic()
+    result = None
+    error = ""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=_WARMUP_TIMEOUT)
+            assert process.returncode is not None
+            result = subprocess.CompletedProcess(
+                list(command),
+                process.returncode,
+                stdout.decode("utf-8", errors="replace"),
+                stderr.decode("utf-8", errors="replace"),
+            )
+        finally:
+            if process.returncode is None:
+                descendants = process_tree.collect_descendants(process.pid)
+                with contextlib.suppress(psutil.NoSuchProcess):
+                    descendants.insert(0, psutil.Process(process.pid))
+                # 回収の待機だけを退避し、ログはthread-local捕捉のある親workerで出力する。
+                residual = await asyncio.to_thread(process_tree.reclaim_processes, descendants)
+                await asyncio.wait_for(process.communicate(), timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
+                if residual:
+                    raise RuntimeError("依存確認の子孫プロセスが残存: " + " / ".join(map(process_tree.describe, residual)))
+    except (OSError, TimeoutError) as exc:
+        error = f"{type(exc).__name__}: {exc}"
+    return CommandOutcome(list(command), result, time.monotonic() - started, error)
