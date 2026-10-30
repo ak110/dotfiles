@@ -28,9 +28,9 @@ def test_project_checks_keep_external_norm_links(tmp_path: pathlib.Path) -> None
     config = pyfltr.config.config.load_config(repository, global_config_path=tmp_path / "absent.toml")
     external = pathlib.Path(".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md")
     assert pyfltr.command.targets.excluded(external, config) is None
-    assert pyfltr.command.targets.matches_exclude_patterns(external, config["lychee-exclude"]) is None
+    assert pyfltr.command.targets.matches_exclude_patterns(external, config["lychee-exclude"], base_dir=repository) is None
     for command in ("textlint", "colloquial-check"):
-        assert pyfltr.command.targets.matches_exclude_patterns(external, config[f"{command}-exclude"])
+        assert pyfltr.command.targets.matches_exclude_patterns(external, config[f"{command}-exclude"], base_dir=repository)
 
 
 def test_project_checks_include_extensionless_shell_targets(tmp_path: pathlib.Path) -> None:
@@ -46,7 +46,7 @@ def test_project_checks_include_extensionless_shell_targets(tmp_path: pathlib.Pa
         selected = [
             path
             for path in selected
-            if pyfltr.command.targets.matches_exclude_patterns(path, config[f"{command}-exclude"]) is None
+            if pyfltr.command.targets.matches_exclude_patterns(path, config[f"{command}-exclude"], base_dir=repository) is None
         ]
         assert set(selected) == {*bash_paths, pathlib.Path("bin/new-cli")}
 
