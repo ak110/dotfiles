@@ -16,21 +16,27 @@ from agent_toolkit._testing.isolation import restore_host_environment
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 
+@pytest.mark.parametrize("case,kind", [("weekday-queries", "dialogue"), ("verification-status", "single")])
 def test_public_multi_turn_trials_prepares_and_grades_saved_artifacts(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str, kind: str
 ) -> None:
     """`atk run-script multi-turn-trials`で公開素材の準備と採点を実行し、採点の終了コードを透過する。"""
     restore_host_environment(monkeypatch)
     trial = json.loads(
-        (run_script.PLUGIN_ROOT / "skills/refine-prompt/fixtures/multi-turn/weekday_queries/private/trial.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            run_script.PLUGIN_ROOT / "skills/refine-prompt/fixtures/multi-turn" / case.replace("-", "_") / "private/trial.json"
+        ).read_text(encoding="utf-8")
     )
     command = [sys.executable, "-m", "agent_toolkit.atk", "run-script", "multi-turn-trials", "--"]
     public = tmp_path / "public"
     environment = dict(os.environ)
+    listed = subprocess.run(
+        [*command, "--list"], capture_output=True, text=True, encoding="utf-8", env=environment, timeout=30, check=False
+    )
+    assert listed.returncode == 0, listed.stderr
+    assert {row["case"]: row["kind"] for row in json.loads(listed.stdout)}[case] == kind
     prepared = subprocess.run(
-        [*command, "prepare", "--case", "weekday-queries", "--output", str(public)],
+        [*command, "prepare", "--case", case, "--output", str(public)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -43,19 +49,20 @@ def test_public_multi_turn_trials_prepares_and_grades_saved_artifacts(
     for example in trial["examples"]:
         candidate = public / "task.py"
         candidate.write_text(example["candidate"], encoding="utf-8")
-        dialogue = tmp_path / "dialogue.json"
-        dialogue.write_text(json.dumps(example["dialogue"], ensure_ascii=False), encoding="utf-8")
+        record_kind = "dialogue" if kind == "dialogue" else "execution"
+        record = tmp_path / f"{record_kind}.json"
+        record.write_text(json.dumps(example[record_kind], ensure_ascii=False), encoding="utf-8")
         result = tmp_path / "result.json"
         graded = subprocess.run(
             [
                 *command,
                 "grade",
                 "--case",
-                "weekday-queries",
+                case,
                 "--candidate",
                 str(candidate),
-                "--dialogue",
-                str(dialogue),
+                f"--{record_kind}",
+                str(record),
                 "--output",
                 str(result),
             ],
@@ -74,6 +81,76 @@ def test_public_multi_turn_trials_prepares_and_grades_saved_artifacts(
             if example["name"] == "success"
             else any(row["status"] == "未達" for row in saved["requirements"])
         )
+
+
+@pytest.mark.parametrize("termination,errors", [("error", []), ("submitted", ["モデル起動失敗"])])
+def test_public_multi_turn_trials_execution_failure_has_retry_action(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, termination: str, errors: list[str]
+) -> None:
+    """単独試行の障害診断から同一条件の再試行まで、公開gradeと保存結果で確認する。"""
+    restore_host_environment(monkeypatch)
+    trial = json.loads(
+        (run_script.PLUGIN_ROOT / "skills/refine-prompt/fixtures/multi-turn/verification_status/private/trial.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    example = trial["examples"][0]
+    candidate = tmp_path / "task.py"
+    candidate.write_text(example["candidate"], encoding="utf-8")
+    execution = tmp_path / "execution.json"
+    for phase, ending, failures, expected_code in [
+        ("failure", termination, errors, 2),
+        ("retry", "submitted", [], 0),
+    ]:
+        example["execution"].update(termination=ending, execution_errors=failures)
+        execution.write_text(json.dumps(example["execution"], ensure_ascii=False), encoding="utf-8")
+        result = tmp_path / f"{phase}.json"
+        process = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "agent_toolkit.atk",
+                "run-script",
+                "multi-turn-trials",
+                "--",
+                "grade",
+                "--case",
+                "verification-status",
+                "--candidate",
+                str(candidate),
+                "--execution",
+                str(execution),
+                "--output",
+                str(result),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=dict(os.environ),
+            timeout=30,
+            check=False,
+        )
+        assert process.returncode == expected_code, process.stderr
+        saved = json.loads(result.read_text(encoding="utf-8"))
+        assert json.loads(process.stdout)["result_path"] == str(result)
+        assert saved["provenance"]["sessions"]["candidate"] == example["execution"]["sessions"]["candidate"]
+        assert saved["execution_path"] == str(execution)
+        if phase == "failure":
+            assert saved["status"] == "不成立"
+            diagnostic = "\n".join(saved["execution_errors"])
+            assert "起動" in diagnostic
+            assert "sessions.candidate" in diagnostic
+            assert "起動記録" in diagnostic
+            assert "障害を確認" in diagnostic
+            assert "同一条件" in diagnostic
+            assert "再実行" in diagnostic
+            assert set(errors) <= set(saved["execution_errors"])
+            assert not saved["functional"]
+            assert not saved["requirements"]
+        else:
+            assert saved["status"] == "成立"
+            assert not saved["execution_errors"]
+            assert all(row["status"] == "達成" for row in saved["requirements"])
 
 
 def test_dispatch_forwards_help_and_exit_code(capsys: pytest.CaptureFixture[str]) -> None:

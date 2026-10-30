@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 FIXTURES = pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "multi-turn"
-CASES = ("attachment-paths", "weekday-queries", "batch-conditions", "display-spaces")
+CASES = ("attachment-paths", "weekday-queries", "batch-conditions", "display-spaces", "verification-status")
 
 
 def grade_fixture(candidate: str, specifications: list[tuple[str, Callable[[types.ModuleType], Any], Any]]) -> None:
@@ -48,6 +48,39 @@ def _read(path: pathlib.Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"JSONのオブジェクトが必要です: {path}。入力形式を修正してください")
     return value
+
+
+def _trial(case: str) -> dict[str, Any]:
+    trial = _read(FIXTURES / case.replace("-", "_") / "private" / "trial.json")
+    if trial.get("kind") not in ("dialogue", "single"):
+        raise ValueError(f"課題{case}のkindをdialogueまたはsingleとしてtrial.jsonに宣言してください")
+    return trial
+
+
+def _execution(data: dict[str, Any], trial: dict[str, Any], condition: str) -> list[str]:
+    if data.get("case") != trial["case"] or data.get("condition") != condition:
+        raise ValueError("課題または条件が一致しません。同じ条件の実施情報を指定してください")
+    for name in ("document_version", "engine", "model"):
+        if not isinstance(data.get(name), str) or not data[name].strip():
+            raise ValueError(f"{name}が必要です。実際の起動記録を入力してください")
+    settings = data.get("settings")
+    if not isinstance(settings, dict) or not isinstance(settings.get("effort"), str) or not settings["effort"].strip():
+        raise ValueError("settings.effortが必要です。実際の起動設定を入力してください")
+    sessions = data.get("sessions")
+    if not isinstance(sessions, dict) or not isinstance(sessions.get("candidate"), str) or not sessions["candidate"].strip():
+        raise ValueError("sessions.candidateが必要です。評価対象の実session識別子を入力してください")
+    errors = data.get("execution_errors", [])
+    if not isinstance(errors, list) or any(not isinstance(error, str) for error in errors):
+        raise ValueError("execution_errorsは障害の文字列配列へ修正してください")
+    if data.get("termination") not in ("submitted", "error"):
+        raise ValueError("単独作業のterminationはsubmittedまたはerrorです。終了を観測して記録してください")
+    if data["termination"] == "error" or errors:
+        return [
+            *errors,
+            "起動または実行障害。実施情報のsessions.candidateが指す起動記録で障害を確認し、"
+            "原因を解消して同一条件で試行を再実行してください",
+        ]
+    return []
 
 
 def _reference(turns: list[dict[str, Any]], reference: dict[str, Any], role: str) -> int:
@@ -152,20 +185,26 @@ def _dialogue(data: dict[str, Any], trial: dict[str, Any], condition: str) -> tu
 
 
 def _grade(args: argparse.Namespace, trial: dict[str, Any]) -> tuple[dict[str, Any], int]:
-    data = _read(args.dialogue)
-    errors, behavior = _dialogue(data, trial, args.condition)
+    record_path = args.dialogue if trial["kind"] == "dialogue" else args.execution
+    data = _read(record_path)
+    if trial["kind"] == "dialogue":
+        errors, behavior = _dialogue(data, trial, args.condition)
+    else:
+        errors, behavior = _execution(data, trial, args.condition), []
     result: dict[str, Any] = {
         "case": args.case,
         "condition": args.condition,
         "status": "不成立" if errors else "成立",
         "execution_errors": errors,
         "provenance": {name: data[name] for name in ("document_version", "model", "settings", "sessions", "termination")},
-        "dialogue_path": str(args.dialogue.resolve()),
         "candidate_path": str(args.candidate.resolve()),
         "behavior": behavior,
         "functional": [],
         "requirements": [],
     }
+    result["dialogue_path" if trial["kind"] == "dialogue" else "execution_path"] = str(record_path.resolve())
+    if trial["kind"] == "single":
+        result["provenance"]["engine"] = data["engine"]
     if errors:
         return result, 2
     # 評価対象の提出物は専用複製で明示実行する。隔離ディレクトリはsandboxではない。
@@ -237,7 +276,9 @@ def main(argv: list[str] | None = None) -> int:
     grade.add_argument("--case", choices=CASES, required=True, help="--listで表示した固定課題名")
     grade.add_argument("--condition", help="開示条件。省略時は課題の最初の条件")
     grade.add_argument("--candidate", type=pathlib.Path, metavar="PATH", required=True, help="提出されたtask.pyのパス")
-    grade.add_argument("--dialogue", type=pathlib.Path, metavar="PATH", required=True, help="全対話と判定を保存したJSONのパス")
+    records = grade.add_mutually_exclusive_group(required=True)
+    records.add_argument("--dialogue", type=pathlib.Path, metavar="PATH", help="対話課題の全対話と判定を保存したJSONのパス")
+    records.add_argument("--execution", type=pathlib.Path, metavar="PATH", help="単独課題の実施情報を保存したJSONのパス")
     grade.add_argument("--output", type=pathlib.Path, metavar="PATH", required=True, help="採点結果を出力するJSONのパス")
     grade.add_argument("--timeout", type=float, default=10, help="成果物テストの有限秒数")
     args = parser.parse_args(argv)
@@ -250,7 +291,8 @@ def main(argv: list[str] | None = None) -> int:
                     [
                         {
                             "case": name,
-                            "conditions": _read(FIXTURES / name.replace("-", "_") / "private" / "trial.json")["conditions"],
+                            "kind": (trial := _trial(name))["kind"],
+                            "conditions": trial["conditions"],
                         }
                         for name in CASES
                     ],
@@ -260,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not args.command:
             parser.error("--list、prepareまたはgradeを指定してください")
-        trial = _read(FIXTURES / args.case.replace("-", "_") / "private" / "trial.json")
+        trial = _trial(args.case)
         if args.command == "prepare":
             shutil.copytree(FIXTURES / args.case.replace("-", "_") / "public", args.output)
             print(json.dumps({"case": args.case, "public_dir": str(args.output.resolve())}, ensure_ascii=False))
@@ -268,11 +310,16 @@ def main(argv: list[str] | None = None) -> int:
         args.condition = args.condition or trial["conditions"][0]
         if args.condition not in trial["conditions"]:
             parser.error("この課題の開示条件を--listから選んでください")
+        if trial["kind"] == "dialogue" and args.dialogue is None:
+            parser.error("対話課題には--dialogueを指定してください")
+        if trial["kind"] == "single" and args.execution is None:
+            parser.error("単独課題には--executionを指定してください")
         if not 0 < args.timeout < float("inf"):
             parser.error("--timeoutには正の有限秒数を指定してください")
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        if args.output.resolve() in (args.candidate.resolve(), args.dialogue.resolve()):
-            parser.error("--outputは提出物と対話以外のパスを指定してください")
+        record_path = args.dialogue if trial["kind"] == "dialogue" else args.execution
+        if args.output.resolve() in (args.candidate.resolve(), record_path.resolve()):
+            parser.error("--outputは提出物と採点入力以外のパスを指定してください")
         result, code = _grade(args, trial)
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({"status": result["status"], "result_path": str(args.output.resolve())}, ensure_ascii=False))
