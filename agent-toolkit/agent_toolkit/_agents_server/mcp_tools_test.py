@@ -959,9 +959,13 @@ async def test_continuation_input_errors_return_reason_and_next_action(
     manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
     session_id = started["session_id"]
     count = len(backend.prompts)
+    freeform: dict[str, str] = {}
+    forms: list[dict[str, Any]] = []
     cases = [
         ("send_message", {"session_id": session_id, "prompt": "続行する", "instruction": "再レビューせよ"}, "排他的"),
         ("send_message", {"session_id": session_id}, "排他的"),
+        ("send_message", {"session_id": session_id, "message": "続行する"}, "排他的"),
+        ("send_message", {"session_id": session_id, "prompt": "続行する", "extra_params": {}}, "排他的"),
         ("send_message", {"session_id": session_id, "instruction": "宣言されていない指示"}, "宣言された継続指示ではありません"),
         ("send_message", {"session_id": session_id, "prompt": "   "}, "prompt must be a non-empty string"),
         ("send_message", {"session_id": "", "prompt": "続行する"}, "invalid session_id"),
@@ -975,6 +979,19 @@ async def test_continuation_input_errors_return_reason_and_next_action(
             assert reason in message, (tool, arguments, message)
             assert NEXT_ACTION_PREFIX in message, (tool, arguments, message)
             assert len(backend.prompts) == count
+            assert not manager.sessions[session_id].followup_prompts
+            if reason in {"排他的", "宣言された継続指示ではありません"}:
+                freeform, _ = json.JSONDecoder().raw_decode(message.split("自由文の再実行形: ", 1)[1])
+                forms = json.loads(message.split("定型指示の最小の再実行形: ", 1)[1])
+                assert freeform == {"prompt": "<今回の指示と新しい入力>"}
+                assert {"instruction": "再レビューせよ", "extra_params": {"round": "<round>"}} in forms
+        assert freeform and forms
+        await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, **freeform})
+        assert "<今回の指示と新しい入力>" in backend.prompts[-1]
+        retry = next(item for item in forms if item["instruction"] == "再レビューせよ")
+        retry["extra_params"]["round"] = "2"
+        await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, **retry})
+        assert "再レビューせよ\nround: 2" in backend.prompts[-1]
     finally:
         await manager.close()
 
@@ -1032,6 +1049,84 @@ async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytes
         assert backend.send_calls == before
     finally:
         await manager.close()
+
+
+@pytest.mark.parametrize("declaration_state", ["宣言なし", "取得不能", "文書消失"])
+@pytest.mark.asyncio
+async def test_continuation_recovery_without_readable_declaration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, declaration_state: str
+) -> None:
+    """宣言の不在と取得失敗を区別し、案内された自由文で同じ担当へ配送できる。"""
+    manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
+    session = manager.sessions[started["session_id"]]
+    if declaration_state == "宣言なし":
+        monkeypatch.setattr(session, "prompt", "自由文で起動した担当")
+    elif declaration_state == "文書消失":
+        monkeypatch.setattr(launch_requests.task_documents, "find_task_documents", lambda _text: [])
+    else:
+        monkeypatch.setattr(launch_requests.task_documents, "read_declaration", lambda _path: "読取失敗の診断")
+    count = len(backend.prompts)
+    retry: dict[str, str] = {}
+    try:
+        for args in ({}, {"instruction": "未知の指示"}, {"prompt": "続行", "extra_params": {}}):
+            with pytest.raises(ToolError) as raised:
+                await mcp_tools.mcp.call_tool("send_message", {"session_id": session.session_id, **args})
+            message = str(raised.value)
+            assert len(backend.prompts) == count
+            assert not session.followup_prompts
+            if declaration_state == "宣言なし":
+                assert "宣言された定型指示はありません" in message
+            else:
+                diagnosis = "読取失敗の診断" if declaration_state == "取得不能" else "起動記録の役割文書へ到達できません"
+                assert "定型指示は確認できません: " + diagnosis in message
+                assert "定型指示はありません" not in message
+            retry, _ = json.JSONDecoder().raw_decode(message.split("自由文の再実行形: ", 1)[1])
+        assert retry
+        await mcp_tools.mcp.call_tool("send_message", {"session_id": session.session_id, **retry})
+        assert "<今回の指示と新しい入力>" in backend.prompts[-1]
+        assert len(session.followup_prompts) == 1
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_wi_policy_review_continues_to_draft_in_same_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """原稿なしの方針検収から、同じ公開sessionへの本文確認へ進める。"""
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        materials = {}
+        for name in ("方針", "原稿", "要求と出所", "成立性の証拠"):
+            path = tmp_path / f"{name}.md"
+            path.write_text(f"# {name}\n", encoding="utf-8")
+            materials[name] = str(path)
+        common = {key: materials[key] for key in ("要求と出所", "成立性の証拠")}
+        started = await mcp_tools.start(
+            str(tmp_path),
+            subagent_md_path="wi-draft-review",
+            extra_params={
+                **common,
+                "確認段階": "方針",
+                "方針": materials["方針"],
+                "引き継ぎ記録先": str(tmp_path / "handoff.md"),
+            },
+        )
+        assert f"方針: {materials['方針']}" in backend.prompts[0]
+        session_id = started["session_id"]
+        await mcp_tools.mcp.call_tool(
+            "send_message",
+            {
+                "session_id": session_id,
+                "instruction": "本文確認",
+                "extra_params": {**common, "原稿": materials["原稿"]},
+            },
+        )
+        assert "本文確認" in backend.prompts[-1]
+        assert materials["原稿"] in backend.prompts[-1]
+        assert len(manager.sessions) == 1
+        assert len(manager.sessions[session_id].followup_prompts) == 1
 
 
 @pytest.mark.parametrize(

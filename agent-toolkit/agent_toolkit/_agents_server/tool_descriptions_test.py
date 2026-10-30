@@ -74,6 +74,9 @@ def test_lightweight_selection_reaches_instructions_and_mode_schema() -> None:
     mode = _start_tool().parameters["properties"]["mode"]["description"]
     assert selection in instructions
     assert selection in mode
+    assert "同じ担当が似た対象から順に調べ" in selection
+    assert "件数や独立性だけで担当を分けず" in selection
+    assert "重複読込・指示作成・検収・結論の再構築" in selection
     assert len(instructions) <= 4096
 
 

@@ -26,6 +26,25 @@ _INPUT_BULLET_PATTERN = re.compile(r"^- `(?P<name>[^`]+)`: ", flags=re.MULTILINE
 _FIXED_REPLY_LIMIT = re.compile("(?:形式|規定行)(?:だけ|のみ)(?:を返|で結果を返|とする)")
 
 
+def test_wi_draft_review_stage_and_continuation_contract() -> None:
+    """方針と本文が共通入力を再利用し、本文確認が資料の絶対パスを要求する。"""
+    root = pathlib.Path(__file__).resolve().parent
+    declaration = task_documents.read_declaration(root / "share/wi-draft-review.subagent.md")
+    assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
+    assert set(declaration.required) == {"要求と出所", "成立性の証拠", "引き継ぎ記録先"}
+    assert set(declaration.optional) == {"確認段階", "方針", "原稿"}
+    (continuation,) = declaration.continuations
+    assert continuation.instruction == "本文確認"
+    assert set(continuation.required) == {"原稿", "要求と出所", "成立性の証拠"}
+    assert set(continuation.paths) == set(continuation.required)
+    for name in (
+        "share/wi-draft-review.parent.md",
+        "skills/add-awi-by-user/SKILL.md",
+        "skills/wi-standards/references/drafting-workflow.md",
+    ):
+        assert "本文確認" in (root / name).read_text(encoding="utf-8")
+
+
 def test_public_start_guidance_preserves_delegation_responsibilities() -> None:
     """公開schemaと独立した委譲規範が、入力の確定と起動検査を同じ主体へ割り当てる。"""
     root = pathlib.Path(__file__).resolve().parent

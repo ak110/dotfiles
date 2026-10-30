@@ -54,6 +54,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 | 保存操作に入る前 | `../wi-standards/references/drafting-workflow.md`の「投入」。`../wi-standards/references/drafting-completion.md`の「重複判定」（通常AWI）と「投入前の読み直し」の対象集合と除外の確認 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「投入」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」`、`bash:atk wi add`、`bash:atk wi edit` | |
 | 原稿の意味を確認する前 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`bash:atk wi add`、`bash:atk wi edit` | |
 | 文脈を分けるためWI投入担当へ委譲する場合 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
+| 独立した方針検収または本文検収を依頼する前 | `${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `read:agent-toolkit:*/share/wi-draft-review.parent.md` | |
 | 完成条件や採否を決める値を測定する前 | `references/measurement.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/measurement.md` | |
 
 ## 手順
@@ -87,7 +88,8 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 回答に依存する質問は次のラウンドへ回し、最終承認は他のユーザー判断がすべて確定してから単独の質問で求める。
 `agent-toolkit:wi-standards`の`references/drafting-workflow.md`「直接起草と独立した検収の選択」の条件に当たる要求では、最終承認の前にも、独立した担当へ方針、要求と出所、調査の根拠を渡して検収する。
 観測された問題を起点とする要求では、同じ一覧も渡す。
-この検収は方針を対象とし、手順3の本文の検収も維持する。
+`share/wi-draft-review.parent.md`の`確認段階: 方針`で同じ要求の方針を検収し、そのsession_idを保持する。
+この検収は方針を対象とし、手順3の本文の検収も同じ担当へ`本文確認`で継続依頼する。
 
 確認で受けた指摘を要求単位に分け、次のいずれかへ分類して、次の確認で報告する。
 
@@ -101,7 +103,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 投入先が元の投入先と異なる場合は、手順2に従い、全投入先を指定して`atk wi submission begin`を再実行する。
 確認の往復中も投入作業のセッション記録を維持する。
 
-承認後に本文を書き、手順3の検収を経て全要求を保存してから手順4へ進む。
+独立検収が必要な要求は方針検収に合格した後にユーザーの最終承認を求める。最終承認を得た後に本文を書き、方針を検収した要求は同じsessionへ本文検収を継続依頼する。手順3の検収を経て全要求を保存してから手順4へ進む。
 起草や検収で新しい判断が出た場合は、その点だけを再確認する。
 中止を求められた場合は保存せずに`atk wi submission end`を実行する。
 作業完了報告には、ユーザーが確認経緯と再発防止策を追跡できるよう、確認の往復回数、指摘ごとの分類、登録した再発防止策のAWIを記載する。
