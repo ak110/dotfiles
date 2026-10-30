@@ -356,6 +356,15 @@ def _stream_write_paths(arguments: tuple[str, ...]) -> list[str]:
     return paths
 
 
+def _is_discard_path(path: pathlib.Path) -> bool:
+    """実行OSの破棄デバイスと同じ実体への出力かを返す。"""
+    try:
+        return path.samefile(os.devnull)
+    except OSError:
+        # 実体を確認できない宛先は通常の書込検出を維持する。
+        return False
+
+
 def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
     """実行位置のリダイレクト・tee・sponge・gawk・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。
 
@@ -404,7 +413,7 @@ def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
             tokens = invocation.segment.tokens
             if is_python_token(pathlib.PurePath(tokens[0]).name) and tokens[1:] in {(), ("-",)}:
                 append_paths(_python_write_paths(command[body.start : body.end]), base)
-    return paths
+    return [path for path in paths if not _is_discard_path(pathlib.Path(path))]
 
 
 def written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
@@ -413,13 +422,20 @@ def written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
         command = tool_input.get("command")
         return _bash_write_paths(command, cwd) if isinstance(command, str) else []
     operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
-    return [str(pathlib.Path(operation.path).resolve()) for operation in operations or [] if operation.path]
+    return [
+        str(pathlib.Path(operation.path).resolve())
+        for operation in operations or []
+        if operation.path and not _is_discard_path(pathlib.Path(operation.path))
+    ]
 
 
 def is_existing_file_edit(tool_name: str, tool_input: dict, cwd: str) -> bool:
     """新規の全文作成と、現行本文を前提とする編集・上書きを区別する。"""
     operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
-    if operations is not None and any(not operation.is_whole_write for operation in operations):
+    if operations is not None and any(
+        not operation.is_whole_write and operation.path and not _is_discard_path(pathlib.Path(operation.path))
+        for operation in operations
+    ):
         return True
     for path in written_paths(tool_name, tool_input, cwd):
         try:
@@ -433,35 +449,40 @@ def is_existing_file_edit(tool_name: str, tool_input: dict, cwd: str) -> bool:
     return False
 
 
-def _is_agent_document_writing(tool_name: str, tool_input: dict) -> bool:
+def _is_agent_document_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
     """編集ツールとBashの書込先がエージェント向け文書なら真を返す。"""
     if tool_name == "Bash":
         command = tool_input.get("command")
-        return isinstance(command, str) and any(is_agent_doc_target_file(path) for path in _bash_write_paths(command))
-    operations = _tool_input.parse_operations(tool_name, tool_input, "")
+        return isinstance(command, str) and any(
+            is_agent_doc_target_file(path) for path in _bash_write_paths(command, cwd or None)
+        )
+    operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
     return operations is not None and any(
-        is_agent_doc_target_file(path) for operation in operations for path in operation.display_paths
+        is_agent_doc_target_file(path) and not _is_discard_path(pathlib.Path(path))
+        for operation in operations
+        for path in operation.display_paths
     )
 
 
-def _is_body_writing(tool_name: str, tool_input: dict) -> bool:
+def _is_body_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
     """編集入力と、静的に確定した本文書込を同じ基準で判定する。"""
     if tool_name == "Bash":
         command = tool_input.get("command")
         if not isinstance(command, str):
             return False
         handoff = _delegated_session.handoff_path(os.environ)
-        paths = _bash_write_paths(command)
+        paths = _bash_write_paths(command, cwd or None)
         if handoff and paths and all(path == handoff for path in paths):
             return False
-        return isinstance(command, str) and (_is_agent_document_writing(tool_name, tool_input) or _bash_body_writing(command))
-    operations = _tool_input.parse_operations(tool_name, tool_input, "")
+        return _is_agent_document_writing(tool_name, tool_input, cwd) or _bash_body_writing(command, cwd)
+    operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
     handoff = _delegated_session.handoff_path(os.environ)
     paths = [path for operation in operations or [] for path in operation.display_paths]
     if handoff and paths and all(path == handoff for path in paths):
         return False
     return any(
         operation.path
+        and not _is_discard_path(pathlib.Path(operation.path))
         and operation.kind != _tool_input.KIND_DELETE
         and (
             bool(operation.whole_after_text)
@@ -472,33 +493,49 @@ def _is_body_writing(tool_name: str, tool_input: dict) -> bool:
     )
 
 
-def _bash_body_writing(command: str) -> bool:
+def _bash_body_writing(command: str, cwd: str = "") -> bool:
     """本文をコマンド内に持つ書込だけを選び、出力保存と複製を除く。"""
-    for invocation in extract_bash_invocations(command):
+    for invocation, base in shell_cwd.bash_invocation_cwds(command, cwd):
         tokens = invocation.static_tokens
         name = pathlib.PurePath(tokens[0]).name
-        if name == "sed" and _sed_write_paths(tokens[1:]):
-            return True
-        if name == "perl" and _perl_write_paths(tokens[1:]):
-            return True
-        if name == "gawk" and _gawk_write_paths(tokens[1:]):
-            return True
-        if is_python_token(name) and len(tokens) > 2 and tokens[1] == "-c" and _python_write_paths(tokens[2]):
-            return True
+        outputs: list[str] = []
+        if name == "sed":
+            outputs = _sed_write_paths(tokens[1:])
+        elif name == "perl":
+            outputs = _perl_write_paths(tokens[1:])
+        elif name == "gawk":
+            outputs = _gawk_write_paths(tokens[1:])
+        elif is_python_token(name) and len(tokens) > 2 and tokens[1] == "-c":
+            outputs = _python_write_paths(tokens[2])
         if name in {"cat", "tee"} and invocation.inline_input:
             outputs = [target for target in invocation.static_outputs if isinstance(target, str)]
             if name == "tee":
                 outputs.extend(_stream_write_paths(tokens[1:]))
-            if any(_static_write_path(path) is not None and path != "-" for path in outputs):
+        for raw in outputs:
+            value = _static_write_path(raw)
+            if value is None or value == "-":
+                continue
+            path = pathlib.Path(value).expanduser()
+            if not path.is_absolute() and base.resolved:
+                path = pathlib.Path(base.path) / path
+            if not _is_discard_path(path):
                 return True
     for body in heredoc_bodies(command):
-        preceding = extract_bash_invocations(command[: body.start])
+        preceding = list(shell_cwd.bash_invocation_cwds(command[: body.start], cwd))
         if preceding:
-            tokens = preceding[-1].segment.tokens
+            invocation, base = preceding[-1]
+            tokens = invocation.segment.tokens
             if (
                 is_python_token(pathlib.PurePath(tokens[0]).name)
                 and tokens[1:] in {(), ("-",)}
-                and _python_write_paths(command[body.start : body.end])
+                and any(
+                    not _is_discard_path(
+                        pathlib.Path(base.path) / pathlib.Path(path).expanduser()
+                        if base.resolved
+                        else pathlib.Path(path).expanduser()
+                    )
+                    for path in _python_write_paths(command[body.start : body.end])
+                )
             ):
                 return True
     return False
@@ -703,13 +740,13 @@ def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str
         "search": _is_search_operation,
         "root-cause-writing": _is_root_cause_writing,
         "managed-temp-create": _is_temp_directory_create,
-        "body-writing": _is_body_writing,
+        "body-writing": lambda name, data: _is_body_writing(name, data, cwd),
         "existing-file-edit": lambda name, data: is_existing_file_edit(name, data, cwd),
         "claude-existing-file-edit": lambda name, data: (
             name in {"Edit", "MultiEdit", "Write"} and is_existing_file_edit(name, data, cwd)
         ),
         "verification": _is_verification_operation,
-        "agent-document-writing": _is_agent_document_writing,
+        "agent-document-writing": lambda name, data: _is_agent_document_writing(name, data, cwd),
         "confirmation": lambda name, _input: name in {"AskUserQuestion", "request_user_input", "request_user_input_async"},
     }
     predicate = predicates.get(operation)

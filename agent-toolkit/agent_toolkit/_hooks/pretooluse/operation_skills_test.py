@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -725,3 +726,85 @@ def test_unreadable_path_does_not_count_as_creation(tmp_path, monkeypatch):
     assert operation_skills.is_existing_file_edit(
         "Write", {"file_path": str(tmp_path / "memo.md"), "content": "新"}, str(tmp_path)
     )
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "grep x source.py 2>{path}",
+        "tee {path}",
+        "sponge {path}",
+        "dd if=source.py of={path}",
+        "cat > {path} <<'EOF'\n本文\nEOF",
+        "tee {path} <<'EOF'\n本文\nEOF",
+        "sed -i 's/a/b/' {path}",
+        "perl -pi -e 's/a/b/' {path}",
+        "gawk -i inplace '{{print}}' {path}",
+        "python3 -c \"open('{path}', 'w').write('本文')\"",
+        "python3 - <<'PY'\nopen('{path}', 'w').write('本文')\nPY",
+    ],
+)
+def test_discard_output_is_not_body_writing(tmp_path: pathlib.Path, form: str) -> None:
+    """破棄だけの各書込構文を除外し、同じ構文の通常ファイル側を保持する。"""
+    for path in (os.devnull, str(tmp_path / "memo.md")):
+        data = {"command": form.format(path=path)}
+        paths = operation_skills.written_paths("Bash", data, str(tmp_path))
+        if path == os.devnull:
+            assert not paths
+            assert not operation_skills.is_existing_file_edit("Bash", data, str(tmp_path))
+            assert not operation_skills.operation_matches("body-writing", "Bash", data, str(tmp_path))
+        else:
+            assert paths == [path]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのsymlinkと通常名NULを確認する")
+def test_discard_alias_and_mixed_output_keep_ordinary_files(tmp_path: pathlib.Path) -> None:
+    """実体がdevnullの別名だけを除き、通常名NULと混在する通常書込を保持する。"""
+    alias = tmp_path / "AGENTS.md"
+    alias.symlink_to(os.devnull)
+    ordinary = tmp_path / "NUL"
+    ordinary.write_text("旧本文", encoding="utf-8")
+    for command in ("cat > AGENTS.md <<<'本文'", "python3 - <<'PY'\nopen('AGENTS.md', 'w').write('本文')\nPY"):
+        assert not operation_skills.written_paths("Bash", {"command": command}, str(tmp_path))
+        assert not operation_skills.operation_matches("body-writing", "Bash", {"command": command}, str(tmp_path))
+    data = {"command": "tee AGENTS.md NUL <<<'本文'"}
+    assert operation_skills.written_paths("Bash", data, str(tmp_path)) == [str(ordinary)]
+    assert operation_skills.operation_matches("body-writing", "Bash", data, str(tmp_path))
+    assert operation_skills.is_existing_file_edit("Bash", data, str(tmp_path))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのfd別名を確認する")
+@pytest.mark.parametrize("alias", ["/dev/stdout", "/dev/stderr", "/dev/fd/1"])
+def test_standard_stream_alias_is_not_discarded_by_name(tmp_path: pathlib.Path, alias: str) -> None:
+    """fdの名前だけでは通常ファイルへの書込を除外しない。"""
+    data = {"command": f"cat > {alias} <<<'本文'"}
+    assert operation_skills.written_paths("Bash", data, str(tmp_path))
+    assert operation_skills.operation_matches("body-writing", "Bash", data, str(tmp_path))
+
+
+def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path) -> None:
+    """公開Pre/Post経路で破棄だけを本文編集やリポジトリ編集として扱わない。"""
+    env = _plan_file_state_env(tmp_path)
+    payload = _bash(f"cat > {os.devnull} <<<'本文'", "discard-public", cwd=str(tmp_path))
+    result = _run(payload, env)
+    assert result.returncode == 0
+    context = _additional_context(result)
+    assert "/references/file-editing.md" not in context
+    assert "/skills/writing-standards/SKILL.md" not in context
+    result = _run_posttooluse({**payload, "tool_response": "", "hook_event_name": "PostToolUse"}, env)
+    assert result.returncode == 0
+    state = _read_session_state(tmp_path, "discard-public")
+    assert not state.get("termination_evidence", {}).get("works")
+
+
+@pytest.mark.parametrize("tool", ["Write", "Edit", "apply_patch"])
+def test_edit_tools_exclude_discard_destination(tmp_path: pathlib.Path, tool: str) -> None:
+    """編集ツールにも同じ破棄先の分類を適用する。"""
+    data = {
+        "Write": {"file_path": os.devnull, "content": "本文"},
+        "Edit": {"file_path": os.devnull, "old_string": "旧", "new_string": "新"},
+        "apply_patch": {"command": f"*** Begin Patch\n*** Update File: {os.devnull}\n@@\n-旧\n+新\n*** End Patch"},
+    }[tool]
+    assert not operation_skills.written_paths(tool, data, str(tmp_path))
+    assert not operation_skills.is_existing_file_edit(tool, data, str(tmp_path))
+    assert not operation_skills.operation_matches("body-writing", tool, data, str(tmp_path))
