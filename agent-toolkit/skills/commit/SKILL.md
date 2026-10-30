@@ -24,10 +24,10 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md#「暫定回避と結果報告」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「暫定回避と結果報告」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md#「暫定回避と結果報告」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「暫定回避と結果報告」` |
 | 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
-| 取得版の異なる結果をレビューへ渡す前 | `../review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
+| 取得版の異なる結果をレビューへ渡す前 | `agent-toolkit:/share/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「根拠の書き方」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
@@ -42,13 +42,13 @@ description: >
 | 既存未コミット差分を不採用として破棄する前 | `references/stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
 | 一時ブランチ、`git stash`の退避または別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `references/stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
 
-push後にCIが失敗した場合は`agent-toolkit:bugfix`を起動し、同スキルの`references/ci-failure-handling.md`に沿って原因を分析する。
+push後にCIが失敗した場合は`agent-basics:bugfix`を起動し、同スキルの`references/ci-failure-handling.md`に沿って原因を分析する。
 
 ## 検証
 
 開発中の動作確認は必要に応じて適宜行う。ただし、レビューに提出する最終テストや手動による動作確認結果は、結果に影響を与える実装・テスト・入力が確定し、すべてのコミットやコミットフックの更新が完了したあとに取得する。レビューへ進む際は、計画全体の変更範囲を網羅した検証結果と、それを取得した時点のバージョンを対応付ける。
 
-以前に保存した検証結果を再利用できるかどうかは、`agent-basics:check-execution`の`references/verification-scope.md`「実行条件と再実行」に沿って判断する。取得したバージョンの対応付けは、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。内容が確定したあとも有効な成功結果はそのまま活かし、結果に影響を与える変更点や未検証の項目だけを追加で検証する。
+以前に保存した検証結果を再利用できるかどうかは、`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に沿って判断する。取得したバージョンの対応付けは、`agent-toolkit:/share/exec-review-recording.md`「根拠の書き方」に従う。内容が確定したあとも有効な成功結果はそのまま活かし、結果に影響を与える変更点や未検証の項目だけを追加で検証する。
 
 ## 通常commit
 
@@ -60,7 +60,7 @@ push後にCIが失敗した場合は`agent-toolkit:bugfix`を起動し、同ス�
 他のセッションが同じリポジトリに変更を加える可能性があるため、ステージングするのは自セッションの担当範囲だけに限定し、ユーザーや他セッションによる未コミットの変更はそのまま残す。コミットの直前に、作業開始時からベースコミットが変わっていた場合の対応は、`agent-toolkit/rules/02-agent-operations.md`「作業中に観測したリポジトリ状態変化の扱い」に従って判断する。
 
 コミットを実行する前に、対象の変更だけがステージングされていること、format・lint・testが警告なしで成功することを確認する。マージの競合を解決したあとは、競合マーカー（`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`）が残っていないことを確認する。プロジェクトの規範でCIを主要な検証関門と定めている場合は、CIが無条件に実行するチェックをローカルの事前確認から省いてよい。
-解除条件付きの暫定対応を含むコミットでは、`agent-toolkit:bugfix/SKILL.md`「暫定回避と結果報告」に従い、保存済みAWIに正式な対応内容、解除条件、復帰後の期待結果、および待機期限が記録されているかを確認する。不足がある場合は、通常のWI登録手順でそれらを記録してからコミットする。
+解除条件付きの暫定対応を含むコミットでは、`agent-toolkit:wi-standards/references/analysis-records.md`「暫定回避と結果報告」に従い、保存済みAWIに正式な対応内容、解除条件、復帰後の期待結果、および待機期限が記録されているかを確認する。不足がある場合は、通常のWI登録手順でそれらを記録してからコミットする。
 
 コミットフック（Git hookやhook管理ツール）のチェックをスキップまたは迂回する操作は、pre-commitの退避（stash）が競合を起こし、かつ対象ファイルを所定の手順ですでに検証済みである場合にのみ認める。
 該当する操作には、`--no-verify`、`-n`、`-c core.hooksPath=/dev/null`などのフック無効化オプションや、環境変数`SKIP=<hook名>`の指定が含まれる。通常の検証を省略したり、フックの失敗を安易に回避したりする目的では使用しない。ただし、プロジェクト規範で個別に許可されている`SKIP=<hook名>`はその定めに従う。フックを迂回した場合は、その手段と理由をコミット完了後の報告に明記する。
@@ -90,3 +90,18 @@ atk run-script plan-commits -- <引き継ぎ記録Markdownの絶対パス> --wor
 ## コミットメッセージ
 
 件名のフォーマット、type、description、本文、および`Co-Authored-By:`の書式は`references/message.md`に従う。計画ファイルやプルリクエストの説明文に記載するコミットメッセージ案にも、同じ基準を適用する。
+
+## 工程で参照する運用資料
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| CI失敗を扱う前 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` | |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-toolkit:commit/references/design-time.md#「破壊的変更の記録」` | 判断 | `section:agent-toolkit:*/skills/commit/references/design-time.md#「破壊的変更の記録」` | |
+| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:commit/references/testing.md#「分岐条件の効果の裏付け」` | 判断 | `section:agent-toolkit:*/skills/commit/references/testing.md#「分岐条件の効果の裏付け」` | |
+
+## 参照資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |

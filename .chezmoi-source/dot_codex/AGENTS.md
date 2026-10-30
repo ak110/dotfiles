@@ -11,10 +11,11 @@ Codex固有の公開機能と、常時規範との差分事項を規定する。
 - コマンド出力の取得と待機処理は、`02-agent-operations.md`「出力の保持と観測」「待機と背景実行」の結果契約に従う。ファイルの読み取りには`cat -- <絶対パス>`または`sed -n '<開始行>,<終了行>p' -- <絶対パス>`を使用し、JSONには`jq`を使用する。資料の取得範囲は`02-agent-operations.md`「標準の読取・実行・一時領域」に従う。全体を読む資料の出力が切り詰められた場合は、行範囲を進めて末尾まで取得する。
 - cat・数値範囲のsed -n・行数指定のhead/tail・単純なjq抽出は、元のポリシーで成功した結果をPostToolUseが追加コンテキストへ全量配送する。
   元の呼出しは変更しない。
-  省略時の再取得はLinuxの元実行cwd・書込root内の通常ファイルに限り、元結果の先頭・末尾と一致することを確かめる。
+  Linuxでの省略時の補完読取は、元turnのsandbox読取権限に従う。`disabled`ではcwd外も対象とし、`managed`の`restricted`ではcwd・書込rootと明示的な`read`・`write`許可を使い、`none`を優先する。権限が未知なら補完しない。
+  通常ファイルをFD固定で読み、各パス要素のsymlinkを拒否し、元結果の先頭・末尾との一致を確かめる。
   拒否・失敗・不一致・範囲外は配送せず、通知だけで読了にしない。
   別のhook指示と区切られたJSON内の本文は出所付きデータとして読む。
-- 自動配送の適用外では、行数・バイト数から取得単位を選び、内側exec_commandと外側functions.execのmax_output_tokensへ全量を収める。同セルの外側予算は内側の合計以上とし、配布値20000は参考値とする。互いの結果に依存しない取得は並列に呼ぶ。モデル文脈容量を超える本文は、必要な資料・行範囲へ分けて取得する。
+- 自動配送の適用外では、行数・バイト数から取得単位を選び、内側exec_commandと外側functions.execのmax_output_tokensへ全量を収める。文章主体の出力では、UTF-8バイト数を3で割った切上げを内側予算の最低値とし、同セルの外側予算を内側の合計以上にする。配布値20000は参考値であり、nativeの`original token count`が設定予算を超えたら、その値以上の予算で1回再取得する。互いの結果に依存しない取得は並列に呼ぶ。モデル文脈容量を超える本文は、必要な資料・行範囲へ分けて取得する。
   空の確認には`wc -c`か`test -s`を使う。`wc -l`は改行数であり、本文の有無・読了は取得した本文で判定する。分割取得の最後は`sed -n '<開始行>,$p' -- <絶対パス>`で末尾まで指定する。
 - `functions.exec`から`exec_command`を呼び出す場合は、返却されたオブジェクト全体を`text(r)`へ渡し、本文、診断情報、`exit_code`、`session_id`を保持する。外側の`cell_id`は`functions.wait`、内側の`session_id`は`write_stdin`を用いて同一ターン内に終了まで回収する。`exit_code`が存在せず`session_id`が存在する結果は実行中として扱い、同一実行のコマンドを重複して再発行することは避ける。
 - 明示的な指示がない限り、Officeファイルは原本を直接変更せずに取り扱う。CSVファイルは利用側の要求仕様に従って処理し、仕様が不明な場合はUTF-8（BOM付き）で保存する。
@@ -199,7 +200,7 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 逸脱しても不利益が小さく後のレビューや自動チェックで回収できる規定と、守る費用が便益を上回りうる規定には「（努力目標。理由）」を付ける。努力目標は理由と適用範囲を添えて品質・費用・提供時期の比較に使い、新しく書く記述から適用する。
 <!-- quality-principles:constraints:end -->
 
-規定はQCDを達成する手段として通常従い、外れる条件は「QCDと3段判定」が定める。規範の書き方と追記の条件は`agent-basics:writing-standards`の`references/agent-documents-basics.md`と`references/agent-documents-additions.md`に従う。常時規範の配送と、規範変更時の既存対象の是正は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`が定める。
+規定はQCDを達成する手段として通常従い、外れる条件は「QCDと3段判定」が定める。規範の書き方と追記の条件は`agent-toolkit:delegation/references/agent-documents-basics.md`と`references/agent-documents-additions.md`に従う。常時規範の配送と、規範変更時の既存対象の是正は`agent-toolkit:wi-standards/references/agent-documents-additions.md`が定める。
 
 ## 完遂と先送り
 
@@ -230,7 +231,7 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 完了、成功、不在、件数、互換性を述べるときは、対象と条件が一致する観測を示す。完了は、その終了状態を決める主体の出力で確かめる。数値は単位と母集団を示し、比べる値は同じ範囲で数える。取得が切り詰められていたら、網羅性や不在の結論は省略のない取得で確かめてから出す。
 <!-- quality-principles:facts:end -->
 
-調査、検証、成功判定、配布と反映の流れは`agent-basics:writing-standards`の`references/investigation.md`に従う。
+調査、検証、成功判定、配布と反映の流れは`agent-toolkit:user-confirmation-and-report/references/investigation.md`に従う。
 
 ## 協調と自律
 
@@ -318,8 +319,8 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 ### パスと検索
 
 - 既存のパスは入力・基準文書・取得済みの出力から解決し、推測したパスは実在を検索で確かめる。外部コマンドへは絶対パスを渡し、cwdを使うCLIは対象のworktreeで起動する。
-- 通常の検索は対象worktreeの`git grep`、追跡外のファイルは`rg`で行う。終了コード0は一致、1は一致なし、それ以外は検索の失敗として扱う。手段の選び方と出力量の制御は`agent-toolkit:search`に従う。
-- 操作の対象と副作用から必要なスキルを判断し、まだ起動していなければ操作の前に起動する（努力目標。契約の確認不足と独自手順の重複を避ける）。
+- 通常の検索は対象worktreeの`git grep`、追跡外のファイルは`rg`で行う。終了コード0は一致、1は一致なし、それ以外は検索の失敗として扱う。手段の選び方と出力量の制御は`agent-basics:search`に従う。
+- 必要なスキルの起動と工程資料の取得は、`agent-toolkit:/share/read-trigger-bootstrap.md`の条件表に従い、該当する判断や操作の前に行う。
 - 外部から観測できる名前と値（文言、設定キー、状態値、コマンド名、返却形式など）を変えるときは、旧値を期待するテストを含む直接影響範囲を固定文字列で探し、送信側と受信側、実装とテストをそろえる。直接影響範囲の定義は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「要件・外部仕様」にある。
 - Git識別子と別worktreeの指定は`agent-toolkit:commit`の`references/git-identifier.md`に従う。前工程から受け取ったパスや識別子は、移動や終了を伴う操作を挟んだ後で同一性を確かめ直す。
 

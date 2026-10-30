@@ -9,7 +9,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
 
 ## 終了コードと呼び出しの失敗
@@ -19,7 +19,7 @@
 - 終了コード10: 委譲元の状態管理に待機対象が登録されていないことを示す。これは委譲先自体の失敗とは異なる。起動時の応答や`atk agents list`でセッションが存在するか確認する。ホストの組み込み機能で起動した委譲対象については、そのホストの委譲一覧や指定された成果物から終了を観測する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日」を参照する。
 - 待機対象の登録と`starting`状態の保持中セッションがいずれも0件の状態で非0終了した場合は、回収すべき対象が存在しないため再実行せず、起動時の応答を確認する。保持中のセッションが残っている場合は、通常の待機上限まで待機を継続する。
 - ホストのリソース上限やメモリー不足によって背景待機の停止通知を受け取った場合は、次節の手順に従って元の待機状態と実行結果を回収する。委譲先が停滞・中断・再起動しているかどうかは、`atk agents list`で確認できる各セッションの`status`で判定する。
-- 委譲先または自分自身のツール呼び出しが終了ステータスを返さずに終了した場合（アイドル上限によるアボート、待機上限の超過、無応答による中断など）は、実行基盤側の欠陥として扱う。`agent-toolkit:bugfix`を起動し、`agent-toolkit/skills/bugfix/SKILL.md`の「問題を見つけたときの対処」に従って対処する。あわせて、待機を継続するかどうかも個別に判定する（単に続行するだけでは、同じ欠陥が別のセッションでも再発するためである）。
+- 委譲先または自分自身のツール呼び出しが終了ステータスを返さずに終了した場合（アイドル上限によるアボート、待機上限の超過、無応答による中断など）は、実行基盤側の欠陥として扱う。`agent-basics:bugfix`を起動し、`agent-basics:bugfix/SKILL.md`の「問題を見つけたときの対処」に従って対処する。あわせて、待機を継続するかどうかも個別に判定する（単に続行するだけでは、同じ欠陥が別のセッションでも再発するためである）。
 
 ## ホストによる背景待機の停止後
 

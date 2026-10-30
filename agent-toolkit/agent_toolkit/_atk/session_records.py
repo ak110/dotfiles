@@ -24,13 +24,18 @@ from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_exit_s
 # Claude Codeのハーネスが、`Skill`ツールの起動の`tool_result`として記録する起動確認文言。
 _CLAUDE_PROCESS_WI_MARKERS = (
     "Launching skill: agent-toolkit:process-wi",
+    "Launching skill: agent-toolkit:process-wi all-repos",
     "Launching skill: agent-toolkit:process-wi-all-repos",
 )
 _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 
 # 記録にはホストの前置きや/goalの境界が含まれるため、目的文本体の包含で判定する。
 # 登録全体の統括へ移行した後も、手動process-wiと過去の記録を検出対象に残す。
-_PROCESS_WI_GOAL_BODIES = (PROCESS_WI_GOAL_BODY, "agent-toolkit:process-wi-all-reposを完遂する")
+_PROCESS_WI_GOAL_BODIES = (
+    PROCESS_WI_GOAL_BODY,
+    "agent-toolkit:process-wi all-reposを完遂する",
+    "agent-toolkit:process-wi-all-reposを完遂する",
+)
 
 _TEXT_EXCERPT_LIMIT = 200
 

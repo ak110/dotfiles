@@ -89,11 +89,11 @@ _SAVED_UNRESOLVED_NEXT_ACTION = (
     "`atk review-table show <PATH>`で保存結果を確認する。解消しない場合はagent-toolkitの不具合としてユーザーへ報告する"
 )
 _ActionableError = _next_action.ActionableError
-# 応答本文の必須ラベル。各ラベルに書く内容は`agent-toolkit:review-standards`の`references/reviewee.md`が定める。
+# 応答本文の必須ラベル。各ラベルに書く内容は`agent-toolkit:/share/exec-review-responses.md`が定める。
 # 記録時点で同じ規定の検索と不採用の根拠の確認を求めるため、列を増やさず本文の行頭ラベルで表す。
 RESPONSE_LABELS = ("違反を確認した規定:", "同じ規定の検索:", "採用する修正範囲:", "採用しない修正方針:")
 NO_RESPONSE_REASON_LABELS = ("根拠の所在:",)
-_LABEL_DEFINITION = "`agent-toolkit:review-standards`の`references/reviewee.md`「レビュー指摘管理表への応答」"
+_LABEL_DEFINITION = "`agent-toolkit:/share/exec-review-responses.md`「レビュー指摘管理表への応答」"
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -592,7 +592,7 @@ def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -
         result["repetition_guidance"] = (
             "過去の指摘・応答と今回の指摘を読み、"
             "agent-toolkit/share/review-loop-coordination.md「反復原因の判定」と"
-            "agent-toolkit/skills/review-standards/references/reviewee.md「同じ指摘の反復」に従い、"
+            "agent-toolkit/share/exec-review-responses.md「同じ指摘の反復」に従い、"
             "違反規定と発生条件を比較して反復原因を判定する"
         )
     return result

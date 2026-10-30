@@ -36,11 +36,8 @@ class Read:
     operands: tuple[int, ...]
 
 
-def read_plan(command: str) -> list[Read]:
-    """展開・副作用・外部入力参照を含まない表示だけを受理する。"""
-    unquoted = re.sub(r"'[^']*'", "", command)
-    if any(value in unquoted for value in ("$", "`", "\\\n")):
-        return []
+def read_command_groups(command: str) -> list[list[str]] | None:
+    """読取計画と取得案内で同じ演算子の境界を使う。"""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()<>\n")
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
@@ -52,13 +49,24 @@ def read_plan(command: str) -> list[Read]:
                 if groups[-1]:
                     groups.append([])
             elif token and all(char in ";&|()<>\n" for char in token):
-                return []
+                return None
             else:
                 groups[-1].append(token)
     except ValueError:
+        return None
+    return [group for group in groups if group]
+
+
+def read_plan(command: str) -> list[Read]:
+    """展開・副作用・外部入力参照を含まない表示だけを受理する。"""
+    unquoted = re.sub(r"'[^']*'", "", command)
+    if any(value in unquoted for value in ("$", "`", "\\\n")):
+        return []
+    groups = read_command_groups(command)
+    if groups is None:
         return []
     result = []
-    for group in filter(None, groups):
+    for group in groups:
         name = pathlib.PurePath(group[0]).name
         if group[0] not in {name, f"/bin/{name}", f"/usr/bin/{name}"}:
             return []
@@ -171,7 +179,7 @@ def _runtime(payload: dict) -> tuple[dict, dict, str, int] | None:
 
 
 def _scope(context: dict) -> tuple[list[pathlib.Path], list[pathlib.Path]] | None:
-    """元turnのcwd・書込rootへ限定し、明示的な禁止を優先する。"""
+    """元turnの読取許可を解決し、明示的な禁止を優先する。"""
     cwd = context.get("cwd")
     if not isinstance(cwd, str) or not pathlib.Path(cwd).is_absolute():
         return None
@@ -181,7 +189,7 @@ def _scope(context: dict) -> tuple[list[pathlib.Path], list[pathlib.Path]] | Non
     if not isinstance(profile, dict):
         return None
     if profile.get("type") == "disabled":
-        return roots, denied
+        return [pathlib.Path(pathlib.Path(cwd).anchor)], denied
     policy = context.get("sandbox_policy", {})
     if not isinstance(policy, dict) or not isinstance(policy.get("writable_roots", []), list):
         return None
@@ -202,7 +210,9 @@ def _scope(context: dict) -> tuple[list[pathlib.Path], list[pathlib.Path]] | Non
             return None
         if path.get("type") == "path" and isinstance(path.get("path"), str):
             resolved = pathlib.Path(path["path"]).resolve()
-            if access == "write":
+            if not pathlib.Path(path["path"]).is_absolute():
+                return None
+            if access in {"read", "write"}:
                 roots.append(resolved)
             elif access == "none":
                 denied.append(resolved)
@@ -218,27 +228,53 @@ def _paths(
     for read in plan:
         paths = []
         for index in read.operands:
-            path = pathlib.Path(read.argv[index])
-            path = (cwd / path).resolve(strict=True)
-            if not any(path.is_relative_to(root) for root in roots) or any(path.is_relative_to(root) for root in denied):
+            # symlinkの後の親参照を先に畳むと、元コマンドと別の対象を開いてしまう。
+            path = cwd / pathlib.Path(read.argv[index])
+            resolved = path.resolve(strict=True)
+            if not any(resolved.is_relative_to(root) for root in roots) or any(
+                resolved.is_relative_to(root) for root in denied
+            ):
                 raise ValueError("読取の再取得範囲外")
             paths.append(path)
         result.append(paths)
     return result
 
 
-def can_deliver(command: str, cwd: str) -> bool:
-    """Preでは入力を変えず、cwd内の自動配送対象への従来の容量警告だけを省く。"""
+def can_deliver(command: str, cwd: str, payload: dict | None = None) -> bool:
+    """元turnの権限とFD固定を確定できる読取だけ、Preの容量警告を省く。"""
     if not pathlib.Path("/proc/self/fd").is_dir() or not hasattr(os, "O_NOFOLLOW"):
         return False
     plan = read_plan(command)
     if not plan:
         return False
     try:
-        paths = _paths(plan, pathlib.Path(cwd), [pathlib.Path(cwd).resolve()], [])
-    except OSError, ValueError:
+        context = (
+            next(
+                (
+                    record["payload"]
+                    for record, _digest in _records(pathlib.Path(payload["transcript_path"]))
+                    if isinstance(record, dict)
+                    and record.get("type") == "turn_context"
+                    and isinstance(record.get("payload"), dict)
+                    and record["payload"].get("turn_id") == payload.get("turn_id")
+                ),
+                None,
+            )
+            if payload is not None
+            else None
+        )
+        # payloadを持たない既存の静的検査は、従来のcwd内だけを対象とする。
+        scope = ([pathlib.Path(cwd).resolve()], []) if payload is None else _scope(context) if context is not None else None
+        if scope is None:
+            return False
+        paths = _paths(plan, pathlib.Path(cwd), *scope)
+        for files in paths:
+            for path in files:
+                descriptor = _open(path)
+                os.close(descriptor)
+    except OSError, ValueError, KeyError, TypeError:
         return False
-    return all(path.is_file() for files in paths for path in files)
+    return True
 
 
 def _open(path: pathlib.Path) -> int:
@@ -386,6 +422,10 @@ def collect(payload: dict) -> Delivery | None:
                     )
             packet = json.dumps({"command": command, "output": body, "exit_code": 0}, ensure_ascii=False)
             if not _reserve(root, generation, limit, len(packet.encode("utf-8"))):
+                # 省略の包絡が無いnative応答は既に全文をモデルへ返している。重複配送の枠不足だけで
+                # 取得を取り消すと、小さな正規の読取でも再書込の遮断を解除できなくなる。
+                if not response_is_truncated(response):
+                    return Delivery("元のnative読取が終了0で全文を返したため、追加配送を省く。", response)
                 return Delivery(
                     "全文は未取得。同じ応答から配送する本文の合計がモデル文脈の残容量を超える。次の応答で必要な行範囲へ限定して読むこと。",
                     None,

@@ -102,7 +102,10 @@ def test_unknown_session_record_cwd_is_not_replaced():
     root = pathlib.Path.home() / ".claude/projects/project"
     root.mkdir(parents=True)
     (root / "record.jsonl").write_text("{}\n", encoding="utf-8")
-    assert large_reads.session_record_reference_warning("Bash", {"command": "cat record.jsonl"}, str(root))
+    notice = large_reads.session_record_reference_warning("Bash", {"command": "cat record.jsonl"}, str(root))
+    assert notice is not None and "`agent-toolkit:session-review`" in notice
+    source = pathlib.Path(__file__).resolve().parents[3] / "skills/session-review/references/session-records.md"
+    assert source.is_file() and str(source) in notice
     assert large_reads.session_record_reference_warning("Bash", {"command": 'cd "$D" && cat record.jsonl'}, str(root)) is None
 
 
@@ -396,6 +399,7 @@ def test_dispatch_claude_large_read_passes_without_correction(tmp_path: pathlib.
 def test_dispatch_codex_warns_and_allows_bash_full_read(tmp_path: pathlib.Path, capsys) -> None:
     """Codexの全文取得を継続し、出力予算と継続取得の案内を渡す。"""
     target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
+    # 元turnのturn_contextを持たないPre入力では容量警告を維持する。
     payload = {
         "tool_name": "Bash",
         "tool_input": {"command": f"cd {target.parent} && cat {target.name}"},
@@ -438,6 +442,7 @@ def test_large_original_record_is_guided_to_evidence_query(
     captured = capsys.readouterr()
     assert not captured.err
     assert "session-review-evidence" in captured.out
+    assert "`agent-toolkit:session-review`" in captured.out
     assert "--transcript" in captured.out
     assert "sed -n '" not in captured.out
 
@@ -458,6 +463,21 @@ def test_large_read_notice_keeps_recovery_without_generic_fallback(tmp_path, mon
     assert "委譲元へ返し" not in notice
     if original:
         assert "session-review-evidence" in notice
+        assert "`agent-toolkit:session-review`" in notice
         assert "--transcript" in notice
     else:
         assert "sed -n '" in notice and "末尾の" in notice
+
+
+@pytest.mark.parametrize("multiple", [False, True])
+def test_large_read_budget_guidance(tmp_path, multiple):
+    """日本語の実バイト合計に対応する内外予算と再取得手順を案内する。"""
+    paths = [tmp_path / "first.md", *([tmp_path / "second.md"] if multiple else [])]
+    for path in paths:
+        path.write_text("本文\n" * 8000, encoding="utf-8")
+    budget = (sum(path.stat().st_size for path in paths) + 2) // 3
+    notice = _codex_read(shlex.join(["cat", "--", *map(str, paths)]), tmp_path)
+    assert notice is not None
+    assert f"少なくとも{budget}" in notice
+    assert "外側セルのmax_output_tokensは内側コマンドの予算の合計以上" in notice
+    assert "original token count" in notice and "その数以上で1回再取得" in notice

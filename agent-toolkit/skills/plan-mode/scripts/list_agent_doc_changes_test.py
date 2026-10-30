@@ -43,7 +43,7 @@ def test_lists_only_agent_documents_changed_between_revisions(
     """エージェント向け文書の追加・変更・削除・改名だけを重複なしの昇順で返し、通常コードとエンドユーザー向け文書を含めない。"""
     base = _commit_all(repository, "base")
     _write(repository / "AGENTS.md", "規範\n")
-    _write(repository / "agent-toolkit" / "skills" / "search" / "SKILL.md", "検索\n")
+    _write(repository / "agent-basics" / "skills" / "search" / "SKILL.md", "検索\n")
     _write(repository / "README.md", "改訂\n")
     _write(repository / "agent-toolkit" / "agent_toolkit" / "tool.py", "VALUE = 1\n")
     (repository / "agent-toolkit" / "share" / "old.subagent.md").rename(
@@ -56,9 +56,9 @@ def test_lists_only_agent_documents_changed_between_revisions(
     assert (code, err) == (0, "")
     assert json.loads(out) == [
         "AGENTS.md",
+        "agent-basics/skills/search/SKILL.md",
         "agent-toolkit/share/new.subagent.md",
         "agent-toolkit/share/old.subagent.md",
-        "agent-toolkit/skills/search/SKILL.md",
     ]
 
 

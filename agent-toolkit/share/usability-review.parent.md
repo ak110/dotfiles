@@ -13,8 +13,8 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` |
-| 実描画の確認条件と検証環境を決める前 | `agent-basics:writing-standards/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:managed-temp/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-toolkit:*/skills/managed-temp/references/ui-ux.md#「完了前の実描画確認」` |
+| 実描画の確認条件と検証環境を決める前 | `agent-toolkit:managed-temp/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-toolkit:*/skills/managed-temp/references/ui-ux.md#「完了前の実描画確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
 
@@ -38,7 +38,7 @@
 - 変更画面: 変更が加えられた画面のパスまたはURLと、該当する表示状態へ到達するための操作手順を指定する。
 - 主要シナリオ: 計画またはWIで指定されたエンドユーザーの作業の流れと、そこで確認すべきUX上の観点を指定する。期待結果との一致、データの反映、操作の成否といった機能的な正しさは、判定基準として渡さない。
   観点は変更画面ごとに、その画面に対するWIの完成条件および計画の受入シナリオが求める範囲に限定し、完成条件が異なる画面についてはシナリオの記述を分ける（計画の要約文が完成条件より広い結果を述べている場合でも、WIの完成条件に合わせる）。
-  `agent-basics:writing-standards/references/ui-ux.md`「完了前の実描画確認」において実データから切り離した環境でのみ実施すると定められた操作を必要とする観点については、切り離された`検証環境`と許可される操作を明記するか、観点自体から除外する。`検証環境`で禁止されている操作を必要とする観点は記載しない。
+  `agent-toolkit:managed-temp/references/ui-ux.md`「完了前の実描画確認」において実データから切り離した環境でのみ実施すると定められた操作を必要とする観点については、切り離された`検証環境`と許可される操作を明記するか、観点自体から除外する。`検証環境`で禁止されている操作を必要とする観点は記載しない。
 - 検証環境: 対象プロジェクトの手順から確定したローカル起動コマンド、または127.0.0.1で稼働中のURLを指定する。
 - 引き継ぎ記録先: 省略時や継続時の扱いは、`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う。
 - round: 初回起動時は1を指定し、同一担当への再判定時には直前の番号に1を加えた値を指定する。

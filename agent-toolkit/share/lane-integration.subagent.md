@@ -34,7 +34,7 @@ writes_worktree: true
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「起動方法別のレビュー基準」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「起動方法別のレビュー基準」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/check-execution/SKILL.md#「統合実行ツール経由の起動」` | 判断 | `section:agent-toolkit:*/skills/check-execution/SKILL.md#「統合実行ツール経由の起動」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/check-execution-operations.md#「統合実行ツール経由の起動」` | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「統合実行ツール経由の起動」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
 | 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/references/plan-file-standards.md#「進捗ログ」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「進捗ログ」` |
@@ -45,8 +45,8 @@ writes_worktree: true
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-integration-failure.md` | |
-| `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` | |
-| 「マージありの統合」の検証を実行した後 | `agent-toolkit:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/diagnostics.md` | |
+| `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `agent-toolkit:/share/exec-review-recording.md`「統合時の完成条件判定」 | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「統合時の完成条件判定」` | |
+| 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
 | `adopt`・`reject`のメモを書く直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準）と`references/states-and-dependencies.md`「終了」 | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`section:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md#「終了」` | |
 
 ## 入力
@@ -86,7 +86,7 @@ atk lane integrate --record <所有登録の絶対パス> --reviewed-head <統�
 
 - `plans`: 全計画を保持する順序付き配列。各項目は`name`（計画ファイル名）と`commands`（後述する「計画最終化」で実行するplan-checkや保存用のargv配列）を持つ。すでに保存済みで進捗を追記していない計画は`commands: []`とし、`saved`に同名の保存済み計画の絶対パスを指定する。実装しなかった計画には`no_merge: true`を付与する。計画を作成していない場合は`[]`とする。
 - `wis`: 選定された今回のレーンに属する全WIの順序付き配列。各項目は`name`（WIファイル名）と`commands`（後述する「AWI行の終了」で実行する確定済みの終了用argv配列）を持つ。延期する項目、終了しない項目、およびすでに終了済みの項目は`commands: []`とし、その区分と理由を引き継ぎ記録に残す。実装しなかった項目には`no_merge: true`を付与する。
-- `verification`: 統合前およびrebase後に実行する検証用argvの順序付き配列。各argvは、計画の`## 検証`（訂正済み検証表がある場合はその表）に記載された検証コマンドを文字列配列へ変換したものとする。計画を作成していない場合は、引き継ぎ記録で確定した検証コマンドを使用する。CLIはレーンworktreeを作業ディレクトリとして各argvを直接実行する。複数の計画で検証コマンドが重複している場合は1回のみ登録し、省略した計画と代表コマンドの対応を引き継ぎ記録に記録する。すでに成功している同一の検証は、fast-forwardマージの前には再実行されない。CLIは検証argvに独自の時間制限を設けないため、各コマンドは自身が持つタイムアウト機構（pyfltrのcommand-timeoutなど）で確実に終了する形式で指定する。タイムアウト機構を持たないコマンドは`timeout <秒数>`で囲む。指定する秒数は、その検証が通常完了する所要時間を十分に上回る有限値とし、引き継ぎ記録にある同一検証の所要時間を基準に見積もる。訂正済み検証表の保持と引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と公開工程」に、結果の検収は`agent-toolkit:check-execution`「統合実行ツール経由の起動」に従う。統合後に初めて実行可能となるプロジェクト全体の検証も含める。rebaseを実行した場合は、新しいHEADに対して検証が実行される。
+- `verification`: 統合前およびrebase後に実行する検証用argvの順序付き配列。各argvは、計画の`## 検証`（訂正済み検証表がある場合はその表）に記載された検証コマンドを文字列配列へ変換したものとする。計画を作成していない場合は、引き継ぎ記録で確定した検証コマンドを使用する。CLIはレーンworktreeを作業ディレクトリとして各argvを直接実行する。複数の計画で検証コマンドが重複している場合は1回のみ登録し、省略した計画と代表コマンドの対応を引き継ぎ記録に記録する。すでに成功している同一の検証は、fast-forwardマージの前には再実行されない。CLIは検証argvに独自の時間制限を設けないため、各コマンドは自身が持つタイムアウト機構（pyfltrのcommand-timeoutなど）で確実に終了する形式で指定する。タイムアウト機構を持たないコマンドは`timeout <秒数>`で囲む。指定する秒数は、その検証が通常完了する所要時間を十分に上回る有限値とし、引き継ぎ記録にある同一検証の所要時間を基準に見積もる。訂正済み検証表の保持と引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と公開工程」に、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。統合後に初めて実行可能となるプロジェクト全体の検証も含める。rebaseを実行した場合は、新しいHEADに対して検証が実行される。
 - `handoff`: 計画を作成していない場合に使用する、既存の引き継ぎ記録の絶対パス。計画が存在する場合は省略可能であり、省略時に引き継ぎ記録を追加で入力する必要はない。
 - `lane_started_at`: 受け取った`レーン開始時刻`（タイムゾーン付きISO 8601形式）。plansやwisのargv内で確定値を参照する場合に必須となる。CLIは最初に受け付けた値を所有登録に保持し、それ以降に異なる値が渡された場合は処理を拒否する。
 
@@ -123,7 +123,7 @@ rebaseによってOIDのみが変化した計画の完成条件証拠につい�
 
 ### 検証結果の警告の判定
 
-検証結果における診断メッセージや警告、および個別・全体の所要時間は、`agent-toolkit:check-execution`の`references/diagnostics.md`「読む出力」の共通基準に従って判定する。統合時の比較基準版には統合前のHEADを使用する。統合処理に特有の扱いは以下のとおりである。
+検証結果における診断メッセージや警告、および個別・全体の所要時間は、`agent-basics:check-execution`の`references/diagnostics.md`「読む出力」の共通基準に従って判定する。統合時の比較基準版には統合前のHEADを使用する。統合処理に特有の扱いは以下のとおりである。
 
 - 比較のためにコマンドを再実行する場合は、統合先worktreeにおいて該当するコマンドのみを読み取り専用で実行し、統合先で追跡しているファイルやブランチを変更しないようにする。
 - 新たに発生した警告であるという理由だけで統合やAWIの採否確定を停止させない。実行工程で残す判断をした警告については、その意味、影響、帰属、比較対象のバージョン、および残す理由が統合後の状態でも妥当であることを確認し、診断本文と結果を記録する。統合の妨げとなる警告は修正し、比較が不可能な場合や意味・帰属が特定できない場合は統合を中断して、理由と不足している条件を「続行できない理由」として報告する。
@@ -183,3 +183,9 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 ```
 
 続行不能と追加報告行は、共通契約`rules-subagent.md`「返却形式の受け渡し」に従う。
+
+## 参照資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |

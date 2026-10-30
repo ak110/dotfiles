@@ -10,23 +10,23 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 再レビューの指摘を受領し修正指示を確定する前 | `review-loop-coordination.md#「反復原因の判定」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「反復原因の判定」` |
 | 判断要請を受領し対処を確定する前 | `review-loop-coordination.md#「エスカレーションの事由別の扱い」「技術判断で外せる完成条件」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「エスカレーションの事由別の扱い」「技術判断で外せる完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewee.md#「round 3以降の方式見直し」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「round 3以降の方式見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「round 3以降の方式見直し」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「round 3以降の方式見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「完成条件証拠の受領確認」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「完成条件証拠の受領確認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewee.md#「実行レビュー反復での記録」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「実行レビュー反復での記録」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewee.md#「同じ指摘の反復」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「同じ指摘の反復」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「実行レビュー反復での記録」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「実行レビュー反復での記録」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「同じ指摘の反復」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「同じ指摘の反復」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/reviewee.md#「レビュー指摘の位置付け」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「レビュー指摘の位置付け」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「レビュー指摘の位置付け」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「レビュー指摘の位置付け」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#「状態と依存」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「状態と依存」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/exec-review-recording.md#「失効の根拠」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「失効の根拠」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-recording.md#「失効の根拠」` | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「失効の根拠」` |
 
 ## ラウンドの遷移
 
@@ -36,8 +36,8 @@
 4. 同一のレビュー担当へ、同一の「開始時のHEAD」（CI記録では「修正系列の開始時のHEAD」）、レビュー基準、初回受領時の`review_contract`（簡潔な直接契約、またはMarkdownファイルの絶対パス）、およびレビュー指摘管理表を渡して再レビューを実施させる。計画のみから条項を生成した場合は、初回の計画内容を継続して使用する。再レビューの対象は、前回指摘に対する修正内容、前回レビューHEADから今回HEADまでの修正差分、ならびに変更された識別子や契約の直接影響範囲とする。初回から判定可能だった新たな軽微論点は、全体走査を再開せずに初回レビューの確認不足として記録し、重大な見落としや修正によって新たに生じた欠陥は根拠を添えて指摘する。
 
 履歴書き換えを実施した後は、前回および今回の開始時点とHEADの組み合わせに基づき、ファイルごとの差分を比較する。
-完成条件の証拠は、ラウンドごとに新しいHEADで全条件を判定し直し、返却の「レビューHEAD」にそのHEADを記録する。前ラウンドの返却結果を委譲元がすでに受理している判定行は、修正差分や前提条件の変化が影響しない条件に限り参照を許可する。判定を維持する簡潔な理由は根拠欄に記録する（`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」）。変化の影響を受けた条件は、新たな根拠に基づいて判定し直す。
-第3ラウンド以降に未解決指摘が残る場合は、修正に着手する前に`agent-toolkit:review-standards`の`references/reviewee.md`「round 3以降の方式見直し」を適用する。方式を全面的に置換した直後の再レビューに限り、開始時点からの全差分を走査対象とする。
+完成条件の証拠は、ラウンドごとに新しいHEADで全条件を判定し直し、返却の「レビューHEAD」にそのHEADを記録する。前ラウンドの返却結果を委譲元がすでに受理している判定行は、修正差分や前提条件の変化が影響しない条件に限り参照を許可する。判定を維持する簡潔な理由は根拠欄に記録する（`agent-toolkit:/share/exec-review-recording.md`「受理済み判定への参照」）。変化の影響を受けた条件は、新たな根拠に基づいて判定し直す。
+第3ラウンド以降に未解決指摘が残る場合は、修正に着手する前に`agent-toolkit:/share/exec-review-responses.md`「round 3以降の方式見直し」を適用する。方式を全面的に置換した直後の再レビューに限り、開始時点からの全差分を走査対象とする。
 修正差分の比較元には前回レビュー時のHEADを指定し、返却の「レビュー開始時点」には初回から一貫して継続している開始時点を指定する。
 履歴書き換え後の開始時点には、書き換え後の対応するOIDを使用する。
 
@@ -59,31 +59,31 @@
 
 ## 応答済みの判定
 
-レビューイーは`agent-toolkit:review-standards`の`references/reviewee.md`「実行レビュー反復での記録」に従い、全指摘に対する応答を記録する。委譲元は、`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`を実行して取得した`unanswered_count`が0件である場合のみ、再レビューへ進む。
+レビューイーは`agent-toolkit:/share/exec-review-responses.md`「実行レビュー反復での記録」に従い、全指摘に対する応答を記録する。委譲元は、`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`を実行して取得した`unanswered_count`が0件である場合のみ、再レビューへ進む。
 
 ## 反復原因の判定
 
 再レビューの指摘を受け取って修正指示を確定する前に、`atk review-table show <表の絶対パス> --track <対象track> --format=jsonl`を実行して過去の指摘・応答内容と今回の指摘内容を確認する。
 現行ラウンドのサマリーに示されている過去ラウンド番号と行番号は、詳細な情報を取得するための参照先として活用する。
-`agent-toolkit:review-standards`の`references/reviewee.md`「同じ指摘の反復」に従い、違反規定および発生条件の一致、修正不足、新たな要件の発生、レビュー契約自体の不備を判定したうえで追送する。
+`agent-toolkit:/share/exec-review-responses.md`「同じ指摘の反復」に従い、違反規定および発生条件の一致、修正不足、新たな要件の発生、レビュー契約自体の不備を判定したうえで追送する。
 完成条件の一致や指摘件数のみを根拠として同一の指摘であると判定することは避ける。
-同一性が確認された場合は、局所的に修正する前に`agent-toolkit:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-scenarios.md`「反復した指摘の原因判定」に従って原因を特定する。
+同一性が確認された場合は、局所的に修正する前に`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-scenarios.md`「反復した指摘の原因判定」に従って原因を特定する。
 既存設計の維持と置換を比較検討した根拠、ならびに採否の理由を、指摘管理表の応答欄へ記録させる。
 新たな要件や認可範囲の変更に該当する結果が得られた場合は、エスカレーションへ回送する。
 
 ## エスカレーションの事由別の扱い
 
-残作業や追加の対策に関して判断要請を受けた場合は、完成条件の変更や除外を判定する前に、元の要求、公開契約、および想定される利用場面に基づいてその処理が本来属する契約を確定する。追加機構の必要性については、`agent-toolkit/rules/01-agent.md`「QCDと3段判定」、ならびに`agent-toolkit:review-standards`の`references/reviewee.md`「レビュー指摘の位置付け」の根拠基準を適用する。完成条件内に特定の障害名が明記されていないことのみをもって所属を判断しない。
+残作業や追加の対策に関して判断要請を受けた場合は、完成条件の変更や除外を判定する前に、元の要求、公開契約、および想定される利用場面に基づいてその処理が本来属する契約を確定する。追加機構の必要性については、`agent-toolkit/rules/01-agent.md`「QCDと3段判定」、ならびに`agent-toolkit:/share/exec-review-responses.md`「レビュー指摘の位置付け」の根拠基準を適用する。完成条件内に特定の障害名が明記されていないことのみをもって所属を判断しない。
 元の契約がその処理を要求していないと一意に確定できる場合は、適用範囲の解釈としてその根拠を同一の担当へ返却する。障害発生時の品質保証が元契約に含まれている場合は、発生頻度の低さのみを理由に除外せず、下表に示す完成条件の変更・除外の認可基準に基づいて判定する。調査を経ても契約上の所属が確定しない場合は、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用し、ユーザーのみが決定できる残余事項を確認する。
 
 | 事由 | 委譲元の処置 | 再開位置の記録 |
 | --- | --- | --- |
 | 計画の条項とWIの明示条件の衝突 | WIの明示条件から契約が一意に定まる場合はWIを優先して確定し、同一のレビューイーへ返却する。人間由来の要求に対する解釈が分かれる場合は、ユーザー確認によって確定させてから返却する | 不要 |
 | 選定結果の`担当モデル`とAWI本文のモデル指定の不一致 | 保存済みの選定原本における該当項目の`担当モデル`のみを本文の担当とモデルの組み合わせへ修正し、初回の配分および既存の判断履歴は保持する。`atk run-script pick-wi-check -- <元の選定原本の絶対パス> --work-dir <対象リポジトリの絶対パス>`を実行し、終了コードが0になることを1回で確認する。生成側に未確定のモデルを推測させず、下位担当を追加起動して不一致を補うことは避ける。`実装担当`の値が変更された場合は、引き継ぎ記録と専用リソースを保持したうえで返却元の担当の終了を確認し、同一レーンの回復処理として修正後の値を`model_type`に渡して再起動する。`実行レビュー担当`のみが変更された場合は、同一スレッドへそのまま続行指示を返却する | 不要 |
-| 完成条件の変更または除外の判断要請 | 後述の「技術判断で外せる完成条件」に該当する場合は、メインが技術判断と根拠を担当へ返却して記録させる。該当しない場合はユーザー判断の記録を確認し、存在しなければ`agent-toolkit:user-confirmation-and-report`「手段の選択」に従ってユーザー確認を行う。ユーザー判断の出所と受理条件は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「失効の根拠」に従う | 必要 |
+| 完成条件の変更または除外の判断要請 | 後述の「技術判断で外せる完成条件」に該当する場合は、メインが技術判断と根拠を担当へ返却して記録させる。該当しない場合はユーザー判断の記録を確認し、存在しなければ`agent-toolkit:user-confirmation-and-report`「手段の選択」に従ってユーザー確認を行う。ユーザー判断の出所と受理条件は`agent-toolkit:/share/exec-review-recording.md`「失効の根拠」に従う | 必要 |
 | ユーザーの選好、要件または認可範囲の変更 | ユーザー確認して回答を取得し、同一のレビューイーへ返却する | 不要 |
 | 外部状態または権限の不足 | 回復手段を確認し、ユーザーによる操作が必要な場合はユーザー確認を実施する | 必要 |
-| 同一論点に関する2回目以降の差し替え | 指摘内容と変更実体を突き合わせて変更の意図と影響範囲を確認し、それでも確定できない場合に限りユーザー確認を行ってから修正する。反復回数のみを確認の判断条件にしない（`agent-toolkit:review-standards`の`references/reviewee.md`「同じ指摘の反復」） | 必要 |
+| 同一論点に関する2回目以降の差し替え | 指摘内容と変更実体を突き合わせて変更の意図と影響範囲を確認し、それでも確定できない場合に限りユーザー確認を行ってから修正する。反復回数のみを確認の判断条件にしない（`agent-toolkit:/share/exec-review-responses.md`「同じ指摘の反復」） | 必要 |
 | 技術的に解消可能な実装欠陥 | レビューイーが同一工程内で修正を実施する | 不要 |
 | 同一スレッドを継続できない場合 | 後続の担当へ同一の計画ファイル（`~/.claude/plans`配下）、レビュー指摘管理表、および確定済みの判断事項を引き継ぐ | 必要 |
 
@@ -101,11 +101,11 @@
 - 変更または除外する部分がユーザー自身の指定ではなく、エージェントによる具体化であること。対応する要求が明示由来でも、その目的、対象範囲、期待結果、明示された検証水準を維持すること。
 - 条件の変更または除外が、`agent-toolkit/rules/01-agent.md`「協調と自律」に定められた「ユーザーが確定した判断の変更」に該当しないこと。
 - `agent-toolkit:user-confirmation-and-report`「確認要否の判定」の3に規定された、ユーザーのみが保持する判断情報を必要としないこと（資料の不足については、同節の2において技術判断の対象外と整理されたものに限る）。
-- 重大度に応じた類似見直しおよび再発防止に不可欠な結果と品質を維持すること。基準は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直しと再発防止の完了」に従う。確認手段は同じ必要水準を満たす別の手段へ変更できる。
+- 重大度に応じた類似見直しおよび再発防止に不可欠な結果と品質を維持すること。基準は`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直しと再発防止の完了」に従う。確認手段は同じ必要水準を満たす別の手段へ変更できる。
 
 この判定は完成条件の意味に対する実質的な評価である。`source`を持つAWIで目的達成に不要なエージェント起草条件は、レーン担当が上記の境界を確認して除外し、その判断を記録して報告する。それ以外の変更・除外の判断要請はメインエージェントが判定する。統合時にはメインエージェントが記録と境界を確認する。変更・除外の根拠として、エージェントによる具体化であることに加え、上記すべての条件を満たすことを示す。
 
 記録の保存先は判断した時点で選択する。計画の確定前は対象AWIの実施内容の根拠欄へ、実装着手後はレビュー指摘管理表へ、旧条件、新条件または除外範囲、保持する要求、判断主体と根拠を記録する。計画なしでレーン担当が不要条件を除外する場合は引き継ぎ記録へ記録する。技術的制約による変更ではその制約も記録する。レーン担当の除外は、計画確定後の進捗ログと`review_contract`にも記録し、AWIの処理結果へ反映する。変更後の条件は観測結果に基づいて判定する。
 対話中の判断については、対象発話の逐語内容、ならびに同一発話の反復と区別するための時点および文脈情報を、その証拠を利用する担当へ引き渡す。`agents_server`の委譲先は`atk run-script session-review-evidence -- --delegation-record root --user-events`を実行して最上位の対話を解決できる。そのため、メイン自身の識別子やtranscriptの絶対パスを手動で渡す必要はない。メインエージェントは出所の抽出処理の完了を待たずに回答を返却する。すでに取得済みの出所ファイル、`record`・`line`の情報、または明示された別会話の識別子や記録パスが存在する場合は、担当側でそれらを優先して利用する。
 解決処理が終了コード2で失敗した場合は、担当側が対象会話の識別子や記録パスをメインから受け取り、既存の`--claude-session-id`、`--codex-thread-id`、`--transcript`のいずれかのオプションを指定して再実行する。`Agent`ツールなど自動解決が確認されていない起動手段を用いる場合も、これらの明示的な値を渡す。
-保存済みの指定組み合わせは、`atk run-script session-review-evidence -- --user-events-file <元の出力の絶対パス> --user-event-at <record>:<line>`を実行して読み込む。根拠の提示には元ファイルと、元のrecord・line情報を使用する。失効根拠の書式およびユーザー由来の受理条件は、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「失効の根拠」に従う。
+保存済みの指定組み合わせは、`atk run-script session-review-evidence -- --user-events-file <元の出力の絶対パス> --user-event-at <record>:<line>`を実行して読み込む。根拠の提示には元ファイルと、元のrecord・line情報を使用する。失効根拠の書式およびユーザー由来の受理条件は、`agent-toolkit:/share/exec-review-recording.md`「失効の根拠」に従う。

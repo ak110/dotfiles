@@ -290,7 +290,8 @@ def _record_read(payload: dict[str, Any]) -> list[str]:
     path = args.get("file_path")
     document = documents.skill_document(path) if isinstance(path, str) else None
     text = documents.response_text(payload.get("tool_response"))
-    if document is None or not documents.body_returned(*document, text):
+    plugin = documents.document_plugin(path) if document is not None else ""
+    if document is None or not documents.body_returned(*document, text, plugin=plugin, path=path):
         return []
     # 行番号や結果の説明を除いた本文が、読取ファイルの全文を含むか確かめる。
     try:
@@ -299,11 +300,11 @@ def _record_read(payload: dict[str, Any]) -> list[str]:
         return []
     returned = re.sub(r"(?m)^\s*\d+\s*[:│→]\s?", "", text or "")
     full = bool(expected) and expected in returned
-    read = documents.DocumentRead(*document, partial=not full)
+    read = documents.DocumentRead(*document, partial=not full, plugin=plugin, path=path)
     operations.record_document_read(payload["session_id"], read, "main")
     if read.relative_path != "SKILL.md" or not full:
         return []
-    observed = {**payload, "tool_name": "Skill", "tool_input": {"skill": f"agent-toolkit:{read.skill}"}}
+    observed = {**payload, "tool_name": "Skill", "tool_input": {"skill": f"{read.plugin}:{read.skill}"}}
     return _invoke("posttooluse", observed).contexts()
 
 

@@ -24,7 +24,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md#「計画準備の受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「計画準備の受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-recording.md#「統合時の完成条件判定」` | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「統合時の完成条件判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-planning.md#「再開」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lane-planning.md#「再開」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#冒頭` |
 
@@ -168,7 +168,7 @@ Claude Code環境では、各段階（複数段階の場合は中間の段階も
 
 ## 統合とAWI終了
 
-統合前の確認作業は、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」に従う。レーン担当へ委ねる統合指示、およびメインエージェント自身がCLIを実行する場合の検収は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に準拠する。
+統合前の確認作業は、`agent-toolkit:/share/exec-review-recording.md`「統合時の完成条件判定」に従う。レーン担当へ委ねる統合指示、およびメインエージェント自身がCLIを実行する場合の検収は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に準拠する。
 
 Git統合、全計画の保存、WIの採否確定、選定情報の統合状態更新は、同一の所有登録をもとに`atk lane integrate`が一括して実行する。呼び出し引数とmanifestの作成手順は、レーン担当の`lane-integration.subagent.md`「公開統合操作」に従う。メインエージェント自身が現行CLIを呼び出す場合も、独立した文脈でのレビューと完成条件の判定を通過した同一の入力情報を使用する。Git統合と統合状態の更新は、この公開操作に集約して実施する。
 

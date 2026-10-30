@@ -1,7 +1,7 @@
 # 検証結果と手動観測の保存
 
 実装を担当するメインエージェントおよびレーン担当者が変更範囲を検証し、手動で観測した結果を返却時の`検証結果`や進捗ログへ記録するための共通手順である。手動観測する前には「手動観測の保存」を、`検証結果`を記述する前には「完成条件証拠の検証記録」をそれぞれ参照する。工程の認可や、実装とレビューの役割分担については、呼出側との契約を適用する。
-最終観測の取得順序は`agent-toolkit:commit`の`SKILL.md`「検証」に、共通する検証のまとめ実行と保存結果の被覆判定は`agent-basics:check-execution`の`references/verification-scope.md`「実行条件と再実行」に従う。
+最終観測の取得順序は`agent-toolkit:commit`の`SKILL.md`「検証」に、共通する検証のまとめ実行と保存結果の被覆判定は`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従う。
 
 ## 名指し参照の読込方法
 
@@ -11,16 +11,16 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 受入シナリオを起動する前 | `../skills/check-execution/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/acceptance-scenarios.md` |
+| 受入シナリオを起動する前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
 | 訂正済み検証表を使う前 | `../skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` |
-| 保存出力を取得する前 | `../skills/check-execution/SKILL.md#「保存した実行出力の取得」` | 判断 | `section:agent-toolkit:*/skills/check-execution/SKILL.md#「保存した実行出力の取得」` |
-| 取得版の異なる観測を検証結果へ書く前 | `../skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
+| 保存出力を取得する前 | `agent-toolkit:/share/check-execution-operations.md#「保存した実行出力の取得」` | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「保存した実行出力の取得」` |
+| 取得版の異なる観測を検証結果へ書く前 | `agent-toolkit:/share/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「根拠の書き方」` |
 | レビューへ渡す最終観測を取得する前 | `../skills/commit/SKILL.md#「検証」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「検証」` |
 | 保存済みの成功集合と限定再検証から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
 
 ## 手動観測の保存
 
-受入シナリオまたは完成条件を手動で観測する直前に、受入シナリオ検証（`agent-toolkit:check-execution`の`references/acceptance-scenarios.md`）の起動条件に従って対象を起動する。コマンドの実行は、実行ハーネスが提供する標準の実行・背景実行・待機機能を用いて対象worktreeから実施する。
+受入シナリオまたは完成条件を手動で観測する直前に、受入シナリオ検証（`agent-toolkit:delegation/references/acceptance-scenarios.md`）の起動条件に従って対象を起動する。コマンドの実行は、実行ハーネスが提供する標準の実行・背景実行・待機機能を用いて対象worktreeから実施する。
 
 実行レビュー担当者など別の担当者が出力の全量を確認する必要がある観測では、自身のセッションのmanaged-temp配下に`mktemp -d '<セッションのmanaged-temp>/<用途>-XXXXXXXX'`でディレクトリを作成し、標準出力と標準エラー出力を別々のファイルへ保存する。その観測における終了コード、cwd、argv、取得時点の`git rev-parse HEAD`による完全OID、および`git status --porcelain=v1`の結果を検証結果に記載する。保存に失敗した観測や、終了コードまたは取得時のHEADが記録されていない観測は、正しく保存できる形で再実行する（実行レビュー担当者は保存された観測結果のみを検証対象として参照できる）。PATH上のコマンドなど、インストール済みの別バイナリを実行した観測については、その実体のバージョンも記録する。
 保存したディレクトリは、その検証結果を利用する実行レビューおよび統合の受領処理が完了した後、作成した担当者が`rm -r -- <作成した絶対パス>`を実行して確実に回収する。
@@ -29,7 +29,7 @@
 
 初回レビューを起動する前に、各検証記録で取得した版、実行時の入力・環境条件、要求または受入シナリオごとの観測箇所を対応付ける。試験用の入力と実際に動作した実行環境の版は別の値として記録する。レビュー担当はこの対応を入力として保存済み結果を独立に適用判定し、適用できない条件と影響差分だけを追加観測する。
 
-実行レビューが完成条件証拠を判定する対象作業では、実装担当者およびメインエージェントが、実装完了時やレビュー修正時の返却値に`検証結果`を記載し、同一の内容を進捗ログ（計画を作成しない場合は引き継ぎ記録）へ記録する。実行レビュー担当者はこの記録を判断材料として判定し、判定結果そのものは実行レビュー担当者のみが記入する（`agent-toolkit:review-standards`の`references/exec-review-recording.md`）。
+実行レビューが完成条件証拠を判定する対象作業では、実装担当者およびメインエージェントが、実装完了時やレビュー修正時の返却値に`検証結果`を記載し、同一の内容を進捗ログ（計画を作成しない場合は引き継ぎ記録）へ記録する。実行レビュー担当者はこの記録を判断材料として判定し、判定結果そのものは実行レビュー担当者のみが記入する（`agent-toolkit:/share/exec-review-recording.md`）。
 
 - 計画の`## 検証`（訂正済み検証表がある場合はその表）に記載された各コマンドを、対象worktree上で標準実行する。計画を作成しない場合は、引き継ぎ記録で確定した検証コマンドを実行する。
 - コマンドごとに、実行コマンド、cwd、終了コード、判定の根拠とした出力の要点（失敗、警告、対象への到達、件数など）、および検証した版の完全OID（`git rev-parse HEAD`）を記述する。未commitの変更を含む状態で検証を実施した場合はその`git status --porcelain=v1`の結果も併記し、出力を全量保存した場合は両出力ファイルの絶対パスを添える。
@@ -37,7 +37,7 @@
 - 検証済み、未実施、条件変更の各判断を明確に区別して記述する。後続工程へ回す項目や不採用・別割当とした項目については、検証済みの範囲と、採否や後続工程を記録した場所を記載する。計画確定時に決定した後続工程は計画の`## 実施内容`、実装中に新たに作成した後続工程は対象AWIへの追記先、同一セッション内で参照するものは引き継ぎ記録の所在をそれぞれ示す。
 - 判定結果（達成、未達、根拠不足）の記入は実行レビュー担当者に委ねる。
 
-各記録には、該当する要求に対して直接必要となる観測結果と、それを現在の成果物へ適用できる理由を明記する。以前に取得した版での観測結果を引き続き適用する場合は、取得時のHEADと適用理由を維持し、失効した説明や別要求に関する経緯は適切に書き換える。書き分けの詳細については、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。
+各記録には、該当する要求に対して直接必要となる観測結果と、それを現在の成果物へ適用できる理由を明記する。以前に取得した版での観測結果を引き続き適用する場合は、取得時のHEADと適用理由を維持し、失効した説明や別要求に関する経緯は適切に書き換える。書き分けの詳細については、`agent-toolkit:/share/exec-review-recording.md`「根拠の書き方」に従う。
 修正ラウンドの経緯、応答内容、履歴統合の詳細はレビュー指摘管理表と観測記録へ残し、`検証結果`には判定に必要な所在と観測内容を対応付けて整理する。
 複数の要求で同一のログ出力を共有する場合であっても、各要求に対応する観測の所在と内容を個別に書き分ける。
 不足している観測結果は自身の操作可能な範囲で追加取得して補い、入力や権限、外部状態の充足を必要とする不足については、続行できない理由として委譲元へ返す。

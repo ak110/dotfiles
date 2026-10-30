@@ -595,7 +595,7 @@ def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib
 _SERIES_HEAD = "修正系列の開始時のHEAD"
 """表の名前の識別子の呼称。
 
-`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`がこの呼称で表を名付け、
+`agent-toolkit:commit/references/ci-failure-handling.md`がこの呼称で表を名付け、
 `retired_terms_invariant_test.py`が撤去した旧呼称の置き換え先として記録する。
 """
 
@@ -1354,8 +1354,8 @@ def test_skill_review_table_commands_reject_incomplete_or_unsupported_forms(argv
 @pytest.mark.parametrize(
     ("relative_path", "marker", "subcommand"),
     (
-        ("review-standards/references/reviewer.md", "`atk review-table add", "add"),
-        ("review-standards/references/reviewee.md", "応答の記録は、`atk review-table respond", "respond"),
+        ("share/exec-review-criteria.md", "`atk review-table add", "add"),
+        ("share/exec-review-responses.md", "応答の記録は、`atk review-table respond", "respond"),
     ),
 )
 def test_skill_review_table_options_match_accepted_cli_vectors(
@@ -1364,7 +1364,7 @@ def test_skill_review_table_options_match_accepted_cli_vectors(
     subcommand: str,
 ) -> None:
     """スキル本文のオプション集合を受理ケースの仕様集合へ固定する。"""
-    skill_path = pathlib.Path(__file__).parents[2] / "skills" / relative_path
+    skill_path = pathlib.Path(__file__).parents[2] / relative_path
     paragraph = next(line for line in skill_path.read_text(encoding="utf-8").splitlines() if marker in line)
     documented = set(re.findall(r"--[a-z-]+", paragraph))
     accepted = {
@@ -1750,7 +1750,7 @@ def test_respond_rejects_body_without_required_labels_and_keeps_table(
     error = capsys.readouterr().err
     assert error.startswith("失敗: ")
     assert f"{option}の本文に必須ラベルが無いか、ラベルの後の記述が空である: {missing}\n" in error
-    assert "`references/reviewee.md`" in error
+    assert "`agent-toolkit:/share/exec-review-responses.md`" in error
     assert path.read_text(encoding="utf-8") == before
 
 

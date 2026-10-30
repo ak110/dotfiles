@@ -15,7 +15,7 @@ WIの作成主体には、専念型メイン（WI作成専用セッションの�
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md#「起動方法」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「起動方法」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「対象集合の仕分け」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「対象集合の仕分け」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「方針と判断の記録との比較」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` |
@@ -27,13 +27,13 @@ WIの作成主体には、専念型メイン（WI作成専用セッションの�
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「重複判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「投入前の読み直し」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「投入前の読み直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
-| 保存する本文の共通品質を判定する前 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「調査結果と判断根拠の記述」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「調査結果と判断根拠の記述」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
 
@@ -51,6 +51,7 @@ WI作成専用セッションでは、メインエージェント自身が調査
 直接起草する場合、メインエージェントは`draft-semantic-review.md`に基づく意味の検収を自ら実施し、原文と反映内容を読み比べ、構造、表記、重複も確認して保存する。
 投入前レビューは、上記の条件のいずれかに該当する原稿に対して実施する。ユーザー向けに提示する部分は、検収側がまず自ら判定し、読者別の探索サブエージェントを起動するかどうかは`draft-semantic-review.md`に定める2つの条件に基づいて選択する。同一の作成主体が並行して準備した複数の原稿は、要求、出所、証拠を要求識別子で対応付け、`share/wi-draft-review.parent.md`の複数原稿入力仕様を用いて共通の事前準備を共有する。後続の原稿を待つためだけに待機することは避け、合格した要求から他の要求の修正待ちとは独立して保存を進める。
 他の作業に付随して投入する場合の文脈分離と、親エージェントによる意味の検収は引き続き維持する。
+`carefully`指定で方針検収を受けた要求は、方針の合格、ユーザーの最終承認、本文の起草の順に進め、同じレビューsessionへ`share/wi-draft-review.parent.md`の`本文確認`を継続依頼する。本文の意味確認と保存前の判定は維持し、同版の共通資料は再利用する。
 
 ## 出所と観測の取得
 
@@ -72,7 +73,7 @@ atk run-script session-review-evidence -- --user-events-file <元の保存ファ
 構造化された確認質問については、質問、全選択肢、選択された回答、および自由記述の対応関係を正確に保持し、ユーザーの回答として採用する範囲は`agent-toolkit:wi-standards`「由来と承認」に従う。この出所情報は、引用の一致確認、ならびに対象、除外事項、認可の由来確認に用いる。複数の候補が一致している照会結果は、証拠の一意性の確認やユーザー由来の判定の根拠としては使用できない。
 
 委譲先エージェントに必須となる入力の欠落は、`agents_server`の`start`コマンドが起動時に検証するため、受け取った入力のまま作業に着手する。委譲先が入力の欠落を観測した場合は、`rules-subagent.md`「委譲時の厳守事項」に従う。
-投入先リポジトリは、ユーザーの指定または委譲入力で指定された値に固定する。調査の過程で投入先リポジトリの外部にも原因機構を共有する対象が見つかった場合は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`に定める基準に従って処置の要否を判定する。
+投入先リポジトリは、ユーザーの指定または委譲入力で指定された値に固定する。調査の過程で投入先リポジトリの外部にも原因機構を共有する対象が見つかった場合は、`agent-basics:bugfix`の`references/root-cause-analysis.md`に定める基準に従って処置の要否を判定する。
 委譲先は、該当対象の所在、所有リポジトリ、根拠、処置の要否を委譲元へ即座に通知し、AWIの`## 反映内容と反映先`に「投入先リポジトリの外部であること」および「委譲元へ通知済みであり投入先の確定は委譲元が行うこと」を記録する。
 投入先リポジトリ内の原稿や、回答を待たずに確定できる成果物は、`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従って完成させる。付随型は委譲元へ返却し、専念型は検収と保存まで完了させる。
 専念型メインは、共通の確認要否判定に従って投入先を確定する。処置不要と判断した対象については、根拠となる現物ファイルの所在とリビジョン（版）を、AWIの`## 反映内容と反映先`の除外事項、もしくはUWIの成立性の証拠に残す。
@@ -94,7 +95,7 @@ atk run-script session-review-evidence -- --user-events-file <元の保存ファ
 投入前に完了すべき調査とは、分類軸、到達手段、判定時点、完成条件を確定させることであり、後続の処理側へ委ねた個別の採否判断は実際の処理実行時点で行う。
 委譲先が受け取った`他の要求単位の割当`の単位が、調査の結果確定した根本原因と同一のものを共有していると判明した場合は、その単位と根拠を`続行できない理由`に記載して返す。要求を統合するかどうかは委譲元が判断する。
 「投入前に確定すべき事項」および`agent-toolkit:wi-standards`の`references/drafting-completion.md`が投入前の確定を求めている事項は、投入先リポジトリに対する読み取り専用の調査を通じて、計画工程へ先送りせずにエージェント自身で確定させる。分割読み込みによって確認可能な未読ファイルや未調査の原因・対象は、安易に作業中断の理由とせず調査を継続する。物理的なアクセス不能、権限の不足、調査を尽くしてもなお残るユーザー固有の判断事項、固定要件の誤った帰属など、自力で解消できない条件に限り、明確な根拠を添えて報告する。
-観測された欠陥を起点とする要求の原因、類似見直しの母集団、ならびに再発防止策は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`の基準に基づいて確定する。この基準にはQualityとCost/Deliveryの区別、重大度に応じた探索と終了条件、根本原因から導く母集団、処置の階層構造、完了判定が含まれる。母集団が指定された投入先リポジトリの外部（他のリポジトリを含む）に及ぶ場合であっても、前述した投入先固定時の処置要否判定と除外記録の手順に従う。
+観測された欠陥を起点とする要求の原因、類似見直しの母集団、ならびに再発防止策は、`agent-basics:bugfix`の`references/root-cause-analysis.md`の基準に基づいて確定する。この基準にはQualityとCost/Deliveryの区別、重大度に応じた探索と終了条件、根本原因から導く母集団、処置の階層構造、完了判定が含まれる。母集団が指定された投入先リポジトリの外部（他のリポジトリを含む）に及ぶ場合であっても、前述した投入先固定時の処置要否判定と除外記録の手順に従う。
 `委譲元の判断`に含まれる理由についても、その事実上の前提を技術的主張として裏付けを取り、実際の観測結果と異なる場合は観測結果に合わせて修正する。ユーザーの方針については記録の所在と該当箇所を確認し、`drafting-completion.md`「方針と判断の記録との比較」に定める優先順位を、現在の逐語要求と`確定した要件`へ適用する。既存のWIを前提、制約、代替案の不採用理由、完成条件の根拠として用いる場合は、`origin-and-approval.md`「ユーザー専用の記入欄と是正要求」に定める参照規則に従い、ユーザー専用記入欄を含む有効な要求内容を確定した上で、その要求と原稿の判断との比較を成立性の証拠に残す。
 `確定済みの観測`は、すでに取得済みの記録位置と保存出力を再利用する。位置が未取得の委譲先は、`atk run-script session-review-evidence -- --delegation-record parent --tool-calls`を実行して直接の委譲元を照会し、コマンドや入力の特徴、実行時点を手がかりに候補を特定する。専念型メインや明示的に指定された別会話の観測結果については、その記録を明示的に指定する。取得した`record`・`line`と必要な`result_line`を、同一の記録指定を伴う`--detail <record>:<line>`へ渡して入力と実行結果を確認する。解決に失敗した場合は「出所と観測の取得」の再指定手順に従う。単なるツール名とタイムスタンプの一致だけでは同一とみなさず、具体的な値と観測条件（実行コマンド、入力、環境変数など）を元の記録や受領内容と突き合わせる。同一操作の繰り返しを区別できない場合は、その情報不足を未確定事項として扱う。
 突き合わせが一致した観測結果は、`drafting-completion.md`「採否と実現方式の確定」における実行結果による裏付けとして利用し、コマンドの再実行を省略する。値や条件が一致しない場合、起草中に確認した現物や別の観測結果と食い違いがある場合、または観測後に値を変更する修正が行われていた場合は、再実行して確認する。
@@ -110,12 +111,12 @@ atk run-script session-review-evidence -- --user-events-file <元の保存ファ
 `確定した要件`は、起草者が任意に変更できない制約である。要件を満たせないことが判明した要求については、その要件を前提とする要求単位の原稿作成を中止し、該当する要件と根拠を`続行できない理由`に記載する。
 通知や回答を待たずに確定できる成果物の完成は、`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従う。以下の要件については各項目の定めに従う。
 
-- `agent-toolkit:wi-standards`冒頭に定めるAWIの粒度に照らして別の要求に該当すると判定した要件は、要求単位、原文、出所、判定理由を委譲元へ即時通知し、担当する原稿の範囲から除外する。調査の過程で独立した別の要求を発見した場合も同様とする。残りの要求単位の原稿は完成させ、委譲元が`agent-toolkit/share/add-wi.parent.md`「起動方法」に従って別要求の担当を決定する。専念型メインは`agent-toolkit:add-awi-by-user`の担当選択プロセスに戻る
+- `agent-toolkit:wi-standards`冒頭に定めるAWIの粒度に照らして別の要求に該当すると判定した要件は、要求単位、原文、出所、判定理由を委譲元へ即時通知し、別要求の原稿・根拠へ分ける。調査の過程で独立した別の要求を発見した場合も同様とする。要求の分割と担当の割当は区別し、委譲元が`agent-toolkit/share/add-wi.parent.md`「起動方法」に従って割当を決定する。同じ担当が複数要求を順に処理してよく、確認待ちの間も確定できる原稿は完成させる。専念型メインは`agent-toolkit:add-awi-by-user`の担当選択プロセスに戻る
 - 後続工程（計画、実行、実行レビュー）に対してモデル、ツール、担当エージェント、操作方法を指定しているものの、逐語本文またはその工程への適用を個別に尋ねた確認回答による支持が得られていないもの（矛盾する入力の該当箇所を明記する）。起草した完成条件が同様の指定を含む場合も同じ確認をする
   後続工程への適用を支持するユーザー発話や独立した確認回答が存在しない指定が渡された`確定した要件`に含まれていた場合は、委譲元がその指定を解除し、同一の作成主体へ再送する
 
 `委譲元の判断`は、調査を進める上での前提として扱う。ただし、原文の集合に含まれる対象が単に字面で名指しされていないことだけを理由に除外されている判断は前提とせず、逐語本文と突き合わせる。原文よりも狭められている場合は、原文の集合へ戻す案を対案として検討する。前提を墨守することによって品質の退行、機能の一律無効化、安易な回避策の追加といった不利益が生じる場合は、前提を守る案と対案の得失を比較する。
-観測された問題への対策の方向性は、直接的原因を特定した観測結果との対応を十分に確認した上で候補として扱う。原因が未確認の入力に対策案や修正箇所が含まれていた場合は、それらを選定の前提とせず、観測された事象、期待される契約、本来の問いから調査を進める。`agent-toolkit:bugfix`の原因分析に基づいて独立に対策を導き出した上で候補を比較し、技術的に最も優れた案を採用する。
+観測された問題への対策の方向性は、直接的原因を特定した観測結果との対応を十分に確認した上で候補として扱う。原因が未確認の入力に対策案や修正箇所が含まれていた場合は、それらを選定の前提とせず、観測された事象、期待される契約、本来の問いから調査を進める。`agent-basics:bugfix`の原因分析に基づいて独立に対策を導き出した上で候補を比較し、技術的に最も優れた案を採用する。
 受け取った判断とは異なる案を採用する場合は、以下のように対応する。
 
 - 対案が`確定した要件`の対象、範囲、外部から観測される結果の内側で成立し、かつ技術的に優れている場合は、その案で起草し、覆した判断、採用した案およびその理由を`判断の変更`に記録する
@@ -149,7 +150,7 @@ AWIは`agent-toolkit:wi-standards`「通常AWIの本文」、UWIは`references/u
 - 原文と転記、反映内容を読み比べ、要求の脱落・追加・意味の変化、ユーザーの回答とエージェントの説明の混同がないことを確認する。送達済みの質問だけに回答済み注記を付ける
 
 - 完成条件ごとに同一セッション内で自己観測可能な手段を確認し、例外に該当する場合は`awi-body.md`「完成条件」に従ってその根拠を本文の適切な箇所に記載していること
-- 本文が`agent-basics:writing-standards`の`references/writing.md`の人間向け文書共通規定を満たし、managed-tempの一時ファイルを参照せずとも、結論、判断条件、原文、ならびに再取得に必要な実装・設定・版管理文書の根拠が本文単体から復元できること
+- 本文が`agent-toolkit:delegation/references/writing.md`の人間向け文書共通規定を満たし、managed-tempの一時ファイルを参照せずとも、結論、判断条件、原文、ならびに再取得に必要な実装・設定・版管理文書の根拠が本文単体から復元できること
 - 仕分け、要約、統合をした本文と元の調査結果との対応関係を証拠に記録していること
 - UWIの各情報が`uwi-format.md`の選定基準に照らして必要十分であり、重複がないこと
 

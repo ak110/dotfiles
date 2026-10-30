@@ -1221,6 +1221,8 @@ async def test_start_accepts_independent_wi_draft_review(tmp_path: pathlib.Path,
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "review"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     params = {key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求と出所", "成立性の証拠", "引き継ぎ記録先")}
+    for key in ("原稿", "要求と出所", "成立性の証拠"):
+        pathlib.Path(params[key]).write_text("# 資料\n", encoding="utf-8")
     await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=params)
     assert manager.start.await_args.args[0] == "review"
     assert "usage" not in manager.start.await_args.kwargs
@@ -1309,9 +1311,31 @@ async def test_public_start_resolves_all_fourteen_roles_to_required_engineering_
         "refine-prompt": {"対象プロンプト": str(tmp_path / "prompt.md"), "シナリオ": "なし"},
     }
     inputs = additional_inputs[role] if role in additional_inputs else _observed_input_params(f"{role}.subagent.md", tmp_path)
+    if role == "wi-draft-review":
+        for key in ("原稿", "要求と出所", "成立性の証拠"):
+            pathlib.Path(inputs[key]).write_text("# 資料\n", encoding="utf-8")
     await mcp_tools.start(str(tmp_path), subagent_md_path=role, extra_params=inputs)
     assert manager.start.await_args.args[0] == expected
     assert "usage" not in manager.start.await_args.kwargs
+
+
+@pytest.mark.parametrize("stage", [None, "本文", "方針"])
+def test_wi_draft_review_requires_material_for_selected_stage(tmp_path: pathlib.Path, stage: str | None) -> None:
+    """段階省略の本文互換を保ち、方針と本文の条件付き必須資料を検査する。"""
+    document = launch_requests._SHARE_DIRECTORY / "wi-draft-review.subagent.md"
+    path = tmp_path / "資料.md"
+    path.write_text("# 資料\n", encoding="utf-8")
+    params = {name: str(path) for name in ("要求と出所", "成立性の証拠", "引き継ぎ記録先")}
+    if stage is not None:
+        params["確認段階"] = stage
+    material = "方針" if stage == "方針" else "原稿"
+    with pytest.raises(ActionableError, match=material):
+        launch_requests._validate_required_prompt_inputs(document, params)
+    params[material] = str(path)
+    assert launch_requests._validate_required_prompt_inputs(document, params) is None
+    params[material] = str(tmp_path / "未作成.md")
+    with pytest.raises(ActionableError, match=material):
+        launch_requests._validate_required_prompt_inputs(document, params)
 
 
 def test_preflight_covers_plugin_launch_commands() -> None:

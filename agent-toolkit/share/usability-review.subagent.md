@@ -15,8 +15,8 @@ writes_worktree: true
 
 # ユーザビリティレビュータスク
 
-変更された画面を独立した担当者として実際に描画・操作し、エンドユーザーが画面の意味を正しく理解して迷わずに作業を完了できるかを評価する。自動テストでは検出できないUX上の観点（配置、状態表示、文言、フォーカス移動、操作の分かりやすさ、狭い表示幅や拡大表示、キーボード操作など）を評価対象とする。期待結果との一致、データの反映、操作の成否といった機能的な正しさについては、`agent-basics:writing-standards`の`references/testing.md`「検証単位の選定」で選んだ層の自動テストおよび実行レビューが担当するため、本タスクの評価範囲からは除外する。
-作業着手時には、まず`agent-toolkit:review-standards`と`agent-basics:writing-standards`を起動し、読込表に指定された着手時の資料を参照する。
+変更された画面を独立した担当者として実際に描画・操作し、エンドユーザーが画面の意味を正しく理解して迷わずに作業を完了できるかを評価する。自動テストでは検出できないUX上の観点（配置、状態表示、文言、フォーカス移動、操作の分かりやすさ、狭い表示幅や拡大表示、キーボード操作など）を評価対象とする。期待結果との一致、データの反映、操作の成否といった機能的な正しさについては、`agent-basics:writing-standards/references/testing.md`「検証単位の選定」で選んだ層の自動テストおよび実行レビューが担当するため、本タスクの評価範囲からは除外する。
+作業着手時には、まず`agent-basics:review-standards`と`agent-basics:writing-standards`を起動し、読込表に指定された着手時の資料を参照する。
 
 ## 名指し参照の読込方法
 
@@ -24,12 +24,13 @@ writes_worktree: true
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 機能の正しさを確認するテスト層を選ぶ時 | `agent-basics:writing-standards/references/testing.md#「検証単位の選定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` |
-| 本文の参照基準を適用する前 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` |
-| 実描画の確認条件と検証環境を判定する前 | `agent-basics:writing-standards/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:managed-temp/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-toolkit:*/skills/managed-temp/references/ui-ux.md#「完了前の実描画確認」` |
+| 実描画の確認条件と検証環境を判定する前 | `agent-toolkit:managed-temp/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-toolkit:*/skills/managed-temp/references/ui-ux.md#「完了前の実描画確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` |
 
@@ -37,7 +38,7 @@ writes_worktree: true
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md`の「適用契約」「基本方針」「指摘内容」「ユーザビリティレビューの判定」「完了報告」。`agent-basics:writing-standards`の`references/ui-ux.md` | 起動時 | `role:usability-review` | |
+| 着手時 | `agent-toolkit:/share/exec-review-criteria.md`の「適用契約」「基本方針」「指摘内容」「ユーザビリティレビューの判定」「完了報告」。`agent-toolkit:managed-temp/references/ui-ux.md` | 起動時 | `role:usability-review` | |
 | `変更画面`がWeb画面である | `agent-basics:writing-standards`の`references/ui-ux-web-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md` | |
 | `変更画面`がフォーム、一覧、検索、通知、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
 
@@ -53,18 +54,18 @@ writes_worktree: true
 ## 操作
 
 対象worktreeは読み取り専用として扱い、接続先はローカルの検証環境、待ち受けアドレスは127.0.0.1に限定する。プロジェクトの手順に沿って環境を起動し、起動したプロセスが対象worktreeのコードを正しく配信していることを確認した上で画面を描画する（別の作業ツリーのコードを配信している画面は評価の対象としない）。
-許可される操作およびキャプチャーの保存先は、`agent-basics:writing-standards`の`references/ui-ux.md`「完了前の実描画確認」に従い、取得した記録はmanaged-temp配下へ保存する。`主要シナリオ`に`検証環境`で許可されていない操作が含まれる場合や、同節において実データから切り離された環境でのみ実施すると定められた操作を要する場合は、その操作の実行を見合わせ、該当する手順を`続行できない理由`に記載して返却する。
+許可される操作およびキャプチャーの保存先は、`agent-toolkit:managed-temp/references/ui-ux.md`「完了前の実描画確認」に従い、取得した記録はmanaged-temp配下へ保存する。`主要シナリオ`に`検証環境`で許可されていない操作が含まれる場合や、同節において実データから切り離された環境でのみ実施すると定められた操作を要する場合は、その操作の実行を見合わせ、該当する手順を`続行できない理由`に記載して返却する。
 
 自身が起動したコマンドおよびプロセス（検証環境、ブラウザ、描画スクリプトなど）には必ず実行時間の上限を設定する。例外的な終了時も含め、判定を返却する前にこれらをすべて確実に終了させ、その記録を引き継ぎ記録先へ残す。
 
 ## 判定と記録
 
-`agent-basics:writing-standards`の`references/ui-ux.md`「完了前の実描画確認」に沿って、主要シナリオおよび操作後に現れる各表示状態へ到達する。指摘の確定基準は`agent-toolkit:review-standards`の`references/reviewer.md`「ユーザビリティレビューの判定」に従い、指摘の範囲と内容は同書の「基本方針」および「指摘内容」に従う。
+`agent-toolkit:managed-temp/references/ui-ux.md`「完了前の実描画確認」に沿って、主要シナリオおよび操作後に現れる各表示状態へ到達する。指摘の確定基準は`agent-toolkit:/share/exec-review-criteria.md`「ユーザビリティレビューの判定」に従い、指摘の範囲と内容は同書の「基本方針」および「指摘内容」に従う。
 
 指摘を確定して返却する前に、発見した問題の発生機構について、依頼された変更画面、表示幅、操作後の状態の全体にわたって確認する。
 同一の原因に起因する該当箇所は、同じラウンドにおける1件の指摘として集約し、問題の機構、対象範囲、該当箇所、確認条件を引き継ぎ記録へ記録する。
 対象は外観、要素名、DOM構造の表面的な類似性だけで限定しない。
-判断には`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」および`agent-toolkit:review-standards`の`references/reviewer.md`「基本方針」を適用する。
+判断には`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」および`agent-toolkit:/share/exec-review-criteria.md`「基本方針」を適用する。
 
 `agent-toolkit:delegation`の`references/handoff-record.md`で規定されている記録項目に加え、対象HEADの7文字以上の一意な短縮OID、`round`、完遂を試みたシナリオ、観測された状態、画面キャプチャーの絶対パス、指摘事項を引き継ぎ記録先へ保存する。判定結果は次のように選択する。
 

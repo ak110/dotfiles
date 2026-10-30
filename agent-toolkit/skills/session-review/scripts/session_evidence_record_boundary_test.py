@@ -3,8 +3,10 @@
 import collections
 import json
 import pathlib
+from typing import Any
 
 import pytest
+import session_evidence_catalog as catalog
 import session_review_evidence as evidence
 import session_review_prepare as prepare
 
@@ -87,10 +89,10 @@ def test_unreadable_main_record_is_query_error(tmp_path: pathlib.Path, capsys, c
 
 
 @pytest.mark.parametrize("broken", [b"\xff", b"not-json", None])
-@pytest.mark.parametrize("query", [[], ["--tool-calls"]])
+@pytest.mark.parametrize("query", [[], ["--tool-calls"], ["--user-events"]])
 @pytest.mark.parametrize("runtime", ["claude", "codex"])
 def test_catalog_retains_readable_records_and_unconfirmed_scope(tmp_path: pathlib.Path, capsys, broken, query, runtime) -> None:
-    """カタログの通常表示・呼出照会がUTF-8・JSON・I/O失敗を正常な兄弟から分離する。"""
+    """カタログの3照会がUTF-8・JSON・I/O失敗を正常な兄弟から分離する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -136,9 +138,43 @@ def test_catalog_retains_readable_records_and_unconfirmed_scope(tmp_path: pathli
         == 0
     )
     events = read_jsonl(capsys, raw=True)
-    assert any(event["kind"] == ("tool-call" if query else "catalog-parent") for event in events)
+    expected_kind = "tool-call" if query == ["--tool-calls"] else "summary" if query else "catalog-parent"
+    assert any(event["kind"] == expected_kind for event in events)
     assert any(event["kind"] == "unresolved-record" and event["record"] == str(path) for event in events)
     assert events[-1]["unresolved_record_count"] == 1
+
+
+@pytest.mark.parametrize("query", [[], ["--tool-calls"], ["--user-events"]])
+def test_catalog_second_pass_read_failure_is_actionable(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], query: list[str]
+) -> None:
+    """索引作成後の再読込不能を公開照会の終了2へ変換し、途中結果を成功として返さない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "timestamp": "2026-10-01T00:00:01Z", "message": {"role": "user", "content": "依頼"}}],
+    )
+
+    def unavailable(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(catalog, "_load_records", unavailable)
+    assert (
+        evidence.main(
+            [
+                "--catalog-claude-project",
+                str(tmp_path),
+                "--since",
+                "2026-10-01T00:00:00Z",
+                "--observation-boundary",
+                "2026-10-01T00:00:02Z",
+                *query,
+            ]
+        )
+        == 2
+    )
+    (event,) = read_jsonl(capsys, raw=True)
+    assert event["kind"] == "error" and str(transcript) in event["text"]
+    assert event["next_action"]
 
 
 @pytest.mark.parametrize("broken", [b"\xff", b"not-json", None])

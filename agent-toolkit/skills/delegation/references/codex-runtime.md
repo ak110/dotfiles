@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/delivery-scope.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delivery-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` |
@@ -39,7 +39,7 @@ forkを選択しない組み込み代替では、`fork_turns: "none"`を明示�
 
 ## agents_serverの起動
 
-`agents_server`の`start`（全`mode`）はCodexネイティブ委譲とは異なる仕組みであり、指定された`model_type`からengine、model、effortを解決して起動する。通常起動（`task`の通常起動および`delegate`）に対しては、`_agents_server/launch_prompts.py`が`rules-subagent.md`をシステムプロンプトへ追加する。軽量な探索・書込・shell実行に適用される規範は、`agent-toolkit:writing-standards`の`references/delivery-scope.md`にある配送範囲表に記載されている。この表で配送されない制約事項は、委譲プロンプト側で記述する。
+`agents_server`の`start`（全`mode`）はCodexネイティブ委譲とは異なる仕組みであり、指定された`model_type`からengine、model、effortを解決して起動する。通常起動（`task`の通常起動および`delegate`）に対しては、`_agents_server/launch_prompts.py`が`rules-subagent.md`をシステムプロンプトへ追加する。軽量な探索・書込・shell実行に適用される規範は、`agent-toolkit:delegation/references/delivery-scope.md`にある配送範囲表に記載されている。この表で配送されない制約事項は、委譲プロンプト側で記述する。
 Codex環境における役割指定`task`と`delegate`では、初回起動時も含めて、呼び出し側が保持している全体作業契約の絶対パスを`whole_contract_path`へ渡す。
 サーバーが役割の起動設定を解決し、通常起動の場合だけ参照を検証・配送する。
 軽量役割の`task`では指定値を参照せず、契約本文・専用記録を追加しないため、呼び出し側による内部設定の判別は不要である。

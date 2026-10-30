@@ -286,6 +286,8 @@ def test_section_union_range_preamble_and_fences(source, selector, expected, exc
 
 
 def test_material_qualifier_and_japanese_selector(tmp_path):
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
     skill = tmp_path / "skills/search"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("# skill\n", encoding="utf-8")
@@ -293,7 +295,7 @@ def test_material_qualifier_and_japanese_selector(tmp_path):
     reference = skill / "references/rule.md"
     reference.write_text("# 基準\n\n## 前段\n前段本文\n\n## 後段\n後段本文\n", encoding="utf-8")
     targets = read_triggers.material_targets(
-        "`agent-toolkit:search`の`references/rule.md`の「前段」", tmp_path / "caller.md", tmp_path
+        "`agent-basics:search`の`references/rule.md`の「前段」", tmp_path / "caller.md", tmp_path
     )
     assert len(targets) == 1
     assert targets[0].path == reference
@@ -301,18 +303,40 @@ def test_material_qualifier_and_japanese_selector(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "invocation,relative",
+    [
+        ("process-wi single-lane", "process-wi/references/single-lane.md"),
+        ("process-wi all-repos", "process-wi/references/all-repos.md"),
+        ("process-wi single-lanex", "process-wi/SKILL.md"),
+        ("session-review batch auto", "session-review/references/batch.md"),
+        ("session-review batch review.md", "session-review/references/batch.md"),
+        ("session-review focus.md", "session-review/SKILL.md"),
+        ("session-review batchx", "session-review/SKILL.md"),
+    ],
+)
+def test_material_mode_invocations_resolve_exactly(tmp_path, invocation, relative):
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    targets = read_triggers.material_targets(f"`agent-toolkit:{invocation}`", tmp_path / "caller.md", tmp_path)
+    assert len(targets) == 1
+    assert targets[0].path == tmp_path / "skills" / relative
+
+
+@pytest.mark.parametrize(
     "text,foreign",
     [
-        ("`agent-toolkit:search`の`references/rule.md`", True),
-        ("`agent-toolkit:search`を起動し、`references/rule.md`", True),
-        ("`agent-toolkit:search`の`references/other.md`と`references/rule.md`", True),
-        ("`agent-toolkit:search`を使う。同スキルの`references/rule.md`", True),
-        ("`agent-toolkit:search`を使う。`references/rule.md`に従う。", False),
-        ("`agent-toolkit:search`を使い、`references/rule.md`を読む。", False),
+        ("`agent-basics:search`の`references/rule.md`", True),
+        ("`agent-basics:search`を起動し、`references/rule.md`", True),
+        ("`agent-basics:search`の`references/other.md`と`references/rule.md`", True),
+        ("`agent-basics:search`を使う。同スキルの`references/rule.md`", True),
+        ("`agent-basics:search`を使う。`references/rule.md`に従う。", False),
+        ("`agent-basics:search`を使い、`references/rule.md`を読む。", False),
     ],
 )
 def test_body_reference_owner_requires_connection(tmp_path, text, foreign):
     """所属は接続された名指しだけから決め、無関係な名指しの後も自スキルを保つ。"""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
     source = tmp_path / "skills/current/SKILL.md"
     source.parent.mkdir(parents=True)
     source.write_text("# 現在\n", encoding="utf-8")
@@ -323,6 +347,8 @@ def test_body_reference_owner_requires_connection(tmp_path, text, foreign):
 
 def test_body_reference_same_skill_across_lines_and_no_unique_fallback(tmp_path):
     """前行の名指しを同スキルで参照し、一意の別所属ファイルへは補完しない。"""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
     source = tmp_path / "share/review.subagent.md"
     only = tmp_path / "skills/search/references/rule.md"
     only.parent.mkdir(parents=True)
@@ -332,7 +358,7 @@ def test_body_reference_same_skill_across_lines_and_no_unique_fallback(tmp_path)
         source,
         tmp_path,
         references_only=True,
-        context="`agent-toolkit:search`を起動する。\n",
+        context="`agent-basics:search`を起動する。\n",
     )[0]
     assert target.path == only
     unowned = read_triggers.material_targets("`references/rule.md`", source, tmp_path, references_only=True)[0]
@@ -383,13 +409,15 @@ def test_duplicate_heading_does_not_fallback_to_whole_document(tmp_path):
 
 
 def test_body_reference_scope_stops_before_other_concepts(tmp_path):
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
     skill = tmp_path / "skills/search"
     (skill / "references").mkdir(parents=True)
     (skill / "SKILL.md").write_text("# skill\n", encoding="utf-8")
     reference = skill / "references/rule.md"
     reference.write_text("# 規定\n## 共通\n基準\n", encoding="utf-8")
     targets = read_triggers.material_targets(
-        "`agent-toolkit:search`の`references/rule.md`「共通」に従う。その後の「対象」は元の文書が定める。",
+        "`agent-basics:search`の`references/rule.md`「共通」に従う。その後の「対象」は元の文書が定める。",
         tmp_path / "caller.md",
         tmp_path,
         references_only=True,
@@ -405,7 +433,7 @@ def test_pure_compatibility_alias_preserves_actual_section(tmp_path):
     actual = basics / "skills/writing-standards/references/rule.md"
     actual.parent.mkdir(parents=True)
     actual.write_text("# 品質\n## 共通\n共通本文\n## 後段\n後段本文\n", encoding="utf-8")
-    wrapper = toolkit / "skills/writing-standards/references/rule.md"
+    wrapper = toolkit / "skills/sample/references/rule.md"
     wrapper.parent.mkdir(parents=True)
     wrapper.write_text(
         "# 互換入口\n\n<!-- read-source: agent-basics:writing-standards/references/rule.md -->\n\n条件と節指定を引き継ぐ。\n",
@@ -424,18 +452,20 @@ def test_mixed_compatibility_document_is_not_unconditionally_redirected(tmp_path
 
 
 def test_redirect_cycle_is_actionable_error(tmp_path):
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
     directory = tmp_path / "skills/search/references"
     directory.mkdir(parents=True)
     first, second = directory / "first.md", directory / "second.md"
-    first.write_text("<!-- read-source: agent-toolkit:search/references/second.md -->\n", encoding="utf-8")
-    second.write_text("<!-- read-source: agent-toolkit:search/references/first.md -->\n", encoding="utf-8")
+    first.write_text("<!-- read-source: agent-basics:search/references/second.md -->\n", encoding="utf-8")
+    second.write_text("<!-- read-source: agent-basics:search/references/first.md -->\n", encoding="utf-8")
     with pytest.raises(ValueError, match="循環"):
         read_triggers.resolve_read_source(first, tmp_path)
 
 
 def test_single_lane_declarations_cover_phases_without_overlapping_full_reads():
     root = pathlib.Path(__file__).resolve().parents[2]
-    sources = (root / "skills/single-lane-process/SKILL.md", root / "share/single-lane-execution.md")
+    sources = (root / "skills/process-wi/references/single-lane.md", root / "share/single-lane-execution.md")
     rows = [row for source in sources for row in read_triggers.parse_tables(source, root, strict=True)]
     targets = [target for row in rows for target in row.targets]
     assert len(targets) == len(set(targets))

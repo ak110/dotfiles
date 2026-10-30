@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import datetime
 import json
@@ -52,6 +53,7 @@ record = {{
         "AGENT_TOOLKIT_DELEGATED_SESSION",
         "AGENT_TOOLKIT_RESTART_SPEC",
         "AGENT_TOOLKIT_RUN_SKILL_ID",
+        "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS",
     )}},
 }}
 (record_dir / f"{{time.time_ns()}}-{{uuid.uuid4().hex}}.json").write_text(json.dumps(record), encoding="utf-8")
@@ -81,6 +83,9 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
     if match:
         scope_file.write_text(match[1])
     scope = scope_file.read_text()
+    mode_match = re.search(r"起動モード: (\\S+)", args[-1])
+    if mode_match:
+        scope += " " + mode_match[1]
     (notes / "2026/10").mkdir(parents=True, exist_ok=True)
     old = notes / "2026/10" / (run_id + ".md")
     body = old.read_text().split("\\n---\\n", 1)[1] + "\\n再開後の報告更新\\n" if old.exists() else "定期実行の報告\\n"
@@ -430,6 +435,7 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
     sessions = _records(engine_env, "session")
     assert len(sessions) == 1
     argv = sessions[0]["argv"]
+    assert sessions[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert argv[:2] == ["claude", "-p"]
     for option, value in (
         ("--permission-mode", "auto"),
@@ -469,6 +475,21 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
         "終了状態: exit code 0",
     ):
         assert expected in log
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_background_setting_is_limited_to_claude_child(engine_env, monkeypatch, capsys, engine) -> None:
+    """同期実行設定はClaudeの子へ限定し、起動元と他engineの設定を維持する。"""
+    monkeypatch.setenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "0")
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
+
+    code, _out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
+
+    assert code == 0, err
+    assert os.environ["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "0"
+    assert _records(engine_env, "session")[0]["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == (
+        "1" if engine == "claude" else "0"
+    )
 
 
 def test_codex_session_receives_goal_without_slash_command(
@@ -826,6 +847,8 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     assert sleeps == [10, 300]
     sessions = _records(engine_env, "session")
     assert len(sessions) == 3
+    if engine == "claude":
+        assert all(session["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1" for session in sessions)
     first = sessions[0]["argv"]
     for session in sessions[1:]:
         argv = session["argv"]
@@ -896,7 +919,7 @@ def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, mon
             host="claude",
             target_repo="https://example.com/team/repo",
         )
-    code, _out, error = _run(["--args", "manual", session_review.BATCH_SKILL], capsys)
+    code, _out, error = _run(["--args", "batch auto 任意の着眼点", "agent-toolkit:session-review"], capsys)
     assert code == 0, error
     assert not session_review.pending()
     assert len(_records(engine_env, "session")) == 1
@@ -904,3 +927,56 @@ def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, mon
     assert len(manifests) == 1
     value = session_review.read(manifests[0])
     assert value["status"] == "completed" and len(value["prepared"]) == 2
+    records = _records(engine_env, "session")
+    assert "batch auto 任意の着眼点" in records[0]["argv"][-1]
+
+
+@pytest.mark.parametrize("arguments,is_batch", [(None, False), ("auto", False), ("batchx", False), ("batch auto", True)])
+def test_dispatch_selects_exact_batch_mode(monkeypatch, arguments, is_batch):
+    from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    observed = []
+
+    def once(args, **_kwargs):
+        observed.append((False, args.args))
+        return 0
+
+    def batch(args, execute, **_kwargs):
+        observed.append((True, args.args))
+        assert execute is once
+        return 0
+
+    monkeypatch.setattr(run_skill, "_dispatch_once", once)
+    monkeypatch.setattr(run_skill_batch, "dispatch", batch)
+    args = argparse.Namespace(skill="agent-toolkit:session-review", args=arguments)
+    assert run_skill.dispatch(args) == 0
+    assert observed == [(is_batch, arguments)]
+
+
+def test_mode_lock_ignores_focus_and_keeps_other_modes_separate(tmp_path):
+    from agent_toolkit._common import skill_modes  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    def lock(arguments):
+        return run_skill._lock_path(  # noqa: SLF001  # pylint: disable=protected-access
+            tmp_path, skill_modes.invocation_scope("agent-toolkit:process-wi", arguments)
+        )
+
+    assert lock("single-lane A") == lock("single-lane B")
+    assert lock("single-lane A") != lock("all-repos A")
+    assert lock("通常の追加指示") != lock("single-lane A")
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize("arguments", [None, "single-lane 追記  保持\n", "all-repos 追加指示", "unknown single-lane"])
+def test_process_modes_reach_public_runner_with_original_arguments(engine_env, monkeypatch, capsys, engine, arguments):
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
+    argv = ["--target-repo", str(engine_env.repo)]
+    if arguments is not None:
+        argv.extend(["--args", arguments])
+    argv.append("agent-toolkit:process-wi")
+    code, _out, error = _run(argv, capsys)
+    assert code == 0, error
+    goal = _records(engine_env, "session")[0]["argv"][-1]
+    if arguments is not None:
+        assert f"スキルへ渡す引数: {arguments}" in goal
+    assert ("起動モード:" in goal) is bool(arguments and arguments.startswith(("single-lane ", "all-repos ")))

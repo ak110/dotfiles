@@ -8,7 +8,7 @@
 メインが`atk run-script session-review-evidence`の`--detail`で照会する。
 
 本スクリプトはデータ取得を目的とし、合否を判定しないため、
-`agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
+`agent-basics:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
 引数誤用と準備項目を取得できない実行前エラーを終了コード2とする区分だけを踏襲する。
 """
 
@@ -68,8 +68,8 @@ MANDATORY_KINDS = frozenset(
 """評価を必須とする候補種別。
 
 ユーザー介入、ユーザー確認（選択肢どおりの回答と投入したUWI）、WIの記入欄の是正は、
-前例の有無によらず評価を要し、除外区分は`agent-toolkit:bugfix`の
-`references/root-cause-analysis.md`「ユーザー介入と確認の判定」で確かめる。探索の深さと再発防止策の要否・終了は同書「QとC・Dの区別」の重大度判断に従う。
+前例の有無によらず評価を要し、除外区分は`agent-basics:bugfix`の
+`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」で確かめる。探索の深さと再発防止策の要否・終了は`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」の重大度判断に従う。
 参照資料を読み込まなくても必須だと分かるよう候補一覧と1行JSONへ示し、
 振り返り結果報告は各候補の扱いを候補IDで示す（書式は`agent-toolkit:completion-report`の`references/report-formats.md`）。
 `definition-body-read`は、準備が起動準備の疑いあり（`launch_check`の`status`が`suspected`）と判定した読取を

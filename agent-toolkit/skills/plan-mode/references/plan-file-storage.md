@@ -12,7 +12,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-file-standards.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/lane-integration.subagent.md#「計画最終化」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「計画最終化」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
 
 ## 計画ファイルの保存と参照
 
@@ -46,4 +46,4 @@ stemの命名規則は`起動経路`ごとに下表のとおりとする（`dd`�
 
 実行レビュー指摘管理表は、計画ファイルと同一ディレクトリに`<計画stem>.exec-review.tsv`（`track`は`exec-review`）として配置する。
 計画ファイルを持たない実行レビューの表は、`~/.claude/plans`直下に配置する。ファイル名は、WIのみを基準とする直接実装の場合は`wi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程におけるCI失敗修正の場合は`ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDには`git rev-parse --short=7 <revision>`の出力をそのまま用いる。
-前者はレビュー収束後に削除する。後者は修正系列の終了時に`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`を実行し、`private-notes/plans/ci/`へ保存する。この保存タイミングは、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`内にある「入力計画」の段落に従う。
+前者はレビュー収束後に削除する。後者は修正系列の終了時に`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`を実行し、`private-notes/plans/ci/`へ保存する。この保存タイミングは、`agent-toolkit:commit/references/ci-failure-handling.md`内にある「入力計画」の段落に従う。

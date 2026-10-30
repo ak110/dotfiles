@@ -4,7 +4,7 @@
 レーンの完了とは、通常レーンではfast-forward（ff）マージ、`adopt`、および計画の保存が完了している状態を指す。固有の指示によって`adopt`を延期したレーンや、`上流投入`が`混在`となっているレーンでは、ffマージと計画の保存が完了している状態（`混在`の場合は元項目を依存関係付きで`inbox`へ戻した状態）を指す。各レーンのリソースは統合状態を記録した上で、セッション終了まで保持する。
 ready一覧は選定時点の情報を使用する。ここで扱う対象は、選定時に確定した項目と、ユーザーの明示指示によって選定結果へ追記された項目の採否確定と公開工程に限られ、それ以外の新規項目は次回の実行へ持ち越す。
 
-`agent-toolkit:process-wi-all-repos`から委譲されたリポジトリ担当も、自身の対象ディレクトリ（cwd）、処理対象WI、およびベースブランチに対して公開工程を適用する。
+`agent-toolkit:process-wi all-repos`から委譲されたリポジトリ担当も、自身の対象ディレクトリ（cwd）、処理対象WI、およびベースブランチに対して公開工程を適用する。
 担当ごとの処理所有権は公開、CI、確認、再開まで維持し、成功根拠には自身が担当するリポジトリの成果と公開結果だけを用いる。
 リポジトリ担当は公開結果、対象リポジトリ、担当セッション、公開コミット、CI結果、未完了工程、再開記録を統括へ返す。作業完了報告と報告用UWIは統括が集約して1件を届ける。completion-reportと振り返りは委譲先の終了工程の対象外とする。
 ある担当が回答待ちや続行不能になった場合も、独立した他の担当は公開工程を続ける。
@@ -15,7 +15,7 @@ ready一覧は選定時点の情報を使用する。ここで扱う対象は、
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi-all-repos/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi-all-repos/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
 | 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/push-and-ci.md#「公開状態の4項目」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開状態の4項目」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/session-termination.parent.md#「起動前の前提」` | 判断 | `section:agent-toolkit:*/share/session-termination.parent.md#「起動前の前提」` |

@@ -16,7 +16,7 @@
 
 通知を置く根拠: 発話本文を可視の本文へ置く規範を加えた後も同じ欠落が再発した。
 本文の有無はtranscriptから機械的に確定でき、本文の出力で回復できるため非遮断の支援とする。基準は
-`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
+`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
 
 委譲先での実行可否: ユーザーへの応答責務を持つメインだけを対象とし、
 agent_idと委譲先の環境印でサブエージェントと委譲先を除く。

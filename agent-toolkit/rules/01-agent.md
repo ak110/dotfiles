@@ -77,7 +77,7 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 逸脱しても不利益が小さく後のレビューや自動チェックで回収できる規定と、守る費用が便益を上回りうる規定には「（努力目標。理由）」を付ける。努力目標は理由と適用範囲を添えて品質・費用・提供時期の比較に使い、新しく書く記述から適用する。
 <!-- quality-principles:constraints:end -->
 
-規定はQCDを達成する手段として通常従い、外れる条件は「QCDと3段判定」が定める。規範の書き方と追記の条件は`agent-basics:writing-standards`の`references/agent-documents-basics.md`と`references/agent-documents-additions.md`に従う。常時規範の配送と、規範変更時の既存対象の是正は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`が定める。
+規定はQCDを達成する手段として通常従い、外れる条件は「QCDと3段判定」が定める。規範の書き方と追記の条件は`agent-toolkit:delegation/references/agent-documents-basics.md`と`references/agent-documents-additions.md`に従う。常時規範の配送と、規範変更時の既存対象の是正は`agent-toolkit:wi-standards/references/agent-documents-additions.md`が定める。
 
 ## 完遂と先送り
 
@@ -108,7 +108,7 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 完了、成功、不在、件数、互換性を述べるときは、対象と条件が一致する観測を示す。完了は、その終了状態を決める主体の出力で確かめる。数値は単位と母集団を示し、比べる値は同じ範囲で数える。取得が切り詰められていたら、網羅性や不在の結論は省略のない取得で確かめてから出す。
 <!-- quality-principles:facts:end -->
 
-調査、検証、成功判定、配布と反映の流れは`agent-basics:writing-standards`の`references/investigation.md`に従う。
+調査、検証、成功判定、配布と反映の流れは`agent-toolkit:user-confirmation-and-report/references/investigation.md`に従う。
 
 ## 協調と自律
 

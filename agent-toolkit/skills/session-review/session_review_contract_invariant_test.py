@@ -12,7 +12,7 @@ from agent_toolkit._testing import cli_examples
 
 def test_session_review_documents_use_public_script_entries() -> None:
     """振り返りの手順書の実行例が登録済みのコマンドを使い、実装ファイルを直接起動しない。"""
-    documents = (run_script.PLUGIN_ROOT / "skills" / "session-review" / "SKILL.md",)
+    documents = (run_script.PLUGIN_ROOT / "skills/session-review/references/current-session.md",)
     commands: list[list[str]] = []
     for document in documents:
         in_block = False
@@ -36,7 +36,7 @@ def test_session_review_documents_use_public_script_entries() -> None:
 
 def test_document_option_mutation_is_detected(monkeypatch: pytest.MonkeyPatch) -> None:
     """実物の案内だけの未登録名への変更が、所在付きで失敗する。"""
-    document = run_script.PLUGIN_ROOT / "skills/session-review/SKILL.md"
+    document = run_script.PLUGIN_ROOT / "skills/session-review/references/current-session.md"
     original = pathlib.Path.read_text
 
     def mutated(path: pathlib.Path, *args: Any, **kwargs: Any) -> str:
@@ -52,6 +52,6 @@ def test_receiver_required_input_mutation_is_detected() -> None:
     """受理側だけが必須入力を増やす変更も、文書の実物との不一致として検出する。"""
     parser = cli_examples.registered_parser("session-review-prepare")
     parser.add_argument("--required-contract-input", required=True)
-    document = run_script.PLUGIN_ROOT / "skills/session-review/SKILL.md"
+    document = run_script.PLUGIN_ROOT / "skills/session-review/references/current-session.md"
     with pytest.raises(AssertionError, match="required-contract-input"):
         cli_examples.validate_document(document, parsers={"session-review-prepare": parser})

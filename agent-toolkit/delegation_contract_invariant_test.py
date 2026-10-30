@@ -26,6 +26,25 @@ _INPUT_BULLET_PATTERN = re.compile(r"^- `(?P<name>[^`]+)`: ", flags=re.MULTILINE
 _FIXED_REPLY_LIMIT = re.compile("(?:形式|規定行)(?:だけ|のみ)(?:を返|で結果を返|とする)")
 
 
+def test_wi_draft_review_stage_and_continuation_contract() -> None:
+    """方針と本文が共通入力を再利用し、本文確認が資料の絶対パスを要求する。"""
+    root = pathlib.Path(__file__).resolve().parent
+    declaration = task_documents.read_declaration(root / "share/wi-draft-review.subagent.md")
+    assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
+    assert set(declaration.required) == {"要求と出所", "成立性の証拠", "引き継ぎ記録先"}
+    assert set(declaration.optional) == {"確認段階", "方針", "原稿"}
+    (continuation,) = declaration.continuations
+    assert continuation.instruction == "本文確認"
+    assert set(continuation.required) == {"原稿", "要求と出所", "成立性の証拠"}
+    assert set(continuation.paths) == set(continuation.required)
+    for name in (
+        "share/wi-draft-review.parent.md",
+        "skills/add-awi-by-user/SKILL.md",
+        "skills/wi-standards/references/drafting-workflow.md",
+    ):
+        assert "本文確認" in (root / name).read_text(encoding="utf-8")
+
+
 def test_public_start_guidance_preserves_delegation_responsibilities() -> None:
     """公開schemaと独立した委譲規範が、入力の確定と起動検査を同じ主体へ割り当てる。"""
     root = pathlib.Path(__file__).resolve().parent
@@ -543,11 +562,11 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
     root = pathlib.Path(__file__).resolve().parent
     review = (root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
     parent = (root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
-    recording = (root / "skills" / "review-standards" / "references" / "exec-review-recording.md").read_text(encoding="utf-8")
+    recording = (root / "share" / "exec-review-recording.md").read_text(encoding="utf-8")
     launchers = [
         root / "share" / "exec.parent.md",
         root / "skills" / "plan-mode" / "SKILL.md",
-        root / "skills" / "single-lane-process" / "SKILL.md",
+        root / "skills" / "process-wi" / "references" / "single-lane.md",
         root / "skills" / "process-wi" / "references" / "termination-ci-failure.md",
     ]
 
@@ -615,14 +634,14 @@ def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> 
     selection_text = _selection_documents(plugin_root)
     lane = _lane_planning_contract(plugin_root)
     review = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
-    criteria = (plugin_root / "skills" / "review-standards" / "references" / "reviewer.md").read_text(encoding="utf-8")
+    criteria = (plugin_root / "share" / "exec-review-criteria.md").read_text(encoding="utf-8")
 
     assert all("鮮度" in content for content in (selection_text, lane))
     assert all("staleness" in content for content in (selection_text, review))
     assert all("notice" in content for content in (selection_text, lane, criteria))
     assert all("不一致" in content and "充足済み" in content and "巻き戻し" in content for content in (selection_text, lane))
     assert "食い違い" in criteria and "すでに充足されている" in criteria and "巻き戻し" in criteria
-    assert "reviewer.md" in review
+    assert "exec-review-criteria.md" in review
 
 
 def test_selection_explanation_contract_covers_questions_without_state_changes() -> None:
@@ -1102,7 +1121,7 @@ def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> No
         ("share/add-wi.parent.md", "add-wi"),
         ("skills/process-wi/references/review-audit-launch.md", "copilot-review-audit"),
         ("skills/refine-prompt/SKILL.md", "refine-prompt"),
-        ("skills/bugfix/references/investigation-delegation.md", "defect-investigation"),
+        ("skills/delegation/references/investigation-delegation.md", "defect-investigation"),
     ],
 )
 def test_caller_owns_generated_return_contract_boundary(relative: str, role: str) -> None:

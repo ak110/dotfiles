@@ -4,17 +4,21 @@ import contextlib
 import pathlib
 import subprocess
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as wi_add
+from agent_toolkit._atk.wi import batch as wi_batch
+from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment, uwi
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import content as mutation_content
 from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
+from agent_toolkit._atk.wi.mutations import result_commits, targets
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 from agent_toolkit._testing.wi_entry_files import entry_path as _fixed_path
@@ -35,6 +39,121 @@ from agent_toolkit.atk_test import (
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["hold", "unhold", "start-processing", "dependencies", "cooldown", "target-repo", "batch", "result", "rewrite"],
+)
+def test_public_append_survives_following_updates(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    operation: str,
+) -> None:
+    """公開追記と後続の本文・メタデータ更新を結合し、更新対象外の作業記録を保持する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "record.md", body="元の要求")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    with pytest.raises(SystemExit) as appended:
+        atk.main(_edit_body_args(tmp_path, path.name, "再開に必要な記録", append=True), home=tmp_path)
+    assert appended.value.code == 0
+    original = path.read_text(encoding="utf-8")
+    parsed = frontmatter_parser.parse_frontmatter(original)
+    assert parsed is not None
+    original_body = parsed[1]
+    if operation in {"hold", "unhold", "start-processing"}:
+        if operation == "unhold":
+            with pytest.raises(SystemExit) as held:
+                atk.main(["wi", "hold", path.name], home=tmp_path)
+            assert held.value.code == 0
+        with pytest.raises(SystemExit) as changed:
+            atk.main(["wi", operation, path.name], home=tmp_path)
+        assert changed.value.code == 0
+    elif operation == "dependencies":
+        _write_awi_file(notes, "dependency.md")
+        mutation_dependencies.set_entry_dependencies(notes, filename=path.name, depends_on=("dependency.md",))
+    elif operation == "cooldown":
+        with pytest.raises(SystemExit) as changed:
+            atk.main(["wi", "edit", path.name, "--cooldown-until", "2999-01-01T00:00:00+00:00"], home=tmp_path)
+        assert changed.value.code == 0
+    elif operation == "target-repo":
+        body_file = tmp_path / "repo.md"
+        body_file.write_text(original.replace("github.com/example/foo", "github.com/example/bar"), encoding="utf-8")
+        with pytest.raises(SystemExit) as changed:
+            atk.main(["wi", "edit", path.name, "--body-file", str(body_file)], home=tmp_path)
+        assert changed.value.code == 0
+    elif operation == "batch":
+        destination = tmp_path / "imported"
+        destination.mkdir()
+        original = original.rstrip("\n") + "\n"
+        wi_batch.add_batch_entries(destination, texts=[f"### {path.name} [inbox]\n{original}"], now=_FIXED_DT)
+        notes = destination
+        path = wi_entries.entry_path(notes, path.name)
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    else:
+        with pytest.raises(SystemExit) as changed:
+            atk.main(["wi", "adopt", path.name, "--note", "終了結果"], home=tmp_path)
+        assert changed.value.code == 0
+        if operation == "rewrite":
+            text = path.read_text(encoding="utf-8")
+            text += "- 対応commit: aaaaaaa\n- 対応commit件名: 旧件名\n"
+            path.write_text(text, encoding="utf-8")
+            monkeypatch.setattr(result_commits, "resolve_repo_id", lambda _value: "github.com/example/foo")
+            monkeypatch.setattr(targets, "resolve_commit", lambda *_args: wi_entries.CommitMetadata("bbbbbbb", "新件名"))
+            result_commits.rewrite_adopted_commits(
+                notes, worktree=tmp_path, filenames={path.name}, rewrite={"a" * 40: "b" * 40}
+            )
+    saved = path.read_text(encoding="utf-8")
+    assert original_body in saved
+    metadata = frontmatter_parser.parse_frontmatter(saved)
+    assert metadata is not None
+    if operation in {"hold", "unhold", "start-processing", "result", "rewrite"}:
+        expected_state = {
+            "hold": "hold",
+            "unhold": "inbox",
+            "start-processing": "processing",
+            "result": "adopted",
+            "rewrite": "adopted",
+        }[operation]
+        assert metadata[0]["state"] == expected_state
+    elif operation == "dependencies":
+        assert metadata[0]["depends_on"] == ["dependency.md"]
+    elif operation == "cooldown":
+        assert metadata[0]["cooldown_until"] == "2999-01-01T00:00:00+00:00"
+    elif operation == "target-repo":
+        assert metadata[0]["target_repo"] == "github.com/example/bar"
+    elif operation == "batch":
+        assert saved == original
+    if operation == "rewrite":
+        assert "- 対応commit: bbbbbbb\n- 対応commit件名: 新件名\n" in saved
+        assert "- 対応commit: aaaaaaa" not in saved
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as shown:
+        atk.main(["wi", "show", path.name, "--skip-pull"], home=tmp_path)
+    assert shown.value.code == 0
+    assert "再開に必要な記録" in capsys.readouterr().out
+
+
+def test_record_preservation_assertion_detects_dependency_body_loss(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """差戻し以外の更新が記録を削除する対照で、結合試験の保持判定が失敗する。"""
+    update = mutation_dependencies.set_entry_dependencies
+
+    def lose_record(notes: pathlib.Path, **kwargs: Any) -> object:
+        result = update(notes, **kwargs)
+        path = _fixed_path(notes, str(kwargs["filename"]))
+        text = path.read_text(encoding="utf-8")
+        path.write_text(text.partition("\n## 処理結果\n")[0] + "\n", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(mutation_dependencies, "set_entry_dependencies", lose_record)
+    with pytest.raises(AssertionError):
+        test_public_append_survives_following_updates(tmp_path, monkeypatch, capsys, "dependencies")
 
 
 def _edit_body_args(tmp_path: pathlib.Path, filename: str, message: str, *, append: bool = False) -> list[str]:

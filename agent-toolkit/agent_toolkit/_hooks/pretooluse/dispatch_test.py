@@ -771,7 +771,7 @@ def test_second_removable_warning_is_suppressed(tmp_path: pathlib.Path) -> None:
     _write_session_state(
         tmp_path,
         "dispatch-repeated-removable-warning",
-        {"operation_skill_delivered_agents": {"agent-toolkit:writing-standards": ["main"]}},
+        {"operation_skill_delivered_agents": {"agent-basics:writing-standards": ["main"]}},
     )
 
     first = _run(payload, env_overrides=environment)
@@ -899,7 +899,7 @@ class TestPs1EolCheck:
         assert "`UTF-8`の`BOM`が失われて日本語が文字化け" in context
         assert "*.ps1 text eol=crlf" in context
         assert (
-            "\n次の操作: `agent-toolkit:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い"
+            "\n次の操作: `agent-basics:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い"
             in context
         )
         assert "既存ファイルには`Edit`ツールを使" in context
@@ -1181,7 +1181,7 @@ class TestPlanModeSkillCallSites:
         result = _run(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:writing-standards"},
+                "tool_input": {"skill": "agent-basics:writing-standards"},
                 "session_id": "other-skill",
                 "permission_mode": "default",
             },
@@ -1208,7 +1208,7 @@ class TestPlanFileDoesNotRequireTextlintRead:
         _write_session_state(
             tmp_path,
             session_id,
-            {"operation_skill_delivered_agents": {"agent-toolkit:writing-standards": ["main"]}, **flags},
+            {"operation_skill_delivered_agents": {"agent-basics:writing-standards": ["main"]}, **flags},
         )
 
     def test_write_without_read_does_not_warn(self, tmp_path: pathlib.Path):
@@ -1372,9 +1372,9 @@ class TestRemovedChecksAreSilent:
     def test_bash_input_passes_without_output(self, tmp_path: pathlib.Path, command: str) -> None:
         # 検索と検証の実行はスキルの取得を求めるため、取得済みの文脈で撤去済みの判定だけを確かめる。
         ready = {
-            "agent-toolkit:search": ["main"],
-            "agent-toolkit:check-execution": ["main"],
-            "agent-toolkit:check-execution:references/verification-scope.md": ["main"],
+            "agent-basics:search": ["main"],
+            "agent-basics:check-execution": ["main"],
+            "agent-basics:check-execution:references/verification-scope.md": ["main"],
         }
         _write_session_state(tmp_path, "removed-bash", {"operation_skill_delivered_agents": ready})
         result = _run(
@@ -1421,7 +1421,7 @@ class TestRemovedChecksAreSilent:
                 {
                     "operation_skill_delivered_agents": {
                         "agent-toolkit:delegation": ["main"],
-                        "agent-toolkit:writing-standards": ["main"],
+                        "agent-basics:writing-standards": ["main"],
                     }
                 },
             )

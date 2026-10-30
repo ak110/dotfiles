@@ -5,7 +5,7 @@ import pytest
 from agent_toolkit._atk.wi import formatters as _formatters  # noqa: E402  # pylint: disable=wrong-import-position
 
 # `parse_alert_keys`のテストは`alerts_test.py`側で公開関数`existing_alert_keys`
-# 経由で行う（private関数直接テストを避けるため。`agent-toolkit:writing-standards`の
+# 経由で行う（private関数直接テストを避けるため。`agent-basics:writing-standards`の
 # `references/testing.md`「private関数の直接テスト禁止」節参照）。
 
 

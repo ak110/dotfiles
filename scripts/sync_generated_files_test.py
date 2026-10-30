@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 import sync_generated_files as subject
+from agent_toolkit._common import read_triggers
 
 
 def test_runs_all_generators_in_order(monkeypatch) -> None:
@@ -116,8 +117,9 @@ def test_return_targets_cover_all_roles_and_declared_callers() -> None:
         if parent.is_file():
             assert targets[role] == parent.relative_to(plugin).as_posix()
         else:
-            declaration = source.read_text(encoding="utf-8").split("<!-- parent-read-source: agent-toolkit:/")[1]
-            assert targets[role] == declaration.split("#")[0]
+            declared = read_triggers.parent_contract_targets(role, plugin)
+            assert len(declared) == 1
+            assert targets[role] == declared[0].path.relative_to(plugin).as_posix()
 
 
 @pytest.mark.parametrize("role,relative,title,level", subject.RETURN_TARGETS)
@@ -193,7 +195,7 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
         files.add("agent-toolkit/" + relative)
     files |= {
         "agent-toolkit/share/rules-subagent.md",
-        "agent-toolkit/skills/review-standards/references/exec-review-recording.md",
+        "agent-toolkit/share/exec-review-recording.md",
     }
     for relative in files:
         target = tmp_path / relative
@@ -212,7 +214,7 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     assert "fork_turns" not in block
     for role, relative, required, internal in (
         ("external-write-review", "skills/external-write-review/SKILL.md", "3観点それぞれ", "## 観点"),
-        ("bulk-replace-review", "skills/writing-standards/references/bulk-replacement.md", "読んだ変更箇所数:", "## 観点"),
+        ("bulk-replace-review", "skills/delegation/references/bulk-replacement.md", "読んだ変更箇所数:", "## 観点"),
         ("usability-review", "share/usability-review.parent.md", "試行: <手段>", "## 操作"),
         ("session-termination", "share/session-termination.parent.md", "延期後にadoptしたAWI:", "## 生成物とpush"),
     ):

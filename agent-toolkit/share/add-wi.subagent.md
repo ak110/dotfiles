@@ -23,7 +23,7 @@ continuations:
 投入先リポジトリの決定、成果物の変更、および委譲元自身の元作業の続行は、委譲元が担当する。既存項目の状態遷移は付随型では委譲元が行い、専念型における保存後の保留解除は共通手順に従って本担当が担当する。
 観測された欠陥を起点とする要求において、直接的原因、根本原因、類似見直し、ならびに対策と再発防止策の確定は本担当が担う。委譲元から渡された`確定済みの観測`は、内容と観測条件が一致する範囲で再利用し、同一の観測を最初からやり直すことは避ける。
 振り返りから受け取った確定済みの原因、類似調査と具体策も、対象や新たな証拠に再確認の必要がない範囲で再利用する。重複比較は`agent-toolkit:wi-standards`の`references/drafting-completion.md`「重複判定」の起点別条件に従う。
-作業の開始にあたっては、調査する前にまず`agent-toolkit:wi-standards`と`agent-basics:writing-standards`を起動する。観測された欠陥を起点とする要求では、併せて`agent-toolkit:bugfix`も起動する。各操作する前には、起動したスキルおよび本書の読込表を参照し、該当する節を読む。
+作業の開始にあたっては、調査する前にまず`agent-toolkit:wi-standards`と`agent-basics:writing-standards`を起動する。観測された欠陥を起点とする要求では、併せて`agent-basics:bugfix`も起動する。各操作する前には、起動したスキルおよび本書の読込表を参照し、該当する節を読む。
 
 本書で書式が固定されている返却値や固定文字列は指定の書式のままとする。
 
@@ -33,6 +33,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md` |
@@ -45,7 +46,7 @@ continuations:
 | 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表で同一の時点に対応する行。writing-standardsについては、実施する調査や執筆の条件に該当する行 | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
 | AWIの本文を起草・判定する前 | `agent-toolkit:wi-standards`の読込表において、AWIの種別・引用・外部再現の各条件に対応付けられている`references/awi-body.md`の節 | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
 | 受領した要求にUWIが含まれる場合 | `agent-toolkit:wi-standards`の`references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
-| 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合 | `agent-toolkit:bugfix`の読込表のうち、原因分析の条件を満たす行の資料 | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` | |
+| 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合 | `agent-basics:bugfix`の読込表のうち、原因分析の条件を満たす行の資料 | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` | |
 
 ## 入力
 
@@ -67,6 +68,8 @@ continuations:
 - `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと、新規作成か継続かの区分。記録内容は`${CLAUDE_PLUGIN_ROOT}/share/rules-subagent.md`「多段工程の引き継ぎ記録」に従う
 
 調査、起草、引用と出所の突き合わせ、読み直し、および保存の各処理は、`agent-toolkit:wi-standards`の`references/drafting-workflow.md`の節を読み、共通手順に沿って実施する。
+複数要求は、要求ごとに原稿と根拠を分け、似た対象から順に処理して知見を再利用する。1要求1AWIという粒度と、担当への割当単位を区別する。
+`確認状態: required`で投入するAWIは、既存方針の何をどう変える提案かと、現状維持を含む主な代替案をタイトルとH1直下に示して完成させる。既存方針の変更にユーザー判断が要ることだけを理由に`user_decision`で返さない。この扱いは、人間由来の要求の不採用・対象集合の縮小、採否や実現方式を1案に確定できない事項、外部操作の認可には適用せず、既存の確認経路で扱う。
 付随型（省略時）では原稿と成立性の証拠を返却し、委譲元からの`保存開始`指示を待つ。専念型では投入前レビューを収束させて保存まで完了させ、「保存の返却」によって結果を返す。既存項目が要求全体をすでに網羅している場合は保存せず、`reused`として返却する。ユーザー自身の判断が必要な事項が生じた場合は委譲元へ差し戻し、回答を得た後に同一の担当者で作業を継続する。
 
 ## 出力

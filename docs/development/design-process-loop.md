@@ -110,10 +110,10 @@ POSIXでは前景の制御端末を`select`で、Windowsでは対話コンソー
 `atk wi process-loop`はprocess_loop_repositoriesの登録全体を扱う唯一の常駐起動形式とする。
 `--once`は同じ対象取得・開始gate・所有・準備・統括起動・結果検収・回収を1集合だけ実行する。
 対象が0件なら待機せず終了し、未完了・所有待ち・準備失敗が残れば非0で終了する。
-手動のprocess-wi-all-reposはこの公開操作へ接続し、manifest付きの統括会話が対象を処理する。
+手動のprocess-wi all-reposはこの公開操作へ接続し、manifest付きの統括会話が対象を処理する。
 所有や準備入力を手動会話内でも生成する案は、同じ排他と資源寿命の実装を増やすため採らない。
 旧単一リポジトリ起動、all-reposサブコマンド、--target-repoは廃止する。
-常駐cwdで既存run_process_sessionによりorchestrateの対話CLIを1つ起動し、process-wi-all-reposを完遂させる。
+常駐cwdで既存run_process_sessionによりorchestrateの対話CLIを1つ起動し、process-wi all-reposを完遂させる。
 Claudeは先頭/goal、CodexとAntigravityは生成目的文を使い、初回と同一会話のresumeで今回の集合JSONを参照する。
 通常delegateとして統括を起動する案は、最上位の役割とGoal配送の例外が必要になるため採用しない。
 候補数Nに対する既存上限floor((N+9)/10)が2以上の対象だけを統括から対象cwdのprocess-wi担当へ委譲し、それ以外は統括が直接処理する。

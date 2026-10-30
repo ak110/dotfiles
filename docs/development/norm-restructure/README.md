@@ -69,7 +69,7 @@ for f in docs/development/norm-restructure/*.tsv; do [ "$f" = docs/development/n
 
 | 語 | 意味 |
 | --- | --- |
-| SSOT違反、自明導出、公式ドキュメント代替可能、上位指針への統合、手段固定、個別事象特化、条件の入れ子、拘束力の過剰 | `agent-toolkit/skills/writing-standards/references/agent-documents-additions.md`「文書記述量の管理」の8つの根拠。語義は同節が定める |
+| SSOT違反、自明導出、公式ドキュメント代替可能、上位指針への統合、手段固定、個別事象特化、条件の入れ子、拘束力の過剰 | `agent-basics/skills/writing-standards/references/agent-documents-additions.md`「文書記述量の管理」の8つの根拠。語義は同節が定める |
 | 統合、統合先I121〜I146 | 同じ判断を複数の箇所が独立に書いていたため、定義元を1箇所に決めて他の箇所を節名の参照へ縮めた。`I`の番号は再構築で調べた重複の組の識別子で、行の説明が定義元を示す |
 | 矛盾の解消、矛盾の解消C01〜C66 | 両立しない判断を与えていた条文の組を1つの判断へそろえたか、矛盾でない理由を記して読み分けを要しない文面へ直した。`C`の番号は再構築で調べた矛盾の組の識別子 |
 | 層と配置1、`01-agent.md`の主題分割 | `agent-toolkit/rules/01-agent.md`で複数の主題が入った段落を主題ごとの段落へ分け、規範の書き方の細則を`writing-standards`の参照資料へ移した |

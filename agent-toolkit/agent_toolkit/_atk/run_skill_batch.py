@@ -69,7 +69,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         if event == "SessionStart":
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
-                "まとめて振り返るには /agent-toolkit:session-review-batch を実行する。"
+                "まとめて振り返るには /agent-toolkit:session-review batch を実行する。"
             )
             return "\n".join(part for part in (notice, waiting) if part)
         return notice
@@ -106,8 +106,8 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
                         str(PLUGIN_ROOT / "agent_toolkit" / "atk.py"),
                         "run-skill",
                         "--args",
-                        "auto",
-                        session_review.BATCH_SKILL,
+                        "batch",
+                        "agent-toolkit:session-review",
                     ],
                     cwd=PLUGIN_ROOT,
                     env=env,
@@ -129,8 +129,8 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     return notice
 
 
-_FAILURE_SOURCE = "session-review-batch"
-"""失敗報告AWIの`source`。起動中のスキル名からプラグイン名の接頭辞を除いた値とする。"""
+_FAILURE_SOURCE = "session-review"
+"""失敗報告AWIの由来。失敗キーによる旧保存記録の抑止も維持する。"""
 
 _ACTIVE_FAILURE_STATES = frozenset({WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_HOLD})
 """失敗報告AWIが未完了で、同じ原因の対象の自動再試行を止める状態。"""
@@ -231,7 +231,7 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
     """
     targets = ", ".join(item["session_id"] for item in manifest["targets"])
     body = (
-        "# 非同期振り返り（session-review-batch）の失敗の是正\n\n"
+        "# 非同期振り返り（session-review batch）の失敗の是正\n\n"
         "非同期振り返りが下記の対象セッションを処理できなかった。"
         "このAWIが終了するまで、同じ原因で失敗した対象の自動振り返りを止めている。"
         "原因を是正し、対象の振り返りが自動で再開できる状態へ戻す。\n\n"
@@ -243,7 +243,8 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
         "失敗理由は振り返りの起動元が記録した値である。"
         "実行記録には固定した対象、準備結果、失敗の記録があり、対象のセッション記録の所在は待ち記録にある。\n\n"
         "## 完成条件\n\n"
-        "失敗理由の原因が是正され、対象セッションで振り返りの準備が成功する。"
+        "失敗理由の原因が是正され、対象セッションで準備から失敗した工程までの成功を確認する。"
+        "準備以降に失敗した場合は、子の結果回収、振り返り、報告の同期とsession-review-state finishまで完了する。"
         "このAWIの終了後、次のセッション開始・終了時に、止めていた対象の振り返りが自動で再試行される。\n\n"
         "## 詳細\n\n"
         f"失敗理由: {reason}\n"
@@ -339,16 +340,11 @@ def record_executor(args: argparse.Namespace, pid: int) -> None:
 
 def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int]) -> int:
     """全repo共通排他の下で、既存run-skillによる各回の実行と結果確定を行う。"""
-    if args.args not in {None, "auto", "manual"}:
-        outcome.report_failure(
-            "session-review-batchの引数はautoまたはmanualを指定する",
-            next_action="手動実行は--args manual、自動起動は--args autoで再実行する",
-        )
-        return 2
     if args.timeout <= 0:
         outcome.report_failure("--timeoutは正の秒数で指定する", next_action="--timeoutを省略するか正の秒数で再実行する")
         return 2
-    manual = args.args != "auto"
+    # hookが発行する起動識別子で区別し、着眼点のauto/manualを制御情報として消費しない。
+    manual = not bool(os.environ.get(session_review.LAUNCH_ENV))
     if not manual and config.resolve_mutable_setting("session_review_auto_start") == "false":
         session_review.launch_result()
         return 0
@@ -361,7 +357,7 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
     except filelock.Timeout:
         session_review.launch_result()
         print(
-            "同じOSアカウントでagent-toolkit:session-review-batchが実行中。既存の実行終了後に残る対象を処理する。",
+            "同じOSアカウントでagent-toolkit:session-review batchが実行中。既存の実行終了後に残る対象を処理する。",
             file=sys.stderr,
         )
         return 1
@@ -378,7 +374,9 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             session_review.launch_result()
             return 1
         if old.get("analysis_succeeded") and add.has_synced_run_report(
-            private_notes.default_private_notes(), run_id=old["run_id"], skill=session_review.BATCH_SKILL
+            private_notes.default_private_notes(),
+            run_id=old["run_id"],
+            skill=old.get("report_scope", session_review.LEGACY_BATCH_SCOPE),
         ):
             for prepared in old["prepared"]:
                 session_review.complete(prepared)
@@ -400,6 +398,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         path = runs / f"{run_id}.json"
         manifest: dict[str, Any] = {
             "run_id": run_id,
+            "report_scope": session_review.BATCH_SCOPE,
             "manifest_path": str(path),
             "status": "running",
             "targets": targets,
@@ -451,7 +450,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
                 )
                 return code
             if not add.has_synced_run_report(
-                private_notes.default_private_notes(), run_id=run_id, skill=session_review.BATCH_SKILL
+                private_notes.default_private_notes(), run_id=run_id, skill=session_review.BATCH_SCOPE
             ):
                 raise ValueError("report-unsynced: 報告の同期を確認できない")
             if not manifest.get("analysis_succeeded"):

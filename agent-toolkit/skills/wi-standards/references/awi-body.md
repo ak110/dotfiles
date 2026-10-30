@@ -3,7 +3,7 @@
 本書は、通常AWIを起草・読解・採否判定するエージェントに向けて、本文の形式と各節に記載すべき判断条件を定める。
 本文の想定読者は2者存在する。一方は、タイトルとH1直下の記述から意図を確認し、必要に応じてユーザーコメントを記入するユーザーである。もう一方は、H2節以降の詳細を読んで作業に着手するエージェントである。処理を担当するエージェントは対象リポジトリのプロジェクト文脈を事前に持たないため、本文の記述と実際のリポジトリの現状だけで着手できるように、変更対象、判断基準および完成条件を明確に書く。
 
-通常AWIは`## 反映内容と反映先`を必須とする。観測された不具合を起点とし`agent-toolkit:bugfix`を起動して起草する場合は`## 原因分析`を置く。調査結果と判断根拠、完成条件、ユーザー指摘の逐語引用は必要な情報がある場合に置く。H1は1つとし、H2は次の順序とする。設置する各節には、その節に属する具体的な本文を書く。
+通常AWIは`## 反映内容と反映先`を必須とする。観測された不具合を起点とし`agent-basics:bugfix`を起動して起草する場合は`## 原因分析`を置く。調査結果と判断根拠、完成条件、ユーザー指摘の逐語引用は必要な情報がある場合に置く。H1は1つとし、H2は次の順序とする。設置する各節には、その節に属する具体的な本文を書く。
 `source`を持つ通常AWIでは、`atk wi add`と`atk wi edit`が必須節の欠落、設置した空節、順序の不一致を保存前に検出する。保存済みのエージェント由来AWIは`## 適用範囲`または`## 実現性`を持つものを旧形式、それ以外を新形式として読む。人間由来の原文AWIはこの判別の対象外とし、完成条件節がない場合は条件表を作らず、`origin-and-approval.md`「逐語転記」に従って本文の要求単位を判定する。処理担当は旧形式の`## 適用範囲`を変更対象・除外と原因成立条件の記録、`## 実現性`を調査結果と判断根拠、`## 完成条件`を完成状態として読み、新形式の対応する内容と同じ判断に使う。既存の番号付き完成条件は形式を問わずその番号を維持する。新形式の完成条件節は固有の補足条件であり、主要な完成状態も本文から導く。
 
 ```markdown
@@ -39,16 +39,16 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「逐語転記」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「逐語転記」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「ユーザー入力素材の取扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「範囲語と程度」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「範囲語と程度」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/analysis-records.md#「原因分析の記録先」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「自作機構の兆候と自問」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「自作機構の兆候と自問」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
@@ -58,7 +58,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「未確定事項と確認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「未確定事項と確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` |
 | 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-restoration-contracts.md#「復元・巻き戻し型の変更」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md#「復元・巻き戻し型の変更」` |
@@ -71,7 +71,7 @@
 1つの事実は1箇所にのみ記載し、他の節からは節名や項目名で参照する。同じ識別子を説明ごとに繰り返し記載することは避ける。ただし、`## 原因分析`における表や行の構造は維持する。
 
 本文には、元の要求そのものか、その要求に固有の採否判断、実装、完成判定に直接必要な記述のみを残す。通常のバージョン更新や生成物の同期、一般原則を変更しない旨の宣言、汎用的な検証やCIの手順、通常の記録更新、投入前に行った調査の途中経過などは記載から除く。一方で、必要な境界条件、根本原因、検討した代替案、外部から観測可能な結果、および否定形の完成条件は残す。
-説明文の追記を反映内容や完成条件へ含める前には、`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」にある「情報を加える前の判定」を適用する。
+説明文の追記を反映内容や完成条件へ含める前には、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」にある「情報を加える前の判定」を適用する。
 H2見出し以降の記述の詳しさは、同資料の「読み手別の追加注意点」におけるエージェント向け文書の規定に従う。なお、タイトルとH1直下の記述はユーザーを読者とするため、エージェント向けの規定ではなく`SKILL.md`冒頭の用語基準に従う。要求に固有の事実や契約、ユーザーが指定した手段、硬い制約は具体的に記載し、一般的な実装手順や検証方法の解説は省く。
 本文は、実装担当者が登録時に確認した対象、判断と根拠を再調査せずに着手できる粒度で記述する。これが本書の各規定が担保すべき価値である。
 調査の結果、正常な対象と変更が必要な対象が混在している場合は、冒頭の1文で両者とAWIが変更する範囲を対照して示し、`欠陥`、`不足`、`未追随`といった評価語には必ず具体的な対象名を添える。
@@ -104,10 +104,10 @@ H1のタイトルは目的と変更が一目で短く分かる表現とし、発
 ### 原因分析
 
 `## 原因分析`は、計画ファイルからWIファイル名で参照される原因分析の記録である。
-具体的な書き方は、`agent-toolkit:bugfix`の`references/analysis-records.md`「原因分析の記録先」に従い、表の常時掲載と必要な確認の完了を検収する。
+具体的な書き方は、`agent-toolkit:wi-standards/references/analysis-records.md`「原因分析の記録先」に従い、表の常時掲載と必要な確認の完了を検収する。
 表の掲載と分析確定に必要な確認は、分析の深さや重大度の全区分で行う。前述の代表AWI参照を使う場合は、参照先の表と確認結果を検収する。
 
-`## 原因分析`には、誤りの仕組みが成立する条件（`agent-toolkit:bugfix`の`references/root-cause-analysis.md`の基準）とともに、観測された事象とは表面的な構造が異なる該当例を1件以上記載する。成立条件が観測事象のファイル名、工程名、識別子のみで構成されている本文は投入せず、誤りを生じさせる仕組みの条件を導き直す。類似見直しの母集団、是正対象と予防対象の選定は、同資料の「類似見直し」（根本原因から導出し、時間軸や他リポジトリも考慮に入れる）と「QとC・Dの区別」に従う。軽微な問題に対して探索範囲を限定する場合は、実際の探索範囲、その限界、許容する残存リスクを明示する。
+`## 原因分析`には、誤りの仕組みが成立する条件（`agent-basics:bugfix`の`references/root-cause-analysis.md`の基準）とともに、観測された事象とは表面的な構造が異なる該当例を1件以上記載する。成立条件が観測事象のファイル名、工程名、識別子のみで構成されている本文は投入せず、誤りを生じさせる仕組みの条件を導き直す。類似見直しの母集団、是正対象と予防対象の選定は、同資料の「類似見直し」（根本原因から導出し、時間軸や他リポジトリも考慮に入れる）と「QとC・Dの区別」に従う。軽微な問題に対して探索範囲を限定する場合は、実際の探索範囲、その限界、許容する残存リスクを明示する。
 是正の対象範囲は、同スキルの「QとC・Dの区別」が定める保持対象全体に従う。
 
 ### 調査結果と判断根拠の記述
@@ -136,7 +136,7 @@ H1のタイトルは目的と変更が一目で短く分かる表現とし、発
 否定形の条件を記述する場合は、観測範囲を要求の差分に限定し、「要求の差分に含まれない」と明記する。成果物全体の不変や不在を完成条件に設定できるのは、独立した後続要求によっても変更されない恒常的な状態に限る。
 
 完成条件や判断材料の観測は、低いコストで処理可能な同一セッション内に得られる範囲に留める（公開・配布後であっても同じセッション内で反映して観測できる場合は含めてよい）。事象の自然発生を待つ観測、専用計測環境の構築、複数セッションにわたるデータの蓄積を要する観測は、任意の参考材料とするか、要求の対象外とする。既知の不具合と明示要件の未達は明確に区別する。要件自体が求めている観測を独断で除外してはならず、検証が成立しない根拠を記録したうえで`agent-toolkit:process-wi`の`references/finish-session.md`に定める延期adoptおよび再開記録へ引き継ぐ。起動前提が整っていない新設のworkflowなどでは、実装の検証と公開工程における検収を明確に分離する。
-手順整理や費用削減など一般的な効率改善では、改善効果を推定に基づいて判断し、その根拠と限界を記載する。速度や資源使用量の性能改善を主目的とする作業では、変更前のボトルネックを確認する。同じ負荷・比較可能な条件による変更前後の数値、挙動維持、トレードオフも確認する。基準は`agent-basics:writing-standards`の`references/investigation.md`と`agent-basics:check-execution`の`references/diagnostics.md`に従う。長期の運用観測やユーザーへの効果判定の回答は完成条件に含めない。機能の正確性、安全性、公開契約の検証はそれぞれの要件として設定し、計測についてユーザーが明示した要求も維持する。
+手順整理や費用削減など一般的な効率改善では、改善効果を推定に基づいて判断し、その根拠と限界を記載する。速度や資源使用量の性能改善を主目的とする作業では、変更前のボトルネックを確認する。同じ負荷・比較可能な条件による変更前後の数値、挙動維持、トレードオフも確認する。基準は`agent-toolkit:user-confirmation-and-report/references/investigation.md`と`agent-basics:check-execution`の`references/diagnostics.md`に従う。長期の運用観測やユーザーへの効果判定の回答は完成条件に含めない。機能の正確性、安全性、公開契約の検証はそれぞれの要件として設定し、計測についてユーザーが明示した要求も維持する。
 所要時間のようにマシンの負荷状態に左右される計測値は、同一のマシンと同一の時点で実行した対照環境（変更前のバージョン、あるいは原因要素のみを元に戻した構成）との比率や差分として記述する。比較した結論と再取得先を本文の適切な箇所に記載し、双方の実測値、比率、測定時の負荷状況を証拠として記録する。ユーザーが目標値を指定した場合はその値をそのまま採用する。なお、`timeout`などの設定値はここでの計測値には当たらない。
 
 ## 外部の既存挙動の再現

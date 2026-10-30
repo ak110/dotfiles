@@ -14,6 +14,8 @@ import pytest
 from agent_toolkit._agents_server import agents_wait, manager, mcp_tools, shared_layout, status_file
 from agent_toolkit._agents_server import state as server_state
 from agent_toolkit._atk import run_script
+from agent_toolkit._atk.wi import entries, uwi_scan
+from agent_toolkit._atk.wi.public_layout_test import _run
 from agent_toolkit._common import atomic_file, automated_prompt, session_state, state_paths
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import (
@@ -336,7 +338,7 @@ def test_codex_target_skill_read_is_deliverable(tmp_path: pathlib.Path) -> None:
         ("Bash", {"command": "git commit -m 変更"}, {"stdout": "", "exit_code": 1}),
         ("Bash", {"command": "git status"}, {"stdout": "", "exit_code": 0}),
         ("Bash", {"command": "atk wi show 20261001-000000-001.md"}, {"stdout": "", "exit_code": 0}),
-        ("Skill", {"skill": "agent-toolkit:writing-standards"}, "起動"),
+        ("Skill", {"skill": "agent-basics:writing-standards"}, "起動"),
     ],
 )
 def test_answer_only_or_failed_work_is_not_deliverable(
@@ -438,16 +440,66 @@ def test_cancelling_current_work_keeps_missing_completion_of_other_work(tmp_path
     assert later_id not in reason
 
 
+def test_monthly_waiting_uwi_public_command(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開保存の年月UWIを待機判断と走査で共有し、回答後は残工程へ戻る。"""
+    repo_id = "github.com/example/repo"
+    notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    body = tmp_path / "question.md"
+    body.write_text("今回の変更を公開してよいか。\n", encoding="utf-8")
+    _run(
+        notes,
+        "add",
+        "--type=uwi",
+        "--question-type=yes-no",
+        "--source=agent",
+        f"--target-repo={repo_id}",
+        "--body-file",
+        str(body),
+    )
+    paths: list[pathlib.Path] = list(entries.iter_entry_paths(notes))
+    assert len(paths) == 1
+    question: pathlib.Path = paths[0]
+    assert question == notes / question.name[:4] / question.name[4:6] / question.name
+    (tmp_path / "transcript.jsonl").write_text("", encoding="utf-8")
+    supply_commit(tmp_path)
+    document = {
+        "session_id": "evidence-test",
+        "action": "wait",
+        "work_id": "work-1",
+        "uwi_file": str(question),
+        "reason": "公開可否の回答を待つ",
+    }
+    for state in ("inbox", "processing"):
+        if state == "processing":
+            _run(notes, "start-processing", question.name, f"--target-repo={repo_id}")
+        status, reason = public_decision(tmp_path, document)
+        assert status == 0, reason
+        assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を待つ。"))[0] == "approve"
+        scanned = uwi_scan.scan_active_uwis(notes, repo_id)
+        assert scanned.complete
+        assert scanned.entries == [uwi_scan.ActiveUwi(question.name, False, "evidence-test")]
+    original = question.read_text(encoding="utf-8")
+    question.write_text(original + "\n公開してよい。\n", encoding="utf-8")
+    assert public_decision(tmp_path, document)[0] != 0
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を受け取った。"))[0] == "notify"
+
+
 def test_waiting_for_answer_is_scoped_and_returns_to_remaining_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     supply_commit(tmp_path)
     queue = tmp_path / "private-notes"
-    inbox = queue / "inbox"
+    inbox = queue / "2026" / "10"
     inbox.mkdir(parents=True)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
     question = inbox / "20261003-000000-001.md"
-    original = "---\ntype: uwi\nsubmitter_session: evidence-test\n---\n\n## 確認\n\n目的を選んでください。\n\n## 回答\n"
+    original = (
+        "---\ntype: uwi\nstate: inbox\nsubmitter_session: evidence-test\n---\n\n## 確認\n\n目的を選んでください。\n\n## 回答\n"
+    )
     question.write_text(original, encoding="utf-8")
     termination_evidence.record_decision(
         {
@@ -477,6 +529,57 @@ def test_unrelated_or_invented_wait_target_does_not_clear_remaining_work(tmp_pat
             }
         )
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "待機中"))[0] == "notify"
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "outside",
+        "wrong-month",
+        "relative",
+        "hold",
+        "adopted",
+        "rejected",
+        "missing-state",
+        "foreign",
+        "awi",
+        "answered",
+        "quote",
+    ],
+)
+def test_waiting_uwi_rejects_invalid_membership_and_metadata(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, problem: str
+) -> None:
+    """年月所属、処理可能状態、投入会話、未回答、全文引用の境界を公開判断CLIで検証する。"""
+    supply_commit(tmp_path)
+    queue = tmp_path / "private-notes"
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
+    question = queue / "2026/10/20261030-120000-001.md"
+    if problem == "outside":
+        question = tmp_path / "other/2026/10/20261030-120000-001.md"
+    elif problem == "wrong-month":
+        question = queue / "2026/09/20261030-120000-001.md"
+    question.parent.mkdir(parents=True)
+    state = problem if problem in {"hold", "adopted", "rejected"} else "inbox"
+    metadata = (
+        f"type: {'awi' if problem == 'awi' else 'uwi'}\n"
+        f"submitter_session: {'other' if problem == 'foreign' else 'evidence-test'}\n"
+    )
+    if problem != "missing-state":
+        metadata += f"state: {state}\n"
+    text = f"---\n{metadata}---\n\n## 確認\n\n公開してよいか。\n\n## 回答\n"
+    question.write_text(text + ("はい。\n" if problem == "answered" else ""), encoding="utf-8")
+    document = {
+        "session_id": "evidence-test",
+        "action": "wait",
+        "work_id": "work-1",
+        "uwi_file": question.name if problem == "relative" else str(question),
+        "reason": "回答待ち",
+    }
+    if problem == "quote":
+        document["quote"] = "本文と異なる引用"
+    assert public_decision(tmp_path, document)[0] != 0
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を待つ。"))[0] == "notify"
 
 
 def test_corrupt_or_foreign_state_does_not_block(tmp_path: pathlib.Path) -> None:
@@ -603,11 +706,13 @@ def test_decision_cli_reads_evidence_from_identifiers(
             document["policy_file"] = str(policy)
     elif action == "wait":
         queue = tmp_path / "private-notes"
-        inbox = queue / "inbox"
+        inbox = queue / "2026" / "10"
         inbox.mkdir(parents=True)
         monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
         question = inbox / "20261016-000000-001.md"
-        text = "---\ntype: uwi\nsubmitter_session: evidence-test\n---\n\n## 確認\n\n選択してください。\n\n## 回答\n"
+        text = (
+            "---\ntype: uwi\nstate: inbox\nsubmitter_session: evidence-test\n---\n\n## 確認\n\n選択してください。\n\n## 回答\n"
+        )
         question.write_text(text, encoding="utf-8")
         document["uwi_file"] = str(question)
     elif action == "blocked":
@@ -1206,14 +1311,20 @@ def test_termination_evidence_and_operation_skills_share_read_judgment(
     assert (not _missing_completion(tmp_path)) is accepted
 
     skill = "search"
+    basics = tmp_path / "agent-basics"
+    search = basics / "skills/search/SKILL.md"
+    search.parent.mkdir(parents=True)
+    (basics / ".claude-plugin").mkdir()
+    (basics / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
+    search.write_text("---\nname: search\n---\n", encoding="utf-8")
     _tool(
         tmp_path,
         "search",
         "Bash",
-        {"command": command.format(skill=skill)},
+        {"command": command.format(skill=skill).replace("/plugin/skills/search/SKILL.md", str(search))},
         response.format(skill=skill),
         codex=True,
         native_exit_code=exit_code,
     )
     recorded = session_state.read_state("evidence-test").get("operation_skill_delivered_agents") or {}
-    assert ("agent-toolkit:search" in recorded) is accepted
+    assert ("agent-basics:search" in recorded) is accepted

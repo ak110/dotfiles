@@ -1,5 +1,6 @@
 {
   "case": "batch-conditions",
+  "kind": "dialogue",
   "source": {
     "url": "https://arxiv.org/html/2610.11559v1",
     "section": "C.3.2 F2",

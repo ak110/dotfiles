@@ -10,6 +10,7 @@ import sys
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk.serve import wi_operations
 from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._atk.wi import frontmatter as frontmatter_parser
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -43,6 +44,75 @@ from agent_toolkit.atk_test import (
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
+
+
+@pytest.mark.parametrize("bulk", [False, True])
+@pytest.mark.parametrize("cooldown", [False, True])
+@pytest.mark.parametrize("state", ["processing", "adopted", "rejected"])
+def test_public_append_return_preserves_unfinished_record(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    bulk: bool,
+    cooldown: bool,
+    state: str,
+) -> None:
+    """公開追記した再開記録を差戻し後の公開取得で確認し、終了済みの旧結果だけを除く。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "record.md", body="元の要求")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    body_file = tmp_path / "resume.md"
+    body_file.write_text("再開に必要な記録", encoding="utf-8")
+    with pytest.raises(SystemExit) as appended:
+        atk.main(["wi", "edit", path.name, "--append", "--body-file", str(body_file)], home=tmp_path)
+    assert appended.value.code == 0
+    _set_state(path, state)
+    args = ["wi", "return-to-inbox"]
+    if bulk:
+        args += ["--all", "--yes", "--status", state, "--skip-pull", "--target-repo", "github.com/example/foo"]
+    else:
+        args += [path.name]
+        if state != "processing":
+            args += ["--state", state]
+    if cooldown:
+        args += ["--cooldown-days", "3"]
+    with pytest.raises(SystemExit) as returned:
+        atk.main(args, home=tmp_path)
+    assert returned.value.code == 0
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as shown:
+        atk.main(["wi", "show", path.name, "--skip-pull"], home=tmp_path)
+    assert shown.value.code == 0
+    output = capsys.readouterr().out
+    assert "元の要求" in output
+    assert ("再開に必要な記録" in output) == (state == "processing")
+    assert ("## 処理結果" in output) == (state == "processing")
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None and parsed[0]["state"] == "inbox"
+    assert ("cooldown_until" in parsed[0]) == cooldown
+
+
+def test_serve_return_preserves_public_append(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Serveの共有更新処理も公開追記した未終了記録を保持する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "record.md", body="元の要求")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    body_file = tmp_path / "resume.md"
+    body_file.write_text("再開に必要な記録", encoding="utf-8")
+    with pytest.raises(SystemExit) as appended:
+        atk.main(["wi", "edit", path.name, "--append", "--body-file", str(body_file)], home=tmp_path)
+    assert appended.value.code == 0
+    _set_state(path, "processing")
+    before = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    operations = wi_operations.Operations(notes)
+    assert operations.transition("return-to-inbox", [path.name]) == [path.name]
+    after = operations.detail("inbox", path.name)
+    assert before is not None and before[1] in str(after["content"])
 
 
 def _set_state(path: pathlib.Path, state: str) -> pathlib.Path:

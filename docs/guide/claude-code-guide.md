@@ -449,7 +449,7 @@ atk wi process-loop instruct '次の処理へ適用する指示'
 `instruct`は次の処理へ1回だけ指示を渡す。
 中断した処理を再開する場合は、`atk wi process-loop --resume <session-ID>`へ統括担当の会話IDを指定するか、`--auto-resume`で保持された未完了の対象を再開する。
 
-常駐させずに登録全体を1回だけ処理する場合は、`atk wi process-loop --once`を実行する（会話からは`/agent-toolkit:process-wi-all-repos`）。
+常駐させずに登録全体を1回だけ処理する場合は、`atk wi process-loop --once`を実行する（会話からは`/agent-toolkit:process-wi all-repos`）。
 対象が0件なら直ちに終了し、未完了の対象が残ると非0で終了するため、表示された記録を確認してから`atk wi process-loop --once --auto-resume`で再開する。
 
 CIの失敗だけを1回確認してAWIとして登録する場合は、`atk wi check-alerts --target-repo <リポジトリの絶対パス>`を実行する（省略時は現在の作業ツリー）。
@@ -457,7 +457,7 @@ AWIの処理は始めず、取得に失敗した場合は理由を示して終�
 
 ### まとめ処理型
 
-常駐実行を起動せず、数件のAWIがたまった時点で対象リポジトリの会話から`/agent-toolkit:single-lane-process`を実行する。
+常駐実行を起動せず、数件のAWIがたまった時点で対象リポジトリの会話から`/agent-toolkit:process-wi single-lane`を実行する。
 同じセッションの中で調査から実装、レビュー、公開まで進む。
 並列のレーンへ分けて処理する場合は`/agent-toolkit:process-wi`を実行する。
 
@@ -606,10 +606,10 @@ Codexでフックを信頼する操作は[Codex利用ガイド](codex-guide.md#�
 - `agent-toolkit:add-awi-by-user`: 要件を対話で確定し、AWIまたはUWIを登録する
   - 考慮漏れを洗い出したい要求では、先頭に`carefully`を付けて起動する（Claude Codeでは`/agent-toolkit:add-awi-by-user carefully <要求>`）。本文を書く前に方針を確認し、考慮漏れの指摘ごとに原因分析して再確認する。通常の起動では要件の確定後に登録する
 - `agent-toolkit:process-wi`: 対象リポジトリのAWIをレーンへ分けて計画・実装・レビュー・公開する
-- `agent-toolkit:single-lane-process`: AWIをレーンへ分けずに1回の起動でまとめて処理する
-- `agent-toolkit:process-wi-all-repos`: `process_loop_repositories`の登録全体を1回処理する
+- `agent-toolkit:process-wi single-lane`: AWIをレーンへ分けずに1回の起動でまとめて処理する
+- `agent-toolkit:process-wi all-repos`: `process_loop_repositories`の登録全体を1回処理する
 - `agent-toolkit:session-review`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。引数で着眼点を追加できる
-- `agent-toolkit:session-review-batch`: 振り返り待ちのセッションをまとめて分析する。既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
+- `agent-toolkit:session-review batch`: 振り返り待ちのセッションをまとめて分析する。既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
 - `agent-toolkit:export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
 - `agent-toolkit:refine-prompt`: プロンプトやスキルの改善点を独立した実行者から集めて反映する
 

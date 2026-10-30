@@ -363,6 +363,23 @@ def builtin_task_prompt(subagent_md_path: str, extra_params: Mapping[str, str]) 
     return "\n".join([f"{document}の手順を実行せよ。", *named_input_lines(extra_params)])
 
 
+def _continuation_recovery(declaration: task_documents.TaskDocumentDeclaration | str | None) -> str:
+    """保持する役割宣言から、同じsessionへ送れる再実行形を示す。"""
+    freeform = json.dumps({"prompt": "<今回の指示と新しい入力>"}, ensure_ascii=False)
+    guidance = "同じsession_idのsend_messageへ渡す自由文の再実行形: " + freeform
+    if isinstance(declaration, str):
+        return guidance + "。役割宣言を取得できないため定型指示は確認できません: " + declaration
+    if declaration is None:
+        return guidance + "。起動記録に役割文書がなく、宣言された定型指示はありません"
+    if not declaration.continuations:
+        return guidance + "。この役割に宣言された定型指示はありません"
+    forms = [
+        {"instruction": item.instruction, "extra_params": {name: f"<{name}>" for name in item.required}}
+        for item in declaration.continuations
+    ]
+    return guidance + "。定型指示の最小の再実行形: " + json.dumps(forms, ensure_ascii=False)
+
+
 def continuation_prompt(
     launch_prompt: str,
     followup_prompts: tuple[str, ...],
@@ -372,13 +389,16 @@ def continuation_prompt(
     extra_params: Mapping[str, str] | None = None,
 ) -> str:
     """既存の起動記録と役割宣言から、継続本文を検査・生成する。"""
+    first_line = launch_prompt.split("\n", 1)[0]
+    documents = task_documents.find_task_documents(first_line)
+    declaration = task_documents.read_declaration(documents[0]) if documents else None
+    if declaration is None and ".subagent.md" in first_line:
+        declaration = "起動記録の役割文書へ到達できません"
     if (prompt is None) == (instruction is None) or (prompt is not None and extra_params is not None):
         raise ActionableError(
             "promptとinstruction/extra_paramsは排他的です。どちらか一方が必要です。",
-            next_action='`send_message(session_id, instruction="<指示>", extra_params={<必要入力>})`で再実行する',
+            next_action=_continuation_recovery(declaration),
         )
-    documents = task_documents.find_task_documents(launch_prompt.split("\n", 1)[0])
-    declaration = task_documents.read_declaration(documents[0]) if documents else None
     text = prompt if prompt is not None else instruction
     assert text is not None
     lines = text.strip().splitlines()
@@ -389,7 +409,7 @@ def continuation_prompt(
         if instruction is not None:
             raise ActionableError(
                 f"宣言された継続指示ではありません: {instruction}",
-                next_action="役割文書の継続指示を指定する。新しい要求はpromptで送る",
+                next_action=_continuation_recovery(declaration),
             )
         if isinstance(declaration, task_documents.TaskDocumentDeclaration):
             known_lines = set(launch_prompt.splitlines())
@@ -722,6 +742,19 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
 def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, str]) -> None:
     """読取と検索だけで動く担当の保存資料を、起動要求の境界で検査する。"""
     role = task_document.name.removesuffix(_TASK_DOCUMENT_SUFFIX)
+    if role == "wi-draft-review":
+        stage = params.get("確認段階", "本文")
+        if stage not in {"方針", "本文"}:
+            raise _material_error("確認段階", "方針または本文を指定する。省略時は本文")
+        name = "方針" if stage == "方針" else "原稿"
+        if not params.get(name):
+            raise _material_error(name, f"{stage}段階で必要")
+        for material in (name, "要求と出所", "成立性の証拠"):
+            path = pathlib.Path(params[material])
+            if not path.is_absolute() or not path.is_file():
+                raise _material_error(material, "実在するファイルの絶対パスが必要")
+            _material_paths(material, params[material])
+        return
     if role == "exec-review":
         _check_exec_review_materials(params)
         return
@@ -769,7 +802,7 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
         required[path.name] = sum(token.type == "list_item_open" and token.level == 1 for token in MarkdownIt().parse(body))
     if not required:
         return
-    reference = "skills/review-standards/references/exec-review-recording.md「記録する行と要求単位」"
+    reference = "share/exec-review-recording.md「記録する行と要求単位」"
 
     def reject(reason: str) -> Never:
         raise _material_error("review_contract", f"{', '.join(required)}: {reason}。条件表の書式: {reference}")

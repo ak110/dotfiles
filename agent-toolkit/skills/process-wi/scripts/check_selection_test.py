@@ -2259,7 +2259,7 @@ def test_directory_range_matches_by_path_element(
 
 _RANGE_DESCRIPTION_FILES = (
     "agent-toolkit/skills/process-wi/references/selection-format.md",
-    "agent-toolkit/skills/search/SKILL.md",
+    "agent-basics/skills/search/SKILL.md",
 )
 
 
@@ -2279,7 +2279,7 @@ def test_range_description_needs_no_coverage_but_inner_paths_do(
         notes,
         "range.md",
         "対象リポジトリは`agent-toolkit/`配下とdocs/配下とする。`agent-toolkit/skills/process-wi/references/selection-format.md`を変える。"
-        "`agent-toolkit/skills/`配下に限り、`agent-toolkit/skills/search/SKILL.md`の節を直す。"
+        "`agent-toolkit/skills/`配下に限り、`agent-basics/skills/search/SKILL.md`の節を直す。"
         "`docs/development/design.md`も変える。",
     )
     body = (
@@ -2308,7 +2308,7 @@ def test_range_description_needs_no_coverage_but_inner_paths_do(
     )
     assert _dispatch("--work-dir", str(repo), str(selection)) == 1
     errors = sorted(line for line in capsys.readouterr().err.splitlines() if ": 未被覆: " in line)
-    assert errors == ["range.md: 未被覆: agent-toolkit/skills/search/SKILL.md", "u.md: 未被覆: src/model.py"]
+    assert errors == ["range.md: 未被覆: agent-basics/skills/search/SKILL.md", "u.md: 未被覆: src/model.py"]
 
 
 def test_directory_range_without_inner_path_still_needs_coverage(

@@ -1,0 +1,52 @@
+{
+  "case": "verification-status",
+  "kind": "single",
+  "source": {
+    "adaptation": "単独課題の保存・採点契約を検証する合成素材。実セッションから抽出した評価課題や実モデル比較の記録ではない。"
+  },
+  "conditions": ["no-dialogue"],
+  "termination": ["submitted"],
+  "requirements": [
+    {"id": "executed", "description": "通常の合否を維持する", "tests": ["passed", "failed"]},
+    {"id": "unexecuted", "description": "未実行を合格に含めない", "tests": ["skipped", "not-collected"]},
+    {"id": "expected-failure", "description": "実行済みの期待された失敗を区別する", "tests": ["xfail"]},
+    {"id": "unknown", "description": "未知の状態を拒否する", "tests": ["unknown"]}
+  ],
+  "behavior_criteria": [
+    {"id": "classification", "description": "未実行と実行された期待失敗の違いを根拠に判断したか。比較記録へ要点を残す。"}
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "no-dialogue",
+      "candidate": "def classify(status: str) -> str:\n    labels = {'passed': '合格', 'failed': '不合格', 'skipped': '未実行', 'not-collected': '未実行', 'xfail': '期待された失敗'}\n    if status not in labels:\n        raise ValueError(status)\n    return labels[status]\n",
+      "execution": {
+        "case": "verification-status",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {"effort": "未取得（合成素材）"},
+        "sessions": {"candidate": "fixture-candidate"},
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "no-dialogue",
+      "candidate": "def classify(status: str) -> str:\n    return '不合格' if status == 'failed' else '合格'\n",
+      "execution": {
+        "case": "verification-status",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {"effort": "未取得（合成素材）"},
+        "sessions": {"candidate": "fixture-candidate"},
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    }
+  ]
+}

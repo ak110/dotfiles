@@ -1,5 +1,6 @@
 {
   "case": "attachment-paths",
+  "kind": "dialogue",
   "source": {
     "url": "https://arxiv.org/html/2610.11559v1",
     "section": "C.2.1 A1",

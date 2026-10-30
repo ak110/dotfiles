@@ -36,11 +36,11 @@ Bash:
 - 読取の引数・診断破棄、atk出力の接続とwaitの背景化の警告 (warn)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
 - Codexでcommitのmessage.mdを読むとき、観測したモデルと推論量の帰属行を先行配送 (warn)
-- 操作を起動の契機とするスキル（`agent-toolkit:search`・`agent-toolkit:bugfix`）が未起動の操作の、文脈ごとに1回の警告 (warn)
+- 操作を起動の契機とするスキル（`agent-basics:search`・`agent-basics:bugfix`）が未起動の操作の、文脈ごとに1回の警告 (warn)
 
 Grep / Glob:
 
-- `agent-toolkit:search`が未起動のままの検索の、文脈ごとに1回の警告 (warn)
+- `agent-basics:search`が未起動のままの検索の、文脈ごとに1回の警告 (warn)
 
 Skill:
 
@@ -57,7 +57,7 @@ Write / Edit / MultiEdit / apply_patch:
 - lockfile / 生成物ディレクトリの直接編集 (warn)
 - Pythonと計画Markdownの末尾へ混入したツール境界タグ (warn)
 - manifestファイルの手編集 (warn)
-- `agent-toolkit:bugfix`が未起動のままの`## 原因分析`の見出し行の記述の、文脈ごとに1回の警告 (warn)
+- `agent-basics:bugfix`が未起動のままの`## 原因分析`の見出し行の記述の、文脈ごとに1回の警告 (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 
@@ -327,7 +327,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     if record_warning is not None:
         if record_warning:
             warnings.append(record_warning)
-    elif read_warning := check_large_bash_read(command, cwd, is_codex=is_codex):
+    elif read_warning := check_large_bash_read(command, cwd, is_codex=is_codex, payload=payload):
         warnings.append(read_warning)
     drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)
     if drive_letter_path_warning is not None:
@@ -464,7 +464,7 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
 
     ユーザーへ直接到達する本文はユーザー自身が読んで誤りを指摘できるため、復元できない結果に当たらない。
     遮断するとそのターンの入力と作業を失い、同じ確認を再発行する必要があるため、警告で返す。
-    判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
+    判定の根拠は`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`
     「遮断と警告の選択」が定める。記述言語の判定は同節の例外により表示前に遮断し、日本語での書き直しを求める。他の2つの判定は、成立した警告を同じ追加コンテキストへ並べる。
     """
     fields = _user_facing_text_fields(tool_name, tool_input)

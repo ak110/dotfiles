@@ -15,7 +15,7 @@ Codexのコマンド回収は、外側の`functions.exec`のcellと内側の`exe
 hook・MCP定義などホスト別に明確に分離された資源を除き、Claude CodeとCodexに共通するルール・スキルは`agent-toolkit/`の共有原本で定義する。
 Codexだけの公開能力との差分は上書きとして置き、常時規範へCodex固有の条件を持ち込まない。Codexの全主体へ適用する差分は`agent-toolkit/share/rules-common.codex.md`へ置き、`scripts/sync_codex_agents.py`が`~/.codex/AGENTS.md`へ埋め込む。Codexのメインだけへ適用する差分は`agent-toolkit/share/rules-main.codex.md`へ置き、`SessionStart` hookがCodexのメインへ`rules-main.md`の後に加える。`~/.codex/AGENTS.md`はCodexのサブエージェントと委譲先にも届くため、メイン向けの差分を同じファイルへ置くとメイン専用の条文が全主体へ届く。
 Codex基礎指示の上書きは、確認・待機・並列化・ツール利用前説明のホスト契約をCodex側へ閉じ込め、Claude Codeの共通契約を変更しない。
-Codexの委譲は、`spawn_agent`・`send_message`・`followup_task`・`wait_agent`・`interrupt_agent`を使うネイティブ方式とagents_server方式を分ける。ネイティブ方式では`fork_turns`が選ぶ会話履歴、worktreeの`AGENTS.md`、`SubagentStart` hookが配送する`rules-subagent.md`を独立した入力とする。agents_serverの通常委譲は`_agents_server/launch_prompts.py`から同じ共通委譲先規範を配送する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。Claude Code固有の委譲先規範はCodexへ配送しない。この境界をhookの実起動、agents_serverのprompt構成、Codex manifestの生成テストで確認し、規範本文を方式ごとに複製しない。
+Codexの委譲は、`spawn_agent`・`send_message`・`followup_task`・`wait_agent`・`interrupt_agent`を使うネイティブ方式とagents_server方式を分ける。ネイティブ方式では`fork_turns`が選ぶ会話履歴、worktreeの`AGENTS.md`、`SubagentStart` hookが配送する`rules-subagent.md`を独立した入力とする。agents_serverの通常委譲は`_agents_server/launch_prompts.py`から同じ共通委譲先規範を配送する。各起動区分の委譲先へ届く規範は`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表が示す。Claude Code固有の委譲先規範はCodexへ配送しない。この境界をhookの実起動、agents_serverのprompt構成、Codex manifestの生成テストで確認し、規範本文を方式ごとに複製しない。
 `scripts/sync_codex_agents.py`はCodex基礎指示と共有ルールから生成物を作成し、`scripts/sync_generated_files.py`が正式な一括生成の窓口となる。
 `scripts/sync_codex_agents_test.py`は共有原本と生成物の同期、共有契約の保持およびCodex固有上書きの配置を確かめる。
 生成物は手編集せず、原本と正式生成器を更新して同期する。
@@ -177,7 +177,7 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 
 WI処理の運用形態、登録と回答、振り返りからの投入の流れをエージェントが横断して参照するため、`agent-toolkit:workflow-overview`をオンデマンドの知識スキルとして置く。人間向けの`docs/guide/claude-code-guide.md`はエンドユーザーの導入と操作の案内を保つ。プラグインからdotfiles固有のガイドを参照できない配布範囲と、全工程が読む`share/workflow-phases.md`の読込費用を分けるためである。ガイドだけを読む契機の追加、ガイドの内容をプラグインへ移して縮める案、工程責務の契約へ運用概要を追記する案は、この境界または読込費用を守れないため採用しない。
 
-複数の実行主体が使う契約は、契約本文を1箇所の基準文書へ集約し、各主体の文書には読む時点と利用場面固有の差分だけを残す。一括取得は`agent-toolkit:add-awi-by-user`、採否レコードは`agent-toolkit:process-wi`、履歴書換えは`agent-toolkit:commit`、レビュー観点は`agent-toolkit:review-standards`が定める。スキル本体には起動判断、工程順序および停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
+複数の実行主体が使う契約は、契約本文を1箇所の基準文書へ集約し、各主体の文書には読む時点と利用場面固有の差分だけを残す。一括取得は`agent-toolkit:add-awi-by-user`、採否レコードは`agent-toolkit:process-wi`、履歴書換えは`agent-toolkit:commit`、レビュー観点は`agent-basics:review-standards`が定める。スキル本体には起動判断、工程順序および停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
 
 判断から一意に導出できる実装順序・分解粒度・コマンド列は、安全性、データ保全または公開契約を保護する場合を除き、各エージェント文書へ常設しない。
 
@@ -199,6 +199,6 @@ WI処理の運用形態、登録と回答、振り返りからの投入の流れ
 
 ## 場面別手順と外部投稿前レビュー
 
-managed-temp、品質確認、検索の手順は、それぞれ`agent-toolkit:managed-temp`、`agent-toolkit:check-execution`、`agent-toolkit:search`が所有する。作業ツリー外の秘匿値ファイルは`agent-toolkit:secret-files`が扱う。作業ツリー内のファイルは通常の手段で扱い、外部の認証情報を参照する場合は実体の位置で内外を判定する。実行時に必要な場面を各スキルの`description`で示す。手順本文を場面別スキルにまとめ、常時規範から長文を読む工程を減らす。委譲の親子契約は前節の境界に従って引き続き`share/`へ置く。スキル起動は`description`から判定するため、常時規範からの決定的な読込契機は持たない。
+managed-temp、品質確認、検索の手順は、それぞれ`agent-toolkit:managed-temp`、`agent-basics:check-execution`、`agent-basics:search`が所有する。作業ツリー外の秘匿値ファイルは`agent-basics:secret-files`が扱う。作業ツリー内のファイルは通常の手段で扱い、外部の認証情報を参照する場合は実体の位置で内外を判定する。実行時に必要な場面を各スキルの`description`で示す。手順本文を場面別スキルにまとめ、常時規範から長文を読む工程を減らす。委譲の親子契約は前節の境界に従って引き続き`share/`へ置く。スキル起動は`description`から判定するため、常時規範からの決定的な読込契機は持たない。
 
 第三者が読む外部サービスへ起草した文面を投稿する前には`agent-toolkit:external-write-review`を用いる。投稿する主体が文面、投稿先、目的と根拠の所在を確定し、読み取り専用の投稿前レビュー担当へ文脈を持たない読者の観点で内容の確認を依頼する。投稿前レビュー担当は文面の採否と投稿認可を持たず、投稿主体が指摘を反映して送信する。投稿先ごとにレビュー手順を複製する案と常時規範から別の`share/`手順を読む案は、同じ判断の保守先と読込量を増やすため採用しない。

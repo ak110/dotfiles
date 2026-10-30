@@ -19,7 +19,7 @@ lazy import subprocess
 lazy from typing import Any
 
 lazy from agent_toolkit._agents_server import tool_names
-lazy from agent_toolkit._atk.wi import uwi_scan
+lazy from agent_toolkit._atk.wi import layout, uwi_scan
 lazy from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
 lazy from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 lazy from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state, shell_cwd
@@ -590,9 +590,11 @@ def _waiting_uwi(document: dict[str, Any], session_id: str) -> pathlib.Path:
     if root is None or not isinstance(path_text, str):
         raise ValueError("確認待ちには未回答UWIの絶対パスを渡す")
     path = pathlib.Path(path_text)
-    if not path.is_absolute() or path.parent not in {root / name for name in WI_PROCESSABLE_STATES}:
+    if not path.is_absolute() or path not in layout.iter_entry_paths(root):
         raise ValueError("確認待ちのUWIはactive状態のキューから取得する")
     text = path.read_text(encoding="utf-8")
+    if layout.entry_state_of(path, text) not in WI_PROCESSABLE_STATES:
+        raise ValueError("確認待ちのUWIはactive状態のキューから取得する")
     parsed = parse_frontmatter(text)
     if parsed is None or parsed[0].get("type") != "uwi" or parsed[0].get("submitter_session") != session_id:
         raise ValueError("現在の会話が投入したUWIを指定する")

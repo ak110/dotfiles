@@ -30,7 +30,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-release/SKILL.md` | 判断 | `read:*/skills/dotfiles-release/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-repo-layout/SKILL.md` | 判断 | `read:*/skills/dotfiles-repo-layout/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:check-execution/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/references/distribution-and-hooks.md#「agent_toolkitパッケージの配置と層」` | 判断 | `section:*/skills/agent-toolkit-edit/references/distribution-and-hooks.md#「agent_toolkitパッケージの配置と層」` |
@@ -43,7 +43,7 @@ description: >
 | 公開前に実行する検証を選定する前 | `agent-toolkit:commit`の`references/publish.md`「検証とCI」 | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「検証とCI」` | |
 | 変更範囲の検証の対象を選ぶ前、push前の全体検証を行う前、ローカルの`make test`が実行しないチェックを確かめる時、または`agent-doc-tone`の報告へ対処する前 | [references/verification-values.md](references/verification-values.md) | 判断 | `read:*/skills/dotfiles-development/references/verification-values.md` | |
 | コミットメッセージのtypeを判定する時 | [commit-types.md](../../../docs/development/commit-types.md)（判定例） | 判断 | `read:*/docs/development/commit-types.md` | |
-| 不変条件のテストの検証対象を探索する時 | `agent-toolkit:check-execution`の`references/verification-scope.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/verification-scope.md` | |
+| 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution`の`references/verification-scope.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` | |
 
 ## 開発手順
 
@@ -65,7 +65,7 @@ description: >
 ### 自動チェックと依存更新
 
 - `make update`は、読込表にあるターゲットの実際の処理対象に変更対象が含まれている場合のみ実行候補とする。現在の主な更新対象は`uv.lock`と`agent-toolkit/uv.lock`の依存関係更新である。lockファイルの更新後はコンテナーでの依存関係インストールを検証し（`ci-deps-check`）、さらに`prek autoupdate`、`mise lock`、`pinact`によるアクション更新、および全テストを実行する。なお`rust/claude-statusline/Cargo.lock`は対象外である。GitHub Actionsのハッシュピンのみを更新する場合は`make update-actions`を実行する。
-- 公開前に実行する検証は、`agent-toolkit:commit`の`references/publish.md`「検証とCI」で選定する。ローカル全体検証が必要と判定された場合は`make test`（`uv run --frozen pyfltr run --no-fix`）を用いる。`agent-toolkit:check-execution`を起動し、標準出力と標準エラー出力を保存して結果を確認できる手段（例: `agents_server`の`start`ツールで`shell`を指定）で実行する。
+- 公開前に実行する検証は、`agent-toolkit:commit`の`references/publish.md`「検証とCI」で選定する。ローカル全体検証が必要と判定された場合は`make test`（`uv run --frozen pyfltr run --no-fix`）を用いる。`agent-basics:check-execution`を起動し、標準出力と標準エラー出力を保存して結果を確認できる手段（例: `agents_server`の`start`ツールで`shell`を指定）で実行する。
   - pyfltrのフォーマッター段（`ruff-format`、`uv-sort`、`shfmt`、`prek`、`sync-generated-files`）は、`--no-fix`を指定した場合でもファイルを整形して終了コード0を返す。そのため、コミット対象を確定する前に`git status`を実行して意図しない差分が生じていないか確認する。コードの自動修正を明示的に行う場合は`make format`（`uv run --frozen pyfltr fast`）を使用する。
 
 pyfltrを調査や計測の目的で実行する場合は、`--no-fix`を付けて自動修正を抑止する。ただしフォーマッター段は`--no-fix`でもファイルを書き換えるため、読み取り専用で実行したい場合はファイルを変更する段を除外して実行する。
@@ -75,7 +75,7 @@ pyfltrを調査や計測の目的で実行する場合は、`--no-fix`を付け�
   - pytestを含む検証を実行する際は、指定したファイルにかかわらず、リポジトリルートと`agent-toolkit/`の両方で`pytest-always-targets`に定義された横断テストが常に追加される。詳細は`references/verification-values.md`の横断テストの項を参照のこと。同一内容に対して2回目以降の静的チェックを行う場合は、`commands`でpytestを除外し、失敗したテストのみを再確認する際は`--only-failed`を指定する。単一テストをピンポイントで確認したい場合は、対象ファイル（必要に応じて`-k`）を指定して`pytest`を直接実行し、収集されたテスト件数が想定と一致していることを確認する。
 - デバッガーの使用、最小限の再現コード実行、環境の切り分け時には、`pytest`を直接実行してよい。`-o`や`-p`は`pytest`固有のオプションであり、`pyfltr run`に渡すと引数エラー（終了コード2）となる。`-o addopts=''`で既存の`addopts`を無効化する場合は、合わせて`-p no:cacheprovider`を指定する。
 - pyfltrの実行枠として扱われるのは、`make test`、`uv run --frozen pyfltr run`、`git commit`（コミットフック内の`pyfltr fast`）、および`agent_toolkit._testing.pytest_plugin`を読み込むpytestの実行である。ルートと`agent-toolkit/`の`addopts`には、このプラグインを読み込む`-p`オプションが設定されている。`-o addopts=''`でプラグインを解除する`make test-browser`などは実行枠の対象外となる。
-  - 実行枠に含まれる検証をシェルから実行する際は、`agent-toolkit:check-execution`「統合実行ツール経由の起動」に記載の起動形式と3分類に従う。
+  - 実行枠に含まれる検証をシェルから実行する際は、`agent-basics:check-execution`「統合実行ツール経由の起動」に記載の起動形式と3分類に従う。
 - `.venv`を再作成する可能性がある自動チェック（`uv run --python`によるPythonバージョンの切り替えや依存関係の更新など）は、同一の仮想環境パスに対して直列で実行する。並行して進める場合は、チェックごとに異なる仮想環境パスを明示的に割り当てる。
 - pyfltrの実行時間を比較・確認する際は、`uv run --frozen pyfltr list-runs`で取得した実行ID（run_id）を使い、`uv run --frozen pyfltr show-run <run_id>`を実行する。
 
@@ -102,7 +102,7 @@ pyfltrを調査や計測の目的で実行する場合は、`--no-fix`を付け�
 ## テスト配置
 
 - テストコードは、検証対象となる実装やファイルの可能な限り近くに配置する。Pythonモジュールの単体テストは同一ディレクトリ内の`<name>_test.py`とし、文書・設定ファイル・スクリプトの実物を読み込んで検証するテストは、そのファイルと同じディレクトリか、対象ファイルを包括する最も近い上位ディレクトリに置く。fixtureで入力を組み立てて実装を呼び出すテストも、実装の近くに配置する。やむを得ず離れた場所に置く場合は、配置可能な最も近い場所を選び、その理由をモジュールのdocstringに明記する
-- 複数の領域にまたがる既存成果物の不変条件（インバリアント）を検証するテストは、`*_invariant_test.py`と命名する。リポジトリルートおよび`agent-toolkit/`の`pyproject.toml`にある`pytest-fast-targets`はこの命名規則に基づいて対象を選定し、`pyfltr fast`で実行されるため、通常の動作テストとは別ファイルに分ける。検証対象の探し方は`agent-toolkit:check-execution`の`references/verification-scope.md`に従い、エージェント向け文書側に対象ファイルの対応表をむやみに増やさない
+- 複数の領域にまたがる既存成果物の不変条件（インバリアント）を検証するテストは、`*_invariant_test.py`と命名する。リポジトリルートおよび`agent-toolkit/`の`pyproject.toml`にある`pytest-fast-targets`はこの命名規則に基づいて対象を選定し、`pyfltr fast`で実行されるため、通常の動作テストとは別ファイルに分ける。検証対象の探し方は`agent-basics:check-execution`の`references/verification-scope.md`に従い、エージェント向け文書側に対象ファイルの対応表をむやみに増やさない
 - テストの共通ヘルパーモジュールは、`pytools/`配下では`pytools/_internal/_test_helpers.py`、リポジトリ直下では`_test_helpers.py`、`scripts/`配下では`scripts/_scripts_test_helpers.py`にそれぞれ配置する。リポジトリ直下と`scripts/`はどちらも`sys.path`に追加されるため、ヘルパーモジュール名が重複しないよう配慮する。なお、`agent-toolkit/`のテストコードは配布物の独立性を保つため、`pytools/_internal/`を参照しない構成にする。共通処理が必要な場合は、`agent-toolkit-edit`の`references/distribution-and-hooks.md`「agent_toolkitパッケージの配置と層」に記載されたテスト専用パッケージに配置する
 - 各テストは`agent-toolkit/agent_toolkit/_testing/isolation.py`による環境隔離のもとで実行され、ホームディレクトリや設定ディレクトリはテストごとに用意される一時ディレクトリを指す。実際のGit操作を伴うテストでは、コミット履歴、タグ、ブランチ、作業ツリーの状態をテスト自身の一時リポジトリ内に構築し、すべてのGitコマンド呼び出しで対象リポジトリを明示的に指定する。この際、`_testing/git_repository.py`が提供する`init_repository`、`commit_all`、`run_git`を活用できる。実行元リポジトリ自体の不変条件を検証するテストが存在するため、テスト実行時のカレントディレクトリ（cwd）は常に実行元リポジトリのルートを維持する。再検証手順は`docs/development/audit-records.md`「dotfiles-development：Git動作テストの状態準備：2026年10月9日」を参照する
 - 外部ランタイムやCLIを子プロセスとして起動するテストを新設・修正する場合は、同モジュールの`host_environ()`を用いてテスト起動に必要なホスト側の環境変数を構築し、子プロセスの`env`へ渡す。子プロセスに直接環境変数を渡せない実行形態の場合は、`restore_host_environment(monkeypatch)`を使ってテストプロセス自身のHOME・設定ディレクトリ・PATHを一時的に隔離前の状態に戻し、テスト対象の設定や状態は別の一時ディレクトリへ明示的に退避して隔離性を確保する。

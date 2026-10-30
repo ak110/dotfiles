@@ -8,7 +8,9 @@ description: >
   作業項目の本文の起草時、成果物へ書く事実主張の裏付け調査時、ホスト機能の可否・入出力契約の調査時、
   記録の集計・分析時も呼び出す。
   規範・基準・手順・目標値の妥当性、到達性、有無、置き場所を確認する場面でも呼び出す。
-  理解のためコードを読むだけの場合はトリガー不要。
+  GitLab CI設定の編集・確認・キーワード仕様・典型パターン・lint実行方法の参照時、
+  pytilpackのモジュール構成・API・extras・CLIの参照時と、`import pytilpack`を含むコードの読み書き時も起動する。
+  これらを除く理解のためのコード読取では起動不要。
 # 編集時の注意点:
 # 著者向けの品質基準だけを扱い、レビュー担当とレビューイーの判断指針はreview-standardsが定める。
 # 規範本文はreferences/配下へ置き、本体には目的と読込条件だけを置く。
@@ -75,6 +77,21 @@ description: >
 | 認証・認可を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「認証・認可設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「認証・認可設計」` | |
 | ファイルアップロードを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「ファイルアップロード設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「ファイルアップロード設計」` | |
 | 状態を変える多段手順の工程順を設計・変更・レビューする前 | `references/design-runtime.md`の「状態を変える多段手順の工程順」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「状態を変える多段手順の工程順」` | |
+| テストの網羅範囲の管理方法を設計・変更・レビューする前 | `references/test-coverage-ledger.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/test-coverage-ledger.md` | |
+| 画面を操作する探索的な試行の実施要否を決める前 | `references/testing.md`の「検証単位の選定」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` | |
+| DBトランザクションを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「DBトランザクション設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「DBトランザクション設計」` | |
+| クエリ性能を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「クエリ性能設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「クエリ性能設計」` | |
+| DB更新と外部送信の整合性を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「DB更新と外部送信の整合性設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「DB更新と外部送信の整合性設計」` | |
+| Webhook受信を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「Webhook受信設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「Webhook受信設計」` | |
+| 常駐サービスを設計・変更・レビューする前 | `references/design-runtime.md`の「常駐サービス設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「常駐サービス設計」` | |
+| 負荷制御と外部呼び出しを設計・変更・レビューする前 | `references/design-runtime.md`の「負荷制御と外部呼び出しの設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「負荷制御と外部呼び出しの設計」` | |
+
+## 技術資料の確認・参照・読取
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| `.gitlab-ci.yml`の編集・確認時と、GitLab CIのキーワード仕様・典型パターン・lint実行方法を参照する時 | `references/gitlab-ci.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/gitlab-ci.md` |
+| `import pytilpack`を含むコードを読み書きする時と、pytilpackのモジュール構成・API・extras・CLIの使い方を参照する時 | `references/pytilpack.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/pytilpack.md` |
 
 ## 文章の作成時に読む資料
 

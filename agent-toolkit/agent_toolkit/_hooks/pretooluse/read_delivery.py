@@ -1,6 +1,6 @@
 """宣言された操作の前に、主体の文脈に未取得の資料を案内する。
 
-確認は関係する資料のパスを警告にまとめ、通常の操作を継続する。
+初回は資料のパスを案内し、未取得のまま再書込する操作を遮断する。
 取得の観測だけを主体別の記録に反映する。
 取得後は出力と資料の該当行の一致を確かめ、分割した取得を区間の被覆として記録する。
 軽量委譲は起動契約がスキルを使わないため対象外とする。
@@ -31,14 +31,14 @@ from agent_toolkit._common.plugin_roots import (
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command
-from agent_toolkit._hooks import agent_id, document_reads, plugin_resources, rules_context, work_contract
+from agent_toolkit._hooks import agent_id, codex_read_delivery, document_reads, plugin_resources, rules_context, work_contract
 from agent_toolkit._hooks import tool_input as tool_input_fields
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse import dependency_usage, operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, sed_read_range
-from agent_toolkit._hooks.pretooluse.notices import _llm_notice
+from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 lazy from agent_toolkit._common import task_documents
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
 
@@ -128,7 +128,7 @@ def _read_path_variants(tool_name: str, tool_input: dict, cwd: str) -> list[path
 
 
 def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[pathlib.Path, int, int | None]], bool]:
-    """Bashの静的な`sed -n '<開始行>,<終了行>p'`を出力順に返す。
+    """Bashの静的なcat全文読取とsed行範囲読取を出力順に返す。
 
     2番目の値は、移動以外の全ての呼出しが行範囲の読取であり、出力全体を範囲の連結と比べられるかを示す。
     """
@@ -137,25 +137,68 @@ def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[p
         return [], False
     reads: list[tuple[pathlib.Path, int, int | None]] = []
     only_reads = True
+    has_sed = False
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         tokens = invocation.segment.tokens
         if invocation.arguments_known and tokens and pathlib.PurePath(tokens[0]).name == "cd":
             continue
         sed = sed_read_range(tokens) if invocation.arguments_known else None
+        has_sed = has_sed or sed is not None
+        ranges = [sed] if sed is not None else []
+        if invocation.arguments_known and tokens and pathlib.PurePath(tokens[0]).name == "cat":
+            # 出力変換オプションを許さない既存の静的計画で全operandの出力を連結し、結果本文との一致を確かめる。
+            plan = codex_read_delivery.read_plan(shlex.join(tokens))
+            if len(plan) == 1:
+                ranges = [(plan[0].argv[index], 1, None) for index in plan[0].operands]
         if (
-            sed is None
-            or any(marker in sed[0] for marker in ("$", "`", "<", ">", "*", "?"))
+            not ranges
+            or any(any(marker in operand for marker in ("$", "`", "<", ">", "*", "?")) for operand, _, _ in ranges)
             or invocation.output_pipe
             or invocation.output_redirected
             or invocation.captured
-            or not (pathlib.Path(sed[0]).expanduser().is_absolute() or current.resolved)
+            or any(not (pathlib.Path(operand).expanduser().is_absolute() or current.resolved) for operand, _, _ in ranges)
         ):
             only_reads = False
             continue
-        operand, start, end = sed
-        path = pathlib.Path(operand).expanduser()
-        reads.append(((path if path.is_absolute() else pathlib.Path(current.path) / path).resolve(), start, end))
-    return reads, only_reads and bool(reads)
+        for operand, start, end in ranges:
+            path = pathlib.Path(operand).expanduser()
+            reads.append(((path if path.is_absolute() else pathlib.Path(current.path) / path).resolve(), start, end))
+    # catだけの呼出しは従来の全文取得判定へ渡し、sedを含む場合だけ全出力と範囲連結の一致を確かめる。
+    return (reads, only_reads and bool(reads)) if has_sed else ([], False)
+
+
+def _pure_bash_read(command: str, cwd: str) -> bool:
+    """既存の静的読取と、解決済みcdだけを連結した取得操作を判定する。"""
+    if codex_read_delivery.read_plan(command):
+        return True
+    invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
+    if not invocations or any(
+        not invocation.arguments_known
+        or invocation.output_pipe
+        or invocation.output_redirected
+        or invocation.captured
+        or invocation.background
+        or invocation.inline_input
+        for invocation, _current in invocations
+    ):
+        return False
+    # 元の演算子を検証し、構文を省いた呼出し列だけから純粋読取と推定しない。
+    groups = codex_read_delivery.read_command_groups(command)
+    if groups is None:
+        return False
+    current = shell_cwd.CwdResolution(cwd, bool(cwd))
+    reads = False
+    for tokens in groups:
+        if tokens[0] == "cd":
+            changed = shell_cwd.resolve_cwd_change(tokens, current)
+            if changed is None or not changed.resolved:
+                return False
+            current = changed
+        elif codex_read_delivery.read_plan(shlex.join(tokens)):
+            reads = True
+        else:
+            return False
+    return reads
 
 
 def _source_text(path: pathlib.Path) -> str:
@@ -430,7 +473,11 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
         for text in _user_texts(entry):
             context_seen = False
             startup_methods = ()
-            for line in text.splitlines()[:1]:
+            launch_text = text
+            opening = '<atk-auto source="agents-server" kind="delivery">\n'
+            if text.startswith(opening) and text.rstrip().endswith("</atk-auto>"):
+                launch_text = text[len(opening) : text.rfind("</atk-auto>")]
+            for line in launch_text.splitlines()[:1]:
                 # 正式な役割見出しの候補だけでfrontmatterの処理を読み込む。
                 if ".subagent.md" not in line:
                     continue
@@ -626,13 +673,9 @@ def dynamic_targets(
         if selection is not None and selection.is_file():
             targets.append(read_triggers.ReadTarget(selection))
         for candidate in declarations(cwd, host=host):
-            if (
-                _skill(candidate.source) == "writing-standards"
-                and candidate.kind == "操作"
-                and any(
-                    operation.startswith(("path:", "write:", "dependency:")) and matches(operation, tool_name, tool_input, cwd)
-                    for operation in candidate.operations
-                )
+            if candidate.kind == "操作" and any(
+                operation.startswith(("path:", "write:", "dependency:")) and matches(operation, tool_name, tool_input, cwd)
+                for operation in candidate.operations
             ):
                 targets.extend(candidate.targets)
         return list(dict.fromkeys(targets))
@@ -710,6 +753,12 @@ def selected_targets(records: dict, agent: str) -> list[read_triggers.ReadTarget
 
 def _select_targets(session_id: str, targets: list[read_triggers.ReadTarget], agent: str) -> None:
     for target in targets:
+        if target.heading:
+            try:
+                target.body()
+            except ValueError:
+                # 不正な宣言を保持すると、宣言を復旧した後にも旧見出しが残る。
+                continue
         value = json.dumps({"path": str(target.path), "heading": target.heading}, ensure_ascii=False, separators=(",", ":"))
         update_state(session_id, operation_skills.mark_ready("selected-read-target:" + value, agent))
 
@@ -804,12 +853,6 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                     for target, start, end, length, fingerprint in _read_body_proofs(
                         name, inputs, response, read_paths, paths | set(read_paths), cwd
                     ):
-                        if (
-                            name == "Bash"
-                            and operation_skills.resolve_subject(payload) != operation_skills.SUBJECT_CODEX
-                            and agent not in records.get("review-output:" + str(target.path), [])
-                        ):
-                            continue
                         if operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_MAIN and skill_name(
                             target.path
                         ):
@@ -1088,6 +1131,11 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             )
         )
         host = "codex" if is_codex_payload(payload) else "claude"
+        pending.extend(
+            target
+            for target in selected_targets(records, agent)
+            if target not in pending and not target_ready(records, target, agent)
+        )
         method_sources = dict.fromkeys([*_read_paths(tool_name, tool_input, cwd), *sorted(roles)])
         for path in method_sources:
             if path.suffix == ".md" and path.is_file():
@@ -1184,6 +1232,10 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         pending = [target for target in pending if not target_ready(records, target, agent)]
     if not pending:
         return Decision()
+    command = tool_input.get("command")
+    if tool_name in {"Read", "Skill"} or (tool_name == "Bash" and isinstance(command, str) and _pure_bash_read(command, cwd)):
+        _select_targets(session_id, pending, agent)
+        return Decision()
     acquisition_paths = _read_paths(tool_name, tool_input, cwd)
     if any(row.selector == "project-skill" and row_matches(row, tool_name, tool_input, cwd) for row in rows):
         # 選択したSKILLの初動資料を案内し、取得操作は遮らずPostToolUseで観測する。
@@ -1246,6 +1298,16 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 )
             )
     acquisition = "。".join(steps) + "。出力が省略された範囲は分割して取得し、必要な全文を読め。"
+    if not warning_only and written:
+        if any(agent in records.get("read-guidance:" + document_key(target.path), []) for target in pending):
+            return Decision(
+                block=_block_notice(
+                    f"案内済み資料が未取得のため再書込を停止する。未取得資料: {shown}。",
+                    fix=acquisition + "全文取得後に元の書込操作を再発行せよ。",
+                )
+            )
+        for target in pending:
+            update_state(session_id, operation_skills.mark_ready("read-guidance:" + document_key(target.path), agent))
     if warning_only:
         return Decision(
             notices=(
@@ -1468,12 +1530,6 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             _mark(session_id, resolved, agent)
         return
     for target, start, end, length, fingerprint in _read_body_proofs(tool_name, tool_input, response, paths, targets, cwd):
-        if (
-            tool_name == "Bash"
-            and operation_skills.resolve_subject(payload) != operation_skills.SUBJECT_CODEX
-            and agent not in records.get("review-output:" + str(target.path), [])
-        ):
-            continue
         if operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_MAIN and skill_name(target.path):
             continue
         if start == 0 and end == length:

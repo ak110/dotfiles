@@ -663,7 +663,8 @@ def test_direct_hooks_deliver_cli_when_bash_environment_file_is_unavailable(
     plugin_root = notified_entry.parent.parent
     assert notified_entry == entry
     assert plugin_root == rules_context.SHARE_DIR.parent
-    skill = plugin_root / "skills" / "writing-standards" / "SKILL.md"
+    basics = plugin_roots.resolve_plugin_root("agent-basics", plugin_root)
+    skill = basics / "skills" / "writing-standards" / "SKILL.md"
     assert skill.is_file()
     assert "name: writing-standards" in skill.read_text(encoding="utf-8")
     command = next(line.removeprefix("起動部分: ") for line in output.splitlines() if line.startswith("起動部分: "))
@@ -799,8 +800,8 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
 @pytest.mark.parametrize(
     ("skill_name", "operation"),
     [
-        ("search", {"tool_name": "Bash", "tool_input": {"command": "rg x"}}),
-        ("delegation", {"tool_name": "Agent", "tool_input": {"prompt": "調査する"}}),
+        ("agent-basics:search", {"tool_name": "Bash", "tool_input": {"command": "rg x"}}),
+        ("agent-toolkit:delegation", {"tool_name": "Agent", "tool_input": {"prompt": "調査する"}}),
     ],
 )
 def test_session_start_resets_operation_skill_ready_for_main(
@@ -843,7 +844,7 @@ def test_session_start_resets_operation_skill_ready_for_main(
         skill_payload: dict[str, object] = {
             "hook_event_name": "PostToolUse",
             "tool_name": "Skill",
-            "tool_input": {"skill": f"agent-toolkit:{skill_name}"},
+            "tool_input": {"skill": skill_name},
             "tool_response": "起動成功",
             "session_id": "reset-skill",
         }
@@ -853,7 +854,7 @@ def test_session_start_resets_operation_skill_ready_for_main(
 
     _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
 
-    assert (f"agent-toolkit:{skill_name}" in _operation_context(None)) is main_warns
+    assert (skill_name in _operation_context(None)) is main_warns
     assert _operation_context("sub-1") == ""
 
 
@@ -883,7 +884,7 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     assert "実行受付前に終了" in context
     assert f"{host} {event}" in context
     assert "ユーザーへ伝える" in context
-    assert "/agent-toolkit:session-review-batch" in context
+    assert "/agent-toolkit:session-review batch" in context
     log_path = next((session_review.directory() / "launches").glob("*.log"))
     assert str(log_path) in context
     assert error.split("(", 1)[0] in log_path.read_text(encoding="utf-8")

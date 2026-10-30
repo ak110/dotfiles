@@ -7,7 +7,7 @@ version: 1
 # 接続詞「および」の漢字表記は動詞「及ぶ」の連用形と同じ字面であり、字面だけで一律に置換すると
 # 「及び得た」「及びます」などの動詞を接続詞の表記へ書き換えて文意を壊す。このため辞書では置換せず、
 # この接続詞の表記は文脈を読む執筆とレビューで確かめる
-# （agent-toolkit/skills/writing-standards/references/notation-rules.md「日本語の表記ルール」）。
+# （agent-toolkit/skills/wi-standards/references/notation-rules.md「日本語の表記ルール」）。
 rules:
   - expected: または
     pattern: /\u53c8\u306f/

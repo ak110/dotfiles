@@ -982,6 +982,24 @@ main > .toolbar {
     width: auto;
   }
 }
+/* 低い画面では折り返す操作欄が本文を押し潰すため、詳細全体を単一のスクロール領域にする。 */
+@media (max-height: 30rem) {
+  #screen-wi dialog.detail-dialog {
+    overflow-y: auto;
+    scroll-padding-block: var(--space-2);
+  }
+  #screen-wi .detail-dialog > .dialog-frame {
+    display: block;
+    max-height: none;
+  }
+  #screen-wi .detail-dialog .dialog-body {
+    overflow-y: visible;
+  }
+  #screen-wi .detail-dialog .dialog-message {
+    position: static;
+    overflow-wrap: anywhere;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

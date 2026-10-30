@@ -109,7 +109,7 @@ _USER_CONFIRMATION_NOTICE_FIX = (
     "是正の認可は`agent-toolkit:user-confirmation-and-report`の「起動契機」から「認可を要する操作」へ進んで判定せよ。"
 )
 _BUGFIX_NOTICE_FIX = (
-    "不具合の有無・原因・直し方を回答や確認の案へ含める場合は、診断より前に`agent-toolkit:bugfix`を起動せよ。"
+    "不具合の有無・原因・直し方を回答や確認の案へ含める場合は、診断より前に`agent-basics:bugfix`を起動せよ。"
     "説明の補足や委譲・AWIの方針も対象とする。"
 )
 
@@ -279,7 +279,7 @@ def main(payload_text: str) -> int:
             name = match.group(1)
             full_name = f"agent-toolkit:{name}"
             if not is_codex:
-                session_title.observe_skill(session_id, full_name)
+                session_title.observe_skill(session_id, full_name, prompt[len(command_prefix) + match.end() :])
 
             # 対応スキル別にフラグを設定する。
             if (is_codex or is_antigravity_payload(payload)) and (

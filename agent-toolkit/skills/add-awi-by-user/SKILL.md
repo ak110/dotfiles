@@ -30,8 +30,8 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
-| 考慮漏れの指摘を受けて原因を分析する前 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
+| 考慮漏れの指摘を受けて原因を分析する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「対策の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
@@ -54,6 +54,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 | 保存操作に入る前 | `../wi-standards/references/drafting-workflow.md`の「投入」。`../wi-standards/references/drafting-completion.md`の「重複判定」（通常AWI）と「投入前の読み直し」の対象集合と除外の確認 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「投入」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」`、`bash:atk wi add`、`bash:atk wi edit` | |
 | 原稿の意味を確認する前 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`bash:atk wi add`、`bash:atk wi edit` | |
 | 文脈を分けるためWI投入担当へ委譲する場合 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
+| 独立した方針検収または本文検収を依頼する前 | `${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `read:agent-toolkit:*/share/wi-draft-review.parent.md` | |
 | 完成条件や採否を決める値を測定する前 | `references/measurement.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/measurement.md` | |
 
 ## 手順
@@ -68,7 +69,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
    - 引数なしでスキルが起動され、直前の会話の応答で各項目の対応方針がすでに示されている場合は、その内容を登録対象の入力として受け入れ、提示済みの基準でも判断がつかない項目のみを質問する。
    - ユーザーの依頼が範囲を示す表現や網羅的な列挙と、具体例や理由の説明を兼ね備えている場合は、要求単位を確定する前に`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」の該当規定を適用する。事前の調査結果が必要な質問への回答は、手順3の作成主体が調査と根拠の確定を終えた後に送信する。
    - ユーザーがモデル、ツール、担当エージェント、操作手順などの具体的な手段を指定した場合は、その指定が`workflow-phases.md`で定義されているどの開発工程（WI作成・計画・実行・実行レビュー）に向けられたものかを原文から正確に対応付ける。現在のセッションに対する指定はWI作成工程のみに適用し、後続の開発工程に対する要件には含めない。後続工程への適用範囲が原文から一意に定まらず、要件や完成条件に影響を与える場合は、工程ごとの適用範囲を個別の質問で確認し、その回答結果のみを根拠として扱う。
-   - 論文、ベンチマーク結果、他プロジェクトの実績など外部資料を根拠とする改善案を提案・確定する前に、`agent-toolkit:review-standards`を起動し、外部資料に基づく改善案の評価基準を適用する。
+   - 論文、ベンチマーク結果、他プロジェクトの実績など外部資料を根拠とする改善案を提案・確定する前に、`agent-basics:review-standards`を起動し、外部資料に基づく改善案の評価基準を適用する。
    - 対象リポジトリの外部へ成果を反映させる要求については、反映先ごとの終了状態（コミットまでかプッシュまでか）を`agent-toolkit:wi-standards`の`references/awi-body.md`「完成条件」に基づいて判定する。質問ラウンドで確認するのは、反映先の規範や取得済みの認可では決まらず、ユーザー自身の判断が必要な事項に限定する。
    - 観測された問題（失敗、不具合、未対応など）を起点とする要求では、対処方針の選定は原因分析を完了させた後に行う。wi-standardsの共通手順に沿って投入先を確定し、手順3の作成主体が初期調査、原因分析、および類似箇所の見直しを実施して具体的な対策を確定する。対処方針についてユーザー確認するのは、原因が特定された後もユーザー自身の選択が必要な事項が残る場合に限る。要求の目的や対象範囲の確認は本手順の段階で行う。
 3. wi-standardsにおける要求の同一性基準に基づいて独立した要求を分割する。件数の多寡にかかわらず、メインエージェント自身が調査、対策の確定、起草、検収、および保存までを一貫して担当することを原則とする。
@@ -87,11 +88,12 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 回答に依存する質問は次のラウンドへ回し、最終承認は他のユーザー判断がすべて確定してから単独の質問で求める。
 `agent-toolkit:wi-standards`の`references/drafting-workflow.md`「直接起草と独立した検収の選択」の条件に当たる要求では、最終承認の前にも、独立した担当へ方針、要求と出所、調査の根拠を渡して検収する。
 観測された問題を起点とする要求では、同じ一覧も渡す。
-この検収は方針を対象とし、手順3の本文の検収も維持する。
+`share/wi-draft-review.parent.md`の`確認段階: 方針`で同じ要求の方針を検収し、そのsession_idを保持する。
+この検収は方針を対象とし、手順3の本文の検収も同じ担当へ`本文確認`で継続依頼する。
 
 確認で受けた指摘を要求単位に分け、次のいずれかへ分類して、次の確認で報告する。
 
-- 考慮漏れ: 原文、取得済みの調査結果、現物、適用中の規範から導けたのに方針へ反映しなかったもの。`agent-toolkit:bugfix`を起動して原因を分析し、同じ仕組みで漏れうる観点を全方針で見直す。再発防止策を検討してから方針へ反映し、再確認する。
+- 考慮漏れ: 原文、取得済みの調査結果、現物、適用中の規範から導けたのに方針へ反映しなかったもの。`agent-basics:bugfix`を起動して原因を分析し、同じ仕組みで漏れうる観点を全方針で見直す。再発防止策を検討してから方針へ反映し、再確認する。
 - ユーザーだけが持つ新しい情報: 選好、未開示の制約など、登録前の調査では導けなかったもの。要件として反映し、再発防止策は設けない。
 - 前提の誤り: 指摘の技術的前提が現物と一致しないもの。根拠と代替案を示す。
 - 採用しない提案: 検討の結果採らない提案。根拠を示す。
@@ -101,7 +103,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 投入先が元の投入先と異なる場合は、手順2に従い、全投入先を指定して`atk wi submission begin`を再実行する。
 確認の往復中も投入作業のセッション記録を維持する。
 
-承認後に本文を書き、手順3の検収を経て全要求を保存してから手順4へ進む。
+独立検収が必要な要求は方針検収に合格した後にユーザーの最終承認を求める。最終承認を得た後に本文を書き、方針を検収した要求は同じsessionへ本文検収を継続依頼する。手順3の検収を経て全要求を保存してから手順4へ進む。
 起草や検収で新しい判断が出た場合は、その点だけを再確認する。
 中止を求められた場合は保存せずに`atk wi submission end`を実行する。
 作業完了報告には、ユーザーが確認経緯と再発防止策を追跡できるよう、確認の往復回数、指摘ごとの分類、登録した再発防止策のAWIを記載する。

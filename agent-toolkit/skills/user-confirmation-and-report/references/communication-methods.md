@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文の参照基準を適用する前 | `../../review-standards/references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/reviewee.md` |
+| 本文の参照基準を適用する前 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
 | 本文の参照基準を適用する前 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 本文の参照基準を適用する前 | `pending-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md` |
 | 本文の参照基準を適用する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
@@ -60,6 +60,54 @@
 
 1. ユーザーが達成したい目標と解決したい課題を自分の言葉で示し、発話から得た理解と自分が補った前提を区別する。
 2. 発話・記録・現物から確定できる訂正はその場で直して報告する。残る相違だけを`../SKILL.md`「確認要否の判定」と`../SKILL.md`「確認の選択肢を組む手順」で問いにし、「手段の選択」の認識合わせの手段で実際の回答を得る。理解の確認と解決案の承認は別の問いにする。
-3. 回答を元の依頼の目的・要件と照らして次の対応（採用済み案の縮小・撤回・差し替えを含む）を決める。判断は`agent-toolkit/share/rules-main.md`「目的との一致の確認」と`agent-toolkit:review-standards`の`references/reviewee.md`「ユーザー指摘の受領」に従う。
+3. 回答を元の依頼の目的・要件と照らして次の対応（採用済み案の縮小・撤回・差し替えを含む）を決める。判断は`agent-toolkit/share/rules-main.md`「目的との一致の確認」と`agent-basics:review-standards/references/reviewee.md`「ユーザー指摘の受領」に従う。
 
 関係しない工程の実行モードは保つ（`agent-toolkit/share/rules-main.md`「協調と自律」）。委譲先で認識合わせが要る場合は、確認すべき論点を委譲元へ返す。
+
+## 参照資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewee.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee.md` |
+
+## 起動案内と進捗通知
+
+セッション開始時、`clear`実行後、および会話圧縮後の最初の実ユーザー発話に対して、`agent-toolkit:user-confirmation-and-report`の起動を案内する。また、不具合の有無・原因・修正方針を回答や確認に含める場合は、診断前に`agent-basics:bugfix`を起動するよう案内する。両ホストにおいて会話文脈ごとに1回配送し、機械的な注入処理では配送待ち状態を消費しない。発話内容と現物の突き合わせ作業は、同スキルの「原文の保持と取り込み」および「確認要否の判定」に従う。時間の経過のみを理由とした固定手順の再注入は行わない。
+
+案内の対象となる通常発話には、ユーザーが入力したスラッシュコマンドを含める。ハーネスが挿入した通知や機械注入によるターンは対象外とする。生成された注記は単一の`additionalContext`に統合し、Codex payloadにおいても同様に返却する。
+
+進捗のセルフチェック通知（`source="progress-self-check"`）は、前段の案内と別に、呼出主体ごとに30分間隔でPostToolUseと機械注入のターンのUserPromptSubmitが返す。経過時間と短い点検項目だけを示す点検の契機であり、手順本文は含めないため、前段の固定手順の再注入とは別の扱いとする。長い委譲の往復の間も点検の契機を届けるため、この通知は機械注入のターン（定期再確認を含む）にも付ける。実ユーザーの発話（機械注入を除くUserPromptSubmit）を受けたターンには通知を付けず、その主体の次の点検を30分後へ送る。ユーザーが長く操作しなかった後の最初の発話や再開の直後に、待機時間だけで通知が出ることを防ぐためである。
+
+ユーザーが入力した文章は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）として`PostToolUse`にも届く。発話内容を判定材料とする注記は両hookで同一の定義本文を用い、原因・対象・対処の変化に応じた共通の新規性判定に基づいて配送する。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+
+## エージェント宛てメッセージの標識
+
+エージェントに直接渡る出力（`reason`、`additionalContext`、終了コード2のstderr）は、全体を`atk-auto`要素で囲む。hookの出力はユーザーの発言と同じ形式で会話へ注入されるため、機械的に識別できる境界と出所を設定する。
+`source`には、agent-toolkit自身であれば接頭辞のない生成元名を指定し、他の生成元であれば`<所有者>/<生成元>`を指定する。`kind`には通知種別を設定する。
+
+種別は、受け取ったエージェントが通知の原因を除去できるかどうかに応じて選定する。原因を除去できる事象には`warn`、発話ごとの定型配送には`notice`、遮断には`block`を使用する。
+`atk run-script session-review-evidence`は、`info`または`notice`を持つhook通知を問題候補から除外する。そのため、原因や対策を持たない通知に`warn`を付与すると、発話のたびに候補判定が発生する。
+
+```xml
+<atk-auto source="pretooluse" kind="warn">
+detected ...
+</atk-auto>
+```
+
+`systemMessage`や`stopReason`などエージェントに届かないフィールド、および追加メッセージを持たない`permissionDecision: "allow"`の呼び出しには付与しない。
+
+## hook以外で生成する本文の要素
+
+自動生成する本文は、hook以外の生成元であっても`atk-auto`で囲み、`source`と`kind`によって生成主体と用途を区別する。エージェント間のメッセージ配送では、委譲先から委譲元への通知に限り`from`で送信元を示す。境界は最初の開始タグと、それに対応する最後の同名終了タグによって確定する。保存済みの会話ログに含まれる古い要素名についても、読み取り側で引き続き受け付ける。
+
+| 要素 | 対象の本文 |
+| --- | --- |
+| `atk-auto` | hook通知、規範、agent間配送、機械生成の入力 |
+| `forwarded-user-input` | 自動生成本文の中に保持したユーザー自身の入力 |
+
+機械が生成した本文は、ユーザー発話の解釈規範を再読させる注記の対象から除外する。
+スラッシュコマンドはホストが1行目の先頭でのみ解釈するため、コマンドを含む本文では引数の位置に標識を配置する。

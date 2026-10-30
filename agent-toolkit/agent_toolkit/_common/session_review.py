@@ -26,7 +26,8 @@ from agent_toolkit._common import (
     state_paths,
 )
 
-BATCH_SKILL = "agent-toolkit:session-review-batch"
+BATCH_SCOPE = "agent-toolkit:session-review batch"
+LEGACY_BATCH_SCOPE = "agent-toolkit:session-review-batch"
 BATCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_BATCH"
 TARGET_ENV = "AGENT_TOOLKIT_RUN_SKILL_TARGET_REPO"
 LAUNCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH"
@@ -117,7 +118,7 @@ def launch_notice() -> str | None:
     return (
         "振り返りの自動起動が実行受付前に終了し、振り返りを実行できなかった。診断ログ: "
         + "、".join(failures)
-        + "。ログの原因を確認・是正して /agent-toolkit:session-review-batch を実行する。"
+        + "。ログの原因を確認・是正して /agent-toolkit:session-review batch を実行する。"
         "pendingは保持している。この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝える。"
     )
 
@@ -252,7 +253,7 @@ def protected_logs() -> set[pathlib.Path]:
             value = read(path)
         except OSError, ValueError:
             # 読めないmanifestが参照するログを削除しない。他skillの起動は妨げない。
-            return set((state_paths.state_dir() / "run-skill").glob("*session-review-batch*.log"))
+            return set((state_paths.state_dir() / "run-skill").glob("*session-review*.log"))
         if value.get("status") not in {"completed", "resolved"} and value.get("log_path"):
             protected.add(pathlib.Path(value["log_path"]))
     return protected

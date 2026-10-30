@@ -88,7 +88,22 @@ def register_error_handlers(app: quart.Quart) -> None:
 
     @app.errorhandler(subprocess.CalledProcessError)
     async def git_error(error: subprocess.CalledProcessError) -> tuple[quart.Response, int]:
-        del error
+        # WI変更はローカル書込みの後にgit add・commitを行う。読み取りや明示同期の失敗と区別し、
+        # 保存前の検証で起きたGitエラーを保存済みと誤表示しない。
+        command = error.cmd
+        mutation = quart.request.path.rsplit("/", 1)[-1]
+        if (
+            quart.request.method in {"POST", "PUT"}
+            and quart.request.path.startswith("/api/entries")
+            and mutation != "commit"
+            and isinstance(command, list)
+            and len(command) > 1
+            and command[0] == "git"
+            and command[1] in {"add", "commit"}
+        ):
+            state: serve_state.ServeState = app.config["SERVE_STATE"]
+            message = _wi_operations.saved_commit_failure_message(state.root, mutation)
+            return await sync_incomplete(_wi_operations.SyncIncompleteError(message))
         status = 503 if quart.request.method == "GET" else 500
         return quart.jsonify(error="Git同期に失敗しました"), status
 

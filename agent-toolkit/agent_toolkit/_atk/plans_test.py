@@ -351,7 +351,7 @@ def test_commit_ci_review_rejects_noncanonical_working_name(tmp_path: pathlib.Pa
 _SERIES_HEAD = "修正系列の開始時のHEAD"
 """表の名前の識別子の呼称。
 
-`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`がこの呼称で表を名付け、
+`agent-toolkit:commit/references/ci-failure-handling.md`がこの呼称で表を名付け、
 `retired_terms_invariant_test.py`が撤去した旧呼称の置き換え先として記録する。
 """
 

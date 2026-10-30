@@ -1,6 +1,6 @@
 # pushとCI通過確認
 
-pushを実行するエージェントが、push先、更新する参照（ref）、基準情報、CI監視、および証拠データ用の一時領域の管理を担当する。通常コミットの作成、ステージング、コミットメッセージの作成は親スキルに従い、CI失敗の帰属判定と原因分析は`agent-toolkit:bugfix`に従って進める。
+pushを実行するエージェントが、push先、更新する参照（ref）、基準情報、CI監視、および証拠データ用の一時領域の管理を担当する。通常コミットの作成、ステージング、コミットメッセージの作成は親スキルに従い、CI失敗の帰属判定と原因分析は`agent-basics:bugfix`に従って進める。
 
 ## 名指し参照の読込方法
 
@@ -8,11 +8,11 @@ pushを実行するエージェントが、push先、更新する参照（ref）
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/wait-anomalies.md#「ホストによる背景待機の停止後」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/wait-anomalies.md#「ホストによる背景待機の停止後」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/ci-failure-handling.md#「修正commitが必要なCI失敗を修正するエージェント」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md#「修正commitが必要なCI失敗を修正するエージェント」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md#「修正commitが必要なCI失敗を修正するエージェント」` | 判断 | `section:agent-toolkit:*/skills/commit/references/ci-failure-handling.md#「修正commitが必要なCI失敗を修正するエージェント」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `history-rewrite.md#「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `publish.md#「公開工程の続行不能からの再開」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「公開工程の続行不能からの再開」` |
@@ -101,10 +101,10 @@ API接続先を明示的に指定する場合は、ポート番号を含むHTTP(
 
    - GitLabでは、同一プロジェクト内のbridgeが再帰的に参照する下流（downstream）パイプラインやジョブも判定対象に含まれる。別プロジェクトの下流パイプラインは対象外とする
 3. すべての監視対象が終了コード0で完了した場合に限り「CI通過」と判定する。出力が空である場合や成功完了を示すマーカーが存在しない場合は、未判定として扱い直接状況を確認する。判定対象はベースラインに保存されたコミットSHAの実行であり、push後に送信元ブランチが進んだ場合でも同じSHAを対象として判定する。また、ジョブ登録の猶予時間内に新しく登録された実行も判定に含める（この猶予時間は実行が1件も登録されていない状態を識別するための待機であり、判定自体の制限時間とは異なる）。なお、GitHub Actionsにおいて監視対象から除外するのは、`event`が`dynamic`かつワークフロー名が`Dependabot Updates`である実行のみとする
-4. 終了コード6が返った場合は`agent-toolkit:bugfix`を起動し、並行して同じベースラインと引数でコマンドを再度呼び出す。終了コード1が返った場合も同スキルを用いて対処する
+4. 終了コード6が返った場合は`agent-basics:bugfix`を起動し、並行して同じベースラインと引数でコマンドを再度呼び出す。終了コード1が返った場合も同スキルを用いて対処する
 5. 修正作業する際は、元のベースライン待機が終了した時点の出力に含まれるすべての失敗ジョブの集合を修正範囲に含め、そのうえで再度pushする（失敗の全体集合を取得できない場合は、まずその原因を解消する）。
    再pushを行うごとに新しいベースラインを作成して再監視し、前回失敗したジョブが新しいpushの監視対象に正しく含まれていることを確認する。
-   もし含まれていない場合は、`agent-toolkit:bugfix`の`references/ci-failure-handling.md`「修正commitが必要なCI失敗を修正するエージェント」に定める修正系列の定義に従う。修正のコミット方法は、以下の2つの区分から選択する。
+   もし含まれていない場合は、`agent-toolkit:commit/references/ci-failure-handling.md`「修正commitが必要なCI失敗を修正するエージェント」に定める修正系列の定義に従う。修正のコミット方法は、以下の2つの区分から選択する。
    - 原因コミットへ取り込む区分: 以下の3条件がすべて成立する場合に限り、修正を原因コミットへ統合する（amend、またはfixupとautosquash）。
      リモートの更新は、`git push --force-with-lease=<destination ref>:<書き換え前に観測したremote側のOID>`のように期待するOIDを明示して実行する。期待値を省略すると、バックグラウンドの`git fetch`等でリモート追跡ブランチが進んだ際に保護が無効化されるためである。
      具体的な実行手順は、`references/history-rewrite.md`の「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」に従う。
@@ -150,3 +150,17 @@ pushの手前で中断した場合は「push未実行」、push完了後であ�
 
 回復処理およびユーザー確認の手順は、`references/publish.md`「公開工程の続行不能からの再開」に従う。
 CI判定が回復したあとは、保存済みのベースライン、または「pushと監視」節に記載の`--wait-sha`を用いて監視を再開する。公開後操作については、記録された対象と再開位置をもとに同一コミットに対する未完了の工程のみを再開し、すでに成功しているバージョン更新、push、および公開後操作を重複して実行しないようにする。
+
+## 私設GitLabのCLI失敗からの回復
+
+CI待機スクリプト（`wait_ci.py`）がCLIの失敗を示す終了コード3を返したときに限り、状態の照会と証拠取得のために`curl -k`でAPIを直接呼び出す。
+パイプライン一覧、および対象パイプラインごとのジョブ一覧は、返却件数が100件未満になるまで`page`を増やしながら全ページを取得する。
+
+```text
+curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+  "https://${GITLAB_HOST}/api/v4/projects/<project-id>/pipelines?sha=<完全SHA>&per_page=100&page=<page>"
+curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+  "https://${GITLAB_HOST}/api/v4/projects/<project-id>/pipelines/<pipeline-id>/jobs?include_retried=false&per_page=100&page=<page>"
+```
+
+待機の完了条件と終了状態は本書「pushと監視」に従う。

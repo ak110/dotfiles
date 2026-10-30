@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "agent-basics",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "コード・設計・テスト・レビュー・文章の品質基準を提供するスキル集。",
   "author": {
     "name": "aki",

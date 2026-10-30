@@ -14,7 +14,7 @@ Codex thread IDおよびカタログ走査のいずれか1つで指定する。
 元記録の読み込みと由来の再判定をせず、全欄と値を保持する。
 
 本スクリプトはデータ抽出を目的とし、合否を判定しないため、
-`agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
+`agent-basics:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
 引数誤用と照会不能（対象記録の読込不能・モード併用・不正な正規表現・範囲外の行番号）を
 終了コード2とする区分だけを踏襲する。
 """

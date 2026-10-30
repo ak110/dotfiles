@@ -14,19 +14,30 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `states-and-dependencies.md#「承認型UWIと元項目」「終了」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md#「承認型UWIと元項目」「終了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `states-and-dependencies.md#「保留と本文修正」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md#「保留と本文修正」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/reviewee.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「処置の階層」` |
-| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-basics:writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
+| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「ユーザー入力素材の取扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「投入前の読み直し」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「投入前の読み直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md#「受領後の報告」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「受領後の報告」` |
+| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
 
 ## 由来と`source`
 
 `source`属性は、本文全体の由来の初期値を示す。`source`が存在しない項目のみを人間由来とみなし、値が設定されている項目は明示的な由来の記載がない限りエージェント由来として扱う。すでに保存されている値と形式はそのまま保持する。
 
 エージェントが投入する項目では`source`の指定を必須とする。値には、起動中のスキル名からプラグイン名のプレフィックスを除いたもの（`add-awi-by-user`、`process-wi`、`session-review`など）を使用し、該当するスキルがない起票では`agent`を設定する。ユーザーの指示に基づいて投入する場合も同様の規則で値を付与し、人間由来である範囲は明示的な由来の記載によって示す。
-`atk run-skill`によって起動されたセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`であるセッション）が投入するUWIでは、`source`を`run-skill`とし、`--scope`には目的文に示されたスキル名をそのまま渡す。これは、次回以降に同じスキルが実行された際に過去のUWIを正しく識別できるようにするためである。同一セッションで作成されるAWIには、前述の一般的な規則を適用する。
+`atk run-skill`によって起動されたセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`であるセッション）が投入するUWIでは、`source`を`run-skill`とする。一般の確認UWIと報告用UWIのどちらも、`--scope`には目的文のスキル名と起動モードの組を渡す。モードがある場合はスキル名、半角空白、目的文の`起動モード:`の値を連結し、モードがない通常起動ではスキル名だけを渡す。モード語以外の自由記述はscopeに含めない。同一セッションで作成されるAWIには、前述の一般的な規則を適用する。
+
+| 起動スキル | 目的文の起動モード | scope |
+| --- | --- | --- |
+| `agent-toolkit:session-review` | なし | `agent-toolkit:session-review` |
+| `agent-toolkit:session-review` | `batch` | `agent-toolkit:session-review batch` |
+| `agent-toolkit:process-wi` | なし | `agent-toolkit:process-wi` |
+| `agent-toolkit:process-wi` | `single-lane` | `agent-toolkit:process-wi single-lane` |
+| `agent-toolkit:process-wi` | `all-repos` | `agent-toolkit:process-wi all-repos` |
+
+次回の同一起動単位はこのscopeのUWIを取り込み、通常起動や別モードのUWIとは区別する。既存項目の`source`とscopeは保持し、旧保存データの取込互換は`../../user-confirmation-and-report/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」に従う。
 
 個々の要求単位に以下の明示的な由来が記録されている場合は、本文全体の由来よりも優先して適用する。種類ごとに本文の内容を確認して判定する。
 
@@ -44,9 +55,11 @@
 
 由来を明確に区別できない要求は、安全側に倒して人間由来として扱う。人間由来の内容を一部でも含む要求単位を全体的または部分的に不採用とする場合は、事前に元の文面との差異、技術的な理由、および代替案を提示し、ユーザーから明示的な承認を得る。事後承認の予定、変更の可逆性（元に戻せること）、あるいは一部を採用済みであることなどは、承認の判定材料としては扱わない。未承認のまま処理を終了させてしまうと、ユーザーが依頼した範囲が処理対象から失われるためである。
 
-人間由来のWI本文、ユーザーコメント、UWIの回答、または対話中の回答に、外部操作、対象、および範囲が具体的に明記されている場合、その範囲に限り承認として扱う。単なる`source`属性の値、空のコメント欄、エージェント側の推奨文、あるいは「進めてください」といった一般的な了解の発話は、承認とはみなさない。手動で起動された`agent-toolkit:process-wi`の公開工程における承認スコープは、同スキルのSKILL.md「公開工程の承認スコープ」が定める。署名や認証、監査用の複雑な仕組みは設けず、読み書きする主体はユーザーとエージェントのみとする。
+人間由来のWI本文、ユーザーコメント、UWIの回答、または対話中の回答に、外部操作、対象、および範囲が具体的に明記されている場合、その範囲に限り承認として扱う。単なる`source`属性の値、空のコメント欄、エージェント側の推奨文、あるいは「進めてください」といった一般的な了解の発話は、承認とはみなさない。手動で起動された`agent-toolkit:process-wi`の公開工程における承認スコープは、同スキルの`references/lanes.md`「公開工程の承認スコープ」が定める。署名や認証、監査用の複雑な仕組みは設けず、読み書きする主体はユーザーとエージェントのみとする。
 
 要求の一部を別の作業単位へ引き継ぐことを理由に元のWIから除外する場合は、引き継ぎ先のWIが実際に存在し、除外する要求単位を過不足なく含んでいることを確認する。引き継ぎ先が存在しない場合は、元のWIに要求を戻すか、先に新しいWIを確定させる。ただし、同一の委譲元から同時に依頼された一連の分割起票や、投入先リポジトリの外部にある対象を委譲元へ通知して割り当てを委譲元に委ねた場合は、元のWIを先に保存してよい。引き継ぎ先の実在と処置の対応関係は、委譲元が`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「保存の検収」において確認する。
+
+`confirmation: required`のAWIをユーザーが確認済みにした場合は、タイトルとH1直下に明示された方針変更の範囲だけを事前承認として扱う。H2以降にだけ書かれた変更、人間由来の要求の不採用・対象集合の縮小、採否や実現方式が1案に確定していない事項、外部操作の認可は、この承認の対象外とする。外部操作には前段の具体的な対象・操作・範囲の承認を要する。要確認へ戻した場合は、この確認済みによる承認も取り消す。
 
 ## 範囲語と程度
 
@@ -65,7 +78,7 @@
 ## ユーザー専用の記入欄と是正要求
 
 UWIの`## 回答`およびAWIの`## ユーザーコメント`は、ユーザーのみが編集できる節である。エージェント環境から実行された`atk`は、これらの節を含む本文の投入や編集を拒否し、`atk wi edit --body-file`では`## ユーザーコメント`を編集対象から除外して保存済みの内容を保護する。
-エージェント由来の項目に記載されたユーザーコメントや回答が、その項目の前提、対象、方針、採否を否定している場合は、ユーザーからの是正要求として扱う。これを受け取ったエージェントは、対象項目が未終了であれば先に`states-and-dependencies.md`「保留と本文修正」に沿って保留（hold）する。その上で`agent-toolkit:review-standards`の`references/reviewee.md`「ユーザー指摘の受領」に従って採否を確定する。続いて`agent-toolkit:bugfix`の`SKILL.md`「問題を見つけたときの対処」に従い、類似見直しと再発防止策の策定まで完了させる。本文の書き換えは個別事象への対症療法にすぎないため、処置の階層（対策、横展開処置、再発防止策）を同スキルの`agent-basics:bugfix/references/root-cause-remediation.md`「処置の階層」に基づいて明確に区別する。
+エージェント由来の項目に記載されたユーザーコメントや回答が、その項目の前提、対象、方針、採否を否定している場合は、ユーザーからの是正要求として扱う。これを受け取ったエージェントは、対象項目が未終了であれば先に`states-and-dependencies.md`「保留と本文修正」に沿って保留（hold）する。その上で`agent-basics:review-standards/references/reviewee.md`「ユーザー指摘の受領」に従って採否を確定する。続いて`agent-basics:bugfix`の`SKILL.md`「問題を見つけたときの対処」に従い、類似見直しと再発防止策の策定まで完了させる。本文の書き換えは個別事象への対症療法にすぎないため、処置の階層（対策、横展開処置、再発防止策）を同スキルの`agent-basics:bugfix/references/root-cause-remediation.md`「処置の階層」に基づいて明確に区別する。
 ユーザーがこれらの記入欄に処理担当宛ての質問を記載した場合は、その回答をUWIに記録して返却し、その保存完了を、対象の維持・変更を確定して元のWIを終了させるための必須条件とする。
 既存のWI（ステータスは問わない）を別の判断における前提、制約、代替案の不採用理由、完成条件などの根拠として参照する場合も、ユーザー専用記入欄を含めた全文を精読し、「由来と`source`」に定める要求単位ごとの明示的な由来から有効な要求を確定して使用する。エージェント由来の本文記述とユーザーコメントや回答の内容が衝突する場合は、要求単位の由来と`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」に基づいて有効な前提を決定し、ユーザーによって是正された本文側の古い記述は根拠から除外する。根拠として参照する判断の主体が、その項目の是正要求を直接受け取ったエージェント自身でない場合も同様である。
 
@@ -73,5 +86,17 @@ UWIの`## 回答`およびAWIの`## ユーザーコメント`は、ユーザー�
 
 `## ユーザー指摘の逐語引用`に転記された発話は、そのAWIを投入したセッション（投入元セッション）へ向けられた発話であり、質問形式であるか否か、解決済みと明記されているか否か、あるいは`source`の値にかかわらず、投入元セッションにおいて解決済みのものとして扱う。後続の処理側（実行レビュー担当、統合時の完成条件判定など）は、逐語引用そのものを達成すべき要求や回答すべき質問としては扱わず、`## 反映内容と反映先`と`## 完成条件`を正しく解釈するための背景根拠として読み込む。処理側が達成を確認すべきユーザー発話は、処理側宛てに書かれた`## ユーザーコメント`、回答済みUWIの`## 回答`、計画書の`ユーザー指示`行、ならびに完成条件節を持たない人間由来のAWI本文である。
 
-ユーザーからの要求を起点とするWIには、会話内の採否や実装方針の根拠となった原文を逐語的に転記する。`agent-basics:writing-standards`の`references/writing.md`「ユーザー入力素材の取扱い」に従い、ユーザー発話とエージェントの質問・説明・判断を区別する。認可や解釈の判断に再取得が必要な場合は必要な所在情報を残す。転記はユーザー専用の2つの記入欄とは区別する。
+ユーザーからの要求を起点とするWIには、会話内の採否や実装方針の根拠となった原文を逐語的に転記する。`agent-toolkit:delegation/references/writing.md`「ユーザー入力素材の取扱い」に従い、ユーザー発話とエージェントの質問・説明・判断を区別する。認可や解釈の判断に再取得が必要な場合は必要な所在情報を残す。転記はユーザー専用の2つの記入欄とは区別する。
 転記する発話の中に質問が含まれている場合は投入元エージェントが回答を作成し、実際にユーザーへ送達済みの質問に限り、引用箇所の近傍に「回答済み」と明記する。回答内容を確定させただけでは送達完了とはみなさない。WI投入担当による調査結果を必要とする回答の送達時期、および返却後の訂正手順は、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「受領後の報告」に従う。
+
+## 参照資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewee.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee.md` |
+
+## 工程の参照
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes.md#「公開工程の承認スコープ」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lanes.md#「公開工程の承認スコープ」` |

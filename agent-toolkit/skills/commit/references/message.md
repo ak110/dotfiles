@@ -12,7 +12,7 @@
 - エージェント向け文書は配布先エージェントの判断や振る舞いを直接規定するため、判断の分岐条件の変更、規範の削除、機能的な規範の改訂などは`chore`としては扱わない。振る舞いを変更する場合は`fix`、振る舞いを変えない構造整理であれば`refactor`とする。
 - scopeは、変更が単一のモジュールや特定の機能に閉じている場合に限り、短い名詞で指定する（努力目標）。
 - descriptionは日本語で記述し、変更対象と変更内容または問題の種類が一目で把握できる簡潔な表現にする。複数の変更が含まれる場合は共通の目的にまとめて件名とし、変更が必要となった背景や個別の詳細事項は本文に記載する。エンドユーザーが呼び出すAPI名、設定キー、画面上で目にする識別子などはそのまま表記し、読み手が直接知り得ない内部識別子のみを必要に応じて平易な言葉に言い換える。
-- 本文の記述は任意とする。本文を記載する場合は、`agent-basics:writing-standards/references/writing.md`「文章の共通規定」に従う。
+- 本文の記述は任意とする。本文を記載する場合は、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」に従う。
 
 ## 名指し参照の読込方法
 
@@ -21,7 +21,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details.md#「矛盾の原因調査」` | 判断 | `section:agent-basics:*/skills/review-standards/references/judgment-details.md#「矛盾の原因調査」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「文章の共通規定」` |
 
 ## `Co-Authored-By:`
 

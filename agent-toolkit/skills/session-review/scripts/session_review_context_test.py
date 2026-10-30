@@ -39,7 +39,7 @@ def test_prepare_keeps_whole_flow_and_delegate_statistics(
                     "content": [{"type": "tool_result", "tool_use_id": "read-1", "content": "結果" * 1000}],
                 },
             },
-            support.claude_call("2026-10-10T00:00:03Z", "skill", "Skill", {"skill": "agent-toolkit:bugfix"}),
+            support.claude_call("2026-10-10T00:00:03Z", "skill", "Skill", {"skill": "agent-basics:bugfix"}),
         ],
     )
     work = tmp_path / "work"
@@ -52,7 +52,7 @@ def test_prepare_keeps_whole_flow_and_delegate_statistics(
     assert result["conversation_utf8_bytes"] == len(document.encode("utf-8"))
     assert "reader_ranges" not in result and "conversation_ranges" not in result and "main_known_scope" not in result
     stats = pathlib.Path(result["stats_path"]).read_text(encoding="utf-8")
-    assert "/repo/rules.md" in stats and "agent-toolkit:bugfix" in stats
+    assert "/repo/rules.md" in stats and "agent-basics:bugfix" in stats
     assert "2000字・6000バイト" in stats
     assert "agent-child:2" in stats
     context = user_events.extract_session_context(parent)

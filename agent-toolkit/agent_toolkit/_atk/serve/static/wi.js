@@ -1221,7 +1221,6 @@ async function reloadOpenDetailFromExternalChange() {
   if (deleteConfirmationInvalidated) setTextMessage('detail-alert', DELETE_RECONFIRM_MESSAGE);
   else if (syncIncompleteNotice?.sessionGeneration === detailSessionGeneration &&
     syncIncompleteNotice.filename === resolvedEntry.filename) {
-    // 再取得で本文は保存後の最新値になるため操作は有効のままにし、他ホストへ未反映である案内だけを保つ。
     setTextMessage('detail-alert', syncIncompleteNotice.message);
   }
 }
@@ -1311,6 +1310,24 @@ async function runDetailMutation(pendingKey, pendingOptions, request, successMes
     result = await (runPending(pendingKey, pendingOptions, request));
   } catch (error) {
     detailMutationPending = false;
+    if (pendingKey !== 'confirmation' && error.payload?.code === 'sync_incomplete' &&
+        sessionGeneration === detailSessionGeneration && currentEntry?.filename === filename) {
+      const message = error.message;
+      detailReloadDeferred = false;
+      if (pendingKey === 'delete') {
+        closeDetailDialog({force: true});
+        await loadEntries({showLoading: false});
+        deliverOperationMessage(message, true);
+      } else {
+        syncIncompleteNotice = {sessionGeneration, filename, message};
+        // 応答はローカル保存済みを保証する。保存した値を表示へ切り替え、後続の編集では通常の入力保持へ戻す。
+        setDetailMode('view');
+        await reloadOpenDetailFromExternalChange();
+        await loadEntries({showLoading: false});
+        deliverOperationMessage(message, true);
+      }
+      return;
+    }
     if (detailReloadDeferred) {
       detailReloadDeferred = false;
       await (reloadOpenDetailFromExternalChange());
@@ -1592,6 +1609,11 @@ async function createEntry(event) {
     await (clearFilters());
     deliverOperationMessage(createResultMessage(isBatch, result));
   } catch (error) {
+    if (error.payload?.code === 'sync_incomplete') {
+      await clearFilters();
+      deliverOperationMessage(error.message, true);
+      return;
+    }
     deliverOperationMessage(`項目を追加できませんでした。 ${error.message}`, true);
     if (byId('create-dialog').open) byId('create-content').focus();
   }

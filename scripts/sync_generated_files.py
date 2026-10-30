@@ -42,9 +42,9 @@ RETURN_TARGETS = (
     ("lane-integration", "share/exec.parent.md", "統合の返却契約", 2),
     ("copilot-review-audit", "skills/process-wi/references/review-audit-launch.md", "監査担当の返却契約", 3),
     ("refine-prompt", "skills/refine-prompt/SKILL.md", "評価担当の返却契約", 3),
-    ("defect-investigation", "skills/bugfix/references/investigation-delegation.md", "調査担当の返却契約", 3),
+    ("defect-investigation", "skills/delegation/references/investigation-delegation.md", "調査担当の返却契約", 3),
     ("external-write-review", "skills/external-write-review/SKILL.md", "投稿前レビューの返却契約", 3),
-    ("bulk-replace-review", "skills/writing-standards/references/bulk-replacement.md", "一括置換後レビューの返却契約", 3),
+    ("bulk-replace-review", "skills/delegation/references/bulk-replacement.md", "一括置換後レビューの返却契約", 3),
     ("usability-review", "share/usability-review.parent.md", "ユーザビリティレビューの返却契約", 2),
     ("session-termination", "share/session-termination.parent.md", "公開担当の返却契約", 2),
 )
@@ -102,7 +102,7 @@ def sync_return_contracts(root: Path = REPO_ROOT) -> None:
                 return match[0]
             target = root / reference if reference.startswith("agent-toolkit/") else source.parent / reference
             if reference == "exec-review-recording.md":
-                target = plugin / "skills/review-standards/references/exec-review-recording.md"
+                target = plugin / "share/exec-review-recording.md"
             if not target.is_file():
                 return match[0]
             return "`" + Path(os.path.relpath(target, path.parent)).as_posix() + separator + heading + "`"

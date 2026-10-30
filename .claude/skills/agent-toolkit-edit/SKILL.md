@@ -23,17 +23,17 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-repo-layout/SKILL.md#「ディレクトリ構造に関する注意点」` | 判断 | `section:*/skills/dotfiles-repo-layout/SKILL.md#「ディレクトリ構造に関する注意点」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-additions.md#「規範追記時の判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「規範追記時の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「責務と構成」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「責務と構成」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/investigation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/agent-documents-basics.md#「読込表の宣言」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/agent-documents-basics.md#「読込表の宣言」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/agent-documents-basics.md#「読込表の宣言」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/agent-documents-basics.md#「読込表の宣言」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-skills.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「定義の所有者」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「定義の所有者」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-development/SKILL.md#「開発手順」` | 判断 | `section:*/skills/dotfiles-development/SKILL.md#「開発手順」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/delivery-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/session-state-and-flags.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/session-state-and-flags.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delivery-scope.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/session-state-and-flags.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
@@ -56,7 +56,7 @@ description: >
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`: メイン向けの共通規範および各ホスト固有の規範。
 - `agent-toolkit/share/rules-common.codex.md`: Codexの全エージェント向けの規範。
 - `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範およびClaude Code固有の規範（Codex固有の差分が必要な場合は`rules-subagent.codex.md`を追加する）。振り分け基準は`agent-basics:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う。
-- 環境変数の命名規則として、配布物内で完結するものは`AGENT_TOOLKIT_<PURPOSE>`、個人環境で完結するものは`DOTFILES_`を接頭辞とする。一覧は`<plugin root>/skills/writing-standards/references/claude-hooks.md`にある。
+- 環境変数の命名規則として、配布物内で完結するものは`AGENT_TOOLKIT_<PURPOSE>`、個人環境で完結するものは`DOTFILES_`を接頭辞とする。一覧は`references/claude-hooks.md`にある。
 
 参照方向は「dotfilesリポジトリ → プラグイン」および「プラグイン ↔ ルールファイル」を許容する。
 `pytools/`は同一リポジトリ内のagent-toolkitをeditableインストールして解決するため、`_`で始まるプライベートなサブパッケージもインポートしてよい。プライベートなモジュールを移動または改名する場合は、同一の変更で`pytools/`側のインポートも揃える。
@@ -80,10 +80,10 @@ description: >
 本プラグインはdotfilesユーザー以外にも配布されるため、環境によって異なる可能性のある設定値やディレクトリ構成などの前提は、条件付きで記述する。
 
 - 本文、docstring、コメントには配布物自身の挙動や仕様を記述し、個人用フックとの連携などエンドユーザー環境側の固有設計は含めない。
-- agent-toolkit同梱スキルは、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で記述する（努力目標）。`.claude/skills/`のプロジェクトローカルスキルは単体のスキル名とし、サブエージェント名は省略しない完全名称で記述する。
-- 配布物が参照する単一情報源（SSOT）は配布物内に配置し、dotfiles固有のファイルや非配布ファイルを参照先に指定しない。例外として、実測値を根拠とする条文が参照する監査記録`docs/development/audit-records.md`は配布物外に置く（失効判定でのみ参照するため）。記録先は`agent-toolkit:writing-standards`の`references/investigation.md`で定めている。
+- agent-toolkit同梱スキルは、`agent-basics:review-standards`のようにプラグイン名で修飾した完全名で記述する（努力目標）。`.claude/skills/`のプロジェクトローカルスキルは単体のスキル名とし、サブエージェント名は省略しない完全名称で記述する。
+- 配布物が参照する単一情報源（SSOT）は配布物内に配置し、dotfiles固有のファイルや非配布ファイルを参照先に指定しない。例外として、実測値を根拠とする条文が参照する監査記録`docs/development/audit-records.md`は配布物外に置く（失効判定でのみ参照するため）。記録先は`agent-basics:writing-standards`の`references/investigation.md`で定めている。
 - ファイル編集時に`pytools/claude_hook/pretooluse.py`の固有名チェックが個人環境固有の識別子を検出した場合は、汎用的な表現へ置き換える。
-- 配布物スキルの本文では、フックの挙動をエンドユーザーが観測できる結果として示し、ハッシュ値の比較や状態フラグの更新といった内部実装の詳細は記載しない（努力目標）。ただし、状態フラグやフック間連携の仕様をSSOTとして集約している`<plugin root>/skills/writing-standards/references/session-state-and-flags.md`などは例外とする。
+- 配布物スキルの本文では、フックの挙動をエンドユーザーが観測できる結果として示し、ハッシュ値の比較や状態フラグの更新といった内部実装の詳細は記載しない（努力目標）。状態フラグやフック間連携の内部仕様は`references/session-state-and-flags.md`へ集約する。
 
 スキルやサブエージェントを編集する際は、次の事項を守る。
 
@@ -94,7 +94,7 @@ description: >
 
 ## スキル間の連携
 
-スキル間の依存関係は、`single-lane-process`側が共通契約を参照して上書き内容を定義する一方向依存とする。共通側の改訂負担を減らすため、`agent-toolkit/skills/single-lane-process/`以外の`agent-toolkit/`配下の文書では`single-lane-process`を名指しで参照しない（努力目標）。ただし、起動コマンドを案内する`docs/`配下の解説や方針記録はこの対象外とする。
+process-wiのモード固有資料は、共通契約を参照して読み替えを定義する。共通側の工程はモード固有の資料へ依存させず、起動時に引数に合う資料を選択する。
 
 ## バージョン更新
 
@@ -115,8 +115,8 @@ description: >
 - `install-claude.sh`の`FILES`、`install-claude.ps1`の`$files`、および`agent-toolkit/rules/`配下のMarkdownファイル一覧は完全一致を保つ。この整合性は`install_script_ssot_invariant_test.py`で検証し、`uv run python scripts/sync_generated_files.py`で同期する。
 - 配布物スキルの外部インターフェース（判定区分、出力フォーマット、後始末コマンドの分岐、サマリー表現など）を追加・削除・変更する場合は、呼び出し元を検索し、連携先の記述も同一の計画内で更新する。
 - `agent-toolkit/rules/01-agent.md`・`02-agent-operations.md`および`agent-toolkit/share/rules-common.codex.md`は、`.chezmoi-source/dot_codex/AGENTS.md`の生成元ファイルである。同期は`uv run python scripts/sync_generated_files.py`で行い、計画への記載は`references/version-bump.md`「plan modeでの取り扱い」の派生物の規則に従う。
-- `agent-toolkit/share/rules-main*.md`や`rules-subagent*.md`の編集はファイルの自動生成や配布一覧の変更を伴わないが、プラグインのバージョン更新は必要である。各起動区分へどの規範が届くかは、`agent-toolkit:writing-standards`の`references/delivery-scope.md`にある配送範囲表を参照する。軽量なagents_server委譲先には`rules-subagent.md`の共通返却契約短節を自動配送し、全文を省く境界と各modeの権限を配送テストで保持する。
-- 読込表の宣言は各文書の本文の表に置く。宣言と参照先への読込行は`agent-toolkit/read_triggers_invariant_test.py`で確かめる。読込表の別ファイル化の再発は`agent_basics_standalone_invariant_test.py`で確かめる。書き方は`agent-basics:writing-standards`の`references/agent-documents-basics.md`「読込表」に従う。agent-toolkitの文書では、`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「読込表の宣言」にも従う。
+- `agent-toolkit/share/rules-main*.md`や`rules-subagent*.md`の編集はファイルの自動生成や配布一覧の変更を伴わないが、プラグインのバージョン更新は必要である。各起動区分へどの規範が届くかは、`agent-toolkit:delegation/references/delivery-scope.md`にある配送範囲表を参照する。軽量なagents_server委譲先には`rules-subagent.md`の共通返却契約短節を自動配送し、全文を省く境界と各modeの権限を配送テストで保持する。
+- 読込表の宣言は各文書の本文の表に置く。宣言と参照先への読込行は`agent-toolkit/read_triggers_invariant_test.py`で確かめる。読込表の別ファイル化の再発は`agent_basics_standalone_invariant_test.py`で確かめる。書き方は`agent-basics:writing-standards`の`references/agent-documents-basics.md`「読込表」に従う。agent-toolkitの文書では、`agent-toolkit:delegation/references/agent-documents-basics.md`「読込表の宣言」にも従う。
 - 計画ファイルの見出し、固定H3、表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`の構造定数で定義されている。これらを改訂する場合は構造定数を変更し、同一名称を使用している以下の文書も同一の変更単位で揃える。
   - `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`
   - `agent-toolkit/share/`配下の`<役割名>.subagent.md`
@@ -126,8 +126,8 @@ description: >
 
 ## セッション状態フラグ
 
-`agent-toolkit`プラグインで管理する全フラグ一覧のSSOTは、`agent-toolkit:writing-standards`の`references/session-state-and-flags.md`である。フラグを追加・変更する際は、必ず同ファイルを更新する。
-フックの実装・編集やセッション状態の設計・変更する際は、`agent-toolkit:writing-standards`を起動して参照する（フック実装の基準を含む。エージェントの行動規範自体は役割別ルールまたは作業別スキルに置く）。
+`agent-toolkit`プラグインで管理する全フラグ一覧のSSOTは、`references/session-state-and-flags.md`である。フラグを追加・変更する際は、必ず同ファイルを更新する。
+フックの実装・編集やセッション状態の設計・変更する際は、`agent-basics:writing-standards`を起動して参照する（フック実装の基準を含む。エージェントの行動規範自体は役割別ルールまたは作業別スキルに置く）。
 
 ## agent-basicsとの責務境界
 
@@ -135,4 +135,35 @@ description: >
 
 `agent-basics/`の文書を編集したときは、agent-basicsだけを導入したエージェントを読者として単体利用を確かめる。本文中の用語、手順、参照先が、agent-basicsの中で定義されているか一般的な語であるかを1つずつ確かめる。agent-toolkitの工程名、WI系の語、`atk`の操作、役割文書や`share/`の名前などを前提なしに使っていれば、一般的な語へ置き換えるか、プロジェクトがその運用を定める場合に従う条件付きの記述にする。agent-toolkitの判断に今も使う内容は、agent-toolkit側の同名スキルの参照資料へ移す。参照先の実在とagent-toolkitの名前空間・コマンドへの依存は`agent_basics_standalone_invariant_test.py`で確かめられる。新しく持ち込んだ未定義の用語は、この確認で捉える。
 
-agent-toolkitのリソースを編集する前は`agent-toolkit:writing-standards`も適用し、同スキルの読込表から配送、状態、起動、記録に関する運用条件を確認する。すでに取得済みの品質に関する記述は再利用する。
+agent-toolkitのリソースを編集する前は`agent-basics:writing-standards`も適用し、同スキルの読込表から配送、状態、起動、記録に関する運用条件を確認する。すでに取得済みの品質に関する記述は再利用する。
+
+## 参照資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
+
+## エージェント向け文書の技術的条文
+
+- 実機や現物の観測結果を根拠として、エージェント向け文書の技術的な条文（外部ライブラリ、実行環境、外部コマンドの挙動など）を新規に作成または改訂する場合は、観測した事象を条文に明記し、その観測記録を条文を保持するリポジトリの`docs/development/audit-records.md`に残す。
+  記録には、再現条件としての観測日、観測時のバージョン、および再検証手段の3項目のみを記載し、見出しは`<ファイルパス>：<節名>：<日付>`とする。条文本文には観測環境やモデルのバージョンは記載せず、条文の末尾に記録の所在を示す文を1文置く。ただし、適用範囲を定める対象バージョン（参照資料の冒頭に掲げる対象バージョンなど）は条文本文に記載する。
+  常時規範（`AGENTS.md`や`CLAUDE.md`など）では、全エージェントの読み込み量を抑えるため、記録の見出しのみを索引として記載する。条文を別の場所へ移動した場合は、見出しのファイルパスと節名も移動先の位置へ修正する。
+  再検証の結果が条文の記述と異なっていた場合は、再現条件をそろえた上で再検証し、そろえられなかった条件の差異を記録する。条文の失効は、条件をそろえて実施した再検証の結果に基づいて判定する。
+  エンドユーザー向け文書、README、設定ファイル、コードコメント、ならびにユーザーの指示に由来する規範、運用手順、確認時の選択肢の説明は、この記録義務の対象外とする。既存の記述は現行のまま維持する（努力目標）。ただし、既存の条文の誤りが品質（Q）に悪影響を及ぼす場合は、この限定にかかわらず是正要否と対応範囲を判定する。判定は`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
+
+## 開発専用資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| toolkitのPython実装を新設・変更する前 | `references/python.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/python.md` |
+| 機械チェックスクリプトを新設・改修する前 | `references/check-script-design.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/check-script-design.md` |
+| hookの実装や登録を新設・変更する前 | `references/claude-hooks.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks.md` |
+| hookの遮断・警告の判定を新設・変更する前 | `references/claude-hooks-block-warn.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-block-warn.md` |
+| hookの出力フィールドを選択・変更する前 | `references/claude-hooks-output.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-output.md` |
+| hook通知のformatterを実装・変更する前 | `references/claude-hooks-messages.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-messages.md` |
+| セッション状態や内部フラグを変更する前 | `references/session-state-and-flags.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |

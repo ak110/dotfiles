@@ -29,8 +29,8 @@ SCRIPT_PATHS = {
     "wait-compaction-context": pathlib.Path("skills/delegation/scripts/wait_compaction_context.py"),
     "session-review-evidence": pathlib.Path("skills/session-review/scripts/session_review_evidence.py"),
     "session-review-prepare": pathlib.Path("skills/session-review/scripts/session_review_prepare.py"),
-    "session-review-state": pathlib.Path("skills/session-review-batch/scripts/session_review_state.py"),
-    "writing-check-dash": pathlib.Path("skills/writing-standards/scripts/check_dash.py"),
+    "session-review-state": pathlib.Path("skills/session-review/scripts/session_review_state.py"),
+    "writing-check-dash": pathlib.Path("agent_toolkit/_atk/check_dash.py"),
     "wi-quote-check": pathlib.Path("skills/wi-standards/scripts/wi_quote_check.py"),
 }
 

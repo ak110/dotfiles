@@ -9,24 +9,24 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「送信」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「送信」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%82%92%E6%8C%81%E3%81%A4%E5%A7%94%E8%AD%B2%E3%81%AE%E8%B5%B7%E5%8B%95%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%82%92%E6%8C%81%E3%81%A4%E5%A7%94%E8%AD%B2%E3%81%AE%E8%B5%B7%E5%8B%95%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/reviewee.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/sub-agents.md#「agents_serverのfrontmatter」「起動対象と入力の案内」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/sub-agents.md#「agents_serverのfrontmatter」「起動対象と入力の案内」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/sub-agents.md#「agents_serverのfrontmatter」「起動対象と入力の案内」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/sub-agents.md#「agents_serverのfrontmatter」「起動対象と入力の案内」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/investigation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 | 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
 | Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing-claude.md` |
 
 ## 委譲プロンプトの構成
 
-文章量の判定は、`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」に従う。
+文章量の判定は、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」に従う。
 役割を指定した初回起動では`start(subagent_md_path=..., extra_params=...)`から、定型的な継続指示では`send_message(session_id=..., instruction=..., extra_params=...)`からプロンプト本文を生成する。
 受理可能な入力項目名は役割文書のfrontmatterに定義されており、入力条件や値の意味は本文の`## 入力`が所有する。
 継続指示においては、すでに保持されている初回起動時の値を省略し、今回の指示に必要な制御値や変更差分のみを渡す。
@@ -59,7 +59,7 @@
 
 指示に用いる言葉は対象、権限、および完了条件を明確に示し、その枠組みの中で委譲先が技術的な判断を自律的に行えるように記述する。指摘事項を受けた修正指示であっても、要求内容と根拠を提示し、修正範囲や具体的な修正方法を委譲先自身が独立して選定できる条件を整える。
 
-- 委譲先が適用すべき成果物作成やレビューの規範を定めているスキルが、具体的な作業手順も規定している場合は、そのスキル名を必須入力に含める。指摘事項や改善提案に対する修正を委譲する場合は、`agent-toolkit:review-standards`の`references/reviewee.md`を含める。
+- 委譲先が適用すべき成果物作成やレビューの規範を定めているスキルが、具体的な作業手順も規定している場合は、そのスキル名を必須入力に含める。指摘事項や改善提案に対する修正を委譲する場合は、`agent-toolkit:/share/exec-review-responses.md`を含める。
 - 内容が確定しているファイル編集を委譲する場合は、`agent-basics:writing-standards`の`references/file-editing.md`を適用条件として渡す。Claude CodeのEditまたはWriteツールを用いて既存ファイルを更新する場合に限り、`agent-basics:writing-standards`の`references/file-editing-claude.md`も編集前に読み込む条件を指定する。なお、軽量起動のwriteでは、`share/agents-server-write.md`の自動付与によってこの条件が伝達される。
 - 委譲先が自身と同一の役割へ再委譲せずに処理を完遂すべき条件について、`<役割名>.subagent.md`、agent定義、適用規範のいずれにも明記がない場合がある。このときは`再委譲`という項目名の必須入力として指示を渡す（`agents_server`には、委譲先のツール利用を委譲元から直接制限するパラメーターが存在しないため）。
 
@@ -69,7 +69,7 @@
 
 ## 起動と観測
 
-役割文書のfrontmatterおよび呼び出し元に記載する`起動対象:`の書式は、`agent-toolkit:writing-standards`の`references/sub-agents.md`「agents_serverのfrontmatter」「起動対象と入力の案内」に従う。
+役割文書のfrontmatterおよび呼び出し元に記載する`起動対象:`の書式は、`agent-toolkit:delegation/references/sub-agents.md`「agents_serverのfrontmatter」「起動対象と入力の案内」に従う。
 `start`ツールは共通パーサーを介して入力内容と起動設定を読み込み、必須項目の欠落、宣言外の入力、不正な新規書式などを起動前に診断する。過去の宣言行の読み取りや既存セッションの継続については互換性処理によって維持される。宣言内容を確認できない古い形式の文書に対しては従来の警告メッセージを返し、モデル工程別のmodel_typeに対応していない役割は起動しない。
 PreToolUseフックは、役割の実行指示を伴う初回起動に対して、サーバー側と同一の宣言内容に基づいてチェックを実施する。
 `send_message`ツールは、構造化メッセージと自由本文メッセージの双方について、サーバー側での配送前にチェックする。
@@ -88,7 +88,7 @@ PreToolUseフックは、役割の実行指示を伴う初回起動に対して�
 - 境界線が機械的に一意に定まらない定性的な多値分類を委譲する場合は、各区分を識別するための具体的な判断事例（校正例）を判断材料として提示する。分類結果から合計や内訳を算出する場合は、保存した明細データを機械的に集計して数値の一致を確認する（努力目標）。
 - 委譲された範囲を超える不可逆な操作に関する差し戻しルールは、`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が定める。AWIの投入は、委譲元が明示的に指示した範囲に限定して実行させる。
 - 対応方針の提案や実装上の制約事項を調査して返却させる場合は、対象リポジトリの方針文書および対象機能の外部仕様文書の該当セクション（絶対パス）を読み込ませ、整合性の評価結果と衝突箇所の有無を報告させる。
-- 点検や調査の作業では、各指摘の裏付けに用いた具体的な手段を報告させる。裏付けを取得できなかった場合、レビュー指摘管理表と`track`を用いた対話フローでは`agent-toolkit:review-standards`のSKILL.mdに従う。それ以外の一般的な調査では証拠が不足している範囲、得られなかった根拠、および追加で必要な検証内容を報告させ、安易に完了としないよう指示する。
+- 点検や調査の作業では、各指摘の裏付けに用いた具体的な手段を報告させる。裏付けを取得できなかった場合、レビュー指摘管理表と`track`を用いた対話フローでは`agent-basics:review-standards`のSKILL.mdに従う。それ以外の一般的な調査では証拠が不足している範囲、得られなかった根拠、および追加で必要な検証内容を報告させ、安易に完了としないよう指示する。
 - 既存の成果物の削除、撤去、または記述の簡潔化を提案する点検作業では、候補ごとに、撤去対象が検出している契約違反の内容、代替となるテストや成果物が同一の違反を検出できる具体的なテスト入力と期待値、および双方の本文を直接確認した結果を報告させる。判断材料を取得する過程で出力の切り詰めや省略が確認された候補は証拠不足として扱わせ、十分な証拠が確認できた候補のみを撤去の判断対象とする。
 - 複数の委譲先におけるツール、権限、モデル、またはホスト環境の能力を比較・分類する場合は、すべての対象に対して同一の機械的な照会コマンドを同一条件下で実行する。条件を揃えられない比較結果は未検証として扱わせ、委譲先による主観的な自己申告を能力判定の根拠として用いることは避ける（単一対象に対する通常のステータス確認や定期的な情報収集はこの対象外とする）。
 
@@ -98,7 +98,7 @@ PreToolUseフックは、役割の実行指示を伴う初回起動に対して�
 
 - 委譲先が作業着手時に読み込む成果物（委譲プロンプトや計画ファイルなど）へ、自身で確認していない具体値や既存実装の挙動・制約を記載する場合は、必ず`未検証`と明記し、作業に着手する前に裏付けを調査するよう指示する。該当箇所の明示には、行番号ではなく見出しや識別子を用いる（努力目標）。
 - 委譲した調査タスクの完了報告を受け取る前に原因をユーザーへ伝える必要がある場合は、確定的な事実ではなく推定であることを明記する。
-- 委譲先が実行する手順として外部コマンドやツールを提示する際の入力契約および根拠の確認手順は、`agent-basics:writing-standards`の`references/investigation.md`に従う。また、toolkit固有の監査や記録の保存については、`agent-toolkit:writing-standards`の同名資料に従う。
+- 委譲先が実行する手順として外部コマンドやツールを提示する際の入力契約および根拠の確認手順は、`agent-toolkit:user-confirmation-and-report/references/investigation.md`に従う。また、toolkit固有の監査や記録の保存については、`agent-basics:writing-standards`の同名資料に従う。
 
 ## 判断材料と一時領域
 

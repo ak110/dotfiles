@@ -11,7 +11,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agents-server-shared-state.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 原因調査で発生位置と直接的原因を確定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
 
 ## 観測できる記録の所在
@@ -55,7 +55,7 @@ MCP再接続に関する監査記録は、`docs/development/audit-records.md`内
 
 通常運用の応答では、`seconds_since_activity`によって最後の活動からの経過時間を確認できる。詳細な絶対時刻や実行パラメーターを突き合わせる調査には、MCPツールの`show(verbose=True)`を使用する。API呼び出しの失敗に関する公開診断情報にはエラー種別、HTTPステータスコード、経過時間が含まれ、初期化診断には受信したメッセージの種別や失敗箇所の詳細が示される。
 
-原因調査に着手する前には`agent-toolkit:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」に従って、実際の起動パラメーターと成否を比較しながら問題の発生箇所を特定・再現する。その際のインプットとして、本書で解説した診断ログの`engine`や`launch_kind`、委譲先CLIの診断ログを利用する。また、SDKや実行環境の条件を統一して不具合を再現する際は、後述の「外部プロセスでの再現」に示す起動手順を用いる。
+原因調査に着手する前には`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」に従って、実際の起動パラメーターと成否を比較しながら問題の発生箇所を特定・再現する。その際のインプットとして、本書で解説した診断ログの`engine`や`launch_kind`、委譲先CLIの診断ログを利用する。また、SDKや実行環境の条件を統一して不具合を再現する際は、後述の「外部プロセスでの再現」に示す起動手順を用いる。
 
 ## 資源記録の読み方
 

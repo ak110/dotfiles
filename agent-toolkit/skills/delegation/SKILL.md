@@ -49,7 +49,7 @@ user-invocable: false
 | 委譲先がプロンプトで`引き継ぎ記録先`を受け取り、最初の記録を書き込む前 | `references/handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` | |
 | 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`が`agent-toolkit:process-wi`の場合） | `../process-wi/references/run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
 | 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`が`agent-toolkit:plan-mode`による直接起動の場合） | `../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` | |
-| 指摘の採否と修正方針を確定する時 | `agent-toolkit:review-standards`を起動し、同スキルの`references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/reviewee.md` | |
+| 指摘の採否と修正方針を確定する時 | `agent-basics:review-standards`を起動し、同スキルの`references/reviewee.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` | |
 | Claude Codeで長時間待機前の会話圧縮、またはバックグラウンドタスクの起動形を判断する時 | `references/waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` | |
 | 停滞の検知と巻き取りを判断する時 | `references/waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` | |
 | agents_serverのexplore・shellを起動する前 | 本書「explore・shellの起動」 | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「explore・shellの起動」` | |
@@ -124,7 +124,7 @@ Claude Codeが会話イベントを処理するために読み込むプラグイ
 - すでに委譲した要求について自ら本文を精読したり、追加調査したり、回答を作成したりする前に、詳細な文脈を保持している元の担当者を確認する。その担当者に対してユーザーの原文、未確定の論点、参照記録を引き渡し、技術的な調査と判断を委ねる。担当者が稼働中であれば追加指示を送り、終了していれば前述の継続・回復・置換の条件に従って処理する。委譲元は認可、全体調整、検収の責任を担い、判断に必要な根拠を確認する。独立した文脈でのレビュー責任や元担当者の終了確認を維持し、書込権限の移動は`references/mandatory-rules.md`「作業ツリーの保護」に従う。
 - 独立したレビュー系統、異なる観点からの評価、先行履歴を前提としない検証は、新しい識別子を用いて起動する。この新規起動は、前項で禁止している同一目的の調査の重複には当たらない。
 - 同一の応答内で複数の継続指示を発行する場合は、送信前に各呼び出しの宛先識別子と本文の組み合わせが正しいことを確認する。
-- ユーザーによる介入が生じた場合は、直ちに強制停止するのではなく、`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」に従って採否を確定した差分のみを追加指示として委譲先へ伝える。作業を停止するのは、介入によって作業対象や前提が無効になり、続行すると誤った成果物が生成される恐れがあり、かつ稼働中の作業が完了するまで対応を先送りできない場合に限定する。
+- ユーザーによる介入が生じた場合は、直ちに強制停止するのではなく、`agent-toolkit:/share/exec-review-responses.md`「指摘発生時の扱い」に従って採否を確定した差分のみを追加指示として委譲先へ伝える。作業を停止するのは、介入によって作業対象や前提が無効になり、続行すると誤った成果物が生成される恐れがあり、かつ稼働中の作業が完了するまで対応を先送りできない場合に限定する。
 - 委譲先を停止した場合は、再起動する前に停止時点の成果物を検収する。完了条件を満たしていれば委譲元が成果を引き取る。未完了の場合は、委譲元が残りを引き取るか、完了済みの工程、試行済みのアプローチ、確認された失敗内容を渡して続きから再起動するかを`references/routing.md`「要否判定」で選ぶ（書込所有権の引き取りは`references/mandatory-rules.md`「作業ツリーの保護」に従う）。
 
 ## 受領と検収
@@ -139,7 +139,7 @@ exploreおよびshellの受領と検収は「explore・shellの起動」の最�
 4. 対象ファイル、退避された成果物、指摘の採否、`気付いた改善点:`の記述を適切に処理する（「受領後の扱い」）。
 
 サブエージェントの出力（レビュー指摘や調査結果）は、指定されたレビュー指摘管理表に記録してから修正作業に着手する。指摘を追加するエージェントは`track`を指定して記録し、`指摘内容`に実際値、期待値、違反している規範や契約の出典、対象への適用根拠を明記する。レビュー対象者は、該当行を一意に特定するキーを用いて応答欄を更新する。
-応答欄の記入時は、事前に`agent-toolkit:review-standards`の`references/reviewee.md`「レビュー指摘管理表への応答」を読み、指定された行頭ラベルと構成に従って記述する（ラベル不足時は`atk review-table respond`の実行が失敗する）。指摘を採用しない（no）行の`根拠の所在:`には、メインエージェントの判断とユーザーの判断のどちらに基づくかも明記する。
+応答欄の記入時は、事前に`agent-toolkit:/share/exec-review-responses.md`「レビュー指摘管理表への応答」を読み、指定された行頭ラベルと構成に従って記述する（ラベル不足時は`atk review-table respond`の実行が失敗する）。指摘を採用しない（no）行の`根拠の所在:`には、メインエージェントの判断とユーザーの判断のどちらに基づくかも明記する。
 
 ## 停滞の検知と巻き取り
 
@@ -153,3 +153,22 @@ exploreおよびshellの受領と検収は「explore・shellの起動」の最�
 上位のエージェントから委譲を受けたエージェントがさらに別のエージェントへ委譲する場合は、本スキルが委譲元に対して定めている規定を自身に適用する。委譲先全般に関する共通規定は`agent-toolkit/share/rules-subagent.md`に従う。
 
 - 上位から受け取った取り決め（作業場所、書込を行う主体、出力言語、プロセスの所有権、不可逆操作の権限と許可範囲）を同一の意味で引き継がせ、子孫エージェントの完了本文を自身で受け取って自身の完了報告に含める。
+
+## 工程で参照する運用資料
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` | |
+| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` | |
+| エージェント向け文書の責務と配置を決める前 | `agent-toolkit:delegation/references/agent-documents-basics.md#「運用条件」「置き場所と配送」「読込表の宣言」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/agent-documents-basics.md#「運用条件」「置き場所と配送」「読込表の宣言」` | |
+| ユーザーの入力素材を整理して取り込む時 | `agent-toolkit:delegation/references/writing.md`の「ユーザー入力素材の取扱い」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「ユーザー入力素材の取扱い」` | |
+| textlintなど文章チェックの診断へ対応する時 | `agent-toolkit:delegation/references/textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/textlint-violations.md#「文の書き直しの委譲と検収」` | |
+| 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/textlint-violations.md#「文の書き直しの委譲と検収」` | |
+| エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:delegation/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delivery-scope.md` | |
+| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `agent-toolkit:delegation/references/sub-agents.md#「%60<役割名>.parent.md%60と%60<役割名>.subagent.md%60の構成」「agents_serverのfrontmatter」「起動対象と入力の案内」「返却形式の設計」「コンテキスト境界」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/sub-agents.md#「%60<役割名>.parent.md%60と%60<役割名>.subagent.md%60の構成」「agents_serverのfrontmatter」「起動対象と入力の案内」「返却形式の設計」「コンテキスト境界」` | |
+
+## 参照資料の取得
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |

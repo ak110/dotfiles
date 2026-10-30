@@ -18,7 +18,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「起動方法別のレビュー基準」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「起動方法別のレビュー基準」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/sending.md#「委譲プロンプトの構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/sending.md#「委譲プロンプトの構成」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
@@ -34,7 +34,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「レビュー修正」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「レビュー修正」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「返却に含まれる既存不良の受領」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「返却に含まれる既存不良の受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md#「エスカレーションの事由別の扱い」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「エスカレーションの事由別の扱い」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/check-execution/references/diagnostics.md#「読む出力」` | 判断 | `section:agent-toolkit:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/diagnostics.md#「読む出力」` | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
 | 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration.subagent.md#「検証結果の警告の判定」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「検証結果の警告の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「完成条件証拠の受領確認」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「完成条件証拠の受領確認」` |
 
@@ -42,7 +42,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 統合を指示する前に統合時の完成条件判定を行う時 | `agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」 | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「統合時の完成条件判定」` | |
+| 統合を指示する前に統合時の完成条件判定を行う時 | `agent-toolkit:/share/exec-review-recording.md`「統合時の完成条件判定」 | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「統合時の完成条件判定」` | |
 | レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` | |
 
 ## 入力
@@ -74,7 +74,7 @@
 - `書込担当一覧`: 重複のない実session IDを格納したJSON配列。統合先メインエージェントと合意済みの担当者を初回入力に含め、起動直後に返された現在のレーン担当者のIDを追加して追送する。担当範囲との対応関係を維持し、担当者の交代、再開、および単一レーンへの追送のタイミングで更新する
 - `引き継ぎ記録先`: `agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う。`再開位置`を指定する再開時、`レビュー修正担当`の起動時、ならびに統合するレーン担当を新規起動する際は、先行する記録をそのまま引き継ぐため`（継続）`と指定する
 
-`CI修正担当`には、`選定結果の出力先ファイル`、`レーン識別子`、`固有指示`、`再開位置`は渡さず、`CI記録`を委譲プロンプトへ直接記述する。`CI記録`の構成項目は`agent-toolkit:bugfix`の`references/ci-failure-handling.md`の定めに従い、1つの入力値にまとめてすべての項目が揃っていることを起動前に確認する。
+`CI修正担当`には、`選定結果の出力先ファイル`、`レーン識別子`、`固有指示`、`再開位置`は渡さず、`CI記録`を委譲プロンプトへ直接記述する。`CI記録`の構成項目は`agent-toolkit:commit/references/ci-failure-handling.md`の定めに従い、1つの入力値にまとめてすべての項目が揃っていることを起動前に確認する。
 
 対象worktree、複製元、プロジェクト規範などは、委譲先が`cwd`およびGitの状態から特定する。
 対象リポジトリへの直接的なpushは委譲元が担当するが、private-notesにおける`atk plans commit`や`atk wi`を通じた保存・公開処理はレーン担当者の責務として残る。これらを混同して一律にpush禁止として指示すると、WIの`adopted`または`rejected`の状態のみが未公開のまま残ることになる。
@@ -147,7 +147,7 @@
 
 ## 統合の指示と受領
 
-検証結果の診断情報、警告、ならびに個別・全体の所要時間は、`agent-toolkit:check-execution`の`references/diagnostics.md`「読む出力」の共通基準に沿って受領する。統合前HEADとの比較および統合固有の是正処理は、`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「検証結果の警告の判定」に従う。
+検証結果の診断情報、警告、ならびに個別・全体の所要時間は、`agent-basics:check-execution`の`references/diagnostics.md`「読む出力」の共通基準に沿って受領する。統合前HEADとの比較および統合固有の是正処理は、`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「検証結果の警告の判定」に従う。
 
 すべての計画における実装の有無を確認し、採用すべき実装が1件でもあるレーンを`マージあり`、実装がないレーンを`マージなし`として確定する（計画ごとの`マージなし`の状態は計画に対応付けて保持する）。レーン担当者に統合処理を委ねる場合は、同一threadに対して`send_message`で指示を送り、`start`は呼び出さず、`引き継ぎ記録先`の指定を省略して起動時の設定を引き継ぐ。同一threadを継続できない場合の新規起動は`## 入力`の規定に従う。レーン担当者が統合を実行する手順は`lane-integration.subagent.md`が規定し（所在参照）、メインエージェント自身がCLIで実行する場合も後述の検収条件を適用する。
 

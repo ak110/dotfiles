@@ -75,6 +75,7 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     # 委譲先セッションの標識。process-loopが委譲先へ渡す環境を検証するテストは、実行元に標識が無いことを前提とする。
     "AGENT_TOOLKIT_DELEGATED_SESSION",
     "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND",
+    "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT",
     "AGENT_TOOLKIT_OWNER_SESSION",
     "AGENT_TOOLKIT_STATUS_HOST_SESSION",
     # process-loop起動セッションの標識。UserPromptSubmitの固定sessionTitleを決める入力であり、
@@ -352,6 +353,8 @@ def import_time_home(home: pathlib.Path) -> Generator[None]:
         for name in CONFIG_DIRECTORY_ENVIRONMENT_NAMES:
             if name != "AGENT_TOOLKIT_RUNTIME_DATA":
                 patch.setenv(name, str(home / name.lower()))
+        # 資料rootをimport時に確定するモジュールにも、試験対象の配布物を使わせる。
+        patch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
         yield
 
 

@@ -41,22 +41,9 @@ if __name__ == "__main__":
 def abort_path() -> Path:
     """`atk wi process-loop`の中断要求を保持する状態ファイルのパスを返す。
 
-    process-loop本体（`process_loop.py`）とStop hookの双方がこのパスを使うため、
-    パスの解決は本モジュールだけで行う。本モジュールはprocess-loopの重い依存を持たず、
-    hookからのimportでも起動コストを増やさない。
+    明示停止の操作と常駐の消費処理が、同じ状態ファイルを参照する。
     """
     return log_path().parent / _ABORT_FILENAME
-
-
-def request_abort() -> Path:
-    """process-loopへ中断を要求し、要求ファイルのパスを返す。
-
-    既に要求がある場合は内容を保ったまま同じパスを返す。
-    """
-    path = abort_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.touch()
-    return path
 
 
 def instruction_path() -> Path:

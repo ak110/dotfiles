@@ -265,3 +265,19 @@ def test_reported_failure_becomes_collectable_only_after_pending_is_cleared(tmp_
     assert log not in session_review.protected_logs()
     session_review.sweep(now=time.time() + 40 * 86400)
     assert not run.exists() and not launch.exists()
+
+
+def test_corrupt_manifest_preserves_new_and_legacy_review_logs():
+    from agent_toolkit._common import state_paths  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    log_dir = state_paths.state_dir() / "run-skill"
+    log_dir.mkdir(parents=True)
+    old = log_dir / "old-session-review-batch.log"
+    new = log_dir / "new-session-review_batch.log"
+    unrelated = log_dir / "other.log"
+    for path in (old, new, unrelated):
+        path.write_text("記録", encoding="utf-8")
+    manifest = session_review.directory() / "runs" / "old.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("{破損", encoding="utf-8")
+    assert session_review.protected_logs() == {old, new}

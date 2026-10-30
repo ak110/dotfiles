@@ -1,7 +1,7 @@
 # 登録全体の統括と対象別担当への受渡し
 
 `atk wi process-loop`は登録集合を取得し、常駐cwdで1つの対話CLIを起動する。
-統括担当は[process-wi-all-repos](../../process-wi-all-repos/SKILL.md)を完遂し、少数候補の対象を自ら処理する。
+統括担当は[process-wi all-repos](../../process-wi/references/all-repos.md)を完遂し、少数候補の対象を自ら処理する。
 常駐プログラムは起動、対象別の所有と準備、完遂判定、続行指示、返却保存と回収を担当する。
 
 ## 名指し参照の読込方法
@@ -10,7 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi-all-repos/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi-all-repos/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
@@ -85,4 +85,4 @@ resumeは既存の準備済み実体と未完了成果をそのまま再利用�
 abort後は現在のセッション終了時に常駐を終了する。
 instructは次の統括起動へ1回渡し、統括が対象に関係する部分を適用する。
 対象別の正常完了、続行不能、未完了工程、再開位置は集合JSONのresult_fileへ保存する。
-返却形式は`agent-toolkit:process-wi-all-repos`の「結果と終了」に従う。
+返却形式は`agent-toolkit:process-wi all-repos`の「結果と終了」に従う。

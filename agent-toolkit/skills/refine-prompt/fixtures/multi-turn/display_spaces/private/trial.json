@@ -1,5 +1,6 @@
 {
   "case": "display-spaces",
+  "kind": "dialogue",
   "source": {
     "url": "https://arxiv.org/html/2610.11559v1",
     "section": "C.1",

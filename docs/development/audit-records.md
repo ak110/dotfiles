@@ -161,6 +161,35 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。分割前の最大の文書`agent-toolkit/skills/wi-standards/SKILL.md`（60,005バイト）は16,945トークンだった。分割後の137件では、最大が13,176トークン（`skills/plan-mode/references/plan-file-standards.md`、45,749バイト）だった。1トークンあたりバイト数の最小は3.10（`skills/plan-mode/references/legacy-plan-file-standards.md`）だった。配布設定`share/codex_config.toml`（当時は`scripts/codex_config.toml`）の`tool_output_token_limit`は20000である。20,000トークンと3.10バイトの積は約62,000バイトであり、実行セルが本文へ付加する分の余裕を取って閾値を48KiB（49,152バイト）とした。48KiBの文書は最悪の比率でも約15,900トークンで、上限に対して約4,000トークンの余裕が残る。
 再検証では同じ集合をo200k_baseで数えて1トークンあたりバイト数の最小値を測り直し、配布設定の`tool_output_token_limit`との積が閾値と付加分の余裕を上回るか確かめる。
 
+### 補完読取と出力予算の契約更新（2026年10月30日）
+
+前述の48KiBは大量読取を案内する閾値であり、個々の出力が省略されない保証値ではない。
+文章主体の内側`max_output_tokens`はUTF-8バイト数÷3の切上げ以上、外側セルは内側予算の合計以上とする。
+nativeの`original token count`が設定予算を超えた場合は、その値以上で1回再取得し、文脈容量を超える本文は分割する。
+この値は取得予算の最低値であり、前述の測定を新たな全資料・全モデルへ一般化した実測値ではない。
+
+`codex_read_delivery.py`の補完読取は元turnのsandbox読取権限を用いる。
+`disabled`ではcwd外を含み、`managed`の`restricted`ではcwd・書込rootと明示`read`・`write`を許可し、`none`を優先する。
+未知の権限では補完しない。
+成功した同一実行、通常ファイルのFD固定、各パス要素のsymlink拒否、元結果の先頭・末尾一致、文脈残量の制限を維持する。
+Preの容量案内を省く判定も同じ権限解決を使う。
+再検証では`codex_read_delivery_test.py`と`pretooluse/large_reads_test.py`で、cwd外の許可・禁止・未知の権限、特殊ファイル、本文不一致、差替え、および単一・複数ファイルの予算案内を比較する。
+本節は確定契約と実装の参照先を記録するものであり、文書更新担当によるテストの再実行結果ではない。
+
+## agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py：並行Readの公開入力：2026年10月30日
+
+独立した観測担当の記録によると、Claude Code 2.1.314、Sonnet 5.5、effort mediumで、Readだけを公開した隔離セッションへ2ファイルの同時取得を指示した。
+各ReadのPreToolUseを一時settingsのhookで捕捉し、プロセスは終了0、標準エラーは空、最終出力は両方の本文を報告した。
+捕捉した2入力では、それぞれのtranscriptにassistant型のレコードは0件で、payloadのtool_use_idとtool_inputも現在の1件だけを示した。
+この観測を根拠に、Pre時点のtranscriptだけでは同じ応答の並行相手の取得先を確定できないと判断した。
+原記録はリポジトリ外に保存されている。
+
+確定した案内方式は、純粋Read・静的Bash読取・Skill起動では依存案内を保留し、次の非取得操作で残る未取得資料を案内するものである。
+本文一致と全文被覆の取得判定、および案内済み資料を未取得のまま再書込する場合の遮断を維持する。
+この観測は変更後の案内方式の動作検証ではない。
+再検証では同じ版条件とReadのみの許可を使い、一時settingsで各Pre入力とtranscriptを保存し、現在のtool_useと並行相手の可視性を比べる。
+変更後の案内は`read_delivery_test.py`と`read_delivery_dispatch_test.py`で、純粋取得後の成功・失敗・省略と、次の非取得操作・再書込・全文取得後の解除を比較する。
+
 ## agent-toolkit/agent_toolkit/_hooks/stop.py：未配送通知を次ターンへ返す：2026年10月10日
 
 Claude Code 2.1.296の非対話CLIで、goalなし・ありの専用sessionを1件ずつ起動した。
@@ -311,7 +340,7 @@ WriteのPreToolUseは原因分析資料の全文32,697文字を返し、ホス�
 本文をhookで代替配送する方式は同月19日の既存判断に反した。宣言型読込表の導入時に再導入された本文配送と、その後の宣言順変更は、後続の全文取得方式で撤去した。
 40,000文字の内部配送予算とホスト保存先のRead分割取得案内を撤去した。
 案内方式へ戻した作業途中の版で、同じ自然入力を使った新規会話を観測した。この途中版は公開履歴の版として再取得する根拠に使わない。
-Claude Code 2.1.311では、`agent-toolkit:bugfix`のSkill起動をhookが取得済みと記録した。
+Claude Code 2.1.311では、`agent-basics:bugfix`のSkill起動をhookが取得済みと記録した。
 詳細資料へのRead案内も届いたが、会話全体にそのReadはなく、原因分析を含むWrite入力がWriteのhook案内より先に生成された。
 全11hookとプロセスの終了コードは0だったが、詳細資料の取得と判断前の利用は確認できなかった。
 この各1回の観測から、別会話での取得や全対象の判断前利用を保証しない。
@@ -375,7 +404,7 @@ Claude Code 2.1.311では、`agent-toolkit:bugfix`のSkill起動をhookが取得
 基準版との`照合状態`は行全文一致1,755、一対一差分21、手動対応5、新規追加9で、未確定は0だった。
 宣言を含む249 sourceのSHA256を分類取得時の作業ツリー本文と照合し、不一致は0だった。
 前述の中間取得時の1,790行から、`agents-server-explore.md`冒頭を指定した宣言1行が削除された。
-その後、`agent-toolkit/skills/writing-standards/references/writing.md`に宣言1行が追加された。
+その後、`agent-toolkit:delegation/references/writing.md`に宣言1行が追加された。
 追加行の参照先は`agent-basics/skills/writing-standards/references/textlint-violations.md`の「textlint指摘への修正方針」である。
 
 4語の検索結果は順に359、815、93、349行の計1,616行である。
@@ -453,7 +482,7 @@ toolkit側原因分析資料とPython資料は、それぞれ全文Readと同じ
 事前に記録する集合はこの3資料に限らず、2 plugin配下を対象とする。
 
 - `agent-basics/skills/bugfix/references/root-cause-analysis.md`
-- `agent-toolkit/skills/bugfix/references/root-cause-analysis.md`
+- `agent-basics:bugfix/references/root-cause-analysis.md`
 - `agent-basics/skills/writing-standards/references/python.md`
 
 次は対象worktreeを`/home/aki/dotfiles/.claude/worktrees/process-wi-lane-05`とする例である。
@@ -558,7 +587,7 @@ tmux内の対話のClaude Code（Opus 5.5）では、ツールで送った見出
 ツール呼び出しだけで地の文を持たない応答は記録に多数あるが、その直後にこの表示は現れなかった。
 再検証では同じ文字列を検索し、表示の直前のアシスタント応答が持つ要素の種類を確かめる。
 
-## agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日
+## agent-toolkit/skills/commit/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日
 
 2026年10月1日、LinuxのGitHub CLI 2.101.0で`ak110/dotfiles`を対象に確認した。
 run `36791008397`が進行中でjob `110143643856`が`completed/success`のとき、job logs APIを`--allow-escape-sequences`付きで取得すると終了コード0で454行の全jobログを保存できた。
@@ -575,7 +604,7 @@ run `36791008397`が進行中でjob `110143643856`が`completed/success`のと�
 APIは全jobログ、`--log-failed`は失敗ステップを返すため、出力件数の一致は求めない。
 進行中runが無い場合はその条件を未観測とし、新しいCIの起動や事象の発生待ちは行わない。
 
-## agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月24日
+## agent-toolkit/skills/commit/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月24日
 
 2026年10月24日、LinuxのGitHub CLI 2.102.0で`ak110/dotfiles`の終了済み失敗run `39987263957`とjob `120529624126`（pytest (3.15)）を対象に確認した。
 job logs APIを`--allow-escape-sequences`付きで取得すると終了コード0で29773行・6090534bytesを保存でき、最長行は600188bytes、外側の時間上限による終了の表示を含んだ。
@@ -826,29 +855,29 @@ Claude Code公式資料「Keep Claude working toward a goal」の「Background w
 
 2026年9月3日にgit version 2.43.0で、upstreamを設定した専用branchをローカルの`develop`へ統合した直後に`branch -d`が未統合として拒否されることを確認した。再検証は`git branch -vv`で追跡先を確認して同じ状態の`branch -d`の終了コードを観測する。
 
-## agent-toolkit/skills/review-standards/SKILL.md：レビュー指摘管理表の共通操作：2026年10月8日
+## agent-toolkit/share/review-table-operations.md：レビュー指摘管理表の共通操作：2026年10月8日
 
 agent-toolkit 2.199.0の基準commitは2026年10月8日「Merge pull request #147 from ak110/develop」、`3b3932b5`で、review-table実装の差分は無い。公開CLIで、通常名と`ci-3b3932b.exec-review.tsv`の表をそれぞれ`atk review-table init <パス>`で作成した。両方とも終了コード0で、`wc -c <パス>`は0バイトを示した。`atk review-table validate <パス>`も両方が終了コード0で、応答欄を含めた検証結果は0件だった。ヘッダーと仮の行は追加していない。
 
 再検証ではmanaged-tempへ異なる通常名とCI名のパスを用意し、前記のinit、バイト数確認、validateを順に実行する。列の順序と旧形式の読み取り互換は`atk review-table --help`で確認する。
 
-## agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月7日
+## agent-basics/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月7日
 
 2026年9月7日、git 2.43.0で`assert expanded_common_job_count + len(statusline_jobs) == 7`を検索する`git grep -n`が一致0件を返し、同じ文字列を検索する`git grep -nF`が1件返すことを確認した。再検証は正規表現のメタ文字を含む行を対象リポジトリの追跡ファイルから1件選び、`git grep -n`と`git grep -nF`の一致件数を比べる。
 
-## agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（1）
+## agent-basics/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（1）
 
 2026年9月8日、ripgrep 15.2.0で実際に動かして確かめた。隠しディレクトリ配下の追跡ファイルだけが含む文字列に対し、リポジトリrootを対象とする`rg -n --fixed-strings`は一致0件を返した。同じ文字列を対象とする`git grep -nF`はその文字列を含む追跡ファイルを返した。再検証は隠しディレクトリ配下の追跡ファイルだけが含む文字列を1件選び、両コマンドの一致件数を比べる。
 
-## agent-toolkit/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（2）
+## agent-basics/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（2）
 
 2026年9月8日、ripgrep 15.2.0で、隠しディレクトリ配下のファイルに存在する文字列が、`--hidden`の無い実行で一致0件となり、付けた実行で一致することを実際に動かして確かめた。再検証は隠しディレクトリ配下のファイルへ一意な文字列を1件置き、`--hidden`の有無で一致件数を比べる。
 
-## agent-toolkit/skills/search/SKILL.md：引数とシェルの扱い：2026年9月14日
+## agent-basics/skills/search/SKILL.md：引数とシェルの扱い：2026年9月14日
 
 2026年9月14日、Git 2.43.0で実際に動かして確かめた。`grep.lineNumber=true`を指定した`git grep -h -m 1 -F -e <固定文字列> -- AGENTS.md`は`3:<本文>`を返し、同じ検索へ`--no-line-number`を指定すると`<本文>`だけを返した。再検証は`git -c grep.lineNumber=true grep -h -m 1 -F -e <固定文字列> -- <追跡ファイル>`と、`-h`を`--no-line-number`へ置き換えた検索の出力を比較する。
 
-## agent-toolkit/skills/search/SKILL.md：引数とシェルの扱い：2026年10月9日
+## agent-basics/skills/search/SKILL.md：引数とシェルの扱い：2026年10月9日
 
 2026年10月9日、Claude Code 2.1.295のBashで`type grep`がシェル関数を返し、ugrep 7.8.4へ転送することを確認した記録に基づく。GNU grepは3.11だった。ignore・binaryの除外で一致する内容を持つ対象でも標準出力が空・終了コード1となった。`.{0,160}a.{0,160}`はugrepで複雑度エラーを標準エラーへ出力し、標準出力は空・終了コード2だった。上限を小さくした`.{0,30}a.{0,30}`も終了コード2で、繰り返しを片側だけにした`a.{0,400}`は終了コード0だった。同じテキストへの`command grep -o -E '.{0,160}a.{0,160}'`は`a`を出力して終了コード0だった。この節のClaude関数の観測は入力WIが保持する対照記録に由来する。
 
@@ -885,7 +914,7 @@ A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「�
 入力WIの基準期間は次の方法で再測定した。最初のCodex由来commit 2026年8月2日「fix(agent-toolkit): プロジェクト規範を実態より優先してコミット帰属を統一する」、`4cef410f8`より前のClaude由来787commitについて、Markdown追加行をhunkごとに数えた。同じ集合で、句点だけの数え方は1400/16182文（8.65%）、ブロック末も数える方法は1879/22925文（8.20%）だった。この再測定値は入力WIの観測に由来し、2026年9月16日の区分ごとの記録と集計単位が異なるため、数え方による差だけを閾値維持の根拠とする。
 再検証では前掲の`--report`を使い、段落、句点の無い箇条の項目、引用内の段落を個別に数え、同じブロックの折返しを1文として数えることを確かめる。規範の一括改訂後は`uv run --frozen pyfltr run-for-agent --commands=agent-doc-tone`をパス指定なしで実行し、全対象への到達と密度超過の診断の不在を確認する。上記の旧値と比べる場合は数え方と集計単位をそろえる。
 
-## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日
+## agent-basics/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日
 
 配送範囲表のAntigravityの2列、作業ディレクトリのプロジェクト規範の行、agent-toolkitのスキルの行、Codexの列の`~/.codex/AGENTS.md`の配置条件の根拠である。
 
@@ -1010,7 +1039,7 @@ Readを経ない取得手段（Bashのリダイレクトでの作成、`cp`で�
 次に`--tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}'`も指定して実行する。
 両実行のstream-jsonの`system`/`init`にある`tools`と`mcp_servers`を比較する。
 
-## agent-toolkit/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月18日（2）
+## agent-toolkit/skills/user-confirmation-and-report/references/investigation.md：実行結果の検証：2026年10月18日（2）
 
 観測した日付は2026年10月18日、版数はClaude Code 2.1.302とcodex-cli 0.163.0である。
 `atk wi process-loop`と`atk run-skill`の可用性確認の固定プロンプトで、変更前の起動形（本作業の候補のモデルとeffortの通常起動）と変更後の軽量起動を1回ずつ比べた。
@@ -1118,27 +1147,27 @@ MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すた
 - 観測した版数: uvが作成したWindows runnerの仮想環境。観測したPythonの正確な版は未確認。Python公式`Doc/library/venv.rst`の3.7.2の変更記録はredirectorの仕様の根拠であり、観測版とは区別する
 - 再検証手段: Windows仮想環境の`sys.executable`で子を起動し、`Popen.pid`と子の`os.getpid()`の標準出力を比べる。子の自己申告PIDとの一致を求める試験と、`Popen.pid`をプロセスの木の根として停止・生存確認に使う試験を分けて確認する
 
-## agent-toolkit/skills/writing-standards/references/session-records.md：H1直下：2026年9月2日
+## agent-toolkit/skills/session-review/references/session-records.md：H1直下：2026年9月2日
 
 2026年9月2日に`~/.claude/projects`配下と`~/.codex/sessions`配下の記録で確認した。再検証は両ディレクトリの記録から対象のキーを検索する。
 
-## agent-toolkit/skills/writing-standards/references/session-records.md：集計値の典拠：2026年9月3日
+## agent-toolkit/skills/session-review/references/session-records.md：集計値の典拠：2026年9月3日
 
 本節の記述は2026年9月3日に`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。再検証は同じ2つの関数を読む。
 
-## agent-toolkit/skills/writing-standards/references/session-records.md：スキル起動の判定：2026年9月10日
+## agent-toolkit/skills/session-review/references/session-records.md：スキル起動の判定：2026年9月10日
 
 2026年9月10日に確認した。`~/.claude/projects`配下でClaude Code 2.1.252と2.1.267の記録を読んだ。`Skill`ツールの`tool_use`要素が`input.skill`にスキル名を持つことを確認した。対応する`tool_result`要素の`content`は`Launching skill: <スキル名>`と一致した。
 同日、`~/.codex/sessions`配下のrollout記録2169件のうち`agent-toolkit:exit-session`を含む1527件を対象に、先頭120件のレコード種別を集計した。このスキル名が現れたのは、`world_state`、`developer`ロールの`message`、`compacted`、`function_call_output`および`custom_tool_call_output`だけであった。
 同日、codex-cli 0.154.0の同じ2169件に対し、`atk wi process-loop`がCodexへ渡す起動プロンプトの完全一致を数えた。一致は0件であった。いずれの記録も最初のuser役レコードの本文は実行環境が挿入する前置きであった。前置きは``# AGENTS.md instructions``または``<recommended_plugins>``で始まる。`agent-toolkit:process-wi`をuser役の本文へ含む記録は304件であった。この304件の`session_meta`を確認すると、`originator`は`agent-toolkit-codex-app-server`が303件、`codex-tui`が1件であった。
 再検証はClaude Codeの記録から`Launching skill:`を含む行を1件取得して`tool_result`の構造を確認し、Codexの記録から同じスキル名を含む行を取得してレコード種別を確認する。あわせてCodexの記録から`atk wi process-loop`が渡す起動プロンプトの完全一致と包含の件数を数える。user役レコードの`text`の先頭が前置きであることも確認する。
 
-## agent-toolkit/skills/writing-standards/references/session-records.md：Claude Codeの記録：2026年10月6日
+## agent-toolkit/skills/session-review/references/session-records.md：Claude Codeの記録：2026年10月6日
 
 2026年10月6日にClaude Code 2.1.291の本体（`~/.local/share/claude/versions/2.1.291`）を確かめた。出力の項目`narration_block_indexes`の説明は該当する`thinking`ブロックを「server summaries of the prose between tool calls, not the model's own reasoning」と記す。
 本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して再検証する。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
 
-## agent-toolkit/skills/writing-standards/references/session-records.md：暗号化された値：2026年10月7日
+## agent-toolkit/skills/session-review/references/session-records.md：暗号化された値：2026年10月7日
 
 2026年10月7日に公式文書「Thinking」（<https://platform.claude.com/docs/en/build-with-claude/thinking>、同日取得）を確かめた。節「Thinking encryption」は`signature`を「The `signature` field is opaque: don't interpret or parse it.」と定め、`redacted_thinking`の`data`を「opaque and encrypted」と記す。
 同じ文書の節「Progress updates between tool calls」は、`display`が`"updates"`のとき「any `thinking` block with non-empty text is a progress update」と記す。
@@ -1167,7 +1196,7 @@ MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すた
 
 2026年9月13日時点で、`main`と名前付きエージェントを列挙した名簿はClaude Code v2.1.206以降の版で付くことを確認した。再検証は`tools`に`SendMessage`を含む定義を、ほかの名前付きエージェントが稼働するセッションから起動し、サブエージェントの記録に名簿が現れるかと`claude --version`の版数を確認する。
 
-## agent-toolkit/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月27日
+## agent-toolkit/skills/delegation/references/sub-agents.md：コンテキスト境界：2026年9月27日
 
 2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>とCodex CLI 0.157.1の`spawn_agent`公開スキーマで、通常起動とforkの履歴入力が異なることを確認した。再検証は同じ起動文で通常起動と全履歴forkを行い、委譲先に渡る会話履歴の有無を比較する。
 

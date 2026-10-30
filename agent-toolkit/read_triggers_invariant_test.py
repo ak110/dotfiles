@@ -1,6 +1,7 @@
 """配布物とdotfilesの全読込表・他資料参照をCIで検査する。"""
 
 import pathlib
+import re
 import shutil
 
 import pytest
@@ -9,6 +10,23 @@ from agent_toolkit._common import plugin_roots, read_triggers
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent
+
+
+@pytest.mark.parametrize("role", sorted(path.name for path in (_PLUGIN_ROOT / "share").glob("*.subagent.md")))
+def test_role_writing_skill_matches_operation_bootstrap(role):
+    """起動する作成規範の名前空間がbootstrapと一致することを確認する。"""
+    bootstrap = (_PLUGIN_ROOT / "share/read-trigger-bootstrap.md").read_text(encoding="utf-8")
+    line = next(line for line in bootstrap.splitlines() if "`body-writing`" in line)
+    skill = re.search(r"`([^`]+/SKILL\.md)`", line)
+    assert skill is not None
+    if ":" in skill[1]:
+        expected = skill[1].removesuffix("/SKILL.md")
+    else:
+        path = (_PLUGIN_ROOT / "share" / skill[1]).resolve()
+        expected = f"{path.relative_to(_PLUGIN_ROOT.parent).parts[0]}:writing-standards"
+    body = (_PLUGIN_ROOT / "share" / role).read_text(encoding="utf-8")
+    started = re.findall(r"`(agent-[^`]+:writing-standards)`(?=[^\n]*を起動)", body)
+    assert not started or set(started) == {expected}, (role, started, expected)
 
 
 def test_all_read_tables_have_valid_declarations_and_routes():
@@ -42,13 +60,34 @@ def test_every_role_has_explicit_parent_read_source():
 
 # 配布版で届かない参照が報告された文書（20261028-161251-001）。
 _CROSS_PLUGIN_DOCUMENTS = (
-    "skills/bugfix/SKILL.md",
-    "skills/bugfix/references/analysis-records.md",
-    "skills/bugfix/references/root-cause-analysis.md",
+    "skills/user-confirmation-and-report/references/analysis-operations.md",
+    "skills/wi-standards/references/analysis-records.md",
+    "skills/session-review/references/analysis-operations.md",
     "skills/user-confirmation-and-report/references/communication-methods.md",
     "skills/user-confirmation-and-report/references/user-utterance.md",
     "skills/wi-standards/references/draft-semantic-review.md",
 )
+
+
+@pytest.mark.parametrize(
+    "skill,documents",
+    [
+        ("process-wi", {"lanes.md", "single-lane.md", "all-repos.md"}),
+        ("session-review", {"current-session.md", "batch.md"}),
+    ],
+)
+def test_mode_entries_keep_exclusive_judgment_routes(skill, documents):
+    """入力に合う資料だけを選ぶ条件付きの取得契約を保持する。"""
+    source = _PLUGIN_ROOT / "skills" / skill / "SKILL.md"
+    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
+    assert {path.name for row in rows for path in row.documents} == documents
+    assert all(row.kind == "判断" and len(row.documents) == 1 for row in rows)
+    normal = "current-session.md" if skill == "session-review" else "lanes.md"
+    text = (source.parent / "references" / normal).read_text(encoding="utf-8")
+    if skill == "session-review":
+        assert "references/batch.md" not in text
+        assert "session-review-state -- finish" not in text
+        assert "session-review-state -- complete" in text
 
 
 def test_cross_plugin_references_resolve_in_codex_cache_layout(tmp_path, monkeypatch):

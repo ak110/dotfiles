@@ -1056,7 +1056,7 @@ class TestPlanModeSkillInvocation:
             {
                 "session_id": sid,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:writing-standards"},
+                "tool_input": {"skill": "agent-basics:writing-standards"},
             },
             state_dir=tmp_path,
         )
@@ -1087,7 +1087,7 @@ class TestDelegationReadiness:
         )
         assert result.returncode == 0
         state = _read_state(tmp_path, sid)
-        assert _legacy_operation_readiness(state) == {"agent-toolkit:delegation": ["main"]}
+        assert _operation_readiness(state) == {"agent-toolkit:delegation": ["main"]}
 
 
 class TestUwiCompletionNotice:
@@ -2405,11 +2405,11 @@ class TestRemovedRecordsAreAbsent:
         assert not [key for key in self._REMOVED_KEYS if key in state]
 
 
-_SEARCH_SKILL_MD = pathlib.Path(__file__).resolve().parents[2] / "skills" / "search" / "SKILL.md"
+_SEARCH_SKILL_MD = pathlib.Path(__file__).resolve().parents[3] / "agent-basics/skills/search/SKILL.md"
 _SCOPE_REFERENCE = (
-    pathlib.Path(__file__).resolve().parents[2] / "skills" / "check-execution" / "references" / "verification-scope.md"
+    pathlib.Path(__file__).resolve().parents[3] / "agent-basics/skills/check-execution/references/verification-scope.md"
 )
-_SCOPE_ID = "agent-toolkit:check-execution:references/verification-scope.md"
+_SCOPE_ID = "agent-basics:check-execution:references/verification-scope.md"
 
 
 def _read_response(path: pathlib.Path, *, start: int = 1, lines: int | None = None, capped: bool = False) -> dict:
@@ -2426,7 +2426,7 @@ def _read_response(path: pathlib.Path, *, start: int = 1, lines: int | None = No
 @pytest.mark.parametrize(
     ("path", "tool_input", "response", "agent_id", "expected"),
     [
-        (_SEARCH_SKILL_MD, {}, _read_response(_SEARCH_SKILL_MD), "child", {"agent-toolkit:search": ["child"]}),
+        (_SEARCH_SKILL_MD, {}, _read_response(_SEARCH_SKILL_MD), "child", {"agent-basics:search": ["child"]}),
         (_SEARCH_SKILL_MD, {}, _read_response(_SEARCH_SKILL_MD, lines=3), "child", None),
         (_SEARCH_SKILL_MD, {}, _read_response(_SEARCH_SKILL_MD, capped=True), "child", None),
         (_SEARCH_SKILL_MD, {"limit": 5}, {"type": "file_unchanged", "file": {"filePath": "x"}}, "child", None),
@@ -2435,7 +2435,7 @@ def _read_response(path: pathlib.Path, *, start: int = 1, lines: int | None = No
             {},
             {"type": "file_unchanged", "file": {"filePath": "x"}},
             "child",
-            {"agent-toolkit:search": ["child"]},
+            {"agent-basics:search": ["child"]},
         ),
         (_SEARCH_SKILL_MD, {}, _read_response(_SEARCH_SKILL_MD), None, None),
         (_SCOPE_REFERENCE, {}, _read_response(_SCOPE_REFERENCE), None, {_SCOPE_ID: ["main"]}),
@@ -2471,13 +2471,13 @@ def test_read_records_operation_skill_acquisition_only_for_full_body(
     }
     assert _run(payload, state_dir=tmp_path).returncode == 0
     state = _read_state(tmp_path, "read-acquisition")
-    assert _legacy_operation_readiness(state) == expected
+    assert _operation_readiness(state) == expected
 
 
 @pytest.mark.parametrize(
     ("command", "output", "expected", "exit_code"),
     [
-        (f"cat {_SEARCH_SKILL_MD}", _SEARCH_SKILL_MD.read_text(encoding="utf-8"), {"agent-toolkit:search": ["main"]}, 0),
+        (f"cat {_SEARCH_SKILL_MD}", _SEARCH_SKILL_MD.read_text(encoding="utf-8"), {"agent-basics:search": ["main"]}, 0),
         (f"cat {_SEARCH_SKILL_MD}", f"cat: {_SEARCH_SKILL_MD}: No such file or directory", None, 1),
         (f"ls {_SEARCH_SKILL_MD}", str(_SEARCH_SKILL_MD), None, 0),
         (f"head -n 5 {_SEARCH_SKILL_MD}", _SEARCH_SKILL_MD.read_text(encoding="utf-8"), None, 0),
@@ -2525,10 +2525,10 @@ def test_codex_bash_read_records_operation_skill_acquisition(
     payload["transcript_path"] = str(transcript)
     assert _run(payload, state_dir=tmp_path).returncode == 0
     state = _read_state(tmp_path, "codex-read")
-    assert _legacy_operation_readiness(state) == expected
+    assert _operation_readiness(state) == expected
 
 
-def _legacy_operation_readiness(state: dict) -> dict | None:
-    """旧公開識別子の互換性を検収する。内容hashと節の取得は共通配送の試験が検収する。"""
+def _operation_readiness(state: dict) -> dict | None:
+    """所有プラグイン付きの資料識別子を検収する。内容hashと節の取得は共通配送の試験が検収する。"""
     rows = state.get("operation_skill_delivered_agents", {})
-    return {key: value for key, value in rows.items() if key.startswith("agent-toolkit:")} or None
+    return {key: value for key, value in rows.items() if key.startswith(("agent-toolkit:", "agent-basics:"))} or None

@@ -318,7 +318,7 @@ _RETIRED_TERMS = (
         )
     ),
     # 規範を横断して使う定義の無い名前と別名（2026年10月2日にユーザーが命名の方針を確定して是正）。
-    # 置き換え先と定義は`agent-toolkit/skills/writing-standards/references/defined-names.md`を正とする。
+    # 置き換え先と定義は`agent-toolkit:workflow-overview/references/defined-names.md`を正とする。
     # 日付付きの経緯記録は当時の名前のまま残す。
     *(
         _RetiredTerm(
@@ -402,7 +402,7 @@ _RETIRED_TERMS = (
             ("外部可視結果", "外部可視の結果"),
             ("履歴契約", "「history-rewrite.mdの規定」"),
             ("履歴書換え契約", "「history-rewrite.mdの規定」"),
-            ("原因分析契約", "「agent-toolkit:bugfixのreferences/root-cause-analysis.mdの条件」"),
+            ("原因分析契約", "「agent-basics:bugfixのreferences/root-cause-analysis.mdの条件」"),
             ("延期`adopt`契約", "「lane-integration.subagent.mdの延期adoptの条件」"),
             ("本文契約", "「agent-toolkit:wi-standards「通常AWIの本文」の要件」"),
             ("process-wi契約", "「agent-toolkit:process-wiの規定の読み替え」"),

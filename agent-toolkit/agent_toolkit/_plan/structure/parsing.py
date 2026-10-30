@@ -273,7 +273,7 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     実行時の呼び出し元は`agent-toolkit/skills/plan-mode/scripts/list_agent_doc_changes.py`
     （`atk run-script agent-doc-changes`）であり、
     レーン統合の`変更したエージェント向け文書`の対象集合を定める。
-    対象集合は`agent-toolkit:writing-standards`の成果物種別表が定めるエージェント向け文書
+    対象集合は`agent-basics:writing-standards`の成果物種別表が定めるエージェント向け文書
     （`AGENTS.md`・`CLAUDE.md`・ルール・`SKILL.md`・サブエージェント定義・`references/`）と
     `agent-toolkit/share/`の`<役割名>.subagent.md`とし、chezmoiの配布元にあるルールとスキルも含む。
     種類ごとに`agent-toolkit/`直下とプロジェクトの`.claude/`直下の両方の層を判定する。

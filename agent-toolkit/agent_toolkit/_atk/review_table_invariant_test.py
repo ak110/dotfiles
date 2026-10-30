@@ -17,7 +17,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def test_required_labels_match_reviewee_definition_and_respond_help(capsys: pytest.CaptureFixture[str]) -> None:
     """`reviewee.md`の応答本文の定義と`respond`の案内文が、`respond`が記録の前に確かめるラベル集合と一致する。"""
-    reviewee = pathlib.Path(__file__).parents[2] / "skills" / "review-standards" / "references" / "reviewee.md"
+    reviewee = pathlib.Path(__file__).parents[2] / "share" / "exec-review-responses.md"
     defined = re.findall(r"^- `([^`]+:)`", reviewee.read_text(encoding="utf-8"), flags=re.MULTILINE)
     labels = [*table.RESPONSE_LABELS, *table.NO_RESPONSE_REASON_LABELS]
     assert defined == labels
@@ -28,7 +28,7 @@ def test_required_labels_match_reviewee_definition_and_respond_help(capsys: pyte
     assert exc_info.value.code == 0
     help_text = capsys.readouterr().out
     assert all(f"`{label}`" in help_text for label in labels)
-    assert "`references/reviewee.md`" in help_text
+    assert "`agent-toolkit:/share/exec-review-responses.md`" in help_text
 
 
 def test_delegation_skill_refers_to_reviewee_response_section() -> None:
@@ -38,7 +38,7 @@ def test_delegation_skill_refers_to_reviewee_response_section() -> None:
     """
     skill = pathlib.Path(__file__).parents[2] / "skills" / "delegation" / "SKILL.md"
     paragraph = next(line for line in skill.read_text(encoding="utf-8").splitlines() if "応答欄の記入時は" in line)
-    assert "`references/reviewee.md`「レビュー指摘管理表への応答」" in paragraph
+    assert "`agent-toolkit:/share/exec-review-responses.md`「レビュー指摘管理表への応答」" in paragraph
     assert not any(f"`{label}`" in paragraph for label in table.RESPONSE_LABELS)
 
 

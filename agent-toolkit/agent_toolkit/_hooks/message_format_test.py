@@ -137,7 +137,7 @@ def test_run_skill_generated_probe_and_goal_reach_shared_receiver(
                 source="run-skill",
                 now=datetime.datetime(2026, 10, 18),
                 entry_type="uwi",
-                scope="agent-toolkit:search",
+                scope="agent-basics:search",
                 question_type="post-approval",
             )
         return original([sys.executable, "-c", "print('OK')"], **kwargs)
@@ -146,7 +146,7 @@ def test_run_skill_generated_probe_and_goal_reach_shared_receiver(
     monkeypatch.setattr(subprocess, "Popen", launch)
     log = io.StringIO()
     result = run_skill._run_locked(  # noqa: SLF001  # pylint: disable=protected-access
-        argparse.Namespace(skill="agent-toolkit:search", args="対象", timeout=30),
+        argparse.Namespace(skill="agent-basics:search", args="対象", timeout=30),
         repo_root=tmp_path,
         candidates=[(engine, "model", "medium")],
         log=log,

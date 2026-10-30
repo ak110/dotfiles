@@ -171,7 +171,7 @@ def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.Cap
             },
         ),
         ("Read", {"file_path": "/rules/shared.md"}),
-        ("Skill", {"skill": "agent-toolkit:search"}),
+        ("Skill", {"skill": "agent-basics:search"}),
         ("Bash", {"command": "cat /rules/other.md"}),
     ]
     for index, (tool, inputs) in enumerate(calls):
@@ -220,7 +220,7 @@ def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.Cap
     assert materials[1]["input_form"] == "file-reference" and materials[1]["observed_body_characters"] is None
     assert materials[2]["target"] == {"file_path": "/rules/shared.md"}
     assert materials[2]["recorded_result_characters"] == len("記録した結果本文")
-    assert materials[3]["target"] == {"skill": "agent-toolkit:search"}
+    assert materials[3]["target"] == {"skill": "agent-basics:search"}
     assert materials[4]["category"] == "opaque-command" and not materials[4]["target"]
     comparison = pathlib.Path(record["comparison_materials_path"]).read_text(encoding="utf-8")
     assert "claude:comparison:2" in comparison and "claude:comparison:3" in comparison

@@ -16,7 +16,7 @@ import pytest
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import claude_settings, launch_prompts
 from agent_toolkit._agents_server import codex as codex_backend
-from agent_toolkit._common import delegated_session
+from agent_toolkit._common import delegated_session, plugin_roots
 from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import plugin_resources, rules_context
 from agent_toolkit._hooks.pretooluse import dispatch, operation_skills, read_delivery
@@ -71,13 +71,25 @@ def _read_payload(path: pathlib.Path, extra: dict[str, str]) -> dict:
     return {"tool_name": "Read", "tool_input": {"file_path": str(path)}, "tool_response": {"type": "text", "file": file}}
 
 
+@pytest.fixture(autouse=True)
+def _target_distribution(monkeypatch):
+    """起動元の保持版を混ぜず、対象worktreeの配布物で契約を確かめる。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
+
+
 def _acquire(env: dict[str, str], entry: operation_skills.OperationSkill, subject: str, session_id: str, extra: dict) -> None:
     """区分ごとのホスト本来の手段で全必須資料を取得し、PostToolUseへ観測させる。"""
     for relative in entry.documents:
         if relative == operation_skills.SKILL_DOCUMENT and subject in {"main", "claude-delegate"}:
             payload: dict[str, Any] = {"tool_name": "Skill", "tool_input": {"skill": entry.skill_name}}
         else:
-            payload = _read_payload(plugin_resources.skill_document_path(entry.short_name, relative), extra)
+            payload = _read_payload(
+                plugin_roots.resolve_plugin_root(entry.skill_name.split(":", 1)[0], plugin_resources.plugin_root())
+                / "skills"
+                / entry.short_name
+                / relative,
+                extra,
+            )
         event = {"hook_event_name": "PostToolUse", "session_id": session_id, **payload, **extra}
         if "turn_id" in extra:
             event = codex_execution_payload(event, pathlib.Path(env["TMPDIR"]), exit_code=0)
@@ -111,7 +123,13 @@ def test_operation_skill_contract_for_every_entry_and_subject(
     session_id = f"{entry.short_name}-{subject}"
     tool, tool_input = _POSITIVE_OPERATIONS[entry.short_name]
     payload = {"tool_name": tool, "tool_input": tool_input, "session_id": session_id, **extra}
-    paths = [plugin_resources.skill_document_path(entry.short_name, relative) for relative in entry.documents]
+    paths = [
+        plugin_roots.resolve_plugin_root(entry.skill_name.split(":", 1)[0], plugin_resources.plugin_root())
+        / "skills"
+        / entry.short_name
+        / relative
+        for relative in entry.documents
+    ]
 
     result = _run(payload, env)
     output = result.stderr + _additional_context(result)
@@ -124,31 +142,49 @@ def test_operation_skill_contract_for_every_entry_and_subject(
     assert result.returncode == 0
     assert 'kind="block"' not in output
     observed = [output]
+    actor = extra.get("agent_id", "main")
+    writing = entry.short_name in {"bugfix", "writing-standards"}
     for _attempt in range(12):
-        if subject.startswith("codex"):
-            records = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
-            targets = read_delivery.selected_targets(records, extra.get("agent_id", "main"))
-            assert targets
-            # 案内だけでは取得済みにならない。
-            assert _run(payload, env).returncode == 0
-            for target in targets:
-                event = {
-                    "hook_event_name": "PostToolUse",
-                    "session_id": session_id,
-                    **_read_payload(target.path, extra),
-                    **extra,
-                }
+        records = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
+        targets = [
+            target
+            for target in read_delivery.selected_targets(records, actor)
+            if not read_delivery.target_ready(records, target, actor)
+        ]
+        if not targets:
+            assert _attempt > 0
+            break
+        repeated = _run(payload, env)
+        assert repeated.returncode == (2 if writing else 0)
+        if writing:
+            assert "未取得資料" in repeated.stderr
+        for target in targets:
+            assert target.body().strip() not in output
+            skill = read_delivery.skill_name(target.path)
+            event = {
+                **payload,
+                "hook_event_name": "PostToolUse",
+                **_read_payload(target.path, extra),
+            }
+            if skill and subject in {"main", "claude-delegate"}:
+                event.update({"tool_name": "Skill", "tool_input": {"skill": skill}, "tool_response": "起動成功"})
+            request = {key: value for key, value in event.items() if key not in {"hook_event_name", "tool_response"}}
+            reading = _run(request, env)
+            assert reading.returncode == 0
+            assert "未取得資料" not in _additional_context(reading)
+            if subject.startswith("codex"):
                 event = codex_execution_payload(event, tmp_path, exit_code=0)
-                assert _run_posttooluse(event, env).returncode == 0
-                acquired = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
-                assert read_delivery.target_ready(acquired, target, extra.get("agent_id", "main"))
+            assert _run_posttooluse(event, env).returncode == 0
+            acquired = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
+            assert read_delivery.target_ready(acquired, target, actor)
         result = _run(payload, env)
-        observed.append(result.stderr + _additional_context(result))
+        output = result.stderr + _additional_context(result)
+        observed.append(output)
         assert result.returncode == 0
-        if not result.stderr and not _additional_context(result):
+        if not output:
             break
     else:
-        pytest.fail("宣言資料の配送・全文取得後にも同じ通知が続いた")
+        pytest.fail("宣言資料の全文取得後にも同じ通知が続いた")
     assert result.returncode == 0
     assert not result.stderr
     assert _run(payload, env).returncode == 0
@@ -201,7 +237,7 @@ def test_missing_skill_document_warns_without_record(
 ) -> None:
     """資料の取得失敗は非遮断で案内し、復旧後も実取得まで未取得に保つ。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    skill_md = plugin_resources.skill_document_path("search", "SKILL.md")
+    skill_md = plugin_roots.resolve_plugin_root("agent-basics", plugin_resources.plugin_root()) / "skills/search/SKILL.md"
     original = pathlib.Path.read_text
 
     def fail_skill(path: pathlib.Path, *args: Any, **kwargs: Any) -> str:
@@ -223,6 +259,6 @@ def test_missing_skill_document_warns_without_record(
     notice = recovered.out + recovered.err
     assert "必須手順であり省略" in notice
     assert "未取得資料" in notice
-    assert "agent-toolkit:search" in notice
+    assert "agent-basics:search" in notice
     records = read_state("failure").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert not any(key.startswith("read-trigger:") for key in records)
