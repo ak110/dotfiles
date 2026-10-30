@@ -1611,6 +1611,7 @@ def _next_action_lines(err: str) -> list[str]:
     [
         ("depends_on", "[other.md]", "atk wi set-dependencies"),
         ("cooldown_until", "2026-08-15T00:00:00+00:00", "--cooldown-until"),
+        ("confirmation", "confirmed", "atk serve"),
         ("target_commit", "b" * 40, "target_commitを除いて"),
         ("plan_file", "/tmp/plan.md", "plan_fileを除いて"),
     ],

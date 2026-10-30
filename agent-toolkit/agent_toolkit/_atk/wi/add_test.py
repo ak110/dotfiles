@@ -2503,6 +2503,54 @@ def test_public_add_cooldown_first_save_and_readiness(
         assert result.cooldown_pending == (names if deadline and delta < 0 else ())
 
 
+def test_public_add_confirmation_required_is_saved_and_blocks_readiness(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """本文frontmatterの要確認を保存し、確認されるまで着手可能にしない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "---\nconfirmation: required\n---\n\n本文\n")
+    with pytest.raises(SystemExit) as finished:
+        atk.main(
+            ["wi", "add", "--target-repo", args.target_repo, "--body-file", args.body_file[0]], home=tmp_path, now=_FIXED_DT
+        )
+    assert finished.value.code == 0
+    (path,) = notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")
+    parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["confirmation"] == "required"
+    result = readiness.calculate_readiness(notes, args.target_repo)
+    assert result.confirmation_pending == (path.name,)
+    assert not result.ready
+
+
+@pytest.mark.parametrize(
+    "extra_args,value",
+    [
+        ([], "confirmed"),
+        ([], "yes"),
+        (["--type=uwi", "--question-type=yes-no"], "required"),
+    ],
+)
+def test_public_add_rejects_confirmation_other_than_required_awi(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    extra_args: list[str],
+    value: str,
+) -> None:
+    """投入時の確認済み・誤記の値とUWIへの指定は、ユーザーの確認を経ない状態を作るため保存前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, f"---\nconfirmation: {value}\n---\n\n本文\n")
+    argv = ["wi", "add", "--target-repo", args.target_repo, "--body-file", args.body_file[0], *extra_args]
+    with pytest.raises(SystemExit) as failed:
+        atk.main(argv, home=tmp_path, now=_FIXED_DT)
+    assert failed.value.code != 0
+    assert "confirmation" in capsys.readouterr().err
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
 @pytest.mark.parametrize("deadline", ["", "not-a-date", "2026-01-02", "2026-01-02T03:04:05"])
 @pytest.mark.parametrize("dry_run", [False, True])
 def test_public_add_rejects_invalid_cooldown_without_saving(

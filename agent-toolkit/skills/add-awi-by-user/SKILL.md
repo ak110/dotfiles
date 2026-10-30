@@ -32,6 +32,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
 | 考慮漏れの指摘を受けて原因を分析する前 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「対策の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` |
@@ -82,8 +83,10 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 ## carefully指定時の方針確認
 
 質問ラウンドと手順3の調査で要件と方針が固まったら、本文を書く前に、対象、変更後の挙動、範囲、除外、完成条件、自ら確定した判断をユーザーへ示して確認する。
+観測された問題を起点とする要求では、自ら確定した判断とともに、`agent-basics:bugfix/references/root-cause-analysis.md`「対策の選定」の一覧を示す。
 回答に依存する質問は次のラウンドへ回し、最終承認は他のユーザー判断がすべて確定してから単独の質問で求める。
 `agent-toolkit:wi-standards`の`references/drafting-workflow.md`「直接起草と独立した検収の選択」の条件に当たる要求では、最終承認の前にも、独立した担当へ方針、要求と出所、調査の根拠を渡して検収する。
+観測された問題を起点とする要求では、同じ一覧も渡す。
 この検収は方針を対象とし、手順3の本文の検収も維持する。
 
 確認で受けた指摘を要求単位に分け、次のいずれかへ分類して、次の確認で報告する。

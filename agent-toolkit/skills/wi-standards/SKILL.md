@@ -66,7 +66,7 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 | UWIを起草する場合 | `references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
 | WIの調査・要件分類・由来の検収に入る前 | `references/origin-and-approval.md`の「由来と`source`」「承認」「範囲語と程度」「ユーザー専用の記入欄と是正要求」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#%E3%80%8C%E7%94%B1%E6%9D%A5%E3%81%A8%60source%60%E3%80%8D%E3%80%8C%E6%89%BF%E8%AA%8D%E3%80%8D%E3%80%8C%E7%AF%84%E5%9B%B2%E8%AA%9E%E3%81%A8%E7%A8%8B%E5%BA%A6%E3%80%8D%E3%80%8C%E3%83%A6%E3%83%BC%E3%82%B6%E3%83%BC%E5%B0%82%E7%94%A8%E3%81%AE%E8%A8%98%E5%85%A5%E6%AC%84%E3%81%A8%E6%98%AF%E6%AD%A3%E8%A6%81%E6%B1%82%E3%80%8D` | |
 | 逐語引用を扱う前 | `references/origin-and-approval.md`の「逐語転記」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「逐語転記」` | |
-| WIの状態、状態遷移、依存、冷却時間、保留と終了を扱う前。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念を受けた時点（調査や認識合わせより先） | `references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
+| WIの状態、状態遷移、依存、冷却時間、確認状態、保留と終了を扱う前。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念を受けた時点（調査や認識合わせより先） | `references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
 | 複数リポジトリへ投入する場合、および同じ成果の整合を要求する複数のAWIを登録する場合 | `references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
 | 同じ対象リポジトリの複数項目を一括取得する場合 | `references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
 | 通常AWIの投入、または投入済みAWIの内容の更新をWI投入担当へ委譲する前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
@@ -118,7 +118,7 @@ WIの保存先は`private-notes/yyyy/MM/<filename>`に固定する。項目の�
 
 WIの保存状態には`inbox`、`processing`、`hold`、`adopted`、`rejected`があり、`agent-toolkit:process-wi`は`inbox`と`processing`のみを処理対象とする。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念が寄せられた時点では、詳細な調査や認識合わせに先立って対象項目を保留（`hold`）にする。
 処理中の項目の扱い: 別のセッションが処理している`processing`状態の項目については、保留や本文の置き換えを行わず、変更したい内容を新規項目として投入する。
-状態遷移、採否の操作、保留と本文の修正、終了処理、依存関係と冷却時間、事前承認型UWIに伴う元項目の保留、および「回答済みUWIの取り込み」の運用は[references/states-and-dependencies.md](references/states-and-dependencies.md)が定める。上流リポジトリへの投入手順は[references/cross-repository-submission.md](references/cross-repository-submission.md)が定める。
+状態遷移、採否の操作、保留と本文の修正、終了処理、依存関係と冷却時間、確認状態、事前承認型UWIに伴う元項目の保留、および「回答済みUWIの取り込み」の運用は[references/states-and-dependencies.md](references/states-and-dependencies.md)が定める。上流リポジトリへの投入手順は[references/cross-repository-submission.md](references/cross-repository-submission.md)が定める。
 
 重要フラグはfrontmatterの`important: true`で設定し、キーの省略時はfalse、フラグの解除はキー自体の削除として扱う。
 一覧表示、検索、全件表示およびWeb画面の一覧では、`all`、`yes`、`no`の重要度フィルターを利用できる。

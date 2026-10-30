@@ -11,9 +11,10 @@ import types
 import check_update_dotfiles_upgrade as upgrade
 import pytest
 
-from pytools._internal import antigravity_plugin, setup_codex_cli, setup_herdr_cli
+from pytools._internal import antigravity_plugin, install_codex_plugins, setup_codex_cli, setup_herdr_cli
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
+_CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
 
 
 @pytest.fixture(name="chezmoi_bin", autouse=True)
@@ -50,6 +51,7 @@ def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
     missing = tmp_path / ".dotnet" / "tools"
     (tmp_path / "update-dotfiles.log").write_text(
         f"2026-10-28 12:00:00,000 run=check WARNING {antigravity_plugin.UPDATED_NOTICE}\n"
+        f"2026-10-28 12:00:00,000 run=check WARNING {_CODEX_TRUST_MESSAGE}\n"
         "2026-10-28 12:00:00,000 run=check WARNING     PATH 整理: ユーザー PATH に存在しないエントリーを検出: "
         f"%USERPROFILE%\\.dotnet\\tools (展開: {missing})。"
         "再導入の予定が無ければWindowsの「環境変数」でユーザーのPathからこのエントリーを削除する\n",
@@ -61,53 +63,10 @@ def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
     )
 
 
-_GCLOUD_REGRESSION_DETAIL = (
-    "vfox:jdx/vfox-gcloud@latest: runtime error: crates/vfox/src/lua_mod/hooks.rs:66:6: module 'python' not found:\n"
-    "\tno field package.preload['python']\n"
-)
-
-
-def test_mise_gcloud_regression_warnings_succeed(tmp_path: pathlib.Path) -> None:
-    """mise 2026.10.21のvfox-gcloudの回帰だけを示すinstallとpruneの警告は検証失敗にしない。"""
-    (tmp_path / "update-dotfiles.log").write_text(
-        "2026-10-29 15:16:23,061 run=check WARNING     mise: `install` に失敗（処理は継続した）。再実行する\n"
-        "stderr: mise ERROR Failed to install tools: vfox:jdx/vfox-gcloud@latest, vfox:jdx/vfox-gcloud@latest\n"
-        "\n"
-        + _GCLOUD_REGRESSION_DETAIL
-        + "2026-10-29 15:16:24,257 run=check WARNING     mise: `prune -y` に失敗（処理は継続した）。手動実行する\n"
-        "stderr: mise ERROR failed to resolve gcloud for linux-x64: runtime error: crates/vfox/src/lua_mod/hooks.rs:66:6: "
-        "module 'python' not found:\n"
-        "2026-10-29 15:16:25,000 run=check INFO 更新完了\n",
-        encoding="utf-8",
-    )
-    upgrade.verify_update_logs(tmp_path)
-
-
-@pytest.mark.parametrize(
-    "record",
-    [
-        # gcloud以外のツールも導入に失敗した場合は、回帰の診断を含んでも検出する。
-        "2026-10-29 15:16:23,061 run=check WARNING     mise: `install` に失敗（処理は継続した）。再実行する\n"
-        "stderr: mise ERROR Failed to install tools: core:node@lts, vfox:jdx/vfox-gcloud@latest\n" + _GCLOUD_REGRESSION_DETAIL,
-        # 回帰の診断を伴わないpruneの失敗は検出する。
-        "2026-10-29 15:16:24,257 run=check WARNING     mise: `prune -y` に失敗（処理は継続した）。手動実行する\n"
-        "stderr: mise ERROR failed to resolve gcloud for linux-x64: HTTP timed out\n",
-        # 回帰の診断が次のレコードにあるだけの警告は検出する。
-        "2026-10-29 15:16:23,061 run=check WARNING     mise: `install` に失敗（処理は継続した）。再実行する\n"
-        "stderr: mise ERROR Failed to install tools: vfox:jdx/vfox-gcloud@latest\n"
-        "2026-10-29 15:16:24,000 run=check INFO     " + _GCLOUD_REGRESSION_DETAIL,
-    ],
-)
-def test_other_mise_failures_still_fail(tmp_path: pathlib.Path, record: str) -> None:
-    """gcloudの回帰だけに限らないmiseの失敗警告は検証失敗にする。"""
-    (tmp_path / "update-dotfiles.log").write_text(record, encoding="utf-8")
-    with pytest.raises(upgrade.UpgradeCheckError, match="警告以上"):
-        upgrade.verify_update_logs(tmp_path)
-
-
 def test_allowed_notice_matches_post_apply_source() -> None:
     """許容する更新案内は、post-applyが実際に出す文言と一致する。"""
     assert upgrade._ANTIGRAVITY_UPDATED_NOTICE == antigravity_plugin.UPDATED_NOTICE  # pylint: disable=protected-access
+    assert upgrade._CODEX_HOOK_TRUST_NOTICE == _CODEX_TRUST_MESSAGE  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize(
@@ -116,6 +75,7 @@ def test_allowed_notice_matches_post_apply_source() -> None:
         "pytoolsの再インストールに失敗しました。失敗理由を確認してupdate-dotfilesを再実行してください。",
         "PATH 整理: ユーザー PATH に存在しないエントリーを検出: C:\\outside\\bin (展開: C:\\outside\\bin)。削除する",
         f"{antigravity_plugin.UPDATED_NOTICE} 追加の文言",
+        f"{_CODEX_TRUST_MESSAGE} 追加の文言",
     ],
 )
 def test_other_update_warnings_still_fail(tmp_path: pathlib.Path, message: str) -> None:
@@ -125,12 +85,27 @@ def test_other_update_warnings_still_fail(tmp_path: pathlib.Path, message: str) 
         upgrade.verify_update_logs(tmp_path)
 
 
-def test_allowed_notice_error_level_fails(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("level", ["ERROR", "CRITICAL"])
+@pytest.mark.parametrize(
+    "message",
+    [antigravity_plugin.UPDATED_NOTICE, _CODEX_TRUST_MESSAGE],
+)
+def test_allowed_notice_error_level_fails(tmp_path: pathlib.Path, message: str, level: str) -> None:
     """許容はWARNINGに限り、同じ文言でもERROR以上は検出する。"""
-    (tmp_path / "update-dotfiles.log").write_text(
-        f"2026-10-28 12:00:00,000 run=check ERROR {antigravity_plugin.UPDATED_NOTICE}\n", encoding="utf-8"
-    )
+    (tmp_path / "update-dotfiles.log").write_text(f"2026-10-28 12:00:00,000 run=check {level} {message}\n", encoding="utf-8")
     with pytest.raises(upgrade.UpgradeCheckError, match="警告以上"):
+        upgrade.verify_update_logs(tmp_path)
+
+
+@pytest.mark.parametrize("message", ["plugin contents changed; hook approval required", "hook failed", "gcloud update failed"])
+def test_hook_trust_notice_keeps_other_warning_failures(tmp_path: pathlib.Path, message: str) -> None:
+    """承認案内と同居しても、実hook失敗や別ツールの警告は検出する。"""
+    (tmp_path / "update-dotfiles.log").write_text(
+        f"2026-10-28 12:00:00,000 run=check WARNING {_CODEX_TRUST_MESSAGE}\n"
+        f"2026-10-28 12:00:00,000 run=check WARNING {message}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(upgrade.UpgradeCheckError, match=message):
         upgrade.verify_update_logs(tmp_path)
 
 

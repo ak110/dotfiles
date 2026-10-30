@@ -70,7 +70,8 @@ description: >
 
 pyfltrを調査や計測の目的で実行する場合は、`--no-fix`を付けて自動修正を抑止する。ただしフォーマッター段は`--no-fix`でもファイルを書き換えるため、読み取り専用で実行したい場合はファイルを変更する段を除外して実行する。
 
-- 特定のファイルに限定して検証する場合は、MCPの`run`ツールにパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を実行する。初回は`commands`（CLI引数では`--commands`）を指定せずに実行し、修正後の再実行時のみ失敗したチェックに対象を絞る。
+- 特定のファイルに限定して検証する対象は、`references/verification-values.md`「変更範囲の検証の値」で消費側の特定を終えたものとする。
+- 特定を終えたファイルに限定して検証する場合は、MCPの`run`ツールにパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を実行する。初回は`commands`（CLI引数では`--commands`）を指定せずに実行し、修正後の再実行時のみ失敗したチェックに対象を絞る。
   - pytestを含む検証を実行する際は、指定したファイルにかかわらず、リポジトリルートと`agent-toolkit/`の両方で`pytest-always-targets`に定義された横断テストが常に追加される。詳細は`references/verification-values.md`の横断テストの項を参照のこと。同一内容に対して2回目以降の静的チェックを行う場合は、`commands`でpytestを除外し、失敗したテストのみを再確認する際は`--only-failed`を指定する。単一テストをピンポイントで確認したい場合は、対象ファイル（必要に応じて`-k`）を指定して`pytest`を直接実行し、収集されたテスト件数が想定と一致していることを確認する。
 - デバッガーの使用、最小限の再現コード実行、環境の切り分け時には、`pytest`を直接実行してよい。`-o`や`-p`は`pytest`固有のオプションであり、`pyfltr run`に渡すと引数エラー（終了コード2）となる。`-o addopts=''`で既存の`addopts`を無効化する場合は、合わせて`-p no:cacheprovider`を指定する。
 - pyfltrの実行枠として扱われるのは、`make test`、`uv run --frozen pyfltr run`、`git commit`（コミットフック内の`pyfltr fast`）、および`agent_toolkit._testing.pytest_plugin`を読み込むpytestの実行である。ルートと`agent-toolkit/`の`addopts`には、このプラグインを読み込む`-p`オプションが設定されている。`-o addopts=''`でプラグインを解除する`make test-browser`などは実行枠の対象外となる。

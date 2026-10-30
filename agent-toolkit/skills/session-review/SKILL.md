@@ -118,7 +118,7 @@ description: >
    登録対象となるAWIが1件以上ある場合は、WI投入担当を起動する前にユーザーへ`## 振り返り結果の予告`（登録予定のAWIを`AWI登録予定`行として記載）を通知し、同じターンでWI投入担当を起動する。
    予告のフォーマットは、`agent-toolkit:completion-report`の`references/report-formats.md`「振り返り結果報告のフォーマット」に従う。
    メッセージの送達は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に規定された手段（Claude Code環境では`mcp__agent-toolkit__send_to_user`）を用いて行う。
-   要求の`source`には`session-review`を指定し、batchではAWIごとに保存直前の登録時刻から24時間後の`cooldown_until`を設定するよう投入担当へ渡す。この期限の自動適用はbatchに限る。要求間に依存関係がある場合は先行する成果物が必要となる理由を趣旨欄に明記する（同書「渡す入力」を参照）。ユーザーの発話を逐語引用して作成する要求には、原文が記録されているファイル（`conversation.md`や`atk run-script session-review-evidence`の出力ファイルなど）の絶対パスを出所として記載する。作成されたAWIの検収は、同書「受領と検収」に従って行う。
+   要求の`source`には`session-review`を指定し、batchでは投入担当へ入力`確認状態`に`required`を渡し、各AWIの本文frontmatterへ`confirmation: required`を記載させる。この要確認の自動適用はbatchに限る。要求間に依存関係がある場合は先行する成果物が必要となる理由を趣旨欄に明記する（同書「渡す入力」を参照）。ユーザーの発話を逐語引用して作成する要求には、原文が記録されているファイル（`conversation.md`や`atk run-script session-review-evidence`の出力ファイルなど）の絶対パスを出所として記載する。作成されたAWIの検収は、同書「受領と検収」に従って行う。
 6. AWIの保存と検収、全候補と未確認範囲の判定を終え、今回分析した範囲と残る範囲を確定する。
    その場で調査済みの改善点は根拠と判断を再利用し、未調査・変更・不一致の部分だけを補う。標識の転記や同じ行の再掲には既存の分析結果を対応付ける。
    準備結果の`scope_path`と、準備後の追記や再開による増分を区別する。今回の要求に必要な追加対応は既存証拠とピンポイントの照会で進め、未処理の増分は次の振り返り待ちとして保持する。

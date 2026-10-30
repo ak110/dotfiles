@@ -11,7 +11,7 @@ description: >
 # プロンプトの改善案の検討
 
 エージェントへの指示文を、前提知識を持たないプロンプト評価担当に読ませて指摘を集める。メインエージェントはその指摘をもとに改善案を作成し、採否を判断して反映する。
-評価担当の入力・手順・出力形式は`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`に従う。起動と受領の手順は、本書の「プロンプト評価担当の起動と受領」に従う。
+評価担当の内部手順は`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`が定める（所在参照）。起動と受領の手順は、本書の「プロンプト評価担当の起動と受領」、返却形式は「評価担当の返却契約」に従う。
 
 評価担当の起動や試行には、委譲手段、参照資料、対象の実行環境が必要となる。これらを利用できない環境では、提示されたプロンプトを現在のセッション内で直接評価する。その際は、直接評価である事実と、未実施の試行内容を明記する。独立した担当による試行やファイルへの反映は、委譲を実行できるClaude CodeやCodexで継続する。指摘や改善案の文面を作成する際は、[文章の品質基準](references/quality-standards.md)を適用する。
 
@@ -33,7 +33,6 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「定義の所有者」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「定義の所有者」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` |
-| 評価担当の返却を受け取った後に形式を確かめる時 | `../../share/refine-prompt.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/refine-prompt.subagent.md#「出力」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
@@ -97,7 +96,7 @@ Plan modeの外で実行する（Claude Codeでは`ExitPlanMode`で終了する�
 ```
 
 `agent-toolkit:refine-prompt`を実行するエージェントが、本書に従ってプロンプト評価担当を起動し、指摘を受け取る。
-プロンプト評価担当の手順と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`に従う（所在参照）。
+プロンプト評価担当の手順は`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`に従う（所在参照）。返却形式は本書「評価担当の返却契約」に従う。
 
 ### 起動
 
@@ -119,8 +118,27 @@ Plan modeの外で実行する（Claude Codeでは`ExitPlanMode`で終了する�
 
 ### 受領
 
-結果は引数なしの`atk agents wait`で受け取る。返却内容が`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`「出力」の形式に一致しない場合は、同一の入力で新しい担当を1回に限り再起動する。
+結果は引数なしの`atk agents wait`で受け取る。返却内容が本書「評価担当の返却契約」の形式に一致しない場合は、同一の入力で新しい担当を1回に限り再起動する。
 指摘の集約、採否の判断、改善案の作成は、`agent-toolkit:refine-prompt`の「指摘の集約と改善案作成」に従う。
 
 多ターン試行を実施する場合は、`references/multi-turn-trials.md`「両役の入力と返却」に基づく自由文形式の委譲を利用し、双方のセッション終了、対話履歴全体、提出物、採点結果を受け取る。
 多ターン試行の結果は、通常のプロンプト評価担当による指摘一覧とは分離して管理し、機能面、非公開の要件、対話の適切さに関する判定を事例ごとに個別に確認する。
+
+<!-- return-contract:refine-prompt:start -->
+<!-- 生成元: share/refine-prompt.subagent.md「出力」。手動編集しない。 -->
+### 評価担当の返却契約
+
+以下の固定形式のみを返却する。指摘1件ごとに`### 指摘`の見出しから`種別`の行までを繰り返して記述する。
+
+```text
+状態: completed
+### 指摘 N: <問題箇所を1行で>
+- 重要度: 高 / 中 / 低
+- 該当箇所: <対象プロンプト中の引用または位置を1〜2文で>
+- 問題内容: <何が問題か1〜2文>
+- 想定される悪影響: <この問題を放置すると何が起きるか1文>
+- 種別: 不明瞭 / 冗長 / 不足 / 誤り / 過剰な指定 / その他
+```
+
+続行不能と追加報告行は、共通契約`../../share/rules-subagent.md`「返却形式の受け渡し」に従う。入力不足の場合は、対象プロンプトの不足情報と取得不能の根拠を記す。
+<!-- return-contract:refine-prompt:end -->

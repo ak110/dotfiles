@@ -33,7 +33,6 @@ _LEGACY_INTERVAL_NS = 86_400 * _NANOSECONDS_PER_SECOND
 """旧版の状態を調べる間隔。数万件に及ぶ旧ロックを起動ごとに走査しない。"""
 _DESCRIPTOR_WALK = os.scandir in os.supports_fd and os.open in os.supports_dir_fd
 """記述子を基点に相対名で走査できるか。Windowsは記述子による走査を提供しない。"""
-_DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _LEGACY_REGISTRY_SUFFIX = ".json"
 _LEGACY_CLEANUP_LOCK_SUFFIX = ".json.cleanup.lock"
 
@@ -135,7 +134,7 @@ def _latest_update_and_worktree(path: pathlib.Path, now_ns: int) -> tuple[int, b
     latest = _update_time(path.lstat(), now_ns)
     registered = False
     if _DESCRIPTOR_WALK:
-        with permissions.descriptor(path, _DIRECTORY_FLAGS) as opened:
+        with permissions.directory(path) as opened:
             return _latest_under(opened, latest, path, path, now_ns)
     pending = [path]
     while pending:
@@ -163,7 +162,7 @@ def _latest_under(directory: int, latest: int, current: pathlib.Path, area: path
         if child.name == ".git" and stat.S_ISREG(metadata.st_mode):
             registered |= _registered_worktree(child_path, area)
         if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata):
-            with permissions.descriptor(child.name, _DIRECTORY_FLAGS, dir_fd=directory) as nested:
+            with permissions.directory(child.name, dir_fd=directory, expected=metadata, display_path=child_path) as nested:
                 latest, nested_registered = _latest_under(nested, latest, child_path, area, now_ns)
             registered |= nested_registered
     return latest, registered

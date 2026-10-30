@@ -16,7 +16,7 @@ import filelock
 import pytest
 
 from agent_toolkit._atk import config, run_script, run_skill_batch
-from agent_toolkit._atk.wi import add, frontmatter, layout
+from agent_toolkit._atk.wi import add, frontmatter, layout, readiness
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository
 
@@ -368,6 +368,9 @@ def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monke
     data, body = frontmatter.parse_frontmatter(failures[0].read_text(encoding="utf-8")) or ({}, "")
     # ユーザーの回答を待たず、振り返りの仕組みの配布元で処理担当が是正できるAWIとして登録する。
     assert data["type"] == "awi" and data["source"] == "session-review-batch"
+    # 振り返りの成果と同じく、ユーザーが内容を確認するまで自動着手しない。
+    assert data["confirmation"] == "required"
+    assert readiness.calculate_readiness(notes, None).confirmation_pending == (failures[0].name,)
     assert data["target_repo"] == run_skill_batch.repo.resolve_repo_id(
         json.loads((run_skill_batch.PLUGIN_ROOT / ".claude-plugin/plugin.json").read_text())["repository"]
     )
@@ -386,3 +389,58 @@ def test_manual_prepare_failure_does_not_retry_same_target(tmp_path, monkeypatch
     assert run_skill_batch.dispatch(_args("manual"), unexpected) == 1
     assert calls == ["bad"]
     assert session_review.pending()
+
+
+def test_prepare_failure_diagnostic_reaches_run_record_and_awi(tmp_path) -> None:
+    """prepareがstderrへ出す不足項目と詳細を、失敗理由としてrun記録と配布元への是正AWIへ残す。"""
+    notes = _notes()
+    _target(tmp_path, "gone")
+    # 記録後に消えたセッション記録は、prepare本物が不足項目をstderrへ出して非0終了する。
+    (tmp_path / "gone.jsonl").unlink()
+
+    def unexpected(args):
+        raise AssertionError("準備できた対象が無いためモデルは起動しない")
+
+    assert run_skill_batch.dispatch(_args(), unexpected) == 1
+    records = [session_review.read(path) for path in (session_review.directory() / "runs").glob("*.json")]
+    errors = [record["error"] for record in records if record.get("error")]
+    assert len(errors) == 1 and "不足:" in errors[0]
+    failures = _failure_awis(notes)
+    assert len(failures) == 1
+    assert "不足:" in failures[0].read_text(encoding="utf-8")
+
+
+def test_prepare_success_keeps_json_and_forwards_stderr(tmp_path, monkeypatch, capsys) -> None:
+    """成功時はstdoutのJSONだけを解析し、stderrの警告は呼び出し元へ残す。"""
+    _target(tmp_path, "one")
+
+    def dispatch(args, **kwargs):
+        del args, kwargs
+        print("警告: 補足", file=sys.stderr)
+        print(json.dumps({"scope_path": "x"}))
+        return 0
+
+    monkeypatch.setattr(run_skill_batch.run_script, "dispatch", dispatch)
+    target = session_review.pending()[0]
+    prepared = run_skill_batch._prepare(target)  # pylint: disable=protected-access
+    assert prepared["scope_path"] == "x" and prepared["generation"] == target["generation"]
+    assert "警告: 補足" in capsys.readouterr().err
+
+
+def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path) -> None:
+    """準備失敗の是正AWIが未完了の間は再試行を止め、終了後の自動起動で再試行して再失敗すれば診断付きの新AWIを投入する。"""
+    notes = _notes()
+    _target(tmp_path, "gone")
+    (tmp_path / "gone.jsonl").unlink()
+
+    def unexpected(args):
+        raise AssertionError("準備できた対象が無いためモデルは起動しない")
+
+    assert run_skill_batch.dispatch(_args(), unexpected) == 1
+    assert run_skill_batch.dispatch(_args(), unexpected) == 0  # 未完了AWIの間は準備自体を再試行しない
+    assert len(_failure_awis(notes)) == 1
+    first = _failure_awis(notes)[0]
+    first.write_text(first.read_text(encoding="utf-8").replace("state: inbox\n", "state: adopted\n", 1), encoding="utf-8")
+    assert run_skill_batch.dispatch(_args(), unexpected) == 1
+    active = [path for path in _failure_awis(notes) if "state: inbox" in path.read_text(encoding="utf-8")]
+    assert len(active) == 1 and "不足:" in active[0].read_text(encoding="utf-8")

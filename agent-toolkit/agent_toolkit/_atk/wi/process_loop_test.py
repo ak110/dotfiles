@@ -48,8 +48,18 @@ def _targets(
 
 
 def _manifest(prompt: str) -> pathlib.Path:
-    start = prompt.index("は ") + len("は ")
-    return pathlib.Path(prompt[start : prompt.index(" を読む", start)])
+    start = prompt.index("開始時入力のmanifest ") + len("開始時入力のmanifest ")
+    return pathlib.Path(prompt[start : prompt.index(" で取得済み候補", start)])
+
+
+@pytest.mark.parametrize("goal_prefix", [True, False])
+def test_manifest_is_read_from_current_goal(tmp_path: pathlib.Path, goal_prefix: bool) -> None:
+    """共有する模擬統括も現在の公開promptから空白を含むmanifestパスを取得する。"""
+    manifest = tmp_path / "round with spaces.json"
+    prompt = session.build_process_loop_prompt(manifest)
+    if not goal_prefix:
+        prompt = prompt.removeprefix("/goal ")
+    assert _manifest(prompt) == manifest
 
 
 @pytest.mark.parametrize("counts", [(1, 1), (0, 9, 10, 11, 12)])

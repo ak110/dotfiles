@@ -533,8 +533,8 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
     ) -> subprocess.CompletedProcess[bytes]:
         assert cmd[0] == "claude" and cwd == pathlib.Path.cwd()
         prompt = next(argument for argument in cmd if argument.startswith("/goal "))
-        start = prompt.index("は ") + len("は ")
-        manifest = pathlib.Path(prompt[start : prompt.index(" を読む", start)])
+        start = prompt.index("開始時入力のmanifest ") + len("開始時入力のmanifest ")
+        manifest = pathlib.Path(prompt[start : prompt.index(" で取得済み候補", start)])
         data = json.loads(manifest.read_text(encoding="utf-8"))
         assert len(data["repositories"]) == 1
         target = data["repositories"][0]

@@ -521,45 +521,29 @@ _ANTIGRAVITY_UPDATED_NOTICE = "Antigravityのプラグインを更新しまし�
 PEP 723スクリプトからpytoolsをimportできないため、文言の一致は試験で確かめる。
 """
 
+_CODEX_HOOK_TRUST_NOTICE = (
+    "Codexプラグインの導入または更新でHook定義が変わった場合は、定義を確認して信頼してください。"
+    "信頼後に新しいセッションを開始し、SessionStartの規範注入を確認してください。"
+    "再信頼の操作だけではSessionStartの規範注入を検収できません。"
+)
+"""`install_codex_plugins.py`の同名案内の本文。上記と同じ制約により一致を試験する。"""
+
 _UV_HARDLINK_FALLBACK = "warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance."
 """uvがhardlinkできず複製へ切り替えたときの診断。導入は完了しており、更新の失敗ではない。"""
 
 _MISSING_PATH_ENTRY = re.compile(r"PATH 整理: ユーザー PATH に存在しないエントリーを検出: \S.* \(展開: (?P<expanded>.+?)\)。")
 
-_MISE_GCLOUD_REGRESSION = "module 'python' not found"
-"""mise 2026.10.21の同梱vfox-gcloudがLuaモジュール`python`を読めない回帰の診断（jdx/mise#15034、修正は2026.10.22）。
 
-更新処理はmiseを自己更新し、2026.10.21が選ばれる間は検証homeでgcloudの導入とpruneが必ず失敗する。
-miseの出力がgcloudのこの回帰だけを示す警告に限り許容する。自己更新が2026.10.22以降を選ぶようになったら撤去する。
-"""
-
-_MISE_FAILED_TOOLS = re.compile(r"Failed to install tools: (?P<tools>.+)$", re.MULTILINE)
-
-
-def _is_mise_gcloud_regression(message: str, detail: str) -> bool:
-    """miseの導入・pruneの失敗警告で、続く出力がgcloudの上流回帰だけを示すかを返す。"""
-    if _MISE_GCLOUD_REGRESSION not in detail:
-        return False
-    if message.startswith("mise: `install` に失敗"):
-        failed = _MISE_FAILED_TOOLS.search(detail)
-        return failed is not None and all(
-            tool.strip().startswith("vfox:jdx/vfox-gcloud@") for tool in failed["tools"].split(",")
-        )
-    if message.startswith("mise: `prune -y` に失敗"):
-        return "failed to resolve gcloud " in detail
-    return False
-
-
-def _is_expected_log_warning(message: str, home: pathlib.Path, detail: str = "") -> bool:
+def _is_expected_log_warning(message: str, home: pathlib.Path) -> bool:
     """正常な更新でも出る警告と、検証の隔離環境が作り出す警告だけを個別に許容する。
 
-    `detail`は同じログレコードの2行目以降（警告に添えた外部コマンドの出力）である。
     許容しない警告は全て検証失敗とし、警告一般の検出は保つ。
     """
-    if _is_mise_gcloud_regression(message, detail):
-        return True
     # 旧版から現行版への更新では配布物の版が必ず変わるため、dotfilesユーザー向けの更新案内が毎回出る。
     if message == _ANTIGRAVITY_UPDATED_NOTICE:
+        return True
+    # 内容変更後の正規承認はユーザー操作であり、更新失敗や実hookの実行失敗を表す診断とは分ける。
+    if message == _CODEX_HOOK_TRUST_NOTICE:
         return True
     # 隔離homeへUSERPROFILE等を差し替えると、ランナー本来のユーザーPATHの`%USERPROFILE%`などを含む項目が
     # 隔離home配下へ展開され、実在しない項目として報告される。展開先が隔離home配下の項目だけを許容する。
@@ -580,17 +564,10 @@ def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = ""
         if not path.is_file():
             continue
         lines = path.read_text(encoding="utf-8").splitlines()
-        for index, line in enumerate(lines):
+        for line in lines:
             if (match := re.search(r" run=\S+ (?P<level>WARNING|ERROR|CRITICAL) (?P<message>.*)$", line)) is None:
                 continue
-            # 同じレコードの続き（次のレコードの行の手前まで）を、警告に添えた出力として判定へ渡す。
-            detail_lines: list[str] = []
-            for following in lines[index + 1 :]:
-                if re.search(r" run=\S+ [A-Z]+ ", following):
-                    break
-                detail_lines.append(following)
-            detail = "\n".join(detail_lines)
-            if match["level"] == "WARNING" and _is_expected_log_warning(match["message"].strip(), home, detail):
+            if match["level"] == "WARNING" and _is_expected_log_warning(match["message"].strip(), home):
                 continue
             diagnostics.append(f"{path}: {line}")
     # severityを明示するCLIの診断だけを拾い、進捗や説明中の単語を誤検出しない。

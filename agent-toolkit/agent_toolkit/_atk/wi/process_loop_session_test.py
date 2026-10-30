@@ -386,6 +386,42 @@ class TestProcessLoopPromptAndEnv:
         prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
         assert "agent-toolkit:process-wi" in prompt
 
+    def test_manifest_goal_separates_own_result_from_post_exit_acceptance(self, tmp_path: pathlib.Path) -> None:
+        """開始時入力と本人の成果保存、CLI終了後の常駐検収を区別する。"""
+        manifest = tmp_path / "round.json"
+        prompt = _pl_session.build_process_loop_prompt(manifest)
+
+        assert prompt.startswith('/goal <atk-auto source="process-loop" kind="goal">')
+        assert f"開始時入力のmanifest {manifest}" in prompt
+        assert "取得済み候補・所有・準備先" in prompt
+        assert "スキル所定の処理と終了準備を終え" in prompt
+        assert "result_fileへ実態に即した対象別結果を保存した時点" in prompt
+        assert "統括自身の到達点" in prompt
+        assert "続行不能時も理由と残工程を保存して制御を常駐へ返す" in prompt
+        assert "常駐による結果の受理・所有解放・回収は統括CLI終了後に行う" in prompt
+        assert prompt.endswith("</atk-auto>")
+        assert "completed" not in prompt
+        assert "atk wi list" not in prompt
+
+    @pytest.mark.parametrize("orchestrator", ["claude", "codex", "agy"])
+    @pytest.mark.parametrize("resume", [None, "saved-session"])
+    def test_manifest_goal_keeps_host_specific_delivery(
+        self, tmp_path: pathlib.Path, orchestrator: str, resume: str | None
+    ) -> None:
+        """manifest付き目標は新規・再開ともClaudeだけに/goalを付けて配送する。"""
+        prompt = _pl_session.build_process_loop_prompt(tmp_path / "round.json")
+        argv, _ = _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
+            argparse.Namespace(resume=resume),
+            prompt,
+            dict(os.environ),
+            orchestrator=orchestrator,
+            model="test-model",
+            effort="medium",
+            resume_pending=resume is not None,
+            cwd=tmp_path,
+        )
+        assert argv[-1] == (prompt if orchestrator == "claude" else prompt.removeprefix("/goal "))
+
     def test_prompt_does_not_inject_publish_destination(self) -> None:
         """対象リポジトリ固有の公開先をprocess-loopが目的文へ注入しない。"""
         prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001

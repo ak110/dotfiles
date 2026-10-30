@@ -1090,6 +1090,32 @@ def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> No
     assert not errors, "\n".join(errors)
 
 
+@pytest.mark.parametrize(
+    "relative,role",
+    [
+        ("share/exec.parent.md", "exec"),
+        ("share/exec.parent.md", "lane-integration"),
+        ("share/exec-review.parent.md", "exec-review"),
+        ("share/reader-fit-review.parent.md", "reader-fit-review"),
+        ("share/wi-draft-review.parent.md", "wi-draft-review"),
+        ("share/exec-review.subagent.md", "recurrence-self-check"),
+        ("share/add-wi.parent.md", "add-wi"),
+        ("skills/process-wi/references/review-audit-launch.md", "copilot-review-audit"),
+        ("skills/refine-prompt/SKILL.md", "refine-prompt"),
+        ("skills/bugfix/references/investigation-delegation.md", "defect-investigation"),
+    ],
+)
+def test_caller_owns_generated_return_contract_boundary(relative: str, role: str) -> None:
+    """呼出側の返却契約を生成配置し、形式確認のための他担当全文読込を求めない。"""
+    root = pathlib.Path(__file__).resolve().parent
+    content = (root / relative).read_text(encoding="utf-8")
+    assert content.count(f"<!-- return-contract:{role}:start -->") == 1
+    assert content.count(f"<!-- return-contract:{role}:end -->") == 1
+    for line in content.splitlines():
+        if line.startswith("|"):
+            assert f"{role}.subagent.md#「出力」" not in line
+
+
 def test_launch_contract_generic_read_of_recipient_is_reported(tmp_path: pathlib.Path) -> None:
     """定型の条件で委譲先の手順書や入力節を読ませる行を報告し、時点を書いた行と所在参照を受理する。"""
     share = tmp_path / "share"

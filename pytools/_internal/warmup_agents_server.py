@@ -16,6 +16,7 @@ import tempfile
 import time
 import traceback
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent_toolkit._common import dotfiles_mode
@@ -33,10 +34,50 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """導入済みの版を解決し、起動時のデータ領域へuv環境を構築する。"""
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
-    return plugin_warmup.run(_targets, tag=_TAG, arguments=("--check-dependencies",), readiness=_check_startup)
+    commands = plugin_warmup.prepare_targets(_targets, tag=_TAG)
+    if not commands:
+        return post_apply_outcome.PostApplyOutcome()
+    outcomes = asyncio.run(_check_targets(commands))
+    failures: list[str] = []
+    for command, outcome in zip(commands, outcomes, strict=True):
+        if isinstance(outcome, BaseException):
+            logger.warning(log_format.format_status(_TAG, f"対象の確認に失敗: {command[-1]} / {outcome}"))
+            failures.append(command[-1])
+            continue
+        dependency, startup = outcome
+        dependency.report(target=log_format.home_short(Path(command[-1])), tag=_TAG)
+        if startup is not None:
+            (logger.info if startup.ok else logger.warning)(log_format.format_status(_TAG, startup.message))
+            if not startup.ok:
+                failures.append(command[-1])
+    if failures:
+        return post_apply_outcome.PostApplyOutcome(
+            failure="準備後の起動確認に失敗: " + ", ".join(failures),
+            next_action="`update-dotfiles logs`の起動段階・標準エラーを確認し、`update-dotfiles`を再実行する",
+        )
+    return post_apply_outcome.PostApplyOutcome()
 
 
-def _check_startup(command: Sequence[str]) -> bool:
+@dataclass(frozen=True)
+class _StartupOutcome:
+    ok: bool
+    message: str
+
+
+async def _check_targets(
+    commands: Sequence[Sequence[str]],
+) -> list[tuple[plugin_warmup.CommandOutcome, _StartupOutcome | None] | BaseException]:
+    """独立rootの確認を並列に進め、1rootの失敗でも全対象を回収する。"""
+
+    async def check(command: Sequence[str]) -> tuple[plugin_warmup.CommandOutcome, _StartupOutcome | None]:
+        dependency = await plugin_warmup.check_command([*command, "--check-dependencies"])
+        startup = await _check_startup(command) if dependency.ok else None
+        return dependency, startup
+
+    return await asyncio.gather(*(check(command) for command in commands), return_exceptions=True)
+
+
+async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
     """準備済みの公開stdioへ接続し、ホストの起動上限内にツール一覧を得る。"""
     # minimal導入と単なる対象解決ではMCP SDKを読み込まない。
     import anyio  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
@@ -46,9 +87,7 @@ def _check_startup(command: Sequence[str]) -> bool:
     started = time.monotonic()
     phase = "process-start"
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errors:
-
-        async def check() -> None:
-            nonlocal phase
+        try:
             parameters = StdioServerParameters(command=command[0], args=list(command[1:]), env=dict(os.environ))
             with anyio.fail_after(_STARTUP_TIMEOUT):
                 async with stdio_client(parameters, errlog=errors) as streams:
@@ -62,25 +101,15 @@ def _check_startup(command: Sequence[str]) -> bool:
                             raise RuntimeError("MCPの公開ツールが0件")
                         phase = "close"
 
-        try:
-            asyncio.run(check())
         except Exception as exc:  # noqa: BLE001  # 公開transportの例外群とstderrをpost-applyへ伝える。
             errors.seek(0)
-            logger.warning(
-                log_format.format_status(
-                    _TAG,
-                    f"MCP起動確認に失敗 (段階={phase}、{time.monotonic() - started:.1f}秒、対象={command[-1]}) / "
-                    + "".join(traceback.format_exception(exc))
-                    + errors.read(),
-                )
+            return _StartupOutcome(
+                False,
+                f"MCP起動確認に失敗 (段階={phase}、{time.monotonic() - started:.1f}秒、対象={command[-1]}) / "
+                + "".join(traceback.format_exception(exc))
+                + errors.read(),
             )
-            return False
-    logger.info(
-        log_format.format_status(
-            _TAG, f"MCPのinitialize・tools/list・終了を確認 ({time.monotonic() - started:.1f}秒): {command[-1]}"
-        )
-    )
-    return True
+    return _StartupOutcome(True, f"MCPのinitialize・tools/list・終了を確認 ({time.monotonic() - started:.1f}秒): {command[-1]}")
 
 
 def _targets() -> list[Path]:

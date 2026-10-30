@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import pathlib
+import stat
 
 import pytest
 
@@ -297,3 +298,52 @@ def test_sweep_invalidates_old_future_schedule() -> None:
         encoding="utf-8",
     )
     assert area in managed_temp.sweep_managed_temp(now=_NOW).deleted
+
+
+@pytest.mark.skipif(not hasattr(os, "O_PATH"), reason="O_PATHによる所有木の権限回復を検証する")
+@pytest.mark.parametrize("restricted", [".", "d"])
+@pytest.mark.parametrize("protection", ["expired", "fresh", "worktree", "plugin"])
+def test_sweep_recovers_unreadable_owned_tree_and_restores_retained_modes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    restricted: str,
+    protection: str,
+) -> None:
+    """mode 000の領域自身・配下を掃引し、保持した木の元modeを復元する。"""
+    name = "agents-server-plugin-root-locked" if protection == "plugin" else "locked-abc"
+    area = _area(name, days=9, files={"d/payload": "x"})
+    if protection == "worktree":
+        gitdir = tmp_path / "gitdir"
+        gitdir.mkdir()
+        (area / "d/.git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
+        (gitdir / "gitdir").write_text(str(area / "d/.git"), encoding="utf-8")
+    _age(area, 1 if protection == "fresh" else 9)
+    if protection == "plugin":
+        monkeypatch.setattr(plugin_root_leases, "plugin_root_in_use", lambda _path, **_kwargs: True)
+    locked = area / restricted
+    locked.chmod(0)
+    try:
+        result = managed_temp.sweep_managed_temp(now=_NOW)
+        assert not result.failed
+        assert (area in result.deleted) is (protection == "expired")
+        assert area.exists() is (protection != "expired")
+        if protection != "expired":
+            assert stat.S_IMODE(locked.stat().st_mode) == 0
+    finally:
+        if area.exists():
+            locked.chmod(0o700)
+
+
+@pytest.mark.skipif(not hasattr(os, "O_PATH"), reason="O_PATHによる所有木の権限回復を検証する")
+@pytest.mark.parametrize("restricted", [".", "d"])
+def test_cleanup_removes_unreadable_owned_tree(restricted: str) -> None:
+    """直接回収もmode 000の領域自身と配下を削除できる。"""
+    area = _area("cleanup-locked", days=9, files={"d/payload": "x"})
+    locked = area / restricted
+    locked.chmod(0)
+    try:
+        managed_temp.cleanup_managed_temp(area)
+        assert not area.exists()
+    finally:
+        if area.exists():
+            locked.chmod(0o700)

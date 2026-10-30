@@ -193,14 +193,16 @@ PROMPT_DESCRIPTION = parameter_description(
 
 
 WHOLE_CONTRACT_PATH_DESCRIPTION = parameter_description(
-    "task・delegateの通常起動だけで受理し、軽量起動（explore・write・shellと`mode:`が軽量の役割）とhandoff_fromでは指定しない。"
+    "task・delegateで受理する。役割指定taskでは内部の起動設定を判別せず渡せる。"
+    "軽量役割のtaskは指定値を参照せず、契約本文・専用記録を追加しない。"
+    "自由本文のexplore・write・shellとhandoff_fromでは指定しない。"
     "担当へ参照を配送する全体作業契約（`share/work-contract.md`の記録）の絶対パス。"
     "初回を含む通常起動では、呼出側が保持する現行の全体作業契約の絶対パスを指定する。"
     "省略時は互換のためサーバーが、直接の委譲元が受領済みの参照、委譲元の会話のmanaged-tempの`work-contract.md`の順に解決する。"
     "委譲先がさらに委譲する場合も受領済みの参照を継承する。"
     "明示したパスは自動解決より優先し、既知の現行契約と自動解決が別の記録を指す場合にも指定する。"
     "期待パスの記録が未作成で拒否されたときは、指定せずに期待パスへ記録を作成して再発行する。"
-    "指定時は自動解決より優先し、不在・ディレクトリ・UTF-8で読めないパスは起動前に拒否する。"
+    "通常起動では指定時は自動解決より優先し、不在・ディレクトリ・UTF-8で読めないパスは起動前に拒否する。"
 )
 
 
@@ -271,8 +273,11 @@ START_NORMAL_TASK_EXAMPLE = (
 """全体作業契約を配送する通常taskの公開例。"""
 
 
-START_LIGHTWEIGHT_TASK_EXAMPLE = '`{"cwd": "<絶対パス>", "subagent_md_path": "<軽量起動の役割名>", "extra_params": {...}}`'
-"""全体作業契約を受理しない軽量taskの公開例。"""
+START_LIGHTWEIGHT_TASK_EXAMPLE = (
+    '`{"cwd": "<絶対パス>", "subagent_md_path": "<軽量起動の役割名>", "extra_params": {...}, '
+    '"whole_contract_path": "<全体作業契約の絶対パス>"}`'
+)
+"""全体作業契約の指定を受理し、参照を省く軽量taskの公開例。"""
 
 
 START_MODE_EXAMPLES = {
@@ -306,7 +311,7 @@ START_DESCRIPTION = "\n".join(
         "| mode | 用途 | 標準の入力 | 起動条件と`model_type`省略時の設定 |",
         "| --- | --- | --- | --- |",
         "| `task`（省略時） | `share/<役割名>.subagent.md`を持つ定型作業 | `subagent_md_path`。"
-        "通常起動は`whole_contract_path`も渡す | "
+        "保持中の`whole_contract_path`も渡す。通常起動だけが参照・配送する | "
         "`<役割名>.subagent.md`の`mode:`、対応する工程別設定 |",
         "| `delegate` | `<役割名>.subagent.md`の無い単発作業 | `prompt`・`model_type`・`whole_contract_path` | "
         "通常起動。委譲先規範が届き、Claude・Codex・Antigravityはスキルを使える。"
@@ -323,7 +328,7 @@ START_DESCRIPTION = "\n".join(
         "",
         "例（`cwd`は全modeで必須）:",
         f"- 通常task: {START_NORMAL_TASK_EXAMPLE}",
-        f"- 軽量task: {START_LIGHTWEIGHT_TASK_EXAMPLE}。`whole_contract_path`を渡さない。",
+        f"- 軽量task: {START_LIGHTWEIGHT_TASK_EXAMPLE}。役割内部の起動設定の判別は不要。",
         '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "execute", '
         '"whole_contract_path": "/abs/work-contract.md"}`',
         '- explore: `{"cwd": "/repo", "mode": "explore", "prompt": "<質問と範囲>"}`',

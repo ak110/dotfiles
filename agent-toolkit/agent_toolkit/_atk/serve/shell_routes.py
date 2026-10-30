@@ -81,6 +81,11 @@ def register_error_handlers(app: quart.Quart) -> None:
             raise error
         return quart.jsonify(error=str(error), code="edit_conflict"), 409
 
+    @app.errorhandler(_wi_operations.SyncIncompleteError)
+    async def sync_incomplete(error: _wi_operations.SyncIncompleteError) -> tuple[quart.Response, int]:
+        # ローカルの保存は済んでいるため、画面は詳細の再取得を求める状態へ切り替える。
+        return quart.jsonify(error=str(error), code="sync_incomplete"), 500
+
     @app.errorhandler(subprocess.CalledProcessError)
     async def git_error(error: subprocess.CalledProcessError) -> tuple[quart.Response, int]:
         del error

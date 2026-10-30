@@ -616,6 +616,109 @@ class TestGrepFixedStrings:
         assert any(line.startswith("該当0件: ") for line in err.splitlines())
 
 
+class TestGrepMultiplePatterns:
+    """反復-eの独立評価と、全出力形式への論理和の適用を公開CLIで検証する。"""
+
+    @pytest.mark.parametrize("fixed", [False, True])
+    @pytest.mark.parametrize("ignore_case", [False, True])
+    def test_patterns_select_union_without_duplicate_lines(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        fixed: bool,
+        ignore_case: bool,
+    ) -> None:
+        """各語だけの行と両方を持つ行を、固定文字列・大文字小文字無視でも1回ずつ数える。"""
+        notes = _setup_notes(tmp_path)
+        body = "alpha[1]\nbeta[2]\nalpha[1] beta[2]\nALPHA[1]\nBETA[2]\n対象外"
+        _write_awi_file(notes, "union.md", body=body)
+        _write_awi_file(notes, "none.md", body="対象外")
+        _write_awi_file(notes, "other.md", body=body, target_repo="github.com/example/other")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        patterns = ["alpha[1]", "beta[2]"] if fixed else [r"alpha\[1\]", r"beta\[2\]"]
+        condition = ["-e", patterns[0], "--regexp", patterns[1], "--target-repo=github.com/example/foo"]
+        if fixed:
+            condition.append("-F")
+        if ignore_case:
+            condition.append("-i")
+        count = 5 if ignore_case else 3
+        code, output, error = _run_wi(["grep", *condition], tmp_path, capsys)
+        assert code == 0 and not error
+        assert output.splitlines() == [f"union.md:{number}:{line}" for number, line in enumerate(body.splitlines()[:count], 7)]
+        code, output, _ = _run_wi(["grep", *condition, "--count"], tmp_path, capsys)
+        assert code == 0 and output == f"union.md:{count}\n"
+        code, output, _ = _run_wi(["grep", *condition, "--files-with-matches"], tmp_path, capsys)
+        assert code == 0 and output == "union.md\n"
+        code, output, _ = _run_wi(["grep", *condition, "--summary-only"], tmp_path, capsys)
+        assert code == 0
+        assert [(record["filename"], record["match_count"]) for record in map(json.loads, output.splitlines())] == [
+            ("union.md", count)
+        ]
+
+    @pytest.mark.parametrize("patterns", [["(?i)alpha", r"(beta)\1"], [r"(alpha)\1", r"(beta)\1"]])
+    def test_regex_patterns_compile_independently(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        patterns: list[str],
+    ) -> None:
+        """各パターンのインラインフラグとグループ参照を文字列合成で変えない。"""
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "independent.md", body="ALPHA\nalphaalpha\nbetabeta")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        code, output, _ = _run_wi(["grep", "-e", patterns[0], "-e", patterns[1]], tmp_path, capsys)
+        assert code == 0
+        expected = ["independent.md:7:ALPHA", "independent.md:8:alphaalpha", "independent.md:9:betabeta"]
+        assert output.splitlines() == (expected if patterns[0] == "(?i)alpha" else expected[1:])
+
+    @pytest.mark.parametrize("arguments", [[], ["-e"], ["-e", "alpha", "beta"], ["alpha", "-e", "beta"]])
+    def test_invalid_pattern_arguments_exit_2(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], arguments: list[str]
+    ) -> None:
+        """欠落・値なし・位置引数との併用は検索結果を出さず終了2になる。"""
+        code, output, error = _run_wi(["grep", *arguments], tmp_path, capsys)
+        assert code == 2 and not output
+        if len(arguments) > 1:
+            assert "すべての検索語を-e PATTERNで反復指定する" in error
+
+    @pytest.mark.parametrize("option", [[], ["--count"], ["--files-with-matches"], ["--summary-only"]])
+    @pytest.mark.parametrize("patterns", [["alpha", "["], ["[", "alpha"], ["absent", "missing"]])
+    def test_invalid_regex_and_no_match_are_distinct_in_all_forms(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        option: list[str],
+        patterns: list[str],
+    ) -> None:
+        """不正な語を1個でも含む場合は結果の出力前に終了2、0件なら終了1となる。"""
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "match.md", body="alpha")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        code, output, error = _run_wi(["grep", "-e", patterns[0], "-e", patterns[1], *option], tmp_path, capsys)
+        assert code == (2 if "[" in patterns else 1)
+        assert not output
+        assert ("正規表現が不正です" if code == 2 else "該当0件: ") in error
+
+    @pytest.mark.parametrize("arguments", [[""], ["-e", "absent", "-e", ""]])
+    def test_empty_pattern_matches_every_line(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        arguments: list[str],
+    ) -> None:
+        """空文字列は未指定と区別され、空行を含む各行へ一致する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "empty.md", body="alpha\n\nbeta")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        code, output, _ = _run_wi(["grep", *arguments, "--count"], tmp_path, capsys)
+        assert code == 0
+        assert output == f"empty.md:{len(path.read_text(encoding='utf-8').splitlines())}\n"
+
+
 @pytest.mark.parametrize("command", ["list", "show", "grep"])
 @pytest.mark.parametrize(
     ("important", "expected"),

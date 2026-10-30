@@ -15,7 +15,6 @@ WI選定の開始前に、対象リポジトリがGitHub上にあれば`atk revi
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
-| 監査担当の返却を受け取った後に形式を確かめる時 | `../../../share/copilot-review-audit.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/copilot-review-audit.subagent.md#「出力」` |
 
 ## 自動コードレビュー監査担当の起動と受領
 
@@ -24,7 +23,7 @@ WI選定の開始前に、対象リポジトリがGitHub上にあれば`atk revi
 ```
 
 `agent-toolkit:process-wi`のメインエージェントが自動コードレビュー監査を委譲する際は、本書に従って監査担当を起動し、結果を受け取る。
-監査の具体的な手順と返却項目は、`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`に定められている（所在参照）。
+監査の具体的な手順は、`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`に定められている（所在参照）。返却項目は本書「監査担当の返却契約」に従う。
 
 ### 起動
 
@@ -50,4 +49,27 @@ WI選定の開始前に、対象リポジトリがGitHub上にあれば`atk revi
 同版の判定済み除外はreview-auditが担い、GitHub APIの`default_branch`が指すブランチの更新後は同番号も再監査する。
 WI部分の無進捗抑止は維持し、未観測Noneを取得成功0件と解釈しない。
 
-実行結果は引数なしの`atk agents wait`で受け取り、`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`「出力」に規定された固定形式を満たしていることを確認する。修正を要する指摘事項やDependabotアラートについては、同一セッション内で修正するか、AWIに記録して後続へ回すかを確定する。機能の無効化や権限不足などによってDependabotアラートを取得できなかった状態は、完了報告へ引き継ぐ。
+実行結果は引数なしの`atk agents wait`で受け取り、本書「監査担当の返却契約」に規定された固定形式を満たしていることを確認する。修正を要する指摘事項やDependabotアラートについては、同一セッション内で修正するか、AWIに記録して後続へ回すかを確定する。機能の無効化や権限不足などによってDependabotアラートを取得できなかった状態は、完了報告へ引き継ぐ。
+
+<!-- return-contract:copilot-review-audit:start -->
+<!-- 生成元: share/copilot-review-audit.subagent.md「出力」。手動編集しない。 -->
+### 監査担当の返却契約
+
+監査が問題なく完了したと判定できた場合は、次の形式のみを返却する。
+
+```text
+状態: completed
+指摘の分類: <全Pull RequestのCopilot由来のreview本文と、未解決threadを持つPull RequestのCopilot由来のinline commentごとの所在、分類および処置>
+要修正の指摘: <要修正と分類した指摘の所在と対処案。無い場合は「なし」>
+GitHubへの書き込み: <返信、threadの解決およびコメント投稿の結果と、非0で終了した書き込み。無い場合は「なし」>
+記録したreview本文: <`atk review-audit mark`で記録したreview本文のdatabaseId。無い場合は「なし」>
+取得対象外のPull Request: <inline commentの取得対象へ入らなかったPull Request番号。無い場合は「なし」>
+代替取得で除いた判定済み: <GraphQLで代替取得した場合に、判定済みとして除いたdatabaseIdの一覧と件数。代替取得しなかった場合は「なし」>
+Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest/package、解決済み版・修正版、判定区分、処置。API終了コードと応答number/state、未処置の理由と次回再取得を含む。無い場合は「なし」>
+要修正のDependabotアラート: <番号、マニフェスト、パッケージ、修正版と対処案。無い場合は「なし」>
+記録したDependabotアラート: <版付きmarkが成功した番号と確認SHA。却下失敗・未判定は含めない。無い場合は「なし」>
+Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
+```
+
+続行不能と追加報告行は、共通契約`../../../share/rules-subagent.md`「返却形式の受け渡し」に従う。取得不能の理由には、失敗したコマンド、終了コードと取得できなかった範囲を記す。
+<!-- return-contract:copilot-review-audit:end -->

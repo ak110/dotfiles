@@ -1135,12 +1135,6 @@ def task_document_request(
             next_action="役割文書のfrontmatterへmodel_typeを宣言して同じstartを再発行する",
         )
     launch_kind: LaunchKind = declaration.launch_kind if not isinstance(declaration, str) else "delegate"
-    if launch_kind != "delegate" and whole_contract_path is not None:
-        raise ActionableError(
-            f"軽量起動（mode: {launch_kind}）の役割はwhole_contract_pathを受理しません: {task_document.name}。"
-            "委譲先は起動していない。",
-            next_action="`whole_contract_path`を外して`start`を再発行する",
-        )
     # 共通前提の不足は記録先の生成より先に起動元へ返す。
     whole_contract = (
         whole_contract_reference(whole_contract_path=whole_contract_path, launcher_session_id=launcher_session_id)

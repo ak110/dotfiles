@@ -54,17 +54,6 @@ _CODEX_EXECUTABLE: contextvars.ContextVar[Path] = contextvars.ContextVar("codex_
 # Codexでは使用しないため、導入済みなら除去するプラグイン。
 _UNUSED_PLUGINS: tuple[str, ...] = ("compact-plus@compact-plus",)
 _MANAGED_PLUGINS: tuple[str, ...] = ("agent-basics", "agent-toolkit")
-_EXPECTED_HOOK_EVENTS = {
-    "sessionStart",
-    "subagentStart",
-    "preToolUse",
-    "postToolUse",
-    "permissionRequest",
-    "userPromptSubmit",
-    "stop",
-    "subagentStop",
-    "sessionEnd",
-}
 
 
 def _codex_json(args: list[str]) -> dict[str, Any] | None:
@@ -187,22 +176,26 @@ def _query_hooks(process: subprocess.Popen[str]) -> dict[str, Any] | None:
                 logger.warning("Codex App Serverの子孫を回収できない: %s", residual)
 
 
-def _hook_trust_notice_required(result: dict[str, Any] | None) -> bool:
-    """期待する9イベントが登録済みで、hook信頼だけが未完了の場合に真を返す。"""
+def _hook_trust_notice_required(result: dict[str, Any] | None, plugin_id: str) -> bool:
+    """対象pluginの有効な非managed hookに正規の信頼確認が必要かを返す。"""
     data = result.get("data") if isinstance(result, dict) else None
-    if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+    if not isinstance(data, list):
         return False
-    item = data[0]
-    hooks = item.get("hooks")
-    if item.get("warnings") != [] or item.get("errors") != [] or not isinstance(hooks, list):
-        return False
-    if not all(isinstance(hook, dict) for hook in hooks):
-        return False
-    return (
-        {hook.get("eventName") for hook in hooks} == _EXPECTED_HOOK_EVENTS
-        and all(hook.get("enabled") is True for hook in hooks)
-        and all(hook.get("trustStatus") == "untrusted" for hook in hooks)
-    )
+    for item in data:
+        if not isinstance(item, dict) or not isinstance(hooks := item.get("hooks"), list):
+            continue
+        # 別hookの登録エラーや承認済み状態は、登録済みの対象hookへの確認案内を妨げない。
+        if any(
+            isinstance(hook, dict)
+            and hook.get("pluginId") == plugin_id
+            and hook.get("source") == "plugin"
+            and hook.get("enabled") is True
+            and hook.get("isManaged") is False
+            and hook.get("trustStatus") in ("untrusted", "modified")
+            for hook in hooks
+        ):
+            return True
+    return False
 
 
 def _target(root: Path, expected_name: str = "agent-toolkit") -> tuple[str, str, str] | None:
@@ -528,7 +521,7 @@ def _sync_local_plugin(
                 raise RuntimeError("Codex plugin更新後のskills実体を確認できない")
             if toolkit_plugin and not (new_cache / "agent_toolkit" / "hook.py").is_file():
                 raise RuntimeError("Codex plugin更新後のhook実体を確認できない")
-            if toolkit_plugin and _hook_trust_notice_required(_hooks_list()):
+            if toolkit_plugin and _hook_trust_notice_required(_hooks_list(), plugin_id):
                 notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
             if toolkit_plugin:
                 _restart_daemon_after_plugin_update(notices)
@@ -543,6 +536,8 @@ def _sync_local_plugin(
                 ) from error
             else:
                 shutil.rmtree(saved_root)
+    elif toolkit_plugin and _hook_trust_notice_required(_hooks_list(), plugin_id):
+        notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
     removed_legacy_links = _remove_legacy_links(root) if toolkit_plugin else False
     return needs_plugin_add or wrapper_changed or removed_legacy_links, False
 

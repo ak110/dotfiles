@@ -6,6 +6,8 @@ import {registerScreen} from "./shell.js";
 
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
 const KIND_LABELS = {awi: 'awi', uwi: 'uwi', unknown: 'unknown'};
+// 確認状態の値ごとの表示名。キーを持たない項目は表示しない。
+const CONFIRMATION_LABELS = {required: '要確認', confirmed: '確認済み'};
 const STATE_LABELS = {
   inbox: 'inbox', processing: 'processing', hold: 'hold',
   adopted: 'adopted', rejected: 'rejected'
@@ -40,6 +42,10 @@ let userListOperationPending = false;
 let externalListReloadPending = false;
 let pendingListAnnouncement = false;
 let detailRefreshRequired = false;
+// 確認状態の同期が完了しなかった案内。失敗した操作自身のローカル書込みが外部変更として通知され、
+// 詳細の自動再取得が警告欄を消すため、同じ詳細を開いている間だけ再取得後に同じ案内を表示し直す。
+// 詳細を閉じるか別の項目を開くと`detailSessionGeneration`が変わり、案内は表示されなくなる。
+let syncIncompleteNotice = null;
 // 詳細ダイアログから送信した変更操作の応答を待つ間か、その間に詳細の再読込を保留したか。
 let detailMutationPending = false;
 let detailReloadDeferred = false;
@@ -78,6 +84,7 @@ async function api(path, options = {}) {
     '/api/entries/answer': '回答保存',
     '/api/entries/user-comment': 'ユーザーコメント保存',
     '/api/entries/important': '重要設定・解除',
+    '/api/entries/confirmation': '確認状態の変更',
     '/api/entries/remove': '削除',
     '/api/entries/adopt': '採用',
     '/api/entries/reject': '却下',
@@ -137,6 +144,8 @@ function restoreRefreshFocus() {
 }
 
 function clearDialogMessages(dialogName) {
+  // 詳細で次の操作を始めるときは、前の操作の同期未完了の案内を再表示の対象から外す。
+  if (dialogName === 'detail') syncIncompleteNotice = null;
   setTextMessage(`${dialogName}-alert`, '');
   setTextMessage(`${dialogName}-status`, '');
 }
@@ -284,7 +293,8 @@ function displayStateLabel(entry) {
   return entry.needs_verify === true ? 'needs-verify' : STATE_LABELS[entry.state] || 'unknown';
 }
 function entryStateText(entry) {
-  return `${KIND_LABELS[entry.kind] || KIND_LABELS.unknown} / ${displayStateLabel(entry)}`;
+  const confirmation = CONFIRMATION_LABELS[entry.confirmation];
+  return `${KIND_LABELS[entry.kind] || KIND_LABELS.unknown} / ${displayStateLabel(entry)}${confirmation ? ` / ${confirmation}` : ''}`;
 }
 
 function updateEntryStateDisplay(entry, button, badge) {
@@ -299,7 +309,7 @@ function updateEntryStateDisplay(entry, button, badge) {
     'aria-label',
     [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
       label, badge.title, entry.plan ? 'plan' : '',
-      entry.important === true ? '重要' : '',
+      entry.important === true ? '重要' : '', CONFIRMATION_LABELS[entry.confirmation] || '',
       entry.kind === 'uwi' && entry.answered === false ? '未回答' : '', entry.summary || '要約なし']
       .filter(Boolean).join('、')
   );
@@ -311,7 +321,6 @@ function refreshCooldownDisplays() {
   for (const {entry, button, badge} of entryStateDisplays.values()) updateEntryStateDisplay(entry, button, badge);
   if (currentEntry) {
     byId('detail-state').textContent = entryStateText(currentEntry);
-    if (displayStateLabel(currentEntry) !== 'cooldown') byId('clear-cooldown-button').hidden = true;
     if (byId('delete-dialog').open) byId('delete-state').textContent = entryStateText(currentEntry);
   }
   const remaining = [...entries, ...(currentEntry ? [currentEntry] : [])]
@@ -394,6 +403,13 @@ function renderEntry(entry) {
     important.className = 'attention-badge important-badge';
     important.textContent = '重要';
     status.append(important);
+  }
+  if (CONFIRMATION_LABELS[entry.confirmation]) {
+    const confirmation = document.createElement('span');
+    confirmation.className = 'confirmation-badge';
+    confirmation.dataset.confirmation = entry.confirmation;
+    confirmation.textContent = CONFIRMATION_LABELS[entry.confirmation];
+    status.append(confirmation);
   }
   if (entry.plan) {
     const plan = document.createElement('span');
@@ -923,7 +939,9 @@ function setDetailMode(mode) {
   if (decisionAction) byId('decision-heading').textContent = decisionAction === 'adopt' ? '採用' : '却下';
   byId('edit-button').hidden = mutating || !currentEntry || !EDITABLE_STATES.has(currentEntry.state);
   byId('important-button').hidden = mutating || !currentEntry;
-  byId('clear-cooldown-button').hidden = mutating || !currentEntry || currentEntry.kind !== 'awi' || displayStateLabel(currentEntry) !== 'cooldown';
+  // 確認状態は確認状態を持つ未終了のAWIだけが切り替えられ、ボタンの文言で次の操作を示す。
+  byId('confirmation-button').hidden = mutating || !mutable || !CONFIRMATION_LABELS[currentEntry.confirmation];
+  byId('confirmation-button').textContent = currentEntry?.confirmation === 'confirmed' ? '要確認に戻す' : '確認済みにする';
   byId('important-button').textContent = currentEntry?.important === true ? '重要解除' : '重要設定';
   byId('answer-button').hidden = mutating || !currentEntry ||
     currentEntry.kind !== 'uwi' || !mutable;
@@ -950,7 +968,7 @@ function setDetailMode(mode) {
 
 function syncDetailMutationAvailability() {
   for (const id of [
-    'edit-button', 'answer-button', 'user-comment-button', 'delete-button', 'important-button', 'clear-cooldown-button',
+    'edit-button', 'answer-button', 'user-comment-button', 'delete-button', 'important-button', 'confirmation-button',
     'save-entry-button', 'save-answer-button', 'save-user-comment-button',
     'adopt-button', 'reject-button', 'hold-button', 'unhold-button', 'return-to-inbox-button',
     'confirm-adopt-button', 'confirm-reject-button'
@@ -1201,6 +1219,11 @@ async function reloadOpenDetailFromExternalChange() {
   detailOriginKey = entryKey(resolvedEntry);
   displayEntry(resolvedEntry);
   if (deleteConfirmationInvalidated) setTextMessage('detail-alert', DELETE_RECONFIRM_MESSAGE);
+  else if (syncIncompleteNotice?.sessionGeneration === detailSessionGeneration &&
+    syncIncompleteNotice.filename === resolvedEntry.filename) {
+    // 再取得で本文は保存後の最新値になるため操作は有効のままにし、他ホストへ未反映である案内だけを保つ。
+    setTextMessage('detail-alert', syncIncompleteNotice.message);
+  }
 }
 
 function enterEdit() {
@@ -1334,6 +1357,36 @@ async function toggleImportant() {
     }, () => api('/api/entries/important', {method: 'POST', body: JSON.stringify(payload)}), `${key}を${label}しました。`);
   } catch (error) {
     deliverOperationMessage(mutationFailureMessage(key, `${key}を${label}できませんでした。 ${error.message}`, error), true);
+  }
+}
+
+async function toggleConfirmation() {
+  if (!currentEntry || detailRefreshRequired) return;
+  const key = entryKey(currentEntry);
+  const confirmed = currentEntry.confirmation !== 'confirmed';
+  const done = confirmed ? '確認済みにしました' : '要確認に戻しました';
+  const payload = {filename: currentEntry.filename, confirmed, expected_content: currentEntry.content};
+  clearDialogMessages('detail');
+  try {
+    await runDetailMutation('confirmation', {
+      container: byId('detail-shell'), button: byId('confirmation-button'), busyLabel: '保存中'
+    }, () => api('/api/entries/confirmation', {method: 'POST', body: JSON.stringify(payload)}), `${key}を${done}。`);
+  } catch (error) {
+    if (error.payload?.code === 'sync_incomplete') {
+      // ローカルの保存は済んでいるため、古い本文で再送しないよう操作を止め、一覧を保存後の状態へ更新する。
+      const message = `${key}の確認状態の同期が完了していません。 ${error.message}`;
+      // 応答を待つ間に届いた変更通知で詳細を再取得済みなら、表示中の本文は保存後の最新値なので操作を止めない。
+      // 送信時の本文のままなら、古い本文で再送しないよう次の再取得まで操作を止める。
+      if (currentEntry?.content === payload.expected_content) {
+        detailRefreshRequired = true;
+        syncDetailMutationAvailability();
+      }
+      syncIncompleteNotice = {sessionGeneration: detailSessionGeneration, filename: payload.filename, message};
+      void loadEntries({showLoading: false});
+      deliverOperationMessage(message, true);
+      return;
+    }
+    deliverOperationMessage(mutationFailureMessage(key, `${key}の確認状態を変更できませんでした。 ${error.message}`, error), true);
   }
 }
 
@@ -1718,17 +1771,7 @@ function bindEvents() {
   });
   byId('edit-button').addEventListener('click', enterEdit);
   byId('important-button').addEventListener('click', () => { void toggleImportant(); });
-  byId('clear-cooldown-button').addEventListener('click', async () => {
-    if (!currentEntry || detailRefreshRequired) return;
-    const payload = {filename: currentEntry.filename, expected_content: currentEntry.content};
-    try {
-      await runDetailMutation('clear-cooldown', {
-        container: byId('detail-shell'), button: byId('clear-cooldown-button'), busyLabel: '保存中'
-      }, () => api('/api/entries/clear-cooldown', {method: 'POST', body: JSON.stringify(payload)}), '冷却を解除しました。');
-    } catch (error) {
-      deliverOperationMessage(mutationFailureMessage(entryKey(currentEntry), `冷却を解除できませんでした。 ${error.message}`, error), true);
-    }
-  });
+  byId('confirmation-button').addEventListener('click', () => { void toggleConfirmation(); });
   byId('answer-button').addEventListener('click', enterAnswer);
   byId('user-comment-button').addEventListener('click', enterUserComment);
   byId('save-entry-button').addEventListener('click', saveEntry);

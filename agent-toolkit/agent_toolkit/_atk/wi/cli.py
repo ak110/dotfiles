@@ -802,7 +802,19 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     grep.add_argument(
         "pattern",
         metavar="PATTERN",
-        help="検索パターン。`-F`を指定しない場合はPythonの正規表現（reモジュール）として、指定した場合は固定文字列として解釈する。",
+        nargs="?",
+        default=None,
+        help="検索パターン。Pythonの正規表現として、`-F`指定時は固定文字列として解釈する。`-e`とは併用できない。",
+    )
+    grep.add_argument(
+        "-e",
+        "--regexp",
+        metavar="PATTERN",
+        action="append",
+        default=None,
+        help=(
+            "検索パターンを反復指定し、いずれかに一致する行を1回だけ計上する。例: -e alpha -e beta。位置引数とは併用できない。"
+        ),
     )
     grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
     grep.add_argument(
@@ -1144,6 +1156,11 @@ def prepare_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
     managed-tempの掃引より前に呼ぶ。引数の誤りを掃引の警告より先に報告するためである。
     """
+    if args.command == "wi" and args.wi_subcommand == "grep":
+        if args.pattern is not None and args.regexp is not None:
+            args.subparser.error("PATTERNと-eは併用できません。すべての検索語を-e PATTERNで反復指定する。")
+        if args.pattern is None and args.regexp is None:
+            args.subparser.error("検索パターンがありません。PATTERNを1個、または-e PATTERNを1回以上指定する。")
     _normalize_repeatable_wi_filters(args)
     _resolve_wi_target_repo(args, parser)
     _resolve_note_file(args, parser)

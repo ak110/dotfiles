@@ -114,10 +114,13 @@ async def test_lightweight_start_does_not_allocate_record(
 
 
 @pytest.mark.parametrize("kind", ["explore", "shell", "write"])
-def test_lightweight_task_does_not_deliver_contract_materials(
+@pytest.mark.parametrize("explicit_contract", [False, True])
+@pytest.mark.asyncio
+async def test_lightweight_task_does_not_deliver_contract_materials(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     kind: str,
+    explicit_contract: bool,
 ) -> None:
     """軽量な役割指定taskは全体契約の確認と専用記録・資料の配送を経由しない。"""
     document = tmp_path / "task.subagent.md"
@@ -129,23 +132,36 @@ def test_lightweight_task_does_not_deliver_contract_materials(
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
     monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", ("whole-session",))
     monkeypatch.setattr(launch_requests._managed_temp, "find_session_temp", lambda *_args, **_kwargs: tmp_path)
-    _model, prompt, actual_kind, path = launch_requests.task_document_request(str(document), {"対象": "調査"})
-    assert actual_kind == kind
-    assert path is None
+    result = {"session_id": "child", "status": "running", "label": "軽量"}
+    operation = AsyncMock(return_value=result)
+    manager = SimpleNamespace(
+        launcher_session_id=lambda: None,
+        launcher_record_context=lambda: {},
+        start=operation,
+    )
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    inputs: dict[str, Any] = {"whole_contract_path": str(tmp_path / "absent-contract.md")} if explicit_contract else {}
+    response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params={"対象": "調査"}, **inputs)
+    operation.assert_awaited_once()
+    call = operation.await_args
+    assert call is not None
+    assert call.kwargs["launch_kind"] == kind
+    assert "handoff_record_path" not in response
+    prompt = call.args[1]
     assert "引き継ぎ記録先:" not in prompt
     assert "全体作業契約:" not in prompt
     assert "share/work-contract.md" not in prompt
     assert "skills/delegation/references/handoff-record.md" not in prompt
 
 
-@pytest.mark.parametrize("target", ["explore", "write", "shell", "lightweight-task", "handoff"])
+@pytest.mark.parametrize("target", ["explore", "write", "shell", "handoff"])
 @pytest.mark.asyncio
 async def test_whole_contract_path_rejected_outside_normal_start(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     target: str,
 ) -> None:
-    """軽量起動・軽量な役割指定task・引き継ぎ起動は全体作業契約の明示入力を受理せず、起動前に拒否する。"""
+    """自由本文の軽量起動と引き継ぎ起動は全体作業契約の明示入力を起動前に拒否する。"""
     whole = tmp_path / "work-contract.md"
     whole.write_text("目的: A全体\n", encoding="utf-8")
     manager = SimpleNamespace(
@@ -160,15 +176,6 @@ async def test_whole_contract_path_rejected_outside_normal_start(
     inputs: dict[str, Any] = {"whole_contract_path": str(whole)}
     if target == "handoff":
         inputs["handoff_from"] = "prior"
-    elif target == "lightweight-task":
-        document = tmp_path / "task.subagent.md"
-        document.write_text(
-            "# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\nmode: explore\n作業ツリーへの書込: なし\n```\n", encoding="utf-8"
-        )
-        monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
-        monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
-        monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
-        inputs |= {"cwd": str(tmp_path), "subagent_md_path": str(document), "extra_params": {"対象": "調査"}}
     elif target == "shell":
         inputs |= {"cwd": str(tmp_path), "mode": "shell", "command": "pwd", "summary_policy": "終了状態"}
     else:

@@ -2133,28 +2133,22 @@ def test_reading_another_roles_task_document_warns_and_points_to_the_launch_cont
     assert f"他の担当の手順書`{other}`を取得しようとしている" in body
     assert "`agent-toolkit:delegation`の`SKILL.md`「送信」" in body
     assert f"`{contract}`" in body
-    assert "返却を受け取った後の受領確認であれば、このまま続行してよい" in body
+    assert "返却を受け取った後の固有手順の検収であれば、このまま続行してよい" in body
+    assert "分割読取の続きを行わず呼出側契約へ進め" in body
 
 
 @pytest.mark.parametrize("host", ["claude-read", "claude-bash", "codex-exec"])
-@pytest.mark.parametrize("case", ["own-role", "designated", "designated-by-own-role", "outside-root", "subagent-own-role"])
+@pytest.mark.parametrize("case", ["own-role", "outside-root", "subagent-own-role"])
 @pytest.mark.usefixtures("memory")
 def test_legitimate_task_document_reads_do_not_warn(tmp_path, monkeypatch, host, case):
-    """自身の担当、取得済みの資料の読込表が指定する手順書、plugin root外の同名ファイルの取得には警告しない。"""
-    _root, other, _contract, lane, integration = _role_plugin(tmp_path, monkeypatch)
+    """自身の担当とplugin root外の同名ファイルの取得には警告しない。"""
+    _root, other, _contract, _lane, _integration = _role_plugin(tmp_path, monkeypatch)
     log = tmp_path / "transcript.jsonl"
     target = other
     payload: dict = {"cwd": str(tmp_path), "transcript_path": str(log)}
     header = read_delivery.task_documents.task_prompt_header
     if case == "own-role":
         _write_transcript(log, header(other), codex=host == "codex-exec")
-    elif case == "designated":
-        _write_transcript(log, "統合へ進む", codex=host == "codex-exec")
-        _mark("test", lane, "main")
-        target = integration
-    elif case == "designated-by-own-role":
-        _write_transcript(log, header(lane), codex=host == "codex-exec")
-        target = integration
     elif case == "outside-root":
         _write_transcript(log, "作業ツリーの手順書を編集する", codex=host == "codex-exec")
         target = tmp_path / "worktree/agent-toolkit/share/reviewer.subagent.md"
@@ -2169,6 +2163,31 @@ def test_legitimate_task_document_reads_do_not_warn(tmp_path, monkeypatch, host,
     host_payload, tool, inputs = _read_request(host, target)
     decision = read_delivery.deliver({**payload, **host_payload}, tool, inputs, "test")
     assert "他の担当の手順書" not in (_guidance(decision) or "")
+
+
+@pytest.mark.parametrize("host", ["claude-read", "claude-bash", "codex-exec"])
+@pytest.mark.parametrize("own_declaration", [False, True])
+@pytest.mark.usefixtures("memory")
+def test_return_time_declaration_does_not_suppress_foreign_notice(tmp_path, monkeypatch, host, own_declaration):
+    """返却後条件の宣言元を取得済みでも、自身の役割へ掲載されていても警告を保つ。"""
+    root, _other, _contract, lane, integration = _role_plugin(tmp_path, monkeypatch)
+    lane.write_text(
+        lane.read_text(encoding="utf-8").replace("統合入力を確定するとき", "返却を受け取った後に形式を検収する時"),
+        encoding="utf-8",
+    )
+    rows = parse_tables(lane, root)
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
+    log = tmp_path / "transcript.jsonl"
+    _write_transcript(
+        log,
+        read_delivery.task_documents.task_prompt_header(lane) if own_declaration else "起動を準備する",
+        codex=host == "codex-exec",
+    )
+    _mark("test", lane, "main")
+    payload, tool, inputs = _read_request(host, integration)
+    decision = read_delivery.deliver({**payload, "cwd": str(tmp_path), "transcript_path": str(log)}, tool, inputs, "test")
+    assert f"他の担当の手順書`{integration}`" in _notice_body(decision)
+    assert decision.block is None
 
 
 @pytest.mark.usefixtures("memory")
