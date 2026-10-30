@@ -15,7 +15,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md#「命名の方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/defined-names.md#「命名の方針」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」「対策の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
 
 ## 根拠の確定
@@ -76,7 +76,7 @@
 
 実装方式やアルゴリズム、データ構造といった手段の比較を選択肢として提示する前に、その手段が満たすべき達成目標と受入れ条件を確定させる。確定できない場合は、達成目標や受入れ条件そのものを確認の対象とする。
 
-観測された問題への対処をユーザーに選択させる確認（方針や初期設定の変更承認、適用範囲の選択など、別の形で対処を問う確認を含む）では、選択肢を作成する前に`agent-toolkit:bugfix`を起動し、「初動と拡張原因分析の判定」に従って直接的な原因を実際の観測から確定する。委譲先から返された直接的原因は、実際の観測結果と突き合わせ、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」における推測の条件に該当しないことを確認した上で、確定済みとして扱う。対策の選定は同スキルの「対策の選定」に従い、比較検討した原因側・構造側の成立案を選択肢に含めるか、成立しない根拠を観測結果に基づいて示す。原因を特定できない場合は、原因特定に必要な調査とその実施条件を確認の主題とする。
+観測された問題への対処をユーザーに選択させる確認（方針や初期設定の変更承認、適用範囲の選択など、別の形で対処を問う確認を含む）では、選択肢を作成する前に`agent-toolkit:bugfix`を起動し、「初動と拡張原因分析の判定」に従って直接的な原因を実際の観測から確定する。委譲先から返された直接的原因は、実際の観測結果と突き合わせ、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」における推測の条件に該当しないことを確認した上で、確定済みとして扱う。対策の選定は同スキルの「対策の選定」に従い、比較検討した原因側・構造側の成立案を選択肢に含めるか、成立しない根拠を観測結果に基づいて示す。選んだ対策の組は、`agent-basics:bugfix/references/root-cause-analysis.md`「対策の選定」の一覧（要因ごとの処置、階層、重大度との比例性、適用範囲）で点検してから確認文に使い、その一覧を確認文の根拠に含める。原因を特定できない場合は、原因特定に必要な調査とその実施条件を確認の主題とする。
 
 ## 影響と回答単位
 
