@@ -75,6 +75,7 @@ description: >
 | 認証・認可を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「認証・認可設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「認証・認可設計」` | |
 | ファイルアップロードを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「ファイルアップロード設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「ファイルアップロード設計」` | |
 | 状態を変える多段手順の工程順を設計・変更・レビューする前 | `references/design-runtime.md`の「状態を変える多段手順の工程順」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「状態を変える多段手順の工程順」` | |
+| テストの網羅範囲の管理方法を設計・変更・レビューする前 | `references/test-coverage-ledger.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/test-coverage-ledger.md` | |
 
 ## 文章の作成時に読む資料
 
