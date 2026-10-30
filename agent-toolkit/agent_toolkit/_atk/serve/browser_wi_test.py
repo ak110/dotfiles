@@ -577,6 +577,236 @@ async def _record_self_write_warnings(page: playwright.async_api.Page) -> None:
     )
 
 
+@pytest.mark.parametrize("timing", ["natural", "during"])
+@pytest.mark.parametrize(
+    "operation", ["save", "answer", "user-comment", "important", "adopt", "hold", "delete", "create", "batch"]
+)
+@pytest.mark.asyncio(loop_scope="session")
+async def test_saved_mutation_commit_failure_with_watcher(
+    browser_harness: _BrowserHarness,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+    operation: str,
+    timing: str,
+) -> None:
+    """実ファイル監視による再取得の前後で、保存済み・未反映と復旧手順を保つ。"""
+    await _saved_mutation_commit_failure(browser_harness, monkeypatch, request, operation, timing)
+
+
+@pytest.mark.parametrize("operation", ["save", "important", "adopt", "hold"])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_low_height_saved_notice_and_controls_are_reachable(
+    browser_harness: _BrowserHarness,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+    operation: str,
+) -> None:
+    """400%拡大相当の高さでも保存後の通知全文と操作を重ねず、スクロールとTabで到達できる。"""
+    await browser_harness.page.set_viewport_size({"width": 320, "height": 225})
+    await _saved_mutation_commit_failure(browser_harness, monkeypatch, request, operation, "natural", low_height=True)
+    page = browser_harness.page
+    for width, height in [(320, 480), (320, 800), (1280, 900)]:
+        await page.set_viewport_size({"width": width, "height": height})
+        if height == 480:
+            await _assert_detail_notice_and_controls_reachable(
+                page, browser_harness.root / f"{operation}-320x480-notice-end.png"
+            )
+        else:
+            assert await page.locator("#detail-shell").evaluate("e => getComputedStyle(e).display") == "grid"
+            assert await page.locator("#detail-alert").evaluate("e => getComputedStyle(e).position") == "sticky"
+        await page.locator("#detail-dialog").evaluate("e => { e.scrollTop = 0; }")
+        await page.screenshot(path=str(browser_harness.root / f"{operation}-{width}x{height}.png"))
+
+
+async def _saved_mutation_commit_failure(
+    browser_harness: _BrowserHarness,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+    operation: str,
+    timing: str,
+    *,
+    low_height: bool = False,
+) -> None:
+    """実Gitとファイル監視を起動し、保存後のcommit失敗と復旧を確認する。"""
+    harness = browser_harness
+    root = harness.root / "commit-failure"
+    monkeypatch.setattr(harness.operations, "private_notes", root)
+    monkeypatch.setattr(harness.operations, "_entry_index", entry_index.EntryIndex(root))
+    monkeypatch.setattr(harness.current_state, "root", root)
+    for name in ("edit", "answer_uwi", "user_comment", "important", "transition", "add", "add_batch"):
+        monkeypatch.setattr(
+            harness.operations, name, functools.partial(getattr(wi_operations.Operations, name), harness.operations)
+        )
+    case = _DETAIL_MUTATION_CASES.get(operation)
+    content = _state_text(case.content if case else _AGENT_AWI, "inbox")
+    path = _entry_path(root, "target.md")
+    path.write_text(content, encoding="utf-8")
+    remote = git_repository.init_bare_repository(root.parent / "commit-failure-remote.git")
+    git_repository.init_repository(root, initial_branch="main", origin=str(remote), commit_message="試験の初期状態")
+    git_repository.run_git(root, "push", "--set-upstream", "origin", "main")
+    before = git_repository.git_output(root, "rev-parse", "HEAD")
+    hook = root / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    await harness.current_state.start_async(asyncio.get_running_loop())
+    request.addfinalizer(harness.current_state.stop)
+    page = harness.page
+    await page.goto(harness.base_url + "/?filename=target.md")
+    await playwright.async_api.expect(page.locator("#detail-dialog")).to_be_visible()
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await _record_self_write_warnings(page)
+    if operation in {"create", "batch"}:
+        await page.keyboard.press("Escape")
+        await page.locator("#create-button").click()
+        if operation == "batch":
+            await page.locator("#create-kind").select_option("batch")
+            await page.locator("#create-content").fill("### imported.md [inbox]\n" + content)
+        else:
+            await page.locator("#create-target").fill("github.com/example/repo")
+            await page.locator("#create-content").fill("# 保存する新規要求\n\n新規本文")
+        route_pattern = "**/api/entries/batch" if operation == "batch" else "**/api/entries"
+        submit = "#create-submit-button"
+    elif operation == "important":
+        route_pattern = "**/api/entries/important"
+        submit = "#important-button"
+    else:
+        assert case is not None
+        if case.mode_button:
+            await page.locator(case.mode_button).click()
+        if case.field:
+            await page.locator(case.field[0]).fill(case.field[1])
+        route_pattern, submit = case.route, case.submit
+    list_reloaded = asyncio.Event()
+    mutation_finished = asyncio.Event()
+
+    def observe(response: playwright.async_api.Response) -> None:
+        if response.request.method == "GET" and urllib.parse.urlsplit(response.url).path == "/api/entries":
+            list_reloaded.set()
+
+    page.on("response", observe)
+    if timing == "during":
+
+        async def hold_response(route: playwright.async_api.Route) -> None:
+            if route.request.method == "GET":
+                await route.continue_()
+                return
+            list_reloaded.clear()
+            response = await route.fetch()
+            await asyncio.wait_for(list_reloaded.wait(), timeout=10)
+            await route.fulfill(response=response)
+            mutation_finished.set()
+
+        await page.route(route_pattern, hold_response)
+    list_reloaded.clear()
+    async with page.expect_response(lambda response: response.request.method != "GET" and response.status == 500) as pending:
+        await page.locator(submit).click()
+    assert (await (await pending.value).json())["code"] == "sync_incomplete"
+    await asyncio.wait_for(list_reloaded.wait(), timeout=10)
+    if timing == "during":
+        await asyncio.wait_for(mutation_finished.wait(), timeout=10)
+    if operation in {"create", "batch"}:
+        alert = page.locator("#create-alert")
+        await playwright.async_api.expect(alert).to_contain_text("登録済み")
+        await playwright.async_api.expect(alert).to_contain_text("重複")
+        assert len(list(root.glob("**/*.md"))) == 2
+        await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(2)
+    elif operation == "delete":
+        await playwright.async_api.expect(page.locator("#detail-dialog")).to_be_hidden()
+        alert = page.locator("#operation-notice-message")
+        await playwright.async_api.expect(alert).to_contain_text("削除済み")
+        await playwright.async_api.expect(page.locator('.entry-select[data-key="target.md"]')).to_have_count(0)
+        assert not path.exists()
+    else:
+        alert = page.locator("#detail-alert")
+        await playwright.async_api.expect(alert).to_contain_text("保存")
+        saved = path.read_text(encoding="utf-8")
+        await playwright.async_api.expect(page.locator("#detail-content")).to_be_visible()
+        if operation == "save":
+            await playwright.async_api.expect(page.locator("#detail-content")).to_contain_text("保存追記")
+        elif operation == "answer":
+            await playwright.async_api.expect(page.locator("#detail-content")).to_contain_text("自由記述の回答")
+        elif operation == "user-comment":
+            await playwright.async_api.expect(page.locator("#detail-content")).to_contain_text("ユーザーのコメント")
+        elif operation == "important":
+            assert "important: true" in saved
+            await playwright.async_api.expect(page.locator("#important-button")).to_contain_text("重要解除")
+        else:
+            assert case is not None
+            await playwright.async_api.expect(page.locator("#detail-state")).to_have_text(f"awi / {case.final_state}")
+    await playwright.async_api.expect(alert).to_contain_text("他ホストへは反映していない")
+    await playwright.async_api.expect(alert).to_contain_text("atk wi commit")
+    assert await page.evaluate("window.__selfWriteWarnings") == []
+    assert git_repository.git_output(root, "rev-parse", "HEAD") == before
+    assert git_repository.git_output(remote, "rev-parse", "main") == before
+    if low_height:
+        await alert.evaluate("e => e.scrollIntoView({block: 'start', behavior: 'instant'})")
+        await page.screenshot(path=str(harness.root / f"{operation}-notice.png"))
+        await _assert_detail_notice_and_controls_reachable(page, harness.root / f"{operation}-notice-end.png")
+    hook.unlink()
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(root))
+    with pytest.raises(SystemExit) as committed:
+        atk.main(["wi", "commit"], home=harness.root)
+    assert committed.value.code == 0
+    assert git_repository.git_output(root, "rev-parse", "HEAD") != before
+    assert git_repository.git_output(remote, "rev-parse", "main") == git_repository.git_output(root, "rev-parse", "HEAD")
+
+
+async def _assert_detail_notice_and_controls_reachable(page: playwright.async_api.Page, notice_image: pathlib.Path) -> None:
+    """通知の各文字と表示中の全ボタンが、スクロール後の可視領域へ入り覆われないことを確認する。"""
+    assert await page.evaluate("""() => {
+      const body = document.getElementById('detail-dialog-body').getBoundingClientRect();
+      const footer = document.getElementById('detail-footer').getBoundingClientRect();
+      return body.bottom <= footer.top;
+    }""")
+    # stickyな通知が表示領域より高いと、scrollHeightだけでは末尾の可読性を保証できない。
+    await page.evaluate("""async () => {
+      const dialog = document.getElementById('detail-dialog');
+      const alert = document.getElementById('detail-alert');
+      const walker = document.createTreeWalker(alert, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      for (const node of nodes) {
+        for (let index = 0; index < node.length; index++) {
+          if (!node.textContent[index].trim()) continue;
+          const range = document.createRange();
+          range.setStart(node, index); range.setEnd(node, index + 1);
+          const rect = range.getBoundingClientRect();
+          const clip = dialog.getBoundingClientRect();
+          dialog.scrollTo({top: dialog.scrollTop + rect.top - clip.top - 16, behavior: 'instant'});
+          const visible = range.getBoundingClientRect();
+          const hit = document.elementFromPoint(visible.x + visible.width / 2, visible.y + visible.height / 2);
+          if (visible.top < clip.top || visible.bottom > clip.bottom || !alert.contains(hit)) {
+            throw new Error(
+              `通知の${index}文字目が読めません。` +
+              '#detail-alertの配置と折り返し、#detail-dialogのスクロール位置、操作欄との重なりを確認してください。'
+            );
+          }
+        }
+      }
+    }""")
+    await page.screenshot(path=str(notice_image))
+    buttons = page.locator("#detail-dialog button")
+    required = {await button.get_attribute("id") for button in await buttons.all() if await button.is_visible()}
+    visited = {"detail-close-button"}
+    await page.locator("#detail-close-button").focus()
+    for _ in range(len(required) + 3):
+        await page.keyboard.press("Tab")
+        focused = await page.evaluate("""() => {
+          const element = document.activeElement;
+          const rect = element.getBoundingClientRect();
+          const clip = document.getElementById('detail-dialog').getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+          return {id: element.id, rect: rect.toJSON(), clip: clip.toJSON(), hit: hit?.id,
+            visible: rect.top >= clip.top && rect.bottom <= clip.bottom && element.contains(hit)};
+        }""")
+        if focused["id"] in required:
+            assert focused["visible"], focused
+            visited.add(focused["id"])
+            if focused["id"] == "edit-button":
+                await page.screenshot(path=str(notice_image.with_name(notice_image.name.replace("notice-end", "controls"))))
+    assert visited == required
+
+
 async def _release_save_after_delay(release: threading.Event) -> None:
     """一定時間の経過後に保存処理を解放する。
 

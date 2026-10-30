@@ -106,6 +106,21 @@ class SyncIncompleteError(Exception):
     """
 
 
+def saved_commit_failure_message(root: pathlib.Path, operation: str) -> str:
+    """書込み後のcommit失敗に対して、操作別の保存状態と復旧手順を返す。"""
+    if operation == "remove":
+        saved = "このホストでは削除済み"
+    elif operation in {"entries", "batch"}:
+        saved = "このホストには登録済みです。再登録すると重複します"
+    else:
+        saved = "変更はこのホストのファイルへ保存済み"
+    return (
+        f"{saved}。commitに失敗したため他ホストへは反映していない。"
+        f"`{_git_status_command(root.resolve())}`で差分を確認し、"
+        "失敗原因を解消してから`atk wi commit`でcommitとpushを完了してください。"
+    )
+
+
 class WebApiInputError(ValueError):
     """`atk serve`のWeb APIだけが送出する入力エラー。
 

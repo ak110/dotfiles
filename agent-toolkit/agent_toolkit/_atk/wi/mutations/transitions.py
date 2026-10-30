@@ -294,9 +294,7 @@ def _apply_transition(
         return
     _update_transition_metadata(paths, action=action, now=now, cooldown_days=cooldown_days)
     for path in paths:
-        if action == "return-to-inbox" or (
-            action == "hold" and _wi_entries.entry_state_of(path) in {WI_STATE_ADOPTED, WI_STATE_REJECTED}
-        ):
+        if action in {"return-to-inbox", "hold"} and _wi_entries.entry_state_of(path) in {WI_STATE_ADOPTED, WI_STATE_REJECTED}:
             _strip_result_section(path)
         if action in {"adopt", "reject"}:
             _wi_entries.stamp_result(path, outcome=destination_name, now=now, commit=commit_values[path], note=note)
