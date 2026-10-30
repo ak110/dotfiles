@@ -456,10 +456,14 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
     # 1行あたりの平均バイト数から、閾値の半分程度に収まる行数を1回の取得単位として示す。
     chunk = max(1, plan.line_count * byte_threshold // (2 * max(plan.byte_count, 1)))
     quoted = shlex.quote(str(path))
+    budget = (plan.byte_count + 2) // 3
     return _large_warning(
         f"{plan.line_count}行、{plan.byte_count}バイトの全文取得の出力量を確認せよ"
         f"（通知の閾値: {byte_threshold}バイト）: {path}",
         fix=(
+            f"文章主体の内側max_output_tokensは少なくとも{budget}（UTF-8バイト数÷3の切上げ）にせよ。"
+            "外側セルのmax_output_tokensは内側コマンドの予算の合計以上にせよ。"
+            "nativeのoriginal token countが得られた場合は、その数以上で1回再取得せよ。"
             "内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら、そのまま標準読取を使え。"
             "予算を超える場合と本文が省略された場合は取得の範囲を選べ。"
             "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使え。"
@@ -481,10 +485,14 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
             subject="\n".join(str(path) for path, _plan in path_counts),
         )
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)
+    budget = (total_bytes + 2) // 3
     details = "、".join(f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト" for path, plan in path_counts)
     return _large_warning(
         f"複数ファイルの全文取得の出力量を確認せよ（合計: {total_bytes}バイト、通知の閾値: {byte_threshold}バイト）: {details}",
-        fix="内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら標準読取を使え。"
+        fix=f"文章主体の内側max_output_tokensは少なくとも{budget}（UTF-8合計バイト数÷3の切上げ）にせよ。"
+        "外側セルのmax_output_tokensは内側コマンドの予算の合計以上にせよ。"
+        "nativeのoriginal token countが得られた場合は、その数以上で1回再取得せよ。"
+        "内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら標準読取を使え。"
         "予算を超える場合と本文が省略された場合は、取得の必要性と範囲を選べ。"
         "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使え。"
         "全文が必要なファイルだけ、ファイルごとに別の呼び出しで"
@@ -493,11 +501,11 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
     )
 
 
-def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> str | None:
+def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False, payload: dict | None = None) -> str | None:
     """Codexの単純なBash全文取得で、通知の閾値を超える容量を警告する。"""
     if not is_codex:
         return None
-    if codex_read_delivery.can_deliver(command, cwd):
+    if codex_read_delivery.can_deliver(command, cwd, payload):
         return None
     byte_threshold = _byte_threshold()
     for paths in bash_read_paths(command, cwd):

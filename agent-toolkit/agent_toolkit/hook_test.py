@@ -31,15 +31,16 @@ from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
-from agent_toolkit._common import inherited_venv, session_activity, session_registry, state_paths
+from agent_toolkit._common import inherited_venv, session_activity, session_registry, session_state, state_paths
 from agent_toolkit._common import plugin_roots as resource_roots
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._common.plugin_roots import _inventories, _plugin_inventory, _reusable
+from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, codex_execution_payload
 from agent_toolkit.atk_test import _setup_notes
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
@@ -804,21 +805,48 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
     context = pretooluse("repeat-session", "grep -rn needle .")
     message = json.loads(context)["hookSpecificOutput"]["additionalContext"]
     assert 'kind="block"' not in message
-    if codex:
-        assert not pretooluse("repeat-session", "ls")
-        assert not pretooluse("repeat-session", "grep -rn needle .")
-    else:
-        assert not pretooluse("repeat-session", "ls")
-        assert '<atk-auto source="read-delivery" kind="document">' not in message
+    pending = pretooluse("repeat-session", "ls")
+    assert "未取得資料" in json.loads(pending)["hookSpecificOutput"]["additionalContext"]
+    assert '<atk-auto source="read-delivery" kind="document">' not in message
+    if not codex:
         assert "agent-toolkit:search" in message
-        assert not pretooluse("repeat-session", "grep -rn needle .")
-    skill = {
-        "session_id": "repeat-session",
-        "tool_name": "Skill",
-        "tool_input": {"skill": "agent-toolkit:search"},
-        "tool_response": "起動成功",
-    }
-    _call_hook_in_process(monkeypatch, "posttooluse", {"hook_event_name": "PostToolUse", **skill})
+    pretooluse("repeat-session", "grep -rn needle .")
+    for _attempt in range(12):
+        records = session_state.read_state("repeat-session")[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
+        targets = [
+            target
+            for target in read_delivery.selected_targets(records, "main")
+            if not read_delivery.target_ready(records, target, "main")
+        ]
+        if not targets:
+            assert _attempt > 0
+            break
+        for target in targets:
+            skill = read_delivery.skill_name(target.path)
+            event: dict[str, object] = {
+                "session_id": "repeat-session",
+                "cwd": str(tmp_path),
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash" if codex else "Skill" if skill else "Read",
+                "tool_input": {"command": f"cat -- {shlex.quote(str(target.path))}"}
+                if codex
+                else {"skill": skill}
+                if skill
+                else {"file_path": str(target.path)},
+                "tool_response": {"stdout": target.path.read_text(encoding="utf-8"), "exit_code": 0},
+                **({"turn_id": "repeat-turn"} if codex else {}),
+            }
+            reading = {key: value for key, value in event.items() if key not in {"hook_event_name", "tool_response"}}
+            assert not _call_hook_in_process(monkeypatch, "pretooluse", reading)
+            if codex:
+                event = codex_execution_payload(event, tmp_path, exit_code=0)
+            _call_hook_in_process(monkeypatch, "posttooluse", event)
+            acquired = session_state.read_state("repeat-session")[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
+            assert read_delivery.target_ready(acquired, target, "main")
+        pretooluse("repeat-session", "ls")
+    else:
+        pytest.fail("成功した全文取得後も未取得資料が残った")
+    assert not pretooluse("repeat-session", "ls")
     assert not pretooluse("repeat-session", "grep -rn needle .")
     assert pretooluse("other-session", "grep -rn needle .") == context
 

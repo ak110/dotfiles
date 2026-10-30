@@ -38,7 +38,7 @@ continuations:
 
 # 実行レビュータスク
 
-実装済みの差分を対象に、要件や外部仕様の水準で1段階レビューする。作業開始時にまず`agent-toolkit:review-standards`と`agent-basics:writing-standards`を起動し、読込表に示す資料を読んでから判定する。
+実装済みの差分を対象に、要件や外部仕様の水準で1段階レビューする。作業開始時にまず`agent-toolkit:review-standards`と`agent-toolkit:writing-standards`を起動し、読込表に示す資料を読んでから判定する。
 判定は`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`の「実行レビューの判定」に従う。
 `agent-basics:writing-standards`の資料は、同書における指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠として用いる。初回レビューでは、適用対象となる`agent-basics:writing-standards`の`references/review-only-criteria.md`の全基準を同一の実行レビュー内でまとめて点検し、基準ごとに個別の担当者を分けることはしない。本担当の役割はレビューおよび判定に必要な検証の実行にとどめ、実装や修正の作業は委譲元が別のエージェントへ割り当てる。
 実行レビューの入力、責務、出口の各条件は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
@@ -51,6 +51,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の起動指定に従って作成規範を取得する前 | `../skills/writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
 | 本文でこの資料の基準を参照・取得する時 | `workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文でこの資料の基準を参照・取得する時 | `exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |

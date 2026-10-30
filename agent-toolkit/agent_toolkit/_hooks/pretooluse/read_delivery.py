@@ -1,6 +1,6 @@
 """宣言された操作の前に、主体の文脈に未取得の資料を案内する。
 
-確認は関係する資料のパスを警告にまとめ、通常の操作を継続する。
+初回は資料のパスを案内し、未取得のまま再書込する操作を遮断する。
 取得の観測だけを主体別の記録に反映する。
 取得後は出力と資料の該当行の一致を確かめ、分割した取得を区間の被覆として記録する。
 軽量委譲は起動契約がスキルを使わないため対象外とする。
@@ -31,14 +31,14 @@ from agent_toolkit._common.plugin_roots import (
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command
-from agent_toolkit._hooks import agent_id, document_reads, plugin_resources, rules_context, work_contract
+from agent_toolkit._hooks import agent_id, codex_read_delivery, document_reads, plugin_resources, rules_context, work_contract
 from agent_toolkit._hooks import tool_input as tool_input_fields
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse import dependency_usage, operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, sed_read_range
-from agent_toolkit._hooks.pretooluse.notices import _llm_notice
+from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 lazy from agent_toolkit._common import task_documents
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
 
@@ -430,7 +430,11 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
         for text in _user_texts(entry):
             context_seen = False
             startup_methods = ()
-            for line in text.splitlines()[:1]:
+            launch_text = text
+            opening = '<atk-auto source="agents-server" kind="delivery">\n'
+            if text.startswith(opening) and text.rstrip().endswith("</atk-auto>"):
+                launch_text = text[len(opening) : text.rfind("</atk-auto>")]
+            for line in launch_text.splitlines()[:1]:
                 # 正式な役割見出しの候補だけでfrontmatterの処理を読み込む。
                 if ".subagent.md" not in line:
                     continue
@@ -710,6 +714,12 @@ def selected_targets(records: dict, agent: str) -> list[read_triggers.ReadTarget
 
 def _select_targets(session_id: str, targets: list[read_triggers.ReadTarget], agent: str) -> None:
     for target in targets:
+        if target.heading:
+            try:
+                target.body()
+            except ValueError:
+                # 不正な宣言を保持すると、宣言を復旧した後にも旧見出しが残る。
+                continue
         value = json.dumps({"path": str(target.path), "heading": target.heading}, ensure_ascii=False, separators=(",", ":"))
         update_state(session_id, operation_skills.mark_ready("selected-read-target:" + value, agent))
 
@@ -804,12 +814,6 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                     for target, start, end, length, fingerprint in _read_body_proofs(
                         name, inputs, response, read_paths, paths | set(read_paths), cwd
                     ):
-                        if (
-                            name == "Bash"
-                            and operation_skills.resolve_subject(payload) != operation_skills.SUBJECT_CODEX
-                            and agent not in records.get("review-output:" + str(target.path), [])
-                        ):
-                            continue
                         if operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_MAIN and skill_name(
                             target.path
                         ):
@@ -1088,6 +1092,11 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             )
         )
         host = "codex" if is_codex_payload(payload) else "claude"
+        pending.extend(
+            target
+            for target in selected_targets(records, agent)
+            if target not in pending and not target_ready(records, target, agent)
+        )
         method_sources = dict.fromkeys([*_read_paths(tool_name, tool_input, cwd), *sorted(roles)])
         for path in method_sources:
             if path.suffix == ".md" and path.is_file():
@@ -1184,6 +1193,12 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         pending = [target for target in pending if not target_ready(records, target, agent)]
     if not pending:
         return Decision()
+    command = tool_input.get("command")
+    if tool_name in {"Read", "Skill"} or (
+        tool_name == "Bash" and isinstance(command, str) and codex_read_delivery.read_plan(command)
+    ):
+        _select_targets(session_id, pending, agent)
+        return Decision()
     acquisition_paths = _read_paths(tool_name, tool_input, cwd)
     if any(row.selector == "project-skill" and row_matches(row, tool_name, tool_input, cwd) for row in rows):
         # 選択したSKILLの初動資料を案内し、取得操作は遮らずPostToolUseで観測する。
@@ -1246,6 +1261,16 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 )
             )
     acquisition = "。".join(steps) + "。出力が省略された範囲は分割して取得し、必要な全文を読め。"
+    if not warning_only and written:
+        if any(agent in records.get("read-guidance:" + document_key(target.path), []) for target in pending):
+            return Decision(
+                block=_block_notice(
+                    f"案内済み資料が未取得のため再書込を停止する。未取得資料: {shown}。",
+                    fix=acquisition,
+                )
+            )
+        for target in pending:
+            update_state(session_id, operation_skills.mark_ready("read-guidance:" + document_key(target.path), agent))
     if warning_only:
         return Decision(
             notices=(
@@ -1468,12 +1493,6 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             _mark(session_id, resolved, agent)
         return
     for target, start, end, length, fingerprint in _read_body_proofs(tool_name, tool_input, response, paths, targets, cwd):
-        if (
-            tool_name == "Bash"
-            and operation_skills.resolve_subject(payload) != operation_skills.SUBJECT_CODEX
-            and agent not in records.get("review-output:" + str(target.path), [])
-        ):
-            continue
         if operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_MAIN and skill_name(target.path):
             continue
         if start == 0 and end == length:

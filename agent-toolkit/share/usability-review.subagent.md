@@ -16,7 +16,7 @@ writes_worktree: true
 # ユーザビリティレビュータスク
 
 変更された画面を独立した担当者として実際に描画・操作し、エンドユーザーが画面の意味を正しく理解して迷わずに作業を完了できるかを評価する。自動テストでは検出できないUX上の観点（配置、状態表示、文言、フォーカス移動、操作の分かりやすさ、狭い表示幅や拡大表示、キーボード操作など）を評価対象とする。期待結果との一致、データの反映、操作の成否といった機能的な正しさについては、`agent-basics:writing-standards`の`references/testing.md`「検証単位の選定」で選んだ層の自動テストおよび実行レビューが担当するため、本タスクの評価範囲からは除外する。
-作業着手時には、まず`agent-toolkit:review-standards`と`agent-basics:writing-standards`を起動し、読込表に指定された着手時の資料を参照する。
+作業着手時には、まず`agent-toolkit:review-standards`と`agent-toolkit:writing-standards`を起動し、読込表に指定された着手時の資料を参照する。
 
 ## 名指し参照の読込方法
 
@@ -24,6 +24,7 @@ writes_worktree: true
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の起動指定に従って作成規範を取得する前 | `../skills/writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
 | 機能の正しさを確認するテスト層を選ぶ時 | `agent-basics:writing-standards/references/testing.md#「検証単位の選定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` |
 | 本文の参照基準を適用する前 | `../skills/bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |

@@ -103,8 +103,8 @@ def test_untruncated_result_is_delivered_without_replay(tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FDへ固定した再取得はLinuxで検証する")
-def test_pretooluse_keeps_original_read_and_warns_only_outside_delivery_scope(tmp_path):
-    """cwd内の通常読取は入力を補正せず許可し、範囲外には手動の警告を保つ。"""
+def test_static_pretooluse_keeps_existing_cwd_scope(tmp_path):
+    """payloadの無い静的判定は従来のcwd内を保ち、cwd外には容量警告を返す。"""
     path = tmp_path / "large.md"
     path.write_text("本文\n" * 12000, encoding="utf-8")
     command = f"cat -- {path}"
@@ -140,9 +140,9 @@ def test_changed_output_is_not_delivered(tmp_path, monkeypatch, position):
     assert "一致しない" in result.context
 
 
-@pytest.mark.parametrize("kind", ["outside", "symlink", "denied", "fifo"])
+@pytest.mark.parametrize("kind", ["symlink", "denied", "fifo"])
 def test_scope_and_special_files_are_not_replayed(tmp_path, monkeypatch, kind):
-    """範囲外・禁止・特殊ファイルを成功済みと仮定しても再取得しない。"""
+    """symlink・禁止・特殊ファイルを成功済みと仮定しても再取得しない。"""
     root = tmp_path / "workspace"
     root.mkdir()
     path = tmp_path / "outside"
@@ -176,6 +176,39 @@ def test_scope_and_special_files_are_not_replayed(tmp_path, monkeypatch, kind):
         pathlib.Path(payload["transcript_path"]).write_text("".join(json.dumps(record) + "\n" for record in records))
     result = delivery.collect(payload)
     assert result is None or result.body is None
+
+
+@pytest.mark.parametrize("kind", ["directory", "inside-link", "outside-link"])
+@pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FD固定はLinuxで検証する")
+def test_parent_operand_preserves_original_file(tmp_path, monkeypatch, capsys, kind):
+    """親ディレクトリ参照の前にあるsymlinkを省略せず、元の入力だけを再取得する。"""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    body = "元の対象の本文\n" * 40
+    (workspace / "note").write_text(body, encoding="utf-8")
+    child = workspace / "child"
+    if kind == "directory":
+        child.mkdir()
+    else:
+        target = (workspace if kind == "inside-link" else tmp_path / "outside") / "nested"
+        target.mkdir(parents=True)
+        (target.parent / "note").write_text(body, encoding="utf-8")
+        child.symlink_to(target, target_is_directory=True)
+    command = f"cat -- {child}/../note"
+    payload = _payload(workspace, monkeypatch, command, _cut(body))
+    transcript = pathlib.Path(payload["transcript_path"])
+    records = [json.loads(line) for line in transcript.read_text(encoding="utf-8").splitlines()]
+    records[2]["payload"]["permission_profile"] = {
+        "type": "managed",
+        "file_system": {"type": "restricted", "entries": []},
+    }
+    transcript.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+    allowed = kind == "directory"
+    assert delivery.can_deliver(command, str(workspace), payload) is allowed
+    assert posttooluse.main(json.dumps(payload)) == 0
+    captured = capsys.readouterr().out
+    output = json.loads(captured)["hookSpecificOutput"]["additionalContext"] if captured.strip() else ""
+    assert (json.dumps(body, ensure_ascii=False)[1:-1] in output) is allowed
 
 
 def test_same_response_capacity_is_accumulated(tmp_path, monkeypatch):
@@ -278,8 +311,8 @@ def test_oversized_replay_remains_unread(tmp_path, monkeypatch):
 @pytest.mark.parametrize("truncated", [False, True])
 @pytest.mark.parametrize("outside", [False, True])
 def test_document_read_state_follows_successful_full_delivery(tmp_path, monkeypatch, capsys, exit_code, truncated, outside):
-    """対象内の配送と対象外の全量手動読取を観測し、失敗・未確認・省略は読了にしない。"""
-    if truncated and not outside and exit_code == 0 and not pathlib.Path("/proc/self/fd").is_dir():
+    """disabledでcwd内外の配送を観測し、失敗・未確認は読了にしない。"""
+    if truncated and exit_code == 0 and not pathlib.Path("/proc/self/fd").is_dir():
         pytest.skip("FDへ固定した再取得はLinuxで検証する")
     path = plugin_resources.skill_document_path("bugfix", "references/root-cause-analysis.md")
     body = path.read_text(encoding="utf-8")
@@ -288,8 +321,6 @@ def test_document_read_state_follows_successful_full_delivery(tmp_path, monkeypa
     records = [json.loads(line) for line in transcript.read_text().splitlines()]
     if not outside:
         records[2]["payload"]["cwd"] = str(path.parent)
-    else:
-        monkeypatch.setattr(delivery, "_replay", lambda *_args, **_kwargs: pytest.fail("範囲外は再取得しない"))
     if exit_code is None:
         records = []
     transcript.write_text("".join(json.dumps(record) + "\n" for record in records))
@@ -297,4 +328,39 @@ def test_document_read_state_follows_successful_full_delivery(tmp_path, monkeypa
     capsys.readouterr()
     recorded = session_state.read_state("session").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     target = read_delivery.read_triggers.ReadTarget(path)
-    assert read_delivery.target_ready(recorded, target, "main") == (exit_code == 0 and (not outside or not truncated))
+    assert read_delivery.target_ready(recorded, target, "main") == (exit_code == 0)
+
+
+@pytest.mark.parametrize("permission", ["disabled", "read", "write", "none", "unknown"])
+@pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FD固定はLinuxで検証する")
+def test_public_hook_delivers_authorized_external_reads(tmp_path, monkeypatch, capsys, permission):
+    """元turnで許可されたcwd外資料だけをPre/Postが同じ範囲として扱う。"""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    path = tmp_path / "external.md"
+    body = "権限内の資料本文\n" * 5000
+    path.write_text(body, encoding="utf-8")
+    command = f"cat -- {path}"
+    payload = _payload(workspace, monkeypatch, command, _cut(body))
+    transcript = pathlib.Path(payload["transcript_path"])
+    records = [json.loads(line) for line in transcript.read_text().splitlines()]
+    if permission != "disabled":
+        records[2]["payload"]["permission_profile"] = {
+            "type": "managed",
+            "file_system": {
+                "type": "restricted",
+                "entries": [{"path": {"type": "path", "path": str(tmp_path)}, "access": "read"}]
+                + ([{"path": {"type": "path", "path": str(path)}, "access": permission}] if permission != "unknown" else []),
+            },
+        }
+    if permission == "unknown":
+        records[2]["payload"]["permission_profile"] = {}
+    transcript.write_text("".join(json.dumps(record) + "\n" for record in records))
+    allowed = permission in {"disabled", "read", "write"}
+    assert delivery.can_deliver(command, str(workspace), payload) is allowed
+    assert (check_large_bash_read(command, str(workspace), is_codex=True, payload=payload) is None) is allowed
+    assert posttooluse.main(json.dumps(payload)) == 0
+    captured = capsys.readouterr()
+    assert not captured.err
+    output = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"] if captured.out.strip() else ""
+    assert (json.dumps(body, ensure_ascii=False)[1:-1] in output) is allowed

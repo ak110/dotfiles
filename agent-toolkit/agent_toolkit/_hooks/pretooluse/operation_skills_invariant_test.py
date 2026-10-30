@@ -124,31 +124,49 @@ def test_operation_skill_contract_for_every_entry_and_subject(
     assert result.returncode == 0
     assert 'kind="block"' not in output
     observed = [output]
+    actor = extra.get("agent_id", "main")
+    writing = entry.short_name in {"bugfix", "writing-standards"}
     for _attempt in range(12):
-        if subject.startswith("codex"):
-            records = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
-            targets = read_delivery.selected_targets(records, extra.get("agent_id", "main"))
-            assert targets
-            # 案内だけでは取得済みにならない。
-            assert _run(payload, env).returncode == 0
-            for target in targets:
-                event = {
-                    "hook_event_name": "PostToolUse",
-                    "session_id": session_id,
-                    **_read_payload(target.path, extra),
-                    **extra,
-                }
+        records = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
+        targets = [
+            target
+            for target in read_delivery.selected_targets(records, actor)
+            if not read_delivery.target_ready(records, target, actor)
+        ]
+        if not targets:
+            assert _attempt > 0
+            break
+        repeated = _run(payload, env)
+        assert repeated.returncode == (2 if writing else 0)
+        if writing:
+            assert "未取得資料" in repeated.stderr
+        for target in targets:
+            assert target.body().strip() not in output
+            skill = read_delivery.skill_name(target.path)
+            event = {
+                **payload,
+                "hook_event_name": "PostToolUse",
+                **_read_payload(target.path, extra),
+            }
+            if skill and subject in {"main", "claude-delegate"}:
+                event.update({"tool_name": "Skill", "tool_input": {"skill": skill}, "tool_response": "起動成功"})
+            request = {key: value for key, value in event.items() if key not in {"hook_event_name", "tool_response"}}
+            reading = _run(request, env)
+            assert reading.returncode == 0
+            assert "未取得資料" not in _additional_context(reading)
+            if subject.startswith("codex"):
                 event = codex_execution_payload(event, tmp_path, exit_code=0)
-                assert _run_posttooluse(event, env).returncode == 0
-                acquired = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
-                assert read_delivery.target_ready(acquired, target, extra.get("agent_id", "main"))
+            assert _run_posttooluse(event, env).returncode == 0
+            acquired = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
+            assert read_delivery.target_ready(acquired, target, actor)
         result = _run(payload, env)
-        observed.append(result.stderr + _additional_context(result))
+        output = result.stderr + _additional_context(result)
+        observed.append(output)
         assert result.returncode == 0
-        if not result.stderr and not _additional_context(result):
+        if not output:
             break
     else:
-        pytest.fail("宣言資料の配送・全文取得後にも同じ通知が続いた")
+        pytest.fail("宣言資料の全文取得後にも同じ通知が続いた")
     assert result.returncode == 0
     assert not result.stderr
     assert _run(payload, env).returncode == 0

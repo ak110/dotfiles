@@ -171,7 +171,7 @@ def _runtime(payload: dict) -> tuple[dict, dict, str, int] | None:
 
 
 def _scope(context: dict) -> tuple[list[pathlib.Path], list[pathlib.Path]] | None:
-    """元turnのcwd・書込rootへ限定し、明示的な禁止を優先する。"""
+    """元turnの読取許可を解決し、明示的な禁止を優先する。"""
     cwd = context.get("cwd")
     if not isinstance(cwd, str) or not pathlib.Path(cwd).is_absolute():
         return None
@@ -181,7 +181,7 @@ def _scope(context: dict) -> tuple[list[pathlib.Path], list[pathlib.Path]] | Non
     if not isinstance(profile, dict):
         return None
     if profile.get("type") == "disabled":
-        return roots, denied
+        return [pathlib.Path(pathlib.Path(cwd).anchor)], denied
     policy = context.get("sandbox_policy", {})
     if not isinstance(policy, dict) or not isinstance(policy.get("writable_roots", []), list):
         return None
@@ -202,7 +202,9 @@ def _scope(context: dict) -> tuple[list[pathlib.Path], list[pathlib.Path]] | Non
             return None
         if path.get("type") == "path" and isinstance(path.get("path"), str):
             resolved = pathlib.Path(path["path"]).resolve()
-            if access == "write":
+            if not pathlib.Path(path["path"]).is_absolute():
+                return None
+            if access in {"read", "write"}:
                 roots.append(resolved)
             elif access == "none":
                 denied.append(resolved)
@@ -218,27 +220,53 @@ def _paths(
     for read in plan:
         paths = []
         for index in read.operands:
-            path = pathlib.Path(read.argv[index])
-            path = (cwd / path).resolve(strict=True)
-            if not any(path.is_relative_to(root) for root in roots) or any(path.is_relative_to(root) for root in denied):
+            # symlinkの後の親参照を先に畳むと、元コマンドと別の対象を開いてしまう。
+            path = cwd / pathlib.Path(read.argv[index])
+            resolved = path.resolve(strict=True)
+            if not any(resolved.is_relative_to(root) for root in roots) or any(
+                resolved.is_relative_to(root) for root in denied
+            ):
                 raise ValueError("読取の再取得範囲外")
             paths.append(path)
         result.append(paths)
     return result
 
 
-def can_deliver(command: str, cwd: str) -> bool:
-    """Preでは入力を変えず、cwd内の自動配送対象への従来の容量警告だけを省く。"""
+def can_deliver(command: str, cwd: str, payload: dict | None = None) -> bool:
+    """元turnの権限とFD固定を確定できる読取だけ、Preの容量警告を省く。"""
     if not pathlib.Path("/proc/self/fd").is_dir() or not hasattr(os, "O_NOFOLLOW"):
         return False
     plan = read_plan(command)
     if not plan:
         return False
     try:
-        paths = _paths(plan, pathlib.Path(cwd), [pathlib.Path(cwd).resolve()], [])
-    except OSError, ValueError:
+        context = (
+            next(
+                (
+                    record["payload"]
+                    for record, _digest in _records(pathlib.Path(payload["transcript_path"]))
+                    if isinstance(record, dict)
+                    and record.get("type") == "turn_context"
+                    and isinstance(record.get("payload"), dict)
+                    and record["payload"].get("turn_id") == payload.get("turn_id")
+                ),
+                None,
+            )
+            if payload is not None
+            else None
+        )
+        # payloadを持たない既存の静的検査は、従来のcwd内だけを対象とする。
+        scope = ([pathlib.Path(cwd).resolve()], []) if payload is None else _scope(context) if context is not None else None
+        if scope is None:
+            return False
+        paths = _paths(plan, pathlib.Path(cwd), *scope)
+        for files in paths:
+            for path in files:
+                descriptor = _open(path)
+                os.close(descriptor)
+    except OSError, ValueError, KeyError, TypeError:
         return False
-    return all(path.is_file() for files in paths for path in files)
+    return True
 
 
 def _open(path: pathlib.Path) -> int:

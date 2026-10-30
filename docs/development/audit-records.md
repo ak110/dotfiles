@@ -161,6 +161,35 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。分割前の最大の文書`agent-toolkit/skills/wi-standards/SKILL.md`（60,005バイト）は16,945トークンだった。分割後の137件では、最大が13,176トークン（`skills/plan-mode/references/plan-file-standards.md`、45,749バイト）だった。1トークンあたりバイト数の最小は3.10（`skills/plan-mode/references/legacy-plan-file-standards.md`）だった。配布設定`share/codex_config.toml`（当時は`scripts/codex_config.toml`）の`tool_output_token_limit`は20000である。20,000トークンと3.10バイトの積は約62,000バイトであり、実行セルが本文へ付加する分の余裕を取って閾値を48KiB（49,152バイト）とした。48KiBの文書は最悪の比率でも約15,900トークンで、上限に対して約4,000トークンの余裕が残る。
 再検証では同じ集合をo200k_baseで数えて1トークンあたりバイト数の最小値を測り直し、配布設定の`tool_output_token_limit`との積が閾値と付加分の余裕を上回るか確かめる。
 
+### 補完読取と出力予算の契約更新（2026年10月30日）
+
+前述の48KiBは大量読取を案内する閾値であり、個々の出力が省略されない保証値ではない。
+文章主体の内側`max_output_tokens`はUTF-8バイト数÷3の切上げ以上、外側セルは内側予算の合計以上とする。
+nativeの`original token count`が設定予算を超えた場合は、その値以上で1回再取得し、文脈容量を超える本文は分割する。
+この値は取得予算の最低値であり、前述の測定を新たな全資料・全モデルへ一般化した実測値ではない。
+
+`codex_read_delivery.py`の補完読取は元turnのsandbox読取権限を用いる。
+`disabled`ではcwd外を含み、`managed`の`restricted`ではcwd・書込rootと明示`read`・`write`を許可し、`none`を優先する。
+未知の権限では補完しない。
+成功した同一実行、通常ファイルのFD固定、各パス要素のsymlink拒否、元結果の先頭・末尾一致、文脈残量の制限を維持する。
+Preの容量案内を省く判定も同じ権限解決を使う。
+再検証では`codex_read_delivery_test.py`と`pretooluse/large_reads_test.py`で、cwd外の許可・禁止・未知の権限、特殊ファイル、本文不一致、差替え、および単一・複数ファイルの予算案内を比較する。
+本節は確定契約と実装の参照先を記録するものであり、文書更新担当によるテストの再実行結果ではない。
+
+## agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py：並行Readの公開入力：2026年10月30日
+
+独立した観測担当の記録によると、Claude Code 2.1.314、Sonnet 5.5、effort mediumで、Readだけを公開した隔離セッションへ2ファイルの同時取得を指示した。
+各ReadのPreToolUseを一時settingsのhookで捕捉し、プロセスは終了0、標準エラーは空、最終出力は両方の本文を報告した。
+捕捉した2入力では、それぞれのtranscriptにassistant型のレコードは0件で、payloadのtool_use_idとtool_inputも現在の1件だけを示した。
+この観測を根拠に、Pre時点のtranscriptだけでは同じ応答の並行相手の取得先を確定できないと判断した。
+原記録はリポジトリ外に保存されている。
+
+確定した案内方式は、純粋Read・静的Bash読取・Skill起動では依存案内を保留し、次の非取得操作で残る未取得資料を案内するものである。
+本文一致と全文被覆の取得判定、および案内済み資料を未取得のまま再書込する場合の遮断を維持する。
+この観測は変更後の案内方式の動作検証ではない。
+再検証では同じ版条件とReadのみの許可を使い、一時settingsで各Pre入力とtranscriptを保存し、現在のtool_useと並行相手の可視性を比べる。
+変更後の案内は`read_delivery_test.py`と`read_delivery_dispatch_test.py`で、純粋取得後の成功・失敗・省略と、次の非取得操作・再書込・全文取得後の解除を比較する。
+
 ## agent-toolkit/agent_toolkit/_hooks/stop.py：未配送通知を次ターンへ返す：2026年10月10日
 
 Claude Code 2.1.296の非対話CLIで、goalなし・ありの専用sessionを1件ずつ起動した。

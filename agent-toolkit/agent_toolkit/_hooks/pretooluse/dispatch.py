@@ -327,7 +327,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     if record_warning is not None:
         if record_warning:
             warnings.append(record_warning)
-    elif read_warning := check_large_bash_read(command, cwd, is_codex=is_codex):
+    elif read_warning := check_large_bash_read(command, cwd, is_codex=is_codex, payload=payload):
         warnings.append(read_warning)
     drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)
     if drive_letter_path_warning is not None:

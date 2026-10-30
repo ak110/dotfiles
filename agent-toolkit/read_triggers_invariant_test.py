@@ -1,6 +1,7 @@
 """配布物とdotfilesの全読込表・他資料参照をCIで検査する。"""
 
 import pathlib
+import re
 import shutil
 
 import pytest
@@ -9,6 +10,23 @@ from agent_toolkit._common import plugin_roots, read_triggers
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent
+
+
+@pytest.mark.parametrize("role", sorted(path.name for path in (_PLUGIN_ROOT / "share").glob("*.subagent.md")))
+def test_role_writing_skill_matches_operation_bootstrap(role):
+    """起動する作成規範の名前空間がbootstrapと一致することを確認する。"""
+    bootstrap = (_PLUGIN_ROOT / "share/read-trigger-bootstrap.md").read_text(encoding="utf-8")
+    line = next(line for line in bootstrap.splitlines() if "`body-writing`" in line)
+    skill = re.search(r"`([^`]+/SKILL\.md)`", line)
+    assert skill is not None
+    if ":" in skill[1]:
+        expected = skill[1].removesuffix("/SKILL.md")
+    else:
+        path = (_PLUGIN_ROOT / "share" / skill[1]).resolve()
+        expected = f"{path.relative_to(_PLUGIN_ROOT.parent).parts[0]}:writing-standards"
+    body = (_PLUGIN_ROOT / "share" / role).read_text(encoding="utf-8")
+    started = re.findall(r"`(agent-[^`]+:writing-standards)`(?=[^\n]*を起動)", body)
+    assert not started or set(started) == {expected}, (role, started, expected)
 
 
 def test_all_read_tables_have_valid_declarations_and_routes():

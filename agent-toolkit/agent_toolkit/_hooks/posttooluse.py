@@ -19,7 +19,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
    `process_wi_skill_invoked`のリセット (Skill)、
    `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)、
    操作を起動の契機とするスキルの起動による`operation_skill_delivered_agents`の記録 (Skill)、
-   同じスキルの必須資料を全文読んだ観測による同じ記録 (Read、CodexのBash)
+   同じスキルの必須資料を全文読んだ観測による同じ記録 (Read、Bash)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （UserPromptSubmitの命名が計画名の解決に使用）
 7. Bashの背景実行、MCP呼び出しの移行通知およびAgent・Taskの背景起動が返した識別子を、
@@ -478,7 +478,8 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
 def _observe_document_reads(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> None:
     """操作を起動の契機とするスキルの必須資料を全文読んだ観測を、主体の取得として記録する。
 
-    Claude CodeのReadは参照資料と、Skillを使えない場合があるサブエージェントの`SKILL.md`を対象にする。
+    Claude Codeの参照資料はReadと本文が一致するBashの取得をread_delivery.observeで記録する。
+    本関数は従来の操作別記録を補い、Skillを使えないサブエージェントの`SKILL.md`も対象にする。
     メイン会話とClaude委譲先の`SKILL.md`はSkill起動を取得手段とするため、Readでは記録しない。
     CodexはBashの読取が資料の本文を返したことを対象にする。軽量委譲先はスキルを使わない前提のため記録しない。
     """

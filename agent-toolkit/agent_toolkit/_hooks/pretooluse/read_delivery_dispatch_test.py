@@ -43,8 +43,9 @@ def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_p
     context = _context(capsys.readouterr())
     assert "root-cause-analysis.md" in context
     assert "記録の粒度は" not in context
-    assert dispatch.main(json.dumps(payload)) == 0
-    _context(capsys.readouterr())
+    assert dispatch.main(json.dumps(payload)) == 2
+    captured = capsys.readouterr()
+    assert "未取得資料" in captured.err
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
     root_cause = plugin_resources.skill_document_path("bugfix", "references/root-cause-analysis.md")
     assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
@@ -57,19 +58,50 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     root_cause = plugin_resources.skill_document_path("bugfix", "references/root-cause-analysis.md")
     assert str(root_cause) in context
     assert root_cause.read_text(encoding="utf-8").strip() not in context
-    assert dispatch.main(json.dumps(payload)) == 0
-    _context(capsys.readouterr())
+    assert dispatch.main(json.dumps(payload)) == 2
+    captured = capsys.readouterr()
+    assert "未取得資料" in captured.err
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
     assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
     assert not (tmp_path / "plan.md").exists()
+    for _ in range(12):
+        selected = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
+        targets = [
+            target
+            for target in read_delivery.selected_targets(selected, "main")
+            if not read_delivery.target_ready(selected, target, "main")
+        ]
+        if not targets:
+            break
+        for path in dict.fromkeys(target.path for target in targets):
+            skill = read_delivery.skill_name(path)
+            result = {
+                **payload,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Skill" if skill else "Read",
+                "tool_input": {"skill": skill} if skill else {"file_path": str(path)},
+                "tool_response": "起動成功" if skill else path.read_text(encoding="utf-8"),
+            }
+            assert posttooluse.main(json.dumps(result)) == 0
+            capsys.readouterr()
+        status = dispatch.main(json.dumps(payload))
+        captured = capsys.readouterr()
+        if status == 0:
+            _context(captured)
+        else:
+            assert status == 2 and "未取得資料" in captured.err
+    else:
+        pytest.fail("全資料取得後も未取得資料が残った")
+    assert dispatch.main(json.dumps(payload)) == 0
+    assert not _context(capsys.readouterr())
 
 
 def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_path, capsys):
     payload = _payload(tmp_path, True)
     assert dispatch.main(json.dumps(payload)) == 0
     assert "root-cause-analysis.md" in _context(capsys.readouterr())
-    assert dispatch.main(json.dumps(payload)) == 0
-    assert not _context(capsys.readouterr())
+    assert dispatch.main(json.dumps(payload)) == 2
+    assert "未取得資料" in capsys.readouterr().err
     seen = set()
     for _ in range(12):
         records = read_delivery.read_state(payload["session_id"])
@@ -94,8 +126,12 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
             assert posttooluse.main(json.dumps(result)) == 0
             capsys.readouterr()
             seen.update(paths)
-        assert dispatch.main(json.dumps(payload)) == 0
-        _context(capsys.readouterr())
+        status = dispatch.main(json.dumps(payload))
+        captured = capsys.readouterr()
+        if status == 0:
+            _context(captured)
+        else:
+            assert status == 2 and "未取得資料" in captured.err
     else:
         pytest.fail("明示した全資料の取得で元の操作が通らなかった")
     assert seen

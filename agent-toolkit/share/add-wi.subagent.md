@@ -23,7 +23,7 @@ continuations:
 投入先リポジトリの決定、成果物の変更、および委譲元自身の元作業の続行は、委譲元が担当する。既存項目の状態遷移は付随型では委譲元が行い、専念型における保存後の保留解除は共通手順に従って本担当が担当する。
 観測された欠陥を起点とする要求において、直接的原因、根本原因、類似見直し、ならびに対策と再発防止策の確定は本担当が担う。委譲元から渡された`確定済みの観測`は、内容と観測条件が一致する範囲で再利用し、同一の観測を最初からやり直すことは避ける。
 振り返りから受け取った確定済みの原因、類似調査と具体策も、対象や新たな証拠に再確認の必要がない範囲で再利用する。重複比較は`agent-toolkit:wi-standards`の`references/drafting-completion.md`「重複判定」の起点別条件に従う。
-作業の開始にあたっては、調査する前にまず`agent-toolkit:wi-standards`と`agent-basics:writing-standards`を起動する。観測された欠陥を起点とする要求では、併せて`agent-toolkit:bugfix`も起動する。各操作する前には、起動したスキルおよび本書の読込表を参照し、該当する節を読む。
+作業の開始にあたっては、調査する前にまず`agent-toolkit:wi-standards`と`agent-toolkit:writing-standards`を起動する。観測された欠陥を起点とする要求では、併せて`agent-toolkit:bugfix`も起動する。各操作する前には、起動したスキルおよび本書の読込表を参照し、該当する節を読む。
 
 本書で書式が固定されている返却値や固定文字列は指定の書式のままとする。
 
@@ -33,6 +33,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文の起動指定に従って作成規範を取得する前 | `../skills/writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md` |

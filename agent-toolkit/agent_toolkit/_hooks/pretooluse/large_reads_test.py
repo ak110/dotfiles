@@ -396,6 +396,7 @@ def test_dispatch_claude_large_read_passes_without_correction(tmp_path: pathlib.
 def test_dispatch_codex_warns_and_allows_bash_full_read(tmp_path: pathlib.Path, capsys) -> None:
     """Codexの全文取得を継続し、出力予算と継続取得の案内を渡す。"""
     target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
+    # 元turnのturn_contextを持たないPre入力では容量警告を維持する。
     payload = {
         "tool_name": "Bash",
         "tool_input": {"command": f"cd {target.parent} && cat {target.name}"},
@@ -461,3 +462,17 @@ def test_large_read_notice_keeps_recovery_without_generic_fallback(tmp_path, mon
         assert "--transcript" in notice
     else:
         assert "sed -n '" in notice and "末尾の" in notice
+
+
+@pytest.mark.parametrize("multiple", [False, True])
+def test_large_read_budget_guidance(tmp_path, multiple):
+    """日本語の実バイト合計に対応する内外予算と再取得手順を案内する。"""
+    paths = [tmp_path / "first.md", *([tmp_path / "second.md"] if multiple else [])]
+    for path in paths:
+        path.write_text("本文\n" * 8000, encoding="utf-8")
+    budget = (sum(path.stat().st_size for path in paths) + 2) // 3
+    notice = _codex_read(shlex.join(["cat", "--", *map(str, paths)]), tmp_path)
+    assert notice is not None
+    assert f"少なくとも{budget}" in notice
+    assert "外側セルのmax_output_tokensは内側コマンドの予算の合計以上" in notice
+    assert "original token count" in notice and "その数以上で1回再取得" in notice
