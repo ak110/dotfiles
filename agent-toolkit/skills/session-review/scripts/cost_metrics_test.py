@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import datetime
+import gc
 import json
 import os
+import weakref
 from pathlib import Path
 from typing import Any
 
 import pytest
 import session_review_evidence
+from cost_metrics import _scan_sessions
 
 from agent_toolkit._atk import run_script
+from agent_toolkit._common import session_family
+from agent_toolkit._common.session_family import _load_records_checked, _RecordLoad
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.session_evidence_support import agy_step, write_agy_log, write_jsonl
 
@@ -441,3 +447,67 @@ def test_history_invalid_wi_identifies_path_and_commit(
     assert relative in event["text"]
     commit = git_repository.run_git(repo, "rev-parse", "HEAD").stdout.strip()
     assert f"commit={commit}" in event["text"]
+
+
+@pytest.mark.parametrize("child_time", ["2026-10-06T12:00:00Z", "2026-09-01T12:00:00Z"])
+def test_old_mtime_parent_reference_excludes_independent_child(
+    dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str], child_time: str
+) -> None:
+    """自己判別情報の無い子も旧mtime親の参照へ帰属させ、旧親の開始・coverage条件を保つ。"""
+    claude, codex, _ = dataset
+    parent = claude / "project-a/parent.jsonl"
+    write_jsonl(parent, _claude("2026-09-01T12:00:00Z", child=_CHILD))
+    os.utime(parent, (0, 0))
+    write_jsonl(codex / f"2026/10/06/rollout-child-{_CHILD}.jsonl", _codex(child_time, _CHILD))
+    since = datetime.datetime(2026, 10, 5, tzinfo=datetime.UTC)
+    # 最終期間判定で除外される子も、索引の段階で独立rootでないことを検査する。
+    sessions, candidates, coverage = _scan_sessions({"claude": claude, "codex": codex}, since)
+    assert {session.item.record_id for session in sessions} == {"codex:other"}
+    assert "parent" in candidates and _CHILD in candidates
+    assert all(not session.item.records for session in sessions)
+    assert coverage["by_runtime"]["claude"]["oldest_record_at"] == "2026-10-06T12:00:00+00:00"
+    assert coverage["by_runtime"]["claude"]["unreadable_record_count"] == 0
+    events = _run(dataset, capsys, "--since", since.isoformat(), "--until", "2026-10-12T00:00:00Z")
+    week = next(event for event in events if event["kind"] == "cost-metrics-week")
+    assert week["root_session_count"] == {"all": 1, "process-wi": 0}
+    assert week["tokens"]["all"]["total"] == {
+        "input_tokens": 75,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 25,
+        "output_tokens": 50,
+    }
+    assert [event["session_id"] for event in events if event["kind"] == "cost-metrics-session"] == ["other"]
+    assert events[-1]["unresolved_delegate_count"] == 0
+
+
+class _TrackedEntry(dict[str, Any]):
+    """費用集計の家族本文を弱参照で観測する。"""
+
+
+def test_cost_metrics_releases_family_before_next_root(
+    dataset: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """費用の公開CLIでも索引に本文を保存せず、独立root間で前家族を解放する。"""
+    original = _load_records_checked
+    references: dict[str, list[weakref.ReferenceType[_TrackedEntry]]] = {}
+
+    def tracked(path: str | None, **_kwargs: Any) -> _RecordLoad:
+        assert path is not None
+        group = "other" if Path(path).name == "rollout-other.jsonl" else "parent"
+        gc.collect()
+        assert all(reference() is None for key, refs in references.items() if key != group for reference in refs)
+        loaded = original(path)
+        assert loaded.records is not None
+        records = []
+        for record in loaded.records:
+            entry = _TrackedEntry(record.entry)
+            references.setdefault(group, []).append(weakref.ref(entry))
+            records.append(record._replace(entry=entry))
+        return loaded._replace(records=records)
+
+    monkeypatch.setattr(session_family, "_load_records_checked", tracked)
+    events = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")
+    assert events[0]["root_session_count"]["all"] == 2
+    assert set(references) == {"parent", "other"}
+    gc.collect()
+    assert all(reference() is None for refs in references.values() for reference in refs)

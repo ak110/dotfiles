@@ -14,9 +14,9 @@ from typing import Any
 
 import yaml
 from session_evidence_catalog import _workflow_evidence
-from session_evidence_extract import _CollectedRecord, _load_records, _parse_timestamp, _record_timestamp, _Runtime
+from session_evidence_extract import _CollectedRecord, _load_records, _parse_timestamp, _Record, _Runtime
 from session_evidence_hook_notices import _hook_notice_events
-from session_evidence_records import _agents_server_call_ids, _collect_records, _thread_ids_from_record
+from session_evidence_records import _collect_records
 from session_evidence_stats import _add_tokens, _codex_normalized_tokens, _parse_cli_timestamp, _stats_summary_data
 
 from agent_toolkit._agents_server import record_paths
@@ -25,6 +25,7 @@ from agent_toolkit._atk.wi import layout as wi_layout
 from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._common import model_pricing, private_notes, session_cost
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.session_family import _scan_record_metadata
 from agent_toolkit._git import command as git_command
 
 _TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
@@ -202,37 +203,31 @@ def _scan_sessions(
                         else path.stem
                     )
                     paths[identity].append((path, "codex" if runtime == "codex" else "agy" if runtime == "agy" else "claude"))
+                    # 旧mtimeの親も参照索引に必要。候補・coverageの期間条件はそのまま保つ。
+                    old_meta = _scan_record_metadata(path)
+                    if old_meta.failure is None:
+                        referenced.update(old_meta.child_ids)
                     continue
-                records = _load_records(str(path))
+                meta = _scan_record_metadata(path)
             except OSError:
-                records = None
-            if not records:
                 runtime_coverage[runtime]["unreadable_record_count"] += 1
                 continue
-            collected, _ = _collect_records(str(path), records, main_only=True)
-            item = collected[0]
-            if item.runtime is None:
+            if meta.failure is not None or not meta.record_count or meta.runtime is None:
                 runtime_coverage[runtime]["unreadable_record_count"] += 1
                 continue
-            timestamps = [timestamp for record in records if (timestamp := _record_timestamp(record)) is not None]
-            start = min(timestamps) if timestamps else None
+            item = _CollectedRecord(meta.record_id, path, [], meta.runtime, None, None, None, "main", ("main",))
+            start = meta.start
             if start is not None:
                 oldest = min(oldest, start) if oldest is not None else start
             else:
                 coverage["unknown_start_count"] += 1
             session_id = item.record_id.partition(":")[2]
-            paths[session_id].append((path, item.runtime))
-            calls = _agents_server_call_ids(records)
-            for record in records:
-                referenced.update(_thread_ids_from_record(record, calls))
-                payload = record.entry.get("payload")
-                source = payload.get("source") if isinstance(payload, dict) else None
-                if isinstance(source, dict) and "subagent" in source:
-                    referenced.add(session_id)
-            if path.parent.name == "subagents":
+            paths[session_id].append((path, meta.runtime))
+            referenced.update(meta.child_ids)
+            if meta.is_subagent:
                 referenced.add(session_id)
             # 走査全体では本文を保持せず、各ルートの集計時だけ再帰収集する。
-            sessions.append(_Session(item._replace(records=[]), start))
+            sessions.append(_Session(item, start))
         runtime_coverage[runtime]["oldest_record_at"] = oldest.isoformat() if oldest else None
     candidates = {identity: items[0] for identity, items in paths.items() if len(items) == 1}
     return [session for session in sessions if session.item.record_id.partition(":")[2] not in referenced], candidates, coverage
@@ -286,17 +281,7 @@ def _session_metrics(
             incomplete=bool(missing),
         )
         amounts.pop("pricing")
-        cwd = next(
-            (
-                entry.get("cwd") if isinstance(entry.get("cwd"), str) else entry["payload"].get("cwd")
-                for record in records
-                if isinstance((entry := record.entry).get("cwd"), str)
-                or entry.get("type") == "session_meta"
-                and isinstance(entry.get("payload"), dict)
-                and isinstance(entry["payload"].get("cwd"), str)
-            ),
-            None,
-        )
+        cwd = _session_cwd(records)
         session_rows.append(
             {
                 "kind": "cost-metrics-session",
@@ -307,7 +292,8 @@ def _session_metrics(
                 **amounts,
             }
         )
-        workflow, _ = _workflow_evidence(family[0])
+        item = family[0]
+        workflow, _ = _workflow_evidence(item)
         scopes = ("all", "process-wi") if workflow == "process-wi" else ("all",)
         for scope in scopes:
             week["root_session_count"][scope] += 1
@@ -337,12 +323,25 @@ def _session_metrics(
                 target = week["tokens"][scope]
                 _add_tokens(target["total"], tokens)
                 _add_tokens(target["by_runtime"].setdefault(item.runtime, _empty_tokens()), tokens)
+        del records, family, item
     coverage["unresolved_delegate_count"] = len(unresolved)
     coverage["records_lost_during_collection_count"] = len(unreadable)
     for runtime, unreadable_ids in cli_unreadable.items():
         coverage["by_runtime"].setdefault(runtime, {"oldest_record_at": None})["unreadable_record_count"] = len(unreadable_ids)
     coverage["pricing"] = model_pricing.pricing_metadata()
     return coverage, session_rows
+
+
+def _session_cwd(records: list[_Record]) -> str | None:
+    """開始記録のcwdを取得し、呼出側へ本文エントリの参照を残さない。"""
+    for record in records:
+        entry = record.entry
+        if isinstance(entry.get("cwd"), str):
+            return entry["cwd"]
+        payload = entry.get("payload")
+        if entry.get("type") == "session_meta" and isinstance(payload, dict) and isinstance(payload.get("cwd"), str):
+            return payload["cwd"]
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
