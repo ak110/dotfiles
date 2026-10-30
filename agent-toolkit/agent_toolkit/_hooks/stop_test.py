@@ -3,15 +3,22 @@
 import importlib
 import json
 import pathlib
+from typing import Any
 
 import pytest
 
+from agent_toolkit import atk
+from agent_toolkit._atk.wi import process_loop_log as loop_log
+from agent_toolkit._atk.wi import process_loop_session as session
+from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
+from agent_toolkit._atk.wi.process_loop_test import _manifest, _targets
 from agent_toolkit._common import session_state
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import stop
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._testing.helpers import _write_transcript
+from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
 
 _HOOKS_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
 
@@ -308,7 +315,11 @@ def test_queued_notifications_yield_without_overriding_block(
 
 
 def _run_busy_loop_turns(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, termination_status: str
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    termination_status: str,
+    *,
+    abort_path: pathlib.Path | None = None,
 ) -> tuple[dict[str, object], dict[str, int]]:
     """常駐ループのセッションで無進捗ターンを閾値まで重ね、最後のStop応答と停止工程の呼出し回数を返す。
 
@@ -316,25 +327,20 @@ def _run_busy_loop_turns(
     自律終了判定は`atk agents-exit-session`の起動記録が無いため、停止が無ければ継続を求める。
     """
     from agent_toolkit._atk import agents_exit_session  # pylint: disable=import-outside-toplevel
-    from agent_toolkit._atk.wi import process_loop_log  # pylint: disable=import-outside-toplevel
 
     _set_state_directory(monkeypatch, tmp_path)
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setattr(_background_tasks, "is_pending_async_work", lambda *args, **kwargs: False)
-    calls = {"abort": 0, "terminate": 0}
-
-    def abort() -> pathlib.Path:
-        calls["abort"] += 1
-        return tmp_path / "process-wi-abort"
+    calls = {"terminate": 0}
 
     def terminate(*, session_id: str) -> tuple[str, object]:
         del session_id  # noqa
         calls["terminate"] += 1
         return termination_status, None
 
-    monkeypatch.setattr(process_loop_log, "request_abort", abort)
+    monkeypatch.setattr(loop_log, "abort_path", lambda: abort_path or tmp_path / "process-wi-abort")
     monkeypatch.setattr(agents_exit_session, "request_termination", terminate)
     _replace_checks(
         monkeypatch,
@@ -360,6 +366,7 @@ def _run_busy_loop_turns(
         result = stop.evaluate(json.dumps({"session_id": "busy-loop", "transcript_path": str(transcript)}))
         if index < 2:
             assert calls["terminate"] == 0
+    assert not loop_log.abort_path().exists()
     return result, calls
 
 
@@ -370,7 +377,7 @@ def test_busy_loop_halt_suppresses_continuation_blocks(
     """無進捗停止が終了要求を成立させたStopは、自律終了判定や他の判定の継続要求を返さない。"""
     result, calls = _run_busy_loop_turns(monkeypatch, tmp_path, termination_status)
 
-    assert calls == {"abort": 1, "terminate": 1}
+    assert calls == {"terminate": 1}
     assert "decision" not in result
     assert "reason" not in result
     assert "無進捗のターンが3回続いた" in str(result["systemMessage"])
@@ -383,8 +390,59 @@ def test_busy_loop_halt_unissued_keeps_other_decisions(
     """終了要求を送れなかったStopは、他の判定の継続要求と未発行を述べる通知をそのまま返す。"""
     result, calls = _run_busy_loop_turns(monkeypatch, tmp_path, termination_status)
 
-    assert calls == {"abort": 1, "terminate": 1}
+    assert calls == {"terminate": 1}
     assert result["decision"] == "block"
     assert "atk agents-exit-session" in str(result["reason"])
     assert "別の遮断" in str(result["reason"])
     assert "セッションの終了要求は送っていない" in str(result["systemMessage"])
+
+
+@pytest.mark.parametrize("stop_mode", ["abort", "interrupt"])
+def test_blocked_conversation_keeps_process_loop_running(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, stop_mode: str
+) -> None:
+    """公開常駐CLIが3無進捗ターン後のblocked結果を保持して待機し、明示停止で終了する。"""
+    isolate_process_loop_commands(monkeypatch, tmp_path)
+    _notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
+    monkeypatch.setattr(_pl_watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)
+    manifests: list[dict] = []
+    waited: list[bool] = []
+
+    def execute(_args: Any, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt).read_text(encoding="utf-8"))
+        manifests.append(data)
+        child_env["AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"] = "busy-loop"
+        kwargs["on_session_started"]("busy-loop")
+        hook_directory = tmp_path / "hook"
+        hook_directory.mkdir()
+        shared_abort = loop_log.abort_path()
+        with monkeypatch.context() as hook_patch:
+            result, calls = _run_busy_loop_turns(hook_patch, hook_directory, "exit_requested", abort_path=shared_abort)
+        assert calls["terminate"] == 1
+        assert "decision" not in result
+        assert not loop_log.abort_path().exists()
+        records = {snapshots[0].repository.repo_id: {"status": "blocked", "writer_sessions": []}}
+        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": records}), encoding="utf-8")
+        return True
+
+    def wait(_notes: pathlib.Path, _repo: str | None, **_kwargs: Any) -> bool:
+        assert len(manifests) == 1
+        assert not loop_log.abort_path().exists()
+        stored = json.loads(pathlib.Path(manifests[0]["result_file"]).read_text(encoding="utf-8"))
+        assert stored["repositories"][snapshots[0].repository.repo_id]["status"] == "blocked"
+        waited.append(True)
+        if stop_mode == "interrupt":
+            raise KeyboardInterrupt
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", "process-loop", "abort"], home=tmp_path)
+        assert result.value.code == 0
+        assert loop_log.abort_path().exists()
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "process-loop", "--no-update", "--no-alerts"], home=tmp_path)
+    assert result.value.code == 0
+    assert waited == [True]
+    assert not loop_log.abort_path().exists()

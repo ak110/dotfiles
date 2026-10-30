@@ -7,6 +7,7 @@
 import json
 import pathlib
 import tempfile
+from collections.abc import Iterator
 
 import pytest
 
@@ -32,27 +33,24 @@ class _Target:
 
 
 @pytest.fixture(name="calls")
-def _calls(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> dict[str, int]:
+def _calls(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> Iterator[dict[str, int]]:
     """状態ファイルの位置を隔離し、停止工程の呼び出し回数を記録する。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv(_ENV_REQUIRED, "1")
     monkeypatch.delenv(_ENV_SESSION_ID, raising=False)
     monkeypatch.delenv(_ENV_DELEGATED_SESSION, raising=False)
     monkeypatch.setattr(_background_tasks, "is_pending_async_work", lambda *args, **kwargs: False)
-    recorded = {"abort": 0, "terminate": 0}
-
-    def _abort() -> pathlib.Path:
-        recorded["abort"] += 1
-        return tmp_path / "process-wi-abort"
+    recorded = {"terminate": 0}
 
     def _terminate(*, session_id: str) -> tuple[str, object]:
         assert session_id == _SESSION_ID
         recorded["terminate"] += 1
         return "terminating", _Target()
 
-    monkeypatch.setattr(_process_loop_log, "request_abort", _abort)
+    monkeypatch.setattr(_process_loop_log, "abort_path", lambda: tmp_path / "process-wi-abort")
     monkeypatch.setattr(_agents_exit_session, "request_termination", _terminate)
-    return recorded
+    yield recorded
+    assert not _process_loop_log.abort_path().exists()
 
 
 def _write_transcript(tmp_path: pathlib.Path, name: str, entries: list[dict]) -> str:
@@ -87,7 +85,7 @@ def _turn(tmp_path: pathlib.Path, index: int, entries: list[dict]) -> tuple[str,
 
 
 def test_halts_after_threshold_no_tool_turns(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
-    """無進捗ターンが閾値回続くと停止の意図を返し、`halt`が中断要求と終了要求を実行する。"""
+    """無進捗ターンが閾値回続くと停止の意図を返し、`halt`が会話の終了を要求する。"""
     entries: list[dict] = []
     decisions = []
     for index in range(3):
@@ -96,11 +94,11 @@ def test_halts_after_threshold_no_tool_turns(tmp_path: pathlib.Path, calls: dict
 
     assert [decision for decision, _ in decisions[:2]] == ["approve", "approve"]
     assert decisions[2] == ("halt", "3")
-    assert calls == {"abort": 0, "terminate": 0}
+    assert calls == {"terminate": 0}
     assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 0
     status, body = busy_loop_guard.halt(_SESSION_ID, 3)
     assert status == "terminating"
-    assert calls == {"abort": 1, "terminate": 1}
+    assert calls == {"terminate": 1}
     assert "無進捗のターンが3回続いた" in body
     assert "pid=4242" in body
 
@@ -126,7 +124,36 @@ def test_halt_requests_function_hook_exit(
     status, body = busy_loop_guard.halt(_SESSION_ID, 3)
     assert status == "exit_requested"
     assert "ターン終了後に/exit" in body
-    assert calls == {"abort": 1, "terminate": 1}
+    assert calls == {"terminate": 1}
+
+
+@pytest.mark.parametrize("status", ["exit_requested", "terminating", "changed", "unsupported"])
+def test_halt_reports_exact_termination_outcome_and_recovery(
+    calls: dict[str, int], monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    """4状態の送出結果と未送出時のユーザーの具体的操作を、停止副作用とともに確認する。"""
+    logged = []
+
+    def terminate(*, session_id: str):
+        assert session_id == _SESSION_ID
+        calls["terminate"] += 1
+        return status, None if status == "unsupported" else _Target()
+
+    monkeypatch.setattr(_agents_exit_session, "request_termination", terminate)
+    monkeypatch.setattr(busy_loop_guard, "append_stop_log", lambda *args, **_kwargs: logged.append(args))
+    actual, body = busy_loop_guard.halt(_SESSION_ID, 3)
+    assert actual == status and calls == {"terminate": 1}
+    assert logged == [(_SESSION_ID, "halt_busy_loop", {"count": 3, "threshold": 3, "termination": status})]
+    assert "無進捗のターンが3回続いた" in body
+    if status == "exit_requested":
+        assert "終了を要求した" in body and "ターン終了後に/exit" in body
+    elif status == "terminating":
+        assert "終了要求を送った: claude pid=4242" in body
+    else:
+        assert "終了を要求した" not in body
+        assert "終了要求は送っていない" in body
+        assert ("識別後に変化した" if status == "changed" else "一意に識別できない") in body
+        assert "次の操作:" in body and "Ctrl+C" in body and "管理者" in body and _SESSION_ID in body
 
 
 def test_below_threshold_keeps_session(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
@@ -137,7 +164,7 @@ def test_below_threshold_keeps_session(tmp_path: pathlib.Path, calls: dict[str, 
         decision, _ = _turn(tmp_path, index, entries)
         assert decision == "approve"
 
-    assert calls == {"abort": 0, "terminate": 0}
+    assert calls == {"terminate": 0}
     assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 2
 
 
@@ -150,7 +177,7 @@ def test_tool_use_resets_count(tmp_path: pathlib.Path, calls: dict[str, int]) ->
 
     assert decision == "approve"
     assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 0
-    assert calls == {"abort": 0, "terminate": 0}
+    assert calls == {"terminate": 0}
 
 
 def test_pending_async_work_resets_count(
@@ -166,7 +193,7 @@ def test_pending_async_work_resets_count(
         decision, _ = _turn(tmp_path, index, entries)
         assert decision == "approve"
 
-    assert calls == {"abort": 0, "terminate": 0}
+    assert calls == {"terminate": 0}
     assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 0
 
 
@@ -183,7 +210,7 @@ def test_non_process_loop_session_is_skipped(
         decision, _ = _turn(tmp_path, index, entries)
         assert decision == "approve"
 
-    assert calls == {"abort": 0, "terminate": 0}
+    assert calls == {"terminate": 0}
     assert "stop_no_tool_turn_count" not in read_state(_SESSION_ID)
 
 
@@ -192,7 +219,7 @@ def test_nested_session_id_is_skipped(tmp_path: pathlib.Path, calls: dict[str, i
     monkeypatch.setenv(_ENV_SESSION_ID, "parent")
     for index in range(4):
         _turn(tmp_path, index, [_text_entry()])
-    assert calls == {"abort": 0, "terminate": 0}
+    assert calls == {"terminate": 0}
     assert "stop_no_tool_turn_count" not in read_state(_SESSION_ID)
 
 
@@ -201,7 +228,7 @@ def test_matching_session_id_is_counted(tmp_path: pathlib.Path, calls: dict[str,
     monkeypatch.setenv(_ENV_SESSION_ID, _SESSION_ID)
     _turn(tmp_path, 0, [_text_entry()])
     assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 1
-    assert calls == {"abort": 0, "terminate": 0}
+    assert calls == {"terminate": 0}
 
 
 def test_delegated_session_is_skipped(
@@ -217,7 +244,7 @@ def test_delegated_session_is_skipped(
         decision, _ = _turn(tmp_path, index, entries)
         assert decision == "approve"
 
-    assert calls == {"abort": 0, "terminate": 0}
+    assert calls == {"terminate": 0}
 
 
 def test_native_subagent_stop_does_not_abort_parent_loop(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
@@ -230,7 +257,7 @@ def test_native_subagent_stop_does_not_abort_parent_loop(tmp_path: pathlib.Path,
         assert validate_hook_output("Stop", result) == []
         assert result.get("decision") != "block"
 
-    assert calls == {"abort": 0, "terminate": 0}
+    assert calls == {"terminate": 0}
     assert "stop_no_tool_turn_count" not in read_state(_SESSION_ID)
 
 
@@ -242,7 +269,7 @@ def test_native_subagent_question_does_not_block_parent_loop(tmp_path: pathlib.P
 
     assert validate_hook_output("Stop", result) == []
     assert result.get("decision") != "block"
-    assert calls == {"abort": 0, "terminate": 0}
+    assert calls == {"terminate": 0}
 
 
 def test_stop_entry_point_reports_system_message(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:

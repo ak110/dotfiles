@@ -14,14 +14,16 @@ _ABORT_BELL_INTERVAL_SEC = 0.1
 def _process_loop_abort_path() -> pathlib.Path:
     """process-loopの中断要求を保持する状態ファイルのパスを返す。
 
-    パスの解決は`process_loop_log.abort_path`が担う。Stop hookも同じ関数を使う。
+    パスの解決は`process_loop_log.abort_path`が担う。
     """
     return _process_loop_log.abort_path()
 
 
 def cmd_process_loop_abort() -> None:
     """process-loopへ現在のセッション終了後の中断を要求する。"""
-    _process_loop_log.request_abort()
+    path = _process_loop_abort_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
     _outcome.report_success("process-loopへ中断を要求した")
 
 

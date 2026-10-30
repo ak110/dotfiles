@@ -2,8 +2,7 @@
 
 `atk wi process-loop`が起動したセッションでは、ターンを終えるたびに`/goal`の目標評価が発動する。
 権限拒否などで工程が進まない状態では、ツール呼び出しを伴わないターンと目標評価だけが繰り返され、
-ユーザーが介入するまでトークンを消費し続ける。本判定はこの反復を検知し、process-loopへ中断を要求したうえで
-そのセッションへ終了要求を送る。
+ユーザーが介入するまでトークンを消費し続ける。本判定はこの反復を検知し、そのセッションへ終了要求を送る。
 
 適用対象はprocess-loopが起動した会話IDを持つ最上位セッションに限り、委譲先セッションと対話セッションは対象外とする。
 
@@ -19,11 +18,10 @@ Stopの共通ハンドラー（`stop.py`）が全判定を終えてから`halt`�
 
 停止工程（`halt`）の順序は次のとおりとする。
 
-1. 判定根拠を常時ログへ記録する
-2. process-loopへの中断要求を作成し、現反復の終了後に次の反復へ進まない状態にする
-3. 現在の対話CLI本体を再識別する。Function hooksが読み込まれたClaude Codeではターン後の`/exit`を要求する。
+1. 現在の対話CLI本体を再識別する。Function hooksが読み込まれたClaude Codeではターン後の`/exit`を要求する。
    それ以外では一致した単一PIDへ終了要求を送る
-4. 停止の事実と終了要求の結果を`systemMessage`でユーザーへ伝える本文を返す
+2. 判定根拠と終了要求の結果を常時ログへ記録する
+3. 停止の事実と終了要求の結果を`systemMessage`でユーザーへ伝える本文を返す
 
 委譲先での実行可否: hook入力と委譲先の環境印で判定し、委譲先では何もしない。
 """
@@ -32,7 +30,6 @@ import os
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk import agents_exit_session as _agents_exit_session
-lazy from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
@@ -76,11 +73,10 @@ def _is_target_session(session_id: str, payload: dict) -> bool:
 
 
 def halt(session_id: str, count: int) -> tuple[str, str]:
-    """中断要求の作成と終了要求の送出を行い、終了要求の状態とユーザーへ伝える本文を返す。
+    """現在の会話へ終了を要求し、その状態とユーザーへ伝える本文を返す。
 
     状態は`agents_exit_session.request_termination`の戻り値（`exit_requested`・`terminating`・`changed`・`unsupported`）とする。
     """
-    abort_path = _process_loop_log.request_abort()
     status, target = _agents_exit_session.request_termination(session_id=session_id)
     append_stop_log(
         session_id,
@@ -88,17 +84,21 @@ def halt(session_id: str, count: int) -> tuple[str, str]:
         {"count": count, "threshold": _THRESHOLD, "termination": status},
     )
     lines = [
-        f"無進捗のターンが{count}回続いたため、process-loopの停止とセッションの終了を要求した。",
-        f"process-loopへの中断要求: {abort_path}（解除は`atk wi process-loop abort-cancel`）。",
+        f"無進捗のターンが{count}回続いた。",
     ]
     if status == "exit_requested":
-        lines.append("現在のセッションはターン終了後に/exitで終了する。")
+        lines.append("現在のセッションの終了を要求した。ターン終了後に/exitで終了する。")
     elif status == "terminating" and target is not None:
         lines.append(f"現在のセッションへ終了要求を送った: {target.host} pid={target.pid}。")
     elif status == "changed":
         lines.append("終了対象が識別後に変化したため、セッションの終了要求は送っていない。")
     else:
         lines.append("現在の対話CLI本体を一意に識別できないため、セッションの終了要求は送っていない。")
+    if status in {"changed", "unsupported"}:
+        lines.append(
+            "次の操作: このセッションを操作できる端末でCtrl+Cを押して反復を中断せよ。"
+            f"端末を操作できない場合は、実行環境の管理者へ会話ID `{session_id}` を伝え、当該セッションの終了を依頼せよ。"
+        )
     return status, "\n".join(lines)
 
 
