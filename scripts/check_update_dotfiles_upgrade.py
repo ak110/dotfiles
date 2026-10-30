@@ -521,6 +521,13 @@ _ANTIGRAVITY_UPDATED_NOTICE = "Antigravityのプラグインを更新しまし�
 PEP 723スクリプトからpytoolsをimportできないため、文言の一致は試験で確かめる。
 """
 
+_CODEX_HOOK_TRUST_NOTICE = (
+    "Codexプラグインの導入または更新でHook定義が変わった場合は、定義を確認して信頼してください。"
+    "信頼後に新しいセッションを開始し、SessionStartの規範注入を確認してください。"
+    "再信頼の操作だけではSessionStartの規範注入を検収できません。"
+)
+"""`install_codex_plugins.py`の同名案内の本文。上記と同じ制約により一致を試験する。"""
+
 _UV_HARDLINK_FALLBACK = "warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance."
 """uvがhardlinkできず複製へ切り替えたときの診断。導入は完了しており、更新の失敗ではない。"""
 
@@ -534,6 +541,9 @@ def _is_expected_log_warning(message: str, home: pathlib.Path) -> bool:
     """
     # 旧版から現行版への更新では配布物の版が必ず変わるため、dotfilesユーザー向けの更新案内が毎回出る。
     if message == _ANTIGRAVITY_UPDATED_NOTICE:
+        return True
+    # 内容変更後の正規承認はユーザー操作であり、更新失敗や実hookの実行失敗を表す診断とは分ける。
+    if message == _CODEX_HOOK_TRUST_NOTICE:
         return True
     # 隔離homeへUSERPROFILE等を差し替えると、ランナー本来のユーザーPATHの`%USERPROFILE%`などを含む項目が
     # 隔離home配下へ展開され、実在しない項目として報告される。展開先が隔離home配下の項目だけを許容する。

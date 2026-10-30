@@ -11,9 +11,10 @@ import types
 import check_update_dotfiles_upgrade as upgrade
 import pytest
 
-from pytools._internal import antigravity_plugin, setup_codex_cli, setup_herdr_cli
+from pytools._internal import antigravity_plugin, install_codex_plugins, setup_codex_cli, setup_herdr_cli
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
+_CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
 
 
 @pytest.fixture(name="chezmoi_bin", autouse=True)
@@ -50,6 +51,7 @@ def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
     missing = tmp_path / ".dotnet" / "tools"
     (tmp_path / "update-dotfiles.log").write_text(
         f"2026-10-28 12:00:00,000 run=check WARNING {antigravity_plugin.UPDATED_NOTICE}\n"
+        f"2026-10-28 12:00:00,000 run=check WARNING {_CODEX_TRUST_MESSAGE}\n"
         "2026-10-28 12:00:00,000 run=check WARNING     PATH 整理: ユーザー PATH に存在しないエントリーを検出: "
         f"%USERPROFILE%\\.dotnet\\tools (展開: {missing})。"
         "再導入の予定が無ければWindowsの「環境変数」でユーザーのPathからこのエントリーを削除する\n",
@@ -64,6 +66,7 @@ def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
 def test_allowed_notice_matches_post_apply_source() -> None:
     """許容する更新案内は、post-applyが実際に出す文言と一致する。"""
     assert upgrade._ANTIGRAVITY_UPDATED_NOTICE == antigravity_plugin.UPDATED_NOTICE  # pylint: disable=protected-access
+    assert upgrade._CODEX_HOOK_TRUST_NOTICE == _CODEX_TRUST_MESSAGE  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize(
@@ -72,6 +75,7 @@ def test_allowed_notice_matches_post_apply_source() -> None:
         "pytoolsの再インストールに失敗しました。失敗理由を確認してupdate-dotfilesを再実行してください。",
         "PATH 整理: ユーザー PATH に存在しないエントリーを検出: C:\\outside\\bin (展開: C:\\outside\\bin)。削除する",
         f"{antigravity_plugin.UPDATED_NOTICE} 追加の文言",
+        f"{_CODEX_TRUST_MESSAGE} 追加の文言",
     ],
 )
 def test_other_update_warnings_still_fail(tmp_path: pathlib.Path, message: str) -> None:
@@ -81,12 +85,27 @@ def test_other_update_warnings_still_fail(tmp_path: pathlib.Path, message: str) 
         upgrade.verify_update_logs(tmp_path)
 
 
-def test_allowed_notice_error_level_fails(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("level", ["ERROR", "CRITICAL"])
+@pytest.mark.parametrize(
+    "message",
+    [antigravity_plugin.UPDATED_NOTICE, _CODEX_TRUST_MESSAGE],
+)
+def test_allowed_notice_error_level_fails(tmp_path: pathlib.Path, message: str, level: str) -> None:
     """許容はWARNINGに限り、同じ文言でもERROR以上は検出する。"""
-    (tmp_path / "update-dotfiles.log").write_text(
-        f"2026-10-28 12:00:00,000 run=check ERROR {antigravity_plugin.UPDATED_NOTICE}\n", encoding="utf-8"
-    )
+    (tmp_path / "update-dotfiles.log").write_text(f"2026-10-28 12:00:00,000 run=check {level} {message}\n", encoding="utf-8")
     with pytest.raises(upgrade.UpgradeCheckError, match="警告以上"):
+        upgrade.verify_update_logs(tmp_path)
+
+
+@pytest.mark.parametrize("message", ["plugin contents changed; hook approval required", "hook failed", "gcloud update failed"])
+def test_hook_trust_notice_keeps_other_warning_failures(tmp_path: pathlib.Path, message: str) -> None:
+    """承認案内と同居しても、実hook失敗や別ツールの警告は検出する。"""
+    (tmp_path / "update-dotfiles.log").write_text(
+        f"2026-10-28 12:00:00,000 run=check WARNING {_CODEX_TRUST_MESSAGE}\n"
+        f"2026-10-28 12:00:00,000 run=check WARNING {message}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(upgrade.UpgradeCheckError, match=message):
         upgrade.verify_update_logs(tmp_path)
 
 
