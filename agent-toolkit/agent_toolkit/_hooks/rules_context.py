@@ -123,6 +123,12 @@ _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
 """メイン会話の起動済みの記録を除くSessionStartの`source`。新しいセッションの`startup`は記録を持たない。"""
 READ_CONTEXT_RESET_KEY = "startup-context-reset"
 """最初の操作より前の圧縮でも、履歴上の起動本文の取得を再計上しないための主体識別子。"""
+CARRIED_READ_TARGET_PREFIX = "read-guidance-carried:"
+"""文脈境界の前に選んだ資料を、境界の後に改めて案内するまで再書込の遮断根拠から外す記録キーの接頭辞。
+
+境界で案内の記録は消えるが選択の記録は残るため、持ち越した候補を境界後の初回書込で案内済みとすると、
+現在の操作と関係しない過去の候補だけを根拠に次の書込が止まる。
+"""
 
 
 def reset_main_operation_skill_ready(
@@ -175,6 +181,15 @@ def reset_main_operation_skill_ready(
             )
             for name, agents in recorded.items()
         }
+        for name, agents in recorded.items():
+            if not name.startswith("selected-read-target:") or not isinstance(agents, list) or MAIN_AGENT_ID not in agents:
+                continue
+            try:
+                path = pathlib.Path(json.loads(name.removeprefix("selected-read-target:"))["path"]).resolve()
+                fingerprint = document_reads.content_fingerprint(path)
+            except KeyError, OSError, TypeError, ValueError:
+                continue
+            updated[CARRIED_READ_TARGET_PREFIX + document_reads.read_trigger_key(path, fingerprint)] = [MAIN_AGENT_ID]
         # 最初の操作より前に圧縮された場合も、旧起動本文を取得済みへ戻さない。
         updated[READ_CONTEXT_RESET_KEY] = [MAIN_AGENT_ID]
         if updated == recorded:

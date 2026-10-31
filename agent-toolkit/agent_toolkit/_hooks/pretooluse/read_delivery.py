@@ -751,6 +751,25 @@ def selected_targets(records: dict, agent: str) -> list[read_triggers.ReadTarget
     return targets
 
 
+def _unmark(identifier: str, agent: str) -> Callable[[dict], dict | None]:
+    """記録キーから主体を除く状態更新を返す。"""
+
+    def mutate(state: dict) -> dict | None:
+        recorded = state.get(rules_context.OPERATION_SKILL_READY_KEY)
+        if not isinstance(recorded, dict):
+            return None
+        agents = recorded.get(identifier)
+        if not isinstance(agents, list) or agent not in agents:
+            return None
+        state[rules_context.OPERATION_SKILL_READY_KEY] = {
+            **recorded,
+            identifier: [item for item in agents if item != agent],
+        }
+        return state
+
+    return mutate
+
+
 def _select_targets(session_id: str, targets: list[read_triggers.ReadTarget], agent: str) -> None:
     for target in targets:
         if target.heading:
@@ -1129,11 +1148,12 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             )
         )
         host = "codex" if is_codex_payload(payload) else "claude"
-        pending.extend(
+        carried = [
             target
             for target in selected_targets(records, agent)
             if target not in pending and not target_ready(records, target, agent)
-        )
+        ]
+        pending.extend(carried)
         method_sources = dict.fromkeys([*_read_paths(tool_name, tool_input, cwd), *sorted(roles)])
         for path in method_sources:
             if path.suffix == ".md" and path.is_file():
@@ -1230,6 +1250,13 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         pending = [target for target in pending if not target_ready(records, target, agent)]
     if not pending:
         return Decision()
+    # 現在の操作が改めて対象にした資料は持ち越しの扱いを外し、圧縮前と同じ限定遮断の対象へ戻す。
+    for target in pending:
+        carried_key = rules_context.CARRIED_READ_TARGET_PREFIX + document_key(target.path)
+        if target not in carried and agent in records.get(carried_key, []):
+            update_state(session_id, _unmark(carried_key, agent))
+    records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    records = records if isinstance(records, dict) else {}
     command = tool_input.get("command")
     if tool_name in {"Read", "Skill"} or (tool_name == "Bash" and isinstance(command, str) and _pure_bash_read(command, cwd)):
         _select_targets(session_id, pending, agent)
@@ -1297,14 +1324,25 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             )
     acquisition = "。".join(steps) + "。出力が省略された範囲は分割して取得し、必要な全文を読め。"
     if not warning_only and written:
-        if any(agent in records.get("read-guidance:" + document_key(target.path), []) for target in pending):
+        # 文脈境界の前に選んだ資料は、現在の操作が改めて対象にするまで案内済みとせず、遮断の根拠にもしない。
+        # 境界後に案内した資料の未取得だけで止め、成功した全文取得で解除する契約は保つ。
+        guided = [
+            target
+            for target in pending
+            if agent not in records.get(rules_context.CARRIED_READ_TARGET_PREFIX + document_key(target.path), [])
+        ]
+        if any(agent in records.get("read-guidance:" + document_key(target.path), []) for target in guided):
+            # 遮断を解除する取得対象だけを示す。持ち越した資料まで並べると、取得しても解除されない資料を読ませる。
             return Decision(
                 block=_block_notice(
-                    f"案内済み資料が未取得のため再書込を停止する。未取得資料: {shown}。",
-                    fix=acquisition + "全文取得後に元の書込操作を再発行せよ。",
+                    "案内済み資料が未取得のため再書込を停止する。未取得資料: "
+                    + "、".join(f"`{target.path}`" for target in guided)
+                    + "。",
+                    fix="。".join(step for target, step in zip(pending, steps, strict=True) if target in guided)
+                    + "。出力が省略された範囲は分割して取得し、必要な全文を読め。全文取得後に元の書込操作を再発行せよ。",
                 )
             )
-        for target in pending:
+        for target in guided:
             update_state(session_id, operation_skills.mark_ready("read-guidance:" + document_key(target.path), agent))
     if warning_only:
         return Decision(

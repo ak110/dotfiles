@@ -1908,6 +1908,41 @@ def test_compaction_recovery_lists_a_selected_document_read_through_a_same_conte
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
+def test_compaction_limits_rewrite_block_to_documents_guided_after_compaction(tmp_path, monkeypatch, memory):
+    """圧縮前に案内した資料の未取得だけでは再書込を止めず、圧縮後に案内した資料の未取得は全文取得まで止める。"""
+    earlier = tmp_path / "earlier.md"
+    later = tmp_path / "later.md"
+    earlier.write_text("# 圧縮前の資料\n\n圧縮前の基準\n", encoding="utf-8")
+    later.write_text("# 圧縮後の資料\n\n圧縮後の基準\n", encoding="utf-8")
+    rows = [
+        ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (earlier,)),
+        ReadTrigger(tmp_path / "SKILL.md", 2, "操作", ("tool:Write",), (later,)),
+    ]
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
+    payload = {"cwd": str(tmp_path)}
+    write = {"file_path": str(tmp_path / "out.md"), "content": "本文"}
+    assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
+    read_delivery.observe({**payload, "tool_response": later.read_text()}, "Read", {"file_path": str(later)}, "test")
+    assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+    # 圧縮前は、案内済み資料の未取得による再書込の遮断が成立している。
+    assert str(earlier) in (read_delivery.deliver(payload, "Write", write, "test").block or "")
+
+    rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+    first = _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+    assert str(later) in first and str(earlier) in first
+    blocked = read_delivery.deliver(payload, "Write", write, "test").block
+    assert blocked is not None and str(later) in blocked and str(earlier) not in blocked
+    read_delivery.observe({**payload, "tool_response": later.read_text()}, "Read", {"file_path": str(later)}, "test")
+    # 圧縮前に案内した資料だけが未取得の再書込は止めず、取得の案内を続ける。
+    for _ in range(2):
+        assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+    # 現在の操作が圧縮前の資料を改めて対象にした後は、圧縮前と同じく案内後の再書込を止める。
+    assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
+    assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+    assert str(earlier) in (read_delivery.deliver(payload, "Write", write, "test").block or "")
+
+
 @pytest.mark.parametrize("failure", ["root", "io", "missing", "unicode", "root-text-only"])
 @pytest.mark.parametrize(
     ("tool", "inputs"),
