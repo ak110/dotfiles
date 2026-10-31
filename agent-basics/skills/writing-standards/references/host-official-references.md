@@ -17,6 +17,14 @@
 参照先のドキュメントは、`https://code.claude.com/docs/ja/`配下の各ページ（`memory.md`、`skills.md`、`sub-agents.md`、`hooks.md`、`plugins.md`、`plugins-reference.md`など）である。
 上記に記載のないページは、ドキュメントのインデックス（`https://code.claude.com/docs/llms.txt`）から探す。インデックス内のURLは英語版（`https://code.claude.com/docs/en/<page>.md`）となっているため、日本語版を参照するときは言語パスの`en`を`ja`に置き換えてアクセスする。
 
+## モデル別の公式プロンプトガイド
+
+モデル更新時などに指示文を点検するときは、提供元の公式ガイドから対象モデル・ホスト・版に合う一次資料を選ぶ。
+モデル固有の推奨と、対象環境で観測した効果を分けて扱う。
+
+- Claude: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)と、同サイトのモデル別ガイドを確認する。[Prompting Claude Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)はeffort調整、思考量の指示、内部推論の再現要求を扱う
+- OpenAI: [Prompt engineering](https://platform.openai.com/docs/guides/prompt-engineering)から、使用するモデルの公式ガイドと推論設定の資料へ進む
+
 ## 子Claudeへ環境値を渡す
 
 通常のClaude Code環境では、settingsで定義された`env`の値が、シェルの起動環境やAgent SDKの`options.env`で設定された同名変数を上書きする。そのため、環境変数の前置代入や`export`、あるいは`options.env`の指定だけで安心せず、CLIオプションの`--settings`（JSONファイルパスまたはJSON文字列）やSDKの`settings`引数を通じて確実に値を渡すようにする。

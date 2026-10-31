@@ -14,8 +14,12 @@
 ## 投稿の同定と本文の取得
 
 - 投稿URLの`x.com/<ユーザー名>/status/<投稿ID>`（`twitter.com`も同様）からユーザー名と投稿IDを抽出する。URL末尾の`/photo/1`などは同一投稿の写真表示画面である。`t.co`などの短縮URLは、Web取得ツールを用いてリダイレクト先を実際に確認した上で投稿を同定し、転送先を取得できない場合はURLを推測せず「未取得」として記録する
-- `https://api.fxtwitter.com/<ユーザー名>/status/<投稿ID>`へリクエストを送信してデータを取得する（リダイレクトが発生した場合は転送先まで追跡する）。最終的なHTTPステータスコードが200であり、かつ返却されたJSON内の`code`フィールドが数値の200である場合に限り、`tweet.text`を本文、`tweet.created_at`を投稿日時、`tweet.media.photos[].url`を添付写真のURLとして採用する。それ以外の応答は「未取得」として扱い、使用した取得手段、HTTPステータス、診断メッセージ、および取得できなかった範囲を報告する。成功応答であっても必要な属性が含まれていない場合は未取得とし、写真の配列が空である場合や写真メディアが存在しない場合は「写真なし」として記録し、通信自体の取得失敗と明確に区別する
+- `https://api.fxtwitter.com/<ユーザー名>/status/<投稿ID>`へリクエストを送信する（リダイレクトが発生した場合は転送先まで追跡する）。応答をファイルへ保存し、最終HTTPステータスが200かつJSONの`code`が数値の200であることを確かめてから、必要な属性だけを`jq`などで会話へ抽出する
+- `tweet.article`が無い、または`null`の通常投稿は`tweet.text`を本文とする。`tweet.article`がオブジェクトの投稿は記事形式として、`tweet.article.title`を表題、`tweet.article.content.blocks[].text`を配列の順序通りに改行で連結したものを本文とする。記事本文の取得にはこの配列を使い、`tweet.text`や`tweet.article.preview_text`と区別する
+- `tweet.created_at`を投稿日時、記事の`tweet.article.created_at`を記事作成日時として区別する。添付写真のURLは`tweet.media.photos[].url`から取得する。引用投稿の本文が必要な場合は、その投稿を別の投稿として取得する
+- HTTPまたは`code`の条件を満たさない応答と、成功応答でも必要な属性が欠ける場合は「未取得」とする。取得手段、HTTPステータス、診断メッセージ、取得できなかった範囲を報告する。写真の配列が空か写真メディアが無い場合は「写真なし」とし、通信の失敗と区別する
 - 本文の取得状況と、写真の取得・確認状況は、それぞれ独立して記録する
+- 記事の`blocks[].text`を連結しても、記事内の画像や埋込を取得したとは扱わない。画像は「添付写真の保存と確認」に従って保存・表示し、実際に確認した範囲を記録する
 
 上記のURLはFxTwitterのv1形式であるため、`/2/`を含むv2形式とは区別し、v1の仕様に沿った属性名で取得する。
 詳細な仕様は[FxEmbedのAPIドキュメント](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)および[レスポンスの実装コード](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)を参照する。

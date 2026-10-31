@@ -1216,6 +1216,28 @@ MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すた
 
 再検証では前記原本のv1の処理と応答生成を取得し、属性と版を比較する。通信を試す場合は公開投稿のURL・最終URL・HTTP状態・応答本文を保存し、最終HTTP 200と数値の`code` 200の両方、必要な`tweet`の属性の成立を確認してから画像URLをmanaged-tempへ取得する。HTTPだけの成功、codeの不一致・欠落・型の違い、通信とJSONの失敗、必要属性の欠落を未取得として区別する。成功応答で写真の一覧が空か写真媒体がない場合の「写真なし」と、写真の取得失敗も区別する。画像を実際に読んだホストと保存先を記録し、通信失敗の本文を画像や投稿の内容として扱わない。
 
+2026年10月31日、FxTwitter v1で[記事形式の投稿](https://x.com/hexobuilds/status/2111056183385833515)と[通常投稿](https://x.com/undefinedKi/status/2116278013398557171)を、curlのリダイレクト追跡と60秒上限で保存取得した。
+両応答は最終HTTP 200、JSONの数値`code` 200だった。
+記事は`tweet.text`が記事URLであり、`tweet.article.title`と79件の`content.blocks`を持ち、各`text`を配列順に改行で連結して本文を保存できた。
+通常投稿は`tweet.article`が`null`で、従来どおり`tweet.text`を抽出できた。
+投稿日時の`tweet.created_at`と記事作成日時の`tweet.article.created_at`を別の属性として確認した。
+[公式型定義](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-schemas.ts)の`TwitterArticleSchema`、`TwitterArticleContentStateSchema`、`TwitterArticleContentBlockSchema`でも表題、作成日時、本文配列と文字列型の`text`を確認した。
+写真は記事0件・通常投稿1件という属性だけを確認し、画像と埋込の取得・表示は実施していない。
+再検証は同じ2投稿の応答とHTTPヘッダーを保存し、数値`code`を確認した後、`jq`で表題・日時・本文を抽出する。
+記事本文には`.tweet.article.content.blocks | map(.text) | join("\n")`、通常投稿には`.tweet.text`を使い、画像・埋込の取得状況を本文の取得状況と区別する。
+
+## agent-basics/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年10月31日
+
+2026年10月31日、[Prompting Claude Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)をHTTP 200で取得した。
+対象版はClaude Opus 5.5であり、実モデルの比較実験は行っていない。
+同ガイドの「Calibrate effort」はeffortを主な調整手段とし、`xhigh`・`max`は品質向上を測定した作業へ留め、思考を減らす場合はeffortを先に下げることを推奨する。
+「Thinking instructions in chat system prompts」は熟考を促す行の削除を検討するよう案内する。
+「Safeguard refusals」は内部推論の再現要求が`reasoning_extraction`で拒否されうる一方、短い説明や実施内容の要約は求められると説明する。
+費用面の推奨を共通規範の努力目標へ採ることは技術判断であり、全モデルの効果を実証した記録ではない。
+再検証は同じURLの対象モデルと上記3節を取得し、effortとプロンプト指示の関係、最上位effortの選定条件、内部推論と短い説明の区別を確認する。
+モデル更新時の点検では、[Claudeの共通ガイド](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)や[OpenAIのガイド](https://developers.openai.com/api/docs/guides/prompt-engineering)から使用モデルの資料へ進む。
+両URLも同日にHTTP 200を確認し、後者は旧platform URLから上記URLへの転送を確認した。
+
 ## docs/development/design-hooks.md：通知の整形と反復検出：2026年10月13日
 
 2026年10月13日、Claude Code 2.1.296の環境で公式の[Hooks reference](https://code.claude.com/docs/en/hooks)を取得した。「Common input fields」は`session_id`を現在のセッション識別子、`transcript_path`を会話のJSONへのパスとし、transcriptは非同期に書かれるため現在のturnの最新メッセージを含まない場合があると記す。「SessionStart」はmatcherを`startup`・`resume`（`--resume`、`--continue`、`/resume`）・`clear`・`compact`・`fork`とし、v2.1.214より前はforkしたセッションが`resume`を報告したと記す。
