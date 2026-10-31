@@ -131,6 +131,14 @@ CARRIED_READ_TARGET_PREFIX = "read-guidance-carried:"
 """
 
 
+def carried_read_target_key(path: pathlib.Path) -> str:
+    """持ち越しの印の記録キーを返す。
+
+    境界の後に資料が変わっても境界前の選択を持ち越しとして扱い続けるため、本文ハッシュを含めない。
+    """
+    return CARRIED_READ_TARGET_PREFIX + str(path.resolve())
+
+
 def reset_main_operation_skill_ready(
     session_id: str, *, retain_for_compact: bool = False
 ) -> list[tuple[pathlib.Path, str, str]]:
@@ -185,11 +193,10 @@ def reset_main_operation_skill_ready(
             if not name.startswith("selected-read-target:") or not isinstance(agents, list) or MAIN_AGENT_ID not in agents:
                 continue
             try:
-                path = pathlib.Path(json.loads(name.removeprefix("selected-read-target:"))["path"]).resolve()
-                fingerprint = document_reads.content_fingerprint(path)
-            except KeyError, OSError, TypeError, ValueError:
+                path = pathlib.Path(json.loads(name.removeprefix("selected-read-target:"))["path"])
+            except KeyError, TypeError, ValueError:
                 continue
-            updated[CARRIED_READ_TARGET_PREFIX + document_reads.read_trigger_key(path, fingerprint)] = [MAIN_AGENT_ID]
+            updated[carried_read_target_key(path)] = [MAIN_AGENT_ID]
         # 最初の操作より前に圧縮された場合も、旧起動本文を取得済みへ戻さない。
         updated[READ_CONTEXT_RESET_KEY] = [MAIN_AGENT_ID]
         if updated == recorded:

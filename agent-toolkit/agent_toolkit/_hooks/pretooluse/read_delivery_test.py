@@ -1944,6 +1944,39 @@ def test_compaction_limits_rewrite_block_to_documents_guided_after_compaction(tm
     assert str(earlier) in (read_delivery.deliver(payload, "Write", write, "test").block or "")
 
 
+@pytest.mark.parametrize(
+    "scenario",
+    ["no-compaction", "compaction-then-change", "change-then-compaction", "compaction-only", "compaction-then-edit"],
+)
+def test_selection_that_no_longer_matches_the_document_is_not_reguided(tmp_path, monkeypatch, memory, scenario):
+    """選択後に見出しが消えた資料と、圧縮後に変わった資料を、宣言が外れた後の操作ごとに再掲しない。"""
+    doc = tmp_path / "parent.md"
+    doc.write_text("# 親\n\n## 生成\n\n生成の本文\n\n## 起動\n\n起動の本文\n", encoding="utf-8")
+    rows = [ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (doc,), ("生成",))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
+    payload = {"cwd": str(tmp_path)}
+    assert str(doc) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
+    read_delivery.observe({**payload, "tool_response": doc.read_text()}, "Read", {"file_path": str(doc)}, "test")
+    # 節「生成」を別の資料へ移した後の本文。compaction-then-editだけは節を残して本文を変える。
+    changed = (
+        "# 親\n\n## 生成\n\n改訂した生成の本文\n\n## 起動\n\n起動の本文\n"
+        if scenario == "compaction-then-edit"
+        else "# 親\n\n## 起動\n\n起動の本文\n"
+    )
+    if scenario == "change-then-compaction":
+        doc.write_text(changed, encoding="utf-8")
+    if scenario != "no-compaction":
+        rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+    if scenario in {"no-compaction", "compaction-then-change", "compaction-then-edit"}:
+        doc.write_text(changed, encoding="utf-8")
+    rows.clear()
+    for _ in range(2):
+        assert str(doc) not in "\n".join(read_delivery.deliver(payload, "Bash", {"command": "git status"}, "test").notices)
+    read_delivery.observe({**payload, "tool_response": doc.read_text()}, "Read", {"file_path": str(doc)}, "test")
+    assert not read_delivery.deliver(payload, "Bash", {"command": "git status"}, "test").notices
+
+
 @pytest.mark.usefixtures("memory")
 def test_sections_of_the_same_document_share_one_acquisition_step(tmp_path, monkeypatch):
     """同じ資料の複数の節は、1件の全文取得の案内へまとめて注目する節を併記する。"""

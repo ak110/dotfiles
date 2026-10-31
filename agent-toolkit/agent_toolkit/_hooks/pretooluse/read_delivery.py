@@ -753,8 +753,17 @@ def selected_targets(records: dict, agent: str) -> list[read_triggers.ReadTarget
         if key.startswith("selected-read-target:") and agent in agents:
             raw = json.loads(key.removeprefix("selected-read-target:"))
             path = pathlib.Path(raw["path"])
-            if path.is_file():
-                targets.append(read_triggers.ReadTarget(path, raw["heading"]))
+            if not path.is_file():
+                continue
+            target = read_triggers.ReadTarget(path, raw["heading"])
+            if target.heading:
+                try:
+                    target.body()
+                except ValueError:
+                    # 選択後に資料から消えた見出しは全文を読んでも取得済みにならないため、
+                    # 保存時の`_select_targets`と同じく選択から外す。
+                    continue
+            targets.append(target)
     return targets
 
 
@@ -1163,7 +1172,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             for target in selected_targets(records, agent)
             if target not in pending
             and not target_ready(records, target, agent)
-            and agent not in records.get(rules_context.CARRIED_READ_TARGET_PREFIX + document_key(target.path), [])
+            and agent not in records.get(rules_context.carried_read_target_key(target.path), [])
         ]
         pending.extend(carried)
         method_sources = dict.fromkeys([*_read_paths(tool_name, tool_input, cwd), *sorted(roles)])
@@ -1264,7 +1273,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         return Decision()
     # 現在の操作が改めて対象にした資料は持ち越しの扱いを外し、圧縮前と同じ限定遮断の対象へ戻す。
     for target in pending:
-        carried_key = rules_context.CARRIED_READ_TARGET_PREFIX + document_key(target.path)
+        carried_key = rules_context.carried_read_target_key(target.path)
         if target not in carried and agent in records.get(carried_key, []):
             update_state(session_id, _unmark(carried_key, agent))
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
@@ -1340,9 +1349,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         # 文脈境界の前に選んだ資料は、現在の操作が改めて対象にするまで案内済みとせず、遮断の根拠にもしない。
         # 境界後に案内した資料の未取得だけで止め、成功した全文取得で解除する契約は保つ。
         guided = [
-            target
-            for target in pending
-            if agent not in records.get(rules_context.CARRIED_READ_TARGET_PREFIX + document_key(target.path), [])
+            target for target in pending if agent not in records.get(rules_context.carried_read_target_key(target.path), [])
         ]
         if any(agent in records.get("read-guidance:" + document_key(target.path), []) for target in guided):
             # 遮断を解除する取得対象だけを示す。持ち越した資料まで並べると、取得しても解除されない資料を読ませる。
