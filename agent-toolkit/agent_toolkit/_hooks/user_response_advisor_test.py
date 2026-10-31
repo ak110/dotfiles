@@ -5,8 +5,9 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._hooks import stop
+from agent_toolkit._hooks import stop, work_contract
 from agent_toolkit._hooks.notice import notice_cycle, output_text, record_delivery
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 _HUMAN = {"type": "user", "origin": {"kind": "human"}, "message": {"content": "進捗を報告して"}}
 _QUEUED = {
@@ -225,14 +226,16 @@ _QUEUED_OK = {
     ],
     ids=["OK", "ok", "OK!", "fullwidth", "了解", "queued", "わかりました", "OKです", "いいよ", "連結", "絵文字"],
 )
+@pytest.mark.parametrize("after_tool", [False, True], ids=["no-tool", "tool-after-ack"])
 def test_stop_accepts_ellipsis_after_acknowledgement(
-    human: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    human: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], after_tool: bool
 ) -> None:
-    """単純な了承には伝える回答が無く、ツールを呼ばずに`…`だけで終える規範どおりのStopを遮断しない。
+    """単純な了承の後は、内部作業の有無によらず`…`だけで終える規範どおりのStopへ通知しない。
 
     了承は構成規則で判定するため、`わかりました`・`OKです`のように例示した語以外の言い回しも受理する。
     """
-    output = _stop([_assistant("前の回答"), human, _assistant("…")], tmp_path, capsys)
+    entries = [_assistant("前の回答"), human, *([_TOOL_CALL, _TOOL_RESULT] if after_tool else []), _assistant("…")]
+    output = _stop(entries, tmp_path, capsys)
     assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
@@ -240,17 +243,59 @@ def test_stop_accepts_ellipsis_after_acknowledgement(
     "entries",
     [
         [_said("OK"), _assistant("")],
-        [_said("OK"), _TOOL_CALL, _TOOL_RESULT, _assistant("…")],
         [_said("OK?"), _assistant("…")],
         [_said("OK、あとXも直して"), _assistant("…")],
         [_said("進捗を報告して"), _said("OK"), _assistant("…")],
     ],
-    ids=["empty", "tool-after-ack", "question", "request-after-ack", "mixed-inputs"],
+    ids=["empty", "question", "request-after-ack", "mixed-inputs"],
 )
 def test_stop_notifies_acknowledgement_that_still_requires_response(
     entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """本文が空、了承の後のツール呼び出し、問い・依頼を含む入力、了承でない入力の混在では本文を求める。"""
+    """本文が空、問い・依頼を含む入力、了承でない入力の混在では本文を求める。"""
     output = _stop([_assistant("前の回答"), *entries], tmp_path, capsys)
     assert output.get("decision") != "block"
     assert 'source="user_response_advisor"' in output["hookSpecificOutput"]["additionalContext"]
+
+
+@pytest.mark.parametrize("prompt", ["OK", "OK?", "OK、あとXも直して"])
+def test_contract_guidance_update_and_ellipsis_reaches_public_stop(tmp_path, monkeypatch, prompt):
+    """先行hookの案内による内部更新を、返答義務の有無と分けて公開Stopまで比較する。"""
+    contract = tmp_path / "work-contract.md"
+    contract.write_text("目的: 継続\n", encoding="utf-8")
+    monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: contract)
+    payload = {"session_id": "ack-contract-flow", "cwd": str(tmp_path)}
+    submitted = _run_hook_in_process("user_prompt_submit", {**payload, "prompt": prompt})
+    assert submitted.returncode == 0 and not submitted.stderr
+    assert str(contract) in submitted.stdout
+    updated = "目的: 継続\n入力を確認した。\n"
+    inputs = {"file_path": str(contract), "content": updated}
+    contract.write_text(updated, encoding="utf-8")
+    observed = _run_hook_in_process(
+        "posttooluse", {**payload, "tool_name": "Write", "tool_input": inputs, "tool_response": "保存済み"}
+    )
+    assert observed.returncode == 0 and not observed.stderr
+    path = tmp_path / "transcript.jsonl"
+    call = {
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "id": "record-update", "name": "Write", "input": inputs}]},
+    }
+    entries = [_assistant("前の回答"), _said(prompt), call, _TOOL_RESULT, _assistant("…")]
+    path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries), encoding="utf-8")
+    stopped = _run_hook_in_process("stop", {**payload, "transcript_path": str(path)})
+    (tmp_path / "ack-contract-public-output.json").write_text(
+        json.dumps(
+            {
+                "prompt": prompt,
+                "submit": submitted.stdout,
+                "post": observed.stdout,
+                "stop": stopped.stdout,
+                "returncode": stopped.returncode,
+                "stderr": stopped.stderr,
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert stopped.returncode == 0 and not stopped.stderr
+    context = output_text(json.loads(stopped.stdout)) if stopped.stdout else ""
+    assert ('source="user_response_advisor"' in context) is (prompt != "OK")

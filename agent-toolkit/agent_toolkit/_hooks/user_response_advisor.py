@@ -5,12 +5,12 @@
 ツール呼び出しより前の地の文が要約へ置き換わる事象をこの判定で検出することはしない。発話したつもりで届いていない事象は
 発話を契機とする判定では捉えられず、原文を`send_to_user`で運ぶ規範とツールで扱う（2026年10月6日、ユーザーの判断）。
 回答の意味は判定せず、拡張思考とツール呼び出しは本文へ数えない。
-例外は人間の入力が単純な了承（ユーザーが原文で示した「単純に了承したパターン」）だけの場合で、了承の後にツールを呼ばず、
-`…`だけの本文で終えるStopは遮断しない。規範（`rules-main.md`「ユーザー向け発話ルール」と
+例外は人間の入力が単純な了承（ユーザーが原文で示した「単純に了承したパターン」）だけの場合で、
+`…`だけの本文で終えるStopは通知しない。規範（`rules-main.md`「ユーザー向け発話ルール」と
 `rules-main.claude-code.md`「ターンの終え方」）は伝える内容が無い場合に`…`だけで終えることを許し、了承には伝える回答が無いためである。
 了承の判定は名指しした語の一覧への一致で閉じず、入力の全体をNFKC正規化と`casefold`の後に、了承を表す語、丁寧語・終助詞、
 末尾の記号・絵文字、読点による了承語どうしの連結だけから成るかを構成規則で確かめる。`?`は受理する記号に含めないため、問いは了承に当たらない。
-了承の後にツールを呼んだ場合は、観測した結果を伝える内容として持ち得て、フックはその有無を区別できないため、本文を求める。
+了承後の内部作業から伝える内容が生じたかは機械判定せず、送達の義務は規範とエージェントの意味判断へ委ねる。
 同じターンで可視本文を出力すれば解除できる。通知は伝える予定だった内容の出力を案内する。
 同じ人間入力の不足は共通noticeで反復を抑止し、新しい入力と解消後の再発を区別する。
 
@@ -67,12 +67,6 @@ def _is_acknowledgement(prompt: str) -> bool:
     return _ACKNOWLEDGEMENT.fullmatch(text[:end]) is not None
 
 
-def _calls_tool(message: object) -> bool:
-    """assistantのメッセージがツール呼び出しを含むかを返す。"""
-    content = message.get("content") if isinstance(message, dict) else None
-    return isinstance(content, list) and any(isinstance(block, dict) and block.get("type") == "tool_use" for block in content)
-
-
 def evaluate(payload_text: str) -> tuple[str, str]:
     """最新の人間の発話に本文が無い場合だけ、本文の出力を求める。"""
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
@@ -91,9 +85,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     needs_response = False
     input_subject = ""
-    # 最後の可視本文より後の人間の入力が全て了承か、その後にツールを呼んだか、`…`だけの本文を出力したかを記録する。
+    # 最後の可視本文より後の人間の入力が全て了承か、`…`だけの本文を出力したかを記録する。
     acknowledged_only = False
-    called_tool = False
     ellipsis_only = False
     for index, line in enumerate(lines):
         try:
@@ -107,7 +100,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             if _is_human_input(entry) and not entry.get("isMeta") and not _is_hook_input(prompt):
                 input_subject = f"{index}|{line}"
                 if not needs_response:
-                    acknowledged_only, called_tool, ellipsis_only = True, False, False
+                    acknowledged_only, ellipsis_only = True, False
                 acknowledged_only = acknowledged_only and _is_acknowledgement(prompt)
                 needs_response = True
             elif not _is_human_input(entry) and prompt.lstrip().startswith("<task-notification>"):
@@ -120,10 +113,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             if any(not char.isspace() and char != "…" for char in text):
                 needs_response = False
             elif needs_response:
-                called_tool = called_tool or _calls_tool(message)
                 ellipsis_only = ellipsis_only or "…" in text
 
-    if not needs_response or (acknowledged_only and not called_tool and ellipsis_only):
+    if not needs_response or (acknowledged_only and ellipsis_only):
         notice.resolve_notice(session_id, "user_response_advisor", "evaluate", subject="main")
         return "approve", ""
     _stop_session.append_stop_log(session_id, "notify_missing_user_response", {})
