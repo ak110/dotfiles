@@ -138,3 +138,34 @@ def test_unresolvable_base_is_not_success(tmp_path: Path, base_sha: str, upstrea
     assert result.returncode == 2
     assert message in result.stderr
     assert "再実行してください" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "broken", ["source", "plugins", "version", "marketplace-json", "entry-shape", "worktree-manifest", "worktree-encoding"]
+)
+def test_broken_manifest_reports_next_action(tmp_path: Path, broken: str) -> None:
+    """定義元の不備は成功扱いにせず、終了2で直す対象と再実行を案内する。"""
+    checkout, published = _repository(tmp_path)
+    marketplace = checkout / ".claude-plugin/marketplace.json"
+    if broken == "source":
+        marketplace.write_text(json.dumps({"plugins": [{"name": "agent-toolkit", "source": "/abs"}]}), encoding="utf-8")
+    elif broken == "plugins":
+        marketplace.write_text(json.dumps({"plugins": []}), encoding="utf-8")
+    elif broken == "version":
+        _write(checkout / "agent-toolkit/agent_toolkit/hook.py", "VALUE = 2\n")
+        _write(checkout / "agent-toolkit/.claude-plugin/plugin.json", "{")
+    elif broken == "marketplace-json":
+        marketplace.write_text("{broken", encoding="utf-8")
+    elif broken == "entry-shape":
+        marketplace.write_text(json.dumps({"plugins": ["agent-toolkit", {"source": "./agent-basics"}]}), encoding="utf-8")
+    elif broken == "worktree-encoding":
+        _write(checkout / "agent-toolkit/agent_toolkit/hook.py", "VALUE = 2\n")
+        (checkout / "agent-toolkit/.claude-plugin/plugin.json").write_bytes(b"\xff\xfe")
+    else:
+        # 作業ツリー側（CURRENT_SHAなし）のplugin.jsonが無い状態で、配布物に差分がある。
+        _write(checkout / "agent-toolkit/agent_toolkit/hook.py", "VALUE = 2\n")
+        (checkout / "agent-toolkit/.claude-plugin/plugin.json").unlink()
+    result = _run(checkout, BASE_SHA=published)
+    assert result.returncode == 2, result.stderr
+    assert "同じ検証コマンドを再実行してください" in result.stderr
+    assert "Traceback" not in result.stderr

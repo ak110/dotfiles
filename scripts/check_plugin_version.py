@@ -56,15 +56,33 @@ def _require(result: subprocess.CompletedProcess[str], operation: str) -> str:
 
 def _plugins(repo_root: pathlib.Path) -> list[tuple[str, str]]:
     """marketplaceに載るプラグインの名前とリポジトリ相対のrootを返す。"""
-    data = json.loads((repo_root / _MARKETPLACE).read_text(encoding="utf-8"))
+    try:
+        data = json.loads((repo_root / _MARKETPLACE).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise CheckError(
+            f"{_MARKETPLACE}を読めない: {error}。JSONとして読める内容へ直して同じ検証コマンドを再実行してください"
+        ) from error
+    entries = data.get("plugins", []) if isinstance(data, dict) else None
+    if not isinstance(entries, list) or not all(
+        isinstance(entry, dict) and isinstance(entry.get("name"), str) for entry in entries
+    ):
+        raise CheckError(
+            f"{_MARKETPLACE}の`plugins`が、`name`を持つエントリの配列ではない。"
+            "各エントリへ`name`と`source`を書いて同じ検証コマンドを再実行してください"
+        )
     plugins = []
-    for entry in data.get("plugins", []):
+    for entry in entries:
         source = entry.get("source")
         if not isinstance(source, str) or not source.startswith("./"):
-            raise CheckError(f"{_MARKETPLACE}の`{entry.get('name')}`の`source`がリポジトリ内の相対パスではない: {source!r}")
+            raise CheckError(
+                f"{_MARKETPLACE}の`{entry.get('name')}`の`source`がリポジトリ内の相対パスではない: {source!r}。"
+                f"`source`を`./<プラグインのディレクトリ>`の形へ直して同じ検証コマンドを再実行してください"
+            )
         plugins.append((str(entry["name"]), source.removeprefix("./").rstrip("/")))
     if not plugins:
-        raise CheckError(f"{_MARKETPLACE}に`plugins[]`が無い")
+        raise CheckError(
+            f"{_MARKETPLACE}に`plugins[]`が無い。配布プラグインのエントリを`plugins[]`へ戻して同じ検証コマンドを再実行してください"
+        )
     return plugins
 
 
@@ -109,7 +127,10 @@ def _version(text: str, source: str) -> str:
     try:
         return str(json.loads(text)["version"])
     except (ValueError, KeyError, TypeError) as error:
-        raise CheckError(f"{source}の`version`を読めない: {error}") from error
+        raise CheckError(
+            f"{source}の`version`を読めない: {error}。"
+            f"{source}がJSONとして読めて`version`の文字列を持つよう直してから同じ検証コマンドを再実行してください"
+        ) from error
 
 
 def check(repo_root: pathlib.Path) -> list[str]:
@@ -129,7 +150,15 @@ def check(repo_root: pathlib.Path) -> list[str]:
         manifest = f"{root}/{_MANIFEST}"
         base_version = _version(_require(_git(repo_root, "show", f"{base}:{manifest}"), f"基点の{manifest}の取得"), manifest)
         if current is None:
-            current_version = _version((repo_root / manifest).read_text(encoding="utf-8"), manifest)
+            try:
+                text = (repo_root / manifest).read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as error:
+                raise CheckError(
+                    f"作業ツリーの{manifest}を読めない: {error}。"
+                    "プラグインのディレクトリを削除・移動した場合は`.claude-plugin/marketplace.json`も合わせて直し、"
+                    "同じ検証コマンドを再実行してください"
+                ) from error
+            current_version = _version(text, manifest)
         else:
             current_version = _version(
                 _require(_git(repo_root, "show", f"{current}:{manifest}"), f"比較先の{manifest}の取得"), manifest
