@@ -4,6 +4,7 @@
 
 import asyncio
 import base64
+import dataclasses
 import importlib.util
 import io
 import json
@@ -1619,6 +1620,113 @@ def _age(*paths: pathlib.Path) -> None:
         os.utime(path, (1_700_000_000, 1_700_000_000))
 
 
+def _retained_characters(value: typing.Any) -> int:
+    """索引と全件結果の文字列長を、オブジェクトの共有にかかわらず項目ごとに合計する。"""
+    if isinstance(value, str):
+        return len(value)
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return sum(_retained_characters(getattr(value, field.name)) for field in dataclasses.fields(value))
+    if isinstance(value, dict):
+        return sum(_retained_characters(key) + _retained_characters(item) for key, item in value.items())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return sum(_retained_characters(item) for item in value)
+    return 0
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize("remote", [False, True])
+def test_listing_retains_messages_only_for_current_display(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, remote: bool
+) -> None:
+    """64件の選外本文長を変えても索引・全件結果は増えず、祖先と先頭行全体を返す。"""
+    helper = _load_remote_helper()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setattr(sessions, "MAX_LIST_ENTRIES", 1)
+    monkeypatch.setattr(helper, "MAX_LIST_ENTRIES", 1)
+    context = _context(tmp_path)
+    index = context.state.record_index
+    first_line = "表示" * 32768
+    paths: list[pathlib.Path] = []
+
+    def write_corpus(length: int) -> None:
+        paths.clear()
+        for number in range(64):
+            identity = f"00000000-0000-4000-8000-{number:012d}"
+            timestamp = f"2026-09-01T00:{number // 60:02d}:{number % 60:02d}Z"
+            text = "祖先" if number == 0 else first_line + "\n続き" if number == 63 else "選外" + "x" * length
+            if engine == "claude":
+                path = tmp_path / "claude/projects/repo" / f"{identity}.jsonl"
+                records: list[dict[str, typing.Any]] = [
+                    {"type": "user", "cwd": "/work", "timestamp": timestamp, "message": {"content": text}}
+                ]
+                if number == 0:
+                    records.extend(
+                        [
+                            {
+                                "type": "assistant",
+                                "message": {
+                                    "content": [{"type": "tool_use", "id": "start", "name": "mcp__agents_server__start"}]
+                                },
+                            },
+                            {
+                                "type": "user",
+                                "toolUseResult": {"session_id": "00000000-0000-4000-8000-000000000063"},
+                                "message": {"content": [{"type": "tool_result", "tool_use_id": "start"}]},
+                            },
+                        ]
+                    )
+            else:
+                path = tmp_path / "codex/sessions/2026/09/01" / f"rollout-{identity}.jsonl"
+                payload: dict[str, typing.Any] = {"cwd": "/work", "timestamp": timestamp}
+                if number == 63:
+                    payload["source"] = {
+                        "subagent": {"thread_spawn": {"parent_thread_id": "00000000-0000-4000-8000-000000000000"}}
+                    }
+                records = [
+                    {"type": "session_meta", "payload": payload},
+                    {"type": "response_item", "payload": {"role": "user", "content": [{"text": text}]}},
+                ]
+            paths.append(_write(path, records))
+        _age(*paths)
+
+    intermediate: list[int] = []
+    original_limit = sessions.session_parents.limit_with_ancestors
+
+    def observe_limit(entries: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        intermediate.append(_retained_characters(entries))
+        assert "選外" not in repr(entries)
+        return original_limit(entries, *args, **kwargs)
+
+    monkeypatch.setattr(sessions.session_parents, "limit_with_ancestors", observe_limit)
+
+    def listing() -> list[dict[str, typing.Any]]:
+        if remote:
+            return helper._list_payload(index=index)["entries"]
+        return [entry.to_json() for entry in sessions.list_local_sessions(context)]
+
+    retained: list[int] = []
+    outputs: list[list[dict[str, typing.Any]]] = []
+    for length in (65536, 262144):
+        write_corpus(length)
+        outputs.append(listing())
+        retained.append(_retained_characters(index._records))
+        assert "選外" not in repr(index._records)
+        assert "選外" not in repr(index._messages)
+    assert retained[0] == retained[1]
+    assert intermediate[0] == intermediate[1]
+    assert outputs[0] == outputs[1]
+    assert [entry["first_user_message"] for entry in outputs[1]] == [first_line, "祖先"]
+    assert outputs[1][0]["parent_path"] == str(paths[0])
+
+    opened = _count_record_opens(monkeypatch)
+    assert listing() == outputs[1]
+    assert not opened
+    monkeypatch.setattr(helper if remote else sessions, "MAX_LIST_ENTRIES", 0)
+    assert not listing()
+    assert not index._messages
+
+
 def test_listing_reuses_unchanged_records_beyond_two_thousand(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """記録が2,049件以上でも、2回目の一覧は変更のない記録を開き直さず、変更は次の一覧へ反映する。
 
@@ -1686,11 +1794,10 @@ def test_listing_reuses_unchanged_records_beyond_two_thousand(tmp_path: pathlib.
     assert str(added) in third
 
 
-def test_initial_list_opens_each_record_once(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """一覧の初回走査は、要約と子セッションIDを同じ走査で求め、各記録を1回だけ開く。
-
-    値ごとに記録を開き直すと、起動直後や単発の`list`の初回走査で全記録の読み込みが値の数だけ増える。
-    """
+def test_initial_list_scans_metadata_then_reads_displayed_messages(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """初回は全件のメタ情報を1回走査し、表示対象だけ本文を読み直す。"""
     claude = _claude_record(tmp_path)
     child = _codex_record(tmp_path)
     parent = _write(
@@ -1713,7 +1820,7 @@ def test_initial_list_opens_each_record_once(tmp_path: pathlib.Path, monkeypatch
 
     entries = {entry.path: entry for entry in sessions.list_local_sessions(context)}
 
-    assert sorted(opened) == sorted([claude, child, parent])
+    assert sorted(opened) == sorted([claude, child, parent] * 2)
     assert entries[str(child)].parent_path == str(parent)
     assert entries[str(claude)].first_user_message == "やあ"
 
@@ -1791,8 +1898,8 @@ def test_remote_helper_serve_mode_reuses_unchanged_records(tmp_path: pathlib.Pat
     assert [response["id"] for response in responses] == [1, 2]
     assert responses[0]["entries"] == responses[1]["entries"]
     assert [entry["path"] for entry in responses[1]["entries"]] == [str(record)]
-    # 1回目の要求が一覧の値と子セッションIDを1回の走査で求め、2回目の要求は開かない。
-    assert opened == [record]
+    # 初回のメタ情報走査と表示本文取得だけが開き、2回目の要求は開かない。
+    assert opened == [record, record]
 
 
 def test_default_record_homes_follow_claude_config_dir_and_codex_home(

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
+import typing
 
 import pytest
+import session_evidence_ancestors as ancestors
 import session_review_evidence as evidence
 
+from agent_toolkit._atk.serve import session_watch
 from agent_toolkit._common import session_launchers, state_paths
 from agent_toolkit._testing.session_evidence_support import read_jsonl, write_jsonl
 
@@ -129,6 +133,86 @@ def test_codex_launcher_resolves_without_registry(
     assert evidence.main(["--delegation-record", "root", "--user-events"]) == 0
     events = read_jsonl(capsys, raw=True)
     assert any(item.get("record") == "codex:root" and item.get("text") == "元の要求" for item in events)
+
+
+@pytest.mark.parametrize("registered", [False, True])
+@pytest.mark.parametrize("codex_child", [False, True])
+def test_delegation_record_retains_no_display_text(
+    record_roots: tuple[pathlib.Path, pathlib.Path],
+    monkeypatch: pytest.MonkeyPatch,
+    registered: bool,
+    codex_child: bool,
+) -> None:
+    """登録簿経路と64件の全探索で親子を保ち、保持する走査結果を本文長から独立させる。"""
+    claude, codex = record_roots
+    child_id = "11111111-1111-4111-8111-111111111111" if codex_child else "child"
+    root = _claude_record(claude, "root", "parent")
+    parent = _claude_record(claude, "parent", child_id)
+    if codex_child:
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION")
+        monkeypatch.setenv("CODEX_THREAD_ID", child_id)
+        child = codex / "sessions/2026/10/18" / f"rollout-2026-10-18-{child_id}.jsonl"
+        write_jsonl(
+            child,
+            [
+                {"type": "session_meta", "payload": {"id": child_id}},
+                {"type": "response_item", "payload": {"role": "user", "content": "子の発話"}},
+            ],
+        )
+    else:
+        child = _claude_record(claude, "child")
+    paths = [root, parent, child]
+    for number in range(61):
+        if number % 2:
+            path = codex / "sessions/2026/10/18" / f"rollout-filler-{number:03d}.jsonl"
+            write_jsonl(
+                path,
+                [
+                    {"type": "session_meta", "payload": {"id": f"filler-{number:03d}"}},
+                    {"type": "response_item", "payload": {"role": "user", "content": "発話"}},
+                ],
+            )
+        else:
+            path = _claude_record(claude, f"filler-{number:03d}")
+        paths.append(path)
+    if registered:
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root")
+        directory = session_launchers.registry_directory(state_paths.state_dir())
+        directory.mkdir(parents=True, exist_ok=True)
+        for identity, launcher in ((child_id, "parent"), ("parent", "root")):
+            (directory / f"{identity}.json").write_text(json.dumps({"launcher_session_id": launcher}), encoding="utf-8")
+    else:
+        monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    scans: list[session_watch.RecordScan] = []
+    original = session_watch.scan_record
+
+    def observe_scan(*args: typing.Any, **kwargs: typing.Any) -> session_watch.RecordScan:
+        scan = original(*args, **kwargs)
+        scans.append(scan)
+        return scan
+
+    monkeypatch.setattr(session_watch, "scan_record", observe_scan)
+    retained: list[int] = []
+    for length in (65536, 262144):
+        for path in paths:
+            records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+            record = records[1] if path.is_relative_to(codex) else records[0]
+            if path.is_relative_to(codex):
+                record["payload"]["content"] = "選外" + "x" * length
+            else:
+                record["message"]["content"] = "選外" + "x" * length
+            write_jsonl(path, records)
+        scans.clear()
+        assert ancestors.delegation_record("parent") == parent
+        assert ancestors.delegation_record("root") == root
+        assert len(scans) == (6 if registered else 130)
+        serialized = json.dumps(
+            [dataclasses.asdict(scan) | {"delegated_ids": sorted(scan.delegated_ids)} for scan in scans], ensure_ascii=False
+        )
+        assert "選外" not in serialized
+        assert "x" * 65536 not in serialized
+        retained.append(len(serialized))
+    assert retained[0] == retained[1]
 
 
 def test_start_results_override_cyclic_registry(

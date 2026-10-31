@@ -63,7 +63,7 @@ def _verified_registry_chain(
         if child_id is not None and child_id not in scan.delegated_ids:
             return None
         scans[str(path)] = scan
-        sources.append(session_parents.ParentSource(str(path), found.engine, current, None, scan.fields[4]))
+        sources.append(session_parents.ParentSource(str(path), found.engine, current, None, scan.fields[3]))
         child_id, current = current, launcher_of(current)
     # 登録簿の欠落だけで途中の会話を最上位としない。所有会話まで起動結果で連結できた場合だけ探索を省く。
     owner = os.environ.get("AGENT_TOOLKIT_OWNER_SESSION", "")
@@ -95,7 +95,7 @@ def delegation_record(scope: str, codex_home: str | None = None) -> Path:
     def add(path: Path, engine: str, session_id: str, parent: str | None = None) -> None:
         scan = session_watch.scan_record(path, engine)
         scans[str(path)] = scan
-        sources.append(session_parents.ParentSource(str(path), engine, session_id, parent, scan.fields[4]))
+        sources.append(session_parents.ParentSource(str(path), engine, session_id, parent, scan.fields[3]))
 
     verified = _verified_registry_chain(identity, codex_root, launchers)
     if verified is not None:

@@ -62,8 +62,8 @@ def test_summary_skips_plugin_origin_and_keeps_human(tmp_path: pathlib.Path) -> 
     ]
     plugin = _write(tmp_path / "plugin.jsonl", records[:1])
     human = _write(tmp_path / "human.jsonl", records)
-    assert session_watch.summary_fields(plugin, "claude")[1] is None
-    assert session_watch.summary_fields(human, "claude")[1] == "/status"
+    assert session_watch.first_user_message(plugin, "claude") is None
+    assert session_watch.first_user_message(human, "claude") == "/status"
 
 
 def test_summary_fields_distinguishes_no_user_record_from_textless_user_message(tmp_path: pathlib.Path) -> None:
@@ -72,10 +72,11 @@ def test_summary_fields_distinguishes_no_user_record_from_textless_user_message(
     textless = _write(tmp_path / "b.jsonl", [{"type": "user", "message": {"content": [{"type": "tool_result"}]}}])
     codex_meta_only = _write(tmp_path / "c.jsonl", [{"type": "session_meta", "payload": {"cwd": "/w"}}])
 
-    assert session_watch.summary_fields(operational, "claude")[3] is False
-    assert session_watch.summary_fields(textless, "claude")[1:4:2] == (None, True)
-    assert session_watch.summary_fields(codex_meta_only, "codex")[3] is False
-    assert session_watch.summary_fields(tmp_path / "missing.jsonl", "claude")[3] is None
+    assert session_watch.summary_fields(operational, "claude")[2] is False
+    assert session_watch.summary_fields(textless, "claude")[2] is True
+    assert session_watch.first_user_message(textless, "claude") is None
+    assert session_watch.summary_fields(codex_meta_only, "codex")[2] is False
+    assert session_watch.summary_fields(tmp_path / "missing.jsonl", "claude")[2] is None
     assert session_watch.has_user_message(textless, "claude") is True
     assert session_watch.has_user_message(codex_meta_only, "codex") is False
 
@@ -100,9 +101,10 @@ def test_summary_skips_runtime_inserted(tmp_path: pathlib.Path) -> None:
     codex = _write(tmp_path / "codex.jsonl", codex_records)
     only_inserted = _write(tmp_path / "inserted.jsonl", claude_records[:2])
 
-    assert session_watch.summary_fields(claude, "claude")[1:4:2] == ("本当の発話", True)
-    assert session_watch.summary_fields(codex, "codex")[1:4:2] == ("Codexの本当の発話", True)
-    assert session_watch.summary_fields(only_inserted, "claude")[1:4:2] == (None, True)
+    assert session_watch.first_user_message(claude, "claude") == "本当の発話"
+    assert session_watch.first_user_message(codex, "codex") == "Codexの本当の発話"
+    assert session_watch.first_user_message(only_inserted, "claude") is None
+    assert session_watch.summary_fields(only_inserted, "claude")[2] is True
     assert session_watch.has_user_message(only_inserted, "claude") is True
 
 
@@ -145,7 +147,7 @@ def test_scan_parses_only_relevant_lines(tmp_path: pathlib.Path, monkeypatch: ty
 
     scan = session_watch.scan_record(path, "codex")
 
-    assert scan.fields == ("/work", None, "2026-09-01T00:00:00Z", True, None)
+    assert scan.fields == ("/work", "2026-09-01T00:00:00Z", True, None)
     assert scan.delegated_ids == frozenset({"child-1"})
     assert filler_line not in parsed
     # session_meta・挿入本文の発話・起動の呼び出し・起動結果の4行と、起動結果の文字列だけを解析する。
@@ -207,14 +209,14 @@ def test_scan_record_returns_same_values_as_separate_reads(tmp_path: pathlib.Pat
     claude_scan = session_watch.scan_record(claude, "claude")
     codex_scan = session_watch.scan_record(codex, "codex")
 
-    assert claude_scan.fields == ("/w", "親の発話", "2026-09-01", True, None)
+    assert claude_scan.fields == ("/w", "2026-09-01", True, None)
     assert claude_scan.fields == session_watch.summary_fields(claude, "claude")
     assert claude_scan.delegated_ids == frozenset({"child-a", "child-b"})
-    assert codex_scan.fields == ("/c", "Codexの発話", "2026-09-02", True, "p")
+    assert codex_scan.fields == ("/c", "2026-09-02", True, "p")
     assert codex_scan.fields == session_watch.summary_fields(codex, "codex")
     assert codex_scan.delegated_ids == frozenset({"child-c"})
     missing = session_watch.scan_record(tmp_path / "missing.jsonl", "claude")
-    assert (missing.fields[3], missing.delegated_ids) == (None, frozenset())
+    assert (missing.fields[2], missing.delegated_ids) == (None, frozenset())
 
 
 def test_has_user_message_skips_lines_without_user(tmp_path: pathlib.Path, monkeypatch: typing.Any) -> None:

@@ -232,13 +232,13 @@ def _local_entry(
     index: session_watch.RecordSummaryIndex, path: pathlib.Path, engine: str, session_id: str, host: str
 ) -> tuple[SessionSummary, bool | None, str | None]:
     """ローカルの記録1件を一覧の項目へ変換し、ユーザー発話の有無とCodexの親threadの識別子とともに返す。"""
-    (cwd, first_user_message, started_at, has_user, parent_thread_id), st = index.summary(path, engine)
+    (cwd, started_at, has_user, parent_thread_id), st = index.summary(path, engine)
     if isinstance(st, OSError):
         summary = SessionSummary(
             engine=engine,
             host=host,
             cwd=cwd,
-            first_user_message=first_user_message,
+            first_user_message=None,
             session_id=session_id,
             path=str(path),
             started_at=started_at,
@@ -251,7 +251,7 @@ def _local_entry(
         engine=engine,
         host=host,
         cwd=cwd,
-        first_user_message=first_user_message,
+        first_user_message=None,
         session_id=session_id,
         path=str(path),
         started_at=started_at,
@@ -312,9 +312,11 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     index.finish_scan()
     entries = [dataclasses.replace(entry, parent_path=links.get(entry.path)) for entry, _ in kept]
     entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
-    return session_parents.limit_with_ancestors(
+    limited = session_parents.limit_with_ancestors(
         entries, MAX_LIST_ENTRIES, path_of=lambda entry: entry.path, parent_of=lambda entry: entry.parent_path
     )
+    messages = index.display_messages((pathlib.Path(entry.path), entry.engine) for entry in limited)
+    return [dataclasses.replace(entry, first_user_message=messages[entry.path]) for entry in limited]
 
 
 def is_local_record_path(context: SessionsContext, raw: str) -> bool:

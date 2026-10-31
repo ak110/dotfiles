@@ -46,8 +46,8 @@ def _is_user_record(record: dict[str, typing.Any], engine: str) -> bool:
     return isinstance(payload, dict) and payload.get("role") == "user"
 
 
-SummaryFields = tuple[str | None, str | None, str | None, bool | None, str | None]
-"""`summary_fields`が返す作業ディレクトリ、最初の発話、開始日時、発話の有無およびCodexの親threadの識別子。"""
+SummaryFields = tuple[str | None, str | None, bool | None, str | None]
+"""全件の選別に使う作業ディレクトリ、開始日時、発話の有無およびCodexの親threadの識別子。"""
 
 # ユーザー発話の記録行は、Claude Codeでは`"type":"user"`、Codexでは`"role":"user"`を持つ。
 # この文字列を含まない行はユーザー発話になり得ないため、JSONとして解析しない。
@@ -70,8 +70,9 @@ class _SummaryScan:
     揃った後は表示できる発話が見つかるまで`"user"`を含む行だけを解析する。
     """
 
-    def __init__(self, engine: str) -> None:
+    def __init__(self, engine: str, *, include_message: bool = False) -> None:
         self.engine = engine
+        self.include_message = include_message
         self.parent_thread_id: str | None = None
         self.meta_seen = False
         self.cwd: str | None = None
@@ -113,7 +114,8 @@ class _SummaryScan:
                 text = as_text(content)
                 if not is_runtime_generated(record) and not (text and is_runtime_inserted_text(text)):
                     self.first_visible_user_seen = True
-                    self.first_user_message = _first_line(content)
+                    if self.include_message:
+                        self.first_user_message = _first_line(content)
             return
         payload = record.get("payload")
         if not isinstance(payload, dict):
@@ -132,12 +134,13 @@ class _SummaryScan:
             text = as_text(content)
             if not (text and is_runtime_inserted_text(text)):
                 self.first_visible_user_seen = True
-                self.first_user_message = _first_line(content)
+                if self.include_message:
+                    self.first_user_message = _first_line(content)
 
     def fields(self, *, readable: bool) -> SummaryFields:
         """求めた値を返す。記録を読み取れなかった場合は発話の有無を`None`とする。"""
         has_user = self.first_user_seen if readable else None
-        return self.cwd, self.first_user_message, self.started_at or self.first_timestamp, has_user, self.parent_thread_id
+        return self.cwd, self.started_at or self.first_timestamp, has_user, self.parent_thread_id
 
 
 @dataclasses.dataclass(frozen=True)
@@ -152,7 +155,7 @@ class RecordScan:
 def scan_record(path: pathlib.Path, engine: str, *, delegations: bool = True) -> RecordScan:
     """記録を1回だけ開き、一覧が記録1件ごとに求める値を1つの走査で求める。
 
-    一覧の記録単位の値を加えるときは、記録を別に開く関数を追加せずにこの走査へ加える。
+    全件で保持する選別メタ情報だけを返し、表示本文は選択後に`first_user_message`で取得する。
     行は要約と子セッションIDのどちらかが結果を変え得る場合だけJSONとして解析する。
     文字コードは要約側が不正なバイトを置換して読み、子セッションIDの側はUTF-8として復号できる行だけを使う。
     記録を読み取れない場合は、要約の発話の有無を`None`、子セッションIDを空集合とする。
@@ -190,7 +193,7 @@ def scan_record(path: pathlib.Path, engine: str, *, delegations: bool = True) ->
 
 
 def summary_fields(path: pathlib.Path, engine: str) -> SummaryFields:
-    """一覧の識別に使う作業ディレクトリ、最初の発話、開始日時、発話の有無および親threadを先頭から取得する。
+    """一覧の選別に使う作業ディレクトリ、開始日時、発話の有無および親threadを先頭から取得する。
 
     発話の有無は、ユーザー発話の記録行を1件でも持てば`True`とする。
     最初の発話が本文を持たない形式でも`True`とし、`first_user_message`がnullであることとは区別する。
@@ -199,6 +202,26 @@ def summary_fields(path: pathlib.Path, engine: str) -> SummaryFields:
     2行目以降の`session_meta`行は親thread側のメタデータの写しであり、記録自身を表さないためである。
     """
     return scan_record(path, engine, delegations=False).fields
+
+
+def first_user_message(path: pathlib.Path, engine: str) -> str | None:
+    """表示対象の最初の発話の先頭1行全体を取得する。本文なしの最初の発話もそのまま返す。"""
+    summary = _SummaryScan(engine, include_message=True)
+    try:
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                if _USER_MARKER not in line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                summary.feed(record)
+                if summary.first_visible_user_seen:
+                    break
+    except OSError:
+        pass
+    return summary.first_user_message
 
 
 def has_user_message(path: pathlib.Path, engine: str) -> bool | None:
@@ -256,6 +279,7 @@ class RecordSummaryIndex:
         self._lock = threading.Lock()
         self._records: dict[str, _IndexedRecord] = {}
         self._seen: set[str] = set()
+        self._messages: dict[str, tuple[_IndexedRecord, str | None]] = {}
 
     def begin_scan(self) -> None:
         """走査の開始を記録し、走査で参照した記録の集合を空にする。"""
@@ -266,6 +290,7 @@ class RecordSummaryIndex:
         """走査で参照しなかった記録の解析結果を破棄する。"""
         with self._lock:
             self._records = {key: value for key, value in self._records.items() if key in self._seen}
+            self._messages = {key: value for key, value in self._messages.items() if key in self._seen}
 
     def summary(self, path: pathlib.Path, engine: str) -> tuple[SummaryFields, os.stat_result | OSError]:
         """記録の`summary_fields`の値と、無効化の判定に使った`stat`の結果を返す。
@@ -293,7 +318,25 @@ class RecordSummaryIndex:
         )
         with self._lock:
             self._records[key] = record
+            self._messages.pop(key, None)
         return scan.fields, st
+
+    def display_messages(self, records: typing.Iterable[tuple[pathlib.Path, str]]) -> dict[str, str | None]:
+        """表示対象だけの本文を返し、選外となった本文のキャッシュを破棄する。"""
+        messages: dict[str, str | None] = {}
+        retained: dict[str, tuple[_IndexedRecord, str | None]] = {}
+        for path, engine in records:
+            key = str(path)
+            with self._lock:
+                record = self._records.get(key)
+                cached = self._messages.get(key)
+            message = cached[1] if cached is not None and cached[0] is record else first_user_message(path, engine)
+            messages[key] = message
+            if record is not None:
+                retained[key] = (record, message)
+        with self._lock:
+            self._messages = retained
+        return messages
 
     def delegated_ids(self, path: pathlib.Path, engine: str) -> frozenset[str]:
         """記録が起動した子セッションIDの集合を返す。

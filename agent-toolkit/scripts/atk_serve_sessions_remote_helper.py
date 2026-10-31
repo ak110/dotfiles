@@ -47,13 +47,14 @@ def _entry(index: session_watch.RecordSummaryIndex, path: pathlib.Path, engine: 
 
     `has_user_message`と`codex_parent_thread_id`は除外と親子付けの判定材料であり、`_list_payload`が応答から取り除く。
     """
-    (cwd, first_user_message, started_at, has_user, parent_thread_id), st = index.summary(path, engine)
+    (cwd, started_at, has_user, parent_thread_id), st = index.summary(path, engine)
     if isinstance(st, OSError):
         return {
             "engine": engine,
             "session_id": session_id,
             "cwd": cwd,
-            "first_user_message": first_user_message,
+            "_record_path": str(path),
+            "first_user_message": None,
             "path": None,
             "size": None,
             "started_at": started_at,
@@ -66,7 +67,8 @@ def _entry(index: session_watch.RecordSummaryIndex, path: pathlib.Path, engine: 
         "engine": engine,
         "session_id": session_id,
         "cwd": cwd,
-        "first_user_message": first_user_message,
+        "_record_path": str(path),
+        "first_user_message": None,
         "path": str(path),
         "size": st.st_size,
         "started_at": started_at,
@@ -134,6 +136,14 @@ def _list_payload(
     limited = session_parents.limit_with_ancestors(
         entries, MAX_LIST_ENTRIES, path_of=lambda item: item.get("path"), parent_of=lambda item: item.get("parent_path")
     )
+    messages = index.display_messages((pathlib.Path(entry["_record_path"]), entry["engine"]) for entry in limited)
+    limited = [
+        {
+            **{key: value for key, value in entry.items() if key != "_record_path"},
+            "first_user_message": messages[entry["_record_path"]],
+        }
+        for entry in limited
+    ]
     return {"host": socket.gethostname(), "entries": limited}
 
 
