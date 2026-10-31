@@ -197,6 +197,88 @@ def test_skill_operation_requires_the_declared_plugin_owner(tmp_path, name, qual
             read_triggers.parse_tables(source, toolkit, strict=True)
 
 
+@pytest.mark.parametrize("operation", ["skill:bugfix", "skill:agent-toolkit:missing"])
+def test_missing_skill_operation_explains_repair_and_revalidation(tmp_path, operation):
+    toolkit = tmp_path / "agent-toolkit"
+    basics = tmp_path / "agent-basics"
+    for root in (toolkit, basics):
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin/plugin.json").write_text(f'{{"name":"{root.name}"}}', encoding="utf-8")
+    skill = basics / "skills/bugfix/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# 基準\n", encoding="utf-8")
+    source = toolkit / "share/source.md"
+    source.parent.mkdir()
+    (source.parent / "rule.md").write_text("# 規則\n", encoding="utf-8")
+    source.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        f"| 判断前 | `rule.md` | 判断 | `{operation}` |\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="配送操作のスキルが存在しない") as failure:
+        read_triggers.parse_tables(source, toolkit, strict=True)
+    diagnostic = str(failure.value)
+    print(diagnostic)
+    assert f"{source}:3:" in diagnostic and operation in diagnostic
+    assert "同一plugin" in diagnostic and "skill:<スキル名>" in diagnostic
+    assert "他plugin" in diagnostic and "skill:<plugin名>:<スキル名>" in diagnostic
+    assert "skills/<スキル名>/SKILL.md" in diagnostic
+    assert "対象worktreeのルート" in diagnostic
+    assert (
+        "uv run --frozen --no-sync pytest -n 0 "
+        "agent-toolkit/read_triggers_invariant_test.py::test_all_read_tables_have_valid_declarations_and_routes"
+    ) in diagnostic
+
+
+@pytest.mark.parametrize("qualified", [False, True])
+@pytest.mark.parametrize("state", ["redirected", "missing-entry", "missing-target", "cycle", "restored"])
+def test_skill_operation_validates_entry_and_redirected_material(tmp_path, qualified, state):
+    """スキルの実在と全文資料への転送を分け、原本へ戻した次の解析も成立させる。"""
+    root = tmp_path / "agent-basics-agy"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
+    entry = root / "skills/long/SKILL.md"
+    full = entry.parent / "references/antigravity-full-instructions.md"
+    full.parent.mkdir(parents=True)
+    original = "# 長文スキル\n原本の基準\n"
+    entry.write_text(original, encoding="utf-8")
+    full.write_text("# 長文スキル\n全文の基準\n", encoding="utf-8")
+    source = root / "share/source.md"
+    source.parent.mkdir()
+    operation = "skill:agent-basics:long" if qualified else "skill:long"
+    source.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        f"| 起動時 | `../skills/long/SKILL.md` | 起動時 | `{operation}` |\n",
+        encoding="utf-8",
+    )
+    with read_triggers.resolution_scope():
+        assert read_triggers.parse_tables(source, root, strict=True)[0].documents == (entry,)
+    entry.write_text("<!-- read-source: agent-basics:long/references/antigravity-full-instructions.md -->\n", encoding="utf-8")
+    if state == "missing-entry":
+        entry.unlink()
+    elif state == "missing-target":
+        full.unlink()
+    elif state == "cycle":
+        full.write_text("<!-- read-source: agent-basics:long/SKILL.md -->\n", encoding="utf-8")
+    if state in {"missing-entry", "missing-target", "cycle"}:
+        diagnostic = {
+            "missing-entry": "配送操作のスキルが存在しない",
+            "missing-target": "read-sourceの実体が無い",
+            "cycle": "循環",
+        }
+        with pytest.raises(ValueError, match=diagnostic[state]), read_triggers.resolution_scope():
+            read_triggers.parse_tables(source, root, strict=True)
+        return
+    with read_triggers.resolution_scope():
+        row = read_triggers.parse_tables(source, root, strict=True)[0]
+        assert row.documents == (full,) and row.operations == (operation,)
+    if state == "restored":
+        entry.write_text(original, encoding="utf-8")
+        with read_triggers.resolution_scope():
+            row = read_triggers.parse_tables(source, root, strict=True)[0]
+            assert row.documents == (entry,) and row.operations == (operation,)
+
+
 def test_role_document_accepts_its_startup_input_selector(tmp_path):
     source = tmp_path / "example.subagent.md"
     source.write_text(

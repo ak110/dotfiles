@@ -12,10 +12,25 @@ from agent_toolkit._hooks.notice import (
     notice_cycle,
     record_delivery,
     resolve_notice,
+    resolve_notice_in_state,
     set_warning_session_id,
     warning_formatter,
 )
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
+
+
+def test_resolution_in_state_preserves_other_subjects_and_causes() -> None:
+    """呼出側の更新対象だけを変更し、別主体・別原因・別hookの配送記録を保つ。"""
+    selected = "stop|main|advisor|evaluate"
+    retained = {
+        "stop|child|advisor|evaluate": ["child"],
+        "stop|main|advisor|other": ["other"],
+        "stop|main|other|evaluate": ["hook"],
+    }
+    state = {"notice_fingerprints": {selected: ["old"], **retained}, "unrelated": 1}
+    assert resolve_notice_in_state(state, "advisor", "evaluate", subject="main") is state
+    assert state == {"notice_fingerprints": retained, "unrelated": 1}
+    assert resolve_notice_in_state(state, "advisor", "evaluate", subject="main") is None
 
 
 @pytest.mark.parametrize("fix", ["", " ", "\t"])

@@ -110,25 +110,26 @@ def emit_response(response: dict) -> None:
 
 def resolve_notice(session_id: str, hook_id: str, cause: str, *, subject: str | None = None) -> None:
     """解消を確認した原因だけを解除する。主体指定時はその主体の全操作範囲へ適用する。"""
+    update_state(session_id, lambda state: resolve_notice_in_state(state, hook_id, cause, subject=subject))
+
+
+def resolve_notice_in_state(state: dict, hook_id: str, cause: str, *, subject: str | None = None) -> dict | None:
+    """呼出側の状態更新と同じロック内で、指定した原因の通知を解除する。"""
     prefix = _warning_context.get("cycle") or f"{hook_id}|main|"
     key = f"{prefix}{hook_id}|{cause}"
-
-    def resolve(state: dict) -> dict | None:
-        notices = state.get("notice_fingerprints")
-        if not isinstance(notices, dict):
-            return None
-        marker = f"|{subject}|{hook_id}|"
-        keys = (
-            {name for name in notices if name == key}
-            if subject is None
-            else {name for name in notices if marker in name and name.rsplit(marker, 1)[1].split("|", 1)[0] == cause}
-        )
-        if not keys:
-            return None
-        state["notice_fingerprints"] = {name: value for name, value in notices.items() if name not in keys}
-        return state
-
-    update_state(session_id, resolve)
+    notices = state.get("notice_fingerprints")
+    if not isinstance(notices, dict):
+        return None
+    marker = f"|{subject}|{hook_id}|"
+    keys = (
+        {name for name in notices if name == key}
+        if subject is None
+        else {name for name in notices if marker in name and name.rsplit(marker, 1)[1].split("|", 1)[0] == cause}
+    )
+    if not keys:
+        return None
+    state["notice_fingerprints"] = {name: value for name, value in notices.items() if name not in keys}
+    return state
 
 
 def set_warning_session_id(session_id: str) -> None:

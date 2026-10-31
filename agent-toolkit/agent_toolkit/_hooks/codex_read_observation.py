@@ -30,7 +30,7 @@ class Read:
     operands: tuple[int, ...]
 
 
-def read_command_groups(command: str) -> list[list[str]] | None:
+def read_command_groups(command: str, *, sequential: bool = False) -> list[list[str]] | None:
     """読取計画と取得案内で同じ演算子の境界を使う。"""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()<>\n")
     lexer.whitespace = " \t\r"
@@ -39,6 +39,8 @@ def read_command_groups(command: str) -> list[list[str]] | None:
     groups: list[list[str]] = [[]]
     try:
         for token in lexer:
+            if sequential and token == "&&":
+                return None
             if token in {";", "&&", "\n"}:
                 if groups[-1]:
                     groups.append([])
@@ -173,12 +175,8 @@ TRUNCATED_OUTPUT_NOTICE = (
 )
 
 
-def collect(payload: dict) -> Observation | None:
-    """標準読取の終了記録と省略の包絡から、読了観測へ渡す本文を確定する。
-
-    終了0で完了し省略の包絡が無いnative応答だけを本文として返す。
-    省略された応答は本文を返さず、分割読取の案内だけを返す。
-    """
+def completed_execution(payload: dict) -> dict | None:
+    """同thread・turn・呼出ID・commandが一致し、終了0で完了したnative実行だけを返す。"""
     if (
         not is_codex_payload(payload)
         or payload.get("hook_event_name", "PostToolUse") != "PostToolUse"
@@ -189,14 +187,29 @@ def collect(payload: dict) -> Observation | None:
     if not isinstance(tool_input, dict):
         return None
     command = tool_input.get("command")
-    response = payload.get("tool_response")
-    if not isinstance(command, str) or not isinstance(response, str) or not read_plan(command):
+    if not isinstance(command, str):
         return None
     try:
         execution = _execution(payload)
     except OSError, UnicodeError, ValueError, KeyError, TypeError:
         return None
     if execution is None or not _succeeded(execution, command):
+        return None
+    return execution
+
+
+def collect(payload: dict) -> Observation | None:
+    """標準読取の終了記録と省略の包絡から、読了観測へ渡す本文を確定する。
+
+    終了0で完了し省略の包絡が無いnative応答だけを本文として返す。
+    省略された応答は本文を返さず、分割読取の案内だけを返す。
+    """
+    tool_input = payload.get("tool_input")
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    response = payload.get("tool_response")
+    if not isinstance(command, str) or not isinstance(response, str) or not read_plan(command):
+        return None
+    if completed_execution(payload) is None:
         return None
     if response_is_truncated(response):
         return Observation(formatter("codex-read-observation")(TRUNCATED_NOTICE), None)

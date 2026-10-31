@@ -183,3 +183,25 @@ def test_untruncated_non_read_output_has_no_notice(tmp_path, capsys):
     payload = _payload(tmp_path, "git status --short", " M file\n")
     assert posttooluse.main(json.dumps(payload)) == 0
     assert observation.TRUNCATED_OUTPUT_NOTICE not in _additional_context(capsys)
+
+
+@pytest.mark.parametrize("defect", ["none", "turn", "id", "session", "command", "failed", "missing"])
+def test_mixed_execution_uses_the_same_native_success_boundary(tmp_path, defect):
+    """混在入力では、native記録による実行成功の確認と資料本文の取得を別々に検証する。"""
+    payload = _payload(tmp_path, "cat first.md; git status --short; sed -n '1p' second.md", "本文\n")
+    if defect in {"turn", "id", "session"}:
+        payload[{"turn": "turn_id", "id": "tool_use_id", "session": "session_id"}[defect]] = "other"
+    elif defect == "command":
+        payload["tool_input"]["command"] += " "
+    elif defect in {"failed", "missing"}:
+        payload = _payload(tmp_path, payload["tool_input"]["command"], "本文\n", exit_code=1)
+        if defect == "missing":
+            pathlib.Path(payload["transcript_path"]).write_text("", encoding="utf-8")
+    assert (observation.completed_execution(payload) is not None) is (defect == "none")
+    assert observation.collect(payload) is None
+
+
+def test_linear_read_groups_do_not_guess_short_circuit_execution():
+    assert observation.read_command_groups("cat first; git status; sed -n '1p' second", sequential=True)
+    assert observation.read_command_groups("false && cat first; sed -n '1p' second", sequential=True) is None
+    assert observation.read_command_groups("cat first && sed -n '1p' second")

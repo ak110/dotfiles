@@ -1117,11 +1117,13 @@ async def test_batch_api_imports_crlf_text(tmp_path: pathlib.Path, monkeypatch: 
         state.ServeState(tmp_path),
     )
 
-    response = await app.test_client().post("/api/entries/batch", json={"text": _BATCH_TEXT.replace("\n", "\r\n")})
+    filename = "20261001-000000-001.md"
+    text = _BATCH_TEXT.replace("keep.md", filename).replace("\n", "\r\n")
+    response = await app.test_client().post("/api/entries/batch", json={"text": text})
 
     assert response.status_code == 201
-    assert (await response.get_json())["filenames"] == ["keep.md"]
-    saved_path = entry_path(tmp_path, "keep.md")
+    assert (await response.get_json())["filenames"] == [filename]
+    saved_path = entry_path(tmp_path, filename)
     assert saved_path.read_bytes() == (
         "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文\n".encode()
     )

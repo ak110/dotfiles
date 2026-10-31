@@ -21,6 +21,44 @@ from agent_toolkit._testing import agents_server_support
 pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
 
 
+@pytest.mark.parametrize("operation", ["start", "send_message"])
+@pytest.mark.parametrize(
+    ("pending", "previous_owner", "delivery", "resolved"),
+    [
+        (False, "main", "reply_started", True),
+        (False, "main", "reply_ambiguous", True),
+        (True, "main", "reply_started", False),
+        (None, "main", "reply_started", False),
+        (False, "other", "reply_started", False),
+    ],
+)
+def test_new_work_resolves_notice_in_same_state_update(monkeypatch, operation, pending, previous_owner, delivery, resolved):
+    """同主体の観測済み記録から新作業を保存する更新だけが、同じロック内で通知を解除する。"""
+    key = "stop|main|agents_server_session_advisor|evaluate"
+    other = "stop|other|agents_server_session_advisor|evaluate"
+    state: dict[str, Any] = {
+        "agents_server_sessions": {"remote": {"pending_observation": pending, "owner_agent_id": previous_owner}},
+        "notice_fingerprints": {key: ["old"], other: ["other"]},
+    }
+    updates = []
+
+    def update(_session_id, mutator, **_kwargs):
+        assert mutator(state) is state
+        assert (key not in state["notice_fingerprints"]) is resolved
+        assert state["agents_server_sessions"]["remote"]["pending_observation"] is True
+        updates.append(True)
+
+    monkeypatch.setattr(agents_server_observations, "update_state", update)
+    agents_server_observations._record_agents_server_session_state(  # pylint: disable=protected-access
+        "local",
+        {"session_id": "remote", "status": "running", "delivery": delivery},
+        operation=operation,
+        owner_agent_id="main",
+    )
+    assert updates == [True]
+    assert state["notice_fingerprints"][other] == ["other"]
+
+
 class _WindowsAccessDenied(PermissionError):
     """Windowsの`os.replace`が返すWinError 5と同じ識別値を持つ置換拒否。"""
 

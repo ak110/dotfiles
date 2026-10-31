@@ -26,6 +26,7 @@ lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import is_agents_wait_command
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
+lazy from agent_toolkit._hooks.notice import resolve_notice_in_state
 lazy from agent_toolkit._hooks.tracked_model_types import TRACKED_MODEL_TYPES as _TRACKED_MODEL_TYPES
 
 
@@ -347,6 +348,14 @@ def _record_agents_server_session_state(
             record["agent_message"] = structured["agent_message"]
         changed = sessions.get(remote_session_id) != record
         if changed:
+            if (
+                previous.get("pending_observation") is False
+                and previous.get("owner_agent_id") == owner_agent_id
+                and record.get("pending_observation") is True
+                and record.get("owner_agent_id") == owner_agent_id
+            ):
+                # 観測と再依頼の間にStopがなくても、新作業の保存と通知解除を同じ更新で確定する。
+                resolve_notice_in_state(state, "agents_server_session_advisor", "evaluate", subject=owner_agent_id)
             sessions[remote_session_id] = record
         cwd_map = state.setdefault(_AGENTS_SERVER_SESSION_CWD_KEY, {})
         if isinstance(cwd, str) and cwd and cwd_map.get(remote_session_id) != cwd:

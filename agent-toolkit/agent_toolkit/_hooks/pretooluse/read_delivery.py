@@ -18,6 +18,7 @@ import os
 import pathlib
 import re
 import shlex
+import tomllib
 from collections.abc import Callable, Generator, Iterator
 from typing import cast
 
@@ -135,7 +136,9 @@ def _read_path_variants(tool_name: str, tool_input: dict, cwd: str) -> list[path
     return [path for resolve in (True, False) for path in _read_paths(tool_name, tool_input, cwd, resolve=resolve)]
 
 
-def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[pathlib.Path, int, int | None]], bool]:
+def _sed_reads(
+    tool_name: str, tool_input: dict, cwd: str, *, include_cat: bool = False
+) -> tuple[list[tuple[pathlib.Path, int, int | None]], bool]:
     """Bashの静的なcat全文読取とsed行範囲読取を出力順に返す。
 
     2番目の値は、移動以外の全ての呼出しが行範囲の読取であり、出力全体を範囲の連結と比べられるかを示す。
@@ -172,7 +175,7 @@ def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[p
             path = pathlib.Path(operand).expanduser()
             reads.append(((path if path.is_absolute() else pathlib.Path(current.path) / path).resolve(), start, end))
     # catだけの呼出しは従来の全文取得判定へ渡し、sedを含む場合だけ全出力と範囲連結の一致を確かめる。
-    return (reads, only_reads and bool(reads)) if has_sed else ([], False)
+    return (reads, only_reads and bool(reads)) if has_sed or include_cat else ([], False)
 
 
 def _pure_bash_read(command: str, cwd: str) -> bool:
@@ -270,6 +273,25 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str) -> str:
     return f"Readで`{path}`を全文読め" + focus
 
 
+def _pyproject_dependencies(text: str) -> object:
+    """pytest等の設定変更を、依存定義の操作から区別する。
+
+    解析不能な本文はそのまま比較し、壊れた依存宣言の変更を不変と扱わない。
+    対象の表はdependency_usageが依存名を抽出する範囲にそろえる。
+    """
+    try:
+        data = tomllib.loads(text)
+        project = data.get("project") or {}
+        return (
+            project.get("dependencies"),
+            project.get("optional-dependencies"),
+            data.get("dependency-groups"),
+            (data.get("tool", {}).get("uv") or {}).get("dev-dependencies"),
+        )
+    except tomllib.TOMLDecodeError, AttributeError, TypeError:
+        return text
+
+
 @_input_cached
 def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
     """共通語彙を既存の静的な操作判定へ結びつける。"""
@@ -309,11 +331,19 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
                 if pathlib.Path(edit.path) != candidate:
                     continue
                 materialized = tool_input_fields.materialize(edit)
+                if (
+                    candidate.name.removesuffix(".tmpl") == "pyproject.toml"
+                    and materialized is not None
+                    and _pyproject_dependencies(materialized.before_image) == _pyproject_dependencies(materialized.after_image)
+                ):
+                    continue
                 if materialized is not None and materialized.after_image:
                     texts.append(materialized.after_image)
                 else:
                     texts.extend(fragment.after for fragment in edit.fragments)
-            if candidate.is_file():
+                if candidate.is_file():
+                    texts.append(candidate.read_text(encoding="utf-8", errors="replace"))
+            if not operations and candidate.is_file():
                 texts.append(candidate.read_text(encoding="utf-8", errors="replace"))
             if any(dependency_usage.uses(candidate, text, value) for text in texts):
                 return True
@@ -965,7 +995,13 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                         or (candidate.is_file() and document_reads.content_fingerprint(candidate) in fingerprints)
                     ]
                     for target, start, end, length, fingerprint in _read_body_proofs(
-                        name, inputs, response, read_paths, paths | set(read_paths), cwd
+                        name,
+                        inputs,
+                        response,
+                        read_paths,
+                        paths | set(read_paths),
+                        cwd,
+                        allow_mixed=not is_codex_payload(payload),
                     ):
                         if skill_name(target.path) and read_triggers.skill_invocation_required(
                             target.path,
@@ -1600,6 +1636,8 @@ def _read_body_proofs(
     paths: list[pathlib.Path],
     targets: set[pathlib.Path],
     cwd: str,
+    *,
+    allow_mixed: bool = True,
 ) -> Iterator[tuple[read_triggers.ReadTarget, int, int, int, str]]:
     """本文と位置が実ファイルに一致する取得範囲を返す。履歴とPostToolUseで同じ本文一致の判定を使う。"""
     if isinstance(response, str):
@@ -1625,6 +1663,8 @@ def _read_body_proofs(
     if sed_reads:
         if only_reads:
             yield from _sed_range_proofs(sed_reads, text, targets)
+        elif allow_mixed:
+            yield from _mixed_read_proofs(tool_input["command"], cwd, text, targets)
         return
     for path in paths:
         if path not in targets:
@@ -1662,6 +1702,51 @@ def _read_body_proofs(
         if body.strip() and body.strip() in normalized:
             yield read_triggers.ReadTarget(path), 0, len(body), len(body), fingerprint
             continue
+
+
+def _mixed_read_proofs(
+    command: str, cwd: str, text: str, targets: set[pathlib.Path]
+) -> Iterator[tuple[read_triggers.ReadTarget, int, int, int, str]]:
+    """診断出力に接する取得は、出力位置を確定できる先頭・末尾の読取列だけを証明する。
+
+    診断出力の長さが不明な中間区間は推測しない。条件分岐・置換・出力転送を含む入力も受理しない。
+    """
+    groups = codex_read_observation.read_command_groups(command, sequential=True)
+    invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
+    if not groups or len(groups) != len(invocations):
+        return
+    runs: list[list[tuple[pathlib.Path, int, int | None]]] = [[]]
+    for tokens, (invocation, current) in zip(groups, invocations, strict=True):
+        if (
+            tuple(tokens) != invocation.segment.tokens
+            or not invocation.arguments_known
+            or invocation.output_pipe
+            or invocation.output_redirected
+            or invocation.captured
+            or invocation.background
+            or invocation.inline_input
+            or not current.resolved
+        ):
+            return
+        inputs = {"command": shlex.join(tokens)}
+        reads, only_reads = _sed_reads("Bash", inputs, current.path, include_cat=True)
+        if only_reads:
+            runs[-1].extend(reads)
+        elif pathlib.PurePath(tokens[0]).name in {"cat", "sed"}:
+            return
+        elif tokens[0] == "echo" or operation_skills.is_diagnostic_operation("Bash", inputs, current.path):
+            runs.append([])
+        else:
+            return
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    # 内側の任意出力を本文の代用にしないよう、範囲の一致は出力端へ固定する。
+    for reads, first in ((runs[0], True), (runs[-1], False)):
+        expected = "".join("".join(_source_text(path).splitlines(keepends=True)[start - 1 : end]) for path, start, end in reads)
+        if not expected:
+            continue
+        positioned = normalized.startswith(expected) if first else normalized.endswith(expected)
+        if positioned:
+            yield from _sed_range_proofs(reads, expected, targets)
 
 
 def _sed_range_proofs(
@@ -1790,7 +1875,19 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         if resolved is not None:
             _mark(session_id, resolved, agent)
         return
-    for target, start, end, length, fingerprint in _read_body_proofs(tool_name, tool_input, response, paths, targets, cwd):
+    allow_mixed = not is_codex_payload(payload)
+    mixed_reads, only_reads = _sed_reads(tool_name, tool_input, cwd)
+    if not allow_mixed and mixed_reads and not only_reads:
+        execution = codex_read_observation.completed_execution(payload)
+        allow_mixed = (
+            execution is not None
+            and isinstance(response, str)
+            and execution.get("aggregated_output") == response
+            and not host_truncated(response)
+        )
+    for target, start, end, length, fingerprint in _read_body_proofs(
+        tool_name, tool_input, response, paths, targets, cwd, allow_mixed=allow_mixed
+    ):
         if skill_name(target.path) and read_triggers.skill_invocation_required(
             target.path,
             host="codex" if is_codex_payload(payload) else "claude",

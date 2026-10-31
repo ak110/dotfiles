@@ -506,6 +506,8 @@ astroid = "astroid"
 thm = "thm"
 
 [tool.pytest.ini_options]
+# 成功した試験の大きな一時環境を、その試験の終了時に回収する。
+tmp_path_retention_policy = "failed"
 addopts = [
     "--showlocals",
     "-p", "no:cacheprovider",

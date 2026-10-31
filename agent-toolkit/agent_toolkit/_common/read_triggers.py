@@ -583,9 +583,19 @@ def parse_tables(
                 if ":" not in name and owner is not None:
                     plugin = _plugin_manifest(owner)["name"]
                     name = f"{plugin}:{name}"
-                selected = resolve_document(name, source, plugin_root, host, project=project)
+                selected = _direct_document(name, source, plugin_root, host, project=project)
                 if selected is None or selected.name != "SKILL.md" or not selected.is_file():
-                    raise ValueError(f"{source}:{number}: 配送操作のスキルが存在しない: {operation}")
+                    raise ValueError(
+                        f"{source}:{number}: 配送操作のスキルが存在しない: {operation}（解決名: skill:{name}）。"
+                        "次の操作: 同一pluginの実在するスキルは`skill:<スキル名>`、"
+                        "他pluginのスキルは完全名`skill:<plugin名>:<スキル名>`へ宣言を修正し、"
+                        "対象pluginの`skills/<スキル名>/SKILL.md`が存在することを確認せよ。"
+                        "修正後、対象worktreeのルートで`uv run --frozen --no-sync pytest -n 0 "
+                        "agent-toolkit/read_triggers_invariant_test.py::test_all_read_tables_have_valid_declarations_and_routes`"
+                        "を再実行せよ。"
+                    )
+                # Skillの実在は転送前に確かめ、全文資料の欠落・循環は共通解決で拒否する。
+                resolve_read_source(selected, plugin_root, host, project=project)
         selector = row.get("資料選択子", "").strip("` ")
         is_role_document = source.name.endswith(".subagent.md")
         if (

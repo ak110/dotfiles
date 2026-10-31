@@ -1,5 +1,6 @@
 """役割の起動配送と、主体別の取得手段をまたぐ読込契約を確かめる。"""
 
+import hashlib
 import json
 import shlex
 
@@ -28,6 +29,218 @@ def _state(monkeypatch):
     monkeypatch.setattr(read_delivery.delegated_session, "is_lightweight_delegated", lambda _env: False)
     notice.set_warning_session_id("")
     return state
+
+
+def test_compact_recovery_first_output_survives_notice_cycle(tmp_path, monkeypatch, state):
+    """実候補1件の予算見積りが、同じ公開SessionStartの初回配送を消費しない。"""
+    document = tmp_path / "compact-reference.md"
+    document.write_text("# 圧縮候補\n再取得する固有基準\n", encoding="utf-8")
+    digest = hashlib.sha256(document.read_bytes()).hexdigest()
+    monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(rules_context, "_compaction_notice", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(rules_context, "reset_main_operation_skill_ready", lambda *_args, **_kwargs: [(document, "", digest)])
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
+    result = _run_hook_in_process(
+        "rules_context",
+        {"session_id": "compact-first", "cwd": str(tmp_path), "hook_event_name": "SessionStart", "source": "compact"},
+    )
+    assert result.returncode == 0 and not result.stderr
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert context and str(document) in context
+    assert state.get("notice_fingerprints")
+
+
+def test_unchecked_condition_keeps_notice_suppressed_until_actual_resolution(tmp_path, monkeypatch, state):
+    """同scopeの非該当操作は抑止を保ち、公開全文取得後の再成立でだけ再配送する。"""
+    document = tmp_path / "reference.md"
+    document.write_text("# 必須資料\n取得する固有基準\n", encoding="utf-8")
+    row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("bash:printf json",), (document,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    payload = {"session_id": "unchecked", "cwd": str(tmp_path), "tool_name": "Bash"}
+
+    def invoke(suffix):
+        command = "printf json" if suffix == "json" else "cat -- " + shlex.quote(str(tmp_path / "unrelated.txt"))
+        result = _run_hook_in_process("pretooluse", {**payload, "tool_input": {"command": command}})
+        assert result.returncode == 0 and not result.stderr
+        return result.stdout
+
+    assert str(document) in invoke("json")
+    fingerprints = dict(state["notice_fingerprints"])
+    assert str(document) not in invoke("txt")
+    assert state["notice_fingerprints"] == fingerprints
+    assert str(document) not in invoke("json")
+    assert not document_reads.content_ready(
+        state.get(rules_context.OPERATION_SKILL_READY_KEY, {}), document_reads.content_fingerprint(document), "main"
+    )
+    observed = _run_hook_in_process(
+        "posttooluse",
+        {
+            **payload,
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(document)},
+            "tool_response": document.read_text(encoding="utf-8"),
+        },
+    )
+    assert observed.returncode == 0 and not observed.stderr
+    assert document_reads.content_ready(
+        state[rules_context.OPERATION_SKILL_READY_KEY], document_reads.content_fingerprint(document), "main"
+    )
+    assert str(document) not in invoke("json")
+    # 別操作で本文を更新したため、同じ宣言の資料が再び未取得となる。
+    document.write_text("# 必須資料\n更新された固有基準\n", encoding="utf-8")
+    assert str(document) in invoke("json")
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize(
+    "case", ["prefix", "suffix", "partial", "middle", "fake", "unexecuted", "wrong-path", "pipe", "redirect"]
+)
+def test_mixed_diagnostic_acquisition_proves_only_positioned_material(tmp_path, monkeypatch, state, host, case):
+    """診断の出力位置が不明でも、両端の実取得だけを主体と本文ごとに証明する。"""
+    first, second, decoy = (tmp_path / name for name in ("first.md", "second.md", "decoy.md"))
+    for path in (first, second, decoy):
+        path.write_text(f"# {path.stem}\n{path.stem}の固有基準\n", encoding="utf-8")
+    row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("path:*.py",), (first, second))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    data = {"session_id": "mixed-position", "cwd": str(tmp_path), **({"turn_id": "turn"} if host == "codex" else {})}
+    log = tmp_path / "native.jsonl"
+    data["transcript_path"] = str(log)
+    operation = {**data, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "code.py"), "content": "x=1\n"}}
+    assert _run_hook_in_process("pretooluse", operation).returncode == 0
+    assert denial_reason(_run_hook_in_process("pretooluse", operation))
+    a, b = first.read_text(encoding="utf-8"), second.read_text(encoding="utf-8")
+    commands = [f"cat -- {first}", "git show --format=full --no-patch HEAD", f"sed -n '1,$p' -- {second}"]
+    output, expected = a + "診断の結果\n" + b, (True, True)
+    if case == "suffix":
+        commands = ["echo 前置き", f"cat -- {first}", f"sed -n '1,$p' -- {second}"]
+        output = "前置き\n" + a + b
+    elif case == "partial":
+        commands[-1] = f"sed -n '1p' -- {second}"
+        output, expected = a + "診断の結果\n" + b.splitlines(keepends=True)[0], (True, False)
+    elif case == "middle":
+        commands = ["git status --short", f"cat -- {first}", f"sed -n '1,$p' -- {second}", "rg -n 基準 -- ."]
+        output, expected = "前置き\n" + a + b + "後記\n", (False, False)
+    elif case == "fake":
+        output, expected = "偽の本文\n診断の結果\n" + b, (False, True)
+    elif case == "unexecuted":
+        commands[0] = f"false && cat -- {first}"
+        expected = (False, False)
+    elif case == "wrong-path":
+        commands[0] = f"cat -- {decoy}"
+        expected = (False, True)
+    elif case in {"pipe", "redirect"}:
+        commands[0] += " | cat" if case == "pipe" else " > ignored"
+        expected = (False, False)
+
+    def acquire(command, body, identifier):
+        item = {
+            "type": "CommandExecution",
+            "id": identifier,
+            "status": "completed",
+            "exit_code": 0,
+            "command": ["/bin/bash", "-lc", command],
+            "aggregated_output": body,
+        }
+        log.write_text(
+            json.dumps(
+                {
+                    "type": "event_msg",
+                    "payload": {"type": "item_completed", "thread_id": data["session_id"], "turn_id": "turn", "item": item},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        result = _run_hook_in_process(
+            "posttooluse",
+            {
+                **data,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_use_id": identifier,
+                "tool_input": {"command": command},
+                "tool_response": body if host == "codex" else {"stdout": body, "exit_code": 0},
+            },
+        )
+        assert result.returncode == 0 and not result.stderr
+
+    acquire("; ".join(commands), output, "mixed-read")
+    records = state[rules_context.OPERATION_SKILL_READY_KEY]
+    assert (
+        tuple(
+            document_reads.content_ready(records, document_reads.content_fingerprint(path), "main") for path in (first, second)
+        )
+        == expected
+    )
+    following = _run_hook_in_process("pretooluse", operation)
+    reason = denial_reason(following) if following.stdout else ""
+    assert all((str(path) not in reason) is ready for path, ready in zip((first, second), expected, strict=True))
+    if case == "partial":
+        acquire(f"sed -n '2,$p' -- {second}", "".join(b.splitlines(keepends=True)[1:]), "remainder")
+        resumed = _run_hook_in_process("pretooluse", operation)
+        assert resumed.returncode == 0 and not resumed.stdout and not resumed.stderr
+
+
+@pytest.mark.parametrize(
+    "defect",
+    ["missing", "turn", "session", "id", "command", "failed", "running", "truncated", "forged", "other-actor", "changed-hash"],
+)
+def test_mixed_diagnostic_native_acquisition_keeps_execution_boundaries(tmp_path, monkeypatch, state, defect):
+    """Codexの混在出力にも同じ元実行・主体・本文hashと省略なしを要求する。"""
+    first, second = (tmp_path / name for name in ("first.md", "second.md"))
+    for path in (first, second):
+        path.write_text(f"# {path.stem}\n{path.stem}固有の本文\n", encoding="utf-8")
+    row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("path:*.py",), (first, second))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    command = f"cat -- {first}; git status --short; sed -n '1,$p' -- {second}"
+    body = first.read_text(encoding="utf-8") + "診断\n" + second.read_text(encoding="utf-8")
+    if defect == "truncated":
+        body = "Warning: truncated output (original token count: 3000)\n" + body
+    item = {
+        "type": "CommandExecution",
+        "id": "read",
+        "status": "completed",
+        "exit_code": 0,
+        "command": ["/bin/bash", "-lc", command],
+        "aggregated_output": body,
+    }
+    event = {"type": "item_completed", "thread_id": "native", "turn_id": "turn", "item": item}
+    if defect in {"turn", "session"}:
+        event["turn_id" if defect == "turn" else "thread_id"] = "other"
+    elif defect == "id":
+        item["id"] = "other"
+    elif defect == "command":
+        item["command"] = ["/bin/bash", "-lc", "echo 未実行"]
+    elif defect == "failed":
+        item["exit_code"] = 1
+    elif defect == "running":
+        item["status"] = "running"
+    elif defect == "forged":
+        item["aggregated_output"] = "実際には別の本文\n"
+    log = tmp_path / "native.jsonl"
+    log.write_text("" if defect == "missing" else json.dumps({"type": "event_msg", "payload": event}) + "\n", encoding="utf-8")
+    data = {"session_id": "native", "turn_id": "turn", "cwd": str(tmp_path), "transcript_path": str(log)}
+    result = _run_hook_in_process(
+        "posttooluse",
+        {
+            **data,
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_use_id": "read",
+            "tool_input": {"command": command},
+            "tool_response": body,
+            **({"agent_id": "other"} if defect == "other-actor" else {}),
+        },
+    )
+    assert result.returncode == 0 and not result.stderr
+    if defect == "changed-hash":
+        for path in (first, second):
+            path.write_text("# 更新された本文\n", encoding="utf-8")
+    records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert all(
+        not document_reads.content_ready(records, document_reads.content_fingerprint(path), "main") for path in (first, second)
+    )
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

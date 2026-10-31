@@ -366,6 +366,66 @@ def test_dependency_selection_requires_code_or_dependency_definition(tmp_path, p
     )
 
 
+@pytest.mark.parametrize(
+    "section",
+    ["project", "project.optional-dependencies", "dependency-groups", "tool.uv"],
+)
+@pytest.mark.parametrize("change", ["settings", "version", "add", "remove"])
+@pytest.mark.parametrize("tool", ["Write", "Edit", "apply_patch"])
+@pytest.mark.usefixtures("memory")
+def test_public_hook_pyproject_selects_only_dependency_definition_changes(tmp_path, monkeypatch, section, change, tool):
+    reference = tmp_path / "playwright.md"
+    reference.write_text("# 技術資料\n依存定義の確認\n", encoding="utf-8")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("dependency:playwright",), (reference,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
+    key = {"project": "dependencies", "tool.uv": "dev-dependencies"}.get(section, "test")
+    dependency = f'[{section}]\n{key} = ["playwright>=1.61.0"]\n'
+    settings = '[tool.pytest.ini_options]\ntmp_path_retention_policy = "failed"\n'
+    before = dependency + settings
+    after = before
+    if change == "settings":
+        after = before.replace('"failed"', '"all"')
+    elif change == "version":
+        after = before.replace("1.61.0", "1.61.1")
+    elif change == "add":
+        before = before.replace('"playwright>=1.61.0"', "")
+    else:
+        after = before.replace('"playwright>=1.61.0"', "")
+    target = tmp_path / "pyproject.toml"
+    target.write_text(before, encoding="utf-8")
+    if tool == "Write":
+        inputs = {"file_path": str(target), "content": after}
+    elif tool == "Edit":
+        inputs = {"file_path": str(target), "old_string": before, "new_string": after}
+    else:
+        removed = "".join("-" + line + "\n" for line in before.splitlines())
+        added = "".join("+" + line + "\n" for line in after.splitlines())
+        inputs = {"command": f"*** Begin Patch\n*** Update File: {target}\n@@\n{removed}{added}*** End Patch\n"}
+    operation = {"session_id": "test", "cwd": str(tmp_path), "tool_name": tool, "tool_input": inputs}
+    first = _run_hook_in_process("pretooluse", operation)
+    second = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == second.returncode == 0 and not first.stderr and not second.stderr
+    if change == "settings":
+        assert str(reference) not in first.stdout
+        assert not second.stdout
+    else:
+        assert str(reference) in first.stdout
+        assert str(reference) in denial_reason(second)
+        read = _run_hook_in_process(
+            "posttooluse",
+            {
+                "session_id": "test",
+                "cwd": str(tmp_path),
+                "tool_name": "Read",
+                "tool_input": {"file_path": str(reference)},
+                "tool_response": reference.read_text(encoding="utf-8"),
+            },
+        )
+        assert read.returncode == 0 and not read.stderr
+        resumed = _run_hook_in_process("pretooluse", operation)
+        assert resumed.returncode == 0 and not resumed.stderr and not resumed.stdout
+
+
 @pytest.mark.usefixtures("memory")
 def test_public_hook_delivers_main_work_contract_and_reuses_it_after_read(tmp_path, monkeypatch):
     contract = tmp_path / "work-contract.md"
@@ -2756,6 +2816,31 @@ def test_mixed_cat_sed_public_rejects_unproven_output(tmp_path, monkeypatch, sub
     elif case == "other-command":
         commands.insert(0, "echo 前置き")
         output = "前置き\n" + output
+        if subject == "codex":
+            log = tmp_path / "mixed-native.jsonl"
+            log.write_text(
+                json.dumps(
+                    {
+                        "type": "event_msg",
+                        "payload": {
+                            "type": "item_completed",
+                            "thread_id": "mixed-reject",
+                            "turn_id": "turn",
+                            "item": {
+                                "type": "CommandExecution",
+                                "id": "mixed-read",
+                                "status": "completed",
+                                "exit_code": 0,
+                                "command": ["/bin/bash", "-lc", "; ".join(commands)],
+                                "aggregated_output": output,
+                            },
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            operation = {**operation, "transcript_path": str(log), "tool_use_id": "mixed-read"}
     observed = _run_hook_in_process(
         "posttooluse",
         {
@@ -2763,11 +2848,15 @@ def test_mixed_cat_sed_public_rejects_unproven_output(tmp_path, monkeypatch, sub
             "hook_event_name": "PostToolUse",
             "tool_name": "Bash",
             "tool_input": {"command": "; ".join(commands)},
-            "tool_response": {"stdout": output, **response},
+            "tool_response": output if case == "other-command" and subject == "codex" else {"stdout": output, **response},
         },
     )
     assert observed.returncode == 0
     final = _run_hook_in_process("pretooluse", operation)
+    if case == "other-command":
+        assert final.returncode == 0 and not final.stdout and not final.stderr
+        assert all(str(path) not in final.stdout for path in paths)
+        return
     reason = denial_reason(final)
     assert str(paths[1]) in reason
     assert (str(paths[0]) not in reason) is (case == "partial")
