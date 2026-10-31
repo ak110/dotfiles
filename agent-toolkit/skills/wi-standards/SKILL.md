@@ -118,7 +118,7 @@ WIの保存先は`private-notes/yyyy/MM/<filename>`に固定する。項目の�
 
 WIの保存状態には`inbox`、`processing`、`hold`、`adopted`、`rejected`があり、`agent-toolkit:process-wi`は`inbox`と`processing`のみを処理対象とする。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念が寄せられた時点では、詳細な調査や認識合わせに先立って対象項目を保留（`hold`）にする。
 処理中の項目の扱い: 別のセッションが処理している`processing`状態の項目については、保留や本文の置き換えを行わず、変更したい内容を新規項目として投入する。
-状態遷移、採否の操作、保留と本文の修正、終了処理、依存関係と冷却時間、確認状態、事前承認型UWIに伴う元項目の保留、および「回答済みUWIの取り込み」の運用は[references/states-and-dependencies.md](references/states-and-dependencies.md)が定める。上流リポジトリへの投入手順は[references/cross-repository-submission.md](references/cross-repository-submission.md)が定める。
+状態遷移、採否の操作、保留と本文の修正、終了処理、依存関係と冷却時間、確認状態、事前承認型UWIを待つ元項目の依存、および「回答済みUWIの取り込み」の運用は[references/states-and-dependencies.md](references/states-and-dependencies.md)が定める。上流リポジトリへの投入手順は[references/cross-repository-submission.md](references/cross-repository-submission.md)が定める。
 
 重要フラグはfrontmatterの`important: true`で設定し、キーの省略時はfalse、フラグの解除はキー自体の削除として扱う。
 一覧表示、検索、全件表示およびWeb画面の一覧では、`all`、`yes`、`no`の重要度フィルターを利用できる。

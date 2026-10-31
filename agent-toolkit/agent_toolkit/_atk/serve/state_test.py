@@ -91,7 +91,7 @@ fetchHandler = async url => {
 };
 await reloadOpenDetailFromExternalChange();
 failures.push(elements['operation-notice-message'].textContent);
-refreshKnownUwis = async () => { throw new Error('SSE更新失敗'); };
+refreshKnownEntries = async () => { throw new Error('SSE更新失敗'); };
 fetchHandler = async () => ({
   ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: [], repos: []})
 });
@@ -100,7 +100,7 @@ await Promise.resolve();
 failures.push(elements['operation-notice-message'].textContent);
 deliverOperationMessage('ダイアログ外失敗', true);
 failures.push(elements['operation-notice-message'].textContent);
-refreshKnownUwis = async () => { throw new Error('初期化失敗'); };
+refreshKnownEntries = async () => { throw new Error('初期化失敗'); };
 initializeApp();
 await initialization;
 failures.push(elements['operation-notice-message'].textContent);
@@ -986,8 +986,8 @@ process.stdout.write(JSON.stringify({
         "repoCountDuringUser": 1,
         "listUrls": [
             "/atk/api/entries?type=awi&status=active&answered=all&period=2w&page=1",
-            "/atk/api/entries?type=uwi&status=all&answered=all",
-            "/atk/api/entries?type=uwi&status=all&answered=all",
+            "/atk/api/entries?type=all&status=all&answered=all",
+            "/atk/api/entries?type=all&status=all&answered=all",
             "/atk/api/entries?type=awi&status=active&answered=all&period=2w&page=1",
         ],
         "status": "1件を表示",

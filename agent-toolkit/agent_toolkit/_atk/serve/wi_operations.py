@@ -232,6 +232,20 @@ def _entry(
     }
 
 
+def _unanswered_uwi_dependents(active: list[entry_index.IndexedEntry]) -> frozenset[pathlib.Path]:
+    """未回答UWIの回答を待つAWIのパスを、未終了の全項目の解析済みの値から求める。"""
+    return wi_readiness.unanswered_uwi_dependents(
+        (
+            indexed.path,
+            target_repo if isinstance(target_repo := indexed.metadata.get("target_repo"), str) else None,
+            indexed.kind,
+            indexed.metadata,
+            indexed.text,
+        )
+        for indexed in active
+    )
+
+
 def _needs_verify(kind: str, state: str, text: str) -> bool:
     """反映後の観測だけが残るため`inbox`へ戻されたawiかを返す。
 
@@ -424,7 +438,19 @@ class Operations:
         created_after = datetime.datetime.now() - datetime.timedelta(weeks=period_weeks) if period_weeks is not None else None
         states = wi_filters.resolve_states(status_filter)
         target_repo_matcher = wi_filters.TargetRepoMatcher(target_repo_filter)
-        indexed_entries, warnings = self._entry_index.scan(states)
+        needs_blocked = kind_filter in ("all", wi_constants.WI_TYPE_AWI)
+        # 索引の走査は状態によらず全ファイルを解析して警告を返すため、blockedの導出に要る未終了の項目も
+        # 同じ1回の走査で取得し、1操作で本文の解析を繰り返さない。
+        selected_states = set(states)
+        scanned, warnings = self._entry_index.scan(
+            selected_states | set(wi_constants.WI_ACTIVE_STATES) if needs_blocked else selected_states
+        )
+        blocked_paths = (
+            _unanswered_uwi_dependents([indexed for indexed in scanned if indexed.state in wi_constants.WI_ACTIVE_STATES])
+            if needs_blocked
+            else frozenset()
+        )
+        indexed_entries = [indexed for indexed in scanned if indexed.state in selected_states]
         for indexed in indexed_entries:
             if kind_filter not in ("all", indexed.kind):
                 continue
@@ -480,7 +506,8 @@ class Operations:
                     ),
                 )
                 indexed.derived[_LIST_ENTRY_KEY] = cached_entry
-            result.append(dict(cached_entry[1]))
+            # 依存先の回答で変わる導出値は、項目自身のキーで保持する表示キャッシュへ入れない。
+            result.append({**cached_entry[1], "blocked": indexed.path in blocked_paths})
         return sorted(result, key=lambda item: str(item["filename"]), reverse=True), warnings
 
     def entries_with_warnings(

@@ -8,9 +8,11 @@ from unittest import mock
 
 import pytest
 
+from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.serve import wi_operations
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import entry_text, frontmatter
+from agent_toolkit._atk.wi import listing as _wi_listing
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_entry_files import write_awi, write_uwi
@@ -248,6 +250,55 @@ class TestReadiness:
 
         assert result.blocked == ("answer.md", "awi.md")
         assert result.actionable_count == 0
+
+    @pytest.mark.parametrize("multiple", [False, True])
+    def test_uwi_answer_releases_candidates_in_same_snapshot(self, tmp_path: pathlib.Path, multiple: bool) -> None:
+        """未回答中は依存元を候補から除き、回答後はUWIと依存元を同じ候補集合へ返す。"""
+        write_uwi(tmp_path, "answer.md")
+        dependencies = ("answer.md", "ordinary.md") if multiple else ("answer.md",)
+        write_awi(tmp_path, "awi.md", depends_on=dependencies)
+        write_awi(tmp_path, "held.md", state="hold", depends_on=("answer.md",))
+        if multiple:
+            write_awi(tmp_path, "ordinary.md")
+        repositories = (_config.ConfiguredRepository("github.com/example/repo", tmp_path, tmp_path / ".git"),)
+
+        before = _wi_listing.configured_repo_snapshot(tmp_path, repositories)[0]
+        assert "awi.md" not in before.readiness.internal_dependency_waits
+        assert {entry[0].name for entry in before.candidates} == ({"ordinary.md"} if multiple else set())
+        # 編集目的のholdにある依存元は、回答の前後を通じて候補に入らない。
+        assert "held.md" not in {entry[0].name for entry in before.candidates}
+
+        write_uwi(tmp_path, "answer.md", answer="回答済み")
+        after = _wi_listing.configured_repo_snapshot(tmp_path, repositories)[0]
+        assert after.readiness.internal_dependency_waits == ("awi.md",)
+        assert {entry[0].name for entry in after.candidates} == {
+            "answer.md",
+            "awi.md",
+            *({"ordinary.md"} if multiple else set()),
+        }
+
+    def test_transitive_dependency_on_unanswered_uwi_stays_out_of_candidates(self, tmp_path: pathlib.Path) -> None:
+        """未回答UWIを待つ項目を依存先に持つ項目も、同じ実行の候補へ入れない。
+
+        依存先が候補外であることは推移的に伝わる。直接の依存先だけを見ると、AがB、Bが未回答UWIを待つ場合に
+        Bは候補外のままAだけが候補に入り、回答前の依存元が実装対象へ投入される。
+        通常のAWI同士の依存（CがDを待つ）は従来どおり同じ実行の候補に入る。
+        """
+        write_uwi(tmp_path, "u.md")
+        write_awi(tmp_path, "b.md", depends_on=("u.md",))
+        write_awi(tmp_path, "a.md", depends_on=("b.md",))
+        write_awi(tmp_path, "d.md")
+        write_awi(tmp_path, "c.md", depends_on=("d.md",))
+        repositories = (_config.ConfiguredRepository("github.com/example/repo", tmp_path, tmp_path / ".git"),)
+
+        before = _wi_listing.configured_repo_snapshot(tmp_path, repositories)[0]
+        assert before.readiness.internal_dependency_waits == ("c.md",)
+        assert {entry[0].name for entry in before.candidates} == {"c.md", "d.md"}
+
+        write_uwi(tmp_path, "u.md", answer="回答済み")
+        after = _wi_listing.configured_repo_snapshot(tmp_path, repositories)[0]
+        assert after.readiness.internal_dependency_waits == ("a.md", "b.md", "c.md")
+        assert {entry[0].name for entry in after.candidates} == {"a.md", "b.md", "c.md", "d.md", "u.md"}
 
     def test_run_skill_answered_uwi_is_not_ready(self, tmp_path: pathlib.Path) -> None:
         """`atk run-skill`のUWIは次回の同じスキルの実行が扱うため、process-loopの起動件数へ数えない。

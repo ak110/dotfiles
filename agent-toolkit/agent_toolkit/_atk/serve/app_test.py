@@ -81,12 +81,12 @@ fetchHandler = async url => {
   }
   return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
 };
-refreshKnownUwis = async () => { throw new Error('外部更新失敗'); };
+refreshKnownEntries = async () => { throw new Error('外部更新失敗'); };
 await reloadFromExternalChange();
 await Promise.resolve();
 const reloadError = elements['operation-notice-message'].textContent;
 setGlobalError('');
-refreshKnownUwis = async () => { throw new Error('初期化失敗'); };
+refreshKnownEntries = async () => { throw new Error('初期化失敗'); };
 initializeApp();
 await initialization;
 process.stdout.write(JSON.stringify({reloadError, initializationError: elements['operation-notice-message'].textContent}));

@@ -163,7 +163,10 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_notify_only_new_active_unanswered_uwi_after_permission() -> None:
-    """初期集合と既知項目の属性変化を通知せず、新規未回答UWIだけを通知する。"""
+    """初期集合と既知項目の属性変化を通知せず、新規の未回答UWIと要確認AWIだけを種別ごとの題で通知する。
+
+    確認済みへ切り替えた既知のAWIと、既知のAWIを要確認へ戻した変化は通知しない。
+    """
     result = _run_node_ui(
         """
 const notifications = [];
@@ -177,13 +180,19 @@ const snapshots = [
     {kind: 'uwi', state: 'inbox', filename: 'base.md', answered: false, target_repo: 'old/repo'},
     {kind: 'uwi', state: 'inbox', filename: 'answered.md', answered: true},
     {kind: 'uwi', state: 'inbox', filename: 'moving.md', answered: false},
-    {kind: 'uwi', state: 'adopted', filename: 'reappear.md', answered: true}
+    {kind: 'uwi', state: 'adopted', filename: 'reappear.md', answered: true},
+    {kind: 'awi', state: 'inbox', filename: 'base-awi.md', confirmation: 'required'},
+    {kind: 'awi', state: 'inbox', filename: 'confirmed-awi.md', confirmation: 'confirmed'}
   ],
   [
     {kind: 'uwi', state: 'inbox', filename: 'base.md', answered: false, target_repo: 'new/repo'},
     {kind: 'uwi', state: 'inbox', filename: 'answered.md', answered: false},
     {kind: 'uwi', state: 'processing', filename: 'moving.md', answered: false},
-    {kind: 'uwi', state: 'inbox', filename: 'new.md', answered: false}
+    {kind: 'uwi', state: 'inbox', filename: 'new.md', answered: false},
+    {kind: 'awi', state: 'inbox', filename: 'base-awi.md', confirmation: 'confirmed'},
+    {kind: 'awi', state: 'inbox', filename: 'confirmed-awi.md', confirmation: 'required'},
+    {kind: 'awi', state: 'inbox', filename: 'new-awi.md', confirmation: 'required'},
+    {kind: 'awi', state: 'inbox', filename: 'plain-awi.md', confirmation: null}
   ],
   [
     {kind: 'uwi', state: 'inbox', filename: 'base.md', answered: false},
@@ -200,13 +209,13 @@ syncNotificationButton();
 const buttonVisibleBefore = !elements['notification-button'].hidden;
 await enableNotifications();
 const buttonHiddenAfter = elements['notification-button'].hidden;
-await refreshKnownUwis({notify: false});
+await refreshKnownEntries({notify: false});
 const afterBaseline = notifications.length;
-await refreshKnownUwis({notify: true});
-await refreshKnownUwis({notify: true});
+await refreshKnownEntries({notify: true});
+await refreshKnownEntries({notify: true});
 process.stdout.write(JSON.stringify({
   buttonVisibleBefore, buttonHiddenAfter, afterBaseline, notifications,
-  known: Array.from(knownUwiFilenames).sort()
+  known: Array.from(knownEntryFilenames).sort()
 }));
 """
     )
@@ -214,8 +223,21 @@ process.stdout.write(JSON.stringify({
         "buttonVisibleBefore": True,
         "buttonHiddenAfter": True,
         "afterBaseline": 0,
-        "notifications": [{"title": "新規未回答UWI", "body": "new.md"}],
-        "known": ["answered.md", "base.md", "moving.md", "new.md", "reappear.md"],
+        "notifications": [
+            {"title": "新規未回答UWI", "body": "new.md"},
+            {"title": "新規要確認AWI", "body": "new-awi.md"},
+        ],
+        "known": [
+            "answered.md",
+            "base-awi.md",
+            "base.md",
+            "confirmed-awi.md",
+            "moving.md",
+            "new-awi.md",
+            "new.md",
+            "plain-awi.md",
+            "reappear.md",
+        ],
     }
 
 

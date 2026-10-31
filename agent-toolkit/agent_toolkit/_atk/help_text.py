@@ -100,7 +100,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi start-processing": {
         "summary": "AWIまたはUWIをprocessingへ移して処理中にする",
-        "description": "AWIまたはUWIをprocessingへ移して処理中にする。\n\n目的: inboxのAWIまたはUWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。UWIの回答が是正または保留中の元項目での作業を求め、その作業を実施するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。`--all`ではholdの項目も候補にする。\n前提: ファイル名で指定する対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
+        "description": "AWIまたはUWIをprocessingへ移して処理中にする。\n\n目的: inboxのAWIまたはUWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。UWIの回答が是正または元項目での作業を求め、その回答を反映する作業を始めるとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。`--all`ではholdの項目も候補にする。\n前提: ファイル名で指定する対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
         "epilog": "実行例:\n\n  atk wi start-processing 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles",
     },
     "atk wi hold": {
