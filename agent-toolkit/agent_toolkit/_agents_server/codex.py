@@ -758,6 +758,23 @@ class AppServerManager:
         }
         if lightweight:
             config["project_doc_max_bytes"] = 0
+            # plugins無効の軽量起動でも、出力省略の回収案内と読了観測をPostToolUseから届ける。
+            # 回収可能な省略を理由に続行不能を返した委譲先には探索担当が含まれていた。資料本文は返さない。
+            root = plugin_roots.SERVER_PLUGIN_ROOT
+            groups = json.loads((root / "hooks/hooks.codex.json").read_text(encoding="utf-8"))["hooks"]["PostToolUse"]
+            features["hooks"] = True
+            config["hooks"] = {
+                "PostToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [
+                            {**handler, "command": handler["command"].replace("${PLUGIN_ROOT}", str(root))}
+                            for group in groups
+                            for handler in group["hooks"]
+                        ],
+                    }
+                ],
+            }
         return config
 
     def _thread_config(

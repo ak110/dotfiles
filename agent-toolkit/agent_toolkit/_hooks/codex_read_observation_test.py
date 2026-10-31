@@ -6,7 +6,7 @@ import shlex
 
 import pytest
 
-from agent_toolkit._common import session_state
+from agent_toolkit._common import delegated_session, session_state
 from agent_toolkit._hooks import codex_read_observation as observation
 from agent_toolkit._hooks import plugin_resources, posttooluse, rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
@@ -160,9 +160,15 @@ def test_document_read_state_follows_successful_full_native_read(tmp_path, capsy
     assert read_delivery.target_ready(recorded, target, "main") == (exit_code == 0 and not truncated)
 
 
+@pytest.mark.parametrize("launch_kind", ["", "explore", "shell"])
 @pytest.mark.parametrize("command", ["rg -n 対象 -- .", "git diff"])
-def test_truncated_non_read_output_gets_recovery_notice(tmp_path, capsys, command):
-    """標準読取以外の出力が省略された場合も、担当内で回収する次の操作を示す。"""
+def test_truncated_non_read_output_gets_recovery_notice(tmp_path, monkeypatch, capsys, command, launch_kind):
+    """標準読取以外の出力が省略された場合も、通常起動と軽量起動の委譲先へ担当内で回収する次の操作を示す。
+
+    回収可能な省略を理由に続行不能を返した実例には、軽量起動の探索担当（2026年10月29日と31日）が含まれる。
+    """
+    if launch_kind:
+        monkeypatch.setenv(delegated_session.LAUNCH_KIND_ENV, launch_kind)
     payload = _payload(tmp_path, command, _cut("検索結果の本文" * 40))
     assert posttooluse.main(json.dumps(payload)) == 0
     output = _additional_context(capsys)
