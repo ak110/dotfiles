@@ -109,7 +109,7 @@ def test_run_skill_agy_noninteractive(tmp_path: pathlib.Path, monkeypatch: pytes
     monkeypatch.setattr(wi_add, "has_synced_run_report", lambda *_args, **_kwargs: True)
     assert run_skill.dispatch(argparse.Namespace(timeout=30, target_repo=str(tmp_path), skill="test:skill", args=None)) == 0
     argv = json.loads(captured.read_text())
-    assert "スキル`test:skill`を完遂" in argv[argv.index("-p") + 1]
+    assert "スキル`test:skill`を実行し、" in argv[argv.index("-p") + 1]
     assert argv[argv.index("--model") + 1] == "gemini-4-argon"
     assert argv[argv.index("--effort") + 1] == "medium"
     assert argv[argv.index("--output-format") + 1] == "stream-json"

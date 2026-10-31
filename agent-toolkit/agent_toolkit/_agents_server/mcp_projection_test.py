@@ -41,6 +41,9 @@ def test_direct_mcp_launch_uses_retained_source_root(
     definition = {"command": sys.executable, "args": ["-B", entry, "agent_toolkit/_common/pyfltr_entry.py", "${OTHER_TOKEN}"]}
     source = root / ".mcp.json"
     source.write_text(json.dumps({"mcpServers": {"pyfltr": definition}}), encoding="utf-8")
+    hooks = root / "hooks"
+    hooks.mkdir()
+    (hooks / "hooks.codex.json").write_text(json.dumps({"hooks": {"PostToolUse": []}}), encoding="utf-8")
     original = source.read_bytes()
     monkeypatch.setattr(codex.plugin_roots, "SERVER_PLUGIN_ROOT", root)
     monkeypatch.setattr(claude.plugin_roots, "SERVER_PLUGIN_ROOT", root)
@@ -48,7 +51,7 @@ def test_direct_mcp_launch_uses_retained_source_root(
         config = codex.AppServerManager._explore_config(  # noqa: SLF001
             {"features": {"retained": True}}, SimpleNamespace(parent_environment={"PATH": "retained"})
         )
-        assert config["features"] == {"retained": True, "plugins": False}
+        assert config["features"] == {"retained": True, "plugins": False, "hooks": True}
         projected: Any = config["mcp_servers"]["pyfltr"]
     else:
         session_id = "saved-session" if backend == "claude-resume" else None
