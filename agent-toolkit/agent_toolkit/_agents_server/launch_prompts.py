@@ -135,8 +135,19 @@ LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
 
 
 # 同じsessionの自動再開を実際に行うbackend（ClaudeとCodex）だけが起動時の指示へ加える。
-# Antigravity backendは自動再開を実機で確かめていないため、この能力を伝えない。
+# 自動再開は、backendが子の起動結果を追跡集合へ接続していることで成立する。
 AUTO_RESUME_NOTICE = _normative(_read_prompt("agents-server-auto-resume.md"), kind="auto-resume")
+
+
+# Antigravity backendはイベントから子の起動結果を追跡集合へ登録しないため、子の終了による自動再開を保証できない。
+# 自動再開の能力を伝える代わりに、backendを問わず成立する公開待機で同じ実行中に結果を回収させる。
+PUBLIC_WAIT_NOTICE = _normative(
+    "この実行環境では、委譲先の終了後に同じセッションが自動再開される保証は無い。\n"
+    "`agents_server`で起動した委譲先の結果は、ターンを終える前に`atk agents wait`で回収する。"
+    "`atk agents wait`は登録済みsessionの終了を待ち、終了したsessionの結果を返す。\n"
+    "`待機中: <実行識別子>`の1行でターンを終えない。結果が不要な委譲先は`kill`で破棄してから終える。",
+    kind="public-wait",
+)
 
 
 # プロジェクト規範と設定の読込を省く軽量な起動条件を共有する種別。

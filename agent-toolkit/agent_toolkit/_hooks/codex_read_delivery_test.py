@@ -57,9 +57,9 @@ def _payload(tmp_path, _monkeypatch, command, body, *, exit_code=0, limit=100000
     }
 
 
-def _cut(body):
+def _cut(body, tokens=100):
     return (
-        "Warning: truncated output (original token count: 100)\nTotal output lines: 20\n\n"
+        f"Warning: truncated output (original token count: {tokens})\nTotal output lines: 20\n\n"
         f"{body[:12]}…90 tokens truncated…{body[-12:]}"
     )
 
@@ -213,11 +213,12 @@ def test_parent_operand_preserves_original_file(tmp_path, monkeypatch, capsys, k
 
 @pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FDへ固定した再取得はLinuxで検証する")
 def test_same_response_capacity_is_accumulated(tmp_path, monkeypatch):
-    """個別には入る複数本文も、同じモデル応答の合計枠で管理する。"""
+    """個別には入る複数本文も、同じモデル応答の合計枠（トークン数）で管理する。"""
     path = tmp_path / "note"
     body = "a" * 500
     path.write_text(body)
-    payload = _payload(tmp_path, monkeypatch, f"cat {path}", _cut(body), limit=1000)
+    # 残り枠は900トークンで、1回の配送は元のトークン数500と包絡のバイト数の合計となり、2回目で枠を超える。
+    payload = _payload(tmp_path, monkeypatch, f"cat {path}", _cut(body, 500), limit=1000)
     first = delivery.collect(payload)
     second = delivery.collect(payload)
     assert first is not None and first.body == body
@@ -309,12 +310,28 @@ def test_additional_writable_root_and_actual_workdir(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FDへ固定した再取得はLinuxで検証する")
 def test_oversized_replay_remains_unread(tmp_path, monkeypatch):
-    """巨大な資料は再取得枠で止め、追加本文から読了にしない。"""
+    """再取得の資源上限（バイト数）を超える資料は再取得を止め、追加本文から読了にしない。"""
     body = "本文\n" * 1000
     path = tmp_path / "note"
     path.write_text(body)
-    result = delivery.collect(_payload(tmp_path, monkeypatch, f"cat {path}", _cut(body), limit=1000))
-    assert result is not None and result.body is None and "未取得" in result.context
+    monkeypatch.setattr(delivery, "_REPLAY_LIMIT_BYTES", 100)
+    result = delivery.collect(_payload(tmp_path, monkeypatch, f"cat {path}", _cut(body)))
+    assert result is not None and result.body is None and "再取得の資源上限" in result.context
+
+
+@pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FDへ固定した再取得はLinuxで検証する")
+def test_japanese_body_fits_token_budget_beyond_byte_count(tmp_path, monkeypatch, capsys):
+    """トークン数では残り枠に収まりUTF-8のバイト数では収まらない日本語本文も、公開PostToolUseで全文を配送する。"""
+    body = "日本語の資料本文を全文読む。\n" * 100
+    path = tmp_path / "日本語.md"
+    path.write_text(body, encoding="utf-8")
+    # 残り枠は1080トークン。本文は4000バイトを超えるが、元のトークン数は300である。
+    assert len(body.encode("utf-8")) > 1080
+    payload = _payload(tmp_path, monkeypatch, f"cat -- {path}", _cut(body, 300), limit=1200)
+    assert posttooluse.main(json.dumps(payload)) == 0
+    output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert json.dumps(body, ensure_ascii=False)[1:-1] in output
+    assert "未取得" not in output
 
 
 @pytest.mark.parametrize("exit_code", [0, 1, None])

@@ -560,7 +560,10 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
     assert not any(key.startswith("read-trigger:") for key in ready)
     _acquire(env, codex, "delegation")
     state = _read_session_state(tmp_path, "codex-delegation")
-    assert state[rules_context.OPERATION_SKILL_READY_KEY]["agent-toolkit:delegation"] == ["main"]
+    assert any(
+        key.startswith("read-trigger:") and "/skills/delegation/SKILL.md" in key and "main" in owners
+        for key, owners in state[rules_context.OPERATION_SKILL_READY_KEY].items()
+    )
     assert "agent-toolkit:delegation" not in _additional_context(_run(codex, env))
 
 

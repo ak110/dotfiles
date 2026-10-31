@@ -73,5 +73,5 @@ Antigravityのメインエージェントは、有効化した`agent-toolkit-agy
 ホスト別のClaude CodeとCodex規範は通常起動へは配送しない。
 `agents_server`の委譲先へ配送する本文は、上表と各backendの委譲プロンプトで定義する。
 
-Antigravityの委譲起動と再開では、通常・軽量を問わず保持されたplugin root、CLIの起動情報、ならびに`AUTO_RESUME_NOTICE`を渡す。役割別規範の境界は共通の`LAUNCH_SYSTEM_PROMPTS`に従う。
+Antigravityの委譲起動と再開では、通常・軽量を問わず保持されたplugin root、CLIの起動情報、ならびに`PUBLIC_WAIT_NOTICE`（自動再開を保証せず、`atk agents wait`で同じ実行中に結果を回収させる指示）を渡す。役割別規範の境界は共通の`LAUNCH_SYSTEM_PROMPTS`に従う。
 ユーザーの`~/.claude/CLAUDE.md`と`~/.claude/rules/`配下（`agent-toolkit/`を除く）は起動・再開の指示へ境界付きで埋め込み、共通の常時規範は有効なプラグインから届ける。

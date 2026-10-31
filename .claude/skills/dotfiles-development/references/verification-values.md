@@ -62,19 +62,20 @@
 
 - 最初に環境を同期する: `make sync`を実行する。仮想環境を`uv.lock`および`.python-version`の内容に合わせ、CIのクリーンな実行環境と同様の条件で後続のチェックを動かす
 - CIのpyfltrで無効化されているチェックを実行する。
-  `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version,function-hooks-types --enable=statusline-version`
+  `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version,plugin-version,function-hooks-types --enable=statusline-version,plugin-version`
 - 複数レーンにまたがる重複実装を検査する: `uv run --frozen pyfltr run --commands=arid`
 - 型定義と静的参照の整合性を検証する: `uv run --frozen pyfltr run --commands=ty`
 - 複数ファイル間にまたがる循環importを検査する: `uv run --frozen pyfltr run --no-fix --commands=pylint --pylint-args='--disable=all --enable=cyclic-import'`
 
 CIの`python-lint (3.15)`ジョブは、ローカルの`make test`から一部のチェックを除外する。
-実行コマンドは`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,function-hooks-types`である。Python 3.15環境でのpytestは`pytest (3.15)`ジョブが担当している。また、以下のジョブはローカルの`make test`では実行されない。
+実行コマンドは`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types`である。Python 3.15環境でのpytestは`pytest (3.15)`ジョブが担当している。また、以下のジョブはローカルの`make test`では実行されない。
 
 - `test-windows`ジョブ: Windows実機環境でのchezmoi適用、Windows固有のテスト、および公開ランチャーの動作確認
 - `update-dotfiles-upgrade (windows)`ジョブ: Windows環境における旧バージョンからのupdate-dotfilesによるアップデート検証
 - `test-linux`ジョブ: `install.sh`およびchezmoiの実際の適用確認
 - `pytest (3.15)`ジョブ: Python 3.15環境におけるpytestの実行
 - `rust-lint`ジョブ: `rust/claude-statusline/`のcargoによる検証
+- `plugin-version`ジョブ: `develop`へのpushで、push前の公開済みcommitとagent-toolkit・agent-basicsの配布物の差分と版数を比べる検証
 - `browser-e2e`ジョブ: 実際のブラウザーを用いたE2Eテスト（ローカル環境では`make test-browser`で実行可能）
 
 ## agent-doc-tone

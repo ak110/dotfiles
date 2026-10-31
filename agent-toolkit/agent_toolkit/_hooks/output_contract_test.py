@@ -70,9 +70,7 @@ def _build_fixture(
         payload["agent_id"] = "agent-contract"
         payload["agent_type"] = "general-purpose"
     elif fixture_name == "pretooluse":
-        assert session_state.update_state(
-            session_id, lambda _previous: {"operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]}}
-        )
+        assert session_state.update_state(session_id, lambda _previous: {"plan_mode_skill_invoked": False})
         payload.update(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",

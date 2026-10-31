@@ -125,6 +125,24 @@ def test_statusline_version_develop_push_reaches_version_check(
     assert expected_output in result.stdout + result.stderr
 
 
+def test_plugin_version_job_compares_previous_published_commit(workflow_data: dict[str, object]) -> None:
+    """developへのpushでは、push前の公開済みcommitと今回のcommitを版数据置き検査へ渡す。"""
+    jobs = [
+        job
+        for value in workflow_jobs(workflow_data).values()
+        if (job := workflow_mapping(value)).get("name") == "plugin-version"
+    ]
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/develop'"
+    checkout = next(step for step in workflow_steps(job) if str(step.get("uses", "")).startswith("actions/checkout@"))
+    assert str(workflow_mapping(checkout["with"])["fetch-depth"]) == "0"
+    step = next(step for step in workflow_steps(job) if step.get("name") == "配布プラグインの版数据置きを検査")
+    assert workflow_mapping(step["env"]) == {"BASE_SHA": "${{ github.event.before }}", "CURRENT_SHA": "${{ github.sha }}"}
+    assert step["run"] == "python3 scripts/check_plugin_version.py"
+    assert (REPO_ROOT / "scripts" / "check_plugin_version.py").is_file()
+
+
 def _windows_step(steps: list[dict[str, object]], name: str) -> tuple[int, dict[str, object]]:
     matches = [(i, step) for i, step in enumerate(steps) if step.get("name") == name]
     assert len(matches) == 1, name
@@ -254,7 +272,10 @@ def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str,
     steps = workflow_steps(job)
     lint = next(step for step in steps if step.get("name") == "Python 3.15 pytest以外の検査")
     pytest_step = next(step for step in steps if step.get("name") == "Python 3.15 pytest")
-    assert lint["run"] == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,function-hooks-types"
+    assert (
+        lint["run"]
+        == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types"
+    )
     assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"
     cache = next(step for step in steps if str(step.get("uses", "")).startswith("actions/cache@"))
     cache_with = workflow_mapping(cache["with"])

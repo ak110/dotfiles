@@ -828,9 +828,7 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                 name, inputs, cwd = request
                 response = block.get("content")
                 if name == "Skill":
-                    if response and not any(
-                        marker in str(response) for marker in ("truncated output", "Output too large", "truncatedByTokenCap")
-                    ):
+                    if response and not host_truncated(response):
                         resolved = resolve_skill_document(inputs.get("skill"), [target.path for target in targets])
                         for target in targets:
                             if target.path == resolved:
@@ -1334,6 +1332,37 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     )
 
 
+_PERSISTED_OUTPUT_OPEN = "<persisted-output>"
+_PERSISTED_OUTPUT_CLOSE = "</persisted-output>"
+
+
+def host_truncated(response: object) -> bool:
+    """ホストが読取結果に付ける省略の表現だけで、省略の有無を判定する。
+
+    資料の本文に省略を思わせる語句（`truncated output`など）が含まれていても省略とはしない。
+    判定する表現は、Codexの応答先頭の包絡、Claude CodeのReadの`file.truncatedByTokenCap`、
+    Bashの退避を示す`persistedOutputPath`、および退避時にホストが本文全体を置き換える
+    `<persisted-output>`の囲みである。SkillとWebFetchの応答には固有の省略表現が無い。
+    """
+    if codex_read_delivery.response_is_truncated(response):
+        return True
+    if isinstance(response, dict):
+        file = response.get("file")
+        if isinstance(file, dict) and file.get("truncatedByTokenCap"):
+            return True
+        if response.get("persistedOutputPath"):
+            return True
+        text = document_reads.response_text(response)
+    elif isinstance(response, list):
+        text = "\n".join(part["text"] for part in response if isinstance(part, dict) and isinstance(part.get("text"), str))
+    else:
+        text = response
+    if not isinstance(text, str):
+        return False
+    stripped = text.strip()
+    return stripped.startswith(_PERSISTED_OUTPUT_OPEN) and stripped.endswith(_PERSISTED_OUTPUT_CLOSE)
+
+
 def _read_body_proofs(
     tool_name: str,
     tool_input: dict,
@@ -1359,9 +1388,7 @@ def _read_body_proofs(
     text = document_reads.response_text(response)
     if not text and isinstance(response, dict) and isinstance(response.get("file"), dict):
         text = response["file"].get("content")
-    if not isinstance(text, str) or any(
-        marker in text for marker in ("truncated output", "Output too large", "truncatedByTokenCap")
-    ):
+    if not isinstance(text, str) or host_truncated(response) or host_truncated(text):
         return
     sed_reads, only_reads = _sed_reads(tool_name, tool_input, cwd)
     if sed_reads:
@@ -1451,12 +1478,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     cwd = payload.get("cwd", "")
     cwd = cwd if isinstance(cwd, str) else ""
     agent = agent_id.resolve_hook_agent_id(payload)
-    if (
-        tool_name == "WebFetch"
-        and isinstance(tool_input.get("url"), str)
-        and response
-        and not any(marker in str(response) for marker in ("truncated output", "Output too large", "truncatedByTokenCap"))
-    ):
+    if tool_name == "WebFetch" and isinstance(tool_input.get("url"), str) and response and not host_truncated(response):
         update_state(session_id, operation_skills.mark_ready("external-document:" + tool_input["url"], agent))
     for path in operation_skills.written_paths(tool_name, tool_input, cwd):
         if operation_skills.is_agent_doc_target_file(path):
@@ -1514,9 +1536,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     targets.update(path for path in paths if path.suffix == ".md" and _document_owner(path) is not None)
     if tool_name == "Skill":
         qualified = tool_input.get("skill")
-        if not response or any(
-            marker in str(response) for marker in ("truncated output", "Output too large", "truncatedByTokenCap")
-        ):
+        if not response or host_truncated(response):
             return
         targets.update(row.source for row in rows)
         targets.update(read_triggers.document_sources(plugin_resources.plugin_root(), cwd))

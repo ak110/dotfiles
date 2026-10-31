@@ -285,7 +285,6 @@ def _native_children(payload: dict[str, Any], normalized: dict[str, Any]) -> Non
 def _record_read(payload: dict[str, Any]) -> list[str]:
     """read_fileが返した本文を確かめ、成功したスキルの読取を共通観測へ渡す。"""
     documents = importlib.import_module("agent_toolkit._hooks.document_reads")
-    operations = importlib.import_module("agent_toolkit._hooks.pretooluse.operation_skills")
     args = payload["tool_input"]
     path = args.get("file_path")
     document = documents.skill_document(path) if isinstance(path, str) else None
@@ -299,12 +298,10 @@ def _record_read(payload: dict[str, Any]) -> list[str]:
     except OSError:
         return []
     returned = re.sub(r"(?m)^\s*\d+\s*[:│→]\s?", "", text or "")
-    full = bool(expected) and expected in returned
-    read = documents.DocumentRead(*document, partial=not full, plugin=plugin, path=path)
-    operations.record_document_read(payload["session_id"], read, "main")
-    if read.relative_path != "SKILL.md" or not full:
+    skill, relative_path = document
+    if relative_path != "SKILL.md" or not expected or expected not in returned:
         return []
-    observed = {**payload, "tool_name": "Skill", "tool_input": {"skill": f"{read.plugin}:{read.skill}"}}
+    observed = {**payload, "tool_name": "Skill", "tool_input": {"skill": f"{plugin}:{skill}"}}
     return _invoke("posttooluse", observed).contexts()
 
 

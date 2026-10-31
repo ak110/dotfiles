@@ -503,7 +503,6 @@ class TestPlanFileDoesNotRequireSelfPath:
             session_id,
             {
                 "plan_mode_skill_invoked": True,
-                "operation_skill_delivered_agents": {"agent-basics:writing-standards": ["main"]},
             },
         )
 

@@ -499,11 +499,24 @@ def test_start_and_reply_use_manager_root(tmp_path: pathlib.Path, monkeypatch: p
     assert [json.loads(line) for line in captured.read_text(encoding="utf-8").splitlines()] == ["manager-root", "manager-root"]
 
 
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+def test_every_launch_kind_instruction_promises_public_wait_only(launch_kind: shared_state.LaunchKind) -> None:
+    """全起動区分の開始・再開で共通に使う指示は、自動再開を約束せず公開待機による回収を案内する。"""
+    prompt = antigravity._system_prompt(launch_kind)  # noqa: SLF001  # pylint: disable=protected-access
+    assert launch_prompts.PUBLIC_WAIT_NOTICE in prompt
+    assert launch_prompts.AUTO_RESUME_NOTICE not in prompt
+    assert 'kind="auto-resume"' not in prompt
+
+
+@pytest.mark.parametrize("launch_kind", ["delegate", "shell", "write"])
 @pytest.mark.asyncio
-async def test_start_and_resume_deliver_current_rules_and_auto_resume_notice(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+async def test_start_and_resume_deliver_public_wait_notice(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, launch_kind: shared_state.LaunchKind
 ) -> None:
-    """起動と再開へホスト規範の現行本文、自動再開契約、保持CLIの位置を配送する。"""
+    """起動と再開へ、ホスト規範の現行本文、公開待機の指示、保持CLIの位置を配送する。
+
+    Antigravityのイベント処理は子の起動結果を追跡集合へ登録しないため、自動再開の保証は配送しない。
+    """
     from agent_toolkit._common import host_homes  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     config = host_homes.claude_config_dir()
@@ -522,21 +535,27 @@ async def test_start_and_resume_deliver_current_rules_and_auto_resume_notice(
         encoding="utf-8",
     )
     async with antigravity.AntigravityManager() as backend:
-        session = await backend.start("起動", str(tmp_path))
+        session = await backend.start("起動", str(tmp_path), launch_kind=launch_kind)
         async with asyncio.timeout(10):
             while not session.terminal:
                 await asyncio.sleep(0.01)
         rule.write_text("更新した環境規範。", encoding="utf-8")
-        resumed = await backend.resume(session.session_id, shared_state.ResumePrompt("再開"), str(tmp_path))
+        resumed = await backend.resume(
+            session.session_id, shared_state.ResumePrompt("再開"), str(tmp_path), launch_kind=launch_kind
+        )
         async with asyncio.timeout(10):
             while not resumed.terminal:
                 await asyncio.sleep(0.01)
     prompts = [json.loads(line) for line in captured.read_text().splitlines()]
+    assert len(prompts) == 2
     assert "この環境では操作を記録する。" in prompts[0]
     assert "更新した環境規範。" in prompts[1]
     assert "この環境では操作を記録する。" not in prompts[1]
     for prompt in prompts:
-        assert launch_prompts.AUTO_RESUME_NOTICE in prompt
+        assert launch_prompts.PUBLIC_WAIT_NOTICE in prompt
+        assert "atk agents wait" in prompt
+        assert launch_prompts.AUTO_RESUME_NOTICE not in prompt
+        assert 'kind="auto-resume"' not in prompt
         assert 'kind="cli-runtime"' in prompt
         assert f'path="{rule}"' in prompt
 
@@ -545,7 +564,12 @@ async def test_start_and_resume_deliver_current_rules_and_auto_resume_notice(
 async def test_pending_child_result_is_held_and_continues_same_conversation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """孫待機の結果は公開を保留し、完了通知の継続を同じ会話へ配送できる。"""
+    """孫待機の結果は公開を保留し、完了通知の継続を同じ会話へ配送できる。
+
+    子IDを追跡集合へ直接設定し、集合が既にある場合の保留分岐だけを確かめる。Antigravityのイベント処理は
+    子の起動結果を集合へ登録しないため、本試験は公開起動から自動再開へ到達する能力の根拠にならない。
+    結果の回収は、起動時に案内する`atk agents wait`が担う。
+    """
     _install_fake_agy(tmp_path, monkeypatch)
     async with antigravity.AntigravityManager() as backend:
         session = await backend.start("開始", str(tmp_path))

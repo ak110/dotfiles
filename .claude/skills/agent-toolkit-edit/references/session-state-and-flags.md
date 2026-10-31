@@ -18,7 +18,7 @@
 
 ## 状態ファイルの設計
 
-PostToolUseのCodex資料配送は、セッションmanaged-tempの`codex-read-budget.json`と同名`.lock`でモデル応答別の配送済みUTF-8バイト数を合算する。文脈残量の1割を予備とし、応答更新時にリセットする。寿命は同managed-tempと同じ。再取得出力の`codex-read-<実行別ID>/`はPost内で作成・回収する。
+PostToolUseのCodex資料配送は、セッションmanaged-tempの`codex-read-budget.json`と同名`.lock`でモデル応答別の配送済みトークン数（省略応答は包絡の元のトークン数、それ以外はUTF-8バイト数を上界として数える）を合算する。文脈残量の1割を予備とし、応答更新時にリセットする。寿命は同managed-tempと同じ。再取得出力の`codex-read-<実行別ID>/`はPost内で作成・回収する。
 
 Claude Code・Codexのhookは呼び出しごとに別プロセスで起動するため、セッション単位の状態ファイルで情報を共有する。
 
@@ -118,7 +118,7 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 - `plan_mode_skill_invoked`: plan-modeスキルの起動を記録し、計画ファイルの構造に対する自動チェックを適用するかどうかの判定に使用する
 - `current_plan_file_path`: PostToolUseが、計画ファイルの編集時や公開された計画作成コマンドの出力からファイルパスを記録する。PreToolUse(Skill)がplan-mode起動時にこの値を消去する。UserPromptSubmitのコマンドhookがセッション名を選択する際にこのパスを参照する
 - `last_hook_session_title`: UserPromptSubmitのコマンドhookが設定したセッション名。現在のセッション名が空であるか、この値と一致している場合に限り、新しい種別や計画名への更新を許可する。同hookが通常状態ファイルへ排他ロック下で保存する。通常状態ファイルと同様の保持期限および`clear`のタイミングで消去される
-- `session_title_kind`: PostToolUse(Skill)、およびスキルの手動起動を受け取ったUserPromptSubmitが記録する命名用の種別（`process-wi`、`single-lane`、`add-awi`）。UserPromptSubmitのコマンドhookがセッション名を選択する際に参照する。process-loopの環境識別印と会話IDが一致している場合は`process-wi`を優先する。生存期間は通常状態ファイルと同一とする
+- `session_title_kind`: PostToolUse(Skill)、およびスキルの手動起動を受け取ったUserPromptSubmitが記録する命名用の種別（`process-wi`、`single-lane`、`all-repos`、`add-awi`）。UserPromptSubmitのコマンドhookがセッション名を選択する際に参照する。種別が`all-repos`の場合と、process-loopの環境識別印と会話IDが一致している場合（記録された種別を問わない）は、計画名を連結しない統括名`process-wi all-repos`を使う。生存期間は通常状態ファイルと同一とする
 
 ## [振り返り](../../../../agent-toolkit/skills/session-review/references/batch.md)・モード系
 
@@ -174,8 +174,8 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
   - `model_type`の決定ロジック: 起動入力で指定された`model_type`を優先し、指定が省略された場合は、`start`の`task`では共通パーサーが読み取る役割文書のfrontmatterから取得し、その他の`mode`では各modeごとのデフォルト種別を適用する。ファイル名対応表は過去の旧文書を読み取る互換性維持のためだけに使用する。統合前の古い名称で記録されている開始履歴は、対応する`mode`として扱う
   - レコードの生成と更新: `start`の成功レスポンスを受信した時点でレコードを生成し、`send_message`、`kill`、`wait`の各レスポンス受信時、ならびにBash経由で`atk agents wait`が実行された際に更新する
   - `pending_observation`を真にする契機: 各開始操作の成功レスポンスを受信した時点、および`delivery`が`reply_started`または`reply_ambiguous`である`send_message`のレスポンスを受信した時点とする。なお、`steered`は実行中のターンへ追加指示を届けるだけで`turn_seq`を変えないため、対象外とする。呼び出し主体はhookペイロードの`agent_id`（これを持たないメイン会話では`main`）から`owner_agent_id`へ記録する。呼び出し主体の判別に`transcript_path`を用いない（`claude-hooks.md`「hookスクリプトの基本プロトコル」を参照）
-  - `pending_observation`を偽にする契機: `kill`の成功レスポンスを受信した時点、Bash経由の`atk agents wait`が完了した時点、およびStop時に直前の応答に含まれる`待機中:`表明がそのセッションを指している場合とする。CLIの`atk agents wait`は引数として特定のセッションを受け取らず、呼び出し主体が所有している既存記録の全セッションを一括して観測済みに更新する。偽という値は「現時点で未観測のタスクが存在しない」ことを意味するため、新しいタスクを配送した場合は再び真に戻る。`owner_agent_id`は次のタスクが発生するまで保持される
-  - 利用用途: Stop判定において、`pending_observation`が真であり、かつ`owner_agent_id`がStopを呼び出した主体と一致している記録のみを警告対象とする。CLI待機中については、ルートセッションが所有する待機権限が有効であることをStop hookが確認し、未観測警告の対象から除外する。終了工程における委譲先へのwait判定でもこれと同じ読み取り処理を使用し、観測義務と有効な待機状態を区別する。なお、`status`が`running`であるレコードの件数自体を、待機をブロックするための判定入力としない
+  - `pending_observation`を偽にする契機: `kill`の成功レスポンス（バックグラウンドタスクへの移行通知を含む）を受信した時点と、Bash経由の`atk agents wait`が完了した時点とする。`待機中:`表明と`send_message`の受理は観測ではないため、真のまま保持する。CLIの`atk agents wait`は引数として特定のセッションを受け取らず、呼び出し主体が所有している既存記録の全セッションを一括して観測済みに更新する。偽という値は「現時点で未観測のタスクが存在しない」ことを意味するため、新しいタスクを配送した場合は再び真に戻る。`owner_agent_id`は次のタスクが発生するまで保持される
+  - 利用用途: Stop判定において、`pending_observation`が真であり、かつ`owner_agent_id`がStopを呼び出した主体と一致している記録のみを警告対象とする。CLI待機中については、ルートセッションが所有する待機権限が有効であることをStop hookが確認し、未観測警告の対象から除外する。現在のセッションがagents_serverのClaude・Codex委譲先である場合に限り、直前の応答の`待機中:`表明が指すセッションもそのStopの判定だけで除外し、保存状態は真のまま保つ。終了工程における委譲先へのwait判定でもこれと同じ読み取り処理を使用し、観測義務と有効な待機状態を区別する。なお、`status`が`running`であるレコードの件数自体を、待機をブロックするための判定入力としない
   - レコードの削除: `stop`ツールの成功レスポンスを受信した時点で、その`session_id`のエントリを削除する。`stop`は実行中のターンを持つセッションや未終了のセッションにはエラーを返すため、未完了のセッションの記録は失われない
   - 状態ファイルに保持しない情報: 結果を回収済みであることを示す専用フラグや、thread IDをハッシュ化した状態ファイルなどは保持しない
 

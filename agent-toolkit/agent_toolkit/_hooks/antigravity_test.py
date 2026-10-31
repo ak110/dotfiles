@@ -11,7 +11,6 @@ from agent_toolkit import hook
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import antigravity, host, plugin_resources
 from agent_toolkit._hooks.antigravity import _Response
-from agent_toolkit._hooks.pretooluse import operation_skills
 
 
 @pytest.fixture(autouse=True)
@@ -39,7 +38,7 @@ def _run(payload: dict[str, Any], event: str, capsys: pytest.CaptureFixture[str]
 @pytest.mark.parametrize("relative", ["SKILL.md", "references/search.md", "references/antigravity-full-instructions.md"])
 @pytest.mark.parametrize("partial", [False, True])
 def test_read_keeps_document_owner_for_shared_observation(tmp_path, monkeypatch, plugin, relative, partial):
-    """全文・部分取得の区分と資料の所有者を、生成形式も含めて共通観測へ渡す。"""
+    """全文を返した`SKILL.md`の読取だけを、資料の所有者付きでSkill観測へ渡す。部分取得と参照資料は渡さない。"""
     root = tmp_path / plugin
     manifest = root / ".claude-plugin/plugin.json"
     manifest.parent.mkdir(parents=True)
@@ -49,9 +48,7 @@ def test_read_keeps_document_owner_for_shared_observation(tmp_path, monkeypatch,
     path.parent.mkdir(parents=True, exist_ok=True)
     header = "---\nname: search\n---\n" if relative == "SKILL.md" else "# 検索の本文\n"
     path.write_text(header + "末尾の本文\n", encoding="utf-8")
-    reads = []
     observed = []
-    monkeypatch.setattr(operation_skills, "record_document_read", lambda _session, read, _agent: reads.append(read))
 
     def invoke(_command, payload):
         observed.append(payload)
@@ -64,7 +61,6 @@ def test_read_keeps_document_owner_for_shared_observation(tmp_path, monkeypatch,
         "tool_response": header if partial else path.read_text(encoding="utf-8"),
     }
     assert not antigravity._record_read(payload)  # noqa: SLF001  # pylint: disable=protected-access
-    assert len(reads) == 1 and reads[0].plugin == plugin and reads[0].partial is partial
     if not partial and relative != "references/search.md":
         assert observed[0]["tool_input"] == {"skill": f"{plugin}:search"}
     else:

@@ -450,7 +450,7 @@ jobs:
         # statusline-versionは浅いcheckoutではmasterとの共通祖先を解決できず、同じ判定を
         # statusline-version jobが所有するため無効化する。
         # Claude Code生成型を用意しないCIではローカル専用の型検査を除外する。
-        run: pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,function-hooks-types
+        run: pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types
 
       - name: Git 2.34.1の導入
         id: minimum-git
@@ -588,3 +588,19 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CURRENT_SHA: ${{ github.sha }}
         run: python3 scripts/check_statusline_version.py
+
+  plugin-version:
+    name: plugin-version
+    # agent-toolkitとagent-basicsはdevelopへのpushごとに稼働環境へ導入されるため、pushの直前の公開済みcommitと比べる。
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: 配布プラグインの版数据置きを検査
+        working-directory: ${{ github.workspace }}
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: python3 scripts/check_plugin_version.py
