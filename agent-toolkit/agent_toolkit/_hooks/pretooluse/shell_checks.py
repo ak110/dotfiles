@@ -214,7 +214,7 @@ def _has_active_process_kill_syntax(segment: str) -> bool:
 
 
 def _has_unsafe_process_kill_match(segment: str) -> bool:
-    """禁止語を含む区間が、既知の検索コマンドのリテラル引数でなければ真を返す。"""
+    """実行位置と確定できたパス引数を分け、未確定の実行と既知の終了操作を保護する。"""
     try:
         raw_tokens = shlex.split(segment, posix=True)
     except ValueError:
@@ -229,6 +229,25 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
         return False
     if _has_active_process_kill_syntax(segment):
         return True
+    invocations = extract_bash_invocations(segment)
+    if (
+        not attached_pager_match
+        and len(invocations) == 1
+        and invocations[0].arguments_known
+        and strip_redirections(raw_tokens) == invocations[0].segment.tokens
+        and all(
+            not _PROCESS_KILL_BY_PATTERN_RE.search(token)
+            or index > 0
+            and "/" in token
+            and "=" not in token
+            and not token.startswith("-")
+            and pathlib.PurePosixPath(token).name not in {"pkill", "killall"}
+            for index, token in enumerate(invocations[0].segment.tokens)
+        )
+    ):
+        # 通常パス中のディレクトリ名は実行名ではない。終了コマンド名と一致する引数や、
+        # ラッパー・構文で実行位置が変わる入力は従来の保守的判定へ残す。
+        return False
     if command_name == "git":
         parsed_segments = extract_execution_segments(segment)
         if len(parsed_segments) != 1 or tuple(raw_tokens) != parsed_segments[0].tokens:
@@ -263,8 +282,8 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
 
     対象の所有権を確認できないパターン一致の一括終了は他者のプロセスを停止する危険があるため禁止する。
     自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
-    ヒアドキュメント本文をマスクした文字列を解析し、禁止語が安全な引数位置の
-    リテラルだと確定できる区間だけを許可する。
+    ヒアドキュメント本文をマスクした文字列を解析し、実行位置と区別できる通常パス、
+    既知の検索用リテラルを許可する。未知の実行形式は保守的な判定を維持する。
     """
     matching_segments = [segment for segment in split_bash_segments(command) if "pkill" in segment or "killall" in segment]
     if not matching_segments or not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments):

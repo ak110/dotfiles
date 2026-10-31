@@ -649,6 +649,51 @@ class TestIssSidechainProbe:
 class TestBashProcessKillByPattern:
     """`Bash`経由のパターン一致プロセス終了（`pkill`・`killall`）検出（block）。"""
 
+    @pytest.mark.parametrize("codex", [False, True])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cat -- /tmp/pkill/output.log",
+            "cat -- '/tmp/killall/output.log'",
+            "cat -- /tmp/pkill/output.log > /tmp/result.log",
+            "printf '%s' /tmp/killall/output.log",
+            "ls -- /tmp/pkill/output.log",
+            "grep -n needle /tmp/pkill/output.log",
+        ],
+    )
+    def test_normal_path_arguments_are_not_process_termination(self, tmp_path, command, codex):
+        """通常読取・表示・検索のパスを、一括終了の実行と区別する。"""
+        payload = {"tool_name": "Bash", "tool_input": {"command": command}, **({"turn_id": "t"} if codex else {})}
+        result = _run(payload)
+        (tmp_path / "normal-path-public-output.json").write_text(
+            json.dumps({"payload": payload, "returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr}),
+            encoding="utf-8",
+        )
+        assert result.returncode == 0 and not result.stderr
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
+
+    @pytest.mark.parametrize("codex", [False, True])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "xargs /usr/bin/pkill -f worker",
+            "/usr/bin/env /usr/bin/pkill -f worker",
+            "find . -exec /usr/bin/pkill -f worker \\;",
+            "cat /tmp/pkill/output.log; killall worker",
+            "cat /tmp/pkill/output.log $(pkill worker)",
+        ],
+    )
+    def test_path_data_does_not_exempt_executable_termination(self, tmp_path, command, codex):
+        """同じパス文字列と実行位置の終了操作が混在しても、両ホストへ拒否理由を届ける。"""
+        payload = {"tool_name": "Bash", "tool_input": {"command": command}, **({"turn_id": "t"} if codex else {})}
+        result = _run(payload)
+        (tmp_path / "process-kill-public-output.json").write_text(
+            json.dumps({"payload": payload, "returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr}),
+            encoding="utf-8",
+        )
+        assert "パターン一致によるプロセス終了" in _denial_reason(result)
+
     @pytest.mark.parametrize(
         "command",
         [
