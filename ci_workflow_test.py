@@ -260,23 +260,35 @@ def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[s
 
 
 def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str, object]) -> None:
-    """Python 3.15のlintとpytestを別のmatrix要素に分け、3.15以外の版を持たない。"""
+    """Python 3.15のlint・直下pytest・toolkit pytestを独立runnerへ分ける。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
     strategy = workflow_mapping(job["strategy"])
     matrix = workflow_mapping(strategy["matrix"])
     include = [workflow_mapping(value) for value in typing.cast(list[object], matrix["include"])]
     assert include == [
         {"python-version": "3.15", "check": "lint", "check-name": "python-lint (3.15)"},
-        {"python-version": "3.15", "check": "pytest", "check-name": "pytest (3.15)"},
+        {"python-version": "3.15", "check": "pytest-root", "check-name": "pytest (3.15)"},
+        {"python-version": "3.15", "check": "pytest-toolkit", "check-name": "pytest-toolkit (3.15)"},
     ]
     steps = workflow_steps(job)
     lint = next(step for step in steps if step.get("name") == "Python 3.15 pytest以外の検査")
-    pytest_step = next(step for step in steps if step.get("name") == "Python 3.15 pytest")
+    root = next(step for step in steps if step.get("name") == "Python 3.15 pytest 直下")
+    toolkit = next(step for step in steps if step.get("name") == "Python 3.15 pytest toolkit")
     assert (
         lint["run"]
         == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types"
     )
-    assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"
+    root_script = str(root["run"])
+    assert "git ls-files -z -- '*_test.py' 'test_*.py'" in root_script
+    assert "':!:agent-toolkit/**' ':!:agent-toolkit-codex/**'" in root_script
+    assert "mapfile -d '' -t targets < \"$RUNNER_TEMP/pytest-root-targets\"" in root_script
+    assert 'test "${#targets[@]}" -gt 0' in root_script
+    assert root_script.splitlines()[-1] == 'uv run --frozen pytest -v --maxfail=0 "${targets[@]}"'
+    assert toolkit["run"] == (
+        "pyfltr ci --work-dir agent-toolkit --commands=pytest --pytest-args='-v --maxfail=0' agent-toolkit"
+    )
+    for check, step in (("pytest-root", root), ("pytest-toolkit", toolkit)):
+        assert str(step["if"]).endswith(f"matrix.check == '{check}'")
     cache = next(step for step in steps if str(step.get("uses", "")).startswith("actions/cache@"))
     cache_with = workflow_mapping(cache["with"])
     assert "${{ matrix.python-version }}" in str(cache_with["key"])
@@ -298,7 +310,7 @@ def _common_job_names(workflow: dict[str, object]) -> list[str]:
 
 
 def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> None:
-    """共通7表示名と全実処理が先行jobの所有出力を参照する。"""
+    """共通jobの全実処理が先行jobの所有出力を参照する。"""
     common_jobs = _common_job_names(workflow_data)
     assert common_jobs == [
         "test-linux",
@@ -616,18 +628,21 @@ def test_update_checks_container_dependencies_after_lock_updates() -> None:
     assert check < commands.index("\t$(MAKE) test")
 
 
-def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]) -> None:
-    """pytestのmatrix要素が、READMEの対応版のGitを通常pytestへ渡して1回だけ実行する。"""
+@pytest.mark.parametrize("scope", ["直下", "toolkit"])
+def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object], scope: str) -> None:
+    """両pytest要素が、READMEの対応版のGitを通常pytestへ渡して各1回実行する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
     steps = workflow_steps(job)
     names = [step.get("name") for step in steps]
-    pytest_index = names.index("Python 3.15 pytest")
+    pytest_name = f"Python 3.15 pytest {scope}"
+    pytest_index = names.index(pytest_name)
     install_index = names.index("Git 2.34.1の導入")
     assert install_index < pytest_index
-    assert names.count("Python 3.15 pytest") == 1
+    assert names.count(pytest_name) == 1
     assert "Git 2.34.1での実Gitテスト" not in names
     install, pytest_step = steps[install_index], steps[pytest_index]
-    assert install["if"] == pytest_step["if"]
+    assert str(install["if"]).endswith("matrix.check != 'lint'")
+    assert str(pytest_step["if"]).startswith(_OWNS)
 
     package = str(workflow_mapping(install["env"])["GIT_DEB"])
     match = re.fullmatch(r"git_(\d+\.\d+\.\d+)-[0-9A-Za-z.]+_amd64\.deb", package)
@@ -640,7 +655,7 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
 
     environment = workflow_mapping(pytest_step["env"])
     assert environment["AGENT_TOOLKIT_TEST_GIT"] == f"${{{{ steps.{install['id']}.outputs.git }}}}"
-    assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"
+    assert "--maxfail=0" in str(pytest_step["run"])
 
 
 def test_linux_job_places_temporary_files_on_runner_disk(workflow_data: dict[str, object]) -> None:

@@ -160,9 +160,11 @@ def test_operation_skill_contract_for_every_entry_and_subject(
             assert _attempt > 0
             break
         repeated = _run(payload, env)
-        assert repeated.returncode == (2 if writing else 0)
+        assert repeated.returncode == 0
         if writing:
-            assert "未取得資料" in repeated.stderr
+            specific = json.loads(repeated.stdout)["hookSpecificOutput"]
+            assert specific["permissionDecision"] == "deny"
+            assert "未取得資料" in specific["permissionDecisionReason"]
         for target in targets:
             assert target.body().strip() not in output
             skill = read_delivery.skill_name(target.path)

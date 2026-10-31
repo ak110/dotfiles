@@ -54,6 +54,17 @@ def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subpr
     return _run(payload, env_overrides=env_overrides)
 
 
+def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
+    """正常拒否の終了状態と配送先を確かめ、理由を返す。"""
+    assert result.returncode == 0
+    assert not result.stderr
+    specific = json.loads(result.stdout)["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    reason = specific["permissionDecisionReason"]
+    assert reason
+    return reason
+
+
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize(
     "predicate",
@@ -133,8 +144,7 @@ def test_commit_message_is_read_after_static_cd(tmp_path):
         {"tool_name": "Bash", "cwd": str(tmp_path), "tool_input": {"command": f"cd {directory} && git commit -F message"}},
         env_overrides=_plan_file_state_env(tmp_path),
     )
-    assert result.returncode == 2
-    assert "空行" in result.stderr
+    assert "空行" in _denial_reason(result)
 
 
 class TestAgentsServerInputChecks:
@@ -649,11 +659,11 @@ class TestBashProcessKillByPattern:
     )
     def test_blocks(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 2
-        assert auto_message_opening_attributes(result.stderr)["source"] == "pretooluse"
+        reason = _denial_reason(result)
+        assert auto_message_opening_attributes(reason)["source"] == "pretooluse"
         # 遮断本文が示す検索語の書き方は、同じ判定条件を通過する形である
-        assert "`git log -S`" in result.stderr
-        assert "`p[k]ill`" in result.stderr
+        assert "`git log -S`" in reason
+        assert "`p[k]ill`" in reason
 
     def test_kill_by_pid_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "kill 12345"}})
@@ -751,8 +761,7 @@ class TestBashProcessKillByPattern:
     )
     def test_blocks_indirect_or_executable_matches(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 2
-        assert "パターン一致によるプロセス終了" in result.stderr
+        assert "パターン一致によるプロセス終了" in _denial_reason(result)
 
 
 class TestBashHeredocLiteralExclusion:
@@ -784,7 +793,7 @@ class TestBashHeredocLiteralExclusion:
             },
             _plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
+        assert "パターン一致によるプロセス終了" in _denial_reason(result)
 
     @pytest.mark.parametrize("delimiter", ["\\EOF", 'E"OF"', "'EOF'"])
     def test_quoted_delimiter_heredoc_keeps_following_commands_checked(self, tmp_path: pathlib.Path, delimiter: str) -> None:
@@ -797,8 +806,7 @@ class TestBashHeredocLiteralExclusion:
             },
             _plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
-        assert "pkill" in result.stderr
+        assert "pkill" in _denial_reason(result)
 
 
 # bashのheredocの展開規則: 区切り語のどこかに引用（`'`・`"`・`\`）があれば本文を展開せず、
@@ -842,8 +850,7 @@ class TestBashUnquotedHeredocSubstitution:
             _plan_file_state_env(tmp_path),
         )
         if expands and substitution is not None:
-            assert result.returncode == 2
-            assert substitution in result.stderr
+            assert substitution in _denial_reason(result)
         else:
             assert result.returncode == 0
             assert "/skills/writing-standards/SKILL.md" in _additional_context(result)
@@ -869,8 +876,7 @@ class TestBashUnquotedHeredocSubstitution:
             {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "heredoc-substitution-nested"},
             _plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
-        assert substitution in result.stderr
+        assert substitution in _denial_reason(result)
 
     def test_here_string_substitution_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
         """here-stringの語は外側の置換として既存の解析が扱うため、本判定の対象外とする。"""
@@ -1087,8 +1093,7 @@ def test_reserved_prefix_reaches_bash_hook_checks(command: str, expected: str, e
     """共通解析の前置分岐が、公開hookの出力接続・Git・オプションの判定まで到達する。"""
     result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **extra_payload})
     if expected == "空行":
-        assert result.returncode == 2
-        assert expected in result.stderr
+        assert expected in _denial_reason(result)
     else:
         assert result.returncode == 0
         assert not result.stderr
@@ -1117,11 +1122,10 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
 
     result = _run_git_commit_message_hook(repo, tmp_path, command, extra_payload)
 
-    assert result.returncode == 2
-    assert result.stdout == ""
-    assert re.search(r"公開するコミットへ作業項目のファイル名を書(?:かない|くな)", result.stderr)
-    assert "対応記録" in result.stderr and "plan-progress" in result.stderr
-    assert "ファイル名を含む行を除いて再実行" in result.stderr
+    reason = _denial_reason(result)
+    assert re.search(r"公開するコミットへ作業項目のファイル名を書(?:かない|くな)", reason)
+    assert "対応記録" in reason and "plan-progress" in reason
+    assert "ファイル名を含む行を除いて再実行" in reason
 
 
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])

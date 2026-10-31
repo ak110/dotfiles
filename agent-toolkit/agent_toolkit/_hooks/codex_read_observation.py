@@ -17,6 +17,7 @@ import shlex
 from dataclasses import dataclass
 
 from agent_toolkit._hooks.host import is_codex_payload
+from agent_toolkit._hooks.notice import formatter
 
 _FILTER = re.compile(r"\.(?:[A-Za-z_]\w*)?(?:(?:\.[A-Za-z_]\w*)|(?:\[\d*\]))*")
 
@@ -168,7 +169,7 @@ TRUNCATED_NOTICE = (
     "`sed -n '<開始行>,<終了行>p' -- <絶対パス>`で行範囲を分けて末尾まで読め（最後の範囲は`<開始行>,$p`）。" + _RECOVERABLE
 )
 TRUNCATED_OUTPUT_NOTICE = (
-    "この出力は省略された。対象や条件を絞るか範囲を分けて再実行し、判断に必要な全量を回収せよ。" + _RECOVERABLE
+    "この出力は省略された。対象や条件を限定するか範囲を分けて再実行し、判断に必要な全量を回収せよ。" + _RECOVERABLE
 )
 
 
@@ -198,5 +199,5 @@ def collect(payload: dict) -> Observation | None:
     if execution is None or not _succeeded(execution, command):
         return None
     if response_is_truncated(response):
-        return Observation(TRUNCATED_NOTICE, None)
+        return Observation(formatter("codex-read-observation")(TRUNCATED_NOTICE), None)
     return Observation("", response)

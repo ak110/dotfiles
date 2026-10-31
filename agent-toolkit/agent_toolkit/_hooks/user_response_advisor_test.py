@@ -6,7 +6,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._hooks import stop
-from agent_toolkit._hooks.notice import notice_cycle
+from agent_toolkit._hooks.notice import notice_cycle, output_text, record_delivery
 
 _HUMAN = {"type": "user", "origin": {"kind": "human"}, "message": {"content": "進捗を報告して"}}
 _QUEUED = {
@@ -37,7 +37,9 @@ def _stop(entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFix
     with notice_cycle("response-case", "Stop", "main"):
         result = stop.main(json.dumps({"session_id": "response-case", "transcript_path": str(path), **extra}))
     assert result == 0
-    return json.loads(capsys.readouterr().out)
+    output = json.loads(capsys.readouterr().out)
+    record_delivery(output_text(output))
+    return output
 
 
 @pytest.mark.parametrize(
@@ -170,6 +172,7 @@ def test_missing_response_notifies_again_after_resolution_or_new_input(tmp_path,
     entries = [_HUMAN, _assistant("…")]
     first = _stop(entries, tmp_path, capsys)
     assert "user_response_advisor" in first["hookSpecificOutput"]["additionalContext"]
+    assert not _stop(entries, tmp_path, capsys, agent_id="skipped-child")
     assert not _stop(entries, tmp_path, capsys)
     assert not _stop([*entries, _assistant("回答した。")], tmp_path, capsys)
     assert "user_response_advisor" in _stop(entries, tmp_path, capsys)["hookSpecificOutput"]["additionalContext"]

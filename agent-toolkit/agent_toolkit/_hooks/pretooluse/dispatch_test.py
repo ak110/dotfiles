@@ -38,6 +38,17 @@ _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hook
 _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
 
 
+def _denial_reason(captured) -> str:
+    """stderrを使わず、正常拒否の理由欄を検証する。"""
+    assert not captured.err
+    response = json.loads(captured.out) if captured.out else {}
+    specific = response.get("hookSpecificOutput", {})
+    reason = specific.get("permissionDecisionReason", "")
+    if reason:
+        assert specific["permissionDecision"] == "deny"
+    return reason
+
+
 @pytest.fixture(autouse=True)
 def _existing_work_contract(tmp_path, monkeypatch):
     """個別チェックの通知契約を、作業契約を作成済みの状態で検証する。"""
@@ -355,8 +366,8 @@ def test_codex_commit_uses_observed_identity_from_hook_payload(capsys: pytest.Ca
         "reasoning_effort": "medium",
     }
 
-    assert pretooluse.main(json.dumps(payload)) == 2
-    assert "Co-Authored-By: GPT-6.1 Sol / Medium <noreply@openai.com>" in capsys.readouterr().err
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert "Co-Authored-By: GPT-6.1 Sol / Medium <noreply@openai.com>" in _denial_reason(capsys.readouterr())
 
 
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude", "codex"])
@@ -383,9 +394,9 @@ def test_bash_without_valid_commit_message_does_not_acquire_attribution_inputs(
     monkeypatch.setattr(pretooluse, "_hook_observed_identity", unexpected)
     monkeypatch.setattr(pretooluse, "_claude_commit_attribution_disabled", unexpected)
     payload = {"tool_name": "Bash", "tool_input": {"command": command}, "isSidechain": True, **extra_payload}
-    assert pretooluse.main(json.dumps(payload)) == code
+    assert pretooluse.main(json.dumps(payload)) == 0
     captured = capsys.readouterr()
-    assert ("空行" in captured.err) == (code == 2)
+    assert ("空行" in _denial_reason(captured)) == (code == 2)
 
 
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude", "codex"])
@@ -454,14 +465,14 @@ def test_commit_rules_read_delivers_observed_trailer_and_allows_same_turn_commit
     assert not captured.err
     payload["tool_input"] = {"command": f"git commit -m 'fix: 変更' -m '{trailer}'"}
     assert pretooluse.main(json.dumps(payload)) == 0
-    assert not capsys.readouterr().err
+    assert not _denial_reason(capsys.readouterr())
     payload["reasoning_effort"] = "high"
-    assert pretooluse.main(json.dumps(payload)) == 2
-    assert "GPT-6.1 Sol / High" in capsys.readouterr().err
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert "GPT-6.1 Sol / High" in _denial_reason(capsys.readouterr())
     for value in ("誤った行", f"{trailer}\n{trailer}"):
         payload["tool_input"] = {"command": f"git commit -m 'fix: 変更' -m '{value}'"}
-        assert pretooluse.main(json.dumps(payload)) == 2
-        assert "GPT-6.1 Sol / High" in capsys.readouterr().err
+        assert pretooluse.main(json.dumps(payload)) == 0
+        assert "GPT-6.1 Sol / High" in _denial_reason(capsys.readouterr())
 
 
 @pytest.mark.parametrize("case", ["literal", "search", "other", "missing", "unknown", "claude", "read-tool"])
@@ -526,8 +537,8 @@ def test_commit_format_blocks_independently_of_attribution(
     if host == "claude-disabled":
         (tmp_path / ".claude").mkdir()
         (tmp_path / ".claude/settings.json").write_text('{"attribution":{"commit":""}}', encoding="utf-8")
-    assert pretooluse.main(json.dumps(payload)) == 2
-    error = capsys.readouterr().err
+    assert pretooluse.main(json.dumps(payload)) == 0
+    error = _denial_reason(capsys.readouterr())
     assert "空行" in error and "再実行" in error
 
 
@@ -593,8 +604,8 @@ def test_claude_commit_blocks_trailer_without_turn_identity(
 
     `-F -`を読まないと、エージェントのcommitの大半を確かめないまま通し、誤った帰属行がpushされる。
     """
-    assert pretooluse.main(json.dumps(_claude_commit_hook_payload(tmp_path, command))) == 2
-    assert _LOW_TRAILER in capsys.readouterr().err
+    assert pretooluse.main(json.dumps(_claude_commit_hook_payload(tmp_path, command))) == 0
+    assert _LOW_TRAILER in _denial_reason(capsys.readouterr())
 
 
 @pytest.mark.parametrize(
@@ -615,7 +626,7 @@ def test_claude_commit_accepts_matching_or_unjudged_messages(
     (tmp_path / "message.txt").write_text(f"fix: 変更\n\n{_LOW_TRAILER}\n", encoding="utf-8")
 
     assert pretooluse.main(json.dumps(_claude_commit_hook_payload(tmp_path, command))) == 0
-    assert capsys.readouterr().err == ""
+    assert _denial_reason(capsys.readouterr()) == ""
 
 
 def test_claude_commit_uses_last_observed_model_after_switching_back(
@@ -632,7 +643,7 @@ def test_claude_commit_uses_last_observed_model_after_switching_back(
     )
 
     assert pretooluse.main(json.dumps(payload)) == 0
-    assert capsys.readouterr().err == ""
+    assert _denial_reason(capsys.readouterr()) == ""
 
 
 def test_subagent_commit_uses_the_subagent_record_model(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
@@ -648,11 +659,11 @@ def test_subagent_commit_uses_the_subagent_record_model(capsys: pytest.CaptureFi
         transcript.parent / "session-1" / "subagents" / "agent-a67c55c5819f1e406.jsonl", ["claude-haiku-4-5-20251001"]
     )
     assert pretooluse.main(json.dumps(payload)) == 0
-    assert capsys.readouterr().err == ""
+    assert _denial_reason(capsys.readouterr()) == ""
 
     unresolved = _claude_commit_hook_payload(tmp_path, "git commit -m 'fix: 変更'", agent_id="missing-agent")
     assert pretooluse.main(json.dumps(unresolved)) == 0
-    assert capsys.readouterr().err == ""
+    assert _denial_reason(capsys.readouterr()) == ""
 
 
 def test_commit_without_observed_identity_remains_unblocked(capsys: pytest.CaptureFixture[str]) -> None:
@@ -660,7 +671,7 @@ def test_commit_without_observed_identity_remains_unblocked(capsys: pytest.Captu
     payload = {"tool_name": "Bash", "tool_input": {"command": "git commit -m '変更'"}}
 
     assert pretooluse.main(json.dumps(payload)) == 0
-    assert capsys.readouterr().err == ""
+    assert _denial_reason(capsys.readouterr()) == ""
 
 
 def test_claude_commit_respects_explicit_empty_attribution_setting(
@@ -682,7 +693,7 @@ def test_claude_commit_respects_explicit_empty_attribution_setting(
     payload = _claude_commit_payload(tmp_path, project)
 
     assert pretooluse.main(json.dumps(payload)) == 0
-    assert capsys.readouterr().err == ""
+    assert _denial_reason(capsys.readouterr()) == ""
 
 
 def test_project_attribution_setting_overrides_user_disable(
@@ -707,8 +718,8 @@ def test_project_attribution_setting_overrides_user_disable(
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
     payload = _claude_commit_payload(tmp_path, project)
 
-    assert pretooluse.main(json.dumps(payload)) == 2
-    assert "Co-Authored-By: Claude Opus 5.5 / Medium <noreply@anthropic.com>" in capsys.readouterr().err
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert "Co-Authored-By: Claude Opus 5.5 / Medium <noreply@anthropic.com>" in _denial_reason(capsys.readouterr())
 
 
 @pytest.mark.parametrize("module_name", sorted(hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
@@ -1144,6 +1155,11 @@ class TestPlanModeSkillCallSites:
 
     _state_env = staticmethod(_plan_file_state_env)
 
+    @pytest.fixture(autouse=True)
+    def _isolate_read_guidance(self, monkeypatch):
+        """計画modeの判定を、別契約の資料候補通知から分離する。"""
+        monkeypatch.setattr(pretooluse, "read_delivery", lambda *_args, **_kwargs: Decision())
+
     @pytest.mark.parametrize("skill_name", ["agent-toolkit:plan-mode", "plan-mode"])
     def test_allowed_outside_plan_mode(self, tmp_path: pathlib.Path, skill_name: str):
         env = self._state_env(tmp_path)
@@ -1336,7 +1352,10 @@ class TestResponseLanguageCheck:
         ],
     )
     def test_blocks_english_user_facing_input(self, tool_name: str, tool_input: dict) -> None:
-        assert _run({"tool_name": tool_name, "tool_input": tool_input}).returncode == 2
+        result = _run({"tool_name": tool_name, "tool_input": tool_input})
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert not result.stderr
 
 
 class TestRemovedChecksAreSilent:
@@ -1377,7 +1396,11 @@ class TestRemovedChecksAreSilent:
         assert result.stdout == ""
         assert result.stderr == ""
 
-    def test_edit_and_non_edit_tools_pass_without_output(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+    @pytest.mark.parametrize("deny_substring", ["必ず", "絶対に"])
+    def test_edit_and_non_edit_tools_pass_without_output(
+        self, tmp_path: pathlib.Path, deny_substring: str, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(pretooluse, "read_delivery", lambda *_args, **_kwargs: Decision())
         home = tmp_path / "home"
         (home / ".claude" / "plans").mkdir(parents=True)
         payloads = [

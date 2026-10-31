@@ -99,7 +99,10 @@ def test_full_read_is_observed_and_truncated_read_is_not(tmp_path):
     full = observation.collect(_payload(tmp_path, f"cat {path}", path.read_text()))
     assert full == observation.Observation("", path.read_text())
     cut = observation.collect(_payload(tmp_path, f"cat {path}", _cut(path.read_text())))
-    assert cut == observation.Observation(observation.TRUNCATED_NOTICE, None)
+    assert cut is not None
+    assert cut.body is None
+    assert observation.TRUNCATED_NOTICE in cut.context
+    assert 'source="codex-read-observation" kind="notice"' in cut.context
 
 
 @pytest.mark.parametrize("mismatch", ["exit", "id", "turn", "session", "command", "missing"])

@@ -19,7 +19,7 @@ r"""`~/.claude/plans`に残る計画バンドルの保存確認Stopフック。
 import os
 import pathlib
 
-from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
+from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
@@ -86,6 +86,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     paths = _owned_working_plan_paths(session_id)
     if not paths:
+        resolve_notice(session_id, _HOOK_ID, "evaluate", subject="main")
         append_stop_log(session_id, "approve_no_working_plans", {})
         return "approve", ""
 

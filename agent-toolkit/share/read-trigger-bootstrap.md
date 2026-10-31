@@ -20,8 +20,8 @@
 | 検証の実行の前 | `agent-basics:check-execution/SKILL.md`、`check-execution-operations.md`、`verification-operations.md` | 操作 | `verification` |
 | 要件・技術判断を分類し、確認要否を判定する前 | `../skills/user-confirmation-and-report/references/approval-scope.md` | 判断 | `skill:user-confirmation-and-report` |
 | 確認本文と選択肢を起草する前 | `../skills/user-confirmation-and-report/references/approval-scope.md`、`../skills/user-confirmation-and-report/references/choice-construction.md` | 判断 | `confirmation` |
-| 原因分析の判断前と記述前 | `agent-basics:bugfix/references/root-cause-analysis.md`、`agent-toolkit:wi-standards/references/analysis-records.md`、`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md`、`agent-toolkit:session-review/references/analysis-operations.md`、`agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `skill:bugfix`、`root-cause-writing` |
-| レビュー指摘管理表を作成・更新する前 | `review-table-operations.md` | 判断 | `skill:review-standards` |
+| 原因分析の判断前と記述前 | `agent-basics:bugfix/references/root-cause-analysis.md`、`agent-toolkit:wi-standards/references/analysis-records.md`、`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md`、`agent-toolkit:session-review/references/analysis-operations.md`、`agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `skill:agent-basics:bugfix`、`root-cause-writing` |
+| レビュー指摘管理表を作成・更新する前 | `review-table-operations.md` | 判断 | `skill:agent-basics:review-standards` |
 | エージェント向け文書の編集前 | `agent-toolkit:delegation/references/writing.md`、`agent-toolkit:delegation/references/agent-documents-basics.md`、`agent-toolkit:delegation/references/agent-documents-basics.md#「運用条件」「置き場所と配送」「読込表の宣言」` | 操作 | `agent-document-writing` |
 
 ## 常時規範が名指しする資料
@@ -60,7 +60,7 @@
 
 ## 品質判断に伴う工程資料
 
-品質の取得と同じ時点で、次の条件に該当する工程資料を全文読む。品質の定義元はagent-basics、運用本文の定義元は各工程の資料とする。
+品質判断に入るとき、現在の役割・工程に次の条件が成立する行の資料を全文読む。hookの確認候補を受けたら条件を自分で確かめ、該当する資料を判断前に取得する。品質の定義元はagent-basics、運用本文の定義元は各工程の資料とする。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |

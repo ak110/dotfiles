@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import plan_save_advisor
-from agent_toolkit._hooks.notice import notice_cycle
+from agent_toolkit._hooks.notice import emit_response, notice_cycle
 from agent_toolkit._plan import owner_records as _owner_records
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
@@ -106,12 +106,19 @@ def test_plan_notice_tracks_target_changes_and_resolution(tmp_path, monkeypatch)
 
     def evaluate():
         with notice_cycle(session_id, "stop", "main"):
-            return plan_save_advisor.evaluate(payload)
+            decision, body = plan_save_advisor.evaluate(payload)
+            response = _stop_check_runner.response_for(decision, body)
+            if response is not None:
+                emit_response(response)
+            return decision, body
 
     first = plans / "first.md"
     first.write_text("# 計画\n", encoding="utf-8")
     _owner_records.write_owner_record(first, session_id=session_id)
     assert evaluate()[0] == "notify"
+    with monkeypatch.context() as skipped:
+        skipped.setattr(plan_save_advisor, "is_pending_async_work", lambda *_args, **_kwargs: True)
+        assert evaluate() == ("approve", "")
     assert evaluate() == ("approve", "")
     second = plans / "second.md"
     second.write_text("# 次の計画\n", encoding="utf-8")

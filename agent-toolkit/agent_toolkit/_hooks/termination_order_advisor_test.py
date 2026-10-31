@@ -23,9 +23,10 @@ from agent_toolkit._hooks import (
 )
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
-from agent_toolkit._hooks.notice import notice_cycle
+from agent_toolkit._hooks.notice import emit_response, notice_cycle
 from agent_toolkit._hooks.termination_evidence_test import isolated_session  # noqa: F401  # pylint: disable=unused-import
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _write_transcript
 
 
@@ -83,19 +84,29 @@ def test_approves_session_without_deliverable(tmp_path: pathlib.Path) -> None:
     assert termination_order_advisor.evaluate(_payload("sess-unrelated", str(trace))) == ("approve", "")
 
 
+def _evaluate_delivered(payload: str) -> tuple[str, str]:
+    """判定で採用した通知だけを、Stopの公開応答形式で出力する。"""
+    with notice_cycle(json.loads(payload)["session_id"], "stop", "main"):
+        decision, body = termination_order_advisor.evaluate(payload)
+        response = _stop_check_runner.response_for(decision, body)
+        if response is not None:
+            emit_response(response)
+        return decision, body
+
+
 @pytest.mark.parametrize("skill", ["agent-toolkit:process-wi", "agent-toolkit:add-awi-by-user"])
 def test_notifies_target_skill_without_completion_report_once(tmp_path: pathlib.Path, skill: str) -> None:
     """対象スキルの起動不足は一度通知し、起動済みの作業では終了判断を求めない。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-missing", trace, skill)
-    decision, body = termination_order_advisor.evaluate(_payload("sess-missing", str(trace)))
+    decision, body = _evaluate_delivered(_payload("sess-missing", str(trace)))
     assert decision == "notify"
     assert f"{skill}の開始" in body
     assert "`Skill`で`agent-toolkit:completion-report`を起動し" in body
     assert "公開工程" in body
-    assert termination_order_advisor.evaluate(_payload("sess-missing", str(trace))) == ("approve", "")
+    assert _evaluate_delivered(_payload("sess-missing", str(trace))) == ("approve", "")
     _start_skill("sess-missing", trace, "agent-toolkit:completion-report", "toolu_report")
-    assert termination_order_advisor.evaluate(_payload("sess-missing", str(trace))) == ("approve", "")
+    assert _evaluate_delivered(_payload("sess-missing", str(trace))) == ("approve", "")
 
 
 def test_completion_before_target_restart_is_not_reused(tmp_path: pathlib.Path) -> None:
@@ -109,7 +120,7 @@ def test_completion_before_target_restart_is_not_reused(tmp_path: pathlib.Path) 
     assert termination_order_advisor.evaluate(_payload("sess-second", str(trace)))[0] == "notify"
 
 
-def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path):
+def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path, monkeypatch):
     """同じ不足を抑え、起動で解消した後に新しい作業で不足すれば再通知する。"""
     trace = _write_transcript(tmp_path, [])
     session_id = "completion-notice-cycle"
@@ -117,10 +128,12 @@ def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path):
     payload = _payload(session_id, str(trace))
 
     def evaluate():
-        with notice_cycle(session_id, "stop", "main"):
-            return termination_order_advisor.evaluate(payload)
+        return _evaluate_delivered(payload)
 
     assert evaluate()[0] == "notify"
+    with monkeypatch.context() as skipped:
+        skipped.setattr(termination_evidence, "evidence_available", lambda *_args, **_kwargs: False)
+        assert evaluate() == ("approve", "")
     assert evaluate() == ("approve", "")
     _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
     assert evaluate() == ("approve", "")

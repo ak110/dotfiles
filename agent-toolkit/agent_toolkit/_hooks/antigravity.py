@@ -14,10 +14,10 @@ import io
 import json
 import pathlib
 import re
-import sys
 from typing import Any
 
 from agent_toolkit._common import agy_records, message_format, next_action, session_activity, session_state
+from agent_toolkit._hooks import notice
 
 EVENTS = frozenset({"SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop"})
 PENDING_CONTEXTS = "antigravity_pending_contexts"
@@ -120,12 +120,10 @@ def _invoke(module_name: str, payload: dict[str, Any]) -> _Response:
     """共有handlerの単一JSONと診断を捕捉し、ホスト形式へ変換する。"""
     module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
     output, errors = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+    with notice.defer_delivery(), contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
         text = json.dumps(payload, ensure_ascii=False)
         code = module.main(text, host="agy") if module_name == "rules_context" else module.main(text)
     diagnostic = errors.getvalue()
-    if diagnostic and code != 2:
-        sys.stderr.write(diagnostic)
     raw = output.getvalue().strip()
     body = json.loads(raw) if raw else {}
     return _Response(code, body if isinstance(body, dict) else {}, diagnostic)
@@ -137,8 +135,12 @@ def _enqueue(session_id: str, contexts: list[str]) -> None:
 
     def append(state: dict) -> dict:
         prior = state.get(PENDING_CONTEXTS)
-        pending = [text for text in prior if isinstance(text, str)] if isinstance(prior, list) else []
-        state[PENDING_CONTEXTS] = list(dict.fromkeys([*pending, *contexts]))
+        pending = list(prior) if isinstance(prior, list) else []
+        for text in contexts:
+            item = {"text": text, "receipts": notice.delivery_receipts(text)}
+            if item not in pending:
+                pending.append(item)
+        state[PENDING_CONTEXTS] = pending
         return state
 
     if not session_state.update_state(session_id, append):
@@ -153,7 +155,12 @@ def _consume(session_id: str) -> list[str]:
         if pending is None:
             return None
         if isinstance(pending, list):
-            contexts.extend(text for text in pending if isinstance(text, str))
+            for item in pending:
+                if isinstance(item, str):
+                    contexts.append(item)
+                elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                    contexts.append(item["text"])
+                    notice.restore_delivery_receipts(item.get("receipts"))
         return state
 
     if session_state.read_state(session_id).get(PENDING_CONTEXTS) is not None and not session_state.update_state(
@@ -342,8 +349,15 @@ def _dispatch(payload: dict[str, Any], event: str) -> dict[str, Any]:
     if event == "PreToolUse":
         response = _invoke("pretooluse", normalized)
         session_activity.record_activity(normalized)
-        if response.code == 2 or response.body.get("decision") in {"block", "deny"}:
-            reason = response.body.get("reason")
+        specific = response.body.get("hookSpecificOutput", {})
+        specific = specific if isinstance(specific, dict) else {}
+        _enqueue(session_id, response.contexts())
+        if (
+            response.code == 2
+            or response.body.get("decision") in {"block", "deny"}
+            or specific.get("permissionDecision") == "deny"
+        ):
+            reason = specific.get("permissionDecisionReason", response.body.get("reason"))
             return {
                 "decision": "deny",
                 "reason": response.diagnostic.strip()
@@ -353,7 +367,6 @@ def _dispatch(payload: dict[str, Any], event: str) -> dict[str, Any]:
                     "拒否された操作とこの事実を、委譲先は委譲元へ、それ以外はユーザーへ報告せよ。"
                 ),
             }
-        _enqueue(session_id, response.contexts())
         overwrite = _native_subagent_context(payload)
         # 公開契約でdecisionは必須。省略した空objectは実ホストで理由のないdenyになる。
         return {"decision": "allow", "overwrite": overwrite} if overwrite else {"decision": "allow"}
@@ -401,6 +414,7 @@ def main(payload_text: str, *, event: str) -> int:
     payload = json.loads(payload_text)
     if not isinstance(payload, dict):
         raise ValueError("Antigravityのhook入力はJSON objectで指定する")
+    notice.begin_delivery()
     response = _dispatch(payload, event)
-    print(json.dumps(response, ensure_ascii=False))
+    notice.emit_response(response)
     return 0

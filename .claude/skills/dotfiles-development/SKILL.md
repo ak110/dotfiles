@@ -5,7 +5,7 @@ description: >
   dotfilesリポジトリで`make update`・`make test`・`make format`・`make setup-browser`・`make setup-pwsh`・`make test-browser`を
   実行するとき、pyfltr・MCPの`run`・`pytest`の直接実行を選ぶとき、
   専用worktreeや回収予定の検証用複製の環境を準備するとき、mise trustが必要な作業ツリーと状態ディレクトリを扱うとき、専用worktreeの変更を`atk`で動かすとき、
-  画面を実描画で確認するとき、本リポジトリのテスト配置を決めるとき、テストを新規作成・編集するとき、
+  画面を実描画で確認するとき、本リポジトリのテスト配置を決めるとき、テストを新規作成・編集・レビューするとき、テストやCIの所要を判定するとき、
   commit typeを判定するとき、コミットメッセージ方針や`.gitmessage`を編集するとき、
   Claude Code本体やCodex本体のバイナリを検索してホスト機能の挙動を確かめるとき、
   `agent-toolkit:session-review`の参照文書の位置を確認するときに起動する。
@@ -42,6 +42,7 @@ description: >
 | `make update`を実行の候補にする前 | 現行`Makefile`の`update` targetと、それが呼び出す子target | 判断 | `section:*/Makefile#make:update` | |
 | 公開前に実行する検証を選定する前 | `agent-toolkit:commit`の`references/publish.md`「検証とCI」 | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「検証とCI」` | |
 | 変更範囲の検証の対象を選ぶ前、push前の全体検証を行う前、ローカルの`make test`が実行しないチェックを確かめる時、または`agent-doc-tone`の報告へ対処する前 | [references/verification-values.md](references/verification-values.md) | 判断 | `read:*/skills/dotfiles-development/references/verification-values.md` | |
+| テストを追加・変更・レビューする前と、テストやCIの結果を成功時も含めて判定する前 | `references/verification-values.md`の「テストとCIの所要基準」 | 判断 | `section:*/skills/dotfiles-development/references/verification-values.md#「テストとCIの所要基準」` | |
 | コミットメッセージのtypeを判定する時 | [commit-types.md](../../../docs/development/commit-types.md)（判定例） | 判断 | `read:*/docs/development/commit-types.md` | |
 | 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution`の`references/verification-scope.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` | |
 

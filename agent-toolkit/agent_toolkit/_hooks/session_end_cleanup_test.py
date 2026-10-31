@@ -12,7 +12,9 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import session_state
+from agent_toolkit._hooks import session_end_cleanup
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _STALE_AGE_SECONDS = 15 * 24 * 60 * 60
@@ -254,14 +256,31 @@ def test_invalid_payload_is_ignored(tmp_path: pathlib.Path, payload_text: str) -
     assert state.exists()
 
 
-def test_delete_failure_is_reported_and_fails_open(tmp_path: pathlib.Path) -> None:
+def test_delete_failure_is_silent_and_fails_open(tmp_path: pathlib.Path) -> None:
     # 状態パスをディレクトリにしてunlinkを失敗させる。
     state_path = session_state.state_path("sid")
     state_path.mkdir(parents=True)
     result = _run(_session_end("sid", reason="clear"), tmp_path)
     assert result.returncode == 0
     assert not result.stdout
-    assert "削除できませんでした" in result.stderr
+    assert not result.stderr
+    assert state_path.is_dir()
+
+
+@pytest.mark.parametrize("stage", ["shared-sweep", "function-hook-sweep"])
+def test_maintenance_failure_has_no_model_output(monkeypatch, stage):
+    """モデルへ即時対処を求められない回収の故障は、終了0・無出力とする。"""
+
+    def fail(*_args, **_kwargs):
+        raise OSError("保守の故障注入")
+
+    if stage == "shared-sweep":
+        monkeypatch.setattr(session_end_cleanup.shared_sweep, "sweep_stale_shared_state", fail)
+    else:
+        monkeypatch.setattr(session_end_cleanup, "sweep_function_hook_files", fail)
+    result = _run_hook_in_process("session_end_cleanup", {"hook_event_name": "SessionEnd", "session_id": "maintenance"})
+    assert result.returncode == 0
+    assert not result.stdout and not result.stderr
 
 
 @pytest.mark.parametrize("reason", [None, "clear", "prompt_input_exit", "logout", "other"])

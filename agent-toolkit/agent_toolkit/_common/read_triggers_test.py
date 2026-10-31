@@ -23,6 +23,7 @@ def test_body_reading_table_keeps_targets_and_scope(tmp_path):
     assert rows[0].source == owner
     assert rows[0].documents == (target,)
     assert rows[0].headings == ("対象",)
+    assert rows[0].condition == "選択時"
     assert "判断基準" in rows[0].targets[0].body()
     assert "別用途" not in rows[0].targets[0].body()
     read_triggers.validate_reference_routes(owner, tmp_path, rows)
@@ -36,6 +37,41 @@ def test_dynamic_document_identity_is_canonical(tmp_path):
     target = read_triggers.ReadTarget(directory / "../rule.md")
     assert target.path == path
     assert target == read_triggers.ReadTarget(path)
+
+
+def test_resolution_scope_shares_manifests_and_refreshes_the_next_request(tmp_path, monkeypatch):
+    toolkit, basics = tmp_path / "agent-toolkit", tmp_path / "agent-basics"
+    for root in (toolkit, basics):
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin/plugin.json").write_text(f'{{"name":"{root.name}"}}', encoding="utf-8")
+        for name in ("sample", "other"):
+            target = root / "skills" / name / "SKILL.md"
+            target.parent.mkdir(parents=True)
+            target.write_text("# 基準\n", encoding="utf-8")
+    reads: dict[pathlib.Path, int] = {}
+    original = pathlib.Path.read_text
+
+    def counted(path, *args, **kwargs):
+        if path.name == "plugin.json":
+            reads[path] = reads.get(path, 0) + 1
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", counted)
+    with read_triggers.resolution_scope():
+        for filename in ("one.md", "two.md"):
+            source = toolkit / "share" / filename
+            for root in (toolkit, basics):
+                for name in ("sample", "other"):
+                    assert read_triggers.resolve_document(f"{root.name}:{name}", source, toolkit) == (
+                        root / "skills" / name / "SKILL.md"
+                    )
+        assert reads == {root / ".claude-plugin/plugin.json": 1 for root in (toolkit, basics)}
+    (toolkit / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
+    with read_triggers.resolution_scope():
+        assert read_triggers.resolve_document("agent-basics:sample", toolkit / "share/one.md", toolkit) == (
+            toolkit / "skills/sample/SKILL.md"
+        )
+    assert reads[toolkit / ".claude-plugin/plugin.json"] == 2
 
 
 def test_nested_fence_keeps_search_headings_and_tables_outside_contract(tmp_path):
@@ -126,11 +162,39 @@ def test_input_selector_without_a_registered_main_resolution_source_fails_ci(tmp
     source.write_text(
         "| 条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |\n"
         "| --- | --- | --- | --- | --- |\n"
-        "| 起動時 | 起動入力 | 起動時 | `skill:example` | `input:未登録` |\n",
+        "| 起動時 | 起動入力 | 起動時 | `tool:Example` | `input:未登録` |\n",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="未登録の動的資料選択子"):
         read_triggers.parse_tables(source, tmp_path, strict=True)
+
+
+@pytest.mark.parametrize("name", ["bugfix", "review-standards"])
+@pytest.mark.parametrize("qualified", [False, True])
+def test_skill_operation_requires_the_declared_plugin_owner(tmp_path, name, qualified):
+    """他pluginのスキルを短縮名で誤解決せず、完全名で宣言できる。"""
+    toolkit = tmp_path / "agent-toolkit"
+    basics = tmp_path / "agent-basics"
+    for root in (toolkit, basics):
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin/plugin.json").write_text(f'{{"name":"{root.name}"}}', encoding="utf-8")
+    skill = basics / "skills" / name / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# 基準\n", encoding="utf-8")
+    source = toolkit / "share/source.md"
+    source.parent.mkdir()
+    operation = f"skill:agent-basics:{name}" if qualified else f"skill:{name}"
+    source.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        f"| 判断前 | `agent-basics:{name}/SKILL.md` | 判断 | `{operation}` |\n",
+        encoding="utf-8",
+    )
+    if qualified:
+        row = read_triggers.parse_tables(source, toolkit, strict=True)[0]
+        assert row.documents == (skill,) and row.operations == (operation,)
+    else:
+        with pytest.raises(ValueError, match="配送操作のスキルが存在しない"):
+            read_triggers.parse_tables(source, toolkit, strict=True)
 
 
 def test_role_document_accepts_its_startup_input_selector(tmp_path):

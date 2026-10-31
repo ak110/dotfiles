@@ -23,7 +23,7 @@ from agent_toolkit._agents_server import agents_wait, shared_layout, shared_root
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._agents_server.state import SessionState
-from agent_toolkit._common import session_state, state_paths
+from agent_toolkit._common import session_registry, session_state, state_paths
 from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import _read_state, auto_message_opening_attributes
@@ -874,8 +874,7 @@ def _registered_posttooluse_names(event: str = "PostToolUse") -> set[str]:
     return {name for entry in hooks for name in entry["matcher"].split("|")}
 
 
-def test_hooks_json_routes_tool_specific_processing_to_posttooluse() -> None:
-    """ツール別処理を持つ現行Claude入力群が登録から到達する。"""
+def _assert_tool_specific_posttooluse_registration(registered: set[str]) -> None:
     tool_names = {
         "AskUserQuestion",
         "Skill",
@@ -888,12 +887,24 @@ def test_hooks_json_routes_tool_specific_processing_to_posttooluse() -> None:
         "Edit",
         "MultiEdit",
         "Read",
+        "WebFetch",
     }
     tool_names.update(
         f"mcp__plugin_agent-toolkit_agents_server__{operation}"
         for operation in ("start", "send_message", "kill", "stop", "list", "show")
     )
-    assert tool_names <= _registered_posttooluse_names()
+    assert tool_names <= registered
+
+
+def test_hooks_json_routes_tool_specific_processing_to_posttooluse() -> None:
+    """ツール別処理を持つ現行Claude入力群が登録から到達する。"""
+    _assert_tool_specific_posttooluse_registration(_registered_posttooluse_names())
+
+
+def test_posttooluse_registration_rejects_missing_webfetch() -> None:
+    """外部取得の観測を公開matcherから欠落させる持込負例を検出する。"""
+    with pytest.raises(AssertionError):
+        _assert_tool_specific_posttooluse_registration(_registered_posttooluse_names() - {"WebFetch"})
 
 
 def _shell_payload(tool_name: str, response: dict) -> dict:
@@ -1602,6 +1613,26 @@ class TestProcessAwisInvokedNonIdempotent:
 class TestAgentsServerSessionState:
     """agents_serverのツール応答とsessionごとのcwd状態記録を検証する。"""
 
+    @staticmethod
+    def _publish_owned_child(sid: str, tmp_path: pathlib.Path) -> dict[str, object]:
+        session_registry.publish(
+            "thread-child",
+            terminal=False,
+            engine="claude",
+            cwd=str(tmp_path),
+            launcher_session_id=sid,
+            state_root=state_paths.state_dir(),
+        )
+        record: dict[str, object] = {
+            "session_id": "thread-child",
+            "status": "running",
+            "launcher_agent_id": "main",
+            "owner_agent_id": "main",
+            "pending_observation": True,
+        }
+        _state_path(sid).write_text(json.dumps({"agents_server_sessions": {"thread-child": record}}), encoding="utf-8")
+        return record
+
     @pytest.mark.parametrize(
         ("tool_name", "tool_input", "response"),
         (
@@ -1778,6 +1809,7 @@ class TestAgentsServerSessionState:
     def test_show_records_live_child_session_cwds(self, tmp_path: pathlib.Path) -> None:
         """`show`の応答が返す子sessionの識別子と`cwd`の対を、続行判定が読むキーへ記録する。"""
         sid = "show-child-cwd"
+        record = self._publish_owned_child(sid, tmp_path)
         result = _run(
             {
                 "session_id": sid,
@@ -1797,7 +1829,7 @@ class TestAgentsServerSessionState:
         assert result.returncode == 0
         state = _read_state(tmp_path, sid)
         assert state["agents_server_cwd_by_session"] == {"thread-child": str(tmp_path)}
-        assert "agents_server_sessions" not in state
+        assert state["agents_server_sessions"] == {"thread-child": record}
 
     @pytest.mark.parametrize(
         "phrase",
@@ -1810,6 +1842,7 @@ class TestAgentsServerSessionState:
     def test_agents_server_response_quoting_notice_is_not_backgrounded(self, tmp_path: pathlib.Path, phrase: str) -> None:
         """委譲先の返却本文が移行通知の文言を引用しても、背景へ移ったとみなさず通常の応答と同じ記録を行う。"""
         sid = f"show-quoting-notice-{phrase.split()[0].lower()}-{len(phrase)}"
+        record = self._publish_owned_child(sid, tmp_path)
         quoted = f"委譲先の返却: background_tasks_test.py:1: {phrase.format(task_id='quoted-task-1')}"
         result = _run(
             {
@@ -1832,6 +1865,7 @@ class TestAgentsServerSessionState:
         state = _read_state(tmp_path, sid)
         assert state["agents_server_cwd_by_session"] == {"thread-child": str(tmp_path)}
         assert "quoted-task-1" not in (state.get("background_task_ids") or [])
+        assert state["agents_server_sessions"] == {"thread-child": record}
 
     @pytest.mark.parametrize("tool_name", ("send_message", "kill", "stop"))
     def test_continuation_uses_cwd_map_without_mutating_it(self, tmp_path: pathlib.Path, tool_name: str) -> None:

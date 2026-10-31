@@ -8,6 +8,7 @@ import pathlib
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common.delegated_session import is_delegated
 from agent_toolkit._common.session_state import update_state
+from agent_toolkit._hooks.notice import resolve_notice
 
 RECORD_NAME = "work-contract.md"
 
@@ -24,6 +25,7 @@ def observe_input(session_id: str) -> str | None:
         session_id,
         lambda state: {**state, "work_contract_input_sequence": state.get("work_contract_input_sequence", 0) + 1},
     )
+    resolve_notice(session_id, "pretooluse", "main", subject="main")
     return notice(session_id)
 
 
@@ -33,6 +35,7 @@ def reset_notice(session_id: str) -> None:
         session_id,
         lambda state: {key: value for key, value in state.items() if key != "work_contract_notified_sequence"},
     )
+    resolve_notice(session_id, "pretooluse", "main", subject="main")
 
 
 def missing_notice(session_id: str, *, agent_id: object = None) -> str | None:

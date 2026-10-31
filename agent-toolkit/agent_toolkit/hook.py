@@ -12,15 +12,9 @@ epilogueを個別に持っていた。本スクリプトへ集約し、各モジ
 依存パッケージはplugin rootのuvプロジェクトへ集約する。全サブコマンドが同じvenvを共有し、
 サブコマンド切替時の再解決コストを生じさせない。
 
-例外時は標準エラー出力の先頭へ要約1行を書き、続けて従来どおりtraceback全文を出力する。
-要約1行は`main()`実行中の例外のみを対象とし、モジュール読込時点の失敗
-（`ModuleNotFoundError`等）は対象外とする。読込失敗時は素のPythonトレースバックのみを
-標準エラー出力へ書き、フック処理を通過させる。
-
-未知のサブコマンドは、hook定義の登録名と実装の`_SUBCOMMANDS`が一致していない状態を示す。稼働中の
-セッションが起動時に読んだ旧定義を保持する場合のほか、hook定義の登録名の誤りや、実装より新しい
-hook定義でも同じ処理が実行される。配布先の定義を追随させる機構は設けず、終了コード0を保ったまま
-標準エラー出力で不整合を観測できるようにする。
+読込・実行の障害は、通知欄を持つイベントで標識付き追加コンテキストへ集約する。
+イベントを確定できない入力と、モデルへの非遮断配送ができない終了イベントでは通知を出力しない。
+内部出力をホスト形式へ変換した後、実出力した通知だけを配送済みとして記録する。
 """
 
 import contextlib
@@ -34,10 +28,8 @@ import types
 
 # 正常な呼出しで使わない診断とdump用の依存を、必要になるまで読み込まない。
 lazy import datetime
-lazy import traceback
 
 from agent_toolkit._common import inherited_venv
-lazy from agent_toolkit._atk import outcome as _outcome
 lazy from agent_toolkit._common import session_launchers as _session_launchers
 lazy from agent_toolkit._common.plugin_roots import plugin_resolution_scope
 lazy from agent_toolkit._hooks import agent_id as _agent_id
@@ -60,9 +52,6 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "antigravity",
     }
 )
-
-# 例外時に`_approve()`で終了を許可する対象。出力形式はStop系モジュールの実装へ委ねる。
-_APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop"})
 
 
 def _configure_standard_output() -> None:
@@ -100,59 +89,21 @@ def main(argv: list[str]) -> int:
     """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。"""
     inherited_venv.strip_inherited_venv(os.environ)
     _configure_standard_output()
-    known_subcommands = "|".join(sorted(_SUBCOMMANDS))
+    _notice.begin_delivery()
+    _notice.set_warning_session_id("")
     if not argv or argv[0] not in _SUBCOMMANDS:
-        session_id = None
-        with contextlib.suppress(OSError, ValueError, UnicodeError):
-            early_payload = json.loads(sys.stdin.read())
-            if isinstance(early_payload, dict) and isinstance(early_payload.get("session_id"), str):
-                session_id = early_payload["session_id"]
-        if session_id and not _outcome.claim_persistent_warning(repr(argv), session_id=session_id):
-            return 0
-    if not argv:
-        print(
-            _notice_formatter("hook")(
-                f"usage: hook.py <{known_subcommands}>",
-                tag="warn",
-                fix="フック定義の起動コマンドへ現行のサブコマンド名を渡す。",
-                removable_cause=False,
-            ),
-            file=sys.stderr,
-        )
-        return 0
-    if argv[0] not in _SUBCOMMANDS:
-        print(
-            _notice_formatter("hook")(
-                f"hook定義と実装が不整合: 未知のサブコマンド'{argv[0]}'を受領した。現行のサブコマンド: {known_subcommands}。",
-                tag="warn",
-                fix=(
-                    "呼び出し元のフック定義の登録名が現行のサブコマンドと一致するか確かめる。"
-                    "稼働中のセッションが起動時に読んだ旧定義を保持している場合は、"
-                    "プラグインを更新してセッションを再起動すると解消する。"
-                ),
-                removable_cause=False,
-            ),
-            file=sys.stderr,
-        )
         return 0
     payload_bytes = sys.stdin.buffer.read()
     _dump_payload(argv[0], payload_bytes)
     try:
         payload_text = payload_bytes.decode("utf-8", errors="strict")
-    except UnicodeDecodeError as exc:
-        print(
-            _notice_formatter("hook")(
-                f"stdinのUTF-8デコードに失敗したためフック処理を通過させる: {exc}",
-                tag="warn",
-                fix="再発する場合はagent-toolkitの不具合としてユーザーへ報告する。",
-                removable_cause=False,
-            ),
-            file=sys.stderr,
-        )
+    except UnicodeDecodeError:
         return 0
     payload: object = None
     with contextlib.suppress(Exception):
         payload = json.loads(payload_text)
+    if isinstance(payload, dict) and isinstance(payload.get("session_id"), str):
+        _notice.set_warning_session_id(payload["session_id"])
         if isinstance(payload, dict):
             session_id = payload.get("session_id")
             transcript_path = payload.get("transcript_path")
@@ -164,8 +115,8 @@ def main(argv: list[str]) -> int:
         _record_activity(payload, returncode=2 if argv[0] in {"stop", "subagent_stop_advisor"} else 0)
     try:
         module = importlib.import_module(f"agent_toolkit._hooks.{argv[0]}")
-    except Exception:  # noqa: BLE001 -- 読込失敗でフック全体を停止させないため広範に捕捉
-        traceback.print_exc()
+    except Exception as exc:  # noqa: BLE001 -- 読込障害でも操作を継続する
+        _failure_response(argv[0], exc)
         return 0
     cycle: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
     if isinstance(payload, dict) and payload.get("session_id") and argv[0] != "pretooluse":
@@ -180,45 +131,63 @@ def main(argv: list[str]) -> int:
     try:
         with cycle, resolution:
             return _invoke_module(module, payload_text, payload, argv)
-    except Exception as exc:  # noqa: BLE001 -- フックの破損によって編集できなくならないよう広範に捕捉
-        tb = traceback.extract_tb(exc.__traceback__)
-        frame = tb[-1] if tb else None
-        location = f" ({pathlib.Path(frame.filename).name}:{frame.lineno})" if frame is not None else ""
-        label = argv[0]
-        print(
-            _notice_formatter("hook")(
-                f"[{label}] 想定外エラー: {type(exc).__name__}: {exc}{location}",
-                tag="warn",
-                fix="対応不要（フック処理を通過させて継続した）。再発する場合はagent-toolkitの不具合としてユーザーへ報告する。",
-                removable_cause=False,
-            ),
-            file=sys.stderr,
-        )
-        traceback.print_exc()
-        if argv[0] in _APPROVE_FALLBACK_SUBCOMMANDS:
-            approve = getattr(module, "_approve", None)
-            if callable(approve):
-                approve()
+    except Exception as exc:  # noqa: BLE001 -- フック障害でも操作を継続する
+        _failure_response(argv[0], exc)
         return 0
 
 
+def _failure_response(subcommand: str, error: Exception, response: dict | None = None) -> dict:
+    """通知を受理するイベントだけへ、既存応答と単一JSONで障害を返す。"""
+    events = {"pretooluse": "PreToolUse", "posttooluse": "PostToolUse", "user_prompt_submit": "UserPromptSubmit"}
+    result = response if response is not None else {}
+    if subcommand in events:
+        specific = result.setdefault("hookSpecificOutput", {})
+        specific["hookEventName"] = events[subcommand]
+        warning = _notice_formatter("hook")(
+            f"[{subcommand}] 想定外エラー: {type(error).__name__}: {error}",
+            tag="warn",
+            removable_cause=False,
+            fix="操作を継続せよ。再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+        )
+        specific["additionalContext"] = "\n\n".join(filter(None, (specific.get("additionalContext"), warning)))
+    if response is None and result:
+        _notice.emit_response(result)
+    return result
+
+
 def _invoke_module(module: types.ModuleType, payload_text: str, payload: object, argv: list[str]) -> int:
-    """通知の有効期間の内側で、イベント固有の出力と活動記録を処理する。"""
-    if argv[0] == "antigravity":
-        if len(argv) != 2:
-            raise ValueError("antigravityにはイベント名を1個渡す")
-        return module.main(payload_text, event=argv[1])
-    if argv[0] in {"stop", "subagent_stop_advisor"}:
-        output = io.StringIO()
+    """内部出力を捕捉し、ホストへ採用した本文の配送だけを確定する。"""
+    output = io.StringIO()
+    error = None
+    result = 0
+    with _notice.defer_delivery(), contextlib.redirect_stdout(output):
         try:
-            with contextlib.redirect_stdout(output):
+            if argv[0] == "antigravity":
+                if len(argv) != 2:
+                    raise ValueError("antigravityにはイベント名を1個渡す")
+                result = module.main(payload_text, event=argv[1])
+            else:
                 result = module.main(payload_text)
-        finally:
-            sys.stdout.write(output.getvalue())
-        response = output.getvalue()
-        _record_activity(payload, output=response, returncode=result)
-        return result
-    return module.main(payload_text)
+        except Exception as exc:  # noqa: BLE001 -- 部分出力の後も単一JSONを保つ
+            error = exc
+    raw = output.getvalue()
+    response = None
+    with contextlib.suppress(ValueError):
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            response = parsed
+    if error is not None:
+        response = _failure_response(argv[0], error, response or {})
+        raw = json.dumps(response, ensure_ascii=False) if response else ""
+    if raw:
+        sys.stdout.write(raw)
+        if response is not None:
+            # 配送後の状態記録失敗で、同じ応答へ別のJSONを追加しない。
+            with contextlib.suppress(Exception):
+                _notice.record_delivery(_notice.output_text(response))
+    if argv[0] in {"stop", "subagent_stop_advisor"}:
+        _record_activity(payload, output=raw, returncode=result)
+    return result
 
 
 if __name__ == "__main__":

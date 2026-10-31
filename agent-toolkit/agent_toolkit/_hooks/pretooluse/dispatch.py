@@ -1,7 +1,7 @@
 r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
 
 任意ツールの実行前に以下のチェックを順に実行する。
-block系checkは1プロセスで直列実行し、最初の違反でexit 2する。
+block系checkは1プロセスで直列実行し、最初の違反を終了0の構造化denyで返す。
 warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を載せつつ処理を継続する
 （exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
 通常の遮断は不可逆な操作とデータ破損を生む入力に限定し、後続の編集で復元できる結果は警告する。
@@ -66,7 +66,7 @@ Write / Edit / MultiEdit / apply_patch:
 - 編集入力は`_hook_tool_input`が共通の操作記録へ正規化し、各判定処理はホストを区別しない
 - 空でない文字列の`turn_id`を持つ入力をCodexと判定し、この判定はpayloadの読込直後に一度だけ行う
 - 大量読取の警告はCodexだけへ適用し、PowerShellの改行を確かめる処理はClaudeの`Write`へ限定する
-- 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反をexit 2とstderrで返す
+- 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反を`permissionDecisionReason`へ返す
 """
 
 from __future__ import annotations
@@ -74,16 +74,16 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import sys
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import dataclasses
+lazy import hashlib
 
 lazy from agent_toolkit._common import host_homes as _host_homes
 lazy from agent_toolkit._common import response_language_check as _response_language_check
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
-lazy from agent_toolkit._common.session_state import read_state
+lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
@@ -93,7 +93,7 @@ lazy from agent_toolkit._hooks import (
 )
 lazy from agent_toolkit._hooks import work_contract
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
-lazy from agent_toolkit._hooks.notice import _WARN_TAG, notice_cycle, set_warning_session_id
+lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
@@ -168,17 +168,18 @@ _USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "Ex
 _SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
 
 
-def main(payload_text: str) -> int:
+def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
     """エントリポイント。
 
     exit code契約:
 
     - exit 0: 通過（違反なし / スキップ対象ツール / 想定外入力 / warnのみ）
-    - exit 2: block違反検出（stderrに理由を出力）
+    - exit 0 + permissionDecision=deny: 正常な拒否（専用の理由欄で返す）
 
     予期せぬ例外は0にフォールバックする（pluginのhookが破損して編集できなくなることを避けるため）。
     各判定は結果を`Decision`で返し、標準出力・標準エラーへの書き込みは本関数と`_emit`だけが行う。
     """
+    begin_delivery()
     try:
         payload = json.loads(payload_text)
     except json.JSONDecodeError, ValueError:
@@ -199,7 +200,11 @@ def main(payload_text: str) -> int:
     scope = "pretooluse:" + str(tool_name) + ":" + ",".join(operations)
     with notice_cycle(session_id, scope, _agent_id.resolve_hook_agent_id(payload)):
         contract_notice = work_contract.missing_notice(session_id, agent_id=payload.get("agent_id"))
-        pending_notices: list[str] = [_llm_notice(contract_notice, tag="notice")] if contract_notice else []
+        pending_notices: list[str] = list(initial_notices)
+        if contract_notice:
+            pending_notices.append(_llm_notice(contract_notice, tag="notice"))
+        if tool_name not in _USER_FACING_TEXT_TOOL_NAMES:
+            _language_retry(payload, tool_name, tool_input, remember=False)
         decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
         if decision.block is None:
             delivery = read_delivery(payload, tool_name, tool_input, session_id)
@@ -243,37 +248,23 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
 
 def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> int:
     """判定の結果と保留の通知を標準出力・標準エラーへ書き、終了コードを返す。"""
-    if decision.block is not None:
-        print(decision.block, file=sys.stderr)
-        return exit_with(2, pending_notices)
     pending_notices.extend(decision.notices)
     hook_output: dict[str, object] = {"hookEventName": "PreToolUse"}
     # Codexは入力書換えを伴うallowだけを受理する。通常通過の権限判定はホストへ委ねる。
     force_allow = decision.allow and not is_codex
-    if force_allow:
+    if decision.block is not None:
+        hook_output["permissionDecision"] = "deny"
+        hook_output["permissionDecisionReason"] = decision.block
+    elif force_allow:
         hook_output["permissionDecision"] = "allow"
     contexts = [decision.context] if decision.context else []
     contexts.extend(notice for notice in pending_notices if notice)
     pending_notices.clear()
     if contexts:
         hook_output["additionalContext"] = format_warning_context(contexts)
-    if force_allow or contexts:
-        print(json.dumps({"hookSpecificOutput": hook_output}, ensure_ascii=False))
-    return exit_with(0, pending_notices)
-
-
-def exit_with(code: int, pending_notices: list[str]) -> int:
-    """終了コードを返す直前に、遮断時だけ保留通知をstderrへ出力して消費する。
-
-    exit 2ではstdoutの構造化JSONが評価されず、保留通知を`additionalContext`で渡せない。
-    出力しないまま返すと、判定処理側のカウンタと最終パスだけが更新されるため、
-    同じ入力を再試行しても通知が再生成されず失われる。
-    exit 2のstderrはコーディングエージェントへ届くため、遮断理由と同じ出力先へ送る。
-    """
-    if code == 2 and pending_notices:
-        print("\n".join(pending_notices), file=sys.stderr)
-        pending_notices.clear()
-    return code
+    if decision.block is not None or force_allow or contexts:
+        emit_response({"hookSpecificOutput": hook_output})
+    return 0
 
 
 def _decide_agents_server_tool(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
@@ -459,6 +450,30 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
     return fields
 
 
+def _language_retry(payload: dict, tool_name: str, tool_input: dict, *, remember: bool) -> bool:
+    """同じ主体の直前入力だけを保持し、別操作による回復権限の持越しを防ぐ。"""
+    session_id = payload.get("session_id", "")
+    if not isinstance(session_id, str) or not session_id:
+        return False
+    actor = _agent_id.resolve_hook_agent_id(payload)
+    fingerprint = hashlib.sha256(json.dumps([tool_name, tool_input], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    repeated = False
+
+    def update(state: dict) -> dict:
+        nonlocal repeated
+        prior = state.get("response_language_retry_by_actor", {})
+        prior = dict(prior) if isinstance(prior, dict) else {}
+        repeated = prior.get(actor) == fingerprint
+        if remember:
+            prior[actor] = fingerprint
+        else:
+            prior.pop(actor, None)
+        state["response_language_retry_by_actor"] = prior
+        return state
+
+    return update_state(session_id, update) and repeated
+
+
 def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: dict) -> Decision:
     """質問・計画本文の文字化けと、確認の前に読む資料の未読を確かめ、警告として返す。
 
@@ -468,13 +483,20 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
     「遮断と警告の選択」が定める。記述言語の判定は同節の例外により表示前に遮断し、日本語での書き直しを求める。他の2つの判定は、成立した警告を同じ追加コンテキストへ並べる。
     """
     fields = _user_facing_text_fields(tool_name, tool_input)
+    recoverable = all(_response_language_check.explanation_is_japanese(text) for _, text in fields)
+    repeated = _language_retry(_payload, tool_name, tool_input, remember=recoverable)
     for name, text in fields:
         outcome, body = _response_language_check.check_text(text)
         if outcome is _response_language_check.CheckOutcome.WARN:
+            if recoverable and repeated:
+                continue
             return Decision(
                 block=_block_notice(
                     f"対象の入力欄: `{name}`。{_response_language_check.BLOCK_BODY}{body}",
-                    fix=_response_language_check.WARNING_FIX,
+                    fix=(
+                        _response_language_check.WARNING_FIX
+                        + "引用・入力素材だけが英語で、説明が日本語なら、同じ主体から同じツールへ同一入力を再発行せよ。"
+                    ),
                 )
             )
     warnings = [warning for warning in (_warn_mojibake(tool_name, fields),) if warning is not None]

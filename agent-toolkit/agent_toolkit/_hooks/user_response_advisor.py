@@ -124,6 +124,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
                 ellipsis_only = ellipsis_only or "…" in text
 
     if not needs_response or (acknowledged_only and not called_tool and ellipsis_only):
+        notice.resolve_notice(session_id, "user_response_advisor", "evaluate", subject="main")
         return "approve", ""
     _stop_session.append_stop_log(session_id, "notify_missing_user_response", {})
     delivery = "応答本文" if is_codex_payload(payload) else "mcp__agent-toolkit__send_to_user（無い環境では応答本文）"

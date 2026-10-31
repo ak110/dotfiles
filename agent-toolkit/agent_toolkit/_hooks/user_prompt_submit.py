@@ -46,7 +46,8 @@ from __future__ import annotations
 import json
 import os
 import re
-import sys
+
+from agent_toolkit._hooks.notice import begin_delivery, emit_response, set_warning_session_id
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -192,11 +193,12 @@ def _emit_hook_output(*, additional_context: str | None, title: str | None = Non
         hook_specific_output["additionalContext"] = additional_context
     if title is not None:
         hook_specific_output["sessionTitle"] = title
-    print(json.dumps({"hookSpecificOutput": hook_specific_output}, ensure_ascii=False))
+    emit_response({"hookSpecificOutput": hook_specific_output})
 
 
 def main(payload_text: str) -> int:
     """エントリポイント。終了コードは常に0（fail-open原則）。"""
+    begin_delivery()
     try:
         payload = json.loads(payload_text)
     except json.JSONDecodeError, ValueError:
@@ -213,10 +215,19 @@ def main(payload_text: str) -> int:
     if not isinstance(prompt, str) or not prompt:
         return 0
 
+    set_warning_session_id(session_id)
+    initial_notices: list[str] = []
     try:
         termination_evidence.observe_user(payload_text)
     except (OSError, ValueError, TypeError, KeyError) as error:
-        print(f"終了工程の原入力を取得できない: {error}", file=sys.stderr)
+        initial_notices.append(
+            _llm_notice(
+                f"終了工程の原入力を取得できない: {error}",
+                tag="warn",
+                removable_cause=False,
+                fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+            )
+        )
 
     # 進捗のセルフチェックは機械注入ターン（定期再確認を含む）で経過時間から判定する。
     # 実ユーザーの発話では通知せず、次の点検をその時点から数え直す。
@@ -229,7 +240,7 @@ def main(payload_text: str) -> int:
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。
     if _is_harness_message(prompt):
-        harness_notices: list[str] = []
+        harness_notices: list[str] = list(initial_notices)
         if not is_codex_payload(payload):
             harness_notices.append(
                 _llm_notice(
@@ -252,7 +263,7 @@ def main(payload_text: str) -> int:
     # 除外するのは機械が生成してユーザー入力欄へ入る本文だけとする。
     is_normal_prompt = not machine_injected
     # 発火条件は受領側が除去できないため、いずれも情報提示の区分で配送する。
-    notices: list[str] = []
+    notices: list[str] = list(initial_notices)
     if is_normal_prompt and first_line.startswith(command_prefix):
         command = first_line[len(command_prefix) :].split(maxsplit=1)
         if command and command[0] in USER_CONFIRMATION_SKILL_NAMES:
@@ -264,7 +275,14 @@ def main(payload_text: str) -> int:
         try:
             contract_notice = work_contract.observe_input(session_id)
         except (OSError, ValueError) as error:
-            print(f"現行の作業契約の入力位置を記録できない: {error}", file=sys.stderr)
+            notices.append(
+                _llm_notice(
+                    f"現行の作業契約の入力位置を記録できない: {error}",
+                    tag="warn",
+                    removable_cause=False,
+                    fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+                )
+            )
         else:
             if contract_notice is not None:
                 notices.append(_llm_notice(contract_notice))

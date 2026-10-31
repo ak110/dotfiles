@@ -13,6 +13,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「テスト配置」` | 判断 | `section:*/skills/dotfiles-development/SKILL.md#「テスト配置」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| テストとCIの所要基準を使う前 | `agent-basics:writing-standards/references/testing.md`の「速度」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「速度」` |
+| テストとCIの所要基準を使う前 | `agent-basics:check-execution/references/diagnostics.md`の「読む出力」 | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
 
 ## 変更範囲の検証の値
 
@@ -56,6 +58,38 @@
   - `ty`
   - `uv run --frozen pyfltr run --commands=arid`
 
+## テストとCIの所要基準
+
+執筆者は追加・変更するテストを次の段階へ分類し、レビュー担当はその段階の必要性と削減余地、結果確認担当は実測を確認する。
+共通の評価方法は`agent-basics:writing-standards/references/testing.md`「速度」と`agent-basics:check-execution/references/diagnostics.md`「読む出力」に従う。
+
+| 必要な仕事 | テスト本体の改善判断値 |
+| --- | --- |
+| 同一プロセス内の通常処理 | 0.1秒 |
+| 契約上不可避の実時間待機を含む処理 | 0.5秒 |
+| 実プロセス・実Gitなどの境界を使う処理 | 2秒 |
+| 外部接続・ブラウザー・大規模結合など | 固有の検出契約、最小構成、起動・待機回数に基づく個別の所要見込み |
+
+通常処理と実境界の値は、2026年10月31日の選択標本88ケースで本体87ケースが0.1秒以下、実プロセス1ケースが0.73秒だった実績を出発点とする。
+待機の値は必要待機量0.08秒の共有ロック試験が本体0.11秒だった実測に余裕を持たせた値である。
+これらは選択標本に基づく改善判断値とし、全テストの分布から推定する上限と区別する。
+setupと後始末も別に読み、全体への寄与を評価する。
+
+0.1秒を超える構成は必要最小限とし、上位段階には、その層でしか検出できない契約違反と代表シナリオを残す。
+待機の段階は契約上必要な待機量から選び、固定sleepの長さだけによる段階の引き上げは禁止する。
+基準超過時には、軽い層への移動、不変準備の共有、データ量と起動・待機回数の削減を検討する。
+OS・負荷・準備状態に由来する差と必要仕事による超過理由、最小化の判断を既存の検証記録に残す。
+固定秒数だけでテストを失敗させる機械チェックの追加は禁止する。
+
+CI workflowの全体基準は、対象HEADの実行開始から必須ジョブ終了までの実時間10分とする。
+以前の同workflowの成功実績8〜9分へ約1〜2分の余裕を持たせた改善判断値であり、キュー待ち・人間の承認待ちは分ける。
+公開担当とPR検収担当は成功時も比較し、律速ジョブの準備・本体・終了処理を内訳として既存の検証記録へ残す。
+10分超なら原因を調べ、現在の範囲と認可で成立する改善を同じ作業で行う。
+外部前提や別計画が必要な残作業だけ、原因、具体策、解除条件を付けて引き継ぐ。
+公開工程と必要な検証は、所要超過時も継続する。
+同条件比較では必須テスト集合、並列度、依存版、コンテナーと環境隔離の一致を確かめる。
+この固有数値の適用範囲はdotfilesに限る。
+
 ## push前のチェックとCIだけが実行するチェック
 
 公開前の全体検証は、`agent-toolkit:commit`が公開工程で参照する資料「検証とCI」の定めに従い、CIでは実行されないチェックや、変更ファイル単体では検知できない複数ファイル間の問題をリポジトリ全体で確認する。本リポジトリでは以下の手順を実行する。
@@ -68,12 +102,14 @@
 - 複数ファイル間にまたがる循環importを検査する: `uv run --frozen pyfltr run --no-fix --commands=pylint --pylint-args='--disable=all --enable=cyclic-import'`
 
 CIの`python-lint (3.15)`ジョブは、ローカルの`make test`から一部のチェックを除外する。
-実行コマンドは`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types`である。Python 3.15環境でのpytestは`pytest (3.15)`ジョブが担当している。また、以下のジョブはローカルの`make test`では実行されない。
+実行コマンドは`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types`である。
+Python 3.15のpytestは直下の`pytest (3.15)`と`pytest-toolkit (3.15)`が独立して担当する。
+以下のジョブはローカルの`make test`では実行されない。
 
 - `test-windows`ジョブ: Windows実機環境でのchezmoi適用、Windows固有のテスト、および公開ランチャーの動作確認
 - `update-dotfiles-upgrade (windows)`ジョブ: Windows環境における旧バージョンからのupdate-dotfilesによるアップデート検証
 - `test-linux`ジョブ: `install.sh`およびchezmoiの実際の適用確認
-- `pytest (3.15)`ジョブ: Python 3.15環境におけるpytestの実行
+- `pytest (3.15)`・`pytest-toolkit (3.15)`ジョブ: Python 3.15・最低Git 2.34.1で直下とtoolkitのテストを各1回実行し、skills配下と横断不変条件も含める
 - `rust-lint`ジョブ: `rust/claude-statusline/`のcargoによる検証
 - `plugin-version`ジョブ: `develop`へのpushで、push前の公開済みcommitとagent-toolkit・agent-basicsの配布物の差分と版数を比べる検証
 - `browser-e2e`ジョブ: 実際のブラウザーを用いたE2Eテスト（ローカル環境では`make test-browser`で実行可能）

@@ -2,6 +2,7 @@
 
 import json
 import shlex
+import subprocess
 
 import pytest
 
@@ -15,6 +16,10 @@ def _context(captured):
     if not captured.out.strip():
         return ""
     return json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+
+
+def _denial(status, captured):
+    return pretooluse_support.denial_reason(subprocess.CompletedProcess((), status, captured.out, captured.err))
 
 
 def _payload(tmp_path, codex):
@@ -43,9 +48,8 @@ def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_p
     context = _context(capsys.readouterr())
     assert "root-cause-analysis.md" in context
     assert "記録の粒度は" not in context
-    assert dispatch.main(json.dumps(payload)) == 2
-    captured = capsys.readouterr()
-    assert "未取得資料" in captured.err
+    status = dispatch.main(json.dumps(payload))
+    assert "未取得資料" in _denial(status, capsys.readouterr())
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
     root_cause = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
     assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
@@ -58,9 +62,8 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     root_cause = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
     assert str(root_cause) in context
     assert root_cause.read_text(encoding="utf-8").strip() not in context
-    assert dispatch.main(json.dumps(payload)) == 2
-    captured = capsys.readouterr()
-    assert "未取得資料" in captured.err
+    status = dispatch.main(json.dumps(payload))
+    assert "未取得資料" in _denial(status, capsys.readouterr())
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
     assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
     assert not (tmp_path / "plan.md").exists()
@@ -86,10 +89,12 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
             capsys.readouterr()
         status = dispatch.main(json.dumps(payload))
         captured = capsys.readouterr()
-        if status == 0:
-            _context(captured)
+        specific = json.loads(captured.out)["hookSpecificOutput"] if captured.out.strip() else {}
+        if specific.get("permissionDecision") == "deny":
+            assert "未取得資料" in _denial(status, captured)
         else:
-            assert status == 2 and "未取得資料" in captured.err
+            assert status == 0
+            _context(captured)
     else:
         pytest.fail("全資料取得後も未取得資料が残った")
     assert dispatch.main(json.dumps(payload)) == 0
@@ -100,8 +105,8 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
     payload = _payload(tmp_path, True)
     assert dispatch.main(json.dumps(payload)) == 0
     assert "root-cause-analysis.md" in _context(capsys.readouterr())
-    assert dispatch.main(json.dumps(payload)) == 2
-    assert "未取得資料" in capsys.readouterr().err
+    status = dispatch.main(json.dumps(payload))
+    assert "未取得資料" in _denial(status, capsys.readouterr())
     seen = set()
     for _ in range(12):
         records = read_delivery.read_state(payload["session_id"])
@@ -128,10 +133,12 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
             seen.update(paths)
         status = dispatch.main(json.dumps(payload))
         captured = capsys.readouterr()
-        if status == 0:
-            _context(captured)
+        specific = json.loads(captured.out)["hookSpecificOutput"] if captured.out.strip() else {}
+        if specific.get("permissionDecision") == "deny":
+            assert "未取得資料" in _denial(status, captured)
         else:
-            assert status == 2 and "未取得資料" in captured.err
+            assert status == 0
+            _context(captured)
     else:
         pytest.fail("明示した全資料の取得で元の操作が通らなかった")
     assert seen
@@ -163,10 +170,10 @@ def test_confirmation_entry_warns_without_blocking(tmp_path, capsys, codex):
 def test_pattern_process_termination_stays_blocked_before_document_delivery(tmp_path, capsys, codex):
     payload = _payload(tmp_path, codex)
     payload.update({"tool_name": "Bash", "tool_input": {"command": "pkill -f worker"}})
-    assert dispatch.main(json.dumps(payload)) == 2
-    captured = capsys.readouterr()
-    assert "pkill" in captured.err
-    assert "read-delivery" not in captured.err
+    status = dispatch.main(json.dumps(payload))
+    reason = _denial(status, capsys.readouterr())
+    assert "pkill" in reason
+    assert "read-delivery" not in reason
 
 
 @pytest.mark.parametrize("codex", [False, True])

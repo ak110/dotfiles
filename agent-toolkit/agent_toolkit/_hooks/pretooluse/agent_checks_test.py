@@ -44,6 +44,16 @@ def _run_after_skill_acquisition(
     return run_after_read_delivery(payload, env_overrides)
 
 
+def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    reason = output["permissionDecisionReason"]
+    assert isinstance(reason, str) and reason
+    return reason
+
+
 @pytest.mark.parametrize(
     ("operation", "tool_input"),
     [
@@ -99,9 +109,27 @@ def test_agents_server_continuation_without_saved_cwd_is_blocked(
         },
         env_overrides=_plan_file_state_env(tmp_path),
     )
-    assert result.returncode == 2
-    assert f"blocked: {operation}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。" in result.stderr
-    assert "空でない" not in result.stderr
+    assert result.returncode == 0
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    reason = output["permissionDecisionReason"]
+    assert f"blocked: {operation}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。" in reason
+    assert "show" in reason
+    assert "空でない" not in reason
+
+
+@pytest.mark.parametrize("cwd", ["", "relative"])
+def test_agents_server_invalid_saved_cwd_is_blocked(tmp_path: pathlib.Path, cwd: str) -> None:
+    """空または相対cwdの記録を所有証拠として継続せず、show照会を案内する。"""
+    _write_session_state(tmp_path, "invalid-cwd", {"agents_server_cwd_by_session": {"child": cwd}})
+    result = _run(
+        {"session_id": "invalid-cwd", "tool_name": "mcp__agents_server__kill", "tool_input": {"session_id": "child"}},
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "show" in output["permissionDecisionReason"]
 
 
 class TestAgentNameParameterAccepted:
@@ -146,29 +174,28 @@ class TestTaskStopBlock:
         first = self._invoke("task-stop-unowned", state_dir, {"task_id": "other-task"})
         second = self._invoke("task-stop-unowned", state_dir, {"task_id": "other-task"})
 
-        assert first.returncode == 2
-        assert second.returncode == 2
-        assert first.stderr == second.stderr
-        assert "バックグラウンドタスクの所有記録に一致する識別子" in first.stderr
-        assert "対象別の停滞検知完了記録を作成" in first.stderr
-        assert "再実行すると続行できる" not in first.stderr
+        reason = _denial_reason(first)
+        assert reason == _denial_reason(second)
+        assert "バックグラウンドタスクの所有記録に一致する識別子" in reason
+        assert "対象別の停滞検知完了記録を作成" in reason
+        assert "再実行すると続行できる" not in reason
 
     def test_block_message_states_the_stop_conditions(self, state_dir: dict[str, str]) -> None:
         """遮断文面が停止の根拠、その完了条件の所在、不十分な理由、確認手段、再実行方法を示す。"""
-        stderr = self._invoke("task-stop-message", state_dir).stderr
-        assert "現在のセッションには" in stderr
-        assert "バックグラウンドタスクの所有記録も停滞検知完了記録も無い" in stderr
-        assert "明示的な即時停止要求" in stderr
-        assert "停滞検知の手順" in stderr
-        assert "進行が遅い" in stderr
-        assert "AskUserQuestionで確認" in stderr
-        assert "references/waiting-and-monitoring.md" in stderr
-        assert "「停滞の検知と巻き取り」節" in stderr
+        reason = _denial_reason(self._invoke("task-stop-message", state_dir))
+        assert "現在のセッションには" in reason
+        assert "バックグラウンドタスクの所有記録も停滞検知完了記録も無い" in reason
+        assert "明示的な即時停止要求" in reason
+        assert "停滞検知の手順" in reason
+        assert "進行が遅い" in reason
+        assert "AskUserQuestionで確認" in reason
+        assert "references/waiting-and-monitoring.md" in reason
+        assert "「停滞の検知と巻き取り」節" in reason
 
     def test_block_message_refers_user_intervention_to_owner_section(self, state_dir: dict[str, str]) -> None:
         """遮断文面がユーザー介入時の扱いを所有者の節（delegation「継続と新規起動」）へ委ねる。"""
-        stderr = self._invoke("task-stop-message-route", state_dir).stderr
-        assert "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める" in stderr
+        reason = _denial_reason(self._invoke("task-stop-message-route", state_dir))
+        assert "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める" in reason
 
     @pytest.mark.parametrize(
         ("label", "tool_input"),
@@ -186,8 +213,8 @@ class TestTaskStopBlock:
     ) -> None:
         """自セッションの起動記録が無い停止は、識別子の有無と値によらず繰り返し遮断する。"""
         session_id = f"task-stop-input-{label}"
-        assert self._invoke(session_id, state_dir, tool_input).returncode == 2
-        assert self._invoke(session_id, state_dir, tool_input).returncode == 2
+        _denial_reason(self._invoke(session_id, state_dir, tool_input))
+        _denial_reason(self._invoke(session_id, state_dir, tool_input))
 
     @pytest.mark.parametrize(
         ("label", "tool_input"),
@@ -237,7 +264,7 @@ class TestTaskStopBlock:
 
         assert recorded.returncode == 0
         assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["bg-task-1"]
-        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
+        _denial_reason(self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}))
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 0
 
     @pytest.mark.parametrize(
@@ -296,7 +323,7 @@ class TestTaskStopBlock:
         state_file = session_state.state_path(session_id)
         state = _read_session_state(tmp_path, session_id) if state_file.exists() else {}
         assert "quoted-task-1" not in (state.get("background_task_ids") or [])
-        assert self._invoke(session_id, state_dir, {"task_id": "quoted-task-1"}).returncode == 2
+        _denial_reason(self._invoke(session_id, state_dir, {"task_id": "quoted-task-1"}))
 
     def test_host_mcp_notice_allows_only_its_task_stop(
         self,
@@ -321,7 +348,7 @@ class TestTaskStopBlock:
         )
         assert recorded.returncode == 0
         assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["mcp-task-1"]
-        assert self._invoke(session_id, state_dir, {"task_id": "other-task"}).returncode == 2
+        _denial_reason(self._invoke(session_id, state_dir, {"task_id": "other-task"}))
         assert self._invoke(session_id, state_dir, {"task_id": "mcp-task-1"}).returncode == 0
 
     def test_structured_timeout_response_allows_only_its_task_stop(
@@ -352,7 +379,7 @@ class TestTaskStopBlock:
 
         assert recorded.returncode == 0
         assert _read_session_state(tmp_path, session_id).get("background_task_ids") == ["bo9oa1l0a"]
-        assert self._invoke(session_id, state_dir, {"task_id": "other-task"}).returncode == 2
+        _denial_reason(self._invoke(session_id, state_dir, {"task_id": "other-task"}))
         assert self._invoke(session_id, state_dir, {"task_id": "bo9oa1l0a"}).returncode == 0
 
     def test_agent_async_launch_allows_only_its_task_stop(
@@ -373,7 +400,7 @@ class TestTaskStopBlock:
         )
 
         assert recorded.returncode == 0
-        assert self._invoke(session_id, state_dir, {"task_id": "b0000000000000000"}).returncode == 2
+        _denial_reason(self._invoke(session_id, state_dir, {"task_id": "b0000000000000000"}))
         assert self._invoke(session_id, state_dir, {"task_id": "a8d4542d5607ca48d"}).returncode == 0
 
     def test_foreground_output_mentioning_background_id_is_not_ownership(
@@ -394,7 +421,7 @@ class TestTaskStopBlock:
         )
 
         assert recorded.returncode == 0
-        assert self._invoke(session_id, state_dir, {"task_id": "other-task"}).returncode == 2
+        _denial_reason(self._invoke(session_id, state_dir, {"task_id": "other-task"}))
 
     def test_other_task_is_blocked_even_with_recorded_background_tasks(
         self,
@@ -404,7 +431,7 @@ class TestTaskStopBlock:
         """記録に無いタスクの停止は、他のバックグラウンドタスクを記録済みでも遮断する。"""
         session_id = "task-stop-other-target"
         _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
-        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
+        _denial_reason(self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}))
 
     def test_recent_stall_detection_allows_only_matching_task(
         self,
@@ -419,7 +446,7 @@ class TestTaskStopBlock:
             {"stall_detection_completed_at_by_task": {"bg-task-1": time.time()}},
         )
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 0
-        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
+        _denial_reason(self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}))
 
     def test_stale_stall_detection_does_not_allow_task(
         self,
@@ -433,7 +460,7 @@ class TestTaskStopBlock:
             session_id,
             {"stall_detection_completed_at_by_task": {"bg-task-1": time.time() - 600}},
         )
-        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 2
+        _denial_reason(self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}))
         assert "stall_detection_completed_at_by_task" not in _read_session_state(tmp_path, session_id)
 
 
@@ -699,7 +726,7 @@ class TestWorkflowSkillInvocation:
         assert "/skills/delegation/SKILL.md" not in _additional_context(result)
 
     def test_no_notice_in_sidechain(self, tmp_path: pathlib.Path) -> None:
-        """サイドチェーンでは案内を返さない。"""
+        """サイドチェーンでは委譲の案内を返さない。"""
         result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
@@ -710,7 +737,7 @@ class TestWorkflowSkillInvocation:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert "/skills/delegation/SKILL.md" not in _additional_context(result)
 
     def test_agent_launch_after_workflow_skill_is_allowed(self, tmp_path: pathlib.Path) -> None:
         """`agent-toolkit:delegation`以外のスキルの起動後のAgent起動も、`agent-toolkit:delegation`の起動状態を問わない。"""
@@ -731,7 +758,8 @@ class TestWorkflowSkillInvocation:
             },
             env_overrides=env,
         )
-        assert skill_result.stdout == ""
+        assert skill_result.returncode == 0, skill_result.stderr
+        assert "/skills/delegation/SKILL.md" not in _additional_context(skill_result)
         assert agent_result.returncode == 0
         assert "agent-toolkit:delegation" not in agent_result.stderr
 

@@ -39,6 +39,7 @@ from agent_toolkit._hooks import (
     rules_context,
     work_contract,
 )
+from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks import tool_input as tool_input_fields
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
@@ -252,7 +253,14 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str) -> str:
         target.body()
     focus = f"。特に`{target.heading}`に注目せよ" if target.heading else ""
     skill = skill_name(path)
-    if subject != operation_skills.SUBJECT_CODEX and skill:
+    if (
+        subject != operation_skills.SUBJECT_CODEX
+        and skill
+        and (
+            subject == operation_skills.SUBJECT_SUBAGENT
+            or read_triggers.skill_invocation_required(path, host="claude", subject=subject)
+        )
+    ):
         step = f"`Skill`で`{skill}`を起動せよ（資料: `{path}`）"
         if subject == operation_skills.SUBJECT_SUBAGENT:
             step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
@@ -427,6 +435,19 @@ def row_matches(row: read_triggers.ReadTrigger, tool_name: str, tool_input: dict
     return False
 
 
+def condition_confirmed(row: read_triggers.ReadTrigger, tool_name: str, tool_input: dict, cwd: str) -> bool:
+    """操作契機と明示的な資料選択だけを確定し、自然文の判断を代行しない。"""
+    if row.kind != "判断" or not row.condition:
+        return True
+    # 確認ツールの呼出しは、確認本文・選択肢を起草する操作が成立した観測になる。
+    if "confirmation" in row.operations and matches("confirmation", tool_name, tool_input, cwd):
+        return True
+    return any(
+        operation.startswith(("read:", "section:")) and _bound_operation_matches(row, operation, tool_name, tool_input, cwd)
+        for operation in row.operations
+    )
+
+
 def _user_texts(entry: dict):
     """ホストのユーザー本文だけを取り出す。取得した資料・ツール出力の見出しを役割にしない。"""
     message = entry.get("message") if entry.get("type") == "user" else None
@@ -494,10 +515,10 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                     roles.add(role)
                     update_state(session_id, operation_skills.mark_ready(prefix + str(role), agent))
                     with contextlib.suppress(OSError, UnicodeError, ValueError):
-                        startup_methods = read_triggers.reference_method_targets(
+                        startup_methods = read_triggers.startup_targets(
                             role,
                             plugin_resources.plugin_root(),
-                            "codex" if is_codex_payload(payload) else "claude",
+                            host="codex" if is_codex_payload(payload) else "claude",
                             project=payload.get("cwd"),
                         )
                     context_seen = True
@@ -521,8 +542,12 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                             rendered in text
                             and agent not in records.get(rules_context.READ_CONTEXT_RESET_KEY, [])
                             and not (
-                                operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_MAIN
-                                and skill_name(target.path)
+                                skill_name(target.path)
+                                and read_triggers.skill_invocation_required(
+                                    target.path,
+                                    host="codex" if is_codex_payload(payload) else "claude",
+                                    subject=operation_skills.resolve_subject(payload),
+                                )
                             )
                         ):
                             _mark(session_id, target.path, agent, metadata["sha256"])
@@ -553,13 +578,23 @@ def _project_skill_rows(
     project: str = "",
 ) -> list[read_triggers.ReadTrigger]:
     """選択した資料と、同じ主体が全文取得したplugin資料の宣言を使う。"""
-    rows = []
+    rows: list[read_triggers.ReadTrigger] = []
     selected = set(paths)
+    origins: dict[pathlib.Path, list[dict]] = {}
     for key, owners in records.items():
         if agent not in owners:
             continue
         if key.startswith("resolved-project-skill:"):
             selected.add(pathlib.Path(key.removeprefix("resolved-project-skill:")))
+        elif key.startswith("selected-read-target:"):
+            # 未読の起動資料も、選択元の現行宣言を次要求で再解決する。
+            # 本文の参照先変更はこの後のparse_tablesへ反映し、保存時のtargetsを復活させない。
+            recorded_origins = json.loads(key.removeprefix("selected-read-target:")).get("declarations", [])
+            if isinstance(recorded_origins, list):
+                for origin in recorded_origins:
+                    source = origin.get("source") if isinstance(origin, dict) else None
+                    if isinstance(source, str) and pathlib.Path(source).is_absolute():
+                        origins.setdefault(pathlib.Path(source).resolve(), []).append(origin)
         elif key.startswith(document_reads.READ_TRIGGER_PREFIX):
             value, separator, fingerprint = key.removeprefix(document_reads.READ_TRIGGER_PREFIX).rpartition("#sha256:")
             if separator and len(fingerprint) == 64:
@@ -570,13 +605,18 @@ def _project_skill_rows(
                     and document_reads.content_fingerprint(path) == fingerprint
                 ):
                     selected.add(path)
-    for path in sorted(selected):
-        path = path.resolve()
+    selected = {path.resolve() for path in selected}
+    for path in sorted(selected | origins.keys()):
         if path.suffix != ".md" or not path.is_file() or path in (known_sources or set()):
             continue
         explicit = "resolved-project-skill:" + str(path)
         if _document_owner(path) is not None or agent in records.get(explicit, []):
-            rows.extend(read_triggers.parse_tables(path, plugin_resources.plugin_root(), host=host, project=project))
+            # 未読の宣言元は選択済みの行だけを復元し、別工程の行を有効にしない。
+            rows.extend(
+                row
+                for row in read_triggers.parse_tables(path, plugin_resources.plugin_root(), host=host, project=project)
+                if path in selected or _declaration_identity(row) in origins.get(path, [])
+            )
     return rows
 
 
@@ -687,6 +727,9 @@ def dynamic_targets(
                 targets.extend(candidate.targets)
         return list(dict.fromkeys(targets))
     if row.selector == "external-pytilpack-index":
+        if is_codex_payload(payload):
+            # CodexにはWebFetchの観測契約がない。取得手段は本文の条件に従って選ぶ。
+            return []
         index_ready = agent in records.get("external-document:https://ak110.github.io/pytilpack/llms.txt", [])
         pages = [
             key
@@ -705,6 +748,13 @@ def _mark(session_id: str, path: pathlib.Path, agent: str, fingerprint: str = ""
     identifier = document_key(path, fingerprint)
     update_state(session_id, operation_skills.mark_ready(identifier, agent))
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    outstanding = [
+        target
+        for target in selected_targets(records, agent)
+        if agent in records.get("read-guidance:" + document_key(target.path), []) and not target_ready(records, target, agent)
+    ]
+    if not outstanding:
+        notice_module.resolve_notice(session_id, "pretooluse", "_deliver_documents", subject=agent)
     if agent in records.get("review-output:" + str(path), []):
         raw = path.read_bytes()
         if fingerprint and document_reads.bytes_fingerprint(raw) != fingerprint:
@@ -747,11 +797,24 @@ def target_ready(records: dict, target: read_triggers.ReadTarget, agent: str) ->
     return document_reads.content_ready(records, document_reads.content_fingerprint(target.path), agent)
 
 
-def selected_targets(records: dict, agent: str) -> list[read_triggers.ReadTarget]:
-    targets = []
+def _declaration_identity(row: read_triggers.ReadTrigger) -> dict:
+    """行移動や参照見出しの改名をまたいで、選択元の宣言を識別する。"""
+    return {"source": str(row.source), "operations": list(row.operations), "kind": row.kind, "selector": row.selector}
+
+
+def selected_targets(
+    records: dict, agent: str, *, rows: list[read_triggers.ReadTrigger] | None = None
+) -> list[read_triggers.ReadTarget]:
+    targets: list[read_triggers.ReadTarget] = []
     for key, agents in records.items():
         if key.startswith("selected-read-target:") and agent in agents:
             raw = json.loads(key.removeprefix("selected-read-target:"))
+            if rows is not None and raw.get("declarations"):
+                # 保存時の見出しを再利用せず、現在の宣言が示す対象を解決する。
+                targets.extend(
+                    target for row in rows if _declaration_identity(row) in raw["declarations"] for target in row.targets
+                )
+                continue
             path = pathlib.Path(raw["path"])
             if not path.is_file():
                 continue
@@ -764,7 +827,7 @@ def selected_targets(records: dict, agent: str) -> list[read_triggers.ReadTarget
                     # 保存時の`_select_targets`と同じく選択から外す。
                     continue
             targets.append(target)
-    return targets
+    return list(dict.fromkeys(targets))
 
 
 def _unmark(identifier: str, agent: str) -> Callable[[dict], dict | None]:
@@ -786,7 +849,21 @@ def _unmark(identifier: str, agent: str) -> Callable[[dict], dict | None]:
     return mutate
 
 
-def _select_targets(session_id: str, targets: list[read_triggers.ReadTarget], agent: str) -> None:
+def _select_targets(
+    session_id: str,
+    targets: list[read_triggers.ReadTarget],
+    agent: str,
+    *,
+    rows: list[read_triggers.ReadTrigger] | None = None,
+) -> None:
+    current = {target.path for target in targets}
+    records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    for key, owners in records.items():
+        if key.startswith("selected-read-target:") and agent in owners:
+            old = json.loads(key.removeprefix("selected-read-target:"))
+            path = pathlib.Path(old["path"])
+            if path in current:
+                update_state(session_id, _unmark(key, agent))
     for target in targets:
         if target.heading:
             try:
@@ -794,7 +871,11 @@ def _select_targets(session_id: str, targets: list[read_triggers.ReadTarget], ag
             except ValueError:
                 # 不正な宣言を保持すると、宣言を復旧した後にも旧見出しが残る。
                 continue
-        value = json.dumps({"path": str(target.path), "heading": target.heading}, ensure_ascii=False, separators=(",", ":"))
+        selected: dict[str, object] = {"path": str(target.path), "heading": target.heading}
+        origins = [_declaration_identity(row) for row in rows or () if target in row.targets]
+        if origins:
+            selected["declarations"] = origins
+        value = json.dumps(selected, ensure_ascii=False, separators=(",", ":"))
         update_state(session_id, operation_skills.mark_ready("selected-read-target:" + value, agent))
 
 
@@ -886,8 +967,10 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                     for target, start, end, length, fingerprint in _read_body_proofs(
                         name, inputs, response, read_paths, paths | set(read_paths), cwd
                     ):
-                        if operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_MAIN and skill_name(
-                            target.path
+                        if skill_name(target.path) and read_triggers.skill_invocation_required(
+                            target.path,
+                            host="codex" if is_codex_payload(payload) else "claude",
+                            subject=operation_skills.resolve_subject(payload),
                         ):
                             continue
                         ranges.setdefault(fingerprint, []).append((start, end))
@@ -972,8 +1055,52 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     decision = _deliver_documents(payload, tool_name, tool_input, session_id)
     if decision.block is not None:
         return decision
+    candidate_notice = _condition_candidate_notice(payload, tool_name, tool_input, session_id)
+    if candidate_notice:
+        decision = dataclasses.replace(decision, notices=(*decision.notices, candidate_notice))
     notice = _foreign_task_document_notice(payload, tool_name, tool_input, session_id)
     return dataclasses.replace(decision, notices=(*decision.notices, notice)) if notice else decision
+
+
+def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str:
+    """機械確定できない判断条件を、案内済み遮断の集合へ加えずに提示する。"""
+    if not session_id or delegated_session.is_lightweight_delegated(os.environ):
+        return ""
+    cwd = str(payload.get("cwd", ""))
+    handoff = delegated_session.handoff_path(os.environ)
+    written = operation_skills.written_paths(tool_name, tool_input, cwd)
+    if handoff and written and all(pathlib.Path(path).resolve() == pathlib.Path(handoff).resolve() for path in written):
+        return ""
+    agent = agent_id.resolve_hook_agent_id(payload)
+    records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    records = records if isinstance(records, dict) else {}
+    roles = active_roles(payload, session_id, records, agent) | _subagent_task_documents(payload)
+    try:
+        rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude", session_id=session_id)
+        candidates = [
+            row
+            for row in rows
+            if (not row.source.name.endswith(".subagent.md") or row.source in roles)
+            and row_matches(row, tool_name, tool_input, cwd)
+            and not condition_confirmed(row, tool_name, tool_input, cwd)
+            and any(not target_ready(records, target, agent) for target in row.targets)
+        ]
+    except OSError, UnicodeError, ValueError:
+        # 宣言の取得失敗は本体の診断が通知する。
+        return ""
+    if not candidates:
+        return ""
+    shown = "\n".join(
+        f"- 条件: {row.condition}。資料: {'、'.join(str(target) for target in row.targets)}（宣言: {row.source}:{row.line}）"
+        for row in candidates
+    )
+    return _llm_notice(
+        "現在の操作に関連する読込条件の候補。条件の成立は未確定である。\n" + shown,
+        tag=_WARN_TAG,
+        fix="自身の役割と現工程で各条件が成立するか確認し、成立する資料だけを判断・操作の前に全文読め。",
+        removable_cause=True,
+        escalate_on_repeat=False,
+    )
 
 
 def _subagent_task_documents(payload: dict) -> set[pathlib.Path]:
@@ -1071,6 +1198,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     written = operation_skills.written_paths(tool_name, tool_input, cwd)
     if handoff and written and all(pathlib.Path(path).resolve() == pathlib.Path(handoff).resolve() for path in written):
         return Decision()
+    diagnostic = operation_skills.is_diagnostic_operation(tool_name, tool_input, cwd)
     warning_only = tool_name in {"AskUserQuestion", "ExitPlanMode", "request_user_input", "request_user_input_async"}
     try:
         rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude", session_id=session_id)
@@ -1128,7 +1256,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     agent = agent_id.resolve_hook_agent_id(payload)
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     records = records if isinstance(records, dict) else {}
-    roles = active_roles(payload, session_id, records, agent)
+    roles = active_roles(payload, session_id, records, agent) | _subagent_task_documents(payload)
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     records = records if isinstance(records, dict) else {}
     try:
@@ -1147,10 +1275,13 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 ]
             )
         )
+        # 現在の役割で除外した宣言は、選択履歴の保存・再接続にも使用しない。
+        rows = [row for row in rows if not row.source.name.endswith(".subagent.md") or row.source in roles]
         pending = list(
             dict.fromkeys(
                 target
                 for row in rows
+                if condition_confirmed(row, tool_name, tool_input, cwd)
                 if (
                     row_matches(row, tool_name, tool_input, cwd)
                     or row.selector == "artifact-standards"
@@ -1169,7 +1300,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         # 残る工程で必要な資料は、現在の操作の宣言が改めて選んだ時点で案内する。
         carried = [
             target
-            for target in selected_targets(records, agent)
+            for target in selected_targets(records, agent, rows=rows)
             if target not in pending
             and not target_ready(records, target, agent)
             and agent not in records.get(rules_context.carried_read_target_key(target.path), [])
@@ -1225,6 +1356,8 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     pending.extend(
                         item for item in row.targets if item not in pending and not target_ready(records, item, agent)
                     )
+        # 選択資料の解析で追加した宣言にも、同じ役割境界を適用する。
+        rows = [row for row in rows if not row.source.name.endswith(".subagent.md") or row.source in roles]
     except (OSError, ValueError) as error:
         if isinstance(error, FileNotFoundError) and isinstance(error.filename, str):
             missing = read_triggers.ReadTarget(pathlib.Path(error.filename))
@@ -1280,17 +1413,17 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     records = records if isinstance(records, dict) else {}
     command = tool_input.get("command")
     if tool_name in {"Read", "Skill"} or (tool_name == "Bash" and isinstance(command, str) and _pure_bash_read(command, cwd)):
-        _select_targets(session_id, pending, agent)
+        _select_targets(session_id, pending, agent, rows=rows)
         return Decision()
     acquisition_paths = _read_paths(tool_name, tool_input, cwd)
     if any(row.selector == "project-skill" and row_matches(row, tool_name, tool_input, cwd) for row in rows):
         # 選択したSKILLの初動資料を案内し、取得操作は遮らずPostToolUseで観測する。
-        _select_targets(session_id, pending, agent)
+        _select_targets(session_id, pending, agent, rows=rows)
         pending = [target for target in pending if target.path not in acquisition_paths]
         if not pending:
             return Decision()
     if any(target.path in acquisition_paths for target in pending):
-        _select_targets(session_id, pending, agent)
+        _select_targets(session_id, pending, agent, rows=rows)
         pending = [target for target in pending if target.path not in acquisition_paths]
         if not pending:
             # 取得操作を許可し、PostToolUseで返却本文と資料の読取範囲が一致するか確かめる。
@@ -1302,20 +1435,27 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         history_path = payload.get("transcript_path")
         if isinstance(history_path, str) and history_path and transcript.read_transcript_lines(history_path) is None:
             return Decision()
-    # 同じ資料の節違いは1件の全文取得で足りるため、パスごとに1回だけ示す。
+    # 同じ資料の節違いは1件の全文取得で十分なため、パスごとに1回だけ示す。
     shown = "、".join(dict.fromkeys(f"`{target.path}`" for target in pending))
     subject = operation_skills.resolve_subject(payload)
     if subject == operation_skills.SUBJECT_CODEX:
         methods = "指定されたシェルコマンド"
     else:
-        has_skill = any(skill_name(target.path) for target in pending)
-        has_read = any(not skill_name(target.path) for target in pending) or subject == operation_skills.SUBJECT_SUBAGENT
+        has_skill = any(
+            skill_name(target.path)
+            and (
+                subject == operation_skills.SUBJECT_SUBAGENT
+                or read_triggers.skill_invocation_required(target.path, host="claude", subject=subject)
+            )
+            for target in pending
+        )
+        has_read = any(
+            not skill_name(target.path)
+            or not read_triggers.skill_invocation_required(target.path, host="claude", subject=subject)
+            for target in pending
+        )
         methods = "指定されたSkill・Read" if has_skill and has_read else "指定されたSkill" if has_skill else "指定されたRead"
-    followup = (
-        "読んだ後に、書いた内容をその基準で見直し、必要なら直せ。"
-        if operation_skills.written_paths(tool_name, tool_input, cwd)
-        else ""
-    )
+    followup = "読んだ後に、書いた内容をその基準で見直し、必要なら直せ。" if written and not diagnostic else ""
     instruction = f"次の資料を、この操作の結果を使う前に{methods}で全文取得せよ。必須手順であり省略するな。{followup}"
     failures: dict[read_triggers.ReadTarget, str] = {}
     for target in pending:
@@ -1345,7 +1485,8 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     acquisition = (
         "。".join(_merged_steps(pending, failures, subject)) + "。出力が省略された範囲は分割して取得し、必要な全文を読め。"
     )
-    if not warning_only and written:
+    guided: list[read_triggers.ReadTarget] = []
+    if not warning_only and written and not diagnostic:
         # 文脈境界の前に選んだ資料は、現在の操作が改めて対象にするまで案内済みとせず、遮断の根拠にもしない。
         # 境界後に案内した資料の未取得だけで止め、成功した全文取得で解除する契約は保つ。
         guided = [
@@ -1362,8 +1503,6 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     + "。出力が省略された範囲は分割して取得し、必要な全文を読め。全文取得後に元の書込操作を再発行せよ。",
                 )
             )
-        for target in guided:
-            update_state(session_id, operation_skills.mark_ready("read-guidance:" + document_key(target.path), agent))
     if warning_only:
         return Decision(
             notices=(
@@ -1376,18 +1515,24 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 ),
             )
         )
-    _select_targets(session_id, pending, agent)
-    return Decision(
-        notices=(
-            _llm_notice(
-                f"{instruction}\n未取得資料: {shown}。\n判断や記述を資料の基準に合わせるため。",
-                tag=_WARN_TAG,
-                removable_cause=True,
-                escalate_on_repeat=False,
-                fix=acquisition + followup,
-            ),
-        )
+    _select_targets(session_id, pending, agent, rows=rows)
+    notice = _llm_notice(
+        f"{instruction}\n未取得資料: {shown}。\n判断や記述を資料の基準に合わせるため。",
+        tag=_WARN_TAG,
+        removable_cause=True,
+        escalate_on_repeat=False,
+        fix=acquisition + followup,
     )
+    if not warning_only and written and not diagnostic:
+        for target in guided:
+            notice_module.stage_delivery(
+                notice,
+                session_id,
+                rules_context.OPERATION_SKILL_READY_KEY,
+                "read-guidance:" + document_key(target.path),
+                agent,
+            )
+    return Decision(notices=(notice,))
 
 
 def _merged_steps(
@@ -1466,6 +1611,7 @@ def _read_body_proofs(
         response.get("exit_code", 0) != 0
         or response.get("interrupted")
         or response.get("is_error")
+        or response.get("isError")
         or isinstance(response.get("file"), dict)
         and response["file"].get("truncatedByTokenCap")
     ):
@@ -1556,6 +1702,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         response.get("exit_code", 0) != 0
         or response.get("interrupted")
         or response.get("is_error")
+        or response.get("isError")
         or isinstance(response.get("file"), dict)
         and response["file"].get("truncatedByTokenCap")
     ):
@@ -1563,7 +1710,16 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     cwd = payload.get("cwd", "")
     cwd = cwd if isinstance(cwd, str) else ""
     agent = agent_id.resolve_hook_agent_id(payload)
-    if tool_name == "WebFetch" and isinstance(tool_input.get("url"), str) and response and not host_truncated(response):
+    fetch_failed = isinstance(response, dict) and (
+        bool(response.get("error")) or isinstance(response.get("code"), int) and not 200 <= response["code"] < 300
+    )
+    if (
+        tool_name == "WebFetch"
+        and isinstance(tool_input.get("url"), str)
+        and response
+        and not fetch_failed
+        and not host_truncated(response)
+    ):
         update_state(session_id, operation_skills.mark_ready("external-document:" + tool_input["url"], agent))
     for path in operation_skills.written_paths(tool_name, tool_input, cwd):
         if operation_skills.is_agent_doc_target_file(path):
@@ -1635,7 +1791,11 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             _mark(session_id, resolved, agent)
         return
     for target, start, end, length, fingerprint in _read_body_proofs(tool_name, tool_input, response, paths, targets, cwd):
-        if operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_MAIN and skill_name(target.path):
+        if skill_name(target.path) and read_triggers.skill_invocation_required(
+            target.path,
+            host="codex" if is_codex_payload(payload) else "claude",
+            subject=operation_skills.resolve_subject(payload),
+        ):
             continue
         if start == 0 and end == length:
             _mark(session_id, target.path, agent, fingerprint)

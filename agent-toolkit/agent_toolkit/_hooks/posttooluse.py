@@ -38,12 +38,11 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 
 import json
 import re
-import sys
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import shlex
 
-from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
+from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._atk import run_script as _run_script
 lazy from agent_toolkit._common import plugin_environment
@@ -602,6 +601,7 @@ def main(payload_text: str) -> int:
     フック応答はstdout全体を1つのJSONとして解析されるため、各記録処理が返した通知本文を
     改行で連結して1回だけ出力する。
     """
+    begin_delivery()
     notices: list[str] = []
     parsed = _parse_hook_payload(payload_text)
     if parsed is not None:
@@ -626,14 +626,21 @@ def main(payload_text: str) -> int:
             and tool_name == "Bash"
             and _codex_read_observation.response_is_truncated(payload.get("tool_response"))
         ):
-            notices.append(_codex_read_observation.TRUNCATED_OUTPUT_NOTICE)
+            notices.append(_llm_notice(_codex_read_observation.TRUNCATED_OUTPUT_NOTICE))
         notices.extend(_observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name))
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
             notices.append(self_check_notice)
     try:
         termination_evidence.observe_tool(payload_text, after=True)
     except (OSError, ValueError, TypeError, KeyError) as error:
-        print(f"終了工程の実行結果を取得できない: {error}", file=sys.stderr)
+        notices.append(
+            _llm_notice(
+                f"終了工程の実行結果を取得できない: {error}",
+                tag="warn",
+                removable_cause=False,
+                fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+            )
+        )
     try:
         payload = json.loads(payload_text)
     except json.JSONDecodeError, ValueError:
@@ -651,5 +658,5 @@ def main(payload_text: str) -> int:
             hook_specific["additionalContext"] = "\n".join(notices)
         if updated_output is not None:
             hook_specific["updatedToolOutput"] = updated_output
-        print(json.dumps({"hookSpecificOutput": hook_specific}, ensure_ascii=False))
+        emit_response({"hookSpecificOutput": hook_specific})
     return 0

@@ -1,8 +1,8 @@
 """agent-toolkit/agent_toolkit/hook.py のテスト。
 
 フック共通エントリポイントが、モジュール読込段階の失敗と`main()`実行中の例外を
-区別して扱うことを検証する。読込失敗では素のtracebackだけを標準エラー出力へ書き、
-`main()`実行中の例外では要約1行とtracebackを書いたうえでStop共通処理の空JSON応答を返す。
+区別して扱うことを検証する。配送先が確定した入力では内部例外を標識付き通知へ変換し、
+Stop・SessionEndやイベント不明の入力では出力を停止する。
 Stopとprocess-loopを呼び出した場合の親子セッションの中断処理も検証する。
 Python 3.15の遅延読み込みでは、公開hookが処理分岐で使わない依存を読み込まずに同じ応答を返すことと、
 同一プロセスで反復して呼んでも状態に従って応答が変わることを検証する。
@@ -11,6 +11,7 @@ Python 3.15の遅延読み込みでは、公開hookが処理分岐で使わな�
 # 共通entrypointとのサブコマンド契約をテスト側にも固定するため意図的に重複する。
 
 import contextlib
+import importlib
 import io
 import json
 import os
@@ -31,10 +32,18 @@ from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
-from agent_toolkit._common import inherited_venv, session_activity, session_registry, session_state, state_paths
+from agent_toolkit._common import (
+    inherited_venv,
+    plugin_environment,
+    session_activity,
+    session_registry,
+    session_state,
+    state_paths,
+)
 from agent_toolkit._common import plugin_roots as resource_roots
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._common.plugin_roots import _inventories, _plugin_inventory, _reusable
+from agent_toolkit._hooks import notice
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
@@ -65,10 +74,11 @@ def test_unknown_hook_warning_once_per_payload_session(
     argv: list[str],
 ) -> None:
     """hook入力の会話識別子ごとに、同じ引数不整合の警告を1回だけ表示する。"""
-    for identifier, expected in (("first", True), ("first", False), ("second", True), (None, True), (None, True)):
+    for identifier in ("first", "first", "second", None, None):
         monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"session_id": identifier})))
         assert _hook.main(argv) == 0
-        assert bool(capsys.readouterr().err) is expected
+        captured = capsys.readouterr()
+        assert not captured.err and not captured.out
 
 
 def _registered_subcommands() -> tuple[str, ...]:
@@ -102,6 +112,141 @@ def test_every_hook_command_converts_launch_failure_to_non_blocking() -> None:
     """全hookの起動コマンドが、起動失敗を非遮断へ変換する末尾を持つ。"""
     missing = [f"{name}: {command}" for name, command in _definition_commands() if not command.endswith(_HOOK_FAILURE_SUFFIX)]
     assert not missing
+
+
+@pytest.mark.skipif(os.name == "nt", reason="登録コマンドをPOSIXシェルで検証する")
+@pytest.mark.parametrize("definition", _HOOK_DEFINITIONS, ids=lambda path: path.name)
+@pytest.mark.parametrize("case", ["pattern-kill", "unread-rewrite"])
+def test_registered_pretooluse_command_preserves_normal_denial(definition, tmp_path, case) -> None:
+    shell = shutil.which("sh")
+    assert shell is not None
+    command = json.loads(definition.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    launcher = "uv run --no-config --no-project --python 3.15 python "
+    assert command.startswith(launcher)
+    command = shlex.quote(sys.executable) + " " + command.removeprefix(launcher)
+    environment = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(_SCRIPT.parents[1]), "PLUGIN_ROOT": str(_SCRIPT.parents[1])}
+    # 依存導入を実行せず、試験を実行中のPythonを準備済み環境の境界へ接続する。
+    environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path / "runtime")
+    selected = plugin_environment.project_environment(_SCRIPT.parents[1], environment)
+    runner = plugin_environment.python_path(selected)
+    runner.parent.mkdir(parents=True)
+    runner.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable) + ' "$@"\n', encoding="utf-8")
+    runner.chmod(0o700)
+    (selected / ".agent-toolkit-dependencies-ready").write_text("ready\n", encoding="utf-8")
+    payload = {"session_id": "registered-denial", "tool_name": "Bash", "tool_input": {"command": "pkill -f worker"}}
+    expected = "pkill"
+    if case == "unread-rewrite":
+        payload.update(tool_name="Write", tool_input={"file_path": str(tmp_path / "note.md"), "content": "本文"})
+        first = subprocess.run(
+            [shell, "-c", command],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            env=environment,
+            cwd=tmp_path,
+        )
+        assert first.returncode == 0 and not first.stderr
+        assert "additionalContext" in json.loads(first.stdout)["hookSpecificOutput"]
+        expected = "未取得"
+    result = subprocess.run(
+        [shell, "-c", command],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        env=environment,
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0
+    assert not result.stderr
+    specific = json.loads(result.stdout)["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    assert expected in specific["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize("subcommand", ["pretooluse", "posttooluse", "user_prompt_submit"])
+@pytest.mark.parametrize("partial", [False, True])
+def test_failure_merges_with_partial_output_as_one_json(monkeypatch, subcommand, partial) -> None:
+    module = importlib.import_module(f"agent_toolkit._hooks.{subcommand}")
+
+    def fail(_payload, **_kwargs):
+        if partial:
+            print(json.dumps({"hookSpecificOutput": {"additionalContext": "既存の通知"}}))
+        raise RuntimeError("故障注入")
+
+    monkeypatch.setattr(module, "main", fail)
+    result = _run_hook_in_process(subcommand, {"session_id": "failure-merge"})
+    assert result.returncode == 0
+    assert not result.stderr
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert 'source="hook" kind="warn"' in context
+    assert "故障注入" in context
+    assert ("既存の通知" in context) is partial
+
+
+def test_discarded_codex_stop_notice_is_not_recorded(monkeypatch) -> None:
+    module = importlib.import_module("agent_toolkit._hooks.stop")
+    advisor = importlib.import_module("agent_toolkit._hooks.termination_order_advisor")
+
+    def evaluate(_payload, **_kwargs):
+        return "notify", notice.formatter("discarded")("通知本文")
+
+    monkeypatch.setattr(module, "CODEX_CHECK_MODULE_NAMES", ("termination_order_advisor",))
+    monkeypatch.setattr(advisor, "evaluate", evaluate)
+    result = _run_hook_in_process("stop", {"session_id": "discarded-stop", "turn_id": "turn"})
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == {}
+    assert not result.stderr
+    assert not session_state.read_state("discarded-stop").get("notice_fingerprints")
+
+
+def test_module_failure_never_records_previous_session(monkeypatch):
+    """handler読込前の障害も、現在のpayloadの会話だけへ記録する。"""
+    original = importlib.import_module
+
+    def fail(name, *args, **kwargs):
+        if name == "agent_toolkit._hooks.pretooluse":
+            raise ImportError("モジュール読込の故障注入")
+        return original(name, *args, **kwargs)
+
+    notice.set_warning_session_id("previous-payload")
+    monkeypatch.setattr(importlib, "import_module", fail)
+    result = _run_hook_in_process("pretooluse", {"session_id": "current-payload"})
+    assert result.returncode == 0 and not result.stderr
+    assert "モジュール読込の故障注入" in json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert session_state.read_state("current-payload")["notice_fingerprints"]
+    assert not session_state.read_state("previous-payload").get("notice_fingerprints")
+
+
+@pytest.mark.parametrize(
+    ("subcommand", "module_name", "function", "payload"),
+    [
+        ("pretooluse", "termination_evidence", "observe_tool", {"tool_name": "Read", "tool_input": {}}),
+        ("posttooluse", "termination_evidence", "observe_tool", {"tool_name": "Read", "tool_input": {}}),
+        ("user_prompt_submit", "termination_evidence", "observe_user", {"prompt": "確認する"}),
+        ("user_prompt_submit", "work_contract", "observe_input", {"prompt": "確認する"}),
+    ],
+)
+def test_internal_observation_failure_uses_one_marked_context(monkeypatch, subcommand, module_name, function, payload):
+    """個別処理が捕捉する内部障害も、単一JSONの追加コンテキストへ配送する。"""
+    module = importlib.import_module("agent_toolkit._hooks." + module_name)
+
+    def fail(*_args, **_kwargs):
+        raise OSError("観測の故障注入")
+
+    monkeypatch.setattr(module, function, fail)
+    result = _run_hook_in_process(subcommand, {"session_id": "internal-failure", **payload})
+    assert result.returncode == 0
+    assert not result.stderr
+    response = json.loads(result.stdout)
+    context = response["hookSpecificOutput"]["additionalContext"]
+    assert f'source="{subcommand}" kind="warn"' in context
+    assert "観測の故障注入" in context
+    assert "次の操作:" in context
+    assert response.get("decision") != "block"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXシェルでの起動コマンドの終了コードを確かめる")
@@ -157,7 +302,7 @@ class TestEntrypointExceptionStages:
     _copy_entrypoint = staticmethod(_copy_entrypoint)
 
     @pytest.mark.parametrize("subcommand", ["stop"])
-    def test_main_import_error_emits_summary_traceback_and_empty_json(
+    def test_stop_main_import_error_is_silent(
         self,
         tmp_path: pathlib.Path,
         subcommand: str,
@@ -182,12 +327,10 @@ class TestEntrypointExceptionStages:
         )
 
         assert result.returncode == 0
-        assert result.stdout == "{}\n"
-        assert auto_message_opening_attributes(result.stderr) == {"source": "hook", "kind": "warn"}
-        assert f"\n[{subcommand}] 想定外エラー: ImportError: main failure" in result.stderr
-        assert "Traceback (most recent call last):" in result.stderr
+        assert not result.stdout
+        assert not result.stderr
 
-    def test_module_import_error_emits_only_traceback(self, tmp_path: pathlib.Path) -> None:
+    def test_session_end_module_import_error_is_silent(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
         (tmp_path / "_hooks" / "session_end_cleanup.py").write_text(
             "raise ImportError('module failure')\n",
@@ -204,8 +347,7 @@ class TestEntrypointExceptionStages:
 
         assert result.returncode == 0
         assert not result.stdout
-        assert result.stderr.startswith("Traceback (most recent call last):")
-        assert "[session_end_cleanup] 想定外エラー" not in result.stderr
+        assert not result.stderr
 
     def test_non_approve_fallback_subcommand_exception_returns_0_without_json(
         self,
@@ -225,10 +367,10 @@ class TestEntrypointExceptionStages:
             check=False,
         )
         assert result.returncode == 0
-        assert not result.stdout
-        assert auto_message_opening_attributes(result.stderr) == {"source": "hook", "kind": "warn"}
-        assert "\n[pretooluse] 想定外エラー: RuntimeError: boom" in result.stderr
-        assert "Traceback (most recent call last):" in result.stderr
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert auto_message_opening_attributes(context) == {"source": "hook", "kind": "warn"}
+        assert "[pretooluse] 想定外エラー: RuntimeError: boom" in context
+        assert not result.stderr
 
     def test_session_end_cleanup_exception_returns_0_without_json(
         self,
@@ -249,8 +391,7 @@ class TestEntrypointExceptionStages:
         )
         assert result.returncode == 0
         assert not result.stdout
-        assert auto_message_opening_attributes(result.stderr) == {"source": "hook", "kind": "warn"}
-        assert f"\n[{subcommand}] 想定外エラー: RuntimeError: boom" in result.stderr
+        assert not result.stderr
 
 
 class TestStandardInputAndPayloadDump:
@@ -307,7 +448,7 @@ class TestStandardInputAndPayloadDump:
 
         assert result.returncode == 0
         assert not result.stdout
-        assert "UTF-8" in result.stderr.decode("utf-8")
+        assert not result.stderr
         assert not marker.exists()
 
     def test_unknown_subcommand_reports_definition_mismatch(self) -> None:
@@ -321,12 +462,7 @@ class TestStandardInputAndPayloadDump:
         stderr = result.stderr.decode("utf-8")
         assert result.returncode == 0
         assert not result.stdout
-        assert auto_message_opening_attributes(stderr) == {"source": "hook", "kind": "warn"}
-        assert "\nhook定義と実装が不整合:" in stderr
-        assert "stop_advisor" in stderr
-        # 従来2形式の登録名に、イベント名を別引数で受け取る公開antigravity adapterを加える。
-        public_subcommands = sorted((*_SUBCOMMANDS, "antigravity"))
-        assert f"現行のサブコマンド: {'|'.join(public_subcommands)}。" in stderr
+        assert not stderr
 
     def test_no_subcommand_reports_usage(self) -> None:
         result = subprocess.run(
@@ -339,8 +475,7 @@ class TestStandardInputAndPayloadDump:
         assert result.returncode == 0
         assert not result.stdout
         stderr = result.stderr.decode("utf-8")
-        assert auto_message_opening_attributes(stderr) == {"source": "hook", "kind": "warn"}
-        assert "\nusage: hook.py <" in stderr
+        assert not stderr
 
     def test_entrypoint_inherits_predecessor_session_state(self, tmp_path: pathlib.Path) -> None:
         """各サブコマンドへ渡す前に共通処理が前身状態を継承する。"""
@@ -403,7 +538,8 @@ class TestStandardInputAndPayloadDump:
         )
 
         assert result.returncode == 0
-        assert "日本語の読込失敗" in result.stderr.decode("utf-8")
+        assert "日本語の読込失敗" in result.stdout.decode("utf-8")
+        assert not result.stderr
 
     def test_dump_preserves_input_bytes(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)

@@ -364,7 +364,7 @@ jobs:
       run:
         shell: bash
     strategy:
-      # 一方の検査が失敗しても、lintとpytestの両方の結果を取得する
+      # 一方の検査が失敗しても、lintと分割したpytestの全結果を取得する
       fail-fast: false
       matrix:
         include:
@@ -372,8 +372,11 @@ jobs:
             check: lint
             check-name: python-lint (3.15)
           - python-version: "3.15"
-            check: pytest
+            check: pytest-root
             check-name: pytest (3.15)
+          - python-version: "3.15"
+            check: pytest-toolkit
+            check-name: pytest-toolkit (3.15)
     env:
       # 開発モード: DeprecationWarning などの隠れた問題を早期検出する
       PYTHONDEVMODE: "1"
@@ -454,7 +457,7 @@ jobs:
 
       - name: Git 2.34.1の導入
         id: minimum-git
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check != 'lint'
         # agent-toolkitが対応する最低版のGit（README.mdの前提条件）。Ubuntu 22.04の公式パッケージを展開し、
         # 開発用のGitを置き換えずに実Gitテストだけへ渡す。版を変える場合はREADME.mdの記載も同じ変更で更新する。
         env:
@@ -472,13 +475,31 @@ jobs:
           "$root/git" --version | grep -Fx "git version 2.34.1"
           echo "git=$root/git" >> "$GITHUB_OUTPUT"
 
-      - name: Python 3.15 pytest
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
+      - name: Python 3.15 pytest 直下
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest-root'
         env:
           AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
-        # agent-toolkitの全テストを含む通常のpytestを、Git呼び出しを新設した経路も個別の指定なしに最低版で検収する。
-        # 外側の上限に達した場合も失敗した試験名を保持し、失敗件数による途中終了を避ける。
-        run: pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'
+        # pyfltrのalways-targetsは両subprojectへ展開されるため、直下は対象を明示してpytestを呼ぶ。
+        # toolkit原本とCodex投影を除き、横断不変条件も所属するjobだけで実行する。
+        run: |
+          set -euo pipefail
+          git ls-files -z -- '*_test.py' 'test_*.py' \
+            ':!:agent-toolkit/**' ':!:agent-toolkit-codex/**' \
+            > "$RUNNER_TEMP/pytest-root-targets"
+          mapfile -d '' -t targets < "$RUNNER_TEMP/pytest-root-targets"
+          test "${#targets[@]}" -gt 0
+          uv run --frozen pytest -v --maxfail=0 "${targets[@]}"
+
+      - name: Python 3.15 pytest toolkit
+        if: >-
+          needs.common-ci-owner.outputs.owns == 'true' &&
+          matrix.python-version == '3.15' && matrix.check == 'pytest-toolkit'
+        env:
+          AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
+        # skills配下と横断不変条件も含む。両jobとも既存設定の4worker・workstealを使う。
+        run: >-
+          pyfltr ci --work-dir agent-toolkit --commands=pytest
+          --pytest-args='-v --maxfail=0' agent-toolkit
 
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'

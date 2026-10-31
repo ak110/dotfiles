@@ -25,6 +25,7 @@ description: 「PRをマージして」などの明示的な依頼を受けた�
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-basics:bugfix/references/ci-failure-handling.md`、`agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md`、`read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` | |
+| 必須CIの結果を成功時も含めて検収する前 | `../dotfiles-development/references/verification-values.md`の「テストとCIの所要基準」 | 判断 | `section:*/skills/dotfiles-development/references/verification-values.md#「テストとCIの所要基準」` | |
 | マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md` | |
 
 ## 失敗時の対応

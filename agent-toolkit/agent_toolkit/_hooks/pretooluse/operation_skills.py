@@ -10,6 +10,7 @@ import dataclasses
 import os
 import pathlib
 import re
+import shlex
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from collections.abc import Callable, Sequence
@@ -26,7 +27,7 @@ lazy from agent_toolkit._hooks import tool_input as _tool_input
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import AGENTS_SERVER_HOOK_TOOL_NAMES
-lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
+lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths, sed_read_range
 lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES
 lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
 
@@ -424,6 +425,108 @@ def written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
         for operation in operations or []
         if operation.path and not _is_discard_path(pathlib.Path(operation.path))
     ]
+
+
+def _diagnostic_tokens(tokens: Sequence[str]) -> bool:
+    """既知の照会・結果回収・非修正検証だけを選び、任意のスクリプト実行へは広げない。"""
+    name, *arguments = tokens
+    name = pathlib.PurePath(name).name
+    if name == "git":
+        # -C以外の値付きglobal optionは実行設定を変更できるため、照会の免除へ含めない。
+        while arguments and arguments[0].startswith("-"):
+            option = arguments.pop(0)
+            if option == "-C" and arguments:
+                arguments.pop(0)
+            elif option != "--no-pager":
+                return False
+        return (
+            bool(arguments)
+            and arguments[0] in {"diff", "status", "log", "show", "ls-files", "rev-parse", "merge-base"}
+            and not any(option.split("=", 1)[0] in {"--ext-diff", "--textconv"} for option in arguments[1:])
+        )
+    if name in {"cat", "head", "tail", "wc", "stat", "cmp", "diff", "jq", "grep", "egrep", "fgrep"}:
+        return True
+    if name == "rg":
+        return not any(option.split("=", 1)[0] == "--pre" for option in arguments)
+    if name == "sed":
+        return sed_read_range(tuple(tokens)) is not None
+    if name in {"pytest", "py.test", "mypy", "pyright"}:
+        return not any(option.split("=", 1)[0] in {"--install-types", "--createstub"} for option in arguments)
+    if name == "ty":
+        return arguments[:1] == ["check"]
+    if name == "ruff":
+        return (
+            arguments[:1] == ["check"]
+            and "--no-fix" in arguments
+            and not {"--fix", "--fix-only"}.intersection(arguments)
+            or arguments[:1] == ["format"]
+            and bool({"--check", "--diff"}.intersection(arguments))
+        )
+    if name == "pyfltr" and arguments:
+        if arguments[0] in {"show-run", "list-runs"}:
+            return True
+        # no-fixでもformatter段は書き換えるため、非修正checkerへの明示限定を必要とする。
+        commands = [
+            arguments[index + 1] if option == "--commands" and index + 1 < len(arguments) else option.partition("=")[2]
+            for index, option in enumerate(arguments)
+            if option.partition("=")[0] == "--commands"
+        ]
+        return (
+            arguments[0] == "run"
+            and "--no-fix" in arguments
+            and len(commands) == 1
+            and bool(commands[0])
+            and set(commands[0].split(","))
+            <= {"pytest", "mypy", "pyright", "ty", "pylint", "ruff-check", "arid", "colloquial-check"}
+        )
+    return False
+
+
+def is_diagnostic_operation(tool_name: str, tool_input: dict, cwd: str) -> bool:
+    """診断・結果回収だけから成る静的なBash入力を判定する。保存・追記先の新旧や配置は問わない。
+
+    書込先の検出は維持する。本判定は資料未取得による限定遮断の免除だけに使い、
+    本文編集・未知の実行位置・動的展開・自動修正の混在では保護を維持する。
+    """
+    command = tool_input.get("command")
+    if tool_name != "Bash" or not isinstance(command, str) or any(char in command for char in ("$", "`")):
+        return False
+    # 関数定義やグループで隠した実行、heredocの本文を診断コマンドと推定しない。
+    lexer = shlex.shlex(command, posix=False, punctuation_chars="(){}<>")
+    lexer.whitespace_split = True
+    try:
+        if any(
+            token in {"(", ")", "()", "{", "}", "<<", "<<<", "<>"} or _shell_segments.ENV_ASSIGN_PATTERN.match(token)
+            for token in lexer
+        ):
+            return False
+    except ValueError:
+        return False
+    segments = _shell_segments.extract_execution_pipelines(command, expand_shell=False)
+    if not segments or any(not segment.resolved for pipeline in segments for segment in pipeline):
+        return False
+    invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
+    if not invocations or any(
+        not invocation.arguments_known
+        or invocation.captured
+        or invocation.inline_input
+        or not current.resolved
+        or any(STATIC_UNKNOWN in target for target in invocation.static_outputs if isinstance(target, str))
+        for invocation, current in invocations
+    ):
+        return False
+    diagnostic = False
+    for index, (invocation, _current) in enumerate(invocations):
+        tokens = invocation.segment.tokens
+        name = pathlib.PurePath(tokens[0]).name
+        if name == "cd" and not invocation.output_redirected:
+            continue
+        if name == "tee" and index and invocations[index - 1][0].output_pipe:
+            continue
+        if not _diagnostic_tokens(tokens):
+            return False
+        diagnostic = True
+    return diagnostic
 
 
 def is_existing_file_edit(tool_name: str, tool_input: dict, cwd: str) -> bool:

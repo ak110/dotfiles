@@ -25,7 +25,7 @@ from agent_toolkit._hooks.pretooluse.read_delivery import (
 )
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 from agent_toolkit._testing.git_repository import init_repository, run_git
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, denial_reason
 
 
 def _persisted_replacement(body: str) -> str:
@@ -290,6 +290,7 @@ def test_pending_documents_preserve_the_own_handoff_exemption(tmp_path, monkeypa
     patch = f"*** Begin Patch\n*** Add File: {handoff}\n+到達点\n*** Add File: {other}\n+原稿\n*** End Patch"
     mixed = read_delivery.deliver(payload, "apply_patch", {"command": patch}, "test")
     assert str(path) in _notice_body(mixed)
+    notice_module.record_delivery("\n".join(mixed.notices))
     assert read_delivery.deliver(payload, "apply_patch", {"command": patch}, "test").block is not None
     assert not _guidance(read_delivery.deliver(payload, "Write", {"file_path": str(handoff), "content": "到達点"}, "test"))
     read_delivery.observe({**payload, "tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
@@ -553,7 +554,7 @@ _FOREIGN_LOADING_LINES = (
 @pytest.mark.parametrize("suffix", sorted(dependency_usage.CODE_SUFFIXES))
 @pytest.mark.usefixtures("memory")
 def test_public_hook_dependency_applies_only_the_language_rules_of_each_suffix(tmp_path, monkeypatch, suffix):
-    """拡張子ごとの言語の規則だけを当て、コメントや別の言語の書式だけでは案内と資料選択を成立させない。
+    """拡張子ごとの言語の規則を適用し、コメントや別の言語の書式だけでは案内と資料選択を成立させない。
 
     JavaScript・Python・CSS・マークアップはその言語のコメント内の読込記述を数えない。
     読込の規則を持たない言語（シェル、PowerShell、Rust、C#、バッチ）は、どの言語の書式の行も数えない。
@@ -801,6 +802,51 @@ def test_external_index_requires_the_selected_page(monkeypatch, tmp_path):
     assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
+@pytest.mark.parametrize("case", ["success", "http-error", "is-error", "failure-event"])
+@pytest.mark.usefixtures("memory")
+def test_public_webfetch_structured_response_distinguishes_success(tmp_path, monkeypatch, case):
+    """公式WebFetch応答のHTTP状態とhookの失敗記録を、索引・対象ページの読了へ反映する。"""
+    row = ReadTrigger(tmp_path / "source.md", 1, "操作", ("tool:Do",), (), selector="external-pytilpack-index")
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    index = "https://ak110.github.io/pytilpack/llms.txt"
+    page = "https://ak110.github.io/pytilpack/api/functools/index.md"
+
+    def fetched(url, *, selected_case="success"):
+        # Claude Agent SDKのTool Output Types / WebFetch（委譲元が2026-10-31確認）の公開形式。
+        # https://code.claude.com/docs/en/agent-sdk/typescript#webfetch-2
+        response = {
+            "bytes": 6,
+            "code": 404 if selected_case == "http-error" else 200,
+            "codeText": "Not Found" if selected_case == "http-error" else "OK",
+            "result": "本文",
+            "durationMs": 1,
+            "url": url,
+        }
+        if selected_case == "is-error":
+            response["isError"] = True
+        result = _run_hook_in_process(
+            "posttooluse",
+            {
+                "session_id": "test",
+                "cwd": str(tmp_path),
+                "hook_event_name": "PostToolUseFailure" if selected_case == "failure-event" else "PostToolUse",
+                "tool_name": "WebFetch",
+                "tool_input": {"url": url, "prompt": "対象の本文を取得する"},
+                "tool_response": response,
+            },
+        )
+        assert result.returncode == 0 and not result.stderr
+
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
+    fetched(index)
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
+    fetched(page, selected_case=case)
+    assert bool(_guidance(read_delivery.deliver({}, "Do", {}, "test"))) is (case != "success")
+    if case != "success":
+        fetched(page)
+        assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
+
+
 @pytest.mark.usefixtures("memory")
 @pytest.mark.parametrize("owner", ["agent-basics/skills/writing-standards", "agent-toolkit/skills/delegation"])
 def test_artifact_standards_use_the_author_declaration(monkeypatch, tmp_path, owner):
@@ -963,6 +1009,9 @@ def _memory(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(read_delivery, "read_state", read)
     monkeypatch.setattr(read_delivery, "update_state", update)
+    monkeypatch.setattr(notice_module, "read_state", read)
+    monkeypatch.setattr(notice_module, "update_state", update)
+    notice_module.begin_delivery()
     monkeypatch.setattr(read_delivery.delegated_session, "is_lightweight_delegated", lambda _env: False)
     return state
 
@@ -1049,6 +1098,8 @@ def test_missing_full_and_partial_reads(tmp_path, monkeypatch, codex):
     assert _guidance(decision)
     assert str(paths[0]) in _notice_body(decision)
     assert "必須基準0" not in _notice_body(decision)
+    # 最終出力に採用した通知だけが、次の再書込を止める。
+    notice_module.record_delivery("\n".join(decision.notices))
     assert read_delivery.deliver(payload, "Write", operation, "test").block is not None
     for path in paths:
         read_delivery.observe({**payload, "tool_response": "# 資料0\n"}, "Read", {"file_path": str(path), "limit": 1}, "test")
@@ -1783,6 +1834,60 @@ def test_explicit_foreign_skill_keeps_startup_and_followup_declarations(tmp_path
     assert str(active) not in _notice_body(selected)
 
 
+@pytest.mark.parametrize("change", ["path", "operation", "removed"])
+@pytest.mark.parametrize("actor", ["main", "child"])
+@pytest.mark.usefixtures("memory")
+def test_selected_foreign_declaration_uses_current_source_and_actor(tmp_path, monkeypatch, change, actor):
+    """明示選択した外部pluginの現行宣言だけを、選択した主体の後続操作へ再接続する。"""
+    _active, foreign = _two_plugin_roots(tmp_path, monkeypatch)
+    monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [])
+    source = foreign / "skills/search/SKILL.md"
+    initial = source.parent / "initial.md"
+    replacement = source.parent / "replacement.md"
+    replacement.write_text("# 現行資料\n現在の本文\n", encoding="utf-8")
+    payload = {"session_id": "test", "cwd": str(tmp_path), "turn_id": "turn"}
+    selected = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Read", "tool_input": {"file_path": str(source)}})
+    assert selected.returncode == 0
+    if change == "removed":
+        source.write_text("# 選択したskill\n", encoding="utf-8")
+    else:
+        source.write_text(
+            "# 選択したskill\n| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+            + (
+                "| 初動 | `replacement.md` | 起動時 | `skill:search` |\n"
+                if change == "path"
+                else "| 別操作 | `initial.md` | 操作 | `tool:Other` |\n"
+            ),
+            encoding="utf-8",
+        )
+    operation = _write_operation(tmp_path, {**payload, **({"agent_id": actor} if actor != "main" else {})})
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and not first.stderr
+    assert str(initial) not in first.stdout
+    if change != "path" or actor != "main":
+        assert str(replacement) not in first.stdout and '"permissionDecision": "deny"' not in first.stdout
+        return
+    assert str(replacement) in first.stdout
+    assert str(replacement) in denial_reason(_run_hook_in_process("pretooluse", operation))
+    for path in (initial, replacement):
+        result = _run_hook_in_process(
+            "posttooluse",
+            {
+                **payload,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Read",
+                "tool_input": {"file_path": str(path)},
+                "tool_response": path.read_text(encoding="utf-8"),
+            },
+        )
+        assert result.returncode == 0
+        rewritten = _run_hook_in_process("pretooluse", operation)
+        if path == initial:
+            assert str(replacement) in denial_reason(rewritten)
+        else:
+            assert rewritten.returncode == 0 and str(replacement) not in rewritten.stdout
+
+
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize("shell", [False, True])
 @pytest.mark.usefixtures("memory")
@@ -1921,15 +2026,21 @@ def test_compaction_limits_rewrite_block_to_documents_guided_after_compaction(tm
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
     payload = {"cwd": str(tmp_path)}
     write = {"file_path": str(tmp_path / "out.md"), "content": "本文"}
+
+    def delivered(tool, inputs):
+        decision = read_delivery.deliver(payload, tool, inputs, "test")
+        notice_module.record_delivery("\n".join(decision.notices))
+        return decision
+
     assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
     read_delivery.observe({**payload, "tool_response": later.read_text()}, "Read", {"file_path": str(later)}, "test")
-    assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+    assert str(earlier) in _notice_body(delivered("Write", write))
     # 圧縮前は、案内済み資料の未取得による再書込の遮断が成立している。
     assert str(earlier) in (read_delivery.deliver(payload, "Write", write, "test").block or "")
 
     rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
     # 圧縮前の候補は操作ごとに再掲せず、現在の操作が選んだ資料だけを案内する。
-    first = _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+    first = _notice_body(delivered("Write", write))
     assert str(later) in first and str(earlier) not in first
     blocked = read_delivery.deliver(payload, "Write", write, "test").block
     assert blocked is not None and str(later) in blocked and str(earlier) not in blocked
@@ -1940,7 +2051,7 @@ def test_compaction_limits_rewrite_block_to_documents_guided_after_compaction(tm
         assert decision.block is None and not decision.notices
     # 現在の操作が圧縮前の資料を改めて対象にした後は、圧縮前と同じく案内後の再書込を止める。
     assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
-    assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+    assert str(earlier) in _notice_body(delivered("Write", write))
     assert str(earlier) in (read_delivery.deliver(payload, "Write", write, "test").block or "")
 
 
@@ -2142,9 +2253,12 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
         target = ReadTarget(path, heading)
         inputs = {"file_path": str(path)}
         assert any(read_delivery.row_matches(row, "Read", inputs, str(root)) and target in row.targets for row in rows), phase
-        read_delivery.deliver(payload, "Read", inputs, "test")
+        decision = read_delivery.deliver(payload, "Read", inputs, "test")
         records = memory[rules_context.OPERATION_SKILL_READY_KEY]
-        assert target in read_delivery.selected_targets(records, "main"), phase
+        # plan-modeは自然文の判断候補であり、Readだけでその条件を確定しない。
+        assert (target in read_delivery.selected_targets(records, "main")) is (phase != "計画"), phase
+        if phase == "計画":
+            assert "読込条件の候補" in _notice_body(decision) and "計画の要否を判定する前" in _notice_body(decision)
         assert not read_delivery.target_ready(records, target, "main"), phase
         body = path.read_text(encoding="utf-8")
         for expected in {
@@ -2418,8 +2532,9 @@ def test_repeated_write_requires_complete_read(tmp_path, monkeypatch, codex):
     first = _run_hook_in_process("pretooluse", operation)
     assert first.returncode == 0 and str(path) in first.stdout
     second = _run_hook_in_process("pretooluse", operation)
-    assert second.returncode == 2 and str(path) in second.stderr
-    assert "全文取得後に元の書込操作を再発行せよ" in second.stderr
+    reason = denial_reason(second)
+    assert str(path) in reason
+    assert "全文取得後に元の書込操作を再発行せよ" in reason
     failed = {
         **payload,
         "hook_event_name": "PostToolUseFailure",
@@ -2428,7 +2543,7 @@ def test_repeated_write_requires_complete_read(tmp_path, monkeypatch, codex):
         "tool_response": {"stdout": path.read_text(), "exit_code": 1},
     }
     assert _run_hook_in_process("posttooluse", failed).returncode == 0
-    assert _run_hook_in_process("pretooluse", operation).returncode == 2
+    assert str(path) in denial_reason(_run_hook_in_process("pretooluse", operation))
     complete = {
         **payload,
         "hook_event_name": "PostToolUse",
@@ -2653,8 +2768,9 @@ def test_mixed_cat_sed_public_rejects_unproven_output(tmp_path, monkeypatch, sub
     )
     assert observed.returncode == 0
     final = _run_hook_in_process("pretooluse", operation)
-    assert final.returncode == 2 and str(paths[1]) in final.stderr
-    assert (str(paths[0]) not in final.stderr) is (case == "partial")
+    reason = denial_reason(final)
+    assert str(paths[1]) in reason
+    assert (str(paths[0]) not in reason) is (case == "partial")
     if case == "partial":
         remainder = _run_hook_in_process(
             "posttooluse",
@@ -2744,7 +2860,7 @@ def test_mixed_reads_resolve_cd_and_all_cat_operands(tmp_path, monkeypatch, subj
     if case == "exact":
         assert final.returncode == 0 and all(str(path) not in final.stdout for path in paths)
     else:
-        assert final.returncode == 2 and all(str(path) in final.stderr for path in paths)
+        assert all(str(path) in denial_reason(final) for path in paths)
 
 
 @pytest.mark.parametrize("subject", ["main", "child", "codex"])
@@ -2806,9 +2922,10 @@ def test_mixed_history_restoration_preserves_acquisition_boundaries(tmp_path, mo
     if case == "exact":
         assert final.returncode == 0 and all(str(path) not in final.stdout for path in paths)
     else:
-        assert final.returncode == 2 and str(paths[1]) in final.stderr
+        reason = denial_reason(final)
+        assert str(paths[1]) in reason
         # 資料の一方が更新されても、未更新資料の同hashに対する初回書込案内は残る。
-        assert (str(paths[0]) not in final.stderr) is (case == "partial")
+        assert (str(paths[0]) not in reason) is (case == "partial")
 
 
 @pytest.mark.parametrize("subject", ["main", "child", "codex"])
@@ -2881,7 +2998,8 @@ def test_mixed_skill_body_does_not_replace_main_skill_invocation(tmp_path, monke
         assert observed.returncode == 0
     final = _run_hook_in_process("pretooluse", operation)
     if subject == "main":
-        assert final.returncode == 2 and str(skill) in final.stderr and str(reference) not in final.stderr
+        reason = denial_reason(final)
+        assert str(skill) in reason and str(reference) not in reason
         invoked = _run_hook_in_process(
             "posttooluse",
             {
@@ -2902,12 +3020,128 @@ def _write_operation(tmp_path, payload):
     return {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "本文"}}
 
 
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.usefixtures("memory")
+def test_unemitted_delivery_cannot_block_the_first_public_write(tmp_path, monkeypatch, codex):
+    """破棄した試作通知は遮断せず、公開出力された案内だけが再書込を止める。"""
+    path = _rows(tmp_path, monkeypatch, "tool:Write", count=1)[0]
+    payload = {"session_id": "test", "cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
+    operation = _write_operation(tmp_path, payload)
+    for _ in range(2):
+        trial = read_delivery.deliver(payload, "Write", operation["tool_input"], "test")
+        assert trial.notices and trial.block is None
+    _guided_and_blocked(operation, path)
+    acquired = _run_hook_in_process(
+        "posttooluse",
+        {
+            **payload,
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(path)},
+            "tool_response": path.read_text(encoding="utf-8"),
+        },
+    )
+    assert acquired.returncode == 0
+    final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 0 and not final.stdout and not final.stderr
+
+
+@pytest.mark.parametrize("old_heading_remains", [False, True])
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.usefixtures("memory")
+def test_changed_declaration_reconnects_current_heading_before_rewrite(tmp_path, monkeypatch, codex, old_heading_remains):
+    """前工程の宣言を現行見出しへ再接続し、全文取得後の別操作の再書込を許可する。"""
+    source = tmp_path / "source.md"
+    reference = tmp_path / "reference.md"
+    reference.write_text("# 資料\n## 旧見出し\n以前の基準\n", encoding="utf-8")
+
+    def declaration(heading):
+        return (
+            "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+            f"| 選択時 | `reference.md#{heading}` | 操作 | `tool:Do` |\n"
+        )
+
+    source.write_text(declaration("旧見出し"), encoding="utf-8")
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: parse_tables(source, tmp_path))
+    payload = {"session_id": "test", "cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
+    selected = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Do", "tool_input": {}})
+    assert selected.returncode == 0 and "旧見出し" in selected.stdout
+    body = "# 資料\n" + ("## 旧見出し\n以前の基準\n" if old_heading_remains else "") + "## 新見出し\n現在の基準\n"
+    reference.write_text(body, encoding="utf-8")
+    source.write_text(declaration("新見出し"), encoding="utf-8")
+    operation = _write_operation(tmp_path, payload)
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and not first.stderr
+    assert first.stdout, "現行宣言の資料案内が無い"
+    context = json.loads(first.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "新見出し" in context and "旧見出し" not in context
+    assert str(reference) in denial_reason(_run_hook_in_process("pretooluse", operation))
+    acquired = _run_hook_in_process(
+        "posttooluse",
+        {
+            **payload,
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(reference)},
+            "tool_response": body,
+        },
+    )
+    assert acquired.returncode == 0
+    final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 0 and not final.stdout and not final.stderr
+
+
+@pytest.mark.usefixtures("memory")
+def test_codex_unsupported_webfetch_does_not_create_condition_candidates(tmp_path, monkeypatch):
+    row = ReadTrigger(
+        tmp_path / "source.md",
+        1,
+        "判断",
+        ("tool:Do",),
+        (),
+        selector="external-pytilpack-index",
+        condition="対象モジュールを選ぶ時",
+    )
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    result = _run_hook_in_process(
+        "pretooluse",
+        {
+            "session_id": "test",
+            "cwd": str(tmp_path),
+            "turn_id": "turn",
+            "tool_name": "Do",
+            "tool_input": {},
+        },
+    )
+    assert result.returncode == 0 and not result.stderr
+    assert "WebFetch" not in result.stdout and "読込条件の候補" not in result.stdout
+
+
+@pytest.mark.parametrize("removed", [False, True])
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.usefixtures("memory")
+def test_obsolete_declaration_cannot_block_another_phase(tmp_path, monkeypatch, removed, codex):
+    """宣言の削除や操作変更後は、過去の案内を別工程の遮断に使わない。"""
+    reference = tmp_path / "reference.md"
+    reference.write_text("# 基準\n本文\n", encoding="utf-8")
+    source = tmp_path / "source.md"
+    rows = [ReadTrigger(source, 1, "操作", ("tool:Write",), (reference,))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
+    payload = {"session_id": "test", "cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
+    operation = _write_operation(tmp_path, payload)
+    _guided_and_blocked(operation, reference)
+    rows[:] = [] if removed else [ReadTrigger(source, 2, "操作", ("tool:Do",), (reference,))]
+    result = _run_hook_in_process("pretooluse", operation)
+    assert result.returncode == 0 and not result.stderr
+    assert str(reference) not in result.stdout and '"permissionDecision": "deny"' not in result.stdout
+
+
 def _guided_and_blocked(operation, path):
     """初回の書込で資料を案内し、未取得のままの再書込を遮断する状態まで進める。"""
     first = _run_hook_in_process("pretooluse", operation)
     assert first.returncode == 0 and str(path) in first.stdout
     second = _run_hook_in_process("pretooluse", operation)
-    assert second.returncode == 2 and str(path) in second.stderr
+    assert str(path) in denial_reason(second)
 
 
 @pytest.mark.parametrize("marker", ["truncated output", "Output too large", "truncatedByTokenCap"])
@@ -2991,7 +3225,7 @@ def test_host_truncation_forms_are_not_read(tmp_path, monkeypatch, form):
         observed = _run_hook_in_process("posttooluse", {**payload, "hook_event_name": "PostToolUse", **acquisition})
         assert observed.returncode == 0
     final = _run_hook_in_process("pretooluse", operation)
-    assert final.returncode == 2 and str(path) in final.stderr
+    assert str(path) in denial_reason(final)
 
 
 def _codex_transcript(tmp_path, command, *, exit_code=0, execution=True):
@@ -3073,18 +3307,18 @@ def test_codex_unverified_or_truncated_read_stays_unread_until_split_reads(tmp_p
     _guided_and_blocked(operation, path)
     command = f"cat -- {path}"
     _codex_read(tmp_path, payload, command, body, execution=False)
-    assert _run_hook_in_process("pretooluse", operation).returncode == 2
+    assert str(path) in denial_reason(_run_hook_in_process("pretooluse", operation))
     _codex_read(tmp_path, payload, command, body, exit_code=1)
-    assert _run_hook_in_process("pretooluse", operation).returncode == 2
+    assert str(path) in denial_reason(_run_hook_in_process("pretooluse", operation))
     envelope = "Warning: truncated output (original token count: 5000)\nTotal output lines: 3\n\n"
     truncated = f"{envelope}{body[:4]}…4990 tokens truncated…{body[-4:]}"
     observed = _codex_read(tmp_path, payload, command, truncated)
     assert "全文は未取得" in observed.stdout and "sed -n" in observed.stdout
-    assert _run_hook_in_process("pretooluse", operation).returncode == 2
+    assert str(path) in denial_reason(_run_hook_in_process("pretooluse", operation))
     lines = body.splitlines(keepends=True)
     first = f"sed -n '1,1p' -- {path}"
     _codex_read(tmp_path, payload, first, lines[0])
-    assert _run_hook_in_process("pretooluse", operation).returncode == 2
+    assert str(path) in denial_reason(_run_hook_in_process("pretooluse", operation))
     rest = f"sed -n '2,$p' -- {path}"
     _codex_read(tmp_path, payload, rest, "".join(lines[1:]))
     final = _run_hook_in_process("pretooluse", operation)

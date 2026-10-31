@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 
@@ -571,8 +572,12 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
     env = _plan_file_state_env(tmp_path)
     blocked = {"tool_name": _DELEGATION_TOOLS[4], "tool_input": {"session_id": "unknown"}, "session_id": "blocked"}
     result = _run(blocked, env)
-    assert result.returncode == 2
-    assert "agent-toolkit:delegation" not in result.stderr
+    assert result.returncode == 0
+    assert not result.stderr
+    specific = json.loads(result.stdout)["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    assert specific["permissionDecisionReason"]
+    assert "agent-toolkit:delegation" not in specific["permissionDecisionReason"]
     state_file = session_state.state_path("blocked")
     state = _read_session_state(tmp_path, "blocked") if state_file.exists() else {}
     assert rules_context.OPERATION_SKILL_READY_KEY not in state

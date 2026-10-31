@@ -1,6 +1,7 @@
 """agent-toolkit/agent_toolkit/_hooks/agents_server_observations.py のテスト。"""
 
 import contextlib
+import copy
 import io
 import json
 import os
@@ -12,8 +13,9 @@ import pytest
 
 from agent_toolkit._agents_server import manager, mcp_tools, shared_layout, status_file
 from agent_toolkit._agents_server import state as server_state
-from agent_toolkit._common import atomic_file, session_state, state_paths
-from agent_toolkit._hooks import agents_server_observations, posttooluse, pretooluse
+from agent_toolkit._common import atomic_file, session_registry, session_state, state_paths
+from agent_toolkit._hooks import agents_server_observations, agents_server_session_advisor, posttooluse, pretooluse
+from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._testing import agents_server_support
 
 pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
@@ -383,3 +385,208 @@ def test_response_cwd_is_accepted_only_for_handoff_start(
         moved_to_background=False,
     )
     assert any("cwd" in warning.body for warning in warnings) is not handoff
+
+
+@pytest.mark.parametrize("namespace", ["mcp__agents_server__", "mcp__plugin_agent-toolkit_agents_server__"])
+@pytest.mark.parametrize("operation", ["send_message", "kill"])
+@pytest.mark.parametrize("actor", ["main", "agent-a"])
+def test_owned_show_recovers_missing_cwd(tmp_path, monkeypatch, namespace, operation, actor):
+    """公開PostToolUseのshowでcwdを回復し、同じ子への追送と中断を許可する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    session_registry.publish("owned-child", terminal=False, engine="claude", cwd=str(tmp_path), launcher_session_id="local")
+    payload = {"session_id": "local", "agent_id": actor, "cwd": str(tmp_path)}
+    start_input = {"mode": "delegate", "cwd": str(tmp_path)}
+    assert (
+        _hook(
+            posttooluse.main,
+            {
+                **payload,
+                "tool_name": namespace + "start",
+                "tool_input": start_input,
+                "tool_response": {"session_id": "owned-child", "status": "running", "root_session_id": "local"},
+            },
+        )
+        == 0
+    )
+    # 追送により観測責任者が変わっても、起動時主体で回復する。
+    assert (
+        _hook(
+            posttooluse.main,
+            {
+                **payload,
+                "agent_id": "other-observer",
+                "tool_name": namespace + "send_message",
+                "tool_input": {"session_id": "owned-child", "prompt": "続行する"},
+                "tool_response": {"delivery": "reply_started"},
+            },
+        )
+        == 0
+    )
+    session_state.update_state("local", lambda state: {**state, "agents_server_cwd_by_session": {}})
+    inputs = {"session_id": "owned-child", "prompt": "続行する"}
+    before = agent_checks._check_agents_server_continuation_target("local", inputs, namespace + operation)  # pylint: disable=protected-access
+    assert before.block is not None
+    assert (
+        _hook(
+            posttooluse.main,
+            {
+                **payload,
+                "tool_name": namespace + "show",
+                "tool_input": {"session_id": "owned-child"},
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": "owned-child",
+                        "status": "failed",
+                        "cwd": str(tmp_path),
+                        "error": {"message": "失敗した"},
+                    }
+                },
+            },
+        )
+        == 0
+    )
+    saved = session_state.read_state("local")
+    assert agents_server_observations.session_cwd(saved, "owned-child") == str(tmp_path)
+    assert agents_server_observations.has_pending_owned_observation(saved, "other-observer")
+    record = agents_server_observations.session_record(saved, "owned-child")
+    assert record is not None and record["launcher_agent_id"] == actor
+    after = agent_checks._check_agents_server_continuation_target("local", inputs, namespace + operation)  # pylint: disable=protected-access
+    assert after.allow and after.block is None
+
+
+@pytest.mark.parametrize("failure", ["foreign", "unknown", "mismatched", "relative", "empty", "other-actor", "missing-actor"])
+def test_foreign_show_does_not_recover_cwd(tmp_path, monkeypatch, failure):
+    """所有不明、応答不一致、不正cwdと別主体のshowでは操作権限を回復しない。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    if failure != "unknown":
+        session_registry.publish(
+            "child",
+            terminal=False,
+            engine="claude",
+            cwd=str(tmp_path),
+            launcher_session_id="foreign" if failure == "foreign" else "local",
+        )
+    record = {"session_id": "child", "status": "running", "owner_agent_id": "main", "pending_observation": True}
+    if failure != "missing-actor":
+        record["launcher_agent_id"] = "agent-a" if failure == "other-actor" else "main"
+    session_state.update_state("local", lambda _state: {"agents_server_sessions": {"child": record}})
+    response = {
+        "session_id": "other" if failure == "mismatched" else "child",
+        "status": "running",
+        "cwd": "relative" if failure == "relative" else "" if failure == "empty" else str(tmp_path),
+        "root_session_id": "local",
+        "live_child_sessions": [{"session_id": "child", "cwd": str(tmp_path)}],
+    }
+    assert (
+        _hook(
+            posttooluse.main,
+            {
+                "session_id": "local",
+                "tool_name": "mcp__agents_server__show",
+                "tool_input": {"session_id": "child"},
+                "tool_response": response,
+            },
+        )
+        == 0
+    )
+    assert agents_server_observations.session_cwd(session_state.read_state("local"), "child") is None
+    for operation in ("send_message", "kill"):
+        result = agent_checks._check_agents_server_continuation_target(  # pylint: disable=protected-access
+            "local", {"session_id": "child"}, "mcp__agents_server__" + operation
+        )
+        assert result.block is not None
+
+
+@pytest.mark.parametrize(
+    "tool_name", sorted(agents_server_observations.AGENTS_SERVER_HOOK_TOOL_NAMES | {"mcp__agents_server__wait"})
+)
+@pytest.mark.parametrize("shape", ["isError", "json", "ToolError", "content"])
+def test_error_response_preserves_observation_state(tmp_path, monkeypatch, tool_name, shape):
+    """全観測操作の失敗は状態、別名、待機登録とStopの未観測警告を保持する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    shared_layout.status_directory("wrong-root", tmp_path).mkdir(parents=True)
+    initial = {
+        "agents_server_sessions": {
+            "child": {
+                "session_id": "child",
+                "status": "running",
+                "owner_agent_id": "main",
+                "pending_observation": True,
+            }
+        },
+        "agents_server_cwd_by_session": {"child": str(tmp_path)},
+    }
+    session_state.update_state("local", lambda _state: copy.deepcopy(initial))
+    response = {
+        "isError": True,
+        "structuredContent": {
+            "session_id": "child",
+            "status": "interrupted",
+            "root_session_id": "wrong-root",
+            "delivery": "reply_started",
+            "live_child_sessions": [{"session_id": "other", "cwd": str(tmp_path)}],
+        },
+    }
+    if shape == "json":
+        response = json.dumps(response)
+    elif shape == "ToolError":
+        response = "ToolError: 実行中のsessionは破棄できない。次の操作: showで確認する"
+    elif shape == "content":
+        # mcp_transport._call_registered_toolのToolError応答で、ホストが本文だけを渡す場合。
+        response = [{"type": "text", "text": "実行中のsessionは破棄できない。次の操作: showで確認する"}]
+    before_files = {
+        str(path.relative_to(tmp_path)): path.read_bytes() for path in (tmp_path / "agents-server").rglob("*") if path.is_file()
+    }
+    assert (
+        _hook(
+            posttooluse.main,
+            {
+                "session_id": "local",
+                "tool_name": tool_name,
+                "tool_input": {"session_id": "child", "cwd": str(tmp_path)},
+                "tool_response": response,
+            },
+        )
+        == 0
+    )
+    saved = session_state.read_state("local")
+    assert {key: saved[key] for key in initial} == initial
+    after_files = {
+        str(path.relative_to(tmp_path)): path.read_bytes() for path in (tmp_path / "agents-server").rglob("*") if path.is_file()
+    }
+    assert after_files == before_files
+    result, message = agents_server_session_advisor.evaluate(json.dumps({"session_id": "local"}))
+    assert result == "notify" and "child" in message
+
+
+def test_terminal_session_error_is_not_tool_failure(tmp_path, monkeypatch):
+    """正常killが返す終了session自身のerrorは状態へ反映する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    session_state.update_state(
+        "local",
+        lambda _state: {
+            "agents_server_sessions": {
+                "child": {
+                    "session_id": "child",
+                    "status": "running",
+                    "owner_agent_id": "main",
+                    "pending_observation": True,
+                }
+            }
+        },
+    )
+    assert (
+        _hook(
+            posttooluse.main,
+            {
+                "session_id": "local",
+                "tool_name": "mcp__agents_server__kill",
+                "tool_input": {"session_id": "child"},
+                "tool_response": {"session_id": "child", "status": "interrupted", "error": {"message": "中断した"}},
+            },
+        )
+        == 0
+    )
+    record = agents_server_observations.session_record(session_state.read_state("local"), "child")
+    assert record is not None and record["error"] == {"message": "中断した"}
+    assert record["pending_observation"] is False

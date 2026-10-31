@@ -16,7 +16,7 @@ import pathlib
 from agent_toolkit._agents_server import launch_prompts, shared_layout, shared_roots, wait_targets
 from agent_toolkit._agents_server import state as _agents_server_state
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
-from agent_toolkit._common import task_documents
+from agent_toolkit._common import session_launchers, state_paths, task_documents
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
@@ -70,7 +70,7 @@ _AGENTS_SERVER_TOOL_NAMES = (
 _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_LIST_TOOLS
 
 
-# `show`は稼働中の子sessionの識別子と`cwd`の対を返すため、この対の記録だけを目的として受信する。
+# `show`は所有する対象と稼働中の子sessionの`cwd`回復にも使う。
 _AGENTS_SERVER_SHOW_TOOLS = frozenset(f"{namespace}show" for namespace in _AGENTS_SERVER_NAMESPACES)
 
 
@@ -101,8 +101,39 @@ def _extract_agents_server_structured_response(tool_response: object) -> dict:
             parsed = json.loads(tool_response)
         except json.JSONDecodeError, TypeError:
             return {}
-        return parsed if isinstance(parsed, dict) else {}
+        return _extract_agents_server_structured_response(parsed) if isinstance(parsed, dict) else {}
     return {}
+
+
+def _agents_server_response_failed(response: object, *, moved_to_background: bool) -> bool:
+    """MCPの失敗標識と、構造化成功応答を持たないToolError本文を除外する。"""
+    if isinstance(response, str):
+        if response.lstrip().startswith("ToolError:"):
+            return True
+        try:
+            response = json.loads(response)
+        except json.JSONDecodeError:
+            return not moved_to_background
+    if isinstance(response, dict):
+        if response.get("isError") is True or response.get("is_error") is True:
+            return True
+        structured = response.get("structuredContent")
+        if isinstance(structured, dict):
+            return _agents_server_response_failed(structured, moved_to_background=moved_to_background)
+        # 正常show/killが返す終了session自身のerrorはツールの失敗ではない。
+        if "error" in response and "status" not in response:
+            return True
+        if "content" not in response:
+            return False
+        response = response["content"]
+    if isinstance(response, list):
+        texts = [entry.get("text") for entry in response if isinstance(entry, dict) and entry.get("type") == "text"]
+        return any(
+            _agents_server_response_failed(text, moved_to_background=moved_to_background)
+            for text in texts
+            if isinstance(text, str)
+        )
+    return False
 
 
 def _is_nonempty_absolute_cwd(value: object) -> bool:
@@ -209,9 +240,23 @@ def _live_child_session_cwds(structured: dict) -> list[tuple[str, str]]:
     return pairs
 
 
-def _record_child_session_cwds(session_id: str, structured: dict) -> None:
-    """応答が返した稼働中の子sessionの識別子と`cwd`の対を、続行判定が読むキーへ記録する。"""
-    pairs = _live_child_session_cwds(structured)
+def _record_child_session_cwds(session_id: str, structured: dict, tool_input: dict, owner_agent_id: str) -> None:
+    """起動元の永続登録と起動時主体が一致する対象だけのcwdを回復する。"""
+    remote_session_id = tool_input.get("session_id")
+    if not isinstance(remote_session_id, str) or structured.get("session_id") != remote_session_id:
+        return
+    pairs = [
+        (remote_session_id, structured.get("cwd")),
+        *(pair for pair in _live_child_session_cwds(structured) if pair[0] != remote_session_id),
+    ]
+    directory = session_launchers.registry_directory(state_paths.state_dir())
+    pairs = [
+        (remote_id, cwd)
+        for remote_id, cwd in pairs
+        if shared_layout.valid_session_id(remote_id)
+        and _is_nonempty_absolute_cwd(cwd)
+        and session_launchers.read_launcher(directory / f"{remote_id}.json") == session_id
+    ]
     if not pairs:
         return
 
@@ -219,6 +264,9 @@ def _record_child_session_cwds(session_id: str, structured: dict) -> None:
         cwd_map = state.setdefault(_AGENTS_SERVER_SESSION_CWD_KEY, {})
         changed = False
         for child_session_id, child_cwd in pairs:
+            record = session_record(state, child_session_id)
+            if record is None or record.get("launcher_agent_id") != owner_agent_id:
+                continue
             if cwd_map.get(child_session_id) != child_cwd:
                 cwd_map[child_session_id] = child_cwd
                 changed = True
@@ -276,6 +324,7 @@ def _record_agents_server_session_state(
         if operation in _AGENTS_SERVER_START_OPERATIONS:
             record["pending_observation"] = True
             record["owner_agent_id"] = owner_agent_id
+            record.setdefault("launcher_agent_id", owner_agent_id)
         elif operation == "send_message":
             delivery = structured.get("delivery")
             # steerはturn_seqを変えず、そのturnの終了を既存の観測が待つ。
@@ -448,16 +497,20 @@ def observe_tool(
     """
     if tool_name not in AGENTS_SERVER_HOOK_TOOL_NAMES:
         return []
-    structured = _extract_agents_server_structured_response(payload.get("tool_response", {}))
+    response = payload.get("tool_response", {})
+    if payload.get("hook_event_name") == "PostToolUseFailure" or _agents_server_response_failed(
+        response, moved_to_background=moved_to_background
+    ):
+        return []
+    structured = _extract_agents_server_structured_response(response)
     # agents_serverの応答が`root_session_id`を持てば、操作名によらずここで1回だけ別名索引へ記録する。
     # 後続の待機対象の登録より前に置き、再起動後の最初の操作が`send_message`でも、
     # 登録と`atk agents wait`が同じルートを使えるようにする。
     _record_agents_server_root_alias(session_id, structured)
 
-    # showの応答が返す稼働中の子sessionは、識別子と`cwd`の対だけを記録する。
-    # session記録そのものはそのsessionを起動した主体が持つため、ここでは更新しない。
+    # owner_agent_idは追送で変わるため、回復時は起動時主体と呼出主体、登録簿の起動元と呼出会話がそれぞれ一致するか確認する。
     if tool_name in _AGENTS_SERVER_SHOW_TOOLS:
-        _record_child_session_cwds(session_id, structured)
+        _record_child_session_cwds(session_id, structured, tool_input, resolve_hook_agent_id(payload))
         return []
 
     # listはsession状態を変更しない。応答が明示した所有rootの別名索引への記録は前段が行う。
@@ -544,7 +597,7 @@ def session_cwd(state: dict, remote_session_id: str) -> str | None:
     """観測の記録から委譲先sessionの`cwd`を返す。記録が無ければ`None`を返す。"""
     cwd_map = state.get(_AGENTS_SERVER_SESSION_CWD_KEY)
     cwd = cwd_map.get(remote_session_id) if isinstance(cwd_map, dict) else None
-    return cwd if isinstance(cwd, str) else None
+    return cwd if isinstance(cwd, str) and _is_nonempty_absolute_cwd(cwd) else None
 
 
 def has_pending_owned_observation(state: object, owner_agent_id: str) -> bool:

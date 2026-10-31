@@ -22,7 +22,7 @@ CodexのStopは非遮断通知を配送できないため対象外とし、起�
 import json
 import pathlib
 
-from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
+from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
@@ -162,6 +162,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     pending = dict(termination_evidence.pending_work(payload))
     missing = {work_id: kinds for work_id, work in pending.items() if (kinds := termination_evidence.missing_completion(work))}
     if not missing:
+        resolve_notice(session_id, _HOOK_ID, "evaluate", subject="main")
         append_stop_log(session_id, "approve_completion_report_satisfied", {})
         return "approve", ""
 

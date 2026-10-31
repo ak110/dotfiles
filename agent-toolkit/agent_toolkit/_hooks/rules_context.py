@@ -222,7 +222,11 @@ def acquisition_failure(target: read_triggers.ReadTarget, error: Exception, *, s
     if shell:
         return prefix + f"全文を`cat -- {shlex.quote(str(path))}`で読め"
     skill = document_reads.skill_document(str(path))
-    if skill and skill[1] == "SKILL.md":
+    if (
+        skill
+        and skill[1] == "SKILL.md"
+        and (agent or read_triggers.skill_invocation_required(path, host="claude", subject="main"))
+    ):
         owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
         name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
         step = f"`Skill`で`{name}`を起動せよ（資料: `{path}`）"
@@ -245,7 +249,7 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
             if heading:
                 target.body()
             skill = document_reads.skill_document(str(path))
-            if host not in {"codex", "agy"} and skill and skill[1] == "SKILL.md":
+            if skill and skill[1] == "SKILL.md" and read_triggers.skill_invocation_required(path, host=host, subject="main"):
                 owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
                 name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
                 steps.append(f"`Skill`で`{name}`を起動せよ（資料: `{path}`）")

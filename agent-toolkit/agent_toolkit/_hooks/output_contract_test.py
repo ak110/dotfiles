@@ -428,7 +428,7 @@ def test_claude_pretooluse_retains_permission_decisions(decision: str) -> None:
 def test_pretooluse_public_entry_returns_host_output(
     tmp_path: pathlib.Path, host: str, scenario: str, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """登録された公開hookで通過・追加文脈・終了2の遮断を確認する。"""
+    """登録された公開hookで通過・追加文脈・構造化denyの正常拒否を確認する。"""
     payload, environment = _build_fixture("PreToolUse", "pretooluse", tmp_path)
     if host == "codex":
         manifest = json.loads((_PLUGIN_ROOT / "hooks/hooks.codex.json").read_text(encoding="utf-8"))
@@ -455,16 +455,15 @@ def test_pretooluse_public_entry_returns_host_output(
         check=False,
         env={**host_environ(), **environment},
     )
-    if scenario == "block":
-        assert result.returncode == 2
-        assert not result.stdout
-        assert "cwd" in result.stderr and "次の操作:" in result.stderr
-        return
     assert result.returncode == 0, result.stderr
     assert not result.stderr
     output = json.loads(result.stdout) if result.stdout else {}
     assert not validate_hook_output("PreToolUse", output, host=host)
-    if scenario == "warning":
+    if scenario == "block":
+        specific = output["hookSpecificOutput"]
+        assert specific["permissionDecision"] == "deny"
+        assert "cwd" in specific["permissionDecisionReason"] and "次の操作:" in specific["permissionDecisionReason"]
+    elif scenario == "warning":
         assert "U+FFFD" in output["hookSpecificOutput"]["additionalContext"]
         assert "permissionDecision" not in output["hookSpecificOutput"]
     elif host == "codex":

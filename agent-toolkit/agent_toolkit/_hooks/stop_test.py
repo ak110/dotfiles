@@ -104,6 +104,32 @@ def test_all_approve_returns_empty_object(monkeypatch: pytest.MonkeyPatch) -> No
     assert not stop.evaluate("{}")
 
 
+@pytest.mark.parametrize("stage", ["periodic-recheck", "halt"])
+def test_internal_stop_failure_keeps_approval_and_existing_log(tmp_path, monkeypatch, capsys, stage):
+    """終了イベントの支援処理の故障だけで、モデルの継続を強制しない。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+
+    def fail(*_args, **_kwargs):
+        raise OSError("終了処理の故障注入")
+
+    if stage == "periodic-recheck":
+        marker = tmp_path / "marker"
+        marker.mkdir()
+        monkeypatch.setattr(stop, "function_hook_paths", lambda *_args, **_kwargs: (marker, tmp_path / "request"))
+        expected = "periodic_recheck_error"
+    else:
+        _replace_checks(monkeypatch, {"autonomous_exit": ("halt", "3")})
+        module = importlib.import_module("agent_toolkit._hooks.autonomous_exit")
+        monkeypatch.setattr(module, "halt", fail, raising=False)
+        expected = "halt_error"
+    assert not stop.evaluate(json.dumps({"session_id": "stop-internal"}))
+    captured = capsys.readouterr()
+    assert not captured.out and not captured.err
+    log = (tmp_path / "claude-agent-toolkit-stop-stop-internal.log").read_text(encoding="utf-8")
+    assert expected in log
+
+
 def test_suppressed_notifications_do_not_emit_empty_context(monkeypatch: pytest.MonkeyPatch) -> None:
     """共通noticeが抑止した本文は、空の通知応答へ変換しない。"""
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
@@ -190,7 +216,7 @@ def test_approve_resets_consecutive_block_count(
     assert _read_state(tmp_path, session_id)["stop_consecutive_block_count"] == 0
 
 
-def test_exception_isolated_per_check(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_exception_isolated_per_check(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path) -> None:
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
     autonomous_exit = importlib.import_module("agent_toolkit._hooks.autonomous_exit")
 
@@ -199,8 +225,10 @@ def test_exception_isolated_per_check(monkeypatch: pytest.MonkeyPatch, capsys: p
 
     monkeypatch.setattr(autonomous_exit, "evaluate", raise_error)
 
-    assert not stop.evaluate("{}")
-    assert capsys.readouterr().err == "[stop/autonomous_exit] 想定外エラー: RuntimeError: 故障\n"
+    _set_state_directory(monkeypatch, tmp_path)
+    assert not stop.evaluate('{"session_id":"check-failure"}')
+    assert not capsys.readouterr().err
+    assert "故障" in (tmp_path / "claude-agent-toolkit-stop-check-failure.log").read_text(encoding="utf-8")
 
 
 def test_stop_evaluations_scan_transcript_once(

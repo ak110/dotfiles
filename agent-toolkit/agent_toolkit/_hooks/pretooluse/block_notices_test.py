@@ -13,6 +13,7 @@ import pytest
 
 from agent_toolkit._hooks import notice
 from agent_toolkit._hooks.pretooluse import dispatch
+from agent_toolkit._hooks.pretooluse.decision import Decision
 
 _RESULT = "この呼び出しは全体を実行していない（同じ呼び出しに含まれる他のコマンドや処理を含む）。"
 
@@ -86,9 +87,14 @@ def test_block_notices_preserve_cause_and_next_action(
             assert 'kind="warn"' in message
             assert "次の操作:" in message
         return
-    assert code == 2, captured
-    blocks = re.findall(r'<atk-auto source="[^"]+" kind="block">\n(.*?)\n</atk-auto>', captured.err, re.DOTALL)
-    assert len(blocks) == 1, captured.err
+    assert code == 0, captured
+    assert not captured.err
+    specific = json.loads(captured.out)["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    blocks = re.findall(
+        r'<atk-auto source="[^"]+" kind="block">\n(.*?)\n</atk-auto>', specific["permissionDecisionReason"], re.DOTALL
+    )
+    assert len(blocks) == 1, captured.out
     body = blocks[0]
     assert _RESULT not in body
     reason, action = body.split("次の操作:", 1)
@@ -109,7 +115,7 @@ def test_repeated_warning_preserves_normal_operation(capsys: pytest.CaptureFixtu
             removable_cause=True,
             escalate_on_repeat=True,
         )
-    assert dispatch.exit_with(0, []) == 0
+    assert dispatch._emit(Decision(), [], is_codex=False) == 0  # pylint: disable=protected-access
     body = capsys.readouterr().err
     assert not body
     assert _RESULT not in notice.block_formatter("stop")("終了工程が残る", fix="工程へ戻る")

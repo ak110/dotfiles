@@ -14,6 +14,8 @@ import urllib.parse
 from collections.abc import Callable, Generator, Iterator
 from typing import cast
 
+import yaml
+
 from agent_toolkit._common import skill_modes
 from agent_toolkit._common.plugin_roots import plugin_resolution_scope, resolve_plugin_root
 
@@ -220,6 +222,7 @@ class ReadTrigger:
     documents: tuple[pathlib.Path, ...]
     headings: tuple[str, ...] = ()
     selector: str = ""
+    condition: str = ""
 
     @property
     def targets(self) -> tuple[ReadTarget, ...]:
@@ -231,6 +234,18 @@ class ReadTrigger:
 def known_operation(operation: str) -> bool:
     """操作が共通語彙か、値付き語彙であるかを返す。"""
     return operation in OPERATIONS or any(operation.startswith(prefix) and operation != prefix for prefix in PREFIXES)
+
+
+@_scope_cached
+def _plugin_manifest(root: pathlib.Path) -> dict:
+    """異なる資料や参照名が同じmanifestを使う場合も、要求内でだけ本文を共有する。"""
+    return json.loads((root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+
+
+@_scope_cached
+def _resolved_plugin_root(name: str, root: pathlib.Path, host: str, project: pathlib.Path | str | None) -> pathlib.Path:
+    """資料の参照名によらないroot解決を共有し、要求終了時に破棄する。"""
+    return resolve_plugin_root(name, root, host, project)
 
 
 @_scope_cached
@@ -260,13 +275,11 @@ def _direct_document(
         if not skill:
             return None
         owner = next((parent for parent in source.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
-        owner_name = (
-            json.loads((owner / ".claude-plugin/plugin.json").read_text(encoding="utf-8")).get("name") if owner else None
-        )
+        owner_name = _plugin_manifest(owner).get("name") if owner else None
         root = (
             owner
             if owner is not None and owner_name == plugin
-            else resolve_plugin_root(
+            else _resolved_plugin_root(
                 plugin, owner if owner is not None and owner_name == "agent-toolkit" else plugin_root, host, project
             )
         )
@@ -561,6 +574,18 @@ def parse_tables(
             raise ValueError(f"{source}:{number}: 配送操作が無い")
         if any(not known_operation(value) for value in operations):
             raise ValueError(f"{source}:{number}: 未登録の配送操作: {operations}")
+        if strict:
+            for operation in operations:
+                if not operation.startswith("skill:"):
+                    continue
+                name = operation.removeprefix("skill:")
+                owner = next((parent for parent in source.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+                if ":" not in name and owner is not None:
+                    plugin = _plugin_manifest(owner)["name"]
+                    name = f"{plugin}:{name}"
+                selected = resolve_document(name, source, plugin_root, host, project=project)
+                if selected is None or selected.name != "SKILL.md" or not selected.is_file():
+                    raise ValueError(f"{source}:{number}: 配送操作のスキルが存在しない: {operation}")
         selector = row.get("資料選択子", "").strip("` ")
         is_role_document = source.name.endswith(".subagent.md")
         if (
@@ -590,7 +615,16 @@ def parse_tables(
             for target in targets:
                 target.body()
         result.append(
-            ReadTrigger(source, number, kind, operations, documents, tuple(target.heading for target in targets), selector)
+            ReadTrigger(
+                source,
+                number,
+                kind,
+                operations,
+                documents,
+                tuple(target.heading for target in targets),
+                selector,
+                row.get("時点または条件", row.get("条件", "")),
+            )
         )
     return list(dict.fromkeys(result))
 
@@ -648,6 +682,27 @@ def reference_method_targets(
 
 
 @plugin_resolution_scope()
+def startup_targets(
+    source: pathlib.Path,
+    plugin_root: pathlib.Path,
+    *,
+    host: str = "claude",
+    project: pathlib.Path | str | None = None,
+) -> tuple[ReadTarget, ...]:
+    """起動時の配送と読了観測が共有する、入力に依存しない資料集合を返す。"""
+    rows = parse_tables(source, plugin_root, host=host, project=project)
+    targets = list(reference_method_targets(source, plugin_root, host, project=project))
+    role = source.name.removesuffix(".subagent.md")
+    for row in rows:
+        if row.kind != "起動時" and f"role:{role}" not in row.operations:
+            continue
+        targets.extend(row.targets)
+    for target in tuple(targets):
+        targets.extend(reference_method_targets(target.path, plugin_root, host, project=project))
+    return tuple(dict.fromkeys(targets))
+
+
+@plugin_resolution_scope()
 def startup_context(
     source: pathlib.Path,
     plugin_root: pathlib.Path,
@@ -657,14 +712,12 @@ def startup_context(
     project: pathlib.Path | str | None = None,
 ) -> str:
     """役割文書の受領と同時に必要な本文を、判断が始まる前に配送する。"""
-    rows = parse_tables(source, plugin_root, host=host, project=project)
-    targets = list(reference_method_targets(source, plugin_root, host, project=project))
+    targets = list(startup_targets(source, plugin_root, host=host, project=project))
     input_selectors: dict[ReadTarget, set[str]] = {}
     role = source.name.removesuffix(".subagent.md")
-    for row in rows:
+    for row in parse_tables(source, plugin_root, host=host, project=project):
         if row.kind != "起動時" and f"role:{role}" not in row.operations:
             continue
-        targets.extend(row.targets)
         if row.selector.startswith("input:"):
             name = row.selector.removeprefix("input:")
             value = inputs.get(name)
@@ -684,6 +737,22 @@ def startup_context(
     for target in tuple(targets):
         targets.extend(reference_method_targets(target.path, plugin_root, host, project=project))
     return startup_documents(targets, plugin_root, input_selectors)
+
+
+def skill_invocation_required(path: pathlib.Path, *, host: str, subject: str) -> bool:
+    """Claudeメインの通常スキルだけに、モデルからのSkill起動を要求する。"""
+    if host != "claude" or subject != "main" or path.name != "SKILL.md":
+        return False
+    text = path.read_text(encoding="utf-8").lstrip("\ufeff").replace("\r\n", "\n")
+    if not text.startswith("---\n"):
+        return True
+    frontmatter, separator, _body = text[4:].partition("\n---\n")
+    if not separator:
+        raise ValueError(f"{path}: スキルのfrontmatterが閉じられていない")
+    metadata = yaml.safe_load(frontmatter)
+    if not isinstance(metadata, dict):
+        raise ValueError(f"{path}: スキルのfrontmatterはmappingで指定する")
+    return metadata.get("disable-model-invocation") is not True
 
 
 def startup_documents(
