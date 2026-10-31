@@ -11,9 +11,9 @@
 {{- $config = setValueAtPath "personality" "none" $config -}}
 {{- /* マウスホイール1ノッチで会話画面を5行動かし、tmuxとherdrのシェル履歴（1ノッチ5行）とそろえる。 */ -}}
 {{- $config = setValueAtPath "tui.mouse_scroll_speed" 5.0 $config -}}
-{{- /* コンテキスト長と自動圧縮の境界は、選択モデルの標準設定を使う。 */ -}}
-{{- $config = deleteValueAtPath "model_context_window" $config -}}
-{{- $config = deleteValueAtPath "model_auto_compact_token_limit" $config -}}
+{{- /* 頻繁な自動圧縮による待ち時間と進行の阻害を避けるため、コンテキスト長と自動圧縮の境界を固定する。 */ -}}
+{{- $config = setValueAtPath "model_context_window" 1000000 $config -}}
+{{- $config = setValueAtPath "model_auto_compact_token_limit" 900000 $config -}}
 {{- /* 権限判定と実行範囲はCodexの自動レビュー経路へ委ねる。 */ -}}
 {{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
 {{- $config = setValueAtPath "sandbox_mode" "danger-full-access" $config -}}
