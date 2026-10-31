@@ -623,6 +623,31 @@ def scan_activity(
     )
 
 
+def living_root_session_ids(*, state_root: pathlib.Path | None = None) -> frozenset[str]:
+    """活動記録のPIDと作成時刻が生存を示す、親を持たない会話IDを読取専用で返す。
+
+    一覧表示用の生存判定であり、応答待ちや利用上限待ちも含める。
+    活動の有無を調べる`scan_activity`の判定や保存記録は変更しない。
+    読取不能・不正な記録は生存の根拠にしない。
+    """
+    found: set[str] = set()
+    for path in _paths(activity_directory(state_root), []):
+        try:
+            record = _read(path)
+        except OSError, UnicodeError, ValueError:
+            continue
+        identity = _identity(record.get("process"))
+        if (
+            session_launchers.valid_launcher(path.stem) is not None
+            and _valid_activity_record(record, path.stem)
+            and not record.get("parent_session_id")
+            and identity is not None
+            and identity.exists()
+        ):
+            found.add(path.stem)
+    return frozenset(found)
+
+
 def submission_activity(
     target_repo_ids: Collection[str],
     *,

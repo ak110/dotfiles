@@ -108,7 +108,7 @@ process-loop、レーン操作、配布物保持が共有する状態は、前�
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
-| ホストsessionのターンと子エージェントの活動 | `session-activity/<session_id>.json` | `_common/session_activity.py`。実プロセス、セッションログ、共通の親子判定結果と突き合わせて、開始猶予（待機時間）の要否を判定する | `hook.py`による活動記録処理。ファイルロック下で最新状態に上書き更新し、SessionEndイベント発生時に自身のセッションファイルを削除する。残存した古い記録については、PIDとプロセス起動時刻からプロセスの生存を確認して失効を判定する |
+| ホストsessionのターンと子エージェントの活動 | `session-activity/<session_id>.json` | `_common/session_activity.py`。実プロセス、セッションログ、共通の親子判定結果と突き合わせて、開始猶予（待機時間）の要否を判定する。人が実行する`atk agents list`（`_agents_server/commands.py`）は、PIDとプロセス起動時刻が生存を示す親の無い会話を、委譲先の無いrootとして見出し表示するためだけに読む（記録は変更しない） | `hook.py`による活動記録処理。ファイルロック下で最新状態に上書き更新し、SessionEndイベント発生時に自身のセッションファイルを削除する。残存した古い記録については、PIDとプロセス起動時刻からプロセスの生存を確認して失効を判定する |
 | WI投入作業の投入先と作業期間 | `session-activity/submissions/<session_id>.json` | `_common/session_activity.py`。投入先がprocess-loopの処理対象と重複する会話およびその子孫会話に限り、開始猶予の対象とする | `atk wi submission begin`が作成・更新し、`atk wi submission end`が削除する。SessionEndイベントでは削除しない |
 | origin単位の処理所有と未完了の再開情報 | `process-loop-ownership/<originのSHA-256>.json`および同名の`.lock` | 専用process-loopおよびall-repos | `_atk/wi/process_loop_ownership.py`。短時間のファイルロックを取得して所有権トークンと生存状態を確認し、worktree、Git共通ディレクトリ、担当セッション、レーン所有セッションの情報を更新する |
 | 対象別の担当返却 | `process-loop-ownership/<originのSHA-256>.result.json` | all-reposの中継処理および再開処理 | `_atk/wi/process_loop_all_repos.py`。担当エージェントの終了を確認した後、完了済み工程と残存工程の情報を保存する |

@@ -89,6 +89,57 @@ def test_stop_does_not_replace_host_turn_completion(tmp_path: pathlib.Path) -> N
     assert session_activity.scan_activity(state_root=tmp_path, processes=()).has_activity
 
 
+@pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
+def test_living_roots_include_waiting_but_preserve_activity(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str
+) -> None:
+    """応答待ちrootの生存表示を活動判定から分け、親のある会話を除く。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    transcript = _transcript(tmp_path, engine, "root")
+    for event in ("SessionStart", "Stop"):
+        session_activity.record_activity(
+            {"session_id": "root", "hook_event_name": event, "transcript_path": str(transcript)},
+            process=_host(engine),
+            state_root=tmp_path,
+        )
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root")
+    session_activity.record_activity(
+        {"session_id": "child", "hook_event_name": "SessionStart"},
+        process=_host(engine),
+        state_root=tmp_path,
+    )
+    before = {path: path.read_bytes() for path in session_activity.activity_directory(tmp_path).iterdir()}
+    activity = session_activity.scan_activity(state_root=tmp_path, processes=())
+    assert session_activity.living_root_session_ids(state_root=tmp_path) == {"root"}
+    assert session_activity.scan_activity(state_root=tmp_path, processes=()) == activity
+    assert "root" not in activity.active_session_ids
+    assert {path: path.read_bytes() for path in before} == before
+
+
+@pytest.mark.parametrize("invalid", ["broken", "mismatched", "missing-process", "reused", "dead"])
+def test_living_roots_require_valid_process_evidence(tmp_path: pathlib.Path, invalid: str) -> None:
+    """破損・不一致・生存しない記録を一覧へ加えず、記録を保持する。"""
+    session_activity.record_activity(
+        {"session_id": "root", "hook_event_name": "SessionStart"},
+        process=_host("codex"),
+        state_root=tmp_path,
+    )
+    path = session_activity.activity_directory(tmp_path) / "root.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    if invalid == "mismatched":
+        record["session_id"] = "other"
+    elif invalid == "missing-process":
+        record.pop("process")
+    elif invalid == "reused":
+        record["process"]["create_time"] -= 1
+    elif invalid == "dead":
+        record["process"] = {"pid": 2147483647, "create_time": 1}
+    path.write_text("{" if invalid == "broken" else json.dumps(record), encoding="utf-8")
+    before = path.read_bytes()
+    assert not session_activity.living_root_session_ids(state_root=tmp_path)
+    assert path.read_bytes() == before
+
+
 def test_dead_and_reused_pid_records_expire(tmp_path: pathlib.Path) -> None:
     """保存記録のactiveだけでは活動とせず、PID再利用と実プロセスの終了を除く。"""
     host = _host("codex")
