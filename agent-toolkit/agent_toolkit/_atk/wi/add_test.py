@@ -19,6 +19,7 @@ from typing import Any, cast
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.wi import add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import (
@@ -30,7 +31,7 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.web_input import WebInputError
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, plan_fixture
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_HEAD_COMMIT,
 )
@@ -126,6 +127,123 @@ def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+@pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+def test_dry_run_opening_preserves_raw_input(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    newline: str,
+    entry_type: str,
+) -> None:
+    """複数原稿の原文冒頭をフェンス内H2と末尾空行を含めて保存・表示する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "", entry_type=entry_type, dry_run=True)
+    expected = "# 質問の表題\n\n問いと理由。  \n推奨回答は了承。\n\n```text\n## 引用\n```\n\n\n".replace("\n", newline)
+    raw = "---\nsource: test\n---\n\n".replace("\n", newline) + expected + "## 反映内容と反映先\n対象\n".replace("\n", newline)
+    sources = [tmp_path / "body.md", tmp_path / "other.md"]
+    for source in sources:
+        source.write_bytes(raw.encode())
+    args.body_file = [str(source) for source in sources]
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    output = capsys.readouterr().out
+    saved = re.findall(r"^冒頭保存先: (.+)$", output, re.MULTILINE)
+    assert len(saved) == 2 and saved[0] != saved[1]
+    for source, saved_path in zip(sources, saved, strict=True):
+        assert f"原稿: {source}" in output
+        assert pathlib.Path(saved_path).read_bytes() == expected.encode()
+        assert source.read_bytes() == raw.encode()
+    assert output.count(expected) == 2
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+@pytest.mark.parametrize("failure", ["write", "prepare"])
+def test_dry_run_opening_save_failure_has_no_valid_result(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+) -> None:
+    """一時保存不能は失敗し、修復後には新しい抽出を取得できる。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "# 表題\n\n説明\n", dry_run=True)
+    blocked = tmp_path / "blocked"
+    blocked.write_text("通常ファイル", encoding="utf-8")
+
+    def fail_prepare(*_args: object, **_kwargs: object) -> pathlib.Path:
+        raise ManagedTempError("保存領域を準備できない")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            add_module, "create_output_temp", fail_prepare if failure == "prepare" else lambda *_args, **_kwargs: blocked
+        )
+        with pytest.raises(SystemExit) as failed:
+            _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    assert failed.value.code != 0
+    output = capsys.readouterr()
+    assert "冒頭保存先:" not in output.out
+    assert "一時保存に失敗" in output.err
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    assert "冒頭保存先:" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("case", ["empty_l4", "bare_l4", "missing_creation", "missing_detection", "bare_rejection", "valid"])
+@pytest.mark.parametrize("agent", [False, True])
+@pytest.mark.parametrize("operation", ["add", "edit"])
+def test_public_add_cause_analysis_format(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    operation: str,
+    *,
+    agent: bool,
+) -> None:
+    """原因分析の新検査はエージェントに適用し、人間入力を拒否しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    for variable in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
+        monkeypatch.delenv(variable, raising=False)
+    if agent:
+        monkeypatch.setenv("CLAUDECODE", "1")
+    cause = plan_fixture.bug_cause_table()
+    table = plan_fixture.bug_investigation_table()
+    if case in ("empty_l4", "bare_l4"):
+        value = "" if case == "empty_l4" else "該当なし。"
+        cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", f"{value} |")
+    elif case.startswith("missing_"):
+        factor = "作り込み要因" if case == "missing_creation" else "見逃し要因"
+        table = table.replace(factor, "別系統")
+    elif case == "bare_rejection":
+        table = table.replace(f"{plan_fixture.BUG_FILLER}を採用。", "不採用。")
+    else:
+        cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外の構造だけで生じた。 |")
+    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{cause}\n\n{table}\n"
+    args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
+
+    def run() -> None:
+        if operation == "add":
+            _run_public_add(args, notes, _FIXED_DT, tmp_path)
+            return
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        _write_awi_file(notes, "cause.md", source="test")
+        with pytest.raises(SystemExit) as finished:
+            atk.main(["wi", "edit", "cause.md", "--body-file", args.body_file[0], "--dry-run"], home=tmp_path)
+        if finished.value.code:
+            raise SystemExit(finished.value.code)
+
+    if agent and case != "valid":
+        with pytest.raises(SystemExit) as rejected:
+            run()
+        assert rejected.value.code != 0
+        assert "原因分析の書式" in capsys.readouterr().err
+    else:
+        run()
+        assert "成功:" in capsys.readouterr().out
+
+
 def test_public_add_post_approval_uses_fixed_choices(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """公開CLIは専用の事後承認形式を保存し、選択肢の指定を要求しない。"""
     notes = _setup_notes(tmp_path)
@@ -163,7 +281,7 @@ def test_add_dry_run_validates_without_side_effects(
 
     after_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     after_files = sorted(path.relative_to(notes) for path in notes.rglob("*") if ".git" not in path.parts)
-    assert capsys.readouterr().out == "成功: 投入前の検証が成立した（--dry-runのため保存していない）\n"
+    assert "成功: 投入前の検証が成立した（--dry-runのため保存していない）" in capsys.readouterr().out
     assert after_files == before_files
     assert after_head == before_head
 

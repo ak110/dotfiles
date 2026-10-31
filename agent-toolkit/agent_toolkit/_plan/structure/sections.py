@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import locations as _plan_file
@@ -275,6 +276,35 @@ def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:
     ]
 
 
+def check_cause_analysis_format(content: str) -> list[str]:
+    """原因分析表のL4と系統別候補の記入を検査する。内容の妥当性は検収者が判断する。"""
+    errors: list[str] = []
+    tables = extract_tables(list(iter_markdown_body_lines(content)))
+    for table in tables:
+        if table.header == PLAN_BUG_CAUSE_TABLE_HEADER:
+            for index, row in enumerate(table.rows):
+                if len(row) != len(PLAN_BUG_CAUSE_TABLE_HEADER):
+                    continue
+                value = row[-1].strip().strip("*_`~").strip()
+                if not value or (value.startswith("該当なし") and not value[4:].strip(" 。、.：:（）()")):
+                    errors.append(f"L4は空欄にせず、該当なしには理由を書く: {table.row_location(index)}")
+        if table.header == PLAN_BUG_TABLE_HEADER:
+            for index, row in enumerate(table.rows):
+                if len(row) != 2 or row[0] not in ("類似見直し観点", "再発防止策"):
+                    continue
+                parts = re.split(r"(作り込み要因|見逃し要因)", row[1])
+                candidates = dict(zip(parts[1::2], parts[2::2], strict=True))
+                for factor in PLAN_BUG_CAUSE_TABLE_ROWS:
+                    candidate = candidates.get(factor, "")
+                    if "採用" not in candidate or (
+                        "不採用" in candidate and not candidate.split("不採用", 1)[1].strip(" 。、.：:（）()")
+                    ):
+                        errors.append(
+                            f"{row[0]}には{factor}の候補と採否（不採用は理由付き）を書く: {table.row_location(index)}"
+                        )
+    return errors
+
+
 def _check_bug_unit_sections(
     body: list[tuple[int, str]], headings: list[PlanHeading], children: list[tuple[int, PlanHeading]]
 ) -> list[str]:
@@ -287,6 +317,7 @@ def _check_bug_unit_sections(
     for position, heading in children:
         start, end = heading_subtree_range(headings, position)
         tables = extract_tables(lines_within(body, start, end))
+        errors.extend(check_cause_analysis_format("\n".join(line for _lineno, line in lines_within(body, start, end))))
         standalone_tables = [
             table
             for table in tables

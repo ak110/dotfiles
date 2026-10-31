@@ -12,7 +12,10 @@ import sys
 import markdown_it
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.managed_temp.creation import create_output_temp
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import entries as _wi_entries
@@ -30,9 +33,11 @@ from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
+from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import refs as _git_refs
 from agent_toolkit._plan import owner_records as _owner_records
+from agent_toolkit._plan.structure import sections as _plan_sections
 
 
 def run_report_metadata(data: dict[str, object]) -> dict[str, object]:
@@ -267,7 +272,7 @@ _AWI_HEADING_ORDER: tuple[str, ...] = (
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
     """先頭frontmatterと論理本文を返し、`agent-toolkit:wi-standards`「通常AWIの本文」の要件のうち種別共通のものを検証する。"""
-    frontmatter, body = _parse_leading_frontmatter(message)
+    frontmatter, body = _parse_leading_frontmatter(_frontmatter.normalize_newlines(message))
     if entry_type == WI_TYPE_AWI and body_is_effectively_empty(body):
         raise WebInputError(_EMPTY_AWI_ERROR, next_action=_EMPTY_AWI_NEXT_ACTION)
     if entry_type != WI_TYPE_AWI:
@@ -379,6 +384,59 @@ def require_confirmed_cause(body: str, *, entry_type: str) -> None:
             "直接的原因が未確定のまま保存しようとした: " + " / ".join(rows),
             next_action=UNDETERMINED_CAUSE_NEXT_ACTION,
         )
+
+
+def require_cause_analysis_format(body: str) -> None:
+    """エージェントが保存する原因分析のL4と系統別候補の書式を確かめる。"""
+    if not is_agent_environment():
+        return
+    section = _headings.last_h2_section_lines(body, _CAUSE_ANALYSIS_HEADING)
+    if section is None:
+        return
+    errors = _plan_sections.check_cause_analysis_format("\n".join(section))
+    if errors:
+        raise WebInputError(
+            "原因分析の書式が不正です: " + "。".join(errors),
+            next_action="L4へ説明または理由付きの該当なしを書き、類似見直し観点・再発防止策へ両系統の候補と採否を書く",
+        )
+
+
+def print_draft_openings(messages: list[str], sources: list[str]) -> None:
+    """検証済み原稿の冒頭を原文の改行で保存し、入力との対応と本文を表示する。"""
+    saved: list[tuple[str, pathlib.Path, str]] = []
+    try:
+        for message, source in zip(messages, sources, strict=True):
+            raw = message.removeprefix("\ufeff")
+            normalized = _frontmatter.normalize_newlines(raw)
+            parsed = _frontmatter.parse_frontmatter(normalized)
+            lines = re.findall(r"[^\r\n]*(?:\r\n|\r|\n|$)", raw)
+            if parsed is not None:
+                prefix = normalized[: len(normalized) - len(parsed[1])]
+                lines = lines[prefix.count("\n") :]
+            body = "".join(lines)
+            headings = [(token, name) for token, name in _markdown_headings.parse_headings(body, 1) if token.level == 0]
+            start = headings[0][0].map[0] if headings and headings[0][0].map is not None else 0
+            end = next(
+                (
+                    token.map[0]
+                    for token, _name in _markdown_headings.parse_headings(body, 2)
+                    if token.level == 0 and token.map is not None and token.map[0] > start
+                ),
+                len(lines),
+            )
+            opening = "".join(lines[start:end])
+            path = _output_file.save_text(opening, lambda: create_output_temp("wi-draft"), filename="draft-opening.md")
+            saved.append((source, path, opening))
+    except (OSError, ManagedTempError) as error:
+        raise WebInputError(
+            f"原稿冒頭の一時保存に失敗した: {error}",
+            next_action="managed-tempの権限・空き容量を確認し、同じ原稿でdry-runを再実行する",
+        ) from error
+    # 全件の保存が成立するまで、有効な抽出として表示しない。
+    for source, path, opening in saved:
+        print(f"原稿: {source}\n冒頭保存先: {path}\n冒頭文字数: {len(opening)}\n冒頭本文:")
+        sys.stdout.write(opening)
+        print("\n冒頭本文終了")
 
 
 def _require_agent_source(frontmatter: dict[str, object], source: str | None) -> None:
@@ -741,7 +799,8 @@ def read_body_files(paths: list[str]) -> list[str]:
     for raw in paths:
         path = pathlib.Path(raw).expanduser()
         try:
-            bodies.append(_frontmatter.normalize_newlines(path.read_text(encoding="utf-8")))
+            with path.open(encoding="utf-8", newline="") as stream:
+                bodies.append(stream.read())
         except OSError as error:
             raise WebInputError(
                 f"--body-fileの読み込みに失敗しました: {raw}（{error}）",
@@ -821,6 +880,7 @@ def cmd_add(
                 validation_errors.append(error)
             try:
                 require_confirmed_cause(body, entry_type=args.type)
+                require_cause_analysis_format(body)
             except WebInputError as error:
                 validation_errors.append(error)
         except WebInputError as error:
@@ -886,6 +946,10 @@ def cmd_add(
                 source=args.source,
                 cooldown_until=getattr(args, "cooldown_until", None),
             )
+            sources = (
+                [str(pathlib.Path(path).expanduser().resolve()) for path in body_files] if body_files else ["エディター入力"]
+            )
+            print_draft_openings(messages, sources)
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             return
         generated = add_entries(

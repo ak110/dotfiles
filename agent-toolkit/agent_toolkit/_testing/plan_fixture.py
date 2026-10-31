@@ -71,12 +71,32 @@ BUG_VARIANT_LEGACY_STANDALONE: str = "legacy_standalone"
 
 def bug_investigation_table(filler: str = BUG_FILLER) -> str:
     """バグ単位の固定行の調査表を組み立てる。"""
-    return rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, filler)
+    return "\n".join(
+        [
+            _header_row(_plan_format.PLAN_BUG_TABLE_HEADER),
+            *(
+                item_row(row, f"作り込み要因: {filler}を採用。見逃し要因: {filler}を採用。")
+                if row in ("類似見直し観点", "再発防止策")
+                else item_row(row, filler)
+                for row in _plan_format.PLAN_BUG_TABLE_ROWS
+            ),
+        ]
+    )
 
 
 def legacy_bug_investigation_table(filler: str = BUG_FILLER) -> str:
     """統廃合前の行構成を持つ調査表を組み立てる。"""
-    return rows_table(_plan_format.PLAN_LEGACY_BUG_TABLE_ROWS, filler)
+    return "\n".join(
+        [
+            _header_row(_plan_format.PLAN_BUG_TABLE_HEADER),
+            *(
+                item_row(row, f"作り込み要因: {filler}を採用。見逃し要因: {filler}を採用。")
+                if row in ("類似見直し観点", "再発防止策")
+                else item_row(row, filler)
+                for row in _plan_format.PLAN_LEGACY_BUG_TABLE_ROWS
+            ),
+        ]
+    )
 
 
 def bug_file(*, title: str = "計画の主題", variant: str = BUG_VARIANT_CURRENT) -> str:

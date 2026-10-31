@@ -207,13 +207,19 @@ def format_command_contract(command_path: tuple[str, ...]) -> str | None:
     return " / ".join(fields)
 
 
+def _is_wi_draft_preview(args: argparse.Namespace) -> bool:
+    """原稿冒頭の直接表示と原文改行の保持を要求する起動かを返す。"""
+    return args.command == "wi" and args.wi_subcommand in ("add", "edit") and args.dry_run
+
+
 def _auto_saves_output(args: argparse.Namespace) -> bool:
     """エージェント環境で、長い標準出力を自動退避するサブコマンドかを返す。
 
     ユーザーが直接呼んだ場合は出力をそのまま表示する。標準出力を逐次書き続ける常駐と追従の起動は、
     終了まで出力を受け取ると経過を表示できなくなるため対象から外す。
+    原稿のdry-runは冒頭全文を直接読む契約のため対象から外す。
     """
-    if not is_agent_environment():
+    if not is_agent_environment() or _is_wi_draft_preview(args):
         return False
     if args.command == "serve":
         return False
@@ -349,6 +355,11 @@ def main(
         return
     args = parser.parse_args(raw_argv)
     args._saved_show_fields = _saved_show_fields
+    if _is_wi_draft_preview(args):
+        # 原文のCRLFがWindowsのstdoutでCRCRLFへ変わるため、原稿表示では改行変換を止める。
+        reconfigure = getattr(sys.stdout, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(newline="")
     if not _output_capture_active and _auto_saves_output(args):
         output_as_file = _output_as_file_call(args)
         after_save = output_as_file.after_save if output_as_file is not None else None

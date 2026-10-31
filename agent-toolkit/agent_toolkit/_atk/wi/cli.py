@@ -35,6 +35,7 @@ lazy from agent_toolkit._atk.wi.mutations import content as _mutation_content
 lazy from agent_toolkit._atk.wi.mutations import dependencies as _mutation_dependencies
 lazy from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 lazy from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
+lazy from agent_toolkit._common import private_notes as _private_notes
 
 _queue_filename_completer = _wi_filenames.make_filename_completer(_wi_constants.WI_STATES)
 
@@ -1226,7 +1227,11 @@ def dispatch(
     if sub == "submission":
         # 会話別の状態ディレクトリだけを扱い、private-notesを必要としない。
         return _submission.cmd_submission(args)
-    private_notes = _wi_sync.ensure_environment(home)
+    private_notes = (
+        _private_notes.default_private_notes(home)
+        if sub in ("add", "edit") and args.dry_run
+        else _wi_sync.ensure_environment(home)
+    )
     commands = {
         "add": lambda: (
             _batch.cmd_add_batch(args, private_notes, now, home) if args.batch else _add.cmd_add(args, private_notes, now, home)

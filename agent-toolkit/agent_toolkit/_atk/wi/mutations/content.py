@@ -435,7 +435,8 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             path = candidates[-1]
         else:
             _wi_filenames.validate_filenames_only([args.filename], inbox_dir)
-            _wi_sync.pull(private_notes)
+            if not args.dry_run:
+                _wi_sync.pull(private_notes)
             paths = resolve_editable_targets([args.filename], private_notes)
             path = paths[0]
         if args.cooldown_until is not None and _wi_entries.entry_state_of(path) == WI_STATE_PROCESSING:
@@ -480,7 +481,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
-    if edited == original:
+    if edited == original and not args.dry_run:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         _outcome.report_success("差分なし（変更は無い）")
@@ -498,6 +499,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             parsed_edited = _frontmatter.parse_frontmatter(edited)
             entry_type = parsed_edited[0].get("type") if parsed_edited is not None else None
             _add.require_confirmed_cause(edited, entry_type=entry_type if isinstance(entry_type, str) else WI_TYPE_AWI)
+            _add.require_cause_analysis_format(edited)
     except WebInputError as error:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
@@ -540,6 +542,13 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                         sys.exit(1)
     if args.dry_run:
         # 未pushのcommitの送信、対象ファイルの書き換え、commitとpushは保存の処理（edit_entry_content）だけが行う。
+        assert message is not None
+        assert args.body_file is not None
+        try:
+            _add.print_draft_openings([message], [str(pathlib.Path(args.body_file).expanduser().resolve())])
+        except WebInputError as error:
+            _outcome.report_failure(f"編集を拒否した: {error.reason}", next_action=error.next_action)
+            sys.exit(1)
         _outcome.report_success(f"編集前の検証が成立した（--dry-runのため保存していない）: {path.name}")
         return
     finalized_content: dict[str, str] = {}
