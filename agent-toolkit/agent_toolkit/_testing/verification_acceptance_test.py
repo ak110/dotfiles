@@ -202,7 +202,8 @@ def test_public_verification_entries_share_one_execution_interval(
         assert holder.wait(timeout=10) == 0
         for label, process in running.items():
             stdout, stderr = process.communicate(timeout=40)
-            assert process.returncode == 0, (label, stdout, stderr)
+            # タプルのreprでは子pytestのtraceback中央が省略されるため、診断は文字列で渡す。
+            assert process.returncode == 0, f"{label}\n標準出力:\n{stdout}\n標準エラー:\n{stderr}"
             observed[label] = {"stdout": stdout, "stderr": stderr}
     intervals = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
     assert len(intervals) == 6
