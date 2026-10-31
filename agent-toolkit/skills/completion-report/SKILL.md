@@ -59,7 +59,7 @@ Claude Codeでは`mcp__agent-toolkit__send_to_user`、Codexの通常のターン
 | 作業完了報告の本文を書く前 | `references/report-formats.md`の「検証結果と実行記録」「作業完了報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「検証結果と実行記録」「作業完了報告のフォーマット」` | |
 | 振り返り結果報告かその予告を書く前 | `references/report-formats.md`の「振り返り結果報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「振り返り結果報告のフォーマット」` | |
 | AWI投入結果報告を書く前 | `references/report-formats.md`の「AWI投入結果報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「AWI投入結果報告のフォーマット」` | |
-| 報告用UWIを書く前 | `references/report-formats.md`の「報告用UWIのフォーマット」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「報告用UWIのフォーマット」` | |
+| 報告用UWIを書く前 | `references/report-formats.md`の「報告用UWIのフォーマット」「報告用UWIの確認と保存」と`../wi-standards/references/uwi-format.md` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「報告用UWIのフォーマット」「報告用UWIの確認と保存」`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
 | 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
 | Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/termination-evidence.md` | |
 
@@ -93,7 +93,7 @@ Claude Codeでは`mcp__agent-toolkit__send_to_user`、Codexの通常のターン
 4. 協調モードで作成したコミットがあり、確認済みの公開範囲がコミットよりも先まで及ぶ場合は、`agent-toolkit:commit`の`references/publish.md`に従ってその範囲の公開を完了する。`agent-toolkit:process-wi`および`agent-toolkit:process-wi single-lane`は、それぞれの工程内で公開する。
 5. 元の要求が求めた結果を各工程の成果から確認し、`references/report-formats.md`「作業完了報告のフォーマット」の本文を確定する。成果、検証、公開・反映・回収の到達点、未達、自ら確定した判断、投入したWIを同じ報告へまとめる。未送達の必要事項があれば補う。追加の送達は必要な未送達事項がある場合に限る。
    改善点の報告は、その場の直接的原因と影響の最低限調査、必要な是正、担当外の処置の引き継ぎまでを終える。確定した不具合の処置は`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従う。非同期の振り返りが残る場合も、元作業の送達と終了を進める。
-6. 自律モードでは、確定した作業結果をユーザーが確認し是正を指示できるよう、事後承認型の報告用UWIをセッションにつき1件保存する。これを「報告用UWI」と呼ぶ。本文は`references/report-formats.md`「報告用UWIのフォーマット」、投入は`agent-toolkit:wi-standards`に従い、`atk wi add`と`atk wi edit`の成功メッセージと警告を検収する。原稿作成と保存受付に続けて、実際の保存成功と警告を検収した時点でユーザーへの伝達を完了とする。失敗した場合は既存のWI投入失敗時の対応へ進み、同じUWIの保存を回復する。
+6. 自律モードでは、確定した作業結果をユーザーが確認し是正を指示できるよう、事後承認型の報告用UWIをセッションにつき1件保存する。これを「報告用UWI」と呼ぶ。本文と保存前の確認は`references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」と、`agent-toolkit:wi-standards`の`references/uwi-format.md`に従う。通常WIの共通起草3資料は報告用だけの保存では取得せず、由来・認可・保存先と投入操作はwi-standardsの該当契約に従い、`atk wi add`と`atk wi edit`の成功メッセージと警告を検収する。原稿作成と保存受付に続けて、実際の保存成功と警告を検収した時点でユーザーへの伝達を完了とする。失敗した場合は既存のWI投入失敗時の対応へ進み、同じUWIの保存を回復する。
    `atk run-skill`による実行では`--source run-skill --scope "<スキル名とモードの組>"`とfrontmatterの`run_skill_report: true`を保持する。通常起動のscopeはスキル名だけとし、自由記述はscopeに含めない。batchのscopeは`agent-toolkit:session-review batch`とする。保存CLIが付与する`run_skill_run_id`を再開・更新でも維持し、起動元が渡した報告先リポジトリを使用する。報告先は起動元の指定から決め、実行cwdとは区別する。起動元は本文、commit、およびupstream設定時のpushを検収する。batchの振り返り結果はその実行の1件の報告へ集約し、対象セッションの作業完了報告とは別に保存する。
 7. 確定した本文をホストに合う手段で1回送達して終了する。Claude Codeの`send_to_user`は成功を確認し、起動元が要求する報告後の終了操作を同じ応答で実施する。通常ターンだけを終える場合、送達済みなら`…`のみを出力する。
    Codexで通常の`final`を使う場合は、必要なツール処理と未達事項の確認を先に終え、手順5の本文自体を`final`にする。必要な操作をすべて終えた後に最終応答を届ける。`atk agents-exit-session`などによってホスト本体を停止する場合は、報告用UWIの保存検収と必要な可視報告を先に終え、停止操作を最後のツール呼び出しとする。Codexで停止前に必要な可視報告は`commentary`で送達する。報告の送達は停止操作の前に完了させる。

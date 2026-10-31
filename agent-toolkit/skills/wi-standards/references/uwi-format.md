@@ -52,6 +52,13 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 
 ## 承認型ごとの内容
 
+`agent-toolkit:completion-report`が定義する報告用UWIは、同スキルの`references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」と、本書の構成・情報選定で確認する。
+通常の事後承認型UWIには共通起草手順を適用し、`--question-type=post-approval`だけでは報告用と判定しない。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| completion-reportが定義する報告用UWIを確認・保存する前 | `../../completion-report/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「報告用UWIの確認と保存」` |
+
 事前承認型のUWIでは、確認を要する解釈の相違やユーザーのみが持つ情報、各案を採用した際に対外的に生じる影響、推奨案、回答を待つ元項目のファイル名と対象範囲、および必要な回答や資料を`## 判断材料`に記載する。元項目とUWIの対応関係は、UWIの本文内のみに記録する。`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」に基づき、確認を必要としない問いはUWIへ送らずエージェント自身で確定する。
 
 事後承認型のUWIでは、実施済みの対応内容、その方針を選んだ根拠、ならびにエンドユーザーから見て観測される影響のうち、回答や是正の依頼に必要な情報のみを記載する。内部的な技術選定の経緯や調査の過程は記載しない。`--question-type=post-approval`を指定し、`--choices`を省略して投入すると、固定の選択肢である`その対応で問題無い`と`問題がある`が自動的に表示される（通常の`choice`や`yes-no`より優先される）。`問題がある`を選んだ場合の説明として、希望する是正内容を回答欄に記入するよう促す案内文を添えておく。

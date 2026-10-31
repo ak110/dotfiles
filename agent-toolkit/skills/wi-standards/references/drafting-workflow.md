@@ -1,5 +1,7 @@
 # WIの調査・起草・保存の共通手順
 
+本書は通常AWIと、報告用を除くUWIに適用する。`agent-toolkit:completion-report`が定義する報告用UWIの確認と保存は、同スキルの`references/report-formats.md`「報告用UWIの確認と保存」と`uwi-format.md`に従う。
+
 WIの作成主体には、専念型メイン（WI作成専用セッションのメインエージェント）、文脈分離のために起動される専念型の担当エージェント、ならびに他の作業中に投入する付随型のWI投入担当がある。WI作成専用セッションでは、要求の件数にかかわらずメインエージェント自身が作業することを原則とし、専念型の担当エージェントを起動する条件は`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動方法」が定める。各作成主体は、wi-standards、writing-standards、欠陥を起点とする場合はbugfix、それぞれの読込表と対象リポジトリの規範を適用する。
 要求の原文、出所、確定した要件、技術判断、観測の記録を明確に区別し、取得済みの証拠は再利用する。専念型メイン自身が保持している原文や観測結果は、委譲用の入力として再構成せず、元の記録をそのまま使用する。
 投入先リポジトリの確定、既存項目の保留（hold）や解除（unhold）、回答済みUWIの照会は、wi-standardsの状態管理と投入契約に従って行う。投入先リポジトリの外部にある対象については後述の処置要否判定に従い、ユーザー固有の判断が必要な事項が残る場合は「未確定事項」へ渡す。
@@ -11,6 +13,7 @@ WIの作成主体には、専念型メイン（WI作成専用セッションの�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../completion-report/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「報告用UWIの確認と保存」` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md#「起動方法」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「起動方法」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
@@ -145,7 +148,7 @@ AWIは`agent-toolkit:wi-standards`「通常AWIの本文」、UWIは`references/u
 
 各要求の本文を他の要求から独立させ、`drafting-completion.md`「投入前の読み直し」に沿って読み直し、併せて以下の項目を確認する。不備が見つかった本文は修正した上で再チェックする。
 
-並行して準備する複数の原稿も個別に読み直し、`atk wi add --dry-run`や`atk wi edit --dry-run`を実施する。原稿、要求内容、必要な根拠を投入前レビューへ渡す。複雑な引用の取り込みには`wi-quote-check`を任意に利用できる。
+並行して準備する複数の原稿も個別に読み直し、`atk wi add --dry-run`や`atk wi edit --dry-run`を実施する。検証済み原稿ごとに返されたユーザー向け部分の保存先を、入力原稿と要求識別子へ対応付けて証拠に記録する。原稿、抽出保存先、要求内容、必要な根拠を投入前レビューへ渡し、冒頭だけの先行判定に用いる。現行原稿と抽出の一致を確認し、変更時はdry-runを再実行する。複雑な引用の取り込みには`wi-quote-check`を任意に利用できる。
 
 - 原文と転記、反映内容を読み比べ、要求の脱落・追加・意味の変化、ユーザーの回答とエージェントの説明の混同がないことを確認する。送達済みの質問だけに回答済み注記を付ける
 

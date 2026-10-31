@@ -1,5 +1,7 @@
 # 起草完了の条件
 
+本書は通常AWIと、報告用を除くUWIに適用する。`agent-toolkit:completion-report`が定義する報告用UWIは、同スキルの`references/report-formats.md`「報告用UWIの確認と保存」と`uwi-format.md`で確認する。
+
 本書は、WI原稿の作成主体と独立した確認主体が共通して用いる、採否・成立性・完成判定の基準を定める。各主体は、wi-standardsの読込表で自身の役割や操作前の時点に対応付けられた節を読む。共通基準の改訂は本書で行う。取得や保存の操作、および確認側の検収・差戻しは、それぞれの役割の手順に従う。
 AWIのみに適用される規定にはその旨を明記している。「重複判定」はAWIのみに適用する。UWIの書式については`uwi-format.md`を参照する。
 
@@ -9,6 +11,7 @@ AWIのみに適用される規定にはその旨を明記している。「重�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../completion-report/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「報告用UWIの確認と保存」` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
 | 観測事象を契機とする要求の採用を確定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」「対策の選定」` |
@@ -142,7 +145,7 @@ bugfixスキルの重大度判定に基づいて終了した類似見直しの�
 後述するユーザー明示集合の保護対象には、同節に示される既知の欠陥や、追加・強化された規定の既存対象も含める。
 ユーザーが確定した判断を複数の通常AWIへ展開する場合は、判断ごとに各本文の反映箇所または非該当理由を対応付け、判断の一部が抜け落ちている集合は投入しない。
 
-本文を単独で読み直し、以下の条件をすべて満たしているもののみを投入する。UWIに対しては、`awi-body.md`の各節および原因分析に関する項目を除いて適用する。複数のWIを連続して起草する場合であっても、各本文を独立して確認する。
+本文を単独で読み直し、以下の条件をすべて満たしているもののみを投入する。報告用を除くUWIに対しては、`awi-body.md`の各節および原因分析に関する項目を除いて適用する。複数のWIを連続して起草する場合であっても、各本文を独立して確認する。
 
 - すべての節が`awi-body.md`「要求固有性と記載量」を満たしていること。要求に固有でない一般的な記述は除外するか、要求との関係を明確にする
 - 要件と技術判断の分類が`drafting-workflow.md`「確定した要件と委譲元の判断」に従っており、原文および実際の回答出所から保存直前まで裏付けられていること
