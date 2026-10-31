@@ -33,7 +33,7 @@ let detailRequestGeneration = 0;
 let detailSessionGeneration = 0;
 let listRequestGeneration = 0;
 let targetRepoRequestGeneration = 0;
-let knownUwiRequestGeneration = 0;
+let knownEntryRequestGeneration = 0;
 let listLoadingVisible = false;
 let listRequestPending = false;
 let detailRequestPending = false;
@@ -55,8 +55,8 @@ let cooldownTimer = null;
 const entryStateDisplays = new Map();
 let currentPage = 1;
 let pagination = {page: 1, page_size: ENTRY_PAGE_SIZE, page_count: 1, total_count: 0};
-let knownUwiBaselineReady = false;
-const knownUwiFilenames = new Set();
+let knownEntryBaselineReady = false;
+const knownEntryFilenames = new Set();
 const pendingOperations = new Set();
 const dialogOrigins = new Map();
 const dialogStack = [];
@@ -411,6 +411,14 @@ function renderEntry(entry) {
     confirmation.textContent = CONFIRMATION_LABELS[entry.confirmation];
     status.append(confirmation);
   }
+  if (entry.blocked === true) {
+    // 未回答UWIの回答待ちは保存状態ではなく依存先から導いた値であり、編集中のholdと区別して示す。
+    const blocked = document.createElement('span');
+    blocked.className = 'blocked-badge';
+    blocked.textContent = 'blocked';
+    blocked.title = '未回答のUWIの回答待ち';
+    status.append(blocked);
+  }
   if (entry.plan) {
     const plan = document.createElement('span');
     plan.className = 'plan-badge';
@@ -739,25 +747,34 @@ function syncNotificationButton() {
   button.hidden = typeof Notification === 'undefined' || Notification.permission !== 'default';
 }
 
-async function refreshKnownUwis({notify = false} = {}) {
-  const generation = ++knownUwiRequestGeneration;
+// 新しく登録されたユーザー対応の項目（未回答UWIと要確認AWI）だけを通知する。
+// 既知集合はファイル名で持ち、初回取得では通知せずに基準だけを作る。
+// 既知の項目の回答・確認状態・対象repoの変化と、削除後の同名の再登録は通知しない。
+async function refreshKnownEntries({notify = false} = {}) {
+  const generation = ++knownEntryRequestGeneration;
   let payload;
   try {
-    payload = await (api('/api/entries?type=uwi&status=all&answered=all'));
+    payload = await (api('/api/entries?type=all&status=all&answered=all'));
   } catch (error) {
-    if (generation !== knownUwiRequestGeneration) return;
+    if (generation !== knownEntryRequestGeneration) return;
     throw error;
   }
-  if (generation !== knownUwiRequestGeneration) return;
-  const allUwis = Array.isArray(payload.entries) ? payload.entries : [];
-  const newUnanswered = knownUwiBaselineReady && notify ? allUwis.filter(entry =>
-    !knownUwiFilenames.has(entry.filename) && PROCESSABLE_STATES.has(entry.state) && entry.answered === false
-  ) : [];
-  allUwis.forEach(entry => knownUwiFilenames.add(entry.filename));
-  knownUwiBaselineReady = true;
-  if (newUnanswered.length && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-    const filenames = newUnanswered.map(entry => entry.filename);
-    new Notification('新規未回答UWI', {
+  if (generation !== knownEntryRequestGeneration) return;
+  const allEntries = Array.isArray(payload.entries) ? payload.entries : [];
+  const added = knownEntryBaselineReady && notify
+    ? allEntries.filter(entry => !knownEntryFilenames.has(entry.filename) && PROCESSABLE_STATES.has(entry.state))
+    : [];
+  allEntries.forEach(entry => knownEntryFilenames.add(entry.filename));
+  knownEntryBaselineReady = true;
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const notifications = [
+    ['新規未回答UWI', added.filter(entry => entry.kind === 'uwi' && entry.answered === false)],
+    ['新規要確認AWI', added.filter(entry => entry.kind === 'awi' && entry.confirmation === 'required')],
+  ];
+  for (const [title, entries] of notifications) {
+    if (!entries.length) continue;
+    const filenames = entries.map(entry => entry.filename);
+    new Notification(title, {
       body: filenames.length === 1 ? filenames[0] : `${filenames.length}件: ${filenames.join('、')}`
     });
   }
@@ -1722,7 +1739,7 @@ async function handleFilterChange({reloadRepos = false} = {}) {
 }
 
 async function reloadFromExternalChange() {
-  void refreshKnownUwis({notify: true}).catch((error) => {
+  void refreshKnownEntries({notify: true}).catch((error) => {
     setGlobalError(error.message);
   });
   if (userListOperationPending) {
@@ -1862,7 +1879,7 @@ function initializeApp() {
   syncFilterDependencies();
   syncNotificationButton();
   initialization = Promise.all([loadEntries(), loadTargetRepos()])
-    .then(() => refreshKnownUwis({notify: false}))
+    .then(() => refreshKnownEntries({notify: false}))
     .catch((error) => {
       setGlobalError(error.message);
     });

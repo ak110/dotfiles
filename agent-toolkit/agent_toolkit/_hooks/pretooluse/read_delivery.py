@@ -31,7 +31,14 @@ from agent_toolkit._common.plugin_roots import (
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command
-from agent_toolkit._hooks import agent_id, codex_read_delivery, document_reads, plugin_resources, rules_context, work_contract
+from agent_toolkit._hooks import (
+    agent_id,
+    codex_read_observation,
+    document_reads,
+    plugin_resources,
+    rules_context,
+    work_contract,
+)
 from agent_toolkit._hooks import tool_input as tool_input_fields
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
@@ -147,7 +154,7 @@ def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[p
         ranges = [sed] if sed is not None else []
         if invocation.arguments_known and tokens and pathlib.PurePath(tokens[0]).name == "cat":
             # 出力変換オプションを許さない既存の静的計画で全operandの出力を連結し、結果本文との一致を確かめる。
-            plan = codex_read_delivery.read_plan(shlex.join(tokens))
+            plan = codex_read_observation.read_plan(shlex.join(tokens))
             if len(plan) == 1:
                 ranges = [(plan[0].argv[index], 1, None) for index in plan[0].operands]
         if (
@@ -169,7 +176,7 @@ def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[p
 
 def _pure_bash_read(command: str, cwd: str) -> bool:
     """既存の静的読取と、解決済みcdだけを連結した取得操作を判定する。"""
-    if codex_read_delivery.read_plan(command):
+    if codex_read_observation.read_plan(command):
         return True
     invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
     if not invocations or any(
@@ -183,7 +190,7 @@ def _pure_bash_read(command: str, cwd: str) -> bool:
     ):
         return False
     # 元の演算子を検証し、構文を省いた呼出し列だけから純粋読取と推定しない。
-    groups = codex_read_delivery.read_command_groups(command)
+    groups = codex_read_observation.read_command_groups(command)
     if groups is None:
         return False
     current = shell_cwd.CwdResolution(cwd, bool(cwd))
@@ -194,7 +201,7 @@ def _pure_bash_read(command: str, cwd: str) -> bool:
             if changed is None or not changed.resolved:
                 return False
             current = changed
-        elif codex_read_delivery.read_plan(shlex.join(tokens)):
+        elif codex_read_observation.read_plan(shlex.join(tokens)):
             reads = True
         else:
             return False
@@ -746,9 +753,37 @@ def selected_targets(records: dict, agent: str) -> list[read_triggers.ReadTarget
         if key.startswith("selected-read-target:") and agent in agents:
             raw = json.loads(key.removeprefix("selected-read-target:"))
             path = pathlib.Path(raw["path"])
-            if path.is_file():
-                targets.append(read_triggers.ReadTarget(path, raw["heading"]))
+            if not path.is_file():
+                continue
+            target = read_triggers.ReadTarget(path, raw["heading"])
+            if target.heading:
+                try:
+                    target.body()
+                except ValueError:
+                    # 選択後に資料から消えた見出しは全文を読んでも取得済みにならないため、
+                    # 保存時の`_select_targets`と同じく選択から外す。
+                    continue
+            targets.append(target)
     return targets
+
+
+def _unmark(identifier: str, agent: str) -> Callable[[dict], dict | None]:
+    """記録キーから主体を除く状態更新を返す。"""
+
+    def mutate(state: dict) -> dict | None:
+        recorded = state.get(rules_context.OPERATION_SKILL_READY_KEY)
+        if not isinstance(recorded, dict):
+            return None
+        agents = recorded.get(identifier)
+        if not isinstance(agents, list) or agent not in agents:
+            return None
+        state[rules_context.OPERATION_SKILL_READY_KEY] = {
+            **recorded,
+            identifier: [item for item in agents if item != agent],
+        }
+        return state
+
+    return mutate
 
 
 def _select_targets(session_id: str, targets: list[read_triggers.ReadTarget], agent: str) -> None:
@@ -828,9 +863,7 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                 name, inputs, cwd = request
                 response = block.get("content")
                 if name == "Skill":
-                    if response and not any(
-                        marker in str(response) for marker in ("truncated output", "Output too large", "truncatedByTokenCap")
-                    ):
+                    if response and not host_truncated(response):
                         resolved = resolve_skill_document(inputs.get("skill"), [target.path for target in targets])
                         for target in targets:
                             if target.path == resolved:
@@ -1131,11 +1164,17 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             )
         )
         host = "codex" if is_codex_payload(payload) else "claude"
-        pending.extend(
+        # 案内済みで未取得の資料は、取得するまで次の操作でも案内する。
+        # 文脈境界（会話圧縮・clear）の前に選んだ資料は候補であり、境界後の操作ごとに再掲しない。
+        # 残る工程で必要な資料は、現在の操作の宣言が改めて選んだ時点で案内する。
+        carried = [
             target
             for target in selected_targets(records, agent)
-            if target not in pending and not target_ready(records, target, agent)
-        )
+            if target not in pending
+            and not target_ready(records, target, agent)
+            and agent not in records.get(rules_context.carried_read_target_key(target.path), [])
+        ]
+        pending.extend(carried)
         method_sources = dict.fromkeys([*_read_paths(tool_name, tool_input, cwd), *sorted(roles)])
         for path in method_sources:
             if path.suffix == ".md" and path.is_file():
@@ -1232,6 +1271,13 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         pending = [target for target in pending if not target_ready(records, target, agent)]
     if not pending:
         return Decision()
+    # 現在の操作が改めて対象にした資料は持ち越しの扱いを外し、圧縮前と同じ限定遮断の対象へ戻す。
+    for target in pending:
+        carried_key = rules_context.carried_read_target_key(target.path)
+        if target not in carried and agent in records.get(carried_key, []):
+            update_state(session_id, _unmark(carried_key, agent))
+    records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    records = records if isinstance(records, dict) else {}
     command = tool_input.get("command")
     if tool_name in {"Read", "Skill"} or (tool_name == "Bash" and isinstance(command, str) and _pure_bash_read(command, cwd)):
         _select_targets(session_id, pending, agent)
@@ -1256,7 +1302,8 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         history_path = payload.get("transcript_path")
         if isinstance(history_path, str) and history_path and transcript.read_transcript_lines(history_path) is None:
             return Decision()
-    shown = "、".join(f"`{path}`" for path in pending)
+    # 同じ資料の節違いは1件の全文取得で足りるため、パスごとに1回だけ示す。
+    shown = "、".join(dict.fromkeys(f"`{target.path}`" for target in pending))
     subject = operation_skills.resolve_subject(payload)
     if subject == operation_skills.SUBJECT_CODEX:
         methods = "指定されたシェルコマンド"
@@ -1270,10 +1317,10 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         else ""
     )
     instruction = f"次の資料を、この操作の結果を使う前に{methods}で全文取得せよ。必須手順であり省略するな。{followup}"
-    steps = []
+    failures: dict[read_triggers.ReadTarget, str] = {}
     for target in pending:
         try:
-            steps.append(acquisition_step(target, subject))
+            acquisition_step(target, subject)
         except (OSError, UnicodeError, ValueError) as error:
             repairs = {row.source.resolve() for row in rows if target in row.targets} | {target.path}
             writes = operation_skills.written_paths(tool_name, tool_input, cwd)
@@ -1289,24 +1336,33 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                         ),
                     )
                 )
-            steps.append(
-                rules_context.acquisition_failure(
-                    target,
-                    error,
-                    shell=subject == operation_skills.SUBJECT_CODEX,
-                    agent=subject == operation_skills.SUBJECT_SUBAGENT,
-                )
+            failures[target] = rules_context.acquisition_failure(
+                target,
+                error,
+                shell=subject == operation_skills.SUBJECT_CODEX,
+                agent=subject == operation_skills.SUBJECT_SUBAGENT,
             )
-    acquisition = "。".join(steps) + "。出力が省略された範囲は分割して取得し、必要な全文を読め。"
+    acquisition = (
+        "。".join(_merged_steps(pending, failures, subject)) + "。出力が省略された範囲は分割して取得し、必要な全文を読め。"
+    )
     if not warning_only and written:
-        if any(agent in records.get("read-guidance:" + document_key(target.path), []) for target in pending):
+        # 文脈境界の前に選んだ資料は、現在の操作が改めて対象にするまで案内済みとせず、遮断の根拠にもしない。
+        # 境界後に案内した資料の未取得だけで止め、成功した全文取得で解除する契約は保つ。
+        guided = [
+            target for target in pending if agent not in records.get(rules_context.carried_read_target_key(target.path), [])
+        ]
+        if any(agent in records.get("read-guidance:" + document_key(target.path), []) for target in guided):
+            # 遮断を解除する取得対象だけを示す。持ち越した資料まで並べると、取得しても解除されない資料を読ませる。
             return Decision(
                 block=_block_notice(
-                    f"案内済み資料が未取得のため再書込を停止する。未取得資料: {shown}。",
-                    fix=acquisition + "全文取得後に元の書込操作を再発行せよ。",
+                    "案内済み資料が未取得のため再書込を停止する。未取得資料: "
+                    + "、".join(dict.fromkeys(f"`{target.path}`" for target in guided))
+                    + "。",
+                    fix="。".join(_merged_steps(guided, failures, subject))
+                    + "。出力が省略された範囲は分割して取得し、必要な全文を読め。全文取得後に元の書込操作を再発行せよ。",
                 )
             )
-        for target in pending:
+        for target in guided:
             update_state(session_id, operation_skills.mark_ready("read-guidance:" + document_key(target.path), agent))
     if warning_only:
         return Decision(
@@ -1334,6 +1390,64 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     )
 
 
+def _merged_steps(
+    targets: list[read_triggers.ReadTarget], failures: dict[read_triggers.ReadTarget, str], subject: str
+) -> list[str]:
+    """同じ資料の取得手段を1件へまとめ、注目する節を併記する。
+
+    節ごとに同じ全文取得を並べると、案内が長くなり同じ資料を繰り返し読ませる。
+    読取または見出しの解決に失敗した対象は、復旧の案内を個別に残す。
+    """
+    groups: dict[pathlib.Path | read_triggers.ReadTarget, list[str]] = {}
+    for target in targets:
+        if target in failures:
+            groups[target] = []
+        else:
+            groups.setdefault(target.path, []).append(target.heading)
+    steps = []
+    for key, headings in groups.items():
+        if isinstance(key, read_triggers.ReadTarget):
+            steps.append(failures[key])
+            continue
+        step = acquisition_step(read_triggers.ReadTarget(key), subject)
+        named = [heading for heading in dict.fromkeys(headings) if heading]
+        if named:
+            step += "。特に" + "、".join(f"`{heading}`" for heading in named) + "に注目せよ"
+        steps.append(step)
+    return steps
+
+
+_PERSISTED_OUTPUT_OPEN = "<persisted-output>"
+_PERSISTED_OUTPUT_CLOSE = "</persisted-output>"
+
+
+def host_truncated(response: object) -> bool:
+    """ホストが読取結果に付ける省略の表現だけで、省略の有無を判定する。
+
+    資料の本文に省略を思わせる語句（`truncated output`など）が含まれていても省略とはしない。
+    判定する表現は、Codexの応答先頭の包絡、Claude CodeのReadの`file.truncatedByTokenCap`、
+    Bashの退避を示す`persistedOutputPath`、および退避時にホストが本文全体を置き換える
+    `<persisted-output>`の囲みである。SkillとWebFetchの応答には固有の省略表現が無い。
+    """
+    if codex_read_observation.response_is_truncated(response):
+        return True
+    if isinstance(response, dict):
+        file = response.get("file")
+        if isinstance(file, dict) and file.get("truncatedByTokenCap"):
+            return True
+        if response.get("persistedOutputPath"):
+            return True
+        text = document_reads.response_text(response)
+    elif isinstance(response, list):
+        text = "\n".join(part["text"] for part in response if isinstance(part, dict) and isinstance(part.get("text"), str))
+    else:
+        text = response
+    if not isinstance(text, str):
+        return False
+    stripped = text.strip()
+    return stripped.startswith(_PERSISTED_OUTPUT_OPEN) and stripped.endswith(_PERSISTED_OUTPUT_CLOSE)
+
+
 def _read_body_proofs(
     tool_name: str,
     tool_input: dict,
@@ -1359,9 +1473,7 @@ def _read_body_proofs(
     text = document_reads.response_text(response)
     if not text and isinstance(response, dict) and isinstance(response.get("file"), dict):
         text = response["file"].get("content")
-    if not isinstance(text, str) or any(
-        marker in text for marker in ("truncated output", "Output too large", "truncatedByTokenCap")
-    ):
+    if not isinstance(text, str) or host_truncated(response) or host_truncated(text):
         return
     sed_reads, only_reads = _sed_reads(tool_name, tool_input, cwd)
     if sed_reads:
@@ -1451,12 +1563,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     cwd = payload.get("cwd", "")
     cwd = cwd if isinstance(cwd, str) else ""
     agent = agent_id.resolve_hook_agent_id(payload)
-    if (
-        tool_name == "WebFetch"
-        and isinstance(tool_input.get("url"), str)
-        and response
-        and not any(marker in str(response) for marker in ("truncated output", "Output too large", "truncatedByTokenCap"))
-    ):
+    if tool_name == "WebFetch" and isinstance(tool_input.get("url"), str) and response and not host_truncated(response):
         update_state(session_id, operation_skills.mark_ready("external-document:" + tool_input["url"], agent))
     for path in operation_skills.written_paths(tool_name, tool_input, cwd):
         if operation_skills.is_agent_doc_target_file(path):
@@ -1514,9 +1621,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     targets.update(path for path in paths if path.suffix == ".md" and _document_owner(path) is not None)
     if tool_name == "Skill":
         qualified = tool_input.get("skill")
-        if not response or any(
-            marker in str(response) for marker in ("truncated output", "Output too large", "truncatedByTokenCap")
-        ):
+        if not response or host_truncated(response):
             return
         targets.update(row.source for row in rows)
         targets.update(read_triggers.document_sources(plugin_resources.plugin_root(), cwd))

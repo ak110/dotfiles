@@ -7,8 +7,10 @@ import re
 
 from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._hooks import agents_server_observations
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
+from agent_toolkit._testing.helpers import _read_state
 
 _HOOK = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _STOP_CHECK_RUNNER = pathlib.Path(_stop_check_runner.__file__)
@@ -73,8 +75,12 @@ def _run_stop(
     stop_hook_active: bool = False,
     agent_id: str | None = None,
     last_assistant_message: str | None = None,
+    delegated: bool = False,
 ) -> str:
-    """指定セッションでStopフックを実行しstdoutを返す。"""
+    """指定セッションでStopフックを実行しstdoutを返す。
+
+    `delegated`はagents_serverのClaude委譲先として起動された形態（自動再開で継続を所有する主体がある）を表す。
+    """
     payload: dict[str, object] = {"session_id": local_session_id, "stop_hook_active": stop_hook_active}
     if agent_id is not None:
         payload["agent_id"] = agent_id
@@ -82,6 +88,10 @@ def _run_stop(
         payload["last_assistant_message"] = last_assistant_message
     environment = _environment(state_directory)
     environment["CLAUDE_CODE_SESSION_ID"] = local_session_id
+    for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION"):
+        environment.pop(name, None)
+    if delegated:
+        environment["AGENT_TOOLKIT_DELEGATED_SESSION"] = "1"
     result = _fork_runner.run_script(
         _STOP_CHECK_RUNNER,
         argv=("agents_server_session_advisor",),
@@ -346,27 +356,50 @@ def test_held_lock_without_registered_target_still_warns(tmp_path: pathlib.Path)
             release_lock(lock_file)
 
 
-def test_waiting_declaration_for_the_session_satisfies_observation(tmp_path: pathlib.Path) -> None:
-    """直前の応答がそのsessionを指す待機表明である場合は警告しない。"""
+def test_waiting_declaration_without_continuation_owner_still_warns(tmp_path: pathlib.Path) -> None:
+    """継続を所有する主体を起動形態から確かめられない場合（run-skillの単一入力起動やメイン）は、待機表明でも警告する。"""
     local_session_id = "waiting-declared"
     remote_session_id = "remote-waiting-declared"
     _record_start(tmp_path, local_session_id, remote_session_id)
 
-    assert _run_stop(tmp_path, local_session_id, last_assistant_message=f"待機中: {remote_session_id}") == ""
+    output = _run_stop(tmp_path, local_session_id, last_assistant_message=f"待機中: {remote_session_id}")
+
+    assert _WARNING_BODY in output
+    assert f"対象session: {remote_session_id}" in output
 
 
-def test_waiting_declaration_resolves_later_stops_until_new_work(tmp_path: pathlib.Path) -> None:
-    """待機表明で解消したsessionは、自動再開で受け取った後の終了でも警告せず、新しい作業の配送で再び警告する。"""
+def test_delegate_waiting_declaration_is_excluded_only_for_that_stop(tmp_path: pathlib.Path) -> None:
+    """委譲先の待機表明はそのStopだけ除外し、未観測を保存したまま次のStopで再び警告する。実受領で解消する。"""
     local_session_id = "waiting-declared-later"
     remote_session_id = "remote-waiting-declared-later"
     _record_start(tmp_path, local_session_id, remote_session_id)
 
-    assert _run_stop(tmp_path, local_session_id, last_assistant_message=f"待機中: {remote_session_id}") == ""
-    assert _run_stop(tmp_path, local_session_id, last_assistant_message="実装完了\n検証結果: 終了コード0") == ""
+    assert _run_stop(tmp_path, local_session_id, last_assistant_message=f"待機中: {remote_session_id}", delegated=True) == ""
+    state = _read_state(tmp_path, local_session_id)
+    # 同じ記録を読む継続判定（background_tasks）と終了証拠（termination_evidence）も未観測のまま扱う。
+    assert agents_server_observations.has_pending_owned_observation(state, "main")
+    assert agents_server_observations.pending_session_ids(state, "main") == [remote_session_id]
+    assert _WARNING_BODY in _run_stop(
+        tmp_path, local_session_id, last_assistant_message="実装完了\n検証結果: 終了コード0", delegated=True
+    )
 
+    _record_running_wait(tmp_path, local_session_id, remote_session_id)
+
+    assert _run_stop(tmp_path, local_session_id, last_assistant_message="実装完了", delegated=True) == ""
+
+
+def test_send_message_acceptance_and_declaration_do_not_resolve(tmp_path: pathlib.Path) -> None:
+    """追送の受理と待機表明は観測ではないため、未観測を解消しない。"""
+    local_session_id = "waiting-send"
+    remote_session_id = "remote-waiting-send"
+    _record_start(tmp_path, local_session_id, remote_session_id)
     _record_send_message(tmp_path, local_session_id, remote_session_id)
+    assert _run_stop(tmp_path, local_session_id, last_assistant_message=f"待機中: {remote_session_id}", delegated=True) == ""
 
-    assert _WARNING_BODY in _run_stop(tmp_path, local_session_id, last_assistant_message="実装完了")
+    output = _run_stop(tmp_path, local_session_id, last_assistant_message="続行する", delegated=True)
+
+    assert _WARNING_BODY in output
+    assert f"対象session: {remote_session_id}" in output
 
 
 def test_waiting_declaration_for_another_session_still_warns(tmp_path: pathlib.Path) -> None:

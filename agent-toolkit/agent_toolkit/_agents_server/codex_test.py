@@ -1620,10 +1620,11 @@ async def test_all_start_and_resume_requests_disable_experimental_context_manage
         for _method, params in requests:
             features = params["config"]["features"]
             assert features["context_management"]["experimental_mode"] is False
-            if launch_kind != "delegate":
-                assert features["hooks"] is True
             if launch_kind == "explore":
                 assert features["plugins"] is False
+                assert features["hooks"] is True
+            else:
+                assert "hooks" not in params["config"]
 
 
 @pytest.mark.asyncio
@@ -2031,9 +2032,10 @@ async def test_codex_explore_commands_reach_start_resume_and_followup(
                 "hooks": True,
                 "context_management": {"experimental_mode": False},
             }
+            # 軽量起動にも出力省略の回収案内を届けるためPost hookを接続し、本文配送用の退避上限の解除は渡さない。
             configured = explore_thread["config"]["hooks"]["PostToolUse"][0]
             assert configured["matcher"] == "Bash"
-            assert all(handler["additionalContextLimit"] == 0 for handler in configured["hooks"])
+            assert all("additionalContextLimit" not in handler for handler in configured["hooks"])
             assert all("${PLUGIN_ROOT}" not in handler["command"] for handler in configured["hooks"])
             pyfltr = explore_thread["config"]["mcp_servers"]["pyfltr"]
             definition = json.loads((subject.plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))[
@@ -2073,8 +2075,9 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
         thread_params = client.requests[0][1]
         assert thread_params["config"]["bypass_hook_trust"] is True
         assert thread_params["config"]["project_doc_max_bytes"] == 0
-        assert thread_params["config"]["features"] == {"hooks": True, "context_management": {"experimental_mode": False}}
-        assert set(thread_params["config"]["hooks"]) == {"PostToolUse"}
+        # shellはpluginのhookをそのまま受けるため、thread設定でPost hookを重ねない。
+        assert thread_params["config"]["features"] == {"context_management": {"experimental_mode": False}}
+        assert "hooks" not in thread_params["config"]
         assert thread_params["developerInstructions"] == subject._developer_instructions("shell")  # noqa: SLF001
 
 
@@ -2114,8 +2117,8 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
         assert shell_resume["developerInstructions"] == subject._developer_instructions("shell")  # noqa: SLF001
         assert shell_resume["config"]["bypass_hook_trust"] is True
         assert shell_resume["config"]["project_doc_max_bytes"] == 0
-        assert shell_resume["config"]["features"] == {"hooks": True, "context_management": {"experimental_mode": False}}
-        assert set(shell_resume["config"]["hooks"]) == {"PostToolUse"}
+        assert shell_resume["config"]["features"] == {"context_management": {"experimental_mode": False}}
+        assert "hooks" not in shell_resume["config"]
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

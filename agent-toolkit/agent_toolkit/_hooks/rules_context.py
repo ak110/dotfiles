@@ -123,6 +123,20 @@ _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
 """メイン会話の起動済みの記録を除くSessionStartの`source`。新しいセッションの`startup`は記録を持たない。"""
 READ_CONTEXT_RESET_KEY = "startup-context-reset"
 """最初の操作より前の圧縮でも、履歴上の起動本文の取得を再計上しないための主体識別子。"""
+CARRIED_READ_TARGET_PREFIX = "read-guidance-carried:"
+"""文脈境界の前に選んだ資料を、境界の後に改めて案内するまで再書込の遮断根拠から外す記録キーの接頭辞。
+
+境界で案内の記録は消えるが選択の記録は残るため、持ち越した候補を境界後の初回書込で案内済みとすると、
+現在の操作と関係しない過去の候補だけを根拠に次の書込が止まる。
+"""
+
+
+def carried_read_target_key(path: pathlib.Path) -> str:
+    """持ち越しの印の記録キーを返す。
+
+    境界の後に資料が変わっても境界前の選択を持ち越しとして扱い続けるため、本文ハッシュを含めない。
+    """
+    return CARRIED_READ_TARGET_PREFIX + str(path.resolve())
 
 
 def reset_main_operation_skill_ready(
@@ -175,6 +189,14 @@ def reset_main_operation_skill_ready(
             )
             for name, agents in recorded.items()
         }
+        for name, agents in recorded.items():
+            if not name.startswith("selected-read-target:") or not isinstance(agents, list) or MAIN_AGENT_ID not in agents:
+                continue
+            try:
+                path = pathlib.Path(json.loads(name.removeprefix("selected-read-target:"))["path"])
+            except KeyError, TypeError, ValueError:
+                continue
+            updated[carried_read_target_key(path)] = [MAIN_AGENT_ID]
         # 最初の操作より前に圧縮された場合も、旧起動本文を取得済みへ戻さない。
         updated[READ_CONTEXT_RESET_KEY] = [MAIN_AGENT_ID]
         if updated == recorded:
@@ -238,8 +260,10 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
     if not steps:
         return None
 
-    def notice(items: list[str], remaining: bool) -> str:
-        suffix = "。残る資料は次の操作で案内する" if remaining else ""
+    def notice(items: list[str], remaining: int) -> str:
+        # 候補は操作ごとに再掲しないため、通知へ収まらない候補は件数だけを示す。
+        # 残る工程で必要な資料は、その操作の宣言が改めて選んだ時点で案内する。
+        suffix = f"。ほかに{remaining}件の候補を省いた" if remaining else ""
         # 圧縮前の選択資料は候補として示し、全件の一括再取得は求めない。
         # 残る工程で使わない資料まで読み直すと、圧縮直後に出力上限を超える複合取得が起きるため。
         return _llm_notice(
@@ -252,10 +276,10 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
     included: list[str] = []
     for step in steps:
         candidate = [*included, step]
-        if len(notice(candidate, len(candidate) < len(steps))) > budget:
+        if len(notice(candidate, len(steps) - len(candidate))) > budget:
             break
         included = candidate
-    return notice(included, len(included) < len(steps)) if included else None
+    return notice(included, len(steps) - len(included)) if included else None
 
 
 def mark_user_confirmation_pending(session_id: str) -> None:

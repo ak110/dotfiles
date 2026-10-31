@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import datetime
 import json
+import os
 import pathlib
 from typing import Any
 
@@ -21,7 +23,7 @@ from agent_toolkit._agents_server import (
     wait_summary,
 )
 from agent_toolkit._atk import environment, managed_temp, session_record_format
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_activity, session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 
 
@@ -719,12 +721,106 @@ def _write_root_sessions(state_root: pathlib.Path, root_session_id: str, session
     (directory / "root.json").write_text(json.dumps({"version": 1, "sessions": sessions}), encoding="utf-8")
 
 
-def test_agents_list_human_tree_omits_roots_without_listed_sessions(
+@pytest.mark.parametrize("watch", [False, True])
+def test_agents_list_shows_living_childless_roots(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], watch: bool
+) -> None:
+    """SessionStartだけのrootを表示し、PID終了・再利用では表示から外す。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    identity = session_registry.ProcessIdentity.of(os.getpid())
+    assert identity is not None
+    session_activity.record_activity(
+        {"session_id": "root-alone", "hook_event_name": "SessionStart"},
+        process=session_activity.HostProcess("codex", identity),
+        state_root=tmp_path,
+    )
+    parser = argparse.ArgumentParser()
+    commands.build_parser(parser)
+    args = parser.parse_args(["list", *(["--watch"] if watch else [])])
+
+    def stop_watch(_seconds: float, **_kwargs: Any) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(commands.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(commands.time, "sleep", stop_watch)
+    assert commands.dispatch(args, environment={}) == 0
+    assert "root root-alone" in capsys.readouterr().out
+    for process in (
+        session_registry.ProcessIdentity(identity.pid, identity.create_time - 1),
+        session_registry.ProcessIdentity(2147483647, 1),
+    ):
+        session_activity.record_activity(
+            {"session_id": "root-alone", "hook_event_name": "SessionStart"},
+            process=session_activity.HostProcess("codex", process),
+            state_root=tmp_path,
+        )
+        assert commands.dispatch(args, environment={}) == 0
+        assert "root root-alone" not in capsys.readouterr().out
+
+
+def test_agents_list_keeps_long_usage_limit_waits_read_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """古い活動記録の待機rootと利用上限待機中の委譲先を表示し、保存状態を維持する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    identity = session_registry.ProcessIdentity.of(os.getpid())
+    assert identity is not None
+    with monkeypatch.context() as activity_clock:
+        activity_clock.setattr(session_activity.time, "time", lambda: 1.0)
+        for event in ("SessionStart", "Stop"):
+            session_activity.record_activity(
+                {"session_id": "root-waiting", "hook_event_name": event},
+                process=session_activity.HostProcess("claude", identity),
+                state_root=tmp_path,
+            )
+    _write_root_sessions(
+        tmp_path,
+        "root-with-child",
+        [
+            {
+                "session_id": "waiting-child",
+                "status": "running",
+                "progress": "進捗",
+                "started_at": "2026-09-01T00:00:00+00:00",
+                "updated_at": "2026-09-01T00:00:00+00:00",
+                "api_error": {
+                    "type": "usage_limit",
+                    "limit_type": "five_hour",
+                    "first_at": "2026-09-01T00:00:00+00:00",
+                    "resets_at": "2099-01-01T00:00:00+00:00",
+                },
+            }
+        ],
+    )
+    before = {
+        path.relative_to(tmp_path): (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    parser = argparse.ArgumentParser()
+    commands.build_parser(parser)
+    assert commands.dispatch(parser.parse_args(["list"]), environment={}) == 0
+    output = capsys.readouterr().out
+    assert "root root-waiting" in output
+    assert "root root-with-child" in output
+    assert "waiting-child" in output
+    assert "利用上限の解除待ち five_hour" in output
+    after = {
+        path.relative_to(tmp_path): (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
+def test_agents_list_human_tree_omits_empty_roots_without_liveness_evidence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """人の端末の一覧は表示するsessionを持つrootだけを見出しにし、管理用ディレクトリをrootとして出力しない。"""
+    """生存記録のない空rootと管理用ディレクトリを省き、終了履歴の指定を保つ。"""
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
@@ -1435,10 +1531,10 @@ def test_human_tree_prefers_usage_limit_and_api_retry_over_progress() -> None:
 
 
 def test_human_tree_reports_empty_list() -> None:
-    """表示対象のsessionが無いrootだけなら、見出しを出力せずsessionが無いことを示す。"""
+    """表示対象のrootが無ければ、sessionが無いことを示す。"""
     now = datetime.datetime(2026, 9, 13, tzinfo=datetime.UTC)
 
-    assert commands._human_tree([("root-empty", [])], columns=80, now=now) == "sessionはありません"  # pylint: disable=protected-access
+    assert commands._human_tree([], columns=80, now=now) == "sessionはありません"  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize("include_terminated", [False, True])

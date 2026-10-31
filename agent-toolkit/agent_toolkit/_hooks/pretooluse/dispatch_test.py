@@ -77,7 +77,6 @@ def test_agents_server_pass_uses_host_output_contract(tmp_path: pathlib.Path, ho
         "host-pass",
         {
             "agents_server_cwd_by_session": {"remote": str(tmp_path)},
-            "operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]},
         },
     )
     result = _run(
@@ -130,7 +129,6 @@ def test_continuation_inputs_pass_without_input_warning(tmp_path: pathlib.Path, 
         "host-continuation",
         {
             "agents_server_cwd_by_session": {"remote": str(tmp_path)},
-            "operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]},
         },
     )
     result = _run(
@@ -161,7 +159,6 @@ def test_continuation_format_errors_pass_to_tool(tmp_path: pathlib.Path, host: s
         "host-format",
         {
             "agents_server_cwd_by_session": {"remote": str(tmp_path)},
-            "operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]},
         },
     )
     result = _run(
@@ -771,7 +768,7 @@ def test_second_removable_warning_is_suppressed(tmp_path: pathlib.Path) -> None:
     _write_session_state(
         tmp_path,
         "dispatch-repeated-removable-warning",
-        {"operation_skill_delivered_agents": {"agent-basics:writing-standards": ["main"]}},
+        {},
     )
 
     first = _run(payload, env_overrides=environment)
@@ -1208,7 +1205,7 @@ class TestPlanFileDoesNotRequireTextlintRead:
         _write_session_state(
             tmp_path,
             session_id,
-            {"operation_skill_delivered_agents": {"agent-basics:writing-standards": ["main"]}, **flags},
+            dict(flags),
         )
 
     def test_write_without_read_does_not_warn(self, tmp_path: pathlib.Path):
@@ -1370,13 +1367,7 @@ class TestRemovedChecksAreSilent:
         ],
     )
     def test_bash_input_passes_without_output(self, tmp_path: pathlib.Path, command: str) -> None:
-        # 検索と検証の実行はスキルの取得を求めるため、取得済みの文脈で撤去済みの判定だけを確かめる。
-        ready = {
-            "agent-basics:search": ["main"],
-            "agent-basics:check-execution": ["main"],
-            "agent-basics:check-execution:references/verification-scope.md": ["main"],
-        }
-        _write_session_state(tmp_path, "removed-bash", {"operation_skill_delivered_agents": ready})
+        _write_session_state(tmp_path, "removed-bash", {})
         result = _run(
             {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "removed-bash", "cwd": str(tmp_path)},
             env_overrides=_plan_file_state_env(tmp_path),
@@ -1418,12 +1409,7 @@ class TestRemovedChecksAreSilent:
             _write_session_state(
                 tmp_path,
                 f"removed-tool-{index}",
-                {
-                    "operation_skill_delivered_agents": {
-                        "agent-toolkit:delegation": ["main"],
-                        "agent-basics:writing-standards": ["main"],
-                    }
-                },
+                {},
             )
             result = _run(
                 {**payload, "session_id": f"removed-tool-{index}", "cwd": str(tmp_path)},

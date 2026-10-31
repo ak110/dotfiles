@@ -6,19 +6,19 @@ PostToolUseがその応答と呼出主体を`agents_server_sessions`へ記録し
 本フックは`pending_observation`が真で、呼出主体が一致する記録だけを警告対象にする。
 
 判定対象は観測を試みていない作業の有無である。
-観測義務を解消する条件は次の4つとする。
+`pending_observation`を解消するのは、実際に観測・破棄した証拠だけとする。
+`atk agents wait`の終了と`kill`の受理（実行環境が呼び出しをバックグラウンドタスクへ移し、
+構造化応答を伴わない移行通知だけを返した場合を含む）をPostToolUseが記録する。
+`send_message`の受理と待機表明は観測ではないため解消しない。
+一度解消したsessionでも、`send_message`が新しい作業を配送すれば再び警告対象になる。
+
+保存状態を変えずに、そのStopの判定に限って警告から除く場合は次の2つとする。
 第1に、`atk agents wait`が待機所有権を保持し、そのsessionを待機対象として登録している間は観測中として扱う。
-第2に、同コマンドの終了後はPostToolUseが`pending_observation`を解消する。
-第3に、`kill`は結果を意図的に破棄するため同じ状態を解消する。
-第4に、直前の応答が`待機中: <session識別子>`の形でそのsessionを待機対象として指す場合は、
-自動再開がそのsessionの結果を受け取る仕組みが成立しているため解消する。
-本フックはそのsessionの記録を解消済みとして保存し、自動再開で結果を受け取った後のturnの終了でも警告しない。
-この4項は、`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が正しい終了として許容する形を全て覆う。
-この規範が許容する終了の形を変える改訂では、同じ変更単位で本列挙と`evaluate`の除外条件を追随させる。
-実行環境が待機・中断をバックグラウンドタスクへ移し、
-構造化応答を伴わない移行通知だけを返した場合も解消契機に含める。
-一度解消したsessionでも、
-`send_message`が新しい作業を配送すれば再び警告対象になる。
+第2に、直前の応答が`待機中: <session識別子>`の形でそのsessionを指し、かつ現在のセッションが
+agents_serverのClaude・Codex委譲先である場合は除く。agents_serverはこのセッションが起動した子を追跡し、
+全終了後に同じセッションを自動再開するため、結果を回収する主体が残る。
+継続を担う主体を確認できない起動形態（`atk run-skill`の単一入力起動やメインなど）では、待機表明だけでは除かない。
+Antigravityの委譲先は子の起動結果を追跡へ接続しないため、委譲先であっても除かない。
 
 警告は`hookSpecificOutput.additionalContext`でそのターンを継続させる。
 `stop_hook_active`が真の再呼び出し、payload不正、状態不在・破損時は何も出力せず
@@ -27,15 +27,18 @@ PostToolUseがその応答と呼出主体を`agents_server_sessions`へ記録し
 委譲先での実行可否: 委譲先も`wait`と`kill`を実行できるため、除外せず警告できる。
 """
 
+import os
 import re
 
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agents_server_observations as _observations
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
+lazy from agent_toolkit._hooks.host import is_antigravity_payload
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session
 
 _HOOK_ID = "agents_server_session_advisor"
@@ -73,6 +76,11 @@ def _declared_waiting_target_ids(last_assistant_message: object) -> set[str]:
     return targets
 
 
+def _continuation_owned(payload: dict) -> bool:
+    """待機表明の後に、同じセッションを自動再開して子の結果を回収させる主体が起動形態から確かめられるかを返す。"""
+    return _delegated_session.is_delegated(os.environ) and not is_antigravity_payload(payload)
+
+
 def evaluate(payload_text: str) -> tuple[str, str]:
     """未観測作業の判定結果と、警告する場合の本文を返す。"""
     resolved = parse_stop_session(payload_text, lambda: None)
@@ -86,10 +94,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     owner_agent_id = resolve_hook_agent_id(payload)
     pending_session_ids = _observations.pending_session_ids(read_state(session_id), owner_agent_id)
     observed = _observations.actively_waited_session_ids(pending_session_ids)
-    declared = _declared_waiting_target_ids(payload.get("last_assistant_message")) & set(pending_session_ids)
-    if declared:
-        _observations.resolve_declared_sessions(session_id, owner_agent_id, declared)
-    observed |= declared
+    if _continuation_owned(payload):
+        observed |= _declared_waiting_target_ids(payload.get("last_assistant_message")) & set(pending_session_ids)
     pending_session_ids = [item for item in pending_session_ids if item not in observed]
     if not pending_session_ids:
         return "approve", ""

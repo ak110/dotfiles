@@ -14,6 +14,7 @@ from agent_toolkit._atk.wi.constants import (
     CONFIRMATION_REQUIRED,
     WI_PROCESSABLE_STATES,
     WI_STATE_ADOPTED,
+    WI_STATE_PROCESSING,
     WI_STATE_REJECTED,
     WI_STATES,
     WI_TYPE_AWI,
@@ -173,12 +174,20 @@ def _effective_dependencies(
 ) -> tuple[str, ...] | None:
     """トップレベル依存を返し、無い場合はlegacy依存を読み取る。"""
     parsed = parse_frontmatter(entry.text)
-    if parsed is not None and "depends_on" in parsed[0]:
-        raw = parsed[0]["depends_on"]
+    return _dependency_names(parsed[0] if parsed is not None else {}, entry.legacy_dependency, resolver_cache)
+
+
+def _dependency_names(
+    data: dict[str, object],
+    legacy: dict[str, object] | None,
+    resolver_cache: dict[str, str | None],
+) -> tuple[str, ...] | None:
+    """解析済みfrontmatterから依存先のファイル名を返す。トップレベル依存が無い場合はlegacy依存を読む。"""
+    if "depends_on" in data:
+        raw = data["depends_on"]
         if not isinstance(raw, list) or any(not isinstance(value, str) for value in raw):
             return None
         return tuple(dict.fromkeys(value for value in raw if isinstance(value, str)))
-    legacy = entry.legacy_dependency
     if legacy is None or legacy.get("kind") in (None, "none"):
         return ()
     kind = legacy.get("kind")
@@ -257,6 +266,82 @@ def applicable_confirmation(kind: str | None, metadata: dict[str, object]) -> st
     if kind != WI_TYPE_AWI or CONFIRMATION_KEY not in metadata:
         return None
     return CONFIRMATION_CONFIRMED if metadata[CONFIRMATION_KEY] == CONFIRMATION_CONFIRMED else CONFIRMATION_REQUIRED
+
+
+def _can_become_candidate(entry: QueueEntry) -> bool:
+    """依存先がprocess-wiの同じ実行の候補へ入り得るかを返す。UWIは回答済みで`atk run-skill`由来でない場合だけ候補になる。"""
+    if entry.kind != WI_TYPE_UWI:
+        return True
+    return entry.uwi_answered is True and entry.source != _automated_prompt.SOURCE_RUN_SKILL
+
+
+def _internal_dependency_waits(
+    wait_targets: dict[tuple[str, str | None], tuple[QueueEntry, ...]],
+    ready_names: set[str],
+    processing_names: set[str],
+) -> list[str]:
+    """依存先が全て同じ実行の候補へ入る項目だけを内部依存待ちとして返す。
+
+    候補は着手可能な項目、処理中の項目、内部依存待ちの項目であり、未回答のUWIと`atk run-skill`のUWIは除く。
+    依存先の候補外は推移的に伝わる（AがB、Bが未回答UWIを待つ場合、Bが候補外なのでAも候補外）ため、
+    候補外の依存先を持つ項目が無くなるまで内部依存待ちの集合を縮める。
+    候補外の依存先を待つ項目を内部依存待ちに数えると、回答前の依存元が実装対象へ投入される。
+    """
+    internal = set(wait_targets)
+
+    def is_candidate(target: QueueEntry) -> bool:
+        if not _can_become_candidate(target):
+            return False
+        return (
+            target.filename in ready_names
+            or target.filename in processing_names
+            or (target.filename, target.target_repo) in internal
+        )
+
+    changed = True
+    while changed:
+        changed = False
+        for key in tuple(internal):
+            if not all(is_candidate(target) for target in wait_targets[key]):
+                internal.discard(key)
+                changed = True
+    return [filename for filename, _repo in internal]
+
+
+def unanswered_uwi_dependents(
+    entries: Iterable[tuple[pathlib.Path, str | None, str | None, dict[str, object], str]],
+) -> frozenset[pathlib.Path]:
+    """依存先に未回答のUWIを持つAWIのパスを返す。
+
+    WI画面は回答待ちを保存状態ではなくこの導出値で`blocked`と表示する。
+    依存先の回答だけが変わった場合も正しく変わるよう、呼び出し側は項目ごとの表示キャッシュの外で求める。
+    `entries`には未終了の項目（`inbox`・`processing`・`hold`）を、パス・frontmatterの`target_repo`の値・種別・
+    解析済みのfrontmatter・本文の組で渡す。一覧の1操作で本文の解析と対象リポジトリの正規化を繰り返さないよう、
+    解析済みの値を受け取る。依存先は、同名の項目のうち`target_repo`の値が依存元と一致するものを優先して決める。
+    """
+    records = tuple(entries)
+    repos_by_name: dict[str, set[str | None]] = {}
+    unanswered: dict[str, set[str | None]] = {}
+    for path, target_repo, kind, _metadata, text in records:
+        repos_by_name.setdefault(path.name, set()).add(target_repo)
+        if kind == WI_TYPE_UWI and not _is_uwi_answered(text):
+            unanswered.setdefault(path.name, set()).add(target_repo)
+    resolver_cache: dict[str, str | None] = {}
+    dependents: set[pathlib.Path] = set()
+    for path, target_repo, kind, metadata, _text in records:
+        if kind != WI_TYPE_AWI:
+            continue
+        schedule = metadata.get("queue_schedule")
+        legacy = schedule.get("dependency") if isinstance(schedule, dict) else None
+        names = _dependency_names(metadata, legacy if isinstance(legacy, dict) else None, resolver_cache) or ()
+        for name in names:
+            waiting = unanswered.get(name, set())
+            # 依存元と同じ対象リポジトリの同名項目があればそれを依存先とし、無ければ同名の全項目を依存先とする。
+            same_repo = target_repo in repos_by_name.get(name, set())
+            if (target_repo in waiting) if same_repo else bool(waiting):
+                dependents.add(path)
+                break
+    return frozenset(dependents)
 
 
 def _legacy_dependency_is_satisfied(
@@ -381,6 +466,7 @@ def calculate_readiness(
         for path, repo, text, state, kind in snapshot
         if state in WI_PROCESSABLE_STATES
     )
+    processing_names = {path.name for path, _repo, _text, state, _kind in snapshot if state == WI_STATE_PROCESSING}
     active = (
         all_active
         if target_repo is None
@@ -473,7 +559,7 @@ def calculate_readiness(
     permanently_blocked = set((*broken, *invalid, *self_dependencies, *missing_dependencies, *cyclic, *invalid_cooldowns))
     ready: list[str] = []
     blocked: list[str] = []
-    internal_waits: list[str] = []
+    internal_wait_targets: dict[tuple[str, str | None], tuple[QueueEntry, ...]] = {}
     for entry in active:
         if entry.kind == WI_TYPE_UWI and entry.source == _automated_prompt.SOURCE_RUN_SKILL:
             # `atk run-skill`のUWIは同じ対象リポジトリと同じスキルの次回の実行が扱い、process-wiは選定から除く。
@@ -510,7 +596,8 @@ def calculate_readiness(
             continue
         blocked.append(entry.filename)
         if waiting_targets and all((target.filename, target.target_repo) in target_pairs for target in waiting_targets):
-            internal_waits.append(entry.filename)
+            internal_wait_targets[(entry.filename, entry.target_repo)] = waiting_targets
+    internal_waits = _internal_dependency_waits(internal_wait_targets, set(ready), processing_names)
     return ReadinessResult(
         ready=tuple(sorted(ready)),
         blocked=tuple(sorted(blocked)),

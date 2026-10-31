@@ -553,6 +553,7 @@ main > .toolbar {
 #screen-wi .state-badge,
 #screen-wi .plan-badge,
 #screen-wi .attention-badge,
+#screen-wi .blocked-badge,
 #screen-wi .confirmation-badge {
   display: inline-flex;
   width: fit-content;
@@ -568,6 +569,11 @@ main > .toolbar {
   background: #f4f3ff;
 }
 #screen-wi .attention-badge {
+  color: #7a4e00;
+  background: #fef0c7;
+}
+/* 回答待ちのblockedは自動着手を止めている状態として、要確認と同じ注意色で示す。 */
+#screen-wi .blocked-badge {
   color: #7a4e00;
   background: #fef0c7;
 }

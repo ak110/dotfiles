@@ -28,6 +28,20 @@ from agent_toolkit._testing.git_repository import init_repository, run_git
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 
+def _persisted_replacement(body: str) -> str:
+    """Claude Codeが大きな結果を退避するときに本文全体を置き換える応答を返す。
+
+    形はClaude Code 2.1.314の本体が組み立てる`<persisted-output>`の囲みを写した。
+    """
+    return (
+        "<persisted-output>\nOutput too large (48.2KB). Full output saved to: /tmp/tool-results/out.txt\n\n"
+        f"Preview (first 2KB):\n{body[:40]}\n...\n</persisted-output>"
+    )
+
+
+_PERSISTED_REPLACEMENT = _persisted_replacement("退避した本文の先頭")
+
+
 @pytest.fixture(autouse=True)
 def _local_plugin_root(monkeypatch):
     """資料rootを差し替える各試験へ、起動元の固定rootを持ち込まない。"""
@@ -781,7 +795,7 @@ def test_external_index_requires_the_selected_page(monkeypatch, tmp_path):
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     read_delivery.observe({"tool_response": {"exit_code": 1}}, "WebFetch", {"url": page}, "test")
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
-    read_delivery.observe({"tool_response": "truncated output"}, "WebFetch", {"url": page}, "test")
+    read_delivery.observe({"tool_response": _PERSISTED_REPLACEMENT}, "WebFetch", {"url": page}, "test")
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     read_delivery.observe({"tool_response": "選んだ対象ページの本文"}, "WebFetch", {"url": page}, "test")
     assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
@@ -1013,7 +1027,7 @@ def test_guidance_requires_real_acquisition_for_each_subject(tmp_path, monkeypat
     if subject in {"main", "task", "delegate"}:
         assert not read_delivery.target_ready(records, ReadTarget(skill), agent)
         read_delivery.observe(
-            {**payload, "tool_response": "truncated output"}, "Skill", {"skill": "example-plugin:example"}, "test"
+            {**payload, "tool_response": _PERSISTED_REPLACEMENT}, "Skill", {"skill": "example-plugin:example"}, "test"
         )
         assert not read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], ReadTarget(skill), agent)
         read_delivery.observe({**payload, "tool_response": "起動成功"}, "Skill", {"skill": "example-plugin:example"}, "test")
@@ -1303,8 +1317,6 @@ def test_sed_range_output_must_match_the_document_lines(tmp_path, monkeypatch, m
         output = output.replace("必須基準0", "別の基準")
     elif case == "extra-output":
         output += "追加の出力\n"
-    elif case == "truncated":
-        output += "\nOutput too large"
     elif case == "beyond-end":
         command = f"sed -n '{len(lines) + 1},{len(lines) + 5}p' -- {paths[0]}"
         output = ""
@@ -1314,9 +1326,9 @@ def test_sed_range_output_must_match_the_document_lines(tmp_path, monkeypatch, m
     elif case == "joined":
         command = "; ".join(f"sed -n '1,$p' -- {path}" for path in paths)
         output = "".join(path.read_text(encoding="utf-8") for path in paths)
-    read_delivery.observe(
-        {"turn_id": "turn", "tool_response": {"stdout": output, "exit_code": 0}}, "Bash", {"command": command}, "test"
-    )
+    # 切り詰めはホストが付ける退避の項目で表す。本文は全行のままでも取得にしない。
+    response = {"stdout": output, "exit_code": 0, **({"persistedOutputPath": "/tmp/out.txt"} if case == "truncated" else {})}
+    read_delivery.observe({"turn_id": "turn", "tool_response": response}, "Bash", {"command": command}, "test")
     records = memory.get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert all(read_delivery.target_ready(records, ReadTarget(path), "main") is ready for path in paths)
 
@@ -1557,7 +1569,7 @@ def test_history_restore_preserves_content_actor_failure_and_context_boundaries(
     elif case == "json-failed":
         result["message"]["content"][0]["content"] = json.dumps({"exit_code": 1, "stdout": body})
     elif case == "truncated":
-        result["message"]["content"][0]["content"] = body + "\nOutput too large"
+        result["message"]["content"][0]["content"] = _persisted_replacement(body)
     elif case in {"sidechain", "other-actor", "own-child"}:
         for entry in entries:
             entry.update({"isSidechain": True} if case == "sidechain" else {"agentId": "child"})
@@ -1893,6 +1905,88 @@ def test_compaction_recovery_lists_a_selected_document_read_through_a_same_conte
     recovery = rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
     assert [path for path, _heading, _fingerprint in recovery] == [checkout.resolve()]
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
+
+
+def test_compaction_limits_rewrite_block_to_documents_guided_after_compaction(tmp_path, monkeypatch, memory):
+    """圧縮前に選んだ資料は候補に留めて案内も遮断もせず、圧縮後に案内した資料の未取得は全文取得まで止める。"""
+    earlier = tmp_path / "earlier.md"
+    later = tmp_path / "later.md"
+    earlier.write_text("# 圧縮前の資料\n\n圧縮前の基準\n", encoding="utf-8")
+    later.write_text("# 圧縮後の資料\n\n圧縮後の基準\n", encoding="utf-8")
+    rows = [
+        ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (earlier,)),
+        ReadTrigger(tmp_path / "SKILL.md", 2, "操作", ("tool:Write",), (later,)),
+    ]
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
+    payload = {"cwd": str(tmp_path)}
+    write = {"file_path": str(tmp_path / "out.md"), "content": "本文"}
+    assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
+    read_delivery.observe({**payload, "tool_response": later.read_text()}, "Read", {"file_path": str(later)}, "test")
+    assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+    # 圧縮前は、案内済み資料の未取得による再書込の遮断が成立している。
+    assert str(earlier) in (read_delivery.deliver(payload, "Write", write, "test").block or "")
+
+    rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+    # 圧縮前の候補は操作ごとに再掲せず、現在の操作が選んだ資料だけを案内する。
+    first = _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+    assert str(later) in first and str(earlier) not in first
+    blocked = read_delivery.deliver(payload, "Write", write, "test").block
+    assert blocked is not None and str(later) in blocked and str(earlier) not in blocked
+    read_delivery.observe({**payload, "tool_response": later.read_text()}, "Read", {"file_path": str(later)}, "test")
+    # 圧縮前に案内した資料だけが未取得の再書込は、案内も遮断もせずに通す。
+    for _ in range(2):
+        decision = read_delivery.deliver(payload, "Write", write, "test")
+        assert decision.block is None and not decision.notices
+    # 現在の操作が圧縮前の資料を改めて対象にした後は、圧縮前と同じく案内後の再書込を止める。
+    assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
+    assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+    assert str(earlier) in (read_delivery.deliver(payload, "Write", write, "test").block or "")
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["no-compaction", "compaction-then-change", "change-then-compaction", "compaction-only", "compaction-then-edit"],
+)
+def test_selection_that_no_longer_matches_the_document_is_not_reguided(tmp_path, monkeypatch, memory, scenario):
+    """選択後に見出しが消えた資料と、圧縮後に変わった資料を、宣言が外れた後の操作ごとに再掲しない。"""
+    doc = tmp_path / "parent.md"
+    doc.write_text("# 親\n\n## 生成\n\n生成の本文\n\n## 起動\n\n起動の本文\n", encoding="utf-8")
+    rows = [ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (doc,), ("生成",))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
+    payload = {"cwd": str(tmp_path)}
+    assert str(doc) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
+    read_delivery.observe({**payload, "tool_response": doc.read_text()}, "Read", {"file_path": str(doc)}, "test")
+    # 節「生成」を別の資料へ移した後の本文。compaction-then-editだけは節を残して本文を変える。
+    changed = (
+        "# 親\n\n## 生成\n\n改訂した生成の本文\n\n## 起動\n\n起動の本文\n"
+        if scenario == "compaction-then-edit"
+        else "# 親\n\n## 起動\n\n起動の本文\n"
+    )
+    if scenario == "change-then-compaction":
+        doc.write_text(changed, encoding="utf-8")
+    if scenario != "no-compaction":
+        rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+    if scenario in {"no-compaction", "compaction-then-change", "compaction-then-edit"}:
+        doc.write_text(changed, encoding="utf-8")
+    rows.clear()
+    for _ in range(2):
+        assert str(doc) not in "\n".join(read_delivery.deliver(payload, "Bash", {"command": "git status"}, "test").notices)
+    read_delivery.observe({**payload, "tool_response": doc.read_text()}, "Read", {"file_path": str(doc)}, "test")
+    assert not read_delivery.deliver(payload, "Bash", {"command": "git status"}, "test").notices
+
+
+@pytest.mark.usefixtures("memory")
+def test_sections_of_the_same_document_share_one_acquisition_step(tmp_path, monkeypatch):
+    """同じ資料の複数の節は、1件の全文取得の案内へまとめて注目する節を併記する。"""
+    document = tmp_path / "guide.md"
+    document.write_text("# 手引き\n\n## 前提\n\n前提の本文\n\n## 手順\n\n手順の本文\n", encoding="utf-8")
+    rows = [ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (document, document), ("前提", "手順"))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    body = _notice_body(read_delivery.deliver({"cwd": str(tmp_path)}, "Do", {}, "test"))
+    assert body.count(f"Readで`{document}`を全文読め") == 1
+    assert "特に`前提`、`手順`に注目せよ" in body
 
 
 @pytest.mark.parametrize("failure", ["root", "io", "missing", "unicode", "root-text-only"])
@@ -2404,8 +2498,9 @@ def test_cd_acquisition_defers_guidance_until_non_read(tmp_path, monkeypatch, co
             "tool_name": "Bash",
             "tool_input": inputs,
             "tool_response": {
-                "stdout": body + ("\nOutput too large" if result == "truncated" else ""),
+                "stdout": body,
                 "exit_code": int(result == "failed"),
+                **({"persistedOutputPath": "/tmp/out.txt"} if result == "truncated" else {}),
             },
         },
     )
@@ -2536,7 +2631,7 @@ def test_mixed_cat_sed_public_rejects_unproven_output(tmp_path, monkeypatch, sub
     elif case == "interrupted":
         response["interrupted"] = True
     elif case == "truncated":
-        output += "\nOutput too large"
+        response["persistedOutputPath"] = "/tmp/out.txt"
     elif case == "pipe":
         commands[0] += " | cat"
     elif case == "redirect":
@@ -2673,7 +2768,9 @@ def test_mixed_history_restoration_preserves_acquisition_boundaries(tmp_path, mo
     body = paths[0].read_text() + (
         paths[1].read_text().splitlines(keepends=True)[0] if case == "partial" else paths[1].read_text()
     )
-    response = {"stdout": body + ("\nOutput too large" if case == "truncated" else ""), "exit_code": int(case == "failed")}
+    response = {"stdout": body, "exit_code": int(case == "failed")}
+    if case == "truncated":
+        response["persistedOutputPath"] = "/tmp/out.txt"
     entries: list[dict] = [
         {
             "type": "assistant",
@@ -2798,3 +2895,197 @@ def test_mixed_skill_body_does_not_replace_main_skill_invocation(tmp_path, monke
         assert invoked.returncode == 0
         final = _run_hook_in_process("pretooluse", operation)
     assert final.returncode == 0 and str(skill) not in final.stdout and str(reference) not in final.stdout
+
+
+def _write_operation(tmp_path, payload):
+    """案内済み資料を要する再書込の操作を返す。"""
+    return {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "本文"}}
+
+
+def _guided_and_blocked(operation, path):
+    """初回の書込で資料を案内し、未取得のままの再書込を遮断する状態まで進める。"""
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and str(path) in first.stdout
+    second = _run_hook_in_process("pretooluse", operation)
+    assert second.returncode == 2 and str(path) in second.stderr
+
+
+@pytest.mark.parametrize("marker", ["truncated output", "Output too large", "truncatedByTokenCap"])
+@pytest.mark.parametrize("method", ["Read", "Bash", "Skill"])
+@pytest.mark.usefixtures("memory")
+def test_marker_words_in_document_body_do_not_block_read(tmp_path, monkeypatch, method, marker):
+    """省略を思わせる語句を本文に含む資料も、省略の無い取得なら読了になり再書込を許可する。"""
+    if method == "Skill":
+        root = tmp_path / "plugin"
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin/plugin.json").write_text('{"name":"example-plugin"}', encoding="utf-8")
+        path = root / "skills/example/SKILL.md"
+        path.parent.mkdir(parents=True)
+        rows = [ReadTrigger(path, 1, "操作", ("tool:Write",), (path,))]
+        monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+        monkeypatch.setattr(read_delivery.read_triggers, "reference_method_targets", lambda *_args, **_kwargs: ())
+    else:
+        path = _rows(tmp_path, monkeypatch, "tool:Write", count=1)[0]
+    path.write_text(f"# 資料\n\n本文中の語句: {marker}\n", encoding="utf-8")
+    payload = {"session_id": "test", "cwd": str(tmp_path)}
+    operation = _write_operation(tmp_path, payload)
+    _guided_and_blocked(operation, path)
+    body = path.read_text(encoding="utf-8")
+    if method == "Read":
+        acquisition = {"tool_name": "Read", "tool_input": {"file_path": str(path)}, "tool_response": body}
+    elif method == "Bash":
+        acquisition = {
+            "tool_name": "Bash",
+            "tool_input": {"command": f"cat -- {path}"},
+            "tool_response": {"stdout": body, "exit_code": 0},
+        }
+    else:
+        acquisition = {
+            "tool_name": "Skill",
+            "tool_input": {"skill": "example-plugin:example"},
+            "tool_response": f"Launching skill: example-plugin:example\n{body}",
+        }
+    observed = _run_hook_in_process("posttooluse", {**payload, "hook_event_name": "PostToolUse", **acquisition})
+    assert observed.returncode == 0
+    final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 0 and str(path) not in final.stdout
+
+
+@pytest.mark.parametrize("form", ["read-token-cap", "bash-persisted-path", "persisted-replacement", "codex-envelope"])
+@pytest.mark.usefixtures("memory")
+def test_host_truncation_forms_are_not_read(tmp_path, monkeypatch, form):
+    """ホストが付ける省略の表現を持つ応答は、本文が全文を含んでも読了にせず再書込の遮断を保つ。"""
+    path = _rows(tmp_path, monkeypatch, "tool:Write", count=1)[0]
+    body = path.read_text(encoding="utf-8")
+    payload = {"session_id": "test", "cwd": str(tmp_path)}
+    operation = _write_operation(tmp_path, payload)
+    _guided_and_blocked(operation, path)
+    if form == "codex-envelope":
+        # CodexのPostToolUseは配送処理が実行記録を確かめるため、省略判定そのものを公開の観測関数で確かめる。
+        response = f"Warning: truncated output (original token count: 99)\nTotal output lines: 3\n\n{body}"
+        read_delivery.observe(
+            {**payload, "turn_id": "turn", "tool_response": response}, "Bash", {"command": f"cat -- {path}"}, "test"
+        )
+    else:
+        if form == "read-token-cap":
+            acquisition = {
+                "tool_name": "Read",
+                "tool_input": {"file_path": str(path)},
+                "tool_response": {
+                    "type": "text",
+                    "file": {"filePath": str(path), "content": body, "truncatedByTokenCap": True},
+                },
+            }
+        elif form == "bash-persisted-path":
+            acquisition = {
+                "tool_name": "Bash",
+                "tool_input": {"command": f"cat -- {path}"},
+                "tool_response": {"stdout": body, "exit_code": 0, "persistedOutputPath": "/tmp/out.txt"},
+            }
+        else:
+            acquisition = {
+                "tool_name": "Bash",
+                "tool_input": {"command": f"cat -- {path}"},
+                "tool_response": _persisted_replacement(body + body),
+            }
+        observed = _run_hook_in_process("posttooluse", {**payload, "hook_event_name": "PostToolUse", **acquisition})
+        assert observed.returncode == 0
+    final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 2 and str(path) in final.stderr
+
+
+def _codex_transcript(tmp_path, command, *, exit_code=0, execution=True):
+    """Codexの元turnの実行記録を書いたセッション記録の絶対パスを返す。"""
+    records: list[dict] = []
+    records.append(
+        {
+            "type": "turn_context",
+            "payload": {"turn_id": "turn", "cwd": str(tmp_path), "permission_profile": {"type": "disabled"}},
+        }
+    )
+    if execution:
+        records.append(
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "turn_id": "turn",
+                    "thread_id": "test",
+                    "item": {
+                        "type": "CommandExecution",
+                        "id": "exec-id",
+                        "status": "completed" if exit_code == 0 else "failed",
+                        "exit_code": exit_code,
+                        "cwd": tmp_path.as_uri(),
+                        "command": ["/bin/bash", "-lc", command],
+                    },
+                },
+            }
+        )
+    transcript = tmp_path / f"transcript-{len(list(tmp_path.glob('transcript-*.jsonl')))}.jsonl"
+    transcript.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+    return str(transcript)
+
+
+def _codex_read(tmp_path, payload, command, response, **transcript):
+    """Codexの公開PostToolUseへ元のBash読取の応答を渡す。"""
+    observed = _run_hook_in_process(
+        "posttooluse",
+        {
+            **payload,
+            "hook_event_name": "PostToolUse",
+            "tool_use_id": "exec-id",
+            "transcript_path": _codex_transcript(tmp_path, command, **transcript),
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "tool_response": response,
+        },
+    )
+    assert observed.returncode == 0
+    return observed
+
+
+def _failing(*_args, **_kwargs):
+    raise OSError("注入した失敗")
+
+
+@pytest.mark.usefixtures("memory")
+def test_codex_full_read_releases_block_without_body_delivery(tmp_path, monkeypatch):
+    """省略の無い成功した読取は読了になって再書込を許可し、Post hookは資料本文を返さない。"""
+    path = _rows(tmp_path, monkeypatch, "tool:Write", count=1)[0]
+    payload = {"session_id": "test", "cwd": str(tmp_path), "turn_id": "turn"}
+    operation = _write_operation(tmp_path, payload)
+    _guided_and_blocked(operation, path)
+    body = path.read_text(encoding="utf-8")
+    observed = _codex_read(tmp_path, payload, f"cat -- {path}", body)
+    assert all(line not in observed.stdout for line in body.splitlines() if line.strip())
+    final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 0 and str(path) not in final.stdout
+
+
+@pytest.mark.usefixtures("memory")
+def test_codex_unverified_or_truncated_read_stays_unread_until_split_reads(tmp_path, monkeypatch):
+    """成功を確かめられない応答と省略応答は未取得のまま残り、分割読取で全文を被覆すると解除される。"""
+    path = _rows(tmp_path, monkeypatch, "tool:Write", count=1)[0]
+    body = path.read_text(encoding="utf-8")
+    payload = {"session_id": "test", "cwd": str(tmp_path), "turn_id": "turn"}
+    operation = _write_operation(tmp_path, payload)
+    _guided_and_blocked(operation, path)
+    command = f"cat -- {path}"
+    _codex_read(tmp_path, payload, command, body, execution=False)
+    assert _run_hook_in_process("pretooluse", operation).returncode == 2
+    _codex_read(tmp_path, payload, command, body, exit_code=1)
+    assert _run_hook_in_process("pretooluse", operation).returncode == 2
+    envelope = "Warning: truncated output (original token count: 5000)\nTotal output lines: 3\n\n"
+    truncated = f"{envelope}{body[:4]}…4990 tokens truncated…{body[-4:]}"
+    observed = _codex_read(tmp_path, payload, command, truncated)
+    assert "全文は未取得" in observed.stdout and "sed -n" in observed.stdout
+    assert _run_hook_in_process("pretooluse", operation).returncode == 2
+    lines = body.splitlines(keepends=True)
+    first = f"sed -n '1,1p' -- {path}"
+    _codex_read(tmp_path, payload, first, lines[0])
+    assert _run_hook_in_process("pretooluse", operation).returncode == 2
+    rest = f"sed -n '2,$p' -- {path}"
+    _codex_read(tmp_path, payload, rest, "".join(lines[1:]))
+    final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 0 and str(path) not in final.stdout

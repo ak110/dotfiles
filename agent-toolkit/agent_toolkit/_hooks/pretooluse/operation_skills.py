@@ -15,15 +15,12 @@ import re
 lazy from collections.abc import Callable, Sequence
 
 lazy from agent_toolkit._common import delegated_session as _delegated_session
-lazy from agent_toolkit._common import plugin_roots, shell_cwd
+lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
-lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
-lazy from agent_toolkit._hooks import document_reads as _document_reads
-lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import rules_context as _rules_context
 lazy from agent_toolkit._hooks import tool_input as _tool_input
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
@@ -643,11 +640,6 @@ def _entry(skill_name: object) -> OperationSkill | None:
     return next((entry for entry in OPERATION_SKILLS if skill_name in {entry.skill_name, entry.short_name}), None)
 
 
-def document_id(entry: OperationSkill, relative_path: str) -> str:
-    """取得の記録に使う資料の識別子。`SKILL.md`はスキルの完全名、参照資料は`<完全名>:<相対パス>`とする。"""
-    return entry.skill_name if relative_path == SKILL_DOCUMENT else f"{entry.skill_name}:{relative_path}"
-
-
 def mark_ready(identifier: str, agent: str) -> Callable[[dict], dict | None]:
     def _mutator(state: dict) -> dict | None:
         recorded = state.get(_rules_context.OPERATION_SKILL_READY_KEY)
@@ -663,39 +655,6 @@ def mark_ready(identifier: str, agent: str) -> Callable[[dict], dict | None]:
     return _mutator
 
 
-def _missing_documents(recorded: object, entry: OperationSkill, agent: str) -> list[str]:
-    """主体の取得が記録されていない必須資料の相対パスを返す。"""
-    records = recorded if isinstance(recorded, dict) else {}
-    missing = []
-    for relative in entry.documents:
-        agents = records.get(document_id(entry, relative))
-        if not isinstance(agents, list) or agent not in agents:
-            missing.append(relative)
-    return missing
-
-
-def record_skill_ready(session_id: str, skill_name: object, agent: str) -> None:
-    """表のスキルのSkill起動を、呼び出し主体の`SKILL.md`の取得として記録する。"""
-    entry = _entry(skill_name)
-    if entry is None or not session_id:
-        return
-    update_state(session_id, mark_ready(document_id(entry, SKILL_DOCUMENT), agent))
-
-
-def record_document_read(session_id: str, read: _document_reads.DocumentRead, agent: str) -> None:
-    """表のスキルの必須資料の全文の読取を、呼び出し主体の取得として記録する。部分取得は記録しない。"""
-    entry = _entry(read.skill)
-    if (
-        entry is None
-        or not session_id
-        or read.partial
-        or read.plugin != entry.skill_name.split(":", 1)[0]
-        or read.relative_path not in entry.documents
-    ):
-        return
-    update_state(session_id, mark_ready(document_id(entry, read.relative_path), agent))
-
-
 def resolve_subject(payload: dict) -> str:
     """主体の区分を返す。区分ごとの取得手段と記録する観測は`docs/development/design-hooks.md`の該当節が定める。"""
     if _delegated_session.is_lightweight_delegated(os.environ):
@@ -705,33 +664,6 @@ def resolve_subject(payload: dict) -> str:
     if _agent_id.resolve_hook_agent_id(payload) != _agent_id.MAIN_AGENT_ID:
         return SUBJECT_SUBAGENT
     return SUBJECT_MAIN
-
-
-def _document_problem(path: pathlib.Path) -> str | None:
-    """案内する資料を取得できない理由を返す。取得できる場合は`None`を返す。"""
-    try:
-        if not path.read_text(encoding="utf-8").strip():
-            return "本文が空"
-    except (OSError, UnicodeError) as exc:
-        return str(exc)
-    return None
-
-
-def _acquisition_steps(subject: str, entry: OperationSkill, missing: list[str]) -> list[str]:
-    """区分ごとに、未取得の資料をホスト本来の手段で取得する操作を返す。"""
-    steps = []
-    for relative in missing:
-        root = plugin_roots.resolve_plugin_root(entry.skill_name.split(":", 1)[0], _plugin_resources.plugin_root())
-        path = root / "skills" / entry.short_name / relative
-        if subject == SUBJECT_CODEX:
-            steps.append(f"`{path}`の全文を読む（`cat`など。`head`や範囲指定の読取は取得にならない）")
-        elif relative != SKILL_DOCUMENT:
-            steps.append(f"`{path}`をReadで全文読む（`offset`・`limit`を付けない）")
-        elif subject == SUBJECT_SUBAGENT:
-            steps.append(f"`Skill`で`{entry.skill_name}`を起動する。`Skill`を使えない場合は`{path}`をReadで全文読む")
-        else:
-            steps.append(f"`Skill`で`{entry.skill_name}`を起動する")
-    return steps
 
 
 def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str = "") -> bool | None:

@@ -10,9 +10,9 @@ from agent_toolkit._agents_server import context_usage, resume_waits
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server.cli_turn import CliTurnManager, decode_event, finalize_turn
 from agent_toolkit._agents_server.launch_prompts import (
-    AUTO_RESUME_NOTICE,
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
+    PUBLIC_WAIT_NOTICE,
     cli_runtime_instructions,
     python_runtime_instructions,
 )
@@ -26,11 +26,11 @@ _MODEL_OUTPUT_STEP_TYPES = frozenset({"agent_response", "tool"})
 
 
 def _system_prompt(launch_kind: LaunchKind) -> str:
-    """役割、自動再開、保持配布物と委譲元のユーザー規範を本文先頭へ渡す。"""
+    """役割、公開待機、保持配布物と委譲元のユーザー規範を本文先頭へ渡す。"""
     root = plugin_roots.SERVER_PLUGIN_ROOT
     parts = [
         LAUNCH_SYSTEM_PROMPTS[launch_kind],
-        AUTO_RESUME_NOTICE,
+        PUBLIC_WAIT_NOTICE,
         cli_runtime_instructions(root),
         f"agent-toolkit plugin root: {root}",
     ]

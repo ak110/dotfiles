@@ -1,4 +1,4 @@
-"""規範Markdownが標準読取の自動配送か従来の容量内で全文取得できることを確かめる。"""
+"""規範Markdownの容量が全文取得の閾値に収まることを確かめる。"""
 
 import pathlib
 
@@ -14,9 +14,9 @@ def _codex_read(command: str, cwd: pathlib.Path) -> str | None:
 
 
 def test_agent_toolkit_markdown_fits_full_read_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
-    """全文取得を求める規範Markdownは、自動配送または従来の容量内で読めるようにする。
+    """全文取得を求める規範Markdownは、Codexが遮断されずに1回の全文取得で読める容量に収める。
 
-    自動配送の対象外で閾値を超える文書は、`references/`への分割で閾値以下へ戻す。
+    閾値を超える文書は読むたびに遮断と分割取得を要するため、`references/`への分割で閾値以下へ戻す。
     対象はagent-toolkitの`skills`・`share`・`rules`とagent-basicsの`skills`である。
     全文取得を求める規範の配布元を新しく加える場合は、この対象も見直す。
     """

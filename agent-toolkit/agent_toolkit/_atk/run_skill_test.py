@@ -507,6 +507,36 @@ def test_codex_session_receives_goal_without_slash_command(
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_goal_distinguishes_success_unresolvable_stop_and_recoverable_failure(
+    engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str
+) -> None:
+    """各ホストへ配送する目的文が、成功・解消できない前提による未完了終了・回復可能な失敗の継続を区別する。
+
+    `/goal`の停止判定は目的文を終了条件として読む。成功だけを終了条件にすると、続行不能を正直に報告した
+    後も停止が遮断され続け、ホストの連続遮断上限で強制終了するまでターンを繰り返す。
+    """
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
+
+    code, _out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
+
+    assert code == 0, err
+    goal = _records(engine_env, "session")[0]["argv"][-1]
+    # 成功時は完遂と報告保存で終える。
+    assert "どちらで終えてもこの目標は達成です" in goal
+    assert "完遂: スキルを完遂し、報告用UWIへ結果を保存した" in goal
+    # 当該実行で解消できない具体的な前提が残る場合は、理由・残工程・再開条件を保存して未完了で終える。
+    assert "未完了の終了: 判断・認可・外部入力など、この実行の中では解消できない具体的な前提が残り" in goal
+    assert "未完了の理由・残る工程・再開の条件を報告用UWIへ保存した" in goal
+    # 未完了の終了も目標の達成と明示しないと、目標評価は報告保存後も完遂の証拠を求めて停止を遮断する。
+    assert "未完了を正直に報告することは、この目標の達成として扱います" in goal
+    # 回復手段をすべて試しても解消しない失敗と、スキルや依頼が回復操作を禁じる失敗も解消できない前提に含める。
+    # 含まないと、目標評価が回復手段の不在を前提不足と認めず停止を遮断し続ける（2026年10月31日の実ホスト受入で観測）。
+    assert "回復手段をすべて試しても解消しない失敗と、スキルや依頼が回復操作（再試行など）を禁じている失敗" in goal
+    # 子担当の失敗だけでは終えず、許可済みの回復手段で続ける。
+    assert "子担当が失敗しても、許可済みの回復手段があれば使って続けて" in goal
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("mode", ["missing", "question", "other", "unsynced"])
 def test_normal_exit_requires_same_run_synced_report(
     engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str, mode: str

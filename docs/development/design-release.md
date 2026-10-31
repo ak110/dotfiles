@@ -80,6 +80,12 @@ push起点を加えるのは、版数更新の抜けをrelease pull requestの�
 判定は`scripts/check_statusline_version.py`へ集約し、CIの同jobとpyfltrのcustom-command`statusline-version`の双方から呼ぶ。レーン担当は版数更新の根拠を渡し、公開担当が版数を更新する。pyfltr側は`pyproject.toml`で無効にしておき、公開担当が公開前のローカル検証で明示的に有効化する。比較先は作業ツリーとしてcommit前の変更も判定し、push前に版数の更新忘れを見つける。pre-commitの`pyfltr fast`で版数更新前の途中commitを遮断しないよう非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。
 同一repositoryのreleaseおよびnon-release pull requestとfork pull requestが同じ検証対象となり、`rust-lint`というrequired名の重複を生成しない。
 
+agent-toolkitとagent-basicsの版数据置きは`plugin-version` jobが検出し、判定は`scripts/check_plugin_version.py`へ集約してpyfltrのcustom-command`plugin-version`からも呼ぶ。
+両プラグインは`develop`へのpushごとに稼働環境へ導入され、Codexの導入処理は版数の不一致だけで再導入するため、比較基点はpush起点の`github.event.before`（ローカルではupstreamの最新の公開済みcommit）とし、`master`との合流点を使わない。
+`*_test.py`だけの差分を除き、コメント・文書を含むプラグインroot配下の差分を版数更新の対象とする。差分の意味（挙動の変化の有無）で対象を絞る案は、文書だけの変更も配布物として稼働環境へ届ける必要があり、機械判定で区別できないため採らない。
+全0のOID、解決できないOID、upstreamの不在は成功扱いにせず終了2とする。2026年10月31日にhookの不具合修正が版数を据え置いたまま公開され、稼働中のCodexへ届かなかったため加えた。
+pyfltr側は`statusline-version`と同じく既定で無効、非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。required checkへは加えず、`develop`へのpushで失敗を可視化する。
+
 ### rulesetの更新手順
 
 ruleset `21524717`のrequired checkは共通7名と`statusline-version`の8件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。

@@ -26,7 +26,7 @@
       "name": "agent-toolkit",
       "source": "./agent-toolkit",
       "description": "WI・委譲・承認・記録・完了報告の運用を提供するプラグイン。成果物の品質判断にはagent-basicsを使う。",
-      "version": "2.236.1",
+      "version": "2.237.1",
       "category": "safety",
       "keywords": [
         "hooks",

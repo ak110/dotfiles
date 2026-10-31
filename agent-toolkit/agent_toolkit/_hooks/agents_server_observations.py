@@ -629,29 +629,3 @@ def _registered_wait_targets(root_session_id: str, owner_status_file: str) -> se
         return {path.stem for path in directory.glob("*.json")}
     except OSError:
         return set()
-
-
-def resolve_declared_sessions(session_id: str, owner_agent_id: str, declared: set[str]) -> None:
-    """待機表明が指すsessionの観測待ちを解消済みとして保存する。
-
-    表明の時点で自動再開が結果を受け取る仕組みが成立するため、以降のturnの終了では同じsessionを警告しない。
-    `send_message`が新しい作業を配送した場合はPostToolUseが観測待ちへ戻す。
-    """
-
-    def _mutator(state: dict) -> dict | None:
-        sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
-        if not isinstance(sessions, dict):
-            return None
-        changed = False
-        for target in declared:
-            record = sessions.get(target)
-            if (
-                isinstance(record, dict)
-                and record.get("owner_agent_id") == owner_agent_id
-                and record.get("pending_observation") is True
-            ):
-                record["pending_observation"] = False
-                changed = True
-        return state if changed else None
-
-    update_state(session_id, _mutator)

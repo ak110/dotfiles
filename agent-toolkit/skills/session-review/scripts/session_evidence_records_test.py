@@ -734,3 +734,52 @@ def test_bundle_preserves_improvement_lines_of_every_runtime(
     assert texts[0].count("気付いた改善点:") == len(notes)
     if long_body:
         assert "…[省略]" in texts[0]
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_long_completed_return_keeps_trailing_escalation_candidate(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str
+) -> None:
+    """正常形式で始まる長い返却の末尾にある続行不能の行と想定外事象を、短縮後も候補まで通す。
+
+    2,000文字を超える成果物列挙の後に`続行できない理由:`を置いた実際の返却が、短縮で理由行を失い
+    `escalation`候補にならなかった（2026年10月29日、Codexの探索担当の返却）。
+    """
+    tail = [
+        "続行できない区分: inaccessible_input",
+        "続行できない理由: 対象文書の全文確認が未完了。必要な入力はなく、"
+        "対象を個別ファイルまたは行範囲に分割して読み直す必要がある。",
+        "想定外事象: 複数成果物の一括読取が切り詰められた。",
+    ]
+    body = "状態: completed\n未解決の指摘数: 0\n" + "確認した成果物の一覧\n" * 300 + "\n".join(tail)
+    if runtime == "claude":
+        entries: list[dict[str, object]] = [assistant_text(body)]
+    else:
+        entries = [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "phase": "final",
+                    "content": [{"type": "output_text", "text": body}],
+                },
+            }
+        ]
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "最初の依頼"}}])
+    subagents = transcript.with_suffix("") / "subagents"
+    subagents.mkdir(parents=True)
+    (subagents / "agent-delegate.jsonl").write_text(
+        "\n".join(json.dumps({**entry, "isSidechain": True}, ensure_ascii=False) for entry in entries) + "\n",
+        encoding="utf-8",
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    capsys.readouterr()
+    records = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    escalations = [record for record in records if record.get("candidate_kind") == "escalation"]
+    assert len(escalations) == 1
+    assert "…[省略]" in escalations[0]["text"]
+    for line in tail:
+        assert line in escalations[0]["text"]

@@ -563,6 +563,7 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
     review = (root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
     parent = (root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
     recording = (root / "share" / "exec-review-recording.md").read_text(encoding="utf-8")
+    operations = (root / "share" / "exec-review-operations.md").read_text(encoding="utf-8")
     launchers = [
         root / "share" / "exec.parent.md",
         root / "skills" / "plan-mode" / "SKILL.md",
@@ -579,7 +580,7 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
     assert "レビューHEAD: " in review
     # 委譲元は返却の条件別判定行を受領確認し、JSON中のHEADの付替えを行わない。
     assert "## 完成条件証拠の受領確認" in parent and "agent_message_path" in parent
-    assert "判定結果と根拠を記述するのは実行レビュー担当のみ" in review
+    assert "判定結果と根拠を記述するのは実行レビュー担当のみ" in operations
     assert "判定とその根拠は、実行レビュー担当自身だけが記述する" in recording
     for content in (review, recording):
         assert "完成条件<N>: 達成|未達|根拠不足" in content

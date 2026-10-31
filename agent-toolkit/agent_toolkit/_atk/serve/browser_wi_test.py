@@ -396,7 +396,7 @@ def _assert_list_request_without_fallback(request_urls: list[str], base_url: str
     """期待した条件の一覧要求が送られ、補助検索の要求が送られていないことを判定する。
 
     要求一覧の完全一致は使わない。画面はエンドユーザーの操作と独立に、外部変更時の再読込で
-    `/api/entries?type=uwi&status=all&answered=all`と現在の条件の一覧要求を任意の時点で追加送信するためである。
+    `/api/entries?type=all&status=all&answered=all`と現在の条件の一覧要求を任意の時点で追加送信するためである。
     再読込の契機はSSE接続の確立、`window`の`focus`、`visibilitychange`、SSEの`changed`、
     およびエンドユーザーの操作中に保留した再読込の操作終了後の実行である。
     条件付きの一覧要求は常に`/api/entries?type=`で始まり、条件を外した補助検索の要求だけが
@@ -1592,7 +1592,7 @@ async def test_terminal_work_items_reopen_and_hold_through_browser(browser_harne
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_browser_notification_uses_filename_registration_identity(browser_harness: _BrowserHarness) -> None:
-    """初回と既知UWIの属性変化を通知せず、新規未回答UWIだけを通知する。"""
+    """初回と既知項目の属性変化を通知せず、新規の未回答UWIと要確認AWIだけを通知する。"""
     harness = browser_harness
     page = harness.page
     await page.add_init_script(
@@ -1606,7 +1606,7 @@ class TestNotification {
 Object.defineProperty(window, 'Notification', {configurable: true, value: TestNotification});
 """
     )
-    async with page.expect_response(lambda response: response.url.endswith("/api/entries?type=uwi&status=all&answered=all")):
+    async with page.expect_response(lambda response: response.url.endswith("/api/entries?type=all&status=all&answered=all")):
         await page.goto(harness.base_url + "/")
     assert await page.evaluate("window.__notificationCalls.length") == 0
     notification_button = page.get_by_role("button", name="通知を有効化")
@@ -1615,7 +1615,7 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
 
     async def publish_and_wait() -> None:
         async with page.expect_response(
-            lambda response: response.url.endswith("/api/entries?type=uwi&status=all&answered=all")
+            lambda response: response.url.endswith("/api/entries?type=all&status=all&answered=all")
         ):
             harness.current_state.publish()
 
@@ -1647,6 +1647,48 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
     await publish_and_wait()
     await page.wait_for_timeout(100)
     assert await page.evaluate("window.__notificationCalls.length") == 1
+
+    # 要確認のAWIが新しく登録された時だけ、UWIと区別できる題で通知する。確認済みへの切替は通知しない。
+    awi_path = _entry_path(harness.root, "new-awi.md")
+    required_awi = "---\ntype: awi\nstate: inbox\ntarget_repo: new/repo\nconfirmation: required\n---\n\n# 要確認\n"
+    awi_path.write_text(required_awi, encoding="utf-8")
+    await publish_and_wait()
+    await page.wait_for_function("window.__notificationCalls.length === 2")
+    assert (await page.evaluate("window.__notificationCalls"))[1] == {"title": "新規要確認AWI", "body": "new-awi.md"}
+    awi_path.write_text(required_awi.replace("confirmation: required", "confirmation: confirmed"), encoding="utf-8")
+    await publish_and_wait()
+    await page.wait_for_timeout(100)
+    assert await page.evaluate("window.__notificationCalls.length") == 2
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_blocked_badge_tracks_unanswered_uwi_dependency(browser_harness: _BrowserHarness) -> None:
+    """未回答UWIの回答を待つAWIだけにblockedバッジを付け、UWIへ回答すると保存状態を変えずに外す。
+
+    回答待ちを編集中のholdと区別するため、AWIの保存状態はinboxのまま表示する。
+    """
+    harness = browser_harness
+    page = harness.page
+    marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
+    uwi_path = _entry_path(harness.root, "wait-question.md")
+    unanswered = f"---\ntype: uwi\nstate: inbox\ntarget_repo: example/repo\n---\n\n## 質問\n\n確認\n\n## 回答\n\n{marker}\n"
+    uwi_path.write_text(unanswered, encoding="utf-8")
+    _entry_path(harness.root, "waiting-awi.md").write_text(
+        "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\ndepends_on:\n  - wait-question.md\n---\n\n# 回答待ち\n",
+        encoding="utf-8",
+    )
+    await page.goto(harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    row = page.locator('.entry-select[data-key="waiting-awi.md"]')
+    await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_text("blocked")
+    await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("inbox")
+    question_badges = page.locator('.entry-select[data-key="wait-question.md"] .blocked-badge')
+    await playwright.async_api.expect(question_badges).to_have_count(0)
+
+    uwi_path.write_text(unanswered + "回答済み\n", encoding="utf-8")
+    harness.current_state.publish()
+    await playwright.async_api.expect(row.locator(".blocked-badge")).to_have_count(0)
+    await playwright.async_api.expect(row.locator(".state-badge")).to_have_text("inbox")
 
 
 @pytest.mark.asyncio(loop_scope="session")

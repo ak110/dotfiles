@@ -168,12 +168,10 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 nativeの`original token count`が設定予算を超えた場合は、その値以上で1回再取得し、文脈容量を超える本文は分割する。
 この値は取得予算の最低値であり、前述の測定を新たな全資料・全モデルへ一般化した実測値ではない。
 
-`codex_read_delivery.py`の補完読取は元turnのsandbox読取権限を用いる。
-`disabled`ではcwd外を含み、`managed`の`restricted`ではcwd・書込rootと明示`read`・`write`を許可し、`none`を優先する。
-未知の権限では補完しない。
-成功した同一実行、通常ファイルのFD固定、各パス要素のsymlink拒否、元結果の先頭・末尾一致、文脈残量の制限を維持する。
-Preの容量案内を省く判定も同じ権限解決を使う。
-再検証では`codex_read_delivery_test.py`と`pretooluse/large_reads_test.py`で、cwd外の許可・禁止・未知の権限、特殊ファイル、本文不一致、差替え、および単一・複数ファイルの予算案内を比較する。
+2026年10月30日から31日まで、PostToolUseが省略された読取を元turnのsandbox読取権限の範囲で再取得し、本文を追加コンテキストへ配送していた（`codex_read_delivery.py`）。
+この補完読取と、それに合わせてPreの容量案内を省く判定は、2026年10月31日に本文配送とともに撤去した。
+現在は`codex_read_observation.py`が省略の無い成功読取だけを読了とし、省略時は分割取得を案内する。
+再検証では`codex_read_observation_test.py`と`pretooluse/large_reads_test.py`で、省略の有無ごとの読了判定、本文を返さないこと、および単一・複数ファイルの予算案内を比較する。
 本節は確定契約と実装の参照先を記録するものであり、文書更新担当によるテストの再実行結果ではない。
 
 ## agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py：並行Readの公開入力：2026年10月30日

@@ -32,7 +32,7 @@ from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.environment import is_agent_environment
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import session_activity, session_registry
 from agent_toolkit._common.next_action import report, with_next_action
 
 _WATCH_INTERVAL_SECONDS = 2.0
@@ -272,14 +272,19 @@ def _list_groups(
     *, human: bool, root_session_id: str | None, include_terminated: bool
 ) -> list[tuple[str, list[dict[str, Any]]]]:
     """一覧の対象sessionをrootごとに返す。人の端末では全root、エージェント環境では現在の会話のrootを読む。"""
-    root_ids = shared_layout.list_root_session_ids() if human else ([root_session_id] if root_session_id else [])
+    living_roots = session_activity.living_root_session_ids() if human else frozenset()
+    root_ids = (
+        sorted(set(shared_layout.list_root_session_ids()) | living_roots)
+        if human
+        else ([root_session_id] if root_session_id else [])
+    )
     groups = [(root_id, _load_sessions(root_id)) for root_id in root_ids]
     if not include_terminated:
         groups = [
             (root_id, [s for s in sessions if s.get("status") == "running" or s.get("result_available") is True])
             for root_id, sessions in groups
         ]
-    return groups
+    return [(root_id, sessions) for root_id, sessions in groups if sessions or root_id in living_roots]
 
 
 def _watch_list(*, include_terminated: bool) -> int:
@@ -304,12 +309,10 @@ def _human_tree(groups: list[tuple[str, list[dict[str, Any]]]], *, columns: int,
 
     session IDは端末幅によらず省略しない。右側の状況は端末幅に収まるよう、行動・進捗の欄へ
     `_MIN_DESCRIPTION_WIDTH`を残すまで名前の欄を先に短くし、残りを説明の切り詰めで合わせる。
-    選べるsessionを持たないrootの見出しは端末の一覧を埋めるだけなので除く。
+    表示対象の選別は`_list_groups`で行い、生存rootは委譲先がなくても見出しを残す。
     """
     rows: list[str | tuple[str, dict[str, Any]]] = []
     for root_id, sessions in groups:
-        if not sessions:
-            continue
         rows.append(f"root {root_id}")
         children: dict[str | None, list[dict[str, Any]]] = {}
         attached: set[str] = set()
@@ -328,6 +331,8 @@ def _human_tree(groups: list[tuple[str, list[dict[str, Any]]]], *, columns: int,
     if not rows:
         return "sessionはありません"
     session_rows = [row for row in rows if isinstance(row, tuple)]
+    if not session_rows:
+        return "\n".join(str(row) for row in rows)
     left_width = max(_display_width(left) for left, _ in session_rows)
     names = {id(session): _session_name(session) for _, session in session_rows}
     parts = {id(session): _status_parts(session, now) for _, session in session_rows}

@@ -758,26 +758,6 @@ class AppServerManager:
         }
         if lightweight:
             config["project_doc_max_bytes"] = 0
-            # plugins無効の探索でも、元の操作を変えないPost配送を有効にする。
-            root = plugin_roots.SERVER_PLUGIN_ROOT
-            groups = json.loads((root / "hooks/hooks.codex.json").read_text(encoding="utf-8"))["hooks"]["PostToolUse"]
-            features["hooks"] = True
-            config["hooks"] = {
-                "PostToolUse": [
-                    {
-                        "matcher": "Bash",
-                        "hooks": [
-                            {
-                                **handler,
-                                "command": handler["command"].replace("${PLUGIN_ROOT}", str(root)),
-                                "additionalContextLimit": 0,
-                            }
-                            for group in groups
-                            for handler in group["hooks"]
-                        ],
-                    }
-                ],
-            }
         return config
 
     def _thread_config(
@@ -805,9 +785,26 @@ class AppServerManager:
         environment = getattr(client, "parent_environment", None) or os.environ
         pyfltr["env_vars"] = list(mcp_environment.runtime_environment_variable_names(environment))
         pyfltr["default_tools_approval_mode"] = "approve"
+        # pluginを無効にする探索にも、出力省略の回収案内をPostToolUse（Bash）から届ける。
+        # 回収可能な省略を理由に続行不能を返した委譲先に探索担当が含まれていた。資料本文は返さない。
+        # shell・writeはpluginのhookをそのまま受けるため、ここで重ねて接続しない。
+        groups = json.loads((root / "hooks/hooks.codex.json").read_text(encoding="utf-8"))["hooks"]["PostToolUse"]
+        hooks = {
+            "PostToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {**handler, "command": handler["command"].replace("${PLUGIN_ROOT}", str(root))}
+                        for group in groups
+                        for handler in group["hooks"]
+                    ],
+                }
+            ],
+        }
         return {
             **config,
-            "features": {**config.get("features", {}), "plugins": False},
+            "features": {**config.get("features", {}), "plugins": False, "hooks": True},
+            "hooks": hooks,
             "mcp_servers": {**config.get("mcp_servers", {}), "pyfltr": pyfltr},
         }
 

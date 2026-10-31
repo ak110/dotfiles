@@ -1296,7 +1296,7 @@ def test_legacy_stop_review_notice_is_not_completion_evidence():
 def test_termination_evidence_and_operation_skills_share_read_judgment(
     tmp_path: pathlib.Path, command: str, response: str, *, accepted: bool, exit_code: int
 ) -> None:
-    """completion-reportの起動証拠と操作を起動の契機とするスキルの取得の記録は、同じ読取を同じく受理・拒否する。"""
+    """completion-reportの起動証拠は、範囲指定を含む資料の読取を本文の識別行で受理し、失敗した読取を拒否する。"""
     supply_commit(tmp_path, codex=True)
     skill = "completion-report"
     _tool(
@@ -1309,22 +1309,3 @@ def test_termination_evidence_and_operation_skills_share_read_judgment(
         native_exit_code=exit_code,
     )
     assert (not _missing_completion(tmp_path)) is accepted
-
-    skill = "search"
-    basics = tmp_path / "agent-basics"
-    search = basics / "skills/search/SKILL.md"
-    search.parent.mkdir(parents=True)
-    (basics / ".claude-plugin").mkdir()
-    (basics / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
-    search.write_text("---\nname: search\n---\n", encoding="utf-8")
-    _tool(
-        tmp_path,
-        "search",
-        "Bash",
-        {"command": command.format(skill=skill).replace("/plugin/skills/search/SKILL.md", str(search))},
-        response.format(skill=skill),
-        codex=True,
-        native_exit_code=exit_code,
-    )
-    recorded = session_state.read_state("evidence-test").get("operation_skill_delivered_agents") or {}
-    assert ("agent-basics:search" in recorded) is accepted

@@ -180,12 +180,26 @@ def _dispatch_once(args: argparse.Namespace) -> int:
 
 
 def build_goal(skill: str, skill_args: str | None) -> str:
-    """子セッションへ渡す目的文の本体を返す。"""
+    """子セッションへ渡す目的文の本体を返す。
+
+    Claude Codeの`/goal`はこの文を停止の可否の判定に使う。成功だけを終了条件にすると、
+    解消できない前提で失敗を正直に報告した後も停止が遮断され続けるため、
+    成功時の完遂と、未完了のまま報告して終える条件を、どちらも目標の達成として並べる。
+    未完了の終了を達成と明示しないと、目標評価は報告保存後も完遂の証拠を求めて停止を遮断した（2026年10月31日の実ホスト受入）。
+    """
     mode, free_text = skill_modes.split_mode(skill, skill_args)
     goal = (
-        f"スキル`{skill}`を完遂し、`agent-toolkit:completion-report`の報告用UWIを保存してください。"
+        f"スキル`{skill}`を実行し、その結果を`agent-toolkit:completion-report`の報告用UWIへ保存して、"
+        "次の2つの終わり方のどちらかで終えてください。どちらで終えてもこの目標は達成です。"
         "作業の前に`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`"
         "「`atk run-skill`の過去の実行のUWI」を適用してください。"
+        "\n- 完遂: スキルを完遂し、報告用UWIへ結果を保存した。"
+        "\n- 未完了の終了: 判断・認可・外部入力など、この実行の中では解消できない具体的な前提が残り、"
+        "未完了の理由・残る工程・再開の条件を報告用UWIへ保存した。完遂を装わずに未完了を正直に報告することは、"
+        "この目標の達成として扱います。スキルや依頼が許す回復手段をすべて試しても解消しない失敗と、"
+        "スキルや依頼が回復操作（再試行など）を禁じている失敗も、この実行の中では解消できない前提に含みます。"
+        "\nどちらにも当たらない間（実行できる作業が残る間）は続けてください。"
+        "子担当が失敗しても、許可済みの回復手段があれば使って続けてください。"
     )
     if mode is not None:
         goal += f"\n起動モード: {mode}"
