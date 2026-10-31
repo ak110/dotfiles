@@ -18,6 +18,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
+| 停止・回避・回復済みの事象を観測または受領した時 | `immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
+| 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring.md#「成果物側の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「成果物側の観測」` |
 
 ## 担当の役割
 
@@ -28,6 +30,11 @@
 配下担当の確認事項・担当外の発見・改善点は統括へ届け、報告用UWIは統括がprocess-wiの実行全体で1回作成する。
 配下担当は祖先の対話CLIを終了する`atk agents-exit-session`を呼ばず、返却と終了観測を統括へ渡す。
 統括自身は対象別結果を保存した後、最上位の終了手順で統括CLIを終了する。
+
+統括は、自身が観測した処理の停止と、配下担当から届く停止・回避・回復済みの報告へ`immediate-fix.md`「即時対応」を適用する。
+回避と正式対応AWIだけの報告では、次のセッションで同じ停止が起きない根拠を確かめる。
+根拠が無ければ、書き込みを担う配下担当へ直接修正を指示し、その検証結果を受領する。
+配下担当を待つ間の進捗点検では、`../../delegation/references/waiting-and-monitoring.md`「成果物側の観測」に従い、活動の有無と工程の所要・反復の妥当性を分けて判断する。
 
 ## 登録集合
 

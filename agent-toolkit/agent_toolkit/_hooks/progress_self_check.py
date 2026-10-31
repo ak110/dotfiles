@@ -12,8 +12,7 @@ in-processのサブエージェントはpayloadの`agent_id`）ごとに次の2�
 
 最初の観測では記録だけを行い通知しない。前回の通知から`SELF_CHECK_INTERVAL_SECONDS`以上たった
 観測で通知を1回返し、`last_notified_at`を更新する。
-実ユーザーの発話を受けた時点は`postpone`で`last_notified_at`を現在時刻へ進め、次の点検をその30分後にする。
-ユーザーが長く操作しなかった後の最初の発話や再開の直後に、待機時間だけで通知が出ることを防ぐ。
+実ユーザーの発話の有無や無操作期間の長さによらず、前回通知を起点に判定する。
 フックは最初のツール実行か発話で初めて観測するため、`started_at`はセッション開始よりわずかに遅れる。
 """
 
@@ -41,16 +40,20 @@ _LAST_NOTIFIED_AT_KEY = "last_notified_at"
 
 _SELF_CHECK_NOTICE_BODY = (
     "進捗の定期セルフチェックの時刻になった。作業を続ける前に次を点検せよ。\n"
-    "1. 経過時間に対して、進捗と残り工程は妥当か。\n"
-    "2. 同じ種類の往復（レビューのラウンド、修正や検証の再試行）は収束しているか。\n"
+    "1. 現在の工程と開始時点を手元の記録で確かめ、経過時間を目標や同種処理の実績と比較せよ。"
+    "工程開始時点や比較基準が不足するなら、記録や担当者への照会で取得せよ。\n"
+    "2. 前回以降の工程の変化と再試行（レビューのラウンド、修正や検証のやり直し）を確かめ、"
+    "収束しているか比較せよ。`HEAD`や最終活動時刻の変化だけで妥当と判断するな。\n"
     "3. 作業範囲を広げすぎていないか。より費用の小さい方式は無いか。\n"
     "4. 委譲先から受け取った想定外事象に、同じ種類の繰り返し"
     "（中断、接続失敗、フックの警告、再実行など実行基盤の異常）は無いか。あれば原因を調べよ。\n"
     "5. 会話圧縮の後に読むべき資料を読み残していないか。\n"
-    "6. 配下に委譲先がいれば、その経過時間とラウンド数は妥当か。\n"
+    "6. 配下に委譲先がいれば、活動の有無と工程の所要・反復の妥当性を分けて点検せよ。"
+    "待機中の詳細な比較は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「成果物側の観測」に従え。\n"
     "改善策があれば、その場で進め方を変えよ。時間を理由に作業を止めたり品質の確認を省いたりするな。"
     "気付いた改善点は`気付いた改善点:`の行で報告せよ。"
-    "点検して問題が無ければ、点検したことをユーザーへ報告するな。"
+    "問題の有無にかかわらず、何をどう点検したかと結果を既存の報告契約に従って報告せよ。"
+    "経過時間と目標に対する進み具合、余計な作業の有無、当初目的との一致を含めよ。"
 )
 
 
@@ -68,29 +71,6 @@ def _number(value: object) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
     return float(value)
-
-
-def postpone(payload: dict, *, now: float | None = None) -> None:
-    """実ユーザーの発話を受けた時刻を、その主体の最後の通知時刻として記録する。最初の観測なら開始時刻も記録する。"""
-    session_id = payload.get("session_id")
-    if not isinstance(session_id, str) or not session_id:
-        return
-    agent_id = resolve_hook_agent_id(payload)
-    current_time = time.time() if now is None else now
-
-    def _mutate(state: dict) -> dict:
-        entries = state.get(STATE_KEY)
-        entries = dict(entries) if isinstance(entries, dict) else {}
-        entry = entries.get(agent_id)
-        entry = dict(entry) if isinstance(entry, dict) else {}
-        if _number(entry.get(_STARTED_AT_KEY)) is None:
-            entry[_STARTED_AT_KEY] = current_time
-        entry[_LAST_NOTIFIED_AT_KEY] = current_time
-        entries[agent_id] = entry
-        state[STATE_KEY] = entries
-        return state
-
-    update_state(session_id, _mutate)
 
 
 def claim_notice(payload: dict, *, now: float | None = None) -> str | None:

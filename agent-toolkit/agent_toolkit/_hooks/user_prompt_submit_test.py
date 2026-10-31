@@ -5,6 +5,7 @@ subprocessで起動しexit code・状態ファイルの内容を検証する。
 
 """
 
+import io
 import json
 import os
 import pathlib
@@ -14,6 +15,7 @@ from collections.abc import Callable
 
 import pytest
 
+from agent_toolkit import hook
 from agent_toolkit._common import automated_prompt, session_state
 from agent_toolkit._hooks import posttooluse, progress_self_check, user_prompt_submit
 from agent_toolkit._testing import fork_runner as _fork_runner
@@ -762,3 +764,45 @@ def test_task_completion_notice_has_japanese_automated_boundary(tmp_path: pathli
     assert "ユーザーの発話ではない" in context
     assert "日本語で書" in context
     assert "この発話は" not in context
+
+
+@pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}], ids=["claude", "codex"])
+def test_progress_notice_keeps_thirty_minute_cycles_during_user_prompts(monkeypatch, capsys, record_property, host_fields):
+    """公開hookの実入力・出力で、10分ごとの発話と26時間後の再開が点検を延期しないことを確かめる。"""
+    sid = "progress-prompt-cycles"
+    opening = '<atk-auto source="progress-self-check" kind="notice">'
+    started_at = 1000000.0
+    observations = []
+    # 既存hook試験と同じホスト入力を使い、時計だけを制御して実時間の待機を省く。
+    for minute in [*range(0, 91, 10), 26 * 60, 26 * 60 + 30]:
+        current = started_at + minute * 60
+        monkeypatch.setattr(progress_self_check.time, "time", lambda current=current: current)
+        expected = minute in {30, 60, 90, 1560, 1590}
+        for subcommand, fields in (
+            ("user_prompt_submit", {"hook_event_name": "UserPromptSubmit", "prompt": "続けて"}),
+            (
+                "posttooluse",
+                {"hook_event_name": "PostToolUse", "tool_name": "Read", "tool_input": {}, "tool_response": {}},
+            ),
+        ):
+            payload = {"session_id": sid, **host_fields, **fields}
+            with io.TextIOWrapper(io.BytesIO(json.dumps(payload, ensure_ascii=False).encode("utf-8"))) as stdin:
+                monkeypatch.setattr("sys.stdin", stdin)
+                rc = hook.main([subcommand])
+            captured = capsys.readouterr()
+            assert rc == 0 and not captured.err, captured.err
+            output = json.loads(captured.out) if captured.out else {}
+            context = output.get("hookSpecificOutput", {}).get("additionalContext", "")
+            assert "想定外エラー" not in context
+            notified = opening in context
+            assert notified == (expected and subcommand == "user_prompt_submit"), (minute, subcommand, output)
+            if notified:
+                assert context.count(opening) == 1
+                assert "問題の有無にかかわらず" in context
+                assert "何をどう点検したかと結果" in context
+                assert "当初目的との一致" in context
+            observations.append({"経過分": minute, "入力": payload, "出力": output, "通知": notified, "終了": rc})
+        entry = session_state.read_state(sid)[progress_self_check.STATE_KEY]["main"]
+        assert entry["started_at"] == started_at
+        assert entry["last_notified_at"] == started_at + (minute // 30) * 30 * 60
+    record_property("hook_observations", json.dumps(observations, ensure_ascii=False))

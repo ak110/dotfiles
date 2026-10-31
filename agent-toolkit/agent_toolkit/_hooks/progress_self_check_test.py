@@ -85,6 +85,26 @@ def test_agents_in_same_session_have_independent_timers() -> None:
     assert _entries(sid)["sub-1"] == {"started_at": now, "last_notified_at": now}
 
 
+def test_notice_requests_stage_comparison_and_missing_information() -> None:
+    """通知を受けた担当が活動だけで判断せず、工程比較と不足情報の取得へ進める。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL))
+    assert notice is not None
+    for instruction in (
+        "現在の工程と開始時点を手元の記録で確かめ",
+        "経過時間を目標や同種処理の実績と比較せよ",
+        "工程開始時点や比較基準が不足するなら、記録や担当者への照会で取得せよ",
+        "前回以降の工程の変化と再試行",
+        "`HEAD`や最終活動時刻の変化だけで妥当と判断するな",
+        "活動の有無と工程の所要・反復の妥当性を分けて点検せよ",
+        "時間を理由に作業を止めたり品質の確認を省いたりするな",
+        "問題の有無にかかわらず、何をどう点検したかと結果を既存の報告契約に従って報告せよ",
+        "経過時間と目標に対する進み具合、余計な作業の有無、当初目的との一致を含めよ",
+    ):
+        assert instruction in notice
+
+
 @pytest.mark.parametrize("payload", [{}, {"session_id": ""}, {"session_id": 1}])
 def test_payload_without_session_is_ignored(payload: dict) -> None:
     assert progress_self_check.claim_notice(payload) is None
@@ -145,29 +165,3 @@ def test_hooks_attach_notice_only_after_interval(subcommand: str, payload: dict)
 
     third = _additional_context(_run_hook(subcommand, {**payload, "session_id": sid}))
     assert _OPENING not in third
-
-
-def test_postpone_moves_next_check_without_notice() -> None:
-    """実ユーザーの発話は次の点検の起点を進め、経過時間の起点は変えない。"""
-    sid = _session_id()
-    payload = {"session_id": sid}
-    progress_self_check.postpone(payload, now=1000.0)
-    assert _entries(sid)["main"] == {"started_at": 1000.0, "last_notified_at": 1000.0}
-
-    later = 1000.0 + 26 * 3600
-    progress_self_check.postpone(payload, now=later)
-    assert _entries(sid)["main"] == {"started_at": 1000.0, "last_notified_at": later}
-    assert progress_self_check.claim_notice(payload, now=later + _INTERVAL - 1) is None
-    notice = progress_self_check.claim_notice(payload, now=later + _INTERVAL)
-    assert notice is not None and "セッション開始から26時間30分たった。" in notice
-
-
-def test_real_user_prompt_postpones_instead_of_notifying() -> None:
-    """長く操作が無かった後の実ユーザー発話では通知せず、次の点検をその時点から数える。"""
-    sid = _session_id()
-    _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
-    payload = {"hook_event_name": "UserPromptSubmit", "prompt": "続けて", "session_id": sid}
-    context = _additional_context(_run_hook("user_prompt_submit", payload))
-    assert _OPENING not in context
-    entry = _entries(sid)["main"]
-    assert entry["started_at"] == 0.0 and entry["last_notified_at"] > 0.0

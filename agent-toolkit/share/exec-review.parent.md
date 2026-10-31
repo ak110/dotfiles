@@ -174,8 +174,8 @@ Git管理外ファイルの変更前後の複製のペアがあれば、レー�
 - 担当から続行できない理由が返ったら、ユーザーの判断が要る事項を`agent-toolkit:user-confirmation-and-report`に従って確認する（自律モードではUWIへ退避する）。投入先リポジトリ外のファイルが対象として返った場合は、`add-wi.parent.md`「続行できない理由の扱い」に従って投入先と要求の組を確定し直す
 
 この運用は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」の「発見した独立の既存不良は同一セッション内で是正する」という一般原則の例外であり、先送りに要る事象の記録、根本原因、対応案は投入担当が保存するAWIが担保する。
-ただし、本セッションに残る後続工程（レビュー修正、統合、公開）の進行を止める不具合は、同節の「進行を妨げる欠陥」としてその場で対処する。この判定は工程が実際に止まる観測に基づき、事前の詳細な原因分析を前提にしない。
-その不具合は`agent-basics:bugfix`と同節の規定に従って直す。`process-wi`の実行中は同スキルの「即時対応」に従って当面の進行に必要な最小限の修正にとどめ、根本的な正式対応は次のセッション用のAWIへ引き継ぐ。正式対応では、品質（Q）影響、レビュー対象との根本原因の同一性、処置完了の有無を判定する。基準は`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従う。`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」「類似見直しと再発防止の完了」も適用する。認可が要る場合は`agent-toolkit:user-confirmation-and-report`に従う。
+ただし、残る工程または次のセッションの処理を停止・遮断する不具合は、同節の「進行を妨げる欠陥」としてその場で対処する。この判定は停止・遮断が生じる観測根拠に基づき、事前の詳細な原因分析を前提にしない。
+その不具合は`agent-basics:bugfix`と同節の規定に従って直す。`process-wi`の実行中は`../skills/process-wi/references/immediate-fix.md`「即時対応」の基準で最小限の直接修正を施し、根本的な正式対応は次のセッション用AWIへ引き継ぐ。正式対応では、品質（Q）影響、レビュー対象との根本原因の同一性、処置完了の有無を判定する。基準は`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従う。`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」「類似見直しと再発防止の完了」も適用する。認可が要る場合は`agent-toolkit:user-confirmation-and-report`に従う。
 レーン担当が自レーンの検証を妨げるとして報告した既存不良は、実行レビューの返却と区別し、`process-wi`の処理中は同スキルの「即時対応」として扱う。
 
 対象の不具合ごとに、引き渡し済みの担当、是正結果、根拠付きの非該当判定、判断待ちの引き渡し先のいずれかを既存の引き継ぎ記録へ対応付けてから、レビュー収束後の工程へ進む。

@@ -8,8 +8,13 @@
 | --- | --- | --- | --- |
 | 本文の参照基準を適用する前 | `codex-runtime.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime.md` |
 | 本書の基準を適用する前 | `waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
+| 巻き取りや別手段への切り替えを判断する前 | `runtime-routing.md#「継続と新規起動」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「継続と新規起動」` |
 
 ## 停滞の検知と巻き取り
+
+停止や巻き取りの保留中も、`waiting-and-monitoring.md`「成果物側の観測」に従って工程の所要・反復を比較し、改善を検討する。
+活動が続くことは、工程比較を省く理由にはならない。改善の検討と処理を停止する判断を分け、停止には本節の条件を適用する。
+巻き取りや別手段への切り替えを選ぶ際は、`runtime-routing.md`「継続と新規起動」に従い、停止や反復の原因となった既存不良の処置も別に判定する。
 
 - 委譲先やバックグラウンドタスクを停止するのは、ユーザーが即時停止を明示的に求めた場合、または本節の手順によって停滞が確定した場合に限る。単に処理の進みが遅いことや手順が非効率であることは停止の根拠から除外される。停止を求めるユーザー発話に複数の解釈が成り立つ場合は、停止を実行する前にユーザーへ確認する（停止した作業は再開できず、そこまでの成果や観測情報が失われてしまうためである）
 - 停滞を確定して停止する場合は、対象ごとにその根拠を記録してから停止する。Claude Codeでは`atk run-script record-stall-detection --`がその記録を作成し、終了コード0を返した対象のみを停止できる

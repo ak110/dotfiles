@@ -464,8 +464,9 @@ hookの実装は契約を参照せず、テストだけが両者の一致を確�
 - PostToolUseとUserPromptSubmitが共通の`progress_self_check.claim_notice`を呼ぶ。両ホストのhookで発火するため、メインと委譲先の全セッションが対象になる（Antigravityはアダプター経由）
 - セッション状態の`progress_self_check`へ呼出主体ごとに開始時刻と最後の通知時刻を持ち、最初の観測は記録だけにする。前回の通知から1800秒以上たった観測で、経過時間と点検項目を`source="progress-self-check"`の通知として1回返す
 - 機械注入のターン（定期再確認、タスク完了通知など）にも付ける。委譲先を待つ間に届くターンは主に機械注入であり、除くと長い待機の間に点検の契機が無くなるため
-- 実ユーザーの発話を受けたターンには付けず、その主体の`last_notified_at`を現在時刻へ進めて次の点検を30分後にする。ユーザーが長く操作しなかった後の最初の発話や再開の直後に、待機時間だけで通知が出ることを防ぐため
-- 点検項目は通知本文が持ち、規範側は`QCDと3段判定`の定期点検へ「進捗の点検通知を受けた時を含む」とだけ接続する
+- 実ユーザーの発話の有無や無操作期間の長さによらず、前回通知からの経過時間で判定する。発話が続く間も30分間隔の点検を保つため
+- 通知本文は工程の所要時間・反復・不足情報を比較する短い契機を持つ。比較に使う情報と改善判断の詳細は`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`「成果物側の観測」が持ち、規範側は`QCDと3段判定`の定期点検へ接続する
+- 問題の有無にかかわらず点検方法と結果の報告を求め、経過時間と目標に対する進み具合、余計な作業の有無、当初目的との一致を含める。送達には既存の報告・委譲契約を用いる
 
 却下した案は2つある。
 1つはagents_serverから委譲先へ点検の指示を挿入する案である。hookが両ホストの委譲先でも発火するため、委譲基盤に別の配送経路を足す必要が無い。
@@ -723,8 +724,10 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 
 Codexはplugin同梱フックの定義が変わると、ユーザーが変更後の定義を再び信頼するまでそのフックを実行しない。
 対象はagent-toolkitの9イベント（`SessionStart`、`SubagentStart`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、`UserPromptSubmit`、`Stop`、`SubagentStop`、`SessionEnd`）である。
-`pytools/_internal/install_codex_plugins.py`の更新処理は、app-serverの`hooks/list`で9イベントが全て登録済みかつ有効で、`trustStatus`だけが`untrusted`の場合に限り、`/hooks`で信頼する案内を出す。
-登録が0件または不足する場合はmanifest・配布rootの問題であり、信頼不足として案内しない。
+`pytools/_internal/install_codex_plugins.py`の`_hook_trust_notice_required`は、app-serverの`hooks/list`に次の条件を全て満たすhookが1件以上あれば、`/hooks`で信頼する案内を出す。
+条件は、`pluginId`が対象pluginと一致し、`source`が`plugin`、`enabled`が`true`、`isManaged`が`false`、`trustStatus`が`untrusted`または`modified`であることとする。
+全9イベントの登録は案内の条件に含めない。
+他のhookにエラーや承認済みの状態があっても、この条件を満たすhookがあれば案内する。
 再信頼の操作だけではSessionStartの規範注入を検収できないため、案内は信頼後に新しいセッションを開始して注入を確かめることも求める。
 
 ### セッション種別が分かる短い名前
