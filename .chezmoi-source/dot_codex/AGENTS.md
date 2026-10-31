@@ -320,7 +320,7 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 
 - 既存のパスは入力・基準文書・取得済みの出力から解決し、推測したパスは実在を検索で確かめる。外部コマンドへは絶対パスを渡し、cwdを使うCLIは対象のworktreeで起動する。
 - 通常の検索は対象worktreeの`git grep`、追跡外のファイルは`rg`で行う。終了コード0は一致、1は一致なし、それ以外は検索の失敗として扱う。手段の選び方と出力量の制御は`agent-basics:search`に従う。
-- 必要なスキルの起動と工程資料の取得は、`agent-toolkit:/share/read-trigger-bootstrap.md`の条件表に従い、該当する判断や操作の前に行う。
+- スキルの起動と工程資料の取得は、`agent-toolkit:/share/read-trigger-bootstrap.md`の条件表とhookの読込案内に従い、作業の進行より優先して、該当する判断や操作の前に行う。
 - 外部から観測できる名前と値（文言、設定キー、状態値、コマンド名、返却形式など）を変えるときは、旧値を期待するテストを含む直接影響範囲を固定文字列で探し、送信側と受信側、実装とテストをそろえる。直接影響範囲の定義は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「要件・外部仕様」にある。
 - Git識別子と別worktreeの指定は`agent-toolkit:commit`の`references/git-identifier.md`に従う。前工程から受け取ったパスや識別子は、移動や終了を伴う操作を挟んだ後で同一性を確かめ直す。
 
