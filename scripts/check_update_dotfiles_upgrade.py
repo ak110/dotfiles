@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import typing
 from collections.abc import Callable, Mapping, Sequence
 
@@ -113,13 +114,21 @@ def _run(
 ) -> subprocess.CompletedProcess[str]:
     """子プロセスを実行し、失敗時は診断出力を保った例外を送出する。"""
     command = [os.fspath(argument) for argument in arguments]
+    started = time.perf_counter()
+    status: int | str = "起動失敗"
     try:
         result = runner(command, cwd=cwd, env=env, check=False, capture_output=True, text=True, encoding="utf-8")
+        status = result.returncode
     except OSError as error:
         raise UpgradeCheckError(
             f"子プロセスを起動できなかった: {command!r}: {error}。"
             "先頭の実行ファイルの導入状況・PATHと作業ディレクトリの権限を修正して検証を再実行する。"
         ) from error
+    finally:
+        print(
+            f"工程計測: 所要={time.perf_counter() - started:.3f}秒 終了状態={status} コマンド={command!r}",
+            file=sys.stderr,
+        )
     if result.returncode == 0:
         return result
     if result.stdout:
