@@ -166,7 +166,7 @@ frontmatterの`source`からエージェント由来と判定される項目は�
 委譲元は起動命令と人間由来の素材を区別する。起動命令と人間由来の素材を区別する基準は委譲先にある。
 配送本文の出所判定は`agent-toolkit/rules/01-agent.md`の「方針が衝突する場合の優先順位」節が担う。
 計画への由来記録は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`の`由来`区分が担う。
-実行レビュー担当への受け渡しは`agent-toolkit/share/exec-review.parent.md`の「`review_contract`の生成」節が担う。
+実行レビュー担当への受け渡しは`agent-toolkit/share/exec-review-contract-generation.md`の「`review_contract`の生成」節が担う。
 起動命令をユーザー合意へ昇格させた差分は、`agent-toolkit/share/exec-review.subagent.md`の種類2（認可された対象、範囲または外部可視の結果からの逸脱）と種類7（自動チェックでは検出できない作成規範またはプロジェクト規範への違反）で指摘する。独立した指摘種類は新設しない。
 委譲プロンプト全体の転記は委譲元の命令をユーザー合意へ昇格させるため採用しない。
 

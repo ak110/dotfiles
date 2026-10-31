@@ -63,9 +63,19 @@ _SUMMARY_LENGTH = 200
 """候補の概要へ載せる文字数。通読の本文と操作入力の全文は別に保持する。"""
 _SLOW_CALL_LIMIT = 10
 MANDATORY_KINDS = frozenset(
-    {"user-intervention", "confirmation-request", "wi-user-response", "definition-body-read", "definition-read-unresolved"}
+    {
+        "user-intervention",
+        "confirmation-request",
+        "wi-user-response",
+        "definition-body-read",
+        "definition-read-unresolved",
+        "escalation",
+    }
 )
 """評価を必須とする候補種別。
+
+`escalation`（`続行できない理由:`を含む返却）は担当の作業遂行不能を示すため、後続で回復しても個別に評価する。
+必須でない候補として残すと、振り返り結果報告が既存の対策へ集約したかどうかを候補ごとに追えなかった。
 
 ユーザー介入、ユーザー確認（選択肢どおりの回答と投入したUWI）、WIの記入欄の是正は、
 前例の有無によらず評価を要し、除外区分は`agent-basics:bugfix`の

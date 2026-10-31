@@ -111,8 +111,9 @@ class CodexHookProjection(NamedTuple):
     ツール名を限定する場合は明示する。
 
     Codexは上限を指定しない場合、およそ2,500トークンを超える`additionalContext`を退避する。
-    条文全文と、PostToolUseがモデル文脈容量を合算管理する資料配送は、
-    `additional_context_limit=0`でこの退避を無効化する。
+    条文全文を渡す射影は`additional_context_limit=0`で無効化する。この指定は、
+    handlerの出力量が条文ファイルで固定され、`rules_context_test.py`の上限検査で
+    拘束される場合に限る。
     """
 
     commands: tuple[str, ...]
@@ -159,7 +160,6 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),
         output_command=_codex_hook_command("posttooluse"),
-        additional_context_limit=0,
         matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
     ),
     "Stop": CodexHookProjection((CODEX_STOP_COMMAND,), output_command=_codex_hook_command("stop")),

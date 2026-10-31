@@ -758,26 +758,6 @@ class AppServerManager:
         }
         if lightweight:
             config["project_doc_max_bytes"] = 0
-            # plugins無効の探索でも、元の操作を変えないPost配送を有効にする。
-            root = plugin_roots.SERVER_PLUGIN_ROOT
-            groups = json.loads((root / "hooks/hooks.codex.json").read_text(encoding="utf-8"))["hooks"]["PostToolUse"]
-            features["hooks"] = True
-            config["hooks"] = {
-                "PostToolUse": [
-                    {
-                        "matcher": "Bash",
-                        "hooks": [
-                            {
-                                **handler,
-                                "command": handler["command"].replace("${PLUGIN_ROOT}", str(root)),
-                                "additionalContextLimit": 0,
-                            }
-                            for group in groups
-                            for handler in group["hooks"]
-                        ],
-                    }
-                ],
-            }
         return config
 
     def _thread_config(

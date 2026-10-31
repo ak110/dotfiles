@@ -31,7 +31,14 @@ from agent_toolkit._common.plugin_roots import (
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command
-from agent_toolkit._hooks import agent_id, codex_read_delivery, document_reads, plugin_resources, rules_context, work_contract
+from agent_toolkit._hooks import (
+    agent_id,
+    codex_read_observation,
+    document_reads,
+    plugin_resources,
+    rules_context,
+    work_contract,
+)
 from agent_toolkit._hooks import tool_input as tool_input_fields
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
@@ -147,7 +154,7 @@ def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[p
         ranges = [sed] if sed is not None else []
         if invocation.arguments_known and tokens and pathlib.PurePath(tokens[0]).name == "cat":
             # 出力変換オプションを許さない既存の静的計画で全operandの出力を連結し、結果本文との一致を確かめる。
-            plan = codex_read_delivery.read_plan(shlex.join(tokens))
+            plan = codex_read_observation.read_plan(shlex.join(tokens))
             if len(plan) == 1:
                 ranges = [(plan[0].argv[index], 1, None) for index in plan[0].operands]
         if (
@@ -169,7 +176,7 @@ def _sed_reads(tool_name: str, tool_input: dict, cwd: str) -> tuple[list[tuple[p
 
 def _pure_bash_read(command: str, cwd: str) -> bool:
     """既存の静的読取と、解決済みcdだけを連結した取得操作を判定する。"""
-    if codex_read_delivery.read_plan(command):
+    if codex_read_observation.read_plan(command):
         return True
     invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
     if not invocations or any(
@@ -183,7 +190,7 @@ def _pure_bash_read(command: str, cwd: str) -> bool:
     ):
         return False
     # 元の演算子を検証し、構文を省いた呼出し列だけから純粋読取と推定しない。
-    groups = codex_read_delivery.read_command_groups(command)
+    groups = codex_read_observation.read_command_groups(command)
     if groups is None:
         return False
     current = shell_cwd.CwdResolution(cwd, bool(cwd))
@@ -194,7 +201,7 @@ def _pure_bash_read(command: str, cwd: str) -> bool:
             if changed is None or not changed.resolved:
                 return False
             current = changed
-        elif codex_read_delivery.read_plan(shlex.join(tokens)):
+        elif codex_read_observation.read_plan(shlex.join(tokens)):
             reads = True
         else:
             return False
@@ -1148,10 +1155,15 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             )
         )
         host = "codex" if is_codex_payload(payload) else "claude"
+        # 案内済みで未取得の資料は、取得するまで次の操作でも案内する。
+        # 文脈境界（会話圧縮・clear）の前に選んだ資料は候補であり、境界後の操作ごとに再掲しない。
+        # 残る工程で必要な資料は、現在の操作の宣言が改めて選んだ時点で案内する。
         carried = [
             target
             for target in selected_targets(records, agent)
-            if target not in pending and not target_ready(records, target, agent)
+            if target not in pending
+            and not target_ready(records, target, agent)
+            and agent not in records.get(rules_context.CARRIED_READ_TARGET_PREFIX + document_key(target.path), [])
         ]
         pending.extend(carried)
         method_sources = dict.fromkeys([*_read_paths(tool_name, tool_input, cwd), *sorted(roles)])
@@ -1281,7 +1293,8 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         history_path = payload.get("transcript_path")
         if isinstance(history_path, str) and history_path and transcript.read_transcript_lines(history_path) is None:
             return Decision()
-    shown = "、".join(f"`{path}`" for path in pending)
+    # 同じ資料の節違いは1件の全文取得で足りるため、パスごとに1回だけ示す。
+    shown = "、".join(dict.fromkeys(f"`{target.path}`" for target in pending))
     subject = operation_skills.resolve_subject(payload)
     if subject == operation_skills.SUBJECT_CODEX:
         methods = "指定されたシェルコマンド"
@@ -1295,10 +1308,10 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         else ""
     )
     instruction = f"次の資料を、この操作の結果を使う前に{methods}で全文取得せよ。必須手順であり省略するな。{followup}"
-    steps = []
+    failures: dict[read_triggers.ReadTarget, str] = {}
     for target in pending:
         try:
-            steps.append(acquisition_step(target, subject))
+            acquisition_step(target, subject)
         except (OSError, UnicodeError, ValueError) as error:
             repairs = {row.source.resolve() for row in rows if target in row.targets} | {target.path}
             writes = operation_skills.written_paths(tool_name, tool_input, cwd)
@@ -1314,15 +1327,15 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                         ),
                     )
                 )
-            steps.append(
-                rules_context.acquisition_failure(
-                    target,
-                    error,
-                    shell=subject == operation_skills.SUBJECT_CODEX,
-                    agent=subject == operation_skills.SUBJECT_SUBAGENT,
-                )
+            failures[target] = rules_context.acquisition_failure(
+                target,
+                error,
+                shell=subject == operation_skills.SUBJECT_CODEX,
+                agent=subject == operation_skills.SUBJECT_SUBAGENT,
             )
-    acquisition = "。".join(steps) + "。出力が省略された範囲は分割して取得し、必要な全文を読め。"
+    acquisition = (
+        "。".join(_merged_steps(pending, failures, subject)) + "。出力が省略された範囲は分割して取得し、必要な全文を読め。"
+    )
     if not warning_only and written:
         # 文脈境界の前に選んだ資料は、現在の操作が改めて対象にするまで案内済みとせず、遮断の根拠にもしない。
         # 境界後に案内した資料の未取得だけで止め、成功した全文取得で解除する契約は保つ。
@@ -1336,9 +1349,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             return Decision(
                 block=_block_notice(
                     "案内済み資料が未取得のため再書込を停止する。未取得資料: "
-                    + "、".join(f"`{target.path}`" for target in guided)
+                    + "、".join(dict.fromkeys(f"`{target.path}`" for target in guided))
                     + "。",
-                    fix="。".join(step for target, step in zip(pending, steps, strict=True) if target in guided)
+                    fix="。".join(_merged_steps(guided, failures, subject))
                     + "。出力が省略された範囲は分割して取得し、必要な全文を読め。全文取得後に元の書込操作を再発行せよ。",
                 )
             )
@@ -1370,6 +1383,33 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     )
 
 
+def _merged_steps(
+    targets: list[read_triggers.ReadTarget], failures: dict[read_triggers.ReadTarget, str], subject: str
+) -> list[str]:
+    """同じ資料の取得手段を1件へまとめ、注目する節を併記する。
+
+    節ごとに同じ全文取得を並べると、案内が長くなり同じ資料を繰り返し読ませる。
+    読取または見出しの解決に失敗した対象は、復旧の案内を個別に残す。
+    """
+    groups: dict[pathlib.Path | read_triggers.ReadTarget, list[str]] = {}
+    for target in targets:
+        if target in failures:
+            groups[target] = []
+        else:
+            groups.setdefault(target.path, []).append(target.heading)
+    steps = []
+    for key, headings in groups.items():
+        if isinstance(key, read_triggers.ReadTarget):
+            steps.append(failures[key])
+            continue
+        step = acquisition_step(read_triggers.ReadTarget(key), subject)
+        named = [heading for heading in dict.fromkeys(headings) if heading]
+        if named:
+            step += "。特に" + "、".join(f"`{heading}`" for heading in named) + "に注目せよ"
+        steps.append(step)
+    return steps
+
+
 _PERSISTED_OUTPUT_OPEN = "<persisted-output>"
 _PERSISTED_OUTPUT_CLOSE = "</persisted-output>"
 
@@ -1382,7 +1422,7 @@ def host_truncated(response: object) -> bool:
     Bashの退避を示す`persistedOutputPath`、および退避時にホストが本文全体を置き換える
     `<persisted-output>`の囲みである。SkillとWebFetchの応答には固有の省略表現が無い。
     """
-    if codex_read_delivery.response_is_truncated(response):
+    if codex_read_observation.response_is_truncated(response):
         return True
     if isinstance(response, dict):
         file = response.get("file")

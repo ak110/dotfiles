@@ -3,7 +3,7 @@
 ## ユーザー指摘の受領
 
 指摘の採否や修正範囲を確定する前に、現行の作業契約と要求の原本を確認し、維持すべき対象、全体への波及影響、および元々の未完了タスクを把握する。作業契約の凍結後に行われた変更や指摘の採否は、レビュー指摘管理表へ記録する。
-作業契約への反映手順は`${CLAUDE_PLUGIN_ROOT}/share/work-contract.md`「更新する時点」に従う。`review_contract`の保持と再生成は、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「`review_contract`の生成」に従う。
+作業契約への反映手順は`${CLAUDE_PLUGIN_ROOT}/share/work-contract.md`「更新する時点」に従う。`review_contract`の保持と再生成は、`${CLAUDE_PLUGIN_ROOT}/share/exec-review-contract-generation.md`「`review_contract`の生成」に従う。
 
 - 指摘の対象が、自動処理待ちの未完了な既存WIである場合は、事実確認する前に`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`に従って対象を「保留」状態にして保護する。この保留は、要求に同意したことや本文を変更したことを意味するのではなく、内容を比較検討している間に古い要求に基づいて処理が進んでしまうのを防ぐための処置である
 - 現物と突き合わせた結果がユーザーの発言と一致しない場合は、同意や修正より先に根拠と代替案を説明する
@@ -16,4 +16,5 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/work-contract.md` | 判断 | `read:agent-toolkit:*/share/work-contract.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |

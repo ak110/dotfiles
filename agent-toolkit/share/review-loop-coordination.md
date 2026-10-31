@@ -16,6 +16,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「round 3以降の方式見直し」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「round 3以降の方式見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「完成条件証拠の受領確認」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「完成条件証拠の受領確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「実行レビュー反復での記録」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「実行レビュー反復での記録」` |
@@ -42,7 +43,7 @@
 履歴書き換え後の開始時点には、書き換え後の対応するOIDを使用する。
 
 前ラウンドで記録された指摘は、解決状態および検証証拠とあわせて指摘管理表に保持する。
-複数の計画が並行する反復処理では、計画ごとに最終のレビューHEAD、ラウンド数、指摘管理表、ならびに受理した返却ファイルを保持する。別計画の認可については、判定対象外のコミットを現在のOIDに更新した契約として渡す。変更後の再レビュー対象は`git range-diff`や`git diff --name-only`を用いて判定する（`exec-review.parent.md`「起動方法別のレビュー基準」「`review_contract`の生成」）。
+複数の計画が並行する反復処理では、計画ごとに最終のレビューHEAD、ラウンド数、指摘管理表、ならびに受理した返却ファイルを保持する。別計画の認可については、判定対象外のコミットを現在のOIDに更新した契約として渡す。変更後の再レビュー対象は`git range-diff`や`git diff --name-only`を用いて判定する（`exec-review.parent.md`「起動方法別のレビュー基準」と`exec-review-contract-generation.md`「`review_contract`の生成」）。
 読者別探索の対象と修正範囲は自計画の判定対象コミットによる差分とし、他計画のコミットのみで変更された文書はその計画のレビューにおいて判定する。
 他計画が作成した記述に対する指摘候補は、委譲元がその計画のレビュー担当へ1回のみ回送し、その担当が同一HEADで読者別探索を完了して下した結論を採用する。
 自計画の変更が参照先、手順、識別子などの前提条件を変更した場合は、自計画の直接影響範囲として判定する。

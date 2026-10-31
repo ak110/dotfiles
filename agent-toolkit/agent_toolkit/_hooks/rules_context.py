@@ -253,8 +253,10 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
     if not steps:
         return None
 
-    def notice(items: list[str], remaining: bool) -> str:
-        suffix = "。残る資料は次の操作で案内する" if remaining else ""
+    def notice(items: list[str], remaining: int) -> str:
+        # 候補は操作ごとに再掲しないため、通知へ収まらない候補は件数だけを示す。
+        # 残る工程で必要な資料は、その操作の宣言が改めて選んだ時点で案内する。
+        suffix = f"。ほかに{remaining}件の候補を省いた" if remaining else ""
         # 圧縮前の選択資料は候補として示し、全件の一括再取得は求めない。
         # 残る工程で使わない資料まで読み直すと、圧縮直後に出力上限を超える複合取得が起きるため。
         return _llm_notice(
@@ -267,10 +269,10 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
     included: list[str] = []
     for step in steps:
         candidate = [*included, step]
-        if len(notice(candidate, len(candidate) < len(steps))) > budget:
+        if len(notice(candidate, len(steps) - len(candidate))) > budget:
             break
         included = candidate
-    return notice(included, len(included) < len(steps)) if included else None
+    return notice(included, len(steps) - len(included)) if included else None
 
 
 def mark_user_confirmation_pending(session_id: str) -> None:

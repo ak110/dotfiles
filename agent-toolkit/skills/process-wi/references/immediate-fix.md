@@ -15,7 +15,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「処理中に確定した必須是正レーン」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「処理中に確定した必須是正レーン」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md#%E3%80%8C%60review_contract%60%E3%81%AE%E7%94%9F%E6%88%90%E3%80%8D` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#%E3%80%8C%60review_contract%60%E3%81%AE%E7%94%9F%E6%88%90%E3%80%8D` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-contract-generation.md#%E3%80%8C%60review_contract%60%E3%81%AE%E7%94%9F%E6%88%90%E3%80%8D` | 判断 | `section:agent-toolkit:*/share/exec-review-contract-generation.md#%E3%80%8C%60review_contract%60%E3%81%AE%E7%94%9F%E6%88%90%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
 
@@ -37,7 +37,7 @@
 レーン担当から作業の進行を妨げる既存不良が報告され、直接修正すべき対象と修正方針が技術的に確定した場合は、その最小限の修正を同レーンの変更範囲に加える認可を同じスレッドへ追送する。正式対応AWIの起草中も、認可済みの修正作業を進める。
 
 - 認可内容には修正対象、修正方針、出所（レーン担当の報告とメインエージェントの判定）を含める。この対象と方針が追加修正における書き込み認可の境界となる。エージェント向け文書も個別に指定せず同一の境界で扱う。確定済みの計画はそのまま保持する。
-- 実行レビュー担当を起動する際に、その認可内容を`review_contract`の条項として渡す（`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「`review_contract`の生成」）。
+- 実行レビュー担当を起動する際に、その認可内容を`review_contract`の条項として渡す（`${CLAUDE_PLUGIN_ROOT}/share/exec-review-contract-generation.md`「`review_contract`の生成」）。
 - 修正対象や方針が定まらない場合は、安全な修正に必要な事項を調査し、ユーザー固有の判断が必要な事項が残る場合は確認する。
 - 修正済みの箇所も正式対応AWIの検証対象に含める。メインエージェントが修正コミットと報告を担当者へ渡し、正式対応AWIが登録されたことを確認する。
 

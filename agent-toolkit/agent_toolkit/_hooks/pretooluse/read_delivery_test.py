@@ -5,7 +5,6 @@ import pathlib
 import shlex
 import shutil
 import subprocess
-import types
 
 import pytest
 
@@ -1909,7 +1908,7 @@ def test_compaction_recovery_lists_a_selected_document_read_through_a_same_conte
 
 
 def test_compaction_limits_rewrite_block_to_documents_guided_after_compaction(tmp_path, monkeypatch, memory):
-    """圧縮前に案内した資料の未取得だけでは再書込を止めず、圧縮後に案内した資料の未取得は全文取得まで止める。"""
+    """圧縮前に選んだ資料は候補に留めて案内も遮断もせず、圧縮後に案内した資料の未取得は全文取得まで止める。"""
     earlier = tmp_path / "earlier.md"
     later = tmp_path / "later.md"
     earlier.write_text("# 圧縮前の資料\n\n圧縮前の基準\n", encoding="utf-8")
@@ -1929,18 +1928,32 @@ def test_compaction_limits_rewrite_block_to_documents_guided_after_compaction(tm
     assert str(earlier) in (read_delivery.deliver(payload, "Write", write, "test").block or "")
 
     rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+    # 圧縮前の候補は操作ごとに再掲せず、現在の操作が選んだ資料だけを案内する。
     first = _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
-    assert str(later) in first and str(earlier) in first
+    assert str(later) in first and str(earlier) not in first
     blocked = read_delivery.deliver(payload, "Write", write, "test").block
     assert blocked is not None and str(later) in blocked and str(earlier) not in blocked
     read_delivery.observe({**payload, "tool_response": later.read_text()}, "Read", {"file_path": str(later)}, "test")
-    # 圧縮前に案内した資料だけが未取得の再書込は止めず、取得の案内を続ける。
+    # 圧縮前に案内した資料だけが未取得の再書込は、案内も遮断もせずに通す。
     for _ in range(2):
-        assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
+        decision = read_delivery.deliver(payload, "Write", write, "test")
+        assert decision.block is None and not decision.notices
     # 現在の操作が圧縮前の資料を改めて対象にした後は、圧縮前と同じく案内後の再書込を止める。
     assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
     assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Write", write, "test"))
     assert str(earlier) in (read_delivery.deliver(payload, "Write", write, "test").block or "")
+
+
+@pytest.mark.usefixtures("memory")
+def test_sections_of_the_same_document_share_one_acquisition_step(tmp_path, monkeypatch):
+    """同じ資料の複数の節は、1件の全文取得の案内へまとめて注目する節を併記する。"""
+    document = tmp_path / "guide.md"
+    document.write_text("# 手引き\n\n## 前提\n\n前提の本文\n\n## 手順\n\n手順の本文\n", encoding="utf-8")
+    rows = [ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (document, document), ("前提", "手順"))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    body = _notice_body(read_delivery.deliver({"cwd": str(tmp_path)}, "Do", {}, "test"))
+    assert body.count(f"Readで`{document}`を全文読め") == 1
+    assert "特に`前提`、`手順`に注目せよ" in body
 
 
 @pytest.mark.parametrize("failure", ["root", "io", "missing", "unicode", "root-text-only"])
@@ -2948,14 +2961,9 @@ def test_host_truncation_forms_are_not_read(tmp_path, monkeypatch, form):
     assert final.returncode == 2 and str(path) in final.stderr
 
 
-def _codex_transcript(tmp_path, command, *, exit_code=0, execution=True, usage=True, window=1000000):
-    """Codexの元turnの実行記録と使用量の記録を書いたセッション記録の絶対パスを返す。"""
+def _codex_transcript(tmp_path, command, *, exit_code=0, execution=True):
+    """Codexの元turnの実行記録を書いたセッション記録の絶対パスを返す。"""
     records: list[dict] = []
-    if usage:
-        records += [
-            {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "turn", "model_context_window": window}},
-            {"type": "token_usage_record", "payload": {"usage": {"input_tokens": 0, "output_tokens": 0}}},
-        ]
     records.append(
         {
             "type": "turn_context",
@@ -3008,33 +3016,23 @@ def _failing(*_args, **_kwargs):
     raise OSError("注入した失敗")
 
 
-@pytest.mark.parametrize("failure", ["usage", "temp", "reserve", "cleanup"])
 @pytest.mark.usefixtures("memory")
-def test_codex_full_read_survives_delivery_failures(tmp_path, monkeypatch, failure):
-    """省略の無い成功した読取は、補助配送の準備・記録・後始末が失敗しても読了になり、再書込を許可する。"""
+def test_codex_full_read_releases_block_without_body_delivery(tmp_path, monkeypatch):
+    """省略の無い成功した読取は読了になって再書込を許可し、Post hookは資料本文を返さない。"""
     path = _rows(tmp_path, monkeypatch, "tool:Write", count=1)[0]
     payload = {"session_id": "test", "cwd": str(tmp_path), "turn_id": "turn"}
     operation = _write_operation(tmp_path, payload)
     _guided_and_blocked(operation, path)
-    if failure == "temp":
-        monkeypatch.setattr(read_delivery.codex_read_delivery.managed_temp, "create_session_temp", _failing)
-    elif failure == "reserve":
-        monkeypatch.setattr(read_delivery.codex_read_delivery, "_reserve", _failing)
-    elif failure == "cleanup":
-        monkeypatch.setattr(
-            read_delivery.codex_read_delivery, "shutil", types.SimpleNamespace(rmtree=_failing, which=shutil.which)
-        )
-    command = f"cat -- {path}"
-    observed = _codex_read(tmp_path, payload, command, path.read_text(encoding="utf-8"), usage=failure != "usage")
-    assert "追加配送を省く" in observed.stdout
+    body = path.read_text(encoding="utf-8")
+    observed = _codex_read(tmp_path, payload, f"cat -- {path}", body)
+    assert all(line not in observed.stdout for line in body.splitlines() if line.strip())
     final = _run_hook_in_process("pretooluse", operation)
     assert final.returncode == 0 and str(path) not in final.stdout
 
 
-@pytest.mark.skipif(not pathlib.Path("/proc/self/fd").is_dir(), reason="FDへ固定した再取得はLinuxで検証する")
 @pytest.mark.usefixtures("memory")
 def test_codex_unverified_or_truncated_read_stays_unread_until_split_reads(tmp_path, monkeypatch):
-    """成功を確かめられない応答と枠不足の省略応答は未取得のまま残り、分割読取で全文を被覆すると解除される。"""
+    """成功を確かめられない応答と省略応答は未取得のまま残り、分割読取で全文を被覆すると解除される。"""
     path = _rows(tmp_path, monkeypatch, "tool:Write", count=1)[0]
     body = path.read_text(encoding="utf-8")
     payload = {"session_id": "test", "cwd": str(tmp_path), "turn_id": "turn"}
@@ -3047,8 +3045,8 @@ def test_codex_unverified_or_truncated_read_stays_unread_until_split_reads(tmp_p
     assert _run_hook_in_process("pretooluse", operation).returncode == 2
     envelope = "Warning: truncated output (original token count: 5000)\nTotal output lines: 3\n\n"
     truncated = f"{envelope}{body[:4]}…4990 tokens truncated…{body[-4:]}"
-    observed = _codex_read(tmp_path, payload, command, truncated, window=2000)
-    assert "全文は未取得" in observed.stdout
+    observed = _codex_read(tmp_path, payload, command, truncated)
+    assert "全文は未取得" in observed.stdout and "sed -n" in observed.stdout
     assert _run_hook_in_process("pretooluse", operation).returncode == 2
     lines = body.splitlines(keepends=True)
     first = f"sed -n '1,1p' -- {path}"

@@ -1603,3 +1603,9 @@ def test_prepare_summarizes_codex_tool_activity(
     for name in ("sed", "checked", "found", "linted"):
         assert f"{name}-line-" not in conversation
     assert "Chunk ID: abc" not in conversation
+
+
+def test_escalation_candidate_requires_evaluation() -> None:
+    """続行不能の返却は担当の作業遂行不能を示すため、後続で回復しても評価必須の候補にする。"""
+    assert prepare.is_mandatory({"candidate_kind": "escalation"})
+    assert not prepare.is_mandatory({"candidate_kind": "delegate-return"})

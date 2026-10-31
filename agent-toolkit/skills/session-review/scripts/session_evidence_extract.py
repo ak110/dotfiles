@@ -206,8 +206,17 @@ def _clip(text: str, limit: int | None = None) -> str:
     return normalized[:effective] + _OMISSION_MARK
 
 
+_PRESERVED_MARKERS = (_IMPROVEMENT_MARKER, "続行できない区分:", "続行できない理由:", "想定外事象:")
+"""短縮の外でも全文を保持する返却の標識行。
+
+候補の抽出は短縮後の本文を入力にするため、返却末尾の標識行が省略区間に入ると、
+続行不能の返却（`session_evidence_candidates.py`の`_is_escalation_return`）や想定外事象が候補から消える。
+2,000文字を超える正常形式の返却の末尾に置かれた`続行できない理由:`を見落とした実例がある。
+"""
+
+
 def _clip_assistant_text(text: str) -> str:
-    """本文の先頭を短縮し、省略区間にある改善点の標識行は全文で保持する。"""
+    """本文の先頭を短縮し、省略区間にある返却の標識行は全文で保持する。"""
     normalized = text.strip()
     clipped = _clip(normalized)
     if clipped == normalized:
@@ -218,7 +227,7 @@ def _clip_assistant_text(text: str) -> str:
     start = 0
     for line in normalized.splitlines(keepends=True):
         end = start + len(line)
-        if line.lstrip().startswith(_IMPROVEMENT_MARKER) and end > boundary:
+        if line.lstrip().startswith(_PRESERVED_MARKERS) and end > boundary:
             if start < boundary:
                 prefix = normalized[:start]
             kept.append(line.rstrip("\r\n"))
