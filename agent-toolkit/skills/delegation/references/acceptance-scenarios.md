@@ -14,7 +14,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
 | 対話の継続と成果物の達成を確かめる試行を選ぶ前 | `agent-toolkit:refine-prompt/references/multi-turn-trials.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/multi-turn-trials.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/agents-server-explore.md#「文書の判定試行」` | 判断 | `section:agent-toolkit:*/share/agents-server-explore.md#「文書の判定試行」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/acceptance-scenarios.md#「検証資源の分離」` | 判断 | `section:agent-basics:*/skills/check-execution/references/acceptance-scenarios.md#「検証資源の分離」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` | 判断 | `section:agent-basics:*/skills/check-execution/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` |
 
@@ -26,7 +26,7 @@
 - 実装担当エージェントは、読み取り専用の委譲タスクとして固定入力と対象文書を渡し、委譲先はスキルを実際に起動せずに文書の判定ルールを入力データへ適用して結果を返す。読み取り範囲と回答根拠の提示には、`agent-toolkit:/share/agents-server-explore.md`「文書の判定試行」を適用し、他の読み取り専用起動手段を用いる場合もその契約内容を委譲時の入力に含める。
 - 一部の抜粋のみに基づく判定や、未読部分がある状態で「文書が不足している」とする回答が返された場合は、必要な読み込みを指示し直した上で合否を判定する。
 - 実装担当エージェントは、入力内容、対象文書のバージョン（コミットハッシュと相対パス、または本文を複製した絶対パス）、委譲先からの回答、期待結果との比較内容、および合否判定をmanaged-temp内の記録ファイルにまとめ、その絶対パスを検証結果に記載する。別のファイルに保存した入力データ、回答内容、および原稿テキストも同じ記録から絶対パスで参照できるように構成し、実行レビュー担当エージェントが取得・確認できる状態を整える。
-- 文書の判定試行は文書の内容を読み取るだけの処理であるため、スキル仕様が定める「起動可能なエージェントの制限」（例えば`agent-toolkit:session-review`を最上位セッションのメインエージェントに限定する規定など）は、後で実際にスキルを起動する段階で適用する。実際にスキルを起動する処理を行う際は、その制限規定と操作認可に厳格に従う。
+- 文書の判定試行は文書の内容を読み取るだけの処理であるため、スキル仕様が定める「起動可能なエージェントの制限」（例えば`agent-toolkit:review-session`を最上位セッションのメインエージェントに限定する規定など）は、後で実際にスキルを起動する段階で適用する。実際にスキルを起動する処理を行う際は、その制限規定と操作認可に厳格に従う。
 
 ## 検証資源の分離
 

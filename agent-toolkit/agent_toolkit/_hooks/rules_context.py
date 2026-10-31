@@ -414,7 +414,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         result = process_tree.run_with_timeout(
             [
                 sys.executable,
-                str(SHARE_DIR.parent / "skills/session-review/scripts/session_review_evidence.py"),
+                str(SHARE_DIR.parent / "skills/review-session/scripts/session_review_evidence.py"),
                 "--transcript",
                 resolved,
                 "--user-events",

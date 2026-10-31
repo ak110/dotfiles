@@ -136,7 +136,7 @@
   dotfilesはリリースPRの作成・マージ・検収まで、smprはpushとCIまで、他5プロジェクトは必要時だけ既存基準でリリースする。
   読み手は個人プロジェクトを編集するエージェントとし、対象外のプロジェクトの公開認可へ広げない。
   2026年10月10日のユーザー回答「確認せず公開まで (Recommended)」により、2026年9月27日の協調モードで公開範囲を確認する判断を、この対象と条件で置き換えた。
-  認可の定義と公開後の違いは`ak110-projects-operations`「リリース運用」、公開操作は`agent-toolkit:commit`、dotfilesのリリースは`dotfiles-release`が定める
+  認可の定義と公開後の違いは`operate-ak110-projects`「リリース運用」、公開操作は`agent-toolkit:commit`、dotfilesのリリースは`release-dotfiles`が定める
 
 ### 確認の提示形式
 

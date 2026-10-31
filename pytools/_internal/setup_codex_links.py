@@ -18,7 +18,7 @@ CODEX_HOME = Path.home() / ".codex"
 # 配布先（`~/.codex/`起点）→配布元（dotfilesルート起点）のマップ。
 # 配布先は全てディレクトリで、Windowsではディレクトリジャンクションで実現する。
 _LINKS: dict[str, str] = {
-    "skills/ak110-projects-operations": ".chezmoi-source/dot_claude/skills/ak110-projects-operations",
+    "skills/operate-ak110-projects": ".chezmoi-source/dot_claude/skills/operate-ak110-projects",
     "docs": ".chezmoi-source/dot_claude/docs",
 }
 # `agent-toolkit/rules`は配布先で`atk-auto`の境界を付けた本文へ書き換えるため、

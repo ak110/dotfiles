@@ -18,7 +18,6 @@ import filelock
 import markdown_it
 import mdit_py_plugins.footnote
 
-from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk.serve import entry_index
 from agent_toolkit._atk.wi import add as awi_add
 from agent_toolkit._atk.wi import batch as awi_batch
@@ -217,8 +216,6 @@ def _entry(
         "state": state,
         "filename": path.name,
         "important": metadata.get("important") is True,
-        # 一覧・詳細の確認状態と操作ボタンは、着手可否判定と同じ解釈の値で表示する。
-        "confirmation": wi_readiness.applicable_confirmation(kind, metadata),
         "answered": answered,
         "needs_verify": _needs_verify(kind, state, text),
         "cooldown_until": cooldown.isoformat() if cooldown is not None else None,
@@ -671,70 +668,6 @@ class Operations:
                 self.private_notes, "chore: update wi importance", [str(path.relative_to(self.private_notes))], skip_push=True
             )
             return True
-
-    def set_confirmation(self, filename: str, confirmed: bool, expected_content: str) -> bool:
-        """確認状態を持つ未終了のAWIを確認済みまたは要確認へ切り替え、他のメタデータと本文を保つ。
-
-        着手可否が変わるため、他ホストの自動処理へ直ちに反映されるようpushまで行う。
-        """
-        with wi_sync.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
-            wi_sync.ensure_mutation_allowed(self.private_notes)
-            records, missing = wi_entries.read_named_entries(
-                self.private_notes, wi_entries.validate_named_filenames(self.private_notes, [filename]), target_repo=None
-            )
-            if missing:
-                raise FileNotFoundError(filename)
-            path, _, text, state, kind = records[0]
-            if text != expected_content:
-                raise RuntimeError(EDIT_CONFLICT_MESSAGE)
-            parsed = entry_text.parse_frontmatter(text)
-            if parsed is None:
-                raise WebApiInputError("frontmatterを解析できません")
-            metadata, body = parsed
-            if state not in wi_constants.WI_ACTIVE_STATES or wi_readiness.applicable_confirmation(kind, metadata) is None:
-                raise WebApiInputError(
-                    "確認状態を切り替えられるのは、確認状態を持つ未終了のAWIだけです。"
-                    "詳細を閉じて開き直し、最新の状態を確認してください。"
-                )
-            value = wi_constants.CONFIRMATION_CONFIRMED if confirmed else wi_constants.CONFIRMATION_REQUIRED
-            if metadata[wi_constants.CONFIRMATION_KEY] == value:
-                return False
-            metadata[wi_constants.CONFIRMATION_KEY] = value
-            frontmatter.write_entry_text(path, frontmatter.serialize_frontmatter(metadata, body))
-            # commitとpushを分けて実行し、失敗した段に応じてローカルの保存状態と他ホストへの反映状態を伝える。
-            # 確認状態は他ホストの自動着手を左右するため、未反映のまま成功として返さない。
-            label = "確認済み" if confirmed else "要確認"
-            resolved = self.private_notes.resolve()
-            try:
-                wi_sync.commit_and_push(
-                    self.private_notes,
-                    "chore: update wi confirmation",
-                    [str(path.relative_to(self.private_notes))],
-                    skip_push=True,
-                )
-            except subprocess.CalledProcessError as error:
-                raise SyncIncompleteError(
-                    f"{path.name}を{label}にした内容はこのホストのファイルへ保存したが、commitに失敗したため他ホストへは反映していない。"
-                    "詳細を閉じて開き直し、表示中の確認状態を確かめてください。"
-                    f"次に`{_git_status_command(resolved)}`で差分を確認し、`atk wi commit`でcommitとpushを完了してください。"
-                ) from error
-            try:
-                wi_sync.push_pending_commits(self.private_notes)
-            except subprocess.CalledProcessError as error:
-                raise SyncIncompleteError(self._push_incomplete_message(path.name, label, resolved)) from error
-            if _atk_git_sync.push_was_deferred(self.private_notes):
-                raise SyncIncompleteError(self._push_incomplete_message(path.name, label, resolved))
-            return True
-
-    @staticmethod
-    def _push_incomplete_message(filename: str, label: str, resolved: pathlib.Path) -> str:
-        """commit済みでpushが完了しなかった場合の、保存状態と復旧操作の案内を返す。"""
-        return (
-            f"{filename}を{label}にした変更はこのホストでcommitしたが、remoteへのpushが完了していないため他ホストへは反映していない。"
-            "詳細を閉じて開き直し、表示中の確認状態を確かめてください。"
-            "接続や認証を確認してから画面上部の「今すぐ同期」を押すと送信を再試行できます。"
-            f"解消しない場合は`{_git_status_command(resolved)}`で状態を確認し、`atk wi commit`を実行してください。"
-        )
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
         """エージェント由来のinboxまたはhold項目へユーザーコメントを追記、置換または削除する。

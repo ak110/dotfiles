@@ -100,7 +100,7 @@ dev = [
 
 [tool.agent-toolkit.pick-wi-check]
 # `atk run-script pick-wi-check`が選定結果の`プロジェクト規範の指定`に求める本リポジトリの条件。
-# 記載の手順と理由は`.claude/skills/dotfiles-norm-edit/SKILL.md`「メインが書くプロジェクト規範の指定」が定め、
+# 記載の手順と理由は`.claude/skills/edit-dotfiles-norms/SKILL.md`「メインが書くプロジェクト規範の指定」が定め、
 # 対象範囲の一致は`project_norm_spec_invariant_test.py`が確かめる。
 
 [[tool.agent-toolkit.pick-wi-check.norm-spec]]
@@ -130,9 +130,9 @@ ty-args = [
     "--output-format", "concise", "--error-on-warning",
     "--extra-search-path", "scripts",
     "--extra-search-path", "libexec",
-    "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts",
+    "--extra-search-path", "agent-toolkit/skills/write-plan/scripts",
     "--extra-search-path", "agent-toolkit/skills/process-wi/scripts",
-    "--extra-search-path", "agent-toolkit/skills/session-review/scripts",
+    "--extra-search-path", "agent-toolkit/skills/review-session/scripts",
     "--extra-search-path", "agent-toolkit/skills/wi-standards/scripts",
 ]
 # pyfltrの設定を変えない場合は`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
@@ -475,7 +475,7 @@ extend-aliases = { datetime = "datetime" }
 
 [tool.pyright]
 # agent-toolkitの計画補助スクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
-extraPaths = ["agent-toolkit/skills/plan-mode/scripts"]
+extraPaths = ["agent-toolkit/skills/write-plan/scripts"]
 
 [tool.mypy]
 allow_redefinition = true

@@ -9,7 +9,7 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/choice-construction.md#「本文の語」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md#「本文の語」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
@@ -23,7 +23,7 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 回答形式には、`--question-type=choice`と`--choices`（各選択肢の簡潔な名前）を指定するか、二者択一の可否であれば`--question-type=yes-no`を用いる。続けて`## 選択肢と帰結`見出しを設け、用意した選択肢と、それぞれを選んだ場合に生じる結果を記載する。具体的な値の指定やログの貼り付けのように選択肢を網羅できない回答であっても、回答欄への記入方法や確認できない旨の扱いを選択肢として提示する。自由記入の回答欄は選択肢の後ろに追加できる。
 文書の末尾には`## 判断材料`を配置する。問いの主題の選定や選択肢の組み立て方は、`agent-toolkit:user-confirmation-and-report`の「確認の選択肢を組む手順」に従う。
 
-ツールが自動付与する`## 質問`や`## 回答`と重複するH2見出しは設けない。本文の見出しレベルはH2までとする（`agent-toolkit:completion-report`の報告用UWIに限り、同スキルが定めるH3見出しを`## 判断材料`の内側に配置できる）。`atk wi add --type=uwi`には質問本文を渡し、見出しや回答欄マーカーの付与はツールに任せる。既存のUWIをもとに作成する場合は、あらかじめ見出しと回答欄マーカーを除去しておく。
+ツールが自動付与する`## 質問`や`## 回答`と重複するH2見出しは設けない。本文の見出しレベルはH2までとする（`agent-toolkit:report-completion`の報告用UWIに限り、同スキルが定めるH3見出しを`## 判断材料`の内側に配置できる）。`atk wi add --type=uwi`には質問本文を渡し、見出しや回答欄マーカーの付与はツールに任せる。既存のUWIをもとに作成する場合は、あらかじめ見出しと回答欄マーカーを除去しておく。
 `## 回答方法`という節は設けない。ブラウザーUIがfrontmatterの情報に基づいて選択肢を表示するためである。返信形式の指定が必要な場合は、`## 判断材料`の中に記載する。
 
 ## 載せる情報
@@ -52,12 +52,12 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 
 ## 承認型ごとの内容
 
-`agent-toolkit:completion-report`が定義する報告用UWIは、同スキルの`references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」と、本書の構成・情報選定で確認する。
+`agent-toolkit:report-completion`が定義する報告用UWIは、同スキルの`references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」と、本書の構成・情報選定で確認する。
 通常の事後承認型UWIには共通起草手順を適用し、`--question-type=post-approval`だけでは報告用と判定しない。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| completion-reportが定義する報告用UWIを確認・保存する前 | `../../completion-report/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「報告用UWIの確認と保存」` |
+| report-completionが定義する報告用UWIを確認・保存する前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
 
 事前承認型のUWIでは、確認を要する解釈の相違やユーザーのみが持つ情報、各案を採用した際に対外的に生じる影響、推奨案、回答を待つ元項目のファイル名と対象範囲、および必要な回答や資料を`## 判断材料`に記載する。元項目とUWIの対応関係は、UWIの本文内のみに記録する。`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」に基づき、確認を必要としない問いはUWIへ送らずエージェント自身で確定する。
 

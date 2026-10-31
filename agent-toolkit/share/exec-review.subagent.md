@@ -74,8 +74,8 @@ continuations:
 | 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
 | テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md`、`read:agent-toolkit:*/skills/commit/references/testing.md` | |
-| `計画`を受領し、条項を生成する前 | `agent-toolkit:plan-mode`の`references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md` | |
-| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:plan-mode`の`references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md` | |
+| `計画`を受領し、条項を生成する前 | `agent-toolkit:write-plan`の`references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` | |
+| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` | |
 | 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
 | 指摘を登録するか完成条件証拠を書く直前 | [exec-review-recording.md](exec-review-recording.md) | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md`、`read:agent-toolkit:*/share/exec-review-recording.md` | |
 | 着手時 | `agent-toolkit:/share/exec-review-criteria.md`の「適用契約」「基本方針」「指摘内容」「実行レビューの判定」「完了報告」 | 起動時 | `role:exec-review` | |

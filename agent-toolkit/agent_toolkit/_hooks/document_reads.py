@@ -1,6 +1,6 @@
 """スキル配下の資料を読む操作が、その資料の本文を返したかを判定する。
 
-completion-reportの起動証拠（`termination_evidence.py`）と、Antigravityの`read_file`をSkill観測へ渡す処理
+report-completionの起動証拠（`termination_evidence.py`）と、Antigravityの`read_file`をSkill観測へ渡す処理
 （`antigravity.py`）が使う。パスの文字列だけを根拠にせず、読取の結果が資料の本文を返したことを確かめる。
 起動証拠は範囲指定の読取も受理するため、本モジュールは全文か部分かを区別しない。
 資料の全文取得の判定は`pretooluse/read_delivery.py`が内容ハッシュと本文一致で行う。
@@ -23,7 +23,7 @@ _READ_PROGRAMS = frozenset({"cat", "sed", "head", "nl", "less", "more", "bat", "
 """Codexが資料を表示する読取コマンド。検索・抽出のコマンドは本文全体を返さないため含めない。
 
 `pretooluse/large_reads.py`の`bash_read_paths`は全文取得の警告用で、`head`・`nl`・`bat`・
-PowerShellの`Get-Content`を扱わない。completion-reportの起動証拠はこれらの読取も受理するため、別に列挙する。
+PowerShellの`Get-Content`を扱わない。report-completionの起動証拠はこれらの読取も受理するため、別に列挙する。
 """
 
 

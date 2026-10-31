@@ -12,7 +12,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 
 1. plan file（`~/.claude/plans/` または
    保存済み計画root `$(atk config get private_notes)/plans/` 配下）書式の判定 (Write / Edit / MultiEdit / apply_patch)
-2. plan-modeスキル呼び出し検出 (Skill)
+2. write-planスキル呼び出し検出 (Skill)
 3. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
 4. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
 5. exit-session起動検知による`autonomous_exit_invoked`の記録と
@@ -32,7 +32,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 11. `AskUserQuestion`の自由記述の回答へ、UserPromptSubmitと同じ現物確認・内容別の注記を返す (AskUserQuestion)
 12. ホストの上限を超えて退避した出力の抜粋を、未読と保存先、次の操作を示す本文へ置き換える
     `updatedToolOutput` (Bash / PowerShell。`persisted_output`が判定する)
-13. メインが成功した前景Bashでcommit・pushを行った後に、completion-reportの起動条件を通知する
+13. メインが成功した前景Bashでcommit・pushを行った後に、report-completionの起動条件を通知する
 14. 一定間隔ごとの進捗のセルフチェック通知（全ツール共通。`progress_self_check`が判定する）
 """
 
@@ -488,7 +488,7 @@ def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None
 
 
 def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
-    """メインが前景で成功させたGit操作の直後に、completion-reportの起動条件を通知する。"""
+    """メインが前景で成功させたGit操作の直後に、report-completionの起動条件を通知する。"""
     response = payload.get("tool_response")
     if (
         not is_main_agent_context(payload)
@@ -502,9 +502,9 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
     if not isinstance(command, str) or not termination_evidence.published_git_operations(command):
         return None
     operation = (
-        f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/SKILL.md'}`を読め"
+        f"`{_run_script.PLUGIN_ROOT / 'skills/report-completion/SKILL.md'}`を読め"
         if is_codex_payload(payload) or is_antigravity_payload(payload)
-        else "Skillで`agent-toolkit:completion-report`を起動せよ"
+        else "Skillで`agent-toolkit:report-completion`を起動せよ"
     )
     return _llm_notice(
         f"作業を完了してユーザーへ成果を報告するときは、報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
@@ -568,7 +568,7 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                     if content_notice not in notices:
                         notices.append(content_notice)
     elif tool_name == "Skill":
-        # Skill: plan-modeスキル呼び出し検出とprocess-wi起動検出
+        # Skill: write-planスキル呼び出し検出とprocess-wi起動検出
         _record_skill_use(session_id, tool_input.get("skill"))
         skill = tool_input.get("skill")
         if not payload.get("agent_id") and isinstance(skill, str):

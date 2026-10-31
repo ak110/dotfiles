@@ -884,7 +884,7 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     assert "実行受付前に終了" in context
     assert f"{host} {event}" in context
     assert "ユーザーへ伝える" in context
-    assert "/agent-toolkit:session-review batch" in context
+    assert "/agent-toolkit:review-session batch" in context
     log_path = next((session_review.directory() / "launches").glob("*.log"))
     assert str(log_path) in context
     assert error.split("(", 1)[0] in log_path.read_text(encoding="utf-8")

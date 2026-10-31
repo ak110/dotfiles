@@ -67,7 +67,7 @@
 
 ## [レビューの運用](concepts-runtime.md#レビューの運用)
 
-## [`session-review`](concepts-runtime.md#session-review)
+## [`review-session`](concepts-runtime.md#review-session)
 
 ## [確認・合意の運用](concepts-governance.md#確認合意の運用)
 

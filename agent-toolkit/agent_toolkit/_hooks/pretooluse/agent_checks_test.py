@@ -688,12 +688,12 @@ class TestWorkflowSkillInvocation:
     @pytest.mark.parametrize(
         "skill_name",
         [
-            "agent-toolkit:plan-mode",
-            "plan-mode",
+            "agent-toolkit:write-plan",
+            "write-plan",
             "agent-toolkit:process-wi",
             "process-wi",
-            "agent-toolkit:session-review",
-            "session-review",
+            "agent-toolkit:review-session",
+            "review-session",
             "agent-basics:bugfix",
             "bugfix",
         ],
@@ -730,7 +730,7 @@ class TestWorkflowSkillInvocation:
         result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:plan-mode"},
+                "tool_input": {"skill": "agent-toolkit:write-plan"},
                 "session_id": "reminder-sidechain",
                 "isSidechain": True,
             },
@@ -745,7 +745,7 @@ class TestWorkflowSkillInvocation:
         skill_result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:plan-mode"},
+                "tool_input": {"skill": "agent-toolkit:write-plan"},
                 "session_id": "reminder-then-agent",
             },
             env_overrides=env,

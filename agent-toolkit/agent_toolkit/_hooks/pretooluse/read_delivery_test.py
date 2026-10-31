@@ -336,14 +336,14 @@ def test_whole_contract_body_and_compaction_use_the_resolved_input(tmp_path, mon
 def test_main_resolves_work_contract_without_a_startup_input(tmp_path, monkeypatch):
     contract = tmp_path / "work-contract.md"
     contract.write_text("# 現行作業契約\n完成条件\n", encoding="utf-8")
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:completion-report",), (), selector="input:作業契約")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:report-completion",), (), selector="input:作業契約")
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
     assert read_delivery.dynamic_targets(row, {}, "Skill", {}, {}, "main", "session") == [ReadTarget(contract)]
 
 
 def test_main_missing_work_contract_explains_its_expected_path(tmp_path, monkeypatch):
     contract = tmp_path / "work-contract.md"
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:completion-report",), (), selector="input:作業契約")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:report-completion",), (), selector="input:作業契約")
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
     with pytest.raises(ValueError, match="work-contract.md.*作成と所有"):
         read_delivery.dynamic_targets(row, {}, "Skill", {}, {}, "main", "session")
@@ -430,30 +430,30 @@ def test_public_hook_pyproject_selects_only_dependency_definition_changes(tmp_pa
 def test_public_hook_delivers_main_work_contract_and_reuses_it_after_read(tmp_path, monkeypatch):
     contract = tmp_path / "work-contract.md"
     contract.write_text("# 現行作業契約\n完成条件\n", encoding="utf-8")
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:completion-report",), (), selector="input:作業契約")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:report-completion",), (), selector="input:作業契約")
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
-    assert not _guidance(read_delivery.deliver({}, "Skill", {"skill": "completion-report"}, "test"))
+    assert not _guidance(read_delivery.deliver({}, "Skill", {"skill": "report-completion"}, "test"))
     first = _notice_body(read_delivery.deliver({}, "Inspect", {}, "test"))
     assert str(contract) in first
     read_delivery.observe({"tool_response": contract.read_text()}, "Read", {"file_path": str(contract)}, "test")
-    assert not _guidance(read_delivery.deliver({}, "Skill", {"skill": "completion-report"}, "test"))
+    assert not _guidance(read_delivery.deliver({}, "Skill", {"skill": "report-completion"}, "test"))
 
 
 @pytest.mark.usefixtures("memory")
 def test_public_hook_explains_missing_main_work_contract(tmp_path, monkeypatch):
     contract = tmp_path / "work-contract.md"
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:completion-report",), (), selector="input:作業契約")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:report-completion",), (), selector="input:作業契約")
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: contract)
-    assert str(contract) in _notice_body(read_delivery.deliver({}, "Skill", {"skill": "completion-report"}, "test"))
+    assert str(contract) in _notice_body(read_delivery.deliver({}, "Skill", {"skill": "report-completion"}, "test"))
 
 
 @pytest.mark.usefixtures("memory")
 def test_public_hook_keeps_delegated_work_contract_input_preferred(tmp_path, monkeypatch, memory):
     delegated = tmp_path / "delegated-contract.md"
     delegated.write_text("# 委譲契約\n", encoding="utf-8")
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:completion-report",), (), selector="input:作業契約")
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "起動時", ("skill:report-completion",), (), selector="input:作業契約")
     memory[rules_context.OPERATION_SKILL_READY_KEY] = {
         "startup-input-target:" + json.dumps({"path": str(delegated), "heading": "", "selectors": ["input:作業契約"]}): [
             "child"
@@ -462,7 +462,7 @@ def test_public_hook_keeps_delegated_work_contract_input_preferred(tmp_path, mon
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: (_ for _ in ()).throw(AssertionError()))
     payload = {"agent_id": "child"}
-    assert not _guidance(read_delivery.deliver(payload, "Skill", {"skill": "completion-report"}, "test"))
+    assert not _guidance(read_delivery.deliver(payload, "Skill", {"skill": "report-completion"}, "test"))
     notice = _notice_body(read_delivery.deliver(payload, "Inspect", {}, "test"))
     assert str(delegated) in notice
 
@@ -2300,14 +2300,14 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
     payload = {"cwd": str(root), "turn_id": "turn"}
     phases = (
         ("選定", root / "skills/process-wi/references/selection-procedure.md", ""),
-        ("計画", root / "skills/plan-mode/SKILL.md", ""),
+        ("計画", root / "skills/write-plan/SKILL.md", ""),
         ("共通工程", root / "share/single-lane-execution.md", ""),
         ("確認", root / "skills/user-confirmation-and-report/SKILL.md", ""),
         ("実装と実行レビュー", root / "share/exec-review.parent.md", ""),
         ("要件検収", root / "share/verification-evidence.md", ""),
         ("レビュー収束", root / "share/review-loop-coordination.md", "冒頭「ラウンドの遷移」から「応答済みの判定」まで"),
         ("公開前検証", root / "skills/commit/references/publish.md", ""),
-        ("終了", root / "skills/completion-report/SKILL.md", ""),
+        ("終了", root / "skills/report-completion/SKILL.md", ""),
     )
     for phase, path, heading in phases:
         target = ReadTarget(path, heading)
@@ -2315,7 +2315,7 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
         assert any(read_delivery.row_matches(row, "Read", inputs, str(root)) and target in row.targets for row in rows), phase
         decision = read_delivery.deliver(payload, "Read", inputs, "test")
         records = memory[rules_context.OPERATION_SKILL_READY_KEY]
-        # plan-modeは自然文の判断候補であり、Readだけでその条件を確定しない。
+        # write-planは自然文の判断候補であり、Readだけでその条件を確定しない。
         assert (target in read_delivery.selected_targets(records, "main")) is (phase != "計画"), phase
         if phase == "計画":
             assert "読込条件の候補" in _notice_body(decision) and "計画の要否を判定する前" in _notice_body(decision)

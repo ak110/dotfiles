@@ -9,7 +9,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認の選択肢を組む手順」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認の選択肢を組む手順」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「要件・外部仕様」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「要件・外部仕様」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards.md#「要件・外部仕様」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「要件・外部仕様」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
@@ -20,7 +20,7 @@
 
 ## 根拠の確定
 
-- 確認の前提、影響、副作用は、推測や未確認である旨の注記を付ける場合であっても、実際のコードや規範、実行結果に基づいて確認する。他のエージェントからの報告や既存ドキュメントの記述についても、一次資料の該当箇所と突き合わせ、裏付けが取れない内容は確認文から外す。共通の仕組みを変更する際は、手元の実行例だけで影響を判断せず、`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「要件・外部仕様」に従って、従来の動作を前提とする指定を網羅して確認する。
+- 確認の前提、影響、副作用は、推測や未確認である旨の注記を付ける場合であっても、実際のコードや規範、実行結果に基づいて確認する。他のエージェントからの報告や既存ドキュメントの記述についても、一次資料の該当箇所と突き合わせ、裏付けが取れない内容は確認文から外す。共通の仕組みを変更する際は、手元の実行例だけで影響を判断せず、`agent-toolkit:write-plan`の`references/plan-file-standards.md`「要件・外部仕様」に従って、従来の動作を前提とする指定を網羅して確認する。
 - 実行環境が会話を自動で圧縮して作業を継続するため、作業を完遂できるかやコンテキスト容量の不足は前提から外す。所要時間やコストの許容範囲の扱いについては、`SKILL.md`「確認要否の判定」の項目3に従う。
 - 既存の値や設定、規範の規定を変更する案を提示する際は、`agent-toolkit:wi-standards`の`references/drafting-completion.md`「方針と判断の記録との比較」に従い、その値を明記している記録や規範と照らし合わせる。その上で、従来の判断を維持する案と、変更の承認を必要とする案を明確に区別する。現状を維持する案を選択肢に含めるか、あるいは確認自体するかどうかは、同節の既存の保護の必要性の比較と`SKILL.md`「確認要否の判定」に基づいて決定する。
 - 本文や選択肢で言及するコマンド、ツール、設定項目については、現在のセッションで公開仕様（ヘルプ出力、入力スキーマ、公式仕様など）を取得してから選択肢を作成する。仕様によって一意に定まる事項はエージェント自身で確定させる。操作や設定、回避策の各案は、入力値の補正やデフォルト値、権限チェックなどを経た後に実際に適用される状態を基準として効果を評価する。

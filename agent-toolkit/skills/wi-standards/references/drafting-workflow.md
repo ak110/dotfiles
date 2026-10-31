@@ -1,6 +1,6 @@
 # WIの調査・起草・保存の共通手順
 
-本書は通常AWIと、報告用を除くUWIに適用する。`agent-toolkit:completion-report`が定義する報告用UWIの確認と保存は、同スキルの`references/report-formats.md`「報告用UWIの確認と保存」と`uwi-format.md`に従う。
+本書は通常AWIと、報告用を除くUWIに適用する。`agent-toolkit:report-completion`が定義する報告用UWIの確認と保存は、同スキルの`references/report-formats.md`「報告用UWIの確認と保存」と`uwi-format.md`に従う。
 
 WIの作成主体には、専念型メイン（WI作成専用セッションのメインエージェント）、文脈分離のために起動される専念型の担当エージェント、ならびに他の作業中に投入する付随型のWI投入担当がある。WI作成専用セッションでは、要求の件数にかかわらずメインエージェント自身が作業することを原則とし、専念型の担当エージェントを起動する条件は`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動方法」が定める。各作成主体は、wi-standards、writing-standards、欠陥を起点とする場合はbugfix、それぞれの読込表と対象リポジトリの規範を適用する。
 要求の原文、出所、確定した要件、技術判断、観測の記録を明確に区別し、取得済みの証拠は再利用する。専念型メイン自身が保持している原文や観測結果は、委譲用の入力として再構成せず、元の記録をそのまま使用する。
@@ -13,7 +13,7 @@ WIの作成主体には、専念型メイン（WI作成専用セッションの�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../completion-report/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「報告用UWIの確認と保存」` |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md#「起動方法」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「起動方法」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |

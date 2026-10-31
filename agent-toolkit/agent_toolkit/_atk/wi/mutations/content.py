@@ -45,9 +45,7 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
     "depends_on": "frontmatterからdepends_onを除き、依存は`atk wi set-dependencies`で更新する",
     "target_commit": "frontmatterからtarget_commitを除いて再実行する（target_commitはatkが記録する）",
     "cooldown_until": "frontmatterからcooldown_untilを除き、期限は`atk wi edit <FILE> --cooldown-until`で設定する",
-    "confirmation": (
-        "frontmatterからconfirmationを除いて再実行する（確認状態はユーザーが`atk serve`のWI画面で確認済み・要確認へ切り替える）"
-    ),
+    "effect_check": "frontmatterからeffect_checkを除き、効果は`atk wi effect-check`で記録する",
     "repair_target": "frontmatterからrepair_targetを除いて再実行する（repair_targetはatkが記録する）",
     "repair_kind": "frontmatterからrepair_kindを除いて再実行する（repair_kindはatkが記録する）",
     "plan_file": (

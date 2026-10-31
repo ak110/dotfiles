@@ -184,21 +184,18 @@ class TestReadiness:
         assert expired.cyclic_dependencies == ("cycle.md", "self.md")
         assert expired.actionable_count == 4
 
-    def test_confirmation_blocks_until_confirmed_and_shares_serve_interpretation(self, tmp_path: pathlib.Path) -> None:
-        """要確認は時間経過でも修復でも着手させず、確認済みだけが他の条件の判定へ戻る。
-
-        誤記の値も要確認として扱い、UWIのキーは無視する。画面用APIは着手可否と同じ解釈の値を返す。
-        """
+    def test_legacy_confirmation_preserves_cooldown_and_dependency_checks(self, tmp_path: pathlib.Path) -> None:
+        """旧確認キーの値にかかわらず冷却と依存を判定し、専用属性を返さない。"""
         now = datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC)
         _with_frontmatter(write_awi(tmp_path, "required.md"), "confirmation: required")
         _with_frontmatter(write_awi(tmp_path, "typo.md"), "confirmation: yes")
         _with_frontmatter(write_awi(tmp_path, "confirmed.md"), "confirmation: confirmed")
-        # 要確認の間は、不正な期限と欠落した依存先を修復対象にも数えない。
+        # 旧確認キーがあっても不正な期限と欠落した依存先を検出する。
         _with_frontmatter(
             write_awi(tmp_path, "required-broken.md", cooldown_until="not-a-date", depends_on=("absent.md",)),
             "confirmation: required",
         )
-        # 確認済みでも未到来の期限は維持し、期限が切れれば着手可能になる。
+        # 未到来の期限は維持し、期限が切れれば着手可能になる。
         _with_frontmatter(
             write_awi(tmp_path, "confirmed-cooldown.md", cooldown_until="2026-08-13T00:00:00+00:00"),
             "confirmation: confirmed",
@@ -210,23 +207,16 @@ class TestReadiness:
         later = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/repo", now=now + datetime.timedelta(days=365))
         entries, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"status": "inbox"})
 
-        assert result.confirmation_pending == ("required-broken.md", "required.md", "typo.md")
-        assert result.ready == ("confirmed.md",)
+        assert not hasattr(result, "confirmation_pending")
+        assert result.ready == ("confirmed.md", "required.md", "typo.md")
         assert result.cooldown_pending == ("confirmed-cooldown.md",)
-        assert not result.invalid_cooldowns
-        assert not result.missing_dependencies
-        assert result.actionable_count == 1
-        assert later.confirmation_pending == result.confirmation_pending
-        assert later.ready == ("confirmed-cooldown.md", "confirmed.md")
+        assert result.invalid_cooldowns == ("required-broken.md",)
+        assert result.missing_dependencies == ("required-broken.md",)
+        assert result.actionable_count == 4
+        assert not hasattr(later, "confirmation_pending")
+        assert later.ready == ("confirmed-cooldown.md", "confirmed.md", "required.md", "typo.md")
         assert not warnings
-        assert {entry["filename"]: entry["confirmation"] for entry in entries} == {
-            "required.md": "required",
-            "typo.md": "required",
-            "required-broken.md": "required",
-            "confirmed.md": "confirmed",
-            "confirmed-cooldown.md": "confirmed",
-            "uwi.md": None,
-        }
+        assert all("confirmation" not in entry for entry in entries)
 
     def test_broken_frontmatter_remains_actionable_with_target_repo_filter(self, tmp_path: pathlib.Path) -> None:
         """対象repo指定時も破損項目を修復診断へ残し、正常な他repo項目は除外する。"""

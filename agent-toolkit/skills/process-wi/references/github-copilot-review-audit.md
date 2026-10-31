@@ -12,7 +12,7 @@ Pull Requestのレビュースレッドへの返信、コメントの投稿、�
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 監査担当の返却の`pending取得結果`を入力に使う時 | `../../../share/copilot-review-audit.subagent.md` | 判断 | `read:agent-toolkit:*/share/copilot-review-audit.subagent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../external-write-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/external-write-review/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-external-writes/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-external-writes/SKILL.md` |
 
 ## 対象
 
@@ -73,7 +73,7 @@ gh api 'repos/{owner}/{repo}/pulls/<PR>/reviews/<REVIEW_ID>' > <managed-tempの�
 判断結果がどこにも残らないのはいまいちだね。PRのレビュー指摘に対して「コメントしてCloseする」みたいな操作は無いの？
 ```
 
-返信やコメントの文面は一度ファイルへ保存し、投稿直前に`agent-toolkit:external-write-review`を起動して、レビュー結果を反映した適切な文面のみを投稿する。本文には対象指摘の識別子（レビュー本文ならdatabaseId、スレッドなら対象ファイルと該当行）、判定分類、および判定根拠（確認した現行成果物の位置、あるいは対応不要と判断した理由）を記載する。
+返信やコメントの文面は一度ファイルへ保存し、投稿直前に`agent-toolkit:review-external-writes`を起動して、レビュー結果を反映した適切な文面のみを投稿する。本文には対象指摘の識別子（レビュー本文ならdatabaseId、スレッドなら対象ファイルと該当行）、判定分類、および判定根拠（確認した現行成果物の位置、あるいは対応不要と判断した理由）を記載する。
 
 未解決のレビュースレッドに対しては、返信が正常に完了したことを確認した上でスレッドを解決する。
 
@@ -147,7 +147,7 @@ openが0件なら版取得を省き、取得状態と0件を返す。
 gh api --method PATCH 'repos/<OWNER>/<REPO>/dependabot/alerts/<番号>' -f state=dismissed -f dismissed_reason=inaccurate -F dismissed_comment=@<COMMENT_FILE>
 ```
 
-`dismissed_comment`をファイルへ保存し、投稿直前に`agent-toolkit:external-write-review`を起動して指摘を反映する。
+`dismissed_comment`をファイルへ保存し、投稿直前に`agent-toolkit:review-external-writes`を起動して指摘を反映する。
 APIの終了コード0に加え、応答の`number`が対象番号、`state`が`dismissed`であることを確認して処置完了とする。
 非0終了、番号不一致、状態不一致の却下と未判定の番号はmarkせず、失敗内容と次回再取得を返す。
 キュー項目の識別子をコメントの対象から除く。

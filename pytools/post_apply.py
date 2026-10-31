@@ -170,7 +170,7 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         # 2つのスキルはagent-toolkit pluginへ移設したため、dotfiles側の旧配布先を削除する。
         cleanup_paths.RemovedPath(Path("skills/refine-prompt"), datetime.date(2026, 9, 29)),
         cleanup_paths.RemovedPath(Path("skills/export-session"), datetime.date(2026, 9, 29)),
-        # 振り返りはagent-toolkit側のsession-reviewへ統合したため旧配布先を削除する。
+        # 振り返りはagent-toolkit側のreview-sessionへ統合したため旧配布先を削除する。
         cleanup_paths.RemovedPath(Path("skills/session-review"), datetime.date(2026, 5, 23)),
         cleanup_paths.RemovedPath(Path("skills/session-review-dotfiles"), datetime.date(2026, 8, 7)),
         # 現在のスキル名は add-awi。旧名 feedback-add の配布先ディレクトリを削除する。
@@ -184,8 +184,9 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         # 旧配布先 (dotfiles-fb 系スキル) の配布先ディレクトリを削除する。
         cleanup_paths.RemovedPath(Path("skills/add-feedback"), datetime.date(2026, 7, 8)),
         cleanup_paths.RemovedPath(Path("skills/process-feedbacks"), datetime.date(2026, 7, 8)),
-        # 現在のスキル名は ak110-projects-operations。旧名の配布先を削除する。
+        # 現在のスキル名は operate-ak110-projects。旧名の配布先を削除する。
         cleanup_paths.RemovedPath(Path("skills/sync-cross-project"), datetime.date(2026, 9, 13)),
+        cleanup_paths.RemovedPath(Path("skills/ak110-projects-operations"), datetime.date(2026, 11, 1)),
         # 02-claude-code.md / 03-styles.md / 04-terminology.md →
         # 03-claude-code.md / 04-styles.md / 05-terminology.md リネームに伴い旧ファイルを削除する。
         cleanup_paths.RemovedPath(Path("rules/agent-toolkit/02-claude-code.md"), datetime.date(2026, 7, 14)),
@@ -222,15 +223,16 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         # 2つのスキルはagent-toolkit pluginへ移設したため、旧リンクを削除する。
         cleanup_paths.RemovedPath(Path("skills/refine-prompt"), datetime.date(2026, 9, 29)),
         cleanup_paths.RemovedPath(Path("skills/export-session"), datetime.date(2026, 9, 29)),
-        # 振り返りはagent-toolkit側のsession-reviewへ統合したため旧配布先リンクを除去する。
+        # 振り返りはagent-toolkit側のreview-sessionへ統合したため旧配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("skills/session-review"), datetime.date(2026, 5, 23)),
         cleanup_paths.RemovedPath(Path("skills/session-review-dotfiles"), datetime.date(2026, 8, 7)),
         # 現在のスキル名は add-awi。旧名 feedback-add の配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("skills/feedback-add"), datetime.date(2026, 6, 16)),
         # 現在のスキル名は process-wi。旧名 process-feedback の配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("skills/process-feedback"), datetime.date(2026, 6, 16)),
-        # 現在のスキル名は ak110-projects-operations。旧名の配布先リンクを削除する。
+        # 現在のスキル名は operate-ak110-projects。旧名の配布先リンクを削除する。
         cleanup_paths.RemovedPath(Path("skills/sync-cross-project"), datetime.date(2026, 9, 13)),
+        cleanup_paths.RemovedPath(Path("skills/ak110-projects-operations"), datetime.date(2026, 11, 1)),
     ],
     Path.home() / ".config": [
         # pyfltr v3.14.1で口語表現チェッカーが内蔵化されたため

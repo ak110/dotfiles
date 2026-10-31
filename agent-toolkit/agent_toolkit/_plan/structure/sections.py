@@ -134,7 +134,7 @@ from agent_toolkit._plan.structure.verification import commands_from_cell
 
 _NO_FIXED_H2_ERROR = (
     "固定H2が1件も無い。対象が計画ファイルか確かめる。"
-    "計画ファイルなら`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「初回起草の雛形」の固定H2を置く"
+    "計画ファイルなら`agent-toolkit:write-plan`の`references/plan-file-standards.md`「初回起草の雛形」の固定H2を置く"
 )
 _PROGRESS_TABLE_FIX = (
     f"`## {PLAN_H2_PROGRESS}`見出しと、表頭（{list(PLAN_PROGRESS_TABLE_HEADER)}の列）だけの固定表を置いてから再実行する"

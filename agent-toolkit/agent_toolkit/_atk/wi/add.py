@@ -230,7 +230,7 @@ def body_is_effectively_empty(body: str) -> bool:
 
     実質空とは、空文字・空白のみ、または全ての非空行が箇条書きマーカー
     （`-`・`*`・`+`のいずれか単独文字）のみで構成される状態を指す。
-    session-review自動投入・ユーザー直接投入のどちらでも、
+    review-session自動投入・ユーザー直接投入のどちらでも、
     実効的な指示・観察事象を含まない投入をCLI側で一律検出するための基準とする。
     """
     non_empty_lines = [line.strip() for line in body.split("\n") if line.strip()]
@@ -479,6 +479,7 @@ def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, objec
 
 
 _RESERVED_ADD_KEY_NEXT_ACTIONS = {
+    "effect_check": "採用後の効果判定はatk wi effect-checkで記録する",
     "state": "新規項目はinboxとして保存する。状態の変更には状態遷移コマンドを使う",
     "type": "--typeで指定する",
     "scope": "--scopeで指定する",
@@ -747,17 +748,6 @@ def _validate_add_entries(
                 "本文frontmatterでは指定できない予約キーです: " + "、".join(rejected_keys),
                 next_action="。".join(
                     f"frontmatterから{key}を除き、{_RESERVED_ADD_KEY_NEXT_ACTIONS[key]}" for key in rejected_keys
-                ),
-            )
-        # 投入時に指定できるのは要確認だけとする。確認済みはユーザーが画面で内容を確認した結果として記録する。
-        if _constants.CONFIRMATION_KEY in frontmatter and (
-            entry_type != WI_TYPE_AWI or frontmatter[_constants.CONFIRMATION_KEY] != _constants.CONFIRMATION_REQUIRED
-        ):
-            raise WebInputError(
-                f"{_constants.CONFIRMATION_KEY}はAWIへ{_constants.CONFIRMATION_REQUIRED}だけを指定できる",
-                next_action=(
-                    f"本文frontmatterの{_constants.CONFIRMATION_KEY}を{_constants.CONFIRMATION_REQUIRED}にするか除き、"
-                    "UWIでは指定せずに再投入する"
                 ),
             )
         require_agent_awi_sections(

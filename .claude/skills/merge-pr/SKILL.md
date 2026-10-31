@@ -6,7 +6,7 @@ description: 「PRをマージして」などの明示的な依頼を受けた�
 
 # PRマージの完遂手順
 
-このスキルは、明示的にPRのマージを依頼された場合や、`agent-toolkit:process-wi`の終了時に日次リリースの条件（`dotfiles-release`「developとmasterのリリース運用」を参照）を満たした場合にのみ実行する。単にPRが存在することを確認しただけでは、本スキルを起動する契機としては扱わない。
+このスキルは、明示的にPRのマージを依頼された場合や、`agent-toolkit:process-wi`の終了時に日次リリースの条件（`release-dotfiles`「developとmasterのリリース運用」を参照）を満たした場合にのみ実行する。単にPRが存在することを確認しただけでは、本スキルを起動する契機としては扱わない。
 リリースの成否はリモートのブランチ、CI、および必要なリリースの結果に基づいて判定し、ローカルの作業ツリーやブランチはユーザーの変更を壊さない範囲でのみ操作する。
 `gh`コマンドの受け付け可能な引数形式や取得できる項目については、操作を実行する直前にヘルプで確認する。
 
@@ -17,7 +17,7 @@ description: 「PRをマージして」などの明示的な依頼を受けた�
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-release/SKILL.md#「developとmasterのリリース運用」` | 判断 | `section:*/skills/dotfiles-release/SKILL.md#「developとmasterのリリース運用」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../release-dotfiles/SKILL.md#「developとmasterのリリース運用」` | 判断 | `section:*/skills/release-dotfiles/SKILL.md#「developとmasterのリリース運用」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
@@ -25,7 +25,7 @@ description: 「PRをマージして」などの明示的な依頼を受けた�
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-basics:bugfix/references/ci-failure-handling.md`、`agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md`、`read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` | |
-| 必須CIの結果を成功時も含めて検収する前 | `../dotfiles-development/references/verification-values.md`の「テストとCIの所要基準」 | 判断 | `section:*/skills/dotfiles-development/references/verification-values.md#「テストとCIの所要基準」` | |
+| 必須CIの結果を成功時も含めて検収する前 | `../develop-dotfiles/references/verification-values.md`の「テストとCIの所要基準」 | 判断 | `section:*/skills/develop-dotfiles/references/verification-values.md#「テストとCIの所要基準」` | |
 | マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md` | |
 
 ## 失敗時の対応

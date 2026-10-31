@@ -7,7 +7,7 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 
 検出対象スキルと対応フラグ:
 
-- Codexのplan-mode → `plan_mode_skill_invoked`
+- Codexのwrite-plan → `plan_mode_skill_invoked`
 - process-wi → `process_wi_skill_invoked`
 
 セッション名はUserPromptSubmitのコマンドhookが通常状態から設定する。

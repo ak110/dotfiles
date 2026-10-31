@@ -95,21 +95,21 @@ Codexの組み込み委譲機能（`spawn_agent`で起動したスレッド）�
 
 ## AWI処理の開始時の横断同期
 
-個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、メインの選定開始より前に`ak110-projects-operations`スキルを起動する。
+個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、メインの選定開始より前に`operate-ak110-projects`スキルを起動する。
 同期調査と依存更新の要否の判定結果は、そのセッションの後続の工程へ渡す。
-起動名はClaude Code・Codexとも`ak110-projects-operations`とする。Claude Codeでは`Skill`ツールから起動する。
+起動名はClaude Code・Codexとも`operate-ak110-projects`とする。Claude Codeでは`Skill`ツールから起動する。
 
 ## WI作成時の追従判定
 
-個人プロジェクトの性質や作業手順（開発・検証できる環境、セットアップ手順、リリース運用など）を変える要求のWIを作成するときは、反映先を確定する前に`ak110-projects-operations`スキルを起動する。
+個人プロジェクトの性質や作業手順（開発・検証できる環境、セットアップ手順、リリース運用など）を変える要求のWIを作成するときは、反映先を確定する前に`operate-ak110-projects`スキルを起動する。
 同スキル「判定手順」に従い、そのプロジェクトを記述するdotfiles側の規範への追従と反映先を確定する。
 
 ## 個人プロジェクトのリリース開始手順
 
-個人プロジェクトの協調モードの変更では、公開範囲を判定する前に`ak110-projects-operations`を起動し、「リリース運用」の恒常的な認可と明示指定の優先を適用する。
+個人プロジェクトの協調モードの変更では、公開範囲を判定する前に`operate-ak110-projects`を起動し、「リリース運用」の恒常的な認可と明示指定の優先を適用する。
 
 個人プロジェクトでpatch、minorまたはmajorのリリースを求められたときは、具体的な公開コマンドを選ぶ前に
-`ak110-projects-operations`スキルを起動し、同スキルの「リリース運用」に従う。
+`operate-ak110-projects`スキルを起動し、同スキルの「リリース運用」に従う。
 個人プロジェクトの一連の作業（`agent-toolkit:process-wi`の公開工程を含む）がpushとCI成功まで終わったときも同スキルを起動し、「リリース運用」に従ってリリース要否を判定する。
 agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築およびworkflow内部の処理は対象外とする。
 </atk-auto>
@@ -315,7 +315,7 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 - 既存のパスは入力・基準文書・取得済みの出力から解決し、推測したパスは実在を検索で確かめる。外部コマンドへは絶対パスを渡し、cwdを使うCLIは対象のworktreeで起動する。
 - 通常の検索は対象worktreeの`git grep`、追跡外のファイルは`rg`で行う。終了コード0は一致、1は一致なし、それ以外は検索の失敗として扱う。手段の選び方と出力量の制御は`agent-basics:search`に従う。
 - スキル起動と資料取得は`agent-toolkit:/share/read-trigger-bootstrap.md`の条件表で条件を確かめ、該当する判断や操作の前に行う。確認候補や圧縮前の候補は条件を確かめ、必要資料を判断・操作の前に読む。候補や一般通知は、反復後も同じ案内として扱う。
-- 外部から観測できる名前と値（文言、設定キー、状態値、コマンド名、返却形式など）を変えるときは、旧値を期待するテストを含む直接影響範囲を固定文字列で探し、送信側と受信側、実装とテストをそろえる。直接影響範囲の定義は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「要件・外部仕様」にある。
+- 外部から観測できる名前と値（文言、設定キー、状態値、コマンド名、返却形式など）を変えるときは、旧値を期待するテストを含む直接影響範囲を固定文字列で探し、送信側と受信側、実装とテストをそろえる。直接影響範囲の定義は`agent-toolkit:write-plan`の`references/plan-file-standards.md`「要件・外部仕様」にある。
 - Git識別子と別worktreeの指定は`agent-toolkit:commit`の`references/git-identifier.md`に従う。前工程から受け取ったパスや識別子は、移動や終了を伴う操作を挟んだ後で同一性を確かめ直す。
 
 ### 出力の保持と観測

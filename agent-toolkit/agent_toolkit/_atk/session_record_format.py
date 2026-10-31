@@ -3,7 +3,7 @@
 記録の保存先の規約（接尾辞、Codexのロールアウトの接頭辞、ファイル名から取り出す識別子、サブエージェント記録の配置）と、
 記録の行の解析、表示用のイベント列への変換を1か所に持つ。セッション画面、`atk agents`のログ出力、
 process-wiの判定（`session_records`）、振り返りの証拠抽出とSSH先のリモートヘルパーがこのモジュールを使う。
-保存先の規約は`agent-toolkit:session-review/references/session-records.md`が定める。
+保存先の規約は`agent-toolkit:review-session/references/session-records.md`が定める。
 保存先を指定しない場合に使う各ホストのホームは`agent_toolkit._common.host_homes`が解決する。
 リモートヘルパーはSSH先で標準ライブラリと`platformdirs`だけを与えて起動するため、本モジュールは
 それ以外のパッケージと`_atk`の他のモジュールに依存しない。

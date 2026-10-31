@@ -41,8 +41,8 @@
 | 全体検証 | 検証の範囲 | `agent-toolkit:/share/workflow-phases.md`「用語」 |
 | 受入シナリオ検証 | 検証の種類 | `agent-toolkit:/share/workflow-phases.md`「用語」 |
 | 公開工程判定 | 完成条件の判定 | `agent-toolkit:/share/workflow-phases.md`「用語」 |
-| 直接影響範囲 | 変更の影響範囲 | `agent-toolkit:plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |
-| 変更範囲の検証 | 検証の範囲 | `agent-toolkit:plan-mode/references/plan-file-standards.md`「検証と公開工程」 |
+| 直接影響範囲 | 変更の影響範囲 | `agent-toolkit:write-plan/references/plan-file-standards.md`「要件・外部仕様」 |
+| 変更範囲の検証 | 検証の範囲 | `agent-toolkit:write-plan/references/plan-file-standards.md`「検証と公開工程」 |
 | 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit:/share/exec-review-recording.md`「統合時の完成条件判定」 |
 | 初回レビュー | 実行レビューの回 | `agent-toolkit:/share/exec-review.subagent.md` |
 | 再レビュー | 実行レビューの回 | `agent-toolkit:/share/exec-review.subagent.md` |
@@ -80,13 +80,13 @@
 | プロジェクト方針 | 方針の範囲 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
 | 作成規範 | 品質基準 | `agent-basics:review-standards/SKILL.md`「対象成果物の作成規範」 |
 | 完成条件 | WIの条件 | `agent-toolkit:wi-standards/references/awi-body.md`「通常AWIの本文」 |
-| 完了条件 | 計画の条件 | `agent-toolkit:plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |
+| 完了条件 | 計画の条件 | `agent-toolkit:write-plan/references/plan-file-standards.md`「要件・外部仕様」 |
 | レビュー指摘管理表 | 実行レビューの指摘と応答を記録する表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |
 | CI対応レビュー指摘管理表 | 計画の無いCI失敗のレビュー指摘管理表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |
-| セッション記録 | 会話の記録 | `agent-toolkit:session-review/references/session-records.md`冒頭 |
-| メイン記録 | 会話の記録 | `agent-toolkit:session-review/references/session-records.md`「Claude Codeの記録」 |
-| サブエージェント記録 | 会話の記録 | `agent-toolkit:session-review/references/session-records.md`「Claude Codeの記録」 |
-| 計画バンドル | 計画のファイル群 | `agent-toolkit:plan-mode/references/plan-file-standards.md`冒頭の呼称の表 |
-| 計画の所有記録 | 計画の局所状態 | `agent-toolkit:plan-mode/references/plan-file-storage.md`「計画ファイルの保存と参照」 |
+| セッション記録 | 会話の記録 | `agent-toolkit:review-session/references/session-records.md`冒頭 |
+| メイン記録 | 会話の記録 | `agent-toolkit:review-session/references/session-records.md`「Claude Codeの記録」 |
+| サブエージェント記録 | 会話の記録 | `agent-toolkit:review-session/references/session-records.md`「Claude Codeの記録」 |
+| 計画バンドル | 計画のファイル群 | `agent-toolkit:write-plan/references/plan-file-standards.md`冒頭の呼称の表 |
+| 計画の所有記録 | 計画の局所状態 | `agent-toolkit:write-plan/references/plan-file-storage.md`「計画ファイルの保存と参照」 |
 | バックグラウンドタスク | 非同期の処理 | `agent-toolkit:delegation/references/waiting-and-monitoring.md` |
 | バックグラウンドタスクの所有記録 | セッション状態の記録 | `agent-toolkit:delegation/references/waiting-and-monitoring.md` |

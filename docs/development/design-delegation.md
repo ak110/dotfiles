@@ -8,7 +8,7 @@
 呼び元は共有する起動契約または単一呼び元へ統合した契約から入力を決め、起動準備のための`.subagent.md`本文取得を禁止する。
 agents_serverが起動設定と必須入力を解決し、呼び元の文脈へ委譲先の手順を重複して読み込む必要を除く。起動時の規範は`agent-toolkit:delegation`の`SKILL.md`「送信」が定める。
 編集、自身が受領した定義の確認、返却後の出力契約の検収は目的を区別して保持する。
-違反の検出は既存のsession-reviewの記録収集・必須候補と、原記録に基づく分類へ接続する。判定基準は`agent-toolkit:session-review`の`references/analysis.md`「定義本文の読込の判定」にある。
+違反の検出は既存のreview-sessionの記録収集・必須候補と、原記録に基づく分類へ接続する。判定基準は`agent-toolkit:review-session`の`references/analysis.md`「定義本文の読込の判定」にある。
 毎読取時に目的を判定して遮断する案は、編集や検収にも判定負担を課すため採らない。
 事後の検出だけでは読んだ時点に作用せず、2026年10月24日と28日に起動準備の読込が再発した。
 このため、PreToolUseの既存の読取判定（`agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py`）はplugin root配下の他の担当の手順書を取得する操作へ非遮断の警告を出す。
@@ -52,7 +52,7 @@ agents_serverが起動設定と必須入力を解決し、呼び元の文脈へ�
 - 探索・原因分析・単純作業: 作業の細分化と起動単位の数を区別し、同じ背景と実行条件を使う確定済みの作業は1件の起動へまとめる。調査担当は詳細な分析を保存原本へ置き、結論と原本の所在を返す（`agent-toolkit/skills/delegation/references/routing.md`、`agent-toolkit/share/defect-investigation.subagent.md`）
 - 保存済み結果の受渡し: `atk agents wait`の`agent_message_path`、CLIの保存先、MCPの結果の保存ファイルは、パスのまま次の消費者へ渡す（`agent-toolkit/skills/delegation/references/receiving.md`「受領後の扱い」）
 - 公開とCI: 公開担当とCI修正担当を保つ。公開担当は委譲元が確定した版数更新の判断をそのまま使い、計画を再読しない。判断を再実施しない受渡しの例である（`agent-toolkit/share/session-termination.subagent.md`の入力`bump種別`）
-- 振り返り: `agent-toolkit:session-review`はメインが全体像の把握と最終判断を担い、費用確認で親子の重複と機械的な転記を最初に判定する。読み取り専用の分担から全文の再調査を組み立て直す受渡しは採らない
+- 振り返り: `agent-toolkit:review-session`はメインが全体像の把握と最終判断を担い、費用確認で親子の重複と機械的な転記を最初に判定する。読み取り専用の分担から全文の再調査を組み立て直す受渡しは採らない
 
 独立した評価を目的とする担当（実行レビュー、WI原稿の投入前レビュー、ユーザビリティレビュー、読者別探索、投稿前レビュー、一括置換後レビュー、再発防止セルフチェック、プロンプト評価、自動コードレビュー監査）と、all-reposのリポジトリ担当、独立した複数レーンの並列処理と文脈分離は保つ。いずれも親子の重複ではなく、独立文脈・並列化・文脈分離そのものを利益とする分担だからである。
 同じ文字列が複数回現れること自体は削減の条件にしない。意味の判断、通常の編集と独立文脈レビューに必要な読込を削ると品質が下がるためである。新しい常設担当、全出力の一律再読、専用の計測基盤は加えない。

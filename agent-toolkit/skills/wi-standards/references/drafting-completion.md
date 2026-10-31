@@ -1,6 +1,6 @@
 # 起草完了の条件
 
-本書は通常AWIと、報告用を除くUWIに適用する。`agent-toolkit:completion-report`が定義する報告用UWIは、同スキルの`references/report-formats.md`「報告用UWIの確認と保存」と`uwi-format.md`で確認する。
+本書は通常AWIと、報告用を除くUWIに適用する。`agent-toolkit:report-completion`が定義する報告用UWIは、同スキルの`references/report-formats.md`「報告用UWIの確認と保存」と`uwi-format.md`で確認する。
 
 本書は、WI原稿の作成主体と独立した確認主体が共通して用いる、採否・成立性・完成判定の基準を定める。各主体は、wi-standardsの読込表で自身の役割や操作前の時点に対応付けられた節を読む。共通基準の改訂は本書で行う。取得や保存の操作、および確認側の検収・差戻しは、それぞれの役割の手順に従う。
 AWIのみに適用される規定にはその旨を明記している。「重複判定」はAWIのみに適用する。UWIの書式については`uwi-format.md`を参照する。
@@ -11,7 +11,7 @@ AWIのみに適用される規定にはその旨を明記している。「重�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../completion-report/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「報告用UWIの確認と保存」` |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
 | 観測事象を契機とする要求の採用を確定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」「対策の選定」` |
@@ -24,7 +24,7 @@ AWIのみに適用される規定にはその旨を明記している。「重�
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「要件・外部仕様」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「要件・外部仕様」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards.md#「要件・外部仕様」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「要件・外部仕様」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「確定した要件と委譲元の判断」「未確定事項」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「確定した要件と委譲元の判断」「未確定事項」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「未確定事項」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「未確定事項」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「原因分析・調査結果と判断根拠」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「原因分析・調査結果と判断根拠」` |
@@ -99,7 +99,7 @@ AWIのみに適用される規定にはその旨を明記している。「重�
 事象を観測した場所、欠陥を作り出した実装、変更すべき定義、および変更後の検収場所を明確に区別して特定する。`target_repo`には変更対象の定義を保持しているリポジトリを指定する。外部ツール、SDK、共有設定の欠陥が消費側で表面化した場合は、その定義を所有する生成側のリポジトリへWIを投入し、消費側で再現するための条件を完成条件に含めておく。
 ユーザーが出力結果のみを提示し発生箇所を明示していない場合は、エージェント自身の実行環境（製品のツール実行やサンドボックス環境など）、CI、配備先を含めて候補を探索し、取得可能なログや記録を手がかりに特定を進める。発生時の操作手順や資料などユーザーしか持ち得ない情報が必要な場合は、共通の判定基準に従ってユーザーへ確認し、推測による発生箇所の特定を前提にしない。
 原因の特定に変動する値を用いる場合は、事象発生時点の値との比較結果を`## 原因分析`に記録する。事象発生後の値しか得られない場合は、原因を未確定として扱う。ユーザーが選定した値、品質水準、適用範囲に関わる対策では、それを維持する根拠、または変更に対する明示的な合意を同節に記録する。
-ファイルや仕組みの削除、改名、意味を変更する場合は、変更前のパスや概念を表す語句を、対象リポジトリ全体（隠しディレクトリを含む）で固定文字列検索する。設計ドキュメントやエンドユーザー向けガイドを含む直接の影響範囲（`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「要件・外部仕様」）は、反映先へ含める。反映対象に含めないものがある場合、その判定根拠は証拠として残し、処理側の判断を左右する除外事項のみを本文に明記する。
+ファイルや仕組みの削除、改名、意味を変更する場合は、変更前のパスや概念を表す語句を、対象リポジトリ全体（隠しディレクトリを含む）で固定文字列検索する。設計ドキュメントやエンドユーザー向けガイドを含む直接の影響範囲（`agent-toolkit:write-plan`の`references/plan-file-standards.md`「要件・外部仕様」）は、反映先へ含める。反映対象に含めないものがある場合、その判定根拠は証拠として残し、処理側の判断を左右する除外事項のみを本文に明記する。
 
 投入先リポジトリの外部にある対象について処置不要と判断する場合は、その根拠として現物のファイルとリビジョン（版）を対応付け、その版において原因となる条件が成立しないことを確認する。
 

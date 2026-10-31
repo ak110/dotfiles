@@ -13,7 +13,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md#「レビュー修正の履歴統合」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「レビュー修正の履歴統合」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
 
 ## プッシュ済み判定
 
@@ -122,7 +122,7 @@ atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え�
 
 この`plan-rewrite`コマンドは、渡された記録に対応する`adopted`状態のAWIについて、`## 処理結果`の記述も自動的に更新する。対応表の古いOIDに該当するコミットOIDと件名を新しい情報へ更新し、コミット分割の場合はそのAWIへ割り当てられたすべての新しいコミットを記録する。採否区分、処理日時、メモ、および対応表に含まれないコミットの情報はそのまま保持される。完了状態のAWIは、WIの保存処理によってprivate-notesへコミットしてプッシュされる。保存後の内容が更新内容と一致することを確認したうえで、計画ファイルや引き継ぎ記録への追記が行われる。保存処理に失敗した場合はコマンドが非0で終了するため、同期エラーや保存エラーを解消したうえで同じ引数で再実行する。すでに更新済みのAWIや滞留コミットの情報は保持され、残りの変更が反映される。
 
-`atk plans checkout`で保存済み計画を取得して履歴に追随させた担当者は、作業工程の最後に、更新したすべての計画バンドル（未完了のWIや延期されたadoptを含む計画も含む）を`atk plans commit`で再度保存し、終了コードと警告の有無から正常終了を確認する。保存先や保存タイミングに関する共通規約は、`agent-toolkit:plan-mode`の`references/plan-file-storage.md`に従い、レーン処理、観測のみの作業、CI実行時における既存の保存タイミングを遵守する。
+`atk plans checkout`で保存済み計画を取得して履歴に追随させた担当者は、作業工程の最後に、更新したすべての計画バンドル（未完了のWIや延期されたadoptを含む計画も含む）を`atk plans commit`で再度保存し、終了コードと警告の有無から正常終了を確認する。保存先や保存タイミングに関する共通規約は、`agent-toolkit:write-plan`の`references/plan-file-storage.md`に従い、レーン処理、観測のみの作業、CI実行時における既存の保存タイミングを遵守する。
 
 ## 履歴確認の起動形
 

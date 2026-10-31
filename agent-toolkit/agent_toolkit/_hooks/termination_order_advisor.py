@@ -1,11 +1,11 @@
-r"""成果作業で`agent-toolkit:completion-report`の起動を忘れた終了をStopフックで検出する。
+r"""成果作業で`agent-toolkit:report-completion`の起動を忘れた終了をStopフックで検出する。
 
 成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、
 計画の保存、WIの保存、commit・pushの実行）を行った作業で、同じ作業の開始以後の起動証拠が無く、
 有効なプロジェクト規範による省略も無い場合は、起動と残工程への続行を一度通知する。
 起動証拠はClaude Codeでは成功したSkill呼び出し、Codexでは実際の入力と結果が示す`SKILL.md`の読取とし、
 `termination_evidence`が観測した記録だけを使う。報告本文の見出し・区切り・区分・候補IDは判定に使わない。
-工程の完遂と報告の送達・内容は、completion-reportの文書に従ってメインが元要求と実際の結果から判断する。
+工程の完遂と報告の送達・内容は、report-completionの文書に従ってメインが元要求と実際の結果から判断する。
 CodexのStopは非遮断通知を配送できないため対象外とし、起動の要否も同じ文書で判断する。
 
 中止・置換・技術的不成立と記録した作業と、確認の回答や委譲先の結果を待つ作業は遮断しない。
@@ -16,7 +16,7 @@ CodexのStopは非遮断通知を配送できないため対象外とし、起�
 作業の開始より前から動く無関係なタスクは待機として扱わない。
 証拠やセッション記録（transcript）を読み取れない場合は遮断せず、Stop判定ログへ確かめられないことを記録する。
 
-委譲先での実行可否: 委譲先はcompletion-reportの適用対象ではないため、hook入力と環境印で除外する。
+委譲先での実行可否: 委譲先はreport-completionの適用対象ではないため、hook入力と環境印で除外する。
 """
 
 import json
@@ -143,7 +143,7 @@ def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """completion-reportの起動証拠が不足する場合に支援通知を返す。"""
+    """report-completionの起動証拠が不足する場合に支援通知を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -184,15 +184,15 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             lines.append(f"作業 {work_id}の公開範囲が未確定の未コミットの編集: {', '.join(edits)}")
     append_stop_log(session_id, "notify_completion_report_missing", {"count": len(remaining)})
     body = _notice(
-        "成果作業を行ったが、同じ作業で`agent-toolkit:completion-report`の起動を確認できない。\n"
+        "成果作業を行ったが、同じ作業で`agent-toolkit:report-completion`の起動を確認できない。\n"
         + "\n".join(lines)
         + "\n"
         + termination_evidence.decision_hint(payload),
         fix=(
             "適用するプロジェクト規範で起動を省く場合は、"
-            f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/references/termination-evidence.md'}`を直接読み、"
+            f"`{_run_script.PLUGIN_ROOT / 'skills/report-completion/references/termination-evidence.md'}`を直接読み、"
             "`omit-completion`を記録して通常の報告を届けよ。"
-            "起動が必要な作業を完了して終える場合は`Skill`で`agent-toolkit:completion-report`を起動し、"
+            "起動が必要な作業を完了して終える場合は`Skill`で`agent-toolkit:report-completion`を起動し、"
             "同スキルの工程の残り（作業完了報告、振り返り、最終報告、"
             "呼び出し元が定める公開工程）へ進め。"
             "ユーザーの中止・置換、確認の回答や委譲先の結果の待機、技術的不成立で終える場合は、"

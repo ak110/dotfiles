@@ -12,7 +12,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 受入シナリオを起動する前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
-| 訂正済み検証表を使う前 | `../skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` |
+| 訂正済み検証表を使う前 | `../skills/write-plan/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「検証と公開工程」` |
 | 保存出力を取得する前 | `agent-toolkit:/share/check-execution-operations.md#「保存した実行出力の取得」` | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「保存した実行出力の取得」` |
 | 取得版の異なる観測を検証結果へ書く前 | `agent-toolkit:/share/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「根拠の書き方」` |
 | レビューへ渡す最終観測を取得する前 | `../skills/commit/SKILL.md#「検証」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「検証」` |

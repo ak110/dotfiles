@@ -9,7 +9,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:*/skills/agent-toolkit-edit/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../dotfiles-development/SKILL.md#「テスト配置」` | 判断 | `section:*/skills/dotfiles-development/SKILL.md#「テスト配置」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../develop-dotfiles/SKILL.md#「テスト配置」` | 判断 | `section:*/skills/develop-dotfiles/SKILL.md#「テスト配置」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「バージョン更新」` | 判断 | `section:*/skills/agent-toolkit-edit/SKILL.md#「バージョン更新」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-messages.md#「エージェント宛てメッセージの標識」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md#「エージェント宛てメッセージの標識」` |
@@ -23,7 +23,7 @@
 - テスト専用の共有ヘルパーは、依存階層の外側にある`_testing`に配置する。このモジュールをインポートできるのは、`*_test.py`、`conftest.py`、および`_testing`配下のコードのみとする。
 - サブパッケージ内では絶対インポートを用いる。`scripts/check_script_imports.py`は相対インポートを解析対象外としているため、相対インポートを使うと階層チェックの対象から漏れてしまう。このスクリプトにより、階層違反や`hook.py`以外からの`_hooks`のインポート、許可されていない箇所からの`_testing`のインポートを検出して報告する。
 - モジュール名には、所属を表す接頭辞を除いて、組み込みの名前や標準ライブラリのトップレベル名と重複しない名前を付ける。
-- テストコードの配置は、`dotfiles-development`の「テスト配置」の定めに従う。
+- テストコードの配置は、`develop-dotfiles`の「テスト配置」の定めに従う。
 
 ## atkの実行結果出力
 

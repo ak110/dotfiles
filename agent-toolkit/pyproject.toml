@@ -64,9 +64,9 @@ ty = true
 ty-args = [
     "check", "--python-version", "3.15", "--extra-search-path", ".",
     "--output-format", "concise", "--error-on-warning",
-    "--extra-search-path", "skills/plan-mode/scripts",
+    "--extra-search-path", "skills/write-plan/scripts",
     "--extra-search-path", "skills/process-wi/scripts",
-    "--extra-search-path", "skills/session-review/scripts",
+    "--extra-search-path", "skills/review-session/scripts",
     "--extra-search-path", "skills/wi-standards/scripts",
 ]
 # pyfltrは設定を省略した場合、`ruff-format`で整形する前に`ruff check --fix --unsafe-fixes`を実行する。
@@ -129,7 +129,7 @@ extend-aliases = { datetime = "datetime" }
 
 [tool.pyright]
 # 計画補助スクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
-extraPaths = ["skills/plan-mode/scripts"]
+extraPaths = ["skills/write-plan/scripts"]
 
 [tool.mypy]
 allow_redefinition = true

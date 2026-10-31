@@ -160,16 +160,6 @@ def normalized_wi_type(value: object) -> str | None:
     return LEGACY_WI_TYPES.get(value)
 
 
-CONFIRMATION_KEY = "confirmation"
-"""ユーザーによる内容確認の状態を保持するAWIのfrontmatterキー。キーを持たない項目は確認を待たない。"""
-
-CONFIRMATION_REQUIRED = "required"
-"""`confirmation`のうち、ユーザーが内容を確認するまで自動着手しないことを示す値。"""
-
-CONFIRMATION_CONFIRMED = "confirmed"
-"""`confirmation`のうち、ユーザーが内容を確認済みであることを示す値。要確認へ戻すと`required`へ書き換える。"""
-
-
 def unrepairable_entry_next_action(name: str) -> str:
     """frontmatterの破損・必須キー欠落の項目に対する次の操作を返す。
 

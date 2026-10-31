@@ -598,6 +598,13 @@ def test_removed_sync_cross_project_paths_cover_claude_and_codex() -> None:
     assert relative in _registered_paths(Path(".codex"))
 
 
+def test_removed_project_operations_paths_cover_claude_and_codex() -> None:
+    """動詞始まりへ改名した個人スキルの旧配布先を両ホストから回収する。"""
+    relative = Path("skills/ak110-projects-operations")
+    assert relative in _registered_paths(Path(".claude"))
+    assert relative in _registered_paths(Path(".codex"))
+
+
 def test_legacy_reference_directory_is_cleanup_target() -> None:
     """スキル配下以外の旧`references/`を配布先から削除する。"""
     assert Path("references") in _registered_paths(Path(".claude"))

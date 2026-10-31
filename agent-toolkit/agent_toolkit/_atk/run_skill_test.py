@@ -450,7 +450,7 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
     for expected in (
         "example-plugin:check-logs",
         "スキルへ渡す引数: 対象: web",
-        "`agent-toolkit:completion-report`の報告用UWI",
+        "`agent-toolkit:report-completion`の報告用UWI",
     ):
         assert expected in goal
     # 目的文が案内する過去の実行のUWIの手順は、`agent-toolkit:user-confirmation-and-report`の
@@ -949,7 +949,7 @@ def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, mon
             host="claude",
             target_repo="https://example.com/team/repo",
         )
-    code, _out, error = _run(["--args", "batch auto 任意の着眼点", "agent-toolkit:session-review"], capsys)
+    code, _out, error = _run(["--args", "batch auto 任意の着眼点", "agent-toolkit:review-session"], capsys)
     assert code == 0, error
     assert not session_review.pending()
     assert len(_records(engine_env, "session")) == 1
@@ -978,7 +978,7 @@ def test_dispatch_selects_exact_batch_mode(monkeypatch, arguments, is_batch):
 
     monkeypatch.setattr(run_skill, "_dispatch_once", once)
     monkeypatch.setattr(run_skill_batch, "dispatch", batch)
-    args = argparse.Namespace(skill="agent-toolkit:session-review", args=arguments)
+    args = argparse.Namespace(skill="agent-toolkit:review-session", args=arguments)
     assert run_skill.dispatch(args) == 0
     assert observed == [(is_batch, arguments)]
 

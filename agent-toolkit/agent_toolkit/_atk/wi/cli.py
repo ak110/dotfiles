@@ -21,6 +21,7 @@ lazy from agent_toolkit._atk.wi import add as _add
 lazy from agent_toolkit._atk.wi import alerts as _alerts
 lazy from agent_toolkit._atk.wi import batch as _batch
 lazy from agent_toolkit._atk.wi import constants as _wi_constants
+lazy from agent_toolkit._atk.wi import effect_check as _effect_check
 lazy from agent_toolkit._atk.wi import filenames as _wi_filenames
 lazy from agent_toolkit._atk.wi import grep as _grep
 lazy from agent_toolkit._atk.wi import listing as _listing
@@ -85,6 +86,7 @@ _WI_SYNC_MUTATIONS = frozenset(
         "reject",
         "rm",
         "edit",
+        "effect-check",
         "set-dependencies",
         "answer",
         "commit",
@@ -735,6 +737,16 @@ def _add_mq_transition_parsers(sub: Any) -> None:
 
 def _add_mq_edit_parsers(sub: Any) -> None:
     """本文編集・計画変換・依存更新サブコマンドを登録する。"""
+    effect = _atk_help.add_command(sub, "effect-check", **_atk_help.HELP["atk wi effect-check"])
+    effect.add_argument("filename", metavar="FILENAME", help="効果を記録する採用済みAWIのファイル名")
+    effect.add_argument("--worktree", required=True, help="対応commitの変更ファイルを確かめる対象リポジトリの作業ツリー")
+    effect.add_argument("--file", required=True, help="対応commitで変更したリポジトリ相対パス")
+    effect.add_argument(
+        "--verdict", required=True, choices=("confirmed", "insufficient"), help="効果を確認したか、効果不足かの判定"
+    )
+    effect.add_argument("--checked-on", required=True, help="判定日（YYYY-MM-DD）")
+    effect.add_argument("--review-record", required=True, help="判定した振り返りの記録位置")
+    effect.add_argument("--corrective-awi", help="効果不足の是正先AWIの保存済みファイル名")
     edit = _atk_help.add_command(sub, "edit", **_atk_help.HELP["atk wi edit"])
     edit.add_argument(
         "filename",
@@ -1246,6 +1258,7 @@ def dispatch(
         "reject": lambda: _mutation_transitions.cmd_reject(args, private_notes, now),
         "rm": lambda: _mutation_transitions.cmd_rm(args, private_notes),
         "edit": lambda: _mutation_content.cmd_edit(args, private_notes),
+        "effect-check": lambda: _effect_check.cmd_effect_check(args, private_notes),
         "set-dependencies": lambda: _mutation_dependencies.cmd_set_dependencies(args, private_notes),
         "grep": lambda: _grep.cmd_grep(args, private_notes),
         "answer": lambda: _uwi.cmd_answer(args, private_notes),

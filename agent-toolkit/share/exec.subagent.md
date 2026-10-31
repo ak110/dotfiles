@@ -75,10 +75,10 @@ continuations:
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「起動方法別のレビュー基準」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「起動方法別のレビュー基準」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md#「ラウンド番号の保持先」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンド番号の保持先」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「検証と公開工程」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
@@ -124,7 +124,7 @@ continuations:
 計画作成と実装の着手前（計画を作成しない場合はAWI本文を読み込んだ時点）に、AWI本文に明示されている担当とモデルの組み合わせを選定結果の`担当モデル`と比較する。これらが一致しない場合は、下位担当を勝手に起動して補うのではなく、WIファイル名、本文中の指定、および選定結果の値を添えて「続行できない理由」を返す。
 `担当モデル.実装担当`の値は、自身の担当範囲の一部を委譲する下位の実装担当（後述する「操作区分」の内部グループなど）の`model_type`に渡す。比較と記録の手順は、`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の担当モデルに関する記述に従う。指定がない場合の下位実装担当の分担は、同節の工程分担の記述に従う（内容が確定している定型作業は`delegate`の`chores`に任せ、自身で行う方が低コストであれば自身で実施する）。自身のレーン全体は同一スレッドで一貫して担当し続け、別の`レーン担当`へ委譲することは避ける。レーン数にかかわらず単一担当の実行契約に従い、実行レビュー担当の起動、指摘への対応、ならびに統合の検収も自身で実施する。初期選定で複数レーンが存在する場合は、メインエージェントから`統合許可`を受領した後にメイン作業ツリーへ統合する。
 
-要求単位の由来は、`agent-toolkit:wi-standards`の`## 由来と承認`に従い、計画起草時に`atk wi show`で得られるAWI本文およびfrontmatterから判定する。判定結果は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`の書式に従って計画の`由来`欄に記入する。計画確定後は由来の再判定を実装や統合の対象から除外し、以降は計画で確定した採否と終了区分を用いる（由来の確定時点）。
+要求単位の由来は、`agent-toolkit:wi-standards`の`## 由来と承認`に従い、計画起草時に`atk wi show`で得られるAWI本文およびfrontmatterから判定する。判定結果は`agent-toolkit:write-plan`の`references/plan-file-standards.md`の書式に従って計画の`由来`欄に記入する。計画確定後は由来の再判定を実装や統合の対象から除外し、以降は計画で確定した採否と終了区分を用いる（由来の確定時点）。
 計画を省略するレーンでは、同様の判定結果を引き継ぎ記録に残す。ユーザーから報告された不具合が既存の実装ですでに充足されていると判断する場合は、`plan-file-standards.md`「実施内容」に定める調査（呼び出し手段、操作手順、結果、報告時点との相違点）を実施し、操作内容、観測結果、相違点、未特定の範囲を引き継ぎ記録に記録する。
 
 完成条件を計画、実装、受入の対象にする前に、AWIの目的達成に必要かを判定する。
@@ -149,7 +149,7 @@ continuations:
 
 - 既存ファイル全体の完全上書きや文字列置換をする直前: 対象ファイルの最新の現行本文を取得する（自身が作成したファイルも含む）。
 - ファイルを編集する直前: プロジェクト規範が定める、編集対象パスに対応した必須スキルを起動する。
-- 変更範囲の検証を実行する直前: 訂正済みの検証表が存在する場合はその検証行から、存在しない場合は計画の`## 検証`にある`変更範囲の検証`行からコマンドを取得する。訂正済み検証表の保持と引き継ぎは、`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と公開工程」に従う。計画を作成していない場合は、引き継ぎ記録に記載された検証コマンドを使用する。
+- 変更範囲の検証を実行する直前: 訂正済みの検証表が存在する場合はその検証行から、存在しない場合は計画の`## 検証`にある`変更範囲の検証`行からコマンドを取得する。訂正済み検証表の保持と引き継ぎは、`agent-toolkit:write-plan`の`references/plan-file-standards.md`「検証と公開工程」に従う。計画を作成していない場合は、引き継ぎ記録に記載された検証コマンドを使用する。
 - 受入シナリオや完成条件を手動で観測する直前: `verification-evidence.md`「手動観測の保存」に従う。
 
 ## 操作区分

@@ -19,9 +19,9 @@
   （2026年10月4日の次回進行への影響による区分と、同月9日の残工程への作用を先に判定する要求に基づく）
 - 「完了」は既知の問題も含め対応済みの状態を指す。
   ユーザー操作が必須の事項だけが残った状態まで到達してから完了と報告する。
-  現行の規定は`agent-toolkit:completion-report`にある
+  現行の規定は`agent-toolkit:report-completion`にある
 - 部分対応（代表箇所だけの対処・一部件数だけの反映）を完了と扱わない。
-  現行の規定は`agent-toolkit:completion-report`にある
+  現行の規定は`agent-toolkit:report-completion`にある
 - 待ち時間（CI・委譲先の応答待ち）には競合しない工程を並行して前倒しする。
   時間経過の体感がないLLMは待ち時間コストの意識が乏しい、というユーザーの分析が根拠にある
 - 手順・規範は指針（「役割分担」「判断指針」「行動と手順の目的」）を達成する手段であり、
@@ -88,7 +88,7 @@
 
 レビュー指摘の採否は`agent-basics:review-standards`の`references/reviewee.md`が定める。
 工程別のモデル割当は`agent-toolkit:delegation`の`delegation/references/runtime-routing.md`が定める。
-計画の成果物契約は`agent-toolkit:plan-mode`の計画ファイル基準が定める。
+計画の成果物契約は`agent-toolkit:write-plan`の計画ファイル基準が定める。
 
 - `atk`のキュー操作と計画保存のコマンドが自身の出力で成功を報告した場合は、その出力を根拠に完了と判定し、同じ状態を別のコマンドで取得し直さない。
   コマンドの出力に成功の報告があり、警告がないことを完了判定の基準とする。
@@ -119,7 +119,7 @@
 - 過去計画30件のレビュー実績の実際の集計では、起草側の完成条件に対応の無い検出側専用の判定基準5件と、
   ラウンド数上位3事例での新設機構への段階的な指摘（最終的な機構の撤去・縮小で収束）を観測した。
   これに基づき、計画の成果物契約は
-  `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`へ一元化する。
+  `agent-toolkit/skills/write-plan/references/plan-file-standards.md`へ一元化する。
   レビュー用タスク文書へ検証項目を追加しない（2026年8月、ユーザー指示）
 - push後はCIが成功することまで確認して初めて作業完了とする。
   CI成功の待機を省略できる例外条件を定める規範は現行に無い
@@ -141,7 +141,7 @@
 ## 所要時間とコスト
 
 レーン分けは`agent-toolkit/skills/process-wi/references/selection-procedure.md`が定める。
-所要時間の分析の現行の規定は`agent-toolkit/skills/session-review/references/duration-analysis.md`の「所要時間の分析と改善」にある。
+所要時間の分析の現行の規定は`agent-toolkit/skills/review-session/references/duration-analysis.md`の「所要時間の分析と改善」にある。
 
 - 速度や資源使用量の改善を主目的とする作業は、変更前のボトルネックと、同じ負荷・比較可能な条件での変更前後の数値を測定し、挙動の維持とトレードオフを報告する。
   一般的な手順整理やコスト削減は推定による判断を保つ。
@@ -167,7 +167,7 @@
   配布元は`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`である。
   進行中も定期的および重い処理への着手前に、進捗と目標時間から必須性と低負担な案を比較する。
   曖昧な要求による必要な調査と、手順・ツールによる回避可能な反復を区別する。
-  現行規範は`agent-basics/skills/writing-standards/references/quality-principles.md`と`.claude/skills/dotfiles-development/SKILL.md`にある（2026年10月25日、ユーザー指示）。
+  現行規範は`agent-basics/skills/writing-standards/references/quality-principles.md`と`.claude/skills/develop-dotfiles/SKILL.md`にある（2026年10月25日、ユーザー指示）。
   本文書は経緯を記録する（2026年8月、ユーザー指示）。
   （2026年9月2日、ユーザー指示により計測範囲と毎セッションの分析を定めた。
   2026年9月4日、ユーザー指示により規模別の目標を撤去して単一の値へ戻した。
@@ -190,7 +190,7 @@
   （2026年9月16日、ユーザー回答。AWI 51件を7レーンへ件数で分けた処理回で、
   レーン別の稼働時間が2298秒から6708秒まで広がった観測に由来する）。
   現行の規定は`agent-toolkit/skills/process-wi/references/selection-procedure.md`にある
-- `agent-toolkit:session-review`の振り返り工程自体の所要時間は、対象セッションの長さによらず300秒以内を目標とする（2026年9月15日のユーザー指示では900秒、2026年9月25日のユーザー回答で300秒へ改めた）。
+- `agent-toolkit:review-session`の振り返り工程自体の所要時間は、対象セッションの長さによらず300秒以内を目標とする（2026年9月15日のユーザー指示では900秒、2026年9月25日のユーザー回答で300秒へ改めた）。
   目標を超過した場合は振り返り工程を短縮する改善提案を作成し、超過しない場合も短縮できる箇所を提案の対象へ含める。
   この目標は達成の判定、工程の省略、停止または先送りの条件には用いない（2026年9月15日、ユーザー指示）
 - `agent-toolkit:process-wi`と`atk wi process-loop`の一連の手順は、品質を保ったまま単位時間あたりに処理する
@@ -445,7 +445,7 @@ E-M2は恒常コストに見合う案が無い場合も技術判断を確定し�
   2026年10月7日のユーザー依頼と、確認への回答「既知の知識は方針と語だけ」「委譲プロンプトと計画にも適用」による。
   現行の規定は`agent-basics:writing-standards`の`references/writing.md`「読み手別の追加注意点」が定義元であり、
   `agent-documents-basics.md`、`agent-documents-additions.md`、`agent-toolkit:delegation`の`references/base-contract.md`、
-  `agent-toolkit:plan-mode`の`references/plan-file-standards.md`、`agent-toolkit:wi-standards`の`references/awi-body.md`と`references/drafting-completion.md`が参照する
+  `agent-toolkit:write-plan`の`references/plan-file-standards.md`、`agent-toolkit:wi-standards`の`references/awi-body.md`と`references/drafting-completion.md`が参照する
 - エージェント向け文書は、読み手のエージェントが広い知識を持つ前提で書き、常識的に判断できることを細かく手順化しない。
   細かすぎる手順は「書かれた手順以外はやってはならない」という先入観を生んで品質を下げ、文章量に比例して費用も増やすためである。
   手順として書くのは目的、守る価値、硬い制約、プロジェクト固有の事実、実際に誤った箇所に限る。
@@ -475,7 +475,7 @@ E-M2は恒常コストに見合う案が無い場合も技術判断を確定し�
   - 計画は1ファイル書式とし、計画型AWIと計画変換を廃止する
   - 実装系モデルは`high_tier_model`（現行はexecute工程）へ一本化し、レーンでは変更範囲の検証だけを実行する
   - 全体検証はCIへ委ね、ローカルではCIが実行しない検証だけを実行する。現行の適用規範は`agent-toolkit:commit`の`references/publish.md`「検証とCI」と、変更範囲の検証の対象選定を定める`agent-basics:check-execution`の`references/verification-scope.md`である
-  - `agent-toolkit:plan-mode`をメインが起動した場合は、追加worktreeを作成せず現在のworktreeで実装する
+  - `agent-toolkit:write-plan`をメインが起動した場合は、追加worktreeを作成せず現在のworktreeで実装する
 - 計画ファイルは複数の要求単位を統合して作成し、要求単位ごとの細分化は例外とする。計画ファイルとレビュー指摘管理表を
   要求単位ごとに起草・維持して計画レビューを別個に反復する固定費が、レビューのコストを押し上げるためである
   （2026年9月5日、ユーザー指示）

@@ -1586,7 +1586,7 @@ def test_public_save_all_then_restore_unfinished_plan(
 
 def test_generated_plan_names_are_current_and_help_shares_the_format(capsys: pytest.CaptureFixture[str]) -> None:
     """作成側の生成名を保存検査が現行として受理し、現行名の拒否にも同じ形式を案内する。"""
-    creator = runpy.run_path(str(run_script.PLUGIN_ROOT / "skills/plan-mode/scripts/create_plan_files.py"))
+    creator = runpy.run_path(str(run_script.PLUGIN_ROOT / "skills/write-plan/scripts/create_plan_files.py"))
     now = datetime.datetime(2026, 10, 14, 13, 10, tzinfo=datetime.UTC)
     stems = [creator["process_lane_plan_name"]("lane-01", now=now), creator["named_plan_name"]("計画", now=now)]
     for stem in stems:

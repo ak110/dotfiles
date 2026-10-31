@@ -367,7 +367,7 @@ def test_native_manual_plan_skill_is_observed(tmp_path: pathlib.Path, capsys: py
                 "type": "USER_INPUT",
                 "source": "USER_EXPLICIT",
                 "step_index": 0,
-                "content": "<USER_REQUEST>\n/agent-toolkit:plan-mode 計画して\n</USER_REQUEST>",
+                "content": "<USER_REQUEST>\n/agent-toolkit:write-plan 計画して\n</USER_REQUEST>",
             }
         ),
         encoding="utf-8",

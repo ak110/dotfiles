@@ -1,7 +1,7 @@
 # 実行レビュー反復の調整
 
 実行レビューの委譲元は、指摘の受領、修正指示、再レビュー、およびエスカレーションの各工程を収束まで統括して調整する。
-レビューイーは、`agent-toolkit:process-wi`では対象レーンのレーン担当、`agent-toolkit:plan-mode`をメインエージェントが起動した場合はメイン自身、公開工程のCI失敗修正では公開担当が起動する`CI修正担当`とする。
+レビューイーは、`agent-toolkit:process-wi`では対象レーンのレーン担当、`agent-toolkit:write-plan`をメインエージェントが起動した場合はメイン自身、公開工程のCI失敗修正では公開担当が起動する`CI修正担当`とする。
 通常の受領、修正、再レビューの進行では「ラウンドの遷移」から「応答済みの判定」までの規定を適用する。再レビューで指摘を受け取った際は「反復原因の判定」を、判断要請を受け取った際は「エスカレーションの事由別の扱い」および「技術判断で外せる完成条件」を、それぞれ具体的に判断する前に読み込む。
 
 ## 名指し参照の読込方法
@@ -14,7 +14,7 @@
 | 再レビューの指摘を受領し修正指示を確定する前 | `review-loop-coordination.md#「反復原因の判定」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「反復原因の判定」` |
 | 判断要請を受領し対処を確定する前 | `review-loop-coordination.md#「エスカレーションの事由別の扱い」「技術判断で外せる完成条件」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「エスカレーションの事由別の扱い」「技術判断で外せる完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「round 3以降の方式見直し」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「round 3以降の方式見直し」` |

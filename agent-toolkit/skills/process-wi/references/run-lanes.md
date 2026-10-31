@@ -11,7 +11,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-planning.md#「計画の起草」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lane-planning.md#「計画の起草」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
@@ -57,7 +57,7 @@ atk lane create --repo <対象リポジトリの絶対パス> --base-branch <統
 同一レーン内のAWIは選定結果に示された依存順序を守り、依存先から順に処理する。計画の作成が必要なレーンでは原則として1つの計画にまとめ、単一の計画では行数制限の警告を回避できない初回の起草時に限り、`references/lane-planning.md`「計画の起草」の手順4に従って複数の計画へと分割する。
 依存先タスクの失敗や保留、あるいは上流投入の完了待ちによって必要な成果物が得られない場合は、後続タスクを依存待ちの状態にし、必要な成果物を取得した後に作業を再開する。ユーザーからの明示的な指示によって追加された依存先が既存レーンに存在する場合は、「処理中に確定した必須是正レーン」に基づいて受け入れ可能かどうかを確認し、同一レーンで受け入れられない項目については待機する。
 
-稼働中のレーンが1つのみとなった場合でも、そのレーンに含まれる未着手のAWIは同一レーン内で処理を継続する。未着手のAWIを別レーンへ移管すると計画ファイルの分割や書き込み所有権の移譲が必要となり、計画凍結（`agent-toolkit:plan-mode`の`references/plan-file-standards.md`）の原則に反するためである。単独稼働となる期間は、選定工程における段階設計を工夫することで短縮を図る。
+稼働中のレーンが1つのみとなった場合でも、そのレーンに含まれる未着手のAWIは同一レーン内で処理を継続する。未着手のAWIを別レーンへ移管すると計画ファイルの分割や書き込み所有権の移譲が必要となり、計画凍結（`agent-toolkit:write-plan`の`references/plan-file-standards.md`）の原則に反するためである。単独稼働となる期間は、選定工程における段階設計を工夫することで短縮を図る。
 
 レーン担当を起動する際は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に定められた入力を渡す。初回起動時における各AWIの再開位置は選定結果から読み取り、担当エージェント全体に対する`再開位置`は中断した同一担当を再開する場合にのみ渡す。該当レーンに属する各WIの`担当モデル.実装担当`は、`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」に従って`model_type`へ指定し、比較検討の結果を引き継ぎ記録へ残す。異なる指定が含まれている場合はWI名と設定値を明示し、いずれかの指定を独断で破棄して起動することは避ける。
 初回の`書込担当一覧`は合意済みのセッションIDと担当範囲に基づいて確定し、担当の交代、再開、および単一レーンへの追送時に更新する。

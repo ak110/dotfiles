@@ -41,7 +41,7 @@ H2は索引元のパスの文字コード順に並べ、同じパスでは日付
 環境除去の単体検証は`_common/mcp_environment_test.py`と`_atk/orchestrator_test.py`を使う。
 全backendの登録前の重複拒否は`_agents_server/manager_test.py`の`test_start_rejects_duplicate_session_id`で再検証する。
 
-## .claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月4日
+## .claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月4日
 
 pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。指定した時点では横断テストをpytestのマーカー`repo_invariant`でも識別しており、マーカーでの収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。その後、fastがマーカーを選択に使わないため、マーカーを撤去してファイル名だけで識別する形にした。撤去後の確認では、fastのpytestが受け取ったファイルは33件で、`git ls-files`が返す`*_invariant_test.py`の33件と一致した。
 
@@ -58,7 +58,7 @@ uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 3行目の出力の1行目（`"kind":"header"`）が示す`run_id`を4行目へ渡す。4行目が返すJSONの`output`に、pyfltrのsubprojectごとの`# subproject: <ディレクトリ>`の行と、収集したテストの`<ファイル>::<テスト名>`の行が並ぶ。各行のファイルへsubprojectのディレクトリ（`.`はroot）を前置した集合が、fastのpytestが受け取ったファイルの集合である。
 この集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。件数だけを比べると、対象のファイルが別のファイルへ置き換わった場合を見逃すため、集合を比べる。Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
 
-## .claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月18日
+## .claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月18日
 
 Python 3.15、CIと同じimageのdigest `sha256:b13645f08610527422a741872c2457ee7b0e2ce96880acee22be2f1984477600`で、lockだけの変更によるsdistビルドの差を観測した。
 基準commit `a151f22a2a3447cfc4925e2a708d279138de46f4`のarchiveへ、`uv.lock`のzstandard依存2行から`python_full_version < '3.14'`のmarkerだけを除いた入力を作成した。
@@ -158,7 +158,7 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 
 ## agent-toolkit/agent_toolkit/_hooks/pretooluse/large_reads.py：全文取得の閾値：2026年9月29日
 
-2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。分割前の最大の文書`agent-toolkit/skills/wi-standards/SKILL.md`（60,005バイト）は16,945トークンだった。分割後の137件では、最大が13,176トークン（`skills/plan-mode/references/plan-file-standards.md`、45,749バイト）だった。1トークンあたりバイト数の最小は3.10（`skills/plan-mode/references/legacy-plan-file-standards.md`）だった。配布設定`share/codex_config.toml`（当時は`scripts/codex_config.toml`）の`tool_output_token_limit`は20000である。20,000トークンと3.10バイトの積は約62,000バイトであり、実行セルが本文へ付加する分の余裕を取って閾値を48KiB（49,152バイト）とした。48KiBの文書は最悪の比率でも約15,900トークンで、上限に対して約4,000トークンの余裕が残る。
+2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。分割前の最大の文書`agent-toolkit/skills/wi-standards/SKILL.md`（60,005バイト）は16,945トークンだった。分割後の137件では、最大が13,176トークン（`skills/write-plan/references/plan-file-standards.md`、45,749バイト）だった。1トークンあたりバイト数の最小は3.10（`skills/write-plan/references/legacy-plan-file-standards.md`）だった。配布設定`share/codex_config.toml`（当時は`scripts/codex_config.toml`）の`tool_output_token_limit`は20000である。20,000トークンと3.10バイトの積は約62,000バイトであり、実行セルが本文へ付加する分の余裕を取って閾値を48KiB（49,152バイト）とした。48KiBの文書は最悪の比率でも約15,900トークンで、上限に対して約4,000トークンの余裕が残る。
 再検証では同じ集合をo200k_baseで数えて1トークンあたりバイト数の最小値を測り直し、配布設定の`tool_output_token_limit`との積が閾値と付加分の余裕を上回るか確かめる。
 
 ### 補完読取と出力予算の契約更新（2026年10月30日）
@@ -574,7 +574,7 @@ Claude Code 2.1.291の本体では、出力の項目`narration_block_indexes`の
 `claude -p --plugin-dir <試作> --model claude-opus-5-5`へ公式ガイドの誘導文を渡し、答えを先に伝えてからファイルを読むよう指示した。モデルはこのツールを呼び、入力は原文のまま記録された。
 tmux内の対話のClaude Code（Opus 5.5）では、ツールで送った見出しと箇条書きが端末の画面へその形で表示された。
 
-再検証は次の2つに限る。1つ目は本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して`narration_block_indexes`の説明を確かめることである。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+再検証は次の2つに限る。1つ目は本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して`narration_block_indexes`の説明を確かめることである。検索の手順は`.claude/skills/develop-dotfiles/SKILL.md`「ホスト本体のバイナリの検索」に従う。
 2つ目は`display: "updates"`を要求する環境の記録で、`thinking`ブロックを文面の有無で数えることである。
 
 ## agent-toolkit/share/rules-main.claude-code.md：ターンの終え方：2026年10月7日
@@ -1117,7 +1117,7 @@ MCPツールの呼び出しで`mayHaveRun`を持つ接続断の例外が起き�
 MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すため、`readOnlyHint: true`のツールは並行呼び出しの対象にもなる。
 権限の自動許可への注釈の作用は確認していない。
 
-再検証は後続版の本体を`dotfiles-development`「ホスト本体のバイナリの検索」の手順で`mayHaveRun`と`isConcurrencySafe(){return`を検索し、再試行と並行実行の条件を比べる。条件が変わった場合は同書の「ホスト固有の条件」を改める。
+再検証は後続版の本体を`develop-dotfiles`「ホスト本体のバイナリの検索」の手順で`mayHaveRun`と`isConcurrencySafe(){return`を検索し、再試行と並行実行の条件を比べる。条件が変わった場合は同書の「ホスト固有の条件」を改める。
 
 ## agent-basics/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
 
@@ -1145,27 +1145,27 @@ MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すた
 - 観測した版数: uvが作成したWindows runnerの仮想環境。観測したPythonの正確な版は未確認。Python公式`Doc/library/venv.rst`の3.7.2の変更記録はredirectorの仕様の根拠であり、観測版とは区別する
 - 再検証手段: Windows仮想環境の`sys.executable`で子を起動し、`Popen.pid`と子の`os.getpid()`の標準出力を比べる。子の自己申告PIDとの一致を求める試験と、`Popen.pid`をプロセスの木の根として停止・生存確認に使う試験を分けて確認する
 
-## agent-toolkit/skills/session-review/references/session-records.md：H1直下：2026年9月2日
+## agent-toolkit/skills/review-session/references/session-records.md：H1直下：2026年9月2日
 
 2026年9月2日に`~/.claude/projects`配下と`~/.codex/sessions`配下の記録で確認した。再検証は両ディレクトリの記録から対象のキーを検索する。
 
-## agent-toolkit/skills/session-review/references/session-records.md：集計値の典拠：2026年9月3日
+## agent-toolkit/skills/review-session/references/session-records.md：集計値の典拠：2026年9月3日
 
-本節の記述は2026年9月3日に`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。再検証は同じ2つの関数を読む。
+本節の記述は2026年9月3日に`agent-toolkit/skills/review-session/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。再検証は同じ2つの関数を読む。
 
-## agent-toolkit/skills/session-review/references/session-records.md：スキル起動の判定：2026年9月10日
+## agent-toolkit/skills/review-session/references/session-records.md：スキル起動の判定：2026年9月10日
 
 2026年9月10日に確認した。`~/.claude/projects`配下でClaude Code 2.1.252と2.1.267の記録を読んだ。`Skill`ツールの`tool_use`要素が`input.skill`にスキル名を持つことを確認した。対応する`tool_result`要素の`content`は`Launching skill: <スキル名>`と一致した。
 同日、`~/.codex/sessions`配下のrollout記録2169件のうち`agent-toolkit:exit-session`を含む1527件を対象に、先頭120件のレコード種別を集計した。このスキル名が現れたのは、`world_state`、`developer`ロールの`message`、`compacted`、`function_call_output`および`custom_tool_call_output`だけであった。
 同日、codex-cli 0.154.0の同じ2169件に対し、`atk wi process-loop`がCodexへ渡す起動プロンプトの完全一致を数えた。一致は0件であった。いずれの記録も最初のuser役レコードの本文は実行環境が挿入する前置きであった。前置きは``# AGENTS.md instructions``または``<recommended_plugins>``で始まる。`agent-toolkit:process-wi`をuser役の本文へ含む記録は304件であった。この304件の`session_meta`を確認すると、`originator`は`agent-toolkit-codex-app-server`が303件、`codex-tui`が1件であった。
 再検証はClaude Codeの記録から`Launching skill:`を含む行を1件取得して`tool_result`の構造を確認し、Codexの記録から同じスキル名を含む行を取得してレコード種別を確認する。あわせてCodexの記録から`atk wi process-loop`が渡す起動プロンプトの完全一致と包含の件数を数える。user役レコードの`text`の先頭が前置きであることも確認する。
 
-## agent-toolkit/skills/session-review/references/session-records.md：Claude Codeの記録：2026年10月6日
+## agent-toolkit/skills/review-session/references/session-records.md：Claude Codeの記録：2026年10月6日
 
 2026年10月6日にClaude Code 2.1.291の本体（`~/.local/share/claude/versions/2.1.291`）を確かめた。出力の項目`narration_block_indexes`の説明は該当する`thinking`ブロックを「server summaries of the prose between tool calls, not the model's own reasoning」と記す。
-本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して再検証する。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+本体のバイナリを`rg -a -F 'server summaries of the prose between tool calls'`で検索して再検証する。検索の手順は`.claude/skills/develop-dotfiles/SKILL.md`「ホスト本体のバイナリの検索」に従う。
 
-## agent-toolkit/skills/session-review/references/session-records.md：暗号化された値：2026年10月7日
+## agent-toolkit/skills/review-session/references/session-records.md：暗号化された値：2026年10月7日
 
 2026年10月7日に公式文書「Thinking」（<https://platform.claude.com/docs/en/build-with-claude/thinking>、同日取得）を確かめた。節「Thinking encryption」は`signature`を「The `signature` field is opaque: don't interpret or parse it.」と定め、`redacted_thinking`の`data`を「opaque and encrypted」と記す。
 同じ文書の節「Progress updates between tool calls」は、`display`が`"updates"`のとき「any `thinking` block with non-empty text is a progress update」と記す。
@@ -1266,13 +1266,13 @@ MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すた
 
 2026年9月13日、Codex CLI 0.154.0でローカルmarketplaceを隔離`CODEX_HOME`へ導入して検証した。`agent-toolkit/`直下にAgent Plugins用`plugin.json`がある構成では、`.codex-plugin/plugin.json`のhook定義よりroot manifestが優先され、app-serverの`hooks/list`は0件を返した。root manifestを除いたwrapperから相対シンボリックリンクでhook・skill・実行資源へ接続した構成では、公式CLIのsnapshotに`.codex-plugin`だけが残り、リンク先は含まれなかった。全資源を通常ファイルとして含む`agent-toolkit-codex/`では、`hooks/list`が8イベントを返した。対象は`sessionStart`、`subagentStart`、`preToolUse`、`postToolUse`、`permissionRequest`、`userPromptSubmit`、`subagentStop`、`sessionEnd`である。project trustの有無で登録集合は変わらなかった。再検証ではCodex CLI 0.154.0で`scripts/sync_codex_plugin_manifests_test.py::test_codex_0154_registers_all_hooks_independent_of_project_trust`を実行する。隔離した2つの`CODEX_HOME`における登録集合、SessionStartの管理一時領域生成、SessionEndの回収を確認する。
 
-## dotfiles-development：回収予定の作業場所の環境準備：2026年10月1日
+## develop-dotfiles：回収予定の作業場所の環境準備：2026年10月1日
 
 2026年10月1日、uv 0.12.21を使い、専用worktreeのrootで`env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras`を実行した。終了コードは0で、標準エラーには135パッケージの解決と133パッケージの確認が記録された。続く`uv run --frozen python`でpytools、agent_toolkit、pytestのimportが成功した。
 同期の前後で、`uv tool dir`配下の導入記録と共有ツールのPythonから取得したeditable導入元を比較し、変更が無いことを確認した。Git共通dirのhookの内容・実行権限・リンク先と、`git config --local --get commit.template`の値も変わらなかった。アクセス時刻は比較対象へ含めていない。
 共有ツールの導入記録とeditable導入元、Git共通dirのhook、commit.templateを保存した後、回収予定の作業場所で上記の同期を1回実行して再検証する。importの成功と登録内容の一致を確認する。恒久作業ツリーの初期導入を検証用に再実行する必要は無い。
 
-## dotfiles-development：ホスト本体のバイナリの検索：2026年10月4日
+## develop-dotfiles：ホスト本体のバイナリの検索：2026年10月4日
 
 ホスト本体の検索手順に関する変更は、2026年10月4日「fix: ホスト本体の検索手順をdotfilesの開発スキルへ集める」、`a896a6d06`である。
 要求を起草した時点の測定環境はClaude Code 2.1.288、codex-cli 0.160.0、ripgrep 15.2.0、GNU grep 3.11、Claude Code組込みugrep 7.8.4で、UTF-8ロケールだった。
@@ -1294,10 +1294,10 @@ Claude CodeのBashツールでgrepはugrepを呼ぶシェル関数として観�
 同じripgrep 15.2.0で、60秒上限の`-a -c -F`はClaudeが7行・0.04秒、Codexが9行・0.05秒だった。
 `-a -o`の前後0〜200文字の文脈はそれぞれ0.04秒・0.05秒で、全て終了0・stderr空。
 ClaudeではJSの設定説明、Codexではfork_turnsのヘルプ文を含む全出力をファイルへ保存した。
-再検証は実体を同じ解決形で取得し、上記の語をdotfiles-developmentの一致行数と文脈取得の各コマンドへ渡す。
+再検証は実体を同じ解決形で取得し、上記の語をdevelop-dotfilesの一致行数と文脈取得の各コマンドへ渡す。
 ホスト版、検索ツール版、ロケール、所要時間と一致行数を保持し、文字列表より後ろにある文脈も使って判断する。
 
-## completion-report：最終報告送達後のターン終了：2026年10月9日
+## report-completion：最終報告送達後のターン終了：2026年10月9日
 
 出所はリポジトリ外に保存した対照の記録である。本記録の作成時にモデルは再実行していない。Claude Codeメインがモデル`claude-opus-5-5`へ、同じ短い最終報告の送達入力と、送達後の地の文を省略記号だけで閉じる指示を加えた入力を各3回渡した。起動形は`claude -p --model claude-opus-5-5 --allowedTools mcp__agent-toolkit__send_to_user --output-format json`で、各JSONの`result`（送達後の最終地の文）を比較した。
 
@@ -1308,7 +1308,7 @@ ClaudeではJSの設定説明、Codexではfork_turnsのヘルプ文を含む全
 
 再検証は同じ報告本文を固定し、後段の終了指示の有無だけを変えて上記起動形で各群を実行し、JSONのresult・success・num_turnsを保存する。モデルとホスト版も取得時に記録する。これは具体化が作用した限定条件の観測であり、元の長い文脈の内的判断、一般発生率、将来の出力保証を示さない。元事象のセッション記録（リポジトリ外）では、固定文付きの送達、表示の成功、追加の要約がこの順に並び、工程10の追加作業を限定する条文は同じ記録の送達より前に読み込まれていた。条文の不在を原因とはしない。
 
-## dotfiles-development：Git動作テストの状態準備：2026年10月9日
+## develop-dotfiles：Git動作テストの状態準備：2026年10月9日
 
 出所はリポジトリ外に保存した対照結果と、導入commit `b20e6f20514a381648c730bbf828e2f8ac9e3522`、修正commit `f071d6348670a39e797e9dc54f6276e1e9dad8f6`の実装である。対象は`agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks_test.py`の`TestBashGitRevParseShortMultiple.test_individual_revision_fix_succeeds`。入力は`git rev-parse`のoption `--short`、`--short=12`、`--verify`、`--verify --quiet`とrevision `HEAD`、`HEAD~1`の8組である。
 

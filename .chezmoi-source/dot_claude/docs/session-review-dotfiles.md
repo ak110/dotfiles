@@ -1,22 +1,22 @@
 # dotfiles環境の振り返り観点
 
-`agent-toolkit:session-review`の振り返りでメインが問題の原因と対策を確定するときと、所要時間を分析するときに適用する。
+`agent-toolkit:review-session`の振り返りでメインが問題の原因と対策を確定するときと、所要時間を分析するときに適用する。
 振り返りの`atk run-script session-review-prepare`が出力するJSONの`reference_document`が本文書の絶対パスを示す。
 
 ## セッションの所要時間目標
 
 起動方法と目標超過の有無によらず、毎セッションの内訳から品質を維持した高速化を検討する。
-目標内なら記録の照会結果で提案の要否を判断し、超過時は律速区間へ作用する再発防止策の採否と必要な処置を確定する。必要なAWIの登録と最終報告は`agent-toolkit:session-review`の手順に従って完了する。
+目標内なら記録の照会結果で提案の要否を判断し、超過時は律速区間へ作用する再発防止策の採否と必要な処置を確定する。必要なAWIの登録と最終報告は`agent-toolkit:review-session`の手順に従って完了する。
 所要時間の超過はC・Dの問題であり、この判断は`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従う。
 超過の区間に品質を下げた手戻りなどQに影響する問題が含まれる場合も、その問題を同節に従って扱う。
 適切に並列化されていれば全体の処理件数が所要時間へ与える影響は小さいという前提で、並列化の成立条件と律速区間を調べる。
-件数増加自体を超過の原因や許容理由にせず、過去対策との比較は`agent-toolkit:session-review`の`references/analysis.md`「原因と対策」に従う。
+件数増加自体を超過の原因や許容理由にせず、過去対策との比較は`agent-toolkit:review-session`の`references/analysis.md`「原因と対策」に従う。
 
 次の目標値と計測範囲は、対象リポジトリ`github.com/ak110/dotfiles`で`agent-toolkit:process-wi`を起動したセッションだけへ適用する。
 他のリポジトリでの作業や、本リポジトリで別の方法により起動した作業は目標値の適用対象から除く。
 
 - 1セッションの所要時間は、セッションの最初の記録からそのセッションが終了する時点までとする。
-  振り返り、公開工程とセッション終了工程、`agent-toolkit:completion-report`および`atk agents-exit-session`に要する時間も計測範囲へ含める
+  振り返り、公開工程とセッション終了工程、`agent-toolkit:report-completion`および`atk agents-exit-session`に要する時間も計測範囲へ含める
 - 処理したAWIの件数によらず、セッション振り返りの完了を含めて3時間以内を目標とする
 - 目標は振り返り対象セッションのこの区間へ適用する
 - 目標は達成の判定、工程の省略、停止または先送りの条件から除く

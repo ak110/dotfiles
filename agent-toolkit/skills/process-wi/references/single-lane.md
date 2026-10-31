@@ -24,7 +24,7 @@
 | 回答済みUWIの処理またはWIを終了する前 | `../../wi-standards/SKILL.md#「状態と依存」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「状態と依存」` |
 | 取得時の版が変わった記録を再利用する前 | `agent-toolkit:/share/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「根拠の書き方」` |
 | WI実装commitの対応を記録する前 | `../../commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
-| 公開時の常時稼働サーバー反映または終了処理の前 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 公開時の常時稼働サーバー反映または終了処理の前 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 | 公開後に追加修正を統合し再公開する前 | `finish-session.md#「公開状態の検収と再起動」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「公開状態の検収と再起動」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
@@ -33,7 +33,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 既存不良の受領、計画または直接実装に着手する前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
-| 計画の要否を判定する前 | `agent-toolkit:plan-mode`のSKILL.md。計画対象がある場合は、計画の起草前（実行順3）に同書の初版起草の行が指定する範囲も読む | 判断 | `skill:plan-mode` | |
+| 計画の要否を判定する前 | `agent-toolkit:write-plan`のSKILL.md。計画対象がある場合は、計画の起草前（実行順3）に同書の初版起草の行が指定する範囲も読む | 判断 | `skill:write-plan` | |
 | 対象worktreeごとに公開する前（実行順8） | `agent-toolkit:commit`を起動し、同スキルの`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
 | Claude Codeでpush後のCI監視の待機へ入る前（実行順8） | `agent-toolkit:delegation`の`references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` | |
 
@@ -45,12 +45,12 @@
 - `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`（所在参照）
 - `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`、`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`（所在参照）
 
-`agent-toolkit:plan-mode`を起動した場合は、ユーザー確認の要否と手段を`agent-toolkit:user-confirmation-and-report`で選択し、計画の起草後は本書の実行順に戻って主作業ツリーで実装を進める。計画のstemは`dd-HHmm_process-wi-single-lane`とし、実行レビューのレビューイーはメインエージェントとする。Codex環境では、`../../plan-mode/references/codex-runtime.md`が専用処理に対して定めているUWI記録と暫定判断のルールを本スキルにも適用する。
+`agent-toolkit:write-plan`を起動した場合は、ユーザー確認の要否と手段を`agent-toolkit:user-confirmation-and-report`で選択し、計画の起草後は本書の実行順に戻って主作業ツリーで実装を進める。計画のstemは`dd-HHmm_process-wi-single-lane`とし、実行レビューのレビューイーはメインエージェントとする。Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処理に対して定めているUWI記録と暫定判断のルールを本スキルにも適用する。
 バージョン番号は、対象リポジトリの版数管理規範における単一worktree向けの一般原則に従い、実装段階でメインエージェントが更新する。
 
 ## 処理の振り分け
 
-計画ファイルの作成要否を`agent-toolkit:plan-mode`「計画ファイルの作成要否」に従って判定し、作成が必要な項目を「計画対象」、省略できる項目を「直接実装対象」として分類する。
+計画ファイルの作成要否を`agent-toolkit:write-plan`「計画ファイルの作成要否」に従って判定し、作成が必要な項目を「計画対象」、省略できる項目を「直接実装対象」として分類する。
 初期選定されたすべてのWIを記録した保存済み対応表をもとに、対象worktreeの全計画対象を1つの計画ファイルへまとめ、計画段階でのレビューは省略して実装後の実行レビューのみで検証する。専用のworktreeは新設せず、対応表に記載されたworktreeで実装する。
 
 ## 不変条件
@@ -90,9 +90,9 @@
 6. worktreeごとに`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`「継続する工程」に従ってレビュー指摘を収束させる。指摘に対する修正作業はメインエージェント自身が行い、同一の「開始時のHEAD」とレビュー指摘管理表を引き続き使用する。
 7. 各計画について`atk run-script plan-progress --`を実行して完了判定を`## 進捗ログ`へ記録し、計画構造の自動チェックが成功することを確認した上で計画バンドルを保存する。
 8. 各WIを`adopt`または`reject`し（`adopt`時は`agent-toolkit:wi-standards`「状態と依存」に定めるコミット対応付けを用いる）、worktreeごとに`agent-toolkit:commit`の`references/publish.md`に従って公開する。複数のリポジトリを対象とする場合は成果物間の依存順序を守り、互いに独立したリポジトリのpushを先にすべて完了させてからCI監視を並行して開始し、すべての実行識別子の終了を待って結果を個別に回収する。CIの成功を前提とする公開後操作はその対象の成功が確認されてから行い、CI成功を前提とせず排他リソースも占有しない操作は待機時間中に進めてよい。
-   開発マシン上で動作する常時稼働サーバーへの反映は、`agent-toolkit:completion-report`の`SKILL.md`「工程」内の「常時稼働サーバーへの反映」段落に記載された条件を満たす場合に、CI待機と並行して開始する。反映したHEADの一意な短縮OID、反映コマンドの終了ステータス、および稼働確認の結果を完了報告へ渡す。
+   開発マシン上で動作する常時稼働サーバーへの反映は、`agent-toolkit:report-completion`の`SKILL.md`「工程」内の「常時稼働サーバーへの反映」段落に記載された条件を満たす場合に、CI待機と並行して開始する。反映したHEADの一意な短縮OID、反映コマンドの終了ステータス、および稼働確認の結果を完了報告へ渡す。
    Claude Code環境では、独立したpush群の監視や並行するサーバー反映処理などを開始した後に、CI待機に伴う会話圧縮を予約する。中断や会話圧縮の後は、注入された要約を起点に計画、WI、資源登録、CI監視出力、担当別引き継ぎ記録から状態を復元し、要約文に書かれた作業順などで選定集合を勝手に置き換えない。予約と通知後の復元処理は、`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」に従う。起動済みのwait_ci.pyバックグラウンドタスクを維持し、Monitorツール等で前景を占有することなくターンを終え、完了通知を受信した後に同一の入力と保存出力からCI結果を回収する。CIが定義されていない対象にはこの圧縮境界を設けず、Codexや会話圧縮ツールが存在しない環境では既存の待機契約に従う。
-9. 一時的に作成したレビュー指摘管理表を正式な保存または回収契約に従って処理し、成果・検証・公開結果を`agent-toolkit:completion-report`の作業完了報告へ一度集約して送達する。公開結果の受領だけで終了せず、同スキルが定める終了処理まで行う。同期の振り返りは終了工程の対象外とする。
+9. 一時的に作成したレビュー指摘管理表を正式な保存または回収契約に従って処理し、成果・検証・公開結果を`agent-toolkit:report-completion`の作業完了報告へ一度集約して送達する。公開結果の受領だけで終了せず、同スキルが定める終了処理まで行う。同期の振り返りは終了工程の対象外とする。
 
 ## 即時対応の参照
 

@@ -64,9 +64,23 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS_TEST): 1,
     (
         f"{_PLUGIN_PREFIX}:process-wi-all-repos",
-        pathlib.Path("agent-toolkit/skills/session-review/scripts/session_evidence_candidates.py"),
+        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_evidence_candidates.py"),
     ): 1,
     (f"{_PLUGIN_PREFIX}:session-review-batch", pathlib.Path("agent-toolkit/agent_toolkit/_common/session_review.py")): 1,
+    (f"{_PLUGIN_PREFIX}:session-review", pathlib.Path("agent-toolkit/agent_toolkit/_common/skill_modes.py")): 2,
+    (f"{_PLUGIN_PREFIX}:session-review-batch", pathlib.Path("agent-toolkit/agent_toolkit/_common/skill_modes.py")): 1,
+    (
+        f"{_PLUGIN_PREFIX}:session-review",
+        pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/run_skill_scope_invariant_test.py"),
+    ): 2,
+    (
+        f"{_PLUGIN_PREFIX}:session-review-batch",
+        pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/run_skill_scope_invariant_test.py"),
+    ): 1,
+    (
+        f"{_PLUGIN_PREFIX}:session-review",
+        pathlib.Path("agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md"),
+    ): 2,
     (
         f"{_PLUGIN_PREFIX}:session-review-batch",
         pathlib.Path("agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md"),
@@ -291,6 +305,10 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
             "single-lane-process",
             "process-wi-all-repos",
             "session-review-batch",
+            "completion-report",
+            "external-write-review",
+            "plan-mode",
+            "session-review",
         )
         if source.is_relative_to(_NORM_RESTRUCTURE_RECORDS) and any(
             reference == f"{_PLUGIN_PREFIX}:{skill}" or reference.startswith(f"{_PLUGIN_PREFIX}/skills/{skill}/")

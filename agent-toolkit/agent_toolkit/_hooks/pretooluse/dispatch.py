@@ -44,7 +44,7 @@ Grep / Glob:
 
 Skill:
 
-- `agent-toolkit:plan-mode`起動時の前の計画ファイルのパスの消去 (side-effect)
+- `agent-toolkit:write-plan`起動時の前の計画ファイルのパスの消去 (side-effect)
 
 TaskStop:
 
@@ -222,7 +222,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     """ツールの種類ごとの判定を実行し、その結果を返す。"""
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
-    # Skill: plan-mode起動時は前の計画のパスを消去する。
+    # Skill: write-plan起動時は前の計画のパスを消去する。
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:

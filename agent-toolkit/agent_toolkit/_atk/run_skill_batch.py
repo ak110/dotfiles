@@ -27,8 +27,6 @@ import psutil
 from agent_toolkit._atk import config, orchestrator, outcome, run_script
 from agent_toolkit._atk.wi import add, frontmatter, layout, repo, sync
 from agent_toolkit._atk.wi.constants import (
-    CONFIRMATION_KEY,
-    CONFIRMATION_REQUIRED,
     WI_STATE_HOLD,
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
@@ -50,7 +48,7 @@ PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     """開始時に登録し、設定に従い既存CLIへ起動要求だけを渡す。"""
-    if delegated_session.is_delegated(os.environ) or os.environ.get(session_review.BATCH_ENV) or payload.get("agent_id"):
+    if delegated_session.is_delegated(os.environ) or payload.get("agent_id"):
         return None
     event = payload.get("hook_event_name")
     target_repo = None
@@ -59,6 +57,8 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         with contextlib.suppress(WebInputError):
             target_repo = repo.resolve_repo_id_or_raise(None, cwd=pathlib.Path(cwd))
     session_review.record(payload, host=host, target_repo=target_repo)
+    if os.environ.get(session_review.BATCH_ENV):
+        return None
     if event not in {"SessionStart", "SessionEnd"}:
         return None
     notice = session_review.launch_notice() if event == "SessionStart" else None
@@ -69,12 +69,16 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         if event == "SessionStart":
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
-                "まとめて振り返るには /agent-toolkit:session-review batch を実行する。"
+                "まとめて振り返るには /agent-toolkit:review-session batch を実行する。"
             )
             return "\n".join(part for part in (notice, waiting) if part)
         return notice
     if session_activity.host_process() is None:
         # ホスト外で再生したhook入力は記録だけにとどめ、実在するホストの開始・終了から起動する。
+        return notice
+    if not session_review.auto_start_due(now=time.time()) or not any(
+        not target.get("review_batch") for target in session_review.pending()
+    ):
         return notice
     env = plugin_environment.direct_environment(PLUGIN_ROOT, orchestrator.child_env(drop=(session_review.BATCH_ENV,)))
     # セッションのstdin/stdoutを保持せず、受付前の試行と受付後の実行記録で責任を分ける。
@@ -107,7 +111,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
                         "run-skill",
                         "--args",
                         "batch",
-                        "agent-toolkit:session-review",
+                        "agent-toolkit:review-session",
                     ],
                     cwd=PLUGIN_ROOT,
                     env=env,
@@ -170,7 +174,7 @@ def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
         activity = session_activity.review_activity({target["session_id"]})
         if not activity.has_activity:
             selected.append(target)
-    return selected
+    return selected if any(not target.get("review_batch") for target in selected) else []
 
 
 def _report_target(targets: list[dict[str, Any]]) -> tuple[str, pathlib.Path]:
@@ -225,13 +229,10 @@ def _plugin_repository() -> str:
 
 
 def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest: dict[str, Any]) -> str:
-    """配布元で是正するための失敗報告AWIを組み立てる。ユーザー判断が要る点は処理担当がUWIで確認する。
-
-    振り返りの成果と同じく要確認として投入し、ユーザーが内容を確認するまで自動処理へ渡さない。
-    """
+    """配布元で是正するための失敗報告AWIを組み立てる。ユーザー判断が要る点は処理担当がUWIで確認する。"""
     targets = ", ".join(item["session_id"] for item in manifest["targets"])
     body = (
-        "# 非同期振り返り（session-review batch）の失敗の是正\n\n"
+        "# 非同期振り返り（review-session batch）の失敗の是正\n\n"
         "非同期振り返りが下記の対象セッションを処理できなかった。"
         "このAWIが終了するまで、同じ原因で失敗した対象の自動振り返りを止めている。"
         "原因を是正し、対象の振り返りが自動で再開できる状態へ戻す。\n\n"
@@ -251,7 +252,7 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
         f"実行記録: {path}\n"
         f"対象: {targets}\n"
     )
-    metadata = f"session_review_failure_key: {json.dumps(failure_key)}\n{CONFIRMATION_KEY}: {CONFIRMATION_REQUIRED}\n"
+    metadata = f"session_review_failure_key: {json.dumps(failure_key)}\n"
     return f"---\n{metadata}---\n\n{body}"
 
 
@@ -357,7 +358,7 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
     except filelock.Timeout:
         session_review.launch_result()
         print(
-            "同じOSアカウントでagent-toolkit:session-review batchが実行中。既存の実行終了後に残る対象を処理する。",
+            "同じOSアカウントでagent-toolkit:review-session batchが実行中。既存の実行終了後に残る対象を処理する。",
             file=sys.stderr,
         )
         return 1
@@ -392,6 +393,9 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
     attempted: set[str] = set()
     prepare_failed = False
     while targets := _targets(manual=manual, attempted=attempted):
+        # hookから排他取得までの競合と、同じ呼び出し内での連続自動起動も防ぐ。
+        if not manual and not session_review.auto_start_due(now=time.time()):
+            break
         attempted.update(target["key"] for target in targets)
         target_repo, cwd = _report_target(targets)
         run_id = uuid.uuid4().hex
@@ -401,6 +405,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             "report_scope": session_review.BATCH_SCOPE,
             "manifest_path": str(path),
             "status": "running",
+            "started_at": session_review.timestamp(),
             "targets": targets,
             "target_repo": target_repo,
             "prepared": [],
@@ -427,8 +432,8 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
                 _prepare_failure(runs, target_repo, failed)
                 failed_keys = {target["key"] for target, _ in failed}
                 manifest["targets"] = [target for target in targets if target["key"] not in failed_keys]
-                if not manifest["targets"]:
-                    # 失敗は失敗記録へ移したため、対象の残らない実行は解決済みとする。
+                if not any(not target.get("review_batch") for target in manifest["targets"]):
+                    # 通常対象を準備できない回も、batch自身だけの分析を起動しない。
                     manifest["status"] = "resolved"
                     session_review.write(path, manifest)
                     continue
@@ -474,6 +479,7 @@ def _prepare_failure(runs: pathlib.Path, target_repo: str, failed: list[tuple[di
         "run_id": run_id,
         "manifest_path": str(path),
         "status": "running",
+        "started_at": session_review.timestamp(),
         "targets": [target for target, _ in failed],
         "target_repo": target_repo,
         "prepared": [],

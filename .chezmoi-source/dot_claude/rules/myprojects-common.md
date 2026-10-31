@@ -6,21 +6,21 @@
 
 ## AWI処理の開始時の横断同期
 
-個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、メインの選定開始より前に`ak110-projects-operations`スキルを起動する。
+個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、メインの選定開始より前に`operate-ak110-projects`スキルを起動する。
 同期調査と依存更新の要否の判定結果は、そのセッションの後続の工程へ渡す。
-起動名はClaude Code・Codexとも`ak110-projects-operations`とする。Claude Codeでは`Skill`ツールから起動する。
+起動名はClaude Code・Codexとも`operate-ak110-projects`とする。Claude Codeでは`Skill`ツールから起動する。
 
 ## WI作成時の追従判定
 
-個人プロジェクトの性質や作業手順（開発・検証できる環境、セットアップ手順、リリース運用など）を変える要求のWIを作成するときは、反映先を確定する前に`ak110-projects-operations`スキルを起動する。
+個人プロジェクトの性質や作業手順（開発・検証できる環境、セットアップ手順、リリース運用など）を変える要求のWIを作成するときは、反映先を確定する前に`operate-ak110-projects`スキルを起動する。
 同スキル「判定手順」に従い、そのプロジェクトを記述するdotfiles側の規範への追従と反映先を確定する。
 
 ## 個人プロジェクトのリリース開始手順
 
-個人プロジェクトの協調モードの変更では、公開範囲を判定する前に`ak110-projects-operations`を起動し、「リリース運用」の恒常的な認可と明示指定の優先を適用する。
+個人プロジェクトの協調モードの変更では、公開範囲を判定する前に`operate-ak110-projects`を起動し、「リリース運用」の恒常的な認可と明示指定の優先を適用する。
 
 個人プロジェクトでpatch、minorまたはmajorのリリースを求められたときは、具体的な公開コマンドを選ぶ前に
-`ak110-projects-operations`スキルを起動し、同スキルの「リリース運用」に従う。
+`operate-ak110-projects`スキルを起動し、同スキルの「リリース運用」に従う。
 個人プロジェクトの一連の作業（`agent-toolkit:process-wi`の公開工程を含む）がpushとCI成功まで終わったときも同スキルを起動し、「リリース運用」に従ってリリース要否を判定する。
 agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築およびworkflow内部の処理は対象外とする。
 </atk-auto>

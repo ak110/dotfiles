@@ -50,7 +50,7 @@
 | 基準の参照時 | `add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
 | 基準の参照時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 基準の参照時 | `../skills/wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 基準の参照時 | `../skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` |
+| 基準の参照時 | `../skills/report-completion/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「作業完了報告のフォーマット」` |
 | 基準の参照時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 基準の参照時 | `add-wi.parent.md#「続行できない理由の扱い」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「続行できない理由の扱い」` |
 | 基準の参照時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` |
@@ -62,7 +62,7 @@
 | 基準の参照時 | `agent-toolkit:/share/exec-review-responses.md#「完了報告」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「完了報告」` |
 | 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee.md#「方式見直しと再レビュー」` | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewee.md#「方式見直しと再レビュー」` |
 | 基準の参照時 | `lane-integration.subagent.md#「マージありの統合」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「マージありの統合」` |
-| 基準の参照時 | `../skills/plan-mode/references/plan-file-storage.md#「計画ファイルの保存と参照」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md#「計画ファイルの保存と参照」` |
+| 基準の参照時 | `../skills/write-plan/references/plan-file-storage.md#「計画ファイルの保存と参照」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md#「計画ファイルの保存と参照」` |
 
 ## 読込表
 
@@ -170,7 +170,7 @@ Git管理外ファイルの変更前後の複製のペアがあれば、レー�
 - 要求ファイルには、`想定外事象:`行の全文と走査記録の絶対パスを要求の趣旨と`確定済みの観測`に、原因・類似見直し・対策の検討項目を`投入前に確定すべき事項`に書く。投入先は該当行が示す対象ファイルを所有するリポジトリとし、`source`属性は受領元エージェントのスキルに基づき`agent-toolkit:wi-standards`「由来と承認」で決める
 - 起動した担当の`session_id`と対象の不具合を、該当レビューの引き継ぎ記録へ引き渡し済みとして対応付ける。再レビューや引き継ぎ再レビューで同じ不具合が再び報告されたら、この記録で引き渡し済みと判定し、担当を重ねて起動しない
 - 投入担当の完了を待たずに、レビューの収束、統合、公開を並行して進める。投入担当の終了はバックグラウンド完了通知で確かめ、最終の作業完了報告の前までに全担当の終了を確かめる。この終了確認は統合や公開を始める前提条件にしない
-- 担当が保存したAWIのファイル名は、`agent-toolkit:completion-report`の`references/report-formats.md`「作業完了報告のフォーマット」の`### 投入したWI`で報告する
+- 担当が保存したAWIのファイル名は、`agent-toolkit:report-completion`の`references/report-formats.md`「作業完了報告のフォーマット」の`### 投入したWI`で報告する
 - 担当から続行できない理由が返ったら、ユーザーの判断が要る事項を`agent-toolkit:user-confirmation-and-report`に従って確認する（自律モードではUWIへ退避する）。投入先リポジトリ外のファイルが対象として返った場合は、`add-wi.parent.md`「続行できない理由の扱い」に従って投入先と要求の組を確定し直す
 
 この運用は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」の「発見した独立の既存不良は同一セッション内で是正する」という一般原則の例外であり、先送りに要る事象の記録、根本原因、対応案は投入担当が保存するAWIが担保する。
@@ -212,7 +212,7 @@ Git管理外ファイルの変更前後の複製のペアがあれば、レー�
 
 - 基準が`WI`のみの場合: レーン統合では`atk lane integrate`が`phase: finalized`を返した後に、直接実装では本書の受領確認と意味検収を終えた後に、指摘管理表を削除する。統合の検査と再開で表を参照するため、最終化が終わるまでは保持する。保存先はprivate-notesの管理外とする
 - 基準が`CI記録`のみの場合: 同じ修正系列では同じ指摘管理表と`修正系列の開始時のHEAD`を引き継ぎ、系列の完了時に`atk plans commit ci-<修正系列の開始時のHEAD>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。保存の時機は`agent-toolkit:commit/references/ci-failure-handling.md`の「入力計画」に従い、`process-wi`の公開工程では公開担当が実行する
-- 基準に`計画`を含む場合: 計画を管理するエージェントが、`agent-toolkit:plan-mode`の`references/plan-file-storage.md`「計画ファイルの保存と参照」に従って計画バンドルとともに保存する
+- 基準に`計画`を含む場合: 計画を管理するエージェントが、`agent-toolkit:write-plan`の`references/plan-file-storage.md`「計画ファイルの保存と参照」に従って計画バンドルとともに保存する
 
 <!-- return-contract:exec-review:start -->
 <!-- 生成元: share/exec-review.subagent.md「出力」。手動編集しない。 -->

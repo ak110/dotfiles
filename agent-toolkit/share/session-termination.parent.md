@@ -18,7 +18,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/push-and-ci.md#「公開先に対応するCI定義の判定」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開先に対応するCI定義の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/push-and-ci.md#「公開状態の4項目」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開状態の4項目」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 
 ## 起動前の前提
 
@@ -102,5 +102,5 @@ push前の工程（バージョン更新、生成物同期、push前チェック
   その結果、見出し`### <ファイル名> [<状態>]`の状態表示が、`延期後にadoptしたAWI`に含まれる項目では`adopted`、差集合の項目では`processing`となっていることを確認する。
 
 すべての確認を終えた後、延期対象から`延期後にadoptしたAWI`を除いた集合を`agent-toolkit/skills/process-wi/references/finish-session.md`「延期adoptと反映後の観測」へ引き渡す。あわせて検収した公開状態の4項目を同書の「公開状態の検収と再起動」へ引き渡す。途中で主作業ツリーや対象refの変更、外部からの更新を観測した場合は、同節の指示に従って現在の状態を再取得する。
-未終了の集合に対する処置を終えた後、同書の「完了報告と終了」に従って`agent-toolkit:completion-report`によって報告し、`atk agents-exit-session`を実行する。
+未終了の集合に対する処置を終えた後、同書の「完了報告と終了」に従って`agent-toolkit:report-completion`によって報告し、`atk agents-exit-session`を実行する。
 なお、all-reposのリポジトリ担当エージェントは同節に従い、`atk agents-exit-session`を呼び出さず、常駐プログラムへの最終返却をもってターンを終了する。

@@ -35,7 +35,6 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
 )
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
-from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.serve_support import _disable_wi_git
 
@@ -46,304 +45,26 @@ _SAVE_RELEASE_DELAY_SEC = 1.0
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_confirmation_toggle_commits_pushes_and_controls_readiness(
-    browser_harness: _BrowserHarness,
-    monkeypatch: pytest.MonkeyPatch,
+async def test_legacy_confirmation_has_no_button_or_api(
+    browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """要確認・確認済み・要確認への取消を画面で順に操作し、着手可否と他のメタデータ・本文の保持を確かめる。
-
-    冷却中の項目にも冷却解除の操作を出さず、期限は確認操作で変えない。
-    """
-    # 隔離HOMEはfixtureのroot配下に生成されるため、WIを別のリポジトリへ配置する。
-    root = browser_harness.root / "wi-repository"
-    monkeypatch.setattr(browser_harness.operations, "private_notes", root)
-    monkeypatch.setattr(browser_harness.operations, "_entry_index", entry_index.EntryIndex(root))
-    path = _entry_path(root, "confirmation-git.md")
-    content = (
-        "---\ntarget_repo: github.com/example/repo\ntype: awi\nstate: inbox\nsource: session-review\n"
-        "confirmation: required\ncooldown_until: '2000-01-01T00:00:00+00:00'\nimportant: true\n---\n\n本文\n"
-    )
-    path.write_text(content, encoding="utf-8")
-    cooldown = _entry_path(root, "cooldown-only.md")
-    cooldown.write_text(
-        "---\ntype: awi\nstate: inbox\ncooldown_until: '2099-01-01T00:00:00+00:00'\n---\n\n本文\n", encoding="utf-8"
-    )
-    remote = git_repository.init_bare_repository(root.parent / (root.name + "-remote.git"))
-    git_repository.init_repository(root, initial_branch="main", origin=str(remote), commit_message="試験の初期状態")
-    git_repository.run_git(root, "push", "--set-upstream", "origin", "main")
-    relative = path.relative_to(root).as_posix()
-    original = wi_frontmatter.parse_frontmatter(content)
-    assert original is not None
-
-    def assert_saved(value: str) -> None:
-        # 確認状態だけが変わり、期限・重要・投入元・本文を保ってremoteまで送られる。
-        committed = git_repository.run_git(root, "show", f"HEAD:{relative}").stdout
-        expected = ({**original[0], "confirmation": value}, original[1])
-        assert wi_frontmatter.parse_frontmatter(committed) == expected
-        assert path.read_text(encoding="utf-8") == committed
-        assert git_repository.git_output(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD") == relative
-        assert git_repository.git_output(remote, "rev-parse", "refs/heads/main") == git_repository.git_output(
-            root, "rev-parse", "HEAD"
-        )
-        assert not git_repository.git_output(root, "status", "--porcelain")
-
-    page = browser_harness.page
-    detail = page.get_by_role("dialog", name="詳細", exact=True)
-    badge = page.locator(f'.entry-select[data-key="{path.name}"] .confirmation-badge')
-    await page.goto(browser_harness.base_url + "/?filename=" + cooldown.name)
-    await playwright.async_api.expect(detail).to_be_visible()
-    await playwright.async_api.expect(detail.get_by_role("button", name="冷却解除", exact=True)).to_have_count(0)
-    await playwright.async_api.expect(detail.get_by_role("button", name="確認済みにする", exact=True)).to_be_hidden()
-    await playwright.async_api.expect(page.get_by_role("button", name="冷却解除", exact=True)).to_have_count(0)
-    await playwright.async_api.expect(badge).to_have_text("要確認")
-    assert _wi_readiness.calculate_readiness(root, None).confirmation_pending == (path.name,)
-
-    for label, value, next_label in (
-        ("確認済みにする", "confirmed", "要確認に戻す"),
-        ("要確認に戻す", "required", "確認済みにする"),
-    ):
-        await page.goto(browser_harness.base_url + "/?filename=" + path.name)
-        button = detail.get_by_role("button", name=label, exact=True)
-        await playwright.async_api.expect(button).to_be_visible()
-        current = "確認済み" if value == "required" else "要確認"
-        await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text(f"awi / inbox / {current}")
-        async with page.expect_response("**/api/entries/confirmation") as pending_response:
-            await button.click()
-        response = await pending_response.value
-        assert response.ok, await response.text()
-        await playwright.async_api.expect(detail).to_be_hidden()
-        await playwright.async_api.expect(badge).to_have_text("確認済み" if value == "confirmed" else "要確認")
-        assert_saved(value)
-        readiness = _wi_readiness.calculate_readiness(root, None)
-        assert (path.name in readiness.ready) is (value == "confirmed")
-        assert (path.name in readiness.confirmation_pending) is (value == "required")
-        await page.goto(browser_harness.base_url + "/?filename=" + path.name)
-        await playwright.async_api.expect(detail.get_by_role("button", name=next_label, exact=True)).to_be_visible()
-
-    await page.reload()
-    await playwright.async_api.expect(badge).to_have_text("要確認")
-
-
-@pytest.mark.asyncio(loop_scope="session")
-@pytest.mark.parametrize(
-    "stage,initial,label,saved,timing",
-    [
-        ("push", "required", "確認済みにする", "confirmed", "natural"),
-        ("commit", "confirmed", "要確認に戻す", "required", "natural"),
-        ("deferred", "confirmed", "要確認に戻す", "required", "natural"),
-        ("commit", "required", "確認済みにする", "confirmed", "during"),
-    ],
-)
-async def test_confirmation_sync_failure_separates_local_save_and_guides_recovery(
-    browser_harness: _BrowserHarness,
-    monkeypatch: pytest.MonkeyPatch,
-    request: pytest.FixtureRequest,
-    stage: str,
-    initial: str,
-    label: str,
-    saved: str,
-    timing: str,
-) -> None:
-    """確認・取消の後にcommitやpushが完了しない場合、ローカル保存と他ホスト未反映の案内を自動再取得の後も保つ。
-
-    pushの失敗は到達できないremote、commitの失敗は終了1のpre-commit hookで起こす。
-    pushの保留は、push処理が保留を記録した状態をGit同期の判定関数の差し替えで再現する。
-    失敗した操作自身のローカル書込みは外部変更として通知され、詳細を再取得する。
-    `natural`は通知の到着時刻を制御しない。commitの失敗では応答の後に届き、pushの失敗や保留では応答を待つ間に届き得る。
-    `during`は応答を保留し、応答を待つ間に通知を確実に届ける。
-    案内した「今すぐ同期」と`atk wi commit`を実行し、remoteへ届くことまで確かめる。
-    """
-    root = browser_harness.root / f"wi-sync-{stage}-{timing}"
-    monkeypatch.setattr(browser_harness.operations, "private_notes", root)
-    monkeypatch.setattr(browser_harness.operations, "_entry_index", entry_index.EntryIndex(root))
-    # 画面の「今すぐ同期」が実際のGit同期を行うよう、試験用の無操作の同期を本来の処理へ戻す。
-    real_sync = functools.partial(wi_operations.Operations.sync, browser_harness.operations)
-    monkeypatch.setattr(browser_harness.operations, "sync", real_sync)
-    path = _entry_path(root, f"confirmation-sync-{stage}-{timing}.md")
-    content = f"---\ntarget_repo: github.com/example/repo\ntype: awi\nstate: inbox\nconfirmation: {initial}\n---\n\n本文\n"
-    path.write_text(content, encoding="utf-8")
-    remote = git_repository.init_bare_repository(root.parent / (root.name + "-remote.git"))
-    git_repository.init_repository(root, initial_branch="main", origin=str(remote), commit_message="試験の初期状態")
-    git_repository.run_git(root, "push", "--set-upstream", "origin", "main")
-    before = git_repository.git_output(root, "rev-parse", "HEAD")
-    relative = path.relative_to(root).as_posix()
-    hook = root / ".git" / "hooks" / "pre-commit"
-    if stage == "push":
-        git_repository.run_git(root, "remote", "set-url", "origin", str(root.parent / "unreachable-remote.git"))
-    elif stage == "commit":
-        hook.parent.mkdir(parents=True, exist_ok=True)
-        hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-        hook.chmod(0o755)
-    else:
-
-        def push_was_deferred(*_args: Any, **_kwargs: Any) -> bool:
-            return True
-
-        git_sync_module = wi_operations._atk_git_sync  # pylint: disable=protected-access
-        monkeypatch.setattr(git_sync_module, "push_was_deferred", push_was_deferred)
-
-    # 本番の`atk serve`と同じく、private-notesのファイル監視からSSEの変更通知を発行させる。
-    await browser_harness.current_state.start_async(asyncio.get_running_loop())
-    request.addfinalizer(browser_harness.current_state.stop)
-    page = browser_harness.page
-    detail = page.get_by_role("dialog", name="詳細", exact=True)
-    detail_path = f"/api/entries/{path.name}"
-    responded = False
-    reloaded = asyncio.Event()
-
-    def observe(response: playwright.async_api.Response) -> None:
-        nonlocal responded
-        response_path = urllib.parse.urlsplit(response.url).path
-        if response_path.endswith("/api/entries/confirmation"):
-            responded = True
-        elif responded and response.request.method == "GET" and response_path.endswith(detail_path):
-            reloaded.set()
-
-    page.on("response", observe)
-    await page.goto(browser_harness.base_url + "/?filename=" + path.name)
-    button = detail.get_by_role("button", name=label, exact=True)
-    await playwright.async_api.expect(button).to_be_visible()
-    if timing == "during":
-        list_reloaded = asyncio.Event()
-
-        def observe_list(response: playwright.async_api.Response) -> None:
-            if urllib.parse.urlsplit(response.url).path.endswith("/api/entries") and response.request.method == "GET":
-                list_reloaded.set()
-
-        async def hold_until_notified(route: playwright.async_api.Route) -> None:
-            # 応答を保留している間に、ローカル書込みの通知による一覧の再取得が届くのを待ってから応答を返す。
-            fetched = await route.fetch()
-            list_reloaded.clear()
-            page.on("response", observe_list)
-            await asyncio.wait_for(list_reloaded.wait(), timeout=10)
-            await route.fulfill(response=fetched)
-
-        await page.route("**/api/entries/confirmation", hold_until_notified)
-    async with page.expect_response("**/api/entries/confirmation") as pending_response:
-        await button.click()
-    response = await pending_response.value
-    assert response.status == 500
-    assert (await response.json())["code"] == "sync_incomplete"
-
-    # 失敗した操作自身の書込みによる詳細の再取得を待ち、その表示に切り替わった後も案内が残ることを確かめる。
-    await asyncio.wait_for(reloaded.wait(), timeout=10)
-    next_label = "要確認に戻す" if saved == "confirmed" else "確認済みにする"
-    next_button = detail.get_by_role("button", name=next_label, exact=True)
-    await playwright.async_api.expect(next_button).to_be_visible()
-    alert = detail.get_by_role("alert")
-    await playwright.async_api.expect(alert).to_contain_text("同期が完了していません")
-    await playwright.async_api.expect(alert).to_contain_text("他ホストへは反映していない")
-    await playwright.async_api.expect(alert).to_contain_text("詳細を閉じて開き直し")
-    # 再取得で本文は保存後の最新値になるため、通知が応答の前後どちらに届いても操作は有効になる。
-    await playwright.async_api.expect(next_button).to_be_enabled()
-    badge = page.locator(f'.entry-select[data-key="{path.name}"] .confirmation-badge')
-    await playwright.async_api.expect(badge).to_have_text("確認済み" if saved == "confirmed" else "要確認")
-    parsed = wi_frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
-    assert parsed is not None and parsed[0]["confirmation"] == saved
-
-    if stage in ("push", "deferred"):
-        # commit済みでpushだけが残る。案内どおり接続先を直して「今すぐ同期」を押すとremoteへ届く。
-        await playwright.async_api.expect(alert).to_contain_text("このホストでcommitした")
-        await playwright.async_api.expect(alert).to_contain_text("今すぐ同期")
-        local_head = git_repository.git_output(root, "rev-parse", "HEAD")
-        assert local_head != before
-        if stage == "push":
-            assert git_repository.git_output(remote, "rev-parse", "refs/heads/main") == before
-            git_repository.run_git(root, "remote", "set-url", "origin", str(remote))
-        await page.keyboard.press("Escape")
-        await playwright.async_api.expect(detail).to_be_hidden()
-        async with page.expect_response("**/api/sync") as sync_response:
-            await page.get_by_role("button", name="今すぐ同期", exact=True).click()
-        assert (await sync_response.value).ok
-        assert git_repository.git_output(remote, "rev-parse", "refs/heads/main") == local_head
-    else:
-        # ファイルだけが変わりcommitされていない。案内どおり原因を除いて`atk wi commit`を実行するとremoteへ届く。
-        await playwright.async_api.expect(alert).to_contain_text("commitに失敗した")
-        await playwright.async_api.expect(alert).to_contain_text("atk wi commit")
-        assert git_repository.git_output(root, "rev-parse", "HEAD") == before
-        assert git_repository.git_output(remote, "rev-parse", "refs/heads/main") == before
-        assert git_repository.git_output(root, "status", "--porcelain", "--", relative)
-        hook.unlink()
-        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(root))
-        with pytest.raises(SystemExit) as committed:
-            atk.main(["wi", "commit"], home=browser_harness.root)
-        assert committed.value.code == 0
-        assert git_repository.git_output(remote, "rev-parse", "refs/heads/main") == git_repository.git_output(
-            root, "rev-parse", "HEAD"
-        )
-        assert git_repository.git_output(root, "rev-parse", "HEAD") != before
-    committed_text = git_repository.run_git(root, "show", f"HEAD:{relative}").stdout
-    committed_parsed = wi_frontmatter.parse_frontmatter(committed_text)
-    assert committed_parsed is not None and committed_parsed[0]["confirmation"] == saved
-
-    # 詳細を閉じると案内は再表示の対象から外れ、開き直すと保存後の確認状態と次の操作だけが表示される。
-    await page.goto(browser_harness.base_url + "/?filename=" + path.name)
-    await playwright.async_api.expect(detail.get_by_role("button", name=next_label, exact=True)).to_be_enabled()
-    await playwright.async_api.expect(detail.get_by_role("alert")).to_be_hidden()
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_confirmation_conflict_preserves_latest_content(
-    browser_harness: _BrowserHarness,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """詳細取得後の外部更新を確認操作で上書きせず、再取得を案内して同期しない。"""
+    """旧確認キーを持つAWIの本文を保ち、確認ボタン・バッジ・専用APIを公開しない。"""
     _disable_wi_git(monkeypatch)
-    calls: list[dict[str, Any]] = []
-
-    def sync(*args: Any, **kwargs: Any) -> None:
-        calls.append({"args": args, **kwargs})
-
-    monkeypatch.setattr(wi_operations.wi_sync, "commit_and_push", sync)
-    path = _entry_path(browser_harness.root, "confirmation-conflict.md")
+    path = _entry_path(browser_harness.root, "legacy.md")
     content = "---\ntype: awi\nstate: inbox\nconfirmation: required\n---\n\n本文\n"
     path.write_text(content, encoding="utf-8")
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/?filename=" + path.name)
-    button = page.get_by_role("button", name="確認済みにする", exact=True)
-    await playwright.async_api.expect(button).to_be_visible()
-
-    async def update(route: playwright.async_api.Route) -> None:
-        path.write_text(content + "外部更新\n", encoding="utf-8")
-        await route.continue_()
-
-    await page.route("**/api/entries/confirmation", update)
-    await button.click()
-    alert = page.get_by_role("dialog", name="詳細", exact=True).get_by_role("alert")
-    await playwright.async_api.expect(alert).to_contain_text("確認状態を変更できませんでした")
-    await playwright.async_api.expect(alert).to_contain_text("詳細を閉じて開き直して")
-    assert path.read_text(encoding="utf-8") == content + "外部更新\n"
-    assert not calls
-
-
-@pytest.mark.asyncio(loop_scope="session")
-@pytest.mark.parametrize(
-    "kind,state,confirmation_line,confirmed",
-    [
-        ("awi", "inbox", "", True),
-        ("uwi", "inbox", "confirmation: required\n", True),
-        ("awi", "adopted", "confirmation: required\n", True),
-        ("awi", "inbox", "confirmation: required\n", "true"),
-    ],
-)
-async def test_confirmation_rejects_ineligible_entries(
-    browser_harness: _BrowserHarness,
-    monkeypatch: pytest.MonkeyPatch,
-    kind: str,
-    state: str,
-    confirmation_line: str,
-    confirmed: object,
-) -> None:
-    """確認状態を持たない項目・UWI・終了項目・booleanでない指定は公開APIでも保存しない。"""
-    _disable_wi_git(monkeypatch)
-    path = _entry_path(browser_harness.root, "confirmation-ineligible.md")
-    content = f"---\ntype: {kind}\nstate: {state}\n{confirmation_line}---\n\n本文\n"
-    path.write_text(content, encoding="utf-8")
-    response = await browser_harness.page.request.post(
+    detail = page.get_by_role("dialog", name="詳細", exact=True)
+    await playwright.async_api.expect(detail).to_be_visible()
+    await playwright.async_api.expect(page.locator("#confirmation-button")).to_have_count(0)
+    await playwright.async_api.expect(page.locator(".confirmation-badge")).to_have_count(0)
+    response = await page.request.post(
         browser_harness.base_url + "/api/entries/confirmation",
-        data={"filename": path.name, "confirmed": confirmed, "expected_content": content},
+        data={"filename": path.name, "confirmed": True, "expected_content": content},
     )
-    assert response.status == 400
+    # 同じURL形式のGET詳細ルートがあるため、専用POSTの撤去後は405になる。
+    assert response.status == 405
     assert path.read_text(encoding="utf-8") == content
 
 
@@ -352,6 +73,23 @@ def _entry_path(root: pathlib.Path, filename: str) -> pathlib.Path:
     path = wi_entries.entry_path(root, filename, fallback_date=datetime.date(2026, 10, 1))
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_effect_check_uses_generic_metadata_display(browser_harness: _BrowserHarness) -> None:
+    """採用済みAWIの効果判定を既存の汎用frontmatter表示で確認できる。"""
+    path = _entry_path(browser_harness.root, "effect.md")
+    path.write_text(
+        "---\ntype: awi\nstate: adopted\neffect_check: confirmed\nconfirmation: required\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/?filename=" + path.name)
+    dialog = page.get_by_role("dialog", name="詳細", exact=True)
+    await playwright.async_api.expect(dialog).to_be_visible()
+    await playwright.async_api.expect(dialog.locator("#detail-metadata dt").filter(has_text="effect_check")).to_have_count(1)
+    await playwright.async_api.expect(dialog.locator("#detail-metadata dd").filter(has_text="confirmed")).to_have_count(1)
+    await playwright.async_api.expect(dialog.locator("#detail-metadata dt").filter(has_text="confirmation")).to_have_count(1)
 
 
 def _state_text(content: str, state: str) -> str:
@@ -1592,7 +1330,7 @@ async def test_terminal_work_items_reopen_and_hold_through_browser(browser_harne
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_browser_notification_uses_filename_registration_identity(browser_harness: _BrowserHarness) -> None:
-    """初回と既知項目の属性変化を通知せず、新規の未回答UWIと要確認AWIだけを通知する。"""
+    """初回と既知項目の属性変化を通知せず、新規の未回答UWIを通知する。"""
     harness = browser_harness
     page = harness.page
     await page.add_init_script(
@@ -1648,17 +1386,17 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
     await page.wait_for_timeout(100)
     assert await page.evaluate("window.__notificationCalls.length") == 1
 
-    # 要確認のAWIが新しく登録された時だけ、UWIと区別できる題で通知する。確認済みへの切替は通知しない。
+    # 保存済みの旧確認キーはAWIの通知を発生させない。
     awi_path = _entry_path(harness.root, "new-awi.md")
     required_awi = "---\ntype: awi\nstate: inbox\ntarget_repo: new/repo\nconfirmation: required\n---\n\n# 要確認\n"
     awi_path.write_text(required_awi, encoding="utf-8")
     await publish_and_wait()
-    await page.wait_for_function("window.__notificationCalls.length === 2")
-    assert (await page.evaluate("window.__notificationCalls"))[1] == {"title": "新規要確認AWI", "body": "new-awi.md"}
+    await page.wait_for_timeout(100)
+    assert await page.evaluate("window.__notificationCalls.length") == 1
     awi_path.write_text(required_awi.replace("confirmation: required", "confirmation: confirmed"), encoding="utf-8")
     await publish_and_wait()
     await page.wait_for_timeout(100)
-    assert await page.evaluate("window.__notificationCalls.length") == 2
+    assert await page.evaluate("window.__notificationCalls.length") == 1
 
 
 @pytest.mark.asyncio(loop_scope="session")

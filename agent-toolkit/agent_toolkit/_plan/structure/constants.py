@@ -1,6 +1,6 @@
 """計画ファイルの見出し、固定H3および表の行名を定める構造定数と、固定H2の別名の解決。
 
-`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`は、本モジュールの構造定数から導いた受理形式を記述する。
+`agent-toolkit/skills/write-plan/references/plan-file-standards.md`は、本モジュールの構造定数から導いた受理形式を記述する。
 """
 
 from __future__ import annotations

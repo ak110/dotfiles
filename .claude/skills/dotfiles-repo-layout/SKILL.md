@@ -10,7 +10,7 @@ description: >
 # dotfilesのロールとファイル配置
 
 このスキルは、本リポジトリにおけるファイル群と各ロールの対応関係、および配布元と配布先の対応関係をまとめたものである。
-変更した規範を自身のセッションへ適用する手順や、メインエージェントが記述する`プロジェクト規範の指定`については`dotfiles-norm-edit`を参照する。
+変更した規範を自身のセッションへ適用する手順や、メインエージェントが記述する`プロジェクト規範の指定`については`edit-dotfiles-norms`を参照する。
 
 ## 名指し参照の読込方法
 
@@ -18,7 +18,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-norm-edit/SKILL.md` | 判断 | `read:*/skills/dotfiles-norm-edit/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../edit-dotfiles-norms/SKILL.md` | 判断 | `read:*/skills/edit-dotfiles-norms/SKILL.md` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## ロールとファイル群の対応

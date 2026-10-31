@@ -1297,7 +1297,7 @@ class TestBashAtkOutputLoss:
             "atk wi add --dry-run --body-file body.md > dryrun.out 2> dryrun.err",
             "atk wi show sample.md >> saved.out",
             "atk wi list 2>/dev/null",
-            "atk run-script completion-report-check -- report.md > out.txt 2>&1",
+            "atk run-script report-completion-check -- report.md > out.txt 2>&1",
             "atk wi list &>saved.out",
             "atk agents wait 2>/dev/null",
             "atk agents wait 2>&1",

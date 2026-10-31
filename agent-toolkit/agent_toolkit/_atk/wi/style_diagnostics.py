@@ -18,7 +18,7 @@ _BODY_WARNING_CONTEXT = re.compile(
     r'^警告: WI本文の表記診断: 入力元="(?:[^"\\]|\\.)*" 論理本文:\d+:\d+: (?:口語表現|ダッシュ) '
 )
 _BODY_WARNING_SUMMARY = re.compile(r"^警告: " + re.escape(_SUMMARY_PREFIX) + r"[1-9]\d*件(?:\s|$)")
-"""件数だけの要約行。現行版は書かないが、過去の記録を読むsession-reviewが同じ診断として識別する。"""
+"""件数だけの要約行。現行版は書かないが、過去の記録を読むreview-sessionが同じ診断として識別する。"""
 
 
 def is_body_style_diagnostic_warning(text: str) -> bool:

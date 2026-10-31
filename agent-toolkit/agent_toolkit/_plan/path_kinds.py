@@ -81,7 +81,7 @@ def is_plan_adjunct_file(file_path: str) -> bool:
 def is_plan_handoff_file(file_path: str) -> bool:
     """計画root配下の引き継ぎ記録か判定する。
 
-    引き継ぎ記録は計画本体ではないため、`agent-toolkit:plan-mode`の未起動を警告する判定の対象から外す。
+    引き継ぎ記録は計画本体ではないため、`agent-toolkit:write-plan`の未起動を警告する判定の対象から外す。
     起草中の素材を含むため、口語表現があるか確かめる対象からは外さない。
     """
     return _kind_of_file(file_path) is _bundle_kinds.HANDOFF

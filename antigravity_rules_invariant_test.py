@@ -40,7 +40,7 @@ def test_shared_verification_references_resolve_after_migration() -> None:
     source = _TOOLKIT / "share/verification-operations.md"
     text = source.read_text()
     assert "本スキルの`SKILL.md`" not in text
-    assert "`agent-toolkit:plan-mode/references/plan-file-standards.md`「計画した検証の実行」" in text
+    assert "`agent-toolkit:write-plan/references/plan-file-standards.md`「計画した検証の実行」" in text
     assert "`check-execution-operations.md`「保存した実行出力の取得」" in text
     rows = read_triggers.parse_tables(source, _TOOLKIT, strict=True)
     read_triggers.validate_reference_routes(source, _TOOLKIT, rows)

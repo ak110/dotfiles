@@ -541,9 +541,8 @@ atk wi answer <UWIファイル名> '<回答本文>'
 - セッション: Claude CodeとCodexの保存済みセッションの一覧と会話の表示。右ペインの見出しにAPI料金換算の推定費用を表示する
 
 WI画面の状態表示のうち、`answered`は回答済みで次の処理を待つUWI、`cooldown`は期限まで処理を始めないAWI、`needs-verify`は反映後の観測待ちで再処理を待つAWIを示す。
-振り返りのbatchが登録したAWIには「要確認」バッジが付き、内容を確認するまで自動処理されない。要確認のAWIが新しく登録されると、未回答UWIと同じくブラウザー通知が届く。
+振り返りのbatchが登録したAWIも、エージェントが採否を検討して自動処理する。
 未回答のUWIの回答を待つAWIには`blocked`バッジが付き、UWIへ回答すると外れて次の処理で回答とともに処理される。処理中のUWIは`processing`と表示される。
-詳細の「確認済みにする」で処理を許可し、誤って押した場合は「要確認に戻す」で取り消せる。
 
 エージェントが登録したinboxまたはholdのAWIには、詳細画面から`## ユーザーコメント`を追記できる。
 コメントに操作・対象・範囲を具体的に書くと、その範囲の外部操作への承認として扱われる。
@@ -609,8 +608,8 @@ Codexでフックを信頼する操作は[Codex利用ガイド](codex-guide.md#�
 - `agent-toolkit:process-wi`: 対象リポジトリのAWIをレーンへ分けて計画・実装・レビュー・公開する
 - `agent-toolkit:process-wi single-lane`: AWIをレーンへ分けずに1回の起動でまとめて処理する
 - `agent-toolkit:process-wi all-repos`: `process_loop_repositories`の登録全体を1回処理する
-- `agent-toolkit:session-review`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。引数で着眼点を追加できる
-- `agent-toolkit:session-review batch`: 振り返り待ちのセッションをまとめて分析する。既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
+- `agent-toolkit:review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。引数で着眼点を追加できる
+- `agent-toolkit:review-session batch`: 振り返り待ちのセッションをまとめて分析する。既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
 - `agent-toolkit:export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
 - `agent-toolkit:refine-prompt`: プロンプトやスキルの改善点を独立した実行者から集めて反映する
 

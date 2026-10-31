@@ -96,7 +96,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         fix=(
             "保存の契機に達したバンドルだけを"
             "`atk plans commit <~/.claude/plans直下の計画ファイル（メイン）名>`で`private-notes`へ保存せよ。"
-            "契機は現在のセッションがどのスキルから起動したかに応じて`agent-toolkit:plan-mode`の`plan-file-storage.md`が定める。"
+            "契機は現在のセッションがどのスキルから起動したかに応じて`agent-toolkit:write-plan`の`plan-file-storage.md`が定める。"
             "残りのバンドルはその場に残してターンを終了せよ。"
         ),
         removable_cause=True,

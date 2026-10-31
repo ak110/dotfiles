@@ -1,6 +1,6 @@
 """セッション振り返りの証拠抽出のテストが共有する、Claude Code・Codex・Antigravityの記録の組み立てと出力の読み取り。
 
-`agent-toolkit/skills/session-review/scripts/`の照会モードごとのテストが使う。
+`agent-toolkit/skills/review-session/scripts/`の照会モードごとのテストが使う。
 """
 
 from __future__ import annotations

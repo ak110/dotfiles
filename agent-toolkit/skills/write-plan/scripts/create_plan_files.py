@@ -1,0 +1,494 @@
+"""write-planが使う新規計画ファイルの内部作成処理。
+
+このスクリプトは、write-planがmanaged-tempの中へ準備した
+メイン本文と任意のバグ本文を`~/.claude/plans`へ確定するための内部APIを提供する。
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime
+import os
+import pathlib
+import re
+import secrets
+import tempfile
+from collections.abc import Iterator
+
+from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    file_lock as _file_lock,
+)
+from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._plan import bundle_kinds as _bundle_kinds
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    locations as _plan_file,
+)
+from agent_toolkit._plan import owner_records as _owner_records
+from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    structure as _plan_format,
+)
+
+PLAN_STEM_PLACEHOLDER = "__PLAN_STEM__"
+"""本文中で最終計画stemが未確定であることを示す固定プレースホルダー。"""
+PORTABLE_PLAN_PREFIX = _plan_file.PORTABLE_PLAN_PREFIX
+"""計画本文の既存参照とキューmetadataで受理する可搬参照の固定接頭辞。"""
+PLAN_ADJUNCT_REFERENCE_PREFIX = _plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX
+"""計画本文が同じ計画に属する付属ファイルを参照する固定接頭辞。"""
+
+_TOKEN_RE = re.compile(r"[0-9a-f]{4}\Z")
+_PORTABLE_REFERENCE_RE = re.compile(re.escape(PORTABLE_PLAN_PREFIX) + r"[^\s`<>\"']+")
+_ADJUNCT_REFERENCE_RE = re.compile(re.escape(PLAN_ADJUNCT_REFERENCE_PREFIX) + r"[^\s`<>\"']*")
+_FORBIDDEN_NAME_CHARACTERS = frozenset('/\\:*?"<>|')
+_PROCESS_LANE_PATTERN = re.compile(r"lane-(?P<number>[0-9]{2})\Z")
+_TIMESTAMPED_NAME_PATTERN = re.compile(r"[0-9]{2}-[0-9]{4}_.+\Z")
+_DEFAULT_MAX_ATTEMPTS = 100
+
+
+_ROOT_NEXT_ACTION = (
+    "`--home`が実行ユーザーのホームディレクトリを指し、"
+    "`~/.claude/plans`が`~/.claude`の外へのシンボリックリンクでないことを確かめて再実行する"
+)
+_RETRY_NEXT_ACTION = "時間をおいて同じ引数で再実行する。繰り返す場合は`~/.claude/plans`の空き容量と権限を確かめる"
+_SOURCE_NEXT_ACTION = "計画本文の入力ファイルを直し、同じ引数で再実行する"
+
+
+class PlanCreationError(_next_action.ActionableError):
+    """計画ファイルを確定できなかった場合のエラー。理由と次の操作を持つ。"""
+
+
+class _CandidateCollision(Exception):
+    """候補stemが既存ファイルまたは競合で利用できないことを示す。"""
+
+
+def _validate_plan_name(plan_name: str) -> str:
+    """計画ファイル名へ埋め込む名称を検証して返す。"""
+    if not plan_name or plan_name in {".", ".."}:
+        raise ValueError("計画名が空です")
+    if any(character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in plan_name):
+        raise ValueError("計画名にパス区切り文字または制御文字を指定できません")
+    if plan_name.endswith(".md"):
+        raise ValueError("計画名に拡張子を指定できません")
+    return plan_name
+
+
+def process_lane_plan_name(lane_identifier: str, *, now: datetime.datetime | None = None) -> str:
+    """`lane-NN`と実行環境のローカル時刻からprocess-wi用の正規stemを返す。"""
+    match = _PROCESS_LANE_PATTERN.fullmatch(lane_identifier)
+    if match is None:
+        raise ValueError("レーン識別子は`lane-NN`の2桁形式で指定してください")
+    current = datetime.datetime.now().astimezone() if now is None else now
+    if current.tzinfo is None:
+        raise ValueError("計画名の生成時刻にはタイムゾーンが必要です")
+    return f"{current.astimezone():%d-%H%M}_process-wi_レーン{match.group('number')}"
+
+
+def named_plan_name(plan_name: str, *, now: datetime.datetime | None = None) -> str:
+    """名称または完全stemを受け取り、メインによる起動用の正規stemを返す。"""
+    name = _validate_plan_name(plan_name)
+    if _TIMESTAMPED_NAME_PATTERN.fullmatch(name) is not None:
+        return name
+    current = datetime.datetime.now(datetime.UTC) if now is None else now
+    if current.tzinfo is None:
+        raise ValueError("計画名の生成時刻にはタイムゾーンが必要です")
+    return f"{current.astimezone(datetime.UTC):%d-%H%M}_{name}"
+
+
+def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
+    """`~/.claude/plans`を解決し、`~/.claude`外へのsymlinkを拒否する。"""
+    home_path = pathlib.Path(home).expanduser() if home is not None else None
+    claude_root = _host_homes.claude_config_dir(home=home_path).resolve(strict=False)
+    plans_root = _plan_file.working_plans_root(home_path).resolve(strict=False)
+    if not plans_root.is_relative_to(claude_root):
+        raise PlanCreationError("`~/.claude/plans`が~/.claudeの外を指しています", next_action=_ROOT_NEXT_ACTION)
+    return plans_root
+
+
+def _require_plans_root_path(path: pathlib.Path, plans_root: pathlib.Path) -> None:
+    """`path`の実体が解決済み計画root配下にあることを検証する。"""
+    try:
+        resolved = path.resolve(strict=False)
+    except OSError as error:
+        raise PlanCreationError(f"計画作成先を検証できません: {path}", next_action=_ROOT_NEXT_ACTION) from error
+    if not resolved.is_relative_to(plans_root):
+        raise PlanCreationError(f"計画作成先が`~/.claude/plans`の外を指しています: {path}", next_action=_ROOT_NEXT_ACTION)
+
+
+def _read_source(path: pathlib.Path | str) -> bytes:
+    """一時領域の入力本文をUTF-8として読み取る。"""
+    source = pathlib.Path(path).expanduser()
+    content = source.read_bytes()
+    content.decode("utf-8")
+    return content
+
+
+def _replace_placeholder(content: bytes, stem: str) -> bytes:
+    """本文中の固定stemプレースホルダーを最終stemへ置換する。"""
+    return content.replace(PLAN_STEM_PLACEHOLDER.encode("utf-8"), stem.encode("utf-8"))
+
+
+def _candidate_is_taken(directory: pathlib.Path, stem: str) -> bool:
+    """同一ディレクトリに候補stemと衝突する項目があるか判定する。"""
+    prefix = f"{stem}."
+    return any(entry.name.startswith(prefix) for entry in directory.iterdir())
+
+
+def _write_temporary(directory: pathlib.Path, stem: str, suffix: str, content: bytes) -> pathlib.Path:
+    """本文を同一ディレクトリの排他的な一時ファイルへ書き込む。"""
+    file_descriptor, raw_path = tempfile.mkstemp(prefix=f".{stem}.", suffix=suffix, dir=directory)
+    path = pathlib.Path(raw_path)
+    try:
+        with os.fdopen(file_descriptor, "wb") as temporary:
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+    except BaseException:
+        with contextlib.suppress(OSError):
+            path.unlink()
+        raise
+    if path.read_bytes() != content:
+        with contextlib.suppress(OSError):
+            path.unlink()
+        raise PlanCreationError(f"一時ファイルの読み戻し内容が一致しません: {path}", next_action=_RETRY_NEXT_ACTION)
+    return path
+
+
+def _file_identity(path: pathlib.Path) -> tuple[int, int]:
+    """ファイルのdevice/inode識別子を返す。"""
+    stat = path.stat()
+    return stat.st_dev, stat.st_ino
+
+
+def _remove_owned(path: pathlib.Path, identity: tuple[int, int], content: bytes) -> bool:
+    """inodeと内容が一致する自作ファイルだけを回収する。"""
+    try:
+        if _file_identity(path) != identity or path.read_bytes() != content:
+            return False
+        path.unlink()
+    except OSError:
+        return False
+    return True
+
+
+def _portable_reference_values(lines: Iterator[tuple[int, str]]) -> Iterator[tuple[int, str, str]]:
+    """Markdown本文の有効行から固定portable接頭辞を持つ参照値を抽出する。"""
+    for lineno, source in lines:
+        for match in _PORTABLE_REFERENCE_RE.finditer(source):
+            value = match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
+            if value:
+                yield lineno, source, value
+
+
+def _adjunct_reference_values(lines: Iterator[tuple[int, str]]) -> Iterator[tuple[int, str, str]]:
+    """Markdown本文の有効行から付属ファイル参照の固定接頭辞を持つ参照値を抽出する。"""
+    for lineno, source in lines:
+        for match in _ADJUNCT_REFERENCE_RE.finditer(source):
+            yield lineno, source, match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
+
+
+def _check_plan_references(
+    plans: tuple[tuple[pathlib.Path, bytes], ...],
+    main_path: pathlib.Path,
+    private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
+) -> None:
+    """共通resolverで計画本文の参照値を安全に解決できるか確かめる。
+
+    付属ファイル参照は接頭辞を展開せず計画ファイルのディレクトリを基準に解決し、
+    既存の可搬参照は従来どおりprivate-notes基準で解決する。
+    参照の抽出対象はコードフェンスなどを除いたMarkdown本文の有効行に限る。
+    コードフェンス内はユーザー発言の逐語引用を含み、そこに現れる接頭辞は参照ではないためである。
+    """
+    for path, content in plans:
+        text = content.decode("utf-8")
+        for lineno, source in enumerate(text.splitlines(), start=1):
+            if PLAN_STEM_PLACEHOLDER in source:
+                raise PlanCreationError(
+                    f"計画本文に未解決のstemプレースホルダーがあります: {path.name}:{lineno}行目: {source}",
+                    next_action="`~/.claude/plans/__PLAN_STEM__.<拡張子>`の形の参照だけにプレースホルダーを置き、同じ引数で再実行する",
+                )
+        body_lines = tuple(_plan_format.iter_markdown_body_lines(text))
+        for lineno, source, reference in _portable_reference_values(iter(body_lines)):
+            try:
+                _plan_file.resolve_plan_file(reference, private_notes=private_notes, home=home)
+            except (OSError, ValueError) as error:
+                raise PlanCreationError(
+                    f"計画本文の可搬参照が不正です: {path.name}:{lineno}行目: {source}: {reference}: {error}",
+                    next_action=_SOURCE_NEXT_ACTION,
+                ) from error
+        for lineno, source, reference in _adjunct_reference_values(iter(body_lines)):
+            try:
+                _plan_file.resolve_plan_adjunct_reference(reference, plan_path=main_path)
+            except (OSError, ValueError) as error:
+                raise PlanCreationError(
+                    f"計画本文の参照値が不正です: {path.name}:{lineno}行目: {source}: {reference}: {error}",
+                    next_action=_SOURCE_NEXT_ACTION,
+                ) from error
+
+
+def _check_structure(
+    main_path: pathlib.Path,
+    work_dir: pathlib.Path,
+    private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
+) -> None:
+    """確定した計画ファイル群を、構造が基準を満たすかを判定する関数へ渡す。"""
+    import check_plan_file  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    errors, _warnings = check_plan_file.check(
+        main_path,
+        work_dir,
+        private_notes=private_notes,
+        home=home,
+        reject_migration_warnings=True,
+        reject_progress_log_rows=True,
+    )
+    if errors:
+        raise PlanCreationError(
+            "計画の構造が基準を満たしていません: "
+            + " / ".join(errors)
+            + " / 判定条件を定める文書: agent-toolkit/skills/write-plan/references/plan-file-standards.md",
+            next_action=check_plan_file.TARGET_REPO_NEXT_ACTION
+            if all("対象リポジトリが作業ディレクトリのGitルートと一致しない" in error for error in errors)
+            else "列挙した構造の違反を計画本文で直し、対象worktreeの不一致は--work-dirを指定して再実行する",
+        )
+
+
+def _finalize_candidate(
+    directory: pathlib.Path,
+    plans_root: pathlib.Path,
+    stem: str,
+    main_content: bytes,
+    bug_content: bytes | None,
+    work_dir: pathlib.Path,
+    private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
+) -> tuple[pathlib.Path, ...]:
+    """同じstemの全ファイルを排他的に確定し、途中失敗時に部分成果を残さず返す。
+
+    確定した計画が基準を満たすと確認した後、この計画バンドルを所有するセッションと、
+    連続する直接編集を判定する処理が読むセッション状態を記録する。
+    所有セッションを解決できない環境では記録を書かず、作成そのものは成功として扱う。
+    """
+    main_path = directory / _bundle_kinds.MAIN.name_for(stem)
+    targets = [(main_path, main_content, f"{_bundle_kinds.MAIN.suffix}.tmp")]
+    if bug_content is not None:
+        targets.append((directory / _bundle_kinds.BUGS.name_for(stem), bug_content, f"{_bundle_kinds.BUGS.suffix}.tmp"))
+    _require_plans_root_path(directory, plans_root)
+    for path, _content, _suffix in targets:
+        _require_plans_root_path(path, plans_root)
+    temporary_paths: list[pathlib.Path] = []
+    owned: list[tuple[pathlib.Path, tuple[int, int], bytes]] = []
+    try:
+        for _path, content, suffix in targets:
+            temporary_paths.append(_write_temporary(directory, stem, suffix, content))
+
+        for (path, content, _suffix), temporary_path in zip(targets, temporary_paths, strict=True):
+            try:
+                os.link(temporary_path, path)
+            except FileExistsError as error:
+                raise _CandidateCollision from error
+            owned.append((path, _file_identity(path), content))
+
+        for path, content, _suffix in targets:
+            _require_plans_root_path(path, plans_root)
+            if path.read_bytes() != content:
+                raise PlanCreationError(f"確定後の計画本文を読み戻せません: {path}", next_action=_RETRY_NEXT_ACTION)
+        _check_plan_references(tuple((path, content) for path, content, _suffix in targets), main_path, private_notes, home)
+        _check_structure(main_path, work_dir, private_notes, home)
+        _owner_records.record_plan_owner(main_path)
+        return tuple(path for path, _content, _suffix in targets)
+    except BaseException:
+        for path, identity, content in reversed(owned):
+            _remove_owned(path, identity, content)
+        raise
+    finally:
+        for temporary_path in temporary_paths:
+            with contextlib.suppress(OSError):
+                temporary_path.unlink()
+
+
+def _check_bug_input(metadata: _plan_format.PlanMetadata, *, has_bug_input: bool) -> None:
+    """バグ対応計画の`計画ファイル（バグ）`行と入力の有無が一致するか確かめる。
+
+    関連WIの`## 原因分析`が原因分析の記録先となる計画は計画ファイル（バグ）を持たない。
+    関連WIが無い計画は原因分析の記録先が他に無いため、計画内の同行と入力を必須とする。
+    """
+    has_bug_field = _plan_format.PLAN_METADATA_BUG_FIELD in metadata.values
+    if has_bug_field and not has_bug_input:
+        raise PlanCreationError(
+            "計画メタ情報に計画ファイル（バグ）の行がある場合は計画ファイル（バグ）の入力が必要です",
+            next_action="計画ファイル（バグ）の本文を`--bugs-source`で渡すか、計画メタ情報から`計画ファイル（バグ）`の行を除いて再実行する",
+        )
+    if not has_bug_field and has_bug_input:
+        raise PlanCreationError(
+            "計画メタ情報に計画ファイル（バグ）の行が無い場合は計画ファイル（バグ）の入力を指定できません",
+            next_action="`--bugs-source`を外すか、計画メタ情報へ`計画ファイル（バグ）`の行を加えて再実行する",
+        )
+    if not has_bug_field and not metadata.related_wi:
+        raise PlanCreationError(
+            "関連WIが無いバグ対応の計画は、原因分析の記録先として計画ファイル（バグ）の行と入力が必要です",
+            next_action="計画メタ情報へ`計画ファイル（バグ）`の行を加え、その本文を`--bugs-source`で渡して再実行する",
+        )
+
+
+def create_plan_files(
+    main_source: pathlib.Path | str,
+    plan_name: str,
+    *,
+    bug_source: pathlib.Path | str | None = None,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
+    work_dir: pathlib.Path | str | None = None,
+    max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
+) -> tuple[pathlib.Path, ...]:
+    """入力本文を`~/.claude/plans`へ作成し、確定済みパスを返す。
+
+    ``main_source``および任意の``bug_source``はmanaged-tempの中にあるUTF-8本文を指す。
+    private-notesは既存の可搬参照の妥当性を判定するときだけ使い、計画本文は`~/.claude/plans`へ保存する。
+    """
+    if max_attempts <= 0:
+        raise ValueError("max_attemptsは1以上にしてください")
+    name = _validate_plan_name(plan_name)
+    main_content = _read_source(main_source)
+    bug_content = _read_source(bug_source) if bug_source is not None else None
+    sources = [pathlib.Path(main_source)]
+    if bug_source is not None:
+        sources.append(pathlib.Path(bug_source))
+    resolved_sources = [source.expanduser().resolve() for source in sources]
+    if len(set(resolved_sources)) != len(resolved_sources):
+        raise ValueError("計画ファイルと計画ファイル（バグ）に同じ入力ファイルを指定できません")
+
+    metadata, metadata_errors = _plan_format.parse_plan_metadata(main_content.decode("utf-8"))
+    if metadata_errors:
+        raise PlanCreationError("計画メタ情報を解析できません: " + " / ".join(metadata_errors), next_action=_SOURCE_NEXT_ACTION)
+    work_type = metadata.values.get("作業種別") if metadata is not None else None
+    if work_type == "通常変更" and bug_content is not None:
+        raise PlanCreationError(
+            "作業種別が通常変更の場合は計画ファイル（バグ）の入力を指定できません",
+            next_action="`--bugs-source`を外すか、計画メタ情報の作業種別を`バグ対応`へ直して再実行する",
+        )
+    if work_type == "バグ対応" and metadata is not None:
+        _check_bug_input(metadata, has_bug_input=bug_content is not None)
+
+    plans_root = _resolved_plans_root(home)
+    plans_root.mkdir(parents=True, exist_ok=True)
+    _require_plans_root_path(plans_root, plans_root)
+    checked_work_dir = pathlib.Path(work_dir or pathlib.Path.cwd()).expanduser().resolve()
+    notes_for_resolver = pathlib.Path(private_notes).expanduser() if private_notes is not None else None
+
+    lock_path = plans_root / ".agent-toolkit-plan-create.lock"
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        _file_lock.acquire_lock(lock_file)
+        try:
+            _require_plans_root_path(plans_root, plans_root)
+            for attempt in range(max_attempts):
+                if attempt == 0:
+                    stem = name
+                else:
+                    token = secrets.token_hex(2)
+                    if _TOKEN_RE.fullmatch(token) is None:
+                        raise PlanCreationError(f"乱数suffixが4桁16進数ではありません: {token}", next_action=_RETRY_NEXT_ACTION)
+                    stem = f"{name}-{token}"
+                if _candidate_is_taken(plans_root, stem):
+                    continue
+                try:
+                    return _finalize_candidate(
+                        plans_root,
+                        plans_root,
+                        stem,
+                        _replace_placeholder(main_content, stem),
+                        _replace_placeholder(bug_content, stem) if bug_content is not None else None,
+                        checked_work_dir,
+                        notes_for_resolver,
+                        home,
+                    )
+                except _CandidateCollision:
+                    continue
+        finally:
+            _file_lock.release_lock(lock_file)
+    raise PlanCreationError(
+        f"計画ファイル名の衝突を解消できませんでした（試行回数={max_attempts}）", next_action=_RETRY_NEXT_ACTION
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLIから内部の作成処理を開始する。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument(
+        "--main-source",
+        dest="main_source",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="計画ファイルの本文を保存したファイルのパス（本文そのものは受け取らない）",
+    )
+    source_group.add_argument(
+        "--source",
+        dest="main_source",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="`--main-source`の別名。計画ファイルの本文を保存したファイルのパス",
+    )
+    parser.add_argument(
+        "--bugs-source",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="計画ファイル（バグ）の本文を保存したファイルのパス（本文そのものは受け取らない）",
+    )
+    name_group = parser.add_mutually_exclusive_group(required=True)
+    name_group.add_argument(
+        "--name",
+        help="計画の名称またはdd-HHmm_<名称>形式の完全stem。名称だけの場合はUTCの日時を付ける。",
+    )
+    name_group.add_argument(
+        "--lane",
+        help="lane-NN形式のレーン識別子。実行環境のローカル時刻の日時を含むprocess-wi用stemを生成する。",
+    )
+    parser.add_argument(
+        "--private-notes",
+        type=pathlib.Path,
+        metavar="DIR",
+        help="計画本文が参照する保存済み計画を解決するprivate-notesのパス（省略すると`AGENT_TOOLKIT_PRIVATE_NOTES`、既存の`~/private-notes`、OSのデータディレクトリの順に解決する）",
+    )
+    parser.add_argument(
+        "--home",
+        type=pathlib.Path,
+        metavar="DIR",
+        help="`.claude/plans`を置くホームディレクトリのパス（省略すると実行ユーザーのホームを使う）",
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=pathlib.Path,
+        metavar="DIR",
+        default=pathlib.Path.cwd(),
+        help="計画構造の自動チェックで`対象リポジトリ`と一致するかを確かめるGit作業ツリーのパス（省略すると現在のディレクトリを使う）",
+    )
+    args = parser.parse_args(argv)
+    try:
+        plan_name = named_plan_name(args.name) if args.name is not None else process_lane_plan_name(args.lane)
+        paths = create_plan_files(
+            args.main_source,
+            plan_name,
+            bug_source=args.bugs_source,
+            private_notes=args.private_notes,
+            home=args.home,
+            work_dir=args.work_dir,
+        )
+    except _next_action.ActionableError as error:
+        _next_action.report(f"計画ファイルを作成できません: {error.reason}", next_action=error.next_action)
+        return 1
+    except (OSError, UnicodeError, TypeError, ValueError) as error:
+        _next_action.report(
+            f"計画ファイルを作成できません: {error}",
+            next_action="`--name`・`--lane`の値と入力ファイル（UTF-8で読めること）を直し、同じ引数で再実行する",
+        )
+        return 1
+    for path in paths:
+        print(path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

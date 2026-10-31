@@ -33,11 +33,17 @@
 
 ## `atk run-skill`の過去の実行のUWI
 
-一般の確認UWIと報告用UWIは、`../../wi-standards/references/origin-and-approval.md`の保存規則で求めた起動単位と、保存済みscopeが一致する場合に取り込む。モード語以外の自由記述が異なっても同一起動単位として扱う。
+一般の確認UWIと報告用UWIは、`../../wi-standards/references/origin-and-approval.md`の保存規則で求めた起動単位か、目的文の取込対象scopeと保存済みscopeが一致する場合に取り込む。モード語以外の自由記述が異なっても同一起動単位として扱う。
 
-batchモードでは旧保存データのscope "agent-toolkit:session-review-batch"も同じ起動単位として読み取る。通常モードのscopeとは区別する。
+スキル名が`review-session`の場合は、目的文の`過去UWIの取込対象scope:`に列挙された旧scopeも同じ起動単位として読み取る。旧scopeの保存値は次の3形式であり、1行目は通常起動、残りはbatchモードに対応する。保存済みのscopeは変更せず、通常起動とbatchモードを区別する。
 
-`atk run-skill`で起動したセッションは、作業を開始する前に`atk wi show --all --type=uwi --state=active --source=run-skill --target-repo=<対象リポジトリの絶対パス>`を実行する。frontmatterの`scope`が自身の起動単位（スキル名とモードの組。通常起動はスキル名）と一致する項目は、同じ作業の過去の実行で投入されたUWIとして扱う。`atk run-skill`は同じ対象リポジトリに対して同じスキルを反復実行する一連の作業であり、次回起動する`atk run-skill`のセッション自身が「次の実行」に該当する。そのため、「回答後の状態遷移」で定めた他セッションのUWIを無視する規定は、この場面では適用しない。
+```text
+agent-toolkit:session-review
+agent-toolkit:session-review batch
+agent-toolkit:session-review-batch
+```
+
+`atk run-skill`で起動したセッションは、作業を開始する前に`atk wi show --all --type=uwi --state=active --source=run-skill --target-repo=<対象リポジトリの絶対パス>`を実行する。frontmatterの`scope`が自身の起動単位（スキル名とモードの組。通常起動はスキル名）か、目的文の取込対象scopeと一致する項目は、同じ作業の過去の実行で投入されたUWIとして扱う。`atk run-skill`は同じ対象リポジトリに対して同じスキルを反復実行する一連の作業であり、次回起動する`atk run-skill`のセッション自身が「次の実行」に該当する。そのため、「回答後の状態遷移」で定めた他セッションのUWIを無視する規定は、この場面では適用しない。
 
 - すでに回答が得られている項目には、「回答後の状態遷移」の手順1から手順3までを適用し、承認された対応をそのセッション内で実施する（元項目や保持している`agents_server`セッションは存在しないため、手順4と手順5は対象外となる）。
 - まだ回答のない事前承認型UWIは、未回答のまま維持する。同じ対応が再び必要になった場合でも新規のUWIは投入せず、対応の実施を見送る。そのうえで、報告用UWIの`### 未達・持ち越し`に、見送った対応内容と回答待ちである既存UWIのファイル名を記録する。

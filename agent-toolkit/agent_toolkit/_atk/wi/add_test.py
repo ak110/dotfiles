@@ -2621,10 +2621,10 @@ def test_public_add_cooldown_first_save_and_readiness(
         assert result.cooldown_pending == (names if deadline and delta < 0 else ())
 
 
-def test_public_add_confirmation_required_is_saved_and_blocks_readiness(
+def test_public_add_legacy_confirmation_is_saved_without_blocking_readiness(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """本文frontmatterの要確認を保存し、確認されるまで着手可能にしない。"""
+    """旧確認キーを未知キーとして保存し、着手可否に影響させない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, "---\nconfirmation: required\n---\n\n本文\n")
@@ -2638,8 +2638,7 @@ def test_public_add_confirmation_required_is_saved_and_blocks_readiness(
     assert parsed is not None
     assert parsed[0]["confirmation"] == "required"
     result = readiness.calculate_readiness(notes, args.target_repo)
-    assert result.confirmation_pending == (path.name,)
-    assert not result.ready
+    assert result.ready == (path.name,)
 
 
 @pytest.mark.parametrize(
@@ -2650,23 +2649,24 @@ def test_public_add_confirmation_required_is_saved_and_blocks_readiness(
         (["--type=uwi", "--question-type=yes-no"], "required"),
     ],
 )
-def test_public_add_rejects_confirmation_other_than_required_awi(
+def test_public_add_preserves_legacy_confirmation_values(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     extra_args: list[str],
     value: str,
 ) -> None:
-    """投入時の確認済み・誤記の値とUWIへの指定は、ユーザーの確認を経ない状態を作るため保存前に拒否する。"""
+    """AWIとUWIに指定した旧確認キーの値を未知キーとして保持する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, f"---\nconfirmation: {value}\n---\n\n本文\n")
     argv = ["wi", "add", "--target-repo", args.target_repo, "--body-file", args.body_file[0], *extra_args]
     with pytest.raises(SystemExit) as failed:
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
-    assert failed.value.code != 0
-    assert "confirmation" in capsys.readouterr().err
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    assert failed.value.code == 0
+    capsys.readouterr()
+    (saved,) = notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")
+    assert "confirmation:" in saved.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("deadline", ["", "not-a-date", "2026-01-02", "2026-01-02T03:04:05"])

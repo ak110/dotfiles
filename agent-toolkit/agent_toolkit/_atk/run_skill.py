@@ -7,7 +7,7 @@ cron、systemd timer、Windowsのタスクスケジューラーなど端末を�
 モデル候補の解決、可用性判定と利用上限の待機は`atk wi process-loop`と同じ`orchestrator`の関数を呼ぶ。
 子セッションには`atk wi process-loop`用の環境印を渡さない。その印は対話型のCLI本体を停止させる終了工程を
 Stopの条件にするhookを有効にし、自ら最終応答で終わる非対話セッションを時間上限まで終われなくするためである。
-報告用UWIはセッション内の`agent-toolkit:completion-report`が作成し、本コマンドは後処理で報告を作成しない。
+報告用UWIはセッション内の`agent-toolkit:report-completion`が作成し、本コマンドは後処理で報告を作成しない。
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         "--args",
         metavar="TEXT",
         default=None,
-        help="スキルへ渡す任意の文字列。process-wiは先頭語single-lane/all-repos、session-reviewはbatchの完全一致でモードを選び、残りを自由記述として保持する。",
+        help="スキルへ渡す任意の文字列。process-wiは先頭語single-lane/all-repos、review-sessionはbatchの完全一致でモードを選び、残りを自由記述として保持する。",
     )
     parser.add_argument(
         "skill",
@@ -189,7 +189,7 @@ def build_goal(skill: str, skill_args: str | None) -> str:
     """
     mode, free_text = skill_modes.split_mode(skill, skill_args)
     goal = (
-        f"スキル`{skill}`を実行し、その結果を`agent-toolkit:completion-report`の報告用UWIへ保存して、"
+        f"スキル`{skill}`を実行し、その結果を`agent-toolkit:report-completion`の報告用UWIへ保存して、"
         "次の2つの終わり方のどちらかで終えてください。どちらで終えてもこの目標は達成です。"
         "作業の前に`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`"
         "「`atk run-skill`の過去の実行のUWI」を適用してください。"
@@ -201,12 +201,23 @@ def build_goal(skill: str, skill_args: str | None) -> str:
         "\nどちらにも当たらない間（実行できる作業が残る間）は続けてください。"
         "子担当が失敗しても、許可済みの回復手段があれば使って続けてください。"
     )
+    goal += (
+        "\n報告同期の検収は起動元がこのセッションの終了後に行う。"
+        "このセッションの完了条件に含めない。報告用UWIへの保存後に終了を要求してください。"
+    )
+    if skill == "agent-toolkit:review-session" and mode == "batch":
+        goal += (
+            "\nbatchの処理済み範囲の確定も起動元が終了後に行う。"
+            "完遂時は報告用UWIへの保存後に`atk run-script session-review-state -- finish`で分析完了を記録し、"
+            "終了を要求してください。未完了の終了では分析完了を記録しないでください。"
+        )
     if mode is not None:
         goal += f"\n起動モード: {mode}"
     if skill_args is not None:
         goal += f"\nスキルへ渡す引数: {skill_args}"
     if mode is not None:
         goal += f"\nモード語を除いた自由記述: {free_text}"
+    goal += "\n過去UWIの取込対象scope: " + json.dumps(skill_modes.accepted_scopes(skill, skill_args), ensure_ascii=False)
     return goal
 
 
@@ -509,7 +520,7 @@ def _wait_session(
                 _outcome.report_failure(
                     f"報告用UWIの保存が同期契約へ到達していない（ログ: {log_path}）",
                     next_action=(
-                        "ログの実行識別子に対応する報告用UWIを確認し、同じ会話を再開してcompletion-reportで保存する。"
+                        "ログの実行識別子に対応する報告用UWIを確認し、同じ会話を再開してreport-completionで保存する。"
                         "保存済みの場合はWI保存先のcommit・pushを完了してから次回の実行を待つ"
                     ),
                 )

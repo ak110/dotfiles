@@ -214,7 +214,7 @@ def current_plan(
 
 ### {_plan_format.PLAN_METADATA_H3}
 
-- 起動経路: `agent-toolkit:plan-mode`
+- 起動経路: `agent-toolkit:write-plan`
 - 対象リポジトリ: `{repo}`
 {_related_wi_block(related_wi)}
 - 作業種別: {work_type}{bug_line}
@@ -297,7 +297,7 @@ def human_main(
 
 ### {_plan_format.PLAN_METADATA_H3}
 
-- 起動経路: `agent-toolkit:plan-mode`
+- 起動経路: `agent-toolkit:write-plan`
 - 対象リポジトリ: `{repo}`
 {_related_wi_block(related_wi)}
 - 作業種別: {work_type}
@@ -410,7 +410,7 @@ def two_file_main(
 
 ### {_plan_format.PLAN_METADATA_H3}
 
-- 起動経路: `agent-toolkit:plan-mode`
+- 起動経路: `agent-toolkit:write-plan`
 - 対象リポジトリ: `{repo}`
 - 作業種別: {work_type}
 - ベースコミット: `{base}`
@@ -508,7 +508,7 @@ def single_file_plan(
 
 ### {_plan_format.PLAN_METADATA_H3}
 
-- 起動経路: `agent-toolkit:plan-mode`
+- 起動経路: `agent-toolkit:write-plan`
 - 対象リポジトリ: `{repo}`
 - 作業種別: {work_type}
 - ベースコミット: `{base}`

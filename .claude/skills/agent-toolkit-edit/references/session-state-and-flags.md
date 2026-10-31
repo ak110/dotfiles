@@ -11,9 +11,9 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:completion-report/references/claude-hooks-stop.md#「終了工程の証拠」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/claude-hooks-stop.md#「終了工程の証拠」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/references/claude-hooks-stop.md#「終了工程の証拠」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/claude-hooks-stop.md#「終了工程の証拠」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/publish-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:completion-report/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/termination-evidence.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks.md#「hookスクリプトの基本プロトコル」` | 判断 | `section:*/.claude/skills/agent-toolkit-edit/references/claude-hooks.md#「hookスクリプトの基本プロトコル」` |
 
 ## 状態ファイルの設計
@@ -113,12 +113,12 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 
 ## plan系
 
-- `plan_mode_skill_invoked`: plan-modeスキルの起動を記録し、計画ファイルの構造に対する自動チェックを適用するかどうかの判定に使用する
-- `current_plan_file_path`: PostToolUseが、計画ファイルの編集時や公開された計画作成コマンドの出力からファイルパスを記録する。PreToolUse(Skill)がplan-mode起動時にこの値を消去する。UserPromptSubmitのコマンドhookがセッション名を選択する際にこのパスを参照する
+- `plan_mode_skill_invoked`: write-planスキルの起動を記録し、計画ファイルの構造に対する自動チェックを適用するかどうかの判定に使用する
+- `current_plan_file_path`: PostToolUseが、計画ファイルの編集時や公開された計画作成コマンドの出力からファイルパスを記録する。PreToolUse(Skill)がwrite-plan起動時にこの値を消去する。UserPromptSubmitのコマンドhookがセッション名を選択する際にこのパスを参照する
 - `last_hook_session_title`: UserPromptSubmitのコマンドhookが設定したセッション名。現在のセッション名が空であるか、この値と一致している場合に限り、新しい種別や計画名への更新を許可する。同hookが通常状態ファイルへ排他ロック下で保存する。通常状態ファイルと同様の保持期限および`clear`のタイミングで消去される
 - `session_title_kind`: PostToolUse(Skill)、およびスキルの手動起動を受け取ったUserPromptSubmitが記録する命名用の種別（`process-wi`、`single-lane`、`all-repos`、`add-awi`）。UserPromptSubmitのコマンドhookがセッション名を選択する際に参照する。種別が`all-repos`の場合と、process-loopの環境識別印と会話IDが一致している場合（記録された種別を問わない）は、計画名を連結しない統括名`process-wi all-repos`を使う。生存期間は通常状態ファイルと同一とする
 
-## [振り返り](../../../../agent-toolkit/skills/session-review/references/batch.md)・モード系
+## [振り返り](../../../../agent-toolkit/skills/review-session/references/batch.md)・モード系
 
 - `AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH`: hook→run-skill試行ID。`session-review/launches/`のID別JSON/logは起動元・プロセス同一性・診断・状態を持つ。`starting`=未受付、`accepted`=manifest移管、`settled`=正常終了/見送り、`notified`=次SessionStart通知済み。受付前終了を一度通知。実行中・未報告失敗以外は30日後sweepで回収
 - `process_wi_skill_invoked`: process-wi起動フラグ。PostToolUse(Skill)・UserPromptSubmitが記録、`atk agents-exit-session`の機械可読応答で偽へ戻す。セッション終了まで保持する
@@ -147,17 +147,17 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
   `read-guidance:read-trigger:<絶対パス>#sha256:<本文hash>`は未取得資料を書込時に案内した主体を保持する。`pretooluse/read_delivery.py`が`notice.stage_delivery`へ記録を予約し、最終出力に採用された非空の案内本文の実配送時に記録する。同じ主体・本文の未取得が残る再書込を`written_paths`で検出して遮断する。自然文条件の確認候補や、整形後に破棄した案内は記録対象から除外する。通知の回数は判定に使わず、成功した全文取得の被覆で未取得条件を解消する。部分取得・失敗・省略・別主体の取得では未取得状態を維持する。寿命は本マッピングと同じとし、clear・compact時は本文取得状態とともにリセットする。
   純粋Read・静的なBash読取・Skill起動では依存案内を保留して選択情報を保持し、次の非取得操作で未取得を再評価する。ClaudeのBash全文・分割取得は各主体と履歴復元で返却本文と資料の一致・全文被覆を確認する。Claudeメインの通常の`SKILL.md`はSkill起動を要し、`disable-model-invocation: true`の場合だけ成功したRead・Bashの全文被覆を認める。`allow_implicit_invocation=false`だけを指定したスキルは通常のSkill起動を要する。案内・通常観測・履歴・起動本文・圧縮は`read_triggers.skill_invocation_required`を共有する。包装されたstartup-documentは`startup_context`と`active_roles`で共通の`startup_targets`を使い、本文・識別子と取得手段の条件を照合して記録する。
   選択は`ReadTrigger.condition`の自然文と役割を保持する。他役割の行を除き、判断契機では`read:`・`section:`の明示選択と、`confirmation`に一致する確認ツール呼出しを確定側に含める。`AskUserQuestion`・`request_user_input`・`request_user_input_async`の呼出しは確認本文・選択肢の起草契機を観測したものとして扱う。他の未確定な自然文条件は確認候補とする。同一パスの節を集約し、宣言修復後の選択は現行宣言へ接続する。圧縮前の候補は現在の必読案内と遮断の根拠から除外する。
-- `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程に必要な証拠を作業単位で管理・保持する。保持する内容には、作業ごとの成果作業の種別、completion-reportの起動証拠、ツールの呼び出し履歴、判断の記録、遅れて返ってくる応答を元の作業に対応付けるための未完了の呼び出し、ならびに判断の根拠となった人間の入力が含まれる。
+- `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程に必要な証拠を作業単位で管理・保持する。保持する内容には、作業ごとの成果作業の種別、report-completionの起動証拠、ツールの呼び出し履歴、判断の記録、遅れて返ってくる応答を元の作業に対応付けるための未完了の呼び出し、ならびに判断の根拠となった人間の入力が含まれる。
   PreToolUse、PostToolUse、UserPromptSubmitがツール呼び出しと人間の入力を逐次更新し、Stopの`termination_order_advisor`が成果作業と起動証拠の対応関係を読み取る。報告本文、完了の自己申告、起動済みを示す独自フラグなどは保持しない。
   解決済みの呼び出しや入力は更新のたびに除外し、バージョンや形式が合致しない値は破棄してStop判定ログに診断情報を残す。
   生存期間と継承の扱いはセッション状態ファイルと同一とし、別の会話から継承した値は`session_id`の一致を確認してから使用する。
-  - 成果作業と起動証拠: 成功した対象スキルの起動、リポジトリに対する自身の編集作業、計画ファイルの保存、WIの保存、commitやpushなどを`deliverables`へ記録する。成功したcompletion-reportスキルの起動（Claude Code）や、結果として本文が返された`SKILL.md`の読み取り（Codex）は、`completion_report`へ記録する。起動証拠を取得済みの作業に対して、新しい人間の入力があった後にさらに成果作業が発生した場合は、別の新しい作業として管理を開始する
-  - 待機の許可: 成果作業が待機している非同期処理の実行中に、Stop hookが待機を許可する条件は`agent-toolkit:completion-report/references/claude-hooks-stop.md`「終了工程の証拠」に定める。本キーは作業の開始位置（UserPromptSubmitが記録したtranscriptのサイズ）を保持し、Stopがその判定時に参照する
+  - 成果作業と起動証拠: 成功した対象スキルの起動、リポジトリに対する自身の編集作業、計画ファイルの保存、WIの保存、commitやpushなどを`deliverables`へ記録する。成功したreport-completionスキルの起動（Claude Code）や、結果として本文が返された`SKILL.md`の読み取り（Codex）は、`completion_report`へ記録する。起動証拠を取得済みの作業に対して、新しい人間の入力があった後にさらに成果作業が発生した場合は、別の新しい作業として管理を開始する
+  - 待機の許可: 成果作業が待機している非同期処理の実行中に、Stop hookが待機を許可する条件は`agent-toolkit:report-completion/references/claude-hooks-stop.md`「終了工程の証拠」に定める。本キーは作業の開始位置（UserPromptSubmitが記録したtranscriptのサイズ）を保持し、Stopがその判定時に参照する
   - 成果作業の対象: 観測されたリポジトリのルートパスを`repositories`に保持する。直接実行されたGit操作については`-C`などの引数を含めて対象リポジトリを取得し、シェルのディレクトリ移動や環境変数の前置代入によって対象を取得できない操作については`null`を保持する。対象が単一のリポジトリであると確定できる作業に限り、プロジェクト規範に基づく終了工程の省略指定を受理する
   - 委譲先に対するwait判定: `async_targets`とその所有者を確認し、観測義務とは独立して有効なCLI待機所有権や対象登録の有無を共通の読み取り処理で確認する。`pending_observation`が偽であっても待機が有効であれば状態を保持し、両方の処理が完了した段階で証拠不足の判定へ戻す
   - 自身の編集作業: 成功したEdit、Write、`apply_patch`、および既存の静的解析で確定したBashによる書き込み先を、作業ごとの`edits`にリポジトリおよび相対パスとして記録する。Claude Codeの協調モードにおけるメインエージェントでは、Stop hookがこの編集集合と終了時のGit状態を比較し、公開範囲が確定していない編集が含まれている場合は遮断通知に添えて提示し、他主体による差分を誤って取り込まないようにする
   - 公開範囲: メインエージェントが元の指示入力または適用済みの認可に基づいて判断した公開範囲を`publish_scope`に記録する。記録手順は`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`に従う
-  - プロジェクト規範による省略: メインエージェントが`omit-completion`で指定したエージェント向け文書の絶対パス、記録処理がそのパスから読み取った全文、対象リポジトリ、および人間の入力識別子を、作業ごとの`omit_completion`に保持する。`input_id`が省略されている場合は、現在の会話における直近の人間の入力に対応付ける。記録時には、観測された成果作業が単一のリポジトリに対するものであること、規範ファイルの所在、現在のメインエージェント・会話・入力の対応関係を確認し、明示された引用文（`quote`）が規範の全文と一致しているかも確認する。Stop hookにおいても規範ファイルの実体と入力の対応を確認する。有効な省略情報を持つ作業に限り、起動不足の判定を免除する。この免除は次回の判断時に解除され、新しい人間の入力後に発生した成果作業は新規作業として扱われるため、省略設定は引き継がれない。エージェント向け文書の変更や消失が確認された場合は、免除を無効化する。具体的な手順は`agent-toolkit:completion-report`の`references/termination-evidence.md`に従う
+  - プロジェクト規範による省略: メインエージェントが`omit-completion`で指定したエージェント向け文書の絶対パス、記録処理がそのパスから読み取った全文、対象リポジトリ、および人間の入力識別子を、作業ごとの`omit_completion`に保持する。`input_id`が省略されている場合は、現在の会話における直近の人間の入力に対応付ける。記録時には、観測された成果作業が単一のリポジトリに対するものであること、規範ファイルの所在、現在のメインエージェント・会話・入力の対応関係を確認し、明示された引用文（`quote`）が規範の全文と一致しているかも確認する。Stop hookにおいても規範ファイルの実体と入力の対応を確認する。有効な省略情報を持つ作業に限り、起動不足の判定を免除する。この免除は次回の判断時に解除され、新しい人間の入力後に発生した成果作業は新規作業として扱われるため、省略設定は引き継がれない。エージェント向け文書の変更や消失が確認された場合は、免除を無効化する。具体的な手順は`agent-toolkit:report-completion`の`references/termination-evidence.md`に従う
   - 元の入力と再突入: `last_human_input`には直近の人間の入力を保持し、自動通知による再開後であっても元の依頼への帰属関係を維持する。`--context`は、人間の入力の有無にかかわらず現在の会話の`session_id`と作業の`work_id`を返し、その入力を観測できた場合のみ`input_id`と`quote`を添え、観測できていなければ両者を`null`とする。証拠が存在しない場合、別会話や旧バージョンの値である場合、現在のメインエージェントとして特定できない場合、あるいは作業も人間の入力も存在しない場合は取得を拒否する。取得しても判断に必要な証拠条件は緩まず、人間の元の入力、実際の失敗、所有する委譲先の待機状態の検証は、各actionごとの記録処理において厳格に行われる。生存期間と継承の扱いは本キー全体と同一であり、公開範囲、起動証拠、および現在のGit状態から不要な判定を除外する
 
 ## 通知反復系

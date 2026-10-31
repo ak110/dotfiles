@@ -83,7 +83,7 @@ holdとrun-skillを抑止へ含めることと処理候補へ含めることは�
 記録はoriginの正規化URLで持ち、同じoriginの別worktreeと別表記のURLを同一リポジトリとして比べる。
 起動cwdから投入先を推定する案は、別リポジトリから投入する会話を誤判定するため採らない。
 記録はhookが会話の終了で削除する活動JSONと分けて置き、会話を再開した場合は残る記録が再び有効になる。
-同じリポジトリの通常の協調作業、process-wi、session-review、別リポジトリへの投入、会話を持たない補助プロセスは理由にしない。
+同じリポジトリの通常の協調作業、process-wi、review-session、別リポジトリへの投入、会話を持たない補助プロセスは理由にしない。
 作業ツリーの競合は猶予では防がず、process-loop間の処理所有は`process_loop_ownership.py`が別に持つ。
 実行ファイル名と生存PIDだけから活動候補を得る旧方式は、Codexの管理daemonと更新ループで600秒の猶予を生じさせた（2026年10月16日）。
 名前別の除外表を増やす案は別の補助処理と無関係な会話を同じ構造で誤判定するため採らず、作業属性を判定の入力にした。
@@ -199,7 +199,7 @@ OSシグナルや稼働中プロセスへの直接通知は、process-loopが動
 
 ## Codexのprocess-loopセッションの終了
 
-ready項目がなくなると、`agent-toolkit:completion-report`が選定工程で完了した振り返りの結果を含む完了報告を完了し、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。
+ready項目がなくなり公開工程の検収を終えると、`agent-toolkit:report-completion`が元の作業の完了報告を送り、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動になったセッションを非同期に分析する（`design-session-review.md`「完了報告と振り返りの関係」）。その結果は作業完了報告とは独立して届ける。
 起動時の終了能力probeと、停止要求の直前に終了対象を新規識別する扱いは`design-workflow-boundaries.md`「セッションの終了」にある。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
 終了対象を確認できない環境では対話UIに終了案内を表示し、ユーザーが`/exit`を入力すると親の監視ループへ戻る。

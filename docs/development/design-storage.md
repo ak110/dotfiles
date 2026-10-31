@@ -38,7 +38,7 @@
 
 会話が分かる保存物は`create_output_temp`でセッションのmanaged-tempの子へ、会話不明の保存物は一時root直下の独立した領域へ置く。
 同じ内容を複数の場所へ保存しない。`atk agents wait`の本文は`agents-wait/<session_id>.md`の1ファイルだけが持ち、耐久run記録は配送状態と本文のパスを持つ。WI本文の表記診断は標準エラーへ直接書き、16KiBを超える出力だけを共通の保存機構が保存する。handoffの抽出は成功時に`conversation.md`だけを残し、失敗時だけ抽出の両出力を診断として残す。
-保持する保存物は、16KiBを超える`atk`の出力と診断、session-reviewの上限付き索引と全量bundle、会話不明時のhandoffである。
+保持する保存物は、16KiBを超える`atk`の出力と診断、review-sessionの上限付き索引と全量bundle、会話不明時のhandoffである。
 レーンの回収結果とworktree-hookの診断、pytestの実行単位の隔離領域、稼働MCP向けの版固定plugin-rootの複製とleaseも保持する。索引と全量は用途が異なり、plugin-rootとレーンの診断は作業ツリーと寿命が異なる。
 専用の検証証拠（`atk-command/record.json`、`plan-verify-results/results.json`、`exec-review-input/reviews.json`など）の生成機構は撤去した。
 検証結果は既存の返却と引き継ぎ記録へ残す（`design-review-evidence.md`）。

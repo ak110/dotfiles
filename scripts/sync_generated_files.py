@@ -43,7 +43,7 @@ RETURN_TARGETS = (
     ("copilot-review-audit", "skills/process-wi/references/review-audit-launch.md", "監査担当の返却契約", 3),
     ("refine-prompt", "skills/refine-prompt/SKILL.md", "評価担当の返却契約", 3),
     ("defect-investigation", "skills/delegation/references/investigation-delegation.md", "調査担当の返却契約", 3),
-    ("external-write-review", "skills/external-write-review/SKILL.md", "投稿前レビューの返却契約", 3),
+    ("external-write-review", "skills/review-external-writes/SKILL.md", "投稿前レビューの返却契約", 3),
     ("bulk-replace-review", "skills/delegation/references/bulk-replacement.md", "一括置換後レビューの返却契約", 3),
     ("usability-review", "share/usability-review.parent.md", "ユーザビリティレビューの返却契約", 2),
     ("session-termination", "share/session-termination.parent.md", "公開担当の返却契約", 2),

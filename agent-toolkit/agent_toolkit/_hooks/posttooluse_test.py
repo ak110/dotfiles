@@ -643,17 +643,17 @@ def test_git_completion_notice_distinguishes_retries_commits_and_targets(
             continue
         body = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert body.count("報告を書く前に") == 1
-        assert "completion-report" in body
+        assert "report-completion" in body
         assert ("SKILL.md" in body) is codex
     payload["tool_response"] = {"exit_code": 0, "stdout": "[main 1234567] 次のcommit"}
     changed_commit = _run(payload, state_dir=tmp_path)
     assert changed_commit.returncode == 0
-    assert "completion-report" in json.loads(changed_commit.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "report-completion" in json.loads(changed_commit.stdout)["hookSpecificOutput"]["additionalContext"]
     assert not _run(payload, state_dir=tmp_path).stdout
     payload["cwd"] = str(tmp_path / "other-repository")
     changed_target = _run(payload, state_dir=tmp_path)
     assert changed_target.returncode == 0
-    assert "completion-report" in json.loads(changed_target.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "report-completion" in json.loads(changed_target.stdout)["hookSpecificOutput"]["additionalContext"]
     assert not any("completion" in key for key in _read_state(tmp_path, "completion-notice"))
 
 
@@ -710,7 +710,7 @@ def test_git_completion_notice_excludes_non_completion_operations(
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     result = _run(payload, state_dir=tmp_path)
     assert result.returncode == 0
-    assert "completion-report" not in result.stdout
+    assert "report-completion" not in result.stdout
 
 
 def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -1045,9 +1045,9 @@ def test_agent_launch_without_agent_id_records_nothing(tmp_path: pathlib.Path, a
 
 
 class TestPlanModeSkillInvocation:
-    """plan-mode スキル呼び出し検出 (Skill ツール)。"""
+    """write-plan スキル呼び出し検出 (Skill ツール)。"""
 
-    @pytest.mark.parametrize("skill_name", ["agent-toolkit:plan-mode", "plan-mode"])
+    @pytest.mark.parametrize("skill_name", ["agent-toolkit:write-plan", "write-plan"])
     def test_skill_invocation_sets_flag(self, tmp_path: pathlib.Path, skill_name: str):
         sid = "skill-flag"
         _run(
@@ -1217,7 +1217,7 @@ class TestCurrentPlanFilePathTracking:
             {
                 "session_id": sid,
                 "tool_name": "Bash",
-                "tool_input": {"command": "uv run --project /plugin /plugin/skills/plan-mode/scripts/create_plan_files.py"},
+                "tool_input": {"command": "uv run --project /plugin /plugin/skills/write-plan/scripts/create_plan_files.py"},
                 "tool_response": {"stdout": f"{plan_path}\n"},
             },
             state_dir=tmp_path,
@@ -1235,7 +1235,7 @@ class TestCurrentPlanFilePathTracking:
         command = (
             "echo done"
             if scenario == "other-command"
-            else "uv run --project /plugin /plugin/skills/plan-mode/scripts/create_plan_files.py"
+            else "uv run --project /plugin /plugin/skills/write-plan/scripts/create_plan_files.py"
         )
         _run(
             {
@@ -1381,7 +1381,7 @@ class TestPlanFilePostWriteNotice:
         assert result.returncode == 0
         message = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert "CLAUDE_PLUGIN_ROOT" not in message
-        expected_script = pathlib.Path(__file__).resolve().parents[2] / "skills/plan-mode/scripts/check_plan_file.py"
+        expected_script = pathlib.Path(__file__).resolve().parents[2] / "skills/write-plan/scripts/check_plan_file.py"
         assert str(expected_script) in message
         # 空白を含むパスは引用しないと単語分割され、意図しない引数として渡る。
         assert f"--work-dir {shlex.quote(str(work_dir))}" in message
@@ -1406,7 +1406,7 @@ class TestPlanFilePostWriteNotice:
 
     def test_notice_skipped_when_plan_mode_not_invoked(self, tmp_path: pathlib.Path) -> None:
         plan_path = self._make_plan_path(tmp_path)
-        sid = "post-write-no-plan-mode"
+        sid = "post-write-no-write-plan"
         result = _run(
             {
                 "session_id": sid,
@@ -2406,7 +2406,7 @@ class TestRemovedRecordsAreAbsent:
 
             assert result.returncode == 0
             if payload.get("tool_input", {}).get("command") == "git commit --amend --no-edit":
-                assert "agent-toolkit:completion-report" in result.stdout
+                assert "agent-toolkit:report-completion" in result.stdout
             else:
                 assert result.stdout == ""
         state = _read_state(tmp_path, sid)

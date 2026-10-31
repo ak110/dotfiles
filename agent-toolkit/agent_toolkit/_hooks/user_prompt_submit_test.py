@@ -376,26 +376,26 @@ class TestSlashCommandDetection:
     """ホストごとの手動起動でセッション状態フラグが実際の起動と一致することを検証する。"""
 
     def test_claude_full_plan_mode_command_does_not_record_invocation(self, tmp_path: pathlib.Path):
-        sid = "full-plan-mode"
+        sid = "full-write-plan"
         result = _run(
-            {"session_id": sid, "prompt": "/agent-toolkit:plan-mode"},
+            {"session_id": sid, "prompt": "/agent-toolkit:write-plan"},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is None
 
     def test_claude_short_plan_mode_command_does_not_record_invocation(self, tmp_path: pathlib.Path):
-        sid = "short-plan-mode"
+        sid = "short-write-plan"
         result = _run(
-            {"session_id": sid, "prompt": "/plan-mode"},
+            {"session_id": sid, "prompt": "/write-plan"},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is None
 
-    @pytest.mark.parametrize("prompt", ["$agent-toolkit:plan-mode", "$plan-mode"])
+    @pytest.mark.parametrize("prompt", ["$agent-toolkit:write-plan", "$write-plan"])
     def test_codex_plan_mode_command_records_invocation(self, tmp_path: pathlib.Path, prompt: str) -> None:
-        sid = "codex-plan-mode"
+        sid = "codex-write-plan"
         result = _run({"session_id": sid, "prompt": prompt, "model": "gpt-5"}, state_dir=tmp_path)
 
         assert result.returncode == 0
@@ -522,7 +522,7 @@ class TestNonMatchingPrompts:
         result = _run(
             {
                 "session_id": sid,
-                "prompt": "この会話について書きます。\n/plan-mode\n(参考: 上のようにも書けます)",
+                "prompt": "この会話について書きます。\n/write-plan\n(参考: 上のようにも書けます)",
             },
             state_dir=tmp_path,
         )

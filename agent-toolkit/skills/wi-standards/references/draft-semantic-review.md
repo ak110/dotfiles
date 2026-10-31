@@ -1,6 +1,6 @@
 # WI原稿の意味の確認
 
-本書は通常AWIと、報告用を除くUWIに適用する。`agent-toolkit:completion-report`が定義する報告用UWIは、同スキルの`references/report-formats.md`「報告用UWIの確認と保存」と`uwi-format.md`を用いる。
+本書は通常AWIと、報告用を除くUWIに適用する。`agent-toolkit:report-completion`が定義する報告用UWIは、同スキルの`references/report-formats.md`「報告用UWIの確認と保存」と`uwi-format.md`を用いる。
 
 付随型の委譲元、専念型の投入前レビュー担当、および直接起草するメインエージェントは、原稿、元の要求、実際の回答の出所、現物の状態、そして取得済みの証拠を独立して突き合わせる。採否、成立性、完成判定の定義基準は`drafting-completion.md`にあり、wi-standardsの読込表において「調査に入る前」や「原稿を確定する前」に指定された共通基準を適用する。確認側も、起草時に取得済みの証拠と保存結果を再利用する。元の要求がその場での回答や案の確定を求めている場合は、`agent-toolkit:user-confirmation-and-report`「成果物の制限」に照らし合わせ、その場で返答すべき回答内容と後続作業の完成条件とを明確に区別する。
 
@@ -10,7 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../completion-report/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「報告用UWIの確認と保存」` |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |

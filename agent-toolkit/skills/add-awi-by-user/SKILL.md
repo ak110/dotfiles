@@ -38,7 +38,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-completion.md#「対象集合の仕分け」「確定の判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「対象集合の仕分け」「確定の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
@@ -79,7 +79,7 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
    - 本来の作業に付随する別件の登録など、作業の文脈を分ける明確な理由がある場合は、`add-wi.parent.md`に従って委譲を選択する。判断基準が明確な大量の走査処理には軽量な読み取り探索を利用してよく、起草と保存の最終責任はメインエージェントが保持する。
    - 検収の構成は`agent-toolkit:wi-standards`の`references/drafting-workflow.md`「直接起草と独立した検収の選択」に従う。原文と反映内容を読み比べて構造を確認し、同スキルの`references/draft-semantic-review.md`に基づいて文脈を再確認する。独立した検収が必要な場合は、同時に準備した原稿、要求内容、出所、証拠を要求識別子で紐付けて`share/wi-draft-review.parent.md`へ一括して引き渡し、作成主体がレビュー指摘の採否を確定した上で保存する。
    - ユーザー自身しか決定できない未確定事項のみを手順2の質問に戻す。委譲した調査に不足がある場合は元の調査担当へ差し戻す。AWI登録の認可はスキル起動の時点で成立しているため、本文全文を提示して登録可否を一律で確認するような不要なやり取りは追加しない。`carefully`指定時は本文を書く前に次節の手順で方針を確認する。
-4. `atk wi submission end`を実行して投入作業のセッション記録を削除し、出力された`ファイル名`、登録・再利用の結果、検収結果、未達事項を`agent-toolkit:completion-report`の作業完了報告へ集約して送達する。投入成功の要約を別の最終応答にせず、同スキルが定める終了処理まで終える。同期の振り返りは起動しない。
+4. `atk wi submission end`を実行して投入作業のセッション記録を削除し、出力された`ファイル名`、登録・再利用の結果、検収結果、未達事項を`agent-toolkit:report-completion`の作業完了報告へ集約して送達する。投入成功の要約を別の最終応答にせず、同スキルが定める終了処理まで終える。同期の振り返りは起動しない。
 
 ## carefully指定時の方針確認
 

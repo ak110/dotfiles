@@ -1,4 +1,4 @@
-r"""PreToolUse統合フックのうち、TaskStop、agents_serverおよびplan-mode起動の可否を判定する。"""
+r"""PreToolUse統合フックのうち、TaskStop、agents_serverおよびwrite-plan起動の可否を判定する。"""
 
 from __future__ import annotations
 
@@ -48,9 +48,9 @@ AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 
 # --- 計画単位の状態管理 ---
 
-# `Skill`の`skill`引数として許容するplan-modeスキル名。
+# `Skill`の`skill`引数として許容するwrite-planスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
-_PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
+_PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:write-plan", "write-plan"})
 
 
 # --- TaskStop: 初回遮断と再実行窓 ---
@@ -101,7 +101,7 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
 
 
 def _clear_current_plan_file_path(session_id: str) -> None:
-    """plan-mode起動時に前の計画ファイルのパスを消去する。
+    """write-plan起動時に前の計画ファイルのパスを消去する。
 
     Function hooksが同じキーから名前を選択するため、
     新しい計画を始めた後に前の計画名を出力し続けないようにする。

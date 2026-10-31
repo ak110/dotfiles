@@ -208,7 +208,7 @@ How many characters of a successful Bash or PowerShell command's output Claude r
 
 同じ形で上限の前後の大きさのファイルを`cat`させ、ストリームの`tool_use_result`の`persistedOutputPath`の有無で再検証する。
 上限値の解釈が変わった疑いがある場合は、本体のバイナリから`bashOutputMaxChars`の説明を確かめる。
-BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。検索の手順は`.claude/skills/develop-dotfiles/SKILL.md`「ホスト本体のバイナリの検索」に従う。
 
 ## `update-dotfiles`のuv自己更新と実行環境
 
@@ -641,5 +641,5 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 
 dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
 同じ最上位セッションですでにリリースPRをマージ済みの場合、後続の差分は`develop`へのpushとCI成功まで進め、次のセッションのリリースPRへまとめる。
-実行時に従う規範は`dotfiles-release`スキルであり、判定条件、評価の時点および実施手順は同スキルが定める。
+実行時に従う規範は`release-dotfiles`スキルであり、判定条件、評価の時点および実施手順は同スキルが定める。
 導入の経緯と根拠は[concepts-workflows.md](concepts-workflows.md)の「developとmasterのリリース運用」にある。

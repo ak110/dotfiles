@@ -338,22 +338,6 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
             )
         )
 
-    @app.post("/api/entries/confirmation")
-    async def set_confirmation() -> quart.Response:
-        data = _json_object(
-            await _request_json(),
-            allowed={"filename", "confirmed", "expected_content"},
-            required={"filename", "confirmed", "expected_content"},
-        )
-        for name in ("filename", "expected_content"):
-            if not isinstance(data[name], str) or not data[name].strip():
-                raise _wi_operations.WebApiInputError(f"{name}は空でない文字列で指定してください")
-        if not isinstance(data["confirmed"], bool):
-            raise _wi_operations.WebApiInputError("confirmedはbooleanで指定してください")
-        return quart.jsonify(
-            changed=await workers.run(ops.set_confirmation, data["filename"], data["confirmed"], data["expected_content"])
-        )
-
     @app.post("/api/entries/user-comment")
     async def save_user_comment() -> quart.Response:
         data = _json_object(

@@ -454,10 +454,10 @@ def test_material_qualifier_and_japanese_selector(tmp_path):
         ("process-wi single-lane", "process-wi/references/single-lane.md"),
         ("process-wi all-repos", "process-wi/references/all-repos.md"),
         ("process-wi single-lanex", "process-wi/SKILL.md"),
-        ("session-review batch auto", "session-review/references/batch.md"),
-        ("session-review batch review.md", "session-review/references/batch.md"),
-        ("session-review focus.md", "session-review/SKILL.md"),
-        ("session-review batchx", "session-review/SKILL.md"),
+        ("review-session batch auto", "review-session/references/batch.md"),
+        ("review-session batch review.md", "review-session/references/batch.md"),
+        ("review-session focus.md", "review-session/SKILL.md"),
+        ("review-session batchx", "review-session/SKILL.md"),
     ],
 )
 def test_material_mode_invocations_resolve_exactly(tmp_path, invocation, relative):
@@ -621,22 +621,22 @@ def test_single_lane_declarations_cover_phases_without_overlapping_full_reads():
     for suffix in (
         "skills/process-wi/references/selection-procedure.md",
         "skills/wi-standards/SKILL.md",
-        "skills/plan-mode/SKILL.md",
+        "skills/write-plan/SKILL.md",
         "share/single-lane-execution.md",
         "share/exec-review.parent.md",
         "share/verification-evidence.md",
         "skills/commit/references/publish.md",
-        "skills/completion-report/SKILL.md",
+        "skills/report-completion/SKILL.md",
     ):
         assert any(str(target.path).endswith(suffix) for target in targets), suffix
     for suffix, condition in (
         ("selection-procedure.md", "対象WIの選定"),
-        ("plan-mode/SKILL.md", "計画の要否"),
+        ("write-plan/SKILL.md", "計画の要否"),
         ("exec-review.parent.md", "実装に着手する前"),
         ("verification-evidence.md", "検証結果を記録する前"),
         ("review-loop-coordination.md", "レビュー指摘への対応"),
         ("commit/references/publish.md", "公開する前"),
-        ("completion-report/SKILL.md", "終了処理の前"),
+        ("report-completion/SKILL.md", "終了処理の前"),
     ):
         assert any(
             any(str(target.path).endswith(suffix) for target in row.targets)

@@ -48,7 +48,7 @@ def _plan_with_uncovered_requirement(adopted_scope: str) -> str:
 
 
 _PLAN_FILE_STANDARDS = (
-    pathlib.Path(__file__).resolve().parents[2] / "skills" / "plan-mode" / "references" / "plan-file-standards.md"
+    pathlib.Path(__file__).resolve().parents[2] / "skills" / "write-plan" / "references" / "plan-file-standards.md"
 )
 
 
@@ -71,7 +71,7 @@ def _wi_source(*, source: bool, trailing_user_comment: bool = False, answer: boo
     """WIファイルへ保存する本文を組み立てる。"""
     frontmatter = ["---", "state: inbox"]
     if source:
-        frontmatter.append(f"{_plan_format.PLAN_WI_SOURCE_KEY}: agent-toolkit:session-review")
+        frontmatter.append(f"{_plan_format.PLAN_WI_SOURCE_KEY}: agent-toolkit:review-session")
     frontmatter.append("---")
     sections = ["# 要求", "", "本文。"]
     if answer:
