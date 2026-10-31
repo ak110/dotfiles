@@ -419,10 +419,13 @@ def run_upgrade_check(
     runner: Runner = subprocess.run,
     registry: UserEnvironmentRegistry | None = None,
     profile_env: Mapping[str, str] | None = None,
+    keep_verification_root: bool = False,
 ) -> None:
     r"""ローカルremoteを用いて旧版から現行版への更新を終了まで検証する。
 
     検証はユーザーの永続状態を前後で変えないことも成功条件とする。
+    `keep_verification_root`は、job終了時に破棄される使い捨てのCI runnerで検証rootの削除を省く。
+    Windowsでは導入物を含む検証rootの削除だけで約1分を要するためである。
     Windowsでは`HKCU\\Environment`を検証前の状態へ戻し、両プラットフォームで通常profile側の監視ディレクトリの
     直下の項目名を前後で比べる。差分があれば、隔離の漏れとして検証の時点で失敗させる。
     """
@@ -448,7 +451,15 @@ def run_upgrade_check(
     profile_before = snapshot_profile(watch_dirs)
     saved_registry = registry.read() if registry is not None else None
     try:
-        _run_isolated_upgrade(source_repo, platform_name, old_oid, current_oid, pathlib.Path(uv_path), runner=runner)
+        _run_isolated_upgrade(
+            source_repo,
+            platform_name,
+            old_oid,
+            current_oid,
+            pathlib.Path(uv_path),
+            runner=runner,
+            keep_verification_root=keep_verification_root,
+        )
     except BaseException:
         # 検証自体の失敗を優先して返すため、差分は元の例外を保ったまま標準エラーへ書く。
         leaks = _restore_and_compare(registry, saved_registry, watch_dirs, profile_before)
@@ -494,9 +505,12 @@ def _run_isolated_upgrade(
     uv_path: pathlib.Path,
     *,
     runner: Runner,
+    keep_verification_root: bool,
 ) -> None:
     """検証homeで旧版を初期適用し、現行版への更新を実行して更新後HEADを確かめる。"""
-    with tempfile.TemporaryDirectory(prefix="update-dotfiles-upgrade-") as temp_name:
+    with tempfile.TemporaryDirectory(prefix="update-dotfiles-upgrade-", delete=not keep_verification_root) as temp_name:
+        if keep_verification_root:
+            print(f"検証rootを削除せずに残す: {temp_name}")
         temp_root = pathlib.Path(temp_name)
         bare_repo = temp_root / "remote.git"
         home = temp_root / "home"
@@ -596,9 +610,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=("linux", "windows"), required=True)
     parser.add_argument("--repo", type=pathlib.Path, default=pathlib.Path.cwd())
+    parser.add_argument(
+        "--keep-verification-root",
+        action="store_true",
+        help="検証rootを削除せずに終了する。job終了時に破棄される使い捨てのCI runnerだけで指定する",
+    )
     args = parser.parse_args()
     try:
-        run_upgrade_check(args.repo.resolve(), args.platform)
+        run_upgrade_check(args.repo.resolve(), args.platform, keep_verification_root=args.keep_verification_root)
     except (OSError, ValueError, UpgradeCheckError) as error:
         print(
             f"update-dotfiles旧版更新検証に失敗した: {error}。上記の対処を行い、"

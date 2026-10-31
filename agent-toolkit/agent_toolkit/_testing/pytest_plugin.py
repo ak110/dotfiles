@@ -11,6 +11,7 @@ import pathlib
 import re
 import sys
 import tempfile
+import zlib
 from collections.abc import Callable, Generator, Iterator
 from multiprocessing import resource_tracker
 from typing import Any
@@ -108,6 +109,9 @@ def pytest_configure(config: pytest.Config) -> None:
     保存先そのものを検証するテストは、明示した環境の辞書か`delenv`で上書きする。
     """
     _validate_import_root(config)
+    # 不正な分割指定は、xdistのworkerが収集を始める前に1回だけ報告する。
+    if (shard := config.getoption("test_shard")) is not None:
+        _parse_test_shard(shard)
     os.environ.setdefault(plugin_environment.RUNTIME_DATA_ENV, str(plugin_environment.runtime_data(os.environ)))
     stack = contextlib.ExitStack()
     config.add_cleanup(stack.close)
@@ -152,6 +156,49 @@ def pytest_configure(config: pytest.Config) -> None:
                 managed_temp.cleanup_managed_temp(directory)
 
     stack.callback(release_resources)
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """CIで1つの試験集合を複数runnerへ分ける`--test-shard`を登録する。"""
+    parser.addoption(
+        "--test-shard",
+        metavar="INDEX/COUNT",
+        default=None,
+        help="収集した試験をnode IDのCRC32でCOUNT個へ分け、INDEX番目（1始まり）だけを実行する",
+    )
+
+
+def _parse_test_shard(value: str) -> tuple[int, int]:
+    """`INDEX/COUNT`を検証し、0始まりの番号と分割数を返す。"""
+    index_text, separator, count_text = value.partition("/")
+    if separator and index_text.isdecimal() and count_text.isdecimal():
+        index, count = int(index_text), int(count_text)
+        if 1 <= index <= count:
+            return index - 1, count
+    raise pytest.UsageError(
+        f"--test-shardの値が不正です: {value!r}。1以上COUNT以下のINDEXを`--test-shard=INDEX/COUNT`の形で指定してください"
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """`--test-shard`の指定時は、担当外の試験を選択解除する。
+
+    node IDの文字列だけから担当を決めるため、xdistの各workerと各runnerが同じ集合へ同じ分割を与え、
+    全分割を合わせると各試験がちょうど1回実行される。収集順や試験の追加に依存しない。
+    試験ファイル単位でなく試験単位で分けるのは、多数のparametrizeを持つ重いファイルを1つのrunnerへ偏らせないためである。
+    """
+    value = config.getoption("test_shard")
+    if value is None:
+        return
+    index, count = _parse_test_shard(value)
+    selected: list[pytest.Item] = []
+    deselected: list[pytest.Item] = []
+    for item in items:
+        shard = zlib.crc32(item.nodeid.encode("utf-8")) % count
+        (selected if shard == index else deselected).append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = selected
 
 
 @pytest.hookimpl(wrapper=True)

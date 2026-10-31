@@ -260,7 +260,7 @@ def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[s
 
 
 def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str, object]) -> None:
-    """Python 3.15のlint・直下pytest・toolkit pytestを独立runnerへ分ける。"""
+    """Python 3.15のlint・直下pytest・3分割したtoolkit pytestを独立runnerへ分ける。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
     strategy = workflow_mapping(job["strategy"])
     matrix = workflow_mapping(strategy["matrix"])
@@ -268,7 +268,15 @@ def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str,
     assert include == [
         {"python-version": "3.15", "check": "lint", "check-name": "python-lint (3.15)"},
         {"python-version": "3.15", "check": "pytest-root", "check-name": "pytest (3.15)"},
-        {"python-version": "3.15", "check": "pytest-toolkit", "check-name": "pytest-toolkit (3.15)"},
+        *(
+            {
+                "python-version": "3.15",
+                "check": "pytest-toolkit",
+                "shard": f"{index}/3",
+                "check-name": f"pytest-toolkit (3.15, {index}/3)",
+            }
+            for index in range(1, 4)
+        ),
     ]
     steps = workflow_steps(job)
     lint = next(step for step in steps if step.get("name") == "Python 3.15 pytest以外の検査")
@@ -285,14 +293,94 @@ def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str,
     assert 'test "${#targets[@]}" -gt 0' in root_script
     assert root_script.splitlines()[-1] == 'uv run --frozen pytest -v --maxfail=0 "${targets[@]}"'
     assert toolkit["run"] == (
-        "pyfltr ci --work-dir agent-toolkit --commands=pytest --pytest-args='-v --maxfail=0' agent-toolkit"
+        "pyfltr ci --work-dir agent-toolkit --commands=pytest"
+        ' --pytest-args="-v --maxfail=0 --test-shard=$TEST_SHARD" agent-toolkit'
     )
+    assert workflow_mapping(toolkit["env"])["TEST_SHARD"] == "${{ matrix.shard }}"
     for check, step in (("pytest-root", root), ("pytest-toolkit", toolkit)):
         assert str(step["if"]).endswith(f"matrix.check == '{check}'")
     cache = next(step for step in steps if str(step.get("uses", "")).startswith("actions/cache@"))
     cache_with = workflow_mapping(cache["with"])
     assert "${{ matrix.python-version }}" in str(cache_with["key"])
     assert "${{ matrix.check }}" in str(cache_with["key"])
+    # 同じcheckの分割jobが同じキーへ保存を競合しない。
+    assert "${{ strategy.job-index }}" in str(cache_with["key"])
+    assert "${{ strategy.job-index }}" in str(cache_with["restore-keys"])
+
+
+class _JobsResponse(io.BytesIO):
+    headers: typing.ClassVar[dict[str, str]] = {}
+
+
+@pytest.mark.parametrize(
+    ("owns", "conclusions", "expected_exit"),
+    [
+        ("true", ["success", "success", "success"], 0),
+        ("true", ["success", "failure", "success"], 1),
+        ("true", ["success", "success"], 1),
+        ("true", ["success", "skipped", "success"], 1),
+        ("false", [], 0),
+        ("", ["success", "success", "success"], 1),
+    ],
+)
+def test_pytest_toolkit_result_requires_every_shard(
+    workflow_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    owns: str,
+    conclusions: list[str],
+    expected_exit: int,
+) -> None:
+    """必須checkの集約jobは、全分割jobの成功を最新試行のjob一覧から確かめた場合だけ成功する。
+
+    応答fieldはGitHub REST list-jobs-for-a-workflow-runの公開schemaに従う。
+    """
+    jobs = workflow_jobs(workflow_data)
+    job = workflow_mapping(jobs["pytest-toolkit-result"])
+    assert job["needs"] == ["common-ci-owner", "python-lint"]
+    assert job["if"] == "${{ !cancelled() }}"
+    assert job["permissions"] == {"actions": "read"}
+    assert job["name"] == (
+        "${{ needs.common-ci-owner.outputs.owns == 'false' && 'pytest-toolkit (3.15) (non-owner)' || 'pytest-toolkit (3.15)' }}"
+    )
+    (step,) = workflow_steps(job)
+    environment = workflow_mapping(step["env"])
+    matrix = workflow_mapping(workflow_mapping(workflow_mapping(jobs["python-lint"])["strategy"])["matrix"])
+    shard_names = [
+        str(workflow_mapping(entry)["check-name"])
+        for entry in typing.cast(list[object], matrix["include"])
+        if workflow_mapping(entry)["check"] == "pytest-toolkit"
+    ]
+    assert len(shard_names) == int(str(environment["SHARD_COUNT"]))
+    script = str(step["run"])
+    script_path = tmp_path / "result.py"
+    script_path.write_text(script.split("\n", 1)[1].rsplit("\nPY", 1)[0], encoding="utf-8")
+    for key, value in {
+        "OWNS": owns,
+        "OWNER_REASON": "非所有の理由",
+        "SHARD_COUNT": str(environment["SHARD_COUNT"]),
+        "GITHUB_API_URL": "https://api.github.com",
+        "GITHUB_REPOSITORY": "ak110/dotfiles",
+        "GITHUB_RUN_ID": "123",
+        "GH_TOKEN": "test-token",
+    }.items():
+        monkeypatch.setenv(key, value)
+
+    def urlopen(request: urllib.request.Request, **_kwargs: object) -> io.BytesIO:
+        parsed = urllib.parse.urlsplit(request.full_url)
+        assert parsed.path == "/repos/ak110/dotfiles/actions/runs/123/jobs"
+        assert urllib.parse.parse_qs(parsed.query) == {"filter": ["latest"], "per_page": ["100"]}
+        listed = [{"name": "python-lint (3.15)", "conclusion": "success"}]
+        listed += [{"name": name, "conclusion": conclusion} for name, conclusion in zip(shard_names, conclusions, strict=False)]
+        return _JobsResponse(json.dumps({"total_count": len(listed), "jobs": listed}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    try:
+        runpy.run_path(str(script_path))
+        code: object = 0
+    except SystemExit as exited:
+        code = exited.code
+    assert code == expected_exit
 
 
 _RELEASE_PULL_REQUEST_CONDITIONS = (
@@ -317,9 +405,12 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
         "update-dotfiles-upgrade-windows",
         "test-windows",
         "python-lint",
+        "pytest-toolkit-result",
         "browser-e2e",
         "rust-lint",
     ]
+    # 集約jobは分割jobの終了を待つ別構成のため、test_pytest_toolkit_result_requires_every_shardで確かめる。
+    common_jobs.remove("pytest-toolkit-result")
     owner = workflow_mapping(workflow_jobs(workflow_data)["common-ci-owner"])
     assert owner["permissions"] == {"actions": "read"}
     outputs = workflow_mapping(owner["outputs"])

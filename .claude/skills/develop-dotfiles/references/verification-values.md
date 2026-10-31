@@ -103,13 +103,13 @@ CI workflowの全体基準は、対象HEADの実行開始から必須ジョブ�
 
 CIの`python-lint (3.15)`ジョブは、ローカルの`make test`から一部のチェックを除外する。
 実行コマンドは`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types`である。
-Python 3.15のpytestは直下の`pytest (3.15)`と`pytest-toolkit (3.15)`が独立して担当する。
+Python 3.15のpytestは直下の`pytest (3.15)`と、toolkitを3分割した`pytest-toolkit (3.15, 1/3)`〜`(3.15, 3/3)`が独立して担当し、必須checkの`pytest-toolkit (3.15)`が全分割の成功を集約する。
 以下のジョブはローカルの`make test`では実行されない。
 
 - `test-windows`ジョブ: Windows実機環境でのchezmoi適用、Windows固有のテスト、および公開ランチャーの動作確認
 - `update-dotfiles-upgrade (windows)`ジョブ: Windows環境における旧バージョンからのupdate-dotfilesによるアップデート検証
 - `test-linux`ジョブ: `install.sh`およびchezmoiの実際の適用確認
-- `pytest (3.15)`・`pytest-toolkit (3.15)`ジョブ: Python 3.15・最低Git 2.34.1で直下とtoolkitのテストを各1回実行し、skills配下と横断不変条件も含める
+- `pytest (3.15)`・`pytest-toolkit (3.15, N/3)`ジョブ: Python 3.15・最低Git 2.34.1で直下とtoolkitのテストを各1回実行し、skills配下と横断不変条件も含める。toolkitの試験は`--test-shard`で3分割の各jobへちょうど1回ずつ割り当てる
 - `rust-lint`ジョブ: `rust/claude-statusline/`のcargoによる検証
 - `plugin-version`ジョブ: `develop`へのpushで、push前の公開済みcommitとagent-toolkit・agent-basicsの配布物の差分と版数を比べる検証
 - `browser-e2e`ジョブ: 実際のブラウザーを用いたE2Eテスト（ローカル環境では`make test-browser`で実行可能）

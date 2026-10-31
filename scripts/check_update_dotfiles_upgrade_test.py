@@ -6,6 +6,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import time
 import types
 
@@ -804,3 +805,36 @@ def test_upgrade_check_reports_missing_chezmoi(tmp_path: pathlib.Path, monkeypat
 
     with pytest.raises(upgrade.UpgradeCheckError, match="chezmoiが見つからない"):
         upgrade.run_upgrade_check(tmp_path, "linux", runner=runner, registry=None, profile_env=_profile_env(tmp_path))
+
+
+@pytest.mark.parametrize("keep", [False, True])
+def test_verification_root_is_kept_only_when_requested(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, keep: bool
+) -> None:
+    """使い捨てrunner向けの指定時だけ検証rootを残し、既定では検証の終了時に回収する。"""
+    monkeypatch.setenv("UV", str(tmp_path / "uv"))
+    (tmp_path / "uv").write_bytes(b"uv")
+    temp_root = tmp_path / "temp"
+    temp_root.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp_root))
+    applied: list[pathlib.Path] = []
+
+    def runner(arguments, **kwargs):
+        if arguments[0] == "chezmoi":
+            applied.append(pathlib.Path(kwargs["cwd"]))
+        return _git_answers(arguments)
+
+    upgrade.run_upgrade_check(
+        tmp_path,
+        "linux",
+        runner=runner,
+        profile_env=_profile_env(tmp_path),
+        keep_verification_root=keep,
+    )
+
+    assert len(applied) == 1
+    checkout = applied[0]
+    # 偽のrunnerはcloneしないため、検証が作成する検証rootそのものの残存で判定する。
+    verification_root = checkout.parents[1]
+    assert verification_root.parent == temp_root
+    assert verification_root.is_dir() == keep

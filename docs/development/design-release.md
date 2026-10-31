@@ -33,6 +33,7 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 
 共通CIは`push`と`master`向け`pull_request`の全イベントでjobを開始し、job表示名とmatrixを評価する。
 共通jobにはjob-level `if`を置かず、step-level条件で非所有markerと既存実処理を切り替える。
+例外は分割した試験の結果を集約する`pytest-toolkit (3.15)`で、後述のとおり分割jobの失敗時にも結果を残すため`!cancelled()`を置く。
 
 `test-linux`と`update-dotfiles-upgrade (windows)`は全履歴を取得し、現行HEADの時刻から約72時間前の祖先を選ぶ。
 管理一時ディレクトリ内へローカルbare remote、旧版checkoutおよび隔離HOMEを構成し、旧版をchezmoiで適用する。
@@ -72,11 +73,18 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 
 Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有し、`test-windows`はWindows固有pytest、公開ランチャー、通常profileへのchezmoi適用とpost-applyの確認を所有する。両job間に依存関係を置かず、更新検証の通常profile監視に必要なMozilla予約タスク停止は更新検証jobが実行する。
 
-`python-lint`のmatrixは`python-lint (3.15)`、直下の`pytest (3.15)`、`pytest-toolkit (3.15)`の3要素であり、それぞれ別runnerで並行する。
+`python-lint`のmatrixは`python-lint (3.15)`、直下の`pytest (3.15)`、toolkitを3分割した`pytest-toolkit (3.15, 1/3)`〜`(3.15, 3/3)`の5要素であり、それぞれ別runnerで並行する。
 直下はGit管理下のテストを明示してpytestへ渡し、toolkitは同サブプロジェクトを起点にskills配下を含めて実行する。
-横断不変条件も所属する集合で各1回実行し、両pytestで最低Git 2.34.1、4worker、workstealと環境隔離を維持する。
+toolkitの各分割jobは同じ集合を収集し、`agent_toolkit._testing.pytest_plugin`の`--test-shard`がnode IDのCRC32で各試験をちょうど1つの分割へ割り当てる。
+1runnerのtoolkit pytestが約16分を要し、CI全体の所要基準10分（`.claude/skills/develop-dotfiles/references/verification-values.md`「テストとCIの所要基準」）を超えたため分割した。
+横断不変条件も所属する集合で各1回実行し、全pytestで最低Git 2.34.1、4worker、workstealと環境隔離を維持する。
 dotfilesとagent-toolkitはユーザーの方針により過去のPython版をサポートせず、対応するPythonを3.15へそろえて同じ版でCIを実行する。
-cache keyにPython版と実行種別の両方を含める。
+cache keyにPython版、実行種別、matrix要素の番号を含め、分割jobが同じキーへ同時に保存して競合しないようにする。
+
+`python-lint`の終了後に動く集約job`pytest-toolkit-result`がrequired checkの`pytest-toolkit (3.15)`を所有する。
+`needs`の結果はmatrix全体の集約でlintと直下pytestの失敗も含むため、同jobは`actions: read`でrunの最新試行のjob一覧を照会し、3分割jobがすべて成功した場合だけ成功する。
+分割jobが失敗しても集約jobをskipさせないよう`!cancelled()`を置く。skipされたrequired checkはマージを遮断しないためである。
+非所有runでは他の共通jobと同じく`(non-owner)`名で成功し、所有判定jobが出力を返さなかった場合は失敗する。
 
 statuslineのCargo versionとbase・head versionおよびtagの確認は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branchおよびrelease条件を追加の限定に使わない。
