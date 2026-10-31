@@ -287,13 +287,29 @@ def _creation_epoch(path: pathlib.Path) -> float | None:
 def _birth_epoch(path: pathlib.Path) -> float:
     """保存先の年月を決める日時を返す。
 
-    作成日時を取得できない環境では更新日時を使う。
-    保存先の年月は更新日時からも決まるため、取得不能を停止条件にしない。
+    作成日時を取得できない環境では、日付付きの名前は更新日時以前で
+    名前の日を満たす最も近い有効日付を使い、一般名は更新日時を使う。
     """
     creation = _creation_epoch(path)
     if creation is not None:
         return creation
-    return float(path.stat(follow_symlinks=False).st_mtime)
+    modified_epoch = float(path.stat(follow_symlinks=False).st_mtime)
+    match = _MIGRATED_MAIN_RE.fullmatch(path.name)
+    if match is None or not 1 <= int(match.group("day")) <= 31:
+        return modified_epoch
+    day = int(match.group("day"))
+    modified = datetime.datetime.fromtimestamp(modified_epoch)
+    month = modified.replace(day=1)
+    # 月を跨いだ編集でも、保存先の年月と名前の日が有効な日付を構成するようにする。
+    while True:
+        try:
+            candidate = month.replace(day=day)
+        except ValueError:
+            pass
+        else:
+            if candidate <= modified:
+                return candidate.timestamp()
+        month = (month - datetime.timedelta(days=1)).replace(day=1)
 
 
 def file_birth_date(path: pathlib.Path) -> datetime.date:

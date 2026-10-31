@@ -7,8 +7,10 @@ import subprocess
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import locations as _plan_file
+from agent_toolkit._testing import git_repository
 
 
 def test_file_birth_date_falls_back_to_mtime_when_creation_time_is_unavailable(
@@ -69,12 +71,14 @@ def test_creation_epoch_rejects_non_positive_gnu_stat_birth_time(
     assert _plan_file._creation_epoch(plan) is None  # pylint: disable=protected-access
 
 
+@pytest.mark.parametrize("filename", ["plan.md", "31-0900_計画.md"])
 def test_file_birth_date_prefers_creation_time_over_mtime(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    filename: str,
 ) -> None:
     """作成日時を取得できる場合は更新日時より作成日時を優先する。"""
-    plan = tmp_path / "plan.md"
+    plan = tmp_path / filename
     plan.write_text("# plan\n", encoding="utf-8")
     creation_epoch = datetime.datetime(2025, 3, 3, 12).timestamp()
     modified_epoch = datetime.datetime(2024, 2, 2, 12).timestamp()
@@ -89,6 +93,50 @@ def test_file_birth_date_prefers_creation_time_over_mtime(
     assert _plan_file.file_birth_date(plan) == expected
 
 
+@pytest.mark.parametrize("suffix", ["0900_計画.md", "計画-d4f9.md", "legacy-name.md"])
+@pytest.mark.parametrize(
+    ("modified", "day", "expected_month"),
+    [
+        ((2026, 11, 1), 31, "2026/10"),
+        ((2026, 1, 1), 31, "2025/12"),
+        ((2026, 3, 1), 31, "2026/01"),
+        ((2026, 11, 15), 20, "2026/10"),
+        ((2026, 11, 15), 15, "2026/11"),
+        ((2026, 11, 15), 1, "2026/11"),
+        ((2024, 3, 1), 29, "2024/02"),
+        ((2025, 3, 1), 29, "2025/01"),
+    ],
+)
+def test_portable_plan_file_uses_latest_valid_named_day_without_creation_time(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+    modified: tuple[int, int, int],
+    day: int,
+    expected_month: str,
+) -> None:
+    """作成日時が無い日付名の参照は、更新日以前の最も近い有効年月を指す。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "notes"
+    working = home / ".claude/plans" / f"{day:02d}-{suffix}"
+    working.parent.mkdir(parents=True)
+    working.write_text("# 計画\n", encoding="utf-8")
+    modified_epoch = datetime.datetime(*modified, 12).timestamp()
+    os.utime(working, (modified_epoch, modified_epoch))
+
+    def unavailable_creation(_path: pathlib.Path, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(_plan_file, "_creation_epoch", unavailable_creation)
+
+    portable = _plan_file.to_portable_plan_file(working, private_notes=notes, home=home)
+
+    assert portable == f"$(atk config get private_notes)/plans/{expected_month}/{working.name}"
+    relative = f"{expected_month}/{working.name}"
+    assert _plan_file.validate_migrated_plan_relative_path(relative) == pathlib.Path(relative)
+    assert _plan_file.resolve_plan_file(portable, private_notes=notes, home=home) == working.resolve()
+
+
 def test_portable_plan_file_round_trips_inside_private_notes(tmp_path: pathlib.Path) -> None:
     """新plans rootの絶対パスを固定可搬表記へ変換し、同じ実体へ復元できる。"""
     private_notes = tmp_path / "private-notes"
@@ -100,6 +148,42 @@ def test_portable_plan_file_round_trips_inside_private_notes(tmp_path: pathlib.P
 
     assert portable == "$(atk config get private_notes)/plans/2026/08/30-計画保存先移行-d4f9.md"
     assert _plan_file.resolve_plan_file(portable, private_notes=private_notes) == plan.resolve()
+
+
+def test_cli_saves_and_checks_out_month_crossing_bundle_without_creation_time(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """公開CLIの保存と取得で、月跨ぎ31日名と付属ファイルの内容を保持する。"""
+    notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "plan-location-test")
+    home = tmp_path / "home"
+    working = _plan_file.working_plans_root(home)
+    working.mkdir(parents=True)
+    name = "31-0900_計画.md"
+    contents = {name: "# 計画\r\n".encode(), "31-0900_計画.bugs.md": "# 調査\n".encode()}
+    for filename, content in contents.items():
+        path = working / filename
+        path.write_bytes(content)
+        modified_epoch = datetime.datetime(2026, 11, 1, 12).timestamp()
+        os.utime(path, (modified_epoch, modified_epoch))
+
+    def unavailable_creation(_path: pathlib.Path, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(_plan_file, "_creation_epoch", unavailable_creation)
+
+    with pytest.raises(SystemExit) as saved:
+        atk.main(["plans", "commit", name, "--skip-push"], home=home)
+    assert saved.value.code == 0
+    assert all(not (working / filename).exists() for filename in contents)
+    assert (notes / "plans/2026/10" / name).is_file()
+    assert {path.name: path.read_bytes() for path in (notes / "plans/2026/10").iterdir()} == contents
+
+    with pytest.raises(SystemExit) as checked_out:
+        atk.main(["plans", "checkout", f"2026/10/{name}"], home=home)
+    assert checked_out.value.code == 0
+    assert {filename: (working / filename).read_bytes() for filename in contents} == contents
 
 
 def test_portable_plan_file_resolves_working_copy_before_saved_copy(tmp_path: pathlib.Path) -> None:
