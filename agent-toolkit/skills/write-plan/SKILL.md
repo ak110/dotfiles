@@ -41,6 +41,7 @@ description: >
 | Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/codex-runtime.md` | |
 | 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`の冒頭、「計画ファイルの構成」から「検証と公開工程」まで、「初回起草の雛形」「要件の成立性」 | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#冒頭`、`section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「計画ファイルの構成」から「検証と公開工程」まで`、`section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「初回起草の雛形」「要件の成立性」` | |
 | 計画の採否を左右する技術的不確実性を解消する前 | `agent-basics:writing-standards/references/design-heuristics.md`の「設計案の予備選別」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」` | |
+| 計画で観測手段と実行環境を確定する前 | `agent-basics:writing-standards/references/testing.md`の「検証単位の選定」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` | |
 | WIの原因分析を補うか計画ファイル（バグ）を書く前 | `references/plan-file-standards.md`の「バグ調査」 | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「バグ調査」` | |
 | 進捗を記録する前と、中断後に再開する前 | `references/plan-file-standards.md`の「進捗ログ」 | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「進捗ログ」` | |
 | 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` | 操作 | `bash:atk plans commit` | |
