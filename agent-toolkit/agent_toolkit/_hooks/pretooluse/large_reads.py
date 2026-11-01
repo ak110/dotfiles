@@ -34,6 +34,7 @@ lazy from agent_toolkit._hooks import plugin_resources
 _DEFAULT_BYTE_THRESHOLD = 48 * 1024
 _BYTE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_BYTES"
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
+_SEARCH_COMMANDS = frozenset({"rg", "grep", "egrep", "fgrep"})
 _notice = formatter("pretooluse")
 
 
@@ -168,6 +169,23 @@ def _read_operands(tokens: Sequence[str], *, include_partial: bool, first_line_o
         if program in {"{print}", "{print$0}"}:
             return (tokens[2],)
     return ()
+
+
+def arguments_are_data(tokens: Sequence[str]) -> bool:
+    """読取・検索の解析が、全引数をプログラムとして実行しないデータとして扱う呼出しかを返す。
+
+    本文表示（`cat`・`less`・`more`）は表示の被演算子を確定できる場合、`head`・`tail`は常に、
+    `sed`・`awk`は読取の解析が全文取得と確定した形だけを対象にする。検索は、外部プログラムを起動する
+    `rg --pre`を除く。他のコマンドは引数の扱いを解析できないため偽を返す。
+    """
+    if not tokens:
+        return False
+    name = pathlib.PurePath(tokens[0]).name
+    if name in _SEARCH_COMMANDS:
+        return not any(token == "--pre" or token.startswith(("--pre=", "--pre-glob")) for token in tokens[1:])
+    if name in {"head", "tail"}:
+        return True
+    return bool(_read_operands(tokens, include_partial=True))
 
 
 def sed_read_range(tokens: Sequence[str]) -> tuple[str, int, int | None] | None:
@@ -391,7 +409,7 @@ def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
         if not tokens or is_unknown_word(tokens[0]):
             continue
         name = pathlib.PurePath(tokens[0]).name
-        search = name in {"rg", "grep", "egrep", "fgrep"}
+        search = name in _SEARCH_COMMANDS
         operands = list(_read_operands(tokens, include_partial=True))
         if search:
             if "--files" in tokens or "--help" in tokens or "--version" in tokens:

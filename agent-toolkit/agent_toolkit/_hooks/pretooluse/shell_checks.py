@@ -27,6 +27,7 @@ lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_
 lazy from agent_toolkit._common.shell_tokens import is_atk_command, strip_redirections
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
+lazy from agent_toolkit._hooks.pretooluse import large_reads
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 _GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
@@ -275,7 +276,7 @@ def _process_kill_word_only_in_data(invocations: Sequence[BashInvocation]) -> bo
 
     `pkill`・`killall`自体を実行する呼出し、引数からプログラムを実行するコマンドの引数に現れる場合、
     値の決まらない引数を持つ呼出し、解析できない入力（呼出しが空）は、データ引数と確定できないため偽を返す。
-    読取コマンド名の許可リストは持たず、実行位置の解析結果だけで判定する。
+    読取・検索の解析（`large_reads.arguments_are_data`）が引数をデータと確定した呼出しは、実行名の形の語もデータとして扱う。
     """
     if not invocations:
         return False
@@ -289,9 +290,10 @@ def _process_kill_word_only_in_data(invocations: Sequence[BashInvocation]) -> bo
         executor = name in _ARGUMENT_EXECUTORS or is_python_token(name)
         if executor and any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in tokens[1:]):
             return False
-        # 引数から実行するコマンドの集合は網羅できないため（`docker exec`、`npm exec`など）、
-        # 語が実行名の形で現れる引数（語そのもの、または後ろに空白が続く本文）はデータと確定しない。
-        if any(_process_kill_command_shaped(token) for token in tokens[1:]):
+        # 引数から実行するコマンドの集合は網羅できないため（`docker exec`、`npm exec`など）、読取・検索の解析が
+        # データと確定した呼出しを除き、語が実行名の形で現れる引数（語そのもの、または後ろに空白が続く本文）は
+        # データと確定しない。
+        if not large_reads.arguments_are_data(tokens) and any(_process_kill_command_shaped(token) for token in tokens[1:]):
             return False
     return True
 
@@ -353,7 +355,8 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
             and index not in safe_indices
             for index, token in enumerate(arguments)
         )
-    if command_name not in _PROCESS_KILL_LITERAL_SEARCH_COMMANDS:
+    # 検索語のリテラルは許可するが、外部プログラムを起動する検索の指定（`rg --pre`）は実行位置と区別できない。
+    if command_name not in _PROCESS_KILL_LITERAL_SEARCH_COMMANDS or not large_reads.arguments_are_data(raw_tokens):
         return True
     return not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens[1:])
 

@@ -664,6 +664,11 @@ class TestBashProcessKillByPattern:
             "cat -- pkill.log",
             "wc -l killall.txt pkill-notes.md",
             'head -n 5 "/tmp/pkill dir/output.log"',
+            # 読取・検索の解析が引数をデータと確定する呼出しは、終了コマンド名そのものの引数もデータとして扱う。
+            "cat -- /usr/bin/pkill",
+            "grep -n pkill /tmp/worker.log",
+            "rg -F killall -- /tmp/worker.log",
+            "tail -n 20 /tmp/pkill",
         ],
     )
     def test_normal_path_arguments_are_not_process_termination(self, tmp_path, command, codex):
@@ -697,7 +702,9 @@ class TestBashProcessKillByPattern:
             "docker exec worker pkill -f app",
             "mise exec -- pkill -f worker",
             "npm exec -- killall worker",
+            # 読取・検索の解析が引数の扱いを確定できない呼出しと、外部プログラムを起動する検索の指定。
             "echo killall",
+            "rg --pre pkill needle /tmp/worker.log",
         ],
     )
     def test_path_data_does_not_exempt_executable_termination(self, tmp_path, command, codex):
