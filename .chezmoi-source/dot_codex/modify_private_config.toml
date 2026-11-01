@@ -11,7 +11,8 @@
 {{- $config = setValueAtPath "personality" "none" $config -}}
 {{- /* マウスホイール1ノッチで会話画面を5行動かし、tmuxとherdrのシェル履歴（1ノッチ5行）とそろえる。 */ -}}
 {{- $config = setValueAtPath "tui.mouse_scroll_speed" 5.0 $config -}}
-{{- /* 頻繁な自動圧縮による待ち時間と進行の阻害を避けるため、コンテキスト長と自動圧縮の境界を固定する。 */ -}}
+{{- /* 頻繁な自動圧縮による待ち時間と進行の阻害を避けるため、コンテキスト長と自動圧縮の境界を固定する。
+       目的と変更時に観測する条件はdocs/development/concepts-runtime.md「Codexの文脈長設定」に記録している。 */ -}}
 {{- $config = setValueAtPath "model_context_window" 1000000 $config -}}
 {{- $config = setValueAtPath "model_auto_compact_token_limit" 900000 $config -}}
 {{- /* 権限判定と実行範囲はCodexの自動レビュー経路へ委ねる。 */ -}}
@@ -20,8 +21,9 @@
 {{- /* 推論の要約と表示はCodexのデフォルトへ委ねる。 */ -}}
 {{- $config = deleteValueAtPath "model_reasoning_summary" $config -}}
 {{- $config = deleteValueAtPath "hide_agent_reasoning" $config -}}
-{{- /* 実験的なコンテキスト管理と工程ごとのeffort指定を利用する。 */ -}}
-{{- $config = setValueAtPath "features.context_management.experimental_mode" true $config -}}
+{{- /* 実験的なコンテキスト管理は、保存の成否と独立に要約なしで文脈を破棄できるため無効にし、通常の会話圧縮を使う。
+       工程ごとのeffort指定は利用する。理由と適用範囲はdocs/development/operations.md「Codexの実験的コンテキスト管理」にある。 */ -}}
+{{- $config = setValueAtPath "features.context_management.experimental_mode" false $config -}}
 {{- $config = setValueAtPath "features.reasoning_effort_override" true $config -}}
 {{- /* process-wiの並列レーンを制約しないためのスレッド上限。 */ -}}
 {{- $config = setValueAtPath "agents.max_concurrent_threads_per_session" 100 $config -}}

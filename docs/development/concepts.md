@@ -69,6 +69,8 @@
 
 ## [`review-session`](concepts-runtime.md#review-session)
 
+## [Codexの文脈長設定](concepts-runtime.md#codexの文脈長設定)
+
 ## [確認・合意の運用](concepts-governance.md#確認合意の運用)
 
 ## [依存とサプライチェーン](concepts-governance.md#依存とサプライチェーン)
