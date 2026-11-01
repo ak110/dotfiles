@@ -8,13 +8,13 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| Xの投稿本文・日時・添付写真を取得する前 | `x-posts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/x-posts.md` |
+| X投稿などの外部資料の本文・日時・添付画像を取得する前 | `../../fetch-sources/SKILL.md` | 判断 | `read:agent-basics:*/skills/fetch-sources/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「要件と認可」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「要件と認可」` |
 
 ## 情報源と裏付けの手段
 
-X（旧Twitter）の投稿本文、日時、添付画像の取得には、読込表にある専用の基準を適用する。
+X（旧Twitter）の投稿など外部資料の本文、日時、添付画像の取得手順は、`agent-basics:fetch-sources`に従う。
 
 有料記事や会員限定などの理由で二次資料の一部しか閲覧できない場合は、確認できる書誌情報、リンク、見出し、著者名などを手がかりにして、その資料が依拠している一次資料を探して本文を確認する。
 元論文、公式発表、公式ドキュメント、公式リポジトリ、報告元のIssue、公開データセットなどを調査対象とし、結論や提案の根拠は一次資料の該当箇所に置く。

@@ -1,7 +1,7 @@
 # Xの投稿本文と添付写真の取得
 
 本書は、X（旧Twitter）の投稿を調査資料として参照する際に、対象の投稿を一意に特定し、本文、投稿日時、添付写真を取得するための手順をまとめたものである。
-引用のルールや事実確認の裏付け手順は、`investigation.md`に従う。
+引用のルールや事実確認の裏付け手順は、`agent-basics:writing-standards`の`references/investigation.md`に従う。
 
 ## 名指し参照の読込方法
 
@@ -9,7 +9,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
 
 ## 投稿の同定と本文の取得
 
@@ -40,4 +40,4 @@ curl -sS --max-time 60 -o <画像保存先の絶対パス> "<画像URL>"
 
 Windows環境のcurlでSSL証明書の失効確認エラーが発生した過去の環境では、`--ssl-no-revoke`オプションを付与することで通信が成功した。同様のエラーが実際に発生した環境に限り、失効確認を無効化するセキュリティ上の影響を理解した上でこのオプションを選択する。その場合でも、証明書自体の検証処理は維持する。
 
-APIの参照先仕様、過去環境での観測条件や再検証手順を記録している。詳細は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/x-posts.md：投稿の同定と本文の取得：2026年10月10日」を参照する。
+APIの参照先仕様、過去環境での観測条件や再検証手順を記録している。詳細は`docs/development/audit-records.md`の「agent-basics/skills/fetch-sources/references/x-posts.md：投稿の同定と本文の取得：2026年10月10日」を参照する。

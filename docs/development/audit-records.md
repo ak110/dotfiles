@@ -1206,7 +1206,7 @@ MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すた
 入れ子を独立した節へ移して各項目を1行に戻すと、再び一致0件であった。
 再検証は同じ順序付きリストについて入れ子を含む写しと含まない写しを作成し、`--commands=textlint`を指定した同じコマンドで一致件数を比べる。
 
-## agent-basics/skills/writing-standards/references/x-posts.md：投稿の同定と本文の取得：2026年10月10日
+## agent-basics/skills/fetch-sources/references/x-posts.md：投稿の同定と本文の取得：2026年10月10日
 
 2026年10月10日、FxEmbedの公開原本を読解した。API版とURLは[API introduction](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)、v1の処理は[src/realms/api/router.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/realms/api/router.ts)、応答の`code`・`message`・`tweet`は[src/embed/status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)、本文・日時・写真の属性は[api-status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-status.ts)と[api-schemas.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-schemas.ts)へ対応付けた。v1は`/:handle/status/:id`、v2は`/2/`付きであり、資料のv1手順をv2の応答構造へ読み替えない。
 
