@@ -617,6 +617,62 @@ class TestEditNoEditor:
 class TestNoninteractiveEdit:
     """editサブコマンドの本文ファイル指定による非対話編集を検証する。"""
 
+    @pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+    @pytest.mark.parametrize(
+        ("stored_source", "replacement", "agent_environment", "accepted"),
+        [
+            ("human", "human", True, True),
+            (None, "human", True, False),
+            ("agent", "human", True, False),
+            ("human", "agent", True, True),
+            ("agent", "human", False, True),
+        ],
+    )
+    def test_public_edit_human_source_contract(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        entry_type: str,
+        stored_source: str | None,
+        replacement: str,
+        agent_environment: bool,
+        accepted: bool,
+    ) -> None:
+        """AWI・UWIの編集は既存humanを保持し、エージェントによる新規humanを保存しない。"""
+        notes = _setup_notes(tmp_path)
+        if entry_type == "awi":
+            path = _write_awi_file(notes, "entry.md", body="編集前", source=stored_source)
+        else:
+            source_line = f"\nsource: {stored_source}" if stored_source is not None else ""
+            path = _write_uwi_entry(
+                notes,
+                "entry.md",
+                frontmatter="target_repo: github.com/example/foo\ntype: uwi\nquestion_type: yes-no" + source_line,
+            )
+        original = path.read_text(encoding="utf-8")
+        for name in _AGENT_ENVIRONMENT_VARIABLES:
+            monkeypatch.delenv(name, raising=False)
+        if agent_environment:
+            monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        message = f"---\nsource: {replacement}\n---\n\n編集後"
+        with pytest.raises(SystemExit) as edited:
+            atk.main(_edit_body_args(tmp_path, path.name, message), home=tmp_path)
+        assert edited.value.code == (0 if accepted else 1)
+        saved = path.read_text(encoding="utf-8")
+        if accepted:
+            parsed = frontmatter_parser.parse_frontmatter(saved)
+            assert parsed is not None
+            assert parsed[0]["source"] == replacement
+            assert "編集後" in parsed[1]
+        else:
+            assert saved == original
+            error = capsys.readouterr().err
+            assert "human" in error
+            assert "起動スキル名（プラグイン接頭辞を除く）" in error
+            assert "agent" in error
+
     def test_awi_body_updates_without_editor_and_preserves_metadata(
         self,
         monkeypatch: pytest.MonkeyPatch,

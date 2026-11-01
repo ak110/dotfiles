@@ -447,10 +447,20 @@ def _require_agent_source(frontmatter: dict[str, object], source: str | None) ->
     """
     raw_source = frontmatter.get("source", source)
     item_source = raw_source if isinstance(raw_source, str) else source
-    if is_agent_environment() and not item_source:
+    if not is_agent_environment():
+        return
+    if not item_source:
         raise WebInputError(
             "エージェント環境ではsourceの明示が必須です。",
             next_action="--sourceオプション、または本文先頭のfrontmatterで指定してください。",
+        )
+    if item_source == "human":
+        raise WebInputError(
+            "エージェント環境ではsourceにhumanを指定できません。",
+            next_action=(
+                "--sourceまたは本文先頭のfrontmatterのsourceへ、起動スキル名（プラグイン接頭辞を除く）を指定する。"
+                "スキルが無い場合はagentを指定して再実行する"
+            ),
         )
 
 

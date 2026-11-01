@@ -772,6 +772,118 @@ def test_cmd_add_rejects_missing_source_in_agent_environment(
     assert "--source" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+@pytest.mark.parametrize(
+    ("cli_source", "body_source", "accepted"),
+    [
+        ("human", None, False),
+        (None, "human", False),
+        ("agent", "human", False),
+        ("human", "agent", True),
+        ("agent", None, True),
+        (None, "add-awi-by-user", True),
+        ("session-review", None, True),
+        (None, "unknown-skill", True),
+    ],
+)
+def test_public_add_validates_effective_source(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    entry_type: str,
+    cli_source: str | None,
+    body_source: str | None,
+    accepted: bool,
+) -> None:
+    """frontmatterを優先した最終sourceでAWI・UWIの投入可否を決める。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("AI_AGENT", "1")
+    body = _AGENT_AWI_BODY if entry_type == "awi" else "変更を承認するか？"
+    message = f"---\nsource: {body_source}\n---\n\n{body}" if body_source is not None else body
+    args = _cmd_add_args(tmp_path, message, source=cli_source, entry_type=entry_type)
+    if accepted:
+        _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    else:
+        with pytest.raises(SystemExit) as rejected:
+            _run_public_add(args, notes, _FIXED_DT, tmp_path)
+        assert rejected.value.code == 1
+        error = capsys.readouterr().err
+        assert "human" in error
+        assert "起動スキル名（プラグイン接頭辞を除く）" in error
+        assert "agent" in error
+    saved = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    assert len(saved) == int(accepted)
+    if accepted:
+        parsed = frontmatter.parse_frontmatter(saved[0].read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["source"] == (body_source or cli_source)
+
+
+@pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+def test_public_add_rejects_human_source_without_partial_save(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, entry_type: str
+) -> None:
+    """複数本文の後続1件がhumanなら先行本文も保存しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("AI_AGENT", "1")
+    body = _AGENT_AWI_BODY if entry_type == "awi" else "変更を承認するか？"
+    args = _cmd_add_args(tmp_path, body, source="agent", entry_type=entry_type)
+    second = tmp_path / "human.md"
+    second.write_text(f"---\nsource: human\n---\n\n{body}", encoding="utf-8")
+    args.body_file.append(str(second))
+    with pytest.raises(SystemExit) as rejected:
+        _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    assert rejected.value.code == 1
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+@pytest.mark.parametrize("source", [None, "human"])
+def test_public_add_preserves_human_environment_source(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str | None
+) -> None:
+    """人間環境ではsourceの欠落と明示humanを従来どおり保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
+        monkeypatch.delenv(name, raising=False)
+    _run_public_add(_cmd_add_args(tmp_path, _AGENT_AWI_BODY, source=source), notes, _FIXED_DT, tmp_path)
+    saved = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    parsed = frontmatter.parse_frontmatter(saved.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0].get("source") == source
+
+
+@pytest.mark.parametrize("source", [None, "human", "agent", "session-review", "unknown-skill"])
+def test_public_batch_preserves_source(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str | None) -> None:
+    """エージェント環境のbatchは明示sourceと欠落を原文どおり保持する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    source_line = f"source: {source}\n" if source is not None else ""
+    original = f"---\ntype: awi\nstate: inbox\ntarget_repo: github.com/example/repo\n{source_line}---\n\n本文\n"
+    body_file = tmp_path / "batch.md"
+    body_file.write_text("### 20260101-000000-001.md [inbox]\n" + original, encoding="utf-8")
+    with pytest.raises(SystemExit) as imported:
+        atk.main(["wi", "add", "--batch", "--body-file", str(body_file)], home=tmp_path, now=_FIXED_DT)
+    assert imported.value.code == 0
+    assert (notes / "2026" / "01" / "20260101-000000-001.md").read_text(encoding="utf-8") == original
+
+
+def test_public_add_help_explains_source_contract(capsys: pytest.CaptureFixture[str]) -> None:
+    """公開ヘルプが仕様で定めたsourceの指定方法と人間環境の省略を案内する。"""
+    with pytest.raises(SystemExit) as shown:
+        atk.main(["wi", "add", "--help"])
+    assert shown.value.code == 0
+    help_text = "".join(capsys.readouterr().out.split())
+    assert "起動スキル名（プラグイン接頭辞を除く）" in help_text
+    assert "スキルが無い場合はagent" in help_text
+    assert "通常追加ではhumanを拒否" in help_text
+    assert "人間の直接投入ではsourceを省略" in help_text
+    assert "agent・human・plan" not in help_text
+
+
 def test_cmd_add_accepts_frontmatter_source_in_agent_environment(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

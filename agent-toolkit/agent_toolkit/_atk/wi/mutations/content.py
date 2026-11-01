@@ -134,6 +134,14 @@ def _require_agent_edit_source(original: str, content: str) -> None:
             "エージェント環境ではsourceの明示が必須です。本文先頭のfrontmatterで`source: <出所>`を指定してください。",
             next_action="本文先頭のfrontmatterへ`source: <出所>`を追記して再実行する",
         )
+    if raw_source == "human" and (stored is None or stored[0].get("source") != "human"):
+        raise WebInputError(
+            "エージェント環境ではsourceを新しくhumanに変更できません。",
+            next_action=(
+                "本文先頭のfrontmatterのsourceへ、起動スキル名（プラグイン接頭辞を除く）を指定する。"
+                "スキルが無い場合はagentを指定して再実行する"
+            ),
+        )
 
 
 def edit_entry_content(

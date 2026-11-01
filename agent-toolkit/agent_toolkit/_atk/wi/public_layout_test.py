@@ -39,7 +39,7 @@ def test_public_transitions_keep_one_dated_file(tmp_path: pathlib.Path) -> None:
     notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
     body = tmp_path / "body.md"
     body.write_text(AGENT_AWI_BODY, encoding="utf-8")
-    _run(notes, "add", "--source=human", f"--target-repo={_REPO}", "--body-file", str(body))
+    _run(notes, "add", "--source=agent", f"--target-repo={_REPO}", "--body-file", str(body))
     paths = list(entries.iter_entry_paths(notes))
     assert len(paths) == 1
     path = paths[0]
