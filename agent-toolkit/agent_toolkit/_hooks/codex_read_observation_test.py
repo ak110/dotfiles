@@ -213,11 +213,13 @@ def _persisted(body: str) -> str:
     return body[:20] + observation.PERSISTENCE_MARKER + body[-20:]
 
 
-@pytest.mark.parametrize("form", ["multiple", "mixed", "single", "split"])
+@pytest.mark.parametrize("form", ["multiple", "mixed", "diagnostic", "single", "split"])
 def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp_path, capsys, monkeypatch, form):
     """モデルへ全文を返し記録の写しだけが省略された読取で、同じ主体の書込遮断が解除される。
 
     複数資料の静的なcat、単一の長い資料、末尾まで分けた行範囲の取得を比べる。
+    `diagnostic`は、読取の間に`git status`のような読取でないコマンドが入る連結で、
+    保存用の写しが省略されても全文を返した応答から先頭の読取列を証明する（code mode内の`exec_command`で観測した形）。
     """
     paths = [tmp_path / "first.md", tmp_path / "second.md"]
     for index, path in enumerate(paths):
@@ -234,6 +236,10 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
         reads = [(f"cat -- {paths[0]} {paths[1]}", paths[0].read_text() + paths[1].read_text())]
     elif form == "mixed":
         reads = [(f"cat -- {paths[0]}; sed -n '1,$p' -- {paths[1]}", paths[0].read_text() + paths[1].read_text())]
+    elif form == "diagnostic":
+        command = f"cat -- {paths[0]} {paths[1]}; git status --short; sed -n '1,2p' -- {paths[0]}"
+        head = "".join(paths[0].read_text().splitlines(keepends=True)[:2])
+        reads = [(command, paths[0].read_text() + paths[1].read_text() + " M out.md\n" + head)]
     else:
         reads = []
         for path in paths:
@@ -250,7 +256,7 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
     assert read_delivery.deliver(operation, "Write", write, "session").block is None
 
 
-def test_persisted_copy_delivered_as_the_response_is_not_a_full_read(tmp_path, capsys):
+def test_persisted_copy_delivered_as_the_response_is_not_a_full_read(tmp_path):
     """保存用に省略した写しがhook入力へ届いた場合は全文取得とせず、分割読取を案内する。"""
     path = tmp_path / "note.md"
     path.write_text("本文の行\n" * 300, encoding="utf-8")
