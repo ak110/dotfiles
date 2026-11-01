@@ -197,24 +197,29 @@ class StartGate:
 
     def __init__(self, private_notes: pathlib.Path) -> None:
         self.private_notes = private_notes
-        self._known_names = self._names()
+        self._known_names = set(self._paths())
         self._activity_deadline: float | None = None
 
-    def _names(self) -> set[str]:
-        return {path.name for path in iter_entry_paths(self.private_notes)}
+    def _paths(self) -> dict[str, pathlib.Path]:
+        return {path.name: path for path in iter_entry_paths(self.private_notes)}
 
     def started(self) -> None:
         """完了した開始判定の猶予を次のprocess-wiの1回の実行へ持ち越さない。"""
         self._activity_deadline = None
-        self._known_names.update(self._names())
+        self._known_names.update(self._paths())
 
     def evaluate(self, target_repo_ids: set[str], *, activity: bool, now: float | None = None) -> StartDecision:
-        """活動の期限とUWI更新の期限を加算せず、同時に判定する。"""
+        """活動の期限とUWI更新の期限を加算せず、同時に判定する。
+
+        活動猶予を延長する新規到着は、処理対象集合へ投入されたAWI・UWIに限る。
+        監視の起床は全項目の変化で起きるが、対象外の到着は対象への投入を待つ理由にならないためである。
+        既知名は対象外を含めて更新し、同じ項目の編集・状態移動を後から到着として数えない。
+        """
         timestamp = time.time() if now is None else now
-        names = self._names()
-        arrivals = names - self._known_names
-        self._known_names.update(names)
-        extended = bool(arrivals and self._activity_deadline is not None)
+        paths = self._paths()
+        arrivals = [path for name, path in paths.items() if name not in self._known_names]
+        self._known_names.update(paths)
+        extended = self._activity_deadline is not None and _targets_any(arrivals, target_repo_ids)
         if extended or (activity and self._activity_deadline is None):
             self._activity_deadline = timestamp + _START_GRACE_SEC
         reasons: list[str] = []
@@ -227,6 +232,24 @@ class StartGate:
             reasons.append(f"未回答UWIが{unanswered}件")
             deadlines.append(latest_update + _START_GRACE_SEC)
         return StartDecision(tuple(reasons), max(deadlines) if deadlines else None, extended)
+
+
+def _targets_any(paths: list[pathlib.Path], target_repo_ids: set[str]) -> bool:
+    """いずれかの項目のtarget_repoが、正規化した処理対象集合に属するかを返す。"""
+    if not paths:
+        return False
+    canonical_cache: dict[str, str | None] = {}
+    targets = {_git_remote.canonical_repo(repo, canonical_cache) for repo in target_repo_ids} - {None}
+    for path in paths:
+        try:
+            parsed = parse_frontmatter(path.read_text(encoding="utf-8"))
+        except OSError:
+            # 取得後に移動・削除された項目は、到着の判定に使わない。
+            continue
+        repo = parsed[0].get("target_repo") if parsed is not None else None
+        if isinstance(repo, str) and _git_remote.canonical_repo(repo, canonical_cache) in targets:
+            return True
+    return False
 
 
 def _uwi_updates(private_notes: pathlib.Path, target_repo_ids: set[str]) -> tuple[int, float]:
@@ -371,6 +394,8 @@ def wait_for_changes(
 
     変更検知時はデバウンス窓（3秒）内の追加イベントを1回の変更としてまとめてから返る
     （他端末書き込みは10分タイムアウト側のremote同期で取得するため、変更検知時は同期しない）。
+    集約中も最初の待機と同じ全体期限と`interrupt`を判定し、変更が途切れずに続いても期限か解除要求で
+    変更検知として復帰する。静穏期間を待ち続けると、呼出元が開始条件・中断・Enter・周期処理を再判定できないためである。
     通常の同期間隔のタイムアウトでは、他端末投入を反映するためlock下でpullする。
     開始前の短い状態再評価へtimeoutを指定した場合は、そのたびにremote同期を繰り返さない。
     他プロセスとの一時的な競合・ネットワーク断等で`_wi_sync.pull`が失敗した場合は例外を捕捉して
@@ -390,12 +415,15 @@ def wait_for_changes(
             if directory.is_dir():
                 observer.schedule(state_handler, str(directory), recursive=False)
         observer.start()
-        if _wait_event(change_event, _POLL_INTERVAL_SEC if timeout is None else max(0.0, timeout), interrupt):
-            if change_event.is_set():
-                while True:
-                    change_event.clear()
-                    if not change_event.wait(timeout=_DEBOUNCE_SEC):
-                        break
+        end = time.monotonic() + (_POLL_INTERVAL_SEC if timeout is None else max(0.0, timeout))
+        if _wait_event(change_event, end - time.monotonic(), interrupt):
+            while change_event.is_set():
+                change_event.clear()
+                remaining = end - time.monotonic()
+                if remaining <= 0 or (interrupt is not None and interrupt()):
+                    break
+                if not _wait_event(change_event, min(_DEBOUNCE_SEC, remaining), interrupt):
+                    break
             return True
         if timeout is not None:
             return False

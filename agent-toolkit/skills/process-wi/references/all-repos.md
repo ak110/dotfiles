@@ -96,7 +96,7 @@ process-wiの実行全体の完了報告と報告用UWIは統括が1回だけ作
 配下のリポジトリ担当は報告用UWIを独立に作らず、公開結果・CI・残工程を統括へ返す。
 
 常駐起動では、会話を終了する前に集合JSONの`result_file`へ次のJSONをUTF-8で保存する。
-`repositories`のキーは対象の`target_repo`、値の`status`は`completed`、`incomplete`、`blocked`、`pending`のいずれかとする。
+`repositories`のキーは今回の集合JSONが渡した対象の`target_repo`に限る。継続指示で同じ会話を再開した場合も、前ラウンドで終えた対象は書かない。値の`status`は`completed`、`incomplete`、`blocked`、`pending`のいずれかとする。
 `completed`は公開・CI検収まで終了、`incomplete`は残工程あり、`blocked`は続行不能、`pending`は未着手を意味する。
 各対象に残工程・再開先・続行不能の理由と、起動した`writer_sessions`の配列を記録する。
 リポジトリ担当を開始した直後にもその識別子を保存し、統括の中断後に生存writerを確認できるようにする。

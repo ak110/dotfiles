@@ -233,7 +233,8 @@ class TestWaitForChanges:
         entry1 = inbox / "entry1.md"
         entry2 = inbox / "entry2.md"
         emit = self._use_synchronous_observer(monkeypatch, entry1)
-        monkeypatch.setattr(_pl_watch, "_POLL_INTERVAL_SEC", 0.2)
+        # 集約の待機は全体期限の残りで短くなるため、期限を集約の窓より十分長くして窓の秒数を比べる。
+        monkeypatch.setattr(_pl_watch, "_POLL_INTERVAL_SEC", 5.0)
         monkeypatch.setattr(_pl_watch, "_DEBOUNCE_SEC", 0.1)
         monkeypatch.setattr(
             _wi_sync,
@@ -844,3 +845,157 @@ def test_observer_scope_releases_after_preparation_or_stop_failure(
             with _pl_watch._watch_observer():  # pylint: disable=protected-access
                 pass
     assert calls == ["stop", "join"]
+
+
+def test_start_gate_extends_only_for_target_arrivals(tmp_path: pathlib.Path) -> None:
+    """対象の活動中に、対象外の到着では猶予が延びず、対象の到着だけで延びる。期限の直前・到達時・到達後と活動終了も比べる。"""
+    notes = _setup_notes(tmp_path)
+    targets = {"https://github.com/Example/myrepo.git"}
+    gate = _pl_watch.StartGate(notes)
+    first = gate.evaluate(targets, activity=True, now=1000.0)
+    assert first.deadline == 1600.0
+    assert not first.extended
+    # 対象外リポジトリへの新規登録は、対象の投入を待つ理由にならない。
+    _start_entry(notes, "foreign.md", repo="github.com/example/other", kind="awi")
+    foreign = gate.evaluate(targets, activity=True, now=1500.0)
+    assert (foreign.deadline, foreign.extended) == (1600.0, False)
+    # 対象への新規登録は猶予を延長し、同じ項目の編集は到着に数えない。
+    arrival = _start_entry(notes, "arrival.md", kind="awi")
+    extended = gate.evaluate(targets, activity=True, now=1550.0)
+    assert (extended.deadline, extended.extended) == (2150.0, True)
+    arrival.write_text(arrival.read_text(encoding="utf-8") + "\n追記\n", encoding="utf-8")
+    edited = gate.evaluate(targets, activity=True, now=1560.0)
+    assert (edited.deadline, edited.extended) == (2150.0, False)
+    assert gate.evaluate(targets, activity=True, now=2149.0).reasons
+    assert not gate.evaluate(targets, activity=True, now=2150.0).reasons
+    assert not gate.evaluate(targets, activity=True, now=2200.0).reasons
+    # 活動が終わっていれば、対象の到着があっても待機理由にならない。
+    gate.started()
+    gate.evaluate(targets, activity=True, now=3000.0)
+    _start_entry(notes, "after.md", kind="awi")
+    assert not gate.evaluate(targets, activity=False, now=3100.0).reasons
+
+
+class _ContinuousChanges:
+    """監視開始後のすべての監視に、`.md`の変更イベントを一定間隔で上限回数まで届ける。"""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, path: pathlib.Path, *, interval: float, count: int) -> None:
+        self._handlers: list[watchdog.events.FileSystemEventHandler] = []
+        self._path = path
+        self._interval = interval
+        self._count = count
+        self._started = threading.Event()
+        self._stopped = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        handlers = self._handlers
+        started = self._started
+
+        class Observer:
+            ident = None
+
+            def schedule(self, handler: watchdog.events.FileSystemEventHandler, *_args: Any, **_kwargs: Any) -> None:
+                handlers.append(handler)
+
+            def start(self) -> None:
+                started.set()
+
+            def stop(self) -> None:
+                pass
+
+            def join(self) -> None:
+                pass
+
+        monkeypatch.setattr(watchdog.observers, "Observer", Observer)
+
+    def _run(self) -> None:
+        assert self._started.wait(timeout=10)
+        for _ in range(self._count):
+            if self._stopped.is_set():
+                return
+            for handler in list(self._handlers):
+                handler.on_any_event(watchdog.events.FileModifiedEvent(str(self._path)))
+            time.sleep(self._interval)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    @property
+    def running(self) -> bool:
+        return self._thread.is_alive()
+
+    def join(self) -> None:
+        """判定を終えた後に変更列を打ち切り、送出スレッドの終了を待つ。"""
+        self._stopped.set()
+        self._thread.join(timeout=30)
+
+
+@pytest.mark.parametrize("timeout", [0.5, None], ids=["start-recheck", "sync-interval"])
+def test_wait_returns_by_deadline_during_continuous_changes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, timeout: float | None
+) -> None:
+    """変更が静穏期間より短い間隔で続いても、全体期限で変更検知として復帰し、同期は行わない。"""
+    notes = tmp_path / "private-notes"
+    changes = _ContinuousChanges(monkeypatch, notes / "entry.md", interval=0.05, count=200)
+    monkeypatch.setattr(_pl_watch, "_POLL_INTERVAL_SEC", 0.5)
+    monkeypatch.setattr(_pl_watch, "_DEBOUNCE_SEC", 0.2)
+    pulls: list[pathlib.Path] = []
+    monkeypatch.setattr(_wi_sync, "pull", pulls.append)
+    changes.start()
+    started = time.monotonic()
+    assert _pl_watch.wait_for_changes(notes, None, timeout=timeout)
+    elapsed = time.monotonic() - started
+    # 変更列（約10秒）が続く間に、期限（0.5秒）を大きく超えずに戻る。
+    assert changes.running
+    assert elapsed < 3.0
+    assert not pulls
+    changes.join()
+
+
+def test_wait_returns_on_interrupt_during_continuous_changes(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """変更の集約中もEnterなどの解除要求を判定し、静穏期間を待たずに戻る。"""
+    notes = tmp_path / "private-notes"
+    changes = _ContinuousChanges(monkeypatch, notes / "entry.md", interval=0.05, count=200)
+    monkeypatch.setattr(_pl_watch, "_DEBOUNCE_SEC", 0.2)
+    started = time.monotonic()
+
+    def interrupt() -> bool:
+        return time.monotonic() - started > 0.5
+
+    changes.start()
+    assert _pl_watch.wait_for_changes(notes, None, timeout=60.0, interrupt=interrupt)
+    assert changes.running
+    assert time.monotonic() - started < 3.0
+    changes.join()
+
+
+def test_wait_without_changes_skips_sync_for_start_recheck(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """開始前の短い再判定は、変更が無く期限に達しても同期しない（通常の同期間隔とは区別する）。"""
+    notes = tmp_path / "private-notes"
+    pulls: list[pathlib.Path] = []
+    monkeypatch.setattr(_wi_sync, "pull", pulls.append)
+    assert not _pl_watch.wait_for_changes(notes, None, timeout=0.1)
+    assert not pulls
+
+
+def test_abort_precedes_enter_during_continuous_changes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """連続変更の最中に中断とEnterが同時に成立した場合も、短時間で外側へ戻り、中断を優先する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: True)
+    monkeypatch.setattr(_pl_watch, "_DEBOUNCE_SEC", 0.2)
+    console = _Console()
+    _use_windows_console(monkeypatch, console)
+    aborted = [False]
+    monkeypatch.setattr(_pl_control, "consume_process_loop_abort", lambda: aborted[0])
+    changes = _ContinuousChanges(monkeypatch, notes / "entry.md", interval=0.05, count=200)
+    released = threading.Timer(0.3, lambda: (console.keys.append("\r"), aborted.__setitem__(0, True)))
+    changes.start()
+    released.start()
+    started = time.monotonic()
+    assert not _pl_watch.wait_for_start_permission(notes, {"github.com/example/myrepo"}, _pl_watch.StartGate(notes))
+    assert changes.running
+    assert time.monotonic() - started < 5.0
+    assert "Enterの入力により" not in capsys.readouterr().out
+    released.join()
+    changes.join()

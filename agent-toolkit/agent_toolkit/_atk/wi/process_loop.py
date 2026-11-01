@@ -117,15 +117,26 @@ def _record_no_progress(snapshot: _listing.RepositorySnapshot, start: _gate.Laun
 
 
 def _read_results(path: pathlib.Path, owners: dict[str, _ownership.Ownership]) -> dict[str, dict[str, Any]]:
-    """担当が保存した対象別の返却を検証し、欠落を成功として扱わない。"""
+    """担当が保存した対象別の返却を検証し、欠落を成功として扱わない。
+
+    今回の対象外の記載（同じ統括会話を継続したラウンドに残る前ラウンドの対象など）は記録して除き、
+    今回の対象の検収を続ける。対象外の記載はどの所有の判定にも使われないため、常駐全体を止める理由にしない。
+    """
     if not path.exists():
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or not isinstance(data.get("repositories"), dict):
         raise ValueError(f"統括結果のrepositoriesが不正: {path}")
-    records = data["repositories"]
-    if records.keys() - owners.keys():
-        raise ValueError(f"統括結果に今回の対象外のリポジトリがある: {path}")
+    foreign = sorted(data["repositories"].keys() - owners.keys())
+    if foreign:
+        detail = f"今回の対象外の記載を除いて検収した: {', '.join(foreign)}"
+        _log.append("result_foreign_repositories", detail=detail, result_path=str(path))
+        _next_action.report(
+            f"統括結果に今回の対象外のリポジトリがある: {path}: {detail}",
+            next_action="対応不要（今回の対象の結果だけを検収した）。繰り返す場合は統括の結果保存の手順を確認する",
+            stream=sys.stdout,
+        )
+    records = {repo_id: record for repo_id, record in data["repositories"].items() if repo_id in owners}
     for repo_id, record in records.items():
         if not isinstance(record, dict) or record.get("status") not in ("completed", "incomplete", "blocked", "pending"):
             raise ValueError(f"統括結果の対象別状態が不正: {repo_id}")
