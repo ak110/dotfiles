@@ -11,6 +11,7 @@
 | 配置や形式が判断で果たす機能の保持を判定する前 | `agent-basics:writing-standards/references/agent-documents-additions.md#「削減の判定根拠」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「削減の判定根拠」` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `agent-toolkit:wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 検出策の実測を記録・検収する前 | `agent-basics:bugfix/references/analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/analysis-records.md` |
 | 原因分析の各段と該当なしを記録する前 | `agent-basics:bugfix/references/causal-analysis.md#「原因分析の段階」` | 判断 | `section:agent-basics:*/skills/bugfix/references/causal-analysis.md#「原因分析の段階」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-standards.md#「バグ調査」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「バグ調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
@@ -51,6 +52,8 @@ L3で処置を決めた後も各段の記録を残す。
 混入防止で見逃し側の処置が不要となる場合も、見逃し側の候補と不採用理由を残す。
 候補を作らない段1〜6や案の種類は、それぞれの理由を1行で示せばよく、採否はbugfixの費用対効果基準に従う。
 類似見直しの実施結果と独立別件の引き渡し先、再発防止の選定済み方針、実装と有効性確認の状態を記録する。表への記載だけで処置済みとは判断しない。
+検出策の実測は`agent-basics:bugfix/references/analysis-records.md`の基準に従い、既存の対策・再発防止策欄から入力・版・診断・終了状態・判定と正常系の証拠を参照する。
+検収と再発時の比較では、その実測、文書試行、後日の効果を分けて適用条件と保証範囲を確認する。
 
 AWIの`## 原因分析`節は原因分析表と、調査表から抽出した`直接的原因`、`原因分析の根拠`、`対策`、`類似見直し観点`、`再発防止策`の5行をこの順序で並べた2列表によって構成する。`対策`行は上記の調査表と同じ定義とし、修正内容の要旨と`## 反映内容と反映先`節の対応項目への参照を記載する。`類似見直し観点`行には原因単位から導いた見直す対象と探す問題を記載し、QとC・Dの区別、重大度、および探索の深さに関する根拠を補足する。`再発防止策`行には上記の調査表と同じ内容を記載し、各策と組合せの作用、必要性、確保するQ、選定理由を対応付ける。具体的な変更内容の詳細は`## 反映内容と反映先`節に記載する。調査表の残りの項目については、`現象`と`期待する契約`を各バグ単位から一意に特定できる場所に配置し、`類似見直し結果`を`## 原因分析`節の5行表の外に配置する。対策・横展開処置・再発防止策の具体的な変更内容は、処置の階層を項目ごとに明記して`## 反映内容と反映先`節に配置する。
 拡張原因分析の対象外となる不具合のAWIでも、バグ単位ごとに5列2行の原因分析表と前述の5行表を常に掲載し、対象条件に該当しない根拠を記載する。複数のバグ単位を含むAWIでは、`## 原因分析`節の中にバグ単位ごとのH3見出しを設けて整理する。
