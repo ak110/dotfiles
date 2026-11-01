@@ -2,15 +2,18 @@
 
 import hashlib
 import json
+import os
 import pathlib
 import shlex
 import shutil
 import subprocess
+import tempfile
 
 import pytest
 
 from agent_toolkit import hook as hook_entry
 from agent_toolkit._agents_server import launch_requests
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import plugin_roots, read_triggers
 from agent_toolkit._common.plugin_roots import PluginRootError
 from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger, parse_tables
@@ -2650,6 +2653,30 @@ def test_acquisition_failure_and_compact_guidance_read_a_worktree_copy(tmp_path,
         assert compact is not None
         assert ("`Skill`で`agent-basics:check-execution`" in compact) is loadable
         assert (f"Readで`{path}`を全文読め" in compact) is (not loadable)
+
+
+@pytest.mark.parametrize("operation", ["path:*.py", "write:*.py", "existing-file-edit"])
+@pytest.mark.usefixtures("memory")
+def test_temporary_area_writes_do_not_require_artifact_reads(tmp_path, monkeypatch, operation):
+    """managed-tempとClaude Codeの一時領域への書込には成果物向けの必読を課さず、再書込も遮断しない。"""
+    _rows(tmp_path, monkeypatch, operation, count=1)
+    payload = {"session_id": "test", "cwd": str(tmp_path)}
+    directories = [managed_temp.temp_root_path() / "session-0123456789abcdef"]
+    if hasattr(os, "getuid"):
+        # Claude Codeは一時ディレクトリ配下の`claude-<uid>`へタスク出力とscratchpadを置く（POSIXだけ）。
+        directories.append(pathlib.Path(tempfile.gettempdir()) / f"claude-{os.getuid()}" / "project/session/scratchpad")
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+        script = directory / "aggregate.py"
+        script.write_text("print(1)\n", encoding="utf-8")
+        operation_input = {"file_path": str(script), "content": "print(2)\n"}
+        for _ in range(2):
+            decision = read_delivery.deliver(payload, "Write", operation_input, "test")
+            assert decision.block is None
+            assert not _guidance(decision)
+    artifact = tmp_path / "artifact.py"
+    artifact.write_text("print(1)\n", encoding="utf-8")
+    assert _guidance(read_delivery.deliver(payload, "Write", {"file_path": str(artifact), "content": "print(2)\n"}, "test"))
 
 
 @pytest.mark.parametrize("codex", [False, True])

@@ -18,10 +18,12 @@ import os
 import pathlib
 import re
 import shlex
+import tempfile
 import tomllib
 from collections.abc import Callable, Generator, Iterator
 from typing import cast
 
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import delegated_session, read_triggers, shell_cwd, transcript
 from agent_toolkit._common.plugin_roots import (
     PluginRootError,
@@ -290,9 +292,38 @@ def _pyproject_dependencies(text: str) -> object:
         return text
 
 
+_FILE_SCOPED_OPERATIONS = frozenset({"existing-file-edit", "claude-existing-file-edit"})
+
+
+def _temporary_path(path: str) -> bool:
+    """成果物ではない一時領域（managed-tempの一時rootと、Claude Codeの一時領域）の配下かを返す。
+
+    一時領域のファイルは使い捨ての集計・下書き用であり、コード規約などの必須読込と再書込の遮断を課すと、
+    成果物の品質に寄与しないまま作業だけが止まる。Claude Codeはタスク出力とscratchpadを
+    `<一時ディレクトリ>/claude-<uid>/`の下へ置く。一時ディレクトリ全体は作業ツリーの検証用複製なども置かれ得るため含めない。
+    """
+    candidate = pathlib.Path(path).resolve()
+    roots = [managed_temp.temp_root_path()]
+    if hasattr(os, "getuid"):
+        roots.append(pathlib.Path(tempfile.gettempdir()) / f"claude-{os.getuid()}")
+    return any(candidate.is_relative_to(root.resolve()) for root in roots)
+
+
+def _artifact_written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
+    """確定した書込先のうち、一時領域を除いた成果物の書込先を返す。"""
+    return [path for path in operation_skills.written_paths(tool_name, tool_input, cwd) if not _temporary_path(path)]
+
+
 @_input_cached
 def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
-    """共通語彙を既存の静的な操作判定へ結びつける。"""
+    """共通語彙を既存の静的な操作判定へ結びつける。
+
+    書込先で成立する操作（既存ファイルの編集、`path:`・`write:`・`dependency:`）は、一時領域の書込先を除いて判定する。
+    """
+    if operation in _FILE_SCOPED_OPERATIONS:
+        written = operation_skills.written_paths(tool_name, tool_input, cwd)
+        if written and all(_temporary_path(path) for path in written):
+            return False
     matched = operation_skills.operation_matches(operation, tool_name, tool_input, cwd)
     if matched is not None:
         return matched
@@ -301,13 +332,12 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
         return tool_name == value
     if prefix == "write":
         return any(
-            fnmatch.fnmatch(path.replace("\\", "/"), value)
-            for path in operation_skills.written_paths(tool_name, tool_input, cwd)
+            fnmatch.fnmatch(path.replace("\\", "/"), value) for path in _artifact_written_paths(tool_name, tool_input, cwd)
         )
     if prefix == "read":
         return any(_matches_document_path(path, value) for path in _read_path_variants(tool_name, tool_input, cwd))
     if prefix == "path":
-        paths = operation_skills.written_paths(tool_name, tool_input, cwd)
+        paths = _artifact_written_paths(tool_name, tool_input, cwd)
         return any(fnmatch.fnmatch(path.replace("\\", "/"), value) for path in paths)
     if prefix == "section":
         pattern, separator, _heading = value.partition("#")
@@ -320,7 +350,7 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
         # 名前の出現ではなく、読込記述と依存定義の項目だけを使用として扱う。編集後の本文と既存の本文の両方を見るため、
         # 変更断片にライブラリ名が無い部分編集でも、既存のコードが依存を読み込んでいれば成立する。
         operations = tool_input_fields.parse_operations(tool_name, tool_input, cwd) or []
-        for raw in operation_skills.written_paths(tool_name, tool_input, cwd):
+        for raw in _artifact_written_paths(tool_name, tool_input, cwd):
             candidate = pathlib.Path(raw)
             if not dependency_usage.is_target(candidate):
                 continue
@@ -1320,7 +1350,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     row_matches(row, tool_name, tool_input, cwd)
                     or row.selector == "artifact-standards"
                     and target_ready(records, read_triggers.ReadTarget(row.source), agent)
-                    and bool(operation_skills.written_paths(tool_name, tool_input, cwd))
+                    and bool(_artifact_written_paths(tool_name, tool_input, cwd))
                     or row.source in roles
                     and (row.kind == "起動時" or any(operation.startswith("role:") for operation in row.operations))
                 )
