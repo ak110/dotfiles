@@ -11,13 +11,27 @@ from agent_toolkit._common import state_paths
 from agent_toolkit._testing import session_evidence_support as support
 
 
-def test_prepare_keeps_quoted_code_out_of_brace_expansion(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """引用されたコード中の波括弧を展開せず、実会話の準備を完了できる。"""
-    program = "print(" + json.dumps([{"left": 1, "right": 2}] * 32) + ")"
+@pytest.mark.parametrize(
+    "program",
+    [
+        "print(" + json.dumps([{"left": 1, "right": 2}] * 32) + ")",
+        "value=[" + ",".join(["{1:2,3:4}"] * 32) + "]",
+        "value=[" + ",".join(['"$f"'] * 32) + "]",
+    ],
+    ids=["quoted-json", "compact-numeric-code", "quoted-variable-code"],
+)
+def test_prepare_keeps_quoted_code_out_of_brace_expansion(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], program: str
+) -> None:
+    """単引用されたコードの波括弧と変数を保持し、実会話の準備を完了できる。"""
     transcript = tmp_path / "quoted-code.jsonl"
     support.write_jsonl(
         transcript,
-        [support.claude_call("2026-10-31T00:00:02Z", "code", "Bash", {"command": f"python3 -c '{program}'"})],
+        [
+            support.claude_call(
+                "2026-10-31T00:00:02Z", "code", "Bash", {"command": f"for f in left right; do python3 -c '{program}'; done"}
+            )
+        ],
     )
     work = tmp_path / "prepared"
     work.mkdir()
@@ -32,8 +46,19 @@ def test_prepare_keeps_quoted_code_out_of_brace_expansion(tmp_path: Path, capsys
     ("command", "expected"),
     [
         ("f=20261030-120000-001.md; atk wi adopt $f", True),
+        ('f=20261030-120000-001.md; atk wi adopt "$f"', True),
+        ("f=20261030-120000-001.md; atk wi adopt '$f'", False),
+        (r"f=20261030-120000-001.md; atk wi adopt \$f", False),
         ("D=/wi; f=${D}/20261030-120000-001.md; atk wi adopt $f", True),
         ("for f in 20261030-120000-{001,002}.md; do atk wi adopt $f; done", True),
+        ("for f in 20261030-120000-{00{1,2},003}.md; do atk wi adopt $f; done", True),
+        ("atk wi adopt '20261030-120000-{001,002}.md'", False),
+        (r"atk wi adopt 20261030-120000-\{001,002\}.md", False),
+        pytest.param("atk wi adopt '20261030-120000-{001,002}'{.md,.txt}", False, id="literal-brace-mixed"),
+        pytest.param("f=20261030-120000-001.md; g=''; atk wi adopt '$f'$g", False, id="literal-variable-mixed"),
+        pytest.param("atk wi adopt 20261030-120000-{'001,002',003}.md", False, id="quoted-comma-mixed"),
+        pytest.param(r"atk wi adopt 20261030-120000-{001\,002,003}.md", False, id="escaped-comma-mixed"),
+        pytest.param(r'f=20261030-120000-001.md; atk wi adopt "$f"; echo \"', True, id="escaped-quote-after-value"),
         ("atk wi adopt $f; f=20261030-120000-001.md", False),
         ("f=20261030-120000-001.md; read f; atk wi adopt $f", False),
     ],
