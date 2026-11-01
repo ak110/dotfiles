@@ -100,7 +100,7 @@ dotfiles固有の項目が生じた時点の配置先は`.claude/skills/develop-
 
 ### 担当間の知識境界
 
-all-reposのオーケストレーターは登録集合の取得、対象別所有と通常delegateへの中継を持つ。
+all-reposのオーケストレーターは登録集合の取得、対象別所有とリポジトリ担当（`repository-process`のtask）への中継を持つ。
 対象cwdの担当は取得済み候補を受領し、そのリポジトリのメインとして規範・選定・レーン・監査・公開を完遂する。
 レーン上限と選定YAMLを対象別に保ち、ホームのオーケストレーターが対象の実装・Git・prepareを行わない。
 取得と開始条件の共有は[design-process-loop.md](design-process-loop.md)、実行契約は[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)に置く。

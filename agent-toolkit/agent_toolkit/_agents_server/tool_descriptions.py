@@ -106,13 +106,14 @@ LIGHTWEIGHT_MODE_SELECTION = (
     "explore・shell・writeは自己完結した1回の入力と返却に使い、追加対話と要求の再構成を要する作業は通常taskかdelegateへ渡す。"
     "既存の担当が詳しい文脈を持つ調査と判断は、新しく本文を読む前にその担当へ戻す。"
     "exploreは結論と所在で後続の判断が成立する調査、shellは終了状態と要約で後続の判断が成立する実行へ使う。\n"
-    "工程: execute担当は作業を判断部分と、読取・調査・要約・走査・確定済みの書込・コマンド実行の部分へ極力細分化し、"
-    "後者を定型走査・事実収集・コマンド実行はchores_fast、中規模の読取・要約・走査と内容の確定した書込作業はchoresへ委ねる"
-    "（自身で行う方が総費用で安い小さな作業を除く）。"
-    "executeを指定してよいのはレーン担当の起動だけとする。"
-    "それ以外に自分の判断で起動する委譲はreview・review_fast・chores・chores_fast・writeのいずれかにする。"
-    "規範・役割契約が起動形を定める担当（役割文書が工程を定めるtask、orchestrate）はその定めに従う。"
-    "計画・設計判断・原因分析、観点の選定と返った結果の判定・統合は委譲元自身が行う。"
+    "工程: execute_modelは高価なため、executeは役割文書が工程を定める担当（複雑な作業やバグ分析などを担う役割）のtask、"
+    "orchestrateはprocess-loop・run-skillなど規範が起動形を定める最上位・統括の起動だけで使う。"
+    "エージェントが自分の判断でexecuteやorchestrateの担当を起動せず、自由本文のdelegateでの指定はstartが起動前に拒否する。"
+    "execute担当が切り出してよいのは、review・review_fast・chores・chores_fast・writeのいずれかで済み、"
+    "起動と規範の読み込みを含めても費用が下がる部分だけとする"
+    "（定型走査・事実収集・コマンド実行はchores_fast、中規模の読取・要約・走査と内容の確定した書込作業はchores）。"
+    "それ以外の作業と、計画・設計判断・原因分析、観点の選定と返った結果の判定・統合は担当自身が行う。"
+    "上位モデルの別sessionでは規範を読み直す費用が大きいためである。"
 )
 """server instructionsとmodeの説明が共有する、コンテキストと費用の節約の目安。"""
 
@@ -249,12 +250,13 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "候補は先頭から試し、起動できない候補を除いて次の候補へ切り替える。"
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
     "exploreとshellが`chores_fast`、writeが`write`の設定を使う。"
-    "作業は判断部分とそれ以外へ極力細分化し、定型走査・事実収集・コマンド実行は`chores_fast`（exploreの省略時）、"
+    "`execute_model`は高価なため、`execute`は役割文書が工程を定める担当（複雑な作業やバグ分析などを担う役割）のtask、"
+    "`orchestrate`はprocess-loop・run-skillなど規範が起動形を定める最上位・統括の起動だけで使い、delegateでの指定は起動前に拒否する。"
+    "自分の判断で起動する委譲は`review`・`review_fast`・`chores`・`chores_fast`・`write`のいずれかにし、"
+    "起動と規範の読み込みを含めても費用が下がる部分だけを切り出す。"
+    "定型走査・事実収集・コマンド実行は`chores_fast`（exploreの省略時）、"
     "中規模の読取・要約・走査と、計画・設計判断で内容の確定した書込作業（単発のコーディング、確定済みの修正など）は`chores`へ渡す。"
-    "`execute`を指定してよいのはレーン担当の起動だけとし、それ以外に自分の判断で起動する委譲は"
-    "`review`・`review_fast`・`chores`・`chores_fast`・`write`のいずれかにする。"
-    "規範・役割契約が起動形を定める担当（役割文書が工程を定めるtask、`orchestrate`）はその定めに従う。"
-    "計画・設計判断・原因分析、観点・判定基準の選定と、返った結果の判定・統合は委譲元自身が行う。"
+    "それ以外の作業と、計画・設計判断・原因分析、観点・判定基準の選定と、返った結果の判定・統合は委譲元自身が行う。"
     "工程名の候補は、対応する`<工程>_model`の候補列を直接使う。"
     "`orchestrate`はprocess-loop・run-skillなど最上位セッションのorchestrate_modelを使う。"
     "WI投入担当のadd-wiは専念型・付随型ともmodel_typeを省略し、役割に定めたexecute工程を使う。"
@@ -289,7 +291,7 @@ START_LIGHTWEIGHT_TASK_EXAMPLE = (
 START_MODE_EXAMPLES = {
     "task": START_LIGHTWEIGHT_TASK_EXAMPLE,
     "delegate": (
-        '`{"cwd": "<絶対パス>", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "execute", '
+        '`{"cwd": "<絶対パス>", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "chores", '
         '"whole_contract_path": "<全体作業契約の絶対パス>"}`'
     ),
     "explore": '`{"cwd": "<絶対パス>", "mode": "explore", "prompt": "<質問と調べる範囲>", "label": "explore-<対象>"}`',
@@ -335,7 +337,7 @@ START_DESCRIPTION = "\n".join(
         "例（`cwd`は全modeで必須）:",
         f"- 通常task: {START_NORMAL_TASK_EXAMPLE}",
         f"- 軽量task: {START_LIGHTWEIGHT_TASK_EXAMPLE}。役割内部の起動設定の判別は不要。",
-        '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "execute", '
+        '- delegate: `{"cwd": "/repo", "mode": "delegate", "prompt": "<依頼本文>", "model_type": "chores", '
         '"whole_contract_path": "/abs/work-contract.md"}`',
         '- explore: `{"cwd": "/repo", "mode": "explore", "prompt": "<質問と範囲>"}`',
         '- write: `{"cwd": "/repo", "mode": "write", "prompt": "<確定した書込依頼>"}`',

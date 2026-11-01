@@ -56,7 +56,7 @@ fork機能に関する監査記録は、`docs/development/audit-records.md`の�
 | 定型走査・軽微な作業・コマンド実行。自由本文の`explore`・`shell`の省略時 | `chores_fast` | 委譲する担当 | `agents_server` |
 | 実行レビュー・ユーザビリティレビュー・投入前レビュー・再発防止セルフチェック。`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check` | `review` | 各レビューを委譲する担当 | `agents_server` |
 | 小規模レビュー。`bulk-replace-review`・`external-write-review`・`reader-fit-review` | `review_fast` | 各レビューを委譲する担当 | `agents_server` |
-| 最上位オーケストレーター、process-loopの新規セッション、run-skill | `orchestrate` | process-loop・run-skill・委譲する担当 | `atk`か`agents_server` |
+| 最上位オーケストレーター、process-loopの新規セッション、run-skill。`repository-process` | `orchestrate` | process-loop・run-skill・all-reposの統括担当 | `atk`か`agents_server` |
 | 文章起草、`write`の省略時 | `write` | 委譲する担当 | `agents_server` |
 | `atk commit`の省略時 | `chores` | `atk` | `atk` |
 
@@ -82,7 +82,7 @@ fork機能に関する監査記録は、`docs/development/audit-records.md`の�
 
 WIの`担当モデル`において担当者、モデル、effortが明記されている工程では、委譲元がその指定値を`model_type`へ渡す。1回の起動に対して異なる指定が混在する場合は、WIと指定値を明示して委譲単位を分割する。終了時に確認したengine、model、effortを指定値と比較し、WI名、指定内容、実際値を進捗ログまたは引き継ぎ記録へ記載する。各工程は自身の担当名（`担当モデル.実装担当`など）と本段落の参照先を保持する。
 
-作業の分担と総コストの比較検討は、`routing.md`「要否判定」に従う。表に記載された`model_type`は役割文書を渡して起動する工程に適用し、役割全体の工程指定を維持する。役割担当者は、観点の選定、アイデア出し、候補の評価判定、結論の統合を自ら実施する。役割の内部では、作業を「判断を伴う部分」と「読み取り、調査、要約、走査、確定済み編集、コマンド実行などの機械的な部分」へ極力細分化する。この細分化は作業内容の分類を目的としており、同一の背景情報と実行条件を共有する確定済みの作業は1件の起動へ集約する（`routing.md`「要否判定」）。後者の定型作業を委譲する際は、定型的な走査、事実の収集、コマンド実行を`chores_fast`へ割り当て、その処理能力では対応が難しい中規模の読み取り、要約、走査、確定済みの編集作業を`chores`へ割り当てる。`execute`を指定してよいのは、レーン担当の起動と、役割文書が`execute`の工程を定める担当の起動に限る。それ以外にエージェントが自分の判断で起動する委譲は、`review`・`review_fast`・`chores`・`chores_fast`・`write`のいずれかにする。計画立案、設計判断、原因分析は委譲元自身が行い、そのための読取・調査は`explore`などの軽量起動へ分ける。
+作業の分担と総コストの比較検討は、`routing.md`「要否判定」に従う。表に記載された`model_type`は役割文書を渡して起動する工程に適用し、役割全体の工程指定を維持する。役割担当者は、観点の選定、アイデア出し、候補の評価判定、結論の統合を自ら実施する。役割の内部では、作業を「判断を伴う部分」と「読み取り、調査、要約、走査、確定済み編集、コマンド実行などの機械的な部分」へ極力細分化する。この細分化は作業内容の分類を目的としており、同一の背景情報と実行条件を共有する確定済みの作業は1件の起動へ集約する（`routing.md`「要否判定」）。後者の定型作業を委譲する際は、定型的な走査、事実の収集、コマンド実行を`chores_fast`へ割り当て、その処理能力では対応が難しい中規模の読み取り、要約、走査、確定済みの編集作業を`chores`へ割り当てる。`execute_model`は高価なため、`execute`は役割文書がその工程を定める担当（レーン担当、`add-wi`、`defect-investigation`など、複雑な作業やバグ分析などを担う役割）の起動だけに使う。`orchestrate`は、process-loop・run-skillなど規範が起動形を定める最上位・統括の起動だけで使う。エージェントが自分の判断で`execute`や`orchestrate`の担当を起動しない（`start`は自由本文の`delegate`でのこの2つの指定を拒否する）。`execute`の担当が作業を切り出してよいのは、`review`・`review_fast`・`chores`・`chores_fast`・`write`のいずれかの工程で済み、起動と規範の読み込みを含めても費用が下がる部分だけとする。それ以外の作業と、計画立案、設計判断、原因分析は担当自身が行う。上位モデルの別sessionでは規範を読み直す費用が大きいためである。
 
 工程別設定の対象外となる委譲には後述の「modelとreasoning effort」を適用し、独自の名前付きagentについては各文書のfrontmatterの定義に従う。
 

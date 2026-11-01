@@ -16,6 +16,7 @@
 | 共通の受渡し規範を選択して取得する時 | `all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` |
 | リポジトリ担当の処理規範を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 少数候補を統括自身が処理する時 | `single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
+| リポジトリ担当の引き継ぎ記録先を指定する時 | `../../delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 開始と振り分け
@@ -36,12 +37,38 @@
 対象の規範と既存チェックを適用してhookの目的を満たし、候補数で担当を振り分ける。
 WorktreeCreate/WorktreeRemoveは対象設定を読む既存atk操作で実行し、常駐が準備したworktreeを利用する。
 
-候補数Nに対する`lane_limit=floor((N+9)/10)`が2以上の対象だけを、対象worktreeをcwdとするagents_serverの通常delegateへ委譲する。
-`model_type`は`orchestrate`とし、目的は対象の[process-wi](../SKILL.md)の完遂とする。
-候補・readiness・所有・準備先・前回情報を対象ごとに渡し、担当は統括へ結果を返す。
+候補数Nに対する`lane_limit=floor((N+9)/10)`が2以上の対象だけを、「リポジトリ担当の起動と受領」に従ってリポジトリ担当へ委譲する。
 それ以外の対象は統括自身が[process-wi single-lane](single-lane.md)と同じ契約で処理する。
 対象worktreeごとに計画・実行レビュー・公開を分ける。
 対象別の開始時CI点検、監査、UWI、公開とCI検収を実施する。
+
+## リポジトリ担当の起動と受領
+
+```text
+起動対象: repository-process.subagent.md
+```
+
+### 起動
+
+リポジトリ担当の起動は定型作業であり、agents_serverの`start`をtaskで呼ぶ。
+`model_type`は指定せず、役割文書が定める`orchestrate`を使う。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 対象の準備済み`worktree` |
+| `subagent_md_path` | `repository-process` |
+| `extra_params` | 次の名前付き入力だけ |
+
+- `target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`、`ownership_record`、`ownership_token`、`lane_session_id`: 集合JSONの対象要素の同名の値
+- `previous`、`common_dir`、`registered_worktree`: 対象要素に値がある場合だけ渡す
+- `追加指示`: `instruct`のうち対象に関係する部分がある場合だけ渡す
+- `引き継ぎ記録先`: 指定の省略や継続時の扱いは`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う
+
+### 受領
+
+実行結果は引数なしの`atk agents wait`で受け取り、`repository-process.subagent.md`「出力」の固定形式を満たしていることを確認する。
+返却の`状態`、`残工程`、`writer_sessions`を「結果と終了」の`result_file`へ転記する。
+続行不能の返却は`blocked`として記録する。
 
 ## 結果と終了
 
@@ -55,7 +82,7 @@ process-wiの実行全体の完了報告と報告用UWIは統括が1回だけ作
 `repositories`のキーは対象の`target_repo`、値の`status`は`completed`、`incomplete`、`blocked`、`pending`のいずれかとする。
 `completed`は公開・CI検収まで終了、`incomplete`は残工程あり、`blocked`は続行不能、`pending`は未着手を意味する。
 各対象に残工程・再開先・続行不能の理由と、起動した`writer_sessions`の配列を記録する。
-通常delegateを開始した直後にもその識別子を保存し、統括の中断後に生存writerを確認できるようにする。
+リポジトリ担当を開始した直後にもその識別子を保存し、統括の中断後に生存writerを確認できるようにする。
 同じ対象を複数の担当が書き込まないよう、配下担当の終了を確かめてから統括自身の作業へ切り替える。
 
 ```json
