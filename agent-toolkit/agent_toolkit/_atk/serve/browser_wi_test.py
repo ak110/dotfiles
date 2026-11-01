@@ -1091,13 +1091,14 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     default_list = "/api/entries?type=all&status=active&answered=all&period=2w&page=1"
     stale_url = browser_harness.base_url + "/api/entries?type=all&status=active&answered=all&period=2w&q=many-terminal&page=1"
 
-    async def consumed_lists() -> int:
-        return await page.evaluate("window.__screenRequests.completed['/api/entries'] || 0")
+    async def consumed_stale() -> int:
+        # focusでは既知項目の再取得も同じパスへ並行するため、保留した旧条件の要求だけをURLで数える。
+        return await page.evaluate("url => window.__screenRequests.completedByUrl[url] || 0", stale_url)
 
-    async def wait_consumed(count: int) -> None:
+    async def wait_stale_consumed(count: int) -> None:
         # ページの時計を止めた区間でも進むよう、ページ側のポーリングではなくテスト側から照会する。
         async with asyncio.timeout(10):
-            while await consumed_lists() < count:
+            while await consumed_stale() < count:
                 await asyncio.sleep(0.05)
 
     async def clear_search_with_stale_reload(*, release_before_new_request: bool) -> None:
@@ -1123,9 +1124,9 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
                 now = await page.evaluate("Date.now()")
                 await page.clock.pause_at(datetime.datetime.fromtimestamp((now + 50) / 1000, tz=datetime.UTC))
                 await page.locator("#search-input").fill("")
-                consumed = await consumed_lists()
+                consumed = await consumed_stale()
                 release.set()
-                await wait_consumed(consumed + 1)
+                await wait_stale_consumed(consumed + 1)
                 # 前提: 旧応答を消費した時点で、デバウンス後の新しい一覧要求はまだ送られていない。
                 assert f"{browser_harness.base_url}{default_list}" not in request_urls
                 await page.clock.resume()
@@ -1133,11 +1134,12 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
             else:
                 await page.locator("#search-input").fill("")
                 await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
-                consumed = await consumed_lists()
+                consumed = await consumed_stale()
                 release.set()
-                await wait_consumed(consumed + 1)
+                await wait_stale_consumed(consumed + 1)
         finally:
             await page.unroute("**/api/entries?*", hold_stale)
+        # 旧応答の消費は上で確定済み。誤って補助検索が発行される場合の要求送出は待機できない不在の観測のため、短い猶予を置く。
         await page.wait_for_timeout(100)
         await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
         await playwright.async_api.expect(notice).to_be_hidden()

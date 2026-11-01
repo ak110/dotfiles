@@ -57,11 +57,13 @@ async def _observe_screen_requests(page: playwright.async_api.Page) -> None:
     """遷移前に、実SSEの確立と一覧・リポジトリ応答本文の消費を観測する。"""
     await page.add_init_script(
         """(() => {
-          const probe = window.__screenRequests = {pending: 0, completed: {}, opened: {}, heartbeats: {}};
+          // completedByUrlは、同じパスへ並行する別条件の取得と区別して特定の要求の本文消費を待つ試験が使う。
+          const probe = window.__screenRequests = {pending: 0, completed: {}, completedByUrl: {}, opened: {}, heartbeats: {}};
           const observed = new Set(['/api/entries', '/api/repos', '/api/sessions/list', '/api/plans/files']);
           const originalFetch = window.fetch.bind(window);
           window.fetch = async (...args) => {
-            const path = new URL(args[0]?.url || args[0], location.href).pathname;
+            const requestUrl = new URL(args[0]?.url || args[0], location.href);
+            const path = requestUrl.pathname;
             if (!observed.has(path)) return originalFetch(...args);
             probe.pending++;
             let finished = false;
@@ -74,6 +76,7 @@ async def _observe_screen_requests(page: playwright.async_api.Page) -> None:
                   try {
                     const value = await consume(...params);
                     probe.completed[path] = (probe.completed[path] || 0) + 1;
+                    probe.completedByUrl[requestUrl.href] = (probe.completedByUrl[requestUrl.href] || 0) + 1;
                     return value;
                   } finally { finish(); }
                 };
