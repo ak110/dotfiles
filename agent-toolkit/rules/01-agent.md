@@ -77,7 +77,7 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 逸脱しても不利益が小さく後のレビューや自動チェックで回収できる規定と、守る費用が便益を上回りうる規定には「（努力目標。理由）」を付ける。努力目標は理由と適用範囲を添えて品質・費用・提供時期の比較に使い、新しく書く記述から適用する。
 <!-- quality-principles:constraints:end -->
 
-規定はQCDを達成する手段として通常従い、外れる条件は「QCDと3段判定」が定める。規範の書き方と追記の条件は`agent-toolkit:delegation/references/agent-documents-basics.md`と`references/agent-documents-additions.md`に従う。常時規範の配送と、規範変更時の既存対象の是正は`agent-toolkit:wi-standards/references/agent-documents-additions.md`が定める。
+規定はQCDを達成する手段として通常従い、外れる条件は「QCDと3段判定」が定める。
 
 ## 完遂と先送り
 
@@ -152,9 +152,9 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 
 ## 委譲の要否判定
 
-委譲済みの主題について本文を読む、追加調査する、回答を準備する前は、`agent-toolkit:delegation`を起動して「継続と新規起動」に従う。委譲元は認可、全体調整と検収を担う。
+委譲済みの主題について本文を読む、追加調査する、回答を準備する前は、`agent-toolkit:delegation`を起動して「継続と新規起動」に従う。
 
-委譲の要否・単位・実行手段・観測・巻き取りは`agent-toolkit:delegation`に従う。Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機能の例外は同スキルの`references/runtime-routing.md`「実行手段」に限る。成果の所有と終了観測は委譲元が担う。
+委譲の要否・単位・実行手段・観測・巻き取りは`agent-toolkit:delegation`に従う。Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機能の例外は同スキルの`references/runtime-routing.md`「実行手段」に限る。認可、全体調整、検収、成果の所有と終了観測は委譲元が担う。
 
 ## 使用言語
 

@@ -194,7 +194,7 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 逸脱しても不利益が小さく後のレビューや自動チェックで回収できる規定と、守る費用が便益を上回りうる規定には「（努力目標。理由）」を付ける。努力目標は理由と適用範囲を添えて品質・費用・提供時期の比較に使い、新しく書く記述から適用する。
 <!-- quality-principles:constraints:end -->
 
-規定はQCDを達成する手段として通常従い、外れる条件は「QCDと3段判定」が定める。規範の書き方と追記の条件は`agent-toolkit:delegation/references/agent-documents-basics.md`と`references/agent-documents-additions.md`に従う。常時規範の配送と、規範変更時の既存対象の是正は`agent-toolkit:wi-standards/references/agent-documents-additions.md`が定める。
+規定はQCDを達成する手段として通常従い、外れる条件は「QCDと3段判定」が定める。
 
 ## 完遂と先送り
 
@@ -269,9 +269,9 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 
 ## 委譲の要否判定
 
-委譲済みの主題について本文を読む、追加調査する、回答を準備する前は、`agent-toolkit:delegation`を起動して「継続と新規起動」に従う。委譲元は認可、全体調整と検収を担う。
+委譲済みの主題について本文を読む、追加調査する、回答を準備する前は、`agent-toolkit:delegation`を起動して「継続と新規起動」に従う。
 
-委譲の要否・単位・実行手段・観測・巻き取りは`agent-toolkit:delegation`に従う。Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機能の例外は同スキルの`references/runtime-routing.md`「実行手段」に限る。成果の所有と終了観測は委譲元が担う。
+委譲の要否・単位・実行手段・観測・巻き取りは`agent-toolkit:delegation`に従う。Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機能の例外は同スキルの`references/runtime-routing.md`「実行手段」に限る。認可、全体調整、検収、成果の所有と終了観測は委譲元が担う。
 
 ## 使用言語
 
@@ -314,7 +314,7 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 
 - 既存のパスは入力・基準文書・取得済みの出力から解決し、推測したパスは実在を検索で確かめる。外部コマンドへは絶対パスを渡し、cwdを使うCLIは対象のworktreeで起動する。
 - 通常の検索は対象worktreeの`git grep`、追跡外のファイルは`rg`で行う。終了コード0は一致、1は一致なし、それ以外は検索の失敗として扱う。手段の選び方と出力量の制御は`agent-basics:search`に従う。
-- スキル起動と資料取得は`agent-toolkit:/share/read-trigger-bootstrap.md`の条件表で条件を確かめ、該当する判断や操作の前に行う。確認候補や圧縮前の候補は条件を確かめ、必要資料を判断・操作の前に読む。候補や一般通知は、反復後も同じ案内として扱う。
+- スキル起動と資料取得は`agent-toolkit:/share/read-trigger-bootstrap.md`の条件表で条件を確かめ、該当する判断や操作の前に行う。hookの警告が案内した取得と起動は、QCDによる省略の対象にせず警告の段階で終えてから次へ進む。省いても同じ案内が呼び出しごとに再挿入され、遮断と再発行で費用が増える。遮断される操作とそれに依存する呼び出しを同じ応答に並べない。確認候補や圧縮前の候補は条件を確かめ、必要資料を判断・操作の前に読む。候補や一般通知は、反復後も同じ案内として扱う。
 - 外部から観測できる名前と値（文言、設定キー、状態値、コマンド名、返却形式など）を変えるときは、旧値を期待するテストを含む直接影響範囲を固定文字列で探し、送信側と受信側、実装とテストをそろえる。直接影響範囲の定義は`agent-toolkit:write-plan`の`references/plan-file-standards.md`「要件・外部仕様」にある。
 - Git識別子と別worktreeの指定は`agent-toolkit:commit`の`references/git-identifier.md`に従う。前工程から受け取ったパスや識別子は、移動や終了を伴う操作を挟んだ後で同一性を確かめ直す。
 
