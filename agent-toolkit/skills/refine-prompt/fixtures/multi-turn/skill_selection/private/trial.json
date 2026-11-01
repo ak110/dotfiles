@@ -1,0 +1,140 @@
+{
+  "case": "skill-selection",
+  "kind": "single",
+  "source": {
+    "adaptation": "スキル選択の採点契約を検証する合成素材。保存例は採点の動作確認用で、実モデルの改善実績や選択精度の記録ではない。",
+    "basis": "期待集合はpublic/skills.jsonのdescriptionとbodyの適用条件から導いた（本課題の版）。"
+  },
+  "conditions": [
+    "no-dialogue"
+  ],
+  "termination": [
+    "submitted"
+  ],
+  "requirements": [
+    {
+      "id": "required-skills",
+      "description": "必須のスキルを漏らさない（本文にだけある追加条件を含む）",
+      "tests": [
+        "article-eval-required",
+        "paraphrase-required",
+        "edit-and-check-required",
+        "bug-explain-required",
+        "known-fact-required",
+        "boundary-required"
+      ]
+    },
+    {
+      "id": "no-out-of-scope",
+      "description": "適用外のスキルを選ばない",
+      "tests": [
+        "article-eval-excluded",
+        "paraphrase-excluded",
+        "edit-and-check-excluded",
+        "bug-explain-excluded",
+        "known-fact-excluded",
+        "boundary-excluded"
+      ]
+    },
+    {
+      "id": "known-ids",
+      "description": "一覧に無い識別子を使わない",
+      "tests": [
+        "article-eval-known",
+        "paraphrase-known",
+        "edit-and-check-known",
+        "bug-explain-known",
+        "known-fact-known",
+        "boundary-known"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "selection-reason",
+      "description": "初期選択をdescriptionから、追加選択を読んだ本文の条件から判断したか。識別子の提出結果は選択判断の評価であり、実際に本文を読んだ証拠は試行のsession記録で確かめる。比較記録へ要点を残す。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "no-dialogue",
+      "candidate": "\"\"\"依頼と本文の適用条件から選んだ合成の提出例。\"\"\"\n\n\nSELECTIONS = {\n    'article-eval': (['research-standards'], ['design-review']),\n    'paraphrase': (['research-standards'], ['design-review']),\n    'edit-and-check': (['writing-quality', 'run-checks'], []),\n    'bug-explain': (['bug-analysis'], ['design-review']),\n    'known-fact': ([], []),\n    'boundary': (['research-standards', 'writing-quality'], []),\n}\n\n\ndef select(request_id: str) -> dict[str, list[str]]:\n    \"\"\"依頼IDに対し、初期選択と本文を読んだ後の追加選択の識別子を返す。\"\"\"\n    initial, additional = SELECTIONS[request_id]\n    return {\"initial\": list(initial), \"additional\": list(additional)}\n",
+      "execution": {
+        "case": "skill-selection",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    },
+    {
+      "name": "description-only",
+      "condition": "no-dialogue",
+      "candidate": "\"\"\"descriptionだけで選択を終えた合成の提出例。\"\"\"\n\n\nSELECTIONS = {\n    'article-eval': (['research-standards'], []),\n    'paraphrase': (['research-standards'], []),\n    'edit-and-check': (['writing-quality', 'run-checks'], []),\n    'bug-explain': (['bug-analysis'], []),\n    'known-fact': ([], []),\n    'boundary': (['research-standards', 'writing-quality'], []),\n}\n\n\ndef select(request_id: str) -> dict[str, list[str]]:\n    \"\"\"依頼IDに対し、初期選択と本文を読んだ後の追加選択の識別子を返す。\"\"\"\n    initial, additional = SELECTIONS[request_id]\n    return {\"initial\": list(initial), \"additional\": list(additional)}\n",
+      "execution": {
+        "case": "skill-selection",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    },
+    {
+      "name": "all-selected",
+      "condition": "no-dialogue",
+      "candidate": "\"\"\"全スキルを選んだ合成の提出例。\"\"\"\n\n\nSELECTIONS = {\n    'article-eval': (['research-standards', 'design-review', 'writing-quality', 'run-checks', 'bug-analysis', 'publish-release', 'process-queue', 'search-files'], []),\n    'paraphrase': (['research-standards', 'design-review', 'writing-quality', 'run-checks', 'bug-analysis', 'publish-release', 'process-queue', 'search-files'], []),\n    'edit-and-check': (['research-standards', 'design-review', 'writing-quality', 'run-checks', 'bug-analysis', 'publish-release', 'process-queue', 'search-files'], []),\n    'bug-explain': (['research-standards', 'design-review', 'writing-quality', 'run-checks', 'bug-analysis', 'publish-release', 'process-queue', 'search-files'], []),\n    'known-fact': (['research-standards', 'design-review', 'writing-quality', 'run-checks', 'bug-analysis', 'publish-release', 'process-queue', 'search-files'], []),\n    'boundary': (['research-standards', 'design-review', 'writing-quality', 'run-checks', 'bug-analysis', 'publish-release', 'process-queue', 'search-files'], []),\n}\n\n\ndef select(request_id: str) -> dict[str, list[str]]:\n    \"\"\"依頼IDに対し、初期選択と本文を読んだ後の追加選択の識別子を返す。\"\"\"\n    initial, additional = SELECTIONS[request_id]\n    return {\"initial\": list(initial), \"additional\": list(additional)}\n",
+      "execution": {
+        "case": "skill-selection",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    },
+    {
+      "name": "unknown-id",
+      "condition": "no-dialogue",
+      "candidate": "\"\"\"一覧に無い識別子を含む合成の提出例。\"\"\"\n\n\nSELECTIONS = {\n    'article-eval': (['research-standards', 'web-fetch'], ['design-review']),\n    'paraphrase': (['research-standards'], ['design-review']),\n    'edit-and-check': (['writing-quality', 'run-checks'], []),\n    'bug-explain': (['bug-analysis'], ['design-review']),\n    'known-fact': ([], []),\n    'boundary': (['research-standards', 'writing-quality'], []),\n}\n\n\ndef select(request_id: str) -> dict[str, list[str]]:\n    \"\"\"依頼IDに対し、初期選択と本文を読んだ後の追加選択の識別子を返す。\"\"\"\n    initial, additional = SELECTIONS[request_id]\n    return {\"initial\": list(initial), \"additional\": list(additional)}\n",
+      "execution": {
+        "case": "skill-selection",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    }
+  ]
+}

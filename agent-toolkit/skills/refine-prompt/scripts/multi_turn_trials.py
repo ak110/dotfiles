@@ -13,7 +13,15 @@ from collections.abc import Callable
 from typing import Any
 
 FIXTURES = pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "multi-turn"
-CASES = ("attachment-paths", "weekday-queries", "batch-conditions", "display-spaces", "verification-status")
+CASES = (
+    "attachment-paths",
+    "weekday-queries",
+    "batch-conditions",
+    "display-spaces",
+    "verification-status",
+    "skill-selection",
+    "test-selection",
+)
 
 
 def grade_fixture(candidate: str, specifications: list[tuple[str, Callable[[types.ModuleType], Any], Any]]) -> None:

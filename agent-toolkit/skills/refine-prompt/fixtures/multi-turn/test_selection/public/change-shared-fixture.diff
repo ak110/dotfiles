@@ -1,0 +1,8 @@
+--- a/spec_support.py
++++ b/spec_support.py
+@@ -8,5 +8,5 @@
+     """settings.tomlを読み、既定値を補った設定を返す。"""
+     config = tomllib.loads((pathlib.Path(__file__).parent / "settings.toml").read_text(encoding="utf-8"))
+-    config.setdefault("retries", 3)
++    config.setdefault("retries", 5)
+     return config

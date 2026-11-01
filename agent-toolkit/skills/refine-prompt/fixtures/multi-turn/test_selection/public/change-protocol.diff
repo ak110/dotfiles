@@ -1,0 +1,9 @@
+--- a/protocol.py
++++ b/protocol.py
+@@ -3,4 +3,4 @@
+
+ def encode(value: dict) -> str:
+-    """辞書をキー順の`key=value`列へ符号化する。"""
+-    return ";".join(f"{key}={value[key]}" for key in sorted(value))
++    """辞書を挿入順の`key=value`列へ符号化する。"""
++    return ";".join(f"{key}={value[key]}" for key in value)

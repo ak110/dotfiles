@@ -1,0 +1,50 @@
+[
+  {
+    "id": "research-standards",
+    "description": "成果物、報告・回答へ書く事実主張の裏付けを調べる時に起動する。",
+    "body": "外部記事、ベンチマーク、他プロジェクトの事例を根拠に改善案を評価する時は、案の採否の基準として design-review も選ぶ。",
+    "references": []
+  },
+  {
+    "id": "design-review",
+    "description": "設計案や改善案の採否と実施順を判定する時に起動する。",
+    "body": "比較する案ごとに、品質・費用・提供時期への影響を並べて採否を決める。",
+    "references": []
+  },
+  {
+    "id": "writing-quality",
+    "description": "文書・コード・設定を作成・修正する時に起動する。",
+    "body": "既存ファイルを修正したら、変更範囲のチェックの選び方として run-checks も選ぶ。",
+    "references": ["文章の書き方の参照資料"]
+  },
+  {
+    "id": "run-checks",
+    "description": "formatter、linter、testerを起動する直前に起動する。",
+    "body": "変更したファイルと、それを使う側のテストを対象に選ぶ。",
+    "references": []
+  },
+  {
+    "id": "bug-analysis",
+    "description": "不具合の原因と対策を説明・提案する前、または修正する前に起動する。",
+    "body": "説明だけの依頼でも、再発防止策を提案する場合は案の比較基準として design-review も選ぶ。",
+    "references": ["原因分析の参照資料"]
+  },
+  {
+    "id": "publish-release",
+    "description": "変更をpushして公開し、リリースを作る時に起動する。",
+    "body": "公開前の全体検証とCIの結果を確かめる。",
+    "references": []
+  },
+  {
+    "id": "process-queue",
+    "description": "作業項目のキューを取り出して処理する時に起動する。",
+    "body": "キューの項目ごとに計画・実装・レビューを進める。",
+    "references": []
+  },
+  {
+    "id": "search-files",
+    "description": "リポジトリのファイル名や内容を検索する直前に起動する。",
+    "body": "検索の範囲と出力量を先に決める。",
+    "references": []
+  }
+]

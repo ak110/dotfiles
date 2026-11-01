@@ -1,0 +1,136 @@
+{
+  "case": "test-selection",
+  "kind": "single",
+  "source": {
+    "adaptation": "テスト選択の採点契約を検証する合成素材。保存例は採点の動作確認用で、実モデルの選択精度や探索方式の優劣の記録ではない。",
+    "basis": "期待集合は公開した模擬リポジトリのコード・設定・テストの利用関係から導いた（private/grade.pyのdocstringに対応を記す）。"
+  },
+  "conditions": [
+    "no-dialogue"
+  ],
+  "termination": [
+    "submitted"
+  ],
+  "requirements": [
+    {
+      "id": "required-tests",
+      "description": "変更が影響するテストを漏らさない（隠れた依存を含む）",
+      "tests": [
+        "change-shared-fixture-required",
+        "change-cli-key-required",
+        "change-plugin-contract-required",
+        "change-protocol-required",
+        "change-local-util-required"
+      ]
+    },
+    {
+      "id": "no-extra-tests",
+      "description": "影響しないテストを選ばない",
+      "tests": [
+        "change-shared-fixture-no-extra",
+        "change-cli-key-no-extra",
+        "change-plugin-contract-no-extra",
+        "change-local-util-no-extra"
+      ]
+    },
+    {
+      "id": "known-tests",
+      "description": "一覧に無いテスト識別子を使わない",
+      "tests": [
+        "change-shared-fixture-known",
+        "change-cli-key-known",
+        "change-plugin-contract-known",
+        "change-protocol-known",
+        "change-local-util-known"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "exploration",
+      "description": "利用側の実コードを検索・読取して依存を確かめたか。選択精度とは別に、実際のツール記録から探索の過程を確かめて比較記録へ残す。正解集合を提出できたことを探索方式の優位性とは扱わない。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "no-dialogue",
+      "candidate": "\"\"\"利用側の実コードから選んだ合成の提出例。\"\"\"\n\n\nSELECTIONS = {\n    'change-shared-fixture': ['settings_spec.py::test_timeout_default', 'loader_spec.py::test_loads_configured_plugins'],\n    'change-cli-key': ['report_spec.py::test_build_report_values', 'cli_output_spec.py::test_cli_output_keys'],\n    'change-plugin-contract': ['plugin_csv_spec.py::test_parse_cells', 'runner_spec.py::test_runner_invokes_plugin', 'loader_spec.py::test_loads_configured_plugins'],\n    'change-protocol': ['report_spec.py::test_build_report_values', 'cli_output_spec.py::test_cli_output_keys', 'settings_spec.py::test_timeout_default', 'loader_spec.py::test_loads_configured_plugins', 'plugin_csv_spec.py::test_parse_cells', 'runner_spec.py::test_runner_invokes_plugin', 'util_text_spec.py::test_slugify', 'protocol_spec.py::test_encode_sorted_pairs'],\n    'change-local-util': ['util_text_spec.py::test_slugify'],\n}\n\n\ndef select(change_id: str) -> list[str]:\n    \"\"\"変更IDに対し、実行すべきテスト識別子の一覧を返す。\"\"\"\n    return list(SELECTIONS[change_id])\n",
+      "execution": {
+        "case": "test-selection",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    },
+    {
+      "name": "path-match",
+      "condition": "no-dialogue",
+      "candidate": "\"\"\"変更したファイル名と同じ名前のテストだけを選んだ合成の提出例。\"\"\"\n\n\nSELECTIONS = {\n    'change-shared-fixture': [],\n    'change-cli-key': ['report_spec.py::test_build_report_values'],\n    'change-plugin-contract': ['plugin_csv_spec.py::test_parse_cells'],\n    'change-protocol': ['protocol_spec.py::test_encode_sorted_pairs'],\n    'change-local-util': ['util_text_spec.py::test_slugify'],\n}\n\n\ndef select(change_id: str) -> list[str]:\n    \"\"\"変更IDに対し、実行すべきテスト識別子の一覧を返す。\"\"\"\n    return list(SELECTIONS[change_id])\n",
+      "execution": {
+        "case": "test-selection",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    },
+    {
+      "name": "all-selected",
+      "condition": "no-dialogue",
+      "candidate": "\"\"\"全テストを選んだ合成の提出例。\"\"\"\n\n\nSELECTIONS = {\n    'change-shared-fixture': ['report_spec.py::test_build_report_values', 'cli_output_spec.py::test_cli_output_keys', 'settings_spec.py::test_timeout_default', 'loader_spec.py::test_loads_configured_plugins', 'plugin_csv_spec.py::test_parse_cells', 'runner_spec.py::test_runner_invokes_plugin', 'util_text_spec.py::test_slugify', 'protocol_spec.py::test_encode_sorted_pairs'],\n    'change-cli-key': ['report_spec.py::test_build_report_values', 'cli_output_spec.py::test_cli_output_keys', 'settings_spec.py::test_timeout_default', 'loader_spec.py::test_loads_configured_plugins', 'plugin_csv_spec.py::test_parse_cells', 'runner_spec.py::test_runner_invokes_plugin', 'util_text_spec.py::test_slugify', 'protocol_spec.py::test_encode_sorted_pairs'],\n    'change-plugin-contract': ['report_spec.py::test_build_report_values', 'cli_output_spec.py::test_cli_output_keys', 'settings_spec.py::test_timeout_default', 'loader_spec.py::test_loads_configured_plugins', 'plugin_csv_spec.py::test_parse_cells', 'runner_spec.py::test_runner_invokes_plugin', 'util_text_spec.py::test_slugify', 'protocol_spec.py::test_encode_sorted_pairs'],\n    'change-protocol': ['report_spec.py::test_build_report_values', 'cli_output_spec.py::test_cli_output_keys', 'settings_spec.py::test_timeout_default', 'loader_spec.py::test_loads_configured_plugins', 'plugin_csv_spec.py::test_parse_cells', 'runner_spec.py::test_runner_invokes_plugin', 'util_text_spec.py::test_slugify', 'protocol_spec.py::test_encode_sorted_pairs'],\n    'change-local-util': ['report_spec.py::test_build_report_values', 'cli_output_spec.py::test_cli_output_keys', 'settings_spec.py::test_timeout_default', 'loader_spec.py::test_loads_configured_plugins', 'plugin_csv_spec.py::test_parse_cells', 'runner_spec.py::test_runner_invokes_plugin', 'util_text_spec.py::test_slugify', 'protocol_spec.py::test_encode_sorted_pairs'],\n}\n\n\ndef select(change_id: str) -> list[str]:\n    \"\"\"変更IDに対し、実行すべきテスト識別子の一覧を返す。\"\"\"\n    return list(SELECTIONS[change_id])\n",
+      "execution": {
+        "case": "test-selection",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    },
+    {
+      "name": "unknown-id",
+      "condition": "no-dialogue",
+      "candidate": "\"\"\"一覧に無いテスト識別子を含む合成の提出例。\"\"\"\n\n\nSELECTIONS = {\n    'change-shared-fixture': ['settings_spec.py::test_timeout_default', 'loader_spec.py::test_loads_configured_plugins'],\n    'change-cli-key': ['report_spec.py::test_build_report_values', 'cli_output_spec.py::test_cli_output_keys'],\n    'change-plugin-contract': ['plugin_csv_spec.py::test_parse_cells', 'runner_spec.py::test_runner_invokes_plugin', 'loader_spec.py::test_loads_configured_plugins'],\n    'change-protocol': ['report_spec.py::test_build_report_values', 'cli_output_spec.py::test_cli_output_keys', 'settings_spec.py::test_timeout_default', 'loader_spec.py::test_loads_configured_plugins', 'plugin_csv_spec.py::test_parse_cells', 'runner_spec.py::test_runner_invokes_plugin', 'util_text_spec.py::test_slugify', 'protocol_spec.py::test_encode_sorted_pairs'],\n    'change-local-util': ['util_text_spec.py::test_slugify', 'missing_spec.py::test_absent'],\n}\n\n\ndef select(change_id: str) -> list[str]:\n    \"\"\"変更IDに対し、実行すべきテスト識別子の一覧を返す。\"\"\"\n    return list(SELECTIONS[change_id])\n",
+      "execution": {
+        "case": "test-selection",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    }
+  ]
+}

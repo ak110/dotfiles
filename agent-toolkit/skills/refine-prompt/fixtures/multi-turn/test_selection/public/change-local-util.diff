@@ -1,0 +1,9 @@
+--- a/util_text.py
++++ b/util_text.py
+@@ -3,4 +3,5 @@
+
+ def slugify(text: str) -> str:
+     """英数字とハイフンだけの識別子へ変換する。"""
+-    return "-".join(part for part in "".join(c.lower() if c.isalnum() else " " for c in text).split())
++    words = "".join(c.lower() if c.isalnum() else " " for c in text).split()
++    return "-".join(words)
