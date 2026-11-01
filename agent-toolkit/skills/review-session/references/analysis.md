@@ -1,6 +1,8 @@
 # 振り返りの判断基準
 
-`agent-toolkit:review-session`の`references/session-analysis.md`「分析と投入」において、メインエージェントが通読で見つけた問題や問題候補を選別し、原因と対策を確定するときの判断基準を定める。手動の工程と入出力は同スキルの`SKILL.md`、非同期の対象固定と範囲確定は`agent-toolkit:review-session batch`、振り返り結果報告の書式は`agent-toolkit:report-completion`の`references/report-formats.md`が定める。複数対象でも分析基準を変えず、対象IDと記録位置を保持する。
+通常・batchのメインによる問題選別・原因と対策の確定に使う。
+手順・入出力は本体、分析・投入は`session-analysis.md`、非同期の対象固定・範囲は`batch.md`、報告は読込表の`report-formats.md`が定める。
+複数対象でも同じ基準を使い、対象IDと記録位置を保持する。
 
 ## 名指し参照の読込方法
 
@@ -208,6 +210,9 @@ Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を
 | 委譲入力の過剰・冗長 | 起動時・追送時の本文と、参照ファイルの本文・配送済みの規範・実際に要った事実・認可・範囲を比べ、重複、不要な情報、先入観による記載を分ける |
 
 ## 原因と対策
+
+検証の困難と採否理由は元要求・証拠へ対応付け、記録前の実行失敗はセッション記録で補う。
+採否件数だけで品質を判定せず、個別の検証手順と共通品質基準へ改善先を分け、既存AWIへ渡す。
 
 再発・悪化を問う入力は、個別候補の採否の前に`agent-basics:bugfix/references/root-cause-scenarios.md`「前提の再検討」「反復した指摘の原因判定」で分析単位と比較範囲を確かめる。
 
