@@ -1929,12 +1929,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         # 記録の写しが保存のために省略された場合は比較に使えず、モデルへ返したhook入力の本文を証拠にする。
         allow_mixed = (
             execution is not None
-            and isinstance(response, str)
-            and (
-                execution.get("aggregated_output") == response
-                or codex_read_observation.persisted_copy_truncated(execution)
-                and codex_read_observation.PERSISTENCE_MARKER not in response
-            )
+            and codex_read_observation.record_matches_response(execution, response)
             and not host_truncated(response)
         )
     for target, start, end, length, fingerprint in _read_body_proofs(

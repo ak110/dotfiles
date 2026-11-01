@@ -108,6 +108,20 @@ def persisted_copy_truncated(execution: dict) -> bool:
     return isinstance(output, str) and PERSISTENCE_MARKER in output
 
 
+def record_matches_response(execution: dict, response: object) -> bool:
+    """記録の写しとhookの応答が同じ出力を表すかを返す。
+
+    記録の`aggregated_output`は保存のために中間を省略されることがあり、モデルへ返した本文の写しとは限らない。
+    写しが省略されていれば、省略行を含まない応答をモデルへ返した全文として扱う。
+    記録の写しを比較に使う判定は、写しの省略を見落とさないよう本関数か`persisted_copy_truncated`を経由する。
+    """
+    if not isinstance(response, str):
+        return False
+    if execution.get("aggregated_output") == response:
+        return True
+    return persisted_copy_truncated(execution) and PERSISTENCE_MARKER not in response
+
+
 def response_is_truncated(response: object) -> bool:
     """nativeが付ける省略の包絡だけを識別し、本文中の語では判定しない。"""
     return isinstance(response, str) and response.startswith("Warning: truncated output (original token count:")
