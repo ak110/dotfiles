@@ -715,6 +715,7 @@ def test_cmd_add_omits_origin_metadata(
     ("environment", "entry_type", "message", "expected"),
     [
         ({"CLAUDE_CODE_SESSION_ID": "main-session"}, WI_TYPE_UWI, "質問本文", "main-session"),
+        ({"CODEX_THREAD_ID": "codex-thread"}, WI_TYPE_UWI, "質問本文", "codex-thread"),
         (
             {"CLAUDE_CODE_SESSION_ID": "child-session", "AGENT_TOOLKIT_OWNER_SESSION": "owner-session"},
             WI_TYPE_UWI,
@@ -736,7 +737,7 @@ def test_cmd_add_records_submitter_session_only_for_uwi(
 ) -> None:
     """UWIだけへ投入元セッションを保存する。
 
-    回答済みUWIの通知は保存した値で宛先を決めるため、委譲先の投入分は委譲元の値、
+    回答済みUWIの通知は保存した値で宛先を決めるため、ownerを持たないCodex最上位の投入分はその会話の値、委譲先の投入分は委譲元の値、
     会話へ対応しないプロセス専用の値と未解決の場合はキーを持たない状態にする。
     本文のfrontmatterによる宛先指定の拒否は予約キーの入力テストで確かめる。
     """
@@ -744,6 +745,7 @@ def test_cmd_add_records_submitter_session_only_for_uwi(
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     for key, value in environment.items():
         monkeypatch.setenv(key, value)
 

@@ -89,11 +89,12 @@ _WORKING_RESIDUE_SUFFIXES = (_LOCK_SUFFIX, ".bak", ".tmp")
 
 
 def _excluded_path(path: pathlib.Path) -> bool:
-    """計画バンドルから一時ファイルと計画の所有記録を除外する。
+    """計画バンドルから一時ファイルと局所記録を除外する。
 
-    計画の所有記録は`~/.claude/plans`の局所状態であり、private-notesへ保存しない。
+    所有記録と作成日記録は`~/.claude/plans`の局所状態であり、private-notesへ保存しない。
     """
-    return path.name.endswith(_WORKING_RESIDUE_SUFFIXES) or _bundle_kinds.OWNER_RECORD.matches(path.name)
+    kind = _bundle_kinds.kind_of_name(path.name)
+    return path.name.endswith(_WORKING_RESIDUE_SUFFIXES) or (kind is not None and not kind.stored)
 
 
 def _remove_working_residue(working_main: pathlib.Path) -> None:
@@ -432,7 +433,8 @@ def checkout_plan(
                 next_action=_PLAN_PATH_NEXT_ACTION,
             )
         destinations = tuple(working_root / path.name for path in saved_bundle)
-        conflicts = tuple(path for path in destinations if path.exists())
+        created_record = working_main.with_name(_bundle_kinds.CREATED_RECORD.name_for(working_main.stem))
+        conflicts = tuple(path for path in (*destinations, created_record) if path.exists() or path.is_symlink())
         if conflicts:
             raise _wi_web_input.WebInputError(
                 f"`~/.claude/plans`に同名ファイルがあります: {conflicts[0]}",
@@ -447,6 +449,10 @@ def checkout_plan(
                 with os.fdopen(descriptor, "wb") as output:
                     output.write(snapshots[destination.name])
                 copied.append(destination)
+            with created_record.open("x", encoding="utf-8") as output:
+                copied.append(created_record)
+                date = f"{relative_main.parts[0]}-{relative_main.parts[1]}-{relative_main.name[:2]}"
+                output.write(json.dumps({"date": date}) + "\n")
             _write_checkout_record(relative_main, snapshots, duplicate_error=duplicate_error)
         except Exception:
             for path in copied:
@@ -762,6 +768,7 @@ def commit_plan(
         if not working_bundle:
             _remove_checkout_record(requested_relative)
             _owner_records.remove_owner_record(working_main)
+            working_main.with_name(_bundle_kinds.CREATED_RECORD.name_for(working_main.stem)).unlink(missing_ok=True)
             return {"plan_file": relative_main.as_posix(), "paths": (), "message": ""}
     elif working_relative is not None and not working_bundle:
         raise _wi_web_input.WebInputError(
@@ -775,6 +782,14 @@ def commit_plan(
         working_main = _plan_file.working_plans_root(home) / working_relative
         date = _birth_date(working_main).split("/")
         relative_main = pathlib.Path(date[0], date[1], working_relative.name)
+        try:
+            _validate_saved_plan_relative_path(relative_main.as_posix())
+        except _wi_web_input.WebInputError as error:
+            record = working_main.with_name(_bundle_kinds.CREATED_RECORD.name_for(working_main.stem))
+            raise _wi_web_input.WebInputError(
+                f"保存年月{date[0]}/{date[1]}と計画名の日{working_relative.name[:2]}が実在する日付になりません",
+                next_action=f"{record}のdateを正しい作成日（YYYY-MM-DD）へ直し、計画名の日も確認して再実行する",
+            ) from error
     with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
         saved_main = _plan_file.new_plans_root(private_notes) / relative_main
         saved_bundle_exists = saved_main.is_file()
@@ -848,9 +863,11 @@ def commit_plan(
             _remove_checked_out_working_bundle(working_bundle, snapshots, requested_relative)
             _remove_checkout_record(requested_relative)
             _owner_records.remove_owner_record(working_main)
+            working_main.with_name(_bundle_kinds.CREATED_RECORD.name_for(working_main.stem)).unlink(missing_ok=True)
         elif working_bundle:
             _remove_finalized_working_bundle(working_bundle, snapshots, bundle, relative_main, home)
             _owner_records.remove_owner_record(working_main)
+            working_main.with_name(_bundle_kinds.CREATED_RECORD.name_for(working_main.stem)).unlink(missing_ok=True)
     return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message}
 
 

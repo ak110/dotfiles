@@ -1,15 +1,119 @@
 """現行の1ファイル計画作成処理を検証する。"""
 
 import datetime
+import json
+import os
 import pathlib
+import subprocess
 import time
+import types
+import typing
 
 import check_plan_file
 import create_plan_files
 import pytest
 
+from agent_toolkit import atk
+from agent_toolkit._atk import plans as _atk_plans
+from agent_toolkit._plan import locations as _locations
+from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import plan_fixture as _plan_fixture
+from agent_toolkit._testing import stop_check_runner as _stop_check_runner
+from agent_toolkit._testing.helpers import _write_transcript
+
+
+@pytest.mark.parametrize(
+    ("clock", "option", "value", "stem", "saved_month", "recorded_date"),
+    [
+        ("2026-10-31T14:59:00+00:00", "--lane", "lane-02", "31-2359_process-wi_レーン02", "2026/10", "2026-10-31"),
+        ("2026-12-31T14:59:00+00:00", "--lane", "lane-02", "31-2359_process-wi_レーン02", "2026/12", "2026-12-31"),
+        ("2026-10-31T15:01:00+00:00", "--name", "計画", "31-1501_計画", "2026/10", "2026-10-31"),
+    ],
+)
+def test_created_date_survives_edit_save_checkout_and_resave(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    clock: str,
+    option: str,
+    value: str,
+    stem: str,
+    saved_month: str,
+    recorded_date: str,
+) -> None:
+    """命名と同時に確定した日付を、月年跨ぎの編集と取得後にも保持する。"""
+    instant = datetime.datetime.fromisoformat(clock)
+    jst = datetime.timezone(datetime.timedelta(hours=9))
+
+    class FixedDatetime(datetime.datetime):
+        """ローカルをJSTとして命名時刻を固定する時計。"""
+
+        @classmethod
+        def now(cls, tz: datetime.tzinfo | None = None) -> typing.Self:
+            return cls.fromtimestamp(instant.timestamp(), tz or jst)
+
+        def astimezone(self, tz: datetime.tzinfo | None = None) -> typing.Self:
+            return super().astimezone(tz or jst)
+
+    monkeypatch.setattr(create_plan_files, "datetime", types.SimpleNamespace(datetime=FixedDatetime, UTC=datetime.UTC))
+    source, bug_source = _source(repo, tmp_path, bug=True)
+    assert bug_source is not None
+    home = tmp_path / "home"
+    notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    assert (
+        create_plan_files.main(
+            [
+                "--main-source",
+                str(source),
+                "--bugs-source",
+                str(bug_source),
+                option,
+                value,
+                "--home",
+                str(home),
+                "--work-dir",
+                str(repo),
+            ]
+        )
+        == 0
+    )
+    main = _locations.working_plans_root(home) / f"{stem}.md"
+    record = main.with_suffix(".created.json")
+    assert json.loads(record.read_text(encoding="utf-8")) == {"date": recorded_date}
+    main.write_bytes(main.read_bytes() + "\n追記\n".encode())
+    contents = {path.name: path.read_bytes() for path in (main, main.with_suffix(".bugs.md"))}
+
+    def unavailable_creation(_path: pathlib.Path, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(_locations, "_creation_epoch", unavailable_creation)
+    # 推定だけなら翌月となる日まで編集し、局所記録の優先を検証する。
+    edited = datetime.datetime(2027, 2, 28, 12).timestamp()
+    os.utime(main, (edited, edited))
+    portable = f"$(atk config get private_notes)/plans/{saved_month}/{main.name}"
+    assert _locations.to_portable_plan_file(main, private_notes=notes, home=home) == portable
+    assert [entry["path"] for entry in _atk_plans.list_working_plans(home)] == [str(main)]
+    with pytest.raises(SystemExit) as saved:
+        atk.main(["plans", "commit", main.name, "--skip-push"], home=home)
+    assert saved.value.code == 0
+    assert not record.exists()
+    saved_main = notes / "plans" / saved_month / main.name
+    assert {path.name: path.read_bytes() for path in saved_main.parent.iterdir()} == contents
+    assert _locations.resolve_plan_file(portable, private_notes=notes, home=home) == saved_main
+    with pytest.raises(SystemExit) as checked_out:
+        atk.main(["plans", "checkout", f"{saved_month}/{main.name}"], home=home)
+    assert checked_out.value.code == 0
+    assert json.loads(record.read_text(encoding="utf-8")) == {"date": recorded_date}
+    os.utime(main, (edited, edited))
+    assert _locations.to_portable_plan_file(main, private_notes=notes, home=home) == portable
+    assert {name: (main.parent / name).read_bytes() for name in contents} == contents
+    with pytest.raises(SystemExit) as resaved:
+        atk.main(["plans", "commit", main.name, "--skip-push"], home=home)
+    assert resaved.value.code == 0
+    assert not record.exists()
+    assert {path.name: path.read_bytes() for path in saved_main.parent.iterdir()} == contents
 
 
 @pytest.mark.parametrize("invalid", ["columns", "initial-progress"])
@@ -152,6 +256,7 @@ def test_creates_single_file_with_supplied_stem(repo: pathlib.Path, tmp_path: pa
 
     assert path == tmp_path / "home/.claude/plans/13-0217_計画保存先移行.md"
     assert path.is_file()
+    assert not path.with_suffix(".created.json").exists()
 
 
 def test_wrong_execution_worktree_guides_recovery_without_changing_source(
@@ -264,7 +369,7 @@ def test_cli_accepts_bare_name(
 ) -> None:
     """CLIの--nameへ名称だけを渡して日時付きファイルを作成できる。"""
     source, _bug_source = _source(repo, tmp_path)
-    monkeypatch.setattr(create_plan_files, "named_plan_name", lambda name: f"18-0334_{name}")
+    monkeypatch.setattr(create_plan_files, "named_plan_name", lambda name, **_kwargs: f"18-0334_{name}")
 
     result = create_plan_files.main(
         [
@@ -336,7 +441,7 @@ def test_cli_creates_process_lane_plan_with_generated_name(
     monkeypatch.setattr(
         create_plan_files,
         "process_lane_plan_name",
-        lambda lane: "14-1405_process-wi_レーン02" if lane == "lane-02" else "unexpected",
+        lambda lane, **_kwargs: "14-1405_process-wi_レーン02" if lane == "lane-02" else "unexpected",
     )
 
     result = create_plan_files.main(
@@ -477,3 +582,82 @@ def test_cli_rejects_removed_detail_source() -> None:
         create_plan_files.main(["--detail-source", "detail.md", "--name", "13-0217_計画"])
 
     assert raised.value.code == 2
+
+
+_CONVERSATION_ENVS = ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
+
+
+def _run_plan_save_advisor(home: pathlib.Path, state_dir: pathlib.Path, session_id: str) -> dict:
+    """保存確認のStopフックを別プロセスで起動し、出力した判定を返す。
+
+    フックは入力の`session_id`が所有記録の会話と一致する計画だけを通知する。起動したプロセスの環境は使わないため、会話を表す環境変数は除く。
+    """
+    transcript = _write_transcript(
+        state_dir,
+        [{"type": "assistant", "message": {"stop_reason": "end_turn", "content": [{"type": "text", "text": "完了"}]}}],
+    )
+    env = {key: value for key, value in os.environ.items() if key not in _CONVERSATION_ENVS}
+    env.update(
+        {"HOME": str(home), "USERPROFILE": str(home), "TMPDIR": str(state_dir), "TEMP": str(state_dir), "TMP": str(state_dir)}
+    )
+    payload = json.dumps({"session_id": session_id, "transcript_path": str(transcript)})
+    result: subprocess.CompletedProcess[str] = _fork_runner.run_script(
+        pathlib.Path(_stop_check_runner.__file__), argv=("plan_save_advisor",), input=payload, env=env
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout) if result.stdout else {}
+
+
+@pytest.mark.parametrize(
+    ("environment", "owner"),
+    [
+        ({"CODEX_THREAD_ID": "codex-thread"}, "codex-thread"),
+        ({"CLAUDE_CODE_SESSION_ID": "claude-session"}, "claude-session"),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "owner-session", "CODEX_THREAD_ID": "delegate-thread"}, "owner-session"),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "mcp-0123456789abcdef0123456789abcdef", "CODEX_THREAD_ID": "delegate-thread"}, None),
+    ],
+    ids=["codex-top-level", "claude-top-level", "delegate-with-owner", "process-root"],
+)
+def test_public_plan_create_owner_reaches_listing_and_save_advisor(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    environment: dict[str, str],
+    owner: str | None,
+) -> None:
+    """公開の`atk run-script plan-create`で作った計画の所有会話を、公開の一覧と保存確認フックまで対応付ける。
+
+    作成処理が所有記録を書かなくなると、作成した会話の保存案内から計画が漏れる。
+    プロセス専用のrootは会話へ対応しないため、どの会話の保存案内にも現れない。
+    """
+    for name in _CONVERSATION_ENVS:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    home = tmp_path / "home"
+    notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    source, _bug_source = _source(repo, tmp_path)
+    arguments = ["--main-source", str(source), "--name", "所有会話", "--home", str(home), "--work-dir", str(repo)]
+    with pytest.raises(SystemExit) as created:
+        atk.main(["run-script", "plan-create", "--", *arguments], home=home)
+    assert created.value.code == 0
+    (main,) = _locations.working_plans_root(home).glob("*_所有会話.md")
+
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as listed:
+        atk.main(["plans", "list"], home=home)
+    assert listed.value.code == 0
+    (line,) = capsys.readouterr().out.splitlines()
+    assert line.split("\t")[:2] == [str(main), owner or "なし"]
+
+    state_dir = tmp_path / "hook-state"
+    state_dir.mkdir()
+    assert not _run_plan_save_advisor(home, state_dir, "other-conversation")
+    for session in ("codex-thread", "claude-session", "owner-session", "delegate-thread"):
+        result = _run_plan_save_advisor(home, state_dir, session)
+        if session == owner:
+            assert str(main) in result["hookSpecificOutput"]["additionalContext"]
+        else:
+            assert not result

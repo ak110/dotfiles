@@ -150,8 +150,9 @@ def test_portable_plan_file_round_trips_inside_private_notes(tmp_path: pathlib.P
     assert _plan_file.resolve_plan_file(portable, private_notes=private_notes) == plan.resolve()
 
 
+@pytest.mark.parametrize(("modified", "month"), [("2026-11-01", "2026/10"), ("2027-01-01", "2026/12")])
 def test_cli_saves_and_checks_out_month_crossing_bundle_without_creation_time(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, modified: str, month: str
 ) -> None:
     """公開CLIの保存と取得で、月跨ぎ31日名と付属ファイルの内容を保持する。"""
     notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
@@ -165,25 +166,34 @@ def test_cli_saves_and_checks_out_month_crossing_bundle_without_creation_time(
     for filename, content in contents.items():
         path = working / filename
         path.write_bytes(content)
-        modified_epoch = datetime.datetime(2026, 11, 1, 12).timestamp()
+        modified_epoch = datetime.datetime.fromisoformat(f"{modified}T12:00:00").timestamp()
         os.utime(path, (modified_epoch, modified_epoch))
 
     def unavailable_creation(_path: pathlib.Path, **_kwargs: object) -> None:
         return None
 
     monkeypatch.setattr(_plan_file, "_creation_epoch", unavailable_creation)
+    portable = f"$(atk config get private_notes)/plans/{month}/{name}"
+    assert _plan_file.to_portable_plan_file(working / name, private_notes=notes, home=home) == portable
 
     with pytest.raises(SystemExit) as saved:
         atk.main(["plans", "commit", name, "--skip-push"], home=home)
     assert saved.value.code == 0
     assert all(not (working / filename).exists() for filename in contents)
-    assert (notes / "plans/2026/10" / name).is_file()
-    assert {path.name: path.read_bytes() for path in (notes / "plans/2026/10").iterdir()} == contents
+    assert (notes / "plans" / month / name).is_file()
+    assert {path.name: path.read_bytes() for path in (notes / "plans" / month).iterdir()} == contents
 
     with pytest.raises(SystemExit) as checked_out:
-        atk.main(["plans", "checkout", f"2026/10/{name}"], home=home)
+        atk.main(["plans", "checkout", f"{month}/{name}"], home=home)
     assert checked_out.value.code == 0
     assert {filename: (working / filename).read_bytes() for filename in contents} == contents
+    edited = datetime.datetime(2028, 3, 31, 12).timestamp()
+    os.utime(working / name, (edited, edited))
+    assert _plan_file.to_portable_plan_file(working / name, private_notes=notes, home=home) == portable
+    with pytest.raises(SystemExit) as resaved:
+        atk.main(["plans", "commit", name, "--skip-push"], home=home)
+    assert resaved.value.code == 0
+    assert {path.name: path.read_bytes() for path in (notes / "plans" / month).iterdir()} == contents
 
 
 def test_portable_plan_file_resolves_working_copy_before_saved_copy(tmp_path: pathlib.Path) -> None:

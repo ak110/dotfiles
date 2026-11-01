@@ -28,6 +28,7 @@ _EXPECTED: dict[bundle_kinds.BundleKind, _Expected] = {
     bundle_kinds.EXEC_REVIEW: _Expected(f"{_STEM}.exec-review.tsv", f"{_STEM}.md", False, True, True, True),
     bundle_kinds.WI_COMMITS: _Expected(f"{_STEM}.wi-commits.jsonl", f"{_STEM}.md", False, False, False, True),
     bundle_kinds.OWNER_RECORD: _Expected(f"{_STEM}.owner.json", f"{_STEM}.md", False, False, False, True),
+    bundle_kinds.CREATED_RECORD: _Expected(f"{_STEM}.created.json", f"{_STEM}.md", False, False, False, True),
     bundle_kinds.HANDOFF: _Expected(f"{_STEM}.handoff.md", None, True, True, True, True),
     bundle_kinds.LEGACY_REVIEW: _Expected(f"{_STEM}.review.md", f"{_STEM}.md", False, False, True, False),
     bundle_kinds.WORKAROUND_CHECK: _Expected(f"{_STEM}-workaround-check.md", f"{_STEM}.md", False, False, True, False),

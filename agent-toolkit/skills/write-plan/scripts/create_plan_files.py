@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime
+import json
 import os
 import pathlib
 import re
@@ -264,6 +265,7 @@ def _finalize_candidate(
     work_dir: pathlib.Path,
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
+    creation_date: datetime.date | None,
 ) -> tuple[pathlib.Path, ...]:
     """同じstemの全ファイルを排他的に確定し、途中失敗時に部分成果を残さず返す。
 
@@ -275,6 +277,15 @@ def _finalize_candidate(
     targets = [(main_path, main_content, f"{_bundle_kinds.MAIN.suffix}.tmp")]
     if bug_content is not None:
         targets.append((directory / _bundle_kinds.BUGS.name_for(stem), bug_content, f"{_bundle_kinds.BUGS.suffix}.tmp"))
+    plan_targets = tuple(targets)
+    if creation_date is not None:
+        targets.append(
+            (
+                directory / _bundle_kinds.CREATED_RECORD.name_for(stem),
+                (json.dumps({"date": creation_date.isoformat()}) + "\n").encode("utf-8"),
+                f"{_bundle_kinds.CREATED_RECORD.suffix}.tmp",
+            )
+        )
     _require_plans_root_path(directory, plans_root)
     for path, _content, _suffix in targets:
         _require_plans_root_path(path, plans_root)
@@ -295,10 +306,12 @@ def _finalize_candidate(
             _require_plans_root_path(path, plans_root)
             if path.read_bytes() != content:
                 raise PlanCreationError(f"確定後の計画本文を読み戻せません: {path}", next_action=_RETRY_NEXT_ACTION)
-        _check_plan_references(tuple((path, content) for path, content, _suffix in targets), main_path, private_notes, home)
+        _check_plan_references(
+            tuple((path, content) for path, content, _suffix in plan_targets), main_path, private_notes, home
+        )
         _check_structure(main_path, work_dir, private_notes, home)
         _owner_records.record_plan_owner(main_path)
-        return tuple(path for path, _content, _suffix in targets)
+        return tuple(path for path, _content, _suffix in plan_targets)
     except BaseException:
         for path, identity, content in reversed(owned):
             _remove_owned(path, identity, content)
@@ -342,11 +355,13 @@ def create_plan_files(
     home: pathlib.Path | str | None = None,
     work_dir: pathlib.Path | str | None = None,
     max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
+    creation_date: datetime.date | None = None,
 ) -> tuple[pathlib.Path, ...]:
     """入力本文を`~/.claude/plans`へ作成し、確定済みパスを返す。
 
     ``main_source``および任意の``bug_source``はmanaged-tempの中にあるUTF-8本文を指す。
     private-notesは既存の可搬参照の妥当性を判定するときだけ使い、計画本文は`~/.claude/plans`へ保存する。
+    ``creation_date``は命名と同時に確定した保存日付とし、完全stemだけで日付を決められない場合は省く。
     """
     if max_attempts <= 0:
         raise ValueError("max_attemptsは1以上にしてください")
@@ -403,6 +418,7 @@ def create_plan_files(
                         checked_work_dir,
                         notes_for_resolver,
                         home,
+                        creation_date,
                     )
                 except _CandidateCollision:
                     continue
@@ -467,7 +483,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        plan_name = named_plan_name(args.name) if args.name is not None else process_lane_plan_name(args.lane)
+        now = datetime.datetime.now(datetime.UTC)
+        if args.name is not None:
+            plan_name = named_plan_name(args.name, now=now)
+            creation_date = None if _TIMESTAMPED_NAME_PATTERN.fullmatch(args.name) else now.date()
+        else:
+            plan_name = process_lane_plan_name(args.lane, now=now)
+            creation_date = now.astimezone().date()
         paths = create_plan_files(
             args.main_source,
             plan_name,
@@ -475,6 +497,7 @@ def main(argv: list[str] | None = None) -> int:
             private_notes=args.private_notes,
             home=args.home,
             work_dir=args.work_dir,
+            creation_date=creation_date,
         )
     except _next_action.ActionableError as error:
         _next_action.report(f"計画ファイルを作成できません: {error.reason}", next_action=error.next_action)

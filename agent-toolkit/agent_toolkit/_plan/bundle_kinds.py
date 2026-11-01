@@ -65,6 +65,7 @@ EXEC_REVIEW = BundleKind(
 )
 WI_COMMITS = BundleKind("wi-commits", ".wi-commits.jsonl", Role.ATTACHMENT, current=True)
 OWNER_RECORD = BundleKind("owner", ".owner.json", Role.ATTACHMENT, current=True, stored=False)
+CREATED_RECORD = BundleKind("created", ".created.json", Role.ATTACHMENT, current=True, stored=False)
 HANDOFF = BundleKind("handoff", ".handoff.md", Role.STANDALONE, current=True)
 LEGACY_REVIEW = BundleKind("review", ".review.md", Role.ATTACHMENT, current=False)
 WORKAROUND_CHECK = BundleKind("workaround-check", "-workaround-check.md", Role.ATTACHMENT, current=False)
@@ -78,6 +79,7 @@ ALL_KINDS: tuple[BundleKind, ...] = (
     EXEC_REVIEW,
     WI_COMMITS,
     OWNER_RECORD,
+    CREATED_RECORD,
     HANDOFF,
     LEGACY_REVIEW,
     WORKAROUND_CHECK,
