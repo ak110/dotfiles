@@ -258,6 +258,13 @@ Claude backendの資源解放では、SDKクライアントの切断を所有タ
 後続turnの稼働・再終了・失敗は現在の登録から判断し、過去turnの未回収結果は結果ファイルで保持する。
 別プロセスの再開では照会側のメモリーを更新できないため、復元済みの終了状態を現在状態として再利用する案は採らない。
 
+CLIの`atk agents list`・`wait`が使う会話の識別は、現在会話・所有ルート・状態ファイルの書込主体を別の値として扱う。
+現在会話の識別子は`_common/delegated_session.py`の`current_conversation_session_id`（`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順）が定め、計画の所有記録とUWIの投入元も同じ関数を使う。
+所有ルートの索引（aliases）のキーは、委譲先なら所有session、最上位なら現在会話の識別子とする。
+Codex CLIが直接起動するMCPは会話の識別子を受け取らずプロセス専用ルートの`root.json`へ書くため、ownerを持たないCodex最上位の会話では、PostToolUseが記録した索引が確認済みのルートを指す場合に限り、そのルートの`root.json`を読む。
+所有ルートを環境だけから解決する`resolve_root_session_id`へCodexの識別子を加える案は、最上位の読取先を`<thread>.json`へ変え、MCPが書いた`root.json`へ届かなくなるため採らない。
+索引が無い場合の待機は、MCPの`list`応答の`root_session_id`を`--root-session-id`へ渡す回復操作を案内する。
+
 ### `send_message`
 
 停止後・保持期限後・所有主体消失後の再開では、要求ごとの`ResumePrompt.delivery`へ配送結果を確定し、`PendingResume`が応答まで保持する。
