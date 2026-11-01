@@ -47,6 +47,7 @@ RETURN_TARGETS = (
     ("bulk-replace-review", "skills/delegation/references/bulk-replacement.md", "一括置換後レビューの返却契約", 3),
     ("usability-review", "share/usability-review.parent.md", "ユーザビリティレビューの返却契約", 2),
     ("session-termination", "share/session-termination.parent.md", "公開担当の返却契約", 2),
+    ("repository-process", "skills/process-wi/references/all-repos.md", "リポジトリ担当の返却契約", 3),
 )
 
 

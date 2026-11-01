@@ -61,7 +61,7 @@ writes_worktree: true
 ## 出力
 
 次の形式のみを返す。
-`状態`は、公開・CI検収まで終了した場合を`completed`、残工程がある場合を`incomplete`、未着手を`pending`とする。
+公開・CI検収まで終了した場合は`状態`を`completed`、残工程がある場合は`incomplete`、未着手の場合は`pending`とする。
 
 ```text
 状態: <completed|incomplete|pending>

@@ -74,7 +74,7 @@ async def test_delegate_preserves_original_and_returns_same_record(
     )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     original = "Aを変更する。\n追加指示の後もA全体を検収する。"
-    response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt=original, model_type="execute")
+    response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt=original, model_type="chores")
     delivered = manager.start.await_args.args[1]
     assert delivered.startswith(original + "\n\n")
     assert f"引き継ぎ記録先: {path}（新規）" in delivered

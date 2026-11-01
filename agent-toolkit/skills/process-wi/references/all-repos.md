@@ -66,9 +66,26 @@ WorktreeCreate/WorktreeRemoveは対象設定を読む既存atk操作で実行し
 
 ### 受領
 
-実行結果は引数なしの`atk agents wait`で受け取り、`repository-process.subagent.md`「出力」の固定形式を満たしていることを確認する。
+実行結果は引数なしの`atk agents wait`で受け取り、本書「リポジトリ担当の返却契約」の固定形式を満たしていることを確認する。
 返却の`状態`、`残工程`、`writer_sessions`を「結果と終了」の`result_file`へ転記する。
 続行不能の返却は`blocked`として記録する。
+
+<!-- return-contract:repository-process:start -->
+<!-- 生成元: share/repository-process.subagent.md「出力」。手動編集しない。 -->
+### リポジトリ担当の返却契約
+
+次の形式のみを返す。
+公開・CI検収まで終了した場合は`状態`を`completed`、残工程がある場合は`incomplete`、未着手の場合は`pending`とする。
+
+```text
+状態: <completed|incomplete|pending>
+残工程: <残る工程と再開先。無ければ「なし」>
+writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列>
+結果: <公開結果、CI、処理したAWIと採否の要約>
+```
+
+続行不能の場合は`状態:`行の代わりに`../../../share/rules-subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。統括担当はこの返却を`result_file`の`blocked`として記録する。
+<!-- return-contract:repository-process:end -->
 
 ## 結果と終了
 
