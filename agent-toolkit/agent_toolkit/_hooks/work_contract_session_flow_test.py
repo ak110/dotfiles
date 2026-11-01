@@ -1,4 +1,4 @@
-"""公開hookから既存の作業契約の所在を通知する流れを確認する。"""
+"""公開hookから既存の作業契約の本文を通知する流れを確認する。"""
 
 from __future__ import annotations
 
@@ -8,21 +8,54 @@ import pathlib
 import pytest
 
 from agent_toolkit._hooks import pretooluse, rules_context, user_prompt_submit, work_contract
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as run_hook_in_process
 
 
-def test_user_prompt_and_compaction_notify_existing_contract(
+@pytest.mark.parametrize("codex", [False, True])
+def test_each_user_prompt_delivers_the_contract_body(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, codex: bool
+) -> None:
+    """実入力のたびに、同じ契約本文と回答後の復帰基準を両ホストの公開UserPromptSubmitから届ける。"""
+    path = tmp_path / "work-contract.md"
+    path.write_text("目的: A全体の完了\n要件: Bを保持\n", encoding="utf-8")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setattr(work_contract, "record_path", lambda _session: path)
+    monkeypatch.setattr(user_prompt_submit, "_claim_user_confirmation_notice", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(user_prompt_submit.termination_evidence, "observe_user", lambda *_args: None)
+    extra = {"turn_id": "turn"} if codex else {}
+    session = "contract-body-" + ("codex" if codex else "claude")
+    for prompt in ("Xはどこから来たの？", "状況は？"):
+        result = run_hook_in_process(
+            "user_prompt_submit", {"session_id": session, "hook_event_name": "UserPromptSubmit", "prompt": prompt, **extra}
+        )
+        assert result.returncode == 0
+        assert "目的: A全体の完了" in result.stdout
+        assert "元の未完了工程へ戻れ" in result.stdout
+    machine = run_hook_in_process(
+        "user_prompt_submit",
+        {
+            "session_id": session,
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": '<atk-auto source="agents-server" kind="delivery">追送</atk-auto>',
+            **extra,
+        },
+    )
+    assert "目的: A全体の完了" not in machine.stdout
+
+
+def test_compaction_delivers_the_contract_body(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = tmp_path / "work-contract.md"
     path.write_text("目的: A全体\n", encoding="utf-8")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setattr(work_contract, "record_path", lambda _session: path)
-    monkeypatch.setattr(user_prompt_submit, "_is_machine_injected", lambda *_args: False)
-    monkeypatch.setattr(user_prompt_submit, "_claim_user_confirmation_notice", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(user_prompt_submit.termination_evidence, "observe_user", lambda *_args: None)
-    assert user_prompt_submit.main(json.dumps({"session_id": "session", "prompt": "続けて"})) == 0
-    assert str(path) in capsys.readouterr().out
-    monkeypatch.setattr(rules_context, "is_delegated", lambda *_args: False)
-    assert work_contract.notice("session") is not None
+    assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "s"})) == 0
+    output = capsys.readouterr().out
+    assert "目的: A全体" in output
+    assert "元の未完了工程へ戻れ" in output
 
 
 @pytest.mark.parametrize("initial_prompt", [None, "調査を進めて", '<atk-auto source="process-loop">/goal 作業</atk-auto>'])

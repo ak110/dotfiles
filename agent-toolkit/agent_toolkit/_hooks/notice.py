@@ -132,6 +132,27 @@ def resolve_notice_in_state(state: dict, hook_id: str, cause: str, *, subject: s
     return state
 
 
+def forget_subject_notices(session_id: str, subject: str) -> None:
+    """文脈を失った主体へ、既送の通知を再び届けられるようにする。
+
+    重複抑止の記録は「受信した文脈がその本文を保持している」ことの代理であり、
+    会話圧縮やclearで文脈が失われた後も残すと、所在通知などの必須案内が届かなくなる。
+    キーの第2要素が主体であるため、全scopeから同じ主体の記録だけを除く。
+    """
+
+    def forget(state: dict) -> dict | None:
+        notices = state.get("notice_fingerprints")
+        if not isinstance(notices, dict):
+            return None
+        kept = {name: value for name, value in notices.items() if name.split("|", 2)[1:2] != [subject]}
+        if len(kept) == len(notices):
+            return None
+        state["notice_fingerprints"] = kept
+        return state
+
+    update_state(session_id, forget)
+
+
 def set_warning_session_id(session_id: str) -> None:
     """現在のhook payloadのセッションIDをwarn通知を整形する処理へ渡す。"""
     _warning_context["session_id"] = session_id

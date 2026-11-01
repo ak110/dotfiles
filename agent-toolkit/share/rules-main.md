@@ -36,7 +36,6 @@
 
 送達手段を問わず、思考以外の全文に`agent-toolkit/rules/01-agent.md`「使用言語」を適用する。
 
-質問形式はClaude Codeの`rules-main.claude-code.md`「ユーザー確認（`AskUserQuestion`）」、Codexの`rules-main.codex.md`「ユーザー確認と終了」に従う。
 説明・報告・確認には`agent-basics:writing-standards/references/writing.md`「文章の共通規定」「日本語の書き方」を適用し、結論と必要な補足の順で述べる。
 
 案・回答・報告・確認の前に、ユーザーの想定反論と考慮漏れを調べ、自力で直せる点を直す。

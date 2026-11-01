@@ -96,8 +96,11 @@ CI workflowの全体基準は、対象HEADの実行開始から必須ジョブ�
 公開前の全体検証は、`agent-toolkit:commit`が公開工程で参照する資料「検証とCI」の定めに従い、CIでは実行されないチェックや、変更ファイル単体では検知できない複数ファイル間の問題をリポジトリ全体で確認する。本リポジトリでは以下の手順を実行する。
 
 - 最初に環境を同期する: `make sync`を実行する。仮想環境を`uv.lock`および`.python-version`の内容に合わせ、CIのクリーンな実行環境と同様の条件で後続のチェックを動かす
-- CIのpyfltrで無効化されているチェックを実行する。
-  `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version,plugin-version,function-hooks-types --enable=statusline-version,plugin-version`
+- 他の全体検証より先に、生成型を前提とする`function-hooks-types`を単独で実行する: `uv run --frozen pyfltr run --commands=function-hooks-types`
+  - 型が未展開で終了2になった場合は、「変更範囲の検証の値」のFunction hooksモジュールの項に従ってplugin-authoringで型を準備し、`FUNCTION_HOOKS_TYPES`で明示してから同じコマンドを再実行する
+  - 成功した結果は同じ型・同じ対象の検査として後段でも再利用し、重ねて実行しない
+- CIのpyfltrで無効化されている残りのチェックを実行する。
+  `uv run --frozen pyfltr run --commands=claude-plugin-validate,statusline-version,plugin-version --enable=statusline-version,plugin-version`
 - 複数レーンにまたがる重複実装を検査する: `uv run --frozen pyfltr run --commands=arid`
 - 型定義と静的参照の整合性を検証する: `uv run --frozen pyfltr run --commands=ty`
 - 複数ファイル間にまたがる循環importを検査する: `uv run --frozen pyfltr run --no-fix --commands=pylint --pylint-args='--disable=all --enable=cyclic-import'`

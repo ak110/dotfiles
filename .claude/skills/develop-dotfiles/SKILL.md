@@ -75,6 +75,8 @@ pyfltrを調査や計測の目的で実行する場合は、`--no-fix`を付け�
 - 特定を終えたファイルに限定して検証する場合は、MCPの`run`ツールにパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を実行する。初回は`commands`（CLI引数では`--commands`）を指定せずに実行し、修正後の再実行時のみ失敗したチェックに対象を絞る。
   - pytestを含む検証を実行する際は、指定したファイルにかかわらず、リポジトリルートと`agent-toolkit/`の両方で`pytest-always-targets`に定義された横断テストが常に追加される。詳細は`references/verification-values.md`の横断テストの項を参照のこと。同一内容に対して2回目以降の静的チェックを行う場合は、`commands`でpytestを除外し、失敗したテストのみを再確認する際は`--only-failed`を指定する。単一テストをピンポイントで確認したい場合は、対象ファイル（必要に応じて`-k`）を指定して`pytest`を直接実行し、収集されたテスト件数が想定と一致していることを確認する。
 - デバッガーの使用、最小限の再現コード実行、環境の切り分け時には、`pytest`を直接実行してよい。`-o`や`-p`は`pytest`固有のオプションであり、`pyfltr run`に渡すと引数エラー（終了コード2）となる。`-o addopts=''`で既存の`addopts`を無効化する場合は、合わせて`-p no:cacheprovider`を指定する。
+  - 並列化だけを止める場合は、プラグインを有効にしたまま`-n 0`を指定する。`addopts`は`-n 4 --dist=worksteal`を持つため、`-p no:xdist`でプラグインを外すと未認識の引数となり、収集前に終了コード4で止まる。`-o addopts=''`は`addopts`全体を外す別の目的に使う。
+- 分岐条件の効果を確かめるために差分を保存して戻す場合は、`git diff --no-ext-diff --src-prefix=a/ --dst-prefix=b/`で保存し、通常の`git apply`（戻すときは`git apply -R`）で適用する。配布するGit設定の`diff.noprefix=true`の下では接頭辞の無い差分になり、既定の`git apply`がパスを解決できないためである。既存の差分とindexは退避先を分けて保護する。
 - pyfltrの実行枠として扱われるのは、`make test`、`uv run --frozen pyfltr run`、`git commit`（コミットフック内の`pyfltr fast`）、および`agent_toolkit._testing.pytest_plugin`を読み込むpytestの実行である。ルートと`agent-toolkit/`の`addopts`には、このプラグインを読み込む`-p`オプションが設定されている。`-o addopts=''`でプラグインを解除する`make test-browser`などは実行枠の対象外となる。
   - 実行枠に含まれる検証をシェルから実行する際は、`agent-basics:check-execution`「統合実行ツール経由の起動」に記載の起動形式と3分類に従う。
 - `.venv`を再作成する可能性がある自動チェック（`uv run --python`によるPythonバージョンの切り替えや依存関係の更新など）は、同一の仮想環境パスに対して直列で実行する。並行して進める場合は、チェックごとに異なる仮想環境パスを明示的に割り当てる。

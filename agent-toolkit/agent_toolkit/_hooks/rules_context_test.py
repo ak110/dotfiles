@@ -615,17 +615,30 @@ def test_rejects_unknown_event_and_missing_source(payload: dict[str, str]) -> No
         rules_context.main(json.dumps(payload))
 
 
+@pytest.mark.parametrize("root_length", [21, 241])
 @pytest.mark.parametrize("windows", [False, True])
 def test_session_start_context_fits_cap_with_maximum_instruction(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, windows: bool
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    windows: bool,
+    root_length: int,
 ) -> None:
-    """追加指示が上限まで載った場合も、固定分との合計がhook上限へ収まる。"""
+    """追加指示が上限まで載った場合も、固定分との合計がhook上限へ収まる。
+
+    CLIのrootと一時領域は通知本文へそのまま入るため、実checkoutやpytestの一時パスの長さで結果が変わらないよう、
+    観測した短い配置（21文字）と長い配置（241文字）を明示した値で固定する。
+    """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv(rules_context.PROCESS_LOOP_INSTRUCTION_ENV, "あ" * process_loop_log.INSTRUCTION_MAX_CHARS)
+    root = pathlib.Path("/" + "r" * (root_length - 1))
+    assert len(str(root)) == root_length
+    session_temp = root / "cache" / "agent-toolkit" / "managed-temp" / "session-0123456789abcdef"
     cli_instructions = plugin_environment.cli_instructions
-    monkeypatch.setattr(plugin_environment, "cli_instructions", lambda root: cli_instructions(root, windows=windows))
+    monkeypatch.setattr(plugin_environment, "cli_instructions", lambda _root: cli_instructions(root, windows=windows))
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda _session_id: session_temp)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
 
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
@@ -635,7 +648,8 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
     assert "あ" * process_loop_log.INSTRUCTION_MAX_CHARS in output
     assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
     assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
-    assert "このセッションのmanaged-temp:" in output
+    assert f"このセッションのmanaged-temp: {session_temp}" in output
+    assert f"agent-toolkitのCLI: {root / 'scripts'}" in output
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

@@ -47,7 +47,7 @@ import json
 import os
 import re
 
-from agent_toolkit._hooks.notice import begin_delivery, emit_response, set_warning_session_id
+from agent_toolkit._hooks.notice import begin_delivery, emit_response, resolve_notice, set_warning_session_id
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -196,6 +196,16 @@ def _emit_hook_output(*, additional_context: str | None, title: str | None = Non
     emit_response({"hookSpecificOutput": hook_specific_output})
 
 
+def _work_contract_notice(session_id: str, body: str) -> str:
+    """作業契約の本文を、実ユーザー入力ごとに届ける。
+
+    同じ本文でも入力ごとに読み直す機会を与えるため、前回の入力で記録した重複抑止を同じ原因だけ解除してから整形する。
+    記録はこの原因の1件だけを保つため、入力が続いても状態は増えない。
+    """
+    resolve_notice(session_id, "user_prompt_submit", "_work_contract_notice")
+    return _llm_notice(body)
+
+
 def main(payload_text: str) -> int:
     """エントリポイント。終了コードは常に0（fail-open原則）。"""
     begin_delivery()
@@ -279,7 +289,7 @@ def main(payload_text: str) -> int:
             )
         else:
             if contract_notice is not None:
-                notices.append(_llm_notice(contract_notice))
+                notices.append(_work_contract_notice(session_id, contract_notice))
         notices.extend(content_notices(prompt, "user_prompt_submit"))
     if self_check_notice is not None:
         notices.append(self_check_notice)

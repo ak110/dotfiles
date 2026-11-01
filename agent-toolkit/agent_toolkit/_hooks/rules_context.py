@@ -27,6 +27,7 @@ lazy from typing import Any
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import message_format, plugin_environment, read_triggers
 from agent_toolkit._hooks import plugin_resources
+from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree
 lazy from agent_toolkit._common.delegated_session import is_delegated
@@ -52,6 +53,8 @@ MAIN_RULES_CODEX_PATH = SHARE_DIR / "rules-main.codex.md"
 SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
 SUBAGENT_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-subagent.claude-code.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
+# 圧縮後に作業契約の後へ続く通知（原文の抽出先、資料の再取得案内）へ残す文字数。
+_COMPACTION_RESERVE = 1_500
 # `atk wi process-loop instruct`が保持し、process-loopがセッション起動時に渡す本文。
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 PROCESS_LOOP_INSTRUCTION_ELEMENT = message_format.FORWARDED_USER_INPUT_ELEMENT
@@ -316,9 +319,8 @@ def session_temp_notice(session_temp: pathlib.Path | str) -> str:
     return (
         f"このセッションのmanaged-temp: {session_temp}\n"
         "一時ファイルはこの領域の直下へ置け。`/tmp`は使うな。"
-        "委譲時は、委譲先自身のmanaged-tempまたは専用一時領域の通知があればそちらの直下、"
+        "委譲時は、委譲先が受信した自身のmanaged-tempか専用一時領域の通知を優先し、"
         "通知が無い場合だけこの絶対パスの直下へ置くよう伝えよ。"
-        "通知の有無が親から分からない場合は、委譲先が受信した通知から選ぶ条件付きの案内にせよ。"
         "入力や出力の個別ファイルを指定した場合は、そのファイルの読み書きを行ってよい。"
     )
 
@@ -382,6 +384,9 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
     """既存の証拠抽出CLIで全人間入力を保存し、会話の流れの取得先も通知する。"""
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
+        if not delegated:
+            # 同じSessionStartの会話識別の通知が、記録の解決手順を既に示している。
+            return "圧縮後の原文を抽出できない。会話識別の通知にあるtranscriptの案内に従って記録を解決せよ。"
         return "圧縮後の原文を抽出できない。特定済みIDをsession-review-evidenceの--claude-session-idへ渡して記録を解決せよ。"
     command = [
         str(SHARE_DIR.parent / "scripts" / "atk"),
@@ -494,13 +499,16 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
         delegated = is_delegated(os.environ)
+        session_id = payload.get("session_id")
+        if source in _CONTEXT_LOSING_SOURCES and isinstance(session_id, str) and session_id:
+            # 同じセッションIDでも受信文脈は失われているため、既送の通知を本文の構成前に未送へ戻す。
+            forget_subject_notices(session_id, MAIN_AGENT_ID)
         content = compose_session_start(source, delegated=delegated, host=host)
         from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         review_notice = run_skill_batch.hook_request(payload, host=host) if host in {"claude", "codex"} else None
         if review_notice is not None:
             content = f"{content}\n\n{_llm_notice(review_notice)}" if content else _llm_notice(review_notice)
-        session_id = payload.get("session_id")
         if not delegated and host == "claude":
             identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))
             content = f"{content}\n\n{identity_context}" if content else identity_context
@@ -531,7 +539,14 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 temp_context = _llm_notice(session_temp_notice(session_temp))
                 content = f"{content}\n\n{temp_context}" if content else temp_context
                 if source == "compact" and not delegated:
-                    contract_notice = work_contract.notice(session_id)
+                    # 圧縮後の通知と資料の再取得案内にも上限内の余白を残し、収まらない契約本文は所在だけを示す。
+                    contract_notice = work_contract.notice(
+                        session_id,
+                        budget=min(
+                            work_contract.NOTICE_BODY_LIMIT,
+                            CLAUDE_CODE_OUTPUT_LIMIT - len(content) - _COMPACTION_RESERVE,
+                        ),
+                    )
                     if contract_notice is not None:
                         content += f"\n\n{_llm_notice(contract_notice)}"
             if source == "compact" and host == "claude":
