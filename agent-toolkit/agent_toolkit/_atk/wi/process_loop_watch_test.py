@@ -989,7 +989,12 @@ def test_abort_precedes_enter_during_continuous_changes(
     aborted = [False]
     monkeypatch.setattr(_pl_control, "consume_process_loop_abort", lambda: aborted[0])
     changes = _ContinuousChanges(monkeypatch, notes / "entry.md", interval=0.05, count=200)
-    released = threading.Timer(0.3, lambda: (console.keys.append("\r"), aborted.__setitem__(0, True)))
+
+    def release() -> None:
+        console.keys.append("\r")
+        aborted[0] = True
+
+    released = threading.Timer(0.3, release)
     changes.start()
     released.start()
     started = time.monotonic()
