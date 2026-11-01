@@ -105,9 +105,14 @@ def _now_ns(now: datetime.datetime) -> int:
 
 
 def _update_time(metadata: os.stat_result, now_ns: int) -> int:
-    """未来の更新時刻は状態変更時刻へ置き換え、現在以前の値だけを採用する。"""
+    """未来の更新時刻は状態変更時刻へ置き換え、状態変更時刻も未来なら判定基準時刻を返す。
+
+    掃引は走査の前に判定基準時刻を取得するため、走査中に並行する主体が作った・変えた項目は
+    状態変更時刻も未来になる。それを古い側へ倒すと使用中の領域を消し、消した領域は回復できない。
+    判定基準時刻として保持しても、次回の掃引が実際の時刻で再判定して回収できる。
+    """
     stamp = metadata.st_mtime_ns if metadata.st_mtime_ns <= now_ns else metadata.st_ctime_ns
-    return stamp if stamp <= now_ns else 0
+    return min(stamp, now_ns)
 
 
 def _registered_worktree(git_file: pathlib.Path, area: pathlib.Path) -> bool:
