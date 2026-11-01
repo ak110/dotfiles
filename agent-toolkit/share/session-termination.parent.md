@@ -4,7 +4,7 @@
 起動対象: session-termination.subagent.md
 ```
 
-`agent-toolkit:process-wi`の公開工程において、メインエージェントが公開担当を起動し、入力を引き渡し、返却値を検収する際にこの文書を適用する。
+`agent-toolkit:process-wi`の公開工程において、メインまたは対象リポジトリ担当が直接実行する場合と、公開担当へ委譲して検収する場合にこの文書を適用する。
 委譲先の詳細な作業手順は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`に定める（所在参照）。
 
 ## 名指し参照の読込方法
@@ -19,15 +19,29 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/push-and-ci.md#「公開先に対応するCI定義の判定」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開先に対応するCI定義の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/push-and-ci.md#「公開状態の4項目」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開状態の4項目」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 公開工程を直接実行する前 | `session-termination.subagent.md`の「入力」から「延期adoptの終了」まで | 判断 | `section:agent-toolkit:*/share/session-termination.subagent.md#「入力」から「延期adoptの終了」まで` |
+| 直接実行中に全体検証またはCIが失敗したとき | `../skills/process-wi/references/termination-ci-failure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/termination-ci-failure.md` |
 
 ## 起動前の前提
 
 全レーンの終了を確認し、対象リポジトリの主作業ツリーへ書き込む主体が自身のみであることを確定してから起動する。
 起動時の`cwd`は対象リポジトリの主作業ツリーとし、現在のブランチを公開対象のベースブランチに合わせておく。
 
+## 直接実行
+
+公開は計画と既決のbump判断を保持するメインまたは対象リポジトリ担当が直接実行することを通常とする。
+独立した並行作業やモデルの使い分けの利益が起動・資料の再読・引渡しの費用を上回る場合は、既存の公開担当へ委譲してよい。
+いずれも「起動前の前提」と「渡す入力」の値を確定し、既決のbump判断を継承する。
+
+直接担当は`session-termination.subagent.md`の「入力」から「延期adoptの終了」までの手順と読込条件を自身へ適用する。
+同本文の公開担当は自身、委譲元への返却は自身の既存の進捗記録への保存として扱い、「出力」の公開結果項目を残して本書「受領と検収」の同じ条件を確かめる。
+役割の起動、返却待ち、自身へのメッセージ送信は不要である。実行する操作は現在の依頼・認可の範囲に限る。
+全体検証またはCIの失敗は`../skills/process-wi/references/termination-ci-failure.md`へ進み、CI修正担当の起動中は自身の書込を止める。
+実行レビュー、公開後操作、延期adopt、未完了工程の保存と再開、および公開状態の検収を維持する。
+
 ## 起動方法
 
-`agents_server`の`start`を次の引数で呼び出し、公開担当を1件起動する。
+委譲を選んだ場合は、`agents_server`の`start`を次の引数で呼び出し、公開担当を1件起動する。
 
 | 引数 | 値 |
 | --- | --- |

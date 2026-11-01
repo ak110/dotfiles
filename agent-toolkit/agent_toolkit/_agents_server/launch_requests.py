@@ -71,19 +71,20 @@ _REQUIRED_INPUT_LINE_FORMAT = (
 _TASK_DOCUMENT_PATH_NEXT_ACTION = (
     "`subagent_md_path`へ役割名（`share/<役割名>.subagent.md`の`<役割名>`。例: `add-wi`）か、"
     "agent-toolkitの`share/*.subagent.md`の絶対パスを渡す。"
-    "自由本文で委譲する場合は`mode`へ`delegate`を指定して`prompt`を渡す"
+    "役割文書の指定を直し、`mode`を省略したtaskで`start`を再発行する"
 )
 
 
 _TASK_DOCUMENT_DEFECT_NEXT_ACTION = (
-    "agent-toolkitの不具合としてユーザーへ報告し、同じ依頼を`start`の`mode`へ`delegate`を指定して起動する"
+    "役割文書の読取を妨げた原因を解消し、同じ`subagent_md_path`を指定したtaskで`start`を再発行する。"
+    "自身で修復できなければ、文書の所在と診断を委譲元（委譲元が無ければユーザー）へ返す"
 )
 
 
 MODEL_TYPE_NEXT_ACTION = (
-    "`model_type`へ工程名（例: `execute`）か`<claude|codex|agy>:<model>[/<effort>]`、"
+    "`model_type`へ工程名（例: `chores`）か`<claude|codex|agy>:<model>[/<effort>]`、"
     "`opencode:<provider>/<model>[@<effort>]`の候補列を指定する。"
-    "工程に対応する候補列は`atk config get <工程>_model`（例: `execute_model`）で確かめる"
+    "工程に対応する候補列は`atk config get <工程>_model`（例: `chores_model`）で確かめる"
 )
 
 
@@ -141,8 +142,8 @@ def validate_handoff_inputs(handoff_from: str, **inputs: Any) -> None:
         )
 
 
-RESERVED_DELEGATE_MODEL_TYPES = frozenset({"execute", "orchestrate"})
-"""自由本文のdelegateでは指定できない工程名。
+RESERVED_FREEFORM_MODEL_TYPES = frozenset({"execute", "orchestrate"})
+"""自由本文のdelegate・explore・write・shellでは指定できない工程名。
 
 executeはレーン担当などの役割文書、orchestrateは最上位・統括の起動形が定める工程であり、
 エージェントが自分の判断で起動する委譲に使うと上位段位の費用が膨らむため、起動前に拒否する。
@@ -150,12 +151,12 @@ executeはレーン担当などの役割文書、orchestrateは最上位・統�
 """
 
 
-def _reject_reserved_delegate_model_type(mode: str, model_type: Any) -> None:
-    """自由本文のdelegateが役割文書専用の工程名を指定した場合に、起動前に拒否する。"""
-    if mode != "delegate" or not isinstance(model_type, str) or model_type.strip() not in RESERVED_DELEGATE_MODEL_TYPES:
+def _reject_reserved_freeform_model_type(mode: str, model_type: Any) -> None:
+    """自由本文の起動が役割文書専用の工程名を指定した場合に、起動前に拒否する。"""
+    if mode == "task" or not isinstance(model_type, str) or model_type.strip() not in RESERVED_FREEFORM_MODEL_TYPES:
         return
     raise ActionableError(
-        f"mode=delegateでは`model_type={model_type.strip()}`を指定できない。委譲先は起動していない。",
+        f"mode={mode}では`model_type={model_type.strip()}`を指定できない。委譲先は起動していない。",
         next_action=(
             "自分の判断で起動する委譲は`model_type`に`review`・`review_fast`・`chores`・`chores_fast`・`write`の"
             "いずれかを指定して再発行する。役割文書（`<役割名>.subagent.md`）を持つ定型作業は`mode`を省略したtaskで"
@@ -176,7 +177,7 @@ def validate_start_inputs(mode: str, **inputs: Any) -> None:
     missing = [name for name in required if inputs.get(name) is None]
     unexpected = sorted(given - accepted)
     if not missing and not unexpected:
-        _reject_reserved_delegate_model_type(mode, inputs.get("model_type"))
+        _reject_reserved_freeform_model_type(mode, inputs.get("model_type"))
         return
     details = []
     if missing:

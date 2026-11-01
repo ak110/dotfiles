@@ -390,7 +390,7 @@ async def test_live_grandchild_wait_resumes_same_session(
         # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
         isolation.restore_host_environment(monkeypatch)
         monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [candidate])
-        started = await mcp_tools.start(cwd, mode="delegate", prompt=GRANDCHILD_INPUT.texts[0], model_type="execute")
+        started = await mcp_tools.start(cwd, mode="delegate", prompt=GRANDCHILD_INPUT.texts[0], model_type="chores")
         session = manager.sessions[started["session_id"]]
 
         result = await _wait_terminal(manager)

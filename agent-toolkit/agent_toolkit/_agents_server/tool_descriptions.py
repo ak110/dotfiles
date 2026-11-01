@@ -108,7 +108,8 @@ LIGHTWEIGHT_MODE_SELECTION = (
     "exploreは結論と所在で後続の判断が成立する調査、shellは終了状態と要約で後続の判断が成立する実行へ使う。\n"
     "工程: execute_modelは高価なため、executeは役割文書が工程を定める担当（複雑な作業やバグ分析などを担う役割）のtask、"
     "orchestrateはprocess-loop・run-skillなど規範が起動形を定める最上位・統括の起動だけで使う。"
-    "エージェントが自分の判断でexecuteやorchestrateの担当を起動せず、自由本文のdelegateでの指定はstartが起動前に拒否する。"
+    "エージェントが自分の判断でexecuteやorchestrateの担当を起動せず、"
+    "自由本文のdelegate・explore・write・shellでの指定はstartが起動前に拒否する。"
     "execute担当が切り出してよいのは、review・review_fast・chores・chores_fast・writeのいずれかで済み、"
     "起動と規範の読み込みを含めても費用が下がる部分だけとする"
     "（定型走査・事実収集・コマンド実行はchores_fast、中規模の読取・要約・走査と内容の確定した書込作業はchores）。"
@@ -251,7 +252,8 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
     "exploreとshellが`chores_fast`、writeが`write`の設定を使う。"
     "`execute_model`は高価なため、`execute`は役割文書が工程を定める担当（複雑な作業やバグ分析などを担う役割）のtask、"
-    "`orchestrate`はprocess-loop・run-skillなど規範が起動形を定める最上位・統括の起動だけで使い、delegateでの指定は起動前に拒否する。"
+    "`orchestrate`はprocess-loop・run-skillなど規範が起動形を定める最上位・統括の起動だけで使い、"
+    "自由本文のdelegate・explore・write・shellでの指定は起動前に拒否する。"
     "自分の判断で起動する委譲は`review`・`review_fast`・`chores`・`chores_fast`・`write`のいずれかにし、"
     "起動と規範の読み込みを含めても費用が下がる部分だけを切り出す。"
     "定型走査・事実収集・コマンド実行は`chores_fast`（exploreの省略時）、"
@@ -260,6 +262,8 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "工程名の候補は、対応する`<工程>_model`の候補列を直接使う。"
     "`orchestrate`はprocess-loop・run-skillなど最上位セッションのorchestrate_modelを使う。"
     "WI投入担当のadd-wiは専念型・付随型ともmodel_typeを省略し、役割に定めたexecute工程を使う。"
+    "ユーザーがWIでモデル・effortを明示した場合は、その候補列かtaskの上書き指定で反映する。"
+    "エージェントの自律選択で工程制限を避けるために候補列やtaskの上書きを使わない。"
     "指定した値はそのsessionだけに使い、恒常的な変更は`atk config set`で行う。"
 )
 

@@ -845,25 +845,54 @@ async def test_start_rejects_missing_and_mixed_mode_inputs_before_creating_sessi
 
 
 @pytest.mark.parametrize("model_type", ["execute", "orchestrate", " execute "])
+@pytest.mark.parametrize("mode", ["delegate", "explore", "write", "shell"])
 @pytest.mark.asyncio
-async def test_start_rejects_role_only_model_types_for_delegate(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, model_type: str
+async def test_start_rejects_role_only_model_types_for_freeform_modes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, model_type: str, mode: str
 ) -> None:
-    """自由本文のdelegateでexecute・orchestrateを指定すると、起動前に代わりの工程とtaskを案内して拒否する。"""
-    manager = SimpleNamespace(start=AsyncMock())
+    """自由本文4modeの上位工程指定を、起動前に代わりの工程とtaskを案内して拒否する。"""
+    response = {"session_id": "unexpected", "status": "running", "label": "担当"}
+    manager = SimpleNamespace(
+        start=AsyncMock(return_value=response),
+        start_explore=AsyncMock(return_value=response),
+        start_write=AsyncMock(return_value=response),
+        start_shell=AsyncMock(return_value=response),
+    )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    inputs = {"command": "git status", "summary_policy": "終了状態"} if mode == "shell" else {"prompt": "調査"}
 
     with pytest.raises(ToolError) as raised:
-        await mcp_tools.mcp.call_tool(
-            "start", {"cwd": str(tmp_path), "mode": "delegate", "prompt": "調査", "model_type": model_type}
-        )
+        await mcp_tools.mcp.call_tool("start", {"cwd": str(tmp_path), "mode": mode, **inputs, "model_type": model_type})
 
     body = str(raised.value)
+    assert f"mode={mode}" in body
     assert f"model_type={model_type.strip()}" in body
     assert "委譲先は起動していない" in body
     for name in ("`review`", "`review_fast`", "`chores`", "`chores_fast`", "`write`", "subagent_md_path"):
         assert name in body
-    manager.start.assert_not_awaited()
+    for method in (manager.start, manager.start_explore, manager.start_write, manager.start_shell):
+        method.assert_not_awaited()
+
+
+@pytest.mark.parametrize("mode", ["delegate", "explore", "write", "shell"])
+@pytest.mark.asyncio
+async def test_start_freeform_modes_keep_lightweight_stages_and_explicit_candidates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, mode: tool_descriptions.StartMode
+) -> None:
+    """自由本文は5工程とユーザー明示の候補列を受理し、指定値を起動へ渡す。"""
+    requested = _recording_candidates(monkeypatch)
+    models = ["review", "review_fast", "chores", "chores_fast", "write", "codex:model/high"]
+    async with _manager_with_fake("codex") as (manager, _backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        for model_type in models:
+            if mode == "shell":
+                response = await mcp_tools.start(
+                    str(tmp_path), mode=mode, model_type=model_type, command="git status", summary_policy="終了状態"
+                )
+            else:
+                response = await mcp_tools.start(str(tmp_path), mode=mode, model_type=model_type, prompt="調査")
+            assert (await manager.show_session(response["session_id"]))["model_type"] == model_type
+        assert requested == models
 
 
 @pytest.mark.asyncio

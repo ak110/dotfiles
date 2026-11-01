@@ -239,7 +239,7 @@ Claude backendの資源解放では、SDKクライアントの切断を所有タ
 却下した代替案は、上限超過で次候補へ進める案と、再試行を設けず1回の上限超過で例外を返す案である。
 前者は候補を消費しても同じ待機を反復し、後者は一時的な遅延で成立する起動を委譲元の再発行へ委ねるため採用しない。
 
-`delegate`は7工程名か候補列の必須の`model_type`と`prompt`を受け取り、専用の`<役割名>.subagent.md`を用意できない単発の作業に使う。サーバーは`model_type`に対応する工程別設定の直接候補列からengine、modelおよびeffortを解決し、
+`delegate`は5工程名（review・review_fast・chores・chores_fast・write）か候補列の必須の`model_type`と`prompt`を受け取り、専用の`<役割名>.subagent.md`を用意できない単発の作業に使う。自由本文の全modeはexecuteとorchestrateの工程名を起動前に拒否し、役割taskの既定値は保つ。候補列の受理と自律選択の認可は区別し、WIのユーザー明示指定を継承する。サーバーは`model_type`に対応する工程別設定の直接候補列からengine、modelおよびeffortを解決し、
 候補を切り替えた場合は採用した値を応答へ含める。可用性に起因する失敗を観測した委譲元は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終了した候補をサーバーが保持して除外することで成立する。
 `delegate`以外の`mode`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別または候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
 

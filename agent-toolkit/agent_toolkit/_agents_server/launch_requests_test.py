@@ -527,8 +527,8 @@ async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPat
 @pytest.mark.parametrize(
     ("document", "extra_params", "operation"),
     [
-        ("relative.subagent.md", {}, "`delegate`"),
-        ("/nonexistent/share/missing.subagent.md", {}, "`delegate`"),
+        ("relative.subagent.md", {}, "task"),
+        ("/nonexistent/share/missing.subagent.md", {}, "task"),
         ("exec.subagent.md", {"不正 な名前": "値"}, "空白"),
     ],
     ids=["relative-path", "missing-file", "invalid-input-name"],
@@ -540,7 +540,7 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """`<役割名>.subagent.md`の指定と入力名の誤りは、正しい渡し方か自由本文の`delegate`への切替を次の操作で示す。"""
+    """役割文書の指定と入力名の誤りは、修復後のtask再実行を次の操作で示す。"""
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     path = str(launch_requests._SHARE_DIRECTORY / document) if document == "exec.subagent.md" else document
@@ -549,6 +549,7 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
         await mcp_tools.start(str(tmp_path), subagent_md_path=path, extra_params=extra_params)
 
     assert operation in _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    assert "`delegate`" not in _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
     if document == "exec.subagent.md":
         next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
         assert "呼び元の起動・受領契約" in next_action
@@ -617,7 +618,7 @@ async def test_start_rejects_unresolvable_role_name_with_accepted_roles(
     assert "add-wi" in accepted
     assert "exec-review" in accepted
     assert "役割名" in next_action
-    assert "`delegate`" in next_action
+    assert "task" in next_action
     manager.start.assert_not_awaited()
 
 
@@ -1184,9 +1185,12 @@ async def test_start_rejects_task_document_that_cannot_be_read(
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, task_document.name, "execute")
 
-    with pytest.raises(ValueError, match="`<役割名>.subagent.md`をUTF-8で読めません"):
+    with pytest.raises(ValueError, match="`<役割名>.subagent.md`をUTF-8で読めません") as raised:
         await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={})
 
+    next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    assert "task" in next_action and "再発行" in next_action
+    assert "`delegate`" not in next_action
     manager.start.assert_not_awaited()
 
 
