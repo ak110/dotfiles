@@ -30,11 +30,18 @@ _FAILED_CHECKS: dict[str, dict[str, set[str]]] = {
     "display-spaces": {"failure": {"spaces", "edges"}},
     "verification-status": {"failure": {"skipped", "not-collected", "xfail", "unknown"}},
     "skill-selection": {
-        "description-only": {"article-eval-required", "paraphrase-required", "bug-explain-required"},
+        "description-only": {
+            f"{request}-additional" for request in ("article-eval", "paraphrase", "edit-and-check", "bug-explain", "boundary")
+        },
+        # 必要な集合は同じでも、本文を読む前の選択へ全て入れた提出は追加選択の検査で区別する。
+        "all-initial": {
+            f"{request}-additional" for request in ("article-eval", "paraphrase", "edit-and-check", "bug-explain", "boundary")
+        },
         "all-selected": {
             f"{request}-excluded"
             for request in ("article-eval", "paraphrase", "edit-and-check", "bug-explain", "known-fact", "boundary")
-        },
+        }
+        | {f"{request}-additional" for request in ("article-eval", "paraphrase", "edit-and-check", "bug-explain", "boundary")},
         "unknown-id": {"article-eval-known"},
     },
     "test-selection": {
