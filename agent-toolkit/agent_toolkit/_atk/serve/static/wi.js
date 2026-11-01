@@ -595,6 +595,12 @@ function renderListLoading(view = captureListLoadingView()) {
 }
 
 function beginUserListOperation() {
+  // 一覧条件を変える操作が始まった時点で、それより前に始めた一覧取得の応答を無効にする。
+  // 検索欄のデバウンス中に旧取得が最新の世代のまま残ると、旧条件の補助検索と一覧反映が起きるため。
+  // 無効にした取得のendListRequestは世代不一致で何もしないので、その処理中表示もここで解く。
+  listRequestGeneration += 1;
+  listRequestPending = false;
+  listLoadingVisible = false;
   userListOperationPending = true;
   renderListLoading();
   return ++userListOperationGeneration;

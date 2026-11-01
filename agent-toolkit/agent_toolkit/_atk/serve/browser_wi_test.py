@@ -1044,8 +1044,15 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
 async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """初期状態の条件で終了状態を検索し、少数結果だけを補助表示して条件を維持する。"""
+    """初期状態の条件で終了状態を検索し、少数結果だけを補助表示して条件を維持する。
+
+    検索欄を空にする区間では、変更前の検索条件で始まった背景再取得の応答を保留し、
+    デバウンス満了前と新しい一覧の表示後の2つの時点で返す。どちらでも旧条件の補助検索と一覧反映が起きないことを確かめる。
+    """
     page = browser_harness.page
+    # デバウンスのタイマーだけを止める区間のため、開く前にページの時計を差し替える。差し替え後も時刻は実時間で進む。
+    await page.clock.install()
+    await _observe_screen_requests(page)
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     await _open_filters(page)
@@ -1081,12 +1088,66 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
 
     request_urls: list[str] = []
     page.on("request", lambda request: request_urls.append(request.url) if "/api/entries?" in request.url else None)
-    await page.locator("#search-input").fill("")
-    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
-    await page.wait_for_timeout(100)
-    _assert_list_request_without_fallback(
-        request_urls, browser_harness.base_url, "/api/entries?type=all&status=active&answered=all&period=2w&page=1"
-    )
+    default_list = "/api/entries?type=all&status=active&answered=all&period=2w&page=1"
+    stale_url = browser_harness.base_url + "/api/entries?type=all&status=active&answered=all&period=2w&q=many-terminal&page=1"
+
+    async def consumed_lists() -> int:
+        return await page.evaluate("window.__screenRequests.completed['/api/entries'] || 0")
+
+    async def wait_consumed(count: int) -> None:
+        # ページの時計を止めた区間でも進むよう、ページ側のポーリングではなくテスト側から照会する。
+        async with asyncio.timeout(10):
+            while await consumed_lists() < count:
+                await asyncio.sleep(0.05)
+
+    async def clear_search_with_stale_reload(*, release_before_new_request: bool) -> None:
+        held = asyncio.Event()
+        release = asyncio.Event()
+
+        async def hold_stale(route: playwright.async_api.Route) -> None:
+            if route.request.url != stale_url:
+                await route.continue_()
+                return
+            held.set()
+            response = await route.fetch()
+            await release.wait()
+            await route.fulfill(response=response)
+
+        await page.route("**/api/entries?*", hold_stale)
+        try:
+            # 外部変更時の再取得は`window`の`focus`でも始まり、その時点の検索条件で一覧を取得する。
+            await page.evaluate("window.dispatchEvent(new Event('focus'))")
+            await asyncio.wait_for(held.wait(), timeout=10)
+            request_urls.clear()
+            if release_before_new_request:
+                now = await page.evaluate("Date.now()")
+                await page.clock.pause_at(datetime.datetime.fromtimestamp((now + 50) / 1000, tz=datetime.UTC))
+                await page.locator("#search-input").fill("")
+                consumed = await consumed_lists()
+                release.set()
+                await wait_consumed(consumed + 1)
+                # 前提: 旧応答を消費した時点で、デバウンス後の新しい一覧要求はまだ送られていない。
+                assert f"{browser_harness.base_url}{default_list}" not in request_urls
+                await page.clock.resume()
+                await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+            else:
+                await page.locator("#search-input").fill("")
+                await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+                consumed = await consumed_lists()
+                release.set()
+                await wait_consumed(consumed + 1)
+        finally:
+            await page.unroute("**/api/entries?*", hold_stale)
+        await page.wait_for_timeout(100)
+        await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+        await playwright.async_api.expect(notice).to_be_hidden()
+        _assert_list_request_without_fallback(request_urls, browser_harness.base_url, default_list)
+
+    await clear_search_with_stale_reload(release_before_new_request=True)
+    async with page.expect_response(lambda response: response.url.endswith("/api/entries?q=many-terminal&page=1")):
+        await page.locator("#search-input").fill("many-terminal")
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
+    await clear_search_with_stale_reload(release_before_new_request=False)
 
     request_urls.clear()
     async with page.expect_response(
