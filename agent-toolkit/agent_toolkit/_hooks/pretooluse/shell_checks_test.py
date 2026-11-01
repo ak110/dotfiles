@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 
@@ -659,6 +660,11 @@ class TestBashProcessKillByPattern:
             "printf '%s' /tmp/killall/output.log",
             "ls -- /tmp/pkill/output.log",
             "grep -n needle /tmp/pkill/output.log",
+            # 共通解析がデータ引数と確定する語は、パスの形をしていなくても実行位置にしない。
+            "cat -- pkill.log",
+            "wc -l killall.txt pkill-notes.md",
+            'head -n 5 "/tmp/pkill dir/output.log"',
+            "echo killall",
         ],
     )
     def test_normal_path_arguments_are_not_process_termination(self, tmp_path, command, codex):
@@ -682,6 +688,12 @@ class TestBashProcessKillByPattern:
             "find . -exec /usr/bin/pkill -f worker \\;",
             "cat /tmp/pkill/output.log; killall worker",
             "cat /tmp/pkill/output.log $(pkill worker)",
+            # 引数を実行し得るコマンド（ラッパー・シェル・インタプリタ）の引数は、データ引数と確定できない。
+            "sudo pkill worker",
+            "timeout 5 killall worker",
+            "sh -c 'pkill worker'",
+            "python3 -c 'import os; os.system(\"pkill worker\")'",
+            "cat pkill.log | xargs killall",
         ],
     )
     def test_path_data_does_not_exempt_executable_termination(self, tmp_path, command, codex):
@@ -1458,3 +1470,13 @@ def _run_git_commit_message_hook(
     assert observed["head_after"] == head_before
     assert observed["status_after"] == status_before
     return result
+
+
+def test_commit_message_file_is_read_with_unknown_pathspec(tmp_path):
+    """`--`より後ろの未知のpathspecと静的な`-F`入力を分け、未知の語が前にあれば検証済みと推定しない。"""
+    message = tmp_path / "message.txt"
+    message.write_text("件名\n\n本文\n", encoding="utf-8")
+    quoted = shlex.quote(str(message))
+    assert list(shell_checks._git_commit_messages(f'git commit -F {quoted} -- "$PATHSPEC"')) == ["件名\n\n本文\n"]
+    assert not list(shell_checks._git_commit_messages(f'git commit "$OPT" -F {quoted}'))
+    assert not list(shell_checks._git_commit_messages('git commit -F "$MESSAGE"'))

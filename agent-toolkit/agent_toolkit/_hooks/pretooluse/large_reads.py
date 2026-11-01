@@ -22,6 +22,7 @@ lazy from collections.abc import Iterator, Sequence
 
 from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._common import host_homes, shell_cwd
+lazy from agent_toolkit._common.bash_invocations import is_unknown_word
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import plugin_resources
 
@@ -205,12 +206,18 @@ def bash_read_paths(
     `first_line_only`は`_read_operands`の同名の指定へ渡す。
     """
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
-        if not invocation.arguments_known or invocation.output_pipe or invocation.output_redirected or invocation.captured:
+        if invocation.output_pipe or invocation.output_redirected or invocation.captured:
+            continue
+        # 読取候補の特定（`include_partial`）では、無関係な引数が未知でも既知のファイル引数を候補に残す。
+        # 出力全体の順序と範囲を使う用途（容量の判定など）は、全引数が確定した呼出しだけを使う。
+        if not invocation.arguments_known and not include_partial:
             continue
         tokens = invocation.segment.tokens
         paths = []
         for operand in _read_operands(tokens, include_partial=include_partial, first_line_only=first_line_only):
-            if include_partial and any(marker in operand for marker in ("$", "`", "<", ">", "*", "?")):
+            if include_partial and (
+                is_unknown_word(operand) or any(marker in operand for marker in ("$", "`", "<", ">", "*", "?"))
+            ):
                 continue
             if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
                 continue
@@ -379,9 +386,10 @@ def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
     """実行位置と静的引数だけから、原記録の読取・本文検索・解析入力を得る。"""
     found: list[pathlib.Path] = []
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
-        if not invocation.arguments_known:
-            continue
         tokens = invocation.segment.tokens
+        # 検索語や追加引数が未知でも、静的な入力先は参照案内の対象に残す。コマンド名が未知なら判定しない。
+        if not tokens or is_unknown_word(tokens[0]):
+            continue
         name = pathlib.PurePath(tokens[0]).name
         search = name in {"rg", "grep", "egrep", "fgrep"}
         operands = list(_read_operands(tokens, include_partial=True))
@@ -389,7 +397,7 @@ def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
             if "--files" in tokens or "--help" in tokens or "--version" in tokens:
                 continue
             operands = list(_content_operands(tokens, pattern=True))
-            if not operands and current.resolved:
+            if not operands and current.resolved and invocation.arguments_known:
                 operands = [current.path]
         elif name in {*_FULL_READ_COMMANDS, "head", "tail"} and not operands:
             operands = list(_content_operands(tokens, pattern=False))
@@ -404,6 +412,8 @@ def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
         elif name in {"jq", "node", "ruby", "perl"}:
             operands = list(tokens[2:])
         for operand in operands:
+            if is_unknown_word(operand):
+                continue
             if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
                 continue
             path = _resolve_path(operand, current.path if current.resolved else cwd)
@@ -461,11 +471,12 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
         f"{plan.line_count}行、{plan.byte_count}バイトの全文取得の出力量を確認せよ"
         f"（通知の閾値: {byte_threshold}バイト）: {path}",
         fix=(
-            f"文章主体の内側max_output_tokensは少なくとも{budget}（UTF-8バイト数÷3の切上げ）にせよ。"
-            "外側セルのmax_output_tokensは内側コマンドの予算の合計以上にせよ。"
-            "nativeのoriginal token countが得られた場合は、その数以上で1回再取得せよ。"
-            "内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら、そのまま標準読取を使え。"
-            "予算を超える場合と本文が省略された場合は取得の範囲を選べ。"
+            f"全量の見積りは文章主体で約{budget}トークン（UTF-8バイト数÷3の切上げ）である。"
+            "内側コマンドと外側セルの利用できる出力枠がどちらも見積り以上と分かっている場合だけ、"
+            "内側max_output_tokensを見積り以上、外側セルを内側の合計以上にして全文を1回で取得せよ。"
+            "枠が見積りより小さい場合と枠が不明な場合は、最初から1回の取得が枠に収まる行範囲へ分けよ。"
+            "nativeのoriginal token countが得られた場合は、その数が枠に収まるときだけその数以上で1回再取得し、"
+            "収まらないときは行範囲へ分けよ。"
             "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使え。"
             "全文が必要な場合だけ、"
             f"`sed -n '1,{chunk}p' -- {quoted}`から始め、"
@@ -489,11 +500,12 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
     details = "、".join(f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト" for path, plan in path_counts)
     return _large_warning(
         f"複数ファイルの全文取得の出力量を確認せよ（合計: {total_bytes}バイト、通知の閾値: {byte_threshold}バイト）: {details}",
-        fix=f"文章主体の内側max_output_tokensは少なくとも{budget}（UTF-8合計バイト数÷3の切上げ）にせよ。"
-        "外側セルのmax_output_tokensは内側コマンドの予算の合計以上にせよ。"
-        "nativeのoriginal token countが得られた場合は、その数以上で1回再取得せよ。"
-        "内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら標準読取を使え。"
-        "予算を超える場合と本文が省略された場合は、取得の必要性と範囲を選べ。"
+        fix=f"全量の見積りは文章主体で約{budget}トークン（UTF-8合計バイト数÷3の切上げ）である。"
+        "内側コマンドと外側セルの利用できる出力枠がどちらも見積り以上と分かっている場合だけ、"
+        "内側max_output_tokensを見積り以上、外側セルを内側の合計以上にして1回で取得せよ。"
+        "枠が見積りより小さい場合と枠が不明な場合は、最初からファイルごと・行範囲ごとに枠へ収まる単位へ分けよ。"
+        "nativeのoriginal token countが得られた場合は、その数が枠に収まるときだけその数以上で1回再取得し、"
+        "収まらないときは分けて取得せよ。"
         "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使え。"
         "全文が必要なファイルだけ、ファイルごとに別の呼び出しで"
         "`sed -n '<開始行>,<終了行>p' -- <必要なファイルの絶対パス>`を使い、行範囲を進めて末尾の行まで取得せよ。"

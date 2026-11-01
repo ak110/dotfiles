@@ -301,10 +301,16 @@ def _perl_write_paths(arguments: tuple[str, ...]) -> list[str]:
     return (operands if inline else operands[1:]) if inplace else []
 
 
-def _static_write_path(path: str) -> str | None:
-    """未知の展開を含むパスは、最後の展開より後ろが`/`で始まる場合だけその末尾を返し、それ以外はbasenameを推定せず`None`を返す。"""
+def _static_write_path(path: str, *, partial: bool = False) -> str | None:
+    """静的に確定した書込先を返す。未知の展開を含むパスは実パスとして確定しないため`None`を返す。
+
+    `partial`が真なら、文書種別の識別など末尾だけを使う用途へ、最後の展開より後ろが`/`で始まる末尾を返す。
+    `$ROOT/path.md`の末尾`/path.md`は実在の場所を表さないため、実パスを求める用途では`partial`を使わない。
+    """
     if STATIC_UNKNOWN not in path:
         return path
+    if not partial:
+        return None
     suffix = path.rsplit(STATIC_UNKNOWN, 1)[1]
     return suffix if suffix.startswith("/") else None
 
@@ -363,10 +369,13 @@ def _is_discard_path(path: pathlib.Path) -> bool:
         return False
 
 
-def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
-    """実行位置のリダイレクト・tee・sponge・gawk・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。
+def _bash_write_paths(command: str, cwd: str | None = None, *, partial: bool = False) -> list[str]:
+    """リダイレクト・tee・sponge・gawk・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。
 
-    静的な末尾だけを使い、本文と環境変数を実行して解決しない。
+    リダイレクト先は実行するコマンドの確定と独立して構文から決まるため、未知の実行
+    （`$COMMAND > out`、リダイレクトだけの文など）の静的な出力先も返す。コマンド名に依存する書込先は、
+    実行するコマンドを確定できた呼出しだけから求める。本文と環境変数を実行して解決しない。
+    未知の展開を含むパスは返さない。`partial`が真なら、文書種別の識別に使う静的な末尾も返す。
     gawkのinplaceとspongeも内容の書込先として扱う。touch・ln・mkdir・truncateは本文の編集とは限らず、
     書込先の指定にも別の解釈を要するため対象へ含めない。
     """
@@ -374,7 +383,7 @@ def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
 
     def append_paths(found: list[str], base: shell_cwd.CwdResolution) -> None:
         for raw in found:
-            value = _static_write_path(raw)
+            value = _static_write_path(raw, partial=partial)
             if value is None:
                 continue
             path = pathlib.Path(value).expanduser()
@@ -385,9 +394,12 @@ def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
             elif cwd is None and base.unresolved_expression is None:
                 paths.append(value)
 
-    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd or ""):
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd or "", effects=True):
         found = [target for target in invocation.static_outputs if isinstance(target, str)]
         tokens = invocation.static_tokens
+        if not invocation.execution_known or not tokens:
+            append_paths(found, current)
+            continue
         name = pathlib.PurePath(tokens[0]).name
         if name in {"tee", "sponge"}:
             found.extend(path for path in _stream_write_paths(tokens[1:]) if name != "tee" or path != "-")
@@ -554,7 +566,7 @@ def _is_agent_document_writing(tool_name: str, tool_input: dict, cwd: str = "") 
     if tool_name == "Bash":
         command = tool_input.get("command")
         return isinstance(command, str) and any(
-            is_agent_doc_target_file(path) for path in _bash_write_paths(command, cwd or None)
+            is_agent_doc_target_file(path) for path in _bash_write_paths(command, cwd or None, partial=True)
         )
     operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
     return operations is not None and any(
@@ -612,7 +624,7 @@ def _bash_body_writing(command: str, cwd: str = "") -> bool:
             if name == "tee":
                 outputs.extend(_stream_write_paths(tokens[1:]))
         for raw in outputs:
-            value = _static_write_path(raw)
+            value = _static_write_path(raw, partial=True)
             if value is None or value == "-":
                 continue
             path = pathlib.Path(value).expanduser()

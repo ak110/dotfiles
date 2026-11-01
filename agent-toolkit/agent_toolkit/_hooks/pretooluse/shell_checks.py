@@ -15,14 +15,17 @@ lazy from collections.abc import (
 
 lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common.bash_invocations import (
+    BashInvocation,
     extract_bash_invocations,
     heredoc_command_substitutions,
     is_read_predicate,
+    is_unknown_word,
 )
 lazy from agent_toolkit._common.heredocs import mask_heredoc_bodies
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
 lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
 lazy from agent_toolkit._common.shell_tokens import is_atk_command, strip_redirections
+lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
@@ -213,8 +216,84 @@ def _has_active_process_kill_syntax(segment: str) -> bool:
     return False
 
 
+_ARGUMENT_EXECUTORS = frozenset(
+    {
+        "awk",
+        "bash",
+        "builtin",
+        "busybox",
+        "dash",
+        "deno",
+        "fish",
+        "gawk",
+        "git",
+        "ksh",
+        "lua",
+        "mawk",
+        "node",
+        "perl",
+        "php",
+        "ruby",
+        "sed",
+        "sh",
+        "zsh",
+        "chroot",
+        "command",
+        "doas",
+        "env",
+        "eval",
+        "exec",
+        "find",
+        "flock",
+        "ionice",
+        "nice",
+        "nohup",
+        "parallel",
+        "script",
+        "setsid",
+        "ssh",
+        "stdbuf",
+        "strace",
+        "su",
+        "sudo",
+        "time",
+        "timeout",
+        "unbuffer",
+        "watch",
+        "xargs",
+    }
+)
+"""引数として受け取った語をプログラムとして実行し得るコマンド（ラッパー、シェル、インタプリタ、gitの設定値など）。
+
+引数に終了コマンド名があれば実行位置と区別できない。gitは`-c`の設定値やpagerから実行するため含め、
+検索語として安全な`git grep`・`git log`の位置は後段の判定が扱う。
+"""
+
+
+def _process_kill_word_only_in_data(invocations: Sequence[BashInvocation]) -> bool:
+    """共通解析が確定した全ての実行位置で、終了コマンド名がデータ引数にだけ現れるかを返す。
+
+    `pkill`・`killall`自体を実行する呼出し、引数からプログラムを実行するコマンドの引数に現れる場合、
+    値の決まらない引数を持つ呼出し、解析できない入力（呼出しが空）は、データ引数と確定できないため偽を返す。
+    読取コマンド名の許可リストは持たず、実行位置の解析結果だけで判定する。
+    """
+    if not invocations:
+        return False
+    for invocation in invocations:
+        tokens = invocation.segment.tokens
+        if not invocation.arguments_known or not tokens:
+            return False
+        name = pathlib.PurePosixPath(tokens[0]).name
+        if name in {"pkill", "killall"}:
+            return False
+        executor = name in _ARGUMENT_EXECUTORS or is_python_token(name)
+        if executor and any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in tokens[1:]):
+            return False
+    return True
+
+
 def _has_unsafe_process_kill_match(segment: str) -> bool:
-    """実行位置と確定できたパス引数を分け、未確定の実行と既知の終了操作を保護する。"""
+    """共通解析の実行位置とデータ引数を分け、未確定の実行と既知の終了操作を保護する。"""
     try:
         raw_tokens = shlex.split(segment, posix=True)
     except ValueError:
@@ -229,24 +308,7 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
         return False
     if _has_active_process_kill_syntax(segment):
         return True
-    invocations = extract_bash_invocations(segment)
-    if (
-        not attached_pager_match
-        and len(invocations) == 1
-        and invocations[0].arguments_known
-        and strip_redirections(raw_tokens) == invocations[0].segment.tokens
-        and all(
-            not _PROCESS_KILL_BY_PATTERN_RE.search(token)
-            or index > 0
-            and "/" in token
-            and "=" not in token
-            and not token.startswith("-")
-            and pathlib.PurePosixPath(token).name not in {"pkill", "killall"}
-            for index, token in enumerate(invocations[0].segment.tokens)
-        )
-    ):
-        # 通常パス中のディレクトリ名は実行名ではない。終了コマンド名と一致する引数や、
-        # ラッパー・構文で実行位置が変わる入力は従来の保守的判定へ残す。
+    if not attached_pager_match and _process_kill_word_only_in_data(extract_bash_invocations(segment)):
         return False
     if command_name == "git":
         parsed_segments = extract_execution_segments(segment)
@@ -282,8 +344,9 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
 
     対象の所有権を確認できないパターン一致の一括終了は他者のプロセスを停止する危険があるため禁止する。
     自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
-    ヒアドキュメント本文をマスクした文字列を解析し、実行位置と区別できる通常パス、
-    既知の検索用リテラルを許可する。未知の実行形式は保守的な判定を維持する。
+    ヒアドキュメント本文をマスクした文字列を共通解析へ渡し、終了コマンド名がデータ引数にだけ現れる読取・表示・検索と、
+    既知の検索用リテラルを許可する。語の存在だけでは終了操作と判定しない。
+    実行位置を確定できない入力、引数を実行し得るコマンド、置換・グループを含む区間は保守的な判定を維持する。
     """
     matching_segments = [segment for segment in split_bash_segments(command) if "pkill" in segment or "killall" in segment]
     if not matching_segments or not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments):
@@ -335,12 +398,18 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
     `--amend --no-edit`、fixup、squashの場合は判定しない。
     """
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
-        if not invocation.arguments_known:
-            continue
         parsed = git_subcommand_tokens(invocation.segment)
         if parsed is None or parsed[0] != "commit":
             continue
         arguments = parsed[1]
+        # `--`より後ろはpathspecであり、未知でもメッセージの指定に作用しない。それより前の未知の語は
+        # メッセージやその入力ファイルを変える可能性があるため、検証済みと推定しない。
+        options = arguments[: arguments.index("--")] if "--" in arguments else arguments
+        if any(is_unknown_word(token) for token in options) or any(
+            is_unknown_word(token) for token in invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)]
+        ):
+            continue
+        arguments = options
         if (
             "--fixup" in arguments
             or "--squash" in arguments

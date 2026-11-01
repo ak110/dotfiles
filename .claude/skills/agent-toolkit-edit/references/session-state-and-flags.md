@@ -30,6 +30,7 @@ Claude Code・Codexのhookは呼び出しごとに別プロセスで起動する
 - フックイベント間の同期: コマンド文字列の完全一致とハッシュ値比較の組み合わせなど、複雑な多段同期を状態ファイルに持ち込まず、対象ファイルの実体を直接実行・直接読み取りして状態を確かめる。構造化した記録を保存するのは、記録元と利用先が同一のフック内で完結する場合に限る
 - フラグ仕様の文書化: 新規フラグや同じ状態ファイルを共有する個人フックのフラグも含め、用途、書き込み元、読み取り元、寿命、リセット処理を後掲の各節に記す（努力目標）
 - 状態JSONの削除契機: 状態ファイルを削除するのは、期限切れの定期回収と、終了理由が`clear`のSessionEndだけとする。SessionEndは`--continue`、`--resume`、`/resume`で同一の`session_id`に復帰する場合にも発火するため、他の理由で削除すると再開後の記録が失われる。期限切れ回収の対象は最終更新から一定期間が経過した通常の状態ファイルとし、`clear`時は排他ロック下で、対象セッションの新旧両方の配置場所にある状態ファイルを削除する
+- 出来事と更新の対応: 時刻や消費済みの記録を持つ状態は、記録が証明する出来事（通知の採用、資料の取得など）と更新を許す出来事を対応付け、予約（生成・試算）と確定（採用・配送）、周期の上限、最小間隔の抑止、活動後のデバウンスを区別する。別種のイベント列を反復しても要求した出来事へ到達するかは、生成・採用・出力を接続した試験で確かめる
 - サブエージェント起動の判定: `tool_name in ("Agent", "Task")`をSSOTとする。子の状態は委譲元へ自動伝播しないため、親が必要な値は完了報告の構造化フィールドから厳密に解析する
 
 ### 並行書き込みの排他制御
@@ -128,9 +129,11 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 
 ## 進捗の点検系
 
-- `progress_self_check`: `_hooks/progress_self_check.py`が、呼出主体（`agent_id`、無ければ`main`）ごとに`started_at`（初回観測）と`last_notified_at`（最後の通知）をepoch秒で保持する。
-  PostToolUseとUserPromptSubmitが`update_state`で読み書きし、初回観測は記録だけにする。PostToolUseと機械注入のUserPromptSubmitは、`last_notified_at`から1800秒以上で`source="progress-self-check"`の通知を返して時刻を更新する。
-  実ユーザーの発話では通知せず`last_notified_at`を現在時刻へ進める。リセットは無く、生存期間はセッション状態ファイルと同一とする。
+- `progress_self_check`: `_hooks/progress_self_check.py`が、呼出主体（`agent_id`、無ければ`main`）ごとに次の3値をepoch秒で保持する。`started_at`は初回観測、`last_notified_at`は通知が最終出力へ採用された最後の時刻、`reserved_at`は期日到達で通知を生成した時刻である。
+  PostToolUseとUserPromptSubmitが`update_state`で読み書きし、初回観測は記録だけにする。実発話・機械注入・PostToolUseを区別せず、`last_notified_at`から1800秒以上たった最初の観測で`source="progress-self-check"`の通知を生成し、`reserved_at`を記録する。
+  生成しただけでは期日を消費しない。`notice.record_delivery`が最終出力へ採用した通知の生成時刻を`progress_self_check_delivered`へ記録し、次の観測がその最大値を`last_notified_at`へ畳み込む。
+  `reserved_at`は60秒の間だけ同じ主体の並列な生成を抑止し、hook.pyがPostToolUseとUserPromptSubmitの処理の終了時に未採用の予約を解除する。Antigravityの保留通知は後の注入で配送記録を残すため、予約は失効時間に任せる。
+  通知時刻はhookが通知を採用した証拠に限り、点検を実施した証拠には使わない。リセットは無く、生存期間はセッション状態ファイルと同一とする。
 
 ## 確認・操作スキル系
 

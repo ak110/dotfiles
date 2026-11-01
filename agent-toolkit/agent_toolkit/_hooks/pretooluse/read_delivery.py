@@ -227,10 +227,40 @@ def skill_name(path: pathlib.Path) -> str | None:
     return f"{document_reads.document_plugin(str(path))}:{document[0]}"
 
 
+def _active_skill_root(plugin: str) -> pathlib.Path | None:
+    """`Skill`起動でホストが読み込む配布物のrootを返す。解決できなければNoneを返す。"""
+    toolkit = plugin_resources.plugin_root().resolve()
+    if plugin == "agent-toolkit":
+        return toolkit
+    sibling = sibling_plugin_root(plugin, toolkit)
+    return sibling.resolve() if sibling is not None else None
+
+
+def skill_loadable(path: pathlib.Path) -> bool:
+    """`Skill`起動がこの実体を読み込むかを返す。
+
+    同じ名前の配布スキルでも、作業ツリー内の写しは起動中の配布物とは別の実体であり、`Skill`起動では読み込まれない。
+    写しにまで`Skill`起動を求めると取得済みに到達できないため、写しはReadの全文取得で扱う。
+    起動中の配布物を解決できない場合は、従来どおり`Skill`起動で読み込む実体として扱う。
+    """
+    name = skill_name(path)
+    if name is None or ":" not in name:
+        return True
+    active = _active_skill_root(name.split(":", 1)[0])
+    owner = _document_owner(path)
+    return active is None or owner is None or owner == active
+
+
+def requires_skill_invocation(path: pathlib.Path, *, host: str, subject: str) -> bool:
+    """`Skill`起動だけを全文取得として認める資料かを返す。"""
+    return skill_loadable(path) and read_triggers.skill_invocation_required(path, host=host, subject=subject)
+
+
 def resolve_skill_document(qualified: object, candidates) -> pathlib.Path | None:
     """`Skill`起動の名前から、ホストが読み込んだ`SKILL.md`を1件に決める。決まらなければNoneを返す。
 
-    `agent-toolkit:`付きの名前は、稼働中のagent-toolkitのplugin rootが所有する候補に限る。
+    プラグイン名付きの名前は、起動中の配布物（agent-toolkitのplugin rootと、その隣に導入された配布物）が所有する候補に限る。
+    作業ツリー内の写しなど同名の別実体が候補に含まれても、ホストが読み込んだ実体だけを選ぶ。
     プラグイン名の無い名前に同名の候補が複数あれば、Claude Codeの優先順位に従ってユーザースキル（`~/.claude/skills`）を
     プロジェクトスキルより優先する（https://code.claude.com/docs/en/skills）。プロジェクトスキルの探索範囲は
     `read_triggers.project_skill_dirs`がホストの規則に合わせて決める。PostToolUseの応答は実体のパスを含まないため、
@@ -239,10 +269,11 @@ def resolve_skill_document(qualified: object, candidates) -> pathlib.Path | None
     if not isinstance(qualified, str):
         return None
     matched = list(dict.fromkeys(path for path in candidates if path.is_file() and skill_name(path) == qualified))
-    if qualified.startswith("agent-toolkit:"):
-        active = plugin_resources.plugin_root().resolve()
-        matched = [path for path in matched if _document_owner(path) == active]
-    elif ":" not in qualified and len(matched) > 1:
+    if ":" in qualified:
+        active = _active_skill_root(qualified.split(":", 1)[0])
+        if active is not None:
+            matched = [path for path in matched if _document_owner(path) == active]
+    elif len(matched) > 1:
         user = (pathlib.Path.home() / ".claude" / "skills").resolve()
         preferred = [path for path in matched if path.resolve().is_relative_to(user)]
         matched = preferred or matched
@@ -259,10 +290,7 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str) -> str:
     if (
         subject != operation_skills.SUBJECT_CODEX
         and skill
-        and (
-            subject == operation_skills.SUBJECT_SUBAGENT
-            or read_triggers.skill_invocation_required(path, host="claude", subject=subject)
-        )
+        and (subject == operation_skills.SUBJECT_SUBAGENT or requires_skill_invocation(path, host="claude", subject=subject))
     ):
         step = f"`Skill`で`{skill}`を起動せよ（資料: `{path}`）"
         if subject == operation_skills.SUBJECT_SUBAGENT:
@@ -573,7 +601,7 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                             and agent not in records.get(rules_context.READ_CONTEXT_RESET_KEY, [])
                             and not (
                                 skill_name(target.path)
-                                and read_triggers.skill_invocation_required(
+                                and requires_skill_invocation(
                                     target.path,
                                     host="codex" if is_codex_payload(payload) else "claude",
                                     subject=operation_skills.resolve_subject(payload),
@@ -1003,7 +1031,7 @@ def _restore_history_reads(payload: dict, session_id: str, agent: str, targets: 
                         cwd,
                         allow_mixed=not is_codex_payload(payload),
                     ):
-                        if skill_name(target.path) and read_triggers.skill_invocation_required(
+                        if skill_name(target.path) and requires_skill_invocation(
                             target.path,
                             host="codex" if is_codex_payload(payload) else "claude",
                             subject=operation_skills.resolve_subject(payload),
@@ -1481,13 +1509,12 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             skill_name(target.path)
             and (
                 subject == operation_skills.SUBJECT_SUBAGENT
-                or read_triggers.skill_invocation_required(target.path, host="claude", subject=subject)
+                or requires_skill_invocation(target.path, host="claude", subject=subject)
             )
             for target in pending
         )
         has_read = any(
-            not skill_name(target.path)
-            or not read_triggers.skill_invocation_required(target.path, host="claude", subject=subject)
+            not skill_name(target.path) or not requires_skill_invocation(target.path, host="claude", subject=subject)
             for target in pending
         )
         methods = "指定されたSkill・Read" if has_skill and has_read else "指定されたSkill" if has_skill else "指定されたRead"
@@ -1874,21 +1901,36 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         resolved = resolve_skill_document(qualified, sorted(targets))
         if resolved is not None:
             _mark(session_id, resolved, agent)
+            # 作業ツリー内の写しなど内容が同じ別実体も、同じ本文を受け取ったものとして取得済みにする。
+            loaded = document_reads.content_fingerprint(resolved)
+            for copy in sorted(targets):
+                if (
+                    copy != resolved
+                    and copy.is_file()
+                    and skill_name(copy) == qualified
+                    and document_reads.content_fingerprint(copy) == loaded
+                ):
+                    _mark(session_id, copy, agent, loaded)
         return
     allow_mixed = not is_codex_payload(payload)
     mixed_reads, only_reads = _sed_reads(tool_name, tool_input, cwd)
     if not allow_mixed and mixed_reads and not only_reads:
         execution = codex_read_observation.completed_execution(payload)
+        # 記録の写しが保存のために省略された場合は比較に使えず、モデルへ返したhook入力の本文を証拠にする。
         allow_mixed = (
             execution is not None
             and isinstance(response, str)
-            and execution.get("aggregated_output") == response
+            and (
+                execution.get("aggregated_output") == response
+                or codex_read_observation.persisted_copy_truncated(execution)
+                and codex_read_observation.PERSISTENCE_MARKER not in response
+            )
             and not host_truncated(response)
         )
     for target, start, end, length, fingerprint in _read_body_proofs(
         tool_name, tool_input, response, paths, targets, cwd, allow_mixed=allow_mixed
     ):
-        if skill_name(target.path) and read_triggers.skill_invocation_required(
+        if skill_name(target.path) and requires_skill_invocation(
             target.path,
             host="codex" if is_codex_payload(payload) else "claude",
             subject=operation_skills.resolve_subject(payload),

@@ -2582,6 +2582,55 @@ def test_public_hook_prefers_the_user_skill_over_a_same_named_project_skill(tmp_
     )
 
 
+def _basics_root(root: pathlib.Path, body: str) -> pathlib.Path:
+    """agent-basicsのmanifestと`check-execution`の`SKILL.md`を持つrootを作り、`SKILL.md`を返す。"""
+    manifest = root / ".claude-plugin/plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"agent-basics"}', encoding="utf-8")
+    skill = root / "skills/check-execution/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(body, encoding="utf-8")
+    return skill
+
+
+@pytest.mark.parametrize("same_content", [True, False])
+@pytest.mark.usefixtures("memory")
+def test_worktree_copy_of_a_distributed_skill_is_released_by_skill_or_read(tmp_path, monkeypatch, same_content):
+    """起動中の配布物とworktree内の写しが同じ名前のスキルを持つとき、写しも取得済みへ到達できる。
+
+    Skill起動は起動中の配布物だけを読み込むため、同名の写しが候補に含まれても実体を1件に決めて記録する。
+    内容が同じ写しはSkill起動で同じ本文を受け取ったものとし、内容が異なる写しはReadの全文取得で取得済みにする。
+    """
+    toolkit = tmp_path / "dist/agent-toolkit"
+    (toolkit / ".claude-plugin").mkdir(parents=True)
+    (toolkit / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    active = _basics_root(tmp_path / "dist/agent-basics", "# 検証\n\n配布物の本文\n")
+    copy = _basics_root(
+        tmp_path / "worktree/agent-basics", "# 検証\n\n配布物の本文\n" if same_content else "# 検証\n\n作業中の本文\n"
+    )
+    monkeypatch.setattr(read_delivery.plugin_resources, "plugin_root", lambda: toolkit)
+    rows = [ReadTrigger(tmp_path / "caller.md", 1, "操作", ("tool:Write",), (active, copy))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    monkeypatch.setattr(read_delivery.read_triggers, "reference_method_targets", lambda *_args, **_kwargs: ())
+    payload = {"session_id": "test", "cwd": str(tmp_path / "worktree")}
+    operation = {"file_path": str(tmp_path / "out.md"), "content": "本文"}
+    first = read_delivery.deliver(payload, "Write", operation, "test")
+    notice = _notice_body(first)
+    assert f"`Skill`で`agent-basics:check-execution`を起動せよ（資料: `{active}`）" in notice
+    assert f"Readで`{copy}`を全文読め" in notice
+    notice_module.record_delivery("\n".join(first.notices))
+    assert read_delivery.deliver(payload, "Write", operation, "test").block is not None
+    read_delivery.observe({**payload, "tool_response": "起動成功"}, "Skill", {"skill": "agent-basics:check-execution"}, "test")
+    if not same_content:
+        assert read_delivery.deliver(payload, "Write", operation, "test").block is not None
+        read_delivery.observe(
+            {**payload, "tool_response": copy.read_text(encoding="utf-8")}, "Read", {"file_path": str(copy)}, "test"
+        )
+    decision = read_delivery.deliver(payload, "Write", operation, "test")
+    assert decision.block is None
+    assert not _guidance(decision)
+
+
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.usefixtures("memory")
 def test_repeated_write_requires_complete_read(tmp_path, monkeypatch, codex):
@@ -2614,6 +2663,46 @@ def test_repeated_write_requires_complete_read(tmp_path, monkeypatch, codex):
     assert _run_hook_in_process("posttooluse", complete).returncode == 0
     final = _run_hook_in_process("pretooluse", operation)
     assert final.returncode == 0 and str(path) not in final.stdout
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["$COMMAND > {out}", "> {out}", "sh -c 'printf x > {out}' name \"$ARG\""],
+    ids=["unknown-command", "redirect-only", "static-shell-body"],
+)
+@pytest.mark.usefixtures("memory")
+def test_unknown_execution_with_static_output_is_protected_until_full_read(tmp_path, monkeypatch, command):
+    """未知の実行の静的な絶対出力先も、案内済み未取得の再書込として遮断し、全文取得後に解除する。
+
+    実行するコマンド自体は起動せず、公開PreToolUse・PostToolUseの入力だけで確かめる。
+    """
+    out = tmp_path / "out.md"
+    path = _rows(tmp_path, monkeypatch, f"write:{tmp_path}/*.md", count=1)[0]
+    payload = {"session_id": "test", "cwd": str(tmp_path)}
+    operation = {**payload, "tool_name": "Bash", "tool_input": {"command": command.format(out=out)}}
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and str(path) in first.stdout
+    assert str(path) in denial_reason(_run_hook_in_process("pretooluse", operation))
+    complete = {
+        **payload,
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(path)},
+        "tool_response": path.read_text(encoding="utf-8"),
+    }
+    assert _run_hook_in_process("posttooluse", complete).returncode == 0
+    final = _run_hook_in_process("pretooluse", operation)
+    assert final.returncode == 0 and str(path) not in final.stdout
+
+
+@pytest.mark.usefixtures("memory")
+def test_unknown_output_path_is_not_protected_as_a_guessed_path(tmp_path, monkeypatch):
+    """出力先そのものが未知の入力は、推測した実パスの保護で代用しない。"""
+    path = _rows(tmp_path, monkeypatch, f"write:{tmp_path}/*.md", count=1)[0]
+    payload = {"session_id": "test", "cwd": str(tmp_path)}
+    operation = {**payload, "tool_name": "Bash", "tool_input": {"command": 'printf x > "$ROOT/out.md"'}}
+    result = _run_hook_in_process("pretooluse", operation)
+    assert result.returncode == 0 and str(path) not in result.stdout
 
 
 @pytest.mark.parametrize("tool", ["Read", "Bash", "Skill"])

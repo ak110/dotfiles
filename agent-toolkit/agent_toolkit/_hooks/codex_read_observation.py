@@ -98,6 +98,16 @@ def read_plan(command: str) -> list[Read]:
     return result
 
 
+PERSISTENCE_MARKER = "\n... command output truncated for persistence ...\n"
+"""Codexが記録へ保存する`aggregated_output`だけを短くするときに本文の途中へ入れる行。モデルへ返す本文には付かない。"""
+
+
+def persisted_copy_truncated(execution: dict) -> bool:
+    """記録の`aggregated_output`が保存のために省略され、モデルへ返した本文の比較に使えないかを返す。"""
+    output = execution.get("aggregated_output")
+    return isinstance(output, str) and PERSISTENCE_MARKER in output
+
+
 def response_is_truncated(response: object) -> bool:
     """nativeが付ける省略の包絡だけを識別し、本文中の語では判定しない。"""
     return isinstance(response, str) and response.startswith("Warning: truncated output (original token count:")
@@ -202,15 +212,18 @@ def collect(payload: dict) -> Observation | None:
     """標準読取の終了記録と省略の包絡から、読了観測へ渡す本文を確定する。
 
     終了0で完了し省略の包絡が無いnative応答だけを本文として返す。
-    省略された応答は本文を返さず、分割読取の案内だけを返す。
+    省略された応答と、記録へ保存するために省略した写しと同じ応答は本文を返さず、分割読取の案内だけを返す。
+    記録の`aggregated_output`は保存のために省略されることがあり、モデルへ返した本文の写しとは限らない。
     """
     tool_input = payload.get("tool_input")
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     response = payload.get("tool_response")
     if not isinstance(command, str) or not isinstance(response, str) or not read_plan(command):
         return None
-    if completed_execution(payload) is None:
+    execution = completed_execution(payload)
+    if execution is None:
         return None
-    if response_is_truncated(response):
+    # 保存用に省略した写しがそのまま届いた場合は、モデルへ返した全文の証拠にしない。
+    if response_is_truncated(response) or (persisted_copy_truncated(execution) and response == execution["aggregated_output"]):
         return Observation(formatter("codex-read-observation")(TRUNCATED_NOTICE), None)
     return Observation("", response)
