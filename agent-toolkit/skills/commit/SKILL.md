@@ -23,6 +23,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:writing-standards/references/investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md#「暫定回避と結果報告」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「暫定回避と結果報告」` |
@@ -60,6 +61,10 @@ push後にCIが失敗した場合は`agent-basics:bugfix`を起動し、同ス�
 他のセッションが同じリポジトリに変更を加える可能性があるため、ステージングするのは自セッションの担当範囲だけに限定し、ユーザーや他セッションによる未コミットの変更はそのまま残す。コミットの直前に、作業開始時からベースコミットが変わっていた場合の対応は、`agent-toolkit/rules/02-agent-operations.md`「作業中に観測したリポジトリ状態変化の扱い」に従って判断する。
 
 コミットを実行する前に、対象の変更だけがステージングされていること、format・lint・testが警告なしで成功することを確認する。マージの競合を解決したあとは、競合マーカー（`git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`）が残っていないことを確認する。プロジェクトの規範でCIを主要な検証関門と定めている場合は、CIが無条件に実行するチェックをローカルの事前確認から省いてよい。
+保存する内容は、`agent-basics:writing-standards/references/investigation.md`「根拠と主張の一致」に従い、要求・計画から今回保存すべき担当変更を先に確定する。
+その集合とステージ済みの実差分を比べ、担当外の混入と担当変更の欠落を両方向で判定する。
+担当外の未ステージ差分を保護し、不足があれば担当変更に必要な差分だけを追加してから、ステージ済みの実差分を再び比較する。
+statusやdiffの表示とcommit hookの成功を確認しても、保存すべき担当変更とステージ済みの実差分の比較は別に行う。
 解除条件付きの暫定対応を含むコミットでは、`agent-toolkit:wi-standards/references/analysis-records.md`「暫定回避と結果報告」に従い、保存済みAWIに正式な対応内容、解除条件、復帰後の期待結果、および待機期限が記録されているかを確認する。不足がある場合は、通常のWI登録手順でそれらを記録してからコミットする。
 
 コミットフック（Git hookやhook管理ツール）のチェックをスキップまたは迂回する操作は、pre-commitの退避（stash）が競合を起こし、かつ対象ファイルを所定の手順ですでに検証済みである場合にのみ認める。

@@ -10,6 +10,8 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 再発の経過を問う要求を検収する前 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
+| 複数バグの現象・期待する契約・原因の対応を検収する前 | `analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
 | 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
@@ -44,6 +46,9 @@
 
 完成条件の網羅性・観測可能性を確認する前に、`drafting-completion.md`「投入前の読み直し」の必要性判定を適用し、起草者が加えた条件も独立して判定する。
 原因と被覆の判定では、同節に従い、探索範囲の各限定を根本原因の成立条件から導けるか確認する。
+元の問いの分析単位を原文から独立に確定し、原因候補を選んだ前提と対応するか判定する。
+起草者が選んだ個別事象だけで検収範囲を決めず、再発の経過を問う要求には`agent-basics:bugfix/references/root-cause-scenarios.md`「反復した指摘の原因判定」を適用する。
+複数バグでは、`analysis-records.md`「原因分析の記録先」に従い、各バグの現象・期待する契約・原因の対応が一意かを確認する。
 
 原稿全体に対して、`drafting-completion.md`の「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「投入前の読み直し」「方針と判断の記録との比較」を適用する。「重複判定」は同節の起点別の適用条件に従い、免除された既存項目との比較を実施していないことだけを理由に検収を止めない。観測された不具合を起点としbugfixを起動して起草するAWIには「原因と定義の所有者」と同資料が参照するbugfixの基準も併せて適用する。原文、実際の回答、現物の状態、ならびに取得済みの証拠をもとに、要件の分類、処置の妥当性と必要性、一連の処理全体の一貫性、根本原因と対象範囲の網羅、過去の判断との整合性、ならびに未確認範囲の有無を独立して判定する。原稿が課している操作上の制約が、原文で指定された工程に正しく対応しているかも確認する。
 原文と反映内容を読み比べ、`agent-toolkit:delegation/references/writing.md`「ユーザー入力素材の取扱い」に従って要求の脱落・追加・意味の変化を確かめる。認可や解釈のため出所の再取得が必要な場合は、`drafting-workflow.md`「出所と観測の取得」に従い、取得済みの出所ファイルと記録位置を優先し、不足時に指定された会話IDから取得する。通常の転記は取得済みの原文で確認する。任意節や引用位置の記録がないこと、`wi-quote-check`の未実行だけを理由に差し戻さない。
@@ -57,7 +62,9 @@
 - `condition_not_met`を返す場合は、投入が不要であると判断した結論と明確な根拠を示す。人間由来の要求を投入対象外とする場合は、`origin-and-approval.md`「承認」に従って確定したうえで、後続の保存対象から除外する。
 - 先行項目の正式なファイル名が未確定であっても、要求内容や証拠から参照先および参照箇所が一意に特定できる状態であれば、意味の検収を進めてよい。正式なファイル名への置き換え、および保存後の一致確認は、作成主体が`drafting-workflow.md`「投入」の手順に従って実施する。
 
-委譲元および専念型の投入前レビュー担当は、原稿と成立性の証拠を確認し、`再発防止策`の行に挙げられた問題が通常の対策範囲の外にあることを確かめ、`agent-basics:bugfix`の`references/root-cause-remediation.md`「処置の階層」における持ち込み試験を実施する。成立しない原稿については、処置の内容を`対策`に書き直すか、再発防止策を選定し直すよう作成主体へ差し戻す。
+委譲元および専念型の投入前レビュー担当は、原稿と成立性の証拠を確認し、対策行と再発防止策行を比較する。
+`再発防止策`の行に挙げられた問題が通常の対策範囲の外にあることを確かめ、`agent-basics:bugfix`の`references/root-cause-remediation.md`「処置の階層」における持ち込み試験を実施する。
+成立しない原稿は、処置を対策行へ移して反映内容節の詳細と対応付け、再発防止策の選び直しまたは不採用理由の記録を求めて作成主体へ差し戻す。
 
 ## 初回と再判定・差戻し
 

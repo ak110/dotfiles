@@ -10,6 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 取得済み候補を受領する前 | `all-repos-orchestration.md#「取得済み候補の受領」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「取得済み候補の受領」` |
 | 本文の参照基準を適用する前 | `../../delegation/references/waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
 | 工程の責務と受け渡しを確認する前 | `../../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 操作機能がなく計画原稿を整理する前 | `quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/quality-standards.md` |
@@ -39,6 +40,9 @@
 
 ## agent-toolkit:process-wiの規定の読み替え
 
+all-reposから受領した候補を処理する場合は、`all-repos-orchestration.md`「取得済み候補の受領」の確認結果を引き継ぎ、受領候補・readiness・対象別の選定の対応を保つ。
+候補が1件でも同節の着手可否と所定選定を適用し、省略の判断は同節のQCD・逸脱契約に従う。
+
 `agent-toolkit:process-wi`を名指ししている条文は、本スキルの実行中にも適用する。ただし、レーン担当、公開担当、専用worktreeを前提とする契約は直接適用せず、本書で示す同等の工程をメインエージェント自身が担う。直接適用しない文書は次のとおりである。
 
 - 通常レーン処理およびレーン・公開担当向け資料（本書が明示的に参照する共通資料は適用する）
@@ -62,6 +66,9 @@
 - 保存済み対応表において同一の対象worktreeに属する全計画対象と全直接実装対象の和を1件の実行レビューにまとめ、異なる対象worktreeの項目を同一の計画や実行レビューに混在させない
 
 ## 見つけた既存不良の扱い
+
+追加操作を選ぶ前に、発話と発生条件を`immediate-fix.md`「即時対応」の分類に当てはめる。
+ユーザーの是正要求、今回混入した不良、同じ実行への明示追加を区別し、その結果から適用する手順を選ぶ。
 
 実行レビューから指摘として返された、今回の変更差分外にある既存不良は、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`「継続する工程」にある既存不良の受領契約に従って専任のWI投入担当へ渡し、本節の手順や今回の処理対象への追加からは除外する。ただし、残る工程または次のセッションの処理を停止・遮断する不良は、同契約の例外として次のように扱う。
 今回の実行の中で修正するかどうかと修正の範囲は、`immediate-fix.md`「即時対応」に従って判定する。メインエージェントは直接修正の安全性を確認し、正式対応のAWIを次回セッション用として登録する。この正式対応AWIは、今回の処理対象や対応表には追加しない。
@@ -98,4 +105,4 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 既存不良の即時対応を判断する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 既存不良・ユーザーの是正要求・今回混入した不良・同じ実行への明示追加について、対処と追加操作を選ぶ前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |

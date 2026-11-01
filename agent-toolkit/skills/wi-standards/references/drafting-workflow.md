@@ -13,6 +13,8 @@ WIの作成主体には、専念型メイン（WI作成専用セッションの�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 原因分析の書式を使う前 | `analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
+| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-remediation.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「処置の階層」` |
 | 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md#「起動方法」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「起動方法」` |
@@ -54,7 +56,7 @@ WI作成専用セッションでは、メインエージェント自身が調査
 直接起草する場合、メインエージェントは`draft-semantic-review.md`に基づく意味の検収を自ら実施し、原文と反映内容を読み比べ、構造、表記、重複も確認して保存する。
 投入前レビューは、上記の条件のいずれかに該当する原稿に対して実施する。ユーザー向けに提示する部分は、検収側がまず自ら判定し、読者別の探索サブエージェントを起動するかどうかは`draft-semantic-review.md`に定める2つの条件に基づいて選択する。同一の作成主体が並行して準備した複数の原稿は、要求、出所、証拠を要求識別子で対応付け、`share/wi-draft-review.parent.md`の複数原稿入力仕様を用いて共通の事前準備を共有する。後続の原稿を待つためだけに待機することは避け、合格した要求から他の要求の修正待ちとは独立して保存を進める。
 他の作業に付随して投入する場合の文脈分離と、親エージェントによる意味の検収は引き続き維持する。
-`carefully`指定で方針検収を受けた要求は、方針の合格、ユーザーの最終承認、本文の起草の順に進め、同じレビューsessionへ`share/wi-draft-review.parent.md`の`本文確認`を継続依頼する。本文の意味確認と保存前の判定は維持し、同版の共通資料は再利用する。
+`agent-toolkit:add-awi-by-user`の「本文起草前の方針確認」で方針検収を受けた要求は、方針の合格、ユーザーの最終承認、本文の起草の順に進め、同じレビューsessionへ`share/wi-draft-review.parent.md`の`本文確認`を継続依頼する。本文の意味確認と保存前の判定は維持し、同版の共通資料は再利用する。
 
 ## 出所と観測の取得
 
@@ -126,6 +128,9 @@ atk run-script session-review-evidence -- --user-events-file <元の保存ファ
 - 対案がそれらを`確定した要件`の外へ拡張または変更する場合、あるいは前提を守る案が品質退行などの外部から見える結果の変化を伴う場合は、原稿を作成せず、両案の内容と各案の不利益を`続行できない理由`に記載して報告する
 
 ### 本文の起草
+
+原因分析の処置は`agent-basics:bugfix/references/root-cause-remediation.md`「処置の階層」で区別し、`analysis-records.md`「原因分析の記録先」の対策行と再発防止策行へ対応付ける。
+変更の詳細は反映内容節へ置き、両行の要旨から対応項目を参照する。
 
 受け取った制約事項は、適用されるべき工程を原文から特定する。WI作成工程にのみ適用される書き込み範囲や操作の許可・禁止は作成主体自身の行動に適用し、後続の計画・実装・公開工程を拘束する要件とするのは、原文がその工程への適用を明示しているものに限る。原稿の反映内容、適用範囲、完成条件を確定する段階で、各制約と適用工程との対応関係を確認する。
 現在の工程における案の提示・回答・対話と、後続工程へ登録すべき成果物との時期的な区別は、`agent-toolkit:user-confirmation-and-report`のSKILL.md「成果物の制限」に従って判定する。現在回答すべき問いを後続の完成条件で代用した原稿を作成しない。

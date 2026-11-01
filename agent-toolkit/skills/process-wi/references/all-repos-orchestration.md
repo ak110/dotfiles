@@ -58,6 +58,10 @@
 回答済みUWI、候補の分類・開始時CI点検は[selection-procedure.md](selection-procedure.md)を使う。
 選定YAMLとNを対象ごとに分け、レーン上限も対象別のNから計算する。
 詳細な生成・合流の契約は[selection-format.md](selection-format.md)を使う。
+少数候補を統括自身が処理する場合も、受領候補・readiness・対象別の選定の対応を保つ。
+候補が1件であることと、その候補に着手できることは別に確認する。
+実行をsingle-laneへ読み替えても、本節の受領確認と所定選定を適用する。
+省略を選ぶ場合は、元工程が保護する結果を保てる根拠を比較し、`agent-toolkit/rules/01-agent.md`「QCDと3段判定」と既存の逸脱契約に従って判断・報告する。
 
 ## worktreeと資源
 

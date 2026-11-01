@@ -3,6 +3,8 @@
 ## 規範の未適用と目的逸脱
 
 規範が適用されなかった事象と、規範を適用した結果として目的から逸脱した事象は、原因を切り離して分析する。
+再発・悪化を問う入力では、個別候補の採否の前に、`agent-basics:bugfix/references/root-cause-scenarios.md`「前提の再検討」「反復した指摘の原因判定」で元の問いと分析単位の一致を確かめる。
+共有する規範・書式・通知・工程の変更も過去対策と比較し、結論を`analysis.md`「原因と対策」の報告へ引き継ぐ。
 以下で実際のモデル階層を規定と比較するのは、その情報が対策の選定を左右する場合に限る。
 規範本文と必要な変更履歴で欠陥と修正方針を判断できる場合は、記録位置やモデル階層を追加で調べずに調査を終える。
 問題発生前のコンテキストにおいて規範の存在判定が`present`であった未適用事象では、記録から確認した実際のモデル階層（上位・中位・軽量）を、`agent-toolkit:delegation`の`references/runtime-routing.md`「代替時の組合せの目安」に照らし合わせる。上位階層あるいはそれと同等以上と確認できるモデルの場合は、モデルの性能不足を原因とみなさず、新たな条文の追記よりも先に、既存条文の削除、緩和、集約、単純化、または一般化を検討する。中位や軽量モデルの場合は、条文が明確であり、権限・手段・入力が適切に揃っていたにもかかわらず失敗したときに限り、工程に割り当てるモデルの変更やモデル自体の改善待ちを対策の候補とする。モデル階層に基づく評価は記録から確実に特定できたモデルのみを対象とし、モデルが不明または記録から欠落している工程については推測で補わない。
@@ -23,6 +25,8 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 再発・悪化を問う入力の分析単位を確定する前 | `agent-basics:bugfix/references/root-cause-scenarios.md#「前提の再検討」「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「前提の再検討」「反復した指摘の原因判定」` |
+| 分析結果を報告へ引き継ぐ前 | `analysis.md#「原因と対策」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/analysis.md#「原因と対策」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/agent-documents-basics.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-documents-basics.md` |
