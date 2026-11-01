@@ -52,6 +52,7 @@ def _run(
         "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
         "AGENT_TOOLKIT_OWNER_SESSION",
         "CLAUDE_CODE_SESSION_ID",
+        "CODEX_THREAD_ID",
     ):
         env.pop(name, None)
     env.update(extra_env or {})
@@ -294,6 +295,30 @@ def test_notified_plans_are_limited_to_the_current_session(
     for name in ("own.md", "other.md"):
         if name not in expected_notified:
             assert str(plans / name) not in notification
+
+
+@pytest.mark.parametrize(("hook_session", "notified"), [("codex-thread", True), ("other-thread", False)])
+def test_codex_top_level_plan_is_notified_to_the_creating_conversation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, hook_session: str, notified: bool
+) -> None:
+    """ownerを持たないCodex最上位で記録した計画は、作成した会話の保存案内にだけ現れる。"""
+    home = tmp_path / "home"
+    plans = home / ".claude" / "plans"
+    plans.mkdir(parents=True)
+    plan = plans / "codex.md"
+    plan.write_text("# codex\n", encoding="utf-8")
+    for name in ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CODEX_THREAD_ID", "codex-thread")
+    assert _owner_records.record_plan_owner(plan) is not None
+    transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
+
+    result = _decision(_run(_payload(hook_session, transcript), state_dir=tmp_path, home=home))
+
+    if notified:
+        assert str(plan) in result["hookSpecificOutput"]["additionalContext"]
+    else:
+        assert not result
 
 
 @pytest.mark.parametrize("record", ["{不正なJSON", '{"recorded_at": "2026-09-03T00:00:00+09:00"}'])

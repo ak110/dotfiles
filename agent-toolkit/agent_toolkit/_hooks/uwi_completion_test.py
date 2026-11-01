@@ -6,6 +6,7 @@ import tempfile
 
 import pytest
 
+from agent_toolkit._atk.wi import add as _wi_add
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import uwi_completion as _uwi_completion
@@ -128,6 +129,27 @@ class TestBuildNotice:
         # 他のセッションの投入分は基準値へ取り込まれ、後の観測でも通知しない。
         (inbox / "unrelated.md").write_text(_entry(), encoding="utf-8")
         assert _uwi_completion.build_notice("self-session", "/dummy") is None
+
+    def test_codex_top_level_submitter_limits_notice_to_submitting_conversation(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # ownerを持たないCodex最上位の会話が投入したUWIは、投入元の解決で会話IDを記録し、その会話だけへ通知する。
+        for name in ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("CODEX_THREAD_ID", "codex-thread")
+        submitter = _wi_add._resolve_submitter_session()  # pylint: disable=protected-access
+        assert submitter == "codex-thread"
+        root = _make_private_notes(tmp_path, monkeypatch, unanswered=0, answered=0)
+        path = root / "inbox" / "codex.md"
+        path.write_text(_entry(submitter_session=submitter), encoding="utf-8")
+        assert _uwi_completion.build_notice("codex-thread", "/dummy") is None
+        assert _uwi_completion.build_notice("other-thread", "/dummy") is None
+        path.write_text(path.read_text(encoding="utf-8") + "回答\n", encoding="utf-8")
+
+        assert _uwi_completion.build_notice("other-thread", "/dummy") is None
+        notice = _uwi_completion.build_notice("codex-thread", "/dummy")
+        assert notice is not None
+        assert "codex.md" in notice
 
     def test_does_not_notify_when_only_foreign_uwi_is_answered(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

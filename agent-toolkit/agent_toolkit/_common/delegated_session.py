@@ -51,6 +51,25 @@ def owner_session_id(environ: Mapping[str, str]) -> str | None:
     return environ.get(OWNER_SESSION_ENV) or None
 
 
+CURRENT_CONVERSATION_ENVS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
+"""ホストが実行中の会話へ設定する識別子の環境変数名。Claude Codeを先に読む。
+
+Codexはシェルへ`CODEX_THREAD_ID`を渡すが、Codex CLIが直接起動するMCPサーバーには渡さない。
+"""
+
+
+def current_conversation_session_id(environ: Mapping[str, str]) -> str | None:
+    """実行中の会話（委譲先なら委譲先自身）の識別子を返す。設定されていないか空なら`None`を返す。
+
+    委譲元を表す`owner_session_id`とは意味が異なる。所有者を優先する判定は呼び出し側が行う。
+    """
+    for name in CURRENT_CONVERSATION_ENVS:
+        value = environ.get(name)
+        if value:
+            return value
+    return None
+
+
 HANDOFF_PATH_ENV = "AGENT_TOOLKIT_HANDOFF_PATH"
 """委譲先自身が更新する引き継ぎ記録の絶対パス。"""
 
