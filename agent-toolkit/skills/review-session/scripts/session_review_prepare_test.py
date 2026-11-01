@@ -1609,3 +1609,145 @@ def test_escalation_candidate_requires_evaluation() -> None:
     """続行不能の返却は担当の作業遂行不能を示すため、後続で回復しても評価必須の候補にする。"""
     assert prepare.is_mandatory({"candidate_kind": "escalation"})
     assert not prepare.is_mandatory({"candidate_kind": "delegate-return"})
+
+
+_FIXTURE_READ_NOTICE = (
+    '<atk-auto source="pretooluse" kind="warn">次の資料を、この操作の結果を使う前に指定されたReadで全文取得せよ。'
+    "必須手順であり省略するな。\n未取得資料: `/plugin/skills/commit/references/message.md`。\n"
+    "次の操作: Readで`/plugin/skills/commit/references/message.md`を全文読め。</atk-auto>"
+)
+_FIXTURE_UNAPPLIED_WARNING = (
+    "警告: 設定キー`cache.path`は未適用のまま終了した（既定値を使用）。適用するには`--apply`を付けて再実行する\nexit code 0"
+)
+_FIXTURE_PROGRESS_NOTICE = (
+    '<atk-auto source="progress-self-check" kind="notice">'
+    "セッション開始から30分たった。進捗の定期セルフチェックの時刻になった。</atk-auto>"
+)
+_FIXTURE_DEFERRAL = (
+    "読込案内を3回受けた件は、既存の未完了AWI 20260901-000000-001.md が被覆しているため、新たな対策は不要と判断した。"
+)
+
+
+def _fixture_entries(*, problem: bool) -> list[dict[str, Any]]:
+    """振り返りの検出能力を確かめる固定記録を組み立てる。
+
+    問題を含む版は、読込案内を読まないままの再試行（案内の反復）、終了コード0の結果に残る未適用の警告、
+    既存の未完了AWIを根拠に残る原因条件を確かめずに対策を見送る完了報告、長い作業中の定期点検の未発火を持つ。
+    対照版はそれぞれを正常化し、両版とも1回失敗して直したテスト（正常な回復）を持つ。
+    """
+
+    def user(time: str, content: object) -> dict[str, Any]:
+        return {"type": "user", "timestamp": f"2026-09-06T{time}Z", "message": {"role": "user", "content": content}}
+
+    def call(time: str, tool_id: str, name: str, value: dict[str, str], text: str | None = None) -> dict[str, Any]:
+        content: list[dict[str, Any]] = [{"type": "text", "text": text}] if text else []
+        content.append({"type": "tool_use", "name": name, "id": tool_id, "input": value})
+        return {"type": "assistant", "timestamp": f"2026-09-06T{time}Z", "message": {"role": "assistant", "content": content}}
+
+    def result(time: str, tool_id: str, text: str, *, error: bool = False) -> dict[str, Any]:
+        return user(time, [{"type": "tool_result", "tool_use_id": tool_id, "is_error": error, "content": text}])
+
+    def say(time: str, text: str) -> dict[str, Any]:
+        return {
+            "type": "assistant",
+            "timestamp": f"2026-09-06T{time}Z",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
+        }
+
+    def attachment(time: str, tool_id: str, hook_name: str, notice: str) -> dict[str, Any]:
+        return {
+            "type": "attachment",
+            "timestamp": f"2026-09-06T{time}Z",
+            "attachment": {"type": "hook_additional_context", "hookName": hook_name, "toolUseID": tool_id, "content": [notice]},
+        }
+
+    commit = {"command": "git commit -F msg.txt"}
+    entries = [
+        user("10:00:00", "設定ファイルの読込処理を直してcommitして"),
+        call("10:01:00", "t1", "Bash", {"command": "make test"}, "テストを実行する。"),
+        result("10:02:00", "t1", "Error: test_config failed: KeyError 'path'", error=True),
+        call("10:03:00", "t2", "Bash", {"command": "make test"}, "KeyErrorの原因を直して再実行する。"),
+        result("10:04:00", "t2", "120 passed"),
+    ]
+    if problem:
+        for index, minute in enumerate(("05", "06", "07")):
+            entries += [
+                call(f"10:{minute}:00", f"c{index}", "Bash", commit),
+                attachment(f"10:{minute}:01", f"c{index}", "PreToolUse:Bash", _FIXTURE_READ_NOTICE),
+                result(
+                    f"10:{minute}:30", f"c{index}", "[main abc1234] fix: 設定の読込を直す" if index == 2 else "nothing added"
+                ),
+            ]
+    else:
+        entries += [
+            call("10:05:00", "c0", "Bash", commit),
+            attachment("10:05:01", "c0", "PreToolUse:Bash", _FIXTURE_READ_NOTICE),
+            result("10:05:30", "c0", "pre-commit中断: 案内された資料が未取得", error=True),
+            call(
+                "10:06:00", "r0", "Read", {"file_path": "/plugin/skills/commit/references/message.md"}, "案内された資料を読む。"
+            ),
+            result("10:06:10", "r0", "# コミットメッセージ\n..."),
+            call("10:07:00", "c1", "Bash", commit),
+            result("10:07:30", "c1", "[main abc1234] fix: 設定の読込を直す"),
+        ]
+    entries += [
+        call("10:08:00", "s1", "Bash", {"command": "tool sync-config"}),
+        result("10:08:10", "s1", _FIXTURE_UNAPPLIED_WARNING if problem else "同期した: cache.path\nexit code 0"),
+    ]
+    for index, time in enumerate(("10:40", "11:10", "11:38")):
+        entries += [
+            call(f"{time}:00", f"w{index}", "Bash", {"command": "make lint"}, "残りの修正を続ける。"),
+            result(f"{time}:20", f"w{index}", "ok"),
+        ]
+        if not problem and index < 2:
+            entries += [
+                attachment(
+                    f"{time}:21",
+                    f"w{index}",
+                    "PostToolUse:Bash",
+                    _FIXTURE_PROGRESS_NOTICE,
+                ),
+                say(f"{time}:30", "進捗を点検した。経過と残りの作業は見込みどおりで、反復は無い。"),
+            ]
+    final = (
+        f"作業を完了した。{_FIXTURE_DEFERRAL}sync-configは成功した。"
+        if problem
+        else "作業を完了した。設定の読込を直し、テスト120件の成功とcommitを確認した。sync-configの同期も確認した。"
+    )
+    return [*entries, say("11:40:00", final)]
+
+
+@pytest.mark.parametrize("problem", [True, False], ids=["problem", "control"])
+def test_prepare_extracts_fixed_record_problems_without_naming_them(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, problem: bool
+) -> None:
+    """問題を含む固定記録では、分析に必要な根拠が候補か会話に現れ、各問題だけを正常化した対照記録では誤った候補を出さない。
+
+    準備処理は問題名を受け取らず、通常の入力だけから抽出する。読込案内の反復は発生件数付きの候補、終了コード0の未適用の警告は
+    warningの候補、正常な回復（1回の失敗と再実行の成功）は単発の失敗として候補から除く。誤った見送りと定期点検の未発火は
+    抽出の対象ではなく分析判断で扱うため、判断に必要な完了報告の全文と経過時間が会話・統計へ届くことを確かめる。
+    分析判断で問題を見つけられるかは、問題名を伏せた分析担当の結果を期待解答と比べる手動観測で確かめる。
+    """
+    transcript = tmp_path / (
+        "aaaaaaaa-0000-4000-8000-000000000001.jsonl" if problem else "bbbbbbbb-0000-4000-8000-000000000002.jsonl"
+    )
+    transcript.write_text(
+        "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in _fixture_entries(problem=problem)),
+        encoding="utf-8",
+    )
+    work_dir = _work_dir(tmp_path)
+
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir)], now=_FIXED_NOW) == 0
+
+    record = json.loads(capsys.readouterr().out)
+    candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
+    conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
+    assert record["excluded_counts"]["single-session-failure"] == (1 if problem else 2)
+    assert "tool-failure" not in record["candidate_counts"]
+    assert record["candidate_counts"]["hook-notice"] == 1
+    assert ("hook-notice（発生3件）" in candidates) is problem
+    assert ("hook-notice（発生1件）" in candidates) is not problem
+    assert record["candidate_counts"].get("warning", 0) == (1 if problem else 0)
+    assert ("cache.path`は未適用" in candidates) is problem
+    assert (_FIXTURE_DEFERRAL in conversation) is problem
+    assert record["elapsed_seconds"] >= 6000

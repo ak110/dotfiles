@@ -189,7 +189,33 @@ def test_dry_run_opening_save_failure_has_no_valid_result(
     assert "冒頭保存先:" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("case", ["empty_l4", "bare_l4", "missing_creation", "missing_detection", "bare_rejection", "valid"])
+def _awi_cause_items_table() -> str:
+    """AWIの`## 原因分析`の2列表（5行）を、計画の調査表と同じ記入値で組み立てる。"""
+    rows = [
+        plan_fixture.item_row(
+            row,
+            f"作り込み要因: {plan_fixture.BUG_FILLER}を採用。見逃し要因: {plan_fixture.BUG_FILLER}を採用。"
+            if row in ("類似見直し観点", "再発防止策")
+            else plan_fixture.BUG_FILLER,
+        )
+        for row in add_module.AWI_CAUSE_TABLE_ROWS
+    ]
+    return "\n".join(["| 項目 | 内容 |", "| --- | --- |", *rows])
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "empty_l4",
+        "bare_l4",
+        "missing_creation",
+        "missing_detection",
+        "bare_rejection",
+        "no_countermeasure",
+        "empty_countermeasure",
+        "valid",
+    ],
+)
 @pytest.mark.parametrize("agent", [False, True])
 @pytest.mark.parametrize("operation", ["add", "edit"])
 def test_public_add_cause_analysis_format(
@@ -201,7 +227,10 @@ def test_public_add_cause_analysis_format(
     *,
     agent: bool,
 ) -> None:
-    """原因分析の新検査はエージェントに適用し、人間入力を拒否しない。"""
+    """原因分析の新検査はエージェントに適用し、人間入力を拒否しない。
+
+    AWIの2列表は対策の行を含む5行とし、旧4行表（対策なし）と空の対策を拒否する。
+    """
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     for variable in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
@@ -209,7 +238,7 @@ def test_public_add_cause_analysis_format(
     if agent:
         monkeypatch.setenv("CLAUDECODE", "1")
     cause = plan_fixture.bug_cause_table()
-    table = plan_fixture.bug_investigation_table()
+    table = _awi_cause_items_table()
     if case in ("empty_l4", "bare_l4"):
         value = "" if case == "empty_l4" else "該当なし。"
         cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", f"{value} |")
@@ -218,6 +247,10 @@ def test_public_add_cause_analysis_format(
         table = table.replace(factor, "別系統")
     elif case == "bare_rejection":
         table = table.replace(f"{plan_fixture.BUG_FILLER}を採用。", "不採用。")
+    elif case == "no_countermeasure":
+        table = "\n".join(line for line in table.splitlines() if not line.startswith("| 対策 |"))
+    elif case == "empty_countermeasure":
+        table = table.replace(f"| 対策 | {plan_fixture.BUG_FILLER} |", "| 対策 |  |")
     else:
         cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外の構造だけで生じた。 |")
     body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{cause}\n\n{table}\n"
@@ -242,6 +275,28 @@ def test_public_add_cause_analysis_format(
     else:
         run()
         assert "成功:" in capsys.readouterr().out
+
+
+def test_public_append_keeps_saved_legacy_cause_table(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """保存済みの旧4行表を持つAWIへの追記は、原因分析節を変えないため拒否しない。
+
+    書式の改訂前に保存された未終了の項目へ、訂正や記録を追記できる必要がある。
+    """
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    legacy = "\n".join(line for line in _awi_cause_items_table().splitlines() if not line.startswith("| 対策 |"))
+    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{plan_fixture.bug_cause_table()}\n\n{legacy}"
+    _write_awi_file(notes, "legacy.md", body=body, source="test")
+    appended = tmp_path / "append.md"
+    appended.write_text("## 原因分析の訂正\n\n対策を分けて示す。\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as finished:
+        atk.main(["wi", "edit", "legacy.md", "--append", "--body-file", str(appended)], home=tmp_path)
+    assert finished.value.code == 0
+    assert "原因分析の書式" not in capsys.readouterr().err
 
 
 def test_public_add_post_approval_uses_fixed_choices(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -920,8 +975,9 @@ def test_cmd_add_accepts_uwi_without_required_sections(
 
 
 def _with_direct_cause(body: str, value: str) -> str:
-    """通常AWIの本文へ`直接的原因`行を持つ原因分析を加える。"""
-    section = f"## 原因分析\n\n| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | {value} |\n\n"
+    """通常AWIの本文へ`直接的原因`行を持つ原因分析（AWIの5行表）を加える。"""
+    table = _awi_cause_items_table().replace(f"| 直接的原因 | {plan_fixture.BUG_FILLER} |", f"| 直接的原因 | {value} |")
+    section = f"## 原因分析\n\n{table}\n\n"
     return f"{body}\n\n{section}"
 
 

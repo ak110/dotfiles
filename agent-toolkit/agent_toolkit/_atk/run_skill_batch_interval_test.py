@@ -1,5 +1,6 @@
 """自動振り返りの間隔・自己記録・goal責務を公開操作で確認する。"""
 
+import argparse
 import datetime
 import io
 import json
@@ -11,7 +12,7 @@ import types
 import pytest
 
 from agent_toolkit import atk, hook
-from agent_toolkit._atk import run_skill
+from agent_toolkit._atk import run_script, run_skill
 from agent_toolkit._common import session_activity, session_review
 
 
@@ -232,3 +233,174 @@ def test_public_cli_skips_batch_when_other_target_cannot_be_prepared(tmp_path, m
     assert result.value.code == 1
     assert len(failures) == 1 and "通常対象の記録がない" in failures[0]
     assert {target["session_id"] for target in session_review.pending()} == {"batch", "ordinary"}
+
+
+def _automatic_launch(monkeypatch, launch_id):
+    """hookが渡す起動試行と同じ形で、自動起動のCLIを準備する。"""
+    monkeypatch.setenv(session_review.LAUNCH_ENV, launch_id)
+    session_review.write(session_review.directory() / "launches" / f"{launch_id}.json", {"status": "starting"})
+
+
+def _run_cli():
+    with pytest.raises(SystemExit) as result:
+        atk.main(["run-skill", "--args", "batch", "agent-toolkit:review-session"])
+    return result.value.code
+
+
+def test_public_cli_concurrent_launches_create_one_run(tmp_path, monkeypatch):
+    """hookの2要求をCLIへ接続し、自身を含む準備・確定と競合時の未処理保持を確認する。"""
+
+    def record(name, *, batch=False):
+        transcript = tmp_path / f"{name}.jsonl"
+        transcript.write_text(
+            json.dumps({"type": "user", "timestamp": "2026-10-28T00:00:00Z", "message": {"role": "user", "content": "要求"}})
+            + "\n",
+            encoding="utf-8",
+        )
+        with monkeypatch.context() as context:
+            if batch:
+                context.setenv(session_review.BATCH_ENV, "batch")
+            else:
+                context.delenv(session_review.BATCH_ENV, raising=False)
+            session_review.record(
+                {
+                    "hook_event_name": "SessionStart",
+                    "session_id": name,
+                    "transcript_path": str(transcript),
+                    "cwd": str(tmp_path),
+                },
+                host="claude",
+            )
+        return transcript
+
+    record("batch", batch=True)
+    transcript = record("ordinary")
+    requests = []
+    executed = []
+    failures = []
+
+    def spawn(argv, **kwargs):
+        requests.append((argv, kwargs["env"]))
+        return types.SimpleNamespace(pid=None, wait=lambda: 0)
+
+    def invoke(request):
+        argv, environment = request
+        with monkeypatch.context() as context:
+            for key in (session_review.LAUNCH_ENV, session_review.BATCH_ENV):
+                context.delenv(key, raising=False)
+            for key, value in environment.items():
+                context.setenv(key, value)
+            with pytest.raises(SystemExit) as result:
+                atk.main(argv[2:])
+            return result.value.code
+
+    def execute(args, **kwargs):
+        del kwargs
+        path = pathlib.Path(args.batch_manifest)
+        executed.append(path)
+        manifest = session_review.read(path)
+        assert {target["session_id"] for target in manifest["targets"]} == {"batch", "ordinary"}
+        assert {prepared["session_id"] for prepared in manifest["prepared"]} == {"batch", "ordinary"}
+        assert all(pathlib.Path(prepared["scope_path"]).is_file() for prepared in manifest["prepared"])
+        record("later")
+        # 第1回の排他区間内で第2要求を受付し、終了後の間隔判定との混同を避ける。
+        assert invoke(requests[1]) == 1
+        with monkeypatch.context() as context:
+            context.setenv(session_review.BATCH_ENV, str(path))
+            assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
+        return 0
+
+    def failure(manifest, path, reason, **kwargs):
+        del manifest, path, kwargs
+        failures.append(reason)
+
+    monkeypatch.setattr("agent_toolkit._atk.run_skill_batch._failure", failure)
+    monkeypatch.setattr(run_skill, "_dispatch_once", execute)
+    monkeypatch.setattr("agent_toolkit._atk.wi.add.has_synced_run_report", lambda *a, **k: True)
+    monkeypatch.setattr(session_activity, "review_activity", lambda *a, **k: types.SimpleNamespace(has_activity=False))
+    monkeypatch.setattr(session_activity, "host_process", object)
+    monkeypatch.setattr("agent_toolkit._atk.wi.repo.resolve_repo_id_or_raise", lambda *a, **k: None)
+    with monkeypatch.context() as context:
+        context.setattr("subprocess.Popen", spawn)
+        for event, module in (("SessionStart", "rules_context"), ("SessionEnd", "session_end_cleanup")):
+            payload = {
+                "hook_event_name": event,
+                "source": "startup",
+                "session_id": "ordinary",
+                "transcript_path": str(transcript),
+                "cwd": str(tmp_path),
+            }
+            context.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode())))
+            assert hook.main([module]) == 0
+    assert len(requests) == 2
+    assert invoke(requests[0]) == 0
+    assert len(executed) == 1
+    assert len(list((session_review.directory() / "runs").glob("*.json"))) == 1
+    assert session_review.read(executed[0])["status"] == "completed"
+    second_launch = requests[1][1][session_review.LAUNCH_ENV]
+    assert session_review.read(session_review.directory() / "launches" / f"{second_launch}.json")["status"] == "settled"
+    assert not failures
+    # 見送った対象は未処理として保持する。
+    assert [target["session_id"] for target in session_review.pending()] == ["later"]
+
+
+def test_public_failed_run_defers_automatic_retry_but_accepts_manual(tmp_path, monkeypatch):
+    """失敗した実行の開始から6時間未満は自動起動せず、手動は即時に受け付ける。見送りは失敗報告を作らない。"""
+    _pending("ordinary")
+    scope = tmp_path / "scope.json"
+    session_review.write(scope, {})
+    failures = []
+
+    def prepare(target, **kwargs):
+        del kwargs
+        return {"session_id": target["session_id"], "scope_path": str(scope)}
+
+    def failure(manifest, path, reason, **kwargs):
+        del kwargs
+        failures.append(reason)
+        session_review.write(path, {**manifest, "status": "failed", "report_synced": True})
+
+    def failed_execution(args, **kwargs):
+        del args, kwargs
+        return 3
+
+    monkeypatch.setattr("agent_toolkit._atk.run_skill_batch._prepare", prepare)
+    monkeypatch.setattr("agent_toolkit._atk.run_skill_batch._failure", failure)
+    monkeypatch.setattr(run_skill, "_dispatch_once", failed_execution)
+    monkeypatch.setattr(session_activity, "review_activity", lambda *a, **k: types.SimpleNamespace(has_activity=False))
+    _automatic_launch(monkeypatch, "a" * 32)
+    assert _run_cli() == 3
+    assert len(failures) == 1
+    # 失敗の直後の開始イベントは、公開hookから起動しない。
+    monkeypatch.delenv(session_review.LAUNCH_ENV)
+    spawned = []
+
+    def spawn(argv, **kwargs):
+        del kwargs
+        spawned.append(argv)
+        return types.SimpleNamespace(pid=None, wait=lambda: 0)
+
+    monkeypatch.setattr("subprocess.Popen", spawn)
+    monkeypatch.setattr(session_activity, "host_process", object)
+    payload = {"hook_event_name": "SessionStart", "source": "startup", "session_id": "next", "cwd": str(tmp_path)}
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode())))
+    monkeypatch.setattr(
+        "agent_toolkit._atk.wi.repo.resolve_repo_id_or_raise", lambda *a, **k: "https://github.com/ak110/dotfiles"
+    )
+    assert hook.main(["rules_context"]) == 0
+    assert not spawned
+    assert len(failures) == 1
+    # 手動の再試行は間隔によらず準備へ進む。
+    reached = []
+
+    def manual_prepare(target, **kwargs):
+        del kwargs
+        reached.append(target["session_id"])
+        raise LookupError("準備まで到達")
+
+    monkeypatch.setattr("agent_toolkit._atk.run_skill_batch._prepare", manual_prepare)
+    with pytest.raises(LookupError, match="準備まで到達"):
+        atk.main(["run-skill", "--args", "batch", "agent-toolkit:review-session"])
+    assert reached
+    # 失敗した対象は未処理のまま保持し、手動の再試行の対象に残る。
+    assert "ordinary" in {target["session_id"] for target in session_review.pending()}

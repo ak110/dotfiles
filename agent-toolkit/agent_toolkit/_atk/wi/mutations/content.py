@@ -505,7 +505,9 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             parsed_edited = _frontmatter.parse_frontmatter(edited)
             entry_type = parsed_edited[0].get("type") if parsed_edited is not None else None
             _add.require_confirmed_cause(edited, entry_type=entry_type if isinstance(entry_type, str) else WI_TYPE_AWI)
-            _add.require_cause_analysis_format(edited)
+            _add.require_cause_analysis_format(
+                edited, original=original, entry_type=entry_type if isinstance(entry_type, str) else WI_TYPE_AWI
+            )
     except WebInputError as error:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)

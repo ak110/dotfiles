@@ -37,6 +37,8 @@ from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import refs as _git_refs
 from agent_toolkit._plan import owner_records as _owner_records
+from agent_toolkit._plan.structure import constants as _plan_constants
+from agent_toolkit._plan.structure import markdown as _plan_markdown
 from agent_toolkit._plan.structure import sections as _plan_sections
 
 
@@ -386,18 +388,55 @@ def require_confirmed_cause(body: str, *, entry_type: str) -> None:
         )
 
 
-def require_cause_analysis_format(body: str) -> None:
-    """エージェントが保存する原因分析のL4と系統別候補の書式を確かめる。"""
+AWI_CAUSE_TABLE_ROWS: tuple[str, ...] = ("直接的原因", "原因分析の根拠", "対策", "類似見直し観点", "再発防止策")
+"""AWIの`## 原因分析`の2列表の行。定義元は`wi-standards/references/analysis-records.md`「原因分析の記録先」。"""
+
+
+def _awi_cause_table_errors(section: str) -> list[str]:
+    """AWIの原因分析の2列表が5行をこの順で持ち、対策が空でないことを確かめる。
+
+    対策と再発防止策を同じ表で比べられるよう、旧4行表（対策行なし）と空の対策を拒否する。
+    処置が対策と再発防止策のどちらに当たるかの意味の判定は意味検収が担う。
+    """
+    errors: list[str] = []
+    for table in _plan_markdown.extract_tables(list(_plan_markdown.iter_markdown_body_lines(section))):
+        labels = table.row_labels()
+        if table.header != _plan_constants.PLAN_BUG_TABLE_HEADER or _DIRECT_CAUSE_LABEL not in labels:
+            continue
+        if labels != AWI_CAUSE_TABLE_ROWS:
+            errors.append(f"原因分析の表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の5行をこの順に置く: {table.row_location(0)}")
+            continue
+        row = table.rows[AWI_CAUSE_TABLE_ROWS.index("対策")]
+        if len(row) < 2 or not _strip_table_cell(row[1]):
+            errors.append(f"対策の行が空である: {table.row_location(AWI_CAUSE_TABLE_ROWS.index('対策'))}")
+    return errors
+
+
+def require_cause_analysis_format(body: str, *, original: str | None = None, entry_type: str = WI_TYPE_AWI) -> None:
+    """エージェントが保存する原因分析のL4と系統別候補、AWIの表の行構成を確かめる。
+
+    5行表の規定はAWIの`## 原因分析`の記録先定義であり、UWIには適用しない。
+
+    既存項目の編集で`## 原因分析`節が変わらない場合（追記など）は、保存済みの旧書式を理由に編集を拒否しない。
+    """
     if not is_agent_environment():
         return
     section = _headings.last_h2_section_lines(body, _CAUSE_ANALYSIS_HEADING)
     if section is None:
         return
-    errors = _plan_sections.check_cause_analysis_format("\n".join(section))
+    if original is not None and _headings.last_h2_section_lines(original, _CAUSE_ANALYSIS_HEADING) == section:
+        return
+    content = "\n".join(section)
+    errors = _plan_sections.check_cause_analysis_format(content)
+    if entry_type != WI_TYPE_UWI:
+        errors += _awi_cause_table_errors(content)
     if errors:
         raise WebInputError(
             "原因分析の書式が不正です: " + "。".join(errors),
-            next_action="L4へ説明または理由付きの該当なしを書き、類似見直し観点・再発防止策へ両系統の候補と採否を書く",
+            next_action=(
+                "L4へ説明または理由付きの該当なしを書き、類似見直し観点・再発防止策へ両系統の候補と採否を書く。"
+                f"2列表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の5行とし、観測した問題への処置と回帰テストを対策の行へ書く"
+            ),
         )
 
 
@@ -880,7 +919,7 @@ def cmd_add(
                 validation_errors.append(error)
             try:
                 require_confirmed_cause(body, entry_type=args.type)
-                require_cause_analysis_format(body)
+                require_cause_analysis_format(body, entry_type=args.type)
             except WebInputError as error:
                 validation_errors.append(error)
         except WebInputError as error:

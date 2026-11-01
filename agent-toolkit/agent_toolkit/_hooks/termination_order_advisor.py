@@ -193,7 +193,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             f"`{_run_script.PLUGIN_ROOT / 'skills/report-completion/references/termination-evidence.md'}`を直接読み、"
             "`omit-completion`を記録して通常の報告を届けよ。"
             "起動が必要な作業を完了して終える場合は`Skill`で`agent-toolkit:report-completion`を起動し、"
-            "同スキルの工程の残り（作業完了報告、振り返り、最終報告、"
+            "同スキルの工程の残り（作業完了報告、最終報告、"
             "呼び出し元が定める公開工程）へ進め。"
             "ユーザーの中止・置換、確認の回答や委譲先の結果の待機、技術的不成立で終える場合は、"
             "原証拠と対象の`work_id`を`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ渡せ。"
