@@ -4,6 +4,7 @@
 
 import asyncio
 import contextlib
+import datetime
 import json
 import os
 import pathlib
@@ -1107,23 +1108,45 @@ async def test_add_api_rejects_omitted_target_repo_without_frontmatter_value(
     assert "target_repo" in (await response.get_json())["error"]
 
 
+@pytest.mark.parametrize(
+    "fixed_now",
+    [
+        datetime.datetime(2026, 10, 31, 23, 59, 59),
+        datetime.datetime(2026, 11, 1, 0, 0, 0),
+        datetime.datetime(2026, 12, 31, 23, 59, 59),
+        datetime.datetime(2027, 1, 1, 0, 0, 0),
+    ],
+)
 @pytest.mark.asyncio
-async def test_batch_api_imports_crlf_text(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """CRLF改行の一括登録テキストも取り込み、保存内容の改行をLFへ正規化する。"""
+async def test_batch_api_imports_crlf_text(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fixed_now: datetime.datetime
+) -> None:
+    """CRLF改行の一括登録テキストも取り込み、保存内容の改行をLFへ正規化し、日付の無い名前を投入日の年月へ保存する。
+
+    APIは時刻を引数で受け取らないため、一括取り込みの既存の`now`引数へ固定時刻を渡す。
+    月末・年末の前後で、保存先の年月が投入日に従うことを確かめる。
+    """
     _patch_batch_repo_operations(monkeypatch)
+    original = wi_operations.awi_batch.add_batch_entries
+
+    def add_batch_entries_at_fixed_now(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        kwargs["now"] = fixed_now
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(wi_operations.awi_batch, "add_batch_entries", add_batch_entries_at_fixed_now)
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
         state.ServeState(tmp_path),
     )
 
-    filename = "20261001-000000-001.md"
-    text = _BATCH_TEXT.replace("keep.md", filename).replace("\n", "\r\n")
+    text = _BATCH_TEXT.replace("\n", "\r\n")
     response = await app.test_client().post("/api/entries/batch", json={"text": text})
 
     assert response.status_code == 201
-    assert (await response.get_json())["filenames"] == [filename]
-    saved_path = entry_path(tmp_path, filename)
+    assert (await response.get_json())["filenames"] == ["keep.md"]
+    saved_path = entry_path(tmp_path, "keep.md", fallback_date=fixed_now.date())
+    assert saved_path.parent == tmp_path / f"{fixed_now:%Y}" / f"{fixed_now:%m}"
     assert saved_path.read_bytes() == (
         "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文\n".encode()
     )
