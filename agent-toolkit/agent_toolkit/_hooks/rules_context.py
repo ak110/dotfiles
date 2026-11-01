@@ -120,8 +120,8 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 OPERATION_SKILL_READY_KEY = "operation_skill_delivered_agents"
 """操作を起動の契機とするスキルの必須資料の識別子から、取得済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
 
-PostToolUseが成功したSkill起動・資料全文の読取を観測した時点で記録する。
-分割読取は全文被覆を確認し、資料の実体・内容hash・主体に結び付ける。選択した資料、入力と文脈境界も同じ対応表へ保持する。
+PostToolUseが成功したSkill起動・対象パスの読取を観測した時点で記録する。
+資料の実体・内容hash・主体に結び付け、選択した資料、入力と文脈境界も同じ対応表へ保持する。
 キー名は既存の読み取り側との互換を保つ。本文を返さない未取得警告は取得済みとして記録しない。
 """
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})

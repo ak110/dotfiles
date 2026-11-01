@@ -8,6 +8,7 @@ description: >
   作業項目の本文の起草時、成果物へ書く事実主張の裏付け調査時、ホスト機能の可否・入出力契約の調査時、
   記録の集計・分析時も呼び出す。
   規範・基準・手順・目標値の妥当性、到達性、有無、置き場所を確認する場面でも呼び出す。
+  成果物の根拠として外部資料を参照するときは、その取得を始める前に起動する。
   GitLab CI設定の編集・確認・キーワード仕様・典型パターン・lint実行方法の参照時、
   pytilpackのモジュール構成・API・extras・CLIの参照時と、`import pytilpack`を含むコードの読み書き時も起動する。
   これらを除く理解のためのコード読取では起動不要。
@@ -20,6 +21,8 @@ description: >
 
 品質判断の共通基準は`references/quality-principles.md`で定義する。すでに読み込み済みで内容が変わっていない資料は、再取得せずにそのまま利用する。
 
+外部資料を根拠に使う依頼では、取得前に資料種別に合う既存の取得手順を選ぶ。`agent-basics:fetch-sources`へ接続し、成功条件と取得範囲を確認してから取得結果を根拠に使う。
+
 本スキルは、ドキュメントやコード（hookなどの実装を含む）、エージェント向け文書を作成するエージェントに対して品質基準を提供する。
 レビュー時の判断基準には`agent-basics:review-standards`を用い、計画ファイルの形式や作業工程には対象プロジェクトの取り決めを適用する。
 
@@ -29,7 +32,7 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`references/quality-principles.md`「読込表の読み方」に従う。
+本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に、指定節とその成立に必要な前提・例外を自分で読む。全体が必要な場合は全文を読む。読込表の列の使い方と取得済み部分の再利用は`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -59,7 +62,7 @@ description: >
 | エンドユーザーが操作する画面の新設・変更、その計画・作業項目の起草またはレビューで、フォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
 | ユーザーが法令上の義務やプライバシーの確認を依頼した時と、不特定のエンドユーザーへ公開・提供するWebサービスやアプリで、第三者サーバーからのリソース読み込みや解析・広告タグ、操作や入力の記録、宣伝メールの一斉送信、定期課金、エンドユーザーの投稿の公開または会員登録を新設・変更する時（その計画・作業項目の起草またはレビューを含む）。自分用ツール、社内システム、ユーザーが自分で開く単体HTML成果物は、確認の依頼と社外の不特定のエンドユーザーへ公開範囲を広げる変更の場合だけ該当する | `references/public-service-obligations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/public-service-obligations.md` | |
 | 起動時 | `references/quality-principles.md` | 起動時 | `skill:writing-standards` | |
-| 人間が読む文章（ドキュメント、コメント、作業項目の本文など）を書く時 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」 | 起動時 | `skill:writing-standards` | |
+| 人間が読む文章（ドキュメント、コメント、作業項目の本文など）を書く時 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」 | 操作 | `body-writing` | |
 | コード・テストコードを書く時 | 「コードの編集時に読む資料」の各行 | 判断 | `skill:writing-standards` | `same-document` |
 | エージェント向け文書を書く時 | 「エージェント向け文書の編集時に読む資料」の各行 | 判断 | `skill:writing-standards` | `same-document` |
 | Claude CodeでEditを使う時と、Writeで既存ファイルを上書きする前 | `references/file-editing-claude.md` | 操作 | `claude-existing-file-edit` | |
@@ -107,11 +110,12 @@ description: >
 | 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/document-types.md` | |
 | 新しい概念名または識別子を導入する時 | `references/referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` | |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/defined-names.md` | |
-| 文章を書く時と表記をチェックする時（他の行より先に読む） | `references/notation-rules.md` | 起動時 | `skill:writing-standards` | |
+| 文章を書く時と表記をチェックする時（他の行より先に読む） | `references/notation-rules.md` | 操作 | `body-writing` | |
 
 ## コードの編集時に読む資料
 
 コードの編集やコードレビュー（変更差分の確認）に着手する前に、`references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」と、以降の技術別・工程別の表で該当する資料を読む。
+成果物として残さない使い捨ての一時コードは、言語別の必須読込の対象外とする。安全性、認可、データ保全の制約は維持し、成果物へ取り込む段階で該当する品質基準を適用する。
 
 | 時点または条件（対象の拡張子・ファイル名・パス・依存名） | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |

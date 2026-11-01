@@ -3,7 +3,7 @@
 report-completionの起動証拠（`termination_evidence.py`）と、Antigravityの`read_file`をSkill観測へ渡す処理
 （`antigravity.py`）が使う。パスの文字列だけを根拠にせず、読取の結果が資料の本文を返したことを確かめる。
 起動証拠は範囲指定の読取も受理するため、本モジュールは全文か部分かを区別しない。
-資料の全文取得の判定は`pretooluse/read_delivery.py`が内容ハッシュと本文一致で行う。
+読込案内の取得状態は`pretooluse/read_delivery.py`が読取操作の成功から記録する。
 """
 
 from __future__ import annotations
@@ -213,11 +213,7 @@ def response_text(response: object) -> str | None:
 READ_TRIGGER_PREFIX = "read-trigger:"
 """読込案内の取得記録のキーの接頭辞。キーは`read-trigger:<絶対パス>#sha256:<内容ハッシュ>`の形をとる。"""
 
-# 読込案内の取得状態は主体と資料の内容ハッシュの組で管理し、記録時のパスを条件に含めない
-# （`share/read-trigger-contract.md`「取得とチェック」）。主checkoutと配下のworktreeのように同じ内容の写しが
-# 別の場所にあっても、どちらを読んだかで判定を変えない。資料の同一性（内容ハッシュ）、全文取得の照会、
-# 分割取得の区間の合算と被覆の判定は以下の関数だけが持ち、案内要否、分割読取の集計、履歴の復元、
-# 会話圧縮時の候補抽出の4箇所はこれらを使う。
+# 読込状態は主体と本文の変更を区別する。区間の被覆や応答本文の一致は判定しない。
 
 
 def content_fingerprint(path: pathlib.Path) -> str:
@@ -231,40 +227,14 @@ def bytes_fingerprint(raw: bytes) -> str:
 
 
 def read_trigger_key(path: pathlib.Path, fingerprint: str) -> str:
-    """取得を観測した資料の記録キーを返す。パスは圧縮後の候補案内で取得手段を示すために残す。"""
+    """取得を観測した資料の実体パスと内容識別子から記録キーを返す。"""
     return READ_TRIGGER_PREFIX + str(path.resolve()) + "#sha256:" + fingerprint
 
 
-def read_trigger_range_key(path: pathlib.Path, fingerprint: str, start: int, end: int) -> str:
-    """分割取得した区間の記録キーを返す。区間は本文全体の文字位置で表す。"""
-    return f"{read_trigger_key(path, fingerprint)}#range:{start}:{end}"
-
-
 def content_ready(records: dict, fingerprint: str, agent: str) -> bool:
-    """同じ主体が同じ内容ハッシュの資料を全文取得した記録があるかを、記録時のパスを問わずに返す。"""
+    """同じ主体が同じ内容ハッシュの資料への読取が成功した記録があるかを、記録時のパスを問わずに返す。"""
     suffix = "#sha256:" + fingerprint
     return any(
         key.startswith(READ_TRIGGER_PREFIX) and key.endswith(suffix) and isinstance(actors, list) and agent in actors
         for key, actors in records.items()
     )
-
-
-def recorded_ranges(records: dict, fingerprint: str, agent: str) -> list[tuple[int, int]]:
-    """同じ主体が同じ内容ハッシュの資料を分割取得した区間を、記録時のパスを問わずに返す。"""
-    marker = f"#sha256:{fingerprint}#range:"
-    ranges = []
-    for key, actors in records.items():
-        if key.startswith(READ_TRIGGER_PREFIX) and marker in key and isinstance(actors, list) and agent in actors:
-            left, _separator, right = key.rpartition(marker)[2].partition(":")
-            ranges.append((int(left), int(right)))
-    return ranges
-
-
-def covers_whole(intervals, length: int) -> bool:
-    """区間の和が本文の先頭から末尾まで途切れずに覆うかを返す。"""
-    reached = 0
-    for left, right in sorted(intervals):
-        if left > reached:
-            break
-        reached = max(reached, right)
-    return reached >= length

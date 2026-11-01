@@ -1,16 +1,10 @@
-"""Codexのnative読取の成功と省略の有無から、PostToolUseの読了観測に渡す本文を決める。
+"""Codexの成功した読取を観測し、省略時は担当による補完を案内する。
 
-hookは資料本文を追加コンテキストへ載せない。省略された読取は再取得して補わず、
-担当自身が行範囲を分けて末尾まで読む。取得の観測は、モデルへ実際に届いたnative本文だけを根拠にする。
-省略補償を目的とした本文配送（2026年10月30日導入）は、ホスト本来の取得を代替して
-二重配送と文脈消費を招いたため撤去した。経緯は`docs/development/incidents-runtime.md`
-「フックとセッション状態の不全」の2026年10月19日の項にある。
+hookは資料本文を追加コンテキストへ載せず、保存用の写しとの一致も判定しない。
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 import pathlib
 import re
 import shlex
@@ -30,23 +24,48 @@ class Read:
     operands: tuple[int, ...]
 
 
-def read_command_groups(command: str, *, sequential: bool = False) -> list[list[str]] | None:
+def read_command_groups(command: str, *, sequential: bool = False, read_prefix: bool = False) -> list[list[str]] | None:
     """読取計画と取得案内で同じ演算子の境界を使う。"""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()<>\n")
+    lexer = shlex.shlex(command.strip() if read_prefix else command, posix=True, punctuation_chars=";&|()<>\n")
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     lexer.commenters = ""
     groups: list[list[str]] = [[]]
+    conditional_chain = False
     try:
         for token in lexer:
+            if read_prefix and token.rstrip("\n") in {";", "&&"}:
+                token = token.rstrip("\n")
             if sequential and token == "&&":
                 return None
             if token in {";", "&&", "\n"}:
+                # &&の失敗を後続の独立コマンドが隠す場合は、短絡した読取を成功と推定できない。
+                if read_prefix and conditional_chain and token != "&&" and groups[-1]:
+                    return None
+                conditional_chain = conditional_chain or token == "&&"
                 if groups[-1]:
                     groups.append([])
             elif token and all(char in ";&|()<>\n" for char in token):
                 return None
             else:
+                # 診断などの後続処理を取得成功の条件にせず、先頭から直列に実行した読取だけを残す。
+                if (
+                    read_prefix
+                    and not groups[-1]
+                    and pathlib.PurePath(token).name not in {"cat", "sed", "head", "tail", "jq", "cd"}
+                ):
+                    break
+                if (
+                    read_prefix
+                    and any(marker in token for marker in ("$", "`"))
+                    and not (
+                        len(groups[-1]) == 2
+                        and pathlib.PurePath(groups[-1][0]).name == "sed"
+                        and groups[-1][1] == "-n"
+                        and re.fullmatch(r"(?:\d+|\$)(?:,(?:\d+|\$))?p", token)
+                    )
+                ):
+                    return None
                 groups[-1].append(token)
     except ValueError:
         return None
@@ -98,85 +117,9 @@ def read_plan(command: str) -> list[Read]:
     return result
 
 
-PERSISTENCE_MARKER = "\n... command output truncated for persistence ...\n"
-"""Codexが記録へ保存する`aggregated_output`だけを短くするときに本文の途中へ入れる行。モデルへ返す本文には付かない。"""
-
-
-def persisted_copy_truncated(execution: dict) -> bool:
-    """記録の`aggregated_output`が保存のために省略され、モデルへ返した本文の比較に使えないかを返す。"""
-    output = execution.get("aggregated_output")
-    return isinstance(output, str) and PERSISTENCE_MARKER in output
-
-
-def record_matches_response(execution: dict, response: object) -> bool:
-    """記録の写しとhookの応答が同じ出力を表すかを返す。
-
-    記録の`aggregated_output`は保存のために中間を省略されることがあり、モデルへ返した本文の写しとは限らない。
-    写しが省略されていれば、省略行を含まない応答をモデルへ返した全文として扱う。
-    記録の写しを比較に使う判定は、写しの省略を見落とさないよう本関数か`persisted_copy_truncated`を経由する。
-    """
-    if not isinstance(response, str):
-        return False
-    if execution.get("aggregated_output") == response:
-        return True
-    return persisted_copy_truncated(execution) and PERSISTENCE_MARKER not in response
-
-
 def response_is_truncated(response: object) -> bool:
     """nativeが付ける省略の包絡だけを識別し、本文中の語では判定しない。"""
     return isinstance(response, str) and response.startswith("Warning: truncated output (original token count:")
-
-
-def _records(path: pathlib.Path):
-    """長い記録は末尾から必要な行まで走査する。"""
-    with path.open("rb") as stream:
-        position = stream.seek(0, 2)
-        pending = b""
-        while position:
-            size = min(position, 65536)
-            position -= size
-            stream.seek(position)
-            lines = (stream.read(size) + pending).split(b"\n")
-            pending = lines.pop(0) if position else b""
-            for line in reversed(lines):
-                try:
-                    yield json.loads(line), hashlib.sha256(line).hexdigest()
-                except ValueError:
-                    continue
-
-
-def _execution(payload: dict) -> dict | None:
-    """同じturn・thread・操作の終了記録を返す。"""
-    for record, _digest in _records(pathlib.Path(payload["transcript_path"])):
-        if not isinstance(record, dict) or record.get("type") != "event_msg":
-            continue
-        event = record.get("payload", {})
-        if not isinstance(event, dict):
-            continue
-        item = event.get("item", {})
-        item = item if isinstance(item, dict) else {}
-        if (
-            event.get("type") == "item_completed"
-            and item.get("type") == "CommandExecution"
-            and item.get("id") == payload.get("tool_use_id")
-            and event.get("turn_id") == payload.get("turn_id")
-            and event.get("thread_id") == payload.get("session_id")
-        ):
-            return item
-    return None
-
-
-def _succeeded(execution: dict, command: str) -> bool:
-    """元の実行が同じコマンドを終了0で完了したかを返す。"""
-    argv = execution.get("command", [])
-    return (
-        execution.get("exit_code") == 0
-        and not isinstance(execution.get("exit_code"), bool)
-        and execution.get("status") == "completed"
-        and isinstance(argv, list)
-        and len(argv) == 3
-        and argv[-1] == command
-    )
 
 
 @dataclass(frozen=True)
@@ -191,53 +134,33 @@ class Observation:
 # 省略が担当内で回収できる不足であることを次の操作とともに示す。
 _RECOVERABLE = "省略は担当内で回収できる不足であり、続行できない理由にしない。"
 TRUNCATED_NOTICE = (
-    "この読取の出力は省略されたため全文は未取得。"
-    "`sed -n '<開始行>,<終了行>p' -- <絶対パス>`で行範囲を分けて末尾まで読め（最後の範囲は`<開始行>,$p`）。" + _RECOVERABLE
+    "この読取の出力は省略された。判断に必要な未取得部分を補え。"
+    "保持可能な枠が元トークン数以上なら内側`exec_command`と外側`functions.exec`の予算を確保して1回再取得せよ。"
+    "枠が不足または不明なら、`sed -n '<開始行>,<終了行>p' -- <絶対パス>`で行範囲を分けて必要箇所を読め"
+    "（資料末尾も必要な場合は最後の範囲を`<開始行>,$p`とする）。" + _RECOVERABLE
 )
 TRUNCATED_OUTPUT_NOTICE = (
     "この出力は省略された。対象や条件を限定するか範囲を分けて再実行し、判断に必要な全量を回収せよ。" + _RECOVERABLE
 )
 
 
-def completed_execution(payload: dict) -> dict | None:
-    """同thread・turn・呼出ID・commandが一致し、終了0で完了したnative実行だけを返す。"""
-    if (
-        not is_codex_payload(payload)
-        or payload.get("hook_event_name", "PostToolUse") != "PostToolUse"
-        or payload.get("tool_name") != "Bash"
-    ):
-        return None
-    tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return None
-    command = tool_input.get("command")
-    if not isinstance(command, str):
-        return None
-    try:
-        execution = _execution(payload)
-    except OSError, UnicodeError, ValueError, KeyError, TypeError:
-        return None
-    if execution is None or not _succeeded(execution, command):
-        return None
-    return execution
-
-
 def collect(payload: dict) -> Observation | None:
-    """標準読取の終了記録と省略の包絡から、読了観測へ渡す本文を確定する。
-
-    終了0で完了し省略の包絡が無いnative応答だけを本文として返す。
-    省略された応答と、記録へ保存するために省略した写しと同じ応答は本文を返さず、分割読取の案内だけを返す。
-    記録の`aggregated_output`は保存のために省略されることがあり、モデルへ返した本文の写しとは限らない。
-    """
+    """成功イベントの読取を観測し、省略は取得状態と独立して回復案内へ渡す。"""
+    if not is_codex_payload(payload) or payload.get("hook_event_name", "PostToolUse") != "PostToolUse":
+        return None
     tool_input = payload.get("tool_input")
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     response = payload.get("tool_response")
-    if not isinstance(command, str) or not isinstance(response, str) or not read_plan(command):
+    if (
+        payload.get("tool_name") != "Bash"
+        or not isinstance(command, str)
+        or not isinstance(response, str)
+        or not read_plan(command)
+    ):
         return None
-    execution = completed_execution(payload)
-    if execution is None:
-        return None
-    # 保存用に省略した写しがそのまま届いた場合は、モデルへ返した全文の証拠にしない。
-    if response_is_truncated(response) or (persisted_copy_truncated(execution) and response == execution["aggregated_output"]):
-        return Observation(formatter("codex-read-observation")(TRUNCATED_NOTICE), None)
+    if response_is_truncated(response):
+        count = re.match(r"Warning: truncated output \(original token count: (\d+)\)", response)
+        measured = f"観測した元の出力量は{count[1]}トークン。" if count else ""
+        context = formatter("codex-read-observation")(measured + TRUNCATED_NOTICE)
+        return Observation(context, response)
     return Observation("", response)

@@ -722,7 +722,9 @@ class TestWorkflowSkillInvocation:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert result.stdout == ""
+        context = _additional_context(result)
+        assert "条件の成立は未確定" in context
+        assert "コード・テストコードを書く時" in context
         assert "/skills/delegation/SKILL.md" not in _additional_context(result)
 
     def test_no_notice_in_sidechain(self, tmp_path: pathlib.Path) -> None:

@@ -398,7 +398,7 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
                 for target in read_delivery.selected_targets(records, agent)
                 if not read_delivery.target_ready(records, target, agent)
             ]
-            if not targets and any("操作前に全文読む資料が未取得" in notice for notice in decision.notices):
+            if not targets and any("操作前に読む資料が未取得" in notice for notice in decision.notices):
                 targets = [
                     target
                     for row in read_delivery.declarations(str(payload.get("cwd", "")))
