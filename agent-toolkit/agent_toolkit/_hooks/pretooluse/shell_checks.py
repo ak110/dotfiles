@@ -287,13 +287,16 @@ def _process_kill_word_only_in_data(invocations: Sequence[BashInvocation]) -> bo
         name = pathlib.PurePosixPath(tokens[0]).name
         if name in {"pkill", "killall"}:
             return False
+        # 読取・検索の解析が引数をデータと確定した呼出し（`sed -n '1p'`・`awk '{print}'`の読取を含む）は、
+        # 引数を実行し得るコマンド名でも引数を実行しない。
+        data = large_reads.arguments_are_data(tokens)
         executor = name in _ARGUMENT_EXECUTORS or is_python_token(name)
-        if executor and any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in tokens[1:]):
+        if not data and executor and any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in tokens[1:]):
             return False
         # 引数から実行するコマンドの集合は網羅できないため（`docker exec`、`npm exec`など）、読取・検索の解析が
         # データと確定した呼出しを除き、語が実行名の形で現れる引数（語そのもの、または後ろに空白が続く本文）は
         # データと確定しない。
-        if not large_reads.arguments_are_data(tokens) and any(_process_kill_command_shaped(token) for token in tokens[1:]):
+        if not data and any(_process_kill_command_shaped(token) for token in tokens[1:]):
             return False
     return True
 

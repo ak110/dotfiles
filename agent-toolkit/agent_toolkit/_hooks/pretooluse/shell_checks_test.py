@@ -669,6 +669,8 @@ class TestBashProcessKillByPattern:
             "grep -n pkill /tmp/worker.log",
             "rg -F killall -- /tmp/worker.log",
             "tail -n 20 /tmp/pkill",
+            "sed -n '1,20p' /tmp/pkill",
+            "awk '{print}' /tmp/killall",
         ],
     )
     def test_normal_path_arguments_are_not_process_termination(self, tmp_path, command, codex):
@@ -705,6 +707,8 @@ class TestBashProcessKillByPattern:
             # 読取・検索の解析が引数の扱いを確定できない呼出しと、外部プログラムを起動する検索の指定。
             "echo killall",
             "rg --pre pkill needle /tmp/worker.log",
+            "sed -e '1e pkill worker' /tmp/worker.log",
+            "awk 'BEGIN{system(\"pkill worker\")}'",
         ],
     )
     def test_path_data_does_not_exempt_executable_termination(self, tmp_path, command, codex):
