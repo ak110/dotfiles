@@ -19,6 +19,7 @@ from typing import Any, cast
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.wi import add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import (
@@ -30,7 +31,7 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.web_input import WebInputError
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, plan_fixture
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_HEAD_COMMIT,
 )
@@ -126,6 +127,178 @@ def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+@pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+def test_dry_run_opening_preserves_raw_input(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    newline: str,
+    entry_type: str,
+) -> None:
+    """複数原稿の原文冒頭をフェンス内H2と末尾空行を含めて保存・表示する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "", entry_type=entry_type, dry_run=True)
+    expected = "# 質問の表題\n\n問いと理由。  \n推奨回答は了承。\n\n```text\n## 引用\n```\n\n\n".replace("\n", newline)
+    raw = "---\nsource: test\n---\n\n".replace("\n", newline) + expected + "## 反映内容と反映先\n対象\n".replace("\n", newline)
+    sources = [tmp_path / "body.md", tmp_path / "other.md"]
+    for source in sources:
+        source.write_bytes(raw.encode())
+    args.body_file = [str(source) for source in sources]
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    output = capsys.readouterr().out
+    saved = re.findall(r"^冒頭保存先: (.+)$", output, re.MULTILINE)
+    assert len(saved) == 2 and saved[0] != saved[1]
+    for source, saved_path in zip(sources, saved, strict=True):
+        assert f"原稿: {source}" in output
+        assert pathlib.Path(saved_path).read_bytes() == expected.encode()
+        assert source.read_bytes() == raw.encode()
+    assert output.count(expected) == 2
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+@pytest.mark.parametrize("failure", ["write", "prepare"])
+def test_dry_run_opening_save_failure_has_no_valid_result(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+) -> None:
+    """一時保存不能は失敗し、修復後には新しい抽出を取得できる。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args(tmp_path, "# 表題\n\n説明\n", dry_run=True)
+    blocked = tmp_path / "blocked"
+    blocked.write_text("通常ファイル", encoding="utf-8")
+
+    def fail_prepare(*_args: object, **_kwargs: object) -> pathlib.Path:
+        raise ManagedTempError("保存領域を準備できない")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            add_module, "create_output_temp", fail_prepare if failure == "prepare" else lambda *_args, **_kwargs: blocked
+        )
+        with pytest.raises(SystemExit) as failed:
+            _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    assert failed.value.code != 0
+    output = capsys.readouterr()
+    assert "冒頭保存先:" not in output.out
+    assert "一時保存に失敗" in output.err
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    assert "冒頭保存先:" in capsys.readouterr().out
+
+
+def _awi_cause_items_table() -> str:
+    """AWIの`## 原因分析`の2列表（5行）を、計画の調査表と同じ記入値で組み立てる。"""
+    rows = [
+        plan_fixture.item_row(
+            row,
+            f"作り込み要因: {plan_fixture.BUG_FILLER}を採用。見逃し要因: {plan_fixture.BUG_FILLER}を採用。"
+            if row in ("類似見直し観点", "再発防止策")
+            else plan_fixture.BUG_FILLER,
+        )
+        for row in add_module.AWI_CAUSE_TABLE_ROWS
+    ]
+    return "\n".join(["| 項目 | 内容 |", "| --- | --- |", *rows])
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "empty_l4",
+        "bare_l4",
+        "missing_creation",
+        "missing_detection",
+        "bare_rejection",
+        "no_countermeasure",
+        "empty_countermeasure",
+        "valid",
+    ],
+)
+@pytest.mark.parametrize("agent", [False, True])
+@pytest.mark.parametrize("operation", ["add", "edit"])
+def test_public_add_cause_analysis_format(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    operation: str,
+    *,
+    agent: bool,
+) -> None:
+    """原因分析の新検査はエージェントに適用し、人間入力を拒否しない。
+
+    AWIの2列表は対策の行を含む5行とし、旧4行表（対策なし）と空の対策を拒否する。
+    """
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    for variable in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
+        monkeypatch.delenv(variable, raising=False)
+    if agent:
+        monkeypatch.setenv("CLAUDECODE", "1")
+    cause = plan_fixture.bug_cause_table()
+    table = _awi_cause_items_table()
+    if case in ("empty_l4", "bare_l4"):
+        value = "" if case == "empty_l4" else "該当なし。"
+        cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", f"{value} |")
+    elif case.startswith("missing_"):
+        factor = "作り込み要因" if case == "missing_creation" else "見逃し要因"
+        table = table.replace(factor, "別系統")
+    elif case == "bare_rejection":
+        table = table.replace(f"{plan_fixture.BUG_FILLER}を採用。", "不採用。")
+    elif case == "no_countermeasure":
+        table = "\n".join(line for line in table.splitlines() if not line.startswith("| 対策 |"))
+    elif case == "empty_countermeasure":
+        table = table.replace(f"| 対策 | {plan_fixture.BUG_FILLER} |", "| 対策 |  |")
+    else:
+        cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外の構造だけで生じた。 |")
+    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{cause}\n\n{table}\n"
+    args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
+
+    def run() -> None:
+        if operation == "add":
+            _run_public_add(args, notes, _FIXED_DT, tmp_path)
+            return
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        _write_awi_file(notes, "cause.md", source="test")
+        with pytest.raises(SystemExit) as finished:
+            atk.main(["wi", "edit", "cause.md", "--body-file", args.body_file[0], "--dry-run"], home=tmp_path)
+        if finished.value.code:
+            raise SystemExit(finished.value.code)
+
+    if agent and case != "valid":
+        with pytest.raises(SystemExit) as rejected:
+            run()
+        assert rejected.value.code != 0
+        assert "原因分析の書式" in capsys.readouterr().err
+    else:
+        run()
+        assert "成功:" in capsys.readouterr().out
+
+
+def test_public_append_keeps_saved_legacy_cause_table(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """保存済みの旧4行表を持つAWIへの追記は、原因分析節を変えないため拒否しない。
+
+    書式の改訂前に保存された未終了の項目へ、訂正や記録を追記できる必要がある。
+    """
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    legacy = "\n".join(line for line in _awi_cause_items_table().splitlines() if not line.startswith("| 対策 |"))
+    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{plan_fixture.bug_cause_table()}\n\n{legacy}"
+    _write_awi_file(notes, "legacy.md", body=body, source="test")
+    appended = tmp_path / "append.md"
+    appended.write_text("## 原因分析の訂正\n\n対策を分けて示す。\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as finished:
+        atk.main(["wi", "edit", "legacy.md", "--append", "--body-file", str(appended)], home=tmp_path)
+    assert finished.value.code == 0
+    assert "原因分析の書式" not in capsys.readouterr().err
+
+
 def test_public_add_post_approval_uses_fixed_choices(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """公開CLIは専用の事後承認形式を保存し、選択肢の指定を要求しない。"""
     notes = _setup_notes(tmp_path)
@@ -163,7 +336,7 @@ def test_add_dry_run_validates_without_side_effects(
 
     after_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     after_files = sorted(path.relative_to(notes) for path in notes.rglob("*") if ".git" not in path.parts)
-    assert capsys.readouterr().out == "成功: 投入前の検証が成立した（--dry-runのため保存していない）\n"
+    assert "成功: 投入前の検証が成立した（--dry-runのため保存していない）" in capsys.readouterr().out
     assert after_files == before_files
     assert after_head == before_head
 
@@ -597,6 +770,7 @@ def test_cmd_add_omits_origin_metadata(
     ("environment", "entry_type", "message", "expected"),
     [
         ({"CLAUDE_CODE_SESSION_ID": "main-session"}, WI_TYPE_UWI, "質問本文", "main-session"),
+        ({"CODEX_THREAD_ID": "codex-thread"}, WI_TYPE_UWI, "質問本文", "codex-thread"),
         (
             {"CLAUDE_CODE_SESSION_ID": "child-session", "AGENT_TOOLKIT_OWNER_SESSION": "owner-session"},
             WI_TYPE_UWI,
@@ -618,7 +792,7 @@ def test_cmd_add_records_submitter_session_only_for_uwi(
 ) -> None:
     """UWIだけへ投入元セッションを保存する。
 
-    回答済みUWIの通知は保存した値で宛先を決めるため、委譲先の投入分は委譲元の値、
+    回答済みUWIの通知は保存した値で宛先を決めるため、ownerを持たないCodex最上位の投入分はその会話の値、委譲先の投入分は委譲元の値、
     会話へ対応しないプロセス専用の値と未解決の場合はキーを持たない状態にする。
     本文のfrontmatterによる宛先指定の拒否は予約キーの入力テストで確かめる。
     """
@@ -626,6 +800,7 @@ def test_cmd_add_records_submitter_session_only_for_uwi(
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     for key, value in environment.items():
         monkeypatch.setenv(key, value)
 
@@ -652,6 +827,118 @@ def test_cmd_add_rejects_missing_source_in_agent_environment(
     assert exc_info.value.code == 1
     assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     assert "--source" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+@pytest.mark.parametrize(
+    ("cli_source", "body_source", "accepted"),
+    [
+        ("human", None, False),
+        (None, "human", False),
+        ("agent", "human", False),
+        ("human", "agent", True),
+        ("agent", None, True),
+        (None, "add-awi-by-user", True),
+        ("session-review", None, True),
+        (None, "unknown-skill", True),
+    ],
+)
+def test_public_add_validates_effective_source(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    entry_type: str,
+    cli_source: str | None,
+    body_source: str | None,
+    accepted: bool,
+) -> None:
+    """frontmatterを優先した最終sourceでAWI・UWIの投入可否を決める。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("AI_AGENT", "1")
+    body = _AGENT_AWI_BODY if entry_type == "awi" else "変更を承認するか？"
+    message = f"---\nsource: {body_source}\n---\n\n{body}" if body_source is not None else body
+    args = _cmd_add_args(tmp_path, message, source=cli_source, entry_type=entry_type)
+    if accepted:
+        _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    else:
+        with pytest.raises(SystemExit) as rejected:
+            _run_public_add(args, notes, _FIXED_DT, tmp_path)
+        assert rejected.value.code == 1
+        error = capsys.readouterr().err
+        assert "human" in error
+        assert "起動スキル名（プラグイン接頭辞を除く）" in error
+        assert "agent" in error
+    saved = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    assert len(saved) == int(accepted)
+    if accepted:
+        parsed = frontmatter.parse_frontmatter(saved[0].read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["source"] == (body_source or cli_source)
+
+
+@pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+def test_public_add_rejects_human_source_without_partial_save(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, entry_type: str
+) -> None:
+    """複数本文の後続1件がhumanなら先行本文も保存しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("AI_AGENT", "1")
+    body = _AGENT_AWI_BODY if entry_type == "awi" else "変更を承認するか？"
+    args = _cmd_add_args(tmp_path, body, source="agent", entry_type=entry_type)
+    second = tmp_path / "human.md"
+    second.write_text(f"---\nsource: human\n---\n\n{body}", encoding="utf-8")
+    args.body_file.append(str(second))
+    with pytest.raises(SystemExit) as rejected:
+        _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    assert rejected.value.code == 1
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+@pytest.mark.parametrize("source", [None, "human"])
+def test_public_add_preserves_human_environment_source(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str | None
+) -> None:
+    """人間環境ではsourceの欠落と明示humanを従来どおり保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
+        monkeypatch.delenv(name, raising=False)
+    _run_public_add(_cmd_add_args(tmp_path, _AGENT_AWI_BODY, source=source), notes, _FIXED_DT, tmp_path)
+    saved = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    parsed = frontmatter.parse_frontmatter(saved.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0].get("source") == source
+
+
+@pytest.mark.parametrize("source", [None, "human", "agent", "session-review", "unknown-skill"])
+def test_public_batch_preserves_source(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str | None) -> None:
+    """エージェント環境のbatchは明示sourceと欠落を原文どおり保持する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    source_line = f"source: {source}\n" if source is not None else ""
+    original = f"---\ntype: awi\nstate: inbox\ntarget_repo: github.com/example/repo\n{source_line}---\n\n本文\n"
+    body_file = tmp_path / "batch.md"
+    body_file.write_text("### 20260101-000000-001.md [inbox]\n" + original, encoding="utf-8")
+    with pytest.raises(SystemExit) as imported:
+        atk.main(["wi", "add", "--batch", "--body-file", str(body_file)], home=tmp_path, now=_FIXED_DT)
+    assert imported.value.code == 0
+    assert (notes / "2026" / "01" / "20260101-000000-001.md").read_text(encoding="utf-8") == original
+
+
+def test_public_add_help_explains_source_contract(capsys: pytest.CaptureFixture[str]) -> None:
+    """公開ヘルプが仕様で定めたsourceの指定方法と人間環境の省略を案内する。"""
+    with pytest.raises(SystemExit) as shown:
+        atk.main(["wi", "add", "--help"])
+    assert shown.value.code == 0
+    help_text = "".join(capsys.readouterr().out.split())
+    assert "起動スキル名（プラグイン接頭辞を除く）" in help_text
+    assert "スキルが無い場合はagent" in help_text
+    assert "通常追加ではhumanを拒否" in help_text
+    assert "人間の直接投入ではsourceを省略" in help_text
+    assert "agent・human・plan" not in help_text
 
 
 def test_cmd_add_accepts_frontmatter_source_in_agent_environment(
@@ -688,8 +975,9 @@ def test_cmd_add_accepts_uwi_without_required_sections(
 
 
 def _with_direct_cause(body: str, value: str) -> str:
-    """通常AWIの本文へ`直接的原因`行を持つ原因分析を加える。"""
-    section = f"## 原因分析\n\n| 項目 | 内容 |\n| --- | --- |\n| 直接的原因 | {value} |\n\n"
+    """通常AWIの本文へ`直接的原因`行を持つ原因分析（AWIの5行表）を加える。"""
+    table = _awi_cause_items_table().replace(f"| 直接的原因 | {plan_fixture.BUG_FILLER} |", f"| 直接的原因 | {value} |")
+    section = f"## 原因分析\n\n{table}\n\n"
     return f"{body}\n\n{section}"
 
 
@@ -2503,10 +2791,10 @@ def test_public_add_cooldown_first_save_and_readiness(
         assert result.cooldown_pending == (names if deadline and delta < 0 else ())
 
 
-def test_public_add_confirmation_required_is_saved_and_blocks_readiness(
+def test_public_add_legacy_confirmation_is_saved_without_blocking_readiness(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """本文frontmatterの要確認を保存し、確認されるまで着手可能にしない。"""
+    """旧確認キーを未知キーとして保存し、着手可否に影響させない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, "---\nconfirmation: required\n---\n\n本文\n")
@@ -2520,8 +2808,7 @@ def test_public_add_confirmation_required_is_saved_and_blocks_readiness(
     assert parsed is not None
     assert parsed[0]["confirmation"] == "required"
     result = readiness.calculate_readiness(notes, args.target_repo)
-    assert result.confirmation_pending == (path.name,)
-    assert not result.ready
+    assert result.ready == (path.name,)
 
 
 @pytest.mark.parametrize(
@@ -2532,23 +2819,24 @@ def test_public_add_confirmation_required_is_saved_and_blocks_readiness(
         (["--type=uwi", "--question-type=yes-no"], "required"),
     ],
 )
-def test_public_add_rejects_confirmation_other_than_required_awi(
+def test_public_add_preserves_legacy_confirmation_values(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     extra_args: list[str],
     value: str,
 ) -> None:
-    """投入時の確認済み・誤記の値とUWIへの指定は、ユーザーの確認を経ない状態を作るため保存前に拒否する。"""
+    """AWIとUWIに指定した旧確認キーの値を未知キーとして保持する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, f"---\nconfirmation: {value}\n---\n\n本文\n")
     argv = ["wi", "add", "--target-repo", args.target_repo, "--body-file", args.body_file[0], *extra_args]
     with pytest.raises(SystemExit) as failed:
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
-    assert failed.value.code != 0
-    assert "confirmation" in capsys.readouterr().err
-    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    assert failed.value.code == 0
+    capsys.readouterr()
+    (saved,) = notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")
+    assert "confirmation:" in saved.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("deadline", ["", "not-a-date", "2026-01-02", "2026-01-02T03:04:05"])

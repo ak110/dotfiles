@@ -30,7 +30,7 @@ Antigravityの委譲先は子の起動結果を追跡へ接続しないため、
 import os
 import re
 
-from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
+from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
@@ -92,7 +92,19 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     owner_agent_id = resolve_hook_agent_id(payload)
-    pending_session_ids = _observations.pending_session_ids(read_state(session_id), owner_agent_id)
+    state = read_state(session_id)
+    pending_session_ids = _observations.pending_session_ids(state, owner_agent_id)
+    if not pending_session_ids:
+        sessions = state.get("agents_server_sessions")
+        if isinstance(sessions, dict) and any(
+            isinstance(record, dict)
+            and record.get("owner_agent_id") == owner_agent_id
+            and record.get("pending_observation") is False
+            for record in sessions.values()
+        ):
+            # 観測・破棄の証拠でだけ解除し、下の一時的な観測所有・待機表明では保持する。
+            resolve_notice(session_id, _HOOK_ID, "evaluate", subject=owner_agent_id)
+        return "approve", ""
     observed = _observations.actively_waited_session_ids(pending_session_ids)
     if _continuation_owned(payload):
         observed |= _declared_waiting_target_ids(payload.get("last_assistant_message")) & set(pending_session_ids)

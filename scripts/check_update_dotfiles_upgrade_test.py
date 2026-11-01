@@ -6,6 +6,8 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
+import time
 import types
 
 import check_update_dotfiles_upgrade as upgrade
@@ -15,6 +17,36 @@ from pytools._internal import antigravity_plugin, install_codex_plugins, setup_c
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("outcome", [0, 23, "起動失敗"])
+def test_old_python_pin_reports_command_timing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    outcome: int | str,
+) -> None:
+    """成功・子の失敗・起動失敗の所要を診断へ残し、子の出力と例外を保つ。"""
+    ticks = iter((10.0, 10.25))
+    monkeypatch.setattr(time, "perf_counter", lambda: next(ticks))
+
+    def runner(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if outcome == "起動失敗":
+            raise FileNotFoundError("git")
+        assert isinstance(outcome, int)
+        return subprocess.CompletedProcess(arguments, outcome, stdout="", stderr="子の診断\n")
+
+    if outcome == 0:
+        assert upgrade.old_python_pin(tmp_path, "old", runner=runner) is None
+    else:
+        with pytest.raises(upgrade.UpgradeCheckError):
+            upgrade.old_python_pin(tmp_path, "old", runner=runner)
+    stdout, stderr = capsys.readouterr()
+    assert not stdout
+    assert "所要=0.250秒" in stderr
+    assert f"終了状態={outcome}" in stderr
+    assert "ls-tree" in stderr and str(tmp_path) in stderr
+    assert ("子の診断\n" in stderr) == (outcome == 23)
 
 
 @pytest.fixture(name="chezmoi_bin", autouse=True)
@@ -394,7 +426,8 @@ def test_initial_apply_failure_preserves_child_output_and_stops_update(
         )
     stdout, stderr = capsys.readouterr()
     assert "child-out\n" in stdout
-    assert stderr == "child-error\n"
+    assert stderr.endswith("child-error\n")
+    assert "終了状態=23" in stderr
     assert calls[-1][0] == "chezmoi"
     assert sum("update-ref" in arguments for arguments in calls) == 1
 
@@ -772,3 +805,36 @@ def test_upgrade_check_reports_missing_chezmoi(tmp_path: pathlib.Path, monkeypat
 
     with pytest.raises(upgrade.UpgradeCheckError, match="chezmoiが見つからない"):
         upgrade.run_upgrade_check(tmp_path, "linux", runner=runner, registry=None, profile_env=_profile_env(tmp_path))
+
+
+@pytest.mark.parametrize("keep", [False, True])
+def test_verification_root_is_kept_only_when_requested(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, keep: bool
+) -> None:
+    """使い捨てrunner向けの指定時だけ検証rootを残し、既定では検証の終了時に回収する。"""
+    monkeypatch.setenv("UV", str(tmp_path / "uv"))
+    (tmp_path / "uv").write_bytes(b"uv")
+    temp_root = tmp_path / "temp"
+    temp_root.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp_root))
+    applied: list[pathlib.Path] = []
+
+    def runner(arguments, **kwargs):
+        if arguments[0] == "chezmoi":
+            applied.append(pathlib.Path(kwargs["cwd"]))
+        return _git_answers(arguments)
+
+    upgrade.run_upgrade_check(
+        tmp_path,
+        "linux",
+        runner=runner,
+        profile_env=_profile_env(tmp_path),
+        keep_verification_root=keep,
+    )
+
+    assert len(applied) == 1
+    checkout = applied[0]
+    # 偽のrunnerはcloneしないため、検証が作成する検証rootそのものの残存で判定する。
+    verification_root = checkout.parents[1]
+    assert verification_root.parent == temp_root
+    assert verification_root.is_dir() == keep

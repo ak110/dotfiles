@@ -251,6 +251,31 @@ def test_sweep_removes_expired_area_with_future_file(monkeypatch: pytest.MonkeyP
     assert not result.failed and not area.exists()
 
 
+@pytest.mark.parametrize("descriptor_walk", [False, True])
+@pytest.mark.parametrize("layout", ["new-area", "old-area-new-child"])
+def test_sweep_keeps_entries_changed_after_sweep_time(
+    monkeypatch: pytest.MonkeyPatch, descriptor_walk: bool, layout: str
+) -> None:
+    """判定基準時刻の取得後に作られた・変更された項目を、走査中に使われている領域として保持する。
+
+    `atk`の起動時掃引は走査の前に現在時刻を取得するため、並行する主体がその後に作った領域は
+    mtimeとctimeの両方が判定基準時刻より新しい。古い領域の配下へ新しい項目を作った場合も同じである。
+    """
+    monkeypatch.setattr(
+        sweep, "_DESCRIPTOR_WALK", descriptor_walk and os.scandir in os.supports_fd and os.open in os.supports_dir_fd
+    )
+    now = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1)
+    if layout == "new-area":
+        area = paths.temp_root() / "pytest-fixtures-created"
+        (area / "fixtures").mkdir(parents=True, mode=0o700)
+    else:
+        area = _area("old-area-abc", days=8)
+        (area / "fixtures").mkdir(mode=0o700)
+    result = managed_temp.sweep_managed_temp(now=now)
+    assert area not in result.deleted
+    assert not result.failed and (area / "fixtures").is_dir()
+
+
 def test_sweep_removes_expired_git_directory() -> None:
     """独立リポジトリを含む期限切れの領域を回収する。"""
     area = _area("git-directory-abc", days=8, files={"repo/.git/HEAD": "ref: refs/heads/main\n"})

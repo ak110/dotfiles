@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent_toolkit._common.bash_invocations import extract_bash_invocations
+from agent_toolkit._common.bash_invocations import extract_bash_effects, extract_bash_invocations
 
 
 @pytest.mark.parametrize(
@@ -142,3 +142,26 @@ def test_time_option_terminator_preserves_arguments(prefix: str) -> None:
     assert calls[0].segment.tokens == ("git", "status")
     assert calls[0].static_tokens == ("git", "status")
     assert calls[0].arguments_known
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["$COMMAND > /fixed/output.md", "> /fixed/output.md", "A=1 > /fixed/output.md"],
+    ids=["unknown-command", "redirect-only", "assignment-only"],
+)
+def test_effects_keep_static_outputs_of_unknown_executions(command: str) -> None:
+    """実行するコマンドが未知でも、構文から確定した出力先は実行位置と独立して保持する。"""
+    assert not extract_bash_invocations(command)
+    effects = extract_bash_effects(command)
+    assert [item.execution_known for item in effects] == [False]
+    assert effects[0].static_outputs[0] == "/fixed/output.md"
+
+
+def test_static_shell_body_is_parsed_even_with_unknown_positional_arguments() -> None:
+    """`sh -c`の本文が静的なら、後続の位置引数が未知でも本文の入出力を解析する。"""
+    invocations = extract_bash_invocations("sh -c 'printf x > /fixed/output.md; cat /fixed/input.md' name \"$ARG\"")
+    assert [item.segment.tokens[0] for item in invocations] == ["printf", "cat"]
+    assert invocations[0].static_outputs[0] == "/fixed/output.md"
+    # 本文自身が未知なら、本文を推定せず外側の呼出しとして残す。
+    unknown = extract_bash_invocations('sh -c "$BODY"')
+    assert [item.segment.tokens[0] for item in unknown] == ["sh"]

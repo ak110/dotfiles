@@ -7,7 +7,7 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 
 検出対象スキルと対応フラグ:
 
-- Codexのplan-mode → `plan_mode_skill_invoked`
+- Codexのwrite-plan → `plan_mode_skill_invoked`
 - process-wi → `process_wi_skill_invoked`
 
 セッション名はUserPromptSubmitのコマンドhookが通常状態から設定する。
@@ -23,8 +23,8 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 引用行を除いた本文の部分文字列の一致だけで行い、範囲語の有無は判定に含めない（範囲語は「など」「とか」のような
 一般的な語で表され、条件に加えても発火がほとんど減らないため）。発話がその項に当たるかの判断は受領側に残し、
 本フックは発話の意味を判断しない。
-一定間隔ごとの進捗のセルフチェック通知（`progress_self_check`が判定する）は機械注入ターンに付け、
-実ユーザー発話では通知せずに次の点検の起点をその時刻へ進める。
+一定間隔ごとの進捗のセルフチェック通知（`progress_self_check`が判定する）は、
+実ユーザー発話と機械注入ターンの両方で前回通知からの経過時間に基づいて付ける。
 成立した注記を1つの`additionalContext`へまとめる。
 
 注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
@@ -46,7 +46,8 @@ from __future__ import annotations
 import json
 import os
 import re
-import sys
+
+from agent_toolkit._hooks.notice import begin_delivery, emit_response, resolve_notice, set_warning_session_id
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -192,11 +193,22 @@ def _emit_hook_output(*, additional_context: str | None, title: str | None = Non
         hook_specific_output["additionalContext"] = additional_context
     if title is not None:
         hook_specific_output["sessionTitle"] = title
-    print(json.dumps({"hookSpecificOutput": hook_specific_output}, ensure_ascii=False))
+    emit_response({"hookSpecificOutput": hook_specific_output})
+
+
+def _work_contract_notice(session_id: str, body: str) -> str:
+    """作業契約の本文を、実ユーザー入力ごとに届ける。
+
+    同じ本文でも入力ごとに読み直す機会を与えるため、前回の入力で記録した重複抑止を同じ原因だけ解除してから整形する。
+    記録はこの原因の1件だけを保つため、入力が続いても状態は増えない。
+    """
+    resolve_notice(session_id, "user_prompt_submit", "_work_contract_notice")
+    return _llm_notice(body)
 
 
 def main(payload_text: str) -> int:
     """エントリポイント。終了コードは常に0（fail-open原則）。"""
+    begin_delivery()
     try:
         payload = json.loads(payload_text)
     except json.JSONDecodeError, ValueError:
@@ -213,23 +225,26 @@ def main(payload_text: str) -> int:
     if not isinstance(prompt, str) or not prompt:
         return 0
 
+    set_warning_session_id(session_id)
+    initial_notices: list[str] = []
     try:
         termination_evidence.observe_user(payload_text)
     except (OSError, ValueError, TypeError, KeyError) as error:
-        print(f"終了工程の原入力を取得できない: {error}", file=sys.stderr)
+        initial_notices.append(
+            _llm_notice(
+                f"終了工程の原入力を取得できない: {error}",
+                tag="warn",
+                removable_cause=False,
+                fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+            )
+        )
 
-    # 進捗のセルフチェックは機械注入ターン（定期再確認を含む）で経過時間から判定する。
-    # 実ユーザーの発話では通知せず、次の点検をその時点から数え直す。
-    self_check_notice: str | None = None
-    if _is_machine_injected(payload, prompt):
-        self_check_notice = _progress_self_check.claim_notice(payload)
-    else:
-        _progress_self_check.postpone(payload)
+    self_check_notice = _progress_self_check.claim_notice(payload)
 
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。
     if _is_harness_message(prompt):
-        harness_notices: list[str] = []
+        harness_notices: list[str] = list(initial_notices)
         if not is_codex_payload(payload):
             harness_notices.append(
                 _llm_notice(
@@ -252,7 +267,7 @@ def main(payload_text: str) -> int:
     # 除外するのは機械が生成してユーザー入力欄へ入る本文だけとする。
     is_normal_prompt = not machine_injected
     # 発火条件は受領側が除去できないため、いずれも情報提示の区分で配送する。
-    notices: list[str] = []
+    notices: list[str] = list(initial_notices)
     if is_normal_prompt and first_line.startswith(command_prefix):
         command = first_line[len(command_prefix) :].split(maxsplit=1)
         if command and command[0] in USER_CONFIRMATION_SKILL_NAMES:
@@ -264,10 +279,17 @@ def main(payload_text: str) -> int:
         try:
             contract_notice = work_contract.observe_input(session_id)
         except (OSError, ValueError) as error:
-            print(f"現行の作業契約の入力位置を記録できない: {error}", file=sys.stderr)
+            notices.append(
+                _llm_notice(
+                    f"現行の作業契約の入力位置を記録できない: {error}",
+                    tag="warn",
+                    removable_cause=False,
+                    fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+                )
+            )
         else:
             if contract_notice is not None:
-                notices.append(_llm_notice(contract_notice))
+                notices.append(_work_contract_notice(session_id, contract_notice))
         notices.extend(content_notices(prompt, "user_prompt_submit"))
     if self_check_notice is not None:
         notices.append(self_check_notice)

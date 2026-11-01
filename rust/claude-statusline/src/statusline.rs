@@ -2,7 +2,7 @@
 //!
 //! stdinから公式statusLine JSON入力を受け取る。
 //! 1行目はモデル名・effort・cwdを半角スペース区切りで
-//! 結合したのち、コンテキスト・コスト・経過時間・消費量(5h/7d)とパイプ区切りで連結する。
+//! 結合したのち、コンテキスト・コスト・経過時間・消費量(7d)とパイプ区切りで連結する。
 //! 2行目はセッションID・セッション名を半角スペース区切りで結合したのち、worktree情報（存在時のみ）
 //! とパイプ区切りで連結する。数値項目には日本語ラベルを付与し、欠落・null・空文字列の要素は省略する。
 
@@ -19,7 +19,7 @@ pub(crate) const GRAY: &str = "\x1b[90m";
 pub(crate) const LABEL_CONTEXT: &str = "コンテキスト";
 const LABEL_COST: &str = "コスト";
 const LABEL_DURATION: &str = "経過時間";
-const LABEL_RATE_LIMITS: &str = "消費量(5h/7d)";
+const LABEL_RATE_LIMITS: &str = "消費量(7d)";
 const LABEL_SESSION: &str = "セッション";
 const LABEL_WORKTREE: &str = "worktree";
 
@@ -69,7 +69,7 @@ fn render_primary_line(data: &Value, home: Option<&str>) -> String {
     let ctx_pct = get_nested_number(data, &["context_window", "used_percentage"]);
     let total_cost = get_nested_number(data, &["cost", "total_cost_usd"]);
     let duration_ms = get_nested_number(data, &["cost", "total_duration_ms"]);
-    let five_hour_pct = get_nested_number(data, &["rate_limits", "five_hour", "used_percentage"]);
+    // 5時間の利用上限は廃止されたため、入力に残っていても表示しない。
     let seven_day_pct = get_nested_number(data, &["rate_limits", "seven_day", "used_percentage"]);
     let head = build_head_segment(
         model_name.as_deref(),
@@ -94,8 +94,11 @@ fn render_primary_line(data: &Value, home: Option<&str>) -> String {
             GRAY,
         ));
     }
-    if let Some(seg) = build_rate_limits_segment(five_hour_pct, seven_day_pct) {
-        tail.push(seg);
+    if let Some(pct) = seven_day_pct {
+        tail.push(color(
+            &format!("{LABEL_RATE_LIMITS}: {pct:.0}%"),
+            threshold_color(pct),
+        ));
     }
 
     let mut segments: Vec<String> = Vec::new();
@@ -238,38 +241,6 @@ fn format_duration(ms: f64) -> String {
     }
 }
 
-fn build_rate_limits_segment(
-    five_hour_pct: Option<f64>,
-    seven_day_pct: Option<f64>,
-) -> Option<String> {
-    match (five_hour_pct, seven_day_pct) {
-        (None, None) => None,
-        (Some(f), Some(s)) => {
-            let display = format!("{f:.0}% / {s:.0}%");
-            let c = severer_color(threshold_color(f), threshold_color(s));
-            Some(color(&format!("{LABEL_RATE_LIMITS}: {display}"), c))
-        }
-        (Some(f), None) => Some(color(
-            &format!("{LABEL_RATE_LIMITS}: {f:.0}%"),
-            threshold_color(f),
-        )),
-        (None, Some(s)) => Some(color(
-            &format!("{LABEL_RATE_LIMITS}: {s:.0}%"),
-            threshold_color(s),
-        )),
-    }
-}
-
-/// 2色のうちRED、YELLOW、GREENの順でより警告寄りの色を返す。
-fn severer_color(a: &'static str, b: &'static str) -> &'static str {
-    for candidate in [RED, YELLOW, GREEN] {
-        if a == candidate || b == candidate {
-            return candidate;
-        }
-    }
-    a
-}
-
 /// 80%超で赤・50%超で黄・それ以下で緑を返す。
 pub(crate) fn threshold_color(percentage: f64) -> &'static str {
     if percentage > 80.0 {
@@ -370,21 +341,24 @@ mod tests {
     }
 
     #[test]
-    fn rate_limits_combined_uses_severer_color() {
-        let data = serde_json::json!({"rate_limits": {"five_hour": {"used_percentage": 60}, "seven_day": {"used_percentage": 40}}});
-        assert_eq!(
-            render(data),
-            format!("{YELLOW}{LABEL_RATE_LIMITS}: 60% / 40%{RESET}")
-        );
-    }
-
-    #[test]
-    fn rate_limits_five_hour_only() {
-        let data = serde_json::json!({"rate_limits": {"five_hour": {"used_percentage": 81}}});
-        assert_eq!(
-            render(data),
-            format!("{RED}{LABEL_RATE_LIMITS}: 81%{RESET}")
-        );
+    fn rate_limits_show_seven_day_only() {
+        let cases = [
+            (
+                serde_json::json!({"rate_limits": {"seven_day": {"used_percentage": 91}}}),
+                format!("{RED}消費量(7d): 91%{RESET}"),
+            ),
+            (
+                serde_json::json!({"rate_limits": {"five_hour": {"used_percentage": 60}, "seven_day": {"used_percentage": 40}}}),
+                format!("{GREEN}消費量(7d): 40%{RESET}"),
+            ),
+            (
+                serde_json::json!({"rate_limits": {"five_hour": {"used_percentage": 81}}}),
+                String::new(),
+            ),
+        ];
+        for (data, expected) in cases {
+            assert_eq!(render(data), expected);
+        }
     }
 
     #[test]

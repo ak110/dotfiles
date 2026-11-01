@@ -1,5 +1,6 @@
 """一般UWIの保存・取込scopeが、起動目的と文書の起動単位へ一致することを検査する。"""
 
+import json
 import pathlib
 import re
 import subprocess
@@ -15,8 +16,8 @@ from agent_toolkit._common import skill_modes
 @pytest.mark.parametrize(
     "skill,arguments,other_arguments",
     [
-        ("agent-toolkit:session-review", "focus.md", "batch auto"),
-        ("agent-toolkit:session-review", "batch auto", "focus.md"),
+        ("agent-toolkit:review-session", "focus.md", "batch auto"),
+        ("agent-toolkit:review-session", "batch auto", "focus.md"),
         ("agent-toolkit:process-wi", "focus.md", "single-lane 追加"),
         ("agent-toolkit:process-wi", "single-lane 追加", "all-repos"),
         ("agent-toolkit:process-wi", "all-repos", "single-lane 追加"),
@@ -62,3 +63,42 @@ def test_general_run_skill_uwi_uses_documented_scope_for_the_same_mode(
     assert saved["scope"] != skill_modes.invocation_scope(skill, other_arguments)
     assert (saved["scope"] == skill_modes.invocation_scope(skill, None)) is (mode is None)
     assert path.read_text(encoding="utf-8") == text
+
+
+@pytest.mark.parametrize("arguments", [None, "batch auto"])
+def test_renamed_review_imports_saved_scopes_without_rewriting(tmp_path, monkeypatch, arguments):
+    """新名の目的文が示す取込対象を、保存済み3形式のUWIに適用する。"""
+    notes = _setup_notes(tmp_path)
+    repository = tmp_path / "myrepo"
+    repository.mkdir()
+    monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(repository))
+    scopes = (
+        "agent-toolkit:session-review",
+        "agent-toolkit:session-review batch",
+        "agent-toolkit:session-review-batch",
+    )
+    for scope in scopes:
+        assert (
+            _invoke_uwi_add(
+                tmp_path, str(repository), "--source", "run-skill", "--scope", scope, body="この操作の事前承認を求める。"
+            ).code
+            == 0
+        )
+    selected = entries.select_entries(
+        notes, status="active", target_repo="github.com/example/myrepo", entry_type="uwi", answered="all", source="run-skill"
+    )
+    goal = run_skill.build_goal("agent-toolkit:review-session", arguments)
+    declared = next(
+        line.removeprefix("過去UWIの取込対象scope: ")
+        for line in goal.splitlines()
+        if line.startswith("過去UWIの取込対象scope: ")
+    )
+    accepted = json.loads(declared)
+    imported = []
+    for path, _repo, text, _state, _kind in selected:
+        parsed = frontmatter.parse_frontmatter(text)
+        assert parsed is not None
+        if parsed[0]["scope"] in accepted:
+            imported.append(parsed[0]["scope"])
+        assert path.read_text(encoding="utf-8") == text
+    assert set(imported) == set(scopes[1:] if arguments else scopes[:1])

@@ -19,7 +19,7 @@
 
 ## 手段の選択
 
-工程の定義は`agent-toolkit/rules/01-agent.md`「役割分担」に従い、後述の個別UWIの条件と、権限拒否の偽陽性に対する`permission-denial.md`の手順は下表より優先する。表の「発話本文」はユーザーへのメッセージである。Claude Codeでは`agent-toolkit/share/rules-main.claude-code.md`「ツールの入出力」に従って`mcp__agent-toolkit__send_to_user`で届ける。Codexでは途中経過を`commentary`、通常の最終応答を必要なツール処理後の`final`で届ける。成果作業ではcompletion-reportで確定した作業完了報告の本文をそのまま用いる。ホスト本体を停止する場合、必要な可視報告は停止前の`commentary`で届ける。自律モードの伝達は報告用UWIの保存検収によって完了する。報告の送達を終えてからホストを停止する。Codexの命令や公開機能は`agent-toolkit/share/rules-common.codex.md`「Codexホスト契約の適用」に従う。
+工程の定義は`agent-toolkit/rules/01-agent.md`「役割分担」に従い、後述の個別UWIの条件と、権限拒否の偽陽性に対する`permission-denial.md`の手順は下表より優先する。表の「発話本文」はユーザーへのメッセージである。Claude Codeでは`agent-toolkit/share/rules-main.claude-code.md`「ツールの入出力」に従って`mcp__agent-toolkit__send_to_user`で届ける。Codexでは途中経過を`commentary`、通常の最終応答を必要なツール処理後の`final`で届ける。成果作業ではreport-completionで確定した作業完了報告の本文をそのまま用いる。ホスト本体を停止する場合、必要な可視報告は停止前の`commentary`で届ける。自律モードの伝達は報告用UWIの保存検収によって完了する。報告の送達を終えてからホストを停止する。Codexの命令や公開機能は`agent-toolkit/share/rules-common.codex.md`「Codexホスト契約の適用」に従う。
 
 | 工程 | 協調モード | 自律モード |
 | --- | --- | --- |
@@ -27,7 +27,7 @@
 | 事前承認以外で回答を待つ通常の確認 | 事前承認と同じ | 回答期限によらずその場では質問せず、事前承認型UWIへ記録して`pending-decisions.md`「未確定判断の保留と暫定判断」に従う |
 | 事後承認 | その場で構造化質問する | 回答を待たずに事後承認型UWIへ記録し、作業を続ける |
 | 認識合わせ | 「認識合わせ」の手順と事前承認の手段でその場で質問し、回答を待つ | 原則としてその場で質問する。有効な回答期限を過ぎたら`pending-decisions.md`「未確定判断の保留と暫定判断」へ進み、期限が無ければ回答を待つ。構造化質問を発行できないCodex Default modeでは`rules-main.codex.md`の例外に従い、自分の理解と質問をUWIへ記録して、回答を要する元項目だけを保留する |
-| ユーザーへの報告 | 発話本文として届ける。作業完了時は`agent-toolkit:completion-report`のフォーマットを使う | 同スキルの報告用UWIに記録する（セッションにつき1件） |
+| ユーザーへの報告 | 発話本文として届ける。作業完了時は`agent-toolkit:report-completion`のフォーマットを使う | 同スキルの報告用UWIに記録する（セッションにつき1件） |
 
 表の`rules-main.claude-code.md`と`rules-main.codex.md`は`agent-toolkit/share/`配下を指す。
 自律モードの「有効な回答期限」は、`atk wi process-loop`のように起動時に与えられた有限の期限を指す。無期限の設定、`askUserQuestionTimeout`などの期限機能が無い環境、期限が無効になる条件が成立している環境、Codex Default modeは「期限なし」とする。認識合わせを期限によらずその場で問うのは、割り込みや是正の直後に理解を確かめるためである。
@@ -37,7 +37,7 @@
 
 次の場合はモードによらず個別UWIを使う。
 
-- AWIの`## ユーザーコメント`やUWIの`## 回答`へ直接書かれた質問への回答: 個別UWIで報告する。自律モードの報告用UWIへの記載（`completion-report`に従う）で代えない。
+- AWIの`## ユーザーコメント`やUWIの`## 回答`へ直接書かれた質問への回答: 個別UWIで報告する。自律モードの報告用UWIへの記載（`report-completion`に従う）で代えない。
 - ユーザーの判断・資料・操作が次の作業に要る未完了事項: 必要と確定した時点で個別UWIへ保存し、成功を確かめてから所在を案内する（同じ依頼の既存UWIは再利用する）。回答を待たずに確定できる作業は続け、関連作業の完了後に要る事項はその完了工程でのUWI登録を記録する。会話中の確認で回答を得た事項はUWIの対象外とする。
 - 作業中に見つけた認証情報: `agent-toolkit/rules/01-agent.md`「完遂と先送り」に従い、所在ごとに報告用UWIを1件登録する。所在は`agent-toolkit:wi-standards`の`references/uwi-format.md`の形式に揃え、同じファイルの値は1件にまとめる。投入前に所在を固定文字列として`atk wi grep --summary-only -F --type=uwi --state=all --target-repo=all -- '<所在>'`で探し、同じ所在の報告があれば発見手法・作業リポジトリ・採否・回答状況が違っても重ねない。無ければ発見時の作業リポジトリに`--question-type=post-approval`でUWIを登録し、報告だけで扱った対応の是非を問う。
 
@@ -49,7 +49,7 @@
 - 調査で解釈が一意に決まった要求の実施
 - 規範からの逸脱（`approval-scope.md`）
 - エージェントが起草した完成条件の技術的な理由による変更
-- 限定探索の終了や再発防止策を見送る判断。`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」で重大度に応じて確定する。`session-review`の対象では振り返り結果の報告が兼ねる
+- 限定探索の終了や再発防止策を見送る判断。`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」で重大度に応じて確定する。`review-session`の対象では振り返り結果の報告が兼ねる
 
 事後承認は、実施の是非がユーザー固有の基準（選好・認可・成果物の見え方など）で決まる場合だけ求め、回答で分かれる観測結果や操作を書けなければ報告に回す。判断材料を内部の工程や進捗でしか説明できない事項も報告に回す。報告は判断を求める行為と区別する。報告用UWIが事後承認型の2択フォーマットなのは、是正を書き戻せる回答欄を設けるためである。
 非同期質問の送信成功や初期カーソル位置は回答や承認ではなく、回答を要する操作は実際の回答まで確定しない。確認の拒否や承認要求の取り下げは無回答と区別し、`../SKILL.md`「確認要否の判定」を再適用する。認識の違いで要件や結果が変わる事項が残れば事前承認型UWIへ記録して元項目の`depends_on`へそのUWIを加え、確認が不要なら自ら確定して続ける。
@@ -76,13 +76,23 @@
 
 案内の対象となる通常発話には、ユーザーが入力したスラッシュコマンドを含める。ハーネスが挿入した通知や機械注入によるターンは対象外とする。生成された注記は単一の`additionalContext`に統合し、Codex payloadにおいても同様に返却する。
 
-進捗のセルフチェック通知（`source="progress-self-check"`）は、前段の案内と別に、呼出主体ごとに30分間隔でPostToolUseと機械注入のターンのUserPromptSubmitが返す。経過時間と短い点検項目だけを示す点検の契機であり、手順本文は含めないため、前段の固定手順の再注入とは別の扱いとする。長い委譲の往復の間も点検の契機を届けるため、この通知は機械注入のターン（定期再確認を含む）にも付ける。実ユーザーの発話（機械注入を除くUserPromptSubmit）を受けたターンには通知を付けず、その主体の次の点検を30分後へ送る。ユーザーが長く操作しなかった後の最初の発話や再開の直後に、待機時間だけで通知が出ることを防ぐためである。
+進捗のセルフチェック通知（`source="progress-self-check"`）は、前段の案内と別に、呼出主体ごとに30分間隔でPostToolUseとUserPromptSubmitが返す。
+経過時間と短い点検項目を示す点検の契機であり、前段の固定手順の再注入とは別の扱いとする。
+長い委譲の往復の間も点検の契機を届けるため、この通知は機械注入のターン（定期再確認を含む）にも付ける。
+実ユーザーの発話の有無や無操作期間の長さによらず、前回通知から30分以上たった観測で通知する。
+
+通知を受けた主体は、活動の有無と、工程の所要・反復の妥当性を分けて点検する。
+計画ファイルか委譲プロンプト（メインは作業契約）の目的と完成条件を読み直し、いま取り組んでいる作業がどの完成条件に必要かを1行で示す。どれにも必要でない対処は記録し、委譲先は委譲元へ、委譲元を持たないメインはユーザーへの報告として返して、本筋へ戻る。送達の手段は本書「手段の選択」に従う。完了は、各完成条件の前提が満たされたことを確かめてから返す。
+問題の有無にかかわらず、何を、どの記録（計画、引き継ぎ記録、実行記録など）と比べて点検し、何が分かったかを報告する。比較に必要な記録が無い項目は未観測と示し、通知の時刻を点検した証拠に使わない。
+経過時間と目標に対する進み具合、余計な作業の有無、当初目的との一致を含め、送達は本書「手段の選択」と既存の委譲契約に従う。
+工程開始時点や比較基準が不足する場合の情報取得を含む詳細は、`agent-toolkit:delegation/references/waiting-and-monitoring.md`「成果物側の観測」に従う。
 
 ユーザーが入力した文章は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）として`PostToolUse`にも届く。発話内容を判定材料とする注記は両hookで同一の定義本文を用い、原因・対象・対処の変化に応じた共通の新規性判定に基づいて配送する。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 進捗のセルフチェック通知を受けて点検する時 | `agent-toolkit:delegation/references/waiting-and-monitoring.md#「成果物側の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「成果物側の観測」` |
 
 ## エージェント宛てメッセージの標識
 

@@ -137,7 +137,6 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
         ("self-dependency", readiness.self_dependencies),
         ("cyclic-dependency", readiness.cyclic_dependencies),
         ("cooldown-until", readiness.cooldown_pending),
-        ("confirmation-required", readiness.confirmation_pending),
     )
     specific = next((reason for reason, filenames in reasons if filename in filenames), None)
     if specific is not None:
@@ -255,6 +254,7 @@ def _print_json_entries(
             "blocked_reason": reason,
             "source": parse_source(text),
             "important": _wi_filters.is_important(text),
+            "effect_check": (parse_frontmatter(text) or ({}, ""))[0].get("effect_check"),
             "summary": summary,
         }
         if include_staleness:

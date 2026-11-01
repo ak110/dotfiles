@@ -2,7 +2,7 @@
 
 コード・設計・テスト・レビュー・文章の品質基準を、作業に応じて読むスキルとして提供する。
 基本の起動スキルは`agent-basics:writing-standards`と`agent-basics:review-standards`である。
-原因分析は`agent-basics:bugfix`、検証の品質基準は`agent-basics:check-execution`が扱う。
+原因分析は`agent-basics:bugfix`、検証の品質基準は`agent-basics:check-execution`、外部資料の取得手順は`agent-basics:fetch-sources`が扱う。
 
 ## Claude Codeへの導入
 

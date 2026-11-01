@@ -23,7 +23,7 @@
 - 必要なユーザー確認の欠落: 同「確認要否の判定」の判定順3に該当するユーザーのみが持つ情報を推測で確定した結果、誤った成果物の作成、要求された作業の未実施、またはユーザーからの是正を招いた事象（技術的な妥当性とQCDに基づいて判断し、確認を省略したケースは除く）
 - ユーザーに余計な作業をさせた事象: 本来不要であった操作、回答、再依頼、是正をユーザーに行わせた事象（必要なユーザー確認への回答を除く）
 - 品質に悪影響を与えた事象: 成果物の欠陥、手戻りの発生、同一指摘の反復など
-- 所要時間目標を超過した事象: `agent-toolkit:session-review`の`SKILL.md`が定める振り返り工程の目標時間、および`reference_document`が定める目標時間を超過した事象
+- 所要時間目標を超過した事象: `agent-toolkit:review-session`の`SKILL.md`が定める振り返り工程の目標時間、および`reference_document`が定める目標時間を超過した事象
 - 同一の成果物かつ同一の責任範囲で発生したレビューの第3ラウンド
 
 ## 参照資料の取得
@@ -32,7 +32,7 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
 
 ## 対処の認可と機能の不足
 

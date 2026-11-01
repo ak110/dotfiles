@@ -74,8 +74,8 @@ continuations:
 | 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
 | テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md`、`read:agent-toolkit:*/skills/commit/references/testing.md` | |
-| `計画`を受領し、条項を生成する前 | `agent-toolkit:plan-mode`の`references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md` | |
-| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:plan-mode`の`references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md` | |
+| `計画`を受領し、条項を生成する前 | `agent-toolkit:write-plan`の`references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` | |
+| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` | |
 | 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
 | 指摘を登録するか完成条件証拠を書く直前 | [exec-review-recording.md](exec-review-recording.md) | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md`、`read:agent-toolkit:*/share/exec-review-recording.md` | |
 | 着手時 | `agent-toolkit:/share/exec-review-criteria.md`の「適用契約」「基本方針」「指摘内容」「実行レビューの判定」「完了報告」 | 起動時 | `role:exec-review` | |
@@ -151,6 +151,7 @@ WIの鮮度（staleness）は、`計画`がある場合は`## 変更履歴`に�
 
 再レビューでは、同一sessionの管理表、開始時点の短縮OID、レビュー基準、および`review_contract`を引き続き使用する。委譲元から追送される入力は、`再レビューせよ`という指示、`round`、ならびに任意指定の`review_contract`と`rewrite_map`である。
 確認の対象は、前回指摘に対する修正内容、前回レビューHEADから今回HEADまでの修正差分、および変更された識別子や契約に伴う直接影響範囲とする。初回の段階で判定可能だった軽微な論点が新たに見つかった場合は、全体走査を再開せず、初回レビューにおける確認不足として記録する。重大な見落としや修正によって新たに生じた欠陥については、適用される規定と発生条件の客観的な根拠を添えて指摘を登録する。
+修正差分が新たに変えた識別子・契約・出力も、初回と同じく「判定の観点と並行する探索」の種類8の走査に従って直接影響範囲を独自に算出し、提出された探索記録と検証結果に欠けている利用側テストを判定する。
 修正差分の比較元には前回レビュー時のHEADを用い、返却情報における`レビュー開始時点`には初回から引き継いでいる開始時点を記載する。
 Git履歴が書き換えられた後の開始時点には、書き換え後の対応するOIDを使用する。
 履歴書き換えが行われた後は、前回と今回の開始時点・HEAD、ならびに各時点の契約に基づいてファイルごとの差分を比較する。
@@ -217,6 +218,8 @@ Codexの組み込み委譲は`agents_server`が利用できない場合の代替
 ```text
 起動対象: recurrence-self-check.subagent.md
 ```
+
+`起動対象:`の値は起動する役割文書のファイル名であり、`agents_server`の`start`には、この値から`.subagent.md`を除いた役割名`recurrence-self-check`を`subagent_md_path`として渡す（後述の起動引数の表と同じ値）。起動の準備に使う入力、起動引数、返却契約は本節にまとめてあるため、起動前に起動対象の役割文書の本文を取得しない。定義ファイル自体を編集するための取得、委譲先自身の取得、完了後の検収のための取得はこの対象から外す。会話圧縮の後に本工程へ戻るときは、本節（起動対象、必要な入力、起動引数、生成済みの返却契約）を読み直して起動・受領の契約を復元する。
 
 再発防止セルフチェックとは、独立した担当者が具体的な再発防止観点を今回の差分に適用して確認する、実行レビュー内の工程である。
 実行レビュー担当は、初回レビュー、再レビュー、および引き継ぎ再レビューの各ラウンドにおいて本書の手順に従って実施する。

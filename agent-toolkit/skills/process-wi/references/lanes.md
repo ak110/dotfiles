@@ -17,7 +17,7 @@ AWIとUWIの共通契約は`../../wi-standards/SKILL.md`に、確認の要否と
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/publish.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#冒頭` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/SKILL.md#「計画ファイルの作成要否」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/write-plan/SKILL.md#「計画ファイルの作成要否」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
@@ -28,7 +28,7 @@ AWIとUWIの共通契約は`../../wi-standards/SKILL.md`に、確認の要否と
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md#「返却に含まれる既存不良の受領」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「返却に含まれる既存不良の受領」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
@@ -55,11 +55,11 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
 - **レーン担当**: 各レーンの計画、実装、レビュー指摘への修正、履歴統合、主作業ツリーへの統合を同一スレッドで担当するエージェント。担当種別にはレーン担当、レビュー修正担当、CI修正担当の3種類がある（区分は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の操作区分。所在参照）
 - **主作業ツリー**: マージ先ブランチをチェックアウトしている作業ツリー。常駐起動では、process-loopが対象リポジトリごとに準備して統括へ渡した作業ツリーを指す。統括自身の起動cwdとは区別する
 - **公開担当**: 公開工程（push、CI、検証失敗時の修正、プロジェクト固有の公開後操作、延期adoptなど）を担当する委譲先エージェント。委譲範囲は`finish-session.md`「公開担当の起動と並行工程」に準拠する
-- **即時対応**: 作業を進めるために必要な最小限の修正をその場で行い、抜本的な対応は次のセッション用のAWIへ引き継ぐ手順
+- **即時対応**: `immediate-fix.md`「即時対応」が定める最小限の直接修正と、正式対応を次のセッション用AWIへ引き継ぐ手順
 
 ## 不変条件
 
-- 計画ファイルの作成要否は、`agent-toolkit:plan-mode`「計画ファイルの作成要否」に従って判定する。作成が必要なレーンでは実装前に起草し、処理中に追加されたAWIは確定済みの計画とは分けて追加計画として配置する。計画作成を省くレーンでは、WIに記載された要求と完成条件を実装およびレビューの判断基準とする
+- 計画ファイルの作成要否は、`agent-toolkit:write-plan`「計画ファイルの作成要否」に従って判定する。作成が必要なレーンでは実装前に起草し、処理中に追加されたAWIは確定済みの計画とは分けて追加計画として配置する。計画作成を省くレーンでは、WIに記載された要求と完成条件を実装およびレビューの判断基準とする
 - 計画自体の事前レビュー工程は設けず、実装完了後に各計画について最終実装HEADの状態で、要件および外部仕様の水準に沿った実行レビューを行う
 - 専用worktreeへの書き込み権限はレーン担当が保持し（メインが「同一主題の追加指示」に従って引き取った場合を除く）、主作業ツリーへの書き込みは統合のタイミングに限定する。担当範囲の一部をサブエージェントへ委譲する場合は、`agent-toolkit:delegation`の`references/mandatory-rules.md`「作業ツリーの保護」に従い、同一の専用worktree内での分担や、別ブランチ・別worktreeの内部グループを適切に使い分ける。計画の策定、検収、コミット対応の記録、統合、メインへの結果返却はレーン担当自身が責任を持つ
 - ユーザーに由来する要求の全部または一部を不採用とする場合は、事前にユーザーへの確認またはUWIの回答を得てから、該当項目の採否を確定する
@@ -96,7 +96,7 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
 
 既存のレーン担当が詳しい文脈を把握している主題については、メイン自身が本文を読み直したり追加調査や回答作成を行ったりする前に、`agent-toolkit:delegation`「継続と新規起動」に従って該当レーン担当へ技術調査と判断を委ねる。メインは認可の管理、全体調整、および検収を担う。メイン自身が調査して文脈を持つ主題は、委譲先へ渡し直さずにメインが修正まで行ってよい。書込先は次のとおりとし、書込主体の交代は`../../delegation/references/mandatory-rules.md`「作業ツリーの保護」に従う。
 
-- レーンに割り当てていない主題: メインが別のworktreeで修正し、主作業ツリーへの統合は他のレーンと同じく`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の許可」の直列条件で行う。現在の作業を進めるための最小限の修正は`immediate-fix.md`「即時対応の手順」に従う
+- レーンに割り当てていない主題: メインが別のworktreeで修正し、主作業ツリーへの統合は他のレーンと同じく`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の許可」の直列条件で行う。最小限の直接修正の判定と手順は`immediate-fix.md`に従う
 - レーンの主題: レーン担当へ追加指示として返すのを基本とする。レーン担当の終了を確認した後は、メインがそのレーンの専用worktreeを引き取ってよい。引き取ったら`exec.parent.md`「入力」の`書込担当一覧`を更新し、統合は同書「統合の指示と受領」の検収条件をメイン自身がCLIを実行する場合として適用する
 
 本スキルの実行中にユーザーから追加指示があった場合は、既存の処理条件と比較して採否を決めた差分のみを処理条件に反映する。比較と採否は`agent-toolkit:/share/exec-review-responses.md`「指摘発生時の扱い」に従う。範囲や論理関係の解釈は`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」に従う。公開工程に入る前に届いた直接的な実装要求も、同じ主題である限り本スキルの処理を継続するための追加条件として扱う。なお、公開工程の開始後に届いた指示は`immediate-fix.md`「対象外の不良と是正要求」に従って処理する。主題が継続しているかどうかは元の要求・現物・既存の認可から自ら判断し、ユーザー自身しか決められない目的・範囲・認可が残っている場合に限って変更前に確認する。
@@ -112,7 +112,7 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
 ## 終了
 
 工程の区切りそのものを確認の理由にしない。確認要否の判定に基づいて、ユーザーの判断が真に必要な事項だけを確認待ちとし、その判断を待たずに進められる工程はそのまま継続する。回答がすぐに得られない確認事項は、`agent-toolkit:user-confirmation-and-report`の手順に従ってUWIへ退避させる。`processing`状態の元項目も同じ手順に従い、そのUWIへの依存を保存して`inbox`へ戻す。
-作業完了の報告は`agent-toolkit:completion-report`に従って行い、本スキルの工程で作成したコミットを公開した上で報告する。
+作業完了の報告は`agent-toolkit:report-completion`に従って行い、本スキルの工程で作成したコミットを公開した上で報告する。
 
 ### 公開工程の承認スコープ
 

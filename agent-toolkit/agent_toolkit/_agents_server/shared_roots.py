@@ -121,9 +121,16 @@ def resolve_conversation_root(
     environment: Mapping[str, str],
     state_root: pathlib.Path | None = None,
 ) -> ConversationRootResolution | None:
-    """現行会話のルートsession識別子と対応の確認状態を返す。"""
-    current_session_id = resolve_root_session_id(environment)
-    if current_session_id is None:
+    """現行会話のルートsession識別子と対応の確認状態を返す。
+
+    索引のキーは、委譲先なら所有session、最上位なら実行中の会話の識別子とする。
+    ownerを持たないCodex最上位の会話では`CODEX_THREAD_ID`をキーにし、PostToolUseが保存した索引から
+    MCPのプロセス専用ルートへ到達する。
+    """
+    current_session_id = _delegated_session.owner_session_id(environment) or _delegated_session.current_conversation_session_id(
+        environment
+    )
+    if current_session_id is None or not valid_session_id(current_session_id):
         return None
     alias_path = aliases_directory(state_root) / f"{current_session_id}.json"
     alias_present = alias_path.is_file()
@@ -272,10 +279,16 @@ def resolve_wait_identity(
     explicit_root_session_id: str | None,
     state_root: pathlib.Path | None = None,
 ) -> StatusFileIdentity | None:
-    """待機に使うルートと書込主体を、明示入力を含む単一の契約で解決する。"""
+    """待機に使うルートと書込主体を、明示入力を含む単一の契約で解決する。
+
+    ownerを持たないCodex最上位の会話は書込主体を環境から解決できない。この会話のMCPはプロセス専用ルートの
+    `root.json`へ書くため、索引が確認済みのルートを指す場合だけ、そのルートの`root.json`を読む。
+    """
     inferred = resolve_conversation_root(environment, state_root)
     identity = resolve_status_owner_identity(environment, state_root)
     if explicit_root_session_id is None:
+        if identity is None and inferred is not None and inferred.alias_valid and inferred.mapping_confirmed:
+            return StatusFileIdentity(inferred.root_session_id, "root.json", None)
         if identity is None or inferred is None or identity.root_session_id == inferred.root_session_id:
             return identity
         return StatusFileIdentity(inferred.root_session_id, identity.file_name, identity.host_session_id)

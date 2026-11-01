@@ -12,7 +12,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「レーンと資源」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「レーンと資源」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` |
+| 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `all-repos-orchestration.md#「取得済み候補の受領」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「取得済み候補の受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-format.md#「欄の意味」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-format.md#「欄の意味」` |
@@ -179,17 +179,24 @@ atk run-script pick-wi-check -- <意味判断YAMLの絶対パス> --candidate-fi
 
 ## 処理対象WIの追加
 
-実行中のセッションへユーザーがキュー操作（UWIへの回答、AWIの投入）を伝達した場合、その発話は該当項目を同じ実行に追加する明示的な指示として扱い、追加の可否を問い直さない。ユーザーが追加するよう明示した項目、および伝達した項目（UWIの場合は投入元のセッションを問わない）を候補差分とする。即時対応で作成された正式対応AWIは、次回のセッションへ引き渡す。UWIが具体的に指定されていない場合は、次の一覧コマンドで処理対象に含まれていない回答済みかつ未終了のUWIをすべて取得する。
+追加操作の前に`immediate-fix.md`「即時対応」を読み、発話と発生条件から是正要求、今回混入した不良、同じ実行への明示追加を分類する。
+混入した不良は元の要求で是正し、独立した既存不良は即時対応の要否を判定する。
+本節の追加操作は明示追加だけに適用する。
+
+ユーザーが実行中にキュー操作（UWIへの回答、AWIの投入）を伝達したら、同じ実行への追加指示とし、可否を問い直さない。
+追加を明示した項目と伝達した項目を候補差分とし、UWIは投入元のセッションを問わない。
+即時対応の正式対応AWIは次回へ渡す。
+UWIの指定がなければ、次のコマンドで処理対象外の回答済みかつ未終了のUWIをすべて取得する。
 
 ```text
 atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス> --pull
 ```
 
-同じ実行への追加を目的として起草・投入したAWIは、投入を他担当へ委譲した場合も、保存完了後の正式なファイル名を受け取った直後に候補差分へ含める。
-ユーザーから伝達された個別のUWIおよびAWIは、`atk wi show <WIファイル名> --pull`を実行して取得する。強制同期後も未回答、項目の不在、更新前の内容のいずれかなら、`agent-toolkit:wi-standards`「投入と取得」に定める再取得条件を適用する。回答が確認されたUWIは、`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`へ引き渡す。
+同じ実行へ追加するために起草・投入したAWIは、投入を他担当へ委譲した場合も、保存完了後の正式なファイル名を受け取った直後に候補差分へ含める。
+ユーザーから伝達された個別のUWIおよびAWIは、`atk wi show <WIファイル名> --pull`を実行して取得する。強制同期後も未回答、項目の不在、更新前の内容のいずれかなら、`agent-toolkit:wi-standards`「投入と取得」に定める再取得条件を適用する。回答を確認したUWIは、`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`へ引き渡す。
 ユーザーが名指しで指定したWIは、追加指示と対象が確定した直後に候補差分へ含める。
 いずれの場合も、他の要求の起草、検収、保存の完了を待たずに、後述の「初期選定中」または「選定完了後」の手順へ進む。
-伝達されていない新規項目や、次回向けに起草された振り返りAWIは次回実行のために残し、`ready`一覧の再取得は行わない。この発話解釈のルールは本節が定め、他の文書は本節を参照する。候補差分に対しても、「処理対象の決定」における回答済みUWIおよび元項目の取り扱いルールを適用する。
+伝達されていない新規項目や、次回向けに起草された振り返りAWIは次回へ残し、`ready`一覧の再取得は行わない。この発話解釈のルールは本節が定め、他の文書は本節を参照する。候補差分に対しても、「処理対象の決定」における回答済みUWIおよび元項目の取り扱いルールを適用する。
 
 初期選定中に受け取った場合は、開始時の候補との集合和（同一名称は1回のみ）を同じ出力先へ保存し、選定、競合確認、未遷移分のみの処理開始、および最新の保存後チェックをやり直す。初回の集合情報も合流先において保持する。
 

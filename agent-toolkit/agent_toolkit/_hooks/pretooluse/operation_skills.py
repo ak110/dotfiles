@@ -10,6 +10,7 @@ import dataclasses
 import os
 import pathlib
 import re
+import shlex
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from collections.abc import Callable, Sequence
@@ -26,7 +27,7 @@ lazy from agent_toolkit._hooks import tool_input as _tool_input
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import AGENTS_SERVER_HOOK_TOOL_NAMES
-lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
+lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths, sed_read_range
 lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES
 lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
 
@@ -300,10 +301,16 @@ def _perl_write_paths(arguments: tuple[str, ...]) -> list[str]:
     return (operands if inline else operands[1:]) if inplace else []
 
 
-def _static_write_path(path: str) -> str | None:
-    """未知の展開を含むパスは、最後の展開より後ろが`/`で始まる場合だけその末尾を返し、それ以外はbasenameを推定せず`None`を返す。"""
+def _static_write_path(path: str, *, partial: bool = False) -> str | None:
+    """静的に確定した書込先を返す。未知の展開を含むパスは実パスとして確定しないため`None`を返す。
+
+    `partial`が真なら、文書種別の識別など末尾だけを使う用途へ、最後の展開より後ろが`/`で始まる末尾を返す。
+    `$ROOT/path.md`の末尾`/path.md`は実在の場所を表さないため、実パスを求める用途では`partial`を使わない。
+    """
     if STATIC_UNKNOWN not in path:
         return path
+    if not partial:
+        return None
     suffix = path.rsplit(STATIC_UNKNOWN, 1)[1]
     return suffix if suffix.startswith("/") else None
 
@@ -362,10 +369,13 @@ def _is_discard_path(path: pathlib.Path) -> bool:
         return False
 
 
-def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
-    """実行位置のリダイレクト・tee・sponge・gawk・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。
+def _bash_write_paths(command: str, cwd: str | None = None, *, partial: bool = False) -> list[str]:
+    """リダイレクト・tee・sponge・gawk・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。
 
-    静的な末尾だけを使い、本文と環境変数を実行して解決しない。
+    リダイレクト先は実行するコマンドの確定と独立して構文から決まるため、未知の実行
+    （`$COMMAND > out`、リダイレクトだけの文など）の静的な出力先も返す。コマンド名に依存する書込先は、
+    実行するコマンドを確定できた呼出しだけから求める。本文と環境変数を実行して解決しない。
+    未知の展開を含むパスは返さない。`partial`が真なら、文書種別の識別に使う静的な末尾も返す。
     gawkのinplaceとspongeも内容の書込先として扱う。touch・ln・mkdir・truncateは本文の編集とは限らず、
     書込先の指定にも別の解釈を要するため対象へ含めない。
     """
@@ -373,7 +383,7 @@ def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
 
     def append_paths(found: list[str], base: shell_cwd.CwdResolution) -> None:
         for raw in found:
-            value = _static_write_path(raw)
+            value = _static_write_path(raw, partial=partial)
             if value is None:
                 continue
             path = pathlib.Path(value).expanduser()
@@ -384,9 +394,12 @@ def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
             elif cwd is None and base.unresolved_expression is None:
                 paths.append(value)
 
-    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd or ""):
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd or "", effects=True):
         found = [target for target in invocation.static_outputs if isinstance(target, str)]
         tokens = invocation.static_tokens
+        if not invocation.execution_known or not tokens:
+            append_paths(found, current)
+            continue
         name = pathlib.PurePath(tokens[0]).name
         if name in {"tee", "sponge"}:
             found.extend(path for path in _stream_write_paths(tokens[1:]) if name != "tee" or path != "-")
@@ -426,6 +439,108 @@ def written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
     ]
 
 
+def _diagnostic_tokens(tokens: Sequence[str]) -> bool:
+    """既知の照会・結果回収・非修正検証だけを選び、任意のスクリプト実行へは広げない。"""
+    name, *arguments = tokens
+    name = pathlib.PurePath(name).name
+    if name == "git":
+        # -C以外の値付きglobal optionは実行設定を変更できるため、照会の免除へ含めない。
+        while arguments and arguments[0].startswith("-"):
+            option = arguments.pop(0)
+            if option == "-C" and arguments:
+                arguments.pop(0)
+            elif option != "--no-pager":
+                return False
+        return (
+            bool(arguments)
+            and arguments[0] in {"diff", "status", "log", "show", "ls-files", "rev-parse", "merge-base"}
+            and not any(option.split("=", 1)[0] in {"--ext-diff", "--textconv"} for option in arguments[1:])
+        )
+    if name in {"cat", "head", "tail", "wc", "stat", "cmp", "diff", "jq", "grep", "egrep", "fgrep"}:
+        return True
+    if name == "rg":
+        return not any(option.split("=", 1)[0] == "--pre" for option in arguments)
+    if name == "sed":
+        return sed_read_range(tuple(tokens)) is not None
+    if name in {"pytest", "py.test", "mypy", "pyright"}:
+        return not any(option.split("=", 1)[0] in {"--install-types", "--createstub"} for option in arguments)
+    if name == "ty":
+        return arguments[:1] == ["check"]
+    if name == "ruff":
+        return (
+            arguments[:1] == ["check"]
+            and "--no-fix" in arguments
+            and not {"--fix", "--fix-only"}.intersection(arguments)
+            or arguments[:1] == ["format"]
+            and bool({"--check", "--diff"}.intersection(arguments))
+        )
+    if name == "pyfltr" and arguments:
+        if arguments[0] in {"show-run", "list-runs"}:
+            return True
+        # no-fixでもformatter段は書き換えるため、非修正checkerへの明示限定を必要とする。
+        commands = [
+            arguments[index + 1] if option == "--commands" and index + 1 < len(arguments) else option.partition("=")[2]
+            for index, option in enumerate(arguments)
+            if option.partition("=")[0] == "--commands"
+        ]
+        return (
+            arguments[0] == "run"
+            and "--no-fix" in arguments
+            and len(commands) == 1
+            and bool(commands[0])
+            and set(commands[0].split(","))
+            <= {"pytest", "mypy", "pyright", "ty", "pylint", "ruff-check", "arid", "colloquial-check"}
+        )
+    return False
+
+
+def is_diagnostic_operation(tool_name: str, tool_input: dict, cwd: str) -> bool:
+    """診断・結果回収だけから成る静的なBash入力を判定する。保存・追記先の新旧や配置は問わない。
+
+    書込先の検出は維持する。本判定は資料未取得による限定遮断の免除だけに使い、
+    本文編集・未知の実行位置・動的展開・自動修正の混在では保護を維持する。
+    """
+    command = tool_input.get("command")
+    if tool_name != "Bash" or not isinstance(command, str) or any(char in command for char in ("$", "`")):
+        return False
+    # 関数定義やグループで隠した実行、heredocの本文を診断コマンドと推定しない。
+    lexer = shlex.shlex(command, posix=False, punctuation_chars="(){}<>")
+    lexer.whitespace_split = True
+    try:
+        if any(
+            token in {"(", ")", "()", "{", "}", "<<", "<<<", "<>"} or _shell_segments.ENV_ASSIGN_PATTERN.match(token)
+            for token in lexer
+        ):
+            return False
+    except ValueError:
+        return False
+    segments = _shell_segments.extract_execution_pipelines(command, expand_shell=False)
+    if not segments or any(not segment.resolved for pipeline in segments for segment in pipeline):
+        return False
+    invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
+    if not invocations or any(
+        not invocation.arguments_known
+        or invocation.captured
+        or invocation.inline_input
+        or not current.resolved
+        or any(STATIC_UNKNOWN in target for target in invocation.static_outputs if isinstance(target, str))
+        for invocation, current in invocations
+    ):
+        return False
+    diagnostic = False
+    for index, (invocation, _current) in enumerate(invocations):
+        tokens = invocation.segment.tokens
+        name = pathlib.PurePath(tokens[0]).name
+        if name == "cd" and not invocation.output_redirected:
+            continue
+        if name == "tee" and index and invocations[index - 1][0].output_pipe:
+            continue
+        if not _diagnostic_tokens(tokens):
+            return False
+        diagnostic = True
+    return diagnostic
+
+
 def is_existing_file_edit(tool_name: str, tool_input: dict, cwd: str) -> bool:
     """新規の全文作成と、現行本文を前提とする編集・上書きを区別する。"""
     operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
@@ -451,7 +566,7 @@ def _is_agent_document_writing(tool_name: str, tool_input: dict, cwd: str = "") 
     if tool_name == "Bash":
         command = tool_input.get("command")
         return isinstance(command, str) and any(
-            is_agent_doc_target_file(path) for path in _bash_write_paths(command, cwd or None)
+            is_agent_doc_target_file(path) for path in _bash_write_paths(command, cwd or None, partial=True)
         )
     operations = _tool_input.parse_operations(tool_name, tool_input, cwd)
     return operations is not None and any(
@@ -509,7 +624,7 @@ def _bash_body_writing(command: str, cwd: str = "") -> bool:
             if name == "tee":
                 outputs.extend(_stream_write_paths(tokens[1:]))
         for raw in outputs:
-            value = _static_write_path(raw)
+            value = _static_write_path(raw, partial=True)
             if value is None or value == "-":
                 continue
             path = pathlib.Path(value).expanduser()

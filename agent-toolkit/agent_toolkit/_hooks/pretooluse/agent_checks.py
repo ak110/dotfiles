@@ -1,4 +1,4 @@
-r"""PreToolUse統合フックのうち、TaskStop、agents_serverおよびplan-mode起動の可否を判定する。"""
+r"""PreToolUse統合フックのうち、TaskStop、agents_serverおよびwrite-plan起動の可否を判定する。"""
 
 from __future__ import annotations
 
@@ -48,9 +48,9 @@ AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 
 # --- 計画単位の状態管理 ---
 
-# `Skill`の`skill`引数として許容するplan-modeスキル名。
+# `Skill`の`skill`引数として許容するwrite-planスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
-_PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
+_PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:write-plan", "write-plan"})
 
 
 # --- TaskStop: 初回遮断と再実行窓 ---
@@ -101,7 +101,7 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
 
 
 def _clear_current_plan_file_path(session_id: str) -> None:
-    """plan-mode起動時に前の計画ファイルのパスを消去する。
+    """write-plan起動時に前の計画ファイルのパスを消去する。
 
     Function hooksが同じキーから名前を選択するため、
     新しい計画を始めた後に前の計画名を出力し続けないようにする。
@@ -171,6 +171,9 @@ def _check_agents_server_continuation_target(session_id: str, tool_input: dict, 
             block=_block_notice(
                 f"blocked: {display_name}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。",
                 fix=(
+                    "自身が起動した対象は、同じ`session_id`を指定して`agents_server`の`show`で照会せよ。"
+                    "永続登録の起動元と呼出主体が一致し、応答の識別子と絶対`cwd`を確認できた場合は記録を回復するため、"
+                    "元の操作を再発行せよ。所有を確認できない場合は遮断を維持する。"
                     "対象が自身の起動した対象でない場合は、その対象を起動した委譲先へ`send_message`で追送し、"
                     "その委譲先に対象を打ち切らせよ。"
                     "自身が所有する作業を続ける場合は、絶対`cwd`を指定した`agents_server`の`start`で新しいセッションを開始せよ。"

@@ -9,13 +9,16 @@ import os
 import pathlib
 import subprocess
 import uuid
+from collections.abc import Mapping
 
 import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_MARKER
-from agent_toolkit._hooks import progress_self_check
+from agent_toolkit._hooks import notice as notice_module
+from agent_toolkit._hooks import posttooluse, progress_self_check
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _INTERVAL = progress_self_check.SELF_CHECK_INTERVAL_SECONDS
@@ -55,11 +58,72 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
 
     notice = progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL)
     assert notice is not None and notice.startswith(_OPENING)
-    assert _entries(sid)["main"] == {"started_at": 1000.0, "last_notified_at": 1000.0 + _INTERVAL}
+    # 生成しただけでは期日を消費せず、最終出力へ採用された時点で確定する。
+    assert _entries(sid)["main"]["last_notified_at"] == 1000.0
+    notice_module.record_delivery(notice)
+    progress_self_check.release_reservations()
 
     # 通知した直後は次の間隔が経過するまで再び通知しない。
     assert progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL + 60) is None
+    assert _entries(sid)["main"]["last_notified_at"] == 1000.0 + _INTERVAL
     assert progress_self_check.claim_notice(payload, now=1000.0 + 2 * _INTERVAL) is not None
+    progress_self_check.release_reservations()
+
+
+def test_undelivered_notice_keeps_the_due_time_for_the_next_call() -> None:
+    """未採用の通知は期日を消費せず、予約の解除後の次の呼出しで通知する。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=1000.0, last_notified_at=1000.0)
+    payload = {"session_id": sid}
+    assert progress_self_check.claim_notice(payload, now=2800.0) is not None
+    progress_self_check.release_reservations()
+    assert _entries(sid)["main"]["last_notified_at"] == 1000.0
+    retry = progress_self_check.claim_notice(payload, now=2801.0)
+    assert retry is not None
+    notice_module.record_delivery(retry)
+    progress_self_check.release_reservations()
+    assert progress_self_check.claim_notice(payload, now=2802.0) is None
+
+
+def test_parallel_claim_of_the_same_subject_is_suppressed() -> None:
+    """予約中の同じ主体は重ねて通知せず、別主体は独立して通知する。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
+    _seed(sid, "sub-1", started_at=0.0, last_notified_at=0.0)
+    first = progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL))
+    assert first is not None
+    assert progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL) + 1) is None
+    assert progress_self_check.claim_notice({"session_id": sid, "agent_id": "sub-1"}, now=float(_INTERVAL) + 1) is not None
+    # 予約は失効時間を過ぎれば外れ、配送されなかった期日を後続の呼出しが引き継ぐ。
+    later = float(_INTERVAL) + progress_self_check.RESERVATION_SECONDS + 1
+    assert progress_self_check.claim_notice({"session_id": sid}, now=later) is not None
+    progress_self_check.release_reservations()
+
+
+def test_older_delivery_receipt_does_not_rewind_the_confirmed_time() -> None:
+    """古い試行の採用記録が後から届いても、新しい確定時刻を巻き戻さない。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
+    old = progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL))
+    progress_self_check.release_reservations()
+    new = progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL) + 10)
+    assert old is not None and new is not None
+    notice_module.record_delivery(new)
+    notice_module.restore_delivery_receipts(
+        [
+            {
+                "text": old,
+                "session_id": sid,
+                "field": progress_self_check.DELIVERED_KEY,
+                "key": "main",
+                "value": repr(float(_INTERVAL)),
+            }
+        ]
+    )
+    notice_module.record_delivery(old)
+    progress_self_check.release_reservations()
+    assert progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL) + 20) is None
+    assert _entries(sid)["main"]["last_notified_at"] == float(_INTERVAL) + 10
 
 
 @pytest.mark.parametrize(
@@ -83,6 +147,29 @@ def test_agents_in_same_session_have_independent_timers() -> None:
     assert progress_self_check.claim_notice({"session_id": sid, "agent_id": "sub-1"}, now=now) is None
     assert progress_self_check.claim_notice({"session_id": sid}, now=now) is not None
     assert _entries(sid)["sub-1"] == {"started_at": now, "last_notified_at": now}
+
+
+def test_notice_requests_stage_comparison_and_missing_information() -> None:
+    """通知を受けた担当が活動だけで判断せず、工程比較と不足情報の取得へ進める。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL))
+    assert notice is not None
+    for instruction in (
+        "現在の工程と開始時点を手元の記録で確かめ",
+        "経過時間を目標や同種処理の実績と比較せよ",
+        "工程開始時点や比較基準が不足するなら、記録や担当者への照会で取得せよ",
+        "前回以降の工程の変化と再試行",
+        "`HEAD`や最終活動時刻の変化だけで妥当と判断するな",
+        "活動の有無と工程の所要・反復の妥当性を分けて点検せよ",
+        "時間を理由に作業を止めたり品質の確認を省いたりするな",
+        "問題の有無にかかわらず、何をどう点検したかと結果を既存の報告契約に従って報告せよ",
+        "経過時間と目標に対する進み具合、余計な作業の有無、当初目的との一致を含めよ",
+        "いま取り組んでいる作業がどの完成条件に必要かを1行で示せ",
+        "どれにも必要でない対処は記録して委譲元（委譲元が無ければユーザー）へ返し、本筋へ戻れ",
+        "各完成条件の前提が満たされていない状態で完了を返すな",
+    ):
+        assert instruction in notice
 
 
 @pytest.mark.parametrize("payload", [{}, {"session_id": ""}, {"session_id": 1}])
@@ -141,33 +228,83 @@ def test_hooks_attach_notice_only_after_interval(subcommand: str, payload: dict)
     _seed(sid, "main", started_at=started_at - 2 * _INTERVAL, last_notified_at=started_at - _INTERVAL)
     second = _additional_context(_run_hook(subcommand, {**payload, "session_id": sid}))
     assert second.count(_OPENING) == 1
-    assert _entries(sid)["main"]["last_notified_at"] >= started_at
 
     third = _additional_context(_run_hook(subcommand, {**payload, "session_id": sid}))
     assert _OPENING not in third
+    assert _entries(sid)["main"]["last_notified_at"] >= started_at
 
 
-def test_postpone_moves_next_check_without_notice() -> None:
-    """実ユーザーの発話は次の点検の起点を進め、経過時間の起点は変えない。"""
+def _in_process(subcommand: str, payload: dict) -> str:
+    result = _run_hook_in_process(subcommand, payload)
+    assert result.returncode == 0, result.stderr
+    if not result.stdout:
+        return ""
+    return json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
+
+
+def test_mixed_event_sequence_keeps_the_period_across_cycles(monkeypatch: pytest.MonkeyPatch) -> None:
+    """実発話・機械注入・PostToolUseが30分未満の間隔で続いても、期日到達後の最初のイベントで周期どおり通知する。"""
     sid = _session_id()
-    payload = {"session_id": sid}
-    progress_self_check.postpone(payload, now=1000.0)
-    assert _entries(sid)["main"] == {"started_at": 1000.0, "last_notified_at": 1000.0}
+    clock = {"now": 10_000.0}
+    monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
+    monkeypatch.setattr(
+        "agent_toolkit._hooks.user_prompt_submit._claim_user_confirmation_notice", lambda *_args, **_kwargs: False
+    )
+    events: list[tuple[str, Mapping[str, object]]] = [
+        ("user_prompt_submit", {"hook_event_name": "UserPromptSubmit", "prompt": "進めて"}),
+        ("posttooluse", _POSTTOOLUSE_PAYLOAD),
+        (
+            "user_prompt_submit",
+            {"hook_event_name": "UserPromptSubmit", "prompt": f"{PERIODIC_RECHECK_MARKER}\n確認する。\n</atk-auto>"},
+        ),
+    ]
+    notified: list[float] = []
+    step = 0
+    while clock["now"] <= 10_000.0 + 3 * _INTERVAL + 600:
+        subcommand, payload = events[step % len(events)]
+        if _OPENING in _in_process(subcommand, {**payload, "session_id": sid}):
+            notified.append(clock["now"])
+        step += 1
+        clock["now"] += 10 * 60
+    # 初回観測は通知せず、1800秒以上たった最初のイベントごとに1回だけ通知し、期日の延期は起きない。
+    assert notified == [10_000.0 + 1800.0, 10_000.0 + 3600.0, 10_000.0 + 5400.0]
 
-    later = 1000.0 + 26 * 3600
-    progress_self_check.postpone(payload, now=later)
-    assert _entries(sid)["main"] == {"started_at": 1000.0, "last_notified_at": later}
-    assert progress_self_check.claim_notice(payload, now=later + _INTERVAL - 1) is None
-    notice = progress_self_check.claim_notice(payload, now=later + _INTERVAL)
-    assert notice is not None and "セッション開始から26時間30分たった。" in notice
 
-
-def test_real_user_prompt_postpones_instead_of_notifying() -> None:
-    """長く操作が無かった後の実ユーザー発話では通知せず、次の点検をその時点から数える。"""
+def test_format_failure_after_claim_does_not_consume_the_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開PostToolUseで通知の整形が失敗しても予約が残らず、直後の正常な呼出しで通知が採用される。"""
     sid = _session_id()
-    _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
-    payload = {"hook_event_name": "UserPromptSubmit", "prompt": "続けて", "session_id": sid}
-    context = _additional_context(_run_hook("user_prompt_submit", payload))
-    assert _OPENING not in context
-    entry = _entries(sid)["main"]
-    assert entry["started_at"] == 0.0 and entry["last_notified_at"] > 0.0
+    _seed(sid, "main", started_at=1000.0, last_notified_at=1000.0)
+    clock = {"now": 2800.0}
+    monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
+
+    def broken(*_args, **_kwargs) -> str:
+        raise ValueError("通知の整形に失敗した")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(progress_self_check, "_llm_notice", broken)
+        failed = _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+    assert _OPENING not in failed
+    assert "reserved_at" not in _entries(sid)["main"]
+    clock["now"] = 2801.0
+    assert _OPENING in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+
+
+def test_output_failure_after_claim_does_not_consume_the_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開PostToolUseで通知の生成後に出力が失敗しても、障害を外した直後の再試行で通知が採用される。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=1000.0, last_notified_at=1000.0)
+    clock = {"now": 2800.0}
+    monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
+
+    def broken(_response: dict) -> None:
+        raise OSError("応答の書き出しに失敗した")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(posttooluse, "emit_response", broken)
+        failed = _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+    assert _OPENING not in failed
+    assert _entries(sid)["main"]["last_notified_at"] == 1000.0
+    clock["now"] = 2801.0
+    assert _OPENING in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+    clock["now"] = 2802.0
+    assert _OPENING not in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})

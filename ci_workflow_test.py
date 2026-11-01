@@ -260,27 +260,127 @@ def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[s
 
 
 def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str, object]) -> None:
-    """Python 3.15のlintとpytestを別のmatrix要素に分け、3.15以外の版を持たない。"""
+    """Python 3.15のlint・直下pytest・3分割したtoolkit pytestを独立runnerへ分ける。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
     strategy = workflow_mapping(job["strategy"])
     matrix = workflow_mapping(strategy["matrix"])
     include = [workflow_mapping(value) for value in typing.cast(list[object], matrix["include"])]
     assert include == [
         {"python-version": "3.15", "check": "lint", "check-name": "python-lint (3.15)"},
-        {"python-version": "3.15", "check": "pytest", "check-name": "pytest (3.15)"},
+        {"python-version": "3.15", "check": "pytest-root", "check-name": "pytest (3.15)"},
+        *(
+            {
+                "python-version": "3.15",
+                "check": "pytest-toolkit",
+                "shard": f"{index}/3",
+                "check-name": f"pytest-toolkit (3.15, {index}/3)",
+            }
+            for index in range(1, 4)
+        ),
     ]
     steps = workflow_steps(job)
     lint = next(step for step in steps if step.get("name") == "Python 3.15 pytest以外の検査")
-    pytest_step = next(step for step in steps if step.get("name") == "Python 3.15 pytest")
+    root = next(step for step in steps if step.get("name") == "Python 3.15 pytest 直下")
+    toolkit = next(step for step in steps if step.get("name") == "Python 3.15 pytest toolkit")
     assert (
         lint["run"]
         == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types"
     )
-    assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"
+    root_script = str(root["run"])
+    assert "git ls-files -z -- '*_test.py' 'test_*.py'" in root_script
+    assert "':!:agent-toolkit/**' ':!:agent-toolkit-codex/**'" in root_script
+    assert "mapfile -d '' -t targets < \"$RUNNER_TEMP/pytest-root-targets\"" in root_script
+    assert 'test "${#targets[@]}" -gt 0' in root_script
+    assert root_script.splitlines()[-1] == 'uv run --frozen pytest -v --maxfail=0 "${targets[@]}"'
+    assert toolkit["run"] == (
+        "pyfltr ci --work-dir agent-toolkit --commands=pytest"
+        ' --pytest-args="-v --maxfail=0 --test-shard=$TEST_SHARD" agent-toolkit'
+    )
+    assert workflow_mapping(toolkit["env"])["TEST_SHARD"] == "${{ matrix.shard }}"
+    for check, step in (("pytest-root", root), ("pytest-toolkit", toolkit)):
+        assert str(step["if"]).endswith(f"matrix.check == '{check}'")
     cache = next(step for step in steps if str(step.get("uses", "")).startswith("actions/cache@"))
     cache_with = workflow_mapping(cache["with"])
     assert "${{ matrix.python-version }}" in str(cache_with["key"])
     assert "${{ matrix.check }}" in str(cache_with["key"])
+    # 同じcheckの分割jobが同じキーへ保存を競合しない。
+    assert "${{ strategy.job-index }}" in str(cache_with["key"])
+    assert "${{ strategy.job-index }}" in str(cache_with["restore-keys"])
+
+
+class _JobsResponse(io.BytesIO):
+    headers: typing.ClassVar[dict[str, str]] = {}
+
+
+@pytest.mark.parametrize(
+    ("owns", "conclusions", "expected_exit"),
+    [
+        ("true", ["success", "success", "success"], 0),
+        ("true", ["success", "failure", "success"], 1),
+        ("true", ["success", "success"], 1),
+        ("true", ["success", "skipped", "success"], 1),
+        ("false", [], 0),
+        ("", ["success", "success", "success"], 1),
+    ],
+)
+def test_pytest_toolkit_result_requires_every_shard(
+    workflow_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    owns: str,
+    conclusions: list[str],
+    expected_exit: int,
+) -> None:
+    """必須checkの集約jobは、全分割jobの成功を最新試行のjob一覧から確かめた場合だけ成功する。
+
+    応答fieldはGitHub REST list-jobs-for-a-workflow-runの公開schemaに従う。
+    """
+    jobs = workflow_jobs(workflow_data)
+    job = workflow_mapping(jobs["pytest-toolkit-result"])
+    assert job["needs"] == ["common-ci-owner", "python-lint"]
+    assert job["if"] == "${{ !cancelled() }}"
+    assert job["permissions"] == {"actions": "read"}
+    assert job["name"] == (
+        "${{ needs.common-ci-owner.outputs.owns == 'false' && 'pytest-toolkit (3.15) (non-owner)' || 'pytest-toolkit (3.15)' }}"
+    )
+    (step,) = workflow_steps(job)
+    environment = workflow_mapping(step["env"])
+    matrix = workflow_mapping(workflow_mapping(workflow_mapping(jobs["python-lint"])["strategy"])["matrix"])
+    shard_names = [
+        str(workflow_mapping(entry)["check-name"])
+        for entry in typing.cast(list[object], matrix["include"])
+        if workflow_mapping(entry)["check"] == "pytest-toolkit"
+    ]
+    assert len(shard_names) == int(str(environment["SHARD_COUNT"]))
+    script = str(step["run"])
+    script_path = tmp_path / "result.py"
+    script_path.write_text(script.split("\n", 1)[1].rsplit("\nPY", 1)[0], encoding="utf-8")
+    for key, value in {
+        "OWNS": owns,
+        "OWNER_REASON": "非所有の理由",
+        "SHARD_COUNT": str(environment["SHARD_COUNT"]),
+        "GITHUB_API_URL": "https://api.github.com",
+        "GITHUB_REPOSITORY": "ak110/dotfiles",
+        "GITHUB_RUN_ID": "123",
+        "GH_TOKEN": "test-token",
+    }.items():
+        monkeypatch.setenv(key, value)
+
+    def urlopen(request: urllib.request.Request, **_kwargs: object) -> io.BytesIO:
+        parsed = urllib.parse.urlsplit(request.full_url)
+        assert parsed.path == "/repos/ak110/dotfiles/actions/runs/123/jobs"
+        assert urllib.parse.parse_qs(parsed.query) == {"filter": ["latest"], "per_page": ["100"]}
+        listed = [{"name": "python-lint (3.15)", "conclusion": "success"}]
+        listed += [{"name": name, "conclusion": conclusion} for name, conclusion in zip(shard_names, conclusions, strict=False)]
+        return _JobsResponse(json.dumps({"total_count": len(listed), "jobs": listed}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    try:
+        runpy.run_path(str(script_path))
+        code: object = 0
+    except SystemExit as exited:
+        code = exited.code
+    assert code == expected_exit
 
 
 _RELEASE_PULL_REQUEST_CONDITIONS = (
@@ -298,16 +398,19 @@ def _common_job_names(workflow: dict[str, object]) -> list[str]:
 
 
 def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> None:
-    """共通7表示名と全実処理が先行jobの所有出力を参照する。"""
+    """共通jobの全実処理が先行jobの所有出力を参照する。"""
     common_jobs = _common_job_names(workflow_data)
     assert common_jobs == [
         "test-linux",
         "update-dotfiles-upgrade-windows",
         "test-windows",
         "python-lint",
+        "pytest-toolkit-result",
         "browser-e2e",
         "rust-lint",
     ]
+    # 集約jobは分割jobの終了を待つ別構成のため、test_pytest_toolkit_result_requires_every_shardで確かめる。
+    common_jobs.remove("pytest-toolkit-result")
     owner = workflow_mapping(workflow_jobs(workflow_data)["common-ci-owner"])
     assert owner["permissions"] == {"actions": "read"}
     outputs = workflow_mapping(owner["outputs"])
@@ -616,18 +719,21 @@ def test_update_checks_container_dependencies_after_lock_updates() -> None:
     assert check < commands.index("\t$(MAKE) test")
 
 
-def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]) -> None:
-    """pytestのmatrix要素が、READMEの対応版のGitを通常pytestへ渡して1回だけ実行する。"""
+@pytest.mark.parametrize("scope", ["直下", "toolkit"])
+def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object], scope: str) -> None:
+    """両pytest要素が、READMEの対応版のGitを通常pytestへ渡して各1回実行する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
     steps = workflow_steps(job)
     names = [step.get("name") for step in steps]
-    pytest_index = names.index("Python 3.15 pytest")
+    pytest_name = f"Python 3.15 pytest {scope}"
+    pytest_index = names.index(pytest_name)
     install_index = names.index("Git 2.34.1の導入")
     assert install_index < pytest_index
-    assert names.count("Python 3.15 pytest") == 1
+    assert names.count(pytest_name) == 1
     assert "Git 2.34.1での実Gitテスト" not in names
     install, pytest_step = steps[install_index], steps[pytest_index]
-    assert install["if"] == pytest_step["if"]
+    assert str(install["if"]).endswith("matrix.check != 'lint'")
+    assert str(pytest_step["if"]).startswith(_OWNS)
 
     package = str(workflow_mapping(install["env"])["GIT_DEB"])
     match = re.fullmatch(r"git_(\d+\.\d+\.\d+)-[0-9A-Za-z.]+_amd64\.deb", package)
@@ -640,7 +746,7 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
 
     environment = workflow_mapping(pytest_step["env"])
     assert environment["AGENT_TOOLKIT_TEST_GIT"] == f"${{{{ steps.{install['id']}.outputs.git }}}}"
-    assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"
+    assert "--maxfail=0" in str(pytest_step["run"])
 
 
 def test_linux_job_places_temporary_files_on_runner_disk(workflow_data: dict[str, object]) -> None:

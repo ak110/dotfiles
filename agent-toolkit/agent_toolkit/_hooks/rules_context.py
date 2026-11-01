@@ -27,6 +27,7 @@ lazy from typing import Any
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import message_format, plugin_environment, read_triggers
 from agent_toolkit._hooks import plugin_resources
+from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree
 lazy from agent_toolkit._common.delegated_session import is_delegated
@@ -52,6 +53,10 @@ MAIN_RULES_CODEX_PATH = SHARE_DIR / "rules-main.codex.md"
 SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
 SUBAGENT_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-subagent.claude-code.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
+# 圧縮後に作業契約の後へ続く通知（原文の抽出先、資料の再取得案内）へ残す文字数。
+_COMPACTION_RESERVE = 1_500
+# 作業契約の通知の囲みと固定文の文字数の見込み。本文を載せるかの判定に使う。
+_CONTRACT_NOTICE_OVERHEAD = 600
 # `atk wi process-loop instruct`が保持し、process-loopがセッション起動時に渡す本文。
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 PROCESS_LOOP_INSTRUCTION_ELEMENT = message_format.FORWARDED_USER_INPUT_ELEMENT
@@ -222,7 +227,15 @@ def acquisition_failure(target: read_triggers.ReadTarget, error: Exception, *, s
     if shell:
         return prefix + f"全文を`cat -- {shlex.quote(str(path))}`で読め"
     skill = document_reads.skill_document(str(path))
-    if skill and skill[1] == "SKILL.md":
+    if (
+        skill
+        and skill[1] == "SKILL.md"
+        and (
+            agent
+            and document_reads.skill_loadable(path)
+            or document_reads.requires_skill_invocation(path, host="claude", subject="main")
+        )
+    ):
         owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
         name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
         step = f"`Skill`で`{name}`を起動せよ（資料: `{path}`）"
@@ -245,7 +258,8 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
             if heading:
                 target.body()
             skill = document_reads.skill_document(str(path))
-            if host not in {"codex", "agy"} and skill and skill[1] == "SKILL.md":
+            # 作業ツリー内の写しは`Skill`起動では読み込まれないため、通常の読取手段を案内する。
+            if skill and skill[1] == "SKILL.md" and document_reads.requires_skill_invocation(path, host=host, subject="main"):
                 owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
                 name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
                 steps.append(f"`Skill`で`{name}`を起動せよ（資料: `{path}`）")
@@ -312,9 +326,8 @@ def session_temp_notice(session_temp: pathlib.Path | str) -> str:
     return (
         f"このセッションのmanaged-temp: {session_temp}\n"
         "一時ファイルはこの領域の直下へ置け。`/tmp`は使うな。"
-        "委譲時は、委譲先自身のmanaged-tempまたは専用一時領域の通知があればそちらの直下、"
+        "委譲時は、委譲先が受信した自身のmanaged-tempか専用一時領域の通知を優先し、"
         "通知が無い場合だけこの絶対パスの直下へ置くよう伝えよ。"
-        "通知の有無が親から分からない場合は、委譲先が受信した通知から選ぶ条件付きの案内にせよ。"
         "入力や出力の個別ファイルを指定した場合は、そのファイルの読み書きを行ってよい。"
     )
 
@@ -374,10 +387,15 @@ def _existing_session_temp(session_id: object) -> str | None:
     return str(path) if path is not None else None
 
 
-def _compaction_notice(session_id: str, transcript_path: object, session_temp: pathlib.Path | None, *, delegated: bool) -> str:
+def _compaction_notice(
+    session_id: str, transcript_path: object, session_temp: pathlib.Path | None, *, delegated: bool
+) -> str | None:
     """既存の証拠抽出CLIで全人間入力を保存し、会話の流れの取得先も通知する。"""
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
+        if not delegated:
+            # 同じSessionStartの会話識別の通知が記録の解決手順を示すため、同じ案内を重ねずに上限内の余白を残す。
+            return None
         return "圧縮後の原文を抽出できない。特定済みIDをsession-review-evidenceの--claude-session-idへ渡して記録を解決せよ。"
     command = [
         str(SHARE_DIR.parent / "scripts" / "atk"),
@@ -410,7 +428,7 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         result = process_tree.run_with_timeout(
             [
                 sys.executable,
-                str(SHARE_DIR.parent / "skills/session-review/scripts/session_review_evidence.py"),
+                str(SHARE_DIR.parent / "skills/review-session/scripts/session_review_evidence.py"),
                 "--transcript",
                 resolved,
                 "--user-events",
@@ -490,13 +508,16 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
         delegated = is_delegated(os.environ)
+        session_id = payload.get("session_id")
+        if source in _CONTEXT_LOSING_SOURCES and isinstance(session_id, str) and session_id:
+            # 同じセッションIDでも受信文脈は失われているため、既送の通知を本文の構成前に未送へ戻す。
+            forget_subject_notices(session_id, MAIN_AGENT_ID)
         content = compose_session_start(source, delegated=delegated, host=host)
         from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         review_notice = run_skill_batch.hook_request(payload, host=host) if host in {"claude", "codex"} else None
         if review_notice is not None:
             content = f"{content}\n\n{_llm_notice(review_notice)}" if content else _llm_notice(review_notice)
-        session_id = payload.get("session_id")
         if not delegated and host == "claude":
             identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))
             content = f"{content}\n\n{identity_context}" if content else identity_context
@@ -524,17 +545,29 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             except managed_temp.ManagedTempError, OSError:
                 pass
             else:
-                temp_context = _llm_notice(session_temp_notice(session_temp))
+                temp_text = session_temp_notice(session_temp)
+                contract_context = None
+                if source == "compact" and not delegated and work_contract.exists(session_id):
+                    # 圧縮後の通知と資料の再取得案内にも上限内の余白を残す。契約の本文と案内が収まらなければ、
+                    # 一時領域の通知へ契約の所在の1行だけを加え、最終出力全体を上限へ収める。
+                    used = len(content or "") + len(_llm_notice(temp_text)) + 4
+                    budget = CLAUDE_CODE_OUTPUT_LIMIT - used - _COMPACTION_RESERVE
+                    contract_notice = work_contract.notice(
+                        session_id, budget=max(0, min(work_contract.NOTICE_BODY_LIMIT, budget - _CONTRACT_NOTICE_OVERHEAD))
+                    )
+                    if contract_notice is not None and len(contract_notice) + _CONTRACT_NOTICE_OVERHEAD <= budget:
+                        contract_context = _llm_notice(contract_notice)
+                    else:
+                        temp_text += "\n" + work_contract.SHORT_NOTICE
+                temp_context = _llm_notice(temp_text)
                 content = f"{content}\n\n{temp_context}" if content else temp_context
-                if source == "compact" and not delegated:
-                    contract_notice = work_contract.notice(session_id)
-                    if contract_notice is not None:
-                        content += f"\n\n{_llm_notice(contract_notice)}"
+                if contract_context:
+                    content += f"\n\n{contract_context}"
             if source == "compact" and host == "claude":
-                compact = _llm_notice(
-                    _compaction_notice(session_id, payload.get("transcript_path"), session_temp, delegated=delegated)
-                )
-                content = f"{content}\n\n{compact}" if content else compact
+                compact_text = _compaction_notice(session_id, payload.get("transcript_path"), session_temp, delegated=delegated)
+                if compact_text:
+                    compact = _llm_notice(compact_text)
+                    content = f"{content}\n\n{compact}" if content else compact
             if source == "compact":
                 # PreToolUseを経ない最初の判断にも、圧縮前の選択資料の取得を案内する。
                 recovery = _compact_recovery_context(

@@ -18,7 +18,7 @@ Python依存の同期では、Makefileから継承する`UV_FROZEN=1`を解除�
 適用内容だけを確認する場合は`mise bootstrap --dry-run`を使う。
 宣言済み状態との差分は`mise bootstrap status`で確認する。
 
-専用worktreeや回収予定の検証用複製の準備では、[dotfiles-development](../../.claude/skills/dotfiles-development/SKILL.md)の「開発手順」で、mise trustとローカル依存の同期を行う。
+専用worktreeや回収予定の検証用複製の準備では、[develop-dotfiles](../../.claude/skills/develop-dotfiles/SKILL.md)の「開発手順」で、mise trustとローカル依存の同期を行う。
 初期セットアップは共有CLI、Git hookとcommit templateも登録するため、一時作業場所の準備には使わない。
 共有CLIの導入元は、回収後も存続する恒久作業ツリーに保つ。
 
@@ -150,5 +150,5 @@ MCPクライアントは初期化応答を得られないまま接続断とな�
 
 ## リリース手順
 
-`develop`から`master`へのリリースPRの作成、マージおよびマージ後の同期と検収は、`dotfiles-release`スキル（`.claude/skills/dotfiles-release/SKILL.md`）が定める。
+`develop`から`master`へのリリースPRの作成、マージおよびマージ後の同期と検収は、`release-dotfiles`スキル（`.claude/skills/release-dotfiles/SKILL.md`）が定める。
 リリース運用の方針と経緯は[concepts-workflows.md](concepts-workflows.md)の「developとmasterのリリース運用」にある。

@@ -16,7 +16,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md#「命名の方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/defined-names.md#「命名の方針」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「作業完了報告のフォーマット」` |
 
 ## 確認対象
 
@@ -49,4 +49,4 @@ WI作成工程（`agent-toolkit:add-awi-by-user`などでAWIを登録する時�
 決定内容と最も有力な対案を記録する前に、`SKILL.md`「確認要否の判定」項目4の原文の目的・理由・程度との比較を適用する。
 ユーザー固有の判断が必要な事項が残っている場合は、質問ラウンドの終了や回答を前提とする後続工程へ進む前に、確認へ戻る。
 
-質問せずに自身で判断した事項のうち、別の合理的なエージェントであれば異なる判断をする可能性があるものについては、質問ラウンドの終了時にまとめて報告する。書式および自律モードでの記載方法は、`agent-toolkit:completion-report`の`references/report-formats.md`「作業完了報告のフォーマット」にある`### 自ら確定した判断`に従う。この報告は承認を求めるものではないため、報告後は呼び出し元の工程が定める次の作業へそのまま進む。
+質問せずに自身で判断した事項のうち、別の合理的なエージェントであれば異なる判断をする可能性があるものについては、質問ラウンドの終了時にまとめて報告する。書式および自律モードでの記載方法は、`agent-toolkit:report-completion`の`references/report-formats.md`「作業完了報告のフォーマット」にある`### 自ら確定した判断`に従う。この報告は承認を求めるものではないため、報告後は呼び出し元の工程が定める次の作業へそのまま進む。

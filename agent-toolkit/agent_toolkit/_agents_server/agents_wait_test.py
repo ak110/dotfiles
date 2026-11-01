@@ -1547,6 +1547,71 @@ def test_agents_wait_resolves_changed_conversation_session(
     assert not (results / "session-1.json").exists()
 
 
+_CODEX_ROOT = "mcp-0123456789abcdef0123456789abcdef"
+
+
+def _codex_top_level_state(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    """ownerを持たないCodex最上位の会話と、そのMCPが書いたプロセス専用ルート・別会話のルートを用意する。"""
+    for name in ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_DELEGATED_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CODEX_THREAD_ID", "codex-thread")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    for root_session_id, remote_session_id in ((_CODEX_ROOT, "codex-child"), ("claude-root", "claude-child")):
+        directory = shared_layout.status_directory(root_session_id, tmp_path)
+        directory.mkdir(parents=True)
+        (directory / "root.json").write_text(
+            json.dumps({"version": 1, "sessions": [{"session_id": remote_session_id, "status": "running"}]}),
+            encoding="utf-8",
+        )
+    shared_roots.write_root_alias("claude-session", "claude-root", tmp_path)
+    results = shared_layout.results_directory(_CODEX_ROOT, tmp_path)
+    results.mkdir(parents=True)
+    return results
+
+
+def test_codex_top_level_lists_and_waits_through_hook_alias(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """PostToolUseと同じ索引の書込を経て、引数なしの`list`と`wait`がCodex最上位の会話のsessionだけを扱う。
+
+    hookが索引を書く処理は`_hooks/agents_server_observations_test.py`がCodexの会話識別子で確かめる。
+    """
+    results = _codex_top_level_state(monkeypatch, tmp_path)
+    shared_roots.write_root_alias("codex-thread", _CODEX_ROOT, tmp_path)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "list"])
+    listed = json.loads(capsys.readouterr().out)
+    assert [session["session_id"] for session in listed["sessions"]] == ["codex-child"]
+
+    payload = {"session_id": "codex-child", "status": "completed"}
+    (results / "codex-child.json").write_text(json.dumps(payload), encoding="utf-8")
+    # エージェント環境の待機は本文を保存先へ書くため、結果のJSONを標準出力で比べる人間の実行形にする。
+    monkeypatch.delenv("AI_AGENT")
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+    assert json.loads(capsys.readouterr().out) == payload
+
+
+def test_codex_top_level_without_alias_guides_root_session_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """索引が無いCodex最上位の会話では、MCPの`list`応答の`root_session_id`を明示する回復操作を案内する。"""
+    _codex_top_level_state(monkeypatch, tmp_path)
+
+    with pytest.raises(SystemExit, match="4"):
+        atk.main(["agents", "wait"])
+
+    err = capsys.readouterr().err
+    assert "--root-session-id" in err
+    assert "MCPの`list`" in err
+
+
 def test_agents_wait_reports_absent_targets_as_failure(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1757,7 +1822,7 @@ def test_missing_state_dir_reports_alternative(
     assert not captured.out
     assert "状態ディレクトリを解決できません" in captured.err
     assert f"\n{NEXT_ACTION_PREFIX}" in captured.err
-    assert "`atk agents list`と`atk agents wait`" in captured.err
+    assert "`atk agents wait --root-session-id <値>`" in captured.err
 
 
 def test_agents_wait_returns_notices_while_running(

@@ -28,7 +28,7 @@ UWIの本文、キューへの投入、状態管理、依存関係の形式は`a
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「作業完了報告のフォーマット」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「作業完了報告のフォーマット」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「レビュー指摘の位置付け」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「レビュー指摘の位置付け」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
@@ -39,8 +39,8 @@ UWIの本文、キューへの投入、状態管理、依存関係の形式は`a
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
 | 状況照会で再検証の要否を判定する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/termination-evidence.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
@@ -87,7 +87,7 @@ UWIの本文、キューへの投入、状態管理、依存関係の形式は`a
    資料が足りないときは、必要な結果（検証結果や判断そのもの）と自分が選んだ資料や取得手段を区別する。確認済みのインターフェース契約、公式資料、再現テストなど別の妥当な手段で、必須の検証水準を保って同じ結果に届くなら技術判断として解決しステップ4で報告し、選んだ手段が使えないことだけを理由に資料を求めない。
 3. 調べ尽くしても解釈にユーザー固有の情報（選好、認可、外部の状態、達成に不可欠でユーザーからしか得られない資料）が足りない事項は、結果の差の大小や推奨案の有無にかかわらず全て確認し、推測で補わない。質問には回答で分かれる観測結果や操作、根拠、推奨案を書き、分岐を示せない問いや技術とQCDで決まる問いは自ら確定する。本質的な分岐点を残して周辺だけを尋ねる確認は、確認責任を果たしていない。
    時間や費用の許容範囲もユーザーが決める値で、見込みは実測や観測から出して各案の影響として示す。費用・時間・工数を理由に範囲表現や例示が指す対象を除外・任意扱いにするのは範囲の縮小であり、「原文からの具体化を要する軸」に従って事前に確認する。
-4. 案を自ら確定する直前と有力な対案を記録する前に、見送る案のほうが原文の目的や理由に合っていないか、要求の程度や確度を厳しくしていないかを`references/user-utterance.md`「原文の保持と取り込み」に照らして点検する。技術とQCDで解決できるなら自ら案を直し、ユーザー固有の判断が残ればステップ3へ戻って後続工程の前に確認する。原文の対象範囲をそのまま適用する判断や、確定した目的と認可の内側の技術手段は、確認にせず自ら決めて進める。別の合理的なエージェントなら違う判断をしうる事項は、`agent-toolkit:completion-report`の`references/report-formats.md`「作業完了報告のフォーマット」の`### 自ら確定した判断`へ1件1行で書く。自律モードでは同資料「報告用UWIのフォーマット」の同じ見出しへ書く。
+4. 案を自ら確定する直前と有力な対案を記録する前に、見送る案のほうが原文の目的や理由に合っていないか、要求の程度や確度を厳しくしていないかを`references/user-utterance.md`「原文の保持と取り込み」に照らして点検する。技術とQCDで解決できるなら自ら案を直し、ユーザー固有の判断が残ればステップ3へ戻って後続工程の前に確認する。原文の対象範囲をそのまま適用する判断や、確定した目的と認可の内側の技術手段は、確認にせず自ら決めて進める。別の合理的なエージェントなら違う判断をしうる事項は、`agent-toolkit:report-completion`の`references/report-formats.md`「作業完了報告のフォーマット」の`### 自ら確定した判断`へ1件1行で書く。自律モードでは同資料「報告用UWIのフォーマット」の同じ見出しへ書く。
 
 推論は確定した目的と認可の範囲内で最適な実装を選ぶために使い、明示された要件の上書き、合意のない目的側の変更、依頼にない挙動や機能の追加を推論だけで決めない。委譲先から戻った論点、委譲する技術的選択、工程やスキルが定める条件付きの確認事項にも同じ基準を適用し、手元の情報で決まる選択肢は委譲前に確定する。他の規範がいう「認識の違いによって要件や結果が変わりうる未確定事項」はステップ3の確認対象である。
 

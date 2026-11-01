@@ -102,8 +102,8 @@ def test_unknown_session_record_cwd_is_not_replaced():
     root.mkdir(parents=True)
     (root / "record.jsonl").write_text("{}\n", encoding="utf-8")
     notice = large_reads.session_record_reference_warning("Bash", {"command": "cat record.jsonl"}, str(root))
-    assert notice is not None and "`agent-toolkit:session-review`" in notice
-    source = pathlib.Path(__file__).resolve().parents[3] / "skills/session-review/references/session-records.md"
+    assert notice is not None and "`agent-toolkit:review-session`" in notice
+    source = pathlib.Path(__file__).resolve().parents[3] / "skills/review-session/references/session-records.md"
     assert source.is_file() and str(source) in notice
     assert large_reads.session_record_reference_warning("Bash", {"command": 'cd "$D" && cat record.jsonl'}, str(root)) is None
 
@@ -441,7 +441,7 @@ def test_large_original_record_is_guided_to_evidence_query(
     captured = capsys.readouterr()
     assert not captured.err
     assert "session-review-evidence" in captured.out
-    assert "`agent-toolkit:session-review`" in captured.out
+    assert "`agent-toolkit:review-session`" in captured.out
     assert "--transcript" in captured.out
     assert "sed -n '" not in captured.out
 
@@ -462,7 +462,7 @@ def test_large_read_notice_keeps_recovery_without_generic_fallback(tmp_path, mon
     assert "委譲元へ返し" not in notice
     if original:
         assert "session-review-evidence" in notice
-        assert "`agent-toolkit:session-review`" in notice
+        assert "`agent-toolkit:review-session`" in notice
         assert "--transcript" in notice
     else:
         assert "sed -n '" in notice and "末尾の" in notice
@@ -470,13 +470,45 @@ def test_large_read_notice_keeps_recovery_without_generic_fallback(tmp_path, mon
 
 @pytest.mark.parametrize("multiple", [False, True])
 def test_large_read_budget_guidance(tmp_path, multiple):
-    """日本語の実バイト合計に対応する内外予算と再取得手順を案内する。"""
+    """全量の見積りと1回の取得単位を分け、出力枠に収まる場合・超える場合・不明な場合の手順を矛盾なく案内する。
+
+    見積りを無条件の最低予算として要求すると、出力枠が見積りより小さい環境では案内どおりに取得できない。
+    """
     paths = [tmp_path / "first.md", *([tmp_path / "second.md"] if multiple else [])]
     for path in paths:
         path.write_text("本文\n" * 8000, encoding="utf-8")
     budget = (sum(path.stat().st_size for path in paths) + 2) // 3
     notice = _codex_read(shlex.join(["cat", "--", *map(str, paths)]), tmp_path)
     assert notice is not None
-    assert f"少なくとも{budget}" in notice
-    assert "外側セルのmax_output_tokensは内側コマンドの予算の合計以上" in notice
-    assert "original token count" in notice and "その数以上で1回再取得" in notice
+    assert f"全量の見積りは文章主体で約{budget}トークン" in notice
+    assert "少なくとも" not in notice
+    # 枠に収まる場合だけ1回で取得し、超える場合と不明な場合は最初から分割する。
+    assert "どちらも見積り以上と分かっている場合だけ" in notice
+    assert "外側セルを内側の合計以上" in notice
+    assert "枠が見積りより小さい場合と枠が不明な場合は、最初から" in notice
+    # 省略後の再取得も、枠に収まるときだけ同じ取得単位で行う。
+    assert "original token count" in notice and "枠に収まるときだけその数以上で1回再取得" in notice
+    assert "sed -n '" in notice
+
+
+def test_known_read_operand_is_kept_as_a_candidate_with_unknown_arguments(tmp_path):
+    """無関係な引数が未知でも、既知のファイル引数を読取候補に残し、全文取得の証明には使わない。"""
+    target = tmp_path / "input.md"
+    target.write_text("本文\n", encoding="utf-8")
+    command = f'cat -- {shlex.quote(str(target))} "$OTHER"'
+    assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
+    assert not list(bash_read_paths(command, str(tmp_path)))
+
+
+def test_static_session_record_with_unknown_search_term_keeps_the_reference_guidance(tmp_path):
+    """検索語が未知でも、静的な原記録の入力先には参照案内を届ける。"""
+    root = pathlib.Path.home() / ".claude/projects/project"
+    root.mkdir(parents=True)
+    record = root / "record.jsonl"
+    record.write_text("{}\n", encoding="utf-8")
+    notice = large_reads.session_record_reference_warning(
+        "Bash", {"command": f'rg -e "$PATTERN" -- {shlex.quote(str(record))}'}, str(tmp_path)
+    )
+    assert notice is not None and str(record) in notice
+    # 入力先そのものが未知なら、cwdを入力先と推定しない。
+    assert large_reads.session_record_reference_warning("Bash", {"command": 'rg needle "$DIR"'}, str(root)) is None

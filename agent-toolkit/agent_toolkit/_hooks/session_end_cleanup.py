@@ -21,9 +21,9 @@ SessionStartが作成するセッションのmanaged-tempも、同じ理由でSe
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-import sys
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._agents_server import shared_roots, shared_sweep
@@ -58,20 +58,13 @@ def main(payload_text: str) -> int:
         if session_id is not None
         else None
     )
-    try:
+    # SessionEndはモデルへの配送先を持たない。次回の期限掃引で再試行する。
+    with contextlib.suppress(OSError):
         shared_sweep.sweep_stale_shared_state(keep_root_session_id=keep_root_session_id)
-    except OSError as error:
-        print(f"[session_end_cleanup] agents_server共有状態を期限掃引できませんでした: {error}", file=sys.stderr)
-    try:
+    with contextlib.suppress(OSError):
         sweep_function_hook_files(keep_session_id=session_id, clear=payload.get("reason") == _DISCARDED_REASON)
-    except OSError as error:
-        print(f"[session_end_cleanup] Function hooksの終了状態を回収できませんでした: {error}", file=sys.stderr)
     sweep_stale_states(keep_session_id=session_id)
     if payload.get("reason") != _DISCARDED_REASON or session_id is None:
         return 0
-    if not clear_session_state(session_id):
-        print(
-            f"[session_end_cleanup] セッション状態を削除できませんでした: session_id={session_id}",
-            file=sys.stderr,
-        )
+    clear_session_state(session_id)
     return 0

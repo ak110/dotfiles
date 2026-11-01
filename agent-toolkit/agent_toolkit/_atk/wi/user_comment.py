@@ -1,4 +1,4 @@
-"""session-review AWIのユーザーコメント節を抽出・更新する。"""
+"""`source: session-review`のAWIのユーザーコメント節を抽出・更新する。"""
 
 import re
 

@@ -225,7 +225,6 @@ process.stdout.write(JSON.stringify({
         "afterBaseline": 0,
         "notifications": [
             {"title": "新規未回答UWI", "body": "new.md"},
-            {"title": "新規要確認AWI", "body": "new-awi.md"},
         ],
         "known": [
             "answered.md",

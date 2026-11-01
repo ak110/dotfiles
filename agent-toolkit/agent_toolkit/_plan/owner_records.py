@@ -13,8 +13,6 @@ import pathlib
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 
-_OWNER_SESSION_ENVIRONMENT_KEYS = (_delegated_session.OWNER_SESSION_ENV, "CLAUDE_CODE_SESSION_ID")
-
 PROCESS_ROOT_SESSION_PREFIX = "mcp-"
 """`agents_server`が会話の識別子を受け取らずに生成するプロセス専用のrootの接頭辞。
 
@@ -33,23 +31,20 @@ def resolve_owner_session_id() -> str | None:
     """所有記録へ書くセッション識別子を環境から解決する。
 
     委譲先には委譲元が`AGENT_TOOLKIT_OWNER_SESSION`で自身の識別子を渡す。
-    この値が無い場合は、実行中のセッション自身を示す`CLAUDE_CODE_SESSION_ID`を用いる。
+    この値が無い場合は、実行中の会話自身の識別子（Claude Codeの`CLAUDE_CODE_SESSION_ID`、
+    Codexのシェルの`CODEX_THREAD_ID`）を用いる。
     Codex CLIが直接起動するMCPサーバーにはいずれの識別子も渡らないため、
     そのMCPサーバーが作成した計画バンドルは所有記録を持たない。
     いずれも非空の値を持たない場合は解決しない。
     """
-    for key in _OWNER_SESSION_ENVIRONMENT_KEYS:
-        value = os.environ.get(key)
-        if value:
-            return value
-    return None
+    return _delegated_session.owner_session_id(os.environ) or _delegated_session.current_conversation_session_id(os.environ)
 
 
 def resolve_conversation_session_id() -> str | None:
     """計画の所有会話とUWIの投入元会話として記録できるセッション識別子を返す。
 
     `resolve_owner_session_id`の値のうち、プロセス専用のrootは会話へ対応しないため除き、`None`を返す。
-    除いた場合も`CLAUDE_CODE_SESSION_ID`へは戻らない。委譲先自身の識別子は委譲元の会話を表さないためである。
+    除いた場合も現在会話の識別子へは戻らない。委譲先自身の識別子は委譲元の会話を表さないためである。
     """
     session_id = resolve_owner_session_id()
     if session_id is None or session_id.startswith(PROCESS_ROOT_SESSION_PREFIX):

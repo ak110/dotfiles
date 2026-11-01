@@ -5,12 +5,15 @@ import os
 import pathlib
 import re
 
+import pytest
+
 from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
-from agent_toolkit._hooks import agents_server_observations
+from agent_toolkit._hooks import agents_server_observations, stop
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _read_state
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 _HOOK = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _STOP_CHECK_RUNNER = pathlib.Path(_stop_check_runner.__file__)
@@ -239,6 +242,162 @@ def test_send_message_after_wait_reopens_observation(tmp_path: pathlib.Path) -> 
     _record_running_wait(tmp_path, "send-after-wait", "remote-send-after-wait")
     _record_send_message(tmp_path, "send-after-wait", "remote-send-after-wait")
     assert _run_stop(tmp_path, "send-after-wait")
+
+
+@pytest.mark.parametrize("intermediate_stop", [False, True])
+@pytest.mark.parametrize("resolution", ["wait", "script-wait", "kill", "background-kill"])
+def test_public_stop_renotifies_only_after_actual_observation(tmp_path, monkeypatch, resolution, intermediate_stop):
+    """公開Stopで配送済みの警告も、実観測・破棄後の同じ子への再依頼では再配送する。"""
+    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("agents_server_session_advisor",))
+    session, remote = "public-reopened", "remote-reopened"
+
+    def check():
+        result = _run_hook_in_process("stop", {"session_id": session})
+        assert result.returncode == 0 and not result.stderr
+        return json.loads(result.stdout).get("hookSpecificOutput", {}).get("additionalContext", "")
+
+    _record_start(tmp_path, session, remote)
+    assert _WARNING_BODY in check()
+    assert not check()
+    if resolution == "wait":
+        _record_running_wait(tmp_path, session, remote)
+    elif resolution == "script-wait":
+        _record_bash(
+            tmp_path,
+            session,
+            "uv run --project /plugin/agent-toolkit --locked --no-default-groups "
+            "/plugin/agent-toolkit/agent_toolkit/atk.py agents wait",
+        )
+    elif resolution == "kill":
+        _record_operation(tmp_path, session, "kill", {"session_id": remote, "status": "interrupted", "kill_requested": True})
+    else:
+        result = _run_hook_in_process(
+            "posttooluse",
+            {
+                "session_id": session,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__kill",
+                "tool_input": {"session_id": remote},
+                "tool_response": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": 'MCP tool "plugin:agent-toolkit:agents_server/kill" is still running after 120s.'
+                            " It was moved to the background as task task-bg-1 and keeps running;",
+                        }
+                    ]
+                },
+            },
+        )
+        assert result.returncode == 0 and not result.stderr
+    assert session_state.read_state(session)["agents_server_sessions"][remote]["pending_observation"] is False
+    if intermediate_stop:
+        assert not check()
+    _record_send_message(tmp_path, session, remote)
+    assert session_state.read_state(session)["agents_server_sessions"][remote]["pending_observation"] is True
+    assert _WARNING_BODY in check()
+    assert not check()
+
+
+@pytest.mark.parametrize("delivery", ["reply_started", "reply_ambiguous", "steered"])
+def test_public_unresolved_followup_preserves_notice(tmp_path, monkeypatch, delivery):
+    """未解消作業への追送では配送記録を保持し、同文警告を反復しない。"""
+    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("agents_server_session_advisor",))
+    session, remote = "unresolved-followup", "remote-followup"
+    _record_start(tmp_path, session, remote)
+    first = _run_hook_in_process("stop", {"session_id": session})
+    assert first.returncode == 0 and not first.stderr and _WARNING_BODY in first.stdout
+    fingerprints = session_state.read_state(session)["notice_fingerprints"]
+    _record_operation(tmp_path, session, "send_message", {"session_id": remote, "delivery": delivery})
+    assert session_state.read_state(session)["notice_fingerprints"] == fingerprints
+    repeated = _run_hook_in_process("stop", {"session_id": session})
+    assert repeated.returncode == 0 and not repeated.stderr and _WARNING_BODY not in repeated.stdout
+
+
+def test_public_reopened_child_preserves_other_owner_and_pending_child(tmp_path, monkeypatch):
+    """一部の子の解消だけでは通知を解除せず、同主体の新作業後に再通知する。"""
+    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("agents_server_session_advisor",))
+    session = "multiple-children"
+    for remote, actor in [("child-a", "main"), ("child-b", "main"), ("child-other", "other")]:
+        _record_operation(tmp_path, session, "start", {"session_id": remote, "status": "running"}, agent_id=actor)
+    for actor in ("main", "other"):
+        result = _run_hook_in_process("stop", {"session_id": session, "agent_id": actor})
+        assert result.returncode == 0 and not result.stderr and _WARNING_BODY in result.stdout
+    fingerprints = session_state.read_state(session)["notice_fingerprints"]
+    _record_operation(tmp_path, session, "kill", {"session_id": "child-a", "status": "interrupted"})
+    assert session_state.read_state(session)["notice_fingerprints"] == fingerprints
+    _record_send_message(tmp_path, session, "child-a")
+    state = session_state.read_state(session)
+    assert agents_server_observations.pending_session_ids(state, "main") == ["child-a", "child-b"]
+    target = "stop|main|agents_server_session_advisor|evaluate"
+    assert state["notice_fingerprints"] == {key: value for key, value in fingerprints.items() if key != target}
+    result = _run_hook_in_process("stop", {"session_id": session})
+    assert result.returncode == 0 and not result.stderr and _WARNING_BODY in result.stdout
+    other = _run_hook_in_process("stop", {"session_id": session, "agent_id": "other"})
+    assert other.returncode == 0 and not other.stderr and _WARNING_BODY not in other.stdout
+
+
+@pytest.mark.parametrize(
+    ("event", "operation"),
+    [
+        ("PostToolUse", "kill"),
+        ("PostToolUse", "send_message"),
+        ("PostToolUseFailure", "kill"),
+        ("PostToolUseFailure", "send_message"),
+        ("PostToolUseFailure", "wait"),
+    ],
+)
+def test_public_failed_observation_preserves_notice(tmp_path, monkeypatch, operation, event):
+    """失敗した観測・追送は未解消状態と配送記録を変更しない。"""
+    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("agents_server_session_advisor",))
+    session, remote = "failed-observation", "remote-failed"
+    _record_start(tmp_path, session, remote)
+    first = _run_hook_in_process("stop", {"session_id": session})
+    assert first.returncode == 0 and not first.stderr and _WARNING_BODY in first.stdout
+    before = session_state.read_state(session)
+    payload = {
+        "session_id": session,
+        "hook_event_name": event,
+        "tool_name": "Bash" if operation == "wait" else f"mcp__plugin_agent-toolkit_agents_server__{operation}",
+        "tool_input": {"command": "atk agents wait"} if operation == "wait" else {"session_id": remote},
+        "tool_response": {"stdout": "", "stderr": "待機失敗", "exit_code": 1}
+        if operation == "wait"
+        else {"isError": True, "structuredContent": {"session_id": remote, "status": "error"}},
+    }
+    failed = _run_hook_in_process("posttooluse", payload)
+    assert failed.returncode == 0 and not failed.stderr
+    after = session_state.read_state(session)
+    assert after["notice_fingerprints"] == before["notice_fingerprints"]
+    assert after["agents_server_sessions"] == before["agents_server_sessions"]
+    repeated = _run_hook_in_process("stop", {"session_id": session})
+    assert repeated.returncode == 0 and not repeated.stderr and _WARNING_BODY not in repeated.stdout
+
+
+@pytest.mark.parametrize("exemption", ["lock", "declaration", "active-stop"])
+def test_temporary_stop_exemption_preserves_delivered_fingerprint(tmp_path, monkeypatch, exemption):
+    """観測所有・待機表明・再入による一時免除では実解消済みと扱わない。"""
+    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("agents_server_session_advisor",))
+    session, remote = "temporary-exemption", "remote-temporary"
+    payload: dict[str, object] = {"session_id": session}
+    _record_start(tmp_path, session, remote)
+    first = _run_hook_in_process("stop", payload)
+    assert first.returncode == 0 and not first.stderr and _WARNING_BODY in first.stdout
+    fingerprints = dict(session_state.read_state(session)["notice_fingerprints"])
+    if exemption == "lock":
+        monkeypatch.setattr(agents_server_observations, "actively_waited_session_ids", lambda *_args: {remote})
+    elif exemption == "declaration":
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+        payload["last_assistant_message"] = f"待機中: {remote}"
+    else:
+        payload["stop_hook_active"] = True
+    exempted = _run_hook_in_process("stop", payload)
+    assert exempted.returncode == 0 and not exempted.stderr
+    assert _WARNING_BODY not in exempted.stdout
+    assert session_state.read_state(session)["notice_fingerprints"] == fingerprints
+    assert agents_server_observations.pending_session_ids(session_state.read_state(session), "main") == [remote]
+    monkeypatch.setattr(agents_server_observations, "actively_waited_session_ids", lambda *_args: set())
+    repeated = _run_hook_in_process("stop", {"session_id": session})
+    assert repeated.returncode == 0 and not repeated.stderr
+    assert _WARNING_BODY not in repeated.stdout
 
 
 def test_wait_alone_clears_pending_observation(tmp_path: pathlib.Path) -> None:

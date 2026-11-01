@@ -9,8 +9,10 @@ import pytest
 
 from agent_toolkit import hook
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import antigravity, host, plugin_resources
+from agent_toolkit._hooks import antigravity, host, notice, plugin_resources
 from agent_toolkit._hooks.antigravity import _Response
+from agent_toolkit._hooks.pretooluse import dispatch
+from agent_toolkit._hooks.pretooluse.decision import Decision
 
 
 @pytest.fixture(autouse=True)
@@ -313,6 +315,35 @@ def test_shared_decoder_preserves_string_content(tmp_path: pathlib.Path) -> None
     assert normalized["tool_input"]["content"] == "1"
 
 
+def test_structured_denial_defers_notice_receipts_until_injection(tmp_path, monkeypatch, capsys) -> None:
+    """内部JSONの拒否理由を保ち、保留通知は実inject時だけ配送済みにする。"""
+
+    def decide(_payload, _tool, _inputs, session_id, **_kwargs):
+        warning = notice.warning_formatter("receipt")(
+            "付随通知",
+            fix="確認せよ",
+            cause="cause",
+            session_id=session_id,
+            removable_cause=True,
+        )
+        notice.stage_delivery(warning, session_id, "operation_skill_delivered_agents", "read-guidance:test", "main")
+        return Decision(block="拒否理由", notices=(warning,))
+
+    monkeypatch.setattr(dispatch, "_decide", decide)
+    raw = _payload(tmp_path, toolCall={"name": "run_command", "args": {"CommandLine": "echo ok"}})
+    session = raw["conversationId"]
+    assert _run(raw, "PreToolUse", capsys) == {"decision": "deny", "reason": "拒否理由"}
+    state = session_state.read_state(session)
+    assert not state.get("notice_fingerprints")
+    assert not state.get("operation_skill_delivered_agents", {}).get("read-guidance:test")
+    result = _run(raw, "PostInvocation", capsys)
+    assert "付随通知" in result["injectSteps"][0]["ephemeralMessage"]
+    state = session_state.read_state(session)
+    assert state["notice_fingerprints"]
+    assert state["operation_skill_delivered_agents"]["read-guidance:test"] == ["main"]
+    assert _run(raw, "PostInvocation", capsys) == {}
+
+
 def test_question_answer_keeps_multiline_feedback(tmp_path: pathlib.Path) -> None:
     """質問への自由記述も、ユーザー発話と同じ通知判定へ全文で渡す。"""
     raw = _payload(
@@ -336,7 +367,7 @@ def test_native_manual_plan_skill_is_observed(tmp_path: pathlib.Path, capsys: py
                 "type": "USER_INPUT",
                 "source": "USER_EXPLICIT",
                 "step_index": 0,
-                "content": "<USER_REQUEST>\n/agent-toolkit:plan-mode 計画して\n</USER_REQUEST>",
+                "content": "<USER_REQUEST>\n/agent-toolkit:write-plan 計画して\n</USER_REQUEST>",
             }
         ),
         encoding="utf-8",

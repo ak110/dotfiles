@@ -26,7 +26,7 @@ from agent_toolkit._common import (
     state_paths,
 )
 
-BATCH_SCOPE = "agent-toolkit:session-review batch"
+BATCH_SCOPE = "agent-toolkit:review-session batch"
 LEGACY_BATCH_SCOPE = "agent-toolkit:session-review-batch"
 BATCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_BATCH"
 TARGET_ENV = "AGENT_TOOLKIT_RUN_SKILL_TARGET_REPO"
@@ -77,6 +77,18 @@ def pending() -> list[dict[str, Any]]:
     return [read(path) for path in sorted((directory() / "pending").glob("*.json"))]
 
 
+def auto_start_due(*, now: float) -> bool:
+    """直前のbatch開始から6時間以上経過したか返す。"""
+    for path in (directory() / "runs").glob("*.json"):
+        value = read(path)
+        started_at = value.get("started_at")
+        # 開始日時を保存していない世代は、既存記録の更新日時で保守的に間隔を保つ。
+        started = datetime.datetime.fromisoformat(started_at).timestamp() if started_at else path.stat().st_mtime
+        if now - started < 6 * 60 * 60:
+            return False
+    return True
+
+
 def launch_result(*, manifest: pathlib.Path | None = None) -> None:
     """受付前の試行を正常見送り、または既存の実行記録の責任へ移す。"""
     launch_id = os.environ.get(LAUNCH_ENV)
@@ -118,7 +130,7 @@ def launch_notice() -> str | None:
     return (
         "振り返りの自動起動が実行受付前に終了し、振り返りを実行できなかった。診断ログ: "
         + "、".join(failures)
-        + "。ログの原因を確認・是正して /agent-toolkit:session-review batch を実行する。"
+        + "。ログの原因を確認・是正して /agent-toolkit:review-session batch を実行する。"
         "pendingは保持している。この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝える。"
     )
 
@@ -130,7 +142,6 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
         not isinstance(session_id, str)
         or session_launchers.valid_launcher(session_id) is None
         or delegated_session.is_delegated(os.environ)
-        or os.environ.get(BATCH_ENV)
         or payload.get("agent_id")
     ):
         return False
@@ -142,11 +153,13 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
         if event != "SessionStart" and not (event == "UserPromptSubmit" and reviewed.exists()):
             return False
         prior = read(path) if path.exists() else {}
+        previous = read(reviewed) if reviewed.exists() else {}
         value = {
             **prior,
             "key": name,
             "host": host,
             "session_id": session_id,
+            "review_batch": bool(os.environ.get(BATCH_ENV) or prior.get("review_batch") or previous.get("review_batch")),
             "transcript_path": payload.get("transcript_path") or prior.get("transcript_path"),
             "cwd": payload.get("cwd") or prior.get("cwd"),
             "target_repo": target_repo or prior.get("target_repo"),
@@ -223,7 +236,7 @@ def complete(prepared: Mapping[str, Any]) -> dict[str, Any]:
             if previous is not None and previous["through_line"] > entry["through_line"]:
                 scope["records"][record_id] = previous
         scope["records"] = {**old["records"], **scope["records"]}
-        scope.update(host=host, session_id=session_id)
+        scope.update(host=host, session_id=session_id, review_batch=bool((target or old).get("review_batch")))
         write(reviewed_path, scope)
         # 新しいSessionStart/UserPromptSubmitがあれば、同じ会話でも後続世代を消さない。
         appended = any(
@@ -253,7 +266,11 @@ def protected_logs() -> set[pathlib.Path]:
             value = read(path)
         except OSError, ValueError:
             # 読めないmanifestが参照するログを削除しない。他skillの起動は妨げない。
-            return set((state_paths.state_dir() / "run-skill").glob("*session-review*.log"))
+            return {
+                log
+                for pattern in ("*session-review*.log", "*review-session*.log")
+                for log in (state_paths.state_dir() / "run-skill").glob(pattern)
+            }
         if value.get("status") not in {"completed", "resolved"} and value.get("log_path"):
             protected.add(pathlib.Path(value["log_path"]))
     return protected

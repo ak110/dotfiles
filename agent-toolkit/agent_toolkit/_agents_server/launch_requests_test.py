@@ -793,6 +793,7 @@ async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPat
         "external-write-review.subagent.md",
         "lane-integration.subagent.md",
         "reader-fit-review.subagent.md",
+        "repository-process.subagent.md",
         "session-termination.subagent.md",
     ],
 )

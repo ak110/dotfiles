@@ -45,9 +45,7 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
     "depends_on": "frontmatterからdepends_onを除き、依存は`atk wi set-dependencies`で更新する",
     "target_commit": "frontmatterからtarget_commitを除いて再実行する（target_commitはatkが記録する）",
     "cooldown_until": "frontmatterからcooldown_untilを除き、期限は`atk wi edit <FILE> --cooldown-until`で設定する",
-    "confirmation": (
-        "frontmatterからconfirmationを除いて再実行する（確認状態はユーザーが`atk serve`のWI画面で確認済み・要確認へ切り替える）"
-    ),
+    "effect_check": "frontmatterからeffect_checkを除き、効果は`atk wi effect-check`で記録する",
     "repair_target": "frontmatterからrepair_targetを除いて再実行する（repair_targetはatkが記録する）",
     "repair_kind": "frontmatterからrepair_kindを除いて再実行する（repair_kindはatkが記録する）",
     "plan_file": (
@@ -135,6 +133,14 @@ def _require_agent_edit_source(original: str, content: str) -> None:
         raise WebInputError(
             "エージェント環境ではsourceの明示が必須です。本文先頭のfrontmatterで`source: <出所>`を指定してください。",
             next_action="本文先頭のfrontmatterへ`source: <出所>`を追記して再実行する",
+        )
+    if raw_source == "human" and (stored is None or stored[0].get("source") != "human"):
+        raise WebInputError(
+            "エージェント環境ではsourceを新しくhumanに変更できません。",
+            next_action=(
+                "本文先頭のfrontmatterのsourceへ、起動スキル名（プラグイン接頭辞を除く）を指定する。"
+                "スキルが無い場合はagentを指定して再実行する"
+            ),
         )
 
 
@@ -435,7 +441,8 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             path = candidates[-1]
         else:
             _wi_filenames.validate_filenames_only([args.filename], inbox_dir)
-            _wi_sync.pull(private_notes)
+            if not args.dry_run:
+                _wi_sync.pull(private_notes)
             paths = resolve_editable_targets([args.filename], private_notes)
             path = paths[0]
         if args.cooldown_until is not None and _wi_entries.entry_state_of(path) == WI_STATE_PROCESSING:
@@ -480,7 +487,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
-    if edited == original:
+    if edited == original and not args.dry_run:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         _outcome.report_success("差分なし（変更は無い）")
@@ -498,6 +505,9 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             parsed_edited = _frontmatter.parse_frontmatter(edited)
             entry_type = parsed_edited[0].get("type") if parsed_edited is not None else None
             _add.require_confirmed_cause(edited, entry_type=entry_type if isinstance(entry_type, str) else WI_TYPE_AWI)
+            _add.require_cause_analysis_format(
+                edited, original=original, entry_type=entry_type if isinstance(entry_type, str) else WI_TYPE_AWI
+            )
     except WebInputError as error:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
@@ -540,6 +550,13 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                         sys.exit(1)
     if args.dry_run:
         # 未pushのcommitの送信、対象ファイルの書き換え、commitとpushは保存の処理（edit_entry_content）だけが行う。
+        assert message is not None
+        assert args.body_file is not None
+        try:
+            _add.print_draft_openings([message], [str(pathlib.Path(args.body_file).expanduser().resolve())])
+        except WebInputError as error:
+            _outcome.report_failure(f"編集を拒否した: {error.reason}", next_action=error.next_action)
+            sys.exit(1)
         _outcome.report_success(f"編集前の検証が成立した（--dry-runのため保存していない）: {path.name}")
         return
     finalized_content: dict[str, str] = {}

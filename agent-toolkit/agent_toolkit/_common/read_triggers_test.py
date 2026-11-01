@@ -23,6 +23,7 @@ def test_body_reading_table_keeps_targets_and_scope(tmp_path):
     assert rows[0].source == owner
     assert rows[0].documents == (target,)
     assert rows[0].headings == ("対象",)
+    assert rows[0].condition == "選択時"
     assert "判断基準" in rows[0].targets[0].body()
     assert "別用途" not in rows[0].targets[0].body()
     read_triggers.validate_reference_routes(owner, tmp_path, rows)
@@ -36,6 +37,41 @@ def test_dynamic_document_identity_is_canonical(tmp_path):
     target = read_triggers.ReadTarget(directory / "../rule.md")
     assert target.path == path
     assert target == read_triggers.ReadTarget(path)
+
+
+def test_resolution_scope_shares_manifests_and_refreshes_the_next_request(tmp_path, monkeypatch):
+    toolkit, basics = tmp_path / "agent-toolkit", tmp_path / "agent-basics"
+    for root in (toolkit, basics):
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin/plugin.json").write_text(f'{{"name":"{root.name}"}}', encoding="utf-8")
+        for name in ("sample", "other"):
+            target = root / "skills" / name / "SKILL.md"
+            target.parent.mkdir(parents=True)
+            target.write_text("# 基準\n", encoding="utf-8")
+    reads: dict[pathlib.Path, int] = {}
+    original = pathlib.Path.read_text
+
+    def counted(path, *args, **kwargs):
+        if path.name == "plugin.json":
+            reads[path] = reads.get(path, 0) + 1
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", counted)
+    with read_triggers.resolution_scope():
+        for filename in ("one.md", "two.md"):
+            source = toolkit / "share" / filename
+            for root in (toolkit, basics):
+                for name in ("sample", "other"):
+                    assert read_triggers.resolve_document(f"{root.name}:{name}", source, toolkit) == (
+                        root / "skills" / name / "SKILL.md"
+                    )
+        assert reads == {root / ".claude-plugin/plugin.json": 1 for root in (toolkit, basics)}
+    (toolkit / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
+    with read_triggers.resolution_scope():
+        assert read_triggers.resolve_document("agent-basics:sample", toolkit / "share/one.md", toolkit) == (
+            toolkit / "skills/sample/SKILL.md"
+        )
+    assert reads[toolkit / ".claude-plugin/plugin.json"] == 2
 
 
 def test_nested_fence_keeps_search_headings_and_tables_outside_contract(tmp_path):
@@ -126,11 +162,121 @@ def test_input_selector_without_a_registered_main_resolution_source_fails_ci(tmp
     source.write_text(
         "| 条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |\n"
         "| --- | --- | --- | --- | --- |\n"
-        "| 起動時 | 起動入力 | 起動時 | `skill:example` | `input:未登録` |\n",
+        "| 起動時 | 起動入力 | 起動時 | `tool:Example` | `input:未登録` |\n",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="未登録の動的資料選択子"):
         read_triggers.parse_tables(source, tmp_path, strict=True)
+
+
+@pytest.mark.parametrize("name", ["bugfix", "review-standards"])
+@pytest.mark.parametrize("qualified", [False, True])
+def test_skill_operation_requires_the_declared_plugin_owner(tmp_path, name, qualified):
+    """他pluginのスキルを短縮名で誤解決せず、完全名で宣言できる。"""
+    toolkit = tmp_path / "agent-toolkit"
+    basics = tmp_path / "agent-basics"
+    for root in (toolkit, basics):
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin/plugin.json").write_text(f'{{"name":"{root.name}"}}', encoding="utf-8")
+    skill = basics / "skills" / name / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# 基準\n", encoding="utf-8")
+    source = toolkit / "share/source.md"
+    source.parent.mkdir()
+    operation = f"skill:agent-basics:{name}" if qualified else f"skill:{name}"
+    source.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        f"| 判断前 | `agent-basics:{name}/SKILL.md` | 判断 | `{operation}` |\n",
+        encoding="utf-8",
+    )
+    if qualified:
+        row = read_triggers.parse_tables(source, toolkit, strict=True)[0]
+        assert row.documents == (skill,) and row.operations == (operation,)
+    else:
+        with pytest.raises(ValueError, match="配送操作のスキルが存在しない"):
+            read_triggers.parse_tables(source, toolkit, strict=True)
+
+
+@pytest.mark.parametrize("operation", ["skill:bugfix", "skill:agent-toolkit:missing"])
+def test_missing_skill_operation_explains_repair_and_revalidation(tmp_path, operation):
+    toolkit = tmp_path / "agent-toolkit"
+    basics = tmp_path / "agent-basics"
+    for root in (toolkit, basics):
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin/plugin.json").write_text(f'{{"name":"{root.name}"}}', encoding="utf-8")
+    skill = basics / "skills/bugfix/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# 基準\n", encoding="utf-8")
+    source = toolkit / "share/source.md"
+    source.parent.mkdir()
+    (source.parent / "rule.md").write_text("# 規則\n", encoding="utf-8")
+    source.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        f"| 判断前 | `rule.md` | 判断 | `{operation}` |\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="配送操作のスキルが存在しない") as failure:
+        read_triggers.parse_tables(source, toolkit, strict=True)
+    diagnostic = str(failure.value)
+    print(diagnostic)
+    assert f"{source}:3:" in diagnostic and operation in diagnostic
+    assert "同一plugin" in diagnostic and "skill:<スキル名>" in diagnostic
+    assert "他plugin" in diagnostic and "skill:<plugin名>:<スキル名>" in diagnostic
+    assert "skills/<スキル名>/SKILL.md" in diagnostic
+    assert "対象worktreeのルート" in diagnostic
+    assert (
+        "uv run --frozen --no-sync pytest -n 0 "
+        "agent-toolkit/read_triggers_invariant_test.py::test_all_read_tables_have_valid_declarations_and_routes"
+    ) in diagnostic
+
+
+@pytest.mark.parametrize("qualified", [False, True])
+@pytest.mark.parametrize("state", ["redirected", "missing-entry", "missing-target", "cycle", "restored"])
+def test_skill_operation_validates_entry_and_redirected_material(tmp_path, qualified, state):
+    """スキルの実在と全文資料への転送を分け、原本へ戻した次の解析も成立させる。"""
+    root = tmp_path / "agent-basics-agy"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
+    entry = root / "skills/long/SKILL.md"
+    full = entry.parent / "references/antigravity-full-instructions.md"
+    full.parent.mkdir(parents=True)
+    original = "# 長文スキル\n原本の基準\n"
+    entry.write_text(original, encoding="utf-8")
+    full.write_text("# 長文スキル\n全文の基準\n", encoding="utf-8")
+    source = root / "share/source.md"
+    source.parent.mkdir()
+    operation = "skill:agent-basics:long" if qualified else "skill:long"
+    source.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        f"| 起動時 | `../skills/long/SKILL.md` | 起動時 | `{operation}` |\n",
+        encoding="utf-8",
+    )
+    with read_triggers.resolution_scope():
+        assert read_triggers.parse_tables(source, root, strict=True)[0].documents == (entry,)
+    entry.write_text("<!-- read-source: agent-basics:long/references/antigravity-full-instructions.md -->\n", encoding="utf-8")
+    if state == "missing-entry":
+        entry.unlink()
+    elif state == "missing-target":
+        full.unlink()
+    elif state == "cycle":
+        full.write_text("<!-- read-source: agent-basics:long/SKILL.md -->\n", encoding="utf-8")
+    if state in {"missing-entry", "missing-target", "cycle"}:
+        diagnostic = {
+            "missing-entry": "配送操作のスキルが存在しない",
+            "missing-target": "read-sourceの実体が無い",
+            "cycle": "循環",
+        }
+        with pytest.raises(ValueError, match=diagnostic[state]), read_triggers.resolution_scope():
+            read_triggers.parse_tables(source, root, strict=True)
+        return
+    with read_triggers.resolution_scope():
+        row = read_triggers.parse_tables(source, root, strict=True)[0]
+        assert row.documents == (full,) and row.operations == (operation,)
+    if state == "restored":
+        entry.write_text(original, encoding="utf-8")
+        with read_triggers.resolution_scope():
+            row = read_triggers.parse_tables(source, root, strict=True)[0]
+            assert row.documents == (entry,) and row.operations == (operation,)
 
 
 def test_role_document_accepts_its_startup_input_selector(tmp_path):
@@ -308,10 +454,10 @@ def test_material_qualifier_and_japanese_selector(tmp_path):
         ("process-wi single-lane", "process-wi/references/single-lane.md"),
         ("process-wi all-repos", "process-wi/references/all-repos.md"),
         ("process-wi single-lanex", "process-wi/SKILL.md"),
-        ("session-review batch auto", "session-review/references/batch.md"),
-        ("session-review batch review.md", "session-review/references/batch.md"),
-        ("session-review focus.md", "session-review/SKILL.md"),
-        ("session-review batchx", "session-review/SKILL.md"),
+        ("review-session batch auto", "review-session/references/batch.md"),
+        ("review-session batch review.md", "review-session/references/batch.md"),
+        ("review-session focus.md", "review-session/SKILL.md"),
+        ("review-session batchx", "review-session/SKILL.md"),
     ],
 )
 def test_material_mode_invocations_resolve_exactly(tmp_path, invocation, relative):
@@ -475,22 +621,22 @@ def test_single_lane_declarations_cover_phases_without_overlapping_full_reads():
     for suffix in (
         "skills/process-wi/references/selection-procedure.md",
         "skills/wi-standards/SKILL.md",
-        "skills/plan-mode/SKILL.md",
+        "skills/write-plan/SKILL.md",
         "share/single-lane-execution.md",
         "share/exec-review.parent.md",
         "share/verification-evidence.md",
         "skills/commit/references/publish.md",
-        "skills/completion-report/SKILL.md",
+        "skills/report-completion/SKILL.md",
     ):
         assert any(str(target.path).endswith(suffix) for target in targets), suffix
     for suffix, condition in (
         ("selection-procedure.md", "対象WIの選定"),
-        ("plan-mode/SKILL.md", "計画の要否"),
+        ("write-plan/SKILL.md", "計画の要否"),
         ("exec-review.parent.md", "実装に着手する前"),
         ("verification-evidence.md", "検証結果を記録する前"),
         ("review-loop-coordination.md", "レビュー指摘への対応"),
         ("commit/references/publish.md", "公開する前"),
-        ("completion-report/SKILL.md", "終了処理の前"),
+        ("report-completion/SKILL.md", "終了処理の前"),
     ):
         assert any(
             any(str(target.path).endswith(suffix) for target in row.targets)

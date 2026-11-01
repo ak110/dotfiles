@@ -31,6 +31,13 @@ def result_next_action(result: Mapping[str, Any]) -> str | None:
     engine = str(result.get("engine", ""))
     status = str(result.get("status", ""))
     error = result.get("error")
+    if (
+        engine == "codex"
+        and status == "failed"
+        and isinstance(error, dict)
+        and error.get("codexErrorInfo") == codex_resume_state.WRITER_CONFLICT
+    ):
+        return codex_resume_state.WRITER_CONFLICT_NEXT_ACTION
     if not _availability_failure(engine, status, error) and not (
         engine == "codex" and codex_resume_state.handoff_failure(status, error)
     ):

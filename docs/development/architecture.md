@@ -237,7 +237,7 @@ dotfiles導入はCodex向けに次を配置する。
 
 - `~/.codex/AGENTS.md`: Codex向けの基本記述と、agent-toolkitの基本原則・製品横断の実行運用を埋め込む（`scripts/sync_codex_agents.py`が生成）
 - `~/.codex/agent-toolkit/rules`: agent-toolkitのルール原本を`atk-auto`の境界付き本文としてコピーで同期する
-- `~/.codex/skills/ak110-projects-operations`と`~/.codex/docs`: dotfiles固有スキルと`.chezmoi-source/dot_claude/docs`へのリンク
+- `~/.codex/skills/operate-ak110-projects`と`~/.codex/docs`: dotfiles固有スキルと`.chezmoi-source/dot_claude/docs`へのリンク
 
 `agent-toolkit/rules`は配布先で境界を付けた本文へ書き換えるためコピーで同期し、書き換えを要さない共有対象はリンクで配布する。
 chezmoiの`symlink_`はWindowsで特権不足により失敗するため、`chezmoi apply`後処理（`pytools.post_apply`）の専用ステップがリンクを生成する（Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション）。

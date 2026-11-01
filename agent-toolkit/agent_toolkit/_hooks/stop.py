@@ -92,7 +92,7 @@ def _write_recheck_verdict(session_id: str, payload: dict, *, may_collect: bool)
     except FileNotFoundError:
         return
     except Exception as exc:  # noqa: BLE001 -- 回収判定の故障を他のStop判定から隔離する
-        print(f"[stop/periodic-recheck] 判定受渡し失敗: {type(exc).__name__}: {exc}", file=sys.stderr)
+        append_stop_log(session_id, "periodic_recheck_error", {"error": f"{type(exc).__name__}: {exc}"})
 
 
 def evaluate(payload_text: str) -> dict[str, object]:
@@ -119,10 +119,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
                 else module.evaluate(payload_text)
             )
         except Exception as exc:  # noqa: BLE001 -- 1判定の故障で他の終了判定を失わないため広範に捕捉
-            print(
-                f"[stop/{module_name}] 想定外エラー: {type(exc).__name__}: {exc}",
-                file=sys.stderr,
-            )
+            append_stop_log(session_id, "check_error", {"check": module_name, "error": f"{type(exc).__name__}: {exc}"})
             continue
         if decision == "block":
             block_reasons.append(body)
@@ -154,7 +151,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
         try:
             status, message = module.halt(session_id, count)  # type: ignore[attr-defined]
         except Exception as exc:  # noqa: BLE001 -- 停止工程の故障で他の判定の結果を失わないため広範に捕捉
-            print(f"[stop/halt] 想定外エラー: {type(exc).__name__}: {exc}", file=sys.stderr)
+            append_stop_log(session_id, "halt_error", {"error": f"{type(exc).__name__}: {exc}"})
         else:
             user_messages.append(message)
             if status in _TERMINATION_ISSUED:

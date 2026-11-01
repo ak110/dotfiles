@@ -566,7 +566,7 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
     operations = (root / "share" / "exec-review-operations.md").read_text(encoding="utf-8")
     launchers = [
         root / "share" / "exec.parent.md",
-        root / "skills" / "plan-mode" / "SKILL.md",
+        root / "skills" / "write-plan" / "SKILL.md",
         root / "skills" / "process-wi" / "references" / "single-lane.md",
         root / "skills" / "process-wi" / "references" / "termination-ci-failure.md",
     ]
@@ -936,7 +936,9 @@ def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
     executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
-    plan_standard = (plugin_root / "skills" / "plan-mode" / "references" / "plan-file-standards.md").read_text(encoding="utf-8")
+    plan_standard = (plugin_root / "skills" / "write-plan" / "references" / "plan-file-standards.md").read_text(
+        encoding="utf-8"
+    )
 
     marker = "事後承認" + "対象:"
     assert all(marker not in content for content in (executor, parent, lanes, plan_standard))
@@ -945,7 +947,7 @@ def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
 def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
     """計画スキルはレーンの非待機通知を無条件の報告・待機で上書きしない。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    plan = (plugin_root / "skills" / "plan-mode" / "SKILL.md").read_text(encoding="utf-8")
+    plan = (plugin_root / "skills" / "write-plan" / "SKILL.md").read_text(encoding="utf-8")
     plan_steps = _h2_section(plan, "進め方")
     lane_row = next(line for line in plan_steps.splitlines() if line.startswith("| `agent-toolkit:process-wi`"))
     lane_steps = _lane_planning_contract(plugin_root)

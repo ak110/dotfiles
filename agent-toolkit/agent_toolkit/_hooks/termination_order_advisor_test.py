@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/termination_order_advisor.py のテスト。
 
-成果作業でcompletion-reportの起動証拠を欠く終了の支援通知と、委譲先・記録読取不能・作業が待つ非同期対象・
+成果作業でreport-completionの起動証拠を欠く終了の支援通知と、委譲先・記録読取不能・作業が待つ非同期対象・
 自編集の公開範囲の各条件を検証する。
 """
 
@@ -23,9 +23,10 @@ from agent_toolkit._hooks import (
 )
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
-from agent_toolkit._hooks.notice import notice_cycle
+from agent_toolkit._hooks.notice import emit_response, notice_cycle
 from agent_toolkit._hooks.termination_evidence_test import isolated_session  # noqa: F401  # pylint: disable=unused-import
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _write_transcript
 
 
@@ -83,33 +84,43 @@ def test_approves_session_without_deliverable(tmp_path: pathlib.Path) -> None:
     assert termination_order_advisor.evaluate(_payload("sess-unrelated", str(trace))) == ("approve", "")
 
 
+def _evaluate_delivered(payload: str) -> tuple[str, str]:
+    """判定で採用した通知だけを、Stopの公開応答形式で出力する。"""
+    with notice_cycle(json.loads(payload)["session_id"], "stop", "main"):
+        decision, body = termination_order_advisor.evaluate(payload)
+        response = _stop_check_runner.response_for(decision, body)
+        if response is not None:
+            emit_response(response)
+        return decision, body
+
+
 @pytest.mark.parametrize("skill", ["agent-toolkit:process-wi", "agent-toolkit:add-awi-by-user"])
 def test_notifies_target_skill_without_completion_report_once(tmp_path: pathlib.Path, skill: str) -> None:
     """対象スキルの起動不足は一度通知し、起動済みの作業では終了判断を求めない。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-missing", trace, skill)
-    decision, body = termination_order_advisor.evaluate(_payload("sess-missing", str(trace)))
+    decision, body = _evaluate_delivered(_payload("sess-missing", str(trace)))
     assert decision == "notify"
     assert f"{skill}の開始" in body
-    assert "`Skill`で`agent-toolkit:completion-report`を起動し" in body
+    assert "`Skill`で`agent-toolkit:report-completion`を起動し" in body
     assert "公開工程" in body
-    assert termination_order_advisor.evaluate(_payload("sess-missing", str(trace))) == ("approve", "")
-    _start_skill("sess-missing", trace, "agent-toolkit:completion-report", "toolu_report")
-    assert termination_order_advisor.evaluate(_payload("sess-missing", str(trace))) == ("approve", "")
+    assert _evaluate_delivered(_payload("sess-missing", str(trace))) == ("approve", "")
+    _start_skill("sess-missing", trace, "agent-toolkit:report-completion", "toolu_report")
+    assert _evaluate_delivered(_payload("sess-missing", str(trace))) == ("approve", "")
 
 
 def test_completion_before_target_restart_is_not_reused(tmp_path: pathlib.Path) -> None:
     """前の作業の起動証拠を、新しい依頼で再開始した対象スキルの作業へ流用しない。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-second", trace, "agent-toolkit:process-wi", "toolu_1")
-    _start_skill("sess-second", trace, "agent-toolkit:completion-report", "toolu_2")
+    _start_skill("sess-second", trace, "agent-toolkit:report-completion", "toolu_2")
     with contextlib.redirect_stdout(io.StringIO()):
         user_prompt_submit.main(json.dumps({"session_id": "sess-second", "turn_id": "again", "prompt": "もう一度処理する"}))
     _start_skill("sess-second", trace, "agent-toolkit:process-wi", "toolu_3")
     assert termination_order_advisor.evaluate(_payload("sess-second", str(trace)))[0] == "notify"
 
 
-def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path):
+def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path, monkeypatch):
     """同じ不足を抑え、起動で解消した後に新しい作業で不足すれば再通知する。"""
     trace = _write_transcript(tmp_path, [])
     session_id = "completion-notice-cycle"
@@ -117,12 +128,14 @@ def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path):
     payload = _payload(session_id, str(trace))
 
     def evaluate():
-        with notice_cycle(session_id, "stop", "main"):
-            return termination_order_advisor.evaluate(payload)
+        return _evaluate_delivered(payload)
 
     assert evaluate()[0] == "notify"
+    with monkeypatch.context() as skipped:
+        skipped.setattr(termination_evidence, "evidence_available", lambda *_args, **_kwargs: False)
+        assert evaluate() == ("approve", "")
     assert evaluate() == ("approve", "")
-    _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
+    _start_skill(session_id, trace, "agent-toolkit:report-completion", "report-start")
     assert evaluate() == ("approve", "")
     _human_input(session_id, trace, "next", "次の作業を進める")
     _commit(session_id, trace, "next-commit")
@@ -138,7 +151,7 @@ def test_approves_delegated_session(tmp_path: pathlib.Path, monkeypatch: pytest.
 
 
 def test_approves_native_subagent_even_when_parent_work_is_pending(tmp_path: pathlib.Path) -> None:
-    """親の成果作業の記録を共有する委譲先へcompletion-reportを要求しない。"""
+    """親の成果作業の記録を共有する委譲先へreport-completionを要求しない。"""
     trace = _write_transcript(tmp_path, [])
     _commit("sess-native", trace)
     assert termination_order_advisor.evaluate(_payload("sess-native", str(trace), agent_id="agent-review")) == ("approve", "")
@@ -381,7 +394,7 @@ def test_self_edit_requires_completion_report_and_shows_unscoped_paths(tmp_path:
     _record_self_edit(payload, repository / "README.md", tool=tool)
     decision, body = termination_order_advisor.evaluate(json.dumps(payload))
     assert decision == "notify"
-    assert "リポジトリの編集" in body and "completion-report" in body
+    assert "リポジトリの編集" in body and "report-completion" in body
     assert "公開範囲が未確定" in body and str(repository / "README.md") in body
 
 
@@ -439,7 +452,7 @@ def test_self_edit_excludes_unowned_failed_and_completed_edits(tmp_path: pathlib
         _record_self_edit(payload, target, failed=case == "failed")
     if case == "completion":
         _start_skill(
-            "self-edit", pathlib.Path(payload["transcript_path"]), "agent-toolkit:completion-report", "completion-call"
+            "self-edit", pathlib.Path(payload["transcript_path"]), "agent-toolkit:report-completion", "completion-call"
         )
     elif case == "delegated":
         payload["agent_id"] = "child"
@@ -853,12 +866,12 @@ def test_public_stop_leaves_started_completion_to_document(tmp_path, monkeypatch
             "turn_id": "request",
             "tool_name": "Bash",
             "tool_use_id": "report-read",
-            "tool_input": {"command": "cat /plugin/skills/completion-report/SKILL.md"},
-            "tool_response": {"stdout": "---\nname: completion-report\n---\n"},
+            "tool_input": {"command": "cat /plugin/skills/report-completion/SKILL.md"},
+            "tool_response": {"stdout": "---\nname: report-completion\n---\n"},
         }
         termination_evidence.observe_tool(json.dumps(invocation), after=True)
     else:
-        _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
+        _start_skill(session_id, trace, "agent-toolkit:report-completion", "report-start")
     payload = json.loads(_payload(session_id, str(trace)))
     if codex:
         payload["turn_id"] = "request"
@@ -879,7 +892,7 @@ def test_started_completion_review_keeps_existing_exclusions(tmp_path, case):
     session_id = "review-excluded"
     _human_input(session_id, trace, "request", "成果作業を行う")
     _commit(session_id, trace)
-    _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
+    _start_skill(session_id, trace, "agent-toolkit:report-completion", "report-start")
     payload = json.loads(_payload(session_id, str(trace)))
     if case == "delegated":
         payload["agent_id"] = "child"

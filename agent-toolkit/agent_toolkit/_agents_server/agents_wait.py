@@ -61,7 +61,9 @@ _SAVED_RESULT_NEXT_ACTION = (
     "`agent_message_paths`にある本文ファイルを読む。保存runの終了行は`jq -r .output -- <run_path>`で読める。"
     "新しい結果の待機が必要な場合だけ`atk agents wait`を実行する"
 )
-_IDENTITY_NEXT_ACTION = "同じsessionで`atk agents list`と`atk agents wait`を実行する"
+_IDENTITY_NEXT_ACTION = (
+    "MCPの`list`を1回呼び出し、応答の`root_session_id`を`atk agents wait --root-session-id <値>`へ渡して再実行する"
+)
 _FAILED_RESULT_NEXT_ACTION = (
     "`agent_message`と`error`で失敗の種類を確かめる。作業を続けられる失敗なら同じsessionへ`send_message`で継続し、"
     "継続できなければ作業を巻き取る"

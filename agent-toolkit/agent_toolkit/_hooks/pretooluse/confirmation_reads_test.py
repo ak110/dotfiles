@@ -1,6 +1,6 @@
 """確認操作に伴う資料取得案内と取得観測のテスト。
 
-PreToolUseの統合フックをsubprocessで起動し、transcriptの読取の記録に応じた警告の有無を検証する。
+PreToolUseの公開hookを同一プロセスで起動し、transcriptの読取の記録に応じた警告の有無を検証する。
 transcriptのエントリの形は、Claude Code 2.1.291の`~/.claude/projects`配下の記録（`tool_use`ブロックを持つ
 `assistant`エントリ、呼出IDに対応する`tool_result`を持つ`user`エントリと、
 `type`が`system`・`subtype`が`compact_boundary`のエントリ）から写した。

@@ -33,11 +33,11 @@ writes_worktree: true
 | AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md`の冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「起動方法別のレビュー基準」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「起動方法別のレビュー基準」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「検証と公開工程」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「検証と公開工程」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/check-execution-operations.md#「統合実行ツール経由の起動」` | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「統合実行ツール経由の起動」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
 | 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/references/plan-file-standards.md#「進捗ログ」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「進捗ログ」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards.md#「進捗ログ」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「進捗ログ」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body.md#「節の構成と分担」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「節の構成と分担」` |
 
 ## 読込表
@@ -86,7 +86,7 @@ atk lane integrate --record <所有登録の絶対パス> --reviewed-head <統�
 
 - `plans`: 全計画を保持する順序付き配列。各項目は`name`（計画ファイル名）と`commands`（後述する「計画最終化」で実行するplan-checkや保存用のargv配列）を持つ。すでに保存済みで進捗を追記していない計画は`commands: []`とし、`saved`に同名の保存済み計画の絶対パスを指定する。実装しなかった計画には`no_merge: true`を付与する。計画を作成していない場合は`[]`とする。
 - `wis`: 選定された今回のレーンに属する全WIの順序付き配列。各項目は`name`（WIファイル名）と`commands`（後述する「AWI行の終了」で実行する確定済みの終了用argv配列）を持つ。延期する項目、終了しない項目、およびすでに終了済みの項目は`commands: []`とし、その区分と理由を引き継ぎ記録に残す。実装しなかった項目には`no_merge: true`を付与する。
-- `verification`: 統合前およびrebase後に実行する検証用argvの順序付き配列。各argvは、計画の`## 検証`（訂正済み検証表がある場合はその表）に記載された検証コマンドを文字列配列へ変換したものとする。計画を作成していない場合は、引き継ぎ記録で確定した検証コマンドを使用する。CLIはレーンworktreeを作業ディレクトリとして各argvを直接実行する。複数の計画で検証コマンドが重複している場合は1回のみ登録し、省略した計画と代表コマンドの対応を引き継ぎ記録に記録する。すでに成功している同一の検証は、fast-forwardマージの前には再実行されない。CLIは検証argvに独自の時間制限を設けないため、各コマンドは自身が持つタイムアウト機構（pyfltrのcommand-timeoutなど）で確実に終了する形式で指定する。タイムアウト機構を持たないコマンドは`timeout <秒数>`で囲む。指定する秒数は、その検証が通常完了する所要時間を十分に上回る有限値とし、引き継ぎ記録にある同一検証の所要時間を基準に見積もる。訂正済み検証表の保持と引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と公開工程」に、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。統合後に初めて実行可能となるプロジェクト全体の検証も含める。rebaseを実行した場合は、新しいHEADに対して検証が実行される。
+- `verification`: 統合前およびrebase後に実行する検証用argvの順序付き配列。各argvは、計画の`## 検証`（訂正済み検証表がある場合はその表）に記載された検証コマンドを文字列配列へ変換したものとする。計画を作成していない場合は、引き継ぎ記録で確定した検証コマンドを使用する。CLIはレーンworktreeを作業ディレクトリとして各argvを直接実行する。複数の計画で検証コマンドが重複している場合は1回のみ登録し、省略した計画と代表コマンドの対応を引き継ぎ記録に記録する。すでに成功している同一の検証は、fast-forwardマージの前には再実行されない。CLIは検証argvに独自の時間制限を設けないため、各コマンドは自身が持つタイムアウト機構（pyfltrのcommand-timeoutなど）で確実に終了する形式で指定する。タイムアウト機構を持たないコマンドは`timeout <秒数>`で囲む。指定する秒数は、その検証が通常完了する所要時間を十分に上回る有限値とし、引き継ぎ記録にある同一検証の所要時間を基準に見積もる。訂正済み検証表の保持と引き継ぎは`agent-toolkit:write-plan`の`references/plan-file-standards.md`「検証と公開工程」に、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。統合後に初めて実行可能となるプロジェクト全体の検証も含める。rebaseを実行した場合は、新しいHEADに対して検証が実行される。
 - `handoff`: 計画を作成していない場合に使用する、既存の引き継ぎ記録の絶対パス。計画が存在する場合は省略可能であり、省略時に引き継ぎ記録を追加で入力する必要はない。
 - `lane_started_at`: 受け取った`レーン開始時刻`（タイムゾーン付きISO 8601形式）。plansやwisのargv内で確定値を参照する場合に必須となる。CLIは最初に受け付けた値を所有登録に保持し、それ以降に異なる値が渡された場合は処理を拒否する。
 
@@ -146,7 +146,7 @@ rebaseによってOIDのみが変化した計画の完成条件証拠につい�
 - 操作する場所は、計画のメタ情報が示す専用worktreeとする。すでに回収済みの場合は、引き継ぎ記録から「反映後の観測のみを行う再開」と「旧worktreeの回収」が確認でき、かつ保存時点の本文から進捗ログ以外の変更がない場合に限り、現在の専用worktreeで処理を継続する。それ以外の場合はメタ情報を書き換えずに「続行できない理由」を返す。
 - `~/.claude/plans`に存在しない未保存の計画は、保存状態と所在を引き継ぎ記録に記録し、必要に応じて`atk plans checkout <private-notes/plans/からの相対パス>`で取得する。
 - `atk run-script plan-progress --`を用いて`## 進捗ログ`に、統合区分、統合先ブランチ、`統合後のHEAD`、実行レビューの収束状況、AWI終了前の状態、およびrebaseを実行した場合は前後の短縮OIDの対応関係を追記する。
-- 同じ追記処理において、レーンの稼働時間と予測補正記録を記録する。秒数、完了時刻、統合後のHEADは確定値のプレースホルダーを用いて渡し、手動で仮の値を入力しない。稼働秒数は`レーン開始時刻`からGit統合成功後・最終化開始前までの総経過秒数とし（担当者の交代があっても起点は変更しない）、書式は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「進捗ログ」に従う。補正前の2つの値は、保持している選定結果の`レーンの所要時間`にある`補正前の実装秒数`および`補正前の統合秒数`から取得し、係数は最上位の`見込みの補正`の`係数`から取得する。追加WIの場合は累積予測を用い、過去の記録から取得できない値は不明と記載する。同一レーン内の複数の計画には同一の値を記録する。この記録は、次回の選定においてレーン配分の予測を算出するための基礎データとなる。
+- 同じ追記処理において、レーンの稼働時間と予測補正記録を記録する。秒数、完了時刻、統合後のHEADは確定値のプレースホルダーを用いて渡し、手動で仮の値を入力しない。稼働秒数は`レーン開始時刻`からGit統合成功後・最終化開始前までの総経過秒数とし（担当者の交代があっても起点は変更しない）、書式は`agent-toolkit:write-plan`の`references/plan-file-standards.md`「進捗ログ」に従う。補正前の2つの値は、保持している選定結果の`レーンの所要時間`にある`補正前の実装秒数`および`補正前の統合秒数`から取得し、係数は最上位の`見込みの補正`の`係数`から取得する。追加WIの場合は累積予測を用い、過去の記録から取得できない値は不明と記載する。同一レーン内の複数の計画には同一の値を記録する。この記録は、次回の選定においてレーン配分の予測を算出するための基礎データとなる。
 - 専用worktreeを作業ディレクトリとして`atk run-script plan-check -- --reject-migration-warnings --work-dir <計画メタ情報の対象リポジトリ> <計画ファイルの絶対パス>`を単独で実行し、終了コード0および警告がないことを確認する。観測のみの再開で本文の凍結を確認済みの計画については、保存時にチェックを通過しているため省略する。
 - 計画ごとに`atk plans commit <計画ファイル名>`を単独で実行し、保存した計画名と結果を直ちに引き継ぎ記録へ記録する。途中で処理が失敗した場合は、保存済みの計画と未保存の計画を区別して報告する。`統合完了`の返却は、全計画の保存が完了した後にのみ行う。
 

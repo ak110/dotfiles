@@ -25,8 +25,11 @@ def test_role_launch_hook_requires_same_named_inputs(tool_name: str, tmp_path: p
     """既存fixtureを変えず、欠けた必須入力が初回hookでも拒否される。"""
     prompt = f"{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n"
     result = _invoke(tool_name, prompt, tmp_path)
-    assert result.returncode == 2
-    assert "引き継ぎ記録先" in result.stderr
+    assert result.returncode == 0
+    assert not result.stderr
+    specific = json.loads(result.stdout)["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    assert "引き継ぎ記録先" in specific["permissionDecisionReason"]
     valid = prompt + f'引き継ぎ記録先: {tmp_path / "引継ぎ 記録.md"}\n書込担当一覧: ["session-main"]\n'
     assert _invoke(tool_name, valid, tmp_path).returncode == 0
 

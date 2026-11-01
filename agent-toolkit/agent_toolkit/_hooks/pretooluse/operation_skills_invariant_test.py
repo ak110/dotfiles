@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import pathlib
 import tempfile
@@ -16,7 +17,7 @@ import pytest
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import claude_settings, launch_prompts
 from agent_toolkit._agents_server import codex as codex_backend
-from agent_toolkit._common import delegated_session, plugin_roots
+from agent_toolkit._common import delegated_session, plugin_roots, read_triggers
 from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import plugin_resources, rules_context
 from agent_toolkit._hooks.pretooluse import dispatch, operation_skills, read_delivery
@@ -117,6 +118,10 @@ def test_operation_skill_contract_for_every_entry_and_subject(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, entry: operation_skills.OperationSkill, subject: str
 ) -> None:
     """全項目と全区分の組で、遮断の有無・案内・本文を含まないこと・取得の観測前に記録しないことを確かめる。"""
+    # この試験は資料と解決環境を変更しない。主体別の取得状態は毎回評価し、
+    # 不変な宣言解析だけを1パラメーターの間で共有する。
+    parsed_tables = functools.cache(read_triggers.parse_tables)
+    monkeypatch.setattr(read_triggers, "parse_tables", parsed_tables)
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     environ, extra = _SUBJECTS[subject]
     env = {**_plan_file_state_env(tmp_path), **environ}
@@ -155,9 +160,11 @@ def test_operation_skill_contract_for_every_entry_and_subject(
             assert _attempt > 0
             break
         repeated = _run(payload, env)
-        assert repeated.returncode == (2 if writing else 0)
+        assert repeated.returncode == 0
         if writing:
-            assert "未取得資料" in repeated.stderr
+            specific = json.loads(repeated.stdout)["hookSpecificOutput"]
+            assert specific["permissionDecision"] == "deny"
+            assert "未取得資料" in specific["permissionDecisionReason"]
         for target in targets:
             assert target.body().strip() not in output
             skill = read_delivery.skill_name(target.path)
@@ -190,6 +197,7 @@ def test_operation_skill_contract_for_every_entry_and_subject(
     assert _run(payload, env).returncode == 0
     joined = "\n".join(observed)
     assert str(paths[0]) in joined or entry.short_name in joined
+    assert parsed_tables.cache_info().hits > 0
 
 
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])

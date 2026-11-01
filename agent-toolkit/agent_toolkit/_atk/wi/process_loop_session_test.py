@@ -377,7 +377,7 @@ class TestProcessLoopPromptAndEnv:
             "push",
             "CI",
             "atk wi adopt",
-            "session-review",
+            "review-session",
         )
         assert all(detail not in prompt for detail in forbidden_details)
 

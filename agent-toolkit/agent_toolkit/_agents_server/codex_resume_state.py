@@ -1,4 +1,4 @@
-"""保存済みCodex会話の不透明な状態を、同じ生成先で再開できることを確かめる。
+"""保存済みCodex会話の再開拒否を分類し、不透明な状態の生成先を確かめる。
 
 観測した記録形と架空fixtureの境界は`docs/development/audit-records.md`の
 「agent-toolkit/agent_toolkit/_agents_server/codex_resume_state.py：会話状態の生成先：2026年10月23日」にある。
@@ -13,6 +13,17 @@ from typing import Any
 from agent_toolkit._common import session_record_paths
 
 INCOMPATIBLE_STATE = "threadStateIncompatible"
+WRITER_CONFLICT = "threadWriterConflict"
+WRITER_CONFLICT_NEXT_ACTION = (
+    "新しいturnは始まっておらず、要求は未配送である。"
+    "別のCodex実行プロセスが同じthreadを使用している可能性がある。"
+    "所有側で対象threadの使用・購読を終え、解放を確認してから同じ`session_id`へ`send_message`を再送する。"
+    "所有側の操作が分からない場合は、その操作を確認する必要がある"
+)
+
+
+class ThreadWriterConflictError(RuntimeError):
+    """対象threadのactive writerがあるため、再開要求が拒否された。"""
 
 
 class IncompatibleResumeError(RuntimeError):

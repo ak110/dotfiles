@@ -3,7 +3,7 @@
 Claude Codeはplugin経由で配布したMCPサーバーのツール名を`mcp__plugin_<plugin-name>_<server-key>__`で、
 Codexは`mcp__<server-key>__`で修飾する。この修飾と、子sessionを生成する起動ツールの操作名を判定する箇所は、
 session状態側の孫session追跡、PreToolUse・PostToolUseの各フック、
-session-reviewの`atk run-script session-review-evidence`に分かれるため、
+review-sessionの`atk run-script session-review-evidence`に分かれるため、
 受理する値の集合を本モジュールへ集約し、判定箇所が同じ値を参照する。
 
 判定箇所が値を個別に保持すると、新しい修飾形式や起動ツールへ追随した箇所と追随しない箇所が混在する。
@@ -44,7 +44,7 @@ LEGACY_START_MODES: Mapping[str, str] = {
 """`start`へ統合する前の起動ツール名と、統合後の`mode`の対応。
 
 公開ツールとしては登録しない。
-統合前に保存されたセッション記録を読む処理（session-reviewの`atk run-script session-review-evidence`など）が、
+統合前に保存されたセッション記録を読む処理（review-sessionの`atk run-script session-review-evidence`など）が、
 旧名の起動も委譲として認識するために使う。
 """
 

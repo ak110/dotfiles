@@ -1,0 +1,3 @@
+timeout = 10
+plugins = ["plugin_csv"]
+codec = "protocol:encode"

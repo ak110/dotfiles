@@ -12,7 +12,52 @@ from agent_toolkit._testing.isolation import restore_host_environment
 
 SCRIPT = pathlib.Path(__file__).with_name("multi_turn_trials.py")
 FIXTURES = SCRIPT.parents[1] / "fixtures" / "multi-turn"
-CASES = ("attachment-paths", "weekday-queries", "batch-conditions", "display-spaces", "verification-status")
+CASES = (
+    "attachment-paths",
+    "weekday-queries",
+    "batch-conditions",
+    "display-spaces",
+    "verification-status",
+    "skill-selection",
+    "test-selection",
+)
+SINGLE_CASES = {"verification-status", "skill-selection", "test-selection"}
+# 保存例ごとに未達となる検査ID。課題の期待集合（private/grade.py）と保存例の提出内容から導いた。
+_FAILED_CHECKS: dict[str, dict[str, set[str]]] = {
+    "attachment-paths": {"failure": {"associate", "delete", "legacy"}},
+    "weekday-queries": {"failure": {"legacy-function", "legacy-query", "public-iso"}},
+    "batch-conditions": {"failure": {"mixed", "order"}},
+    "display-spaces": {"failure": {"spaces", "edges"}},
+    "verification-status": {"failure": {"skipped", "not-collected", "xfail", "unknown"}},
+    "skill-selection": {
+        "description-only": {
+            f"{request}-additional" for request in ("article-eval", "paraphrase", "edit-and-check", "bug-explain", "boundary")
+        },
+        # 必要な集合は同じでも、本文を読む前の選択へ全て入れた提出は追加選択の検査で区別する。
+        "all-initial": {
+            f"{request}-additional" for request in ("article-eval", "paraphrase", "edit-and-check", "bug-explain", "boundary")
+        },
+        "all-selected": {
+            f"{request}-excluded"
+            for request in ("article-eval", "paraphrase", "edit-and-check", "bug-explain", "known-fact", "boundary")
+        }
+        | {f"{request}-additional" for request in ("article-eval", "paraphrase", "edit-and-check", "bug-explain", "boundary")},
+        "unknown-id": {"article-eval-known"},
+    },
+    "test-selection": {
+        "path-match": {
+            "change-shared-fixture-required",
+            "change-cli-key-required",
+            "change-plugin-contract-required",
+            "change-protocol-required",
+        },
+        "all-selected": {
+            f"{change}-no-extra"
+            for change in ("change-shared-fixture", "change-cli-key", "change-plugin-contract", "change-local-util")
+        },
+        "unknown-id": {"change-local-util-known"},
+    },
+}
 
 
 @pytest.fixture(autouse=True)
@@ -62,7 +107,9 @@ def test_prepare_copies_only_public_material_and_refuses_overwrite(tmp_path: pat
     output = tmp_path / "public"
     process = _run("prepare", "--case", case, "--output", str(output))
     assert process.returncode == 0, process.stderr
-    assert {path.name for path in output.iterdir()} == {"task.py", "request.md"}
+    public = FIXTURES / case.replace("-", "_") / "public"
+    assert {path.name for path in output.iterdir()} == {path.name for path in public.iterdir()}
+    assert {"task.py", "request.md"} <= {path.name for path in output.iterdir()}
     task = output / "task.py"
     task.write_text("提出物\n", encoding="utf-8")
     process = _run("prepare", "--case", case, "--output", str(output))
@@ -78,7 +125,8 @@ def test_saved_success_and_failure_are_graded_from_artifacts(tmp_path: pathlib.P
         directory = tmp_path / str(number)
         directory.mkdir()
         process, result = _grade(directory, case, example)
-        assert process.returncode == (0 if example["name"] == "success" else 1), process.stderr
+        failed_checks = _FAILED_CHECKS[case].get(example["name"], set())
+        assert process.returncode == (1 if failed_checks else 0), process.stderr
         assert result["status"] == "成立"
         if trial["kind"] == "dialogue":
             assert result["behavior"] == example["dialogue"]["behavior"]
@@ -90,14 +138,7 @@ def test_saved_success_and_failure_are_graded_from_artifacts(tmp_path: pathlib.P
         assert {row["id"] for row in result["requirements"]} == {row["id"] for row in trial["requirements"]}
         assert result["test_run"]["exit_code"] == 0
         failed = {row["id"] for row in result["functional"] if not row["passed"]}
-        expected = {
-            "attachment-paths": {"associate", "delete", "legacy"},
-            "weekday-queries": {"legacy-function", "legacy-query", "public-iso"},
-            "batch-conditions": {"mixed", "order"},
-            "display-spaces": {"spaces", "edges"},
-            "verification-status": {"skipped", "not-collected", "xfail", "unknown"},
-        }
-        assert failed == (expected[case] if example["name"] == "failure" else set())
+        assert failed == failed_checks
         assert {row["id"]: row["status"] for row in result["requirements"]} == {
             row["id"]: "未達" if failed.intersection(row["tests"]) else "達成" for row in trial["requirements"]
         }
@@ -186,7 +227,7 @@ def test_public_list_and_finite_termination(tmp_path: pathlib.Path) -> None:
     rows = json.loads(process.stdout)
     assert {row["case"] for row in rows} == set(CASES)
     assert {row["case"]: row["kind"] for row in rows} == {
-        case: "single" if case == "verification-status" else "dialogue" for case in CASES
+        case: "single" if case in SINGLE_CASES else "dialogue" for case in CASES
     }
     trial = json.loads((FIXTURES / "batch_conditions" / "private" / "trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][1]

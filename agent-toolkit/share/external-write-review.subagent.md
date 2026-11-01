@@ -11,7 +11,7 @@ writes_worktree: false
 
 # 投稿前レビュー担当タスク
 
-<!-- parent-read-source: agent-toolkit:/skills/external-write-review/SKILL.md#投稿前レビュー担当の起動と受領 -->
+<!-- parent-read-source: agent-toolkit:/skills/review-external-writes/SKILL.md#投稿前レビュー担当の起動と受領 -->
 
 第三者が閲覧する外部サービスへ投稿する前の文面を、起草者とは独立した立場で確認し、投稿前に修正すべき箇所を報告する。
 文面の修正、指摘の採否の確定、および実際の投稿は委譲元が担当する。

@@ -239,13 +239,13 @@ class TestListSingle:
         assert "blocked_reason=cooldown-until cooldown_until=2999-01-01T00:00:00+00:00" in output
         assert "blocked_reason=invalid-cooldown" in output
 
-    def test_confirmation_pending_shows_stable_reason(
+    def test_legacy_confirmation_keeps_cooldown_reason(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """要確認の項目は期限より先に確認待ちを理由として表示する。"""
+        """旧確認キーがあっても期限による待機理由を表示する。"""
         notes = _setup_notes(tmp_path)
         pending = _write_awi_file(notes, "pending.md")
         pending.write_text(
@@ -263,8 +263,8 @@ class TestListSingle:
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
         assert "pending.md" in output
-        assert "blocked_reason=confirmation-required" in output
-        assert "cooldown_until=" not in output
+        assert "blocked_reason=cooldown-until" in output
+        assert "cooldown_until=" in output
 
     def test_unfinished_item_with_missing_plan_file_is_listed_as_normal_awi(
         self,

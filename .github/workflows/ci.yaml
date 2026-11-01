@@ -119,7 +119,8 @@ jobs:
       - name: 約3日前からの update-dotfiles 更新検証
         if: needs.common-ci-owner.outputs.owns == 'true'
         working-directory: ${{ env.DOTFILES_DIR }}
-        run: uv run --script scripts/check_update_dotfiles_upgrade.py --platform linux --repo "$DOTFILES_DIR"
+        # hosted runnerはjob終了時に破棄されるため、検証rootの削除を省く。
+        run: uv run --script scripts/check_update_dotfiles_upgrade.py --platform linux --repo "$DOTFILES_DIR" --keep-verification-root
       - name: install.sh 実行
         if: needs.common-ci-owner.outputs.owns == 'true'
         run: ~/dotfiles/install.sh
@@ -209,7 +210,8 @@ jobs:
         working-directory: ${{ env.DOTFILES_DIR }}
         run: |
           $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
-          uv run --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR"
+          # hosted runnerはjob終了時に破棄されるため、約1分を要する検証rootの削除を省く。
+          uv run --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR" --keep-verification-root
 
   test-windows:
     needs: common-ci-owner
@@ -364,7 +366,7 @@ jobs:
       run:
         shell: bash
     strategy:
-      # 一方の検査が失敗しても、lintとpytestの両方の結果を取得する
+      # 一方の検査が失敗しても、lintと分割したpytestの全結果を取得する
       fail-fast: false
       matrix:
         include:
@@ -372,8 +374,22 @@ jobs:
             check: lint
             check-name: python-lint (3.15)
           - python-version: "3.15"
-            check: pytest
+            check: pytest-root
             check-name: pytest (3.15)
+          # toolkitの試験は1runnerでは全体10分の基準を超えるため、試験IDで3runnerへ分ける。
+          # 必須checkの`pytest-toolkit (3.15)`は、全分割の結果を確かめるpytest-toolkit-result jobが所有する。
+          - python-version: "3.15"
+            check: pytest-toolkit
+            shard: "1/3"
+            check-name: pytest-toolkit (3.15, 1/3)
+          - python-version: "3.15"
+            check: pytest-toolkit
+            shard: "2/3"
+            check-name: pytest-toolkit (3.15, 2/3)
+          - python-version: "3.15"
+            check: pytest-toolkit
+            shard: "3/3"
+            check-name: pytest-toolkit (3.15, 3/3)
     env:
       # 開発モード: DeprecationWarning などの隠れた問題を早期検出する
       PYTHONDEVMODE: "1"
@@ -432,8 +448,9 @@ jobs:
           # 新しいキーで保存して次の実行へ引き継ぐ。
           # run_idは再実行（Re-run）で変化しないため、run_attemptを併記する。
           # run_idだけでは再実行時にキーが完全一致し、その再実行中に変化した/cacheの内容が保存されない。
-          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.check }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.check }}-
+          # 同じcheckの分割jobが同じキーへ同時に保存して競合しないよう、matrix要素の番号も含める。
+          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.check }}-${{ strategy.job-index }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.check }}-${{ strategy.job-index }}-
 
       - name: Install dependencies
         if: needs.common-ci-owner.outputs.owns == 'true'
@@ -454,7 +471,7 @@ jobs:
 
       - name: Git 2.34.1の導入
         id: minimum-git
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check != 'lint'
         # agent-toolkitが対応する最低版のGit（README.mdの前提条件）。Ubuntu 22.04の公式パッケージを展開し、
         # 開発用のGitを置き換えずに実Gitテストだけへ渡す。版を変える場合はREADME.mdの記載も同じ変更で更新する。
         env:
@@ -472,17 +489,88 @@ jobs:
           "$root/git" --version | grep -Fx "git version 2.34.1"
           echo "git=$root/git" >> "$GITHUB_OUTPUT"
 
-      - name: Python 3.15 pytest
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
+      - name: Python 3.15 pytest 直下
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest-root'
         env:
           AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
-        # agent-toolkitの全テストを含む通常のpytestを、Git呼び出しを新設した経路も個別の指定なしに最低版で検収する。
-        # 外側の上限に達した場合も失敗した試験名を保持し、失敗件数による途中終了を避ける。
-        run: pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'
+        # pyfltrのalways-targetsは両subprojectへ展開されるため、直下は対象を明示してpytestを呼ぶ。
+        # toolkit原本とCodex投影を除き、横断不変条件も所属するjobだけで実行する。
+        run: |
+          set -euo pipefail
+          git ls-files -z -- '*_test.py' 'test_*.py' \
+            ':!:agent-toolkit/**' ':!:agent-toolkit-codex/**' \
+            > "$RUNNER_TEMP/pytest-root-targets"
+          mapfile -d '' -t targets < "$RUNNER_TEMP/pytest-root-targets"
+          test "${#targets[@]}" -gt 0
+          uv run --frozen pytest -v --maxfail=0 "${targets[@]}"
+
+      - name: Python 3.15 pytest toolkit
+        if: >-
+          needs.common-ci-owner.outputs.owns == 'true' &&
+          matrix.python-version == '3.15' && matrix.check == 'pytest-toolkit'
+        env:
+          AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
+          TEST_SHARD: ${{ matrix.shard }}
+        # skills配下と横断不変条件も含む。各jobとも既存設定の4worker・workstealを使う。
+        # 全分割が同じ集合を収集し、`--test-shard`が各試験をちょうど1つの分割へ割り当てる。
+        run: >-
+          pyfltr ci --work-dir agent-toolkit --commands=pytest
+          --pytest-args="-v --maxfail=0 --test-shard=$TEST_SHARD" agent-toolkit
 
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'
         run: uv cache prune --ci
+
+  pytest-toolkit-result:
+    needs: [common-ci-owner, python-lint]
+    # 分割jobの失敗時もこのjobを失敗として残す。skipされた必須checkは成功と同じ扱いでマージを許すためである。
+    if: ${{ !cancelled() }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pytest-toolkit (3.15) (non-owner)' || 'pytest-toolkit (3.15)' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: toolkit pytestの全分割の結果確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNS: ${{ needs.common-ci-owner.outputs.owns }}
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+          SHARD_COUNT: "3"
+        shell: bash
+        # needsの結果はmatrix全体（lintと直下pytestを含む）の集約なので、分割jobの結論はjob一覧から個別に読む。
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+
+          if os.environ["OWNS"] == "false":
+              print(os.environ["OWNER_REASON"])
+              sys.exit(0)
+          if os.environ["OWNS"] != "true":
+              print("::error::common-ci-ownerが所有の判定を出力していません。同jobのログで失敗原因を確認し、修正後にRe-run failed jobsで再実行してください。")
+              sys.exit(1)
+          count = int(os.environ["SHARD_COUNT"])
+          expected = {f"pytest-toolkit (3.15, {index}/{count})" for index in range(1, count + 1)}
+          url = (
+              f'{os.environ["GITHUB_API_URL"]}/repos/{os.environ["GITHUB_REPOSITORY"]}'
+              f'/actions/runs/{os.environ["GITHUB_RUN_ID"]}/jobs?filter=latest&per_page=100'
+          )
+          request = urllib.request.Request(url, headers={
+              "Authorization": f'Bearer {os.environ["GH_TOKEN"]}',
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          })
+          with urllib.request.urlopen(request, timeout=20) as response:
+              jobs = json.load(response)["jobs"]
+          conclusions = {job["name"]: job["conclusion"] for job in jobs if job["name"] in expected}
+          for name in sorted(expected):
+              print(f"{name}: {conclusions.get(name, '未実行')}")
+          if any(conclusions.get(name) != "success" for name in expected):
+              print("::error::toolkit pytestの分割jobに成功していないものがあります。上記で失敗した分割jobのログを確認し、修正後にRe-run failed jobsで再実行してください。")
+              sys.exit(1)
+          PY
 
   browser-e2e:
     needs: common-ci-owner

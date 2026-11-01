@@ -38,3 +38,26 @@ def test_result_guidance_preserves_backend_availability_contract(engine: str, st
 def test_existing_import_keeps_the_same_result_guidance() -> None:
     """従来のsession_handoffからのimportも、分離した結果判定へ到達する。"""
     assert session_handoff.result_next_action is handoff_next_action.result_next_action
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        ({"codexErrorInfo": "threadWriterConflict"}, "再送"),
+        ({"codexErrorInfo": "threadStateIncompatible"}, "handoff_from"),
+        ({"message": "Codex connection rejected the request"}, "handoff_from"),
+        ({"message": "再開の一般的な拒否"}, None),
+    ],
+)
+def test_result_guidance_distinguishes_resume_failure(error: dict[str, str], expected: str | None) -> None:
+    """終了時もwriter競合の解放条件を保持し、既存の引き継ぎ案内と区別する。"""
+    action = handoff_next_action.result_next_action(
+        {"session_id": "predecessor", "engine": "codex", "status": "failed", "error": error}
+    )
+    if expected is None:
+        assert action is None
+    else:
+        assert action is not None and expected in action
+        if expected == "再送":
+            assert "未配送" in action and "可能性" in action and "解放を確認" in action
+            assert "handoff_from" not in action

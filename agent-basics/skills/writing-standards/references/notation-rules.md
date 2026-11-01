@@ -1,7 +1,6 @@
 # 表記とMarkdownの規則と確認手段
 
 本書は、人間向けの文章を執筆するエージェントや表記チェックを担当するエージェント向けに、日本語の表記ルール、Markdownの書式規則、表記の一括置換手順、チェックの対象範囲、および口語表現やダッシュ記号の検証手段をまとめたものである。
-Claude Codeの`Edit`ツールや`Write`ツールによる既存ファイルの上書き前には、対象の絶対パスに対して`Read`を実行しておく前提条件がある。この前提条件や、その代替とならない操作（Bashでの表示・作成・変更や別パスのReadなど）については、同一ディレクトリにある`file-editing.md`の「ファイル更新時の編集ツールの前提」を参照する。
 
 ## 名指し参照の読込方法
 
@@ -9,7 +8,6 @@ Claude Codeの`Edit`ツールや`Write`ツールによる既存ファイルの�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `file-editing.md#「ファイル更新時の編集ツールの前提」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/file-editing.md#「ファイル更新時の編集ツールの前提」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `textlint-violations.md#「textlint指摘への修正方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/textlint-violations.md#「textlint指摘への修正方針」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「役割分担」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「役割分担」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lint-relax-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/lint-relax-criteria.md` |
@@ -104,7 +102,6 @@ lint設定の緩和、無効化、除外指定の追加手順は、`lint-relax-c
 同一の設定でチェックできる複数のファイルは、1回の`run`呼び出しにまとめる。
 チェックが完了したかどうかの判定では、レスポンスの`completion`が`completed`であり、`files_reached`が指定したファイル数と一致していることを確認する。
 また、指定したすべてのコマンドが`completed_commands`に含まれており、`incomplete_commands`、`missing_targets`、`fully_excluded_files`がいずれも空であることを確認する。
-拡張子ごとに適切なコマンドが選択され、必要なチェックがすべての対象ファイルに適用されたことを確かめる。
 `incomplete`や`not_reached`が返った場合はチェック完了とはみなさず、`incomplete_commands`、`missing_targets`、`fully_excluded_files`、`skipped_reason`、`warnings`から原因を特定して対処する。
 警告やエラーの件数は完了が確定した後に確認し、詳細なメッセージが必要な場合はレスポンスの`run_id`をMCPの`show_run_diagnostics`ツールに渡して取得する。
 
@@ -114,11 +111,7 @@ MCPの`run`ツールが利用できない環境では、導入しているpyfltr
 <pyfltrの起動形> run --commands=<全対象へ到達するコマンドの和集合> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --work-dir <チェック設定を持つプロジェクトの絶対パス> <対象ファイルの絶対パス...>
 ```
 
-チェックの対象拡張子は`.md`、`.py`、`.txt`、`.yaml`、`.yml`、`.toml`である。Markdownの引用ブロックおよびフェンス付きコードブロックの内部は対象外となるが、ソースコード内のコメント行はチェック対象となる。
-検出された語句と指摘の理由は診断結果から確認する。
-辞書の改訂や誤検知の調査で辞書の実データを確認する必要が生じた場合は、使用している`pyfltr`の公開機能や提供元の資料を参照する。
+チェックの対象拡張子は`.md`、`.py`、`.txt`、`.yaml`、`.yml`、`.toml`であり、ソースコード内のコメント行も対象とする。
+Markdown内の引用は「逐語引用の検出範囲」に従う。
 
 警告を解消することだけを目的にして、読者に伝わる情報量を減らすような安易な書き換えをしない。他者の原文（記事や発表のタイトル、引用した発言、固有名詞など）に含まれる警告語句は原文のまま保持し、修正せずに残した箇所とその理由を完了報告に明記する。
-
-日本語の地の文や見出しに含まれるemダッシュ、horizontal bar、2倍ダッシュは、プロジェクトに用意されたダッシュチェッカーをこの一括実行に含めて検証する。
-コードブロック、インラインコード、およびURLの内部はチェック対象外とする。

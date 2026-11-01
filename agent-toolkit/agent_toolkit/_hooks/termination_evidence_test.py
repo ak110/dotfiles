@@ -33,7 +33,7 @@ pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
 
 WORK_COMPLETE = "## 作業完了報告\n\n完了した。\n\n### 成果\n\n- 変更した\n\n### 投入したWI\n\n- なし\n"
 CONTINUATION = '<atk-auto source="stop" kind="continuation">判断を記録する</atk-auto>'
-COMPLETION_SKILL_TEXT = "---\nname: completion-report\nuser-invocable: false\n---\n\n# 作業完了報告とセッションの完了処理\n"
+COMPLETION_SKILL_TEXT = "---\nname: report-completion\nuser-invocable: false\n---\n\n# 作業完了報告とセッションの完了処理\n"
 
 
 @pytest.mark.parametrize(
@@ -107,7 +107,7 @@ def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch
     termination_evidence.unscoped_self_edits({"session_id": "evidence-test"}, work)
     if case.startswith("unknown"):
         assert "特定できなかった成果作業" in reason and "commit" in reason
-        assert "completion-report" in reason and "ユーザーへ報告" in reason
+        assert "report-completion" in reason and "ユーザーへ報告" in reason
         assert "同じコマンドで再実行" not in reason
 
 
@@ -186,14 +186,14 @@ def supply_commit(directory: pathlib.Path, call_id: str = "commit", *, codex: bo
 
 
 def supply_completion(directory: pathlib.Path, call_id: str = "completion", *, codex: bool = False) -> None:
-    """completion-reportの起動証拠を、Claude CodeはSkillの成功、CodexはSKILL.mdの読取で供給する。"""
+    """report-completionの起動証拠を、Claude CodeはSkillの成功、CodexはSKILL.mdの読取で供給する。"""
     if codex:
-        skill = directory / "plugin" / "skills" / "completion-report" / "SKILL.md"
+        skill = directory / "plugin" / "skills" / "report-completion" / "SKILL.md"
         skill.parent.mkdir(parents=True, exist_ok=True)
         skill.write_text(COMPLETION_SKILL_TEXT, encoding="utf-8")
         _tool(directory, call_id, "Bash", {"command": f"cat {skill}"}, COMPLETION_SKILL_TEXT, codex=True)
     else:
-        _tool(directory, call_id, "Skill", {"skill": "agent-toolkit:completion-report"}, "起動", codex=False)
+        _tool(directory, call_id, "Skill", {"skill": "agent-toolkit:report-completion"}, "起動", codex=False)
 
 
 def human_input(directory: pathlib.Path, turn_id: str, prompt: str) -> None:
@@ -240,7 +240,7 @@ def test_missing_completion_notifies_only_on_supported_host(tmp_path: pathlib.Pa
     if codex:
         assert not reason
     else:
-        assert "completion-report" in reason and "commit" in reason
+        assert "report-completion" in reason and "commit" in reason
     assert _missing_completion(tmp_path) == ["commit"]
     supply_completion(tmp_path, codex=codex)
     assert not _missing_completion(tmp_path)
@@ -271,11 +271,11 @@ def test_report_body_differences_do_not_block_evidenced_work(tmp_path: pathlib.P
 @pytest.mark.parametrize(
     ("command", "response"),
     [
-        ("echo plugin/skills/completion-report/SKILL.md", "plugin/skills/completion-report/SKILL.md"),
-        ("cat plugin/skills/completion-report/SKILL.md", "cat: plugin/skills/completion-report/SKILL.md: No such file"),
-        ("grep -n name plugin/skills/completion-report/SKILL.md", "2:name: completion-report"),
-        ("cat plugin/skills/session-review/SKILL.md", "---\nname: session-review\n---\n"),
-        ("cat plugin/skills/completion-report/SKILL.md", ""),
+        ("echo plugin/skills/report-completion/SKILL.md", "plugin/skills/report-completion/SKILL.md"),
+        ("cat plugin/skills/report-completion/SKILL.md", "cat: plugin/skills/report-completion/SKILL.md: No such file"),
+        ("grep -n name plugin/skills/report-completion/SKILL.md", "2:name: report-completion"),
+        ("cat plugin/skills/review-session/SKILL.md", "---\nname: review-session\n---\n"),
+        ("cat plugin/skills/report-completion/SKILL.md", ""),
     ],
 )
 def test_codex_path_string_or_failed_read_is_not_evidence(tmp_path: pathlib.Path, command: str, response: str) -> None:
@@ -286,18 +286,18 @@ def test_codex_path_string_or_failed_read_is_not_evidence(tmp_path: pathlib.Path
 
 
 def test_claude_failed_or_unrelated_skill_is_not_evidence(tmp_path: pathlib.Path) -> None:
-    """失敗したcompletion-reportの起動と、他のスキルの起動を起動証拠にしない。"""
+    """失敗したreport-completionの起動と、他のスキルの起動を起動証拠にしない。"""
     supply_commit(tmp_path)
     payload: dict[str, Any] = {
         "session_id": "evidence-test",
         "hook_event_name": "PostToolUseFailure",
         "tool_name": "Skill",
         "tool_use_id": "failed-skill",
-        "tool_input": {"skill": "agent-toolkit:completion-report"},
+        "tool_input": {"skill": "agent-toolkit:report-completion"},
         "tool_response": {"error": "失敗"},
     }
     termination_evidence.observe_tool(json.dumps(payload), after=True)
-    _tool(tmp_path, "other", "Skill", {"skill": "agent-toolkit:session-review"}, "起動", codex=False)
+    _tool(tmp_path, "other", "Skill", {"skill": "agent-toolkit:review-session"}, "起動", codex=False)
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))[0] == "notify"
 
 
@@ -1042,7 +1042,7 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
         finally:
             release_lock(stream)
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った。"))
-    assert decision == "notify" and "completion-report" in reason
+    assert decision == "notify" and "report-completion" in reason
 
 
 @pytest.mark.parametrize("kind", ["unrelated", "other-owner", "finished"])
@@ -1271,7 +1271,7 @@ async def test_started_session_without_projection_is_waited_by_same_work(
             )
             assert not agents_server_observations.pending_session_ids(session_state.read_state("evidence-test"), "main")
             decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った。"))
-            assert decision == "notify" and "completion-report" in reason
+            assert decision == "notify" and "report-completion" in reason
         finally:
             monkeypatch.setattr(atomic_file.os, "replace", original_replace)
 
@@ -1296,9 +1296,9 @@ def test_legacy_stop_review_notice_is_not_completion_evidence():
 def test_termination_evidence_and_operation_skills_share_read_judgment(
     tmp_path: pathlib.Path, command: str, response: str, *, accepted: bool, exit_code: int
 ) -> None:
-    """completion-reportの起動証拠は、範囲指定を含む資料の読取を本文の識別行で受理し、失敗した読取を拒否する。"""
+    """report-completionの起動証拠は、範囲指定を含む資料の読取を本文の識別行で受理し、失敗した読取を拒否する。"""
     supply_commit(tmp_path, codex=True)
-    skill = "completion-report"
+    skill = "report-completion"
     _tool(
         tmp_path,
         "read",

@@ -9,7 +9,7 @@
 `master`への更新はPRのマージコミットだけに限定し、直接pushを許可しない。
 PRの作成は、条件が成立する`agent-toolkit:process-wi`と、恒常的な認可または明示指定により公開まで扱う協調モードではエージェントが実施する。公開範囲の明示指定を優先し、それ以外では手動で行う。
 同じ最上位セッションでのリリースPR作成・マージは1件までとする。マージ後に生じた差分は`develop`へのpushとCI成功まで検収し、次のセッションで累積差分を1件のPRとして扱う。PR作成、必須check、レビュー、マージ後同期の固定費を同じセッションで重ねないためである。
-実施可否と条件の判定は`dotfiles-release`スキルが定める。
+実施可否と条件の判定は`release-dotfiles`スキルが定める。
 head branchの機械的な限定は設けない。
 
 repository設定ではマージコミットを有効にし、squash merge、rebase mergeおよびauto-mergeを無効にする。
@@ -17,12 +17,13 @@ repository設定ではマージコミットを有効にし、squash merge、reba
 GitHubのdefault branchは`master`のまま維持する。
 
 `master-release-pr`という固定名のactiveなbranch rulesetを1件だけ使用する。
-rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の8必須check、削除禁止およびforce push禁止を設定する。
+rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の9必須check、削除禁止およびforce push禁止を設定する。
 
 - `test-linux`
 - `test-windows`
 - `python-lint (3.15)`
 - `pytest (3.15)`
+- `pytest-toolkit (3.15)`
 - `rust-lint`
 - `statusline-version`
 - `browser-e2e`
@@ -32,6 +33,7 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 
 共通CIは`push`と`master`向け`pull_request`の全イベントでjobを開始し、job表示名とmatrixを評価する。
 共通jobにはjob-level `if`を置かず、step-level条件で非所有markerと既存実処理を切り替える。
+例外は分割した試験の結果を集約する`pytest-toolkit (3.15)`で、後述のとおり分割jobの失敗時にも結果を残すため`!cancelled()`を置く。
 
 `test-linux`と`update-dotfiles-upgrade (windows)`は全履歴を取得し、現行HEADの時刻から約72時間前の祖先を選ぶ。
 管理一時ディレクトリ内へローカルbare remote、旧版checkoutおよび隔離HOMEを構成し、旧版をchezmoiで適用する。
@@ -39,14 +41,14 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 `bin/update-dotfiles.cmd`を起動する。公開ランチャーの終了コードが0で、更新後checkoutの`git rev-parse --short=7 HEAD`が
 検証開始時の現行HEADと一致した場合だけ成功とする。実行中のOSアカウントのHOMEと外部remoteは変更対象にしない。
 
-| イベント | head repository | head branch | base branch | 共通7 jobの実処理所有者 | 表示名 |
+| イベント | head repository | head branch | base branch | 共通8 jobの実処理所有者 | 表示名 |
 | --- | --- | --- | --- | --- | --- |
-| `push` | base repository | `master` | 該当なし | `master`の`push` run | 7件のrequired check名 |
-| `push` | base repository | `develop`、同一SHAの利用可能なmaster runあり | 該当なし | `master`の`push` run | 7件の`(non-owner)`名 |
-| `push` | base repository | その他 | 該当なし | この`push` run | 7件のrequired check名 |
-| `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 7件の`(non-owner)`名 |
-| `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 7件のrequired check名 |
-| `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 7件のrequired check名 |
+| `push` | base repository | `master` | 該当なし | `master`の`push` run | 8件のrequired check名 |
+| `push` | base repository | `develop`、同一SHAの利用可能なmaster runあり | 該当なし | `master`の`push` run | 8件の`(non-owner)`名 |
+| `push` | base repository | その他 | 該当なし | この`push` run | 8件のrequired check名 |
+| `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 8件の`(non-owner)`名 |
+| `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 8件のrequired check名 |
+| `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 8件のrequired check名 |
 
 先行job`common-ci-owner`が所有判定を1回だけ行い、全共通jobの表示名、非所有marker、後続stepの条件へ同じ出力を渡す。
 同一repositoryのheadが`develop`、baseが`master`のrelease pull requestは、`develop`のpushを所有者とする。
@@ -59,7 +61,7 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 共通jobは短い先行判定だけを待つ。Windowsの2ジョブは互いを待たず、`statusline-version`は所有判定から独立する。concurrencyはeventとrefを分け、master runとdevelop runを相互取消しの対象にしない。
 実行中のmaster runが後に失敗した場合は、その失敗結果が残る。非所有側の別名checkはrequired checkの成功を代替しない。
 
-job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の7件の表示名を保証できない。
+job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の8件の表示名を保証できない。
 共通jobを開始して非所有markerを成功させる構成により、required check名と異なる表示名を生成し、同名のskip-successで所有runを代替しない。
 pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示すが、check runの`head_sha`はstatusを関連付けるpull request head commitを示すため、両者を同一視しない。
 `master`が`develop`の祖先であり、release merge commitのtreeが`develop` headのtreeと同一になるrelease invariantを、共通CIの実処理を`develop`の`push` runへ帰属させる根拠とする。
@@ -71,7 +73,18 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 
 Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有し、`test-windows`はWindows固有pytest、公開ランチャー、通常profileへのchezmoi適用とpost-applyの確認を所有する。両job間に依存関係を置かず、更新検証の通常profile監視に必要なMozilla予約タスク停止は更新検証jobが実行する。
 
-`python-lint`のmatrixは`python-lint (3.15)`と`pytest (3.15)`の2要素であり、pytest以外の確認とpytestを別runnerで並行する。dotfilesとagent-toolkitはユーザーの方針により過去のPython版をサポートせず、対応するPythonを3.15へそろえて同じ版でCIを実行する。cache keyにPython版と実行種別の両方を含める。
+`python-lint`のmatrixは`python-lint (3.15)`、直下の`pytest (3.15)`、toolkitを3分割した`pytest-toolkit (3.15, 1/3)`〜`(3.15, 3/3)`の5要素であり、それぞれ別runnerで並行する。
+直下はGit管理下のテストを明示してpytestへ渡し、toolkitは同サブプロジェクトを起点にskills配下を含めて実行する。
+toolkitの各分割jobは同じ集合を収集し、`agent_toolkit._testing.pytest_plugin`の`--test-shard`がnode IDのCRC32で各試験をちょうど1つの分割へ割り当てる。
+1runnerのtoolkit pytestが約16分を要し、CI全体の所要基準10分（`.claude/skills/develop-dotfiles/references/verification-values.md`「テストとCIの所要基準」）を超えたため分割した。
+横断不変条件も所属する集合で各1回実行し、全pytestで最低Git 2.34.1、4worker、workstealと環境隔離を維持する。
+dotfilesとagent-toolkitはユーザーの方針により過去のPython版をサポートせず、対応するPythonを3.15へそろえて同じ版でCIを実行する。
+cache keyにPython版、実行種別、matrix要素の番号を含め、分割jobが同じキーへ同時に保存して競合しないようにする。
+
+`python-lint`の終了後に動く集約job`pytest-toolkit-result`がrequired checkの`pytest-toolkit (3.15)`を所有する。
+`needs`の結果はmatrix全体の集約でlintと直下pytestの失敗も含むため、同jobは`actions: read`でrunの最新試行のjob一覧を照会し、3分割jobがすべて成功した場合だけ成功する。
+分割jobが失敗しても集約jobをskipさせないよう`!cancelled()`を置く。skipされたrequired checkはマージを遮断しないためである。
+非所有runでは他の共通jobと同じく`(non-owner)`名で成功し、所有判定jobが出力を返さなかった場合は失敗する。
 
 statuslineのCargo versionとbase・head versionおよびtagの確認は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branchおよびrelease条件を追加の限定に使わない。
@@ -88,9 +101,9 @@ pyfltr側は`statusline-version`と同じく既定で無効、非fastとし、�
 
 ### rulesetの更新手順
 
-ruleset `21524717`のrequired checkは共通7名と`statusline-version`の8件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。
+ruleset `21524717`のrequired checkは共通8名と`statusline-version`の9件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。
 ruleset更新前の個別GETでは、応答の完全IDが`21524717`、`source`が`ak110/dotfiles`、`target`が`branch`であり、条件が`refs/heads/master`を対象とすることを確認する。確認した完全IDは、送信前後の個別GETとPUTのURLパス`repos/ak110/dotfiles/rulesets/21524717`へ固定する。
-ruleset更新の本文はmanaged-tempの中のJSONファイルへ保存し、送信前に保存したJSONファイルを読み戻す。トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、8件のrequired check名を検証する。
+ruleset更新の本文はmanaged-tempの中のJSONファイルへ保存し、送信前に保存したJSONファイルを読み戻す。トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、9件のrequired check名を検証する。
 検証に成功した同じファイルを`gh api --method PUT --input <検証したJSONファイルの絶対パス> repos/ak110/dotfiles/rulesets/21524717`へ渡す。擬似端末の標準入力を更新本文の搬送に使わない。
 更新要求が失敗した場合は、追加のPUTを実行する前に対象rulesetを個別GETで再取得する。再取得した現行状態が更新前状態と完全に一致し、送信するJSONファイルの内容が検証時から変化しておらず、失敗の原因が本文の搬送であって送信方法をファイル入力へ是正できることを確認できる場合だけ、同じ本文の再送を1回だけ許可する。
 現行状態を取得できない場合、現行状態が更新前状態と一致しない場合、更新後の確認が期待値と一致しない場合は再送せず、更新前状態と現行状態を保持して続行できない理由を返して終了する。
@@ -128,7 +141,7 @@ PRマージ、branch同期およびRelease検収の詳細は、プロジェク�
 
 ## 公開工程
 
-起動形態によらず共通の版数更新、全体検証、push、CI確認、公開状態とプロジェクト固有の公開後の操作の手順は`agent-toolkit:commit`の`references/publish.md`を基準とする。公開担当と単一レーンはその文書を読み、CI修正の委譲など固有の受渡しだけを保持する。個人7プロジェクトの協調モードは`ak110-projects-operations`の恒常的な公開認可を適用し、明示指定があればその範囲まで同じ手順で進める。dotfilesはリリースPRのマージ・検収まで、smprはpushとCIまで、リリース対象5プロジェクトは必要時だけ既存基準でリリースする。2026年10月10日の判断は、協調モードで指定がなければ確認する旧判断を置き換える。一般の公開規範へ個人認可を複製する案は適用範囲が広がるため採らない。
+起動形態によらず共通の版数更新、全体検証、push、CI確認、公開状態とプロジェクト固有の公開後の操作の手順は`agent-toolkit:commit`の`references/publish.md`を基準とする。公開担当と単一レーンはその文書を読み、CI修正の委譲など固有の受渡しだけを保持する。個人7プロジェクトの協調モードは`operate-ak110-projects`の恒常的な公開認可を適用し、明示指定があればその範囲まで同じ手順で進める。dotfilesはリリースPRのマージ・検収まで、smprはpushとCIまで、リリース対象5プロジェクトは必要時だけ既存基準でリリースする。2026年10月10日の判断は、協調モードで指定がなければ確認する旧判断を置き換える。一般の公開規範へ個人認可を複製する案は適用範囲が広がるため採らない。
 
 ### 公開の分離と並行工程
 
@@ -138,7 +151,7 @@ commit以降のリリース、PR/MRまたは公開操作は、実装のレーン
 メインは長時間の公開待機と追加工程の入力commit、成果物、配備先、排他資源および先行工程の成功結果を起動前に比較し、先行成果が必要となる順序を記録する。独立工程は別の実行主体へ渡して待機中に進め、同じDB migrationの成功を要する工程はその結果を確認してから始める。公開担当は主作業ツリーへの唯一の書込主体であり、別主体へ渡す工程の書込先は分ける。全工程を公開担当の返却後へ直列化する案では、独立した公開操作も長時間待機の終了まで開始できないため採用しない。
 公開結果を待たずに調べられる既知の警告は、公開担当のCI待機と並行して読み取り調査とAWI（未完了の作業要求）原稿を準備する。正式な候補選別と原稿の採否は公開後の同じメインが確定し、WI投入担当への委譲で投入する。先行調査の結果を現行状態と比べずに投入する案は、公開結果で消えた問題までprocess-wiの次の実行へ渡すため採用しない。
 
-開発機の常時稼働サーバーへの反映は、全レーンの統合を検収し専用資源を保持した状態で、対象リポジトリへ書き込まず公開工程の入力や排他資源と競合しない場合に、公開担当の公開・CI待機と並行して始める。開始をCIの終了後まで延ばすと、反映の開始が公開の待機時間だけ遅れる。開始時機と反映したHEAD・稼働確認結果の保持は`agent-toolkit:process-wi`の`references/finish-session.md`が担い、単一レーンの同等の時機は`agent-toolkit:process-wi single-lane`の実行順が担う。`agent-toolkit:completion-report`は先行結果と報告時点のHEADを比べ、同じHEADへの成功済み反映を再実行せず、追加commitや先行失敗があれば現行HEADを反映して稼働を確認する。反映を完了報告だけへ置く案は開始が公開待機後となり、反映を完了報告から完全に外す案は追加commitと先行失敗を反映できないため採らない。
+開発機の常時稼働サーバーへの反映は、全レーンの統合を検収し専用資源を保持した状態で、対象リポジトリへ書き込まず公開工程の入力や排他資源と競合しない場合に、公開担当の公開・CI待機と並行して始める。開始をCIの終了後まで延ばすと、反映の開始が公開の待機時間だけ遅れる。開始時機と反映したHEAD・稼働確認結果の保持は`agent-toolkit:process-wi`の`references/finish-session.md`が担い、単一レーンの同等の時機は`agent-toolkit:process-wi single-lane`の実行順が担う。`agent-toolkit:report-completion`は先行結果と報告時点のHEADを比べ、同じHEADへの成功済み反映を再実行せず、追加commitや先行失敗があれば現行HEADを反映して稼働を確認する。反映を完了報告だけへ置く案は開始が公開待機後となり、反映を完了報告から完全に外す案は追加commitと先行失敗を反映できないため採らない。
 
 Claude Codeのメインは、独立した投入・読取調査・追加公開工程とサーバー反映を公開担当の起動直後に開始し、既存の担当別記録と保存出力へ入力commit・所有資源・担当とタスク・保存出力・公開結果後の工程を保存してから、共通の引数なし圧縮予約へ進む。公開対象なしの短絡では公開担当の起動もこの境界の予約も省く。まとめ処理のpush後CI待機は、同じ監視入力とbaselineを保存して同じ手順を使う。予約・背景待機・通知後の復元の所有者はdelegationのwaiting-and-monitoring.mdであり、公開の意味判断はメインが担い、Function hooks moduleへ移さない。
 
@@ -181,13 +194,13 @@ all-reposの公開・CI・確認・再開は対象リポジトリの担当が所
 ホームの常駐プログラムは担当別の返却と再開記録を保持し、対象へのGit操作は担当に任せる。
 1担当の回答待ちは他担当の成功を取り消す条件にせず、各担当の公開状態と未判定を別々に保持する。
 
-公開担当の完了後に`agent-toolkit:completion-report`を起動する。同スキルは元作業の完了報告を先に出力し、現在のセッションを対象とする`agent-toolkit:session-review`を起動する。振り返りが対策のAWIを投入する場合は投入の前に振り返り結果を予告し、担当の終了後の応答で振り返りの最終報告（投入が1件以上なら`## AWI投入結果報告`、0件なら`## 振り返り結果報告`）を出力し、続けて`atk agents-exit-session`を単独で実行する。各工程は同じ完了本文を再生成しない。
+公開担当の完了後に`agent-toolkit:report-completion`を起動する。同スキルは元作業の完了報告を送り、続けて`atk agents-exit-session`を単独で実行する。振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動のセッションを非同期にまとめて分析する（`design-session-review.md`「完了報告と振り返りの関係」）。その結果は作業完了報告とは独立して届ける。各工程は同じ完了本文を再生成しない。
 
-公開担当の返却後と振り返り後に、メインはベースbranch、追跡ref、最新HEADのCIと作業ツリーを確認する。前回push後に是正レーンまたは主作業ツリーのcommitが統合された場合は、全レーンの終了と書込主体の解放を確認してから追加差分だけを公開担当へ再び渡す。前回公開済み成果の版数更新、プロジェクト固有の公開後の操作、延期adoptを重ねず、最新HEADのpushとCI成功を同じセッションで検収する。
+公開担当の返却後に、メインはベースbranch、追跡ref、最新HEADのCIと作業ツリーを確認する。前回push後に是正レーンまたは主作業ツリーのcommitが統合された場合は、全レーンの終了と書込主体の解放を確認してから追加差分だけを公開担当へ再び渡す。前回公開済み成果の版数更新、プロジェクト固有の公開後の操作、延期adoptを重ねず、最新HEADのpushとCI成功を同じセッションで検収する。
 新しいcommitが無くCIの検収と公開後の操作が完了していれば再起動を省き、CI未判定か公開後の操作が未完了なら同じcommitの未完了工程だけを再開する。
 起動回数で重複公開を防ぐ案は追加成果を未pushのまま残すため採用しない。
 
-公開担当はpushの完了後にベースbranchの公開状態を観測し、`ベースbranchの状態`として返す。メインは`agent-toolkit:completion-report`の完了報告の前に同じ項目を1回観測する。公開担当が返却した時点のOID一致だけを判定に用いると、作業ツリーの未コミット差分と中断状態が観測されず、以降の工程を経た後の状態も対象に入らないためである。公開担当後の是正commit以外の理由で解消できない場合はUWI（ユーザーの判断を要する確認事項）へ引き継ぎ、観測を経ないまま完了報告へ到達させない。
+公開担当はpushの完了後にベースbranchの公開状態を観測し、`ベースbranchの状態`として返す。メインは`agent-toolkit:report-completion`の完了報告の前に同じ項目を1回観測する。公開担当が返却した時点のOID一致だけを判定に用いると、作業ツリーの未コミット差分と中断状態が観測されず、以降の工程を経た後の状態も対象に入らないためである。公開担当後の是正commit以外の理由で解消できない場合はUWI（ユーザーの判断を要する確認事項）へ引き継ぎ、観測を経ないまま完了報告へ到達させない。
 
 公開状態の4項目は、Gitのporcelain v2のbranch情報と通常の`status`表示から取得する。前者でbranch、未コミット差分および追跡先からのaheadを判定し、後者でrebase・merge・cherry-pickの進行を判定する。親と公開担当は同じ取得形を使う。`.git`内部ファイルの探索を組み合わせる案は、linked worktreeのGitディレクトリ（`--git-dir`）の配置を呼び出し側へ漏らすため採用しない。
 

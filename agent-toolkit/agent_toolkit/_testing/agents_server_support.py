@@ -502,6 +502,18 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             "レーン識別子: lane-01",
             handoff,
         ]
+    if task_name == "repository-process.subagent.md":
+        return [
+            "target_repo: github.com/example/repository",
+            f"worktree: {root}",
+            f"candidate_file: {root / 'candidates.jsonl'}",
+            'readiness: {"status": "ready"}',
+            "lane_limit: 2",
+            f"ownership_record: {root / 'ownership.json'}",
+            "ownership_token: token",
+            "lane_session_id: lane-session",
+            handoff,
+        ]
     if task_name == "lane-integration.subagent.md":
         return [
             "統合区分: マージあり",

@@ -5,6 +5,7 @@ import contextlib
 import json
 import os
 import pathlib
+import re
 import socket
 import subprocess
 import sys
@@ -603,3 +604,39 @@ def test_pytest_notifies_once_while_waiting_for_slot_held_by_other_process(tmp_p
     assert errors.count("実行枠を保持している") == 1
     assert f"label=holder-probe、pid={holder.pid}" in errors
     assert "待機時間は試験の処理時間に含まれない" in errors
+
+
+def test_test_shards_partition_collected_tests_across_runs(tmp_path: pathlib.Path) -> None:
+    """全分割の実行結果を合わせると、xdistのworkerを含めて各試験がちょうど1回実行される。"""
+    (tmp_path / "shard_test.py").write_text(
+        textwrap.dedent("""\
+            import pytest
+
+            @pytest.mark.parametrize("value", range(30))
+            def test_value(value):
+                pass
+
+            def test_single():
+                pass
+        """),
+        encoding="utf-8",
+    )
+    expected = {f"shard_test.py::test_value[{value}]" for value in range(30)} | {"shard_test.py::test_single"}
+    executed: list[set[str]] = []
+    # 子pytestの起動回数を抑えるため2分割で確かめ、2番目はworker間で同じ集合を選ぶことも見るためxdistで実行する。
+    for index, workers in ((1, []), (2, ["-p", "xdist.plugin", "-n", "2"])):
+        result = _run_child_pytest(tmp_path, "-rA", *workers, f"--test-shard={index}/2", "shard_test.py")
+        assert result.returncode == 0, result.stdout + result.stderr
+        executed.append(set(re.findall(r"^PASSED (\S+)$", result.stdout, re.MULTILINE)))
+    assert all(executed)
+    assert set().union(*executed) == expected
+    assert sum(len(shard) for shard in executed) == len(expected)
+
+
+def test_invalid_test_shard_stops_before_collection(tmp_path: pathlib.Path) -> None:
+    """範囲外の分割番号は、試験を実行せず指定方法を示す使用法エラーで終了する。"""
+    (tmp_path / "probe_test.py").write_text("def test_probe():\n    pass\n", encoding="utf-8")
+    result = _run_child_pytest(tmp_path, "--test-shard=4/3", "probe_test.py")
+    assert result.returncode == pytest.ExitCode.USAGE_ERROR, result.stdout + result.stderr
+    assert "--test-shard=INDEX/COUNT" in result.stderr
+    assert "passed" not in result.stdout

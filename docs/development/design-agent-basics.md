@@ -11,7 +11,7 @@ agent-basicsはコード・設計・テスト・レビュー・文章の品質�
 品質判断ではbasicsのスキルを直接起動する。
 toolkitの工程文書と常時規範が、運用を開始する時点で必要な運用資料を読み込む。
 
-配送範囲はtoolkitのdelegation、セッション記録はsession-review、内部フラグとhookの実装仕様は開発専用のagent-toolkit-editが所有する。
+配送範囲はtoolkitのdelegation、セッション記録はreview-session、内部フラグとhookの実装仕様は開発専用のagent-toolkit-editが所有する。
 混在する文書では、品質を判断する条件と、委譲・表の保存・工程遷移を分ける。
 basics単独のエンドユーザーには、プロジェクトが採用する認可と作業手順を適用する。
 toolkit併用時には、toolkitが自身の運用契約を適用してから、各品質スキルの条件付き資料へ進む。

@@ -496,8 +496,8 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 | --- | --- |
 | `atk wi add` | 依頼内容が既に固まっており、本文をそのまま登録したい |
 | `atk wi add --batch` | 別環境の`atk wi show --all`の出力を複数件まとめて移行・復元したい |
-| `/agent-toolkit:add-awi-by-user` | 依頼内容を対話で確定してから登録したい |
-| `/agent-toolkit:add-awi-by-user carefully <要求>` | 考慮漏れを洗い出したい要求を、本文を書く前に方針から確認したい |
+| `/agent-toolkit:add-awi-by-user` | 依頼内容を対話で確定し、本文を書く前に方針を確認してから登録したい（`carefully`を付けても同じ動作） |
+| `/agent-toolkit:add-awi-by-user direct <要求>` | 要件の確認だけを対話で行い、方針の最終承認を省いて登録したい |
 | `atk serve`の新規追加 | 画面から登録したい。種別「一括登録（show形式）」で移行・復元もできる |
 
 通常の登録は、本文を書いたファイルを渡して`atk wi add --body-file <本文ファイル>`を実行する。
@@ -505,10 +505,10 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 登録済みのAWIを直したい場合は、`atk wi hold <ファイル名>`で自動処理から外し、本文を直してから`atk wi unhold <ファイル名>`で戻す。
 処理中の項目は保留せず、変更内容を新しいAWIとして登録する。
 
-`carefully`を付けると、エージェントは本文を書く前に方針の承認を求める。
+通常の起動では、エージェントは本文を書く前に方針の承認を求める（`carefully`を付けても同じ動作になる）。
 考慮漏れを指摘するたびに原因を分析し、ほかの方針にも同じ理由の見落としがないか確認する。
 その結果を方針へ反映して再確認し、再発防止策も別AWIとして登録する。
-通常の起動では、要件の確定後に登録する。
+先頭に`direct`を付けると方針の最終承認だけを省いて登録する。要件の曖昧さや選好など、ユーザーの判断が必要な点は`direct`でも確認する。
 
 ### UWIへの回答と状態確認
 
@@ -541,9 +541,8 @@ atk wi answer <UWIファイル名> '<回答本文>'
 - セッション: Claude CodeとCodexの保存済みセッションの一覧と会話の表示。右ペインの見出しにAPI料金換算の推定費用を表示する
 
 WI画面の状態表示のうち、`answered`は回答済みで次の処理を待つUWI、`cooldown`は期限まで処理を始めないAWI、`needs-verify`は反映後の観測待ちで再処理を待つAWIを示す。
-振り返りのbatchが登録したAWIには「要確認」バッジが付き、内容を確認するまで自動処理されない。要確認のAWIが新しく登録されると、未回答UWIと同じくブラウザー通知が届く。
+振り返りのbatchが登録したAWIも、エージェントが採否を検討して自動処理する。
 未回答のUWIの回答を待つAWIには`blocked`バッジが付き、UWIへ回答すると外れて次の処理で回答とともに処理される。処理中のUWIは`processing`と表示される。
-詳細の「確認済みにする」で処理を許可し、誤って押した場合は「要確認に戻す」で取り消せる。
 
 エージェントが登録したinboxまたはholdのAWIには、詳細画面から`## ユーザーコメント`を追記できる。
 コメントに操作・対象・範囲を具体的に書くと、その範囲の外部操作への承認として扱われる。
@@ -605,12 +604,12 @@ Codexでフックを信頼する操作は[Codex利用ガイド](codex-guide.md#�
 ユーザーが手動で起動する主なスキルは次のとおりである（Claude Codeでは`/`、Codexでは`$`を付けて起動する）。
 
 - `agent-toolkit:add-awi-by-user`: 要件を対話で確定し、AWIまたはUWIを登録する
-  - 考慮漏れを洗い出したい要求では、先頭に`carefully`を付けて起動する（Claude Codeでは`/agent-toolkit:add-awi-by-user carefully <要求>`）。本文を書く前に方針を確認し、考慮漏れの指摘ごとに原因分析して再確認する。通常の起動では要件の確定後に登録する
+  - 本文を書く前に方針を確認し、考慮漏れの指摘ごとに原因分析して再確認する（`carefully`を付けても同じ動作）。方針の最終承認を省きたい場合は先頭に`direct`を付けて起動する（Claude Codeでは`/agent-toolkit:add-awi-by-user direct <要求>`）。必要なユーザー確認は`direct`でも行う
 - `agent-toolkit:process-wi`: 対象リポジトリのAWIをレーンへ分けて計画・実装・レビュー・公開する
 - `agent-toolkit:process-wi single-lane`: AWIをレーンへ分けずに1回の起動でまとめて処理する
 - `agent-toolkit:process-wi all-repos`: `process_loop_repositories`の登録全体を1回処理する
-- `agent-toolkit:session-review`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。引数で着眼点を追加できる
-- `agent-toolkit:session-review batch`: 振り返り待ちのセッションをまとめて分析する。既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
+- `agent-toolkit:review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。引数で着眼点を追加できる
+- `agent-toolkit:review-session batch`: 振り返り待ちのセッションをまとめて分析する。既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
 - `agent-toolkit:export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
 - `agent-toolkit:refine-prompt`: プロンプトやスキルの改善点を独立した実行者から集めて反映する
 

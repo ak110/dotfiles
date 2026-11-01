@@ -1,6 +1,6 @@
 """スキル配下の資料を読む操作が、その資料の本文を返したかを判定する。
 
-completion-reportの起動証拠（`termination_evidence.py`）と、Antigravityの`read_file`をSkill観測へ渡す処理
+report-completionの起動証拠（`termination_evidence.py`）と、Antigravityの`read_file`をSkill観測へ渡す処理
 （`antigravity.py`）が使う。パスの文字列だけを根拠にせず、読取の結果が資料の本文を返したことを確かめる。
 起動証拠は範囲指定の読取も受理するため、本モジュールは全文か部分かを区別しない。
 資料の全文取得の判定は`pretooluse/read_delivery.py`が内容ハッシュと本文一致で行う。
@@ -9,11 +9,14 @@ completion-reportの起動証拠（`termination_evidence.py`）と、Antigravity
 from __future__ import annotations
 
 import dataclasses
+import functools
 import hashlib
 import json
 import pathlib
+from collections.abc import Callable
 
-lazy from agent_toolkit._common.plugin_roots import resolve_plugin_root
+lazy from agent_toolkit._common import read_triggers
+lazy from agent_toolkit._common.plugin_roots import resolve_plugin_root, sibling_plugin_root
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
@@ -23,7 +26,7 @@ _READ_PROGRAMS = frozenset({"cat", "sed", "head", "nl", "less", "more", "bat", "
 """Codexが資料を表示する読取コマンド。検索・抽出のコマンドは本文全体を返さないため含めない。
 
 `pretooluse/large_reads.py`の`bash_read_paths`は全文取得の警告用で、`head`・`nl`・`bat`・
-PowerShellの`Get-Content`を扱わない。completion-reportの起動証拠はこれらの読取も受理するため、別に列挙する。
+PowerShellの`Get-Content`を扱わない。report-completionの起動証拠はこれらの読取も受理するため、別に列挙する。
 """
 
 
@@ -66,6 +69,65 @@ def skill_document(argument: str) -> tuple[str, str] | None:
     if len(parts) >= 4 and parts[-2] == "references" and parts[-4] == "skills" and parts[-1].endswith(".md"):
         return parts[-3], f"references/{parts[-1]}"
     return None
+
+
+def document_owner(path: pathlib.Path) -> pathlib.Path | None:
+    """選択された実体のmanifestを持つ所有rootを返す。別版の探索はしない。"""
+    return next((parent for parent in path.resolve().parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+
+
+def skill_name(path: pathlib.Path, *, owner: Callable[[pathlib.Path], pathlib.Path | None] = document_owner) -> str | None:
+    """実体のmanifestを使い、配布スキルとローカルスキルを区別する。
+
+    `owner`には、呼出側が同じ実体の判定を共有する所有rootの解決関数を渡せる。
+    """
+    document = skill_document(str(path))
+    if document is None or document[1] != "SKILL.md":
+        return None
+    if owner(path) is None:
+        return document[0]
+    return f"{document_plugin(str(path))}:{document[0]}"
+
+
+def active_skill_root(plugin: str) -> pathlib.Path | None:
+    """`Skill`起動でホストが読み込む配布物のrootを返す。解決できなければNoneを返す。"""
+    return _sibling_skill_root(plugin, plugin_resources.plugin_root().resolve())
+
+
+@functools.cache
+def _sibling_skill_root(plugin: str, toolkit: pathlib.Path) -> pathlib.Path | None:
+    """読込案内は資料ごとに同じrootを繰り返し解決するため、toolkitのrootと配布物名の組で結果を保持する。"""
+    if plugin == "agent-toolkit":
+        return toolkit
+    sibling = sibling_plugin_root(plugin, toolkit)
+    return sibling.resolve() if sibling is not None else None
+
+
+def skill_loadable(path: pathlib.Path, *, owner: Callable[[pathlib.Path], pathlib.Path | None] = document_owner) -> bool:
+    """`Skill`起動がこの実体を読み込むかを返す。
+
+    同じ名前の配布スキルでも、作業ツリー内の写しは起動中の配布物とは別の実体であり、`Skill`起動では読み込まれない。
+    写しにまで`Skill`起動を求めると取得済みに到達できないため、写しはReadの全文取得で扱う。
+    起動中の配布物を解決できない場合は、従来どおり`Skill`起動で読み込む実体として扱う。
+    読込案内、取得観測、圧縮後と取得失敗の案内が同じ判定を使うよう、どのhookからも依存できるこの層に置く。
+    """
+    name = skill_name(path, owner=owner)
+    if name is None or ":" not in name:
+        return True
+    active = active_skill_root(name.split(":", 1)[0])
+    root = owner(path)
+    return active is None or root is None or root == active
+
+
+def requires_skill_invocation(
+    path: pathlib.Path,
+    *,
+    host: str,
+    subject: str,
+    owner: Callable[[pathlib.Path], pathlib.Path | None] = document_owner,
+) -> bool:
+    """`Skill`起動だけを全文取得として認める資料かを返す。"""
+    return skill_loadable(path, owner=owner) and read_triggers.skill_invocation_required(path, host=host, subject=subject)
 
 
 def bash_document_reads(command: str) -> list[DocumentRead]:

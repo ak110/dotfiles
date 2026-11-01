@@ -21,6 +21,7 @@ lazy from agent_toolkit._atk.wi import add as _add
 lazy from agent_toolkit._atk.wi import alerts as _alerts
 lazy from agent_toolkit._atk.wi import batch as _batch
 lazy from agent_toolkit._atk.wi import constants as _wi_constants
+lazy from agent_toolkit._atk.wi import effect_check as _effect_check
 lazy from agent_toolkit._atk.wi import filenames as _wi_filenames
 lazy from agent_toolkit._atk.wi import grep as _grep
 lazy from agent_toolkit._atk.wi import listing as _listing
@@ -35,6 +36,7 @@ lazy from agent_toolkit._atk.wi.mutations import content as _mutation_content
 lazy from agent_toolkit._atk.wi.mutations import dependencies as _mutation_dependencies
 lazy from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 lazy from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
+lazy from agent_toolkit._common import private_notes as _private_notes
 
 _queue_filename_completer = _wi_filenames.make_filename_completer(_wi_constants.WI_STATES)
 
@@ -84,6 +86,7 @@ _WI_SYNC_MUTATIONS = frozenset(
         "reject",
         "rm",
         "edit",
+        "effect-check",
         "set-dependencies",
         "answer",
         "commit",
@@ -333,8 +336,9 @@ def _add_wi_add_parser(sub: Any) -> None:
         metavar="NAME",
         default=None,
         help=(
-            "投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: "
-            "session-review・alert-monitor・agent・human・plan）。"
+            "投入元の識別子をfrontmatterのsourceへ記録する。"
+            "エージェントは起動スキル名（プラグイン接頭辞を除く）、スキルが無い場合はagentを指定する。"
+            "エージェント環境の通常追加ではhumanを拒否する。人間の直接投入ではsourceを省略する。"
             "本文先頭のfrontmatterに source がある場合は本オプションより優先する。"
         ),
     )
@@ -734,6 +738,16 @@ def _add_mq_transition_parsers(sub: Any) -> None:
 
 def _add_mq_edit_parsers(sub: Any) -> None:
     """本文編集・計画変換・依存更新サブコマンドを登録する。"""
+    effect = _atk_help.add_command(sub, "effect-check", **_atk_help.HELP["atk wi effect-check"])
+    effect.add_argument("filename", metavar="FILENAME", help="効果を記録する採用済みAWIのファイル名")
+    effect.add_argument("--worktree", required=True, help="対応commitの変更ファイルを確かめる対象リポジトリの作業ツリー")
+    effect.add_argument("--file", required=True, help="対応commitで変更したリポジトリ相対パス")
+    effect.add_argument(
+        "--verdict", required=True, choices=("confirmed", "insufficient"), help="効果を確認したか、効果不足かの判定"
+    )
+    effect.add_argument("--checked-on", required=True, help="判定日（YYYY-MM-DD）")
+    effect.add_argument("--review-record", required=True, help="判定した振り返りの記録位置")
+    effect.add_argument("--corrective-awi", help="効果不足の是正先AWIの保存済みファイル名")
     edit = _atk_help.add_command(sub, "edit", **_atk_help.HELP["atk wi edit"])
     edit.add_argument(
         "filename",
@@ -1226,7 +1240,11 @@ def dispatch(
     if sub == "submission":
         # 会話別の状態ディレクトリだけを扱い、private-notesを必要としない。
         return _submission.cmd_submission(args)
-    private_notes = _wi_sync.ensure_environment(home)
+    private_notes = (
+        _private_notes.default_private_notes(home)
+        if sub in ("add", "edit") and args.dry_run
+        else _wi_sync.ensure_environment(home)
+    )
     commands = {
         "add": lambda: (
             _batch.cmd_add_batch(args, private_notes, now, home) if args.batch else _add.cmd_add(args, private_notes, now, home)
@@ -1241,6 +1259,7 @@ def dispatch(
         "reject": lambda: _mutation_transitions.cmd_reject(args, private_notes, now),
         "rm": lambda: _mutation_transitions.cmd_rm(args, private_notes),
         "edit": lambda: _mutation_content.cmd_edit(args, private_notes),
+        "effect-check": lambda: _effect_check.cmd_effect_check(args, private_notes),
         "set-dependencies": lambda: _mutation_dependencies.cmd_set_dependencies(args, private_notes),
         "grep": lambda: _grep.cmd_grep(args, private_notes),
         "answer": lambda: _uwi.cmd_answer(args, private_notes),

@@ -123,6 +123,43 @@ def test_continue_only_unfinished_repository(tmp_path: pathlib.Path, monkeypatch
     ]
 
 
+def test_continued_round_ignores_previous_round_repository(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """継続ラウンドの結果に前ラウンドの対象が残っても常駐は続き、今回の対象を結果どおり検収する。
+
+    2026年11月1日の異常終了（結果に前ラウンドの対象が残り、常駐全体が拒否で終了した）の再現である。
+    """
+    notes, snapshots = _targets(tmp_path, monkeypatch)
+    # 常駐のログは常駐セッションでだけ記録されるため、常駐から起動した状態にする。
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    finished: dict[str, dict[str, Any]] = {}
+
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt).read_text())
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "same-coordinator"
+        kwargs["on_session_started"]("same-coordinator")
+        selected = data["repositories"][0]["target_repo"]
+        for path in notes.glob(f"2026/10/{selected.rsplit('/', 1)[1]}-*.md"):
+            path.unlink()
+        finished[selected] = {"status": "completed", "writer_sessions": []}
+        # 同じ会話の統括は、前ラウンドで完了した対象も結果へ書く。
+        records = {**finished}
+        for target in data["repositories"][1:]:
+            records[target["target_repo"]] = {"status": "incomplete", "writer_sessions": []}
+        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": records}))
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    results = loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+    assert {repo_id: result["status"] for repo_id, result in results.items()} == {
+        snapshot.repository.repo_id: "completed" for snapshot in snapshots
+    }
+    output = capsys.readouterr().out
+    assert "統括結果に今回の対象外のリポジトリがある" in output and snapshots[0].repository.repo_id in output
+    assert any("event=result_foreign_repositories" in line for line in log.log_path().read_text(encoding="utf-8").splitlines())
+
+
 @pytest.mark.parametrize("status", ["incomplete", "completed", "blocked", "pending", None])
 def test_no_progress_and_blocking_are_repository_scoped(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, status: str | None
@@ -554,7 +591,7 @@ def test_public_once_failure_does_not_wait(tmp_path: pathlib.Path, monkeypatch: 
     [
         [],
         {"repositories": []},
-        {"repositories": {"foreign": {"status": "completed"}}},
+        {"repositories": {"foreign": {"status": "completed"}, "repo": {"status": "done"}}},
         {"repositories": {"repo": {"status": []}}},
         {"repositories": {"repo": {"status": "incomplete", "writer_sessions": "writer"}}},
         {"repositories": {"repo": {"status": "incomplete", "writer_sessions": [1]}}},

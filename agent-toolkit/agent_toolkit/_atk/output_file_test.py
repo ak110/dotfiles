@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import pathlib
 import sys
@@ -119,6 +120,57 @@ def run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[object
         code = 0
     captured = capsys.readouterr()
     return code, captured.out, captured.err
+
+
+@pytest.mark.parametrize("subcommand", ["add", "edit"])
+@pytest.mark.parametrize("agent", [False, True])
+def test_main_draft_output_preserves_large_raw_text(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, subcommand: str, agent: bool
+) -> None:
+    """公開mainのadd/edit dry-runで大容量原稿を直接表示し、Windows相当の改行変換も抑える。"""
+    opening = "# 表題\r\n\r\n" + "原文\r\n単独CR\r末尾空白  \n" * 2000
+    body = opening + "## 反映内容と反映先\n対象へ反映する。\n"
+    draft = tmp_path / "draft.md"
+    draft.write_bytes(body.encode("utf-8"))
+    notes = tmp_path / "notes"
+    entry = notes / "2026/10/20261031-000000-001.md"
+    entry.parent.mkdir(parents=True)
+    entry.write_text(
+        "---\nstate: hold\ntype: awi\ntarget_repo: github.com/example/test\nsource: test\n---\n\n# 元の表題\n",
+        encoding="utf-8",
+    )
+    original = entry.read_bytes()
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    if agent:
+        monkeypatch.setenv("AI_AGENT", "1")
+    argv = [
+        "wi",
+        subcommand,
+        "--dry-run",
+        "--source=test",
+        "--target-repo=github.com/example/test",
+        "--body-file",
+        str(draft),
+    ]
+    if subcommand == "edit":
+        argv.remove("--source=test")
+        argv.append(entry.name)
+    buffer = io.BytesIO()
+    with io.TextIOWrapper(buffer, encoding="utf-8", newline="\r\n") as stream, monkeypatch.context() as patch:
+        patch.setattr(sys, "stdout", stream)
+        with pytest.raises(SystemExit) as raised:
+            atk.main(argv)
+        stream.flush()
+        actual = buffer.getvalue()
+    assert raised.value.code == 0
+    assert opening.encode("utf-8") in actual
+    assert not actual.startswith("保存先: ".encode())
+    saved = next(
+        line.removeprefix("冒頭保存先: ") for line in actual.decode("utf-8").splitlines() if line.startswith("冒頭保存先: ")
+    )
+    assert pathlib.Path(saved).read_bytes() == opening.encode("utf-8")
+    assert draft.read_bytes() == body.encode("utf-8")
+    assert entry.read_bytes() == original
 
 
 @pytest.mark.parametrize("agent", [False, True])

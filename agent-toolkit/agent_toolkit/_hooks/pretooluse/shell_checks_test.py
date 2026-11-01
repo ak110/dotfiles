@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 
@@ -52,6 +53,17 @@ def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subpr
     recorded = _run_posttooluse(acquisition, env_overrides)
     assert recorded.returncode == 0
     return _run(payload, env_overrides=env_overrides)
+
+
+def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
+    """正常拒否の終了状態と配送先を確かめ、理由を返す。"""
+    assert result.returncode == 0
+    assert not result.stderr
+    specific = json.loads(result.stdout)["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    reason = specific["permissionDecisionReason"]
+    assert reason
+    return reason
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -133,8 +145,7 @@ def test_commit_message_is_read_after_static_cd(tmp_path):
         {"tool_name": "Bash", "cwd": str(tmp_path), "tool_input": {"command": f"cd {directory} && git commit -F message"}},
         env_overrides=_plan_file_state_env(tmp_path),
     )
-    assert result.returncode == 2
-    assert "空行" in result.stderr
+    assert "空行" in _denial_reason(result)
 
 
 class TestAgentsServerInputChecks:
@@ -639,6 +650,77 @@ class TestIssSidechainProbe:
 class TestBashProcessKillByPattern:
     """`Bash`経由のパターン一致プロセス終了（`pkill`・`killall`）検出（block）。"""
 
+    @pytest.mark.parametrize("codex", [False, True])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cat -- /tmp/pkill/output.log",
+            "cat -- '/tmp/killall/output.log'",
+            "cat -- /tmp/pkill/output.log > /tmp/result.log",
+            "printf '%s' /tmp/killall/output.log",
+            "ls -- /tmp/pkill/output.log",
+            "grep -n needle /tmp/pkill/output.log",
+            # 共通解析がデータ引数と確定する語は、パスの形をしていなくても実行位置にしない。
+            "cat -- pkill.log",
+            "wc -l killall.txt pkill-notes.md",
+            'head -n 5 "/tmp/pkill dir/output.log"',
+            # 読取・検索の解析が引数をデータと確定する呼出しは、終了コマンド名そのものの引数もデータとして扱う。
+            "cat -- /usr/bin/pkill",
+            "grep -n pkill /tmp/worker.log",
+            "rg -F killall -- /tmp/worker.log",
+            "tail -n 20 /tmp/pkill",
+            "sed -n '1,20p' /tmp/pkill",
+            "awk '{print}' /tmp/killall",
+        ],
+    )
+    def test_normal_path_arguments_are_not_process_termination(self, tmp_path, command, codex):
+        """通常読取・表示・検索のパスを、一括終了の実行と区別する。"""
+        payload = {"tool_name": "Bash", "tool_input": {"command": command}, **({"turn_id": "t"} if codex else {})}
+        result = _run(payload)
+        (tmp_path / "normal-path-public-output.json").write_text(
+            json.dumps({"payload": payload, "returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr}),
+            encoding="utf-8",
+        )
+        assert result.returncode == 0 and not result.stderr
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
+
+    @pytest.mark.parametrize("codex", [False, True])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "xargs /usr/bin/pkill -f worker",
+            "/usr/bin/env /usr/bin/pkill -f worker",
+            "find . -exec /usr/bin/pkill -f worker \\;",
+            "cat /tmp/pkill/output.log; killall worker",
+            "cat /tmp/pkill/output.log $(pkill worker)",
+            # 引数を実行し得るコマンド（ラッパー・シェル・インタプリタ）の引数は、データ引数と確定できない。
+            "sudo pkill worker",
+            "timeout 5 killall worker",
+            "sh -c 'pkill worker'",
+            "python3 -c 'import os; os.system(\"pkill worker\")'",
+            "cat pkill.log | xargs killall",
+            # 引数から実行するコマンドを列挙で網羅できない場合も、実行名の形の語は保護する。
+            "docker exec worker pkill -f app",
+            "mise exec -- pkill -f worker",
+            "npm exec -- killall worker",
+            # 読取・検索の解析が引数の扱いを確定できない呼出しと、外部プログラムを起動する検索の指定。
+            "echo killall",
+            "rg --pre pkill needle /tmp/worker.log",
+            "sed -e '1e pkill worker' /tmp/worker.log",
+            "awk 'BEGIN{system(\"pkill worker\")}'",
+        ],
+    )
+    def test_path_data_does_not_exempt_executable_termination(self, tmp_path, command, codex):
+        """同じパス文字列と実行位置の終了操作が混在しても、両ホストへ拒否理由を届ける。"""
+        payload = {"tool_name": "Bash", "tool_input": {"command": command}, **({"turn_id": "t"} if codex else {})}
+        result = _run(payload)
+        (tmp_path / "process-kill-public-output.json").write_text(
+            json.dumps({"payload": payload, "returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr}),
+            encoding="utf-8",
+        )
+        assert "パターン一致によるプロセス終了" in _denial_reason(result)
+
     @pytest.mark.parametrize(
         "command",
         [
@@ -649,11 +731,11 @@ class TestBashProcessKillByPattern:
     )
     def test_blocks(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 2
-        assert auto_message_opening_attributes(result.stderr)["source"] == "pretooluse"
+        reason = _denial_reason(result)
+        assert auto_message_opening_attributes(reason)["source"] == "pretooluse"
         # 遮断本文が示す検索語の書き方は、同じ判定条件を通過する形である
-        assert "`git log -S`" in result.stderr
-        assert "`p[k]ill`" in result.stderr
+        assert "`git log -S`" in reason
+        assert "`p[k]ill`" in reason
 
     def test_kill_by_pid_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "kill 12345"}})
@@ -751,8 +833,7 @@ class TestBashProcessKillByPattern:
     )
     def test_blocks_indirect_or_executable_matches(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 2
-        assert "パターン一致によるプロセス終了" in result.stderr
+        assert "パターン一致によるプロセス終了" in _denial_reason(result)
 
 
 class TestBashHeredocLiteralExclusion:
@@ -784,7 +865,7 @@ class TestBashHeredocLiteralExclusion:
             },
             _plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
+        assert "パターン一致によるプロセス終了" in _denial_reason(result)
 
     @pytest.mark.parametrize("delimiter", ["\\EOF", 'E"OF"', "'EOF'"])
     def test_quoted_delimiter_heredoc_keeps_following_commands_checked(self, tmp_path: pathlib.Path, delimiter: str) -> None:
@@ -797,8 +878,7 @@ class TestBashHeredocLiteralExclusion:
             },
             _plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
-        assert "pkill" in result.stderr
+        assert "pkill" in _denial_reason(result)
 
 
 # bashのheredocの展開規則: 区切り語のどこかに引用（`'`・`"`・`\`）があれば本文を展開せず、
@@ -842,8 +922,7 @@ class TestBashUnquotedHeredocSubstitution:
             _plan_file_state_env(tmp_path),
         )
         if expands and substitution is not None:
-            assert result.returncode == 2
-            assert substitution in result.stderr
+            assert substitution in _denial_reason(result)
         else:
             assert result.returncode == 0
             assert "/skills/writing-standards/SKILL.md" in _additional_context(result)
@@ -869,8 +948,7 @@ class TestBashUnquotedHeredocSubstitution:
             {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "heredoc-substitution-nested"},
             _plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
-        assert substitution in result.stderr
+        assert substitution in _denial_reason(result)
 
     def test_here_string_substitution_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
         """here-stringの語は外側の置換として既存の解析が扱うため、本判定の対象外とする。"""
@@ -1087,8 +1165,7 @@ def test_reserved_prefix_reaches_bash_hook_checks(command: str, expected: str, e
     """共通解析の前置分岐が、公開hookの出力接続・Git・オプションの判定まで到達する。"""
     result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **extra_payload})
     if expected == "空行":
-        assert result.returncode == 2
-        assert expected in result.stderr
+        assert expected in _denial_reason(result)
     else:
         assert result.returncode == 0
         assert not result.stderr
@@ -1117,11 +1194,10 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
 
     result = _run_git_commit_message_hook(repo, tmp_path, command, extra_payload)
 
-    assert result.returncode == 2
-    assert result.stdout == ""
-    assert re.search(r"公開するコミットへ作業項目のファイル名を書(?:かない|くな)", result.stderr)
-    assert "対応記録" in result.stderr and "plan-progress" in result.stderr
-    assert "ファイル名を含む行を除いて再実行" in result.stderr
+    reason = _denial_reason(result)
+    assert re.search(r"公開するコミットへ作業項目のファイル名を書(?:かない|くな)", reason)
+    assert "対応記録" in reason and "plan-progress" in reason
+    assert "ファイル名を含む行を除いて再実行" in reason
 
 
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
@@ -1248,7 +1324,7 @@ class TestBashAtkOutputLoss:
             "atk wi add --dry-run --body-file body.md > dryrun.out 2> dryrun.err",
             "atk wi show sample.md >> saved.out",
             "atk wi list 2>/dev/null",
-            "atk run-script completion-report-check -- report.md > out.txt 2>&1",
+            "atk run-script report-completion-check -- report.md > out.txt 2>&1",
             "atk wi list &>saved.out",
             "atk agents wait 2>/dev/null",
             "atk agents wait 2>&1",
@@ -1409,3 +1485,13 @@ def _run_git_commit_message_hook(
     assert observed["head_after"] == head_before
     assert observed["status_after"] == status_before
     return result
+
+
+def test_commit_message_file_is_read_with_unknown_pathspec(tmp_path):
+    """`--`より後ろの未知のpathspecと静的な`-F`入力を分け、未知の語が前にあれば検証済みと推定しない。"""
+    message = tmp_path / "message.txt"
+    message.write_text("件名\n\n本文\n", encoding="utf-8")
+    quoted = shlex.quote(str(message))
+    assert list(shell_checks._git_commit_messages(f'git commit -F {quoted} -- "$PATHSPEC"')) == ["件名\n\n本文\n"]
+    assert not list(shell_checks._git_commit_messages(f'git commit "$OPT" -F {quoted}'))
+    assert not list(shell_checks._git_commit_messages('git commit -F "$MESSAGE"'))

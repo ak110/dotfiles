@@ -1,0 +1,13 @@
+--- a/plugin_csv.py
++++ b/plugin_csv.py
+@@ -6,9 +6,9 @@
+ def parse(line: str) -> list[str]:
+     """カンマ区切りの1行を分解する。"""
+-    return [cell.strip() for cell in line.split(",")]
++    return line.rstrip("\n").split(",")
+
+
+ if __name__ == "__main__":
+     for raw in sys.stdin:
+-        print("|".join(parse(raw)))
++        print("\t".join(parse(raw)))

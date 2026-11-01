@@ -29,7 +29,7 @@ agent-toolkitの文書に登場するClaude Code向けのツール名は、Codex
 | `Read`・`Write`・`Edit` | Codexのネイティブ編集機能を使用する |
 | `Bash`・`Grep`・`Glob` | シェル経由のネイティブ機能を使用する |
 | `WebFetch`・`WebSearch` | CodexのWeb機能を使用する |
-| `EnterPlanMode`・`ExitPlanMode` | `agent-toolkit:plan-mode`の`references/codex-runtime.md`に従う |
+| `EnterPlanMode`・`ExitPlanMode` | `agent-toolkit:write-plan`の`references/codex-runtime.md`に従う |
 | `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 公開機能が存在しない場合は、手動運用またはユーザーへの依頼へ切り替える |
 
 Codexネイティブ委譲は`spawn_agent`で起動する。稼働中エージェントへの入力追加には`send_message`、待機中または終了後の同一エージェントの継続には`followup_task`、終了待機には`wait_agent`、自身が起動したエージェントの中断には`interrupt_agent`を使用する。`fork_turns`で引き渡される会話履歴と、`SubagentStart`フックが追加する`rules-subagent.md`は別個の入力である。forkを行わない場合でも、共通の委譲先規範はフックから渡され、`AGENTS.md`は対象worktreeの自動読込によって渡される。Codex固有の委譲先規範が必要になった場合は、共通規範とは別のファイルに配置し、同一のフック生成処理によってCodex環境のみに追加する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日」に記載されている。

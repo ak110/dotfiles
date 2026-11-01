@@ -11,23 +11,30 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
+| 停止・回避・回復済みの事象を観測または受領した時 | `immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
+| 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring.md#「成果物側の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「成果物側の観測」` |
 
 ## 担当の役割
 
 統括担当が最上位のメインとして、全対象の判断・確認・完了報告を所有する。
 常駐から起動した対話CLIには通常の最上位セッションの契約を適用する。
-候補数Nに対する対象別の`floor((N+9)/10)`が2以上のリポジトリは、統括から対象worktreeをcwdとする通常delegateへ委譲する。
+候補数Nに対する対象別の`floor((N+9)/10)`が2以上のリポジトリは、統括から対象worktreeをcwdとするリポジトリ担当（`share/repository-process.subagent.md`のtask）へ委譲する。
 その担当は対象repoのprocess-wiを完遂し、統括の配下として結果と未完了工程を返す。
 配下担当の確認事項・担当外の発見・改善点は統括へ届け、報告用UWIは統括がprocess-wiの実行全体で1回作成する。
 配下担当は祖先の対話CLIを終了する`atk agents-exit-session`を呼ばず、返却と終了観測を統括へ渡す。
 統括自身は対象別結果を保存した後、最上位の終了手順で統括CLIを終了する。
+
+統括は、自身が観測した処理の停止と、配下担当から届く停止・回避・回復済みの報告へ`immediate-fix.md`「即時対応」を適用する。
+回避と正式対応AWIだけの報告では、次のセッションで同じ停止が起きない根拠を確かめる。
+根拠が無ければ、書き込みを担う配下担当へ直接修正を指示し、その検証結果を受領する。
+配下担当を待つ間の進捗点検では、`../../delegation/references/waiting-and-monitoring.md`「成果物側の観測」に従い、活動の有無と工程の所要・反復の妥当性を分けて判断する。
 
 ## 登録集合
 
@@ -51,6 +58,10 @@
 回答済みUWI、候補の分類・開始時CI点検は[selection-procedure.md](selection-procedure.md)を使う。
 選定YAMLとNを対象ごとに分け、レーン上限も対象別のNから計算する。
 詳細な生成・合流の契約は[selection-format.md](selection-format.md)を使う。
+少数候補を統括自身が処理する場合も、受領候補・readiness・対象別の選定の対応を保つ。
+候補が1件であることと、その候補に着手できることは別に確認する。
+実行をsingle-laneへ読み替えても、本節の受領確認と所定選定を適用する。
+省略を選ぶ場合は、元工程が保護する結果を保てる根拠を比較し、`agent-toolkit/rules/01-agent.md`「QCDと3段判定」と既存の逸脱契約に従って判断・報告する。
 
 ## worktreeと資源
 

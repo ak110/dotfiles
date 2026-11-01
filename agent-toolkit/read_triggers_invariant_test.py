@@ -62,7 +62,7 @@ def test_every_role_has_explicit_parent_read_source():
 _CROSS_PLUGIN_DOCUMENTS = (
     "skills/user-confirmation-and-report/references/analysis-operations.md",
     "skills/wi-standards/references/analysis-records.md",
-    "skills/session-review/references/analysis-operations.md",
+    "skills/review-session/references/analysis-operations.md",
     "skills/user-confirmation-and-report/references/communication-methods.md",
     "skills/user-confirmation-and-report/references/user-utterance.md",
     "skills/wi-standards/references/draft-semantic-review.md",
@@ -73,7 +73,7 @@ _CROSS_PLUGIN_DOCUMENTS = (
     "skill,documents",
     [
         ("process-wi", {"lanes.md", "single-lane.md", "all-repos.md"}),
-        ("session-review", {"current-session.md", "batch.md"}),
+        ("review-session", {"current-session.md", "batch.md"}),
     ],
 )
 def test_mode_entries_keep_exclusive_judgment_routes(skill, documents):
@@ -82,9 +82,9 @@ def test_mode_entries_keep_exclusive_judgment_routes(skill, documents):
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
     assert {path.name for row in rows for path in row.documents} == documents
     assert all(row.kind == "判断" and len(row.documents) == 1 for row in rows)
-    normal = "current-session.md" if skill == "session-review" else "lanes.md"
+    normal = "current-session.md" if skill == "review-session" else "lanes.md"
     text = (source.parent / "references" / normal).read_text(encoding="utf-8")
-    if skill == "session-review":
+    if skill == "review-session":
         assert "references/batch.md" not in text
         assert "session-review-state -- finish" not in text
         assert "session-review-state -- complete" in text

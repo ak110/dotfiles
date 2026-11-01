@@ -12,6 +12,7 @@ def _owner_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """所有セッションの解決に使う環境変数を未設定の状態から始める。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
 
 
 @pytest.mark.usefixtures("_owner_environment")
@@ -102,4 +103,33 @@ def test_record_plan_owner_excludes_process_root(
 
     assert _owner_records.resolve_conversation_session_id() == expected
     assert (written is None) is (expected is None)
+    assert _owner_records.read_owner_session_id(main) == expected
+
+
+@pytest.mark.usefixtures("_owner_environment")
+@pytest.mark.parametrize(
+    ("environment", "expected"),
+    [
+        ({"CODEX_THREAD_ID": "codex-thread"}, "codex-thread"),
+        ({"CLAUDE_CODE_SESSION_ID": "claude-session"}, "claude-session"),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "owner-session", "CODEX_THREAD_ID": "delegate-thread"}, "owner-session"),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "mcp-0123456789abcdef0123456789abcdef", "CODEX_THREAD_ID": "delegate-thread"}, None),
+    ],
+    ids=["codex-top-level", "claude-top-level", "delegate-with-owner", "process-root"],
+)
+def test_plan_owner_records_codex_top_level_conversation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, environment: dict[str, str], expected: str | None
+) -> None:
+    """ownerを持たないCodex最上位の会話は`CODEX_THREAD_ID`を所有会話として記録し、他の3条件の既存契約を保つ。
+
+    記録が無いと、Codex最上位で作った計画が同じ会話の保存案内から漏れ、UWIの投入元も未設定になる。
+    """
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    main = tmp_path / "30-Codex所有-a1b2.md"
+    main.write_text("# main\n", encoding="utf-8")
+
+    _owner_records.record_plan_owner(main)
+
+    assert _owner_records.resolve_conversation_session_id() == expected
     assert _owner_records.read_owner_session_id(main) == expected

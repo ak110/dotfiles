@@ -328,10 +328,10 @@ async def test_public_start_returns_label_of_started_session(
 
         responses = {
             "lane-02": await mcp_tools.start(
-                cwd, mode="delegate", prompt="対象の調査\n詳細", model_type="execute", label="lane-02"
+                cwd, mode="delegate", prompt="対象の調査\n詳細", model_type="chores", label="lane-02"
             ),
-            "別の調査": await mcp_tools.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="execute"),
-            "空白の調査": await mcp_tools.start(cwd, mode="delegate", prompt="空白の調査", model_type="execute", label="   "),
+            "別の調査": await mcp_tools.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="chores"),
+            "空白の調査": await mcp_tools.start(cwd, mode="delegate", prompt="空白の調査", model_type="chores", label="   "),
             "explore": await mcp_tools.start(cwd, mode="explore", prompt="探索"),
             "write-awi": await mcp_tools.start(cwd, mode="write", prompt="定型変更", label="write-awi"),
             "shell-git": await mcp_tools.start(
@@ -351,13 +351,13 @@ async def test_public_start_returns_label_of_started_session(
         async with _manager_with_fake("claude") as (switching, claude):
             _install_backend(switching, "codex", UnavailableStartBackend(switching.sessions, "codex"))
             monkeypatch.setattr(mcp_tools, "_MANAGER", switching)
-            switched = await mcp_tools.start(cwd, mode="delegate", prompt="切替", model_type="execute", label="switched")
+            switched = await mcp_tools.start(cwd, mode="delegate", prompt="切替", model_type="chores", label="switched")
             assert switched["excluded_candidates"]
             assert switched["label"] == (await switching.show_session(switched["session_id"]))["label"] == "switched"
 
             _install_backend(switching, "claude", UnavailableStartBackend(switching.sessions, "claude"))
             del claude
-            failed = await mcp_tools.start(cwd, mode="delegate", prompt="失敗", model_type="execute", label="all-failed")
+            failed = await mcp_tools.start(cwd, mode="delegate", prompt="失敗", model_type="chores", label="all-failed")
             assert failed["status"] == "failed"
             assert failed["label"] == (await switching.show_session(failed["session_id"]))["label"] == "all-failed"
 
@@ -437,7 +437,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "observed_identity": None,
     }
 
-    delegated = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="本文", model_type="execute")
+    delegated = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="本文", model_type="chores")
     assert pathlib.Path(delegated.pop("handoff_record_path")).is_absolute()
     assert delegated == {
         "session_id": "session",
@@ -694,7 +694,7 @@ async def test_start_response_adds_next_action_only_for_failed_start(
     )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 
-    response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="調査", model_type="execute")
+    response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="調査", model_type="chores")
 
     if expects_next_action:
         assert "atk agents wait" in response["next_action"]
@@ -844,6 +844,52 @@ async def test_start_rejects_missing_and_mixed_mode_inputs_before_creating_sessi
         method.assert_not_awaited()
 
 
+@pytest.mark.parametrize("model_type", ["execute", "orchestrate", " execute "])
+@pytest.mark.asyncio
+async def test_start_rejects_role_only_model_types_for_delegate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, model_type: str
+) -> None:
+    """自由本文のdelegateでexecute・orchestrateを指定すると、起動前に代わりの工程とtaskを案内して拒否する。"""
+    manager = SimpleNamespace(start=AsyncMock())
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+
+    with pytest.raises(ToolError) as raised:
+        await mcp_tools.mcp.call_tool(
+            "start", {"cwd": str(tmp_path), "mode": "delegate", "prompt": "調査", "model_type": model_type}
+        )
+
+    body = str(raised.value)
+    assert f"model_type={model_type.strip()}" in body
+    assert "委譲先は起動していない" in body
+    for name in ("`review`", "`review_fast`", "`chores`", "`chores_fast`", "`write`", "subagent_md_path"):
+        assert name in body
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_start_launches_repository_process_task_with_orchestrate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """all-reposの統括がtaskで起動するリポジトリ担当は、役割文書が定めるorchestrateで起動条件の検査を通過する。"""
+    manager = SimpleNamespace(
+        start=AsyncMock(return_value={"session_id": "repo", "status": "running", "label": "repository-process"}),
+        launcher_session_id=lambda: None,
+        launcher_record_context=lambda: {"status": "unresolved"},
+    )
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    params = _observed_input_params("repository-process.subagent.md", tmp_path)
+    contract = tmp_path / "work-contract.md"
+    contract.write_text("# 作業契約\n", encoding="utf-8")
+
+    response = await mcp_tools.start(
+        str(tmp_path), subagent_md_path="repository-process", extra_params=params, whole_contract_path=str(contract)
+    )
+
+    assert response["session_id"] == "repo"
+    assert manager.start.await_args.args[0] == "orchestrate"
+    assert manager.start.await_args.kwargs["launch_kind"] == "delegate"
+
+
 @pytest.mark.asyncio
 async def test_start_routes_each_mode_to_launch_kind_model_and_label(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
@@ -864,7 +910,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
                 "subagent_md_path": str(task_document),
                 "extra_params": _observed_input_params(task_document.name, tmp_path),
             },
-            "delegate": {"mode": "delegate", "prompt": "監査\n詳細", "model_type": "execute"},
+            "delegate": {"mode": "delegate", "prompt": "監査\n詳細", "model_type": "chores"},
             "explore": {"mode": "explore", "prompt": "調査", "label": "explore-対象"},
             "write": {"mode": "write", "prompt": "起草"},
             "shell": {"mode": "shell", "command": "make test", "summary_policy": "終了状態"},
@@ -877,7 +923,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
 
         assert requested == [
             launch_requests._TASK_MODEL_TYPES[task_document.name],
-            "execute",
+            "chores",
             "chores_fast",
             "write",
             "chores_fast",

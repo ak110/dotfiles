@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import plan_save_advisor
-from agent_toolkit._hooks.notice import notice_cycle
+from agent_toolkit._hooks.notice import emit_response, notice_cycle
 from agent_toolkit._plan import owner_records as _owner_records
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
@@ -52,6 +52,7 @@ def _run(
         "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
         "AGENT_TOOLKIT_OWNER_SESSION",
         "CLAUDE_CODE_SESSION_ID",
+        "CODEX_THREAD_ID",
     ):
         env.pop(name, None)
     env.update(extra_env or {})
@@ -106,12 +107,19 @@ def test_plan_notice_tracks_target_changes_and_resolution(tmp_path, monkeypatch)
 
     def evaluate():
         with notice_cycle(session_id, "stop", "main"):
-            return plan_save_advisor.evaluate(payload)
+            decision, body = plan_save_advisor.evaluate(payload)
+            response = _stop_check_runner.response_for(decision, body)
+            if response is not None:
+                emit_response(response)
+            return decision, body
 
     first = plans / "first.md"
     first.write_text("# 計画\n", encoding="utf-8")
     _owner_records.write_owner_record(first, session_id=session_id)
     assert evaluate()[0] == "notify"
+    with monkeypatch.context() as skipped:
+        skipped.setattr(plan_save_advisor, "is_pending_async_work", lambda *_args, **_kwargs: True)
+        assert evaluate() == ("approve", "")
     assert evaluate() == ("approve", "")
     second = plans / "second.md"
     second.write_text("# 次の計画\n", encoding="utf-8")
@@ -287,6 +295,30 @@ def test_notified_plans_are_limited_to_the_current_session(
     for name in ("own.md", "other.md"):
         if name not in expected_notified:
             assert str(plans / name) not in notification
+
+
+@pytest.mark.parametrize(("hook_session", "notified"), [("codex-thread", True), ("other-thread", False)])
+def test_codex_top_level_plan_is_notified_to_the_creating_conversation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, hook_session: str, notified: bool
+) -> None:
+    """ownerを持たないCodex最上位で記録した計画は、作成した会話の保存案内にだけ現れる。"""
+    home = tmp_path / "home"
+    plans = home / ".claude" / "plans"
+    plans.mkdir(parents=True)
+    plan = plans / "codex.md"
+    plan.write_text("# codex\n", encoding="utf-8")
+    for name in ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CODEX_THREAD_ID", "codex-thread")
+    assert _owner_records.record_plan_owner(plan) is not None
+    transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
+
+    result = _decision(_run(_payload(hook_session, transcript), state_dir=tmp_path, home=home))
+
+    if notified:
+        assert str(plan) in result["hookSpecificOutput"]["additionalContext"]
+    else:
+        assert not result
 
 
 @pytest.mark.parametrize("record", ["{不正なJSON", '{"recorded_at": "2026-09-03T00:00:00+09:00"}'])

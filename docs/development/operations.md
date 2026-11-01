@@ -208,7 +208,7 @@ How many characters of a successful Bash or PowerShell command's output Claude r
 
 同じ形で上限の前後の大きさのファイルを`cat`させ、ストリームの`tool_use_result`の`persistedOutputPath`の有無で再検証する。
 上限値の解釈が変わった疑いがある場合は、本体のバイナリから`bashOutputMaxChars`の説明を確かめる。
-BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。検索の手順は`.claude/skills/dotfiles-development/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。検索の手順は`.claude/skills/develop-dotfiles/SKILL.md`「ホスト本体のバイナリの検索」に従う。
 
 ## `update-dotfiles`のuv自己更新と実行環境
 
@@ -404,39 +404,20 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 ## Codexの実験的コンテキスト管理
 
 `.chezmoi-source/dot_codex/modify_private_config.toml`はCodex設定の
-`features.context_management.experimental_mode`を`true`に設定する。
-2026年9月6日に`codex-cli 0.153.4`の`codex features list`で、有効化前の値が`false`であることを確認した。
+`features.context_management.experimental_mode`を`false`に設定する。
+この機能は、保存の成否と独立に要約なしで会話文脈を破棄する操作をエージェントへ公開する。
+2026年10月31日のCodex記録では、作業状態の保存がbackendエラーで失敗した直後に要約なしの切替が2回実行され、受信した依頼が失われた。
+保全を担当者の判断に依存させないため、通常の会話圧縮と既存の作業記録を使う。
 
-`agents_server`のCodex委譲先は、threadの開始・再開時に同設定を`false`で上書きする。
-通常のdelegateと軽量なexplore・shell・writeのすべてに適用し、所有ルート識別子がない起動にも適用する。
-依頼と追送変更の保持の信頼性を優先し、通常の会話圧縮と既存の作業記録を使うためである。
-ホーム向けの有効化は維持する。
-通常圧縮による所要時間の変化は未測定である。
+適用範囲はホーム設定を継承する全起動経路である。
+対話起動、`bin/codex-medium`・`bin/codex-xhigh`とWindowsペア、`pytools/agent_launcher.py`、`atk run-skill`と`atk wi process-loop`の新規・再開はいずれも同設定に追加の指定を持たない。
+`agents_server`のCodex委譲先は、threadの開始・再開時に同設定を明示的に`false`で上書きし、ホスト内部の設定継承に依存しない。
+Codex組み込みの委譲（`spawn_agent`）の子threadへの継承はホスト内部の動作であり、未確認である。
 
-有効化前の基準はセッション`cd6180fe-097a-4d97-bc6b-ea5c9bdc159c`で計測し、
-コンパクションは合計69回だった。内訳は次のとおりである。
-
-- メインのClaudeセッション: 5回、合計1284.9秒
-- Claude委譲先: 10回、合計2230.3秒
-- Codex委譲先: 54回。このうちセッション`01a074b5-f8d5-7850-bca7-a10144a3b742`は6.8時間で10回
-
-有効化後の比較値は未計測である。本節の値は有効化前の基準だけを表す。
-計測は次の手順で行う。
-まず`~/.claude/projects/`配下から`agent-toolkit:process-wi`のメインセッション記録を1件選ぶ。
-選定条件は最初のレコードの`timestamp`が有効化commit`248ec7cec313fe36d5a0210b561656340e4dc3c4`の
-commit時刻（2026-09-06T14:57:05Z）より後であり、かつ選定対象のセッションが終了済みであることとする。
-次に以下を実行する。
-
-```sh
-atk run-script session-review-evidence -- --stats <選んだ記録の絶対パス>
-```
-
-出力の`stats-compaction-total`の`by_record`から、キーが`codex:`で始まる項目の値の合計を求める。
-この合計がCodex委譲先のコンパクション回数となる。
-最後に、選んだセッション識別子と計算した合計を上記の有効化前の値とともに本節へ追記する。
-2026年9月7日の時点で選定条件を満たすセッションは無い。
-直近の`agent-toolkit:process-wi`セッション`9af72711-b905-4602-b5df-93843ad1af8a`は2026-09-06T14:25:51Zに開始している。
-このセッションには有効化より前に開始したCodex委譲先が含まれるため、比較対象にしない。
+2026年9月6日から10月31日まではホーム設定で`true`にしていた（元の要求は、圧縮時間を減らすために有効化も含めて検討することだった）。
+有効化前の基準はセッション`cd6180fe-097a-4d97-bc6b-ea5c9bdc159c`で計測したコンパクション合計69回（メインのClaudeセッション5回・合計1284.9秒、Claude委譲先10回・合計2230.3秒、Codex委譲先54回）である。
+有効化後の対照値は計測しておらず、通常圧縮による所要時間の変化も未測定である。
+これらの値は過去の基準であり、無効化の判断の根拠には使っていない。
 
 ## 特定ホストでの常駐サービス自動起動
 
@@ -641,5 +622,5 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 
 dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
 同じ最上位セッションですでにリリースPRをマージ済みの場合、後続の差分は`develop`へのpushとCI成功まで進め、次のセッションのリリースPRへまとめる。
-実行時に従う規範は`dotfiles-release`スキルであり、判定条件、評価の時点および実施手順は同スキルが定める。
+実行時に従う規範は`release-dotfiles`スキルであり、判定条件、評価の時点および実施手順は同スキルが定める。
 導入の経緯と根拠は[concepts-workflows.md](concepts-workflows.md)の「developとmasterのリリース運用」にある。

@@ -16,7 +16,7 @@ import filelock
 import pytest
 
 from agent_toolkit._atk import config, run_script, run_skill_batch
-from agent_toolkit._atk.wi import add, frontmatter, layout, readiness
+from agent_toolkit._atk.wi import add, frontmatter, layout
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository
 
@@ -49,7 +49,7 @@ def _args(mode="auto"):
             session_review.write(path, {"status": "starting", "host": "codex", "event": "SessionStart"})
     else:
         os.environ.pop(session_review.LAUNCH_ENV, None)
-    return argparse.Namespace(skill="agent-toolkit:session-review", args="batch", timeout=60, target_repo=None, work_dir=None)
+    return argparse.Namespace(skill="agent-toolkit:review-session", args="batch", timeout=60, target_repo=None, work_dir=None)
 
 
 def _notes():
@@ -104,7 +104,7 @@ def test_hook_disabled_records_and_announces_pending(tmp_path, monkeypatch) -> N
         {"hook_event_name": "SessionStart", "session_id": "main", "cwd": str(tmp_path)}, host="codex"
     )
     assert notice is not None
-    assert "1件" in notice and "/agent-toolkit:session-review batch" in notice
+    assert "1件" in notice and "/agent-toolkit:review-session batch" in notice
     assert session_review.pending()[0]["host"] == "codex"
     assert run_skill_batch.hook_request({"hook_event_name": "SessionEnd", "session_id": "main"}, host="codex") is None
 
@@ -121,7 +121,7 @@ def test_hook_requests_existing_cli_without_wait(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(run_skill_batch.subprocess, "Popen", spawn)
     run_skill_batch.hook_request({"hook_event_name": "SessionStart", "session_id": "main", "cwd": str(tmp_path)}, host="claude")
     assert len(calls) == 1
-    assert calls[0][0][-4:] == ["run-skill", "--args", "batch", "agent-toolkit:session-review"]
+    assert calls[0][0][-4:] == ["run-skill", "--args", "batch", "agent-toolkit:review-session"]
     assert calls[0][1]["stdin"] == run_skill_batch.subprocess.DEVNULL
 
 
@@ -303,7 +303,7 @@ def test_config_boolean_contract() -> None:
         config.save_mutable_settings({"session_review_auto_start": "yes"})
 
 
-def test_failure_awi_close_releases_failed_target(tmp_path) -> None:
+def test_failure_awi_close_releases_failed_target(tmp_path, monkeypatch) -> None:
     """是正AWIが未完了の間は同じ対象を起動せず、AWIが終了すると次の自動起動で対象へ戻す。"""
     notes = _notes()
     _target(tmp_path, "one")
@@ -319,6 +319,7 @@ def test_failure_awi_close_releases_failed_target(tmp_path) -> None:
     report = next(layout.iter_entry_paths(notes))
     text = report.read_text(encoding="utf-8")
     report.write_text(text.replace("state: inbox\n", "state: adopted\n", 1), encoding="utf-8")
+    monkeypatch.setattr(run_skill_batch.time, "time", lambda: datetime.datetime.now(datetime.UTC).timestamp() + 21600)
     assert run_skill_batch.dispatch(_args(), fail) == 124
     assert len(calls) == 2
     assert len(list(layout.iter_entry_paths(notes))) == 2
@@ -341,7 +342,7 @@ def test_batch_uses_most_common_repo_and_unknown_repo_fallback(tmp_path) -> None
     for path in (session_review.directory() / "pending").glob("*.json"):
         path.unlink()
     _target(tmp_path, "unknown", None)
-    assert run_skill_batch.dispatch(_args(), fail) == 124
+    assert run_skill_batch.dispatch(_args("manual"), fail) == 124
     assert observed[-1] == json.loads((run_skill_batch.PLUGIN_ROOT / ".claude-plugin/plugin.json").read_text())["repository"]
     assert len(list(layout.iter_entry_paths(notes))) == 2
 
@@ -421,9 +422,7 @@ def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monke
     data, body = frontmatter.parse_frontmatter(failures[0].read_text(encoding="utf-8")) or ({}, "")
     # ユーザーの回答を待たず、振り返りの仕組みの配布元で処理担当が是正できるAWIとして登録する。
     assert data["type"] == "awi" and data["source"] == "session-review"
-    # 振り返りの成果と同じく、ユーザーが内容を確認するまで自動着手しない。
-    assert data["confirmation"] == "required"
-    assert readiness.calculate_readiness(notes, None).confirmation_pending == (failures[0].name,)
+    assert "confirmation" not in data
     assert data["target_repo"] == run_skill_batch.repo.resolve_repo_id(
         json.loads((run_skill_batch.PLUGIN_ROOT / ".claude-plugin/plugin.json").read_text())["repository"]
     )
@@ -540,7 +539,7 @@ def test_child_failure_keeps_scope_unprocessed(tmp_path) -> None:
     assert reason in _failure_awis(notes)[0].read_text(encoding="utf-8")
 
 
-def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path) -> None:
+def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path, monkeypatch) -> None:
     """準備失敗の是正AWIが未完了の間は再試行を止め、終了後の自動起動で再試行して再失敗すれば診断付きの新AWIを投入する。"""
     notes = _notes()
     _target(tmp_path, "gone")
@@ -554,6 +553,7 @@ def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path
     assert len(_failure_awis(notes)) == 1
     first = _failure_awis(notes)[0]
     first.write_text(first.read_text(encoding="utf-8").replace("state: inbox\n", "state: adopted\n", 1), encoding="utf-8")
+    monkeypatch.setattr(run_skill_batch.time, "time", lambda: datetime.datetime.now(datetime.UTC).timestamp() + 21600)
     assert run_skill_batch.dispatch(_args(), unexpected) == 1
     active = [path for path in _failure_awis(notes) if "state: inbox" in path.read_text(encoding="utf-8")]
     assert len(active) == 1 and "不足:" in active[0].read_text(encoding="utf-8")

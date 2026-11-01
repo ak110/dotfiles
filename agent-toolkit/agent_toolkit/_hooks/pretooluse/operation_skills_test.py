@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 
@@ -571,8 +572,12 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
     env = _plan_file_state_env(tmp_path)
     blocked = {"tool_name": _DELEGATION_TOOLS[4], "tool_input": {"session_id": "unknown"}, "session_id": "blocked"}
     result = _run(blocked, env)
-    assert result.returncode == 2
-    assert "agent-toolkit:delegation" not in result.stderr
+    assert result.returncode == 0
+    assert not result.stderr
+    specific = json.loads(result.stdout)["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    assert specific["permissionDecisionReason"]
+    assert "agent-toolkit:delegation" not in specific["permissionDecisionReason"]
     state_file = session_state.state_path("blocked")
     state = _read_session_state(tmp_path, "blocked") if state_file.exists() else {}
     assert rules_context.OPERATION_SKILL_READY_KEY not in state
@@ -810,3 +815,27 @@ def test_edit_tools_exclude_discard_destination(tmp_path: pathlib.Path, tool: st
     assert not operation_skills.written_paths(tool, data, str(tmp_path))
     assert not operation_skills.is_existing_file_edit(tool, data, str(tmp_path))
     assert not operation_skills.operation_matches("body-writing", tool, data, str(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["$COMMAND > {path}", "> {path}", "A=1 > {path}", "sh -c 'printf x > {path}' name \"$ARG\""],
+    ids=["unknown-command", "redirect-only", "assignment-only", "static-shell-body"],
+)
+def test_static_output_of_unknown_execution_is_a_write(tmp_path: pathlib.Path, command: str) -> None:
+    """未知の実行でも、静的な絶対出力先は通常の書込先として返す。"""
+    path = tmp_path / "out.md"
+    assert operation_skills.written_paths("Bash", {"command": command.format(path=path)}, str(tmp_path)) == [str(path)]
+
+
+@pytest.mark.parametrize("command", ['$COMMAND > "$OUT"', 'printf x > "$ROOT/path.md"', "cat > $ROOT/path.md <<<x"])
+def test_unknown_output_path_is_not_converted_to_a_real_path(tmp_path: pathlib.Path, command: str) -> None:
+    """未知の出力先と未知の接頭部を持つ出力先は、推測した実パスへ変えない。"""
+    assert not operation_skills.written_paths("Bash", {"command": command}, str(tmp_path))
+
+
+def test_partial_suffix_identifies_document_kind_without_a_real_path(tmp_path: pathlib.Path) -> None:
+    """未知の接頭部の後の静的な末尾は、文書種別の識別にだけ使う。"""
+    data = {"command": 'cat > "$ROOT/.claude/skills/x/SKILL.md" <<<x'}
+    assert not operation_skills.written_paths("Bash", data, str(tmp_path))
+    assert operation_skills.operation_matches("agent-document-writing", "Bash", data, str(tmp_path))

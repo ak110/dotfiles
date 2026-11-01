@@ -4,7 +4,7 @@ user-invocable: false
 description: >
   `pytools/`、`scripts/`、`libexec/`、`bin/`、`rust/`配下のコマンドラインツール、スクリプト、フックスクリプトを
   新規作成・編集するときに使う。
-  配置規約、実装規約、PEP 723、cmdファイルのエンコーディングを扱う。テストの配置は`dotfiles-development`が扱う。
+  配置規約、実装規約、PEP 723、cmdファイルのエンコーディングを扱う。テストの配置は`develop-dotfiles`が扱う。
 ---
 
 # pytools・scripts・binの編集
@@ -17,8 +17,8 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-development/SKILL.md` | 判断 | `read:*/skills/dotfiles-development/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-release/SKILL.md` | 判断 | `read:*/skills/dotfiles-release/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/SKILL.md` | 判断 | `read:*/skills/develop-dotfiles/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../release-dotfiles/SKILL.md` | 判断 | `read:*/skills/release-dotfiles/SKILL.md` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
@@ -50,4 +50,4 @@ description: >
 - 外部コマンドの失敗をエラーメッセージ、例外、警告へと変換する際は、`pytools/_internal/common.py`の`format_cli_error()`による出力結果を含める。この関数は、キャプチャ済みの標準エラー出力と標準出力を併記し、両方が空であれば終了コードを、コマンド自体を実行できなかった場合はその旨を返す。終了コードだけを伝えても、失敗の原因や復旧に向けた次の操作がdotfilesユーザーに伝わらないためである。なお、接続不能などの環境異常（例: `systemctl --user`がユーザーマネージャーに接続できない場合など）は、対象サービス自体の状態（無効化されている、起動していないなど）として解釈するのではなく、環境側の問題として区別したうえで復旧手順を案内する。
 - post_applyのステップにおいて、外部ツールが存在しないことを理由にステップ全体をスキップする場合は、そのツールを同一または先行するステップで自動導入するか、あるいは`README.md`に手動での復旧手順を明記しておく。なお、dotfilesユーザーが各自で導入先を選択するようなアプリケーションは除く。
 - post_applyの処理で配置されるファイル（ランチャー、フラグファイル、systemd unitなど）はchezmoiの管理外となるため、適切に登録しておかないと古い生成物が配布先に残り続けてしまう。そのため、配置先のパスを変更したり処理自体を廃止したりした場合は、同じ変更の中で旧パスを`_REMOVED_PATHS`（dotfilesユーザー自身が編集する可能性のあるファイルは`_REMOVED_PATHS_IF_CONTENT`）に登録する。撤去テーブル（この2つおよび`update_claude_settings.py`の除去テーブル）に登録する各項目には登録日を明記し、登録から6か月が経過したものは一覧から削除する。この運用規則は`pytools/_internal/removal_registry.py`に定義されており、期限切れの検出テストは`pytools/removed_paths_invariant_test.py`が担当している。
-- `rust/`配下のコードは、`rust/<クレート名>/`という単位でCargoクレートとして配置し、実装作法は`agent-basics:writing-standards`の`references/rust.md`に従う。通常の`make test`では`rust/`配下は検証されないため、変更を加えたクレート内で`cargo fmt --check`、`cargo clippy`、`cargo test`を変更範囲のローカル検証として実行する（CIでは`rust-lint`ジョブがこれを検証する）。クレートのバージョン番号を更新する際は、`dotfiles-release`の手順を参照する。
+- `rust/`配下のコードは、`rust/<クレート名>/`という単位でCargoクレートとして配置し、実装作法は`agent-basics:writing-standards`の`references/rust.md`に従う。通常の`make test`では`rust/`配下は検証されないため、変更を加えたクレート内で`cargo fmt --check`、`cargo clippy`、`cargo test`を変更範囲のローカル検証として実行する（CIでは`rust-lint`ジョブがこれを検証する）。クレートのバージョン番号を更新する際は、`release-dotfiles`の手順を参照する。

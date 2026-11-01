@@ -17,6 +17,7 @@ import shlex
 from dataclasses import dataclass
 
 from agent_toolkit._hooks.host import is_codex_payload
+from agent_toolkit._hooks.notice import formatter
 
 _FILTER = re.compile(r"\.(?:[A-Za-z_]\w*)?(?:(?:\.[A-Za-z_]\w*)|(?:\[\d*\]))*")
 
@@ -29,7 +30,7 @@ class Read:
     operands: tuple[int, ...]
 
 
-def read_command_groups(command: str) -> list[list[str]] | None:
+def read_command_groups(command: str, *, sequential: bool = False) -> list[list[str]] | None:
     """読取計画と取得案内で同じ演算子の境界を使う。"""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()<>\n")
     lexer.whitespace = " \t\r"
@@ -38,6 +39,8 @@ def read_command_groups(command: str) -> list[list[str]] | None:
     groups: list[list[str]] = [[]]
     try:
         for token in lexer:
+            if sequential and token == "&&":
+                return None
             if token in {";", "&&", "\n"}:
                 if groups[-1]:
                     groups.append([])
@@ -93,6 +96,30 @@ def read_plan(command: str) -> list[Read]:
             return []
         result.append(Read((name, *group[1:]), operands))
     return result
+
+
+PERSISTENCE_MARKER = "\n... command output truncated for persistence ...\n"
+"""Codexが記録へ保存する`aggregated_output`だけを短くするときに本文の途中へ入れる行。モデルへ返す本文には付かない。"""
+
+
+def persisted_copy_truncated(execution: dict) -> bool:
+    """記録の`aggregated_output`が保存のために省略され、モデルへ返した本文の比較に使えないかを返す。"""
+    output = execution.get("aggregated_output")
+    return isinstance(output, str) and PERSISTENCE_MARKER in output
+
+
+def record_matches_response(execution: dict, response: object) -> bool:
+    """記録の写しとhookの応答が同じ出力を表すかを返す。
+
+    記録の`aggregated_output`は保存のために中間を省略されることがあり、モデルへ返した本文の写しとは限らない。
+    写しが省略されていれば、省略行を含まない応答をモデルへ返した全文として扱う。
+    記録の写しを比較に使う判定は、写しの省略を見落とさないよう本関数か`persisted_copy_truncated`を経由する。
+    """
+    if not isinstance(response, str):
+        return False
+    if execution.get("aggregated_output") == response:
+        return True
+    return persisted_copy_truncated(execution) and PERSISTENCE_MARKER not in response
 
 
 def response_is_truncated(response: object) -> bool:
@@ -168,16 +195,12 @@ TRUNCATED_NOTICE = (
     "`sed -n '<開始行>,<終了行>p' -- <絶対パス>`で行範囲を分けて末尾まで読め（最後の範囲は`<開始行>,$p`）。" + _RECOVERABLE
 )
 TRUNCATED_OUTPUT_NOTICE = (
-    "この出力は省略された。対象や条件を絞るか範囲を分けて再実行し、判断に必要な全量を回収せよ。" + _RECOVERABLE
+    "この出力は省略された。対象や条件を限定するか範囲を分けて再実行し、判断に必要な全量を回収せよ。" + _RECOVERABLE
 )
 
 
-def collect(payload: dict) -> Observation | None:
-    """標準読取の終了記録と省略の包絡から、読了観測へ渡す本文を確定する。
-
-    終了0で完了し省略の包絡が無いnative応答だけを本文として返す。
-    省略された応答は本文を返さず、分割読取の案内だけを返す。
-    """
+def completed_execution(payload: dict) -> dict | None:
+    """同thread・turn・呼出ID・commandが一致し、終了0で完了したnative実行だけを返す。"""
     if (
         not is_codex_payload(payload)
         or payload.get("hook_event_name", "PostToolUse") != "PostToolUse"
@@ -188,8 +211,7 @@ def collect(payload: dict) -> Observation | None:
     if not isinstance(tool_input, dict):
         return None
     command = tool_input.get("command")
-    response = payload.get("tool_response")
-    if not isinstance(command, str) or not isinstance(response, str) or not read_plan(command):
+    if not isinstance(command, str):
         return None
     try:
         execution = _execution(payload)
@@ -197,6 +219,25 @@ def collect(payload: dict) -> Observation | None:
         return None
     if execution is None or not _succeeded(execution, command):
         return None
-    if response_is_truncated(response):
-        return Observation(TRUNCATED_NOTICE, None)
+    return execution
+
+
+def collect(payload: dict) -> Observation | None:
+    """標準読取の終了記録と省略の包絡から、読了観測へ渡す本文を確定する。
+
+    終了0で完了し省略の包絡が無いnative応答だけを本文として返す。
+    省略された応答と、記録へ保存するために省略した写しと同じ応答は本文を返さず、分割読取の案内だけを返す。
+    記録の`aggregated_output`は保存のために省略されることがあり、モデルへ返した本文の写しとは限らない。
+    """
+    tool_input = payload.get("tool_input")
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    response = payload.get("tool_response")
+    if not isinstance(command, str) or not isinstance(response, str) or not read_plan(command):
+        return None
+    execution = completed_execution(payload)
+    if execution is None:
+        return None
+    # 保存用に省略した写しがそのまま届いた場合は、モデルへ返した全文の証拠にしない。
+    if response_is_truncated(response) or (persisted_copy_truncated(execution) and response == execution["aggregated_output"]):
+        return Observation(formatter("codex-read-observation")(TRUNCATED_NOTICE), None)
     return Observation("", response)

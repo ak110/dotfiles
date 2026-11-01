@@ -126,6 +126,28 @@ def test_bug_file_structure_accepts_canonical_sidecar() -> None:
     assert not plan_sections.check_bug_file_structure(_BUG_FILE_CONTENT)
 
 
+@pytest.mark.parametrize("value", ["", "該当なし", "該当なし。", "該当なし（）。"])
+def test_bug_file_rejects_unexplained_l4(value: str) -> None:
+    """L4の空欄と理由なし該当なしを計画ファイル検査で拒否する。"""
+    content = _BUG_FILE_CONTENT.replace(f"{_plan_fixture.CAUSE_FILLER} |", f"{value} |")
+    assert any("L4" in error for error in plan_sections.check_bug_file_structure(content))
+
+
+@pytest.mark.parametrize("factor", ["作り込み要因", "見逃し要因"])
+def test_bug_file_rejects_missing_candidate_factor(factor: str) -> None:
+    """調査表の両系統の候補と採否を要求する。"""
+    content = _BUG_FILE_CONTENT.replace(factor, "別系統")
+    assert any(factor in error for error in plan_sections.check_bug_file_structure(content))
+
+
+def test_bug_file_accepts_explained_l4_and_rejected_candidate() -> None:
+    """理由付きの該当なしと不採用を受理する。"""
+    content = _BUG_FILE_CONTENT.replace(
+        f"{_plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外で生じた構造と確認した。 |"
+    ).replace("を採用。", "を不採用。既存対策で検出でき継続費用が上回る。")
+    assert not plan_sections.check_bug_file_structure(content)
+
+
 def test_bug_file_structure_rejects_missing_cause_table() -> None:
     """原因分析表のない新形式のバグ単位を拒否する。"""
     content = _BUG_FILE_CONTENT.replace(f"{_BUG_CAUSE_TABLE}\n\n", "")

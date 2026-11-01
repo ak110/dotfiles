@@ -14,6 +14,7 @@ private-notesへ移す。計画本文が同じ計画に属する付属ファイ�
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import pathlib
 import re
@@ -287,17 +288,52 @@ def _creation_epoch(path: pathlib.Path) -> float | None:
 def _birth_epoch(path: pathlib.Path) -> float:
     """保存先の年月を決める日時を返す。
 
-    作成日時を取得できない環境では更新日時を使う。
-    保存先の年月は更新日時からも決まるため、取得不能を停止条件にしない。
+    作成日時を取得できない環境では、日付付きの名前は更新日時以前で
+    名前の日を満たす最も近い有効日付を使い、一般名は更新日時を使う。
     """
     creation = _creation_epoch(path)
     if creation is not None:
         return creation
-    return float(path.stat(follow_symlinks=False).st_mtime)
+    modified_epoch = float(path.stat(follow_symlinks=False).st_mtime)
+    match = _MIGRATED_MAIN_RE.fullmatch(path.name)
+    if match is None or not 1 <= int(match.group("day")) <= 31:
+        return modified_epoch
+    day = int(match.group("day"))
+    modified = datetime.datetime.fromtimestamp(modified_epoch)
+    month = modified.replace(day=1)
+    # 月を跨いだ編集でも、保存先の年月と名前の日が有効な日付を構成するようにする。
+    while True:
+        try:
+            candidate = month.replace(day=day)
+        except ValueError:
+            pass
+        else:
+            if candidate <= modified:
+                return candidate.timestamp()
+        month = (month - datetime.timedelta(days=1)).replace(day=1)
 
 
 def file_birth_date(path: pathlib.Path) -> datetime.date:
-    """保存先の年月を決める日時を実行ホストのローカル日付へ変換する。"""
+    """保存日付を局所記録、作成時刻、更新時刻からの推定の順で解決する。"""
+    record = path.with_name(_bundle_kinds.CREATED_RECORD.name_for(path.stem))
+    next_action = f"{record}のdateを計画の作成日（YYYY-MM-DD）へ直し、同じ操作を再実行する"
+    if record.is_symlink():
+        raise ActionableError(f"計画の作成日記録がシンボリックリンクです: {record}", next_action=next_action)
+    try:
+        content = record.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        pass
+    except (OSError, UnicodeError) as error:
+        raise ActionableError(f"計画の作成日記録を読み取れません: {record}: {error}", next_action=next_action) from error
+    else:
+        try:
+            value = json.loads(content)
+            date_text = value["date"]
+            if not isinstance(date_text, str) or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", date_text) is None:
+                raise ValueError("dateはYYYY-MM-DD形式で指定してください")
+            return datetime.date.fromisoformat(date_text)
+        except (ValueError, KeyError, TypeError) as error:
+            raise ActionableError(f"計画の作成日記録が不正です: {record}: {error}", next_action=next_action) from error
     return datetime.datetime.fromtimestamp(_birth_epoch(path)).date()
 
 
@@ -516,27 +552,30 @@ def to_portable_plan_file(
         return PORTABLE_PLAN_PREFIX + pathlib.PurePosixPath(*relative.parts).as_posix()
     working_relative = _relative_to(resolved, working_plans_root(home))
     if working_relative is not None:
+        main_candidate = main_candidate_path(resolved)
+        if main_candidate is None:
+            return str(resolved)
         try:
-            main_candidate = main_candidate_path(resolved)
-            if main_candidate is not None:
-                relative_main = _relative_to(main_candidate, working_plans_root(home))
-                if relative_main is None:
-                    raise ValueError("計画メインファイルが`~/.claude/plans`の外です")
-                if len(relative_main.parts) == 1:
-                    validate_working_plan_relative_path(relative_main.as_posix())
-                    birth_date = file_birth_date(main_candidate)
-                    portable_parts = (
-                        NEW_PLANS_DIRECTORY,
-                        f"{birth_date.year:04d}",
-                        f"{birth_date.month:02d}",
-                        *working_relative.parts,
-                    )
-                else:
-                    validate_plan_relative_path(relative_main.as_posix())
-                    portable_parts = (NEW_PLANS_DIRECTORY, *working_relative.parts)
-                return PORTABLE_PLAN_PREFIX + pathlib.PurePosixPath(*portable_parts).as_posix()
+            relative_main = _relative_to(main_candidate, working_plans_root(home))
+            if relative_main is None:
+                raise ValueError("計画メインファイルが`~/.claude/plans`の外です")
+            if len(relative_main.parts) == 1:
+                validate_working_plan_relative_path(relative_main.as_posix())
+            else:
+                validate_plan_relative_path(relative_main.as_posix())
         except ValueError:
-            pass
+            return str(resolved)
+        if len(relative_main.parts) == 1:
+            birth_date = file_birth_date(main_candidate)
+            portable_parts = (
+                NEW_PLANS_DIRECTORY,
+                f"{birth_date.year:04d}",
+                f"{birth_date.month:02d}",
+                *working_relative.parts,
+            )
+        else:
+            portable_parts = (NEW_PLANS_DIRECTORY, *working_relative.parts)
+        return PORTABLE_PLAN_PREFIX + pathlib.PurePosixPath(*portable_parts).as_posix()
     return str(resolved)
 
 

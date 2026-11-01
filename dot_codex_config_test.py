@@ -93,8 +93,12 @@ def test_config_template_applies_shared_limits_and_preserves_existing_values() -
     ],
     ids=["absent", "same", "different"],
 )
-def test_config_template_removes_context_overrides(context_config: str) -> None:
-    """共通のコンテキスト固定値を除き、選択モデルと無関係な設定を保つ。"""
+def test_config_template_applies_context_overrides(context_config: str) -> None:
+    """コンテキスト設定の有無と値によらず指定値を反映し、無関係な設定を保つ。
+
+    固定値の目的と、値を変える前に観測する条件は`docs/development/concepts-runtime.md`「Codexの文脈長設定」にある。
+    このテストは生成値だけを確かめ、目的（圧縮の頻度と待ち時間）の達成は確かめない。
+    """
     template = REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
     result = subprocess.run(
         ["chezmoi", "execute-template", "--file", str(template), "--with-stdin", "--working-tree", str(REPO_ROOT)],
@@ -108,8 +112,10 @@ def test_config_template_removes_context_overrides(context_config: str) -> None:
     )
     assert result.returncode == 0, result.stderr
     rendered = tomllib.loads(result.stdout)
-    assert "model_context_window" not in rendered
-    assert "model_auto_compact_token_limit" not in rendered
+    assert isinstance(rendered["model_context_window"], int)
+    assert rendered["model_context_window"] == 1000000
+    assert isinstance(rendered["model_auto_compact_token_limit"], int)
+    assert rendered["model_auto_compact_token_limit"] == 900000
     assert rendered["model"] == "gpt-test"
     assert rendered["features"]["user_feature"] is True
 
@@ -159,3 +165,31 @@ def test_config_template_sets_mouse_scroll_speed_and_keeps_tui_keys(
         assert isinstance(tui["mouse_scroll_speed"], float)
         if existing:
             assert tui["status_line_use_colors"] is True
+
+
+@pytest.mark.parametrize(
+    "existing",
+    [
+        "",
+        "[features.context_management]\nexperimental_mode = true\n",
+        "[features.context_management]\nexperimental_mode = false\nother = 1\n",
+    ],
+    ids=["absent", "enabled", "disabled"],
+)
+def test_config_template_disables_experimental_context_management(
+    existing: str, host_environ: collections.abc.Callable[[], dict[str, str]]
+) -> None:
+    """ホーム設定の実験的コンテキスト管理を無効にし、再適用でも同じ値と無関係なキーを保つ。
+
+    有効のままでは、保存の成否と独立に要約なしで会話文脈を破棄する操作がメイン会話へ公開される。
+    """
+    content = existing if existing else existing + "[features]\nuser_feature = true\n"
+    for _ in range(2):
+        content = _render_config(content, host_environ())
+        features = tomllib.loads(content)["features"]
+        assert features["context_management"]["experimental_mode"] is False
+        assert features["reasoning_effort_override"] is True
+        if "other" in existing:
+            assert features["context_management"]["other"] == 1
+        if not existing:
+            assert features["user_feature"] is True

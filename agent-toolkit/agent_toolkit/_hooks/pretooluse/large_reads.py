@@ -22,6 +22,7 @@ lazy from collections.abc import Iterator, Sequence
 
 from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._common import host_homes, shell_cwd
+lazy from agent_toolkit._common.bash_invocations import is_unknown_word
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import plugin_resources
 
@@ -33,6 +34,7 @@ lazy from agent_toolkit._hooks import plugin_resources
 _DEFAULT_BYTE_THRESHOLD = 48 * 1024
 _BYTE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_BYTES"
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
+_SEARCH_COMMANDS = frozenset({"rg", "grep", "egrep", "fgrep"})
 _notice = formatter("pretooluse")
 
 
@@ -169,6 +171,23 @@ def _read_operands(tokens: Sequence[str], *, include_partial: bool, first_line_o
     return ()
 
 
+def arguments_are_data(tokens: Sequence[str]) -> bool:
+    """読取・検索の解析が、全引数をプログラムとして実行しないデータとして扱う呼出しかを返す。
+
+    本文表示（`cat`・`less`・`more`）は表示の被演算子を確定できる場合、`head`・`tail`は常に、
+    `sed`・`awk`は読取の解析が全文取得と確定した形だけを対象にする。検索は、外部プログラムを起動する
+    `rg --pre`を除く。他のコマンドは引数の扱いを解析できないため偽を返す。
+    """
+    if not tokens:
+        return False
+    name = pathlib.PurePath(tokens[0]).name
+    if name in _SEARCH_COMMANDS:
+        return not any(token == "--pre" or token.startswith(("--pre=", "--pre-glob")) for token in tokens[1:])
+    if name in {"head", "tail"}:
+        return True
+    return bool(_read_operands(tokens, include_partial=True))
+
+
 def sed_read_range(tokens: Sequence[str]) -> tuple[str, int, int | None] | None:
     """静的な`sed -n '<開始行>,<終了行>p' [--] <パス>`のパスと1始まりの行範囲を返す。
 
@@ -205,12 +224,18 @@ def bash_read_paths(
     `first_line_only`は`_read_operands`の同名の指定へ渡す。
     """
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
-        if not invocation.arguments_known or invocation.output_pipe or invocation.output_redirected or invocation.captured:
+        if invocation.output_pipe or invocation.output_redirected or invocation.captured:
+            continue
+        # 読取候補の特定（`include_partial`）では、無関係な引数が未知でも既知のファイル引数を候補に残す。
+        # 出力全体の順序と範囲を使う用途（容量の判定など）は、全引数が確定した呼出しだけを使う。
+        if not invocation.arguments_known and not include_partial:
             continue
         tokens = invocation.segment.tokens
         paths = []
         for operand in _read_operands(tokens, include_partial=include_partial, first_line_only=first_line_only):
-            if include_partial and any(marker in operand for marker in ("$", "`", "<", ">", "*", "?")):
+            if include_partial and (
+                is_unknown_word(operand) or any(marker in operand for marker in ("$", "`", "<", ">", "*", "?"))
+            ):
                 continue
             if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
                 continue
@@ -379,17 +404,18 @@ def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
     """実行位置と静的引数だけから、原記録の読取・本文検索・解析入力を得る。"""
     found: list[pathlib.Path] = []
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
-        if not invocation.arguments_known:
-            continue
         tokens = invocation.segment.tokens
+        # 検索語や追加引数が未知でも、静的な入力先は参照案内の対象に残す。コマンド名が未知なら判定しない。
+        if not tokens or is_unknown_word(tokens[0]):
+            continue
         name = pathlib.PurePath(tokens[0]).name
-        search = name in {"rg", "grep", "egrep", "fgrep"}
+        search = name in _SEARCH_COMMANDS
         operands = list(_read_operands(tokens, include_partial=True))
         if search:
             if "--files" in tokens or "--help" in tokens or "--version" in tokens:
                 continue
             operands = list(_content_operands(tokens, pattern=True))
-            if not operands and current.resolved:
+            if not operands and current.resolved and invocation.arguments_known:
                 operands = [current.path]
         elif name in {*_FULL_READ_COMMANDS, "head", "tail"} and not operands:
             operands = list(_content_operands(tokens, pattern=False))
@@ -404,6 +430,8 @@ def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
         elif name in {"jq", "node", "ruby", "perl"}:
             operands = list(tokens[2:])
         for operand in operands:
+            if is_unknown_word(operand):
+                continue
             if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
                 continue
             path = _resolve_path(operand, current.path if current.resolved else cwd)
@@ -425,7 +453,7 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
         paths = _bash_session_record_paths(tool_input["command"], cwd)
     if not paths:
         return None
-    reference = plugin_resources.skill_reference("session-review", "references/session-records.md")
+    reference = plugin_resources.skill_reference("review-session", "references/session-records.md")
     return _notice(
         "セッションの原記録の本文を、汎用ツールで直接参照しようとしている。\n対象: " + "、".join(str(path) for path in paths),
         tag="warn",
@@ -451,7 +479,7 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
             f"通知の閾値: {byte_threshold}バイト）: {path}",
             fix="まず取得の必要性と範囲を見直せ。目的に不要なら取得を中止せよ。必要な場合は、"
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加えよ。"
-            "`agent-toolkit:session-review`の`references/session-records.md`で入力と照会モードを選べ。",
+            "`agent-toolkit:review-session`の`references/session-records.md`で入力と照会モードを選べ。",
         )
     # 1行あたりの平均バイト数から、閾値の半分程度に収まる行数を1回の取得単位として示す。
     chunk = max(1, plan.line_count * byte_threshold // (2 * max(plan.byte_count, 1)))
@@ -461,11 +489,12 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
         f"{plan.line_count}行、{plan.byte_count}バイトの全文取得の出力量を確認せよ"
         f"（通知の閾値: {byte_threshold}バイト）: {path}",
         fix=(
-            f"文章主体の内側max_output_tokensは少なくとも{budget}（UTF-8バイト数÷3の切上げ）にせよ。"
-            "外側セルのmax_output_tokensは内側コマンドの予算の合計以上にせよ。"
-            "nativeのoriginal token countが得られた場合は、その数以上で1回再取得せよ。"
-            "内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら、そのまま標準読取を使え。"
-            "予算を超える場合と本文が省略された場合は取得の範囲を選べ。"
+            f"全量の見積りは文章主体で約{budget}トークン（UTF-8バイト数÷3の切上げ）である。"
+            "内側コマンドと外側セルの利用できる出力枠がどちらも見積り以上と分かっている場合だけ、"
+            "内側max_output_tokensを見積り以上、外側セルを内側の合計以上にして全文を1回で取得せよ。"
+            "枠が見積りより小さい場合と枠が不明な場合は、最初から1回の取得が枠に収まる行範囲へ分けよ。"
+            "nativeのoriginal token countが得られた場合は、その数が枠に収まるときだけその数以上で1回再取得し、"
+            "収まらないときは行範囲へ分けよ。"
             "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使え。"
             "全文が必要な場合だけ、"
             f"`sed -n '1,{chunk}p' -- {quoted}`から始め、"
@@ -481,7 +510,7 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
             "原セッション記録を含む複数ファイルの全文取得の出力量を確認せよ。",
             fix="まず取得の必要性と範囲を見直せ。目的に不要なら取得を中止せよ。必要な原記録を"
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`へ照会条件を渡し、"
-            "通常の本文は別の呼び出しで取得せよ。入力の選択は`agent-toolkit:session-review`の`references/session-records.md`に従え。",
+            "通常の本文は別の呼び出しで取得せよ。入力の選択は`agent-toolkit:review-session`の`references/session-records.md`に従え。",
             subject="\n".join(str(path) for path, _plan in path_counts),
         )
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)
@@ -489,11 +518,12 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
     details = "、".join(f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト" for path, plan in path_counts)
     return _large_warning(
         f"複数ファイルの全文取得の出力量を確認せよ（合計: {total_bytes}バイト、通知の閾値: {byte_threshold}バイト）: {details}",
-        fix=f"文章主体の内側max_output_tokensは少なくとも{budget}（UTF-8合計バイト数÷3の切上げ）にせよ。"
-        "外側セルのmax_output_tokensは内側コマンドの予算の合計以上にせよ。"
-        "nativeのoriginal token countが得られた場合は、その数以上で1回再取得せよ。"
-        "内側コマンドと外側セルの出力予算内で全文と終了状態を省略なく取得できるなら標準読取を使え。"
-        "予算を超える場合と本文が省略された場合は、取得の必要性と範囲を選べ。"
+        fix=f"全量の見積りは文章主体で約{budget}トークン（UTF-8合計バイト数÷3の切上げ）である。"
+        "内側コマンドと外側セルの利用できる出力枠がどちらも見積り以上と分かっている場合だけ、"
+        "内側max_output_tokensを見積り以上、外側セルを内側の合計以上にして1回で取得せよ。"
+        "枠が見積りより小さい場合と枠が不明な場合は、最初からファイルごと・行範囲ごとに枠へ収まる単位へ分けよ。"
+        "nativeのoriginal token countが得られた場合は、その数が枠に収まるときだけその数以上で1回再取得し、"
+        "収まらないときは分けて取得せよ。"
         "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使え。"
         "全文が必要なファイルだけ、ファイルごとに別の呼び出しで"
         "`sed -n '<開始行>,<終了行>p' -- <必要なファイルの絶対パス>`を使い、行範囲を進めて末尾の行まで取得せよ。"

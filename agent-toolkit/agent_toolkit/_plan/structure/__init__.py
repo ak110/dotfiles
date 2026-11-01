@@ -3,7 +3,7 @@
 構造の判定（`check_plan_file.py`）、`atk wi add`、
 2系統のPreToolUse（`_hooks/pretooluse/`・`pytools/claude_hook/pretooluse.py`）、
 PostToolUse（`_hooks/posttooluse.py`）が同じ判定結果を得る。
-成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定める。
+成果物契約は`agent-toolkit/skills/write-plan/references/plan-file-standards.md`が定める。
 各判定関数のdocstringへ、判定する条件、受け取るトークン範囲、段落内の候補条件を記載する。
 判定する条件を追加する場合は、次の構文境界を含む共通コーパスへテスト入力を追加してから実装する。
 

@@ -7,8 +7,9 @@
 """
 
 import importlib
-import json
 import sys
+
+from agent_toolkit._hooks.notice import emit_response
 
 
 def response_for(decision: str, body: str) -> dict[str, object] | None:
@@ -28,7 +29,7 @@ def main(argv: list[str]) -> int:
     decision, body = module.evaluate(sys.stdin.read())
     response = response_for(decision, body)
     if response is not None:
-        print(json.dumps(response, ensure_ascii=False))
+        emit_response(response)
     return 0
 
 

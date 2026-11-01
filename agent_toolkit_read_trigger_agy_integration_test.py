@@ -25,7 +25,7 @@ def _generated(tmp_path):
         "# 長文スキル\n\n"
         "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
         "| --- | --- | --- | --- |\n"
-        "| 起動時 | `references/quality.md` | 起動時 | `skill:long` |\n"
+        "| 起動時 | `references/quality.md` | 起動時 | `skill:agent-basics:long` |\n"
         "| 対象を選ぶ前 | `../peer/SKILL.md` | 判断 | `read:*/skills/peer/SKILL.md` |\n"
         "| 根拠を取得する時 | `references/quality.md#品質` | 判断 | `read:*/references/quality.md` |\n"
         "\n## 必要節\n選択した基準本文\n\n## 別用途\n" + "別用途の大きな本文\n" * 4000
@@ -62,6 +62,7 @@ def test_generated_root_keeps_logical_namespace_and_relative_base(generated, mon
     # 実体を明示した同じproviderの入口は、別版のCLI rootからもその実体へ転送する。
     assert read_triggers.resolve_read_source(entry, toolkit.parent / "agent-toolkit") == full
     rows = read_triggers.parse_tables(full, toolkit, strict=True)
+    assert rows[0].operations == ("skill:agent-basics:long",)
     assert rows[0].documents == (native / "skills/long/references/quality.md",)
     assert rows[1].documents == (native / "skills/peer/SKILL.md",)
     assert rows[2].documents == (native / "skills/long/references/quality.md",)

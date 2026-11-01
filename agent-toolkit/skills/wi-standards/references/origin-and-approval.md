@@ -26,13 +26,13 @@
 
 `source`属性は、本文全体の由来の初期値を示す。`source`が存在しない項目のみを人間由来とみなし、値が設定されている項目は明示的な由来の記載がない限りエージェント由来として扱う。すでに保存されている値と形式はそのまま保持する。
 
-エージェントが投入する項目では`source`の指定を必須とする。値には、起動中のスキル名からプラグイン名のプレフィックスを除いたもの（`add-awi-by-user`、`process-wi`、`session-review`など）を使用し、該当するスキルがない起票では`agent`を設定する。ユーザーの指示に基づいて投入する場合も同様の規則で値を付与し、人間由来である範囲は明示的な由来の記載によって示す。
+エージェントが投入する項目では`source`の指定を必須とする。値には、起動中のスキル名からプラグイン名のプレフィックスを除いたもの（`add-awi-by-user`、`process-wi`など）を使用し、該当するスキルがない起票では`agent`を設定する。スキル名が`review-session`の場合、作成するAWIの`source`は保存済み項目との由来の一貫性を保つため`session-review`とする。ユーザーの指示に基づいて投入する場合も同様の規則で値を付与し、人間由来である範囲は明示的な由来の記載によって示す。
 `atk run-skill`によって起動されたセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`であるセッション）が投入するUWIでは、`source`を`run-skill`とする。一般の確認UWIと報告用UWIのどちらも、`--scope`には目的文のスキル名と起動モードの組を渡す。モードがある場合はスキル名、半角空白、目的文の`起動モード:`の値を連結し、モードがない通常起動ではスキル名だけを渡す。モード語以外の自由記述はscopeに含めない。同一セッションで作成されるAWIには、前述の一般的な規則を適用する。
 
 | 起動スキル | 目的文の起動モード | scope |
 | --- | --- | --- |
-| `agent-toolkit:session-review` | なし | `agent-toolkit:session-review` |
-| `agent-toolkit:session-review` | `batch` | `agent-toolkit:session-review batch` |
+| `agent-toolkit:review-session` | なし | `agent-toolkit:review-session` |
+| `agent-toolkit:review-session` | `batch` | `agent-toolkit:review-session batch` |
 | `agent-toolkit:process-wi` | なし | `agent-toolkit:process-wi` |
 | `agent-toolkit:process-wi` | `single-lane` | `agent-toolkit:process-wi single-lane` |
 | `agent-toolkit:process-wi` | `all-repos` | `agent-toolkit:process-wi all-repos` |
@@ -58,8 +58,6 @@
 人間由来のWI本文、ユーザーコメント、UWIの回答、または対話中の回答に、外部操作、対象、および範囲が具体的に明記されている場合、その範囲に限り承認として扱う。単なる`source`属性の値、空のコメント欄、エージェント側の推奨文、あるいは「進めてください」といった一般的な了解の発話は、承認とはみなさない。手動で起動された`agent-toolkit:process-wi`の公開工程における承認スコープは、同スキルの`references/lanes.md`「公開工程の承認スコープ」が定める。署名や認証、監査用の複雑な仕組みは設けず、読み書きする主体はユーザーとエージェントのみとする。
 
 要求の一部を別の作業単位へ引き継ぐことを理由に元のWIから除外する場合は、引き継ぎ先のWIが実際に存在し、除外する要求単位を過不足なく含んでいることを確認する。引き継ぎ先が存在しない場合は、元のWIに要求を戻すか、先に新しいWIを確定させる。ただし、同一の委譲元から同時に依頼された一連の分割起票や、投入先リポジトリの外部にある対象を委譲元へ通知して割り当てを委譲元に委ねた場合は、元のWIを先に保存してよい。引き継ぎ先の実在と処置の対応関係は、委譲元が`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「保存の検収」において確認する。
-
-`confirmation: required`のAWIをユーザーが確認済みにした場合は、タイトルとH1直下に明示された方針変更の範囲だけを事前承認として扱う。H2以降にだけ書かれた変更、人間由来の要求の不採用・対象集合の縮小、採否や実現方式が1案に確定していない事項、外部操作の認可は、この承認の対象外とする。外部操作には前段の具体的な対象・操作・範囲の承認を要する。要確認へ戻した場合は、この確認済みによる承認も取り消す。
 
 ## 範囲語と程度
 

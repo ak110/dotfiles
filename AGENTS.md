@@ -24,10 +24,10 @@
 
 | スキル | 扱う範囲 |
 | --- | --- |
-| `dotfiles-development` | テスト、コード整形、依存関係の更新手順、リポジトリ全体のテスト配置、コミットメッセージの方針、ホスト本体のバイナリ検索手順、振り返り用ドキュメントの参照先 |
-| `dotfiles-release` | `develop`と`master`のリリース運用、日次リリースの判定と実施 |
+| `develop-dotfiles` | テスト、コード整形、依存関係の更新手順、リポジトリ全体のテスト配置、コミットメッセージの方針、ホスト本体のバイナリ検索手順、振り返り用ドキュメントの参照先 |
+| `release-dotfiles` | `develop`と`master`のリリース運用、日次リリースの判定と実施 |
 | `dotfiles-repo-layout` | ロールとファイル群の対応関係、配布元と配布先の対応関係 |
-| `dotfiles-norm-edit` | エージェント向け文書の改訂、変更した規範の自セッションへの適用、process-wiのメインが記述する`プロジェクト規範の指定`、規範を削除・縮小する際の消失確認 |
+| `edit-dotfiles-norms` | エージェント向け文書の改訂、変更した規範の自セッションへの適用、process-wiのメインが記述する`プロジェクト規範の指定`、規範を削除・縮小する際の消失確認 |
 | `agent-toolkit-edit` | `agent-toolkit/`配下と`.claude-plugin/marketplace.json`の編集、バージョン更新と編集手順、権限設定の配置 |
 | `pytools-edit` | `pytools/`、`scripts/`、`libexec/`、`bin/`、`rust/`配下の配置規約と実装規約 |
 | `sync-platform-pair` | LinuxとWindowsのペアファイルの同期 |

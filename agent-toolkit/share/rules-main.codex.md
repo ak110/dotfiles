@@ -14,7 +14,7 @@ Codexの全エージェントに適用する差分は`rules-common.codex.md`が�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 
 ## ユーザー確認と終了
 
@@ -24,7 +24,7 @@ Codexの全エージェントに適用する差分は`rules-common.codex.md`が�
 
 回答期限が設定されないDefault modeでは、協調モードの確認を前段の手順で提示して回答を待つ。自律モードでは回答期限のない実行環境として、同スキルの「手段の選択」の表に従う。権限設定やauto mode classifierによる拒否への確認には、同スキルが定める例外規定を適用する。
 
-成果作業を終える通常の`final`は`agent-toolkit:completion-report`で確定した作業完了報告の本文として届ける。
+成果作業を終える通常の`final`は`agent-toolkit:report-completion`で確定した作業完了報告の本文として届ける。
 登録・レビュー・公開などの局所結果はその本文の入力とし、未送達の必要報告や実行可能な残工程があれば`commentary`とツールで続ける。
 必要なツール処理をすべて終えてから、報告本文を`final`で届けてターンを終了する。
 正当な待機、中止・置換、技術的不成立、単発回答、委譲先の返却は、それぞれの既存契約を用いる。

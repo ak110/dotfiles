@@ -553,8 +553,7 @@ main > .toolbar {
 #screen-wi .state-badge,
 #screen-wi .plan-badge,
 #screen-wi .attention-badge,
-#screen-wi .blocked-badge,
-#screen-wi .confirmation-badge {
+#screen-wi .blocked-badge {
   display: inline-flex;
   width: fit-content;
   padding: 0.2rem 0.55rem;
@@ -572,13 +571,8 @@ main > .toolbar {
   color: #7a4e00;
   background: #fef0c7;
 }
-/* 回答待ちのblockedは自動着手を止めている状態として、要確認と同じ注意色で示す。 */
+/* 回答待ちのblockedは自動着手を止めている状態として注意色で示す。 */
 #screen-wi .blocked-badge {
-  color: #7a4e00;
-  background: #fef0c7;
-}
-/* 要確認は自動着手を止めている状態として注意色で示し、確認済みは他のバッジと同じ灰色にする。 */
-#screen-wi .confirmation-badge[data-confirmation="required"] {
   color: #7a4e00;
   background: #fef0c7;
 }

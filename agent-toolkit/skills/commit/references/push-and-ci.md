@@ -16,6 +16,7 @@ pushを実行するエージェントが、push先、更新する参照（ref）
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `history-rewrite.md#「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `publish.md#「公開工程の続行不能からの再開」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「公開工程の続行不能からの再開」` |
+| CIの結果を成功時も含めて判定する前 | `agent-basics:check-execution/references/diagnostics.md`の「読む出力」 | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
 
 ## 公開状態の4項目
 
@@ -130,6 +131,10 @@ API接続先を明示的に指定する場合は、ポート番号を含むHTTP(
 | 6 | 新たな未報告の失敗を検出したが、まだ実行中のrunやjobが残っている状態。同一引数で待機を再開する |
 | 7 | コマンド引数の誤り。正しい引数形式を確認して修正し、再起動する |
 | 130 | 処理の中断 |
+
+CIの結果確認担当は、成功時も対象プロジェクトが定める段階別・全体の所要基準を読み、実測と比較する。
+比較と超過時の改善判断は`agent-basics:check-execution/references/diagnostics.md`「読む出力」に従い、既存のCI検証記録へ残す。
+所要基準と監視コマンドのタイムアウトは区別し、所要超過だけを理由とする公開停止や検証省略は行わない。
 
 ## 後始末
 

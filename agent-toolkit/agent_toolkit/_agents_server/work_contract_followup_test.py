@@ -33,7 +33,7 @@ def _manager(launcher: str | None = None) -> SimpleNamespace:
 def _start_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode: Literal["task", "delegate"]) -> dict[str, Any]:
     """通常起動の公開入力を返す。taskは記録先を宣言しない役割文書を使う。"""
     if mode == "delegate":
-        return {"prompt": "Aを実装・検収する", "model_type": "execute"}
+        return {"prompt": "Aを実装・検収する", "model_type": "chores"}
     document = tmp_path / "task.subagent.md"
     document.write_text("# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
@@ -81,7 +81,7 @@ async def test_public_start_delivers_whole_contract_reference(
         if handoff_input in {"新規", "継続"}:
             inputs["extra_params"]["引き継ぎ記録先"] = f"{own}（{handoff_input}）"
     else:
-        inputs = {"prompt": "Aを実装・検収する", "model_type": "execute"}
+        inputs = {"prompt": "Aを実装・検収する", "model_type": "chores"}
     before = set(tmp_path.iterdir())
     with pytest.raises(ActionableError) as caught:
         await mcp_tools.start(str(tmp_path), mode=mode, **inputs)

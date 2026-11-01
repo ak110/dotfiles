@@ -1,0 +1,8 @@
+--- a/report.py
++++ b/report.py
+@@ -3,4 +3,4 @@
+
+ def build_report(rows: list[str]) -> dict:
+     """行の一覧から集計結果を返す。"""
+-    return {"name": "rows", "count": len(rows)}
++    return {"name": "rows", "count": len(rows), "status": "ok"}

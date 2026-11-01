@@ -12,7 +12,10 @@ import sys
 import markdown_it
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.managed_temp.creation import create_output_temp
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import entries as _wi_entries
@@ -30,9 +33,13 @@ from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
+from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import refs as _git_refs
 from agent_toolkit._plan import owner_records as _owner_records
+from agent_toolkit._plan.structure import constants as _plan_constants
+from agent_toolkit._plan.structure import markdown as _plan_markdown
+from agent_toolkit._plan.structure import sections as _plan_sections
 
 
 def run_report_metadata(data: dict[str, object]) -> dict[str, object]:
@@ -225,7 +232,7 @@ def body_is_effectively_empty(body: str) -> bool:
 
     実質空とは、空文字・空白のみ、または全ての非空行が箇条書きマーカー
     （`-`・`*`・`+`のいずれか単独文字）のみで構成される状態を指す。
-    session-review自動投入・ユーザー直接投入のどちらでも、
+    review-session自動投入・ユーザー直接投入のどちらでも、
     実効的な指示・観察事象を含まない投入をCLI側で一律検出するための基準とする。
     """
     non_empty_lines = [line.strip() for line in body.split("\n") if line.strip()]
@@ -267,7 +274,7 @@ _AWI_HEADING_ORDER: tuple[str, ...] = (
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
     """先頭frontmatterと論理本文を返し、`agent-toolkit:wi-standards`「通常AWIの本文」の要件のうち種別共通のものを検証する。"""
-    frontmatter, body = _parse_leading_frontmatter(message)
+    frontmatter, body = _parse_leading_frontmatter(_frontmatter.normalize_newlines(message))
     if entry_type == WI_TYPE_AWI and body_is_effectively_empty(body):
         raise WebInputError(_EMPTY_AWI_ERROR, next_action=_EMPTY_AWI_NEXT_ACTION)
     if entry_type != WI_TYPE_AWI:
@@ -381,6 +388,96 @@ def require_confirmed_cause(body: str, *, entry_type: str) -> None:
         )
 
 
+AWI_CAUSE_TABLE_ROWS: tuple[str, ...] = ("直接的原因", "原因分析の根拠", "対策", "類似見直し観点", "再発防止策")
+"""AWIの`## 原因分析`の2列表の行。定義元は`wi-standards/references/analysis-records.md`「原因分析の記録先」。"""
+
+
+def _awi_cause_table_errors(section: str) -> list[str]:
+    """AWIの原因分析の2列表が5行をこの順で持ち、対策が空でないことを確かめる。
+
+    対策と再発防止策を同じ表で比べられるよう、旧4行表（対策行なし）と空の対策を拒否する。
+    処置が対策と再発防止策のどちらに当たるかの意味の判定は意味検収が担う。
+    """
+    errors: list[str] = []
+    for table in _plan_markdown.extract_tables(list(_plan_markdown.iter_markdown_body_lines(section))):
+        labels = table.row_labels()
+        if table.header != _plan_constants.PLAN_BUG_TABLE_HEADER or _DIRECT_CAUSE_LABEL not in labels:
+            continue
+        if labels != AWI_CAUSE_TABLE_ROWS:
+            errors.append(f"原因分析の表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の5行をこの順に置く: {table.row_location(0)}")
+            continue
+        row = table.rows[AWI_CAUSE_TABLE_ROWS.index("対策")]
+        if len(row) < 2 or not _strip_table_cell(row[1]):
+            errors.append(f"対策の行が空である: {table.row_location(AWI_CAUSE_TABLE_ROWS.index('対策'))}")
+    return errors
+
+
+def require_cause_analysis_format(body: str, *, original: str | None = None, entry_type: str = WI_TYPE_AWI) -> None:
+    """エージェントが保存する原因分析のL4と系統別候補、AWIの表の行構成を確かめる。
+
+    5行表の規定はAWIの`## 原因分析`の記録先定義であり、UWIには適用しない。
+
+    既存項目の編集で`## 原因分析`節が変わらない場合（追記など）は、保存済みの旧書式を理由に編集を拒否しない。
+    """
+    if not is_agent_environment():
+        return
+    section = _headings.last_h2_section_lines(body, _CAUSE_ANALYSIS_HEADING)
+    if section is None:
+        return
+    if original is not None and _headings.last_h2_section_lines(original, _CAUSE_ANALYSIS_HEADING) == section:
+        return
+    content = "\n".join(section)
+    errors = _plan_sections.check_cause_analysis_format(content)
+    if entry_type != WI_TYPE_UWI:
+        errors += _awi_cause_table_errors(content)
+    if errors:
+        raise WebInputError(
+            "原因分析の書式が不正です: " + "。".join(errors),
+            next_action=(
+                "L4へ説明または理由付きの該当なしを書き、類似見直し観点・再発防止策へ両系統の候補と採否を書く。"
+                f"2列表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の5行とし、観測した問題への処置と回帰テストを対策の行へ書く"
+            ),
+        )
+
+
+def print_draft_openings(messages: list[str], sources: list[str]) -> None:
+    """検証済み原稿の冒頭を原文の改行で保存し、入力との対応と本文を表示する。"""
+    saved: list[tuple[str, pathlib.Path, str]] = []
+    try:
+        for message, source in zip(messages, sources, strict=True):
+            raw = message.removeprefix("\ufeff")
+            normalized = _frontmatter.normalize_newlines(raw)
+            parsed = _frontmatter.parse_frontmatter(normalized)
+            lines = re.findall(r"[^\r\n]*(?:\r\n|\r|\n|$)", raw)
+            if parsed is not None:
+                prefix = normalized[: len(normalized) - len(parsed[1])]
+                lines = lines[prefix.count("\n") :]
+            body = "".join(lines)
+            headings = [(token, name) for token, name in _markdown_headings.parse_headings(body, 1) if token.level == 0]
+            start = headings[0][0].map[0] if headings and headings[0][0].map is not None else 0
+            end = next(
+                (
+                    token.map[0]
+                    for token, _name in _markdown_headings.parse_headings(body, 2)
+                    if token.level == 0 and token.map is not None and token.map[0] > start
+                ),
+                len(lines),
+            )
+            opening = "".join(lines[start:end])
+            path = _output_file.save_text(opening, lambda: create_output_temp("wi-draft"), filename="draft-opening.md")
+            saved.append((source, path, opening))
+    except (OSError, ManagedTempError) as error:
+        raise WebInputError(
+            f"原稿冒頭の一時保存に失敗した: {error}",
+            next_action="managed-tempの権限・空き容量を確認し、同じ原稿でdry-runを再実行する",
+        ) from error
+    # 全件の保存が成立するまで、有効な抽出として表示しない。
+    for source, path, opening in saved:
+        print(f"原稿: {source}\n冒頭保存先: {path}\n冒頭文字数: {len(opening)}\n冒頭本文:")
+        sys.stdout.write(opening)
+        print("\n冒頭本文終了")
+
+
 def _require_agent_source(frontmatter: dict[str, object], source: str | None) -> None:
     """CLIのエージェント投入でsourceが確定していることを検証する。
 
@@ -389,10 +486,20 @@ def _require_agent_source(frontmatter: dict[str, object], source: str | None) ->
     """
     raw_source = frontmatter.get("source", source)
     item_source = raw_source if isinstance(raw_source, str) else source
-    if is_agent_environment() and not item_source:
+    if not is_agent_environment():
+        return
+    if not item_source:
         raise WebInputError(
             "エージェント環境ではsourceの明示が必須です。",
             next_action="--sourceオプション、または本文先頭のfrontmatterで指定してください。",
+        )
+    if item_source == "human":
+        raise WebInputError(
+            "エージェント環境ではsourceにhumanを指定できません。",
+            next_action=(
+                "--sourceまたは本文先頭のfrontmatterのsourceへ、起動スキル名（プラグイン接頭辞を除く）を指定する。"
+                "スキルが無い場合はagentを指定して再実行する"
+            ),
         )
 
 
@@ -421,6 +528,7 @@ def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, objec
 
 
 _RESERVED_ADD_KEY_NEXT_ACTIONS = {
+    "effect_check": "採用後の効果判定はatk wi effect-checkで記録する",
     "state": "新規項目はinboxとして保存する。状態の変更には状態遷移コマンドを使う",
     "type": "--typeで指定する",
     "scope": "--scopeで指定する",
@@ -691,17 +799,6 @@ def _validate_add_entries(
                     f"frontmatterから{key}を除き、{_RESERVED_ADD_KEY_NEXT_ACTIONS[key]}" for key in rejected_keys
                 ),
             )
-        # 投入時に指定できるのは要確認だけとする。確認済みはユーザーが画面で内容を確認した結果として記録する。
-        if _constants.CONFIRMATION_KEY in frontmatter and (
-            entry_type != WI_TYPE_AWI or frontmatter[_constants.CONFIRMATION_KEY] != _constants.CONFIRMATION_REQUIRED
-        ):
-            raise WebInputError(
-                f"{_constants.CONFIRMATION_KEY}はAWIへ{_constants.CONFIRMATION_REQUIRED}だけを指定できる",
-                next_action=(
-                    f"本文frontmatterの{_constants.CONFIRMATION_KEY}を{_constants.CONFIRMATION_REQUIRED}にするか除き、"
-                    "UWIでは指定せずに再投入する"
-                ),
-            )
         require_agent_awi_sections(
             body,
             frontmatter,
@@ -741,7 +838,8 @@ def read_body_files(paths: list[str]) -> list[str]:
     for raw in paths:
         path = pathlib.Path(raw).expanduser()
         try:
-            bodies.append(_frontmatter.normalize_newlines(path.read_text(encoding="utf-8")))
+            with path.open(encoding="utf-8", newline="") as stream:
+                bodies.append(stream.read())
         except OSError as error:
             raise WebInputError(
                 f"--body-fileの読み込みに失敗しました: {raw}（{error}）",
@@ -821,6 +919,7 @@ def cmd_add(
                 validation_errors.append(error)
             try:
                 require_confirmed_cause(body, entry_type=args.type)
+                require_cause_analysis_format(body, entry_type=args.type)
             except WebInputError as error:
                 validation_errors.append(error)
         except WebInputError as error:
@@ -886,6 +985,10 @@ def cmd_add(
                 source=args.source,
                 cooldown_until=getattr(args, "cooldown_until", None),
             )
+            sources = (
+                [str(pathlib.Path(path).expanduser().resolve()) for path in body_files] if body_files else ["エディター入力"]
+            )
+            print_draft_openings(messages, sources)
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             return
         generated = add_entries(

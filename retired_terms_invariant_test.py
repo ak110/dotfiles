@@ -76,7 +76,7 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
         # 旧形式の計画を読む構造定数と、その互換を確かめるテスト、旧形式の基準文書
         _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/constants.py"),
         _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/references_test.py"),
-        _AllowedLocation("agent-toolkit/skills/plan-mode/references/legacy-plan-file-standards.md"),
+        _AllowedLocation("agent-toolkit/skills/write-plan/references/legacy-plan-file-standards.md"),
     ),
     "基準コミット": (
         # 旧形式の計画の別名を読む互換の実装とそのテスト
@@ -101,8 +101,8 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     ),
     "Skillツール": (
         # 計画本文の旧表記を検出する正規表現とその入力例
-        _AllowedLocation("agent-toolkit/skills/plan-mode/scripts/check_plan_file.py"),
-        _AllowedLocation("agent-toolkit/skills/plan-mode/scripts/check_plan_file_test.py"),
+        _AllowedLocation("agent-toolkit/skills/write-plan/scripts/check_plan_file.py"),
+        _AllowedLocation("agent-toolkit/skills/write-plan/scripts/check_plan_file_test.py"),
     ),
     "鮮度情報": (
         # `atk wi list --with-staleness`のオプション説明（ヘルプの説明として維持する）
@@ -145,7 +145,7 @@ _ENDING_TERM_ALLOWED = (
     # 今回の表記変更の対象から除外した、過去の条文・観測の保存記録。
     _AllowedLocation("docs/development/norm-restructure*/*"),
     # 保存済みの旧計画を読む際の見出し一覧。
-    _AllowedLocation("agent-toolkit/skills/plan-mode/references/legacy-plan-file-standards.md"),
+    _AllowedLocation("agent-toolkit/skills/write-plan/references/legacy-plan-file-standards.md"),
     # 保存済み記録の旧名を現行の役割・工程へ対応付ける説明だけを許容する。
     _AllowedLocation("docs/development/concepts-principles.md", "旧記録の読み替え:"),
 )
@@ -170,9 +170,9 @@ _RETIRED_TERMS = (
             # 旧形式の計画を読むための構造定数（`PLAN_LEGACY_*`）
             _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/constants.py"),
             # 既存計画の旧名を読み取り互換として受理することを説明する文
-            _AllowedLocation("agent-toolkit/skills/plan-mode/references/plan-file-standards.md", "読み取り互換"),
+            _AllowedLocation("agent-toolkit/skills/write-plan/references/plan-file-standards.md", "読み取り互換"),
             # 旧形式の計画の基準文書
-            _AllowedLocation("agent-toolkit/skills/plan-mode/references/legacy-plan-file-standards.md"),
+            _AllowedLocation("agent-toolkit/skills/write-plan/references/legacy-plan-file-standards.md"),
             # 旧形式の計画を読む互換のテスト
             _AllowedLocation("*_test.py"),
         ),
@@ -193,7 +193,7 @@ _RETIRED_TERMS = (
             _AllowedLocation("*_test.py", "利用者指示"),
             _AllowedLocation("*_test.py", "利用者と入口"),
             # 旧形式の計画の基準文書
-            _AllowedLocation("agent-toolkit/skills/plan-mode/references/legacy-plan-file-standards.md", "利用者と入口"),
+            _AllowedLocation("agent-toolkit/skills/write-plan/references/legacy-plan-file-standards.md", "利用者と入口"),
             # 旧列名を構造の名前として扱う文体検査
             _AllowedLocation("scripts/check_agent_doc_tone.py", "利用者と入口"),
             # 呼称の使用停止を定める規定と、その方針記録
@@ -220,7 +220,7 @@ _RETIRED_TERMS = (
             _AllowedLocation("docs/index.md", line_exact="- [docs/guide/index.md](guide/index.md): 利用者向け"),
             _AllowedLocation("docs/guide/index.md", line_exact="# 利用者向けガイド"),
             _AllowedLocation(
-                ".chezmoi-source/dot_claude/skills/ak110-projects-operations/references/doc-structure.md",
+                ".chezmoi-source/dot_claude/skills/operate-ak110-projects/references/doc-structure.md",
                 line_exact=(
                     "配置する場合は見出しを「利用者向けガイド」で揃える。"
                     "docs/development/index.mdの見出しは「開発者向けガイド」で揃える。"
@@ -421,8 +421,8 @@ _RETIRED_TERMS = (
             ("原因欄", "「`直接的原因`行」"),
             ("実施記録", "検証記録"),
             ("引継ぎ記録", "引き継ぎ記録"),
-            ("固定報告", "「`agent-toolkit:completion-report`の完了報告」"),
-            ("固定完了報告", "「`agent-toolkit:completion-report`の完了報告」"),
+            ("固定報告", "「`agent-toolkit:report-completion`の完了報告」"),
+            ("固定完了報告", "「`agent-toolkit:report-completion`の完了報告」"),
             ("品質想起通知", "`QUALITY_CHECKPOINT_NOTICE`"),
             ("完了値", "返却値"),
             ("固定された返却値", "返却値"),
@@ -551,12 +551,12 @@ _RETIRED_TERMS = (
         allowed=(
             # 過去のセッション記録に残る旧形式の返却を読む定数と、その読み取り互換を確かめるテスト
             _AllowedLocation(
-                "agent-toolkit/skills/session-review/scripts/session_evidence_candidates.py",
+                "agent-toolkit/skills/review-session/scripts/session_evidence_candidates.py",
                 line_exact='_ESCALATION_RETURN_STATUS = "needs_escalation"',
             ),
-            _AllowedLocation("agent-toolkit/skills/session-review/scripts/session_evidence_bundle_test.py", "needs_escalation"),
+            _AllowedLocation("agent-toolkit/skills/review-session/scripts/session_evidence_bundle_test.py", "needs_escalation"),
             _AllowedLocation(
-                "agent-toolkit/skills/session-review/scripts/session_evidence_candidates_test.py", "needs_escalation"
+                "agent-toolkit/skills/review-session/scripts/session_evidence_candidates_test.py", "needs_escalation"
             ),
             # 日付の付いた過去の障害記録
             _AllowedLocation("docs/development/incidents*.md"),
@@ -653,7 +653,7 @@ def test_retired_term_outside_allowed_location_is_reported(tmp_path: pathlib.Pat
         tmp_path,
         {
             ".claude/skills/example/SKILL.md": "# 例\n\nレーンの近接検証へテストを含める。\n",
-            "agent-toolkit/skills/plan-mode/references/plan-file-standards.md": "近接検証の1行表を使う。\n",
+            "agent-toolkit/skills/write-plan/references/plan-file-standards.md": "近接検証の1行表を使う。\n",
         },
     )
 
@@ -661,7 +661,7 @@ def test_retired_term_outside_allowed_location_is_reported(tmp_path: pathlib.Pat
 
     assert violations == [
         ".claude/skills/example/SKILL.md:3: 撤去した名称「近接検証」が残っている。正式名「変更範囲の検証」へ置き換える",
-        "agent-toolkit/skills/plan-mode/references/plan-file-standards.md:1: "
+        "agent-toolkit/skills/write-plan/references/plan-file-standards.md:1: "
         "撤去した名称「近接検証」が残っている。正式名「変更範囲の検証」へ置き換える",
     ]
 
@@ -690,10 +690,10 @@ def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -
         tmp_path,
         {
             "agent-toolkit/agent_toolkit/_plan/structure/constants.py": 'LEGACY = ("近接検証",)\n',
-            "agent-toolkit/skills/plan-mode/references/plan-file-standards.md": (
+            "agent-toolkit/skills/write-plan/references/plan-file-standards.md": (
                 "旧名「近接検証」の表は読み取り互換で受理する。\n"
             ),
-            "agent-toolkit/skills/plan-mode/references/legacy-plan-file-standards.md": "- `近接検証`列\n",
+            "agent-toolkit/skills/write-plan/references/legacy-plan-file-standards.md": "- `近接検証`列\n",
             "agent-toolkit/agent_toolkit/_plan/structure/parsing_test.py": 'LEGACY = "近接検証"\n',
         },
     )

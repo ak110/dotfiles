@@ -100,12 +100,15 @@ def test_record_only_top_level_and_keep_identity(host, tmp_path, monkeypatch) ->
     assert not session_review.record({**payload, "session_id": "delegate"}, host=host)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION")
     monkeypatch.setenv(session_review.BATCH_ENV, "manifest")
-    assert not session_review.record({**payload, "session_id": "batch"}, host=host)
-    assert len(session_review.pending()) == 1
+    assert session_review.record({**payload, "session_id": "batch"}, host=host)
+    monkeypatch.delenv(session_review.BATCH_ENV)
+    assert session_review.record({**payload, "session_id": "batch"}, host=host)
+    assert next(item for item in session_review.pending() if item["session_id"] == "batch")["review_batch"]
+    assert len(session_review.pending()) == 2
 
 
 @pytest.mark.parametrize("change", ["append", "resume", "new-input", "none"])
-def test_prepare_complete_preserves_new_scope(change, tmp_path, capsys) -> None:
+def test_prepare_complete_preserves_new_scope(change, tmp_path, capsys, monkeypatch) -> None:
     transcript = tmp_path / "session.jsonl"
     _transcript(transcript, "初回要求")
     payload = {
@@ -114,7 +117,9 @@ def test_prepare_complete_preserves_new_scope(change, tmp_path, capsys) -> None:
         "transcript_path": str(transcript),
         "cwd": str(tmp_path),
     }
+    monkeypatch.setenv(session_review.BATCH_ENV, "manifest")
     session_review.record(payload, host="claude")
+    monkeypatch.delenv(session_review.BATCH_ENV)
     prepared = _prepare(transcript, capsys)
     if change == "append":
         _transcript(transcript, "準備中の追記", append=True)
@@ -124,6 +129,7 @@ def test_prepare_complete_preserves_new_scope(change, tmp_path, capsys) -> None:
     if change == "new-input":
         session_review.record({**payload, "hook_event_name": "UserPromptSubmit"}, host="claude")
     assert bool(session_review.pending()) == (change != "none")
+    assert all(target["review_batch"] for target in session_review.pending())
     previous = session_review.previous_scope({"host": "claude", "session_id": "session"})
     assert previous is not None
     _transcript(transcript, "次の要求", append=True)
@@ -274,10 +280,11 @@ def test_corrupt_manifest_preserves_new_and_legacy_review_logs():
     log_dir.mkdir(parents=True)
     old = log_dir / "old-session-review-batch.log"
     new = log_dir / "new-session-review_batch.log"
+    renamed = log_dir / "new-review-session_batch.log"
     unrelated = log_dir / "other.log"
-    for path in (old, new, unrelated):
+    for path in (old, new, renamed, unrelated):
         path.write_text("記録", encoding="utf-8")
     manifest = session_review.directory() / "runs" / "old.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text("{破損", encoding="utf-8")
-    assert session_review.protected_logs() == {old, new}
+    assert session_review.protected_logs() == {old, new, renamed}

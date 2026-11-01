@@ -11,7 +11,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「会話を引き継ぐ委譲」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「会話を引き継ぐ委譲」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime.md#「後続操作の共通先行条件」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「後続操作の共通先行条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination.md#「ラウンド番号の保持先」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンド番号の保持先」` |
@@ -47,7 +47,7 @@ fork機能に関する監査記録は、`docs/development/audit-records.md`の�
 
 ## 工程別モデル設定
 
-各工程の`model_type`は、対応する`<工程>_model`の設定に定義された候補列を直接参照する。下表における「メイン」は、`agent-toolkit:process-wi`のメインエージェント、または`agent-toolkit:plan-mode`を起動したエージェントを指す。
+各工程の`model_type`は、対応する`<工程>_model`の設定に定義された候補列を直接参照する。下表における「メイン」は、`agent-toolkit:process-wi`のメインエージェント、または`agent-toolkit:write-plan`を起動したエージェントを指す。
 
 | 対応工程・役割 | model_type | 起動直前に解決する主体 | 起動手段 |
 | --- | --- | --- | --- |
@@ -56,7 +56,7 @@ fork機能に関する監査記録は、`docs/development/audit-records.md`の�
 | 定型走査・軽微な作業・コマンド実行。自由本文の`explore`・`shell`の省略時 | `chores_fast` | 委譲する担当 | `agents_server` |
 | 実行レビュー・ユーザビリティレビュー・投入前レビュー・再発防止セルフチェック。`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check` | `review` | 各レビューを委譲する担当 | `agents_server` |
 | 小規模レビュー。`bulk-replace-review`・`external-write-review`・`reader-fit-review` | `review_fast` | 各レビューを委譲する担当 | `agents_server` |
-| 最上位オーケストレーター、process-loopの新規セッション、run-skill | `orchestrate` | process-loop・run-skill・委譲する担当 | `atk`か`agents_server` |
+| 最上位オーケストレーター、process-loopの新規セッション、run-skill。`repository-process` | `orchestrate` | process-loop・run-skill・all-reposの統括担当 | `atk`か`agents_server` |
 | 文章起草、`write`の省略時 | `write` | 委譲する担当 | `agents_server` |
 | `atk commit`の省略時 | `chores` | `atk` | `atk` |
 
@@ -82,11 +82,15 @@ fork機能に関する監査記録は、`docs/development/audit-records.md`の�
 
 WIの`担当モデル`において担当者、モデル、effortが明記されている工程では、委譲元がその指定値を`model_type`へ渡す。1回の起動に対して異なる指定が混在する場合は、WIと指定値を明示して委譲単位を分割する。終了時に確認したengine、model、effortを指定値と比較し、WI名、指定内容、実際値を進捗ログまたは引き継ぎ記録へ記載する。各工程は自身の担当名（`担当モデル.実装担当`など）と本段落の参照先を保持する。
 
-作業の分担と総コストの比較検討は、`routing.md`「要否判定」に従う。表に記載された`model_type`は役割文書を渡して起動する工程に適用し、役割全体の工程指定を維持する。役割担当者は、観点の選定、アイデア出し、候補の評価判定、結論の統合を自ら実施する。役割の内部では、作業を「判断を伴う部分」と「読み取り、調査、要約、走査、確定済み編集、コマンド実行などの機械的な部分」へ極力細分化する。この細分化は作業内容の分類を目的としており、同一の背景情報と実行条件を共有する確定済みの作業は1件の起動へ集約する（`routing.md`「要否判定」）。後者の定型作業を委譲する際は、定型的な走査、事実の収集、コマンド実行を`chores_fast`へ割り当て、その処理能力では対応が難しい中規模の読み取り、要約、走査、確定済みの編集作業を`chores`へ割り当てる。表の`execute`を指定するのは、役割文書を渡して起動する工程と、計画立案、設計判断、原因分析など分割できない判断を独立した担当者へ委ねる場合に限定する。そうした判断のための事前調査を`execute`の`explore`へ割り当てることは避ける。
+作業の分担と総コストの比較検討は、`routing.md`「要否判定」に従う。表に記載された`model_type`は役割文書を渡して起動する工程に適用し、役割全体の工程指定を維持する。役割担当者は、観点の選定、アイデア出し、候補の評価判定、結論の統合を自ら実施する。役割の内部では、作業を「判断を伴う部分」と「読み取り、調査、要約、走査、確定済み編集、コマンド実行などの機械的な部分」へ極力細分化する。この細分化は作業内容の分類を目的としており、同一の背景情報と実行条件を共有する確定済みの作業は1件の起動へ集約する（`routing.md`「要否判定」）。後者の定型作業を委譲する際は、定型的な走査、事実の収集、コマンド実行を`chores_fast`へ割り当て、その処理能力では対応が難しい中規模の読み取り、要約、走査、確定済みの編集作業を`chores`へ割り当てる。`execute_model`は高価なため、`execute`は役割文書がその工程を定める担当（レーン担当、`add-wi`、`defect-investigation`など、複雑な作業やバグ分析などを担う役割）の起動だけに使う。`orchestrate`は、process-loop・run-skillなど規範が起動形を定める最上位・統括の起動だけで使う。エージェントが自分の判断で`execute`や`orchestrate`の担当を起動しない（`start`は自由本文の`delegate`でのこの2つの指定を拒否する）。`execute`の担当が作業を切り出してよいのは、`review`・`review_fast`・`chores`・`chores_fast`・`write`のいずれかの工程で済み、起動と規範の読み込みを含めても費用が下がる部分だけとする。それ以外の作業と、計画立案、設計判断、原因分析は担当自身が行う。上位モデルの別sessionでは規範を読み直す費用が大きいためである。
 
 工程別設定の対象外となる委譲には後述の「modelとreasoning effort」を適用し、独自の名前付きagentについては各文書のfrontmatterの定義に従う。
 
 ## 継続と新規起動
+
+担当の交代やモデル・実行手段の変更は、担当の回復として扱う。停止や失敗反復の原因が既存不良なら、欠陥の処置は回復と別に判定する。
+process-wiの実行中は`../../process-wi/references/immediate-fix.md`「即時対応」、それ以外は`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従う。
+この判定によって、可用性の障害に限る「代替起動」の適用範囲は変わらない。
 
 自身で実行可能な処理を残したままの返却が繰り返される場合は、同一の担当者へ再送を重ねる前に、担当者の交代、作業単位の再編、モデルや実行手段の変更を総コストの観点から比較検討する。担当者を交代させる際は前任の終了を確認し、検証済みの成果物と未完了の作業内容を後任へ引き継ぐ。共有されているモデル設定は変更せず、必要な調整は今回の起動時における個別指定にとどめる。これは通信エラーによる継続不能とは区別して判断する。
 
@@ -127,6 +131,18 @@ WIの`担当モデル`において担当者、モデル、effortが明記され�
 
 工程別モデル設定の対象外となる委譲においては、設計判断を伴う実装やレビュー、観点や判定基準の選定、新たな候補の提案、および走査結果として返された候補の評価や結論の統合には上位モデルを選択し、内容が確定している定型的な書き込み作業などその他全般には標準モデルを選択する（努力目標）。また、判定基準を明確に言語化して指示できる多数の対象に対する走査作業は、軽量モデルへ分割して委譲する（努力目標。モデルは作業の性質に応じて選定し、走査と書き込み作業の分担は「工程別モデル設定」の分担方針に従う）。reasoning effortの指定を省略した場合は`medium`を適用し、読むべきファイル数が少なく推論の深さが結果を大きく左右することが事前に分かっている工程に限り高いeffortを選択する（努力目標）。モデルを明示的に指定する場合はeffortも併せて指定する。指定したモデルが利用できない場合は、再試行にかかる負担も含めた総コストを考慮し、作業を成立させられるモデルへ切り替える。
 関連する監査記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月」に記載されている。
+
+エージェント自身がeffortを選ぶ場合は、次の方針を適用する。工程別設定の初期値・プリセット、ユーザーの設定値は保持する。
+
+- `xhigh`・`max`は、同種の作業で品質の向上を測って確かめた場合に限って選ぶ（努力目標。高いeffortは思考と出力トークンを増やし、前記の監査記録には軽量モデルの`max`で自動コンパクションが10回発生したというユーザーからの報告がある）。
+- effortを指定できる起動では、思考を増減させる指示文を委譲プロンプトへ追加する前にeffortで調整する（努力目標。指示文より設定で調整する方針である）。effortを指定できない起動には適用しない。
+
+公式ガイドの対象モデルと推奨内容の確認記録は、`docs/development/audit-records.md`にある。
+項目名は「agent-basics/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年10月31日」である。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| process-wi中の停止や反復の原因が既存不良である時 | `../../process-wi/references/immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
 
 ## 代替時の組合せの目安
 

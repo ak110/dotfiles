@@ -169,7 +169,7 @@ class TestAgentToolkitDotfilesNamesCheck:
     @pytest.mark.parametrize(
         "name",
         [
-            "ak110-projects-operations",  # 個人スキル名 (.chezmoi-source/dot_claude/skills/)
+            "operate-ak110-projects",  # 個人スキル名 (.chezmoi-source/dot_claude/skills/)
             "sync-platform-pair",  # dotfiles スキル名 (.claude/skills/)
             "psgrep",  # pytools コマンド名
             "agent_toolkit_bump",  # scripts 名

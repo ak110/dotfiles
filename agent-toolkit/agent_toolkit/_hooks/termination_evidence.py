@@ -1,4 +1,4 @@
-"""成果作業と`agent-toolkit:completion-report`の起動証拠を作業単位で保持する。
+"""成果作業と`agent-toolkit:report-completion`の起動証拠を作業単位で保持する。
 
 各イベントはこの所有モジュールへ観測を渡す。成果作業は成功した対象スキルの開始、リポジトリへの自編集、
 計画の保存、WIの保存、commit・pushの実行記録から、起動証拠はClaude Codeの成功したSkill呼び出しと、
@@ -41,14 +41,14 @@ lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 STATE_KEY = "termination_evidence"
 
-COMPLETION_REPORT = "completion-report"
+COMPLETION_REPORT = "report-completion"
 """起動証拠を確かめるスキルの短縮名。"""
 
 TARGET_SKILLS = ("process-wi", "add-awi-by-user")
-"""開始した時点で成果作業となるスキルの短縮名。適用条件は`completion-report/SKILL.md`「工程」の工程9に従う。"""
+"""開始した時点で成果作業となるスキルの短縮名。適用条件は`report-completion/SKILL.md`「工程」の工程9に従う。"""
 
 _UNRESOLVED_REPOSITORY_FIX = (
-    "この作業では省略を記録できないため、`agent-toolkit:completion-report`を起動して終了工程を進める。"
+    "この作業では省略を記録できないため、`agent-toolkit:report-completion`を起動して終了工程を進める。"
     "規範がその起動を禁じる場合は、その旨をユーザーへ報告する。"
 )
 

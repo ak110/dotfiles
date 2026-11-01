@@ -21,7 +21,7 @@ from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common.session_state import state_path
 from agent_toolkit._testing import git_repository
 lazy from agent_toolkit._common.session_state import read_state
-lazy from agent_toolkit._hooks import agent_id, rules_context
+lazy from agent_toolkit._hooks import agent_id, notice, rules_context
 lazy from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
@@ -138,6 +138,16 @@ def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
     return context if isinstance(context, str) else ""
 
 
+def denial_reason(result: subprocess.CompletedProcess[str]) -> str:
+    """公開hookの正常拒否と、主体へ届く理由を検証する。"""
+    assert result.returncode == 0 and not result.stderr
+    specific = json.loads(result.stdout)["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    reason = specific["permissionDecisionReason"]
+    assert isinstance(reason, str) and reason
+    return reason
+
+
 def _notice_body(context: str) -> str:
     """標準XML境界を検証し、通知本文を返す。"""
     assert context.startswith(_NOTICE_PREFIX)
@@ -153,7 +163,9 @@ def _agent_messages(result: subprocess.CompletedProcess[str]) -> str:
     コーディングエージェントへ渡らない。そのためstderrはexit 2（ブロック）の場合だけ含める。
     """
     stderr = result.stderr if result.returncode == 2 else ""
-    return f"{stderr}\n{_additional_context(result)}"
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout.strip() else {}
+    reason = specific.get("permissionDecisionReason", "") if specific.get("permissionDecision") == "deny" else ""
+    return f"{stderr}\n{reason}\n{_additional_context(result)}"
 
 
 def _stderr_warn_offenders(source: str) -> list[int]:
@@ -377,8 +389,8 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
         session_id = payload["session_id"]
         for _attempt in range(12):
             decision = read_delivery.deliver(payload, payload.get("tool_name", ""), payload.get("tool_input", {}), session_id)
-            if decision.block is not None:
-                return
+            # ここで採用した案内を配送済みにし、未配送の試作結果とは区別する。
+            notice.record_delivery("\n".join(decision.notices))
             records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
             agent = agent_id.resolve_hook_agent_id(payload)
             targets = [

@@ -2,6 +2,7 @@
 
 import argparse
 import datetime
+import json
 import os
 import pathlib
 import runpy
@@ -23,6 +24,51 @@ from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import owner_records as _owner_records
 from agent_toolkit._testing import git_repository, review_bodies
 from agent_toolkit._testing import plan_fixture as _plan_fixture
+
+
+@pytest.mark.parametrize("record", ['{"date":"2026-11-01"}', '{"date":"2026-02-30"}', '{"date":42}', "[]", "{"])
+def test_commit_rejects_invalid_creation_record_before_saving(
+    tmp_path: pathlib.Path,
+    record: str,
+) -> None:
+    """記録が不正、または名前の日と保存年月が無効な場合は保存前に止める。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "notes"
+    _init_local_notes(notes)
+    main = _plan_file.working_plans_root(home) / "31-0900_計画.md"
+    main.parent.mkdir(parents=True)
+    main.write_text("# 計画\n", encoding="utf-8")
+    main.with_suffix(".created.json").write_text(record, encoding="utf-8")
+    with pytest.raises(ActionableError) as rejected:
+        _atk_plans.commit_plan(notes, main.name, home=home, skip_push=True)
+    assert rejected.value.next_action
+    assert main.read_text(encoding="utf-8") == "# 計画\n"
+    assert not (notes / "plans").exists()
+
+
+def test_creation_record_precedes_available_creation_time(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """作成時刻を取得できる複製でも、局所記録が可搬参照と保存年月を決める。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "notes"
+    _init_local_notes(notes)
+    main = _plan_file.working_plans_root(home) / "31-0900_計画.md"
+    main.parent.mkdir(parents=True)
+    main.write_text("# 計画\n", encoding="utf-8")
+    main.with_suffix(".created.json").write_text(json.dumps({"date": "2025-12-31"}), encoding="utf-8")
+
+    def fixed_creation(_path: pathlib.Path, **_kwargs: object) -> float:
+        return datetime.datetime(2026, 1, 31, 12).timestamp()
+
+    monkeypatch.setattr(_plan_file, "_creation_epoch", fixed_creation)
+    assert _plan_file.to_portable_plan_file(main, private_notes=notes, home=home) == (
+        "$(atk config get private_notes)/plans/2025/12/31-0900_計画.md"
+    )
+    result = _atk_plans.commit_plan(notes, main.name, home=home, skip_push=True)
+    assert result["plan_file"] == "2025/12/31-0900_計画.md"
+    assert not main.with_suffix(".created.json").exists()
 
 
 @pytest.fixture(autouse=True)
@@ -1586,7 +1632,7 @@ def test_public_save_all_then_restore_unfinished_plan(
 
 def test_generated_plan_names_are_current_and_help_shares_the_format(capsys: pytest.CaptureFixture[str]) -> None:
     """作成側の生成名を保存検査が現行として受理し、現行名の拒否にも同じ形式を案内する。"""
-    creator = runpy.run_path(str(run_script.PLUGIN_ROOT / "skills/plan-mode/scripts/create_plan_files.py"))
+    creator = runpy.run_path(str(run_script.PLUGIN_ROOT / "skills/write-plan/scripts/create_plan_files.py"))
     now = datetime.datetime(2026, 10, 14, 13, 10, tzinfo=datetime.UTC)
     stems = [creator["process_lane_plan_name"]("lane-01", now=now), creator["named_plan_name"]("計画", now=now)]
     for stem in stems:

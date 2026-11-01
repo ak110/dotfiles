@@ -213,7 +213,7 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     assert "review-table validate" not in block
     assert "fork_turns" not in block
     for role, relative, required, internal in (
-        ("external-write-review", "skills/external-write-review/SKILL.md", "3観点それぞれ", "## 観点"),
+        ("external-write-review", "skills/review-external-writes/SKILL.md", "3観点それぞれ", "## 観点"),
         ("bulk-replace-review", "skills/delegation/references/bulk-replacement.md", "読んだ変更箇所数:", "## 観点"),
         ("usability-review", "share/usability-review.parent.md", "試行: <手段>", "## 操作"),
         ("session-termination", "share/session-termination.parent.md", "延期後にadoptしたAWI:", "## 生成物とpush"),

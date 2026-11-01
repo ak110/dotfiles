@@ -119,6 +119,12 @@ WARNING_FIX = (
 """表示と後続の操作の取り違えを防ぐ、モデル自身による書き直し。"""
 
 
+def explanation_is_japanese(text: str) -> bool:
+    """再発行時に引用素材を除いた説明が適合するかを返す。"""
+    material = re.sub(r'"[^"\n]*"|“[^”\n]*”|(?<!\w)\x27[^\x27\n]*\x27(?!\w)', " ", text)
+    return check_text(material)[0] is not CheckOutcome.WARN
+
+
 def check_text(text: str) -> tuple[CheckOutcome, str | None]:
     """文字列の記述言語を判定し、3値で結果を返す。
 

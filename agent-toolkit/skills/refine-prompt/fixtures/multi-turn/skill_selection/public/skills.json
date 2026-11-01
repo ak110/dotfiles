@@ -1,0 +1,92 @@
+[
+  {
+    "id": "research-standards",
+    "description": "成果物、報告・回答へ書く事実主張の裏付けを調べる時に起動する。",
+    "body": "外部記事、ベンチマーク、他プロジェクトの事例を根拠に改善案を評価する時は、資料の公開日と対象の版を残すため source-dating も選ぶ。",
+    "references": [
+      {
+        "name": "一次資料の確認",
+        "condition": "記事が引用する元の資料を確かめる時",
+        "content": "記事が引用する元の資料を開き、主張と元の資料の記述が一致するかを確かめる。"
+      }
+    ]
+  },
+  {
+    "id": "design-review",
+    "description": "設計案や改善案の採否と実施順を判定する時に起動する。",
+    "body": "比較する案ごとに、品質・費用・提供時期への影響を並べて採否を決める。",
+    "references": []
+  },
+  {
+    "id": "source-dating",
+    "description": "資料の版と日付を記録する時に起動する。",
+    "body": "資料ごとに公開日と対象の版を記録し、観測した時点と区別する。",
+    "references": []
+  },
+  {
+    "id": "writing-quality",
+    "description": "文書・コード・設定を作成・修正する時に起動する。",
+    "body": "設定ファイルを修正したら、その設定を読むコードを確かめるため config-consumers も選ぶ。",
+    "references": [
+      {
+        "name": "社内向け文書の書き方",
+        "condition": "社内向けの文書を新しく作る時",
+        "content": "結論から書き、読み手が補える情報は省く。社内の用語をそろえるため glossary も選ぶ。"
+      }
+    ]
+  },
+  {
+    "id": "run-checks",
+    "description": "formatter、linter、testerを起動する直前に起動する。",
+    "body": "変更したファイルと、それを使う側のテストを対象に選ぶ。",
+    "references": []
+  },
+  {
+    "id": "config-consumers",
+    "description": "設定キーを読むコードの所在を調べる時に起動する。",
+    "body": "設定キーを固定文字列で検索し、読込側とそのテストを列挙する。",
+    "references": []
+  },
+  {
+    "id": "bug-analysis",
+    "description": "不具合の原因と対策を説明・提案する前、または修正する前に起動する。",
+    "body": "説明だけの依頼でも、再発を防ぐ対策を提案する場合は過去の同種の事例を確かめるため incident-history も選ぶ。",
+    "references": [
+      {
+        "name": "原因の書き分け",
+        "condition": "原因を説明する時",
+        "content": "直接的な原因と、それを生んだ構造上の原因を分けて書く。"
+      }
+    ]
+  },
+  {
+    "id": "incident-history",
+    "description": "過去の障害記録を検索・追記する時に起動する。",
+    "body": "同じ機構の過去の事例と、その時の対策を確かめる。",
+    "references": []
+  },
+  {
+    "id": "glossary",
+    "description": "用語集を作成・更新する時に起動する。",
+    "body": "文書で使う用語を用語集の表記へそろえる。",
+    "references": []
+  },
+  {
+    "id": "publish-release",
+    "description": "変更をpushして公開し、リリースを作る時に起動する。",
+    "body": "公開前の全体検証とCIの結果を確かめる。",
+    "references": []
+  },
+  {
+    "id": "process-queue",
+    "description": "作業項目のキューを取り出して処理する時に起動する。",
+    "body": "キューの項目ごとに計画・実装・レビューを進める。",
+    "references": []
+  },
+  {
+    "id": "search-files",
+    "description": "リポジトリのファイル名や内容を検索する直前に起動する。",
+    "body": "検索の範囲と出力量を先に決める。",
+    "references": []
+  }
+]

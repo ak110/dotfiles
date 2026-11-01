@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 import enum
 import pathlib
@@ -47,6 +48,14 @@ class BashInvocation:
     cwd_scope: tuple[object, ...] = ()
     inline_input: bool = False
     """同じコマンドか上流パイプが、heredoc・here-stringを標準入力として持つ。"""
+    execution_known: bool = True
+    """実行するコマンドを静的に確定できたかを表す。
+
+    `extract_bash_invocations`は確定した呼出しだけを返すため常に真である。
+    `extract_bash_effects`は、実行するコマンドが未知の文（`$COMMAND > out`、リダイレクトだけの文、前置代入だけの文）も
+    偽として返す。出力接続はコマンドの確定と独立して構文から決まるため、書込先を求める消費側はこの値によらず
+    `static_outputs`を使える。コマンド種別や本文の取得を確定する用途は、この値が真の呼出しだけを使う。
+    """
 
     @property
     def output_pipe(self) -> bool:
@@ -83,6 +92,11 @@ _UNKNOWN_BASH_WORD = "\x00"
 STATIC_UNKNOWN = "\ue000"
 
 
+def is_unknown_word(token: str) -> bool:
+    """解析した語が、実行しないと値が決まらない部分（展開・置換）を含むかを返す。"""
+    return _UNKNOWN_BASH_WORD in token
+
+
 def is_read_predicate(args: Sequence[str]) -> bool:
     """引数列が、正常な否定結果を終了1で返す読取述語かを返す。"""
     if not args:
@@ -113,6 +127,22 @@ def is_read_predicate(args: Sequence[str]) -> bool:
     if git_args[0] == "config":
         return any(option in git_args[1:] for option in ("--get", "--get-all", "--get-regexp"))
     return git_args[0] == "merge-base" and "--is-ancestor" in git_args[1:]
+
+
+_INCLUDE_UNKNOWN_EXECUTIONS: contextvars.ContextVar[bool] = contextvars.ContextVar("include_unknown_executions", default=False)
+
+
+def extract_bash_effects(command: str) -> list[BashInvocation]:
+    """`extract_bash_invocations`の結果へ、実行するコマンドが未知の文も`execution_known=False`で加えて返す。
+
+    入出力先の確定度は実行位置の確定と独立している。未知の実行を空の結果にすると、構文から確定した出力先まで失うため、
+    書込先を求める消費側はこの関数を使う。未知の文のコマンド名や引数は推定しない。
+    """
+    token = _INCLUDE_UNKNOWN_EXECUTIONS.set(True)
+    try:
+        return extract_bash_invocations(command)
+    finally:
+        _INCLUDE_UNKNOWN_EXECUTIONS.reset(token)
 
 
 def extract_bash_invocations(command: str) -> list[BashInvocation]:
@@ -515,12 +545,22 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
     known = not any(_UNKNOWN_BASH_WORD in token for token in segment.tokens)
     if segment.resolved and segment.tokens and _UNKNOWN_BASH_WORD not in segment.tokens[0]:
         shell = shell_c_argument(segment.tokens)
-        if shell is not None and known:
+        # 本文の確定は本文自身の語だけで決まる。後続の`$0`・位置引数が未知でも、静的な本文の入出力は失わない。
+        if shell is not None and _UNKNOWN_BASH_WORD not in shell:
             result.extend(_isolated_cwd_scope(extract_bash_invocations(shell)))
         else:
             result.append(
                 BashInvocation(segment, known, static_tokens=tuple(word.static_value for word in words[-len(segment.tokens) :]))
             )
+    elif _INCLUDE_UNKNOWN_EXECUTIONS.get():
+        result.append(
+            BashInvocation(
+                ExecutionSegment(tuple(values[prefix:]), False),
+                False,
+                static_tokens=tuple(word.static_value for word in words[prefix:]),
+                execution_known=False,
+            )
+        )
     substitutions: list[BashInvocation] = []
     for word in words:
         for body in word.nested:

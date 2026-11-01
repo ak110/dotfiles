@@ -7,7 +7,7 @@ import os
 import re
 from collections.abc import Iterator
 
-from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations
+from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_effects, extract_bash_invocations
 from agent_toolkit._common.shell_segments import skip_env_assignments
 
 _PUSHD_STACK_ROTATION_PATTERN = re.compile(r"^[+-]\d+$")
@@ -22,20 +22,28 @@ class CwdResolution:
     unresolved_expression: str | None = None
 
 
-def bash_invocation_cwds(command: str, cwd: str = "") -> Iterator[tuple[BashInvocation, CwdResolution]]:
+def bash_invocation_cwds(
+    command: str, cwd: str = "", *, effects: bool = False
+) -> Iterator[tuple[BashInvocation, CwdResolution]]:
     """各呼び出しの実行位置を返す。未知の移動後は不明を保ち、絶対移動で解決を再開する。
 
     子シェル・パイプ・背景実行・置換の移動は、その作用範囲内だけで追跡する。
     波括弧と複合文の移動は後続へ渡す。実行環境によって結果が変わる移動を元のcwdへ代用しない。
+    `effects`が真なら`extract_bash_effects`の未知の実行も返す。未知の実行はcwdを移す可能性があるため、
+    後続の相対パスは不明として扱う。
     """
     initial = CwdResolution(cwd, bool(cwd))
     positions: dict[tuple[object, ...], CwdResolution] = {(): initial}
-    for invocation in extract_bash_invocations(command):
+    for invocation in extract_bash_effects(command) if effects else extract_bash_invocations(command):
         scope = invocation.cwd_scope
         for length in range(1, len(scope) + 1):
             positions.setdefault(scope[:length], positions[scope[: length - 1]])
         current = positions[scope]
         yield invocation, current
+        if not invocation.execution_known:
+            if invocation.segment.tokens:
+                positions[scope] = CwdResolution("", False, invocation.segment.tokens[0])
+            continue
         change = resolve_cwd_change(list(invocation.segment.tokens), current)
         if change is not None:
             positions[scope] = change

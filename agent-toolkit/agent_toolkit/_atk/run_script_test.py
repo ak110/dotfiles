@@ -190,7 +190,7 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
     assert observed == [str(run_script.registered_script_path("session-review-evidence")), *script_args]
 
 
-@pytest.mark.parametrize("script_name", ["session-review-decisions", "session-review-report", "completion-report-check"])
+@pytest.mark.parametrize("script_name", ["session-review-decisions", "session-review-report", "report-completion-check"])
 def test_removed_session_review_entries_are_rejected(script_name: str, capsys: pytest.CaptureFixture[str]) -> None:
     """振り返りの判定入力と報告の生成器として撤去したコマンドを指定すると、未知の公開名として拒否する。"""
     parser = argparse.ArgumentParser()
@@ -314,7 +314,7 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
 
 ### 計画メタ情報
 
-- 起動経路: `agent-toolkit:plan-mode`
+- 起動経路: `agent-toolkit:write-plan`
 - 対象リポジトリ: `{repository}`
 - 関連WI: なし
 - 作業種別: 通常変更

@@ -12,7 +12,7 @@ from agent_toolkit._hooks import plugin_resources, posttooluse, rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
 
 
-def _payload(tmp_path, command, body, *, exit_code=0):
+def _payload(tmp_path, command, body, *, exit_code=0, aggregated=None):
     records = [
         {
             "type": "event_msg",
@@ -27,6 +27,7 @@ def _payload(tmp_path, command, body, *, exit_code=0):
                     "exit_code": exit_code,
                     "cwd": tmp_path.as_uri(),
                     "command": ["/bin/bash", "-lc", command],
+                    **({"aggregated_output": aggregated} if aggregated is not None else {}),
                 },
             },
         },
@@ -99,7 +100,10 @@ def test_full_read_is_observed_and_truncated_read_is_not(tmp_path):
     full = observation.collect(_payload(tmp_path, f"cat {path}", path.read_text()))
     assert full == observation.Observation("", path.read_text())
     cut = observation.collect(_payload(tmp_path, f"cat {path}", _cut(path.read_text())))
-    assert cut == observation.Observation(observation.TRUNCATED_NOTICE, None)
+    assert cut is not None
+    assert cut.body is None
+    assert observation.TRUNCATED_NOTICE in cut.context
+    assert 'source="codex-read-observation" kind="notice"' in cut.context
 
 
 @pytest.mark.parametrize("mismatch", ["exit", "id", "turn", "session", "command", "missing"])
@@ -180,3 +184,84 @@ def test_untruncated_non_read_output_has_no_notice(tmp_path, capsys):
     payload = _payload(tmp_path, "git status --short", " M file\n")
     assert posttooluse.main(json.dumps(payload)) == 0
     assert observation.TRUNCATED_OUTPUT_NOTICE not in _additional_context(capsys)
+
+
+@pytest.mark.parametrize("defect", ["none", "turn", "id", "session", "command", "failed", "missing"])
+def test_mixed_execution_uses_the_same_native_success_boundary(tmp_path, defect):
+    """混在入力では、native記録による実行成功の確認と資料本文の取得を別々に検証する。"""
+    payload = _payload(tmp_path, "cat first.md; git status --short; sed -n '1p' second.md", "本文\n")
+    if defect in {"turn", "id", "session"}:
+        payload[{"turn": "turn_id", "id": "tool_use_id", "session": "session_id"}[defect]] = "other"
+    elif defect == "command":
+        payload["tool_input"]["command"] += " "
+    elif defect in {"failed", "missing"}:
+        payload = _payload(tmp_path, payload["tool_input"]["command"], "本文\n", exit_code=1)
+        if defect == "missing":
+            pathlib.Path(payload["transcript_path"]).write_text("", encoding="utf-8")
+    assert (observation.completed_execution(payload) is not None) is (defect == "none")
+    assert observation.collect(payload) is None
+
+
+def test_linear_read_groups_do_not_guess_short_circuit_execution():
+    assert observation.read_command_groups("cat first; git status; sed -n '1p' second", sequential=True)
+    assert observation.read_command_groups("false && cat first; sed -n '1p' second", sequential=True) is None
+    assert observation.read_command_groups("cat first && sed -n '1p' second")
+
+
+def _persisted(body: str) -> str:
+    """Codexが記録へ保存するときだけ入れる省略行を持つ、保存用の写しを返す。"""
+    return body[:20] + observation.PERSISTENCE_MARKER + body[-20:]
+
+
+@pytest.mark.parametrize("form", ["multiple", "mixed", "diagnostic", "single", "split"])
+def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp_path, capsys, monkeypatch, form):
+    """モデルへ全文を返し記録の写しだけが省略された読取で、同じ主体の書込遮断が解除される。
+
+    複数資料の静的なcat、単一の長い資料、末尾まで分けた行範囲の取得を比べる。
+    `diagnostic`は、読取の間に`git status`のような読取でないコマンドが入る連結で、
+    保存用の写しが省略されても全文を返した応答から先頭の読取列を証明する（code mode内の`exec_command`で観測した形）。
+    """
+    paths = [tmp_path / "first.md", tmp_path / "second.md"]
+    for index, path in enumerate(paths):
+        path.write_text("".join(f"資料{index}-{line:03d}: 本文\n" for line in range(200)), encoding="utf-8")
+    rows = [read_delivery.read_triggers.ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Write",), tuple(paths))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
+    monkeypatch.setattr(read_delivery.read_triggers, "reference_method_targets", lambda *_args, **_kwargs: ())
+    operation = {"session_id": "session", "turn_id": "turn", "cwd": str(tmp_path)}
+    write = {"file_path": str(tmp_path / "out.md"), "content": "本文"}
+    first = read_delivery.deliver(operation, "Write", write, "session")
+    read_delivery.notice_module.record_delivery("\n".join(first.notices))
+    assert read_delivery.deliver(operation, "Write", write, "session").block is not None
+    if form == "multiple":
+        reads = [(f"cat -- {paths[0]} {paths[1]}", paths[0].read_text() + paths[1].read_text())]
+    elif form == "mixed":
+        reads = [(f"cat -- {paths[0]}; sed -n '1,$p' -- {paths[1]}", paths[0].read_text() + paths[1].read_text())]
+    elif form == "diagnostic":
+        command = f"cat -- {paths[0]} {paths[1]}; git status --short; sed -n '1,2p' -- {paths[0]}"
+        head = "".join(paths[0].read_text().splitlines(keepends=True)[:2])
+        reads = [(command, paths[0].read_text() + paths[1].read_text() + " M out.md\n" + head)]
+    else:
+        reads = []
+        for path in paths:
+            if form == "single":
+                reads.append((f"cat -- {path}", path.read_text()))
+            else:
+                lines = path.read_text().splitlines(keepends=True)
+                reads.append((f"sed -n '1,100p' -- {path}", "".join(lines[:100])))
+                reads.append((f"sed -n '101,$p' -- {path}", "".join(lines[100:])))
+    for command, body in reads:
+        payload = _payload(tmp_path, command, body, aggregated=_persisted(body))
+        assert posttooluse.main(json.dumps(payload)) == 0
+    capsys.readouterr()
+    assert read_delivery.deliver(operation, "Write", write, "session").block is None
+
+
+def test_persisted_copy_delivered_as_the_response_is_not_a_full_read(tmp_path):
+    """保存用に省略した写しがhook入力へ届いた場合は全文取得とせず、分割読取を案内する。"""
+    path = tmp_path / "note.md"
+    path.write_text("本文の行\n" * 300, encoding="utf-8")
+    persisted = _persisted(path.read_text())
+    payload = _payload(tmp_path, f"cat -- {path}", persisted, aggregated=persisted)
+    collected = observation.collect(payload)
+    assert collected is not None and collected.body is None
+    assert observation.TRUNCATED_NOTICE in collected.context

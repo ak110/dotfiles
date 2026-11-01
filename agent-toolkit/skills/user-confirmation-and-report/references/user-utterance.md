@@ -10,8 +10,8 @@
 | --- | --- | --- | --- |
 | 本文の参照基準を適用する前 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文の参照基準を適用する前 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
-| 本文の参照基準を適用する前 | `../../completion-report/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/termination-evidence.md` |
+| 本文の参照基準を適用する前 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 本文の参照基準を適用する前 | `../../report-completion/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` |
 | 本文の参照基準を適用する前 | `../../delegation/references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` |
 | 本文の参照基準を適用する前 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 本文の参照基準を適用する前 | `grilling.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/grilling.md` |
@@ -74,8 +74,8 @@ WIに関する問いは、文脈から現在の操作、WIで依頼する内容�
 - 実行中の工程を不要とする発話は省略の提案とし、実際の状態で要否を確かめる。不要なら同じ応答で省略し、必要なら観測事実を示して続ける。規範の改訂を提案する場合も、まず今回の動作を変えてから改訂案を別に示す。
 - 進行中の作業の中断は、即時の対応を求める明示的な指示（「今すぐ」「先に」「割り込んで」など）がある場合に限り、質問や提案への応答は中断に当たらない。
 - 取り下げや差し替えを伴わない確認・訂正・状況照会に応えた後は、同じターンで元の未完了工程へ戻る（返答だけで終えると、再び促されるまで作業が止まる）。
-- 成果物を伴う作業の後に`agent-toolkit:completion-report`を起動せず終えようとすると、Stop hookが起動と残りの工程の続行を促す。プロジェクト規範で起動を省く場合は、`agent-toolkit:completion-report`の`references/termination-evidence.md`を直接読み、省いた根拠を記録する。起動後の工程の完遂と報告内容はメインエージェントが同スキルに従って確かめる。
-- 中止や差し替えの指示では、対象の作業だけを`completion-report`の工程末尾の判断記録で止め、関係しない作業は続ける。
+- 成果物を伴う作業の後に`agent-toolkit:report-completion`を起動せず終えようとすると、Stop hookが起動と残りの工程の続行を促す。プロジェクト規範で起動を省く場合は、`agent-toolkit:report-completion`の`references/termination-evidence.md`を直接読み、省いた根拠を記録する。起動後の工程の完遂と報告内容はメインエージェントが同スキルに従って確かめる。
+- 中止や差し替えの指示では、対象の作業だけを`report-completion`の工程末尾の判断記録で止め、関係しない作業は続ける。
 
 ## 成果物の制限
 

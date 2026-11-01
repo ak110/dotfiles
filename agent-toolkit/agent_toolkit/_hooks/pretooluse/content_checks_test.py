@@ -4,6 +4,7 @@
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
 
+import json
 import pathlib
 
 import pytest
@@ -76,13 +77,17 @@ class TestLanguageRewrite:
         }
         for _ in range(2):
             result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
-            assert result.returncode == expected
+            assert result.returncode == 0
+            assert not result.stderr
             saved = _read_session_state(tmp_path, sid)
             assert all(saved[key] == value for key, value in legacy.items())
             if expected == 2:
-                assert "日本語で書き直" in result.stderr
-                assert "識別子と名前" in result.stderr
-                assert result.stderr.rstrip().endswith("</atk-auto>")
+                specific = json.loads(result.stdout)["hookSpecificOutput"]
+                assert specific["permissionDecision"] == "deny"
+                reason = specific["permissionDecisionReason"]
+                assert "日本語で書き直" in reason
+                assert "識別子と名前" in reason
+                assert reason.rstrip().endswith("</atk-auto>")
 
     def test_control_characters_in_input_do_not_leak_into_notice(self, tmp_path: pathlib.Path) -> None:
         result = _run(
@@ -94,9 +99,13 @@ class TestLanguageRewrite:
             },
             env_overrides=_plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
-        assert "\x1b" not in result.stderr
-        assert "\x00" not in result.stderr
+        assert result.returncode == 0
+        assert not result.stderr
+        specific = json.loads(result.stdout)["hookSpecificOutput"]
+        assert specific["permissionDecision"] == "deny"
+        assert specific["permissionDecisionReason"]
+        assert "\x1b" not in specific["permissionDecisionReason"]
+        assert "\x00" not in specific["permissionDecisionReason"]
 
 
 class TestGeneralBehavior:

@@ -113,7 +113,7 @@ def _collect_notice_texts() -> list[tuple[str, str]]:
                 text = _literal_text(value, constants)
                 if text is not None:
                     texts.append((f"{relative}:{node.lineno} {label}", text))
-    # `hook.py`の自己障害通知は終了コード0の標準エラーへ出てエージェントへ届かないため、走査対象の`_hooks/`に含めない。
+    # `hook.py`の共通障害通知は公開hookの試験で検証し、本走査は`_hooks/`の通知生成元を対象とする。
     # 置換欄だけで構成される本文（`f"{a}\n{b}"`など）は自然言語を持たないため判定対象から外す。
     return [(source, text) for source, text in texts if re.sub(r"[{}\s]", "", text)]
 
@@ -194,8 +194,17 @@ def _run_user_prompt_submit(payload: dict, tmp_path: pathlib.Path) -> subprocess
 def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
     command = "p" + "kill -f myserver"
     result = _run({"tool_name": "Bash", "tool_input": {"command": command}}, tmp_path)
-    assert result.returncode == 2
-    assert _is_japanese_notice(result.stderr)
+    assert _is_japanese_notice(_denial_reason(result))
+
+
+def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
+    """終了0の正常拒否と非空の専用理由欄を検証する。"""
+    assert result.returncode == 0
+    assert not result.stderr
+    specific = json.loads(result.stdout)["hookSpecificOutput"]
+    assert specific["permissionDecision"] == "deny"
+    assert specific["permissionDecisionReason"]
+    return specific["permissionDecisionReason"]
 
 
 @pytest.mark.parametrize(
@@ -241,9 +250,9 @@ def test_direct_response_language_block_is_japanese(tmp_path: pathlib.Path, repe
     }
     for _ in range(repetitions):
         result = _run(payload, tmp_path)
-        assert result.returncode == 2
-        assert "日本語で書き直" in result.stderr
-        assert _is_japanese_notice(result.stderr)
+        reason = _denial_reason(result)
+        assert "日本語で書き直" in reason
+        assert _is_japanese_notice(reason)
 
 
 def test_user_prompt_context_notice_is_japanese(tmp_path: pathlib.Path) -> None:
