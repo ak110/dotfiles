@@ -80,7 +80,13 @@ def test_public_hook_records_batch_without_recursive_launch(tmp_path, monkeypatc
 
     monkeypatch.setattr("subprocess.Popen", spawn)
     monkeypatch.setattr(session_activity, "host_process", object)
-    payload = {"hook_event_name": "SessionStart", "source": "startup", "session_id": "current", "cwd": str(tmp_path)}
+    payload = {
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "session_id": "current",
+        "cwd": str(tmp_path),
+        "transcript_path": str(tmp_path / "current.jsonl"),
+    }
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode())))
     monkeypatch.setattr(
         "agent_toolkit._atk.wi.repo.resolve_repo_id_or_raise", lambda *a, **k: "https://github.com/ak110/dotfiles"

@@ -154,13 +154,17 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
             return False
         prior = read(path) if path.exists() else {}
         previous = read(reviewed) if reviewed.exists() else {}
+        transcript = payload.get("transcript_path") or prior.get("transcript_path")
+        # Claudeの準備はtranscript指定で始める。記録先の無いhook再生入力を実対象へ登録しない。
+        if host == "claude" and (not isinstance(transcript, str) or not transcript.strip()):
+            return False
         value = {
             **prior,
             "key": name,
             "host": host,
             "session_id": session_id,
             "review_batch": bool(os.environ.get(BATCH_ENV) or prior.get("review_batch") or previous.get("review_batch")),
-            "transcript_path": payload.get("transcript_path") or prior.get("transcript_path"),
+            "transcript_path": transcript,
             "cwd": payload.get("cwd") or prior.get("cwd"),
             "target_repo": target_repo or prior.get("target_repo"),
             "started_at": prior.get("started_at", timestamp()),

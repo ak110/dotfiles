@@ -71,6 +71,10 @@ class StaticValues:
             )
         if "$" in word or SUBSTITUTION_MARK in word or "`" in word:
             return (word,)
+        # シェルの語分割後に残る空白や引用符を含む本文は、引用コードなどのリテラルとして保つ。
+        # コードの辞書・JSONを波括弧の選択肢として列挙すると、内容に対し組合せが指数的に増える。
+        if any(character.isspace() or character in "\"'" for character in word):
+            return (word,)
         match = _BRACE.search(word)
         if match is None:
             return (word,)

@@ -107,6 +107,15 @@ def test_record_only_top_level_and_keep_identity(host, tmp_path, monkeypatch) ->
     assert len(session_review.pending()) == 2
 
 
+@pytest.mark.parametrize("transcript", [None, "", 123])
+def test_claude_record_requires_preparable_transcript(transcript: object) -> None:
+    """記録先の無いClaude入力を待ちへ追加せず、準備不能な再試行を防ぐ。"""
+    assert not session_review.record(
+        {"hook_event_name": "SessionStart", "session_id": "session-1", "transcript_path": transcript}, host="claude"
+    )
+    assert not session_review.pending()
+
+
 @pytest.mark.parametrize("change", ["append", "resume", "new-input", "none"])
 def test_prepare_complete_preserves_new_scope(change, tmp_path, capsys, monkeypatch) -> None:
     transcript = tmp_path / "session.jsonl"
@@ -252,7 +261,10 @@ def test_complete_rejects_history_replaced_after_prepare(tmp_path, capsys) -> No
 
 
 def test_reported_failure_becomes_collectable_only_after_pending_is_cleared(tmp_path) -> None:
-    session_review.record({"hook_event_name": "SessionStart", "session_id": "one"}, host="claude")
+    session_review.record(
+        {"hook_event_name": "SessionStart", "session_id": "one", "transcript_path": str(tmp_path / "one.jsonl")},
+        host="claude",
+    )
     target = session_review.pending()[0]
     run = session_review.directory() / "runs" / "failed.json"
     log = tmp_path / "failed.log"

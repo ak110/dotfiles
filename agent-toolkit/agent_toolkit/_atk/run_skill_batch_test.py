@@ -119,7 +119,15 @@ def test_hook_requests_existing_cli_without_wait(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(run_skill_batch.repo, "resolve_repo_id_or_raise", lambda *args, **kwargs: "example.com/team/repo")
     monkeypatch.setattr(session_activity, "host_process", object)
     monkeypatch.setattr(run_skill_batch.subprocess, "Popen", spawn)
-    run_skill_batch.hook_request({"hook_event_name": "SessionStart", "session_id": "main", "cwd": str(tmp_path)}, host="claude")
+    run_skill_batch.hook_request(
+        {
+            "hook_event_name": "SessionStart",
+            "session_id": "main",
+            "cwd": str(tmp_path),
+            "transcript_path": str(tmp_path / "main.jsonl"),
+        },
+        host="claude",
+    )
     assert len(calls) == 1
     assert calls[0][0][-4:] == ["run-skill", "--args", "batch", "agent-toolkit:review-session"]
     assert calls[0][1]["stdin"] == run_skill_batch.subprocess.DEVNULL

@@ -887,7 +887,15 @@ def test_session_start_resets_operation_skill_ready_for_main(
 def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypatch, capsys, host, event, error):
     """実native子の受付前失敗を、次の規範配送で一度報告しpendingを保持する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "true")
-    session_review.record({"hook_event_name": "SessionStart", "session_id": "pending-main", "cwd": str(tmp_path)}, host=host)
+    session_review.record(
+        {
+            "hook_event_name": "SessionStart",
+            "session_id": "pending-main",
+            "cwd": str(tmp_path),
+            "transcript_path": str(tmp_path / "pending-main.jsonl"),
+        },
+        host=host,
+    )
     monkeypatch.setattr(session_activity, "host_process", object)
     original_popen = subprocess.Popen
 

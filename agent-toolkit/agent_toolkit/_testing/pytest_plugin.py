@@ -460,8 +460,8 @@ def _immediate_wait_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def _owner_session_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """所有セッションの解決に使う環境変数を未設定の状態から始める。"""
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    for name in isolation.DEVELOPMENT_SESSION_ENVIRONMENT_NAMES:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture

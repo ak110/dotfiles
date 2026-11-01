@@ -11,6 +11,22 @@ from agent_toolkit._common import state_paths
 from agent_toolkit._testing import session_evidence_support as support
 
 
+def test_prepare_keeps_quoted_code_out_of_brace_expansion(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """引用されたコード中の波括弧を展開せず、実会話の準備を完了できる。"""
+    program = "print(" + json.dumps([{"left": 1, "right": 2}] * 32) + ")"
+    transcript = tmp_path / "quoted-code.jsonl"
+    support.write_jsonl(
+        transcript,
+        [support.claude_call("2026-10-31T00:00:02Z", "code", "Bash", {"command": f"python3 -c '{program}'"})],
+    )
+    work = tmp_path / "prepared"
+    work.mkdir()
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert not result["unconfirmed_scope"]
+    assert Path(result["scope_path"]).is_file()
+
+
 @pytest.mark.parametrize("tool", ["Bash", "functions.exec"])
 @pytest.mark.parametrize(
     ("command", "expected"),
