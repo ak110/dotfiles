@@ -40,6 +40,7 @@ description: >
 | --- | --- | --- | --- | --- |
 | Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/codex-runtime.md` | |
 | 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`の冒頭、「計画ファイルの構成」から「検証と公開工程」まで、「初回起草の雛形」「要件の成立性」 | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#冒頭`、`section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「計画ファイルの構成」から「検証と公開工程」まで`、`section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「初回起草の雛形」「要件の成立性」` | |
+| 計画の採否を左右する技術的不確実性を解消する前 | `agent-basics:writing-standards/references/design-heuristics.md`の「設計案の予備選別」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」` | |
 | WIの原因分析を補うか計画ファイル（バグ）を書く前 | `references/plan-file-standards.md`の「バグ調査」 | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「バグ調査」` | |
 | 進捗を記録する前と、中断後に再開する前 | `references/plan-file-standards.md`の「進捗ログ」 | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「進捗ログ」` | |
 | 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` | 操作 | `bash:atk plans commit` | |
@@ -63,7 +64,7 @@ description: >
 
 本スキルを起動した後にエージェント向け文書（`agent-toolkit/`など）を編集する場合は、必ず計画ファイルを作成してから着手する。
 
-1. 変更対象、外部仕様、テスト、検証内容を確定するために調査する。WIで確定している事項は`references/plan-file-standards.md`「計画ファイルの構成」に従って参照し、重複した調査は行わない。
+1. 変更対象、外部仕様、テスト、検証内容を確定するために調査する。WIで確定している事項は`references/plan-file-standards.md`「計画ファイルの構成」に従って参照し、重複した調査は行わない。採否を左右する技術的不確実性は、読込表の設計基準で試作の要否を判断し、計画確定前に解消する。問い・条件・観測・判断・未証明範囲は既存の根拠記録へ残し、計画とレビューから参照する。
    - 作業種別が`バグ対応`で、入力にWIがない場合やWIの原因分析を修正・追加する計画では、手順2の確認前に`agent-basics:bugfix`を起動する。直接的な原因を突き止め、「対策の選定」で根本原因への対策と対症療法を比較検討する。WIの原因分析をそのまま使う場合も、対症療法を採用する前に同様に選定し、類似箇所の見直し対象、品質とコスト・納期（QとC・D）の区別、対応の適用レイヤー、完了判定が同スキルの`references/root-cause-analysis.md`の基準を満たしているか確認する。不足がある場合は原因分析を追加する。
    - 参照側や別の発生源（`references/plan-file-standards.md`「要件・外部仕様」）をたどり、変更対象や影響が波及する範囲を`## 要件・外部仕様`に記述する。
    - 出力内容、診断件数、条件分岐の結果などを完了条件に設定する場合は、生成元と利用先、分岐が有効になる条件、修正前の状態と修正後の期待値を正しく対応付ける。修正前後で値が変わらない条件、該当の分岐が無効な条件、正常時に出力されないメッセージの不在などは判定基準にせず、公開されている状態や直接の契約テストで確認する。
