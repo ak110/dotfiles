@@ -353,6 +353,22 @@ def _add_wi_add_parser(sub: Any) -> None:
         resolved_by_consumer=True,
     )
     add.set_defaults(subparser=add)
+    _add_draft_comparison_arg(add)
+
+
+def _add_draft_comparison_arg(parser: argparse.ArgumentParser) -> None:
+    """両dry-runへ同じ原稿冒頭の比較入力を登録する。"""
+    parser.add_argument(
+        "--compare-opening-file",
+        metavar="PATH",
+        action="append",
+        default=None,
+        help=(
+            "--dry-runの冒頭を、受領済みのUTF-8抽出ファイルと改行・末尾空行を含めて比較する。"
+            "新規では--body-fileと同じ件数・対応順で反復指定し、編集では1件指定する。"
+            "不一致・読取不能・件数違いは非0で終了する。--dry-runとだけ併用できる。"
+        ),
+    )
 
 
 def _add_mq_read_parsers(sub: Any) -> None:
@@ -793,6 +809,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     )
     _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
+    _add_draft_comparison_arg(edit)
 
     set_dependencies = _atk_help.add_command(sub, "set-dependencies", **_atk_help.HELP["atk wi set-dependencies"])
     set_dependencies.add_argument(
@@ -1212,6 +1229,8 @@ def _validate_uwi_add_args(args: argparse.Namespace) -> None:
 def validate_args(args: argparse.Namespace) -> None:
     """一括指定の排他と`atk wi add`の引数の組み合わせを検証する。managed-tempの掃引の後に呼ぶ。"""
     _validate_bulk_transition_args(args)
+    if args.wi_subcommand in {"add", "edit"} and args.compare_opening_file is not None and not args.dry_run:
+        args.subparser.error("--compare-opening-fileは--dry-runとともに指定してください。")
     if args.wi_subcommand == "add":
         _validate_add_args(args)
         _validate_uwi_add_args(args)

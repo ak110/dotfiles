@@ -292,17 +292,54 @@ def check_cause_analysis_format(content: str) -> list[str]:
             for index, row in enumerate(table.rows):
                 if len(row) != 2 or row[0] not in ("類似見直し観点", "再発防止策"):
                     continue
-                parts = re.split(r"(作り込み要因|見逃し要因)", row[1])
-                candidates = dict(zip(parts[1::2], parts[2::2], strict=True))
+                decided = _cause_candidate_decisions(row[1])
                 for factor in PLAN_BUG_CAUSE_TABLE_ROWS:
-                    candidate = candidates.get(factor, "")
-                    if "採用" not in candidate or (
-                        "不採用" in candidate and not candidate.split("不採用", 1)[1].strip(" 。、.：:（）()")
-                    ):
+                    if factor not in decided:
                         errors.append(
                             f"{row[0]}には{factor}の候補と採否（不採用は理由付き）を書く: {table.row_location(index)}"
                         )
     return errors
+
+
+def _cause_candidate_decisions(value: str) -> set[str]:
+    """文内の列挙と、両候補を明示する後続文の採否を対応付ける。
+
+    候補名の再出現は補足でもあり得るため、確定済みの採否を上書きしない。
+    内容の妥当性は意味検収へ委ね、ここでは決定と不採用理由の記載を確かめる。
+    """
+    decided: set[str] = set()
+    mentioned: set[str] = set()
+    previous: set[str] = set()
+    for sentence in re.finditer(r"[^。;；\n]+[。;；\n]?", value):
+        pending: set[str] = set()
+        text = sentence.group()
+        for token in re.finditer(r"作り込み要因|見逃し要因|不採用|採用", text):
+            name = token.group()
+            if name in PLAN_BUG_CAUSE_TABLE_ROWS:
+                pending.add(name)
+                mentioned.add(name)
+                continue
+            tail = text[token.end() :]
+            if re.match(r"(?:する|とする|した)?(?:予定|方針|か|を|候補)", tail):
+                continue
+            if re.search(r"保留|未決定|後に.*決める|今後.*決める", text):
+                continue
+            targets = pending
+            if not targets and re.search(r"両(?:候補|系統|方)|双方|ともに|いずれも", text):
+                targets = mentioned
+            elif not targets and text.lstrip().startswith("を"):
+                targets = previous
+            if name == "不採用":
+                # 理由は同文の前後にも、採否の直後の文にも記載できる。
+                reason_tail = value[sentence.start() + token.end() :]
+                reason_tail = re.split(r"作り込み要因|見逃し要因", reason_tail, maxsplit=1)[0]
+                reason_tail = re.sub(r"^(?:とする|する|した)?[ 。、.：:（）()]*", "", reason_tail)
+                if not reason_tail and not re.search(r"ため|ので|理由|見合わない|上回る", text[: token.start()]):
+                    continue
+            decided.update(targets)
+            pending = set()
+        previous = pending
+    return decided
 
 
 def _check_bug_unit_sections(

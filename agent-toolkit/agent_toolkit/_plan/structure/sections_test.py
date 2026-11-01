@@ -126,6 +126,31 @@ def test_bug_file_structure_accepts_canonical_sidecar() -> None:
     assert not plan_sections.check_bug_file_structure(_BUG_FILE_CONTENT)
 
 
+@pytest.mark.parametrize("row", ["類似見直し観点", "再発防止策"])
+@pytest.mark.parametrize(
+    ("value", "accepted"),
+    [
+        ("作り込み要因の候補はA、見逃し要因の候補はBであり、ともに採用する。", True),
+        ("作り込み要因の候補としてA、見逃し要因の候補としてBを採用する。", True),
+        ("作り込み要因の候補はA。見逃し要因の候補はB。両候補を採用する。", True),
+        ("作り込み要因の候補はA、見逃し要因の候補はB。費用が効果を上回るため、双方を不採用とする。", True),
+        ("作り込み要因の候補Aを採用する。見逃し要因の候補Bは不採用。既存対策で検出できる。", True),
+        ("作り込み要因の候補Aを採用。見逃し要因の候補Bを採用。作り込み要因の補足を記す。", True),
+        ("作り込み要因の候補Aを採用する。", False),
+        ("作り込み要因の候補Aを採用する。見逃し要因の候補はB。", False),
+        ("作り込み要因の候補はA、見逃し要因の候補はB。両系統とも原因確定後に採否を決める。", False),
+        ("作り込み要因の候補はA、見逃し要因の候補はB。両候補を不採用とする。", False),
+        ("作り込み要因の候補はA、見逃し要因の候補はB。双方の採用を保留する。", False),
+    ],
+)
+def test_bug_file_candidate_decision_scope(row: str, value: str, *, accepted: bool) -> None:
+    """計画ファイルの候補列挙と共通・個別採否の適用範囲を検証する。"""
+    content = _BUG_FILE_CONTENT.splitlines()
+    content = [f"| {row} | {value} |" if line.startswith(f"| {row} |") else line for line in content]
+    errors = plan_sections.check_bug_file_structure("\n".join(content))
+    assert (not errors) is accepted, errors
+
+
 @pytest.mark.parametrize("value", ["", "該当なし", "該当なし。", "該当なし（）。"])
 def test_bug_file_rejects_unexplained_l4(value: str) -> None:
     """L4の空欄と理由なし該当なしを計画ファイル検査で拒否する。"""
