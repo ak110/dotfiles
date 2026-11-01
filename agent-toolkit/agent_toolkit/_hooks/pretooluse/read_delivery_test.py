@@ -2655,7 +2655,7 @@ def test_acquisition_failure_and_compact_guidance_read_a_worktree_copy(tmp_path,
         assert (f"Readで`{path}`を全文読め" in compact) is (not loadable)
 
 
-@pytest.mark.parametrize("operation", ["path:*.py", "write:*.py", "existing-file-edit"])
+@pytest.mark.parametrize("operation", ["path:*.py", "write:*.py", "existing-file-edit", "body-writing"])
 @pytest.mark.usefixtures("memory")
 def test_temporary_area_writes_do_not_require_artifact_reads(tmp_path, monkeypatch, operation):
     """managed-tempとClaude Codeの一時領域への書込には成果物向けの必読を課さず、再書込も遮断しない。"""
@@ -2677,6 +2677,10 @@ def test_temporary_area_writes_do_not_require_artifact_reads(tmp_path, monkeypat
     artifact = tmp_path / "artifact.py"
     artifact.write_text("print(1)\n", encoding="utf-8")
     assert _guidance(read_delivery.deliver(payload, "Write", {"file_path": str(artifact), "content": "print(2)\n"}, "test"))
+    if operation == "body-writing":
+        # 一時領域で起草する文章（作業項目の本文など）は、投入・送信される成果物として基準の取得を案内する。
+        draft = managed_temp.temp_root_path() / "session-0123456789abcdef" / "awi-body.md"
+        assert _guidance(read_delivery.deliver(payload, "Write", {"file_path": str(draft), "content": "# 目的\n"}, "test"))
 
 
 @pytest.mark.parametrize("codex", [False, True])
