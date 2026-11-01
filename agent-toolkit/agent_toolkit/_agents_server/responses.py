@@ -11,6 +11,7 @@ from typing import Any
 from uuid import UUID
 
 from agent_toolkit._agents_server import (
+    codex_resume_state,
     handoff_next_action,
     manager_base,
     record_paths,
@@ -160,6 +161,13 @@ def public_send_message_response(response: Mapping[str, Any]) -> dict[str, Any]:
     if response.get("notices"):
         public["notices"] = [result_projection.public_notice(notice) for notice in response["notices"]]
     next_action = REPLY_NEXT_ACTIONS.get(response["delivery"])
+    error = response.get("error")
+    if (
+        response["delivery"] == "reply_failed"
+        and isinstance(error, dict)
+        and error.get("codexErrorInfo") == codex_resume_state.WRITER_CONFLICT
+    ):
+        next_action = codex_resume_state.WRITER_CONFLICT_NEXT_ACTION
     if next_action is not None:
         public["next_action"] = next_action
     return public
@@ -377,6 +385,12 @@ class ManagerResponses(manager_base.ManagerBase):
             raise
         delivery = pending.delivery
         response: dict[str, Any] = {"delivery": delivery, "label": session.label}
+        if (
+            delivery == "reply_failed"
+            and isinstance(session.error, dict)
+            and session.error.get("codexErrorInfo") == codex_resume_state.WRITER_CONFLICT
+        ):
+            response["error"] = {"codexErrorInfo": codex_resume_state.WRITER_CONFLICT}
         previous_result = pending.take_previous_result()
         if previous_result:
             response["previous_result"] = previous_result

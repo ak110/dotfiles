@@ -1310,6 +1310,12 @@ class AppServerManager:
                 held.restore(session)
             await self._mark_incompatible_resume(session, exc, new_reply=True)
             return "reply_failed", session.public_status(), None
+        except codex_resume_state.ThreadWriterConflictError as exc:
+            if session.pending_result is not None:
+                resume_waits.finalize_pending_result(session, touch=False)
+            begin_reply(session, preserve_waits=held is not None)
+            await self._mark_failed(session, exc, retryable=True)
+            return "reply_failed", {**session.public_status(), "error": session.error}, exc
         except Exception as exc:
             if held is not None:
                 held.restore(session)
@@ -1352,6 +1358,8 @@ class AppServerManager:
         status = result["status"] if result is not None else session.status
         if error is None:
             error = result["error"] if result is not None else session.error
+        if isinstance(error, dict) and error.get("codexErrorInfo") == codex_resume_state.WRITER_CONFLICT:
+            return False
         limit = error.get("usageLimit") if isinstance(error, dict) else None
         if isinstance(limit, dict) and should_wait("codex", limit.get("type")):
             return False
@@ -1570,6 +1578,10 @@ class AppServerManager:
                     if not closed.is_set():
                         raise
                 return await client.request("thread/resume", params)
+        except JsonRpcResponseError as exc:
+            if exc.method == "thread/resume" and thread_id in str(exc) and "already has an active writer" in str(exc):
+                raise codex_resume_state.ThreadWriterConflictError(str(exc)) from exc
+            raise
         finally:
             self._resume_close_events.pop(thread_id, None)
 
@@ -1630,13 +1642,20 @@ class AppServerManager:
         `retryable`が真の場合だけ、同じreplyを再試行できる内部状態にする。
         """
         public_error = {"message": str(error) or error.__class__.__name__}
+        writer_conflict = isinstance(error, codex_resume_state.ThreadWriterConflictError)
+        if writer_conflict:
+            public_error["codexErrorInfo"] = codex_resume_state.WRITER_CONFLICT
         failure = public_error.copy()
         if isinstance(error, JsonRpcResponseError) and isinstance(error.data, dict):
             # RPCの追加dataは内部の切替判定だけへ渡し、公開結果へ保存しない。
             failure.update(error.data)
         # 読取中に届いた中断要求は、続く保留判定でも維持する。
         session.interrupt_requested = False
-        limit = None if isinstance(error, StartCandidateUnavailable) else await self._read_usage_limit_failure(session, failure)
+        limit = (
+            None
+            if isinstance(error, StartCandidateUnavailable) or writer_conflict
+            else await self._read_usage_limit_failure(session, failure)
+        )
         session.turn_id = ""
         session.status = "failed"
         session.plan = []
@@ -1648,6 +1667,7 @@ class AppServerManager:
             session.codex_model_provider
             and session.codex_model_provider != session.codex_subscription_provider
             and not isinstance(error, StartCandidateUnavailable)
+            and not writer_conflict
         ):
             session.error = {"message": "Codex connection rejected the request"}
         session.agent_message = ""
@@ -1657,7 +1677,11 @@ class AppServerManager:
         session.turn_start_ambiguous = False
         session.turn_completed = True
         session.failure_pending_completion = False
-        if not isinstance(error, StartCandidateUnavailable) and not self._hold_usage_limit_failure(session, limit):
+        if (
+            not isinstance(error, StartCandidateUnavailable)
+            and not writer_conflict
+            and not self._hold_usage_limit_failure(session, limit)
+        ):
             self._hold_provider_failure(session, failure)
         session.touch()
         await self._notify_waiters()
@@ -1679,7 +1703,7 @@ class AppServerManager:
     @staticmethod
     def _turn_start_response_is_ambiguous(client: Any, error: BaseException) -> bool:
         """turn/startの失敗が実行状態を判定できない応答喪失であるかを返す。"""
-        if isinstance(error, (JsonRpcResponseError, StartCandidateUnavailable)):
+        if isinstance(error, (JsonRpcResponseError, StartCandidateUnavailable, codex_resume_state.ThreadWriterConflictError)):
             return False
         if bool(getattr(client, "closed", False)) or getattr(client, "reader_failure", None) is not None:
             return False

@@ -13,6 +13,7 @@ from typing import Any, Self
 
 from agent_toolkit._agents_server import (
     backends,
+    codex_resume_state,
     launch_requests,
     lifetime,
     logging_config,
@@ -733,6 +734,13 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     if delivery in {"reply_started", "reply_ambiguous"}:
                         session.reset_progress()
                     response: dict[str, Any] = {"delivery": delivery, "label": session.label}
+                    error = result.get("error")
+                    if (
+                        delivery == "reply_failed"
+                        and isinstance(error, dict)
+                        and error.get("codexErrorInfo") == codex_resume_state.WRITER_CONFLICT
+                    ):
+                        response["error"] = {"codexErrorInfo": codex_resume_state.WRITER_CONFLICT}
                     if delivery in REPLY_DELIVERIES:
                         previous_result = result["previous_result"]
                         if previous_result:
