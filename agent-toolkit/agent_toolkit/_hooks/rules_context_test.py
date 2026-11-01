@@ -615,6 +615,7 @@ def test_rejects_unknown_event_and_missing_source(payload: dict[str, str]) -> No
         rules_context.main(json.dumps(payload))
 
 
+@pytest.mark.parametrize("contract", ["", "short", "long"])
 @pytest.mark.parametrize("root_length", [21, 241])
 @pytest.mark.parametrize("windows", [False, True])
 def test_session_start_context_fits_cap_with_maximum_instruction(
@@ -623,6 +624,7 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
     tmp_path: pathlib.Path,
     windows: bool,
     root_length: int,
+    contract: str,
 ) -> None:
     """追加指示が上限まで載った場合も、固定分との合計がhook上限へ収まる。
 
@@ -640,6 +642,11 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
     monkeypatch.setattr(plugin_environment, "cli_instructions", lambda _root: cli_instructions(root, windows=windows))
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda _session_id: session_temp)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
+    # 圧縮後は作業契約の通知も同じ本文へ加わるため、契約の有無と長さを変えても上限へ収まることを確かめる。
+    record = tmp_path / "work-contract.md"
+    if contract:
+        record.write_text("目的: 継続\n" + ("要件の記録\n" * (2000 if contract == "long" else 1)), encoding="utf-8")
+        monkeypatch.setattr(rules_context.work_contract, "record_path", lambda _session_id: record)
 
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
 
@@ -650,6 +657,8 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
     assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
     assert f"このセッションのmanaged-temp: {session_temp}" in output
     assert f"agent-toolkitのCLI: {root / 'scripts'}" in output
+    if contract:
+        assert str(record) in output or rules_context.work_contract.SHORT_NOTICE in output
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

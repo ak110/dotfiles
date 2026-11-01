@@ -664,7 +664,6 @@ class TestBashProcessKillByPattern:
             "cat -- pkill.log",
             "wc -l killall.txt pkill-notes.md",
             'head -n 5 "/tmp/pkill dir/output.log"',
-            "echo killall",
         ],
     )
     def test_normal_path_arguments_are_not_process_termination(self, tmp_path, command, codex):
@@ -694,6 +693,11 @@ class TestBashProcessKillByPattern:
             "sh -c 'pkill worker'",
             "python3 -c 'import os; os.system(\"pkill worker\")'",
             "cat pkill.log | xargs killall",
+            # 引数から実行するコマンドを列挙で網羅できない場合も、実行名の形の語は保護する。
+            "docker exec worker pkill -f app",
+            "mise exec -- pkill -f worker",
+            "npm exec -- killall worker",
+            "echo killall",
         ],
     )
     def test_path_data_does_not_exempt_executable_termination(self, tmp_path, command, codex):

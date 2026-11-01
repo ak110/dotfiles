@@ -218,42 +218,12 @@ def _source_text(path: pathlib.Path) -> str:
 
 def skill_name(path: pathlib.Path) -> str | None:
     """実体のmanifestを使い、配布スキルとローカルスキルを区別する。"""
-    document = document_reads.skill_document(str(path))
-    if document is None or document[1] != "SKILL.md":
-        return None
-    owner = _document_owner(path)
-    if owner is None:
-        return document[0]
-    return f"{document_reads.document_plugin(str(path))}:{document[0]}"
-
-
-def _active_skill_root(plugin: str) -> pathlib.Path | None:
-    """`Skill`起動でホストが読み込む配布物のrootを返す。解決できなければNoneを返す。"""
-    toolkit = plugin_resources.plugin_root().resolve()
-    if plugin == "agent-toolkit":
-        return toolkit
-    sibling = sibling_plugin_root(plugin, toolkit)
-    return sibling.resolve() if sibling is not None else None
-
-
-def skill_loadable(path: pathlib.Path) -> bool:
-    """`Skill`起動がこの実体を読み込むかを返す。
-
-    同じ名前の配布スキルでも、作業ツリー内の写しは起動中の配布物とは別の実体であり、`Skill`起動では読み込まれない。
-    写しにまで`Skill`起動を求めると取得済みに到達できないため、写しはReadの全文取得で扱う。
-    起動中の配布物を解決できない場合は、従来どおり`Skill`起動で読み込む実体として扱う。
-    """
-    name = skill_name(path)
-    if name is None or ":" not in name:
-        return True
-    active = _active_skill_root(name.split(":", 1)[0])
-    owner = _document_owner(path)
-    return active is None or owner is None or owner == active
+    return document_reads.skill_name(path, owner=_document_owner)
 
 
 def requires_skill_invocation(path: pathlib.Path, *, host: str, subject: str) -> bool:
-    """`Skill`起動だけを全文取得として認める資料かを返す。"""
-    return skill_loadable(path) and read_triggers.skill_invocation_required(path, host=host, subject=subject)
+    """`Skill`起動だけを全文取得として認める資料かを、hook内で共有する所有rootの判定で返す。"""
+    return document_reads.requires_skill_invocation(path, host=host, subject=subject, owner=_document_owner)
 
 
 def resolve_skill_document(qualified: object, candidates) -> pathlib.Path | None:
@@ -270,7 +240,7 @@ def resolve_skill_document(qualified: object, candidates) -> pathlib.Path | None
         return None
     matched = list(dict.fromkeys(path for path in candidates if path.is_file() and skill_name(path) == qualified))
     if ":" in qualified:
-        active = _active_skill_root(qualified.split(":", 1)[0])
+        active = document_reads.active_skill_root(qualified.split(":", 1)[0])
         if active is not None:
             matched = [path for path in matched if _document_owner(path) == active]
     elif len(matched) > 1:
@@ -423,8 +393,8 @@ def _matches_document_path(path: pathlib.Path, pattern: str) -> bool:
 
 @_input_cached
 def _document_owner(path: pathlib.Path) -> pathlib.Path | None:
-    """選択された実体のmanifestを持つ所有rootを返す。別版の探索はしない。"""
-    return next((parent for parent in path.resolve().parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+    """同じhook内で同じ実体を繰り返し判定するため、`document_reads.document_owner`の結果を入力単位で共有する。"""
+    return document_reads.document_owner(path)
 
 
 @_input_cached

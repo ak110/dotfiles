@@ -1,5 +1,6 @@
 """両ホストの宣言配送、取得範囲、主体と圧縮の境界を確かめる。"""
 
+import hashlib
 import json
 import pathlib
 import shlex
@@ -2629,6 +2630,26 @@ def test_worktree_copy_of_a_distributed_skill_is_released_by_skill_or_read(tmp_p
     decision = read_delivery.deliver(payload, "Write", operation, "test")
     assert decision.block is None
     assert not _guidance(decision)
+
+
+@pytest.mark.parametrize("agent", [False, True])
+def test_acquisition_failure_and_compact_guidance_read_a_worktree_copy(tmp_path, monkeypatch, agent):
+    """取得失敗と圧縮後の案内も、`Skill`起動では読み込まれない写しへReadを案内する。"""
+    toolkit = tmp_path / "dist/agent-toolkit"
+    (toolkit / ".claude-plugin").mkdir(parents=True)
+    (toolkit / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    active = _basics_root(tmp_path / "dist/agent-basics", "# 検証\n\n配布物の本文\n")
+    copy = _basics_root(tmp_path / "worktree/agent-basics", "# 検証\n\n作業中の本文\n")
+    monkeypatch.setattr(read_delivery.plugin_resources, "plugin_root", lambda: toolkit)
+    for path, loadable in ((active, True), (copy, False)):
+        notice = rules_context.acquisition_failure(ReadTarget(path, "不存在"), ValueError("範囲不明"), shell=False, agent=agent)
+        assert ("`Skill`で`agent-basics:check-execution`" in notice) is loadable
+        assert (f"`{path}`をReadで全文読め" in notice) is (not loadable or agent)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        compact = rules_context._compact_recovery_context("claude", 10000, [(path, "", digest)])  # pylint: disable=protected-access
+        assert compact is not None
+        assert ("`Skill`で`agent-basics:check-execution`" in compact) is loadable
+        assert (f"Readで`{path}`を全文読め" in compact) is (not loadable)
 
 
 @pytest.mark.parametrize("codex", [False, True])

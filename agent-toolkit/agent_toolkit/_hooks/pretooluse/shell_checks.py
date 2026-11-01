@@ -289,7 +289,26 @@ def _process_kill_word_only_in_data(invocations: Sequence[BashInvocation]) -> bo
         executor = name in _ARGUMENT_EXECUTORS or is_python_token(name)
         if executor and any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in tokens[1:]):
             return False
+        # 引数から実行するコマンドの集合は網羅できないため（`docker exec`、`npm exec`など）、
+        # 語が実行名の形で現れる引数（語そのもの、または後ろに空白が続く本文）はデータと確定しない。
+        if any(_process_kill_command_shaped(token) for token in tokens[1:]):
+            return False
     return True
+
+
+def _process_kill_command_shaped(token: str) -> bool:
+    """引数の語が、別のコマンドに実行名として渡され得る形かを返す。
+
+    語そのものか、本文の先頭・空白・区切り記号の直後に置かれて後ろに空白が続く場合を実行名の形とする。
+    `/tmp/pkill dir/out.log`のようにパスの区切りの直後にある語はディレクトリ名として扱う。
+    """
+    if pathlib.PurePosixPath(token).name in {"pkill", "killall"}:
+        return True
+    return any(
+        token[match.end() : match.end() + 1].isspace()
+        and (match.start() == 0 or token[match.start() - 1].isspace() or token[match.start() - 1] in ";&|(`'\"")
+        for match in _PROCESS_KILL_BY_PATTERN_RE.finditer(token)
+    )
 
 
 def _has_unsafe_process_kill_match(segment: str) -> bool:

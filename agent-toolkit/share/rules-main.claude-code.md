@@ -13,7 +13,7 @@ Claude Codeのホストが挿入する`Usage limit reached; a short grace allowa
 
 ## 自身の会話の記録
 
-- 自身の会話におけるセッションIDとtranscriptの絶対パスには、SessionStartの通知に含まれる「この会話のセッションID」「この会話のtranscript」の値を使用する。会話圧縮、再開、clear、forkを行った後は、新しく届いた値を使用する。別の会話の記録を取り違えるのを防ぐため、同プロジェクト記録の更新時刻順、cwdから推測したファイル名、MCPの`root_session_id`、委譲先のsession識別子などは代用しない。
+- 自身の会話におけるセッションIDとtranscriptの絶対パスには、SessionStartの通知に含まれる「この会話のセッションID」「この会話のtranscript」の値を使用する。会話圧縮、再開、clear、forkを行った後は、新しく届いた値を使用する。別の会話の記録との取り違えを防ぐため、記録の更新時刻順、cwdから推測した名前、MCPの`root_session_id`、委譲先のsession識別子などで代用しない。
 - 通知から取得できないと示された値は、BashやPowerShellの環境変数`CLAUDE_CODE_SESSION_ID`から取得する。あるいは特定済みのIDを`atk run-script session-review-evidence -- --claude-session-id <ID>`へ渡して記録を解決する。
 - 委譲先へ自身の会話を証拠として渡す際はこの値を使用する。過去の会話や委譲先の記録は、対象として指定された識別子を用いて取得する。
 

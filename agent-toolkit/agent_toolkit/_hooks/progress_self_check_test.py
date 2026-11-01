@@ -9,6 +9,7 @@ import os
 import pathlib
 import subprocess
 import uuid
+from collections.abc import Mapping
 
 import pytest
 
@@ -246,7 +247,7 @@ def test_mixed_event_sequence_keeps_the_period_across_cycles(monkeypatch: pytest
     monkeypatch.setattr(
         "agent_toolkit._hooks.user_prompt_submit._claim_user_confirmation_notice", lambda *_args, **_kwargs: False
     )
-    events = [
+    events: list[tuple[str, Mapping[str, object]]] = [
         ("user_prompt_submit", {"hook_event_name": "UserPromptSubmit", "prompt": "進めて"}),
         ("posttooluse", _POSTTOOLUSE_PAYLOAD),
         (
@@ -266,6 +267,25 @@ def test_mixed_event_sequence_keeps_the_period_across_cycles(monkeypatch: pytest
     assert notified == [10_000.0 + 1800.0, 10_000.0 + 3600.0, 10_000.0 + 5400.0]
 
 
+def test_format_failure_after_claim_does_not_consume_the_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    """公開PostToolUseで通知の整形が失敗しても予約が残らず、直後の正常な呼出しで通知が採用される。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=1000.0, last_notified_at=1000.0)
+    clock = {"now": 2800.0}
+    monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
+
+    def broken(*_args, **_kwargs) -> str:
+        raise ValueError("通知の整形に失敗した")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(progress_self_check, "_llm_notice", broken)
+        failed = _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+    assert _OPENING not in failed
+    assert "reserved_at" not in _entries(sid)["main"]
+    clock["now"] = 2801.0
+    assert _OPENING in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+
+
 def test_output_failure_after_claim_does_not_consume_the_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
     """公開PostToolUseで通知の生成後に出力が失敗しても、障害を外した直後の再試行で通知が採用される。"""
     sid = _session_id()
@@ -274,7 +294,7 @@ def test_output_failure_after_claim_does_not_consume_the_due_time(monkeypatch: p
     monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
 
     def broken(_response: dict) -> None:
-        raise OSError("出力の組立てに失敗した")
+        raise OSError("応答の書き出しに失敗した")
 
     with monkeypatch.context() as patch:
         patch.setattr(posttooluse, "emit_response", broken)

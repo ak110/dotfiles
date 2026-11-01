@@ -26,6 +26,16 @@ RETURN_CRITERION = (
 )
 
 
+SHORT_NOTICE = "現行の作業契約: 同じ領域の`work-contract.md`を全文読み、回答後は元の未完了工程へ戻れ。"
+"""通知の上限に本文が収まらない場合に、一時領域の通知へ加える所在の1行。"""
+
+
+def exists(session_id: str) -> bool:
+    """メインの作業契約が実在するかを返す。"""
+    path = record_path(session_id)
+    return path is not None and path.is_file()
+
+
 def record_path(session_id: str) -> pathlib.Path | None:
     """既存のセッションのmanaged-tempから、メインが所有する記録先を解決する。"""
     directory = managed_temp.find_session_temp(session_id)
@@ -94,7 +104,10 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
     except (OSError, UnicodeDecodeError) as error:
         return (
             f"現行の作業契約を読めない（{type(error).__name__}: {error}）: {path}\n"
-            f"この絶対パスを読み、share/work-contract.mdに従って現在の目的・要件を確かめよ。{RETURN_CRITERION}"
+            "権限や文字コードの原因を解消できればこの絶対パスを読み、share/work-contract.mdに従って現在の目的・要件を確かめよ。"
+            "解消できなければ、会話の原文と計画・WIから現在の目的・要件を確かめて作業を続け、"
+            "所在と診断を委譲元（委譲元が無ければユーザー）へ報告せよ。"
+            f"{RETURN_CRITERION}"
         )
     if len(body) > budget:
         return (

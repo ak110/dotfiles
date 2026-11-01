@@ -152,13 +152,13 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
 
     if not update_state(session_id, _mutate) or elapsed is None:
         return None
+    # 整形や後続の出力が例外で終わっても終了時に予約を外せるよう、整形より先に解除の対象へ登録する。
+    _reservations.append((session_id, agent_id, current_time))
     body = f"セッション開始から{_format_elapsed(elapsed)}たった。{_SELF_CHECK_NOTICE_BODY}"
     text = _llm_notice(body, tag="notice")
     if not text:
-        _reservations.append((session_id, agent_id, current_time))
         return None
     _notice.stage_delivery(text, session_id, DELIVERED_KEY, agent_id, repr(current_time))
-    _reservations.append((session_id, agent_id, current_time))
     return text
 
 
