@@ -107,9 +107,11 @@ CI workflowの全体基準は、対象HEADの実行開始から必須ジョブ�
 - 型定義と静的参照の整合性を検証する: `uv run --frozen pyfltr run --commands=ty`
 - 複数ファイル間にまたがる循環importを検査する: `uv run --frozen pyfltr run --no-fix --commands=pylint --pylint-args='--disable=all --enable=cyclic-import'`
 
-CIの`python-lint (3.15)`ジョブは、ローカルの`make test`から一部のチェックを除外する。
-実行コマンドは`pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types`である。
-Python 3.15のpytestは直下の`pytest (3.15)`と、toolkitを3分割した`pytest-toolkit (3.15, 1/3)`〜`(3.15, 3/3)`が独立して担当し、必須checkの`pytest-toolkit (3.15)`が全分割の成功を集約する。
+CIの`python-lint (3.15)`は、Pylintとその他のlintの両jobの成功を集約する。
+Pylintは`pyfltr ci --commands=pylint`で実行する。
+その他は`pyfltr ci --disable=pylint,pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types`で実行する。
+Python 3.15のpytestは直下の`pytest (3.15)`と、toolkitを3分割した`pytest-toolkit (3.15, 1/3)`〜`(3.15, 3/3)`が独立して担当する。
+必須checkの`pytest-toolkit (3.15)`が全分割の成功を集約する。
 以下のジョブはローカルの`make test`では実行されない。
 
 - `test-windows`ジョブ: Windows実機環境でのchezmoi適用、Windows固有のテスト、および公開ランチャーの動作確認

@@ -73,7 +73,9 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 
 Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有し、`test-windows`はWindows固有pytest、公開ランチャー、通常profileへのchezmoi適用とpost-applyの確認を所有する。両job間に依存関係を置かず、更新検証の通常profile監視に必要なMozilla予約タスク停止は更新検証jobが実行する。
 
-`python-lint`のmatrixは`python-lint (3.15)`、直下の`pytest (3.15)`、toolkitを3分割した`pytest-toolkit (3.15, 1/3)`〜`(3.15, 3/3)`の5要素であり、それぞれ別runnerで並行する。
+`python-lint`のmatrixは6要素であり、それぞれ別runnerで並行する。
+内訳は`python-lint-other (3.15)`、`pylint (3.15)`、直下の`pytest (3.15)`、toolkitを3分割した`pytest-toolkit (3.15, 1/3)`〜`(3.15, 3/3)`である。
+Pylintは既存の直列設定のまま独立実行し、その他のlintから除外する。
 直下はGit管理下のテストを明示してpytestへ渡し、toolkitは同サブプロジェクトを起点にskills配下を含めて実行する。
 toolkitの各分割jobは同じ集合を収集し、`agent_toolkit._testing.pytest_plugin`の`--test-shard`がnode IDのCRC32で各試験をちょうど1つの分割へ割り当てる。
 1runnerのtoolkit pytestが約16分を要し、CI全体の所要基準10分（`.claude/skills/develop-dotfiles/references/verification-values.md`「テストとCIの所要基準」）を超えたため分割した。
@@ -81,8 +83,9 @@ toolkitの各分割jobは同じ集合を収集し、`agent_toolkit._testing.pyte
 dotfilesとagent-toolkitはユーザーの方針により過去のPython版をサポートせず、対応するPythonを3.15へそろえて同じ版でCIを実行する。
 cache keyにPython版、実行種別、matrix要素の番号を含め、分割jobが同じキーへ同時に保存して競合しないようにする。
 
-`python-lint`の終了後に動く集約job`pytest-toolkit-result`がrequired checkの`pytest-toolkit (3.15)`を所有する。
-`needs`の結果はmatrix全体の集約でlintと直下pytestの失敗も含むため、同jobは`actions: read`でrunの最新試行のjob一覧を照会し、3分割jobがすべて成功した場合だけ成功する。
+`python-lint`の終了後に動く集約job`pytest-toolkit-result`が、matrixの2要素でrequired checkの`pytest-toolkit (3.15)`と`python-lint (3.15)`を所有する。
+`needs`の結果はmatrix全体の集約であるため、同jobは`actions: read`でrunの最新試行のjob一覧を照会する。
+pytestは3分割、lintはPylintとその他のlintの両jobがすべて成功した場合だけ、それぞれの必須checkを成功にする。
 分割jobが失敗しても集約jobをskipさせないよう`!cancelled()`を置く。skipされたrequired checkはマージを遮断しないためである。
 非所有runでは他の共通jobと同じく`(non-owner)`名で成功し、所有判定jobが出力を返さなかった場合は失敗する。
 

@@ -266,7 +266,8 @@ def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str,
     matrix = workflow_mapping(strategy["matrix"])
     include = [workflow_mapping(value) for value in typing.cast(list[object], matrix["include"])]
     assert include == [
-        {"python-version": "3.15", "check": "lint", "check-name": "python-lint (3.15)"},
+        {"python-version": "3.15", "check": "lint", "check-name": "python-lint-other (3.15)"},
+        {"python-version": "3.15", "check": "pylint", "check-name": "pylint (3.15)"},
         {"python-version": "3.15", "check": "pytest-root", "check-name": "pytest (3.15)"},
         *(
             {
@@ -284,8 +285,11 @@ def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str,
     toolkit = next(step for step in steps if step.get("name") == "Python 3.15 pytest toolkit")
     assert (
         lint["run"]
-        == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types"
+        == "pyfltr ci --disable=pylint,pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types"
     )
+    pylint = next(step for step in steps if step.get("name") == "Python 3.15 Pylint")
+    assert pylint["run"] == "pyfltr ci --commands=pylint"
+    assert str(pylint["if"]).endswith("matrix.check == 'pylint'")
     root_script = str(root["run"])
     assert "git ls-files -z -- '*_test.py' 'test_*.py'" in root_script
     assert "':!:agent-toolkit/**' ':!:agent-toolkit-codex/**'" in root_script
@@ -312,15 +316,18 @@ class _JobsResponse(io.BytesIO):
     headers: typing.ClassVar[dict[str, str]] = {}
 
 
+@pytest.mark.parametrize("check_name", ["pytest-toolkit (3.15)", "python-lint (3.15)"])
+@pytest.mark.parametrize("failed_index", [0, -1])
 @pytest.mark.parametrize(
-    ("owns", "conclusions", "expected_exit"),
+    ("owns", "failure", "expected_exit"),
     [
-        ("true", ["success", "success", "success"], 0),
-        ("true", ["success", "failure", "success"], 1),
-        ("true", ["success", "success"], 1),
-        ("true", ["success", "skipped", "success"], 1),
-        ("false", [], 0),
-        ("", ["success", "success", "success"], 1),
+        ("true", "none", 0),
+        ("true", "failure", 1),
+        ("true", "missing", 1),
+        ("true", "skipped", 1),
+        ("true", "cancelled", 1),
+        ("false", "missing", 0),
+        ("", "none", 1),
     ],
 )
 def test_pytest_toolkit_result_requires_every_shard(
@@ -328,8 +335,10 @@ def test_pytest_toolkit_result_requires_every_shard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     owns: str,
-    conclusions: list[str],
+    failure: str,
     expected_exit: int,
+    check_name: str,
+    failed_index: int,
 ) -> None:
     """必須checkの集約jobは、全分割jobの成功を最新試行のjob一覧から確かめた場合だけ成功する。
 
@@ -341,24 +350,38 @@ def test_pytest_toolkit_result_requires_every_shard(
     assert job["if"] == "${{ !cancelled() }}"
     assert job["permissions"] == {"actions": "read"}
     assert job["name"] == (
-        "${{ needs.common-ci-owner.outputs.owns == 'false' && 'pytest-toolkit (3.15) (non-owner)' || 'pytest-toolkit (3.15)' }}"
+        "${{ needs.common-ci-owner.outputs.owns == 'false' && format('{0} (non-owner)', matrix.check-name)"
+        " || matrix.check-name }}"
     )
     (step,) = workflow_steps(job)
     environment = workflow_mapping(step["env"])
     matrix = workflow_mapping(workflow_mapping(workflow_mapping(jobs["python-lint"])["strategy"])["matrix"])
+    target_checks = ("pytest-toolkit",) if check_name.startswith("pytest") else ("lint", "pylint")
     shard_names = [
         str(workflow_mapping(entry)["check-name"])
         for entry in typing.cast(list[object], matrix["include"])
-        if workflow_mapping(entry)["check"] == "pytest-toolkit"
+        if workflow_mapping(entry)["check"] in target_checks
     ]
-    assert len(shard_names) == int(str(environment["SHARD_COUNT"]))
+    result_matrix = workflow_mapping(workflow_mapping(job["strategy"])["matrix"])
+    result_entry = next(
+        workflow_mapping(entry)
+        for entry in typing.cast(list[object], result_matrix["include"])
+        if workflow_mapping(entry)["check-name"] == check_name
+    )
+    assert result_entry["jobs"] == shard_names
+    assert environment["EXPECTED_JOBS"] == "${{ toJSON(matrix.jobs) }}"
+    conclusions = ["success"] * len(shard_names)
+    if failure == "missing":
+        conclusions.pop()
+    elif failure != "none":
+        conclusions[failed_index] = failure
     script = str(step["run"])
     script_path = tmp_path / "result.py"
     script_path.write_text(script.split("\n", 1)[1].rsplit("\nPY", 1)[0], encoding="utf-8")
     for key, value in {
         "OWNS": owns,
         "OWNER_REASON": "非所有の理由",
-        "SHARD_COUNT": str(environment["SHARD_COUNT"]),
+        "EXPECTED_JOBS": json.dumps(shard_names),
         "GITHUB_API_URL": "https://api.github.com",
         "GITHUB_REPOSITORY": "ak110/dotfiles",
         "GITHUB_RUN_ID": "123",
@@ -732,7 +755,7 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
     assert names.count(pytest_name) == 1
     assert "Git 2.34.1での実Gitテスト" not in names
     install, pytest_step = steps[install_index], steps[pytest_index]
-    assert str(install["if"]).endswith("matrix.check != 'lint'")
+    assert str(install["if"]).endswith("startsWith(matrix.check, 'pytest-')")
     assert str(pytest_step["if"]).startswith(_OWNS)
 
     package = str(workflow_mapping(install["env"])["GIT_DEB"])

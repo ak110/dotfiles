@@ -372,7 +372,10 @@ jobs:
         include:
           - python-version: "3.15"
             check: lint
-            check-name: python-lint (3.15)
+            check-name: python-lint-other (3.15)
+          - python-version: "3.15"
+            check: pylint
+            check-name: pylint (3.15)
           - python-version: "3.15"
             check: pytest-root
             check-name: pytest (3.15)
@@ -423,7 +426,7 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: ネイティブ依存インストール
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.check != 'pylint'
         # actions/cacheはPATH上のzstdを使ってキャッシュを圧縮するため、キャッシュの復元より前に導入する。
         # repack-archive の PDF 入力テストが pdftoppm を、libarchive-c 経由のアーカイブ展開が
         # libarchive13 の共有ライブラリを必要とする。
@@ -434,7 +437,7 @@ jobs:
 
 
       - name: chezmoi インストール
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.check != 'pylint'
         uses: ./.github/actions/install-chezmoi
         with:
           bin-dir: /usr/local/bin
@@ -467,11 +470,15 @@ jobs:
         # statusline-versionは浅いcheckoutではmasterとの共通祖先を解決できず、同じ判定を
         # statusline-version jobが所有するため無効化する。
         # Claude Code生成型を用意しないCIではローカル専用の型検査を除外する。
-        run: pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types
+        run: pyfltr ci --disable=pylint,pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types
+
+      - name: Python 3.15 Pylint
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.check == 'pylint'
+        run: pyfltr ci --commands=pylint
 
       - name: Git 2.34.1の導入
         id: minimum-git
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check != 'lint'
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && startsWith(matrix.check, 'pytest-')
         # agent-toolkitが対応する最低版のGit（README.mdの前提条件）。Ubuntu 22.04の公式パッケージを展開し、
         # 開発用のGitを置き換えずに実Gitテストだけへ渡す。版を変える場合はREADME.mdの記載も同じ変更で更新する。
         env:
@@ -525,17 +532,25 @@ jobs:
     needs: [common-ci-owner, python-lint]
     # 分割jobの失敗時もこのjobを失敗として残す。skipされた必須checkは成功と同じ扱いでマージを許すためである。
     if: ${{ !cancelled() }}
-    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pytest-toolkit (3.15) (non-owner)' || 'pytest-toolkit (3.15)' }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && format('{0} (non-owner)', matrix.check-name) || matrix.check-name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check-name: pytest-toolkit (3.15)
+            jobs: ["pytest-toolkit (3.15, 1/3)", "pytest-toolkit (3.15, 2/3)", "pytest-toolkit (3.15, 3/3)"]
+          - check-name: python-lint (3.15)
+            jobs: ["python-lint-other (3.15)", "pylint (3.15)"]
     permissions:
       actions: read
     steps:
-      - name: toolkit pytestの全分割の結果確認
+      - name: 必須checkの全実行結果確認
         env:
           GH_TOKEN: ${{ github.token }}
           OWNS: ${{ needs.common-ci-owner.outputs.owns }}
           OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
-          SHARD_COUNT: "3"
+          EXPECTED_JOBS: ${{ toJSON(matrix.jobs) }}
         shell: bash
         # needsの結果はmatrix全体（lintと直下pytestを含む）の集約なので、分割jobの結論はjob一覧から個別に読む。
         run: |
@@ -551,8 +566,7 @@ jobs:
           if os.environ["OWNS"] != "true":
               print("::error::common-ci-ownerが所有の判定を出力していません。同jobのログで失敗原因を確認し、修正後にRe-run failed jobsで再実行してください。")
               sys.exit(1)
-          count = int(os.environ["SHARD_COUNT"])
-          expected = {f"pytest-toolkit (3.15, {index}/{count})" for index in range(1, count + 1)}
+          expected = set(json.loads(os.environ["EXPECTED_JOBS"]))
           url = (
               f'{os.environ["GITHUB_API_URL"]}/repos/{os.environ["GITHUB_REPOSITORY"]}'
               f'/actions/runs/{os.environ["GITHUB_RUN_ID"]}/jobs?filter=latest&per_page=100'
@@ -568,7 +582,7 @@ jobs:
           for name in sorted(expected):
               print(f"{name}: {conclusions.get(name, '未実行')}")
           if any(conclusions.get(name) != "success" for name in expected):
-              print("::error::toolkit pytestの分割jobに成功していないものがあります。上記で失敗した分割jobのログを確認し、修正後にRe-run failed jobsで再実行してください。")
+              print("::error::必須checkの対象jobに成功していないものがあります。上記jobのログを確認し、修正後にRe-run failed jobsで再実行してください。")
               sys.exit(1)
           PY
 
