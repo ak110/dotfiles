@@ -193,7 +193,7 @@ def _holds_resources(process: psutil.Process) -> bool:
     """
     try:
         # 列挙時と起動時刻が異なる同じPIDのプロセスは別の主体であり、対象の資源保持に数えない。
-        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        return process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
     except psutil.Error, OSError:
         return False
 

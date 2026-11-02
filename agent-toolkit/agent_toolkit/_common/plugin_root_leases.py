@@ -58,7 +58,10 @@ def usage_basis_is_current(basis: dict[str, typing.Any]) -> bool:
             if path.parent != _directory() or basis["record_signature"] != _metadata_signature(path):
                 return False
         process = psutil.Process(basis["pid"])
-        return process.create_time() == basis["created_at"] and process.status() != psutil.STATUS_ZOMBIE
+        return process.create_time() == basis["created_at"] and process.status() not in (
+            psutil.STATUS_ZOMBIE,
+            psutil.STATUS_DEAD,
+        )
     except KeyError, TypeError, OSError, ValueError, psutil.Error:
         return False
 
@@ -162,7 +165,10 @@ def plugin_root_in_use(area: Path) -> bool:
                 return True
             try:
                 process = psutil.Process(record["pid"])
-                if process.create_time() == record["created_at"] and process.status() != psutil.STATUS_ZOMBIE:
+                if process.create_time() == record["created_at"] and process.status() not in (
+                    psutil.STATUS_ZOMBIE,
+                    psutil.STATUS_DEAD,
+                ):
                     return _record_process_use(process, "領域別lease", record=path)
             except psutil.NoSuchProcess:
                 pass
@@ -218,7 +224,7 @@ def _server_may_use_root(area: Path, *, allow_unattributed: bool) -> bool:
                     Path(argument).parts[-2:] == ("agent_toolkit", "agents_server_mcp.py") for argument in arguments
                 ):
                     continue
-                if process.username() != username or process.status() == psutil.STATUS_ZOMBIE:
+                if process.username() != username or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                     continue
                 if arguments is None:
                     _usage_details.set(f"起動引数を取得できない: pid={process.pid}")

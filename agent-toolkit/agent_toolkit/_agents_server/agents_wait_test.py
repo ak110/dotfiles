@@ -769,7 +769,12 @@ def _stash_notice(tmp_path: pathlib.Path, run_path: pathlib.Path) -> None:
         encoding="utf-8",
     )
     assert notice_inbox.take_notices(
-        "root-session", "session-1", tmp_path, stash_directory=run_path.with_suffix("") / "notices"
+        "root-session",
+        "session-1",
+        tmp_path,
+        recipient_session_id="root-session",
+        owner_status_file="root.json",
+        stash_directory=run_path.with_suffix("") / "notices",
     ) == [{"body": "通知"}]
 
 
@@ -1350,9 +1355,14 @@ def test_wait_recovers_claimed_notice_once(
     payload = {"version": 1, "session_id": "session-1", "sent_at": "2026-09-25T00:00:00Z", "body": "通知"}
     notice_path.write_text(json.dumps(payload), encoding="utf-8")
     stash_directory = run_path.with_suffix("") / "notices"
-    assert notice_inbox.take_notices("root-session", "session-1", tmp_path, stash_directory=stash_directory) == [
-        {"body": payload["body"]}
-    ]
+    assert notice_inbox.take_notices(
+        "root-session",
+        "session-1",
+        tmp_path,
+        recipient_session_id="root-session",
+        owner_status_file="root.json",
+        stash_directory=stash_directory,
+    ) == [{"body": payload["body"]}]
     if original_exists:
         notice_path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -2169,6 +2179,7 @@ def test_agents_wait_adds_notices_to_terminal_result(
 ) -> None:
     """同じ周回の通知を終了時の結果へ加える。"""
     wait_environment.mkdir(parents=True)
+    _write_own_status(wait_environment, [{"session_id": "session-1", "status": "completed"}])
     payload = {"session_id": "session-1", "status": "completed", "turn_seq": 2}
     (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
     notices = wait_environment.parent / "notices"

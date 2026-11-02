@@ -154,7 +154,7 @@ def host_processes() -> tuple[HostProcess, ...]:
     username = psutil.Process().username()
     for process in psutil.process_iter():
         try:
-            if process.username() != username or process.status() == psutil.STATUS_ZOMBIE:
+            if process.username() != username or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                 continue
             if (engine := _engine(process)) is not None:
                 found.append(HostProcess(engine, session_registry.ProcessIdentity(process.pid, process.create_time())))

@@ -81,7 +81,10 @@ class ProcessIdentity:
         """同じpidと起動時刻のプロセスが終了していなければ真を返す。照会を拒否された場合は存在するものとして扱う。"""
         try:
             process = psutil.Process(self.pid)
-            return process.create_time() == self.create_time and process.status() != psutil.STATUS_ZOMBIE
+            return process.create_time() == self.create_time and process.status() not in (
+                psutil.STATUS_ZOMBIE,
+                psutil.STATUS_DEAD,
+            )
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             return False
         except psutil.Error:

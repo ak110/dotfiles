@@ -141,12 +141,13 @@ class ServerLifetime:
     def _collect(self) -> None:
         for key, process in tuple(self._targets.items()):
             with contextlib.suppress(psutil.Error, OSError):
-                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                if process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                     continue
             self._targets.pop(key, None)
         for process in process_tree.collect_descendants(self._process.pid):
             with contextlib.suppress(psutil.Error, OSError):
-                self._targets[(process.pid, process.create_time())] = process
+                if process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    self._targets[(process.pid, process.create_time())] = process
 
     def _parent_gone(self) -> bool:
         if self._parent is None:
@@ -154,7 +155,7 @@ class ServerLifetime:
         if os.name != "nt" and self._parent.pid == 1:
             return True
         try:
-            return not self._parent.is_running() or self._parent.status() == psutil.STATUS_ZOMBIE
+            return not self._parent.is_running() or self._parent.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
         except psutil.Error, OSError:
             return True
 

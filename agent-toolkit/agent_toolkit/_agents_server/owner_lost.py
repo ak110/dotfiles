@@ -6,7 +6,8 @@
 
 通知と終了時の結果は、委譲先の起動時のルート（所有サーバーのルート）へ届く。Codexを親とするMCPサーバーは起動単位ごとに
 別のルートへ結び付くため、委譲元のサーバーが替わると届いた先を新しいサーバーが読まなくなる。
-登録簿から解決したsessionに限り、生存の印が有効な書込主体のいない他のルートからも同じsessionの通知と結果を回収する。
+通知は現在の受取主体を確認し、生存の印が有効な書込主体のいない他のルートからも回収する。
+終了時の結果は登録簿から解決したsessionについて、同じ旧ルートから回収する。
 """
 
 from __future__ import annotations
@@ -112,6 +113,7 @@ def take_stranded_notices(
     own_root_session_id: str | None,
     state_root: pathlib.Path | None = None,
     *,
+    recipient_session_id: str | None,
     stash_directory: pathlib.Path | None = None,
     roots: list[str] | None = None,
 ) -> list[dict[str, str]]:
@@ -125,7 +127,16 @@ def take_stranded_notices(
     for root_session_id in roots:
         # 退避先はルートごとに分ける。`take_notices`は退避先の全通知を毎回返すため、共有すると同じ通知を重ねて返す。
         stash = None if stash_directory is None else stash_directory / root_session_id
-        notices.extend(notice_inbox.take_notices(root_session_id, session_id, state_root, stash_directory=stash))
+        notices.extend(
+            notice_inbox.take_notices(
+                root_session_id,
+                session_id,
+                state_root,
+                recipient_session_id=recipient_session_id,
+                owner_status_file=None,
+                stash_directory=stash,
+            )
+        )
     return notices
 
 

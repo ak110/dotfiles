@@ -52,6 +52,8 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 _SESSION_ID = "019a2c41-5b6e-7d10-8f21-3c4d5e6f7a81"
 _OLD_ROOT = "mcp-1831ca1999764addb43ebee00782864b"
 _NEW_ROOT = "mcp-36ddd3de15894595bd160c24210f5f0e"
+_LAUNCHER = "parent-conversation"
+_OWNER_FILE = f"{_LAUNCHER}.json"
 
 
 @contextlib.contextmanager
@@ -87,6 +89,7 @@ def _publish_running(
         launch_info=session_registry.LaunchInfo(label="公開担当", prompt="公開工程を実施せよ"),
         processes=processes,
         owner_root_session_id=_OLD_ROOT,
+        launcher_session_id=_LAUNCHER,
     )
     return session_registry.registry_directory() / f"{_SESSION_ID}.json"
 
@@ -130,7 +133,9 @@ def _old_notice_files(tmp_path: pathlib.Path) -> list[pathlib.Path]:
 
 def _new_writer(tmp_path: pathlib.Path) -> status_file.StatusFileWriter:
     """新しいサーバーが使う、旧サーバーと別のルートの書込主体を返す。"""
-    return status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity(_NEW_ROOT, "root.json", None), state_root=tmp_path)
+    return status_file.StatusFileWriter(
+        {}, shared_roots.StatusFileIdentity(_NEW_ROOT, _OWNER_FILE, _LAUNCHER), state_root=tmp_path
+    )
 
 
 def _backend(
@@ -159,7 +164,11 @@ def _wait_lines(
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
     monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
     capsys.readouterr()
-    code = agents_wait.wait_for_result(environment={}, state_root=tmp_path, root_session_id=_NEW_ROOT)
+    code = agents_wait.wait_for_result(
+        environment={"AGENT_TOOLKIT_OWNER_SESSION": _NEW_ROOT, "AGENT_TOOLKIT_STATUS_HOST_SESSION": _LAUNCHER},
+        state_root=tmp_path,
+        root_session_id=_NEW_ROOT,
+    )
     output = capsys.readouterr().out
     assert code in {0, 3}, output
     return [json.loads(line) for line in output.splitlines() if line.strip()]
@@ -216,7 +225,7 @@ async def test_owner_lost_session_stays_running_on_every_entry(
             assert shown_by_cli["ownership"] == "owner_lost"
             assert shown_by_cli["next_action"] == owner_lost.OWNER_LOST_NEXT_ACTION
 
-            wait_targets.retain_wait_targets(_NEW_ROOT, "root.json", [_SESSION_ID], tmp_path)
+            wait_targets.retain_wait_targets(_NEW_ROOT, _OWNER_FILE, [_SESSION_ID], tmp_path)
             _add_old_notices(tmp_path, "待機中の通知")
             waited = _wait_lines(capsys, monkeypatch, tmp_path)
             assert [(line["session_id"], line["status"]) for line in waited] == [(_SESSION_ID, "running")]
@@ -321,7 +330,15 @@ async def test_registry_resolved_send_message_collects_stranded_notices(
 ) -> None:
     """登録簿から解決した終了sessionへの追送も、旧ルートに残る上り通知を回収して返す（完成条件4）。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    session_registry.publish(_SESSION_ID, terminal=True, engine="claude", cwd=str(tmp_path), turn_seq=1, status="completed")
+    session_registry.publish(
+        _SESSION_ID,
+        terminal=True,
+        engine="claude",
+        cwd=str(tmp_path),
+        turn_seq=1,
+        status="completed",
+        launcher_session_id=_LAUNCHER,
+    )
     _write_old_root(tmp_path, "終了前の通知")
     async with server_manager.AgentsServerManager(_new_writer(tmp_path)) as manager:
         manager.activate()
@@ -351,7 +368,7 @@ async def test_atk_agents_wait_collects_result_left_in_old_root(
         old_writer.retain_result(finished)
     assert shared_layout.results_directory(_OLD_ROOT, tmp_path).joinpath(f"{_SESSION_ID}.json").is_file()
     shared_layout.status_directory(_NEW_ROOT, tmp_path).mkdir(parents=True)
-    wait_targets.retain_wait_targets(_NEW_ROOT, "root.json", [_SESSION_ID], tmp_path)
+    wait_targets.retain_wait_targets(_NEW_ROOT, _OWNER_FILE, [_SESSION_ID], tmp_path)
 
     waited = _wait_lines(capsys, monkeypatch, tmp_path)
 

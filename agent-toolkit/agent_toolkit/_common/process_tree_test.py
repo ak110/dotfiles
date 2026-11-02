@@ -199,7 +199,7 @@ def _still_holding_resources(descendants: list[psutil.Process]) -> list[int]:
     holding: list[int] = []
     for process in descendants:
         try:
-            if process.status() != psutil.STATUS_ZOMBIE:
+            if process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                 holding.append(process.pid)
         except psutil.Error, OSError:
             continue

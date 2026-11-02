@@ -399,9 +399,14 @@ class ManagerRegistry(responses.ManagerResponses):
     async def _take_registry_notices(self, session_id: str) -> list[dict[str, str]]:
         """登録簿から解決したsessionの通知を、自身のルートと所有者のいない他のルートから回収する。"""
         notices = await self._take_notices_async(session_id)
+        recipient = await self._status_writer.launcher_session_id_async() if self._status_writer is not None else None
         notices.extend(
             await run_file_operation(
-                owner_lost.take_stranded_notices, session_id, self._own_root_session_id(), self._state_root()
+                owner_lost.take_stranded_notices,
+                session_id,
+                self._own_root_session_id(),
+                self._state_root(),
+                recipient_session_id=recipient,
             )
         )
         return notices

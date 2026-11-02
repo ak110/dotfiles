@@ -191,9 +191,9 @@ def _report_target(targets: list[dict[str, Any]]) -> tuple[str, pathlib.Path]:
     return chosen, cwd
 
 
-def _prepare(target: dict[str, Any]) -> dict[str, Any]:
+def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
     if session_activity.review_activity({target["session_id"]}).has_activity:
-        raise ValueError(f"対象が活動を再開した: {target['session_id']}")
+        return None
     arguments = (
         ["--transcript", target["transcript_path"]]
         if target["host"] == "claude"
@@ -316,7 +316,7 @@ def _live(manifest: dict[str, Any]) -> bool:
             if (
                 process.username() == username
                 and any(marker in part for part in process.cmdline())
-                and process.status() != psutil.STATUS_ZOMBIE
+                and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
             ):
                 return True
         except psutil.NoSuchProcess, psutil.ZombieProcess:
@@ -414,12 +414,17 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         session_review.launch_result(manifest=path)
         try:
             failed: list[tuple[dict[str, Any], str]] = []
+            deferred: set[str] = set()
             for target in targets:
                 try:
                     prepared = _prepare(target)
                 except ValueError as error:
                     # 1対象の準備失敗で残りの対象と、回答済みの過去UWIを取り込むモデル起動を止めない。
                     failed.append((target, str(error)))
+                    continue
+                if prepared is None:
+                    # 選定後の活動再開は正常な延期であり、失敗抑止せず次の機会へ残す。
+                    deferred.add(target["key"])
                     continue
                 # scopeは行位置とdigestだけなので、未確定manifestと同じ寿命で保つ。
                 scope_path = runs / f"{run_id}-{target['key']}.scope"
@@ -430,8 +435,9 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             if failed:
                 prepare_failed = True
                 _prepare_failure(runs, target_repo, failed)
-                failed_keys = {target["key"] for target, _ in failed}
-                manifest["targets"] = [target for target in targets if target["key"] not in failed_keys]
+            if failed or deferred:
+                omitted = deferred | {target["key"] for target, _ in failed}
+                manifest["targets"] = [target for target in targets if target["key"] not in omitted]
                 if not any(not target.get("review_batch") for target in manifest["targets"]):
                     # 通常対象を準備できない回も、batch自身だけの分析を起動しない。
                     manifest["status"] = "resolved"

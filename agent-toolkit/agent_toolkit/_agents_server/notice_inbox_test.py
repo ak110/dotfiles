@@ -9,6 +9,7 @@ from agent_toolkit._agents_server import (
     notice_inbox,
     shared_layout,
 )
+from agent_toolkit._common import session_registry
 
 
 def test_take_notices_keeps_invalid_values_and_removes_ordered_valid_notices(tmp_path: pathlib.Path) -> None:
@@ -26,8 +27,11 @@ def test_take_notices_keeps_invalid_values_and_removes_ordered_valid_notices(tmp
     }
     for name, payload in payloads.items():
         (directory / name).write_text(json.dumps(payload), encoding="utf-8")
+    session_registry.publish("target", terminal=False, launcher_session_id="parent", state_root=tmp_path)
 
-    notices = notice_inbox.take_notices("root", "target", tmp_path)
+    notices = notice_inbox.take_notices(
+        "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="parent.json"
+    )
 
     assert notices == [
         {"body": "同時刻A"},

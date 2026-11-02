@@ -1470,3 +1470,16 @@ WI原本の2026年10月22日の観測（Codex CLI 0.163.0）では、起動直�
 - 観測日: 2026年11月2日。
 - 確認版: Codex CLI0.166.0。公開execのcell/command識別子は同一turnのwait/write_stdinで回収する。App Serverの圧縮・使用量通知とCLIのproxyは公開されているが、この最上位待機形はturnを閉じるClaude背景waitと異なる。agents_serverの所有backendだけが、turn完了後に担当結果を保留し未完了子を待つ状態を持つ。
 - 再検証: 公開execで待機コマンドを起動し、返る実行識別子と同一turnでの終了回収を確認する。`codex --version`、`codex app-server --help`、`codex queue --help`と対象版生成schemaで圧縮入力・使用量通知を確認し、最上位クライアントがターン間背景待機を提供する場合はその所有者と状態遷移を再判定する。既存のユーザー会話へ検証用の圧縮を送らない。
+
+## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年11月2日
+
+- 観測日: 2026年11月2日。
+- 確認版: Python 3.15.0、pytest 9.2.0。非対話Claude Codeの背景無効化時に、Bash前景上限600000ミリ秒と背景引数の不在を観測した起票元の記録を再利用した。その外側観測のClaude Code版番号は記録から特定しておらず、担当自身による外側の再測定は未実施である。公開CLIと警告hookの試験では、背景無効・TTL 1hの540秒、終了コード3、再待機後の終了結果回収を模擬時計で確認した。
+- 再検証: 同条件のClaude Codeで公開Bashの引数定義を取得し、背景無効時の前景上限と背景引数の有無を確認する。下記の試験でCLI期限、MCP期限の維持、警告と受理できる回収操作の対応を検証する。実時間で540秒を待つ試験とは区別する。
+
+```sh
+uv run --frozen pytest -v -p no:cacheprovider \
+  agent-toolkit/agent_toolkit/_agents_server/agents_wait_foreground_test.py \
+  agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_wait_guidance_test.py \
+  agent-toolkit/agent_toolkit/_common/wait_foreground_test.py
+```

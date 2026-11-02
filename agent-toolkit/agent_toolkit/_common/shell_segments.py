@@ -368,6 +368,10 @@ def split_bash_segments(command: str) -> list[str]:
             continue
         if in_double:
             buf.append(c)
+            if c == "\\" and i + 1 < len(command) and command[i + 1] in '$`"\\\n':
+                buf.append(command[i + 1])
+                i += 2
+                continue
             if c == '"':
                 in_double = False
             i += 1
@@ -382,8 +386,12 @@ def split_bash_segments(command: str) -> list[str]:
             buf.append(c)
             i += 1
             continue
-        if c == "\\" and i + 1 < len(command) and command[i + 1] == "\n":
-            buf.extend((c, "\n"))
+        if c == "\\" and i + 1 < len(command):
+            # 行継続は語を連結し、それ以外の引用は次の文字を構文判定から除く。
+            if command[i + 1] != "\n":
+                finish_word()
+                command_start = False
+            buf.extend((c, command[i + 1]))
             i += 2
             continue
         if c.isalnum() or c == "_":

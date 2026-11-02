@@ -21,7 +21,7 @@ Claude Agent SDKで開始したセッションのターンは、main conversatio
 待機上限は用途ごとに別の関数から得る。MCPのツール呼び出しなど通信手段に固有の制限は、その手段を使う用途の関数だけに置き、
 別の用途の関数を改訂しても他の用途の上限が変わらないようにする。
 
-- `get_cli_wait_timeout`: CLIの`atk agents wait`の結果待機。保持期間とホストの判定だけから導く。
+- `get_cli_wait_timeout`: CLIの`atk agents wait`の結果待機。保持期間とホスト、背景機能の判定から導く。
   CLIはMCPのツール呼び出しを経由しないため、委譲先セッションでもMCPクライアントの制限を適用しない
 - `get_wait_timeout`: MCPサーバー内部の待機と、`atk lane delete`の資源解放の待機。
   委譲先として起動されたセッションでは、実際に確認したMCPクライアントの300秒のツール呼び出し上限の内側へ
@@ -56,6 +56,8 @@ _WAIT_TIMEOUT_FOR_1H_TTL = 1740.0
 # 誤判定の影響は誤りの向きによって異なり、Claude Codeを誤って対象ホストと判定した場合は待機の再発行が増えるだけで、
 # 逆の誤りだけがタイムアウト失敗を残す。このため`CLAUDECODE`を確認できない場合も同様のホストとして扱う。
 _WAIT_TIMEOUT_FOR_UNKNOWN_HOST = 270.0
+# 背景無効のClaude CodeはBash前景上限600秒より60秒短くし、CLI自身の終了を回収する。
+_WAIT_TIMEOUT_FOR_FOREGROUND = 540.0
 # 委譲先セッションでMCPのツール呼び出しを経由する待機の上限。CLIの結果待機には適用しない。
 _WAIT_TIMEOUT_FOR_DELEGATED_SESSION = 240.0
 _BUCKET_TTL_ENV = {
@@ -167,20 +169,28 @@ def get_schedule(request_bucket: str) -> str:
     return _SCHEDULE_FOR_5M_TTL
 
 
-def get_cli_wait_timeout(request_bucket: str) -> float:
-    """CLIの`atk agents wait`が委譲先の終了を待つ上限秒数を、保持期間とホストの判定から導く。"""
+def _ttl_wait_timeout(request_bucket: str) -> float:
+    """各用途で共有する保持期間とホストの上限を導く。"""
     timeout = _WAIT_TIMEOUT_FOR_1H_TTL if get_prompt_cache_ttl(request_bucket) == "1h" else _WAIT_TIMEOUT_FOR_5M_TTL
     if "CLAUDECODE" not in os.environ:
         timeout = min(timeout, _WAIT_TIMEOUT_FOR_UNKNOWN_HOST)
     return timeout
 
 
+def get_cli_wait_timeout(request_bucket: str) -> float:
+    """CLIの結果待機を、実行可能な背景・前景の上限へ収める。"""
+    timeout = _ttl_wait_timeout(request_bucket)
+    if "CLAUDECODE" in os.environ and os.environ.get("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS") == "1":
+        timeout = min(timeout, _WAIT_TIMEOUT_FOR_FOREGROUND)
+    return timeout
+
+
 def get_wait_timeout(request_bucket: str) -> float:
     """MCPサーバー内部の待機とlaneの資源解放の待機が使う上限秒数を導く。
 
-    `get_cli_wait_timeout`の値に加え、委譲先セッションではMCPクライアントのツール呼び出し上限の内側へ縮める。
+    TTL・ホストの共通上限に加え、委譲先ではMCPクライアントのツール呼び出し上限の内側へ縮める。
     """
-    timeout = get_cli_wait_timeout(request_bucket)
+    timeout = _ttl_wait_timeout(request_bucket)
     if is_delegated(os.environ):
         timeout = min(timeout, _WAIT_TIMEOUT_FOR_DELEGATED_SESSION)
     return timeout

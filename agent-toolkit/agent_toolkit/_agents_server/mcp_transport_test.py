@@ -497,7 +497,7 @@ def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, launcher
         deadline = time.monotonic() + _LAUNCH_TIMEOUT
         # 孤児の回収時機はPID 1に依存する。終了済みzombieは記録を書けず、PIDが残っていても停止済みである。
         with contextlib.suppress(psutil.NoSuchProcess):
-            while server_process.is_running() and server_process.status() != psutil.STATUS_ZOMBIE:
+            while server_process.is_running() and server_process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                 assert time.monotonic() < deadline, "SIGKILLしたサーバーが停止していない"
                 time.sleep(0.05)
 

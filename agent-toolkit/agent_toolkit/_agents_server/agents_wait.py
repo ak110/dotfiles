@@ -30,7 +30,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.environment import is_agent_environment, is_human_terminal
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import delegated_session, session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import ActionableError, report, with_next_action
@@ -338,6 +338,8 @@ def _target_origins(
     owner_status_file: str,
     state_root: pathlib.Path | None,
     interrupted_sessions: list[dict[str, Any]] | None = None,
+    *,
+    recipient_session_id: str | None,
 ) -> tuple[dict[str, set[str]], tuple[str, int, str] | None]:
     """現行の待機対象と由来を返し、解釈不能な入力は理由・終了コード・次の操作の診断へ変換する。
 
@@ -356,7 +358,12 @@ def _target_origins(
     owners = status_reader.load_root(root_session_id, state_root).sessions
     for session_id in set(registered_ids):
         owner = owners.get(session_id, {}).get("owner_status_file")
-        if owner is not None and owner != owner_status_file:
+        if (
+            owner is not None
+            and owner != owner_status_file
+            or notice_inbox.recipient_matches(root_session_id, session_id, recipient_session_id, owner_status_file, state_root)
+            is False
+        ):
             wait_targets.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
             registered_ids.remove(session_id)
     # 状態ファイルにも結果ファイルにも無い登録は、登録簿が喪失か終了を示す場合に結果が生じないため解放する。
@@ -442,6 +449,11 @@ def _wait_for_result(
         return _fail("agents_serverの状態ディレクトリを解決できません。", 4, next_action=_IDENTITY_NEXT_ACTION)
     root_session_id = identity.root_session_id
     own_status_path = shared_layout.status_directory(root_session_id, state_root) / identity.file_name
+    recipient_session_id = (
+        delegated_session.current_conversation_session_id(env)
+        or env.get("AGENT_TOOLKIT_STATUS_HOST_SESSION")
+        or (root_session_id if not root_session_id.startswith(shared_roots.PROCESS_ROOT_PREFIX) else None)
+    )
     result_directory = shared_layout.results_directory(root_session_id, state_root)
     run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
     released_interruptions: list[dict[str, Any]] = []
@@ -452,6 +464,7 @@ def _wait_for_result(
         identity.file_name,
         state_root,
         released_interruptions,
+        recipient_session_id=recipient_session_id,
     )
     if target_error is not None:
         message, code, next_action = target_error
@@ -588,6 +601,7 @@ def _wait_for_result(
                     identity.file_name,
                     state_root,
                     released_interruptions,
+                    recipient_session_id=recipient_session_id,
                 )
                 if target_error is not None:
                     message, code, next_action = target_error
@@ -681,18 +695,22 @@ def _wait_for_result(
                         root_session_id,
                         session_id,
                         state_root,
+                        recipient_session_id=recipient_session_id,
+                        owner_status_file=identity.file_name,
                         stash_directory=run_path.with_suffix("") / "notices",
                     )
-                    if registry_resolved:
-                        notices.extend(
-                            owner_lost.take_stranded_notices(
-                                session_id,
-                                root_session_id,
-                                state_root,
-                                stash_directory=run_path.with_suffix("") / "notices",
-                                roots=stranded_roots,
-                            )
+                    if stranded_roots is None:
+                        stranded_roots = status_reader.ownerless_root_session_ids(root_session_id, state_root)
+                    notices.extend(
+                        owner_lost.take_stranded_notices(
+                            session_id,
+                            root_session_id,
+                            state_root,
+                            recipient_session_id=recipient_session_id,
+                            stash_directory=run_path.with_suffix("") / "notices",
+                            roots=stranded_roots,
                         )
+                    )
                     if result is not None:
                         result["session_id"] = session_id
                         if isinstance(result.get("agent_message"), str):

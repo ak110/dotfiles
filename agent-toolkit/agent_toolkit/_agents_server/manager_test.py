@@ -1512,8 +1512,9 @@ async def test_kill_includes_notices_only_when_available(
     async with server_manager.AgentsServerManager(writer) as manager:
         backend = FakeBackend(manager.sessions, "codex")
         install_backend(manager, "codex", backend)
-        session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+        session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1", announced=True)
         manager.sessions[session.session_id] = session
+        writer.activate()
         if with_notice:
             notices = shared_layout.notices_directory("root-session", tmp_path)
             _write_notice(notices, session.session_id, 1, "2026-09-06T00:00:01+00:00", "中断前の通知")

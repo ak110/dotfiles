@@ -1,6 +1,8 @@
 """`atk agents notify`が置いた上り通知（`notices/`）の回収。
 
-上り通知の配送媒体は共有状態ディレクトリ（`shared_layout.notices_directory`）とする。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されず、Claudeの委譲先へ公開されるagents_server系のMCPツールは委譲元のsession登録簿を共有しないため、engineを問わず使える媒体が他に無い。2026年9月6日に両engineの委譲先を1件ずつ起動して確かめた。この前提が成立しなくなった場合は、片方のengineの委譲先から送った通知が委譲元へ届かない事象として現れる。
+上り通知は共有状態ディレクトリ（`shared_layout.notices_directory`）を媒体とし、
+別のMCPサーバーが管理する多段委譲でも同じ通知を回収できるようにする。
+共有ルートの一致と、通知を受け取る起動主体の一致は分けて確認する。
 """
 
 from __future__ import annotations
@@ -10,9 +12,26 @@ import json
 import logging
 import pathlib
 
+from agent_toolkit._agents_server import status_reader
 from agent_toolkit._agents_server.result_projection import public_notice
 from agent_toolkit._agents_server.shared_layout import notices_directory
+from agent_toolkit._common import session_launchers, session_registry
 from agent_toolkit._common.atomic_file import atomic_write
+
+
+def recipient_matches(
+    root_session_id: str,
+    session_id: str,
+    recipient_session_id: str | None,
+    owner_status_file: str | None,
+    state_root: pathlib.Path | None = None,
+) -> bool | None:
+    """起動主体または状態の所有者を比較し、どちらも不明なら未確定を返す。"""
+    owner = status_reader.load_root(root_session_id, state_root).sessions.get(session_id, {}).get("owner_status_file")
+    if owner is not None:
+        return owner == owner_status_file
+    launcher = session_launchers.read_launcher(session_registry.registry_directory(state_root) / f"{session_id}.json")
+    return None if launcher is None else launcher == recipient_session_id
 
 
 def take_notices(
@@ -20,9 +39,14 @@ def take_notices(
     session_id: str,
     state_root: pathlib.Path | None = None,
     *,
+    recipient_session_id: str | None,
+    owner_status_file: str | None,
     stash_directory: pathlib.Path | None = None,
 ) -> list[dict[str, str]]:
     """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
+    # 退避済み通知にも同じ所有者の確認を適用し、誤登録の再開から他主体の本文を消費しない。
+    if recipient_matches(root_session_id, session_id, recipient_session_id, owner_status_file, state_root) is not True:
+        return []
     directory = notices_directory(root_session_id, state_root)
     try:
         paths = tuple(directory.iterdir())

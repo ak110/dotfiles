@@ -23,7 +23,7 @@ from agent_toolkit._common import process_tree
 def _holds_resources(process: psutil.Process) -> bool:
     """対象が資源を保持しているかを返す。生存確認と状態取得の間に終了した対象は解放済みとして扱う。"""
     try:
-        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        return process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
     except psutil.NoSuchProcess:
         return False
 
@@ -210,7 +210,10 @@ def test_stdio_shutdown_reclaims_owned_hierarchy(
         finally:
             process_tree.reclaim_processes(targets, timeout=0.5)
             with contextlib.suppress(psutil.NoSuchProcess):
-                assert all(not target.is_running() or target.status() == psutil.STATUS_ZOMBIE for target in targets)
+                assert all(
+                    not target.is_running() or target.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+                    for target in targets
+                )
 
 
 @pytest.mark.asyncio
