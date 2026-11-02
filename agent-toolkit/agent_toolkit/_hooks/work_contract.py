@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
+import shlex
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common.delegated_session import is_delegated
 from agent_toolkit._common.session_state import update_state
+from agent_toolkit._hooks import document_reads
+from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.notice import resolve_notice
 
 RECORD_NAME = "work-contract.md"
+DELEGATED_NOTICE_KEY = "whole_contract_notified"
 
 NOTICE_BODY_LIMIT = 4_000
 """通知へ載せる契約本文の上限（文字）。
@@ -56,9 +61,40 @@ def reset_notice(session_id: str) -> None:
     """圧縮で失われた未作成通知を、次の操作で再配送可能にする。"""
     update_state(
         session_id,
-        lambda state: {key: value for key, value in state.items() if key != "work_contract_notified_sequence"},
+        lambda state: {
+            key: value for key, value in state.items() if key not in {"work_contract_notified_sequence", DELEGATED_NOTICE_KEY}
+        },
     )
     resolve_notice(session_id, "pretooluse", "main", subject="main")
+
+
+def delegated_notice(session_id: str, records: dict, state: dict, *, agent: str = "main") -> str | None:
+    """受領した全体契約の未読版を、本文配送や遮断をせず1回案内する。"""
+    if not is_delegated(os.environ):
+        return None
+    delivered = state.get(DELEGATED_NOTICE_KEY, {})
+    seen = delivered.get(agent, []) if isinstance(delivered, dict) else []
+    for key, actors in records.items():
+        if not key.startswith("startup-input-target:") or agent not in actors:
+            continue
+        metadata = json.loads(key.removeprefix("startup-input-target:"))
+        if "input:作業契約" not in metadata.get("selectors", [metadata.get("selector", "")]):
+            continue
+        path = pathlib.Path(metadata["path"])
+        try:
+            fingerprint = document_reads.content_fingerprint(path)
+        except OSError:
+            return f"全体作業契約を取得できない: {path}。委譲元へ所在と読取可能性を確認せよ。"
+        if document_reads.content_ready(records, fingerprint, agent) or fingerprint in seen:
+            continue
+        text = (
+            f"全体作業契約の現行版を再読せよ: {path}。"
+            "「即時対応で確定した暫定規則」を含む要求を確かめ、配布前の暫定規則に従え。"
+            f"Readまたは`cat -- {shlex.quote(str(path))}`で全文を取得してから判断・操作へ進め。"
+        )
+        notice_module.stage_delivery(text, session_id, DELEGATED_NOTICE_KEY, agent, fingerprint)
+        return text
+    return None
 
 
 def missing_notice(session_id: str, *, agent_id: object = None) -> str | None:

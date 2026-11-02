@@ -1,6 +1,6 @@
 # 公開担当の検証またはCIの失敗
 
-本書は、`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`に基づく公開担当エージェントが、全体検証またはCIの失敗を受けた際に行う修正系列の管理、CI修正担当および実行レビューの起動、ならびにpushの更新手順を定める。
+本書は公開を直接実行するメイン・対象リポジトリ担当、または`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`に基づく公開担当が、全体検証またはCIの失敗を受けた際の手順を定める。本書の公開担当はこれらの実行主体を指す。修正系列の管理、CI修正担当と実行レビューの起動、およびpushの更新を同じ契約で行う。
 
 ## 名指し参照の読込方法
 

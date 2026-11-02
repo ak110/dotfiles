@@ -18,7 +18,7 @@ QCDの観点、3段判定、事実と推論の区別、硬い制約と努力目�
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に指定節と、その成立に必要な前提・例外を自分で読む。全体が判断に必要な場合は全文を読む。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -30,9 +30,14 @@ QCDの観点、3段判定、事実と推論の区別、硬い制約と努力目�
 | --- | --- | --- | --- | --- |
 | 実装に着手する直前（基準版を記録する時点）と、テスト・検証・CIの結果を成功時も含めて判定する前（プロジェクトの段階別・全体所要基準との比較を含む） | `references/diagnostics.md`（「読む出力」に所要時間の評価を集約） | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` | |
 | 変更範囲の検証で動かすチェックとテストを選ぶ前（計画の検証コマンドを書くとき、実装後に検証する前、計画の検証行・前回の実行・CI失敗の調査記録にある検証コマンドを再利用して実行する前、実行レビューで直接影響範囲を求めるとき） | `references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` | |
+| 要求の結果を観測する手段と環境を選ぶ前 | `agent-basics:writing-standards/references/testing.md`の「検証単位の選定」と冒頭 | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」`、`section:agent-basics:*/skills/writing-standards/references/testing.md#冒頭` | |
 | 受入シナリオ検証を実施する前（文書の試行、操作・故障注入・自動終了の失敗が使用する資源の所有者と共有範囲を判定するとき、本番の起動単位からの公開前観測を含む） | `references/acceptance-scenarios.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/acceptance-scenarios.md` | |
 | 起動時 | `agent-basics:writing-standards/references/quality-principles.md` | 起動時 | `skill:check-execution` | |
 
 ## 実行条件と結果
 
 各チェックは、プロジェクトが採用している実行形式と、公開されている入力契約に従って実行する。保存された結果を読み取る前に、目的に適した出力形式と対象範囲を、ツール側の公開仕様から選択する。画面への本文表示と、構造化された診断情報の取得や要求事項への紐付けとは用途を明確に分け、結果の内容と取得時の条件が一致していることを確認する。実行や結果保存の機能が利用できない環境では、検証対象と手順、および未実行の範囲を整理して報告先に返す。
+要求の結果を直接観測する手段と実行環境は、`agent-basics:writing-standards/references/testing.md`「検証単位の選定」で選ぶ。
+テストの実行が成功した範囲と、その結果から成果物について主張できる範囲を対応付ける。
+未実施・失敗・観測不能は要求、理由、試した手段、限界を既存の検証記録に残し、必要な検証手段の改善へ使えるようにする。
+記録の生成前に実行基盤が失敗した場合は既存の実行ログを使い、未観測と成功を区別する。

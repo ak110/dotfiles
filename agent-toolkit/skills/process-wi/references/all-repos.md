@@ -9,13 +9,14 @@
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したらその判断や操作の前に自分で全文読み、指定箇所に注目してから、その基準で判断する。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に指定節と、その成立に必要な前提・例外を自分で読む。全体が判断に必要な場合は全文を読む。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 共通の受渡し規範を選択して取得する時 | `all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` |
 | リポジトリ担当の処理規範を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 少数候補を統括自身が処理する時 | `single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
+| 統括がlane_limit 2以上の対象を直接処理する時 | `lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` |
+| 統括がlane_limit 1以下の対象を直接処理する時 | `single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
 | リポジトリ担当の引き継ぎ記録先を指定する時 | `../../delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
@@ -34,11 +35,14 @@
 
 対象worktreeの作業に入る前に、その対象の`AGENTS.md`、`CLAUDE.md`、作業に関わるプロジェクトスキルの実在する`SKILL.md`を絶対パスで読んで適用する。
 ホームなどのプロジェクト外cwdでは、対象のプロジェクトスキルを明示的に読み込み、通常のプロジェクトhookが担う確認を実施する。
-対象の規範と既存チェックを適用してhookの目的を満たし、候補数で担当を振り分ける。
+対象の規範と既存チェックを適用してhookの目的を満たす。
+担当の振分け前に、`agent-toolkit/rules/01-agent.md`「行動と手順の目的」に従い、今回の対象集合で委譲が得る成果と直接処理との差を点検する。
 WorktreeCreate/WorktreeRemoveは対象設定を読む既存atk操作で実行し、常駐が準備したworktreeを利用する。
 
-候補数Nに対する`lane_limit=floor((N+9)/10)`が2以上の対象だけを、「リポジトリ担当の起動と受領」に従ってリポジトリ担当へ委譲する。
-それ以外の対象は統括自身が[process-wi single-lane](single-lane.md)と同じ契約で処理する。
+今回の集合JSONの`repositories`が1件なら、`lane_limit`によらず統括自身が直接処理する。
+対象が2件以上の場合は、候補数Nに対する`lane_limit=floor((N+9)/10)`が2以上の対象を「リポジトリ担当の起動と受領」に従って委譲し、それ以外を統括自身が処理する。
+直接処理では`lane_limit`が2以上なら[通常のレーン処理](lanes.md)、1以下なら[単一レーン処理](single-lane.md)へ接続する。
+両経路とも受領済み候補・readiness・対象worktree・対象別`lane_session_id`を使い、起動したレーン担当とwriterを対象別の`writer_sessions`へ記録する。
 対象worktreeごとに計画・実行レビュー・公開を分ける。
 対象別の開始時CI点検、監査、UWI、公開とCI検収を実施する。
 

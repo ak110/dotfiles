@@ -1,12 +1,11 @@
-"""SubagentStop hook: 空の完了報告と説明言語を判定する。
+"""SubagentStop hook: 空の完了報告を判定する。
 
 公式仕様の`last_assistant_message`を直参照し、空文字列だけの完了報告をblockする。
 成果物と検証結果の妥当性は委譲元による現物の確認と実行レビュー担当のレビューへ委ねる。
 
 正常許可と`stop_hook_active`真の再呼び出し時は、両ホスト共通でstdoutを空にする。
 完了判定にtranscriptを使わず、両ホストが渡す`last_assistant_message`を使う。
-両ホストの非空本文は親Stopと共通の説明言語判定へ渡す。
-Codexで説明言語の誤検出を解消するときは、委譲元へ渡る最後の応答に完了本文の全文を再出力する。
+非空の内部返却は言語で遮断せず、ユーザーへの送達主体が説明を日本語で作成する。
 
 委譲先での実行可否: 委譲先も空でない完了報告を再出力できるため、除外せず遮断できる。
 """
@@ -17,7 +16,6 @@ import json
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
-from agent_toolkit._hooks.response_language_advisor import evaluate as evaluate_language
 
 _HOOK_ID = "subagent-stop"
 
@@ -50,7 +48,4 @@ def main(payload_text: str) -> int:
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
         return 0
 
-    decision, reason = evaluate_language(payload_text)
-    if decision == "block":
-        print(json.dumps({"decision": decision, "reason": reason}, ensure_ascii=False))
     return 0

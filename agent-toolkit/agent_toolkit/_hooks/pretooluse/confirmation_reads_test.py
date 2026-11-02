@@ -1,6 +1,6 @@
 """確認操作に伴う資料取得案内と取得観測のテスト。
 
-PreToolUseの公開hookを同一プロセスで起動し、transcriptの読取の記録に応じた警告の有無を検証する。
+PreToolUseとPostToolUseの公開hookを同一プロセスで起動し、読取成功の観測に応じた警告の有無を検証する。
 transcriptのエントリの形は、Claude Code 2.1.291の`~/.claude/projects`配下の記録（`tool_use`ブロックを持つ
 `assistant`エントリ、呼出IDに対応する`tool_result`を持つ`user`エントリと、
 `type`が`system`・`subtype`が`compact_boundary`のエントリ）から写した。
@@ -15,12 +15,12 @@ import shlex
 import pytest
 
 from agent_toolkit._hooks import work_contract
-from agent_toolkit._testing.pretooluse_support import _additional_context, _run
+from agent_toolkit._testing.pretooluse_support import _additional_context, _run, _run_posttooluse
 
 _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
 _APPROVAL = _SKILL_REFERENCES / "approval-scope.md"
 _CHOICE = _SKILL_REFERENCES / "choice-construction.md"
-_WARNING = "操作前に全文読む資料が未取得"
+_WARNING = "操作前に読む資料が未取得"
 _QUESTION_INPUT = {
     "questions": [{"question": "どちらにしますか？", "header": "方針", "options": [{"label": "A"}, {"label": "B"}]}]
 }
@@ -105,7 +105,7 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
     # 比較対象の2資料とは独立に、共有の読込方法を含む親スキル本文を圧縮後にも取得する。
     entries = [*entries, *_successful_skill()]
     transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
-    return {
+    payload = {
         "tool_name": "AskUserQuestion",
         "tool_input": _QUESTION_INPUT,
         "session_id": "confirmation-reads",
@@ -113,6 +113,23 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
         "cwd": str(tmp_path),
         **extra,
     }
+    # 履歴だけから取得済みを推定せず、現在の文脈で完了した公開取得イベントを先に観測する。
+    boundary = max((i + 1 for i, entry in enumerate(entries) if entry == _COMPACT), default=0)
+    pending = {}
+    for entry in entries[boundary:]:
+        for block in entry.get("message", {}).get("content", []):
+            if block.get("type") == "tool_use":
+                pending[block["id"]] = block
+            elif block.get("type") == "tool_result" and (call := pending.pop(block["tool_use_id"], None)):
+                event = {
+                    **payload,
+                    "hook_event_name": "PostToolUse",
+                    "tool_name": call["name"],
+                    "tool_input": call["input"],
+                    "tool_response": {"stdout": block["content"], "exit_code": 1 if block.get("is_error") else 0},
+                }
+                assert _run_posttooluse(event, {}).returncode == 0
+    return payload
 
 
 @pytest.mark.parametrize(

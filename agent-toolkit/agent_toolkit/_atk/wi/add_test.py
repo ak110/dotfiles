@@ -49,6 +49,7 @@ from agent_toolkit.atk_test import (  # noqa: E402  # pylint: disable=wrong-impo
     _make_subprocess_fake,
     _setup_notes,
     _write_awi_file,
+    _write_uwi_file,
 )
 
 
@@ -83,6 +84,7 @@ def _cmd_add_args(
         question_type="yes-no" if entry_type == WI_TYPE_UWI else None,
         choices=None,
         dry_run=dry_run,
+        compare_opening_file=None,
         subparser=None,
     )
 
@@ -125,6 +127,117 @@ def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+
+
+@pytest.mark.parametrize("operation", ["add", "edit"])
+@pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+def test_public_dry_run_compares_received_opening(tmp_path, monkeypatch, capsys, operation, entry_type, newline):
+    """新規・編集の公開操作だけで原改行、末尾空行、フェンス内H2を含む冒頭を比較する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    opening = "# 表題\n\n質問と理由。  \n\n```text\n## 引用\n```\n\n\n".replace("\n", newline)
+    body = tmp_path / "draft.md"
+    body.write_bytes((opening + "## 反映内容と反映先\n対象\n".replace("\n", newline)).encode())
+    comparison = tmp_path / "opening.md"
+    comparison.write_bytes(opening.encode())
+    argv = ["wi", operation, "--target-repo", "github.com/example/repo", "--body-file", str(body), "--dry-run"]
+    stored = None
+    original = b""
+    if operation == "edit":
+        stored = (
+            _write_awi_file(notes, "draft.md", target_repo="github.com/example/repo")
+            if entry_type == "awi"
+            else _write_uwi_file(notes, "draft.md", target_repo="github.com/example/repo", answer=uwi_module.ANSWER_MARKER)
+        )
+        original = stored.read_bytes()
+        argv.insert(2, "draft.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    elif entry_type == "uwi":
+        argv.extend(["--type=uwi", "--question-type=yes-no"])
+    with pytest.raises(SystemExit) as result:
+        atk.main([*argv, "--compare-opening-file", str(comparison)], home=tmp_path)
+    assert result.value.code == 0
+    output = capsys.readouterr()
+    saved = re.search(r"^冒頭保存先: (.+)$", output.out, re.MULTILINE)
+    assert saved is not None
+    assert pathlib.Path(saved[1]).read_bytes() == opening.encode()
+    if stored is not None:
+        assert stored.read_bytes() == original
+    else:
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+@pytest.mark.parametrize("difference", ["body", "newline", "trailing", "missing", "encoding"])
+@pytest.mark.parametrize("operation", ["add", "edit"])
+def test_public_dry_run_rejects_changed_or_unreadable_opening(tmp_path, monkeypatch, capsys, operation, difference):
+    """本文変更、原改行・末尾空行の差、読取不能を公開比較で拒否し保存しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    opening = "# 表題\n\n説明\n\n"
+    args = _cmd_add_args(tmp_path, opening + "## 反映内容と反映先\n対象\n", dry_run=True)
+    comparison = tmp_path / "opening.md"
+    if difference != "missing":
+        expected = {
+            "body": opening.replace("説明", "変更"),
+            "newline": opening.replace("\n", "\r\n"),
+            "trailing": opening[:-1],
+            "encoding": "",
+        }[difference]
+        comparison.write_bytes(b"\xff" if difference == "encoding" else expected.encode())
+    argv = [
+        "wi",
+        operation,
+        "--target-repo",
+        args.target_repo,
+        "--body-file",
+        args.body_file[0],
+        "--dry-run",
+        "--compare-opening-file",
+        str(comparison),
+    ]
+    stored = None
+    original = b""
+    if operation == "edit":
+        stored = _write_awi_file(notes, "draft.md", target_repo=args.target_repo)
+        original = stored.read_bytes()
+        argv.insert(2, "draft.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    with pytest.raises(SystemExit) as result:
+        atk.main(argv, home=tmp_path)
+    assert result.value.code != 0
+    output = capsys.readouterr()
+    assert "冒頭保存先:" not in output.out
+    assert str(comparison) in output.err
+    assert "次の操作:" in output.err
+    if stored is not None:
+        assert stored.read_bytes() == original
+
+
+@pytest.mark.parametrize("comparisons", ["matching", "swapped", "short", "long"])
+def test_public_dry_run_matches_each_opening_to_its_source(tmp_path, monkeypatch, capsys, comparisons):
+    """複数原稿の対応順と件数を検査し、全件一致した場合だけ成功する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    argv = ["wi", "add", "--target-repo", "github.com/example/repo", "--dry-run"]
+    paths = []
+    for index in range(2):
+        body = tmp_path / f"body-{index}.md"
+        opening = tmp_path / f"opening-{index}.md"
+        text = f"# 表題{index}\n\n説明\n\n"
+        body.write_text(text + "## 反映内容と反映先\n対象\n", encoding="utf-8")
+        opening.write_text(text, encoding="utf-8")
+        argv.extend(["--body-file", str(body)])
+        paths.append(opening)
+    selected = {"matching": paths, "swapped": list(reversed(paths)), "short": paths[:1], "long": paths + paths[:1]}
+    for path in selected[comparisons]:
+        argv.extend(["--compare-opening-file", str(path)])
+    with pytest.raises(SystemExit) as result:
+        atk.main(argv, home=tmp_path)
+    assert result.value.code == (0 if comparisons == "matching" else 1)
+    output = capsys.readouterr()
+    assert output.out.count("冒頭保存先:") == (2 if comparisons == "matching" else 0)
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
@@ -214,6 +327,11 @@ def _awi_cause_items_table() -> str:
         "no_countermeasure",
         "empty_countermeasure",
         "valid",
+        "shared_decision",
+        "separate_shared_decision",
+        "one_decision",
+        "deferred_decision",
+        "shared_bare_rejection",
     ],
 )
 @pytest.mark.parametrize("agent", [False, True])
@@ -251,6 +369,18 @@ def test_public_add_cause_analysis_format(
         table = "\n".join(line for line in table.splitlines() if not line.startswith("| 対策 |"))
     elif case == "empty_countermeasure":
         table = table.replace(f"| 対策 | {plan_fixture.BUG_FILLER} |", "| 対策 |  |")
+    elif case in ("shared_decision", "separate_shared_decision", "one_decision", "deferred_decision", "shared_bare_rejection"):
+        value = {
+            "shared_decision": "作り込み要因の候補はA、見逃し要因の候補はBであり、ともに採用する。",
+            "separate_shared_decision": "作り込み要因の候補はA。見逃し要因の候補はB。両候補を採用する。",
+            "one_decision": "作り込み要因の候補Aを採用する。見逃し要因の候補はB。",
+            "deferred_decision": "作り込み要因の候補はA、見逃し要因の候補はB。両系統とも原因確定後に採否を決める。",
+            "shared_bare_rejection": "作り込み要因の候補はA、見逃し要因の候補はB。両候補を不採用とする。",
+        }[case]
+        table = "\n".join(
+            f"| {line.split('|')[1].strip()} | {value} |" if line.startswith(("| 類似見直し観点 |", "| 再発防止策 |")) else line
+            for line in table.splitlines()
+        )
     else:
         cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外の構造だけで生じた。 |")
     body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{cause}\n\n{table}\n"
@@ -267,7 +397,7 @@ def test_public_add_cause_analysis_format(
         if finished.value.code:
             raise SystemExit(finished.value.code)
 
-    if agent and case != "valid":
+    if agent and case not in ("valid", "shared_decision", "separate_shared_decision"):
         with pytest.raises(SystemExit) as rejected:
             run()
         assert rejected.value.code != 0

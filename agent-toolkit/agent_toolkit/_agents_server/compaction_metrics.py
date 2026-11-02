@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
+from agent_toolkit._agents_server.file_operations import run_file_operation
+from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import file_lock
 from agent_toolkit._common import state_paths as _state_paths
 
@@ -20,6 +23,35 @@ def record_directory(state_root: Path | None = None) -> Path:
     """コンパクション計測記録の保存先を指定しない場合に使うディレクトリを返す。"""
     root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / "compaction"
+
+
+async def observe_compaction_item(session: SessionState, method: str, params: dict[str, Any]) -> None:
+    """通常turnと独立した圧縮turnから、同じ時刻の検証・保存処理を使う。"""
+    item = params.get("item")
+    if not isinstance(item, dict) or item.get("type") != "contextCompaction":
+        return
+    item_id = item.get("id")
+    if not isinstance(item_id, str) or not item_id:
+        return
+    if method == "item/started":
+        started_at_ms = params.get("startedAtMs")
+        if isinstance(started_at_ms, int) and not isinstance(started_at_ms, bool):
+            session.compaction_started_at_ms[item_id] = started_at_ms
+    elif method == "item/completed":
+        completed_at_ms = params.get("completedAtMs")
+        if (
+            item_id in session.compaction_started_at_ms
+            and isinstance(completed_at_ms, int)
+            and not isinstance(completed_at_ms, bool)
+        ):
+            await run_file_operation(
+                append_compaction_record,
+                session.session_id,
+                item_id,
+                session.compaction_started_at_ms[item_id],
+                completed_at_ms,
+            )
+            del session.compaction_started_at_ms[item_id]
 
 
 def append_compaction_record(

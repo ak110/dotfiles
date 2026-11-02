@@ -168,12 +168,18 @@ class ReadTarget:
     def body(self, text: str | None = None) -> str:
         """指定範囲だけを返す。見出しの曖昧さと不在は宣言エラーにする。"""
         text = self.path.read_text(encoding="utf-8") if text is None else text
-        if not self.heading:
-            return text
-        selector = urllib.parse.unquote(self.heading)
         if self.path.name == "Makefile" and self.heading.startswith("make:"):
             return _make_targets(text, self.heading.removeprefix("make:"), self.path)
+        lines = text.splitlines(keepends=True)
+        return "".join("".join(lines[start - 1 : end]) for start, end in self.line_ranges(text))
+
+    def line_ranges(self, text: str | None = None) -> tuple[tuple[int, int], ...]:
+        """節の解決を共有し、案内するnative読取へ1始まりの行範囲を渡す。"""
+        text = self.path.read_text(encoding="utf-8") if text is None else text
         lines, headings = _headings(text)
+        if not self.heading:
+            return ((1, len(lines)),) if lines else ()
+        selector = urllib.parse.unquote(self.heading)
 
         def find(value: str) -> tuple[int, int, str]:
             value = urllib.parse.unquote(value)
@@ -208,7 +214,13 @@ class ReadTarget:
             heading = find(name)
             selections.append((heading[0], end_of(heading)))
         indices = {index for start, end in selections for index in range(start, end)}
-        return "".join(lines[index] for index in sorted(indices))
+        result: list[tuple[int, int]] = []
+        for index in sorted(indices):
+            if result and index == result[-1][1]:
+                result[-1] = (result[-1][0], index + 1)
+            else:
+                result.append((index + 1, index + 1))
+        return tuple(result)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -774,7 +786,7 @@ def startup_documents(
     for target in dict.fromkeys(targets):
         owner = next((parent.parent for parent in target.path.parents if parent.name == "skills"), plugin_root)
         raw = target.path.read_bytes()
-        body = raw.decode("utf-8").replace("${CLAUDE_PLUGIN_ROOT}", str(owner))
+        body = target.body(raw.decode("utf-8")).replace("${CLAUDE_PLUGIN_ROOT}", str(owner))
         digest = hashlib.sha256(raw).hexdigest()
         metadata = json.dumps(
             {

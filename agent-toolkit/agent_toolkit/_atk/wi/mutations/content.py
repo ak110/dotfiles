@@ -553,7 +553,11 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         assert message is not None
         assert args.body_file is not None
         try:
-            _add.print_draft_openings([message], [str(pathlib.Path(args.body_file).expanduser().resolve())])
+            _add.print_draft_openings(
+                [message],
+                [str(pathlib.Path(args.body_file).expanduser().resolve())],
+                compare_paths=args.compare_opening_file,
+            )
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error.reason}", next_action=error.next_action)
             sys.exit(1)

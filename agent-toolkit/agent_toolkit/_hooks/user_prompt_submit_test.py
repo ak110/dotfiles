@@ -798,8 +798,9 @@ def test_progress_notice_keeps_thirty_minute_cycles_during_user_prompts(monkeypa
             assert notified == (expected and subcommand == "user_prompt_submit"), (minute, subcommand, output)
             if notified:
                 assert context.count(opening) == 1
-                assert "問題の有無にかかわらず" in context
-                assert "何をどう点検したかと結果" in context
+                assert "点検した対象・結果" in context
+                assert "進捗: <整数>%" in context
+                assert "既存記録へ残せ" in context
                 assert "当初目的との一致" in context
             observations.append({"経過分": minute, "入力": payload, "出力": output, "通知": notified, "終了": rc})
         entry = session_state.read_state(sid)[progress_self_check.STATE_KEY]["main"]

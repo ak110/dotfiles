@@ -192,7 +192,7 @@ def test_pytest_owns_fixture_directory_and_reclaims_children(tmp_path: pathlib.P
         directory = next(path for path in (base, *base.parents) if path.name == "fixtures")
         assert not directory.parent.exists()
     with contextlib.suppress(psutil.NoSuchProcess):
-        assert psutil.Process(observed["pid"]).status() == psutil.STATUS_ZOMBIE
+        assert psutil.Process(observed["pid"]).status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
 
 
 @pytest.mark.parametrize("workers", [0, 2])
@@ -466,9 +466,9 @@ def test_release_keeps_interpreter_resource_tracker(tmp_path: pathlib.Path) -> N
     assert "relaunching" not in result.stderr, result.stderr
     observed = json.loads(evidence.read_text(encoding="utf-8"))
     assert observed["tracker"] is not None
-    # 回収済みの子は照会の間に消えることがあるため、消滅とzombieの両方を回収済みとみなす。
+    # 終了済みの子はzombieからdeadを経て消えるため、照会時点によらず終了状態を確かめる。
     with contextlib.suppress(psutil.NoSuchProcess):
-        assert psutil.Process(observed["child"]).status() == psutil.STATUS_ZOMBIE
+        assert psutil.Process(observed["child"]).status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
 
 
 @pytest.mark.parametrize("workers", [0, 2])

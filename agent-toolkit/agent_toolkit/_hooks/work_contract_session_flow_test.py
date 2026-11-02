@@ -7,7 +7,8 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._hooks import pretooluse, rules_context, user_prompt_submit, work_contract
+from agent_toolkit._common import session_state
+from agent_toolkit._hooks import document_reads, pretooluse, rules_context, user_prompt_submit, work_contract
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as run_hook_in_process
 
 
@@ -101,3 +102,58 @@ def test_delegated_public_hook_has_no_missing_notice(tmp_path, monkeypatch, caps
     monkeypatch.setattr(work_contract, "record_path", lambda *_args: tmp_path / "work-contract.md")
     assert pretooluse.main(json.dumps({"session_id": "delegated", "tool_name": "Skill", "tool_input": {}})) == 0
     assert "作業契約が未作成" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("codex", [False, True])
+def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, monkeypatch, codex):
+    """起動時の読了後に更新した契約を1回案内し、実読取と圧縮をまたいで現行版へ戻る。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    path = tmp_path / "whole.md"
+    path.write_text("# 目的\n継続する\n", encoding="utf-8")
+    sid = "whole-update-" + str(codex)
+    metadata = json.dumps({"path": str(path), "heading": "", "selectors": ["input:作業契約"]})
+    records = {
+        "startup-input-target:" + metadata: ["main"],
+        document_reads.read_trigger_key(path, document_reads.content_fingerprint(path)): ["main"],
+    }
+    session_state.update_state(sid, lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: records})
+    extra = {"turn_id": "turn"} if codex else {}
+    operation = {"session_id": sid, "tool_name": "Judge", "tool_input": {}, **extra}
+    assert "全体作業契約の現行版を再読" not in run_hook_in_process("pretooluse", operation).stdout
+    path.write_text("# 目的\n継続する\n## 即時対応で確定した暫定規則\n契約専用の新規則\n", encoding="utf-8")
+    updated = run_hook_in_process("pretooluse", operation)
+    assert updated.returncode == 0
+    assert "全体作業契約の現行版を再読" in updated.stdout
+    assert str(path) in updated.stdout and "契約専用の新規則" not in updated.stdout
+    assert 'permissionDecision": "deny' not in updated.stdout
+    assert "全体作業契約の現行版を再読" not in run_hook_in_process("pretooluse", operation).stdout
+    read = run_hook_in_process(
+        "posttooluse",
+        {
+            "session_id": sid,
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(path)},
+            "tool_response": path.read_text(encoding="utf-8"),
+            **extra,
+        },
+    )
+    assert read.returncode == 0
+    assert "全体作業契約の現行版を再読" not in run_hook_in_process("pretooluse", operation).stdout
+    compact = run_hook_in_process(
+        "rules_context",
+        {
+            "session_id": sid,
+            "hook_event_name": "SessionStart",
+            "source": "compact",
+            **extra,
+        },
+    )
+    assert compact.returncode == 0
+    assert str(path) in compact.stdout and "全体作業契約の現行版を再読" in compact.stdout
+    assert "契約専用の新規則" not in compact.stdout
+    path.write_text("# 目的\n## 即時対応で確定した暫定規則\n次の訂正を適用する\n", encoding="utf-8")
+    reupdated = run_hook_in_process("pretooluse", operation)
+    assert reupdated.returncode == 0
+    assert "全体作業契約の現行版を再読" in reupdated.stdout
+    assert "次の訂正を適用する" not in reupdated.stdout
+    assert "全体作業契約の現行版を再読" not in run_hook_in_process("pretooluse", operation).stdout

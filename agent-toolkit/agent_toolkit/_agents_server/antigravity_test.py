@@ -172,7 +172,7 @@ def test_start_wraps_missing_cli_as_backend_error(tmp_path: pathlib.Path, monkey
 
 
 def test_delegate_prompt_carries_language_condition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """通常委譲の本文先頭に、完了報告を日本語で書き英語の挿入指示を引き継がない条件が届く。
+    """通常委譲の本文先頭に、ユーザー向け成果物と内部返却を区別する言語条件が届く。
 
     Antigravityは規範とプロジェクト規範を読み込まないため、この条件が本文に無いと委譲先へ言語の定めが届かない。
     """
@@ -198,8 +198,9 @@ def test_delegate_prompt_carries_language_condition(tmp_path: pathlib.Path, monk
     asyncio.run(scenario())
 
     prompt = captured.read_text(encoding="utf-8")
-    assert "日本語" in prompt
-    assert "応答言語として引き継がない" in prompt
+    assert "ユーザーが読む本文・成果物は日本語で記述" in prompt
+    assert "内部返却は言語だけで書き直させず" in prompt
+    assert "成果物の記述言語として引き継がない" in prompt
     assert prompt.endswith("原稿を推敲して")
 
 

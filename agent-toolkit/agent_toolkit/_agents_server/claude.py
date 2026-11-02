@@ -39,6 +39,7 @@ from agent_toolkit._agents_server import (
     resume_waits,
     session_errors,
     session_identity,
+    wait_compaction,
     wait_output_tracking,
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
@@ -84,7 +85,7 @@ _LAUNCH_TOOLS: dict[str, list[str]] = {
 _LAUNCH_ALLOWED_TOOLS = {kind: list(tools) for kind, tools in _LAUNCH_TOOLS.items()}
 _LAUNCH_ALLOWED_TOOLS["explore"].append("mcp__pyfltr__*")
 _DeliveryResult = tuple[str, dict[str, Any] | None]
-_Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
+_Command = tuple[Literal["prompt", "interrupt", "compact"], str, asyncio.Future[_DeliveryResult]]
 _INITIALIZATION_STDERR_LIMIT_CHARS = 4000
 # 初期化の停止位置を特定するため、受信したメッセージを識別できる要約を件数と長さの上限内で保持する。
 _INITIALIZATION_MESSAGE_LIMIT = 20
@@ -264,7 +265,7 @@ class _CommandChannel:
         self._queue: asyncio.Queue[_Command] = asyncio.Queue()
         self._closed = False
 
-    def send(self, kind: Literal["prompt", "interrupt"], prompt: str) -> asyncio.Future[_DeliveryResult]:
+    def send(self, kind: Literal["prompt", "interrupt", "compact"], prompt: str) -> asyncio.Future[_DeliveryResult]:
         """要求を受理して応答futureを返す。閉鎖後は受理せず例外を送出する。"""
         if self._closed:
             raise SessionOwnerGoneError("the Claude session owner task has ended")
@@ -1076,6 +1077,7 @@ class ClaudeServerManager:
 
         client: Any = None
         usage_observer: _ContextUsageObserver | None = None
+        wait_compactor: wait_compaction.WaitCompaction | None = None
         session: SessionState | None = None
         channel = _CommandChannel()
         iterator: Any = None
@@ -1153,6 +1155,11 @@ class ClaudeServerManager:
             diagnostic.stage = "creating_client"
             client = self._client_factory(options)
             usage_observer = _ContextUsageObserver(client)
+            # 使用量APIの解決を待機時まで遅らせ、未対応SDKでも通常の起動・結果回収を保つ。
+            wait_compactor = wait_compaction.WaitCompaction(
+                lambda: client.get_context_usage(),  # pylint: disable=unnecessary-lambda
+                lambda key: channel.send("compact", key),
+            )
             diagnostic.stage = "connecting"
             await client.connect()
             diagnostic.capture_client(client)
@@ -1165,6 +1172,8 @@ class ClaudeServerManager:
             iterator = aiter(client.receive_messages())
             diagnostic.stage = "receiving_messages"
             while True:
+                if session is not None:
+                    wait_compactor.observe(session)
                 loop = asyncio.get_running_loop()
                 now = loop.time()
                 deadline = resume_waits.auto_resume_wait_deadline(session) if session is not None else None
@@ -1398,6 +1407,8 @@ class ClaudeServerManager:
 
             async def cleanup_runtime() -> None:
                 nonlocal retrieved
+                if wait_compactor is not None:
+                    await wait_compactor.close()
                 if diagnostic.mcp_recovery_task is not None:
                     if not diagnostic.mcp_recovery_task.done():
                         diagnostic.mcp_recovery_task.cancel()
@@ -1537,6 +1548,13 @@ class ClaudeServerManager:
             return iterator
         if future.cancelled():
             return iterator
+        if command_kind == "compact":
+            # SDKではターン間の$.session.compact()を使えない。公開/compact入力を所有キューで直列化する。
+            # 予約後の完了通知や追送を先に消費し、待機が変わった場合は新しいturnを起こさない。
+            if wait_compaction.wait_key(session) != prompt:
+                future.set_result(("compact_skipped", None))
+                return iterator
+            prompt = "/compact"
         if session.awaiting_auto_resume and not resume_waits.is_background_completion_wait(session):
             (await self._finalize_pending_result(session))
         held = resume_waits.HeldTurn.capture(session)

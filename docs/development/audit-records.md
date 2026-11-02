@@ -170,7 +170,7 @@ nativeの`original token count`が設定予算を超えた場合は、その値�
 
 2026年10月30日から31日まで、PostToolUseが省略された読取を元turnのsandbox読取権限の範囲で再取得し、本文を追加コンテキストへ配送していた（`codex_read_delivery.py`）。
 この補完読取と、それに合わせてPreの容量案内を省く判定は、2026年10月31日に本文配送とともに撤去した。
-現在は`codex_read_observation.py`が省略の無い成功読取だけを読了とし、省略時は分割取得を案内する。
+当時は`codex_read_observation.py`が省略の無い成功読取だけを読了としていた。現行の取得成功契約と構造は[design-hooks.md](design-hooks.md#宣言型読込表による操作前配送)にある。
 再検証では`codex_read_observation_test.py`と`pretooluse/large_reads_test.py`で、省略の有無ごとの読了判定、本文を返さないこと、および単一・複数ファイルの予算案内を比較する。
 本節は確定契約と実装の参照先を記録するものであり、文書更新担当によるテストの再実行結果ではない。
 
@@ -183,7 +183,7 @@ nativeの`original token count`が設定予算を超えた場合は、その値�
 原記録はリポジトリ外に保存されている。
 
 確定した案内方式は、純粋Read・静的Bash読取・Skill起動では依存案内を保留し、次の非取得操作で残る未取得資料を案内するものである。
-本文一致と全文被覆の取得判定、および案内済み資料を未取得のまま再書込する場合の遮断を維持する。
+当時の案内は本文一致と全文被覆の取得判定、および案内済み資料を未取得のまま再書込する場合の遮断を維持していた。現行契約は前節の設計資料を参照する。
 この観測は変更後の案内方式の動作検証ではない。
 再検証では同じ版条件とReadのみの許可を使い、一時settingsで各Pre入力とtranscriptを保存し、現在のtool_useと並行相手の可視性を比べる。
 変更後の案内は`read_delivery_test.py`と`read_delivery_dispatch_test.py`で、純粋取得後の成功・失敗・省略と、次の非取得操作・再書込・全文取得後の解除を比較する。
@@ -1452,3 +1452,21 @@ SDK・process-loop・可用性確認の起動環境と合成settingsを合わせ
 WI原本の2026年10月22日の観測（Codex CLI 0.163.0）では、起動直後の`ALL_TOOLS`へstdio MCPがまだ登録されず、20秒後の別の`exec`ではagents_serverの6ツールとpyfltrが現れた。2026年10月20日の比較記録では`tools.mcp__agents_server__start`の呼び出しが成功している。本変更の担当も2026年10月22日の`functions.exec`で`ALL_TOOLS`から同じ6ツールの名前と公開説明を取得した。
 
 再検証は同じ設定のCodex CLIで、起動直後と20秒後の別の`exec`から`text(ALL_TOOLS.map(x => x.name).filter(n => n.startsWith("mcp__")))`を実行する。引数は該当要素の`description`のexec tool declarationから読み、同じ`exec`から`tools.mcp__agents_server__list({})`を呼ぶ。原稿担当は配布先の変更を認可されていないため、生成物配布後の通常委譲の試行は統合担当が行う。
+
+## agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日
+
+- 観測日: 2026年11月2日。
+- 確認版: Claude Code 2.1.316、Claude Agent SDK 0.2.174。直接の`/compact`入力は`session.compact`の返却messagesで原本所在へ置換し、復元turnがReadで元の目的・訂正・認可・未完了を確認した。同pluginの`$.session.compact()`予約では、debugの`session.compact skipped: re-entry (the plugin's own code raised it; origin ...)`と`source=compact`のAPI要求を観測した。公開`SessionCompactArgs`はinstructionsのみを受け付ける。
+- 再検証: 読取と予約ツールだけを持つ新規対話セッションへ、目的・色の訂正・認可・未完了を含む検証入力を与える。最初は直接`/compact`、別の新規セッションでは予約ツールを1回使いターンを終える。原本の圧縮境界、要約要求の有無、復元時のReadと回答を比較する。実際の作業セッションは再開しない。`claude plugin test agent-toolkit`で公開hook入力のmanual・auto・plugin・precomputeと、記録未解決・失敗時の標準処理を検証する。同plugin予約はテストハーネスの外からのplugin入力と区別する。
+
+## agent-toolkit/agent_toolkit/_agents_server/codex.py：待機中の独立圧縮turn：2026年11月2日
+
+- 観測日: 2026年11月2日。
+- 確認版: Codex CLI 0.166.0。公式App Serverの公開`thread/compact/start`は空オブジェクトを返してから、別turnのcontextCompaction項目とturn/completedを通知した。圧縮中の通常turn/startは`ActiveTurnNotSteerable { turn_kind: Compact }`を返した。
+- 再検証: 公開generate-json-schemaでthreadIdの入力契約を確認し、読取専用の新規threadで初回応答、圧縮受付、独立turn完了、保持情報を答える通常turnの順に観測する。所有AppServerManagerの試行では、使用量50%と未完了の子を隔離入力として与え、圧縮中の保留・元turn ID・通常追送の待機と、圧縮終了後の結果回収を確認する。`wait_compaction_backend_test.py`で完了・失敗・明示拒否・取消後の後着通知を確認する。使用量の差し替えによる観測を、実際に文脈50%まで蓄積した試行と区別する。
+
+## agent-toolkit/skills/delegation/references/waiting-claude-code.md：Codex最上位の待機条件：2026年11月2日
+
+- 観測日: 2026年11月2日。
+- 確認版: Codex CLI0.166.0。公開execのcell/command識別子は同一turnのwait/write_stdinで回収する。App Serverの圧縮・使用量通知とCLIのproxyは公開されているが、この最上位待機形はturnを閉じるClaude背景waitと異なる。agents_serverの所有backendだけが、turn完了後に担当結果を保留し未完了子を待つ状態を持つ。
+- 再検証: 公開execで待機コマンドを起動し、返る実行識別子と同一turnでの終了回収を確認する。`codex --version`、`codex app-server --help`、`codex queue --help`と対象版生成schemaで圧縮入力・使用量通知を確認し、最上位クライアントがターン間背景待機を提供する場合はその所有者と状態遷移を再判定する。既存のユーザー会話へ検証用の圧縮を送らない。

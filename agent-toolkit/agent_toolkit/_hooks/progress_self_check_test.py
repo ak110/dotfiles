@@ -149,12 +149,13 @@ def test_agents_in_same_session_have_independent_timers() -> None:
     assert _entries(sid)["sub-1"] == {"started_at": now, "last_notified_at": now}
 
 
-def test_notice_requests_stage_comparison_and_missing_information() -> None:
+def test_notice_requests_stage_comparison_and_missing_information(monkeypatch: pytest.MonkeyPatch) -> None:
     """通知を受けた担当が活動だけで判断せず、工程比較と不足情報の取得へ進める。"""
     sid = _session_id()
     _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
-    notice = progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL))
-    assert notice is not None
+    monkeypatch.setattr(progress_self_check.time, "time", lambda: float(_INTERVAL))
+    notice = _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+    assert notice.count(_OPENING) == 1
     for instruction in (
         "現在の工程と開始時点を手元の記録で確かめ",
         "経過時間を目標や同種処理の実績と比較せよ",
@@ -163,11 +164,16 @@ def test_notice_requests_stage_comparison_and_missing_information() -> None:
         "`HEAD`や最終活動時刻の変化だけで妥当と判断するな",
         "活動の有無と工程の所要・反復の妥当性を分けて点検せよ",
         "時間を理由に作業を止めたり品質の確認を省いたりするな",
-        "問題の有無にかかわらず、何をどう点検したかと結果を既存の報告契約に従って報告せよ",
-        "経過時間と目標に対する進み具合、余計な作業の有無、当初目的との一致を含めよ",
+        "比べた記録と具体的な結果へ対応付けよ",
+        "当初目的との一致",
+        "最上位メインは同じ報告に`進捗: <整数>%`と点検した対象・結果を短く含め",
+        "点検通知の配送だけを点検実施の証拠にするな",
+        "正常な回収を問題化せず",
         "いま取り組んでいる作業がどの完成条件に必要かを1行で示せ",
         "どれにも必要でない対処は記録して委譲元（委譲元が無ければユーザー）へ返し、本筋へ戻れ",
         "各完成条件の前提が満たされていない状態で完了を返すな",
+        "完成条件の前提が成立するか、実データ・実装・実行結果の証拠で確かめよ",
+        "前提が未成立なら未達の条件と証拠を委譲元（委譲元が無ければユーザー）へ返せ",
     ):
         assert instruction in notice
 

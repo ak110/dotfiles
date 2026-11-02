@@ -31,7 +31,7 @@ from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree
 lazy from agent_toolkit._common.delegated_session import is_delegated
-lazy from agent_toolkit._common.session_state import update_state
+lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import document_reads, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
@@ -40,9 +40,10 @@ _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
 RESPONSE_LANGUAGE_NOTICE = (
-    "思考を除いてエージェントが書く全ての文は、最初の応答の1文目から日本語で書け。"
-    "ツール呼び出しの前後の短い状態行、送達後の本文、委譲プロンプト、返却、成果物も含む。"
-    "英語の文は1文も書くな。識別子、コマンド、引用はこの禁止の対象外とする。"
+    "ユーザーが読む報告・回答・質問・計画と成果物は日本語で書け。"
+    "ユーザーへ送らない内部文面は、言語だけで書き直させるな。"
+    "送達主体が説明を日本語化し、識別子・コマンド・逐語引用は原表記を保て。"
+    "詳細は`01-agent.md`「使用言語」に従え。"
 )
 QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。会話限定の指示を成果物へ混入させるな。"
 
@@ -120,8 +121,8 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 OPERATION_SKILL_READY_KEY = "operation_skill_delivered_agents"
 """操作を起動の契機とするスキルの必須資料の識別子から、取得済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
 
-PostToolUseが成功したSkill起動・資料全文の読取を観測した時点で記録する。
-分割読取は全文被覆を確認し、資料の実体・内容hash・主体に結び付ける。選択した資料、入力と文脈境界も同じ対応表へ保持する。
+PostToolUseが成功したSkill起動・対象パスの読取を観測した時点で記録する。
+資料の実体・内容hash・主体に結び付け、選択した資料、入力と文脈境界も同じ対応表へ保持する。
 キー名は既存の読み取り側との互換を保つ。本文を返さない未取得警告は取得済みとして記録しない。
 """
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
@@ -538,8 +539,17 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 recovery_targets = reset_main_operation_skill_ready(session_id, retain_for_compact=source == "compact")
             if not delegated and source in _CONTEXT_LOSING_SOURCES:
                 mark_user_confirmation_pending(session_id)
-            if source == "compact" and not delegated:
+            if source == "compact":
                 work_contract.reset_notice(session_id)
+                if delegated:
+                    state = read_state(session_id)
+                    contract_update = work_contract.delegated_notice(
+                        session_id,
+                        state.get(OPERATION_SKILL_READY_KEY, {}),
+                        state,
+                    )
+                    if contract_update:
+                        content = f"{content}\n\n{_llm_notice(contract_update)}"
             try:
                 session_temp = managed_temp.resolve_session_temp(session_id)
             except managed_temp.ManagedTempError, OSError:

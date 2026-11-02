@@ -187,15 +187,14 @@ def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> N
 
 
 def test_all_launch_system_prompts_include_language_condition() -> None:
-    """全modeのシステム指示が完了報告の言語を定め、通常委譲は英語の挿入指示を引き継がない条件も持つ。
+    """全modeの起動指示がユーザー向け説明の日本語化と内部返却の言語境界を届ける。
 
-    委譲プロンプトから言語の指定を外しても委譲先が日本語で返すことを、委譲元による言語の指定を必要とせず保証する。
-    通常委譲の`agents-server-delegate.md`が条件を欠くと、`01-agent.md`「使用言語」が届かない委譲先
-    （`~/.codex/AGENTS.md`を配置していないCodexと、Antigravity）では言語の条件が無くなり、
-    実行環境が英語で挿入した指示に引きずられて英語で書いた応答は、応答言語を判定するPreToolUse hookに遮断される。
+    共通規範を直接読み込まないバックエンドにも、成果物と内部連絡を区別した契約が必要となる。
     """
     for kind, prompt in launch_prompts.LAUNCH_SYSTEM_PROMPTS.items():
-        assert "日本語" in prompt, kind
+        assert "ユーザーへ届ける主体が日本語の説明を作成する" in prompt, kind
+        assert "内部返却" in prompt, kind
+        assert "言語だけで書き直させず" in prompt, kind
     for prompt in (launch_prompts.DELEGATE_SYSTEM_PROMPT, launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT):
         assert "実行環境によって英語の指示が挿入された場合でも" in prompt
-        assert "応答言語として引き継がない" in prompt
+        assert "成果物の記述言語として引き継がない" in prompt

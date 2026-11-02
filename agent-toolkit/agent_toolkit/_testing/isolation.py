@@ -78,9 +78,14 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT",
     "AGENT_TOOLKIT_OWNER_SESSION",
     "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+    "AGENT_TOOLKIT_HANDOFF_PATH",
+    "AGENT_TOOLKIT_LANE_SESSION_ID",
+    "AGENT_TOOLKIT_SESSION_REVIEW_BATCH",
+    "AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH",
     # Codexの会話識別子。ownerを持たないCodex最上位では計画の所有会話・UWIの投入元・会話ルートの解決元になるため、
     # 継承されるとCodex上で実行したテストだけが別の会話として解決する。解決を検証するテストは自身で設定する。
     "CODEX_THREAD_ID",
+    "CLAUDE_CODE_SESSION_ID",
     # process-loop起動セッションの標識。UserPromptSubmitの固定sessionTitleを決める入力であり、
     # 標識の有無で分岐する動作を検証するテストは自身で設定する。
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",

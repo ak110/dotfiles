@@ -150,9 +150,10 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
     assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
-    assert "思考を除いてエージェントが書く全ての文" in output
-    assert "ツール呼び出しの前後の短い状態行" in output
-    assert "英語の文は1文も書くな" in output
+    assert "ユーザーが読む報告・回答・質問・計画" in output
+    assert "ユーザーへ送らない内部文面は、言語だけで書き直させるな" in output
+    assert "送達主体が説明を日本語化" in output
+    assert "思考を除いてエージェントが書く全ての文" not in output
     normative_start = (
         f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
         f'kind="{rules_context.NORMATIVE_KIND_MAIN}">'
@@ -887,7 +888,15 @@ def test_session_start_resets_operation_skill_ready_for_main(
 def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypatch, capsys, host, event, error):
     """実native子の受付前失敗を、次の規範配送で一度報告しpendingを保持する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "true")
-    session_review.record({"hook_event_name": "SessionStart", "session_id": "pending-main", "cwd": str(tmp_path)}, host=host)
+    session_review.record(
+        {
+            "hook_event_name": "SessionStart",
+            "session_id": "pending-main",
+            "cwd": str(tmp_path),
+            "transcript_path": str(tmp_path / "pending-main.jsonl"),
+        },
+        host=host,
+    )
     monkeypatch.setattr(session_activity, "host_process", object)
     original_popen = subprocess.Popen
 

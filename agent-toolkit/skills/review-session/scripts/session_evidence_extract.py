@@ -107,7 +107,7 @@ _CANDIDATE_VARIABLE = re.compile(
 _CANDIDATE_VARIABLE_PLACEHOLDER = "<var>"
 
 
-_HOOK_FAILURE_PREFIX = re.compile(r"^[^\r\n]*?\bhook error:\s*\[[^\r\n]*?\]:\s*", re.IGNORECASE)
+_HOOK_FAILURE_PREFIX = re.compile(r"^[^\r\n]*?\bhook error:\s*(?:\[[^\r\n]*?\]:\s*)?", re.IGNORECASE)
 
 
 _FALLBACK_TEXT = (

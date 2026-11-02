@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import os
@@ -20,7 +21,7 @@ import sys
 import time
 import typing
 import uuid
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Coroutine, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,7 @@ from agent_toolkit._agents_server import (
     session_errors,
     session_identity,
     shared_roots,  # pylint: disable=wrong-import-position
+    wait_compaction,
     wait_output_tracking,
 )
 from agent_toolkit._agents_server import (
@@ -222,6 +224,15 @@ class JsonRpcResponseError(AppServerError):
 
 class TurnStartResponseError(AppServerError):
     """turn/startの応答形式が不正である。要求拒否を確認できないため、client生存中は受理状態が曖昧である。"""
+
+
+@dataclasses.dataclass
+class _WaitCompactionTurn:
+    """担当の結果保留とは分けて観測する、圧縮操作の完了。"""
+
+    original_turn_id: str
+    done: asyncio.Event = dataclasses.field(default_factory=asyncio.Event)
+    error: str | None = None
 
 
 def _as_text(value: Any) -> str:
@@ -701,6 +712,8 @@ class AppServerManager:
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._writer_session_ids: dict[str, str] = {}
         self._resume_close_events: dict[str, asyncio.Event] = {}
+        self._wait_compactors: dict[str, wait_compaction.WaitCompaction] = {}
+        self._wait_compaction_turns: dict[str, _WaitCompactionTurn] = {}
 
     @staticmethod
     def _agents_server_config(owner_session_id: str, writer_session_id: str, client: Any = None) -> dict[str, Any]:
@@ -884,6 +897,9 @@ class AppServerManager:
 
     async def _release_owned_client(self, session_id: str) -> None:
         """sessionが所有するApp Serverと子孫を終了させ、全ての終了を確認してから所有を外す。"""
+        compactor = self._wait_compactors.pop(session_id, None)
+        if compactor is not None:
+            await compactor.close()
         client = self._clients.get(session_id)
         if client is None:
             return
@@ -892,6 +908,10 @@ class AppServerManager:
             raise ResourceReleaseError(session_id, list(residual))
         if self._clients.get(session_id) is client:
             del self._clients[session_id]
+        compacting = self._wait_compaction_turns.pop(session_id, None)
+        if compacting is not None:
+            compacting.error = "圧縮中の接続を終了した"
+            compacting.done.set()
 
     async def read_thread_turns(self, session_id: str) -> list[tuple[str, str]]:
         """保存済みthreadの全turnを、識別子と状態（`inProgress`・`completed`・`failed`・`interrupted`）の組で時系列順に返す。
@@ -1150,7 +1170,7 @@ class AppServerManager:
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
         """実行中turnへ追加指示を送り、終了競合時は同じthreadのreplyを開始する。"""
         validate_prompt(prompt)
-        async with session.turn_control_lock:
+        async with self._input_turn_control(session):
             if (
                 session.awaiting_auto_resume
                 and not resume_waits.is_background_completion_wait(session)
@@ -1215,6 +1235,23 @@ class AppServerManager:
                 "delivery": "steered",
                 **session.public_status(),
             }
+
+    @contextlib.asynccontextmanager
+    async def _input_turn_control(self, session: SessionState) -> AsyncGenerator[None]:
+        # 圧縮の完了待ちでは停止用のロックを保持しない。取得後も予約との競合を再確認する。
+        async with asyncio.timeout(DEFAULT_WAIT_TIMEOUT):
+            while True:
+                compacting = self._wait_compaction_turns.get(session.session_id)
+                if compacting is not None:
+                    await compacting.done.wait()
+                await session.turn_control_lock.acquire()
+                if session.session_id not in self._wait_compaction_turns:
+                    break
+                session.turn_control_lock.release()
+        try:
+            yield
+        finally:
+            session.turn_control_lock.release()
 
     async def release_session(self, session: SessionState) -> None:
         """sessionが所有するApp Serverと子孫（threadごとのMCPサーバーと子孫threadの資源）を終了させる。
@@ -1750,8 +1787,57 @@ class AppServerManager:
         session.touch()
 
     async def _notify_waiters(self) -> None:
+        for session in self._codex_sessions():
+            if wait_compaction.wait_key(session) is not None:
+                compactor = self._wait_compactors.get(session.session_id)
+                if compactor is None and self._owned_client(session) is not None:
+
+                    async def usage(current: SessionState = session) -> dict[str, object]:
+                        return {"totalTokens": current.context_tokens, "rawMaxTokens": current.context_window}
+
+                    async def enqueue(key: str, current: SessionState = session) -> None:
+                        await self._compact_wait(current, key)
+
+                    compactor = wait_compaction.WaitCompaction(usage, enqueue)
+                    self._wait_compactors[session.session_id] = compactor
+                if compactor is not None:
+                    compactor.observe(session)
         async with self._condition:
             self._condition.notify_all()
+
+    async def _compact_wait(self, session: SessionState, key: str) -> None:
+        """保存条件を変えず、所有接続の公開圧縮APIと通常追送を直列化する。
+
+        観測と再検証はdocs/development/audit-records.mdの
+        「agent-toolkit/agent_toolkit/_agents_server/codex.py：待機中の独立圧縮turn：2026年11月2日」にある。
+        """
+        async with session.turn_control_lock:
+            if wait_compaction.wait_key(session) != key:
+                return
+            client = self._owned_client(session)
+            if client is None:
+                return
+            compacting = _WaitCompactionTurn(session.turn_id)
+            self._wait_compaction_turns[session.session_id] = compacting
+        try:
+            async with asyncio.timeout(DEFAULT_WAIT_TIMEOUT):
+                async with session.turn_control_lock:
+                    if wait_compaction.wait_key(session) != key:
+                        compacting.done.set()
+                        return
+                    await client.request("thread/compact/start", {"threadId": session.session_id})
+                await compacting.done.wait()
+            if compacting.error is not None:
+                raise AppServerError(compacting.error)
+        except JsonRpcResponseError:
+            # RPCによる明示拒否では圧縮turnが無い。待機と通常の追送へ戻れる。
+            self._wait_compaction_turns.pop(session.session_id, None)
+            compacting.done.set()
+            raise
+        finally:
+            # 時間上限だけでは実行終了としない。後着の完了を観測するまで通常追送も待つ。
+            if compacting.done.is_set():
+                self._wait_compaction_turns.pop(session.session_id, None)
 
     @staticmethod
     async def _read_usage_limit_failure(session: SessionState, error: Any) -> codex_usage_limit.UsageLimitState | None:
@@ -1825,6 +1911,28 @@ class AppServerManager:
         method = message.get("method")
         params = message.get("params")
         if not isinstance(method, str) or not isinstance(params, dict):
+            return
+        thread_id = _thread_id_from(params)
+        compacting = self._wait_compaction_turns.get(thread_id or "")
+        notification_turn_id = self._notification_turn_id(params)
+        if compacting is not None and notification_turn_id is not None and notification_turn_id != compacting.original_turn_id:
+            # 圧縮は独立したturnを発生する。担当のturn ID・結果・待機対象を変更しない。
+            session = self.sessions.get(thread_id or "")
+            if session is not None:
+                await compaction_metrics.observe_compaction_item(session, method, params)
+            if method == "turn/completed":
+                turn = params.get("turn")
+                if not isinstance(turn, dict) or turn.get("status") != "completed":
+                    compacting.error = "待機中の会話圧縮が正常に完了しなかった"
+                self._wait_compaction_turns.pop(thread_id or "", None)
+                compacting.done.set()
+                await self._notify_waiters()
+            elif method == "thread/tokenUsage/updated":
+                session = self.sessions.get(thread_id or "")
+                usage = params.get("tokenUsage")
+                last = usage.get("last") if isinstance(usage, dict) else None
+                if session is not None and isinstance(usage, dict) and isinstance(last, dict):
+                    context_usage.record_context_usage(session, last.get("totalTokens"), usage.get("modelContextWindow"))
             return
         if method == "thread/tokenUsage/updated":
             thread_id = params.get("threadId")
@@ -2002,38 +2110,13 @@ class AppServerManager:
                     session.model_output_observed = True
                 if item.get("type") == "fileChange":
                     session.diff_changed = True
-                item_id = item.get("id")
-                started_at_ms = params.get("startedAtMs")
-                if (
-                    item.get("type") == "contextCompaction"
-                    and isinstance(item_id, str)
-                    and item_id
-                    and isinstance(started_at_ms, int)
-                    and not isinstance(started_at_ms, bool)
-                ):
-                    session.compaction_started_at_ms[item_id] = started_at_ms
+                await compaction_metrics.observe_compaction_item(session, method, params)
         elif method == "item/completed":
             item = params.get("item")
             if isinstance(item, dict):
                 session.record_current_item_start(None)
                 (await self._consume_item(session, item))
-                item_id = item.get("id")
-                completed_at_ms = params.get("completedAtMs")
-                if (
-                    item.get("type") == "contextCompaction"
-                    and isinstance(item_id, str)
-                    and item_id in session.compaction_started_at_ms
-                    and isinstance(completed_at_ms, int)
-                    and not isinstance(completed_at_ms, bool)
-                ):
-                    await run_file_operation(
-                        compaction_metrics.append_compaction_record,
-                        session.session_id,
-                        item_id,
-                        session.compaction_started_at_ms[item_id],
-                        completed_at_ms,
-                    )
-                    del session.compaction_started_at_ms[item_id]
+                await compaction_metrics.observe_compaction_item(session, method, params)
         elif method == "item/agentMessage/delta":
             delta = params.get("delta")
             if isinstance(delta, str):
@@ -2139,6 +2222,10 @@ class AppServerManager:
         detail = str(error) or error.__class__.__name__
         changed = False
         for session in self._client_sessions(client):
+            compacting = self._wait_compaction_turns.pop(session.session_id, None)
+            if compacting is not None:
+                compacting.error = detail
+                compacting.done.set()
             if not session.terminal or session.failure_pending_completion:
                 if session.awaiting_auto_resume and session.pending_result is not None:
                     resume_waits.finalize_pending_result(session, touch=False)

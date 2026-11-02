@@ -354,7 +354,7 @@ def test_role_startup_receives_the_common_reference_method(tmp_path):
     )
     context = read_triggers.startup_context(role, tmp_path, {})
     assert context.count("共通取得順") == 1
-    assert "別用途本文" in context
+    assert "別用途本文" not in context
 
 
 @pytest.mark.parametrize("defect", ["missing-heading", "outside-package", "cycle"])

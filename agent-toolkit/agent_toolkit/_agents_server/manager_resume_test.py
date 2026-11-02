@@ -88,7 +88,8 @@ async def test_cold_reply_publishes_wait_target_before_returning(
     """再開応答の直後に公開CLIで待つと、登録済みの同じsessionとして待機できる。"""
     for name in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "AGENT_TOOLKIT_STATUS_HOST_SESSION"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root-session")
+    # 明示rootを受け取る最上位CLIの入力とし、主体不明の委譲先へ読み替えない。
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
     monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
 

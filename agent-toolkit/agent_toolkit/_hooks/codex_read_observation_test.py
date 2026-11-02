@@ -38,7 +38,7 @@ def _payload(tmp_path, command, body, *, exit_code=0, aggregated=None):
         "session_id": "session",
         "turn_id": "turn",
         "tool_use_id": "exec-id",
-        "hook_event_name": "PostToolUse",
+        "hook_event_name": "PostToolUseFailure" if exit_code else "PostToolUse",
         "cwd": str(tmp_path),
         "transcript_path": str(transcript),
         "tool_name": "Bash",
@@ -93,32 +93,17 @@ def test_public_post_hook_never_delivers_document_body(tmp_path, capsys, kind, t
         assert output == ""
 
 
-def test_full_read_is_observed_and_truncated_read_is_not(tmp_path):
-    """終了0で省略の無いnative本文だけを読了観測へ渡し、省略時は分割読取だけを案内する。"""
+def test_successful_read_is_observed_and_truncation_gets_recovery(tmp_path):
+    """成功した読取を観測し、省略時は元トークン数と回復の案内も返す。"""
     path = tmp_path / "note"
     path.write_text("元の全量\n" * 30, encoding="utf-8")
     full = observation.collect(_payload(tmp_path, f"cat {path}", path.read_text()))
     assert full == observation.Observation("", path.read_text())
     cut = observation.collect(_payload(tmp_path, f"cat {path}", _cut(path.read_text())))
     assert cut is not None
-    assert cut.body is None
+    assert cut.body == _cut(path.read_text())
     assert observation.TRUNCATED_NOTICE in cut.context
     assert 'source="codex-read-observation" kind="notice"' in cut.context
-
-
-@pytest.mark.parametrize("mismatch", ["exit", "id", "turn", "session", "command", "missing"])
-def test_failed_or_unidentified_execution_is_not_observed(tmp_path, mismatch):
-    """本文が読取に見えても、同じ元実行の成功を確認できなければ読了の根拠にしない。"""
-    path = tmp_path / "note"
-    path.write_text("資料の本文\n" * 30, encoding="utf-8")
-    payload = _payload(tmp_path, f"cat {path}", path.read_text(), exit_code=1 if mismatch == "exit" else 0)
-    if mismatch in {"id", "turn", "session"}:
-        payload[{"id": "tool_use_id", "turn": "turn_id", "session": "session_id"}[mismatch]] = "別の操作"
-    elif mismatch == "command":
-        payload["tool_input"]["command"] += " "
-    elif mismatch == "missing":
-        pathlib.Path(payload["transcript_path"]).write_text("", encoding="utf-8")
-    assert observation.collect(payload) is None
 
 
 @pytest.mark.parametrize(
@@ -140,18 +125,18 @@ def test_side_effects_and_external_jq_inputs_are_not_read_plans(command):
 
 @pytest.mark.parametrize("value", [None, [], {"payload": None}, {"type": "event_msg", "payload": {"item": None}}])
 def test_malformed_transcript_is_not_observed(tmp_path, value):
-    """壊れた外部記録を成功の根拠にせず、hookの他の処理を維持する。"""
+    """保存用の記録が壊れていても成功イベントの読取を観測する。"""
     path = tmp_path / "note"
     path.write_text("本文")
     payload = _payload(tmp_path, f"cat {path}", "本文")
     pathlib.Path(payload["transcript_path"]).write_text(json.dumps(value) + "\n")
-    assert observation.collect(payload) is None
+    assert observation.collect(payload) == observation.Observation("", "本文")
 
 
 @pytest.mark.parametrize("exit_code", [0, 1, None])
 @pytest.mark.parametrize("truncated", [False, True])
 def test_document_read_state_follows_successful_full_native_read(tmp_path, capsys, exit_code, truncated):
-    """終了0で省略の無いnative読取だけを読了にし、失敗・未確認・省略は読了にしない。"""
+    """PostToolUseの成功と失敗を分け、省略や保存記録の欠落で誤遮断しない。"""
     path = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
     body = path.read_text(encoding="utf-8")
     payload = _payload(tmp_path, f"cat -- {path}", _cut(body) if truncated else body, exit_code=exit_code)
@@ -161,7 +146,7 @@ def test_document_read_state_follows_successful_full_native_read(tmp_path, capsy
     capsys.readouterr()
     recorded = session_state.read_state("session").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     target = read_delivery.read_triggers.ReadTarget(path)
-    assert read_delivery.target_ready(recorded, target, "main") == (exit_code == 0 and not truncated)
+    assert read_delivery.target_ready(recorded, target, "main") == (exit_code != 1)
 
 
 @pytest.mark.parametrize("launch_kind", ["", "explore", "shell"])
@@ -186,22 +171,6 @@ def test_untruncated_non_read_output_has_no_notice(tmp_path, capsys):
     assert observation.TRUNCATED_OUTPUT_NOTICE not in _additional_context(capsys)
 
 
-@pytest.mark.parametrize("defect", ["none", "turn", "id", "session", "command", "failed", "missing"])
-def test_mixed_execution_uses_the_same_native_success_boundary(tmp_path, defect):
-    """混在入力では、native記録による実行成功の確認と資料本文の取得を別々に検証する。"""
-    payload = _payload(tmp_path, "cat first.md; git status --short; sed -n '1p' second.md", "本文\n")
-    if defect in {"turn", "id", "session"}:
-        payload[{"turn": "turn_id", "id": "tool_use_id", "session": "session_id"}[defect]] = "other"
-    elif defect == "command":
-        payload["tool_input"]["command"] += " "
-    elif defect in {"failed", "missing"}:
-        payload = _payload(tmp_path, payload["tool_input"]["command"], "本文\n", exit_code=1)
-        if defect == "missing":
-            pathlib.Path(payload["transcript_path"]).write_text("", encoding="utf-8")
-    assert (observation.completed_execution(payload) is not None) is (defect == "none")
-    assert observation.collect(payload) is None
-
-
 def test_linear_read_groups_do_not_guess_short_circuit_execution():
     assert observation.read_command_groups("cat first; git status; sed -n '1p' second", sequential=True)
     assert observation.read_command_groups("false && cat first; sed -n '1p' second", sequential=True) is None
@@ -210,20 +179,30 @@ def test_linear_read_groups_do_not_guess_short_circuit_execution():
 
 def _persisted(body: str) -> str:
     """Codexが記録へ保存するときだけ入れる省略行を持つ、保存用の写しを返す。"""
-    return body[:20] + observation.PERSISTENCE_MARKER + body[-20:]
+    marker = "\n... command output truncated for persistence ...\n"
+    raw = body.encode("utf-8")
+    if len(raw) <= 65536:
+        return body
+    available = 65536 - len(marker.encode("utf-8"))
+    head = raw[: available // 2].decode("utf-8", errors="ignore")
+    tail = raw[-(available - available // 2) :].decode("utf-8", errors="ignore")
+    padding = 65536 - len((head + marker + tail).encode("utf-8"))
+    result = head + marker + "\n" * padding + tail
+    assert len(result.encode("utf-8")) == 65536
+    return result
 
 
 @pytest.mark.parametrize("form", ["multiple", "mixed", "diagnostic", "single", "split"])
 def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp_path, capsys, monkeypatch, form):
-    """モデルへ全文を返し記録の写しだけが省略された読取で、同じ主体の書込遮断が解除される。
+    """65536バイトを超える応答の保存用写しが省略されても、成功した読取で書込遮断を解除する。
 
     複数資料の静的なcat、単一の長い資料、末尾まで分けた行範囲の取得を比べる。
-    `diagnostic`は、読取の間に`git status`のような読取でないコマンドが入る連結で、
-    保存用の写しが省略されても全文を返した応答から先頭の読取列を証明する（code mode内の`exec_command`で観測した形）。
+    `diagnostic`は、先頭の読取成功を後続の`git status`などの診断によって失わないことを確かめる。
     """
     paths = [tmp_path / "first.md", tmp_path / "second.md"]
     for index, path in enumerate(paths):
-        path.write_text("".join(f"資料{index}-{line:03d}: 本文\n" for line in range(200)), encoding="utf-8")
+        path.write_text("".join(f"資料{index}-{line:03d}: 本文" + "文" * 110 + "\n" for line in range(200)), encoding="utf-8")
+        assert path.stat().st_size > 65536
     rows = [read_delivery.read_triggers.ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Write",), tuple(paths))]
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
     monkeypatch.setattr(read_delivery.read_triggers, "reference_method_targets", lambda *_args, **_kwargs: ())
@@ -235,7 +214,7 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
     if form == "multiple":
         reads = [(f"cat -- {paths[0]} {paths[1]}", paths[0].read_text() + paths[1].read_text())]
     elif form == "mixed":
-        reads = [(f"cat -- {paths[0]}; sed -n '1,$p' -- {paths[1]}", paths[0].read_text() + paths[1].read_text())]
+        reads = [(f"cat -- {paths[0]} && sed -n '1,$p' -- {paths[1]}", paths[0].read_text() + paths[1].read_text())]
     elif form == "diagnostic":
         command = f"cat -- {paths[0]} {paths[1]}; git status --short; sed -n '1,2p' -- {paths[0]}"
         head = "".join(paths[0].read_text().splitlines(keepends=True)[:2])
@@ -257,11 +236,10 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
 
 
 def test_persisted_copy_delivered_as_the_response_is_not_a_full_read(tmp_path):
-    """保存用に省略した写しがhook入力へ届いた場合は全文取得とせず、分割読取を案内する。"""
+    """保存用の写しとの比較を使わず、成功イベントの本文を観測へ渡す。"""
     path = tmp_path / "note.md"
     path.write_text("本文の行\n" * 300, encoding="utf-8")
     persisted = _persisted(path.read_text())
     payload = _payload(tmp_path, f"cat -- {path}", persisted, aggregated=persisted)
     collected = observation.collect(payload)
-    assert collected is not None and collected.body is None
-    assert observation.TRUNCATED_NOTICE in collected.context
+    assert collected == observation.Observation("", persisted)
