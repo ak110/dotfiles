@@ -32,7 +32,9 @@ def _runtime_diagnostics(request: pytest.FixtureRequest, caplog: pytest.LogCaptu
                 "executable": sys.executable,
                 "pytest": importlib.metadata.version("pytest"),
                 "xdist": importlib.metadata.version("pytest-xdist"),
-                "parallelism": request.config.getoption("numprocesses", default=None),
+                # xdistのworkerでは`numprocesses`が渡らないため、xdistがworkerへ設定するworker数を優先する。
+                "parallelism": os.environ.get("PYTEST_XDIST_WORKER_COUNT")
+                or request.config.getoption("numprocesses", default=None),
                 "worker": os.environ.get("PYTEST_XDIST_WORKER"),
                 "runner_image": {name: os.environ.get(name) for name in ("ImageOS", "ImageVersion", "RUNNER_OS")},
             },
