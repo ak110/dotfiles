@@ -17,7 +17,6 @@ import pytest
 
 from agent_toolkit._common import process_tree
 from agent_toolkit._testing import pytest_plugin, resource_diagnostics
-from agent_toolkit._testing.isolation import host_environ
 
 
 @pytest.mark.parametrize(
@@ -168,7 +167,9 @@ def test_pytest_cleanup_preserves_failure_and_reports_cause_path(
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windowsのファイル共有違反とネイティブAPIを検証する")
-def test_windows_owned_holder_is_identified_and_released(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_windows_owned_holder_is_identified_and_released(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host_environ: Callable[[], dict[str, str]]
+) -> None:
     """所有子の実PIDと失敗パスを対応付け、子の終了後に削除と診断handleの解放を確認する。"""
     target = tmp_path / "locked.txt"
     target.write_text("保持試験", encoding="utf-8")
