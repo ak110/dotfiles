@@ -301,6 +301,9 @@ def check_cause_analysis_format(content: str) -> list[str]:
     return errors
 
 
+_CAUSE_FACTOR_PATTERN = r"(作り込み|見逃し)(?:要因|側|候補)?"
+
+
 def _cause_candidate_decisions(value: str) -> set[str]:
     """文内の列挙と、両候補を明示する後続文の採否を対応付ける。
 
@@ -313,9 +316,10 @@ def _cause_candidate_decisions(value: str) -> set[str]:
     for sentence in re.finditer(r"[^。;；\n]+[。;；\n]?", value):
         pending: set[str] = set()
         text = sentence.group()
-        for token in re.finditer(r"作り込み要因|見逃し要因|不採用|採用", text):
+        for token in re.finditer(_CAUSE_FACTOR_PATTERN + r"|不採用|採用", text):
             name = token.group()
-            if name in PLAN_BUG_CAUSE_TABLE_ROWS:
+            if token[1] is not None:
+                name = token[1] + "要因"
                 pending.add(name)
                 mentioned.add(name)
                 continue
@@ -332,7 +336,7 @@ def _cause_candidate_decisions(value: str) -> set[str]:
             if name == "不採用":
                 # 理由は同文の前後にも、採否の直後の文にも記載できる。
                 reason_tail = value[sentence.start() + token.end() :]
-                reason_tail = re.split(r"作り込み要因|見逃し要因", reason_tail, maxsplit=1)[0]
+                reason_tail = re.split(_CAUSE_FACTOR_PATTERN, reason_tail, maxsplit=1)[0]
                 reason_tail = re.sub(r"^(?:とする|する|した)?[ 。、.：:（）()]*", "", reason_tail)
                 if not reason_tail and not re.search(r"ため|ので|理由|見合わない|上回る", text[: token.start()]):
                     continue

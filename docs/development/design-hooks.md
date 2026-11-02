@@ -543,6 +543,12 @@ managed-tempの文章下書きには品質基準を適用し、使い捨てコ�
 
 hookは資料本文を代替配送せず、絶対パス、必要節、ホスト本来の取得手段を警告で案内する。Claude Codeのメインとagents_serverのtask・delegateでは、通常の`SKILL.md`は完全名を指定したSkillで起動する。referencesなどはReadと静的Bash読取を使い、AgentサブエージェントはSkillを使えない場合のReadも案内する。Codexは絶対パスのcatとsedを使う。必要節と前提・例外への到達は担当が判断する。軽量委譲先は既存の起動契約に従い対象外とする。
 
+非修飾名のプロジェクトスキルは、hook入力のcwdから[`project_skill_dirs`](../../agent-toolkit/agent_toolkit/_common/read_triggers.py)が返す探索範囲と実体を照合する。
+範囲外の実体はSkillで起動できないため、Read・静的Bash読取の成功を取得要求の解除へ使う。
+起動可能性は`document_reads`に集約し、通常案内・再書込の判定・取得失敗・圧縮後の案内へ同じcwdを渡す。
+資料の実在だけでSkillを要求する方式は、取得できない操作を反復させるため採らない。
+起動可能なスキルの起動証拠と参照読取の区別を保ち、新しい状態キーや特定のスキル名への例外は設けない。
+
 純粋なRead・静的Bash読取・Skill起動では依存資料の案内を保留し、次の非取得操作で未取得資料を案内する。同じ応答の並行Read相手をPreToolUseの公開入力から特定できないため、取得そのものへ依存案内を重ねない。読取の失敗を取得済みにせず、成功した対象パスを記録する。観測条件は`audit-records.md`の2026年10月30日の並行Read記録にある。
 
 読取結果の省略は、ホストが付ける表現だけで判定し、`read_delivery.host_truncated`へ集約する。対象はCodexの応答先頭の包絡、Claude CodeのReadの`file.truncatedByTokenCap`、Bashの`persistedOutputPath`、退避時に本文全体を置き換える`<persisted-output>`の囲みである。資料の本文に`truncated output`などの語句が含まれても省略とはしない。本文の部分文字列で判定していた版では、その語句を含む資料を正しく全文読んでも読了にならず、再書込の遮断を正規の手段で解除できなかった。SkillとWebFetchの応答には固有の省略表現が無い。

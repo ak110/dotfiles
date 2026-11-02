@@ -179,9 +179,9 @@ def skill_name(path: pathlib.Path) -> str | None:
     return document_reads.skill_name(path, owner=_document_owner)
 
 
-def requires_skill_invocation(path: pathlib.Path, *, host: str, subject: str) -> bool:
+def requires_skill_invocation(path: pathlib.Path, *, host: str, subject: str, cwd: str = "") -> bool:
     """`Skill`起動を要する資料かを、hook内で共有する所有rootの判定で返す。"""
-    return document_reads.requires_skill_invocation(path, host=host, subject=subject, owner=_document_owner)
+    return document_reads.requires_skill_invocation(path, host=host, subject=subject, cwd=cwd, owner=_document_owner)
 
 
 def resolve_skill_document(qualified: object, candidates) -> pathlib.Path | None:
@@ -208,7 +208,7 @@ def resolve_skill_document(qualified: object, candidates) -> pathlib.Path | None
     return matched[0] if len(matched) == 1 else None
 
 
-def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, reference: bool = False) -> str:
+def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, reference: bool = False, cwd: str = "") -> str:
     """主体に合う取得手段と、必要な範囲の容量を示す。"""
     path = target.path
     body = target.body()
@@ -218,7 +218,11 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, referenc
         subject != operation_skills.SUBJECT_CODEX
         and not reference
         and skill
-        and (subject == operation_skills.SUBJECT_SUBAGENT or requires_skill_invocation(path, host="claude", subject=subject))
+        and document_reads.skill_loadable(path, cwd=cwd, owner=_document_owner)
+        and (
+            subject == operation_skills.SUBJECT_SUBAGENT
+            or requires_skill_invocation(path, host="claude", subject=subject, cwd=cwd)
+        )
     ):
         step = f"`Skill`で`{skill}`を起動せよ（資料: `{path}`）"
         if subject == operation_skills.SUBJECT_SUBAGENT:
@@ -586,6 +590,7 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                                     target.path,
                                     host="codex" if is_codex_payload(payload) else "claude",
                                     subject=operation_skills.resolve_subject(payload),
+                                    cwd=str(payload.get("cwd", "")),
                                 )
                             )
                         ):
@@ -1258,14 +1263,14 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             for row in selection_rows
             if not document_reads.reference_only([row.operations])
             for target in active_targets.get(row, row.targets)
-            if not target.heading and requires_skill_invocation(target.path, host=host, subject=subject)
+            if not target.heading and requires_skill_invocation(target.path, host=host, subject=subject, cwd=cwd)
         }
         # 動的な起動対象は従来どおりパスで持ち越す。名指し参照の選択元がある場合だけ資料参照として扱う。
         invocation_paths.update(
             target.path
             for target in selected_targets(records, agent, rows=rows)
             if not target.heading
-            and requires_skill_invocation(target.path, host=host, subject=subject)
+            and requires_skill_invocation(target.path, host=host, subject=subject, cwd=cwd)
             and not document_reads.reference_only([row.operations for row in selection_rows if target in row.targets])
         )
 
@@ -1432,7 +1437,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     failures: dict[read_triggers.ReadTarget, str] = {}
     for target in pending:
         try:
-            acquisition_step(target, subject, reference=target.path not in invocation_paths)
+            acquisition_step(target, subject, reference=target.path not in invocation_paths, cwd=cwd)
         except (OSError, UnicodeError, ValueError) as error:
             repairs = {row.source.resolve() for row in rows if target in row.targets} | {target.path}
             writes = operation_skills.written_paths(tool_name, tool_input, cwd)
@@ -1454,9 +1459,10 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 shell=subject == operation_skills.SUBJECT_CODEX,
                 agent=subject == operation_skills.SUBJECT_SUBAGENT,
                 reference=target.path not in invocation_paths,
+                cwd=cwd,
             )
     acquisition = (
-        "。".join(_merged_steps(pending, failures, subject, invocation_paths=invocation_paths))
+        "。".join(_merged_steps(pending, failures, subject, invocation_paths=invocation_paths, cwd=cwd))
         + "。判断に必要な未取得部分は行範囲を分けて補え。"
     )
     guided: list[read_triggers.ReadTarget] = []
@@ -1473,7 +1479,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     "案内済み資料が未取得のため再書込を停止する。未取得資料: "
                     + "、".join(dict.fromkeys(f"`{target.path}`" for target in guided))
                     + "。",
-                    fix="。".join(_merged_steps(guided, failures, subject, invocation_paths=invocation_paths))
+                    fix="。".join(_merged_steps(guided, failures, subject, invocation_paths=invocation_paths, cwd=cwd))
                     + "。必要節と前提・例外を取得後に元の書込操作を再発行せよ。",
                 )
             )
@@ -1515,6 +1521,7 @@ def _merged_steps(
     subject: str,
     *,
     invocation_paths: set[pathlib.Path] | None = None,
+    cwd: str = "",
 ) -> list[str]:
     """同じ資料の取得手段を1件へまとめ、注目する節を併記する。
 
@@ -1540,6 +1547,7 @@ def _merged_steps(
             read_triggers.ReadTarget(key, heading),
             subject,
             reference=invocation_paths is not None and key not in invocation_paths,
+            cwd=cwd,
         )
         steps.append(step)
     return steps

@@ -218,7 +218,13 @@ def reset_main_operation_skill_ready(
 
 
 def acquisition_failure(
-    target: read_triggers.ReadTarget, error: Exception, *, shell: bool, agent: bool = False, reference: bool = False
+    target: read_triggers.ReadTarget,
+    error: Exception,
+    *,
+    shell: bool,
+    agent: bool = False,
+    reference: bool = False,
+    cwd: str = "",
 ) -> str:
     """資料読取または見出し解決の失敗を、主体に応じた取得または復旧へ導く。"""
     path = target.path
@@ -239,8 +245,8 @@ def acquisition_failure(
         and skill[1] == "SKILL.md"
         and (
             agent
-            and document_reads.skill_loadable(path)
-            or document_reads.requires_skill_invocation(path, host="claude", subject="main")
+            and document_reads.skill_loadable(path, cwd=cwd)
+            or document_reads.requires_skill_invocation(path, host="claude", subject="main", cwd=cwd)
         )
     ):
         owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
@@ -249,11 +255,14 @@ def acquisition_failure(
         if agent:
             step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
         return prefix + step
-    return prefix + f"`{path}`をReadで全文読め"
+    step = f"`{path}`をReadで全文読め"
+    if skill and not document_reads.skill_loadable(path, cwd=cwd):
+        step += f"。Bashでは`cat -- {shlex.quote(str(path))}`で取得せよ"
+    return prefix + step
 
 
 def _compact_recovery_context(
-    host: str, budget: int, recovery_targets: list[tuple[pathlib.Path, str, str, bool]]
+    host: str, budget: int, recovery_targets: list[tuple[pathlib.Path, str, str, bool]], *, cwd: str = ""
 ) -> str | None:
     """圧縮前に取得した選択資料を、ホスト本来の取得手段で案内する。"""
     steps = []
@@ -272,7 +281,7 @@ def _compact_recovery_context(
                 not reference
                 and skill
                 and skill[1] == "SKILL.md"
-                and document_reads.requires_skill_invocation(path, host=host, subject="main")
+                and document_reads.requires_skill_invocation(path, host=host, subject="main", cwd=cwd)
             ):
                 owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
                 name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
@@ -282,9 +291,12 @@ def _compact_recovery_context(
             if host in {"codex", "agy"}:
                 steps.append(f"`cat -- {shlex.quote(str(path))}`で全文読め" + focus)
             else:
-                steps.append(f"Readで`{path}`を全文読め" + focus)
+                step = f"Readで`{path}`を全文読め"
+                if skill and not document_reads.skill_loadable(path, cwd=cwd):
+                    step += f"。Bashでは`cat -- {shlex.quote(str(path))}`で取得せよ"
+                steps.append(step + focus)
         except (OSError, UnicodeError, ValueError) as error:
-            steps.append(acquisition_failure(target, error, shell=host in {"codex", "agy"}, reference=reference))
+            steps.append(acquisition_failure(target, error, shell=host in {"codex", "agy"}, reference=reference, cwd=cwd))
     if not steps:
         return None
 
@@ -597,6 +609,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     host,
                     CLAUDE_CODE_OUTPUT_LIMIT - len(content or "") - 2,
                     recovery_targets,
+                    cwd=str(payload.get("cwd", "")),
                 )
                 if recovery is not None:
                     content = f"{content}\n\n{recovery}" if content else recovery

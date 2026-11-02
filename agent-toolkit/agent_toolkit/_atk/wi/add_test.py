@@ -332,16 +332,20 @@ def _awi_cause_items_table() -> str:
         "one_decision",
         "deferred_decision",
         "shared_bare_rejection",
+        "short_names",
+        "candidate_names",
     ],
 )
 @pytest.mark.parametrize("agent", [False, True])
 @pytest.mark.parametrize("operation", ["add", "edit"])
+@pytest.mark.parametrize("factor_suffix", ["要因", "", "側", "候補"])
 def test_public_add_cause_analysis_format(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     case: str,
     operation: str,
+    factor_suffix: str,
     *,
     agent: bool,
 ) -> None:
@@ -369,13 +373,23 @@ def test_public_add_cause_analysis_format(
         table = "\n".join(line for line in table.splitlines() if not line.startswith("| 対策 |"))
     elif case == "empty_countermeasure":
         table = table.replace(f"| 対策 | {plan_fixture.BUG_FILLER} |", "| 対策 |  |")
-    elif case in ("shared_decision", "separate_shared_decision", "one_decision", "deferred_decision", "shared_bare_rejection"):
+    elif case in (
+        "shared_decision",
+        "separate_shared_decision",
+        "one_decision",
+        "deferred_decision",
+        "shared_bare_rejection",
+        "short_names",
+        "candidate_names",
+    ):
         value = {
             "shared_decision": "作り込み要因の候補はA、見逃し要因の候補はBであり、ともに採用する。",
             "separate_shared_decision": "作り込み要因の候補はA。見逃し要因の候補はB。両候補を採用する。",
             "one_decision": "作り込み要因の候補Aを採用する。見逃し要因の候補はB。",
             "deferred_decision": "作り込み要因の候補はA、見逃し要因の候補はB。両系統とも原因確定後に採否を決める。",
             "shared_bare_rejection": "作り込み要因の候補はA、見逃し要因の候補はB。両候補を不採用とする。",
+            "short_names": "作り込み: 経路A。見逃し: 試験B。両方を採用。",
+            "candidate_names": "作り込み候補: 集約を採用。見逃し候補: 試験を採用。",
         }[case]
         table = "\n".join(
             f"| {line.split('|')[1].strip()} | {value} |" if line.startswith(("| 類似見直し観点 |", "| 再発防止策 |")) else line
@@ -383,6 +397,7 @@ def test_public_add_cause_analysis_format(
         )
     else:
         cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外の構造だけで生じた。 |")
+    table = table.replace("作り込み要因", "作り込み" + factor_suffix).replace("見逃し要因", "見逃し" + factor_suffix)
     body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{cause}\n\n{table}\n"
     args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
 
@@ -397,7 +412,7 @@ def test_public_add_cause_analysis_format(
         if finished.value.code:
             raise SystemExit(finished.value.code)
 
-    if agent and case not in ("valid", "shared_decision", "separate_shared_decision"):
+    if agent and case not in ("valid", "shared_decision", "separate_shared_decision", "short_names", "candidate_names"):
         with pytest.raises(SystemExit) as rejected:
             run()
         assert rejected.value.code != 0
