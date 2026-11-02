@@ -20,7 +20,8 @@ dependencies = [
     "pygments",
     "pytilpack[quart]>=1.47.0",
     "pyyaml",
-    "watchdog>=6.0.0",
+    # 再帰inotify監視がKeyErrorで停止する版を除外する（PYTHONDEVMODE=1のbrowser-e2eで再現）。
+    "watchdog>=6.0.0,!=7.0.0",
 ]
 
 [build-system]

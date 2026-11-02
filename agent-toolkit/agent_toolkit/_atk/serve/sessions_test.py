@@ -1556,7 +1556,7 @@ def test_remote_helper_is_started_with_watchdog_and_platformdirs() -> None:
     argv = _atk_serve_remote.remote_command_argv(sessions.REMOTE_BOOTSTRAP, "serve", [])
 
     with_values = [argv[index + 1] for index, value in enumerate(argv) if value == "--with"]
-    assert with_values == ['"watchdog>=6.0.0"', '"platformdirs>=4.0"']
+    assert with_values == ['"watchdog>=6.0.0,!=7.0.0"', '"platformdirs>=4.0"']
 
 
 @pytest.mark.asyncio
