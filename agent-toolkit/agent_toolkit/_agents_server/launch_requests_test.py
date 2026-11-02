@@ -94,7 +94,12 @@ async def test_exec_review_condition_table_preflight(
     elif defect == "duplicate":
         content = header + major + supplement.replace("| 2 |", "| 1 |")
     contract.write_text(content, encoding="utf-8")
-    params = {"レビュー基準": "計画", "引き継ぎ記録先": f"{tmp_path / 'handoff.md'}（新規）", "WI記録": name}
+    params = {
+        "レビュー基準": "WI",
+        "引き継ぎ記録先": f"{tmp_path / 'handoff.md'}（新規）",
+        "WI記録": name,
+        "開始時のHEAD": "abc1234",
+    }
     if input_kind == "record-file":
         record = tmp_path / "wi-record.md"
         record.write_text(name, encoding="utf-8")
@@ -103,6 +108,8 @@ async def test_exec_review_condition_table_preflight(
         plan = tmp_path / "plan.md"
         plan.write_text(f"# 計画\n## 概要\n### 計画メタ情報\n- 関連WI:\n  - {name}: 要求\n", encoding="utf-8")
         params.pop("WI記録")
+        params.pop("開始時のHEAD")
+        params["レビュー基準"] = "計画"
         params["計画"] = str(plan)
     if defect != "omitted":
         params["review_contract"] = "直接契約" if defect == "direct" else str(contract)
@@ -112,6 +119,7 @@ async def test_exec_review_condition_table_preflight(
         plan = tmp_path / "other-plan.md"
         plan.write_text(f"# 計画\n## 概要\n### 計画メタ情報\n- 関連WI:\n  - {other}: 別の要求\n", encoding="utf-8")
         params["計画"] = str(plan)
+        params["レビュー基準"] = "計画、WI"
     document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
     sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
     monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
@@ -124,6 +132,79 @@ async def test_exec_review_condition_table_preflight(
             await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=params)
         assert "exec-review-recording.md" in str(rejected.value)
         sender.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "case,expected",
+    [
+        ("plan-path-in-basis", "`計画: "),
+        ("plan-omitted", "`計画`に必要な入力がありません: `計画`"),
+        ("unknown-basis", "`AWI`"),
+        ("duplicate-basis", "重複"),
+        ("ci-missing", "`原因commitOID`"),
+        ("wi-without-plan-missing-head", "`開始時のHEAD`"),
+        ("plan-unreadable", "通常ファイルを参照できない"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_exec_review_basis_preflight_rejects_before_launch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str, expected: str
+) -> None:
+    """公開`start`は基準名の不正と基準別の追加入力の欠落を、担当の起動前に修正案付きで拒否する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "notes"))
+    plan = tmp_path / "plan.md"
+    plan.write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
+    params = {"引き継ぎ記録先": f"{tmp_path / 'handoff.md'}（新規）"}
+    if case == "plan-path-in-basis":
+        params["レビュー基準"] = f"計画: {plan}"
+    elif case == "plan-omitted":
+        params["レビュー基準"] = "計画"
+    elif case == "unknown-basis":
+        params |= {"レビュー基準": "計画、AWI", "計画": str(plan)}
+    elif case == "duplicate-basis":
+        params |= {"レビュー基準": "計画, 計画", "計画": str(plan)}
+    elif case == "ci-missing":
+        params |= {"レビュー基準": "CI記録", "CI記録": "記録", "修正系列の開始時のHEAD": "abc1234"}
+    elif case == "wi-without-plan-missing-head":
+        params |= {"レビュー基準": "WI", "WI記録": "20261028-130047-001.md"}
+    else:
+        params |= {"レビュー基準": "計画", "計画": str(tmp_path / "missing.md")}
+    document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
+    sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
+    with pytest.raises(ActionableError) as rejected:
+        await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=params)
+    assert expected in str(rejected.value)
+    if case != "plan-unreadable":
+        assert "レビュー基準" in rejected.value.next_action
+    sender.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"レビュー基準": "計画、WI"},
+        {"レビュー基準": "CI記録", "CI記録": "記録", "修正系列の開始時のHEAD": "abc1234", "原因commitOID": "def5678"},
+        {"レビュー基準": "WI", "WI記録": "記録なし", "開始時のHEAD": "abc1234"},
+    ],
+)
+@pytest.mark.asyncio
+async def test_exec_review_basis_preflight_accepts_contract_inputs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, params: dict[str, str]
+) -> None:
+    """基準名と基準別の追加入力が揃った起動は、公開`start`から担当の起動へ進む。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "notes"))
+    plan = tmp_path / "plan.md"
+    plan.write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
+    extra = {"引き継ぎ記録先": f"{tmp_path / 'handoff.md'}（新規）", **params}
+    if "計画" in params["レビュー基準"]:
+        extra["計画"] = str(plan)
+    document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
+    sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
+    response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=extra)
+    assert response["session_id"] == "review"
+    sender.assert_awaited_once()
 
 
 @pytest.mark.parametrize(
