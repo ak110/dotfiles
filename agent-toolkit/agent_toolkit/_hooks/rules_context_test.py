@@ -330,7 +330,7 @@ def test_compact_skill_guidance_uses_host_acquisition(host: str, tmp_path: pathl
     skill.parent.mkdir(parents=True)
     skill.write_text("# 固有スキル本文\n", encoding="utf-8")
     digest = hashlib.sha256(skill.read_bytes()).hexdigest()
-    output = rules_context._compact_recovery_context(host, 10000, [(skill, "", digest)])
+    output = rules_context._compact_recovery_context(host, 10000, [(skill, "", digest, False)])
     assert output is not None
     assert "固有スキル本文" not in output
     assert str(skill) in output
@@ -343,7 +343,7 @@ def test_compact_guidance_presents_candidates_for_remaining_steps(tmp_path: path
     reference = tmp_path / "reference.md"
     reference.write_text("# 見出し\n本文\n", encoding="utf-8")
     digest = hashlib.sha256(reference.read_bytes()).hexdigest()
-    output = rules_context._compact_recovery_context("claude", 10000, [(reference, "", digest)])
+    output = rules_context._compact_recovery_context("claude", 10000, [(reference, "", digest, False)])
     assert output is not None
     assert "候補" in output and "残る工程の判断に使う資料だけ" in output and "使う前に" in output
     assert "全文再取得" in output
@@ -355,7 +355,7 @@ def test_compact_missing_heading_guides_full_acquisition(host: str, tmp_path: pa
     reference = tmp_path / "reference.md"
     reference.write_text("# 実見出し\n固有本文\n", encoding="utf-8")
     digest = hashlib.sha256(reference.read_bytes()).hexdigest()
-    output = rules_context._compact_recovery_context(host, 10000, [(reference, "不存在", digest)])
+    output = rules_context._compact_recovery_context(host, 10000, [(reference, "不存在", digest, False)])
     assert output is not None
     assert "不存在" in output and "見出し" in output
     assert "固有本文" not in output
@@ -365,7 +365,7 @@ def test_compact_missing_heading_guides_full_acquisition(host: str, tmp_path: pa
 
 def test_compact_missing_document_guides_repair(tmp_path: pathlib.Path) -> None:
     reference = tmp_path / "missing.md"
-    output = rules_context._compact_recovery_context("claude", 10000, [(reference, "", "old-hash")])
+    output = rules_context._compact_recovery_context("claude", 10000, [(reference, "", "old-hash", False)])
     assert output is not None
     assert str(reference) in output and "存在しない" in output and "復旧" in output
     assert "委譲元" in output and "ユーザー" in output
@@ -382,7 +382,7 @@ def test_compact_public_session_start_reports_missing_material(tmp_path, monkeyp
     monkeypatch.setattr(rules_context, "mark_user_confirmation_pending", lambda *_args: None)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
     monkeypatch.setattr(
-        rules_context, "reset_main_operation_skill_ready", lambda *_args, **_kwargs: [(missing, "対象", "old-hash")]
+        rules_context, "reset_main_operation_skill_ready", lambda *_args, **_kwargs: [(missing, "対象", "old-hash", False)]
     )
     payload = {"hook_event_name": "SessionStart", "source": "compact", "session_id": "missing"}
     assert rules_context.main(json.dumps(payload), host=host) == 0

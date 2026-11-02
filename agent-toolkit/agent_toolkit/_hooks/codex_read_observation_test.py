@@ -216,7 +216,7 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
     elif form == "mixed":
         reads = [(f"cat -- {paths[0]} && sed -n '1,$p' -- {paths[1]}", paths[0].read_text() + paths[1].read_text())]
     elif form == "diagnostic":
-        command = f"cat -- {paths[0]} {paths[1]}; git status --short; sed -n '1,2p' -- {paths[0]}"
+        command = f"cat -- {paths[0]} {paths[1]} && git status --short && sed -n '1,2p' -- {paths[0]}"
         head = "".join(paths[0].read_text().splitlines(keepends=True)[:2])
         reads = [(command, paths[0].read_text() + paths[1].read_text() + " M out.md\n" + head)]
     else:

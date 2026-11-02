@@ -781,8 +781,13 @@ def test_resolved_project_skill_delivers_startup_and_later_conditions(tmp_path, 
     read_delivery.observe({**payload, "tool_response": skill.read_text()}, "Read", {"file_path": str(skill)}, "test")
     assert not _guidance(read_delivery.deliver(payload, tool, inputs, "test"))
     if not codex:
-        assert not read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], ReadTarget(skill), "main")
+        assert not read_delivery.target_ready(
+            memory[rules_context.OPERATION_SKILL_READY_KEY], ReadTarget(skill), "main", invocation=True
+        )
         read_delivery.observe({**payload, "tool_response": "起動成功"}, "Skill", {"skill": "language"}, "test")
+        assert read_delivery.target_ready(
+            memory[rules_context.OPERATION_SKILL_READY_KEY], ReadTarget(skill), "main", invocation=True
+        )
     assert read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], ReadTarget(skill), "main")
     operation = {"file_path": str(tmp_path / "other-repo/code.py"), "content": "value = 1\n"}
     selected = read_delivery.deliver(payload, "Write", operation, "test")
@@ -1123,7 +1128,7 @@ def test_guidance_requires_real_acquisition_for_each_subject(tmp_path, monkeypat
     notice = _notice_body(decision)
     assert str(skill) in notice and str(reference) in notice
     assert "スキル固有本文" not in notice and "参照資料固有本文" not in notice
-    assert ("example-plugin:example" in notice) is (subject != "codex")
+    assert ("example-plugin:example" in notice) is (subject not in {"codex", "agent"})
     records = memory[rules_context.OPERATION_SKILL_READY_KEY]
     assert not read_delivery.target_ready(records, ReadTarget(skill), agent)
     assert not read_delivery.target_ready(records, ReadTarget(reference), agent)
@@ -1137,11 +1142,13 @@ def test_guidance_requires_real_acquisition_for_each_subject(tmp_path, monkeypat
     )
     records = memory[rules_context.OPERATION_SKILL_READY_KEY]
     if subject in {"main", "task", "delegate"}:
-        assert not read_delivery.target_ready(records, ReadTarget(skill), agent)
+        assert not read_delivery.target_ready(records, ReadTarget(skill), agent, invocation=True)
         read_delivery.observe(
             {**payload, "tool_response": _PERSISTED_REPLACEMENT}, "Skill", {"skill": "example-plugin:example"}, "test"
         )
-        assert read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], ReadTarget(skill), agent)
+        assert read_delivery.target_ready(
+            memory[rules_context.OPERATION_SKILL_READY_KEY], ReadTarget(skill), agent, invocation=True
+        )
         read_delivery.observe({**payload, "tool_response": "起動成功"}, "Skill", {"skill": "example-plugin:example"}, "test")
         records = memory[rules_context.OPERATION_SKILL_READY_KEY]
     assert read_delivery.target_ready(records, ReadTarget(skill), agent)
@@ -1803,7 +1810,7 @@ def test_compaction_recovery_lists_a_selected_document_read_through_a_same_conte
     ] = ["main"]
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
     recovery = rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
-    assert [path for path, _heading, _fingerprint in recovery] == [checkout.resolve()]
+    assert [path for path, _heading, _fingerprint, _reference in recovery] == [checkout.resolve()]
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
@@ -2364,7 +2371,7 @@ def test_acquisition_failure_and_compact_guidance_read_a_worktree_copy(tmp_path,
         assert ("`Skill`で`agent-basics:check-execution`" in notice) is loadable
         assert (f"`{path}`をReadで全文読め" in notice) is (not loadable or agent)
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        compact = rules_context._compact_recovery_context("claude", 10000, [(path, "", digest)])  # pylint: disable=protected-access
+        compact = rules_context._compact_recovery_context("claude", 10000, [(path, "", digest, False)])  # pylint: disable=protected-access
         assert compact is not None
         assert ("`Skill`で`agent-basics:check-execution`" in compact) is loadable
         assert (f"Readで`{path}`を全文読め" in compact) is (not loadable)
@@ -2581,7 +2588,7 @@ def test_cd_read_with_side_effects_keeps_dependency_guidance(tmp_path, monkeypat
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.usefixtures("memory")
 def test_mixed_cat_sed_public_acquisition_preserves_actor_and_hash(tmp_path, monkeypatch, subject, separator, reverse):
-    """静的読取の直列連結で解除し、他主体と更新後の本文へ取得を流用しない。"""
+    """成功した&&読取だけで解除し、独立連結・他主体・更新後本文との境界を保つ。"""
     paths = _rows(tmp_path, monkeypatch, "path:*.py", count=2)
     actor = {"agent_id": "child"} if subject == "child" else {"turn_id": "turn"} if subject == "codex" else {}
     operation = {
@@ -2610,13 +2617,15 @@ def test_mixed_cat_sed_public_acquisition_preserves_actor_and_hash(tmp_path, mon
     )
     assert observed.returncode == 0
     final = _run_hook_in_process("pretooluse", operation)
-    assert final.returncode == 0 and all(str(path) not in final.stdout for path in paths)
+    acquired = separator == " && "
+    assert final.returncode == 0 and all((str(path) not in final.stdout) is acquired for path in paths)
     other = {**operation, "agent_id": "other"}
     pending = _run_hook_in_process("pretooluse", other)
     assert pending.returncode == 0 and all(str(path) in pending.stdout for path in paths)
     paths[0].write_text("# 更新した資料\n更新後の本文\n", encoding="utf-8")
     changed = _run_hook_in_process("pretooluse", operation)
-    assert changed.returncode == 0 and str(paths[0]) in changed.stdout and str(paths[1]) not in changed.stdout
+    assert changed.returncode == 0 and str(paths[0]) in changed.stdout
+    assert (str(paths[1]) not in changed.stdout) is acquired
 
 
 @pytest.mark.parametrize("subject", ["main", "child", "codex"])
@@ -3146,7 +3155,7 @@ def _observe_bash_result(payload, command, actual, host):
 @pytest.mark.parametrize("sed", ["sed", "/bin/sed", "/usr/bin/sed"])
 @pytest.mark.usefixtures("memory")
 def test_public_compound_reads_before_diagnostics_release_write(tmp_path, monkeypatch, host, sed, host_environ):
-    """複数資料・分割読取の後に診断を連結しても、実際の取得成功を再書込へ反映する。
+    """独立診断が成否を隠す構成は保持し、成功した&&読取でだけ再書込を解除する。
 
     Codex 0.166.0の実記録で観測したcat3資料とsed、続くsed2件・wc・if/findの構成を隔離する。
     """
@@ -3162,7 +3171,7 @@ def test_public_compound_reads_before_diagnostics_release_write(tmp_path, monkey
         f"wc -lc -- {' '.join(quoted[:3])}; if test -d {shlex.quote(str(tmp_path))}; "
         f"then find {shlex.quote(str(tmp_path))} -maxdepth 1 -type f; fi",
     ]
-    for index, command in enumerate(commands):
+    for command in commands:
         actual = subprocess.run(
             ["bash", "-c", command],
             cwd=tmp_path,
@@ -3175,12 +3184,13 @@ def test_public_compound_reads_before_diagnostics_release_write(tmp_path, monkey
         observed = _observe_bash_result(payload, command, actual, host)
         assert observed.returncode == 0
         final = _run_hook_in_process("pretooluse", operation)
-        if index == 0:
-            reason = denial_reason(final)
-            assert str(paths[4]) in reason
-            assert all(str(path) not in reason for path in paths[:4])
-        else:
-            assert not final.stdout
+        assert all(str(path) in denial_reason(final) for path in paths)
+    command = " && ".join(f"cat -- {path}" for path in quoted)
+    actual = subprocess.run(
+        ["bash", "-c", command], cwd=tmp_path, env=host_environ(), capture_output=True, text=True, encoding="utf-8", check=True
+    )
+    assert _observe_bash_result(payload, command, actual, host).returncode == 0
+    assert not _run_hook_in_process("pretooluse", operation).stdout
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

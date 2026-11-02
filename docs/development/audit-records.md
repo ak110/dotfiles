@@ -41,6 +41,12 @@ H2は索引元のパスの文字コード順に並べ、同じパスでは日付
 環境除去の単体検証は`_common/mcp_environment_test.py`と`_atk/orchestrator_test.py`を使う。
 全backendの登録前の重複拒否は`_agents_server/manager_test.py`の`test_start_rejects_duplicate_session_id`で再検証する。
 
+## .claude/skills/agent-toolkit-edit/references/session-state-and-flags.md：自己編集の取得継承：2026年11月2日
+
+- 観測日: 2026年11月2日。
+- 観測時の版: Claude Code 2.1.316の実行ファイル内にあるEdit・Writeの出力スキーマとPostToolUse呼出しを確認した。`originalFile`は編集前本文かnullであり、`staged`・`userModified`も出力に含まれる。MultiEditの実ホスト応答型とCRLF正規化時の継承は未確認。
+- 再検証手段: `develop-dotfiles`「ホスト本体のバイナリの検索」に従い、対象版の`originalFile`出力型・data生成と`hook_event_name:"PostToolUse"`の`tool_response`への引渡しを確認する。同居する`read_delivery_acquisition_test.py`の自己編集成功・未取得編集の試験で、編集前本文・入力・現本文の一致と成功・主体の境界を検証する。
+
 ## .claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月4日
 
 pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。指定した時点では横断テストをpytestのマーカー`repo_invariant`でも識別しており、マーカーでの収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。その後、fastがマーカーを選択に使わないため、マーカーを撤去してファイル名だけで識別する形にした。撤去後の確認では、fastのpytestが受け取ったファイルは33件で、`git ls-files`が返す`*_invariant_test.py`の33件と一致した。
