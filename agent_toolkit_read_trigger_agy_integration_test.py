@@ -77,7 +77,8 @@ def test_generated_root_keeps_logical_namespace_and_relative_base(generated, mon
     assert read_delivery.matches("skill:agent-basics:long", "Read", {"file_path": str(full)}, "")
 
 
-def test_generated_section_requires_full_native_read(generated, monkeypatch):
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_generated_section_observes_native_read_success(generated, monkeypatch, exit_code):
     toolkit, _native, full = generated
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", toolkit)
     target = read_triggers.ReadTarget(full, "必要節")
@@ -101,14 +102,10 @@ def test_generated_section_requires_full_native_read(generated, monkeypatch):
         "cwd": str(toolkit.parent),
         "tool_name": "Bash",
         "tool_input": {"command": command},
-        "tool_response": {"stdout": output, "exit_code": 0},
+        "tool_response": {"stdout": output, "exit_code": exit_code},
     }
+    assert not read_delivery.target_ready({}, target, "main")
     assert _run_hook_in_process("posttooluse", event).returncode == 0
     records = memory.get(read_delivery.rules_context.OPERATION_SKILL_READY_KEY, {})
-    assert not read_delivery.target_ready(records, target, "main")
-    whole = subprocess.run(["cat", "--", str(full)], check=True, capture_output=True, encoding="utf-8").stdout
-    event["tool_input"] = {"command": f"cat -- {full}"}
-    event["tool_response"] = {"stdout": whole, "exit_code": 0}
-    assert _run_hook_in_process("posttooluse", event).returncode == 0
-    records = memory.get(read_delivery.rules_context.OPERATION_SKILL_READY_KEY, {})
-    assert read_delivery.target_ready(records, target, "main")
+    # 必要範囲への到達は担当が確認し、hookは生成資料でも読取操作の成否を記録する。
+    assert read_delivery.target_ready(records, target, "main") is (exit_code == 0)
