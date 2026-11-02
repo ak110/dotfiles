@@ -1,7 +1,7 @@
 # 登録全体の統括と対象別担当への受渡し
 
 `atk wi process-loop`は登録集合を取得し、常駐cwdで1つの対話CLIを起動する。
-統括担当は[process-wi all-repos](../../process-wi/references/all-repos.md)を完遂し、少数候補の対象を自ら処理する。
+統括担当は[process-wi all-repos](../../process-wi/references/all-repos.md)を完遂し、対象集合が1件の場合と複数対象中の少数候補を自ら処理する。
 常駐プログラムは起動、対象別の所有と準備、完遂判定、続行指示、返却保存と回収を担当する。
 
 ## 名指し参照の読込方法
@@ -25,7 +25,8 @@
 
 統括担当が最上位のメインとして、全対象の判断・確認・完了報告を所有する。
 常駐から起動した対話CLIには通常の最上位セッションの契約を適用する。
-候補数Nに対する対象別の`floor((N+9)/10)`が2以上のリポジトリは、統括から対象worktreeをcwdとするリポジトリ担当（`share/repository-process.subagent.md`のtask）へ委譲する。
+今回の集合JSONの対象が1リポジトリなら、統括が`lane_limit`によらず直接処理する。
+対象が2件以上の場合だけ、対象別の`lane_limit=floor((N+9)/10)`が2以上のリポジトリを、対象worktreeをcwdとするリポジトリ担当（`share/repository-process.subagent.md`のtask）へ委譲する。
 その担当は対象repoのprocess-wiを完遂し、統括の配下として結果と未完了工程を返す。
 配下担当の確認事項・担当外の発見・改善点は統括へ届け、報告用UWIは統括がprocess-wiの実行全体で1回作成する。
 配下担当は祖先の対話CLIを終了する`atk agents-exit-session`を呼ばず、返却と終了観測を統括へ渡す。
@@ -58,9 +59,10 @@
 回答済みUWI、候補の分類・開始時CI点検は[selection-procedure.md](selection-procedure.md)を使う。
 選定YAMLとNを対象ごとに分け、レーン上限も対象別のNから計算する。
 詳細な生成・合流の契約は[selection-format.md](selection-format.md)を使う。
-少数候補を統括自身が処理する場合も、受領候補・readiness・対象別の選定の対応を保つ。
+統括自身が直接処理する場合も、受領候補・readiness・対象別の選定・`lane_session_id`の対応を保つ。
 候補が1件であることと、その候補に着手できることは別に確認する。
-実行をsingle-laneへ読み替えても、本節の受領確認と所定選定を適用する。
+直接処理は`lane_limit`が2以上ならlanes、1以下ならsingle-laneへ接続し、どちらも本節の受領確認と所定選定を適用する。
+直接起動したレーン担当とwriterも対象別の`writer_sessions`へ記録し、常駐による終了確認・所有解放・回収と、`previous`を用いた再開へ引き渡す。
 省略を選ぶ場合は、元工程が保護する結果を保てる根拠を比較し、`agent-toolkit/rules/01-agent.md`「QCDと3段判定」と既存の逸脱契約に従って判断・報告する。
 
 ## worktreeと資源
