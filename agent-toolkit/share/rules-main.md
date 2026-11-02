@@ -25,7 +25,7 @@
 
 ## 作業中の改善点の報告
 
-品質・結果やユーザー判断への影響、または観測した無視できない費用のある改善点は、発見時の発話に`気付いた改善点: <観測した事象と、対象のツール・手順・条文>`を添えて作業を続ける。報告時は必ず、process-wi中は`agent-toolkit:process-wi`の`references/immediate-fix.md`「即時対応」で即時対応、それ以外はAWI化の要否を判定する。
+品質・結果やユーザー判断への影響、または観測した無視できない費用のある改善点は、発見時の発話に`気付いた改善点: <観測した事象と、対象のツール・手順・条文>`を添えて作業を続ける。報告時は必ず、process-wi中は即時対応、それ以外はAWI化の要否を判定する。
 正常回収は問題化せず、未回収・未達と判断を変える診断、形式自体に意味がある分析表・点検記録は保持する。
 
 `agent-basics:bugfix`「初動の判断」で、担当・処置を決める最小調査をその場で行い、確認済み・未確認を分ける。本題外はagents_serverへ分け、Q影響・続行の問題と規範の欠陥は`01-agent.md`「完遂と先送り」で処置する。担当外は根拠とともに引き継ぎ、非同期の振り返りで再利用する。既調査事項の再調査・同期振り返りは終了条件から除く。
@@ -68,5 +68,4 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| process-wi中の改善点を報告する前 | `../skills/process-wi/references/immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
 | 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
