@@ -247,7 +247,13 @@ def _is_winget_managed(mise_bin: Path) -> bool:
     WinGetで導入したmiseは`mise self-update`を拒否するため、更新操作の選択に使う。
     PATHで別の配置のmiseが先行する場合は、実際に使う実行ファイルの配置で判定する。
     """
-    return _is_windows() and "winget" in (part.lower() for part in ntpath.normpath(str(mise_bin)).split("\\"))
+    if not _is_windows():
+        return False
+    parts = [part.lower() for part in ntpath.normpath(str(mise_bin)).split("\\")]
+    # WinGetは`%LOCALAPPDATA%\Microsoft\WinGet\{Links,Packages}`へ配置する。ユーザー名など
+    # 別の位置にある`winget`という名前のディレクトリを取り違えないよう、連続する3要素で判定する。
+    winget_dirs = (["microsoft", "winget", "links"], ["microsoft", "winget", "packages"])
+    return any(parts[i : i + 3] in winget_dirs for i in range(len(parts)))
 
 
 def _ensure_mise_up_to_date(mise_bin: Path) -> bool:

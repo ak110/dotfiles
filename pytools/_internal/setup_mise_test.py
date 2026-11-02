@@ -230,15 +230,17 @@ class TestEnsureMiseUpToDate:
         assert self_update_calls and self_update_calls[0]["args"] == ["self-update", "-y"]
         assert self_update_calls[0]["env_overrides"] == _EXPECTED_ENV_OVERRIDES
 
-    def test_self_update_failure_does_not_block_install(self, mise_stub: _MiseSubprocessStub):
-        """パッケージマネージャー経由インストール等で `self-update` が失敗しても後続ステップは継続する。"""
+    def test_self_update_failure_does_not_block_install(self, mise_stub: _MiseSubprocessStub, caplog: pytest.LogCaptureFixture):
+        """`self-update` の失敗は警告として残し、後続ステップは継続する。"""
         mise_stub.handlers[("self-update", "-y")] = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="not available via package manager"
+            args=[], returncode=1, stdout="", stderr="mise ERROR not available via package manager"
         )
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
 
-        _setup_mise.run()
+        with caplog.at_level("WARNING"):
+            _setup_mise.run()
 
+        assert any("self-update" in record.getMessage() for record in caplog.records if record.levelname == "WARNING")
         assert mise_stub.calls_for("install")
 
     def test_self_update_none_result_does_not_block_install(self, mise_stub: _MiseSubprocessStub):
@@ -320,6 +322,52 @@ class TestUpgradeWingetManagedMise:
 
         assert not self._winget_upgrades(mise_stub)
         assert mise_stub.calls_for("self-update")
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            r"C:\Users\winget\AppData\Local\mise\bin\mise.exe",
+            r"C:\tools\winget\mise.exe",
+        ],
+    )
+    def test_unrelated_winget_directory_is_not_winget_managed(
+        self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub, path: str
+    ) -> None:
+        """WinGetの配置先以外にある`winget`という名前のディレクトリでは`self-update`を使う。"""
+        monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: Path(path))
+
+        _setup_mise.run()
+
+        assert not self._winget_upgrades(mise_stub)
+        assert mise_stub.calls_for("self-update")
+
+    def test_winget_packages_directory_is_winget_managed(
+        self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub
+    ) -> None:
+        monkeypatch.setattr(
+            _setup_mise,
+            "find_mise_binary",
+            lambda: Path(r"C:\Users\user\AppData\Local\Microsoft\WinGet\Packages\jdx.mise_Microsoft.Winget.Source\mise.exe"),
+        )
+
+        _setup_mise.run()
+
+        assert len(self._winget_upgrades(mise_stub)) == 1
+        assert not mise_stub.calls_for("self-update")
+
+    def test_new_winget_install_is_updated_with_winget(
+        self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub
+    ) -> None:
+        """WinGetで新規導入した直後も、同じ実行の更新は`self-update`ではなく`winget upgrade`を使う。"""
+        binaries = iter((None, _WINGET_MISE))
+        monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: next(binaries))
+
+        _setup_mise.run()
+
+        commands = [record["cmd"][:2] for record in mise_stub.records]
+        assert commands.index(["winget", "install"]) < commands.index(["winget", "upgrade"])
+        assert not mise_stub.calls_for("self-update")
+        assert mise_stub.calls_for("install")
 
 
 def _version_response(version: str) -> subprocess.CompletedProcess[str]:
