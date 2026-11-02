@@ -15,6 +15,7 @@ ready一覧は選定時点の情報を使用する。ここで扱う対象は、
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies.md#「依存と冷却時間」「着手不能要因の分類」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md#「依存と冷却時間」「着手不能要因の分類」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
 | 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/push-and-ci.md#「公開状態の4項目」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開状態の4項目」` |
@@ -86,10 +87,15 @@ Claude Codeのメインエージェントは、公開担当を起動するたび
 ## 延期adoptと反映後の観測
 
 本節では、要件そのものとして実環境での観測が必要とされている未終了項目を扱う。
-後日の対策効果が完成条件として明示されている場合も、必要な適用条件と観測機会を特定して本節の再開記録とcooldownへ渡す。
+未達条件の延期を選ぶ前に、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」と`agent-toolkit:wi-standards`「由来と承認」を適用する。
+後日の対策効果が完成条件である場合も、適用条件・観測機会と、待てば解決する見込みの根拠を特定して再開記録へ残す。
+cooldownを使える境界は`agent-toolkit:wi-standards/references/states-and-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
+残りの見送り・追加認可・見込みの立たない外部変更待ちの判断は、レーン担当が必要と確定した時点で委譲元へ通知する。
+リポジトリ担当は判断事項を保持して統括へ返し、窓口を持つ統括がUWIの保存と元項目の依存設定を確認して待機へ移す。
 実装・検証の成功と後日の効果を区別し、適用機会が無い項目は効果未確認として保持する。
 通常の効率改善へ長期観測を一律に追加しない。
-環境的な制約などを理由に確認しきれない範囲が存在するからといって、完成条件に人手による実機確認を追加したり、個別のUWIを登録したりしない。
+環境的な制約という事情だけを理由に、人手による実機確認を完成条件へ追加したり個別UWIを登録したりしない。
+残りの扱いがユーザー判断を必要とする場合は、前述の確認手順を適用する。
 実施可能な範囲での検証を完了させた上で、その結果と確認できなかった範囲や限界を完了報告へ明記する。
 既知の不具合や明示された要件の未達については、未達事項として後述の再開手順に沿って処理する。
 

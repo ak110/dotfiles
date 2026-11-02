@@ -8,6 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 待機の確認要否と冷却期限を選ぶ前 | `states-and-dependencies.md#「依存と冷却時間」「着手不能要因の分類」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md#「依存と冷却時間」「着手不能要因の分類」` |
 | 配置や形式が判断で果たす機能の保持を判定する前 | `agent-basics:writing-standards/references/agent-documents-additions.md#「削減の判定根拠」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「削減の判定根拠」` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `agent-toolkit:wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
@@ -74,7 +75,7 @@ H1直下は短い目的・変更・結果を保ち、各バグの具体的な現
 
 ## 暫定回避と結果報告
 
-解除条件を伴う暫定回避を行う場合は、`agent-toolkit:wi-standards`の通常の投入手順に従い、正式対応の対象、解除条件、復帰後に期待される結果を保存済みAWIへ記録して接続する。時間経過や外部公開の待機を伴う場合は、再確認までの冷却期限を設定する。再発防止策を採用するかどうかの判断は、作業完了報告および報告用UWIの`### 自ら確定した判断`に根拠とともに記録する。ユーザーのみが判断できる事項については、`agent-toolkit:user-confirmation-and-report`に従って確認する。
+解除条件を伴う暫定回避を行う場合は、`agent-toolkit:wi-standards`の通常の投入手順に従い、正式対応の対象、解除条件、復帰後に期待される結果を保存済みAWIへ記録して接続する。時間経過や外部公開の待機は、`states-and-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従って、ユーザー判断の要否と解決の見込みを先に確定し、UWIまたは冷却期限を選ぶ。再発防止策を採用するかどうかの判断は、作業完了報告および報告用UWIの`### 自ら確定した判断`に根拠とともに記録する。ユーザーのみが判断できる事項については、`agent-toolkit:user-confirmation-and-report`に従って確認する。
 
 ## 参照資料の取得
 
