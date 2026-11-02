@@ -30,6 +30,8 @@ URLや文書などの参考資料だけを受け取った場合は、その内�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/causal-analysis.md` |
+| 観測された問題を起点とする要求で方針を確認する前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/quality-standards.md` |
@@ -89,10 +91,15 @@ URLや文書などの参考資料だけを受け取った場合は、その内�
 本節は`direct`指定を除く起動（指定なしと`carefully`指定）に適用する。
 
 質問ラウンドと手順3の調査で要件と方針が固まったら、本文を書く前に、対象、変更後の挙動、範囲、除外、完成条件、自ら確定した判断をユーザーへ示して確認する。
-観測された問題を起点とする要求では、自ら確定した判断とともに、`agent-basics:bugfix/references/root-cause-analysis.md`「対策の選定」の一覧を示す。
+観測された不具合や考慮漏れの是正方針では、自ら確定した判断とともに、`agent-basics:bugfix/references/causal-analysis.md`の原因分析表を示す。
+`agent-toolkit:wi-standards/references/analysis-records.md`の8項目の調査表も示す。
+原因分析表は作り込み要因・見逃し要因の2系統とL1〜L4を用いる。
+調査表には現象、期待する契約、直接的原因、原因分析の根拠、対策、類似見直し観点、類似見直し結果、再発防止策を記載する。
+再発防止策の採否と理由、根本原因への作用、実装と有効性確認の範囲を対応付け、提案・登録・実装・有効性確認を区別する。
+未確定の原因・候補と未実施の検証はその状態を示す。
 回答に依存する質問は次のラウンドへ回し、最終承認は他のユーザー判断がすべて確定してから単独の質問で求める。
 `agent-toolkit:wi-standards`の`references/drafting-workflow.md`「直接起草と独立した検収の選択」の条件に当たる要求では、最終承認の前にも、独立した担当へ方針、要求と出所、調査の根拠を渡して検収する。
-観測された問題を起点とする要求では、同じ一覧も渡す。
+観測された問題を起点とする要求では、同じ分析表・調査表も渡し、表示する分析と確定した対策・実施状況の一致を同じ検収で確認する。
 `share/wi-draft-review.parent.md`の`確認段階: 方針`で同じ要求の方針を検収し、そのsession_idを保持する。
 この検収は方針を対象とし、手順3の本文の検収も同じ担当へ`本文確認`で継続依頼する。
 
