@@ -587,12 +587,18 @@ def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = ""
         if not path.is_file():
             continue
         lines = path.read_text(encoding="utf-8").splitlines()
-        for line in lines:
+        for index, line in enumerate(lines):
             if (match := re.search(r" run=\S+ (?P<level>WARNING|ERROR|CRITICAL) (?P<message>.*)$", line)) is None:
                 continue
             if match["level"] == "WARNING" and _is_expected_log_warning(match["message"].strip(), home):
                 continue
-            diagnostics.append(f"{path}: {line}")
+            # 失敗したコマンドの出力は次のログ行の前まで続く行へ記録されるため、原因の特定に要る本文として添える。
+            continuation: list[str] = []
+            for following in lines[index + 1 :]:
+                if re.search(r" run=\S+ [A-Z]+ ", following):
+                    break
+                continuation.append(following)
+            diagnostics.append("\n".join([f"{path}: {line}", *continuation]))
     # severityを明示するCLIの診断だけを拾い、進捗や説明中の単語を誤検出しない。
     for stream, output in (("stdout", stdout), ("stderr", stderr)):
         for line in output.splitlines():

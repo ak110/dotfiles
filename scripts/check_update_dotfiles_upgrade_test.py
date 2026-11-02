@@ -72,6 +72,21 @@ def test_update_warning_fails_even_when_command_succeeded(tmp_path: pathlib.Path
         upgrade.verify_update_logs(tmp_path)
 
 
+def test_update_warning_includes_following_command_output(tmp_path: pathlib.Path) -> None:
+    """警告に続くコマンド出力の行も診断へ含め、次のログ行は含めない。"""
+    (tmp_path / "update-dotfiles.log").write_text(
+        "2026-10-28 12:00:00,000 run=check WARNING     mise: `install` に失敗\n"
+        "mise ERROR failed to download tool\n"
+        "  caused by: HTTP 403\n"
+        "2026-10-28 12:00:01,000 run=check INFO 次の工程\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(upgrade.UpgradeCheckError) as caught:
+        upgrade.verify_update_logs(tmp_path)
+    assert "mise ERROR failed to download tool\n  caused by: HTTP 403" in str(caught.value)
+    assert "次の工程" not in str(caught.value)
+
+
 def test_update_info_log_succeeds(tmp_path: pathlib.Path) -> None:
     """通常の進捗とメッセージ中のWARNINGという単語は警告扱いにしない。"""
     (tmp_path / "update-dotfiles.log").write_text("2026-10-28 12:00:00 run=check INFO WARNING設定を確認\n", encoding="utf-8")
