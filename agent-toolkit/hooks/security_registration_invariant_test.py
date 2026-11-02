@@ -22,6 +22,10 @@ def test_registered_events_survive_organization_security_defaults() -> None:
             continue
         text = path.read_text(encoding="utf-8")
         for event in re.findall(r'\bon\("([^"]+)"', text):
+            # 任意の要約省略は、組織側で省略されても標準圧縮を継続できる。
+            # 実matcherと他機能の保護はcompact_conversation.test.tsで検証する。
+            if path.name == "compact_conversation.ts" and event == "session.compact":
+                continue
             if event.startswith("classic.") or event in skipped:
                 violations.append(f"{path.name}: {event}")
     assert not violations, violations

@@ -628,6 +628,13 @@ turn実行中の予約はturn完了へ持ち越す。成功・skip・失敗を�
 ### 利用上限後のメインの再開予約
 
 観測と再検証手段は`docs/development/audit-records.md`の「docs/development/design-hooks.md：利用上限後のメインの再開予約：2026年10月14日」にある。
+公開`session.compact`の主会話を処理するときは、会話IDから一意に解決した原本ログの所在を返し、要約モデルの呼出しを省く。
+原本の解決を別の同期台帳へ保存せず、既存のsession記録解決を使う。未解決・例外・agentId付きでは標準の処理を保ち、precomputeは先行要約を見送る。
+同じpluginが`session.compact()`を予約した経路では、自身の置換hookが再入除外されるため標準の要約生成になる。追加pluginで再入を回避する案は配布構成と導入負担を増やすため採らず、公開APIの対応を待つ。
+SDKの委譲先はターン間の同APIが未対応なので、所有backendが公開`/compact`入力を配送する。Codexの独立圧縮turnと合わせ、所有と結果保留の構造は[design-agents-server.md](design-agents-server.md#結果の保留と自動再開)が扱う。
+原本を使う復元は要約を生成するホストでも共通とし、目的・最新訂正・認可・未完了を発話順・主体・参照位置から確認する。
+実機の適用範囲と再検証はaudit-records.md「agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日」にある。
+
 
 メインの利用上限では、StopFailureのコマンドhookが再開要求を保存し、Function hooksの`turn.complete`が既存の再開予約へ接続する。
 Remote Control接続ではホストの自動継続が自動で始まらないため、起動形態に対応した再開の契機を確保する。

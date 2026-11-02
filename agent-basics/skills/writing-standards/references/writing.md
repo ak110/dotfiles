@@ -16,6 +16,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md#「限定の反証」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「限定の反証」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md#「名前の到達性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「名前の到達性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md#「見出しと本文の対応」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「見出しと本文の対応」` |
+| 会話の要約から文章の要求・事実・認可を復元する前 | `investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
 
 ## 文章の共通規定
 

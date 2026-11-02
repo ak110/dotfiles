@@ -9,7 +9,7 @@ function registrationViolations(event: unknown, matcher: unknown): string[] {
     if (matcher instanceof RegExp) { matcher.lastIndex = 0; return matcher.test(value); }
     throw new Error(`未対応のmatcher: ${String(matcher)}`);
   };
-  const protectedEvents = ["prompt.section", "prompt.context", "prompt.attachment", "prompt.compose", "skill.prompt", "attribution.text", "session.compact", "settings.read"];
+  const protectedEvents = ["prompt.section", "prompt.context", "prompt.attachment", "prompt.compose", "skill.prompt", "attribution.text", "settings.read"];
   const violations = protectedEvents.filter(name => matches(event, name));
   if (typeof event === "string" && event.startsWith("classic.")) violations.push(event);
   if (matches(event, "session.append")) {
@@ -19,7 +19,7 @@ function registrationViolations(event: unknown, matcher: unknown): string[] {
   return violations;
 }
 
-test("全機能の実登録matcherは組織ガードの保護対象を購読しない", () => {
+test("圧縮置換以外の実登録matcherは組織ガードの保護対象を購読しない", () => {
   let count = 0;
   const capture = ((event: unknown, matcher: unknown) => {
     count++;
@@ -29,6 +29,48 @@ test("全機能の実登録matcherは組織ガードの保護対象を購読し�
   register(capture, {});
   expect(count > 0).toBe(true);
 });
+
+for (const trigger of ["manual", "auto", "plugin", "precompute"] as const) {
+  test(`main会話の${trigger}は原本を参照して要約を呼ばない`, async ($, on) => {
+    mock.env(on, {});
+    let summaries = 0;
+    on("session.id", () => ({ value: "current-session" }));
+    on("process.run", (_$, e) => {
+      expect(e.argv.slice(-2)).toEqual(["--session-id", "current-session"]);
+      return { value: { exitCode: 0, stdout: JSON.stringify({ record_path: "/records/current-session.jsonl" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
+    });
+    on("session.compact", () => { summaries++; return { messages: [] }; });
+    const result = await $.session.compact({ trigger, messages: [] });
+    expect(summaries).toBe(0);
+    if (trigger === "precompute") {
+      expect(result.skip).toMatch("先行生成");
+    } else {
+      expect(result.messages?.length).toBe(1);
+      expect(result.messages?.[0]?.text).toMatch("/records/current-session.jsonl");
+      expect(result.messages?.[0]?.text).toMatch("最新の訂正");
+      expect("usage" in result).toBe(false);
+    }
+  });
+}
+
+for (const condition of ["subagent", "unresolved", "failure", "truncated"] as const) {
+  test(`原本置換できない${condition}では標準圧縮を保つ`, async ($, on) => {
+    mock.env(on, {});
+    let summaries = 0;
+    let resolutions = 0;
+    on("session.id", () => ({ value: "current-session" }));
+    on("process.run", () => {
+      resolutions++;
+      if (condition === "failure") throw new Error("記録を取得できない");
+      return { value: { exitCode: condition === "unresolved" ? 2 : 0, stdout: JSON.stringify({ record_path: "/records/current-session.jsonl" }), stderr: "", isStdoutTruncated: condition === "truncated", isStderrTruncated: false } };
+    });
+    on("session.compact", () => { summaries++; return { messages: [{ role: "user", text: "標準の圧縮結果", toolUses: [] }] }; });
+    const result = await $.session.compact({ trigger: "manual", messages: [], ...(condition === "subagent" ? { agentId: "child" } : {}) });
+    expect(summaries).toBe(1);
+    expect(resolutions).toBe(condition === "subagent" ? 0 : 1);
+    expect(result.messages?.[0]?.text).toBe("標準の圧縮結果");
+  });
+}
 
 test("他機能への保護door・無条件・広域イベント登録の持込みを検出する", () => {
   for (const matcher of [{ door: "attachment" }, { door: /^(delivery|queue|attachment)$/ }, { door: /hook-context/ }, { door: /compaction/g }, {}]) {

@@ -386,6 +386,13 @@ Antigravityも共通の起動候補・プロンプトとCLIの処理を使う。
 
 ## 結果の保留と自動再開
 
+背景待機中の圧縮は、所有backendの`WaitCompaction`が待機識別子・5秒・50%を確認して単発予約する。
+Claudeは既存の入力キューの`compact`操作へ、Codexは公開`thread/compact/start`へ接続する。圧縮の受付を担当の終了や結果として公開しない。
+ClaudeのSDK結果は既存の保留・追送処理を使い、Codexの別圧縮turnは元turn IDと完了イベントを持つ一時操作として観測する。通常の追送は圧縮が終わってから配送し、完了待ち中は停止用のturnロックを保持しない。
+取消し・時間上限だけでCodexの圧縮終了とせず、後着の完了または接続終了で操作を解く。接続解放時には予約タスクを回収する。
+新しい公開状態・永続予約・圧縮専用のモデルturnは追加しない。CLIやmodから所有backendの状態を書き換える案は、結果を保持する主体との寿命を分けるため採らない。
+公開APIの観測と再検証は[audit-records.md](audit-records.md)「agent-toolkit/agent_toolkit/_agents_server/codex.py：待機中の独立圧縮turn：2026年11月2日」にある。
+
 Claude SDKの受信列は接続全体で1つを共有し、全ての外部queryが同じ列から受信する。通常の結果確定後も所有taskが受信を続け、公開済みturnのassistant・Resultを再公開しない。外部継続を配送する前には既に読取り可能な旧イベントを先に処理し、その後に新しいturnを開始する。結果確定で受信を止め、次のqueryで別のiteratorを作成する方式は、旧Resultを新queryの完了として確定させるため採らない。背景通知とCLIのturn状態は同じreaderで処理し、バックグラウンドタスクによる自動再開を除去する案や、委譲元の再送で回避する案は採らない。
 
 子sessionとClaudeの背景taskを待つ保留へ追加指示を受けた場合は、旧結果の確定と追送の受理を分離する。
