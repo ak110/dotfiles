@@ -207,7 +207,8 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     assert first == {relative: (tmp_path / relative).read_bytes() for relative in files}
     review = (tmp_path / "agent-toolkit/share/exec-review.parent.md").read_text(encoding="utf-8")
     block = review.split("<!-- return-contract:exec-review:start -->")[1]
-    assert "レビューHEAD:" in block and "読者別探索の結果申告" in block
+    assert "レビューHEAD:" in block and "読者別探索:" in block
+    assert '"direct":' in block
     assert "判定工程: 公開工程" in block
     assert "返却する前に、以下の処理" not in block
     assert "review-table validate" not in block
@@ -239,7 +240,7 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     subject.sync_return_contracts(tmp_path)
     assert target.read_bytes() == after_addition
     # 旧抽出アンカーだった通常の文面を変えても、外部契約全体の同期が成立する。
-    changed_output = changed_preparation.replace("読者別探索の結果申告は", "読者別探索の申告形式は")
+    changed_output = changed_preparation.replace("読者別探索は", "読者別探索の申告形式は")
     changed_output = changed_output.replace("返却の状態行、", "返却する状態行、")
     changed_output = changed_output.replace("延期用の記録によって許容された", "延期用の記録で認めた")
     source.write_text(changed_output, encoding="utf-8")
