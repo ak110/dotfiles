@@ -1,6 +1,7 @@
 """atk agents waitの公開CLI契約を検証する。"""
 
 import asyncio
+import contextlib
 import json
 import os
 import pathlib
@@ -727,6 +728,41 @@ def _join_threads(threads: list[threading.Thread], timeout: float = _THREAD_JOIN
     return [thread.name for thread in threads if thread.is_alive()]
 
 
+class _LockedStepFailed(Exception):
+    """lock保持中の準備・検証が失敗した状況を再現するテスト専用の例外。"""
+
+
+def _followers_under_lock(
+    lock_path: pathlib.Path,
+    original_acquire: Callable[..., None],
+    followers_waiting: threading.Event,
+    follow: Callable[[], None],
+    count: int,
+    while_locked: Callable[[], None] | None = None,
+) -> None:
+    """lockを保持したまま後発待機を開始し、lock競合への到達後に`while_locked`を実行する。
+
+    準備・検証が例外で終わっても、lockを解放して開始した全スレッドを共通の期限まで待ってから例外を伝える。
+    """
+    with lock_path.open("a+b") as lock_file:
+        original_acquire(lock_file, blocking=False)
+        followers = [threading.Thread(target=follow, name=_CONTENDED_FOLLOWER_NAME, daemon=True) for _ in range(count)]
+        try:
+            for follower in followers:
+                follower.start()
+            assert followers_waiting.wait(timeout=5)
+            if while_locked is not None:
+                while_locked()
+        finally:
+            release_lock(lock_file)
+            alive = _join_threads(followers)
+        assert not alive
+
+
+def _alive_followers() -> list[threading.Thread]:
+    return [thread for thread in threading.enumerate() if thread.name == _CONTENDED_FOLLOWER_NAME]
+
+
 def test_join_threads_waits_all_until_deadline() -> None:
     """処理期限を超えて終わるスレッドと、先に待つスレッドより遅いスレッドも共通の期限内に回収する。"""
     released = threading.Event()
@@ -743,6 +779,21 @@ def test_join_threads_waits_all_until_deadline() -> None:
 
     assert _join_threads([early, late, unstarted], timeout=3.0) == []
     assert not late.is_alive()
+
+
+def test_join_threads_waits_rest_when_first_stays_alive() -> None:
+    """先に待つスレッドが期限後も生存していても、残りのスレッドを待ってから生存したスレッドだけを返す。"""
+    released = threading.Event()
+    stuck = threading.Thread(target=released.wait, args=(5,), name="stuck", daemon=True)
+    finishing = threading.Thread(target=time.sleep, args=(0.2,), name="finishing", daemon=True)
+    stuck.start()
+    finishing.start()
+    try:
+        assert _join_threads([stuck, finishing], timeout=0.5) == ["stuck"]
+        assert not finishing.is_alive()
+    finally:
+        released.set()
+        stuck.join(timeout=5)
 
 
 def _run_contended_wait(
@@ -764,18 +815,14 @@ def _run_contended_wait(
             agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path)
         )
 
-    with lock_path.open("a+b") as lock_file:
-        original_acquire(lock_file, blocking=False)
-        follower = threading.Thread(target=follow, name=_CONTENDED_FOLLOWER_NAME, daemon=True)
-        try:
-            follower.start()
-            assert follower_waiting.wait(timeout=5)
-            if prepare is not None:
-                prepare(tmp_path, run_path)
-        finally:
-            release_lock(lock_file)
-            alive = _join_threads([follower])
-        assert not alive
+    _followers_under_lock(
+        lock_path,
+        original_acquire,
+        follower_waiting,
+        follow,
+        1,
+        None if prepare is None else lambda: prepare(tmp_path, run_path),
+    )
     assert len(outcomes) == 1
     return outcomes[0]
 
@@ -865,14 +912,19 @@ def test_agents_wait_rejects_overlapping_owner(tmp_path: pathlib.Path, capsys: p
     assert "atk agents wait" in error
 
 
+@pytest.mark.parametrize("failure", [False, True], ids=["normal", "verification-fails"])
 @pytest.mark.parametrize("notification", [False, True])
 def test_followers_join_the_same_wait_run(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     notification: bool,
+    failure: bool,
 ) -> None:
-    """先行待機の配信後、2件の後発待機は保存runの参照だけを返す。"""
+    """先行待機の配信後、2件の後発待機は保存runの参照だけを返す。
+
+    配信後の検証が失敗した場合も、例外を伝える前に両方の後発待機を回収する。
+    """
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: _CLI_WAIT_TIMEOUT_SECONDS)
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     lock_path = _wait_lock_path(tmp_path)
@@ -904,23 +956,20 @@ def test_followers_join_the_same_wait_run(
     delivered: dict[str, Any] = {"session_id": "session-1", "status": "running" if notification else "completed"}
     if notification:
         delivered["notices"] = [{"body": "通知"}]
-    with lock_path.open("a+b") as lock_file:
-        original_acquire(lock_file, blocking=False)
-        followers = [threading.Thread(target=follow, daemon=True) for _ in range(2)]
-        try:
-            for follower in followers:
-                follower.start()
-            assert followers_waiting.wait(timeout=5)
-            agents_wait._publish_wait_result(  # pylint: disable=protected-access
-                run_path,
-                json.dumps(delivered, ensure_ascii=False, separators=(",", ":")),
-                0,
-            )
-        finally:
-            release_lock(lock_file)
-            alive = _join_threads(followers)
-        assert not alive
 
+    def publish() -> None:
+        agents_wait._publish_wait_result(  # pylint: disable=protected-access
+            run_path,
+            json.dumps(delivered, ensure_ascii=False, separators=(",", ":")),
+            0,
+        )
+        if failure:
+            raise _LockedStepFailed
+
+    with pytest.raises(_LockedStepFailed) if failure else contextlib.nullcontext():
+        _followers_under_lock(lock_path, original_acquire, followers_waiting, follow, 2, publish)
+
+    assert not _alive_followers()
     assert sorted(results) == [8, 8]
     output = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert output.count(delivered) == 1
@@ -1130,14 +1179,19 @@ def test_agents_wait_contention_diagnostic_recovers_collected_body(
     assert pathlib.Path(terminal["agent_message_path"]).read_text(encoding="utf-8") == delivered["agent_message"]
 
 
+@pytest.mark.parametrize("failure", [False, True], ids=["normal", "verification-fails"])
 @pytest.mark.parametrize("stream", ["stdout", "stderr"])
 def test_wait_replays_follower_output_after_interrupt(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     stream: str,
+    failure: bool,
 ) -> None:
-    """未配送runの回復がflush後に停止した場合は、別waitが本文を回収する。"""
+    """未配送runの回復がflush後に停止した場合は、別waitが本文を回収する。
+
+    lock競合への到達後の検証が失敗した場合も、例外を伝える前に両方の後発待機を回収する。
+    """
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: _CLI_WAIT_TIMEOUT_SECONDS)
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="published")
@@ -1169,18 +1223,13 @@ def test_wait_replays_follower_output_after_interrupt(
         except KeyboardInterrupt:
             outcomes.append("interrupted")
 
-    with lock_path.open("a+b") as lock_file:
-        original_acquire(lock_file, blocking=False)
-        followers = [threading.Thread(target=follow, daemon=True) for _ in range(2)]
-        try:
-            for follower in followers:
-                follower.start()
-            assert followers_waiting.wait(timeout=5)
-        finally:
-            release_lock(lock_file)
-            alive = _join_threads(followers)
-        assert not alive
+    def fail_verification() -> None:
+        raise _LockedStepFailed
 
+    with pytest.raises(_LockedStepFailed) if failure else contextlib.nullcontext():
+        _followers_under_lock(lock_path, original_acquire, followers_waiting, follow, 2, fail_verification if failure else None)
+
+    assert not _alive_followers()
     assert outcomes.count("interrupted") == 1
     assert outcomes.count(0) == 1
     captured = capsys.readouterr()
@@ -1230,17 +1279,14 @@ def test_contended_wait_joins_follower_when_prepare_fails(
 ) -> None:
     """準備が失敗しても、lockを解放して後発待機の終了を待ってから例外を伝える。"""
 
-    class PrepareFailed(Exception):
-        """準備段階の失敗を表すテスト専用の例外。"""
-
     def leave_result_then_fail(state_root: pathlib.Path, run_path: pathlib.Path) -> None:
         _leave_result_original(state_root, run_path)
-        raise PrepareFailed
+        raise _LockedStepFailed
 
-    with pytest.raises(PrepareFailed):
+    with pytest.raises(_LockedStepFailed):
         _run_contended_wait(tmp_path, monkeypatch, leave_result_then_fail)
 
-    assert not [thread for thread in threading.enumerate() if thread.name == _CONTENDED_FOLLOWER_NAME]
+    assert not _alive_followers()
     assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
 
 
