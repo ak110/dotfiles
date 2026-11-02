@@ -199,8 +199,48 @@ def test_windows_job_runs_pinned_codex_command_integration(workflow_data: dict[s
     assert "$env:GITHUB_PATH" in script
     targets = direct_pytest_targets({"jobs": {"test-windows": {"steps": [integration]}}})
     prefix = "agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::"
-    assert targets == [prefix + "test_explore_start_reaches_normal_commands"]
+    assert targets == [
+        prefix + "test_explore_start_reaches_normal_commands",
+        "agent-toolkit/agent_toolkit/_testing/resource_diagnostics_test.py",
+    ]
     assert integration["working-directory"] == "${{ env.DOTFILES_DIR }}"
+    integration_script = str(integration["run"])
+    assert "$env:ImageOS" in integration_script
+    assert "$env:ImageVersion" in integration_script
+    assert "codex --version" in integration_script
+    assert "$pytestExitCode = $LASTEXITCODE" in integration_script
+    assert "pytest_exit_code=$pytestExitCode" in integration_script
+    assert "exit $pytestExitCode" in integration_script
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
+@pytest.mark.parametrize("pytest_exit_code", [0, 7])
+def test_windows_codex_integration_preserves_final_code(
+    workflow_data: dict[str, object],
+    tmp_path: Path,
+    pytest_exit_code: int,
+) -> None:
+    """実PowerShellがpytest相当の成否を最終ログとstep終了コードの両方へ保持する。"""
+    steps = workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
+    script = str(_windows_step(steps, "Windows Codex command integration")[1]["run"])
+    probe = tmp_path / "integration.ps1"
+    probe.write_text(
+        "function codex { $global:LASTEXITCODE = 0 }\n"
+        f"function uv {{ $global:LASTEXITCODE = {pytest_exit_code} }}\n" + script,
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(probe)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == pytest_exit_code, result.stdout + result.stderr
+    assert f"pytest_exit_code={pytest_exit_code}" in result.stdout
+    assert "Codex境界pytest開始: at=" in result.stdout
+    assert "Codex境界pytest終了: at=" in result.stdout
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")

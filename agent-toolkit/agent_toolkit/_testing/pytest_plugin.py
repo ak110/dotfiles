@@ -6,6 +6,7 @@ package collectorが収集順で再生成されても、fixtureの登録を失�
 
 import asyncio
 import contextlib
+import datetime
 import os
 import pathlib
 import re
@@ -30,7 +31,7 @@ from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import git_repository as _git_repository
-from agent_toolkit._testing import isolation, session_evidence_support
+from agent_toolkit._testing import isolation, resource_diagnostics, session_evidence_support
 from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.wi_mutations_support import _AGENT_ENVIRONMENT_VARIABLES
@@ -140,20 +141,46 @@ def pytest_configure(config: pytest.Config) -> None:
             for child in process_tree.collect_descendants(os.getpid())
             if child not in previous_children and child.pid != tracker
         ]
-        residual = process_tree.reclaim_descendants(children)
-        if residual:
-            raise pytest.UsageError(
-                "pytestの子孫を回収できない: " + "; ".join(residual) + "; 対象の終了を確認してから一時領域を回収する"
+        diagnostic_pids = [os.getpid(), *[child.pid for child in children]]
+        before = [process_tree.identity(pid) for pid in diagnostic_pids] if sys.platform == "win32" else []
+        if sys.platform == "win32":
+            print(
+                f"pytest資源回収開始: at={datetime.datetime.now(datetime.UTC).isoformat()} "
+                f"pytest_pid={os.getpid()} owned={before}",
+                file=sys.stderr,
+                flush=True,
             )
-        if directory is not None:
-            # テストの隔離がHOME・キャッシュの場所を変えても、作成時と同じ一時rootで包含を判定する。
-            with pytest.MonkeyPatch.context() as patch:
-                for name, value in resource_environment.items():
-                    if value is None:
-                        patch.delenv(name, raising=False)
-                    else:
-                        patch.setenv(name, value)
-                managed_temp.cleanup_managed_temp(directory)
+        try:
+            residual = process_tree.reclaim_descendants(children)
+            if residual:
+                raise pytest.UsageError(
+                    "pytestの子孫を回収できない: " + "; ".join(residual) + "; 対象の終了を確認してから一時領域を回収する"
+                )
+            if directory is not None:
+                # テストの隔離がHOME・キャッシュの場所を変えても、作成時と同じ一時rootで包含を判定する。
+                with pytest.MonkeyPatch.context() as patch:
+                    for name, value in resource_environment.items():
+                        if value is None:
+                            patch.delenv(name, raising=False)
+                        else:
+                            patch.setenv(name, value)
+                    managed_temp.cleanup_managed_temp(directory)
+        except Exception as error:
+            # 診断の出力先が閉じている場合も、元の回収失敗をそのまま再送出する。
+            with contextlib.suppress(Exception):
+                resource_diagnostics.report_cleanup_failure(
+                    error,
+                    directory=directory,
+                    before=before,
+                    after=[process_tree.identity(pid) for pid in diagnostic_pids],
+                )
+            raise
+        if sys.platform == "win32":
+            print(
+                f"pytest資源回収完了: at={datetime.datetime.now(datetime.UTC).isoformat()} pytest_pid={os.getpid()}",
+                file=sys.stderr,
+                flush=True,
+            )
 
     stack.callback(release_resources)
 

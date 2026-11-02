@@ -64,6 +64,9 @@ MCP再接続に関する監査記録は、`docs/development/audit-records.md`内
 - `counts_complete`が`false`の場合は集計が不完全であることを示し、確定値は`null`となって読み取れた範囲の数値が`observed_running_*`に格納される。情報の欠落理由は`state_read_failures`や`unavailable_fields`に記録される。
 - `load_average_1_5_15`および`available_memory_bytes`はホストマシン全体のリソース値である（Windows環境ではロードアベレージは未取得となり、その旨の理由が残される）。これらは非アトミックに取得された値であるため、個々のセッションが与えた影響や因果関係の特定には同一条件下での比較を要する。
 - `resource_snapshot_failed`はリソース計測処理そのものが失敗したことを示すイベントであり、セッション本体の処理失敗とは区別して扱う。ログファイルはサイズ2 MiB、バックアップ3世代で自動ローテーションされる。
+- WindowsのCodex境界試験では、試験開始・終了のpytest PIDとUTC時刻、App Serverの終了要求前・終了確認後の所有PID集合を対応付ける。各PIDの`created_at`と`ppid`で起動時刻と親子関係を確認し、終了後の`unavailable: NoSuchProcess`を保持PID不在の照会結果と区別する。
+- pytestの回収失敗時は、標準エラーの`resource-diagnostics:`にある失敗パス・Windowsエラー番号・`before`・`after`を読む。`ownership.state`の`success`だけが保持PID照会の成功を示し、`unavailable`は採取不能、`unsupported`は対象外OSを表す。診断handleの自己PIDは外部保持者と分けて記録され、同じPIDの別handleの有無は判別できない。CIの開始・終了行と試験開始記録から、Python完全版・実行ファイル、runner image、Codex・pytest・xdistの版、並列度と最終終了コードも突き合わせる。
+- 診断を採取できなかった場合も`next_action`に従い、元の回収例外のtracebackから失敗パス・winerrorを保存し、同じ実行の終了前後PID記録・CI環境・最終コードを原因分析担当へ渡す。
 
 ## 外部プロセスでの再現
 
