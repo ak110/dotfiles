@@ -27,6 +27,7 @@ ready一覧は選定時点の情報を使用する。ここで扱う対象は、
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「採否の確定と終了区分」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「採否の確定と終了区分」` |
+| 統合後の即時修正の担当と時機を決める前 | `immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` |
@@ -50,6 +51,7 @@ ready一覧は選定時点の情報を使用する。ここで扱う対象は、
 委譲を選んだときだけ公開担当を起動し、返却を待つ。実行レビューとCI修正担当の起動条件は変えない。
 
 レーンの数にかかわらず、各レーン担当から返却された統合結果に基づいて、本書の公開工程へ進む。計画、実装、レビューに関する定型的な結果報告を再度求めることはせず、最終的なHEAD、計画の保存状況、WIの採否確定、延期対象を検収する。
+統合後の独立した即時修正は`immediate-fix.md`「レーンの変更範囲へ加える修正の認可」で担当と時機を決め、統合先の現行HEADで限定検証と独立文脈レビューを実施する。元WIの未達を除き、統合済みレーンへ戻して再統合を繰り返さない。公開後なら修正の検収後に公開状態を再検収し、必要な再公開へ接続する。
 
 対象リポジトリの規範によって、セッション終了工程と同じタイミングで固有の追跡先への記録が義務付けられている場合は、その記録を完了させてからセッションを終了する。
 
