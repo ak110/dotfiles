@@ -728,7 +728,7 @@ def _join_threads(threads: list[threading.Thread], timeout: float = _THREAD_JOIN
 
 
 def test_join_threads_waits_all_until_deadline() -> None:
-    """処理期限を超えて終わるスレッドと、先に待つスレッドより遅いスレッドも期限まで待ち切る。"""
+    """処理期限を超えて終わるスレッドと、先に待つスレッドより遅いスレッドも共通の期限内に回収する。"""
     released = threading.Event()
 
     def finish_after_release() -> None:
