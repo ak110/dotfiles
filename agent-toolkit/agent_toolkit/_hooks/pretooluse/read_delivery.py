@@ -138,10 +138,35 @@ def _read_path_variants(tool_name: str, tool_input: dict, cwd: str) -> list[path
     return [path for resolve in (True, False) for path in _read_paths(tool_name, tool_input, cwd, resolve=resolve)]
 
 
-def _pure_bash_read(command: str, cwd: str) -> bool:
-    """既存の静的読取と、解決済みcdだけを連結した取得操作を判定する。"""
-    if codex_read_observation.read_plan(command):
-        return True
+def _operand_paths(read: codex_read_observation.Read, current: shell_cwd.CwdResolution) -> list[pathlib.Path]:
+    """読取計画が入力ファイルと判定した位置の引数を、連結中の作業ディレクトリで解決する。
+
+    展開が不明なglobと、作業ディレクトリを解決できない相対パスは対象に含めない。
+    """
+    paths = []
+    for index in read.operands:
+        operand = read.argv[index]
+        if any(marker in operand for marker in ("*", "?", "[")):
+            continue
+        path = pathlib.Path(operand).expanduser()
+        if not path.is_absolute():
+            if not current.resolved:
+                continue
+            path = pathlib.Path(current.path) / path
+        paths.append(path)
+    return paths
+
+
+def _static_read_paths(command: str, cwd: str) -> list[pathlib.Path] | None:
+    """静的読取と解決済みcdだけの連結なら、読取計画のファイル位置から求めた対象パスを返す。
+
+    取得操作に当たらない入力はNoneを返す。受理判定と対象パスの特定は同じ読取計画を使い、
+    成功記録の段階でコマンド別の受理条件を別に定めない。
+    """
+    reads = codex_read_observation.read_plan(command)
+    if reads:
+        base = shell_cwd.CwdResolution(cwd, bool(cwd))
+        return [path for read in reads for path in _operand_paths(read, base)]
     invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
     if not invocations or any(
         not invocation.arguments_known
@@ -152,26 +177,34 @@ def _pure_bash_read(command: str, cwd: str) -> bool:
         or invocation.inline_input
         for invocation, _current in invocations
     ):
-        return False
+        return None
     # 元の演算子を検証し、構文を省いた呼出し列だけから純粋読取と推定しない。
     groups = codex_read_observation.read_command_groups(command)
     if groups is None:
-        return False
+        return None
     current = shell_cwd.CwdResolution(cwd, bool(cwd))
-    reads = False
+    paths: list[pathlib.Path] = []
+    found = False
     for tokens in groups:
         if tokens[0] == "cd":
             changed = shell_cwd.resolve_cwd_change(tokens, current)
             if changed is None or not changed.resolved:
-                return False
+                return None
             current = changed
         elif pathlib.PurePath(tokens[0]).name in {"wc", "ls"}:
             continue
-        elif codex_read_observation.read_plan(shlex.join(tokens)):
-            reads = True
         else:
-            return False
-    return reads
+            plan = codex_read_observation.read_plan(shlex.join(tokens))
+            if len(plan) != 1:
+                return None
+            found = True
+            paths.extend(_operand_paths(plan[0], current))
+    return paths if found else None
+
+
+def _pure_bash_read(command: str, cwd: str) -> bool:
+    """既存の静的読取と、解決済みcdだけを連結した取得操作を判定する。"""
+    return _static_read_paths(command, cwd) is not None
 
 
 def skill_name(path: pathlib.Path) -> str | None:
@@ -1659,11 +1692,12 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         groups = codex_read_observation.read_command_groups(command, read_prefix=True)
         if not groups:
             return
-        command = "; ".join(shlex.join(group) for group in groups)
-        if not _pure_bash_read(command, cwd):
+        static_paths = _static_read_paths("; ".join(shlex.join(group) for group in groups), cwd)
+        if static_paths is None:
             return
-        tool_input = {**tool_input, "command": command}
-    paths = _read_paths(tool_name, tool_input, cwd)
+        paths = [path.resolve() for path in static_paths]
+    else:
+        paths = _read_paths(tool_name, tool_input, cwd)
     if tool_name == "Bash" and any(not path.is_file() for path in paths):
         return
     if tool_name != "Skill" and not paths:

@@ -517,6 +517,23 @@ def test_small_codex_section_guidance_has_capacity_and_both_budgets(tmp_path, mo
         ("cat -- reference.md; ls", False),
         ("wc -l missing && cat -- reference.md; ls", False),
         ("cat -- reference.md && printf done; ls", False),
+        # 読取計画が受理する表示形式は、同じ計画のファイル位置から対象パスを特定して記録する。
+        ("sed -n '1,1p;2,$p' -- reference.md", True),
+        ("sed -n '/^# 基準/,$p' -- reference.md", True),
+        ("wc -l reference.md && sed -n '/^# 基準/,/^必要/p' -- reference.md", True),
+        ("cd nested && sed -n '1,1p;2,2p' ../reference.md", True),
+        ("head -n 20 reference.md", True),
+        ("tail -n 20 -- reference.md", True),
+        ("jq -r '.body' reference.md", True),
+        # 印字以外のsed命令、追従、外部入力、展開、失敗を隠す連結は取得にしない。
+        ("sed -n '1p;w copy.md' -- reference.md", False),
+        ("sed -n '1e date' -- reference.md", False),
+        ('sed -n "/^# 基準/,$p" -- reference.md', False),
+        ("sed -n '/^# 基準/,$p' -- reference.md; ls", False),
+        ("tail -f reference.md", False),
+        ("head -n 20 reference.md | cut -c1-3", False),
+        ("jq --rawfile extra copy.md -r '.body' reference.md", False),
+        ("jq -r 'input' reference.md", False),
     ],
 )
 def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state, host, command, success):
