@@ -352,7 +352,11 @@ def _ensure_gcloud_plugin_usable(mise_bin: Path) -> bool:
     if version_result is None or version_result.returncode != 0:
         return False
     match = re.search(r"\b(\d{4}\.\d+\.\d+)\b", version_result.stdout)
-    if match is None or match[1] not in _GCLOUD_PLUGIN_BROKEN_VERSIONS:
+    if match is None:
+        return False
+    # 更新後に実際に使う本体の版と実体を記録し、更新経路と回避処置の要否をログで確かめられるようにする。
+    logger.info(log_format.format_status("mise", f"本体 {match[1]} を使う: {mise_bin}"))
+    if match[1] not in _GCLOUD_PLUGIN_BROKEN_VERSIONS:
         return False
 
     listed = _run_mise(mise_bin, ["plugins", "ls", "--urls"])
