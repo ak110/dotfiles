@@ -11,6 +11,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| Codex導入版変更後にrootを再解決する前 | `agent-toolkit:/share/rules-common.codex.md#「Codexのplugin root解決」` | 判断 | `section:agent-toolkit:*/share/rules-common.codex.md#「Codexのplugin root解決」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md#「版数と生成物」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「版数と生成物」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 
@@ -38,7 +39,9 @@ rebaseやmergeを完了した後は、競合の有無にかかわらず、公開
 ## Codex導入後のrootの再確認
 
 Codexプラグインの導入バージョンが変更された場合は、保持しているplugin rootの情報を破棄して再解決する。
-プログラム内で`codex plugin list --json`を実行して結果を取得する。`installed`の一覧から`pluginId == "agent-toolkit@ak110-dotfiles"`となるエントリを一意に抽出し、識別子、marketplace、version、有効状態、ならびにrootの解決結果のみをモデルへ返却する。
+`agent-toolkit/share/rules-common.codex.md`「Codexのplugin root解決」のmarketplace限定照会と抽出を用いる。
+このプロジェクトのmarketplaceは`ak110-dotfiles`であり、`installed`から`pluginId == "agent-toolkit@ak110-dotfiles"`のエントリを一意に特定する。
+識別子、marketplace、version、有効状態、rootの解決結果と診断のみをモデルへ返却する。
 取得の失敗、対象エントリの不在、対象が一意に定まらない状態、無効化状態、実体パスの欠落をそれぞれ区別して診断し、全一覧をそのまま返すことは避ける。
 plugin cache directory配下にある新バージョンのrootパスを解決し、そのroot内の`skills/`ディレクトリの存在、plugin manifestに記載された`version`と導入バージョンの一致、および実行対象スクリプトの実在を確認した上で使用する。
 これらを確認できない場合は処理を未完了として扱い、古いrootへ戻す操作は行わない（`source.path`は配布元を示す値であり、cache rootの解決には新バージョンのrootを使用する）。

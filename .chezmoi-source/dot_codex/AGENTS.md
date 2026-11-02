@@ -21,7 +21,23 @@ Codex固有の公開機能と、常時規範との差分事項を規定する。
 
 - 最初の`SKILL.md`を読み込む前に、自身の起動通知に記載されたagent-toolkitのルートパス、またはCLIの絶対パスにおける`scripts/`の親ディレクトリから`<plugin root>`を確定し、実体および`skills/`ディレクトリが存在することを確認する。
 - agents_serverの起動時指示に`agent-toolkit plugin root: <絶対パス>`として示された配布物の配置場所は、当該委譲処理が利用する配布物として最優先し、同一ルートにある`skills/<スキル名>/SKILL.md`を読み込む。
-- 起動通知とCLIの絶対パスのいずれからもルートパスを確定できない場合は、`codex plugin list --json`の実行結果をプログラム内で取得して確認する。プラグイン導入版を変更した後の再解決でも同様の手順で取得する。`installed`の一覧からagent-toolkitを一意に特定し、識別子、marketplace、version、有効状態、および解決結果のみを返却する。
+- 保持しているルートパスは、実体と`skills/`ディレクトリを確認して再利用する。導入版を変更した場合は保持値を破棄して再解決する。
+- 起動通知・CLI・保持値から確定できない場合は、既知のmarketplaceに限定して導入情報を取得する。次の例の`MARKETPLACE`には、その環境で確認したmarketplace名を設定する。必要な識別情報を抽出し、無効な候補も診断の対象に残す。
+
+```sh
+set -o pipefail
+codex plugin list --json --marketplace "$MARKETPLACE" |
+  jq '{installed: [.installed[] | select(.name == "agent-toolkit" or .name == "agent-basics") | {pluginId, marketplaceName, name, version, enabled}]}'
+```
+
+- marketplaceが不明な場合は、先に設定済みの名前を列挙する。取得した各marketplaceへ前述の限定照会を行い、候補全体で一意性を確かめる。
+
+```sh
+set -o pipefail
+codex plugin marketplace list --json | jq '{marketplaces: [.marketplaces[] | {name}]}'
+```
+
+- 抽出した`installed`からagent-toolkitを一意に特定する。モデルへ渡す情報は識別子、marketplace、version、有効状態、解決結果と診断に限定する。
 - プラグイン導入情報からのルートパスは、`<Codexホーム>/plugins/cache/<marketplaceName>/<name>/<version>`として解決する。Codexホームのパスは、環境変数`CODEX_HOME`が設定されている場合はその値、未設定の場合は`~/.codex`とし、実体および`skills/`ディレクトリが存在することを確認する。
 - 情報の取得失敗、対象の不在、対象が一意に定まらない状況、無効化状態、または実体の欠落が発生した場合は、原因を明確に分類して委譲元へ報告する。モデルへ返却する情報は対象の識別情報、解決結果、および診断情報に限定し、ルートパスは前述の実在確認を経て確定する。
 - 確定したルートパスは保持し、公開サブコマンドを持たないプラグイン内部のリソースも同一のルートパスから読み込む。導入版が変更された後は新たな導入情報に基づいて再解決を実施し、全リソースを同一ホストかつ同一導入版のルートパスから一貫して読み込む。
@@ -30,7 +46,7 @@ Codex固有の公開機能と、常時規範との差分事項を規定する。
 
 品質基準の正式な提供元は`agent-basics`である。`agent-basics:writing-standards`などの資料を参照する際は、当該プラグイン自身のルートパスから解決する。
 開発環境における同一チェックアウト内では、agent-toolkitと同一の親ディレクトリに存在する`agent-basics/.claude-plugin/plugin.json`のnameおよび`skills/`ディレクトリの存在を確認して利用する。
-配布先環境では、`codex plugin list --json`の導入済み情報から同一マーケットプレイスに属する有効なagent-basicsを一意に特定し、前節と同様の対応関係（Codexホーム、marketplace、name、version）に基づいてルートパスを解決する。
+配布先環境では、前節のmarketplace限定照会と抽出で得た導入済み情報から、同一マーケットプレイスに属する有効なagent-basicsを一意に特定し、前節と同様の対応関係（Codexホーム、marketplace、name、version）に基づいてルートパスを解決する。
 実体や`skills/`ディレクトリを取得できない場合は、原因を特定して委譲元へ報告する。別バージョンのキャッシュディレクトリを推測で選択することは避ける。
 agent-toolkitのルートパスとagent-basicsのルートパスは個別に保持し、品質基準の参照先パスへagent-toolkitのルートパスを代入しない。
 
