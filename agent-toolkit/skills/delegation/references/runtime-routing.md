@@ -47,6 +47,9 @@ fork機能に関する監査記録は、`docs/development/audit-records.md`の�
 
 ## 工程別モデル設定
 
+定型処理はモデルを割り当てる前に`routing.md`「要否判定」で既存CLI・API・標準コマンドによる実行と直接処理を比較する。
+その比較でモデルへ委譲する部分を選んだ後に、以下の工程別設定を適用する。
+
 各工程の`model_type`は、対応する`<工程>_model`の設定に定義された候補列を直接参照する。下表における「メイン」は、`agent-toolkit:process-wi`のメインエージェント、または`agent-toolkit:write-plan`を起動したエージェントを指す。
 
 | 対応工程・役割 | model_type | 起動直前に解決する主体 | 起動手段 |
