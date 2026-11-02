@@ -68,15 +68,15 @@ def test_missing_heading_guides_full_read_without_marking(tmp_path, monkeypatch,
 
 @pytest.mark.parametrize("agent", [False, True])
 def test_range_failure_skill_fallback_and_missing_target(tmp_path, agent):
-    skill = tmp_path / "skills" / "local" / "SKILL.md"
+    skill = tmp_path / ".claude" / "skills" / "local" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("# 固有本文\n", encoding="utf-8")
     target = ReadTarget(skill, "不存在")
-    notice = rules_context.acquisition_failure(target, ValueError("範囲不明"), shell=False, agent=agent)
+    notice = rules_context.acquisition_failure(target, ValueError("範囲不明"), shell=False, agent=agent, cwd=str(tmp_path))
     assert "`Skill`で`local`" in notice and "固有本文" not in notice
     assert ("Readで全文読" in notice) is agent
     decoding = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")
-    notice = rules_context.acquisition_failure(target, decoding, shell=False, agent=agent)
+    notice = rules_context.acquisition_failure(target, decoding, shell=False, agent=agent, cwd=str(tmp_path))
     assert "invalid" in notice and "宣言の見出しと資料を整合" not in notice
     skill.unlink()
     notice = rules_context.acquisition_failure(target, FileNotFoundError(), shell=False, agent=agent)
@@ -768,7 +768,7 @@ def test_resolved_project_skill_delivers_startup_and_later_conditions(tmp_path, 
         selector="project-skill",
     )
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [fallback])
-    payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
+    payload = {"cwd": str(tmp_path / "other-repo"), **({"turn_id": "turn"} if codex else {})}
     tool, inputs = ("Bash", {"command": f"cat -- {requested}"}) if shell else ("Read", {"file_path": str(requested)})
     first = read_delivery.deliver(payload, tool, inputs, "test")
     assert not _guidance(first)

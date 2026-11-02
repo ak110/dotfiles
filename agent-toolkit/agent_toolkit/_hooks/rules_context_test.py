@@ -40,7 +40,7 @@ def test_session_start_reacquires_plugin_inventory_for_the_same_session(tmp_path
     monkeypatch.setattr(plugin_roots.shutil, "which", lambda *_args, **_kwargs: str(executable))
     monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
-    monkeypatch.setattr(rules_context, "_compact_recovery_context", lambda *_args: None)
+    monkeypatch.setattr(rules_context, "_compact_recovery_context", lambda *_args, **_kwargs: None)
     calls = []
 
     def acquire(args, **_kwargs):
@@ -325,17 +325,23 @@ def test_session_start_context_fits_claude_code_cap(
 # compact前の内部状態を既存PreToolUse記録で組み立てる局所fixtureだけを許可する。
 # pylint: disable=protected-access
 @pytest.mark.parametrize("host", ["claude", "codex", "agy"])
-def test_compact_skill_guidance_uses_host_acquisition(host: str, tmp_path: pathlib.Path) -> None:
-    skill = tmp_path / "skills" / "local" / "SKILL.md"
+@pytest.mark.parametrize("inside", [False, True])
+def test_compact_skill_guidance_uses_host_acquisition(host: str, tmp_path: pathlib.Path, inside: bool) -> None:
+    skill = tmp_path / "project/.claude/skills/local/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("# 固有スキル本文\n", encoding="utf-8")
     digest = hashlib.sha256(skill.read_bytes()).hexdigest()
-    output = rules_context._compact_recovery_context(host, 10000, [(skill, "", digest, False)])
+    cwd = str(tmp_path / ("project" if inside else "outside"))
+    output = rules_context._compact_recovery_context(host, 10000, [(skill, "", digest, False)], cwd=cwd)
     assert output is not None
     assert "固有スキル本文" not in output
     assert str(skill) in output
-    assert ("`Skill`で`local`" in output) is (host == "claude")
-    assert ("cat --" in output) is (host in {"codex", "agy"})
+    loadable = host == "claude" and inside
+    assert ("`Skill`で`local`" in output) is loadable
+    assert ("cat --" in output) is not loadable
+    failure = rules_context.acquisition_failure(ReadTarget(skill), ValueError("読取失敗"), shell=host != "claude", cwd=cwd)
+    assert ("`Skill`で`local`" in failure) is loadable
+    assert ("cat --" in failure) is not loadable
 
 
 def test_compact_guidance_presents_candidates_for_remaining_steps(tmp_path: pathlib.Path) -> None:
@@ -396,13 +402,17 @@ def test_compact_skill_becomes_ready_only_after_skill_success(capsys, monkeypatc
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [])
-    skill = tmp_path / "skills" / "local" / "SKILL.md"
+    skill = tmp_path / ".claude" / "skills" / "local" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("# 固有スキル本文\n", encoding="utf-8")
     target = ReadTarget(skill)
     read_delivery._select_targets("compact-skill", [target], "main")
     read_delivery._mark("compact-skill", skill, "main")
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "compact-skill"}))
+    rules_context.main(
+        json.dumps(
+            {"hook_event_name": "SessionStart", "source": "compact", "session_id": "compact-skill", "cwd": str(tmp_path)}
+        )
+    )
     output = _output(capsys)
     assert "固有スキル本文" not in output and "`Skill`で`local`" in output
     records = read_state("compact-skill").get(rules_context.OPERATION_SKILL_READY_KEY, {})

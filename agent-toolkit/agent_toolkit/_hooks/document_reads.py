@@ -103,7 +103,12 @@ def _sibling_skill_root(plugin: str, toolkit: pathlib.Path) -> pathlib.Path | No
     return sibling.resolve() if sibling is not None else None
 
 
-def skill_loadable(path: pathlib.Path, *, owner: Callable[[pathlib.Path], pathlib.Path | None] = document_owner) -> bool:
+def skill_loadable(
+    path: pathlib.Path,
+    *,
+    cwd: str | pathlib.Path | None = None,
+    owner: Callable[[pathlib.Path], pathlib.Path | None] = document_owner,
+) -> bool:
     """`Skill`起動がこの実体を読み込むかを返す。
 
     同じ名前の配布スキルでも、作業ツリー内の写しは起動中の配布物とは別の実体であり、`Skill`起動では読み込まれない。
@@ -112,8 +117,12 @@ def skill_loadable(path: pathlib.Path, *, owner: Callable[[pathlib.Path], pathli
     読込案内、取得観測、圧縮後と取得失敗の案内が同じ判定を使うよう、どのhookからも依存できるこの層に置く。
     """
     name = skill_name(path, owner=owner)
-    if name is None or ":" not in name:
+    if name is None:
         return True
+    if ":" not in name:
+        # ローカル資料の実在だけでは、会話からSkillで起動できる根拠にならない。
+        directories = [pathlib.Path.home() / ".claude/skills", *read_triggers.project_skill_dirs(pathlib.Path(cwd or "."))]
+        return any((directory / name / "SKILL.md").resolve() == path.resolve() for directory in directories)
     active = active_skill_root(name.split(":", 1)[0])
     root = owner(path)
     return active is None or root is None or root == active
@@ -124,10 +133,13 @@ def requires_skill_invocation(
     *,
     host: str,
     subject: str,
+    cwd: str | pathlib.Path | None = None,
     owner: Callable[[pathlib.Path], pathlib.Path | None] = document_owner,
 ) -> bool:
     """`Skill`起動だけを全文取得として認める資料かを返す。"""
-    return skill_loadable(path, owner=owner) and read_triggers.skill_invocation_required(path, host=host, subject=subject)
+    return skill_loadable(path, cwd=cwd, owner=owner) and read_triggers.skill_invocation_required(
+        path, host=host, subject=subject
+    )
 
 
 def bash_document_reads(command: str) -> list[DocumentRead]:

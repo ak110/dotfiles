@@ -106,7 +106,7 @@ def test_unchecked_condition_keeps_notice_suppressed_until_actual_resolution(tmp
 @pytest.mark.parametrize("tool", ["Read", "Bash"])
 def test_skill_acquisition_respects_model_invocation(tmp_path, monkeypatch, state, host, frontmatter, allows_read, tool):
     """全文だけを取得済みにし、通常のClaudeスキルはSkill起動を要する。"""
-    skill = tmp_path / "skills/local/SKILL.md"
+    skill = tmp_path / ".claude/skills/local/SKILL.md"
     skill.parent.mkdir(parents=True)
     body = f"---\nname: local\n{frontmatter}\n---\n# 基準\n固有の本文\n"
     skill.write_text(body, encoding="utf-8")
@@ -135,6 +135,99 @@ def test_skill_acquisition_respects_model_invocation(tmp_path, monkeypatch, stat
         assert document_reads.content_ready(
             state[rules_context.OPERATION_SKILL_READY_KEY], document_reads.content_fingerprint(skill), "main"
         )
+
+
+@pytest.mark.parametrize("inside", [False, True])
+@pytest.mark.parametrize("linked", [False, True])
+@pytest.mark.parametrize("reading", ["Read", "Bash"])
+@pytest.mark.parametrize("writing", ["Write", "Bash"])
+def test_project_skill_cwd_boundary_releases_same_write(tmp_path, monkeypatch, state, inside, linked, reading, writing):
+    """会話から起動できる実体だけSkillを要求し、範囲外は通常取得で再書込へ戻る。"""
+    project = tmp_path / "project"
+    skill = project / ".claude/skills/local/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: local\n---\n# 基準\n固有の本文\n", encoding="utf-8")
+    if linked:
+        physical = tmp_path / "physical/skills/local"
+        physical.parent.mkdir(parents=True)
+        skill.parent.rename(physical)
+        skill.parent.symlink_to(physical, target_is_directory=True)
+        skill = skill.resolve()
+    cwd = project if inside else tmp_path / "outside"
+    cwd.mkdir(exist_ok=True)
+    row = read_triggers.ReadTrigger(project / "source.md", 1, "操作", ("write:*",), (skill,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    payload = {"session_id": "project-cwd", "cwd": str(cwd)}
+    output = project / "out.md"
+    request = {
+        **payload,
+        "tool_name": writing,
+        "tool_input": {"file_path": str(output), "content": "本文"}
+        if writing == "Write"
+        else {"command": f"printf '本文' > {shlex.quote(str(output))}"},
+    }
+    first = _run_hook_in_process("pretooluse", request)
+    assert first.returncode == 0 and not first.stderr
+    assert str(skill) in first.stdout
+    assert ("`Skill`で`local`" in first.stdout) is inside
+    if not inside:
+        assert "Readで" in first.stdout and "cat --" in first.stdout
+    assert str(skill) in denial_reason(_run_hook_in_process("pretooluse", request))
+    inputs = {"file_path": str(skill)} if reading == "Read" else {"command": "cat -- " + shlex.quote(str(skill))}
+    acquired = _run_hook_in_process(
+        "posttooluse",
+        {
+            **payload,
+            "hook_event_name": "PostToolUse",
+            "tool_name": reading,
+            "tool_input": inputs,
+            "tool_response": {"stdout": skill.read_text(encoding="utf-8"), "exit_code": 0}
+            if reading == "Bash"
+            else skill.read_text(encoding="utf-8"),
+        },
+    )
+    assert acquired.returncode == 0 and not acquired.stderr
+    after = _run_hook_in_process("pretooluse", request)
+    assert after.returncode == 0 and not after.stderr
+    assert read_delivery.target_ready(state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main")
+    assert ('"permissionDecision": "deny"' in after.stdout) is inside
+    if not inside:
+        assert str(skill) not in after.stdout
+        monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
+        monkeypatch.setattr(rules_context, "_compaction_notice", lambda *_args, **_kwargs: "")
+        monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
+        compact = _run_hook_in_process("rules_context", {**payload, "hook_event_name": "SessionStart", "source": "compact"})
+        assert compact.returncode == 0 and not compact.stderr
+        assert str(skill) in compact.stdout and "`Skill`で`local`" not in compact.stdout
+        assert "Readで" in compact.stdout and "cat --" in compact.stdout
+        failed = _run_hook_in_process(
+            "posttooluse",
+            {
+                **payload,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": reading,
+                "tool_input": inputs,
+                "tool_response": "失敗",
+            },
+        )
+        assert failed.returncode == 0 and not failed.stderr
+        guided = _run_hook_in_process("pretooluse", request)
+        assert guided.returncode == 0 and str(skill) in guided.stdout
+        assert str(skill) in denial_reason(_run_hook_in_process("pretooluse", request))
+        acquired = _run_hook_in_process(
+            "posttooluse",
+            {
+                **payload,
+                "hook_event_name": "PostToolUse",
+                "tool_name": reading,
+                "tool_input": inputs,
+                "tool_response": skill.read_text(encoding="utf-8"),
+            },
+        )
+        assert acquired.returncode == 0 and not acquired.stderr
+        resumed = _run_hook_in_process("pretooluse", request)
+        assert resumed.returncode == 0 and not resumed.stderr
+        assert str(skill) not in resumed.stdout and '"permissionDecision": "deny"' not in resumed.stdout
 
 
 @pytest.mark.parametrize("tampered", [False, True])
