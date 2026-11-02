@@ -10,6 +10,7 @@ import pathlib
 import subprocess
 import sys
 import time
+import types
 from collections.abc import Generator
 from unittest import mock
 
@@ -167,6 +168,52 @@ def test_reclaim_descendants_accepts_already_finished_targets(spawn_parent):
     assert process_tree.reclaim_descendants(descendants, timeout=5.0) == []
 
     assert process_tree.reclaim_descendants(descendants, timeout=0.5) == []
+
+
+def test_suspend_and_collect_descendants_suspends_root_and_descendants(spawn_parent, monkeypatch):
+    """`sys.platform`が`win32`の場合は起点と子孫を一時停止し、列挙した子孫を返す。"""
+    monkeypatch.setattr(process_tree, "sys", types.SimpleNamespace(platform="win32"))
+    parent = spawn_parent()
+
+    descendants = process_tree.suspend_and_collect_descendants(parent.pid)
+
+    try:
+        assert {item.pid for item in descendants} == {item.pid for item in psutil.Process(parent.pid).children(recursive=True)}
+        targets = [psutil.Process(parent.pid), *descendants]
+        # POSIXの停止シグナルは非同期に配送されるため、停止状態の観測を上限付きで待つ。
+        deadline = time.monotonic() + 10.0
+        while any(target.status() != psutil.STATUS_STOPPED for target in targets) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert [target.status() for target in targets] == [psutil.STATUS_STOPPED] * len(targets)
+    finally:
+        parent.kill()
+        assert process_tree.reclaim_descendants(descendants, timeout=0.5) == []
+
+
+def test_suspend_and_collect_descendants_includes_child_started_after_first_listing(monkeypatch):
+    """初回の列挙後に起動した子孫も、一時停止を繰り返して列挙へ含める。"""
+    monkeypatch.setattr(process_tree, "sys", types.SimpleNamespace(platform="win32"))
+    first = mock.Mock(pid=11)
+    late = mock.Mock(pid=12)
+    root = mock.Mock(pid=10)
+    root.children.side_effect = [[first], [first, late], [first, late]]
+    monkeypatch.setattr(psutil, "Process", mock.Mock(return_value=root))
+
+    assert process_tree.suspend_and_collect_descendants(10) == [first, late]
+    for target in (root, first, late):
+        target.suspend.assert_called_once_with()
+
+
+def test_suspend_and_collect_descendants_keeps_posix_processes_running(spawn_parent):
+    """POSIXでは一時停止せず、`collect_descendants`と同じ子孫を返す。"""
+    if os.name == "nt":
+        pytest.skip("POSIXでの動作を確かめる試験")
+    parent = spawn_parent()
+
+    descendants = process_tree.suspend_and_collect_descendants(parent.pid)
+
+    assert {item.pid for item in descendants} == {item.pid for item in process_tree.collect_descendants(parent.pid)}
+    assert psutil.Process(parent.pid).status() != psutil.STATUS_STOPPED
 
 
 def test_reclaim_descendants_returns_empty_list_without_targets():

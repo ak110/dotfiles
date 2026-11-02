@@ -8,6 +8,7 @@ import json
 import logging
 import ntpath
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -109,6 +110,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         failures.append(str(error))
     if not dotfiles_mode.is_minimal():
         changed |= _ensure_global_node(mise_bin)
+        changed |= _ensure_gcloud_plugin_usable(mise_bin)
     changed |= _ensure_tools_installed(mise_bin)
     changed |= _ensure_tool_bin_paths_present(mise_bin)
     if not dotfiles_mode.is_minimal():
@@ -234,14 +236,35 @@ def find_mise_binary() -> Path | None:
 # `mise self-update`は公式インストーラーで導入したmiseだけが使える。手動でも失敗する場合の代替手段。
 _SELF_UPDATE_FALLBACK = "手動でも失敗する場合は、miseを導入した手段（パッケージマネージャーや公式インストーラー）で更新する"
 
+# WinGetの`upgrade`が「適用できる更新がない」ときに返す終了コード（APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE）。
+# Windowsの`returncode`は符号なしの値で返るが、符号付きで返る実行系にも対応する。
+_WINGET_UPDATE_NOT_APPLICABLE = frozenset({0x8A15002B, 0x8A15002B - (1 << 32)})
+
+
+def _is_winget_managed(mise_bin: Path) -> bool:
+    r"""Mise実行ファイルがWinGetの配置先（`WinGet\\Links`や`WinGet\\Packages`）にあるかを返す。
+
+    WinGetで導入したmiseは`mise self-update`を拒否するため、更新操作の選択に使う。
+    PATHで別の配置のmiseが先行する場合は、実際に使う実行ファイルの配置で判定する。
+    """
+    if not _is_windows():
+        return False
+    parts = [part.lower() for part in ntpath.normpath(str(mise_bin)).split("\\")]
+    # WinGetは`%LOCALAPPDATA%\Microsoft\WinGet\{Links,Packages}`へ配置する。ユーザー名など
+    # 別の位置にある`winget`という名前のディレクトリを取り違えないよう、連続する3要素で判定する。
+    winget_dirs = (["microsoft", "winget", "links"], ["microsoft", "winget", "packages"])
+    return any(parts[i : i + 3] in winget_dirs for i in range(len(parts)))
+
 
 def _ensure_mise_up_to_date(mise_bin: Path) -> bool:
-    """`mise self-update -y` で mise 本体を最新版へ更新する。
+    """Mise本体を、導入した手段に合う操作で最新版へ更新する。
 
-    パッケージマネージャー経由でインストールされた mise では
-    `self-update` サブコマンド自体が失敗するが、`_run_mise` の例外・非ゼロ終了吸収により
-    後続ステップ（trust・global node・tools install）は継続する。
+    WinGetで導入したmiseは`mise self-update`を拒否するため`winget upgrade`で更新し、
+    それ以外は`mise self-update -y`で更新する。
+    更新の失敗は警告して吸収し、後続ステップ（trust・global node・tools install）は継続する。
     """
+    if _is_winget_managed(mise_bin):
+        return _upgrade_mise_with_winget()
     result = _run_mise(mise_bin, ["self-update", "-y"], timeout=_MISE_INSTALL_TIMEOUT)
     if result is None:
         logger.warning(
@@ -264,6 +287,111 @@ def _ensure_mise_up_to_date(mise_bin: Path) -> bool:
         )
         return False
     logger.info(log_format.format_status("mise", "`self-update` を実行しました"))
+    return True
+
+
+def _upgrade_mise_with_winget() -> bool:
+    """WinGetで導入したmiseを`winget upgrade`で更新する。
+
+    適用できる更新がない場合は更新なしとして扱い、その他の失敗は警告して後続ステップを継続する。
+    """
+    manual = (
+        "`winget upgrade --id jdx.mise --exact`を手動実行する。"
+        "手動でも失敗する場合は、表示されたwingetの出力に従ってWinGetの状態を確かめる"
+    )
+    try:
+        result = common.run_subprocess(
+            [
+                "winget",
+                "upgrade",
+                "--id",
+                "jdx.mise",
+                "--exact",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+                "--disable-interactivity",
+            ],
+            timeout=_MISE_INSTALL_TIMEOUT,
+            tag="mise",
+        )
+    except Exception as error:  # noqa: BLE001  # 更新失敗で後続のセットアップ全体を止めない
+        logger.warning(log_format.format_status("mise", f"`winget upgrade` に失敗（処理は継続した）: {error}。{manual}"))
+        return False
+    if result is None:
+        logger.warning(
+            log_format.format_status("mise", f"`winget upgrade` がタイムアウトまたは例外で中断（処理は継続した）。{manual}"),
+        )
+        return False
+    if result.returncode in _WINGET_UPDATE_NOT_APPLICABLE:
+        logger.info(log_format.format_status("mise", "WinGetに適用できる更新が無いため本体は現在の版のまま"))
+        return False
+    if result.returncode != 0:
+        logger.warning(
+            log_format.format_status(
+                "mise",
+                f"`winget upgrade` に失敗（処理は継続した）。{manual}\n{common.format_cli_error(result)}",
+            ),
+        )
+        return False
+    logger.info(log_format.format_status("mise", "`winget upgrade` で本体を更新しました"))
+    return True
+
+
+# 同梱のgcloudプラグインが`require("python")`を解決できず、gcloudの導入と実行が失敗するmiseの版（jdx/mise#15034）。
+_GCLOUD_PLUGIN_BROKEN_VERSIONS = frozenset({"2026.10.20", "2026.10.21"})
+
+# 同梱版の代わりに使うGit配布のgcloudプラグイン。ファイルシステムから読み込むプラグインは`hooks/`配下の
+# モジュールを解決できるため、上流のissueが回避策として示している。
+_GCLOUD_PLUGIN_URL = "https://github.com/jdx/vfox-gcloud"
+
+
+def _ensure_gcloud_plugin_usable(mise_bin: Path) -> bool:
+    """同梱gcloudプラグインが壊れた版のmiseでは、Git配布のプラグインを導入して置き換える。
+
+    WinGetなど管理元の配布が修正版より遅れると本体を更新しても壊れた版が残るため、版で判定する。
+    導入済みなら再導入しない。導入の失敗は警告し、後続の`mise install`へ進む。
+
+    Returns:
+        プラグインを新たに導入した場合True。
+    """
+    version_result = _run_mise(mise_bin, ["--version"])
+    if version_result is None or version_result.returncode != 0:
+        return False
+    match = re.search(r"\b(\d{4}\.\d+\.\d+)\b", version_result.stdout)
+    if match is None:
+        return False
+    # 更新後に実際に使う本体の版と実体を記録し、更新経路と回避処置の要否をログで確かめられるようにする。
+    logger.info(log_format.format_status("mise", f"本体 {match[1]} を使う: {mise_bin}"))
+    if match[1] not in _GCLOUD_PLUGIN_BROKEN_VERSIONS:
+        return False
+
+    listed = _run_mise(mise_bin, ["plugins", "ls", "--urls"])
+    if listed is not None and listed.returncode == 0:
+        for line in listed.stdout.splitlines():
+            fields = line.split()
+            if len(fields) >= 2 and fields[0] == "gcloud" and fields[1].removesuffix(".git") == _GCLOUD_PLUGIN_URL:
+                return False
+
+    result = _run_mise(mise_bin, ["plugins", "install", "gcloud", _GCLOUD_PLUGIN_URL], timeout=_MISE_INSTALL_TIMEOUT)
+    if result is None or result.returncode != 0:
+        logger.warning(
+            log_format.format_status(
+                "mise",
+                _with_mise_output(
+                    f"mise {match[1]}の同梱gcloudプラグインの不具合を回避するGit配布プラグインの導入に失敗"
+                    f"（処理は継続した）。`mise plugins install gcloud {_GCLOUD_PLUGIN_URL}`を手動実行するか、"
+                    "miseを2026.10.22以降へ更新する",
+                    result,
+                ),
+            ),
+        )
+        return False
+    logger.info(
+        log_format.format_status(
+            "mise",
+            f"mise {match[1]}の同梱gcloudプラグインの不具合を回避するため、Git配布のプラグインを導入しました",
+        ),
+    )
     return True
 
 

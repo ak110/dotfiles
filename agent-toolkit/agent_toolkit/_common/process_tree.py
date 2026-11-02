@@ -14,6 +14,7 @@ CLIのプロセスが終了すると子孫の親が変わり、そのPIDを起�
 import contextlib
 import logging
 import subprocess
+import sys
 import time
 from collections.abc import Generator
 from typing import Any
@@ -33,6 +34,13 @@ RECLAIM_TIMEOUT_SECONDS = 5.0
 
 _POLL_INTERVAL_SECONDS = 0.05
 """子孫の終了を確認する間隔（秒）。"""
+
+_SUSPEND_COLLECT_MAX_ROUNDS = 10
+"""`suspend_and_collect_descendants`が一時停止と列挙を繰り返す上限回数。
+
+一時停止した対象は子を起動できないため、各回で増えるのは前回の列挙と一時停止の間に起動した子孫だけである。
+一時停止できない対象が子を起動し続ける場合も、この回数で列挙を打ち切る。
+"""
 
 
 def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
@@ -137,6 +145,39 @@ def collect_descendants(pid: int | None) -> list[psutil.Process]:
         return psutil.Process(pid).children(recursive=True)
     except psutil.Error, OSError:
         return []
+
+
+def suspend_and_collect_descendants(pid: int | None) -> list[psutil.Process]:
+    """Windowsでは起点と子孫を一時停止しながら列挙を繰り返し、列挙が増えなくなった子孫を返す。
+
+    Windowsでは親の終了で子孫が終了せず、親を失った子孫は起点から辿れなくなる。
+    1回の列挙の直後に起動した子孫は列挙から漏れ、親の強制終了後も資源を保持したまま残る。
+    一時停止したプロセスは新しい子を起動できないため、列挙が増えなくなった時点で子孫の集合が確定する。
+    一時停止した対象は、呼び出し元が`TerminateProcess`による終了で回収する（停止中でも終了できる）。
+    POSIXでは終了要求による正常終了の機会を保つため、一時停止せず`collect_descendants`と同じ結果を返す。
+    """
+    if sys.platform != "win32" or pid is None:
+        return collect_descendants(pid)
+    try:
+        root = psutil.Process(pid)
+    except psutil.Error, OSError:
+        return []
+    suspended: set[int] = set()
+    descendants: list[psutil.Process] = []
+    targets = [root]
+    for _ in range(_SUSPEND_COLLECT_MAX_ROUNDS):
+        for process in targets:
+            with contextlib.suppress(psutil.Error, OSError):
+                process.suspend()
+            suspended.add(process.pid)
+        try:
+            descendants = root.children(recursive=True)
+        except psutil.Error, OSError:
+            break
+        targets = [process for process in descendants if process.pid not in suspended]
+        if not targets:
+            break
+    return descendants
 
 
 def reclaim_descendants(descendants: list[psutil.Process], *, timeout: float = RECLAIM_TIMEOUT_SECONDS) -> list[str]:

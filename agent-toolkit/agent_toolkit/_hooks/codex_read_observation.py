@@ -14,6 +14,11 @@ from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import formatter
 
 _FILTER = re.compile(r"\.(?:[A-Za-z_]\w*)?(?:(?:\.[A-Za-z_]\w*)|(?:\[\d*\]))*")
+# `sed -n`へ渡す印字だけのスクリプト。`;`区切りの印字指定を並べ、番地は行番号・`$`・静的な正規表現に限る。
+# 正規表現には区切り・エスケープ・角括弧・`;`・改行を含めず、sedの解釈と番地の境界がずれる記述を受理しない。
+# `p`以外のコマンド（書込の`w`、外部実行の`e`、置換の`s`など）は受理しない。
+_SED_ADDRESS = r"(?:\d+|\$|/[^/\\\[;\n]+/)"
+_SED_PRINT = re.compile(rf"{_SED_ADDRESS}(?:,{_SED_ADDRESS})?p(?:;{_SED_ADDRESS}(?:,{_SED_ADDRESS})?p)*")
 
 
 @dataclass(frozen=True)
@@ -26,6 +31,9 @@ class Read:
 
 def read_command_groups(command: str, *, sequential: bool = False, read_prefix: bool = False) -> list[list[str]] | None:
     """読取計画と取得案内で同じ演算子の境界を使う。"""
+    # 字句解析は引用を外すので、展開を受ける`$`とバッククォートは単一引用の外側で先に拒否する。
+    if read_prefix and any(marker in re.sub(r"'[^']*'", "", command) for marker in ("$", "`")):
+        return None
     lexer = shlex.shlex(command.strip() if read_prefix else command, posix=True, punctuation_chars=";&|()<>\n")
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
@@ -52,7 +60,7 @@ def read_command_groups(command: str, *, sequential: bool = False, read_prefix: 
                         len(groups[-1]) == 2
                         and pathlib.PurePath(groups[-1][0]).name == "sed"
                         and groups[-1][1] == "-n"
-                        and re.fullmatch(r"(?:\d+|\$)(?:,(?:\d+|\$))?p", token)
+                        and _SED_PRINT.fullmatch(token)
                     )
                 ):
                     return None
@@ -90,7 +98,7 @@ def read_plan(command: str) -> list[Read]:
             return []
         position = 1
         if name == "sed":
-            if len(group) < 4 or group[1] != "-n" or not re.fullmatch(r"(?:\d+|\$)(?:,(?:\d+|\$))?p", group[2]):
+            if len(group) < 4 or group[1] != "-n" or not _SED_PRINT.fullmatch(group[2]):
                 return []
             position = 3
         elif name in {"head", "tail"}:

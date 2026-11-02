@@ -592,8 +592,10 @@ class JsonRpcProcess:
             self._closed = True
             # 子孫の列挙は終了要求より前に行う。App Serverが終了すると子孫の親が変わり、
             # 保持しているPIDを起点に辿れなくなるためである。
+            # Windowsでは列挙直後に起動した孫が回収から漏れ、codex-homeを保持したまま残ったため、
+            # App Serverと子孫を一時停止しながら列挙を確定させる。
             self._residual = await run_file_operation(
-                process_tree.collect_descendants, None if process is None else process.pid
+                process_tree.suspend_and_collect_descendants, None if process is None else process.pid
             )
             tasks = tuple(
                 task
