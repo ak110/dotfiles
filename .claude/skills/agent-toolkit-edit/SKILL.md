@@ -32,7 +32,6 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/SKILL.md#「開発手順」` | 判断 | `section:*/skills/develop-dotfiles/SKILL.md#「開発手順」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delivery-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/session-state-and-flags.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
@@ -41,7 +40,7 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`、または`atk wi`の実装を編集する前 | `agent-toolkit:workflow-overview`を起動する。ユーザーの判断、操作、観測結果が変わる場合のみ、対応する`docs/guide/`節も読む | 判断 | `read:agent-toolkit:*/skills/workflow-overview/SKILL.md` | |
-| `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下、または`rust/claude-statusline/src/agents_server.rs`の実装を変更・調査する前 | `references/agents-server-shared-state.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md` | |
+| `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下、または`rust/claude-statusline/src/agents_server.rs`の実装を変更・調査する前、および共有状態の読み書きを変更・調査する前 | `references/agents-server-shared-state.md`の「共通事項」「実行主体」「判定を確定する前に確認すること」「本書の更新が必要になる変更」 | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「共通事項」「実行主体」「判定を確定する前に確認すること」「本書の更新が必要になる変更」` | |
 | `agents_server`が起動した委譲先が動作しない事象（起動失敗、初期化未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-investigation.md` | |
 | `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/atk-serve-static.md` | |
 | 次のいずれかを変更する前、および作業ツリーで改訂した配布物の挙動を確認する前: `agent-toolkit/agent_toolkit/`・`agent-toolkit/scripts/`の配置とインポート、`atk`のサブコマンドと出力、MCPサーバー識別子とツール名、フックの実装と登録、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/distribution-and-hooks.md` | |
@@ -70,6 +69,26 @@ description: >
 ## agents_serverの共有状態
 
 共有状態ごとの保存場所や読み書きの担当モジュールは、`references/agents-server-shared-state.md`に記録されている。保存先、更新する主体、または状態ディレクトリ配下のファイル構成を変更する場合は、同一の変更単位で同文書も更新する。
+読込表の共通節に加え、「共有状態資料の選択」で該当する主題の節を読む。
+
+### 状態資料の節の選択
+
+状態資料の名指し参照と読込表では、読み書きする状態、更新する主体、消費側との利用関係から必要な節を選ぶ。
+複数の状態を扱う変更では、共通節と該当する主題節の和を読む。
+ファイル名だけで対象を限定せず、選択した節の前提・例外が別の主題にある場合も、その節を加える。
+共有状態は次の表、セッション状態と内部フラグは「セッション状態資料の選択」を使う。
+
+### 共有状態資料の選択
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 待機run、終了結果の保持・回収、通知、保留結果や自動再開を変更・調査する前 | `references/agents-server-shared-state.md`の「待機と終了結果・通知」「セッション登録と再開・解放」「索引と状態表示」 | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「待機と終了結果・通知」「セッション登録と再開・解放」「索引と状態表示」` |
+| セッションの登録、追送、引き継ぎ、再開、所有の解決や解放を変更・調査する前 | `references/agents-server-shared-state.md`の「セッション登録と再開・解放」 | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「セッション登録と再開・解放」` |
+| ルート・書込主体の索引、statusline・CLIの状態表示、生存確認やコンテキスト使用量を変更・調査する前 | `references/agents-server-shared-state.md`の「索引と状態表示」 | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「索引と状態表示」` |
+| バックエンドの接続・環境継承、API失敗・利用上限、モデル候補や可用性を変更・調査する前 | `references/agents-server-shared-state.md`の「バックエンド固有の接続とAPI状態」 | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「バックエンド固有の接続とAPI状態」` |
+| process-loopの所有・再開・無進捗記録、活動記録やレーンの統合・回収を変更・調査する前 | `references/agents-server-shared-state.md`の「process-loopとレーン」「セッション登録と再開・解放」 | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「process-loopとレーン」「セッション登録と再開・解放」` |
+| 配布物の保持・リース、managed-tempや共有状態の掃引を変更・調査する前 | `references/agents-server-shared-state.md`の「配布物保持と掃引」「診断とログ」 | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「配布物保持と掃引」「診断とログ」` |
+| 診断・公開イベントログ、コンパクション計測やリソース集計を変更・調査する前 | `references/agents-server-shared-state.md`の「診断とログ」 | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「診断とログ」` |
 
 ## agents_serverの委譲不具合の調査
 
@@ -128,6 +147,27 @@ process-wiのモード固有資料は、共通契約を参照して読み替え�
 
 `agent-toolkit`プラグインで管理する全フラグ一覧のSSOTは、`references/session-state-and-flags.md`である。フラグを追加・変更する際は、必ず同ファイルを更新する。
 フックの実装・編集やセッション状態の設計・変更する際は、`agent-basics:writing-standards`を起動して参照する（フック実装の基準を含む。エージェントの行動規範自体は役割別ルールまたは作業別スキルに置く）。
+状態資料は「状態資料の節の選択」の方針で、次の表の共通節と該当する既存節を読む。
+
+### セッション状態資料の選択
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| セッション状態や内部フラグを変更・調査する前 | `references/session-state-and-flags.md`の「状態ファイルの設計」「状態の継承」。設計節配下の「並行書き込みの排他制御」も含む | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「状態ファイルの設計」「状態の継承」` |
+| 活動・WI投入作業の記録を変更・調査する前 | `references/session-state-and-flags.md`の「セッションの活動記録」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「セッションの活動記録」` |
+| managed-tempの状態を変更・調査する前 | `references/session-state-and-flags.md`の「managed-tempの状態」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「managed-tempの状態」` |
+| 完了報告からの状態解析を変更・調査する前 | `references/session-state-and-flags.md`の「完了報告からの状態読み取り」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「完了報告からの状態読み取り」` |
+| Function hooksの終了要求、定期再確認や利用上限の再開予約を変更・調査する前 | `references/session-state-and-flags.md`の「Function hooksの終了要求」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「Function hooksの終了要求」` |
+| 作業契約の状態を変更・調査する前 | `references/session-state-and-flags.md`の「作業契約系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「作業契約系」` |
+| plan・セッション名の状態を変更・調査する前 | `references/session-state-and-flags.md`の「plan系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「plan系」` |
+| 振り返り・モード・無進捗停止の状態を変更・調査する前 | `references/session-state-and-flags.md`の「振り返りとモードの状態」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「振り返りとモードの状態」` |
+| 進捗点検の状態を変更・調査する前 | `references/session-state-and-flags.md`の「進捗の点検系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「進捗の点検系」` |
+| 確認・操作スキルの起動、資料取得証拠、読込の選択・案内や終了工程の証拠を変更・調査する前 | `references/session-state-and-flags.md`の「確認・操作スキル系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「確認・操作スキル系」` |
+| 通知の反復抑止・配送状態を変更・調査する前 | `references/session-state-and-flags.md`の「通知反復系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「通知反復系」` |
+| agents_serverの呼出・所有・待機の観測状態を変更・調査する前 | `references/session-state-and-flags.md`の「agents_server連携系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「agents_server連携系」` |
+| バックグラウンドタスクの所有・通知・停止の状態を変更・調査する前 | `references/session-state-and-flags.md`の「バックグラウンドタスク系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「バックグラウンドタスク系」` |
+| UWI回答の検出状態を変更・調査する前 | `references/session-state-and-flags.md`の「UWI系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「UWI系」` |
+| Antigravityのイベント間状態を変更・調査する前 | `references/session-state-and-flags.md`の「Antigravityのイベント間状態」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「Antigravityのイベント間状態」` |
 
 ## agent-basicsとの責務境界
 
@@ -165,5 +205,4 @@ agent-toolkitのリソースを編集する前は`agent-basics:writing-standards
 | hookの遮断・警告の判定を新設・変更する前 | `references/claude-hooks-block-warn.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-block-warn.md` |
 | hookの出力フィールドを選択・変更する前 | `references/claude-hooks-output.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-output.md` |
 | hook通知のformatterを実装・変更する前 | `references/claude-hooks-messages.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-messages.md` |
-| セッション状態や内部フラグを変更する前 | `references/session-state-and-flags.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |

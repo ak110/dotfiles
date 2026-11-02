@@ -798,8 +798,59 @@ def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, s
             _material_paths("根拠の所在", evidence)
 
 
+_REVIEW_BASES = ("計画", "CI記録", "WI")
+"""`exec-review.subagent.md`「入力」が定める`レビュー基準`の基準名。"""
+
+_REVIEW_BASIS_INPUTS: dict[str, tuple[str, ...]] = {
+    "計画": ("計画",),
+    "CI記録": ("CI記録", "修正系列の開始時のHEAD", "原因commitOID"),
+    "WI": ("WI記録", "開始時のHEAD"),
+}
+"""基準ごとに同じ起動で受け取る追加入力。`WI`の値は`計画`基準を含まない起動だけに求める。"""
+
+
+def _review_basis_error(reason: str) -> ActionableError:
+    """基準名と基準別の追加入力の誤りを、正しい指定方法とともに返す。"""
+    return ActionableError(
+        f"exec-reviewの起動入力が不成立です: {reason}。委譲先は起動していない。",
+        next_action=(
+            "`レビュー基準`には`計画`・`CI記録`・`WI`の基準名だけを読点（`、`または`,`）で区切って書き、"
+            "資料は基準ごとの別入力へ渡して`start`を再発行する。"
+            "`計画`は`計画`に計画ファイルの絶対パス、`CI記録`は`CI記録`・`修正系列の開始時のHEAD`・`原因commitOID`、"
+            "`計画`を含まない`WI`は`WI記録`・`開始時のHEAD`を渡す"
+            "（例: `レビュー基準: 計画`と`計画: /abs/plan.md`）。"
+            "入力の定義は`share/exec-review.subagent.md`「入力」にある"
+        ),
+    )
+
+
+def _check_review_bases(params: Mapping[str, str]) -> None:
+    """`レビュー基準`の基準名と、選んだ基準が求める追加入力を資料検査の前に確かめる。
+
+    基準名へパスや説明を連結した値は、別入力の資料が無いまま起動して担当が初めて不足に気付くため拒否する。
+    """
+    value = params.get("レビュー基準", "").strip()
+    items = [item.strip() for item in re.split(r"[、,，､]", value)]
+    unknown = [item for item in items if item not in _REVIEW_BASES]
+    if not value or unknown:
+        shown = "、".join(f"`{item}`" for item in unknown) or "空の値"
+        raise _review_basis_error(f"`レビュー基準`に基準名以外の値があります: {shown}")
+    if len(set(items)) != len(items):
+        raise _review_basis_error("`レビュー基準`に同じ基準名が重複しています")
+    for basis in items:
+        if basis == "WI" and "計画" in items:
+            continue
+        missing = [name for name in _REVIEW_BASIS_INPUTS[basis] if not params.get(name, "").strip()]
+        if missing:
+            names = "、".join(f"`{name}`" for name in missing)
+            raise _review_basis_error(f"`レビュー基準`の`{basis}`に必要な入力がありません: {names}")
+    if "計画" in items:
+        _material_paths("計画", params["計画"])
+
+
 def _check_exec_review_materials(params: Mapping[str, str]) -> None:
-    """新形式AWIの条件表を起動前に構造だけ検査する。内容の評価はレビュー担当が担う。"""
+    """基準と追加入力を確かめてから、新形式AWIの条件表を起動前に構造だけ検査する。内容の評価はレビュー担当が担う。"""
+    _check_review_bases(params)
     names: set[str] = set()
     if plan := params.get("計画"):
         for path in _material_paths("計画", plan):
