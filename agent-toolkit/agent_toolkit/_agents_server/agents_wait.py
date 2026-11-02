@@ -352,6 +352,13 @@ def _target_origins(
     registered_ids, registry_error = wait_targets.read_wait_targets(root_session_id, owner_status_file, state_root)
     if registry_error is not None:
         return {}, (f"待機対象登録簿を読めません: {registry_error}", 9, _BROKEN_STATE_NEXT_ACTION)
+    # 古いhookが祖先の名前空間へ登録した対象は、本来の書込主体の通知を回収する権限を与えない。
+    owners = status_reader.load_root(root_session_id, state_root).sessions
+    for session_id in set(registered_ids):
+        owner = owners.get(session_id, {}).get("owner_status_file")
+        if owner is not None and owner != owner_status_file:
+            wait_targets.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
+            registered_ids.remove(session_id)
     # 状態ファイルにも結果ファイルにも無い登録は、登録簿が喪失か終了を示す場合に結果が生じないため解放する。
     # 終了の公開から結果ファイルの書込までの間は状態ファイルに行が残るため、回収前の対象を解放しない。
     releasable = {
@@ -636,10 +643,14 @@ def _wait_for_result(
                         ",".join(sorted(current_origins[session_id])),
                     )
                 status_paths = shared_layout.list_status_files(root_session_id, state_root)
+                owners = status_reader.load_root(root_session_id, state_root).sessions
                 stranded_roots: list[str] | None = None
                 collected: list[dict[str, Any]] = []
                 read_failure: str | None = None
                 for session_id in ordered_ids:
+                    owner = owners.get(session_id, {}).get("owner_status_file")
+                    if owner is not None and owner != identity.file_name:
+                        continue
                     result_path = result_directory / f"{session_id}.json"
                     result, read_error = retained_results.take_result(
                         root_session_id,

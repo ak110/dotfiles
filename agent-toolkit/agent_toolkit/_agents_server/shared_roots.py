@@ -287,7 +287,13 @@ def resolve_wait_identity(
     inferred = resolve_conversation_root(environment, state_root)
     identity = resolve_status_owner_identity(environment, state_root)
     if explicit_root_session_id is None:
-        if identity is None and inferred is not None and inferred.alias_valid and inferred.mapping_confirmed:
+        if (
+            identity is None
+            and _delegated_session.owner_session_id(environment) is None
+            and inferred is not None
+            and inferred.alias_valid
+            and inferred.mapping_confirmed
+        ):
             return StatusFileIdentity(inferred.root_session_id, "root.json", None)
         if identity is None or inferred is None or identity.root_session_id == inferred.root_session_id:
             return identity
@@ -310,6 +316,8 @@ def resolve_wait_identity(
         )
     if identity is not None:
         return StatusFileIdentity(explicit_root_session_id, identity.file_name, identity.host_session_id)
+    if _delegated_session.owner_session_id(environment) is not None:
+        return None
     return StatusFileIdentity(explicit_root_session_id, "root.json", None)
 
 
