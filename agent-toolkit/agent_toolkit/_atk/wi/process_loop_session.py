@@ -79,6 +79,9 @@ def build_process_loop_prompt(manifest: pathlib.Path | None = None) -> str:
             f"。開始時入力のmanifest {manifest} で取得済み候補・所有・準備先を確認する。"
             "スキル所定の処理と終了準備を終え、manifestのresult_fileへ実態に即した対象別結果を保存した時点を"
             "統括自身の到達点とする。続行不能時も理由と残工程を保存して制御を常駐へ返す。"
+            "completedは今回進められる作業と公開・CI検収の完了を表し、正当な延期はremainingへ明記する。"
+            "続行不能時は実態に合うstatusと理由を保存すれば今回の到達点となる。"
+            "判定には訂正後の最終保存内容と既存工程の検証証拠を使い、保存内容の読戻し後に終了手順へ進む。"
             "常駐による結果の受理・所有解放・回収は統括CLI終了後に行う"
         )
     goal = _automated_prompt.wrap(
