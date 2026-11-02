@@ -44,6 +44,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
+| 規範読込の改善案でrefine-promptを利用すると判断した時 | `agent-toolkit:refine-prompt/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/SKILL.md` | |
 | 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表で同一の時点に対応する行。writing-standardsについては、実施する調査や執筆の条件に該当する行 | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
 | AWIの本文を起草・判定する前 | `agent-toolkit:wi-standards`の読込表において、AWIの種別・引用・外部再現の各条件に対応付けられている`references/awi-body.md`の節 | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
 | 受領した要求にUWIが含まれる場合 | `agent-toolkit:wi-standards`の`references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
@@ -66,6 +67,11 @@ continuations:
 - 上流投入の場合は、要求ごとに`元項目`（元項目のAWIファイル名）と`投入条件`も受け取る。省略時の値はそれぞれ`なし`と`無条件`であり、値が設定されている要求を上流投入として扱う
 - 投入済みAWIの更新や失敗後の再開では、要求ごとに更新または修復する対象項目の`ファイル名`を受け取る
 - `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと、新規作成か継続かの区分。記録内容は`${CLAUDE_PLUGIN_ROOT}/share/rules-subagent.md`「多段工程の引き継ぎ記録」に従う
+
+規範読込の改善報告では、既存の観測欄と委譲元の判断にある利用節・不要範囲・削減見込み・方針候補と理由を再利用し、未確認部分だけを調べる。
+同じ資料の複数報告と既存項目の被覆をまとめて処置を選ぶ。
+スキルや参照資料の分割、削減、抽象化、読込条件の見直しなどを、その資料と実際の利用に合わせて比較する。
+報告者の候補を判断材料とし、必要な場合は`agent-toolkit:refine-prompt`も選択肢として用いる。
 
 調査、起草、引用と出所の突き合わせ、読み直し、および保存の各処理は、`agent-toolkit:wi-standards`の`references/drafting-workflow.md`の節を読み、共通手順に沿って実施する。
 保存前のdry-runが返すユーザー向け部分の抽出保存先と入力原稿を、要求識別子ごとに成立性の証拠へ記録して返す。検収者が冒頭だけを先に判定できるようにし、現行原稿との一致を確認する。原稿を変更した場合はdry-runを再実行し、新しい抽出へ対応を更新する。
