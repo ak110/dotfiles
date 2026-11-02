@@ -20,8 +20,17 @@
 
 ## 進捗報告
 
-- 通常の途中報告は全工程を100%とした概算を`進捗: <整数>%`で示し、工程の区切りか予想外の事象があれば要旨を添える。
-- 30分のセルフチェックでは進捗率と対象・結果を短く報告する。比較記録は`agent-toolkit:user-confirmation-and-report`の`references/communication-methods.md`「起動案内と進捗通知」に従う。
+最上位メインの途中報告・30分点検:
+
+```text
+進捗: <整数>%（<工程>）
+<状態変化>
+改善案:
+- <候補>（AWI化ステータス: 済 <WI名> | 予定 <時点> | 不要 <理由>）
+次: <対応>
+```
+
+`../skills/user-confirmation-and-report/references/communication-methods.md`「起動案内と進捗通知」に従う。
 
 ## 作業中の改善点の報告
 
