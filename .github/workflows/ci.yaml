@@ -19,9 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      contents: read
     outputs:
       owns: ${{ steps.owner.outputs.owns }}
       reason: ${{ steps.owner.outputs.reason }}
+      rust: ${{ steps.scope.outputs.rust }}
+      browser: ${{ steps.scope.outputs.browser }}
+      scope_reason: ${{ steps.scope.outputs.scope_reason }}
     steps:
       - name: 共通CI所有の判定
         id: owner
@@ -70,6 +74,76 @@ jobs:
                   print(f"::warning::master CIを照会できないため、このrunで共通検証を実行します: {type(error).__name__}")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"owns={str(owns).lower()}\nreason={reason}\n")
+          PY
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.owner.outputs.owns == 'true'
+        with:
+          fetch-depth: 0
+      - name: 変更領域の判定
+        id: scope
+        if: steps.owner.outputs.owns == 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CURRENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          rust = browser = True
+          event = os.environ["EVENT_NAME"]
+          reason = "判定できない入力のため全体を実行する。"
+          if event == "push" and os.environ["REF_NAME"] in {"refs/heads/master", "refs/heads/develop"}:
+              reason = "master・developへのpushは全体を実行する。"
+          elif event == "push" and (not os.environ["BEFORE_SHA"] or set(os.environ["BEFORE_SHA"]) == {"0"}):
+              reason = "初回pushは全体を実行する。"
+          elif event in {"push", "pull_request"}:
+              try:
+                  base = os.environ["PR_BASE_SHA"] if event == "pull_request" else "refs/remotes/origin/develop"
+                  if not base or not os.environ["CURRENT_SHA"]:
+                      raise ValueError("比較元または対象のSHAがない")
+                  common = subprocess.run(
+                      ["git", "merge-base", base, os.environ["CURRENT_SHA"]],
+                      check=True, capture_output=True, text=True, encoding="utf-8",
+                  ).stdout.strip()
+                  changed = subprocess.run(
+                      ["git", "diff", "--name-only", "--no-renames", "-z", common, os.environ["CURRENT_SHA"], "--"],
+                      check=True, capture_output=True,
+                  ).stdout
+                  paths = [path.decode("utf-8", errors="surrogateescape") for path in changed.split(b"\0") if path]
+                  print("変更パス: " + json.dumps(paths, ensure_ascii=True))
+                  if not paths:
+                      raise ValueError("変更パスを取得できない")
+                  rust = browser = False
+                  categories = set()
+                  shared = {"Makefile", "mise.toml", "mise.lock", ".python-version", "Cargo.toml", "Cargo.lock", "rust-toolchain", "rust-toolchain.toml"}
+                  for path in paths:
+                      if path in shared or path.startswith((".github/", ".cargo/")) or path.endswith(("pyproject.toml", "uv.lock")):
+                          rust = browser = True
+                          categories.add("共有・実行設定")
+                      elif path.startswith("rust/"):
+                          rust = True
+                          categories.add("Rust")
+                      elif path.endswith((".md", ".md.tmpl")):
+                          categories.add("文書")
+                      elif path.endswith(".py") or path.startswith("agent-toolkit/agent_toolkit/_atk/serve/"):
+                          browser = True
+                          categories.add("Python・serve")
+                      else:
+                          rust = browser = True
+                          categories.add("未知のパス")
+                  reason = "変更領域: " + "、".join(sorted(categories))
+              except (OSError, ValueError, subprocess.CalledProcessError):
+                  rust = browser = True
+                  reason = "比較元・履歴・差分を確認できないため全体を実行する。"
+          print(f"Rust={str(rust).lower()}, browser={str(browser).lower()}: {reason}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"rust={str(rust).lower()}\nbrowser={str(browser).lower()}\nscope_reason={reason}\n")
           PY
 
   test-linux:
@@ -588,6 +662,7 @@ jobs:
 
   browser-e2e:
     needs: common-ci-owner
+    if: ${{ !cancelled() }}
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'browser-e2e (non-owner)' || 'browser-e2e' }}
     runs-on: ubuntu-latest
     container:
@@ -613,28 +688,54 @@ jobs:
         env:
           OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
         run: echo "$OWNER_REASON"
+      - name: 検査領域の判定を確認
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          OWNS: ${{ needs.common-ci-owner.outputs.owns }}
+          OWNER_RESULT: ${{ needs.common-ci-owner.result }}
+          SELECTED: ${{ needs.common-ci-owner.outputs.browser }}
+          SCOPE_REASON: ${{ needs.common-ci-owner.outputs.scope_reason }}
+          CHECK_NAME: browser-e2e
+        run: |
+          set -euo pipefail
+          if [ "$OWNS" = false ]; then
+            exit 0
+          fi
+          if [ "$OWNS" != true ] || [ "$OWNER_RESULT" != success ]; then
+            echo '::error::検査領域の判定が完了していません。common-ci-ownerのログを確認し、修正後にRe-run failed jobsで再実行してください。'
+            exit 1
+          fi
+          case "$SELECTED" in
+            true | false) ;;
+            *)
+              echo '::error::検査領域の出力が不正です。common-ci-ownerのログを確認し、修正後にRe-run failed jobsで再実行してください。'
+              exit 1
+              ;;
+          esac
+          printf '%s: 実行=%s、%s\n' "$CHECK_NAME" "$SELECTED" "$SCOPE_REASON"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
       - name: safe.directory の設定
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
         # --user root 実行のためワークスペース所有者（UID 1001）と実行ユーザーが不一致になり、
         # git 操作が dubious ownership で停止する。safe.directory へ追加して回避する。
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: ネイティブ依存インストール
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
         # make は container image に含まれないため、後続ステップの make setup-browser 用に導入する
         run: |
           set -euo pipefail
           apt-get update
           apt-get install -y --no-install-recommends make
       - name: Install dependencies
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
         run: uv sync --all-groups --all-extras
       - name: Playwright Chromiumの導入
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
         run: make setup-browser
       - name: ブラウザーE2E
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
         run: >-
           uv run pytest -v
           -m browser agent-toolkit/agent_toolkit/_atk/serve
@@ -642,6 +743,7 @@ jobs:
 
   rust-lint:
     needs: common-ci-owner
+    if: ${{ !cancelled() }}
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'rust-lint (non-owner)' || 'rust-lint' }}
     runs-on: ubuntu-latest
     defaults:
@@ -655,24 +757,50 @@ jobs:
         env:
           OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
         run: echo "$OWNER_REASON"
+      - name: 検査領域の判定を確認
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          OWNS: ${{ needs.common-ci-owner.outputs.owns }}
+          OWNER_RESULT: ${{ needs.common-ci-owner.result }}
+          SELECTED: ${{ needs.common-ci-owner.outputs.rust }}
+          SCOPE_REASON: ${{ needs.common-ci-owner.outputs.scope_reason }}
+          CHECK_NAME: rust-lint
+        run: |
+          set -euo pipefail
+          if [ "$OWNS" = false ]; then
+            exit 0
+          fi
+          if [ "$OWNS" != true ] || [ "$OWNER_RESULT" != success ]; then
+            echo '::error::検査領域の判定が完了していません。common-ci-ownerのログを確認し、修正後にRe-run failed jobsで再実行してください。'
+            exit 1
+          fi
+          case "$SELECTED" in
+            true | false) ;;
+            *)
+              echo '::error::検査領域の出力が不正です。common-ci-ownerのログを確認し、修正後にRe-run failed jobsで再実行してください。'
+              exit 1
+              ;;
+          esac
+          printf '%s: 実行=%s、%s\n' "$CHECK_NAME" "$SELECTED" "$SCOPE_REASON"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
         with:
           fetch-depth: 0
       - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
         with:
           workspaces: rust/claude-statusline
       - name: cargo fmt --check
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
         run: cargo fmt --check
       - name: cargo clippy
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: cargo test
-        if: needs.common-ci-owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
         run: cargo test
 
   statusline-version:

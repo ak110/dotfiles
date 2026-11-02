@@ -12,6 +12,7 @@ import typing
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -435,7 +436,7 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
     # 集約jobは分割jobの終了を待つ別構成のため、test_pytest_toolkit_result_requires_every_shardで確かめる。
     common_jobs.remove("pytest-toolkit-result")
     owner = workflow_mapping(workflow_jobs(workflow_data)["common-ci-owner"])
-    assert owner["permissions"] == {"actions": "read"}
+    assert owner["permissions"] == {"actions": "read", "contents": "read"}
     outputs = workflow_mapping(owner["outputs"])
     assert outputs["owns"] == "${{ steps.owner.outputs.owns }}"
     assert outputs["reason"] == "${{ steps.owner.outputs.reason }}"
@@ -446,7 +447,10 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
     for job_name in common_jobs:
         job = workflow_mapping(workflow_jobs(workflow_data)[job_name])
         assert job["needs"] == "common-ci-owner"
-        assert "if" not in job
+        if job_name in {"rust-lint", "browser-e2e"}:
+            assert job["if"] == "${{ !cancelled() }}"
+        else:
+            assert "if" not in job
         base_name = {"update-dotfiles-upgrade-windows": "update-dotfiles-upgrade (windows)"}.get(job_name, job_name)
         suffix = (
             "format('{0} (non-owner)', matrix.check-name) || matrix.check-name"
@@ -464,6 +468,12 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
                 job_name,
                 step.get("name"),
             )
+        if job_name in {"rust-lint", "browser-e2e"}:
+            guard = real_steps.pop(0)
+            assert guard["name"] == "検査領域の判定を確認"
+            assert "if" not in guard
+            flag = "rust" if job_name == "rust-lint" else "browser"
+            assert all(f"needs.common-ci-owner.outputs.{flag} == 'true'" in str(step.get("if", "")) for step in real_steps)
         assert all(str(step.get("if", "")).startswith(_OWNS) for step in real_steps), job_name
 
     version = _statusline_job(workflow_data)
@@ -782,3 +792,175 @@ def test_linux_job_places_temporary_files_on_runner_disk(workflow_data: dict[str
     placement = runs.index('echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"')
     for marker in ("scripts/check_update_dotfiles_upgrade.py", "install.sh"):
         assert placement < next(index for index, run in enumerate(runs) if marker in run), marker
+
+
+@pytest.mark.parametrize(
+    ("changed_path", "event", "branch", "mode", "expected"),
+    [
+        ("docs/development/note.md", "push", "feature", "normal", (False, False)),
+        ("agent-toolkit/skills/workflow-overview/SKILL.md", "push", "feature", "normal", (False, False)),
+        ("rust/claude-statusline/src/main.rs", "push", "feature", "normal", (True, False)),
+        ("rust/claude-statusline/fixtures/input.json", "push", "feature", "normal", (True, False)),
+        ("agent-toolkit/agent_toolkit/_atk/serve/static/wi.js", "push", "feature", "normal", (False, True)),
+        ("conftest.py", "push", "feature", "normal", (False, True)),
+        ("agent-toolkit/agent_toolkit/_testing/serve_support.py", "push", "feature", "normal", (False, True)),
+        ("pyproject.toml", "push", "feature", "normal", (True, True)),
+        (".github/workflows/ci.yaml", "push", "feature", "normal", (True, True)),
+        ("mise.toml", "push", "feature", "normal", (True, True)),
+        ("future/input.bin", "push", "feature", "normal", (True, True)),
+        ("docs/development/note.md", "push", "feature", "missing-history", (True, True)),
+        ("docs/development/note.md", "push", "feature", "first", (True, True)),
+        ("docs/development/note.md", "push", "develop", "normal", (True, True)),
+        ("docs/development/note.md", "push", "master", "normal", (True, True)),
+        ("docs/development/note.md", "pull_request", "feature", "pr-base", (False, False)),
+        ("docs/development/note.md", "pull_request", "feature", "missing-pr-base", (True, True)),
+        ("docs/development/note.md", "push", "feature", "branch-history", (True, False)),
+        ("docs/development/note.md", "push", "feature", "rename", (True, False)),
+        ("docs/a\ninjected=true.md", "push", "feature", "normal", (False, False)),
+        ("README.md", "push", "feature", "empty", (True, True)),
+    ],
+)
+def test_ci_scope_runs_real_workflow_selection(
+    workflow_data: dict[str, object],
+    tmp_path: Path,
+    host_environ: Callable[[], dict[str, str]],
+    changed_path: str,
+    event: str,
+    branch: str,
+    mode: str,
+    expected: tuple[bool, bool],
+) -> None:
+    """実Gitの共通祖先と実workflowの判定から、検査領域と省略理由を取得する。"""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    _run_git(repository, "init", "--initial-branch=develop")
+    _run_git(repository, "config", "user.email", "ci@example.com")
+    _run_git(repository, "config", "user.name", "CI")
+    (repository / "README.md").write_text("base\n", encoding="utf-8")
+    if mode == "rename":
+        (repository / "rust").mkdir()
+        (repository / "rust/input.rs").write_text("input\n", encoding="utf-8")
+    _run_git(repository, "add", ".")
+    _run_git(repository, "commit", "-m", "base")
+    base = _run_git(repository, "rev-parse", "HEAD")
+    if branch != "develop":
+        _run_git(repository, "switch", "-c", branch)
+    before = base
+    if mode == "branch-history":
+        (repository / "rust").mkdir()
+        (repository / "rust/input.rs").write_text("input\n", encoding="utf-8")
+        _run_git(repository, "add", ".")
+        _run_git(repository, "commit", "-m", "earlier Rust change")
+        before = _run_git(repository, "rev-parse", "HEAD")
+    if mode != "empty":
+        target = repository / changed_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if mode == "rename":
+            _run_git(repository, "mv", "rust/input.rs", changed_path)
+        else:
+            target.write_text("change\n", encoding="utf-8")
+        _run_git(repository, "add", ".")
+        _run_git(repository, "commit", "-m", "change")
+    head = _run_git(repository, "rev-parse", "HEAD")
+    if mode != "missing-history":
+        _run_git(repository, "update-ref", "refs/remotes/origin/develop", head if mode == "pr-base" else base)
+    owner = workflow_mapping(workflow_jobs(workflow_data)["common-ci-owner"])
+    step = next(step for step in workflow_steps(owner) if step.get("id") == "scope")
+    assert workflow_mapping(step["env"])["PR_BASE_SHA"] == "${{ github.event.pull_request.base.sha }}"
+    script = str(step["run"])
+    script_path = tmp_path / "scope.py"
+    script_path.write_text(script.split("\n", 1)[1].rsplit("\nPY", 1)[0], encoding="utf-8")
+    output = tmp_path / "output"
+    host = host_environ()
+    environment = {key: host[key] for key in ("PATH", "SYSTEMROOT", "WINDIR", "PATHEXT") if key in host}
+    environment.update(
+        {
+            "HOME": str(tmp_path / "home"),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "EVENT_NAME": event,
+            "REF_NAME": f"refs/heads/{branch}",
+            "CURRENT_SHA": head,
+            "PR_BASE_SHA": "" if mode == "missing-pr-base" else base,
+            "BEFORE_SHA": "0" * 40 if mode == "first" else before,
+            "GITHUB_OUTPUT": str(output),
+        }
+    )
+    result = subprocess.run(
+        [sys.executable, str(script_path)],
+        cwd=repository,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
+    assert set(values) == {"rust", "browser", "scope_reason"}
+    assert values["rust"] in {"true", "false"} and values["browser"] in {"true", "false"}
+    assert (values["rust"] == "true", values["browser"] == "true") == expected
+    assert values["scope_reason"] and values["scope_reason"] in result.stdout
+    print(
+        json.dumps(
+            {"path": changed_path, "mode": mode, "selection": values, "previous_owned_run": [True, True]}, ensure_ascii=True
+        )
+    )
+
+
+@pytest.mark.parametrize("job_name", ["rust-lint", "browser-e2e"])
+@pytest.mark.parametrize(
+    ("owns", "owner_result", "selected", "expected_exit"),
+    [
+        ("true", "success", "true", 0),
+        ("true", "success", "false", 0),
+        ("true", "failure", "true", 1),
+        ("true", "success", "", 1),
+        ("", "failure", "", 1),
+        ("false", "success", "", 0),
+    ],
+)
+def test_ci_scope_failure_is_not_an_intentional_skip(
+    workflow_data: dict[str, object],
+    tmp_path: Path,
+    host_environ: Callable[[], dict[str, str]],
+    job_name: str,
+    owns: str,
+    owner_result: str,
+    selected: str,
+    expected_exit: int,
+) -> None:
+    """選択しない成功と、判定失敗・出力欠落による必須checkの失敗を区別する。"""
+    job = workflow_mapping(workflow_jobs(workflow_data)[job_name])
+    assert job["if"] == "${{ !cancelled() }}"
+    step = next(step for step in workflow_steps(job) if step.get("name") == "検査領域の判定を確認")
+    assert "if" not in step
+    environment = workflow_mapping(step["env"])
+    flag = "rust" if job_name == "rust-lint" else "browser"
+    assert environment["SELECTED"] == f"${{{{ needs.common-ci-owner.outputs.{flag} }}}}"
+    runtime = host_environ()
+    child_environment = {key: runtime[key] for key in ("PATH", "SYSTEMROOT", "WINDIR", "PATHEXT") if key in runtime}
+    child_environment.update(
+        {
+            "OWNS": owns,
+            "OWNER_RESULT": owner_result,
+            "SELECTED": selected,
+            "CHECK_NAME": job_name,
+            "SCOPE_REASON": "文書だけの変更",
+        }
+    )
+    result = subprocess.run(
+        ["bash"],
+        input=str(step["run"]),
+        cwd=tmp_path,
+        env=child_environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+    )
+    assert result.returncode == expected_exit, result.stdout + result.stderr
+    if owns == "true" and expected_exit == 0:
+        assert f"実行={selected}" in result.stdout and "文書だけの変更" in result.stdout

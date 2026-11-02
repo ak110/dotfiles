@@ -126,6 +126,14 @@ Python 3.15のpytestは直下の`pytest (3.15)`と、toolkitを3分割した`pyt
 - `plugin-version`ジョブ: `develop`へのpushで、push前の公開済みcommitとagent-toolkit・agent-basicsの配布物の差分と版数を比べる検証
 - `browser-e2e`ジョブ: 実際のブラウザーを用いたE2Eテスト（ローカル環境では`make test-browser`で実行可能）
 
+通常branchのpushではdevelop、PRではPRのbaseとの共通祖先から変更領域を判定する。
+`common-ci-owner`の選択結果と理由を基に、Rust・fixtureは`rust-lint`、Python・serveは`browser-e2e`を実行する。
+文書だけの変更では両検査を省略できる。
+共有設定・未知の変更・比較不能・初回pushとmaster/develop pushは両方を実行する。
+選択しない成功と判定の失敗・出力欠落を区別し、必須check名と失敗伝播を保つ。
+Pythonのpytest・lint、完全導入と更新検証には領域選択を適用しない。
+CIを変更した担当は、同条件の保存結果から実時間とrunner実行量を比較し、公開前に観測できない実CIの比較は公開担当へ渡す。
+
 ## agent-doc-tone
 
 - `make test`およびコミット時のpre-commit（ステージされた対象ファイル向け）によって`agent-doc-tone`が実行される。単独で実行する場合は`uv run --frozen pyfltr run --commands=agent-doc-tone`を使用する。
