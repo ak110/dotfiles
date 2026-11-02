@@ -45,7 +45,11 @@
   - `agent-toolkit/.mcp.json`のバージョン指定（自動生成される`agent-toolkit/mcp.json`および`agent-toolkit/.mcp.codex.json`を含む）
   - リポジトリ直下および`agent-toolkit/`の`pyproject.toml`にある`dependencies`
   - `.chezmoi-source/`のインストール・更新処理がパッケージマネージャーへ渡すバージョン指定
-- パッケージ外からの呼び出し元: `agent-toolkit/`の外部から`agent_toolkit`パッケージをimportしているのは`pytools/`と`scripts/`である。そのため、`agent-toolkit/agent_toolkit/`配下にあるPythonファイル（`*_test.py`を除く）を変更した場合は、`uv run --frozen pytest -v -p no:cacheprovider pytools scripts`を実行する。
+- パッケージ外からの呼び出し元: 変更した共有契約の消費側を配置にかかわらず、本節冒頭の参照追跡で選定する。
+  既存の配置には`pytools/`、`scripts/`、`libexec/`とリポジトリ直下の結合テストがある。
+  生成資料の読取契約では`agent_toolkit_read_trigger_agy_integration_test.py`、共有Git処理では`libexec/update_dotfiles.py`・`update_dotfiles_stash.py`とその関連テストも追跡する。
+  これらの配置と実行例だけで探索を終了せず、将来追加される別配置の消費側も同じ基準で含める。
+  既存のパッケージ外試験をまとめて実行する例は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts libexec agent_toolkit_read_trigger_agy_integration_test.py`とする。
 - Function hooksモジュール: `agent-toolkit/hooks/`配下の`*.ts`および`*.tsx`（テストを含む）の変更は、既存の`make test`とコミットフックの`pyfltr fast`から`function-hooks-types`を起動し、全モジュールを一括型検査する。
   - 型チェック: TypeScript 5.9.3を使用する。Claude Codeの`plugin-authoring`で生成した`claude-code.d.ts`を環境変数`FUNCTION_HOOKS_TYPES`へ絶対パスで指定する。未指定時はworktree直下または`agent-toolkit/`の`.claude-plugin/types/`と`types/claude-code.d.ts`を参照する。型定義不足は非0終了する。一時設定と生成型定義はコミットしない。CIはClaude Code生成型を用意しないため、このコマンドを明示無効化する。
   - 未指定かつworktree内に生成型がない場合は、OS一時領域（`TMPDIR`などを反映）の直下および`claude-*`ディレクトリ内の`bundled-skills/<版>/*/plugin-authoring/types/claude-code.d.ts`を探索する。PATH上の`claude --version`とディレクトリ版・先頭行の`// Written by Claude Code <版>.`が一致する型を1件使う。不足時は対象版を含む診断と終了2を返す。`--types`は環境変数より優先し、両者の明示指定時は自動探索しない。チェックはモデルを呼び出さない。
@@ -121,6 +125,14 @@ Python 3.15のpytestは直下の`pytest (3.15)`と、toolkitを3分割した`pyt
 - `rust-lint`ジョブ: `rust/claude-statusline/`のcargoによる検証
 - `plugin-version`ジョブ: `develop`へのpushで、push前の公開済みcommitとagent-toolkit・agent-basicsの配布物の差分と版数を比べる検証
 - `browser-e2e`ジョブ: 実際のブラウザーを用いたE2Eテスト（ローカル環境では`make test-browser`で実行可能）
+
+通常branchのpushではdevelop、PRではPRのbaseとの共通祖先から変更領域を判定する。
+`common-ci-owner`の選択結果と理由を基に、Rust・fixtureは`rust-lint`、Python・serveは`browser-e2e`を実行する。
+文書だけの変更では両検査を省略できる。
+共有設定・未知の変更・比較不能・初回pushとmaster/develop pushは両方を実行する。
+選択しない成功と判定の失敗・出力欠落を区別し、必須check名と失敗伝播を保つ。
+Pythonのpytest・lint、完全導入と更新検証には領域選択を適用しない。
+CIを変更した担当は、同条件の保存結果から実時間とrunner実行量を比較し、公開前に観測できない実CIの比較は公開担当へ渡す。
 
 ## agent-doc-tone
 

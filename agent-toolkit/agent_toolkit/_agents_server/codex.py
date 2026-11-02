@@ -607,6 +607,14 @@ class JsonRpcProcess:
                     task.cancel()
         else:
             tasks = ()
+        diagnostic_targets = ([process.pid] if process is not None else []) + [item.pid for item in self._residual]
+        if sys.platform == "win32":
+            _LOG.info(
+                "Codex App Server終了要求前: at=%s observer_pid=%s owned=%s",
+                utc_now(),
+                os.getpid(),
+                await run_file_operation(lambda: [process_tree.identity(pid) for pid in diagnostic_targets]),
+            )
         if process is not None:
             with contextlib.suppress(OSError, ProcessLookupError):
                 if process.returncode is None:
@@ -624,6 +632,15 @@ class JsonRpcProcess:
         if process is not None:
             _LOG.info("Codex App Serverを終了しました: returncode=%s", process.returncode)
         self._residual = await asyncio.to_thread(process_tree.reclaim_processes, self._residual)
+        if sys.platform == "win32":
+            _LOG.info(
+                "Codex App Server終了確認後: at=%s observer_pid=%s app_server_pid=%s returncode=%s owned=%s",
+                utc_now(),
+                os.getpid(),
+                None if process is None else process.pid,
+                None if process is None else process.returncode,
+                await run_file_operation(lambda: [process_tree.identity(pid) for pid in diagnostic_targets]),
+            )
         residual = [process_tree.describe(item) for item in self._residual]
         if process is not None and process.returncode is not None:
             self.process = None

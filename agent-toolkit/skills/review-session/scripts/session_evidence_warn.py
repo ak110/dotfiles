@@ -21,7 +21,7 @@ from session_evidence_extract import (
     _unresolved_events,
     _UnresolvedRecord,
 )
-from session_evidence_hook_notices import _hook_notice_bodies, _hook_notice_keys, _hook_records
+from session_evidence_hook_notices import _hook_notice_bodies, _hook_notice_keys, _hook_occurrence, _hook_records
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._common import message_format as _message_format
@@ -368,17 +368,15 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
     return result
 
 
-def _warning_hook_identities(entry: dict[str, Any]) -> dict[str, list[str]]:
-    """hook記録の警告本文ごとにツール呼び出し識別子を出現順で返す。"""
+def _warning_hook_identities(entry: dict[str, Any], line: int) -> dict[str, list[str]]:
+    """hook記録の警告本文ごとに発生識別子を出現順で返す。"""
     identities: dict[str, list[str]] = {}
     for hook_record in _hook_records(entry):
-        tool_use_id = hook_record.get("toolUseID")
-        if not isinstance(tool_use_id, str):
-            continue
+        occurrence = _hook_occurrence(hook_record, line)
         for line_text in _warning_texts(hook_record):
             tool_use_ids = identities.setdefault(line_text, [])
-            if tool_use_id not in tool_use_ids:
-                tool_use_ids.append(tool_use_id)
+            if occurrence not in tool_use_ids:
+                tool_use_ids.append(occurrence)
     return identities
 
 
@@ -398,7 +396,7 @@ def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
         matched_lines = _warning_texts(record.entry, tool_names)
         if not matched_lines:
             continue
-        hook_identities = _warning_hook_identities(record.entry)
+        hook_identities = _warning_hook_identities(record.entry, record.line)
         hint = _tool_hint(record.entry)
         for line_text in matched_lines:
             tool_use_ids = hook_identities.get(line_text, [])

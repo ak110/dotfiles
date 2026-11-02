@@ -87,7 +87,7 @@ def _wait_process_resources(targets: list[psutil.Process]) -> list[psutil.Proces
         alive = []
         for target in targets:
             with contextlib.suppress(psutil.Error, OSError):
-                if target.is_running() and target.status() != psutil.STATUS_ZOMBIE:
+                if target.is_running() and target.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                     alive.append(target)
         targets = alive
         if not targets or time.monotonic() >= deadline:

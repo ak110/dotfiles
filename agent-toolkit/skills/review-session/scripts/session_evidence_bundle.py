@@ -12,6 +12,7 @@ from session_evidence_candidates import (
     _adhoc_processing_events,
     _candidate_events,
     _candidate_evidence_events,
+    _delegate_notice_events,
     _wi_candidate_events,
     _write_candidate_evidence_files,
 )
@@ -126,6 +127,7 @@ def _bundle_events(
             incremental, main_record.record_id.split(":", 1)[1] if main_record.runtime == "opencode" else main_record.path.stem
         ),
         definition_reads=definition_body_read_events(incremental),
+        delegate_notices=_delegate_notice_events(incremental),
     )
 
     candidate_evidence = _write_candidate_evidence_files(

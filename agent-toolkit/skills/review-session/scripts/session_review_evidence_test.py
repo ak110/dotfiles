@@ -1219,7 +1219,7 @@ def test_bundle_treats_quoted_operator_shaped_search_terms_as_data(
     unresolved = [
         item for item in records if item["kind"] == "candidate" and item["candidate_kind"] == "definition-read-unresolved"
     ]
-    assert {locator["line"] for item in unresolved for locator in item["locators"]} == {4, 6}
+    assert {locator["line"] for item in unresolved for locator in item["locators"]} == {6}
     assert not any(item["kind"] == "candidate" and item["candidate_kind"] == "definition-body-read" for item in records)
 
 

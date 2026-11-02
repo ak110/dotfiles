@@ -154,7 +154,7 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
         deadline = time.monotonic() + 5
         while True:
             try:
-                if children[0].status() == psutil.STATUS_ZOMBIE:
+                if children[0].status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                     break
             except psutil.NoSuchProcess:
                 break
@@ -197,7 +197,9 @@ def test_launcher_signal_reaches_bounded_reclaim(
             assert len(targets) == 1
             process.send_signal(signal.SIGTERM)
             assert process.wait(timeout=5) == 128 + signal.SIGKILL
-            assert all(not target.is_running() or target.status() == psutil.STATUS_ZOMBIE for target in targets)
+            assert all(
+                not target.is_running() or target.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD) for target in targets
+            )
         finally:
             process_tree.reclaim_processes(targets, timeout=0.5)
 
@@ -378,7 +380,10 @@ def test_prepare_timeout_reclaims_its_descendants(
     probe.write_text(
         "import pathlib, subprocess, sys\n"
         "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
-        "pathlib.Path(sys.argv[1]).write_text(str(child.pid))\n"
+        "ready = pathlib.Path(sys.argv[1])\n"
+        "temporary = ready.with_suffix('.tmp')\n"
+        "temporary.write_text(str(child.pid))\n"
+        "temporary.replace(ready)\n"
         "child.wait()\n",
         encoding="utf-8",
     )
@@ -406,7 +411,7 @@ def test_prepare_timeout_reclaims_its_descendants(
     for child in children:
         while True:
             try:
-                if child.status() == psutil.STATUS_ZOMBIE:
+                if child.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                     break
             except psutil.NoSuchProcess:
                 break

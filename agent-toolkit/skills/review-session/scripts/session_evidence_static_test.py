@@ -59,6 +59,8 @@ def test_prepare_keeps_quoted_code_out_of_brace_expansion(
         pytest.param("atk wi adopt 20261030-120000-{'001,002',003}.md", False, id="quoted-comma-mixed"),
         pytest.param(r"atk wi adopt 20261030-120000-{001\,002,003}.md", False, id="escaped-comma-mixed"),
         pytest.param(r'f=20261030-120000-001.md; atk wi adopt "$f"; echo \"', True, id="escaped-quote-after-value"),
+        pytest.param(r'echo \"; f=20261030-120000-001.md; atk wi adopt "$f"', True, id="escaped-quote-before-value"),
+        pytest.param(r"echo a\;atk wi adopt 20261030-120000-001.md", False, id="escaped-separator-data"),
         ("atk wi adopt $f; f=20261030-120000-001.md", False),
         ("f=20261030-120000-001.md; read f; atk wi adopt $f", False),
     ],

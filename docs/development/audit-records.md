@@ -41,6 +41,12 @@ H2は索引元のパスの文字コード順に並べ、同じパスでは日付
 環境除去の単体検証は`_common/mcp_environment_test.py`と`_atk/orchestrator_test.py`を使う。
 全backendの登録前の重複拒否は`_agents_server/manager_test.py`の`test_start_rejects_duplicate_session_id`で再検証する。
 
+## .claude/skills/agent-toolkit-edit/references/session-state-and-flags.md：自己編集の取得継承：2026年11月2日
+
+- 観測日: 2026年11月2日。
+- 観測時の版: Claude Code 2.1.316の実行ファイル内にあるEdit・Writeの出力スキーマとPostToolUse呼出しを確認した。`originalFile`は編集前本文かnullであり、`staged`・`userModified`も出力に含まれる。MultiEditの実ホスト応答型とCRLF正規化時の継承は未確認。
+- 再検証手段: `develop-dotfiles`「ホスト本体のバイナリの検索」に従い、対象版の`originalFile`出力型・data生成と`hook_event_name:"PostToolUse"`の`tool_response`への引渡しを確認する。同居する`read_delivery_acquisition_test.py`の自己編集成功・未取得編集の試験で、編集前本文・入力・現本文の一致と成功・主体の境界を検証する。
+
 ## .claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月4日
 
 pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。指定した時点では横断テストをpytestのマーカー`repo_invariant`でも識別しており、マーカーでの収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。その後、fastがマーカーを選択に使わないため、マーカーを撤去してファイル名だけで識別する形にした。撤去後の確認では、fastのpytestが受け取ったファイルは33件で、`git ls-files`が返す`*_invariant_test.py`の33件と一致した。
@@ -1470,3 +1476,16 @@ WI原本の2026年10月22日の観測（Codex CLI 0.163.0）では、起動直�
 - 観測日: 2026年11月2日。
 - 確認版: Codex CLI0.166.0。公開execのcell/command識別子は同一turnのwait/write_stdinで回収する。App Serverの圧縮・使用量通知とCLIのproxyは公開されているが、この最上位待機形はturnを閉じるClaude背景waitと異なる。agents_serverの所有backendだけが、turn完了後に担当結果を保留し未完了子を待つ状態を持つ。
 - 再検証: 公開execで待機コマンドを起動し、返る実行識別子と同一turnでの終了回収を確認する。`codex --version`、`codex app-server --help`、`codex queue --help`と対象版生成schemaで圧縮入力・使用量通知を確認し、最上位クライアントがターン間背景待機を提供する場合はその所有者と状態遷移を再判定する。既存のユーザー会話へ検証用の圧縮を送らない。
+
+## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年11月2日
+
+- 観測日: 2026年11月2日。
+- 確認版: Python 3.15.0、pytest 9.2.0。非対話Claude Codeの背景無効化時に、Bash前景上限600000ミリ秒と背景引数の不在を観測した起票元の記録を再利用した。その外側観測のClaude Code版番号は記録から特定しておらず、担当自身による外側の再測定は未実施である。公開CLIと警告hookの試験では、背景無効・TTL 1hの540秒、終了コード3、再待機後の終了結果回収を模擬時計で確認した。
+- 再検証: 同条件のClaude Codeで公開Bashの引数定義を取得し、背景無効時の前景上限と背景引数の有無を確認する。下記の試験でCLI期限、MCP期限の維持、警告と受理できる回収操作の対応を検証する。実時間で540秒を待つ試験とは区別する。
+
+```sh
+uv run --frozen pytest -v -p no:cacheprovider \
+  agent-toolkit/agent_toolkit/_agents_server/agents_wait_foreground_test.py \
+  agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_wait_guidance_test.py \
+  agent-toolkit/agent_toolkit/_common/wait_foreground_test.py
+```

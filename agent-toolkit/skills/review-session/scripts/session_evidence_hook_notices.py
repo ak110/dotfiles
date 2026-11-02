@@ -42,7 +42,7 @@ class _HookNoticeKey(NamedTuple):
 def _hook_notice_events(records: list[_Record]) -> list[dict[str, Any]]:
     """hook実行の記録から通知本文だけを集計し、分類軸ごとの件数を件数降順で返す。
 
-    母集団はhook実行記録とホストが遮断結果として格納した本文である。
+    母集団はhook実行記録、ホストの遮断結果、および由来付きの追加コンテキストである。
     hookの発動を伴わない本文（ソースの引用、会話中の言及）は記録の種別で除かれる。
     同一ツール呼び出しの通知は実行成功記録の標準出力と追加コンテキストの双方へ格納されるため、
     分類軸とツール呼び出し識別子の組で重複を除いてから数える。
@@ -61,7 +61,7 @@ def _hook_notice_events(records: list[_Record]) -> list[dict[str, Any]]:
             hook_name = hook_record.get("hookName") or hook_names.get(tool_use_id)
             for body in _hook_notice_bodies(hook_record):
                 for key in _hook_notice_keys(body, hook_name if isinstance(hook_name, str) else None):
-                    identity = (tool_use_id if isinstance(tool_use_id, str) else None, key)
+                    identity = (_hook_occurrence(hook_record, record.line), key)
                     if identity in seen:
                         continue
                     seen.add(identity)
@@ -88,8 +88,7 @@ def _hook_notice_candidate_events(collected: list[_CollectedRecord]) -> list[dic
     for item in collected:
         for record in item.records:
             for hook_record in _hook_records(record.entry):
-                tool_use_id = hook_record.get("toolUseID")
-                normalized_id = tool_use_id if isinstance(tool_use_id, str) else None
+                normalized_id = _hook_occurrence(hook_record, record.line)
                 hook_name = hook_record.get("hookName")
                 for body in _hook_notice_bodies(hook_record):
                     for key in _hook_notice_keys(body, hook_name if isinstance(hook_name, str) else None):
@@ -111,6 +110,15 @@ def _hook_notice_candidate_events(collected: list[_CollectedRecord]) -> list[dic
     return events
 
 
+def _hook_occurrence(hook_record: dict[str, Any], line: int) -> str:
+    """メッセージの発生識別とツール呼び出しの関連付けを分ける。"""
+    tool_use_id = hook_record.get("toolUseID")
+    if isinstance(tool_use_id, str):
+        return f"call:{tool_use_id}"
+    message_id = hook_record.get("messageID")
+    return f"message:{message_id}" if isinstance(message_id, str) else f"line:{line}"
+
+
 def _hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     """エントリを再帰的にたどり、hook実行の記録を出現順に集める。
 
@@ -119,6 +127,45 @@ def _hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     _collect_hook_records(entry, found)
     found.extend(_result_hook_records(entry))
+    found.extend(_codex_hook_messages(entry))
+    return found
+
+
+def _codex_hook_messages(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Codexのharnessがhook由来と記録したcontent要素だけを抽出する。"""
+    payload = entry.get("payload")
+    if entry.get("type") != "response_item" or not isinstance(payload, dict):
+        return []
+    if payload.get("type") != "message" or payload.get("role") != "developer":
+        return []
+    metadata = payload.get("internal_chat_message_metadata_passthrough")
+    content = payload.get("content")
+    if not isinstance(metadata, dict) or not isinstance(content, list):
+        return []
+    kinds = metadata.get("content_item_kinds")
+    items = metadata.get("content_item_metadata")
+    if not isinstance(kinds, list) or not isinstance(items, list):
+        return []
+    found = []
+    # 2026-11-01のCodex記録では、メタデータはcontentと同じ添字を持つ。
+    for index, (block, kind, item) in enumerate(zip(content, kinds, items, strict=False)):
+        provenance = item.get("provenance") if isinstance(item, dict) else None
+        if (
+            kind != "hooks.additional_context"
+            or not isinstance(provenance, dict)
+            or provenance.get("type") != "harness"
+            or provenance.get("hook") is not True
+            or not isinstance(block, dict)
+            or not isinstance(block.get("text"), str)
+        ):
+            continue
+        found.append(
+            {
+                "type": "hook_system_message",
+                "content": block["text"],
+                "messageID": f"{payload['id']}:{index}" if isinstance(payload.get("id"), str) else None,
+            }
+        )
     return found
 
 

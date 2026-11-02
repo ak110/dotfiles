@@ -30,7 +30,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.environment import is_agent_environment, is_human_terminal
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import delegated_session, session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import ActionableError, report, with_next_action
@@ -259,22 +259,21 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
     value = _read_json(run_path)
     if value is None:
         return _fail(f"先行する待機の結果記録を読めません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
-    if value.get("status") == "consumed":
+    if value.get("status") in {"foreground-delivered", "consumed"}:
         consumed = {"status": "consumed", "run_id": value.get("run_id"), "next_action": _CONSUMED_NEXT_ACTION}
         recovery = _saved_wait_recovery(run_path)
         if recovery["status"] == "available":
             consumed["recovery"] = recovery
             consumed["next_action"] = _SAVED_RESULT_NEXT_ACTION
+        elif value.get("status") == "foreground-delivered":
+            consumed["recovery"] = recovery
+            consumed["next_action"] = _PRECEDING_WAIT_NEXT_ACTION
         print(json.dumps(consumed, ensure_ascii=False, separators=(",", ":")))
         return 8
     output = value.get("output")
     code = value.get("exit_code")
     stream = value.get("stream")
-    if (
-        value.get("status") not in {"published", "foreground-delivered"}
-        or not isinstance(output, str)
-        or not isinstance(code, int)
-    ):
+    if value.get("status") != "published" or not isinstance(output, str) or not isinstance(code, int):
         return _fail(f"先行する待機の終了時の結果が公開されていません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
     _print_public(_public_wait_output(output, stream), stream)
     value["status"] = "consumed"
@@ -338,6 +337,8 @@ def _target_origins(
     owner_status_file: str,
     state_root: pathlib.Path | None,
     interrupted_sessions: list[dict[str, Any]] | None = None,
+    *,
+    recipient_session_id: str | None,
 ) -> tuple[dict[str, set[str]], tuple[str, int, str] | None]:
     """現行の待機対象と由来を返し、解釈不能な入力は理由・終了コード・次の操作の診断へ変換する。
 
@@ -356,7 +357,12 @@ def _target_origins(
     owners = status_reader.load_root(root_session_id, state_root).sessions
     for session_id in set(registered_ids):
         owner = owners.get(session_id, {}).get("owner_status_file")
-        if owner is not None and owner != owner_status_file:
+        if (
+            owner is not None
+            and owner != owner_status_file
+            or notice_inbox.recipient_matches(root_session_id, session_id, recipient_session_id, owner_status_file, state_root)
+            is False
+        ):
             wait_targets.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
             registered_ids.remove(session_id)
     # 状態ファイルにも結果ファイルにも無い登録は、登録簿が喪失か終了を示す場合に結果が生じないため解放する。
@@ -442,6 +448,11 @@ def _wait_for_result(
         return _fail("agents_serverの状態ディレクトリを解決できません。", 4, next_action=_IDENTITY_NEXT_ACTION)
     root_session_id = identity.root_session_id
     own_status_path = shared_layout.status_directory(root_session_id, state_root) / identity.file_name
+    recipient_session_id = (
+        delegated_session.current_conversation_session_id(env)
+        or env.get("AGENT_TOOLKIT_STATUS_HOST_SESSION")
+        or (root_session_id if not root_session_id.startswith(shared_roots.PROCESS_ROOT_PREFIX) else None)
+    )
     result_directory = shared_layout.results_directory(root_session_id, state_root)
     run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
     released_interruptions: list[dict[str, Any]] = []
@@ -452,6 +463,7 @@ def _wait_for_result(
         identity.file_name,
         state_root,
         released_interruptions,
+        recipient_session_id=recipient_session_id,
     )
     if target_error is not None:
         message, code, next_action = target_error
@@ -588,6 +600,7 @@ def _wait_for_result(
                     identity.file_name,
                     state_root,
                     released_interruptions,
+                    recipient_session_id=recipient_session_id,
                 )
                 if target_error is not None:
                     message, code, next_action = target_error
@@ -681,18 +694,22 @@ def _wait_for_result(
                         root_session_id,
                         session_id,
                         state_root,
+                        recipient_session_id=recipient_session_id,
+                        owner_status_file=identity.file_name,
                         stash_directory=run_path.with_suffix("") / "notices",
                     )
-                    if registry_resolved:
-                        notices.extend(
-                            owner_lost.take_stranded_notices(
-                                session_id,
-                                root_session_id,
-                                state_root,
-                                stash_directory=run_path.with_suffix("") / "notices",
-                                roots=stranded_roots,
-                            )
+                    if stranded_roots is None:
+                        stranded_roots = status_reader.ownerless_root_session_ids(root_session_id, state_root)
+                    notices.extend(
+                        owner_lost.take_stranded_notices(
+                            session_id,
+                            root_session_id,
+                            state_root,
+                            recipient_session_id=recipient_session_id,
+                            stash_directory=run_path.with_suffix("") / "notices",
+                            roots=stranded_roots,
                         )
+                    )
                     if result is not None:
                         result["session_id"] = session_id
                         if isinstance(result.get("agent_message"), str):

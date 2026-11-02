@@ -73,6 +73,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
@@ -187,7 +188,7 @@ continuations:
 
 - 初回実装（CI修正では修正）の直前に、`agent-basics:check-execution`の`references/diagnostics.md`が定める基準版の一意な短縮OIDを記録し、レビュー修正や履歴統合の後も同一の基準版を使用する。各検証の実行後は、同資料「読む出力」の共通基準に従って診断メッセージや警告、および個別・全体の所要時間を判定し、比較対象のバージョンと、残す判断をした診断の意味・影響・帰属・理由を検証結果および進捗ログに記録する。
 - 実装契約: 計画を持つレーンでは`## 要件・外部仕様`を契約とし、`## 実施内容`と`## 変更履歴`に記載された対象、範囲、外部から観測可能な結果を認可範囲の上限とする。計画を作成しないレーンではAWIの要求と完成条件を契約とし、引き継ぎ記録で確定した採否と対象の範囲内のみを変更する。計画ファイルの取り扱いは、計画凍結の規定（`plan-file-standards.md`）に従う。
-- 実装に着手する前に、受入シナリオの消費主体、公開されている呼び出し手段、具体的な入力値と初期状態、有効な期待結果、および検出対象とする失敗を確定する。テストの選定は`agent-basics:writing-standards/references/testing.md`「検証単位の選定」に従う。計画を作成しない場合やレビュー修正においても、要求と完成条件から同様に対応関係を確定する。不具合を修正する場合は、該当する入力値を用いて不具合を再現させてから是正し、計画凍結後の仕様変更は既存のレビュー指摘管理表および採否・変更記録と関連付ける。
+- 実装に着手する前に、受入シナリオの消費主体、公開されている呼び出し手段、具体的な入力値と初期状態、有効な期待結果、および検出対象とする失敗を確定する。テストの選定は`agent-basics:writing-standards/references/testing.md`「検証単位の選定」に従う。計画を作成しない場合やレビュー修正においても、要求と完成条件から同様に対応関係を確定する。不具合の再現と修正後の確認・証拠保存は、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」に従う。計画凍結後の仕様変更は既存のレビュー指摘管理表および採否・変更記録と関連付ける。
 - 変更する前に作成規範を確認し、担当ファイルおよび直接影響範囲のみを変更する。生成元ファイルを変更した場合は、生成・配布手段も追随して更新する。
 - 結果に影響を与える実装、テスト、入力値、および消費側の期待値を整合させ、`agent-toolkit:commit`「検証」に定めるタイミングで最終的な変更範囲の検証と有限回の手動観測を実施する。保存済みの成功結果と失敗限定の結果の統合は、`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従う。
 - `レーン担当`自身はバージョン更新コマンドを実行せず、bumpの種別と根拠を計画または引き継ぎ記録に記載して公開工程へ引き渡す。

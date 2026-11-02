@@ -135,6 +135,8 @@ async def test_close_reclaims_descendants_when_kill_wait_stalls(
             monkeypatch.setattr(Process, "wait", stalled_wait)
             await asyncio.wait_for(manager.close(), 15)
             assert len(calls) >= 2
-            assert all(not target.is_running() or target.status() == psutil.STATUS_ZOMBIE for target in targets)
+            assert all(
+                not target.is_running() or target.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD) for target in targets
+            )
         finally:
             await asyncio.to_thread(process_tree.reclaim_processes, targets, timeout=0.5)

@@ -254,4 +254,4 @@ def test_async_command_timeout_or_cancellation_reclaims_child_tree(tmp_path, mon
 
     asyncio.run(check())
     pid = int(pid_file.read_text())
-    assert not psutil.pid_exists(pid) or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+    assert not psutil.pid_exists(pid) or psutil.Process(pid).status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)

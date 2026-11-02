@@ -31,30 +31,20 @@ def read_command_groups(command: str, *, sequential: bool = False, read_prefix: 
     lexer.whitespace_split = True
     lexer.commenters = ""
     groups: list[list[str]] = [[]]
-    conditional_chain = False
     try:
         for token in lexer:
             if read_prefix and token.rstrip("\n") in {";", "&&"}:
                 token = token.rstrip("\n")
             if sequential and token == "&&":
                 return None
+            if read_prefix and token in {";", "\n"}:
+                return None
             if token in {";", "&&", "\n"}:
-                # &&の失敗を後続の独立コマンドが隠す場合は、短絡した読取を成功と推定できない。
-                if read_prefix and conditional_chain and token != "&&" and groups[-1]:
-                    return None
-                conditional_chain = conditional_chain or token == "&&"
                 if groups[-1]:
                     groups.append([])
             elif token and all(char in ";&|()<>\n" for char in token):
                 return None
             else:
-                # 診断などの後続処理を取得成功の条件にせず、先頭から直列に実行した読取だけを残す。
-                if (
-                    read_prefix
-                    and not groups[-1]
-                    and pathlib.PurePath(token).name not in {"cat", "sed", "head", "tail", "jq", "cd"}
-                ):
-                    break
                 if (
                     read_prefix
                     and any(marker in token for marker in ("$", "`"))
@@ -69,7 +59,20 @@ def read_command_groups(command: str, *, sequential: bool = False, read_prefix: 
                 groups[-1].append(token)
     except ValueError:
         return None
-    return [group for group in groups if group]
+    groups = [group for group in groups if group]
+    if read_prefix:
+        # 後続の構文まで検証してから、先頭から確認可能な読取と前置きだけを残す。
+        # 途中で解析を打ち切ると、その後のセミコロンによる失敗隠蔽を見落とす。
+        end = next(
+            (
+                index
+                for index, group in enumerate(groups)
+                if pathlib.PurePath(group[0]).name not in {"cat", "sed", "head", "tail", "jq", "cd", "wc", "ls"}
+            ),
+            len(groups),
+        )
+        return groups[:end]
+    return groups
 
 
 def read_plan(command: str) -> list[Read]:

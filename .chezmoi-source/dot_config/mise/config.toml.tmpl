@@ -26,7 +26,7 @@ chezmoi = "latest"
 # `latest`のような曖昧な版指定の解決でmise.lockの確定バージョンより優先されるため、
 # 版を明示してこの解決経路を通さない。版の更新は`make update`が`mise upgrade --bump`で行う。
 {{ if eq $mode "full" }}
-dotnet = "10.0.402"
+dotnet = "10.0.403"
 {{ end }}
 fzf = "latest"
 {{ if eq $mode "full" }}

@@ -32,6 +32,7 @@ QCD、3段判定、事実と推論、硬い制約と努力目標の定義は、`
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 規範追記を含む案の必要性を判定する前 | `../writing-standards/references/agent-documents-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/design-heuristics.md#「設計案の予備選別」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」` |
@@ -65,6 +66,8 @@ QCD、3段判定、事実と推論、硬い制約と努力目標の定義は、`
 ## 対象成果物の作成規範
 
 作成規範とは、対象成果物の種類ごとに適用する作成時の品質基準である。`agent-basics:writing-standards`の該当資料に加え、対象リポジトリに実在する`AGENTS.md`、`CLAUDE.md`、`.claude/rules/`配下の文書を指す。
+変更要求・方針・作業項目・計画を検収するときは、その文書自体と、要求が変更する成果物の双方に、それぞれの作成規範を適用する。
+規範追記案では、案が成立するかと追記自体が必要かを分け、`agent-basics:writing-standards/references/agent-documents-additions.md`「規範追記時の判定」に従い、既存記述の削除・集約でも目的を満たせるかを採用前に判断する。
 レビュー担当は初回レビューにおいて、作成規範と合わせて`agent-basics:writing-standards`の`references/review-only-criteria.md`を一括して適用する。
 レビューイーは、指摘で言及された基準のみを同資料から読み取る。
 

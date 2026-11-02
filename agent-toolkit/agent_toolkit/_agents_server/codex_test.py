@@ -1399,7 +1399,7 @@ def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3)
         alive = []
         for process in owned.values():
             try:
-                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                if process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                     alive.append(process)
             except psutil.NoSuchProcess:
                 continue
@@ -2127,6 +2127,8 @@ async def test_manager_root_connects_codex_start_resume_and_notification(
         try:
             session = await backend.start("調査", str(tmp_path))
             await backend.resume("resumed-thread", state.ResumePrompt("続行"), str(tmp_path))
+            session.announced = True
+            manager._status_writer.activate()
             configs = [params["config"] for method, params in client.requests if method in {"thread/start", "thread/resume"}]
             assert len(configs) == 2
             parent_environment = dict(os.environ)
@@ -2143,10 +2145,22 @@ async def test_manager_root_connects_codex_start_resume_and_notification(
             assert response["status"] == "starting"
             assert "途中の観測" in response["notices"][0]["body"]
             assert f"delegate:{session.session_id}" in response["notices"][0]["body"]
-            assert notice_inbox.take_notices(root, session.session_id, state_root=tmp_path) == []
+            assert not notice_inbox.take_notices(
+                root,
+                session.session_id,
+                state_root=tmp_path,
+                recipient_session_id=manager._status_writer.launcher_session_id(),
+                owner_status_file=manager._status_writer.path.name,
+            )
             if environment_owner is None:
                 assert (
-                    notice_inbox.take_notices(other._status_writer.root_session_id, session.session_id, state_root=tmp_path)
+                    notice_inbox.take_notices(
+                        other._status_writer.root_session_id,
+                        session.session_id,
+                        state_root=tmp_path,
+                        recipient_session_id=other._status_writer.launcher_session_id(),
+                        owner_status_file=other._status_writer.path.name,
+                    )
                     == []
                 )
         finally:

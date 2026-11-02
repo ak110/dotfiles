@@ -5,7 +5,7 @@ import itertools
 import json
 import pathlib
 import re
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import session_evidence_static
 
@@ -123,6 +123,63 @@ def command_input_observations(tool: str, text: str) -> list[dict[str, str | Non
             observation["command"] = None
             observation["reason"] = "実行引数の閉じ位置または上書きを静的に確定できない"
     return commands
+
+
+def continuation_handles(tool: str, text: str) -> set[tuple[str, int | str]]:
+    """後続回収の公開入力から実行IDとセルIDを区別し、静的な値だけを読む。"""
+    keys = {"write_stdin": "session_id", "wait": "cell_id"}
+    leaf = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
+    values: list[tuple[str, Any]] = []
+    if leaf in keys:
+        try:
+            inputs = json.loads(text)
+        except ValueError:
+            return set()
+        if isinstance(inputs, dict):
+            values.append((keys[leaf], inputs.get(keys[leaf])))
+    elif leaf == "exec":
+        matches = [match for match in _JS_TOKEN.finditer(text) if not match[0].startswith(("//", "/*"))]
+        tokens = [match[0] for match in matches]
+        for index in range(len(tokens) - 4):
+            if tokens[index : index + 2] != ["tools", "."] or tokens[index + 2] not in keys:
+                continue
+            if tokens[index + 3 : index + 5] != ["(", "{"]:
+                continue
+            key = keys[tokens[index + 2]]
+            cursor, depth, ambiguous = index + 5, 1, False
+            found: list[Any] = []
+            while cursor < len(tokens) and depth:
+                token = tokens[cursor]
+                if depth == 1 and (token == "[" or tokens[cursor : cursor + 3] == [".", ".", "."]):
+                    ambiguous = True
+                if depth == 1 and (token == key or _literal(token) == key) and tokens[cursor - 1] in {"{", ","}:
+                    value = None
+                    if cursor + 2 < len(tokens) and tokens[cursor + 1] == ":":
+                        end = cursor + 2
+                        while end < len(tokens) and tokens[end] not in {",", "}"}:
+                            end += 1
+                        if end > cursor + 2:
+                            raw = text[matches[cursor + 2].start() : matches[end - 1].end()]
+                            value = _literal(raw)
+                            if value is None:
+                                try:
+                                    value = json.loads(raw)
+                                except ValueError:
+                                    value = None
+                    found.append(value)
+                depth += (token == "{") - (token == "}")
+                cursor += 1
+            if not depth and not ambiguous and len(found) == 1:
+                values.append((key, found[0]))
+    return {
+        (key, value)
+        for key, value in values
+        if key == "session_id"
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+        or key == "cell_id"
+        and isinstance(value, str)
+    }
 
 
 def command_execution_input(command: object) -> str:

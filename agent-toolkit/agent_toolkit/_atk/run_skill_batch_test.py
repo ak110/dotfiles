@@ -64,6 +64,7 @@ def test_recovers_finished_analysis_with_saved_report_scope(tmp_path, monkeypatc
     _target(tmp_path, "old-session")
     target = session_review.pending()[0]
     prepared = run_skill_batch._prepare(target)  # noqa: SLF001  # pylint: disable=protected-access
+    assert prepared is not None
     run_id = "b" * 32
     scope = session_review.LEGACY_BATCH_SCOPE if legacy else session_review.BATCH_SCOPE
     monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", run_id)
@@ -303,6 +304,63 @@ def test_active_target_is_not_prepared(tmp_path, monkeypatch) -> None:
     assert len(session_review.pending()) == 1
 
 
+@pytest.mark.parametrize("other", [None, "ready", "broken"])
+def test_activity_resumed_after_selection_is_deferred(tmp_path, monkeypatch, other) -> None:
+    """選定後の活動再開はpendingへ残し、真の準備失敗だけを抑止する。"""
+    notes = _notes()
+    _target(tmp_path, "resumed")
+    if other is not None:
+        _target(tmp_path, other)
+    if other == "broken":
+        (tmp_path / "broken.jsonl").unlink()
+    queries = 0
+
+    def activity(session_ids, **kwargs):
+        nonlocal queries
+        del kwargs
+        if session_ids == {"resumed"}:
+            queries += 1
+        active = session_ids == {"resumed"} and queries > 1
+        return session_activity.ActivitySnapshot(frozenset(session_ids) if active else frozenset(), ())
+
+    monkeypatch.setattr(session_activity, "review_activity", activity)
+    calls = []
+
+    def execute(args):
+        manifest = session_review.read(pathlib.Path(args.batch_manifest))
+        calls.append([target["session_id"] for target in manifest["targets"]])
+        monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", args.run_id)
+        monkeypatch.setenv(session_review.BATCH_ENV, args.batch_manifest)
+        add.add_entries(
+            notes,
+            messages=["---\nrun_skill_report: true\n---\n# 振り返り結果\n\n対象を確認した。"],
+            target_repo=args.target_repo,
+            source="run-skill",
+            now=datetime.datetime.now(datetime.UTC),
+            entry_type="uwi",
+            scope=session_review.BATCH_SCOPE,
+            question_type="post-approval",
+        )
+        assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
+        return 0
+
+    assert run_skill_batch.dispatch(_args("manual"), execute) == (1 if other == "broken" else 0)
+    assert calls == ([["ready"]] if other == "ready" else [])
+    deferred = next(target for target in session_review.pending() if target["session_id"] == "resumed")
+    assert not deferred.get("failure_key") and not deferred.get("failure_unreported")
+    failures = _failure_awis(notes)
+    assert len(failures) == (1 if other == "broken" else 0)
+    if failures:
+        assert "対象: broken\n" in failures[0].read_text(encoding="utf-8")
+    # 元対象の準備は、活動が終わった後の次の公開batchから再試行できる。
+    if other is None:
+        monkeypatch.setattr(
+            session_activity, "review_activity", lambda *args, **kwargs: session_activity.ActivitySnapshot(frozenset(), ())
+        )
+        assert run_skill_batch.dispatch(_args("manual"), execute) == 0
+        assert calls == [["resumed"]] and not session_review.pending()
+
+
 def test_config_boolean_contract() -> None:
     assert config.resolve_mutable_setting("session_review_auto_start") == "true"
     config.save_mutable_settings({"session_review_auto_start": "false"})
@@ -483,6 +541,7 @@ def test_prepare_success_keeps_json_and_forwards_stderr(tmp_path, monkeypatch, c
     monkeypatch.setattr(run_skill_batch.run_script, "dispatch", dispatch)
     target = session_review.pending()[0]
     prepared = run_skill_batch._prepare(target)  # pylint: disable=protected-access
+    assert prepared is not None
     assert prepared["scope_path"] == "x" and prepared["generation"] == target["generation"]
     assert "警告: 補足" in capsys.readouterr().err
 

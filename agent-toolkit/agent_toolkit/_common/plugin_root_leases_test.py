@@ -57,6 +57,7 @@ def test_plugin_root_in_use_distinguishes_live_stale_and_unknown(
         "vanished",
         "other-user",
         "zombie",
+        "dead",
         "missing-log",
         "denied-files",
         "wrong-log",
@@ -107,6 +108,8 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(
         def status(self) -> str:
             if observation == "non-mcp-status-denied":
                 raise subject.psutil.AccessDenied()
+            if observation == "dead":
+                return subject.psutil.STATUS_DEAD
             return subject.psutil.STATUS_ZOMBIE if observation == "zombie" else subject.psutil.STATUS_RUNNING
 
         def cmdline(self) -> list[str]:

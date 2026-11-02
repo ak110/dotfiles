@@ -40,7 +40,9 @@ class _Progress:
 
     def unfinished(self, candidates: set[str]) -> dict[str, list[str]]:
         return {
-            "wi": sorted(name for name, state in self.items if state == "processing" or name in candidates),
+            "wi": sorted(
+                name for name, kind in self.items if name in candidates or kind not in {"ready", "internal-dependency-wait"}
+            ),
             "lanes": sorted(name for name, integrated, _head in self.lanes if not integrated),
         }
 
@@ -64,10 +66,11 @@ def _progress(snapshot: _listing.RepositorySnapshot, ownership: _ownership.Owner
         if result.returncode:
             raise ValueError(f"レーンbranchのHEADを取得できない: {record['lane']}: {result.stderr.strip()}")
         lanes.add((record["lane"], integrated, result.stdout.strip()))
-    return _Progress(
-        frozenset((entry[0].name, entry[3]) for entry in current.entries if entry[3] in {"inbox", "processing"}),
-        frozenset(lanes),
-    )
+    # 開始側と同じ候補・修復診断を使い、冷却・外部依存で延期したinboxを残件へ戻さない。
+    items = {name: kind.rsplit(":", 1)[-1] for name, _digest, kind in _gate.repository_input(current, None).items}
+    # 未回答UWIなど開始候補から外れる項目も、processingのままなら処理終了を待つ。
+    items.update((path.name, "processing") for path, _repo, _text, state, _kind in current.entries if state == "processing")
+    return _Progress(frozenset(items.items()), frozenset(lanes))
 
 
 def _report(event: str, ownership: _ownership.Ownership, detail: str) -> None:
@@ -334,13 +337,10 @@ def run_coordinator(
                 observed = _progress(by_repo[repo_id], owner)
                 candidate_records = json.loads(pathlib.Path(targets[repo_id]["candidate_file"]).read_text(encoding="utf-8"))
                 candidate_names = {record["filename"] for record in candidate_records}
-                observed = dataclasses.replace(
-                    observed,
-                    items=frozenset(
-                        (name, state) for name, state in observed.items if state == "processing" or name in candidate_names
-                    ),
-                )
                 remaining = observed.unfinished(candidate_names)
+                observed = dataclasses.replace(
+                    observed, items=frozenset((name, kind) for name, kind in observed.items if name in remaining["wi"])
+                )
                 completed = execution and record.get("status") == "completed" and not any(remaining.values())
                 blocked = record.get("status") == "blocked"
                 unchanged[repo_id] = unchanged.get(repo_id, 0) + 1 if progress.get(repo_id) == observed else 0

@@ -217,14 +217,16 @@ def sed_read_range(tokens: Sequence[str]) -> tuple[str, int, int | None] | None:
 
 
 def bash_read_paths(
-    command: str, cwd: str, *, include_partial: bool = False, first_line_only: bool = False
+    command: str, cwd: str, *, include_partial: bool = False, first_line_only: bool = False, include_piped: bool = False
 ) -> Iterator[tuple[pathlib.Path, ...]]:
     """読取の解析とcwd・パスの解決を共有し、コマンドごとにファイル群を返す。
 
     `first_line_only`は`_read_operands`の同名の指定へ渡す。
+    `include_piped`は警告候補専用で、加工後の出力を取得成功や容量判定の根拠にしない。
     """
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
-        if invocation.output_pipe or invocation.output_redirected or invocation.captured:
+        # output_redirectedにはパイプ接続も含まれる。警告用の候補では、その接続だけを許容する。
+        if invocation.captured or invocation.output_redirected and not (include_piped and invocation.output_pipe):
             continue
         # 読取候補の特定（`include_partial`）では、無関係な引数が未知でも既知のファイル引数を候補に残す。
         # 出力全体の順序と範囲を使う用途（容量の判定など）は、全引数が確定した呼出しだけを使う。

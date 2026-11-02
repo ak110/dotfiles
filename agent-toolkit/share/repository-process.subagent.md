@@ -54,14 +54,18 @@ writes_worktree: true
 処理の工程は`agent-toolkit:process-wi`の`references/lanes.md`（通常のレーン処理）に従い、計画・実行レビュー・公開を対象worktreeごとに行う。
 配下へ委譲する場合も、`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」が許す工程だけを使う。
 
-- 確認事項、担当外の発見、気付いた改善点と報告用UWIの材料は統括担当へ返却し、報告用UWIの作成は統括担当に任せる。
+- 改善点は`rules-subagent.md`「返却形式の受け渡し」に従って統括担当へ送る。確認事項、担当外の発見と報告用UWIの材料は統括担当へ返却し、報告用UWIの作成は統括担当に任せる。
 - 祖先の対話CLIの終了（`atk agents-exit-session`）は統括担当に任せる。
 - 起動したレーン担当とwriterのsession IDを記録し、終了を観測してから返却する。
 
 ## 出力
 
 次の形式のみを返す。
-公開・CI検収まで終了した場合は`状態`を`completed`、残工程がある場合は`incomplete`、未着手の場合は`pending`とする。
+今回進められる作業と処理済み部分の公開・CI検収が完了した場合は`状態`を`completed`とする。
+残りが、必要なユーザー判断を終えた有効な未来の冷却期限、未回答UWIへの依存、外部の先行項目への依存で正当に先送りされている場合も含む。
+WI自体の完成とは区別し、先送りした項目・残る条件・解除条件・再開先を`残工程`へ記す。
+今回進められる作業、対象全体のprocessing、対処を要する不正metadata、未統合レーン、未完了の公開・CI検収があれば`incomplete`、未着手なら`pending`とする。
+起動したwriterの終了観測を保ち、欠落・失敗の結果を完了として返さない。
 
 ```text
 状態: <completed|incomplete|pending>

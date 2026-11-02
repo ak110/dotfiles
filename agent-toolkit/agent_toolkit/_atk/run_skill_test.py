@@ -792,7 +792,10 @@ def test_timeout_terminates_session_and_descendants(
     assert pid_file.exists(), "子孫プロセスが時間上限より前に起動しなかった"
     grandchild = int(pid_file.read_text(encoding="utf-8"))
     deadline = time.monotonic() + 10
-    while psutil.pid_exists(grandchild) and psutil.Process(grandchild).status() != psutil.STATUS_ZOMBIE:
+    while psutil.pid_exists(grandchild) and psutil.Process(grandchild).status() not in (
+        psutil.STATUS_ZOMBIE,
+        psutil.STATUS_DEAD,
+    ):
         assert time.monotonic() < deadline, "子孫プロセスが終了しなかった"
         time.sleep(0.05)
     assert "時間上限（3秒）を超えたため終了させた" in _log_files(engine_env)[0].read_text(encoding="utf-8")

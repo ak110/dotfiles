@@ -137,8 +137,9 @@ async def test_wait_returns_running_notification_once(tmp_path: pathlib.Path) ->
         state_root=tmp_path,
     )
     async with server_manager.AgentsServerManager(writer) as manager:
-        session = state.SessionState("thread-1", str(tmp_path), engine="codex")
+        session = state.SessionState("thread-1", str(tmp_path), engine="codex", announced=True)
         manager.sessions[session.session_id] = session
+        writer.activate()
         _set_wait_timeout(manager, 2.0)
         wait_task = asyncio.create_task(manager.wait())
         await asyncio.sleep(0)
@@ -169,9 +170,10 @@ async def test_wait_returns_terminal_result_with_pending_notification(tmp_path: 
         state_root=tmp_path,
     )
     async with server_manager.AgentsServerManager(writer) as manager:
-        session = state.SessionState("thread-1", str(tmp_path), engine="codex")
+        session = state.SessionState("thread-1", str(tmp_path), engine="codex", announced=True)
         _complete(session, message="最終結果")
         manager.sessions[session.session_id] = session
+        writer.activate()
         notices = shared_layout.notices_directory("root-session", tmp_path)
         _write_notice(notices, session.session_id, 1, "2026-09-06T00:00:01+00:00", "終了前の通知")
 

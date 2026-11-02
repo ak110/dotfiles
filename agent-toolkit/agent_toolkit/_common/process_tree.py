@@ -193,7 +193,7 @@ def _holds_resources(process: psutil.Process) -> bool:
     """
     try:
         # 列挙時と起動時刻が異なる同じPIDのプロセスは別の主体であり、対象の資源保持に数えない。
-        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        return process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
     except psutil.Error, OSError:
         return False
 
@@ -205,6 +205,19 @@ def describe(process: psutil.Process) -> str:
     except psutil.Error, OSError:
         command = ""
     return f"{process.pid}: {command}" if command else str(process.pid)
+
+
+def identity(pid: int) -> dict[str, int | float | str]:
+    """引数や環境を含めず、PID再利用と親子関係を判別する識別情報を返す。"""
+    result: dict[str, int | float | str] = {"pid": pid}
+    try:
+        process = psutil.Process(pid)
+        result["created_at"] = process.create_time()
+        result["ppid"] = process.ppid()
+        result["status"] = process.status()
+    except (psutil.Error, OSError) as error:
+        result["unavailable"] = type(error).__name__
+    return result
 
 
 def log_residual(residual: list[str], *, context: str) -> None:

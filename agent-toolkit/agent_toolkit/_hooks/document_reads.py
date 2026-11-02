@@ -13,7 +13,7 @@ import functools
 import hashlib
 import json
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 lazy from agent_toolkit._common import read_triggers
 lazy from agent_toolkit._common.plugin_roots import resolve_plugin_root, sibling_plugin_root
@@ -231,6 +231,16 @@ def read_trigger_key(path: pathlib.Path, fingerprint: str) -> str:
     return READ_TRIGGER_PREFIX + str(path.resolve()) + "#sha256:" + fingerprint
 
 
+def skill_invocation_key(path: pathlib.Path, fingerprint: str) -> str:
+    """資料参照の成功と区別して、同じ主体・本文のSkill起動を識別する。"""
+    return "read-trigger-skill:" + str(path.resolve()) + "#sha256:" + fingerprint
+
+
+def reference_only(operations: Sequence[Sequence[str]]) -> bool:
+    """選択元がすべて名指し参照である場合だけ、Readによる取得を案内する。"""
+    return bool(operations) and all(any(value.startswith(("read:", "section:")) for value in group) for group in operations)
+
+
 def content_ready(records: dict, fingerprint: str, agent: str) -> bool:
     """同じ主体が同じ内容ハッシュの資料への読取が成功した記録があるかを、記録時のパスを問わずに返す。"""
     suffix = "#sha256:" + fingerprint
@@ -238,3 +248,51 @@ def content_ready(records: dict, fingerprint: str, agent: str) -> bool:
         key.startswith(READ_TRIGGER_PREFIX) and key.endswith(suffix) and isinstance(actors, list) and agent in actors
         for key, actors in records.items()
     )
+
+
+def edited_document(tool_name: str, tool_input: dict, response: object, cwd: str) -> tuple[pathlib.Path, str] | None:
+    """編集応答の前本文と入力の変更が、現在の対象本文に一致する場合だけ前hashを返す。
+
+    Claude Code 2.1.316のEdit/Write出力型のoriginalFileは編集前全文かnullである。
+    staged（未適用）とuserModified（ユーザー変更）は、自分の入力どおりの成功に含めない。
+    """
+    if tool_name not in {"Edit", "MultiEdit", "Write"} or not isinstance(response, dict):
+        return None
+    before = response.get("originalFile")
+    requested = tool_input.get("file_path")
+    reported = response.get("filePath")
+    if (
+        not isinstance(before, str)
+        or not isinstance(requested, str)
+        or not isinstance(reported, str)
+        or response.get("staged")
+        or response.get("userModified")
+    ):
+        return None
+    path = pathlib.Path(requested).expanduser()
+    path = (path if path.is_absolute() else pathlib.Path(cwd) / path).resolve()
+    report = pathlib.Path(reported).expanduser()
+    if (report if report.is_absolute() else pathlib.Path(cwd) / report).resolve() != path:
+        return None
+    if tool_name == "Write":
+        after = tool_input.get("content")
+        if not isinstance(after, str):
+            return None
+    else:
+        edits = [tool_input] if tool_name == "Edit" else tool_input.get("edits")
+        if not isinstance(edits, list) or not edits:
+            return None
+        after = before
+        for edit in edits:
+            if not isinstance(edit, dict):
+                return None
+            old, new = edit.get("old_string"), edit.get("new_string")
+            if not isinstance(old, str) or not old or not isinstance(new, str):
+                return None
+            if old not in after or not edit.get("replace_all") and after.count(old) != 1:
+                return None
+            after = after.replace(old, new, -1 if edit.get("replace_all") else 1)
+    # 応答の後に外部変更があった場合も、その未知の本文へ継承しない。
+    if path.read_bytes() != after.encode("utf-8"):
+        return None
+    return path, bytes_fingerprint(before.encode("utf-8"))

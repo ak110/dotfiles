@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.15"
-# dependencies = ["platformdirs>=4.0", "watchdog>=6.0.0"]
+# dependencies = ["platformdirs>=4.0", "watchdog>=6.0.0,!=7.0.0"]
 # ///
 """`atk serve`の計画ファイル画面が使うリモートホスト側ヘルパー。
 

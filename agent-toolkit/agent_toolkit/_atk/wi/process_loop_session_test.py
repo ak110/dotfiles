@@ -400,7 +400,9 @@ class TestProcessLoopPromptAndEnv:
         assert "続行不能時も理由と残工程を保存して制御を常駐へ返す" in prompt
         assert "常駐による結果の受理・所有解放・回収は統括CLI終了後に行う" in prompt
         assert prompt.endswith("</atk-auto>")
-        assert "completed" not in prompt
+        assert "completedは今回進められる作業と公開・CI検収の完了" in prompt
+        assert "正当な延期はremainingへ明記する" in prompt
+        assert "訂正後の最終保存内容と既存工程の検証証拠" in prompt
         assert "atk wi list" not in prompt
 
     @pytest.mark.parametrize("orchestrator", ["claude", "codex", "agy"])

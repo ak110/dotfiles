@@ -199,7 +199,7 @@ def _still_holding_resources(descendants: list[psutil.Process]) -> list[int]:
     holding: list[int] = []
     for process in descendants:
         try:
-            if process.status() != psutil.STATUS_ZOMBIE:
+            if process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                 holding.append(process.pid)
         except psutil.Error, OSError:
             continue
@@ -247,3 +247,19 @@ def test_stop_process_tree_reports_residual(monkeypatch, spawn_parent):
         with contextlib.suppress(psutil.Error, OSError):
             target.kill()
             target.wait(timeout=5)
+
+
+def test_identity_limits_fields_and_keeps_unavailable(monkeypatch):
+    """引数や環境を照会せず、起動時刻・親PIDと採取不能の理由を返す。"""
+    process = mock.Mock(pid=123)
+    process.create_time.return_value = 12.5
+    process.ppid.return_value = 99
+    process.status.return_value = "running"
+    monkeypatch.setattr(psutil, "Process", mock.Mock(return_value=process))
+    assert process_tree.identity(123) == {"pid": 123, "created_at": 12.5, "ppid": 99, "status": "running"}
+    process.cmdline.assert_not_called()
+    process.environ.assert_not_called()
+    process.ppid.side_effect = psutil.AccessDenied(123)
+    assert process_tree.identity(123) == {"pid": 123, "created_at": 12.5, "unavailable": "AccessDenied"}
+    monkeypatch.setattr(psutil, "Process", mock.Mock(side_effect=psutil.NoSuchProcess(123)))
+    assert process_tree.identity(123) == {"pid": 123, "unavailable": "NoSuchProcess"}

@@ -158,7 +158,7 @@ def remote_command_argv(bootstrap: str, op: str, args: list[str]) -> list[str]:
         "--python",
         "3.15",
         "--with",
-        '"watchdog>=6.0.0"',
+        '"watchdog>=6.0.0,!=7.0.0"',
         "--with",
         '"platformdirs>=4.0"',
         "python",

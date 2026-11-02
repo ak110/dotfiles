@@ -409,7 +409,7 @@ class StatusFileWriter:
 
     async def take_notices_async(self, session_id: str) -> list[dict[str, str]]:
         """通知の一度だけの回収をworkerで待つ。"""
-        return await run_file_operation(take_notices, self.root_session_id, session_id, self._state_root)
+        return await run_file_operation(self.take_notices, session_id)
 
     async def deactivate_async(self) -> None:
         """保存taskの終了後に予約を解除して所有ファイルを回収する。"""
@@ -491,7 +491,13 @@ class StatusFileWriter:
 
     def take_notices(self, session_id: str) -> list[dict[str, str]]:
         """待機対象sessionの正常な通知を回収する。"""
-        return take_notices(self._identity.root_session_id, session_id, self._state_root)
+        return take_notices(
+            self._identity.root_session_id,
+            session_id,
+            self._state_root,
+            recipient_session_id=self.launcher_session_id(),
+            owner_status_file=self._projection_path.name,
+        )
 
     def _write_terminal_results(self) -> None:
         for session in self._sessions.values():

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+import contextlib
 import json
 import re
 import shlex
@@ -41,10 +42,12 @@ from session_evidence_hook_notices import (
     _normalize_hook_candidate_text,
 )
 from session_evidence_tool_calls import (
+    _conversation_tool_calls,
     _record_tool_calls,
     _recorded_input,
 )
 
+from agent_toolkit._agents_server.wait_summary import WAIT_BODY_END_PREFIX, WAIT_BODY_START_PREFIX
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import layout as _wi_layout
@@ -408,6 +411,7 @@ def _candidate_events(
     adhoc_processing: list[dict[str, Any]] | None = None,
     wi_events: list[dict[str, Any]] | None = None,
     definition_reads: list[dict[str, Any]] | None = None,
+    delegate_notices: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
@@ -468,7 +472,12 @@ def _candidate_events(
         ("escalation", (event for event in timeline if _is_escalation_return(event))),
         (
             "delegate-return",
-            (event for event in timeline if _is_delegate_return(event, main_record_id=main_record_id)),
+            iter(
+                [
+                    *(event for event in timeline if _is_delegate_return(event, main_record_id=main_record_id)),
+                    *(delegate_notices or ()),
+                ]
+            ),
         ),
         ("adhoc-processing", iter(adhoc_processing or ())),
         ("definition-body-read", (event for event in definition_reads or () if event["kind"] == "definition-body-read")),
@@ -660,6 +669,92 @@ def _candidate_events(
             "excluded": dict(sorted(excluded.items())),
         },
     ]
+
+
+def _delegate_notice_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """実際のwaitの結果で受信した改善点を、完了前も原記録の位置へ対応付ける。"""
+    events = []
+    for item in collected:
+        calls = _record_tool_calls(item.records)
+        wait_lines = {
+            call.line
+            for call in calls
+            if any(
+                _is_atk_command(list(simple.words)) and list(simple.words)[1:3] == ["agents", "wait"]
+                for command in session_evidence_execution.command_inputs(call.tool, call.text)
+                for simple in session_evidence_execution.shell_simple_commands(command)
+            )
+            or "agents_server" in call.tool
+            and call.tool.endswith("__wait")
+        }
+        handles: set[tuple[str, int | str]] = set()
+        for event in sorted(_conversation_tool_calls(item.records), key=lambda row: row["line"]):
+            if event.get("kind") == "tool-call":
+                if handles & session_evidence_execution.continuation_handles(event["tool"], event["text"]):
+                    wait_lines.add(event["line"])
+                continue
+            if event.get("kind") != "tool-result" or event.get("input_line") not in wait_lines:
+                continue
+            bodies, resumed = _wait_response_parts(event["text"])
+            handles.update(resumed)
+            lines = [
+                line.lstrip() for body in bodies for line in body.splitlines() if line.lstrip().startswith(_IMPROVEMENT_MARKER)
+            ]
+            if lines:
+                events.append({**event, "record": item.record_id, "text": "\n".join(dict.fromkeys(lines))})
+    return events
+
+
+def _wait_response_parts(value: Any) -> tuple[list[str], set[tuple[str, int | str]]]:
+    """waitの本文と、後続回収へ引き継ぐ実行識別子を読む。"""
+    bodies: list[str] = []
+    handles: set[tuple[str, int | str]] = set()
+    if isinstance(value, list):
+        children = value
+    elif isinstance(value, dict):
+        notices = value.get("notices")
+        bodies = (
+            [notice["body"] for notice in notices if isinstance(notice, dict) and isinstance(notice.get("body"), str)]
+            if isinstance(notices, list)
+            else []
+        )
+        session = value.get("session_id")
+        if isinstance(session, int) and not isinstance(session, bool):
+            handles.add(("session_id", session))
+        cell = value.get("cell_id")
+        if isinstance(cell, str):
+            handles.add(("cell_id", cell))
+        children = [value[key] for key in ("stdout", "output", "text", "content", "results") if key in value]
+    elif isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            children = []
+            cell_match = re.match(r"^Script running with cell ID (\S+)", value)
+            if cell_match:
+                handles.add(("cell_id", cell_match[1]))
+            active: list[str] | None = None
+            session_text = ""
+            for line in value.splitlines():
+                if line.startswith(WAIT_BODY_START_PREFIX):
+                    active, session_text = [], line.removeprefix(WAIT_BODY_START_PREFIX)
+                elif active is not None and line == f"{WAIT_BODY_END_PREFIX}{session_text}":
+                    bodies.append("\n".join(active))
+                    active = None
+                elif active is not None:
+                    active.append(line)
+                elif line.startswith("{"):
+                    with contextlib.suppress(json.JSONDecodeError):
+                        children.append(json.loads(line))
+        else:
+            return _wait_response_parts(parsed) if not isinstance(parsed, str) else ([], set())
+    else:
+        return [], set()
+    for child in children:
+        child_bodies, child_handles = _wait_response_parts(child)
+        bodies.extend(child_bodies)
+        handles.update(child_handles)
+    return bodies, handles
 
 
 _CANDIDATE_EVIDENCE_DIRNAME = "candidate-evidence"

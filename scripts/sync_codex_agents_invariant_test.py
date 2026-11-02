@@ -23,8 +23,9 @@ def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
         encoding="utf-8"
     )
     response_section = markdown_section(waiting, "## `atk agents wait`の応答の扱い")
-    assert "前景のCLIが本文を返した後の逐次待機は新しいrunへ進み" in response_section
-    assert "先行CLIが稼働中にlock競合した後発待機だけが先行runの本文を1回回収する" in response_section
+    assert "前景のCLIが本文を返した後の逐次待機は新しいrunへ進む" in response_section
+    assert "配信済みの`foreground-delivered`または`consumed`なら本文を再出力せず" in response_section
+    assert "未配送の`published`なら保存済み本文を回収し" in response_section
 
 
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:

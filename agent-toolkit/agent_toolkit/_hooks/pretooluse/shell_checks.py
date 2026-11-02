@@ -2,6 +2,7 @@ r"""PreToolUse統合フックのBashコマンドに対する実害保護と手�
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import sys
@@ -800,6 +801,12 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
         if not causes:
             continue
         label = "atk agents wait" if is_wait else "atk"
+        waiting = (
+            "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領せよ。"
+            if "CLAUDECODE" in os.environ and os.environ.get("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS") != "1"
+            else "待機は単独の前景実行とし、CLI自身の期限で返る結果と終了コードを同じターン内に回収せよ。"
+            "`Claude Code`の`Bash`では`timeout=600000`を指定し、未終了なら同じコマンドを再発行せよ。"
+        )
         return _llm_notice(
             f"`{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
             tag=_WARN_TAG,
@@ -809,7 +816,7 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
                 "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
                 "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読め。"
                 "`atk agents wait`は`&`も外して単独で発行せよ。"
-                "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領せよ。"
+                f"{waiting}"
                 "保存した本文の選別は別の呼び出しで行え。"
             ),
         )

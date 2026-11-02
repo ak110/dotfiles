@@ -236,9 +236,9 @@ class ReadTrigger:
     selector: str = ""
     condition: str = ""
 
-    @property
+    @functools.cached_property
     def targets(self) -> tuple[ReadTarget, ...]:
-        """資料と指定範囲を対応させる。"""
+        """不変な宣言行の寿命内で、解決済みの資料と指定範囲を共有する。"""
         headings = self.headings or ("",) * len(self.documents)
         return tuple(ReadTarget(path, heading) for path, heading in zip(self.documents, headings, strict=True))
 

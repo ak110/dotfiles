@@ -147,13 +147,13 @@ def carried_read_target_key(path: pathlib.Path) -> str:
 
 def reset_main_operation_skill_ready(
     session_id: str, *, retain_for_compact: bool = False
-) -> list[tuple[pathlib.Path, str, str]]:
+) -> list[tuple[pathlib.Path, str, str, bool]]:
     """メイン会話の起動済みの記録を除く。
 
     `clear`と`compact`ではスキルの本文が文脈から外れるため、次の操作で再び取得を求める。
     サブエージェントの記録は親の会話圧縮と独立した文脈のため変えない。
     """
-    recovery: list[tuple[pathlib.Path, str, str]] = []
+    recovery: list[tuple[pathlib.Path, str, str, bool]] = []
 
     def _reset(current: dict) -> dict | None:
         recovery.clear()
@@ -173,7 +173,10 @@ def reset_main_operation_skill_ready(
                     continue
                 # 同じ内容の写しを別の場所で読んだ取得も、選択済み資料の取得として候補に含める。
                 if document_reads.content_ready(recorded, fingerprint, MAIN_AGENT_ID):
-                    recovery.append((path, heading, fingerprint))
+                    reference = document_reads.reference_only(
+                        [origin["operations"] for origin in selected.get("declarations", [])]
+                    )
+                    recovery.append((path, heading, fingerprint, reference))
         updated = {
             name: (
                 [agent for agent in agents if agent != MAIN_AGENT_ID]
@@ -214,7 +217,9 @@ def reset_main_operation_skill_ready(
     return recovery
 
 
-def acquisition_failure(target: read_triggers.ReadTarget, error: Exception, *, shell: bool, agent: bool = False) -> str:
+def acquisition_failure(
+    target: read_triggers.ReadTarget, error: Exception, *, shell: bool, agent: bool = False, reference: bool = False
+) -> str:
     """資料読取または見出し解決の失敗を、主体に応じた取得または復旧へ導く。"""
     path = target.path
     if not path.is_file():
@@ -229,7 +234,8 @@ def acquisition_failure(target: read_triggers.ReadTarget, error: Exception, *, s
         return prefix + f"全文を`cat -- {shlex.quote(str(path))}`で読め"
     skill = document_reads.skill_document(str(path))
     if (
-        skill
+        not reference
+        and skill
         and skill[1] == "SKILL.md"
         and (
             agent
@@ -246,10 +252,12 @@ def acquisition_failure(target: read_triggers.ReadTarget, error: Exception, *, s
     return prefix + f"`{path}`をReadで全文読め"
 
 
-def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tuple[pathlib.Path, str, str]]) -> str | None:
+def _compact_recovery_context(
+    host: str, budget: int, recovery_targets: list[tuple[pathlib.Path, str, str, bool]]
+) -> str | None:
     """圧縮前に取得した選択資料を、ホスト本来の取得手段で案内する。"""
     steps = []
-    for path, heading, fingerprint in recovery_targets:
+    for path, heading, fingerprint, reference in recovery_targets:
         target = read_triggers.ReadTarget(path, heading)
         try:
             if not path.is_file():
@@ -260,7 +268,12 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
                 target.body()
             skill = document_reads.skill_document(str(path))
             # 作業ツリー内の写しは`Skill`起動では読み込まれないため、通常の読取手段を案内する。
-            if skill and skill[1] == "SKILL.md" and document_reads.requires_skill_invocation(path, host=host, subject="main"):
+            if (
+                not reference
+                and skill
+                and skill[1] == "SKILL.md"
+                and document_reads.requires_skill_invocation(path, host=host, subject="main")
+            ):
                 owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
                 name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
                 steps.append(f"`Skill`で`{name}`を起動せよ（資料: `{path}`）")
@@ -271,7 +284,7 @@ def _compact_recovery_context(host: str, budget: int, recovery_targets: list[tup
             else:
                 steps.append(f"Readで`{path}`を全文読め" + focus)
         except (OSError, UnicodeError, ValueError) as error:
-            steps.append(acquisition_failure(target, error, shell=host in {"codex", "agy"}))
+            steps.append(acquisition_failure(target, error, shell=host in {"codex", "agy"}, reference=reference))
     if not steps:
         return None
 
@@ -534,7 +547,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     ),
                 )
             session_temp = None
-            recovery_targets: list[tuple[pathlib.Path, str, str]] = []
+            recovery_targets: list[tuple[pathlib.Path, str, str, bool]] = []
             if source in _OPERATION_SKILL_RESET_SOURCES:
                 recovery_targets = reset_main_operation_skill_ready(session_id, retain_for_compact=source == "compact")
             if not delegated and source in _CONTEXT_LOSING_SOURCES:

@@ -1528,7 +1528,10 @@ def test_git_pull_timeout_terminates_stream_holding_descendant(
             pytest.fail(f"孫プロセスのPIDファイルが5秒以内に作成されなかった（開始から{time.monotonic() - started:.3f}秒）")
         time.sleep(0.05)
     descendant_pid = int(pid_path.read_text(encoding="utf-8"))
-    assert not psutil.pid_exists(descendant_pid) or psutil.Process(descendant_pid).status() == psutil.STATUS_ZOMBIE
+    assert not psutil.pid_exists(descendant_pid) or psutil.Process(descendant_pid).status() in (
+        psutil.STATUS_ZOMBIE,
+        psutil.STATUS_DEAD,
+    )
 
 
 class TestLockExclusion:

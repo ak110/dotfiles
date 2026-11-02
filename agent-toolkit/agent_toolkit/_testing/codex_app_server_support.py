@@ -57,7 +57,7 @@ class FakeAppServer:
             raise AssertionError(f"pid {pid} was not started by the fake App Server")
         try:
             process = psutil.Process(pid)
-            if process.create_time() != created or process.status() == psutil.STATUS_ZOMBIE:
+            if process.create_time() != created or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                 return None
         except psutil.Error:
             return None

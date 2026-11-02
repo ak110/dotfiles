@@ -95,7 +95,7 @@ dev = [
     "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",
     "types-PyYAML",
-    "watchdog>=6.0.0",
+    "watchdog>=6.0.0,!=7.0.0",
 ]
 
 [tool.agent-toolkit.pick-wi-check]

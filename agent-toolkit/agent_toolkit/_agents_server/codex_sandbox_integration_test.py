@@ -1,5 +1,10 @@
 """導入済みApp Serverで探索の開始が通常コマンドへ到達することを検証する。"""
 
+import datetime
+import importlib.metadata
+import json
+import logging
+import os
 import pathlib
 import shutil
 import sys
@@ -10,10 +15,48 @@ from agent_toolkit._agents_server import codex
 from agent_toolkit._testing.isolation import restore_host_environment
 
 
+@pytest.fixture(autouse=True)
+def _runtime_diagnostics(request: pytest.FixtureRequest, caplog: pytest.LogCaptureFixture):
+    """実境界の開始・終了と、App Server終了ログを同じpytest PIDへ対応付ける。"""
+    caplog.set_level(logging.INFO, logger="agent-toolkit.agents-server.codex")
+    logger = logging.getLogger("agent-toolkit.agents-server.codex")
+    # agents_server側がrootへの伝播を止めた構成でも、CIへ終了境界を残す。
+    logger.addHandler(caplog.handler)
+    print(
+        "Codex境界試験開始: "
+        + json.dumps(
+            {
+                "at": datetime.datetime.now(datetime.UTC).isoformat(),
+                "pytest_pid": os.getpid(),
+                "python": sys.version,
+                "executable": sys.executable,
+                "pytest": importlib.metadata.version("pytest"),
+                "xdist": importlib.metadata.version("pytest-xdist"),
+                # xdistのworkerでは`numprocesses`が渡らないため、xdistがworkerへ設定するworker数を優先する。
+                "parallelism": os.environ.get("PYTEST_XDIST_WORKER_COUNT")
+                or request.config.getoption("numprocesses", default=None),
+                "worker": os.environ.get("PYTEST_XDIST_WORKER"),
+                "runner_image": {name: os.environ.get(name) for name in ("ImageOS", "ImageVersion", "RUNNER_OS")},
+            },
+            ensure_ascii=True,
+        ),
+        flush=True,
+    )
+    try:
+        yield
+    finally:
+        logger.removeHandler(caplog.handler)
+        print(
+            f"Codex境界試験終了: at={datetime.datetime.now(datetime.UTC).isoformat()} pytest_pid={os.getpid()}",
+            flush=True,
+        )
+
+
 @pytest.mark.asyncio
 async def test_explore_start_reaches_normal_commands(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """モデルを呼ばず、実thread開始とcommand/execで得た本文を入力資料と比べる。
 
@@ -63,3 +106,7 @@ async def test_explore_start_reaches_normal_commands(
             assert result["stdout"].strip() == "探索対象の日本語本文"
             assert not result["stderr"]
         assert source.read_text(encoding="utf-8") == "探索対象の日本語本文"
+    if sys.platform == "win32":
+        assert "Codex App Server終了要求前: at=" in caplog.text
+        assert "Codex App Server終了確認後: at=" in caplog.text
+        assert "app_server_pid=" in caplog.text

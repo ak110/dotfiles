@@ -1355,7 +1355,8 @@ class TestBashAtkOutputLoss:
         assert result.returncode == 0
         assert auto_message_opening_attributes(_additional_context(result))["source"] == "pretooluse"
         assert "結果と終了状態を直接受領できない入力" in _additional_context(result)
-        assert "run_in_background" in _additional_context(result)
+        background = "CLAUDECODE" in os.environ and os.environ.get("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS") != "1"
+        assert ("run_in_background" in _additional_context(result)) is background
         assert "パイプとリダイレクトを外して単独で発行し" in _additional_context(result)
         assert "--output-file" not in _additional_context(result)
         assert "別の呼び出し" in _additional_context(result)

@@ -71,7 +71,10 @@ def _run_in_terminal(timeout: int | None, input_text: str | None) -> tuple[int, 
         pid_path = pathlib.Path(os.environ["UPDATE_DOTFILES_TEST_PID_PATH"])
         if pid_path.exists():
             with contextlib.suppress(psutil.NoSuchProcess):
-                descendant_running = psutil.Process(int(pid_path.read_text(encoding="utf-8"))).status() != psutil.STATUS_ZOMBIE
+                descendant_running = psutil.Process(int(pid_path.read_text(encoding="utf-8"))).status() not in (
+                    psutil.STATUS_ZOMBIE,
+                    psutil.STATUS_DEAD,
+                )
     finally:
         # forkptyが作成した専用セッションの子孫も回収する。pytestや他のテストはこの群に属さない。
         with contextlib.suppress(ProcessLookupError):
