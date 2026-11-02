@@ -3,6 +3,7 @@
 import hashlib
 import json
 import shlex
+import subprocess
 
 import pytest
 
@@ -517,23 +518,8 @@ def test_small_codex_section_guidance_has_capacity_and_both_budgets(tmp_path, mo
         ("cat -- reference.md; ls", False),
         ("wc -l missing && cat -- reference.md; ls", False),
         ("cat -- reference.md && printf done; ls", False),
-        # 読取計画が受理する表示形式は、同じ計画のファイル位置から対象パスを特定して記録する。
-        ("sed -n '1,1p;2,$p' -- reference.md", True),
-        ("sed -n '/^# 基準/,$p' -- reference.md", True),
-        ("wc -l reference.md && sed -n '/^# 基準/,/^必要/p' -- reference.md", True),
-        ("cd nested && sed -n '1,1p;2,2p' ../reference.md", True),
-        ("head -n 20 reference.md", True),
-        ("tail -n 20 -- reference.md", True),
-        ("jq -r '.body' reference.md", True),
-        # 印字以外のsed命令、追従、外部入力、展開、失敗を隠す連結は取得にしない。
-        ("sed -n '1p;w copy.md' -- reference.md", False),
-        ("sed -n '1e date' -- reference.md", False),
-        ('sed -n "/^# 基準/,$p" -- reference.md', False),
-        ("sed -n '/^# 基準/,$p' -- reference.md; ls", False),
+        # 追従は終了しないため実行結果を得られない。終了したと報告されても取得にしない。
         ("tail -f reference.md", False),
-        ("head -n 20 reference.md | cut -c1-3", False),
-        ("jq --rawfile extra copy.md -r '.body' reference.md", False),
-        ("jq -r 'input' reference.md", False),
     ],
 )
 def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state, host, command, success):
@@ -566,6 +552,79 @@ def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state
     assert ('"permissionDecision": "deny"' in after.stdout) is not success
     if success:
         assert str(reference) not in after.stdout
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize(
+    "command,target,success",
+    [
+        # 読取計画が受理する表示形式は、同じ計画のファイル位置から対象パスを特定して記録する。
+        ("sed -n '1,1p;2,$p' -- reference.md", "reference.md", True),
+        ("sed -n '/^# 基準/,$p' -- reference.md", "reference.md", True),
+        ("wc -l reference.md && sed -n '/^# 基準/,/^必要/p' -- reference.md", "reference.md", True),
+        ("cd nested && sed -n '1,1p;2,2p' ../reference.md", "reference.md", True),
+        ("head -n 20 reference.md", "reference.md", True),
+        ("wc -l reference.md && head -n 20 reference.md", "reference.md", True),
+        ("tail -n 20 -- reference.md", "reference.md", True),
+        ("cd nested && tail -n 20 ../reference.md", "reference.md", True),
+        ("jq -r '.body' reference.json", "reference.json", True),
+        ("wc -l reference.json && jq -r '.body' reference.json", "reference.json", True),
+        # 印字以外のsed命令、外部入力、展開、失敗を隠す連結は取得にしない。
+        ("sed -n '1p;w copy.md' -- reference.md", "reference.md", False),
+        ("sed -n '1e true' -- reference.md", "reference.md", False),
+        ('sed -n "/^# 基準/,$p" -- reference.md', "reference.md", False),
+        ("sed -n '/^# 基準/,$p' -- reference.md; ls", "reference.md", False),
+        ("head -n 20 reference.md | cut -c1-3", "reference.md", False),
+        ("jq --rawfile extra copy.md -r '.body' reference.json", "reference.json", False),
+        ("jq -r 'input' reference.json", "reference.json", False),
+        # brace展開は実在する別名のファイルを読むので、展開前の語と同名の未読ファイルを取得にしない。
+        ("head -n 20 ref{a,b}.md", "ref{a,b}.md", False),
+    ],
+)
+def test_executed_static_read_acquisition_releases_same_write(tmp_path, monkeypatch, state, host, command, target, success):
+    """実際に実行した静的読取の結果を公開hookへ渡し、取得記録と同じ書込の許可を確かめる。"""
+    (tmp_path / "reference.md").write_text("# 基準\n必要な内容\n", encoding="utf-8")
+    (tmp_path / "reference.json").write_text(json.dumps({"body": "本文"}, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "copy.md").write_text("写し\n", encoding="utf-8")
+    for name in ("refa.md", "refb.md", "ref{a,b}.md"):
+        (tmp_path / name).write_text(f"# {name}\n", encoding="utf-8")
+    (tmp_path / "nested").mkdir()
+    reference = tmp_path / target
+    row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("tool:Write",), (reference,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    payload = {"session_id": "executed", "cwd": str(tmp_path), **({"turn_id": "turn"} if host == "codex" else {})}
+    writing = {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "本文"}}
+    _run_hook_in_process("pretooluse", writing)
+    assert str(reference) in denial_reason(_run_hook_in_process("pretooluse", writing))
+    executed = subprocess.run(
+        # `cut -c`はバイト単位で抽出するため、マルチバイト文字の一部だけを含む出力を置換文字で受け取る。
+        ["bash", "-c", command],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    if success:
+        assert executed.returncode == 0, executed.stderr
+    observed = _run_hook_in_process(
+        "posttooluse",
+        {
+            **payload,
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "tool_response": {"stdout": executed.stdout, "stderr": executed.stderr, "exit_code": executed.returncode},
+        },
+    )
+    assert observed.returncode == 0 and not observed.stderr
+    records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert read_delivery.target_ready(records, read_triggers.ReadTarget(reference), "main") is success
+    after = _run_hook_in_process("pretooluse", writing)
+    assert after.returncode == 0 and not after.stderr
+    assert ('"permissionDecision": "deny"' in after.stdout) is not success
 
 
 @pytest.mark.parametrize("failure", ["PostToolUseFailure", "exit_code", "is_error"])

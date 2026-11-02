@@ -141,12 +141,13 @@ def _read_path_variants(tool_name: str, tool_input: dict, cwd: str) -> list[path
 def _operand_paths(read: codex_read_observation.Read, current: shell_cwd.CwdResolution) -> list[pathlib.Path]:
     """読取計画が入力ファイルと判定した位置の引数を、連結中の作業ディレクトリで解決する。
 
-    展開が不明なglobと、作業ディレクトリを解決できない相対パスは対象に含めない。
+    シェルが展開し得るglobとbrace展開の語、作業ディレクトリを解決できない相対パスは対象に含めない。
+    字句解析で引用が外れているため、展開記号を含む語は引用の有無によらず静的に確定しない対象として扱う。
     """
     paths = []
     for index in read.operands:
         operand = read.argv[index]
-        if any(marker in operand for marker in ("*", "?", "[")):
+        if any(marker in operand for marker in ("*", "?", "[", "{")):
             continue
         path = pathlib.Path(operand).expanduser()
         if not path.is_absolute():
