@@ -103,7 +103,8 @@
 `気付いた改善点:`として報告済みの事象も改善案の欄に含め、AWI化ステータスを示す。
 同標識の報告基準に満たない軽い候補も挙げてよい。
 AWI化ステータスの`済`にはWIファイル名、`予定`には投入時点、`不要`には理由を必ず記入する。
-作業を終える報告の前に`予定`を`済`か理由付きの`不要`へ確定し、確定できないものは理由を完了報告へ残す。
+`予定`とした時点で、対象と投入予定時点を既存の作業記録（計画の`## 進捗ログ`、計画が無ければ引き継ぎ記録）へ残す。送達済みの途中報告を事象の原本とし、作業記録には原本の所在と現在の処置だけを書く。
+`予定`の確定と完了報告への記載は、`agent-toolkit:report-completion`の`SKILL.md`「工程」の手順5に従う。
 委譲先は自身の点検結果を委譲元へ渡し、ユーザーへの送達は本書「手段の選択」と既存の報告契約に従う。
 委譲先の点検結果は役割ごとの返却形式を使う。
 工程開始時点や比較基準が不足する場合の情報取得を含む詳細は、`agent-toolkit:delegation/references/waiting-and-monitoring.md`「成果物側の観測」に従う。
@@ -113,6 +114,7 @@ AWI化ステータスの`済`にはWIファイル名、`予定`には投入時�
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| `予定`の改善点を確定して完了報告へ記載する前 | `../../report-completion/SKILL.md`の「工程」 | 判断 | `section:agent-toolkit:*/skills/report-completion/SKILL.md#「工程」` |
 | 進捗のセルフチェック通知を受けて点検する時 | `agent-toolkit:delegation/references/waiting-and-monitoring.md#「成果物側の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「成果物側の観測」` |
 
 ## エージェント宛てメッセージの標識
