@@ -7,6 +7,7 @@ import pathlib
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -706,13 +707,51 @@ def _observe_waiters(monkeypatch: pytest.MonkeyPatch, expected_count: int) -> tu
     return original_acquire, followers_waiting
 
 
+# 並行待機テストが`get_cli_wait_timeout`へ与える処理期限と、待機スレッドの終了確認期限。
+# 終了確認を処理期限より先に打ち切ると、期限内に正常回復する待機を負荷の違いで失敗と判定するため、
+# 終了確認期限は処理期限に余裕を加えた値とする。
+_CLI_WAIT_TIMEOUT_SECONDS = 10.0
+_THREAD_JOIN_SECONDS = _CLI_WAIT_TIMEOUT_SECONDS + 5.0
+_CONTENDED_FOLLOWER_NAME = "contended-wait-follower"
+
+
+def _join_threads(threads: list[threading.Thread], timeout: float = _THREAD_JOIN_SECONDS) -> list[str]:
+    """開始済みの全スレッドを共通の期限まで待ち、期限後も生存するスレッド名を返す。
+
+    先に待ったスレッドの生存にかかわらず残りも待つので、失敗時もテスト用の差し替えの解除前に全スレッドを回収できる。
+    """
+    deadline = time.monotonic() + timeout
+    for thread in threads:
+        if thread.ident is not None:
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
+    return [thread.name for thread in threads if thread.is_alive()]
+
+
+def test_join_threads_waits_all_until_deadline() -> None:
+    """処理期限を超えて終わるスレッドと、先に待つスレッドより遅いスレッドも期限まで待ち切る。"""
+    released = threading.Event()
+
+    def finish_after_release() -> None:
+        released.wait(timeout=5)
+
+    late = threading.Thread(target=finish_after_release, daemon=True)
+    early = threading.Thread(target=time.sleep, args=(0.05,), daemon=True)
+    unstarted = threading.Thread(target=time.sleep, args=(0,), daemon=True)
+    late.start()
+    early.start()
+    threading.Timer(0.3, released.set).start()
+
+    assert _join_threads([early, late, unstarted], timeout=3.0) == []
+    assert not late.is_alive()
+
+
 def _run_contended_wait(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     prepare: Callable[[pathlib.Path, pathlib.Path], None] | None = None,
 ) -> int:
     """後発待機がlockに並んだ後、未公開runを残して所有権を渡す。"""
-    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 10.0)
+    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: _CLI_WAIT_TIMEOUT_SECONDS)
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
     original_acquire, follower_waiting = _observe_waiters(monkeypatch, 1)
@@ -727,7 +766,7 @@ def _run_contended_wait(
 
     with lock_path.open("a+b") as lock_file:
         original_acquire(lock_file, blocking=False)
-        follower = threading.Thread(target=follow)
+        follower = threading.Thread(target=follow, name=_CONTENDED_FOLLOWER_NAME, daemon=True)
         try:
             follower.start()
             assert follower_waiting.wait(timeout=5)
@@ -735,8 +774,8 @@ def _run_contended_wait(
                 prepare(tmp_path, run_path)
         finally:
             release_lock(lock_file)
-        follower.join(timeout=5)
-        assert not follower.is_alive()
+            alive = _join_threads([follower])
+        assert not alive
     assert len(outcomes) == 1
     return outcomes[0]
 
@@ -834,7 +873,7 @@ def test_followers_join_the_same_wait_run(
     notification: bool,
 ) -> None:
     """先行待機の配信後、2件の後発待機は保存runの参照だけを返す。"""
-    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 10.0)
+    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: _CLI_WAIT_TIMEOUT_SECONDS)
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     lock_path = _wait_lock_path(tmp_path)
     lock_path.parent.mkdir(parents=True)
@@ -862,24 +901,25 @@ def test_followers_join_the_same_wait_run(
             )
         )
 
+    delivered: dict[str, Any] = {"session_id": "session-1", "status": "running" if notification else "completed"}
+    if notification:
+        delivered["notices"] = [{"body": "通知"}]
     with lock_path.open("a+b") as lock_file:
         original_acquire(lock_file, blocking=False)
-        followers = [threading.Thread(target=follow) for _ in range(2)]
-        for follower in followers:
-            follower.start()
-        assert followers_waiting.wait(timeout=5)
-        delivered: dict[str, Any] = {"session_id": "session-1", "status": "running" if notification else "completed"}
-        if notification:
-            delivered["notices"] = [{"body": "通知"}]
-        agents_wait._publish_wait_result(  # pylint: disable=protected-access
-            run_path,
-            json.dumps(delivered, ensure_ascii=False, separators=(",", ":")),
-            0,
-        )
-        release_lock(lock_file)
-        for follower in followers:
-            follower.join(timeout=5)
-            assert not follower.is_alive()
+        followers = [threading.Thread(target=follow, daemon=True) for _ in range(2)]
+        try:
+            for follower in followers:
+                follower.start()
+            assert followers_waiting.wait(timeout=5)
+            agents_wait._publish_wait_result(  # pylint: disable=protected-access
+                run_path,
+                json.dumps(delivered, ensure_ascii=False, separators=(",", ":")),
+                0,
+            )
+        finally:
+            release_lock(lock_file)
+            alive = _join_threads(followers)
+        assert not alive
 
     assert sorted(results) == [8, 8]
     output = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
@@ -1098,7 +1138,7 @@ def test_wait_replays_follower_output_after_interrupt(
     stream: str,
 ) -> None:
     """未配送runの回復がflush後に停止した場合は、別waitが本文を回収する。"""
-    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 10.0)
+    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: _CLI_WAIT_TIMEOUT_SECONDS)
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="published")
     run = json.loads(run_path.read_text(encoding="utf-8"))
@@ -1131,16 +1171,15 @@ def test_wait_replays_follower_output_after_interrupt(
 
     with lock_path.open("a+b") as lock_file:
         original_acquire(lock_file, blocking=False)
+        followers = [threading.Thread(target=follow, daemon=True) for _ in range(2)]
         try:
-            followers = [threading.Thread(target=follow) for _ in range(2)]
             for follower in followers:
                 follower.start()
             assert followers_waiting.wait(timeout=5)
         finally:
             release_lock(lock_file)
-        for follower in followers:
-            follower.join(timeout=5)
-            assert not follower.is_alive()
+            alive = _join_threads(followers)
+        assert not alive
 
     assert outcomes.count("interrupted") == 1
     assert outcomes.count(0) == 1
@@ -1182,6 +1221,27 @@ def test_wait_recovers_contended_running_run(
     captured = capsys.readouterr()
     assert [_running_body(json.loads(line)) for line in captured.out.splitlines()] == [expected]
     assert not captured.err
+
+
+def test_contended_wait_joins_follower_when_prepare_fails(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """準備が失敗しても、lockを解放して後発待機の終了を待ってから例外を伝える。"""
+
+    class PrepareFailed(Exception):
+        """準備段階の失敗を表すテスト専用の例外。"""
+
+    def leave_result_then_fail(state_root: pathlib.Path, run_path: pathlib.Path) -> None:
+        _leave_result_original(state_root, run_path)
+        raise PrepareFailed
+
+    with pytest.raises(PrepareFailed):
+        _run_contended_wait(tmp_path, monkeypatch, leave_result_then_fail)
+
+    assert not [thread for thread in threading.enumerate() if thread.name == _CONTENDED_FOLLOWER_NAME]
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
 
 
 def test_wait_continues_after_contended_owner_aborts(
