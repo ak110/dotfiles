@@ -4,12 +4,13 @@ import json
 
 import pytest
 
+from agent_toolkit._atk import agents_exit_session
 from agent_toolkit._hooks import response_language_advisor, stop, subagent_stop_advisor
 
 
 @pytest.mark.parametrize("entrypoint", ["parent", "child"])
 def test_codex_completion_rewrites_explanation_and_preserves_material(entrypoint, capsys, monkeypatch):
-    """親子の同じ混入を遮断し、日本語への書き直しと正当な素材を許可する。"""
+    """直接送達する親の本文を保護し、子の内部返却は言語で遮断しない。"""
     monkeypatch.setattr(stop, "CODEX_CHECK_MODULE_NAMES", ("response_language_advisor",))
     payload: dict[str, object] = {
         "session_id": "language-probe",
@@ -26,6 +27,9 @@ def test_codex_completion_rewrites_explanation_and_preserves_material(entrypoint
         return json.loads(output) if output else {}
 
     blocked = invoke()
+    if entrypoint == "child":
+        assert not blocked
+        return
     assert blocked["decision"] == "block"
     reason = blocked["reason"]
     assert isinstance(reason, str)
@@ -65,15 +69,18 @@ def test_recovery_preserves_delegated_return_contract(actor, monkeypatch):
     elif actor == "codex":
         payload["turn_id"] = "turn"
     decision, reason = response_language_advisor.evaluate(json.dumps(payload))
+    if actor in {"subagent", "delegated", "owner"}:
+        assert (decision, reason) == ("", "")
+        return
     assert decision == "block"
-    assert ("`…`だけを出力して停止" in reason) is (actor == "main")
-    assert ("そのまま再出力して停止" in reason) is (actor != "main")
+    assert "`…`だけを出力して停止" not in reason
+    assert "そのまま再出力して停止" in reason
 
 
 @pytest.mark.parametrize("delegated", ["0", "1"])
 @pytest.mark.parametrize("child", [False, True])
 def test_claude_english_completion_rewrites_once(delegated, child, monkeypatch, capsys):
-    """メイン、委譲先、サブエージェントの英語の最終応答を書き直す。"""
+    """直接送達するメインの本文だけを書き直す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", delegated)
     payload: dict[str, object] = {"last_assistant_message": "The work is complete."}
     if child:
@@ -82,15 +89,36 @@ def test_claude_english_completion_rewrites_once(delegated, child, monkeypatch, 
     raw = json.dumps(payload)
     if child:
         assert subagent_stop_advisor.main(raw) == 0
-        blocked = json.loads(capsys.readouterr().out)
+        output = capsys.readouterr().out
+        blocked = json.loads(output) if output else {}
     else:
         blocked = stop.evaluate(raw)
+    if delegated == "1" or child:
+        assert not blocked
+        return
     decision, reason = blocked["decision"], blocked["reason"]
     assert decision == "block"
     assert isinstance(reason, str)
     assert "日本語で書いてから停止" in reason
     payload["stop_hook_active"] = True
     assert response_language_advisor.evaluate(json.dumps(payload)) == ("", "")
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("marker_body", ["ready", "consumed", None])
+def test_stop_language_follows_user_delivery_path(tmp_path, monkeypatch, marker_body, codex):
+    """同一会話の送達ツールの準備印があるClaudeだけ、末尾の状態行を除外する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    marker = tmp_path / "marker.txt"
+    if marker_body is not None:
+        marker.write_text(marker_body, encoding="utf-8")
+    monkeypatch.setattr(agents_exit_session, "function_hook_paths", lambda _session: (marker, tmp_path / "request.txt"))
+    payload: dict[str, object] = {"session_id": "delivery-path", "last_assistant_message": "The work is complete."}
+    if codex:
+        payload["turn_id"] = "turn"
+    decision, _reason = response_language_advisor.evaluate(json.dumps(payload))
+    assert (decision == "block") is (codex or marker_body != "ready")
     payload["stop_hook_active"] = False
     payload["last_assistant_message"] = "作業が完了しました。"
     assert response_language_advisor.evaluate(json.dumps(payload)) == ("", "")

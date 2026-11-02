@@ -116,7 +116,7 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | `posttooluse.py` | 観測・配送・出力の変換 | 所有・取得証拠を記録し、計画構造、回答UWI、完了処理の関連案内を共通noticeへ集約する。退避出力の置換は結果取得先を保つ |
 | `user_prompt_submit.py` | 状態観測・関連規範の配送 | 実ユーザー入力と機械生成を区別する。意味の判定は受領側が文書に従って行う |
 | `rules_context.py`・`rules_context_codex.py` | 起動時の規範配送 | ホストと主体ごとの役割・一時領域・原記録の所在を届ける。開始・圧縮という受領境界に対応する |
-| `response_language_advisor.py` | 言語例外、block | 共通の説明言語判定を使い、誤検出時に成果・判断・未達と返却形式を保持して終える手段を示す |
+| `response_language_advisor.py` | ユーザー向け本文の言語保護、block | 直接送達される最上位メインの本文を判定し、内部返却と送達ツールを使うClaude Codeのターン末尾を除く。誤検出時は成果・判断・未達を保って終了する手段を示す |
 | `busy_loop_guard.py`・`autonomous_exit.py` | 常駐運用の終了保証、halt・block | 対象の常駐セッションだけで機械的な無進捗と終了操作の有無を扱う。正当な非同期待機を除く |
 | `plan_save_advisor.py` | 回復可能な支援、notify | 所有する現存計画を知らせ、保存契機の判断は受領側へ残す。同じ対象を抑止し、対象変化と解消後の再発を通知する |
 | `agents_server_session_advisor.py` | 観測支援、notify | 呼出主体の未観測対象だけを知らせ、正常な待機と観測済みの対象を除く |
@@ -124,7 +124,7 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | `termination_order_advisor.py` | 起動証拠の不足支援、notify | Claude Codeだけで成果作業の起動不足を通知する。起動済み作業の送達・残工程と報告の固定句は判定しない |
 | `queued_notification_advisor.py` | 既存結果の配送、yield・notify | 他のblockが無ければホスト配送へ戻す。blockが残る場合だけ未配送対象の受領を一度案内する |
 | 旧`pending_question_advisor.py` | 意味判断、文書へ移管して撤去 | 疑問符・定型表現から質問の意味を推測する終了判定を撤去した。確認の要否と手段は`user-confirmation-and-report`が定める |
-| `subagent_stop_advisor.py` | 返却契約と言語の保護、block | 空の返却で委譲元が成果を失うことを防ぎ、非空本文は共通の言語判定へ渡す |
+| `subagent_stop_advisor.py` | 返却契約の保護、block | 空の返却で委譲元が成果を失うことを防ぐ。内部返却の言語は判定しない |
 | `permissionrequest.py` | 権限応答 | Claude Codeの設定済みの自動許可を返す。新たな遮断・反復通知を持たない |
 | `session_end_cleanup.py`・`session_activity.py`・`stopfailure_notifier.py` | 記録と回収 | 状態の寿命、活動、API失敗を記録する。StopFailureは出力で遮断・通知できず、利用上限の再開予約だけを既存modへ渡す |
 | TS `register.ts`・`send_to_user.tsx` | 公開範囲・入力・言語の保護 | 自moduleのメイン専用toolと文字列入力を守り、言語checker障害は許可して一度通知する |
@@ -350,9 +350,12 @@ PreToolUse側の遮断通知の生成はnotices.pyの共通整形へ集約し、
 判定本体は共有中核が担い、ホストを区別せず操作記録だけを参照する。
 この分離により、同じ判定を二重に実装せず、ホスト固有の契約差を端点へ閉じ込められる。
 
-記述言語の判定は`check_text()`として入力取得から分離し、Function hooksの実行前チェック、直接入力とStop・SubagentStopの完了本文で共有する。
-SubagentStopの言語判定は`last_assistant_message`だけを入力とし、完了報告の言語判定にtranscriptを使わない。
-StopとSubagentStopは`response_language_advisor`から共通の`check_text()`へ本文を渡す。誤検出時はClaude Codeの最上位メインに`…`だけの出力を案内する。委譲元へ本文を渡す主体（Claude Codeのサブエージェント、agents_serverの委譲先、Codex）には、成果・判断・未達と指定の返却形式を含む完了本文の全文の再出力を案内する。最後の応答を返却本文として保持する主体の成果を保つためであり、主体の判定は共通の`is_main_agent_context`を使う。再出力後は`stop_hook_active`で通過することを親子のhookのテストで確認する。
+記述言語の判定は`check_text()`として入力取得から分離し、ユーザーへの送達前チェック、質問・計画の直接入力と、直接送達される最上位メインのStop本文で共有する。
+委譲先・子エージェントの内部返却と、ユーザーへ送らないターン末尾は言語判定から除外する。
+Stopの`response_language_advisor`は共通の`is_main_agent_context`で主体を判別し、Codexの最上位メインと、送達ツールを利用できないClaude Codeの最上位メインの`last_assistant_message`を`check_text()`へ渡す。
+誤検出時は成果・判断・未達を含む本文全体をそのまま再出力する手段を示し、再出力後は`stop_hook_active`で通過させる。
+Claude Codeで同一会話の送達ツールが利用可能な場合は、既存の`function_hook_paths`が解決する準備印を使ってターン末尾の言語判定を省く。
+新しい言語用状態や毎回の全transcript走査は追加しない。
 言語判定では、空白を含まず英数字を`_`・`-`・`.`で連結した字句（先頭の`-`・`--`を含む）と、英大文字・数字だけの字句を機械値として除く。パス・UUID・commit IDの除外も保つ。識別子の形式ごとの許可リストを保つ案は、列挙外の返却値を英語へ数えるため採らない。空白で区切られた通常の英語の散文は引き続き判定する。
 質問への回答待ちと残工程の意味判断は、両ホストとも文書の手順に従う。
 却下した代替案は、PreToolUseのsidechain除外を解除する案である。
@@ -363,8 +366,8 @@ Claude Codeだけで有効化する。
 記述言語の警告は、応答が日本語文字を含まず英単語を2語以上含む記述であるとき、
 応答の冒頭が英語の談話標識であるとき、日本語文字の比率が閾値未満のときに返す。
 英単語が1語だけの記述は、識別子やコマンド名の単独提示と区別できないため警告しない。
-日本語で書く目的は、ユーザーが読めることと、識別子や名前の取り違えを防いで成果物の品質を守ることである。判定対象は報告・質問・計画・最終応答の本文とする。2026年10月26日のユーザー指示により、途中説明の言語を理由に通常操作を拒否するFunction hooksの`tool.call`登録を撤去した。通常操作では直前本文の取得、言語判定、診断通知を行わない。
-質問・計画本文とsend_to_userのmessageはcheck_textで表示前に判定する。`response_language.ts`はsend_to_userが使うPythonのCLI起動・結果解釈・診断抑止を所有する。StopとSubagentStopはlast_assistant_messageを判定し、再帰防止により1回だけ終了を止める。
+日本語で書く目的は、ユーザーが読めることと、識別子や名前の取り違えを防いで成果物の品質を守ることである。読者基準の定義元は`agent-toolkit/rules/01-agent.md`「使用言語」とし、ユーザーが読む報告・質問・計画・直接送達される最終応答を判定対象とする。2026年10月26日のユーザー指示により、途中説明の言語を理由に通常操作を拒否するFunction hooksの`tool.call`登録を撤去した。通常操作では直前本文の取得、言語判定、診断通知を行わない。
+質問・計画本文とsend_to_userのmessageはcheck_textで表示前に判定する。`response_language.ts`はsend_to_userが使うPythonのCLI起動・結果解釈・診断抑止を所有する。直接送達される最上位メインのStopはlast_assistant_messageを判定し、再帰防止により1回だけ終了を止める。SubagentStopでは空返却の保護を保ち、内部返却の言語判定を省く。
 send_to_userでは判定基盤の障害を言語違反と分け、成功結果を返して本文を表示し、結果の後に読む文脈へ`response-language`の`warn`を加える。診断は判定段階とエラーの種類・終了状態を示し、入力本文とプロセスの出力を載せず、元の操作の再発行を求めない。同じ会話に同じ診断が続く間は1回だけ届け、判定の成功や診断の変化で再び届ける。英語主体の報告は日本語への書き直しを求める。途中説明の判定を警告として残す案は、ユーザーが求める報告の日本語化に寄与しない検査と通知を残すため採らない。全ての言語判定を撤去する案は、報告と最終応答の日本語化を求める範囲を満たさないため採らない。
 表示だけの差し替えは、モデルの文脈と記録へ英語の本文が残り、識別子の取り違えへ作用しないため採らない。ツール呼び出しの間隔ごとの日本語指示の再注入は、直前の注入からの距離による改善が観測されなかったため撤去する。SessionStartの言語指示は維持する。
 ハーネスの英文の由来を01-agentへ明記し、バックグラウンドタスク完了通知のターンには日本語のatk-auto注記を添える。進捗催促を変える非公開の環境変数は、公開仕様にない設定を前提とすることを避け、規範へ由来を記す案を採用するため追加しない。
@@ -625,9 +628,6 @@ turn実行中の予約はturn完了へ持ち越す。成功・skip・失敗を�
 終了要求へ混ぜる案は、再予約できる圧縮とセッションを終える操作の寿命が異なるため採らない。
 対話UIと非対話の結果、ホスト版と再検証手段はaudit-records.mdの会話圧縮予約の項に保持する。
 
-### 利用上限後のメインの再開予約
-
-観測と再検証手段は`docs/development/audit-records.md`の「docs/development/design-hooks.md：利用上限後のメインの再開予約：2026年10月14日」にある。
 公開`session.compact`の主会話を処理するときは、会話IDから一意に解決した原本ログの所在を返し、要約モデルの呼出しを省く。
 原本の解決を別の同期台帳へ保存せず、既存のsession記録解決を使う。未解決・例外・agentId付きでは標準の処理を保ち、precomputeは先行要約を見送る。
 同じpluginが`session.compact()`を予約した経路では、自身の置換hookが再入除外されるため標準の要約生成になる。追加pluginで再入を回避する案は配布構成と導入負担を増やすため採らず、公開APIの対応を待つ。
@@ -635,6 +635,9 @@ SDKの委譲先はターン間の同APIが未対応なので、所有backendが�
 原本を使う復元は要約を生成するホストでも共通とし、目的・最新訂正・認可・未完了を発話順・主体・参照位置から確認する。
 実機の適用範囲と再検証はaudit-records.md「agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日」にある。
 
+### 利用上限後のメインの再開予約
+
+観測と再検証手段は`docs/development/audit-records.md`の「docs/development/design-hooks.md：利用上限後のメインの再開予約：2026年10月14日」にある。
 
 メインの利用上限では、StopFailureのコマンドhookが再開要求を保存し、Function hooksの`turn.complete`が既存の再開予約へ接続する。
 Remote Control接続ではホストの自動継続が自動で始まらないため、起動形態に対応した再開の契機を確保する。
@@ -726,7 +729,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。TaskStopは登録から成功対象の完了記録だけを消費し、別対象と失敗・拒否の記録を保持する。計画ファイル・スキル起動・バックグラウンドタスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、そのセッションが投入したUWIへの回答を通知する。`AskUserQuestion`への回答が選択肢と一致しない自由記述を含む場合は、UserPromptSubmitと同じ、発話の内容を現物で確かめる手順を示す注記を返す。ホストの上限を超えて退避したBashとPowerShellの結果は、抜粋を保存先・元の出力のバイト数・保存先を読む次の操作を示す本文へ置き換える | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録、Bashで実行した振り返りの準備結果の記録に対応する。Codexはシェル出力を退避せず切り詰めて返すため、退避した結果の置き換えは対象外 |
 | plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は`QUALITY_CHECKPOINT_NOTICE`も併せて追加する。Claude Codeのメインへは入力の会話IDとtranscriptの絶対パスも通知する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する。親の一時領域がある場合は、agent_idごとの専用領域を通知する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
-| plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに加え、`response_language_advisor`と共通の`check_text()`で説明言語を判定して遮断する。誤検出時は完了本文の全文をそのまま再出力して停止する操作を通知する |
+| plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告をブロックし、内部返却の言語は判定しない |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop` | 言語保護、常駐ループの終了保証、所有計画・未観測委譲先・可視本文・report-completion起動不足の非遮断通知、未配送通知のホスト配送を集約する。送達・残工程・質問の意味は文書へ委ねる。実在する待機を除き、同じ原因・対象・対処の反復を共通noticeで抑止する | 対応 | 部分対応。`response_language_advisor`で説明言語を判定し、`decision`と`reason`だけを返す。非遮断の終了支援は関連操作と文書で扱う |
 | plugin `UserPromptSubmit/user_prompt_submit` | 実入力・手動スキル起動を記録し、開始・clear・圧縮後の最初の実入力へ一度だけ起動を案内する。固定手順の時間再注入と時刻追跡は持たない。全角記号と例示・調査語の関連案内は既存共通noticeで反復を抑止する。機械注入は実入力向けの案内を消費しない | 対応 | 対応。文脈ごとの一度の案内と入力観測を同じ条件で行い、sessionTitleは付けない |
@@ -799,7 +802,7 @@ clearと期限回収でもlockを削除せず、sessionごとのlockファイル
 0件では入力値を保ち、1件なら解決した記録を使う。複数件では会話IDの明示を求め、一意性を推定しない。
 開始時と別のディレクトリでの再開時に入力が実在しない記録を示したためである。観測と再検証手段は[audit-records.md](audit-records.md)「docs/development/design-hooks.md：通知の整形と反復検出：2026年10月20日」にある。
 
-応答言語判定は、send_to_userの`message`、StopとSubagentStopの`last_assistant_message`を対象とする。
+応答言語判定は、send_to_userの`message`と、ユーザーへ直接送達される最上位メインのStopの`last_assistant_message`を対象とする。
 AskUserQuestionの`questions[].question`・`header`と`options[].label`・`description`、ExitPlanModeの`plan`も既存の判定対象に保つ。
 通常操作の直前本文の取得と判定は撤去した。StopとSubagentStopで最終応答が欠けた場合の判定は保持する。
 終了を拒否する通知は、終了証拠、終了順序と委譲先観測の理由ごとに、実行できる続行またはユーザー確認への操作を返す。

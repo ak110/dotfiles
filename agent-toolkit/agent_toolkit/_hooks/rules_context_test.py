@@ -150,9 +150,10 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
     assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
-    assert "思考を除いてエージェントが書く全ての文" in output
-    assert "ツール呼び出しの前後の短い状態行" in output
-    assert "英語の文は1文も書くな" in output
+    assert "ユーザーが読む報告・回答・質問・計画" in output
+    assert "ユーザーへ送らない内部文面は、言語だけで書き直させるな" in output
+    assert "送達主体が説明を日本語化" in output
+    assert "思考を除いてエージェントが書く全ての文" not in output
     normative_start = (
         f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
         f'kind="{rules_context.NORMATIVE_KIND_MAIN}">'
