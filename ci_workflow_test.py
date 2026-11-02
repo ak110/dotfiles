@@ -872,7 +872,7 @@ def test_ci_scope_runs_real_workflow_selection(
     script_path.write_text(script.split("\n", 1)[1].rsplit("\nPY", 1)[0], encoding="utf-8")
     output = tmp_path / "output"
     host = host_environ()
-    environment = {key: host[key] for key in ("PATH", "SYSTEMROOT", "WINDIR", "PATHEXT") if key in host}
+    environment: dict[str, str] = {key: host[key] for key in ("PATH", "SYSTEMROOT", "WINDIR", "PATHEXT") if key in host}
     environment.update(
         {
             "HOME": str(tmp_path / "home"),
@@ -940,7 +940,9 @@ def test_ci_scope_failure_is_not_an_intentional_skip(
     flag = "rust" if job_name == "rust-lint" else "browser"
     assert environment["SELECTED"] == f"${{{{ needs.common-ci-owner.outputs.{flag} }}}}"
     runtime = host_environ()
-    child_environment = {key: runtime[key] for key in ("PATH", "SYSTEMROOT", "WINDIR", "PATHEXT") if key in runtime}
+    child_environment: dict[str, str] = {
+        key: runtime[key] for key in ("PATH", "SYSTEMROOT", "WINDIR", "PATHEXT") if key in runtime
+    }
     child_environment.update(
         {
             "OWNS": owns,
