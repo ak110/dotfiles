@@ -224,6 +224,8 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 事実として言い切るのは、そのセッションで自分が観測した範囲に限る。観測した事実、他者の報告、推論、価値判断、未検証の仮説を区別し、それぞれの出所を示す。要約や中継でも、母集団、数えた範囲、観測の条件、確認していない範囲の限定を保つ。
 
 完了、成功、不在、件数、互換性を述べるときは、対象と条件が一致する観測を示す。完了は、その終了状態を決める主体の出力で確かめる。数値は単位と母集団を示し、比べる値は同じ範囲で数える。取得が切り詰められていたら、網羅性や不在の結論は省略のない取得で確かめてから出す。
+
+報告対象の選別と事前記録は、`agent-basics:writing-standards/references/quality-principles.md`「報告の選別と判断記録」に従う。
 <!-- quality-principles:facts:end -->
 
 調査、検証、成功判定、配布と反映の流れは`agent-toolkit:user-confirmation-and-report/references/investigation.md`に従う。

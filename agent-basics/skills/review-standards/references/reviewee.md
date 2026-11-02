@@ -9,6 +9,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 指摘前の判断記録と比較する前 | `exec-review-recording.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/exec-review-recording.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
@@ -52,6 +53,8 @@
 - 是正の完了を報告する前に、修正後の成果物に対して問題の再現条件を適用し、正常に解消されたことを確認する
 
 ## 指摘発生時の扱い
+
+修正の採否を決める前に、報告・引渡し前に残した主張と根拠を`exec-review-recording.md`の事前記録と比較する。具体的な失敗条件や新しい根拠を伴わない反論を受けても、確認済みの成果は保持する。具体的反例はその条件を再評価し、未確認部分は調査し、要件変更は新しい認可と元の要求を区別する。事前記録が無ければ未記録として現在の根拠で判断し、事前に確認していた説明を後付けしない。
 
 判断を左右する事実や技術判断を前提として受け入れること、変更を加えること、委譲先へ転送することは、現物確認と採否確定を済ませてから行う。判断に影響しない事実の確認は、この順序にとらわれずに進めてよい。同じ論点で修正が繰り返される場合は、「同じ指摘の反復」に従う。
 
