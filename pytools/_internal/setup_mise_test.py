@@ -251,6 +251,143 @@ class TestEnsureMiseUpToDate:
         assert mise_stub.calls_for("install")
 
 
+_WINGET_MISE = Path(r"C:\Users\user\AppData\Local\Microsoft\WinGet\Links\mise.exe")
+_WINGET_UPGRADE_ARGS = [
+    "upgrade",
+    "--id",
+    "jdx.mise",
+    "--exact",
+    "--accept-package-agreements",
+    "--accept-source-agreements",
+    "--disable-interactivity",
+]
+
+
+class TestUpgradeWingetManagedMise:
+    """WinGetで導入したmiseは`self-update`の代わりに`winget upgrade`で更新する。"""
+
+    @pytest.fixture(autouse=True)
+    def _windows_winget_mise(self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub) -> None:
+        monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: _WINGET_MISE)
+        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: True)
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+
+    def _winget_upgrades(self, mise_stub: _MiseSubprocessStub) -> list[dict[str, typing.Any]]:
+        return [record for record in mise_stub.records if record["cmd"] == ["winget", *_WINGET_UPGRADE_ARGS]]
+
+    def test_winget_upgrade_replaces_self_update(self, mise_stub: _MiseSubprocessStub) -> None:
+        _setup_mise.run()
+
+        assert len(self._winget_upgrades(mise_stub)) == 1
+        assert not mise_stub.calls_for("self-update")
+        assert mise_stub.calls_for("install")
+
+    @pytest.mark.parametrize("returncode", [0x8A15002B, 0x8A15002B - (1 << 32)])
+    def test_update_not_applicable_is_not_warned(
+        self, mise_stub: _MiseSubprocessStub, caplog: pytest.LogCaptureFixture, returncode: int
+    ) -> None:
+        mise_stub.handlers[tuple(_WINGET_UPGRADE_ARGS)] = subprocess.CompletedProcess(
+            args=[], returncode=returncode, stdout="No applicable update found.", stderr=""
+        )
+
+        with caplog.at_level("WARNING"):
+            _setup_mise.run()
+
+        assert not [record for record in caplog.records if record.levelname == "WARNING"]
+        assert mise_stub.calls_for("install")
+
+    def test_upgrade_failure_warns_and_continues(
+        self, mise_stub: _MiseSubprocessStub, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        mise_stub.handlers[tuple(_WINGET_UPGRADE_ARGS)] = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="network error"
+        )
+
+        with caplog.at_level("WARNING"):
+            _setup_mise.run()
+
+        assert any("winget upgrade" in record.getMessage() for record in caplog.records if record.levelname == "WARNING")
+        assert mise_stub.calls_for("install")
+
+    def test_mise_outside_winget_uses_self_update(
+        self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub
+    ) -> None:
+        """PATHで公式インストーラー版のmiseが先行する場合は、その実体を`self-update`で更新する。"""
+        monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: Path(r"C:\Users\user\AppData\Local\mise\bin\mise.exe"))
+
+        _setup_mise.run()
+
+        assert not self._winget_upgrades(mise_stub)
+        assert mise_stub.calls_for("self-update")
+
+
+def _version_response(version: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(args=[], returncode=0, stdout=f"{version} linux-x64 (2026-10-26)\n", stderr="")
+
+
+_GCLOUD_PLUGIN_INSTALL = ("plugins", "install", "gcloud", "https://github.com/jdx/vfox-gcloud")
+
+
+class TestEnsureGcloudPluginUsable:
+    """同梱gcloudプラグインが壊れたmiseの版でだけ、Git配布のプラグインへ置き換える。"""
+
+    @pytest.fixture(autouse=True)
+    def _global_node(self, mise_stub: _MiseSubprocessStub) -> None:
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+
+    @pytest.mark.parametrize("version", ["2026.10.20", "2026.10.21"])
+    def test_broken_version_installs_git_plugin_before_install(self, mise_stub: _MiseSubprocessStub, version: str) -> None:
+        mise_stub.handlers[("--version",)] = _version_response(version)
+
+        assert _setup_mise.run().changed is True
+
+        args = [record["args"] for record in mise_stub.records]
+        assert list(_GCLOUD_PLUGIN_INSTALL) in args
+        assert args.index(list(_GCLOUD_PLUGIN_INSTALL)) < args.index(["install"])
+
+    @pytest.mark.parametrize("version", ["2026.10.12", "2026.10.22"])
+    def test_unaffected_version_keeps_embedded_plugin(self, mise_stub: _MiseSubprocessStub, version: str) -> None:
+        mise_stub.handlers[("--version",)] = _version_response(version)
+
+        _setup_mise.run()
+
+        assert not mise_stub.calls_for("plugins")
+
+    def test_installed_git_plugin_is_not_reinstalled(self, mise_stub: _MiseSubprocessStub) -> None:
+        mise_stub.handlers[("--version",)] = _version_response("2026.10.20")
+        mise_stub.handlers[("plugins", "ls", "--urls")] = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="gcloud  https://github.com/jdx/vfox-gcloud  HEAD 3144d84\n", stderr=""
+        )
+
+        _setup_mise.run()
+
+        assert not mise_stub.calls_for(*_GCLOUD_PLUGIN_INSTALL)
+
+    def test_plugin_install_failure_warns_and_continues(
+        self, mise_stub: _MiseSubprocessStub, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        mise_stub.handlers[("--version",)] = _version_response("2026.10.20")
+        mise_stub.handlers[_GCLOUD_PLUGIN_INSTALL] = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="mise ERROR git clone failed"
+        )
+
+        with caplog.at_level("WARNING"):
+            _setup_mise.run()
+
+        assert any("gcloud" in record.getMessage() for record in caplog.records if record.levelname == "WARNING")
+        assert mise_stub.calls_for("install")
+
+    def test_minimal_mode_skips_plugin(self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub) -> None:
+        """minimalはgcloudを導入しないため、プラグインの置き換えもしない。"""
+        monkeypatch.setattr(_setup_mise.dotfiles_mode, "is_minimal", lambda: True)
+        mise_stub.handlers[("--version",)] = _version_response("2026.10.20")
+
+        _setup_mise.run()
+
+        assert not mise_stub.calls_for("plugins")
+
+
 class TestRunTrustsWorkingTree:
     """`CHEZMOI_WORKING_TREE` と `mise.toml` 有無で `mise trust` 呼び出し有無が分かれる。"""
 
