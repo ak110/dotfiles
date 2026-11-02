@@ -1888,7 +1888,7 @@ async def test_send_message_previous_and_stopped_results_relay_improvements(
         action = previous["next_action"]
         assert action.count(result_projection.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
         assert "メインエージェントは次のユーザーへの発話へ" in action
-        assert "委譲先は自身の返却の末尾へ" in action
+        assert "委譲先は受領時点で上流へ逐語で中継し、完了返却の末尾にも残す" in action
         assert "字下げを除く行頭に`気付いた改善点:`を原文のまま置き" in action
         assert "標識とコロンの間へ報告元などの語を入れない" in action
         assert "標識行の原文の後ろか別の行に添える" in action

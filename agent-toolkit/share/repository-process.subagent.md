@@ -54,7 +54,7 @@ writes_worktree: true
 処理の工程は`agent-toolkit:process-wi`の`references/lanes.md`（通常のレーン処理）に従い、計画・実行レビュー・公開を対象worktreeごとに行う。
 配下へ委譲する場合も、`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」が許す工程だけを使う。
 
-- 確認事項、担当外の発見、気付いた改善点と報告用UWIの材料は統括担当へ返却し、報告用UWIの作成は統括担当に任せる。
+- 改善点は`rules-subagent.md`「返却形式の受け渡し」に従って統括担当へ送る。確認事項、担当外の発見と報告用UWIの材料は統括担当へ返却し、報告用UWIの作成は統括担当に任せる。
 - 祖先の対話CLIの終了（`atk agents-exit-session`）は統括担当に任せる。
 - 起動したレーン担当とwriterのsession IDを記録し、終了を観測してから返却する。
 

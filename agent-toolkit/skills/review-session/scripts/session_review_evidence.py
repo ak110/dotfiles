@@ -92,9 +92,6 @@ from agent_toolkit._common import opencode_records
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.session_family import _RecordRecovery, _started_after_boundary
 
-_CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録は数えない。"
-
-
 _LOCAL_TIME_NOTE = "タイムゾーン（`Z`や`+09:00`など）を省いた値は実行ホストのローカルタイムゾーンの時刻として扱う。"
 """時刻を受け取る引数の説明へ加える、タイムゾーンを省いた値の解釈。"""
 
@@ -349,7 +346,8 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="hook実行の記録（追加コンテキスト・システムメッセージ・遮断エラー・実行成功）に"
         "格納された通知本文だけを集計し、hook識別子・発動元・タグ・種別ごとの件数と"
-        "重複を除いた通知件数を照会する。" + _CLAUDE_ONLY_NOTE + _HOOK_RECORD_NOTE,
+        "重複を除いた通知件数を照会する。Claude Code形式の記録と、Codexの由来付きhook追加コンテキスト・遮断結果を含む。"
+        + _HOOK_RECORD_NOTE,
     )
     parser.add_argument(
         "--context-at",

@@ -259,22 +259,21 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
     value = _read_json(run_path)
     if value is None:
         return _fail(f"先行する待機の結果記録を読めません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
-    if value.get("status") == "consumed":
+    if value.get("status") in {"foreground-delivered", "consumed"}:
         consumed = {"status": "consumed", "run_id": value.get("run_id"), "next_action": _CONSUMED_NEXT_ACTION}
         recovery = _saved_wait_recovery(run_path)
         if recovery["status"] == "available":
             consumed["recovery"] = recovery
             consumed["next_action"] = _SAVED_RESULT_NEXT_ACTION
+        elif value.get("status") == "foreground-delivered":
+            consumed["recovery"] = recovery
+            consumed["next_action"] = _PRECEDING_WAIT_NEXT_ACTION
         print(json.dumps(consumed, ensure_ascii=False, separators=(",", ":")))
         return 8
     output = value.get("output")
     code = value.get("exit_code")
     stream = value.get("stream")
-    if (
-        value.get("status") not in {"published", "foreground-delivered"}
-        or not isinstance(output, str)
-        or not isinstance(code, int)
-    ):
+    if value.get("status") != "published" or not isinstance(output, str) or not isinstance(code, int):
         return _fail(f"先行する待機の終了時の結果が公開されていません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
     _print_public(_public_wait_output(output, stream), stream)
     value["status"] = "consumed"

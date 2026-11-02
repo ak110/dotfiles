@@ -369,7 +369,7 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
         assert action.count(result_projection.IMPROVEMENT_RESULT_NEXT_ACTION) == 1
         for fragment in (
             "メインエージェントは次のユーザーへの発話へ",
-            "委譲先は自身の返却の末尾へ",
+            "委譲先は受領時点で上流へ逐語で中継し、完了返却の末尾にも残す",
             "字下げを除く行頭に`気付いた改善点:`を原文のまま置き",
             "標識とコロンの間へ報告元などの語を入れない",
             "標識行の原文の後ろか別の行に添える",
@@ -826,12 +826,14 @@ def test_agents_wait_rejects_overlapping_owner(tmp_path: pathlib.Path, capsys: p
     assert "atk agents wait" in error
 
 
+@pytest.mark.parametrize("notification", [False, True])
 def test_followers_join_the_same_wait_run(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    notification: bool,
 ) -> None:
-    """同時に発行した2件の後発待機は先行runへ固定し、結果を1回だけ再演する。"""
+    """先行待機の配信後、2件の後発待機は保存runの参照だけを返す。"""
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 10.0)
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     lock_path = _wait_lock_path(tmp_path)
@@ -866,9 +868,12 @@ def test_followers_join_the_same_wait_run(
         for follower in followers:
             follower.start()
         assert followers_waiting.wait(timeout=5)
+        delivered: dict[str, Any] = {"session_id": "session-1", "status": "running" if notification else "completed"}
+        if notification:
+            delivered["notices"] = [{"body": "通知"}]
         agents_wait._publish_wait_result(  # pylint: disable=protected-access
             run_path,
-            '{"session_id":"session-1","status":"completed"}',
+            json.dumps(delivered, ensure_ascii=False, separators=(",", ":")),
             0,
         )
         release_lock(lock_file)
@@ -876,12 +881,14 @@ def test_followers_join_the_same_wait_run(
             follower.join(timeout=5)
             assert not follower.is_alive()
 
-    assert sorted(results) == [0, 8]
+    assert sorted(results) == [8, 8]
     output = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert {"session_id": "session-1", "status": "completed"} in output
-    consumed = next(item for item in output if item.get("status") == "consumed")
-    assert "atk agents wait" in consumed.pop("next_action")
-    assert consumed == {"status": "consumed", "run_id": "run-1"}
+    assert output.count(delivered) == 1
+    consumed = [item for item in output if item.get("status") == "consumed"]
+    assert len(consumed) == 2
+    for response in consumed:
+        assert response["recovery"]["run_path"] == str(run_path.resolve())
+    assert json.loads(json.loads(run_path.read_text(encoding="utf-8"))["output"]) == delivered
 
 
 @pytest.mark.parametrize("host_alias", [False, True], ids=["root", "codex-alias"])
@@ -1090,10 +1097,10 @@ def test_wait_replays_follower_output_after_interrupt(
     monkeypatch: pytest.MonkeyPatch,
     stream: str,
 ) -> None:
-    """後続waitがflush後に停止しても、lock待ちの別waitが本文を回収する。"""
+    """未配送runの回復がflush後に停止した場合は、別waitが本文を回収する。"""
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 10.0)
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
-    _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="foreground-delivered")
+    _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="published")
     run = json.loads(run_path.read_text(encoding="utf-8"))
     run["stream"] = stream
     agents_wait._write_json(run_path, run)  # pylint: disable=protected-access
