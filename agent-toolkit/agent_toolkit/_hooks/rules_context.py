@@ -31,7 +31,7 @@ from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree
 lazy from agent_toolkit._common.delegated_session import is_delegated
-lazy from agent_toolkit._common.session_state import update_state
+lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import document_reads, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
@@ -538,8 +538,17 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 recovery_targets = reset_main_operation_skill_ready(session_id, retain_for_compact=source == "compact")
             if not delegated and source in _CONTEXT_LOSING_SOURCES:
                 mark_user_confirmation_pending(session_id)
-            if source == "compact" and not delegated:
+            if source == "compact":
                 work_contract.reset_notice(session_id)
+                if delegated:
+                    state = read_state(session_id)
+                    contract_update = work_contract.delegated_notice(
+                        session_id,
+                        state.get(OPERATION_SKILL_READY_KEY, {}),
+                        state,
+                    )
+                    if contract_update:
+                        content = f"{content}\n\n{_llm_notice(contract_update)}"
             try:
                 session_temp = managed_temp.resolve_session_temp(session_id)
             except managed_temp.ManagedTempError, OSError:

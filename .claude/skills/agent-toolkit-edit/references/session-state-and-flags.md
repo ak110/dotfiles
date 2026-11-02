@@ -109,6 +109,7 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 
 ## 作業契約系
 
+- `whole_contract_notified`: 委譲先の主体ごとに、全体作業契約の再読案内を最終出力へ採用した内容ハッシュの一覧を保持する。PreToolUseと圧縮後のSessionStartが、起動時の正式な作業契約入力と既存の資料読了記録から未読版を判定する。本文は配送せず、同じ版は1回だけ非遮断で案内する。実際の全文読取後は案内を抑止し、compact時はこの通知記録を削除して所在を再案内する。セッション状態と同じ寿命で保持する。
 - `work_contract_input_sequence`: UserPromptSubmitが実ユーザー入力ごとに進める整数。初期値は0で、機械注入の間は値を保つ。PreToolUseが未作成通知の入力区切りとして参照する。セッション状態と同じ寿命で保持する。
 - `work_contract_notified_sequence`: PreToolUseが未作成のメインへ通知した入力連番。排他ロック下で比較・更新し、同じ入力では1回だけ通知する。SessionStartの`compact`時に削除して、圧縮後の最初の操作で再通知する。他はセッション状態と同じ寿命で保持する。
 

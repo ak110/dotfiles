@@ -88,10 +88,10 @@ lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
 )
+lazy from agent_toolkit._hooks import rules_context, work_contract
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
-lazy from agent_toolkit._hooks import work_contract
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
@@ -215,6 +215,23 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                 decision = delivery
             elif delivery.notices:
                 decision = dataclasses.replace(decision, notices=decision.notices + delivery.notices)
+        state = read_state(session_id)
+        contract_update = work_contract.delegated_notice(
+            session_id,
+            state.get(rules_context.OPERATION_SKILL_READY_KEY, {}),
+            state,
+            agent=_agent_id.resolve_hook_agent_id(payload),
+        )
+        if contract_update:
+            pending_notices.append(
+                _llm_notice(
+                    contract_update,
+                    tag="warn",
+                    fix="案内された全体作業契約を全文読み、現行要求で続行せよ。",
+                    removable_cause=True,
+                    escalate_on_repeat=False,
+                )
+            )
         return _emit(decision, pending_notices, is_codex=is_codex)
 
 
