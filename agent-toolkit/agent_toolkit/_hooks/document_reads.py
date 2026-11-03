@@ -2,14 +2,15 @@
 
 report-completionの起動証拠（`termination_evidence.py`）と、Antigravityの`read_file`をSkill観測へ渡す処理
 （`antigravity.py`）が使う。パスの文字列だけを根拠にせず、読取の結果が資料の本文を返したことを確かめる。
-起動証拠は範囲指定の読取も受理するため、本モジュールは全文か部分かを区別しない。
-読込案内の取得状態は、同じ主体へ配送された本文・必要範囲・受信版から判定する。
+Codexの起動証拠と読込案内は、同じ主体へ配送された本文・必要範囲・受信版から判定する。
+分割受信は同じ版の行範囲として集約し、Antigravityの識別行による起動観測とは区別する。
 """
 
 from __future__ import annotations
 
 import contextlib
 import dataclasses
+import difflib
 import functools
 import hashlib
 import json
@@ -282,7 +283,11 @@ def receipt_key(metadata: dict) -> str:
 
 
 def receipt_candidates(
-    targets: Sequence[read_triggers.ReadTarget], *, include_headings: bool = True, bodies: dict[pathlib.Path, str] | None = None
+    targets: Sequence[read_triggers.ReadTarget],
+    *,
+    include_headings: bool = True,
+    bodies: dict[pathlib.Path, str] | None = None,
+    fragment_paths: set[pathlib.Path] | None = None,
 ) -> list[dict]:
     """既知資料の現在の範囲digestを作る。未知ファイル全体や本文の写しは保存しない。"""
     candidates = []
@@ -307,24 +312,30 @@ def receipt_candidates(
         for heading in dict.fromkeys(["", *headings]):
             target = read_triggers.ReadTarget(path, heading)
             try:
+                ranges = target.line_ranges(text) if heading else ((1, len(lines)),)
                 if path.name == "Makefile" and heading.startswith("make:"):
                     parts = [target.body(text).rstrip("\n")]
                 else:
-                    ranges = target.line_ranges(text) if heading else ((1, len(lines)),)
                     parts = ["".join(lines[start - 1 : end]).rstrip("\n") for start, end in ranges]
             except ValueError:
                 continue
             if not parts or any(not part for part in parts):
                 continue
-            candidates.append(
-                {
-                    "path": str(path),
-                    "logical": logical,
-                    "heading": heading,
-                    "version": version,
-                    "parts": [[bytes_fingerprint(part.encode("utf-8")), len(part), len(part.splitlines())] for part in parts],
-                }
-            )
+            metadata = {
+                "path": str(path),
+                "logical": logical,
+                "heading": heading,
+                "version": version,
+                "parts": [[bytes_fingerprint(part.encode("utf-8")), len(part), len(part.splitlines())] for part in parts],
+                "ranges": [
+                    [start, start + len(piece.splitlines()) - 1]
+                    for start, end in ranges
+                    if (piece := "".join(lines[start - 1 : end]).rstrip("\n"))
+                ],
+            }
+            if not heading and fragment_paths is not None and path in fragment_paths:
+                metadata["lines"] = _line_hashes(text)
+            candidates.append(metadata)
     return candidates
 
 
@@ -352,12 +363,7 @@ def returned_texts(response: object) -> list[str]:
     return [response, *returned_texts(decoded)] if isinstance(decoded, (dict, list)) else [response]
 
 
-def received_candidates(candidates: Sequence[dict], texts: Sequence[str]) -> list[dict]:
-    """実出力中に完全に含まれる既知範囲だけを受信版として返す。
-
-    digestと文字数を使うため、読取後に実体が更新されても旧版を新版へ付け替えない。
-    JSONの文字列として配送されるexec出力は、文字列をデコードできる連続部分も調べる。
-    """
+def _text_variants(texts: Sequence[str]) -> list[str]:
     decoded = list(texts)
     for text in texts:
         if "\\n" in text:
@@ -366,13 +372,31 @@ def received_candidates(candidates: Sequence[dict], texts: Sequence[str]) -> lis
         for fragment in re.findall(r'"(?:[^"\\]|\\.)*"', text):
             with contextlib.suppress(ValueError):
                 decoded.append(json.loads(fragment))
-    windows: dict[tuple[int, int], set[str]] = {}
-    indexed = []
+    valid = []
     for text in decoded:
         try:
             text.encode("utf-8")
         except UnicodeError:
             continue
+        if text not in valid:
+            valid.append(text)
+    return valid
+
+
+def _line_hashes(text: str) -> list[str]:
+    return [bytes_fingerprint(line.rstrip("\n").encode("utf-8")) for line in text.splitlines(keepends=True)]
+
+
+def receipt_metadata(candidate: dict) -> dict:
+    """受信記録は範囲・版・digestに限定し、一致判定用の全行索引を取り除く。"""
+    return {key: value for key, value in candidate.items() if key not in {"lines", "request"}}
+
+
+def received_candidates(candidates: Sequence[dict], texts: Sequence[str]) -> list[dict]:
+    """単一の実出力に完全に含まれる範囲を返す。分割分は同じ版の行範囲として別に集約する。"""
+    windows: dict[tuple[int, int], set[str]] = {}
+    indexed = []
+    for text in _text_variants(texts):
         lines = text.splitlines(keepends=True)
         lengths = [0]
         trailing = [0]
@@ -411,6 +435,105 @@ def received_candidates(candidates: Sequence[dict], texts: Sequence[str]) -> lis
     return result
 
 
+def fragment_candidates(candidates: Sequence[dict], texts: Sequence[str]) -> list[dict]:
+    """実応答と一致した連続行を、読取時に観測した版へ結び付ける。本文は保持しない。"""
+    variants = [_line_hashes(text) for text in _text_variants(texts)]
+    choices: dict[str, tuple[int, dict]] = {}
+    for source in candidates:
+        if not source.get("lines"):
+            continue
+        best: list[list[str]] = []
+        for lines in variants:
+            blocks = [
+                source["lines"][match.a : match.a + match.size]
+                for match in difflib.SequenceMatcher(None, source["lines"], lines, autojunk=False).get_matching_blocks()
+                if match.size
+            ]
+            if sum(map(len, blocks)) > sum(map(len, best)):
+                best = blocks
+        score = sum(map(len, best))
+        if not score:
+            continue
+        scopes = [
+            receipt_metadata(item)
+            for item in candidates
+            if item["path"] == source["path"] and item["version"] == source["version"]
+        ]
+        packet = {"source": source, "scopes": scopes, "blocks": best, "remaining": score}
+        # Preの版を先に渡す。Postまでに実体が変わった場合も、同点なら受信前の版を保つ。
+        if source["path"] not in choices or score > choices[source["path"]][0]:
+            choices[source["path"]] = (score, packet)
+    return [packet for _score, packet in choices.values()]
+
+
+def delivered_fragments(packet: dict, texts: Sequence[str]) -> tuple[int, list[list[str]]]:
+    """内側で生産された行のうち、外側でも実際に届いたものだけを返す。"""
+    best: list[list[str]] = []
+    for text in _text_variants(texts):
+        lines = _line_hashes(text)
+        observed = [
+            block[match.a : match.a + match.size]
+            for block in packet["blocks"]
+            for match in difflib.SequenceMatcher(None, block, lines, autojunk=False).get_matching_blocks()
+            if match.size
+        ]
+        if sum(map(len, observed)) > sum(map(len, best)):
+            best = observed
+    return sum(map(len, best)), best
+
+
+def _merge_ranges(ranges: Sequence[Sequence[int]]) -> list[list[int]]:
+    merged: list[list[int]] = []
+    for start, end in sorted(ranges, key=lambda span: (span[0], span[1])):
+        if merged and start <= merged[-1][1] + 1:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return merged
+
+
+def _covers(coverage: Sequence[Sequence[int]], required: Sequence[Sequence[int]]) -> bool:
+    return all(any(low <= start and end <= high for low, high in coverage) for start, end in required)
+
+
+def accumulate_fragments(records: dict, packet: dict, blocks: Sequence[list[str]], agent: str) -> list[dict]:
+    """同じ主体・論理資料・版の実受信範囲だけを集約し、完成した既知範囲を返す。"""
+    source = packet["source"]
+    coverage = []
+    previous = []
+    for key, actors in list(records.items()):
+        if not key.startswith(RECEIPT_PREFIX) or agent not in actors:
+            continue
+        item = json.loads(key.removeprefix(RECEIPT_PREFIX))
+        if item.get("partial") and item["logical"] == source["logical"] and item["version"] == source["version"]:
+            coverage.extend(item["coverage"])
+            previous.append(key)
+    coverage = _merge_ranges(coverage)
+    joined = "".join(source["lines"])
+    width = len(source["lines"][0])
+    for block in blocks:
+        pattern = "".join(block)
+        index = joined.find(pattern)
+        placements = []
+        while index >= 0:
+            if index % width == 0:
+                placements.append([index // width + 1, index // width + len(block)])
+            index = joined.find(pattern, index + 1)
+        if placements:
+            # 同じ行が反復する資料でも、1応答を全出現箇所の取得へ膨らませない。
+            span = placements[0]
+            coverage = _merge_ranges([*coverage, span])
+    for key in previous:
+        records[key] = [actor for actor in records[key] if actor != agent]
+        if not records[key]:
+            del records[key]
+    metadata = receipt_metadata(source)
+    metadata.update(partial=True, coverage=coverage)
+    if not _covers(coverage, source["ranges"]):
+        records.setdefault(receipt_key(metadata), []).append(agent)
+    return [metadata for metadata in packet["scopes"] if _covers(coverage, metadata.get("ranges", [[1, len(source["lines"])]]))]
+
+
 def acquisition_state(records: dict, target: read_triggers.ReadTarget, agent: str) -> str:
     """現在範囲の取得・旧版取得後の更新・未取得を共通の意味で返す。"""
     raw = target.path.read_bytes()
@@ -431,6 +554,7 @@ def acquisition_state(records: dict, target: read_triggers.ReadTarget, agent: st
         for key, actors in records.items()
         if key.startswith(RECEIPT_PREFIX) and isinstance(actors, list) and agent in actors
     ]
+    receipts = [item for item in receipts if not item.get("partial")]
     known = {tuple(part) for item in receipts for part in item["parts"]}
     if all(tuple(part) in known for part in current["parts"]):
         return "current"

@@ -21,7 +21,7 @@ lazy from agent_toolkit._agents_server import tool_names
 lazy from agent_toolkit._atk.wi import layout, uwi_scan
 lazy from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
 lazy from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
-lazy from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state, shell_cwd
+lazy from agent_toolkit._common import automated_prompt, next_action, read_triggers, runtime_inserted, session_state, shell_cwd
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
@@ -323,7 +323,7 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
         for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd if isinstance(cwd, str) else ""):
             single = join_words(invocation.segment.tokens)
             item_labels = [*_saved_operations(single), *([] if invocation.background else published_git_operations(single))]
-            if (codex or is_antigravity_payload(payload)) and not host_truncated(payload.get("tool_response")):
+            if not codex and is_antigravity_payload(payload) and not host_truncated(payload.get("tool_response")):
                 text = _document_reads.response_text(payload.get("tool_response"))
                 for document in _read_skills(single):
                     if not _document_reads.body_returned(
@@ -332,7 +332,7 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
                         text,
                         plugin=document.plugin,
                         path=document.path,
-                        host="codex" if codex else "agy",
+                        host="agy",
                         project=cwd,
                     ):
                         continue
@@ -476,7 +476,109 @@ def observe_tool(payload_text: str, *, after: bool) -> None:
     failed = payload.get("hook_event_name") == "PostToolUseFailure" or (
         isinstance(code, int) and not isinstance(code, bool) and code != 0
     )
+    if after and is_codex_payload(payload) and not failed:
+        _register_document_reads(payload)
     invocations = _invocations(payload, after=after, failed=failed)
+    _observe_invocations(payload, invocations, after=after, failed=failed)
+
+
+def _register_document_reads(payload: dict[str, Any]) -> None:
+    """内側の成功は読取意図と版だけを保留し、本文受信の証拠にはしない。"""
+    tool_input = payload.get("tool_input", {})
+    if (
+        not isinstance(tool_input, dict)
+        or payload.get("tool_name") not in ATK_SHELL_TOOLS
+        or not isinstance(tool_input.get("command"), str)
+    ):
+        return
+    response = payload.get("tool_response")
+    if isinstance(response, dict) and any(response.get(key) for key in ("isError", "is_error", "interrupted")):
+        return
+    state = session_state.read_state(payload["session_id"])
+    candidates = [
+        packet["source"]
+        for packet in state.get("document_read_pending", {}).get("main", [])
+        if packet.get("read_id") == payload.get("tool_use_id")
+    ]
+    candidates.extend(state.get("document_read_candidates", {}).get("main", []))
+    pending = []
+    documents = []
+    for invocation, current in shell_cwd.bash_invocation_cwds(tool_input["command"], payload.get("cwd", "")):
+        if not current.resolved:
+            continue
+        for read in _read_skills(join_words(invocation.segment.tokens)):
+            path = str((pathlib.Path(current.path) / read.path).resolve())
+            if _document_reads.document_plugin(path) == "agent-toolkit":
+                documents.append(_document_reads.DocumentRead(read.skill, read.relative_path, "agent-toolkit", path))
+    for document in documents:
+        metadata = next((item for item in candidates if item["path"] == document.path and not item["heading"]), None)
+        if metadata is None:
+            metadata = next(
+                iter(_document_reads.receipt_candidates([read_triggers.ReadTarget(pathlib.Path(document.path))])), None
+            )
+        if metadata is None:
+            continue
+        records: list[dict[str, Any]] = [{"kind": "completion"}]
+        if document.skill != COMPLETION_REPORT:
+            repository = _git_root(payload.get("cwd", ""))
+            records = [
+                {
+                    "kind": "deliverable",
+                    "labels": [f"agent-toolkit:{document.skill}の開始"],
+                    "repository": str(repository) if repository else None,
+                }
+            ]
+        pending.append(
+            {
+                "path": document.path,
+                "version": metadata["version"],
+                "parts": metadata["parts"],
+                "tool_id": payload["tool_use_id"],
+                "records": records,
+            }
+        )
+    if pending:
+
+        def register(value: dict[str, Any]) -> dict[str, Any]:
+            queue = _data(value, payload["session_id"]).setdefault("pending_reads", [])
+            for item in pending:
+                if not any(old["path"] == item["path"] and old["version"] == item["version"] for old in queue):
+                    queue.append(item)
+            return value
+
+        session_state.update_state(payload["session_id"], register)
+
+
+def observe_delivered_documents(payload_text: str) -> None:
+    """実配送の共通記録で本文を確認してから、Codexの起動証拠へ接続する。"""
+    payload = _parse(payload_text)
+    if payload is None or not is_codex_payload(payload):
+        return
+    state = session_state.read_state(payload["session_id"])
+    data = state.get(STATE_KEY, {})
+    queue = data.get("pending_reads", []) if isinstance(data, dict) else []
+    receipts = [
+        json.loads(key.removeprefix(_document_reads.RECEIPT_PREFIX))
+        for key, actors in state.get("operation_skill_delivered_agents", {}).items()
+        if key.startswith(_document_reads.RECEIPT_PREFIX) and "main" in actors
+    ]
+    for pending in list(queue):
+        if not any(not item.get("partial") and not item["heading"] and item["parts"] == pending["parts"] for item in receipts):
+            continue
+        _observe_invocations({**payload, "tool_use_id": pending["tool_id"]}, pending["records"], after=True, failed=False)
+
+        def remove(value: dict[str, Any], pending: dict = pending) -> dict[str, Any]:
+            current = value.get(STATE_KEY, {}).get("pending_reads", [])
+            if pending in current:
+                current.remove(pending)
+            return value
+
+        session_state.update_state(payload["session_id"], remove)
+
+
+def _observe_invocations(payload: dict[str, Any], invocations: list[dict[str, Any]], *, after: bool, failed: bool) -> None:
+    tool_id = payload["tool_use_id"]
+    response = payload.get("tool_response")
     if not invocations and not (after and failed):
         # 工程外の成功した呼び出しは状態を読み書きせず、全ツール呼び出しの排他更新を避ける。
         return

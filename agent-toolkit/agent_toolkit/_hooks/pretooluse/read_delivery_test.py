@@ -849,8 +849,6 @@ def test_review_reference_arrives_after_successful_prepare_result(tmp_path, monk
                     {"command": f"sed -n '{start},{end}p' -- {output}"},
                     "test",
                 )
-            assert "prepare" in _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
-            observe_received({"tool_response": body}, "Read", {"file_path": str(output)}, "test")
     assert str(reference) in _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
     assert "判断前の固有基準" not in _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
     observe_received({"tool_response": reference.read_text()}, "Read", {"file_path": str(reference)}, "test")
@@ -3195,9 +3193,12 @@ def test_public_compound_reads_before_diagnostics_release_write(tmp_path, monkey
         observed = _observe_bash_result(payload, command, actual, host)
         assert observed.returncode == 0
         final = _run_hook_in_process("pretooluse", operation)
-        reason = denial_reason(final)
-        assert all(str(paths[item]) in reason for item in ((3, 4) if index == 0 else (3,)))
-        assert all(str(path) not in reason for path in paths[:3])
+        if index == 0:
+            reason = denial_reason(final)
+            assert all(str(paths[item]) in reason for item in (3, 4))
+            assert all(str(path) not in reason for path in paths[:3])
+        else:
+            assert not final.stdout
     command = " && ".join(f"cat -- {path}" for path in quoted)
     actual = subprocess.run(
         ["bash", "-c", command], cwd=tmp_path, env=host_environ(), capture_output=True, text=True, encoding="utf-8", check=True

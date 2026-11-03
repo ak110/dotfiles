@@ -7,9 +7,9 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._common import read_triggers, session_state
+from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks import document_reads, notice, rules_context
-from agent_toolkit._hooks.pretooluse import agent_checks, read_delivery
+from agent_toolkit._hooks.pretooluse import agent_checks, dispatch, read_delivery
 from agent_toolkit._testing.document_delivery import observe_received
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
 from agent_toolkit._testing.pretooluse_support import denial_reason
@@ -25,7 +25,7 @@ def _state(monkeypatch):
     def update(_session, mutate):
         mutate(state)
 
-    for module in (agent_checks, read_delivery, rules_context, notice, session_state):
+    for module in (agent_checks, read_delivery, rules_context, notice, dispatch):
         monkeypatch.setattr(module, "read_state", read, raising=False)
         monkeypatch.setattr(module, "update_state", update)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)

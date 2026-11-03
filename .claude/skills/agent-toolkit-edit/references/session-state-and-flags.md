@@ -145,7 +145,7 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が人間の実際の発話を受けたときにこの値を参照し、真であれば同スキルの起動を促す注記を返す（機械的に注入されたターンでは参照も変更も行わない）。
   注記を返した時点で偽に戻す。また、PostToolUse(Skill)が同スキルの起動を観測した場合や、UserPromptSubmitがユーザーによる同スキルのスラッシュコマンド実行を観測した場合も偽に戻す。
   生存期間はセッション状態ファイルと同一とする。
-- `operation_skill_delivered_agents`: 資料識別子から受信主体へのマッピング。`received-document:<JSON>`は論理資料・実体パス・必要範囲・受信版・範囲digestを保持する。
+- `operation_skill_delivered_agents`: 資料識別子から受信主体へのマッピング。`received-document:<JSON>`は論理資料・実体パス・必要範囲・受信版・範囲digestを保持する。分割受信は同じ主体・論理資料・版の行範囲を集約し、必要範囲が完成した時点で取得済みにする。部分記録は更新案内の根拠から除く。
   `document_reads.acquisition_state`が取得済み・取得後の更新・未取得を区別する。同じ必要本文を別実体から受信した場合も再利用し、他節の変更後も必要節の取得を維持する。
   旧形式の`read-trigger:<絶対パス>#sha256:<本文hash>`も、受信時の版のまま保持する。主体はpayloadの`agent_id`、無い場合は`main`とする。
   `read-update:<受信資料識別子>`は未受信の現在版の更新案内を実配送した主体を保持する。更新だけの場合は再書込を許可する。
@@ -168,12 +168,13 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
   正式なstartup-documentは識別と本文を意味上で確認して記録する。
   選択は`ReadTrigger.condition`の自然文と役割を保持する。他役割の行を除き、判断契機では`read:`・`section:`の明示選択と、`confirmation`に一致する確認ツール呼出しを確定側に含める。`AskUserQuestion`・`request_user_input`・`request_user_input_async`の呼出しは確認本文・選択肢の起草契機を観測したものとして扱う。他の未確定な自然文条件は確認候補とする。同一パスの節を集約し、宣言修復後の選択は現行宣言へ接続する。圧縮前の候補は現在の必読案内と遮断の根拠から除外する。
 - `document_read_candidates`: PreToolUseで準備した、主体ごとの既知資料・必要範囲・受信前の版とdigest。Readの明示対象も含め、選択前の取得と観測前の外部更新に対応する。保存はdigestなどのメタデータに限定する。compact時はメインの候補を除く。
+- `document_read_pending`: Codexの内側出力と一致した版・行digest・必要範囲の主体別候補。外側配送で一致した行だけを取得記録へ反映し、観測分を消費する。本文は保存せず、compact時はメインの候補を除く。
 - `document_read_offsets`: 主体とrolloutの絶対パスから、観測済みのバイト位置への対応。Codexの後続PreToolUseが完成した外側出力行だけを差分走査して進める。compact時はメインの位置を末尾へ進め、以後に配送された本文を観測する。寿命はセッション状態と同じ。
 - `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程に必要な証拠を作業単位で管理・保持する。保持する内容には、作業ごとの成果作業の種別、report-completionの起動証拠、ツールの呼び出し履歴、判断の記録、遅れて返ってくる応答を元の作業に対応付けるための未完了の呼び出し、ならびに判断の根拠となった人間の入力が含まれる。
   PreToolUse、PostToolUse、UserPromptSubmitがツール呼び出しと人間の入力を逐次更新し、Stopの`termination_order_advisor`が成果作業と起動証拠の対応関係を読み取る。報告本文、完了の自己申告、起動済みを示す独自フラグなどは保持しない。
   解決済みの呼び出しや入力は更新のたびに除外し、バージョンや形式が合致しない値は破棄してStop判定ログに診断情報を残す。
   生存期間と継承の扱いはセッション状態ファイルと同一とし、別の会話から継承した値は`session_id`の一致を確認してから使用する。
-  - 成果作業と起動証拠: 成功した対象スキルの起動、リポジトリに対する自身の編集作業、計画ファイルの保存、WIの保存、commitやpushなどを`deliverables`へ記録する。成功したreport-completionスキルの起動（Claude Code）や、結果として本文が返された`SKILL.md`の読み取り（Codex）は、`completion_report`へ記録する。起動証拠を取得済みの作業に対して、新しい人間の入力があった後にさらに成果作業が発生した場合は、別の新しい作業として管理を開始する
+  - 成果作業と起動証拠: 成功した対象スキルの起動、リポジトリに対する自身の編集作業、計画ファイルの保存、WIの保存、commitやpushなどを`deliverables`へ記録する。成功したreport-completionスキルの起動（Claude Code）や、外側で必要本文の配送を確認した`SKILL.md`の読み取り（Codex）は、`completion_report`へ記録する。Codexの成功した読取は`pending_reads`に所有plugin・実体・版・元の呼出しを保留し、共通の取得記録で本文受信を確認して開始証拠へ変える。compactで保留を除く。起動証拠を取得済みの作業に対して、新しい人間の入力があった後にさらに成果作業が発生した場合は、別の新しい作業として管理を開始する
   - 待機の許可: 成果作業が待機している非同期処理の実行中に、Stop hookが待機を許可する条件は`agent-toolkit:report-completion/references/claude-hooks-stop.md`「終了工程の証拠」に定める。本キーは作業の開始位置（UserPromptSubmitが記録したtranscriptのサイズ）を保持し、Stopがその判定時に参照する
   - 成果作業の対象: 観測されたリポジトリのルートパスを`repositories`に保持する。直接実行されたGit操作については`-C`などの引数を含めて対象リポジトリを取得し、シェルのディレクトリ移動や環境変数の前置代入によって対象を取得できない操作については`null`を保持する。対象が単一のリポジトリであると確定できる作業に限り、プロジェクト規範に基づく終了工程の省略指定を受理する
   - 委譲先に対するwait判定: `async_targets`とその所有者を確認し、観測義務とは独立して有効なCLI待機所有権や対象登録の有無を共通の読み取り処理で確認する。`pending_observation`が偽であっても待機が有効であれば状態を保持し、両方の処理が完了した段階で証拠不足の判定へ戻す

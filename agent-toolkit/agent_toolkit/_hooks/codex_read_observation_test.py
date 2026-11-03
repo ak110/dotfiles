@@ -235,7 +235,7 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
         result = run_hook("posttooluse", payload)
         assert result.returncode == 0 and not result.stderr
     capsys.readouterr()
-    assert (read_delivery.deliver(operation, "Write", write, "session").block is None) is (form != "split")
+    assert read_delivery.deliver(operation, "Write", write, "session").block is None
 
 
 def test_persisted_copy_delivered_as_the_response_is_not_a_full_read(tmp_path):

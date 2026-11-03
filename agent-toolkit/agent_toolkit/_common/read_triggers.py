@@ -119,7 +119,7 @@ def _headings(text: str) -> tuple[list[str], list[tuple[int, int, str]]]:
     return lines, headings
 
 
-def _make_targets(text: str, name: str, path: pathlib.Path) -> str:
+def _make_targets(text: str, name: str, path: pathlib.Path) -> tuple[tuple[int, int], ...]:
     """指定targetと静的に名指しされた子targetを、共有変数の定義とともに読む。"""
     lines = text.splitlines(keepends=True)
     starts = [
@@ -149,7 +149,13 @@ def _make_targets(text: str, name: str, path: pathlib.Path) -> str:
     for target in selected:
         start, end, _dependencies = blocks[target]
         indices.update(range(start, end))
-    return "".join(lines[index] for index in sorted(indices))
+    ranges: list[tuple[int, int]] = []
+    for index in sorted(indices):
+        if ranges and ranges[-1][1] == index:
+            ranges[-1] = (ranges[-1][0], index + 1)
+        else:
+            ranges.append((index + 1, index + 1))
+    return tuple(ranges)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -168,14 +174,14 @@ class ReadTarget:
     def body(self, text: str | None = None) -> str:
         """指定範囲だけを返す。見出しの曖昧さと不在は宣言エラーにする。"""
         text = self.path.read_text(encoding="utf-8") if text is None else text
-        if self.path.name == "Makefile" and self.heading.startswith("make:"):
-            return _make_targets(text, self.heading.removeprefix("make:"), self.path)
         lines = text.splitlines(keepends=True)
         return "".join("".join(lines[start - 1 : end]) for start, end in self.line_ranges(text))
 
     def line_ranges(self, text: str | None = None) -> tuple[tuple[int, int], ...]:
         """節の解決を共有し、案内するnative読取へ1始まりの行範囲を渡す。"""
         text = self.path.read_text(encoding="utf-8") if text is None else text
+        if self.path.name == "Makefile" and self.heading.startswith("make:"):
+            return _make_targets(text, self.heading.removeprefix("make:"), self.path)
         lines, headings = _headings(text)
         if not self.heading:
             return ((1, len(lines)),) if lines else ()

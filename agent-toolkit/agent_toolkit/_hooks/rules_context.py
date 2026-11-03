@@ -212,10 +212,13 @@ def reset_main_operation_skill_ready(
             updated[carried_read_target_key(path)] = [MAIN_AGENT_ID]
         # 最初の操作より前に圧縮された場合も、旧起動本文を取得済みへ戻さない。
         updated[READ_CONTEXT_RESET_KEY] = [MAIN_AGENT_ID]
-        if updated == recorded:
-            return None
+        # 取得マッピングが同じでも、各文脈境界で候補とrollout位置を初期化する。
         current[OPERATION_SKILL_READY_KEY] = updated
         current.get("document_read_candidates", {}).pop(MAIN_AGENT_ID, None)
+        current.get("document_read_pending", {}).pop(MAIN_AGENT_ID, None)
+        evidence = current.get("termination_evidence")
+        if isinstance(evidence, dict):
+            evidence.pop("pending_reads", None)
         for key in current.get("document_read_offsets", {}):
             actor, path = json.loads(key)
             if actor == MAIN_AGENT_ID:

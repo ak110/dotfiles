@@ -1604,6 +1604,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         removable_cause=True,
         escalate_on_repeat=False,
         fix=acquisition + followup,
+        subject=json.dumps([guidance_key(target) for target in pending]),
     )
     if not warning_only and written and not diagnostic:
         for target in guided:
@@ -1688,30 +1689,92 @@ def _receipt_targets(
     return list(dict.fromkeys(targets))
 
 
-def _record_receipts(session_id: str, agent: str, candidates: list[dict], texts: list[str]) -> None:
-    observed = set()
-    keys = []
-    for metadata in document_reads.received_candidates(candidates, texts):
-        scope = (metadata["logical"], metadata["heading"], json.dumps(metadata["parts"]))
-        if scope in observed:
-            continue
-        observed.add(scope)
-        keys.append(document_reads.receipt_key(metadata))
+def _record_receipts(session_id: str, agent: str, candidates: list[dict], texts: list[str], *, fragments=None) -> None:
+    received = document_reads.received_candidates(candidates, texts)
+    if fragments is None:
+        fragments = [(packet, packet["blocks"]) for packet in document_reads.fragment_candidates(candidates, texts)]
+    if not received and not fragments:
+        return
+    full = []
+
+    def mark(value: dict) -> dict:
+        records = value.setdefault(rules_context.OPERATION_SKILL_READY_KEY, {})
+        completed = list(received)
+        for packet, blocks in fragments:
+            completed.extend(document_reads.accumulate_fragments(records, packet, blocks, agent))
+        known = {tuple(part) for item in completed for part in item["parts"]}
+        completed.extend(item for item in candidates if all(tuple(part) in known for part in item["parts"]))
+        observed = set()
+        for candidate in completed:
+            metadata = document_reads.receipt_metadata(candidate)
+            scope = (metadata["logical"], metadata["heading"], json.dumps(metadata["parts"]))
+            if scope in observed:
+                continue
+            observed.add(scope)
+            operation_skills.mark_ready(document_reads.receipt_key(metadata), agent)(value)
+            if not metadata["heading"]:
+                full.append(metadata)
+        return value
+
+    update_state(session_id, mark)
+    for metadata in full:
         path = pathlib.Path(metadata["path"])
-        if not metadata["heading"]:
-            # 旧キーも保持し、既存の起動・自己編集・参照宣言の消費側を同じ証拠へ接続する。
-            if path.is_file() and document_reads.content_fingerprint(path) == metadata["version"]:
-                _mark(session_id, path, agent, metadata["version"], record_scopes=False)
-            else:
-                update_state(session_id, operation_skills.mark_ready(document_key(path, metadata["version"]), agent))
-    if keys:
-        # 全文読取では多数の節が同時に届くため、状態JSONの読書きと排他を1回にまとめる。
-        def mark(value: dict) -> dict:
-            for key in keys:
-                operation_skills.mark_ready(key, agent)(value)
+        if path.is_file() and document_reads.content_fingerprint(path) == metadata["version"]:
+            _mark(session_id, path, agent, metadata["version"], record_scopes=False)
+        else:
+            update_state(session_id, operation_skills.mark_ready(document_key(path, metadata["version"]), agent))
+
+
+def _receipt_candidates(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[dict]:
+    active = {target.path for target in _receipt_targets(payload, tool_name, tool_input, session_id, active_only=True)}
+    candidates = document_reads.receipt_candidates(
+        _receipt_targets(payload, tool_name, tool_input, session_id), fragment_paths=active
+    )
+    request = _read_request(tool_name, tool_input)
+    for item in candidates:
+        if "lines" in item:
+            item["request"] = request
+    return candidates
+
+
+def _read_request(tool_name: str, tool_input: dict) -> str:
+    return document_reads.bytes_fingerprint(json.dumps([tool_name, tool_input], sort_keys=True).encode("utf-8"))
+
+
+def _record_codex_delivery(session_id: str, agent: str, candidates: list[dict], text: str) -> None:
+    pending = read_state(session_id).get("document_read_pending", {}).get(agent, [])
+    choices: dict[str, list[tuple[int, int, dict, list[list[str]]]]] = {}
+    for index, packet in enumerate(pending):
+        score, blocks = document_reads.delivered_fragments(packet, [text])
+        if score:
+            choices.setdefault(packet["source"]["logical"], []).append((score, index, packet, blocks))
+    selected = []
+    consumed = []
+    for possibilities in choices.values():
+        score = max(item[0] for item in possibilities)
+        best = [item for item in possibilities if item[0] == score]
+        # 同じ本文が複数の版へ一致し、配送元の版を区別できない場合は混在させない。
+        if len({item[2]["source"]["version"] for item in best}) != 1:
+            continue
+        _score, _index, packet, blocks = best[0]
+        selected.append((packet, blocks))
+        consumed.append((packet, score))
+    _record_receipts(session_id, agent, candidates, [text], fragments=selected)
+    if consumed:
+
+        def advance(value: dict) -> dict:
+            queue = value.get("document_read_pending", {}).get(agent, [])
+            for packet, score in consumed:
+                if packet in queue:
+                    index = queue.index(packet)
+                    remaining = packet["remaining"] - score
+                    if remaining > 0:
+                        queue[index] = {**packet, "remaining": remaining}
+                    else:
+                        queue.pop(index)
             return value
 
-        update_state(session_id, mark)
+        update_state(session_id, advance)
 
 
 def _refresh_receipts(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> None:
@@ -1721,7 +1784,7 @@ def _refresh_receipts(payload: dict, tool_name: str, tool_input: dict, session_i
     agent = agent_id.resolve_hook_agent_id(payload)
     state = read_state(session_id)
     candidates = state.get("document_read_candidates", {}).get(agent, [])
-    current = document_reads.receipt_candidates(_receipt_targets(payload, tool_name, tool_input, session_id))
+    current = _receipt_candidates(payload, tool_name, tool_input, session_id)
     if is_codex_payload(payload):
         raw_path = payload.get("agent_transcript_path") if agent != "main" else payload.get("transcript_path")
         if isinstance(raw_path, str) and raw_path:
@@ -1758,7 +1821,7 @@ def _refresh_receipts(payload: dict, tool_name: str, tool_input: dict, session_i
                         ):
                             output = item.get("output")
                             if isinstance(output, str):
-                                texts.extend(document_reads.returned_texts(output))
+                                texts.append(output)
                             elif isinstance(output, list):
                                 texts.extend(
                                     block["text"]
@@ -1770,7 +1833,8 @@ def _refresh_receipts(payload: dict, tool_name: str, tool_input: dict, session_i
             except OSError:
                 texts = []
             else:
-                _record_receipts(session_id, agent, [*candidates, *current], texts)
+                for text in texts:
+                    _record_codex_delivery(session_id, agent, [*candidates, *current], text)
 
                 def advance(value: dict) -> dict:
                     positions = value.setdefault("document_read_offsets", {})
@@ -1788,7 +1852,7 @@ def _refresh_receipts(payload: dict, tool_name: str, tool_input: dict, session_i
 
 
 def _observe_content(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> None:
-    if tool_name not in {"Read", "Bash"} or is_codex_payload(payload) or payload.get("hook_event_name") == "PermissionDenied":
+    if tool_name not in {"Read", "Bash"} or payload.get("hook_event_name") == "PermissionDenied":
         return
     response = payload.get("tool_response")
     texts = document_reads.returned_texts(response)
@@ -1797,7 +1861,23 @@ def _observe_content(payload: dict, tool_name: str, tool_input: dict, session_id
     agent = agent_id.resolve_hook_agent_id(payload)
     state = read_state(session_id)
     candidates = state.get("document_read_candidates", {}).get(agent, [])
-    current = document_reads.receipt_candidates(_receipt_targets(payload, tool_name, tool_input, session_id))
+    candidates = [
+        {**item, "lines": []} if "lines" in item and item.get("request") != _read_request(tool_name, tool_input) else item
+        for item in candidates
+    ]
+    current = _receipt_candidates(payload, tool_name, tool_input, session_id)
+    if is_codex_payload(payload):
+        packets = document_reads.fragment_candidates([*candidates, *current], texts)
+        if packets:
+
+            def prepare(value: dict) -> dict:
+                value.setdefault("document_read_pending", {}).setdefault(agent, []).extend(
+                    {**packet, "read_id": payload.get("tool_use_id")} for packet in packets
+                )
+                return value
+
+            update_state(session_id, prepare)
+        return
     _record_receipts(session_id, agent, [*candidates, *current], texts)
 
 

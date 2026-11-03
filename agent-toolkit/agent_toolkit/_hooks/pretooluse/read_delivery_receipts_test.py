@@ -1,5 +1,6 @@
 """配送本文を独立の比較元に、公開hookの取得・更新・遮断まで検収する。"""
 
+import importlib
 import json
 import shlex
 import subprocess
@@ -8,7 +9,7 @@ import pytest
 
 from agent_toolkit._common import plugin_roots, read_triggers, session_state
 from agent_toolkit._hooks import document_reads, notice, rules_context, work_contract
-from agent_toolkit._hooks.pretooluse import agent_checks, read_delivery
+from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
@@ -34,15 +35,6 @@ def _scenario(tmp_path, monkeypatch):
     state: dict = {}
     rows: list[read_triggers.ReadTrigger] = []
 
-    def read(_session):
-        return state
-
-    def update(_session, mutate):
-        mutate(state)
-
-    for module in (read_delivery, session_state, rules_context, notice, agent_checks, work_contract):
-        monkeypatch.setattr(module, "read_state", read, raising=False)
-        monkeypatch.setattr(module, "update_state", update)
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     monkeypatch.setattr(read_delivery.delegated_session, "is_lightweight_delegated", lambda _env: False)
     notice.set_warning_session_id("")
@@ -65,9 +57,11 @@ def _scenario(tmp_path, monkeypatch):
             payload.update(turn_id="turn", transcript_path=str(rollout))
         result = _run_hook_in_process("posttooluse" if event.startswith("Post") else "pretooluse", payload)
         assert result.returncode == 0 and not result.stderr
+        state.clear()
+        state.update(session_state.read_state("receipts"))
         return result.stdout
 
-    def delivered(body):
+    def delivered(body, *, destination=None):
         # Codex 0.166.0のrolloutで観測した外側output配列と、exec_commandのJSON文字列。
         entry = {
             "type": "response_item",
@@ -77,7 +71,7 @@ def _scenario(tmp_path, monkeypatch):
                 "output": [{"type": "input_text", "text": "Script completed\nOutput:\n"}, {"type": "input_text", "text": body}],
             },
         }
-        with rollout.open("a", encoding="utf-8") as stream:
+        with (destination or rollout).open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     return state, rows, path, rollout, invoke, delivered
@@ -367,6 +361,8 @@ def test_codex_rollout_cursor_preserves_context_boundary(scenario, monkeypatch):
         },
     )
     assert result.returncode == 0 and not result.stderr
+    state.clear()
+    state.update(session_state.read_state("receipts"))
     assert not read_delivery.target_ready(
         state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main"
     )
@@ -518,8 +514,132 @@ def test_existing_work_contract_body_delivery_is_received(scenario, monkeypatch)
     )
     assert result.returncode == 0 and not result.stderr
     assert path.read_text(encoding="utf-8").rstrip("\n") in result.stdout.replace("\\n", "\n")
+    state.clear()
+    state.update(session_state.read_state("receipts"))
     records = state[rules_context.OPERATION_SKILL_READY_KEY]
     assert read_delivery.target_ready(records, read_triggers.ReadTarget(path), "main")
     assert str(path) not in invoke(
         "claude", "PreToolUse", "Write", {"file_path": str(path.parent / "out.md"), "content": "成果"}
     )
+
+
+def test_session_state_bindings_survive_receipt_scenarios():
+    """先行scenarioの終了後も公開hookの状態取得が実保存先へ接続する。"""
+    dispatch = importlib.import_module("agent_toolkit._hooks.pretooluse.dispatch")
+
+    assert dispatch.read_state is session_state.read_state
+    assert dispatch.update_state is session_state.update_state
+
+
+def test_repeated_compact_excludes_unobserved_old_delivery(scenario, monkeypatch, host_environ):
+    """連続する圧縮でも、次のPreで未観測だった旧文脈の出力を再利用しない。"""
+    state, rows, path, rollout, invoke, delivered = scenario
+    rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
+    write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
+    invoke("codex", "PreToolUse", "Write", write)
+    monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(rules_context, "_compaction_notice", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: path.parent)
+    compact = {
+        "session_id": "receipts",
+        "turn_id": "turn",
+        "cwd": str(path.parent),
+        "transcript_path": str(rollout),
+        "hook_event_name": "SessionStart",
+        "source": "compact",
+    }
+    first = _run_hook_in_process("rules_context_codex", compact)
+    assert first.returncode == 0 and not first.stderr
+    command = "cat -- " + shlex.quote(str(path))
+    produced = subprocess.run(
+        ["/bin/bash", "-c", command],
+        env=host_environ(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+        check=False,
+    )
+    assert produced.returncode == 0 and not produced.stderr
+    invoke("codex", "PostToolUse", "Bash", {"command": command}, produced.stdout)
+    delivered(produced.stdout)
+    second = _run_hook_in_process("rules_context_codex", compact)
+    assert second.returncode == 0 and not second.stderr
+    invoke("codex", "PreToolUse", "Write", write)
+    assert not read_delivery.target_ready(
+        state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main"
+    )
+
+
+@pytest.mark.parametrize("host,reader", [("claude", "Read"), ("claude", "Bash"), ("codex", "Bash")])
+@pytest.mark.parametrize(
+    "mode", ["complete", "missing", "other-agent", "version", "overlap", "reverse", "omitted", "repeat", "blank-boundary"]
+)
+def test_split_delivery_controls_public_write(scenario, host_environ, host, reader, mode):
+    """実回収した同じ版の全範囲だけが、案内済みの再書込を解除する。"""
+    _state, rows, path, _rollout, invoke, delivered = scenario
+    if mode == "repeat":
+        path.write_text("同じ行\n" * 4, encoding="utf-8")
+    rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
+    write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
+    invoke(host, "PreToolUse", "Write", write)
+    assert '"permissionDecision": "deny"' in invoke(host, "PreToolUse", "Write", write)
+    intervals = [(1, 5), (4, None)] if mode == "overlap" else [(1, 3), (4, None)]
+    if mode == "repeat":
+        intervals = [(1, 2), (1, 2)]
+    if mode == "blank-boundary":
+        intervals = [(1, 2), (3, None)]
+    if mode == "reverse":
+        intervals.reverse()
+    received = []
+    for index, (start, end) in enumerate(intervals):
+        if index and mode == "missing":
+            break
+        if index and mode == "version":
+            path.write_text(path.read_text(encoding="utf-8").replace("固有の必要本文", "新版の必要本文"), encoding="utf-8")
+        actor = {"agent_id": "other"} if index and mode == "other-agent" else {}
+        child = path.with_name("child.jsonl")
+        if actor and host == "codex":
+            actor["agent_transcript_path"] = str(child)
+        command = f"sed -n '{start},{end if end is not None else '$'}p' -- {shlex.quote(str(path))}"
+        inputs = (
+            {"file_path": str(path), "offset": start, **({"limit": end - start + 1} if end else {})}
+            if reader == "Read"
+            else {"command": command}
+        )
+        invoke(host, "PreToolUse", reader, inputs, **actor)
+        produced = subprocess.run(
+            ["/bin/bash", "-c", command],
+            env=host_environ(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+        )
+        assert produced.returncode == 0 and not produced.stderr
+        received.append(produced.stdout)
+        visible = produced.stdout
+        if index and mode == "omitted":
+            visible = "".join(visible.splitlines(keepends=True)[-1:])
+        response = (
+            {"type": "text", "file": {"content": visible, "startLine": start, "truncatedByTokenCap": mode == "omitted"}}
+            if reader == "Read"
+            else {"stdout": visible, "exit_code": 0}
+        )
+        invoke(host, "PostToolUse", reader, inputs, response if host == "claude" else produced.stdout, **actor)
+        if host == "codex":
+            delivered(visible, destination=child if actor else None)
+    final = invoke(host, "PreToolUse", "Write", write)
+    complete = mode in {"complete", "overlap", "reverse", "blank-boundary"}
+    assert (
+        read_delivery.target_ready(_state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main")
+        is complete
+    )
+    if mode == "version":
+        # 本文が変わった現行版の初回案内はwarn。その案内後の再書込を検収する。
+        assert "未取得" in final
+        final = invoke(host, "PreToolUse", "Write", write)
+    assert ('"permissionDecision": "deny"' not in final) is complete
+    if mode == "complete":
+        assert "".join(received) == path.read_text(encoding="utf-8")
