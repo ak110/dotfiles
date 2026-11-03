@@ -640,3 +640,28 @@ def test_invalid_test_shard_stops_before_collection(tmp_path: pathlib.Path) -> N
     assert result.returncode == pytest.ExitCode.USAGE_ERROR, result.stdout + result.stderr
     assert "--test-shard=INDEX/COUNT" in result.stderr
     assert "passed" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("markexpr", "name", "body", "expected"),
+    [
+        ("windows", "posix_only_test.py", "import os\n_UID = os.getuid()\n", True),
+        ("windows", "boundary_test.py", "import pytest\n\npytestmark = pytest.mark.windows\n", False),
+        ("windows", "helper.py", "import os\n", None),
+        ("not browser and not live_agents", "posix_only_test.py", "import os\n_UID = os.getuid()\n", None),
+    ],
+    ids=["unmarked", "marked", "not-test-module", "other-expression"],
+)
+def test_windows_selection_skips_unmarked_test_modules(
+    tmp_path: pathlib.Path, markexpr: str, name: str, body: str, expected: bool | None
+) -> None:
+    """`-m windows`では本文にmarkerが無い試験モジュールだけを読み込まず、他の選択では収集を変えない。"""
+    path = tmp_path / name
+    path.write_text(body, encoding="utf-8")
+
+    class Config:
+        def getoption(self, option: str) -> str:
+            assert option == "markexpr"
+            return markexpr
+
+    assert pytest_plugin.pytest_ignore_collect(path, cast(pytest.Config, Config())) is expected
