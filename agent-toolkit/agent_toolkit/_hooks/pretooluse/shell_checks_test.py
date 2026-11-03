@@ -1253,6 +1253,9 @@ class TestBashOptionAfterTerminator:
             ("rg -c -F --regexp=X -- --glob", "--glob"),
             ("grep -rc -F -f patterns.txt -- --include", "--include"),
             ("case value in one) rg -l -F -- 'x' --glob '*.py' .;; esac", "--glob"),
+            # 引用した`'>'`は検索語のデータであり、後ろのオプションをリダイレクト先として除かない。
+            ("rg -c -F -- 'x' '>' --glob '*.py' .", "--glob"),
+            ("git log -- path '>' --oneline", "--oneline"),
         ],
     )
     @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])

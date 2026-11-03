@@ -370,6 +370,7 @@ _PREVIOUS_AWI_CAUSE_ITEMS_TABLE = "\n".join(
         "empty_decision",
         "empty_countermeasure",
         "previous_format",
+        "missing_table",
         "valid",
     ],
 )
@@ -387,7 +388,7 @@ def test_public_add_cause_analysis_format(
     """原因分析の新検査はエージェントに適用し、人間入力を拒否しない。
 
     AWIの2列表は処置の6区分と採否2行の8行とし、4区分の候補行・採否行・回帰防止策の欠落と空欄、
-    6区分化前の5行表を拒否する。
+    6区分化前の5行表と、L4表だけで処置表そのものが無い記録を拒否する。
     """
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
@@ -417,6 +418,8 @@ def test_public_add_cause_analysis_format(
         table = table.replace(f"| {emptied[case]} | {plan_fixture.BUG_FILLER} |", f"| {emptied[case]} |  |")
     elif case == "previous_format":
         table = _PREVIOUS_AWI_CAUSE_ITEMS_TABLE
+    elif case == "missing_table":
+        table = ""
     else:
         cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外の構造だけで生じた。 |")
     body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{cause}\n\n{table}\n"
@@ -1224,7 +1227,8 @@ def test_add_rejects_undetermined_direct_cause_in_uwi(
         _AGENT_AWI_BODY.replace(
             "## 反映内容と反映先\n対象と反映先",
             "## 反映内容と反映先\n対象と反映先\n\n## 原因分析\n\n確定した原因の説明。例示:\n\n"
-            "```markdown\n| 直接的原因 | 未確定 |\n```",
+            "```markdown\n| 直接的原因 | 未確定 |\n```\n\n"
+            f"{plan_fixture.bug_cause_table()}\n\n{_awi_cause_items_table()}",
             1,
         ),
     ],

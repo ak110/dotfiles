@@ -3110,6 +3110,10 @@ def test_public_read_history_cannot_acquire_changed_content(tmp_path, monkeypatc
         ("false && cat -- {path}; true", False),
         ("if false; then cat -- {path}; fi", False),
         ("cat -- /missing-document; cat -- {path}", False),
+        # 引用した演算子はデータであり、実際の連結だけが取得の可否を分ける。
+        ("cat -- {path} && echo 'a; b | c'", True),
+        ("cat -- {path}; echo 'a && b'", False),
+        ("cat -- {path} | head -n 1", False),
     ],
 )
 @pytest.mark.usefixtures("memory")

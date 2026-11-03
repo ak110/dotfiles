@@ -427,19 +427,24 @@ def _awi_cause_table_errors(section: str) -> list[str]:
     """AWIの原因分析の2列表が8行をこの順で持ち、全行に内容があることを確かめる。
 
     `対策`行か旧5行表の`直接的原因`行を持つ2列表を処置表として識別する。
-    4区分の候補行と採否行のいずれかが欠けた記録や空の行を拒否し、候補・採否の意味の判定は意味検収が担う。
+    4区分の候補行と採否行のいずれかが欠けた記録や空の行と、処置表そのものが無い記録を拒否し、
+    候補・採否の意味の判定は意味検収が担う。
     """
     errors: list[str] = []
+    found = False
     for table in _plan_markdown.extract_tables(list(_plan_markdown.iter_markdown_body_lines(section))):
         labels = table.row_labels()
         if table.header != _plan_constants.PLAN_BUG_TABLE_HEADER or not {"対策", _DIRECT_CAUSE_LABEL} & set(labels):
             continue
+        found = True
         if labels != AWI_CAUSE_TABLE_ROWS:
             errors.append(f"原因分析の表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の8行をこの順に置く: {table.row_location(0)}")
             continue
         for index, row in enumerate(table.rows):
             if len(row) < 2 or not _strip_table_cell(row[1]):
                 errors.append(f"{AWI_CAUSE_TABLE_ROWS[index]}の行が空である: {table.row_location(index)}")
+    if not found:
+        errors.append(f"原因分析に{'、'.join(AWI_CAUSE_TABLE_ROWS)}の8行の処置表が無い")
     return errors
 
 
