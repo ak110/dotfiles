@@ -46,7 +46,9 @@ if role == "holder":
         time.sleep(120)
     sys.exit(0)
 if role == "spawner":
-    (directory / "spawner.pid").write_text(str(os.getpid()), encoding="utf-8")
+    # holderと同じく、一時ファイルへ書いてから置き換えて書きかけを読ませない。
+    (directory / "spawner.pid.tmp").write_text(str(os.getpid()), encoding="utf-8")
+    os.replace(directory / "spawner.pid.tmp", directory / "spawner.pid")
     while not (directory / "trigger").exists():
         time.sleep(0.01)
     launch("holder")
