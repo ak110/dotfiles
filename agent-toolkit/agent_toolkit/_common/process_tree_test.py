@@ -328,15 +328,19 @@ def test_stop_tree_keeps_processes_outside_the_tree_and_the_excluded_root(spawn_
 
 
 _GRACEFUL_SOURCE = """
-import pathlib, signal, subprocess, sys, time
+import os, pathlib, signal, subprocess, sys, time
 
 directory = pathlib.Path(sys.argv[1])
 def handle(_signum, _frame):
     (directory / "graceful").touch()
     if len(sys.argv) > 2:
-        # 終了猶予中に資源を保持する子を起動し、その準備を待ってから終了する。
-        subprocess.Popen([sys.executable, sys.argv[2], "holder", str(directory)])
-        while not (directory / "holder.pid").exists():
+        # 終了猶予中に資源を保持する子を起動し、起動したPIDを記録して準備を上限付きで待ってから終了する。
+        # 停止処理は猶予中に見つけた子へすぐ終了を要求するため、子が準備前に終了することもある。
+        child = subprocess.Popen([sys.executable, sys.argv[2], "holder", str(directory)])
+        (directory / "spawned.pid.tmp").write_text(str(child.pid))
+        os.replace(directory / "spawned.pid.tmp", directory / "spawned.pid")
+        deadline = time.monotonic() + 10
+        while not (directory / "holder.pid").exists() and time.monotonic() < deadline:
             time.sleep(0.01)
         time.sleep(1.0)
     sys.exit(0)
@@ -363,7 +367,12 @@ def test_stop_tree_keeps_posix_graceful_exit_and_reclaims_children_started_in_gr
     assert (tmp_path / "graceful").exists()
     assert not result.unresolved
     if spawn_in_grace:
-        late_descendant.assert_released(tmp_path)
+        # 猶予中に起動した子は、準備の前後どちらで終了を要求されても停止処理の完了時点で終了している。
+        spawned = int((tmp_path / "spawned.pid").read_text())
+        assert spawned in {item.pid for item in result.targets}
+        assert not _still_holding_resources([item for item in result.targets if item.pid == spawned])
+        if (tmp_path / "holder.pid").exists():
+            late_descendant.assert_released(tmp_path)
 
 
 def test_reclaim_descendants_returns_empty_list_without_targets():
