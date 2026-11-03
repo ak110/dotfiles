@@ -21,7 +21,7 @@ from pathlib import Path
 
 from agent_toolkit._common import dotfiles_mode
 
-from pytools._internal import claude_common, common, log_format, plugin_warmup, post_apply_outcome
+from pytools._internal import claude_common, common, log_format, plugin_warmup, post_apply_cache, post_apply_outcome
 
 _TAG = "agent-toolkit warmup"
 _SCRIPT_RELATIVE = Path("agent_toolkit") / "agents_server_mcp.py"
@@ -37,8 +37,19 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     commands = plugin_warmup.prepare_targets(_targets, tag=_TAG)
     if not commands:
         return post_apply_outcome.PostApplyOutcome()
-    outcomes = asyncio.run(_check_targets(commands))
+    paths: list[Path] = []
+    for command in commands:
+        paths.extend((Path(command[0]), Path(command[1])))
+        paths.append(Path(command[command.index("--project") + 1]) if "--project" in command else Path(command[-1]))
+    key = post_apply_cache.fingerprint(paths, values=[repr(commands), repr(sorted(os.environ.items()))])
+    checks = (
+        _check_targets(commands, skip_startup=True)
+        if post_apply_cache.matches("agents-server-startup", key)
+        else _check_targets(commands)
+    )
+    outcomes = asyncio.run(checks)
     failures: list[str] = []
+    dependencies_ready = True
     for command, outcome in zip(commands, outcomes, strict=True):
         if isinstance(outcome, BaseException):
             logger.warning(log_format.format_status(_TAG, f"対象の確認に失敗: {command[-1]} / {outcome}"))
@@ -46,6 +57,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             continue
         dependency, startup = outcome
         dependency.report(target=log_format.home_short(Path(command[-1])), tag=_TAG)
+        if not dependency.ok:
+            dependencies_ready = False
         if startup is not None:
             (logger.info if startup.ok else logger.warning)(log_format.format_status(_TAG, startup.message))
             if not startup.ok:
@@ -55,6 +68,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             failure="準備後の起動確認に失敗: " + ", ".join(failures),
             next_action="`update-dotfiles logs`の起動段階・標準エラーを確認し、`update-dotfiles`を再実行する",
         )
+    if dependencies_ready:
+        post_apply_cache.save("agents-server-startup", key)
     return post_apply_outcome.PostApplyOutcome()
 
 
@@ -66,13 +81,18 @@ class _StartupOutcome:
 
 async def _check_targets(
     commands: Sequence[Sequence[str]],
+    *,
+    skip_startup: bool = False,
 ) -> list[tuple[plugin_warmup.CommandOutcome, _StartupOutcome | None] | BaseException]:
     """独立rootの確認を並列に進め、1rootの失敗でも全対象を回収する。"""
 
     async def check(command: Sequence[str]) -> tuple[plugin_warmup.CommandOutcome, _StartupOutcome | None]:
         dependency = await plugin_warmup.check_command([*command, "--check-dependencies"])
-        startup = await _check_startup(command) if dependency.ok else None
-        return dependency, startup
+        if not dependency.ok:
+            return dependency, None
+        if skip_startup:
+            return dependency, _StartupOutcome(True, "コード・起動条件が同じためMCP起動確認を省略")
+        return dependency, await _check_startup(command)
 
     return await asyncio.gather(*(check(command) for command in commands), return_exceptions=True)
 

@@ -24,6 +24,7 @@ from pytools._internal import (
     common,
     deferred_updates,
     log_format,
+    post_apply_cache,
     post_apply_outcome,
 )
 
@@ -160,9 +161,7 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
     # user scope のバージョン辞書を取得
     installed = _extract_plugin_version_map(raw_data)
 
-    # directory 型登録が健全な環境では、dotfiles 実体からキャッシュへの同期を
-    # `plugin install` の再実行で毎回行う。`plugin update` は version 一致時 no-op になるため
-    # 採用不可 (chezmoi apply 環境での実測: 2026-04-20)。
+    # 同版の編集はplugin updateが反映しないため、内容差がある場合にinstallで同期する。
     is_directory_type = claude_marketplace.is_directory_type_registered()
 
     # 旧 GitHub 型が残存する環境では、インストール済みプラグインにバージョン不一致があるときだけ
@@ -198,9 +197,7 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
                 cache_check_names.append(name)
             else:
                 failed_operations.append(f"{name} (update)")
-        elif is_directory_type:
-            # directory 型登録が健全かつ version 一致の場合、dotfiles 側の編集を反映するため
-            # `plugin install` を再実行してキャッシュを最新化する。
+        elif is_directory_type and not _plugin_content_matches(dotfiles_root, name):
             logger.info(
                 log_format.format_status(name, f"最新 ({current or '不明'}) のため directory 型キャッシュを再同期"),
             )
@@ -213,6 +210,8 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
         else:
             logger.info(log_format.format_status(name, f"最新 ({current or '不明'})"))
             latest_count += 1
+            if is_directory_type:
+                cache_check_names.append(name)
 
     # CLI が成功終了しても、同じ version を既に導入済みと判定した場合はキャッシュが検証されない。
     # Claude Code が次回起動時に読む実体を確認し、欠落していれば 1 回だけ再インストールで修復する。
@@ -250,6 +249,22 @@ def _install_plugins() -> tuple[bool, list[str], int, int, bool]:
     # CLIの終了コードだけでなく、Claude Codeが次回起動時に読む実体を完了条件とする。
     _verify_target_plugins(target_versions, failed_operations)
     return external_changed or any_change, recommendations, disable_failed_count, artifact_failed_count, cache_deferred
+
+
+def _plugin_content_matches(root: Path, name: str) -> bool:
+    """marketplace原本と導入先の全配布内容を比べ、同版の編集や欠落も検出する。"""
+    marketplace = common.load_json_dict(root / ".claude-plugin" / "marketplace.json")
+    entries = marketplace.get("plugins") if marketplace is not None else None
+    if not isinstance(entries, list):
+        return False
+    source = next((item.get("source") for item in entries if isinstance(item, dict) and item.get("name") == name), None)
+    if not isinstance(source, str):
+        return False
+    original = (root / source).resolve()
+    installed = _plugin_cache_directory(name)
+    if not original.is_relative_to(root.resolve()) or not original.is_dir() or installed is None or not installed.is_dir():
+        return False
+    return post_apply_cache.fingerprint([original]) == post_apply_cache.fingerprint([installed])
 
 
 def _remove_unused_plugins() -> bool:
