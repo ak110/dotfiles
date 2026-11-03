@@ -8,10 +8,11 @@ import pytest
 from _test_helpers import (
     REPO_ROOT,
     direct_pytest_targets,
+    expanded_workflow_steps,
     load_workflow,
     workflow_jobs,
     workflow_mapping,
-    workflow_steps,
+    workflow_step_source,
 )
 
 
@@ -61,9 +62,9 @@ def test_pytest_steps_report_each_completed_test(workflow_data: dict[str, object
     簡略進捗は失敗した試験名をsession末尾の要約だけへ出力するため、時間上限やjobの停止で要約へ到達しないと特定できない。
     """
     commands = [
-        str(step["run"])
+        workflow_step_source(step)
         for job in workflow_jobs(workflow_data).values()
-        for step in workflow_steps(workflow_mapping(job))
+        for step in expanded_workflow_steps(workflow_mapping(job))
         if isinstance(step.get("run"), str)
     ]
     arguments = [parsed for command in commands if (parsed := _pytest_arguments(command)) is not None]

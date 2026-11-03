@@ -60,7 +60,7 @@
 
 - Linuxの配布設定: `.bashrc`のPATH追加行
 - Windowsの配布設定: `pytools/_internal/setup_bin_path.py`によるユーザーPATH追記
-- `.github/workflows/ci.yaml`の「主要ファイルの存在確認」ステップ
+- `.github/workflows/ci.yaml`から呼ぶ`scripts/ci_verify_linux.sh`・`scripts/ci_verify_windows.ps1`
 
 新しいOS別`run_*`スクリプトを追加する場合は`.chezmoiignore`にも除外エントリを追加。
 

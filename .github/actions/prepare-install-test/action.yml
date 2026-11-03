@@ -1,0 +1,21 @@
+name: prepare-install-test
+description: prepare-install-testの実処理
+runs:
+  using: composite
+  steps:
+    # ローカルactionを使い終えてからcheckoutを移し、uvのキャッシュ処理は移動後の作業場所で行う。
+    - name: chezmoi インストール
+      uses: ./dotfiles/.github/actions/install-chezmoi
+      with:
+        ssl-revoke-best-effort: ${{ runner.os == 'Windows' && 'true' || 'false' }}
+    - name: ~/dotfiles に配置
+      if: runner.os == 'Linux'
+      shell: bash
+      run: bash "$GITHUB_WORKSPACE/dotfiles/scripts/ci_place_linux.sh"
+    - name: ~/dotfiles に配置
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: '& "$env:GITHUB_WORKSPACE\dotfiles\scripts\ci_place_windows.ps1"'
+    - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      with:
+        working-directory: ${{ env.DOTFILES_DIR }}

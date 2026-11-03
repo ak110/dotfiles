@@ -336,6 +336,35 @@ def workflow_steps(job: dict[str, object]) -> list[dict[str, object]]:
     return [workflow_mapping(step) for step in value]
 
 
+def expanded_workflow_steps(job: dict[str, object]) -> list[dict[str, object]]:
+    """ローカルcompositeの呼出先まで検査対象をたどる。条件式の評価は行わない。"""
+    steps: list[dict[str, object]] = []
+    for step in workflow_steps(job):
+        uses = str(step.get("uses", ""))
+        if uses.startswith(("./.github/actions/", "./dotfiles/.github/actions/")):
+            action = REPO_ROOT / uses.removeprefix("./dotfiles/").removeprefix("./") / "action.yml"
+            data = workflow_mapping(yaml.load(action.read_text(encoding="utf-8"), Loader=yaml.BaseLoader))
+            steps.append(step)
+            steps.extend(expanded_workflow_steps(workflow_mapping(data["runs"])))
+        else:
+            steps.append(step)
+    return steps
+
+
+def workflow_step_source(step: dict[str, object]) -> str:
+    """CIが起動する固定のスクリプト参照を解決し、検証用に本文を返す。"""
+    command = str(step["run"])
+    if command.startswith(("python3 scripts/", "bash scripts/")):
+        return (REPO_ROOT / command.split()[1]).read_text(encoding="utf-8-sig")
+    if command.startswith('& "$env:DOTFILES_DIR\\scripts\\'):
+        filename = command.rsplit("\\", 1)[1].removesuffix('"')
+        return (REPO_ROOT / "scripts" / filename).read_text(encoding="utf-8-sig")
+    if command.startswith('bash "$DOTFILES_DIR/scripts/'):
+        filename = command.rsplit("/", 1)[1].removesuffix('"')
+        return (REPO_ROOT / "scripts" / filename).read_text(encoding="utf-8")
+    return command
+
+
 def workflow_jobs(workflow: dict[str, object]) -> dict[str, object]:
     return workflow_mapping(workflow["jobs"])
 
@@ -350,8 +379,8 @@ def load_workflow() -> dict[str, object]:
 def direct_pytest_targets(workflow: dict[str, object]) -> list[str]:
     targets: list[str] = []
     for value in workflow_jobs(workflow).values():
-        for step in workflow_steps(workflow_mapping(value)):
-            command = step.get("run")
+        for step in expanded_workflow_steps(workflow_mapping(value)):
+            command = workflow_step_source(step) if "run" in step else None
             if not isinstance(command, str) or "pytest" not in command.split():
                 continue
             tokens = shlex.split(command)

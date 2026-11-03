@@ -1,0 +1,16 @@
+name: ci-update-dotfiles-upgrade-windows
+description: ci-update-dotfiles-upgrade-windowsの実処理
+runs:
+  using: composite
+  steps:
+    - uses: ./dotfiles/.github/actions/prepare-install-test
+    - name: Mozilla予約タスクの停止
+      shell: pwsh
+      run: '& "$env:DOTFILES_DIR\scripts\ci_stop_mozilla_tasks.ps1"'
+    - name: 約3日前からの update-dotfiles 更新検証
+      shell: pwsh
+      working-directory: ${{ env.DOTFILES_DIR }}
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        # hosted runnerはjob終了時に破棄されるため、約1分を要する検証rootの削除を省く。
+        uv run --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR" --keep-verification-root

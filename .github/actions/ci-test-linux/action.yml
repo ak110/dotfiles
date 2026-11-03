@@ -1,0 +1,26 @@
+name: ci-test-linux
+description: ci-test-linuxの実処理
+runs:
+  using: composite
+  steps:
+    - name: 一時領域を作業ディスクへ置く
+      # Ubuntu runnerの/tmpはquota付きtmpfsのため、大容量の導入・更新検証を作業ディスクへ置く。
+      run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+      shell: bash
+    - uses: ./dotfiles/.github/actions/prepare-install-test
+    - name: PowerShell + PSScriptAnalyzer の確認
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSVersionTable.PSVersion
+        Import-Module PSScriptAnalyzer -ErrorAction Stop -PassThru
+    - name: 約3日前からの update-dotfiles 更新検証
+      working-directory: ${{ env.DOTFILES_DIR }}
+      run: uv run --script scripts/check_update_dotfiles_upgrade.py --platform linux --repo "$DOTFILES_DIR" --keep-verification-root
+      shell: bash
+    - name: install.sh 実行
+      run: ~/dotfiles/install.sh
+      shell: bash
+    - name: 主要ファイルの存在確認
+      run: bash "$DOTFILES_DIR/scripts/ci_verify_linux.sh"
+      shell: bash
