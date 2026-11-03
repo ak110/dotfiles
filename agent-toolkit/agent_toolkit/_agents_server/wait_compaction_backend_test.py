@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import claude_agent_sdk
 import pytest
 
-from agent_toolkit._agents_server import codex, manager, state, wait_compaction
+from agent_toolkit._agents_server import claude, codex, manager, state, wait_compaction
 from agent_toolkit._testing.agents_server_support import (
     FakeCodexClient,
     QueueClaudeClient,
@@ -50,13 +50,32 @@ def _partial_wait_clock(monkeypatch):
     return started, changed, elapsed, observers
 
 
+@pytest.mark.parametrize(
+    "boundary,change",
+    [(boundary, change) for boundary in ("timer", "usage", "enqueue") for change in ("partial", "finished", "new_turn")]
+    + [("delivery", "partial"), ("delivery", "finished")],
+)
 @pytest.mark.asyncio
-async def test_claude_partial_completion_keeps_a_compaction_reservation(tmp_path, monkeypatch, partial_wait_clock):
-    """2件のバックグラウンドタスクのうち1件だけが終わっても、無言で続く待機を公開/compactへ接続する。"""
+async def test_claude_wait_changes_at_compaction_boundaries(tmp_path, monkeypatch, partial_wait_clock, boundary, change):
+    """予約・照会・所有キューの各待機点で、同じturnの残存待機だけを公開/compactへ接続する。"""
     started, changed, elapsed, observers = partial_wait_clock
+    suspended, release = asyncio.Event(), asyncio.Event()
+    get_command = claude._CommandChannel.get
+
+    async def command_at_boundary(channel):
+        command = await get_command(channel)
+        if boundary == "delivery" and command[0] == "compact":
+            suspended.set()
+            await release.wait()
+        return command
+
+    monkeypatch.setattr(claude._CommandChannel, "get", command_at_boundary)
 
     class Client(QueueClaudeClient):
         async def get_context_usage(self):
+            if boundary == "usage" and observers and asyncio.current_task() is observers[0]._task:
+                suspended.set()
+                await release.wait()
             return {"totalTokens": 400_000, "rawMaxTokens": 1_000_000}
 
     tasks = [
@@ -77,24 +96,44 @@ async def test_claude_partial_completion_keeps_a_compaction_reservation(tmp_path
     async with claude_manager(monkeypatch, client) as (owner, backend):
         session = await backend.start("複数の処理を待つ", str(tmp_path))
         await asyncio.wait_for(started.wait(), 2)
-        await client.messages.put(
-            claude_agent_sdk.TaskNotificationMessage(
-                "task_notification",
-                {},
-                "short",
-                "completed",
-                "",
-                "終了",
-                "short-ended",
-                session.session_id,
-            )
-        )
-        await asyncio.wait_for(changed.wait(), 2)
+        reservation = observers[0]._task
+        enqueue = observers[0]._enqueue
+
+        async def enqueue_at_boundary(key):
+            suspended.set()
+            await release.wait()
+            return await enqueue(key)
+
+        if boundary == "enqueue":
+            observers[0]._enqueue = enqueue_at_boundary
+        if boundary != "timer":
+            elapsed.set()
+            await asyncio.wait_for(suspended.wait(), 2)
+        if change == "new_turn":
+            await asyncio.wait_for(backend.send_message(session, "新しいturnを始める"), 2)
+        else:
+            for task in ("short", "long") if change == "finished" else ("short",):
+                await client.messages.put(
+                    claude_agent_sdk.TaskNotificationMessage(
+                        "task_notification", {}, task, "completed", "", "終了", f"{task}-ended", session.session_id
+                    )
+                )
+            await asyncio.wait_for(changed.wait(), 2)
+            if change == "finished":
+                async with asyncio.timeout(2):
+                    while session.live_tasks:
+                        await asyncio.sleep(0)
         elapsed.set()
-        await asyncio.wait_for(asyncio.shield(observers[0]._task), 2)
-        assert client.queries.count("/compact") == 1
-        assert (await owner.show_session(session.session_id))["result_held"]
-        assert set(session.live_tasks) == {"long"}
+        release.set()
+        await asyncio.wait_for(asyncio.gather(reservation, return_exceptions=True), 2)
+        # キュー受付後に予約taskが先に終わる場合も、所有側の処理結果まで検収する。
+        async with asyncio.timeout(2):
+            while boundary == "delivery" and client.queries.count("/compact") == 0 and change == "partial":
+                await asyncio.sleep(0)
+        assert client.queries.count("/compact") == (1 if change == "partial" else 0)
+        if change == "partial":
+            assert (await owner.show_session(session.session_id))["result_held"]
+            assert set(session.live_tasks) == {"long"}
 
 
 @pytest.mark.asyncio

@@ -15,17 +15,21 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.compaction")
 
 
 def wait_key(session: SessionState) -> str | None:
-    """同じ背景waitがターン間で続く場合だけ、その識別子を返す。"""
+    """有効な背景待機をエンジンとturnで識別し、対象の増減では同一性を変えない。
+
+    予約・使用量照会・所有キューのawait中にも対象集合は変わる。
+    配送側もこの判定を使い、同一turnに対象が残る間は同じ予約を有効とする。
+    """
     if session.terminal or session.interrupt_requested or not resume_waits.is_background_completion_wait(session):
         return None
     if session.engine == "claude":
         children = session.live_child_session_ids | session.live_tasks.keys()
         if session.cli_turn_state != "idle" or not children:
             return None
-        return json.dumps(["claude", session.turn_seq, *sorted(children)])
+        return json.dumps(["claude", session.turn_seq])
     if session.engine == "codex" and session.turn_completed:
         children = session.live_child_session_ids | session.codex_live_subagent_thread_ids | session.live_tasks.keys()
-        return json.dumps(["codex", session.turn_seq, *sorted(children)]) if children else None
+        return json.dumps(["codex", session.turn_seq]) if children else None
     return None
 
 
@@ -44,7 +48,6 @@ class WaitCompaction:
         self._sleep = sleep
         self._task: asyncio.Task[None] | None = None
         self._task_key: str | None = None
-        self._task_turn_seq: int | None = None
         self._tasks: set[asyncio.Task[None]] = set()
         self._used: set[str] = set()
         self._paused = False
@@ -64,29 +67,22 @@ class WaitCompaction:
         key = wait_key(session)
         if self._task is not None and not self._task.done():
             # 同じturnの一部終了で待機時間を延ばさず、配送開始後の圧縮はbackendに所有させる。
-            if (key is not None and session.turn_seq == self._task_turn_seq) or self._task_key in self._used:
+            if (key is not None and key == self._task_key) or self._task_key in self._used:
                 return
             self._task.cancel()
             self._task = None
         if key is None or key in self._used:
             return
         self._task_key = key
-        self._task_turn_seq = session.turn_seq
-        self._task = asyncio.create_task(self._compact(session, key, turn_seq=session.turn_seq))
+        self._task = asyncio.create_task(self._compact(session, key))
         self._tasks.add(self._task)
         self._task.add_done_callback(self._tasks.discard)
 
-    async def _compact(self, session: SessionState, key: str, *, turn_seq: int) -> None:
+    async def _compact(self, session: SessionState, key: str) -> None:
         try:
             await self._sleep(60)
-            if asyncio.current_task() is not self._task or session.turn_seq != turn_seq:
+            if asyncio.current_task() is not self._task or wait_key(session) != key:
                 return
-            # 子threadの終了通知だけでは再観測されない場合も、同じturnの残る待機を確認する。
-            current_key = wait_key(session)
-            if current_key is None or current_key in self._used:
-                return
-            key = current_key
-            self._task_key = key
             usage = await self._get_usage()
             tokens = context_usage.valid_number(usage.get("totalTokens"))
             window = context_usage.valid_number(usage.get("rawMaxTokens"))
