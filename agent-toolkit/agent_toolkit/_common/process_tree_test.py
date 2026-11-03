@@ -186,14 +186,20 @@ def test_stop_process_tree_reclaims_descendant_started_after_first_listing(tmp_p
     ],
     ids=["suspend-denied-and-survives", "suspend-denied-then-stopped", "vanished"],
 )
-def test_stop_tree_distinguishes_suspend_failure_from_vanished_target(spawn_parent, monkeypatch, failure, survives, expected):
+def test_stop_tree_distinguishes_suspend_failure_from_vanished_target(
+    tmp_path: pathlib.Path, monkeypatch, failure, survives, expected
+):
     """一時停止できず資源を保持したまま残る対象だけを未確定として報告し、終了できた対象と消滅した対象は正常とする。
 
     Windowsでは終了中のプロセスの一時停止がAccessDeniedになるため、一時停止の失敗だけでは未確定にしない。
     """
-    parent = spawn_parent()
-    root = psutil.Process(parent.pid)
-    descendants = process_tree.collect_descendants(parent.pid)
+    with _reporting_root(tmp_path) as root:
+        _check_suspend_failure(root, monkeypatch, failure, survives, expected)
+
+
+def _check_suspend_failure(root: psutil.Process, monkeypatch, failure, survives, expected) -> None:
+    parent = root
+    descendants = root.children(recursive=True)
     original_suspend, original_terminate, original_kill = (
         psutil.Process.suspend,
         psutil.Process.terminate,
@@ -276,10 +282,13 @@ def test_stop_tree_does_not_leave_suspended_targets_on_exception(spawn_parent, m
     assert not _still_holding_resources(targets)
 
 
-def test_stop_tree_keeps_processes_outside_the_tree_and_the_excluded_root(spawn_parent, tmp_path: pathlib.Path):
-    """起点を除く指定では起点を一時停止も終了もせず、木の外のプロセスも維持して、子孫だけを終了させる。"""
-    # Windowsの仮想環境の`python.exe`は本体を子として起動する中継役であり、`Popen.pid`は本体の親になる。
-    # 起点を除く契約を本体で確かめるため、本体に自身のPIDを書かせて起点にする。
+@contextlib.contextmanager
+def _reporting_root(tmp_path: pathlib.Path) -> Generator[psutil.Process]:
+    """子を1つ起動したPython本体を、本体自身が申告したPIDで返す。
+
+    Windowsの仮想環境の`python.exe`は本体を子として起動する中継役であり、`Popen.pid`は本体の親になる。
+    中継役は本体の終了に合わせて終了するため、起点そのものの扱いを確かめる試験は本体を起点にする。
+    """
     marker = tmp_path / "root.pid"
     source = (
         "import os, pathlib, subprocess, sys, time; "
@@ -288,15 +297,25 @@ def test_stop_tree_keeps_processes_outside_the_tree_and_the_excluded_root(spawn_
         f"pathlib.Path({str(marker)!r} + '.tmp').write_text(str(os.getpid())); "
         f"os.replace({str(marker)!r} + '.tmp', {str(marker)!r}); time.sleep(120)"
     )
-    other = spawn_parent()
     with process_tree.process_scope([sys.executable, "-c", source]):
         _wait_for_ready_marker(marker)
         root = psutil.Process(int(marker.read_text()))
         deadline = time.monotonic() + 30.0
         while not root.children(recursive=True) and time.monotonic() < deadline:
             time.sleep(0.05)
+        assert root.children(recursive=True), "起点の子プロセス起動を確認できませんでした"
+        try:
+            yield root
+        finally:
+            with contextlib.suppress(psutil.Error, OSError):
+                root.kill()
+
+
+def test_stop_tree_keeps_processes_outside_the_tree_and_the_excluded_root(spawn_parent, tmp_path: pathlib.Path):
+    """起点を除く指定では起点を一時停止も終了もせず、木の外のプロセスも維持して、子孫だけを終了させる。"""
+    other = spawn_parent()
+    with _reporting_root(tmp_path) as root:
         descendants = root.children(recursive=True)
-        assert descendants
         result = process_tree.stop_tree(root, include_root=False, timeout=1.0)
         assert root.pid not in {item.pid for item in result.targets}
         assert not _still_holding_resources(descendants)
