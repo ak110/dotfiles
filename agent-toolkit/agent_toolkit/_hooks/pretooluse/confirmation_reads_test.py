@@ -15,7 +15,8 @@ import shlex
 import pytest
 
 from agent_toolkit._hooks import work_contract
-from agent_toolkit._testing.pretooluse_support import _additional_context, _run, _run_posttooluse
+from agent_toolkit._testing.document_delivery import run_hook
+from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 
 _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
 _APPROVAL = _SKILL_REFERENCES / "approval-scope.md"
@@ -128,7 +129,7 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
                     "tool_input": call["input"],
                     "tool_response": {"stdout": block["content"], "exit_code": 1 if block.get("is_error") else 0},
                 }
-                assert _run_posttooluse(event, {}).returncode == 0
+                assert run_hook("posttooluse", event, {}).returncode == 0
     return payload
 
 

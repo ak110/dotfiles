@@ -3,23 +3,31 @@
 report-completionの起動証拠（`termination_evidence.py`）と、Antigravityの`read_file`をSkill観測へ渡す処理
 （`antigravity.py`）が使う。パスの文字列だけを根拠にせず、読取の結果が資料の本文を返したことを確かめる。
 起動証拠は範囲指定の読取も受理するため、本モジュールは全文か部分かを区別しない。
-読込案内の取得状態は`pretooluse/read_delivery.py`が読取操作の成功から記録する。
+読込案内の取得状態は、同じ主体へ配送された本文・必要範囲・受信版から判定する。
 """
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import functools
 import hashlib
 import json
 import pathlib
+import re
 from collections.abc import Callable, Sequence
 
 lazy from agent_toolkit._common import read_triggers
-lazy from agent_toolkit._common.plugin_roots import resolve_plugin_root, sibling_plugin_root
+lazy from agent_toolkit._common.plugin_roots import (
+    PluginRootError,
+    codex_plugin_source_root,
+    resolve_plugin_root,
+    sibling_plugin_root,
+)
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._hooks import plugin_resources
 
 _READ_PROGRAMS = frozenset({"cat", "sed", "head", "nl", "less", "more", "bat", "type", "get-content", "gc"})
@@ -136,7 +144,7 @@ def requires_skill_invocation(
     cwd: str | pathlib.Path | None = None,
     owner: Callable[[pathlib.Path], pathlib.Path | None] = document_owner,
 ) -> bool:
-    """`Skill`起動だけを全文取得として認める資料かを返す。"""
+    """本文参照と別に、`Skill`起動の証拠を要求する資料かを返す。"""
     return skill_loadable(path, cwd=cwd, owner=owner) and read_triggers.skill_invocation_required(
         path, host=host, subject=subject
     )
@@ -225,11 +233,221 @@ def response_text(response: object) -> str | None:
 READ_TRIGGER_PREFIX = "read-trigger:"
 """読込案内の取得記録のキーの接頭辞。キーは`read-trigger:<絶対パス>#sha256:<内容ハッシュ>`の形をとる。"""
 
-# 読込状態は主体と本文の変更を区別する。区間の被覆や応答本文の一致は判定しない。
+RECEIPT_PREFIX = "received-document:"
+"""本文を保存せず、論理資料・範囲・受信版を主体別に保持する。"""
+
+
+@functools.cache
+def _repository_identity(root: pathlib.Path) -> str:
+    result = git_command.run(
+        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    return str(pathlib.Path(result.stdout.strip()).resolve()) if result.returncode == 0 else str(root)
+
+
+def logical_document(path: pathlib.Path) -> str:
+    """実在manifestとGit共通ディレクトリで裏付けられる配布元だけを統合する。"""
+    path = path.resolve()
+    owner = document_owner(path)
+    repository = next((parent for parent in path.parents if (parent / ".git").exists()), None)
+    if repository is None and owner is not None:
+        source = _distribution_source(owner, document_plugin(str(path)))
+        if source is not None:
+            repository = next((parent for parent in (source, *source.parents) if (parent / ".git").exists()), source)
+    if repository is not None:
+        origin = _repository_identity(repository)
+        relative = path.relative_to(owner if owner else repository).as_posix()
+        return json.dumps([origin, document_plugin(str(path)) if owner else "project", relative], ensure_ascii=False)
+    # 出所を確認できない配布cacheや同名ファイルを、名前だけで統合しない。
+    return str(path)
+
+
+@functools.cache
+def _distribution_source(owner: pathlib.Path, name: str) -> pathlib.Path | None:
+    try:
+        return codex_plugin_source_root(owner, name)
+    except PluginRootError:
+        # 出所を取得できない実体は別資料として扱う。本文そのものの一致による再利用は保つ。
+        return None
+
+
+def receipt_key(metadata: dict) -> str:
+    """受信した範囲の識別子を既存の主体別マッピングへ格納する。"""
+    return RECEIPT_PREFIX + json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def receipt_candidates(
+    targets: Sequence[read_triggers.ReadTarget], *, include_headings: bool = True, bodies: dict[pathlib.Path, str] | None = None
+) -> list[dict]:
+    """既知資料の現在の範囲digestを作る。未知ファイル全体や本文の写しは保存しない。"""
+    candidates = []
+    for path in dict.fromkeys(target.path for target in targets):
+        if not path.is_file():
+            continue
+        try:
+            text = bodies[path] if bodies is not None and path in bodies else path.read_bytes().decode("utf-8")
+        except OSError, UnicodeError:
+            # 明示されたReadには画像なども含まれる。本文候補は読めたUTF-8資料に限る。
+            continue
+        lines = text.splitlines(keepends=True)
+        logical = logical_document(path)
+        version = bytes_fingerprint(text.encode("utf-8"))
+        headings = [target.heading for target in targets if target.path == path]
+        # 選択前の全文取得も、後で必要になる実在節へ再利用できるようにする。
+        headings.extend(
+            match[1]
+            for _number, line, visible in read_triggers.document_lines(text)
+            if include_headings and visible and (match := re.fullmatch(r"#{1,6} (.+?)[ \t]*", line))
+        )
+        for heading in dict.fromkeys(["", *headings]):
+            target = read_triggers.ReadTarget(path, heading)
+            try:
+                if path.name == "Makefile" and heading.startswith("make:"):
+                    parts = [target.body(text).rstrip("\n")]
+                else:
+                    ranges = target.line_ranges(text) if heading else ((1, len(lines)),)
+                    parts = ["".join(lines[start - 1 : end]).rstrip("\n") for start, end in ranges]
+            except ValueError:
+                continue
+            if not parts or any(not part for part in parts):
+                continue
+            candidates.append(
+                {
+                    "path": str(path),
+                    "logical": logical,
+                    "heading": heading,
+                    "version": version,
+                    "parts": [[bytes_fingerprint(part.encode("utf-8")), len(part), len(part.splitlines())] for part in parts],
+                }
+            )
+    return candidates
+
+
+def returned_texts(response: object) -> list[str]:
+    """モデル向け出力の本文を取り出し、別ブロック間を連結して欠落を埋めない。"""
+    if isinstance(response, list):
+        return [text for part in response for text in returned_texts(part)]
+    if isinstance(response, dict):
+        if "type" in response and response["type"] not in {"text", "input_text", "output_text"}:
+            return []
+        if isinstance(response.get("file"), dict):
+            return returned_texts(response["file"].get("content"))
+        if "stdout" in response or "stderr" in response:
+            return [text for key in ("stdout", "stderr") for text in returned_texts(response.get(key))]
+        for key in ("stdout", "output", "text"):
+            if key in response:
+                return returned_texts(response[key])
+        return []
+    if not isinstance(response, str) or not response:
+        return []
+    try:
+        decoded = json.loads(response)
+    except ValueError:
+        return [response]
+    return [response, *returned_texts(decoded)] if isinstance(decoded, (dict, list)) else [response]
+
+
+def received_candidates(candidates: Sequence[dict], texts: Sequence[str]) -> list[dict]:
+    """実出力中に完全に含まれる既知範囲だけを受信版として返す。
+
+    digestと文字数を使うため、読取後に実体が更新されても旧版を新版へ付け替えない。
+    JSONの文字列として配送されるexec出力は、文字列をデコードできる連続部分も調べる。
+    """
+    decoded = list(texts)
+    for text in texts:
+        if "\\n" in text:
+            decoded.append(re.sub(r'\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})', lambda match: json.loads('"' + match[0] + '"'), text))
+        # 外側で中間を省略されたJSONでも、残った各文字列断片の境界を保つ。
+        for fragment in re.findall(r'"(?:[^"\\]|\\.)*"', text):
+            with contextlib.suppress(ValueError):
+                decoded.append(json.loads(fragment))
+    windows: dict[tuple[int, int], set[str]] = {}
+    indexed = []
+    for text in decoded:
+        try:
+            text.encode("utf-8")
+        except UnicodeError:
+            continue
+        lines = text.splitlines(keepends=True)
+        lengths = [0]
+        trailing = [0]
+        for line in lines:
+            lengths.append(lengths[-1] + len(line))
+            trailing.append(trailing[-1] + len(line) if not line.rstrip("\n") else len(line) - len(line.rstrip("\n")))
+        indexed.append((lines, lengths, trailing))
+    result = []
+    complete = set()
+    for candidate in candidates:
+        source = (candidate["path"], candidate["version"])
+        if source in complete:
+            result.append(candidate)
+            continue
+        matches = True
+        for digest, size, count in candidate["parts"]:
+            key = (size, count)
+            if key not in windows:
+                values = set()
+                for lines, lengths, trailing in indexed:
+                    for start in range(len(lines) - count + 1):
+                        end = start + count
+                        length = lengths[end] - lengths[start]
+                        if length - min(length, trailing[end]) == size:
+                            value = "".join(lines[start:end]).rstrip("\n")
+                            values.add(bytes_fingerprint(value.encode("utf-8")))
+                windows[key] = values
+            if digest not in windows[key]:
+                matches = False
+                break
+        if matches:
+            result.append(candidate)
+            # 同じ版の全文が返れば、非連続なMakefile targetを含む既知範囲も全て含まれる。
+            if not candidate["heading"]:
+                complete.add(source)
+    return result
+
+
+def acquisition_state(records: dict, target: read_triggers.ReadTarget, agent: str) -> str:
+    """現在範囲の取得・旧版取得後の更新・未取得を共通の意味で返す。"""
+    raw = target.path.read_bytes()
+    if target.heading:
+        try:
+            target.body(raw.decode("utf-8"))
+        except ValueError:
+            return "missing"
+    if content_ready(records, bytes_fingerprint(raw), agent):
+        return "current"
+    current = next(
+        (item for item in receipt_candidates([target], include_headings=False) if item["heading"] == target.heading), None
+    )
+    if current is None:
+        return "missing"
+    receipts = [
+        json.loads(key.removeprefix(RECEIPT_PREFIX))
+        for key, actors in records.items()
+        if key.startswith(RECEIPT_PREFIX) and isinstance(actors, list) and agent in actors
+    ]
+    known = {tuple(part) for item in receipts for part in item["parts"]}
+    if all(tuple(part) in known for part in current["parts"]):
+        return "current"
+    if any(item["logical"] == current["logical"] and item["heading"] == current["heading"] for item in receipts):
+        return "updated"
+    # 旧形式の証拠は保持する。新版の受信記録へ変換せず、全文の更新として区別する。
+    if not target.heading and any(
+        key.startswith(READ_TRIGGER_PREFIX + str(target.path) + "#sha256:") and agent in actors
+        for key, actors in records.items()
+        if isinstance(actors, list)
+    ):
+        return "updated"
+    return "missing"
 
 
 def content_fingerprint(path: pathlib.Path) -> str:
-    """資料の同一性を表す内容ハッシュを返す。"""
+    """資料の現在版を表す内容ハッシュを返す。"""
     return bytes_fingerprint(path.read_bytes())
 
 
@@ -254,7 +472,7 @@ def reference_only(operations: Sequence[Sequence[str]]) -> bool:
 
 
 def content_ready(records: dict, fingerprint: str, agent: str) -> bool:
-    """同じ主体が同じ内容ハッシュの資料への読取が成功した記録があるかを、記録時のパスを問わずに返す。"""
+    """同じ主体の全文受信版を、記録時のパスを問わずに照会する。旧形式のキーも保持する。"""
     suffix = "#sha256:" + fingerprint
     return any(
         key.startswith(READ_TRIGGER_PREFIX) and key.endswith(suffix) and isinstance(actors, list) and agent in actors

@@ -78,7 +78,7 @@ def test_generated_root_keeps_logical_namespace_and_relative_base(generated, mon
 
 
 @pytest.mark.parametrize("exit_code", [0, 1])
-def test_generated_section_observes_native_read_success(generated, monkeypatch, exit_code):
+def test_generated_section_observes_received_body(generated, monkeypatch, exit_code):
     toolkit, _native, full = generated
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", toolkit)
     target = read_triggers.ReadTarget(full, "必要節")
@@ -98,7 +98,7 @@ def test_generated_section_observes_native_read_success(generated, monkeypatch, 
     )
     event = {
         "session_id": "agy-full",
-        "turn_id": "turn",
+        "runtime": "agy",
         "cwd": str(toolkit.parent),
         "tool_name": "Bash",
         "tool_input": {"command": command},
@@ -107,5 +107,5 @@ def test_generated_section_observes_native_read_success(generated, monkeypatch, 
     assert not read_delivery.target_ready({}, target, "main")
     assert _run_hook_in_process("posttooluse", event).returncode == 0
     records = memory.get(read_delivery.rules_context.OPERATION_SKILL_READY_KEY, {})
-    # 必要範囲への到達は担当が確認し、hookは生成資料でも読取操作の成否を記録する。
-    assert read_delivery.target_ready(records, target, "main") is (exit_code == 0)
+    assert read_delivery.target_ready(records, target, "main")
+    assert not read_delivery.target_ready(records, read_triggers.ReadTarget(full), "main")

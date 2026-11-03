@@ -7,7 +7,8 @@ import pytest
 from agent_toolkit._common import read_triggers, session_state
 from agent_toolkit._hooks import document_reads, rules_context
 from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, denial_reason
+from agent_toolkit._testing.document_delivery import run_hook
+from agent_toolkit._testing.pretooluse_support import denial_reason
 
 
 def _arrange(tmp_path, monkeypatch, host):
@@ -20,7 +21,7 @@ def _arrange(tmp_path, monkeypatch, host):
     if host == "codex":
         payload["turn_id"] = "turn"
     operation = {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "output.py"), "content": "x=1"}}
-    first = _run_hook_in_process("pretooluse", operation)
+    first = run_hook("pretooluse", operation)
     assert first.returncode == 0 and not first.stderr
     assert str(reference) in first.stdout
     assert "permissionDecisionReason" not in first.stdout
@@ -55,7 +56,7 @@ def test_diagnostic_save_preserves_unread_write_guard(tmp_path, monkeypatch, hos
     """既存証拠への追記も許可し、取得状態と次の通常再書込の拒否は保持する。"""
     payload, operation, reference = _arrange(tmp_path, monkeypatch, host)
     before = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
-    result = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Bash", "tool_input": {"command": command}})
+    result = run_hook("pretooluse", {**payload, "tool_name": "Bash", "tool_input": {"command": command}})
     assert result.returncode == 0 and not result.stderr
     specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
     assert specific.get("permissionDecision") != "deny"
@@ -63,8 +64,8 @@ def test_diagnostic_save_preserves_unread_write_guard(tmp_path, monkeypatch, hos
     after = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
     assert after == before
     assert not document_reads.content_ready(after, document_reads.content_fingerprint(reference), "main")
-    assert str(reference) in denial_reason(_run_hook_in_process("pretooluse", operation))
-    read = _run_hook_in_process(
+    assert str(reference) in denial_reason(run_hook("pretooluse", operation))
+    read = run_hook(
         "posttooluse",
         {
             **payload,
@@ -74,7 +75,7 @@ def test_diagnostic_save_preserves_unread_write_guard(tmp_path, monkeypatch, hos
         },
     )
     assert read.returncode == 0 and not read.stderr
-    resumed = _run_hook_in_process("pretooluse", operation)
+    resumed = run_hook("pretooluse", operation)
     assert resumed.returncode == 0 and not resumed.stderr
     assert "permissionDecisionReason" not in resumed.stdout
 
@@ -110,7 +111,7 @@ def test_diagnostic_save_preserves_unread_write_guard(tmp_path, monkeypatch, hos
 def test_uncertain_or_mixed_save_keeps_guard(tmp_path, monkeypatch, command):
     """診断名だけで通常書込・動的起動・自動修正を免除しない。"""
     payload, _operation, reference = _arrange(tmp_path, monkeypatch, "codex")
-    result = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Bash", "tool_input": {"command": command}})
+    result = run_hook("pretooluse", {**payload, "tool_name": "Bash", "tool_input": {"command": command}})
     assert str(reference) in denial_reason(result)
 
 
@@ -119,12 +120,12 @@ def test_diagnostic_notice_does_not_claim_unread_write_warning(tmp_path, monkeyp
     payload, operation, reference = _arrange(tmp_path, monkeypatch, "codex")
     session_state.update_state(payload["session_id"], lambda _state: {})
     diagnostic = {**payload, "tool_name": "Bash", "tool_input": {"command": "git diff >> evidence.log"}}
-    result = _run_hook_in_process("pretooluse", diagnostic)
+    result = run_hook("pretooluse", diagnostic)
     assert result.returncode == 0 and not result.stderr
     records = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
     assert not any(key.startswith("read-guidance:") for key in records)
     assert not document_reads.content_ready(records, document_reads.content_fingerprint(reference), "main")
-    first_write = _run_hook_in_process("pretooluse", operation)
+    first_write = run_hook("pretooluse", operation)
     assert first_write.returncode == 0 and not first_write.stderr
     assert str(reference) in first_write.stdout and "permissionDecisionReason" not in first_write.stdout
-    assert str(reference) in denial_reason(_run_hook_in_process("pretooluse", operation))
+    assert str(reference) in denial_reason(run_hook("pretooluse", operation))

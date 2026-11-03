@@ -27,8 +27,10 @@ from agent_toolkit._hooks.pretooluse.read_delivery import (
     _project_skill_rows,
 )
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
+from agent_toolkit._testing.document_delivery import observe_received
+from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
 from agent_toolkit._testing.git_repository import init_repository, run_git
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, denial_reason
+from agent_toolkit._testing.pretooluse_support import denial_reason
 
 
 def _persisted_replacement(body: str) -> str:
@@ -133,7 +135,7 @@ def test_public_hook_scope_reaches_dynamic_targets_and_document_read_consumers(t
         returned = document_reads.body_returned(
             "writing-standards", "references/writing.md", "# 共通基準\n内容\n", plugin="agent-basics", project=tmp_path
         )
-        read_delivery.observe(payload, "Read", payload["tool_input"], session)
+        observe_received(payload, "Read", payload["tool_input"], session)
         seen.append((ReadTarget(reference) in project, ReadTarget(author) in artifact, returned))
         return 0
 
@@ -296,7 +298,7 @@ def test_pending_documents_preserve_the_own_handoff_exemption(tmp_path, monkeypa
     notice_module.record_delivery("\n".join(mixed.notices))
     assert read_delivery.deliver(payload, "apply_patch", {"command": patch}, "test").block is not None
     assert not _guidance(read_delivery.deliver(payload, "Write", {"file_path": str(handoff), "content": "到達点"}, "test"))
-    read_delivery.observe({**payload, "tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
+    observe_received({**payload, "tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
     assert not _guidance(read_delivery.deliver(payload, "apply_patch", {"command": patch}, "test"))
 
 
@@ -326,7 +328,7 @@ def test_whole_contract_body_and_compaction_use_the_resolved_input(tmp_path, mon
         assert _guidance(first) is None
     else:
         assert str(contract) in _notice_body(first)
-    read_delivery.observe({**payload, "tool_response": contract.read_text()}, "Read", {"file_path": str(contract)}, "test")
+    observe_received({**payload, "tool_response": contract.read_text()}, "Read", {"file_path": str(contract)}, "test")
     assert not _guidance(read_delivery.deliver(payload, "Judge", {}, "test"))
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
     rules_context.reset_main_operation_skill_ready("test")
@@ -439,7 +441,7 @@ def test_public_hook_delivers_main_work_contract_and_reuses_it_after_read(tmp_pa
     assert not _guidance(read_delivery.deliver({}, "Skill", {"skill": "report-completion"}, "test"))
     first = _notice_body(read_delivery.deliver({}, "Inspect", {}, "test"))
     assert str(contract) in first
-    read_delivery.observe({"tool_response": contract.read_text()}, "Read", {"file_path": str(contract)}, "test")
+    observe_received({"tool_response": contract.read_text()}, "Read", {"file_path": str(contract)}, "test")
     assert not _guidance(read_delivery.deliver({}, "Skill", {"skill": "report-completion"}, "test"))
 
 
@@ -776,15 +778,15 @@ def test_resolved_project_skill_delivers_startup_and_later_conditions(tmp_path, 
     assert str(initial) in _notice_body(first)
     assert any(str(skill) in key for key in memory[rules_context.OPERATION_SKILL_READY_KEY])
     assert "言語を選ぶ初動基準" not in _notice_body(first)
-    read_delivery.observe({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
+    observe_received({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
     assert not _guidance(read_delivery.deliver(payload, tool, inputs, "test"))
-    read_delivery.observe({**payload, "tool_response": skill.read_text()}, "Read", {"file_path": str(skill)}, "test")
+    observe_received({**payload, "tool_response": skill.read_text()}, "Read", {"file_path": str(skill)}, "test")
     assert not _guidance(read_delivery.deliver(payload, tool, inputs, "test"))
     if not codex:
         assert not read_delivery.target_ready(
             memory[rules_context.OPERATION_SKILL_READY_KEY], ReadTarget(skill), "main", invocation=True
         )
-        read_delivery.observe({**payload, "tool_response": "起動成功"}, "Skill", {"skill": "language"}, "test")
+        observe_received({**payload, "tool_response": "起動成功"}, "Skill", {"skill": "language"}, "test")
         assert read_delivery.target_ready(
             memory[rules_context.OPERATION_SKILL_READY_KEY], ReadTarget(skill), "main", invocation=True
         )
@@ -805,7 +807,7 @@ def test_missing_scope_does_not_become_ready_from_a_whole_file_read(tmp_path, mo
     source = tmp_path / "SKILL.md"
     rows = [ReadTrigger(source, 1, "操作", ("tool:Do",), (path,), ("存在しない節",))]
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
-    read_delivery.observe({"tool_response": path.read_text(encoding="utf-8")}, "Read", {"file_path": str(path)}, "test")
+    observe_received({"tool_response": path.read_text(encoding="utf-8")}, "Read", {"file_path": str(path)}, "test")
     decision = read_delivery.deliver({}, "Do", {}, "test")
     assert "見出しを一意に解決できない" in _notice_body(decision)
     assert "必須基準0" not in _notice_body(decision)
@@ -826,7 +828,7 @@ def test_review_reference_arrives_after_successful_prepare_result(tmp_path, monk
     row = ReadTrigger(tmp_path / "SKILL.md", 1, "判断", ("tool:Do",), (), selector="review-reference")
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     response = body if mode == "direct" else "保存先: " + str(output)
-    read_delivery.observe(
+    observe_received(
         {"tool_response": {"stdout": response, "exit_code": 0}},
         "Bash",
         {"command": "atk run-script session-review-prepare --"},
@@ -835,21 +837,23 @@ def test_review_reference_arrives_after_successful_prepare_result(tmp_path, monk
     if mode != "direct":
         assert "prepare" in _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
         if mode == "saved":
-            read_delivery.observe(
+            observe_received(
                 {"tool_response": {"stdout": body, "exit_code": 0}}, "Bash", {"command": f"cat -- {output}"}, "test"
             )
         else:
             lines = body.splitlines(keepends=True)
             for start, end in ((1, 2), (3, len(lines))):
-                read_delivery.observe(
+                observe_received(
                     {"tool_response": {"stdout": "".join(lines[start - 1 : end]), "exit_code": 0}},
                     "Bash",
                     {"command": f"sed -n '{start},{end}p' -- {output}"},
                     "test",
                 )
+            assert "prepare" in _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
+            observe_received({"tool_response": body}, "Read", {"file_path": str(output)}, "test")
     assert str(reference) in _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
     assert "判断前の固有基準" not in _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
-    read_delivery.observe({"tool_response": reference.read_text()}, "Read", {"file_path": str(reference)}, "test")
+    observe_received({"tool_response": reference.read_text()}, "Read", {"file_path": str(reference)}, "test")
     assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
@@ -860,13 +864,13 @@ def test_external_index_requires_the_selected_page(monkeypatch, tmp_path):
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     index = "https://ak110.github.io/pytilpack/llms.txt"
     page = "https://ak110.github.io/pytilpack/api/functools/index.md"
-    read_delivery.observe({"tool_response": "索引"}, "WebFetch", {"url": index}, "test")
+    observe_received({"tool_response": "索引"}, "WebFetch", {"url": index}, "test")
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
-    read_delivery.observe({"tool_response": {"exit_code": 1}}, "WebFetch", {"url": page}, "test")
+    observe_received({"tool_response": {"exit_code": 1}}, "WebFetch", {"url": page}, "test")
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
-    read_delivery.observe({"tool_response": _PERSISTED_REPLACEMENT}, "WebFetch", {"url": page}, "test")
+    observe_received({"tool_response": _PERSISTED_REPLACEMENT}, "WebFetch", {"url": page}, "test")
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
-    read_delivery.observe({"tool_response": "選んだ対象ページの本文"}, "WebFetch", {"url": page}, "test")
+    observe_received({"tool_response": "選んだ対象ページの本文"}, "WebFetch", {"url": page}, "test")
     assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
@@ -1132,9 +1136,9 @@ def test_guidance_requires_real_acquisition_for_each_subject(tmp_path, monkeypat
     records = memory[rules_context.OPERATION_SKILL_READY_KEY]
     assert not read_delivery.target_ready(records, ReadTarget(skill), agent)
     assert not read_delivery.target_ready(records, ReadTarget(reference), agent)
-    read_delivery.observe({**payload, "tool_response": reference.read_text()}, "Read", {"file_path": str(reference)}, "test")
-    read_delivery.observe({**payload, "tool_response": skill.read_text()}, "Read", {"file_path": str(skill)}, "test")
-    read_delivery.observe(
+    observe_received({**payload, "tool_response": reference.read_text()}, "Read", {"file_path": str(reference)}, "test")
+    observe_received({**payload, "tool_response": skill.read_text()}, "Read", {"file_path": str(skill)}, "test")
+    observe_received(
         {**payload, "tool_response": {"stdout": skill.read_text(), "exit_code": 0}},
         "Bash",
         {"command": f"cat -- {skill}"},
@@ -1143,13 +1147,13 @@ def test_guidance_requires_real_acquisition_for_each_subject(tmp_path, monkeypat
     records = memory[rules_context.OPERATION_SKILL_READY_KEY]
     if subject in {"main", "task", "delegate"}:
         assert not read_delivery.target_ready(records, ReadTarget(skill), agent, invocation=True)
-        read_delivery.observe(
+        observe_received(
             {**payload, "tool_response": _PERSISTED_REPLACEMENT}, "Skill", {"skill": "example-plugin:example"}, "test"
         )
         assert read_delivery.target_ready(
             memory[rules_context.OPERATION_SKILL_READY_KEY], ReadTarget(skill), agent, invocation=True
         )
-        read_delivery.observe({**payload, "tool_response": "起動成功"}, "Skill", {"skill": "example-plugin:example"}, "test")
+        observe_received({**payload, "tool_response": "起動成功"}, "Skill", {"skill": "example-plugin:example"}, "test")
         records = memory[rules_context.OPERATION_SKILL_READY_KEY]
     assert read_delivery.target_ready(records, ReadTarget(skill), agent)
     assert read_delivery.target_ready(records, ReadTarget(reference), agent)
@@ -1172,12 +1176,12 @@ def test_missing_full_and_partial_reads(tmp_path, monkeypatch, codex):
     notice_module.record_delivery("\n".join(decision.notices))
     assert read_delivery.deliver(payload, "Write", operation, "test").block is not None
     for path in paths:
-        read_delivery.observe({**payload, "tool_response": "# 資料0\n"}, "Read", {"file_path": str(path), "limit": 1}, "test")
-    assert read_delivery.deliver(payload, "Write", operation, "test").block is None
+        observe_received({**payload, "tool_response": "# 資料0\n"}, "Read", {"file_path": str(path), "limit": 1}, "test")
+    assert read_delivery.deliver(payload, "Write", operation, "test").block is not None
     for path in paths:
         tool = "Bash" if codex else "Read"
         inputs = {"command": f"cat -- {path}"} if codex else {"file_path": str(path)}
-        read_delivery.observe(
+        observe_received(
             {**payload, "tool_response": {"stdout": path.read_text(encoding="utf-8"), "exit_code": 0}},
             tool,
             inputs,
@@ -1238,7 +1242,7 @@ def test_delivery_records_the_body_snapshot_hash(tmp_path, monkeypatch):
     first = read_delivery.deliver({}, "Do", {}, "test")
     assert str(path) in _notice_body(first)
     assert "必須基準0" not in _notice_body(first)
-    read_delivery.observe({"tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
+    observe_received({"tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
     assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     path.write_text("# 変更後\n新しい基準\n", encoding="utf-8")
     second = read_delivery.deliver({}, "Do", {}, "test")
@@ -1253,7 +1257,7 @@ def test_bounded_delivery_retries_in_declaration_order(tmp_path, monkeypatch):
         notice = _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
         assert all(str(p) in notice for p in paths[index:])
         assert all(f"必須基準{i}" not in notice for i in range(3))
-        read_delivery.observe({"tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
+        observe_received({"tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
     assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
@@ -1261,7 +1265,7 @@ def test_agent_scope_and_compaction(tmp_path, monkeypatch, memory):
     path = _rows(tmp_path, monkeypatch, "tool:Do", count=1)[0]
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     assert _guidance(read_delivery.deliver({"agent_id": "child"}, "Do", {}, "test"))
-    read_delivery.observe({"agent_id": "child", "tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
+    observe_received({"agent_id": "child", "tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
     rules_context.reset_main_operation_skill_ready("test")
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
@@ -1276,7 +1280,7 @@ def test_bash_reference_acquisition_is_recorded_for_each_actor(tmp_path, monkeyp
         payload["agent_id"] = "child"
     if subject == "codex":
         payload["turn_id"] = "turn"
-    read_delivery.observe(payload, "Bash", {"command": f"cat -- {path}"}, "test")
+    observe_received(payload, "Bash", {"command": f"cat -- {path}"}, "test")
     agent = "child" if subject == "agent" else "main"
     assert read_delivery.target_ready(memory.get(rules_context.OPERATION_SKILL_READY_KEY, {}), ReadTarget(path), agent)
     other = "main" if agent == "child" else "child"
@@ -1292,7 +1296,7 @@ def test_codex_notice_guides_full_document_reads(tmp_path, monkeypatch):
     payload = {"turn_id": "turn"}
     notice = _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
     assert f"sed -n '2,3p' -- {path}" in notice and "共通" in notice
-    read_delivery.observe({**payload, "tool_response": path.read_text()}, "Bash", {"command": f"cat -- {path}"}, "test")
+    observe_received({**payload, "tool_response": path.read_text()}, "Bash", {"command": f"cat -- {path}"}, "test")
     assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
 
 
@@ -1309,8 +1313,8 @@ def test_claude_notice_shows_ranges_for_documents_over_the_budget(tmp_path, monk
 @pytest.mark.parametrize("failure", [{"exit_code": 1}, {"interrupted": True}])
 def test_failed_read_does_not_mark_ready(tmp_path, monkeypatch, memory, failure):
     path = _rows(tmp_path, monkeypatch, "tool:Do", count=1)[0]
-    read_delivery.observe(
-        {"tool_response": {"stdout": path.read_text(encoding="utf-8"), **failure}},
+    observe_received(
+        {"tool_response": {"stdout": "読取失敗", **failure}},
         "Bash",
         {"command": f"cat -- {path}"},
         "test",
@@ -1329,7 +1333,7 @@ def test_explicit_section_delivery_keeps_other_sections_out(tmp_path, monkeypatc
     assert "共通内容" not in notice
     assert "領域内容" not in notice
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
-    read_delivery.observe({"tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
+    observe_received({"tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
     assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     assert ReadTarget(path, "領域").body() == "## 領域\n領域内容\n"
 
@@ -1368,7 +1372,7 @@ def test_selected_section_success_completes_acquisition(tmp_path, monkeypatch, m
     target = ReadTarget(path, "共通")
     row = ReadTrigger(tmp_path / "SKILL.md", 1, "判断", ("section:*reference.md#共通",), (path,), ("共通",))
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
-    read_delivery.observe(
+    observe_received(
         {"turn_id": "turn", "tool_response": "## 共通\n選択基準\n"}, "Bash", {"command": f"sed -n '2,3p' -- {path}"}, "test"
     )
     assert read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], target, "main")
@@ -1378,7 +1382,7 @@ def test_selected_section_success_completes_acquisition(tmp_path, monkeypatch, m
 def test_modified_document_invalidates_previous_acquisition(tmp_path, monkeypatch):
     path = _rows(tmp_path, monkeypatch, "tool:Do", count=1)[0]
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
-    read_delivery.observe({"tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
+    observe_received({"tool_response": path.read_text()}, "Read", {"file_path": str(path)}, "test")
     assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     path.write_text("# 更新した基準\n新しい本文\n", encoding="utf-8")
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
@@ -1619,14 +1623,12 @@ def test_explicit_foreign_skill_keeps_startup_and_followup_declarations(tmp_path
     first = read_delivery.deliver(payload, "Read", inputs, "test")
     assert not _guidance(first)
     assert str(initial) in _notice_body(read_delivery.deliver(payload, "Inspect", {}, "test"))
-    read_delivery.observe({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
+    observe_received({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
     assert _guidance(read_delivery.deliver(payload, "Read", inputs, "test")) is None
     if codex:
-        read_delivery.observe({**payload, "tool_response": skill.read_text()}, "Read", inputs, "test")
+        observe_received({**payload, "tool_response": skill.read_text()}, "Read", inputs, "test")
     else:
-        read_delivery.observe(
-            {**payload, "tool_response": skill.read_text()}, "Skill", {"skill": "agent-basics:search"}, "test"
-        )
+        observe_received({**payload, "tool_response": skill.read_text()}, "Skill", {"skill": "agent-basics:search"}, "test")
     selected = read_delivery.deliver(payload, "Do", {}, "test")
     if not codex:
         # 同名pluginのSkill起動は、指定した別実体を取得した根拠にはならない。
@@ -1716,7 +1718,7 @@ def test_packaged_skill_read_delivers_startup_material_before_its_own_pending_re
     first = read_delivery.deliver(payload, tool, inputs, "test")
     assert not _guidance(first)
     assert str(initial) in _notice_body(read_delivery.deliver(payload, "Inspect", {}, "test"))
-    read_delivery.observe({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
+    observe_received({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
     assert _guidance(read_delivery.deliver(payload, tool, inputs, "test")) is None
 
 
@@ -1747,7 +1749,7 @@ def _copies(tmp_path, monkeypatch, *, same=True):
         path.parent.mkdir(parents=True)
         path.write_text(body, encoding="utf-8")
     if not same:
-        worktree.write_text(body + "worktreeだけの変更\n", encoding="utf-8")
+        worktree.write_text(body.replace("二行目", "別本文"), encoding="utf-8")
     rows = [
         ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (checkout,)),
         ReadTrigger(tmp_path / "SKILL.md", 2, "操作", ("tool:Other",), (worktree,)),
@@ -1758,11 +1760,11 @@ def _copies(tmp_path, monkeypatch, *, same=True):
 
 @pytest.mark.parametrize(
     ("case", "ready"),
-    [("same", False), ("different", False), ("other-actor", False), ("partial", False), ("split-copies", True)],
+    [("same", True), ("different", False), ("other-actor", False), ("partial", False), ("split-copies", False)],
 )
 @pytest.mark.usefixtures("memory")
-def test_public_hook_requires_the_selected_path_even_for_same_content(tmp_path, monkeypatch, case, ready):
-    """別パスの同じ内容を取得しても、対象パスの成功読取の代用にはしない。"""
+def test_public_hook_reuses_received_content_across_paths(tmp_path, monkeypatch, case, ready):
+    """同じ要求本文だけを再利用し、別本文・別主体・不完全な本文を区別する。"""
     checkout, worktree = _copies(tmp_path, monkeypatch, same=case != "different")
     lines = worktree.read_text(encoding="utf-8").splitlines(keepends=True)
     payload = {"agent_id": "child"} if case == "other-actor" else {}
@@ -1770,7 +1772,7 @@ def test_public_hook_requires_the_selected_path_even_for_same_content(tmp_path, 
     def read(path, start, count):
         text = "".join(lines[start - 1 : start - 1 + count])
         response = {"file": {"content": text, "startLine": start, "numLines": count, "totalLines": len(lines)}}
-        read_delivery.observe({**payload, "tool_response": response}, "Read", {"file_path": str(path)}, "test")
+        observe_received({**payload, "tool_response": response}, "Read", {"file_path": str(path)}, "test")
 
     if case == "partial":
         read(worktree, 1, 2)
@@ -1804,7 +1806,7 @@ def test_unrecorded_copy_history_keeps_the_selected_path_unread(tmp_path, monkey
 def test_compaction_recovery_lists_a_selected_document_read_through_a_same_content_copy(tmp_path, monkeypatch, memory):
     """会話圧縮時は、選択済み資料を同じ内容の別の場所で読んだ場合も、選択済み資料のパスを再取得の候補に挙げる。"""
     checkout, worktree = _copies(tmp_path, monkeypatch)
-    read_delivery.observe({"tool_response": worktree.read_text()}, "Read", {"file_path": str(worktree)}, "test")
+    observe_received({"tool_response": worktree.read_text()}, "Read", {"file_path": str(worktree)}, "test")
     memory[rules_context.OPERATION_SKILL_READY_KEY][
         "selected-read-target:" + json.dumps({"path": str(checkout), "heading": ""}, ensure_ascii=False, separators=(",", ":"))
     ] = ["main"]
@@ -1835,7 +1837,7 @@ def test_compaction_limits_rewrite_block_to_documents_guided_after_compaction(tm
         return decision
 
     assert str(earlier) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
-    read_delivery.observe({**payload, "tool_response": later.read_text()}, "Read", {"file_path": str(later)}, "test")
+    observe_received({**payload, "tool_response": later.read_text()}, "Read", {"file_path": str(later)}, "test")
     assert str(earlier) in _notice_body(delivered("Write", write))
     # 圧縮前は、案内済み資料の未取得による再書込の遮断が成立している。
     assert str(earlier) in (read_delivery.deliver(payload, "Write", write, "test").block or "")
@@ -1846,7 +1848,7 @@ def test_compaction_limits_rewrite_block_to_documents_guided_after_compaction(tm
     assert str(later) in first and str(earlier) not in first
     blocked = read_delivery.deliver(payload, "Write", write, "test").block
     assert blocked is not None and str(later) in blocked and str(earlier) not in blocked
-    read_delivery.observe({**payload, "tool_response": later.read_text()}, "Read", {"file_path": str(later)}, "test")
+    observe_received({**payload, "tool_response": later.read_text()}, "Read", {"file_path": str(later)}, "test")
     # 圧縮前に案内した資料だけが未取得の再書込は、案内も遮断もせずに通す。
     for _ in range(2):
         decision = read_delivery.deliver(payload, "Write", write, "test")
@@ -1870,7 +1872,7 @@ def test_selection_that_no_longer_matches_the_document_is_not_reguided(tmp_path,
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
     payload = {"cwd": str(tmp_path)}
     assert str(doc) in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
-    read_delivery.observe({**payload, "tool_response": doc.read_text()}, "Read", {"file_path": str(doc)}, "test")
+    observe_received({**payload, "tool_response": doc.read_text()}, "Read", {"file_path": str(doc)}, "test")
     # 節「生成」を別の資料へ移した後の本文。compaction-then-editだけは節を残して本文を変える。
     changed = (
         "# 親\n\n## 生成\n\n改訂した生成の本文\n\n## 起動\n\n起動の本文\n"
@@ -1886,7 +1888,7 @@ def test_selection_that_no_longer_matches_the_document_is_not_reguided(tmp_path,
     rows.clear()
     for _ in range(2):
         assert str(doc) not in "\n".join(read_delivery.deliver(payload, "Bash", {"command": "git status"}, "test").notices)
-    read_delivery.observe({**payload, "tool_response": doc.read_text()}, "Read", {"file_path": str(doc)}, "test")
+    observe_received({**payload, "tool_response": doc.read_text()}, "Read", {"file_path": str(doc)}, "test")
     assert not read_delivery.deliver(payload, "Bash", {"command": "git status"}, "test").notices
 
 
@@ -2061,11 +2063,11 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
         }[phase]:
             assert expected in target.body(body), phase
         if phase == "要件検収":
-            read_delivery.observe({**payload, "tool_response": body.splitlines()[0]}, "Read", {**inputs, "limit": 1}, "test")
-            assert read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], target, "main")
-            read_delivery.observe({**payload, "agent_id": "child", "tool_response": body}, "Read", inputs, "test")
-            assert read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], target, "main")
-        read_delivery.observe({**payload, "tool_response": body}, "Read", inputs, "test")
+            observe_received({**payload, "tool_response": body.splitlines()[0]}, "Read", {**inputs, "limit": 1}, "test")
+            assert not read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], target, "main")
+            observe_received({**payload, "agent_id": "child", "tool_response": body}, "Read", inputs, "test")
+            assert not read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], target, "main")
+        observe_received({**payload, "tool_response": body}, "Read", inputs, "test")
         records = memory[rules_context.OPERATION_SKILL_READY_KEY]
         assert read_delivery.target_ready(records, target, "main"), phase
         assert str(path) not in (_guidance(read_delivery.deliver(payload, "Read", inputs, "test")) or ""), phase
@@ -2279,7 +2281,7 @@ def test_public_hook_records_the_worktree_project_skill_invoked_in_a_nested_work
     before = _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
     assert str((worktree / ".claude/skills/proj-skill/SKILL.md").resolve()) in before
     assert str((main / ".claude/skills/proj-skill/SKILL.md").resolve()) not in before
-    read_delivery.observe(
+    observe_received(
         {**payload, "tool_response": {"success": True, "commandName": "proj-skill"}}, "Skill", {"skill": "proj-skill"}, "test"
     )
     assert _guidance(read_delivery.deliver(payload, "Do", {}, "test")) is None
@@ -2300,7 +2302,7 @@ def test_public_hook_prefers_the_user_skill_over_a_same_named_project_skill(tmp_
     )
     _project_declarations(monkeypatch, read_delivery.plugin_resources.plugin_root().resolve())
     payload = {"cwd": str(project)}
-    read_delivery.observe(
+    observe_received(
         {**payload, "tool_response": {"success": True, "commandName": "proj-skill"}}, "Skill", {"skill": "proj-skill"}, "test"
     )
     assert _guidance(read_delivery.deliver(payload, "Judge", {}, "test")) is None
@@ -2347,11 +2349,9 @@ def test_worktree_copy_of_a_distributed_skill_is_released_by_skill_or_read(tmp_p
     assert f"Readで`{copy}`を取得せよ" in notice
     notice_module.record_delivery("\n".join(first.notices))
     assert read_delivery.deliver(payload, "Write", operation, "test").block is not None
-    read_delivery.observe({**payload, "tool_response": "起動成功"}, "Skill", {"skill": "agent-basics:check-execution"}, "test")
-    assert read_delivery.deliver(payload, "Write", operation, "test").block is not None
-    read_delivery.observe(
-        {**payload, "tool_response": copy.read_text(encoding="utf-8")}, "Read", {"file_path": str(copy)}, "test"
-    )
+    observe_received({**payload, "tool_response": "起動成功"}, "Skill", {"skill": "agent-basics:check-execution"}, "test")
+    assert (read_delivery.deliver(payload, "Write", operation, "test").block is not None) is (not same_content)
+    observe_received({**payload, "tool_response": copy.read_text(encoding="utf-8")}, "Read", {"file_path": str(copy)}, "test")
     decision = read_delivery.deliver(payload, "Write", operation, "test")
     assert decision.block is None
     assert not _guidance(decision)
@@ -2432,7 +2432,7 @@ def test_repeated_write_requires_complete_read(tmp_path, monkeypatch, codex):
         "hook_event_name": "PostToolUseFailure",
         "tool_name": "Bash",
         "tool_input": {"command": f"cat -- {path}"},
-        "tool_response": {"stdout": path.read_text(), "exit_code": 1},
+        "tool_response": {"stdout": "", "exit_code": 1},
     }
     assert _run_hook_in_process("posttooluse", failed).returncode == 0
     assert str(path) in denial_reason(_run_hook_in_process("pretooluse", operation))
@@ -2554,7 +2554,7 @@ def test_cd_acquisition_defers_guidance_until_non_read(tmp_path, monkeypatch, co
     assert observed.returncode == 0
     following = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Do", "tool_input": {}})
     assert following.returncode == 0 and str(paths[1]) in following.stdout
-    assert (str(paths[0]) not in following.stdout) is (result != "failed")
+    assert (str(paths[0]) not in following.stdout) is (result != "partial")
 
 
 @pytest.mark.parametrize(
@@ -2588,7 +2588,7 @@ def test_cd_read_with_side_effects_keeps_dependency_guidance(tmp_path, monkeypat
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.usefixtures("memory")
 def test_mixed_cat_sed_public_acquisition_preserves_actor_and_hash(tmp_path, monkeypatch, subject, separator, reverse):
-    """成功した&&読取だけで解除し、独立連結・他主体・更新後本文との境界を保つ。"""
+    """配送された本文で解除し、他主体と未受信の更新を区別する。"""
     paths = _rows(tmp_path, monkeypatch, "path:*.py", count=2)
     actor = {"agent_id": "child"} if subject == "child" else {"turn_id": "turn"} if subject == "codex" else {}
     operation = {
@@ -2617,7 +2617,7 @@ def test_mixed_cat_sed_public_acquisition_preserves_actor_and_hash(tmp_path, mon
     )
     assert observed.returncode == 0
     final = _run_hook_in_process("pretooluse", operation)
-    acquired = separator == " && "
+    acquired = True
     assert final.returncode == 0 and all((str(path) not in final.stdout) is acquired for path in paths)
     other = {**operation, "agent_id": "other"}
     pending = _run_hook_in_process("pretooluse", other)
@@ -3005,8 +3005,8 @@ def test_codex_full_read_releases_block_without_body_delivery(tmp_path, monkeypa
 @pytest.mark.parametrize("host", ["claude", "codex"])
 @pytest.mark.parametrize("result", ["partial", "truncated", "failed"])
 @pytest.mark.usefixtures("memory")
-def test_public_read_success_releases_guard_without_body_proof(tmp_path, monkeypatch, host, result):
-    """読取の成功だけで解除し、失敗と他主体の状態は区別する。"""
+def test_public_partial_read_keeps_guard(tmp_path, monkeypatch, host, result):
+    """必要範囲が欠ける応答は、成功イベントでも再書込を解除しない。"""
     path = _rows(tmp_path, monkeypatch, "tool:Write", count=1)[0]
     payload = {"session_id": "test", "cwd": str(tmp_path), **({"turn_id": "turn"} if host == "codex" else {})}
     operation = _write_operation(tmp_path, payload)
@@ -3026,10 +3026,7 @@ def test_public_read_success_releases_guard_without_body_proof(tmp_path, monkeyp
     )
     assert observed.returncode == 0 and not observed.stderr
     final = _run_hook_in_process("pretooluse", operation)
-    if result == "failed":
-        assert str(path) in denial_reason(final)
-    else:
-        assert final.returncode == 0 and not final.stdout and not final.stderr
+    assert str(path) in denial_reason(final)
     other = _run_hook_in_process("pretooluse", {**operation, "agent_id": "other"})
     assert str(path) in other.stdout
 
@@ -3084,9 +3081,9 @@ def test_public_read_history_cannot_acquire_changed_content(tmp_path, monkeypatc
     path.write_text(body + "更新した基準\n", encoding="utf-8")
     operation["transcript_path"] = str(history)
     guidance = _run_hook_in_process("pretooluse", operation)
-    assert str(path) in guidance.stdout
+    assert str(path) in guidance.stdout and "取得済み資料の更新あり" in guidance.stdout
     blocked = _run_hook_in_process("pretooluse", operation)
-    assert str(path) in denial_reason(blocked)
+    assert blocked.returncode == 0 and not blocked.stdout
     _run_hook_in_process(
         "posttooluse",
         {
@@ -3109,21 +3106,31 @@ def test_public_read_history_cannot_acquire_changed_content(tmp_path, monkeypatc
         ("cat -- {path} &&\nsed -n '1,$p' -- {path}", True),
         ("false && cat -- {path}; true", False),
         ("if false; then cat -- {path}; fi", False),
-        ("cat -- /missing-document; cat -- {path}", False),
+        ("cat -- /missing-document; cat -- {path}", True),
         # 引用した演算子はデータであり、実際の連結だけが取得の可否を分ける。
         ("cat -- {path} && echo 'a; b | c'", True),
-        ("cat -- {path}; echo 'a && b'", False),
+        ("cat -- {path}; echo 'a && b'", True),
         ("cat -- {path} | head -n 1", False),
     ],
 )
 @pytest.mark.usefixtures("memory")
-def test_public_acquisition_requires_successful_read_chain(tmp_path, monkeypatch, host, template, acquired):
-    """全体の成功から各読取の成功を判定できる操作だけで遮断を解除する。"""
+def test_public_acquisition_uses_executed_read_output(tmp_path, monkeypatch, host, template, acquired, host_environ):
+    """実Bash出力に必要本文がある操作だけで遮断を解除する。"""
     path = _rows(tmp_path, monkeypatch, "tool:Write", count=1)[0]
     payload = {"session_id": "test", "cwd": str(tmp_path), **({"turn_id": "turn"} if host == "codex" else {})}
     operation = _write_operation(tmp_path, payload)
     _guided_and_blocked(operation, path)
     command = template.format(path=shlex.quote(str(path)))
+    actual = subprocess.run(
+        ["bash", "-c", command],
+        cwd=tmp_path,
+        env=host_environ(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=10,
+    )
     observed = _run_hook_in_process(
         "posttooluse",
         {
@@ -3131,7 +3138,7 @@ def test_public_acquisition_requires_successful_read_chain(tmp_path, monkeypatch
             "hook_event_name": "PostToolUse",
             "tool_name": "Bash",
             "tool_input": {"command": command},
-            "tool_response": {"stdout": "", "exit_code": 0},
+            "tool_response": {"stdout": actual.stdout, "stderr": actual.stderr, "exit_code": actual.returncode},
         },
     )
     assert observed.returncode == 0
@@ -3159,7 +3166,7 @@ def _observe_bash_result(payload, command, actual, host):
 @pytest.mark.parametrize("sed", ["sed", "/bin/sed", "/usr/bin/sed"])
 @pytest.mark.usefixtures("memory")
 def test_public_compound_reads_before_diagnostics_release_write(tmp_path, monkeypatch, host, sed, host_environ):
-    """独立診断が成否を隠す構成は保持し、成功した&&読取でだけ再書込を解除する。
+    """独立診断を含む実出力から受信済み資料だけを除き、残りの取得で再書込を解除する。
 
     Codex 0.166.0の実記録で観測したcat3資料とsed、続くsed2件・wc・if/findの構成を隔離する。
     """
@@ -3175,7 +3182,7 @@ def test_public_compound_reads_before_diagnostics_release_write(tmp_path, monkey
         f"wc -lc -- {' '.join(quoted[:3])}; if test -d {shlex.quote(str(tmp_path))}; "
         f"then find {shlex.quote(str(tmp_path))} -maxdepth 1 -type f; fi",
     ]
-    for command in commands:
+    for index, command in enumerate(commands):
         actual = subprocess.run(
             ["bash", "-c", command],
             cwd=tmp_path,
@@ -3188,7 +3195,9 @@ def test_public_compound_reads_before_diagnostics_release_write(tmp_path, monkey
         observed = _observe_bash_result(payload, command, actual, host)
         assert observed.returncode == 0
         final = _run_hook_in_process("pretooluse", operation)
-        assert all(str(path) in denial_reason(final) for path in paths)
+        reason = denial_reason(final)
+        assert all(str(paths[item]) in reason for item in ((3, 4) if index == 0 else (3,)))
+        assert all(str(path) not in reason for path in paths[:3])
     command = " && ".join(f"cat -- {path}" for path in quoted)
     actual = subprocess.run(
         ["bash", "-c", command], cwd=tmp_path, env=host_environ(), capture_output=True, text=True, encoding="utf-8", check=True

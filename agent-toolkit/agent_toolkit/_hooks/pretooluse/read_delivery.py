@@ -2,7 +2,7 @@
 
 初回は資料のパスを案内し、未取得のまま再書込する操作を遮断する。
 取得の観測だけを主体別の記録に反映する。
-取得状態は対象パスへの読取操作の成功から記録し、判断に必要な範囲の確認は担当が行う。
+実際に配送された必要範囲を記録し、旧版の受信と現在版の更新を区別する。
 軽量委譲は起動契約がスキルを使わないため対象外とする。
 """
 
@@ -33,7 +33,7 @@ from agent_toolkit._common.plugin_roots import (
 )
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments, split_bash_commands
-from agent_toolkit._common.shell_tokens import is_atk_command, join_words, split_words
+from agent_toolkit._common.shell_tokens import ShellWord, is_atk_command, join_words, split_words
 from agent_toolkit._hooks import (
     agent_id,
     codex_read_observation,
@@ -142,12 +142,13 @@ def _operand_paths(read: codex_read_observation.Read, current: shell_cwd.CwdReso
     """読取計画が入力ファイルと判定した位置の引数を、連結中の作業ディレクトリで解決する。
 
     シェルが展開し得るglobとbrace展開の語、作業ディレクトリを解決できない相対パスは対象に含めない。
-    字句解析で引用が外れているため、展開記号を含む語は引用の有無によらず静的に確定しない対象として扱う。
+    引用された記号はデータとして保持する。
     """
     paths = []
     for index in read.operands:
         operand = read.argv[index]
-        if any(marker in operand for marker in ("*", "?", "[", "{")):
+        unquoted = operand.unquoted if isinstance(operand, ShellWord) else operand
+        if any(marker in unquoted for marker in ("*", "?", "[", "{")):
             continue
         path = pathlib.Path(operand).expanduser()
         if not path.is_absolute():
@@ -214,7 +215,7 @@ def skill_name(path: pathlib.Path) -> str | None:
 
 
 def requires_skill_invocation(path: pathlib.Path, *, host: str, subject: str, cwd: str = "") -> bool:
-    """`Skill`起動を要する資料かを、hook内で共有する所有rootの判定で返す。"""
+    """本文参照と別に`Skill`起動を要する資料かを返す。"""
     return document_reads.requires_skill_invocation(path, host=host, subject=subject, cwd=cwd, owner=_document_owner)
 
 
@@ -612,23 +613,42 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                         key = "startup-input-target:" + json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
                         update_state(session_id, operation_skills.mark_ready(key, agent))
                     with contextlib.suppress(OSError, UnicodeError, ValueError):
-                        rendered = read_triggers.startup_documents(
-                            [target], plugin_resources.plugin_root(), {target: set(selectors)}
-                        )
-                        if (
-                            rendered in text
-                            and agent not in records.get(rules_context.READ_CONTEXT_RESET_KEY, [])
-                            and not (
-                                skill_name(target.path)
-                                and requires_skill_invocation(
-                                    target.path,
-                                    host="codex" if is_codex_payload(payload) else "claude",
-                                    subject=operation_skills.resolve_subject(payload),
-                                    cwd=str(payload.get("cwd", "")),
-                                )
+                        if agent not in records.get(rules_context.READ_CONTEXT_RESET_KEY, []):
+                            delivered = text[match.end() :]
+                            owner = _document_owner(target.path)
+                            previous = []
+                            bodies = []
+                            # 資料中のタグの用例を包装の終わりと誤認しないよう、本文digestが一致する境界を使う。
+                            for ending in re.finditer(r"(?m)^[ \t]*</atk-auto>[ \t]*(?:\r?\n|$)", delivered):
+                                body_lines = delivered[: ending.start()].removeprefix("\n").splitlines(keepends=True)
+                                for label in ("資料:", "本文識別子:", "相対参照の基点:"):
+                                    if body_lines and body_lines[0].startswith(label):
+                                        body_lines.pop(0)
+                                body = "".join(body_lines).removesuffix("\n")
+                                normalized = body.replace(str(owner), "${CLAUDE_PLUGIN_ROOT}") if owner else body
+                                if not (
+                                    document_reads.bytes_fingerprint(body.encode("utf-8")) == metadata.get("body_sha256")
+                                    or not target.heading
+                                    and document_reads.bytes_fingerprint(normalized.encode("utf-8")) == metadata.get("sha256")
+                                ):
+                                    continue
+                                previous = [
+                                    item
+                                    for item in document_reads.receipt_candidates([target], bodies={target.path: normalized})
+                                    if not target.heading or item["heading"]
+                                ]
+                                for item in previous:
+                                    item["version"] = metadata["sha256"]
+                                bodies.append(normalized)
+                                break
+                            if owner is not None:
+                                delivered = delivered.replace(str(owner), "${CLAUDE_PLUGIN_ROOT}")
+                            _record_receipts(
+                                session_id,
+                                agent,
+                                [*previous, *document_reads.receipt_candidates([target])],
+                                [delivered, *bodies],
                             )
-                        ):
-                            _mark(session_id, target.path, agent, metadata["sha256"])
             # 保存済みsessionの正式な参照だけの配送も、同じ実体指定として受理する。
             legacy = re.search(
                 r'<atk-auto source="agents-server" kind="work-contract-reference">\n全体作業契約: ([^\n]+)\n', text
@@ -822,9 +842,12 @@ def dynamic_targets(
     raise ValueError(f"未登録の資料選択子: {row.selector}")
 
 
-def _mark(session_id: str, path: pathlib.Path, agent: str, fingerprint: str = "") -> None:
+def _mark(session_id: str, path: pathlib.Path, agent: str, fingerprint: str = "", *, record_scopes: bool = True) -> None:
     identifier = document_key(path, fingerprint)
     update_state(session_id, operation_skills.mark_ready(identifier, agent))
+    if record_scopes and (not fingerprint or fingerprint == document_reads.content_fingerprint(path)):
+        for metadata in document_reads.receipt_candidates([read_triggers.ReadTarget(path)]):
+            update_state(session_id, operation_skills.mark_ready(document_reads.receipt_key(metadata), agent))
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     outstanding = [
         target
@@ -866,6 +889,8 @@ def _review_reference(session_id: str, prepared: object, agent: str) -> None:
 
 
 def target_ready(records: dict, target: read_triggers.ReadTarget, agent: str, *, invocation: bool = False) -> bool:
+    if not invocation:
+        return document_reads.acquisition_state(records, target, agent) != "missing"
     raw = target.path.read_bytes()
     if target.heading:
         try:
@@ -1032,7 +1057,44 @@ def _declaration_recovery_operation(tool_name: str, tool_input: dict, error: Exc
 @_input_scope()
 def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
     """現在の操作に関係する宣言資料を配送または案内し、他の担当の手順書の取得へ警告を加え、通常操作の進行を保つ。"""
+    handoff = delegated_session.handoff_path(os.environ)
+    written = operation_skills.written_paths(tool_name, tool_input, str(payload.get("cwd", "")))
+    if handoff and written and all(pathlib.Path(path).resolve() == pathlib.Path(handoff).resolve() for path in written):
+        return Decision()
+    _refresh_receipts(payload, tool_name, tool_input, session_id)
     decision = _deliver_documents(payload, tool_name, tool_input, session_id)
+    agent = agent_id.resolve_hook_agent_id(payload)
+    records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    updates = []
+    has_receipts = any(
+        key.startswith((document_reads.RECEIPT_PREFIX, document_reads.READ_TRIGGER_PREFIX)) and agent in actors
+        for key, actors in records.items()
+        if isinstance(actors, list)
+    )
+    current_targets = _receipt_targets(payload, tool_name, tool_input, session_id, active_only=True) if has_receipts else []
+    for target in dict.fromkeys(current_targets):
+        if document_reads.acquisition_state(records, target, agent) != "updated":
+            continue
+        metadata = next(
+            item
+            for item in document_reads.receipt_candidates([target], include_headings=False)
+            if item["heading"] == target.heading
+        )
+        key = "read-update:" + document_reads.receipt_key(metadata)
+        if agent in records.get(key, []):
+            continue
+        text = _llm_notice(
+            f"取得済み資料の更新あり: `{target}`。旧版の取得記録を保持している。",
+            tag=_WARN_TAG,
+            removable_cause=True,
+            escalate_on_repeat=False,
+            fix=acquisition_step(
+                target, operation_skills.resolve_subject(payload), reference=True, cwd=str(payload.get("cwd", ""))
+            ),
+        )
+        notice_module.stage_delivery(text, session_id, rules_context.OPERATION_SKILL_READY_KEY, key, agent)
+        updates.append(text)
+    decision = dataclasses.replace(decision, notices=(*decision.notices, *updates))
     if decision.block is not None:
         return decision
     candidate_notice = _condition_candidate_notice(payload, tool_name, tool_input, session_id)
@@ -1459,6 +1521,8 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         if isinstance(history_path, str) and history_path and transcript.read_transcript_lines(history_path) is None:
             return Decision()
     # 同じ資料の節違いは取得案内をまとめるため、パスごとに1回だけ示す。
+    uninvoked = [target for target in pending if target.path in invocation_paths and target_ready(records, target, agent)]
+    label = "未起動スキル" if len(uninvoked) == len(pending) else "未取得資料・未起動スキル" if uninvoked else "未取得資料"
     shown = "、".join(dict.fromkeys(f"`{target.path}`" for target in pending))
     subject = operation_skills.resolve_subject(payload)
     if subject == operation_skills.SUBJECT_CODEX:
@@ -1514,7 +1578,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             # 遮断を解除する取得対象だけを示す。持ち越した資料まで並べると、取得しても解除されない資料を読ませる。
             return Decision(
                 block=_block_notice(
-                    "案内済み資料が未取得のため再書込を停止する。未取得資料: "
+                    f"案内済みの取得・起動が未完了のため再書込を停止する。{label}: "
                     + "、".join(dict.fromkeys(f"`{target.path}`" for target in guided))
                     + "。",
                     fix="。".join(_merged_steps(guided, failures, subject, invocation_paths=invocation_paths, cwd=cwd))
@@ -1535,7 +1599,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         )
     _select_targets(session_id, pending, agent, rows=selection_rows)
     notice = _llm_notice(
-        f"{instruction}\n未取得資料: {shown}。\n判断や記述を資料の基準に合わせるため。",
+        f"{instruction}\n{label}: {shown}。\n判断や記述を資料の基準に合わせるため。",
         tag=_WARN_TAG,
         removable_cause=True,
         escalate_on_repeat=False,
@@ -1595,6 +1659,148 @@ _PERSISTED_OUTPUT_OPEN = "<persisted-output>"
 _PERSISTED_OUTPUT_CLOSE = "</persisted-output>"
 
 
+def _receipt_targets(
+    payload: dict, tool_name: str, tool_input: dict, session_id: str, *, active_only: bool = False
+) -> list[read_triggers.ReadTarget]:
+    cwd = str(payload.get("cwd", ""))
+    agent = agent_id.resolve_hook_agent_id(payload)
+    records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    try:
+        rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude", session_id=session_id)
+    except OSError, UnicodeError, ValueError:
+        # 宣言の診断と復旧操作の許可は_deliver_documentsが返す。
+        rows = []
+    targets = [
+        target
+        for row in rows
+        if not active_only
+        or condition_confirmed(row, tool_name, tool_input, cwd)
+        and row_matches(row, tool_name, tool_input, cwd)
+        for target in row.targets
+    ]
+    targets.extend(selected_targets(records, agent))
+    targets.extend(read_triggers.ReadTarget(path) for path in _read_paths(tool_name, tool_input, cwd))
+    targets.extend(
+        read_triggers.ReadTarget(pathlib.Path(json.loads(key.removeprefix("startup-input-target:"))["path"]))
+        for key, actors in records.items()
+        if key.startswith("startup-input-target:") and agent in actors
+    )
+    return list(dict.fromkeys(targets))
+
+
+def _record_receipts(session_id: str, agent: str, candidates: list[dict], texts: list[str]) -> None:
+    observed = set()
+    keys = []
+    for metadata in document_reads.received_candidates(candidates, texts):
+        scope = (metadata["logical"], metadata["heading"], json.dumps(metadata["parts"]))
+        if scope in observed:
+            continue
+        observed.add(scope)
+        keys.append(document_reads.receipt_key(metadata))
+        path = pathlib.Path(metadata["path"])
+        if not metadata["heading"]:
+            # 旧キーも保持し、既存の起動・自己編集・参照宣言の消費側を同じ証拠へ接続する。
+            if path.is_file() and document_reads.content_fingerprint(path) == metadata["version"]:
+                _mark(session_id, path, agent, metadata["version"], record_scopes=False)
+            else:
+                update_state(session_id, operation_skills.mark_ready(document_key(path, metadata["version"]), agent))
+    if keys:
+        # 全文読取では多数の節が同時に届くため、状態JSONの読書きと排他を1回にまとめる。
+        def mark(value: dict) -> dict:
+            for key in keys:
+                operation_skills.mark_ready(key, agent)(value)
+            return value
+
+        update_state(session_id, mark)
+
+
+def _refresh_receipts(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> None:
+    """Preで既知範囲のdigestを準備し、Codexの外側配送後の出力だけを差分で観測する。"""
+    if not session_id or delegated_session.is_lightweight_delegated(os.environ):
+        return
+    agent = agent_id.resolve_hook_agent_id(payload)
+    state = read_state(session_id)
+    candidates = state.get("document_read_candidates", {}).get(agent, [])
+    current = document_reads.receipt_candidates(_receipt_targets(payload, tool_name, tool_input, session_id))
+    if is_codex_payload(payload):
+        raw_path = payload.get("agent_transcript_path") if agent != "main" else payload.get("transcript_path")
+        if isinstance(raw_path, str) and raw_path:
+            path = pathlib.Path(raw_path)
+            cursor_key = json.dumps([agent, str(path)])
+            offset = state.get("document_read_offsets", {}).get(cursor_key, 0)
+            rotated = False
+            texts = []
+            try:
+                with path.open("rb") as stream:
+                    if cursor_key not in state.get("document_read_offsets", {}) and agent in state.get(
+                        rules_context.OPERATION_SKILL_READY_KEY, {}
+                    ).get(rules_context.READ_CONTEXT_RESET_KEY, []):
+                        offset = path.stat().st_size
+                    if offset > path.stat().st_size:
+                        # 切り替わった記録の旧履歴を再受信として扱わない。
+                        offset = path.stat().st_size
+                        rotated = True
+                    stream.seek(offset)
+                    for raw in stream:
+                        if not raw.endswith(b"\n"):
+                            break
+                        offset += len(raw)
+                        try:
+                            entry = json.loads(raw)
+                        except ValueError:
+                            continue
+                        item = entry.get("payload") if isinstance(entry, dict) else None
+                        if (
+                            isinstance(entry, dict)
+                            and entry.get("type") == "response_item"
+                            and isinstance(item, dict)
+                            and item.get("type") in {"custom_tool_call_output", "function_call_output"}
+                        ):
+                            output = item.get("output")
+                            if isinstance(output, str):
+                                texts.extend(document_reads.returned_texts(output))
+                            elif isinstance(output, list):
+                                texts.extend(
+                                    block["text"]
+                                    for block in output
+                                    if isinstance(block, dict)
+                                    and block.get("type") in {"text", "input_text", "output_text"}
+                                    and isinstance(block.get("text"), str)
+                                )
+            except OSError:
+                texts = []
+            else:
+                _record_receipts(session_id, agent, [*candidates, *current], texts)
+
+                def advance(value: dict) -> dict:
+                    positions = value.setdefault("document_read_offsets", {})
+                    positions[cursor_key] = offset if rotated else max(positions.get(cursor_key, 0), offset)
+                    return value
+
+                update_state(session_id, advance)
+    if current and current != candidates:
+
+        def prepare(value: dict) -> dict:
+            value.setdefault("document_read_candidates", {})[agent] = current
+            return value
+
+        update_state(session_id, prepare)
+
+
+def _observe_content(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> None:
+    if tool_name not in {"Read", "Bash"} or is_codex_payload(payload) or payload.get("hook_event_name") == "PermissionDenied":
+        return
+    response = payload.get("tool_response")
+    texts = document_reads.returned_texts(response)
+    if not texts:
+        return
+    agent = agent_id.resolve_hook_agent_id(payload)
+    state = read_state(session_id)
+    candidates = state.get("document_read_candidates", {}).get(agent, [])
+    current = document_reads.receipt_candidates(_receipt_targets(payload, tool_name, tool_input, session_id))
+    _record_receipts(session_id, agent, [*candidates, *current], texts)
+
+
 def host_truncated(response: object) -> bool:
     """ホストが読取結果に付ける省略の表現だけで、省略の有無を判定する。
 
@@ -1624,7 +1830,8 @@ def host_truncated(response: object) -> bool:
 
 @_input_scope()
 def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> None:
-    """成功した読取を資料単位・主体単位に記録する。"""
+    """本文受信と操作全体の成否を分け、成功時の副作用だけを後続へ渡す。"""
+    _observe_content(payload, tool_name, tool_input, session_id)
     if payload.get("hook_event_name") in {"PostToolUseFailure", "PermissionDenied"}:
         return
     response = payload.get("tool_response")
@@ -1690,19 +1897,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     raise ValueError(f"prepareの保存結果が実在しない: {path}")
                 update_state(session_id, operation_skills.mark_ready("review-output:" + str(path), agent))
                 _select_targets(session_id, [read_triggers.ReadTarget(path)], agent)
-    if tool_name == "Bash":
-        command = tool_input.get("command")
-        if not isinstance(command, str):
-            return
-        groups = codex_read_observation.read_command_groups(command, read_prefix=True)
-        if not groups:
-            return
-        static_paths = _static_read_paths("; ".join(join_words(group) for group in groups), cwd)
-        if static_paths is None:
-            return
-        paths = [path.resolve() for path in static_paths]
-    else:
-        paths = _read_paths(tool_name, tool_input, cwd)
+    paths = _read_paths(tool_name, tool_input, cwd)
     if tool_name == "Bash" and any(not path.is_file() for path in paths):
         return
     if tool_name != "Skill" and not paths:
@@ -1748,7 +1943,3 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
             )
             _mark(session_id, resolved, agent)
         return
-    for path in paths:
-        if path not in targets or not path.is_file():
-            continue
-        _mark(session_id, path, agent)

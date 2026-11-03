@@ -12,7 +12,7 @@ from agent_toolkit._common import delegated_session, read_triggers
 from agent_toolkit._hooks import notice, plugin_resources, posttooluse, rules_context
 from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
 from agent_toolkit._testing.agents_server_support import FakeCodexClient
-from agent_toolkit._testing.pretooluse_support import codex_execution_payload
+from agent_toolkit._testing.pretooluse_support import codex_delivered_payload, codex_execution_payload
 
 
 @pytest.mark.asyncio
@@ -68,6 +68,7 @@ async def test_start_resume_root_reaches_foreign_hook_and_acquisition(
                 "cwd": str(tmp_path),
                 "tool_name": "Judge",
                 "tool_input": {},
+                "transcript_path": str(tmp_path / f"outer-{index}.jsonl"),
             }
             assert dispatch.main(json.dumps(payload)) == 0
             first = capsys.readouterr()
@@ -88,9 +89,11 @@ async def test_start_resume_root_reaches_foreign_hook_and_acquisition(
                 == 0
             )
             capsys.readouterr()
+            codex_delivered_payload({**read, "tool_response": reference.read_text(encoding="utf-8")}, tmp_path)
+            assert dispatch.main(json.dumps(payload)) == 0
+            final = capsys.readouterr()
             records = read_delivery.read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
             assert read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(reference), "main")
-            assert dispatch.main(json.dumps(payload)) == 0
-            assert str(reference) not in capsys.readouterr().out
+            assert str(reference) not in final.out
             # 次の開始・再開条件でも取得前から確認する。
             read_delivery.update_state(session_id, lambda _state: {})

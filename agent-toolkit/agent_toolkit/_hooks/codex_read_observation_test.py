@@ -10,6 +10,7 @@ from agent_toolkit._common import delegated_session, session_state
 from agent_toolkit._hooks import codex_read_observation as observation
 from agent_toolkit._hooks import plugin_resources, posttooluse, rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
+from agent_toolkit._testing.document_delivery import run_hook
 
 
 def _payload(tmp_path, command, body, *, exit_code=0, aggregated=None):
@@ -33,7 +34,8 @@ def _payload(tmp_path, command, body, *, exit_code=0, aggregated=None):
         },
     ]
     transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+    with transcript.open("a", encoding="utf-8") as stream:
+        stream.writelines(json.dumps(record) + "\n" for record in records)
     return {
         "session_id": "session",
         "turn_id": "turn",
@@ -135,8 +137,8 @@ def test_malformed_transcript_is_not_observed(tmp_path, value):
 
 @pytest.mark.parametrize("exit_code", [0, 1, None])
 @pytest.mark.parametrize("truncated", [False, True])
-def test_document_read_state_follows_successful_full_native_read(tmp_path, capsys, exit_code, truncated):
-    """PostToolUseの成功と失敗を分け、省略や保存記録の欠落で誤遮断しない。"""
+def test_document_read_state_waits_for_outer_delivery(tmp_path, capsys, exit_code, truncated):
+    """内側のnative結果だけでは、外側で実配送された本文の取得を確定しない。"""
     path = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
     body = path.read_text(encoding="utf-8")
     payload = _payload(tmp_path, f"cat -- {path}", _cut(body) if truncated else body, exit_code=exit_code)
@@ -146,7 +148,7 @@ def test_document_read_state_follows_successful_full_native_read(tmp_path, capsy
     capsys.readouterr()
     recorded = session_state.read_state("session").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     target = read_delivery.read_triggers.ReadTarget(path)
-    assert read_delivery.target_ready(recorded, target, "main") == (exit_code != 1)
+    assert not read_delivery.target_ready(recorded, target, "main")
 
 
 @pytest.mark.parametrize("launch_kind", ["", "explore", "shell"])
@@ -230,9 +232,10 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
                 reads.append((f"sed -n '101,$p' -- {path}", "".join(lines[100:])))
     for command, body in reads:
         payload = _payload(tmp_path, command, body, aggregated=_persisted(body))
-        assert posttooluse.main(json.dumps(payload)) == 0
+        result = run_hook("posttooluse", payload)
+        assert result.returncode == 0 and not result.stderr
     capsys.readouterr()
-    assert read_delivery.deliver(operation, "Write", write, "session").block is None
+    assert (read_delivery.deliver(operation, "Write", write, "session").block is None) is (form != "split")
 
 
 def test_persisted_copy_delivered_as_the_response_is_not_a_full_read(tmp_path):

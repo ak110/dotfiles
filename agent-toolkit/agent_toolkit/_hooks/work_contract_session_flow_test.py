@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import document_reads, pretooluse, rules_context, user_prompt_submit, work_contract
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as run_hook_in_process
+from agent_toolkit._testing.document_delivery import run_hook
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -27,13 +27,13 @@ def test_each_user_prompt_delivers_the_contract_body(
     extra = {"turn_id": "turn"} if codex else {}
     session = "contract-body-" + ("codex" if codex else "claude")
     for prompt in ("Xはどこから来たの？", "状況は？"):
-        result = run_hook_in_process(
+        result = run_hook(
             "user_prompt_submit", {"session_id": session, "hook_event_name": "UserPromptSubmit", "prompt": prompt, **extra}
         )
         assert result.returncode == 0
         assert "目的: A全体の完了" in result.stdout
         assert "元の未完了工程へ戻れ" in result.stdout
-    machine = run_hook_in_process(
+    machine = run_hook(
         "user_prompt_submit",
         {
             "session_id": session,
@@ -119,15 +119,15 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
     session_state.update_state(sid, lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: records})
     extra = {"turn_id": "turn"} if codex else {}
     operation = {"session_id": sid, "tool_name": "Judge", "tool_input": {}, **extra}
-    assert "全体作業契約の現行版を再読" not in run_hook_in_process("pretooluse", operation).stdout
+    assert "全体作業契約の現行版を再読" not in run_hook("pretooluse", operation).stdout
     path.write_text("# 目的\n継続する\n## 即時対応で確定した暫定規則\n契約専用の新規則\n", encoding="utf-8")
-    updated = run_hook_in_process("pretooluse", operation)
+    updated = run_hook("pretooluse", operation)
     assert updated.returncode == 0
-    assert "全体作業契約の現行版を再読" in updated.stdout
+    assert "取得済み資料の更新あり" in updated.stdout
     assert str(path) in updated.stdout and "契約専用の新規則" not in updated.stdout
     assert 'permissionDecision": "deny' not in updated.stdout
-    assert "全体作業契約の現行版を再読" not in run_hook_in_process("pretooluse", operation).stdout
-    read = run_hook_in_process(
+    assert "全体作業契約の現行版を再読" not in run_hook("pretooluse", operation).stdout
+    read = run_hook(
         "posttooluse",
         {
             "session_id": sid,
@@ -138,8 +138,8 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
         },
     )
     assert read.returncode == 0
-    assert "全体作業契約の現行版を再読" not in run_hook_in_process("pretooluse", operation).stdout
-    compact = run_hook_in_process(
+    assert "全体作業契約の現行版を再読" not in run_hook("pretooluse", operation).stdout
+    compact = run_hook(
         "rules_context",
         {
             "session_id": sid,
@@ -152,8 +152,8 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
     assert str(path) in compact.stdout and "全体作業契約の現行版を再読" in compact.stdout
     assert "契約専用の新規則" not in compact.stdout
     path.write_text("# 目的\n## 即時対応で確定した暫定規則\n次の訂正を適用する\n", encoding="utf-8")
-    reupdated = run_hook_in_process("pretooluse", operation)
+    reupdated = run_hook("pretooluse", operation)
     assert reupdated.returncode == 0
     assert "全体作業契約の現行版を再読" in reupdated.stdout
     assert "次の訂正を適用する" not in reupdated.stdout
-    assert "全体作業契約の現行版を再読" not in run_hook_in_process("pretooluse", operation).stdout
+    assert "全体作業契約の現行版を再読" not in run_hook("pretooluse", operation).stdout

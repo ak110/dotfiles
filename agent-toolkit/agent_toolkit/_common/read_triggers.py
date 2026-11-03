@@ -794,6 +794,7 @@ def startup_documents(
                 "heading": target.heading,
                 "selectors": sorted(input_selectors.get(target, set())),
                 "sha256": digest,
+                "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
             },
             ensure_ascii=False,
         )

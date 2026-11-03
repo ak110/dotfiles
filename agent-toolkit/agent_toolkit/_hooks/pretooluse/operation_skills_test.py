@@ -15,12 +15,12 @@ import pytest
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import plugin_resources, rules_context
 from agent_toolkit._hooks.pretooluse import operation_skills
+from agent_toolkit._testing.document_delivery import run_hook
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
     _read_session_state,
     _run,
-    _run_posttooluse,
     codex_execution_payload,
 )
 
@@ -589,7 +589,8 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
 
 
 def _record_skill(env: dict[str, str], session_id: str, skill: str, **extra: object) -> None:
-    result = _run_posttooluse(
+    result = run_hook(
+        "posttooluse",
         {
             "hook_event_name": "PostToolUse",
             "tool_name": "Skill",
@@ -621,7 +622,7 @@ def _acquire(env: dict[str, str], payload: dict, skill: str) -> None:
         "session_id": payload["session_id"],
         **extra,
     }
-    result = _run_posttooluse(codex_execution_payload(acquisition, pathlib.Path(env["TMPDIR"]), exit_code=0), env)
+    result = run_hook("posttooluse", codex_execution_payload(acquisition, pathlib.Path(env["TMPDIR"]), exit_code=0), env)
     assert result.returncode == 0
 
 
@@ -633,7 +634,8 @@ def _record_read(env: dict[str, str], session_id: str, path: pathlib.Path, **ext
     text = path.read_text(encoding="utf-8")
     lines = len(text.splitlines())
     file = {"filePath": str(path), "content": text, "numLines": lines, "startLine": 1, "totalLines": lines}
-    result = _run_posttooluse(
+    result = run_hook(
+        "posttooluse",
         {
             "hook_event_name": "PostToolUse",
             "tool_name": "Read",
@@ -798,7 +800,7 @@ def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path)
     context = _additional_context(result)
     assert "/references/file-editing.md" not in context
     assert "/skills/writing-standards/SKILL.md" not in context
-    result = _run_posttooluse({**payload, "tool_response": "", "hook_event_name": "PostToolUse"}, env)
+    result = run_hook("posttooluse", {**payload, "tool_response": "", "hook_event_name": "PostToolUse"}, env)
     assert result.returncode == 0
     state = _read_session_state(tmp_path, "discard-public")
     assert not state.get("termination_evidence", {}).get("works")

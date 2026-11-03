@@ -49,7 +49,7 @@ from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, codex_execution_payload
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, codex_delivered_payload, codex_execution_payload
 from agent_toolkit.atk_test import _setup_notes
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
@@ -928,7 +928,7 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
             "pretooluse",
             {
                 "session_id": session_id,
-                "transcript_path": str(empty_transcript),
+                "transcript_path": str(empty_transcript if session_id == "repeat-session" else tmp_path / "other.jsonl"),
                 "cwd": str(tmp_path),
                 "tool_name": "Bash",
                 "tool_input": {"command": command},
@@ -977,6 +977,9 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
             if codex:
                 event = codex_execution_payload(event, tmp_path, exit_code=0)
             _call_hook_in_process(monkeypatch, "posttooluse", event)
+            if codex:
+                codex_delivered_payload({**event, "transcript_path": str(empty_transcript)}, tmp_path)
+                pretooluse("repeat-session", "ls")
             acquired = session_state.read_state("repeat-session")[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
             assert read_delivery.target_ready(acquired, target, "main")
         pretooluse("repeat-session", "ls")

@@ -8,6 +8,7 @@ import pathlib
 import shlex
 
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._common import read_triggers
 from agent_toolkit._common.delegated_session import is_delegated
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import document_reads
@@ -86,11 +87,12 @@ def delegated_notice(session_id: str, records: dict, state: dict, *, agent: str 
             fingerprint = document_reads.content_fingerprint(path)
         except OSError:
             return f"全体作業契約を取得できない: {path}。委譲元へ所在と読取可能性を確認せよ。"
-        if document_reads.content_ready(records, fingerprint, agent) or fingerprint in seen:
+        status = document_reads.acquisition_state(records, read_triggers.ReadTarget(path), agent)
+        if status == "current" or fingerprint in seen:
             continue
         text = (
-            f"全体作業契約の現行版を再読せよ: {path}。"
-            "「即時対応で確定した暫定規則」を含む要求を確かめ、配布前の暫定規則に従え。"
+            (f"取得済み資料の更新あり: {path}。" if status == "updated" else f"全体作業契約の現行版を再読せよ: {path}。")
+            + "「即時対応で確定した暫定規則」を含む要求を確かめ、配布前の暫定規則に従え。"
             f"Readまたは`cat -- {shlex.quote(str(path))}`で全文を取得してから判断・操作へ進め。"
         )
         notice_module.stage_delivery(text, session_id, DELEGATED_NOTICE_KEY, agent, fingerprint)
@@ -137,7 +139,7 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
     if path is None or not path.is_file():
         return None
     try:
-        body = path.read_text(encoding="utf-8").strip()
+        body = path.read_bytes().decode("utf-8").rstrip("\n")
     except (OSError, UnicodeDecodeError) as error:
         return (
             f"現行の作業契約を読めない（{type(error).__name__}: {error}）: {path}\n"
@@ -151,4 +153,9 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
             f"現行の作業契約: {path}\n"
             f"本文が通知の上限{budget}文字を超えるため所在だけを示す。全文を読み、現在の目的・要件を確かめよ。{RETURN_CRITERION}"
         )
-    return f"現行の作業契約（機械生成の参照資料。原本: {path}）:\n{body}\n\n{RETURN_CRITERION}"
+    text = f"現行の作業契約（機械生成の参照資料。原本: {path}）:\n{body}\n\n{RETURN_CRITERION}"
+    for metadata in document_reads.receipt_candidates([read_triggers.ReadTarget(path)]):
+        notice_module.stage_delivery(
+            text, session_id, "operation_skill_delivered_agents", document_reads.receipt_key(metadata), "main"
+        )
+    return text

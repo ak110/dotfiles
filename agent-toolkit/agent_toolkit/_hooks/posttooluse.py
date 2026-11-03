@@ -528,13 +528,6 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
     if notice_task_id is not None:
         _record_background_task_id(session_id, notice_task_id)
 
-    if event_name == "PostToolUseFailure":
-        if tool_input.get("run_in_background"):
-            failed_task_id = _background_task_id_from_response(payload.get("tool_response"))
-            if failed_task_id is not None:
-                _record_background_task_id(session_id, failed_task_id)
-        return []
-
     notices: list[str] = []
     try:
         _read_delivery.observe(payload, tool_name, tool_input, session_id)
@@ -548,6 +541,12 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                 escalate_on_repeat=False,
             )
         )
+    if event_name == "PostToolUseFailure":
+        if tool_input.get("run_in_background"):
+            failed_task_id = _background_task_id_from_response(payload.get("tool_response"))
+            if failed_task_id is not None:
+                _record_background_task_id(session_id, failed_task_id)
+        return notices
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず回答を確認し、ユーザーの回答から通知までの遅延を抑える。
     # この通知が指示する反映と回答を待っていた作業の再開はメインが所有するため、

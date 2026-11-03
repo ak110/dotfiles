@@ -27,7 +27,7 @@ Claude Code・Codexのhookは呼び出しごとに別プロセスで起動する
 - 読み書きの契機: スキル呼出・バックグラウンドタスク起動などのPostToolUseイベントで書き込み、PreToolUse・UserPromptSubmit・Stopの判定時に読み取る
 - 破損・不在時の扱い: 空の辞書として扱い、安全側に判定する
 - `session_id`の切り替え: 現行の状態ファイルが存在しない場合に限り、transcriptを先頭から走査し、状態ファイルを持つ別の`session_id`が一意に特定できるなら、その全キーを継承して継承元を記録する。現行の状態ファイルがある通常時は、存在確認だけで終える
-- フックイベント間の同期: コマンド文字列の完全一致とハッシュ値比較の組み合わせなど、複雑な多段同期を状態ファイルに持ち込まず、対象ファイルの実体を直接実行・直接読み取りして状態を確かめる。構造化した記録を保存するのは、記録元と利用先が同一のフック内で完結する場合に限る
+- フックイベント間の同期: 主体・文脈・受信版と、実際に発生した出来事を区別して必要な記録だけを共有する。資料取得では既知範囲のdigestと配送後の本文を対応付け、実際の受信だけを根拠にする。保存内容は本文を除く識別情報に限定する
 - フラグ仕様の文書化: 新規フラグや同じ状態ファイルを共有する個人フックのフラグも含め、用途、書き込み元、読み取り元、寿命、リセット処理を後掲の各節に記す（努力目標）
 - 状態JSONの削除契機: 状態ファイルを削除するのは、期限切れの定期回収と、終了理由が`clear`のSessionEndだけとする。SessionEndは`--continue`、`--resume`、`/resume`で同一の`session_id`に復帰する場合にも発火するため、他の理由で削除すると再開後の記録が失われる。期限切れ回収の対象は最終更新から一定期間が経過した通常の状態ファイルとし、`clear`時は排他ロック下で、対象セッションの新旧両方の配置場所にある状態ファイルを削除する
 - 出来事と更新の対応: 時刻や消費済みの記録を持つ状態は、記録が証明する出来事（通知の採用、資料の取得など）と更新を許す出来事を対応付け、予約（生成・試算）と確定（採用・配送）、周期の上限、最小間隔の抑止、活動後のデバウンスを区別する。別種のイベント列を反復しても要求した出来事へ到達するかは、生成・採用・出力を接続した試験で確かめる
@@ -145,20 +145,30 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が人間の実際の発話を受けたときにこの値を参照し、真であれば同スキルの起動を促す注記を返す（機械的に注入されたターンでは参照も変更も行わない）。
   注記を返した時点で偽に戻す。また、PostToolUse(Skill)が同スキルの起動を観測した場合や、UserPromptSubmitがユーザーによる同スキルのスラッシュコマンド実行を観測した場合も偽に戻す。
   生存期間はセッション状態ファイルと同一とする。
-- `operation_skill_delivered_agents`: 資料識別子から、取得した主体の一覧へのマッピング。識別子は`read-trigger:<絶対パス>#sha256:<本文hash>`であり、成功した対象パスへの読取から記録する。本文hashは内容変更の判定に使い、読取の取得判定は本文・保存用写しの一致や全文区間被覆の証明を除いた読取成功に限定する。主体はpayloadの`agent_id`、無い場合は`main`とする。Skill起動必須の境界は`document_reads.requires_skill_invocation`と選択元の取得用途を使う。
+- `operation_skill_delivered_agents`: 資料識別子から受信主体へのマッピング。`received-document:<JSON>`は論理資料・実体パス・必要範囲・受信版・範囲digestを保持する。
+  `document_reads.acquisition_state`が取得済み・取得後の更新・未取得を区別する。同じ必要本文を別実体から受信した場合も再利用し、他節の変更後も必要節の取得を維持する。
+  旧形式の`read-trigger:<絶対パス>#sha256:<本文hash>`も、受信時の版のまま保持する。主体はpayloadの`agent_id`、無い場合は`main`とする。
+  `read-update:<受信資料識別子>`は未受信の現在版の更新案内を実配送した主体を保持する。更新だけの場合は再書込を許可する。
   `read-trigger-skill:<絶対パス>#sha256:<本文hash>`はSkill起動の専用証拠とし、PostToolUseのSkill成功時に記録する。名指し参照のRead・Bashで得た本文取得と区別し、後続のスキル起動要求には専用証拠を求める。案内済みのキーも`read-guidance:read-trigger-skill:<絶対パス>#sha256:<本文hash>`で区別する。寿命・主体別の管理とclear・compactによるリセットは既存の取得状態と同じとする。
-  同じ主体が取得済みの本文をEdit・MultiEdit・Writeで変更した成功では、編集応答の`originalFile`から変更前後の本文を確かめ、変更前に存在した種類の取得証拠だけを新hashへ引き継ぐ。参照取得だけをSkill起動証拠へ昇格させない。`originalFile`が欠落・null、`staged`や`userModified`、編集失敗、別主体・外部変更・Bashの書換えは継承の対象外とする。ホスト応答の観測と再検証手段は`docs/development/audit-records.md`「.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md：自己編集の取得継承：2026年11月2日」にある。
+  同じ主体が取得済みの本文をEdit・MultiEdit・Writeで変更した成功では、編集応答の`originalFile`から変更前後の本文を確かめ、変更前に存在した種類の取得証拠だけを新hashへ引き継ぐ。参照取得で継承するのは本文取得の証拠に限る。`originalFile`が欠落・null、`staged`や`userModified`、編集失敗、別主体・外部変更・Bashの書換えは継承の対象外とする。ホスト応答の観測と再検証手段は`docs/development/audit-records.md`「.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md：自己編集の取得継承：2026年11月2日」にある。
   `selected-read-target:<JSON>`は選択済みパス・見出しと選択元の`declarations`配列（`source`・`operations`・`kind`・`selector`）を保持し、持越し時に現行宣言へ接続する。対応の無い旧選択は保存したパス・見出しを解決し、失われた見出しを除く。
   `modified-agent-document:<絶対パス>`は変更文書、`review-reference:<絶対パス>`はprepareの参照資料、`read-trigger-role:<絶対パス>`は役割を保持する。選択情報は圧縮後も保持し、取得済み状態のみリセットする。
-  `compact`では同じ本文hashで`main`が取得済みだった選択資料を候補として抽出し、絶対パス・必要節・取得手段を予算内で一度案内する。選択資料へ`read-guidance-carried:<絶対パス>`を付け、操作ごとの案内と遮断の根拠から外す。現在の操作が資料を再選択した時点で印を外す。候補情報自体は同じ呼出し内だけで保持する。案内後の読取成功で取得を記録する。
-  `startup-input-target:<JSON>`は起動入力のパス・見出し・selectors・本文hashを保持し、圧縮後の再配送に使う。`review-output:<絶対パス>`は未取得の保存JSON、`review-output-parsed:<資料識別子>`は解析済み版を示す。JSONから参照資料を登録した後は未取得の保存JSON登録を解除する。
+  `compact`では取得済みだった選択資料と必要範囲を候補にし、現在必要な範囲を予算内で一度案内する。
+  `read-guidance-carried:<絶対パス>`は持越し候補を操作ごとの案内と遮断から外し、現在の操作が再選択したときに解除する。取得証拠は主体ごとにリセットする。
+  `startup-input-target:<JSON>`は起動入力のパス・見出し・selectors・原資料のhashと配送本文の`body_sha256`を保持し、圧縮後の再配送に使う。`review-output:<絶対パス>`は未取得の保存JSON、`review-output-parsed:<資料識別子>`は解析済み版を示す。JSONから参照資料を登録した後は未取得の保存JSON登録を解除する。
   本文編集の検知対象は、編集ツール、Bashの静的なヒアドキュメント（heredoc）やヒアストリング（here-string）、インプレース置換、およびPythonスクリプトによる書き込みとし、生成出力の保存や単なるファイル複製は除外する。managed-temp配下の原稿に対してもこれと同じ基準を適用する。
   委譲先自身が使用する引き継ぎ記録ファイルについては、`AGENT_TOOLKIT_HANDOFF_PATH`が示す1件の絶対パスのみを、本文編集時のwriting-standards取得要求の対象から除外する。この除外後も取得状態は元の値を保つ。同一ディレクトリにある別ファイルや、環境変数が未設定の入力、引き継ぎ記録先以外を含む複数ファイルの編集については、通常の取得状態に基づいて判定する。
-  `resolved-project-skill:<絶対パス>`は実際の取得入力から確定したproject skillの宣言元パスを保持する。起動時の取得記録は、入力のメタデータと実際に配送された同一バージョンの本文が一致している場合に記録し、メタデータのみの抜粋は未取得として扱う。入力の識別情報と宣言元は会話圧縮時にも保持される。
+  `resolved-project-skill:<絶対パス>`は実際の取得入力から確定したproject skillの宣言元パスを保持する。起動時は正式入力の識別と実配送本文のdigestを確認し、受信した版を記録する。後日の更新は取得後の更新として区別し、取得済みの根拠は識別情報と本文の両方に求める。入力の識別情報と宣言元は会話圧縮時にも保持される。
   `startup-context-observed`は、正式な起動入力の取得先と役割を登録した主体を保持し、圧縮後に過去の履歴本文が二重計上されるのを防ぐ。`startup-context-reset`は、最初の操作より前に発生したclearやcompactについても記録する。これにより、同じ記録で本文取得の前提が誤って復元されるのを防ぎ、実体指定の再取得へつなげる。
-  `read-guidance:read-trigger:<絶対パス>#sha256:<本文hash>`は書込時に未取得資料を案内した主体を保持する。`notice.stage_delivery`の予約は最終出力に採用された非空の案内の実配送時に記録する。同じ主体・本文の未取得が残る再書込を`written_paths`で検出して遮断し、対象パスの読取成功で解除する。失敗と別主体の取得は未取得として扱う。確認候補・破棄した案内は記録対象から除き、通知回数は判定から除外する。clear・compact時は取得状態とともにリセットする。
-  純粋Read・静的Bash読取・Skill起動では依存案内を保留し、次の非取得操作で未取得を再評価する。各主体の読取成功を、その時点の内容識別子と組にして記録する。内容を特定できない過去の読取履歴から、現行本文の取得済み状態を推測しない。Claudeメインの通常のスキル起動要求はSkill起動を要し、`disable-model-invocation: true`はRead・Bashも認める。名指し参照の`SKILL.md`はRead・Bashでも取得済みにする。`allow_implicit_invocation=false`だけの場合は通常の起動要件に従う。案内・観測・起動本文・圧縮は取得用途と`document_reads.requires_skill_invocation`による境界を共有する。startup-documentは`startup_context`と`active_roles`で同じ`startup_targets`を使い、入力本文・識別子と取得手段を確かめて記録する。
+  `read-guidance:read-trigger:<絶対パス>#sha256:<本文hash>`は、書込時の未取得案内を実配送した主体を保持する。
+  予約は最終出力へ採用した場合だけ確定する。必要本文の受信で再書込を解除し、解除の根拠は同じ主体が実際に受信した本文に限る。
+  純粋Read・静的Bash読取・Skill起動では依存案内を保留し、次の操作で必要範囲を再評価する。
+  Claudeは実tool_response、Codexは後続PreToolUse時点の外側配送本文を観測する。取得の記録は、応答に実際に含まれた必要範囲に限る。
+  ClaudeメインのSkill起動要求、名指し参照の内容取得、WebFetchのURL別出典確認は分離する。
+  正式なstartup-documentは識別と本文を意味上で確認して記録する。
   選択は`ReadTrigger.condition`の自然文と役割を保持する。他役割の行を除き、判断契機では`read:`・`section:`の明示選択と、`confirmation`に一致する確認ツール呼出しを確定側に含める。`AskUserQuestion`・`request_user_input`・`request_user_input_async`の呼出しは確認本文・選択肢の起草契機を観測したものとして扱う。他の未確定な自然文条件は確認候補とする。同一パスの節を集約し、宣言修復後の選択は現行宣言へ接続する。圧縮前の候補は現在の必読案内と遮断の根拠から除外する。
+- `document_read_candidates`: PreToolUseで準備した、主体ごとの既知資料・必要範囲・受信前の版とdigest。Readの明示対象も含め、選択前の取得と観測前の外部更新に対応する。保存はdigestなどのメタデータに限定する。compact時はメインの候補を除く。
+- `document_read_offsets`: 主体とrolloutの絶対パスから、観測済みのバイト位置への対応。Codexの後続PreToolUseが完成した外側出力行だけを差分走査して進める。compact時はメインの位置を末尾へ進め、以後に配送された本文を観測する。寿命はセッション状態と同じ。
 - `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程に必要な証拠を作業単位で管理・保持する。保持する内容には、作業ごとの成果作業の種別、report-completionの起動証拠、ツールの呼び出し履歴、判断の記録、遅れて返ってくる応答を元の作業に対応付けるための未完了の呼び出し、ならびに判断の根拠となった人間の入力が含まれる。
   PreToolUse、PostToolUse、UserPromptSubmitがツール呼び出しと人間の入力を逐次更新し、Stopの`termination_order_advisor`が成果作業と起動証拠の対応関係を読み取る。報告本文、完了の自己申告、起動済みを示す独自フラグなどは保持しない。
   解決済みの呼び出しや入力は更新のたびに除外し、バージョンや形式が合致しない値は破棄してStop判定ログに診断情報を残す。

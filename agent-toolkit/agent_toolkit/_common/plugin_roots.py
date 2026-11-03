@@ -196,6 +196,39 @@ def codex_installed_plugins(executable: str, project: pathlib.Path | None = None
     return installed
 
 
+def codex_plugin_source_root(root: pathlib.Path, name: str) -> pathlib.Path | None:
+    """導入済みcacheの実体と公開marketplace一覧を対応付け、配布元の実在rootを返す。"""
+    home = pathlib.Path(os.environ.get("CODEX_HOME", pathlib.Path.home() / ".codex"))
+    cache = (home / "plugins/cache").resolve()
+    if not root.is_relative_to(cache):
+        return None
+    parts = root.relative_to(cache).parts
+    if len(parts) != 3 or parts[1] != name:
+        return None
+    marketplace, _name, version = parts
+    listing = _host_json("codex", ["codex", "plugin", "marketplace", "list", "--json"], None)
+    markets = listing.get("marketplaces", []) if isinstance(listing, dict) else []
+    sources = [item.get("root") for item in markets if isinstance(item, dict) and item.get("name") == marketplace]
+    if len(sources) != 1 or not isinstance(sources[0], str):
+        return None
+    source = pathlib.Path(sources[0])
+    if not source.is_absolute() or not source.is_dir():
+        return None
+    data = _host_json("codex", ["codex", "plugin", "list", "--json", "--marketplace", marketplace], None)
+    installed = data.get("installed", []) if isinstance(data, dict) else []
+    matched = [
+        item
+        for item in installed
+        if isinstance(item, dict)
+        and item.get("name") == name
+        and item.get("marketplaceName") == marketplace
+        and item.get("version") == version
+        and item.get("installed") is True
+        and item.get("enabled") is True
+    ]
+    return source.resolve() if len(matched) == 1 else None
+
+
 def _host_json(host: str, command: list[str], project: pathlib.Path | None) -> object:
     """ホストCLIの照会を時間上限付きで実行し、JSONを返す。
 

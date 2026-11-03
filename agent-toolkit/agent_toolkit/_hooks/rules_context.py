@@ -12,6 +12,7 @@ Claude CodeはJSONのadditionalContextを10,000文字で保存先とプレビュ
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import pathlib
@@ -172,7 +173,10 @@ def reset_main_operation_skill_ready(
                 except KeyError, OSError, TypeError, ValueError:
                     continue
                 # 同じ内容の写しを別の場所で読んだ取得も、選択済み資料の取得として候補に含める。
-                if document_reads.content_ready(recorded, fingerprint, MAIN_AGENT_ID):
+                if (
+                    document_reads.acquisition_state(recorded, read_triggers.ReadTarget(path, heading), MAIN_AGENT_ID)
+                    != "missing"
+                ):
                     reference = document_reads.reference_only(
                         [origin["operations"] for origin in selected.get("declarations", [])]
                     )
@@ -211,6 +215,12 @@ def reset_main_operation_skill_ready(
         if updated == recorded:
             return None
         current[OPERATION_SKILL_READY_KEY] = updated
+        current.get("document_read_candidates", {}).pop(MAIN_AGENT_ID, None)
+        for key in current.get("document_read_offsets", {}):
+            actor, path = json.loads(key)
+            if actor == MAIN_AGENT_ID:
+                with contextlib.suppress(OSError):
+                    current["document_read_offsets"][key] = pathlib.Path(path).stat().st_size
         return current
 
     update_state(session_id, _reset)
@@ -220,8 +230,7 @@ def reset_main_operation_skill_ready(
 def shell_acquisition_conditions() -> str:
     """取得観測が受理するシェル実行と、取得後の再試行を案内する。"""
     return (
-        "静的な読取は、1回のシェル実行（Codexではexec_command）で単独か`&&`連結にし、成功した出力を返せ。"
-        "`;`連結・パイプ前段・出力リダイレクト・失敗した読取は取得として記録されない。"
+        "必要範囲の本文を実出力として返せ。省略・退避した部分は実際に回収してから進め。"
         "取得後は、止められた元の書き込みを再発行できる"
     )
 
@@ -275,13 +284,11 @@ def _compact_recovery_context(
 ) -> str | None:
     """圧縮前に取得した選択資料を、ホスト本来の取得手段で案内する。"""
     steps = []
-    for path, heading, fingerprint, reference in recovery_targets:
+    for path, heading, _fingerprint, reference in recovery_targets:
         target = read_triggers.ReadTarget(path, heading)
         try:
             if not path.is_file():
                 raise FileNotFoundError(str(path))
-            if document_reads.content_fingerprint(path) != fingerprint:
-                continue
             if heading:
                 target.body()
             skill = document_reads.skill_document(str(path))
@@ -298,9 +305,18 @@ def _compact_recovery_context(
                 continue
             focus = f"。特に`{heading}`に注目せよ" if heading else ""
             if host in {"codex", "agy"}:
-                steps.append(f"`cat -- {shlex.quote(str(path))}`で全文読め" + focus)
+                if heading:
+                    steps.append(
+                        "、".join(
+                            f"`sed -n '{start},{end}p' -- {shlex.quote(str(path))}`" for start, end in target.line_ranges()
+                        )
+                        + "で必要範囲を取得せよ"
+                        + focus
+                    )
+                else:
+                    steps.append(f"`cat -- {shlex.quote(str(path))}`で全文読め")
             else:
-                step = f"Readで`{path}`を全文読め"
+                step = f"Readで`{path}`の必要節を取得せよ" if heading else f"Readで`{path}`を全文読め"
                 if skill and not document_reads.skill_loadable(path, cwd=cwd):
                     step += f"。Bashでは`cat -- {shlex.quote(str(path))}`で取得せよ"
                 steps.append(step + focus)
