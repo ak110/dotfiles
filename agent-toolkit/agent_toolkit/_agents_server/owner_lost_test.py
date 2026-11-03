@@ -553,6 +553,7 @@ def test_process_loop_record_stays_running_while_claude_child_survives(
     assert session_registry.resolve(identifier).state is session_registry.Resolution.TERMINAL
 
 
+@pytest.mark.windows
 def test_stop_recorded_executor_reclaims_descendant_started_after_first_listing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

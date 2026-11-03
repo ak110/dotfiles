@@ -13,6 +13,8 @@ import pytest
 from pytools import touch_file
 from pytools._internal import winutils
 
+pytestmark = pytest.mark.windows
+
 
 def _set_mtime(path: pathlib.Path, time: datetime.datetime) -> None:
     ts = time.timestamp()

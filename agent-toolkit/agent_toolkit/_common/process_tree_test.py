@@ -19,6 +19,8 @@ import pytest
 from agent_toolkit._common import process_tree
 from agent_toolkit._testing import late_descendant
 
+pytestmark = pytest.mark.windows
+
 _CHILD_SOURCE = "import time; time.sleep(120)"
 
 
@@ -249,22 +251,37 @@ def test_stop_tree_does_not_leave_suspended_targets_on_exception(spawn_parent, m
     assert not _still_holding_resources(targets)
 
 
-def test_stop_tree_keeps_processes_outside_the_tree_and_the_excluded_root(spawn_parent):
+def test_stop_tree_keeps_processes_outside_the_tree_and_the_excluded_root(spawn_parent, tmp_path: pathlib.Path):
     """起点を除く指定では起点を一時停止も終了もせず、木の外のプロセスも維持して、子孫だけを終了させる。"""
-    parent = spawn_parent()
+    # Windowsの仮想環境の`python.exe`は本体を子として起動する中継役であり、`Popen.pid`は本体の親になる。
+    # 起点を除く契約を本体で確かめるため、本体に自身のPIDを書かせて起点にする。
+    marker = tmp_path / "root.pid"
+    source = (
+        "import os, pathlib, subprocess, sys, time; "
+        f"subprocess.Popen([sys.executable, '-c', {_CHILD_SOURCE!r}]); "
+        f"pathlib.Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(120)"
+    )
     other = spawn_parent()
-    descendants = process_tree.collect_descendants(parent.pid)
-    result = process_tree.stop_tree(psutil.Process(parent.pid), include_root=False, timeout=1.0)
-    assert parent.pid not in {item.pid for item in result.targets}
-    assert not _still_holding_resources(descendants)
-    assert parent.poll() is None
-    assert psutil.Process(parent.pid).status() != psutil.STATUS_STOPPED
+    with process_tree.process_scope([sys.executable, "-c", source]):
+        _wait_for_ready_marker(marker)
+        root = psutil.Process(int(marker.read_text()))
+        deadline = time.monotonic() + 30.0
+        while not root.children(recursive=True) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        descendants = root.children(recursive=True)
+        assert descendants
+        result = process_tree.stop_tree(root, include_root=False, timeout=1.0)
+        assert root.pid not in {item.pid for item in result.targets}
+        assert not _still_holding_resources(descendants)
+        assert root.is_running()
+        assert root.status() != psutil.STATUS_STOPPED
     assert other.poll() is None
     assert process_tree.collect_descendants(other.pid)
 
 
 _GRACEFUL_SOURCE = """
 import pathlib, signal, subprocess, sys, time
+
 directory = pathlib.Path(sys.argv[1])
 def handle(_signum, _frame):
     (directory / "graceful").touch()

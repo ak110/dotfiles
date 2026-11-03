@@ -1555,6 +1555,7 @@ SERVER_PLUGIN_ROOT = resolve_stable_plugin_root()
 
 
 # Windowsのcold依存導入、配布コピーと終了後の回収までを含む上限。
+@pytest.mark.windows
 @pytest.mark.timeout(180)
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("share_package_caches")
@@ -2731,6 +2732,7 @@ async def test_close_reclaims_app_server_and_mcp_when_reader_and_term_stall(
             await reader
 
 
+@pytest.mark.windows
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_stop_reclaims_descendant_started_after_first_listing(

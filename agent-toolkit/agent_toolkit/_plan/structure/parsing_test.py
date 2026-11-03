@@ -23,6 +23,8 @@ from agent_toolkit._testing.plan_structure_support import (
     _write_wi,
 )
 
+pytestmark = pytest.mark.windows
+
 
 def test_human_readable_main_accepts_satisfied_action() -> None:
     """新書式の実施内容表は裏付けを持つ`充足済み`を受理する。"""

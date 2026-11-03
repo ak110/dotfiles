@@ -12,6 +12,8 @@ import pytest
 from agent_toolkit._common import plugin_root_leases as subject
 from agent_toolkit._common import state_paths
 
+pytestmark = pytest.mark.windows
+
 
 @pytest.mark.parametrize("observation", ["live", "broken-json", "pid-reused", "access-denied"])
 def test_plugin_root_in_use_distinguishes_live_stale_and_unknown(

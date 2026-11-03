@@ -12,6 +12,8 @@ import pytest
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.managed_temp import permissions
 
+pytestmark = pytest.mark.windows
+
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIXの権限ビットと記述子を検証する")
 @pytest.mark.parametrize("mode", [0, 0o100, 0o300, 0o500, 0o555])

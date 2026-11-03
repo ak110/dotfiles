@@ -143,6 +143,7 @@ async def test_close_reclaims_descendants_when_kill_wait_stalls(
             await asyncio.to_thread(process_tree.reclaim_processes, targets, timeout=0.5)
 
 
+@pytest.mark.windows
 @pytest.mark.asyncio
 async def test_close_reclaims_descendant_started_after_first_listing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, host_environ: Callable[[], dict[str, str]]

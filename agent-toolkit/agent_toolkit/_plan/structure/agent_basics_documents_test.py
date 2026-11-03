@@ -4,6 +4,8 @@ import pytest
 
 from agent_toolkit._plan import structure
 
+pytestmark = pytest.mark.windows
+
 
 @pytest.mark.parametrize(
     "path",

@@ -282,6 +282,7 @@ sys.exit(3)
 """
 
 
+@pytest.mark.windows
 @pytest.mark.parametrize("mode", ["finish", "deadline"])
 def test_lifetime_reclaims_descendant_started_after_first_listing(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], mode: str

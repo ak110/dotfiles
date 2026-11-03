@@ -5,6 +5,8 @@ import pytest
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan.structure.verification import plan_commands
 
+pytestmark = pytest.mark.windows
+
 
 def test_plan_commands_ignores_fenced_table_and_preserves_quoted_arguments() -> None:
     content = (

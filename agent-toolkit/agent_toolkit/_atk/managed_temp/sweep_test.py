@@ -16,6 +16,8 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.managed_temp import paths, permissions, sweep
 from agent_toolkit._common import file_lock, plugin_root_leases
 
+pytestmark = pytest.mark.windows
+
 _NOW = datetime.datetime(2026, 10, 25, 12, 0, tzinfo=datetime.UTC)
 
 

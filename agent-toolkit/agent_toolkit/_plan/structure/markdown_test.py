@@ -29,6 +29,8 @@ from agent_toolkit._testing.plan_structure_support import (
     _write_wi,
 )
 
+pytestmark = pytest.mark.windows
+
 
 def test_markdown_table_keeps_first_and_last_row_locations() -> None:
     """表の先頭行と末尾行について入力の行番号と原文を保持する。"""

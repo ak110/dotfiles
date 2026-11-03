@@ -30,6 +30,8 @@ from agent_toolkit._testing.plan_structure_support import (
     _write_wi,
 )
 
+pytestmark = pytest.mark.windows
+
 
 def test_human_readable_action_rejects_non_adopted_empty_reason() -> None:
     """人間向け形式の採用以外の行は自足した理由を持つ。"""

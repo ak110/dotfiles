@@ -9,6 +9,8 @@ import pytest
 
 from agent_toolkit._git import command as subject
 
+pytestmark = pytest.mark.windows
+
 
 def test_run_quiet_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """成功したGitの出力を標準出力にも標準エラーにも書かない。"""

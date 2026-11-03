@@ -132,6 +132,7 @@ time.sleep(120)
 """
 
 
+@pytest.mark.windows
 @pytest.mark.asyncio
 async def test_model_list_reclaims_descendant_started_after_first_listing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

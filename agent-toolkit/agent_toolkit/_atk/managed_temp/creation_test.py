@@ -13,6 +13,8 @@ import pytest
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.managed_temp import paths
 
+pytestmark = pytest.mark.windows
+
 
 def _legacy_reference(session_id: str, target: pathlib.Path) -> pathlib.Path:
     reference = paths.state_root() / ".sessions" / hashlib.sha256(session_id.encode()).hexdigest()

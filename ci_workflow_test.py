@@ -5,6 +5,7 @@ import json
 import os
 import re
 import runpy
+import shlex
 import shutil
 import subprocess
 import sys
@@ -178,10 +179,14 @@ def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]
     ["pytools/touch_file_test.py", "agent-toolkit/agent_toolkit/_common/plugin_environment_test.py"],
 )
 def test_windows_job_runs_link_and_prepare_lock_boundaries(workflow_data: dict[str, object], target: str) -> None:
-    """リンク非追跡と共有環境のlock境界をWindows上で検証する指定を保つ。"""
+    """リンク非追跡と共有環境のlock境界をWindows上で検証する指定を保つ。
+
+    Windows境界テストは`windows` markerで対象を選ぶため、ステップがmarkerを選択し、対象ファイルがmarkerを持つことを確かめる。
+    """
     _, step = _windows_step(workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "Windows境界テスト")
-    targets = direct_pytest_targets({"jobs": {"test-windows": {"steps": [step]}}})
-    assert target in targets
+    tokens = shlex.split(str(step["run"]))
+    assert tokens[tokens.index("-m") + 1] == "windows"
+    assert "pytestmark = pytest.mark.windows" in (REPO_ROOT / target).read_text(encoding="utf-8").splitlines()
 
 
 def test_windows_job_runs_pinned_codex_command_integration(workflow_data: dict[str, object]) -> None:
