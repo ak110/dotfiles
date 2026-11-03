@@ -95,13 +95,16 @@ def stop_tree_by_pid(pid: int, **kwargs: Any) -> TreeStopResult | None:
 
 
 def stop_tree(
-    root: psutil.Process,
+    root: psutil.Process | None,
     *,
     include_root: bool = True,
     known: Iterable[psutil.Process] = (),
     timeout: float = RECLAIM_TIMEOUT_SECONDS,
 ) -> TreeStopResult:
     """`root`の子孫（`include_root`なら`root`自身も）の生成を止め、終了させて回収する。
+
+    `root`を省略（None）すると`known`だけを起点に回収する。
+    前回の停止で未確定が残った対象を、起点の終了後に再試行する場合に使う。
 
     Windowsでは一時停止した全対象を強制終了する（一時停止中でも終了できる）。
     POSIXでは全対象へSIGTERMを送ってから再開し、正常終了の機会を保つ。
@@ -135,13 +138,13 @@ def stop_tree(
 class _OwnedTree:
     """`stop_tree`が所有する終了対象と、子孫を辿る起点の集合。"""
 
-    def __init__(self, root: psutil.Process, *, include_root: bool, known: Iterable[psutil.Process]) -> None:
+    def __init__(self, root: psutil.Process | None, *, include_root: bool, known: Iterable[psutil.Process]) -> None:
         self._anchors: dict[tuple[int, float], psutil.Process] = {}
         self._owned: dict[tuple[int, float], psutil.Process] = {}
         self.suspended: set[tuple[int, float]] = set()
         self.unresolved: list[str] = []
-        root_key = _key(root)
-        if root_key is not None:
+        root_key = None if root is None else _key(root)
+        if root is not None and root_key is not None:
             if include_root and root.pid != os.getpid():
                 self._owned[root_key] = root
             else:
@@ -456,4 +459,15 @@ def log_residual(residual: list[str], *, context: str) -> None:
     回収の失敗は委譲の失敗として扱わないため、呼び出し元の終了処理は継続する。
     """
     if residual:
-        _LOG.warning("委譲先の子孫プロセスを回収できませんでした: context=%s residual=%s", context, residual)
+        _LOG.warning("%s", residual_message(residual, context=context))
+
+
+def residual_message(residual: list[str], *, context: str) -> str:
+    """回収できなかった対象と、診断を読む主体が次に取る操作を示す診断文を返す。"""
+    return (
+        f"委譲先の子孫プロセスを回収できませんでした: context={context} residual={residual}。"
+        "次の操作: 一覧のPIDと起動コマンドで対象を確かめ、不要なら終了させる"
+        "（POSIXは`kill -KILL <PID>`、Windowsは`taskkill /PID <PID> /T /F`）。"
+        "「生成の停止を確認できない」がある場合は、一覧に無い子孫が残っている可能性があるため、"
+        "同じ停止操作を再実行して回収を再試行し、残れば同じ手順で確かめる"
+    )

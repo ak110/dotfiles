@@ -315,6 +315,9 @@ class JsonRpcProcess:
         self._initialization_stage = "created"
         self._received_message_types: dict[str, int] = {}
         self._residual: list[psutil.Process] = []
+        # 生成の停止を確認できなかった前回の停止の理由と、その停止が所有した対象。再closeで同じ対象から回収を再試行する。
+        self._unresolved: list[str] = []
+        self._owned: list[psutil.Process] = []
 
     def initialization_diagnostic(self) -> dict[str, Any]:
         """初期化の到達段階と、長さに上限を設けた子プロセスの診断値を返す。"""
@@ -585,10 +588,9 @@ class JsonRpcProcess:
         return await finish_task(task)
 
     async def _close(self) -> list[str]:
-        if self._closed and self.process is None and not self._residual:
+        if self._closed and self.process is None and not self._residual and not self._unresolved:
             return []
         process = self.process
-        unresolved: list[str] = []
         reclaimed = False
         diagnostic_targets = [] if process is None else [process.pid]
         if sys.platform == "win32":
@@ -617,7 +619,8 @@ class JsonRpcProcess:
                 if result is not None:
                     reclaimed = True
                     self._residual = [item for item in result.residual if item.pid != process.pid]
-                    unresolved = result.unresolved_descriptions()
+                    self._unresolved = result.unresolved_descriptions()
+                    self._owned = result.targets
                     diagnostic_targets += [item.pid for item in result.targets if item.pid != process.pid]
         else:
             tasks = ()
@@ -638,7 +641,13 @@ class JsonRpcProcess:
             await lifetime.wait_for_shutdown(tasks)
         if process is not None:
             _LOG.info("Codex App Serverを終了しました: returncode=%s", process.returncode)
-        if not reclaimed:
+        if not reclaimed and self._unresolved:
+            # 前回の停止で生成の停止を確認できなかった。所有した対象を起点に、残る子孫を改めて回収する。
+            retry = await asyncio.to_thread(process_tree.stop_tree, None, known=[*self._owned, *self._residual])
+            self._residual = retry.residual
+            self._unresolved = retry.unresolved_descriptions()
+            self._owned = retry.targets
+        elif not reclaimed:
             self._residual = await asyncio.to_thread(process_tree.reclaim_processes, self._residual)
         if sys.platform == "win32":
             _LOG.info(
@@ -649,7 +658,7 @@ class JsonRpcProcess:
                 None if process is None else process.returncode,
                 await run_file_operation(lambda: [process_tree.identity(pid) for pid in diagnostic_targets]),
             )
-        residual = [process_tree.describe(item) for item in self._residual] + unresolved
+        residual = [process_tree.describe(item) for item in self._residual] + self._unresolved
         if process is not None and process.returncode is not None:
             self.process = None
         elif process is not None:

@@ -2757,6 +2757,42 @@ async def test_stop_reclaims_descendant_started_after_first_listing(
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
+async def test_unresolved_generation_stop_is_retried_instead_of_reported_released(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """生成の停止を確認できなかった停止は再試行できる失敗として返し、再発行で同じ所有対象を改めて回収する。"""
+    async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
+        session_id = (await manager.start("plan", "担当", str(tmp_path)))["session_id"]
+        await _wait_terminal(manager, session_id)
+        server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
+        original_suspend = psutil.Process.suspend
+        suspends: list[int] = []
+
+        def suspend(process: psutil.Process) -> None:
+            suspends.append(process.pid)
+            # 1回目の停止ではApp Serverの一時停止を拒否し、生成の停止を確認できない状態を作る。
+            if process.pid == server_pid and suspends.count(server_pid) == 1:
+                raise psutil.AccessDenied(process.pid)
+            original_suspend(process)
+
+        monkeypatch.setattr(psutil.Process, "suspend", suspend)
+        with pytest.raises(ActionableError) as raised:
+            await manager.stop(session_id)
+        assert "生成の停止を確認できない" in str(raised.value)
+        assert session_registry.resolve(session_id).state is not session_registry.Resolution.RELEASED
+        stopped_once = len(suspends)
+
+        assert await manager.stop(session_id) == {}
+
+        # 再発行では成功を前提にせず、所有対象から子孫を改めて回収した。
+        assert len(suspends) > stopped_once
+        assert not fake.alive(server_pid)
+        assert not any(fake.alive(pid) for pid in mcp_pids)
+        assert session_registry.resolve(session_id).state is session_registry.Resolution.RELEASED
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
 async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """子孫を回収できないstopは再試行の方法とともに失敗し、解放済みと記録せず、再発行で回収を完了する。"""
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):

@@ -130,17 +130,18 @@ class ServerLifetime:
     def finish(self) -> None:
         """正常な終了処理の完了後に監視を解除する。"""
         self.request_stop(cancel_transport=False)
-        self._reclaim()
+        process_tree.log_residual(self._reclaim(), context="agents_server finish")
         self._finished.set()
         self._thread.join(timeout=POLL_INTERVAL * 2)
         os.close(self._stdin_fd)
         for signum, previous in self._handlers.items():
             signal.signal(signum, previous)
 
-    def _reclaim(self) -> None:
+    def _reclaim(self) -> list[str]:
+        """子孫の生成を止めて回収し、残った対象と生成の停止を確認できなかった理由の記述を返す。"""
         # 監視主体（自プロセス）は回収を続けるため一時停止せず、子孫だけの生成を止めてから終了させる。
         # 定期収集済みの対象に加えて最後に列挙し直すだけでは、その後に起動した子孫が親を失うと回収から漏れる。
-        process_tree.stop_tree(self._process, include_root=False, known=list(self._targets.values()))
+        return process_tree.stop_tree(self._process, include_root=False, known=list(self._targets.values())).descriptions()
 
     def _collect(self) -> None:
         for key, process in tuple(self._targets.items()):
@@ -184,7 +185,10 @@ class ServerLifetime:
                     self._callback()
             if time.monotonic() >= self._deadline:
                 # shutdownやloggingのロック、asyncio.runの残task待機へ戻らず終了する。
-                self._reclaim()
+                # 回収できなかった対象は、loggingを経由せず標準エラーへ直接書いて残す。
+                if residual := self._reclaim():
+                    with contextlib.suppress(OSError):
+                        os.write(2, (process_tree.residual_message(residual, context="agents_server deadline") + "\n").encode())
                 if not self._finished.is_set():
                     os._exit(self._exitcode)
                 return

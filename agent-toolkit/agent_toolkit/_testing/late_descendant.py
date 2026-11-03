@@ -101,14 +101,22 @@ def arm(
         result = original(*args, **kwargs)
         if not fired.is_set() and (thread_name is None or threading.current_thread().name == thread_name):
             fired.set()
-            (directory / "trigger").touch()
-            deadline = time.monotonic() + READY_TIMEOUT_SECONDS
-            while not (directory / "holder.pid").exists() and time.monotonic() < deadline:
-                time.sleep(0.01)
+            trigger(directory)
         return result
 
     setattr_(process_tree, name, wrapper)
     return fired
+
+
+def trigger(directory: pathlib.Path) -> None:
+    """spawnerへholderを起動させ、準備を上限まで待つ。
+
+    生成が止められていてholderが起動しない場合は、上限まで待って処理を続ける。
+    """
+    (directory / "trigger").touch()
+    deadline = time.monotonic() + READY_TIMEOUT_SECONDS
+    while not (directory / "holder.pid").exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
 
 
 def assert_released(directory: pathlib.Path) -> None:

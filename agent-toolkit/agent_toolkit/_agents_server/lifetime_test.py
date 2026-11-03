@@ -260,10 +260,16 @@ def test_monitor_start_failure_restores_signal_handlers(monkeypatch: pytest.Monk
 
 _LATE_SCRIPT = """
 import pathlib, subprocess, sys, time
+import psutil
 from agent_toolkit._agents_server import lifetime
 from agent_toolkit._testing import late_descendant
 
 mode, directory = sys.argv[1], pathlib.Path(sys.argv[2])
+if len(sys.argv) > 3:
+    # 一時停止を拒否させ、生成の停止を確認できない結果が診断へ残ることを観測する。
+    def deny(self, **kwargs):
+        raise psutil.AccessDenied(self.pid)
+    psutil.Process.suspend = deny
 # finishでは期限による強制終了が回収と重ならない長さにし、期限到達の試験では短くする。
 monitor = lifetime.ServerLifetime(timeout=30.0 if mode == "finish" else 0.5)
 # 定期収集がspawnerを先に所有すると、終了処理の最初の列挙より前に一時停止され同期点を作れない。
@@ -272,10 +278,13 @@ monitor._collect = lambda: None
 monitor.start()
 subprocess.Popen(late_descendant.cli_command(directory))
 late_descendant.wait_spawner(directory)
-late_descendant.arm(directory, setattr, thread_name="MainThread" if mode == "finish" else "agents-server-lifetime")
 if mode == "finish":
+    late_descendant.arm(directory, setattr, thread_name="MainThread")
     monitor.finish()
     sys.exit(0)
+# 期限到達の回収は、定期収集の後に起動して未収集のまま親が残る子孫を対象にする。
+# 修正前の期限回収は列挙せず定期収集済みの対象だけを終了させるため、回収より前に生成を終えておく。
+late_descendant.trigger(directory)
 monitor.request_stop()
 time.sleep(60)
 sys.exit(3)
@@ -296,3 +305,23 @@ def test_lifetime_reclaims_descendant_started_after_first_listing(
         # 期限到達では監視スレッドが回収後に終了コード0で即時終了し、sleep後の3へ到達しない。
         assert process.wait(timeout=60) == 0
     late_descendant.assert_released(tmp_path)
+
+
+@pytest.mark.parametrize("mode", ["finish", "deadline"])
+def test_lifetime_reports_unresolved_generation_stop(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], mode: str
+) -> None:
+    """生成の停止を確認できない回収結果を、通常終了と期限到達のどちらでも次の操作付きの診断として残す。"""
+    script = tmp_path / "late_lifetime.py"
+    script.write_text(_LATE_SCRIPT, encoding="utf-8")
+    with process_tree.process_scope(
+        [sys.executable, str(script), mode, str(tmp_path), "deny-suspend"],
+        env=host_environ(),
+        stdin=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ) as process:
+        _, stderr = process.communicate(timeout=60)
+        assert process.returncode == 0
+    message = stderr.decode("utf-8", errors="replace")
+    assert "生成の停止を確認できない" in message
+    assert "次の操作" in message
