@@ -168,7 +168,7 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
   正式なstartup-documentは識別と本文を意味上で確認して記録する。
   選択は`ReadTrigger.condition`の自然文と役割を保持する。他役割の行を除き、判断契機では`read:`・`section:`の明示選択と、`confirmation`に一致する確認ツール呼出しを確定側に含める。`AskUserQuestion`・`request_user_input`・`request_user_input_async`の呼出しは確認本文・選択肢の起草契機を観測したものとして扱う。他の未確定な自然文条件は確認候補とする。同一パスの節を集約し、宣言修復後の選択は現行宣言へ接続する。圧縮前の候補は現在の必読案内と遮断の根拠から除外する。
 - `document_read_candidates`: PreToolUseで準備した、主体ごとの既知資料・必要範囲・受信前の版とdigest。Readの明示対象も含め、選択前の取得と観測前の外部更新に対応する。保存はdigestなどのメタデータに限定する。compact時はメインの候補を除く。
-- `document_read_pending`: Codexの内側出力と一致した版・行digest・必要範囲の主体別候補。外側配送で一致した行だけを取得記録へ反映し、観測分を消費する。本文は保存せず、compact時はメインの候補を除く。
+- `document_read_pending`: Codexの読取要求の行位置・版・本文digest・必要範囲の主体別候補。外側配送でも本文を確認した要求位置だけを取得記録へ反映する。別位置の同文候補が区別できなければ取得済みにせず、観測した外側出力と対応しない候補を次の読取へ流用しない。本文は保存せず、compact時はメインの候補を除く。
 - `document_read_offsets`: 主体とrolloutの絶対パスから、観測済みのバイト位置への対応。Codexの後続PreToolUseが完成した外側出力行だけを差分走査して進める。compact時はメインの位置を末尾へ進め、以後に配送された本文を観測する。寿命はセッション状態と同じ。
 - `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程に必要な証拠を作業単位で管理・保持する。保持する内容には、作業ごとの成果作業の種別、report-completionの起動証拠、ツールの呼び出し履歴、判断の記録、遅れて返ってくる応答を元の作業に対応付けるための未完了の呼び出し、ならびに判断の根拠となった人間の入力が含まれる。
   PreToolUse、PostToolUse、UserPromptSubmitがツール呼び出しと人間の入力を逐次更新し、Stopの`termination_order_advisor`が成果作業と起動証拠の対応関係を読み取る。報告本文、完了の自己申告、起動済みを示す独自フラグなどは保持しない。

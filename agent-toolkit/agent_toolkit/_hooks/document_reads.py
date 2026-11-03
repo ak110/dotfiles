@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
-import difflib
 import functools
 import hashlib
 import json
@@ -435,23 +434,50 @@ def received_candidates(candidates: Sequence[dict], texts: Sequence[str]) -> lis
     return result
 
 
-def fragment_candidates(candidates: Sequence[dict], texts: Sequence[str]) -> list[dict]:
-    """実応答と一致した連続行を、読取時に観測した版へ結び付ける。本文は保持しない。"""
+def _find_lines(lines: list[str], expected: list[str], cursor: int) -> int:
+    return next(
+        (index for index in range(cursor, len(lines) - len(expected) + 1) if lines[index : index + len(expected)] == expected),
+        -1,
+    )
+
+
+def fragment_candidates(
+    candidates: Sequence[dict], texts: Sequence[str], requests: dict[str, list[tuple[int, int | None]]]
+) -> list[dict]:
+    """読取要求の位置に対応する本文が実出力へ返った範囲を保持する。位置は本文から推定しない。"""
     variants = [_line_hashes(text) for text in _text_variants(texts)]
     choices: dict[str, tuple[int, dict]] = {}
     for source in candidates:
-        if not source.get("lines"):
+        if not source.get("lines") or source["path"] not in requests:
             continue
-        best: list[list[str]] = []
+        requested: list[dict] = []
+        for start, end in requests[source["path"]]:
+            if start < 0:
+                start = max(1, len(source["lines"]) + start + 1)
+            end = min(end if end is not None else len(source["lines"]), len(source["lines"]))
+            if start <= end:
+                content = source["lines"][start - 1 : end]
+                if end == len(source["lines"]):
+                    while content and content[-1] == bytes_fingerprint(b""):
+                        content.pop()
+                if content:
+                    requested.append({"start": start, "lines": content})
+        if not requested:
+            continue
+        best: list[dict] = []
+        delivery = ""
         for lines in variants:
-            blocks = [
-                source["lines"][match.a : match.a + match.size]
-                for match in difflib.SequenceMatcher(None, source["lines"], lines, autojunk=False).get_matching_blocks()
-                if match.size
-            ]
-            if sum(map(len, blocks)) > sum(map(len, best)):
-                best = blocks
-        score = sum(map(len, best))
+            cursor = 0
+            for block in requested:
+                index = _find_lines(lines, block["lines"], cursor)
+                if index < 0:
+                    break
+                cursor = index + len(block["lines"])
+            else:
+                best = requested
+                delivery = bytes_fingerprint("".join(lines).encode("ascii"))
+                break
+        score = sum(len(block["lines"]) for block in best)
         if not score:
             continue
         scopes = [
@@ -459,27 +485,75 @@ def fragment_candidates(candidates: Sequence[dict], texts: Sequence[str]) -> lis
             for item in candidates
             if item["path"] == source["path"] and item["version"] == source["version"]
         ]
-        packet = {"source": source, "scopes": scopes, "blocks": best, "remaining": score}
+        packet = {"source": source, "scopes": scopes, "blocks": best, "delivery": delivery}
         # Preの版を先に渡す。Postまでに実体が変わった場合も、同点なら受信前の版を保つ。
         if source["path"] not in choices or score > choices[source["path"]][0]:
             choices[source["path"]] = (score, packet)
     return [packet for _score, packet in choices.values()]
 
 
-def delivered_fragments(packet: dict, texts: Sequence[str]) -> tuple[int, list[list[str]]]:
-    """内側で生産された行のうち、外側でも実際に届いたものだけを返す。"""
-    best: list[list[str]] = []
-    for text in _text_variants(texts):
-        lines = _line_hashes(text)
-        observed = [
-            block[match.a : match.a + match.size]
-            for block in packet["blocks"]
-            for match in difflib.SequenceMatcher(None, block, lines, autojunk=False).get_matching_blocks()
-            if match.size
-        ]
-        if sum(map(len, observed)) > sum(map(len, best)):
-            best = observed
-    return sum(map(len, best)), best
+def delivered_fragments(packet: dict, texts: Sequence[str]) -> tuple[int, list[dict]]:
+    """生産した応答全体の配送回数を数え、別の応答の一部分を流用しない。"""
+    blocks = packet["blocks"]
+    if any(not isinstance(block, dict) for block in blocks):
+        return 0, []
+
+    def matches_delivery(text: str) -> bool:
+        try:
+            return bytes_fingerprint("".join(_line_hashes(text)).encode("ascii")) == packet.get("delivery")
+        except UnicodeError:
+            return False
+
+    count = 0
+    for text in texts:
+        fields = []
+        with contextlib.suppress(ValueError):
+            decoded = json.loads(text)
+            if isinstance(decoded, str):
+                fields.append(decoded)
+        # 外側のtext(result)に含まれる本文フィールドを、同文の重複も保って数える。
+        for match in re.finditer(r'"((?:[^"\\]|\\.)*)"\s*:\s*("(?:[^"\\]|\\.)*")', text):
+            with contextlib.suppress(ValueError):
+                if json.loads('"' + match[1] + '"') in {"stdout", "stderr", "output", "text", "content"}:
+                    fields.append(json.loads(match[2]))
+        count += max(int(matches_delivery(text)), sum(matches_delivery(field) for field in fields))
+    return count, blocks if count else []
+
+
+def fragment_coverage(packets: Sequence[dict]) -> dict[str, list[list[int]]]:
+    """本文が一致した読取要求の位置を、同じ全文内容の写しにも適用する。"""
+    result: dict[str, list[list[int]]] = {}
+    for packet in packets:
+        ranges = result.setdefault(packet["source"]["version"], [])
+        ranges.extend([block["start"], block["start"] + len(block["lines"]) - 1] for block in packet["blocks"])
+    return {version: _merge_ranges(ranges) for version, ranges in result.items()}
+
+
+def unambiguous_fragments(packet: dict, pending: Sequence[dict], texts: Sequence[str]) -> list[dict]:
+    """省略後も完全な要求範囲があり、他の生産位置と競合しない断片を返す。"""
+    visible = [_line_hashes(text) for text in _text_variants(texts)]
+    result = []
+    for block in packet["blocks"]:
+        positions = set()
+        for other in pending:
+            for produced in other["blocks"]:
+                if not isinstance(produced, dict):
+                    continue
+                cursor = 0
+                while (index := _find_lines(produced["lines"], block["lines"], cursor)) >= 0:
+                    positions.add((other["source"]["logical"], other["source"]["version"], produced["start"] + index))
+                    cursor = index + 1
+        expected = (packet["source"]["logical"], packet["source"]["version"], block["start"])
+        if positions == {expected} and any(_find_lines(lines, block["lines"], 0) >= 0 for lines in visible):
+            result.append(block)
+    return result
+
+
+def restrict_receipts(candidates: Sequence[dict], coverage: dict[str, list[list[int]]]) -> list[dict]:
+    """同文の部分反復が全文に一致しても、既知の要求位置より広い取得へ昇格させない。"""
+    return [
+        item for item in candidates if item["version"] not in coverage or _covers(coverage[item["version"]], item["ranges"])
+    ]
 
 
 def _merge_ranges(ranges: Sequence[Sequence[int]]) -> list[list[int]]:
@@ -496,7 +570,7 @@ def _covers(coverage: Sequence[Sequence[int]], required: Sequence[Sequence[int]]
     return all(any(low <= start and end <= high for low, high in coverage) for start, end in required)
 
 
-def accumulate_fragments(records: dict, packet: dict, blocks: Sequence[list[str]], agent: str) -> list[dict]:
+def accumulate_fragments(records: dict, packet: dict, blocks: Sequence[dict], agent: str) -> list[dict]:
     """同じ主体・論理資料・版の実受信範囲だけを集約し、完成した既知範囲を返す。"""
     source = packet["source"]
     coverage = []
@@ -509,20 +583,11 @@ def accumulate_fragments(records: dict, packet: dict, blocks: Sequence[list[str]
             coverage.extend(item["coverage"])
             previous.append(key)
     coverage = _merge_ranges(coverage)
-    joined = "".join(source["lines"])
-    width = len(source["lines"][0])
     for block in blocks:
-        pattern = "".join(block)
-        index = joined.find(pattern)
-        placements = []
-        while index >= 0:
-            if index % width == 0:
-                placements.append([index // width + 1, index // width + len(block)])
-            index = joined.find(pattern, index + 1)
-        if placements:
-            # 同じ行が反復する資料でも、1応答を全出現箇所の取得へ膨らませない。
-            span = placements[0]
-            coverage = _merge_ranges([*coverage, span])
+        start = block["start"]
+        end = start + len(block["lines"]) - 1
+        if start >= 1 and block["lines"] == source["lines"][start - 1 : end]:
+            coverage = _merge_ranges([*coverage, [start, end]])
     for key in previous:
         records[key] = [actor for actor in records[key] if actor != agent]
         if not records[key]:

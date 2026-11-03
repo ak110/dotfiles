@@ -20,6 +20,7 @@ import re
 import shlex
 import tempfile
 import tomllib
+import uuid
 from collections.abc import Callable, Generator
 from typing import cast
 
@@ -1689,10 +1690,16 @@ def _receipt_targets(
     return list(dict.fromkeys(targets))
 
 
-def _record_receipts(session_id: str, agent: str, candidates: list[dict], texts: list[str], *, fragments=None) -> None:
+def _record_receipts(
+    session_id: str, agent: str, candidates: list[dict], texts: list[str], *, fragments=None, requests=None, coverage=None
+) -> None:
     received = document_reads.received_candidates(candidates, texts)
     if fragments is None:
-        fragments = [(packet, packet["blocks"]) for packet in document_reads.fragment_candidates(candidates, texts)]
+        fragments = [
+            (packet, packet["blocks"]) for packet in document_reads.fragment_candidates(candidates, texts, requests or {})
+        ]
+    coverage = coverage if coverage is not None else document_reads.fragment_coverage([packet for packet, _blocks in fragments])
+    received = document_reads.restrict_receipts(received, coverage)
     if not received and not fragments:
         return
     full = []
@@ -1703,7 +1710,11 @@ def _record_receipts(session_id: str, agent: str, candidates: list[dict], texts:
         for packet, blocks in fragments:
             completed.extend(document_reads.accumulate_fragments(records, packet, blocks, agent))
         known = {tuple(part) for item in completed for part in item["parts"]}
-        completed.extend(item for item in candidates if all(tuple(part) in known for part in item["parts"]))
+        completed.extend(
+            document_reads.restrict_receipts(
+                [item for item in candidates if all(tuple(part) in known for part in item["parts"])], coverage
+            )
+        )
         observed = set()
         for candidate in completed:
             metadata = document_reads.receipt_metadata(candidate)
@@ -1726,9 +1737,14 @@ def _record_receipts(session_id: str, agent: str, candidates: list[dict], texts:
 
 
 def _receipt_candidates(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[dict]:
+    requested = {pathlib.Path(path) for path in _fragment_requests(payload, tool_name, tool_input)}
     active = {target.path for target in _receipt_targets(payload, tool_name, tool_input, session_id, active_only=True)}
     candidates = document_reads.receipt_candidates(
-        _receipt_targets(payload, tool_name, tool_input, session_id), fragment_paths=active
+        [
+            *_receipt_targets(payload, tool_name, tool_input, session_id),
+            *(read_triggers.ReadTarget(path) for path in requested),
+        ],
+        fragment_paths=active | requested,
     )
     request = _read_request(tool_name, tool_input)
     for item in candidates:
@@ -1741,37 +1757,104 @@ def _read_request(tool_name: str, tool_input: dict) -> str:
     return document_reads.bytes_fingerprint(json.dumps([tool_name, tool_input], sort_keys=True).encode("utf-8"))
 
 
+def _fragment_requests(payload: dict, tool_name: str, tool_input: dict) -> dict[str, list[tuple[int, int | None]]]:
+    """ホストの読取引数から原本上の行位置を取得し、未知の位置は集約しない。"""
+    cwd = str(payload.get("cwd", ""))
+    result: dict[str, list[tuple[int, int | None]]] = {}
+    if tool_name == "Read":
+        start = tool_input.get("offset", 1)
+        limit = tool_input.get("limit")
+        if not isinstance(start, int) or isinstance(start, bool) or start < 1:
+            return result
+        if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit < 1):
+            return result
+        end = start + limit - 1 if limit is not None else None
+        response = payload.get("tool_response")
+        file = response.get("file") if isinstance(response, dict) else None
+        if isinstance(file, dict):
+            if file.get("startLine", start) != start:
+                return result
+            if file.get("truncatedByTokenCap") is True and isinstance(file.get("content"), str):
+                count = len(file["content"].splitlines())
+                end = min(end, start + count - 1) if end is not None else start + count - 1
+        return {str(path): [(start, end)] for path in _read_paths(tool_name, tool_input, cwd)}
+    command = tool_input.get("command")
+    if tool_name != "Bash" or not isinstance(command, str):
+        return result
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
+        if not invocation.execution_known or not invocation.arguments_known or invocation.captured or invocation.output_pipe:
+            continue
+        tokens = invocation.segment.tokens
+        selected = sed_read_range(tokens)
+        if selected is not None:
+            operand, start, end = selected
+            operands = [operand]
+        else:
+            plans = codex_read_observation.read_plan(join_words(tokens))
+            if len(plans) != 1 or plans[0].argv[0] not in {"cat", "head", "tail"}:
+                continue
+            plan = plans[0]
+            operands = [plan.argv[index] for index in plan.operands]
+            start, end = 1, None
+            if plan.argv[0] in {"head", "tail"}:
+                options = plan.argv[1 : plan.operands[0]]
+                count = (
+                    int(options[1])
+                    if options[:1] == ("-n",)
+                    else int(options[0][2:])
+                    if options and options[0].startswith("-n")
+                    else 10
+                )
+                if count < 1:
+                    continue
+                if plan.argv[0] == "head":
+                    end = count
+                else:
+                    start = -count
+        for operand in operands:
+            path = pathlib.Path(operand).expanduser()
+            if not path.is_absolute():
+                if not current.resolved:
+                    continue
+                path = pathlib.Path(current.path) / path
+            result.setdefault(str(path.resolve()), []).append((start, end))
+    return result
+
+
 def _record_codex_delivery(session_id: str, agent: str, candidates: list[dict], text: str) -> None:
     pending = read_state(session_id).get("document_read_pending", {}).get(agent, [])
-    choices: dict[str, list[tuple[int, int, dict, list[list[str]]]]] = {}
-    for index, packet in enumerate(pending):
-        score, blocks = document_reads.delivered_fragments(packet, [text])
-        if score:
-            choices.setdefault(packet["source"]["logical"], []).append((score, index, packet, blocks))
-    selected = []
-    consumed = []
+    choices: dict[str, list[tuple[int, dict, list[dict]]]] = {}
+    for packet in pending:
+        count, blocks = document_reads.delivered_fragments(packet, [text])
+        if count:
+            choices.setdefault(packet["delivery"], []).append((count, packet, blocks))
+    selected: list[tuple[dict, list[dict]]] = []
     for possibilities in choices.values():
-        score = max(item[0] for item in possibilities)
-        best = [item for item in possibilities if item[0] == score]
-        # 同じ本文が複数の版へ一致し、配送元の版を区別できない場合は混在させない。
-        if len({item[2]["source"]["version"] for item in best}) != 1:
+        observations: dict[str, list[tuple]] = {}
+        for _count, packet, blocks in possibilities:
+            observations.setdefault(packet["observation"], []).append(
+                (packet["source"]["logical"], packet["source"]["version"], json.dumps(blocks, sort_keys=True))
+            )
+        identities = {tuple(sorted(items)) for items in observations.values()}
+        # 同文の異なる要求位置には、それぞれに対応する実配送が必要。
+        if possibilities[0][0] < len(identities):
             continue
-        _score, _index, packet, blocks = best[0]
-        selected.append((packet, blocks))
-        consumed.append((packet, score))
-    _record_receipts(session_id, agent, candidates, [text], fragments=selected)
-    if consumed:
+        selected.extend((packet, blocks) for _count, packet, blocks in possibilities)
+    for packet in pending:
+        if any(packet is item[0] for item in selected):
+            continue
+        blocks = document_reads.unambiguous_fragments(packet, pending, [text])
+        if blocks:
+            selected.append((packet, blocks))
+    coverage = document_reads.fragment_coverage(pending)
+    _record_receipts(session_id, agent, candidates, [text], fragments=selected, coverage=coverage)
+    if selected:
 
         def advance(value: dict) -> dict:
             queue = value.get("document_read_pending", {}).get(agent, [])
-            for packet, score in consumed:
+            for packet, _blocks in selected:
                 if packet in queue:
-                    index = queue.index(packet)
-                    remaining = packet["remaining"] - score
-                    if remaining > 0:
-                        queue[index] = {**packet, "remaining": remaining}
-                    else:
-                        queue.pop(index)
+                    queue.remove(packet)
             return value
 
         update_state(session_id, advance)
@@ -1839,6 +1922,12 @@ def _refresh_receipts(payload: dict, tool_name: str, tool_input: dict, session_i
                 def advance(value: dict) -> dict:
                     positions = value.setdefault("document_read_offsets", {})
                     positions[cursor_key] = offset if rotated else max(positions.get(cursor_key, 0), offset)
+                    if texts:
+                        # 観測済みの外側出力へ結び付けられなかった候補を、次の読取へ流用しない。
+                        queue = value.get("document_read_pending", {}).get(agent, [])
+                        for packet in state.get("document_read_pending", {}).get(agent, []):
+                            if packet in queue:
+                                queue.remove(packet)
                     return value
 
                 update_state(session_id, advance)
@@ -1866,19 +1955,22 @@ def _observe_content(payload: dict, tool_name: str, tool_input: dict, session_id
         for item in candidates
     ]
     current = _receipt_candidates(payload, tool_name, tool_input, session_id)
+    requests = _fragment_requests(payload, tool_name, tool_input)
     if is_codex_payload(payload):
-        packets = document_reads.fragment_candidates([*candidates, *current], texts)
+        packets = document_reads.fragment_candidates([*candidates, *current], texts, requests)
         if packets:
+            # 同じPostToolUseの複数資料を1応答として扱い、別の同文応答と区別する。
+            observation = uuid.uuid4().hex
 
             def prepare(value: dict) -> dict:
                 value.setdefault("document_read_pending", {}).setdefault(agent, []).extend(
-                    {**packet, "read_id": payload.get("tool_use_id")} for packet in packets
+                    {**packet, "read_id": payload.get("tool_use_id"), "observation": observation} for packet in packets
                 )
                 return value
 
             update_state(session_id, prepare)
         return
-    _record_receipts(session_id, agent, [*candidates, *current], texts)
+    _record_receipts(session_id, agent, [*candidates, *current], texts, requests=requests)
 
 
 def host_truncated(response: object) -> bool:

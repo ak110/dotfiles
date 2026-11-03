@@ -14,7 +14,8 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, code
 @pytest.mark.parametrize("skill", ["report-completion", "process-wi", "add-awi-by-user"])
 @pytest.mark.parametrize("plugin", ["agent-toolkit", "foreign-plugin"])
 @pytest.mark.parametrize("result", ["body", "different", "failure", "truncated", "persisted"])
-def test_public_hook_keeps_document_owner(tmp_path, monkeypatch, skill, plugin, result):
+@pytest.mark.parametrize("extra_eof_lf", [False, True])
+def test_public_hook_keeps_document_owner(tmp_path, monkeypatch, skill, plugin, result, extra_eof_lf):
     """同名foreign資料・別本文・失敗・省略をToolkitの起動証拠へ転用しない。"""
     root = tmp_path / plugin
     manifest = root / ".claude-plugin/plugin.json"
@@ -23,7 +24,7 @@ def test_public_hook_keeps_document_owner(tmp_path, monkeypatch, skill, plugin, 
     document = root / "skills" / skill / "SKILL.md"
     document.parent.mkdir(parents=True)
     body = f"---\nname: {skill}\n---\n# 起動資料\n固有本文\n"
-    document.write_text(body, encoding="utf-8")
+    document.write_text(body + ("\n" if extra_eof_lf else ""), encoding="utf-8")
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [])
     response = body
     if result == "different":

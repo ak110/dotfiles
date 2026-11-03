@@ -602,7 +602,7 @@ def test_split_delivery_controls_public_write(scenario, host_environ, host, read
         if actor and host == "codex":
             actor["agent_transcript_path"] = str(child)
         command = f"sed -n '{start},{end if end is not None else '$'}p' -- {shlex.quote(str(path))}"
-        inputs = (
+        inputs: dict[str, object] = (
             {"file_path": str(path), "offset": start, **({"limit": end - start + 1} if end else {})}
             if reader == "Read"
             else {"command": command}
@@ -643,3 +643,198 @@ def test_split_delivery_controls_public_write(scenario, host_environ, host, read
     assert ('"permissionDecision": "deny"' not in final) is complete
     if mode == "complete":
         assert "".join(received) == path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("host,reader", [("claude", "Read"), ("claude", "Bash"), ("codex", "Bash")])
+@pytest.mark.parametrize("identical", [False, True])
+@pytest.mark.parametrize(
+    "mode", ["complete", "reverse", "overlap", "duplicate", "missing", "wrong", "omitted", "unknown", "recover"]
+)
+def test_repeated_lines_keep_producer_positions(scenario, host_environ, host, reader, identical, mode):
+    """同じ本文の異なる要求位置を区別し、実回収した全行だけで再書込を解除する。"""
+    state, rows, path, _rollout, invoke, delivered = scenario
+    body = "繰り返す本文\n" * 4 if identical else "# 基準\n第一行\n繰り返す本文\n繰り返す本文\n"
+    path.write_text(body, encoding="utf-8")
+    rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
+    write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
+    invoke(host, "PreToolUse", "Write", write)
+    assert '"permissionDecision": "deny"' in invoke(host, "PreToolUse", "Write", write)
+    intervals = [(1, 2), (3, 4)] if identical else [(1, 3), (4, 4)]
+    if mode == "reverse":
+        intervals.reverse()
+    elif mode == "overlap":
+        intervals = [(1, 3), (3, 4)]
+    elif mode == "duplicate":
+        intervals[1] = intervals[0]
+    elif mode == "missing":
+        intervals = intervals[:1]
+    elif mode == "recover":
+        intervals.append(intervals[0])
+    received = []
+    for index, (start, end) in enumerate(intervals):
+        command = f"sed -n '{start},{end}p' -- {shlex.quote(str(path))}"
+        if mode == "unknown" and index:
+            command = f"awk 'NR>={start} && NR<={end}' {shlex.quote(str(path))}"
+        inputs: dict[str, object] = (
+            {"file_path": str(path), "offset": start, "limit": end - start + 1} if reader == "Read" else {"command": command}
+        )
+        if reader == "Read" and mode == "unknown" and index:
+            inputs["offset"] = 1
+        invoke(host, "PreToolUse", reader, inputs)
+        actual = subprocess.run(
+            ["/bin/bash", "-c", command],
+            env=host_environ(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+        )
+        assert actual.returncode == 0 and not actual.stderr
+        received.append(actual.stdout)
+        visible = actual.stdout
+        if mode == "wrong" and index:
+            visible = "別の本文\n"
+        if mode == "omitted" and index or mode == "recover" and index == 0:
+            visible = ""
+        response = (
+            {"type": "text", "file": {"content": visible, "startLine": start}}
+            if reader == "Read"
+            else {"stdout": visible, "exit_code": 0}
+        )
+        invoke(host, "PostToolUse", reader, inputs, response if host == "claude" else actual.stdout)
+        if host == "codex":
+            delivered(visible)
+    result = invoke(host, "PreToolUse", "Write", write)
+    complete = mode in {"complete", "reverse", "overlap", "recover"}
+    assert (
+        read_delivery.target_ready(state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main")
+        is complete
+    )
+    assert ('"permissionDecision": "deny"' not in result) is complete
+    if mode in {"complete", "reverse"}:
+        assert sorted("".join(received).splitlines()) == sorted(body.splitlines())
+
+
+@pytest.mark.parametrize("identical", [False, True])
+@pytest.mark.parametrize("both", [False, True])
+def test_codex_positioned_results_follow_outer_delivery(scenario, host_environ, identical, both):
+    """要求位置が異なる同文も実配送の数で確認し、片方の未配送は再取得で回復する。"""
+    state, rows, path, _rollout, invoke, delivered = scenario
+    path.write_text("同じ本文\n" * 4 if identical else "第一行\n第二行\n第三行\n第四行\n", encoding="utf-8")
+    rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
+    write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
+    invoke("codex", "PreToolUse", "Write", write)
+    assert '"permissionDecision": "deny"' in invoke("codex", "PreToolUse", "Write", write)
+    commands = [f"sed -n '{span}p' -- {shlex.quote(str(path))}" for span in ("1,2", "3,4")]
+
+    def read(command):
+        inputs = {"command": command}
+        invoke("codex", "PreToolUse", "Bash", inputs)
+        actual = subprocess.run(
+            ["/bin/bash", "-c", command],
+            env=host_environ(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+        )
+        assert actual.returncode == 0 and not actual.stderr
+        invoke("codex", "PostToolUse", "Bash", inputs, actual.stdout)
+        return actual.stdout
+
+    outputs = [read(command) for command in commands]
+    assert "".join(outputs) == path.read_text(encoding="utf-8")
+    delivered(json.dumps({"results": [{"output": body} for body in outputs]}) if both else outputs[0])
+    if both:
+        assert not invoke("codex", "PreToolUse", "Write", write)
+        assert read_delivery.target_ready(
+            state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main"
+        )
+        return
+    assert '"permissionDecision": "deny"' in invoke("codex", "PreToolUse", "Write", write)
+    assert not read_delivery.target_ready(
+        state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main"
+    )
+    for command, body in zip(commands, outputs, strict=True):
+        actual = read(command)
+        assert actual == body
+        delivered(actual)
+    assert not invoke("codex", "PreToolUse", "Write", write)
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("distinct", [False, True])
+@pytest.mark.parametrize("channel", ["stdout", "stderr"])
+def test_same_response_repetition_keeps_requested_coverage(scenario, host_environ, host, distinct, channel):
+    """本文全体に偶然一致する反復出力も、要求位置の全被覆で判定する。"""
+    state, rows, path, _rollout, invoke, delivered = scenario
+    path.write_text("反復する行\n" * 4, encoding="utf-8")
+    rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
+    write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
+    invoke(host, "PreToolUse", "Write", write)
+    assert '"permissionDecision": "deny"' in invoke(host, "PreToolUse", "Write", write)
+    latter = "3,4" if distinct else "1,2"
+    redirect = " >&2" if channel == "stderr" else ""
+    command = "; ".join(f"sed -n '{span}p' -- {shlex.quote(str(path))}{redirect}" for span in ("1,2", latter))
+    invoke(host, "PreToolUse", "Bash", {"command": command})
+    actual = subprocess.run(
+        ["/bin/bash", "-c", command],
+        env=host_environ(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+        check=False,
+    )
+    assert actual.returncode == 0
+    visible = getattr(actual, channel)
+    assert visible == path.read_text(encoding="utf-8")
+    invoke(
+        host, "PostToolUse", "Bash", {"command": command}, {"stdout": actual.stdout, "stderr": actual.stderr, "exit_code": 0}
+    )
+    if host == "codex":
+        delivered(visible)
+    result = invoke(host, "PreToolUse", "Write", write)
+    assert (
+        read_delivery.target_ready(state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main")
+        is distinct
+    )
+    assert ('"permissionDecision": "deny"' not in result) is distinct
+
+
+def test_codex_truncated_diagnostic_keeps_received_requested_span(scenario, host_environ):
+    """必要な読取範囲を全受信していれば、診断出力の省略でその位置を失わない。"""
+    state, rows, path, _rollout, invoke, delivered = scenario
+    path.write_text("第一行\n第二行\n第三行\n第四行\n", encoding="utf-8")
+    rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
+    write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
+    invoke("codex", "PreToolUse", "Write", write)
+    assert '"permissionDecision": "deny"' in invoke("codex", "PreToolUse", "Write", write)
+    for start, end in ((1, 2), (3, 4)):
+        command = f"sed -n '{start},{end}p' -- {shlex.quote(str(path))}"
+        if start == 1:
+            command += "; printf '追加の診断結果\\n'"
+        invoke("codex", "PreToolUse", "Bash", {"command": command})
+        actual = subprocess.run(
+            ["/bin/bash", "-c", command],
+            env=host_environ(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+        )
+        assert actual.returncode == 0 and not actual.stderr
+        invoke("codex", "PostToolUse", "Bash", {"command": command}, actual.stdout)
+        visible = (
+            actual.stdout
+            if start == 3
+            else "Warning: truncated output (original token count: 100)\n"
+            + "".join(actual.stdout.splitlines(keepends=True)[:2])
+            + "…10 tokens truncated…"
+        )
+        delivered(visible)
+    assert not invoke("codex", "PreToolUse", "Write", write)
+    assert read_delivery.target_ready(state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main")
