@@ -38,7 +38,11 @@ def launch(child_role):
 
 if role == "holder":
     with open(directory / "held" / "held.txt", "w", encoding="utf-8"):
-        (directory / "holder.pid").write_text(str(os.getpid()), encoding="utf-8")
+        # PIDと起動時刻を一時ファイルへ書いてから置き換え、読み手が書きかけの内容を読まないようにする。
+        import psutil
+        record = directory / "holder.pid.tmp"
+        record.write_text(f"{os.getpid()} {psutil.Process().create_time()}", encoding="utf-8")
+        os.replace(record, directory / "holder.pid")
         time.sleep(120)
     sys.exit(0)
 if role == "spawner":
@@ -127,21 +131,27 @@ def assert_released(directory: pathlib.Path) -> None:
     """
     holder_file = directory / "holder.pid"
     assert holder_file.exists(), "終了処理の最初の列挙の後にholderが起動しませんでした"
-    holder = int(holder_file.read_text(encoding="utf-8"))
+    pid_text, created_text = holder_file.read_text(encoding="utf-8").split()
+    holder, created = int(pid_text), float(created_text)
     deadline = time.monotonic() + 10.0
-    while _holds(holder) and time.monotonic() < deadline:
+    while _holds(holder, created) and time.monotonic() < deadline:
         time.sleep(0.05)
+    released = not _holds(holder, created)
+    # 観測記録として、生成したholderのPID・起動時刻と最終結果を残す（pytestの`-s`や`-rP`で表示される）。
+    print(f"late_descendant: holder pid={holder} created_at={created} released={released}")
     try:
-        assert not _holds(holder), f"列挙の後に起動したholder（pid {holder}）が残っています"
+        assert released, f"列挙の後に起動したholder（pid {holder}、起動時刻 {created}）が残っています"
         shutil.rmtree(directory / "held")
     finally:
-        if _holds(holder):
+        if _holds(holder, created):
             psutil.Process(holder).kill()
 
 
-def _holds(pid: int) -> bool:
+def _holds(pid: int, created: float) -> bool:
+    """起動時刻が一致する同じholderが資源を保持したまま生存しているかを返す（PIDの再利用と区別する）。"""
     try:
-        return psutil.Process(pid).status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+        process = psutil.Process(pid)
+        return process.create_time() == created and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
     except psutil.Error, OSError:
         return False
 

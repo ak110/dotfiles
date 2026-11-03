@@ -126,6 +126,12 @@ def stop_tree(
             tree.freeze()
             tree.kill_all()
         residual = _wait_until_released(tree.targets(), timeout=timeout)
+        # 一時停止できなかった対象が終了までに子を起動していないかを確かめ、見つかれば同じく終了させる。
+        if late := tree.scan():
+            tree.kill_all()
+            residual = _wait_until_released(tree.targets(), timeout=timeout)
+            tree.unresolve_late(late)
+        tree.resolve_suspend_failures()
         finished = True
     finally:
         if not finished:
@@ -143,6 +149,8 @@ class _OwnedTree:
         self._owned: dict[tuple[int, float], psutil.Process] = {}
         self.suspended: set[tuple[int, float]] = set()
         self.unresolved: list[str] = []
+        # 一時停止できなかった対象と理由。終了処理の後も資源を保持していれば未確定として報告する。
+        self._suspend_failures: dict[tuple[int, float], tuple[psutil.Process, str]] = {}
         root_key = None if root is None else _key(root)
         if root is not None and root_key is not None:
             if include_root and root.pid != os.getpid():
@@ -177,10 +185,25 @@ class _OwnedTree:
                 except psutil.NoSuchProcess:
                     pass  # 既に終了した対象は子を起動しない。
                 except (psutil.Error, OSError) as error:
-                    self._unresolve(f"pid {process.pid} を一時停止できない: {type(error).__name__}: {error}")
+                    # Windowsでは終了中のプロセスの一時停止がAccessDeniedになるため、ここでは未確定と決めない。
+                    reason = f"pid {process.pid} を一時停止できない: {type(error).__name__}: {error}"
+                    self._suspend_failures[key] = (process, reason)
             if not self.scan():
                 return
         self._unresolve(f"{_FREEZE_MAX_ROUNDS}回の一時停止と列挙の後も子孫が増え続けた")
+
+    def resolve_suspend_failures(self) -> None:
+        """一時停止できなかった対象のうち、終了処理の後も資源を保持している対象だけを未確定として報告する。
+
+        終了した対象が起動した子は、終了処理の後の列挙で所有へ加えて終了させている。
+        """
+        for process, reason in self._suspend_failures.values():
+            if _holds_resources(process):
+                self._unresolve(reason)
+
+    def unresolve_late(self, late: list[psutil.Process]) -> None:
+        """終了処理の後の列挙で新しい子孫が見つかったことを、生成を止められなかった証拠として報告する。"""
+        self._unresolve(f"終了処理の後に子孫が見つかった: {[process.pid for process in late]}")
 
     def _unresolve(self, reason: str) -> None:
         # POSIXでは終了猶予の前後で2回凍結するため、同じ理由を重複して報告しない。

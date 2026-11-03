@@ -266,10 +266,19 @@ from agent_toolkit._testing import late_descendant
 
 mode, directory = sys.argv[1], pathlib.Path(sys.argv[2])
 if len(sys.argv) > 3:
-    # 一時停止を拒否させ、生成の停止を確認できない結果が診断へ残ることを観測する。
-    def deny(self, **kwargs):
-        raise psutil.AccessDenied(self.pid)
-    psutil.Process.suspend = deny
+    # spawnerの一時停止と終了を拒否させ、生成の停止を確認できない対象が残る結果が診断へ残ることを観測する。
+    original = {name: getattr(psutil.Process, name) for name in ("suspend", "terminate", "kill")}
+    def denying(name):
+        def call(self, **kwargs):
+            spawner = directory / "spawner.pid"
+            if spawner.exists() and self.pid == int(spawner.read_text(encoding="utf-8")):
+                if name == "suspend":
+                    raise psutil.AccessDenied(self.pid)
+                return None
+            return original[name](self)
+        return call
+    for name in original:
+        setattr(psutil.Process, name, denying(name))
 # finishでは期限による強制終了が回収と重ならない長さにし、期限到達の試験では短くする。
 monitor = lifetime.ServerLifetime(timeout=30.0 if mode == "finish" else 0.5)
 # 定期収集がspawnerを先に所有すると、終了処理の最初の列挙より前に一時停止され同期点を作れない。
@@ -323,8 +332,13 @@ def test_lifetime_reports_unresolved_generation_stop(
         stdin=subprocess.PIPE,
         stderr=subprocess.PIPE,
     ) as process:
-        _, stderr = process.communicate(timeout=60)
-        assert process.returncode == 0
+        try:
+            _, stderr = process.communicate(timeout=60)
+            assert process.returncode == 0
+        finally:
+            # 終了を拒否させたspawnerを試験の後始末として終了させる。
+            with contextlib.suppress(psutil.Error, OSError, ValueError):
+                psutil.Process(int((tmp_path / "spawner.pid").read_text(encoding="utf-8"))).kill()
     message = stderr.decode("utf-8", errors="replace")
     assert "生成の停止を確認できない" in message
     assert "次の操作" in message

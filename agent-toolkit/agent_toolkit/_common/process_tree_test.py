@@ -178,33 +178,58 @@ def test_stop_process_tree_reclaims_descendant_started_after_first_listing(tmp_p
 
 
 @pytest.mark.parametrize(
-    ("failure", "expected"),
+    ("failure", "survives", "expected"),
     [
-        (psutil.AccessDenied(0), "を一時停止できない"),
-        (psutil.NoSuchProcess(0), None),
+        (psutil.AccessDenied(0), True, "を一時停止できない"),
+        (psutil.AccessDenied(0), False, None),
+        (psutil.NoSuchProcess(0), False, None),
     ],
-    ids=["suspend-denied", "vanished"],
+    ids=["suspend-denied-and-survives", "suspend-denied-then-stopped", "vanished"],
 )
-def test_stop_tree_distinguishes_suspend_failure_from_vanished_target(spawn_parent, monkeypatch, failure, expected):
-    """一時停止の拒否は未確定として報告し、消滅した対象は正常として扱い、いずれも所有対象を終了させる。"""
+def test_stop_tree_distinguishes_suspend_failure_from_vanished_target(spawn_parent, monkeypatch, failure, survives, expected):
+    """一時停止できず資源を保持したまま残る対象だけを未確定として報告し、終了できた対象と消滅した対象は正常とする。
+
+    Windowsでは終了中のプロセスの一時停止がAccessDeniedになるため、一時停止の失敗だけでは未確定にしない。
+    """
     parent = spawn_parent()
-    targets = [psutil.Process(parent.pid), *process_tree.collect_descendants(parent.pid)]
-    original = psutil.Process.suspend
+    root = psutil.Process(parent.pid)
+    descendants = process_tree.collect_descendants(parent.pid)
+    original_suspend, original_terminate, original_kill = (
+        psutil.Process.suspend,
+        psutil.Process.terminate,
+        psutil.Process.kill,
+    )
 
     def suspend(self, **kwargs):
         del kwargs
         if self.pid == parent.pid:
             raise failure
-        return original(self)
+        return original_suspend(self)
+
+    def terminate(self, **kwargs):
+        del kwargs
+        if not (survives and self.pid == parent.pid):
+            original_terminate(self)
+
+    def kill(self, **kwargs):
+        del kwargs
+        if not (survives and self.pid == parent.pid):
+            original_kill(self)
 
     monkeypatch.setattr(psutil.Process, "suspend", suspend)
-    result = process_tree.stop_tree(psutil.Process(parent.pid), timeout=1.0)
+    monkeypatch.setattr(psutil.Process, "terminate", terminate)
+    monkeypatch.setattr(psutil.Process, "kill", kill)
+    try:
+        result = process_tree.stop_tree(root, timeout=1.0)
+    finally:
+        monkeypatch.undo()
     if expected is None:
         assert not result.unresolved
+        assert not result.residual
     else:
         assert [reason for reason in result.unresolved if expected in reason and str(parent.pid) in reason]
-    assert not result.residual
-    assert not _still_holding_resources(targets)
+        assert [item.pid for item in result.residual] == [parent.pid]
+    assert not _still_holding_resources(descendants)
 
 
 def test_stop_tree_keeps_suspended_targets_when_listing_fails(spawn_parent, monkeypatch):
@@ -259,7 +284,9 @@ def test_stop_tree_keeps_processes_outside_the_tree_and_the_excluded_root(spawn_
     source = (
         "import os, pathlib, subprocess, sys, time; "
         f"subprocess.Popen([sys.executable, '-c', {_CHILD_SOURCE!r}]); "
-        f"pathlib.Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(120)"
+        # 書きかけを読まないよう、一時ファイルへ書いてから置き換える。
+        f"pathlib.Path({str(marker)!r} + '.tmp').write_text(str(os.getpid())); "
+        f"os.replace({str(marker)!r} + '.tmp', {str(marker)!r}); time.sleep(120)"
     )
     other = spawn_parent()
     with process_tree.process_scope([sys.executable, "-c", source]):

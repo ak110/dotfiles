@@ -2765,22 +2765,38 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
         session_id = (await manager.start("plan", "担当", str(tmp_path)))["session_id"]
         await _wait_terminal(manager, session_id)
         server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
-        original_suspend = psutil.Process.suspend
+        original_suspend, original_terminate, original_kill = (
+            psutil.Process.suspend,
+            psutil.Process.terminate,
+            psutil.Process.kill,
+        )
         suspends: list[int] = []
+        first_stop = True
 
         def suspend(process: psutil.Process) -> None:
             suspends.append(process.pid)
-            # 1回目の停止ではApp Serverの一時停止を拒否し、生成の停止を確認できない状態を作る。
-            if process.pid == server_pid and suspends.count(server_pid) == 1:
+            # 1回目の停止ではApp Serverの一時停止と終了を拒否し、生成の停止を確認できないまま残る状態を作る。
+            if first_stop and process.pid == server_pid:
                 raise psutil.AccessDenied(process.pid)
             original_suspend(process)
 
+        def terminate(process: psutil.Process) -> None:
+            if not (first_stop and process.pid == server_pid):
+                original_terminate(process)
+
+        def kill(process: psutil.Process) -> None:
+            if not (first_stop and process.pid == server_pid):
+                original_kill(process)
+
         monkeypatch.setattr(psutil.Process, "suspend", suspend)
+        monkeypatch.setattr(psutil.Process, "terminate", terminate)
+        monkeypatch.setattr(psutil.Process, "kill", kill)
         with pytest.raises(ActionableError) as raised:
             await manager.stop(session_id)
         assert "生成の停止を確認できない" in str(raised.value)
         assert session_registry.resolve(session_id).state is not session_registry.Resolution.RELEASED
         stopped_once = len(suspends)
+        first_stop = False
 
         assert await manager.stop(session_id) == {}
 
