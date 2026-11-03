@@ -20,14 +20,16 @@ WindowsのCodex App Serverでは、この漏れた孫が一時領域を保持し
 """
 
 import contextlib
+import ctypes
+import ctypes.wintypes
 import dataclasses
 import logging
 import os
 import subprocess
 import sys
 import time
-from collections.abc import Generator, Iterable
-from typing import Any
+from collections.abc import Callable, Generator, Iterable
+from typing import Any, Self
 
 # 回収しない呼出し元では、プロセス管理の依存を読み込まない。
 lazy import psutil
@@ -113,7 +115,11 @@ def stop_tree(
     途中で例外が起きても、一時停止した対象を残さないよう所有対象を強制終了してから例外を伝播させる。
     同期的に待機するため、イベントループ上から呼ぶ場合は別スレッドへ退避させる。
     """
-    tree = _OwnedTree(root, include_root=include_root, known=known)
+    with _OwnedTree(root, include_root=include_root, known=known) as tree:
+        return _stop_owned_tree(tree, timeout)
+
+
+def _stop_owned_tree(tree: _OwnedTree, timeout: float) -> TreeStopResult:
     finished = False
     try:
         tree.freeze()
@@ -151,6 +157,8 @@ class _OwnedTree:
         self.unresolved: list[str] = []
         # 一時停止できなかった対象と理由。終了処理の後も資源を保持していれば未確定として報告する。
         self._suspend_failures: dict[tuple[int, float], tuple[psutil.Process, str]] = {}
+        self._handles = contextlib.ExitStack()
+        self._retained: dict[tuple[int, float], bool] = {}
         root_key = None if root is None else _key(root)
         if root is not None and root_key is not None:
             if include_root and root.pid != os.getpid():
@@ -158,6 +166,28 @@ class _OwnedTree:
             else:
                 self._anchors[root_key] = root
         self.add(known)
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_exception: object) -> None:
+        self._handles.close()
+
+    def _retain(self, process: psutil.Process) -> bool:
+        key = _key(process)
+        if key is None:
+            return False
+        if sys.platform != "win32":
+            return process.is_running()
+        if key not in self._retained:
+            try:
+                self._retained[key] = self._handles.enter_context(_retain_windows_process(process))
+                if not self._retained[key]:
+                    self._unresolve(f"pid {process.pid} の親世代を終了前に保持できなかった")
+            except (psutil.Error, OSError) as error:
+                self._retained[key] = False
+                self._unresolve(f"pid {process.pid} の親世代を保持できない: {type(error).__name__}: {error}")
+        return self._retained[key]
 
     def targets(self) -> list[psutil.Process]:
         return list(self._owned.values())
@@ -215,7 +245,7 @@ class _OwnedTree:
     def scan(self) -> list[psutil.Process]:
         """所有対象と起点の子孫のうち未所有の対象を所有に加えて返す。列挙の失敗は未確定として記録する。"""
         try:
-            found = _scan_descendants([*self._anchors.values(), *self._owned.values()])
+            found = _scan_descendants([*self._anchors.values(), *self._owned.values()], retain=self._retain)
         except (psutil.Error, OSError) as error:
             self._unresolve(f"子孫を列挙できない: {type(error).__name__}: {error}")
             return []
@@ -259,10 +289,37 @@ def _key(process: psutil.Process) -> tuple[int, float] | None:
         return None
 
 
-def _scan_descendants(parents: list[psutil.Process]) -> list[psutil.Process]:
+@contextlib.contextmanager
+def _retain_windows_process(process: psutil.Process) -> Generator[bool]:
+    """同じ世代と確認した親のkernel handleを、子孫列挙が終わるまで保持する。
+
+    Windowsは終了後もPPIDを保持し、最後のhandleを閉じるとPIDを再利用する。
+    handle取得後の同一性検証と保持を組み合わせ、終了した別世代の子を所有へ加えない。
+    """
+    if sys.platform != "win32":
+        yield False
+        return
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.restype = ctypes.wintypes.HANDLE
+    kernel.OpenProcess.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.BOOL, ctypes.wintypes.DWORD]
+    kernel.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+    handle = kernel.OpenProcess(0x1000, False, process.pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        if ctypes.get_last_error() == 87:  # ERROR_INVALID_PARAMETER: 既に消滅している。
+            yield False
+            return
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        yield process.is_running()
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil.Process], bool]) -> list[psutil.Process]:
     """`parents`の子孫を、1回のプロセス一覧から親PIDを辿って返す。
 
-    終了済みの`parents`も親として辿る。Windowsでは親の終了後も子の親PIDが残るため、親を失った子孫を見つけられる。
+    終了済みの親は、同じ世代のhandleを保持している場合だけ辿る。
+    Windowsでは親の終了後も子の親PIDが残るため、保持した親から親を失った子孫も見つけられる。
     子の起動時刻が親より前の場合と、親PIDを別のプロセスが再利用している場合のその新しいプロセスの子は含めない。
     """
     entries: list[tuple[psutil.Process, int]] = []
@@ -274,7 +331,8 @@ def _scan_descendants(parents: list[psutil.Process]) -> list[psutil.Process]:
     created: dict[int, float] = {}
     for parent in parents:
         with contextlib.suppress(psutil.Error, OSError):
-            created[parent.pid] = parent.create_time()
+            if retain(parent):
+                created[parent.pid] = parent.create_time()
     found: list[psutil.Process] = []
     pending = set(created)
     while pending:
@@ -294,7 +352,8 @@ def _scan_descendants(parents: list[psutil.Process]) -> list[psutil.Process]:
                 continue
             created[process.pid] = child_created
             found.append(process)
-            next_pending.add(process.pid)
+            if retain(process):
+                next_pending.add(process.pid)
         pending = next_pending
     return found
 

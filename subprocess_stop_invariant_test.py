@@ -11,7 +11,7 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "_stop_server_process",
     ): "stdlibだけのbootstrapで、独立sessionとして起動した子のprocess groupを有限時間で回収する",
     ("agent-toolkit/agent_toolkit/_common/process_tree.py", "reclaim_processes"): "子孫回収の共通実装",
-    ("agent-toolkit/agent_toolkit/_common/process_tree.py", "stop_tree"): "生成を止めてから子孫を回収する共通実装",
+    ("agent-toolkit/agent_toolkit/_common/process_tree.py", "_stop_owned_tree"): "生成を止めてから子孫を回収する共通実装",
     (
         "agent-toolkit/agent_toolkit/_common/process_tree.py",
         "terminate_gracefully",
