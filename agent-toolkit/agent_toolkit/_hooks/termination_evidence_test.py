@@ -323,6 +323,22 @@ def test_deliverable_kinds_require_completion(
     assert (label in reason) is not codex
 
 
+@pytest.mark.parametrize(
+    ("command", "label", "recorded"),
+    [
+        ("git commit -m 'message; git push'", "push", False),
+        ("printf '%s' 'x; atk wi add --body-file data'", "WIの保存", False),
+        ("git commit -m message && git push", "push", True),
+    ],
+)
+def test_quoted_operators_do_not_create_deliverables(
+    tmp_path: pathlib.Path, command: str, label: str, *, recorded: bool
+) -> None:
+    """引用した演算子と後続の語はデータであり、実際に連結した操作だけを成果作業として記録する。"""
+    _tool(tmp_path, "deliverable", "Bash", {"command": command}, {"stdout": "", "exit_code": 0}, codex=False)
+    assert (label in _missing_completion(tmp_path)) is recorded
+
+
 def test_codex_target_skill_read_is_deliverable(tmp_path: pathlib.Path) -> None:
     """Codexが対象スキルの`SKILL.md`を実際に読んだ記録を、対象スキルの開始として扱う。"""
     text = "---\nname: process-wi\n---\n\n# WI処理\n"

@@ -200,6 +200,9 @@ class TestExitSessionReached:
             (r"'C:\x\atk.py' agents-exit-session", True),
             (r"& 'C:\x\atk.cmd' agents-exit-session", True),
             ("echo 'atk agents-exit-session'", False),
+            # 引用した演算子はデータであり、実際の連結の後ろにある終了CLIだけを実行として扱う。
+            ("echo 'ready; atk agents-exit-session'", False),
+            ("true && atk agents-exit-session", True),
         ],
     )
     @pytest.mark.parametrize("tool_name", ["Bash", "PowerShell"])

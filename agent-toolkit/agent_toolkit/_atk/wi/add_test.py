@@ -371,6 +371,8 @@ _PREVIOUS_AWI_CAUSE_ITEMS_TABLE = "\n".join(
         "empty_countermeasure",
         "previous_format",
         "missing_table",
+        "second_unit_missing_table",
+        "two_units",
         "valid",
     ],
 )
@@ -388,7 +390,7 @@ def test_public_add_cause_analysis_format(
     """原因分析の新検査はエージェントに適用し、人間入力を拒否しない。
 
     AWIの2列表は処置の6区分と採否2行の8行とし、4区分の候補行・採否行・回帰防止策の欠落と空欄、
-    6区分化前の5行表と、L4表だけで処置表そのものが無い記録を拒否する。
+    6区分化前の5行表と、バグ単位のL4表に対応する処置表が無い記録（2単位の片方だけ欠ける場合を含む）を拒否する。
     """
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
@@ -420,6 +422,10 @@ def test_public_add_cause_analysis_format(
         table = _PREVIOUS_AWI_CAUSE_ITEMS_TABLE
     elif case == "missing_table":
         table = ""
+    elif case == "second_unit_missing_table":
+        table = f"{table}\n\n{plan_fixture.bug_cause_table()}"
+    elif case == "two_units":
+        table = f"{table}\n\n{plan_fixture.bug_cause_table()}\n\n{_awi_cause_items_table()}"
     else:
         cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外の構造だけで生じた。 |")
     body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{cause}\n\n{table}\n"
@@ -436,7 +442,7 @@ def test_public_add_cause_analysis_format(
         if finished.value.code:
             raise SystemExit(finished.value.code)
 
-    if agent and case != "valid":
+    if agent and case not in ("valid", "two_units"):
         with pytest.raises(SystemExit) as rejected:
             run()
         assert rejected.value.code != 0

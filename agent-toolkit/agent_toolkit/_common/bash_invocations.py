@@ -532,7 +532,8 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
     result: list[BashInvocation] = []
     # リダイレクトは字句解析で語から分けてあるため、語はリダイレクトを持たない`ShellWord`として渡す。
     # 消費側が`strip_redirections`を通しても、引用済みの`'>'`などのデータを演算子として除かない。
-    values: list[str] = [ShellWord(word.value, expansion=not word.known) for word in words]
+    # 元の語は`join_words`で同じ値へ戻るよう引用した表記を保ち、再解析で引用内の`;`などを区切りにしない。
+    values: list[str] = [ShellWord(word.value, expansion=not word.known, raw=shlex.quote(word.value)) for word in words]
     prefix = 0
     while prefix < len(words) and words[prefix].assignment:
         prefix += 1
