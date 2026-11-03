@@ -181,7 +181,8 @@ def test_stop_process_tree_reclaims_descendant_started_after_first_listing(tmp_p
     ("failure", "survives", "expected"),
     [
         (psutil.AccessDenied(0), True, "を一時停止できない"),
-        (psutil.AccessDenied(0), False, None),
+        # POSIXでは一時停止できなかった対象の子が親の終了でinitへ付け替わり辿れないため、終了しても未確定とする。
+        (psutil.AccessDenied(0), False, None if sys.platform == "win32" else "を一時停止できない"),
         (psutil.NoSuchProcess(0), False, None),
     ],
     ids=["suspend-denied-and-survives", "suspend-denied-then-stopped", "vanished"],
@@ -189,9 +190,10 @@ def test_stop_process_tree_reclaims_descendant_started_after_first_listing(tmp_p
 def test_stop_tree_distinguishes_suspend_failure_from_vanished_target(
     tmp_path: pathlib.Path, monkeypatch, failure, survives, expected
 ):
-    """一時停止できず資源を保持したまま残る対象だけを未確定として報告し、終了できた対象と消滅した対象は正常とする。
+    """一時停止できなかった対象を未確定として報告し、消滅していた対象は正常とする。
 
-    Windowsでは終了中のプロセスの一時停止がAccessDeniedになるため、一時停止の失敗だけでは未確定にしない。
+    Windowsでは終了中のプロセスの一時停止がAccessDeniedになるため、終了・回収できた対象は未確定にしない。
+    POSIXでは一時停止できなかった対象の子を親の終了後に辿れないため、終了できた場合も未確定とする。
     """
     with _reporting_root(tmp_path) as root:
         _check_suspend_failure(root, monkeypatch, failure, survives, expected)
@@ -234,7 +236,7 @@ def _check_suspend_failure(root: psutil.Process, monkeypatch, failure, survives,
         assert not result.residual
     else:
         assert [reason for reason in result.unresolved if expected in reason and str(parent.pid) in reason]
-        assert [item.pid for item in result.residual] == [parent.pid]
+        assert [item.pid for item in result.residual] == ([parent.pid] if survives else [])
     assert not _still_holding_resources(descendants)
 
 

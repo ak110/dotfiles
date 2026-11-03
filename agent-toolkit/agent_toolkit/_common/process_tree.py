@@ -185,7 +185,7 @@ class _OwnedTree:
                 except psutil.NoSuchProcess:
                     pass  # 既に終了した対象は子を起動しない。
                 except (psutil.Error, OSError) as error:
-                    # Windowsでは終了中のプロセスの一時停止がAccessDeniedになるため、ここでは未確定と決めない。
+                    # 未確定とするかは、終了処理の後に`resolve_suspend_failures`で判定する。
                     reason = f"pid {process.pid} を一時停止できない: {type(error).__name__}: {error}"
                     self._suspend_failures[key] = (process, reason)
             if not self.scan():
@@ -193,12 +193,14 @@ class _OwnedTree:
         self._unresolve(f"{_FREEZE_MAX_ROUNDS}回の一時停止と列挙の後も子孫が増え続けた")
 
     def resolve_suspend_failures(self) -> None:
-        """一時停止できなかった対象のうち、終了処理の後も資源を保持している対象だけを未確定として報告する。
+        """一時停止できなかった対象を、子孫を追跡できなかった可能性に応じて未確定として報告する。
 
-        終了した対象が起動した子は、終了処理の後の列挙で所有へ加えて終了させている。
+        Windowsでは親の終了後も子の親PIDが残り、終了処理の後の列挙で終了した対象の子まで所有へ加えて終了させている。
+        このため、終了処理の後も資源を保持している対象だけを未確定とする（終了中の対象への一時停止はAccessDeniedになる）。
+        POSIXでは親を失った子がinitへ付け替わり辿れないため、一時停止できなかった対象は終了した場合も未確定とする。
         """
         for process, reason in self._suspend_failures.values():
-            if _holds_resources(process):
+            if sys.platform != "win32" or _holds_resources(process):
                 self._unresolve(reason)
 
     def unresolve_late(self, late: list[psutil.Process]) -> None:
