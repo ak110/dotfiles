@@ -274,7 +274,7 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, referenc
             "、".join(f"`{command}`" for command in commands)
             + f"で取得せよ（対象{size}バイト、予算目安{(size + 2) // 3}トークン）。"
             "内側exec_commandのmax_output_tokensと外側functions.execの出力枠を確保し、外側は内側の合計以上にせよ。"
-            "枠に収まらない範囲は行範囲を分けて取得せよ" + focus
+            "枠に収まらない範囲は行範囲を分けて取得せよ。" + rules_context.shell_acquisition_conditions() + focus
         )
     return (
         f"Readで`{path}`を取得せよ。Bashでは`cat -- {shlex.quote(str(path))}`、"

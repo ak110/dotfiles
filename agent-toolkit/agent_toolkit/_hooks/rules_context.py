@@ -217,6 +217,15 @@ def reset_main_operation_skill_ready(
     return recovery
 
 
+def shell_acquisition_conditions() -> str:
+    """取得観測が受理するシェル実行と、取得後の再試行を案内する。"""
+    return (
+        "静的な読取は、1回のシェル実行（Codexではexec_command）で単独か`&&`連結にし、成功した出力を返せ。"
+        "`;`連結・パイプ前段・出力リダイレクト・失敗した読取は取得として記録されない。"
+        "取得後は、止められた元の書き込みを再発行できる"
+    )
+
+
 def acquisition_failure(
     target: read_triggers.ReadTarget,
     error: Exception,
@@ -237,7 +246,7 @@ def acquisition_failure(
     if target.heading and isinstance(error, ValueError) and not isinstance(error, UnicodeError):
         prefix += "読込宣言の見出しと資料を整合させよ。"
     if shell:
-        return prefix + f"全文を`cat -- {shlex.quote(str(path))}`で読め"
+        return prefix + f"全文を`cat -- {shlex.quote(str(path))}`で読め。" + shell_acquisition_conditions()
     skill = document_reads.skill_document(str(path))
     if (
         not reference
@@ -311,6 +320,7 @@ def _compact_recovery_context(
             + "。".join(items)
             + suffix
             + "。"
+            + (shell_acquisition_conditions() if host in {"codex", "agy"} else "")
         )
 
     included: list[str] = []
