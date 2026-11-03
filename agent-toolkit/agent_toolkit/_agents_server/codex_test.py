@@ -46,9 +46,9 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import lane, managed_temp
-from agent_toolkit._common import inherited_venv, plugin_environment, process_tree, session_registry, state_paths
+from agent_toolkit._common import inherited_venv, plugin_environment, session_registry, state_paths
 from agent_toolkit._common.next_action import ActionableError
-from agent_toolkit._testing import codex_app_server_support, fake_codex_app_server, git_repository
+from agent_toolkit._testing import codex_app_server_support, fake_codex_app_server, git_repository, late_descendant
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeCodexClient,
     CompletingInterruptClient,
@@ -626,7 +626,8 @@ class _SilentProcess:
         self.stdout: Any = _HangingStream()
         self.stderr = _HangingStream()
         self.returncode: int | None = None
-        self.pid = 123
+        # 終了処理は実PIDの子孫を一時停止・終了させるため、実在しないPIDを使い、無関係なプロセスへ作用させない。
+        self.pid = next(pid for pid in range(2**22 - 1, 2**21, -1) if not psutil.pid_exists(pid))
 
     def terminate(self) -> None:
         self.returncode = -15
@@ -2732,21 +2733,48 @@ async def test_close_reclaims_app_server_and_mcp_when_reader_and_term_stall(
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
+async def test_stop_reclaims_descendant_started_after_first_listing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """App Serverの終了処理の最初の列挙の後に起動した子孫も終了させ、保持していたファイルを解放する。"""
+    work = tmp_path / "late"
+    work.mkdir()
+    async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
+        monkeypatch.setattr(
+            subject,
+            "APP_SERVER_COMMAND",
+            tuple(late_descendant.cli_command(work, str(codex_app_server_support.FAKE_APP_SERVER), str(fake.log_path))),
+        )
+        session_id = (await manager.start("plan", "停止試験", str(tmp_path)))["session_id"]
+        await _wait_terminal(manager, session_id)
+        await asyncio.to_thread(late_descendant.wait_spawner, work)
+        late_descendant.arm(work, monkeypatch.setattr)
+        await asyncio.wait_for(manager.stop(session_id), 60)
+    late_descendant.assert_released(work)
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
 async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """子孫を回収できないstopは再試行の方法とともに失敗し、解放済みと記録せず、再発行で回収を完了する。"""
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
         session_id = (await manager.start("plan", "担当", str(tmp_path)))["session_id"]
         session = await _wait_terminal(manager, session_id)
         server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
-        reclaim = process_tree.reclaim_processes
-        attempts: list[int] = []
+        # 1回目は子孫が終了要求にも強制終了にも応じない状態を作る。
+        unkillable = set(mcp_pids)
+        original_terminate, original_kill = psutil.Process.terminate, psutil.Process.kill
 
-        def reclaim_after_first_attempt(targets: list[psutil.Process], **kwargs: Any) -> list[psutil.Process]:
-            attempts.append(len(targets))
-            # 1回目は子孫が終了要求にも強制終了にも応じなかった結果を返す。
-            return list(targets) if len(attempts) == 1 else reclaim(targets, **kwargs)
+        def terminate(process: psutil.Process) -> None:
+            if process.pid not in unkillable:
+                original_terminate(process)
 
-        monkeypatch.setattr(process_tree, "reclaim_processes", reclaim_after_first_attempt)
+        def kill(process: psutil.Process) -> None:
+            if process.pid not in unkillable:
+                original_kill(process)
+
+        monkeypatch.setattr(psutil.Process, "terminate", terminate)
+        monkeypatch.setattr(psutil.Process, "kill", kill)
         with pytest.raises(ActionableError) as raised:
             await manager.stop(session_id)
         assert session_id in str(raised.value)
@@ -2758,9 +2786,9 @@ async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch:
         assert not fake.alive(server_pid)
         assert all(fake.alive(pid) for pid in mcp_pids)
 
+        unkillable.clear()
         assert await manager.stop(session_id) == {}
 
-        assert attempts == [len(mcp_pids), len(mcp_pids)]
         assert not any(fake.alive(pid) for pid in mcp_pids)
         assert session_registry.resolve(session_id).state is session_registry.Resolution.RELEASED
 

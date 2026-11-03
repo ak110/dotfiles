@@ -2,12 +2,14 @@
 
 import asyncio
 import json
+import pathlib
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from agent_toolkit._common import codex_models, next_action
+from agent_toolkit._testing import late_descendant
 
 _UNPATCHED_LIST_MODELS = codex_models.list_models
 """conftestが固定一覧へ差し替える前の`list_models`。取得失敗の出力を検証するテストが使う。"""
@@ -116,3 +118,38 @@ async def test_model_catalog_reads_long_response_and_unterminated_eof(monkeypatc
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", start)
     assert await codex_models.list_models_from_app_server() == [model]
+
+
+_MODEL_LIST_SERVER = """
+import json, sys, time
+for line in sys.stdin:
+    request = json.loads(line)
+    if "id" not in request:
+        continue
+    result = {"data": [json.loads(sys.argv[1])]} if request["method"] == "model/list" else {}
+    print(json.dumps({"id": request["id"], "result": result}), flush=True)
+time.sleep(120)
+"""
+
+
+@pytest.mark.asyncio
+async def test_model_list_reclaims_descendant_started_after_first_listing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """一覧取得後の終了処理で、最初の列挙の後に起動した子孫も終了させてファイルを解放する。"""
+    server = tmp_path / "model_list_server.py"
+    server.write_text(_MODEL_LIST_SERVER, encoding="utf-8")
+    model = _model("gpt-6-sol", "medium")
+    monkeypatch.setattr(
+        codex_models, "_APP_SERVER_COMMAND", (*late_descendant.cli_command(tmp_path, str(server)), json.dumps(model))
+    )
+    original = codex_models.fetch_catalog
+
+    async def fetch_after_spawner(request: Any, **kwargs: Any) -> Any:
+        await asyncio.to_thread(late_descendant.wait_spawner, tmp_path)
+        late_descendant.arm(tmp_path, monkeypatch.setattr)
+        return await original(request, **kwargs)
+
+    monkeypatch.setattr(codex_models, "fetch_catalog", fetch_after_spawner)
+    assert await codex_models.list_models_from_app_server() == [model]
+    late_descendant.assert_released(tmp_path)

@@ -195,12 +195,11 @@ def stop_recorded_executor(identity: session_registry.ProcessIdentity) -> str | 
         return f"pid {identity.pid} の起動時刻を照会できない: {error}"
     if created != identity.create_time:
         return None
-    # 委譲先CLIの終了後は子孫の親が変わり辿れなくなるため、終了を要求する前に列挙する。
-    targets = [process, *process_tree.collect_descendants(identity.pid)]
-    residual = process_tree.reclaim_processes(targets)
+    # 本人確認済みのプロセスを起点に、子孫の生成を止めてから終了させる。
+    # 終了要求前の1回の列挙だけでは、その後に起動した子孫が親を失って回収から漏れる。
+    result = process_tree.stop_tree(process)
     if identity.exists():
-        return f"pid {identity.pid} の終了を確認できない: residual={[process_tree.describe(item) for item in residual]}"
-    if residual:
-        process_tree.log_residual([process_tree.describe(item) for item in residual], context="owner-lost executor")
+        return f"pid {identity.pid} の終了を確認できない: residual={result.descriptions()}"
+    process_tree.log_residual(result.descriptions(), context="owner-lost executor")
     _LOG.info("owner_lost_executor_stopped pid=%d create_time=%s", identity.pid, identity.create_time)
     return None

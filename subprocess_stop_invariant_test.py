@@ -11,6 +11,12 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "_stop_server_process",
     ): "stdlibだけのbootstrapで、独立sessionとして起動した子のprocess groupを有限時間で回収する",
     ("agent-toolkit/agent_toolkit/_common/process_tree.py", "reclaim_processes"): "子孫回収の共通実装",
+    ("agent-toolkit/agent_toolkit/_common/process_tree.py", "stop_tree"): "生成を止めてから子孫を回収する共通実装",
+    (
+        "agent-toolkit/agent_toolkit/_common/process_tree.py",
+        "terminate_gracefully",
+    ): "生成を止めてから子孫を回収する共通実装",
+    ("agent-toolkit/agent_toolkit/_common/process_tree.py", "kill_all"): "生成を止めてから子孫を回収する共通実装",
     ("agent-toolkit/agent_toolkit/_common/process_tree.py", "process_scope"): "停止処理の例外時にも所有Popenを回収する共通実装",
     (
         "agent-toolkit/agent_toolkit/_common/process_tree.py",
@@ -20,12 +26,15 @@ _ALLOWED: dict[tuple[str, str], str] = {
     (
         "agent-toolkit/agent_toolkit/_agents_server/cli_turn.py",
         "_terminate_process",
-    ): "停止前に列挙して子孫も回収する既存実装",
-    ("agent-toolkit/agent_toolkit/_agents_server/codex.py", "_close"): "停止前に列挙して子孫も回収する既存実装",
+    ): "共通の停止処理で子孫を回収した後、asyncioの子の終了状態を上限付きで回収する",
+    (
+        "agent-toolkit/agent_toolkit/_agents_server/codex.py",
+        "_close",
+    ): "共通の停止処理で子孫を回収した後、App Serverの終了状態を上限付きで回収する",
     (
         "agent-toolkit/agent_toolkit/_common/codex_models.py",
         "list_models_from_app_server",
-    ): "asyncioの子を待ち、列挙済み子孫をスレッドで回収する",
+    ): "共通の停止処理で子孫を回収した後、asyncioの子の終了状態を上限付きで回収する",
     ("agent-toolkit/agent_toolkit/_agents_server/launch_requests.py", "_run_preflight_command"): "固定のuv --version照会",
     (
         "agent-toolkit/agent_toolkit/_atk/agents_exit_session.py",

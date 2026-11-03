@@ -18,6 +18,7 @@ import pytest
 
 from agent_toolkit._agents_server import lifetime
 from agent_toolkit._common import process_tree
+from agent_toolkit._testing import late_descendant
 
 
 def _holds_resources(process: psutil.Process) -> bool:
@@ -255,3 +256,42 @@ def test_monitor_start_failure_restores_signal_handlers(monkeypatch: pytest.Monk
     with pytest.raises(RuntimeError, match="monitor start failed"):
         guard.start()
     assert {signum: signal.getsignal(signum) for signum in previous} == previous
+
+
+_LATE_SCRIPT = """
+import pathlib, subprocess, sys, time
+from agent_toolkit._agents_server import lifetime
+from agent_toolkit._testing import late_descendant
+
+mode, directory = sys.argv[1], pathlib.Path(sys.argv[2])
+# finishでは期限による強制終了が回収と重ならない長さにし、期限到達の試験では短くする。
+monitor = lifetime.ServerLifetime(timeout=30.0 if mode == "finish" else 0.5)
+# 定期収集がspawnerを先に所有すると、終了処理の最初の列挙より前に一時停止され同期点を作れない。
+# 定期収集の間隔内に起動した子孫と同じ状態を決定的に作るため、定期収集を止める。
+monitor._collect = lambda: None
+monitor.start()
+subprocess.Popen(late_descendant.cli_command(directory))
+late_descendant.wait_spawner(directory)
+late_descendant.arm(directory, setattr, thread_name="MainThread" if mode == "finish" else "agents-server-lifetime")
+if mode == "finish":
+    monitor.finish()
+    sys.exit(0)
+monitor.request_stop()
+time.sleep(60)
+sys.exit(3)
+"""
+
+
+@pytest.mark.parametrize("mode", ["finish", "deadline"])
+def test_lifetime_reclaims_descendant_started_after_first_listing(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], mode: str
+) -> None:
+    """正常終了と期限到達のどちらでも、最初の列挙の後に起動した子孫を終了させてファイルを解放する。"""
+    script = tmp_path / "late_lifetime.py"
+    script.write_text(_LATE_SCRIPT, encoding="utf-8")
+    with process_tree.process_scope(
+        [sys.executable, str(script), mode, str(tmp_path)], env=host_environ(), stdin=subprocess.PIPE
+    ) as process:
+        # 期限到達では監視スレッドが回収後に終了コード0で即時終了し、sleep後の3へ到達しない。
+        assert process.wait(timeout=60) == 0
+    late_descendant.assert_released(tmp_path)

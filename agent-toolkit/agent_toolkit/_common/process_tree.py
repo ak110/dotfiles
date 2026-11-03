@@ -2,21 +2,31 @@
 
 ラッパー、シェル、エージェントCLIは、自身の実行中に補助プロセスを起動する。
 終了処理が直接の子だけを終了させると、これらの子孫は親を失ったまま生存し続ける。
-`collect_descendants`と`reclaim_descendants`は、その残留をCLIのプロセスの終了に合わせて回収する。
+外部コマンドの終了処理は`stop_tree`へ集約し、生成の停止、終了対象の確定、終了要求、回収の確認を1回の呼び出しで行う。
 
-`collect_descendants`はCLIのプロセスへ終了を要求する前に呼ぶ。
-CLIのプロセスが終了すると子孫の親が変わり、そのPIDを起点に辿れなくなるためである。
+終了要求の前に1回だけ列挙した一覧で回収を完了と判断してはならない。
+列挙の後に起動した子孫は一覧に含まれず、親の終了後は起点から辿れなくなるためである。
+WindowsのCodex App Serverでは、この漏れた孫が一時領域を保持して削除がWinError 32で失敗した。
+`stop_tree`は起点と子孫を一時停止しながら列挙を繰り返して生成を止め、増えなくなった集合を終了させる。
+一時停止できない対象、列挙の失敗、反復上限への到達は`TreeStopResult.unresolved`で全対象の回収成功と区別する。
+
+完全な回収を保証しない範囲は次のとおりである。
+一時停止できない対象が起動した子孫と、POSIXの終了猶予中に子を起動した親がポーリング間隔より早く終了した場合の子
+（親を失った子はinitへ付け替わり、起点から辿れない）である。
+起点自身を一時停止しない呼び出し（`include_root=False`）では、凍結後に起点が新たに起動した子がさらに起動した子孫も含む。
 
 対象の特定は起点PIDからの子孫関係だけを根拠とする。
 プロセス名の部分一致とパターン一致で対象集合を広げない。
 """
 
 import contextlib
+import dataclasses
 import logging
+import os
 import subprocess
 import sys
 import time
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from typing import Any
 
 # 回収しない呼出し元では、プロセス管理の依存を読み込まない。
@@ -35,23 +45,235 @@ RECLAIM_TIMEOUT_SECONDS = 5.0
 _POLL_INTERVAL_SECONDS = 0.05
 """子孫の終了を確認する間隔（秒）。"""
 
-_SUSPEND_COLLECT_MAX_ROUNDS = 10
-"""`suspend_and_collect_descendants`が一時停止と列挙を繰り返す上限回数。
+_FREEZE_MAX_ROUNDS = 10
+"""`stop_tree`が一時停止と列挙を繰り返す上限回数。
 
 一時停止した対象は子を起動できないため、各回で増えるのは前回の列挙と一時停止の間に起動した子孫だけである。
-一時停止できない対象が子を起動し続ける場合も、この回数で列挙を打ち切る。
+一時停止できない対象が子を起動し続ける場合も、この回数で列挙を打ち切り、未確定として報告する。
 """
+
+
+@dataclasses.dataclass
+class TreeStopResult:
+    """`stop_tree`の結果。
+
+    `residual`が空でも`unresolved`が空でなければ、生成を止められなかった子孫が残っている可能性がある。
+    """
+
+    targets: list[psutil.Process]
+    """終了させた所有対象（起点を含む場合は起点を含む）。"""
+    residual: list[psutil.Process]
+    """資源を保持したまま残った対象。`reclaim_processes`へそのまま渡して再試行できる。"""
+    unresolved: list[str]
+    """生成の停止を確認できなかった理由。"""
+    _descriptions: dict[int, str] = dataclasses.field(default_factory=dict)
+
+    def describe_residual(self, process: psutil.Process) -> str:
+        """終了要求の前に取得した記述で対象を示す（終了後は起動コマンドを取得できないため）。"""
+        return self._descriptions.get(process.pid) or describe(process)
+
+    def descriptions(self, *, exclude_pid: int | None = None) -> list[str]:
+        """残存の記述と未確定の理由を、呼び出し元の残存診断へ渡す形式で返す。"""
+        residual = [self.describe_residual(process) for process in self.residual if process.pid != exclude_pid]
+        return residual + self.unresolved_descriptions()
+
+    def unresolved_descriptions(self) -> list[str]:
+        """未確定の理由を、残存診断へ渡す形式で返す。"""
+        return [f"生成の停止を確認できない: {reason}" for reason in self.unresolved]
+
+
+def stop_tree_by_pid(pid: int, **kwargs: Any) -> TreeStopResult | None:
+    """`pid`のプロセスを起点に`stop_tree`を呼ぶ。起点が既に消滅していればNoneを返す。
+
+    起点が消滅していると、POSIXでは子孫の親がinitへ付け替わり起点から辿れないため、回収の対象を特定できない。
+    """
+    try:
+        root = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return None
+    return stop_tree(root, **kwargs)
+
+
+def stop_tree(
+    root: psutil.Process,
+    *,
+    include_root: bool = True,
+    known: Iterable[psutil.Process] = (),
+    timeout: float = RECLAIM_TIMEOUT_SECONDS,
+) -> TreeStopResult:
+    """`root`の子孫（`include_root`なら`root`自身も）の生成を止め、終了させて回収する。
+
+    Windowsでは一時停止した全対象を強制終了する（一時停止中でも終了できる）。
+    POSIXでは全対象へSIGTERMを送ってから再開し、正常終了の機会を保つ。
+    猶予中に増えた子孫にもSIGTERMを送り、期限で再び一時停止してからSIGKILLを送る。
+    `known`は呼び出し元が既に所有する対象であり、同じ扱いで終了させる。
+    途中で例外が起きても、一時停止した対象を残さないよう所有対象を強制終了してから例外を伝播させる。
+    同期的に待機するため、イベントループ上から呼ぶ場合は別スレッドへ退避させる。
+    """
+    tree = _OwnedTree(root, include_root=include_root, known=known)
+    finished = False
+    try:
+        tree.freeze()
+        descriptions = {process.pid: describe(process) for process in tree.targets()}
+        if sys.platform == "win32":
+            tree.kill_all()
+        else:
+            tree.terminate_gracefully(timeout)
+            tree.suspended.clear()
+            tree.freeze()
+            tree.kill_all()
+        residual = _wait_until_released(tree.targets(), timeout=timeout)
+        finished = True
+    finally:
+        if not finished:
+            for process in tree.targets():
+                with contextlib.suppress(psutil.Error, OSError):
+                    process.kill()
+    return TreeStopResult(tree.targets(), residual, tree.unresolved, descriptions)
+
+
+class _OwnedTree:
+    """`stop_tree`が所有する終了対象と、子孫を辿る起点の集合。"""
+
+    def __init__(self, root: psutil.Process, *, include_root: bool, known: Iterable[psutil.Process]) -> None:
+        self._anchors: dict[tuple[int, float], psutil.Process] = {}
+        self._owned: dict[tuple[int, float], psutil.Process] = {}
+        self.suspended: set[tuple[int, float]] = set()
+        self.unresolved: list[str] = []
+        root_key = _key(root)
+        if root_key is not None:
+            if include_root and root.pid != os.getpid():
+                self._owned[root_key] = root
+            else:
+                self._anchors[root_key] = root
+        self.add(known)
+
+    def targets(self) -> list[psutil.Process]:
+        return list(self._owned.values())
+
+    def add(self, processes: Iterable[psutil.Process]) -> list[psutil.Process]:
+        """自プロセス以外の未所有の対象を所有に加え、加えた対象を返す。"""
+        added = []
+        for process in processes:
+            key = _key(process)
+            if key is None or key in self._owned or key in self._anchors or process.pid == os.getpid():
+                continue
+            self._owned[key] = process
+            added.append(process)
+        return added
+
+    def freeze(self) -> None:
+        """所有対象を一時停止しながら子孫を列挙し、増えなくなるまで所有に加える。"""
+        for _ in range(_FREEZE_MAX_ROUNDS):
+            for key, process in list(self._owned.items()):
+                if key in self.suspended:
+                    continue
+                self.suspended.add(key)
+                try:
+                    process.suspend()
+                except psutil.NoSuchProcess:
+                    pass  # 既に終了した対象は子を起動しない。
+                except (psutil.Error, OSError) as error:
+                    self._unresolve(f"pid {process.pid} を一時停止できない: {type(error).__name__}: {error}")
+            if not self.scan():
+                return
+        self._unresolve(f"{_FREEZE_MAX_ROUNDS}回の一時停止と列挙の後も子孫が増え続けた")
+
+    def _unresolve(self, reason: str) -> None:
+        # POSIXでは終了猶予の前後で2回凍結するため、同じ理由を重複して報告しない。
+        if reason not in self.unresolved:
+            self.unresolved.append(reason)
+
+    def scan(self) -> list[psutil.Process]:
+        """所有対象と起点の子孫のうち未所有の対象を所有に加えて返す。列挙の失敗は未確定として記録する。"""
+        try:
+            found = _scan_descendants([*self._anchors.values(), *self._owned.values()])
+        except (psutil.Error, OSError) as error:
+            self._unresolve(f"子孫を列挙できない: {type(error).__name__}: {error}")
+            return []
+        return self.add(found)
+
+    def terminate_gracefully(self, timeout: float) -> None:
+        """SIGTERMを送ってから再開し、猶予中に増えた子孫にもSIGTERMを送りながら終了を待つ。"""
+        targets = self.targets()
+        for process in targets:
+            with contextlib.suppress(psutil.Error, OSError):
+                process.terminate()
+        for process in targets:
+            with contextlib.suppress(psutil.Error, OSError):
+                process.resume()
+        deadline = time.monotonic() + timeout
+        while any(_holds_resources(process) for process in self.targets()) and time.monotonic() < deadline:
+            time.sleep(_POLL_INTERVAL_SECONDS)
+            for process in self.scan():
+                with contextlib.suppress(psutil.Error, OSError):
+                    process.terminate()
+
+    def kill_all(self) -> None:
+        """所有対象を強制終了し、強制終了の間に増えた子孫も強制終了する。"""
+        killed: set[int] = set()
+        for _ in range(_FREEZE_MAX_ROUNDS):
+            for process in self.targets():
+                if id(process) in killed:
+                    continue
+                killed.add(id(process))
+                with contextlib.suppress(psutil.Error, OSError):
+                    process.kill()
+            if not self.scan():
+                return
+
+
+def _key(process: psutil.Process) -> tuple[int, float] | None:
+    """PIDの再利用と区別するため、PIDと起動時刻の組で対象を識別する。消滅済みならNoneを返す。"""
+    try:
+        return process.pid, process.create_time()
+    except psutil.Error, OSError:
+        return None
+
+
+def _scan_descendants(parents: list[psutil.Process]) -> list[psutil.Process]:
+    """`parents`の子孫を、1回のプロセス一覧から親PIDを辿って返す。
+
+    終了済みの`parents`も親として辿る。Windowsでは親の終了後も子の親PIDが残るため、親を失った子孫を見つけられる。
+    子の起動時刻が親より前の場合と、親PIDを別のプロセスが再利用している場合のその新しいプロセスの子は含めない。
+    """
+    entries: list[tuple[psutil.Process, int]] = []
+    for process in psutil.process_iter(["ppid"]):
+        ppid = process.info.get("ppid")
+        if isinstance(ppid, int):
+            entries.append((process, ppid))
+    holders = {process.pid: process for process, _ in entries}
+    created: dict[int, float] = {}
+    for parent in parents:
+        with contextlib.suppress(psutil.Error, OSError):
+            created[parent.pid] = parent.create_time()
+    found: list[psutil.Process] = []
+    pending = set(created)
+    while pending:
+        next_pending: set[int] = set()
+        for process, ppid in entries:
+            if ppid not in pending or process.pid in created:
+                continue
+            try:
+                child_created = process.create_time()
+                if child_created < created[ppid]:
+                    continue
+                holder = holders.get(ppid)
+                # 親PIDを別の新しいプロセスが再利用していれば、その後に起動した子は再利用側の子である。
+                if holder is not None and created[ppid] != holder.create_time() <= child_created:
+                    continue
+            except psutil.Error, OSError:
+                continue
+            created[process.pid] = child_created
+            found.append(process)
+            next_pending.add(process.pid)
+        pending = next_pending
+    return found
 
 
 def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
     """所有する子を子孫ごと停止し、回収できなかったPIDと起動コマンドを返す。"""
-    descendants = collect_descendants(process.pid)
-    try:
-        targets = [psutil.Process(process.pid), *descendants]
-    except psutil.NoSuchProcess:
-        targets = descendants
-    descriptions = {target.pid: describe(target) for target in targets}
-    alive = reclaim_processes(targets)
+    result = stop_tree_by_pid(process.pid)
     # 所有する子はzombie表示でも回収済みとは限らない。スレッドグループのリーダーだけが先に終了し、
     # 他のスレッドが生存する多スレッドの子はzombieと表示され、`reclaim_processes`の強制終了の対象から外れる。
     # そのためzombie判定に頼らず回収を上限付きで待ち、終わらなければ強制終了を重ねる。
@@ -62,9 +284,9 @@ def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
             process.kill()
         with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
-    residual = [descriptions[target.pid] for target in alive if target.pid != process.pid]
+    residual = [] if result is None else result.descriptions(exclude_pid=process.pid)
     if process.poll() is None:
-        residual.append(descriptions.get(process.pid, f"{process.pid}: {process.args!r}"))
+        residual.append(f"{process.pid}: {process.args!r}")
     return residual
 
 
@@ -145,39 +367,6 @@ def collect_descendants(pid: int | None) -> list[psutil.Process]:
         return psutil.Process(pid).children(recursive=True)
     except psutil.Error, OSError:
         return []
-
-
-def suspend_and_collect_descendants(pid: int | None) -> list[psutil.Process]:
-    """Windowsでは起点と子孫を一時停止しながら列挙を繰り返し、列挙が増えなくなった子孫を返す。
-
-    Windowsでは親の終了で子孫が終了せず、親を失った子孫は起点から辿れなくなる。
-    1回の列挙の直後に起動した子孫は列挙から漏れ、親の強制終了後も資源を保持したまま残る。
-    一時停止したプロセスは新しい子を起動できないため、列挙が増えなくなった時点で子孫の集合が確定する。
-    一時停止した対象は、呼び出し元が`TerminateProcess`による終了で回収する（停止中でも終了できる）。
-    POSIXでは終了要求による正常終了の機会を保つため、一時停止せず`collect_descendants`と同じ結果を返す。
-    """
-    if sys.platform != "win32" or pid is None:
-        return collect_descendants(pid)
-    try:
-        root = psutil.Process(pid)
-    except psutil.Error, OSError:
-        return []
-    suspended: set[int] = set()
-    descendants: list[psutil.Process] = []
-    targets = [root]
-    for _ in range(_SUSPEND_COLLECT_MAX_ROUNDS):
-        for process in targets:
-            with contextlib.suppress(psutil.Error, OSError):
-                process.suspend()
-            suspended.add(process.pid)
-        try:
-            descendants = root.children(recursive=True)
-        except psutil.Error, OSError:
-            break
-        targets = [process for process in descendants if process.pid not in suspended]
-        if not targets:
-            break
-    return descendants
 
 
 def reclaim_descendants(descendants: list[psutil.Process], *, timeout: float = RECLAIM_TIMEOUT_SECONDS) -> list[str]:

@@ -141,17 +141,18 @@ async def list_models_from_app_server() -> list[dict[str, Any]]:
             await stdin.drain()
             return await fetch_catalog(request)
         finally:
-            descendants = process_tree.collect_descendants(process.pid)
             stdin.close()
+            # App Serverと子孫の生成を止めてから終了させ、応答後に起動した補助プロセスも回収する。
+            result = None
             if process.returncode is None:
-                process.terminate()
+                result = await asyncio.to_thread(process_tree.stop_tree_by_pid, process.pid)
             try:
                 await asyncio.wait_for(process.wait(), 5)
             except TimeoutError:
                 process.kill()
                 await process.wait()
-            residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
-            process_tree.log_residual(residual, context="model/list")
+            if result is not None:
+                process_tree.log_residual(result.descriptions(exclude_pid=process.pid), context="model/list")
 
 
 def list_models() -> list[dict[str, Any]]:

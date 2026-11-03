@@ -349,6 +349,12 @@ jobs:
           agent-toolkit/agent_toolkit/_common/plugin_environment_test.py
           agent-toolkit/agent_toolkit/_agents_server/codex_test.py::test_legacy_plugin_root_real_mcp_lifecycle
           agent-toolkit/agent_toolkit/_plan/structure
+          agent-toolkit/agent_toolkit/_common/process_tree_test.py
+          agent-toolkit/agent_toolkit/_agents_server/codex_test.py::test_stop_reclaims_descendant_started_after_first_listing
+          agent-toolkit/agent_toolkit/_agents_server/cli_turn_test.py::test_close_reclaims_descendant_started_after_first_listing
+          agent-toolkit/agent_toolkit/_agents_server/owner_lost_test.py::test_stop_recorded_executor_reclaims_descendant_started_after_first_listing
+          agent-toolkit/agent_toolkit/_common/codex_models_test.py::test_model_list_reclaims_descendant_started_after_first_listing
+          agent-toolkit/agent_toolkit/_agents_server/lifetime_test.py::test_lifetime_reclaims_descendant_started_after_first_listing
       - name: Codex CLI 0.163.0の導入
         if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh

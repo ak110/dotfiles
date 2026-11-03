@@ -20,6 +20,7 @@ import time
 from collections.abc import Generator
 from typing import Any
 
+import psutil
 import pytest
 
 from agent_toolkit import atk
@@ -38,7 +39,8 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import process_tree, session_registry, state_paths
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
     ThreadReadBackend,
@@ -549,3 +551,16 @@ def test_process_loop_record_stays_running_while_claude_child_survives(
             child.kill()
             child.wait()
     assert session_registry.resolve(identifier).state is session_registry.Resolution.TERMINAL
+
+
+def test_stop_recorded_executor_reclaims_descendant_started_after_first_listing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """本人確認した委譲先CLIの停止で、最初の列挙の後に起動した子孫も終了させてファイルを解放する。"""
+    with process_tree.process_scope(late_descendant.cli_command(tmp_path)) as process:
+        late_descendant.wait_spawner(tmp_path)
+        executor = psutil.Process(process.pid)
+        identity = session_registry.ProcessIdentity(executor.pid, executor.create_time())
+        late_descendant.arm(tmp_path, monkeypatch.setattr)
+        assert owner_lost.stop_recorded_executor(identity) is None
+    late_descendant.assert_released(tmp_path)

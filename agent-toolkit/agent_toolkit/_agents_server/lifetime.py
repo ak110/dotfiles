@@ -130,13 +130,17 @@ class ServerLifetime:
     def finish(self) -> None:
         """正常な終了処理の完了後に監視を解除する。"""
         self.request_stop(cancel_transport=False)
-        targets = list(self._targets.values()) + process_tree.collect_descendants(self._process.pid)
-        process_tree.reclaim_processes(targets)
+        self._reclaim()
         self._finished.set()
         self._thread.join(timeout=POLL_INTERVAL * 2)
         os.close(self._stdin_fd)
         for signum, previous in self._handlers.items():
             signal.signal(signum, previous)
+
+    def _reclaim(self) -> None:
+        # 監視主体（自プロセス）は回収を続けるため一時停止せず、子孫だけの生成を止めてから終了させる。
+        # 定期収集済みの対象に加えて最後に列挙し直すだけでは、その後に起動した子孫が親を失うと回収から漏れる。
+        process_tree.stop_tree(self._process, include_root=False, known=list(self._targets.values()))
 
     def _collect(self) -> None:
         for key, process in tuple(self._targets.items()):
@@ -180,7 +184,7 @@ class ServerLifetime:
                     self._callback()
             if time.monotonic() >= self._deadline:
                 # shutdownやloggingのロック、asyncio.runの残task待機へ戻らず終了する。
-                process_tree.reclaim_processes(list(self._targets.values()))
+                self._reclaim()
                 if not self._finished.is_set():
                     os._exit(self._exitcode)
                 return

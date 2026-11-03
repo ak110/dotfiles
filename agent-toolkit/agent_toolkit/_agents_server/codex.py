@@ -588,15 +588,18 @@ class JsonRpcProcess:
         if self._closed and self.process is None and not self._residual:
             return []
         process = self.process
+        unresolved: list[str] = []
+        reclaimed = False
+        diagnostic_targets = [] if process is None else [process.pid]
+        if sys.platform == "win32":
+            _LOG.info(
+                "Codex App Server終了要求前: at=%s observer_pid=%s owned=%s",
+                utc_now(),
+                os.getpid(),
+                await run_file_operation(lambda: [process_tree.identity(pid) for pid in diagnostic_targets]),
+            )
         if not self._closed:
             self._closed = True
-            # 子孫の列挙は終了要求より前に行う。App Serverが終了すると子孫の親が変わり、
-            # 保持しているPIDを起点に辿れなくなるためである。
-            # Windowsでは列挙直後に起動した孫が回収から漏れ、codex-homeを保持したまま残ったため、
-            # App Serverと子孫を一時停止しながら列挙を確定させる。
-            self._residual = await run_file_operation(
-                process_tree.suspend_and_collect_descendants, None if process is None else process.pid
-            )
             tasks = tuple(
                 task
                 for task in (self._reader_task, self._stderr_task)
@@ -607,17 +610,19 @@ class JsonRpcProcess:
             for task in tasks:
                 if not task.done():
                     task.cancel()
+            # App Serverと子孫の生成を止めてから終了させる。終了要求前の1回の列挙だけを回収すると、
+            # その直後に起動した孫が漏れ、Windowsではcodex-homeを保持したまま残った。
+            if process is not None and process.returncode is None:
+                result = await asyncio.to_thread(process_tree.stop_tree_by_pid, process.pid)
+                if result is not None:
+                    reclaimed = True
+                    self._residual = [item for item in result.residual if item.pid != process.pid]
+                    unresolved = result.unresolved_descriptions()
+                    diagnostic_targets += [item.pid for item in result.targets if item.pid != process.pid]
         else:
             tasks = ()
-        diagnostic_targets = ([process.pid] if process is not None else []) + [item.pid for item in self._residual]
-        if sys.platform == "win32":
-            _LOG.info(
-                "Codex App Server終了要求前: at=%s observer_pid=%s owned=%s",
-                utc_now(),
-                os.getpid(),
-                await run_file_operation(lambda: [process_tree.identity(pid) for pid in diagnostic_targets]),
-            )
         if process is not None:
+            # 停止処理が終了させた後も、asyncioが終了状態を回収するまでreturncodeは未確定のまま残る。
             with contextlib.suppress(OSError, ProcessLookupError):
                 if process.returncode is None:
                     process.terminate()
@@ -633,7 +638,8 @@ class JsonRpcProcess:
             await lifetime.wait_for_shutdown(tasks)
         if process is not None:
             _LOG.info("Codex App Serverを終了しました: returncode=%s", process.returncode)
-        self._residual = await asyncio.to_thread(process_tree.reclaim_processes, self._residual)
+        if not reclaimed:
+            self._residual = await asyncio.to_thread(process_tree.reclaim_processes, self._residual)
         if sys.platform == "win32":
             _LOG.info(
                 "Codex App Server終了確認後: at=%s observer_pid=%s app_server_pid=%s returncode=%s owned=%s",
@@ -643,7 +649,7 @@ class JsonRpcProcess:
                 None if process is None else process.returncode,
                 await run_file_operation(lambda: [process_tree.identity(pid) for pid in diagnostic_targets]),
             )
-        residual = [process_tree.describe(item) for item in self._residual]
+        residual = [process_tree.describe(item) for item in self._residual] + unresolved
         if process is not None and process.returncode is not None:
             self.process = None
         elif process is not None:

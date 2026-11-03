@@ -14,6 +14,7 @@ import pytest
 from agent_toolkit._agents_server import antigravity, cli_turn, opencode
 from agent_toolkit._agents_server.cli_turn import CliTurnManager
 from agent_toolkit._common import process_tree
+from agent_toolkit._testing import late_descendant
 
 
 @pytest.mark.asyncio
@@ -134,9 +135,31 @@ async def test_close_reclaims_descendants_when_kill_wait_stalls(
 
             monkeypatch.setattr(Process, "wait", stalled_wait)
             await asyncio.wait_for(manager.close(), 15)
-            assert len(calls) >= 2
+            # 停止処理が子孫ごと終了させた後は、終了状態の取得が返らなくてもcloseは上限内に戻る。
             assert all(
                 not target.is_running() or target.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD) for target in targets
             )
         finally:
             await asyncio.to_thread(process_tree.reclaim_processes, targets, timeout=0.5)
+
+
+@pytest.mark.asyncio
+async def test_close_reclaims_descendant_started_after_first_listing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """終了処理の最初の列挙の後に委譲先CLIの子孫が起動しても、終了させてファイルを解放する。"""
+    runtime = tmp_path / "runtime.py"
+    runtime.write_text(
+        f"import time\nprint({json.dumps({'type': 'step_start', 'sessionID': 'late'})!r}, flush=True)\ntime.sleep(120)\n",
+        encoding="utf-8",
+    )
+    command = late_descendant.cli_command(tmp_path, str(runtime))
+    monkeypatch.setattr(opencode.OpenCodeManager, "build_command", staticmethod(lambda *_args: command))
+    monkeypatch.setattr(opencode.OpenCodeManager, "system_prompt", staticmethod(lambda _kind: "停止試験"))
+    monkeypatch.setattr(cli_turn, "_child_env", lambda _owner: host_environ())
+    async with opencode.OpenCodeManager(condition=asyncio.Condition(), log_directory=tmp_path / "logs") as manager:
+        await manager.start("停止試験", str(tmp_path), "test-model", "low")
+        await asyncio.to_thread(late_descendant.wait_spawner, tmp_path)
+        late_descendant.arm(tmp_path, monkeypatch.setattr)
+        await asyncio.wait_for(manager.close(), 60)
+    late_descendant.assert_released(tmp_path)
