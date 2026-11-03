@@ -198,6 +198,7 @@ def test_warmup_rechecks_code_and_dependencies(tmp_path: Path, monkeypatch) -> N
     monkeypatch.setattr(plugin_warmup, "check_command", dependency)
     monkeypatch.setattr(warmup_agents_server, "_check_startup", check)
     assert warmup_agents_server.run().failure is None
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "next-update")
     assert warmup_agents_server.run().failure is None
     assert len(startup) == 1
     script.write_text("# changed", encoding="utf-8")

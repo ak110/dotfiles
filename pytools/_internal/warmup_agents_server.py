@@ -41,7 +41,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     for command in commands:
         paths.extend((Path(command[0]), Path(command[1])))
         paths.append(Path(command[command.index("--project") + 1]) if "--project" in command else Path(command[-1]))
-    key = post_apply_cache.fingerprint(paths, values=[repr(commands), repr(sorted(os.environ.items()))])
+    # 更新実行IDはログの対応付け専用であり、毎回変わってもMCPの起動条件を変えない。
+    startup_environment = sorted((name, value) for name, value in os.environ.items() if name != "UPDATE_DOTFILES_RUN_ID")
+    key = post_apply_cache.fingerprint(paths, values=[repr(commands), repr(startup_environment)])
     checks = (
         _check_targets(commands, skip_startup=True)
         if post_apply_cache.matches("agents-server-startup", key)
