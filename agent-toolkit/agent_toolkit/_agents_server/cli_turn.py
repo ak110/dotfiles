@@ -561,17 +561,18 @@ async def _terminate(process: asyncio.subprocess.Process) -> None:
 async def _terminate_process(process: asyncio.subprocess.Process) -> None:
     if process.returncode is not None:
         return
-    descendants = await run_file_operation(process_tree.collect_descendants, process.pid)
+    # 委譲先CLIと子孫の生成を止めてから終了させる。終了要求前の1回の列挙だけを回収すると、
+    # 列挙後や終了猶予中に起動した子孫が親を失い、回収から漏れる。
+    result = await asyncio.to_thread(process_tree.stop_tree_by_pid, process.pid, timeout=_STOP_TIMEOUT)
     try:
-        with contextlib.suppress(ProcessLookupError):
-            process.terminate()
-        with contextlib.suppress(Exception):
-            await asyncio.wait_for(process.wait(), timeout=_STOP_TIMEOUT)
+        if process.returncode is None:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(process.wait(), timeout=_STOP_TIMEOUT)
         if process.returncode is None:
             with contextlib.suppress(ProcessLookupError):
                 process.kill()
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(process.wait(), timeout=_STOP_TIMEOUT)
     finally:
-        residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
-        process_tree.log_residual(residual, context=f"CLI pid={process.pid}")
+        if result is not None:
+            process_tree.log_residual(result.descriptions(exclude_pid=process.pid), context=f"CLI pid={process.pid}")

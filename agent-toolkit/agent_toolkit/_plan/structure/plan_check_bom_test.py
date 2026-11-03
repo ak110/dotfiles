@@ -10,6 +10,8 @@ import pytest
 
 from agent_toolkit._testing import git_repository, isolation, plan_fixture
 
+pytestmark = pytest.mark.windows
+
 
 @pytest.mark.parametrize("kind", ["awi", "uwi"])
 @pytest.mark.parametrize("reject_migration", [False, True])

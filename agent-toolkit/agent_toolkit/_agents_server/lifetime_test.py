@@ -18,6 +18,7 @@ import pytest
 
 from agent_toolkit._agents_server import lifetime
 from agent_toolkit._common import process_tree
+from agent_toolkit._testing import late_descendant
 
 
 def _holds_resources(process: psutil.Process) -> bool:
@@ -255,3 +256,89 @@ def test_monitor_start_failure_restores_signal_handlers(monkeypatch: pytest.Monk
     with pytest.raises(RuntimeError, match="monitor start failed"):
         guard.start()
     assert {signum: signal.getsignal(signum) for signum in previous} == previous
+
+
+_LATE_SCRIPT = """
+import pathlib, subprocess, sys, time
+import psutil
+from agent_toolkit._agents_server import lifetime
+from agent_toolkit._testing import late_descendant
+
+mode, directory = sys.argv[1], pathlib.Path(sys.argv[2])
+if len(sys.argv) > 3:
+    # spawnerの一時停止と終了を拒否させ、生成の停止を確認できない対象が残る結果が診断へ残ることを観測する。
+    original = {name: getattr(psutil.Process, name) for name in ("suspend", "terminate", "kill")}
+    def denying(name):
+        def call(self, **kwargs):
+            spawner = directory / "spawner.pid"
+            if spawner.exists() and self.pid == int(spawner.read_text(encoding="utf-8")):
+                if name == "suspend":
+                    raise psutil.AccessDenied(self.pid)
+                return None
+            return original[name](self)
+        return call
+    for name in original:
+        setattr(psutil.Process, name, denying(name))
+# finishでは期限による強制終了が回収と重ならない長さにし、期限到達の試験では短くする。
+monitor = lifetime.ServerLifetime(timeout=30.0 if mode == "finish" else 0.5)
+# 定期収集がspawnerを先に所有すると、終了処理の最初の列挙より前に一時停止され同期点を作れない。
+# 定期収集の間隔内に起動した子孫と同じ状態を決定的に作るため、定期収集を止める。
+collect = monitor._collect
+monitor._collect = lambda: None
+monitor.start()
+subprocess.Popen(late_descendant.cli_command(directory))
+late_descendant.wait_spawner(directory)
+if mode == "finish":
+    late_descendant.arm(directory, setattr, thread_name="MainThread")
+    monitor.finish()
+    sys.exit(0)
+# 期限到達の回収は、定期収集の後に起動して未収集のまま残る子孫を対象にする。
+# 定期収集を1回だけ行ってCLIとspawnerを所有させ、その後にholderを起動させる。
+# 修正前の期限回収は列挙せず定期収集済みの対象だけを終了させるため、回収より前に生成を終えておく。
+collect()
+late_descendant.trigger(directory)
+monitor.request_stop()
+time.sleep(60)
+sys.exit(3)
+"""
+
+
+@pytest.mark.windows
+@pytest.mark.parametrize("mode", ["finish", "deadline"])
+def test_lifetime_reclaims_descendant_started_after_first_listing(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], mode: str
+) -> None:
+    """正常終了と期限到達のどちらでも、最初の列挙の後に起動した子孫を終了させてファイルを解放する。"""
+    script = tmp_path / "late_lifetime.py"
+    script.write_text(_LATE_SCRIPT, encoding="utf-8")
+    with process_tree.process_scope(
+        [sys.executable, str(script), mode, str(tmp_path)], env=host_environ(), stdin=subprocess.PIPE
+    ) as process:
+        # 期限到達では監視スレッドが回収後に終了コード0で即時終了し、sleep後の3へ到達しない。
+        assert process.wait(timeout=60) == 0
+    late_descendant.assert_released(tmp_path)
+
+
+@pytest.mark.parametrize("mode", ["finish", "deadline"])
+def test_lifetime_reports_unresolved_generation_stop(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], mode: str
+) -> None:
+    """生成の停止を確認できない回収結果を、通常終了と期限到達のどちらでも次の操作付きの診断として残す。"""
+    script = tmp_path / "late_lifetime.py"
+    script.write_text(_LATE_SCRIPT, encoding="utf-8")
+    with process_tree.process_scope(
+        [sys.executable, str(script), mode, str(tmp_path), "deny-suspend"],
+        env=host_environ(),
+        stdin=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ) as process:
+        try:
+            _, stderr = process.communicate(timeout=60)
+            assert process.returncode == 0
+        finally:
+            # 終了を拒否させたspawnerを試験の後始末として終了させる。
+            with contextlib.suppress(psutil.Error, OSError, ValueError):
+                psutil.Process(int((tmp_path / "spawner.pid").read_text(encoding="utf-8"))).kill()
+    message = stderr.decode("utf-8", errors="replace")
+    assert "生成の停止を確認できない" in message
+    assert "次の操作" in message

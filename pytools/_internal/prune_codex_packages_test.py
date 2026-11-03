@@ -12,6 +12,8 @@ import pytest
 from pytools._internal import codex_processes, prune_codex_packages
 from pytools.prune_codex_packages_test import _release
 
+pytestmark = pytest.mark.windows
+
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのflock競合を実物で検証する")
 def test_official_flock_blocks_pruning(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

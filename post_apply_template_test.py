@@ -12,6 +12,8 @@ import pytest
 
 from pytools._internal import setup_media_remote
 
+pytestmark = pytest.mark.windows
+
 REPO_ROOT = Path(__file__).resolve().parent
 LINUX_TEMPLATE = REPO_ROOT / ".chezmoi-source/run_after_post-apply.sh.tmpl"
 WINDOWS_TEMPLATE = REPO_ROOT / ".chezmoi-source/run_after_post-apply-windows.ps1.tmpl"

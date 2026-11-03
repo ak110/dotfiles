@@ -12,6 +12,8 @@ import pytest
 from pytools import prune_codex_packages as cli
 from pytools._internal import codex_processes, prune_codex_packages
 
+pytestmark = pytest.mark.windows
+
 _TARGET = "x86_64-unknown-linux-musl"
 
 

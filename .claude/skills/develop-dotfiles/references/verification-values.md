@@ -118,7 +118,7 @@ Python 3.15のpytestは直下の`pytest (3.15)`と、toolkitを3分割した`pyt
 必須checkの`pytest-toolkit (3.15)`が全分割の成功を集約する。
 以下のジョブはローカルの`make test`では実行されない。
 
-- `test-windows`ジョブ: Windows実機環境でのchezmoi適用、Windows固有のテスト、および公開ランチャーの動作確認
+- `test-windows`ジョブ: Windows実機環境でのchezmoi適用、Windows固有のテスト、および公開ランチャーの動作確認。Windows固有のテストは`windows` markerを付けた試験が選ばれるため、Windows実機で確かめる試験を加えるときはCI定義ではなく試験側へmarkerを付ける
 - `update-dotfiles-upgrade (windows)`ジョブ: Windows環境における旧バージョンからのupdate-dotfilesによるアップデート検証
 - `test-linux`ジョブ: `install.sh`およびchezmoiの実際の適用確認
 - `pytest (3.15)`・`pytest-toolkit (3.15, N/3)`ジョブ: Python 3.15・最低Git 2.34.1で直下とtoolkitのテストを各1回実行し、skills配下と横断不変条件も含める。toolkitの試験は`--test-shard`で3分割の各jobへちょうど1回ずつ割り当てる

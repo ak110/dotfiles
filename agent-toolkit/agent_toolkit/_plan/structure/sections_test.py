@@ -26,6 +26,8 @@ from agent_toolkit._testing.plan_structure_support import (
     _origin_check,
 )
 
+pytestmark = pytest.mark.windows
+
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 
 

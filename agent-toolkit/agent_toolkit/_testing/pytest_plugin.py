@@ -102,6 +102,18 @@ def _notify_slot_wait(owner: execution_slot.SlotOwner | None) -> None:
     )
 
 
+def pytest_ignore_collect(collection_path: pathlib.Path, config: pytest.Config) -> bool | None:
+    """`-m windows`の実行では、`windows` markerを書いていない試験モジュールを読み込まない。
+
+    Windows CIの「Windows境界テスト」はリポジトリ全体から`windows` markerの試験を選ぶ。
+    選ばれない試験モジュールにはPOSIX専用の値をimport時に使うものがあり、Windowsでは読み込むだけで収集が失敗するため、
+    markerによる選択の前に、本文にmarkerの記述があるモジュールだけを読み込む。
+    """
+    if config.getoption("markexpr") != "windows" or not collection_path.name.endswith("_test.py"):
+        return None
+    return "pytest.mark.windows" not in collection_path.read_text(encoding="utf-8")
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
     """共有検証の所有と一時領域をpytestの寿命へ結び、配布CLIの依存環境の保存先を固定する。

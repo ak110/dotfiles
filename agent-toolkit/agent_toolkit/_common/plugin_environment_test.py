@@ -17,6 +17,8 @@ import pytest
 from agent_toolkit._common import inherited_venv
 from agent_toolkit._common import plugin_environment as subject
 
+pytestmark = pytest.mark.windows
+
 
 def _hold_posix_prepare_lock(path: str, entered: Any, release: Any) -> None:
     """別プロセスでprepare lockを保有してから正常終了する。"""
@@ -184,6 +186,7 @@ _CHILD_ENVIRONMENT_PROBE = """\
 import json, os, pathlib, subprocess, sys
 from agent_toolkit._atk import lane
 from agent_toolkit._common import claude_connection, inherited_venv, plugin_environment
+
 
 root = pathlib.Path(__file__).resolve().parent
 child = dict(os.environ)

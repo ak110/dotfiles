@@ -8,6 +8,8 @@ import pytest
 import update_dotfiles_stash
 from agent_toolkit._testing import git_repository
 
+pytestmark = pytest.mark.windows
+
 
 def _repository(path: pathlib.Path) -> pathlib.Path:
     return git_repository.init_repository(
