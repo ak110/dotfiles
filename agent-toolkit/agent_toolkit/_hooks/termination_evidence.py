@@ -14,7 +14,6 @@ import pathlib
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import argparse
-lazy import shlex
 lazy import subprocess
 lazy from typing import Any
 
@@ -27,7 +26,7 @@ lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
-lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
+lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command, join_words
 lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._git import worktrees as git_worktrees
 lazy from agent_toolkit._hooks import agent_id, agents_server_observations
@@ -319,7 +318,7 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
     command = tool_input.get("command")
     if tool_name in ATK_SHELL_TOOLS and isinstance(command, str):
         for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd if isinstance(cwd, str) else ""):
-            single = shlex.join(invocation.segment.tokens)
+            single = join_words(invocation.segment.tokens)
             item_labels = [*_saved_operations(single), *([] if invocation.background else published_git_operations(single))]
             if codex or is_antigravity_payload(payload):
                 text = _document_reads.response_text(payload.get("tool_response"))

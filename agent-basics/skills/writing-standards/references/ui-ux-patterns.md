@@ -1,6 +1,6 @@
 # 画面の主題別設計
 
-本書は、フォーム、一覧、検索、通知、パネル表示、AI連携、同意・解約フロー、多言語対応などを含む画面の設計、実装、レビューをする際に参照する指針である。
+本書は、フォーム、一覧、検索、通知、自動で切り替わる表示、パネル表示、AI連携、同意・解約フロー、多言語対応などを含む画面の設計、実装、レビューをする際に参照する指針である。
 設計にあたっては、まずエンドユーザーの作業の流れと中断可能な範囲を明確にし、各機能における操作から最終結果に至る動線を一貫して確認する。
 
 参考資料: [ux-designer-skill](https://github.com/szilu/ux-designer-skill)、[frontend-ui-ux-skill](https://github.com/overseek944/frontend-ui-ux-skill)。これらの資料をもとに主題別の判断基準を再構成した。アクセシビリティや表示性能に関する基準値は[W3C WCAG 2.2](https://www.w3.org/TR/WCAG22/)および[web.dev Core Web Vitals](https://web.dev/articles/vitals/)に準拠し、共通の指標値は`ui-ux.md`にまとめている。
@@ -13,6 +13,7 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `public-service-obligations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/public-service-obligations.md` |
+| 自動切替の操作とアクセシビリティを決める時 | `ui-ux-web-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md` |
 
 ## フォームと入力
 
@@ -37,6 +38,12 @@
 トーストやバナーなどの通知表示は、ユーザーの作業を中断させる必要性の度合いと、後から見返す必要性の度合いに応じて適切な形式を選択する。
 エラー通知はユーザーが内容を確認して明示的に閉じるまで表示を保持し、操作の取り消し（Undo）を案内する場合はワンクリックで実行できる手段を提供する。
 通知の出現や消失によって既存コンテンツの配置やキーボードフォーカスが不意に乱れないように配慮する。
+
+## 自動で切り替わる表示
+
+カルーセルなど、内容を順に切り替えて読ませる表示は、静的表示か手動切替を標準として検討する（努力目標。読む時間を読者自身が決められるようにするため）。
+自動切替は利用目的に対する必要性を確かめてから選び、停止、再開、前後の内容への手動切替を提供する。
+キーボード操作、フォーカス管理、支援技術への変更通知は、`ui-ux.md`と`ui-ux-web-rules.md`のアクセシビリティと動き軽減の基準に合わせる。
 
 ## モーダル、サイドパネル、全画面表示
 

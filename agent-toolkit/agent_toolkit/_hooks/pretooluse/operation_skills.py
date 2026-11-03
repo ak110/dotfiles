@@ -10,7 +10,6 @@ import dataclasses
 import os
 import pathlib
 import re
-import shlex
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from collections.abc import Callable, Sequence
@@ -20,6 +19,7 @@ lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
+lazy from agent_toolkit._common.shell_tokens import split_words
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import rules_context as _rules_context
@@ -504,15 +504,17 @@ def is_diagnostic_operation(tool_name: str, tool_input: dict, cwd: str) -> bool:
     if tool_name != "Bash" or not isinstance(command, str) or any(char in command for char in ("$", "`")):
         return False
     # 関数定義やグループで隠した実行、heredocの本文を診断コマンドと推定しない。
-    lexer = shlex.shlex(command, posix=False, punctuation_chars="(){}<>")
-    lexer.whitespace_split = True
     try:
-        if any(
-            token in {"(", ")", "()", "{", "}", "<<", "<<<", "<>"} or _shell_segments.ENV_ASSIGN_PATTERN.match(token)
-            for token in lexer
-        ):
-            return False
+        words = [word for _connector, segment in _shell_segments.split_bash_commands(command) for word in split_words(segment)]
     except ValueError:
+        return False
+    if any(
+        set("()") & set(word.unquoted)
+        or word.unquoted in {"{", "}"}
+        or (word.redirection and word.unquoted.lstrip("0123456789").startswith(("<<", "<>")))
+        or _shell_segments.ENV_ASSIGN_PATTERN.match(word.unquoted)
+        for word in words
+    ):
         return False
     segments = _shell_segments.extract_execution_pipelines(command, expand_shell=False)
     if not segments or any(not segment.resolved for pipeline in segments for segment in pipeline):

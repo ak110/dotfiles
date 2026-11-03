@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import re
-import shlex
 import sys
 import time
 import typing
@@ -85,6 +84,7 @@ from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_agents_wait_command
 
 if typing.TYPE_CHECKING:
@@ -2406,26 +2406,17 @@ class AppServerManager:
         elif item_type == "commandExecution":
             command = item.get("command")
             output = item.get("aggregatedOutput")
-            if item.get("exitCode") == 0 and isinstance(command, str) and isinstance(output, str):
-                try:
-                    arguments = shlex.split(command)
-                except ValueError:
-                    return
-                if len(arguments) >= 3 and Path(arguments[0]).name == "timeout":
-                    arguments = arguments[2:]
-                if (
-                    len(arguments) == 3
-                    and Path(arguments[0]).name in {"bash", "sh", "dash", "zsh"}
-                    and arguments[1] in {"-c", "-lc"}
-                ):
-                    try:
-                        arguments = shlex.split(arguments[2])
-                    except ValueError:
-                        return
-                    if len(arguments) >= 3 and Path(arguments[0]).name == "timeout":
-                        arguments = arguments[2:]
-                if is_agents_wait_command(arguments):
-                    await wait_output_tracking.consume_agents_wait_output_async(session, output)
+            # `timeout`などの実行前置語と`bash -c`の展開は、Claudeの待機回収と同じ区間解析で扱う。
+            if (
+                item.get("exitCode") == 0
+                and isinstance(command, str)
+                and isinstance(output, str)
+                and any(
+                    segment.resolved and is_agents_wait_command(segment.tokens)
+                    for segment in extract_execution_segments(command)
+                )
+            ):
+                await wait_output_tracking.consume_agents_wait_output_async(session, output)
         elif item_type == "mcpToolCall" and item.get("server") == "agents_server":
             arguments = item.get("arguments")
             result = item.get("result")

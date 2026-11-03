@@ -7,13 +7,14 @@ import contextlib
 import io
 import pathlib
 import re
-import shlex
 from collections.abc import Iterator
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import run_script
+from agent_toolkit._common.shell_segments import split_bash_commands
+from agent_toolkit._common.shell_tokens import split_words, strip_redirections
 
 
 class _ParserCaptured(Exception):
@@ -66,13 +67,15 @@ def example_argv(command: str) -> list[str]:
     command = re.sub(r"<(?:round|ラウンド番号|正の有限秒数|秒数|N)>", "1", command)
     command = command.replace("<40桁のSHA>", "a" * 40)
     command = re.sub(r"<[^<>]+>", "example", command)
-    # シェルのリダイレクトとパイプの先はatkへの入力ではない。
-    tokens = shlex.split(command, comments=True)
-    for index, token in enumerate(tokens):
-        if token in {"|", ">", ">>", "2>", "&&", ";"}:
-            tokens = tokens[:index]
-            break
-    return tokens
+    # シェルのリダイレクト、パイプ・連結の先とコメントはatkへの入力ではない。
+    # 区切りと語の構文は共通表現から得て、引用した`|`や`>`を引数として残す。
+    commands = split_bash_commands(command)
+    if not commands:
+        return []
+    segment = commands[0][1]
+    words = split_words(segment)
+    comment = next((index for index, word in enumerate(words) if segment[word.start] == "#"), len(words))
+    return list(strip_redirections(words[:comment]))
 
 
 def validate_example(command: str, *, source: str, parsers: dict[str, argparse.ArgumentParser] | None = None) -> None:

@@ -7,7 +7,6 @@ import datetime
 import json
 import pathlib
 import re
-import shlex
 from typing import Any, NamedTuple
 
 import session_evidence_execution
@@ -482,12 +481,19 @@ def _expected_body_read(tool: str, inputs: dict[str, Any]) -> bool:
     if name not in {"Bash", "bash", "shell", "exec_command", "CommandExecution"}:
         return False
     command = inputs.get("command", inputs.get("cmd"))
-    if not isinstance(command, str) or any(operator in command for operator in ";&|<>"):
+    if not isinstance(command, str):
+        return False
+    commands = shell_segments.split_bash_commands(command)
+    if len(commands) != 1:
         return False
     try:
-        argv = shlex.split(command)
+        words = shell_tokens.split_words(commands[0][1])
     except ValueError:
         return False
+    # 単独操作だけを除外する。引用の外側のリダイレクトやサブシェルを含む入力は除外しない。
+    if any(word.redirection or set("()<>") & set(word.unquoted) for word in words):
+        return False
+    argv = list(words)
     if not argv:
         return False
     executable = pathlib.PurePosixPath(argv[0]).name

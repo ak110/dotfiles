@@ -32,8 +32,8 @@ from agent_toolkit._common.plugin_roots import (
     sibling_plugin_root,
 )
 from agent_toolkit._common.session_state import read_state, update_state
-from agent_toolkit._common.shell_segments import extract_execution_segments
-from agent_toolkit._common.shell_tokens import is_atk_command
+from agent_toolkit._common.shell_segments import extract_execution_segments, split_bash_commands
+from agent_toolkit._common.shell_tokens import is_atk_command, join_words, split_words
 from agent_toolkit._hooks import (
     agent_id,
     codex_read_observation,
@@ -195,7 +195,7 @@ def _static_read_paths(command: str, cwd: str) -> list[pathlib.Path] | None:
         elif pathlib.PurePath(tokens[0]).name in {"wc", "ls"}:
             continue
         else:
-            plan = codex_read_observation.read_plan(shlex.join(tokens))
+            plan = codex_read_observation.read_plan(join_words(tokens))
             if len(plan) != 1:
                 return None
             found = True
@@ -463,7 +463,7 @@ def _bound_operation_matches(
         requests = [tool_input]
         if tool_name == "Bash" and isinstance(tool_input.get("command"), str):
             requests = [
-                {"command": shlex.join(segment.tokens)}
+                {"command": join_words(segment.tokens)}
                 for segment in extract_execution_segments(tool_input["command"])
                 if segment.resolved
             ]
@@ -994,15 +994,19 @@ def _declaration_recovery_operation(tool_name: str, tool_input: dict, error: Exc
     if tool_name != "Bash" or not isinstance(command, str):
         return False
     # 回復用の例外では、単一の静的な呼出しだけを受理する。
-    if any(char in command for char in ("$", "`", "\n", "\r")):
+    if any(char in command for char in ("\n", "\r")):
         return False
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>()")
-    lexer.whitespace_split = True
+    commands = split_bash_commands(command)
+    if len(commands) != 1:
+        return False
     try:
-        tokens = tuple(lexer)
+        words = split_words(commands[0][1])
     except ValueError:
         return False
-    if not tokens or any(token and all(char in ";&|<>()" for char in token) for token in tokens):
+    if any(word.expansion or word.redirection or set("()<>") & set(word.unquoted) for word in words):
+        return False
+    tokens = tuple(words)
+    if not tokens:
         return False
     name = pathlib.Path(tokens[0]).name
     if name in {"cat", "cat.exe"}:
@@ -1693,7 +1697,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         groups = codex_read_observation.read_command_groups(command, read_prefix=True)
         if not groups:
             return
-        static_paths = _static_read_paths("; ".join(shlex.join(group) for group in groups), cwd)
+        static_paths = _static_read_paths("; ".join(join_words(group) for group in groups), cwd)
         if static_paths is None:
             return
         paths = [path.resolve() for path in static_paths]

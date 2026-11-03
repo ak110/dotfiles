@@ -410,34 +410,43 @@ def require_confirmed_cause(body: str, *, entry_type: str) -> None:
         )
 
 
-AWI_CAUSE_TABLE_ROWS: tuple[str, ...] = ("直接的原因", "原因分析の根拠", "対策", "類似見直し観点", "再発防止策")
+AWI_CAUSE_TABLE_ROWS: tuple[str, ...] = (
+    "対策",
+    "回帰防止策",
+    "類似見直し観点（作り込み）",
+    "類似見直し観点（見逃し）",
+    "再発防止策（作り込み）",
+    "再発防止策（見逃し）",
+    "類似見直しの採否",
+    "再発防止策の採否",
+)
 """AWIの`## 原因分析`の2列表の行。定義元は`wi-standards/references/analysis-records.md`「原因分析の記録先」。"""
 
 
 def _awi_cause_table_errors(section: str) -> list[str]:
-    """AWIの原因分析の2列表が5行をこの順で持ち、対策が空でないことを確かめる。
+    """AWIの原因分析の2列表が8行をこの順で持ち、全行に内容があることを確かめる。
 
-    対策と再発防止策を同じ表で比べられるよう、旧4行表（対策行なし）と空の対策を拒否する。
-    処置が対策と再発防止策のどちらに当たるかの意味の判定は意味検収が担う。
+    `対策`行か旧5行表の`直接的原因`行を持つ2列表を処置表として識別する。
+    4区分の候補行と採否行のいずれかが欠けた記録や空の行を拒否し、候補・採否の意味の判定は意味検収が担う。
     """
     errors: list[str] = []
     for table in _plan_markdown.extract_tables(list(_plan_markdown.iter_markdown_body_lines(section))):
         labels = table.row_labels()
-        if table.header != _plan_constants.PLAN_BUG_TABLE_HEADER or _DIRECT_CAUSE_LABEL not in labels:
+        if table.header != _plan_constants.PLAN_BUG_TABLE_HEADER or not {"対策", _DIRECT_CAUSE_LABEL} & set(labels):
             continue
         if labels != AWI_CAUSE_TABLE_ROWS:
-            errors.append(f"原因分析の表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の5行をこの順に置く: {table.row_location(0)}")
+            errors.append(f"原因分析の表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の8行をこの順に置く: {table.row_location(0)}")
             continue
-        row = table.rows[AWI_CAUSE_TABLE_ROWS.index("対策")]
-        if len(row) < 2 or not _strip_table_cell(row[1]):
-            errors.append(f"対策の行が空である: {table.row_location(AWI_CAUSE_TABLE_ROWS.index('対策'))}")
+        for index, row in enumerate(table.rows):
+            if len(row) < 2 or not _strip_table_cell(row[1]):
+                errors.append(f"{AWI_CAUSE_TABLE_ROWS[index]}の行が空である: {table.row_location(index)}")
     return errors
 
 
 def require_cause_analysis_format(body: str, *, original: str | None = None, entry_type: str = WI_TYPE_AWI) -> None:
     """エージェントが保存する原因分析のL4と系統別候補、AWIの表の行構成を確かめる。
 
-    5行表の規定はAWIの`## 原因分析`の記録先定義であり、UWIには適用しない。
+    8行表の規定はAWIの`## 原因分析`の記録先定義であり、UWIには適用しない。
 
     既存項目の編集で`## 原因分析`節が変わらない場合（追記など）は、保存済みの旧書式を理由に編集を拒否しない。
     """
@@ -456,8 +465,9 @@ def require_cause_analysis_format(body: str, *, original: str | None = None, ent
         raise WebInputError(
             "原因分析の書式が不正です: " + "。".join(errors),
             next_action=(
-                "L4へ説明または理由付きの該当なしを書き、類似見直し観点・再発防止策へ両系統の候補と採否を書く。"
-                f"2列表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の5行とし、観測した問題への処置と回帰テストを対策の行へ書く"
+                "L4へ説明または理由付きの該当なしを書く。"
+                f"2列表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の8行とし、作り込み・見逃しの各行へ候補を1件以上、"
+                "採否の行へ候補ごとの採否と理由、回帰テストを回帰防止策の行へ書く"
             ),
         )
 

@@ -155,8 +155,11 @@ def test_bug_file_structure_accepts_canonical_sidecar() -> None:
     ],
 )
 def test_bug_file_candidate_decision_scope(row: str, value: str, *, accepted: bool) -> None:
-    """計画ファイルの候補列挙と共通・個別採否の適用範囲を検証する。"""
-    content = _BUG_FILE_CONTENT.splitlines()
+    """6区分化前の計画ファイルで、1行にまとめた候補列挙と共通・個別採否の適用範囲を検証する。
+
+    現行の調査表は系統ごとの行と採否の行へ分かれるため、この判定は保存済みの旧行構成にだけ適用する。
+    """
+    content = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_PREVIOUS_ROWS).splitlines()
     content = [f"| {row} | {value} |" if line.startswith(f"| {row} |") else line for line in content]
     errors = plan_sections.check_bug_file_structure("\n".join(content))
     assert (not errors) is accepted, errors
@@ -171,9 +174,23 @@ def test_bug_file_rejects_unexplained_l4(value: str) -> None:
 
 @pytest.mark.parametrize("factor", ["作り込み要因", "見逃し要因"])
 def test_bug_file_rejects_missing_candidate_factor(factor: str) -> None:
-    """調査表の両系統の候補と採否を要求する。"""
-    content = _BUG_FILE_CONTENT.replace(factor, "別系統")
+    """6区分化前の調査表では、1行に両系統の候補と採否を要求する。"""
+    content = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_PREVIOUS_ROWS).replace(factor, "別系統")
     assert any(factor in error for error in plan_sections.check_bug_file_structure(content))
+
+
+@pytest.mark.parametrize(
+    "row",
+    ["類似見直し観点（作り込み）", "類似見直し観点（見逃し）", "再発防止策（作り込み）", "再発防止策（見逃し）"],
+)
+@pytest.mark.parametrize("mode", ["missing", "empty"])
+def test_bug_file_rejects_missing_or_empty_candidate_row(row: str, mode: str) -> None:
+    """現行の調査表は4区分の候補行のいずれかが欠けるか空の記録を合格にしない。"""
+    line = _plan_fixture.bug_row(row)
+    content = _BUG_FILE_CONTENT.replace(f"{line}\n", "" if mode == "missing" else f"| {row} |  |\n")
+    errors = plan_sections.check_bug_file_structure(content)
+    expected = f"固定{len(_plan_format.PLAN_BUG_TABLE_ROWS)}行" if mode == "missing" else "空の`内容`"
+    assert any(expected in error for error in errors), errors
 
 
 def test_bug_file_accepts_explained_l4_and_rejected_candidate() -> None:

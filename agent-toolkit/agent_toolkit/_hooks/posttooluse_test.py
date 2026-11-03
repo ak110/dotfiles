@@ -818,9 +818,21 @@ def test_answer_without_user_text_receives_no_notice(tmp_path: pathlib.Path, too
 
 
 @pytest.mark.parametrize("field", ["response", "answers", "annotations", "multi"])
-@pytest.mark.parametrize("text", ["違います！！", "例えば設定などを調査して", "例えば設定, 調査して", "`例えば調査`は引用です"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "違います！！",
+        "例えば設定などを調査して",
+        "例えば設定, 調査して",
+        "`例えば調査`は引用です",
+        "全体が分かりにくい。例えば表示順を簡潔にすべき",
+    ],
+)
 def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: str, text: str) -> None:
-    """自由記述の配送欄によらず、通常発話と同じ内容注記が届く。"""
+    """自由記述の配送欄によらず、通常発話と同じ内容注記が届く。
+
+    例示の語があれば調査の語が無い提案にも範囲判断の節を示し、調査の語も含む場合だけ手順1の調査の所在を加える。
+    """
     responses: dict[str, dict[str, object]] = {
         "response": {"response": text},
         "answers": {"answers": {_QUESTION: text}},
@@ -832,7 +844,9 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
     assert result.returncode == 0, result.stderr
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
     assert ("認識合わせ" in context) == ("！！" in text)
-    assert ("範囲語か開放列挙" in context) == text.startswith("例えば")
+    has_example = not text.startswith("`") and "例えば" in text
+    assert ("「原文の保持と取り込み」" in context) == has_example
+    assert ("範囲語か開放列挙" in context) == (has_example and "調査" in text)
 
 
 @pytest.mark.parametrize("changed_field", ["tool_use_id", "question", "answer"])

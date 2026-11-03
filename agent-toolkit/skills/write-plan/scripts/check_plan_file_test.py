@@ -1678,21 +1678,23 @@ def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.
     assert any(f"固定{len(_plan_format.PLAN_BUG_TABLE_ROWS)}行" in error for error in errors), errors
 
 
-def test_new_format_accepts_legacy_bug_table_rows_with_warning(repo: tuple[pathlib.Path, str]) -> None:
-    """統廃合前の行構成を持つ調査表を読み取りで受理し、移行warningを返す。"""
+@pytest.mark.parametrize("variant", [_plan_fixture.BUG_VARIANT_PREVIOUS_ROWS, _plan_fixture.BUG_VARIANT_LEGACY_ROWS])
+def test_new_format_accepts_legacy_bug_table_rows_with_warning(repo: tuple[pathlib.Path, str], variant: str) -> None:
+    """6区分化前と統廃合前の行構成を持つ調査表を読み取りで受理し、移行warningを返す。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
-    legacy_bug_file = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_ROWS)
+    legacy_bug_file = _plan_fixture.bug_file(variant=variant)
     errors, warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=legacy_bug_file)
     assert not errors, errors
-    assert any("統廃合前の行構成" in warning for warning in warnings), warnings
+    assert any("現行より前の行構成" in warning for warning in warnings), warnings
 
 
-def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str]) -> None:
-    """新規作成では統廃合前の行構成を持つ調査表をエラーにする。"""
+@pytest.mark.parametrize("variant", [_plan_fixture.BUG_VARIANT_PREVIOUS_ROWS, _plan_fixture.BUG_VARIANT_LEGACY_ROWS])
+def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str], variant: str) -> None:
+    """新規作成では現行より前の行構成を持つ調査表をエラーにする。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
-    legacy_bug_file = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_ROWS)
+    legacy_bug_file = _plan_fixture.bug_file(variant=variant)
     errors, _warnings = _check_new(
         work_dir,
         main_content,
@@ -1700,7 +1702,7 @@ def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str]) 
         bug_file_content=legacy_bug_file,
         reject_migration_warnings=True,
     )
-    assert any("統廃合前の行構成" in error for error in errors), errors
+    assert any("現行より前の行構成" in error for error in errors), errors
 
 
 def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str]) -> None:
@@ -1708,8 +1710,8 @@ def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, 
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     invalid_bug_file = _plan_fixture.bug_file().replace(
-        _plan_fixture.bug_row("直接的原因"),
-        "| 直接的原因 |  |",
+        _plan_fixture.bug_row("再発防止策の採否"),
+        "| 再発防止策の採否 |  |",
     )
     errors, _warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=invalid_bug_file)
     assert any("空の`内容`" in error for error in errors), errors

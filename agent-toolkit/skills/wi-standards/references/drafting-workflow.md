@@ -129,8 +129,8 @@ atk run-script session-review-evidence -- --user-events-file <元の保存ファ
 
 ### 本文の起草
 
-原因分析の処置は`agent-basics:bugfix/references/root-cause-remediation.md`「処置の階層」で区別し、`analysis-records.md`「原因分析の記録先」の対策行と再発防止策行へ対応付ける。
-変更の詳細は反映内容節へ置き、両行の要旨から対応項目を参照する。
+原因分析の処置は`agent-basics:bugfix/references/root-cause-remediation.md`「処置の階層」で区別し、`analysis-records.md`「原因分析の記録先」の対策・回帰防止策・類似見直し観点・再発防止策の各行と採否の行へ対応付ける。
+変更の詳細は反映内容節へ置き、各行の要旨から対応項目を参照する。
 
 受け取った制約事項は、適用されるべき工程を原文から特定する。WI作成工程にのみ適用される書き込み範囲や操作の許可・禁止は作成主体自身の行動に適用し、後続の計画・実装・公開工程を拘束する要件とするのは、原文がその工程への適用を明示しているものに限る。原稿の反映内容、適用範囲、完成条件を確定する段階で、各制約と適用工程との対応関係を確認する。
 現在の工程における案の提示・回答・対話と、後続工程へ登録すべき成果物との時期的な区別は、`agent-toolkit:user-confirmation-and-report`のSKILL.md「成果物の制限」に従って判定する。現在回答すべき問いを後続の完成条件で代用した原稿を作成しない。

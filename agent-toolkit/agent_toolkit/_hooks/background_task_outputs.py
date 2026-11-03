@@ -5,10 +5,9 @@ from __future__ import annotations
 import pathlib
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
-lazy import shlex
-
 lazy from agent_toolkit._common import background_output
 lazy from agent_toolkit._common.shell_segments import split_bash_segments
+lazy from agent_toolkit._common.shell_tokens import split_words
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
 lazy from agent_toolkit._hooks import transcript_scan as _transcript_scan
 
@@ -21,7 +20,7 @@ def command_reads_path(command: str, paths: set[str]) -> bool:
         return False
     for segment in split_bash_segments(command):
         try:
-            tokens = shlex.split(segment, posix=True)
+            tokens = split_words(segment)
         except ValueError:
             continue
         if not tokens or pathlib.PurePath(tokens[0]).name not in _READ_COMMANDS:

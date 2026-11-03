@@ -40,7 +40,7 @@ writes_worktree: true
 | --- | --- | --- | --- | --- |
 | 着手時 | `agent-toolkit:/share/exec-review-criteria.md`の「適用契約」「基本方針」「指摘内容」「ユーザビリティレビューの判定」「完了報告」。`agent-toolkit:managed-temp/references/ui-ux.md` | 起動時 | `role:usability-review` | |
 | `変更画面`がWeb画面である | `agent-basics:writing-standards`の`references/ui-ux-web-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md` | |
-| `変更画面`がフォーム、一覧、検索、通知、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
+| `変更画面`がフォーム、一覧、検索、通知、自動で切り替わる表示、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
 
 ## 入力
 

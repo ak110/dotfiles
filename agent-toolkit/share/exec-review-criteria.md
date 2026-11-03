@@ -14,6 +14,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-recording.md#「判定の値」` | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「判定の値」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
+| 要求の縮小を判定する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/SKILL.md#「通常AWIの本文」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「通常AWIの本文」` |
 | AWIの新旧形式を判断する前 | `agent-toolkit:wi-standards/references/awi-body.md`の冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
@@ -41,7 +42,7 @@
 
 ## 計画と表の優先
 
-計画ファイル、WI、CI記録、および受領した`review_contract`は、実装された差分と独立して比較する。WIで求められている要求が差分に反映されていない場合は種類1の指摘とし、計画ファイルの中で理由を添えて明示的に不採用とされた範囲のみを除外する。設計時に記録された鮮度判断と差分との関係も確認し、現行の内容との食い違い、既存の実装によってすでに充足されている事実、または変更の巻き戻しの危険が観察された項目については、変更履歴を調査する。履歴調査する根拠は、単なる`notice`の表示だけでなく、実際に観察された不一致の事実とする。
+計画ファイル、WI、CI記録、および受領した`review_contract`は、実装された差分と独立して比較する。WIで求められている要求が差分に反映されていない場合は種類1の指摘とし、計画ファイルの中で理由を添えて明示的に不採用とされた範囲のみを除外する。反映されているかは、元の目的に対応して必要な結果と認可された要求を比較元にし、利用主体が通常の利用場面で得る結果で判定する。未対応の要素があることだけで未達・承認不足に分類せず、計画や原稿が選んだ分類や除外の正しさも、同じ比較元から独立に判定する（縮小の判定は`agent-toolkit:user-confirmation-and-report`「原文からの具体化を要する軸」）。設計時に記録された鮮度判断と差分との関係も確認し、現行の内容との食い違い、既存の実装によってすでに充足されている事実、または変更の巻き戻しの危険が観察された項目については、変更履歴を調査する。履歴調査する根拠は、単なる`notice`の表示だけでなく、実際に観察された不一致の事実とする。
 
 計画ファイルの記述とレビュー指摘管理表に記録された応答内容が食い違っている場合は、後から記録された応答内容を現在の確定結論とみなす。計画ファイルと実装された差分の食い違いは種類2の指摘とする。計画ファイル自体の体裁、節の構成や整合性、進捗ログなどは指摘の対象外とし、計画ファイルを更新するかどうかは所有者に委ねる（実装着手後は計画ファイルを直接更新しないため、要件変更に対する実装側の応答はレビュー指摘管理表に記録される）。
 元の要求の解釈を変更するような応答は、ユーザー自身による判断が未確定である間は現在の結論として採用せず、前述のユーザー確認へ差し戻す。

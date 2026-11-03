@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import dataclasses
 import re
-import shlex
 from collections.abc import Sequence
 
 from agent_toolkit._common.heredocs import mask_heredoc_bodies
+from agent_toolkit._common.shell_tokens import split_words
 from agent_toolkit._common.uv_arguments import (
     is_agent_toolkit_script_invocation,
     is_python_token,
@@ -44,7 +44,8 @@ _EXEC_PREFIX_WITHOUT_OPTIONS: frozenset[str] = frozenset({"command", "nohup", "u
 
 _TIMEOUT_DURATION_RE = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
 
-_SHELL_TOKENS: frozenset[str] = frozenset({"sh", "bash"})
+_SHELL_TOKENS: frozenset[str] = frozenset({"sh", "bash", "dash", "zsh"})
+"""`-c`の文字列を1段だけ展開するシェルの実行ファイル名。絶対パスで起動した場合も名前で判定する。"""
 
 
 PIPE_SEPARATORS: frozenset[str] = frozenset({"|", "|&"})
@@ -61,8 +62,9 @@ class ExecutionSegment:
     `resolved`が偽の区間では`tokens`を空とし、助言するかを判定する処理は、その区間では検出しない。
     `is_agent_toolkit_script`はagent-toolkit配下から配布する自動チェックスクリプトを表す。
     `raw_tokens`は、実行位置が未確定の区間でリダイレクト先を解析するため、元のトークン列を保持する。
-    `tokens`はリダイレクトの演算子と対象（`>`・`/tmp/x`・`2>&1`など）も含む。
-    位置引数を数える消費側と、引数列全体を比べる消費側は、`agent_toolkit._common.shell_tokens`でリダイレクトを除いた引数列を使う。
+    `tokens`はリダイレクトの演算子と対象（`>`・`/tmp/x`・`2>&1`など）も含む。区間の解析から得た要素は`ShellWord`であり、
+    引用した`'>'`と実際の演算子を区別できる。位置引数を数える消費側と、引数列全体を比べる消費側は、
+    `agent_toolkit._common.shell_tokens.strip_redirections`でリダイレクトを除いた引数列を使う。
     """
 
     tokens: tuple[str, ...]
@@ -73,29 +75,40 @@ class ExecutionSegment:
     directories: tuple[str, ...] = ()
 
 
-def _split_bash_pipelines(command: str) -> list[list[str]]:
-    """`split_bash_segments`の分割結果を、パイプラインごとの区間列へまとめて返す。
+def split_bash_commands(command: str) -> list[tuple[str, str]]:
+    """Bashコマンドを区間へ分け、各区間とその直前の区切り演算子の組を実行順で返す。
 
-    分割そのものは`split_bash_segments`が行い、本関数は境界の分類とまとめ直しだけを行う。
-    各区間の元コマンド内の位置を先頭から順に求め、区間の間に残る文字列（空白と区切り演算子だけからなる）で
-    同一パイプラインの継続かを判定する。位置を求められない場合は継続とみなさない。
+    区切りは`;`・`&&`・`||`・`|`・`|&`・`&`・改行のいずれかであり、先頭の区間は空文字列とする。
+    `2>&1`・`&>log`などのリダイレクトに含まれる`&`は区切りとせず、前の区間へ連結する。
+    区間の分割は`split_bash_segments`が行い、本関数は区間の間に残る文字列から区切りを求める。
+    位置を求められない区間の区切りは空文字列とする。
     """
-    pipelines: list[list[str]] = []
+    commands: list[tuple[str, str]] = []
     segments = split_bash_segments(command)
     position = 0
     for index, segment in enumerate(segments):
         start = command.find(segment, position)
         separator_text = command[position:start] if start >= 0 else ""
-        separator = separator_text.strip()
         previous = segments[index - 1] if index > 0 else ""
-        if pipelines and _is_redirection_continuation(previous, separator_text, segment):
-            pipelines[-1][-1] += separator_text + segment
-            position = (start if start >= 0 else position) + len(segment)
-            continue
+        if commands and _is_redirection_continuation(previous, separator_text, segment):
+            connector, text = commands[-1]
+            commands[-1] = (connector, text + separator_text + segment)
+        else:
+            separator = separator_text.strip(" \t\r")
+            commands.append((separator.strip() or ("\n" if "\n" in separator else separator), segment))
+        position = (start if start >= 0 else position) + len(segment)
+    return commands
+
+
+def _split_bash_pipelines(command: str) -> list[list[str]]:
+    """`split_bash_commands`の結果を、パイプラインごとの区間列へまとめて返す。"""
+    pipelines: list[list[str]] = []
+    previous = ""
+    for index, (separator, segment) in enumerate(split_bash_commands(command)):
         if index == 0 or not _is_pipeline_continuation(previous, separator, segment):
             pipelines.append([])
         pipelines[-1].append(segment)
-        position = (start if start >= 0 else position) + len(segment)
+        previous = segment
     return pipelines
 
 
@@ -125,7 +138,7 @@ def extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> l
     前段の出力が後段へ渡るかを判定する処理は、同じパイプライン内の前後関係だけを見ればよい。
 
     区間分割は`split_bash_segments`（`;`・`&&`・`||`・`|`・`&`で分割し、クォート内のメタ文字を除く）、
-    トークン化は`shlex.split(segment, posix=True)`を使う。
+    トークン化は`shell_tokens.split_words`を使い、各トークンは引用とリダイレクトの構文情報を持つ`ShellWord`である。
     実行前置語（`sudo`・`env`・`uv run`等）を解決した後の実行位置が`sh -c`・`bash -c`
     （`-lc`等の結合形を含む）である場合、続く文字列引数を1段だけ同じ手順で展開する。
     2段以上の入れ子は展開せず実行位置未確定とする。
@@ -155,7 +168,7 @@ def _resolve_pipeline(raw_segments: Sequence[str], *, expand_shell: bool) -> lis
     current: list[ExecutionSegment] = []
     for index, raw_segment in enumerate(raw_segments):
         try:
-            tokens = shlex.split(raw_segment, posix=True)
+            tokens: list[str] = list(split_words(raw_segment))
         except ValueError:
             current.append(ExecutionSegment((), False))
             continue
@@ -194,7 +207,7 @@ def shell_c_argument(tokens: Sequence[str]) -> str | None:
     該当しない場合はNoneを返す。判定対象は実行前置語を解決した後のトークン列であり、
     `sudo sh -c '...'`のように前置語と組み合わせた形も展開対象となる。
     """
-    if not tokens or tokens[0] not in _SHELL_TOKENS:
+    if not tokens or tokens[0].rsplit("/", 1)[-1] not in _SHELL_TOKENS:
         return None
     for position in range(1, len(tokens)):
         token = tokens[position]

@@ -74,6 +74,7 @@ from agent_toolkit._plan.structure.constants import (
     PLAN_METADATA_TWO_FILE_FIELDS,
     PLAN_PERMANENCE_H3,
     PLAN_PERMANENCE_TABLE_HEADER,
+    PLAN_PREVIOUS_BUG_TABLE_ROWS,
     PLAN_PROGRESS_TABLE_HEADER,
     PLAN_QUEUE_ID_PATTERN,
     PLAN_REFACTORING_TABLE_HEADER,
@@ -389,7 +390,9 @@ def _check_bug_unit_sections(
             continue
 
         investigation_tables = [
-            table for table in tables if table.row_labels() in (PLAN_BUG_TABLE_ROWS, PLAN_LEGACY_BUG_TABLE_ROWS)
+            table
+            for table in tables
+            if table.row_labels() in (PLAN_BUG_TABLE_ROWS, PLAN_PREVIOUS_BUG_TABLE_ROWS, PLAN_LEGACY_BUG_TABLE_ROWS)
         ]
         if len(investigation_tables) != 1 or investigation_tables[0].header != PLAN_BUG_TABLE_HEADER:
             errors.append(
@@ -492,9 +495,13 @@ def has_legacy_bug_table(content: str) -> bool:
 
 
 def has_legacy_bug_investigation_table(content: str) -> bool:
-    """統廃合前の行構成を持つ調査表を含む場合に真を返す。既存計画の移行案内にだけ用いる。"""
+    """現行より前の行構成を持つ調査表を含む場合に真を返す。既存計画の移行案内にだけ用いる。"""
     tables = extract_tables(list(iter_markdown_body_lines(content)))
-    return any(table.header == PLAN_BUG_TABLE_HEADER and table.row_labels() == PLAN_LEGACY_BUG_TABLE_ROWS for table in tables)
+    return any(
+        table.header == PLAN_BUG_TABLE_HEADER
+        and table.row_labels() in (PLAN_PREVIOUS_BUG_TABLE_ROWS, PLAN_LEGACY_BUG_TABLE_ROWS)
+        for table in tables
+    )
 
 
 def check_bug_file_structure(content: str) -> list[str]:
