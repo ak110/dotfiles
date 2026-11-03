@@ -274,6 +274,7 @@ if len(sys.argv) > 3:
 monitor = lifetime.ServerLifetime(timeout=30.0 if mode == "finish" else 0.5)
 # 定期収集がspawnerを先に所有すると、終了処理の最初の列挙より前に一時停止され同期点を作れない。
 # 定期収集の間隔内に起動した子孫と同じ状態を決定的に作るため、定期収集を止める。
+collect = monitor._collect
 monitor._collect = lambda: None
 monitor.start()
 subprocess.Popen(late_descendant.cli_command(directory))
@@ -282,8 +283,10 @@ if mode == "finish":
     late_descendant.arm(directory, setattr, thread_name="MainThread")
     monitor.finish()
     sys.exit(0)
-# 期限到達の回収は、定期収集の後に起動して未収集のまま親が残る子孫を対象にする。
+# 期限到達の回収は、定期収集の後に起動して未収集のまま残る子孫を対象にする。
+# 定期収集を1回だけ行ってCLIとspawnerを所有させ、その後にholderを起動させる。
 # 修正前の期限回収は列挙せず定期収集済みの対象だけを終了させるため、回収より前に生成を終えておく。
+collect()
 late_descendant.trigger(directory)
 monitor.request_stop()
 time.sleep(60)
