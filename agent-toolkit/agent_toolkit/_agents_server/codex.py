@@ -645,6 +645,13 @@ class JsonRpcProcess:
             # 前回の停止で生成の停止を確認できなかった。所有した対象を起点に、残る子孫を改めて回収する。
             retry = await asyncio.to_thread(process_tree.stop_tree, None, known=[*self._owned, *self._residual])
             self._residual = retry.residual
+            if sys.platform != "win32" and not retry.unresolved:
+                # POSIXでは親を失った子がinitへ付け替わり、再試行の列挙でも見つけられない（保証境界）。
+                # 未確定を保持し続けると解放もサーバーの停止も完了しないため、再試行で所有対象を回収した後は
+                # 解放へ進み、確認できないまま残る可能性を残存診断へ記録して観測できるようにする。
+                process_tree.log_residual(
+                    [f"再試行でも確認できない: {reason}" for reason in self._unresolved], context="codex app-server retry"
+                )
             self._unresolved = retry.unresolved_descriptions()
             self._owned = retry.targets
         elif not reclaimed:

@@ -9,6 +9,7 @@ import contextlib
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 import json
+import logging
 import os
 import pathlib
 import shlex
@@ -2758,9 +2759,12 @@ async def test_stop_reclaims_descendant_started_after_first_listing(
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_unresolved_generation_stop_is_retried_instead_of_reported_released(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """生成の停止を確認できなかった停止は再試行できる失敗として返し、再発行で同じ所有対象を改めて回収する。"""
+    """生成の停止を確認できなかった停止は再試行できる失敗として返し、再発行で同じ所有対象を改めて回収する。
+
+    POSIXでは再試行でも辿れない子が残り得るため、解放後も確認できない旨を残存診断へ記録する。
+    """
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
         session_id = (await manager.start("plan", "担当", str(tmp_path)))["session_id"]
         await _wait_terminal(manager, session_id)
@@ -2798,7 +2802,10 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
         stopped_once = len(suspends)
         first_stop = False
 
-        assert await manager.stop(session_id) == {}
+        with caplog.at_level(logging.WARNING, logger="agent_toolkit._common.process_tree"):
+            assert await manager.stop(session_id) == {}
+        retry_warnings = [record.getMessage() for record in caplog.records if "再試行でも確認できない" in record.getMessage()]
+        assert bool(retry_warnings) is (sys.platform != "win32")
 
         # 再発行では成功を前提にせず、所有対象から子孫を改めて回収した。
         assert len(suspends) > stopped_once
