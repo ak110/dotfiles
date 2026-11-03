@@ -43,6 +43,9 @@ class WaitCompaction:
         self._enqueue = enqueue
         self._sleep = sleep
         self._task: asyncio.Task[None] | None = None
+        self._task_key: str | None = None
+        self._task_turn_seq: int | None = None
+        self._tasks: set[asyncio.Task[None]] = set()
         self._used: set[str] = set()
         self._paused = False
 
@@ -59,15 +62,31 @@ class WaitCompaction:
         if tokens is not None and window is not None and window > 0 and tokens < min(400_000, window * 0.4):
             self._paused = False
         key = wait_key(session)
-        if key is None or key in self._used or (self._task is not None and not self._task.done()):
+        if self._task is not None and not self._task.done():
+            # 同じturnの一部終了で待機時間を延ばさず、配送開始後の圧縮はbackendに所有させる。
+            if (key is not None and session.turn_seq == self._task_turn_seq) or self._task_key in self._used:
+                return
+            self._task.cancel()
+            self._task = None
+        if key is None or key in self._used:
             return
-        self._task = asyncio.create_task(self._compact(session, key))
+        self._task_key = key
+        self._task_turn_seq = session.turn_seq
+        self._task = asyncio.create_task(self._compact(session, key, turn_seq=session.turn_seq))
+        self._tasks.add(self._task)
+        self._task.add_done_callback(self._tasks.discard)
 
-    async def _compact(self, session: SessionState, key: str) -> None:
+    async def _compact(self, session: SessionState, key: str, *, turn_seq: int) -> None:
         try:
             await self._sleep(60)
-            if wait_key(session) != key:
+            if asyncio.current_task() is not self._task or session.turn_seq != turn_seq:
                 return
+            # 子threadの終了通知だけでは再観測されない場合も、同じturnの残る待機を確認する。
+            current_key = wait_key(session)
+            if current_key is None or current_key in self._used:
+                return
+            key = current_key
+            self._task_key = key
             usage = await self._get_usage()
             tokens = context_usage.valid_number(usage.get("totalTokens"))
             window = context_usage.valid_number(usage.get("rawMaxTokens"))
@@ -76,7 +95,7 @@ class WaitCompaction:
             if tokens < min(400_000, window * 0.4):
                 self._paused = False
                 return
-            if not self._paused and wait_key(session) == key:
+            if not self._paused and wait_key(session) == key and asyncio.current_task() is self._task:
                 self._used.add(key)
                 self._paused = True
                 await self._enqueue(key)
@@ -87,7 +106,7 @@ class WaitCompaction:
 
     async def close(self) -> None:
         """SDKを切断する前に、照会・配送を含めて予約タスクを回収する。"""
-        if self._task is not None:
-            if not self._task.done():
-                self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
+        tasks = tuple(self._tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

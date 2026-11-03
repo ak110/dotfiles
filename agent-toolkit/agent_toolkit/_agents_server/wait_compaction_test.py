@@ -148,18 +148,22 @@ async def test_same_wait_rechecks_usage_after_crossing_threshold(waiting: state.
         assert len(queued) == 1
 
 
+@pytest.mark.parametrize("replaced", [False, True])
 @pytest.mark.asyncio
-async def test_close_collects_the_pending_reservation(waiting: state.SessionState) -> None:
+async def test_close_collects_the_pending_reservation(waiting: state.SessionState, replaced: bool) -> None:
     """所有タスクの終了後にSDKへ遅れた入力を送らない。"""
     entered = asyncio.Event()
-    cancelled = asyncio.Event()
+    cancelled: set[int] = set()
+    reservations: list[int] = []
 
     async def sleep(_seconds: float) -> None:
+        number = len(reservations)
+        reservations.append(number)
         entered.set()
         try:
             await asyncio.Event().wait()
         finally:
-            cancelled.set()
+            cancelled.add(number)
 
     async def enqueue(_key: str) -> None:
         pytest.fail("終了後に圧縮を配送した")
@@ -170,8 +174,14 @@ async def test_close_collects_the_pending_reservation(waiting: state.SessionStat
     observer = wait_compaction.WaitCompaction(usage, enqueue, sleep=sleep)
     observer.observe(waiting)
     await entered.wait()
+    if replaced:
+        entered.clear()
+        waiting.turn_seq += 1
+        waiting.live_child_session_ids.add("replacement")
+        observer.observe(waiting)
+        await asyncio.wait_for(entered.wait(), 2)
     await observer.close()
-    assert cancelled.is_set()
+    assert cancelled == set(range(2 if replaced else 1))
 
 
 @pytest.mark.asyncio

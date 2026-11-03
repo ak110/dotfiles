@@ -24,6 +24,157 @@ from agent_toolkit._testing.agents_server_support import (
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.fixture(name="partial_wait_clock")
+def _partial_wait_clock(monkeypatch):
+    """backendの観測と仮想60秒経過を同期し、待機対象の一部終了を再現する。"""
+    started, changed, elapsed = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    observers = []
+
+    async def sleep(_seconds):
+        deadline = asyncio.Event() if started.is_set() else elapsed
+        started.set()
+        await deadline.wait()
+
+    class Observer(wait_compaction.WaitCompaction):
+        def __init__(self, *args: Any, **kwargs: Any):
+            super().__init__(*args, sleep=sleep, **kwargs)
+            observers.append(self)
+
+        def observe(self, session):
+            super().observe(session)
+            targets = session.live_child_session_ids | session.codex_live_subagent_thread_ids | session.live_tasks.keys()
+            if session.awaiting_auto_resume and "long" in targets and "short" not in targets:
+                changed.set()
+
+    monkeypatch.setattr(wait_compaction, "WaitCompaction", Observer)
+    return started, changed, elapsed, observers
+
+
+@pytest.mark.asyncio
+async def test_claude_partial_completion_keeps_a_compaction_reservation(tmp_path, monkeypatch, partial_wait_clock):
+    """2件のバックグラウンドタスクのうち1件だけが終わっても、無言で続く待機を公開/compactへ接続する。"""
+    started, changed, elapsed, observers = partial_wait_clock
+
+    class Client(QueueClaudeClient):
+        async def get_context_usage(self):
+            return {"totalTokens": 400_000, "rawMaxTokens": 1_000_000}
+
+    tasks = [
+        claude_agent_sdk.TaskStartedMessage("task_started", {}, task, "背景Bash", task, "partial-wait", task_type="local_bash")
+        for task in ("short", "long")
+    ]
+    client = Client(
+        [
+            [
+                SystemMessage("partial-wait"),
+                *tasks,
+                claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"}),
+                ResultMessage("待機中"),
+            ],
+            [ResultMessage("圧縮完了"), claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"})],
+        ]
+    )
+    async with claude_manager(monkeypatch, client) as (owner, backend):
+        session = await backend.start("複数の処理を待つ", str(tmp_path))
+        await asyncio.wait_for(started.wait(), 2)
+        await client.messages.put(
+            claude_agent_sdk.TaskNotificationMessage(
+                "task_notification",
+                {},
+                "short",
+                "completed",
+                "",
+                "終了",
+                "short-ended",
+                session.session_id,
+            )
+        )
+        await asyncio.wait_for(changed.wait(), 2)
+        elapsed.set()
+        await asyncio.wait_for(asyncio.shield(observers[0]._task), 2)
+        assert client.queries.count("/compact") == 1
+        assert (await owner.show_session(session.session_id))["result_held"]
+        assert set(session.live_tasks) == {"long"}
+
+
+@pytest.mark.asyncio
+async def test_codex_partial_completion_keeps_a_compaction_reservation(tmp_path, monkeypatch, partial_wait_clock):
+    """一方の子threadの終了後も、残る子の待機を所有接続の圧縮APIへ接続する。"""
+    started, _changed, elapsed, observers = partial_wait_clock
+    async with manager.AgentsServerManager(None) as owner, codex.AppServerManager(owner.sessions, owner._condition) as backend:
+        install_backend(owner, "codex", backend)
+        client = FakeCodexClient()
+        monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+        session = await backend.start("複数の処理を待つ", str(tmp_path))
+        session.agent_message = "待機中"
+        request = client.request
+        compactions = []
+
+        async def compact_request(method, params=None, **kwargs):
+            if method != "thread/compact/start":
+                return await request(method, params, **kwargs)
+            compactions.append(params)
+            for event, status in (("started", "inProgress"), ("completed", "completed")):
+                await backend._handle_notification(
+                    {
+                        "method": f"turn/{event}",
+                        "params": {"threadId": session.session_id, "turn": {"id": "compact", "status": status, "items": []}},
+                    }
+                )
+            return {}
+
+        monkeypatch.setattr(client, "request", compact_request)
+        await backend._handle_notification(
+            {
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": session.session_id,
+                    "turnId": session.turn_id,
+                    "tokenUsage": {"last": {"totalTokens": 400_000}, "modelContextWindow": 1_000_000},
+                },
+            }
+        )
+        for child in ("short", "long"):
+            await backend._handle_notification(
+                {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": session.session_id,
+                        "turnId": session.turn_id,
+                        "item": {
+                            "id": child,
+                            "type": "subAgentActivity",
+                            "kind": "started",
+                            "agentThreadId": child,
+                            "agentPath": f"/root/{child}",
+                        },
+                    },
+                }
+            )
+        await backend._handle_notification(
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": session.session_id,
+                    "turn": {"id": session.turn_id, "status": "completed", "items": [], "error": None},
+                },
+            }
+        )
+        await asyncio.wait_for(started.wait(), 2)
+        await backend._handle_notification(
+            {
+                "method": "turn/completed",
+                "params": {"threadId": "short", "turn": {"id": "short-turn", "status": "completed", "items": []}},
+            }
+        )
+        assert session.codex_live_subagent_thread_ids == {"long"}
+        elapsed.set()
+        await asyncio.wait_for(asyncio.shield(observers[0]._task), 2)
+        assert compactions == [{"threadId": session.session_id}]
+        assert (await owner.show_session(session.session_id))["result_held"]
+        assert session.codex_live_subagent_thread_ids == {"long"}
+
+
 @pytest.mark.parametrize("launch_kind", ["delegate", "write", "explore", "shell"])
 @pytest.mark.asyncio
 async def test_claude_compacts_a_background_bash_wait_without_a_child_session(tmp_path, monkeypatch, launch_kind):
