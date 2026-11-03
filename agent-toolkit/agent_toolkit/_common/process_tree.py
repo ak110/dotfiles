@@ -478,21 +478,32 @@ def identity(pid: int) -> dict[str, int | float | str]:
     return result
 
 
-def log_residual(residual: list[str], *, context: str) -> None:
+def log_residual(residual: list[str], *, context: str, retryable: bool = True) -> None:
     """回収できなかった子孫プロセスを診断へ残す。
 
     回収の失敗は委譲の失敗として扱わないため、呼び出し元の終了処理は継続する。
+    `retryable`は、同じ停止操作の再実行で回収を再試行できるかを示す。
     """
     if residual:
-        _LOG.warning("%s", residual_message(residual, context=context))
+        _LOG.warning("%s", residual_message(residual, context=context, retryable=retryable))
 
 
-def residual_message(residual: list[str], *, context: str) -> str:
+def residual_message(residual: list[str], *, context: str, retryable: bool = True) -> str:
     """回収できなかった対象と、診断を読む主体が次に取る操作を示す診断文を返す。"""
+    if retryable:
+        unresolved = (
+            "「生成の停止を確認できない」がある場合は、一覧に無い子孫が残っている可能性があるため、"
+            "同じ停止操作を再実行して回収を再試行し、残れば同じ手順で確かめる"
+        )
+    else:
+        # 再試行を終えて解放済みのため、停止操作の再実行では回収されない。
+        unresolved = (
+            "所有は解放済みで停止操作を再実行しても回収されないため、"
+            "`ps -o pid,ppid,lstart,args -e`などで一覧のPIDの後に起動した不要なプロセスを探して同じ手順で終了させる"
+        )
     return (
         f"委譲先の子孫プロセスを回収できませんでした: context={context} residual={residual}。"
         "次の操作: 一覧のPIDと起動コマンドで対象を確かめ、不要なら終了させる"
         "（POSIXは`kill -KILL <PID>`、Windowsは`taskkill /PID <PID> /T /F`）。"
-        "「生成の停止を確認できない」がある場合は、一覧に無い子孫が残っている可能性があるため、"
-        "同じ停止操作を再実行して回収を再試行し、残れば同じ手順で確かめる"
+        f"{unresolved}"
     )

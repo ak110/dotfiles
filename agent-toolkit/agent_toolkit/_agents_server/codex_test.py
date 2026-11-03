@@ -2806,6 +2806,8 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
             assert await manager.stop(session_id) == {}
         retry_warnings = [record.getMessage() for record in caplog.records if "再試行でも確認できない" in record.getMessage()]
         assert bool(retry_warnings) is (sys.platform != "win32")
+        # 解放済みの後の案内は、回収されない停止操作の再実行を勧めない。
+        assert all("停止操作を再実行しても回収されない" in message for message in retry_warnings)
 
         # 再発行では成功を前提にせず、所有対象から子孫を改めて回収した。
         assert len(suspends) > stopped_once

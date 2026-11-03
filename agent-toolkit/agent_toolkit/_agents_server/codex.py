@@ -653,7 +653,9 @@ class JsonRpcProcess:
                 # 未確定を保持し続けると解放もサーバーの停止も完了しないため、再試行で所有対象を回収した後は
                 # 解放へ進み、確認できないまま残る可能性を残存診断へ記録して観測できるようにする。
                 process_tree.log_residual(
-                    [f"再試行でも確認できない: {reason}" for reason in self._unresolved], context="codex app-server retry"
+                    [f"再試行でも確認できない: {reason}" for reason in self._unresolved],
+                    context="codex app-server retry",
+                    retryable=False,
                 )
             self._unresolved = retry.unresolved_descriptions()
             self._owned = retry.targets
