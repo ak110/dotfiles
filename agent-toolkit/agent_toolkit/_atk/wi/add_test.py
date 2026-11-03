@@ -53,6 +53,37 @@ from agent_toolkit.atk_test import (  # noqa: E402  # pylint: disable=wrong-impo
 )
 
 
+@pytest.mark.parametrize("outcome", ["adopted", "rejected"])
+def test_run_report_sync_ignores_later_answer_and_state(tmp_path: pathlib.Path, outcome: str) -> None:
+    """報告のpush後に回答・採否を未pushで追加しても、報告本体の未同期だけを検出する。"""
+    notes = git_repository.init_repository(tmp_path / "notes", files={"README": "base\n"}, commit_message="base")
+    origin = git_repository.init_bare_repository(tmp_path / "origin.git")
+    git_repository.run_git(notes, "remote", "add", "origin", str(origin))
+    git_repository.run_git(notes, "push", "-u", "origin", "HEAD")
+    report = notes / "2026/11/20261103-000000-001.md"
+    report.parent.mkdir(parents=True)
+    content = (
+        "---\nstate: inbox\ntype: uwi\nsource: run-skill\nscope: my-skill\n"
+        "run_skill_report: true\nrun_skill_run_id: run-1\n---\n\n# 報告\n分析した。\n\n"
+        f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n"
+    )
+    report.write_text(content, encoding="utf-8")
+    assert not add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    git_repository.commit_all(notes, "report")
+    assert not add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    git_repository.run_git(notes, "push", "origin", "HEAD")
+    updated = content.replace("state: inbox", f"state: {outcome}") + "了解した。\n\n## 処理結果\n採否を記録した。\n"
+    report.write_text(updated, encoding="utf-8")
+    git_repository.commit_all(notes, "answer")
+    assert add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    report.write_text(updated.replace("分析した。", "追加の分析をした。"), encoding="utf-8")
+    assert not add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    git_repository.commit_all(notes, "edit report")
+    assert not add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    git_repository.run_git(notes, "push", "origin", "HEAD")
+    assert add_module.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+
+
 @pytest.fixture(autouse=True)
 def _isolate_managed_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """CLIの起動処理が作成するmanaged-tempと状態ディレクトリを、テストごとの一時ディレクトリへ隔離する。"""

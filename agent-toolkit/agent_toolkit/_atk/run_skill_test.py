@@ -90,6 +90,8 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
     old = notes / "2026/10" / (run_id + ".md")
     body = old.read_text().split("\\n---\\n", 1)[1] + "\\n再開後の報告更新\\n" if old.exists() else "定期実行の報告\\n"
     saved_id = "other-run" if mode == "other" else run_id
+    if os.environ.get("FAKE_REPORT_ANSWER"):
+        body += "\\n## 回答\\n\\n<!-- ユーザーはこの行以降に回答を追記する -->\\n"
     old.write_text("---\\nstate: inbox\\ntype: uwi\\nsource: run-skill\\nscope: " + json.dumps(scope) +
         "\\nrun_skill_report: " + ("false" if mode == "question" else "true") +
         "\\nrun_skill_run_id: " + saved_id + "\\n---\\n" + body)
@@ -99,6 +101,10 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
         pushed = subprocess.run(["git", "-C", str(notes), "push"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if pushed.returncode and not os.environ.get("FAKE_REPORT_PUSH_FAIL"):
             sys.exit(pushed.returncode)
+    if os.environ.get("FAKE_REPORT_ANSWER"):
+        old.write_text(old.read_text().replace("state: inbox", "state: adopted") + "了解した。\\n")
+        subprocess.run(["git", "-C", str(notes), "add", "."], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(["git", "-C", str(notes), "commit", "-qm", "answer"], check=True)
     if mode in ("other", "unsynced"):
         old.write_text(old.read_text() + "\\n未同期の更新\\n")
         if mode == "other":
@@ -552,7 +558,7 @@ def test_normal_exit_requires_same_run_synced_report(
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
-@pytest.mark.parametrize("push_fails", [False, True])
+@pytest.mark.parametrize("push_fails,answered", [(False, False), (True, False), (False, True)])
 def test_report_requires_remote_push(
     engine_env: _Env,
     tmp_path: pathlib.Path,
@@ -560,6 +566,7 @@ def test_report_requires_remote_push(
     capsys: pytest.CaptureFixture[str],
     engine: str,
     push_fails: bool,
+    answered: bool,
 ) -> None:
     """実bare remoteへ報告が到達した場合に成功し、commit後のpush失敗は保存未達になる。"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
@@ -569,6 +576,8 @@ def test_report_requires_remote_push(
     git_repository.run_git(notes, "remote", "add", "origin", str(origin))
     git_repository.run_git(notes, "push", "-u", "origin", "HEAD")
     monkeypatch.setenv("FAKE_REPORT_REMOTE", "1")
+    if answered:
+        monkeypatch.setenv("FAKE_REPORT_ANSWER", "1")
     if push_fails:
         hook = origin / "hooks" / "pre-receive"
         hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
