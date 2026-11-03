@@ -34,6 +34,7 @@ lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
+lazy from agent_toolkit._hooks.pretooluse.read_delivery import host_truncated
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
@@ -257,12 +258,14 @@ def _saved_operations(command: str) -> list[str]:
 # 読取の`tool_response`の形とStopの出力契約の監査記録は`docs/development/audit-records.md`の
 # 「agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日」にある。
 # 読取が本文を返したかの判定は`document_reads.py`が持つ。
-def _read_skills(command: str) -> list[str]:
-    """Bashのコマンドが読む、起動証拠と成果作業の対象スキルの`SKILL.md`のスキル名を返す。範囲指定の読取も含める。"""
+def _read_skills(command: str) -> list[_document_reads.DocumentRead]:
+    """Toolkitの対象資料を、返された本文の確認まで所有pluginと実体を保持して返す。"""
     return [
-        read.skill
+        read
         for read in _document_reads.bash_document_reads(command)
-        if read.relative_path == "SKILL.md" and read.skill in {COMPLETION_REPORT, *TARGET_SKILLS}
+        if read.plugin == "agent-toolkit"
+        and read.relative_path == "SKILL.md"
+        and read.skill in {COMPLETION_REPORT, *TARGET_SKILLS}
     ]
 
 
@@ -320,15 +323,23 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
         for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd if isinstance(cwd, str) else ""):
             single = join_words(invocation.segment.tokens)
             item_labels = [*_saved_operations(single), *([] if invocation.background else published_git_operations(single))]
-            if codex or is_antigravity_payload(payload):
+            if (codex or is_antigravity_payload(payload)) and not host_truncated(payload.get("tool_response")):
                 text = _document_reads.response_text(payload.get("tool_response"))
-                for skill in dict.fromkeys(_read_skills(single)):
-                    if not _document_reads.body_returned(skill, "SKILL.md", text):
+                for document in _read_skills(single):
+                    if not _document_reads.body_returned(
+                        document.skill,
+                        document.relative_path,
+                        text,
+                        plugin=document.plugin,
+                        path=document.path,
+                        host="codex" if codex else "agy",
+                        project=cwd,
+                    ):
                         continue
-                    if skill == COMPLETION_REPORT:
+                    if document.skill == COMPLETION_REPORT:
                         records.append({"kind": "completion"})
                     else:
-                        item_labels.append(f"agent-toolkit:{skill}の開始")
+                        item_labels.append(f"agent-toolkit:{document.skill}の開始")
             if item_labels:
                 repository = _invocation_repository(invocation, current)
                 records.append(
