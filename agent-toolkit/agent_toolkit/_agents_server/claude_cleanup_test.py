@@ -47,7 +47,7 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
     collect = claude._owned_runtime_processes  # pylint: disable=protected-access
 
     def observed_collect(root, known=(), **_kwargs):
-        targets = collect(root, known) if known else collect(root)
+        targets = collect(root, known, **_kwargs)
         loop.call_soon_threadsafe(first_snapshot.set)
         if child_pid.exists() and int(child_pid.read_text(encoding="utf-8")) in {target.pid for target in targets}:
             loop.call_soon_threadsafe(child_observed.set)

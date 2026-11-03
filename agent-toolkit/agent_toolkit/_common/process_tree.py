@@ -27,6 +27,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Generator, Iterable
 from typing import Any, Self
@@ -101,6 +102,7 @@ def stop_tree(
     *,
     include_root: bool = True,
     known: Iterable[psutil.Process] = (),
+    pins: ProcessIdentityPins | None = None,
     timeout: float = RECLAIM_TIMEOUT_SECONDS,
 ) -> TreeStopResult:
     """`root`の子孫（`include_root`なら`root`自身も）の生成を止め、終了させて回収する。
@@ -112,10 +114,12 @@ def stop_tree(
     POSIXでは全対象へSIGTERMを送ってから再開し、正常終了の機会を保つ。
     猶予中に増えた子孫にもSIGTERMを送り、期限で再び一時停止してからSIGKILLを送る。
     `known`は呼び出し元が既に所有する対象であり、同じ扱いで終了させる。
+    `pins`を渡すと、呼び出し元が事前観測から保持している親世代を使う。
+    渡した`pins`は呼び出し元が回収終了後に閉じる。
     途中で例外が起きても、一時停止した対象を残さないよう所有対象を強制終了してから例外を伝播させる。
     同期的に待機するため、イベントループ上から呼ぶ場合は別スレッドへ退避させる。
     """
-    with _OwnedTree(root, include_root=include_root, known=known) as tree:
+    with _OwnedTree(root, include_root=include_root, known=known, pins=pins) as tree:
         return _stop_owned_tree(tree, timeout)
 
 
@@ -147,18 +151,58 @@ def _stop_owned_tree(tree: _OwnedTree, timeout: float) -> TreeStopResult:
     return TreeStopResult(tree.targets(), residual, tree.unresolved, descriptions)
 
 
+class ProcessIdentityPins:
+    """最初の所有観測から回収まで、Windowsのプロセス世代を保持する。"""
+
+    def __init__(self) -> None:
+        self._handles = contextlib.ExitStack()
+        self._retained: dict[tuple[int, float], bool] = {}
+        self._lock = threading.RLock()
+        self._closed = False
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_exception: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """全観測・回収が終わった所有者が、保持したkernel handleを解放する。"""
+        with self._lock:
+            self._closed = True
+            self._handles.close()
+
+    def retain(self, process: psutil.Process) -> bool:
+        """観測した同じ世代を保持する。終了後も既に保持済みならTrueを返す。"""
+        with self._lock:
+            if self._closed or (key := _key(process)) is None:
+                return False
+            if sys.platform != "win32":
+                return process.is_running()
+            if key not in self._retained:
+                self._retained[key] = self._handles.enter_context(_retain_windows_process(process))
+            return self._retained[key]
+
+
 class _OwnedTree:
     """`stop_tree`が所有する終了対象と、子孫を辿る起点の集合。"""
 
-    def __init__(self, root: psutil.Process | None, *, include_root: bool, known: Iterable[psutil.Process]) -> None:
+    def __init__(
+        self,
+        root: psutil.Process | None,
+        *,
+        include_root: bool,
+        known: Iterable[psutil.Process],
+        pins: ProcessIdentityPins | None,
+    ) -> None:
         self._anchors: dict[tuple[int, float], psutil.Process] = {}
         self._owned: dict[tuple[int, float], psutil.Process] = {}
         self.suspended: set[tuple[int, float]] = set()
         self.unresolved: list[str] = []
         # 一時停止できなかった対象と理由。終了処理の後も資源を保持していれば未確定として報告する。
         self._suspend_failures: dict[tuple[int, float], tuple[psutil.Process, str]] = {}
-        self._handles = contextlib.ExitStack()
-        self._retained: dict[tuple[int, float], bool] = {}
+        self._pins = ProcessIdentityPins() if pins is None else pins
+        self._owns_pins = pins is None
         root_key = None if root is None else _key(root)
         if root is not None and root_key is not None:
             if include_root and root.pid != os.getpid():
@@ -171,23 +215,18 @@ class _OwnedTree:
         return self
 
     def __exit__(self, *_exception: object) -> None:
-        self._handles.close()
+        if self._owns_pins:
+            self._pins.close()
 
     def _retain(self, process: psutil.Process) -> bool:
-        key = _key(process)
-        if key is None:
+        try:
+            retained = self._pins.retain(process)
+            if not retained and sys.platform == "win32":
+                self._unresolve(f"pid {process.pid} の親世代を終了前に保持できなかった")
+            return retained
+        except (psutil.Error, OSError) as error:
+            self._unresolve(f"pid {process.pid} の親世代を保持できない: {type(error).__name__}: {error}")
             return False
-        if sys.platform != "win32":
-            return process.is_running()
-        if key not in self._retained:
-            try:
-                self._retained[key] = self._handles.enter_context(_retain_windows_process(process))
-                if not self._retained[key]:
-                    self._unresolve(f"pid {process.pid} の親世代を終了前に保持できなかった")
-            except (psutil.Error, OSError) as error:
-                self._retained[key] = False
-                self._unresolve(f"pid {process.pid} の親世代を保持できない: {type(error).__name__}: {error}")
-        return self._retained[key]
 
     def targets(self) -> list[psutil.Process]:
         return list(self._owned.values())
@@ -442,16 +481,21 @@ def run_with_timeout(
     return subprocess.CompletedProcess(process.args, returncode, stdout, stderr)
 
 
-def collect_descendants(pid: int | None) -> list[psutil.Process]:
+def collect_descendants(pid: int | None, *, pins: ProcessIdentityPins | None = None) -> list[psutil.Process]:
     """`pid`を起点とする子孫プロセスを列挙する。
 
     起点プロセスが存在しない場合と、権限などで列挙できない場合は空リストを返す。
     回収は委譲の付随処理であり、列挙できないことを委譲の失敗として扱わない。
+    `pins`を指定した場合は、親世代を保持できた子孫だけを返し、最終回収まで保持を続ける。
     """
     if pid is None:
         return []
     try:
-        return psutil.Process(pid).children(recursive=True)
+        root = psutil.Process(pid)
+        if pins is not None and not pins.retain(root):
+            return []
+        children = root.children(recursive=True)
+        return children if pins is None else [process for process in children if pins.retain(process)]
     except psutil.Error, OSError:
         return []
 

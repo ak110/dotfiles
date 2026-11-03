@@ -188,13 +188,21 @@ def _describe_child_processes(pid: int | None) -> list[str]:
     return children
 
 
-def _owned_runtime_processes(root: psutil.Process | None, known: tuple[psutil.Process, ...] = ()) -> list[psutil.Process]:
+def _owned_runtime_processes(
+    root: psutil.Process | None,
+    known: tuple[psutil.Process, ...] = (),
+    *,
+    pins: process_tree.ProcessIdentityPins | None = None,
+) -> list[psutil.Process]:
     """親終了後も観測済みhandleを保ち、それぞれの子孫を所有へ加える。"""
     owned = dict.fromkeys((*known, *((root,) if root is not None else ())))
     for parent in tuple(owned):
         try:
+            if pins is not None and not pins.retain(parent):
+                continue
             if parent.is_running():
-                owned.update(dict.fromkeys(parent.children(recursive=True)))
+                children = parent.children(recursive=True)
+                owned.update(dict.fromkeys(children if pins is None else [child for child in children if pins.retain(child)]))
         except psutil.NoSuchProcess:
             continue
     return list(owned)
@@ -794,12 +802,12 @@ class ClaudeServerManager:
             if isinstance(outcome, BaseException) and not isinstance(outcome, asyncio.CancelledError):
                 raise outcome
 
-    async def _reclaim_runtime(self, session_id: str) -> None:
+    async def _reclaim_runtime(self, session_id: str, *, pins: process_tree.ProcessIdentityPins | None = None) -> None:
         """未回収の所有資源を再試行し、終了できないhandleを次の停止要求へ保持する。"""
         targets = self._residual_processes.get(session_id, [])
         if not targets:
             return
-        result = await run_file_operation(process_tree.stop_tree, None, known=targets)
+        result = await run_file_operation(process_tree.stop_tree, None, known=targets, pins=pins)
         process_tree.log_residual(result.descriptions(), context=f"claude runtime {session_id}")
         if result.residual or result.unresolved:
             self._residual_processes[session_id] = result.targets if result.unresolved else result.residual
@@ -1406,7 +1414,7 @@ class ClaudeServerManager:
                 await self._notify_waiters()
         finally:
 
-            async def cleanup_runtime() -> None:
+            async def cleanup_runtime(pins: process_tree.ProcessIdentityPins) -> None:
                 nonlocal retrieved
                 if wait_compactor is not None:
                     await wait_compactor.close()
@@ -1442,13 +1450,15 @@ class ClaudeServerManager:
                             nonlocal descendants
                             while not tracking_done.is_set():
                                 descendants = await run_file_operation(
-                                    _owned_runtime_processes, diagnostic.child_process, tuple(descendants)
+                                    _owned_runtime_processes, diagnostic.child_process, tuple(descendants), pins=pins
                                 )
                                 with contextlib.suppress(TimeoutError):
                                     await asyncio.wait_for(tracking_done.wait(), timeout=0.05)
 
                         try:
-                            descendants = await run_file_operation(_owned_runtime_processes, diagnostic.child_process)
+                            descendants = await run_file_operation(
+                                _owned_runtime_processes, diagnostic.child_process, pins=pins
+                            )
                         finally:
                             tracker = asyncio.create_task(track_descendants())
                             try:
@@ -1463,7 +1473,7 @@ class ClaudeServerManager:
                                     )
                                     if descendants:
                                         self._residual_processes[runtime_key] = descendants
-                                    await self._reclaim_runtime(runtime_key)
+                                    await self._reclaim_runtime(runtime_key, pins=pins)
 
             async def cleanup() -> None:
                 async with contextlib.AsyncExitStack() as resources:
@@ -1472,7 +1482,7 @@ class ClaudeServerManager:
                     if session is not None:
                         resources.callback(self._channels.pop, session.session_id, None)
                         resources.push_async_callback(session.drain_registration)
-                    await cleanup_runtime()
+                    await cleanup_runtime(resources.enter_context(process_tree.ProcessIdentityPins()))
 
             await finish_task(asyncio.create_task(cleanup()))
 
