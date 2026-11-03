@@ -48,7 +48,7 @@ def main() -> None:
                         break
                 url = next((link.split(">", 1)[0].lstrip("<") for link in links if 'rel="next"' in link), "")
         except (OSError, ValueError, KeyError, TypeError) as error:
-            print(f"::warning::master CIを照会できないため、このrunで共通検証を実行します: {type(error).__name__}")
+            print(f"master CIを照会できないため、このrunで共通検証を実行します: {type(error).__name__}")
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         output.write(f"owns={str(owns).lower()}\nreason={reason}\n")
 

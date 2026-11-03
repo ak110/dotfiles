@@ -299,6 +299,10 @@ def test_windows_codex_installer_requires_pinned_executable(
         assert version in result.stdout
     else:
         assert not github_path.exists()
+    if failure in {"missing-cli", "wrong-version"}:
+        assert "npm導入ログ" in result.stdout + result.stderr
+        assert "Re-run failed" in result.stdout + result.stderr
+        assert "再実行してください" in result.stdout + result.stderr
 
 
 def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[str, object]) -> None:
@@ -461,6 +465,7 @@ def test_common_ci_owner_runs_workflow_judgment(
     workflow_data: dict[str, object],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     event: str,
     branch: str,
     *,
@@ -516,6 +521,10 @@ def test_common_ci_owner_runs_workflow_judgment(
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     runpy.run_path(str(script_path), run_name="__main__")
+    if run_state == "api-error":
+        diagnostic = capsys.readouterr().out
+        assert "このrunで共通検証を実行します" in diagnostic
+        assert "::warning::" not in diagnostic
     values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
     assert values["owns"] == str(expected_owns).lower()
     assert bool(requests) == (event == "push" and branch == "develop")
