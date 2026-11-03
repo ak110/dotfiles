@@ -5,15 +5,83 @@
 from __future__ import annotations
 
 import asyncio
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
+import claude_agent_sdk
 import pytest
 
 from agent_toolkit._agents_server import codex, manager, state, wait_compaction
-from agent_toolkit._testing.agents_server_support import FakeCodexClient, install_backend
+from agent_toolkit._testing.agents_server_support import (
+    FakeCodexClient,
+    QueueClaudeClient,
+    ResultMessage,
+    SystemMessage,
+    claude_manager,
+    install_backend,
+)
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.parametrize("launch_kind", ["delegate", "write", "explore", "shell"])
+@pytest.mark.asyncio
+async def test_claude_compacts_a_background_bash_wait_without_a_child_session(tmp_path, monkeypatch, launch_kind):
+    """全起動区分で、CI待機と同じ子sessionを伴わない背景Bashを所有キュー経由で圧縮する。"""
+    entered, release, compacted = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    delays = []
+    original = wait_compaction.WaitCompaction
+
+    async def sleep(seconds):
+        delays.append(seconds)
+        entered.set()
+        await release.wait()
+
+    def observer(*args: Any, **kwargs: Any):
+        return original(*args, sleep=sleep, **kwargs)
+
+    monkeypatch.setattr(wait_compaction, "WaitCompaction", observer)
+
+    class Client(QueueClaudeClient):
+        async def get_context_usage(self):
+            return {"totalTokens": 400_000, "rawMaxTokens": 1_000_000}
+
+        async def query(self, prompt):
+            await super().query(prompt)
+            if prompt == "/compact":
+                compacted.set()
+
+    client = Client(
+        [
+            [
+                SystemMessage("wait-claude"),
+                claude_agent_sdk.TaskStartedMessage(
+                    "task_started",
+                    {},
+                    "ci-task",
+                    "CI待機",
+                    "task-event",
+                    "wait-claude",
+                    task_type="local_bash",
+                ),
+                claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"}),
+                ResultMessage("待機中"),
+            ],
+            [ResultMessage("圧縮完了"), claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"})],
+        ]
+    )
+    async with claude_manager(monkeypatch, client) as (_owner, backend):
+        session = await backend.start("CIの完了待ち", str(tmp_path), launch_kind=launch_kind)
+        await asyncio.wait_for(entered.wait(), 2)
+        assert delays == [60]
+        assert session.awaiting_auto_resume and not session.live_child_session_ids
+        release.set()
+        await asyncio.wait_for(compacted.wait(), 2)
+        async with asyncio.timeout(2):
+            while session.pending_result is None:
+                await asyncio.sleep(0)
+        assert session.awaiting_auto_resume and not session.terminal
+        assert client.queries.count("/compact") == 1
 
 
 @pytest.mark.parametrize("outcome", ["completed", "failed", "rejected", "stop"])

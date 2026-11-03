@@ -16,24 +16,15 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.compaction")
 
 def wait_key(session: SessionState) -> str | None:
     """同じ背景waitがターン間で続く場合だけ、その識別子を返す。"""
-    if (
-        session.launch_kind not in {"delegate", "write"}
-        or session.terminal
-        or session.interrupt_requested
-        or not resume_waits.is_background_completion_wait(session)
-    ):
+    if session.terminal or session.interrupt_requested or not resume_waits.is_background_completion_wait(session):
         return None
     if session.engine == "claude":
-        if (
-            session.cli_turn_state != "idle"
-            or not session.live_tasks
-            or not session.live_child_session_ids
-            or not session.agents_wait_background_outputs
-        ):
+        children = session.live_child_session_ids | session.live_tasks.keys()
+        if session.cli_turn_state != "idle" or not children:
             return None
-        return json.dumps(sorted(session.agents_wait_background_outputs))
+        return json.dumps(["claude", session.turn_seq, *sorted(children)])
     if session.engine == "codex" and session.turn_completed:
-        children = session.live_child_session_ids | session.codex_live_subagent_thread_ids
+        children = session.live_child_session_ids | session.codex_live_subagent_thread_ids | session.live_tasks.keys()
         return json.dumps(["codex", session.turn_seq, *sorted(children)]) if children else None
     return None
 
@@ -65,7 +56,7 @@ class WaitCompaction:
         """受信済みの状態から予約し、SDKの読取ループを占有しない。"""
         tokens = context_usage.valid_number(session.context_tokens)
         window = context_usage.valid_number(session.context_window)
-        if tokens is not None and window is not None and window > 0 and tokens / window < 0.5:
+        if tokens is not None and window is not None and window > 0 and tokens < min(400_000, window * 0.4):
             self._paused = False
         key = wait_key(session)
         if key is None or key in self._used or (self._task is not None and not self._task.done()):
@@ -74,7 +65,7 @@ class WaitCompaction:
 
     async def _compact(self, session: SessionState, key: str) -> None:
         try:
-            await self._sleep(5)
+            await self._sleep(60)
             if wait_key(session) != key:
                 return
             usage = await self._get_usage()
@@ -82,7 +73,7 @@ class WaitCompaction:
             window = context_usage.valid_number(usage.get("rawMaxTokens"))
             if tokens is None or window is None or window <= 0:
                 return
-            if tokens / window < 0.5:
+            if tokens < min(400_000, window * 0.4):
                 self._paused = False
                 return
             if not self._paused and wait_key(session) == key:

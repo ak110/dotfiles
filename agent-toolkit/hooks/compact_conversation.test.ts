@@ -83,17 +83,18 @@ test("他機能への保護door・無条件・広域イベント登録の持込�
 
 const TOOL = "mcp__agent-toolkit__compact_conversation";
 
-async function waitingEngine($: Engine, on: On, options: { percent?: number; eligible?: boolean; delegated?: boolean; compact?: "skip" | "failure" } = {}) {
+async function waitingEngine($: Engine, on: On, options: { percent?: number; window?: number; eligible?: boolean; delegated?: boolean; compact?: "skip" | "failure" } = {}) {
   mock.env(on, options.delegated ? { AGENT_TOOLKIT_DELEGATED_SESSION: "1" } : {});
   mock.session(on);
   const clock = mock.clock(on, { now: 10_000 });
-  const calls = { queries: [] as (readonly string[])[], compactions: 0, notices: [] as string[] };
+  const calls = { queries: [] as (readonly string[])[], compactions: 0, notices: [] as string[], diagnostics: [] as string[] };
   const usage = { percent: options.percent ?? 60 };
   const task = { id: "wait-task" };
   on("session.id", () => ({ value: "wait-main" }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("session.messages", () => ({ value: [] }));
-  on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: usage.percent, window: 100, percent: usage.percent }, rateLimits: [] } }));
+  on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: usage.percent * 10_000, window: options.window ?? 1_000_000, percent: usage.percent }, rateLimits: [] } }));
+  on("ui.log", (_$, e) => { calls.diagnostics.push(e.text); return { value: undefined }; });
   on("tool.register", (_$, e) => ({ value: { tool: e.name } }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("turn.complete", () => ({ text: "" }));
@@ -115,13 +116,29 @@ async function waitingEngine($: Engine, on: On, options: { percent?: number; eli
 
 const MAIN_TURN = { answer: "", durationMs: 0, isAborted: false, turnId: "waiting-turn", reason: "answer" as const };
 
+for (const scenario of [
+  { command: "wait_ci.py", percent: 40, window: 2_000_000, expected: 1 },
+  { command: "wait_ci.py", percent: 7.9999, window: 200_000, expected: 0 },
+  { command: "wait_ci.py", percent: 8, window: 200_000, expected: 1 },
+  { command: "atk agents wait", percent: Number.NaN, window: 1_000_000, expected: 0 },
+]) {
+  test(`背景Bashとモデル上限に応じた圧縮: ${JSON.stringify(scenario)}`, async ($, on) => {
+    const { clock, calls } = await waitingEngine($, on, scenario);
+    await $.tool.call({ tool: "Bash", command: scenario.command, run_in_background: true });
+    await clock.advance(60_000);
+    await clock.advance(0);
+    expect(calls.compactions).toBe(scenario.expected);
+    if (Number.isNaN(scenario.percent)) expect(calls.diagnostics.join(" ")).toMatch("usage_unknown");
+  });
+}
+
 for (const mode of ["long", "low", "ineligible-wait-owner", "running", "delegated", "subagent", "skip", "failure"] as const) {
   test(`背景waitの自動圧縮条件: ${mode}`, async ($, on) => {
-    const options = { percent: mode === "low" ? 49 : mode === "long" ? 50 : 60, eligible: mode !== "ineligible-wait-owner", delegated: mode === "delegated", ...(mode === "skip" || mode === "failure" ? { compact: mode } : {}) };
+    const options = { percent: mode === "low" ? 39 : mode === "long" ? 40 : 60, eligible: mode !== "ineligible-wait-owner", delegated: mode === "delegated", ...(mode === "skip" || mode === "failure" ? { compact: mode } : {}) };
     const { clock, calls } = await waitingEngine($, on, options);
     if (mode === "running") await $.turn.start({ text: "待機を開始", turnId: MAIN_TURN.turnId });
     await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true, ...(mode === "subagent" ? { agentId: "child" } : {}) });
-    await clock.advance(4999);
+    await clock.advance(59_999);
     expect(calls.compactions).toBe(0);
     expect(calls.queries.length).toBe(0);
     await clock.advance(1);
@@ -144,19 +161,22 @@ for (const mode of ["long", "low", "ineligible-wait-owner", "running", "delegate
       expect(query).toContain("--command=atk agents wait");
     }
     await $.turn.complete(MAIN_TURN);
-    await clock.advance(5000);
+    await clock.advance(60_000);
     expect(calls.compactions).toBe(eligible ? 1 : 0);
     expect(calls.notices.length).toBe(mode === "skip" || mode === "failure" ? 1 : 0);
+    if (mode === "low") expect(calls.diagnostics.join(" ")).toMatch("below_threshold");
+    if (mode === "ineligible-wait-owner") expect(calls.diagnostics.join(" ")).toMatch("ownership_unconfirmed");
+    if (mode === "running") expect(calls.diagnostics.join(" ")).toMatch("turn_running");
   });
 }
 
 for (const door of ["delivery", "queue"] as const) {
   for (const status of ["completed", "failed", "killed"]) {
-    test(`5秒前の${door}の${status}通知で同じ背景waitの自動圧縮を取り消す`, async ($, on) => {
+    test(`60秒前の${door}の${status}通知で同じ背景waitの自動圧縮を取り消す`, async ($, on) => {
       const { clock, calls } = await waitingEngine($, on);
       await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
       await $.session.append({ door, origin: { kind: "engine" }, uuid: "done", message: { type: "user", role: "user", content: [{ type: "text", text: `<task-notification><task-id>wait-task</task-id><status>${status}</status></task-notification>` }] } });
-      await clock.advance(5000);
+      await clock.advance(60_000);
       expect(calls.queries.length).toBe(0);
       expect(calls.compactions).toBe(0);
     });
@@ -166,12 +186,12 @@ for (const door of ["delivery", "queue"] as const) {
 test("高利用率の新しい待機でも反復せず、閾値未満を観測した後の新作業で再開する", async ($, on) => {
   const { clock, calls, usage, task } = await waitingEngine($, on);
   await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
-  await clock.advance(5000);
+  await clock.advance(60_000);
   await clock.advance(0);
   expect(calls.compactions).toBe(1);
   task.id = "second-wait";
   await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
-  await clock.advance(5000);
+  await clock.advance(60_000);
   await clock.advance(0);
   expect(calls.compactions).toBe(1);
   expect(calls.queries.length).toBe(1);

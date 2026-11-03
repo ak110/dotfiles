@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""待機時の会話圧縮に必要な所有・起動区分を一度だけ取得する。"""
+"""背景Bashの待機時圧縮と、agents waitの所有を確認する。"""
 
 from __future__ import annotations
 
@@ -15,13 +15,15 @@ from agent_toolkit._common.shell_tokens import is_atk_command
 
 
 def wait_context(session_id: str, command: str, environment: Mapping[str, str] | None = None) -> dict[str, Any]:
-    """実行位置のwaitと既存所有記録を使い、explore・shell以外の待機を返す。"""
+    """ホストが現在会話のバックグラウンドタスクと確認したBashの待機条件を返す。"""
     invocations = extract_bash_invocations(command)
     waits = [
         invocation.static_tokens
         for invocation in invocations
         if is_atk_command(invocation.static_tokens) and invocation.static_tokens[1:3] == ("agents", "wait")
     ]
+    if not waits:
+        return {"eligible": True, "reason": "現在会話の背景Bashタスク"}
     if len(waits) != 1 or len(invocations) != 1:
         return {"eligible": False, "reason": "単独のatk agents waitではない"}
     tokens = waits[0]
@@ -48,10 +50,9 @@ def wait_context(session_id: str, command: str, environment: Mapping[str, str] |
         if identifier in targets
         and session.get("owner_status_file") == identity.file_name
         and session.get("status") == "running"
-        and session.get("launch_kind") in {"delegate", "write"}
     ]
     if not sessions:
-        return {"eligible": False, "reason": "所有するexplore・shell以外の担当の待機がない"}
+        return {"eligible": False, "reason": "所有する担当の待機がない"}
     return {"eligible": True, "sessions": sessions}
 
 

@@ -625,8 +625,10 @@ CodexのPostToolUseは`persistedOutputPath`を持たず（出力は切り詰め�
 `register.ts`がメイン専用の登録と委譲先の判定を「send_to_userツール」と共有し、同じ判定を自動経路にも渡す。Codexにはこのmodを配らない。
 `compact_conversation.ts`は受付と完了を分け、turn間の単発タイマーから公開APIの`session.compact()`を呼ぶ。
 turn実行中の予約はturn完了へ持ち越す。成功・skip・失敗を分け、skipと失敗は予約を解除し、追加LLM turnを発生させないtoastで通知する。
-背景Bashの`atk agents wait`が5秒以上続き、文脈使用率50%以上で、保存済みの圧縮専用記録に依存せず同じ予約へ自動接続する。
-所有・待機対象・explore/shell以外の起動区分は、`wait-compaction-context`が既存の状態と待機登録から確認する。
+現在会話の背景Bashタスクが60秒以上続き、使用量400,000トークン以上なら同じ予約へ自動接続する。
+文脈上限が1,000,000未満のモデルでは上限の40%以上を条件とする。
+`atk agents wait`の所有と待機対象は、`wait-compaction-context`が既存の状態と待機登録から確認する。起動区分による除外は行わず、CI監視などほかの背景Bashも対象とする。
+見送り条件と予約は`ui.log`のdebug出力へ記録し、使用量不明・閾値未満・所有未確認・turn実行中を区別する。
 同じ待機では1回までとし、高利用率が続く間の再圧縮を抑止する。閾値未満を観測した後の新作業で再開できる。
 完了通知で待機を除き、turnと単発タイマーで判定する。永続予約・継続ポーリング・追加のモデル呼出しによる判定は設けない。
 圧縮の実装と結果はホスト、予約と自動発動条件はmodが持つ。状態保存と通知後の復元はdelegationのwaiting-and-monitoring.mdが所有する。
