@@ -9,18 +9,21 @@ import pytest
 
 
 def test_linux_placement(tmp_path: Path, host_environ: Callable[[], dict[str, str]]) -> None:
-    """checkoutをHOMEへ移し、後続step用の配置先を出力する。"""
+    """HOMEへ配置し、post工程が元のローカルactionを引き続き読み取れる。"""
     workspace = tmp_path / "workspace"
     source = workspace / "dotfiles"
     source.mkdir(parents=True)
     (source / "keep").write_text("checkout", encoding="utf-8")
+    definition = source / ".github/actions/ci-test-linux/action.yml"
+    definition.parent.mkdir(parents=True)
+    definition.write_text("name: ci-test-linux\n", encoding="utf-8")
     home = tmp_path / "home"
     home.mkdir()
     output = tmp_path / "environment"
     process = subprocess.run(
         ["bash", str(Path(__file__).with_name("ci_place_linux.sh"))],
         cwd=workspace,
-        env={**host_environ(), "HOME": str(home), "GITHUB_ENV": str(output)},
+        env={**host_environ(), "HOME": str(home), "GITHUB_WORKSPACE": str(workspace), "GITHUB_ENV": str(output)},
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -29,7 +32,7 @@ def test_linux_placement(tmp_path: Path, host_environ: Callable[[], dict[str, st
         timeout=10,
     )
     assert process.returncode == 0, process.stderr
-    assert not source.exists()
+    assert definition.read_text(encoding="utf-8") == "name: ci-test-linux\n"
     assert (home / "dotfiles/keep").read_text(encoding="utf-8") == "checkout"
     assert output.read_text(encoding="utf-8").strip() == f"DOTFILES_DIR={home}/dotfiles"
 
@@ -58,15 +61,25 @@ def test_linux_distribution_check(tmp_path: Path, host_environ: Callable[[], dic
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
 @pytest.mark.parametrize("copy_code", [1, 8])
-def test_windows_placement_copy_boundary(tmp_path: Path, host_environ: Callable[[], dict[str, str]], copy_code: int) -> None:
-    """robocopyの成功コードを正規化し、失敗時は元checkoutを保持する。"""
+@pytest.mark.parametrize("action_name", ["ci-test-windows", "ci-update-dotfiles-upgrade-windows"])
+def test_windows_placement_copy_boundary(
+    tmp_path: Path, host_environ: Callable[[], dict[str, str]], copy_code: int, action_name: str
+) -> None:
+    """robocopyの成功コードを正規化し、成功後もpost用のaction定義を保持する。"""
     source = tmp_path / "dotfiles"
     source.mkdir()
+    definition = source / f".github/actions/{action_name}/action.yml"
+    definition.parent.mkdir(parents=True)
+    definition.write_text(f"name: {action_name}\n", encoding="utf-8")
+    profile = tmp_path / "profile"
+    profile.mkdir()
     output = tmp_path / "environment"
     script = Path(__file__).with_name("ci_place_windows.ps1").read_text(encoding="utf-8-sig")
     probe = tmp_path / "placement.ps1"
     probe.write_text(
-        f"function robocopy {{ $global:LASTEXITCODE = {copy_code} }}\n" + script,
+        "function robocopy { param($source, $destination) "
+        f"if ({copy_code} -lt 8) {{ Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force }}; "
+        f"$global:LASTEXITCODE = {copy_code} }}\n" + script,
         encoding="utf-8-sig",
     )
     process = subprocess.run(
@@ -74,7 +87,7 @@ def test_windows_placement_copy_boundary(tmp_path: Path, host_environ: Callable[
         env={
             **host_environ(),
             "GITHUB_WORKSPACE": str(tmp_path),
-            "USERPROFILE": str(tmp_path / "profile"),
+            "USERPROFILE": str(profile),
             "GITHUB_ENV": str(output),
         },
         capture_output=True,
@@ -85,5 +98,8 @@ def test_windows_placement_copy_boundary(tmp_path: Path, host_environ: Callable[
         timeout=10,
     )
     assert process.returncode == (0 if copy_code < 8 else copy_code), process.stdout + process.stderr
-    assert source.exists() == (copy_code >= 8)
+    assert definition.read_text(encoding="utf-8") == f"name: {action_name}\n"
     assert output.exists() == (copy_code < 8)
+    if copy_code < 8:
+        installed = profile / f"dotfiles/.github/actions/{action_name}/action.yml"
+        assert installed.read_bytes() == definition.read_bytes()

@@ -77,7 +77,8 @@ Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有し�
 所有判定は`scripts/ci_owner.py`、変更領域の分類は`scripts/ci_scope.py`、領域出力の検証は`scripts/ci_check_scope.sh`に集約する。
 Rustとブラウザーは領域出力を検証した後、選択された場合だけ実検査のcomposite actionを呼ぶ。
 Windowsの配置・Mozilla予約タスク停止・固定版Codex導入・境界pytestの結果ログ・配布確認は`scripts/ci_*.ps1`、Linuxの配置と配布確認は`scripts/ci_*.sh`へ置く。
-`prepare-install-test`はcheckout上のローカルactionでchezmoiを導入してから、OS固有の配置スクリプトでHOME配下へ移し、移動後の作業場所でuvを準備する。
+`prepare-install-test`はcheckout上のローカルactionでchezmoiを導入してから、OS固有の配置スクリプトでHOME配下へコピーし、コピー先でuvを準備する。
+GitHub Actionsのpost工程もworkspace上のローカルaction定義を読み直すため、元のcheckoutはjob終了まで保持する。
 
 Python系は`python-lint`、`pylint`、`pytest-root`、`pytest-toolkit`の責務別jobとする。
 表示名はそれぞれ`python-lint-other (3.15)`、`pylint (3.15)`、`pytest (3.15)`、`pytest-toolkit (3.15, N/3)`である。

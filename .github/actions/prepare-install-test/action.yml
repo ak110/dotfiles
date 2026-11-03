@@ -3,7 +3,7 @@ description: prepare-install-testの実処理
 runs:
   using: composite
   steps:
-    # ローカルactionを使い終えてからcheckoutを移し、uvのキャッシュ処理は移動後の作業場所で行う。
+    # post工程まで元のローカルaction定義を保持し、HOME側のコピーで導入検証を行う。
     - name: chezmoi インストール
       uses: ./dotfiles/.github/actions/install-chezmoi
       with:
