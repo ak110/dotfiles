@@ -117,9 +117,11 @@ async function waitingEngine($: Engine, on: On, options: { percent?: number; win
 const MAIN_TURN = { answer: "", durationMs: 0, isAborted: false, turnId: "waiting-turn", reason: "answer" as const };
 
 for (const scenario of [
-  { command: "wait_ci.py", percent: 40, window: 2_000_000, expected: 1 },
-  { command: "wait_ci.py", percent: 7.9999, window: 200_000, expected: 0 },
-  { command: "wait_ci.py", percent: 8, window: 200_000, expected: 1 },
+  // 閾値は400,000トークンと上限の40%の大きい方。tokensはpercentの1万倍として与える。
+  { command: "wait_ci.py", percent: 40, window: 1_000_000, expected: 1 },
+  { command: "wait_ci.py", percent: 79.9999, window: 2_000_000, expected: 0 },
+  { command: "wait_ci.py", percent: 80, window: 2_000_000, expected: 1 },
+  { command: "wait_ci.py", percent: 19.9999, window: 200_000, expected: 0 },
   { command: "atk agents wait", percent: Number.NaN, window: 1_000_000, expected: 0 },
 ]) {
   test(`背景Bashとモデル上限に応じた圧縮: ${JSON.stringify(scenario)}`, async ($, on) => {

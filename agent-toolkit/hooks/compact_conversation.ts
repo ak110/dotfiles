@@ -28,7 +28,7 @@ type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean
 
 function usageThreshold(context: { tokens?: number; window: number }): boolean | undefined {
   if (typeof context.tokens !== "number" || !Number.isFinite(context.tokens) || context.tokens < 0 || !Number.isFinite(context.window) || context.window <= 0) return undefined;
-  return context.tokens >= Math.min(400_000, context.window * 0.4);
+  return context.tokens >= Math.max(400_000, context.window * 0.4);
 }
 
 async function automatic($: EngineInterface, state: CompactState, wait: BackgroundWait): Promise<void> {

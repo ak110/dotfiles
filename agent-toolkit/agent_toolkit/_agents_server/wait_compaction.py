@@ -62,7 +62,7 @@ class WaitCompaction:
         """受信済みの状態から予約し、SDKの読取ループを占有しない。"""
         tokens = context_usage.valid_number(session.context_tokens)
         window = context_usage.valid_number(session.context_window)
-        if tokens is not None and window is not None and window > 0 and tokens < min(400_000, window * 0.4):
+        if tokens is not None and window is not None and window > 0 and tokens < max(400_000, window * 0.4):
             self._paused = False
         key = wait_key(session)
         if self._task is not None and not self._task.done():
@@ -88,7 +88,7 @@ class WaitCompaction:
             window = context_usage.valid_number(usage.get("rawMaxTokens"))
             if tokens is None or window is None or window <= 0:
                 return
-            if tokens < min(400_000, window * 0.4):
+            if tokens < max(400_000, window * 0.4):
                 self._paused = False
                 return
             if not self._paused and wait_key(session) == key and asyncio.current_task() is self._task:

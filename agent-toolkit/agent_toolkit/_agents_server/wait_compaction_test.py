@@ -31,11 +31,12 @@ def _waiting(request: pytest.FixtureRequest) -> state.SessionState:
 @pytest.mark.parametrize(
     "tokens,window,expected",
     [
+        # 閾値は400,000トークンと上限の40%の大きい方。上限が小さいモデルでも400,000未満では圧縮しない。
         (399_999, 1_000_000, False),
         (400_000, 1_000_000, True),
-        (400_000, 2_000_000, True),
-        (79_999, 200_000, False),
-        (80_000, 200_000, True),
+        (799_999, 2_000_000, False),
+        (800_000, 2_000_000, True),
+        (199_999, 200_000, False),
         (None, 100, False),
         (50, 0, False),
     ],
@@ -91,7 +92,7 @@ async def test_changed_wait_does_not_deliver_a_compaction_turn(waiting: state.Se
         await release.wait()
 
     async def usage() -> dict[str, int]:
-        return {"totalTokens": 50, "rawMaxTokens": 100}
+        return {"totalTokens": 500_000, "rawMaxTokens": 1_000_000}
 
     async def enqueue(key: str) -> None:
         queued.append(key)
@@ -122,14 +123,14 @@ async def test_same_wait_rechecks_usage_after_crossing_threshold(waiting: state.
     """同じ待機中に閾値へ上がったとき、最初の低使用率判定で予約を失わない。"""
     checked = asyncio.Event()
     queued: list[str] = []
-    tokens = 39
+    tokens = 399_999
 
     async def sleep(_seconds: float) -> None:
         return
 
     async def usage() -> dict[str, int]:
         checked.set()
-        return {"totalTokens": tokens, "rawMaxTokens": 100}
+        return {"totalTokens": tokens, "rawMaxTokens": 1_000_000}
 
     async def enqueue(key: str) -> None:
         queued.append(key)
@@ -138,7 +139,7 @@ async def test_same_wait_rechecks_usage_after_crossing_threshold(waiting: state.
         observer.observe(waiting)
         await asyncio.wait_for(checked.wait(), 2)
         assert not queued
-        tokens = 40
+        tokens = 400_000
         checked.clear()
         observer.observe(waiting)
         await asyncio.wait_for(checked.wait(), 2)
@@ -195,7 +196,7 @@ async def test_high_usage_new_wait_is_paused_until_usage_falls(waiting: state.Se
 
     async def usage() -> dict[str, int]:
         settled.set()
-        return {"totalTokens": 50, "rawMaxTokens": 100}
+        return {"totalTokens": 500_000, "rawMaxTokens": 1_000_000}
 
     async def enqueue(key: str) -> None:
         queued.append(key)
@@ -206,7 +207,7 @@ async def test_high_usage_new_wait_is_paused_until_usage_falls(waiting: state.Se
             waiting.turn_seq += 1
             waiting.agents_wait_background_outputs = {f"/work/output-{number}"}
             if number == 2:
-                waiting.context_tokens, waiting.context_window = 10, 100
+                waiting.context_tokens, waiting.context_window = 100_000, 1_000_000
             observer.observe(waiting)
             await asyncio.wait_for(settled.wait(), 2)
             assert len(queued) == (1 if number < 2 else 2)
@@ -230,7 +231,7 @@ async def test_optional_compaction_failure_keeps_waiting_without_warning(
         if failure == "usage":
             settled.set()
             raise RuntimeError("使用量の照会失敗")
-        return {"totalTokens": 50, "rawMaxTokens": 100}
+        return {"totalTokens": 500_000, "rawMaxTokens": 1_000_000}
 
     async def enqueue(_key: str) -> None:
         calls.append("enqueue")
