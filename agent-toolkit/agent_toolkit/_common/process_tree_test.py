@@ -308,7 +308,9 @@ def test_stop_tree_keeps_posix_graceful_exit_and_reclaims_children_started_in_gr
     command = [sys.executable, str(source), str(tmp_path)] + ([str(script)] if spawn_in_grace else [])
     with process_tree.process_scope(command) as process:
         _wait_for_ready_marker(tmp_path / "ready")
-        result = process_tree.stop_tree(psutil.Process(process.pid), timeout=5.0)
+        # 猶予中に起動した子の準備完了まで猶予を保つ。CIの高負荷時はPythonの起動に数秒かかり、
+        # 猶予が先に尽きると子が準備前に強制終了され、猶予中の生成を観測できない。
+        result = process_tree.stop_tree(psutil.Process(process.pid), timeout=late_descendant.READY_TIMEOUT_SECONDS)
         process.wait(timeout=5)
     assert (tmp_path / "graceful").exists()
     assert not result.unresolved
