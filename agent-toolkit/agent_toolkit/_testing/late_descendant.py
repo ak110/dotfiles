@@ -27,6 +27,15 @@ _SCRIPT = r"""
 import os, pathlib, runpy, subprocess, sys, time
 
 role, directory = sys.argv[1], pathlib.Path(sys.argv[2])
+
+def launch(child_role):
+    # 起動元の標準入出力（App Serverのpipeなど）を引き継がせず、起動の失敗は診断ファイルへ残す。
+    with open(directory / (child_role + ".err"), "ab") as error:
+        subprocess.Popen(
+            [sys.executable, __file__, child_role, str(directory)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=error,
+        )
+
 if role == "holder":
     with open(directory / "held" / "held.txt", "w", encoding="utf-8"):
         (directory / "holder.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -36,7 +45,7 @@ if role == "spawner":
     (directory / "spawner.pid").write_text(str(os.getpid()), encoding="utf-8")
     while not (directory / "trigger").exists():
         time.sleep(0.01)
-    subprocess.Popen([sys.executable, __file__, "holder", str(directory)])
+    launch("holder")
     while not (directory / "holder.pid").exists():
         time.sleep(0.01)
     if os.name == "nt":
@@ -44,7 +53,7 @@ if role == "spawner":
     time.sleep(120)
     sys.exit(0)
 # role == "cli": spawnerを起動し、残りの引数があればそのスクリプトを本来の処理として実行する。
-subprocess.Popen([sys.executable, __file__, "spawner", str(directory)])
+launch("spawner")
 if len(sys.argv) > 3:
     sys.argv = sys.argv[3:]
     runpy.run_path(sys.argv[0], run_name="__main__")
@@ -71,7 +80,7 @@ def cli_command(directory: pathlib.Path, *inner: str) -> list[str]:
 
 def wait_spawner(directory: pathlib.Path) -> None:
     """spawnerの起動を待つ。上限までに起動しない場合は失敗させる。"""
-    _wait_file(directory / "spawner.pid", "spawnerの起動を確認できませんでした")
+    _wait_file(directory / "spawner.pid", "spawnerの起動を確認できませんでした", directory / "spawner.err")
 
 
 def arm(
@@ -129,9 +138,12 @@ def _holds(pid: int) -> bool:
         return False
 
 
-def _wait_file(path: pathlib.Path, message: str) -> None:
+def _wait_file(path: pathlib.Path, message: str, diagnostics: pathlib.Path) -> None:
     deadline = time.monotonic() + READY_TIMEOUT_SECONDS
     while not path.exists():
         if time.monotonic() >= deadline:
-            raise AssertionError(message)
+            detail = "（診断ファイルなし）"
+            if diagnostics.exists():
+                detail = diagnostics.read_text(encoding="utf-8", errors="replace")
+            raise AssertionError(f"{message}: {detail}")
         time.sleep(0.01)
