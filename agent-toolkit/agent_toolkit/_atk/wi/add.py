@@ -110,11 +110,23 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, skill: st
                     text=True,
                     check=False,
                 )
-                if committed.returncode != 0 or committed.stdout != content:
+                report_content = _run_report_content(content)
+                if committed.returncode != 0 or _run_report_content(committed.stdout) != report_content:
                     continue
                 if remote_revision is None:
                     return True
-                commit = _git_command.output(["log", "-1", "--format=%H", "--", relative], private_notes).strip()
+                # 回答と採否のcommitを除き、現在の報告本文を保存した最新の変更点を探す。
+                # 同じ本文の過去版へ戻した場合も、戻したcommitのpushを必要とする。
+                commit = ""
+                for revision in _git_command.output(["log", "--format=%H", "--", relative], private_notes).splitlines():
+                    historical = _git_command.run(
+                        ["show", f"{revision}:{relative}"], private_notes, check=True, capture_output=True, text=True
+                    ).stdout
+                    if _run_report_content(historical) != report_content:
+                        break
+                    commit = revision
+                if not commit:
+                    continue
                 reached = _git_command.run(
                     ["-C", str(private_notes), "merge-base", "--is-ancestor", commit, remote_revision],
                     capture_output=True,
@@ -124,6 +136,16 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, skill: st
                 if reached.returncode == 0:
                     return True
     return False
+
+
+def _run_report_content(content: str) -> tuple[dict[str, object], str] | None:
+    """報告本体を、保存後に追加される回答・採否から区別する。"""
+    parsed = _frontmatter.parse_frontmatter(content)
+    if parsed is None:
+        return None
+    data, body = parsed
+    # answer_uwiと同じ最後のマーカーを境界にし、回答後の処理結果も除く。
+    return {key: value for key, value in data.items() if key != "state"}, body.rsplit(_uwi.ANSWER_MARKER, 1)[0]
 
 
 def _saved_mismatch_next_action(filename: str) -> str:

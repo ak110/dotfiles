@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import ctypes
 import json
 import os
 import pathlib
@@ -11,7 +12,9 @@ import subprocess
 import sys
 import threading
 import time
+import types
 from collections.abc import Callable
+from unittest import mock
 
 import psutil
 import pytest
@@ -19,6 +22,49 @@ import pytest
 from agent_toolkit._agents_server import lifetime
 from agent_toolkit._common import process_tree
 from agent_toolkit._testing import late_descendant
+
+
+def test_collected_windows_parent_is_pinned_before_it_exits(monkeypatch):
+    """収集後に親が終了しても、保持した親世代から遅い子を回収する。"""
+    monitor = lifetime.ServerLifetime()
+    root = mock.Mock(pid=900001)
+    parent = mock.Mock(pid=900002)
+    child = mock.Mock(pid=900003, info={"ppid": parent.pid})
+    for number, process in enumerate((root, parent, child), 1):
+        process.create_time.return_value = float(number)
+        process.is_running.return_value = True
+        process.status.return_value = psutil.STATUS_RUNNING
+        process.cmdline.return_value = ["owned"]
+    monitor._process = root  # pylint: disable=protected-access
+    monkeypatch.setattr(root, "children", mock.Mock(return_value=[parent]))
+    monkeypatch.setattr(psutil, "Process", mock.Mock(return_value=root))
+    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter([child]))
+    monkeypatch.setattr(process_tree, "sys", types.SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(lifetime, "sys", types.SimpleNamespace(platform="win32"))
+    kernel = mock.Mock()
+    kernel.OpenProcess.side_effect = lambda _access, _inherit, pid: 0 if pid == parent.pid and not parent.is_running() else pid
+    monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 87, raising=False)
+
+    def kill_child():
+        child.is_running.return_value = False
+
+    child.kill.side_effect = kill_child
+    try:
+        monitor._collect()  # pylint: disable=protected-access
+        parent.is_running.return_value = False
+        parent.status.return_value = psutil.STATUS_DEAD
+        root.children.return_value = []
+        monitor._collect()  # pylint: disable=protected-access
+        monitor._reclaim()  # pylint: disable=protected-access
+        child.kill.assert_called_once_with()
+        kernel.CloseHandle.assert_not_called()
+    finally:
+        pins = getattr(monitor, "_process_pins", None)
+        if pins is not None:
+            pins.close()
+        os.close(monitor._stdin_fd)  # pylint: disable=protected-access
+    assert kernel.CloseHandle.call_count == 3
 
 
 def _holds_resources(process: psutil.Process) -> bool:

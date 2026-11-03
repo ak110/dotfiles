@@ -5,6 +5,7 @@
 """
 
 import contextlib
+import ctypes
 import os
 import pathlib
 import subprocess
@@ -22,6 +23,56 @@ from agent_toolkit._testing import late_descendant
 pytestmark = pytest.mark.windows
 
 _CHILD_SOURCE = "import time; time.sleep(120)"
+
+
+def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypatch):
+    """再利用した親も終了して一覧に無い場合、その子を古い所有対象の子と誤認しない。"""
+    parent = mock.Mock(pid=900001)
+    parent.create_time.return_value = 1.0
+    parent.is_running.return_value = False
+    parent.status.return_value = psutil.STATUS_DEAD
+    parent.cmdline.return_value = ["owned"]
+    foreign = mock.Mock(pid=900002, info={"ppid": parent.pid})
+    foreign.create_time.return_value = 3.0
+    foreign.status.return_value = psutil.STATUS_RUNNING
+    foreign.is_running.return_value = True
+    foreign.cmdline.return_value = ["unrelated"]
+    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter([foreign]))
+    result = process_tree.stop_tree(parent, timeout=0)
+    assert {process.pid for process in result.targets} == {parent.pid}
+    foreign.suspend.assert_not_called()
+    foreign.terminate.assert_not_called()
+    foreign.kill.assert_not_called()
+
+
+@pytest.mark.parametrize("same_generation", [False, True])
+def test_windows_parent_handle_is_checked_and_closed(monkeypatch, same_generation):
+    """handle取得後に同じ親か確認し、列挙の例外時にもhandleを閉じる。"""
+    kernel = mock.Mock()
+    kernel.OpenProcess.return_value = 123
+    monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
+    process = mock.Mock(pid=42)
+    process.is_running.return_value = same_generation
+    # pylint: disable=protected-access
+    with pytest.raises(RuntimeError, match="列挙失敗"), process_tree._retain_windows_process(process) as retained:
+        assert retained is same_generation
+        process.is_running.assert_called_once_with()
+        kernel.CloseHandle.assert_not_called()
+        raise RuntimeError("列挙失敗")
+    kernel.OpenProcess.assert_called_once_with(0x1000, False, process.pid)
+    kernel.CloseHandle.assert_called_once_with(123)
+
+
+def test_stop_tree_keeps_unrelated_process_while_reclaiming_late_descendants(tmp_path, monkeypatch):
+    """列挙後に生じた子孫を回収し、無関係な実プロセスを生存させる。"""
+    with process_tree.process_scope([sys.executable, "-c", _CHILD_SOURCE]) as unrelated:
+        with process_tree.process_scope(late_descendant.cli_command(tmp_path)) as owned:
+            late_descendant.wait_spawner(tmp_path)
+            late_descendant.arm(tmp_path, monkeypatch.setattr)
+            assert process_tree.stop_process_tree(owned) == []
+        late_descendant.assert_released(tmp_path)
+        assert unrelated.poll() is None
 
 
 def test_process_scope_reaps_child_after_stop_failure(monkeypatch):

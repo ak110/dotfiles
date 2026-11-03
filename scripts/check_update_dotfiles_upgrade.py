@@ -545,9 +545,12 @@ PEP 723スクリプトからpytoolsをimportできないため、文言の一致
 """
 
 _CODEX_HOOK_TRUST_NOTICE = (
-    "Codexプラグインの導入または更新でHook定義が変わった場合は、定義を確認して信頼してください。"
-    "信頼後に新しいセッションを開始し、SessionStartの規範注入を確認してください。"
-    "再信頼の操作だけではSessionStartの規範注入を検収できません。"
+    "Codexの入力欄で`/hooks`を実行し、agent-toolkitの未信頼・変更済みフックの定義を確認して信頼してください。"
+    "その後、そのセッションを終了して新しいセッションを開始してください。"
+    "セッションの開始時（SessionStart）に規範を読み込みます。"
+    "新しいセッションでエージェントに「起動時にagent-toolkitの規範を受け取ったか確認して」と尋ねてください。"
+    "フックの永続的な信頼登録は手動です。daemon再起動は環境変数"
+    "DOTFILES_CODEX_DAEMON_AUTO_RESTART=1を設定してupdate-dotfilesを実行すると自動化できます。"
 )
 """`install_codex_plugins.py`の同名案内の本文。上記と同じ制約により一致を試験する。"""
 

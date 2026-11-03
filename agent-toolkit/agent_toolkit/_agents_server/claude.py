@@ -188,16 +188,24 @@ def _describe_child_processes(pid: int | None) -> list[str]:
     return children
 
 
-def _owned_runtime_processes(root: psutil.Process | None) -> list[psutil.Process]:
-    """SDKが起動したCLIと子孫を、停止前の同一性を持つhandleとして確定する。"""
-    if root is None:
-        return []
-    try:
-        if not root.is_running():
-            return []
-        return [root, *root.children(recursive=True)]
-    except psutil.NoSuchProcess:
-        return []
+def _owned_runtime_processes(
+    root: psutil.Process | None,
+    known: tuple[psutil.Process, ...] = (),
+    *,
+    pins: process_tree.ProcessIdentityPins | None = None,
+) -> list[psutil.Process]:
+    """親終了後も観測済みhandleを保ち、それぞれの子孫を所有へ加える。"""
+    owned = dict.fromkeys((*known, *((root,) if root is not None else ())))
+    for parent in tuple(owned):
+        try:
+            if pins is not None and not pins.retain(parent):
+                continue
+            if parent.is_running():
+                children = parent.children(recursive=True)
+                owned.update(dict.fromkeys(children if pins is None else [child for child in children if pins.retain(child)]))
+        except psutil.NoSuchProcess:
+            continue
+    return list(owned)
 
 
 def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
@@ -794,14 +802,15 @@ class ClaudeServerManager:
             if isinstance(outcome, BaseException) and not isinstance(outcome, asyncio.CancelledError):
                 raise outcome
 
-    async def _reclaim_runtime(self, session_id: str) -> None:
+    async def _reclaim_runtime(self, session_id: str, *, pins: process_tree.ProcessIdentityPins | None = None) -> None:
         """未回収の所有資源を再試行し、終了できないhandleを次の停止要求へ保持する。"""
         targets = self._residual_processes.get(session_id, [])
         if not targets:
             return
-        residual = await run_file_operation(process_tree.reclaim_processes, targets)
-        if residual:
-            self._residual_processes[session_id] = residual
+        result = await run_file_operation(process_tree.stop_tree, None, known=targets, pins=pins)
+        process_tree.log_residual(result.descriptions(), context=f"claude runtime {session_id}")
+        if result.residual or result.unresolved:
+            self._residual_processes[session_id] = result.targets if result.unresolved else result.residual
             raise session_errors.DelegateBackendError(
                 "Claude CLIの所有資源を終了できなかった。所有状態を確認して停止を再試行する。"
             )
@@ -1405,7 +1414,7 @@ class ClaudeServerManager:
                 await self._notify_waiters()
         finally:
 
-            async def cleanup_runtime() -> None:
+            async def cleanup_runtime(pins: process_tree.ProcessIdentityPins) -> None:
                 nonlocal retrieved
                 if wait_compactor is not None:
                     await wait_compactor.close()
@@ -1430,21 +1439,41 @@ class ClaudeServerManager:
                         if usage_observer is not None:
                             await usage_observer.close()
                     finally:
-                        # 切断より先に子孫を列挙し、親の終了後も所有資源を回収できるようにする。
-                        descendants = []
+                        if diagnostic.child_process is None:
+                            diagnostic.capture_client(client)
+                        # CLIの正常終了を妨げず、切断中に観測した子孫のhandleを保持する。
+                        # POSIXで列挙間隔内に生成と親終了が完結した子孫は追跡できない。
+                        descendants = [diagnostic.child_process] if diagnostic.child_process is not None else []
+                        tracking_done = asyncio.Event()
+
+                        async def track_descendants() -> None:
+                            nonlocal descendants
+                            while not tracking_done.is_set():
+                                descendants = await run_file_operation(
+                                    _owned_runtime_processes, diagnostic.child_process, tuple(descendants), pins=pins
+                                )
+                                with contextlib.suppress(TimeoutError):
+                                    await asyncio.wait_for(tracking_done.wait(), timeout=0.05)
+
                         try:
-                            descendants = await run_file_operation(_owned_runtime_processes, diagnostic.child_process)
-                            if session is not None and descendants:
-                                self._residual_processes[session.session_id] = descendants
+                            descendants = await run_file_operation(
+                                _owned_runtime_processes, diagnostic.child_process, pins=pins
+                            )
                         finally:
+                            tracker = asyncio.create_task(track_descendants())
                             try:
                                 await self._disconnect_client(client)
                             finally:
-                                if session is not None:
-                                    await self._reclaim_runtime(session.session_id)
-                                else:
-                                    residual = await run_file_operation(process_tree.reclaim_descendants, descendants)
-                                    process_tree.log_residual(residual, context="claude initialization")
+                                tracking_done.set()
+                                try:
+                                    await tracker
+                                finally:
+                                    runtime_key = (
+                                        session.session_id if session is not None else f"initialization:{diagnostic.debug_file}"
+                                    )
+                                    if descendants:
+                                        self._residual_processes[runtime_key] = descendants
+                                    await self._reclaim_runtime(runtime_key, pins=pins)
 
             async def cleanup() -> None:
                 async with contextlib.AsyncExitStack() as resources:
@@ -1453,7 +1482,7 @@ class ClaudeServerManager:
                     if session is not None:
                         resources.callback(self._channels.pop, session.session_id, None)
                         resources.push_async_callback(session.drain_registration)
-                    await cleanup_runtime()
+                    await cleanup_runtime(resources.enter_context(process_tree.ProcessIdentityPins()))
 
             await finish_task(asyncio.create_task(cleanup()))
 

@@ -23,9 +23,11 @@ from _test_helpers import (
     REPO_ROOT,
     WORKFLOW_PATH,
     direct_pytest_targets,
+    expanded_workflow_steps,
     load_workflow,
     workflow_jobs,
     workflow_mapping,
+    workflow_step_source,
     workflow_steps,
 )
 
@@ -104,7 +106,9 @@ def test_statusline_version_develop_push_reaches_version_check(
     scripts.mkdir()
     (scripts / "check_statusline_version.py").write_bytes((REPO_ROOT / "scripts" / "check_statusline_version.py").read_bytes())
     step = next(
-        step for step in workflow_steps(_statusline_job(workflow_data)) if step.get("name") == "statuslineの版数とタグを検査"
+        step
+        for step in expanded_workflow_steps(_statusline_job(workflow_data))
+        if step.get("name") == "statuslineの版数とタグを検査"
     )
     script = step["run"]
     assert isinstance(script, str)
@@ -137,9 +141,9 @@ def test_plugin_version_job_compares_previous_published_commit(workflow_data: di
     assert len(jobs) == 1
     job = jobs[0]
     assert job["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/develop'"
-    checkout = next(step for step in workflow_steps(job) if str(step.get("uses", "")).startswith("actions/checkout@"))
+    checkout = next(step for step in expanded_workflow_steps(job) if str(step.get("uses", "")).startswith("actions/checkout@"))
     assert str(workflow_mapping(checkout["with"])["fetch-depth"]) == "0"
-    step = next(step for step in workflow_steps(job) if step.get("name") == "配布プラグインの版数据置きを検査")
+    step = next(step for step in expanded_workflow_steps(job) if step.get("name") == "配布プラグインの版数据置きを検査")
     assert workflow_mapping(step["env"]) == {"BASE_SHA": "${{ github.event.before }}", "CURRENT_SHA": "${{ github.sha }}"}
     assert step["run"] == "python3 scripts/check_plugin_version.py"
     assert (REPO_ROOT / "scripts" / "check_plugin_version.py").is_file()
@@ -156,7 +160,7 @@ _MOZILLA_STEP = "Mozilla予約タスクの停止"
 
 def test_windows_mozilla_tasks_are_stopped_before_upgrade_check(workflow_data: dict[str, object]) -> None:
     """更新検証の通常profile監視より前に、同じ実行条件でMozilla予約タスクを止める。"""
-    steps = workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
     stop_index, stop_step = _windows_step(steps, _MOZILLA_STEP)
     check_index, check_step = _windows_step(steps, "約3日前からの update-dotfiles 更新検証")
     assert stop_index < check_index
@@ -167,7 +171,7 @@ def test_windows_mozilla_tasks_are_stopped_before_upgrade_check(workflow_data: d
 def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]) -> None:
     """Windowsジョブが公開された起動スクリプトのテストを実行し、`.cmd`の分岐をWindowsで確かめる。"""
     _, step = _windows_step(
-        workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "公開入口ランチャーの動作確認"
+        expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "公開入口ランチャーの動作確認"
     )
     targets = direct_pytest_targets({"jobs": {"test-windows": {"steps": [step]}}})
     assert "bin/atk_launcher_test.py" in targets
@@ -183,7 +187,9 @@ def test_windows_job_runs_link_and_prepare_lock_boundaries(workflow_data: dict[s
 
     Windows境界テストは`windows` markerで対象を選ぶため、ステップがmarkerを選択し、対象ファイルがmarkerを持つことを確かめる。
     """
-    _, step = _windows_step(workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "Windows境界テスト")
+    _, step = _windows_step(
+        expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"])), "Windows境界テスト"
+    )
     tokens = shlex.split(str(step["run"]))
     assert tokens[tokens.index("-m") + 1] == "windows"
     assert "pytestmark = pytest.mark.windows" in (REPO_ROOT / target).read_text(encoding="utf-8").splitlines()
@@ -193,12 +199,12 @@ def test_windows_job_runs_pinned_codex_command_integration(workflow_data: dict[s
     """固定版CLIを導入した所有Windows jobが、探索の開始から通常コマンドへ到達することを検査する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["test-windows"])
     assert job["runs-on"] == "windows-latest"
-    steps = workflow_steps(job)
+    steps = expanded_workflow_steps(job)
     install_index, install = _windows_step(steps, "Codex CLI 0.163.0の導入")
     integration_index, integration = _windows_step(steps, "Windows Codex command integration")
     assert install_index < integration_index
-    assert install["if"] == integration["if"] == "needs.common-ci-owner.outputs.owns == 'true'"
-    script = str(install["run"])
+    assert install.get("if") == integration.get("if")
+    script = workflow_step_source(install)
     assert "npm.cmd install --global --no-audit --no-fund @openai/codex@0.163.0" in script
     assert "codex-cli 0.163.0" in script
     assert "$env:GITHUB_PATH" in script
@@ -209,7 +215,7 @@ def test_windows_job_runs_pinned_codex_command_integration(workflow_data: dict[s
         "agent-toolkit/agent_toolkit/_testing/resource_diagnostics_test.py",
     ]
     assert integration["working-directory"] == "${{ env.DOTFILES_DIR }}"
-    integration_script = str(integration["run"])
+    integration_script = workflow_step_source(integration)
     assert "$env:ImageOS" in integration_script
     assert "$env:ImageVersion" in integration_script
     assert "codex --version" in integration_script
@@ -226,8 +232,8 @@ def test_windows_codex_integration_preserves_final_code(
     pytest_exit_code: int,
 ) -> None:
     """実PowerShellがpytest相当の成否を最終ログとstep終了コードの両方へ保持する。"""
-    steps = workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
-    script = str(_windows_step(steps, "Windows Codex command integration")[1]["run"])
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
+    script = workflow_step_source(_windows_step(steps, "Windows Codex command integration")[1])
     probe = tmp_path / "integration.ps1"
     probe.write_text(
         "function codex { $global:LASTEXITCODE = 0 }\n"
@@ -254,8 +260,8 @@ def test_windows_codex_installer_requires_pinned_executable(
     workflow_data: dict[str, object], tmp_path: Path, failure: str
 ) -> None:
     """導入stepの実PowerShellがnpm失敗・CLI不在・版不一致を非0にし、成功時だけPATHを配送する。"""
-    steps = workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
-    script = str(_windows_step(steps, "Codex CLI 0.163.0の導入")[1]["run"])
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
+    script = workflow_step_source(_windows_step(steps, "Codex CLI 0.163.0の導入")[1])
     executable = tmp_path / "codex.ps1"
     version = "codex-cli 0.162.0" if failure == "wrong-version" else "codex-cli 0.163.0"
     executable.write_text(f"Write-Output '{version}'\n", encoding="utf-8-sig")
@@ -293,6 +299,10 @@ def test_windows_codex_installer_requires_pinned_executable(
         assert version in result.stdout
     else:
         assert not github_path.exists()
+    if failure in {"missing-cli", "wrong-version"}:
+        assert "npm導入ログ" in result.stdout + result.stderr
+        assert "Re-run failed" in result.stdout + result.stderr
+        assert "再実行してください" in result.stdout + result.stderr
 
 
 def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[str, object]) -> None:
@@ -301,155 +311,61 @@ def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[s
     upgrade = workflow_mapping(jobs["update-dotfiles-upgrade-windows"])
     windows = workflow_mapping(jobs["test-windows"])
     assert upgrade.get("needs") == windows.get("needs") == "common-ci-owner"
-    assert all(step.get("name") != "約3日前からの update-dotfiles 更新検証" for step in workflow_steps(windows))
-    assert any(step.get("name") == "公開入口ランチャーの動作確認" for step in workflow_steps(windows))
+    assert all(step.get("name") != "約3日前からの update-dotfiles 更新検証" for step in expanded_workflow_steps(windows))
+    assert any(step.get("name") == "公開入口ランチャーの動作確認" for step in expanded_workflow_steps(windows))
 
 
-def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str, object]) -> None:
-    """Python 3.15のlint・直下pytest・3分割したtoolkit pytestを独立runnerへ分ける。"""
-    job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
-    strategy = workflow_mapping(job["strategy"])
-    matrix = workflow_mapping(strategy["matrix"])
-    include = [workflow_mapping(value) for value in typing.cast(list[object], matrix["include"])]
-    assert include == [
-        {"python-version": "3.15", "check": "lint", "check-name": "python-lint-other (3.15)"},
-        {"python-version": "3.15", "check": "pylint", "check-name": "pylint (3.15)"},
-        {"python-version": "3.15", "check": "pytest-root", "check-name": "pytest (3.15)"},
-        *(
-            {
-                "python-version": "3.15",
-                "check": "pytest-toolkit",
-                "shard": f"{index}/3",
-                "check-name": f"pytest-toolkit (3.15, {index}/3)",
-            }
-            for index in range(1, 4)
-        ),
-    ]
-    steps = workflow_steps(job)
-    lint = next(step for step in steps if step.get("name") == "Python 3.15 pytest以外の検査")
-    root = next(step for step in steps if step.get("name") == "Python 3.15 pytest 直下")
-    toolkit = next(step for step in steps if step.get("name") == "Python 3.15 pytest toolkit")
-    assert (
-        lint["run"]
-        == "pyfltr ci --disable=pylint,pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types"
-    )
-    pylint = next(step for step in steps if step.get("name") == "Python 3.15 Pylint")
-    assert pylint["run"] == "pyfltr ci --commands=pylint"
-    assert str(pylint["if"]).endswith("matrix.check == 'pylint'")
-    root_script = str(root["run"])
-    assert "git ls-files -z -- '*_test.py' 'test_*.py'" in root_script
-    assert "':!:agent-toolkit/**' ':!:agent-toolkit-codex/**'" in root_script
-    assert "mapfile -d '' -t targets < \"$RUNNER_TEMP/pytest-root-targets\"" in root_script
-    assert 'test "${#targets[@]}" -gt 0' in root_script
-    assert root_script.splitlines()[-1] == 'uv run --frozen pytest -v --maxfail=0 "${targets[@]}"'
-    assert toolkit["run"] == (
-        "pyfltr ci --work-dir agent-toolkit --commands=pytest"
-        ' --pytest-args="-v --maxfail=0 --test-shard=$TEST_SHARD" agent-toolkit'
-    )
-    assert workflow_mapping(toolkit["env"])["TEST_SHARD"] == "${{ matrix.shard }}"
-    for check, step in (("pytest-root", root), ("pytest-toolkit", toolkit)):
-        assert str(step["if"]).endswith(f"matrix.check == '{check}'")
-    cache = next(step for step in steps if str(step.get("uses", "")).startswith("actions/cache@"))
-    cache_with = workflow_mapping(cache["with"])
-    assert "${{ matrix.python-version }}" in str(cache_with["key"])
-    assert "${{ matrix.check }}" in str(cache_with["key"])
-    # 同じcheckの分割jobが同じキーへ保存を競合しない。
-    assert "${{ strategy.job-index }}" in str(cache_with["key"])
-    assert "${{ strategy.job-index }}" in str(cache_with["restore-keys"])
-
-
-class _JobsResponse(io.BytesIO):
-    headers: typing.ClassVar[dict[str, str]] = {}
-
-
-@pytest.mark.parametrize("check_name", ["pytest-toolkit (3.15)", "python-lint (3.15)"])
-@pytest.mark.parametrize("failed_index", [0, -1])
-@pytest.mark.parametrize(
-    ("owns", "failure", "expected_exit"),
-    [
-        ("true", "none", 0),
-        ("true", "failure", 1),
-        ("true", "missing", 1),
-        ("true", "skipped", 1),
-        ("true", "cancelled", 1),
-        ("false", "missing", 0),
-        ("", "none", 1),
-    ],
-)
-def test_pytest_toolkit_result_requires_every_shard(
-    workflow_data: dict[str, object],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    owns: str,
-    failure: str,
-    expected_exit: int,
-    check_name: str,
-    failed_index: int,
-) -> None:
-    """必須checkの集約jobは、全分割jobの成功を最新試行のjob一覧から確かめた場合だけ成功する。
-
-    応答fieldはGitHub REST list-jobs-for-a-workflow-runの公開schemaに従う。
-    """
+def test_python_jobs_separate_responsibilities(workflow_data: dict[str, object]) -> None:
+    """同一検査の分割だけをmatrixにし、異なる責務は別jobで実行する。"""
     jobs = workflow_jobs(workflow_data)
-    job = workflow_mapping(jobs["pytest-toolkit-result"])
-    assert job["needs"] == ["common-ci-owner", "python-lint"]
+    for name in ("python-lint", "pylint", "pytest-root"):
+        assert "strategy" not in workflow_mapping(jobs[name])
+    toolkit = workflow_mapping(jobs["pytest-toolkit"])
+    assert workflow_mapping(toolkit["strategy"]) == {"fail-fast": "false", "matrix": {"shard": ["1/3", "2/3", "3/3"]}}
+    root = next(
+        step
+        for step in expanded_workflow_steps(workflow_mapping(jobs["pytest-root"]))
+        if step.get("name") == "Python 3.15 pytest 直下"
+    )
+    assert "':!:agent-toolkit/**' ':!:agent-toolkit-codex/**'" in str(root["run"])
+    assert '--maxfail=0 "${targets[@]}"' in str(root["run"])
+    test = next(step for step in expanded_workflow_steps(toolkit) if step.get("name") == "Python 3.15 pytest toolkit")
+    assert "--test-shard=$TEST_SHARD" in str(test["run"])
+    assert workflow_mapping(test["env"])["TEST_SHARD"] == "${{ matrix.shard }}"
+    prepare = next(step for step in workflow_steps(toolkit) if str(step.get("uses", "")).endswith("prepare-python-check"))
+    assert "${{ strategy.job-index }}" in str(workflow_mapping(prepare["with"])["cache-key"])
+
+
+@pytest.mark.parametrize(
+    "job_name,dependencies", [("pytest-toolkit-result", ["pytest-toolkit"]), ("python-lint-result", ["python-lint", "pylint"])]
+)
+def test_required_results_use_needs(workflow_data: dict[str, object], job_name: str, dependencies: list[str]) -> None:
+    """必須checkは検査の依存先を直接待ち、結果を集約する。"""
+    job = workflow_mapping(workflow_jobs(workflow_data)[job_name])
+    assert job["needs"] == ["common-ci-owner", *dependencies]
     assert job["if"] == "${{ !cancelled() }}"
-    assert job["permissions"] == {"actions": "read"}
-    assert job["name"] == (
-        "${{ needs.common-ci-owner.outputs.owns == 'false' && format('{0} (non-owner)', matrix.check-name)"
-        " || matrix.check-name }}"
-    )
-    (step,) = workflow_steps(job)
-    environment = workflow_mapping(step["env"])
-    matrix = workflow_mapping(workflow_mapping(workflow_mapping(jobs["python-lint"])["strategy"])["matrix"])
-    target_checks = ("pytest-toolkit",) if check_name.startswith("pytest") else ("lint", "pylint")
-    shard_names = [
-        str(workflow_mapping(entry)["check-name"])
-        for entry in typing.cast(list[object], matrix["include"])
-        if workflow_mapping(entry)["check"] in target_checks
-    ]
-    result_matrix = workflow_mapping(workflow_mapping(job["strategy"])["matrix"])
-    result_entry = next(
-        workflow_mapping(entry)
-        for entry in typing.cast(list[object], result_matrix["include"])
-        if workflow_mapping(entry)["check-name"] == check_name
-    )
-    assert result_entry["jobs"] == shard_names
-    assert environment["EXPECTED_JOBS"] == "${{ toJSON(matrix.jobs) }}"
-    conclusions = ["success"] * len(shard_names)
-    if failure == "missing":
-        conclusions.pop()
-    elif failure != "none":
-        conclusions[failed_index] = failure
-    script = str(step["run"])
-    script_path = tmp_path / "result.py"
-    script_path.write_text(script.split("\n", 1)[1].rsplit("\nPY", 1)[0], encoding="utf-8")
-    for key, value in {
-        "OWNS": owns,
-        "OWNER_REASON": "非所有の理由",
-        "EXPECTED_JOBS": json.dumps(shard_names),
-        "GITHUB_API_URL": "https://api.github.com",
-        "GITHUB_REPOSITORY": "ak110/dotfiles",
-        "GITHUB_RUN_ID": "123",
-        "GH_TOKEN": "test-token",
+    step = workflow_steps(job)[-1]
+    assert workflow_mapping(step["env"])["NEEDS"] == "${{ toJSON(needs) }}"
+    assert step["run"] == "python3 scripts/ci_result.py"
+
+
+def test_required_check_display_names(workflow_data: dict[str, object]) -> None:
+    """rulesetが参照する9表示名と、共通checkの非所有名を維持する。"""
+    jobs = workflow_jobs(workflow_data)
+    for key, display in {
+        "test-linux": "test-linux",
+        "test-windows": "test-windows",
+        "python-lint-result": "python-lint (3.15)",
+        "pytest-root": "pytest (3.15)",
+        "pytest-toolkit-result": "pytest-toolkit (3.15)",
+        "rust-lint": "rust-lint",
+        "browser-e2e": "browser-e2e",
+        "update-dotfiles-upgrade-windows": "update-dotfiles-upgrade (windows)",
     }.items():
-        monkeypatch.setenv(key, value)
-
-    def urlopen(request: urllib.request.Request, **_kwargs: object) -> io.BytesIO:
-        parsed = urllib.parse.urlsplit(request.full_url)
-        assert parsed.path == "/repos/ak110/dotfiles/actions/runs/123/jobs"
-        assert urllib.parse.parse_qs(parsed.query) == {"filter": ["latest"], "per_page": ["100"]}
-        listed = [{"name": "python-lint (3.15)", "conclusion": "success"}]
-        listed += [{"name": name, "conclusion": conclusion} for name, conclusion in zip(shard_names, conclusions, strict=False)]
-        return _JobsResponse(json.dumps({"total_count": len(listed), "jobs": listed}).encode())
-
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
-    try:
-        runpy.run_path(str(script_path))
-        code: object = 0
-    except SystemExit as exited:
-        code = exited.code
-    assert code == expected_exit
+        assert workflow_mapping(jobs[key])["name"] == (
+            f"${{{{ needs.common-ci-owner.outputs.owns == 'false' && '{display} (non-owner)' || '{display}'" + " }}"
+        )
+    assert workflow_mapping(jobs["statusline-version"])["name"] == "statusline-version"
 
 
 _RELEASE_PULL_REQUEST_CONDITIONS = (
@@ -469,57 +385,44 @@ def _common_job_names(workflow: dict[str, object]) -> list[str]:
 def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> None:
     """共通jobの全実処理が先行jobの所有出力を参照する。"""
     common_jobs = _common_job_names(workflow_data)
-    assert common_jobs == [
+    assert set(common_jobs) == {
         "test-linux",
-        "update-dotfiles-upgrade-windows",
         "test-windows",
+        "update-dotfiles-upgrade-windows",
         "python-lint",
+        "pylint",
+        "pytest-root",
+        "pytest-toolkit",
         "pytest-toolkit-result",
+        "python-lint-result",
         "browser-e2e",
         "rust-lint",
-    ]
-    # 集約jobは分割jobの終了を待つ別構成のため、test_pytest_toolkit_result_requires_every_shardで確かめる。
-    common_jobs.remove("pytest-toolkit-result")
+    }
     owner = workflow_mapping(workflow_jobs(workflow_data)["common-ci-owner"])
     assert owner["permissions"] == {"actions": "read", "contents": "read"}
     outputs = workflow_mapping(owner["outputs"])
     assert outputs["owns"] == "${{ steps.owner.outputs.owns }}"
     assert outputs["reason"] == "${{ steps.owner.outputs.reason }}"
-    judgment = workflow_steps(owner)[0]
+    judgment = next(step for step in workflow_steps(owner) if step.get("id") == "owner")
     assert judgment["id"] == "owner"
     release_expression = str(workflow_mapping(judgment["env"])["RELEASE_PULL_REQUEST"])
     assert release_expression == "${{ " + " && ".join(_RELEASE_PULL_REQUEST_CONDITIONS) + " }}"
+    assert str(workflow_steps(owner)[0]["uses"]).startswith("actions/checkout@")
     for job_name in common_jobs:
         job = workflow_mapping(workflow_jobs(workflow_data)[job_name])
-        assert job["needs"] == "common-ci-owner"
+        assert "needs.common-ci-owner.outputs.owns == 'false'" in str(job["name"])
+        steps = workflow_steps(job)
+        if job_name.endswith("-result"):
+            continue
+        marker, *real = steps
+        assert marker["if"] == "needs.common-ci-owner.outputs.owns == 'false'"
+        assert workflow_mapping(marker["env"])["OWNER_REASON"] == "${{ needs.common-ci-owner.outputs.reason }}"
         if job_name in {"rust-lint", "browser-e2e"}:
             assert job["if"] == "${{ !cancelled() }}"
+            assert real[-1]["if"] == "steps.selection.outputs.selected == 'true'"
         else:
             assert "if" not in job
-        base_name = {"update-dotfiles-upgrade-windows": "update-dotfiles-upgrade (windows)"}.get(job_name, job_name)
-        suffix = (
-            "format('{0} (non-owner)', matrix.check-name) || matrix.check-name"
-            if job_name == "python-lint"
-            else f"'{base_name} (non-owner)' || '{base_name}'"
-        )
-        assert job["name"] == "${{ needs.common-ci-owner.outputs.owns == 'false' && " + suffix + " }}"
-        marker, *real_steps = workflow_steps(job)
-        assert marker["name"] == "共通CI非所有経路", job_name
-        assert marker["if"] == "needs.common-ci-owner.outputs.owns == 'false'", job_name
-        assert workflow_mapping(marker["env"])["OWNER_REASON"] == "${{ needs.common-ci-owner.outputs.reason }}"
-        for step in [marker, *real_steps]:
-            condition = str(step.get("if", ""))
-            assert not any(term in condition for term in ("github.head_ref", "github.base_ref", "github.event_name")), (
-                job_name,
-                step.get("name"),
-            )
-        if job_name in {"rust-lint", "browser-e2e"}:
-            guard = real_steps.pop(0)
-            assert guard["name"] == "検査領域の判定を確認"
-            assert "if" not in guard
-            flag = "rust" if job_name == "rust-lint" else "browser"
-            assert all(f"needs.common-ci-owner.outputs.{flag} == 'true'" in str(step.get("if", "")) for step in real_steps)
-        assert all(str(step.get("if", "")).startswith(_OWNS) for step in real_steps), job_name
+            assert all(step.get("if") == _OWNS for step in real)
 
     version = _statusline_job(workflow_data)
     assert "needs" not in version
@@ -562,6 +465,7 @@ def test_common_ci_owner_runs_workflow_judgment(
     workflow_data: dict[str, object],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     event: str,
     branch: str,
     *,
@@ -574,11 +478,10 @@ def test_common_ci_owner_runs_workflow_judgment(
     応答fieldはGitHub REST list-workflow-runs-for-a-workflowの公開schemaに従う。
     """
     job = workflow_mapping(workflow_jobs(workflow_data)["common-ci-owner"])
-    step = workflow_steps(job)[0]
-    script = str(step["run"])
-    assert script.startswith("python3 - <<'PY'\n")
+    step = next(step for step in workflow_steps(job) if step.get("id") == "owner")
+    script = workflow_step_source(step)
     script_path = tmp_path / "owner.py"
-    script_path.write_text(script.split("\n", 1)[1].rsplit("\nPY", 1)[0], encoding="utf-8")
+    script_path.write_text(script, encoding="utf-8")
     output = tmp_path / "output"
     for key, value in {
         "GITHUB_EVENT_NAME": event,
@@ -617,7 +520,11 @@ def test_common_ci_owner_runs_workflow_judgment(
         return _WorkflowRunsResponse(json.dumps({"workflow_runs": [] if run_state == "none" else [run]}).encode())
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
-    runpy.run_path(str(script_path))
+    runpy.run_path(str(script_path), run_name="__main__")
+    if run_state == "api-error":
+        diagnostic = capsys.readouterr().out
+        assert "このrunで共通検証を実行します" in diagnostic
+        assert "::warning::" not in diagnostic
     values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
     assert values["owns"] == str(expected_owns).lower()
     assert bool(requests) == (event == "push" and branch == "develop")
@@ -652,7 +559,7 @@ def test_common_ci_release_boundary(
         )
     )
     jobs = workflow_jobs(release)
-    gate = workflow_steps(workflow_mapping(jobs["gate"]))[0]
+    gate = expanded_workflow_steps(workflow_mapping(jobs["gate"]))[0]
     assert workflow_mapping(gate["env"])["CONCLUSION"] == "${{ github.event.workflow_run.conclusion }}"
     output = tmp_path / "gate-output"
     result = subprocess.run(
@@ -678,7 +585,7 @@ def test_common_ci_release_boundary(
     assert values["eligible"] == str(eligible).lower()
     prepare = workflow_mapping(jobs["prepare"])
     assert prepare["if"] == "needs.gate.outputs.eligible == 'true'"
-    assert workflow_mapping(workflow_steps(prepare)[0]["with"])["ref"] == "${{ needs.gate.outputs.head_sha }}"
+    assert workflow_mapping(expanded_workflow_steps(prepare)[0]["with"])["ref"] == "${{ needs.gate.outputs.head_sha }}"
 
 
 def test_chezmoi_is_installed_by_shared_action(workflow_data: dict[str, object]) -> None:
@@ -686,10 +593,18 @@ def test_chezmoi_is_installed_by_shared_action(workflow_data: dict[str, object])
     installers = {
         job_name: step
         for job_name, job in workflow_jobs(workflow_data).items()
-        for step in workflow_steps(workflow_mapping(job))
-        if step.get("name") == "chezmoi インストール"
+        for step in expanded_workflow_steps(workflow_mapping(job))
+        if str(step.get("uses", "")).endswith(".github/actions/install-chezmoi")
     }
-    assert sorted(installers) == ["python-lint", "test-linux", "test-windows", "update-dotfiles-upgrade-windows"]
+    assert set(installers) == {
+        "python-lint",
+        "pylint",
+        "pytest-root",
+        "pytest-toolkit",
+        "test-linux",
+        "test-windows",
+        "update-dotfiles-upgrade-windows",
+    }
     for job_name, step in installers.items():
         assert str(step["uses"]).endswith(".github/actions/install-chezmoi"), job_name
         assert "run" not in step, job_name
@@ -719,8 +634,8 @@ def test_windows_mozilla_step_disables_only_mozilla_tasks(
     unexpected: str,
 ) -> None:
     """ステップ本体は`\\Mozilla\\`配下だけを停止・無効化して結果を出力し、0件でも成功する。"""
-    steps = workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
-    script = _windows_step(steps, _MOZILLA_STEP)[1]["run"]
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
+    script = workflow_step_source(_windows_step(steps, _MOZILLA_STEP)[1])
     assert isinstance(script, str)
     # Windowsの予約タスクcmdletは他のOSに無いため、同名の関数で置き換えて分岐と出力を確かめる。
     entries = ",".join(
@@ -771,16 +686,18 @@ def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) ->
     container = workflow_mapping(job["container"])
     assert _makefile_variable("CI_CONTAINER_IMAGE") == container["image"]
 
-    install = next(step for step in workflow_steps(job) if step.get("name") == "ネイティブ依存インストール")
+    install = next(step for step in expanded_workflow_steps(job) if step.get("name") == "ネイティブ依存インストール")
     install_lines = [line.strip() for line in str(install["run"]).splitlines() if "apt-get install" in line]
     assert len(install_lines) == 1
     packages = install_lines[0].split("--no-install-recommends", 1)[1].split()
     assert _makefile_variable("CI_NATIVE_PACKAGES").split() == packages
 
-    matrix = workflow_mapping(workflow_mapping(job["strategy"])["matrix"])
-    include = [workflow_mapping(value) for value in typing.cast(list[object], matrix["include"])]
-    versions = sorted({str(entry["python-version"]) for entry in include}, key=lambda value: tuple(map(int, value.split("."))))
-    assert _makefile_variable("CI_PYTHON_VERSIONS").split() == versions
+    versions = {
+        str(workflow_mapping(workflow_mapping(value)["env"])["UV_PYTHON"])
+        for name, value in workflow_jobs(workflow_data).items()
+        if name in {"python-lint", "pylint", "pytest-root", "pytest-toolkit"}
+    }
+    assert set(_makefile_variable("CI_PYTHON_VERSIONS").split()) == versions
 
 
 def test_update_checks_container_dependencies_after_lock_updates() -> None:
@@ -800,8 +717,8 @@ def test_update_checks_container_dependencies_after_lock_updates() -> None:
 @pytest.mark.parametrize("scope", ["直下", "toolkit"])
 def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object], scope: str) -> None:
     """両pytest要素が、READMEの対応版のGitを通常pytestへ渡して各1回実行する。"""
-    job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
-    steps = workflow_steps(job)
+    job = workflow_mapping(workflow_jobs(workflow_data)["pytest-root" if scope == "直下" else "pytest-toolkit"])
+    steps = expanded_workflow_steps(job)
     names = [step.get("name") for step in steps]
     pytest_name = f"Python 3.15 pytest {scope}"
     pytest_index = names.index(pytest_name)
@@ -810,7 +727,6 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
     assert names.count(pytest_name) == 1
     assert "Git 2.34.1での実Gitテスト" not in names
     install, pytest_step = steps[install_index], steps[pytest_index]
-    assert str(install["if"]).endswith("startsWith(matrix.check, 'pytest-')")
     assert str(pytest_step["if"]).startswith(_OWNS)
 
     package = str(workflow_mapping(install["env"])["GIT_DEB"])
@@ -832,7 +748,7 @@ def test_linux_job_places_temporary_files_on_runner_disk(workflow_data: dict[str
 
     Ubuntu 26.04の/tmpはquota付きtmpfsであり、完全導入の検証homeや展開物が容量制限で失敗する。
     """
-    steps = workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-linux"]))
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-linux"]))
     runs = [str(step.get("run", "")) for step in steps]
     placement = runs.index('echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"')
     for marker in ("scripts/check_update_dotfiles_upgrade.py", "install.sh"):
@@ -910,11 +826,11 @@ def test_ci_scope_runs_real_workflow_selection(
     if mode != "missing-history":
         _run_git(repository, "update-ref", "refs/remotes/origin/develop", head if mode == "pr-base" else base)
     owner = workflow_mapping(workflow_jobs(workflow_data)["common-ci-owner"])
-    step = next(step for step in workflow_steps(owner) if step.get("id") == "scope")
+    step = next(step for step in expanded_workflow_steps(owner) if step.get("id") == "scope")
     assert workflow_mapping(step["env"])["PR_BASE_SHA"] == "${{ github.event.pull_request.base.sha }}"
-    script = str(step["run"])
+    script = workflow_step_source(step)
     script_path = tmp_path / "scope.py"
-    script_path.write_text(script.split("\n", 1)[1].rsplit("\nPY", 1)[0], encoding="utf-8")
+    script_path.write_text(script, encoding="utf-8")
     output = tmp_path / "output"
     host = host_environ()
     environment: dict[str, str] = {key: host[key] for key in ("PATH", "SYSTEMROOT", "WINDIR", "PATHEXT") if key in host}
@@ -979,7 +895,7 @@ def test_ci_scope_failure_is_not_an_intentional_skip(
     """選択しない成功と、判定失敗・出力欠落による必須checkの失敗を区別する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)[job_name])
     assert job["if"] == "${{ !cancelled() }}"
-    step = next(step for step in workflow_steps(job) if step.get("name") == "検査領域の判定を確認")
+    step = next(step for step in expanded_workflow_steps(job) if step.get("name") == "検査領域の判定を確認")
     assert "if" not in step
     environment = workflow_mapping(step["env"])
     flag = "rust" if job_name == "rust-lint" else "browser"
@@ -995,11 +911,12 @@ def test_ci_scope_failure_is_not_an_intentional_skip(
             "SELECTED": selected,
             "CHECK_NAME": job_name,
             "SCOPE_REASON": "文書だけの変更",
+            "GITHUB_OUTPUT": str(tmp_path / "output"),
         }
     )
     result = subprocess.run(
         ["bash"],
-        input=str(step["run"]),
+        input=workflow_step_source(step),
         cwd=tmp_path,
         env=child_environment,
         check=False,

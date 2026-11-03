@@ -32,8 +32,8 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 ### CIの実処理所有権
 
 共通CIは`push`と`master`向け`pull_request`の全イベントでjobを開始し、job表示名とmatrixを評価する。
-共通jobにはjob-level `if`を置かず、step-level条件で非所有markerと既存実処理を切り替える。
-例外は分割した試験の結果を集約する`pytest-toolkit (3.15)`で、後述のとおり分割jobの失敗時にも結果を残すため`!cancelled()`を置く。
+共通jobの所有・非所有の切り替えはstep-level条件で行い、job表示名をどちらの経路でも評価する。
+結果集約と領域選択のjobには`!cancelled()`を置き、先行jobの失敗・出力欠落を必須checkの失敗として残す。
 
 `test-linux`と`update-dotfiles-upgrade (windows)`は全履歴を取得し、現行HEADの時刻から約72時間前の祖先を選ぶ。
 管理一時ディレクトリ内へローカルbare remote、旧版checkoutおよび隔離HOMEを構成し、旧版をchezmoiで適用する。
@@ -55,9 +55,9 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 `develop`へのpushでは、`actions: read`を持つ先行jobが同一repository・同一workflowのmaster push runを完全SHAで照会する。
 実行待ち・実行中または成功済みのrunがあれば、そのmaster runを所有者とする。該当runがない場合、失敗・取消済みのrunだけの場合、API照会が失敗した場合は、このdevelop runが共通検証を実行する。
 `master`へのpushは常に所有し、Release起点を維持する。その他のbranchのpush、release PR以外の同一repository PR、fork PRも所有する。
-非所有時はmarkerだけを成功させ、checkout・依存導入・チェックを省く。markerはrelease PRではdevelop branch、同期pushでは所有master runのURLを確認先として示す。
+非所有時はmarkerで理由を表示し、依存導入と実検査を省く。所有判定・領域判定・結果集約に使う標準Pythonとshellのスクリプトは、checkoutで取得してから実行する。markerはrelease PRではdevelop branch、同期pushでは所有master runのURLを確認先として示す。
 非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、Windowsの共通jobは`pwsh`、その他の共通jobは`bash`を明示する。
-`rust-lint`は既存jobの`defaults.run.working-directory`を維持し、非所有markerがworkspace rootを明示してその指定を上書きする。
+`rust-lint`の作業場所は実検査のcomposite action内で指定し、判定とmarkerはworkspace rootで動く。
 共通jobは短い先行判定だけを待つ。Windowsの2ジョブは互いを待たず、`statusline-version`は所有判定から独立する。concurrencyはeventとrefを分け、master runとdevelop runを相互取消しの対象にしない。
 実行中のmaster runが後に失敗した場合は、その失敗結果が残る。非所有側の別名checkはrequired checkの成功を代替しない。
 
@@ -73,21 +73,28 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 
 Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有し、`test-windows`はWindows固有pytest、公開ランチャー、通常profileへのchezmoi適用とpost-applyの確認を所有する。両job間に依存関係を置かず、更新検証の通常profile監視に必要なMozilla予約タスク停止は更新検証jobが実行する。
 
-`python-lint`のmatrixは6要素であり、それぞれ別runnerで並行する。
-内訳は`python-lint-other (3.15)`、`pylint (3.15)`、直下の`pytest (3.15)`、toolkitを3分割した`pytest-toolkit (3.15, 1/3)`〜`(3.15, 3/3)`である。
+検査の実行順と表示名はworkflowが所有し、実処理は`.github/actions/ci-*`、共通準備は`prepare-install-test`・`prepare-python-check`が所有する。
+所有判定は`scripts/ci_owner.py`、変更領域の分類は`scripts/ci_scope.py`、領域出力の検証は`scripts/ci_check_scope.sh`に集約する。
+Rustとブラウザーは領域出力を検証した後、選択された場合だけ実検査のcomposite actionを呼ぶ。
+Windowsの配置・Mozilla予約タスク停止・固定版Codex導入・境界pytestの結果ログ・配布確認は`scripts/ci_*.ps1`、Linuxの配置と配布確認は`scripts/ci_*.sh`へ置く。
+`prepare-install-test`はcheckout上のローカルactionでchezmoiを導入してから、OS固有の配置スクリプトでHOME配下へコピーし、コピー先でuvを準備する。
+GitHub Actionsのpost工程もworkspace上のローカルaction定義を読み直すため、元のcheckoutはjob終了まで保持する。
+
+Python系は`python-lint`、`pylint`、`pytest-root`、`pytest-toolkit`の責務別jobとする。
+表示名はそれぞれ`python-lint-other (3.15)`、`pylint (3.15)`、`pytest (3.15)`、`pytest-toolkit (3.15, N/3)`である。
+matrixはtoolkitの3分割だけに使い、`fail-fast: false`で全分割の結果を取得する。
 Pylintは既存の直列設定のまま独立実行し、その他のlintから除外する。
 直下はGit管理下のテストを明示してpytestへ渡し、toolkitは同サブプロジェクトを起点にskills配下を含めて実行する。
 toolkitの各分割jobは同じ集合を収集し、`agent_toolkit._testing.pytest_plugin`の`--test-shard`がnode IDのCRC32で各試験をちょうど1つの分割へ割り当てる。
-1runnerのtoolkit pytestが約16分を要し、CI全体の所要基準10分（`.claude/skills/develop-dotfiles/references/verification-values.md`「テストとCIの所要基準」）を超えたため分割した。
-横断不変条件も所属する集合で各1回実行し、全pytestで最低Git 2.34.1、4worker、workstealと環境隔離を維持する。
-dotfilesとagent-toolkitはユーザーの方針により過去のPython版をサポートせず、対応するPythonを3.15へそろえて同じ版でCIを実行する。
-cache keyにPython版、実行種別、matrix要素の番号を含め、分割jobが同じキーへ同時に保存して競合しないようにする。
+1runnerのtoolkit pytestが約16分を要したため3分割し、通常pytestは最低Git 2.34.1、4worker、workstealと環境隔離を維持する。
+Python版は3.15とし、cache keyにPython版・検査種別・分割番号・runと試行の識別子を含める。
+ネイティブ依存・chezmoi・キャッシュ・uv syncは`prepare-python-check`、最低Gitの導入は`minimum-git`が共有する。
 
-`python-lint`の終了後に動く集約job`pytest-toolkit-result`が、matrixの2要素でrequired checkの`pytest-toolkit (3.15)`と`python-lint (3.15)`を所有する。
-`needs`の結果はmatrix全体の集約であるため、同jobは`actions: read`でrunの最新試行のjob一覧を照会する。
-pytestは3分割、lintはPylintとその他のlintの両jobがすべて成功した場合だけ、それぞれの必須checkを成功にする。
-分割jobが失敗しても集約jobをskipさせないよう`!cancelled()`を置く。skipされたrequired checkはマージを遮断しないためである。
-非所有runでは他の共通jobと同じく`(non-owner)`名で成功し、所有判定jobが出力を返さなかった場合は失敗する。
+集約jobは`pytest-toolkit-result`と`python-lint-result`を分け、必須checkの`pytest-toolkit (3.15)`と`python-lint (3.15)`を所有する。
+toolkitは同一検査だけのmatrix全体、lintはPylintとその他のlintの両jobの`needs`結果を`scripts/ci_result.py`で検証する。
+必要な依存jobがすべて成功した場合だけ成功とし、失敗・取消・skip・所有出力欠落を失敗として残す。
+非所有runは他の共通jobと同じ`(non-owner)`名と理由を表示する。
+job表示名から検査を再発見するAPI照会を省き、依存関係を集約対象の定義元とする。
 
 statuslineのCargo versionとbase・head versionおよびtagの確認は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branchおよびrelease条件を追加の限定に使わない。

@@ -10,9 +10,13 @@ import pytest
 from agent_toolkit._agents_server import state, wait_compaction
 
 
-@pytest.fixture(name="waiting", params=["claude", "codex"])
+@pytest.fixture(
+    name="waiting",
+    params=[(engine, kind) for engine in ("claude", "codex") for kind in ("delegate", "write", "explore", "shell")],
+)
 def _waiting(request: pytest.FixtureRequest) -> state.SessionState:
-    session = state.SessionState("parent", "/work", engine=request.param)
+    engine, kind = request.param
+    session = state.SessionState("parent", "/work", engine=engine, launch_kind=kind)
     session.awaiting_auto_resume = True
     session.pending_result = {"status": "completed", "agent_message": "待機中", "error": None}
     session.cli_turn_state = "idle"
@@ -25,19 +29,29 @@ def _waiting(request: pytest.FixtureRequest) -> state.SessionState:
 
 
 @pytest.mark.parametrize(
-    "tokens,window,expected", [(49, 100, False), (50, 100, True), (100, 100, True), (None, 100, False), (50, 0, False)]
+    "tokens,window,expected",
+    [
+        (399_999, 1_000_000, False),
+        (400_000, 1_000_000, True),
+        (400_000, 2_000_000, True),
+        (79_999, 200_000, False),
+        (80_000, 200_000, True),
+        (None, 100, False),
+        (50, 0, False),
+    ],
 )
 @pytest.mark.asyncio
 async def test_wait_reservation_observes_delay_usage_and_only_runs_once(
     waiting: state.SessionState, tokens: int | None, window: int, expected: bool
 ) -> None:
-    """待機の同一性と50%境界を守り、同じ通知で予約を重ねない。"""
+    """待機の同一性と使用量の境界を守り、同じ通知で予約を重ねない。"""
     entered = asyncio.Event()
     release = asyncio.Event()
     queued: list[str] = []
+    delays: list[float] = []
 
     async def sleep(seconds: float) -> None:
-        assert seconds == 5
+        delays.append(seconds)
         entered.set()
         await release.wait()
 
@@ -51,6 +65,7 @@ async def test_wait_reservation_observes_delay_usage_and_only_runs_once(
     try:
         observer.observe(waiting)
         await entered.wait()
+        assert delays == [60]
         observer.observe(waiting)
         assert not queued
         release.set()
@@ -63,7 +78,7 @@ async def test_wait_reservation_observes_delay_usage_and_only_runs_once(
         await observer.close()
 
 
-@pytest.mark.parametrize("change", ["finished", "running", "no_child", "no_wait", "interrupt", "shell"])
+@pytest.mark.parametrize("change", ["finished", "running", "no_wait", "interrupt"])
 @pytest.mark.asyncio
 async def test_changed_wait_does_not_deliver_a_compaction_turn(waiting: state.SessionState, change: str) -> None:
     """予約後の完了・追送と競合しても、新しいturnを起こさない。"""
@@ -91,14 +106,10 @@ async def test_changed_wait_does_not_deliver_a_compaction_turn(waiting: state.Se
         elif change == "running":
             waiting.cli_turn_state = "running"
             waiting.turn_completed = False
-        elif change == "no_child":
-            waiting.live_child_session_ids.clear()
         elif change == "no_wait":
             waiting.pending_result = None
         elif change == "interrupt":
             waiting.interrupt_requested = True
-        else:
-            waiting.launch_kind = "shell"
         release.set()
         await asyncio.sleep(0)
         assert not queued
@@ -108,10 +119,10 @@ async def test_changed_wait_does_not_deliver_a_compaction_turn(waiting: state.Se
 
 @pytest.mark.asyncio
 async def test_same_wait_rechecks_usage_after_crossing_threshold(waiting: state.SessionState) -> None:
-    """同じ待機中に使用率が50%へ上がったとき、最初の低使用率判定で予約を失わない。"""
+    """同じ待機中に閾値へ上がったとき、最初の低使用率判定で予約を失わない。"""
     checked = asyncio.Event()
     queued: list[str] = []
-    tokens = 49
+    tokens = 39
 
     async def sleep(_seconds: float) -> None:
         return
@@ -127,7 +138,7 @@ async def test_same_wait_rechecks_usage_after_crossing_threshold(waiting: state.
         observer.observe(waiting)
         await asyncio.wait_for(checked.wait(), 2)
         assert not queued
-        tokens = 50
+        tokens = 40
         checked.clear()
         observer.observe(waiting)
         await asyncio.wait_for(checked.wait(), 2)
@@ -137,18 +148,22 @@ async def test_same_wait_rechecks_usage_after_crossing_threshold(waiting: state.
         assert len(queued) == 1
 
 
+@pytest.mark.parametrize("replaced", [False, True])
 @pytest.mark.asyncio
-async def test_close_collects_the_pending_reservation(waiting: state.SessionState) -> None:
+async def test_close_collects_the_pending_reservation(waiting: state.SessionState, replaced: bool) -> None:
     """所有タスクの終了後にSDKへ遅れた入力を送らない。"""
     entered = asyncio.Event()
-    cancelled = asyncio.Event()
+    cancelled: set[int] = set()
+    reservations: list[int] = []
 
     async def sleep(_seconds: float) -> None:
+        number = len(reservations)
+        reservations.append(number)
         entered.set()
         try:
             await asyncio.Event().wait()
         finally:
-            cancelled.set()
+            cancelled.add(number)
 
     async def enqueue(_key: str) -> None:
         pytest.fail("終了後に圧縮を配送した")
@@ -159,8 +174,14 @@ async def test_close_collects_the_pending_reservation(waiting: state.SessionStat
     observer = wait_compaction.WaitCompaction(usage, enqueue, sleep=sleep)
     observer.observe(waiting)
     await entered.wait()
+    if replaced:
+        entered.clear()
+        waiting.turn_seq += 1
+        waiting.live_child_session_ids.add("replacement")
+        observer.observe(waiting)
+        await asyncio.wait_for(entered.wait(), 2)
     await observer.close()
-    assert cancelled.is_set()
+    assert cancelled == set(range(2 if replaced else 1))
 
 
 @pytest.mark.asyncio

@@ -60,6 +60,9 @@ class ServerLifetime:
         self._exitcode = 0
         self._finished = threading.Event()
         self._targets: dict[tuple[int, float], psutil.Process] = {}
+        self._process_pins = process_tree.ProcessIdentityPins()
+        # 正常終了と期限監視が競合しても、回収中の親handleを閉じない。
+        self._process_lock = threading.RLock()
         self._callback: Callable[[], None] | None = None
         self._notified = False
         self._cancel_transport = False
@@ -97,6 +100,7 @@ class ServerLifetime:
                     self._handlers[signum] = signal.signal(signum, self._signal)
             self._thread.start()
         except BaseException:
+            self._process_pins.close()
             os.close(self._stdin_fd)
             for signum, previous in self._handlers.items():
                 signal.signal(signum, previous)
@@ -130,8 +134,12 @@ class ServerLifetime:
     def finish(self) -> None:
         """正常な終了処理の完了後に監視を解除する。"""
         self.request_stop(cancel_transport=False)
-        process_tree.log_residual(self._reclaim(), context="agents_server finish")
-        self._finished.set()
+        with self._process_lock:
+            try:
+                process_tree.log_residual(self._reclaim(), context="agents_server finish")
+            finally:
+                self._finished.set()
+                self._process_pins.close()
         self._thread.join(timeout=POLL_INTERVAL * 2)
         os.close(self._stdin_fd)
         for signum, previous in self._handlers.items():
@@ -141,15 +149,28 @@ class ServerLifetime:
         """子孫の生成を止めて回収し、残った対象と生成の停止を確認できなかった理由の記述を返す。"""
         # 監視主体（自プロセス）は回収を続けるため一時停止せず、子孫だけの生成を止めてから終了させる。
         # 定期収集済みの対象に加えて最後に列挙し直すだけでは、その後に起動した子孫が親を失うと回収から漏れる。
-        return process_tree.stop_tree(self._process, include_root=False, known=list(self._targets.values())).descriptions()
+        with self._process_lock:
+            if self._finished.is_set():
+                return []
+            return process_tree.stop_tree(
+                self._process, include_root=False, known=list(self._targets.values()), pins=self._process_pins
+            ).descriptions()
 
     def _collect(self) -> None:
+        with self._process_lock:
+            if not self._finished.is_set():
+                self._collect_owned_processes()
+
+    def _collect_owned_processes(self) -> None:
         for key, process in tuple(self._targets.items()):
+            # Windowsの終了済み親も、保持した世代から孤児を追跡する起点として回収まで残す。
+            if sys.platform == "win32":
+                continue
             with contextlib.suppress(psutil.Error, OSError):
                 if process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                     continue
             self._targets.pop(key, None)
-        for process in process_tree.collect_descendants(self._process.pid):
+        for process in process_tree.collect_descendants(self._process.pid, pins=self._process_pins):
             with contextlib.suppress(psutil.Error, OSError):
                 if process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                     self._targets[(process.pid, process.create_time())] = process

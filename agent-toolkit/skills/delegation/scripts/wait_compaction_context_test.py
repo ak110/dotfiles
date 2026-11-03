@@ -47,8 +47,8 @@ def test_wait_compaction_context_uses_recorded_ownership(
     captured = capsys.readouterr()
     assert captured.err == ""
     payload = json.loads(captured.out)
-    assert payload["eligible"] is (is_single_wait and case in {"delegate", "write"})
-    if payload["eligible"]:
+    assert payload["eligible"] is (not is_single_wait or case in {"delegate", "write", "explore", "shell"})
+    if payload["eligible"] and is_single_wait:
         assert payload["sessions"] == [{"session_id": "child", "mode": case}]
-    else:
+    elif not payload["eligible"]:
         assert payload["reason"]

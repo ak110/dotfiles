@@ -2,17 +2,15 @@ name: CI
 on:
   push:
     tags-ignore:
-      - "*"
+      - '*'
     branches:
-      - "**"
+      - '**'
   pull_request:
     branches:
       - master
-
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   common-ci-owner:
     name: common-ci-owner
@@ -27,58 +25,17 @@ jobs:
       browser: ${{ steps.scope.outputs.browser }}
       scope_reason: ${{ steps.scope.outputs.scope_reason }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: '0'
       - name: 共通CI所有の判定
         id: owner
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' }}
+          RELEASE_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master'
+            }}
         shell: bash
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import urllib.error
-          import urllib.parse
-          import urllib.request
-
-          owns = True
-          reason = "このrunが共通CIを所有します。"
-          if os.environ["RELEASE_PULL_REQUEST"] == "true":
-              owns = False
-              reason = "release PR: develop pushが共通CIを所有します。develop branchのCI結果を確認してください。"
-          elif os.environ["GITHUB_EVENT_NAME"] == "push" and os.environ["GITHUB_REF"] == "refs/heads/develop":
-              repository = os.environ["GITHUB_REPOSITORY"]
-              sha = os.environ["GITHUB_SHA"]
-              query = urllib.parse.urlencode({"branch": "master", "event": "push", "head_sha": sha, "per_page": 100})
-              url = f'{os.environ["GITHUB_API_URL"]}/repos/{repository}/actions/workflows/ci.yaml/runs?{query}'
-              try:
-                  while url and owns:
-                      request = urllib.request.Request(url, headers={
-                          "Authorization": f'Bearer {os.environ["GH_TOKEN"]}',
-                          "Accept": "application/vnd.github+json",
-                          "X-GitHub-Api-Version": "2022-11-28",
-                      })
-                      with urllib.request.urlopen(request, timeout=20) as response:
-                          runs = json.load(response)["workflow_runs"]
-                          links = urllib.request.parse_http_list(response.headers.get("Link", ""))
-                      for run in runs:
-                          if (run["head_sha"] == sha and run["head_branch"] == "master"
-                                  and run["event"] == "push" and run["head_repository"]["full_name"] == repository
-                                  and (run["status"] in {"queued", "in_progress", "waiting", "pending", "requested"}
-                                       or (run["status"] == "completed" and run["conclusion"] == "success"))):
-                              owns = False
-                              reason = f'同期push: masterの所有run {run["html_url"]} を確認してください。'
-                              break
-                      url = next((link.split(">", 1)[0].lstrip("<") for link in links if 'rel="next"' in link), "")
-              except (OSError, ValueError, KeyError, TypeError) as error:
-                  print(f"::warning::master CIを照会できないため、このrunで共通検証を実行します: {type(error).__name__}")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"owns={str(owns).lower()}\nreason={reason}\n")
-          PY
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.owner.outputs.owns == 'true'
-        with:
-          fetch-depth: 0
+        run: python3 scripts/ci_owner.py
       - name: 変更領域の判定
         id: scope
         if: steps.owner.outputs.owns == 'true'
@@ -89,63 +46,7 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CURRENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: bash
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import subprocess
-
-          rust = browser = True
-          event = os.environ["EVENT_NAME"]
-          reason = "判定できない入力のため全体を実行する。"
-          if event == "push" and os.environ["REF_NAME"] in {"refs/heads/master", "refs/heads/develop"}:
-              reason = "master・developへのpushは全体を実行する。"
-          elif event == "push" and (not os.environ["BEFORE_SHA"] or set(os.environ["BEFORE_SHA"]) == {"0"}):
-              reason = "初回pushは全体を実行する。"
-          elif event in {"push", "pull_request"}:
-              try:
-                  base = os.environ["PR_BASE_SHA"] if event == "pull_request" else "refs/remotes/origin/develop"
-                  if not base or not os.environ["CURRENT_SHA"]:
-                      raise ValueError("比較元または対象のSHAがない")
-                  common = subprocess.run(
-                      ["git", "merge-base", base, os.environ["CURRENT_SHA"]],
-                      check=True, capture_output=True, text=True, encoding="utf-8",
-                  ).stdout.strip()
-                  changed = subprocess.run(
-                      ["git", "diff", "--name-only", "--no-renames", "-z", common, os.environ["CURRENT_SHA"], "--"],
-                      check=True, capture_output=True,
-                  ).stdout
-                  paths = [path.decode("utf-8", errors="surrogateescape") for path in changed.split(b"\0") if path]
-                  print("変更パス: " + json.dumps(paths, ensure_ascii=True))
-                  if not paths:
-                      raise ValueError("変更パスを取得できない")
-                  rust = browser = False
-                  categories = set()
-                  shared = {"Makefile", "mise.toml", "mise.lock", ".python-version", "Cargo.toml", "Cargo.lock", "rust-toolchain", "rust-toolchain.toml"}
-                  for path in paths:
-                      if path in shared or path.startswith((".github/", ".cargo/")) or path.endswith(("pyproject.toml", "uv.lock")):
-                          rust = browser = True
-                          categories.add("共有・実行設定")
-                      elif path.startswith("rust/"):
-                          rust = True
-                          categories.add("Rust")
-                      elif path.endswith((".md", ".md.tmpl")):
-                          categories.add("文書")
-                      elif path.endswith(".py") or path.startswith("agent-toolkit/agent_toolkit/_atk/serve/"):
-                          browser = True
-                          categories.add("Python・serve")
-                      else:
-                          rust = browser = True
-                          categories.add("未知のパス")
-                  reason = "変更領域: " + "、".join(sorted(categories))
-              except (OSError, ValueError, subprocess.CalledProcessError):
-                  rust = browser = True
-                  reason = "比較元・履歴・差分を確認できないため全体を実行する。"
-          print(f"Rust={str(rust).lower()}, browser={str(browser).lower()}: {reason}")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"rust={str(rust).lower()}\nbrowser={str(browser).lower()}\nscope_reason={reason}\n")
-          PY
-
+        run: python3 scripts/ci_scope.py
   test-linux:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-linux (non-owner)' || 'test-linux' }}
@@ -163,57 +64,8 @@ jobs:
         with:
           fetch-depth: 0
           path: dotfiles
-      - name: 一時領域を作業ディスクへ置く
+      - uses: ./dotfiles/.github/actions/ci-test-linux
         if: needs.common-ci-owner.outputs.owns == 'true'
-        # Ubuntu 26.04の/tmpはquota付きtmpfsのため、完全導入の検証homeや展開先など大容量の一時物を
-        # job内の全stepでrunnerの作業ディスクへ置く。
-        # https://github.com/actions/runner-images/issues/14777
-        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
-      # ローカルのcomposite actionは作業場所の実在パスで参照するため、checkoutしたディレクトリを移す前に導入する。
-      - name: chezmoi インストール
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        uses: ./dotfiles/.github/actions/install-chezmoi
-      - name: ~/dotfiles に配置
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        run: |
-          mv dotfiles ~/dotfiles
-          echo "DOTFILES_DIR=$HOME/dotfiles" >> "$GITHUB_ENV"
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        with:
-          working-directory: ${{ env.DOTFILES_DIR }}
-      # hosted runnerの導入済みツールを使い、OSごとのAPT配布状況への依存を省く。
-      - name: PowerShell + PSScriptAnalyzer の確認
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $PSVersionTable.PSVersion
-          Import-Module PSScriptAnalyzer -ErrorAction Stop -PassThru
-      - name: 約3日前からの update-dotfiles 更新検証
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        working-directory: ${{ env.DOTFILES_DIR }}
-        # hosted runnerはjob終了時に破棄されるため、検証rootの削除を省く。
-        run: uv run --script scripts/check_update_dotfiles_upgrade.py --platform linux --repo "$DOTFILES_DIR" --keep-verification-root
-      - name: install.sh 実行
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        run: ~/dotfiles/install.sh
-      - name: 主要ファイルの存在確認
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        run: |
-          set -euo pipefail
-          for required in "$HOME/.bashrc" "$HOME/.vimrc" "$HOME/.claude/rules/agent-toolkit/01-agent.md" "$HOME/.ssh/config"; do
-            if [ ! -f "$required" ]; then
-              printf '::error::必須ファイルがありません: %s。install.shとchezmoi適用のログで原因を確認し、修正後にRe-run failed jobsで再実行してください。\n' "$required"
-              exit 1
-            fi
-          done
-          # shellcheck disable=SC2016 # .bashrc内に格納される$HOMEを展開せず文字列リテラルとして検索する
-          grep -qF '$HOME/dotfiles/bin' ~/.bashrc || {
-            echo '::error::.bashrcに$HOME/dotfiles/binのPATH設定がありません。配布元dot_bashrcとchezmoi適用ログを確認し、修正後にRe-run failed jobsで再実行してください。'
-            exit 1
-          }
-
   update-dotfiles-upgrade-windows:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'update-dotfiles-upgrade (windows) (non-owner)' || 'update-dotfiles-upgrade (windows)' }}
@@ -226,67 +78,13 @@ jobs:
         env:
           OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
         run: Write-Output "$env:OWNER_REASON"
-      - name: Mozilla予約タスクの停止
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        # ランナーイメージのFirefox Default Browser Agentなどの予約タスクは、runneradminとしてジョブと無関係な時刻に
-        # 通常profile（LOCALAPPDATA・APPDATA直下のMozilla）へ書き込む。更新検証の通常profile監視と衝突するため、ジョブ冒頭で止める。
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $tasks = @(Get-ScheduledTask | Where-Object { $_.TaskPath.StartsWith('\Mozilla\') })
-          if ($tasks.Count -eq 0) {
-            Write-Output "TaskPathが\Mozilla\の予約タスクは0件である。"
-            exit 0
-          }
-          foreach ($task in $tasks) {
-            if ($task.State -eq 'Running') {
-              Stop-ScheduledTask -TaskPath $task.TaskPath -TaskName $task.TaskName
-            }
-            $disabled = Disable-ScheduledTask -TaskPath $task.TaskPath -TaskName $task.TaskName
-            Write-Output "TaskPath=$($disabled.TaskPath) TaskName=$($disabled.TaskName) State=$($disabled.State)"
-            if ("$($disabled.State)" -ne 'Disabled') {
-              throw "予約タスクを無効化できなかった: $($task.TaskPath)$($task.TaskName)。Get-ScheduledTaskの状態と権限を確認し、runnerの問題としてGitHub Actionsの管理者へ報告してください。"
-            }
-          }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           fetch-depth: 0
           path: dotfiles
-      # ローカルのcomposite actionは作業場所の実在パスで参照するため、checkoutしたディレクトリを移す前に導入する。
-      - name: chezmoi インストール
+      - uses: ./dotfiles/.github/actions/ci-update-dotfiles-upgrade-windows
         if: needs.common-ci-owner.outputs.owns == 'true'
-        uses: ./dotfiles/.github/actions/install-chezmoi
-        with:
-          ssl-revoke-best-effort: "true"
-      - name: ~/dotfiles に配置
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        shell: pwsh
-        run: |
-          $src = "$env:GITHUB_WORKSPACE\dotfiles"
-          $dst = "$env:USERPROFILE\dotfiles"
-          robocopy $src $dst /E /SL /COPY:DAT /NFL /NDL /NJH /NJS
-          $rc = $LASTEXITCODE
-          if ($rc -ge 8) {
-            Write-Output "::error::robocopyによる配置に失敗: exit $rc、$src -> $dst。コピーのエラーと配置先の権限・空き容量を確認し、修正後にRe-run failed jobsで再実行してください。"
-            exit $rc
-          }
-          Remove-Item -Recurse -Force $src
-          "DOTFILES_DIR=$dst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          exit 0
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        with:
-          working-directory: ${{ env.DOTFILES_DIR }}
-      - name: 約3日前からの update-dotfiles 更新検証
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        shell: pwsh
-        working-directory: ${{ env.DOTFILES_DIR }}
-        run: |
-          $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
-          # hosted runnerはjob終了時に破棄されるため、約1分を要する検証rootの削除を省く。
-          uv run --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR" --keep-verification-root
-
   test-windows:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-windows (non-owner)' || 'test-windows' }}
@@ -304,175 +102,119 @@ jobs:
         with:
           fetch-depth: 0
           path: dotfiles
-      # ローカルのcomposite actionは作業場所の実在パスで参照するため、checkoutしたディレクトリを移す前に導入する。
-      - name: chezmoi インストール
+      - uses: ./dotfiles/.github/actions/ci-test-windows
         if: needs.common-ci-owner.outputs.owns == 'true'
-        uses: ./dotfiles/.github/actions/install-chezmoi
-        with:
-          ssl-revoke-best-effort: "true"
-      - name: ~/dotfiles に配置
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        # Windows runnerはチェックアウト先（D:）と $env:USERPROFILE（C:）が別ボリュームのため、
-        # GNU mvでクロスドライブ移動するとシンボリックリンクの再作成に失敗する。
-        # robocopyの /SL でsymlinkを保持しつつコピーし、元ディレクトリを削除して移動を実現する。
-        shell: pwsh
-        run: |
-          $src = "$env:GITHUB_WORKSPACE\dotfiles"
-          $dst = "$env:USERPROFILE\dotfiles"
-          robocopy $src $dst /E /SL /COPY:DAT /NFL /NDL /NJH /NJS
-          $rc = $LASTEXITCODE
-          if ($rc -ge 8) {
-            Write-Output "::error::robocopyによる配置に失敗: exit $rc、$src -> $dst。コピーのエラーと配置先の権限・空き容量を確認し、修正後にRe-run failed jobsで再実行してください。"
-            exit $rc
-          }
-          Remove-Item -Recurse -Force $src
-          "DOTFILES_DIR=$dst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          exit 0
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        with:
-          working-directory: ${{ env.DOTFILES_DIR }}
-      - name: Windows境界テスト
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        shell: pwsh
-        working-directory: ${{ env.DOTFILES_DIR }}
-        # 対象はテスト側の`windows` markerで選ぶ（定義は各pyproject.tomlのmarkers）。
-        run: uv run --python 3.15 pytest -v -m windows
-      - name: Codex CLI 0.163.0の導入
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $npmVersion = npm.cmd --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Output "npm: $npmVersion"
-          npm.cmd install --global --no-audit --no-fund @openai/codex@0.163.0
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $npmRoot = npm.cmd root --global
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # asyncioの子プロセス起動は、npmのcmd shimを介さず同じ配布物のnative executableを使う。
-          $binaries = @(Get-ChildItem -Path (Join-Path $npmRoot '@openai') -Filter codex.exe -File -Recurse)
-          if ($binaries.Count -ne 1) { throw "codex.exeを一意に解決できません: $($binaries.Count)件" }
-          $version = & $binaries[0].FullName --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Output $version
-          if ($version -ne 'codex-cli 0.163.0') { throw "検証対象のCodex版が一致しません: $version" }
-          $binaries[0].DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-      - name: Windows Codex command integration
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        shell: pwsh
-        working-directory: ${{ env.DOTFILES_DIR }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $false
-          Write-Output "Codex境界pytest開始: at=$([DateTime]::UtcNow.ToString('o')) launcher_pid=$PID image=$env:ImageOS image_version=$env:ImageVersion"
-          codex --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          uv run --frozen --python 3.15 pytest -v -rA -p no:cacheprovider `
-            agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::test_explore_start_reaches_normal_commands `
-            agent-toolkit/agent_toolkit/_testing/resource_diagnostics_test.py
-          $pytestExitCode = $LASTEXITCODE
-          Write-Output "Codex境界pytest終了: at=$([DateTime]::UtcNow.ToString('o')) launcher_pid=$PID pytest_exit_code=$pytestExitCode"
-          exit $pytestExitCode
-      - name: 公開入口ランチャーの動作確認
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        shell: pwsh
-        working-directory: ${{ env.DOTFILES_DIR }}
-        run: >-
-          uv run --frozen --python 3.15 pytest -v -p no:cacheprovider
-          bin/atk_launcher_test.py
-          bin/update_dotfiles_launcher_test.py
-      - name: chezmoi 適用
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          export PATH="$HOME/.local/bin:$PATH"
-          chezmoi init --source=~/dotfiles --apply
-      - name: dotfiles-post-apply の動作確認
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        shell: pwsh
-        run: dotfiles-post-apply
-      - name: 主要ファイルの存在確認
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "$env:USERPROFILE\.claude\rules\agent-toolkit\01-agent.md")) {
-            Write-Output "::error::agent-toolkit/01-agent.mdがありません。chezmoi適用とpost-applyのログを確認し、修正後にRe-run failed jobsで再実行してください。"
-            exit 1
-          }
-          if (-not (Test-Path "$env:USERPROFILE\.ssh\authorized_keys")) {
-            Write-Output "::error::.ssh/authorized_keysがありません。chezmoi適用ログと配布元を確認し、修正後にRe-run failed jobsで再実行してください。"
-            exit 1
-          }
-          $envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
-          if ($null -eq $envKey) {
-            Write-Output "::error::ユーザーのEnvironmentレジストリキーがありません。post-applyの環境変数設定ログを確認し、修正後にRe-run failed jobsで再実行してください。"
-            exit 1
-          }
-          try {
-            $pathValue = $envKey.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-            $pathKind = $envKey.GetValueKind('Path')
-          } finally {
-            $envKey.Close()
-          }
-          if ($pathValue -notlike '*%USERPROFILE%\dotfiles\bin*') {
-            Write-Output "::error::ユーザーのPathに%USERPROFILE%\dotfiles\binがありません。post-applyのPATH設定ログを確認し、修正後にRe-run failed jobsで再実行してください。"
-            exit 1
-          }
-          if ($pathKind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) {
-            Write-Output "::error::ユーザーのPathがExpandString型ではありません。post-applyのPATH設定ログを確認し、修正後にRe-run failed jobsで再実行してください。"
-            exit 1
-          }
-
-  python-lint:
+  browser-e2e:
     needs: common-ci-owner
-    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && format('{0} (non-owner)', matrix.check-name) || matrix.check-name }}
+    if: ${{ !cancelled() }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'browser-e2e (non-owner)' || 'browser-e2e' }}
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ak110/pyfltr:latest
-      # repack-archive の PDF 入力テストで pdftoppm を使うため、apt 導入用に root で実行する
-      # （イメージが指定する実行ユーザーは非 root・sudo 無し）
       options: --user root
     defaults:
       run:
         shell: bash
-    strategy:
-      # 一方の検査が失敗しても、lintと分割したpytestの全結果を取得する
-      fail-fast: false
-      matrix:
-        include:
-          - python-version: "3.15"
-            check: lint
-            check-name: python-lint-other (3.15)
-          - python-version: "3.15"
-            check: pylint
-            check-name: pylint (3.15)
-          - python-version: "3.15"
-            check: pytest-root
-            check-name: pytest (3.15)
-          # toolkitの試験は1runnerでは全体10分の基準を超えるため、試験IDで3runnerへ分ける。
-          # 必須checkの`pytest-toolkit (3.15)`は、全分割の結果を確かめるpytest-toolkit-result jobが所有する。
-          - python-version: "3.15"
-            check: pytest-toolkit
-            shard: "1/3"
-            check-name: pytest-toolkit (3.15, 1/3)
-          - python-version: "3.15"
-            check: pytest-toolkit
-            shard: "2/3"
-            check-name: pytest-toolkit (3.15, 2/3)
-          - python-version: "3.15"
-            check: pytest-toolkit
-            shard: "3/3"
-            check-name: pytest-toolkit (3.15, 3/3)
     env:
-      # 開発モード: DeprecationWarning などの隠れた問題を早期検出する
-      PYTHONDEVMODE: "1"
-      # サプライチェーン攻撃対策: uv が lockfile を常に尊重する
-      UV_FROZEN: "1"
-      UV_PYTHON: ${{ matrix.python-version }}
-      # mise 等が GitHub API を呼び出す際のレート制限（403）回避。
-      # container job では明示しないと secrets.GITHUB_TOKEN がコンテナへ渡らない
+      PYTHONDEVMODE: '1'
+      UV_FROZEN: '1'
+      UV_PYTHON: '3.15'
+    steps:
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: echo "$OWNER_REASON"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: 検査領域の判定を確認
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          OWNS: ${{ needs.common-ci-owner.outputs.owns }}
+          OWNER_RESULT: ${{ needs.common-ci-owner.result }}
+          SELECTED: ${{ needs.common-ci-owner.outputs.browser }}
+          SCOPE_REASON: ${{ needs.common-ci-owner.outputs.scope_reason }}
+          CHECK_NAME: browser-e2e
+        run: bash scripts/ci_check_scope.sh
+        id: selection
+      - uses: ./.github/actions/ci-browser-e2e
+        if: steps.selection.outputs.selected == 'true'
+  rust-lint:
+    needs: common-ci-owner
+    if: ${{ !cancelled() }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'rust-lint (non-owner)' || 'rust-lint' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: echo "$OWNER_REASON"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: 検査領域の判定を確認
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          OWNS: ${{ needs.common-ci-owner.outputs.owns }}
+          OWNER_RESULT: ${{ needs.common-ci-owner.result }}
+          SELECTED: ${{ needs.common-ci-owner.outputs.rust }}
+          SCOPE_REASON: ${{ needs.common-ci-owner.outputs.scope_reason }}
+          CHECK_NAME: rust-lint
+        run: bash scripts/ci_check_scope.sh
+        id: selection
+      - uses: ./.github/actions/ci-rust-lint
+        if: steps.selection.outputs.selected == 'true'
+  statusline-version:
+    name: statusline-version
+    if: (github.event_name == 'pull_request' && github.base_ref == 'master') || (github.event_name == 'push' && github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: '0'
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+      - name: statuslineの版数とタグを検査
+        working-directory: ${{ github.workspace }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: python3 scripts/check_statusline_version.py
+  plugin-version:
+    name: plugin-version
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: '0'
+      - name: 配布プラグインの版数据置きを検査
+        working-directory: ${{ github.workspace }}
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: python3 scripts/check_plugin_version.py
+  python-lint:
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'python-lint-other (3.15) (non-owner)' || 'python-lint-other (3.15)' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ak110/pyfltr:latest
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONDEVMODE: '1'
+      UV_FROZEN: '1'
+      UV_PYTHON: '3.15'
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: 共通CI非所有経路
@@ -485,95 +227,98 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.common-ci-owner.outputs.owns == 'true'
       - name: ユーザー設定から隔離したlockfile検証
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'lint'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: |
           set -euo pipefail
           config_dir="$(mktemp -d)"
           trap 'rm -r -- "$config_dir"' EXIT
           env --unset=UV_FROZEN XDG_CONFIG_HOME="$config_dir" uv lock --check
-      - name: safe.directory の設定
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        # --user root 実行のためワークスペース所有者（UID 1001）と実行ユーザーが不一致になり、
-        # pre-commit 等の git 操作が dubious ownership で停止する。safe.directory へ追加して回避する。
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: ネイティブ依存インストール
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.check != 'pylint'
-        # actions/cacheはPATH上のzstdを使ってキャッシュを圧縮するため、キャッシュの復元より前に導入する。
-        # repack-archive の PDF 入力テストが pdftoppm を、libarchive-c 経由のアーカイブ展開が
-        # libarchive13 の共有ライブラリを必要とする。
-        run: |
-          set -euo pipefail
-          apt-get update
-          apt-get install -y --no-install-recommends poppler-utils libarchive13 zstd
-
-
-      - name: chezmoi インストール
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.check != 'pylint'
-        uses: ./.github/actions/install-chezmoi
+      - uses: ./.github/actions/prepare-python-check
         with:
-          bin-dir: /usr/local/bin
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          cache-key: python-lint
+          native: 'true'
         if: needs.common-ci-owner.outputs.owns == 'true'
-        with:
-          path: /cache
-          # 固定キーでは一度保存されると更新されないため、run_idとrun_attemptを含めて毎回保存させる。
-          # restore-keysで直近のキャッシュを初期値として復元し、ジョブ中に変化した/cacheの内容を
-          # 新しいキーで保存して次の実行へ引き継ぐ。
-          # run_idは再実行（Re-run）で変化しないため、run_attemptを併記する。
-          # run_idだけでは再実行時にキーが完全一致し、その再実行中に変化した/cacheの内容が保存されない。
-          # 同じcheckの分割jobが同じキーへ同時に保存して競合しないよう、matrix要素の番号も含める。
-          key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.check }}-${{ strategy.job-index }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.check }}-${{ strategy.job-index }}-
-
-      - name: Install dependencies
-        if: needs.common-ci-owner.outputs.owns == 'true'
-        run: uv sync --all-groups --all-extras
-
       - name: Python 3.15 pytest以外の検査
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'lint'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         env:
-          # cargo-fmt/cargo-clippy はrust-lint jobで専用実行するため python-lint 側では
-          # 除外する（ccを含むRustビルドツールチェーンをcontainer imageに追加せずに済む）
           SKIP: cargo-fmt,cargo-clippy
-        # claude CLIのCI導入はminimum-release-age機構とメタデータ欠落で安定しないため、
-        # Claude plugin manifest検査を無効化する。
-        # statusline-versionは浅いcheckoutではmasterとの共通祖先を解決できず、同じ判定を
-        # statusline-version jobが所有するため無効化する。
-        # Claude Code生成型を用意しないCIではローカル専用の型検査を除外する。
         run: pyfltr ci --disable=pylint,pytest,claude-plugin-validate,statusline-version,plugin-version,function-hooks-types
-
-      - name: Python 3.15 Pylint
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.check == 'pylint'
-        run: pyfltr ci --commands=pylint
-
-      - name: Git 2.34.1の導入
-        id: minimum-git
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && startsWith(matrix.check, 'pytest-')
-        # agent-toolkitが対応する最低版のGit（README.mdの前提条件）。Ubuntu 22.04の公式パッケージを展開し、
-        # 開発用のGitを置き換えずに実Gitテストだけへ渡す。版を変える場合はREADME.mdの記載も同じ変更で更新する。
+      - name: Prune uv cache for CI
+        if: needs.common-ci-owner.outputs.owns == 'true'
+        run: uv cache prune --ci
+  pylint:
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pylint (3.15) (non-owner)' || 'pylint (3.15)' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ak110/pyfltr:latest
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONDEVMODE: '1'
+      UV_FROZEN: '1'
+      UV_PYTHON: '3.15'
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
+        shell: bash
+        working-directory: ${{ github.workspace }}
         env:
-          GIT_DEB: git_2.34.1-1ubuntu1_amd64.deb
-          GIT_DEB_SHA256: 0a0bd5c85eafb688025d68e69f49919591b22abf8b7d608d7e64307714d361ca
-        run: |
-          set -euo pipefail
-          root="$RUNNER_TEMP/minimum-git"
-          mkdir -p "$root"
-          curl -sSfL -o "$root/$GIT_DEB" "http://archive.ubuntu.com/ubuntu/pool/main/g/git/$GIT_DEB"
-          echo "$GIT_DEB_SHA256  $root/$GIT_DEB" | sha256sum -c -
-          dpkg -x "$root/$GIT_DEB" "$root/extract"
-          printf '#!/bin/sh\nGIT_EXEC_PATH=%s/usr/lib/git-core exec %s/usr/bin/git "$@"\n' "$root/extract" "$root/extract" > "$root/git"
-          chmod +x "$root/git"
-          "$root/git" --version | grep -Fx "git version 2.34.1"
-          echo "git=$root/git" >> "$GITHUB_OUTPUT"
-
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: echo "$OWNER_REASON"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.common-ci-owner.outputs.owns == 'true'
+      - uses: ./.github/actions/prepare-python-check
+        with:
+          cache-key: pylint
+          native: 'false'
+        if: needs.common-ci-owner.outputs.owns == 'true'
+      - name: Python 3.15 Pylint
+        if: needs.common-ci-owner.outputs.owns == 'true'
+        run: pyfltr ci --commands=pylint
+      - name: Prune uv cache for CI
+        if: needs.common-ci-owner.outputs.owns == 'true'
+        run: uv cache prune --ci
+  pytest-root:
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pytest (3.15) (non-owner)' || 'pytest (3.15)' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ak110/pyfltr:latest
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONDEVMODE: '1'
+      UV_FROZEN: '1'
+      UV_PYTHON: '3.15'
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: echo "$OWNER_REASON"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.common-ci-owner.outputs.owns == 'true'
+      - uses: ./.github/actions/prepare-python-check
+        with:
+          cache-key: pytest-root
+          native: 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
+      - uses: ./.github/actions/minimum-git
+        id: minimum-git
+        if: needs.common-ci-owner.outputs.owns == 'true'
       - name: Python 3.15 pytest 直下
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest-root'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         env:
           AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
-        # pyfltrのalways-targetsは両subprojectへ展開されるため、直下は対象を明示してpytestを呼ぶ。
-        # toolkit原本とCodex投影を除き、横断不変条件も所属するjobだけで実行する。
         run: |
           set -euo pipefail
           git ls-files -z -- '*_test.py' 'test_*.py' \
@@ -582,102 +327,24 @@ jobs:
           mapfile -d '' -t targets < "$RUNNER_TEMP/pytest-root-targets"
           test "${#targets[@]}" -gt 0
           uv run --frozen pytest -v --maxfail=0 "${targets[@]}"
-
-      - name: Python 3.15 pytest toolkit
-        if: >-
-          needs.common-ci-owner.outputs.owns == 'true' &&
-          matrix.python-version == '3.15' && matrix.check == 'pytest-toolkit'
-        env:
-          AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
-          TEST_SHARD: ${{ matrix.shard }}
-        # skills配下と横断不変条件も含む。各jobとも既存設定の4worker・workstealを使う。
-        # 全分割が同じ集合を収集し、`--test-shard`が各試験をちょうど1つの分割へ割り当てる。
-        run: >-
-          pyfltr ci --work-dir agent-toolkit --commands=pytest
-          --pytest-args="-v --maxfail=0 --test-shard=$TEST_SHARD" agent-toolkit
-
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'
         run: uv cache prune --ci
-
-  pytest-toolkit-result:
-    needs: [common-ci-owner, python-lint]
-    # 分割jobの失敗時もこのjobを失敗として残す。skipされた必須checkは成功と同じ扱いでマージを許すためである。
-    if: ${{ !cancelled() }}
-    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && format('{0} (non-owner)', matrix.check-name) || matrix.check-name }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - check-name: pytest-toolkit (3.15)
-            jobs: ["pytest-toolkit (3.15, 1/3)", "pytest-toolkit (3.15, 2/3)", "pytest-toolkit (3.15, 3/3)"]
-          - check-name: python-lint (3.15)
-            jobs: ["python-lint-other (3.15)", "pylint (3.15)"]
-    permissions:
-      actions: read
-    steps:
-      - name: 必須checkの全実行結果確認
-        env:
-          GH_TOKEN: ${{ github.token }}
-          OWNS: ${{ needs.common-ci-owner.outputs.owns }}
-          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
-          EXPECTED_JOBS: ${{ toJSON(matrix.jobs) }}
-        shell: bash
-        # needsの結果はmatrix全体（lintと直下pytestを含む）の集約なので、分割jobの結論はjob一覧から個別に読む。
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import sys
-          import urllib.request
-
-          if os.environ["OWNS"] == "false":
-              print(os.environ["OWNER_REASON"])
-              sys.exit(0)
-          if os.environ["OWNS"] != "true":
-              print("::error::common-ci-ownerが所有の判定を出力していません。同jobのログで失敗原因を確認し、修正後にRe-run failed jobsで再実行してください。")
-              sys.exit(1)
-          expected = set(json.loads(os.environ["EXPECTED_JOBS"]))
-          url = (
-              f'{os.environ["GITHUB_API_URL"]}/repos/{os.environ["GITHUB_REPOSITORY"]}'
-              f'/actions/runs/{os.environ["GITHUB_RUN_ID"]}/jobs?filter=latest&per_page=100'
-          )
-          request = urllib.request.Request(url, headers={
-              "Authorization": f'Bearer {os.environ["GH_TOKEN"]}',
-              "Accept": "application/vnd.github+json",
-              "X-GitHub-Api-Version": "2022-11-28",
-          })
-          with urllib.request.urlopen(request, timeout=20) as response:
-              jobs = json.load(response)["jobs"]
-          conclusions = {job["name"]: job["conclusion"] for job in jobs if job["name"] in expected}
-          for name in sorted(expected):
-              print(f"{name}: {conclusions.get(name, '未実行')}")
-          if any(conclusions.get(name) != "success" for name in expected):
-              print("::error::必須checkの対象jobに成功していないものがあります。上記jobのログを確認し、修正後にRe-run failed jobsで再実行してください。")
-              sys.exit(1)
-          PY
-
-  browser-e2e:
+  pytest-toolkit:
     needs: common-ci-owner
-    if: ${{ !cancelled() }}
-    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'browser-e2e (non-owner)' || 'browser-e2e' }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && format('pytest-toolkit (3.15, {0}) (non-owner)', matrix.shard) || format('pytest-toolkit (3.15, {0})', matrix.shard) }}
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ak110/pyfltr:latest
-      # Playwrightのシステム依存をaptで導入するため root で実行する
-      # （イメージが指定する実行ユーザーは非 root・sudo 無し）
       options: --user root
     defaults:
       run:
         shell: bash
     env:
-      # 開発モード: DeprecationWarning などの隠れた問題を早期検出する
-      PYTHONDEVMODE: "1"
-      # サプライチェーン攻撃対策: uv が lockfile を常に尊重する
-      UV_FROZEN: "1"
-      # 実ブラウザーE2Eは最新のPythonで実行する
-      UV_PYTHON: "3.15"
+      PYTHONDEVMODE: '1'
+      UV_FROZEN: '1'
+      UV_PYTHON: '3.15'
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: 共通CI非所有経路
         if: needs.common-ci-owner.outputs.owns == 'false'
@@ -686,149 +353,62 @@ jobs:
         env:
           OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
         run: echo "$OWNER_REASON"
-      - name: 検査領域の判定を確認
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        env:
-          OWNS: ${{ needs.common-ci-owner.outputs.owns }}
-          OWNER_RESULT: ${{ needs.common-ci-owner.result }}
-          SELECTED: ${{ needs.common-ci-owner.outputs.browser }}
-          SCOPE_REASON: ${{ needs.common-ci-owner.outputs.scope_reason }}
-          CHECK_NAME: browser-e2e
-        run: |
-          set -euo pipefail
-          if [ "$OWNS" = false ]; then
-            exit 0
-          fi
-          if [ "$OWNS" != true ] || [ "$OWNER_RESULT" != success ]; then
-            echo '::error::検査領域の判定が完了していません。common-ci-ownerのログを確認し、修正後にRe-run failed jobsで再実行してください。'
-            exit 1
-          fi
-          case "$SELECTED" in
-            true | false) ;;
-            *)
-              echo '::error::検査領域の出力が不正です。common-ci-ownerのログを確認し、修正後にRe-run failed jobsで再実行してください。'
-              exit 1
-              ;;
-          esac
-          printf '%s: 実行=%s、%s\n' "$CHECK_NAME" "$SELECTED" "$SCOPE_REASON"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
-      - name: safe.directory の設定
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
-        # --user root 実行のためワークスペース所有者（UID 1001）と実行ユーザーが不一致になり、
-        # git 操作が dubious ownership で停止する。safe.directory へ追加して回避する。
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - name: ネイティブ依存インストール
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
-        # make は container image に含まれないため、後続ステップの make setup-browser 用に導入する
-        run: |
-          set -euo pipefail
-          apt-get update
-          apt-get install -y --no-install-recommends make
-      - name: Install dependencies
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
-        run: uv sync --all-groups --all-extras
-      - name: Playwright Chromiumの導入
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
-        run: make setup-browser
-      - name: ブラウザーE2E
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.browser == 'true'
-        run: >-
-          uv run pytest -v
-          -m browser agent-toolkit/agent_toolkit/_atk/serve
-          -o addopts='' -p no:cacheprovider
-
-  rust-lint:
-    needs: common-ci-owner
+        if: needs.common-ci-owner.outputs.owns == 'true'
+      - uses: ./.github/actions/prepare-python-check
+        with:
+          cache-key: pytest-toolkit-${{ strategy.job-index }}
+          native: 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
+      - uses: ./.github/actions/minimum-git
+        id: minimum-git
+        if: needs.common-ci-owner.outputs.owns == 'true'
+      - name: Python 3.15 pytest toolkit
+        if: needs.common-ci-owner.outputs.owns == 'true'
+        env:
+          AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
+          TEST_SHARD: ${{ matrix.shard }}
+        run: pyfltr ci --work-dir agent-toolkit --commands=pytest --pytest-args="-v --maxfail=0 --test-shard=$TEST_SHARD" agent-toolkit
+      - name: Prune uv cache for CI
+        if: needs.common-ci-owner.outputs.owns == 'true'
+        run: uv cache prune --ci
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - 1/3
+          - 2/3
+          - 3/3
+  pytest-toolkit-result:
+    needs:
+      - common-ci-owner
+      - pytest-toolkit
     if: ${{ !cancelled() }}
-    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'rust-lint (non-owner)' || 'rust-lint' }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'pytest-toolkit (3.15) (non-owner)' || 'pytest-toolkit (3.15)' }}
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: rust/claude-statusline
     steps:
-      - name: 共通CI非所有経路
-        if: needs.common-ci-owner.outputs.owns == 'false'
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        env:
-          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
-        run: echo "$OWNER_REASON"
-      - name: 検査領域の判定を確認
-        shell: bash
-        working-directory: ${{ github.workspace }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 必須checkの全実行結果確認
         env:
           OWNS: ${{ needs.common-ci-owner.outputs.owns }}
-          OWNER_RESULT: ${{ needs.common-ci-owner.result }}
-          SELECTED: ${{ needs.common-ci-owner.outputs.rust }}
-          SCOPE_REASON: ${{ needs.common-ci-owner.outputs.scope_reason }}
-          CHECK_NAME: rust-lint
-        run: |
-          set -euo pipefail
-          if [ "$OWNS" = false ]; then
-            exit 0
-          fi
-          if [ "$OWNS" != true ] || [ "$OWNER_RESULT" != success ]; then
-            echo '::error::検査領域の判定が完了していません。common-ci-ownerのログを確認し、修正後にRe-run failed jobsで再実行してください。'
-            exit 1
-          fi
-          case "$SELECTED" in
-            true | false) ;;
-            *)
-              echo '::error::検査領域の出力が不正です。common-ci-ownerのログを確認し、修正後にRe-run failed jobsで再実行してください。'
-              exit 1
-              ;;
-          esac
-          printf '%s: 実行=%s、%s\n' "$CHECK_NAME" "$SELECTED" "$SCOPE_REASON"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
-        with:
-          fetch-depth: 0
-      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
-        with:
-          workspaces: rust/claude-statusline
-      - name: cargo fmt --check
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
-        run: cargo fmt --check
-      - name: cargo clippy
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: cargo test
-        if: needs.common-ci-owner.outputs.owns == 'true' && needs.common-ci-owner.outputs.rust == 'true'
-        run: cargo test
-
-  statusline-version:
-    name: statusline-version
-    if: (github.event_name == 'pull_request' && github.base_ref == 'master') || (github.event_name == 'push' && github.ref == 'refs/heads/develop')
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+          NEEDS: ${{ toJSON(needs) }}
+        shell: bash
+        run: python3 scripts/ci_result.py
+  python-lint-result:
+    needs:
+      - common-ci-owner
+      - python-lint
+      - pylint
+    if: ${{ !cancelled() }}
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'python-lint (3.15) (non-owner)' || 'python-lint (3.15)' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
-      - name: statuslineの版数とタグを検査
-        working-directory: ${{ github.workspace }}
+      - name: 必須checkの全実行結果確認
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          CURRENT_SHA: ${{ github.sha }}
-        run: python3 scripts/check_statusline_version.py
-
-  plugin-version:
-    name: plugin-version
-    # agent-toolkitとagent-basicsはdevelopへのpushごとに稼働環境へ導入されるため、pushの直前の公開済みcommitと比べる。
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - name: 配布プラグインの版数据置きを検査
-        working-directory: ${{ github.workspace }}
-        env:
-          BASE_SHA: ${{ github.event.before }}
-          CURRENT_SHA: ${{ github.sha }}
-        run: python3 scripts/check_plugin_version.py
+          OWNS: ${{ needs.common-ci-owner.outputs.owns }}
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+          NEEDS: ${{ toJSON(needs) }}
+        shell: bash
+        run: python3 scripts/ci_result.py

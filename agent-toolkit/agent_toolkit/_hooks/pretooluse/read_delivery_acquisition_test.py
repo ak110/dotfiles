@@ -506,7 +506,7 @@ def test_small_codex_section_guidance_has_capacity_and_both_budgets(tmp_path, mo
     assert len(whole) == 1 and "cat --" in whole[0]
 
 
-@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("host,route", [("claude", "normal"), ("codex", "normal"), ("codex", "failure"), ("codex", "compact")])
 @pytest.mark.parametrize(
     "command,success",
     [
@@ -522,7 +522,7 @@ def test_small_codex_section_guidance_has_capacity_and_both_budgets(tmp_path, mo
         ("tail -f reference.md", False),
     ],
 )
-def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state, host, command, success):
+def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state, host, route, command, success):
     """規範の単独・&&読取でだけ、案内済み資料の書込遮断を解除する。"""
     reference = tmp_path / "reference.md"
     reference.write_text("# 基準\n必要な内容\n", encoding="utf-8")
@@ -533,7 +533,33 @@ def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state
     writing = {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "本文"}}
     first = _run_hook_in_process("pretooluse", writing)
     assert first.returncode == 0 and str(reference) in first.stdout
-    assert str(reference) in denial_reason(_run_hook_in_process("pretooluse", writing))
+    blocked = denial_reason(_run_hook_in_process("pretooluse", writing))
+    assert str(reference) in blocked
+    if host == "codex":
+        guidance = first.stdout + blocked
+        if route == "failure":
+            guidance = rules_context.acquisition_failure(read_triggers.ReadTarget(reference), OSError("読取失敗"), shell=True)
+        elif route == "compact":
+            monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
+            monkeypatch.setattr(rules_context, "_compaction_notice", lambda *_args, **_kwargs: "")
+            monkeypatch.setattr(
+                rules_context,
+                "reset_main_operation_skill_ready",
+                lambda *_args, **_kwargs: [(reference, "", document_reads.content_fingerprint(reference), False)],
+            )
+            result = _run_hook_in_process(
+                "rules_context_codex", {**payload, "hook_event_name": "SessionStart", "source": "compact"}
+            )
+            assert result.returncode == 0 and not result.stderr
+            guidance = result.stdout
+        assert "1回のシェル実行（Codexではexec_command）" in guidance and "単独か`&&`連結" in guidance
+        assert "`;`連結・パイプ前段・出力リダイレクト・失敗" in guidance
+        assert "元の書き込みを再発行" in guidance
+        # 成功ケースは通知が示した実コマンドをそのまま取得観測へ渡す。
+        if success:
+            advised = f"cat -- {shlex.quote(str(reference))}"
+            assert advised in guidance
+            command = advised if command.startswith("cat") else f"wc -l {shlex.quote(str(reference))} && {advised}"
     observed = _run_hook_in_process(
         "posttooluse",
         {

@@ -1,0 +1,21 @@
+name: ci-rust-lint
+description: ci-rust-lintの実処理
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        workspaces: rust/claude-statusline
+    - name: cargo fmt --check
+      run: cargo fmt --check
+      working-directory: rust/claude-statusline
+      shell: bash
+    - name: cargo clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+      working-directory: rust/claude-statusline
+      shell: bash
+    - name: cargo test
+      run: cargo test
+      working-directory: rust/claude-statusline
+      shell: bash

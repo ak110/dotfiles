@@ -12,7 +12,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 対象の分析を始める前 | `session-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-analysis.md` |
 | AWIを投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| 結果報告を保存する前 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 結果報告の作成・保存に入る前に、メインが起動する | `../../report-completion/SKILL.md` | 判断 | `skill:report-completion` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 起動
@@ -44,7 +44,8 @@ batch自身のセッションも振り返り対象に含める。
 3. 原因と対策を確定したAWIを `agent-toolkit:wi-standards` と `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` の契約で登録する。
    sourceは `session-review` とし、エージェント由来の提案として処理担当が根拠と採否を懐疑的に評価する。
    所要時間目標と超過分析は対象1件あたり300秒として適用する。
-4. `agent-toolkit:report-completion` の振り返り結果報告書式で、今回の結果を事後承認型UWIへ1件保存する。
+4. batchを実行するメインが`agent-toolkit:report-completion`を起動し、その工程で振り返り結果報告書式を使って今回の結果を事後承認型UWIへ1件保存する。
+   Claude Codeでは`Skill`で起動し、Codexでは同スキルの`SKILL.md`を絶対パスで取得する。
    対象一覧、登録AWI・見送り・費用確認を対象IDと対応付ける。
    sourceは `run-skill`、scopeは `agent-toolkit:review-session batch`、本文frontmatterは `run_skill_report: true` とし、manifestの `target_repo` を `--target-repo` へ明示する。
    同一実行の報告があれば同じUWIを更新して1件に保つ。

@@ -372,6 +372,51 @@ def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathli
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
 
 
+@pytest.mark.parametrize("invoked,new_input,missing", [(False, False, True), (True, False, False), (True, True, True)])
+def test_batch_report_save_requires_invocation_in_same_work(tmp_path, invoked, new_input, missing):
+    """batchの参照読取・起動・報告保存を、同じ作業の終了証拠として区別する。"""
+
+    def observe(call_id, tool, inputs, response):
+        payload = {
+            "session_id": "evidence-test",
+            "cwd": str(tmp_path),
+            "tool_use_id": call_id,
+            "tool_name": tool,
+            "tool_input": inputs,
+        }
+        termination_evidence.observe_tool(json.dumps(payload), after=False)
+        termination_evidence.observe_tool(json.dumps({**payload, "tool_response": response}), after=True)
+
+    termination_evidence.observe_user(
+        json.dumps({"session_id": "evidence-test", "turn_id": "batch", "prompt": "batchの報告を保存する"})
+    )
+    skill = tmp_path / "plugin/skills/report-completion/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(COMPLETION_SKILL_TEXT, encoding="utf-8")
+    observe(
+        "reference",
+        "Bash",
+        {"command": f"cat -- {skill}"},
+        {"stdout": COMPLETION_SKILL_TEXT, "exit_code": 0},
+    )
+    if invoked:
+        observe("completion", "Skill", {"skill": "agent-toolkit:report-completion"}, "起動")
+    if new_input:
+        termination_evidence.observe_user(
+            json.dumps({"session_id": "evidence-test", "turn_id": "next", "prompt": "別の報告を保存する"})
+        )
+    observe(
+        "report",
+        "Bash",
+        {"command": "atk wi add --type uwi --body-file report.md"},
+        {"stdout": "成功: 1件を保存した", "exit_code": 0},
+    )
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, ""))
+    assert (decision == "notify") is missing
+    if missing:
+        assert "WIの保存" in reason
+
+
 def test_generated_input_cannot_cancel_work(tmp_path: pathlib.Path) -> None:
     supply_commit(tmp_path)
     prompt = '<atk-auto source="stop" kind="continuation">中止する</atk-auto>'

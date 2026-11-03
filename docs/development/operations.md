@@ -313,6 +313,17 @@ miseは実行位置から設定ファイルを探索するため、後処理は`
 そこを実行位置として呼び出す。実行位置を指定しないとglobal設定だけが対象となり、
 working treeにだけ定義したツールが更新を繰り返しても未導入のまま残る。
 
+成功した導入・整理の後は、miseが列挙した設定ファイル・lock・導入状態とshimの内容を記録する。
+次回も内容が同じなら`install`・`prune`・`reshim`を省き、実行ファイルの配置先の欠落検査は毎回行う。
+内容は実バイトで比較するため、同じサイズ・更新時刻での設定編集も反映する。
+導入や整理の失敗は成功記録を更新せず、次回に再試行する。
+
+WindowsでWinGet管理のmiseを使う場合は、実行中の本体版と`winget show --versions`の候補版を比較する。
+本体が候補版以上なら`winget upgrade`を省き、同じ本体版に対する確認結果を24時間再利用する。
+`remove_all: Access is denied`では、miseを使うターミナルやエディターを終了し、新しいターミナルで`update-dotfiles`を再実行する案内を出す。
+展開時の`os error 1314`では、Windowsの設定で「開発者モード」を検索して有効にする操作を案内する。
+miseの後処理はプロセスを強制終了せず、OSの権限設定も変更しない。
+
 後処理は`mise install`の後、`mise prune`の前に、設定済みツールの実行ファイルの配置先（引数なしの`mise bin-paths`が返すディレクトリ）の実在を確かめる。
 実在しない配置先は、`mise ls --current --installed --json`の`install_path`を親に持つツールと版へ対応付け、同じ実行位置で`mise install --force <ツール>@<版>`により再導入する。
 `symlink_bins`など配置先を変えるツールオプションはmiseが導入時にだけ配置を生成し、`mise install`は導入済みの版を再導入せず、`mise install --dry-run-code`と`mise doctor`も欠落を示さないためである。
@@ -554,6 +565,13 @@ Windowsのスリープ抑制用`keep-awake`も、引数なしで本体を開始�
   補助更新の失敗を主目的の更新停止条件にしない
 
 ## Claude Code plugin cacheの旧版削除
+
+directory型marketplaceでは、原本と導入先の配布内容が一致していれば同版の`plugin install`を省く。
+開発用の仮想環境や`__pycache__`などを比較から除き、原本の編集や導入先の欠落は次回の再同期対象にする。
+agents_serverのウォームアップでは依存検査を毎回行い、コードと起動条件が前回成功時と同じ場合だけMCPの起動確認を省く。
+成功記録はOSのユーザーキャッシュ領域の`dotfiles/post-apply/`に処理ごとの固定ファイルとして保存する。
+読めない記録は再処理で回復し、古い記録は次の成功時に置き換える。
+各工程の所要時間は通常のpost-apply出力と`update-dotfiles logs`で確認できる。
 
 Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<marketplace>/<name>/<version>/`を新設するだけで、旧版を削除しない。
 `claude plugin`にもキャッシュ整理のサブコマンドは無く、2026年9月26日のeuryaleではagent-toolkitだけで75版（約3.9GB）が残っていた。

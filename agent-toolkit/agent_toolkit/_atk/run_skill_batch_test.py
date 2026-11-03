@@ -16,7 +16,7 @@ import filelock
 import pytest
 
 from agent_toolkit._atk import config, run_script, run_skill_batch
-from agent_toolkit._atk.wi import add, frontmatter, layout
+from agent_toolkit._atk.wi import add, frontmatter, layout, uwi
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository
 
@@ -61,6 +61,10 @@ def _notes():
 @pytest.mark.parametrize("legacy", [False, True])
 def test_recovers_finished_analysis_with_saved_report_scope(tmp_path, monkeypatch, legacy):
     notes = _notes()
+    origin = git_repository.init_bare_repository(tmp_path / "origin.git")
+    git_repository.run_git(notes, "remote", "add", "origin", str(origin))
+    git_repository.run_git(notes, "commit", "--allow-empty", "-m", "base")
+    git_repository.run_git(notes, "push", "-u", "origin", "HEAD")
     _target(tmp_path, "old-session")
     target = session_review.pending()[0]
     prepared = run_skill_batch._prepare(target)  # noqa: SLF001  # pylint: disable=protected-access
@@ -68,7 +72,7 @@ def test_recovers_finished_analysis_with_saved_report_scope(tmp_path, monkeypatc
     run_id = "b" * 32
     scope = session_review.LEGACY_BATCH_SCOPE if legacy else session_review.BATCH_SCOPE
     monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", run_id)
-    add.add_entries(
+    names = add.add_entries(
         notes,
         messages=["---\nrun_skill_report: true\n---\n# 結果\n\n準備済み範囲を分析した。"],
         target_repo=target["target_repo"],
@@ -78,11 +82,12 @@ def test_recovers_finished_analysis_with_saved_report_scope(tmp_path, monkeypatc
         scope=scope,
         question_type="post-approval",
     )
+    assert uwi.answer_uwi(notes, filename=names[0], answer=uwi.POST_APPROVAL_CHOICES[0], skip_remote_sync=True)
     path = session_review.directory() / "runs" / f"{run_id}.json"
     value = {
         "run_id": run_id,
         "manifest_path": str(path),
-        "status": "running",
+        "status": "failed",
         "targets": [target],
         "prepared": [prepared],
         "analysis_succeeded": True,

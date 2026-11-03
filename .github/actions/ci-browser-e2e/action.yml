@@ -1,0 +1,23 @@
+name: ci-browser-e2e
+description: ci-browser-e2eの実処理
+runs:
+  using: composite
+  steps:
+    - name: safe.directory の設定
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      shell: bash
+    - name: ネイティブ依存インストール
+      run: |
+        set -euo pipefail
+        apt-get update
+        apt-get install -y --no-install-recommends make
+      shell: bash
+    - name: Install dependencies
+      run: uv sync --all-groups --all-extras
+      shell: bash
+    - name: Playwright Chromiumの導入
+      run: make setup-browser
+      shell: bash
+    - name: ブラウザーE2E
+      run: uv run pytest -v -m browser agent-toolkit/agent_toolkit/_atk/serve -o addopts='' -p no:cacheprovider
+      shell: bash
