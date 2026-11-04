@@ -1,5 +1,6 @@
-"""公開Post hookを通して、Codexのnative読取の成功だけを読了として観測し、本文を配送しないことを確かめる。"""
+"""公開Post hookの読取観測と本文の非再配送、Codexの内側成功だけでは取得を確定しない境界を検証する。"""
 
+import gzip
 import json
 import pathlib
 import shlex
@@ -14,6 +15,7 @@ from agent_toolkit._testing.document_delivery import run_hook
 
 
 def _payload(tmp_path, command, body, *, exit_code=0, aggregated=None):
+    """分岐網羅用の合成入力。実ホストの形は生産済み標本の試験で別に確認する。"""
     records = [
         {
             "type": "event_msg",
@@ -106,6 +108,39 @@ def test_successful_read_is_observed_and_truncation_gets_recovery(tmp_path):
     assert cut.body == _cut(path.read_text())
     assert observation.TRUNCATED_NOTICE in cut.context
     assert 'source="codex-read-observation" kind="notice"' in cut.context
+
+
+@pytest.mark.parametrize("name", ["claude_read", "claude_token_cap", "codex_two_layer_cut"])
+def test_public_post_hook_does_not_redeliver_produced_host_response(tmp_path, capsys, name):
+    """実ホストの応答形式でも本文を再配送せず、Codexの内側成功を外側の取得と扱わない。
+
+    Claude Code 2.1.317・Codex 0.166.0の抽出元と行は既存fixtureのsourceにある。
+    外側配送後の取得範囲はread_delivery_host_samples_test.pyの通し試験が検証する。
+    本試験はPostの非再配送を担い、ホストを起動した保証には広げない。
+    """
+    samples = pathlib.Path(__file__).with_name("pretooluse") / "fixtures/read_delivery_host_samples.json.gz"
+    sample = json.loads(gzip.decompress(samples.read_bytes()).decode("utf-8"))[name]
+    path = tmp_path / "source.md"
+    if name.startswith("claude_"):
+        response = sample["response"]
+        body = response["file"]["content"]
+        payload = {
+            "session_id": "session",
+            "cwd": str(tmp_path),
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(path)},
+            "tool_response": response,
+        }
+    else:
+        body = sample["producer_outputs"][0]
+        payload = _payload(tmp_path, f"cat -- {path}", body)
+    path.write_text(body, encoding="utf-8")
+    assert posttooluse.main(json.dumps(payload)) == 0
+    output = _additional_context(capsys)
+    assert not output
+    if name == "codex_two_layer_cut":
+        recorded = session_state.read_state("session").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+        assert not read_delivery.target_ready(recorded, read_delivery.read_triggers.ReadTarget(path), "main")
 
 
 @pytest.mark.parametrize(
