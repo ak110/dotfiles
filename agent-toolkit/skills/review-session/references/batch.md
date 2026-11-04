@@ -33,6 +33,10 @@ batch自身のセッションも振り返り対象に含める。
 
 ## 分析と保存
 
+短い起動目的から本節へ進み、今回のmanifest・自由記述・同一実行識別子・報告先はSessionStartの起動入力を用いる。
+中断・再開では同じmanifestの未完了範囲を処理し、成功時だけ手順5のfinishを実行する。
+回復可能な残工程は続行し、外部前提不足の終了では未完了対象と再開条件を報告する。
+
 1. `AGENT_TOOLKIT_SESSION_REVIEW_BATCH` が指すmanifest JSONを読む。
    `targets` が今回の固定対象、`prepared` が対象別の準備結果である。
    `target_repo` は今回1件の結果報告UWIの登録先であり、各対象の分析先と区別する。

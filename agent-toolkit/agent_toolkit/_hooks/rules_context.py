@@ -13,6 +13,7 @@ Claude CodeはJSONのadditionalContextを10,000文字で保存先とプレビュ
 from __future__ import annotations
 
 import contextlib
+import html
 import json
 import os
 import pathlib
@@ -26,7 +27,7 @@ lazy import urllib.parse
 lazy from typing import Any
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import message_format, plugin_environment, read_triggers
+from agent_toolkit._common import mcp_environment, message_format, plugin_environment, read_triggers
 from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
@@ -84,6 +85,28 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     """
     parts: list[str] = []
     if not delegated:
+        if raw := os.environ.get(mcp_environment.SESSION_START_INPUT_ENV):
+            data = json.loads(raw)
+            if not isinstance(data, dict) or data.get("source") not in ("process-loop", "run-skill"):
+                raise ValueError("起動入力はsourceがprocess-loopまたはrun-skillのJSON objectで指定する")
+            references = (
+                "agent-toolkit:process-wiのreferences/all-repos.md「結果と終了」"
+                if data["source"] == "process-loop"
+                else "agent-toolkit:user-confirmation-and-reportのreferences/answer-transitions.md"
+                "「`atk run-skill`の過去の実行のUWI」とagent-toolkit:report-completion"
+            )
+            if data["source"] == "run-skill" and data.get("batch_manifest"):
+                references += "、agent-toolkit:review-sessionのreferences/batch.md"
+            parts.append(
+                message_format.auto_message(
+                    "起動入力: "
+                    + html.escape(json.dumps(data, ensure_ascii=False))
+                    + "\n指定スキルを起動し、次の終了契約を読め: "
+                    + references,
+                    source=data["source"],
+                    kind="startup-input",
+                )
+            )
         instruction = os.environ.get(PROCESS_LOOP_INSTRUCTION_ENV, "").strip()
         if instruction:
             parts.append(
@@ -559,12 +582,12 @@ def main(payload_text: str, *, host: str = "claude") -> int:
     """SessionStartまたはSubagentStartのpayloadを処理する。"""
     payload = _parse_payload(payload_text)
     event_name = payload.get("hook_event_name")
+    session_id = payload.get("session_id")
+    delegated = is_delegated(os.environ)
     if event_name == "SessionStart":
         source = payload.get("source")
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
-        delegated = is_delegated(os.environ)
-        session_id = payload.get("session_id")
         if source in _CONTEXT_LOSING_SOURCES and isinstance(session_id, str) and session_id:
             # 同じセッションIDでも受信文脈は失われているため、既送の通知を本文の構成前に未送へ戻す。
             forget_subject_notices(session_id, MAIN_AGENT_ID)
@@ -652,6 +675,25 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         raise ValueError("hook_event_nameはSessionStartまたはSubagentStartである必要がある")
 
     if content is not None:
+        if (
+            host == "claude"
+            and event_name == "SessionStart"
+            and not delegated
+            and len(content) > CLAUDE_CODE_OUTPUT_LIMIT
+            and (raw := os.environ.get(mcp_environment.SESSION_START_INPUT_ENV))
+        ):
+            # 可変引数でhook全体がプレビューに置換されると、終了契約も失われる。
+            # 大きい実行データだけをセッションのmanaged-tempへ保存し、参照と契約の導線を配送する。
+            if not isinstance(session_id, str) or not session_id:
+                raise ValueError("大きい起動入力の保存にはSessionStartのsession_idが必要")
+            path = managed_temp.resolve_session_temp(session_id) / "startup-input.json"
+            path.write_text(raw, encoding="utf-8")
+            encoded = html.escape(json.dumps(json.loads(raw), ensure_ascii=False))
+            content = content.replace(
+                "起動入力: " + encoded,
+                "起動入力ファイル: " + html.escape(str(path)) + "。全文を読め。",
+                1,
+            )
         # 本文は区分ごとに境界を持つため、全体を重ねて囲まない。
         print(
             json.dumps(

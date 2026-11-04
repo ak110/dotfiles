@@ -4,6 +4,9 @@ from collections.abc import Iterable, Mapping, MutableMapping
 
 from agent_toolkit._common import host_homes, plugin_environment, private_notes
 
+SESSION_START_INPUT_ENV = "AGENT_TOOLKIT_SESSION_START_INPUT"
+"""最上位の自動起動がSessionStartへ渡す実行データ。新しい会話には継承しない。"""
+
 PROXY_ENVIRONMENT_VARIABLES = (
     "http_proxy",
     "https_proxy",
@@ -681,6 +684,7 @@ _NON_INHERITABLE_NAMES = frozenset(
         "AGENT_TOOLKIT_OWNER_SESSION",
         "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT",
         "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+        SESSION_START_INPUT_ENV,
         "AI_AGENT",
         "CLAUDECODE",
         "CLAUDE_CODE_BRIDGE_SESSION_ID",

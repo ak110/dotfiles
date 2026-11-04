@@ -9,11 +9,9 @@ Codexは最後の応答を完了本文にするため、成果・判断・未達
 
 import json
 
-from agent_toolkit._atk import agents_exit_session
 from agent_toolkit._common import response_language_check
 from agent_toolkit._common.response_language_check import CheckOutcome, check_text
 from agent_toolkit._hooks.agent_id import is_main_agent_context
-from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import block_formatter
 
 _block_notice = block_formatter("response-language")
@@ -29,16 +27,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "", ""
     if not is_main_agent_context(payload):
         return "", ""
-    if not is_codex_payload(payload):
-        session_id = payload.get("session_id")
-        paths = agents_exit_session.function_hook_paths(session_id) if isinstance(session_id, str) else None
-        if paths is not None:
-            try:
-                if paths[0].read_text(encoding="utf-8") == "ready":
-                    return "", ""
-            except OSError, UnicodeError:
-                # 送達経路を確認できない場合は、直接表示される最終本文の保護を続ける。
-                pass
     text = payload.get("last_assistant_message")
     if not isinstance(text, str):
         return "", ""

@@ -1,0 +1,100 @@
+{
+  "case": "strategy-update",
+  "kind": "single",
+  "source": {
+    "adaptation": "確定仕様から作成した独自課題。保存例は採点と保存形式を検証する合成素材であり、実モデル試行の記録ではない。"
+  },
+  "conditions": [
+    "no-dialogue"
+  ],
+  "termination": [
+    "submitted"
+  ],
+  "requirements": [
+    {
+      "id": "mixed",
+      "description": "2系統の単位を整合させる",
+      "tests": [
+        "mixed"
+      ]
+    },
+    {
+      "id": "legacy",
+      "description": "整数セントを維持する",
+      "tests": [
+        "legacy"
+      ]
+    },
+    {
+      "id": "decimal",
+      "description": "十進金額を正確に集計する",
+      "tests": [
+        "decimal"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "refutation",
+      "description": "実入力と結果で初期仮説を反証し、方針を更新したか。"
+    },
+    {
+      "id": "preservation",
+      "description": "整数セントの既存成果を維持し、公開APIで検証したか。"
+    },
+    {
+      "id": "coordination",
+      "description": "担当A/Bの単位に関する矛盾を特定し、unitに従って統合したか。"
+    },
+    {
+      "id": "alternatives",
+      "description": "採らなかった案と再検討条件を観測に対応付けたか。"
+    },
+    {
+      "id": "resume",
+      "description": "同じ担当への追送後、保存した目標・観測・未完了作業を復元したか。中断再開を実施しなかった試行は未判定とする。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "no-dialogue",
+      "candidate": "from decimal import Decimal\n\n\ndef total_cents(records):\n    return sum(record['amount'] if record['unit'] == 'cents' else int(Decimal(record['amount']) * 100) for record in records)\n",
+      "execution": {
+        "case": "strategy-update",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "no-dialogue",
+      "candidate": "def total_cents(records):\n    return sum(record['amount'] for record in records)\n",
+      "execution": {
+        "case": "strategy-update",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    }
+  ]
+}

@@ -82,6 +82,7 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     "AGENT_TOOLKIT_LANE_SESSION_ID",
     "AGENT_TOOLKIT_SESSION_REVIEW_BATCH",
     "AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH",
+    "AGENT_TOOLKIT_SESSION_START_INPUT",
     # Codexの会話識別子。ownerを持たないCodex最上位では計画の所有会話・UWIの投入元・会話ルートの解決元になるため、
     # 継承されるとCodex上で実行したテストだけが別の会話として解決する。解決を検証するテストは自身で設定する。
     "CODEX_THREAD_ID",

@@ -12,18 +12,23 @@ from agent_toolkit._testing.isolation import restore_host_environment
 
 SCRIPT = pathlib.Path(__file__).with_name("multi_turn_trials.py")
 FIXTURES = SCRIPT.parents[1] / "fixtures" / "multi-turn"
-CASES = (
-    "attachment-paths",
-    "weekday-queries",
-    "batch-conditions",
-    "display-spaces",
-    "verification-status",
-    "skill-selection",
-    "test-selection",
-)
-SINGLE_CASES = {"verification-status", "skill-selection", "test-selection"}
+EXPECTED_CASES = {
+    "attachment-paths": "dialogue",
+    "weekday-queries": "dialogue",
+    "batch-conditions": "dialogue",
+    "display-spaces": "dialogue",
+    "verification-status": "single",
+    "skill-selection": "single",
+    "test-selection": "single",
+    "goal-discovery": "single",
+    "strategy-update": "single",
+    "purpose-boundary": "dialogue",
+}
 # 保存例ごとに未達となる検査ID。課題の期待集合（private/grade.py）と保存例の提出内容から導いた。
 _FAILED_CHECKS: dict[str, dict[str, set[str]]] = {
+    "goal-discovery": {"failure": {"report", "empty"}},
+    "strategy-update": {"failure": {"mixed", "decimal"}},
+    "purpose-boundary": {"failure": {"discovery", "strategy", "coordination", "verification"}},
     "attachment-paths": {"failure": {"associate", "delete", "legacy"}},
     "weekday-queries": {"failure": {"legacy-function", "legacy-query", "public-iso"}},
     "batch-conditions": {"failure": {"mixed", "order"}},
@@ -101,7 +106,7 @@ def _grade(tmp_path: pathlib.Path, case: str, example: dict) -> tuple[subprocess
     return process, json.loads(result.read_text(encoding="utf-8")) if result.exists() else {}
 
 
-@pytest.mark.parametrize("case", CASES)
+@pytest.mark.parametrize("case", EXPECTED_CASES)
 def test_prepare_copies_only_public_material_and_refuses_overwrite(tmp_path: pathlib.Path, case: str) -> None:
     """準備が公開素材だけを複製し、既存の提出物を上書きしないことを確かめる。"""
     output = tmp_path / "public"
@@ -117,7 +122,7 @@ def test_prepare_copies_only_public_material_and_refuses_overwrite(tmp_path: pat
     assert task.read_text(encoding="utf-8") == "提出物\n"
 
 
-@pytest.mark.parametrize("case", CASES)
+@pytest.mark.parametrize("case", EXPECTED_CASES)
 def test_saved_success_and_failure_are_graded_from_artifacts(tmp_path: pathlib.Path, case: str) -> None:
     """保存した成功例と失敗例を、成果物の機能テストで判定する。"""
     trial = json.loads((FIXTURES / case.replace("-", "_") / "private" / "trial.json").read_text(encoding="utf-8"))
@@ -142,6 +147,23 @@ def test_saved_success_and_failure_are_graded_from_artifacts(tmp_path: pathlib.P
         assert {row["id"]: row["status"] for row in result["requirements"]} == {
             row["id"]: "未達" if failed.intersection(row["tests"]) else "達成" for row in trial["requirements"]
         }
+
+
+def test_goal_report_failure_includes_repair_and_regrade_action(tmp_path: pathlib.Path) -> None:
+    """公開採点のreport失敗に、提出物の修正と再採点の案内を保存する。"""
+    trial = json.loads((FIXTURES / "goal_discovery" / "private" / "trial.json").read_text(encoding="utf-8"))
+    example = trial["examples"][0]
+    example["candidate"] = (
+        "import sys\ndef legacy_total(values):\n    return sum(values)\n"
+        "if __name__ == '__main__':\n    print('report失敗', file=sys.stderr)\n    raise SystemExit(3)\n"
+    )
+    process, result = _grade(tmp_path, "goal-discovery", example)
+    assert process.returncode == 1, process.stderr
+    assert result["status"] == "成立"
+    errors = [row["error"] for row in result["functional"] if not row["passed"]]
+    assert len(errors) == 2
+    assert all("report終了3" in error and "report失敗" in error for error in errors)
+    assert all("次の操作:" in error and "同じtrial・candidateでgradeを再実行" in error for error in errors)
 
 
 @pytest.mark.parametrize("violation", ["unknown", "unasked", "internal", "audit", "execution"])
@@ -225,10 +247,8 @@ def test_public_list_and_finite_termination(tmp_path: pathlib.Path) -> None:
     process = _run("--list")
     assert process.returncode == 0, process.stderr
     rows = json.loads(process.stdout)
-    assert {row["case"] for row in rows} == set(CASES)
-    assert {row["case"]: row["kind"] for row in rows} == {
-        case: "single" if case in SINGLE_CASES else "dialogue" for case in CASES
-    }
+    assert {row["case"] for row in rows} == set(EXPECTED_CASES)
+    assert {row["case"]: row["kind"] for row in rows} == EXPECTED_CASES
     trial = json.loads((FIXTURES / "batch_conditions" / "private" / "trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][1]
     dialogue = example["dialogue"]
@@ -338,3 +358,51 @@ def test_single_result_cannot_overwrite_inputs(tmp_path: pathlib.Path, target: s
     )
     assert rejected.returncode == 2
     assert protected.read_bytes() == original
+
+
+@pytest.mark.parametrize("case", ["goal-discovery", "strategy-update", "purpose-boundary"])
+def test_goal_trials_execution_failure_is_inconclusive(tmp_path: pathlib.Path, case: str) -> None:
+    """新課題も起動障害と機能未達を混同しない。"""
+    trial = json.loads((FIXTURES / case.replace("-", "_") / "private/trial.json").read_text(encoding="utf-8"))
+    example = trial["examples"][0]
+    record = example["execution" if trial["kind"] == "single" else "dialogue"]
+    record.update(termination="error", execution_errors=["モデル起動失敗"])
+    process, result = _grade(tmp_path, case, example)
+    assert process.returncode == 2, process.stderr
+    assert result["status"] == "不成立"
+    assert not result["functional"]
+    assert not result["requirements"]
+
+
+def test_goal_discovery_requires_public_cli(tmp_path: pathlib.Path) -> None:
+    """内部ヘルパーだけを完成させた提出は公開CLIの機能未達となる。"""
+    trial = json.loads((FIXTURES / "goal_discovery/private/trial.json").read_text(encoding="utf-8"))
+    example = trial["examples"][0]
+    example["candidate"] = (
+        "def legacy_total(values):\n    return sum(values)\n"
+        "def report(records):\n"
+        "    return {'count': len(records), 'total_cents': sum(row['amount_cents'] for row in records)}\n"
+    )
+    process, result = _grade(tmp_path, "goal-discovery", example)
+    assert process.returncode == 1, process.stderr
+    assert {row["id"] for row in result["functional"] if not row["passed"]} == {"report", "empty"}
+
+
+def test_purpose_boundary_behavior_is_independent_of_function(tmp_path: pathlib.Path) -> None:
+    """機能が正しくても目的を確認しない行動判定を保持する。"""
+    trial = json.loads((FIXTURES / "purpose_boundary/private/trial.json").read_text(encoding="utf-8"))
+    example = trial["examples"][0]
+    dialogue = example["dialogue"]
+    dialogue["turns"] = [dialogue["turns"][0], {"role": "candidate", "text": "目的を自分で選んで提出した。"}]
+    dialogue["disclosures"] = []
+    dialogue["disclosure_audit"]["reviewed_user_turns"] = [1]
+    for judgment in dialogue["behavior"]:
+        judgment.update(
+            verdict="不適合",
+            reason="回答前に目的を確定し、質問していない。",
+            evidence=[{"role": "candidate", "turn": 2, "quote": "目的を自分で選んで提出した。"}],
+        )
+    process, result = _grade(tmp_path, "purpose-boundary", example)
+    assert process.returncode == 0, process.stderr
+    assert all(row["passed"] for row in result["functional"])
+    assert all(row["verdict"] == "不適合" for row in result["behavior"])

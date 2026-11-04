@@ -437,7 +437,7 @@ def test_blocked_conversation_keeps_process_loop_running(
     waited: list[bool] = []
 
     def execute(_args: Any, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt).read_text(encoding="utf-8"))
+        data = json.loads(_manifest(prompt, child_env).read_text(encoding="utf-8"))
         manifests.append(data)
         child_env["AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"] = "busy-loop"
         kwargs["on_session_started"]("busy-loop")

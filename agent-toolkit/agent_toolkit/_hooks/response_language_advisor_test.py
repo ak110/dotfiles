@@ -107,7 +107,7 @@ def test_claude_english_completion_rewrites_once(delegated, child, monkeypatch, 
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize("marker_body", ["ready", "consumed", None])
 def test_stop_language_follows_user_delivery_path(tmp_path, monkeypatch, marker_body, codex):
-    """同一会話の送達ツールの準備印があるClaudeだけ、末尾の状態行を除外する。"""
+    """送達ツールの準備状態によらず、実際に表示する最終本文を判定する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     marker = tmp_path / "marker.txt"
@@ -117,8 +117,14 @@ def test_stop_language_follows_user_delivery_path(tmp_path, monkeypatch, marker_
     payload: dict[str, object] = {"session_id": "delivery-path", "last_assistant_message": "The work is complete."}
     if codex:
         payload["turn_id"] = "turn"
-    decision, _reason = response_language_advisor.evaluate(json.dumps(payload))
-    assert (decision == "block") is (codex or marker_body != "ready")
+    monkeypatch.setattr(stop, "CODEX_CHECK_MODULE_NAMES" if codex else "CHECK_MODULE_NAMES", ("response_language_advisor",))
+    assert stop.evaluate(json.dumps(payload))["decision"] == "block"
+    payload["stop_hook_active"] = True
+    assert "decision" not in stop.evaluate(json.dumps(payload))
     payload["stop_hook_active"] = False
-    payload["last_assistant_message"] = "作業が完了しました。"
+    for text in ("作業が完了した。", "…", "> The work is complete.\n`response_language_advisor.py` を確認した。"):
+        payload["last_assistant_message"] = text
+        assert "decision" not in stop.evaluate(json.dumps(payload))
+    payload["agent_id"] = "child"
+    payload["last_assistant_message"] = "The work is complete."
     assert response_language_advisor.evaluate(json.dumps(payload)) == ("", "")

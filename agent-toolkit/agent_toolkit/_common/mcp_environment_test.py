@@ -74,6 +74,7 @@ def test_runtime_names_preserve_open_environment_and_exclude_parent_context(lowe
         "AGENT_TOOLKIT_OWNER_SESSION",
         "AGENT_TOOLKIT_STATUS_HOST_SESSION",
         "AGENT_TOOLKIT_DELEGATED_SESSION",
+        "AGENT_TOOLKIT_SESSION_START_INPUT",
         "PWD",
         "OLDPWD",
         "SHLVL",

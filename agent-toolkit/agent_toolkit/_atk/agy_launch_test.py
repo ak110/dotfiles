@@ -62,11 +62,10 @@ def test_process_loop_agy_interactive_and_resume(
     monkeypatch.setattr(process_loop_log, "append", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(process_loop_log, "consume_instructions", lambda: "")
     args = argparse.Namespace(resume=resume, no_update=True)
-    manifest = tmp_path / "current-manifest.json"
     process_loop_session.run_process_session(
         args,
         tmp_path,
-        process_loop_session.build_process_loop_prompt(manifest),
+        process_loop_session.build_process_loop_prompt(),
         {},
         orchestrator="agy",
         model="gemini-4-argon",
@@ -78,9 +77,9 @@ def test_process_loop_agy_interactive_and_resume(
     assert argv[argv.index("--model") + 1] == "gemini-4-argon"
     assert argv[argv.index("--effort") + 1] == "medium"
     delivered = argv[argv.index("-i") + 1]
-    assert "agent-toolkit:process-wi all-repos" in delivered
-    assert str(manifest) in delivered
-    assert not delivered.startswith("/goal ")
+    assert delivered == (
+        '<atk-auto source="process-loop" kind="goal">\nagent-toolkit:process-wi all-reposを完遂する\n</atk-auto>'
+    )
     if resume:
         assert argv[argv.index("--conversation") + 1] == resume
     elif resume is not None:
@@ -109,7 +108,9 @@ def test_run_skill_agy_noninteractive(tmp_path: pathlib.Path, monkeypatch: pytes
     monkeypatch.setattr(wi_add, "has_synced_run_report", lambda *_args, **_kwargs: True)
     assert run_skill.dispatch(argparse.Namespace(timeout=30, target_repo=str(tmp_path), skill="test:skill", args=None)) == 0
     argv = json.loads(captured.read_text())
-    assert "スキル`test:skill`を実行し、" in argv[argv.index("-p") + 1]
+    assert argv[argv.index("-p") + 1] == (
+        '<atk-auto source="run-skill" kind="goal">\nスキル`test:skill`を完遂する\n</atk-auto>'
+    )
     assert argv[argv.index("--model") + 1] == "gemini-4-argon"
     assert argv[argv.index("--effort") + 1] == "medium"
     assert argv[argv.index("--output-format") + 1] == "stream-json"

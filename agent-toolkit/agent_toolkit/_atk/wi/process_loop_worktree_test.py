@@ -217,8 +217,7 @@ def _run_public_process_loop(
     entry.write_text("---\ntype: awi\nstate: inbox\ntarget_repo: github.com/example/repo\n---\n\n# 作業\n", encoding="utf-8")
 
     def execute(_args: Any, cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
-        start = prompt.index("開始時入力のmanifest ") + len("開始時入力のmanifest ")
-        manifest = pathlib.Path(prompt[start : prompt.index(" で取得済み候補", start)])
+        manifest = pathlib.Path(json.loads(child_env["AGENT_TOOLKIT_SESSION_START_INPUT"])["manifest"])
         data = json.loads(manifest.read_text(encoding="utf-8"))
         target = data["repositories"][0]
         session_calls.append(

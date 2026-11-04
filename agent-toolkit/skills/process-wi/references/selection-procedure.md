@@ -11,16 +11,17 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「レーンと資源」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「レーンと資源」` |
+| 目標起点の判断を行う前 | `lanes.md#「明示された目標からの実行」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lanes.md#「明示された目標からの実行」` |
+| 本文で基準を使う資料の選択・取得時 | `run-lanes.md#「レーンと資源」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「レーンと資源」` |
 | 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `all-repos-orchestration.md#「取得済み候補の受領」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「取得済み候補の受領」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-format.md#「欄の意味」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-format.md#「欄の意味」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md#「延期adoptと反映後の観測」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「延期adoptと反映後の観測」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「処理中に確定した必須是正レーン」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「処理中に確定した必須是正レーン」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「統合とAWI終了」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「統合とAWI終了」` |
+| 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文で基準を使う資料の選択・取得時 | `all-repos-orchestration.md#「取得済み候補の受領」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「取得済み候補の受領」` |
+| 本文で基準を使う資料の選択・取得時 | `selection-format.md#「欄の意味」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-format.md#「欄の意味」` |
+| 本文で基準を使う資料の選択・取得時 | `finish-session.md#「延期adoptと反映後の観測」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「延期adoptと反映後の観測」` |
+| 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
+| 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
+| 本文で基準を使う資料の選択・取得時 | `run-lanes.md#「処理中に確定した必須是正レーン」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「処理中に確定した必須是正レーン」` |
+| 本文で基準を使う資料の選択・取得時 | `run-lanes.md#「統合とAWI終了」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「統合とAWI終了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
 
 ## 読込表
@@ -42,7 +43,7 @@
 
 実行時に同じ要求の重複が判明した場合は、要求と充足状況を比較し、既存項目・計画・成果を統合または再利用して必要な残差だけを実装する。各AWIの処置と根拠を記録し、他の担当が処理中なら並行して二重着手せず既存の担当と状態管理へ接続する。同じファイルの編集競合は要求の重複と区別する。
 選定の開始時には、公開対象のリポジトリとベースブランチを明示し、対象forgeの実際のCI状況と最新状態を確認する。GitHubでは公開時の検収対象となるワークフローごとの直近の実行（run）を、GitLabではベースブランチにおける直近パイプラインの識別子、対象SHA、実行状態、URLを取得する。失敗している実行があればジョブ情報とログまで取得し、失敗原因と残りの工程への影響を評価して`process-wi`の「即時対応」へ引き渡す。失敗したジョブが今回の差分と無関係でも、既存の不具合として同じく引き渡す。
-認証エラー、ネットワーク到達不能、CLIツールの不備、対象解決の失敗などは技術的に回復できるものを回復し、資格情報の準備などユーザーだけが対応できる事項は`agent-toolkit:user-confirmation-and-report`へ引き渡す。回答を待たずに進められる作業は同スキルに従って並行して続ける。CIの状態は「正常」「失敗」「未終了」「実行未登録」「CI定義なし」「照会不能」を区別し、失敗ログの取得権限があるかは実際にログを取得して確認する。未終了と実行未登録は、失敗を示す明確な証拠を得てから既存不具合かを判断する。選定開始時の点検に加えて、公開時には従来どおりベースラインを作成し、push後のCI結果を検収する。
+認証エラー、ネットワーク到達不能、CLIツールの不備、対象解決の失敗などは技術的に回復できるものを回復し、資格情報の準備などユーザーだけが対応できる事項は`agent-toolkit:user-confirmation-and-report`へ引き渡す。回答を待たずに進められる作業は同スキルに従って並行して続ける。CIの状態は「正常」「失敗」「未終了」「実行未登録」「CI定義なし」「CI実行対象外」「照会不能」を区別し、失敗ログの取得権限があるかは実際にログを取得して確認する。未終了と実行未登録は、失敗を示す明確な証拠を得てから既存不具合かを判断する。選定開始時の点検に加えて、公開時には従来どおりベースラインを作成し、push後のCI結果を検収する。
 
 通常起動では、`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を実行する。
 `all-repos`のリポジトリ担当は[all-repos-orchestration.md](all-repos-orchestration.md)「取得済み候補の受領」に従い、受け取った`candidate_file`の保存原本と`readiness`を初回の取得結果として扱う。
@@ -181,7 +182,7 @@ atk run-script pick-wi-check -- <意味判断YAMLの絶対パス> --candidate-fi
 
 追加操作の前に`immediate-fix.md`「即時対応」を読み、発話と発生条件から是正要求、今回混入した不良、同じ実行への明示追加を分類する。
 混入した不良は元の要求で是正し、独立した既存不良は即時対応の要否を判定する。
-本節の追加操作は明示追加だけに適用する。
+本節の追加操作は明示追加と、`lanes.md`「明示された目標からの実行」で必要と確定した作業に適用する。
 
 ユーザーが実行中にキュー操作（UWIへの回答、AWIの投入）を伝達したら、同じ実行への追加指示とし、可否を問い直さない。
 追加を明示した項目と伝達した項目を候補差分とし、UWIは投入元のセッションを問わない。
@@ -196,7 +197,10 @@ atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill -
 ユーザーから伝達された個別のUWIおよびAWIは、`atk wi show <WIファイル名> --pull`を実行して取得する。強制同期後も未回答、項目の不在、更新前の内容のいずれかなら、`agent-toolkit:wi-standards`「投入と取得」に定める再取得条件を適用する。回答を確認したUWIは、`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`へ引き渡す。
 ユーザーが名指しで指定したWIは、追加指示と対象が確定した直後に候補差分へ含める。
 いずれの場合も、他の要求の起草、検収、保存の完了を待たずに、後述の「初期選定中」または「選定完了後」の手順へ進む。
-伝達されていない新規項目や、次回向けに起草された振り返りAWIは次回へ残し、`ready`一覧の再取得は行わない。この発話解釈のルールは本節が定め、他の文書は本節を参照する。候補差分に対しても、「処理対象の決定」における回答済みUWIおよび元項目の取り扱いルールを適用する。
+目標から具体化して同一実行へ追加する必要作業以外の、伝達されていない新規項目や次回向けの振り返りAWIは次回へ残す。
+`ready`一覧の再取得は行わない。
+この発話解釈のルールは本節が定め、他の文書は本節を参照する。
+候補差分に対しても、「処理対象の決定」における回答済みUWIおよび元項目の取り扱いルールを適用する。
 
 初期選定中に受け取った場合は、開始時の候補との集合和（同一名称は1回のみ）を同じ出力先へ保存し、選定、競合確認、未遷移分のみの処理開始、および最新の保存後チェックをやり直す。初回の集合情報も合流先において保持する。
 

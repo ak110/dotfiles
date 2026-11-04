@@ -6,6 +6,7 @@ GitHub ActionsまたはGitLab CIの実行一覧からbaselineに存在しないI
 境界条件（run未登録・コマンド失敗・登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
 未報告の失敗を検出し未終了が残る場合は6を返す。同じbaselineまたは--failure-recordで再開すると、
 既報の失敗では返らず残りを待つ。全体終了では全失敗を出力し、成功0・失敗1を返す。
+GitLab CI Lintで対象commit・refのパイプライン非生成を確定した場合は8（CI実行対象外）を返す。
 `agent-toolkit:commit`の`references/push-and-ci.md`から参照される。
 """
 
@@ -46,6 +47,7 @@ EXIT_NO_RUNS = 4
 EXIT_NO_CI_CONFIG = 5
 EXIT_NEW_FAILURE = 6
 EXIT_USAGE = 7
+EXIT_CI_EXCLUDED = 8
 EXIT_INTERRUPTED = 130
 
 _STDERR_FD = 2
@@ -72,6 +74,7 @@ _NEXT_ACTION_NO_RUNS = (
     "登録が遅いだけの場合は`--registration-grace`を延ばして再実行する"
 )
 _NEXT_ACTION_NO_CI_CONFIG = "CI検収は不要として次の工程へ進む"
+_NEXT_ACTION_CI_EXCLUDED = "ローカル全体検証の成功を確認し、CI実行対象外の証拠と合わせて公開判定へ進む"
 _NEXT_ACTION_INTERRUPTED = "同じ引数で再実行すると待機を再開できる"
 _NEXT_ACTION_SHA_RESOLUTION = (
     "revisionの綴りを確かめる。remoteにだけあるcommitなら`git fetch`してから、"
@@ -457,6 +460,37 @@ def _github_ci_configured(repository: str, sha: str, subprocess_timeout: float) 
         ):
             return True
     return False
+
+
+def _gitlab_ci_exclusion(repository: str, sha: str, ref: str, subprocess_timeout: float) -> list[str] | None:
+    """CI Lintで確定した非生成理由を返す。判定不能なら既存の登録待機へ進める。"""
+    try:
+        target = _parse_repository(repository)
+        # GETのcontent_refで対象commitの設定を読み、dry_run_refでpush先の文脈を指定する。
+        # API仕様: https://docs.gitlab.com/api/lint/#validate-existing-cicd-configuration
+        endpoint = (
+            f"projects/{quote(target.project_path, safe='')}/ci/lint?content_ref={quote(sha, safe='')}"
+            f"&dry_run=true&dry_run_ref={quote(_short_ref(ref), safe='')}&include_jobs=true"
+        )
+        payload = _run_forge_json_command(
+            ["glab", "api", endpoint, "-X", "GET", "--output", "json"],
+            subprocess_timeout,
+            "glab api ci lint",
+            env=_forge_cli.glab_environment(repository),
+        )
+    except RunListError:
+        return None
+    if not isinstance(payload, dict) or payload.get("valid") is not False:
+        return None
+    jobs = payload.get("jobs")
+    errors = payload.get("errors")
+    if not isinstance(jobs, list) or jobs or not isinstance(errors, list) or not errors:
+        return None
+    # 設定誤りを非生成へ誤分類すると失敗CIを見逃すため、確認済みの完全一致だけを受理する。
+    non_generation = {"The pipeline did not run. Review the workflow:rules configuration for the pipeline."}
+    if not all(isinstance(error, str) and error in non_generation for error in errors):
+        return None
+    return errors
 
 
 def _resolve_forge(explicit: str, repository: str, cwd: pathlib.Path | None = None) -> str | None:
@@ -894,6 +928,7 @@ def wait_for_ci(
     - 完了待ちフェーズでも対象shaのrunを毎pollで取り込み、猶予後に登録されたrunを期待集合へ加える
       （run一覧は対象shaで限定するため、猶予後のrunも同じcommitに対する実行である）
     - 期間末で0件ならEXIT_NO_RUNS
+    - GitLabで取得関数の指定がない場合は登録猶予前にCI Lintを照会し、確定的な非生成だけをEXIT_CI_EXCLUDEDとする
     - run一覧・ジョブ一覧いずれかの取得失敗を含むスナップショット取得の連続失敗が閾値到達でEXIT_GH_ERROR
       （1回でも全取得成功したスナップショットで連続失敗カウンターをリセットする。
       登録猶予末・後続SHA登録猶予末は、猶予末に到達した回の取得失敗のみでも
@@ -918,6 +953,13 @@ def wait_for_ci(
     if forge == "github" and use_default_fetchers and _github_ci_configured(repository, sha, subprocess_timeout) is False:
         _print(0.0, "CI定義が無いため監視対象なし")
         return _finish(EXIT_NO_CI_CONFIG, _NEXT_ACTION_NO_CI_CONFIG)
+    if forge == "gitlab" and use_default_fetchers:
+        errors = _gitlab_ci_exclusion(repository, sha, ref, subprocess_timeout)
+        if errors is not None:
+            target = _parse_repository(repository)
+            project = f"{target.authority}/{target.project_path}" if target.hostname is not None else target.project_path
+            _print(0.0, f"CI実行対象外: project={project}, commit={sha}, ref={ref}, errors={json.dumps(errors)}")
+            return _finish(EXIT_CI_EXCLUDED, _NEXT_ACTION_CI_EXCLUDED)
     runs: list[RunRecord] = []
     consecutive_failures = 0
     expected_ids: set[int] = set()

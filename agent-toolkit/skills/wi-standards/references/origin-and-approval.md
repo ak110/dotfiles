@@ -27,9 +27,13 @@
 `source`属性は、本文全体の由来の初期値を示す。`source`が存在しない項目のみを人間由来とみなし、値が設定されている項目は明示的な由来の記載がない限りエージェント由来として扱う。すでに保存されている値と形式はそのまま保持する。
 
 エージェントが投入する項目では`source`の指定を必須とする。値には、起動中のスキル名からプラグイン名のプレフィックスを除いたもの（`add-awi-by-user`、`process-wi`など）を使用し、該当するスキルがない起票では`agent`を設定する。スキル名が`review-session`の場合、作成するAWIの`source`は保存済み項目との由来の一貫性を保つため`session-review`とする。ユーザーの指示に基づいて投入する場合も同様の規則で値を付与し、人間由来である範囲は明示的な由来の記載によって示す。
-`atk run-skill`によって起動されたセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`であるセッション）が投入するUWIでは、`source`を`run-skill`とする。一般の確認UWIと報告用UWIのどちらも、`--scope`には目的文のスキル名と起動モードの組を渡す。モードがある場合はスキル名、半角空白、目的文の`起動モード:`の値を連結し、モードがない通常起動ではスキル名だけを渡す。モード語以外の自由記述はscopeに含めない。同一セッションで作成されるAWIには、前述の一般的な規則を適用する。
+`atk run-skill`が起動したセッションのUWIでは、`source`を`run-skill`とする。
+一般の確認UWIと報告用UWIのどちらも、`--scope`にはSessionStartの起動入力の`skill`と`mode`から得た起動単位を渡す。
+モードがあればスキル名、半角空白、モードを連結し、モードがない通常起動ではスキル名だけを使う。
+モード語以外の自由記述はscopeに含めない。
+同一セッションのAWIには前述の一般的な規則を適用する。
 
-| 起動スキル | 目的文の起動モード | scope |
+| 起動スキル | 起動入力のmode | scope |
 | --- | --- | --- |
 | `agent-toolkit:review-session` | なし | `agent-toolkit:review-session` |
 | `agent-toolkit:review-session` | `batch` | `agent-toolkit:review-session batch` |

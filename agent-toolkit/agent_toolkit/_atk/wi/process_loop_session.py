@@ -71,21 +71,14 @@ def repository_input(
     }
 
 
-def build_process_loop_prompt(manifest: pathlib.Path | None = None) -> str:
-    """登録全体の処理を依頼し、長い候補本文は配送ファイルで渡す。"""
-    body = "agent-toolkit:process-wi all-reposを完遂する"
-    if manifest is not None:
-        body += (
-            f"。開始時入力のmanifest {manifest} で取得済み候補・所有・準備先を確認する。"
-            "スキル所定の処理と終了準備を終え、manifestのresult_fileへ実態に即した対象別結果を保存した時点を"
-            "統括自身の到達点とする。続行不能時も理由と残工程を保存して制御を常駐へ返す。"
-            "completedは今回進められる作業と公開・CI検収の完了を表し、正当な延期はremainingへ明記する。"
-            "続行不能時は実態に合うstatusと理由を保存すれば今回の到達点となる。"
-            "判定には訂正後の最終保存内容と既存工程の検証証拠を使い、保存内容の読戻し後に終了手順へ進む。"
-            "常駐による結果の受理・所有解放・回収は統括CLI終了後に行う"
-        )
+def build_process_loop_prompt() -> str:
+    """スキルの完遂だけを目的にする。
+
+    工程・終了条件はprocess-wiが所有する。目的文にも持つと定義が二重化し、
+    各ターンの目標評価へ再掲されるため、可変入力はSessionStartへ分離する。
+    """
     goal = _automated_prompt.wrap(
-        body,
+        "agent-toolkit:process-wi all-reposを完遂する",
         source=_automated_prompt.SOURCE_PROCESS_LOOP,
         kind=_automated_prompt.KIND_GOAL,
     )

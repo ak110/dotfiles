@@ -2,43 +2,81 @@
 
 import json
 import pathlib
-import re
 import subprocess
 
 import pytest
 
-from agent_toolkit._atk import run_skill
+from agent_toolkit._atk.run_skill_test import _engine_env, _records, _run, _startup_input
 from agent_toolkit._atk.wi import entries, frontmatter
 from agent_toolkit._atk.wi.uwi_test import _invoke_uwi_add, _make_uwi_add_fake, _setup_notes
-from agent_toolkit._common import skill_modes
+from agent_toolkit._common import session_review, skill_modes
+
+# pytestがモジュールの属性から取得する共有fixtureを公開する。
+__all__ = ["_engine_env"]
+
+
+@pytest.fixture(name="skill_invocation")
+def _skill_invocation(engine_env, tmp_path, monkeypatch, capsys):
+    """公開起動から実ホストへ渡すargvとSessionStartの実行データを取得する。"""
+
+    def launch(skill, arguments, expected_scope):
+        if skill == "agent-toolkit:review-session" and arguments and arguments.split()[0] == "batch":
+            transcript = tmp_path / "target.jsonl"
+            transcript.write_text(
+                json.dumps({"type": "user", "message": {"role": "user", "content": "要求"}}) + "\n",
+                encoding="utf-8",
+            )
+            session_review.record(
+                {
+                    "hook_event_name": "SessionStart",
+                    "session_id": "target",
+                    "transcript_path": str(transcript),
+                    "cwd": str(engine_env.repo),
+                },
+                host="claude",
+                target_repo="github.com/example/myrepo",
+            )
+        options = ["--target-repo", str(engine_env.repo)]
+        if arguments is not None:
+            options.extend(["--args", arguments])
+        code, _out, error = _run([*options, skill], capsys)
+        assert code == 0, error
+        record = _records(engine_env, "session")[0]
+        assert record["argv"][-1] == (
+            f'/goal <atk-auto source="run-skill" kind="goal">\nスキル`{expected_scope}`を完遂する\n</atk-auto>'
+        )
+        return _startup_input(record, monkeypatch, capsys)
+
+    return launch
 
 
 @pytest.mark.parametrize(
-    "skill,arguments,other_arguments",
+    "skill,arguments,other_arguments,mode",
     [
-        ("agent-toolkit:review-session", "focus.md", "batch auto"),
-        ("agent-toolkit:review-session", "batch auto", "focus.md"),
-        ("agent-toolkit:process-wi", "focus.md", "single-lane 追加"),
-        ("agent-toolkit:process-wi", "single-lane 追加", "all-repos"),
-        ("agent-toolkit:process-wi", "all-repos", "single-lane 追加"),
+        ("agent-toolkit:review-session", "focus.md", "batch auto", None),
+        ("agent-toolkit:review-session", "batch auto", "focus.md", "batch"),
+        ("agent-toolkit:process-wi", "focus.md", "single-lane 追加", None),
+        ("agent-toolkit:process-wi", "single-lane 追加", "all-repos", "single-lane"),
+        ("agent-toolkit:process-wi", "all-repos", "single-lane 追加", "all-repos"),
     ],
 )
 def test_general_run_skill_uwi_uses_documented_scope_for_the_same_mode(
-    tmp_path, monkeypatch, skill, arguments, other_arguments
+    tmp_path, monkeypatch, skill_invocation, skill, arguments, other_arguments, mode
 ):
     """文書のscope例を一般UWIへ保存し、同じモードの次回だけが取り込む境界を検査する。"""
-    goal = run_skill.build_goal(skill, arguments)
-    named_skill = re.search(r"スキル`([^`]+)`", goal)
-    assert named_skill is not None
-    mode = re.search(r"^起動モード: (\S+)$", goal, re.MULTILINE)
+    expected_scope = skill + (" " + mode if mode else "")
+    data = skill_invocation(skill, arguments, expected_scope)
+    assert data["skill"] == skill and data["mode"] == mode
     document = pathlib.Path(__file__).resolve().parents[3] / "skills/wi-standards/references/origin-and-approval.md"
     rows = [
         [cell.strip().strip("`") for cell in line.strip("|").split("|")]
         for line in document.read_text(encoding="utf-8").splitlines()
         if line.startswith("| `agent-toolkit:")
     ]
-    scope = next(row[2] for row in rows if row[:2] == [named_skill[1], mode[1] if mode else "なし"])
+    scope = next(row[2] for row in rows if row[:2] == [data["skill"], data["mode"] or "なし"])
+    assert scope == expected_scope and scope in data["accepted_scopes"]
     notes = _setup_notes(tmp_path)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     repository = tmp_path / "myrepo"
     repository.mkdir()
     monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(repository))
@@ -66,9 +104,12 @@ def test_general_run_skill_uwi_uses_documented_scope_for_the_same_mode(
 
 
 @pytest.mark.parametrize("arguments", [None, "batch auto"])
-def test_renamed_review_imports_saved_scopes_without_rewriting(tmp_path, monkeypatch, arguments):
-    """新名の目的文が示す取込対象を、保存済み3形式のUWIに適用する。"""
+def test_renamed_review_imports_saved_scopes_without_rewriting(tmp_path, monkeypatch, skill_invocation, arguments):
+    """公開起動が配送した取込対象を、保存済み3形式のUWIに非破壊で適用する。"""
+    expected_scope = "agent-toolkit:review-session" + (" batch" if arguments else "")
+    data = skill_invocation("agent-toolkit:review-session", arguments, expected_scope)
     notes = _setup_notes(tmp_path)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     repository = tmp_path / "myrepo"
     repository.mkdir()
     monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(repository))
@@ -87,13 +128,8 @@ def test_renamed_review_imports_saved_scopes_without_rewriting(tmp_path, monkeyp
     selected = entries.select_entries(
         notes, status="active", target_repo="github.com/example/myrepo", entry_type="uwi", answered="all", source="run-skill"
     )
-    goal = run_skill.build_goal("agent-toolkit:review-session", arguments)
-    declared = next(
-        line.removeprefix("過去UWIの取込対象scope: ")
-        for line in goal.splitlines()
-        if line.startswith("過去UWIの取込対象scope: ")
-    )
-    accepted = json.loads(declared)
+    accepted = data["accepted_scopes"]
+    assert accepted == [expected_scope, *list(scopes[1:] if arguments else scopes[:1])]
     imported = []
     for path, _repo, text, _state, _kind in selected:
         parsed = frontmatter.parse_frontmatter(text)

@@ -155,7 +155,7 @@ class TestInvokedProcessWi:
     @pytest.mark.parametrize("role", ["user", "assistant"])
     def test_process_loop_goal_is_detected_only_as_input(self, tmp_path: pathlib.Path, engine: str, role: str) -> None:
         """常駐が実際に渡す新Goalを検出し、モデル自身の発言を起動の根拠にしない。"""
-        text = "# AGENTS.md instructions\n" + _pl_session.build_process_loop_prompt(tmp_path / "targets.json")
+        text = "# AGENTS.md instructions\n" + _pl_session.build_process_loop_prompt()
         record = (
             _codex_message_record(role=role, item_type="input_text", text=text)
             if engine == "codex"
