@@ -26,7 +26,7 @@ _CHILD_SOURCE = "import time; time.sleep(120)"
 
 
 @pytest.mark.parametrize("has_descendant", [False, True], ids=["exited-leaf", "unretained-parent"])
-def test_stop_tree_requires_parent_generation_only_for_existing_child_edges(monkeypatch, has_descendant):
+def test_stop_tree_requires_parent_generation_only_for_existing_child_edges(monkeypatch, has_descendant, caplog):
     """終了済みleafは回収済みとし、子がある親の世代保持失敗は未確定として残す。"""
     root, leaf, descendant = (
         mock.Mock(pid=900001),
@@ -46,6 +46,11 @@ def test_stop_tree_requires_parent_generation_only_for_existing_child_edges(monk
     assert {process.pid for process in result.targets} == {root.pid, leaf.pid}
     assert not result.residual
     assert bool(result.unresolved) is has_descendant
+    if has_descendant:
+        assert "snapshot_children=" in caplog.text
+        assert str(descendant.pid) in caplog.text
+    else:
+        assert "snapshot_children=" not in caplog.text
     descendant.suspend.assert_not_called()
     descendant.kill.assert_not_called()
 
@@ -70,23 +75,32 @@ def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypat
     foreign.kill.assert_not_called()
 
 
-@pytest.mark.parametrize("same_generation", [False, True])
-def test_windows_parent_handle_is_checked_and_closed(monkeypatch, same_generation):
+@pytest.mark.parametrize(("same_generation", "handle"), [(False, 0), (False, 123), (True, 123)])
+def test_windows_parent_handle_is_checked_and_closed(monkeypatch, same_generation, handle, caplog):
     """handle取得後に同じ親か確認し、列挙の例外時にもhandleを閉じる。"""
     kernel = mock.Mock()
-    kernel.OpenProcess.return_value = 123
+    kernel.OpenProcess.return_value = handle
     monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 87, raising=False)
     monkeypatch.setattr(sys, "platform", "win32")
     process = mock.Mock(pid=42)
     process.is_running.return_value = same_generation
     # pylint: disable=protected-access
     with pytest.raises(RuntimeError, match="列挙失敗"), process_tree._retain_windows_process(process) as retained:
         assert retained is same_generation
-        process.is_running.assert_called_once_with()
+        if handle:
+            process.is_running.assert_called_once_with()
+        else:
+            process.is_running.assert_not_called()
         kernel.CloseHandle.assert_not_called()
         raise RuntimeError("列挙失敗")
     kernel.OpenProcess.assert_called_once_with(0x1000, False, process.pid)
-    kernel.CloseHandle.assert_called_once_with(123)
+    if handle:
+        kernel.CloseHandle.assert_called_once_with(handle)
+    else:
+        kernel.CloseHandle.assert_not_called()
+    if not same_generation:
+        assert ("reason=identity-check" if handle else "reason=open-process") in caplog.text
 
 
 def test_stop_tree_keeps_unrelated_process_while_reclaiming_late_descendants(tmp_path, monkeypatch):

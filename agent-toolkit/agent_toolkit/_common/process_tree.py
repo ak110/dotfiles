@@ -344,12 +344,26 @@ def _retain_windows_process(process: psutil.Process) -> Generator[bool]:
     kernel.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
     handle = kernel.OpenProcess(0x1000, False, process.pid)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
-        if ctypes.get_last_error() == 87:  # ERROR_INVALID_PARAMETER: 既に消滅している。
+        error = ctypes.get_last_error()
+        _LOG.warning(
+            "Windows親世代保持失敗: reason=open-process error=%s observed=%s current=%s",
+            error,
+            _key(process),
+            identity(process.pid),
+        )
+        if error == 87:  # ERROR_INVALID_PARAMETER: 既に消滅している。
             yield False
             return
-        raise ctypes.WinError(ctypes.get_last_error())
+        raise ctypes.WinError(error)
     try:
-        yield process.is_running()
+        same_generation = process.is_running()
+        if not same_generation:
+            _LOG.warning(
+                "Windows親世代保持失敗: reason=identity-check observed=%s current=%s",
+                _key(process),
+                identity(process.pid),
+            )
+        yield same_generation
     finally:
         kernel.CloseHandle(handle)
 
@@ -368,6 +382,24 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
             entries.append((process, ppid))
     holders = {process.pid: process for process, _ in entries}
     parent_pids = {ppid for _, ppid in entries}
+
+    def retain_parent(process: psutil.Process) -> bool:
+        retained = retain(process)
+        if not retained and sys.platform == "win32":
+            # 保持失敗の意味を、同じ列挙時点の親子関係と後続のPID世代から判別する。
+            # 引数や環境は採取せず、失敗した親と直接の子だけを記録する。
+            _LOG.warning(
+                "Windows親世代保持失敗の列挙: observed=%s current=%s snapshot_children=%s",
+                _key(process),
+                identity(process.pid),
+                [
+                    {"pid": child.pid, "snapshot_ppid": ppid, "observed": _key(child), "current": identity(child.pid)}
+                    for child, ppid in entries
+                    if ppid == process.pid
+                ],
+            )
+        return retained
+
     created: dict[int, float] = {}
     for parent in parents:
         # 子のない終了済みleafには、辿る親子関係も保持すべき親世代もない。
@@ -375,7 +407,7 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
         if parent.pid not in parent_pids:
             continue
         with contextlib.suppress(psutil.Error, OSError):
-            if retain(parent):
+            if retain_parent(parent):
                 created[parent.pid] = parent.create_time()
     found: list[psutil.Process] = []
     pending = set(created)
@@ -396,7 +428,7 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
                 continue
             created[process.pid] = child_created
             found.append(process)
-            if process.pid in parent_pids and retain(process):
+            if process.pid in parent_pids and retain_parent(process):
                 next_pending.add(process.pid)
         pending = next_pending
     return found
