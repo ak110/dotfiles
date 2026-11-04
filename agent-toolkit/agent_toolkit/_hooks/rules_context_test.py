@@ -334,6 +334,9 @@ def test_compact_skill_guidance_uses_host_acquisition(host: str, tmp_path: pathl
     digest = hashlib.sha256(skill.read_bytes()).hexdigest()
     cwd = str(tmp_path / ("project" if inside else "outside"))
     output = rules_context._compact_recovery_context(host, 10000, [(skill, "", digest, False)], cwd=cwd)
+    if host == "claude" and inside:
+        assert output is None
+        return
     assert output is not None
     assert "固有スキル本文" not in output
     assert str(skill) in output
@@ -415,7 +418,7 @@ def test_compact_skill_becomes_ready_only_after_skill_success(capsys, monkeypatc
         )
     )
     output = _output(capsys)
-    assert "固有スキル本文" not in output and "`Skill`で`local`" in output
+    assert "固有スキル本文" not in output and "`Skill`で`local`" not in output
     records = read_state("compact-skill").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert not read_delivery.target_ready(records, target, "main")
     read_delivery.observe(

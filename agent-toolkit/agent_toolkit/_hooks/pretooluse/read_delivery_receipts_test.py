@@ -1,4 +1,4 @@
-"""配送本文を独立の比較元に、公開hookの取得・更新・遮断まで検収する。"""
+"""配送本文を独立の比較元に、公開hookの受領証拠・更新案内・継続許可を検収する。"""
 
 import importlib
 import json
@@ -12,6 +12,20 @@ from agent_toolkit._hooks import document_reads, notice, rules_context, work_con
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+
+
+def _assert_allowed_without_guidance(text):
+    """invokeで確認したhook正常終了に加え、denyと反復案内がないことを確かめる。"""
+    output = json.loads(text).get("hookSpecificOutput", {}) if text else {}
+    assert output.get("permissionDecision") != "deny"
+    assert not output.get("additionalContext")
+
+
+def _assert_acquisition(state, target, expected):
+    """操作の許可と独立に、現行本文・要求範囲・主体の受領証拠を照会する。"""
+    target = target if isinstance(target, read_triggers.ReadTarget) else read_triggers.ReadTarget(target)
+    records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert (document_reads.acquisition_state(records, target, "main") == "current") is expected
 
 
 def _produce(target, host_environ):
@@ -99,14 +113,14 @@ def _scenario(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
 @pytest.mark.parametrize("syntax", ["generated", "for", "variable", "pipe", "failed-tail", "stderr"])
-def test_generated_read_output_releases_public_write(scenario, host_environ, host, syntax):
+def test_generated_read_output_records_current_body(scenario, host_environ, host, syntax):
     """同じ実本文を返す構文変形は、生成した取得操作と同じ後続結果になる。"""
     state, rows, path, _rollout, invoke, delivered = scenario
     rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
     write = {"file_path": str(path.parent / "output.md"), "content": "成果"}
     guide = invoke(host, "PreToolUse", "Write", write)
     assert str(path) in guide
-    assert '"permissionDecision": "deny"' in invoke(host, "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
     step = read_delivery.acquisition_step(read_triggers.ReadTarget(path), "codex")
     command = step.split("`", 2)[1]
     if syntax == "for":
@@ -140,7 +154,7 @@ def test_generated_read_output_releases_public_write(scenario, host_environ, hos
             state.get(rules_context.OPERATION_SKILL_READY_KEY, {}), read_triggers.ReadTarget(path), "main"
         )
         delivered(json.dumps({"output": body, "exit_code": executed.returncode}, ensure_ascii=False))
-    assert str(path) not in invoke(host, "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
     assert read_delivery.target_ready(state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main")
 
 
@@ -155,7 +169,7 @@ def test_nontext_read_prepares_no_text_receipt(scenario, host):
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
-def test_executed_empty_sed_range_keeps_write_blocked(scenario, host_environ, host):
+def test_executed_empty_sed_range_keeps_document_unacquired(scenario, host_environ, host):
     """終了0でも存在しない行範囲の実出力は取得の証拠にならない。"""
     state, rows, path, _rollout, invoke, delivered = scenario
     rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
@@ -176,7 +190,7 @@ def test_executed_empty_sed_range_keeps_write_blocked(scenario, host_environ, ho
     invoke(host, "PostToolUse", "Bash", {"command": command}, {"stdout": result.stdout})
     if host == "codex":
         delivered(json.dumps({"output": result.stdout}))
-    assert '"permissionDecision": "deny"' in invoke(host, "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
     assert not read_delivery.target_ready(
         state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main"
     )
@@ -220,7 +234,7 @@ def test_partial_delivery_only_acquires_visible_scope(scenario, host_environ, ho
     assert read_delivery.target_ready(records, target, "main") is (shape in {"partial", "truncated"})
     assert not read_delivery.target_ready(records, missing, "main")
     assert not read_delivery.target_ready(records, read_triggers.ReadTarget(path), "main")
-    assert ('"permissionDecision": "deny"' in following) is (shape not in {"partial", "truncated"})
+    _assert_allowed_without_guidance(following)
     if shape == "persisted":
         saved = path.parent / "saved.txt"
         saved.write_text(body, encoding="utf-8")
@@ -229,7 +243,8 @@ def test_partial_delivery_only_acquires_visible_scope(scenario, host_environ, ho
         invoke(host, "PostToolUse", "Bash", {"command": command}, response)
         if host == "codex":
             delivered(response["stdout"])
-        assert str(path) not in invoke(host, "PreToolUse", "Write", write)
+        _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
+        _assert_acquisition(state, target, True)
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
@@ -255,7 +270,8 @@ def test_received_version_and_new_scope_stay_distinct(scenario, host_environ, ho
     assert document_reads.acquisition_state(state[rules_context.OPERATION_SKILL_READY_KEY], target, "main") == "updated"
     rows[:] = [read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,), ("別節",))]
     assert "未取得" in invoke(host, "PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in invoke(host, "PreToolUse", "Write", write)
+    _assert_acquisition(state, read_triggers.ReadTarget(path, "別節"), False)
+    _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
@@ -353,7 +369,8 @@ def test_worktree_versions_share_proven_logical_document(scenario, host_environ,
         assert str(target) not in result
     elif changed == "new-section":
         assert str(target) in result and "追加節" in result
-        assert '"permissionDecision": "deny"' in invoke("claude", "PreToolUse", "Write", write)
+        _assert_acquisition(state, read_triggers.ReadTarget(target, heading), False)
+        _assert_allowed_without_guidance(invoke("claude", "PreToolUse", "Write", write))
     git_repository.run_git(repo, "worktree", "remove", "--force", str(worktree))
 
 
@@ -476,8 +493,9 @@ def test_installed_cache_provenance_keeps_source_boundary(scenario, monkeypatch,
     assert ("取得済み資料の更新あり" in result) is same_source
     if not same_source:
         assert str(target) in result
-        denied = invoke("claude", "PreToolUse", "Write", {"file_path": str(path.parent / "out.md"), "content": "成果"})
-        assert '"permissionDecision": "deny"' in denied
+        repeated = invoke("claude", "PreToolUse", "Write", {"file_path": str(path.parent / "out.md"), "content": "成果"})
+        _assert_allowed_without_guidance(repeated)
+        _assert_acquisition(state, read_triggers.ReadTarget(target, "必要節"), False)
 
 
 @pytest.mark.parametrize("form", ["canonical", "reformatted", "old-version", "tampered", "embedded-close"])
@@ -516,7 +534,7 @@ def test_generated_startup_scope_survives_packaging_and_version(scenario, form):
     if form == "old-version":
         assert "取得済み資料の更新あり" in result
     second = invoke("claude", "PreToolUse", "Write", write, transcript_path=str(rollout))
-    assert ('"permissionDecision": "deny"' in second) is (form == "tampered")
+    _assert_allowed_without_guidance(second)
 
 
 def test_existing_work_contract_body_delivery_is_received(scenario, monkeypatch):
@@ -595,15 +613,15 @@ def test_repeated_compact_excludes_unobserved_old_delivery(scenario, monkeypatch
 @pytest.mark.parametrize(
     "mode", ["complete", "missing", "other-agent", "version", "overlap", "reverse", "omitted", "repeat", "blank-boundary"]
 )
-def test_split_delivery_controls_public_write(scenario, host_environ, host, reader, mode):
-    """実回収した同じ版の全範囲だけが、案内済みの再書込を解除する。"""
+def test_split_delivery_preserves_scope_actor_and_version_evidence(scenario, host_environ, host, reader, mode):
+    """同じ版・主体で実回収した全範囲だけを取得済みとし、再書込の許可と分けて検収する。"""
     _state, rows, path, _rollout, invoke, delivered = scenario
     if mode == "repeat":
         path.write_text("同じ行\n" * 4, encoding="utf-8")
     rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
     write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
     invoke(host, "PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in invoke(host, "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
     intervals = [(1, 5), (4, None)] if mode == "overlap" else [(1, 3), (4, None)]
     if mode == "repeat":
         intervals = [(1, 2), (1, 2)]
@@ -660,7 +678,7 @@ def test_split_delivery_controls_public_write(scenario, host_environ, host, read
         # 本文が変わった現行版の初回案内はwarn。その案内後の再書込を検収する。
         assert "未取得" in final
         final = invoke(host, "PreToolUse", "Write", write)
-    assert ('"permissionDecision": "deny"' not in final) is complete
+    _assert_allowed_without_guidance(final)
     if mode == "complete":
         assert "".join(received) == path.read_text(encoding="utf-8")
 
@@ -671,14 +689,14 @@ def test_split_delivery_controls_public_write(scenario, host_environ, host, read
     "mode", ["complete", "reverse", "overlap", "duplicate", "missing", "wrong", "omitted", "unknown", "recover"]
 )
 def test_repeated_lines_keep_producer_positions(scenario, host_environ, host, reader, identical, mode):
-    """同じ本文の異なる要求位置を区別し、実回収した全行だけで再書込を解除する。"""
+    """同じ本文の異なる要求位置を区別し、実回収した全行だけを取得済みとする。"""
     state, rows, path, _rollout, invoke, delivered = scenario
     body = "繰り返す本文\n" * 4 if identical else "# 基準\n第一行\n繰り返す本文\n繰り返す本文\n"
     path.write_text(body, encoding="utf-8")
     rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
     write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
     invoke(host, "PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in invoke(host, "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
     intervals = [(1, 2), (3, 4)] if identical else [(1, 3), (4, 4)]
     if mode == "reverse":
         intervals.reverse()
@@ -731,7 +749,7 @@ def test_repeated_lines_keep_producer_positions(scenario, host_environ, host, re
         read_delivery.target_ready(state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main")
         is complete
     )
-    assert ('"permissionDecision": "deny"' not in result) is complete
+    _assert_allowed_without_guidance(result)
     if mode in {"complete", "reverse"}:
         assert sorted("".join(received).splitlines()) == sorted(body.splitlines())
 
@@ -748,7 +766,7 @@ def test_codex_positioned_results_follow_outer_delivery(scenario, host_environ, 
     rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
     write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
     invoke("codex", "PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in invoke("codex", "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
     commands = [f"sed -n '{span}p' -- {shlex.quote(str(path))}" for span in ("1,2", "3,4")]
     if reverse:
         commands.reverse()
@@ -791,12 +809,12 @@ def test_codex_positioned_results_follow_outer_delivery(scenario, host_environ, 
         else None,
     )
     if both and delivery == "complete":
-        assert not invoke("codex", "PreToolUse", "Write", write)
+        _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
         assert read_delivery.target_ready(
             state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main"
         )
         return
-    assert '"permissionDecision": "deny"' in invoke("codex", "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
     assert not read_delivery.target_ready(
         state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main"
     )
@@ -804,13 +822,15 @@ def test_codex_positioned_results_follow_outer_delivery(scenario, host_environ, 
         for span in ("2,2", "4,4"):
             actual = read(f"sed -n '{span}p' -- {shlex.quote(str(path))}")
             delivered(actual)
-        assert not invoke("codex", "PreToolUse", "Write", write)
+        _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
+        _assert_acquisition(state, path, True)
         return
     for command, body in zip(commands, outputs, strict=True):
         actual = read(command)
         assert actual == body
         delivered(actual)
-    assert not invoke("codex", "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
+    _assert_acquisition(state, path, True)
 
 
 @pytest.mark.parametrize("reader", ["claude-bash", "claude-read", "codex-bash"])
@@ -828,7 +848,7 @@ def test_spooled_documents_follow_saved_offsets(scenario, host_environ, reader, 
     rows.append(read_triggers.ReadTrigger(first, 1, "操作", ("tool:Write",), (first, second)))
     write = {"file_path": str(first.parent / "out.md"), "content": "成果"}
     invoke(host, "PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in invoke(host, "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
 
     def execute(command):
         result = subprocess.run(
@@ -852,7 +872,9 @@ def test_spooled_documents_follow_saved_offsets(scenario, host_environ, reader, 
     if host == "codex":
         delivered(json.dumps(response))
     final = invoke(host, "PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in final
+    _assert_allowed_without_guidance(final)
+    for path in (first, second):
+        _assert_acquisition(_state, path, False)
     spans = [(1, 2), (5, 6), (3, 4), (7, 8)]
     if reverse:
         spans.reverse()
@@ -867,9 +889,12 @@ def test_spooled_documents_follow_saved_offsets(scenario, host_environ, reader, 
         if host == "codex":
             delivered(json.dumps({"output": body}))
         final = invoke(host, "PreToolUse", "Write", write)
+        _assert_allowed_without_guidance(final)
         if index < 2:
-            assert '"permissionDecision": "deny"' in final
-    assert '"permissionDecision": "deny"' not in final
+            for path in (first, second):
+                _assert_acquisition(_state, path, False)
+    for path in (first, second):
+        _assert_acquisition(_state, path, True)
 
 
 @pytest.mark.parametrize("inner_cap", [False, True])
@@ -884,7 +909,7 @@ def test_json_value_cut_keeps_received_prefix(scenario, host_environ, inner_cap,
     rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
     write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
     invoke("codex", "PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in invoke("codex", "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
     command = read_delivery.acquisition_step(read_triggers.ReadTarget(path), "codex").split("`", 2)[1]
     invoke("codex", "PreToolUse", "Bash", {"command": command})
     produced_command, response = _produce(read_triggers.ReadTarget(path), host_environ)
@@ -916,11 +941,13 @@ def test_json_value_cut_keeps_received_prefix(scenario, host_environ, inner_cap,
         + "…20 tokens truncated…"
         + suffix
     )
-    assert '"permissionDecision": "deny"' in invoke("codex", "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
+    _assert_acquisition(_state, path, False)
     spans = ["3,$"] if ends == "prefix" else ["2,2", "4,4"] if inner_cap else ["2,3"]
     for span in spans:
         _deliver_sed(path, span, invoke, delivered, host_environ)
-    assert '"permissionDecision": "deny"' not in invoke("codex", "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
+    _assert_acquisition(_state, path, True)
 
 
 def test_json_field_with_unknown_stream_position_stays_unread(scenario, host_environ):
@@ -930,7 +957,7 @@ def test_json_field_with_unknown_stream_position_stays_unread(scenario, host_env
     rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
     write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
     invoke("codex", "PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in invoke("codex", "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
     command = f"sed -n '1,2p' -- {shlex.quote(str(path))} && sed -n '3,4p' -- {shlex.quote(str(path))} >&2"
     invoke("codex", "PreToolUse", "Bash", {"command": command})
     result = subprocess.run(
@@ -946,10 +973,10 @@ def test_json_field_with_unknown_stream_position_stays_unread(scenario, host_env
     invoke("codex", "PostToolUse", "Bash", {"command": command}, {"stdout": result.stdout, "stderr": result.stderr})
     prefix = json.dumps({"stderr": result.stderr.splitlines(keepends=True)[0]})[:-2]
     delivered("Warning: truncated output (original token count: 100)\n" + prefix + "…10 tokens truncated…")
-    for span, expected_deny in (("2,$", True), ("1,1", False)):
+    for span, expected_acquired in (("2,$", False), ("1,1", True)):
         _deliver_sed(path, span, invoke, delivered, host_environ)
-        denied = '"permissionDecision": "deny"' in invoke("codex", "PreToolUse", "Write", write)
-        assert denied is expected_deny
+        _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
+        _assert_acquisition(_state, path, expected_acquired)
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
@@ -962,7 +989,7 @@ def test_same_response_repetition_keeps_requested_coverage(scenario, host_enviro
     rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
     write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
     invoke(host, "PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in invoke(host, "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
     latter = "3,4" if distinct else "1,2"
     redirect = " >&2" if channel == "stderr" else ""
     command = "; ".join(f"sed -n '{span}p' -- {shlex.quote(str(path))}{redirect}" for span in ("1,2", latter))
@@ -989,7 +1016,7 @@ def test_same_response_repetition_keeps_requested_coverage(scenario, host_enviro
         read_delivery.target_ready(state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(path), "main")
         is distinct
     )
-    assert ('"permissionDecision": "deny"' not in result) is distinct
+    _assert_allowed_without_guidance(result)
 
 
 def test_codex_truncated_diagnostic_keeps_received_requested_span(scenario, host_environ):
@@ -999,7 +1026,7 @@ def test_codex_truncated_diagnostic_keeps_received_requested_span(scenario, host
     rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))
     write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
     invoke("codex", "PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in invoke("codex", "PreToolUse", "Write", write)
+    _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
     for start, end in ((1, 2), (3, 4)):
         command = f"sed -n '{start},{end}p' -- {shlex.quote(str(path))}"
         if start == 1:

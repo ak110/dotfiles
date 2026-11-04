@@ -117,7 +117,7 @@ def test_every_hook_command_converts_launch_failure_to_non_blocking() -> None:
 @pytest.mark.skipif(os.name == "nt", reason="登録コマンドをPOSIXシェルで検証する")
 @pytest.mark.parametrize("definition", _HOOK_DEFINITIONS, ids=lambda path: path.name)
 @pytest.mark.parametrize("case", ["pattern-kill", "unread-rewrite"])
-def test_registered_pretooluse_command_preserves_normal_denial(definition, tmp_path, case) -> None:
+def test_registered_pretooluse_command_preserves_denial_and_read_guidance(definition, tmp_path, case) -> None:
     shell = shutil.which("sh")
     assert shell is not None
     command = json.loads(definition.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
@@ -162,6 +162,11 @@ def test_registered_pretooluse_command_preserves_normal_denial(definition, tmp_p
     )
     assert result.returncode == 0
     assert not result.stderr
+    if case == "unread-rewrite":
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
+        assert "未取得" not in specific.get("additionalContext", "")
+        return
     specific = json.loads(result.stdout)["hookSpecificOutput"]
     assert specific["permissionDecision"] == "deny"
     assert expected in specific["permissionDecisionReason"]
@@ -291,7 +296,7 @@ def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
     hooks.mkdir()
     (hooks / "__init__.py").write_text("", encoding="utf-8")
     source_hooks = _SCRIPT.parent / "_hooks"
-    for name in ("notice.py", "message_format.py", "agent_id.py"):
+    for name in ("notice.py", "message_format.py", "agent_id.py", "timing.py"):
         (hooks / name).write_text((source_hooks / name).read_text(encoding="utf-8"), encoding="utf-8")
     return entrypoint
 
@@ -941,7 +946,7 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
     message = json.loads(context)["hookSpecificOutput"]["additionalContext"]
     assert 'kind="block"' not in message
     pending = pretooluse("repeat-session", "ls")
-    assert "未取得資料" in json.loads(pending)["hookSpecificOutput"]["additionalContext"]
+    assert not pending
     assert '<atk-auto source="read-delivery" kind="document">' not in message
     if not codex:
         assert "agent-basics:search" in message
@@ -972,7 +977,12 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
                 **({"turn_id": "repeat-turn"} if codex else {}),
             }
             reading = {key: value for key, value in event.items() if key not in {"hook_event_name", "tool_response"}}
-            assert not _call_hook_in_process(monkeypatch, "pretooluse", reading)
+            guidance = _call_hook_in_process(monkeypatch, "pretooluse", reading)
+            if guidance:
+                specific = json.loads(guidance)["hookSpecificOutput"]
+                assert specific.get("permissionDecision") != "deny"
+                assert "読込条件の候補" in specific["additionalContext"]
+                assert "未取得資料" not in specific["additionalContext"]
             if codex:
                 event = codex_execution_payload(event, tmp_path, exit_code=0)
             _call_hook_in_process(monkeypatch, "posttooluse", event)

@@ -148,7 +148,6 @@ def test_operation_skill_contract_for_every_entry_and_subject(
     assert 'kind="block"' not in output
     observed = [output]
     actor = extra.get("agent_id", "main")
-    writing = entry.short_name in {"bugfix", "writing-standards"}
     for _attempt in range(12):
         records = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
         targets = [
@@ -161,10 +160,8 @@ def test_operation_skill_contract_for_every_entry_and_subject(
             break
         repeated = _run(payload, env)
         assert repeated.returncode == 0
-        if writing:
-            specific = json.loads(repeated.stdout)["hookSpecificOutput"]
-            assert specific["permissionDecision"] == "deny"
-            assert "未取得資料" in specific["permissionDecisionReason"]
+        assert '"permissionDecision": "deny"' not in repeated.stdout
+        assert "未取得資料" not in _additional_context(repeated)
         for target in targets:
             assert target.body().strip() not in output
             skill = read_delivery.skill_name(target.path)
@@ -265,7 +262,7 @@ def test_missing_skill_document_warns_without_record(
     assert dispatch.main(payload) == 0
     recovered = capsys.readouterr()
     notice = recovered.out + recovered.err
-    assert "必須手順であり省略" in notice
+    assert "必要な基準を取得せよ" in notice
     assert "未取得資料" in notice
     assert "agent-basics:search" in notice
     records = read_state("failure").get(rules_context.OPERATION_SKILL_READY_KEY, {})

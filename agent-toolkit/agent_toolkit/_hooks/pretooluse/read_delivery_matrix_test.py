@@ -13,7 +13,8 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._common import read_triggers
+from agent_toolkit._common import read_triggers, session_state
+from agent_toolkit._hooks import document_reads, rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
@@ -54,7 +55,7 @@ def test_positioned_receipt_matrix(tmp_path, monkeypatch, host_environ, host_sam
 
     write = {"file_path": str(tmp_path / "out.md"), "content": "成果"}
     invoke("PreToolUse", "Write", write)
-    assert '"permissionDecision": "deny"' in invoke("PreToolUse", "Write", write)
+    assert not invoke("PreToolUse", "Write", write)
     spans = [(1, 4)] if method == "cat" else [(1, 2), (3, 4)]
     if order == "reverse":
         spans.reverse()
@@ -132,11 +133,17 @@ def test_positioned_receipt_matrix(tmp_path, monkeypatch, host_environ, host_sam
         kind = method if not (method == "cat" and order == "recovery" and index) else "sed"
         kept, saved = read(path, start, end, kind, mode)
         received.update(kept)
-        denied = '"permissionDecision": "deny"' in invoke("PreToolUse", "Write", write)
-        assert denied is (received != {1, 2, 3, 4})
+        assert not invoke("PreToolUse", "Write", write)
+        records = session_state.read_state("matrix").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+        assert (document_reads.acquisition_state(records, read_triggers.ReadTarget(path), "main") == "current") is (
+            received == {1, 2, 3, 4}
+        )
         if mode == "persisted":
             read(saved, 1, end - start + 1, "read" if method == "read" else "cat", "complete")
             if not (method == "read" and packing == "stderr"):
                 received.update(range(start, end + 1))
-            denied = '"permissionDecision": "deny"' in invoke("PreToolUse", "Write", write)
-            assert denied is (received != {1, 2, 3, 4})
+            assert not invoke("PreToolUse", "Write", write)
+            records = session_state.read_state("matrix").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+            assert (document_reads.acquisition_state(records, read_triggers.ReadTarget(path), "main") == "current") is (
+                received == {1, 2, 3, 4}
+            )

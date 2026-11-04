@@ -32,6 +32,8 @@ OPERATIONS = frozenset(
         "verification",
         "agent-document-writing",
         "confirmation",
+        "wi-report-save",
+        "wi-standard-save",
     }
 )
 PREFIXES = ("skill:", "write:", "path:", "dependency:", "section:", "tool:", "bash:", "role:", "read:")
@@ -108,8 +110,9 @@ def document_lines(text: str) -> Iterator[tuple[int, str, bool]]:
         yield number, line, fence is None
 
 
+@functools.lru_cache(maxsize=1)
 def _headings(text: str) -> tuple[list[str], list[tuple[int, int, str]]]:
-    """フェンス内を除いたMarkdown見出しを位置と階層に分ける。"""
+    """節の範囲解決で直前の本文の索引を共有する。本文をキーにし、同サイズ更新も再解析する。"""
     lines = text.splitlines(keepends=True)
     headings = []
     for number, line, visible in document_lines(text):
@@ -592,6 +595,8 @@ def parse_tables(
             raise ValueError(f"{source}:{number}: 配送操作が無い")
         if any(not known_operation(value) for value in operations):
             raise ValueError(f"{source}:{number}: 未登録の配送操作: {operations}")
+        if strict and any(value in {"bash:atk wi add", "bash:atk wi edit"} for value in operations):
+            raise ValueError(f"{source}:{number}: WI保存は`wi-report-save`または`wi-standard-save`で本文の種別を限定せよ")
         if strict:
             for operation in operations:
                 if not operation.startswith("skill:"):

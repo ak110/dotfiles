@@ -402,6 +402,47 @@ def python_file_paths(code: str, *, writing: bool = False) -> list[str]:
     return paths
 
 
+def _display_read_operands(tokens: Sequence[str]) -> tuple[str, ...]:
+    if not tokens or is_unknown_word(tokens[0]):
+        return ()
+    name = pathlib.PurePath(tokens[0]).name
+    if name in _SEARCH_COMMANDS:
+        if any(option in tokens for option in ("--files", "--help", "--version")):
+            return ()
+        return _content_operands(tokens, pattern=True)
+    if name in {"head", "tail"}:
+        return _content_operands(tokens, pattern=False)
+    return _read_operands(tokens, include_partial=True)
+
+
+def display_read_paths(command: str, cwd: str) -> list[pathlib.Path]:
+    """内容を表示する静的なファイル引数を返す。パイプによる部分表示も案内の対象にする。
+
+    `bash_read_paths`が証明する全文受領とは用途が異なる。編集、ファイルへの出力と
+    ディレクトリ検索を除き、この結果を資料の取得証拠に使わない。
+    """
+    paths = []
+    invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
+    for index, (invocation, current) in enumerate(invocations):
+        if invocation.captured or invocation.output_redirected and not invocation.output_pipe:
+            continue
+        if invocation.output_pipe:
+            downstream = index + 1
+            while downstream < len(invocations) and invocations[downstream][0].output_pipe:
+                downstream += 1
+            if downstream < len(invocations) and invocations[downstream][0].output_redirected:
+                continue
+        for operand in _display_read_operands(invocation.segment.tokens):
+            if is_unknown_word(operand):
+                continue
+            if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
+                continue
+            path = _resolve_path(operand, current.path if current.resolved else cwd)
+            if path.is_file():
+                paths.append(path.resolve())
+    return list(dict.fromkeys(paths))
+
+
 def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
     """実行位置と静的引数だけから、原記録の読取・本文検索・解析入力を得る。"""
     found: list[pathlib.Path] = []
@@ -412,7 +453,7 @@ def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
             continue
         name = pathlib.PurePath(tokens[0]).name
         search = name in _SEARCH_COMMANDS
-        operands = list(_read_operands(tokens, include_partial=True))
+        operands = list(_display_read_operands(tokens))
         if search:
             if "--files" in tokens or "--help" in tokens or "--version" in tokens:
                 continue

@@ -64,7 +64,7 @@ Claude Codeでは`mcp__agent-toolkit__send_to_user`、Codexの通常のターン
 | 作業完了報告の本文を書く前 | `references/report-formats.md`の「検証結果と実行記録」「作業完了報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「検証結果と実行記録」「作業完了報告のフォーマット」` | |
 | 振り返り結果報告かその予告を書く前 | `references/report-formats.md`の「振り返り結果報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「振り返り結果報告のフォーマット」` | |
 | AWI投入結果報告を書く前 | `references/report-formats.md`の「AWI投入結果報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「AWI投入結果報告のフォーマット」` | |
-| 報告用UWIを書く前 | `references/report-formats.md`の「報告用UWIのフォーマット」「報告用UWIの確認と保存」と`../wi-standards/references/uwi-format.md` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIのフォーマット」「報告用UWIの確認と保存」`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
+| 報告用UWIを書く前 | `references/report-formats.md`の「報告用UWIのフォーマット」「報告用UWIの確認と保存」と`../wi-standards/references/uwi-format.md`、`agent-toolkit:wi-standards/SKILL.md` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIのフォーマット」「報告用UWIの確認と保存」`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md`、`read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`wi-report-save` | |
 | 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
 | Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` | |
 

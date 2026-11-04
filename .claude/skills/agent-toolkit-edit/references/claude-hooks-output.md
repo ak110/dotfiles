@@ -13,7 +13,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-output.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-output.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `session-state-and-flags.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md` |
+| セッション名の状態仕様を使う前 | `session-state-and-flags.md`の「状態ファイルの設計」「状態の継承」「plan系」 | 判断 | `section:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md#「状態ファイルの設計」「状態の継承」「plan系」` |
 
 ## 出力フィールドの使い分け
 

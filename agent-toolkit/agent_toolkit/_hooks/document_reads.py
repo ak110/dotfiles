@@ -38,6 +38,14 @@ PowerShellの`Get-Content`を扱わない。report-completionの起動証拠は�
 """
 
 
+def selected_target_key(target: read_triggers.ReadTarget, *, declarations: Sequence[dict] = ()) -> str:
+    """復元と通常操作で同じ資料選択の識別子を使う。"""
+    selected: dict[str, object] = {"path": str(target.path), "heading": target.heading}
+    if declarations:
+        selected["declarations"] = list(declarations)
+    return "selected-read-target:" + json.dumps(selected, ensure_ascii=False, separators=(",", ":"))
+
+
 @dataclasses.dataclass(frozen=True)
 class DocumentRead:
     """スキル配下の資料を対象とする1件の読取。"""
@@ -130,7 +138,10 @@ def skill_loadable(
     if ":" not in name:
         # ローカル資料の実在だけでは、会話からSkillで起動できる根拠にならない。
         directories = [pathlib.Path.home() / ".claude/skills", *read_triggers.project_skill_dirs(pathlib.Path(cwd or "."))]
-        return any((directory / name / "SKILL.md").resolve() == path.resolve() for directory in directories)
+        selected = next(
+            (directory / name / "SKILL.md" for directory in directories if (directory / name / "SKILL.md").is_file()), None
+        )
+        return selected is not None and selected.resolve() == path.resolve()
     active = active_skill_root(name.split(":", 1)[0])
     root = owner(path)
     return active is None or root is None or root == active
@@ -346,7 +357,20 @@ def returned_texts(response: object) -> list[str]:
         if "type" in response and response["type"] not in {"text", "input_text", "output_text"}:
             return []
         if isinstance(response.get("file"), dict):
-            return returned_texts(response["file"].get("content"))
+            file = response["file"]
+            content = file.get("content")
+            count = file.get("numLines")
+            if (
+                isinstance(content, str)
+                and content.endswith("\n")
+                and isinstance(count, int)
+                and not isinstance(count, bool)
+                and count == len(content.splitlines()) + 1
+            ):
+                # Readは行間LFで結合するため、範囲末尾の空行は終端の空要素として表現される。
+                # 明示された表示行数が一致する場合だけ、行digestがその空行も保持する形へそろえる。
+                content += "\n"
+            return returned_texts(content)
         if "stdout" in response or "stderr" in response:
             return [text for key in ("stdout", "stderr") for text in returned_texts(response.get(key))]
         for key in ("stdout", "output", "text"):

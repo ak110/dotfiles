@@ -8,7 +8,12 @@ from agent_toolkit._common import read_triggers, session_state
 from agent_toolkit._hooks import document_reads, rules_context
 from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery
 from agent_toolkit._testing.document_delivery import run_hook
-from agent_toolkit._testing.pretooluse_support import denial_reason
+
+
+def _assert_continues_without_guidance(result):
+    """公開hookの正常終了と反復案内がないことを確認する。"""
+    assert result.returncode == 0 and not result.stderr
+    assert not result.stdout
 
 
 def _arrange(tmp_path, monkeypatch, host):
@@ -52,8 +57,8 @@ def _arrange(tmp_path, monkeypatch, host):
         "ty check > evidence.log",
     ],
 )
-def test_diagnostic_save_preserves_unread_write_guard(tmp_path, monkeypatch, host, command):
-    """既存証拠への追記も許可し、取得状態と次の通常再書込の拒否は保持する。"""
+def test_diagnostic_save_preserves_unread_evidence_without_blocking(tmp_path, monkeypatch, host, command):
+    """診断保存と通常再書込を許可し、資料の未取得状態は独立に保持する。"""
     payload, operation, reference = _arrange(tmp_path, monkeypatch, host)
     before = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
     result = run_hook("pretooluse", {**payload, "tool_name": "Bash", "tool_input": {"command": command}})
@@ -61,10 +66,13 @@ def test_diagnostic_save_preserves_unread_write_guard(tmp_path, monkeypatch, hos
     specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
     assert specific.get("permissionDecision") != "deny"
     assert operation_skills.written_paths("Bash", {"command": command}, str(tmp_path))
+    assert operation_skills.is_diagnostic_operation("Bash", {"command": command}, str(tmp_path))
     after = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
     assert after == before
     assert not document_reads.content_ready(after, document_reads.content_fingerprint(reference), "main")
-    assert str(reference) in denial_reason(run_hook("pretooluse", operation))
+    _assert_continues_without_guidance(run_hook("pretooluse", operation))
+    records = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
+    assert document_reads.acquisition_state(records, read_triggers.ReadTarget(reference), "main") == "missing"
     read = run_hook(
         "posttooluse",
         {
@@ -77,7 +85,9 @@ def test_diagnostic_save_preserves_unread_write_guard(tmp_path, monkeypatch, hos
     assert read.returncode == 0 and not read.stderr
     resumed = run_hook("pretooluse", operation)
     assert resumed.returncode == 0 and not resumed.stderr
-    assert "permissionDecisionReason" not in resumed.stdout
+    _assert_continues_without_guidance(resumed)
+    records = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
+    assert document_reads.acquisition_state(records, read_triggers.ReadTarget(reference), "main") == "current"
 
 
 @pytest.mark.parametrize(
@@ -108,24 +118,29 @@ def test_diagnostic_save_preserves_unread_write_guard(tmp_path, monkeypatch, hos
         "git -c alias.inspect='!printf x' inspect > evidence.log",
     ],
 )
-def test_uncertain_or_mixed_save_keeps_guard(tmp_path, monkeypatch, command):
-    """診断名だけで通常書込・動的起動・自動修正を免除しない。"""
+def test_uncertain_or_mixed_save_continues_with_unread_evidence(tmp_path, monkeypatch, command):
+    """通常書込・動的起動・自動修正を診断保存と区別し、未取得でも継続を許可する。"""
     payload, _operation, reference = _arrange(tmp_path, monkeypatch, "codex")
     result = run_hook("pretooluse", {**payload, "tool_name": "Bash", "tool_input": {"command": command}})
-    assert str(reference) in denial_reason(result)
+    assert not operation_skills.is_diagnostic_operation("Bash", {"command": command}, str(tmp_path))
+    _assert_continues_without_guidance(result)
+    records = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
+    assert document_reads.acquisition_state(records, read_triggers.ReadTarget(reference), "main") == "missing"
 
 
-def test_diagnostic_notice_does_not_claim_unread_write_warning(tmp_path, monkeypatch):
-    """診断の案内だけでは再書込の案内済み状態を作らず、次の通常書込は初回警告になる。"""
+def test_delivered_diagnostic_guidance_is_not_repeated_for_write(tmp_path, monkeypatch):
+    """診断時に実配送した同じ資料の案内を、次の通常書込で反復しない。"""
     payload, operation, reference = _arrange(tmp_path, monkeypatch, "codex")
     session_state.update_state(payload["session_id"], lambda _state: {})
     diagnostic = {**payload, "tool_name": "Bash", "tool_input": {"command": "git diff >> evidence.log"}}
     result = run_hook("pretooluse", diagnostic)
     assert result.returncode == 0 and not result.stderr
     records = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
-    assert not any(key.startswith("read-guidance:") for key in records)
+    assert any(key.startswith("read-guidance:") for key in records)
     assert not document_reads.content_ready(records, document_reads.content_fingerprint(reference), "main")
     first_write = run_hook("pretooluse", operation)
     assert first_write.returncode == 0 and not first_write.stderr
-    assert str(reference) in first_write.stdout and "permissionDecisionReason" not in first_write.stdout
-    assert str(reference) in denial_reason(run_hook("pretooluse", operation))
+    assert str(reference) not in first_write.stdout and "permissionDecisionReason" not in first_write.stdout
+    _assert_continues_without_guidance(run_hook("pretooluse", operation))
+    records = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
+    assert document_reads.acquisition_state(records, read_triggers.ReadTarget(reference), "main") == "missing"

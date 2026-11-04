@@ -196,7 +196,7 @@ def _persisted(body: str) -> str:
 
 @pytest.mark.parametrize("form", ["multiple", "mixed", "diagnostic", "single", "split"])
 def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp_path, capsys, monkeypatch, form):
-    """65536バイトを超える応答の保存用写しが省略されても、成功した読取で書込遮断を解除する。
+    """保存用写しが省略されても、実配送した必要本文の受領を記録する。
 
     複数資料の静的なcat、単一の長い資料、末尾まで分けた行範囲の取得を比べる。
     `diagnostic`は、先頭の読取成功を後続の`git status`などの診断によって失わないことを確かめる。
@@ -212,7 +212,10 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
     write = {"file_path": str(tmp_path / "out.md"), "content": "本文"}
     first = read_delivery.deliver(operation, "Write", write, "session")
     read_delivery.notice_module.record_delivery("\n".join(first.notices))
-    assert read_delivery.deliver(operation, "Write", write, "session").block is not None
+    repeated = read_delivery.deliver(operation, "Write", write, "session")
+    assert repeated.block is None and not repeated.notices
+    records = session_state.read_state("session").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert all(not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(path), "main") for path in paths)
     if form == "multiple":
         reads = [(f"cat -- {paths[0]} {paths[1]}", paths[0].read_text() + paths[1].read_text())]
     elif form == "mixed":
@@ -236,6 +239,8 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
         assert result.returncode == 0 and not result.stderr
     capsys.readouterr()
     assert read_delivery.deliver(operation, "Write", write, "session").block is None
+    records = session_state.read_state("session")[rules_context.OPERATION_SKILL_READY_KEY]
+    assert all(read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(path), "main") for path in paths)
 
 
 def test_persisted_copy_delivered_as_the_response_is_not_a_full_read(tmp_path):

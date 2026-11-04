@@ -9,7 +9,9 @@ from typing import Any
 import pytest
 
 from agent_toolkit._atk import run_script
-from agent_toolkit._hooks import rules_context
+from agent_toolkit._hooks import rules_context, user_prompt_submit, work_contract
+from agent_toolkit._hooks.pretooluse import read_delivery
+from agent_toolkit._testing.document_delivery import run_hook
 
 
 @pytest.mark.parametrize("candidates", [0, 1, 2])
@@ -84,6 +86,67 @@ def test_compact_extracts_original_user_events(
         assert [event["text"] for event in events] == ["最初の要求を全部保持する", "範囲を狭めず例も確認する"]
         assert [event["line"] for event in events] == [1, 4]
         assert all(event["record"] for event in events)
+
+
+@pytest.mark.parametrize(
+    "instructions,retained",
+    [
+        (["説明を省かず最後まで実装して", "説明は簡潔に訂正する。最後まで実装して"], "説明は簡潔に、実装を完了する"),
+        (["計画だけを返して", "計画だけという指示を取り下げる。検証まで進めて"], "検証まで実装する"),
+    ],
+)
+def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, instructions, retained):
+    """原文の選択から公開取得・反復抑止・契約への統合と再開までを接続する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
+    monkeypatch.setattr(work_contract, "record_path", lambda _session: tmp_path / "work-contract.md")
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(user_prompt_submit, "_claim_user_confirmation_notice", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(user_prompt_submit.termination_evidence, "observe_user", lambda *_args: None)
+    contract = tmp_path / "work-contract.md"
+    contract.write_text("目的: 作業を完了する\n", encoding="utf-8")
+    session = "original-resume"
+    for prompt in instructions:
+        notified = run_hook("user_prompt_submit", {"session_id": session, "prompt": prompt})
+        assert notified.returncode == 0 and "現在の指示として作業契約へ統合" in notified.stdout
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text(
+        "\n".join(
+            json.dumps(
+                {"type": "user", "sessionId": session, "message": {"role": "user", "content": prompt}}, ensure_ascii=False
+            )
+            for prompt in instructions
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    compact = run_hook(
+        "rules_context",
+        {"session_id": session, "hook_event_name": "SessionStart", "source": "compact", "transcript_path": str(transcript)},
+    )
+    original = tmp_path / "compaction-user-events.jsonl"
+    assert compact.returncode == 0 and str(original) in compact.stdout
+    operation = {
+        "session_id": session,
+        "cwd": str(tmp_path),
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "result.md"), "content": "# 結果\n"},
+    }
+    guided = run_hook("pretooluse", operation)
+    assert guided.returncode == 0 and str(original) in guided.stdout, rules_context.read_state(session)
+    body = original.read_text(encoding="utf-8")
+    assert [json.loads(line)["text"] for line in body.splitlines()] == instructions
+    received = run_hook(
+        "posttooluse", {**operation, "tool_name": "Read", "tool_input": {"file_path": str(original)}, "tool_response": body}
+    )
+    assert received.returncode == 0
+    resumed = run_hook("pretooluse", operation)
+    assert resumed.returncode == 0 and str(original) not in resumed.stdout
+    # 自然文の採否はエージェントの責務であり、この試験では判定済みの契約を消費側へ渡す。
+    contract.write_text(f"目的: 作業を完了する\n現在の指示: {retained}\n", encoding="utf-8")
+    restart = run_hook("user_prompt_submit", {"session_id": session, "prompt": "続きを進めて"})
+    assert restart.returncode == 0 and retained in restart.stdout and "元の未完了工程へ戻れ" in restart.stdout
 
 
 @pytest.mark.parametrize("cleanup_fails", [False, True])

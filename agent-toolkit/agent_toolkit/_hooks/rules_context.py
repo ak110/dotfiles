@@ -17,6 +17,7 @@ import html
 import json
 import os
 import pathlib
+import time
 lazy import re
 lazy import shlex
 lazy import subprocess
@@ -34,7 +35,7 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.session_state import read_state, update_state
-lazy from agent_toolkit._hooks import document_reads, work_contract
+lazy from agent_toolkit._hooks import document_reads, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
 
@@ -240,6 +241,7 @@ def reset_main_operation_skill_ready(
         current.get("document_read_candidates", {}).pop(MAIN_AGENT_ID, None)
         current.get("document_read_pending", {}).pop(MAIN_AGENT_ID, None)
         current.get("document_read_spools", {}).pop(MAIN_AGENT_ID, None)
+        current.get("result_read_pending", {}).pop(MAIN_AGENT_ID, None)
         evidence = current.get("termination_evidence")
         if isinstance(evidence, dict):
             evidence.pop("pending_reads", None)
@@ -326,9 +328,6 @@ def _compact_recovery_context(
                 and skill[1] == "SKILL.md"
                 and document_reads.requires_skill_invocation(path, host=host, subject="main", cwd=cwd)
             ):
-                owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
-                name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
-                steps.append(f"`Skill`で`{name}`を起動せよ（資料: `{path}`）")
                 continue
             focus = f"。特に`{heading}`に注目せよ" if heading else ""
             if host in {"codex", "agy"}:
@@ -527,9 +526,19 @@ def _compaction_notice(
         ]
         data = "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in users)
         output.write_text(data, encoding="utf-8")
+        key = document_reads.selected_target_key(read_triggers.ReadTarget(output))
+
+        def select_original(state: dict) -> dict:
+            records = state.setdefault(OPERATION_SKILL_READY_KEY, {})
+            actors = records.setdefault(key, [])
+            if MAIN_AGENT_ID not in actors:
+                actors.append(MAIN_AGENT_ID)
+            return state
+
+        update_state(session_id, select_original)
         lines.append(
             f"ユーザー発話の原文{len(users)}件: {output}。圧縮の要約で文言や範囲が変わり得るため、"
-            "ユーザーの要求と判断はこのファイルの原文で確かめよ。"
+            "ユーザーの要求・判断・行動の訂正を原文と作業契約で比較し、有効な指示を統合して元の未完了工程へ戻れ。"
         )
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         if output is not None:
@@ -588,13 +597,21 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         source = payload.get("source")
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
+        session_temp = None
+        if isinstance(session_id, str) and session_id:
+            with contextlib.suppress(managed_temp.ManagedTempError, OSError):
+                session_temp = managed_temp.resolve_session_temp(session_id)
         if source in _CONTEXT_LOSING_SOURCES and isinstance(session_id, str) and session_id:
             # 同じセッションIDでも受信文脈は失われているため、既送の通知を本文の構成前に未送へ戻す。
             forget_subject_notices(session_id, MAIN_AGENT_ID)
+        started = time.monotonic()
         content = compose_session_start(source, delegated=delegated, host=host)
+        timing.record(payload, "rules_context", started, "ok", stage="normative-content")
         from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
+        started = time.monotonic()
         review_notice = run_skill_batch.hook_request(payload, host=host) if host in {"claude", "codex"} else None
+        timing.record(payload, "rules_context", started, "ok", stage="review-session-request")
         if review_notice is not None:
             content = f"{content}\n\n{_llm_notice(review_notice)}" if content else _llm_notice(review_notice)
         if not delegated and host == "claude":
@@ -611,7 +628,6 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                         else None
                     ),
                 )
-            session_temp = None
             recovery_targets: list[tuple[pathlib.Path, str, str, bool]] = []
             if source in _OPERATION_SKILL_RESET_SOURCES:
                 recovery_targets = reset_main_operation_skill_ready(session_id, retain_for_compact=source == "compact")
@@ -628,11 +644,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     )
                     if contract_update:
                         content = f"{content}\n\n{_llm_notice(contract_update)}"
-            try:
-                session_temp = managed_temp.resolve_session_temp(session_id)
-            except managed_temp.ManagedTempError, OSError:
-                pass
-            else:
+            if session_temp is not None:
                 temp_text = session_temp_notice(session_temp)
                 contract_context = None
                 if source == "compact" and not delegated and work_contract.exists(session_id):
@@ -652,7 +664,9 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 if contract_context:
                     content += f"\n\n{contract_context}"
             if source == "compact" and host == "claude":
+                started = time.monotonic()
                 compact_text = _compaction_notice(session_id, payload.get("transcript_path"), session_temp, delegated=delegated)
+                timing.record(payload, "rules_context", started, "ok", stage="compaction-recovery")
                 if compact_text:
                     compact = _llm_notice(compact_text)
                     content = f"{content}\n\n{compact}" if content else compact

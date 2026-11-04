@@ -1,4 +1,4 @@
-"""実ホストの生産済み標本を再配送し、公開hookの最終案内・遮断まで確かめる。
+"""実ホストの生産済み標本を再配送し、公開hookの案内・継続許可と受領証拠を確かめる。
 
 原記録のファイル・行・版はfixtures/read_delivery_host_samples.json.gzのsourceに保存する。
 responseとrecordは実記録から未改変で抽出した値であり、試験側でホスト出力を再構成しない。
@@ -55,7 +55,7 @@ def test_claude_produced_response_reaches_guidance_and_write(tmp_path, monkeypat
         return result.stdout
 
     assert str(target) in invoke("PreToolUse", write)
-    assert '"permissionDecision": "deny"' in invoke("PreToolUse", write)
+    assert not invoke("PreToolUse", write)
     invoke(
         "PostToolUseFailure" if name == "claude_failure" else "PostToolUse",
         {
@@ -68,16 +68,20 @@ def test_claude_produced_response_reaches_guidance_and_write(tmp_path, monkeypat
         },
     )
     final = invoke("PreToolUse", write)
-    assert ('"permissionDecision": "deny"' not in final) is acquired
+    assert not final
     records = session_state.read_state("sample-claude").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert read_delivery.target_ready(records, read_triggers.ReadTarget(target), "main") is acquired
     assert not read_delivery.target_ready(records, read_triggers.ReadTarget(remainder), "main")
     assert not read_delivery.target_ready(records, read_triggers.ReadTarget(target), "other")
     invoke("PreToolUse", {**write, "agent_id": "other"})
-    assert '"permissionDecision": "deny"' in invoke("PreToolUse", {**write, "agent_id": "other"})
+    assert not invoke("PreToolUse", {**write, "agent_id": "other"})
+    records = session_state.read_state("sample-claude").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert not read_delivery.target_ready(records, read_triggers.ReadTarget(target), "other")
     rows[:] = [read_triggers.ReadTrigger(remainder, 1, "操作", ("tool:Write",), (remainder,))]
     invoke("PreToolUse", write)
-    assert '"permissionDecision": "deny"' in invoke("PreToolUse", write)
+    assert not invoke("PreToolUse", write)
+    records = session_state.read_state("sample-claude").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert not read_delivery.target_ready(records, read_triggers.ReadTarget(remainder), "main")
 
 
 @pytest.mark.parametrize("name", ["codex_two_layer_cut", "codex_nonzero"])
@@ -119,11 +123,13 @@ def test_codex_produced_outer_record_reaches_incremental_pre_hook(tmp_path, monk
     records = session_state.read_state("sample-codex").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert read_delivery.target_ready(records, read_triggers.ReadTarget(visible), "main")
     assert read_delivery.target_ready(records, read_triggers.ReadTarget(full), "main") is (name == "codex_nonzero")
-    assert ('"permissionDecision": "deny"' in final.stdout) is (name == "codex_two_layer_cut")
+    assert not final.stdout
     offsets = session_state.read_state("sample-codex")["document_read_offsets"]
     assert next(iter(offsets.values())) == rollout.stat().st_size
     other = {**write, "agent_id": "other"}
     _run_hook_in_process("pretooluse", other)
-    denied = _run_hook_in_process("pretooluse", other)
-    assert denied.returncode == 0 and not denied.stderr
-    assert '"permissionDecision": "deny"' in denied.stdout
+    repeated = _run_hook_in_process("pretooluse", other)
+    assert repeated.returncode == 0 and not repeated.stderr and not repeated.stdout
+    records = session_state.read_state("sample-codex").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert not read_delivery.target_ready(records, read_triggers.ReadTarget(visible), "other")
+    assert not read_delivery.target_ready(records, read_triggers.ReadTarget(full), "other")

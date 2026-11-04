@@ -24,6 +24,7 @@ import json
 import os
 import pathlib
 import sys
+import time
 import types
 
 # 正常な呼出しで使わない診断とdump用の依存を、必要になるまで読み込まない。
@@ -35,6 +36,7 @@ lazy from agent_toolkit._common.plugin_roots import plugin_resolution_scope
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import notice as _notice
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
+lazy from agent_toolkit._hooks import timing
 lazy from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 _SUBCOMMANDS: frozenset[str] = frozenset(
@@ -88,6 +90,7 @@ def _record_activity(payload: object, *, output: str = "", returncode: int = 0) 
 
 def main(argv: list[str]) -> int:
     """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。"""
+    started = time.monotonic()
     inherited_venv.strip_inherited_venv(os.environ)
     _configure_standard_output()
     _notice.begin_delivery()
@@ -117,6 +120,7 @@ def main(argv: list[str]) -> int:
     try:
         module = importlib.import_module(f"agent_toolkit._hooks.{argv[0]}")
     except Exception as exc:  # noqa: BLE001 -- 読込障害でも操作を継続する
+        timing.record(payload, argv[0], started, "import-error")
         _failure_response(argv[0], exc)
         return 0
     cycle: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
@@ -131,8 +135,11 @@ def main(argv: list[str]) -> int:
             resolution = plugin_resolution_scope(session_id=session_id)
     try:
         with cycle, resolution:
-            return _invoke_module(module, payload_text, payload, argv)
+            result = _invoke_module(module, payload_text, payload, argv)
+        timing.record(payload, argv[0], started, "returned-zero" if result == 0 else "nonzero")
+        return result
     except Exception as exc:  # noqa: BLE001 -- フック障害でも操作を継続する
+        timing.record(payload, argv[0], started, "error")
         _failure_response(argv[0], exc)
         return 0
 
@@ -158,6 +165,7 @@ def _failure_response(subcommand: str, error: Exception, response: dict | None =
 
 def _invoke_module(module: types.ModuleType, payload_text: str, payload: object, argv: list[str]) -> int:
     """内部出力を捕捉し、ホストへ採用した本文の配送だけを確定する。"""
+    started = time.monotonic()
     output = io.StringIO()
     error = None
     result = 0
@@ -193,6 +201,9 @@ def _invoke_module(module: types.ModuleType, payload_text: str, payload: object,
         # Antigravityは保留した通知を後の注入で配送するため、予約を残して失効時間と配送記録に任せる。
         with contextlib.suppress(Exception):
             _progress_self_check.release_reservations()
+    timing.record(
+        payload, argv[0], started, "error" if error is not None else "ok" if result == 0 else "nonzero", stage="handler"
+    )
     return result
 
 

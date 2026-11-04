@@ -3,9 +3,60 @@
 import json
 import subprocess
 
-from agent_toolkit._common import plugin_roots
+import pytest
+
+from agent_toolkit._common import plugin_roots, read_triggers
 from agent_toolkit._hooks import document_reads
 from agent_toolkit._hooks.pretooluse import read_delivery
+
+
+def test_receipt_candidates_share_document_scan_and_refresh_changed_body(tmp_path, monkeypatch):
+    """必要な節の受領を保ち、同じ本文の解析を共有して同サイズ更新も識別する。"""
+    path = tmp_path / "document.md"
+    text = f"# {tmp_path.name}\n" + "".join(f"## Section {index}\nold\n" for index in range(20))
+    scans = []
+    document_lines = read_triggers.document_lines
+
+    def observe_lines(body, **_kwargs):
+        scans.append(body)
+        yield from document_lines(body)
+
+    monkeypatch.setattr(read_triggers, "document_lines", observe_lines)
+    versions = []
+    for body in (text, text.replace("old", "new")):
+        path.write_text(body, encoding="utf-8")
+        scans.clear()
+        candidates = document_reads.receipt_candidates([read_triggers.ReadTarget(path)])
+        received = document_reads.received_candidates(candidates, [body])
+        assert len(received) == 22
+        assert next(item for item in received if item["heading"] == "Section 19")["ranges"] == [[40, 41]]
+        assert len(scans) <= 2
+        versions.append(received[0]["version"])
+    assert versions[0] != versions[1]
+
+
+@pytest.mark.parametrize("tool_name", ["WebFetch", "Read"])
+def test_receipt_preparation_excludes_unrelated_documents(tmp_path, monkeypatch, tool_name):
+    """公開配送操作は明示読取だけを候補化し、非読取では無関係な本文を解析しない。"""
+    path = tmp_path / "document.md"
+    path.write_text("# Document\ncontent\n", encoding="utf-8")
+    row = read_triggers.ReadTrigger(path, 1, "操作", ("path:*.py",), (path,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    calls = []
+    receipt_candidates = document_reads.receipt_candidates
+
+    def observe_candidates(*args, **kwargs):
+        calls.append(args)
+        return receipt_candidates(*args, **kwargs)
+
+    monkeypatch.setattr(document_reads, "receipt_candidates", observe_candidates)
+    read_path = tmp_path / "read.md"
+    read_path.write_text("# Requested\ncontent\n", encoding="utf-8")
+    inputs = {"file_path": str(read_path)} if tool_name == "Read" else {"url": "https://example.com", "prompt": "全文を返す"}
+    decision = read_delivery.deliver({"cwd": str(tmp_path)}, tool_name, inputs, "receipt-preparation")
+    assert decision.block is None
+    assert not decision.notices
+    assert {target.path for args in calls for target in args[0]} == ({read_path} if tool_name == "Read" else set())
 
 
 def test_basics_reference_uses_observed_manifest_and_path(tmp_path):

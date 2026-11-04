@@ -1,6 +1,6 @@
 """宣言された操作の前に、主体の文脈に未取得の資料を案内する。
 
-初回は資料のパスを案内し、未取得のまま再書込する操作を遮断する。
+必要な資料を初回に案内し、資料の取得判定を操作の許可条件にしない。
 取得の観測だけを主体別の記録に反映する。
 実際に配送された必要範囲を記録し、旧版の受信と現在版の更新を区別する。
 軽量委譲は起動契約がスキルを使わないため対象外とする。
@@ -49,8 +49,8 @@ from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse import dependency_usage, operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
-from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, sed_read_range
-from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, display_read_paths, sed_read_range
+from agent_toolkit._hooks.pretooluse.notices import _llm_notice
 lazy from agent_toolkit._common import task_documents
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
 
@@ -260,7 +260,7 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, referenc
             or requires_skill_invocation(path, host="claude", subject=subject, cwd=cwd)
         )
     ):
-        step = f"`Skill`で`{skill}`を起動せよ（資料: `{path}`）"
+        step = f"`Skill`で`{skill}`を起動せよ"
         if subject == operation_skills.SUBJECT_SUBAGENT:
             step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
         return step + focus
@@ -274,14 +274,10 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, referenc
         size = len(body.encode("utf-8"))
         return (
             "、".join(f"`{command}`" for command in commands)
-            + f"で取得せよ（対象{size}バイト、予算目安{(size + 2) // 3}トークン）。"
-            "内側exec_commandのmax_output_tokensと外側functions.execの出力枠を確保し、外側は内側の合計以上にせよ。"
-            "枠に収まらない範囲は行範囲を分けて取得せよ。" + rules_context.shell_acquisition_conditions() + focus
+            + f"で取得せよ（{size}バイト、予算目安{(size + 2) // 3}トークン）"
+            + focus
         )
-    return (
-        f"Readで`{path}`を取得せよ。Bashでは`cat -- {shlex.quote(str(path))}`、"
-        "または`sed -n '<開始行>,<終了行>p' -- <絶対パス>`を単独か`&&`連結で実行せよ" + focus
-    )
+    return f"Readで`{path}`を取得せよ" + focus
 
 
 def _pyproject_dependencies(text: str) -> object:
@@ -361,9 +357,10 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
         paths = _artifact_written_paths(tool_name, tool_input, cwd)
         return any(fnmatch.fnmatch(path.replace("\\", "/"), value) for path in paths)
     if prefix == "section":
-        pattern, separator, _heading = value.partition("#")
+        pattern, separator, heading = value.partition("#")
+        requests = _fragment_requests({"cwd": cwd}, tool_name, tool_input)
         return bool(separator) and any(
-            _matches_document_path(path, pattern)
+            _matches_document_path(path, pattern) and _requested_section(path, heading, requests.get(str(path.resolve()), []))
             for resolve in (True, False)
             for path in _read_paths(tool_name, tool_input, cwd, resolve=resolve)
         )
@@ -429,6 +426,19 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
     return False
 
 
+def _requested_section(path: pathlib.Path, heading: str, requests: list[tuple[int, int | None, int]]) -> bool:
+    """部分読取で実際に選んだ節だけを、自然文条件の明示選択として扱う。"""
+    if not requests:
+        return False
+    try:
+        ranges = read_triggers.ReadTarget(path, heading).line_ranges()
+    except OSError, UnicodeError, ValueError:
+        # 不正な参照は、後続の宣言診断へ渡す。
+        return True
+    return any(0 < start <= last and (end is None or end >= first) for start, end, _order in requests for first, last in ranges)
+
+
+@_input_cached
 def _matches_document_path(path: pathlib.Path, pattern: str) -> bool:
     """同名skillを持つpluginを、明示した資料の取得操作でも区別する。"""
     candidates = [path]
@@ -515,14 +525,15 @@ def row_matches(row: read_triggers.ReadTrigger, tool_name: str, tool_input: dict
 
 
 def condition_confirmed(row: read_triggers.ReadTrigger, tool_name: str, tool_input: dict, cwd: str) -> bool:
-    """操作契機と明示的な資料選択だけを確定し、自然文の判断を代行しない。"""
+    """公開操作で確かめられる条件だけを確定し、自然文の判断を代行しない。"""
     if row.kind != "判断" or not row.condition:
         return True
     # 確認ツールの呼出しは、確認本文・選択肢を起草する操作が成立した観測になる。
     if "confirmation" in row.operations and matches("confirmation", tool_name, tool_input, cwd):
         return True
+    # 対象資料の読取だけでは、宣言元の役割・工程などの自然文条件を確定できない。
     return any(
-        operation.startswith(("read:", "section:")) and _bound_operation_matches(row, operation, tool_name, tool_input, cwd)
+        operation in {"wi-report-save", "wi-standard-save"} and matches(operation, tool_name, tool_input, cwd)
         for operation in row.operations
     )
 
@@ -844,6 +855,8 @@ def dynamic_targets(
 
 
 def _mark(session_id: str, path: pathlib.Path, agent: str, fingerprint: str = "", *, record_scopes: bool = True) -> None:
+    from agent_toolkit._hooks import result_reads  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
     identifier = document_key(path, fingerprint)
     update_state(session_id, operation_skills.mark_ready(identifier, agent))
     if record_scopes and (not fingerprint or fingerprint == document_reads.content_fingerprint(path)):
@@ -874,6 +887,20 @@ def _mark(session_id: str, path: pathlib.Path, agent: str, fingerprint: str = ""
             return state
 
         update_state(session_id, parsed)
+    _select_result_documents(session_id, agent, result_reads.observe_file(session_id, agent, path))
+
+
+def _select_result_documents(session_id: str, agent: str, documents: list[str]) -> None:
+    targets = []
+    root = plugin_resources.plugin_root()
+    for document in documents:
+        name, _separator, heading = document.partition("#")
+        path = read_triggers.resolve_document(name, root / "share/read-trigger-contract.md", root)
+        if path is None or not path.is_file():
+            raise ValueError(f"結果の判断資料を解決できない: {document}")
+        targets.append(read_triggers.ReadTarget(path, heading))
+    if targets:
+        _select_targets(session_id, targets, agent)
 
 
 def _review_reference(session_id: str, prepared: object, agent: str) -> None:
@@ -977,12 +1004,9 @@ def _select_targets(
             except ValueError:
                 # 不正な宣言を保持すると、宣言を復旧した後にも旧見出しが残る。
                 continue
-        selected: dict[str, object] = {"path": str(target.path), "heading": target.heading}
         origins = [_declaration_identity(row) for row in rows or () if target in row.targets]
-        if origins:
-            selected["declarations"] = origins
-        value = json.dumps(selected, ensure_ascii=False, separators=(",", ":"))
-        update_state(session_id, operation_skills.mark_ready("selected-read-target:" + value, agent))
+        key = document_reads.selected_target_key(target, declarations=origins)
+        update_state(session_id, operation_skills.mark_ready(key, agent))
 
 
 def _codex_dependency_repair(tokens: tuple[str, ...], error: Exception) -> bool:
@@ -1072,7 +1096,11 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         for key, actors in records.items()
         if isinstance(actors, list)
     )
-    current_targets = _receipt_targets(payload, tool_name, tool_input, session_id, active_only=True) if has_receipts else []
+    current_targets = (
+        _receipt_targets(payload, tool_name, tool_input, session_id, active_only=True, include_selected=False)
+        if has_receipts
+        else []
+    )
     for target in dict.fromkeys(current_targets):
         if document_reads.acquisition_state(records, target, agent) != "updated":
             continue
@@ -1190,7 +1218,7 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
     share = root / "share"
     command = tool_input.get("command")
     candidates = (
-        [path.resolve() for group in bash_read_paths(command, cwd, include_partial=True, include_piped=True) for path in group]
+        display_read_paths(command, cwd)
         if tool_name == "Bash" and isinstance(command, str)
         else _read_paths(tool_name, tool_input, cwd)
     )
@@ -1369,7 +1397,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         # 動的な起動対象は従来どおりパスで持ち越す。名指し参照の選択元がある場合だけ資料参照として扱う。
         invocation_paths.update(
             target.path
-            for target in selected_targets(records, agent, rows=rows)
+            for target in selected_targets(
+                records, agent, rows=[row for row in rows if condition_confirmed(row, tool_name, tool_input, cwd)]
+            )
             if not target.heading
             and requires_skill_invocation(target.path, host=host, subject=subject, cwd=cwd)
             and not document_reads.reference_only([row.operations for row in selection_rows if target in row.targets])
@@ -1384,19 +1414,20 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 if target.path in invocation_paths
                 else document_key(target.path)
             )
-            return "read-guidance:" + key
+            return "read-guidance:" + key + "#heading:" + target.heading
 
         pending = list(dict.fromkeys(target for row in active_rows for target in active_targets[row] if not ready(target)))
-        # 案内済みで未取得の資料は、取得するまで次の操作でも案内する。
-        # 文脈境界（会話圧縮・clear）の前に選んだ資料は候補であり、境界後の操作ごとに再掲しない。
-        # 残る工程で必要な資料は、現在の操作の宣言が改めて選んだ時点で案内する。
+        # 取得操作で保留した初回案内だけを次の依存操作へ渡す。実配送後は未取得でも再掲しない。
         carried = [
             target
-            for target in selected_targets(records, agent, rows=rows)
+            for target in selected_targets(
+                records, agent, rows=[row for row in rows if condition_confirmed(row, tool_name, tool_input, cwd)]
+            )
             if not temporary_code
             and target not in pending
             and not ready(target)
             and agent not in records.get(rules_context.carried_read_target_key(target.path), [])
+            and agent not in records.get(guidance_key(target), [])
         ]
         pending.extend(carried)
         method_sources = dict.fromkeys([*_read_paths(tool_name, tool_input, cwd), *sorted(roles)])
@@ -1490,7 +1521,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         )
     if not pending:
         return Decision()
-    # 現在の操作が改めて対象にした資料は持ち越しの扱いを外し、圧縮前と同じ限定遮断の対象へ戻す。
+    # 現在の操作が改めて対象にした資料は、圧縮前の候補から現在の案内対象へ戻す。
     for target in pending:
         carried_key = rules_context.carried_read_target_key(target.path)
         if target not in carried and agent in records.get(carried_key, []):
@@ -1521,10 +1552,13 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         history_path = payload.get("transcript_path")
         if isinstance(history_path, str) and history_path and transcript.read_transcript_lines(history_path) is None:
             return Decision()
-    # 同じ資料の節違いは取得案内をまとめるため、パスごとに1回だけ示す。
+    _select_targets(session_id, pending, agent, rows=selection_rows)
+    pending = [target for target in pending if agent not in records.get(guidance_key(target), [])]
+    if not pending:
+        return Decision()
+    # 同じ資料の節違いは取得案内をまとめる。
     uninvoked = [target for target in pending if target.path in invocation_paths and target_ready(records, target, agent)]
     label = "未起動スキル" if len(uninvoked) == len(pending) else "未取得資料・未起動スキル" if uninvoked else "未取得資料"
-    shown = "、".join(dict.fromkeys(f"`{target.path}`" for target in pending))
     subject = operation_skills.resolve_subject(payload)
     if subject == operation_skills.SUBJECT_CODEX:
         methods = "指定されたシェルコマンド"
@@ -1533,10 +1567,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         has_read = any(target.path not in invocation_paths for target in pending)
         methods = "指定されたSkill・Read" if has_skill and has_read else "指定されたSkill" if has_skill else "指定されたRead"
     followup = "読んだ後に、書いた内容をその基準で見直し、必要なら直せ。" if written and not diagnostic else ""
-    instruction = (
-        f"次の資料を、この操作の結果を使う前に{methods}で取得せよ。"
-        f"必要節と前提・例外への到達は必須手順であり省略するな。{followup}"
-    )
+    instruction = f"{label}がある。この操作の結果を使う前に{methods}で必要な基準を取得せよ。"
     failures: dict[read_triggers.ReadTarget, str] = {}
     for target in pending:
         try:
@@ -1564,58 +1595,21 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 reference=target.path not in invocation_paths,
                 cwd=cwd,
             )
-    acquisition = (
-        "。".join(_merged_steps(pending, failures, subject, invocation_paths=invocation_paths, cwd=cwd))
-        + "。判断に必要な未取得部分は行範囲を分けて補え。"
-    )
-    guided: list[read_triggers.ReadTarget] = []
-    if not warning_only and written and not diagnostic:
-        # 文脈境界の前に選んだ資料は、現在の操作が改めて対象にするまで案内済みとせず、遮断の根拠にもしない。
-        # 境界後に案内した資料の未取得だけで止め、対象パスの読取成功で解除する契約は保つ。
-        guided = [
-            target for target in pending if agent not in records.get(rules_context.carried_read_target_key(target.path), [])
-        ]
-        if any(agent in records.get(guidance_key(target), []) for target in guided):
-            # 遮断を解除する取得対象だけを示す。持ち越した資料まで並べると、取得しても解除されない資料を読ませる。
-            return Decision(
-                block=_block_notice(
-                    f"案内済みの取得・起動が未完了のため再書込を停止する。{label}: "
-                    + "、".join(dict.fromkeys(f"`{target.path}`" for target in guided))
-                    + "。",
-                    fix="。".join(_merged_steps(guided, failures, subject, invocation_paths=invocation_paths, cwd=cwd))
-                    + "。必要節と前提・例外を取得後に元の書込操作を再発行せよ。",
-                )
-            )
+    acquisition = "。\n".join(_merged_steps(pending, failures, subject, invocation_paths=invocation_paths, cwd=cwd)) + "。"
+    if subject == operation_skills.SUBJECT_CODEX:
+        acquisition += "内外の出力枠を確保し、収まらない範囲は分割して取得せよ。"
     if warning_only:
-        return Decision(
-            notices=(
-                _llm_notice(
-                    f"{instruction}\n操作前に読む資料が未取得: {shown}。\n質問の前提と選択肢を資料の基準に合わせるため。",
-                    tag=_WARN_TAG,
-                    fix=acquisition + "質問の前提と選択肢を資料の基準で確かめ直せ。",
-                    removable_cause=True,
-                    escalate_on_repeat=False,
-                ),
-            )
-        )
-    _select_targets(session_id, pending, agent, rows=selection_rows)
+        acquisition += "質問の前提と選択肢を資料の基準で確かめ直せ。"
     notice = _llm_notice(
-        f"{instruction}\n{label}: {shown}。\n判断や記述を資料の基準に合わせるため。",
+        instruction,
         tag=_WARN_TAG,
         removable_cause=True,
         escalate_on_repeat=False,
         fix=acquisition + followup,
         subject=json.dumps([guidance_key(target) for target in pending]),
     )
-    if not warning_only and written and not diagnostic:
-        for target in guided:
-            notice_module.stage_delivery(
-                notice,
-                session_id,
-                rules_context.OPERATION_SKILL_READY_KEY,
-                guidance_key(target),
-                agent,
-            )
+    for target in pending:
+        notice_module.stage_delivery(notice, session_id, rules_context.OPERATION_SKILL_READY_KEY, guidance_key(target), agent)
     return Decision(notices=(notice,))
 
 
@@ -1662,7 +1656,13 @@ _PERSISTED_OUTPUT_CLOSE = "</persisted-output>"
 
 
 def _receipt_targets(
-    payload: dict, tool_name: str, tool_input: dict, session_id: str, *, active_only: bool = False
+    payload: dict,
+    tool_name: str,
+    tool_input: dict,
+    session_id: str,
+    *,
+    active_only: bool = False,
+    include_selected: bool = True,
 ) -> list[read_triggers.ReadTarget]:
     cwd = str(payload.get("cwd", ""))
     agent = agent_id.resolve_hook_agent_id(payload)
@@ -1680,7 +1680,8 @@ def _receipt_targets(
         and row_matches(row, tool_name, tool_input, cwd)
         for target in row.targets
     ]
-    targets.extend(selected_targets(records, agent))
+    if include_selected:
+        targets.extend(selected_targets(records, agent))
     targets.extend(read_triggers.ReadTarget(path) for path in _read_paths(tool_name, tool_input, cwd))
     targets.extend(
         read_triggers.ReadTarget(pathlib.Path(json.loads(key.removeprefix("startup-input-target:"))["path"]))
@@ -1737,11 +1738,15 @@ def _record_receipts(
 
 
 def _receipt_candidates(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[dict]:
+    # Codexは次の操作で外側配送を観測するため、静的読取でない応答の候補もその時点まで保持する。
+    if tool_name not in {"Read", "Bash"} and not is_codex_payload(payload):
+        return []
     requested = {pathlib.Path(path) for path in _fragment_requests(payload, tool_name, tool_input)}
-    active = {target.path for target in _receipt_targets(payload, tool_name, tool_input, session_id, active_only=True)}
+    targets = _receipt_targets(payload, tool_name, tool_input, session_id, active_only=True)
+    active = {target.path for target in targets}
     candidates = document_reads.receipt_candidates(
         [
-            *_receipt_targets(payload, tool_name, tool_input, session_id),
+            *targets,
             *(read_triggers.ReadTarget(path) for path in requested),
         ],
         fragment_paths=active | requested,
@@ -1944,6 +1949,9 @@ def _refresh_receipts(payload: dict, tool_name: str, tool_input: dict, session_i
             else:
                 for text in texts:
                     _record_codex_delivery(session_id, agent, [*candidates, *current], text)
+                    from agent_toolkit._hooks import result_reads  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+                    _select_result_documents(session_id, agent, result_reads.observe_outer(session_id, agent, text))
 
                 def advance(value: dict) -> dict:
                     positions = value.setdefault("document_read_offsets", {})
@@ -2145,6 +2153,20 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     cwd = payload.get("cwd", "")
     cwd = cwd if isinstance(cwd, str) else ""
     agent = agent_id.resolve_hook_agent_id(payload)
+    result_operation = tool_name.startswith(
+        ("mcp__agents_server__", "mcp__plugin_agent-toolkit_agents_server__")
+    ) and tool_name.rsplit("__", 1)[-1] in {"wait", "send_message"}
+    command = tool_input.get("command")
+    if tool_name == "Bash" and isinstance(command, str):
+        result_operation = any(
+            segment.resolved and is_atk_command(segment.tokens) and segment.tokens[1:3] == ("agents", "wait")
+            for segment in extract_execution_segments(command)
+        )
+    if result_operation and not tool_input.get("run_in_background") and not host_truncated(response):
+        from agent_toolkit._hooks import result_reads  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        documents = result_reads.observe(session_id, agent, response, deferred=is_codex_payload(payload))
+        _select_result_documents(session_id, agent, documents)
     edited = document_reads.edited_document(tool_name, tool_input, response, cwd)
     if edited is not None:
         path, before = edited
