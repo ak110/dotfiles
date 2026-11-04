@@ -99,9 +99,11 @@ def test_prepare_keeps_all_records_as_compact_flow(tmp_path: pathlib.Path, capsy
     text = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
     for marker in ("目的", "委譲の目的", "agent-child", "Bash×2", "失敗1件"):
         assert marker in text
+    main_calls = [line for line in text.splitlines() if line.startswith("- 呼出 ")]
+    assert len(main_calls) == 1
+    assert f"claude:{transcript.stem}:2:" in main_calls[0]
+    assert command in main_calls[0]
     for result_body in (
-        "中間の操作",
-        "末尾の操作",
         "unique-normal-operation",
         "blocked-operation",
         "保存先: /results/success.txt",
@@ -111,6 +113,7 @@ def test_prepare_keeps_all_records_as_compact_flow(tmp_path: pathlib.Path, capsy
         assert result_body not in text
     assert record["conversation_utf8_bytes"] == len(text.encode("utf-8"))
     assert len(text.encode("utf-8")) <= record["conversation_limit_bytes"]
+    assert record["conversation_limit_bytes"] == 100_000
 
 
 @pytest.mark.parametrize(
@@ -145,12 +148,16 @@ def test_prepare_keeps_all_records_as_compact_flow(tmp_path: pathlib.Path, capsy
     ],
 )
 def test_prepare_summarizes_native_and_agy_successful_operations(tmp_path: pathlib.Path, capsys, entries) -> None:
-    """通常のツール結果以外の実行記録も種類と量へ縮約し、結果の本文は載せない。"""
+    """通常のツール結果以外の実行記録も入力と位置を個別行へ載せ、結果本文を除く。"""
     transcript = _write_transcript(tmp_path, entries)
     work = tmp_path / "work"
     work.mkdir()
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)]) == 0
     result = json.loads(capsys.readouterr().out)
     text = pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
-    assert "normal-operation" not in text and "normal-result" not in text
-    assert "呼出1件" in text
+    calls = [line for line in text.splitlines() if line.startswith("- 呼出 ")]
+    assert len(calls) == 1
+    assert "normal-operation" in calls[0]
+    assert ":1:" in calls[0]
+    assert "normal-result" not in text
+    assert len(text.encode("utf-8")) <= 100_000

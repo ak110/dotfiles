@@ -411,6 +411,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
     )
     _add_source_arg(list_, multiple=True)
     _add_important_filter_arg(list_)
+    list_.add_argument(
+        "--effect-check",
+        choices=("pending", "confirmed", "insufficient", "not_required"),
+        help="効果確認の全体判定で限定する。採用済みは--state=adoptedと併用する。",
+    )
     output = list_.add_mutually_exclusive_group()
     output.add_argument(
         "--count",
@@ -755,15 +760,18 @@ def _add_mq_transition_parsers(sub: Any) -> None:
 def _add_mq_edit_parsers(sub: Any) -> None:
     """本文編集・計画変換・依存更新サブコマンドを登録する。"""
     effect = _atk_help.add_command(sub, "effect-check", **_atk_help.HELP["atk wi effect-check"])
-    effect.add_argument("filename", metavar="FILENAME", help="効果を記録する採用済みAWIのファイル名")
+    effect.add_argument("filenames", metavar="FILENAME", nargs="+", help="効果を記録する採用済みAWIのファイル名（1件以上）")
     effect.add_argument("--worktree", required=True, help="対応commitの変更ファイルを確かめる対象リポジトリの作業ツリー")
-    effect.add_argument("--file", required=True, help="対応commitで変更したリポジトリ相対パス")
     effect.add_argument(
-        "--verdict", required=True, choices=("confirmed", "insufficient"), help="効果を確認したか、効果不足かの判定"
+        "--file", help="対応commitで変更したリポジトリ相対パス。省略時は全体のpending・not_requiredを記録する。"
+    )
+    effect.add_argument(
+        "--verdict", required=True, choices=("pending", "confirmed", "insufficient", "not_required"), help="効果の判定"
     )
     effect.add_argument("--checked-on", required=True, help="判定日（YYYY-MM-DD）")
     effect.add_argument("--review-record", required=True, help="判定した振り返りの記録位置")
     effect.add_argument("--corrective-awi", help="効果不足の是正先AWIの保存済みファイル名")
+    effect.add_argument("--reason", help="確認待ち・確認不要の理由（pending・not_requiredでは必須）")
     edit = _atk_help.add_command(sub, "edit", **_atk_help.HELP["atk wi edit"])
     edit.add_argument(
         "filename",

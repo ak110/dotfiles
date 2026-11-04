@@ -1122,7 +1122,7 @@ def test_stats_reports_breakdown_of_each_agent_thread(
     assert evidence.main([str(threads.transcript), "--detail", f"{codex_record}:3"]) == 0
     detail = read_jsonl(capsys, raw=True)
     assert [(event["record"], event["line"]) for event in detail] == [(codex_record, 3)]
-    assert "make build" in detail[0]["text"]
+    assert detail[0]["input"] == {"cmd": "make build"}
 
 
 def test_stats_separates_turn_completion_from_trailing_records(

@@ -66,10 +66,10 @@ def is_runtime_generated(entry: dict[str, Any]) -> bool:
     )
 
 
-def reported_improvement_lines(text: str) -> list[str]:
-    """実際に報告した行を、コードフェンス・引用・生成通知に現れる例から区別する。"""
+def reported_improvement_lines(text: str, *, deduplicate: bool = True) -> list[str]:
+    """実際に報告した行を例から区別し、出所の行順が必要な照会では同文行も保持する。"""
     text = re.sub(rf"<({_message_format.AUTO_ELEMENT_NAME_PATTERN})(?:\s[^>]*)?>.*?</\1>", "", text, flags=re.DOTALL)
-    found: dict[str, None] = {}
+    found: list[str] = []
     fence: str | None = None
     for line in text.splitlines():
         stripped = line.lstrip()
@@ -82,5 +82,5 @@ def reported_improvement_lines(text: str) -> list[str]:
                 fence = None
             continue
         if fence is None and not line.startswith(("    ", "\t")) and stripped.startswith(IMPROVEMENT_MARKER):
-            found[stripped.rstrip()] = None
-    return list(found)
+            found.append(stripped.rstrip())
+    return list(dict.fromkeys(found)) if deduplicate else found

@@ -139,8 +139,24 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/home/aki/.cache/agent-toolkit/tmp/awi-body.md",
     },
     "atk wi effect-check": {
-        "summary": "採用済みAWIのファイル別効果を記録する",
-        "description": "採用済みAWIのファイル別効果を記録する。\n\n目的: 過去の対策を適用した結果と根拠を、そのAWIへ保存する。\n利用場面: 振り返りで変更ファイルの効果を確認したとき。\n対象と出力: 採用済みAWIの処理結果へファイル、判定、判定日、振り返りの記録位置を追記し、commitとpushを行う。状態と既存本文を保持する。全変更ファイルがconfirmedならeffect_check: confirmed、一つでもinsufficientで是正AWIが保存済みならinsufficientを記録する。部分確認ではキーを追加しない。適用機会が無い場合は記録せず次回の候補へ残す。\n前提: --worktreeは対応commitを持つ対象リポジトリを指定する。--fileはリポジトリ相対パス、--checked-onはYYYY-MM-DD、--review-recordは記録位置を指定する。insufficientでは--corrective-awiが必須。\n復元・後始末: 変更前の内容はprivate-notesのGit履歴に残る。",
+        "summary": "採用済みAWIの効果と確認待ち・確認不要の理由を記録する",
+        "description": (
+            "採用済みAWIの効果と確認待ち・確認不要の理由を記録する。\n\n"
+            "目的: 実装済みの対策を実利用で確認し、結果を元のAWIへ保存する。\n"
+            "利用場面: 振り返りで適用機会と効果を調べるとき。\n"
+            "対象と出力: FILENAMEを1件以上指定し、全対象へ同じ判定と理由を適用する。全件を検証してから書き込み、"
+            "通常のrepo lockの下でcommitとpushを一回にまとめる。採用状態、要求本文、コメント、既存処理結果と"
+            "ファイル別判定を保持する。部分確認はpending、全変更ファイルがconfirmedならconfirmed、"
+            "一つでもinsufficientならinsufficientを記録する。規範以外の変更も集約対象とする。"
+            "pending・not_requiredは--fileを省略して全体判定と理由を保存する。処理結果節のない旧項目には"
+            "既存本文を保持して節と全体効果行を末尾へ追記する。pendingは14日を過ぎても候補として保持する。"
+            "一覧は`atk wi list --state=adopted --effect-check=pending`で絞り込める。\n"
+            "前提: --worktreeは対象リポジトリを指定する。ファイル別判定では対応commitの解決を要する。"
+            "--fileはリポジトリ相対パス、--checked-onはYYYY-MM-DD、--review-recordは判定の記録位置を指定する。"
+            "pending・not_requiredには--reason、insufficientには保存済み是正先の--corrective-awiが必須。"
+            "機会なしや日時・commit不明は全体のpendingと理由を保存できる。同じ引数での再実行は判定行を重複させない。\n"
+            "復元・後始末: 変更前の内容はprivate-notesのGit履歴に残る。途中保存やcommit・pushの失敗を解消して同じ引数で再実行する。"
+        ),
         "epilog": "実行例:\n\n  atk wi effect-check 20260901-072734-001.md --worktree /home/user/repo --file agent-toolkit/rules/01-agent.md --verdict confirmed --checked-on 2026-10-31 --review-record session:42",
     },
     "atk wi set-dependencies": {

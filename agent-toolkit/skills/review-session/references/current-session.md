@@ -86,7 +86,7 @@ OpenCodeを対象とする場合、スクリプトは環境変数`XDG_DATA_HOME`
 このほか、`prepared_at`、`utterance_counts`、`candidate_total`、`candidate_counts`、`excluded_counts`、`failure_ledger_skipped`が格納される。
 さらに、`mandatory_candidates`、`similar_records`、`elapsed_seconds`、`compaction_count`と、実際に抽出した記録の範囲を示す`scope_path`も含まれる。これらの候補を振り返り結果報告のどの項目に記載するかは、`agent-toolkit:report-completion`の`references/report-formats.md`に従う。
 `conversation_utf8_bytes`、`candidates_utf8_bytes`、`stats_utf8_bytes`は生成された各文書のUTF-8バイト数を示し、`conversation_limit_bytes`は会話の流れの原則上限である100,000バイトを示す。候補文書と統計文書のサイズは、合計で100,000バイト以下に収める。
-`improvement_lines`には、セッション記録の全文から抽出された実際の改善提案行が格納される。候補文書には先頭10件の概要と総件数が表示され、全行の内容は`bundle/timeline.jsonl`の`reported_improvements`から確認できる。また、未解決の記録全件は`bundle/unconfirmed.jsonl`に保存される。
+`improvement_lines`にはセッション記録の全文から抽出された実際の改善提案行が格納される。候補文書には先頭10件の概要と総件数が表示され、全行は同じ記録指定の`session-review-evidence --reported-improvements`で出所付きで取得する。元データは`bundle/timeline.jsonl`の`reported_improvements`に保持される。未解決の記録全件は`bundle/unconfirmed.jsonl`に保存される。
 2〜5. `session-analysis.md`の工程2〜5を実施する。
 
 ### 工程6
@@ -98,4 +98,4 @@ AWIの保存と検収、全候補と未確認範囲の判定を終え、今回�
 手動起動では分析・必要なAWI保存・結果本文の確定を終え、準備時の1行JSONを保存した絶対パスを`atk run-script session-review-state -- complete --prepared <準備結果JSONの絶対パス>`へ渡す。成功と残る待ち件数を確認し、結果本文を送達する前に必要なツール処理を終える。この操作の確定対象は準備済み範囲の分析に限る。本文の送達は実際の送達結果で確かめ、分析に失敗した範囲は未処理として保持する。
 結果本文は`agent-toolkit:report-completion`の`references/report-formats.md`に従う。AWIを1件以上投入した場合は「AWI投入結果報告のフォーマット」、それ以外は「振り返り結果報告のフォーマット」を使う。送達は`agent-toolkit:user-confirmation-and-report`に従う。本スキルは結果報告の送達で終え、通常作業の完了処理と同期振り返りの再起動は対象外とする。
 
-振り返り工程全体の所要時間目標は300秒とする。この所要時間の計測は、本スキルの起動時点から最終報告（AWIを1件以上登録した場合は`## AWI投入結果報告`、0件の場合は`## 振り返り結果報告`）を出力するまでの時間を対象とし、事前の予告通知を出力した時点は終了点とみなさない。この目標時間は振り返り処理の完了条件そのものではなく、時間を超過した場合は工程6に従って原因を分析し、必要な処置を行い報告する。
+振り返りの時間目標の値、計測区間、用途は`duration-analysis.md`「所要時間の分析と改善」に従う。AWI投入が0件の場合も同じ基準を適用し、必要な調査と工程6の超過分析・報告を完遂する。

@@ -34,7 +34,7 @@ from agent_toolkit._common.plugin_roots import (
 )
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import extract_execution_segments, split_bash_commands
-from agent_toolkit._common.shell_tokens import ShellWord, is_atk_command, join_words, split_words
+from agent_toolkit._common.shell_tokens import is_atk_command, join_words, split_words
 from agent_toolkit._hooks import (
     agent_id,
     codex_read_observation,
@@ -49,8 +49,14 @@ from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse import dependency_usage, operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
-from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, display_read_paths, sed_read_range
+from agent_toolkit._hooks.pretooluse.large_reads import (
+    bash_read_paths,
+    display_read_paths,
+    is_dynamic_read_operand,
+    sed_read_range,
+)
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
+from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
 lazy from agent_toolkit._common import task_documents
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
 
@@ -118,10 +124,12 @@ def _read_paths(tool_name: str, tool_input: dict, cwd: str, *, resolve: bool = T
         return [path.resolve() if resolve else path]
     command = tool_input.get("command")
     if tool_name == "Bash" and isinstance(command, str):
+        # 同一コマンドの前段で生成される候補は、実行後に存在と本文を観測する。
         return [
             path.resolve() if resolve else path
             for group in bash_read_paths(command, cwd, include_partial=True)
             for path in group
+            if path.is_file()
         ]
     return []
 
@@ -135,7 +143,13 @@ def _read_path_variants(tool_name: str, tool_input: dict, cwd: str) -> list[path
     command = tool_input.get("command")
     if tool_name == "Bash" and isinstance(command, str):
         groups = list(bash_read_paths(command, cwd, include_partial=True, first_line_only=True))
-        return [path.resolve() if resolve else path for resolve in (True, False) for group in groups for path in group]
+        return [
+            path.resolve() if resolve else path
+            for resolve in (True, False)
+            for group in groups
+            for path in group
+            if path.is_file()
+        ]
     return [path for resolve in (True, False) for path in _read_paths(tool_name, tool_input, cwd, resolve=resolve)]
 
 
@@ -148,8 +162,7 @@ def _operand_paths(read: codex_read_observation.Read, current: shell_cwd.CwdReso
     paths = []
     for index in read.operands:
         operand = read.argv[index]
-        unquoted = operand.unquoted if isinstance(operand, ShellWord) else operand
-        if any(marker in unquoted for marker in ("*", "?", "[", "{")):
+        if is_dynamic_read_operand(operand):
             continue
         path = pathlib.Path(operand).expanduser()
         if not path.is_absolute():
@@ -247,7 +260,7 @@ def resolve_skill_document(qualified: object, candidates) -> pathlib.Path | None
 def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, reference: bool = False, cwd: str = "") -> str:
     """主体に合う取得手段と、必要な範囲の容量を示す。"""
     path = target.path
-    body = target.body()
+    target.body()
     focus = f"。指定節`{target.heading}`と、その成立に必要な前提・例外を読め" if target.heading else ""
     skill = skill_name(path)
     if (
@@ -265,18 +278,8 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, referenc
             step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
         return step + focus
     if subject == operation_skills.SUBJECT_CODEX:
-        quoted = shlex.quote(str(path))
-        commands = (
-            [f"sed -n '{start},{end}p' -- {quoted}" for start, end in target.line_ranges()]
-            if target.heading and path.suffix == ".md"
-            else [f"cat -- {quoted}"]
-        )
-        size = len(body.encode("utf-8"))
-        return (
-            "、".join(f"`{command}`" for command in commands)
-            + f"で取得せよ（{size}バイト、予算目安{(size + 2) // 3}トークン）"
-            + focus
-        )
+        ranges = target.line_ranges() if target.heading and path.suffix == ".md" else ()
+        return codex_acquisition(path, ranges).removesuffix("。") + focus
     return f"Readで`{path}`を取得せよ" + focus
 
 
@@ -1806,7 +1809,7 @@ def _fragment_requests(payload: dict, tool_name: str, tool_input: dict) -> dict[
             if len(plans) != 1 or plans[0].argv[0] not in {"cat", "head", "tail"}:
                 continue
             plan = plans[0]
-            operands = [plan.argv[index] for index in plan.operands]
+            operands = [tokens[index] for index in plan.operands]
             start, end = 1, None
             if plan.argv[0] in {"head", "tail"}:
                 options = plan.argv[1 : plan.operands[0]]
@@ -1824,11 +1827,16 @@ def _fragment_requests(payload: dict, tool_name: str, tool_input: dict) -> dict[
                 else:
                     start = -count
         for operand in operands:
+            if is_dynamic_read_operand(operand):
+                continue
             path = pathlib.Path(operand).expanduser()
             if not path.is_absolute():
                 if not current.resolved:
                     continue
                 path = pathlib.Path(current.path) / path
+            if not path.is_file():
+                # 前段の生成は実行前には確定できない。PostToolUseで実在と実配送を観測する。
+                continue
             result.setdefault(str(path.resolve()), []).append((start, end, order))
             order += 1
     return result

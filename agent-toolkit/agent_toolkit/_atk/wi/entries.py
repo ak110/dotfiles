@@ -73,7 +73,7 @@ def stamp_result(
         "## 処理結果",
         "",
         f"- 採否: {outcome}",
-        f"- 処理日時: {now.isoformat(timespec='seconds')}",
+        f"- 処理日時: {now.astimezone().isoformat(timespec='seconds')}",
     ]
     commits = [commit] if isinstance(commit, CommitMetadata) else commit or []
     for item in commits:

@@ -16,15 +16,16 @@ from dataclasses import dataclass
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import ast
 lazy import re
-lazy import shlex
 lazy import stat
 lazy from collections.abc import Iterator, Sequence
 
 from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._common import host_homes, shell_cwd
 lazy from agent_toolkit._common.bash_invocations import is_unknown_word
+lazy from agent_toolkit._common.shell_tokens import ShellWord
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import plugin_resources
+lazy from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
 
 # Codexの配布設定の出力上限`tool_output_token_limit = 20000`（トークン）と、
 # agent-toolkitのMarkdownで測った1トークンあたりバイト数の最小値3.10の積は約62,000バイトである。
@@ -216,6 +217,16 @@ def sed_read_range(tokens: Sequence[str]) -> tuple[str, int, int | None] | None:
     return operand, start, max(start, int(matched[2]))
 
 
+def is_dynamic_read_operand(operand: str) -> bool:
+    """引用の外側で展開する語を、実在するリテラルの読取対象と区別する。"""
+    unquoted = operand.unquoted if isinstance(operand, ShellWord) else operand
+    return (
+        is_unknown_word(operand)
+        or any(marker in unquoted for marker in ("$", "`", "<", ">", "*", "?", "["))
+        or re.search(r"\{[^{}]*,[^{}]*\}|\{(?:-?\d+\.\.-?\d+|[a-zA-Z]\.\.[a-zA-Z])(?:\.\.-?\d+)?\}", unquoted) is not None
+    )
+
+
 def bash_read_paths(
     command: str, cwd: str, *, include_partial: bool = False, first_line_only: bool = False, include_piped: bool = False
 ) -> Iterator[tuple[pathlib.Path, ...]]:
@@ -235,9 +246,7 @@ def bash_read_paths(
         tokens = invocation.segment.tokens
         paths = []
         for operand in _read_operands(tokens, include_partial=include_partial, first_line_only=first_line_only):
-            if include_partial and (
-                is_unknown_word(operand) or any(marker in operand for marker in ("$", "`", "<", ">", "*", "?"))
-            ):
+            if is_dynamic_read_operand(operand):
                 continue
             if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
                 continue
@@ -524,26 +533,10 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加えよ。"
             "`agent-toolkit:review-session`の`references/session-records.md`で入力と照会モードを選べ。",
         )
-    # 1行あたりの平均バイト数から、閾値の半分程度に収まる行数を1回の取得単位として示す。
-    chunk = max(1, plan.line_count * byte_threshold // (2 * max(plan.byte_count, 1)))
-    quoted = shlex.quote(str(path))
-    budget = (plan.byte_count + 2) // 3
     return _large_warning(
         f"{plan.line_count}行、{plan.byte_count}バイトの全文取得の出力量を確認せよ"
         f"（通知の閾値: {byte_threshold}バイト）: {path}",
-        fix=(
-            f"全量の見積りは文章主体で約{budget}トークン（UTF-8バイト数÷3の切上げ）である。"
-            "内側コマンドと外側セルの利用できる出力枠がどちらも見積り以上と分かっている場合だけ、"
-            "内側max_output_tokensを見積り以上、外側セルを内側の合計以上にして全文を1回で取得せよ。"
-            "枠が見積りより小さい場合と枠が不明な場合は、最初から1回の取得が枠に収まる行範囲へ分けよ。"
-            "nativeのoriginal token countが得られた場合は、その数が枠に収まるときだけその数以上で1回再取得し、"
-            "収まらないときは行範囲へ分けよ。"
-            "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使え。"
-            "全文が必要な場合だけ、"
-            f"`sed -n '1,{chunk}p' -- {quoted}`から始め、"
-            f"`sed -n '{chunk + 1},{2 * chunk}p' -- {quoted}`のように開始行と終了行を進めて"
-            f"末尾の{plan.line_count}行目まで別の呼び出しで取得せよ。出力が省略された範囲は行数を狭めて取り直せ。"
-        ),
+        fix="必要な範囲を選べ。全文が必要な場合は、次の実行例で取得せよ。\n" + codex_acquisition(path),
     )
 
 
@@ -557,20 +550,11 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
             subject="\n".join(str(path) for path, _plan in path_counts),
         )
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)
-    budget = (total_bytes + 2) // 3
     details = "、".join(f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト" for path, plan in path_counts)
     return _large_warning(
         f"複数ファイルの全文取得の出力量を確認せよ（合計: {total_bytes}バイト、通知の閾値: {byte_threshold}バイト）: {details}",
-        fix=f"全量の見積りは文章主体で約{budget}トークン（UTF-8合計バイト数÷3の切上げ）である。"
-        "内側コマンドと外側セルの利用できる出力枠がどちらも見積り以上と分かっている場合だけ、"
-        "内側max_output_tokensを見積り以上、外側セルを内側の合計以上にして1回で取得せよ。"
-        "枠が見積りより小さい場合と枠が不明な場合は、最初からファイルごと・行範囲ごとに枠へ収まる単位へ分けよ。"
-        "nativeのoriginal token countが得られた場合は、その数が枠に収まるときだけその数以上で1回再取得し、"
-        "収まらないときは分けて取得せよ。"
-        "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使え。"
-        "全文が必要なファイルだけ、ファイルごとに別の呼び出しで"
-        "`sed -n '<開始行>,<終了行>p' -- <必要なファイルの絶対パス>`を使い、行範囲を進めて末尾の行まで取得せよ。"
-        "出力が省略された範囲は行数を狭めて取り直せ。",
+        fix="必要な資料と範囲を選べ。全文が必要な資料は、資料ごと・コードブロックごとに別のセルで取得せよ。\n"
+        + "\n".join(codex_acquisition(path) for path, _plan in path_counts),
     )
 
 

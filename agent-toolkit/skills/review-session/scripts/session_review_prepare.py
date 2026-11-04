@@ -326,31 +326,64 @@ def _main_turns(events: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     return turns
 
 
-def _main_turn_summary(events: list[dict[str, Any]], limit: int) -> str:
-    """ユーザー発話1件と、その後の判断・操作・結果を同じ区間の概要にする。"""
-    utterances = [item for item in events if item.get("kind") == "utterance"]
-    user = next((item for item in utterances if item.get("role") == "user"), None)
-    assistants = [item for item in utterances if item.get("role") == "assistant"]
-    parts: list[str] = []
-    if user is not None:
-        locator = f"{user['record']}:{user['line']}"
-        parts.append(
-            f"ユーザー {user.get('timestamp') or '時刻なし'} {locator}: "
-            f"{_conversation_excerpt(str(user.get('text', '')), max(80, limit // 2))}"
-        )
-    if assistants:
-        first = _conversation_excerpt(str(assistants[0].get("text", "")), max(40, limit // 8))
-        last = _conversation_excerpt(str(assistants[-1].get("text", "")), max(40, limit // 8))
-        location = f"{assistants[0]['record']}:{assistants[0]['line']}〜{assistants[-1]['record']}:{assistants[-1]['line']}"
-        parts.append(f"アシスタント{len(assistants)}発話（{location}）: 冒頭={first} / 末尾={last}")
-    parts.append(_activity_summary(events))
-    return _clip_utf8("\n".join(f"- {part}" for part in parts), limit)
+def _main_turn_rows(events: list[dict[str, Any]], *, compact_calls: bool = False) -> list[tuple[str, str]]:
+    """区間内の表示行を固定部と抜粋本文へ分け、結果本文を通読へ含めない。"""
+    failures = {
+        item.get("call_id")
+        for item in events
+        if item.get("kind") == "tool-failure" or item.get("kind") == "tool-result" and _codex_failed(str(item.get("text", "")))
+    }
+    failed_lines = {
+        item["line"]
+        for item in events
+        if item.get("kind") == "tool-failure" or item.get("kind") == "tool-result" and _codex_failed(str(item.get("text", "")))
+    }
+    displayed = [
+        item
+        for item in events
+        if item.get("kind") == "tool-call" or item.get("kind") == "utterance" and str(item.get("text", "")).strip()
+    ]
+    rows: list[tuple[str, str]] = []
+    index = 0
+    while index < len(displayed):
+        item = displayed[index]
+        if compact_calls and item["kind"] == "tool-call":
+            end = index + 1
+            while end < len(displayed) and displayed[end]["kind"] == "tool-call":
+                end += 1
+            if end - index > 1:
+                calls = displayed[index:end]
+                ids = {call.get("call_id") for call in calls}
+                result_lines = {call.get("result_line") for call in calls}
+                results = [
+                    event
+                    for event in events
+                    if event.get("kind") in {"tool-result", "tool-failure"}
+                    and (event.get("call_id") in ids or event.get("line") in result_lines)
+                ]
+                rows.append(("- " + _activity_summary([*calls, *results]), ""))
+                index = end
+                continue
+        locator = f"{item['record']}:{item['line']}"
+        if item["kind"] == "utterance":
+            label = "ユーザー" if item.get("role") == "user" else "アシスタント"
+            prefix = f"- {label} {item.get('timestamp') or '時刻なし'} {locator}: "
+        else:
+            failed = item.get("call_id") in failures or item.get("result_line") in failed_lines
+            prefix = f"- 呼出 {item.get('tool') or 'unknown'} {locator}{'（失敗1件）' if failed else ''}: "
+        rows.append((prefix, str(item.get("text", ""))))
+        index += 1
+    return rows
 
 
 def _delegate_summary(record: str, events: list[dict[str, Any]], limit: int) -> str:
     """委譲先1記録の目的・返却・操作量を1行にする。"""
     utterances = [item for item in events if item.get("kind") == "utterance"]
-    users = [item for item in utterances if item.get("role") == "user"]
+    users = [
+        item
+        for item in events
+        if item.get("kind") == "delegation-request" or item.get("kind") == "utterance" and item.get("role") == "user"
+    ]
     assistants = [item for item in utterances if item.get("role") == "assistant"]
     task = _conversation_excerpt(str(users[0].get("text", "")), max(30, limit // 4)) if users else "なし"
     result = _conversation_excerpt(str(assistants[-1].get("text", "")), max(30, limit // 4)) if assistants else "なし"
@@ -374,7 +407,7 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str, ma
         "# 会話の流れ",
         "",
         "セッション全体の目的、判断、主要な操作、分担、待機、再読、失敗と手戻りを、"
-        "1エージェントが一続きで見直すための概要である。自動挿入本文と詳細本文の写しは含めない。"
+        "1エージェントが一続きで見直すための概要である。委譲元の依頼本文の抜粋を含み、機械生成の内包資料と結果本文は除く。"
         f"全文は`{detail_command} --detail <記録位置>`から取得する。",
         "",
         "## メインの流れ",
@@ -385,8 +418,17 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str, ma
     if not turns:
         lines.append("- メイン記録の発話と操作は0件である。")
     else:
-        per_turn = max(240, _CONVERSATION_MAIN_BYTES // len(turns))
-        lines.extend(_main_turn_summary(turn, per_turn) for turn in turns)
+        rows = [row for turn in turns for row in _main_turn_rows(turn)]
+        minimum = sum(len(prefix.encode("utf-8")) + 1 for prefix, _ in rows)
+        if minimum > _CONVERSATION_MAIN_BYTES:
+            rows = [row for turn in turns for row in _main_turn_rows(turn, compact_calls=True)]
+            minimum = sum(len(prefix.encode("utf-8")) + 1 for prefix, _ in rows)
+        if minimum > _CONVERSATION_MAIN_BYTES:
+            raise ValueError("会話の流れの最小行がメインの表示予算を超えた。全文はbundle/conversation.jsonlへ保持した。")
+        excerpt_bytes = (_CONVERSATION_MAIN_BYTES - minimum) // max(1, len(rows))
+        lines.extend(
+            prefix + (_conversation_excerpt(text, excerpt_bytes) if excerpt_bytes >= 3 else "") for prefix, text in rows
+        )
     lines.extend(["", "## 委譲先の流れ", ""])
     delegates = sorted(by_record.items(), key=lambda item: str(item[1][0].get("timestamp") or ""))
     if not delegates:
@@ -462,11 +504,16 @@ def _text_parts(value: Any) -> list[str]:
 
 def _candidate_bodies(candidate: dict[str, Any], evidence: dict[str, Any]) -> tuple[list[str], str]:
     """候補の証拠から人が読む本文の一覧と、その先頭（無ければ候補の本文）を返す。"""
-    bodies = [
-        _readable_entry_text(str(event["text"]))
-        for event in evidence.get("events", [])
-        if event.get("kind") == "detail" and isinstance(event.get("text"), str) and event["text"].strip()
-    ]
+    bodies: list[str] = []
+    for event in evidence.get("events", []):
+        if event.get("kind") != "detail":
+            continue
+        for key in ("text", "input", "command", "stderr", "error"):
+            value = event.get(key)
+            if isinstance(value, str) and value.strip():
+                bodies.append(_readable_entry_text(value) if key == "text" else value)
+            elif value is not None and key in {"input", "command", "error"}:
+                bodies.append(json.dumps(value, ensure_ascii=False))
     return bodies, bodies[0] if bodies else str(candidate.get("text", ""))
 
 

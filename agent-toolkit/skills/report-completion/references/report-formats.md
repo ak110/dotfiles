@@ -13,6 +13,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` |
+| 振り返りの時間目標と改善見込みを報告する前 | `../../review-session/references/duration-analysis.md#「所要時間の分析と改善」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/duration-analysis.md#「所要時間の分析と改善」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/report-completion/SKILL.md#「工程」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
@@ -180,6 +181,8 @@ Codexの`functions.exec`の記録を扱う場合は、記載する区分にか�
 - `所要時間`: `elapsed_seconds`の値（セッションの最初の記録から準備処理時点までの経過秒数）
 - `費用確認`: `agent-toolkit:review-session`の`references/analysis.md`「コストの無駄の確認」に示された比較結果を毎回1行で記載する。現状維持を選択した場合でも、達成すべき成果・実際の作業量・品質を維持する対案と比較した結論を記載し、詳細については該当する対策行や見送り行に対応付ける
 - `改善見込み`: 同一の比較結果から、時間改善案の最終値における合計短縮見込み、改善後の所要時間、目標値との差、および目標超過時のボトルネック（律速区間）をこの1箇所にまとめて記載する。各AWIにはその案固有の値のみを記載する
+
+振り返りの目標値・計測区間・用途は`agent-toolkit:review-session`の`references/duration-analysis.md`「所要時間の分析と改善」に従う。目標との差は改善案の必須性の判断にだけ使う。未達・持ち越しは実在する未完了の記録であり、時間目標を未確認の理由にしない。
 
 ## AWI投入結果報告のフォーマット
 

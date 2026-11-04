@@ -11,6 +11,7 @@ from collections.abc import Mapping
 
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filters as _wi_filters
 from agent_toolkit._atk.wi import readiness as _wi_readiness
@@ -185,6 +186,11 @@ def print_entries(selected: list[_wi_entries.EntryRecord], readiness: ReadinessR
             if reason == "cooldown-until":
                 cooldown_until = dict(readiness.cooldown_values)[path.name]
                 reason_suffix += f" cooldown_until={cooldown_until}"
+            if parsed is not None and parsed[0].get("effect_check"):
+                reason_suffix += f" effect_check={parsed[0]['effect_check']}"
+                effect_reason = _effect_check.pending_reason(text)
+                if effect_reason:
+                    reason_suffix += f" effect_check_reason={effect_reason}"
             prefix = f"{path.name}: {display_repo} [{label}]{reason_suffix} "
             available_width = shutil.get_terminal_size().columns - display_width(prefix) if sys.stdout.isatty() else sys.maxsize
             summary = (
@@ -255,6 +261,7 @@ def _print_json_entries(
             "source": parse_source(text),
             "important": _wi_filters.is_important(text),
             "effect_check": (parse_frontmatter(text) or ({}, ""))[0].get("effect_check"),
+            "effect_check_reason": _effect_check.pending_reason(text),
             "summary": summary,
         }
         if include_staleness:
@@ -320,6 +327,10 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 and _wi_filters.answered_matches(entry[4], entry[2], args.answered)
                 and _wi_filters.source_matches_any(parse_source(entry[2]), args.source)
                 and _wi_filters.important_matches(entry[2], getattr(args, "important", "all"))
+                and (
+                    getattr(args, "effect_check", None) is None
+                    or (parse_frontmatter(entry[2]) or ({}, ""))[0].get("effect_check") == args.effect_check
+                )
             ]
             total += len(selected)
             if args.count:
@@ -354,6 +365,10 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         texts=texts,
         important=getattr(args, "important", "all"),
     )
+    if getattr(args, "effect_check", None) is not None:
+        selected = [
+            entry for entry in selected if (parse_frontmatter(entry[2]) or ({}, ""))[0].get("effect_check") == args.effect_check
+        ]
 
     if args.count:
         print(len(selected))

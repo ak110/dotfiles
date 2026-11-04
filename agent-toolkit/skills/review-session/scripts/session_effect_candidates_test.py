@@ -1,12 +1,15 @@
 """公開prepareから効果候補の期間・適用位置・未確認を検証する。"""
 
+import datetime
 import json
 import pathlib
 
 import pytest
 import session_review_prepare as prepare
 
-from agent_toolkit._atk.wi import effect_check, uwi_scan
+from agent_toolkit import atk
+from agent_toolkit._atk.wi import effect_check, frontmatter, readiness, sync, uwi_scan
+from agent_toolkit._atk.wi.mutations import targets
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import _write_transcript
@@ -116,10 +119,15 @@ def test_public_prepare_effect_candidates_cover_period_and_application_sources(
         ("missing.md", "2026-10-20T12:00:00Z", None, ""),
         ("unresolved.md", "2026-10-20T12:00:00Z", "a" * 40, ""),
         ("partial.md", "2026-10-20T12:00:00Z", oid, ""),
+        ("naive.md", "2026-10-20T12:00:00", oid, ""),
+        ("bad-date.md", "不明", oid, "effect_check: pending\n"),
+        ("no-date.md", None, oid, "effect_check: pending\n"),
     ):
         path = write_awi(notes, filename, state="adopted")
         text = path.read_text(encoding="utf-8").replace("state: adopted\n", "state: adopted\n" + extra)
-        text += f"\n## 処理結果\n\n- 処理日時: {date}\n"
+        text += "\n## 処理結果\n\n"
+        if date is not None:
+            text += f"- 処理日時: {date}\n"
         if commit:
             text += f"- 対応commit: {commit}\n"
         if filename == "partial.md":
@@ -169,11 +177,20 @@ def test_public_prepare_effect_candidates_cover_period_and_application_sources(
     assert {row["file"] for row in candidates if row["awi"] == "boundary.md"} == expected
     assert {row["file"] for row in candidates if row["awi"] == "at-start.md"} == expected
     assert {row["file"] for row in candidates if row["awi"] == "partial.md"} == expected - {f"{plugin}/skills/main/SKILL.md"}
-    assert {row["awi"] for row in candidates} == {"boundary.md", "at-start.md", "partial.md"}
+    assert {row["awi"] for row in candidates} == {"boundary.md", "at-start.md", "partial.md", "naive.md"}
+    assert {row["file"] for row in candidates if row["awi"] == "naive.md"} == expected
+    assert all(
+        row["assumed_timezone"] and row["adopted_at"] == "2026-10-20T12:00:00" for row in candidates if row["awi"] == "naive.md"
+    )
     unresolved = [
         json.loads(line) for line in pathlib.Path(result["effect_unconfirmed_path"]).read_text(encoding="utf-8").splitlines()
     ]
-    assert {row.get("awi") for row in unresolved if row.get("awi")} == {"missing.md", "unresolved.md"}
+    assert {row.get("awi") for row in unresolved if row.get("awi")} == {
+        "missing.md",
+        "unresolved.md",
+        "bad-date.md",
+        "no-date.md",
+    }
     assert any(row.get("path") == "/unknown/document.md" for row in unresolved)
     assert result["effect_candidates_count"] == len(candidates)
     assert result["effect_unconfirmed_count"] == len(unresolved)
@@ -201,3 +218,134 @@ def test_public_prepare_effect_candidates_cover_period_and_application_sources(
         pathlib.Path(incremental["effect_candidates_path"]).read_bytes()
         == pathlib.Path(result["effect_candidates_path"]).read_bytes()
     )
+
+
+def test_public_adopt_to_prepare_and_effect_lifecycle(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """実採用データを後日のprepareへ渡し、未確認・部分確認・保存再開・全体確認を接続する。"""
+    files = {"app.py": "print('結果')\n", "agent-toolkit/skills/review-session/SKILL.md": "適用する規範\n"}
+    worktree = git_repository.init_repository(
+        tmp_path / "repo", origin="https://github.com/example/repo.git", files=files, commit_message="仕組みを実装する"
+    )
+    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    notes = tmp_path / "notes"
+    awi = write_awi(notes, "effect.md", state="processing")
+    awi.write_text(awi.read_text(encoding="utf-8") + "\n## ユーザーコメント\n\n保持する要求\n", encoding="utf-8")
+    write_awi(notes, "dependent.md", depends_on=(awi.name,))
+    write_awi(notes, "corrective.md")
+    unnecessary = write_awi(notes, "unnecessary.md", state="processing")
+    insufficient = write_awi(notes, "insufficient.md", state="processing")
+    remote = git_repository.init_bare_repository(tmp_path / "notes.git")
+    git_repository.init_repository(notes, initial_branch="main", origin=str(remote), commit_message="処理対象")
+    git_repository.run_git(notes, "push", "--set-upstream", "origin", "main")
+    monkeypatch.setattr(sync, "ensure_environment", lambda *_args, **_kwargs: notes)
+    monkeypatch.setattr(uwi_scan, "private_notes_root", lambda: notes)
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
+
+    with pytest.raises(SystemExit) as adopted:
+        atk.main(
+            ["wi", "adopt", awi.name, unnecessary.name, insufficient.name, "--target-repo", str(worktree), "--commit", oid],
+            home=tmp_path,
+            now=datetime.datetime(2026, 10, 1, 12),
+        )
+    assert adopted.value.code == 0
+    capsys.readouterr()
+    saved_adoption = awi.read_text(encoding="utf-8")
+    dates = effect_check.result_values(saved_adoption, "処理日時")
+    assert readiness.calculate_readiness(notes, "github.com/example/repo").ready == ("corrective.md", "dependent.md")
+
+    def effect(verdict: str, *extra: str, filename: str = awi.name) -> int:
+        with pytest.raises(SystemExit) as finished:
+            atk.main(
+                [
+                    "wi",
+                    "effect-check",
+                    filename,
+                    "--worktree",
+                    str(worktree),
+                    "--verdict",
+                    verdict,
+                    "--checked-on",
+                    "2026-10-31",
+                    "--review-record",
+                    "session:42",
+                    *extra,
+                ],
+                home=tmp_path,
+            )
+        capsys.readouterr()
+        assert isinstance(finished.value.code, int)
+        return finished.value.code
+
+    def candidates(label: str, *, used: bool, started: str = "2026-10-31T12:00:00Z") -> tuple[list[dict], list[dict]]:
+        rows = [{"type": "user", "timestamp": started, "message": {"role": "user", "content": "作業依頼"}}]
+        if used:
+            for index, file in enumerate(files, 1):
+                event = _tool("Read", {"file_path": str(worktree / file)}, index)
+                event["timestamp"] = (datetime.datetime.fromisoformat(started) + datetime.timedelta(seconds=index)).isoformat()
+                rows.append(event)
+        transcript_dir = tmp_path / label
+        transcript_dir.mkdir()
+        transcript = _write_transcript(transcript_dir, rows)
+        output = transcript_dir / "output"
+        output.mkdir()
+        assert prepare.main(["--transcript", str(transcript), "--target-repo", str(worktree), "--work-dir", str(output)]) == 0
+        result = json.loads(capsys.readouterr().out)
+        selected, unconfirmed = (
+            [json.loads(line) for line in pathlib.Path(result[key]).read_text(encoding="utf-8").splitlines()]
+            for key in ("effect_candidates_path", "effect_unconfirmed_path")
+        )
+        return selected, unconfirmed
+
+    # 採用側のnaive値だけを消費側がUTCとみなす不一致を、採用直後の候補化で検出する。
+    immediate_start = (
+        datetime.datetime.fromisoformat(dates[0]).astimezone(datetime.UTC) + datetime.timedelta(minutes=1)
+    ).isoformat()
+    immediate, _ = candidates("immediate", used=True, started=immediate_start)
+    assert {row["file"] for row in immediate if row["awi"] == awi.name} == set(files)
+    assert awi.read_text(encoding="utf-8") == saved_adoption
+    assert datetime.datetime.fromisoformat(dates[0]).tzinfo is not None
+    assert "effect_check: pending" in saved_adoption
+    initial, waiting = candidates("unused", used=False)
+    assert not initial
+    assert {row["file"] for row in waiting if row.get("awi") == awi.name} == set(files)
+    assert awi.read_text(encoding="utf-8") == saved_adoption
+    assert effect("pending", "--reason", "適用機会なし") == 0
+    assert effect("pending", "--reason", "適用機会なし") == 0
+    assert len(effect_check.result_values(awi.read_text(encoding="utf-8"), "効果確認全体")) == 1
+    later, _ = candidates("used", used=True)
+    assert {row["file"] for row in later if row["awi"] == awi.name} == set(files)
+    assert all(row["adopted_at"] == dates[0] and row["uses"] for row in later)
+
+    assert effect("confirmed", "--file", "app.py") == 0
+    partial = awi.read_text(encoding="utf-8")
+    assert "effect_check: pending" in partial
+    remaining, _ = candidates("partial", used=True)
+    assert {row["file"] for row in remaining if row["awi"] == awi.name} == {"agent-toolkit/skills/review-session/SKILL.md"}
+
+    def fail_write(_path: pathlib.Path, _text: str, **_kwargs: object) -> None:
+        raise OSError("試験用の保存失敗")
+
+    with monkeypatch.context() as failing:
+        failing.setattr(targets, "atomic_write_text", fail_write)
+        assert effect("confirmed", "--file", "agent-toolkit/skills/review-session/SKILL.md") != 0
+    assert awi.read_text(encoding="utf-8") == partial
+    assert effect("confirmed", "--file", "agent-toolkit/skills/review-session/SKILL.md") == 0
+    assert effect("confirmed", "--file", "agent-toolkit/skills/review-session/SKILL.md") == 0
+    complete = awi.read_text(encoding="utf-8")
+    assert "effect_check: confirmed" in complete
+    assert len(effect_check.result_values(complete, "効果確認")) == 2
+    assert effect_check.result_values(complete, "処理日時") == dates
+    assert "## ユーザーコメント\n\n保持する要求\n" in complete
+    parsed = frontmatter.parse_frontmatter(complete)
+    assert parsed is not None and parsed[0]["state"] == "adopted"
+    assert effect("not_required", "--reason", "後日の確認を要しない変更", filename=unnecessary.name) == 0
+    assert effect("insufficient", "--file", "app.py", "--corrective-awi", "corrective.md", filename=insufficient.name) == 0
+    for path, expected in ((unnecessary, "not_required"), (insufficient, "insufficient")):
+        text = path.read_text(encoding="utf-8")
+        assert f"effect_check: {expected}" in text
+        assert effect_check.result_values(text, "処理日時") == dates
+    terminal, _ = candidates("complete", used=True)
+    assert not terminal
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "origin/main")

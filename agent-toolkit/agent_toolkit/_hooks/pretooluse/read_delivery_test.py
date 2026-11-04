@@ -1225,11 +1225,15 @@ def test_guidance_gives_mandatory_host_steps_and_edit_review(tmp_path, monkeypat
     assert "この操作の結果を使う前に" in instruction and "必要な基準を取得" in instruction
     assert ("シェルコマンド" in instruction) is codex
     assert ("Read" in instruction) is (not codex)
-    assert all(notice.count(str(path)) == 1 for path in paths)
+    if not codex:
+        assert all(notice.count(str(path)) == 1 for path in paths)
     assert ("読んだ後に、書いた内容をその基準で見直し、必要なら直" in notice) is write
     assert "必須基準0" not in notice and decision.block is None
     if codex:
-        assert all(notice.count(f"cat -- {path}") == 1 for path in paths)
+        prefix = "const result = await tools.exec_command("
+        requests = [json.loads(line[len(prefix) : -2]) for line in notice.splitlines() if line.startswith(prefix)]
+        assert [request["cmd"] for request in requests] == [f"cat -- {path}" for path in paths]
+        assert all(request["max_output_tokens"] > 0 for request in requests)
         assert notice.count("内外の出力枠") == 1
     for path in paths:
         _assert_acquired(payload, path, False)

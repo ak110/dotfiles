@@ -55,6 +55,7 @@ from session_evidence_extract import (
     _CollectedRecord,
     _default_events,
     _error_event,
+    _extract_records,
     _load_records_checked,
     _referenced_provenance_events,
     _Runtime,
@@ -75,6 +76,7 @@ from session_evidence_stats import (
     _stats_events,
 )
 from session_evidence_tool_calls import (
+    _sorted_tool_call_events,
     _tool_call_collection_events,
 )
 from session_evidence_user_events import (
@@ -141,6 +143,7 @@ _QUERY_OPTIONS = {
     "record_schema": (False, False),
     "elapsed_until": (False, False),
     "hook_notices": (False, False),
+    "reported_improvements": (False, False),
 }
 
 
@@ -342,6 +345,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "statsは総量・親・サブエージェント・threadの要約を全フィールド・既存順で返す。診断と由来を保持する。",
     )
     parser.add_argument(
+        "--reported-improvements",
+        action="store_true",
+        help="全収集記録のreported_improvementsを、record・line・timestamp・text付きで1報告行ずつ返す。"
+        "同文の別出所と同じ出所の複数行を保持し、本文を切り詰めない。0件は専用の要約で示す。",
+    )
+    parser.add_argument(
         "--hook-notices",
         action="store_true",
         help="hook実行の記録（追加コンテキスト・システムメッセージ・遮断エラー・実行成功）に"
@@ -461,6 +470,7 @@ def _single_transcript_query_modes(args: argparse.Namespace) -> tuple[bool, ...]
         args.user_events,
         args.context_at is not None,
         args.tool_calls,
+        args.reported_improvements,
     )
 
 
@@ -858,6 +868,26 @@ def main(argv: list[str] | None = None) -> int:
             events.extend(_user_events_since(collected, since))
     if args.tool_calls:
         events.extend(_tool_call_collection_events(collected, unresolved, args.tool, input_pattern))
+    if args.reported_improvements:
+        improvements = [
+            {
+                "kind": "reported-improvement",
+                "record": item.record_id,
+                "line": event["line"],
+                "timestamp": event.get("timestamp"),
+                "text": text,
+            }
+            for item in collected
+            for event in _extract_records(item.records)
+            for text in event.get("reported_improvements", [])
+        ]
+        events.extend(
+            [
+                *_sorted_tool_call_events(improvements),
+                {"kind": "reported-improvement-summary", "count": len(improvements)},
+                *_unresolved_events(unresolved),
+            ]
+        )
     if any(query_modes):
         seen = set()
         unique = []
@@ -875,6 +905,7 @@ def main(argv: list[str] | None = None) -> int:
             or args.stats
             or args.hook_notices
             or args.tool_calls
+            or args.reported_improvements
             or args.user_events
             and (args.delegation_record is not None or args.owner_session)
         )

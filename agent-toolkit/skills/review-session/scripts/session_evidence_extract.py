@@ -278,7 +278,7 @@ def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] |
         return None
     event: dict[str, Any] = {"kind": kind, "text": clipped}
     if kind == "assistant":
-        improvements = _runtime_inserted.reported_improvement_lines(text)
+        improvements = _runtime_inserted.reported_improvement_lines(text, deduplicate=False)
         if improvements:
             event["reported_improvements"] = improvements
     if kind == "user":
@@ -289,7 +289,11 @@ def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] |
 
 
 def _generated_user_event(event: dict[str, Any]) -> bool:
-    """`_event`が原文から付けた由来の標識で、実行環境が生成したユーザーイベントかを返す。"""
+    """人間入力の抽出で除く生成ユーザーイベントかを、原文由来の標識で返す。
+
+    agents_serverの配送境界に包まれた委譲元の依頼も生成扱いになる。
+    委譲元の依頼を必要とする消費側は、配送境界を別に判定する。
+    """
     return event.get("runtime_generated") is True or event.get("runtime_inserted") is True
 
 
