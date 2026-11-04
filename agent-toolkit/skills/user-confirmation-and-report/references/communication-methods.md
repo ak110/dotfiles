@@ -8,8 +8,8 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-severity.md`の「QとC・Dの区別」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-prevention.md`の「再発防止策の必須性」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
 | 本文の参照基準を適用する前 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
 | 本文の参照基準を適用する前 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 本文の参照基準を適用する前 | `pending-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md` |
@@ -53,7 +53,7 @@
 - 調査で解釈が一意に決まった要求の実施
 - 規範からの逸脱（`approval-scope.md`）
 - エージェントが起草した完成条件の技術的な理由による変更
-- 限定探索の終了や再発防止策を見送る判断。`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」で重大度に応じて確定する。`review-session`の対象では振り返り結果の報告が兼ねる
+- 限定探索の終了や再発防止策を見送る判断。`agent-basics:bugfix/references/root-cause-severity.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」で重大度に応じて確定する。`review-session`の対象では振り返り結果の報告が兼ねる
 
 事後承認は、実施の是非がユーザー固有の基準（選好・認可・成果物の見え方など）で決まる場合だけ求め、回答で分かれる観測結果や操作を書けなければ報告に回す。判断材料を内部の工程や進捗でしか説明できない事項も報告に回す。報告は判断を求める行為と区別する。報告用UWIが事後承認型の2択フォーマットなのは、是正を書き戻せる回答欄を設けるためである。
 非同期質問の送信成功や初期カーソル位置は回答や承認ではなく、回答を要する操作は実際の回答まで確定しない。確認の拒否や承認要求の取り下げは無回答と区別し、`../SKILL.md`「確認要否の判定」を再適用する。認識の違いで要件や結果が変わる事項が残れば事前承認型UWIへ記録して元項目の`depends_on`へそのUWIを加え、確認が不要なら自ら確定して続ける。

@@ -19,7 +19,9 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sub-agents.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%81%A8%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.subagent.md%60%E3%81%AE%E6%A7%8B%E6%88%90%E3%80%8D` | 判断 | `section:agent-basics:*/skills/writing-standards/references/sub-agents.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%81%A8%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.subagent.md%60%E3%81%AE%E6%A7%8B%E6%88%90%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-additions.md#「常時規範への追記条件」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「常時規範への追記条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「日本語の書き方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「日本語の書き方」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `defined-names.md#「命名の方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/defined-names.md#「命名の方針」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
@@ -66,7 +68,7 @@
 ### 定義の所有者
 
 - 複数の文書や実装から共通で利用する手順は、定義の所有者を1つ決定してその場所にのみ定義を配置し、生成元とすべての利用側を把握する。利用側は参照、呼び出し、生成結果の検証のいずれかで接続する。同一の判断基準が複数箇所で個別に定義されている場合は所有者に集約し、各利用側の適用範囲、認可、検証、終了条件を維持する。共通する部分的な責務は利用主体が扱う判断単位ごとに分割し、役割固有の通知や後続工程が連鎖して読み込まれる構造を整理する。集約によって利用側に新たなスキル起動や`Read`が発生する場合は、増加する読み込み量と重複による改訂時の不整合リスクとを比較して採用を決定する。
-- 類似見直しと再発防止の定義、対象母集団、採否基準、省略条件、終了条件、コスト比較の定義所有者は`agent-basics:bugfix`である。問題の分類、重大度、対応見送りなど初動で用いる判断は、起動時に届く同スキルの`SKILL.md`に持たせる。母集団の導出、対処の階層、再発防止策の段階分けや完了判定といった詳細な分析は、同スキルの`references/root-cause-analysis.md`に持たせる。他の文書には各工程固有の入力、認可、記録、検収、保存の処理のみを記載し、共通の判断は同スキルを参照する。
+- 類似見直しと再発防止の定義、対象母集団、採否基準、省略条件、終了条件、コスト比較の定義所有者は`agent-basics:bugfix`である。問題の分類、重大度、対応見送りなど初動で用いる判断は、起動時に届く同スキルの`SKILL.md`に持たせる。母集団の導出は同スキルの`references/root-cause-remediation.md`、処置の階層は`references/root-cause-actions.md`、再発防止策の段階分けと完了判定は`references/root-cause-prevention.md`に持たせる。他の文書には各工程固有の入力、認可、記録、検収、保存の処理のみを記載し、共通の判断は同スキルを参照する。
 - スキルの初動で毎回利用する判断基準は、起動時に読み込まれる`SKILL.md`に配置し、条件付きで参照する`references/`には詳細な分析手順のみを置く（努力目標。スキルを起動したこと自体で参照資料を取得したと錯覚し、基準を確認しないまま初動判断を終えてしまう事態を防ぐため）。
 - 文書間の参照方向は、原則として呼び出し元から呼び出し先へ向かう形に統一する（努力目標。逆方向の参照が存在すると、呼び出し元の改訂が呼び出し先へ波及するため）。
 

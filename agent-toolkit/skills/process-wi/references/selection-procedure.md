@@ -12,23 +12,23 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 目標起点の判断を行う前 | `lanes.md#「明示された目標からの実行」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lanes.md#「明示された目標からの実行」` |
-| 本文で基準を使う資料の選択・取得時 | `run-lanes.md#「レーンと資源」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「レーンと資源」` |
+| 参照基準の適用前 | `run-lanes.md#「レーンと資源」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「レーンと資源」` |
 | 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `all-repos-orchestration.md#「取得済み候補の受領」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「取得済み候補の受領」` |
-| 本文で基準を使う資料の選択・取得時 | `selection-format.md#「欄の意味」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-format.md#「欄の意味」` |
-| 本文で基準を使う資料の選択・取得時 | `finish-session.md#「延期adoptと反映後の観測」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「延期adoptと反映後の観測」` |
-| 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
-| 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
-| 本文で基準を使う資料の選択・取得時 | `run-lanes.md#「処理中に確定した必須是正レーン」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「処理中に確定した必須是正レーン」` |
-| 本文で基準を使う資料の選択・取得時 | `run-lanes.md#「統合とAWI終了」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「統合とAWI終了」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
+| 参照基準の適用前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 参照基準の適用前 | `all-repos-orchestration.md#「取得済み候補の受領」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「取得済み候補の受領」` |
+| 参照基準の適用前 | `selection-format.md#「欄の意味」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-format.md#「欄の意味」` |
+| 参照基準の適用前 | `finish-session.md#「延期adoptと反映後の観測」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「延期adoptと反映後の観測」` |
+| 参照基準の適用前 | `../../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
+| 参照基準の適用前 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
+| 参照基準の適用前 | `run-lanes.md#「処理中に確定した必須是正レーン」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「処理中に確定した必須是正レーン」` |
+| 参照基準の適用前 | `run-lanes.md#「統合とAWI終了」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「統合とAWI終了」` |
+| 参照基準の適用前 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-explanation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-explanation.md` | |
+| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-explanation.md` | |
 | 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
 
 ## 対象と保存先
@@ -82,6 +82,8 @@ UWIの本文が元の項目を参照している場合は、その項目の保�
 レーン数は`floor((WI数+9)/10)`を上限とし、前述の3つの価値を満たす最小の数を選ぶ。`WI数`は、selection-format.md「初回配分の算定根拠」に定める`候補WI`の件数Nであり、開始時の候補から除外条件に該当するものを除外した全件（包含された項目と初回確定前の明示的な追加WIを含む）を数える。途中で追加されたWIは初回の件数計算から外し、「処理対象WIの追加」の手順で扱う。初回の候補集合、初回割当、成分を構成するWI、および型付き結合条件は、同節の形式に従って`初回配分`に保存する。確定後に追加されたWIは`追加WI`として区別し、追加統合の際にも既存側の初回情報を保持する。
 
 所要時間の見込みは、既存の方針から変更を一意に導ける軽量な項目か、設計判断を要する項目かという性質と、変更対象の範囲から見積もり、同じリポジトリにおける直近の統合済み`process-wi`の実行記録を用いて補正する。
+実装・検証・直列統合の処理時間、共有資源の処理能力と待ちの蓄積も見積もり、上限内の並列数、独立準備の先行、準備・検証の集約を比較する。
+先行変更の反映後は前提と見積もりを更新し、要求別の識別・完成判定と全対象の完遂を維持する。
 
 - 計画の`## 進捗ログ`、または計画ファイルを持たないレーンの対象AWI本文に保存された予測補正記録から、対象リポジトリ、選定元、レーン、完了時刻を突き合わせて、実行とレーンの対応関係を確定する。各レーンの総経過秒数の合計を、補正前の実装秒数と統合秒数の合計で割った値を係数とし、今回の2つの予測値にそれぞれ掛ける。総経過秒数は内訳を含む実測値なので、補正後の予測値へ加算しない。
 - 補正前の予測値が欠けている記録、合計が0秒の記録、対応関係が不明な記録は理由を添えて除外する。同一の実行・レーン内に複数の計画やAWIが存在する場合は1件として扱う。有効な記録がなければ過去の実行へ遡り、それでもなければ係数を1とする。記録には保存済みの進捗ログとAWI本文を使用する。

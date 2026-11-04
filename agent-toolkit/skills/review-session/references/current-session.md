@@ -20,8 +20,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「原因分析の品質確認」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「原因分析の品質確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats.md#「振り返り結果報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「振り返り結果報告のフォーマット」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |

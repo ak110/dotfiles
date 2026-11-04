@@ -48,6 +48,30 @@ def test_all_read_tables_have_valid_declarations_and_routes():
     assert not errors, "\n".join(errors)
 
 
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "skills/user-confirmation-and-report/SKILL.md",
+        "skills/user-confirmation-and-report/references/user-utterance.md",
+        "skills/add-awi-by-user/SKILL.md",
+        "share/wi-draft-review.parent.md",
+    ],
+)
+def test_user_input_classification_reaches_common_intervention_assessment(relative):
+    """受領・分類の段階から、共通の介入評価の同じ定義元へ直接到達する。"""
+    source = _PLUGIN_ROOT / relative
+    target = _PLUGIN_ROOT / "skills/user-confirmation-and-report/references/analysis-operations.md"
+    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
+    routes = [row for row in rows if "受領" in row.condition and "分類" in row.condition and target in row.documents]
+    assert routes, relative
+    assert all(row.kind == "判断" for row in routes)
+    assert any(
+        item.path == target and item.heading == "「ユーザー介入と確認の判定」" and item.body().strip()
+        for row in routes
+        for item in row.targets
+    ), relative
+
+
 def test_every_role_has_explicit_parent_read_source():
     """全役割の共有契約か統合節が実在し、明示した範囲を取得できる。"""
     sources = sorted((_PLUGIN_ROOT / "share").glob("*.subagent.md"))

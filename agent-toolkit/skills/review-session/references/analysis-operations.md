@@ -6,7 +6,9 @@
 警告への未対応から検査の強化、誤検出・反復負担へ続く場合は、行動上の原因と対策の副作用を同じ連鎖として評価する。最初の通知、判断、実行、元の成果、変更履歴を対応付け、行動規則の改訂、規範の統合・簡素化、hookの縮小・撤去、維持を比較する。
 遮断と毎回の警告を極力避ける方針を前提とし、保持する成果、減る負担、残るリスクから推奨案と是正先を決める。必要性は目的と観測した害から判断する。正当な初回警告と安全保護の撤去には、発火件数に加えて保護の目的と実際の作用を評価する。
 必要な対応を一度の警告後に取らなかった行動も是正対象とし、一般則の存在、警告の発火、最終回復だけで是正済みとしない。既存認可内の是正または通常AWIへ接続し、登録・実装と今回条件での解消・後日の効果を区別する。
-再発・悪化を問う入力では、個別候補の採否の前に、`agent-basics:bugfix/references/root-cause-scenarios.md`「前提の再検討」「反復した指摘の原因判定」で元の問いと分析単位の一致を確かめる。
+再発・悪化を問う入力では、個別候補の採否の前に、次の2節で元の問いと分析単位の一致を確かめる。
+`agent-basics:bugfix/references/root-cause-severity.md`「前提の再検討」を適用する。
+`agent-basics:bugfix/references/root-cause-scenarios.md`「反復した指摘の原因判定」も併用する。
 共有する規範・書式・通知・工程の変更も過去対策と比較し、結論を`analysis.md`「原因と対策」の報告へ引き継ぐ。
 以下で実際のモデル階層を規定と比較するのは、その情報が対策の選定を左右する場合に限る。
 規範本文と必要な変更履歴で欠陥と修正方針を判断できる場合は、記録位置やモデル階層を追加で調べずに調査を終える。
@@ -17,7 +19,7 @@
 
 1. 条文から特徴的な1行を選び、`atk run-script session-review-evidence --`の`--context-at <事象の記録位置> --phrase=<文字列>`を実行してコンテキスト内の存在を照会する。得られた判定結果と、条文がコンテキストへ読み込まれた経路を示す`channel`をAWIの`直接的原因`行に記録する。phraseには事象発生時点の条文から文字列を選ぶ（事象後に改訂されている場合は`git log -S`で当時の文面を特定する）。
 2. 判定結果を各区分に対応付ける。`absent`は起動契機の欠落や参照時点の問題（条文を含む資料が読み込まれなかった）とする。`dropped-by-compaction`はコンテキスト圧縮時の問題（会話圧縮によって除外され、再読み込みの対象外だったか切り詰めによって欠落した）、`present`は条文の判定条件、責務の所在、または想起性の問題とする。一致した`channel`が`user`と`assistant`のみである場合は、会話の中での単なる言及として扱う。
-3. `agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」の未適用規範に関する是正原則に従って原因を特定する。条文の想起性を改善する案と、改善後の条文によって誤りの発生を未然に防げる見込みの根拠をAWIへ記録する。その見込みは、`agent-toolkit:delegation/references/agent-documents-basics.md`に示されている読み手（LLM）の特性に基づいて評価する。
+3. `agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」の未適用規範に関する是正原則に従って原因を特定する。条文の想起性を改善する案と、改善後の条文によって誤りの発生を未然に防げる見込みの根拠をAWIへ記録する。その見込みは、`agent-toolkit:delegation/references/agent-documents-basics.md`に示されている読み手（LLM）の特性に基づいて評価する。
 
 目的逸脱には、規範に従ったことによる処理の停止、差し戻し、空転、不要な反復、条文間の矛盾、前提の欠落、あるいは要求を満たさない成果物の生成などが含まれる。正常に完了した工程であっても、資料の読み込み、照会、事前準備、確認に要した作業量を、本来達成すべき目的の操作と比較して評価する。
 規範に従って実行される工程は適用されるたびに発生するため、1セッション内で1回発生しただけでも反復的な負担として評価する。ツールの呼び出し回数、資料の読み込み量、所要時間、適用の頻度を考慮し、必読範囲の縮小や集約、準備処理を呼び出される側へ移管する案、または探索自体を不要にする案などを比較検討する。
@@ -89,10 +91,10 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 再発・悪化を問う入力の分析単位を確定する前 | `agent-basics:bugfix/references/root-cause-scenarios.md#「前提の再検討」「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「前提の再検討」「反復した指摘の原因判定」` |
+| 再発・悪化を問う入力の分析単位を確定する前 | `agent-basics:bugfix/references/root-cause-severity.md#「前提の再検討」`、`agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「前提の再検討」`、`section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
 | 分析結果を報告へ引き継ぐ前 | `analysis.md#「原因と対策」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/analysis.md#「原因と対策」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md`の「再発防止策の必須性」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/agent-documents-basics.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-documents-basics.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |

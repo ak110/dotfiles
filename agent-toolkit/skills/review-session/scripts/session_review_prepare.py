@@ -80,7 +80,7 @@ MANDATORY_KINDS = frozenset(
 
 ユーザー介入、ユーザー確認（選択肢どおりの回答と投入したUWI）、WIの記入欄の是正は、
 前例の有無によらず評価を要し、除外区分は`agent-basics:bugfix`の
-`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」で確かめる。探索の深さと再発防止策の要否・終了は`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」の重大度判断に従う。
+`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」で確かめる。探索の深さと再発防止策の要否・終了は`agent-basics:bugfix/references/root-cause-severity.md`「QとC・Dの区別」の重大度判断に従う。
 参照資料を読み込まなくても必須だと分かるよう候補一覧と1行JSONへ示し、
 振り返り結果報告は各候補の扱いを候補IDで示す（書式は`agent-toolkit:report-completion`の`references/report-formats.md`）。
 `definition-body-read`は、準備が起動準備の疑いあり（`launch_check`の`status`が`suspected`）と判定した読取を

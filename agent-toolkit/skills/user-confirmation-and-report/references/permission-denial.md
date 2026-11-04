@@ -12,7 +12,7 @@ auto modeのカスタムルールを追加・編集する手順は、`agent-tool
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/auto-mode.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-output.md#「PermissionRequest」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-output.md#「PermissionRequest」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md#「カスタムルール追加のワークフロー」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/auto-mode.md#「カスタムルール追加のワークフロー」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/auto-mode.md#「カスタムルール記述の注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/auto-mode.md#「カスタムルール記述の注意点」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
@@ -67,7 +67,7 @@ auto mode classifierによる拒否は、対象操作の実行そのものを妨
 3. ユーザーから承認を得た場合は、メイン側で該当操作を直接実行する。撤回となった場合は該当操作を取りやめ、委譲された操作であれば撤回の旨と再開条件をサブエージェントへ伝える。レビュー完了を待つ場合は、サブエージェント側でレビューを実施し、完了報告を受領した後に手順1へ戻る。
 4. `AskUserQuestion`が未回答のままタイムアウトを迎えた場合は対象操作を保留とし、回答待ちのUWIを記録して代替手段のみで作業を継続する。
 5. 未回答の後にUWIへ回答が保存された場合であっても、classifierが認識する承認は同一セッションの対話履歴内で成立する必要がある。そのため、対話内で同じ操作に対する再確認を発行し、回答を受領した後に手順1へ戻る。
-6. 手順3または手順5で承認を得て操作を実行したメインエージェントは、同様の承認要求の繰り返しを減らすための許可ルールの追加を検討する。対処の要否や省略の可否は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に基づいて判定する（委譲先から報告された拒否であってもメイン側が担当し、承認済み操作の実行を優先して完了させる）。
+6. 手順3または手順5で承認を得て操作を実行したメインエージェントは、同様の承認要求の繰り返しを減らすための許可ルールの追加を検討する。対処の要否や省略の可否は、`agent-basics:bugfix`の`references/root-cause-severity.md`「QとC・Dの区別」に基づいて判定する（委譲先から報告された拒否であってもメイン側が担当し、承認済み操作の実行を優先して完了させる）。
    - 文面作成: 個別の識別子を操作種別へと一般化する。有効な規則との比較には2資料を参照する。まず`agent-toolkit:user-confirmation-and-report/references/auto-mode.md`「カスタムルール追加のワークフロー」を参照する。また`agent-basics:writing-standards/references/auto-mode.md`「カスタムルール記述の注意点」も参照する。既存の規則で完全に対象を網羅できる場合は追記を省略する。
    - 環境固有のルール（マシン構成、ローカル設定、接続先などを前提とする規則）: 配布元ソースの有無にかかわらず、`~/.claude/settings.json`の`autoMode.allow`へ直接追記する。管理ラベルや非推奨文字列と衝突しない独自の文面とする。
    - 汎用的なルール: 文面、根拠、および反映先（`share/claude_settings_json_managed.json`）を記載したdotfiles向けのAWIを、`agent-toolkit:wi-standards`に従って登録する。dotfilesの作業中であっても管理原本をその場で直接編集することは避ける。

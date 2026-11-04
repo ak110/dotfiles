@@ -16,6 +16,32 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks.md#「hookスクリプトの基本プロトコル」` | 判断 | `section:*/.claude/skills/agent-toolkit-edit/references/claude-hooks.md#「hookスクリプトの基本プロトコル」` |
 
+## 資料の選択
+
+読み書きする状態、更新主体、消費側との利用関係から必要な共通節と主題節を選ぶ。
+複数の状態を扱う変更では、その和と必要な前提・例外を読む。
+ファイル名だけで範囲を限定せず、選択した節の前提・例外が別の主題にある場合も、その節を加える。
+
+## セッション状態資料の選択
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| セッション状態や内部フラグを変更・調査する前 | `session-state-and-flags.md`の「状態ファイルの設計」「状態の継承」。設計節配下の「並行書き込みの排他制御」も含む | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「状態ファイルの設計」「状態の継承」` |
+| 活動・WI投入作業の記録を変更・調査する前 | `session-state-and-flags.md`の「セッションの活動記録」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「セッションの活動記録」` |
+| managed-tempの状態を変更・調査する前 | `session-state-and-flags.md`の「managed-tempの状態」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「managed-tempの状態」` |
+| 完了報告からの状態解析を変更・調査する前 | `session-state-and-flags.md`の「完了報告からの状態読み取り」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「完了報告からの状態読み取り」` |
+| Function hooksの終了要求、定期再確認や利用上限の再開予約を変更・調査する前 | `session-state-and-flags.md`の「Function hooksの終了要求」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「Function hooksの終了要求」` |
+| 作業契約の状態を変更・調査する前 | `session-state-and-flags.md`の「作業契約系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「作業契約系」` |
+| plan・セッション名の状態を変更・調査する前 | `session-state-and-flags.md`の「plan系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「plan系」` |
+| 振り返り・モード・無進捗停止の状態を変更・調査する前 | `session-state-and-flags.md`の「振り返りとモードの状態」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「振り返りとモードの状態」` |
+| 進捗点検の状態を変更・調査する前 | `session-state-and-flags.md`の「進捗の点検系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「進捗の点検系」` |
+| 確認・操作スキルの起動、資料取得証拠、読込の選択・案内や終了工程の証拠を変更・調査する前 | `session-state-and-flags.md`の「確認・操作スキル系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「確認・操作スキル系」` |
+| 通知の反復抑止・配送状態を変更・調査する前 | `session-state-and-flags.md`の「通知反復系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「通知反復系」` |
+| agents_serverの呼出・所有・待機の観測状態を変更・調査する前 | `session-state-and-flags.md`の「agents_server連携系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「agents_server連携系」` |
+| バックグラウンドタスクの所有・通知・停止の状態を変更・調査する前 | `session-state-and-flags.md`の「バックグラウンドタスク系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「バックグラウンドタスク系」` |
+| UWI回答の検出状態を変更・調査する前 | `session-state-and-flags.md`の「UWI系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「UWI系」` |
+| Antigravityのイベント間状態を変更・調査する前 | `session-state-and-flags.md`の「Antigravityのイベント間状態」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「Antigravityのイベント間状態」` |
+
 ## 状態ファイルの設計
 
 Claude Code・Codexのhookは呼び出しごとに別プロセスで起動するため、セッション単位の状態ファイルで情報を共有する。

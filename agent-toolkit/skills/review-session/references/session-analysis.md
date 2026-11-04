@@ -13,8 +13,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「原因分析の品質確認」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「原因分析の品質確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats.md#「振り返り結果報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「振り返り結果報告のフォーマット」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
@@ -28,7 +28,7 @@
 | 工程3および工程4で、問題の原因と対策を導き、既存AWIで対処済みかを確認する前 | `analysis.md`の「原因と対策」「既存キュー項目との重複確認」「規範適用による目的逸脱」 | 判断 | `section:agent-toolkit:*/skills/review-session/references/analysis.md#「原因と対策」「既存キュー項目との重複確認」「規範適用による目的逸脱」` | |
 | コスト削減案の採否および所要時間300秒超過時の対応を確定する前 | `duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` | |
 | 工程3または工程4において、事実関係の調査をサブエージェントへ委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` | |
-| 工程4で問題ごとに`agent-basics:bugfix`を起動した時点（`analysis.md`「原因と対策」において、ユーザー介入を拡張原因分析の対象として扱うため） | `agent-basics:bugfix`の`references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` | |
+| 工程4で問題ごとに`agent-basics:bugfix`を起動した時点（`analysis.md`「原因と対策」において、ユーザー介入を拡張原因分析の対象として扱うため） | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` | |
 | 工程5でAWIの登録要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
 
 ## 分析と投入
@@ -68,12 +68,12 @@ prepareの`effect_candidates_path`を取得し、採用済みAWIごとの変更�
 
 選別した問題ごとに、メインエージェント自身が`agent-basics:bugfix`を起動し、発生した事象、期待されていた本来の契約、実際の結果、発生条件を入力情報として適用する。同一セッション内で過去に起動していた場合でも、振り返りごとに改めて適用する。WI投入担当による分析を、メインエージェント自身が行うべき原因分析の代替にしない。
 
-1. 当該事項が、既存の上位規範（`agent-toolkit/rules/01-agent.md`のQCDや「完遂と先送り」など）や対象の目的、技術的な常識から自ずと導き出せるものであるかを検討する。詳細は`agent-basics:bugfix/references/root-cause-analysis.md`「原因分析の品質確認」を参照する。ルールや条文を追加する前に、既存ルールの削除、緩和、または一般化によって目的を達成できるかを検証する。
+1. 当該事項が、既存の上位規範（`agent-toolkit/rules/01-agent.md`のQCDや「完遂と先送り」など）や対象の目的、技術的な常識から自ずと導き出せるものであるかを検討する。詳細は`agent-basics:bugfix/references/root-cause-severity.md`「原因分析の品質確認」を参照する。ルールや条文を追加する前に、既存ルールの削除、緩和、または一般化によって目的を達成できるかを検証する。
 2. 初動対応、拡張原因分析の要否判定、根本原因、類似事例の調査結果、具体的な対策、横展開の処置、および再発防止策を実際の証拠と突き合わせ、原因と対策を1つの明確な案として確定する。
    過去AWIと今回の比較は`analysis.md`「原因と対策」に従い、終了済み項目の実装・配布と適用機会を確認する。
    未完了AWIによる被覆、起票、実装配布、今回条件での解消を区別し、残る原因条件、処置担当、適用機会と観測結果を工程5へ渡す。
    適用機会が無い処置は効果未確認とする。
-3. 工程2と工程3で実施したコスト比較の検討結果を活用し、欠陥の有無に関する判定と、具体的な実施方法についての判断をそれぞれ確定させる。対応を見送ると判断した問題についても原因と比較検討の内容を明確に記録し、見送りの根拠を要求の不成立、判明した原因、コスト比較の結果と整合させる。その見送り理由が、`agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」で禁止されている不当な根拠に該当しないことを、`analysis.md`の基準に照らして確認する。
+3. 工程2と工程3で実施したコスト比較の検討結果を活用し、欠陥の有無に関する判定と、具体的な実施方法についての判断をそれぞれ確定させる。対応を見送ると判断した問題についても原因と比較検討の内容を明確に記録し、見送りの根拠を要求の不成立、判明した原因、コスト比較の結果と整合させる。その見送り理由が、`agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」で禁止されている不当な根拠に該当しないことを、`analysis.md`の基準に照らして確認する。
 
 ### 工程5
 

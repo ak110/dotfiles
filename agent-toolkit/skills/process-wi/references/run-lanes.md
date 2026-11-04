@@ -17,10 +17,10 @@
 | 本文で基準を使う資料の選択・取得時 | `../../delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` |
 | 本文で基準を使う資料の選択・取得時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../wi-standards/references/origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
+| 参照基準の適用前 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
 | 追加WIと即時修正を区別する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
+| 参照基準の適用前 | `../../../share/exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
+| 参照基準の適用前 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md#「延期adoptと反映後の観測」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「延期adoptと反映後の観測」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` |
@@ -72,6 +72,7 @@ atk lane create --repo <対象リポジトリの絶対パス> --base-branch <統
 メインは、後段レーンのworktreeを作成する前に、先行成果を要しない読み取り専用調査を既存の委譲手段で開始してよい。
 対象は要求・規範の確認、実装・テスト・参照先の所在、先行成果に依存しない設計材料、正式化前の計画下書きとする。
 書込競合だけで後段となる場合と、調査や判断自体が先行成果を要する場合を区別し、後者の未確定部分は成果の到着まで保留する。
+共有検証や直列統合の処理能力を踏まえ、独立した準備の先行と準備・検証の集約を比較し、先行変更後に前提と所要見込みを更新する。
 
 調査担当は取得したリポジトリの版、対象パス、確認した事実と仮定、残る問いを自身のmanaged-tempへ保存する。
 先行調査では、正式計画の作成、WI状態の変更、レーン資源の登録、および対象worktreeへの書き込みを行わない。

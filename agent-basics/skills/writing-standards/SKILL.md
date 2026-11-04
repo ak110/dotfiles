@@ -58,7 +58,7 @@ description: >
 | 論文・調査報告を書く時 | `references/writing-research.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-research.md` | |
 | 脚本・台本を書く時 | `references/writing-scripts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-scripts.md` | |
 | ユーザーの入力素材を整理して取り込む時 | `references/writing.md`の「ユーザー入力素材の取扱い」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | |
-| 配布物がエンドユーザーの環境でパッケージマネージャーへ渡す版指定（`uvx --from`の引数、`pyproject.toml`の`dependencies`、`uv run --with`の引数、PEP 723の`dependencies`など）を変える作業の起草、計画、実装、レビューの時 | `references/dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` | |
+| 依存パッケージ、コンテナーイメージ、言語処理系、CI・自動ビルドのツールやactionの版指定を選ぶ・変える作業の起草、計画、実装、レビューの時。配布物が渡す`uvx --from`、`dependencies`、`uv run --with`、PEP 723の版指定やPython対応版の追加も含む | `references/dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` | |
 | ロゴ、ワードマーク、ブランドマークとそのアイコン展開を制作・改訂する時（その計画・作業項目の起草を含む） | `references/logo-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/logo-quality.md` | |
 | エンドユーザーが操作する画面の新設・変更、その計画・作業項目の起草またはレビューの時 | `references/ui-ux.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux.md` | |
 | エンドユーザーが操作する画面の新設・変更、その計画・作業項目の起草またはレビューで、フォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、自動で切り替わる表示、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
@@ -90,7 +90,7 @@ description: >
 | クエリ性能を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「クエリ性能設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「クエリ性能設計」` | |
 | DB更新と外部送信の整合性を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「DB更新と外部送信の整合性設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「DB更新と外部送信の整合性設計」` | |
 | Webhook受信を設計・変更・レビューする前 | `references/design-data-interfaces.md`の「Webhook受信設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「Webhook受信設計」` | |
-| 常駐サービスを設計・変更・レビューする前 | `references/design-runtime.md`の「常駐サービス設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「常駐サービス設計」` | |
+| 常駐サービスの設計・変更・レビュー、または子プロセス・委譲先・非同期ジョブなど配下を持つ機能の停止・再開・切替を要件化・設計・変更・レビューする前 | `references/design-runtime.md`の「常駐サービス設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「常駐サービス設計」` | |
 | 負荷制御と外部呼び出しを設計・変更・レビューする前 | `references/design-runtime.md`の「負荷制御と外部呼び出しの設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「負荷制御と外部呼び出しの設計」` | |
 
 ## 技術資料の確認・参照・読取
@@ -114,7 +114,8 @@ description: >
 | 設計の記録（ADRを含む）を作成・変更・レビューする時 | `references/document-types.md`の「設計の記録」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/document-types.md#「設計の記録」` | |
 | 新しい概念名または識別子を導入する時 | `references/referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` | |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/defined-names.md` | |
-| 文章を書く時と表記をチェックする時（他の行より先に読む） | `references/notation-rules.md` | 操作 | `body-writing` | |
+| 文章を書く時と表記を修正する時（他の行より先に読む） | `references/notation-rules.md` | 操作 | `body-writing` | |
+| 表記チェックの対象・実行方法を選ぶ前、実行する前と診断へ対応する前 | `references/notation-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-checks.md` | |
 
 ## コードの編集時に読む資料
 
@@ -144,7 +145,6 @@ description: >
 | 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `references/design-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time.md` | |
 | コードを編集する時と、依存の追加・更新をする時 | `references/implementation-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time.md` | |
 | 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時 | `references/design-heuristics.md`の「設計案の予備選別」から「設計品質の劣化確認」まで（各節の適用条件を保つ） | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」から「設計品質の劣化確認」まで` | |
-| 依存の追加・更新、またはPythonの対応版を追加する時（CI・開発環境の版指定変更を含む） | `references/dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` | |
 | MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/mcp-server-design.md` | |
 | テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md` | |
 | Pythonの静的解析（ruff・pylint・pyright・mypyなど）の診断へ対処する時と、抑制を追加する時 | `references/python.md`の「静的解析の誤検出と抑制」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/python.md#「静的解析の誤検出と抑制」` | |

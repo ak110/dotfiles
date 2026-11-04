@@ -26,7 +26,7 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
@@ -51,7 +51,7 @@ description: >
 ## 使用条件
 
 frontmatterに記載した条件に加えて、利用頻度の高いスキルや、自動化の中核となるプロンプトを堅牢化したい場合にも本スキルを使用する。
-起動コストに見合わない単発のプロンプトや、作成者の主観的な好みを反映するだけの作業は、本スキルの適用対象から除外する。この除外は本スキルという手段の選択に限定する。プロンプトの欠陥が品質（Quality）に影響する場合は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従って処置の要否を判断する。
+起動コストに見合わない単発のプロンプトや、作成者の主観的な好みを反映するだけの作業は、本スキルの適用対象から除外する。この除外は本スキルという手段の選択に限定する。プロンプトの欠陥が品質（Quality）に影響する場合は、`agent-basics:bugfix`の`references/root-cause-severity.md`「QとC・Dの区別」に従って処置の要否を判断する。
 指示と挙動の不一致を問題として調査するときは、原因を指示の曖昧さに限定せず、評価や追記案の検討に先立って`agent-basics:bugfix`を起動する。初動対応・原因分析・対策選定を進めた結果、指示文の改訂が必要と判断された場合に本スキルを適用する。通常のプロンプト改善は、この不具合調査の流れとは区別して進める。
 
 ## 文書の点検

@@ -8,8 +8,10 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-prevention.md`の「再発防止策の必須性」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
+| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-severity.md`の「QとC・Dの区別」「前提の再検討」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」「前提の再検討」` |
+| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-analysis.md`の「直接的原因と事象時点の確定」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
+| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-actions.md`の「対策の選定」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「対策の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/quality-principles.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「QとC・Dの区別」` |
@@ -19,17 +21,17 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「直接的原因と事象時点の確定」「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「直接的原因と事象時点の確定」「対策の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「対策の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「直接的原因と事象時点の確定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios.md#「前提の再検討」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「前提の再検討」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity.md#「前提の再検討」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「前提の再検討」` |
 
 ## 既存記述との重複と方針との整合
 
 規範、ドキュメント、または設定へ新しく記述を追加する案を検討するときは、追加先で同じ判断基準がすでに成り立っていないかを確認する。既存の記述を補強するだけで目的を果たせる場合は、新規追加ではなく補強を採用する。変更を確定する前に、明文化された既存の方針と整合しているかを照らし合わせる。
 外部資料との比較では、`agent-basics:writing-standards/references/design-heuristics.md`「問題と手段の比例性」に従い、意味上の被覆と実効性の根拠を独立に検収する。条文の対応表だけから十分性を認めず、未確認の範囲が採否でどう扱われているかも確認する。
-既存規範への違反を是正する場合は、本節の重複回避ルールを適用しない。`agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」にある未適用規範の是正原則に従って対処する。
+既存規範への違反を是正する場合は、本節の重複回避ルールを適用しない。`agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」にある未適用規範の是正原則に従って対処する。
 
 ## 問題と手段の比例性
 
-指摘が示す問題に対して処置が必要かどうかは、`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」に沿って判断する。指摘の採否や求める処置の決定、修正方針の確定では、同資料の重大度別の判断基準を踏まえた上で、`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」にある比較を適用する。検討した各案（何もしない案や既存の操作だけで済ませる案を含む）、それぞれの案が目的を満たせるか、および採用した根拠を、指摘文や採否の応答へ記録する。
+指摘が示す問題に対して処置が必要かどうかは、`agent-basics:bugfix/references/root-cause-severity.md`「QとC・Dの区別」に沿って判断する。指摘の採否や求める処置の決定、修正方針の確定では、同資料の重大度別の判断基準を踏まえた上で、`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」にある比較を適用する。検討した各案（何もしない案や既存の操作だけで済ませる案を含む）、それぞれの案が目的を満たせるか、および採用した根拠を、指摘文や採否の応答へ記録する。
 
 ## 解決案の比較
 
@@ -49,14 +51,16 @@
 
 ## 矛盾の原因調査
 
-矛盾の原因を調べるときは、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」「対策の選定」に沿って、契約、生成機構、必要な処置を確定する。レビューにおける指摘の採否には、その調査結果と指摘の裏付けを活用する。一般的な解決案の比較は、本書の「解決案の比較」に従う。
+矛盾の原因を調べるときは、`agent-basics:bugfix`を起動する。
+契約、生成機構、必要な処置の確定には、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」を適用する。
+`agent-basics:bugfix/references/root-cause-actions.md`「対策の選定」も併用する。レビューにおける指摘の採否には、その調査結果と指摘の裏付けを活用する。一般的な解決案の比較は、本書の「解決案の比較」に従う。
 
 ## 判断の点検
 
 - 判定条件、例外条件、許容条件は観測可能な事実だけで記述し、判定する主体がその事実を実際に観測できるかを確認する。判定の入力が別の主体や工程による生成物である場合は、その入力を生成する処理をすべて洗い出し、生成しない処理があれば事実の定義元を判定入力に設定する
 - 暫定規範を削除するときは、削除条件の文面に加え、対象の節や警告の種類、実際に観測された値が、削除後にも必要な状態を満たしているかを確認する。同じ粒度で比較できない場合は、暫定規範を残したまま条件の記述を修正する
 - ある挙動を一般則として記述する前に、その挙動が発生しない条件を探して実物で確認し、記述する適用範囲を観測で確認できた条件だけに限定する
-- 問題への対策が及ぼす効果の向きは、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「対策の選定」に沿って判定し、その結果に基づいて選択肢の推奨順を決める
+- 問題への対策が及ぼす効果の向きは、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-actions.md`「対策の選定」に沿って判定し、その結果に基づいて選択肢の推奨順を決める
 - 最初に思い浮かんだ仮説や過去の作業パターンに引っ張られていないかを点検し、前提を1つ以上問い直した上で判断を確定する（努力目標）
 - 欠陥の候補を見つけたときは、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」に従って誤認の可能性を反証してから判定する。一般的な事実の主張についても前述の反例を確認して判定し、レビューの指摘として採用するかどうかは独立して確定する
 
@@ -65,8 +69,8 @@
 ある規定を適用するかどうかは、その規定が守ろうとしている価値を特定した上で判断する。その価値が別の手段ですでに満たされている場合や、前提条件が成り立たない場合など、規定の手順を実行しても成果につながらないと判断したときは適用を省く。その際は、省略した工程と根拠を同じターンで報告し、規定側の改訂を提案する。
 レビュー担当は、到達不能と確定した完了条件について、本節を根拠とする成果物への指摘を1回にとどめる。
 
-再発防止の条文と改善要求が衝突した場合は、`agent-basics:bugfix`の`references/root-cause-scenarios.md`「前提の再検討」に従って原因と保護機構の成立状況を判定し、その結果を踏まえて改善要求の採否と、同じ変更に含める条文改訂を確定する。判断や入力にユーザー自身の選択が必要な場合は、その確認事項を依頼元へ返す。
+再発防止の条文と改善要求が衝突した場合は、`agent-basics:bugfix`の`references/root-cause-severity.md`「前提の再検討」に従って原因と保護機構の成立状況を判定し、その結果を踏まえて改善要求の採否と、同じ変更に含める条文改訂を確定する。判断や入力にユーザー自身の選択が必要な場合は、その確認事項を依頼元へ返す。
 
 ## 前提の再検討
 
-指摘が示す問題や規範を改訂する原因は、指摘の反復や未収束の有無にかかわらず、`agent-basics:bugfix`を起動して分析する。分析にあたっては、同スキルの`references/root-cause-scenarios.md`「前提の再検討」に従い、問題の成立に必要な前提（既存の仕組み、制約、分類、条文など）も原因の候補に含めて検討する。レビューの場では、「検収手段の到達可能性」で得られた結果と共通分析を踏まえて採否を確定する。
+指摘が示す問題や規範を改訂する原因は、指摘の反復や未収束の有無にかかわらず、`agent-basics:bugfix`を起動して分析する。分析にあたっては、同スキルの`references/root-cause-severity.md`「前提の再検討」に従い、問題の成立に必要な前提（既存の仕組み、制約、分類、条文など）も原因の候補に含めて検討する。レビューの場では、「検収手段の到達可能性」で得られた結果と共通分析を踏まえて採否を確定する。

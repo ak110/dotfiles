@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「処置の階層」「再発防止としてのテスト」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「処置の階層」「再発防止としてのテスト」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-actions.md#「処置の階層」`、`../../bugfix/references/root-cause-prevention.md#「再発防止としてのテスト」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「処置の階層」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止としてのテスト」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「テストの原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「テストの原因調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/diagnostics.md#「読む出力」` | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「所要の原因調査」` |
@@ -45,6 +45,10 @@
 
 ## 検証単位の選定
 
+性能変更の前後を差分検証する場合は、基準版・変更版に同じ入力・初期状態・操作列を与え、成功値・エラー・順序・更新後状態・並行更新を比較する。
+時刻・乱数・IDの正規化範囲を明確にし、仕様由来の期待値も併用して基準版の既知不良を正解にしない。
+高価な性能試験の前に、安価な正確性の確認を選ぶ。
+
 実装に着手する前に具体化した受入シナリオにおける利用主体、最初に実行される公開操作、入力データと初期状態、検証すべき期待結果、および検出すべき失敗条件を整理し、代表的な操作手順には同一の契約違反を検出できる最も上位で安定した公開操作を選択する。
 網羅ケースも上位優先を基本とし、実ブラウザや実バックエンド、外部ホストなどを要して実行時間が大きく増える場合に限り、同じ違反を検出できる最も実行の軽い層を選ぶ。
 実行時間をテストの費用に含め、何を保証するためにどこまで動かす必要があるかで層を選ぶ。
@@ -70,7 +74,7 @@ APIのエンドポイントを検証する条件は、実際にAPIリクエス�
 
 画面を持つ成果物の大きな画面変更や新機能を検証するときは、シナリオを渡さず、達成するゴールだけを渡してエージェントにブラウザなどで画面を操作させる探索的な試行も選択肢とする。
 1回の試行の所要時間と誤った指摘を確かめる費用を、シナリオにない操作から不具合候補を発見する効果と比較し、実施しない判断も含めて選ぶ。
-指摘は深刻と判定されたものも含め、再現と仕様の確認を経てから不具合として扱い、確定した不具合には回帰テストを追加する。回帰テストは今回の事象そのものの再発を検出する回帰防止策であり、同じ要因から生じる別の不良を防ぐ再発防止テストとの区別は`agent-basics:bugfix`の`references/root-cause-remediation.md`「再発防止としてのテスト」に従う。
+指摘は深刻と判定されたものも含め、再現と仕様の確認を経てから不具合として扱い、確定した不具合には回帰テストを追加する。回帰テストは今回の事象そのものの再発を検出する回帰防止策であり、同じ要因から生じる別の不良を防ぐ再発防止テストとの区別は`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止としてのテスト」に従う。
 
 ### 削除・統合の類型
 
@@ -161,7 +165,7 @@ import error、構文エラー、fixtureの準備失敗、無関係なアサー�
 
 この確認作業は一時的なコード変更によって行い、変更前の未コミットの差分やGitのインデックス（ステージング状態）を確実に保持して、確認完了後に元の状態へ正確に復元する。復元の手段は、対象リポジトリのバージョン管理システムおよび作業ツリーの契約に従って選択し、作業対象外のサブモジュールのHEAD、ブランチ、および作業内容も保持する。
 
-不具合の再発防止を目的としてテストを追加する場合は、そのテストが「直接的な対策」であるのか「根本的な再発防止策」であるのかを区分する。そして今回の条件下での有効性を、`agent-basics:bugfix`の`references/root-cause-remediation.md`「処置の階層」と「再発防止としてのテスト」に従って評価する。不具合修正前のバージョンにおいてテストが確実に失敗することの確認は同節の規定に従って行い、前述の費用便益評価による省略の対象外とする。
+不具合の再発防止を目的としてテストを追加する場合は、そのテストが「直接的な対策」であるのか「根本的な再発防止策」であるのかを区分する。そして今回の条件下での有効性を、`agent-basics:bugfix`の`references/root-cause-actions.md`「処置の階層」、`references/root-cause-prevention.md`「再発防止としてのテスト」に従って評価する。不具合修正前のバージョンにおいてテストが確実に失敗することの確認は同節の規定に従って行い、前述の費用便益評価による省略の対象外とする。
 
 ## 状態遷移の性質確認
 

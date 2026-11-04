@@ -1,5 +1,5 @@
 # agent-doc-tone: test-data
-"""`notation-rules.md`「文章チェックの一括実行」が定める引数と完了判定の回帰テスト。
+"""`notation-checks.md`「文章チェックの一括実行」が定める引数と完了判定の回帰テスト。
 
 規範どおりの引数でpyfltr MCPの`run`ツールの実装（`pyfltr.cli.mcp_server.tool_run`）を呼び、
 規範が定める判定条件が到達・完了した対象だけを完了と判定し、未到達・未完了を完了と判定しないことを確かめる。
@@ -18,7 +18,7 @@ import pytest
 pytestmark = pytest.mark.usefixtures("share_package_caches")
 
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
-_REPOSITORY_MARKDOWN = _PROJECT_ROOT / "agent-toolkit/skills/wi-standards/references/notation-rules.md"
+_REPOSITORY_MARKDOWN = _PROJECT_ROOT / "agent-basics/skills/writing-standards/references/notation-checks.md"
 _REPOSITORY_PYTHON = pathlib.Path(__file__).resolve()
 
 

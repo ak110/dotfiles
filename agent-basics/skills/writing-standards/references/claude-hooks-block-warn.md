@@ -11,7 +11,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-messages.md#「通知本文の整形」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md#「通知本文の整形」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-stop.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「QCDと3段判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-stop.md#「遮断の条件と再帰呼び出し対策」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-stop.md#「遮断の条件と再帰呼び出し対策」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks.md#「hookスクリプトの基本プロトコル」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks.md#「hookスクリプトの基本プロトコル」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-stop.md#「委譲先での発火」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-stop.md#「委譲先での発火」` |
@@ -26,7 +26,7 @@
 実行してしまうと元に戻せない操作を防ぐ判定（不可逆な操作の防止やデータ破損の防止）や、常駐プロセスの確実な終了保証は、一度の発火であっても重大な被害を防ぐ効果があるため、フックを設ける十分な根拠となる。
 操作が不可逆であるかどうかは、対象ツールの公開仕様に元の状態へ復元する手段が用意されているかで判断する。
 規範の自動配送や権限の自動許可フックについても、発火頻度、重複発生、受信トークン量、再取得や保守の費用と、その操作が支える成果の価値とを比較して採否を決める。遮断か警告かの選択は、実際に操作を差し戻す判定に対して適用する。
-この比較はフックという手段を採用するかどうかの判断に限定される。品質（Q）に影響する問題への対処が必要かどうかや、フックが成立しない場合に根本原因へアプローチする代替手段の選定については、`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従う。
+この比較はフックという手段を採用するかどうかの判断に限定される。品質（Q）に影響する問題への対処が必要かどうかや、フックが成立しない場合に根本原因へアプローチする代替手段の選定については、`agent-basics:bugfix`の`references/root-cause-severity.md`「QとC・Dの区別」に従う。
 
 判定に必要な情報は、フックの入力（イベントペイロード、対象ファイル、セッション状態）から機械的に一意に特定できることを必須要件とする。
 担当範囲の境界、資源の所有関係、作業の収束状況、会話の意図など、判定基準自体にエージェントの文脈判断を要する事項は、フックによる遮断や警告の対象とせず、エージェント向け文書の中で扱う（機械判定できない条件で通知を出すと、無関係なエージェントにも対処法のないターンを無駄に消費させる）。通知本文の解消手順としてエージェント自身の判断を求める場合は、検出された箇所、判断基準、および基準を満たさない場合に入力や本文を変更せずにそのまま処理を継続する操作手順を明示する。

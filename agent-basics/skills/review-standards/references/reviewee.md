@@ -13,14 +13,14 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「文章成果物の実害」` | 判断 | `section:agent-basics:*/skills/review-standards/SKILL.md#「文章成果物の実害」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/quality-principles.md#「QCDと3段判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `judgment-details.md#「検収手段の到達可能性」` | 判断 | `section:agent-basics:*/skills/review-standards/references/judgment-details.md#「検収手段の到達可能性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」`、`../../bugfix/references/root-cause-remediation.md#「類似見直し」「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」`、`../../bugfix/references/root-cause-remediation.md#「類似見直し」`、`../../bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/review-only-criteria.md#「指摘と採否」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「指摘と採否」` |
 
@@ -64,12 +64,12 @@
 
 ## 恒久ルールへの反映判定
 
-事象の修正と並行して、得られた観点を恒久的なルールへ反映すべきかを検討し、反映先を確定するか、または不採用とする旨を明示的に報告するまでを同じセッションで完遂する。該当する既存規範がある場合の要否判断は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「再発防止策の必須性」にある未適用規範の是正原則に従う。
+事象の修正と並行して、得られた観点を恒久的なルールへ反映すべきかを検討し、反映先を確定するか、または不採用とする旨を明示的に報告するまでを同じセッションで完遂する。該当する既存規範がある場合の要否判断は、`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止策の必須性」にある未適用規範の是正原則に従う。
 
 ## 修正要否の立証
 
 - 観測された事実、違反している目的や契約、対象への適用条件、通常運用で発生する実害と裏付けがそろっている指摘に限り、採否を確定する。根拠が不足している指摘は判断を保留し、証拠が不足している範囲と必要な検証結果を得る手段を応答に記載する。その範囲の再検証は、次ラウンドのレビュー担当が引き継ぐ
-- 欠陥と確定した指摘については、観測された欠陥の修正と追加の類似箇所の探索を区別する。`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従い、重大度、探索の深さ、処置の要否と作業の終了条件を決める
+- 欠陥と確定した指摘については、観測された欠陥の修正と追加の類似箇所の探索を区別する。`agent-basics:bugfix`の`references/root-cause-severity.md`「QとC・Dの区別」に従い、重大度、探索の深さ、処置の要否と作業の終了条件を決める
 - 何も変更を加えない案も含め、そのまま残した場合の実害や認知・保守コストと、変更によって増える複雑さを、同じライフサイクルの視点で比較する。比例性の判定は、`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」に従う。この比較は、bugfixの重大度判定を踏まえて指摘の採否や修正方針を選ぶ際に用いる。計画ファイルの形式や記述間の矛盾に関する指摘も、この区別と比較に沿って判断する
 - 文章成果物の実害や、エンドユーザー向け文書の誤記・適用対象のスタイル違反の修正は、本スキルの`SKILL.md`「文章成果物の実害」に従う
 - 実害も意味の変化もなく、エンドユーザー向け文書の誤記やスタイル違反にも該当しない軽微な単独の誤記は、それだけのために独立した修正や再レビューをせず、重大な修正に伴う再レビューがある場合にまとめて修正する
@@ -100,7 +100,10 @@
 
 同じ論点で修正が繰り返されている場合は、指摘内容と現物を突き合わせて、ユーザーの意図と要件への影響を確認する。ユーザー自身の判断によって意図や変更範囲が分かれる場合は、その判断が確定してから変更する。
 
-違反した規定と発生条件の組み合わせが同一である指摘（文言、対象ファイル、個別箇所の違いは問わない）を再度受け取ったときは、その場しのぎの局所修正を止め、`agent-basics:bugfix`を起動する。同スキルの初動手順と、`references/root-cause-scenarios.md`「反復した指摘の原因判定」、`references/root-cause-remediation.md`「類似見直し」「再発防止策の必須性」の共通判定に引き渡し、比較の根拠と処置の採否を応答に記録する。一般的な設計案の比較は`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」に従い、現在の設計を維持する場合はその理由を明記する。欠陥を解消し、かつ新たな問題を引き起こさない案を立証できないときは、検討した案と理由を委譲元へ報告する。
+違反した規定と発生条件の組み合わせが同一である指摘（文言、対象ファイル、個別箇所の違いは問わない）を再度受け取ったときは、その場しのぎの局所修正を止め、`agent-basics:bugfix`を起動する。同スキルの初動手順と`references/root-cause-scenarios.md`「反復した指摘の原因判定」へ引き渡す。
+共通判定には`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」も適用する。
+`agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」を併用する。
+比較の根拠と処置の採否を応答に記録する。一般的な設計案の比較は`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」に従い、現在の設計を維持する場合はその理由を明記する。欠陥を解消し、かつ新たな問題を引き起こさない案を立証できないときは、検討した案と理由を委譲元へ報告する。
 
 ## 公開可能性の検証
 

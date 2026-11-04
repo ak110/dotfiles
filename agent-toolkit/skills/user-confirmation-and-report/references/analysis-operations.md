@@ -2,7 +2,11 @@
 
 ## ユーザー介入と確認の判定
 
-ユーザー介入はそれまでのエージェントの判断を是正した事象であるため、必ず評価する。調査の深さや再発防止策の要否は、`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」に基づいて判定する。ユーザー介入およびWI記入欄の是正（`wi-user-response`）を分析対象から除外できるのは次の4区分に限られ、除外区分とその根拠を分析結果へ記録する。
+実ユーザー発話とWI記入欄の受領・分類時に、情報の由来とは別に、これまでの判断・工程・成果物・要求分類・完了判定を変えたかを評価する。
+情報が新しい選好や追加要件であることと、介入分析を要することは両立する。
+分析の対象と除外、処置の採否は本節を定義元とし、分類側から独立した免除を加えない。
+
+ユーザー介入はそれまでのエージェントの判断を是正した事象であるため、必ず評価する。調査の深さや再発防止策の要否は、`agent-basics:bugfix/references/root-cause-severity.md`「QとC・Dの区別」に基づいて判定する。ユーザー介入およびWI記入欄の是正（`wi-user-response`）を分析対象から除外できるのは次の4区分に限られ、除外区分とその根拠を分析結果へ記録する。
 
 - `single-inquiry`（単発の照会）: 進捗や所要時間、状態を尋ねるのみの発話であり、是正、停止、方針変更、将来の振る舞い変更を含まないもの。発話の本文を根拠とする。
 - `non-changing-request`（判断を変えない追加要求）: これまでの判断、工程、成果物、要求分類、完了判定のいずれも変更しない要求。変更がないことを示す本文の箇所を根拠とする。
@@ -30,7 +34,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md`の「QとC・Dの区別」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
 

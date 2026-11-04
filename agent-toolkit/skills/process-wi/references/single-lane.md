@@ -17,7 +17,7 @@
 | 複数レーンへ処理を切り替える前、または既存不良の即時対応を判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | ユーザー確認の要否と手段を選ぶ前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 書き込みを委譲先へ分担させる前 | `../../delegation/references/mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
-| 不良の類似見直しと再発防止を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` |
+| 不良の類似見直しと再発防止を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」`、`agent-basics:bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` |
 | 不良を発見し対処を判断する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | WIの共通契約を適用する前 | `../../wi-standards/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
 | 対象WIの選定と処理開始を判断する前 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |

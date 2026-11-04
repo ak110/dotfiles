@@ -17,6 +17,9 @@ WI作成工程における入力、責務、完了基準（出口）は、`${CLA
 本スキルでは、同条件を満たす調査、対話による確定および登録をメインエージェントが担当する。
 URLや文書などの参考資料だけを受け取った場合は、その内容を参考に対象リポジトリを改善するAWIの投入要求として扱う。
 資料の目的、目的へ作用する具体的な手法、対象の利用場面と実態を対応付け、どの差分が元の目的へ有効か比較する。
+改善の対象は資料が扱う問題と対象リポジトリの状況から定める。
+資料の全項目との対応を確認した後も、同じ問題に関係する実行経路・制約・利用場面から資料外の改善候補を検討する。
+候補の十分性は`agent-basics:writing-standards/references/design-heuristics.md`「問題と手段の比例性」の共通基準で判断する。
 名前や目的が似た条文の存在は、同じ利用条件で必要な結果を得られる根拠と分ける。
 採否を左右する主張には、その手法を実装した一次資料・コード・テストを必要な範囲で確認する。
 機能差だけで追加を選ばず、対象での必要性と見込める便益から採否を決める。
@@ -36,6 +39,8 @@ URLや文書などの参考資料だけを受け取った場合は、その内�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 参考資料から改善候補を起草・採否判定する前 | `agent-basics:writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
+| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `../user-confirmation-and-report/references/analysis-operations.md#「ユーザー介入と確認の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md#「ユーザー介入と確認の判定」` |
 | 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/causal-analysis.md` |
 | 観測された問題を起点とする要求で方針を確認する前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
@@ -43,7 +48,7 @@ URLや文書などの参考資料だけを受け取った場合は、その内�
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | 考慮漏れの指摘を受けて原因を分析する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「対策の選定」` |
+| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/root-cause-actions.md#「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「対策の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` |
@@ -96,9 +101,11 @@ URLや文書などの参考資料だけを受け取った場合は、その内�
 ## 指摘の分類と処置
 
 ユーザーからの指摘と独立した方針検収・本文検収の指摘は、受領後、採否・修正を確定する前に要求単位へ分け、次のいずれかへ分類して処置する。分類と処置を終えてから修正・再確認へ進む。
+作業中・完了後の追加発話と従来の`direct`指定を含む全経路に適用する。
+情報の由来の分類と、既存判断を是正した介入の評価は別の判断であり、受領・分類時に`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」を適用する。
 
 - 考慮漏れ: 原文、取得済みの調査結果、現物、適用中の規範から導けたのに方針へ反映しなかったもの。`agent-basics:bugfix`を起動して原因を分析し、同じ仕組みで漏れうる観点を全方針で見直す。再発防止策を検討してから方針へ反映し、再確認する。
-- ユーザーだけが持つ新しい情報: 選好、未開示の制約など、登録前の調査では導けなかったもの。要件として反映し、再発防止策は設けない。
+- ユーザーだけが持つ新しい情報: 選好、未開示の制約など、登録前の調査では導けなかったもの。要件として反映し、介入評価と処置の採否は前述の共通基準に従う。
 - 前提の誤り: 指摘の技術的前提が現物と一致しないもの。根拠と代替案を示す。
 - 採用しない提案: 検討の結果採らない提案。根拠を示す。
 
@@ -115,6 +122,7 @@ URLや文書などの参考資料だけを受け取った場合は、その内�
 ## セッション境界
 
 成果物をAWIの登録と更新に限定する契約には、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「成果物の制限」を適用する。
+追加発話に指摘が含まれる場合は、要求分解から「指摘の分類と処置」へ接続する。
 
 追加で受け取ったユーザー発話は、作業途中か完了報告後かを問わず、文章の書き方に対する指示や行動の是正も含めて要求単位に分解する。単位ごとに、`agent-toolkit:wi-standards`冒頭の要求の同一性基準に基づいて、既存・起草中のAWIへ合流させるか独立した要求として扱うかを判定する。同一ファイル、同一節、同一文章に対する部分的な重複は、編集上の競合として扱う。発話の一部が既存AWIの更新に該当する場合でも、残りの要求単位は個別に判定する。独立した要求と判定したものは、手順3の担当選定に戻す。合流させる要求単位は確定済みの作業範囲と比較し、ユーザー発話が範囲の一部のみに言及している場合であっても、確定済みの作業範囲を勝手に縮小しない。明示的に範囲の縮小が指示された場合や意図が曖昧な場合は、現在の範囲を`共通前提`として明示して確認する。
 ユーザーによる依頼の取り下げ等で投入作業を中止する場合も、必ず`atk wi submission end`を実行する。完了後に追加の発話を受けて投入を再開する場合は、投入先リポジトリの確定時に手順2の記録処理を再度行い、再開した投入が完了した際や再度中止となった際にも`atk wi submission end`を実行する。

@@ -7,13 +7,13 @@
 メインエージェントは、実装完了後のHEADに対する実行レビュー、指摘の修正、コミット履歴の統合を管理する。
 レビュー担当の手順は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`が定める（所在参照）。本書は起動、入力の生成、修正、レビュー指摘管理表の保存を扱い、指摘の分類と判定基準は同書と`agent-basics:review-standards`に従う。
 
-実装担当またはメインエージェントは、計画の検証コマンドと受入シナリオの実行結果を`検証結果`として返し、計画の`## 進捗ログ`（計画がなければ引き継ぎ記録）へ記録する。記録形式は`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`の「完成条件証拠の検証記録」に、手動観測の実施と全量保存は同書の「手動観測の保存」に従う。メイン自身が実装した場合も、実装完了前に同じ手順で記録する。レビュー担当は検証結果を進捗ログや引き継ぎ記録から読むので、委譲プロンプトに再掲しない。
+実装担当またはメインエージェントは、計画の検証コマンドと受入シナリオの実行結果を`検証結果`として返し、計画の`## 進捗ログ`（計画がなければ引き継ぎ記録）へ記録する。記録形式は`verification-evidence.md`の「完成条件証拠の検証記録」に、手動観測の実施と全量保存は同書の「手動観測の保存」に従う。メイン自身が実装した場合も、実装完了前に同じ手順で記録する。レビュー担当は検証結果を進捗ログや引き継ぎ記録から読むので、委譲プロンプトに再掲しない。
 任意入力の`受理済みの完成条件証拠`には、同じ計画の進捗ログに保存した受理済みの実行レビュー返却ファイルのうち、後続の担当が読めるものの絶対パスを渡す（無ければ`なし`）。参照できる条件と判定基準は、`agent-toolkit:/share/exec-review-recording.md`「受理済み判定への参照」に従う。
 最終検証と回数を限った手動観測の時機は`agent-toolkit:commit`の「検証」に、保存済みの成功記録と失敗対象だけの再実行結果の合成は`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に従う。
 委譲元が管理する残工程があれば、後続の担当と再開先を対応付け、検証済み・未実施・条件変更の各判断を整理してレビュー担当へ渡す。
 根拠の十分さと要件・外部仕様の達成は、実行レビュー担当が判定する。完成条件証拠（返却の条件別判定行）を書くのもレビュー担当である。
 
-画面表示に変更がある場合は並列画面レビュー（`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`「用語」参照）を行う。ユーザビリティレビュー担当の起動と検収は`${CLAUDE_PLUGIN_ROOT}/share/usability-review.parent.md`に従う。
+画面表示に変更がある場合は並列画面レビュー（`workflow-phases.md`「用語」参照）を行う。ユーザビリティレビュー担当の起動と検収は`usability-review.parent.md`に従う。
 
 文章成果物のレビュー（読者適合性レビュー）は、`reader-fit-review.parent.md`が直接確認の適用条件と別担当の起動単位を管理する。通常リスクを含む一括起動の識別子をファイルごとの申告に対応付けて受け取り、初回・再レビュー・引き継ぎ再レビューのいずれでも、Git管理外のファイルや回答下書きの不足・失敗も含めて対象ファイルと想定読者ごとに検収する。
 
@@ -55,7 +55,7 @@
 | 基準の参照時 | `../skills/report-completion/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「作業完了報告のフォーマット」` |
 | 基準の参照時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 基準の参照時 | `add-wi.parent.md#「続行できない理由の扱い」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「続行できない理由の扱い」` |
-| 基準の参照時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` |
+| 基準の参照時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」`、`agent-basics:bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` |
 | 基準の参照時 | `../skills/delegation/references/sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` |
 | 基準の参照時 | `review-loop-coordination.md`の冒頭と「ラウンドの遷移」から「応答済みの判定」まで | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#冒頭`、`section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンドの遷移」から「応答済みの判定」まで` |
 | 基準の参照時 | `exec.parent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「入力」` |
@@ -129,7 +129,7 @@
 初回起動の`extra_params`には、レビュー基準と、複数計画、計画外の条項または新形式AWIにより作った`review_contract`を含める。`引き継ぎ記録先`の扱い（引き継ぎ再レビューでの`（継続）`表記を含む）は、`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う。
 特定レーンの作業を対象に起動する場合は`レーン識別子`も指定し、セッション識別名を`<レーン識別子>-exec-review`とする（`CI記録`のみによる起動を除く）。起動直前に`git merge-base <専用branch> <ベースbranch>`で分岐元コミットを解決し、計画の有無にかかわらず`開始時のHEAD`としてプロンプトに書く。それ以外で`WI`だけを渡す場合は、作業開始時のHEADを`開始時のHEAD`とする。
 `CI記録`を渡す場合は、`agent-toolkit:commit/references/ci-failure-handling.md`の項目に加えて`修正系列の開始時のHEAD`と`原因commitOID`を書く。`原因commitOID`はCI失敗が再帰するたびにCI記録と一緒に更新し、`修正系列の開始時のHEAD`は同じ修正系列で引き継ぐ。CI記録には、メインエージェントが原因コミットを作ったときに持っていた情報を直接書く。
-初回レビューでは、デフォルト値の`レビュー種別: 初回レビュー`と`round: 1`を省く。再レビューの指示と引き継ぎ再レビューでは、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の「ラウンド番号の保持先」に記録した値で`round: <ラウンド番号>`を含める。
+初回レビューでは、デフォルト値の`レビュー種別: 初回レビュー`と`round: 1`を省く。再レビューの指示と引き継ぎ再レビューでは、`review-loop-coordination.md`の「ラウンド番号の保持先」に記録した値で`round: <ラウンド番号>`を含める。
 `対象ファイル限定`は対象ファイルを示す。リポジトリ、レビューHEAD、変更ファイル、検証結果、指摘管理表は担当が解決する。
 メインエージェントが読者別探索を起動する場合も、Git管理下の比較対象資料は`reader-fit-review.parent.md`「入力」のGit参照形式で渡す。再レビューの比較元には前回のレビューHEADを指定し、計画ごとの判定範囲は同節の`判定範囲差分`で渡す。
 
@@ -158,7 +158,7 @@ Git管理外ファイルの変更前後の複製のペアがあれば、レー�
 
 内容の検収では、対象WI集合の本文にある完成条件や原文要求と、返却の判定行を突き合わせる。原文要求は`## ユーザーコメント`、UWIの`## 回答`、完成条件の見出しを持たないAWI本文から抽出し、対応済みの`## ユーザー指摘の逐語引用`（`agent-toolkit:wi-standards`の`references/origin-and-approval.md`参照）は除く。補足のコードブロックは背景情報として扱う。計画書の`ユーザー指示`の行も要求単位に分ける（計画書にだけある要求行は計画ファイル名を`<WI>`とする）。原文要求行の突き合わせは、元になるユーザーの発言がある場合だけ行う。
 `達成`の行は、`agent-toolkit:/share/exec-review-recording.md`「統合時の完成条件判定」の後続工程の予定と代替観測の基準に合うかを確かめ、合わない行は再判定を指示する。
-`失効`の行は、根拠の所在が同書の「失効の根拠」が認めるユーザー判断か、メインまたはレーン担当の技術判断の記録を正しく指していることを本文を読んで確かめる。レーン担当の不要条件の除外は、計画の記録か引き継ぎ記録とAWIの処理結果を確認する。計画確定後は進捗ログ、レビュー指摘管理表、`review_contract`の条件番号と判断記録も確認する。いずれの技術判断も`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「技術判断で外せる完成条件」の境界を満たすことを確かめる。`review_contract`の記述だけをユーザー判断の代わりにせず、要求の取り下げや不採用の根拠との対応を本文で確認する。根拠の足りない条件変更は同書の「エスカレーションの事由別の扱い」で差し戻す。
+`失効`の行は、根拠の所在が同書の「失効の根拠」が認めるユーザー判断か、メインまたはレーン担当の技術判断の記録を正しく指していることを本文を読んで確かめる。レーン担当の不要条件の除外は、計画の記録か引き継ぎ記録とAWIの処理結果を確認する。計画確定後は進捗ログ、レビュー指摘管理表、`review_contract`の条件番号と判断記録も確認する。いずれの技術判断も`review-loop-coordination.md`「技術判断で外せる完成条件」の境界を満たすことを確かめる。`review_contract`の記述だけをユーザー判断の代わりにせず、要求の取り下げや不採用の根拠との対応を本文で確認する。根拠の足りない条件変更は同書の「エスカレーションの事由別の扱い」で差し戻す。
 受領確認と内容の検収を通った返却の`agent_message_path`は、計画書の進捗ログへ`受理済みの完成条件証拠`として記録し、以降のレビューで同名の任意入力に指定する。レビュー完了後にHEADが更新された場合は、「起動方法別のレビュー基準」で影響がないと確かめた計画を除き、最新HEADで全条件を再判定した返却を受理してから後続へ進む。
 
 ## 返却に含まれる既存不良の受領
@@ -183,8 +183,9 @@ Git管理外ファイルの変更前後の複製のペアがあれば、レー�
 process-wi中は読込表の`immediate-fix.md`「即時対応」で正式改善の今回追加を判定し、最小修正後の正式対応は次回へ渡す。
 残工程や次のセッションを停止・遮断する不具合は、観測根拠から「進行を妨げる欠陥」と判定し、詳細な原因分析に先行して直接修正する。
 修正は`agent-basics:bugfix`と`01-agent.md`「完遂と先送り」、process-wi中の最小修正は前述の「即時対応」に従う。
-正式対応では`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」で、品質影響・レビュー対象との根本原因の同一性・処置完了を判定する。
-同スキルの`references/root-cause-remediation.md`「類似見直し」「類似見直しと再発防止の完了」も適用し、認可は`agent-toolkit:user-confirmation-and-report`に従う。
+正式対応では`agent-basics:bugfix`の`references/root-cause-severity.md`「QとC・Dの区別」で、品質影響・レビュー対象との根本原因の同一性・処置完了を判定する。
+同スキルの`references/root-cause-remediation.md`「類似見直し」、`references/root-cause-prevention.md`「類似見直しと再発防止の完了」も適用する。
+認可は`agent-toolkit:user-confirmation-and-report`に従う。
 レーン担当が自レーンの検証を妨げるとして報告した既存不良は、実行レビューの返却と区別し、`process-wi`の処理中は同スキルの「即時対応」として扱う。
 
 対象の不具合ごとに、引き渡し済みの担当、是正結果、根拠付きの非該当判定、判断待ちの引き渡し先のいずれかを既存の引き継ぎ記録へ対応付けてから、レビュー収束後の工程へ進む。
@@ -197,7 +198,7 @@ process-wi中は読込表の`immediate-fix.md`「即時対応」で正式改善�
 入力契約で役割の継続を明示し、後述の条件に応じて必要な最新情報を加える。
 組み込みの委譲機構を使う場合は、`agent-toolkit:delegation`の`references/sending.md`の生成用CLIを使う。
 
-指摘の修正は該当worktreeを所有するエージェントが担い、起動形態ごとの担当と修正サイクルは`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従う。同じthreadを続ける場合は、`send_message`に`instruction: レビュー指摘の対応をせよ`を指定し、`extra_params`に`レビュー指摘管理表: <単一の絶対パスまたは全計画の表の絶対パスのJSON配列>`を渡す。「起動方法別のレビュー基準」の計画ごとの受け渡しに従い、全ての指摘管理表を1回の指示に含める。ラウンド番号は各表の記載から解決する。自由文で送る場合も同じ指示内容と名前付き入力行を使う。
+指摘の修正は該当worktreeを所有するエージェントが担い、起動形態ごとの担当と修正サイクルは`review-loop-coordination.md`に従う。同じthreadを続ける場合は、`send_message`に`instruction: レビュー指摘の対応をせよ`を指定し、`extra_params`に`レビュー指摘管理表: <単一の絶対パスまたは全計画の表の絶対パスのJSON配列>`を渡す。「起動方法別のレビュー基準」の計画ごとの受け渡しに従い、全ての指摘管理表を1回の指示に含める。ラウンド番号は各表の記載から解決する。自由文で送る場合も同じ指示内容と名前付き入力行を使う。
 同じthreadを続けられない場合は、`agent-toolkit:delegation`のSKILL.md「継続と新規起動」に従い、`exec.parent.md`の「入力」と同じ形式で新しいレーン担当を起動する。`担当種別`に`レビュー修正担当`、`再開位置`に`~/.claude/plans`配下の計画ファイルの絶対パス、`レビュー指摘管理表`に未解決の指摘を含む全計画の指摘管理表のパス（複数ならJSON配列、1つなら単一パス）を指定し、引き継ぎ記録にある全計画と各指摘管理表の対応も渡す。
 指摘の採否、対象コミットの選定、修正方針、成果物・Git状態・検証結果の検収は、修正を担うエージェントが自ら行う（採否の基準は`exec.subagent.md`「実装」に、履歴統合は同書の「レビュー修正の履歴統合」に従う）。メインエージェントが指摘管理表の内容を確かめるのは、`review-loop-coordination.md`「応答済みの判定」が求める範囲にとどめる（努力目標。判断の重複を防ぐため）。
 

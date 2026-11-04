@@ -11,6 +11,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 資料起点の採否を検収する前 | `../../add-awi-by-user/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/add-awi-by-user/SKILL.md#冒頭` |
+| 参考資料に基づく候補の十分性を検収する前 | `agent-basics:writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
 | 再発の経過を問う要求を検収する前 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
 | 複数バグの現象・期待する契約・原因の対応を検収する前 | `analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
 | 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
@@ -28,7 +29,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow.md#「投入」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「投入」` |
 | 引用の認可や解釈のため出所を再取得する時 | `drafting-workflow.md#「出所と観測の取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「出所と観測の取得」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「処置の階層」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「処置の階層」` |
 
 ## ユーザーが読む部分
 
@@ -68,7 +69,7 @@
 
 委譲元および専念型の投入前レビュー担当は、原稿と成立性の証拠を確認し、対策・回帰防止策の行と再発防止策の2行を比較する。
 4区分の候補行のいずれかが欠けていないこと、採否の行が候補ごとの採否と影響・費用の比較を示し候補数を採用義務として扱っていないことを確かめる。
-再発防止策の行に挙げられた問題が通常の対策範囲の外にあることを確かめ、`agent-basics:bugfix`の`references/root-cause-remediation.md`「処置の階層」における持ち込み試験を実施する。
+再発防止策の行に挙げられた問題が通常の対策範囲の外にあることを確かめ、`agent-basics:bugfix`の`references/root-cause-actions.md`「処置の階層」における持ち込み試験を実施する。
 成立しない原稿は、処置を対策行か回帰防止策行へ移して反映内容節の詳細と対応付け、再発防止策の選び直しまたは不採用理由の記録を求めて作成主体へ差し戻す。
 
 ## 初回と再判定・差戻し
