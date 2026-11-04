@@ -61,6 +61,7 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
     _LOG.info("manager activateを開始します")
     try:
         await _MANAGER.activate_async()
+        await _MANAGER.prepare_delegation_recovery()
     except BaseException:
         _LOG.exception("manager activateに失敗しました: stage=manager_activate")
         await _MANAGER.close()
@@ -69,12 +70,17 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
     _LOG.info("manager activateが完了しました")
     root_session_id, owner_status_file = _MANAGER.status_owner()
     logging_config.record_instance_event("bound", root_session_id=root_session_id, owner_status_file=owner_status_file)
+    recovery = asyncio.create_task(_MANAGER.monitor_delegation_recovery())
     try:
         yield
     finally:
         _LOG.info("manager closeを開始します")
         try:
-            await _MANAGER.close()
+            try:
+                recovery.cancel()
+                await lifetime.wait_for_shutdown((recovery,))
+            finally:
+                await _MANAGER.close()
         except BaseException:
             _LOG.exception("manager closeに失敗しました: stage=manager_close")
             await run_file_operation(logging_config.flush_logging)

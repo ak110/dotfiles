@@ -99,7 +99,7 @@ def diagnose(
 def count_stranded_notices(session_id: str, own_root_session_id: str | None, state_root: pathlib.Path | None = None) -> int:
     """所有者のいない他のルートに残る、同じsessionの上り通知の件数を返す。"""
     count = 0
-    for root_session_id in status_reader.ownerless_root_session_ids(own_root_session_id, state_root):
+    for root_session_id in _result_roots(session_id, own_root_session_id, state_root):
         directory = shared_layout.notices_directory(root_session_id, state_root)
         try:
             count += sum(1 for path in directory.iterdir() if path.suffix == ".json" and path.name.startswith(f"{session_id}."))
@@ -122,18 +122,19 @@ def take_stranded_notices(
     `roots`は呼び出し側が同じ巡回で列挙済みの所有者のいないルートで、省略時は自ら列挙する。
     """
     notices: list[dict[str, str]] = []
-    if roots is None:
-        roots = status_reader.ownerless_root_session_ids(own_root_session_id, state_root)
+    roots = _result_roots(session_id, own_root_session_id, state_root, roots=roots)
     for root_session_id in roots:
         # 退避先はルートごとに分ける。`take_notices`は退避先の全通知を毎回返すため、共有すると同じ通知を重ねて返す。
         stash = None if stash_directory is None else stash_directory / root_session_id
+        owner = status_reader.load_root(root_session_id, state_root).sessions.get(session_id, {})
+        owner_file = owner.get("owner_status_file") if owner.get("host_session_id") == recipient_session_id else None
         notices.extend(
             notice_inbox.take_notices(
                 root_session_id,
                 session_id,
                 state_root,
                 recipient_session_id=recipient_session_id,
-                owner_status_file=None,
+                owner_status_file=owner_file,
                 stash_directory=stash,
             )
         )
@@ -144,7 +145,7 @@ def has_stranded_result(session_id: str, own_root_session_id: str | None, state_
     """所有者のいない他のルートに、同じsessionの未回収の終了時の結果が残るかを返す。"""
     return any(
         retained_results.read_retained_result(root_session_id, session_id, state_root) is not None
-        for root_session_id in status_reader.ownerless_root_session_ids(own_root_session_id, state_root)
+        for root_session_id in _result_roots(session_id, own_root_session_id, state_root)
     )
 
 
@@ -158,8 +159,7 @@ def take_stranded_result(
     roots: list[str] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """所有者のいない他のルートに残る同じsessionの終了時の結果を、記録された所有者として一度だけ回収する。"""
-    if roots is None:
-        roots = status_reader.ownerless_root_session_ids(own_root_session_id, state_root)
+    roots = _result_roots(session_id, own_root_session_id, state_root, roots=roots)
     for root_session_id in roots:
         payload = retained_results.read_retained_result(root_session_id, session_id, state_root)
         if payload is None:
@@ -176,6 +176,19 @@ def take_stranded_result(
         if result is not None or error is not None:
             return result, error
     return None, None
+
+
+def _result_roots(
+    session_id: str,
+    own_root_session_id: str | None,
+    state_root: pathlib.Path | None,
+    *,
+    roots: list[str] | None = None,
+) -> list[str]:
+    """同じsessionの登録先を優先し、旧形式では所有者のいないルートも調べる。"""
+    recorded = session_registry.resolve(session_id, state_root=state_root).owner_root_session_id
+    candidates = roots if roots is not None else status_reader.ownerless_root_session_ids(own_root_session_id, state_root)
+    return list(dict.fromkeys(root for root in (recorded, *candidates) if root is not None and root != own_root_session_id))
 
 
 def stop_recorded_executor(identity: session_registry.ProcessIdentity) -> str | None:

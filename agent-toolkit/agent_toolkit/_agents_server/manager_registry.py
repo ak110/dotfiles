@@ -16,9 +16,11 @@ from agent_toolkit._agents_server import (
     owner_lost,
     responses,
     result_projection,
+    retained_results,
     shared_layout,
     state,
     status_file,
+    status_reader,
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.responses import (
@@ -36,8 +38,12 @@ from agent_toolkit._common.next_action import ActionableError, next_action_line
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
+@dataclasses.dataclass(frozen=True)
 class _RegistryResumeState(SessionResumeState):
     """別プロセスの共有登録から復元し、照会時に鮮度確認を要する再開状態。"""
+
+    result_root_session_id: str | None = None
+    result_owner_status_file: str = "root.json"
 
 
 def _terminal_turn_status(
@@ -153,7 +159,7 @@ class ManagerRegistry(responses.ManagerResponses):
                 resolution,
                 next_action="そのsessionを起動したroot sessionで`atk agents wait`を実行して終了を観測する",
             )
-        info = resolution.resume_info
+        info = resolution.resume_info or resolution.handoff_info
         if info is not None and (
             info.turn_seq != resume_state.turn_seq or info.status != resume_state.status or resume_state.finalized_at is None
         ):
@@ -222,6 +228,8 @@ class ManagerRegistry(responses.ManagerResponses):
             return
         resolution = await run_file_operation(session_registry.resolve, session_id)
         info = resolution.resume_info
+        if resolution.resume_pending:
+            return
         if info is None or not (resolution.state is session_registry.Resolution.RUNNING or resolution.inferred_terminal):
             return
         writer_alive = await run_file_operation(status_file.live_writer_holds_session, session_id)
@@ -416,6 +424,7 @@ class ManagerRegistry(responses.ManagerResponses):
         session_id: str,
         *,
         resolution: session_registry.SessionResolution | None = None,
+        include_handoff: bool = False,
     ) -> SessionResumeState | None:
         """再起動前の終了sessionを登録簿から最小の再開状態へ復元する。
 
@@ -440,7 +449,9 @@ class ManagerRegistry(responses.ManagerResponses):
                 ),
             )
         if resolution.state is session_registry.Resolution.MISSING or (
-            resolution.state is session_registry.Resolution.RELEASED and resolution.resume_info is None
+            resolution.state is session_registry.Resolution.RELEASED
+            and resolution.resume_info is None
+            and not (include_handoff and resolution.handoff_info is not None)
         ):
             return None
         if resolution.state is session_registry.Resolution.UNREADABLE:
@@ -448,7 +459,7 @@ class ManagerRegistry(responses.ManagerResponses):
                 f"error.recovery=unreadable: {session_id}",
                 next_action="`atk agents wait`で結果を観測し、得られなければ検証済みの状態から新規に起動する",
             )
-        info = resolution.resume_info
+        info = resolution.resume_info or (resolution.handoff_info if include_handoff else None)
         if info is None:
             raise ActionableError(
                 f"error.recovery=no_resume_info: {session_id}",
@@ -460,9 +471,35 @@ class ManagerRegistry(responses.ManagerResponses):
         persisted_result = (
             (await run_file_operation(self._status_writer.read_result, session_id)) if self._status_writer is not None else None
         )
+        result_root = self._own_root_session_id() if persisted_result is not None else None
+        if persisted_result is None:
+            roots = (
+                [resolution.owner_root_session_id]
+                if resolution.owner_root_session_id is not None
+                else (
+                    await run_file_operation(
+                        status_reader.ownerless_root_session_ids, self._own_root_session_id(), self._state_root()
+                    )
+                )
+            )
+            for root in roots:
+                payload = await run_file_operation(retained_results.read_retained_result, root, session_id, self._state_root())
+                if payload is not None and (
+                    isinstance(payload.get("agent_message"), str)
+                    and payload.get("turn_seq") == info.turn_seq
+                    and isinstance(payload.get("finalized_at"), str)
+                ):
+                    persisted_result, result_root = payload, root
+                    break
         if persisted_result is not None and persisted_result["turn_seq"] != info.turn_seq:
             # 過去turnの未回収結果は共有ファイルへ残し、現在turnの状態とは分けて扱う。
             persisted_result = None
+        result_owner = persisted_result.get("owner_status_file") if persisted_result is not None else None
+        if result_owner is not None and not isinstance(result_owner, str):
+            raise ActionableError(
+                f"保存結果の書込主体が不正です: {session_id}",
+                next_action="結果の原本を保全し、owner_status_fileが文字列であるか確認して同じwaitを再実行する",
+            )
         # 実行プロセスの不在から中断と解決した記録は、結果ファイルを持たなくても終了の理由を`show`へ返す。
         registry_error = result_projection.resolution_interruption_error(resolution)
         resume_state = _RegistryResumeState(
@@ -490,6 +527,8 @@ class ManagerRegistry(responses.ManagerResponses):
             finalized_at=persisted_result["finalized_at"] if persisted_result is not None else None,
             result_delivered=persisted_result is None,
             result_contract_recovery_consumed=info.result_contract_recovery_consumed,
+            result_root_session_id=result_root,
+            result_owner_status_file=result_owner or "root.json",
         )
         self.stopped_sessions[session_id] = resume_state
         return resume_state
@@ -505,6 +544,23 @@ class ManagerRegistry(responses.ManagerResponses):
         response = self._stopped_result_response(resume_state)
         if response is None:
             return None
+        if isinstance(resume_state, _RegistryResumeState) and resume_state.result_root_session_id is not None:
+            claimed, error = await run_file_operation(
+                retained_results.take_result,
+                resume_state.result_root_session_id,
+                session_id,
+                resume_state.result_owner_status_file,
+                collector=collector,
+                state_root=self._state_root(),
+                expected_turn_seq=resume_state.turn_seq,
+            )
+            if error is not None:
+                raise ActionableError(
+                    f"保存済みの子の結果を回収できない: {session_id}: {error}",
+                    next_action="結果ファイルの読み取り権限を確認して同じwaitを再実行する",
+                )
+            self.stopped_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
+            return None if claimed is None else {**response, **claimed}
         self.stopped_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
         if self._status_writer is not None:
             (await self._status_writer.delete_result_async(session_id, collector=collector))

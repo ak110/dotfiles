@@ -12,11 +12,16 @@ import typing
 import pytest
 
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import resume_waits, state
+from agent_toolkit._agents_server import mcp_tools, resume_waits, state
 from agent_toolkit._common import session_registry as subject
 from agent_toolkit._common import state_paths
 from agent_toolkit._common import wait_schedule as _wait_schedule
-from agent_toolkit._testing.agents_server_support import FakeBackend, exited_process_identity, install_backend
+from agent_toolkit._testing.agents_server_support import (
+    FakeBackend,
+    ThreadReadBackend,
+    exited_process_identity,
+    install_backend,
+)
 
 
 def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
@@ -277,3 +282,48 @@ def test_session_publishes_owner_and_executor_processes(tmp_path: pathlib.Path, 
     session.touch()
     recorded = json.loads(path.read_text(encoding="utf-8"))["processes"]
     assert recorded[1] == {"pid": restarted.pid, "create_time": restarted.create_time}
+
+
+@pytest.mark.parametrize("record_kind", ["completed", "released", "owner-gone"])
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_resume_reservation_prevents_release_and_takeover(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    record_kind: str,
+) -> None:
+    """接続前の再開予約を別の解放・照会が失わせず、予約中に別backendを開始しない。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    identifier = "reserved-session"
+    subject.publish(
+        identifier,
+        terminal=record_kind != "owner-gone",
+        cwd=str(tmp_path),
+        launch_info=subject.LaunchInfo(prompt="保存する依頼"),
+        processes=(exited_process_identity(),) if record_kind == "owner-gone" else (),
+        state_root=tmp_path,
+    )
+    if record_kind == "released":
+        assert subject.release(identifier, reason="stopped", state_root=tmp_path)
+    original = subject.resolve(identifier, state_root=tmp_path)
+    expected_owner = original.server_instance, original.recorded_turn_seq
+    assert subject.claim_resume(identifier, 0, state_root=tmp_path)
+    pending = subject.resolve(identifier, state_root=tmp_path)
+    assert pending.state is subject.Resolution.RUNNING and pending.resume_pending
+    assert not pending.inferred_terminal
+    assert pending.resume_info is not None and pending.resume_info.turn_seq == 1
+    path = subject.registry_directory(tmp_path) / f"{identifier}.json"
+    reserved = path.read_bytes()
+    subject.publish(identifier, terminal=True, turn_seq=0, state_root=tmp_path)
+    assert not subject.release(identifier, reason="retention_expired", expected_owner=expected_owner, state_root=tmp_path)
+    async with server_manager.AgentsServerManager(None) as manager:
+        backend = ThreadReadBackend(manager.sessions, [("old-turn", "completed")])
+        install_backend(manager, "codex", backend)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        with pytest.raises(ValueError, match="still running"):
+            await mcp_tools.show_session(identifier)
+        assert not backend.read_calls and not backend.resume_calls
+    assert path.read_bytes() == reserved
+    subject.release_resume_claim(identifier, 0, state_root=tmp_path)
+    assert not subject.resolve(identifier, state_root=tmp_path).resume_pending
+    assert subject.release(identifier, reason="stopped", expected_owner=expected_owner, state_root=tmp_path)

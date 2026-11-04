@@ -32,6 +32,7 @@ def sweep_stale_shared_state(
     cutoff = datetime.datetime.now(datetime.UTC).timestamp() if now is None else now
     cutoff -= STALE_SHARED_STATE_SECONDS
     base = root / "agents-server"
+    pending: set[str] | None = None
     try:
         entries = tuple(base.iterdir())
     except OSError:
@@ -46,8 +47,25 @@ def sweep_stale_shared_state(
             continue
         try:
             files = tuple(path for path in directory.rglob("*") if path.is_file())
+            if any(
+                path.parent == directory / "results" and path.suffix == ".json" and valid_session_id(path.stem)
+                for path in files
+            ):
+                continue
             latest = max((path.stat().st_mtime for path in files), default=directory.stat().st_mtime)
             if latest < cutoff:
+                if pending is None:
+                    pending = session_registry.pending_session_ids(root)
+                if any(
+                    session_registry.resolve(identifier, state_root=root).owner_root_session_id == directory.name
+                    for identifier in pending
+                ):
+                    continue
+                if any(
+                    path.suffix == ".json" and "wait-results" in path.relative_to(directory).parts and _uncollected_run(path)
+                    for path in files
+                ):
+                    continue
                 shutil.rmtree(directory)
         except OSError as exc:
             _LOG.warning(
@@ -62,8 +80,11 @@ def sweep_stale_shared_state(
             continue
         try:
             with session_registry.registry_lock(path.stem, state_root=root):
-                if path.is_file() and path.stat().st_mtime < cutoff and not _registry_record_is_running(path, root):
-                    path.unlink()
+                if path.is_file() and path.stat().st_mtime < cutoff:
+                    if pending is None:
+                        pending = session_registry.pending_session_ids(root)
+                    if path.stem not in pending:
+                        path.unlink()
         except OSError as exc:
             _LOG.warning(
                 "期限切れ登録簿を回収できませんでした: path=%s error=%s。"
@@ -84,6 +105,15 @@ def sweep_stale_shared_state(
     )
 
 
+def _uncollected_run(path: pathlib.Path) -> bool:
+    """CLIの回収途中・未配送runを通常の期限掃引から保護する。"""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, UnicodeError, json.JSONDecodeError:
+        return False
+    return isinstance(payload, dict) and payload.get("status") in {"running", "published"}
+
+
 def _result_server_instances(base: pathlib.Path) -> set[str]:
     """各rootの終了時の結果ファイルが中断の診断参照で指す起動単位を返す。読めないファイルは除く。"""
     instances: set[str] = set()
@@ -102,20 +132,6 @@ def _result_server_instances(base: pathlib.Path) -> set[str]:
         if isinstance(instance, str) and instance:
             instances.add(instance)
     return instances
-
-
-def _registry_record_is_running(path: pathlib.Path, state_root: pathlib.Path) -> bool:
-    """登録簿の記録が終了しておらず、記録プロセスのいずれかが実在するかを返す。
-
-    更新時刻は所有側の公開の契機でしか進まないため、7日を超えて1つのturnを続ける委譲先の記録も期限切れと判定される。
-    削除すると以後の照会は不在と解決するため、記録プロセスが実在する間は保持する。
-    """
-    if path.suffix != ".json" or not valid_session_id(path.stem):
-        return False
-    resolution = session_registry.resolve(path.stem, state_root=state_root)
-    return resolution.state is session_registry.Resolution.RUNNING and (
-        resolution.owner_process is not None or bool(resolution.executor_processes)
-    )
 
 
 def _sweep_stale_files(directory: pathlib.Path, cutoff: float, *, keep: Callable[[pathlib.Path], bool] | None = None) -> None:
