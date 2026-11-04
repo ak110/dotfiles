@@ -100,6 +100,7 @@ const active = {
   allPeriods: !elements['empty-all-periods-button'].hidden
 };
 elements['search-input'].value = 'none';
+setDisplayMode('search');
 renderEmptyState();
 const filtered = {
   message: elements['empty-state-message'].textContent,
@@ -107,6 +108,7 @@ const filtered = {
 };
 elements['search-input'].value = '';
 elements['state-filter'].value = 'all';
+elements['period-filter'].value = '2w';
 renderEmptyState();
 const recent = {
   message: elements['empty-state-message'].textContent,
@@ -971,7 +973,7 @@ async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, mon
 
 
 def test_assets_ignore_out_of_order_repo_candidates_for_state_changes() -> None:
-    """状態の変更より前に発行した候補要求の応答を破棄し、その古い処理から一覧要求を開始しない。"""
+    """候補要求が逆順に完了しても、最新の状態・候補・一覧を維持する。"""
     result = _run_node_ui(
         """
 let resolveAdopted;
@@ -1020,8 +1022,8 @@ process.stdout.write(JSON.stringify({
         "state": "active",
         "candidates": ["", "active/repo"],
         "listUrls": [
-            "/atk/api/entries?type=all&status=adopted&answered=all&period=2w&page=1",
-            "/atk/api/entries?type=all&status=active&answered=all&period=2w&page=1",
+            "/atk/api/entries?type=all&status=adopted&answered=all&period=all&page=1",
+            "/atk/api/entries?type=all&status=active&answered=all&period=all&page=1",
         ],
         "rows": ["active.md"],
     }

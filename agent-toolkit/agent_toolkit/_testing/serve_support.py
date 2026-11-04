@@ -144,6 +144,7 @@ class Element {{
     this.ownText = String(value);
   }}
   get firstChild() {{ return this.children[0] ?? null; }}
+  get parentElement() {{ return this.parentNode; }}
   get nextSibling() {{
     const siblings = this.parentNode?.children || [];
     return siblings[siblings.indexOf(this) + 1] ?? null;
@@ -297,18 +298,16 @@ class _FakeTimer(threading.Timer):
         self.cancelled = True
 
 
-_STALE_FALLBACK_SEARCH_SCRIPT = """
+_STALE_SEARCH_SCRIPT = """
 @DECLARATION@
-let fallbackStarted;
-const fallbackReady = new Promise(resolve => { fallbackStarted = resolve; });
+let searchStarted;
+const searchReady = new Promise(resolve => { searchStarted = resolve; });
+setDisplayMode('search');
 elements['search-input'].value = 'old';
 fetchHandler = async url => {
-  if (url === '/atk/api/entries?q=old&page=1') {
-    fallbackStarted();
-    return @PENDING@;
-  }
   if (url.includes('q=old')) {
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+    searchStarted();
+    return @PENDING@;
   }
   if (url.includes('q=new')) {
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({
@@ -318,20 +317,20 @@ fetchHandler = async url => {
   throw new Error('想定外のURL: ' + url);
 };
 const oldRequest = loadEntries({announce: true});
-await fallbackReady;
+await searchReady;
 elements['search-input'].value = 'new';
 const newRequest = loadEntries({announce: true});
 await newRequest;
 """
 
 
-def stale_fallback_search_script(declaration: str, pending_promise: str) -> str:
-    """古い検索語の補助検索を保留させたまま、新しい検索語の一覧要求を完了させるNodeの画面スクリプトを返す。
+def stale_search_script(declaration: str, pending_promise: str) -> str:
+    """古い検索語の応答を保留させたまま、新しい検索語の一覧要求を完了させるNodeの画面スクリプトを返す。
 
-    `declaration`は保留を解く関数を受ける変数の宣言、`pending_promise`は補助検索が返す保留中のPromiseの式とする。
+    `declaration`は保留を解く関数を受ける変数の宣言、`pending_promise`は検索が返す保留中のPromiseの式とする。
     呼び出し側は、返したスクリプトの後ろへ保留の解き方と検証を続ける。
     """
-    return _STALE_FALLBACK_SEARCH_SCRIPT.replace("@DECLARATION@", declaration).replace("@PENDING@", pending_promise)
+    return _STALE_SEARCH_SCRIPT.replace("@DECLARATION@", declaration).replace("@PENDING@", pending_promise)
 
 
 UNANSWERED_UWI_TEXT = (

@@ -130,21 +130,6 @@ async def test_narrow_work_items_keep_unique_identifiers_visible(browser_harness
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
-def _assert_list_request_without_fallback(request_urls: list[str], base_url: str, expected_path: str) -> None:
-    """期待した条件の一覧要求が送られ、補助検索の要求が送られていないことを判定する。
-
-    要求一覧の完全一致は使わない。画面はエンドユーザーの操作と独立に、外部変更時の再読込で
-    `/api/entries?type=all&status=all&answered=all`と現在の条件の一覧要求を任意の時点で追加送信するためである。
-    再読込の契機はSSE接続の確立、`window`の`focus`、`visibilitychange`、SSEの`changed`、
-    およびエンドユーザーの操作中に保留した再読込の操作終了後の実行である。
-    条件付きの一覧要求は常に`/api/entries?type=`で始まり、条件を外した補助検索の要求だけが
-    `/api/entries?q=`で始まるため、後者の不在で補助検索の混入を判定できる。
-    """
-    assert f"{base_url}{expected_path}" in request_urls
-    fallback_prefix = f"{base_url}/api/entries?q="
-    assert not [url for url in request_urls if url.startswith(fallback_prefix)]
-
-
 _POST_APPROVAL_UWI = (
     "---\ntype: uwi\nstate: inbox\ntarget_repo: example/repo\nquestion_type: choice\n"
     "choices: その対応で問題無い, 問題がある\n---\n\n"
@@ -888,12 +873,13 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.keyboard.press("Escape")
 
     await page.locator("#kind-filter").select_option("awi")
-    await playwright.async_api.expect(page.locator("#answer-filter")).to_be_disabled()
+    await page.locator("#state-filter").select_option("active")
+    await playwright.async_api.expect(page.locator("#answer-filter")).to_be_enabled()
     assert await page.locator("#answer-filter").input_value() == "all"
     assert await page.locator("#source-filter option").all_text_contents() == ["all", "human", "agent"]
     async with page.expect_response(
         lambda response: response.url.endswith(
-            "/api/entries?type=awi&status=active&answered=all&period=2w&source_kind=agent&page=1"
+            "/api/entries?type=awi&status=active&answered=all&period=all&source_kind=agent&page=1"
         )
     ):
         await page.locator("#source-filter").select_option("agent")
@@ -902,7 +888,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await playwright.async_api.expect(empty_row).to_be_visible()
     async with page.expect_response(
         lambda response: response.url.endswith(
-            "/api/entries?type=awi&status=active&answered=all&period=2w&source_kind=human&page=1"
+            "/api/entries?type=awi&status=active&answered=all&period=all&source_kind=human&page=1"
         )
     ):
         await page.locator("#source-filter").select_option("human")
@@ -911,9 +897,11 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
 
     await page.locator("#target-filter").select_option("example/repo")
     await page.locator("#state-filter").select_option("adopted")
-    await playwright.async_api.expect(page.locator("#target-filter")).to_have_value("")
-    assert await page.locator("#target-filter option").all_text_contents() == ["all", "adopted/repo"]
-    await page.locator("#entry-list .entry-select").filter(has_text="adopted.md").wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#target-filter")).to_have_value("example/repo")
+    await playwright.async_api.expect(page.locator("#target-filter option")).to_have_text(
+        ["all", "adopted/repo", "example/repo"]
+    )
+    await playwright.async_api.expect(page.locator("#empty-state")).to_be_visible()
 
     async with page.expect_response(
         lambda response: (
@@ -929,7 +917,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
         lambda response: (
             response.request.method == "GET"
             and response.url.endswith(
-                "/api/entries?type=all&status=active&answered=all&period=2w&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
+                "/api/entries?type=all&status=all&answered=all&period=all&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
             )
         )
     ):
@@ -1041,155 +1029,110 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
-    browser_harness: _BrowserHarness,
-) -> None:
-    """初期状態の条件で終了状態を検索し、少数結果だけを補助表示して条件を維持する。
-
-    検索欄を空にする区間では、変更前の検索条件で始まった背景再取得の応答を保留し、
-    デバウンス満了前と新しい一覧の表示後の2つの時点で返す。どちらでも旧条件の補助検索と一覧反映が起きないことを確かめる。
-    """
+async def test_work_item_search_modes_preserve_conditions_and_clear(browser_harness: _BrowserHarness) -> None:
+    """古い終了項目を検索し、手動条件を保持して通常表示と往復し、全消去できる。"""
     page = browser_harness.page
-    # デバウンスのタイマーだけを止める区間のため、開く前にページの時計を差し替える。差し替え後も時刻は実時間で進む。
+    old_name = f"{datetime.datetime.now() - datetime.timedelta(days=40):%Y%m%d-%H%M%S}-001.md"
+    _entry_path(browser_harness.root, old_name).write_text(
+        "---\ntype: awi\nstate: adopted\ntarget_repo: adopted/repo\n---\n\n過去の採用項目\n",
+        encoding="utf-8",
+    )
+    await page.set_viewport_size({"width": 320, "height": 800})
+    await page.goto(browser_harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await playwright.async_api.expect(page.locator("#wi-mode-normal")).to_be_checked()
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+    await _open_filters(page)
+    await playwright.async_api.expect(page.get_by_label("state", exact=True)).to_have_value("all")
+    await playwright.async_api.expect(page.get_by_label("period", exact=True)).to_have_value("all")
+    await page.get_by_label("検索", exact=True).fill("過去の採用項目")
+    await playwright.async_api.expect(page.locator(f'.entry-select[data-key="{old_name}"]')).to_be_visible()
+    await playwright.async_api.expect(page.locator("#wi-mode-search")).to_be_checked()
+    await page.get_by_label("state", exact=True).select_option("rejected")
+    await playwright.async_api.expect(page.locator("#empty-state")).to_be_visible()
+    await page.get_by_label("state", exact=True).select_option("adopted")
+    await page.get_by_label("period", exact=True).select_option("8w")
+    await page.get_by_label("target-repo", exact=True).select_option("adopted/repo")
+    await playwright.async_api.expect(page.locator(f'.entry-select[data-key="{old_name}"]')).to_be_visible()
+    await page.locator(".filters summary").click()
+    await page.get_by_role("radio", name="通常表示", exact=True).check()
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+    await playwright.async_api.expect(page.locator("#wi-effective-conditions")).to_have_text(
+        "通常表示: state=active、直近2週間"
+    )
+    await page.get_by_role("radio", name="条件検索", exact=True).check()
+    await playwright.async_api.expect(page.locator(f'.entry-select[data-key="{old_name}"]')).to_be_visible()
+    await page.get_by_role("button", name="今すぐ同期", exact=True).click()
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    await _open_filters(page)
+    await playwright.async_api.expect(page.get_by_label("target-repo", exact=True)).to_have_value("adopted/repo")
+    await playwright.async_api.expect(page.get_by_label("period", exact=True)).to_have_value("8w")
+    await page.get_by_label("検索", exact=True).fill("")
+    await playwright.async_api.expect(page.locator("#wi-mode-search")).to_be_checked()
+    await playwright.async_api.expect(page.locator("#pagination-status")).to_contain_text("全2件")
+    await page.locator(".filters summary").click()
+    await page.locator("#clear-filters-button").click()
+    await playwright.async_api.expect(page.locator("#wi-mode-normal")).to_be_checked()
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+    await _open_filters(page)
+    for field in ("kind", "state", "period", "answer", "important"):
+        await playwright.async_api.expect(page.locator(f"#{field}-filter")).to_have_value("all")
+    for field in ("target", "source"):
+        await playwright.async_api.expect(page.locator(f"#{field}-filter")).to_have_value("")
+    await playwright.async_api.expect(page.get_by_label("検索", exact=True)).to_have_value("")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_work_item_search_ime_and_pending_input_return_to_normal(browser_harness: _BrowserHarness) -> None:
+    """IME未確定入力では取得せず、確定後の連続入力や保留中の応答を通常表示への復帰で無効化する。"""
+    page = browser_harness.page
     await page.clock.install()
     await _observe_screen_requests(page)
     await page.goto(browser_harness.base_url + "/")
-    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     await _open_filters(page)
-    notice = page.locator("#list-fallback-notice")
-    expected_notice = (
-        "状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。"
-        "フィルターの選択値は変更していません。"
-    )
-
-    async with page.expect_response(
-        lambda response: response.url.endswith("/api/entries?q=%E6%8E%A1%E7%94%A8%E6%B8%88%E3%81%BF&page=1")
-    ):
-        await page.locator("#search-input").fill("採用済み")
-    await page.locator('.entry-select[data-key="adopted.md"]').wait_for(state="visible")
-    await playwright.async_api.expect(notice).to_have_text(expected_notice)
-    await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
-    await playwright.async_api.expect(page.locator("#kind-filter")).to_have_value("all")
-    await playwright.async_api.expect(page.locator("#answer-filter")).to_have_value("all")
-
-    async with page.expect_response(
-        lambda response: response.url.endswith("/api/entries?q=%E4%B8%8D%E6%8E%A1%E7%94%A8&page=1")
-    ):
-        await page.locator("#search-input").fill("不採用")
-    await page.locator('.entry-select[data-key="rejected.md"]').wait_for(state="visible")
-    await playwright.async_api.expect(notice).to_be_visible()
-    await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
-
-    async with page.expect_response(lambda response: response.url.endswith("/api/entries?q=many-terminal&page=1")):
-        await page.locator("#search-input").fill("many-terminal")
-    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
-    await playwright.async_api.expect(notice).to_be_hidden()
-    await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
-
+    search = page.get_by_label("検索", exact=True)
     request_urls: list[str] = []
     page.on("request", lambda request: request_urls.append(request.url) if "/api/entries?" in request.url else None)
-    default_list = "/api/entries?type=all&status=active&answered=all&period=2w&page=1"
-    stale_url = browser_harness.base_url + "/api/entries?type=all&status=active&answered=all&period=2w&q=many-terminal&page=1"
+    await search.dispatch_event("compositionstart")
+    await search.fill("未確定")
+    await page.clock.fast_forward(300)
+    assert not [url for url in request_urls if "q=" in url]
+    await search.evaluate("element => { element.value = '採用済み'; }")
+    await search.dispatch_event("compositionend")
+    await page.clock.fast_forward(300)
+    await playwright.async_api.expect(page.locator('.entry-select[data-key="adopted.md"]')).to_be_visible()
+    await search.fill("不採用")
+    await page.get_by_role("radio", name="通常表示", exact=True).check()
+    await page.clock.fast_forward(300)
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+    await playwright.async_api.expect(search).to_have_value("不採用")
+    held = asyncio.Event()
+    release = asyncio.Event()
 
-    async def consumed_stale() -> int:
-        # focusでは既知項目の再取得も同じパスへ並行するため、保留した旧条件の要求だけをURLで数える。
-        return await page.evaluate("url => window.__screenRequests.completedByUrl[url] || 0", stale_url)
+    async def hold_search(route: playwright.async_api.Route) -> None:
+        if "q=" not in route.request.url:
+            await route.continue_()
+            return
+        response = await route.fetch()
+        held.set()
+        await release.wait()
+        await route.fulfill(response=response)
 
-    async def wait_stale_consumed(count: int) -> None:
-        # ページの時計を止めた区間でも進むよう、ページ側のポーリングではなくテスト側から照会する。
-        async with asyncio.timeout(10):
-            while await consumed_stale() < count:
-                await asyncio.sleep(0.05)
-
-    async def clear_search_with_stale_reload(*, release_before_new_request: bool) -> None:
-        held = asyncio.Event()
-        release = asyncio.Event()
-
-        async def hold_stale(route: playwright.async_api.Route) -> None:
-            if route.request.url != stale_url:
-                await route.continue_()
-                return
-            held.set()
-            response = await route.fetch()
-            await release.wait()
-            await route.fulfill(response=response)
-
-        await page.route("**/api/entries?*", hold_stale)
-        try:
-            # 外部変更時の再取得は`window`の`focus`でも始まり、その時点の検索条件で一覧を取得する。
-            await page.evaluate("window.dispatchEvent(new Event('focus'))")
-            await asyncio.wait_for(held.wait(), timeout=10)
-            request_urls.clear()
-            if release_before_new_request:
-                now = await page.evaluate("Date.now()")
-                await page.clock.pause_at(datetime.datetime.fromtimestamp((now + 50) / 1000, tz=datetime.UTC))
-                await page.locator("#search-input").fill("")
-                consumed = await consumed_stale()
-                release.set()
-                await wait_stale_consumed(consumed + 1)
-                # 前提: 旧応答を消費した時点で、デバウンス後の新しい一覧要求はまだ送られていない。
-                assert f"{browser_harness.base_url}{default_list}" not in request_urls
-                await page.clock.resume()
-                await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
-            else:
-                await page.locator("#search-input").fill("")
-                await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
-                consumed = await consumed_stale()
-                release.set()
-                await wait_stale_consumed(consumed + 1)
-        finally:
-            await page.unroute("**/api/entries?*", hold_stale)
-        # 旧応答の消費は上で確定済み。誤って補助検索が発行される場合の要求送出は待機できない不在の観測のため、短い猶予を置く。
-        await page.wait_for_timeout(100)
+    await page.route("**/api/entries?*", hold_search)
+    try:
+        await page.get_by_role("radio", name="条件検索", exact=True).check()
+        await asyncio.wait_for(held.wait(), timeout=10)
+        await page.get_by_role("radio", name="通常表示", exact=True).check()
         await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
-        await playwright.async_api.expect(notice).to_be_hidden()
-        _assert_list_request_without_fallback(request_urls, browser_harness.base_url, default_list)
-
-    await clear_search_with_stale_reload(release_before_new_request=True)
-    async with page.expect_response(lambda response: response.url.endswith("/api/entries?q=many-terminal&page=1")):
-        await page.locator("#search-input").fill("many-terminal")
-    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
-    await clear_search_with_stale_reload(release_before_new_request=False)
-
-    request_urls.clear()
-    async with page.expect_response(
-        lambda response: response.url.endswith(
-            "/api/entries?type=all&status=active&answered=all&period=2w&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1"
-        )
-    ):
-        await page.locator("#search-input").fill("編集対象")
-    await page.locator('.entry-select[data-key="awi.md"]').wait_for(state="visible")
-    await playwright.async_api.expect(notice).to_be_hidden()
-    await playwright.async_api.expect(page.locator("#state-filter")).to_have_value("active")
-    await page.wait_for_timeout(100)
-    _assert_list_request_without_fallback(
-        request_urls,
-        browser_harness.base_url,
-        "/api/entries?type=all&status=active&answered=all&period=2w&q=%E7%B7%A8%E9%9B%86%E5%AF%BE%E8%B1%A1&page=1",
-    )
-
-    await page.locator("#kind-filter").select_option("all")
-    await page.locator("#state-filter").select_option("all")
-    await page.locator("#period-filter").select_option("all")
-    await page.locator("#answer-filter").select_option("all")
-    await page.locator("#target-filter").select_option("")
-    await page.locator("#source-filter").select_option("")
-    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
-    request_urls.clear()
-    async with page.expect_response(
-        lambda response: response.url.endswith(
-            "/api/entries?type=all&status=all&answered=all&period=all&q=all-filters-only&page=1"
-        )
-    ):
-        await page.locator("#search-input").fill("all-filters-only")
-    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
-    await playwright.async_api.expect(notice).to_be_hidden()
-    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
-    _assert_list_request_without_fallback(
-        request_urls,
-        browser_harness.base_url,
-        "/api/entries?type=all&status=all&answered=all&period=all&q=all-filters-only&page=1",
-    )
+        release.set()
+        await _wait_screen_requests_consumed(page, ("/api/events",))
+        await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+        await playwright.async_api.expect(page.locator("#wi-mode-normal")).to_be_checked()
+    finally:
+        release.set()
+        await page.unroute("**/api/entries?*", hold_search)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -1212,7 +1155,7 @@ async def test_period_filter_limits_work_items_to_recent_by_default(browser_harn
     await _open_filters(page)
     period = page.locator("#period-filter")
     rows = page.locator("#entry-list .entry-select")
-    await playwright.async_api.expect(period).to_have_value("2w")
+    await playwright.async_api.expect(period).to_have_value("all")
     await playwright.async_api.expect(rows.filter(has_text=names[1])).to_have_count(1)
     await playwright.async_api.expect(rows.filter(has_text=names[20])).to_have_count(0)
 
@@ -1227,7 +1170,7 @@ async def test_period_filter_limits_work_items_to_recent_by_default(browser_harn
     await playwright.async_api.expect(rows.filter(has_text="awi.md")).to_have_count(1)
 
     await page.locator("#clear-filters-button").click()
-    await playwright.async_api.expect(period).to_have_value("2w")
+    await playwright.async_api.expect(period).to_have_value("all")
     await playwright.async_api.expect(rows.filter(has_text=names[20])).to_have_count(0)
     await playwright.async_api.expect(rows.filter(has_text=names[1])).to_have_count(1)
     await playwright.async_api.expect(page.locator("#entry-period")).to_have_text("直近2週間に作成")
@@ -1259,6 +1202,7 @@ async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: 
     await page.goto(harness.base_url + "/")
     await _open_filters(page)
     await page.locator("#state-filter").select_option(state)
+    await page.locator("#period-filter").select_option("2w")
     await playwright.async_api.expect(page.locator("#empty-state")).to_be_visible()
     await playwright.async_api.expect(page.locator("#entry-period")).to_be_visible()
     await playwright.async_api.expect(page.locator("#entry-period")).to_have_text("直近2週間に作成")
@@ -2123,7 +2067,7 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
             await release_background.wait()
         await route.continue_()
 
-    await page.route("**/api/repos?status=active", delay_first_repo_request)
+    await page.route("**/api/repos?status=all", delay_first_repo_request)
     await page.locator("#result-status").evaluate("element => { element.textContent = '変更前の通知'; }")
     await page.locator("#kind-filter").evaluate("element => { element.value = 'awi'; }")
     # 状態フィルター変更時の処理を起動し、対象リポジトリの再取得を伴う一覧の更新を実行する。
@@ -2132,17 +2076,17 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     try:
         harness.current_state.publish()
         release_first.set()
-        await playwright.async_api.expect(page.locator("#result-status")).to_have_text("2件を表示")
-        await playwright.async_api.expect(page.locator("#entry-list .entry-select[data-kind=awi]")).to_have_count(2)
+        await playwright.async_api.expect(page.locator("#result-status")).to_have_text("10件を表示")
+        await playwright.async_api.expect(page.locator("#entry-list .entry-select[data-kind=awi]")).to_have_count(10)
         await asyncio.wait_for(second_started.wait(), timeout=5)
         release_background.set()
         await _wait_screen_requests_consumed(page, ("/api/events",))
-        await playwright.async_api.expect(page.locator("#result-status")).to_have_text("2件を表示")
-        async with page.expect_response("**/api/repos?status=active") as response:
+        await playwright.async_api.expect(page.locator("#result-status")).to_have_text("10件を表示")
+        async with page.expect_response("**/api/repos?status=all") as response:
             await page.evaluate("window.dispatchEvent(new Event('focus'))")
         await (await response.value).finished()
         await _wait_screen_requests_consumed(page, ("/api/events",))
-        await playwright.async_api.expect(page.locator("#result-status")).to_have_text("2件を表示")
+        await playwright.async_api.expect(page.locator("#result-status")).to_have_text("10件を表示")
     finally:
         release_first.set()
         release_background.set()

@@ -848,12 +848,12 @@ def test_sync_ignores_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
     assert calls == ["push", "pull", "push", "pull"]
 
 
-def test_assets_clear_selected_target_repo_when_absent_from_choices() -> None:
-    """候補から消えた対象リポジトリの選択状態を解除する。"""
+def test_assets_preserve_selected_target_repo_when_absent_from_choices() -> None:
+    """候補から消えた対象リポジトリも選択肢と選択状態を保持する。"""
     result = _run_node_ui(
         """
 fetchHandler = async (url) => {
-  if (url.endsWith('/api/repos?status=active')) {
+  if (url.endsWith('/api/repos?status=all')) {
     const repos = ['github.com/x/alpha'];
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos})};
   }
@@ -867,8 +867,8 @@ process.stdout.write(JSON.stringify({
 }));
 """
     )
-    assert result["values"] == ["", "github.com/x/alpha"]
-    assert result["selected"] == ""
+    assert result["values"] == ["", "github.com/x/alpha", "github.com/x/removed"]
+    assert result["selected"] == "github.com/x/removed"
 
 
 def test_assets_do_not_accumulate_target_repo_choices() -> None:
@@ -876,7 +876,7 @@ def test_assets_do_not_accumulate_target_repo_choices() -> None:
     result = _run_node_ui(
         """
 fetchHandler = async (url) => {
-  if (url.endsWith('/api/repos?status=active')) {
+  if (url.endsWith('/api/repos?status=all')) {
     const repos = ['github.com/x/alpha', 'github.com/x/beta'];
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos})};
   }
@@ -894,17 +894,19 @@ process.stdout.write(JSON.stringify({
     assert result["datalistCount"] == 2
 
 
-def test_assets_search_fallback_failure_keeps_initial_empty_result() -> None:
-    """補助検索が失敗しても初回の空一覧とエラー表示を維持する。"""
+def test_assets_search_failure_keeps_initial_empty_result() -> None:
+    """検索が失敗しても初回の空一覧とエラー表示を維持する。"""
     result = _run_node_ui(
         """
 bindEvents();
+await loadEntries({announce: true});
+setDisplayMode('search');
 elements['search-input'].value = '失敗する検索';
 fetchHandler = async url => {
   if (url.includes('status=active')) {
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
   }
-  return {ok: false, status: 503, statusText: 'Unavailable', json: async () => ({error: '補助検索に失敗'})};
+  return {ok: false, status: 503, statusText: 'Unavailable', json: async () => ({error: '検索に失敗'})};
 };
 await loadEntries({announce: true});
 const shown = {
@@ -915,7 +917,6 @@ elements['operation-notice-close-button'].focus();
 elements['operation-notice-close-button'].listeners.click();
 process.stdout.write(JSON.stringify({
   rows: entries.map(entry => entry.filename),
-  notice: elements['list-fallback-notice'].textContent,
   status: elements['result-status'].textContent,
   shown,
   cleared: {
@@ -928,11 +929,10 @@ process.stdout.write(JSON.stringify({
     )
     assert result == {
         "rows": [],
-        "notice": "",
         "status": "一致する項目はありません",
-        "shown": {"message": "［WI / node-test / /notes / 一覧取得］補助検索に失敗", "hidden": False},
+        "shown": {"message": "［WI / node-test / /notes / 一覧取得］検索に失敗", "hidden": False},
         "cleared": {
-            "message": "［WI / node-test / /notes / 一覧取得］補助検索に失敗",
+            "message": "［WI / node-test / /notes / 一覧取得］検索に失敗",
             "hidden": True,
             "focused": "refresh-button",
         },
@@ -985,10 +985,10 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "repoCountDuringUser": 1,
         "listUrls": [
-            "/atk/api/entries?type=awi&status=active&answered=all&period=2w&page=1",
+            "/atk/api/entries?type=awi&status=all&answered=all&period=all&page=1",
             "/atk/api/entries?type=all&status=all&answered=all",
             "/atk/api/entries?type=all&status=all&answered=all",
-            "/atk/api/entries?type=awi&status=active&answered=all&period=2w&page=1",
+            "/atk/api/entries?type=awi&status=all&answered=all&period=all&page=1",
         ],
         "status": "1件を表示",
         "rows": ["filtered.md"],
@@ -1049,7 +1049,7 @@ fetchHandler = async (url) => {
       json: async () => ({filenames: ['new.md'], mapping: {'old.md': 'new.md'}, warnings: ['依存先が不在']})
     };
   }
-  if (url.endsWith('/api/repos?status=active')) {
+  if (url.endsWith('/api/repos?status=all')) {
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: []})};
   }
   return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};

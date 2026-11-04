@@ -32,12 +32,15 @@
   <div class="wi-screen-scroll">
   <main class="app-layout">
     <aside class="filters card" aria-label="フィルター条件">
+      <fieldset class="wi-display-mode">
+        <legend>表示モード</legend>
+        <label><input id="wi-mode-normal" type="radio" name="wi-display-mode" value="normal" checked>通常表示</label>
+        <label><input id="wi-mode-search" type="radio" name="wi-display-mode" value="search">条件検索</label>
+      </fieldset>
+      <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
       <details open>
-        <summary>フィルター</summary>
+        <summary>条件検索の入力</summary>
         <div class="filters-body">
-          <div class="pane-heading">
-            <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
-          </div>
           <label for="search-input">検索</label>
           <input id="search-input" type="search" placeholder="本文・ファイル名・target-repo・sourceを検索">
 
@@ -52,7 +55,7 @@
             <select id="state-filter">
               <option value="active">active</option>
               <option value="processable">processable</option>
-              <option value="all">all</option>
+              <option value="all" selected>all</option>
               <option value="inbox">inbox</option>
               <option value="processing">processing</option>
               <option value="hold">hold</option>
@@ -61,10 +64,10 @@
             </select>
             <label for="period-filter">period</label>
             <select id="period-filter">
-              <option value="2w" selected>直近2週間</option>
+              <option value="2w">直近2週間</option>
               <option value="4w">直近4週間</option>
               <option value="8w">直近8週間</option>
-              <option value="all">全期間</option>
+              <option value="all" selected>全期間</option>
             </select>
             <label for="answer-filter">answered</label>
             <select id="answer-filter">
@@ -103,8 +106,8 @@
           <span id="entry-period" class="secondary-text">直近2週間に作成</span>
         </div>
       </div>
+      <div id="wi-effective-conditions" class="secondary-text" role="status">通常表示: state=active、直近2週間</div>
       <div id="copy-all-status" class="secondary-text" role="status" hidden></div>
-      <div id="list-fallback-notice" class="list-fallback-notice" role="status" hidden></div>
       <div id="result-status" class="visually-hidden" role="status"></div>
       <div id="list-warning" class="list-warning" role="alert" hidden></div>
       <div class="entry-columns">

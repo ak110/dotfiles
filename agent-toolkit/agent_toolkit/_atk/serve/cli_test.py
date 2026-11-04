@@ -926,155 +926,35 @@ def test_repository_readers_canonicalize_legacy_paths_once_per_operation(
     )
 
 
-def test_assets_search_fallback_obeys_boundaries_and_keeps_filters() -> None:
-    """検索結果0件時の補助検索を境界値、通常一致、検索語なしで検証する。"""
+def test_assets_search_keeps_empty_results_with_manual_conditions() -> None:
+    """手動条件で0件なら、その条件と警告を保ち、条件外への補助取得を発行しない。"""
     result = _run_node_ui(
         """
-const fallbackNotice =
-  '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
-  'フィルターの選択値は変更していません。';
-const initialWarnings = [{state: 'inbox', filename: 'initial.md', reason: '初回警告'}];
-const runCase = async (token, count) => {
-  fetchCalls.length = 0;
-  elements['search-input'].value = token;
-  elements['kind-filter'].value = 'all';
-  elements['state-filter'].value = 'active';
-  elements['answer-filter'].value = 'all';
-  elements['target-filter'].value = '';
-  elements['source-filter'].value = '';
-  const fallbackEntries = Array.from({length: count}, (_, index) => ({
-    kind: 'awi', state: 'adopted', filename: `${token}-${index}.md`, summary: token
-  }));
-  fetchHandler = async url => {
-    if (url.includes('status=active')) {
-      return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: initialWarnings})};
-    }
-    if (url === `/atk/api/entries?q=${token}&page=1`) {
-      return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: fallbackEntries, warnings: []})};
-    }
-    throw new Error('想定外のURL: ' + url);
-  };
-  await loadEntries({announce: true});
-  return {
-    count,
-    rows: entries.map(entry => entry.filename),
-    notice: elements['list-fallback-notice'].textContent,
-    noticeHidden: elements['list-fallback-notice'].hidden,
-    status: elements['result-status'].textContent,
-    warning: elements['list-warning'].textContent,
-    filters: {
-      kind: elements['kind-filter'].value,
-      state: elements['state-filter'].value,
-      answer: elements['answer-filter'].value,
-      target: elements['target-filter'].value,
-      source: elements['source-filter'].value
-    },
-    urls: fetchCalls.map(call => call.url)
-  };
-};
-const one = await runCase('one', 1);
-const five = await runCase('five', 5);
-const none = await runCase('none', 0);
-const six = await runCase('six', 6);
-
-fetchCalls.length = 0;
-elements['search-input'].value = 'normal';
+elements['search-input'].value = 'terminal';
+elements['state-filter'].value = 'active';
+elements['period-filter'].value = '4w';
 fetchHandler = async url => {
-  if (!url.includes('/api/entries?')) throw new Error('想定外のURL: ' + url);
-  return {ok: true, status: 200, statusText: 'OK', json: async () => ({
-    entries: [{kind: 'awi', state: 'inbox', filename: 'normal.md', summary: 'normal'}], warnings: []
-  })};
-};
-await loadEntries({announce: true});
-const normal = {
-  rows: entries.map(entry => entry.filename),
-  noticeHidden: elements['list-fallback-notice'].hidden,
-  urls: fetchCalls.map(call => call.url)
-};
-
-fetchCalls.length = 0;
-elements['search-input'].value = '';
-fetchHandler = async url => {
-  if (!url.includes('/api/entries?')) throw new Error('想定外のURL: ' + url);
-  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
-};
-await loadEntries({announce: true});
-const emptySearch = {
-  rows: entries.map(entry => entry.filename),
-  noticeHidden: elements['list-fallback-notice'].hidden,
-  urls: fetchCalls.map(call => call.url)
-};
-
-fetchCalls.length = 0;
-elements['search-input'].value = 'all-filters-only';
-elements['kind-filter'].value = 'all';
-elements['state-filter'].value = 'all';
-elements['period-filter'].value = 'all';
-elements['answer-filter'].value = 'all';
-elements['target-filter'].value = '';
-elements['source-filter'].value = '';
-fetchHandler = async url => {
-  if (url !== '/atk/api/entries?type=all&status=all&answered=all&period=all&q=all-filters-only&page=1') {
-    throw new Error('想定外のURL: ' + url);
+  if (url !== '/atk/api/entries?type=all&status=active&answered=all&period=4w&q=terminal&page=1') {
+    throw new Error('条件外の取得: ' + url);
   }
-  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
+  return {ok: true, status: 200, json: async () => ({entries: [],
+    warnings: [{state: 'inbox', filename: 'invalid.md', reason: '読取失敗'}]})};
 };
-await loadEntries({announce: true});
-const allFilters = {
-  rows: entries.map(entry => entry.filename),
-  noticeHidden: elements['list-fallback-notice'].hidden,
-  urls: fetchCalls.map(call => call.url)
-};
-process.stdout.write(JSON.stringify({one, five, none, six, normal, emptySearch, allFilters, fallbackNotice}));
+await handleFilterChange();
+process.stdout.write(JSON.stringify({rows: entries, urls: fetchCalls.map(call => call.url),
+  state: elements['state-filter'].value, period: elements['period-filter'].value,
+  warning: elements['list-warning'].textContent, error: elements['operation-notice-message'].textContent,
+  status: elements['result-status'].textContent, mode: displayMode}));
 """
     )
-    expected_notice = (
-        "状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。"
-        "フィルターの選択値は変更していません。"
-    )
-    assert result["one"]["rows"] == ["one-0.md"]
-    assert result["five"]["rows"] == [f"five-{index}.md" for index in range(5)]
-    for name in ("one", "five"):
-        assert result[name]["notice"] == expected_notice
-        assert result[name]["noticeHidden"] is False
-        assert result[name]["warning"] == ""
-        assert result[name]["urls"] == [
-            f"/atk/api/entries?type=all&status=active&answered=all&period=2w&q={name}&page=1",
-            f"/atk/api/entries?q={name}&page=1",
-        ]
-        assert result[name]["filters"] == {
-            "kind": "all",
-            "state": "active",
-            "answer": "all",
-            "target": "",
-            "source": "",
-        }
-    for name in ("none", "six"):
-        assert result[name]["rows"] == []
-        assert result[name]["notice"] == ""
-        assert result[name]["noticeHidden"] is True
-        assert result[name]["warning"] == "［WI / node-test / /notes / inbox/initial.md］一覧から除外したファイル: 初回警告"
-        assert result[name]["status"] == "一致する項目はありません"
-        assert result[name]["urls"] == [
-            f"/atk/api/entries?type=all&status=active&answered=all&period=2w&q={name}&page=1",
-            f"/atk/api/entries?q={name}&page=1",
-        ]
-    assert result["normal"] == {
-        "rows": ["normal.md"],
-        "noticeHidden": True,
-        "urls": ["/atk/api/entries?type=all&status=active&answered=all&period=2w&q=normal&page=1"],
-    }
-    assert result["emptySearch"] == {
-        "rows": [],
-        "noticeHidden": True,
-        "urls": ["/atk/api/entries?type=all&status=active&answered=all&period=2w&page=1"],
-    }
-    assert result["allFilters"] == {
-        "rows": [],
-        "noticeHidden": True,
-        "urls": ["/atk/api/entries?type=all&status=all&answered=all&period=all&q=all-filters-only&page=1"],
-    }
-    assert result["fallbackNotice"] == expected_notice
+    assert not result["rows"]
+    assert result["urls"] == ["/atk/api/entries?type=all&status=active&answered=all&period=4w&q=terminal&page=1"]
+    assert result["state"] == "active"
+    assert result["period"] == "4w"
+    assert result["warning"] == "［WI / node-test / /notes / inbox/invalid.md］一覧から除外したファイル: 読取失敗"
+    assert not result["error"]
+    assert result["status"] == "一致する項目はありません"
+    assert result["mode"] == "search"
 
 
 def test_user_comment_pure_update_preserves_frontmatter_and_previous_body() -> None:

@@ -41,7 +41,7 @@ from agent_toolkit._testing.serve_support import (
     _write_detail_entry,
     _write_repo_entry,
     make_inbox_and_processing,
-    stale_fallback_search_script,
+    stale_search_script,
 )
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
@@ -222,6 +222,7 @@ displayEntry(second);
 detailOriginKey = entryKey(second);
 openDialog(elements['detail-dialog'], secondButton, elements['detail-dialog-body']);
 elements['search-input'].value = '一致しない条件';
+setDisplayMode('search');
 entries = [];
 renderEntries();
 closeDetailDialog();
@@ -407,7 +408,7 @@ fetchHandler = async (url, options) => {
   if (url.endsWith('/api/entries') && options.method === 'POST') {
     return {ok: true, status: 201, statusText: 'Created', json: async () => ({filenames: ['new.md']})};
   }
-  if (url.endsWith('/api/repos?status=active')) {
+  if (url.endsWith('/api/repos?status=all')) {
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: ['example/repo']})};
   }
   if (url.includes('/api/entries?')) {
@@ -430,7 +431,7 @@ process.stdout.write(JSON.stringify({
     )
     assert result == {
         "kind": "all",
-        "state": "active",
+        "state": "all",
         "search": "",
         "detailOpen": False,
         "current": None,
@@ -1574,20 +1575,19 @@ process.stdout.write(JSON.stringify({
     }
 
 
-def test_assets_discard_stale_search_fallback_error_without_overwriting_global_error() -> None:
-    """失効した補助検索のエラーが後発要求の操作通知を上書きしない。"""
+def test_assets_discard_stale_search_error_without_overwriting_global_error() -> None:
+    """失効した検索のエラーが後発要求の操作通知を上書きしない。"""
     result = _run_node_ui(
-        stale_fallback_search_script(
+        stale_search_script(
             "let rejectFallback;",
             "new Promise((_resolve, reject) => { rejectFallback = reject; })",
         )
         + """elements['operation-notice'].textContent = '後発要求のエラー';
-rejectFallback(new Error('失効した補助検索エラー'));
+rejectFallback(new Error('失効した検索エラー'));
 await oldRequest;
 process.stdout.write(JSON.stringify({
   rows: entries.map(entry => entry.filename),
   state: entries[0]?.state,
-  notice: elements['list-fallback-notice'].textContent,
   status: elements['result-status'].textContent,
   error: elements['operation-notice'].textContent
 }));
@@ -1596,7 +1596,6 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "rows": ["new.md"],
         "state": "inbox",
-        "notice": "",
         "status": "1件を表示",
         "error": "後発要求のエラー",
     }
@@ -1670,7 +1669,7 @@ fetchHandler = async (url) => {
   if (url.endsWith('/api/entries')) {
     return {ok: true, status: 201, statusText: 'Created', json: async () => ({filenames: ['new.md']})};
   }
-  if (url.endsWith('/api/repos?status=active')) {
+  if (url.endsWith('/api/repos?status=all')) {
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: []})};
   }
   return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
@@ -1709,7 +1708,7 @@ fetchHandler = async (url) => {
       })
     };
   }
-  if (url.endsWith('/api/repos?status=active')) {
+  if (url.endsWith('/api/repos?status=all')) {
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos: []})};
   }
   return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
@@ -1899,7 +1898,7 @@ process.stdout.write(JSON.stringify({
     assert result["notification"] == ["operation-notice-message", "operation-notice-close-button"]
     assert result["closeClass"] == "dialog-close"
     assert result["aria"] == "操作通知を閉じる"
-    assert result["selected"] == ["all", "active", "2w", "all", "awi", "yes-no"]
+    assert result["selected"] == ["all", "all", "all", "all", "awi", "yes-no"]
 
 
 def test_node_dom_uses_new_html_element(monkeypatch: pytest.MonkeyPatch) -> None:
