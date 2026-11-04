@@ -36,7 +36,7 @@ def test_bugfix_start_does_not_request_other_analysis_workflows(tmp_path, monkey
 
 
 def test_user_intervention_analysis_requests_both_operation_references(tmp_path, monkeypatch):
-    """介入分析の資料を選んだ担当へ、判定と運用の双方の基準を案内する。"""
+    """介入分析の読取時に双方の基準を候補として示し、次の操作では再掲しない。"""
     root = pathlib.Path(__file__).parent
     rows = read_triggers.parse_tables(root / "share/read-trigger-bootstrap.md", root)
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
@@ -49,8 +49,9 @@ def test_user_intervention_analysis_requests_both_operation_references(tmp_path,
         {**payload, "tool_name": "Bash", "tool_input": {"command": "cat -- " + shlex.quote(str(source))}},
     )
     assert selected.returncode == 0 and not selected.stderr
-    result = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Do", "tool_input": {}})
-    assert result.returncode == 0 and not result.stderr
-    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    context = json.loads(selected.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "条件の成立は未確定" in context
     assert "review-session/references/analysis-operations.md" in context
     assert "user-confirmation-and-report/references/analysis-operations.md" in context
+    result = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Do", "tool_input": {}})
+    assert result.returncode == 0 and not result.stderr and not result.stdout
