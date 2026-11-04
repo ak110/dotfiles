@@ -1,7 +1,8 @@
 # Codex利用ガイド
 
 Codexはagent-toolkitの標準構成に含まれ、単体インストーラーがCodexプラグインと共有スキルを設定する。
-導入と共通の操作は[agent-toolkit導入ガイド](claude-code-guide.md)を参照し、本書はCodexに固有の操作と注意をまとめる。
+概要と導入・初回確認は[agent-toolkitのREADME](../../agent-toolkit/README.md)、共通の詳細操作は[agent-toolkit利用ガイド](claude-code-guide.md)を参照。
+本書はCodexに固有の操作と注意をまとめる。
 
 単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、dotfiles固有のグローバル`AGENTS.md`と共有リンクを配置しない。
 dotfilesユーザーは`update-dotfiles`または`chezmoi apply`で、Codex向け`AGENTS.md`、共有ルール、スキルのリンク、プラグインをまとめて設定する。

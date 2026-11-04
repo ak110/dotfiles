@@ -28,14 +28,16 @@ manifestはClaude固有の依存宣言を持たず、独立パッケージとし
 
 ## 単独導入のbootstrap
 
-dotfilesリポジトリのrootにある導入スクリプトは、Claude CodeとCodexへagent-basicsだけを導入できる。
+dotfilesリポジトリの[導入スクリプト](https://github.com/ak110/dotfiles/blob/master/install-claude.sh)は、Claude CodeとCodexへagent-basicsだけを導入できる。
 既存のtoolkit運用規範、MCP設定とatkラッパーを保持する。
 
 ```sh
-bash ./install-claude.sh --basics-only
+curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.sh | bash -s -- --basics-only
 ```
 
 ```powershell
+# install-claude.ps1を取得してから実行する。
+Invoke-WebRequest https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 -OutFile install-claude.ps1
 pwsh -NoProfile -File ./install-claude.ps1 -BasicsOnly
 ```
 
@@ -48,3 +50,8 @@ uvはtoolkitも導入する場合の前提である。
 このプラグインが配るのはスキルと参照資料である。常時フック、MCP、ホームへの運用規範の配送は含まない。
 認可・WI・委譲・セッション管理・完了報告には、利用するプロジェクトの手順を適用する。
 agent-toolkitはこれらの運用を提供し、品質判断でagent-basicsを参照する。
+併用時の導入と最初の操作は[agent-toolkitのREADME](https://github.com/ak110/dotfiles/tree/master/agent-toolkit)を参照。
+
+## ライセンス
+
+[MIT License](LICENSE)。

@@ -37,9 +37,10 @@ description: >
 | `agent-basics/skills/`配下 | 品質スキルを適用する全プロジェクト編集者 | 成果物の品質基準 |
 | `agent-toolkit/skills/`配下 | 全プロジェクト編集者 | スキルの指示本体 |
 | `agent-basics/README.md` | agent-basicsユーザー | 品質スキルの単独導入と併用の案内 |
+| `agent-toolkit/README.md` | agent-toolkitユーザー | ツールキットの概要・導入・初回操作の案内 |
 | `.chezmoi-source/dot_claude/`配下 | 全プロジェクト編集者・dotfilesユーザー | 常時自動ロードされる行動原則（配布先`~/.claude/`） |
 | `.chezmoi-source/dot_codex/`配下 | 全プロジェクト編集者 | Codex向けのユーザー設定とClaude Code側原本へのリンク |
-| `docs/guide/claude-code-guide.md` | agent-toolkitユーザー | プラグインの導入・更新手順 |
+| `docs/guide/claude-code-guide.md`・`docs/guide/codex-guide.md` | agent-toolkitユーザー・dotfilesユーザー | 詳細設定・操作とdotfiles固有の運用の案内 |
 | `.claude/`（リポジトリ直下） | dotfiles編集者 | 本リポジトリ開発時のみ参照されるClaude Codeプロジェクト設定 |
 | `AGENTS.md`（リポジトリ直下） | dotfiles編集者 | 本リポジトリの案内 |
 | `pytools/`・`bin/`・`scripts/` | dotfilesユーザー・dotfiles編集者 | コマンドラインツールと開発スクリプト |

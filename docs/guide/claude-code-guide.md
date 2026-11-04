@@ -1,33 +1,16 @@
 # agent-toolkit導入ガイド（Agent Plugins・Claude Code・Codex）
 
-agent-toolkitはAgent Plugins、Claude Code、Codexで共有できるコーディングエージェント向けツールキットである。
-Claude Codeは対話と作業全体の統括を担い、Codex CLIは`agents_server` MCP経由の調査・実装・レビューと、Codexセッションでのスキル実行を担う。
-uvは配布スクリプトと`atk`コマンドの実行基盤である。
+本書はagent-toolkitの詳細設定・操作とdotfiles固有の運用を扱う。
+概要・導入・初回確認は[agent-toolkitのREADME](../../agent-toolkit/README.md)を参照。
 
 ## コンセプト
 
-1. 標準動作のカスタマイズ: 判断基準が曖昧な場面での事前相談、lint抑制時のユーザー確認、検証からコミットまでの流れの自動化など、コーディングエージェントの動作を変える
-2. 品質水準の維持: 各言語のイディオム、セキュリティ、テスト方針などの作法とプロジェクト固有の制約を示し、既存コードの乱れにエージェントが引きずられないようにする
-3. 知識の補完: Claude Codeの現行仕様や個人製作のツール（pytilpackなど）のように、LLMの学習データに含まれない情報をスキルで補う
-
-agent-toolkitは、`~/.claude/rules/agent-toolkit/`へ配置して自動で読み込まれるルールファイルと、スキル・フック・MCPを含むプラグインで構成する。
-両者は同時に導入する前提で作られている。
-部分的に動作を変えたい場合は、`~/.claude/CLAUDE.md`、プロジェクトの`AGENTS.md`、プロンプトでの指示で上書きできる。
-
-本書ではエージェントへ渡す作業の単位を2種類の略語で呼ぶ。
-AWIはユーザーまたはエージェントが登録し、後でエージェントが自動処理する作業要求である。
-UWIはユーザーの回答・判断・操作を待つ項目と、作業結果の報告である。
-どちらもユーザーの手元のキュー（private-notesリポジトリ）で管理し、対象リポジトリには保存しない。
+用途、品質基準との責務分担、AWI・UWIの意味は[README](../../agent-toolkit/README.md)を参照。
+常時規範とスキル・フック・MCPを併用する構成と、ホストごとの機能範囲は[対応ホストと機能](../../agent-toolkit/README.md#対応ホストと機能)にまとめている。
 
 ## 前提条件
 
-単体インストーラーを実行する前に、次の3コマンドを公式手順で導入する。
-インストーラーはCLI本体を導入しない。
-
-- `claude`: [Claude Code](https://docs.anthropic.com/ja/docs/claude-code/overview)のCLI（2.1.163以上）
-- `codex`: [Codex CLI](https://developers.openai.com/codex/cli/)本体
-- `uv`: [uv](https://docs.astral.sh/uv/)による配布スクリプト実行環境
-
+単体導入に必要なCLIは[READMEの前提条件](../../agent-toolkit/README.md#前提条件)を参照。
 dotfilesユーザーでは、`chezmoi apply`後の処理がClaude Code（Anthropic公式ネイティブ版）とCodex CLIを導入・更新する。
 WindowsでClaude CodeやCodexが実行中の場合は停止せず、更新を次回へ延期する。
 
@@ -35,45 +18,13 @@ WindowsでClaude CodeやCodexが実行中の場合は停止せず、更新を次
 
 ### ツールキットのインストール
 
-次のワンライナーを実行する。
-`install-claude.sh`と`install-claude.ps1`は名前に反してClaude CodeとCodexの双方を設定する。
-
-- Linux:
-
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.sh | bash
-    ```
-
-- Windows:
-
-    ```cmd
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex"
-    ```
-
-ルールファイル、Claude CodeとCodexのagent-toolkitプラグイン、共有`agents_server` MCP、`atk`コマンドが設定される。
-3コマンドのいずれかが見つからない場合は、何も書き込まずにエラー終了する。
-再実行すると最新版へ更新される。
-Codexのdaemon再起動を案内された場合の操作は[Codex利用ガイド](codex-guide.md#プラグイン更新の反映)を参照。
-
-インストール後、Claude Codeでマーケットプレイスの自動更新を初回だけ手動で有効にする。
-
-1. Claude Code内で`/plugin`を実行
-2. `Marketplaces`タブで`ak110-dotfiles`を選択
-3. `Enable auto-update`を選択
-
-Agent Plugins互換クライアントでは、`agent-toolkit/`をプラグインのパッケージルートとして指定する。
-導入操作は利用するクライアントの公式手順を参照。
+[READMEの導入](../../agent-toolkit/README.md#導入)にある統合インストーラーを実行し、[導入確認](../../agent-toolkit/README.md#導入確認)と[最初の操作](../../agent-toolkit/README.md#最初の操作)へ進む。
+dotfilesユーザーは`chezmoi apply`で同じプラグインを設定する。
 
 ## Claudeの各環境への導入
 
-使う環境に応じて、次の導入方法を選ぶ。
-
-| 環境 | 導入操作と使える機能 |
-| --- | --- |
-| claude.aiのChat・DesktopのChat | `Customize > Plugins`からマーケットプレイスを追加するか、プラグインのZIPをアップロードする。スキル内の品質基準を使える。CLI・hook・local MCPは使えない |
-| DesktopのCowork | Coworkタブで同じ`Customize > Plugins`から追加する。hook・local MCPはホストの対応、uvとネットワーク、組織の許可がそろう場合に使える |
-| DesktopのCode・ローカルClaude Code | 前述の単体インストーラーを実行し、`/plugin`で導入状態を確認する。CLI・hook・MCPを使える |
-| Claude Codeクラウド | 後述「Claude Codeクラウドの環境設定」の2欄を保存する |
+使う環境と対応機能は[READMEの対応ホストと機能](../../agent-toolkit/README.md#対応ホストと機能)を参照。
+ここではマーケットプレイス・ZIPからの追加とクラウドの詳細設定を扱う。
 
 マーケットプレイスを追加する場合は、`Customize > Plugins > Add > Add marketplace`で`Add from a repository`を選び、`ak110/dotfiles`を入力して`agent-toolkit`を`Add`する。
 同期範囲と組織による制限は[Claudeのプラグイン利用手順](https://support.claude.com/en/articles/13837440-use-plugins-in-claude)を参照。
@@ -122,12 +73,7 @@ setupの制限時間とネットワーク設定は[クラウド環境の設定](
 
 ## 設定確認
 
-次のコマンドで導入結果を確認できる。
-
-```bash
-codex plugin list
-claude plugin list
-```
+初回の確認コマンドと期待結果は[READMEの導入確認](../../agent-toolkit/README.md#導入確認)を参照。
 
 委譲先（エージェントが作業を任せた別のエージェント）の状態は次のコマンドで確認する。
 
@@ -577,38 +523,21 @@ atk config set serve_sessions_remote_hosts '["remote-host"]'
 
 ## atkコマンドのPATH設定
 
-インストーラーは`~/.local/bin/atk`（Windowsでは`~/.local/bin/atk.cmd`）に、導入済みの最新版を呼び出すラッパーを配置する。
-`~/.local/bin`がPATHに含まれていない場合は警告が表示されるため、PATHへ追加する。
-dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/scripts`がPATHへ追加されるため、この設定は不要である。
+インストーラーで導入するユーザーは[READMEの導入](../../agent-toolkit/README.md#導入)を参照。
+dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/scripts`がPATHへ追加される。
 
 ## 構成と機能
 
 ### 常時有効な仕組み
 
-ルールファイルは自動で読み込まれ、行動原則、運用方針、言語表現、検証とコミットの流れを提供する。
-プラグインはpyfltrのMCPサーバーを同梱し、lint・テスト・横断検索・横断置換をシェルを経由せずに実行できる（pyfltr自体の事前インストールは不要）。
-
-常時有効なフックは、主に次の働きをする。
-
-- 元へ戻せない操作や明らかな誤りを、実行前に警告または遮断する
-- 英語主体の最終応答や空の完了報告を検出し、日本語での書き直しや報告を求める
-- セッションの開始時と会話圧縮の後に、エージェントへ必要な規範を追加する
-- ツールの確認ダイアログを自動で許可し、許可した要求をログへ残す（Claude Codeのみ）
-
-警告や遮断が表示された場合は、本文に示された次の操作に従う。
-各フックの判定条件とCodexでの対応範囲は[design-hooks.md](../development/design-hooks.md#フックごとの処理とcodexの対応範囲)を参照。
-Codexでフックを信頼する操作は[Codex利用ガイド](codex-guide.md#フックの信頼確認)を参照。
+規範・フック・MCPの役割は[READMEの構成と機能](../../agent-toolkit/README.md#構成と機能)を参照。
+各フックの判定条件とCodexでの対応範囲は[design-hooks.md](../development/design-hooks.md#フックごとの処理とcodexの対応範囲)、Codexでの信頼操作は[Codex利用ガイド](codex-guide.md#フックの信頼確認)を参照。
 
 ### 手動で起動する主なスキル
 
-スキルの多くは、該当する作業に着手した時点でエージェントが自動で起動する。
-ユーザーが手動で起動する主なスキルは次のとおりである（Claude Codeでは`/`、Codexでは`$`を付けて起動する）。
+最初に使う登録・処理の操作は[READMEの最初の操作](../../agent-toolkit/README.md#最初の操作)、運用ごとの例は[推奨ワークフロー](#推奨ワークフロー)を参照。
+Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 
-- `agent-toolkit:add-awi-by-user`: 要件を対話で確定し、AWIまたはUWIを登録する
-  - 要求や参考資料を渡すと、必要な目的・範囲を確認して具体化し、意味の検収を経て登録する
-- `agent-toolkit:process-wi`: 対象リポジトリのAWIをレーンへ分けて計画・実装・レビュー・公開する
-- `agent-toolkit:process-wi single-lane`: AWIをレーンへ分けずに1回の起動でまとめて処理する
-- `agent-toolkit:process-wi all-repos`: `process_loop_repositories`の登録全体を1回処理する
 - `agent-toolkit:review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。引数で着眼点を追加できる
 - `agent-toolkit:review-session batch`: 振り返り待ちのセッションをまとめて分析する。既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
 - `agent-toolkit:export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
@@ -616,12 +545,9 @@ Codexでフックを信頼する操作は[Codex利用ガイド](codex-guide.md#�
 
 ## 更新と削除
 
-ルールファイル・プラグインとも頻繁に更新されるため、定期的に最新化する。
-「ツールキットのインストール」のワンライナーを再実行すると更新される。
-dotfiles（chezmoi）管理下のマシンでは`chezmoi apply`でも更新できる。
-実行中のセッションは更新前の版を使い続けるため、新しい版は新しいセッションから使う。
-
-アンインストール時は、Claude CodeとCodexのagent-toolkitプラグインを除去し、`~/.claude/rules/agent-toolkit/`と`~/.local/bin`の`atk`ラッパーを削除する。
+一般の更新・削除は[READMEの更新と削除](../../agent-toolkit/README.md#更新と削除)を参照。
+dotfiles管理下のマシンでは`chezmoi apply`でも更新できる。
+ここでは既存環境の移行時に必要な補足を扱う。
 
 過去の手順で登録したUser scopeのMCP定義`codex`（`codex mcp-server`）は、インストーラーと`chezmoi apply`が自動で除去する。
 自動で除去できなかった場合は、次のコマンドで定義を確認し、旧`codex mcp-server`定義だけを削除する。
@@ -636,4 +562,4 @@ Codex単独セッションとdotfiles固有の配布内容については[Codex�
 
 ## 品質基準だけを導入する
 
-`agent-basics`はコード・設計・テスト・レビュー・文章の品質スキルを提供する。単独導入と利用時の起動条件は[agent-basicsの導入案内](../../agent-basics/README.md)を参照する。agent-toolkitはWI・委譲・承認・完了報告を担当し、品質基準としてagent-basicsへ依存する。Claude Codeはその依存を自動導入し、Codexは2件を明示的に導入する。dotfilesの更新処理は両方を同期する。
+品質スキルの単独導入と適用条件は[agent-basicsのREADME](../../agent-basics/README.md)を参照。

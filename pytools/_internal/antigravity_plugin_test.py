@@ -43,6 +43,8 @@ def _source(tmp_path: Path) -> Path:
         "scripts/launch.py": "# MCP入口。\n",
         "pyproject.toml": "[project]\nname = 'fixture'\nversion = '1.2.3'\n",
         "uv.lock": "version = 1\n",
+        "README.md": "# toolkit\n\n[ライセンス](LICENSE)\n",
+        "LICENSE": "MIT toolkit\n",
     }
     for relative, content in files.items():
         path = root / "agent-toolkit" / relative
@@ -64,6 +66,8 @@ def _source(tmp_path: Path) -> Path:
         "---\nname: bugfix\ndescription: 品質の問題を直す\n---\n" + "品質基準の全文を保持する。\n" * 1000,
     )
     (basics / "skills/bugfix/references/reason.md").write_text("判断の根拠。\n")
+    (basics / "README.md").write_text("# basics\n\n[ライセンス](LICENSE)\n", encoding="utf-8")
+    (basics / "LICENSE").write_text("MIT basics\n", encoding="utf-8")
     return root
 
 
@@ -228,6 +232,20 @@ def test_basics_standalone_keeps_full_body_and_namespace(source: Path) -> None:
     assert not (target / "mcp_config.json").exists()
     assert not subject.check_diagnostics(source, "agent-basics")
     assert not subject.sync(source, "agent-basics")
+
+
+@pytest.mark.parametrize("plugin_name", ["agent-toolkit", "agent-basics"])
+def test_sync_includes_readme_and_license(source: Path, plugin_name: str) -> None:
+    """原本の導入文書とライセンスを同梱し、再同期で更新を反映する。"""
+    subject.sync(source, plugin_name)
+    target = source / subject.plugin_directory(plugin_name)
+    for name in ("README.md", "LICENSE"):
+        original = source / plugin_name / name
+        assert (target / name).read_bytes() == original.read_bytes()
+        original.write_text(f"更新した{plugin_name}の{name}\n", encoding="utf-8")
+    assert subject.sync(source, plugin_name)
+    for name in ("README.md", "LICENSE"):
+        assert (target / name).read_bytes() == (source / plugin_name / name).read_bytes()
 
 
 def test_registration_upgrades_managed_entry_and_preserves_preferences(source: Path, tmp_path: Path, monkeypatch) -> None:
