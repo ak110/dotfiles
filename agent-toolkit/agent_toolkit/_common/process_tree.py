@@ -379,14 +379,9 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
         if isinstance(ppid, int):
             entries.append((process, ppid))
     holders = {process.pid: process for process, _ in entries}
-    parent_pids = {ppid for _, ppid in entries}
 
     created: dict[int, float] = {}
     for parent in parents:
-        # 子のない終了済みleafには、辿る親子関係も保持すべき親世代もない。
-        # 回収後の再列挙でそのhandle取得失敗まで未確定とすると、正常な終了が失敗になる。
-        if parent.pid not in parent_pids:
-            continue
         with contextlib.suppress(psutil.Error, OSError):
             if retain(parent):
                 created[parent.pid] = parent.create_time()
@@ -409,7 +404,8 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
                 continue
             created[process.pid] = child_created
             found.append(process)
-            if process.pid in parent_pids and retain(process):
+            # 今はleafでも、次の列挙までに子を起動して終了し得るため、発見時から世代を保持する。
+            if retain(process):
                 next_pending.add(process.pid)
         pending = next_pending
     return found

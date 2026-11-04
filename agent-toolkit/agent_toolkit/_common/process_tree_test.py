@@ -27,8 +27,8 @@ _CHILD_SOURCE = "import time; time.sleep(120)"
 
 
 @pytest.mark.parametrize("has_descendant", [False, True], ids=["exited-leaf", "unretained-parent"])
-def test_stop_tree_requires_parent_generation_only_for_existing_child_edges(monkeypatch, has_descendant):
-    """終了済みleafは回収済みとし、子がある親の世代保持失敗は未確定として残す。"""
+def test_stop_tree_keeps_unretained_generation_unresolved(monkeypatch, has_descendant):
+    """世代を保持できない親は、snapshotの子の有無にかかわらず未確定として残す。"""
     root, leaf, descendant = (
         mock.Mock(pid=900001),
         mock.Mock(pid=900002, info={"ppid": 900001}),
@@ -46,9 +46,55 @@ def test_stop_tree_requires_parent_generation_only_for_existing_child_edges(monk
     result = process_tree.stop_tree(root, pins=pins, timeout=0)
     assert {process.pid for process in result.targets} == {root.pid, leaf.pid}
     assert not result.residual
-    assert bool(result.unresolved) is has_descendant
+    assert result.unresolved
     descendant.suspend.assert_not_called()
     descendant.kill.assert_not_called()
+
+
+def test_stop_tree_retains_leaf_before_it_spawns_and_exits(monkeypatch):
+    """初回列挙の直後に子を生成して終了するleafも、保持した世代から子を回収する。"""
+    root = mock.Mock(pid=900001)
+    spawner = mock.Mock(pid=900002, info={"ppid": root.pid})
+    holder = mock.Mock(pid=900003, info={"ppid": spawner.pid})
+    for number, process in enumerate((root, spawner, holder), 1):
+        process.create_time.return_value = float(number)
+        process.is_running.return_value = True
+        process.status.return_value = psutil.STATUS_RUNNING
+        process.cmdline.return_value = ["owned"]
+
+        def kill(target=process, **_kwargs):
+            target.is_running.return_value = False
+
+        process.kill.side_effect = kill
+    held: set[int] = set()
+    before_spawn: list[int] = []
+    entries = [spawner]
+    pins = mock.Mock()
+
+    def retain(process, **_kwargs):
+        if process.is_running():
+            held.add(process.pid)
+        return process.pid in held
+
+    pins.retain.side_effect = retain
+    original = process_tree._scan_descendants  # pylint: disable=protected-access
+
+    def scan(parents, **kwargs):
+        found = original(parents, **kwargs)
+        if not before_spawn:
+            before_spawn.extend(sorted(held))
+            entries.append(holder)
+            spawner.is_running.return_value = False
+        return found
+
+    monkeypatch.setattr(process_tree, "_scan_descendants", scan)
+    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter(entries))
+    monkeypatch.setattr(sys, "platform", "win32")
+    result = process_tree.stop_tree(root, pins=pins, timeout=0)
+    assert before_spawn == [root.pid, spawner.pid]
+    assert {process.pid for process in result.targets} == {root.pid, spawner.pid, holder.pid}
+    assert not result.residual and not result.unresolved
+    assert not holder.is_running()
 
 
 def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypatch):

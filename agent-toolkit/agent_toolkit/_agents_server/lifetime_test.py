@@ -74,7 +74,7 @@ def test_collected_windows_parent_is_pinned_before_it_exits(monkeypatch):
         if pins is not None:
             pins.close()
         os.close(monitor._stdin_fd)  # pylint: disable=protected-access
-    assert sorted(call.args[0] for call in kernel.CloseHandle.call_args_list) == sorted((root.pid, parent.pid))
+    assert sorted(call.args[0] for call in kernel.CloseHandle.call_args_list) == sorted((root.pid, parent.pid, child.pid))
 
 
 def _holds_resources(process: psutil.Process) -> bool:
