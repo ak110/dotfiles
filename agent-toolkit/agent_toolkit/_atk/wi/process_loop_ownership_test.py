@@ -39,7 +39,7 @@ def test_dedicated_and_all_repos(tmp_path: pathlib.Path) -> None:
 
 
 def test_all_repos_resume_preserves_lane_owner(tmp_path: pathlib.Path) -> None:
-    """異常終了した担当の会話とレーン所有を継続し、通常会話は混同しない。"""
+    """元の集合とレーン所有を継続し、台帳に無い会話も明示resumeの対象にする。"""
     repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
     first = ownership.try_acquire("example.test/team/repo", worktree=repo, mode="coordinator")
     assert first is not None
@@ -49,8 +49,7 @@ def test_all_repos_resume_preserves_lane_owner(tmp_path: pathlib.Path) -> None:
     resumed = ownership.try_acquire(first.repo_id, worktree=repo, mode="coordinator")
     assert resumed is not None
     assert resumed.lane_session_id == first.lane_session_id
-    with pytest.raises(ValueError, match="統括"):
-        ownership.resume_repositories("ordinary-session", (first.repo_id,))
+    assert ownership.resume_repositories("ordinary-session", (first.repo_id,)) == {first.repo_id}
     ownership.release(resumed)
 
 

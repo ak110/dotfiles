@@ -2,7 +2,6 @@
 
 import argparse
 import concurrent.futures
-import dataclasses
 import json
 import os
 import pathlib
@@ -31,47 +30,31 @@ from agent_toolkit._common import mcp_environment
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._git import command as _git_command
 
 
-@dataclasses.dataclass(frozen=True)
-class _Progress:
-    items: frozenset[tuple[str, str]]
-    lanes: frozenset[tuple[str, bool, str]]
-
-    def unfinished(self, candidates: set[str]) -> dict[str, list[str]]:
-        return {
-            "wi": sorted(
-                name for name, kind in self.items if name in candidates or kind not in {"ready", "internal-dependency-wait"}
-            ),
-            "lanes": sorted(name for name, integrated, _head in self.lanes if not integrated),
-        }
-
-
-def _progress(snapshot: _listing.RepositorySnapshot, ownership: _ownership.Ownership) -> _Progress:
+def _remaining_work(
+    snapshot: _listing.RepositorySnapshot, ownership: _ownership.Ownership, candidates: set[str]
+) -> dict[str, list[str]]:
     current = _listing.configured_repo_snapshot(snapshot.private_notes, (snapshot.repository,))[0]
     resources = _lane.list_resources(ownership.lane_session_id)
     if resources["errors"]:
         raise ValueError(f"レーン登録を照会できない: {resources['errors']}")
-    lanes: set[tuple[str, bool, str]] = set()
+    lanes: set[str] = set()
     for entry in resources["records"]:
         record = entry["record"]
         integrated = record.get("integration", {}).get("phase") in {"git-integrated", "finalized"}
-        result = _git_command.run(
-            ["rev-parse", "--short", "--verify", f"refs/heads/{record['branch']}"],
-            pathlib.Path(record["repo"]),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode:
-            raise ValueError(f"レーンbranchのHEADを取得できない: {record['lane']}: {result.stderr.strip()}")
-        lanes.add((record["lane"], integrated, result.stdout.strip()))
+        if not integrated:
+            lanes.add(record["lane"])
     # 開始側と同じ候補・修復診断を使い、冷却・外部依存で延期したinboxを残件へ戻さない。
     items = {name: kind.rsplit(":", 1)[-1] for name, _digest, kind in _gate.repository_input(current, None).items}
     # 未回答UWIなど開始候補から外れる項目も、processingのままなら処理終了を待つ。
     items.update((path.name, "processing") for path, _repo, _text, state, _kind in current.entries if state == "processing")
-    return _Progress(frozenset(items.items()), frozenset(lanes))
+    return {
+        "wi": sorted(
+            name for name, kind in items.items() if name in candidates or kind not in {"ready", "internal-dependency-wait"}
+        ),
+        "lanes": sorted(lanes),
+    }
 
 
 def _report(event: str, ownership: _ownership.Ownership, detail: str) -> None:
@@ -82,7 +65,7 @@ def _report(event: str, ownership: _ownership.Ownership, detail: str) -> None:
 def _finish_repository(ownership: _ownership.Ownership, *, completed: bool) -> None:
     """続行の予定が無くなった担当の所有を解放し、その担当のレーン所有sessionの資源を回収する。
 
-    停止を確認できない担当と続行を配送する担当はここへ到達させない。回収の可否は`lane.cleanup_session`の
+    停止を確認した担当だけを対象とする。回収の可否は`lane.cleanup_session`の
     `_eligible`が判定する保持条件（未統合、使用中、未commitの変更など）が決め、未統合の資源は次の反復の再開（同じレーン所有session）へ残る。
     """
     _ownership.release(ownership, completed=completed)
@@ -123,7 +106,7 @@ def _record_no_progress(snapshot: _listing.RepositorySnapshot, start: _gate.Laun
 def _read_results(path: pathlib.Path, owners: dict[str, _ownership.Ownership]) -> dict[str, dict[str, Any]]:
     """担当が保存した対象別の返却を検証し、欠落を成功として扱わない。
 
-    今回の対象外の記載（同じ統括会話を継続したラウンドに残る前ラウンドの対象など）は記録して除き、
+    今回の対象外の記載（明示resumeで再利用した会話に残る前巡回の対象など）は記録して除き、
     今回の対象の検収を続ける。対象外の記載はどの所有の判定にも使われないため、常駐全体を止める理由にしない。
     """
     if not path.exists():
@@ -188,7 +171,7 @@ def _recover_completed(
     if record.get("status") != "completed":
         return None
     candidates = json.loads(pathlib.Path(target["candidate_file"]).read_text(encoding="utf-8"))
-    if any(_progress(snapshot, owner).unfinished({item["filename"] for item in candidates}).values()):
+    if any(_remaining_work(snapshot, owner, {item["filename"] for item in candidates}).values()):
         return None
     if not _writers_stopped(owner, writers=record.get("writer_sessions", [])):
         return None
@@ -201,12 +184,10 @@ def run_coordinator(
     *,
     launch_inputs: dict[str, _gate.LaunchInput] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """常駐cwdで1つの統括会話を実行し、対象別の成果を検収して同じ会話を継続する。"""
+    """常駐cwdで1つの統括会話を実行し、対象別の成果を検収して巡回を終える。"""
     owners: dict[str, _ownership.Ownership] = {}
     targets: dict[str, dict[str, Any]] = {}
     results: dict[str, dict[str, Any]] = {}
-    progress: dict[str, _Progress] = {}
-    unchanged: dict[str, int] = {}
     by_repo = {snapshot.repository.repo_id: snapshot for snapshot in snapshots}
     cwd = pathlib.Path.cwd().resolve()
     env = _env.child_env()
@@ -276,112 +257,96 @@ def run_coordinator(
         if not owners:
             return results
         instruction = _log.consume_instructions()
-        while owners:
-            atomic_write(
-                manifest,
-                json.dumps(
-                    {
-                        "repositories": list(targets.values()),
-                        "result_file": str(result_path),
-                        "instruction": instruction,
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n",
-            )
-            result_path.unlink(missing_ok=True)
-            prompt = _session.build_process_loop_prompt()
-            engine, model, effort, codex_provider = _session.select_available_orchestrator(
-                _session.resolve_orchestrator_specs(),
-                env,
-                cwd,
-                resume_session_id=resume,
-            )
-            env[mcp_environment.SESSION_START_INPUT_ENV] = json.dumps(
-                {"source": "process-loop", "skill": "agent-toolkit:process-wi", "mode": "all-repos", "manifest": str(manifest)},
+        atomic_write(
+            manifest,
+            json.dumps(
+                {
+                    "repositories": list(targets.values()),
+                    "result_file": str(result_path),
+                    "instruction": instruction,
+                },
                 ensure_ascii=False,
             )
-            session_args = argparse.Namespace(**vars(args))
-            session_args.resume = resume
+            + "\n",
+        )
+        result_path.unlink(missing_ok=True)
+        prompt = _session.build_process_loop_prompt()
+        engine, model, effort, codex_provider = _session.select_available_orchestrator(
+            _session.resolve_orchestrator_specs(),
+            env,
+            cwd,
+            resume_session_id=resume,
+        )
+        env[mcp_environment.SESSION_START_INPUT_ENV] = json.dumps(
+            {"source": "process-loop", "skill": "agent-toolkit:process-wi", "mode": "all-repos", "manifest": str(manifest)},
+            ensure_ascii=False,
+        )
+        session_args = argparse.Namespace(**vars(args))
+        session_args.resume = resume
 
-            def started(identifier: str) -> None:
-                for repo_id, owner in tuple(owners.items()):
-                    owners[repo_id] = _ownership.update_session(owner, identifier)
-
-            def process_started(process: _registry.ProcessIdentity) -> None:
-                for owner in owners.values():
-                    _ownership.update_process(owner, process)
-
-            execution = _session.run_process_session(
-                session_args,
-                cwd,
-                prompt,
-                env,
-                orchestrator=engine,
-                model=model,
-                effort=effort,
-                resume_pending=resume is not None,
-                on_session_started=started,
-                on_process_started=process_started,
-                codex_provider=codex_provider,
-            )
-            identifier = env.get(_env.PROCESS_LOOP_SESSION_ID_ENV)
-            if identifier:
-                started(identifier)
-                resume = identifier
-            returned = _read_results(result_path, owners)
+        def started(identifier: str) -> None:
             for repo_id, owner in tuple(owners.items()):
-                record = returned.get(repo_id, {})
-                writers = record.get("writer_sessions", [])
-                other_writers = {
-                    writer
-                    for other, result in returned.items()
-                    if other != repo_id
-                    for writer in result.get("writer_sessions", [])
-                }
-                observed = _progress(by_repo[repo_id], owner)
-                candidate_records = json.loads(pathlib.Path(targets[repo_id]["candidate_file"]).read_text(encoding="utf-8"))
-                candidate_names = {record["filename"] for record in candidate_records}
-                remaining = observed.unfinished(candidate_names)
-                observed = dataclasses.replace(
-                    observed, items=frozenset((name, kind) for name, kind in observed.items if name in remaining["wi"])
+                owners[repo_id] = _ownership.update_session(owner, identifier)
+
+        def process_started(process: _registry.ProcessIdentity) -> None:
+            for owner in owners.values():
+                _ownership.update_process(owner, process)
+
+        execution = _session.run_process_session(
+            session_args,
+            cwd,
+            prompt,
+            env,
+            orchestrator=engine,
+            model=model,
+            effort=effort,
+            resume_pending=resume is not None,
+            on_session_started=started,
+            on_process_started=process_started,
+            codex_provider=codex_provider,
+        )
+        identifier = env.get(_env.PROCESS_LOOP_SESSION_ID_ENV)
+        if identifier:
+            started(identifier)
+            resume = identifier
+        returned = _read_results(result_path, owners)
+        for repo_id, owner in tuple(owners.items()):
+            record = returned.get(repo_id, {})
+            writers = record.get("writer_sessions", [])
+            other_writers = {
+                writer for other, result in returned.items() if other != repo_id for writer in result.get("writer_sessions", [])
+            }
+            candidate_records = json.loads(pathlib.Path(targets[repo_id]["candidate_file"]).read_text(encoding="utf-8"))
+            candidate_names = {record["filename"] for record in candidate_records}
+            remaining = _remaining_work(by_repo[repo_id], owner, candidate_names)
+            completed = execution and record.get("status") == "completed" and not any(remaining.values())
+            blocked = record.get("status") == "blocked"
+            saved_result = manifest.with_name(f"{manifest.stem}.{owner.token}.result.json")
+            results[repo_id] = {
+                **record,
+                "status": "completed" if completed else "blocked" if blocked else "incomplete",
+                "observed_remaining": remaining,
+                "result_path": str(saved_result),
+                "session_id": resume,
+            }
+            stopped = _writers_stopped(owner, writers=writers, other_writers=other_writers)
+            if stopped:
+                _finish_repository(owner, completed=bool(completed))
+            else:
+                _ownership.hold(owner)
+                results[repo_id]["status"] = "owner_wait"
+            if blocked:
+                target = targets[repo_id]
+                initial = _gate.LaunchInput(
+                    frozenset((name, digest, kind) for name, digest, kind in target["launch_items"]),
+                    frozenset(target["launch_alerts"]) if target["launch_alerts"] is not None else None,
                 )
-                completed = execution and record.get("status") == "completed" and not any(remaining.values())
-                blocked = record.get("status") == "blocked"
-                unchanged[repo_id] = unchanged.get(repo_id, 0) + 1 if progress.get(repo_id) == observed else 0
-                progress[repo_id] = observed
-                abandoned = unchanged.get(repo_id, 0) >= 2
-                saved_result = manifest.with_name(f"{manifest.stem}.{owner.token}.result.json")
-                results[repo_id] = {
-                    **record,
-                    "status": "completed" if completed else "blocked" if blocked else "incomplete",
-                    "observed_remaining": remaining,
-                    "result_path": str(saved_result),
-                    "session_id": resume,
-                }
-                stopped = _writers_stopped(owner, writers=writers, other_writers=other_writers)
-                if not stopped or not execution or completed or blocked or abandoned:
-                    if stopped:
-                        _finish_repository(owner, completed=bool(completed))
-                    else:
-                        _ownership.hold(owner)
-                        results[repo_id]["status"] = "owner_wait"
-                    if blocked or abandoned:
-                        target = targets[repo_id]
-                        initial = _gate.LaunchInput(
-                            frozenset((name, digest, kind) for name, digest, kind in target["launch_items"]),
-                            frozenset(target["launch_alerts"]) if target["launch_alerts"] is not None else None,
-                        )
-                        _record_no_progress(by_repo[repo_id], initial)
-                    owners.pop(repo_id)
-                    targets.pop(repo_id)
-                atomic_write(saved_result, json.dumps(results[repo_id], ensure_ascii=False) + "\n")
-            instruction = "残る対象の未完了工程を再開する。完了済み対象へ再着手しない。"
-            if _control.consume_process_loop_abort():
-                results["abort"] = {"status": "aborted"}
-                break
-            if owners and resume is None:
-                raise ValueError("統括session IDを取得できないため続行しなかった。セッション記録を確認する")
+                _record_no_progress(by_repo[repo_id], initial)
+            owners.pop(repo_id)
+            targets.pop(repo_id)
+            atomic_write(saved_result, json.dumps(results[repo_id], ensure_ascii=False) + "\n")
+        if _control.consume_process_loop_abort():
+            results["abort"] = {"status": "aborted"}
         return results
     finally:
         for owner in owners.values():

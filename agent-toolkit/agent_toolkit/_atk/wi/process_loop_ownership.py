@@ -191,11 +191,8 @@ def coordinator_session(repo_id: str) -> str | None:
 
 
 def resume_repositories(session_id: str, repositories: tuple[str, ...]) -> set[str]:
-    """指定した統括会話に属する登録済みの未完了集合を返す。"""
-    result = {repo for repo in repositories if coordinator_session(repo) == session_id}
-    if not result:
-        raise ValueError(f"登録集合の統括会話として再開できないsession: {session_id}")
-    return result
+    """台帳に元集合があれば再利用し、無ければ現在の登録集合で明示resumeする。"""
+    return {repo for repo in repositories if coordinator_session(repo) == session_id} or set(repositories)
 
 
 def update_prepared(ownership: Ownership, worktree: pathlib.Path, manifest: pathlib.Path) -> None:
