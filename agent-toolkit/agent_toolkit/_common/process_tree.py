@@ -347,6 +347,12 @@ def _retain_windows_process(process: psutil.Process) -> Generator[bool]:
     handle = kernel.OpenProcess(0x1000, False, process.pid)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
         error = ctypes.get_last_error()
+        _LOG.warning(
+            "Windows親世代保持診断: reason=open-process error=%s observed=%s current=%s",
+            error,
+            _key(process),
+            identity(process.pid),
+        )
         if error == 87:  # ERROR_INVALID_PARAMETER: 既に消滅している。
             yield False
             return
@@ -356,12 +362,23 @@ def _retain_windows_process(process: psutil.Process) -> Generator[bool]:
         if not kernel.GetProcessTimes(
             handle, ctypes.byref(created), ctypes.byref(exited), ctypes.byref(kernel_time), ctypes.byref(user_time)
         ):
-            raise ctypes.WinError(ctypes.get_last_error())
+            error = ctypes.get_last_error()
+            _LOG.warning("Windows親世代保持診断: reason=process-times error=%s observed=%s", error, _key(process))
+            raise ctypes.WinError(error)
         # is_running()は終了済みの同世代もFalseにする。handle自身の作成時刻を観測済みの値と比べる。
         # psutilのcreate_timeと丸めを揃え、1601→1970の差を整数で引いてから秒へ変換する。
         ticks = (created.dwHighDateTime << 32) | created.dwLowDateTime
         handle_created_at = float(ticks - 116444736000000000) / 10000000
-        yield handle_created_at == process.create_time()
+        observed_created_at = process.create_time()
+        same_generation = handle_created_at == observed_created_at
+        if not same_generation:
+            _LOG.warning(
+                "Windows親世代保持診断: reason=creation-time observed=%s handle_created_at=%r current=%s",
+                (process.pid, observed_created_at),
+                handle_created_at,
+                identity(process.pid),
+            )
+        yield same_generation
     finally:
         kernel.CloseHandle(handle)
 
@@ -380,10 +397,28 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
             entries.append((process, ppid))
     holders = {process.pid: process for process, _ in entries}
 
+    def retain_parent(process: psutil.Process, stage: str) -> bool:
+        retained = retain(process)
+        if not retained and sys.platform == "win32":
+            # 保持失敗時の親子関係を同じsnapshotから記録し、消滅と世代不一致を判別する。
+            _LOG.warning(
+                "Windows親世代保持診断: stage=%s observed=%s current=%s snapshot_present=%s snapshot_children=%s",
+                stage,
+                _key(process),
+                identity(process.pid),
+                process.pid in holders,
+                [
+                    {"pid": child.pid, "snapshot_ppid": ppid, "observed": _key(child), "current": identity(child.pid)}
+                    for child, ppid in entries
+                    if ppid == process.pid
+                ],
+            )
+        return retained
+
     created: dict[int, float] = {}
     for parent in parents:
         with contextlib.suppress(psutil.Error, OSError):
-            if retain(parent):
+            if retain_parent(parent, "known"):
                 created[parent.pid] = parent.create_time()
     found: list[psutil.Process] = []
     pending = set(created)
@@ -405,7 +440,7 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
             created[process.pid] = child_created
             found.append(process)
             # 今はleafでも、次の列挙までに子を起動して終了し得るため、発見時から世代を保持する。
-            if retain(process):
+            if retain_parent(process, "discovered"):
                 next_pending.add(process.pid)
         pending = next_pending
     return found

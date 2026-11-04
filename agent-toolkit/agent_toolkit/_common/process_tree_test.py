@@ -120,7 +120,7 @@ def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypat
 @pytest.mark.parametrize(
     ("same_generation", "handle", "running"), [(False, 0, False), (False, 123, False), (True, 123, True), (True, 123, False)]
 )
-def test_windows_parent_handle_is_checked_and_closed(monkeypatch, same_generation, handle, running):
+def test_windows_parent_handle_is_checked_and_closed(monkeypatch, caplog, same_generation, handle, running):
     """handle取得後に同じ親か確認し、列挙の例外時にもhandleを閉じる。"""
     kernel = mock.Mock()
     kernel.OpenProcess.return_value = handle
@@ -145,10 +145,35 @@ def test_windows_parent_handle_is_checked_and_closed(monkeypatch, same_generatio
         kernel.CloseHandle.assert_not_called()
         raise RuntimeError("列挙失敗")
     kernel.OpenProcess.assert_called_once_with(0x1000, False, process.pid)
+    if not handle:
+        assert "reason=open-process error=87" in caplog.text
+    elif not same_generation:
+        assert "reason=creation-time" in caplog.text
+        assert "handle_created_at=2.0" in caplog.text
+    else:
+        assert "Windows親世代保持診断" not in caplog.text
     if handle:
         kernel.CloseHandle.assert_called_once_with(handle)
     else:
         kernel.CloseHandle.assert_not_called()
+
+
+def test_windows_retention_diagnostic_keeps_snapshot_children(monkeypatch, caplog):
+    """保持失敗の対象とその子だけを、同じ列挙時点の識別情報で診断する。"""
+    parent = mock.Mock(pid=900001)
+    parent.create_time.return_value = 1.0
+    child = mock.Mock(pid=900002, info={"ppid": parent.pid})
+    child.create_time.return_value = 2.0
+    unrelated = mock.Mock(pid=900003, info={"ppid": 0})
+    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter([child, unrelated]))
+    monkeypatch.setattr(process_tree, "identity", lambda pid, **_kwargs: {"pid": pid, "status": "observed"})
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert not process_tree._scan_descendants([parent], retain=lambda _process: False)  # pylint: disable=protected-access
+    assert "stage=known" in caplog.text
+    assert "snapshot_present=False" in caplog.text
+    assert "'snapshot_ppid': 900001" in caplog.text
+    assert "900002" in caplog.text
+    assert "900003" not in caplog.text
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="終了済み親のWindows kernel handleを検証する")
