@@ -101,13 +101,28 @@ def _detect_self_containment_deficiency(message: str) -> str | None:
     return None
 
 
+def strip_unanswered_uwi_wrapper(body: str) -> str:
+    """保存形式の先頭質問見出しと、末尾の未回答欄だけを取り除く。"""
+    leading = re.match(r"\A(?:[^\S\n]*\n)*" + re.escape(QUESTION_HEADING) + r"(?:\n|\Z)(?:[^\S\n]*\n)*", body)
+    if leading is not None:
+        body = body[leading.end() :]
+    trailing = re.search(
+        r"^" + re.escape(ANSWER_HEADING) + r"(?:\n[^\S\n]*)*(?:\n" + re.escape(ANSWER_MARKER) + r"(?:\n[^\S\n]*)*)?\Z",
+        body,
+        flags=re.MULTILINE,
+    )
+    if trailing is not None:
+        body = body[: trailing.start()].rstrip("\n")
+    return body
+
+
 def reject_reserved_uwi_markup(body: str) -> None:
     """UWI本文がツール側で自動付与する要素を含む場合に`WebInputError`を送出する。
 
     確認する対象は回答欄マーカーと、行頭に現れる質問見出し・回答見出しとする。
-    投入側が本文へ同じ要素を書くと`add_entries`が確認せず連結し二重生成となるため、
-    拒否とする。非ブロッキングの警告は無視された実績がある（既存の`warn_question_quality`）。
-    CLIとWeb UIの双方が`add_entries`を経由するため、この1箇所で確認すれば両方を対象にできる。
+    `parse_entry_message`が保存形式の未回答外枠を取り除いた後に適用する。
+    回答の記入がある欄、本文途中の予約見出し、外枠以外のマーカーは、
+    回答の混入と見出しの二重生成を防ぐため拒否する。
     """
     violations: list[str] = []
     if ANSWER_MARKER in body:

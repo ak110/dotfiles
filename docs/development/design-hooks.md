@@ -669,12 +669,14 @@ CodexのPostToolUseは`persistedOutputPath`を持たず（出力は切り詰め�
 
 `compact_conversation`はClaude Codeのメインへ引数なしの会話圧縮予約を提供する。
 `register.ts`がメイン専用の登録と委譲先の判定を「send_to_userツール」と共有し、同じ判定を自動経路にも渡す。Codexにはこのmodを配らない。
-`compact_conversation.ts`は受付と完了を分け、turn間の単発タイマーから公開APIの`session.compact()`を呼ぶ。
+`compact_conversation.ts`は受付と完了を分け、turn間の単発タイマーから圧縮を実行する。
+surfaceを持つ会話では公開APIの`session.compact()`、headlessでは公開`command.run`の`compact`を使う。
 turn実行中の予約はturn完了へ持ち越す。成功・skip・失敗を分け、skipと失敗は予約を解除し、追加LLM turnを発生させないtoastで通知する。
-現在会話の背景Bashタスクが60秒以上続き、使用量が400,000トークンと文脈上限の40%の大きい方以上なら同じ予約へ自動接続する。
+現在会話の背景Bashタスクを検出し、使用量が400,000トークンと文脈上限の40%の大きい方以上なら同じ予約へ自動接続する。
+予約の判定はturn実行中も行い、実行前に完了通知が到着しても、受け付けた予約をturn間まで保持する。
 上限の小さいモデルでも400,000トークン未満では自動圧縮しない。
 `atk agents wait`の所有と待機対象は、`wait-compaction-context`が既存の状態と待機登録から確認する。起動区分による除外は行わず、CI監視などほかの背景Bashも対象とする。
-見送り条件と予約は`ui.log`のdebug出力へ記録し、使用量不明・閾値未満・所有未確認・turn実行中を区別する。
+見送り条件と予約は`ui.log`のdebug出力へ記録し、使用量不明・閾値未満・所有未確認・予約済みを区別する。
 同じ待機では1回までとし、高利用率が続く間の再圧縮を抑止する。閾値未満を観測した後の新作業で再開できる。
 完了通知で待機を除き、turnと単発タイマーで判定する。永続予約・継続ポーリング・追加のモデル呼出しによる判定は設けない。
 圧縮の実装と結果はホスト、予約と自動発動条件はmodが持つ。状態保存と通知後の復元はdelegationのwaiting-and-monitoring.mdが所有する。
@@ -684,7 +686,7 @@ turn実行中の予約はturn完了へ持ち越す。成功・skip・失敗を�
 
 公開`session.compact`の主会話を処理するときは、会話IDから一意に解決した原本ログの所在を返し、要約モデルの呼出しを省く。
 原本の解決を別の同期台帳へ保存せず、既存のsession記録解決を使う。未解決・例外・agentId付きでは標準の処理を保ち、precomputeは先行要約を見送る。
-同じpluginが`session.compact()`を予約した経路では、自身の置換hookが再入除外されるため標準の要約生成になる。追加pluginで再入を回避する案は配布構成と導入負担を増やすため採らず、公開APIの対応を待つ。
+同じpluginが`session.compact()`を予約した経路では、自身の置換hookが再入除外されるため標準の要約生成になる。headlessの`compact`コマンドはホスト側の圧縮として原本置換hookを適用する。追加pluginで再入を回避する案は配布構成と導入負担を増やすため採らない。
 SDKの委譲先はターン間の同APIが未対応なので、所有backendが公開`/compact`入力を配送する。Codexの独立圧縮turnと合わせ、所有と結果保留の構造は[design-agents-server.md](design-agents-server.md#結果の保留と自動再開)が扱う。
 原本を使う復元は要約を生成するホストでも共通とし、目的・最新訂正・認可・未完了を発話順・主体・参照位置から確認する。
 実機の適用範囲と再検証はaudit-records.md「agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日」にある。

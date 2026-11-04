@@ -1453,7 +1453,7 @@ class TestEditBodyFile:
     @pytest.mark.parametrize(
         "message",
         [
-            f"変更後\n\n{uwi.ANSWER_HEADING}\n",
+            f"変更後\n\n{uwi.ANSWER_HEADING}\n記入済みの回答\n",
             f"変更後\n\n{uwi.ANSWER_MARKER}\n",
             "---\nquestion_type: invalid\n---\n\n変更後",
             "---\nquestion_type: choice\nchoices:\n---\n\n変更後",

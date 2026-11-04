@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 CODEX_HOME = Path.home() / ".codex"
 _TIMEOUT = 60.0
 _VERSION_PATTERN = re.compile(r"[A-Za-z0-9._+-]+\Z")
-_AUTO_RESTART_ENV = "DOTFILES_CODEX_DAEMON_AUTO_RESTART"
 # 自動更新タイマーを持たないホストで、延期した更新を反映する操作。
 _MANUAL_RETRY = "Codexのセッションを全て終了してから`update-dotfiles`を再実行してください。"
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
@@ -47,8 +46,7 @@ _CODEX_HOOK_TRUST_NOTICE = post_apply_outcome.PostApplyNotice(
         "その後、そのセッションを終了して新しいセッションを開始してください。"
         "セッションの開始時（SessionStart）に規範を読み込みます。"
         "新しいセッションでエージェントに「起動時にagent-toolkitの規範を受け取ったか確認して」と尋ねてください。"
-        "フックの永続的な信頼登録は手動です。daemon再起動は環境変数"
-        "DOTFILES_CODEX_DAEMON_AUTO_RESTART=1を設定してupdate-dotfilesを実行すると自動化できます。"
+        "フックの永続的な信頼登録は手動です。daemonは利用セッションが無ければ更新時に自動で再起動します。"
     ),
     command="/hooks",
 )
@@ -348,10 +346,10 @@ def _append_restart_notice_if_daemon_running(notices: list[post_apply_outcome.Po
 
 
 def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApplyNotice]) -> None:
-    """稼働中daemonへ、設定に応じた自動再起動または手動案内を適用する。"""
+    """利用セッションが無い稼働中daemonを再起動し、失敗時は手動操作を案内する。"""
     if not _command(["app-server", "daemon", "version"]):
         return
-    if os.environ.get(_AUTO_RESTART_ENV) != "1":
+    if _codex_processes_using_plugin():
         notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
         return
     result = common.run_subprocess(
@@ -437,13 +435,10 @@ def _codex_processes_using_plugin() -> tuple[str, ...]:
 
     `plugin remove`はhook・スキル・MCP実体を回収するため、参照するプロセスが1件でもあれば除去を延期する。
     参照の有無はホストの役割と無関係に、プロセスの役割だけで判定する。
-    daemon自動再起動の指定は管理daemonを更新後に再起動する許可であり、通常セッションと`agents_server`の
-    `codex app-server --stdio`が使う版を回収する許可を含まない。このため指定の下では管理daemonとその補助実行体を除き、
+    管理daemonとその補助実行体はセッション不在時に自動で再起動するため、
     `session`の役割（判定素材を取得できないプロセスを含む）だけを数える。
     """
-    if os.environ.get(_AUTO_RESTART_ENV) == "1":
-        return tuple(process.label for process in codex_processes.codex_processes() if process.role == "session")
-    return codex_processes.running_codex_processes()
+    return tuple(process.label for process in codex_processes.codex_processes() if process.role == "session")
 
 
 def _snapshot_plugin_caches(cache_root: Path, saved_root: Path) -> tuple[str, ...]:

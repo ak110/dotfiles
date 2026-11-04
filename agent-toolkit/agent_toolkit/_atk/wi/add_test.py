@@ -543,7 +543,10 @@ def test_add_dry_run_reports_all_reserved_uwi_markup(
     """UWI本文の予約要素を一度のdry-runで全て報告する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-    body = f"どちらの案を採用しますか？\n{uwi_module.ANSWER_MARKER}\n{uwi_module.QUESTION_HEADING}\n{uwi_module.ANSWER_HEADING}"
+    body = (
+        f"どちらの案を採用しますか？\n{uwi_module.ANSWER_MARKER}\n"
+        f"{uwi_module.QUESTION_HEADING}\n{uwi_module.ANSWER_HEADING}\n記入済みの回答"
+    )
     args = _cmd_add_args(tmp_path, body, entry_type=WI_TYPE_UWI, dry_run=True)
 
     with pytest.raises(SystemExit) as exc_info:

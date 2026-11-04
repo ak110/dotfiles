@@ -25,6 +25,9 @@ Windowsでは親の監視ループをCtrl+Cで終了できる。
 
 Codex向けプラグインは`update-dotfiles`または`chezmoi apply`で更新する。
 実行中のセッションは更新前の版を使い続けるため、更新後は新しいセッションで新版を使う。
+`chezmoi apply`によるagent-toolkitの追加・更新後は、利用セッションが無ければ稼働中のapp-server daemonを自動で再起動する。
+Linuxの`update-dotfiles`では、プラグインの変更有無によらず、適用前に管理daemonを一時停止し、適用後に起動状態を戻す。
+利用セッションがある場合は接続を保ち、daemonを停止・再起動しない。
 
 更新が延期または失敗した場合は、`update-dotfiles logs`で原因と次の操作を確認し、表示されたCodexを終了してから`update-dotfiles`を再実行する。
 
@@ -35,13 +38,6 @@ codex app-server daemon restart
 ```
 
 再起動が失敗した場合だけ、`codex app-server daemon start`でdaemonを起動する。
-
-更新時に接続を切断してよい場合は、daemonを自動で再起動できる。
-PowerShellでは`$env:DOTFILES_CODEX_DAEMON_AUTO_RESTART = "1"`を設定してから`update-dotfiles`を実行する。
-
-```bash
-DOTFILES_CODEX_DAEMON_AUTO_RESTART=1 update-dotfiles
-```
 
 ## フックの信頼確認
 
@@ -56,7 +52,7 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 `/hooks`はCodex内の操作であり、PowerShellやbashへ入力するコマンドではない。
 規範を読み込むSessionStartフックはセッション開始時に実行されるため、信頼した後にもう一度新しいセッションを開始する。
 永続的な信頼登録の公開手段は確認できていないため、この確認と信頼操作は手動で行う。
-daemonの再起動は前節の環境変数で自動化できる。
+daemonの自動再起動の条件は[プラグイン更新の反映](#プラグイン更新の反映)を参照。
 
 CodexのStopフックは説明言語だけを判定し、完了報告の起動忘れは通知しない。
 フックの判定内容とClaude Codeとの差は[design-hooks.md](../development/design-hooks.md#フックごとの処理とcodexの対応範囲)を参照。

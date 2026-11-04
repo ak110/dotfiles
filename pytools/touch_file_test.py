@@ -42,24 +42,6 @@ class TestTouchPath:
 
         assert _read_mtime(target) == new_time
 
-    def test_directory_recursive(self, tmp_path: pathlib.Path) -> None:
-        sub = tmp_path / "sub"
-        sub.mkdir()
-        (sub / "inner.txt").touch()
-        (tmp_path / "top.txt").touch()
-
-        old = datetime.datetime(2000, 1, 1)
-        for p in [tmp_path, sub, sub / "inner.txt", tmp_path / "top.txt"]:
-            _set_mtime(p, old)
-
-        new_time = datetime.datetime(2024, 6, 15, 12, 30, 45)
-        touch_file.touch_path(tmp_path, new_time)
-
-        assert _read_mtime(tmp_path) == new_time
-        assert _read_mtime(sub) == new_time
-        assert _read_mtime(sub / "inner.txt") == new_time
-        assert _read_mtime(tmp_path / "top.txt") == new_time
-
     def test_missing_path_logs_warning(self, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture) -> None:
         missing = tmp_path / "nope"
         with caplog.at_level("WARNING", logger=touch_file.logger.name):
@@ -125,7 +107,7 @@ class TestTouchPath:
         _set_mtime(target_file, old)
 
         new_time = datetime.datetime(2024, 6, 15, 12, 30, 45)
-        touch_file.touch_path(root, new_time)
+        touch_file.touch_path(root, new_time, recursive=True)
 
         assert _read_mtime(target) == old
         assert _read_mtime(target_file) == old
@@ -233,7 +215,8 @@ class TestCli:
 
         assert _read_mtime(target) == datetime.datetime(2024, 6, 15, 12, 30, 45)
 
-    def test_cli_symlink_does_not_follow(self, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize("recursive_args", [(), ("-r",), ("--recursive",)])
+    def test_cli_symlink_does_not_follow(self, tmp_path: pathlib.Path, recursive_args: tuple[str, ...]) -> None:
         real_file = tmp_path / "real.txt"
         real_file.touch()
         link = tmp_path / "link"
@@ -245,31 +228,36 @@ class TestCli:
         old_real = datetime.datetime(2000, 1, 1)
         _set_mtime(real_file, old_real)
 
-        self._run("-t", "2024-06-15T12:30:45", str(link))
+        self._run(*recursive_args, "-t", "2024-06-15T12:30:45", str(link))
 
         assert _read_mtime(real_file) == old_real
         assert _read_link_mtime(link) == datetime.datetime(2024, 6, 15, 12, 30, 45)
 
-    def test_cli_with_multiple_targets_mixed(self, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize("recursive_args", [(), ("-r",), ("--recursive",)])
+    def test_cli_with_multiple_targets_mixed(self, tmp_path: pathlib.Path, recursive_args: tuple[str, ...]) -> None:
         file1 = tmp_path / "f1.txt"
         file2 = tmp_path / "f2.txt"
         sub = tmp_path / "sub"
         sub.mkdir()
         inner = sub / "inner.txt"
-        for p in [file1, file2, inner]:
+        nested = sub / "nested"
+        nested.mkdir()
+        deep = nested / "deep.txt"
+        for p in [file1, file2, inner, deep]:
             p.touch()
 
         old = datetime.datetime(2000, 1, 1)
-        for p in [file1, file2, sub, inner]:
+        for p in [file1, file2, sub, inner, nested, deep]:
             _set_mtime(p, old)
 
-        self._run("-t", "2024-06-15T12:30:45", str(file1), str(file2), str(sub))
+        self._run(*recursive_args, "-t", "2024-06-15T12:30:45", str(file1), str(file2), str(sub))
 
         new_time = datetime.datetime(2024, 6, 15, 12, 30, 45)
         assert _read_mtime(file1) == new_time
         assert _read_mtime(file2) == new_time
         assert _read_mtime(sub) == new_time
-        assert _read_mtime(inner) == new_time
+        for p in [inner, nested, deep]:
+            assert _read_mtime(p) == (new_time if recursive_args else old)
 
     def test_cli_continues_on_missing_path(self, tmp_path: pathlib.Path) -> None:
         existing = tmp_path / "f.txt"

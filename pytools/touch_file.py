@@ -2,7 +2,7 @@
 """ファイル・ディレクトリの更新日時を変更するCLI。
 
 複数の対象を引数で受け取り、指定日時または現在日時に mtime/atime を一括設定する。
-ディレクトリ指定時は配下を再帰的に処理する。
+ディレクトリ指定時は自身を更新し、-r指定時は配下も再帰的に処理する。
 """
 
 import argparse
@@ -30,6 +30,7 @@ def main() -> None:
         help="設定する日時 (ISO 8601 形式)。省略時は対話入力",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("-r", "--recursive", action="store_true", help="ディレクトリ配下も再帰的に更新する")
     enable_completion(parser)
     args = parser.parse_args()
 
@@ -49,7 +50,7 @@ def main() -> None:
     target_time = datetime.datetime.fromisoformat(time_string) if time_string else datetime.datetime.now()
 
     for target in args.targets:
-        touch_path(target, target_time)
+        touch_path(target, target_time, recursive=args.recursive)
 
     # Windowsの「送る」経由実行ではコマンドプロンプトが自動で閉じるため、
     # 結果を確認できるようキー入力待ちで停止する (C# 版踏襲)。
@@ -76,10 +77,10 @@ def _print_targets(targets: list[pathlib.Path]) -> None:
     print()
 
 
-def touch_path(path: pathlib.Path, time: datetime.datetime) -> None:
+def touch_path(path: pathlib.Path, time: datetime.datetime, *, recursive: bool = False) -> None:
     """対象パスの mtime/atime を `time` に設定する。
 
-    ディレクトリ指定時は配下を再帰的に処理する。シンボリックリンクとジャンクションは
+    `recursive=True`の場合はディレクトリ配下も更新する。シンボリックリンクとジャンクションは
     追跡せず、どのOSでもリンク自身の時刻を更新する。存在しないパスは警告ログのみで継続する。
     `pathlib` には任意時刻を指定する API が無いため `os.utime` を使う。
     """
@@ -91,8 +92,9 @@ def touch_path(path: pathlib.Path, time: datetime.datetime) -> None:
         os.utime(path, (timestamp, timestamp))
     elif path.is_dir():
         os.utime(path, (timestamp, timestamp))
-        for child in path.iterdir():
-            touch_path(child, time)
+        if recursive:
+            for child in path.iterdir():
+                touch_path(child, time, recursive=True)
     else:
         logger.warning(
             ("対象が存在しません: %s。スキップして続行します。更新が必要なら存在するパスを指定して再実行してください。"), path

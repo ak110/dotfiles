@@ -300,6 +300,7 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     if entry_type == WI_TYPE_AWI and body_is_effectively_empty(body):
         raise WebInputError(_EMPTY_AWI_ERROR, next_action=_EMPTY_AWI_NEXT_ACTION)
     if entry_type != WI_TYPE_AWI:
+        body = _uwi.strip_unanswered_uwi_wrapper(body)
         _uwi.reject_reserved_uwi_markup(body)
     return frontmatter, body
 
@@ -759,8 +760,8 @@ def add_entries(
     """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
 
     frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
-    UWI種別では、本文がツール側で自動付与する見出し・回答欄マーカーを含む場合に
-    `_uwi.reject_reserved_uwi_markup`が`WebInputError`を送出する（CLIとWeb UIが共通で呼ぶ処理）。
+    UWI種別では、`parse_entry_message`が保存形式の未回答外枠を取り除いた本文を保存する。
+    残った予約見出し・回答欄マーカーは`WebInputError`で拒否する（CLIとWeb UIの共通処理）。
     `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
     `_wi_sync.repo_lock`取得前に全件の型・非空・解決可否を検証する。
     `submitter_session`はUWI種別のfrontmatterへだけ保存する。
