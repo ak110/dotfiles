@@ -301,16 +301,6 @@ _REMOVED_PATHS_IF_CONTENT: dict[Path, list[cleanup_paths.RemovedPathIfContent]] 
             "0b6c81745268a31c9f862651f671f179ae5966d39c12e80b9c1f6034ce783760",
         ),
     ],
-    # claude-plans-viewer 自動起動セットアップ（旧 setup_plans_viewer_windows）で
-    # スタートアップフォルダーへ配置していた .cmd を、未編集なら除去する。
-    # 旧モジュールの削除に伴い配布物としての保守元がないため。
-    Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup": [
-        cleanup_paths.RemovedPathIfContent(
-            Path("claude-plans-viewer.cmd"),
-            datetime.date(2026, 5, 4),
-            b'@echo off\r\nstart "" "%USERPROFILE%\\.local\\bin\\claude-plans-viewer.exe"\r\n',
-        ),
-    ],
 }
 
 
