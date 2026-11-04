@@ -14,6 +14,8 @@
 
 取り消しが難しい操作の前に、受領指示と現在の対象の整合を確認する。
 
+会話で受け取った継続的な方針は、`agent-toolkit:write-plan`の`references/plan-file-standards.md`「恒久化・リファクタリング」の候補抽出と反映先判定へ渡す。計画凍結後は既存の変更受入・レビュー指摘管理表を使う。計画がない場合も必要時に読む成果物へ反映し、担当外は具体的な方針と出所を所有者へ渡す。process-wiで追加AWIが必要な場合の時機と対象追加は、`agent-toolkit:process-wi`の`references/immediate-fix.md`に従う。
+
 ### 目的との一致の確認
 
 成果物の作成前に`share/work-contract.md`で契約を作り、通常対話の目標から作業を構成する。
@@ -84,4 +86,6 @@ process-wi中に同じセッションで是正する事象は`即時対応`、AW
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 会話で継続的な方針を受け取った時 | `../skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` |
+| process-wi中に方針の反映を追加AWIへ渡す時 | `../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
 | 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
