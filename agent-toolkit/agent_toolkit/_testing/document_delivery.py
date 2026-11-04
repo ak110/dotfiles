@@ -9,9 +9,20 @@ import json
 import pathlib
 
 from agent_toolkit._common import state_paths
+from agent_toolkit._hooks import notice, rules_context
 from agent_toolkit._hooks.host import is_codex_payload
-from agent_toolkit._hooks.pretooluse import read_delivery
+from agent_toolkit._hooks.pretooluse import agent_checks, dispatch, read_delivery
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, codex_delivered_payload
+
+
+def prepare_state(monkeypatch, read, update) -> None:
+    """呼出側の代用関数の引数契約を保ち、読込通知の状態差替えを共通化する。"""
+    for module in (agent_checks, read_delivery, rules_context, notice, dispatch):
+        monkeypatch.setattr(module, "read_state", read, raising=False)
+        monkeypatch.setattr(module, "update_state", update)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
+    monkeypatch.setattr(read_delivery.delegated_session, "is_lightweight_delegated", lambda _env: False)
+    notice.set_warning_session_id("")
 
 
 def _payload(value: dict) -> dict:
