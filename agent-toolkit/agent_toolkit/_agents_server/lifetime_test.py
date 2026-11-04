@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import ctypes
+import ctypes.wintypes
 import json
 import os
 import pathlib
@@ -43,6 +44,15 @@ def test_collected_windows_parent_is_pinned_before_it_exits(monkeypatch):
     monkeypatch.setattr(lifetime, "sys", types.SimpleNamespace(platform="win32"))
     kernel = mock.Mock()
     kernel.OpenProcess.side_effect = lambda _access, _inherit, pid: 0 if pid == parent.pid and not parent.is_running() else pid
+
+    def times(handle, creation, *_args, **_kwargs):
+        ticks = 116444736000000000 + (handle - root.pid + 1) * 10000000
+        timestamp = ctypes.cast(creation, ctypes.POINTER(ctypes.wintypes.FILETIME)).contents
+        timestamp.dwLowDateTime = ticks & 0xFFFFFFFF
+        timestamp.dwHighDateTime = ticks >> 32
+        return True
+
+    kernel.GetProcessTimes.side_effect = times
     monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
     monkeypatch.setattr(ctypes, "get_last_error", lambda: 87, raising=False)
 
