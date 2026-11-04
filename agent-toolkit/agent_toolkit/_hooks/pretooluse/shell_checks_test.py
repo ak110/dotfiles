@@ -17,12 +17,12 @@ import pytest
 from agent_toolkit._hooks import plugin_resources, work_contract
 from agent_toolkit._hooks.pretooluse import shell_checks
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.document_delivery import run_hook
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
     _run,
-    _run_posttooluse,
     _write_session_state,
     codex_execution_payload,
 )
@@ -50,7 +50,7 @@ def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subpr
     }
     if codex:
         acquisition = codex_execution_payload(acquisition, pathlib.Path(env_overrides["TMPDIR"]), exit_code=0)
-    recorded = _run_posttooluse(acquisition, env_overrides)
+    recorded = run_hook("posttooluse", acquisition, env_overrides)
     assert recorded.returncode == 0
     return _run(payload, env_overrides=env_overrides)
 
@@ -925,7 +925,7 @@ class TestBashUnquotedHeredocSubstitution:
             assert substitution in _denial_reason(result)
         else:
             assert result.returncode == 0
-            assert "/skills/writing-standards/SKILL.md" in _additional_context(result)
+            assert "`Skill`で`agent-basics:writing-standards`" in _additional_context(result)
             assert result.stderr == ""
 
     @pytest.mark.parametrize(
@@ -1253,6 +1253,9 @@ class TestBashOptionAfterTerminator:
             ("rg -c -F --regexp=X -- --glob", "--glob"),
             ("grep -rc -F -f patterns.txt -- --include", "--include"),
             ("case value in one) rg -l -F -- 'x' --glob '*.py' .;; esac", "--glob"),
+            # 引用した`'>'`は検索語のデータであり、後ろのオプションをリダイレクト先として除かない。
+            ("rg -c -F -- 'x' '>' --glob '*.py' .", "--glob"),
+            ("git log -- path '>' --oneline", "--oneline"),
         ],
     )
     @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])

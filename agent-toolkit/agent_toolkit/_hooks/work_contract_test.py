@@ -18,6 +18,7 @@ def test_existing_contract_is_not_a_input_ledger(tmp_path: pathlib.Path, monkeyp
     assert "目的: A全体" in notice
     assert "機械生成の参照資料" in notice
     assert "元の未完了工程へ戻れ" in notice
+    assert "原要求全体と実行可能な残工程を突き合わせ" in notice
     assert "今回の原入力" in notice
     assert path.read_text(encoding="utf-8") == "目的: A全体\n"
 
@@ -32,6 +33,7 @@ def test_oversized_contract_falls_back_to_location(tmp_path: pathlib.Path, monke
     assert "長" * 50 not in notice
     assert "上限10文字を超える" in notice
     assert "元の未完了工程へ戻れ" in notice
+    assert "原要求全体と実行可能な残工程を突き合わせ" in notice
 
 
 def test_unreadable_contract_reports_diagnostic(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -42,6 +44,7 @@ def test_unreadable_contract_reports_diagnostic(tmp_path: pathlib.Path, monkeypa
     notice = work_contract.notice("session")
     assert notice is not None and "現行の作業契約を読めない（UnicodeDecodeError" in notice
     assert str(path) in notice
+    assert "原要求全体と実行可能な残工程を突き合わせ" in notice
 
 
 def test_missing_contract_has_no_notice(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

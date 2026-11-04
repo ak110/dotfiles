@@ -87,7 +87,7 @@ def test_flat_uwi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     generated = add_module.add_entries(
         notes,
-        messages=["この方針を採用しますか？"],
+        messages=[f"## 質問\n\nこの方針を採用しますか？\n\n## 回答\n\n{uwi_module.ANSWER_MARKER}\n"],
         target_repo="github.com/example/repo",
         source=None,
         now=_FIXED_DT,
@@ -101,6 +101,9 @@ def test_flat_uwi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
     assert "type: uwi" in content
     assert "question_type: yes-no" in content
     assert "ユーザーはこの行以降に回答を追記する" in content
+    assert content.count(uwi_module.QUESTION_HEADING) == 1
+    assert content.count(uwi_module.ANSWER_HEADING) == 1
+    assert content.count(uwi_module.ANSWER_MARKER) == 1
 
 
 class TestDetectSelfContainmentDeficiency:
@@ -180,6 +183,91 @@ class TestCmdUwiAddSelfContainmentWarning:
 
 class TestUwiAdd:
     """UWI投入の基本動作検証。"""
+
+    @pytest.mark.parametrize("prefix", ["", "\n\n## 質問\n\n"], ids=["plain", "question-heading"])
+    @pytest.mark.parametrize(
+        "suffix",
+        ["", "\n\n## 回答\n\n", f"\n\n## 回答\n\n{uwi_module.ANSWER_MARKER}\n\n"],
+        ids=["plain", "empty-answer", "answer-marker"],
+    )
+    def test_saved_wrapper_is_accepted_by_add_and_edit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        prefix: str,
+        suffix: str,
+    ) -> None:
+        """保存形式の未回答外枠を投入・編集しても、見出しとマーカーを各1つに保つ。"""
+        notes = _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
+        question = "この方針を採用しますか？\n\n## 判断材料\n\n既存の挙動を確認した。"
+
+        assert _invoke_uwi_add(tmp_path, str(myrepo), body=prefix + question + suffix).code == 0
+        path = _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        content = path.read_text(encoding="utf-8")
+        expected_body = f"## 質問\n\n{question}\n\n## 回答\n\n{uwi_module.ANSWER_MARKER}\n"
+        assert content.split("---\n", 2)[2].lstrip("\n") == expected_body
+        assert "警告" not in capsys.readouterr().err
+
+        edited_question = question.replace("この方針", "更新した方針")
+        with pytest.raises(SystemExit) as edited:
+            atk.main(
+                ["wi", "edit", path.name, *_body_file_args(tmp_path, prefix + edited_question + suffix)],
+                home=tmp_path,
+            )
+        assert edited.value.code == 0
+        assert path.read_text(encoding="utf-8").split("---\n", 2)[2].lstrip("\n") == expected_body.replace(
+            "この方針", "更新した方針"
+        )
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            f"## 質問\n\n採用しますか？\n\n## 回答\n\n{uwi_module.ANSWER_MARKER}\nはい",
+            "採用しますか？\n\n## 回答\n\nはい",
+            "採用しますか？\n\n## 質問\n\n補足",
+            "採用しますか？\n\n## 回答\n\n補足\n\n## 判断材料\n\n事実",
+            f"採用しますか？\n\n{uwi_module.ANSWER_MARKER}",
+            f"採用しますか？\n\n## 回答\n\n{uwi_module.ANSWER_MARKER}\n{uwi_module.ANSWER_MARKER}",
+            f"採用しますか？\n\n## 回答{uwi_module.ANSWER_MARKER}",
+            "## 質問\n\n採用しますか？\n\n## 質問\n\n補足\n\n## 回答",
+        ],
+        ids=[
+            "answered-marker",
+            "answered",
+            "inner-question",
+            "inner-answer",
+            "bare-marker",
+            "double-marker",
+            "inline-marker",
+            "nested-wrapper",
+        ],
+    )
+    def test_reserved_markup_is_rejected_after_wrapper_removal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        body: str,
+    ) -> None:
+        """外枠以外の予約要素を含む投入・編集は既存ファイルを変更しない。"""
+        notes = _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
+        path = _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="元の質問か？")
+        original = path.read_bytes()
+        assert _invoke_uwi_add(tmp_path, str(myrepo), body=body).code == 1
+        assert "UWI本文にツールが自動付与する要素" in capsys.readouterr().err
+        with pytest.raises(SystemExit) as edited:
+            atk.main(["wi", "edit", path.name, *_body_file_args(tmp_path, body)], home=tmp_path)
+        assert edited.value.code == 1
+        assert "UWI本文にツールが自動付与する要素" in capsys.readouterr().err
+        assert path.read_bytes() == original
+        assert list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")) == [path]
 
     def test_single_message_generates_one_file(
         self,
@@ -676,6 +764,30 @@ class TestUwiListSkipPull:
 
 class TestUwiEdit:
     """UWI編集の境界条件検証。"""
+
+    def test_show_body_can_be_reused_without_duplicate_headings(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """showで取得した未回答の本文をそのまま編集入力へ戻せる。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
+        assert _invoke_uwi_add(tmp_path, str(myrepo), body="この方針を採用しますか？").code == 0
+        filename = f"{_FIXED_TIMESTAMP}-001.md"
+        capsys.readouterr()
+        with pytest.raises(SystemExit) as shown:
+            atk.main(["wi", "show", filename, "--skip-pull"], home=tmp_path)
+        assert shown.value.code == 0
+        shown_text = capsys.readouterr().out
+        question_body = shown_text[shown_text.index(uwi_module.QUESTION_HEADING) :]
+        with pytest.raises(SystemExit) as edited:
+            atk.main(["wi", "edit", filename, *_body_file_args(tmp_path, question_body)], home=tmp_path)
+        assert edited.value.code == 0
+        assert "差分なし" in capsys.readouterr().out
 
     def test_rejects_traversal(
         self,

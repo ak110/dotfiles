@@ -225,6 +225,28 @@ def test_pretooluse_ignores_output_path_in_foreground_result(
     assert _WARNING in _pretooluse_bash_context(capsys, "foreground-pending", transcript, f"cat {pending_path}", tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("template", "warned"),
+    [
+        ("echo 'cat {path}'", False),
+        ("echo 'ready; cat {path}'", False),
+        ("true && cat {path}", True),
+        ("echo ready; cat {path}", True),
+    ],
+)
+def test_pretooluse_quoted_read_command_is_data(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], template: str, *, warned: bool
+) -> None:
+    """引用した読取コマンドは出力するデータであり、実際の連結の後ろにある読取だけを警告する。"""
+    output_path = str(tmp_path / "tasks" / "bg-1.output")
+    entries, response = _background_launch("run_in_background", "bg-1", "toolu_launch", output_path)
+    transcript = _write_transcript(tmp_path / "transcript.jsonl", entries)
+    session_id = "quoted-read"
+    _record_launch(session_id, response)
+    context = _pretooluse_bash_context(capsys, session_id, transcript, template.format(path=output_path), tmp_path)
+    assert (_WARNING in context) is warned
+
+
 def test_command_reads_path_only_for_read_command_operand() -> None:
     """同じパス文字列でも読取コマンドのオペランドだけを検出する。"""
     paths = {"/tmp/bg-1.output"}

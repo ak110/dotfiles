@@ -112,8 +112,8 @@ def test_human_readable_main_rejects_internal_identifiers(mutation: str, expecte
 def test_bug_file_structure_rejects_empty_content_cell() -> None:
     """付属ファイルの固定表で`内容`が空欄の場合を拒否する。"""
     content = _BUG_FILE_CONTENT.replace(
-        _plan_fixture.bug_row("直接的原因"),
-        "| 直接的原因 |  |",
+        _plan_fixture.bug_row("対策"),
+        "| 対策 |  |",
     )
     errors = plan_sections.check_bug_file_structure(content)
     matched = [error for error in errors if "空の`内容`" in error]

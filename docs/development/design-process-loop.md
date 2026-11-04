@@ -212,6 +212,12 @@ OSシグナルや稼働中プロセスへの直接通知は、process-loopが動
 
 ## Codexのprocess-loopセッションの終了
 
+起動目的は初回・再開、manifestの有無によらずprocess-wi all-reposの完遂だけを示す。
+集合JSONと可変入力は`AGENT_TOOLKIT_SESSION_START_INPUT`からSessionStartへ渡し、機械生成の出所を付けて配送する。
+成功・正当な未完了終了・回復可能な残工程の判断はall-repos「結果と終了」が所有し、目的文へ恒久的な終了細則を再掲しない。
+ホストごとの目的入力の違いと終了能力の判定は保持する。
+目的文にmanifestや終了手順を連結する案は、反復評価の対象と更新箇所を増やすため採らない。
+
 ready項目がなくなり公開工程の検収を終えると、`agent-toolkit:report-completion`が元の作業の完了報告を送り、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動になったセッションを非同期に分析する（`design-session-review.md`「完了報告と振り返りの関係」）。その結果は作業完了報告とは独立して届ける。
 起動時の終了能力probeと、停止要求の直前に終了対象を新規識別する扱いは`design-workflow-boundaries.md`「セッションの終了」にある。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。

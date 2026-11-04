@@ -123,6 +123,8 @@ def test_allowed_notice_matches_post_apply_source() -> None:
         "PATH 整理: ユーザー PATH に存在しないエントリーを検出: C:\\outside\\bin (展開: C:\\outside\\bin)。削除する",
         f"{antigravity_plugin.UPDATED_NOTICE} 追加の文言",
         f"{_CODEX_TRUST_MESSAGE} 追加の文言",
+        "    codex plugins: app-server daemonの自動再起動に失敗 (exit 9: daemon restart detail)。"
+        "実行中のCodexセッションを終了し、codex app-server daemon restartを実行してください。",
     ],
 )
 def test_other_update_warnings_still_fail(tmp_path: pathlib.Path, message: str) -> None:

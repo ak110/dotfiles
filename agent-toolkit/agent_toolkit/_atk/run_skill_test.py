@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime
+import html
+import io
 import json
 import os
 import pathlib
@@ -25,7 +27,7 @@ import typing
 import psutil
 import pytest
 
-from agent_toolkit import atk
+from agent_toolkit import atk, hook
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._atk.wi import frontmatter
@@ -53,6 +55,7 @@ record = {{
         "AGENT_TOOLKIT_DELEGATED_SESSION",
         "AGENT_TOOLKIT_RESTART_SPEC",
         "AGENT_TOOLKIT_RUN_SKILL_ID",
+        "AGENT_TOOLKIT_SESSION_START_INPUT",
         "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS",
     )}},
 }}
@@ -78,14 +81,8 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
     notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
     mode = os.environ.get("FAKE_REPORT_MODE", "saved")
     run_id = os.environ["AGENT_TOOLKIT_RUN_SKILL_ID"]
-    scope_file = record_dir / "scope"
-    match = re.search(r"スキル`([^`]+)`", args[-1])
-    if match:
-        scope_file.write_text(match[1])
-    scope = scope_file.read_text()
-    mode_match = re.search(r"起動モード: (\\S+)", args[-1])
-    if mode_match:
-        scope += " " + mode_match[1]
+    data = json.loads(os.environ["AGENT_TOOLKIT_SESSION_START_INPUT"])
+    scope = data["skill"] + (" " + data["mode"] if data["mode"] else "")
     (notes / "2026/10").mkdir(parents=True, exist_ok=True)
     old = notes / "2026/10" / (run_id + ".md")
     body = old.read_text().split("\\n---\\n", 1)[1] + "\\n再開後の報告更新\\n" if old.exists() else "定期実行の報告\\n"
@@ -221,6 +218,25 @@ def _records(env: _Env, kind: str) -> list[dict[str, typing.Any]]:
 
 def _log_files(env: _Env) -> list[pathlib.Path]:
     return sorted((env.state / "agent-toolkit" / "run-skill").glob("*.log"))
+
+
+def _startup_input(record, monkeypatch, capsys, *, source="startup"):
+    """実子へ渡された環境をSessionStartへ適用し、消費側のデータと参照先を確かめる。"""
+    raw = record["env"]["AGENT_TOOLKIT_SESSION_START_INPUT"]
+    with monkeypatch.context() as scoped:
+        scoped.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", raw)
+        payload = json.dumps({"hook_event_name": "SessionStart", "source": source}).encode("utf-8")
+        scoped.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(payload)))
+        assert hook.main(["rules_context_codex" if record["name"] == "codex" else "rules_context"]) == 0
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    match = re.search(r'<atk-auto source="run-skill" kind="startup-input">\n起動入力: (.*)\n', context)
+    assert match is not None
+    data = json.loads(html.unescape(match[1]))
+    assert data == json.loads(raw)
+    assert "references/answer-transitions.md" in context and "agent-toolkit:report-completion" in context
+    if data["batch_manifest"]:
+        assert "references/batch.md" in context
+    return data
 
 
 def _read_terminal_until(fd: int, expected: str, received: bytes = b"") -> bytes:
@@ -451,21 +467,13 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
     ):
         assert argv[argv.index(option) + 1] == value
     session_id = argv[argv.index("--session-id") + 1]
-    goal = argv[-1]
-    assert goal.startswith('/goal <atk-auto source="run-skill" kind="goal">')
-    for expected in (
-        "example-plugin:check-logs",
-        "スキルへ渡す引数: 対象: web",
-        "`agent-toolkit:report-completion`の報告用UWI",
-    ):
-        assert expected in goal
-    # 目的文が案内する過去の実行のUWIの手順は、`agent-toolkit:user-confirmation-and-report`の
-    # 参照文書の節として実在する必要がある。
-    # 節を移した後に案内だけが旧い所在を指すと、子セッションは手順へ到達できない。
-    reference = re.search(r"`agent-toolkit:user-confirmation-and-report`の`(references/[^`]+)`「([^」]+)」", goal)
-    assert reference is not None and "過去の実行のUWI" in reference[2]
-    skill_dir = pathlib.Path(__file__).resolve().parents[2] / "skills" / "user-confirmation-and-report"
-    assert f"## {reference[2]}" in (skill_dir / reference[1]).read_text(encoding="utf-8").splitlines()
+    assert argv[-1] == (
+        '/goal <atk-auto source="run-skill" kind="goal">\nスキル`example-plugin:check-logs`を完遂する\n</atk-auto>'
+    )
+    data = json.loads(sessions[0]["env"]["AGENT_TOOLKIT_SESSION_START_INPUT"])
+    assert data["arguments"] == data["free_text"] == "対象: web"
+    assert data["accepted_scopes"] == ["example-plugin:check-logs"]
+    assert data["run_id"] == sessions[0]["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"]
     assert pathlib.Path(sessions[0]["cwd"]).resolve() == engine_env.repo.resolve()
     lines = out.splitlines()
     assert len(lines) == 1
@@ -513,36 +521,6 @@ def test_codex_session_receives_goal_without_slash_command(
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
-def test_goal_distinguishes_success_unresolvable_stop_and_recoverable_failure(
-    engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str
-) -> None:
-    """各ホストへ配送する目的文が、成功・解消できない前提による未完了終了・回復可能な失敗の継続を区別する。
-
-    `/goal`の停止判定は目的文を終了条件として読む。成功だけを終了条件にすると、続行不能を正直に報告した
-    後も停止が遮断され続け、ホストの連続遮断上限で強制終了するまでターンを繰り返す。
-    """
-    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
-
-    code, _out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
-
-    assert code == 0, err
-    goal = _records(engine_env, "session")[0]["argv"][-1]
-    # 成功時は完遂と報告保存で終える。
-    assert "どちらで終えてもこの目標は達成です" in goal
-    assert "完遂: スキルを完遂し、報告用UWIへ結果を保存した" in goal
-    # 当該実行で解消できない具体的な前提が残る場合は、理由・残工程・再開条件を保存して未完了で終える。
-    assert "未完了の終了: 判断・認可・外部入力など、この実行の中では解消できない具体的な前提が残り" in goal
-    assert "未完了の理由・残る工程・再開の条件を報告用UWIへ保存した" in goal
-    # 未完了の終了も目標の達成と明示しないと、目標評価は報告保存後も完遂の証拠を求めて停止を遮断する。
-    assert "未完了を正直に報告することは、この目標の達成として扱います" in goal
-    # 回復手段をすべて試しても解消しない失敗と、スキルや依頼が回復操作を禁じる失敗も解消できない前提に含める。
-    # 含まないと、目標評価が回復手段の不在を前提不足と認めず停止を遮断し続ける（2026年10月31日の実ホスト受入で観測）。
-    assert "回復手段をすべて試しても解消しない失敗と、スキルや依頼が回復操作（再試行など）を禁じている失敗" in goal
-    # 子担当の失敗だけでは終えず、許可済みの回復手段で続ける。
-    assert "子担当が失敗しても、許可済みの回復手段があれば使って続けて" in goal
-
-
-@pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("mode", ["missing", "question", "other", "unsynced"])
 def test_normal_exit_requires_same_run_synced_report(
     engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str, mode: str
@@ -579,9 +557,9 @@ def test_report_requires_remote_push(
     if answered:
         monkeypatch.setenv("FAKE_REPORT_ANSWER", "1")
     if push_fails:
-        hook = origin / "hooks" / "pre-receive"
-        hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-        hook.chmod(0o755)
+        pre_receive = origin / "hooks" / "pre-receive"
+        pre_receive.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        pre_receive.chmod(0o755)
         monkeypatch.setenv("FAKE_REPORT_PUSH_FAIL", "1")
     code, out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
     assert code == (1 if push_fails else 0), err
@@ -902,6 +880,8 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
             assert argv[-2] == "01234567-89ab-cdef-0123-456789abcdef"
         assert argv[-1].startswith('<atk-auto source="run-skill" kind="usage-limit-resume">')
         assert argv[argv.index("--model") + 1] == "test-model"
+        data = _startup_input(session, monkeypatch, capsys, source="resume")
+        assert data == json.loads(sessions[0]["env"]["AGENT_TOOLKIT_SESSION_START_INPUT"])
     log = _log_files(engine_env)[0].read_text(encoding="utf-8")
     assert log.count("利用上限の解除待ち:") == 2
     run_ids = {session["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"] for session in sessions}
@@ -970,7 +950,15 @@ def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, mon
     value = session_review.read(manifests[0])
     assert value["status"] == "completed" and len(value["prepared"]) == 2
     records = _records(engine_env, "session")
-    assert "batch auto 任意の着眼点" in records[0]["argv"][-1]
+    assert records[0]["argv"][-1] == (
+        ("/goal " if engine == "claude" else "")
+        + '<atk-auto source="run-skill" kind="goal">\nスキル`agent-toolkit:review-session batch`を完遂する\n</atk-auto>'
+    )
+    data = _startup_input(records[0], monkeypatch, capsys)
+    assert data["arguments"] == "batch auto 任意の着眼点"
+    assert data["free_text"] == "auto 任意の着眼点"
+    assert data["target_repo"] == "example.com/team/repo"
+    assert pathlib.Path(data["batch_manifest"]) == manifests[0]
 
 
 @pytest.mark.parametrize("arguments,is_batch", [(None, False), ("auto", False), ("batchx", False), ("batch auto", True)])
@@ -993,6 +981,23 @@ def test_dispatch_selects_exact_batch_mode(monkeypatch, arguments, is_batch):
     args = argparse.Namespace(skill="agent-toolkit:review-session", args=arguments)
     assert run_skill.dispatch(args) == 0
     assert observed == [(is_batch, arguments)]
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize("arguments", [None, "追加指示"])
+def test_final_goal_is_only_skill_completion(engine_env, monkeypatch, capsys, engine, arguments):
+    """公開起動の最終argvで、引数の有無によらず短い目的を保持する。"""
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
+    options = ["--target-repo", str(engine_env.repo)]
+    if arguments is not None:
+        options.extend(["--args", arguments])
+    code, _out, error = _run([*options, "my-skill"], capsys)
+    assert code == 0, error
+    expected = '<atk-auto source="run-skill" kind="goal">\nスキル`my-skill`を完遂する\n</atk-auto>'
+    assert _records(engine_env, "session")[0]["argv"][-1] == ("/goal " if engine == "claude" else "") + expected
+    data = _startup_input(_records(engine_env, "session")[0], monkeypatch, capsys)
+    assert data["arguments"] == data["free_text"] == arguments
+    assert data["accepted_scopes"] == ["my-skill"]
 
 
 def test_mode_lock_ignores_focus_and_keeps_other_modes_separate(tmp_path):
@@ -1018,7 +1023,17 @@ def test_process_modes_reach_public_runner_with_original_arguments(engine_env, m
     argv.append("agent-toolkit:process-wi")
     code, _out, error = _run(argv, capsys)
     assert code == 0, error
-    goal = _records(engine_env, "session")[0]["argv"][-1]
-    if arguments is not None:
-        assert f"スキルへ渡す引数: {arguments}" in goal
-    assert ("起動モード:" in goal) is bool(arguments and arguments.startswith(("single-lane ", "all-repos ")))
+    record = _records(engine_env, "session")[0]
+    data = json.loads(record["env"]["AGENT_TOOLKIT_SESSION_START_INPUT"])
+    assert data["arguments"] == arguments
+    mode = (
+        "single-lane"
+        if arguments and arguments.startswith("single-lane ")
+        else "all-repos"
+        if arguments and arguments.startswith("all-repos ")
+        else None
+    )
+    assert data["mode"] == mode
+    expected_skill = "agent-toolkit:process-wi" + (" " + mode if mode else "")
+    expected = f'<atk-auto source="run-skill" kind="goal">\nスキル`{expected_skill}`を完遂する\n</atk-auto>'
+    assert record["argv"][-1] == ("/goal " if engine == "claude" else "") + expected

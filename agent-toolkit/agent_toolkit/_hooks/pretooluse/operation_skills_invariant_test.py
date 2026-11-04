@@ -21,11 +21,11 @@ from agent_toolkit._common import delegated_session, plugin_roots, read_triggers
 from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import plugin_resources, rules_context
 from agent_toolkit._hooks.pretooluse import dispatch, operation_skills, read_delivery
+from agent_toolkit._testing.document_delivery import run_hook
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
     _run,
-    _run_posttooluse,
     codex_execution_payload,
 )
 
@@ -94,7 +94,7 @@ def _acquire(env: dict[str, str], entry: operation_skills.OperationSkill, subjec
         event = {"hook_event_name": "PostToolUse", "session_id": session_id, **payload, **extra}
         if "turn_id" in extra:
             event = codex_execution_payload(event, pathlib.Path(env["TMPDIR"]), exit_code=0)
-        assert _run_posttooluse(event, env).returncode == 0
+        assert run_hook("posttooluse", event, env).returncode == 0
 
 
 def test_positive_operations_cover_every_entry() -> None:
@@ -148,7 +148,6 @@ def test_operation_skill_contract_for_every_entry_and_subject(
     assert 'kind="block"' not in output
     observed = [output]
     actor = extra.get("agent_id", "main")
-    writing = entry.short_name in {"bugfix", "writing-standards"}
     for _attempt in range(12):
         records = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
         targets = [
@@ -161,10 +160,8 @@ def test_operation_skill_contract_for_every_entry_and_subject(
             break
         repeated = _run(payload, env)
         assert repeated.returncode == 0
-        if writing:
-            specific = json.loads(repeated.stdout)["hookSpecificOutput"]
-            assert specific["permissionDecision"] == "deny"
-            assert "未取得資料" in specific["permissionDecisionReason"]
+        assert '"permissionDecision": "deny"' not in repeated.stdout
+        assert "未取得資料" not in _additional_context(repeated)
         for target in targets:
             assert target.body().strip() not in output
             skill = read_delivery.skill_name(target.path)
@@ -181,7 +178,7 @@ def test_operation_skill_contract_for_every_entry_and_subject(
             assert "未取得資料" not in _additional_context(reading)
             if subject.startswith("codex"):
                 event = codex_execution_payload(event, tmp_path, exit_code=0)
-            assert _run_posttooluse(event, env).returncode == 0
+            assert run_hook("posttooluse", event, env).returncode == 0
             acquired = read_state(session_id)[rules_context.OPERATION_SKILL_READY_KEY]
             assert read_delivery.target_ready(acquired, target, actor)
         result = _run(payload, env)
@@ -265,7 +262,7 @@ def test_missing_skill_document_warns_without_record(
     assert dispatch.main(payload) == 0
     recovered = capsys.readouterr()
     notice = recovered.out + recovered.err
-    assert "必須手順であり省略" in notice
+    assert "必要な基準を取得せよ" in notice
     assert "未取得資料" in notice
     assert "agent-basics:search" in notice
     records = read_state("failure").get(rules_context.OPERATION_SKILL_READY_KEY, {})

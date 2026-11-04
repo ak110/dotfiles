@@ -1489,3 +1489,9 @@ uv run --frozen pytest -v -p no:cacheprovider \
   agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_wait_guidance_test.py \
   agent-toolkit/agent_toolkit/_common/wait_foreground_test.py
 ```
+
+## agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年11月4日
+
+- 観測日: 2026年11月4日。
+- 確認版: Claude Code 2.1.318。背景Bashの結果は`result.backgroundTaskId`で識別できた。同一turnの背景待機中は`turn_running`の予約抑止が成立し、完了通知の後にturnが終了しても予約されなかった。headlessの直接`session.compact`は未対応のHooksErrorを返した。slash commandsが有効な同じ隔離会話で`command.run({command:"compact"})`を使うと、compact_boundaryと背景タスクの結果回収を観測した。試行では使用量の閾値を縮小し、所有照会と原本所在だけをfixtureへ差し替えたため、製品の400,000トークン・40%閾値と所有判定の実データでの成立はこの観測の対象外である。
+- 再検証: 読取・Bashだけを使う新規headless会話に、製品の圧縮modを登録する。独立した検証用背景タスクを開始し、同一turnで結果を待つ。使用量・所有条件が成立した入力で、予約診断、turn完了、compact_boundary、同一会話の背景結果回収の順を確認する。surfaceを持つ会話は直接APIとskip判定を比較する。`claude plugin test agent-toolkit`で通知先着、閾値両境界、委譲先の除外、予約重複、skip・例外後の再予約を確認する。通常の作業会話へ検証用の圧縮を送らない。

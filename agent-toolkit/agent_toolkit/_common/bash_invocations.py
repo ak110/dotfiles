@@ -18,6 +18,7 @@ from agent_toolkit._common.shell_segments import (
     resolve_execution_segment,
     shell_c_argument,
 )
+from agent_toolkit._common.shell_tokens import ShellWord
 
 
 class _BashOutput(enum.Enum):
@@ -529,7 +530,10 @@ def _bash_compound(tokens: Sequence[_BashToken], start: int) -> tuple[list[BashI
 def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
     """実行前置語を解決し、引用されたシェル本文と能動的な置換を解析する。"""
     result: list[BashInvocation] = []
-    values = [word.value for word in words]
+    # リダイレクトは字句解析で語から分けてあるため、語はリダイレクトを持たない`ShellWord`として渡す。
+    # 消費側が`strip_redirections`を通しても、引用済みの`'>'`などのデータを演算子として除かない。
+    # 元の語は`join_words`で同じ値へ戻るよう引用した表記を保ち、再解析で引用内の`;`などを区切りにしない。
+    values: list[str] = [ShellWord(word.value, expansion=not word.known, raw=shlex.quote(word.value)) for word in words]
     prefix = 0
     while prefix < len(words) and words[prefix].assignment:
         prefix += 1

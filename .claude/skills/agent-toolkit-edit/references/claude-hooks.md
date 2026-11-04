@@ -1,6 +1,6 @@
 # Claude Code・Codex Hook実装ガイドライン
 
-品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks.md`である。呼び出し元の取得条件と注目箇所を引き継ぎ、本書と正式な資料を全文読む。節指定がある場合は、指定された見出しを持つ資料に注目する。両方に同名の見出しがあれば両方に注目する。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks.md`である。呼び出し元の条件と節指定を引き継ぎ、本書の運用条件と正式な資料の必要節・前提・例外を読む。両方に同名の見出しがあれば、その範囲を両方で確認する。範囲の選択と取得済み本文の再利用は`../SKILL.md`「名指し参照の読込方法」に従う。
 
 以下はagent-toolkitが所有する運用条件である。
 
@@ -33,6 +33,7 @@
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`: AWI処理の常駐実行が起動したセッションであることを示す印（値`1`）。後述の`AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`が存在する場合は、hook入力の会話IDとの一致も確認する。
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`: process-loopがClaude会話の新規起動またはID指定再開時に子セッションへ渡す会話ID。hook入力の`session_id`と突き合わせ、環境変数の印を継承した入れ子の別会話を、自律終了、空転防止ガード、計画保存通知、セッション名設定、および観測ログの対象から除外する。
 - `AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`: 常駐実行がセッション起動時に渡す追加指示の本文。`rules_context`が委譲先を除くメインセッション開始時のコンテキストへ配置する。
+- `AGENT_TOOLKIT_SESSION_START_INPUT`: process-loop・run-skillが渡す起動元、スキル、モードと可変入力のJSON。SessionStartがメインへ機械生成標識付きで配送し、委譲先の環境継承とテスト環境では除去する。Claudeの出力上限を超える場合はmanaged-tempの原本参照を配送する。
 - `AGENT_TOOLKIT_LARGE_READ_BYTES`: CodexのBash実行によるファイル全文取得を分割読取へ誘導する、`pretooluse/large_reads`のバイト数閾値。正の整数のみを採用し、それ以外はデフォルト値を使用する。
 - `AGENT_TOOLKIT_RUNTIME_DATA`: 配布ルートの外側に配置する共有依存環境の保存先。起動処理がパスを確定し、委譲先へも明示的に引き継ぐ。
 - `AGENT_TOOLKIT_RUNTIME_ENVIRONMENT`・`AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT`: 起動処理が選定した依存環境、および呼び出し元の`UV_PROJECT_ENVIRONMENT`を保持する内部値。子プロセスへ渡す環境を整える処理が、環境変数の復元後にこれらを除去する。

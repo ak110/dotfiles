@@ -334,17 +334,27 @@ def test_dry_run_opening_save_failure_has_no_valid_result(
 
 
 def _awi_cause_items_table() -> str:
-    """AWIの`## 原因分析`の2列表（5行）を、計画の調査表と同じ記入値で組み立てる。"""
-    rows = [
-        plan_fixture.item_row(
-            row,
-            f"作り込み要因: {plan_fixture.BUG_FILLER}を採用。見逃し要因: {plan_fixture.BUG_FILLER}を採用。"
-            if row in ("類似見直し観点", "再発防止策")
-            else plan_fixture.BUG_FILLER,
-        )
-        for row in add_module.AWI_CAUSE_TABLE_ROWS
-    ]
+    """AWIの`## 原因分析`の2列表（8行）を、計画の調査表と同じ記入値で組み立てる。"""
+    rows = [plan_fixture.item_row(row, plan_fixture.BUG_FILLER) for row in add_module.AWI_CAUSE_TABLE_ROWS]
     return "\n".join(["| 項目 | 内容 |", "| --- | --- |", *rows])
+
+
+_PREVIOUS_AWI_CAUSE_ITEMS_TABLE = "\n".join(
+    [
+        "| 項目 | 内容 |",
+        "| --- | --- |",
+        *(
+            plan_fixture.item_row(
+                row,
+                f"作り込み要因: {plan_fixture.BUG_FILLER}を採用。見逃し要因: {plan_fixture.BUG_FILLER}を採用。"
+                if row in ("類似見直し観点", "再発防止策")
+                else plan_fixture.BUG_FILLER,
+            )
+            for row in ("直接的原因", "原因分析の根拠", "対策", "類似見直し観点", "再発防止策")
+        ),
+    ]
+)
+"""6区分化より前のAWIの5行表。原因分析を変える保存では新形式への移行を求める。"""
 
 
 @pytest.mark.parametrize(
@@ -352,37 +362,35 @@ def _awi_cause_items_table() -> str:
     [
         "empty_l4",
         "bare_l4",
-        "missing_creation",
-        "missing_detection",
-        "bare_rejection",
-        "no_countermeasure",
+        "missing_creation_review",
+        "missing_detection_prevention",
+        "empty_detection_review",
+        "missing_regression",
+        "missing_decision",
+        "empty_decision",
         "empty_countermeasure",
+        "previous_format",
+        "missing_table",
+        "second_unit_missing_table",
+        "two_units",
         "valid",
-        "shared_decision",
-        "separate_shared_decision",
-        "one_decision",
-        "deferred_decision",
-        "shared_bare_rejection",
-        "short_names",
-        "candidate_names",
     ],
 )
 @pytest.mark.parametrize("agent", [False, True])
 @pytest.mark.parametrize("operation", ["add", "edit"])
-@pytest.mark.parametrize("factor_suffix", ["要因", "", "側", "候補"])
 def test_public_add_cause_analysis_format(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     case: str,
     operation: str,
-    factor_suffix: str,
     *,
     agent: bool,
 ) -> None:
     """原因分析の新検査はエージェントに適用し、人間入力を拒否しない。
 
-    AWIの2列表は対策の行を含む5行とし、旧4行表（対策なし）と空の対策を拒否する。
+    AWIの2列表は処置の6区分と採否2行の8行とし、4区分の候補行・採否行・回帰防止策の欠落と空欄、
+    6区分化前の5行表と、バグ単位のL4表に対応する処置表が無い記録（2単位の片方だけ欠ける場合を含む）を拒否する。
     """
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
@@ -392,43 +400,34 @@ def test_public_add_cause_analysis_format(
         monkeypatch.setenv("CLAUDECODE", "1")
     cause = plan_fixture.bug_cause_table()
     table = _awi_cause_items_table()
+    removed = {
+        "missing_creation_review": "類似見直し観点（作り込み）",
+        "missing_detection_prevention": "再発防止策（見逃し）",
+        "missing_regression": "回帰防止策",
+        "missing_decision": "再発防止策の採否",
+    }
+    emptied = {
+        "empty_detection_review": "類似見直し観点（見逃し）",
+        "empty_decision": "類似見直しの採否",
+        "empty_countermeasure": "対策",
+    }
     if case in ("empty_l4", "bare_l4"):
         value = "" if case == "empty_l4" else "該当なし。"
         cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", f"{value} |")
-    elif case.startswith("missing_"):
-        factor = "作り込み要因" if case == "missing_creation" else "見逃し要因"
-        table = table.replace(factor, "別系統")
-    elif case == "bare_rejection":
-        table = table.replace(f"{plan_fixture.BUG_FILLER}を採用。", "不採用。")
-    elif case == "no_countermeasure":
-        table = "\n".join(line for line in table.splitlines() if not line.startswith("| 対策 |"))
-    elif case == "empty_countermeasure":
-        table = table.replace(f"| 対策 | {plan_fixture.BUG_FILLER} |", "| 対策 |  |")
-    elif case in (
-        "shared_decision",
-        "separate_shared_decision",
-        "one_decision",
-        "deferred_decision",
-        "shared_bare_rejection",
-        "short_names",
-        "candidate_names",
-    ):
-        value = {
-            "shared_decision": "作り込み要因の候補はA、見逃し要因の候補はBであり、ともに採用する。",
-            "separate_shared_decision": "作り込み要因の候補はA。見逃し要因の候補はB。両候補を採用する。",
-            "one_decision": "作り込み要因の候補Aを採用する。見逃し要因の候補はB。",
-            "deferred_decision": "作り込み要因の候補はA、見逃し要因の候補はB。両系統とも原因確定後に採否を決める。",
-            "shared_bare_rejection": "作り込み要因の候補はA、見逃し要因の候補はB。両候補を不採用とする。",
-            "short_names": "作り込み: 経路A。見逃し: 試験B。両方を採用。",
-            "candidate_names": "作り込み候補: 集約を採用。見逃し候補: 試験を採用。",
-        }[case]
-        table = "\n".join(
-            f"| {line.split('|')[1].strip()} | {value} |" if line.startswith(("| 類似見直し観点 |", "| 再発防止策 |")) else line
-            for line in table.splitlines()
-        )
+    elif case in removed:
+        table = "\n".join(line for line in table.splitlines() if not line.startswith(f"| {removed[case]} |"))
+    elif case in emptied:
+        table = table.replace(f"| {emptied[case]} | {plan_fixture.BUG_FILLER} |", f"| {emptied[case]} |  |")
+    elif case == "previous_format":
+        table = _PREVIOUS_AWI_CAUSE_ITEMS_TABLE
+    elif case == "missing_table":
+        table = ""
+    elif case == "second_unit_missing_table":
+        table = f"{table}\n\n{plan_fixture.bug_cause_table()}"
+    elif case == "two_units":
+        table = f"{table}\n\n{plan_fixture.bug_cause_table()}\n\n{_awi_cause_items_table()}"
     else:
         cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外の構造だけで生じた。 |")
-    table = table.replace("作り込み要因", "作り込み" + factor_suffix).replace("見逃し要因", "見逃し" + factor_suffix)
     body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{cause}\n\n{table}\n"
     args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
 
@@ -443,7 +442,7 @@ def test_public_add_cause_analysis_format(
         if finished.value.code:
             raise SystemExit(finished.value.code)
 
-    if agent and case not in ("valid", "shared_decision", "separate_shared_decision", "short_names", "candidate_names"):
+    if agent and case not in ("valid", "two_units"):
         with pytest.raises(SystemExit) as rejected:
             run()
         assert rejected.value.code != 0
@@ -456,7 +455,7 @@ def test_public_add_cause_analysis_format(
 def test_public_append_keeps_saved_legacy_cause_table(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """保存済みの旧4行表を持つAWIへの追記は、原因分析節を変えないため拒否しない。
+    """保存済みの6区分化前の5行表を持つAWIへの追記は、原因分析節を変えないため拒否しない。
 
     書式の改訂前に保存された未終了の項目へ、訂正や記録を追記できる必要がある。
     """
@@ -464,7 +463,7 @@ def test_public_append_keeps_saved_legacy_cause_table(
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-    legacy = "\n".join(line for line in _awi_cause_items_table().splitlines() if not line.startswith("| 対策 |"))
+    legacy = _PREVIOUS_AWI_CAUSE_ITEMS_TABLE
     body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{plan_fixture.bug_cause_table()}\n\n{legacy}"
     _write_awi_file(notes, "legacy.md", body=body, source="test")
     appended = tmp_path / "append.md"
@@ -544,7 +543,10 @@ def test_add_dry_run_reports_all_reserved_uwi_markup(
     """UWI本文の予約要素を一度のdry-runで全て報告する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-    body = f"どちらの案を採用しますか？\n{uwi_module.ANSWER_MARKER}\n{uwi_module.QUESTION_HEADING}\n{uwi_module.ANSWER_HEADING}"
+    body = (
+        f"どちらの案を採用しますか？\n{uwi_module.ANSWER_MARKER}\n"
+        f"{uwi_module.QUESTION_HEADING}\n{uwi_module.ANSWER_HEADING}\n記入済みの回答"
+    )
     args = _cmd_add_args(tmp_path, body, entry_type=WI_TYPE_UWI, dry_run=True)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -1151,9 +1153,11 @@ def test_cmd_add_accepts_uwi_without_required_sections(
 
 
 def _with_direct_cause(body: str, value: str) -> str:
-    """通常AWIの本文へ`直接的原因`行を持つ原因分析（AWIの5行表）を加える。"""
-    table = _awi_cause_items_table().replace(f"| 直接的原因 | {plan_fixture.BUG_FILLER} |", f"| 直接的原因 | {value} |")
-    section = f"## 原因分析\n\n{table}\n\n"
+    """通常AWIの本文へ、原因分析表の作り込み要因のL1へ原因の記述を置いた原因分析（8行表）を加える。"""
+    cause = plan_fixture.bug_cause_table().replace(
+        f"| 作り込み要因 | {plan_fixture.CAUSE_FILLER} |", f"| 作り込み要因 | {value} |", 1
+    )
+    section = f"## 原因分析\n\n{cause}\n\n{_awi_cause_items_table()}\n\n"
     return f"{body}\n\n{section}"
 
 
@@ -1232,7 +1236,8 @@ def test_add_rejects_undetermined_direct_cause_in_uwi(
         _AGENT_AWI_BODY.replace(
             "## 反映内容と反映先\n対象と反映先",
             "## 反映内容と反映先\n対象と反映先\n\n## 原因分析\n\n確定した原因の説明。例示:\n\n"
-            "```markdown\n| 直接的原因 | 未確定 |\n```",
+            "```markdown\n| 直接的原因 | 未確定 |\n```\n\n"
+            f"{plan_fixture.bug_cause_table()}\n\n{_awi_cause_items_table()}",
             1,
         ),
     ],

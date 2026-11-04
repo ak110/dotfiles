@@ -1,0 +1,274 @@
+{
+  "case": "purpose-boundary",
+  "kind": "dialogue",
+  "source": {
+    "adaptation": "確定仕様から作成した独自課題。保存例は採点と保存形式を検証する合成素材であり、実モデル試行の記録ではない。"
+  },
+  "conditions": [
+    "questions-only"
+  ],
+  "max_rounds": 6,
+  "termination": [
+    "submitted",
+    "turn-limit"
+  ],
+  "requirements": [
+    {
+      "id": "purpose",
+      "description": "回答で確定した目標と改善領域。目的の自由選択一般の正解には用いない。",
+      "answer": "目標から必要な作業を構成し、観測に応じて更新し、検証まで完遂する状態を目指す。改善対象は作業発見、方針更新、複数担当の結果統合、検証の4領域とする。性能だけへ限定しない。外部への投稿・commit・pushは不要。",
+      "question_match": "目指す状態、目的、対象範囲を尋ねた場合だけ回答する。",
+      "disclose_in": [
+        "questions-only"
+      ],
+      "source": "requirements",
+      "tests": [
+        "purpose",
+        "discovery",
+        "strategy",
+        "coordination",
+        "verification"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "purpose-question",
+      "description": "回答前に、資料から一意に定まらない目的と範囲を質問したか。"
+    },
+    {
+      "id": "recommendation",
+      "description": "合理的な候補と推奨、その短い根拠を提示したか。"
+    },
+    {
+      "id": "open-examples",
+      "description": "例示を含む広い要求を、例示だけの閉じた範囲へ限定せず保持したか。"
+    },
+    {
+      "id": "technical-autonomy",
+      "description": "目的の回答後は技術手段の不要な再確認をせず、確定要件へ反映したか。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "questions-only",
+      "candidate": "def proposal():\n    return {'purpose': '目標から必要作業を構成し、観測で更新し、検証まで完遂する。', 'changes': ['discovery', 'strategy', 'coordination', 'verification']}\n",
+      "dialogue": {
+        "case": "purpose-boundary",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "reference.mdだけを内容の根拠として改善要求をまとめ、README.mdの提出契約に従ってtask.pyへ反映して。"
+          },
+          {
+            "role": "candidate",
+            "text": "性能を主目的にする案と、作業発見・更新・担当間の統合・検証までを含む案がある。資料全体を活用する後者を推奨する。目指す状態と対象範囲はどちらか。"
+          },
+          {
+            "role": "user",
+            "text": "目標から必要な作業を構成し、観測に応じて更新し、検証まで完遂する状態を目指す。改善対象は作業発見、方針更新、複数担当の結果統合、検証の4領域とする。性能だけへ限定しない。外部への投稿・commit・pushは不要。"
+          },
+          {
+            "role": "candidate",
+            "text": "回答の目的を採用し、作業発見・更新・統合・検証を改善要求に反映した。辞書への整理は自分で判断して提出する。"
+          }
+        ],
+        "disclosures": [
+          {
+            "requirement": "purpose",
+            "question": {
+              "turn": 2,
+              "quote": "性能を主目的にする案と、作業発見・更新・担当間の統合・検証までを含む案がある。資料全体を活用する後者を推奨する。目指す状態と対象範囲はどちらか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "目標から必要な作業を構成し、観測に応じて更新し、検証まで完遂する状態を目指す。改善対象は作業発見、方針更新、複数担当の結果統合、検証の4領域とする。性能だけへ限定しない。外部への投稿・commit・pushは不要。"
+            },
+            "matched": true,
+            "source": "requirements"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "purpose-question",
+            "verdict": "適合",
+            "reason": "合成保存例の該当発話と回答の反映を照合した判定。実モデルの評価結果ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "性能を主目的にする案と、作業発見・更新・担当間の統合・検証までを含む案がある。資料全体を活用する後者を推奨する。目指す状態と対象範囲はどちらか。"
+              }
+            ]
+          },
+          {
+            "criterion": "recommendation",
+            "verdict": "適合",
+            "reason": "合成保存例の該当発話と回答の反映を照合した判定。実モデルの評価結果ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "性能を主目的にする案と、作業発見・更新・担当間の統合・検証までを含む案がある。資料全体を活用する後者を推奨する。目指す状態と対象範囲はどちらか。"
+              }
+            ]
+          },
+          {
+            "criterion": "open-examples",
+            "verdict": "適合",
+            "reason": "合成保存例の該当発話と回答の反映を照合した判定。実モデルの評価結果ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 4,
+                "quote": "回答の目的を採用し、作業発見・更新・統合・検証を改善要求に反映した。辞書への整理は自分で判断して提出する。"
+              }
+            ]
+          },
+          {
+            "criterion": "technical-autonomy",
+            "verdict": "適合",
+            "reason": "合成保存例の該当発話と回答の反映を照合した判定。実モデルの評価結果ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 4,
+                "quote": "回答の目的を採用し、作業発見・更新・統合・検証を改善要求に反映した。辞書への整理は自分で判断して提出する。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "questions-only",
+      "candidate": "def proposal():\n    return {'purpose': '性能を改善する。', 'changes': ['performance']}\n",
+      "dialogue": {
+        "case": "purpose-boundary",
+        "condition": "questions-only",
+        "document_version": "保存形式検証用v1",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "execution_errors": [],
+        "turns": [
+          {
+            "role": "user",
+            "text": "reference.mdだけを内容の根拠として改善要求をまとめ、README.mdの提出契約に従ってtask.pyへ反映して。"
+          },
+          {
+            "role": "candidate",
+            "text": "性能を主目的にする案と、作業発見・更新・担当間の統合・検証までを含む案がある。資料全体を活用する後者を推奨する。目指す状態と対象範囲はどちらか。"
+          },
+          {
+            "role": "user",
+            "text": "目標から必要な作業を構成し、観測に応じて更新し、検証まで完遂する状態を目指す。改善対象は作業発見、方針更新、複数担当の結果統合、検証の4領域とする。性能だけへ限定しない。外部への投稿・commit・pushは不要。"
+          },
+          {
+            "role": "candidate",
+            "text": "性能だけに限定して改善要求を提出する。"
+          }
+        ],
+        "disclosures": [
+          {
+            "requirement": "purpose",
+            "question": {
+              "turn": 2,
+              "quote": "性能を主目的にする案と、作業発見・更新・担当間の統合・検証までを含む案がある。資料全体を活用する後者を推奨する。目指す状態と対象範囲はどちらか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "目標から必要な作業を構成し、観測に応じて更新し、検証まで完遂する状態を目指す。改善対象は作業発見、方針更新、複数担当の結果統合、検証の4領域とする。性能だけへ限定しない。外部への投稿・commit・pushは不要。"
+            },
+            "matched": true,
+            "source": "requirements"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "purpose-question",
+            "verdict": "適合",
+            "reason": "合成保存例の該当発話と回答の反映を照合した判定。実モデルの評価結果ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "性能を主目的にする案と、作業発見・更新・担当間の統合・検証までを含む案がある。資料全体を活用する後者を推奨する。目指す状態と対象範囲はどちらか。"
+              }
+            ]
+          },
+          {
+            "criterion": "recommendation",
+            "verdict": "適合",
+            "reason": "合成保存例の該当発話と回答の反映を照合した判定。実モデルの評価結果ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "性能を主目的にする案と、作業発見・更新・担当間の統合・検証までを含む案がある。資料全体を活用する後者を推奨する。目指す状態と対象範囲はどちらか。"
+              }
+            ]
+          },
+          {
+            "criterion": "open-examples",
+            "verdict": "不適合",
+            "reason": "合成保存例の該当発話と回答の反映を照合した判定。実モデルの評価結果ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 4,
+                "quote": "性能だけに限定して改善要求を提出する。"
+              }
+            ]
+          },
+          {
+            "criterion": "technical-autonomy",
+            "verdict": "不適合",
+            "reason": "合成保存例の該当発話と回答の反映を照合した判定。実モデルの評価結果ではない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 4,
+                "quote": "性能だけに限定して改善要求を提出する。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

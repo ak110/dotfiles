@@ -607,11 +607,12 @@ class TestRealignNoticeInjection:
         assert set(_read_state(tmp_path, "realign-machine")) <= {"notice_fingerprints"}
 
 
-class TestExampleInvestigationNotice:
-    """例示の語と調査を求める語を併せ持つ実ユーザー発話へ、範囲語と例示を併せた依頼の項の所在を示す。
+class TestExampleScopeNotice:
+    """例示の語を含む実ユーザー発話へ、原文の対象と例示の関係を判断する節の所在を示す。
 
-    注記が欠けると、例示の対象から自ら直列に調べ始め、例示を除いた独立した調査を委ねないまま結論へ進む。
-    注記が過剰だと、貼り付けた素材や実行指示の発話にも毎回同じ本文が載る。
+    注記が欠けると、上位の対象と例示を併記した指摘・提案で対応範囲を例示だけに狭める。
+    調査を求める語も含む発話では、例示を除いた独立した調査を委ねる手段の所在も加える。
+    注記が過剰だと、貼り付けた素材だけに例示語がある発話にも同じ本文が載る。
     """
 
     _PROMPT = (
@@ -620,7 +621,7 @@ class TestExampleInvestigationNotice:
         "例えばアプリ呼び出しの分がチャット画面の消費CRのバッジに表示されないとか？\n"
         "（報告者の勘違いの可能性もあるのでそれも含めて調査して。）"
     )
-    _UTTERANCE_PATH = _SCRIPTS_DIR.parent / "skills" / "user-confirmation-and-report" / "SKILL.md"
+    _UTTERANCE_PATH = _SCRIPTS_DIR.parent / "skills" / "user-confirmation-and-report" / "references" / "user-utterance.md"
     _ROUTING_PATH = _SCRIPTS_DIR.parent / "skills" / "delegation" / "references" / "routing.md"
 
     @classmethod
@@ -633,7 +634,7 @@ class TestExampleInvestigationNotice:
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_example_with_investigation_request_receives_notice(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
-        """両ホストで、両資料の絶対パスと着手前の適用を求める注記を返す。"""
+        """両ホストで、範囲判断の節と手順1の調査の手段の所在を示す注記を返す。"""
         result = _run({"session_id": "example-notice", "prompt": self._PROMPT, **host_fields}, state_dir=tmp_path)
         bodies = self._example_bodies(result)
         assert len(bodies) == 1
@@ -643,31 +644,58 @@ class TestExampleInvestigationNotice:
         assert "自ら調査へ着手する前に" in bodies[0]
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
+    @pytest.mark.parametrize(
+        "prompt",
+        [
+            pytest.param(
+                ".github/workflows/ci.yaml が複雑になり過ぎでは？ "
+                "例えばpytestのところはmark使うとかもっとシンプルにすることを考えるべきでしょ",
+                id="observed-utterance",
+            ),
+            pytest.param("全体が分かりにくい。例えば表示順を簡潔にすべき", id="proposal-without-investigation"),
+            pytest.param("例えば見出しを太字にして", id="example-only"),
+            pytest.param("例えば`make test`を実行して", id="execution-instruction"),
+        ],
+    )
+    def test_example_without_investigation_receives_scope_notice(
+        self, tmp_path: pathlib.Path, host_fields: dict, prompt: str
+    ) -> None:
+        """調査の語が無い指摘・提案・実行指示にも範囲判断の節を示し、調査や委譲を求める本文は付けない。"""
+        result = _run({"session_id": "example-scope", "prompt": prompt, **host_fields}, state_dir=tmp_path)
+        bodies = self._example_bodies(result)
+        assert len(bodies) == 1
+        assert "「原文の保持と取り込み」" in bodies[0]
+        assert "対応範囲を例示だけに狭めるな" in bodies[0]
+        assert "そのまま元の依頼を続けよ" in bodies[0]
+        assert str(self._ROUTING_PATH) not in bodies[0]
+        assert "自ら調査へ着手する前に" not in bodies[0]
+
+    @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize("word_form", ["洗い出して", "洗い出せるか", "洗い出そう", "探して"])
     def test_investigation_word_stems_cover_inflections(
         self, tmp_path: pathlib.Path, host_fields: dict, word_form: str
     ) -> None:
-        """調査を求める語の部分文字列は、活用形の発話にも注記を返す。"""
+        """調査を求める語の部分文字列は、活用形の発話にも手順1の調査の所在を加える。"""
         result = _run(
             {"session_id": "example-inflections", "prompt": f"例えば通信経路を{word_form}", **host_fields},
             state_dir=tmp_path,
         )
-        assert len(self._example_bodies(result)) == 1
+        bodies = self._example_bodies(result)
+        assert len(bodies) == 1
+        assert str(self._ROUTING_PATH) in bodies[0]
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize(
         "prompt",
         [
-            pytest.param("例えば見出しを太字にして", id="example-only"),
             pytest.param("何か計上されないものが無いか確認して", id="investigation-only"),
-            pytest.param("例えば`make test`を実行して", id="execution-instruction"),
             pytest.param("このエラーを確認して\n```text\n例えば次のように表示される\n```", id="fenced-code"),
             pytest.param("`例えば`という語の扱いを確認して", id="inline-code"),
             pytest.param("> 例えば旧版ではこう書いていた\n上の引用の出典を確認して", id="quote"),
         ],
     )
     def test_other_prompts_do_not_receive_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
-        """例示か調査の語の片方だけを持つ発話と、語が貼り付けた素材の中だけにある発話には返さない。"""
+        """例示の語が無い発話と、語が貼り付けた素材の中だけにある発話には返さない。"""
         result = _run({"session_id": "example-negative", "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert not self._example_bodies(result)
 

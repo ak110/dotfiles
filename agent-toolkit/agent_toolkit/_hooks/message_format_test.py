@@ -253,7 +253,7 @@ const timers = [];
 const base = {plugin: {name: 'agent-toolkit', root: '/plugin'}, env: {get: async () => undefined}};
 const compactCall = c.calls.find(({selector}) => selector.tool instanceof RegExp).callback;
 await compactCall({...base, clock: {after: (_time, callback) => timers.push(callback)},
-  session: {compact: async () => { throw new Error('圧縮の実行拒否'); }},
+  session: {surfaces: async () => ['terminal'], compact: async () => { throw new Error('圧縮の実行拒否'); }},
   ui: {toast: (text) => bodies.push(text)}}, {tool: 'mcp__agent-toolkit__compact_conversation'}, async () => ({}));
 await timers[0]();
 for (const success of [true, false]) {

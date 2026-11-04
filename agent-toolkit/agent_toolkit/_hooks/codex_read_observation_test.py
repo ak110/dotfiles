@@ -1,5 +1,6 @@
-"""公開Post hookを通して、Codexのnative読取の成功だけを読了として観測し、本文を配送しないことを確かめる。"""
+"""公開Post hookの読取観測と本文の非再配送、Codexの内側成功だけでは取得を確定しない境界を検証する。"""
 
+import gzip
 import json
 import pathlib
 import shlex
@@ -10,9 +11,11 @@ from agent_toolkit._common import delegated_session, session_state
 from agent_toolkit._hooks import codex_read_observation as observation
 from agent_toolkit._hooks import plugin_resources, posttooluse, rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
+from agent_toolkit._testing.document_delivery import run_hook
 
 
 def _payload(tmp_path, command, body, *, exit_code=0, aggregated=None):
+    """分岐網羅用の合成入力。実ホストの形は生産済み標本の試験で別に確認する。"""
     records = [
         {
             "type": "event_msg",
@@ -33,7 +36,8 @@ def _payload(tmp_path, command, body, *, exit_code=0, aggregated=None):
         },
     ]
     transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+    with transcript.open("a", encoding="utf-8") as stream:
+        stream.writelines(json.dumps(record) + "\n" for record in records)
     return {
         "session_id": "session",
         "turn_id": "turn",
@@ -106,6 +110,39 @@ def test_successful_read_is_observed_and_truncation_gets_recovery(tmp_path):
     assert 'source="codex-read-observation" kind="notice"' in cut.context
 
 
+@pytest.mark.parametrize("name", ["claude_read", "claude_token_cap", "codex_two_layer_cut"])
+def test_public_post_hook_does_not_redeliver_produced_host_response(tmp_path, capsys, name):
+    """実ホストの応答形式でも本文を再配送せず、Codexの内側成功を外側の取得と扱わない。
+
+    Claude Code 2.1.317・Codex 0.166.0の抽出元と行は既存fixtureのsourceにある。
+    外側配送後の取得範囲はread_delivery_host_samples_test.pyの通し試験が検証する。
+    本試験はPostの非再配送を担い、ホストを起動した保証には広げない。
+    """
+    samples = pathlib.Path(__file__).with_name("pretooluse") / "fixtures/read_delivery_host_samples.json.gz"
+    sample = json.loads(gzip.decompress(samples.read_bytes()).decode("utf-8"))[name]
+    path = tmp_path / "source.md"
+    if name.startswith("claude_"):
+        response = sample["response"]
+        body = response["file"]["content"]
+        payload = {
+            "session_id": "session",
+            "cwd": str(tmp_path),
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(path)},
+            "tool_response": response,
+        }
+    else:
+        body = sample["producer_outputs"][0]
+        payload = _payload(tmp_path, f"cat -- {path}", body)
+    path.write_text(body, encoding="utf-8")
+    assert posttooluse.main(json.dumps(payload)) == 0
+    output = _additional_context(capsys)
+    assert not output
+    if name == "codex_two_layer_cut":
+        recorded = session_state.read_state("session").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+        assert not read_delivery.target_ready(recorded, read_delivery.read_triggers.ReadTarget(path), "main")
+
+
 @pytest.mark.parametrize(
     "command",
     [
@@ -135,8 +172,8 @@ def test_malformed_transcript_is_not_observed(tmp_path, value):
 
 @pytest.mark.parametrize("exit_code", [0, 1, None])
 @pytest.mark.parametrize("truncated", [False, True])
-def test_document_read_state_follows_successful_full_native_read(tmp_path, capsys, exit_code, truncated):
-    """PostToolUseの成功と失敗を分け、省略や保存記録の欠落で誤遮断しない。"""
+def test_document_read_state_waits_for_outer_delivery(tmp_path, capsys, exit_code, truncated):
+    """内側のnative結果だけでは、外側で実配送された本文の取得を確定しない。"""
     path = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
     body = path.read_text(encoding="utf-8")
     payload = _payload(tmp_path, f"cat -- {path}", _cut(body) if truncated else body, exit_code=exit_code)
@@ -146,7 +183,7 @@ def test_document_read_state_follows_successful_full_native_read(tmp_path, capsy
     capsys.readouterr()
     recorded = session_state.read_state("session").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     target = read_delivery.read_triggers.ReadTarget(path)
-    assert read_delivery.target_ready(recorded, target, "main") == (exit_code != 1)
+    assert not read_delivery.target_ready(recorded, target, "main")
 
 
 @pytest.mark.parametrize("launch_kind", ["", "explore", "shell"])
@@ -194,7 +231,7 @@ def _persisted(body: str) -> str:
 
 @pytest.mark.parametrize("form", ["multiple", "mixed", "diagnostic", "single", "split"])
 def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp_path, capsys, monkeypatch, form):
-    """65536バイトを超える応答の保存用写しが省略されても、成功した読取で書込遮断を解除する。
+    """保存用写しが省略されても、実配送した必要本文の受領を記録する。
 
     複数資料の静的なcat、単一の長い資料、末尾まで分けた行範囲の取得を比べる。
     `diagnostic`は、先頭の読取成功を後続の`git status`などの診断によって失わないことを確かめる。
@@ -210,7 +247,10 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
     write = {"file_path": str(tmp_path / "out.md"), "content": "本文"}
     first = read_delivery.deliver(operation, "Write", write, "session")
     read_delivery.notice_module.record_delivery("\n".join(first.notices))
-    assert read_delivery.deliver(operation, "Write", write, "session").block is not None
+    repeated = read_delivery.deliver(operation, "Write", write, "session")
+    assert repeated.block is None and not repeated.notices
+    records = session_state.read_state("session").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert all(not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(path), "main") for path in paths)
     if form == "multiple":
         reads = [(f"cat -- {paths[0]} {paths[1]}", paths[0].read_text() + paths[1].read_text())]
     elif form == "mixed":
@@ -230,9 +270,12 @@ def test_full_return_with_persisted_copy_only_truncated_releases_write_block(tmp
                 reads.append((f"sed -n '101,$p' -- {path}", "".join(lines[100:])))
     for command, body in reads:
         payload = _payload(tmp_path, command, body, aggregated=_persisted(body))
-        assert posttooluse.main(json.dumps(payload)) == 0
+        result = run_hook("posttooluse", payload)
+        assert result.returncode == 0 and not result.stderr
     capsys.readouterr()
     assert read_delivery.deliver(operation, "Write", write, "session").block is None
+    records = session_state.read_state("session")[rules_context.OPERATION_SKILL_READY_KEY]
+    assert all(read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(path), "main") for path in paths)
 
 
 def test_persisted_copy_delivered_as_the_response_is_not_a_full_read(tmp_path):

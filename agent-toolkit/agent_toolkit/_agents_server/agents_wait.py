@@ -299,6 +299,7 @@ def _fail(message: str, code: int, *, next_action: str, session_id: str | None =
 
 def _with_result_next_action(result: dict[str, Any]) -> dict[str, Any]:
     """委譲先が失敗または中断で終了した結果へ、受領した主体の次の操作を加える。"""
+    result = result_projection.with_result_next_action(result, result.get("label"))
     status = result.get("status")
     if status == "failed":
         result = result_projection.append_result_next_action(

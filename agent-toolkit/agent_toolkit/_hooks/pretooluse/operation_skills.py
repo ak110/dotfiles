@@ -10,16 +10,17 @@ import dataclasses
 import os
 import pathlib
 import re
-import shlex
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from collections.abc import Callable, Sequence
 
+lazy from agent_toolkit._atk.wi import frontmatter
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
+lazy from agent_toolkit._common.shell_tokens import is_atk_command, split_words
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import rules_context as _rules_context
@@ -504,15 +505,17 @@ def is_diagnostic_operation(tool_name: str, tool_input: dict, cwd: str) -> bool:
     if tool_name != "Bash" or not isinstance(command, str) or any(char in command for char in ("$", "`")):
         return False
     # 関数定義やグループで隠した実行、heredocの本文を診断コマンドと推定しない。
-    lexer = shlex.shlex(command, posix=False, punctuation_chars="(){}<>")
-    lexer.whitespace_split = True
     try:
-        if any(
-            token in {"(", ")", "()", "{", "}", "<<", "<<<", "<>"} or _shell_segments.ENV_ASSIGN_PATTERN.match(token)
-            for token in lexer
-        ):
-            return False
+        words = [word for _connector, segment in _shell_segments.split_bash_commands(command) for word in split_words(segment)]
     except ValueError:
+        return False
+    if any(
+        set("()") & set(word.unquoted)
+        or word.unquoted in {"{", "}"}
+        or (word.redirection and word.unquoted.lstrip("0123456789").startswith(("<<", "<>")))
+        or _shell_segments.ENV_ASSIGN_PATTERN.match(word.unquoted)
+        for word in words
+    ):
         return False
     segments = _shell_segments.extract_execution_pipelines(command, expand_shell=False)
     if not segments or any(not segment.resolved for pipeline in segments for segment in pipeline):
@@ -781,6 +784,39 @@ def resolve_subject(payload: dict) -> str:
     return SUBJECT_MAIN
 
 
+def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str) -> set[bool]:
+    """保存に渡された本文の報告標識を読む。未指定・読取不能は通常保存として扱う。"""
+    if tool_name != "Bash" or not isinstance(tool_input.get("command"), str):
+        return set()
+    kinds = set()
+    for invocation, current in shell_cwd.bash_invocation_cwds(tool_input["command"], cwd):
+        tokens = invocation.segment.tokens
+        if not is_atk_command(tokens) or tokens[1:3] not in {("wi", "add"), ("wi", "edit")}:
+            continue
+        if "--help" in tokens or "-h" in tokens:
+            continue
+        bodies = [
+            tokens[index + 1] if value == "--body-file" and index + 1 < len(tokens) else value.partition("=")[2]
+            for index, value in enumerate(tokens)
+            if value == "--body-file" or value.startswith("--body-file=")
+        ]
+        if not bodies:
+            kinds.add(False)
+        for value in bodies:
+            path = pathlib.Path(value).expanduser()
+            if not path.is_absolute():
+                if not current.resolved:
+                    kinds.add(False)
+                    continue
+                path = pathlib.Path(current.path) / path
+            try:
+                parsed = frontmatter.parse_frontmatter(frontmatter.decode_entry_text(path.read_bytes()))
+            except OSError, UnicodeError:
+                parsed = None
+            kinds.add(parsed is not None and parsed[0].get("run_skill_report") == "true")
+    return kinds
+
+
 def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str = "") -> bool | None:
     """共通語彙の操作を判定し、担当外の語彙はNoneを返す。"""
     predicates = {
@@ -796,6 +832,8 @@ def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str
         "verification": _is_verification_operation,
         "agent-document-writing": lambda name, data: _is_agent_document_writing(name, data, cwd),
         "confirmation": lambda name, _input: name in {"AskUserQuestion", "request_user_input", "request_user_input_async"},
+        "wi-report-save": lambda name, data: True in _wi_save_kinds(name, data, cwd),
+        "wi-standard-save": lambda name, data: False in _wi_save_kinds(name, data, cwd),
     }
     predicate = predicates.get(operation)
     return predicate(tool_name, tool_input) if predicate is not None else None

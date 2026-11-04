@@ -42,9 +42,9 @@ from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import mcp_environment, session_review, skill_modes
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import process_tree as _process_tree
-from agent_toolkit._common import session_review, skill_modes
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
 
@@ -180,45 +180,12 @@ def _dispatch_once(args: argparse.Namespace) -> int:
 
 
 def build_goal(skill: str, skill_args: str | None) -> str:
-    """子セッションへ渡す目的文の本体を返す。
+    """スキルと認識したモードの完遂だけを目的にする。
 
-    Claude Codeの`/goal`はこの文を停止の可否の判定に使う。成功だけを終了条件にすると、
-    解消できない前提で失敗を正直に報告した後も停止が遮断され続けるため、
-    成功時の完遂と、未完了のまま報告して終える条件を、どちらも目標の達成として並べる。
-    未完了の終了を達成と明示しないと、目標評価は報告保存後も完遂の証拠を求めて停止を遮断した（2026年10月31日の実ホスト受入）。
+    工程・終了条件を目的文へ加えるとスキルと定義が二重化し、各ターンの目標評価へ
+    再掲される。起動データと終了契約の参照先はSessionStartで渡す。
     """
-    mode, free_text = skill_modes.split_mode(skill, skill_args)
-    goal = (
-        f"スキル`{skill}`を実行し、その結果を`agent-toolkit:report-completion`の報告用UWIへ保存して、"
-        "次の2つの終わり方のどちらかで終えてください。どちらで終えてもこの目標は達成です。"
-        "作業の前に`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`"
-        "「`atk run-skill`の過去の実行のUWI」を適用してください。"
-        "\n- 完遂: スキルを完遂し、報告用UWIへ結果を保存した。"
-        "\n- 未完了の終了: 判断・認可・外部入力など、この実行の中では解消できない具体的な前提が残り、"
-        "未完了の理由・残る工程・再開の条件を報告用UWIへ保存した。完遂を装わずに未完了を正直に報告することは、"
-        "この目標の達成として扱います。スキルや依頼が許す回復手段をすべて試しても解消しない失敗と、"
-        "スキルや依頼が回復操作（再試行など）を禁じている失敗も、この実行の中では解消できない前提に含みます。"
-        "\nどちらにも当たらない間（実行できる作業が残る間）は続けてください。"
-        "子担当が失敗しても、許可済みの回復手段があれば使って続けてください。"
-    )
-    goal += (
-        "\n報告同期の検収は起動元がこのセッションの終了後に行う。"
-        "このセッションの完了条件に含めない。報告用UWIへの保存後に終了を要求してください。"
-    )
-    if skill == "agent-toolkit:review-session" and mode == "batch":
-        goal += (
-            "\nbatchの処理済み範囲の確定も起動元が終了後に行う。"
-            "完遂時は報告用UWIへの保存後に`atk run-script session-review-state -- finish`で分析完了を記録し、"
-            "終了を要求してください。未完了の終了では分析完了を記録しないでください。"
-        )
-    if mode is not None:
-        goal += f"\n起動モード: {mode}"
-    if skill_args is not None:
-        goal += f"\nスキルへ渡す引数: {skill_args}"
-    if mode is not None:
-        goal += f"\nモード語を除いた自由記述: {free_text}"
-    goal += "\n過去UWIの取込対象scope: " + json.dumps(skill_modes.accepted_scopes(skill, skill_args), ensure_ascii=False)
-    return goal
+    return f"スキル`{skill_modes.invocation_scope(skill, skill_args)}`を完遂する"
 
 
 def _run_locked(
@@ -276,10 +243,24 @@ def _run_locked(
     candidate = f"{orchestrator}:{model}/{effort}"
     _log_line(log, f"採用した候補: {candidate}")
     goal = _automated_prompt.wrap(
-        build_goal(args.skill, args.args)
-        + (f"\n報告先target_repo: {args.target_repo}" if getattr(args, "work_dir", None) is not None else ""),
+        build_goal(args.skill, args.args),
         source=_automated_prompt.SOURCE_RUN_SKILL,
         kind=_automated_prompt.KIND_GOAL,
+    )
+    mode, free_text = skill_modes.split_mode(args.skill, args.args)
+    env[mcp_environment.SESSION_START_INPUT_ENV] = json.dumps(
+        {
+            "source": "run-skill",
+            "skill": args.skill,
+            "mode": mode,
+            "arguments": args.args,
+            "free_text": free_text,
+            "accepted_scopes": skill_modes.accepted_scopes(args.skill, args.args),
+            "run_id": run_id,
+            "target_repo": args.target_repo if getattr(args, "work_dir", None) is not None else None,
+            "batch_manifest": getattr(args, "batch_manifest", None),
+        },
+        ensure_ascii=False,
     )
     session_id: str | None = None
     if orchestrator == "claude":
@@ -314,10 +295,6 @@ def _run_locked(
     codex_home = _host_homes.codex_home(env)
     remaining = float(args.timeout)
     while True:
-        if manifest := getattr(args, "batch_manifest", None):
-            marker = f"\nbatch manifest: {manifest}"
-            if marker not in argv[-1]:
-                argv[-1] += marker
         output = _SessionOutput()
         started_at = time.monotonic()
         with contextlib.ExitStack() as resources:

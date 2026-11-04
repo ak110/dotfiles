@@ -2,17 +2,20 @@
 
 import argparse
 import datetime
+import html
+import io
 import json
 import os
 import pathlib
 import subprocess
+import sys
 import threading
 import time
 from typing import Any
 
 import pytest
 
-from agent_toolkit import atk
+from agent_toolkit import atk, hook
 from agent_toolkit._atk import lane
 from agent_toolkit._atk.wi import listing, readiness
 from agent_toolkit._atk.wi import process_loop as loop
@@ -49,19 +52,12 @@ def _targets(
     return notes, listing.configured_repo_snapshot(notes)
 
 
-def _manifest(prompt: str) -> pathlib.Path:
-    start = prompt.index("開始時入力のmanifest ") + len("開始時入力のmanifest ")
-    return pathlib.Path(prompt[start : prompt.index(" で取得済み候補", start)])
-
-
-@pytest.mark.parametrize("goal_prefix", [True, False])
-def test_manifest_is_read_from_current_goal(tmp_path: pathlib.Path, goal_prefix: bool) -> None:
-    """共有する模擬統括も現在の公開promptから空白を含むmanifestパスを取得する。"""
-    manifest = tmp_path / "round with spaces.json"
-    prompt = session.build_process_loop_prompt(manifest)
-    if not goal_prefix:
-        prompt = prompt.removeprefix("/goal ")
-    assert _manifest(prompt) == manifest
+def _manifest(prompt: str, environment: dict[str, str]) -> pathlib.Path:
+    expected = '<atk-auto source="process-loop" kind="goal">\nagent-toolkit:process-wi all-reposを完遂する\n</atk-auto>'
+    assert prompt.removeprefix("/goal ") == expected
+    data = json.loads(environment["AGENT_TOOLKIT_SESSION_START_INPUT"])
+    assert data["source"] == "process-loop" and data["mode"] == "all-repos"
+    return pathlib.Path(data["manifest"])
 
 
 @pytest.mark.parametrize("counts", [(1, 1), (0, 9, 10, 11, 12)])
@@ -73,7 +69,7 @@ def test_one_coordinator_receives_every_repository(
     observed: list[tuple[pathlib.Path, dict[str, Any]]] = []
 
     def execute(_args: argparse.Namespace, cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt).read_text(encoding="utf-8"))
+        data = json.loads(_manifest(prompt, child_env).read_text(encoding="utf-8"))
         observed.append((cwd, data))
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "coordinator"
         kwargs["on_session_started"]("coordinator")
@@ -105,7 +101,7 @@ def test_continue_only_unfinished_repository(tmp_path: pathlib.Path, monkeypatch
     rounds: list[tuple[str | None, list[str]]] = []
 
     def execute(args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt).read_text())
+        data = json.loads(_manifest(prompt, child_env).read_text())
         targets = data["repositories"]
         rounds.append((args.resume, [target["target_repo"] for target in targets]))
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "same-coordinator"
@@ -138,7 +134,7 @@ def test_continued_round_ignores_previous_round_repository(
     finished: dict[str, dict[str, Any]] = {}
 
     def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt).read_text())
+        data = json.loads(_manifest(prompt, child_env).read_text())
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "same-coordinator"
         kwargs["on_session_started"]("same-coordinator")
         selected = data["repositories"][0]["target_repo"]
@@ -174,7 +170,7 @@ def test_no_progress_and_blocking_are_repository_scoped(
         calls += 1
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "same-coordinator"
         kwargs["on_session_started"]("same-coordinator")
-        data = json.loads(_manifest(prompt).read_text())
+        data = json.loads(_manifest(prompt, child_env).read_text())
         records = {target["target_repo"]: {"status": status} for target in data["repositories"]} if status else {}
         pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": records}))
         return True
@@ -193,8 +189,8 @@ def test_owner_wait_keeps_other_repository_running(tmp_path: pathlib.Path, monke
     assert held is not None
     targets: list[str] = []
 
-    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, _env: dict[str, str], **_kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt).read_text())
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **_kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt, child_env).read_text())
         targets.extend(target["target_repo"] for target in data["repositories"])
         return False
 
@@ -244,7 +240,7 @@ def test_explicit_resume_uses_frozen_candidates(tmp_path: pathlib.Path, monkeypa
         _args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any
     ) -> bool:
         nonlocal first_candidate
-        data = json.loads(_manifest(prompt).read_text())
+        data = json.loads(_manifest(prompt, child_env).read_text())
         first_candidate = data["repositories"][0]["candidate_file"]
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "frozen-coordinator"
         kwargs["on_session_started"]("frozen-coordinator")
@@ -259,7 +255,7 @@ def test_explicit_resume_uses_frozen_candidates(tmp_path: pathlib.Path, monkeypa
     )
 
     def resumed(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt).read_text())
+        data = json.loads(_manifest(prompt, child_env).read_text())
         target = data["repositories"][0]
         assert target["candidate_file"] == first_candidate
         assert len(json.loads(pathlib.Path(target["candidate_file"]).read_text())) == 1
@@ -283,7 +279,7 @@ def test_declared_writer_holds_only_its_repository(tmp_path: pathlib.Path, monke
     notes, snapshots = _targets(tmp_path, monkeypatch)
 
     def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt).read_text())
+        data = json.loads(_manifest(prompt, child_env).read_text())
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "coordinator"
         kwargs["on_session_started"]("coordinator")
         identity = session_registry.ProcessIdentity.of(os.getpid())
@@ -315,7 +311,7 @@ def test_resume_recovers_saved_completion_before_launch(tmp_path: pathlib.Path, 
     def interrupted(
         _args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any
     ) -> bool:
-        data = json.loads(_manifest(prompt).read_text())
+        data = json.loads(_manifest(prompt, child_env).read_text())
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "interrupted-root"
         kwargs["on_session_started"]("interrupted-root")
         (notes / "2026/10/repo-0-0.md").unlink()
@@ -329,7 +325,7 @@ def test_resume_recovers_saved_completion_before_launch(tmp_path: pathlib.Path, 
         loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
 
     def resumed(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt).read_text())
+        data = json.loads(_manifest(prompt, child_env).read_text())
         assert [target["target_repo"] for target in data["repositories"]] == [second]
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "interrupted-root"
         kwargs["on_session_started"]("interrupted-root")
@@ -472,7 +468,7 @@ def test_public_once_finishes_one_collection(tmp_path: pathlib.Path, monkeypatch
     def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
         nonlocal calls
         calls += 1
-        data = json.loads(_manifest(prompt).read_text(encoding="utf-8"))
+        data = json.loads(_manifest(prompt, child_env).read_text(encoding="utf-8"))
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "once-coordinator"
         kwargs["on_session_started"]("once-coordinator")
         if status == "completed":
@@ -522,7 +518,9 @@ def test_public_once_empty_does_not_wait(
     assert exited.value.code == 0
 
 
-def test_public_agy_resume_delivers_current_manifest(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
+@pytest.mark.parametrize("resume", [False, True])
+def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, engine, resume) -> None:
     """明示再開でも今回の配送原本と結果保存先を使用し、対象別の完了を検収する。"""
     notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
     repository = snapshots[0].repository
@@ -533,15 +531,43 @@ def test_public_agy_resume_delivers_current_manifest(tmp_path: pathlib.Path, mon
     monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
     monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
     monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
-    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_args, **_kwargs: ("agy", "model", "medium", None))
+    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_args, **_kwargs: (engine, "model", "medium", None))
     manifests: list[dict[str, Any]] = []
 
     def execute(
-        argv: list[str], _env: dict[str, str], _cwd: pathlib.Path, **_kwargs: Any
+        argv: list[str], child_env: dict[str, str], _cwd: pathlib.Path, **_kwargs: Any
     ) -> subprocess.CompletedProcess[bytes]:
-        assert argv[argv.index("--conversation") + 1] == "saved-agy-conversation"
-        prompt = argv[argv.index("-i") + 1]
-        manifest = _manifest(prompt)
+        if resume:
+            assert "saved-agy-conversation" in argv or "--resume=saved-agy-conversation" in argv
+        prompt = argv[-1]
+        expected = '<atk-auto source="process-loop" kind="goal">\nagent-toolkit:process-wi all-reposを完遂する\n</atk-auto>'
+        assert prompt == ("/goal " if engine == "claude" else "") + expected
+        manifest = _manifest(prompt, child_env)
+        capsys.readouterr()
+        with monkeypatch.context() as scoped:
+            scoped.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", child_env["AGENT_TOOLKIT_SESSION_START_INPUT"])
+            source = "resume" if resume else "startup"
+            if engine == "agy":
+                # agy 1.4.4はSessionStartの通知を次のInvocationで配送する。
+                payload = {
+                    "conversationId": "manifest-delivery",
+                    "workspacePaths": [str(tmp_path)],
+                    "transcriptPath": str(tmp_path / "agy.jsonl"),
+                    "source": source,
+                }
+                for event in ("SessionStart", "PreInvocation"):
+                    scoped.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode("utf-8"))))
+                    assert hook.main(["antigravity", event]) == 0
+                    response = json.loads(capsys.readouterr().out)
+                context = "\n\n".join(step["ephemeralMessage"] for step in response["injectSteps"])
+            else:
+                payload = json.dumps({"hook_event_name": "SessionStart", "source": source}).encode("utf-8")
+                scoped.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(payload)))
+                assert hook.main(["rules_context_codex" if engine == "codex" else "rules_context"]) == 0
+                context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+        assert 'kind="startup-input"' in context
+        assert str(manifest) in html.unescape(context)
+        assert "references/all-repos.md「結果と終了」" in context
         data = json.loads(manifest.read_text(encoding="utf-8"))
         manifests.append(data)
         target = data["repositories"][0]
@@ -556,7 +582,15 @@ def test_public_agy_resume_delivers_current_manifest(tmp_path: pathlib.Path, mon
     monkeypatch.setattr(session, "_run_cli_session", execute)
     with pytest.raises(SystemExit) as exited:
         atk.main(
-            ["wi", "process-loop", "--once", "--resume", "saved-agy-conversation", "--no-alerts", "--no-update"], home=tmp_path
+            [
+                "wi",
+                "process-loop",
+                "--once",
+                *(["--resume", "saved-agy-conversation"] if resume else []),
+                "--no-alerts",
+                "--no-update",
+            ],
+            home=tmp_path,
         )
     assert exited.value.code == 0
     assert len(manifests) == 1
@@ -654,7 +688,7 @@ def test_public_once_accepts_deferred_candidates_and_recovers_completion(
         calls += 1
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "deferred-coordinator"
         kwargs["on_session_started"]("deferred-coordinator")
-        data = json.loads(_manifest(prompt).read_text(encoding="utf-8"))
+        data = json.loads(_manifest(prompt, child_env).read_text(encoding="utf-8"))
         if wait_kind == "cooldown":
             metadata = "cooldown_until: '2030-01-02T00:00:00+00:00'\n"
         else:
@@ -723,7 +757,7 @@ def test_completed_result_preserves_actionable_work_and_unintegrated_lanes(
         calls += 1
         child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "unfinished-coordinator"
         kwargs["on_session_started"]("unfinished-coordinator")
-        data = json.loads(_manifest(prompt).read_text(encoding="utf-8"))
+        data = json.loads(_manifest(prompt, child_env).read_text(encoding="utf-8"))
         if remaining_kind in {"processing", "processing-uwi", "invalid-cooldown", "missing", "cycle", "lane"}:
             item.write_text(
                 item.read_text(encoding="utf-8").replace(

@@ -12,7 +12,7 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
-| レーン担当が返した書込対象の追加を受領する時 | `../../../share/exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
+| 初期配分の見込みと実装中の編集範囲を区別する時 | `../../../share/exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「統合とAWI終了」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「統合とAWI終了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
 
@@ -114,8 +114,8 @@ WIを明示的に追加する場合は`--merge <追加の意味判断YAML> --can
 ## 欄の意味
 
 `書込対象`はレーン担当が変更を加えるファイルを、リポジトリ相対パスのYAMLフローリスト形式で指定する。WI本文で列挙されたファイル、作業を伴うUWIの回答から導き出した変更対象、本文で参照されている手順書や限定調査から導いたファイルを含める。具体的な書き込み先ファイルを特定できない項目については、限定調査で見積もったディレクトリ範囲を末尾に`/`を付けて指定する。配下の個別パスとあわせて記載されたディレクトリ範囲（「対象リポジトリは`agent-toolkit/`配下とする」といった範囲の説明）は記載せず、配下の個別パスのみを記述する（`pick-wi-check`による被覆検証も個別パスに対してのみ行われる）。`レーン`が`なし`の項目であっても行自体は残し、空のリスト`[]`を指定する。
-保存後に、レーン担当から未統合の他レーンの`書込対象`と重複する追加対象が返された場合に限り、メインエージェントはその追加パスと重複の記録を選定YAMLに保存する。他レーンと重複しない追加対象は、レーン担当が進捗ログまたは引き継ぎ記録に記録し、選定YAMLは変更しない（重複判定の詳細は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」参照）。
-追加、全体チェック、保存までを完了するには、以下のコマンドを実行する。
+`書込対象`は初期配分と段階の見積もりに使う予定である。開始後の編集認可はWIの要求を境界とする。要求内の追加編集は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」に従い、追加一覧の受渡しや選定YAMLへの反映を省いて進める。
+初期配分の見積もりを修正する場合は、次の既存操作で追加・全体チェック・保存を行える。
 
 ```text
 atk run-script pick-wi-check -- <選定YAML> --extend-write-targets <追加YAML> --output <保存先> --work-dir <対象リポジトリの絶対パス>

@@ -16,16 +16,6 @@ from agent_toolkit._atk import run_script, run_skill
 from agent_toolkit._common import session_activity, session_review
 
 
-@pytest.mark.parametrize("mode", [None, "batch"])
-def test_goal_separates_child_completion_from_launcher_verification(mode):
-    goal = run_skill.build_goal("agent-toolkit:review-session", mode)
-    assert "終了を要求" in goal
-    assert "報告同期の検収は起動元がこのセッションの終了後に行う" in goal
-    assert "このセッションの完了条件に含めない" in goal
-    assert ("session-review-state -- finish" in goal) is (mode == "batch")
-    assert ("batchの処理済み範囲の確定も起動元が終了後に行う" in goal) is (mode == "batch")
-
-
 def _pending(name, *, batch=False):
     path = session_review.directory() / "pending" / f"claude-{name}.json"
     session_review.write(path, {"key": path.stem, "host": "claude", "session_id": name, "review_batch": batch})

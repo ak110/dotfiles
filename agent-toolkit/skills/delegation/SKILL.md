@@ -21,12 +21,12 @@ user-invocable: false
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/quality-standards.md` |
+| 委譲プロンプトや返却の文章を作成・検収する前 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/quality-standards.md` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
-該当する状況になったら、次の表に示した資料を事前に全文読み込む。同一セッション内ですでに読み終えており、その後に更新がない資料は再読を省略してよい（会話圧縮後は読み直す）。
+次に行う委譲・受領・待機の操作と、自身の役割から条件を選び、判断前に必要な資料・節と前提・例外を読む。hookの通知を待たずに選び、同じ版の取得済み本文は再利用する。会話圧縮後は現在の要求・認可・実行状態を復元し、再開する工程で必要な範囲を選び直す。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
@@ -34,8 +34,7 @@ user-invocable: false
 | 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` | |
 | 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |
 | 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` | |
-| 作業へ着手する前に、担当範囲の一部を委譲先へ分けるかと委譲単位を判定する時（計画の起草前、独立した複数の作業単位か長い工程を含む作業の着手前） | `references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
-| 呼び出し元の起動契約で手順と必須入力が定められていない委譲を開始する前（explore・shellを除く）と、確定済みの委譲単位の構成を変更する前 | `references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
+| 作業の分担・委譲単位を決める前（計画起草前、独立した複数単位や長い工程の着手前を含む）、起動契約に手順と必須入力がない委譲を開始する前（explore・shellを除く）、確定した委譲構成を変更する前 | `references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
 | 委譲先とモデルを選定する時（explore・shell、および役割文書を持ち`model_type`を指定しない起動を除く） | `references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` | |
 | 元担当の継続・回復・置換・再起動または役割引継ぎを選ぶ前 | `references/runtime-routing.md`の「継続と新規起動」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「継続と新規起動」` | |
 | Claude Codeで`Agent`ツールの委譲先やバックグラウンドタスクを初回起動する前、定期再確認タスクを自身で設定する前、設定や回収の失敗通知に対処する時、Claude Code固有の手順を確定する時（explore・shellの起動から受領までの操作は除き、本書の同名節に従う） | `references/claude-code-runtime.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md` | |
@@ -82,7 +81,7 @@ Codex環境で`agents_server`が使えず組み込みの委譲で代用する場
 - 入力は命令1文と必要な値（元の要求、対象、完了条件、返却形式、基準記録）にとどめ、すでに配布済みの制約、経緯、推測、既存記録の転記は含めない。自身で裏付けをとっていない値は未検証情報として明示する。exploreは読取専用として結果を返し、後続の入力には`atk agents wait`が保存した`agent_message_path`を直接指定する（base-contract.md「入力の適格性と追送」、sending.md「委譲プロンプトの構成」「未検証情報の取り扱い」）。
 - 各モードの入力項目や機能は、公開されている`start`の説明とスキーマで確認し、`cwd`に作業ディレクトリの絶対パスを渡す。exploreでは`prompt`を、shellでは`command`と`summary_policy`を使用する。スキルの手順を必要とする作業は`task`または`delegate`に委ねる（sending.md「起動と観測」）。
 - 作業を分割する場合は`references/routing.md`「要否判定」を用い、モデルを選択する場合は`references/runtime-routing.md`「工程別モデル設定」に従う。明示的な指定がない場合は工程別の設定値を使用し、WIにモデル指定がある場合はそれを優先する。受領時には、指定値、起動候補、観測された実際の値を区別して扱う。
-- exploreは読取専用とする。shellの書込先は、生成物も含めて他の担当と重複しない範囲に限定し、同一担当の交代は先行する担当の終了後に実施する。同一のworktreeで書込を分担する場合、コミット、Gitフックの実行、インデックスや履歴の操作、全体のコード整形、自動生成の同期、依存関係の更新、環境構築は、全担当が終了した後に呼び出し元が一括して直列に行う。別ブランチや別worktreeを用いるグループでは、各グループの担当が自身のコミットとGitフックの処理を担い、フックによる更新物も同一コミットに含める。グループ間で重複する生成物は、レーン担当が統合後に原本から同期する。担当ごとのコミットや内容の書き換えを伴う検証が必要な場合、または書込先を事前に限定できない場合は、別のworktreeおよびブランチに分離する（mandatory-rules.md「作業ツリーの保護」）。軽量起動では自動配送されないプロジェクト固有の指示や、コマンドの入力境界、終了状態、標準出力・標準エラー出力の保持を確実に引き渡す（base-contract.md「起動前の確認」、sending.md「権限と成果物の取り決め」）。
+- exploreは読取専用とする。shellの書込先は、生成物も含めて他の担当と重複しない範囲に限定し、同一担当の交代は先行する担当の終了後に実施する。同一worktreeでの書込の分担、作業ツリー全体へ影響する操作の直列化、別worktreeへ分離する条件は`references/mandatory-rules.md`「作業ツリーの保護」に従う。軽量起動では自動配送されないプロジェクト固有の指示や、コマンドの入力境界、終了状態、標準出力・標準エラー出力の保持を確実に引き渡す（base-contract.md「起動前の確認」、sending.md「権限と成果物の取り決め」）。
 - 返却された`session_id`を保持し、`atk agents wait`を用いて終了状態と結果本文を受け取る。待機の実行形式、終了コード、バックグラウンド化、通知後の受領手順は、読込表にある`references/waiting-and-monitoring.md`に従い、ホスト別の待機手順は後述の「軽量起動のホスト別待機」に従う。
 - 終了後に対象ファイルの差分、実行結果、診断情報を確認し、返却形式ならびに対象・権限・完了条件との整合性を検収する。件数、不在、網羅性は、省略のない取得結果に基づいて判定し、事実の主張は実物の根拠で裏付ける。受領前の段階で得られた情報のみで完了とみなさず、不足がある場合は同一担当へ差し戻す（receiving.md「返却形式の適合確認」「終了と報告内容の確認」、sending.md「権限と成果物の取り決め」）。
 
@@ -171,4 +170,4 @@ exploreおよびshellの受領と検収は「explore・shellの起動」の最�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
+| レビュー指摘への応答、修正、修正後の完了を判断する前 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |

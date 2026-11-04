@@ -93,6 +93,7 @@ async function waitingEngine($: Engine, on: On, options: { percent?: number; win
   on("session.id", () => ({ value: "wait-main" }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("session.messages", () => ({ value: [] }));
+  on("session.surfaces", () => ({ value: ["terminal"] }));
   on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: usage.percent * 10_000, window: options.window ?? 1_000_000, percent: usage.percent }, rateLimits: [] } }));
   on("ui.log", (_$, e) => { calls.diagnostics.push(e.text); return { value: undefined }; });
   on("tool.register", (_$, e) => ({ value: { tool: e.name } }));
@@ -116,10 +117,25 @@ async function waitingEngine($: Engine, on: On, options: { percent?: number; win
 
 const MAIN_TURN = { answer: "", durationMs: 0, isAborted: false, turnId: "waiting-turn", reason: "answer" as const };
 
+test("turn実行中に受け付けた待機予約は完了通知が先着しても失われない", async ($, on) => {
+  const { clock, calls } = await waitingEngine($, on);
+  await $.turn.start({ text: "待機を開始", turnId: MAIN_TURN.turnId });
+  await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
+  await clock.advance(0);
+  expect(calls.queries.length).toBe(1);
+  expect(calls.compactions).toBe(0);
+  await $.session.append({ door: "delivery", origin: { kind: "engine" }, uuid: "done", message: { type: "user", role: "user", content: [{ type: "text", text: "<task-notification><task-id>wait-task</task-id><status>completed</status></task-notification>" }] } });
+  await $.turn.complete(MAIN_TURN);
+  await clock.advance(0);
+  expect(calls.compactions).toBe(1);
+});
+
 for (const scenario of [
-  { command: "wait_ci.py", percent: 40, window: 2_000_000, expected: 1 },
-  { command: "wait_ci.py", percent: 7.9999, window: 200_000, expected: 0 },
-  { command: "wait_ci.py", percent: 8, window: 200_000, expected: 1 },
+  // 閾値は400,000トークンと上限の40%の大きい方。tokensはpercentの1万倍として与える。
+  { command: "wait_ci.py", percent: 40, window: 1_000_000, expected: 1 },
+  { command: "wait_ci.py", percent: 79.9999, window: 2_000_000, expected: 0 },
+  { command: "wait_ci.py", percent: 80, window: 2_000_000, expected: 1 },
+  { command: "wait_ci.py", percent: 19.9999, window: 200_000, expected: 0 },
   { command: "atk agents wait", percent: Number.NaN, window: 1_000_000, expected: 0 },
 ]) {
   test(`背景Bashとモデル上限に応じた圧縮: ${JSON.stringify(scenario)}`, async ($, on) => {
@@ -138,12 +154,10 @@ for (const mode of ["long", "low", "ineligible-wait-owner", "running", "delegate
     const { clock, calls } = await waitingEngine($, on, options);
     if (mode === "running") await $.turn.start({ text: "待機を開始", turnId: MAIN_TURN.turnId });
     await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true, ...(mode === "subagent" ? { agentId: "child" } : {}) });
-    await clock.advance(59_999);
-    expect(calls.compactions).toBe(0);
-    expect(calls.queries.length).toBe(0);
-    await clock.advance(1);
+    await clock.advance(0);
     if (mode === "running") {
-      expect(calls.queries.length).toBe(0);
+      expect(calls.queries.length).toBe(1);
+      expect(calls.compactions).toBe(0);
       await $.turn.complete(MAIN_TURN);
     }
     await clock.advance(0);
@@ -166,17 +180,16 @@ for (const mode of ["long", "low", "ineligible-wait-owner", "running", "delegate
     expect(calls.notices.length).toBe(mode === "skip" || mode === "failure" ? 1 : 0);
     if (mode === "low") expect(calls.diagnostics.join(" ")).toMatch("below_threshold");
     if (mode === "ineligible-wait-owner") expect(calls.diagnostics.join(" ")).toMatch("ownership_unconfirmed");
-    if (mode === "running") expect(calls.diagnostics.join(" ")).toMatch("turn_running");
   });
 }
 
 for (const door of ["delivery", "queue"] as const) {
   for (const status of ["completed", "failed", "killed"]) {
-    test(`60秒前の${door}の${status}通知で同じ背景waitの自動圧縮を取り消す`, async ($, on) => {
+    test(`予約判定前の${door}の${status}通知では終了した背景waitを圧縮しない`, async ($, on) => {
       const { clock, calls } = await waitingEngine($, on);
       await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
       await $.session.append({ door, origin: { kind: "engine" }, uuid: "done", message: { type: "user", role: "user", content: [{ type: "text", text: `<task-notification><task-id>wait-task</task-id><status>${status}</status></task-notification>` }] } });
-      await clock.advance(60_000);
+      await clock.advance(0);
       expect(calls.queries.length).toBe(0);
       expect(calls.compactions).toBe(0);
     });
@@ -211,6 +224,7 @@ test("実行中turnの予約はturn完了後の単発タイマーで圧縮する
   const clock = mock.clock(on);
   let calls = 0;
   on("session.id", () => ({ value: "compact-test" }));
+  on("session.surfaces", () => ({ value: ["terminal"] }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("turn.complete", () => ({ text: "" }));
   on("session.compact", () => {
@@ -231,12 +245,15 @@ test("skipを成功とせず通知し、次の明示予約を受け付ける", a
   const clock = mock.clock(on);
   const notes: string[] = [];
   let calls = 0;
+  on("session.surfaces", () => ({ value: ["terminal"] }));
   on("session.compact", () => { calls++; return { skip: "状態保存待ち" }; });
   on("ui.toast", (_$, e) => { notes.push(e.text); return { value: undefined }; });
   await $.tool.call({ tool: TOOL });
   await clock.advance(0);
   expect(notes.length).toBe(1);
   expect(notes[0]).toMatch("見送られた");
+  expect(notes[0]).toMatch("通常の作業を続け");
+  expect(notes[0]).toMatch("compact_conversationを引数なしで再予約せよ");
   await $.tool.call({ tool: TOOL });
   await clock.advance(0);
   expect(calls).toBe(2);
@@ -246,6 +263,7 @@ test("受付と重複の応答後に一度だけ圧縮し、完了後は再予�
   mock.env(on, {});
   const clock = mock.clock(on);
   const calls: number[] = [];
+  on("session.surfaces", () => ({ value: ["terminal"] }));
   on("session.compact", () => {
     calls.push(1);
     return { messages: [{ role: "user", text: "圧縮後の引継ぎ", toolUses: [] }] };
@@ -268,6 +286,7 @@ test("実行拒否は同じ会話へ通知し、失敗後に再予約できる",
   const clock = mock.clock(on);
   const prompts: string[] = [];
   let calls = 0;
+  on("session.surfaces", () => ({ value: ["terminal"] }));
   on("session.compact", () => {
     calls++;
     if (calls === 1) throw new Error("圧縮の実行拒否");
@@ -284,10 +303,35 @@ test("実行拒否は同じ会話へ通知し、失敗後に再予約できる",
   expect(prompts[0]?.endsWith("\n</atk-auto>")).toBe(true);
   // hookの例外はホストが次の実装へ渡す。実装が無い拒否が呼出元へ届く。
   expect(prompts[0]).toMatch("会話圧縮の予約実行に失敗した");
+  expect(prompts[0]).toMatch("compact_conversationを引数なしで再予約せよ");
   await $.tool.call({ tool: TOOL });
   await clock.advance(0);
   expect(calls).toBe(2);
   expect(prompts.length).toBe(1);
+});
+
+test("headlessではcompactコマンドを使い、実行拒否の後も再予約できる", async ($, on) => {
+  mock.env(on, {});
+  const clock = mock.clock(on);
+  const commands: string[] = [];
+  const notices: string[] = [];
+  let directCalls = 0;
+  on("session.surfaces", () => ({ value: [] }));
+  on("session.compact", () => { directCalls++; return { messages: [] }; });
+  on("command.run", (_$, e) => {
+    commands.push(e.command);
+    if (commands.length === 1) throw new Error("コマンド実行拒否");
+    return {};
+  });
+  on("ui.toast", (_$, e) => { notices.push(e.text); return { value: undefined }; });
+  await $.tool.call({ tool: TOOL });
+  await clock.advance(0);
+  expect(notices.length).toBe(1);
+  await $.tool.call({ tool: TOOL });
+  await clock.advance(0);
+  expect(commands).toEqual(["compact", "compact"]);
+  expect(directCalls).toBe(0);
+  expect(notices.length).toBe(1);
 });
 
 test("サブエージェントからの呼び出しは予約しない", async ($, on) => {

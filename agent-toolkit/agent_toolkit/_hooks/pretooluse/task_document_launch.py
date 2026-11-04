@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+import string
 
 import markdown_it
 
@@ -183,6 +184,12 @@ def _execution_document(prompt: str) -> pathlib.Path | None:
     if not documents:
         return None
     paths = {str(document): document for document in documents}
+    # パスはMarkdownの装飾ではない。別行のunderscoreとの対応で文字が失われないよう保護する。
+    # インラインコード内ではエスケープが展開されないため、その表記も同じ文書へ対応付ける。
+    for path, document in tuple(paths.items()):
+        escaped = "".join("\\" + char if char in string.punctuation else char for char in path)
+        prompt = prompt.replace(path, escaped)
+        paths[escaped] = document
     quote_depth = 0
     for token in _MARKDOWN.parse(prompt):
         if token.type == "blockquote_open":

@@ -6,6 +6,7 @@
 
 import contextlib
 import ctypes
+import ctypes.wintypes
 import os
 import pathlib
 import subprocess
@@ -23,6 +24,77 @@ from agent_toolkit._testing import late_descendant
 pytestmark = pytest.mark.windows
 
 _CHILD_SOURCE = "import time; time.sleep(120)"
+
+
+@pytest.mark.parametrize("has_descendant", [False, True], ids=["exited-leaf", "unretained-parent"])
+def test_stop_tree_keeps_unretained_generation_unresolved(monkeypatch, has_descendant):
+    """世代を保持できない親は、snapshotの子の有無にかかわらず未確定として残す。"""
+    root, leaf, descendant = (
+        mock.Mock(pid=900001),
+        mock.Mock(pid=900002, info={"ppid": 900001}),
+        mock.Mock(pid=900003, info={"ppid": 900002}),
+    )
+    for index, process in enumerate((root, leaf, descendant), start=1):
+        process.create_time.return_value = float(index)
+        process.is_running.return_value = False
+        process.cmdline.return_value = ["owned"]
+    pins = mock.Mock()
+    pins.retain.side_effect = lambda process: process is root
+    entries = [leaf, descendant] if has_descendant else [leaf]
+    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter(entries))
+    monkeypatch.setattr(sys, "platform", "win32")
+    result = process_tree.stop_tree(root, pins=pins, timeout=0)
+    assert {process.pid for process in result.targets} == {root.pid, leaf.pid}
+    assert not result.residual
+    assert result.unresolved
+    descendant.suspend.assert_not_called()
+    descendant.kill.assert_not_called()
+
+
+def test_stop_tree_retains_leaf_before_it_spawns_and_exits(monkeypatch):
+    """初回列挙の直後に子を生成して終了するleafも、保持した世代から子を回収する。"""
+    root = mock.Mock(pid=900001)
+    spawner = mock.Mock(pid=900002, info={"ppid": root.pid})
+    holder = mock.Mock(pid=900003, info={"ppid": spawner.pid})
+    for number, process in enumerate((root, spawner, holder), 1):
+        process.create_time.return_value = float(number)
+        process.is_running.return_value = True
+        process.status.return_value = psutil.STATUS_RUNNING
+        process.cmdline.return_value = ["owned"]
+
+        def kill(target=process, **_kwargs):
+            target.is_running.return_value = False
+
+        process.kill.side_effect = kill
+    held: set[int] = set()
+    before_spawn: list[int] = []
+    entries = [spawner]
+    pins = mock.Mock()
+
+    def retain(process, **_kwargs):
+        if process.is_running():
+            held.add(process.pid)
+        return process.pid in held
+
+    pins.retain.side_effect = retain
+    original = process_tree._scan_descendants  # pylint: disable=protected-access
+
+    def scan(parents, **kwargs):
+        found = original(parents, **kwargs)
+        if not before_spawn:
+            before_spawn.extend(sorted(held))
+            entries.append(holder)
+            spawner.is_running.return_value = False
+        return found
+
+    monkeypatch.setattr(process_tree, "_scan_descendants", scan)
+    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter(entries))
+    monkeypatch.setattr(sys, "platform", "win32")
+    result = process_tree.stop_tree(root, pins=pins, timeout=0)
+    assert before_spawn == [root.pid, spawner.pid]
+    assert {process.pid for process in result.targets} == {root.pid, spawner.pid, holder.pid}
+    assert not result.residual and not result.unresolved
+    assert not holder.is_running()
 
 
 def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypatch):
@@ -45,23 +117,81 @@ def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypat
     foreign.kill.assert_not_called()
 
 
-@pytest.mark.parametrize("same_generation", [False, True])
-def test_windows_parent_handle_is_checked_and_closed(monkeypatch, same_generation):
+@pytest.mark.parametrize(
+    ("same_generation", "handle", "running"), [(False, 0, False), (False, 123, False), (True, 123, True), (True, 123, False)]
+)
+def test_windows_parent_handle_is_checked_and_closed(monkeypatch, caplog, same_generation, handle, running):
     """handle取得後に同じ親か確認し、列挙の例外時にもhandleを閉じる。"""
     kernel = mock.Mock()
-    kernel.OpenProcess.return_value = 123
+    kernel.OpenProcess.return_value = handle
+
+    def times(_handle, creation, *_args, **_kwargs):
+        ticks = 116444736000000000 + (10000000 if same_generation else 20000000)
+        timestamp = ctypes.cast(creation, ctypes.POINTER(ctypes.wintypes.FILETIME)).contents
+        timestamp.dwLowDateTime = ticks & 0xFFFFFFFF
+        timestamp.dwHighDateTime = ticks >> 32
+        return True
+
+    kernel.GetProcessTimes.side_effect = times
     monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 87, raising=False)
     monkeypatch.setattr(sys, "platform", "win32")
     process = mock.Mock(pid=42)
-    process.is_running.return_value = same_generation
+    process.create_time.return_value = 1.0
+    process.is_running.return_value = running
     # pylint: disable=protected-access
     with pytest.raises(RuntimeError, match="列挙失敗"), process_tree._retain_windows_process(process) as retained:
         assert retained is same_generation
-        process.is_running.assert_called_once_with()
         kernel.CloseHandle.assert_not_called()
         raise RuntimeError("列挙失敗")
     kernel.OpenProcess.assert_called_once_with(0x1000, False, process.pid)
-    kernel.CloseHandle.assert_called_once_with(123)
+    if not handle:
+        assert "reason=open-process error=87" in caplog.text
+    elif not same_generation:
+        assert "reason=creation-time" in caplog.text
+        assert "handle_created_at=2.0" in caplog.text
+    else:
+        assert "Windows親世代保持診断" not in caplog.text
+    if handle:
+        kernel.CloseHandle.assert_called_once_with(handle)
+    else:
+        kernel.CloseHandle.assert_not_called()
+
+
+def test_windows_retention_diagnostic_keeps_snapshot_children(monkeypatch, caplog):
+    """保持失敗の対象とその子だけを、同じ列挙時点の識別情報で診断する。"""
+    parent = mock.Mock(pid=900001)
+    parent.create_time.return_value = 1.0
+    child = mock.Mock(pid=900002, info={"ppid": parent.pid})
+    child.create_time.return_value = 2.0
+    unrelated = mock.Mock(pid=900003, info={"ppid": 0})
+    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter([child, unrelated]))
+    monkeypatch.setattr(process_tree, "identity", lambda pid, **_kwargs: {"pid": pid, "status": "observed"})
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert not process_tree._scan_descendants([parent], retain=lambda _process: False)  # pylint: disable=protected-access
+    assert "stage=known" in caplog.text
+    assert "snapshot_present=False" in caplog.text
+    assert "'snapshot_ppid': 900001" in caplog.text
+    assert "900002" in caplog.text
+    assert "900003" not in caplog.text
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="終了済み親のWindows kernel handleを検証する")
+def test_stop_tree_reclaims_children_of_exited_parent_with_retained_handle(tmp_path):
+    """終了済みでも同じ親世代のhandleを保持している場合、その子を辿って回収する。"""
+    with _reporting_root(tmp_path) as parent:
+        descendants = parent.children(recursive=True)
+        try:
+            # 終了後も親のkernel objectが存在する、CIで観測した初期条件を保つ。
+            with process_tree._retain_windows_process(parent) as retained:  # pylint: disable=protected-access
+                assert retained
+                parent.kill()
+                parent.wait(timeout=5)
+                result = process_tree.stop_tree(parent, timeout=1)
+                assert not result.residual and not result.unresolved
+                assert not _still_holding_resources(descendants)
+        finally:
+            process_tree.stop_tree(None, known=descendants, timeout=1)
 
 
 def test_stop_tree_keeps_unrelated_process_while_reclaiming_late_descendants(tmp_path, monkeypatch):

@@ -27,7 +27,7 @@ from agent_toolkit._hooks import (
     user_prompt_submit,
 )
 from agent_toolkit._testing import agents_server_support, git_repository
-from agent_toolkit._testing.pretooluse_support import codex_execution_payload
+from agent_toolkit._testing.pretooluse_support import codex_delivered_payload, codex_execution_payload
 
 pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
 
@@ -88,6 +88,13 @@ def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch
     else:
         tool, data = "Bash", {"command": commands[case]}
     response = "---\nname: process-wi\n---\n" if case == "codex-skill" else {"exit_code": 0}
+    if case == "codex-skill":
+        skill = repo / "plugin/skills/process-wi/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("---\nname: process-wi\n---\n", encoding="utf-8")
+        manifest = repo / "plugin/.claude-plugin/plugin.json"
+        manifest.parent.mkdir()
+        manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     _tool(repo, "action", tool, data, response, codex=case == "codex-skill")
     document = {
         "session_id": "evidence-test",
@@ -177,6 +184,12 @@ def _tool(
     payload["tool_response"] = response
     with contextlib.redirect_stdout(io.StringIO()):
         posttooluse.main(json.dumps(payload))
+    if codex:
+        delivered = codex_delivered_payload(payload, directory)
+        with contextlib.redirect_stdout(io.StringIO()):
+            pretooluse.main(
+                json.dumps({**delivered, "hook_event_name": "PreToolUse", "tool_name": "ObserveDelivery", "tool_input": {}})
+            )
 
 
 def supply_commit(directory: pathlib.Path, call_id: str = "commit", *, codex: bool = False) -> None:
@@ -191,6 +204,9 @@ def supply_completion(directory: pathlib.Path, call_id: str = "completion", *, c
         skill = directory / "plugin" / "skills" / "report-completion" / "SKILL.md"
         skill.parent.mkdir(parents=True, exist_ok=True)
         skill.write_text(COMPLETION_SKILL_TEXT, encoding="utf-8")
+        manifest = directory / "plugin/.claude-plugin/plugin.json"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
         _tool(directory, call_id, "Bash", {"command": f"cat {skill}"}, COMPLETION_SKILL_TEXT, codex=True)
     else:
         _tool(directory, call_id, "Skill", {"skill": "agent-toolkit:report-completion"}, "起動", codex=False)
@@ -323,9 +339,31 @@ def test_deliverable_kinds_require_completion(
     assert (label in reason) is not codex
 
 
+@pytest.mark.parametrize(
+    ("command", "label", "recorded"),
+    [
+        ("git commit -m 'message; git push'", "push", False),
+        ("printf '%s' 'x; atk wi add --body-file data'", "WIの保存", False),
+        ("git commit -m message && git push", "push", True),
+    ],
+)
+def test_quoted_operators_do_not_create_deliverables(
+    tmp_path: pathlib.Path, command: str, label: str, *, recorded: bool
+) -> None:
+    """引用した演算子と後続の語はデータであり、実際に連結した操作だけを成果作業として記録する。"""
+    _tool(tmp_path, "deliverable", "Bash", {"command": command}, {"stdout": "", "exit_code": 0}, codex=False)
+    assert (label in _missing_completion(tmp_path)) is recorded
+
+
 def test_codex_target_skill_read_is_deliverable(tmp_path: pathlib.Path) -> None:
     """Codexが対象スキルの`SKILL.md`を実際に読んだ記録を、対象スキルの開始として扱う。"""
     text = "---\nname: process-wi\n---\n\n# WI処理\n"
+    skill = tmp_path / "plugin/skills/process-wi/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(text, encoding="utf-8")
+    manifest = tmp_path / "plugin/.claude-plugin/plugin.json"
+    manifest.parent.mkdir()
+    manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     _tool(tmp_path, "start", "Bash", {"command": "sed -n '1,200p' plugin/skills/process-wi/SKILL.md"}, text, codex=True)
     assert "agent-toolkit:process-wiの開始" in _missing_completion(tmp_path)
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True)) == ("approve", "")
@@ -1344,11 +1382,17 @@ def test_termination_evidence_and_operation_skills_share_read_judgment(
     """report-completionの起動証拠は、範囲指定を含む資料の読取を本文の識別行で受理し、失敗した読取を拒否する。"""
     supply_commit(tmp_path, codex=True)
     skill = "report-completion"
+    path = tmp_path / "plugin/skills" / skill / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("---\nname: report-completion\n---\n", encoding="utf-8")
+    manifest = tmp_path / "plugin/.claude-plugin/plugin.json"
+    manifest.parent.mkdir()
+    manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     _tool(
         tmp_path,
         "read",
         "Bash",
-        {"command": command.format(skill=skill)},
+        {"command": command.format(skill=skill).replace("/plugin", shlex.quote(str(tmp_path / "plugin")))},
         response.format(skill=skill),
         codex=True,
         native_exit_code=exit_code,

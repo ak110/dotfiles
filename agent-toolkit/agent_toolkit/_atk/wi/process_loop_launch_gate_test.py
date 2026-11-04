@@ -75,7 +75,7 @@ def test_record_survives_restart_and_is_cleared(tmp_path: pathlib.Path, monkeypa
     assert restarted.stdout.strip() == "True"
 
     def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, env: dict[str, str], **kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt).read_text())
+        data = json.loads(_manifest(prompt, env).read_text())
         for path in notes.glob("2026/10/task.md"):
             path.unlink()
         env["AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"] = "session-one"

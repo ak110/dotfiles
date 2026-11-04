@@ -21,6 +21,9 @@ CASES = (
     "verification-status",
     "skill-selection",
     "test-selection",
+    "goal-discovery",
+    "strategy-update",
+    "purpose-boundary",
 )
 
 

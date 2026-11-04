@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._hooks import plugin_resources, posttooluse
+from agent_toolkit._hooks import document_reads, plugin_resources, posttooluse
 from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
 from agent_toolkit._testing import git_repository, pretooluse_support
 
@@ -49,7 +49,7 @@ def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_p
     assert "root-cause-analysis.md" in context
     assert "記録の粒度は" not in context
     status = dispatch.main(json.dumps(payload))
-    assert "未取得資料" in _denial(status, capsys.readouterr())
+    assert status == 0 and not _context(capsys.readouterr())
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
     root_cause = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
     assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
@@ -63,7 +63,7 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     assert str(root_cause) in context
     assert root_cause.read_text(encoding="utf-8").strip() not in context
     status = dispatch.main(json.dumps(payload))
-    assert "未取得資料" in _denial(status, capsys.readouterr())
+    assert status == 0 and not _context(capsys.readouterr())
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
     assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
     assert not (tmp_path / "plan.md").exists()
@@ -103,10 +103,11 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
 
 def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_path, capsys):
     payload = _payload(tmp_path, True)
+    payload["transcript_path"] = str(tmp_path / "outer.jsonl")
     assert dispatch.main(json.dumps(payload)) == 0
     assert "root-cause-analysis.md" in _context(capsys.readouterr())
     status = dispatch.main(json.dumps(payload))
-    assert "未取得資料" in _denial(status, capsys.readouterr())
+    assert status == 0 and not _context(capsys.readouterr())
     seen = set()
     for _ in range(12):
         records = read_delivery.read_state(payload["session_id"])
@@ -130,6 +131,7 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
             }
             assert posttooluse.main(json.dumps(result)) == 0
             capsys.readouterr()
+            pretooluse_support.codex_delivered_payload(result)
             seen.update(paths)
         status = dispatch.main(json.dumps(payload))
         captured = capsys.readouterr()
@@ -238,7 +240,7 @@ def test_request_reuses_read_parsing_and_rechecks_the_next_request(tmp_path, mon
     assert len(calls) == first * 2
 
 
-def test_prepare_batches_complete_reads_and_reacquires_changed_body(tmp_path, monkeypatch):
+def test_prepare_batches_reads_and_keeps_received_version_after_external_change(tmp_path, monkeypatch):
     first, second = tmp_path / "first.md", tmp_path / "second.md"
     first.write_text("# 第一\n本文\n", encoding="utf-8")
     second.write_text("# 第二\n別本文\n", encoding="utf-8")
@@ -268,8 +270,10 @@ def test_prepare_batches_complete_reads_and_reacquires_changed_body(tmp_path, mo
         read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(path), "main") for path in (first, second)
     )
     first.write_text("# 第一\n更新された本文\n", encoding="utf-8")
-    assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(first), "main")
+    target = read_delivery.read_triggers.ReadTarget(first)
+    assert read_delivery.target_ready(records, target, "main")
+    assert document_reads.acquisition_state(records, target, "main") == "updated"
     pretooluse_support.prepare_read_delivery(payload)
-    assert len(events) == 2
+    assert len(events) == 1
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
     assert read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(first), "main")

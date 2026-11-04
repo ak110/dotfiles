@@ -114,7 +114,7 @@ def test_instruction_is_consumed_only_when_a_session_launches(
         return True
 
     def execute(_args: Any, _cwd: pathlib.Path, prompt: str, _env: dict[str, str], **_kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt).read_text(encoding="utf-8"))
+        data = json.loads(_manifest(prompt, _env).read_text(encoding="utf-8"))
         instructions.append(data["instruction"])
         (notes / "2026/10/arrived.md").unlink()
         result = {snapshots[0].repository.repo_id: {"status": "completed", "writer_sessions": []}}

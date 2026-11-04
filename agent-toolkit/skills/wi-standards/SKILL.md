@@ -22,7 +22,7 @@ AWIの投入は、後続の`process-wi`で処理するエージェントへの�
 UWIには、回答が得られるまで元の作業を再開・確定できない事前承認型と、最善と判断した対応を実施したうえで可否を尋ねる事後承認型がある。
 WI作成工程における入力、責務および出口は、`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 自律モードでのユーザーへの報告と回答はUWIへ記録し、UWIの保存をもって伝達の完了とする（保存する条件と手段は`agent-toolkit:user-confirmation-and-report`「手段の選択」を参照）。別項目の完了待ちや時間経過待ちはUWIとして扱わず、依存関係や冷却時間で管理する。
-WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求をキューへ保存する操作であり、投入元のセッションの処理対象には加えない。現在の依頼と承認の範囲で必要な是正はそのセッション内で完遂し、後続の独立した作業要求が残る場合だけ別途WIを投入する。
+WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求をキューへ保存する操作であり、通常は投入元のセッションの処理対象には加えない。例外として、目標が明示された同一実行で必要作業を具体化する場合は、`../process-wi/references/lanes.md`「明示された目標からの実行」に従って追加する。現在の依頼と承認の範囲で必要な是正はそのセッション内で完遂し、後続の独立した作業要求が残る場合だけ別途WIを投入する。
 事象を新しい改善要求へ変える前に、品質・結果やユーザーの判断への影響、または観測した無視できない費用を確かめる。正常に回収した切り詰めや判断に影響しない数値差だけを起票しない。未達条件と未回収の入力は保持し、必要な是正と、形式に従って残す分析・点検記録を区別する。
 対象リポジトリはAWIの対象となる実装リポジトリを指し、private-notesはキューを保持するリポジトリを指す。WIはユーザーの手元に残す記録であるため、外部の読者が参照する成果物にこれらの識別子を記載することは避ける（`agent-toolkit:delegation/references/writing.md`「文章の共通規定」）。
 
@@ -35,7 +35,7 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「文章の共通規定」` |
-| 報告用UWIを除くWIの意味確認で、この資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
+| 報告用UWIを除くWIの意味確認で、この資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-save` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
@@ -60,9 +60,9 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 | AWIの逐語引用を取り込む前 | `references/awi-body.md`の「逐語引用の対応付け」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「逐語引用の対応付け」` | |
 | 外部の既存挙動の再現を完成条件へ採る前 | `references/awi-body.md`の「外部の既存挙動の再現」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「外部の既存挙動の再現」` | |
 | 報告用UWIを除くWI作成の調査に入る前 | `references/drafting-workflow.md`の冒頭、「出所と観測の取得」「投入条件の判定」「前提と観測の確認」「確定した要件と委譲元の判断」「未確定事項」。`references/drafting-completion.md`の「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「方針と判断の記録との比較」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#冒頭「出所と観測の取得」「投入条件の判定」「前提と観測の確認」「確定した要件と委譲元の判断」「未確定事項」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「採否と実現方式の確定」「実現方式の成立」「対象集合の仕分け」「未確定事項と確認」「確定の判定」「方針と判断の記録との比較」`、`bash:atk wi submission begin` | |
-| 報告用UWIを除く原稿を確定する前 | `references/drafting-workflow.md`の「本文の起草」「保存前の確認」。`references/drafting-completion.md`の「投入前の読み直し」。新しい通常AWIでは同資料の「重複判定」、観測された不具合を起点としbugfixを起動して起草する場合は「原因と定義の所有者」も読む | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「本文の起草」「保存前の確認」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「投入前の読み直し」` | |
-| 報告用UWIを除くWIの独立した確認に入る前 | `references/drafting-workflow.md`の「直接起草と独立した検収の選択」。選んだ手順の起動・検収・差戻しの契約 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | |
-| 報告用UWIを除くWIの保存操作に入る前 | `references/drafting-workflow.md`の「投入」。`references/drafting-completion.md`の「重複判定」（通常AWI）と「投入前の読み直し」の対象集合と除外の確認 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「投入」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」` | |
+| 報告用UWIを除く原稿を確定する前 | `references/drafting-workflow.md`の「本文の起草」「保存前の確認」。`references/drafting-completion.md`の「投入前の読み直し」。新しい通常AWIでは同資料の「重複判定」、観測された不具合を起点としbugfixを起動して起草する場合は「原因と定義の所有者」も読む | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「本文の起草」「保存前の確認」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「投入前の読み直し」`、`wi-standard-save` | |
+| 報告用UWIを除くWIの独立した確認に入る前 | `references/drafting-workflow.md`の「直接起草と独立した検収の選択」。選んだ手順の起動・検収・差戻しの契約 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」`、`wi-standard-save` | |
+| 報告用UWIを除くWIの保存操作に入る前 | `references/drafting-workflow.md`の「投入」。`references/drafting-completion.md`の「重複判定」（通常AWI）と「投入前の読み直し」の対象集合と除外の確認 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「投入」`、`section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」`、`wi-standard-save` | |
 | 報告用UWIを除く投入済みWIへ着手する前の対象集合と除外の確認 | `references/drafting-completion.md`の「投入前の読み直し」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「投入前の読み直し」` | |
 | report-completionが定義する報告用UWIの原稿確定・意味確認・保存に入る前 | `../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」と`references/uwi-format.md`。由来・認可・保存先などは当該操作の既存資料も読む | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
 | UWIを起草する場合 | `references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |

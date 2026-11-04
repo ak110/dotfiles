@@ -9,7 +9,6 @@ from __future__ import annotations
 import contextvars
 import json
 import re
-import shlex
 from collections.abc import Callable
 from typing import Any, NamedTuple
 
@@ -18,6 +17,7 @@ from agent_toolkit._atk import session_record_format as _session_record_format
 from agent_toolkit._common import agy_records as _agy_records
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import runtime_inserted as _runtime_inserted
+from agent_toolkit._common import shell_tokens as _shell_tokens_module
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.runtime_inserted import IMPROVEMENT_MARKER as _IMPROVEMENT_MARKER
 from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
@@ -1394,7 +1394,7 @@ def _basename(token: str) -> str:
 def _shell_tokens(command: str) -> list[str]:
     """コマンド文字列をシェルの引用規則で分解する。分解できない場合は空白で分ける。"""
     try:
-        return shlex.split(command)
+        return list(_shell_tokens_module.split_words(command))
     except ValueError:
         return command.split()
 

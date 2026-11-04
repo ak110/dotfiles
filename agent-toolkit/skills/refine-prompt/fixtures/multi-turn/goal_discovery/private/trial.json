@@ -1,0 +1,90 @@
+{
+  "case": "goal-discovery",
+  "kind": "single",
+  "source": {
+    "adaptation": "確定仕様から作成した独自課題。保存例は採点と保存形式を検証する合成素材であり、実モデル試行の記録ではない。"
+  },
+  "conditions": [
+    "no-dialogue"
+  ],
+  "termination": [
+    "submitted"
+  ],
+  "requirements": [
+    {
+      "id": "report",
+      "description": "公開CLIで件数と合計を返す",
+      "tests": [
+        "report",
+        "empty"
+      ]
+    },
+    {
+      "id": "legacy",
+      "description": "既存APIを保つ",
+      "tests": [
+        "legacy"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "discovery",
+      "description": "目標と公開契約から必要作業を発見したか。履歴の作業構成と実施を根拠にする。"
+    },
+    {
+      "id": "verification",
+      "description": "公開CLIを実行して件数・金額を確かめたか。コード提出だけでは適合としない。"
+    },
+    {
+      "id": "purpose",
+      "description": "注文を集計できる目的と局所的な実装判断を区別したか。"
+    },
+    {
+      "id": "confirmation",
+      "description": "確定した目的内で不要な指示待ちをせず実装・検証したか。"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "no-dialogue",
+      "candidate": "import json\nimport pathlib\nimport sys\n\n\ndef legacy_total(values):\n    return sum(values)\n\n\nif __name__ == '__main__':\n    if len(sys.argv) != 3 or sys.argv[1] != 'report':\n        raise SystemExit(2)\n    records = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding='utf-8'))\n    print(json.dumps({'count': len(records), 'total_cents': sum(row['amount_cents'] for row in records)}))\n",
+      "execution": {
+        "case": "goal-discovery",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "no-dialogue",
+      "candidate": "def legacy_total(values):\n    return sum(values)\n",
+      "execution": {
+        "case": "goal-discovery",
+        "condition": "no-dialogue",
+        "document_version": "保存形式検証用v1",
+        "engine": "fixture",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "effort": "未取得（合成素材）"
+        },
+        "sessions": {
+          "candidate": "fixture-candidate"
+        },
+        "termination": "submitted",
+        "execution_errors": []
+      }
+    }
+  ]
+}

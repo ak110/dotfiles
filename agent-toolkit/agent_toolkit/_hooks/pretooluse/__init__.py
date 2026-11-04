@@ -20,7 +20,9 @@ def main(payload_text: str) -> int:
                 removable_cause=False,
             ),
         )
-    return _dispatch.main(payload_text, initial_notices=notices)
+    status = _dispatch.main(payload_text, initial_notices=notices)
+    termination_evidence.observe_delivered_documents(payload_text)
+    return status
 
 
 __all__ = ["main"]

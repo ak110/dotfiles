@@ -8,7 +8,6 @@ import re
 import sys
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
-lazy import shlex
 lazy from collections.abc import (
     Iterable,
     Sequence,
@@ -25,7 +24,7 @@ lazy from agent_toolkit._common.bash_invocations import (
 lazy from agent_toolkit._common.heredocs import mask_heredoc_bodies
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
 lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
-lazy from agent_toolkit._common.shell_tokens import is_atk_command, strip_redirections
+lazy from agent_toolkit._common.shell_tokens import is_atk_command, split_words, strip_redirections
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse import large_reads
@@ -320,7 +319,7 @@ def _process_kill_command_shaped(token: str) -> bool:
 def _has_unsafe_process_kill_match(segment: str) -> bool:
     """共通解析の実行位置とデータ引数を分け、未確定の実行と既知の終了操作を保護する。"""
     try:
-        raw_tokens = shlex.split(segment, posix=True)
+        raw_tokens = split_words(segment)
     except ValueError:
         return True
     if not raw_tokens:

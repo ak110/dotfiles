@@ -27,6 +27,7 @@ from agent_toolkit._atk.wi import process_loop_update as _update
 from agent_toolkit._atk.wi import process_loop_watch as _watch
 from agent_toolkit._atk.wi import process_loop_worktree as _worktree
 from agent_toolkit._common import console_title as _console_title
+from agent_toolkit._common import mcp_environment
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common.atomic_file import atomic_write
@@ -289,12 +290,16 @@ def run_coordinator(
                 + "\n",
             )
             result_path.unlink(missing_ok=True)
-            prompt = _session.build_process_loop_prompt(manifest)
+            prompt = _session.build_process_loop_prompt()
             engine, model, effort, codex_provider = _session.select_available_orchestrator(
                 _session.resolve_orchestrator_specs(),
                 env,
                 cwd,
                 resume_session_id=resume,
+            )
+            env[mcp_environment.SESSION_START_INPUT_ENV] = json.dumps(
+                {"source": "process-loop", "skill": "agent-toolkit:process-wi", "mode": "all-repos", "manifest": str(manifest)},
+                ensure_ascii=False,
             )
             session_args = argparse.Namespace(**vars(args))
             session_args.resume = resume

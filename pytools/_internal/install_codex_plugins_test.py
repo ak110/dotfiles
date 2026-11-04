@@ -63,9 +63,9 @@ def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ())
     # 既存のtoolkit固有シナリオは単一対象へ限定し、2件の導入契約は結合シナリオで検証する。
     monkeypatch.setattr(install_codex_plugins, "_MANAGED_PLUGINS", ("agent-toolkit",))
-    monkeypatch.delenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", raising=False)
     monkeypatch.setattr(host_roles, "is_linux_server", lambda: False)
-    monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
+    # 既存の更新ケースは利用中セッションへの手動案内を検査し、daemonだけのケースは個別に指定する。
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: (_SESSION,))
     monkeypatch.setattr(
         install_codex_plugins,
         "_hooks_list",
@@ -411,15 +411,11 @@ def test_running_codex_session_updates_without_removing_old_cache(
     assert not record.exists()
 
 
-@pytest.mark.parametrize("auto_restart", [False, True], ids=["manual-daemon-restart", "auto-daemon-restart"])
 def test_plugin_update_does_not_query_running_codex(
     plugin_env: Path,
     monkeypatch: pytest.MonkeyPatch,
-    auto_restart: bool,
 ) -> None:
     """旧cacheの復旧でセッションを守るため、更新可否の判定にプロセス一覧を使わない。"""
-    if auto_restart:
-        monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: pytest.fail("更新時にプロセス一覧を参照しない"))
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
     calls: list[list[str]] = []
@@ -890,13 +886,25 @@ def test_plugin_update_keeps_hook_notice_when_daemon_is_stopped(plugin_env: Path
     assert "SessionStart" in outcome.notices[0].message
 
 
-def test_plugin_update_auto_restarts_running_daemon(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """明示設定時は更新検証後に稼働中daemonを1回だけ再起動する。"""
+@pytest.mark.parametrize("session_starts", [False, True])
+def test_plugin_update_rechecks_sessions_before_auto_restart(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, session_starts: bool
+) -> None:
+    """更新開始時はdaemonだけでも、再起動直前にセッションがあれば接続を維持する。"""
     calls: list[list[str]] = []
     restart_calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
-    monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
-    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+    daemon = codex_processes.CodexProcess(4321, "codex app-server --managed-daemon", "managed-daemon")
+    processes = [daemon]
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: tuple(processes))
+    success = _recording_success(calls)
+
+    def command(args: list[str], **_kwargs: Any) -> bool:
+        if session_starts and args == ["app-server", "daemon", "version"]:
+            processes.append(_SESSION)
+        return success(args)
+
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
 
     def run_subprocess(args: list[str], **_kwargs: object) -> _FakeResult:
         restart_calls.append(args)
@@ -907,8 +915,10 @@ def test_plugin_update_auto_restarts_running_daemon(plugin_env: Path, monkeypatc
     outcome = install_codex_plugins.run()
 
     assert outcome.changed is True
-    assert [notice.command for notice in outcome.notices] == ["/hooks"]
-    assert restart_calls == [["codex", "app-server", "daemon", "restart"]]
+    assert [notice.command for notice in outcome.notices] == (
+        ["/hooks", "codex app-server daemon restart"] if session_starts else ["/hooks"]
+    )
+    assert restart_calls == ([] if session_starts else [["codex", "app-server", "daemon", "restart"]])
     assert calls[-1] == ["app-server", "daemon", "version"]
 
 
@@ -920,7 +930,7 @@ def test_plugin_update_auto_restart_failure_keeps_notice_and_logs_exit_code(
     """自動再起動の失敗は終了コードを記録して手動案内へ戻す。"""
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
-    monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
     monkeypatch.setattr(
         install_codex_plugins.common,
@@ -936,14 +946,13 @@ def test_plugin_update_auto_restart_failure_keeps_notice_and_logs_exit_code(
     assert "daemon restart detail" in caplog.text
 
 
-def test_plugin_update_does_not_restart_stopped_daemon_when_enabled(
+def test_plugin_update_does_not_restart_stopped_daemon(
     plugin_env: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """明示設定時もdaemonが停止中なら再起動コマンドを発行しない。"""
+    """daemonが停止中なら再起動コマンドを発行しない。"""
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
-    monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
     monkeypatch.setattr(
         install_codex_plugins.common,
@@ -1095,7 +1104,6 @@ def test_same_version_enabled_is_unchanged(plugin_env: Path, monkeypatch: pytest
     calls: list[list[str]] = []
     state = _installed_state()
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), state])
-    monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
     monkeypatch.setattr(
         install_codex_plugins,
@@ -1394,6 +1402,11 @@ def test_removes_installed_unused_plugin_and_returns_notice(plugin_env: Path, mo
     }
     calls: list[list[str]] = []
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ("compact-plus@compact-plus",))
+    monkeypatch.setattr(
+        codex_processes,
+        "codex_processes",
+        lambda: (codex_processes.CodexProcess(4321, "codex app-server --managed-daemon", "managed-daemon"),),
+    )
     _set_json_responses(monkeypatch, [unused_state, _local_marketplace(plugin_env), _installed_state()])
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
 
@@ -1472,6 +1485,7 @@ def test_continues_when_unused_plugin_remove_fails(
     }
     calls: list[list[str]] = []
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ("compact-plus@compact-plus",))
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
     _set_json_responses(monkeypatch, [unused_state, _local_marketplace(plugin_env), unused_state])
 
     def command(args: list[str]) -> bool:

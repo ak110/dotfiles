@@ -14,13 +14,15 @@ import shlex
 
 import pytest
 
-from agent_toolkit._hooks import work_contract
-from agent_toolkit._testing.pretooluse_support import _additional_context, _run, _run_posttooluse
+from agent_toolkit._common import read_triggers, session_state
+from agent_toolkit._hooks import document_reads, rules_context, work_contract
+from agent_toolkit._testing.document_delivery import run_hook
+from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 
 _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
 _APPROVAL = _SKILL_REFERENCES / "approval-scope.md"
 _CHOICE = _SKILL_REFERENCES / "choice-construction.md"
-_WARNING = "操作前に読む資料が未取得"
+_WARNING = "未取得資料"
 _QUESTION_INPUT = {
     "questions": [{"question": "どちらにしますか？", "header": "方針", "options": [{"label": "A"}, {"label": "B"}]}]
 }
@@ -33,6 +35,12 @@ def _local_plugin_root(tmp_path, monkeypatch):
     path = tmp_path / "work-contract.md"
     path.write_text("目的: 確認操作固有の通知の検証\n", encoding="utf-8")
     monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
+
+
+def _assert_reference_state(path: pathlib.Path, expected: bool) -> None:
+    """通知の有無と分けて、現在本文の実受領を確認する。"""
+    records = session_state.read_state("confirmation-reads").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert (document_reads.acquisition_state(records, read_triggers.ReadTarget(path), "main") == "current") is expected
 
 
 def _read(path: pathlib.Path) -> dict:
@@ -128,7 +136,7 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
                     "tool_input": call["input"],
                     "tool_response": {"stdout": block["content"], "exit_code": 1 if block.get("is_error") else 0},
                 }
-                assert _run_posttooluse(event, {}).returncode == 0
+                assert run_hook("posttooluse", event, {}).returncode == 0
     return payload
 
 
@@ -164,8 +172,11 @@ def test_unread_reference_warns_without_blocking(
         result = _run(payload)
         assert result.returncode == 0
         context = _additional_context(result)
+        for path in (_APPROVAL, _CHOICE):
+            _assert_reference_state(path, path not in unread)
         if attempt:
-            assert context == ""
+            assert _WARNING not in context
+            assert all(str(path) not in context for path in (_APPROVAL, _CHOICE))
             continue
         assert context.count(_WARNING) == 1
         for path in (_APPROVAL, _CHOICE):
@@ -193,6 +204,8 @@ def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]
     result = _run(_payload(tmp_path, entries, **({"turn_id": "turn"} if codex else {})))
     assert result.returncode == 0
     assert _WARNING not in _additional_context(result)
+    for path in (_APPROVAL, _CHOICE):
+        _assert_reference_state(path, True)
 
 
 @pytest.mark.parametrize(
@@ -205,6 +218,8 @@ def test_name_mentions_and_attributes_do_not_suppress_warning(tmp_path: pathlib.
     assert result.returncode == 0
     context = _additional_context(result)
     assert _WARNING in context and str(_APPROVAL) in context and str(_CHOICE) in context
+    for path in (_APPROVAL, _CHOICE):
+        _assert_reference_state(path, False)
 
 
 @pytest.mark.parametrize("tool", ["Read", "Bash"])
@@ -214,7 +229,10 @@ def test_other_copy_of_same_named_reference_is_not_the_target(tmp_path: pathlib.
     other.parent.mkdir(parents=True)
     other.write_text("別資料", encoding="utf-8")
     entries = _successful_read(other) if tool == "Read" else _successful_bash(f"cat {other}")
-    assert _WARNING in _additional_context(_run(_payload(tmp_path, entries)))
+    result = _run(_payload(tmp_path, entries))
+    assert result.returncode == 0 and not result.stderr
+    assert _WARNING in _additional_context(result)
+    _assert_reference_state(_APPROVAL, False)
 
 
 def test_compaction_drops_unfinished_read_and_later_success_restores_it(tmp_path: pathlib.Path) -> None:
@@ -224,7 +242,11 @@ def test_compaction_drops_unfinished_read_and_later_success_restores_it(tmp_path
     assert _WARNING in _additional_context(first)
     assert str(_APPROVAL) in _additional_context(first)
     assert str(_CHOICE) not in _additional_context(first)
+    _assert_reference_state(_APPROVAL, False)
+    _assert_reference_state(_CHOICE, True)
     assert _WARNING not in _additional_context(_run(_payload(tmp_path, [*entries, *_successful_read(_APPROVAL)])))
+    _assert_reference_state(_APPROVAL, True)
+    _assert_reference_state(_CHOICE, True)
 
 
 def test_non_main_or_unreadable_context_does_not_warn(tmp_path: pathlib.Path) -> None:
@@ -238,7 +260,9 @@ def test_non_main_or_unreadable_context_does_not_warn(tmp_path: pathlib.Path) ->
 def test_exit_plan_mode_and_mojibake_warning_are_unchanged(tmp_path: pathlib.Path) -> None:
     """`ExitPlanMode`は対象外とし、文字化けの警告は未読の警告と並べて返す。"""
     plan = {**_payload(tmp_path, []), "tool_name": "ExitPlanMode", "tool_input": {"plan": "計画"}}
-    assert _additional_context(_run(plan)) == ""
+    plan_context = _additional_context(_run(plan))
+    assert _WARNING not in plan_context
+    assert all(str(path) not in plan_context for path in (_APPROVAL, _CHOICE))
     mojibake = _payload(tmp_path, [])
     mojibake["tool_input"] = {"questions": [{"question": "日本語の�本文", "header": "見出し", "options": [{"label": "A"}]}]}
     context = _additional_context(_run(mojibake))

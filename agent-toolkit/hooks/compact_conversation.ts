@@ -23,18 +23,18 @@ export const COMPACT_CONVERSATION_TOOL = {
 // 委譲先からの呼び出しへ`register.ts`が返す拒否の本文。委譲先への登録と呼び出しの除外は`register.ts`が行う。
 export const COMPACT_CONVERSATION_DELEGATED_DENY = "メインの会話で使うツール。";
 
-type BackgroundWait = { id: string; command: string; ready: boolean; used: boolean };
+type BackgroundWait = { id: string; command: string; used: boolean };
 type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean; automaticPaused: boolean; waits: Map<string, BackgroundWait> };
 
 function usageThreshold(context: { tokens?: number; window: number }): boolean | undefined {
   if (typeof context.tokens !== "number" || !Number.isFinite(context.tokens) || context.tokens < 0 || !Number.isFinite(context.window) || context.window <= 0) return undefined;
-  return context.tokens >= Math.min(400_000, context.window * 0.4);
+  return context.tokens >= Math.max(400_000, context.window * 0.4);
 }
 
 async function automatic($: EngineInterface, state: CompactState, wait: BackgroundWait): Promise<void> {
-  if (wait.used || !wait.ready || !state.waits.has(wait.id)) return;
+  if (wait.used || !state.waits.has(wait.id)) return;
   const diagnose = (reason: string) => $.ui.log(`wait_compaction task=${wait.id} reason=${reason}`, { to: "debug" });
-  if (state.turnRunning || state.pending) { diagnose(state.turnRunning ? "turn_running" : "pending"); return; }
+  if (state.pending) { diagnose("pending"); return; }
   try {
     const contextUsage = (await $.session.usage()).context;
     const high = usageThreshold(contextUsage);
@@ -48,7 +48,7 @@ async function automatic($: EngineInterface, state: CompactState, wait: Backgrou
       `--command=${wait.command}`,
     ]), { timeoutMs: 30_000 });
     if (checked.exitCode !== 0 || checked.isStdoutTruncated) { diagnose("ownership_check_failed"); return; }
-    if (state.turnRunning || state.pending || !state.waits.has(wait.id)) { diagnose("wait_changed"); return; }
+    if (state.pending || !state.waits.has(wait.id)) { diagnose("wait_changed"); return; }
     const context: unknown = JSON.parse(checked.stdout);
     if (typeof context !== "object" || context === null || (context as { eligible?: unknown }).eligible !== true) { diagnose("ownership_unconfirmed"); return; }
     state.pending = true;
@@ -70,15 +70,22 @@ function schedule($: EngineInterface, state: CompactState): void {
       if (state.turnRunning || !state.pending) return;
       try {
         for (const wait of state.waits.values()) wait.used = true;
-        const result = await $.session.compact();
+        // headlessでは直接APIが拒否されるため、ホストが実行する/compactを使う。
+        // 実ホストの制約と両経路の観測は監査記録の
+        // 「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年11月4日」にある。
+        if ((await $.session.surfaces()).length === 0) {
+          await $.command.run({ command: "compact" });
+        } else {
+          const result = await $.session.compact();
+          if (result.skip !== undefined) {
+            $.ui.toast(automatedMessage("compact-conversation", "warn", `会話圧縮は見送られた。予約状態は解除済み。通常の作業を続け、圧縮が必要ならcompact_conversationを引数なしで再予約せよ。理由: ${result.skip}`));
+          }
+        }
         state.pending = false;
         state.automaticPaused = true;
-        if (result.skip !== undefined) {
-          $.ui.toast(automatedMessage("compact-conversation", "warn", `会話圧縮は見送られた。予約状態は解除済み。理由: ${result.skip}`));
-        }
       } catch (error) {
         state.pending = false;
-        $.ui.toast(automatedMessage("compact-conversation", "warn", `会話圧縮の予約実行に失敗した。予約状態は解除済みで再予約できる。原因: ${String(error)}`));
+        $.ui.toast(automatedMessage("compact-conversation", "warn", `会話圧縮の予約実行に失敗した。予約状態は解除済み。通常の作業を続け、圧縮が必要ならcompact_conversationを引数なしで再予約せよ。原因: ${String(error)}`));
       }
     });
 }
@@ -138,10 +145,9 @@ export function register(on: On, session: { delegated: boolean }): void {
     const raw: unknown = result.result;
     const id = typeof raw === "object" && raw !== null ? (raw as { backgroundTaskId?: unknown }).backgroundTaskId : undefined;
     if (typeof id !== "string" || !id || state.waits.has(id)) return result;
-    const wait: BackgroundWait = { id, command: e.command, ready: false, used: false };
+    const wait: BackgroundWait = { id, command: e.command, used: false };
     state.waits.set(id, wait);
-    $.clock.after(60_000, async () => {
-      wait.ready = true;
+    $.clock.after(0, async () => {
       await automatic($, state, wait);
     });
     return result;

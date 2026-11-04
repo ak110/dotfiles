@@ -64,13 +64,18 @@ Claude Codeでは`mcp__agent-toolkit__send_to_user`、Codexの通常のターン
 | 作業完了報告の本文を書く前 | `references/report-formats.md`の「検証結果と実行記録」「作業完了報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「検証結果と実行記録」「作業完了報告のフォーマット」` | |
 | 振り返り結果報告かその予告を書く前 | `references/report-formats.md`の「振り返り結果報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「振り返り結果報告のフォーマット」` | |
 | AWI投入結果報告を書く前 | `references/report-formats.md`の「AWI投入結果報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「AWI投入結果報告のフォーマット」` | |
-| 報告用UWIを書く前 | `references/report-formats.md`の「報告用UWIのフォーマット」「報告用UWIの確認と保存」と`../wi-standards/references/uwi-format.md` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIのフォーマット」「報告用UWIの確認と保存」`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
+| 報告用UWIを書く前 | `references/report-formats.md`の「報告用UWIのフォーマット」「報告用UWIの確認と保存」と`../wi-standards/references/uwi-format.md`、`agent-toolkit:wi-standards/SKILL.md` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIのフォーマット」「報告用UWIの確認と保存」`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md`、`read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`wi-report-save` | |
 | 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
 | Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` | |
 
 メインの作業契約が未作成の場合は、期待パスを示す警告に従い、`share/work-contract.md`の「作成と所有」に基づいて作成し、全文を取得する。
 
 ## 完了の到達水準
+
+run-skillのスキル名・モード・自由記述・scope・同一実行識別子・報告先は、SessionStartが渡す起動入力から取得する。
+短い目的文を完了の自己申告に置き換えず、本節の要求と証拠で判定する。
+起動した処理が回復可能な残工程を持つ場合は続行し、外部前提不足で終了する場合は未達・理由・再開条件を同一実行の報告へ保存する。
+run-skill起動元による報告の同期検収は、子セッションの終了後に行われるため、子自身の完了条件へ含めない。
 
 読込表で受け取った現行の作業契約、および`share/work-contract.md`の工程境界における要求と成果の確認手順に従い、各要求と残る完成条件を「証拠」「明示的な取り下げや置換」「ユーザー対応が必要な未完了事項」に対応付ける。未処理の追加入力があれば統合し、残っている元の工程を完了させてから全体を判定する。
 

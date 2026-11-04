@@ -67,6 +67,8 @@ BUG_VARIANT_LEGACY_ROWS: str = "legacy_rows"
 """統廃合前の調査表。原因分析表を伴い、行構成だけが旧い。"""
 BUG_VARIANT_LEGACY_STANDALONE: str = "legacy_standalone"
 """原因分析表を持たない旧調査表。"""
+BUG_VARIANT_PREVIOUS_ROWS: str = "previous_rows"
+"""6区分化より前の8行の調査表。原因分析表を伴い、行構成だけが旧い。"""
 
 
 def bug_investigation_table(filler: str = BUG_FILLER) -> str:
@@ -79,6 +81,21 @@ def bug_investigation_table(filler: str = BUG_FILLER) -> str:
                 if row in ("類似見直し観点", "再発防止策")
                 else item_row(row, filler)
                 for row in _plan_format.PLAN_BUG_TABLE_ROWS
+            ),
+        ]
+    )
+
+
+def previous_bug_investigation_table(filler: str = BUG_FILLER) -> str:
+    """6区分化より前の8行の調査表を組み立てる。"""
+    return "\n".join(
+        [
+            _header_row(_plan_format.PLAN_BUG_TABLE_HEADER),
+            *(
+                item_row(row, f"作り込み要因: {filler}を採用。見逃し要因: {filler}を採用。")
+                if row in ("類似見直し観点", "再発防止策")
+                else item_row(row, filler)
+                for row in _plan_format.PLAN_PREVIOUS_BUG_TABLE_ROWS
             ),
         ]
     )
@@ -102,13 +119,15 @@ def legacy_bug_investigation_table(filler: str = BUG_FILLER) -> str:
 def bug_file(*, title: str = "計画の主題", variant: str = BUG_VARIANT_CURRENT) -> str:
     """計画ファイル（バグ）の正常系本文を返す。
 
-    ``variant``は``BUG_VARIANT_CURRENT``、``BUG_VARIANT_LEGACY_ROWS``、
+    ``variant``は``BUG_VARIANT_CURRENT``、``BUG_VARIANT_PREVIOUS_ROWS``、``BUG_VARIANT_LEGACY_ROWS``、
     ``BUG_VARIANT_LEGACY_STANDALONE``のいずれかを受理する。
     """
     if variant == BUG_VARIANT_LEGACY_STANDALONE:
         body = rows_table(_plan_format.PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS, BUG_FILLER)
     elif variant == BUG_VARIANT_LEGACY_ROWS:
         body = f"{bug_cause_table()}\n\n{legacy_bug_investigation_table()}"
+    elif variant == BUG_VARIANT_PREVIOUS_ROWS:
+        body = f"{bug_cause_table()}\n\n{previous_bug_investigation_table()}"
     else:
         body = f"{bug_cause_table()}\n\n{bug_investigation_table()}"
     return f"# {title}\n\n### {BUG_UNIT_H3}\n\n{body}\n"

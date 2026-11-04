@@ -2,7 +2,7 @@
 //!
 //! stdinから公式statusLine JSON入力を受け取る。
 //! 1行目はモデル名・effort・cwdを半角スペース区切りで
-//! 結合したのち、コンテキスト・コスト・経過時間・消費量(7d)とパイプ区切りで連結する。
+//! 結合したのち、コンテキスト・コスト・経過時間・消費量とパイプ区切りで連結する。
 //! 2行目はセッションID・セッション名を半角スペース区切りで結合したのち、worktree情報（存在時のみ）
 //! とパイプ区切りで連結する。数値項目には日本語ラベルを付与し、欠落・null・空文字列の要素は省略する。
 
@@ -19,7 +19,6 @@ pub(crate) const GRAY: &str = "\x1b[90m";
 pub(crate) const LABEL_CONTEXT: &str = "コンテキスト";
 const LABEL_COST: &str = "コスト";
 const LABEL_DURATION: &str = "経過時間";
-const LABEL_RATE_LIMITS: &str = "消費量(7d)";
 const LABEL_SESSION: &str = "セッション";
 const LABEL_WORKTREE: &str = "worktree";
 
@@ -69,7 +68,7 @@ fn render_primary_line(data: &Value, home: Option<&str>) -> String {
     let ctx_pct = get_nested_number(data, &["context_window", "used_percentage"]);
     let total_cost = get_nested_number(data, &["cost", "total_cost_usd"]);
     let duration_ms = get_nested_number(data, &["cost", "total_duration_ms"]);
-    // 5時間の利用上限は廃止されたため、入力に残っていても表示しない。
+    let five_hour_pct = get_nested_number(data, &["rate_limits", "five_hour", "used_percentage"]);
     let seven_day_pct = get_nested_number(data, &["rate_limits", "seven_day", "used_percentage"]);
     let head = build_head_segment(
         model_name.as_deref(),
@@ -94,11 +93,8 @@ fn render_primary_line(data: &Value, home: Option<&str>) -> String {
             GRAY,
         ));
     }
-    if let Some(pct) = seven_day_pct {
-        tail.push(color(
-            &format!("{LABEL_RATE_LIMITS}: {pct:.0}%"),
-            threshold_color(pct),
-        ));
+    if let Some(segment) = build_rate_limits_segment(five_hour_pct, seven_day_pct) {
+        tail.push(segment);
     }
 
     let mut segments: Vec<String> = Vec::new();
@@ -107,6 +103,19 @@ fn render_primary_line(data: &Value, home: Option<&str>) -> String {
     }
     segments.extend(tail);
     segments.join(" | ")
+}
+
+fn build_rate_limits_segment(five_hour: Option<f64>, seven_day: Option<f64>) -> Option<String> {
+    let (label, display, percentage) = match (five_hour, seven_day) {
+        (Some(f), Some(s)) => ("5h/7d", format!("{f:.0}% / {s:.0}%"), f.max(s)),
+        (Some(f), None) => ("5h", format!("{f:.0}%"), f),
+        (None, Some(s)) => ("7d", format!("{s:.0}%"), s),
+        (None, None) => return None,
+    };
+    Some(color(
+        &format!("消費量({label}): {display}"),
+        threshold_color(percentage),
+    ))
 }
 
 /// 2行目: セッションID・セッション名・worktree情報（いずれも存在時のみ）。
@@ -341,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn rate_limits_show_seven_day_only() {
+    fn rate_limits_follow_available_windows() {
         let cases = [
             (
                 serde_json::json!({"rate_limits": {"seven_day": {"used_percentage": 91}}}),
@@ -349,10 +358,22 @@ mod tests {
             ),
             (
                 serde_json::json!({"rate_limits": {"five_hour": {"used_percentage": 60}, "seven_day": {"used_percentage": 40}}}),
-                format!("{GREEN}消費量(7d): 40%{RESET}"),
+                format!("{YELLOW}消費量(5h/7d): 60% / 40%{RESET}"),
             ),
             (
                 serde_json::json!({"rate_limits": {"five_hour": {"used_percentage": 81}}}),
+                format!("{RED}消費量(5h): 81%{RESET}"),
+            ),
+            (
+                serde_json::json!({"rate_limits": {"five_hour": null, "seven_day": {"used_percentage": 40}}}),
+                format!("{GREEN}消費量(7d): 40%{RESET}"),
+            ),
+            (
+                serde_json::json!({"rate_limits": {"five_hour": {"used_percentage": 0}, "seven_day": {"used_percentage": null}}}),
+                format!("{GREEN}消費量(5h): 0%{RESET}"),
+            ),
+            (
+                serde_json::json!({"rate_limits": {"five_hour": {"used_percentage": "unknown"}, "seven_day": null}}),
                 String::new(),
             ),
         ];

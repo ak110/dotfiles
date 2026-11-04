@@ -12,9 +12,12 @@ Claude CodeはJSONのadditionalContextを10,000文字で保存先とプレビュ
 
 from __future__ import annotations
 
+import contextlib
+import html
 import json
 import os
 import pathlib
+import time
 lazy import re
 lazy import shlex
 lazy import subprocess
@@ -25,14 +28,14 @@ lazy import urllib.parse
 lazy from typing import Any
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import message_format, plugin_environment, read_triggers
+from agent_toolkit._common import mcp_environment, message_format, plugin_environment, read_triggers
 from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.session_state import read_state, update_state
-lazy from agent_toolkit._hooks import document_reads, work_contract
+lazy from agent_toolkit._hooks import document_reads, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
 
@@ -83,6 +86,28 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     """
     parts: list[str] = []
     if not delegated:
+        if raw := os.environ.get(mcp_environment.SESSION_START_INPUT_ENV):
+            data = json.loads(raw)
+            if not isinstance(data, dict) or data.get("source") not in ("process-loop", "run-skill"):
+                raise ValueError("起動入力はsourceがprocess-loopまたはrun-skillのJSON objectで指定する")
+            references = (
+                "agent-toolkit:process-wiのreferences/all-repos.md「結果と終了」"
+                if data["source"] == "process-loop"
+                else "agent-toolkit:user-confirmation-and-reportのreferences/answer-transitions.md"
+                "「`atk run-skill`の過去の実行のUWI」とagent-toolkit:report-completion"
+            )
+            if data["source"] == "run-skill" and data.get("batch_manifest"):
+                references += "、agent-toolkit:review-sessionのreferences/batch.md"
+            parts.append(
+                message_format.auto_message(
+                    "起動入力: "
+                    + html.escape(json.dumps(data, ensure_ascii=False))
+                    + "\n指定スキルを起動し、次の終了契約を読め: "
+                    + references,
+                    source=data["source"],
+                    kind="startup-input",
+                )
+            )
         instruction = os.environ.get(PROCESS_LOOP_INSTRUCTION_ENV, "").strip()
         if instruction:
             parts.append(
@@ -172,7 +197,10 @@ def reset_main_operation_skill_ready(
                 except KeyError, OSError, TypeError, ValueError:
                     continue
                 # 同じ内容の写しを別の場所で読んだ取得も、選択済み資料の取得として候補に含める。
-                if document_reads.content_ready(recorded, fingerprint, MAIN_AGENT_ID):
+                if (
+                    document_reads.acquisition_state(recorded, read_triggers.ReadTarget(path, heading), MAIN_AGENT_ID)
+                    != "missing"
+                ):
                     reference = document_reads.reference_only(
                         [origin["operations"] for origin in selected.get("declarations", [])]
                     )
@@ -208,9 +236,20 @@ def reset_main_operation_skill_ready(
             updated[carried_read_target_key(path)] = [MAIN_AGENT_ID]
         # 最初の操作より前に圧縮された場合も、旧起動本文を取得済みへ戻さない。
         updated[READ_CONTEXT_RESET_KEY] = [MAIN_AGENT_ID]
-        if updated == recorded:
-            return None
+        # 取得マッピングが同じでも、各文脈境界で候補とrollout位置を初期化する。
         current[OPERATION_SKILL_READY_KEY] = updated
+        current.get("document_read_candidates", {}).pop(MAIN_AGENT_ID, None)
+        current.get("document_read_pending", {}).pop(MAIN_AGENT_ID, None)
+        current.get("document_read_spools", {}).pop(MAIN_AGENT_ID, None)
+        current.get("result_read_pending", {}).pop(MAIN_AGENT_ID, None)
+        evidence = current.get("termination_evidence")
+        if isinstance(evidence, dict):
+            evidence.pop("pending_reads", None)
+        for key in current.get("document_read_offsets", {}):
+            actor, path = json.loads(key)
+            if actor == MAIN_AGENT_ID:
+                with contextlib.suppress(OSError):
+                    current["document_read_offsets"][key] = pathlib.Path(path).stat().st_size
         return current
 
     update_state(session_id, _reset)
@@ -220,8 +259,7 @@ def reset_main_operation_skill_ready(
 def shell_acquisition_conditions() -> str:
     """取得観測が受理するシェル実行と、取得後の再試行を案内する。"""
     return (
-        "静的な読取は、1回のシェル実行（Codexではexec_command）で単独か`&&`連結にし、成功した出力を返せ。"
-        "`;`連結・パイプ前段・出力リダイレクト・失敗した読取は取得として記録されない。"
+        "必要範囲の本文を実出力として返せ。省略・退避した部分は実際に回収してから進め。"
         "取得後は、止められた元の書き込みを再発行できる"
     )
 
@@ -275,13 +313,11 @@ def _compact_recovery_context(
 ) -> str | None:
     """圧縮前に取得した選択資料を、ホスト本来の取得手段で案内する。"""
     steps = []
-    for path, heading, fingerprint, reference in recovery_targets:
+    for path, heading, _fingerprint, reference in recovery_targets:
         target = read_triggers.ReadTarget(path, heading)
         try:
             if not path.is_file():
                 raise FileNotFoundError(str(path))
-            if document_reads.content_fingerprint(path) != fingerprint:
-                continue
             if heading:
                 target.body()
             skill = document_reads.skill_document(str(path))
@@ -292,15 +328,21 @@ def _compact_recovery_context(
                 and skill[1] == "SKILL.md"
                 and document_reads.requires_skill_invocation(path, host=host, subject="main", cwd=cwd)
             ):
-                owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
-                name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
-                steps.append(f"`Skill`で`{name}`を起動せよ（資料: `{path}`）")
                 continue
             focus = f"。特に`{heading}`に注目せよ" if heading else ""
             if host in {"codex", "agy"}:
-                steps.append(f"`cat -- {shlex.quote(str(path))}`で全文読め" + focus)
+                if heading:
+                    steps.append(
+                        "、".join(
+                            f"`sed -n '{start},{end}p' -- {shlex.quote(str(path))}`" for start, end in target.line_ranges()
+                        )
+                        + "で必要範囲を取得せよ"
+                        + focus
+                    )
+                else:
+                    steps.append(f"`cat -- {shlex.quote(str(path))}`で全文読め")
             else:
-                step = f"Readで`{path}`を全文読め"
+                step = f"Readで`{path}`の必要節を取得せよ" if heading else f"Readで`{path}`を全文読め"
                 if skill and not document_reads.skill_loadable(path, cwd=cwd):
                     step += f"。Bashでは`cat -- {shlex.quote(str(path))}`で取得せよ"
                 steps.append(step + focus)
@@ -484,9 +526,19 @@ def _compaction_notice(
         ]
         data = "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in users)
         output.write_text(data, encoding="utf-8")
+        key = document_reads.selected_target_key(read_triggers.ReadTarget(output))
+
+        def select_original(state: dict) -> dict:
+            records = state.setdefault(OPERATION_SKILL_READY_KEY, {})
+            actors = records.setdefault(key, [])
+            if MAIN_AGENT_ID not in actors:
+                actors.append(MAIN_AGENT_ID)
+            return state
+
+        update_state(session_id, select_original)
         lines.append(
             f"ユーザー発話の原文{len(users)}件: {output}。圧縮の要約で文言や範囲が変わり得るため、"
-            "ユーザーの要求と判断はこのファイルの原文で確かめよ。"
+            "ユーザーの要求・判断・行動の訂正を原文と作業契約で比較し、有効な指示を統合して元の未完了工程へ戻れ。"
         )
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         if output is not None:
@@ -539,19 +591,27 @@ def main(payload_text: str, *, host: str = "claude") -> int:
     """SessionStartまたはSubagentStartのpayloadを処理する。"""
     payload = _parse_payload(payload_text)
     event_name = payload.get("hook_event_name")
+    session_id = payload.get("session_id")
+    delegated = is_delegated(os.environ)
     if event_name == "SessionStart":
         source = payload.get("source")
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
-        delegated = is_delegated(os.environ)
-        session_id = payload.get("session_id")
+        session_temp = None
+        if isinstance(session_id, str) and session_id:
+            with contextlib.suppress(managed_temp.ManagedTempError, OSError):
+                session_temp = managed_temp.resolve_session_temp(session_id)
         if source in _CONTEXT_LOSING_SOURCES and isinstance(session_id, str) and session_id:
             # 同じセッションIDでも受信文脈は失われているため、既送の通知を本文の構成前に未送へ戻す。
             forget_subject_notices(session_id, MAIN_AGENT_ID)
+        started = time.monotonic()
         content = compose_session_start(source, delegated=delegated, host=host)
+        timing.record(payload, "rules_context", started, "ok", stage="normative-content")
         from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
+        started = time.monotonic()
         review_notice = run_skill_batch.hook_request(payload, host=host) if host in {"claude", "codex"} else None
+        timing.record(payload, "rules_context", started, "ok", stage="review-session-request")
         if review_notice is not None:
             content = f"{content}\n\n{_llm_notice(review_notice)}" if content else _llm_notice(review_notice)
         if not delegated and host == "claude":
@@ -568,7 +628,6 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                         else None
                     ),
                 )
-            session_temp = None
             recovery_targets: list[tuple[pathlib.Path, str, str, bool]] = []
             if source in _OPERATION_SKILL_RESET_SOURCES:
                 recovery_targets = reset_main_operation_skill_ready(session_id, retain_for_compact=source == "compact")
@@ -585,11 +644,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     )
                     if contract_update:
                         content = f"{content}\n\n{_llm_notice(contract_update)}"
-            try:
-                session_temp = managed_temp.resolve_session_temp(session_id)
-            except managed_temp.ManagedTempError, OSError:
-                pass
-            else:
+            if session_temp is not None:
                 temp_text = session_temp_notice(session_temp)
                 contract_context = None
                 if source == "compact" and not delegated and work_contract.exists(session_id):
@@ -609,7 +664,9 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 if contract_context:
                     content += f"\n\n{contract_context}"
             if source == "compact" and host == "claude":
+                started = time.monotonic()
                 compact_text = _compaction_notice(session_id, payload.get("transcript_path"), session_temp, delegated=delegated)
+                timing.record(payload, "rules_context", started, "ok", stage="compaction-recovery")
                 if compact_text:
                     compact = _llm_notice(compact_text)
                     content = f"{content}\n\n{compact}" if content else compact
@@ -632,6 +689,25 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         raise ValueError("hook_event_nameはSessionStartまたはSubagentStartである必要がある")
 
     if content is not None:
+        if (
+            host == "claude"
+            and event_name == "SessionStart"
+            and not delegated
+            and len(content) > CLAUDE_CODE_OUTPUT_LIMIT
+            and (raw := os.environ.get(mcp_environment.SESSION_START_INPUT_ENV))
+        ):
+            # 可変引数でhook全体がプレビューに置換されると、終了契約も失われる。
+            # 大きい実行データだけをセッションのmanaged-tempへ保存し、参照と契約の導線を配送する。
+            if not isinstance(session_id, str) or not session_id:
+                raise ValueError("大きい起動入力の保存にはSessionStartのsession_idが必要")
+            path = managed_temp.resolve_session_temp(session_id) / "startup-input.json"
+            path.write_text(raw, encoding="utf-8")
+            encoded = html.escape(json.dumps(json.loads(raw), ensure_ascii=False))
+            content = content.replace(
+                "起動入力: " + encoded,
+                "起動入力ファイル: " + html.escape(str(path)) + "。全文を読め。",
+                1,
+            )
         # 本文は区分ごとに境界を持つため、全体を重ねて囲まない。
         print(
             json.dumps(

@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import re
-import shlex
 
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.shell_tokens import split_words
 from agent_toolkit._plan.structure import constants, markdown
 
 _CODE = re.compile(r"`([^`]+)`")
-_QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 _BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
 
 
@@ -22,13 +21,18 @@ def commands_from_cell(cell: str) -> list[tuple[str, list[str]]]:
     commands = []
     for span in spans:
         command = span.group(1).replace(r"\|", "|")
-        unquoted = _QUOTED.sub("", command)
-        if re.search(r"[;&|<>`\n]|\$", unquoted) or re.match(r"\s*[A-Za-z_][A-Za-z0-9_]*=", command):
-            raise ActionableError(f"shellの再評価を要する検証コマンドです: {command}", next_action=failure)
         try:
-            argv = shlex.split(command)
+            words = split_words(command)
         except ValueError as error:
             raise ActionableError(f"検証コマンドの引用が不正です: {command}: {error}", next_action=failure) from error
+        # 区切り・リダイレクト・展開・前置代入は引用の外側にある場合だけshellの再評価を要する。
+        if (
+            "\n" in command
+            or any(word.expansion or re.search(r"[;&|<>`]", word.unquoted) for word in words)
+            or (words and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", words[0].unquoted))
+        ):
+            raise ActionableError(f"shellの再評価を要する検証コマンドです: {command}", next_action=failure)
+        argv = [str(word) for word in words]
         if not argv:
             raise ActionableError("検証コマンドが空です", next_action=failure)
         commands.append((command, argv))

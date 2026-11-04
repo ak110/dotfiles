@@ -6,6 +6,7 @@
 import ast
 import contextlib
 import functools
+import hashlib
 import io
 import json
 import os
@@ -18,6 +19,7 @@ import pytest
 
 from agent_toolkit import hook as _hook
 from agent_toolkit._common import message_format as _message_format
+from agent_toolkit._common import state_paths
 from agent_toolkit._common.session_state import state_path
 from agent_toolkit._testing import git_repository
 lazy from agent_toolkit._common.session_state import read_state
@@ -123,6 +125,34 @@ def codex_execution_payload(payload: dict, directory: pathlib.Path, *, exit_code
     with transcript.open("a", encoding="utf-8") as stream:
         stream.writelines(json.dumps(record) + "\n" for record in records)
     return {**payload, "transcript_path": str(transcript)}
+
+
+def codex_delivered_payload(payload: dict, directory: pathlib.Path | None = None) -> dict:
+    """合成分岐試験の応答を外側rolloutへ保存し、後続Preが読む実体を返す。
+
+    実ホストの形と配送時機は`../_hooks/pretooluse/read_delivery_host_samples_test.py`の標本で別に検収する。
+    """
+    actor = payload.get("agent_id", "main")
+    identity = json.dumps([payload.get("session_id", "test"), actor]).encode("utf-8")
+    directory = directory or state_paths.state_dir() / "test-deliveries"
+    path = pathlib.Path(
+        payload.get(
+            "agent_transcript_path",
+            payload.get("transcript_path", directory / (hashlib.sha256(identity).hexdigest() + ".jsonl")),
+        )
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "type": "response_item",
+        "payload": {
+            "type": "custom_tool_call_output",
+            "call_id": "synthetic",
+            "output": [{"type": "input_text", "text": json.dumps(payload.get("tool_response"), ensure_ascii=False)}],
+        },
+    }
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return {**payload, "transcript_path": str(path), **({"agent_transcript_path": str(path)} if actor != "main" else {})}
 
 
 def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
@@ -423,6 +453,14 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
                     },
                 }
                 assert _run_posttooluse(event, env_overrides or {}).returncode == 0
+                delivered = codex_delivered_payload(event)
+                assert (
+                    _run(
+                        {**delivered, "hook_event_name": "PreToolUse", "tool_name": "ObserveDelivery", "tool_input": {}},
+                        env_overrides,
+                    ).returncode
+                    == 0
+                )
                 continue
             for target in targets:
                 subject = operation_skills.resolve_subject(payload)

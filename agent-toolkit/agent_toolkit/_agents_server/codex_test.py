@@ -873,6 +873,8 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
         "shell-unrelated",
         "failure",
         "unrelated",
+        "quoted-data",
+        "chained",
     ),
 )
 async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, delivery: str) -> None:
@@ -898,6 +900,11 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
             command = '/bin/sh -c "timeout 300 atk agents wait"'
         if delivery == "shell-unrelated":
             command = '/bin/bash -lc "printf unrelated"'
+        # 引用した待機コマンドは出力するデータであり、実際の連結の後ろにある待機だけを回収する。
+        if delivery == "quoted-data":
+            command = "printf '%s' 'atk agents wait'"
+        if delivery == "chained":
+            command = "true && atk agents wait"
         if delivery in {"absolute-stdout", "absolute-shell"}:
             command = shlex.quote(str(plugin_roots.SERVER_PLUGIN_ROOT / "scripts" / "atk")) + " agents wait"
             if delivery == "absolute-shell":
@@ -916,7 +923,7 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
         await manager.handle_notification(_completed_turn(session))
 
         # 回収できなかった子は追跡に残り、自動再開まで結果を保留する。回収済みなら保留せず直ちに公開する。
-        unobserved = delivery in {"failure", "unrelated", "shell-unrelated"}
+        unobserved = delivery in {"failure", "unrelated", "shell-unrelated", "quoted-data"}
         assert session.awaiting_auto_resume is unobserved
         assert session.result_available is not unobserved
         assert session.live_child_session_ids == ({"child-1"} if unobserved else set())

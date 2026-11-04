@@ -121,22 +121,28 @@ _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗�
 _QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
 
 
-def _example_investigation_notice(prompt: str, source: str, *, subject: str) -> str | None:
-    """例示の語と調査を求める語を併せ持つ発話へ、範囲語と例示を併せた依頼の項の所在を示す注記を返す。
+def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | None:
+    """例示の語を含む発話へ、原文の対象と例示の関係を判断する節の所在を示す注記を返す。
 
-    該当する発話が範囲語か開放列挙を伴う調査の依頼かは受領側が判断し、本フックは字面の一致だけで返す。
+    指摘・提案・実行指示のどれに当たるか、例示が上位の対象の一部かは受領側が判断し、本フックは字面の一致だけで返す。
+    調査を求める語も併せ持つ発話には、独立した調査を委ねる手段の所在も加える。
     """
     text = _QUOTED_MATERIAL_RE.sub("", prompt)
-    if not any(word in text for word in _EXAMPLE_WORDS) or not any(word in text for word in _INVESTIGATION_WORDS):
+    if not any(word in text for word in _EXAMPLE_WORDS):
         return None
-    utterance = _plugin_resources.skill_reference("user-confirmation-and-report", "SKILL.md")
-    routing = _plugin_resources.skill_reference("delegation", "references/routing.md")
+    utterance = _plugin_resources.skill_reference("user-confirmation-and-report", "references/user-utterance.md")
     body = (
-        "この発話は例示の語と、調査・確認を求める語を含む。"
-        "範囲語か開放列挙を併せ持つ調査、見直し、点検の依頼である場合は、自ら調査へ着手する前に"
-        f"{utterance}「原文の保持と取り込み」の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用せよ。"
-        f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従え。"
+        "この発話は例示の語を含む。"
+        f"応答や具体化の前に{utterance}「原文の保持と取り込み」で、原文が示す上位の対象と例示の関係を判断し、"
+        "対応範囲を例示だけに狭めるな。"
+        "例示が対象そのものを指す通常の指示であれば、そのまま元の依頼を続けよ。"
     )
+    if any(word in text for word in _INVESTIGATION_WORDS):
+        routing = _plugin_resources.skill_reference("delegation", "references/routing.md")
+        body += (
+            "範囲語か開放列挙を併せ持つ調査、見直し、点検の依頼である場合は、自ら調査へ着手する前に同節の該当項を適用し、"
+            f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従え。"
+        )
     return _notice_formatter(source)(body, tag="notice", subject=subject)
 
 
@@ -146,7 +152,7 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
     subject = subject or prompt
     if "！！" in prompt:
         notices.append(_notice_formatter(source)(_REALIGN_NOTICE_BODY, tag="notice", subject=subject))
-    if (example := _example_investigation_notice(prompt, source, subject=subject)) is not None:
+    if (example := _example_scope_notice(prompt, source, subject=subject)) is not None:
         notices.append(example)
     return notices
 
@@ -522,13 +528,6 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
     if notice_task_id is not None:
         _record_background_task_id(session_id, notice_task_id)
 
-    if event_name == "PostToolUseFailure":
-        if tool_input.get("run_in_background"):
-            failed_task_id = _background_task_id_from_response(payload.get("tool_response"))
-            if failed_task_id is not None:
-                _record_background_task_id(session_id, failed_task_id)
-        return []
-
     notices: list[str] = []
     try:
         _read_delivery.observe(payload, tool_name, tool_input, session_id)
@@ -542,6 +541,12 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                 escalate_on_repeat=False,
             )
         )
+    if event_name == "PostToolUseFailure":
+        if tool_input.get("run_in_background"):
+            failed_task_id = _background_task_id_from_response(payload.get("tool_response"))
+            if failed_task_id is not None:
+                _record_background_task_id(session_id, failed_task_id)
+        return notices
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず回答を確認し、ユーザーの回答から通知までの遅延を抑える。
     # この通知が指示する反映と回答を待っていた作業の再開はメインが所有するため、

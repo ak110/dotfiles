@@ -382,6 +382,7 @@ def test_parent_update_and_config_override_environment_removed(tmp_path: pathlib
         "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT": "parent-runtime",
         "AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT": "parent-caller-venv",
         "AGENT_TOOLKIT_LAUNCH_RESTORE": "parent-restore",
+        "AGENT_TOOLKIT_SESSION_START_INPUT": "parent-startup-input",
         "PARENT_VENV_BIN": str(tmp_path / "parent-venv" / "bin"),
     }
     environment["PATH"] = os.pathsep.join((environment["PARENT_VENV_BIN"], environment["PATH"]))

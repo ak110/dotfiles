@@ -18,6 +18,12 @@
 
 ## 検証またはCIの失敗
 
+手元で対象条件の成否を観測できない修正は、`agent-toolkit:commit/references/ci-failure-handling.md`「修正系列」の先行CIへ接続する。
+公開担当が認可済み作業refへのpushと監視を所有し、CI修正担当の書込終了を確認して再レビューの合格を待たずに先行CIを開始する。
+必要なレビューは並行して進め、正式公開前にCI結果とともに合格を検収する。
+先行結果のSHA・ref・対象ジョブと、正式公開のcheck集合を区別する。
+修正合格には対象ジョブの実行と成功を要する。
+
 計画を基準とする修正系列の実行レビューにおいて、取得した計画の進捗ログに記録されている受理済みの実行レビュー返却ファイルが後続担当から読み取り可能である場合は、その絶対パスを任意入力`受理済みの完成条件証拠`に指定する（存在しない場合は`なし`とする）。参照を使用する際の条件は、`agent-toolkit:/share/exec-review-recording.md`「受理済み判定への参照」に従う。
 
 最初に観測された失敗からCIの成功、または本タスクの終了に至るまでを、1つの修正系列（`agent-toolkit:commit/references/ci-failure-handling.md`「修正系列」）として扱う。`agent-basics:bugfix`を起動し、ログ、参照実装、期待値から直接的な原因を特定した上で、`agent-toolkit:commit/references/ci-failure-handling.md`で定められた項目を含むCI記録を保持する。

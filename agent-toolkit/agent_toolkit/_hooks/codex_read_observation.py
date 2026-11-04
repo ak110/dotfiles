@@ -1,15 +1,17 @@
-"""Codexの成功した読取を観測し、省略時は担当による補完を案内する。
+"""Codexのnative読取の省略を観測し、担当による補完を案内する。
 
-hookは資料本文を追加コンテキストへ載せず、保存用の写しとの一致も判定しない。
+取得の確定はread_deliveryが外側rolloutの配送済み本文から行う。
+本モジュールは資料本文を追加コンテキストへ載せず、保存用の写しとの一致も判定しない。
 """
 
 from __future__ import annotations
 
 import pathlib
 import re
-import shlex
 from dataclasses import dataclass
 
+from agent_toolkit._common.shell_segments import split_bash_commands
+from agent_toolkit._common.shell_tokens import ShellWord, split_words
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import formatter
 
@@ -29,45 +31,37 @@ class Read:
     operands: tuple[int, ...]
 
 
+_GROUP_CONNECTORS = frozenset({";", "&&", "\n"})
+"""読取計画が受理する連結。パイプ・`||`・背景実行は前段の出力や失敗を後段が扱うため受理しない。"""
+_SUBSHELL_OR_REDIRECTION = frozenset("()<>")
+
+
 def read_command_groups(command: str, *, sequential: bool = False, read_prefix: bool = False) -> list[list[str]] | None:
-    """読取計画と取得案内で同じ演算子の境界を使う。"""
-    # 字句解析は引用を外すので、展開を受ける`$`とバッククォートは単一引用の外側で先に拒否する。
-    if read_prefix and any(marker in re.sub(r"'[^']*'", "", command) for marker in ("$", "`")):
-        return None
-    lexer = shlex.shlex(command.strip() if read_prefix else command, posix=True, punctuation_chars=";&|()<>\n")
-    lexer.whitespace = " \t\r"
-    lexer.whitespace_split = True
-    lexer.commenters = ""
-    groups: list[list[str]] = [[]]
-    try:
-        for token in lexer:
-            if read_prefix and token.rstrip("\n") in {";", "&&"}:
-                token = token.rstrip("\n")
-            if sequential and token == "&&":
-                return None
-            if read_prefix and token in {";", "\n"}:
-                return None
-            if token in {";", "&&", "\n"}:
-                if groups[-1]:
-                    groups.append([])
-            elif token and all(char in ";&|()<>\n" for char in token):
-                return None
-            else:
-                if (
-                    read_prefix
-                    and any(marker in token for marker in ("$", "`"))
-                    and not (
-                        len(groups[-1]) == 2
-                        and pathlib.PurePath(groups[-1][0]).name == "sed"
-                        and groups[-1][1] == "-n"
-                        and _SED_PRINT.fullmatch(token)
-                    )
-                ):
-                    return None
-                groups[-1].append(token)
-    except ValueError:
-        return None
-    groups = [group for group in groups if group]
+    """読取計画と取得案内で同じ演算子の境界を使う。
+
+    区間と区切りは`shell_segments.split_bash_commands`、語は`shell_tokens.split_words`の共通表現から得る。
+    引用した`;`・`|`・`>`などはデータとして扱い、実際の区切りとリダイレクトだけで判定する。
+    `sequential`は`&&`連結を、`read_prefix`は`;`・改行の連結と展開を含む語を受理しない。
+    `read_prefix`では先頭から確認可能な読取と前置きだけを残す。
+    """
+    groups: list[list[str]] = []
+    for connector, segment in split_bash_commands(command):
+        if connector and connector not in _GROUP_CONNECTORS:
+            return None
+        if sequential and connector == "&&":
+            return None
+        if read_prefix and connector in {";", "\n"}:
+            return None
+        try:
+            words: list[ShellWord] = split_words(segment)
+        except ValueError:
+            return None
+        if any(word.redirection or _SUBSHELL_OR_REDIRECTION & set(word.unquoted) for word in words):
+            return None
+        if read_prefix and any(word.expansion for word in words):
+            return None
+        if words:
+            groups.append(list(words))
     if read_prefix:
         # 後続の構文まで検証してから、先頭から確認可能な読取と前置きだけを残す。
         # 途中で解析を打ち切ると、その後のセミコロンによる失敗隠蔽を見落とす。
@@ -85,11 +79,10 @@ def read_command_groups(command: str, *, sequential: bool = False, read_prefix: 
 
 def read_plan(command: str) -> list[Read]:
     """展開・副作用・外部入力参照を含まない表示だけを受理する。"""
-    unquoted = re.sub(r"'[^']*'", "", command)
-    if any(value in unquoted for value in ("$", "`", "\\\n")):
+    if "\\\n" in command:
         return []
     groups = read_command_groups(command)
-    if groups is None:
+    if groups is None or any(isinstance(word, ShellWord) and word.expansion for group in groups for word in group):
         return []
     result = []
     for group in groups:

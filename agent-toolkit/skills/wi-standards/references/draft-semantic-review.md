@@ -10,6 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 資料起点の採否を検収する前 | `../../add-awi-by-user/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/add-awi-by-user/SKILL.md#冒頭` |
 | 再発の経過を問う要求を検収する前 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
 | 複数バグの現象・期待する契約・原因の対応を検収する前 | `analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
 | 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
@@ -47,6 +48,8 @@
 
 完成条件の網羅性・観測可能性を確認する前に、`drafting-completion.md`「投入前の読み直し」の必要性判定を適用し、起草者が加えた条件も独立して判定する。
 原因と被覆の判定では、同節に従い、探索範囲の各限定を根本原因の成立条件から導けるか確認する。
+資料起点の採用案は、`agent-toolkit:add-awi-by-user`冒頭の資料比較に従い、資料の具体的な手法と対象の利用結果を結ぶ根拠を確かめる。
+規定の存在や対象外のテスト例だけで既存充足や必要性を確定していないかも比較する。
 元の問いの分析単位を原文から独立に確定し、原因候補を選んだ前提と対応するか判定する。
 起草者が選んだ個別事象だけで検収範囲を決めず、再発の経過を問う要求には`agent-basics:bugfix/references/root-cause-scenarios.md`「反復した指摘の原因判定」を適用する。
 複数バグでは、`analysis-records.md`「原因分析の記録先」に従い、各バグの現象・期待する契約・原因の対応が一意かを確認する。
@@ -63,9 +66,10 @@
 - `condition_not_met`を返す場合は、投入が不要であると判断した結論と明確な根拠を示す。人間由来の要求を投入対象外とする場合は、`origin-and-approval.md`「承認」に従って確定したうえで、後続の保存対象から除外する。
 - 先行項目の正式なファイル名が未確定であっても、要求内容や証拠から参照先および参照箇所が一意に特定できる状態であれば、意味の検収を進めてよい。正式なファイル名への置き換え、および保存後の一致確認は、作成主体が`drafting-workflow.md`「投入」の手順に従って実施する。
 
-委譲元および専念型の投入前レビュー担当は、原稿と成立性の証拠を確認し、対策行と再発防止策行を比較する。
-`再発防止策`の行に挙げられた問題が通常の対策範囲の外にあることを確かめ、`agent-basics:bugfix`の`references/root-cause-remediation.md`「処置の階層」における持ち込み試験を実施する。
-成立しない原稿は、処置を対策行へ移して反映内容節の詳細と対応付け、再発防止策の選び直しまたは不採用理由の記録を求めて作成主体へ差し戻す。
+委譲元および専念型の投入前レビュー担当は、原稿と成立性の証拠を確認し、対策・回帰防止策の行と再発防止策の2行を比較する。
+4区分の候補行のいずれかが欠けていないこと、採否の行が候補ごとの採否と影響・費用の比較を示し候補数を採用義務として扱っていないことを確かめる。
+再発防止策の行に挙げられた問題が通常の対策範囲の外にあることを確かめ、`agent-basics:bugfix`の`references/root-cause-remediation.md`「処置の階層」における持ち込み試験を実施する。
+成立しない原稿は、処置を対策行か回帰防止策行へ移して反映内容節の詳細と対応付け、再発防止策の選び直しまたは不採用理由の記録を求めて作成主体へ差し戻す。
 
 ## 初回と再判定・差戻し
 

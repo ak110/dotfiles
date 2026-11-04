@@ -7,10 +7,27 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._common import read_triggers, session_state
+from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks import document_reads, notice, rules_context
-from agent_toolkit._hooks.pretooluse import agent_checks, read_delivery
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, denial_reason
+from agent_toolkit._hooks.pretooluse import agent_checks, dispatch, read_delivery
+from agent_toolkit._testing.document_delivery import observe_received
+from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
+
+
+def _assert_continues_without_guidance(result):
+    """公開hookの正常終了と、deny・反復案内がないことを確かめる。"""
+    assert result.returncode == 0 and not result.stderr
+    _assert_no_read_guidance(result.stdout)
+
+
+def _assert_no_read_guidance(text):
+    """作業契約など独立した通知を保ち、読込資料の反復案内だけを検査する。"""
+    specific = json.loads(text).get("hookSpecificOutput", {}) if text else {}
+    assert specific.get("permissionDecision") != "deny"
+    context = specific.get("additionalContext", "")
+    assert "未取得資料" not in context
+    assert "未起動スキル" not in context
+    assert "取得済み資料の更新あり" not in context
 
 
 @pytest.fixture(name="state")
@@ -23,7 +40,7 @@ def _state(monkeypatch):
     def update(_session, mutate):
         mutate(state)
 
-    for module in (agent_checks, read_delivery, rules_context, notice, session_state):
+    for module in (agent_checks, read_delivery, rules_context, notice, dispatch):
         monkeypatch.setattr(module, "read_state", read, raising=False)
         monkeypatch.setattr(module, "update_state", update)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
@@ -119,20 +136,21 @@ def test_skill_acquisition_respects_model_invocation(tmp_path, monkeypatch, stat
     assert first.notices and not first.block
     if host == "claude":
         assert ("`Skill`で`local`" in "".join(first.notices)) is not allows_read
-    for response in ({"stdout": body, "exit_code": 1},):
-        read_delivery.observe({**payload, "tool_response": response}, tool, inputs, "test")
+    for response in ({"stdout": "読取失敗", "exit_code": 1},):
+        observe_received({**payload, "tool_response": response}, tool, inputs, "test")
         assert not document_reads.content_ready(
             state.get(rules_context.OPERATION_SKILL_READY_KEY, {}), document_reads.content_fingerprint(skill), "main"
         )
-    read_delivery.observe({**payload, "tool_response": body[:12]}, tool, inputs, "test")
+    observe_received({**payload, "tool_response": body[:12]}, tool, inputs, "test")
     ready = document_reads.content_ready(
         state.get(rules_context.OPERATION_SKILL_READY_KEY, {}), document_reads.content_fingerprint(skill), "main"
     )
-    assert ready
+    assert not ready
+    observe_received({**payload, "tool_response": body}, tool, inputs, "test")
     following = read_delivery.deliver(payload, "Do", {}, "test")
     assert bool(following.notices) is (host == "claude" and not allows_read)
     if host == "claude" and not allows_read:
-        read_delivery.observe({**payload, "tool_response": "スキル起動済み"}, "Skill", {"skill": "local"}, "test")
+        observe_received({**payload, "tool_response": "スキル起動済み"}, "Skill", {"skill": "local"}, "test")
         assert document_reads.content_ready(
             state[rules_context.OPERATION_SKILL_READY_KEY], document_reads.content_fingerprint(skill), "main"
         )
@@ -142,8 +160,10 @@ def test_skill_acquisition_respects_model_invocation(tmp_path, monkeypatch, stat
 @pytest.mark.parametrize("linked", [False, True])
 @pytest.mark.parametrize("reading", ["Read", "Bash"])
 @pytest.mark.parametrize("writing", ["Write", "Bash"])
-def test_project_skill_cwd_boundary_releases_same_write(tmp_path, monkeypatch, state, inside, linked, reading, writing):
-    """会話から起動できる実体だけSkillを要求し、範囲外は通常取得で再書込へ戻る。"""
+def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
+    tmp_path, monkeypatch, state, inside, linked, reading, writing
+):
+    """会話から起動できる実体だけSkillを案内し、通常取得と起動の証拠を分ける。"""
     project = tmp_path / "project"
     skill = project / ".claude/skills/local/SKILL.md"
     skill.parent.mkdir(parents=True)
@@ -169,11 +189,14 @@ def test_project_skill_cwd_boundary_releases_same_write(tmp_path, monkeypatch, s
     }
     first = _run_hook_in_process("pretooluse", request)
     assert first.returncode == 0 and not first.stderr
-    assert str(skill) in first.stdout
+    assert (str(skill) in first.stdout) is not inside
     assert ("`Skill`で`local`" in first.stdout) is inside
     if not inside:
-        assert "Readで" in first.stdout and "cat --" in first.stdout
-    assert str(skill) in denial_reason(_run_hook_in_process("pretooluse", request))
+        assert "Readで" in first.stdout
+    _assert_continues_without_guidance(_run_hook_in_process("pretooluse", request))
+    assert not read_delivery.target_ready(
+        state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main"
+    )
     inputs = {"file_path": str(skill)} if reading == "Read" else {"command": "cat -- " + shlex.quote(str(skill))}
     acquired = _run_hook_in_process(
         "posttooluse",
@@ -191,7 +214,11 @@ def test_project_skill_cwd_boundary_releases_same_write(tmp_path, monkeypatch, s
     after = _run_hook_in_process("pretooluse", request)
     assert after.returncode == 0 and not after.stderr
     assert read_delivery.target_ready(state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main")
-    assert ('"permissionDecision": "deny"' in after.stdout) is inside
+    _assert_continues_without_guidance(after)
+    if inside:
+        assert not read_delivery.target_ready(
+            state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
+        )
     if not inside:
         assert str(skill) not in after.stdout
         monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
@@ -214,7 +241,10 @@ def test_project_skill_cwd_boundary_releases_same_write(tmp_path, monkeypatch, s
         assert failed.returncode == 0 and not failed.stderr
         guided = _run_hook_in_process("pretooluse", request)
         assert guided.returncode == 0 and str(skill) in guided.stdout
-        assert str(skill) in denial_reason(_run_hook_in_process("pretooluse", request))
+        _assert_continues_without_guidance(_run_hook_in_process("pretooluse", request))
+        assert not read_delivery.target_ready(
+            state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main"
+        )
         acquired = _run_hook_in_process(
             "posttooluse",
             {
@@ -283,8 +313,8 @@ def test_unconfirmed_conditions_and_foreign_roles_cannot_block(tmp_path, monkeyp
 
 @pytest.mark.parametrize("role_name", ["exec-review.subagent.md", "session-termination.subagent.md"])
 @pytest.mark.parametrize("select_current", [False, True])
-def test_role_resumes_finding_save_after_current_acquisition(tmp_path, monkeypatch, state, role_name, select_current):
-    """レビュー・公開担当の指摘保存は、現在の資料だけを再取得すれば同じ入力で再開できる。"""
+def test_role_finding_save_keeps_current_acquisition_evidence(tmp_path, monkeypatch, state, role_name, select_current):
+    """レビュー・公開担当の指摘保存は継続を許可し、現在の資料の取得証拠を独立に確認する。"""
     root = tmp_path / "agent-toolkit"
     share = root / "share"
     share.mkdir(parents=True)
@@ -328,7 +358,7 @@ def test_role_resumes_finding_save_after_current_acquisition(tmp_path, monkeypat
                 "hook_event_name": "PostToolUseFailure" if failed else "PostToolUse",
                 "tool_name": "Read",
                 "tool_input": {"file_path": str(path), **({"limit": 1} if partial else {})},
-                "tool_response": body.splitlines(keepends=True)[0] if partial else body,
+                "tool_response": "読取失敗" if failed else body.splitlines(keepends=True)[0] if partial else body,
             },
         )
         assert result.returncode == 0 and not result.stderr
@@ -358,10 +388,17 @@ def test_role_resumes_finding_save_after_current_acquisition(tmp_path, monkeypat
         for acquisition in (None, "failed"):
             if acquisition:
                 read(needed, failed=True)
-            reason = denial_reason(_run_hook_in_process("pretooluse", operation))
-            assert str(needed) in reason
-            assert all(str(path) not in reason for path in (delegation, waiting, unrelated))
+            _assert_continues_without_guidance(_run_hook_in_process("pretooluse", operation))
+            assert (
+                document_reads.acquisition_state(
+                    state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(needed), "main"
+                )
+                == "missing"
+            )
         read(needed)
+        assert read_delivery.target_ready(
+            state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(needed), "main"
+        )
     for _ in range(2):
         result = _run_hook_in_process("pretooluse", operation)
         assert result.returncode == 0 and not result.stderr
@@ -375,7 +412,7 @@ def test_role_resumes_finding_save_after_current_acquisition(tmp_path, monkeypat
 @pytest.mark.parametrize("role_name", [None, "exec.subagent.md", "lane-integration.subagent.md"])
 @pytest.mark.parametrize("history", ["new", "existing", "compact"])
 def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch, state, role_name, history):
-    """共有SKILLの履歴を再接続しても他役割の必読資料を復帰させない。"""
+    """判断行のRead一致は候補に留め、役割・工程の成立と実受領・起動の証拠を分ける。"""
     root = tmp_path / "agent-toolkit"
     share = root / "share"
     share.mkdir(parents=True)
@@ -418,6 +455,9 @@ def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch
     def acquire(tool, inputs, response):
         before = _run_hook_in_process("pretooluse", {**payload, "tool_name": tool, "tool_input": inputs})
         assert before.returncode == 0 and not before.stderr
+        if tool == "Read" and inputs.get("file_path") == str(skill):
+            assert "読込条件の候補" in before.stdout
+            assert ("工程資料の選択" in before.stdout) is (role_name is not None)
         after = _run_hook_in_process(
             "posttooluse",
             {**payload, "hook_event_name": "PostToolUse", "tool_name": tool, "tool_input": inputs, "tool_response": response},
@@ -451,14 +491,22 @@ def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch
         result = _run_hook_in_process("pretooluse", {**payload, "tool_name": tool, "tool_input": inputs})
         assert result.returncode == 0 and not result.stderr
         assert '"permissionDecision": "deny"' not in result.stdout
-        for path in (planning, integration):
-            assert (str(path) in result.stdout) is (path == required)
+        assert all(str(path) not in result.stdout for path in (planning, integration))
         assert f"`Skill`で`{skill_name}`" not in result.stdout
-        assert (str(skill) in result.stdout) is (history == "existing")
+        assert str(skill) not in result.stdout
         repeated = _run_hook_in_process("pretooluse", {**payload, "tool_name": tool, "tool_input": inputs})
         assert repeated.returncode == 0 and not repeated.stderr
         assert '"permissionDecision": "deny"' not in repeated.stdout
+        assert all(str(path) not in repeated.stdout for path in (planning, integration, skill))
+    records = state[rules_context.OPERATION_SKILL_READY_KEY]
+    for path in (planning, integration):
+        assert document_reads.acquisition_state(records, read_triggers.ReadTarget(path), "main") == "missing"
+    assert read_delivery.target_ready(records, read_triggers.ReadTarget(skill), "main") is (history != "existing")
+    assert not read_delivery.target_ready(records, read_triggers.ReadTarget(skill), "main", invocation=True)
     acquire("Skill", {"skill": skill_name}, "起動済み")
+    assert read_delivery.target_ready(
+        state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
+    )
     if required:
         acquire("Read", {"file_path": str(required)}, required.read_text(encoding="utf-8"))
     for tool, inputs in operations:
@@ -495,10 +543,9 @@ def test_small_codex_section_guidance_has_capacity_and_both_budgets(tmp_path, mo
     )
     assert result.returncode == 0 and not result.stderr
     step = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert "対象19バイト、予算目安7トークン" in step
+    assert "19バイト、予算目安7トークン" in step
     assert "sed -n '3,5p' --" in step
-    assert "内側exec_commandのmax_output_tokens" in step
-    assert "外側functions.exec" in step
+    assert step.count("内外の出力枠") == 1
     assert "前提・例外" in step
     whole = read_delivery._merged_steps(  # pylint: disable=protected-access
         [target, read_triggers.ReadTarget(document)], {}, "codex"
@@ -515,15 +562,15 @@ def test_small_codex_section_guidance_has_capacity_and_both_budgets(tmp_path, mo
         ("cd nested && ls && wc -l ../reference.md && sed -n '1,$p' -- ../reference.md", True),
         ("cat -- reference.md | cut -c1-3", False),
         ("cat -- reference.md > copy.md", False),
-        ("cat -- reference.md; ls", False),
+        ("cat -- reference.md; ls", True),
         ("wc -l missing && cat -- reference.md; ls", False),
-        ("cat -- reference.md && printf done; ls", False),
+        ("cat -- reference.md && printf done; ls", True),
         # 追従は終了しないため実行結果を得られない。終了したと報告されても取得にしない。
         ("tail -f reference.md", False),
     ],
 )
-def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state, host, route, command, success):
-    """規範の単独・&&読取でだけ、案内済み資料の書込遮断を解除する。"""
+def test_hook_chain_records_acquisition_without_blocking_write(tmp_path, monkeypatch, state, host, route, command, success):
+    """単独・複合読取の取得証拠を判定し、未取得でも同じ書込の継続を許可する。"""
     reference = tmp_path / "reference.md"
     reference.write_text("# 基準\n必要な内容\n", encoding="utf-8")
     (tmp_path / "nested").mkdir()
@@ -533,10 +580,9 @@ def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state
     writing = {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "本文"}}
     first = _run_hook_in_process("pretooluse", writing)
     assert first.returncode == 0 and str(reference) in first.stdout
-    blocked = denial_reason(_run_hook_in_process("pretooluse", writing))
-    assert str(reference) in blocked
+    _assert_continues_without_guidance(_run_hook_in_process("pretooluse", writing))
     if host == "codex":
-        guidance = first.stdout + blocked
+        guidance = first.stdout
         if route == "failure":
             guidance = rules_context.acquisition_failure(read_triggers.ReadTarget(reference), OSError("読取失敗"), shell=True)
         elif route == "compact":
@@ -552,9 +598,11 @@ def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state
             )
             assert result.returncode == 0 and not result.stderr
             guidance = result.stdout
-        assert "1回のシェル実行（Codexではexec_command）" in guidance and "単独か`&&`連結" in guidance
-        assert "`;`連結・パイプ前段・出力リダイレクト・失敗" in guidance
-        assert "元の書き込みを再発行" in guidance
+        if route == "normal":
+            assert "内外の出力枠" in guidance
+        else:
+            assert "必要範囲の本文を実出力として返せ" in guidance
+            assert "省略・退避した部分は実際に回収" in guidance
         # 成功ケースは通知が示した実コマンドをそのまま取得観測へ渡す。
         if success:
             advised = f"cat -- {shlex.quote(str(reference))}"
@@ -567,7 +615,7 @@ def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state
             "hook_event_name": "PostToolUse",
             "tool_name": "Bash",
             "tool_input": {"command": command},
-            "tool_response": {"stdout": "基準", "exit_code": 0},
+            "tool_response": {"stdout": reference.read_text(encoding="utf-8") if success else "基準", "exit_code": 0},
         },
     )
     assert observed.returncode == 0 and not observed.stderr
@@ -575,7 +623,7 @@ def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state
     assert read_delivery.target_ready(records, read_triggers.ReadTarget(reference), "main") is success
     after = _run_hook_in_process("pretooluse", writing)
     assert after.returncode == 0 and not after.stderr
-    assert ('"permissionDecision": "deny"' in after.stdout) is not success
+    _assert_continues_without_guidance(after)
     if success:
         assert str(reference) not in after.stdout
 
@@ -593,13 +641,13 @@ def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state
         ("wc -l reference.md && head -n 20 reference.md", "reference.md", True),
         ("tail -n 20 -- reference.md", "reference.md", True),
         ("cd nested && tail -n 20 ../reference.md", "reference.md", True),
-        ("jq -r '.body' reference.json", "reference.json", True),
-        ("wc -l reference.json && jq -r '.body' reference.json", "reference.json", True),
+        ("jq -r '.body' reference.json", "reference.json", False),
+        ("wc -l reference.json && jq -r '.body' reference.json", "reference.json", False),
         # 印字以外のsed命令、外部入力、展開、失敗を隠す連結は取得にしない。
         ("sed -n '1p;w copy.md' -- reference.md", "reference.md", False),
         ("sed -n '1e true' -- reference.md", "reference.md", False),
         ('sed -n "/^# 基準/,$p" -- reference.md', "reference.md", False),
-        ("sed -n '/^# 基準/,$p' -- reference.md; ls", "reference.md", False),
+        ("sed -n '/^# 基準/,$p' -- reference.md; ls", "reference.md", True),
         ("head -n 20 reference.md | cut -c1-3", "reference.md", False),
         ("jq --rawfile extra copy.md -r '.body' reference.json", "reference.json", False),
         ("jq -r 'input' reference.json", "reference.json", False),
@@ -607,7 +655,9 @@ def test_hook_chain_acquisition_releases_same_write(tmp_path, monkeypatch, state
         ("head -n 20 ref{a,b}.md", "ref{a,b}.md", False),
     ],
 )
-def test_executed_static_read_acquisition_releases_same_write(tmp_path, monkeypatch, state, host, command, target, success):
+def test_executed_static_read_records_acquisition_without_blocking_write(
+    tmp_path, monkeypatch, state, host, command, target, success
+):
     """実際に実行した静的読取の結果を公開hookへ渡し、取得記録と同じ書込の許可を確かめる。"""
     (tmp_path / "reference.md").write_text("# 基準\n必要な内容\n", encoding="utf-8")
     (tmp_path / "reference.json").write_text(json.dumps({"body": "本文"}, ensure_ascii=False), encoding="utf-8")
@@ -621,7 +671,7 @@ def test_executed_static_read_acquisition_releases_same_write(tmp_path, monkeypa
     payload = {"session_id": "executed", "cwd": str(tmp_path), **({"turn_id": "turn"} if host == "codex" else {})}
     writing = {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "本文"}}
     _run_hook_in_process("pretooluse", writing)
-    assert str(reference) in denial_reason(_run_hook_in_process("pretooluse", writing))
+    _assert_continues_without_guidance(_run_hook_in_process("pretooluse", writing))
     executed = subprocess.run(
         # `cut -c`はバイト単位で抽出するため、マルチバイト文字の一部だけを含む出力を置換文字で受け取る。
         ["bash", "-c", command],
@@ -650,7 +700,7 @@ def test_executed_static_read_acquisition_releases_same_write(tmp_path, monkeypa
     assert read_delivery.target_ready(records, read_triggers.ReadTarget(reference), "main") is success
     after = _run_hook_in_process("pretooluse", writing)
     assert after.returncode == 0 and not after.stderr
-    assert ('"permissionDecision": "deny"' in after.stdout) is not success
+    _assert_continues_without_guidance(after)
 
 
 @pytest.mark.parametrize("failure", ["PostToolUseFailure", "exit_code", "is_error"])
@@ -769,6 +819,9 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
     guidance = invoke("PreToolUse", "Write", write)
     if order == "invocation-first":
         assert str(skill) not in guidance
+        assert read_delivery.target_ready(
+            state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
+        )
         return
     if order == "reference-first":
         assert "Readで" in guidance and "`Skill`で`agent-toolkit:process-wi`" not in guidance
@@ -782,8 +835,17 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
         assert str(skill) not in following and '"permissionDecision": "deny"' not in following
         select_invocation()
         following = invoke("PreToolUse", "Write", write)
-    assert "`Skill`で`agent-toolkit:process-wi`" in following
+    if order == "reference-first":
+        assert "`Skill`で`agent-toolkit:process-wi`" in following
+    else:
+        _assert_no_read_guidance(following)
+    assert not read_delivery.target_ready(
+        state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
+    )
     acquire_skill()
+    assert read_delivery.target_ready(
+        state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
+    )
     assert str(skill) not in invoke("PreToolUse", "Write", write)
     records = state[rules_context.OPERATION_SKILL_READY_KEY]
     assert not read_delivery.target_ready(records, read_triggers.ReadTarget(skill), "other", invocation=True)
@@ -792,21 +854,32 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
 
 
 @pytest.mark.parametrize("tool", ["Edit", "MultiEdit", "Write"])
-def test_hook_self_edit_twice_preserves_acquired_body(tmp_path, monkeypatch, state, tool):
-    """Read後の自己編集成功を経由し、2回目の編集前に再取得や遮断を求めない。"""
+def test_hook_self_edit_twice_preserves_acquired_body(tmp_path, monkeypatch, state, host_environ, tool):
+    """実読取後の自己編集成功を経由し、2回目の編集前に再取得や遮断を求めない。"""
     document = tmp_path / "reference.md"
     document.write_text("# 基準\n本文0\n", encoding="utf-8")
     row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("tool:" + tool,), (document,))
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
     payload = {"session_id": "self-edit", "cwd": str(tmp_path)}
+    command = read_delivery.acquisition_step(read_triggers.ReadTarget(document), "codex").split("`", 2)[1]
+    produced = subprocess.run(
+        ["/bin/bash", "-c", command],
+        env=host_environ(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+        check=False,
+    )
+    assert produced.returncode == 0 and not produced.stderr
     acquired = _run_hook_in_process(
         "posttooluse",
         {
             **payload,
             "hook_event_name": "PostToolUse",
-            "tool_name": "Read",
-            "tool_input": {"file_path": str(document)},
-            "tool_response": document.read_text(encoding="utf-8"),
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "tool_response": {"stdout": produced.stdout, "stderr": produced.stderr, "exit_code": produced.returncode},
         },
     )
     assert acquired.returncode == 0 and not acquired.stderr
@@ -884,8 +957,9 @@ def test_hook_unknown_edits_require_reacquisition(tmp_path, monkeypatch, state, 
         },
     )
     assert result.returncode == 0 and not result.stderr
-    assert not read_delivery.target_ready(
-        state.get(rules_context.OPERATION_SKILL_READY_KEY, {}), read_triggers.ReadTarget(document), "main"
+    records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert document_reads.acquisition_state(records, read_triggers.ReadTarget(document), "main") == (
+        "missing" if change == "unread" else "updated"
     )
     request = {
         **payload,
@@ -894,7 +968,11 @@ def test_hook_unknown_edits_require_reacquisition(tmp_path, monkeypatch, state, 
     }
     guided = _run_hook_in_process("pretooluse", request)
     assert guided.returncode == 0 and str(document) in guided.stdout
-    assert str(document) in denial_reason(_run_hook_in_process("pretooluse", request))
+    following = _run_hook_in_process("pretooluse", request)
+    _assert_continues_without_guidance(following)
+    assert document_reads.acquisition_state(
+        state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(document), "main"
+    ) == ("missing" if change == "unread" else "updated")
 
 
 def test_hook_invoked_skill_self_edit_twice_keeps_invocation(tmp_path, monkeypatch, state):
@@ -942,8 +1020,7 @@ def test_hook_invoked_skill_self_edit_twice_keeps_invocation(tmp_path, monkeypat
 
 
 @pytest.mark.parametrize("purpose", ["reference", "invocation", "both"])
-@pytest.mark.usefixtures("state")
-def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatch, purpose):
+def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatch, state, purpose):
     """Read→compact→書込の案内でも、名指し参照と起動要求の用途を保つ。"""
     root = tmp_path / "agent-toolkit"
     (root / ".claude-plugin").mkdir(parents=True)
@@ -984,18 +1061,26 @@ def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatc
     assert compact.returncode == 0 and not compact.stderr
     context = json.loads(compact.stdout)["hookSpecificOutput"]["additionalContext"]
     skill_step = "`Skill`で`agent-toolkit:process-wi`"
-    assert (skill_step in context) is (purpose != "reference")
+    assert skill_step not in context
     assert ("Readで`" + str(skill) + "`" in context) is (purpose == "reference")
     failure = rules_context.acquisition_failure(
         read_triggers.ReadTarget(skill, "欠落"), ValueError("見出し不明"), shell=False, reference=purpose == "reference"
     )
     assert (skill_step in failure) is (purpose != "reference")
-    assert str(skill) in invoke("PreToolUse", "Write", write)
+    current = invoke("PreToolUse", "Write", write)
+    assert (str(skill) in current) is (purpose == "reference")
+    assert (skill_step in current) is (purpose != "reference")
     invoke("PostToolUse", "Read", {"file_path": str(skill)}, skill.read_text(encoding="utf-8"))
     following = invoke("PreToolUse", "Write", write)
     if purpose == "reference":
         assert str(skill) not in following and '"permissionDecision": "deny"' not in following
     else:
-        assert skill_step in following
+        _assert_no_read_guidance(following)
+        assert not read_delivery.target_ready(
+            state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
+        )
         invoke("PostToolUse", "Skill", {"skill": "agent-toolkit:process-wi"}, "起動済み")
-        assert str(skill) not in invoke("PreToolUse", "Write", write)
+        _assert_no_read_guidance(invoke("PreToolUse", "Write", write))
+        assert read_delivery.target_ready(
+            state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
+        )

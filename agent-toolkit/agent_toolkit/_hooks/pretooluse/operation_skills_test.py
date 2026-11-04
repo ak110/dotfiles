@@ -12,15 +12,15 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._common import session_state
-from agent_toolkit._hooks import plugin_resources, rules_context
+from agent_toolkit._common import read_triggers, session_state
+from agent_toolkit._hooks import document_reads, plugin_resources, rules_context
 from agent_toolkit._hooks.pretooluse import operation_skills
+from agent_toolkit._testing.document_delivery import run_hook
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
     _read_session_state,
     _run,
-    _run_posttooluse,
     codex_execution_payload,
 )
 
@@ -66,7 +66,7 @@ def _bash(command: str, session_id: str, **extra: object) -> dict:
     ],
     ids=lambda payload: payload["tool_input"].get("command") or payload["tool_name"],
 )
-def test_search_without_skill_blocks_until_acquired(payload: dict) -> None:
+def test_search_inputs_match_read_guidance_operation(payload: dict) -> None:
     """既存の操作に対する検出条件を静的解析で確かめる。"""
     assert operation_skills.operation_matches("search", payload["tool_name"], payload["tool_input"])
 
@@ -137,7 +137,7 @@ def test_write_paths_respect_option_roles(command: str, expected: list[str], tmp
     ],
     ids=["rg", "git-grep", "find", "grep-r", "root-cause-bash", "root-cause-apply_patch", "managed-temp", "agent-doc"],
 )
-def test_codex_operations_block_until_skill_md_read(payload: dict, skills: list[str]) -> None:
+def test_codex_inputs_match_required_skill_operations(payload: dict, skills: list[str]) -> None:
     """既存の操作に対する検出条件を静的解析で確かめる。"""
     matched = {
         entry.short_name
@@ -167,7 +167,7 @@ def test_codex_operations_block_until_skill_md_read(payload: dict, skills: list[
         "coproc WORKER if test -f marker; then cp -t .claude/rules AGENTS.md; fi",
     ],
 )
-def test_agent_document_bash_writing_blocks_until_acquired(command: str) -> None:
+def test_agent_document_bash_writing_matches_guidance_operation(command: str) -> None:
     """既存の操作に対する検出条件を静的解析で確かめる。"""
     assert operation_skills.operation_matches("agent-document-writing", "Bash", {"command": command})
 
@@ -289,8 +289,8 @@ _WRITE_FORMS = [
 
 @pytest.mark.parametrize("form", _WRITE_FORMS)
 @pytest.mark.parametrize("prefix", ["", "/repo/", "~/", "$HOME/", '"$HOME/', "${HOME}/"])
-def test_bash_static_document_suffix_blocks_until_acquired(form: str, prefix: str) -> None:
-    """展開される先頭と操作形式を組み合わせ、公開hookが取得の観測まで遮断し、観測の後は通すことを検証する。"""
+def test_bash_static_document_suffix_matches_guidance_operation(form: str, prefix: str) -> None:
+    """展開される先頭と操作形式を組み合わせ、エージェント向け文書の編集条件への一致を検証する。"""
     closing_quote = '"' if prefix.startswith('"') else ""
     path = prefix + ".claude/rules/AGENTS.md" + closing_quote
     directory = prefix + ".claude/rules/" + closing_quote
@@ -430,7 +430,7 @@ _ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n| 要因系統 | L1 現象 |\
     ],
     ids=["write", "edit", "multiedit", "bash"],
 )
-def test_root_cause_writing_without_bugfix_blocks_until_acquired(payload: dict) -> None:
+def test_root_cause_writing_matches_bugfix_guidance_operation(payload: dict) -> None:
     """既存の操作に対する検出条件を静的解析で確かめる。"""
     assert operation_skills.operation_matches("root-cause-writing", payload["tool_name"], payload["tool_input"])
 
@@ -584,12 +584,17 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
     valid = {**blocked, "tool_name": _DELEGATION_TOOLS[5], "tool_input": {}}
     delivered = _run(valid, env)
     assert delivered.returncode == 0
-    assert "/skills/delegation/SKILL.md" in _additional_context(delivered)
+    assert "`Skill`で`agent-toolkit:delegation`" in _additional_context(delivered)
+    state = _read_session_state(tmp_path, "blocked")
+    records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    target = read_triggers.ReadTarget(plugin_resources.skill_document_path("delegation", "SKILL.md"))
+    assert document_reads.acquisition_state(records, target, "main") == "missing"
     assert delivered.stderr == ""
 
 
 def _record_skill(env: dict[str, str], session_id: str, skill: str, **extra: object) -> None:
-    result = _run_posttooluse(
+    result = run_hook(
+        "posttooluse",
         {
             "hook_event_name": "PostToolUse",
             "tool_name": "Skill",
@@ -621,7 +626,7 @@ def _acquire(env: dict[str, str], payload: dict, skill: str) -> None:
         "session_id": payload["session_id"],
         **extra,
     }
-    result = _run_posttooluse(codex_execution_payload(acquisition, pathlib.Path(env["TMPDIR"]), exit_code=0), env)
+    result = run_hook("posttooluse", codex_execution_payload(acquisition, pathlib.Path(env["TMPDIR"]), exit_code=0), env)
     assert result.returncode == 0
 
 
@@ -633,7 +638,8 @@ def _record_read(env: dict[str, str], session_id: str, path: pathlib.Path, **ext
     text = path.read_text(encoding="utf-8")
     lines = len(text.splitlines())
     file = {"filePath": str(path), "content": text, "numLines": lines, "startLine": 1, "totalLines": lines}
-    result = _run_posttooluse(
+    result = run_hook(
+        "posttooluse",
         {
             "hook_event_name": "PostToolUse",
             "tool_name": "Read",
@@ -678,7 +684,11 @@ def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, tool: str, target: s
         )
     payload = {"tool_name": tool, "tool_input": inputs[tool], "session_id": "handoff-exempt"}
     result = _run(payload, env)
-    assert ("/skills/writing-standards/SKILL.md" in _additional_context(result)) is (target != "own")
+    assert ("`Skill`で`agent-basics:writing-standards`" in _additional_context(result)) is (target != "own")
+    state = _read_session_state(tmp_path, "handoff-exempt") if session_state.state_path("handoff-exempt").exists() else {}
+    records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    author = plugin_resources.plugin_root().parent / "agent-basics/skills/writing-standards/SKILL.md"
+    assert document_reads.acquisition_state(records, read_triggers.ReadTarget(author), "main") == "missing"
     assert result.returncode == 0
     assert result.stderr == ""
 
@@ -798,7 +808,7 @@ def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path)
     context = _additional_context(result)
     assert "/references/file-editing.md" not in context
     assert "/skills/writing-standards/SKILL.md" not in context
-    result = _run_posttooluse({**payload, "tool_response": "", "hook_event_name": "PostToolUse"}, env)
+    result = run_hook("posttooluse", {**payload, "tool_response": "", "hook_event_name": "PostToolUse"}, env)
     assert result.returncode == 0
     state = _read_session_state(tmp_path, "discard-public")
     assert not state.get("termination_evidence", {}).get("works")

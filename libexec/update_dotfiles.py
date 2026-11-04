@@ -54,8 +54,8 @@ Linuxでは`chezmoi apply`の直前に、Codexの管理daemonだけが稼働し�
 公開CLI`codex app-server daemon stop`で管理daemonを一時停止する。
 post-applyの診断ログ復元と不要pluginの除去が、利用セッションの無い管理daemonを理由に延期されないためである。
 停止を試みた場合は`chezmoi apply`の成否にかかわらず`codex app-server daemon start`で起動状態を戻し、
-停止または再起動の失敗を終了コードと同期結果へ反映する。利用セッションが残る場合と
-`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`の場合は停止しない。
+停止または再起動の失敗を終了コードと同期結果へ反映する。利用セッションが残る場合は停止せず、
+復帰直前にセッションが開始していた場合もdaemonの起動を見送る。
 """
 
 # pylint: disable=global-statement
@@ -103,7 +103,6 @@ _WORKTREE_STASH_TIMEOUT_SEC = 120
 _PROCESS_TREE_WAIT_TIMEOUT_SEC = 5
 _GIT_TIMEOUT_ENV = "UPDATE_DOTFILES_GIT_TIMEOUT_SEC"
 _LOG_STAGE_TOTAL = 5
-_CODEX_AUTO_RESTART_ENV = "DOTFILES_CODEX_DAEMON_AUTO_RESTART"
 # 公式READMEが定める停止猶予`shutdownGraceSeconds`の上限300秒に、強制終了と応答の余裕を加える。
 _CODEX_DAEMON_STOP_TIMEOUT_SEC = 360
 _CODEX_DAEMON_COMMAND_TIMEOUT_SEC = 120
@@ -977,7 +976,7 @@ def _pause_codex_daemon() -> _CodexDaemonPause | None:
         return None
     sessions = tuple(process.label for process in processes if process.role == "session")
     codex = shutil.which("codex", path=_child_env()["PATH"])
-    if os.environ.get(_CODEX_AUTO_RESTART_ENV) == "1" or sessions or codex is None:
+    if sessions or codex is None:
         return None
     logger.info("Codex管理daemonを一時停止: %s", codex)
     print("Codex管理daemonを一時停止します（更新後に再起動します）。", flush=True)
@@ -994,6 +993,9 @@ def _pause_codex_daemon() -> _CodexDaemonPause | None:
 
 def _resume_codex_daemon(pause: _CodexDaemonPause) -> str | None:
     """停止を試みた管理daemonを起動し、失敗時は手動の復帰操作を含む文面を返す。"""
+    if any(process.role == "session" for process in codex_processes.codex_processes()):
+        logger.info("Codexセッションが開始したため管理daemonの起動を見送り")
+        return None
     error = _run_codex_daemon_command(pause.codex, "start", _CODEX_DAEMON_COMMAND_TIMEOUT_SEC)
     if error is None:
         logger.info("Codex管理daemonを再起動")

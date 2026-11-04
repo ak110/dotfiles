@@ -59,13 +59,36 @@ def append_result_next_action(result: dict[str, Any], next_action: str) -> dict[
 
 def with_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
     """受領時に必要なレビューの採否確定と改善点の転記を、既存の次の操作に併記する。"""
+    for action, _documents in result_guidance(result, label):
+        result = append_result_next_action(result, action)
+    documents = list(dict.fromkeys(document for _action, paths in result_guidance(result, label) for document in paths))
+    if documents:
+        result["read_requirements"] = documents
+    return result
+
+
+def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[str, tuple[str, ...]]]:
+    """受領結果の種類に対する次操作と判断資料を、公開案内と読込選択で共有する。"""
+    guidance: list[tuple[str, tuple[str, ...]]] = []
     if result.get("status") == "completed" and isinstance(label, str) and label.endswith(REVIEW_LABEL_SUFFIX):
-        next_action = READER_FIT_REVIEW_RESULT_NEXT_ACTION if label.endswith("reader-fit-review") else REVIEW_RESULT_NEXT_ACTION
-        result = append_result_next_action(result, next_action)
+        reader_fit = label.endswith("reader-fit-review")
+        guidance.append(
+            (
+                READER_FIT_REVIEW_RESULT_NEXT_ACTION if reader_fit else REVIEW_RESULT_NEXT_ACTION,
+                (
+                    "agent-basics:review-standards/SKILL.md",
+                    "agent-toolkit:/share/reader-fit-review.parent.md#「受領」"
+                    if reader_fit
+                    else "agent-basics:review-standards/references/reviewee.md",
+                ),
+            )
+        )
     message = result.get("agent_message")
     if isinstance(message, str) and any(line.lstrip().startswith("気付いた改善点:") for line in message.splitlines()):
-        result = append_result_next_action(result, IMPROVEMENT_RESULT_NEXT_ACTION)
-    return result
+        guidance.append(
+            (IMPROVEMENT_RESULT_NEXT_ACTION, ("agent-toolkit:delegation/references/receiving.md#「受領後の扱い」",))
+        )
+    return guidance
 
 
 def progress_excerpt(text: str) -> str:
@@ -178,6 +201,7 @@ def public_result(payload: Mapping[str, Any]) -> dict[str, Any]:
             "label",
             "agent_message",
             "next_action",
+            "read_requirements",
             "recovery",
             "engine",
             "model",

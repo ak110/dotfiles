@@ -8,14 +8,15 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-planning.md#「計画の起草」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lane-planning.md#「計画の起草」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
+| 目標起点の判断を行う前 | `lanes.md#「明示された目標からの実行」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lanes.md#「明示された目標からの実行」` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
+| 本文で基準を使う資料の選択・取得時 | `lane-planning.md#「計画の起草」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lane-planning.md#「計画の起草」` |
+| 本文で基準を使う資料の選択・取得時 | `../../write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../wi-standards/references/origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
 | 追加WIと即時修正を区別する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
@@ -30,6 +31,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#冒頭` |
 
 ## レーンと資源
+
+目標起点の判断は`lanes.md`「明示された目標からの実行」に従う。
 
 各レーンに準備された専用worktreeと処理対象WIを1名のレーン担当へ引き渡し、レーン数にかかわらず`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。以降の工程境界におけるやり取りは同契約の継続工程として扱い、複数レーンが存在する場合は、メインエージェントが`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の許可」に従ってメイン作業ツリーへの統合許可のみを直列に送信する。
 
@@ -107,7 +110,9 @@ Claude Code環境では、各段階（複数段階の場合は中間の段階も
 
 ## 処理中に確定した必須是正レーン
 
-処理中に追加された対象WI（ユーザーから明示指示のあったAWI、処理中に回答が得られたUWIとその元項目）は、`selection-procedure.md`「処理対象WIの追加」に従って分類と処理開始手続きを完了した後に、本節の基準に沿ってレーンへ割り当てる。未回答のUWI、要求内容が確定していない項目、ユーザーからの明示指示がない新規到着項目は、追加の対象外とする。即時対応における正式対応AWIは、後続のセッションへ引き継ぐ。
+処理中に追加された対象WIは、`selection-procedure.md`「処理対象WIの追加」に従って分類と処理開始手続きを完了した後に、本節の基準に沿ってレーンへ割り当てる。
+目標の明示がある実行では`lanes.md`「明示された目標からの実行」で具体化した必要作業も含める。
+通常のキュー処理では未回答UWI、未確定の要求、明示追加のない新規到着項目は追加の対象外とし、即時対応の正式対応AWIは後続のセッションへ引き継ぐ。
 
 追加された項目は必ず既存のレーンへ割り当て、処理中の一環として新たな最終レーン名を新設することは避ける（上限値および算定集合は`selection-format.md`「初回配分の算定根拠」が定める。所在参照）。既存レーンが0件の場合は、上限および割り当て先リソースの不足を「続行できない理由」として報告する。
 

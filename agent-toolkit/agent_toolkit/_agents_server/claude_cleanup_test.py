@@ -31,11 +31,15 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
     script = tmp_path / "runtime.py"
     child_pid = tmp_path / "child.pid"
     finished = tmp_path / "normal-finish"
+    runtime_ready = tmp_path / "runtime-ready"
     script.write_text(
         "import pathlib, subprocess, sys\n"
+        "pathlib.Path(sys.argv[3]).write_text('ready')\n"
         "assert sys.stdin.readline().strip() == 'spawn'\n"
         "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
-        "pathlib.Path(sys.argv[1]).write_text(str(child.pid))\n"
+        "pending_pid = pathlib.Path(sys.argv[1]).with_suffix('.tmp')\n"
+        "pending_pid.write_text(str(child.pid))\n"
+        "pending_pid.replace(sys.argv[1])\n"
         "assert sys.stdin.readline().strip() == 'exit'\n"
         "pathlib.Path(sys.argv[2]).write_text('finished')\n",
         encoding="utf-8",
@@ -59,10 +63,17 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
     targets: list[psutil.Process] = []
     with (
         process_tree.process_scope(
-            [sys.executable, str(script), str(child_pid), str(finished)], stdin=subprocess.PIPE, env=host_environ()
+            [sys.executable, str(script), str(child_pid), str(finished), str(runtime_ready)],
+            stdin=subprocess.PIPE,
+            env=host_environ(),
         ) as process,
         process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(60)"], env=host_environ()) as foreign,
     ):
+        # Pythonの起動準備をSDK切断の猶予に含めず、負荷による準備の遅れと切断timeoutを分ける。
+        async with asyncio.timeout(5):
+            while not runtime_ready.exists():
+                assert process.poll() is None, "runtimeが子生成の準備前に終了した"
+                await asyncio.sleep(0.005)
 
         class DisconnectClient(QueueClaudeClient):
             _transport: Any
@@ -128,6 +139,7 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
                     if outcome in {"residual", "unresolved"}:
                         with pytest.raises(RuntimeError, match="所有資源"):
                             await release
+                        assert targets, "残存の判定前に子PIDの登録へ到達していない"
                         assert targets[0].is_running()
                         fail_reclaim = False
                         await backend.release_session(session)
