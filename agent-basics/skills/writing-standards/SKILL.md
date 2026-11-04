@@ -30,7 +30,7 @@ description: >
 
 用途別の資料は、文章全般に適用する共通基準と「文書種別ごとの注意点」を組み合わせて読む。
 
-以下の読込表に記載された条件に当てはまる場合は（作業の途中で該当した場合を含む）、対象の操作をする前に、該当行に示された資料をすべて読んで内容を反映する。
+次の操作、成果物の種類、判断する事項から読込表の条件を選び、判断前に指定された基準と前提・例外を読む。hookの通知は選択を補助する。同じ版の取得済み本文は再利用し、会話圧縮後は残る作業に必要な範囲を選び直す。
 
 ## 名指し参照の読込方法
 
@@ -38,7 +38,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
+| 成果物や提案のレビュー、指摘の採否を判断する前 | `../review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 
 ## 成果物種別ごとの必読資料
 
@@ -77,6 +77,7 @@ description: >
 | 検索・一覧画面を設計・変更・レビューする前 | `references/design-display.md`の「検索・一覧画面の設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-display.md#「検索・一覧画面の設計」` | |
 | 閾値と表示段階を設計・変更・レビューする前 | `references/design-display.md`の「閾値と表示段階の設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-display.md#「閾値と表示段階の設計」` | |
 | キャッシュを設計・変更・レビューする前 | `references/design-runtime.md`の「キャッシュ設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「キャッシュ設計」` | |
+| 負荷・データ・外部システムの条件に依存する技術仕様や非機能要件を設計・変更・レビューする前 | `references/design-runtime.md`の「技術仕様と実利用環境の評価」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「技術仕様と実利用環境の評価」` | |
 | 非同期ジョブ・リトライを設計・変更・レビューする前 | `references/design-runtime.md`の「非同期ジョブ・リトライ設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-runtime.md#「非同期ジョブ・リトライ設計」` | |
 | DBスキーマ・マイグレーションを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「DBスキーマ・マイグレーション設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「DBスキーマ・マイグレーション設計」` | |
 | APIを設計・変更・レビューする前 | `references/design-data-interfaces.md`の「API設計」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-data-interfaces.md#「API設計」` | |

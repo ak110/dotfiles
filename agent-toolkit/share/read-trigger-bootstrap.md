@@ -1,7 +1,7 @@
 # 操作を契機とする共有資料
 
 操作に伴って共通で起動するスキルの宣言を本表にまとめる。各スキル固有の追加資料は、それぞれのスキル内の読込表で宣言する。
-操作の対象と副作用から必要なスキルを判断し、まだ起動していなければ操作の前に起動する（努力目標。契約の確認不足と独自手順の重複を避ける）。
+操作の対象と副作用から必要なスキルを判断し、まだ起動していなければ操作の前に起動する（努力目標。契約の確認不足と独自手順の重複を避ける）。資料の範囲は`read-trigger-contract.md`「名指し参照の読込方法」に従って選び、hookの案内の有無によらず判断前に取得する。
 配送操作の語彙と記法は、`read-trigger-contract.md`「表と取得方法」の定義に従う。
 
 ## 名指し参照の読込方法
@@ -22,7 +22,7 @@
 | 確認本文と選択肢を起草する前 | `../skills/user-confirmation-and-report/references/approval-scope.md`、`../skills/user-confirmation-and-report/references/choice-construction.md` | 判断 | `confirmation` |
 | 原因分析の判断前と記述前 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `skill:agent-basics:bugfix`、`root-cause-writing` |
 | レビュー指摘管理表を作成・更新する前 | `review-table-operations.md` | 判断 | `skill:agent-basics:review-standards` |
-| エージェント向け文書の編集前 | `agent-toolkit:delegation/references/writing.md`、`agent-toolkit:delegation/references/agent-documents-basics.md`、`agent-toolkit:delegation/references/agent-documents-basics.md#「運用条件」「置き場所と配送」「読込表の宣言」` | 操作 | `agent-document-writing` |
+| エージェント向け文書の編集前 | `agent-toolkit:delegation/references/writing.md`の「文章の共通規定」、`agent-toolkit:delegation/references/agent-documents-basics.md`の「運用条件」「置き場所と配送」「読込表の宣言」 | 操作 | `agent-document-writing` |
 
 ## 常時規範が名指しする資料
 

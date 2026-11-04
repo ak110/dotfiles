@@ -1,6 +1,6 @@
 # 検証対象の品質基準と記録操作
 
-検証対象の選定に関する品質基準の定義元は、`agent-basics:check-execution/references/verification-scope.md`である。呼び出し元の取得条件と注目箇所を引き継ぎ、本書と正式な資料を全文読む。節指定がある場合は、指定された見出しを持つ資料に注目する。両方に同名の見出しがあれば両方に注目する。すでに同一バージョンの本文を取得している場合は、再取得せずにその内容を再利用する。
+検証対象の選定に関する品質基準の定義元は、`agent-basics:check-execution/references/verification-scope.md`である。呼び出し元の条件と節指定を引き継ぎ、本書の運用条件と正式な資料の必要節・前提・例外を読む。両方に同名の見出しがあれば、その範囲を両方で確認する。範囲の選択と取得済み本文の再利用は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
 
 検証対象を選定する際は、`agent-toolkit:wi-standards`の`references/awi-body.md`「完成条件」に定められた自己観測の原則と未確認範囲の扱いを適用する。また、公開前に行う全体検証については、`agent-toolkit:commit`の`references/publish.md`「検証とCI」の規定に従う。
 
