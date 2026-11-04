@@ -120,7 +120,7 @@ def test_stop_tree_reclaims_children_of_exited_parent_with_retained_handle(tmp_p
                 assert not result.residual and not result.unresolved
                 assert not _still_holding_resources(descendants)
         finally:
-            process_tree.reclaim_descendants(descendants, timeout=1)
+            process_tree.stop_tree(None, known=descendants, timeout=1)
 
 
 def test_stop_tree_keeps_unrelated_process_while_reclaiming_late_descendants(tmp_path, monkeypatch):
