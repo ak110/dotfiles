@@ -1757,10 +1757,10 @@ def _read_request(tool_name: str, tool_input: dict) -> str:
     return document_reads.bytes_fingerprint(json.dumps([tool_name, tool_input], sort_keys=True).encode("utf-8"))
 
 
-def _fragment_requests(payload: dict, tool_name: str, tool_input: dict) -> dict[str, list[tuple[int, int | None]]]:
+def _fragment_requests(payload: dict, tool_name: str, tool_input: dict) -> dict[str, list[tuple[int, int | None, int]]]:
     """ホストの読取引数から原本上の行位置を取得し、未知の位置は集約しない。"""
     cwd = str(payload.get("cwd", ""))
-    result: dict[str, list[tuple[int, int | None]]] = {}
+    result: dict[str, list[tuple[int, int | None, int]]] = {}
     if tool_name == "Read":
         start = tool_input.get("offset", 1)
         limit = tool_input.get("limit")
@@ -1774,13 +1774,20 @@ def _fragment_requests(payload: dict, tool_name: str, tool_input: dict) -> dict[
         if isinstance(file, dict):
             if file.get("startLine", start) != start:
                 return result
-            if file.get("truncatedByTokenCap") is True and isinstance(file.get("content"), str):
-                count = len(file["content"].splitlines())
+            if file.get("truncatedByTokenCap") is True:
+                content = file.get("content")
+                fields = document_reads.returned_texts(content)
+                count = (
+                    max((len(text.splitlines()) for text in fields), default=0)
+                    if isinstance(content, str)
+                    else sum(len(text.splitlines()) for text in fields)
+                )
                 end = min(end, start + count - 1) if end is not None else start + count - 1
-        return {str(path): [(start, end)] for path in _read_paths(tool_name, tool_input, cwd)}
+        return {str(path): [(start, end, order)] for order, path in enumerate(_read_paths(tool_name, tool_input, cwd))}
     command = tool_input.get("command")
     if tool_name != "Bash" or not isinstance(command, str):
         return result
+    order = 0
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         if not invocation.execution_known or not invocation.arguments_known or invocation.captured or invocation.output_pipe:
             continue
@@ -1817,15 +1824,23 @@ def _fragment_requests(payload: dict, tool_name: str, tool_input: dict) -> dict[
                 if not current.resolved:
                     continue
                 path = pathlib.Path(current.path) / path
-            result.setdefault(str(path.resolve()), []).append((start, end))
+            result.setdefault(str(path.resolve()), []).append((start, end, order))
+            order += 1
     return result
 
 
-def _record_codex_delivery(session_id: str, agent: str, candidates: list[dict], text: str) -> None:
+def _record_codex_delivery(session_id: str, agent: str, candidates: list[dict], texts: list[str]) -> None:
     pending = read_state(session_id).get("document_read_pending", {}).get(agent, [])
+    frames = {packet["observation"]: packet["produced"] for packet in pending if packet.get("produced")}
+    json_fields = {packet["observation"]: packet.get("json_fields", []) for packet in pending if packet.get("produced")}
+    tail_fields = {packet["observation"]: packet.get("json_tail_fields", []) for packet in pending if packet.get("produced")}
+    embedded = len({packet["delivery"] for packet in pending}) == 1
     choices: dict[str, list[tuple[int, dict, list[dict]]]] = {}
     for packet in pending:
-        count, blocks = document_reads.delivered_fragments(packet, [text])
+        # 異なる応答の包含関係がある場合は、他の応答の部分を流用しない。
+        count, blocks = document_reads.delivered_fragments(
+            packet, texts, produced=frames.get(packet["observation"]) if embedded else None
+        )
         if count:
             choices.setdefault(packet["delivery"], []).append((count, packet, blocks))
     selected: list[tuple[dict, list[dict]]] = []
@@ -1843,11 +1858,13 @@ def _record_codex_delivery(session_id: str, agent: str, candidates: list[dict], 
     for packet in pending:
         if any(packet is item[0] for item in selected):
             continue
-        blocks = document_reads.unambiguous_fragments(packet, pending, [text])
+        blocks = document_reads.unambiguous_fragments(packet, pending, texts)
         if blocks:
             selected.append((packet, blocks))
+    if not all(any(packet is item and blocks == packet["blocks"] for item, blocks in selected) for packet in pending):
+        selected.extend(document_reads.partial_fragment_deliveries(pending, texts))
     coverage = document_reads.fragment_coverage(pending)
-    _record_receipts(session_id, agent, candidates, [text], fragments=selected, coverage=coverage)
+    _record_receipts(session_id, agent, candidates, texts, fragments=selected, coverage=coverage)
     if selected:
 
         def advance(value: dict) -> dict:
@@ -1855,6 +1872,13 @@ def _record_codex_delivery(session_id: str, agent: str, candidates: list[dict], 
             for packet, _blocks in selected:
                 if packet in queue:
                     queue.remove(packet)
+            # 同じ生産観測の未配送資料が残る間は、共有する出力索引を1件だけ保つ。
+            for observation, produced in frames.items():
+                remaining = [item for item in queue if item["observation"] == observation]
+                if remaining and not any(item.get("produced") for item in remaining):
+                    remaining[0]["produced"] = produced
+                    remaining[0]["json_fields"] = json_fields[observation]
+                    remaining[0]["json_tail_fields"] = tail_fields[observation]
             return value
 
         update_state(session_id, advance)
@@ -1904,14 +1928,16 @@ def _refresh_receipts(payload: dict, tool_name: str, tool_input: dict, session_i
                         ):
                             output = item.get("output")
                             if isinstance(output, str):
-                                texts.append(output)
+                                texts.append([output])
                             elif isinstance(output, list):
-                                texts.extend(
-                                    block["text"]
-                                    for block in output
-                                    if isinstance(block, dict)
-                                    and block.get("type") in {"text", "input_text", "output_text"}
-                                    and isinstance(block.get("text"), str)
+                                texts.append(
+                                    [
+                                        block["text"]
+                                        for block in output
+                                        if isinstance(block, dict)
+                                        and block.get("type") in {"text", "input_text", "output_text"}
+                                        and isinstance(block.get("text"), str)
+                                    ]
                                 )
             except OSError:
                 texts = []
@@ -1945,7 +1971,8 @@ def _observe_content(payload: dict, tool_name: str, tool_input: dict, session_id
         return
     response = payload.get("tool_response")
     texts = document_reads.returned_texts(response)
-    if not texts:
+    saved_path = response.get("persistedOutputPath") if isinstance(response, dict) else None
+    if not texts and not saved_path:
         return
     agent = agent_id.resolve_hook_agent_id(payload)
     state = read_state(session_id)
@@ -1956,21 +1983,125 @@ def _observe_content(payload: dict, tool_name: str, tool_input: dict, session_id
     ]
     current = _receipt_candidates(payload, tool_name, tool_input, session_id)
     requests = _fragment_requests(payload, tool_name, tool_input)
+    if isinstance(saved_path, str) and pathlib.Path(saved_path).is_absolute():
+        saved = pathlib.Path(saved_path)
+        try:
+            saved_raw = saved.read_bytes()
+            saved_text = saved_raw.decode("utf-8")
+        except OSError, UnicodeError:
+            saved_raw = b""
+            saved_text = ""
+        # 保存先の検査は来歴の準備だけであり、受信証拠にはしない。
+        packets = document_reads.fragment_candidates([*candidates, *current], [saved_text], requests)
+        if packets:
+
+            def remember(value: dict) -> dict:
+                value.setdefault("document_read_spools", {}).setdefault(agent, {})[str(saved)] = {
+                    "version": document_reads.bytes_fingerprint(saved_raw),
+                    "produced": packets[0]["produced"],
+                    "packets": [
+                        {
+                            key: item
+                            for key, item in packet.items()
+                            if key not in {"produced", "json_fields", "json_tail_fields"}
+                        }
+                        for packet in packets
+                    ],
+                }
+                return value
+
+            update_state(session_id, remember)
+    if not texts:
+        return
+    streams = None
+    if isinstance(response, dict):
+        if isinstance(response.get("file"), dict) and isinstance(response["file"].get("content"), str):
+            streams = {"content": response["file"]["content"]}
+        else:
+            streams = {
+                field: response[field]
+                for field in ("stdout", "stderr", "output", "text", "content")
+                if isinstance(response.get(field), str) and response[field]
+            }
+    packets = document_reads.fragment_candidates([*candidates, *current], texts, requests, streams=streams)
+    for name, spans in requests.items():
+        saved = state.get("document_read_spools", {}).get(agent, {}).get(name)
+        if not saved:
+            continue
+        try:
+            version = document_reads.content_fingerprint(pathlib.Path(name))
+        except OSError, UnicodeError:
+            continue
+        if version != saved["version"]:
+            continue
+        for original in saved["packets"]:
+            # 保存先の位置を、生産時に確定した各原本の出力位置へ合成する。
+            source = {**original["source"], "path": name, "lines": saved["produced"]}
+            recovered = document_reads.fragment_candidates([source], texts, {name: spans}, streams=streams)
+            for packet in recovered:
+                mapped = []
+                positions = {
+                    block["output_start"] + index + 1: block["start"] + index
+                    for block in original["blocks"]
+                    for index in range(len(block["lines"]))
+                }
+                for block in packet["blocks"]:
+                    for index, line in enumerate(block["lines"]):
+                        position = block["start"] + index
+                        if position not in positions:
+                            continue
+                        mapped.append(
+                            {
+                                "start": positions[position],
+                                "lines": [line],
+                                "output_start": block["output_start"] + index,
+                            }
+                        )
+                if mapped:
+                    packets.append(
+                        {
+                            **original,
+                            "blocks": mapped,
+                            "delivery": packet["delivery"],
+                            "produced": packet["produced"],
+                            "json_fields": packet["json_fields"],
+                            "json_tail_fields": packet["json_tail_fields"],
+                        }
+                    )
     if is_codex_payload(payload):
-        packets = document_reads.fragment_candidates([*candidates, *current], texts, requests)
         if packets:
             # 同じPostToolUseの複数資料を1応答として扱い、別の同文応答と区別する。
             observation = uuid.uuid4().hex
 
             def prepare(value: dict) -> dict:
                 value.setdefault("document_read_pending", {}).setdefault(agent, []).extend(
-                    {**packet, "read_id": payload.get("tool_use_id"), "observation": observation} for packet in packets
+                    {
+                        **{
+                            key: item
+                            for key, item in packet.items()
+                            if key not in {"produced", "json_fields", "json_tail_fields"}
+                        },
+                        **(
+                            {
+                                "produced": packet["produced"],
+                                "json_fields": packet["json_fields"],
+                                "json_tail_fields": packet["json_tail_fields"],
+                            }
+                            if index == 0
+                            else {}
+                        ),
+                        "read_id": payload.get("tool_use_id"),
+                        "observation": observation,
+                    }
+                    for index, packet in enumerate(packets)
                 )
                 return value
 
             update_state(session_id, prepare)
         return
-    _record_receipts(session_id, agent, [*candidates, *current], texts, requests=requests)
+    _record_receipts(
+        session_id, agent, [*candidates, *current], texts, fragments=[(packet, packet["blocks"]) for packet in packets]
+    )
 
 
 def host_truncated(response: object) -> bool:

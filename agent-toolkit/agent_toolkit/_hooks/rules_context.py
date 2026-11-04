@@ -216,6 +216,7 @@ def reset_main_operation_skill_ready(
         current[OPERATION_SKILL_READY_KEY] = updated
         current.get("document_read_candidates", {}).pop(MAIN_AGENT_ID, None)
         current.get("document_read_pending", {}).pop(MAIN_AGENT_ID, None)
+        current.get("document_read_spools", {}).pop(MAIN_AGENT_ID, None)
         evidence = current.get("termination_evidence")
         if isinstance(evidence, dict):
             evidence.pop("pending_reads", None)
