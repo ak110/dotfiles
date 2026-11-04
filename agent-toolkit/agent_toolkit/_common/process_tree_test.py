@@ -25,6 +25,31 @@ pytestmark = pytest.mark.windows
 _CHILD_SOURCE = "import time; time.sleep(120)"
 
 
+@pytest.mark.parametrize("has_descendant", [False, True], ids=["exited-leaf", "unretained-parent"])
+def test_stop_tree_requires_parent_generation_only_for_existing_child_edges(monkeypatch, has_descendant):
+    """終了済みleafは回収済みとし、子がある親の世代保持失敗は未確定として残す。"""
+    root, leaf, descendant = (
+        mock.Mock(pid=900001),
+        mock.Mock(pid=900002, info={"ppid": 900001}),
+        mock.Mock(pid=900003, info={"ppid": 900002}),
+    )
+    for index, process in enumerate((root, leaf, descendant), start=1):
+        process.create_time.return_value = float(index)
+        process.is_running.return_value = False
+        process.cmdline.return_value = ["owned"]
+    pins = mock.Mock()
+    pins.retain.side_effect = lambda process: process is root
+    entries = [leaf, descendant] if has_descendant else [leaf]
+    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter(entries))
+    monkeypatch.setattr(sys, "platform", "win32")
+    result = process_tree.stop_tree(root, pins=pins, timeout=0)
+    assert {process.pid for process in result.targets} == {root.pid, leaf.pid}
+    assert not result.residual
+    assert bool(result.unresolved) is has_descendant
+    descendant.suspend.assert_not_called()
+    descendant.kill.assert_not_called()
+
+
 def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypatch):
     """再利用した親も終了して一覧に無い場合、その子を古い所有対象の子と誤認しない。"""
     parent = mock.Mock(pid=900001)

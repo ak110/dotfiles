@@ -5,6 +5,7 @@ PreToolUseフックをsubprocessで起動し、配布物の`<役割名>.subagent
 
 import json
 import pathlib
+import shutil
 import subprocess
 
 import pytest
@@ -18,6 +19,20 @@ from agent_toolkit._testing.pretooluse_support import (
 )
 
 _EXEC_DOCUMENT = _SHARE_DIR / "exec.subagent.md"
+
+
+@pytest.fixture(name="task_share", params=["checkout", "__w"])
+def _task_share(request: pytest.FixtureRequest, tmp_path: pathlib.Path) -> pathlib.Path:
+    if request.param == "checkout":
+        return _SHARE_DIR
+    root = tmp_path / request.param
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    share = root / "share"
+    share.mkdir()
+    for name in ("exec.subagent.md", "reader-fit-review.subagent.md"):
+        shutil.copyfile(_SHARE_DIR / name, share / name)
+    return share
 
 
 @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
@@ -136,14 +151,20 @@ def test_quoted_execution_command_passes(tool_name: str, mode: str | None, quote
 
 
 @pytest.mark.parametrize(("tool_name", "mode"), [("mcp__agents_server__start", "write"), ("Task", None)])
-def test_execution_uses_its_document_after_other_reference(tool_name: str, mode: str | None, tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("path_markup", ["{}", "**{}**", "`{}`"])
+def test_execution_uses_its_document_after_other_reference(
+    tool_name: str, mode: str | None, tmp_path: pathlib.Path, task_share: pathlib.Path, path_markup: str
+) -> None:
     """先に読解対象が出ていても、引用の外の実行命令の対象について是正を案内する。"""
-    task = _SHARE_DIR / "reader-fit-review.subagent.md"
-    prompt = f"読解対象: {_EXEC_DOCUMENT}\n{task}の手順を実行せよ。\n成果物: {tmp_path / 'guide.md'}\n"
+    task = task_share / "reader-fit-review.subagent.md"
+    reference = task_share / "exec.subagent.md"
+    prompt = (
+        f"読解対象: {reference}\n{path_markup.format(task)}の手順を実行せよ。\n成果物: {tmp_path / 'artifact_' / 'guide.md'}\n"
+    )
     result = _invoke(tool_name, prompt, tmp_path, mode)
     assert result.returncode == 0
     assert str(task) in _additional_context(result)
-    assert f"`{_EXEC_DOCUMENT}`を指" not in _additional_context(result)
+    assert f"`{reference}`を指" not in _additional_context(result)
 
 
 def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib.Path) -> None:
@@ -171,10 +192,11 @@ def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib
     assert "レーン識別子" in _additional_context(blocked)
 
 
-def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path) -> None:
+def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path, task_share: pathlib.Path) -> None:
     """差分を持つ初回と再レビュー入力を通し、宣言外補足の拒否を維持する。"""
-    task = _SHARE_DIR / "reader-fit-review.subagent.md"
-    current = tmp_path / "guide.md"
+    task = task_share / "reader-fit-review.subagent.md"
+    (tmp_path / "artifact_").mkdir()
+    current = tmp_path / "artifact_" / "guide.md"
     before = tmp_path / "before.md"
     patch = tmp_path / "guide.patch"
     before.write_text("# 保存\n保存先を選ぶ。\n", encoding="utf-8")
