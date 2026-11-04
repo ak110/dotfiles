@@ -264,8 +264,11 @@ def _persist_observed(record: dict[str, typing.Any], key: str, observed: dict[st
             # 実行ごとの保存先の名前を保ち、再実行の記録を前回の記録と区別する。
             destination = directory / pathlib.Path(source).parent.name / pathlib.Path(source).name
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, destination)
+            if pathlib.Path(source).resolve() != destination.resolve():
+                shutil.copyfile(source, destination)
             persisted[field] = str(destination)
+    if isinstance(persisted.get("record_path"), str):
+        atomic_file.atomic_write(pathlib.Path(persisted["record_path"]), json.dumps(persisted, ensure_ascii=False) + "\n")
     return persisted
 
 
@@ -992,10 +995,16 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
         "plans",
         "wis",
         "verification",
+        "verification_records",
         "handoff",
         "lane_started_at",
     }:
-        raise ValueError("manifestはplans・wis・verification・handoff・lane_started_atを持つobjectで指定する")
+        raise ValueError(
+            "manifestはplans・wis・verification・verification_records・handoff・lane_started_atを持つobjectで指定する"
+        )
+    reuse = manifest.get("verification_records", [])
+    if not isinstance(reuse, list) or any(not isinstance(path, str) or not pathlib.Path(path).is_absolute() for path in reuse):
+        raise ValueError("verification_recordsは保存済み実行記録JSONの絶対パスの配列で指定する")
     for name in ("plans", "wis"):
         rows = manifest.get(name)
         if not isinstance(rows, list):
@@ -1145,7 +1154,36 @@ def _verify(record: dict[str, typing.Any], state: dict[str, typing.Any], argvs: 
     # 検証argvは計画の検証コマンドをそのまま渡し、自身の上限（pyfltrのcommand-timeoutなど）で終わる。
     # 固有手順向けのprocedure_timeoutを重ねると、検証が自身の上限より先に打ち切られる。
     for index, argv in enumerate(argvs):
-        _integration_command(record, state, f"verification-{index}", argv, cwd, timeout=None)
+        key = f"verification-{index}"
+        sources = [*state["input"]["manifest"].get("verification_records", [])]
+        previous = state.get("results", {}).get(key, {}).get("record_path")
+        if previous:
+            sources.append(previous)
+        for source in sources:
+            observed = run_command.reusable_success(pathlib.Path(source), argv, cwd)
+            if observed is not None:
+                state.setdefault("results", {})[key] = _persist_observed(record, key, {**observed, "reused_from": source})
+                if key not in state["completed"]:
+                    state["completed"].append(key)
+                _save(pathlib.Path(record["record_path"]), record)
+                break
+        else:
+            state["completed"] = [value for value in state["completed"] if value != key]
+            _integration_command(record, state, key, argv, cwd, timeout=None)
+
+
+def _rebase_unpublished(worktree: pathlib.Path, base: str, record: dict[str, typing.Any], state: dict[str, typing.Any]) -> None:
+    current = _git(worktree, "rev-parse", "HEAD")
+    old_base = _git(worktree, "merge-base", base, current)
+    commits = _git(worktree, "rev-list", f"{old_base}..{current}").splitlines()
+    _git(worktree, "fetch", "--all", "--no-tags")
+    for commit in commits:
+        if _git(worktree, "for-each-ref", "--format=%(refname)", f"--contains={commit}", "refs/remotes"):
+            raise ValueError(f"push済みcommitの書換えを拒否した: {commit}")
+    state.update(phase="rebasing", new_base=base)
+    record["integration"] = state
+    _save(pathlib.Path(record["record_path"]), record)
+    _git(worktree, "-c", "submodule.recurse=false", "rebase", base)
 
 
 def _atk_script(*arguments: str) -> list[str]:
@@ -1284,10 +1322,15 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     "input": identity,
                     "phase": "rebased",
                     "completed": [key for key in state["completed"] if not key.startswith("verification-")],
-                    "results": {
-                        key: value for key, value in state.get("results", {}).items() if not key.startswith("verification-")
-                    },
+                    "results": dict(state.get("results", {})),
                 }
+                base = _git(target, "rev-parse", "HEAD")
+                if base != state["new_base"]:
+                    # 最初の旧系列を保ち、元のWI対応を最新のrebase結果まで直接継承する。
+                    state["completed"] = [key for key in state["completed"] if key != "history-compare"]
+                    state.pop("rewrite_map", None)
+                    _rebase_unpublished(worktree, base, record, state)
+                    state.update(phase="rebased", new_head=_git(worktree, "rev-parse", "HEAD"))
                 record["integration"] = state
                 _save(path, record)
             else:
@@ -1331,16 +1374,10 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 raise ValueError("統合先との祖先判定が失敗した")
             if ancestor == 1:
                 old_base = _git(worktree, "merge-base", base, current)
-                commits = _git(worktree, "rev-list", f"{old_base}..{current}").splitlines()
-                _git(worktree, "fetch", "--all", "--no-tags")
-                for commit in commits:
-                    if _git(worktree, "for-each-ref", "--format=%(refname)", f"--contains={commit}", "refs/remotes"):
-                        raise ValueError(f"push済みcommitの書換えを拒否した: {commit}")
                 if not manifest.get("verification"):
                     raise ValueError("rebase後の検証argvがmanifestに無い")
-                state.update(phase="rebasing", old_base=old_base, new_base=base)
-                _save(path, record)
-                _git(worktree, "-c", "submodule.recurse=false", "rebase", base)
+                state["old_base"] = old_base
+                _rebase_unpublished(worktree, base, record, state)
                 state.update(phase="rebased", new_head=_git(worktree, "rev-parse", "HEAD"))
                 _save(path, record)
             else:
@@ -1503,6 +1540,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         required=True,
         help=(
             "JSONのplans/wisは{name,commands:[argv,...]}の順序付き配列、verificationはargv配列。"
+            "任意のverification_recordsは同じHEAD・argv・cwd・実行条件で成功した実行記録JSONの絶対パス配列。"
             "計画なしはplans:[]とhandoff:ABS。保存済みplansはcommands:[]とsaved:ABS、延期wisはcommands:[]。"
             "lane_started_atは最初のレーン開始時刻（時差付きISO 8601）。plans/wisのargvの"
             "{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}と{{expand-file:ABS}}を確定値で展開する。"
@@ -1514,7 +1552,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     integrate_parser.add_argument(
         "--restart-review",
         action="store_true",
-        help="Git統合前の入力是正から再開する。HEAD不変のrebase結果は再検証して検収待ちへ戻る。",
+        help="Git統合前の入力是正から再開し、最新統合先へ追随する。同条件成功を再利用し、必要な検証後に検収待ちへ戻る。",
     )
     integrate_parser.add_argument("--session-id", help="所有登録のsession（atk lane createの所有session）。")
     integrate_parser.add_argument(

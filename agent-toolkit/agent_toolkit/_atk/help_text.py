@@ -447,6 +447,9 @@ HELP["atk agents"]["description"] += (
     "listで一覧、showで詳細、logsで記録の表示を行う。"
 )
 HELP["atk lane integrate"]["description"] += (
+    "\n検証の再利用: manifestの任意のverification_recordsへ保存済み実行記録JSONの絶対パス配列を渡す。"
+    "同じcleanなHEAD・argv・cwd・Pythonと環境の実行条件で終了0となり、両出力が保存されている成功だけ再利用する。"
+    "条件差・欠損・未完了・失敗した検証は実行する。--restart-reviewは最新統合先へ追随し検収待ちへ戻る。"
     "\n担当集合: 初回と再開の両方で、メインが保持する現在の合意済み書込担当一覧の実session ID全要素を"
     "--writer-sessionへ1件ずつ反復指定する。--session-idは資源の所有sessionとして別に保持する。"
     "担当の追加・交代後は合意済み一覧を更新し、再開にも更新後の全要素を渡す。"

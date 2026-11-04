@@ -18,7 +18,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
-| 停止・回避・回復済みの事象を観測または受領した時 | `immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
+| 不良・是正要求・改善点を観測または受領した時 | `immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
 | 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring.md#「成果物側の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「成果物側の観測」` |
 
 ## 担当の役割
@@ -33,7 +33,9 @@
 配下担当は祖先の対話CLIを終了する`atk agents-exit-session`を呼ばず、返却と終了観測を統括へ渡す。
 統括自身は対象別結果を保存した後、最上位の終了手順で統括CLIを終了する。
 
-統括は自身が観測した不良・是正要求と、配下担当から届く報告へ`immediate-fix.md`「即時対応」を適用する。担当・基点・時機は同書「レーンの変更範囲へ加える修正の認可」で決め、統合済みの対象の独立修正をレーンへ反復追加しない。
+統括は自身が観測した不良・是正要求・改善点と配下担当からの報告へ、`immediate-fix.md`「即時対応」の対処時機判定を適用する。
+今回追加とした正式改善AWIは対象リポジトリ担当へ渡し、保存済みの正式名、選定への追加、担当への追送を確認する。
+最小の直接修正の担当・基点・時機は同書「レーンの変更範囲へ加える修正の認可」で決め、統合済みの対象の独立修正をレーンへ反復追加しない。
 回避と正式対応AWIだけの報告では、次のセッションで同じ停止が起きない根拠を確かめる。
 根拠が無ければ、書き込みを担う配下担当へ直接修正を指示し、その検証結果を受領する。
 配下担当を待つ間の進捗点検では、`../../delegation/references/waiting-and-monitoring.md`「成果物側の観測」に従い、活動の有無と工程の所要・反復の妥当性を分けて判断する。

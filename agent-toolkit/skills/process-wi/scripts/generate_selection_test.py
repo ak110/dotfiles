@@ -79,6 +79,34 @@ def _inputs(
     return facts, judgments
 
 
+def _merge_args(
+    tmp_path: pathlib.Path,
+    repo: pathlib.Path,
+    output: pathlib.Path,
+    facts: pathlib.Path,
+    addition: pathlib.Path,
+    wi: str,
+) -> list[str]:
+    """同じ既存レーンへ合流する公開操作の入力を組み立てる。"""
+    mapping = tmp_path / "mapping.json"
+    mapping.write_text(json.dumps({"lane-01": "lane-01"}), encoding="utf-8")
+    return [
+        str(output),
+        "--merge",
+        str(addition),
+        "--candidate-file",
+        str(facts),
+        "--lane-map",
+        str(mapping),
+        "--output",
+        str(output),
+        "--work-dir",
+        str(repo),
+        "--body-wi",
+        wi,
+    ]
+
+
 @pytest.mark.parametrize("kind", ["書込重複", "依存", "再開計画"])
 def test_public_generation_uses_candidate_facts_and_typed_edges_once(
     environment: tuple[pathlib.Path, pathlib.Path],
@@ -244,26 +272,81 @@ def test_generated_addition_saves_once_and_preserves_initial_allocation(
     initial = yaml.safe_load(output.read_text(encoding="utf-8"))["初回配分"]
     _wi(notes, "second.md")
     facts, addition = _inputs(tmp_path, ["second.md"])
-    mapping = tmp_path / "mapping.json"
-    mapping.write_text(json.dumps({"lane-01": "lane-01"}), encoding="utf-8")
+    assert _dispatch(*_merge_args(tmp_path, repo, output, facts, addition, "second.md")) == 0
+    saved = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert saved["初回配分"] == initial and saved["追加WI"] == ["second.md"]
+    assert [item["WI"] for item in saved["選定"]] == ["first.md", "second.md"]
+
+
+@pytest.mark.parametrize("staged", [False, True])
+def test_minimal_selection_generation_merge_and_integration(
+    environment: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, staged: bool
+) -> None:
+    """非書込の未列挙と必要最小限の重なり記録で、生成・合流・統合状態を保存する。"""
+    repo, notes = environment
+    reference = repo / "AGENTS.md"
+    reference.write_text("# 参照規範\n", encoding="utf-8")
+    (repo / "pyproject.toml").write_text(
+        '[[tool.agent-toolkit.pick-wi-check.norm-spec]]\nname = "規範"\npaths = ["AGENTS.md"]\n'
+        'require-text = ["規範変更時の必須記載"]\n',
+        encoding="utf-8",
+    )
+    names = ["first.md", "second.md"]
+    for name in names:
+        _wi(notes, name)
+        source = entry_path(notes, name)
+        source.write_text(source.read_text(encoding="utf-8") + "`AGENTS.md`を参照する。\n", encoding="utf-8")
+    facts, judgments = _inputs(tmp_path, names + [f"candidate-{index}.md" for index in range(9)])
+    data = yaml.safe_load(judgments.read_text(encoding="utf-8"))
+    data["選定"] = data["選定"][:2]
+    data["選定"][1]["レーン"] = "lane-02"
+    data["レーンの所要時間"].append({**data["レーンの所要時間"][0], "レーン": "lane-02"})
+    if staged:
+        data["レーンの所要時間"][1].update({"段階": 2, "先行レーン": ["lane-01"]})
+        data["単一段階案の完了見込み秒数"] = 220
+    else:
+        data["レーン間の重なり"] = [
+            {
+                "レーン1": "lane-01",
+                "レーン2": "lane-02",
+                "共通パス": "src/model.py",
+                "レーン1の定義": ["入力"],
+                "レーン2の定義": ["表示"],
+                "判定": "交わらない",
+            }
+        ]
+    judgments.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    output = tmp_path / "selection.yaml"
+    assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 0
+    saved = yaml.safe_load(output.read_text(encoding="utf-8"))
+    initial = saved["初回配分"]
+    assert all("書き込まない反映先" not in item for item in saved["選定"])
+    assert bool(saved.get("レーン間の重なり")) != staged
+    assert _dispatch(str(output), "--mark-integrated", "lane-01", "--output", str(output), "--work-dir", str(repo)) == 0
+    _wi(notes, "added.md")
+    facts, addition = _inputs(tmp_path, ["added.md"])
+    if staged:
+        added = yaml.safe_load(addition.read_text(encoding="utf-8"))
+        added["単一段階案の完了見込み秒数"] = 330
+        addition.write_text(yaml.safe_dump(added, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(*_merge_args(tmp_path, repo, output, facts, addition, "added.md")) == 0
+    saved = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert saved["初回配分"] == initial and saved["追加WI"] == ["added.md"]
+    assert saved["選定"][0]["統合状態"] == "統合済み"
+    assert "統合状態" not in saved["選定"][-1]
+    assert saved["レーンの所要時間"][0]["統合状態"] == "未統合"
     assert (
         _dispatch(
             str(output),
-            "--merge",
-            str(addition),
-            "--candidate-file",
-            str(facts),
-            "--lane-map",
-            str(mapping),
+            "--mark-integrated",
+            "lane-01",
+            "--mark-integrated",
+            "lane-02",
             "--output",
             str(output),
             "--work-dir",
             str(repo),
-            "--body-wi",
-            "second.md",
         )
         == 0
     )
-    saved = yaml.safe_load(output.read_text(encoding="utf-8"))
-    assert saved["初回配分"] == initial and saved["追加WI"] == ["second.md"]
-    assert [item["WI"] for item in saved["選定"]] == ["first.md", "second.md"]
+    assert all(row["統合状態"] == "統合済み" for row in yaml.safe_load(output.read_text(encoding="utf-8"))["レーンの所要時間"])

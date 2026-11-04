@@ -1968,7 +1968,10 @@ def test_integrate_restart_review_keeps_rebase_validation(
     previous = json.loads(record_path.read_text(encoding="utf-8"))["previous_integration"]
     assert previous == stored["integration"]
     assert pending["results"]["history-compare"] == original["results"]["history-compare"]
-    assert pending["results"]["verification-0"]["record_path"] != original["results"]["verification-0"]["record_path"]
+    if changed == "verification":
+        assert pending["results"]["verification-0"]["record_path"] != original["results"]["verification-0"]["record_path"]
+    else:
+        assert pending["results"]["verification-0"]["reused_from"] == original["results"]["verification-0"]["record_path"]
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == original["new_base"]
     code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", original["new_head"])
     assert code == 0 and final["phase"] == "finalized", stderr
@@ -2013,6 +2016,77 @@ def test_integrate_resumes_failed_history_compare_without_rebasing_again(
     code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
     assert code == 0 and final["phase"] == "finalized", stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == pending["new_head"]
+
+
+@pytest.mark.parametrize("difference", [None, "git_head", "argv", "cwd", "environment", "failed", "incomplete", "output"])
+def test_integrate_imports_only_matching_success(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    difference: str | None,
+) -> None:
+    """公開manifestへ生成済み記録を渡し、一致した成功だけが子の再実行を省く。"""
+    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys)
+    observed = json.loads(pathlib.Path(original["results"]["verification-0"]["record_path"]).read_text(encoding="utf-8"))
+    exported = tmp_path / "success.json"
+    if difference in {"git_head", "cwd"}:
+        observed[difference] = "different"
+    elif difference == "argv":
+        observed["argv"] = [sys.executable, "-c", "assert True"]
+    elif difference == "environment":
+        monkeypatch.setenv("LANE_ACCEPTANCE_CONDITION", "changed")
+    elif difference == "failed":
+        observed["child_exit_code"] = observed["wrapper_exit_code"] = 3
+    elif difference == "incomplete":
+        observed["child_exit_code"] = None
+    elif difference == "output":
+        observed["stdout_path"] = str(tmp_path / "absent-output")
+    exported.write_text(json.dumps(observed), encoding="utf-8")
+    value["verification_records"] = [str(exported)]
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
+    stored["integration"]["results"].pop("verification-0")
+    stored["integration"]["completed"].remove("verification-0")
+    pathlib.Path(record["record_path"]).write_text(json.dumps(stored), encoding="utf-8")
+    executed = []
+    execute = lane.run_command.execute
+
+    def counted(argv: list[str], *args: Any, **kwargs: Any) -> Any:
+        executed.append(argv)
+        return execute(argv, *args, **kwargs)
+
+    monkeypatch.setattr(lane.run_command, "execute", counted)
+    code, pending, stderr = _invoke(
+        capsys, *_integration_args(record, repo, manifest, original["old_head"]), "--restart-review"
+    )
+    assert code == 1 and pending["phase"] == "awaiting-validation", stderr
+    result = pending["results"]["verification-0"]
+    if difference is None:
+        assert not executed
+        assert result["reused_from"] == str(exported)
+    else:
+        assert executed == value["verification"]
+        assert "reused_from" not in result
+
+
+def test_integrate_restart_tracks_advanced_target(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """検証失敗後に前進した統合先へ追随し、元の成果と対応表を保持する。"""
+    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys, failed=True)
+    (repo / "later").write_text("追加の先行成果", encoding="utf-8")
+    latest = git_repository.commit_all(repo, "統合先の追加更新")
+    value["verification"] = [[sys.executable, "-c", "pass"]]
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    args = _integration_args(record, repo, manifest, original["old_head"])
+    code, pending, stderr = _invoke(capsys, *args, "--restart-review")
+    assert code == 1 and pending["phase"] == "awaiting-validation", stderr
+    assert pending["new_base"] == latest
+    worktree = pathlib.Path(record["worktree"])
+    assert (worktree / "later").read_text(encoding="utf-8") == "追加の先行成果"
+    assert (worktree / "feature").exists()
+    mapping = json.loads(pathlib.Path(pending["rewrite_map"]).read_text(encoding="utf-8"))
+    assert mapping[original["old_head"]] == pending["new_head"]
 
 
 def test_integrate_restart_review_after_failed_rebased_verification(

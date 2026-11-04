@@ -37,6 +37,7 @@
 | 基準の参照時 | `reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` |
 | 基準の参照時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
 | 基準の参照時 | `../skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` |
+| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `../skills/process-wi/references/immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
 | 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
 | 基準の参照時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
 | 基準の参照時 | `review-loop-coordination.md#「ラウンド番号の保持先」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンド番号の保持先」` |
@@ -165,18 +166,25 @@ Git管理外ファイルの変更前後の複製のペアがあれば、レー�
 各ラウンド中に届いた通知、および返却と走査記録を受け取った時点で、今回の変更差分の対象外としてレビュー指摘管理表から外した候補と、通知・返却の`気付いた改善点:`行との対応を確かめる。
 レーン担当経由の報告も同じく受領確認し、処置はメインエージェントが決める。
 
-報告を受領したエージェントは、差分外の既存不良を示す`気付いた改善点:`の各行を要求別に保持し、共通受領契約（`agent-toolkit:delegation/references/receiving.md`「受領後の扱い」）で即時対応の要否を判定する。正式対応へ渡すものはまとめて`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の専念型のWI投入担当へ渡す。元作業と実行レビューから独立した担当が、似た対象から順に調べて知見を再利用する。担当を増やすのは同書の総費用比較で有利な場合に限る。
-メインエージェント自身は`agent-basics:bugfix`の起動や走査記録からの原因・対策の読み取りをせず、原因分析からAWIファイルの保存までをWI投入担当に任せる。差分外の不具合の調査、原因分析、起草原稿の検収をレビュー受領側の文脈から切り離し、セッション全体の総費用を抑えるためである。
+受領側は差分外の既存不良の`気付いた改善点:`行を要求別に保持し、`agent-toolkit:delegation/references/receiving.md`「受領後の扱い」で対処時機を判定する。
+正式対応は`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の専念型へまとめて渡す。
+元作業・実行レビューから独立したWI投入担当が、似た対象から順に調べて知見を再利用する。
+担当追加は同書の総費用比較で有利な場合に限る。
+メインは`agent-basics:bugfix`の起動や走査記録からの原因・対策の読み取りをせず、原因分析からAWI保存まで投入担当に任せる。
+調査・原因分析・原稿検収をレビュー受領側の文脈から分け、総費用を抑えるためである。
 
 - 要求ファイルには、`気付いた改善点:`行の全文と走査記録の絶対パスを要求の趣旨と`確定済みの観測`に、原因・類似見直し・対策の検討項目を`投入前に確定すべき事項`に書く。投入先は該当行が示す対象ファイルを所有するリポジトリとし、`source`属性は受領元エージェントのスキルに基づき`agent-toolkit:wi-standards`「由来と承認」で決める
 - 起動した担当の`session_id`と対象の不具合を、該当レビューの引き継ぎ記録へ引き渡し済みとして対応付ける。再レビューや引き継ぎ再レビューで同じ不具合が再び報告されたら、この記録で引き渡し済みと判定し、担当を重ねて起動しない
 - 投入担当の完了を待たずに、レビューの収束、統合、公開を並行して進める。投入担当の終了はバックグラウンド完了通知で確かめ、最終の作業完了報告の前までに全担当の終了を確かめる。この終了確認は統合や公開を始める前提条件にしない
-- 担当が保存したAWIのファイル名は、`agent-toolkit:report-completion`の`references/report-formats.md`「作業完了報告のフォーマット」の`### 投入したWI`で報告する
+- 保存済みAWIの正式名を受領したら、process-wi中は読込表の`immediate-fix.md`「即時対応」で今回追加を判定し、選定と担当への受渡しを確認する。正式名は`agent-toolkit:report-completion`の`references/report-formats.md`「作業完了報告のフォーマット」の`### 投入したWI`でも報告する
 - 担当から続行できない理由が返ったら、ユーザーの判断が要る事項を`agent-toolkit:user-confirmation-and-report`に従って確認する（自律モードではUWIへ退避する）。投入先リポジトリ外のファイルが対象として返った場合は、`add-wi.parent.md`「続行できない理由の扱い」に従って投入先と要求の組を確定し直す
 
-この運用は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」の「発見した独立の既存不良は同一セッション内で是正する」という一般原則の例外であり、先送りに要る事象の記録、根本原因、対応案は投入担当が保存するAWIが担保する。
-ただし、残る工程または次のセッションの処理を停止・遮断する不具合は、同節の「進行を妨げる欠陥」としてその場で対処する。この判定は停止・遮断が生じる観測根拠に基づき、事前の詳細な原因分析を前提にしない。
-その不具合は`agent-basics:bugfix`と同節の規定に従って直す。`process-wi`の実行中は`../skills/process-wi/references/immediate-fix.md`「即時対応」の基準で最小限の直接修正を施し、根本的な正式対応は次のセッション用AWIへ引き継ぐ。正式対応では、品質（Q）影響、レビュー対象との根本原因の同一性、処置完了の有無を判定する。基準は`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従う。`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」「類似見直しと再発防止の完了」も適用する。認可が要る場合は`agent-toolkit:user-confirmation-and-report`に従う。
+通常の次回送りは`agent-toolkit/rules/01-agent.md`「完遂と先送り」の一般原則の例外とし、事象・根本原因・対応案を投入担当がAWIへ保存する。
+process-wi中は読込表の`immediate-fix.md`「即時対応」で正式改善の今回追加を判定し、最小修正後の正式対応は次回へ渡す。
+残工程や次のセッションを停止・遮断する不具合は、観測根拠から「進行を妨げる欠陥」と判定し、詳細な原因分析に先行して直接修正する。
+修正は`agent-basics:bugfix`と`01-agent.md`「完遂と先送り」、process-wi中の最小修正は前述の「即時対応」に従う。
+正式対応では`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」で、品質影響・レビュー対象との根本原因の同一性・処置完了を判定する。
+同スキルの`references/root-cause-remediation.md`「類似見直し」「類似見直しと再発防止の完了」も適用し、認可は`agent-toolkit:user-confirmation-and-report`に従う。
 レーン担当が自レーンの検証を妨げるとして報告した既存不良は、実行レビューの返却と区別し、`process-wi`の処理中は同スキルの「即時対応」として扱う。
 
 対象の不具合ごとに、引き渡し済みの担当、是正結果、根拠付きの非該当判定、判断待ちの引き渡し先のいずれかを既存の引き継ぎ記録へ対応付けてから、レビュー収束後の工程へ進む。

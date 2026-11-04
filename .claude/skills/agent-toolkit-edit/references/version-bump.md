@@ -14,6 +14,8 @@
 | Codex導入版変更後にrootを再解決する前 | `agent-toolkit:/share/rules-common.codex.md#「Codexのplugin root解決」` | 判断 | `section:agent-toolkit:*/share/rules-common.codex.md#「Codexのplugin root解決」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md#「版数と生成物」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「版数と生成物」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 公開前の統合差分に`rust/claude-statusline/`の変更がある時 | `../../release-dotfiles/SKILL.md`の「developとmasterのリリース運用」内のstatusline採番規定 | 判断 | `section:*/skills/release-dotfiles/SKILL.md#「developとmasterのリリース運用」` |
+| 公開前の統合差分に`rust/claude-statusline/`の変更があり、最終検証を選ぶ時 | `../../develop-dotfiles/SKILL.md`の「自動チェックと依存更新」 | 判断 | `section:*/skills/develop-dotfiles/SKILL.md#「自動チェックと依存更新」` |
 
 ## 判定基準
 
@@ -27,6 +29,10 @@
 - 現行のバージョンが`major.minor.patch`という3つの数値要素で表せない場合は、プロジェクト固有の対応表またはユーザーからの明示的な指定がある場合にのみ区分を適用する。指定がない場合はバージョン更新せず、判定不能として報告する
 
 ## 競合解決と統合後の確認
+
+公開担当は統合差分の配布対象ごとに採番要否を確定し、レーンの引渡しと比較する。
+`rust/claude-statusline/`の変更には`release-dotfiles`の採番規定を適用し、`develop-dotfiles`「自動チェックと依存更新」の`--enable=statusline-version`による最終検証へ接続する。
+プラグインとstatuslineの採番は各定義元で判定する。
 
 rebaseやmergeの際に`version`の競合が発生した場合は、`(major, minor, patch)`の数値タプルを比較して値が大きい方を採用する。採用した値は、競合したプラグインの定義元の2ファイルへ反映する。続けて`scripts/sync_codex_plugin_manifests.py`を実行し、派生マニフェストを同期する。バージョンの整合性は`scripts/sync_codex_plugin_manifests.py --check`（最新なら終了コード0、不整合なら1、引数の誤用なら2）を実行して確認し、同スクリプトによる判定結果を採用する。
 
