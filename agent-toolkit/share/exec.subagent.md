@@ -74,6 +74,7 @@ continuations:
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
+| 観測で実装の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation.md`の「仮説から次の確認を選ぶ」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「仮説から次の確認を選ぶ」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
@@ -182,6 +183,7 @@ continuations:
 ## 実装
 
 検証前に、受入条件と通常検証を`agent-toolkit:/share/verification-operations.md`に従って比較し、初回の実行単位・条件・出力を確定する。対象定義と公開入力から選んだ起動形を、計画か訂正済み検証表と`検証結果`へ記す。
+試験では入力の由来、生産側・変換・最終消費を確認し、差し替えた境界と観測結果を`検証結果`へ記す。
 観測手段・環境とテストの有効性は`agent-basics:writing-standards/references/testing.md`「検証単位の選定」と冒頭の基準を適用し、実行後は要求された結果を観測できた範囲を`検証結果`へ対応付ける。
 
 `実装開始`を受領した`レーン担当`、待機を要しない`計画検査完了`を通知した`レーン担当`、および修正入力を受領した他の担当種別が本節の作業を実施する。本節が計画の進捗ログへ記録する内容は、計画を作成していない場合は引き継ぎ記録へ記録する。
