@@ -10,6 +10,7 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「日本語の書き方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「日本語の書き方」` |
+| スライドの構成や配置をレビューする時 | `writing-slides.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-slides.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time.md#「コメントの記述粒度」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/implementation-time.md#「コメントの記述粒度」` |
 
 ## 指摘と採否
@@ -49,7 +50,7 @@
 
 見出しと各段落の先頭文の並びで要旨と論理の流れが通るかを確認する。後続の文が先頭文の主張を支え、接続文や総括が理解や次の判断を進める役割を持つかを確かめる。読み手が文脈から補える文や自明な否定の重複も確認する。改善を説明できない言い換えや、具体的な問題が残らない状態での反復を求めない。作成側の原則は`writing.md`「文章の共通規定」「構成・構造」「改訂・保守」を参照。
 
-スライドでは、説明順序とページの要点、主情報と補足の関係、図表が示す関係、画像での読む順序を確認する。単位・出所・成立条件と依頼固有の条件を保ち、構成や配置の指針は努力目標として評価する。作成側の原則は`writing.md`「スライド」を参照。
+スライドでは、説明順序とページの要点、主情報と補足の関係、図表が示す関係、画像での読む順序を確認する。単位・出所・成立条件と依頼固有の条件を保ち、構成や配置の指針は努力目標として評価する。作成側の原則は`writing-slides.md`を参照。
 
 ## コメントの再掲と重複
 

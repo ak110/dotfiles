@@ -28,6 +28,8 @@ description: >
 
 文章やコードの品質は、参照できる資料に基づいて判断する。スキルフォルダーのみを読み込める環境であっても、[日本語の書き方](references/writing.md#日本語の書き方)を参照できる。ファイルの変更やformatter・linter・testerの実行を伴う手順は、それらの機能が利用できるホスト環境で適用する。機能がない環境では、作成した原稿と未実行のチェック項目を結果として返す。実際の変更や保存は、それらの機能を使えるClaude CodeやCodexで継続して行う。
 
+用途別の資料は、文章全般に適用する共通基準と「文書種別ごとの注意点」を組み合わせて読む。
+
 以下の読込表に記載された条件に当てはまる場合は（作業の途中で該当した場合を含む）、対象の操作をする前に、該当行に示された資料をすべて読んで内容を反映する。
 
 ## 名指し参照の読込方法
@@ -47,14 +49,14 @@ description: >
 | X投稿などの外部資料の本文・日時・添付画像を取得・確認する前 | `../fetch-sources/SKILL.md` | 判断 | `read:agent-basics:*/skills/fetch-sources/SKILL.md` | |
 | ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
 | 計画の起草、実現方式の確定、実装の完了前と実行レビューで、変更後の設計品質や累積したファイル構成を評価する時（エージェント向け文書だけの変更を含む）と、外部資料（論文、ベンチマーク、他プロジェクトの事例など）に基づく改善案を提案・評価する時 | `references/design-heuristics.md`の「設計案の予備選別」から「設計品質の劣化確認」まで（各節の適用条件を保つ） | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」から「設計品質の劣化確認」まで` | |
-| 技術記事・操作手順などの技術文書を書く時 | `references/writing.md`の「技術文書」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「技術文書」` | |
-| 業務・仕様文書を書く時（変更説明、障害報告、提案書、議事録、規程、作業項目などを含む） | `references/writing.md`の「業務・仕様文書」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「業務・仕様文書」` | |
-| 体験を述べる文章を書く時 | `references/writing.md`の「体験を述べる文章」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「体験を述べる文章」` | |
-| スライドを書く時 | `references/writing.md`の「スライド」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「スライド」` | |
-| 紹介・宣伝文を書く時 | `references/writing.md`の「紹介・宣伝文」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「紹介・宣伝文」` | |
-| メール・チャットを書く時 | `references/writing.md`の「メール・チャット」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「メール・チャット」` | |
-| 論文・調査報告を書く時 | `references/writing.md`の「論文・調査報告」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「論文・調査報告」` | |
-| 脚本・台本を書く時 | `references/writing.md`の「脚本・台本」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「脚本・台本」` | |
+| 技術記事・操作手順などの技術文書を書く時 | `references/writing-technical.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-technical.md` | |
+| 業務・仕様文書を書く時（変更説明、障害報告、提案書、議事録、規程、作業項目などを含む） | `references/writing-business.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-business.md` | |
+| 体験を述べる文章を書く時 | `references/writing-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-experience.md` | |
+| スライドを書く時 | `references/writing-slides.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-slides.md` | |
+| 紹介・宣伝文を書く時 | `references/writing-promotion.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-promotion.md` | |
+| メール・チャットを書く時 | `references/writing-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-messages.md` | |
+| 論文・調査報告を書く時 | `references/writing-research.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-research.md` | |
+| 脚本・台本を書く時 | `references/writing-scripts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-scripts.md` | |
 | ユーザーの入力素材を整理して取り込む時 | `references/writing.md`の「ユーザー入力素材の取扱い」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | |
 | 配布物がエンドユーザーの環境でパッケージマネージャーへ渡す版指定（`uvx --from`の引数、`pyproject.toml`の`dependencies`、`uv run --with`の引数、PEP 723の`dependencies`など）を変える作業の起草、計画、実装、レビューの時 | `references/dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` | |
 | ロゴ、ワードマーク、ブランドマークとそのアイコン展開を制作・改訂する時（その計画・作業項目の起草を含む） | `references/logo-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/logo-quality.md` | |
@@ -62,7 +64,7 @@ description: >
 | エンドユーザーが操作する画面の新設・変更、その計画・作業項目の起草またはレビューで、フォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、自動で切り替わる表示、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
 | ユーザーが法令上の義務やプライバシーの確認を依頼した時と、不特定のエンドユーザーへ公開・提供するWebサービスやアプリで、第三者サーバーからのリソース読み込みや解析・広告タグ、操作や入力の記録、宣伝メールの一斉送信、定期課金、エンドユーザーの投稿の公開または会員登録を新設・変更する時（その計画・作業項目の起草またはレビューを含む）。自分用ツール、社内システム、ユーザーが自分で開く単体HTML成果物は、確認の依頼と社外の不特定のエンドユーザーへ公開範囲を広げる変更の場合だけ該当する | `references/public-service-obligations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/public-service-obligations.md` | |
 | 起動時 | `references/quality-principles.md` | 起動時 | `skill:writing-standards` | |
-| 人間が読む文章（ドキュメント、コメント、作業項目の本文など）を書く時 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」 | 操作 | `body-writing` | |
+| 人間が読む文章（ドキュメント、コメント、作業項目の本文など）を書く時 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」「文書種別ごとの注意点」 | 操作 | `body-writing` | |
 | コード・テストコードを書く時 | 「コードの編集時に読む資料」の各行 | 判断 | `skill:writing-standards` | `same-document` |
 | エージェント向け文書を書く時 | 「エージェント向け文書の編集時に読む資料」の各行 | 判断 | `skill:writing-standards` | `same-document` |
 | Claude CodeでEditを使う時と、Writeで既存ファイルを上書きする前 | `references/file-editing-claude.md` | 操作 | `claude-existing-file-edit` | |
@@ -115,7 +117,7 @@ description: >
 
 ## コードの編集時に読む資料
 
-コードの編集やコードレビュー（変更差分の確認）に着手する前に、`references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」と、以降の技術別・工程別の表で該当する資料を読む。
+コードの編集やコードレビュー（変更差分の確認）に着手する前に、`references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」「文書種別ごとの注意点」と、以降の技術別・工程別の表で該当する資料を読む。
 成果物として残さない使い捨ての一時コードは、言語別の必須読込の対象外とする。安全性、認可、データ保全の制約は維持し、成果物へ取り込む段階で該当する品質基準を適用する。
 
 | 時点または条件（対象の拡張子・ファイル名・パス・依存名） | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
@@ -156,7 +158,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| エージェント向け文書（AGENTS.md、CLAUDE.md、ルール、SKILL.md、サブエージェント定義、referencesなど）の編集前 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」と`references/agent-documents-basics.md` | 操作 | `agent-document-writing` | |
+| エージェント向け文書（AGENTS.md、CLAUDE.md、ルール、SKILL.md、サブエージェント定義、referencesなど）の編集前 | `references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」「文書種別ごとの注意点」と`references/agent-documents-basics.md` | 操作 | `agent-document-writing` | |
 | スキル編集 | `references/agent-skills.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills.md` | |
 | スキル編集 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
 | エージェント向け文書の置き場所を選ぶ時 | `references/agent-documents-basics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md` | |
