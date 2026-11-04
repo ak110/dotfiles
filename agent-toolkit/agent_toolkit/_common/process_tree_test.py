@@ -162,18 +162,29 @@ def test_windows_retention_diagnostic_keeps_snapshot_children(monkeypatch, caplo
     """保持失敗の対象とその子だけを、同じ列挙時点の識別情報で診断する。"""
     parent = mock.Mock(pid=900001)
     parent.create_time.return_value = 1.0
+    parent.is_running.return_value = False
+    parent.cmdline.return_value = ["owned"]
     child = mock.Mock(pid=900002, info={"ppid": parent.pid})
     child.create_time.return_value = 2.0
     unrelated = mock.Mock(pid=900003, info={"ppid": 0})
+    pins = mock.Mock()
+    pins.retain.return_value = False
     monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter([child, unrelated]))
     monkeypatch.setattr(process_tree, "identity", lambda pid, **_kwargs: {"pid": pid, "status": "observed"})
     monkeypatch.setattr(sys, "platform", "win32")
-    assert not process_tree._scan_descendants([parent], retain=lambda _process: False)  # pylint: disable=protected-access
+    result = process_tree.stop_tree(parent, pins=pins, timeout=0)
+    assert result.targets == [parent]
+    assert not result.residual
+    assert result.unresolved == ["pid 900001 の親世代を終了前に保持できなかった"]
     assert "stage=known" in caplog.text
     assert "snapshot_present=False" in caplog.text
     assert "'snapshot_ppid': 900001" in caplog.text
     assert "900002" in caplog.text
     assert "900003" not in caplog.text
+    for process in (child, unrelated):
+        process.suspend.assert_not_called()
+        process.terminate.assert_not_called()
+        process.kill.assert_not_called()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="終了済み親のWindows kernel handleを検証する")
