@@ -14,17 +14,11 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import logging
-import os
 import pathlib
 from typing import Any
 
-import psutil
-
 from agent_toolkit._agents_server import notice_inbox, retained_results, shared_layout, status_file, status_reader
-from agent_toolkit._common import process_tree, session_registry
-
-_LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
+from agent_toolkit._common import session_registry
 
 OWNER_LOST_NEXT_ACTION = (
     "所有サーバーを失った実行中のため、次のどちらかを選ぶ。"
@@ -189,30 +183,3 @@ def _result_roots(
     recorded = session_registry.resolve(session_id, state_root=state_root).owner_root_session_id
     candidates = roots if roots is not None else status_reader.ownerless_root_session_ids(own_root_session_id, state_root)
     return list(dict.fromkeys(root for root in (recorded, *candidates) if root is not None and root != own_root_session_id))
-
-
-def stop_recorded_executor(identity: session_registry.ProcessIdentity) -> str | None:
-    """登録簿のpidと起動時刻が一致する委譲先CLIを子孫ごと停止し、停止を確かめられない場合はその理由を返す。
-
-    起動時刻が一致しないpidは別のプロセスへ再利用されたものであり、記録した委譲先CLIは終了済みとして停止しない。
-    自プロセスは対象にしない。所有サーバーのプロセスは他のsessionの資源を持ち得るため、呼び出し側が渡さない。
-    """
-    if identity.pid == os.getpid():
-        return f"pid {identity.pid} はこのMCPサーバー自身のプロセスである"
-    try:
-        process = psutil.Process(identity.pid)
-        created = process.create_time()
-    except psutil.NoSuchProcess:
-        return None
-    except psutil.Error as error:
-        return f"pid {identity.pid} の起動時刻を照会できない: {error}"
-    if created != identity.create_time:
-        return None
-    # 本人確認済みのプロセスを起点に、子孫の生成を止めてから終了させる。
-    # 終了要求前の1回の列挙だけでは、その後に起動した子孫が親を失って回収から漏れる。
-    result = process_tree.stop_tree(process)
-    if identity.exists():
-        return f"pid {identity.pid} の終了を確認できない: residual={result.descriptions()}"
-    process_tree.log_residual(result.descriptions(), context="owner-lost executor")
-    _LOG.info("owner_lost_executor_stopped pid=%d create_time=%s", identity.pid, identity.create_time)
-    return None

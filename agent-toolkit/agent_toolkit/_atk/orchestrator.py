@@ -161,13 +161,13 @@ def select_available(
     candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path, context: ProbeContext
 ) -> tuple[str, str, str]:
     """候補を先頭から事前に試し、最初に可用な3つ組を返す。詳細は`select_available_with_provider`に従う。"""
-    orchestrator, model, effort, _ = select_available_with_provider(candidates, env, cwd, context)
+    orchestrator, model, effort, _, _ = select_available_with_provider(candidates, env, cwd, context)
     return orchestrator, model, effort
 
 
 def select_available_with_provider(
     candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path, context: ProbeContext
-) -> tuple[str, str, str, str | None]:
+) -> tuple[str, str, str, str | None, _connection.Connection | None]:
     """候補を先頭から事前に試し、最初に可用な3つ組と、Codexで判定したprovider IDを返す。
 
     `context.codex_providers`を渡したCodexの候補は、providerごとに使用順で判定し、最初に成功したproviderを返す。
@@ -176,30 +176,54 @@ def select_available_with_provider(
     待機の回数と総時間に上限を置かない。上限を含まない全候補の失敗は`NoAvailableCandidateError`を送出する。
     """
     probe_models: dict[str, str] = {}
+    claude_connections: tuple[_connection.Connection, ...] = ()
+    if any(engine == "claude" for engine, _, _ in candidates):
+        choices = _connection.candidates("orchestrator", env=env, cli=True)
+        for diagnostic in choices.warnings:
+            _notify(context, diagnostic, "Claude接続設定を確認する")
+        claude_connections = choices.connections
+        if context.claude_connection is not None:
+            saved = _connection.apply_current_settings(context.claude_connection, role="orchestrator", env=env, cli=True)
+            claude_connections = (saved, *(item for item in claude_connections if item.kind != saved.kind))
+        if not claude_connections:
+            choices.require_first()
     while True:
         last_failure = (candidates[-1][0], 1, "")
         codex_limits: list[tuple[str, UsageLimitState]] = []
-        attempts = [
-            (orchestrator, model, effort, provider)
-            for orchestrator, model, effort in candidates
-            for provider in ((context.codex_providers or (None,)) if orchestrator == "codex" else (None,))
-        ]
-        for orchestrator, model, effort, provider in attempts:
-            candidate = f"{orchestrator}:{model}/{effort}" + (f" (provider: {provider})" if provider else "")
-            while True:
-                outcome = _probe_candidate(orchestrator, probe_models, env, cwd, candidate, context, codex_provider=provider)
+        retry_claude = False
+        for orchestrator, model, effort in candidates:
+            connections = claude_connections if orchestrator == "claude" else (None,)
+            providers = (context.codex_providers or (None,)) if orchestrator == "codex" else (None,)
+            claude_limits: list[tuple[str, UsageLimitState]] = []
+            for connection, provider in ((connection, provider) for connection in connections for provider in providers):
+                candidate = f"{orchestrator}:{model}/{effort}"
+                if connection is not None:
+                    candidate += f" (connection: {connection.kind})"
+                elif provider:
+                    candidate += f" (provider: {provider})"
+                selected_context = dataclasses.replace(context, claude_connection=connection)
+                outcome = _probe_candidate(
+                    orchestrator, probe_models, env, cwd, candidate, selected_context, codex_provider=provider
+                )
                 if outcome is None:
-                    return orchestrator, model, effort, provider
+                    return orchestrator, model, effort, provider, connection
                 usage_limit, failure = outcome
-                if orchestrator == "codex" and usage_limit is not None:
-                    codex_limits.append((candidate, usage_limit))
+                if usage_limit is not None:
+                    limits = claude_limits if orchestrator == "claude" else codex_limits
+                    limits.append((candidate, usage_limit))
                     last_failure = (orchestrator, 1, usage_limit.describe())
-                    break
-                if usage_limit is None:
+                else:
                     assert failure is not None
                     last_failure = failure
-                    break
+            if claude_limits:
+                # 同じClaude会話を保つ。接続候補をすべて評価した後だけ解除を待つ。
+                now = time.time()
+                candidate, usage_limit = min(claude_limits, key=lambda item: item[1].delay_seconds(now))
                 _wait_for_usage_limit(candidate, usage_limit, context)
+                retry_claude = True
+                break
+        if retry_claude:
+            continue
         if not codex_limits:
             raise NoAvailableCandidateError(*last_failure)
         now = time.time()
@@ -375,7 +399,7 @@ def _probe_candidate_owned(
         probe_argv = _probe_argv(
             orchestrator, probe_models[orchestrator], context.prompt, codex_provider_arguments=provider_arguments
         )
-        if orchestrator == "claude" and env.get(PROCESS_LOOP_SESSION_ENV):
+        if orchestrator == "claude":
             connection = context.claude_connection
             if connection is None:
                 choices = _connection.candidates("orchestrator", env=env, cli=True)

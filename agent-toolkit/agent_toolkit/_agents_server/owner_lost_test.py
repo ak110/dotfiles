@@ -39,7 +39,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session
-from agent_toolkit._common import process_tree, session_registry, state_paths
+from agent_toolkit._common import process_tree, recorded_process, session_registry, state_paths
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
@@ -297,10 +297,10 @@ async def test_kill_does_not_stop_process_whose_start_time_differs(
             _backend(monkeypatch, manager, "codex", [("turn-1", "inProgress")])
             with pytest.raises(ValueError, match="turn_unobserved"):
                 await mcp_tools.kill(_SESSION_ID)
-        assert owner_lost.stop_recorded_executor(stale) is None
+        assert recorded_process.stop_recorded_executor(stale) is None
         assert reused_process.poll() is None
         assert owner_process.poll() is None
-        assert owner_lost.stop_recorded_executor(session_registry.ProcessIdentity(os.getpid(), 0.0)) is not None
+        assert recorded_process.stop_recorded_executor(session_registry.ProcessIdentity(os.getpid(), 0.0)) is not None
 
 
 @pytest.mark.asyncio
@@ -572,5 +572,5 @@ def test_stop_recorded_executor_reclaims_descendant_started_after_first_listing(
         executor = psutil.Process(process.pid)
         identity = session_registry.ProcessIdentity(executor.pid, executor.create_time())
         late_descendant.arm(tmp_path, monkeypatch.setattr)
-        assert owner_lost.stop_recorded_executor(identity) is None
+        assert recorded_process.stop_recorded_executor(identity) is None
     late_descendant.assert_released(tmp_path)

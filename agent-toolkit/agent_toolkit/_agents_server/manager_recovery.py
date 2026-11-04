@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from agent_toolkit._agents_server import manager_resume, notify, owner_lost, shared_roots, status_file, wait_targets
+from agent_toolkit._agents_server import manager_resume, notify, shared_roots, status_file, wait_targets
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import recorded_process, session_registry
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -112,7 +112,7 @@ class ManagerRecovery(manager_resume.ManagerResume):
             if resolution.live_executors:
                 # PIDと起動時刻の一致を停止側で再確認する。別sessionを持つ所有サーバーは停止しない。
                 for process in resolution.live_executors:
-                    failure = await run_file_operation(owner_lost.stop_recorded_executor, process)
+                    failure = await run_file_operation(recorded_process.stop_recorded_executor, process)
                     if failure is not None:
                         raise ActionableError(
                             f"子の復旧前の終了を確認できない: {identifier}: {failure}",

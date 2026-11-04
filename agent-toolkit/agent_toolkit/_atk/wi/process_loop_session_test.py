@@ -205,7 +205,8 @@ def test_orchestrator_resume_probe_keeps_selected_connection(
         tmp_path,
         resume_session_id="resume-api",
     )
-    assert selected == (*candidate, None)
+    assert selected[:4] == (*candidate, None)
+    assert selected[4] is not None and selected[4].api_env_file == str(path)
     assert observed[0]["ANTHROPIC_API_KEY"] == "selected-key"
     assert not observed[0].get("CLAUDE_CODE_OAUTH_TOKEN")
 
@@ -256,7 +257,7 @@ def test_codex_orchestrator_probe_start_and_resume_use_selected_provider(
     candidate = ("codex", "gpt-5.6-sol", "medium")
     selected = _pl_session.select_available_orchestrator([candidate], env, tmp_path)
     # APIキーのアカウントではsubscriptionを除いて診断を出し、使用順の次のクレジットを選ぶ。
-    assert selected == (*candidate, "my-credits")
+    assert selected == (*candidate, "my-credits", None)
     assert "codex_payg_provider openai" in capsys.readouterr().err
     assert len(probes) == 1 and "--ignore-user-config" in probes[0]
     assert _provider_option(probes[0]) == "my-credits"
@@ -315,7 +316,7 @@ def test_codex_orchestrator_resume_keeps_saved_provider_until_removed_from_order
     selected = _pl_session.select_available_orchestrator(
         [("codex", "other-model", "high")], env, tmp_path, resume_session_id="orchestrator-thread"
     )
-    assert selected == ("codex", "gpt-5.6-sol", "medium", expected)
+    assert selected == ("codex", "gpt-5.6-sol", "medium", expected, None)
     assert [_provider_option(argv) for argv in probes] == [expected]
 
 
@@ -341,6 +342,152 @@ _PROCESS_LOOP_SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 
 
 _DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
+
+
+@pytest.mark.parametrize("resume", [False, True])
+def test_limited_claude_probe_selects_next_connection_for_same_session_launch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, resume: bool
+) -> None:
+    """上限中の接続をスキップし、probeで成功した接続を同一会話の本起動へ渡す。"""
+    api = tmp_path / "payg.env"
+    api.write_text("ANTHROPIC_API_KEY=selected-test-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(api))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription,payg")
+    if resume:
+        session_registry.publish(
+            "saved-claude",
+            terminal=True,
+            engine="claude",
+            cwd=str(tmp_path),
+            model="sonnet",
+            effort="high",
+            claude_connection="subscription",
+            claude_role="orchestrator",
+        )
+    probes: list[str] = []
+    launched: list[list[str]] = []
+
+    def run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if "--no-session-persistence" in argv:
+            if kwargs["env"].get("CLAUDE_CODE_OAUTH_TOKEN"):
+                probes.append("subscription")
+                event = {
+                    "type": "rate_limit_event",
+                    "rate_limit_info": {
+                        "status": "rejected",
+                        "rateLimitType": "five_hour",
+                        "resetsAt": int(time.time()) + 3600,
+                    },
+                }
+                return subprocess.CompletedProcess(argv, 1, json.dumps(event), "")
+            probes.append("payg")
+            assert kwargs["env"]["ANTHROPIC_API_KEY"] == "selected-test-key"
+            return subprocess.CompletedProcess(argv, 0, "OK", "")
+        launched.append(argv)
+        assert not kwargs["env"].get("CLAUDE_CODE_OAUTH_TOKEN")
+        raw = argv[argv.index("--settings") + 1]
+        settings = json.loads(pathlib.Path(raw).read_text(encoding="utf-8"))
+        assert str(api) in settings["apiKeyHelper"]
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    env = dict(os.environ)
+    engine, model, effort, provider, connection = _pl_session.select_available_orchestrator(
+        [("claude", "sonnet", "high")],
+        env,
+        tmp_path,
+        resume_session_id="saved-claude" if resume else None,
+    )
+    assert probes == ["subscription", "payg"]
+    assert connection is not None and connection.kind == "payg"
+    assert _pl_session.run_process_session(
+        argparse.Namespace(resume="saved-claude" if resume else None),
+        tmp_path,
+        "続行する",
+        env,
+        orchestrator=engine,
+        model=model,
+        effort=effort,
+        resume_pending=resume,
+        codex_provider=provider,
+        claude_connection=connection,
+    )
+    assert len(launched) == 1
+    if resume:
+        assert "--resume=saved-claude" in launched[0]
+    assert env.get("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS") == "subscription,payg"
+
+
+@pytest.mark.parametrize("hold", [False, True])
+def test_process_loop_restarts_limited_claude_after_owned_exit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    host_environ: Callable[[], dict[str, str]],
+    hold: bool,
+) -> None:
+    """StopFailureの公開要求から旧CLIを回収し、同じIDの実CLIで仕事を続行する。"""
+    api = tmp_path / "payg.env"
+    api.write_text("ANTHROPIC_API_KEY=test-key\nANTHROPIC_BASE_URL=https://payg.example.test\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(api))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription,payg")
+    binary = tmp_path / "claude"
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, pathlib, sys, time\n"
+        "from agent_toolkit._hooks import stopfailure_notifier\n"
+        "from agent_toolkit._common import session_registry\n"
+        "root = pathlib.Path(os.environ['SWITCH_ROOT'])\n"
+        "subscription = bool(os.environ.get('CLAUDE_CODE_OAUTH_TOKEN'))\n"
+        "if '--no-session-persistence' in sys.argv:\n"
+        "    if subscription and (root / 'limited').exists():\n"
+        "        print(json.dumps({'type':'rate_limit_event','rate_limit_info':{\n"
+        "            'status':'rejected','rateLimitType':'five_hour','resetsAt':int(time.time())+3600}}))\n"
+        "        sys.exit(1)\n"
+        "    sys.exit(0)\n"
+        "identifier = next((arg.split('=',1)[1] for arg in sys.argv if arg.startswith('--resume=')), None)\n"
+        "if identifier is None: identifier = sys.argv[sys.argv.index('--session-id')+1]\n"
+        "identity = session_registry.ProcessIdentity.of(os.getpid())\n"
+        "assert identity is not None\n"
+        "with (root / 'calls').open('a', encoding='utf-8') as log:\n"
+        "    log.write(json.dumps({'id':identifier,'subscription':subscription,\n"
+        "        'process':session_registry.process_payload(identity)})+'\\n')\n"
+        "if subscription:\n"
+        "    (root / 'limited').write_text('limited')\n"
+        "    stopfailure_notifier.main(json.dumps({'session_id':identifier,'error':'rate_limit'}))\n"
+        "    if os.environ['HOLD_LIMIT'] == '1': time.sleep(20)\n"
+        "    sys.exit(1)\n"
+        "(root / 'continued').write_text(identifier)\n",
+        encoding="utf-8",
+    )
+    binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+    env = {
+        **host_environ(),
+        **os.environ,
+        "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+        "SWITCH_ROOT": str(tmp_path),
+        "HOLD_LIMIT": str(int(hold)),
+        _pl_env.PROCESS_LOOP_SESSION_ENV: "1",
+    }
+    finished: list[bool] = []
+    assert _pl_session.run_process_session(
+        argparse.Namespace(resume=None),
+        tmp_path,
+        "元の仕事",
+        env,
+        orchestrator="claude",
+        model="sonnet",
+        effort="high",
+        resume_pending=False,
+        on_session_finished=finished.append,
+    )
+    calls = [json.loads(line) for line in (tmp_path / "calls").read_text(encoding="utf-8").splitlines()]
+    assert len(calls) == 2
+    assert [call["subscription"] for call in calls] == [True, False]
+    assert calls[0]["id"] == calls[1]["id"] == (tmp_path / "continued").read_text(encoding="utf-8")
+    assert not session_registry.ProcessIdentity(**calls[0]["process"]).exists()
+    assert finished == [True]
+    info = session_registry.resolve(calls[1]["id"]).resume_info
+    assert info is not None and info.claude_connection == "payg" and info.turn_seq == 2
 
 
 class TestProcessLoopPromptAndEnv:
@@ -439,7 +586,8 @@ class TestProcessLoopPromptAndEnv:
             tmp_path,
         )
 
-        assert selected == ("claude", "sonnet", "high", None)
+        assert selected[:4] == ("claude", "sonnet", "high", None)
+        assert selected[4] is not None and selected[4].kind == "inherit"
         assert [call[0] for call in calls] == ["codex", "claude"]
 
     def test_all_unstartable_candidates_use_abnormal_exit(

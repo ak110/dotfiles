@@ -148,7 +148,8 @@ atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonn
 ## 接続の使い分け
 
 `agents_server`の委譲先と、`atk wi process-loop`・all-reposの統括担当（オーケストレーター）は、Claude・Codexのそれぞれで次の3種類の接続を役割ごとの順序で使い分けられる。
-ユーザーが直接起動するClaude Code・Codex、組み込みのサブエージェント、`atk run-skill`、`atk commit`は対象外である。
+`atk run-skill`のClaude起動も統括担当の使用順を使う。
+ユーザーが直接起動するClaude Code・Codex、組み込みのサブエージェント、Codexの`atk run-skill`、`atk commit`は対象外である。
 
 | 種別 | 接続 | 用意するもの |
 | --- | --- | --- |
@@ -172,15 +173,18 @@ atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonn
 - エンジンごとに4キーのどれも設定しない場合は、親の環境変数と通常の認証（ClaudeはAPIキー・Bedrock・Vertexなど、Codexは`config.toml`の通常設定）をそのまま使い、別の接続へ切り替えない。
 - いずれかのキーを設定し、ある役割で使える接続が1つも無い場合は、原因と設定方法を表示して起動を止める。
 - envファイルが空・不在・不正な場合は、その種別を除いて対象パスと修正方法を表示する。
-- [APIクレジット](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers)はClaude APIとAgent SDKを対象とし、Claude Codeを対象外とする。そのため`claude` CLIで起動するClaudeの統括担当（`atk wi process-loop`）は`credits`を候補から除く。Agent SDKで起動する`agents_server`のClaudeは`credits`を使う。
+- [APIクレジット](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers)はClaude APIとAgent SDKを対象とし、Claude Codeを対象外とする。そのため`claude` CLIで起動するClaudeの統括担当（`atk wi process-loop`・`atk run-skill`）は`credits`を候補から除く。Agent SDKで起動する`agents_server`のClaudeは`credits`を使う。
 - Codexの`subscription`はprovider `openai`をChatGPTログインで使う場合だけを指す。APIキーでログインしている場合は`subscription`を候補から除いて診断を表示するため、`codex_payg_provider`（クレジットなら`codex_credits_provider`）へ`openai`を設定する。
 
 委譲先は`subscription`の利用上限、`credits`の残高不足、`payg`の不受理で、同じ会話のまま使用順の次の接続へ移る。
 解除を待つ設定（`claude_usage_limit_wait`・`codex_usage_limit_wait`）の対象の利用上限では、移らずに解除を待つ。
 `credits`の残高不足を観測してから1時間は、新しい委譲先で`credits`を使用順の最後へ回す。
-統括担当は起動時に使用順の先頭の使える接続を選び、会話の途中では切り替えない。
+Claudeの統括担当は、起動時と再開時に利用可能な接続を確かめ、本作業にも同じ接続を使う。
+利用上限で中断した場合は旧CLIの終了を確認してから、同じ会話を次の利用可能な接続で再開する。
+代替がない場合の待機には既存の待機設定を使う。
+Codexの統括担当は起動時に使用順の先頭の使える接続を選び、会話の途中では切り替えない。
 
-継続・再開する会話は選んだ接続を使い続ける。
+継続・再開する会話は、Claude統括の利用上限時の切替を除き、選んだ接続を使い続ける。
 使用順からその種別を外した場合は、次の継続で使用順の先頭の使える接続へ移り、外した種別へは戻らない。
 利用上限で`subscription`から移ったClaudeの委譲先は、使用順で`subscription`が前にあれば、解除予定時刻の後の最初の継続で`subscription`へ戻る。
 Codexの会話は移った接続を使い続け、新しい会話だけを使用順の先頭から評価する。
@@ -425,17 +429,19 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 ```
 
 終了コード0は報告用UWIの保存（upstreamがあればpush）まで成功したこと、1は報告の保存に失敗したこと、124は時間上限に達したことを示す。
-ログは`atk config get state_dir`が示すディレクトリの`run-skill/`に30日保存される。
+ログは`atk config get state_dir`が示すディレクトリの`run-skill/`に保存される。
+未完了の実行入力とログは保持し、完了済みの記録とログは最終更新から30日を過ぎた実行開始時に回収する。
 破壊的な操作など判断が要る対応は実施されずにUWIとして届き、回答すると次回の実行がその対応を実施する。
 オプションは`atk run-skill --help`で確認する。
 
 報告の保存に失敗した場合（終了コード1）は、標準エラーが示すログを開いて次の手順で保存を完了する。
 
 1. ログの「実行識別子」を控える
-2. 対象リポジトリのディレクトリで、実行した会話を再開する
-    - Claude Code: `AGENT_TOOLKIT_RUN_SKILL_ID=<実行識別子> claude --resume <ログのClaudeのセッション識別子>`
-    - Codex: `AGENT_TOOLKIT_RUN_SKILL_ID=<実行識別子> codex resume <ログのthread_id>`
-3. 再開した会話で「今回の報告用UWIの保存を完了して」と依頼し、保存完了の報告を確認する
+2. `RUN_ID`を控えた実行識別子へ置き換え、`atk run-skill --resume RUN_ID`を実行する
+3. 元の会話・実行ID・報告先・batchの準備範囲・残時間を引き継いだ続行が、報告の同期を確認して成功することを確認する
+
+再開時はスキル名・対象・cwd・引数・時間上限を変更しない。
+完了済みの実行を再度指定しても、会話の再起動は行わない。
 
 再開できない場合は、新しい会話でログの所在・実行識別子・スキル名を伝えて調査と復旧を依頼する。
 

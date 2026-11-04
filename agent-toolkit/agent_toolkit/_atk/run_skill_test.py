@@ -31,7 +31,7 @@ from agent_toolkit import atk, hook
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._atk.wi import frontmatter
-from agent_toolkit._common import claude_usage_limit, process_tree
+from agent_toolkit._common import claude_usage_limit, process_tree, session_review
 from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 
@@ -49,6 +49,9 @@ record = {{
     "kind": kind,
     "argv": [name, *args],
     "cwd": os.getcwd(),
+    "pid": os.getpid(),
+    "connection": "subscription" if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") else
+                  "payg" if os.environ.get("ANTHROPIC_API_KEY") else "inherit",
     "env": {{key: os.environ.get(key) for key in (
         "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
         "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
@@ -61,6 +64,11 @@ record = {{
 }}
 (record_dir / f"{{time.time_ns()}}-{{uuid.uuid4().hex}}.json").write_text(json.dumps(record), encoding="utf-8")
 if probe:
+    if os.environ.get("FAKE_CONNECTION_LIMIT") and record["connection"] == "subscription" and (record_dir / "limited").exists():
+        print(json.dumps({{"type": "rate_limit_event", "rate_limit_info": {{
+            "status": "rejected", "rateLimitType": "five_hour", "resetsAt": int(time.time()) + 3600
+        }}}}))
+        sys.exit(1)
     counter = record_dir / "probe-count"
     count = int(counter.read_text()) if counter.exists() else 0
     counter.write_text(str(count + 1))
@@ -77,6 +85,15 @@ if probe:
         sys.exit(1)
     print(json.dumps({{"type": "result", "is_error": False}}))
     sys.exit(0)
+if os.environ.get("FAKE_RECORD_THREAD") and name == "codex":
+    print(json.dumps({{"type": "thread.started", "thread_id": "01234567-89ab-cdef-0123-456789abcdef"}}), flush=True)
+if os.environ.get("FAKE_CONNECTION_LIMIT") and record["connection"] == "subscription":
+    (record_dir / "limited").write_text("limited", encoding="utf-8")
+    print(json.dumps({{"type": "rate_limit_event", "rate_limit_info": {{
+        "status": "rejected", "rateLimitType": "five_hour", "resetsAt": int(time.time()) + 3600
+    }}}}), flush=True)
+    time.sleep(30)
+    sys.exit(1)
 if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
     notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
     mode = os.environ.get("FAKE_REPORT_MODE", "saved")
@@ -1037,3 +1054,144 @@ def test_process_modes_reach_public_runner_with_original_arguments(engine_env, m
     expected_skill = "agent-toolkit:process-wi" + (" " + mode if mode else "")
     expected = f'<atk-auto source="run-skill" kind="goal">\nスキル`{expected_skill}`を完遂する\n</atk-auto>'
     assert record["argv"][-1] == ("/goal " if engine == "claude" else "") + expected
+
+
+def test_public_runner_stops_limited_cli_and_switches_same_conversation(
+    engine_env: _Env,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """上限通知後も終了しない実CLIを停止し、別接続で同じ会話と報告実行を続行する。"""
+    api = tmp_path / "payg.env"
+    api.write_text("ANTHROPIC_API_KEY=payg-test-key\n", encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription-test")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(api))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription,payg")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "always")
+    monkeypatch.setenv("FAKE_CONNECTION_LIMIT", "1")
+    code, _out, error = _run(["--target-repo", str(engine_env.repo), "--timeout", "5", "switch-skill"], capsys)
+    assert code == 0, error
+    sessions = _records(engine_env, "session")
+    assert [record["connection"] for record in sessions] == ["subscription", "payg"]
+    first, resumed = (record["argv"] for record in sessions)
+    assert resumed[resumed.index("--resume") + 1] == first[first.index("--session-id") + 1]
+    assert len({record["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"] for record in sessions}) == 1
+    assert not psutil.pid_exists(sessions[0]["pid"])
+    assert [record["connection"] for record in _records(engine_env, "probe")] == ["subscription", "subscription", "payg"]
+
+
+@pytest.mark.parametrize("batch", [False, True])
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_public_resume_restores_execution_after_launcher_process_exit(
+    engine_env: _Env,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    host_environ: typing.Callable[[], dict[str, str]],
+    engine: str,
+    batch: bool,
+) -> None:
+    """異なる起動元プロセスの公開resumeが、会話・入力・報告実行と残予算を保持する。"""
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/high")
+    environment = {
+        **host_environ(),
+        **os.environ,
+        "FAKE_SESSION_EXIT": "7",
+        "FAKE_REPORT_MODE": "missing",
+        "FAKE_RECORD_THREAD": "1",
+    }
+    if engine == "claude":
+        api = tmp_path / "payg.env"
+        api.write_text("ANTHROPIC_API_KEY=payg-test-key\n", encoding="utf-8")
+        environment.update(
+            {
+                "CLAUDE_CODE_OAUTH_TOKEN": "subscription-test",
+                "AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE": str(api),
+                "AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS": "subscription,payg",
+            }
+        )
+    launcher = [sys.executable, "-c", "import sys; from agent_toolkit import atk; atk.main(sys.argv[1:])", "run-skill"]
+    options = ["--target-repo", str(engine_env.repo), "--timeout", "10", "--args", "元の追加指示", "resume-skill"]
+    if batch:
+        transcript = tmp_path / "resume-source.jsonl"
+        transcript.write_text(
+            json.dumps({"type": "user", "message": {"role": "user", "content": "元の要求"}}) + "\n", encoding="utf-8"
+        )
+        session_review.record(
+            {
+                "hook_event_name": "SessionStart",
+                "session_id": "resume-source",
+                "transcript_path": str(transcript),
+                "cwd": str(engine_env.repo),
+            },
+            host="claude",
+            target_repo="https://example.com/team/repo",
+        )
+        options = ["--timeout", "10", "--args", "batch auto 元の追加指示", "agent-toolkit:review-session"]
+    first = subprocess.run(
+        [*launcher, *options],
+        env=environment,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=20,
+        check=False,
+    )
+    assert first.returncode == 7, first.stderr
+    original = _records(engine_env, "session")[0]
+    run_id = original["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"]
+    record_path = engine_env.state / "agent-toolkit/run-skill/runs" / f"{run_id}.json"
+    before = json.loads(record_path.read_text(encoding="utf-8"))
+    old_time = time.time() - 35 * 24 * 60 * 60
+    for path in (record_path, pathlib.Path(before["log_path"])):
+        os.utime(path, (old_time, old_time))
+    environment.update(
+        FAKE_SESSION_EXIT="0", FAKE_REPORT_MODE="saved", FAKE_PROBE_REJECT_COUNT="2" if engine == "claude" else "0"
+    )
+    ready = tmp_path / "resumed-ready"
+    release = tmp_path / "resume-release"
+    environment.update(FAKE_SESSION_STARTED_FILE=str(ready), FAKE_SESSION_HOLD_FILE=str(release))
+    with process_tree.process_scope(
+        [*launcher, "--resume", run_id],
+        env=environment,
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    ) as resumed:
+        try:
+            deadline = time.monotonic() + 15
+            while not ready.exists():
+                assert resumed.poll() is None, resumed.communicate()
+                assert time.monotonic() < deadline, "再開したCLIが実行状態へ到達しない"
+                time.sleep(0.01)
+            active = json.loads(record_path.read_text(encoding="utf-8"))
+            assert active["status"] == "running" and active["remaining"] == before["remaining"]
+            assert active["input"] == before["input"]
+            release.touch()
+            _out, error = resumed.communicate(timeout=20)
+            assert resumed.returncode == 0, error
+        finally:
+            release.touch()
+    sessions = _records(engine_env, "session")
+    assert len(sessions) == 2
+    assert json.loads(sessions[1]["env"]["AGENT_TOOLKIT_SESSION_START_INPUT"]) == json.loads(
+        original["env"]["AGENT_TOOLKIT_SESSION_START_INPUT"]
+    )
+    assert sessions[1]["cwd"] == original["cwd"]
+    if engine == "claude":
+        argv = sessions[1]["argv"]
+        assert argv[argv.index("--resume") + 1] == original["argv"][original["argv"].index("--session-id") + 1]
+        assert sessions[1]["connection"] == "payg"
+    else:
+        assert sessions[1]["argv"][-2] == "01234567-89ab-cdef-0123-456789abcdef"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert record["status"] == "completed" and 0 < record["remaining"] < 10
+    if batch:
+        manifest = pathlib.Path(record["input"]["batch_manifest"])
+        value = session_review.read(manifest)
+        assert value["status"] == "completed"
+        assert [prepared["session_id"] for prepared in value["prepared"]] == ["resume-source"]
+        assert not session_review.pending()

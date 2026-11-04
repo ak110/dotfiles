@@ -271,7 +271,7 @@ def run_coordinator(
         )
         result_path.unlink(missing_ok=True)
         prompt = _session.build_process_loop_prompt()
-        engine, model, effort, codex_provider = _session.select_available_orchestrator(
+        engine, model, effort, codex_provider, claude_connection = _session.select_available_orchestrator(
             _session.resolve_orchestrator_specs(),
             env,
             cwd,
@@ -304,6 +304,7 @@ def run_coordinator(
             on_session_started=started,
             on_process_started=process_started,
             codex_provider=codex_provider,
+            claude_connection=claude_connection,
         )
         identifier = env.get(_env.PROCESS_LOOP_SESSION_ID_ENV)
         if identifier:

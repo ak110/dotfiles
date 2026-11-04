@@ -32,7 +32,7 @@ from agent_toolkit._agents_server.responses import (
 )
 from agent_toolkit._agents_server.session_errors import ActionableRuntimeError
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionResumeState, SessionState, has_uncollected_result
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import recorded_process, session_registry
 from agent_toolkit._common.next_action import ActionableError, next_action_line
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -368,7 +368,7 @@ class ManagerRegistry(responses.ManagerResponses):
         refused = [
             reason
             for executor in stopped
-            if (reason := await run_file_operation(owner_lost.stop_recorded_executor, executor)) is not None
+            if (reason := await run_file_operation(recorded_process.stop_recorded_executor, executor)) is not None
         ]
         if refused:
             raise ActionableError(
