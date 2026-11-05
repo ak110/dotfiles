@@ -19,15 +19,21 @@ runs:
       shell: pwsh
       working-directory: ${{ env.DOTFILES_DIR }}
       run: uv run --frozen --python 3.15 pytest -v -p no:cacheprovider bin/atk_launcher_test.py bin/update_dotfiles_launcher_test.py
-    - name: chezmoi 適用
-      shell: bash
-      run: |
-        set -euo pipefail
-        export PATH="$HOME/.local/bin:$PATH"
-        chezmoi init --source=~/dotfiles --apply
-    - name: dotfiles-post-apply の動作確認
+    - name: install.ps1から初回導入とバックアップを検証
       shell: pwsh
-      run: dotfiles-post-apply
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $existing = '" dotfiles CI: initial configuration' + [Environment]::NewLine
+        $target = Join-Path $env:USERPROFILE '.vimrc'
+        [IO.File]::WriteAllText($target, $existing, [Text.UTF8Encoding]::new($false))
+        & "$env:DOTFILES_DIR\install.ps1" -Mode full
+        $config = Get-Content (Join-Path $env:USERPROFILE '.config/agent-toolkit/config.json') -Raw | ConvertFrom-Json
+        if ($config.dotfiles_mode -ne 'full') { throw '導入モードが保存されていません。install.ps1のログを確認してください。' }
+        $backups = @(Get-ChildItem (Join-Path $env:USERPROFILE '.dotfiles-backup') -Filter '.vimrc' -Recurse -File |
+          Where-Object { [IO.File]::ReadAllText($_.FullName) -ceq $existing })
+        if ($backups.Count -eq 0) { throw '元の設定を復元できるバックアップがありません。install.ps1のログを確認してください。' }
+        $expected = Join-Path $env:DOTFILES_DIR '.chezmoi-source/dot_vimrc'
+        if ((Get-FileHash $target).Hash -ne (Get-FileHash $expected).Hash) { throw '.vimrcが適用されていません。chezmoiのログを確認してください。' }
     - name: 主要ファイルの存在確認
       shell: pwsh
       run: '& "$env:DOTFILES_DIR\scripts\ci_verify_windows.ps1"'

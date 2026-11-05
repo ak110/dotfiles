@@ -24,6 +24,10 @@ update:
 	mise exec -- prek autoupdate
 	$(MAKE) update-mise-locks
 	$(MAKE) update-actions
+	mise exec -- cargo update --manifest-path rust/claude-statusline/Cargo.toml
+	mise exec -- cargo fmt --manifest-path rust/claude-statusline/Cargo.toml --check
+	mise exec -- cargo clippy --manifest-path rust/claude-statusline/Cargo.toml --locked --all-targets --all-features -- -D warnings
+	mise exec -- cargo test --manifest-path rust/claude-statusline/Cargo.toml --locked
 	$(MAKE) test
 
 # リポジトリ用と配布用のmise lockfileを更新
