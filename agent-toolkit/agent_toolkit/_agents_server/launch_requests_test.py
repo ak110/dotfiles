@@ -630,9 +630,15 @@ async def test_start_input_rejection_points_to_owning_contract(
             shutil.copyfile(source / contract_relative, target)
     document = root / "share" / f"{role}.subagent.md"
     params = _observed_input_params(document.name, tmp_path)
-    missing_name = "担当種別" if role == "exec" else "target_repo"
+    missing_name = "担当種別" if role == "exec" else "引き継ぎ記録先"
     if defect == "missing":
         params.pop(missing_name)
+        if role == "repository-process":
+            # この役割の必須項目は記録先だけなので、自動補完も失敗した拒否を観測する。
+            def unavailable_handoff(*_args: object, **_kwargs: object) -> None:
+                return None
+
+            monkeypatch.setattr(launch_requests, "_default_handoff_path", unavailable_handoff)
     else:
         params["宣言外の項目"] = "補足"
     backend = TaskManager(start=AsyncMock())
