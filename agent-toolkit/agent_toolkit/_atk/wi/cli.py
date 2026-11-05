@@ -898,6 +898,12 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         help="UWIの回答状況で限定する。省略時は全ての回答状況を含める。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(grep, multiple=True)
+    grep.add_argument(
+        "--since",
+        type=datetime.date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="ファイル名の投入日が指定日以後のWIだけを検索する。投入日を持たない旧名は含めない。",
+    )
     _add_important_filter_arg(grep)
     _add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)

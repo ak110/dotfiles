@@ -8,6 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `notation-rules.md#「表記の一括置換」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「表記の一括置換」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `notation-rules.md#「日本語の表記ルール」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「日本語の表記ルール」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lint-relax-criteria.md#「緩和判断のフレーム」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/lint-relax-criteria.md#「緩和判断のフレーム」` |
@@ -19,6 +20,9 @@
 | チェッカーがない環境で自己点検する前 | `notation-checks.md`の「チェックの対象範囲」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-checks.md#「チェックの対象範囲」` |
 
 ## textlint指摘への修正方針
+
+指摘・エラーを受けたときは`agent-basics:bugfix`を起動し、原因分析と絞り込み型の類似見直しを行う。
+再発防止策の要否と初回検出の例外、記録の比例性は同スキルに従う。
 
 1対1の表記変更や、限られた候補から選べる反復表現の指摘については、`notation-rules.md`の「表記の一括置換」にある手順に従って候補を試し、変更した文をすべてレビューする。
 それ以外の指摘では、該当する文全体を自然な日本語へ書き直す。対象にはドキュメントのほか、コード内のコメント、docstring、表示メッセージ、プロンプトへの注入文なども含む。

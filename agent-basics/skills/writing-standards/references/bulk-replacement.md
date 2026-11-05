@@ -9,9 +9,13 @@
 
 ## 名指し参照の読込方法
 
+指摘・エラーを受けたときは`agent-basics:bugfix`を起動し、原因分析と絞り込み型の類似見直しを行う。
+再発防止策の要否と初回検出の例外、記録の比例性は同スキルに従う。
+
 名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `file-editing.md#「ファイル更新時の編集ツールの前提」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/file-editing.md#「ファイル更新時の編集ツールの前提」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/textlint-violations.md#「文の書き直しの委譲と検収」` |

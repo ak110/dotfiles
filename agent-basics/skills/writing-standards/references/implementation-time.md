@@ -9,6 +9,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-time.md#「実装方針の選択」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-time.md#「実装方針の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `encoding.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/encoding.md` |
@@ -174,6 +175,9 @@ except json.JSONDecodeError:
 - 既存コードに設けられている意図的な制約（型定義の制約、アクセス制限、lint設定、不変条件のアサーションなど）は新しいコードでも尊重して維持し、変更する場合は事前にその妥当性を確認する。
 
 ## lintと機械チェック
+
+指摘・エラーを受けたときは`agent-basics:bugfix`を起動し、原因分析と絞り込み型の類似見直しを行う。
+再発防止策の要否と初回検出の例外、記録の比例性は同スキルに従う。
 
 - lintの指摘への対応方針は、`quality-principles.md`の「QCDと3段判定」におけるQCDの原則（品質を第一に守り、その制約下でコストと納期を比較する）に従って決定する。本節をlint対応に関する基本方針の基準とし、警告の抑制（サプレス）を採用するかどうかもエージェント自身が技術的判断として確定する。
 - 正当な指摘はコード自体を修正して解消し、意図的な設計に該当して修正すべきでない指摘に限り、必要な最小範囲で警告を抑制する。理由が自明でない場合は抑制コメントに理由を明記する。コードの振る舞いを変えずに単にlint警告を回避するためだけの小手先の書き換えは避ける。新しく抑制を追加するときは、既存の抑制コメントの有無にとらわれず、個別に妥当性を判断する。

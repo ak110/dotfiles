@@ -8,6 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 類似見直しの検索と個別判定を依頼する前 | `similar-review.parent.md` | 判断 | `read:agent-toolkit:*/share/similar-review.parent.md` |
 | 入力、操作区分、phaseの対象、返却値を確かめる時 | `exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
 | `CI修正担当`として原因を調べる前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-recording.md#「失効の根拠」` | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「失効の根拠」` |
@@ -21,6 +22,10 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/history-rewrite.md#「修正方法の選択」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「修正方法の選択」` |
 
 ## 担当種別ごとの修正
+
+ユーザー介入、セルフレビューと他者の指摘、lint・自動テスト・CI等のエラーは`agent-basics:bugfix`による原因分析と類似見直しの対象とする。
+類似見直しの検索と個別判定は`similar-review.parent.md`の専用担当を起動して受け取り、原因分析と採否は自身が所有する。
+初回の仕組みによる検出だけ再発防止策を省略できる条件と、反復・ユーザー介入時の検討はbugfixに従う。
 
 レビュー修正やCI修正においても、渡された是正項目とファイル内の他箇所の整合性については、`agent-toolkit:delegation`の`references/base-contract.md`「入力の適格性と追送」に従う。
 会話圧縮の後にレビュー修正を再開する場合は、担当種別の切り替えの有無にかかわらず、`agent-toolkit:/share/exec-review-responses.md`「安全な修正」「公開可能性の検証」を再読する。
