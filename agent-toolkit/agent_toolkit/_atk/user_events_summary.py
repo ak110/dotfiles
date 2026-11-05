@@ -1,4 +1,4 @@
-"""`atk run-script session-review-evidence`の`--user-events`を保存した後に、発話ごとの記録位置と冒頭を表示する。
+"""`atk run-script session-review-evidence`の保存後に、発話・一致ごとの記録位置と冒頭を表示する。
 
 逐語引用の出所として保存ファイルをWI投入担当へ渡す呼び出し元は、引用する発話を選ぶために記録位置と本文の冒頭だけを要する。
 保存先を開いて長いJSON行の末尾から`record`と`line`を取り出す追加の呼び出しを不要にするため、保存後の表示でこれらを返す。
@@ -38,9 +38,36 @@ def summarize_saved_user_events(path: pathlib.Path) -> None:
         print(line)
 
 
-def _head(text: str) -> str:
+def summarize_saved_matches(path: pathlib.Path) -> None:
+    """検索一致とツール呼び出しを、保存ファイルの順序で選択できる一覧にする。"""
+    count = 0
+    empty = False
+    with path.open(encoding="utf-8", newline="") as stream:
+        for raw in stream:
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if event.get("kind") in ("summary", "tool-call-summary") and event.get("count") == 0:
+                empty = True
+            if event.get("kind") not in ("match", "tool-call"):
+                continue
+            fields = "".join(f" {key}={event[key]}" for key in ("role", "tool") if key in event)
+            text = event.get("text")
+            print(
+                f"一致: record={event.get('record')} line={event.get('line')} kind={event['kind']}{fields} "
+                f"{_head(text if isinstance(text, str) else '', length=160)}"
+            )
+            count += 1
+    if not count and empty:
+        print("一致: 0件")
+
+
+def _head(text: str, *, length: int = _HEAD_LENGTH) -> str:
     """改行を空白へ置き換えた先頭の文字列を返し、切り詰めた場合は末尾へ`…`を付ける。"""
     flattened = " ".join(text.splitlines())
-    if len(flattened) <= _HEAD_LENGTH:
+    if len(flattened) <= length:
         return flattened
-    return flattened[:_HEAD_LENGTH] + "…"
+    return flattened[:length] + "…"

@@ -363,6 +363,11 @@ def main(
     if not _output_capture_active and _auto_saves_output(args):
         output_as_file = _output_as_file_call(args)
         after_save = output_as_file.after_save if output_as_file is not None else None
+        if args.command == "run-script" and args.script_name == "session-review-evidence":
+            flags = {argument.split("=", 1)[0] for argument in args.script_args}
+            if flags & {"--grep", "--tool-calls"} and not flags & {"--summary-only", "--fixed-string"}:
+                # 一覧を付ける照会でも、保存する量の境界は通常の判定を使う。
+                after_save = _user_events_summary.summarize_saved_matches
         show_fields: list[str] | None = None
         if args.command == "wi" and args.wi_subcommand == "show" and not args.summary_only and args.section is None:
             show_fields = []
