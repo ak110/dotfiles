@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import pytest
 
-from agent_toolkit._agents_server import result_contract, state
+from agent_toolkit._agents_server import launch_requests, result_contract, state
 from agent_toolkit._common import task_documents
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._testing.task_document_contract import validate_frontmatter
@@ -83,3 +84,37 @@ def test_share_task_documents_have_no_bare_return_line_examples() -> None:
             if bare_label_line.match(line):
                 offending.append(f"{path.name}:{lineno}: {line}")
     assert not offending
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_repository_process_public_request_accepts_single_and_group(tmp_path: Path, grouped: bool) -> None:
+    """同じ役割の公開入力生成が、重い単一対象と軽い対象群を欠落なく引き渡す。"""
+    target = {
+        "target_repo": "example.test/team/one",
+        "worktree": str(tmp_path / "one"),
+        "candidate_file": str(tmp_path / "candidate.jsonl"),
+        "readiness": "ready",
+        "lane_limit": "1",
+        "ownership_record": str(tmp_path / "ownership.json"),
+        "ownership_token": "test-token",
+        "lane_session_id": "test-lane-session",
+    }
+    params = {"引き継ぎ記録先": str(tmp_path / "handoff.md")}
+    source = tmp_path / "repositories.json"
+    if grouped:
+        targets = [target, {**target, "target_repo": "example.test/team/two", "worktree": str(tmp_path / "two")}]
+        source.write_text(json.dumps(targets), encoding="utf-8")
+        params["repositories"] = str(source)
+    else:
+        params.update(target)
+    role = rules_context.SHARE_DIR / "repository-process.subagent.md"
+    whole = tmp_path / "work-contract.md"
+    whole.write_text("目的: 対象別の公開入力を保持する\n", encoding="utf-8")
+    model, prompt, mode, _handoff = launch_requests.task_document_request(str(role), params, whole_contract_path=str(whole))
+    assert (model, mode) == ("orchestrate", "delegate")
+    if grouped:
+        assert f"repositories: {source}" in prompt
+        assert "target_repo: example.test/team/one" not in prompt
+    else:
+        assert "target_repo: example.test/team/one" in prompt
+        assert "candidate_file:" in prompt and "ownership_token: test-token" in prompt

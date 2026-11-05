@@ -40,8 +40,14 @@
 担当の振分け前に、`agent-toolkit/rules/01-agent.md`「行動と手順の目的」に従い、今回の対象集合で委譲が得る成果と直接処理との差を点検する。
 WorktreeCreate/WorktreeRemoveは対象設定を読む既存atk操作で実行し、常駐が準備したworktreeを利用する。
 
-今回の集合JSONの`repositories`が1件なら、`lane_limit`によらず統括自身が直接処理する。
-対象が2件以上の場合は、候補数Nに対する`lane_limit=floor((N+9)/10)`が2以上の対象を「リポジトリ担当の起動と受領」に従って委譲し、それ以外を統括自身が処理する。
+初回の担当起動前に、取得済みの候補本文・件数・readiness・previousの残工程から、今回進められる処理負荷が最大と見込まれる1対象を選び、統括自身が直接担当する。
+変更規模、検証・公開、再開時の残作業を比べ、差を判断できなければ候補数、それも同じなら受領集合の順で選ぶ。
+選定理由は既存の引き継ぎ記録へ短く残し、詳細な実装調査や専用の負荷スコアは作らない。
+対象が1件なら上限によらず直接処理し、全対象の`lane_limit`が1以下なら従来の集約を保って統括が全件を処理する。
+上限2以上の対象がある複数対象では、直接担当を除く1以下の対象群を全件まとめて1つのリポジトリ担当へ渡し、残る2以上の対象は対象ごとに並行委譲する。
+軽い残対象がある場合だけまとめ担当を起動し、1件の場合もその担当へ渡す。
+`lane_limit`は対象内の並列度と軽い対象の区分に限定して使い、負荷最大の対象は上限によらず直接担当に選べる。
+統括の直接担当、軽い群のまとめ担当、重い対象の個別担当を並行して進める。
 直接処理では`lane_limit`が2以上なら[通常のレーン処理](lanes.md)、1以下なら[単一レーン処理](single-lane.md)へ接続する。
 両経路とも受領済み候補・readiness・対象worktree・対象別`lane_session_id`を使い、起動したレーン担当とwriterを対象別の`writer_sessions`へ記録する。
 対象worktreeごとに計画・実行レビュー・公開を分ける。
@@ -60,11 +66,12 @@ WorktreeCreate/WorktreeRemoveは対象設定を読む既存atk操作で実行し
 
 | 引数 | 値 |
 | --- | --- |
-| `cwd` | 対象の準備済み`worktree` |
+| `cwd` | 単一対象の準備済み`worktree`。まとめ担当ではグループ内の準備済みworktreeの1つ |
 | `subagent_md_path` | `repository-process` |
 | `extra_params` | 次の名前付き入力だけ |
 
-- `target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`、`ownership_record`、`ownership_token`、`lane_session_id`: 集合JSONの対象要素の同名の値
+- 単一対象では`target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`、`ownership_record`、`ownership_token`、`lane_session_id`に集合JSONの対象要素の同名の値を渡す
+- まとめ担当では、割り当てる対象要素をそのまま順序付きJSON配列へ保存し、単一対象の各フィールドの代わりにその絶対パスを`repositories`へ渡す
 - `previous`、`common_dir`、`registered_worktree`: 対象要素に値がある場合だけ渡す
 - `追加指示`: `instruct`のうち対象に関係する部分がある場合だけ渡す
 - `引き継ぎ記録先`: 指定の省略や継続時の扱いは`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う
@@ -72,14 +79,14 @@ WorktreeCreate/WorktreeRemoveは対象設定を読む既存atk操作で実行し
 ### 受領
 
 実行結果は引数なしの`atk agents wait`で受け取り、本書「リポジトリ担当の返却契約」の固定形式を満たしていることを確認する。
-返却の`状態`、`残工程`、`writer_sessions`を「結果と終了」の`result_file`へ転記する。
-続行不能の返却は`blocked`として記録する。
+返却の各`対象`を割当集合と突き合わせ、重複・欠落なく各対象の`状態`、`残工程`、`writer_sessions`を「結果と終了」の`result_file`へ保存して読戻す。
+続行不能はその対象だけ`blocked`として理由と再開先を残し、他対象の結果は保つ。
 
 <!-- return-contract:repository-process:start -->
 <!-- 生成元: share/repository-process.subagent.md「出力」。手動編集しない。 -->
 ### リポジトリ担当の返却契約
 
-次の形式のみを返す。
+各対象について次の形式のみを返す。5行の組を入力順に繰り返し、結果とwriterは対象別に保持する。
 今回進められる作業と処理済み部分の公開・CI検収が完了した場合は`状態`を`completed`とする。
 残りが、必要なユーザー判断を終えた有効な未来の冷却期限、未回答UWIへの依存、外部の先行項目への依存で正当に先送りされている場合も含む。
 WI自体の完成とは区別し、先送りした項目・残る条件・解除条件・再開先を`残工程`へ記す。
@@ -88,6 +95,7 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 
 ```text
 状態: <completed|incomplete|pending>
+対象: <target_repo>
 残工程: <残る工程と再開先。無ければ「なし」>
 writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列>
 結果: <公開結果、CI、処理したAWIと採否の要約>

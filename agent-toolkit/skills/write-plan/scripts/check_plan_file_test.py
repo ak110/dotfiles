@@ -1981,11 +1981,10 @@ def test_legacy_wi_names_are_rejected_on_creation(repo: tuple[pathlib.Path, str]
 
 
 def _origin_plan(repo: pathlib.Path, private_notes: pathlib.Path, *, source: bool) -> pathlib.Path:
-    """由来をWI本文と比べる計画一式とWIファイルを配置し、計画ファイル（メイン）のパスを返す。"""
-    main_content = _plan_fixture.human_main(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
+    """由来の構文確認に使う現行計画とWIファイルを配置する。"""
+    main_content = _plan_fixture.current_plan(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_path = repo / "plan.md"
     main_path.write_text(main_content, encoding="utf-8")
-    (repo / "plan.detail.md").write_text(_plan_fixture.human_detail(), encoding="utf-8")
     frontmatter = ["---", "status: inbox"]
     if source:
         frontmatter.append(f"{_plan_format.PLAN_WI_SOURCE_KEY}: agent-toolkit:review-session")
@@ -1998,28 +1997,29 @@ def _origin_plan(repo: pathlib.Path, private_notes: pathlib.Path, *, source: boo
     return main_path
 
 
-def test_origin_mismatch_is_warning_on_read(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
-    """保存済み計画の読み取りでは由来の不一致を移行warningに留める。"""
+def test_source_does_not_imply_origin_mismatch_on_read(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
+    """WIのsourceから要求単位の由来を推定せず読み取る。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     main_path = _origin_plan(work_dir, private_notes, source=True)
     errors, warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes)
     assert not errors, errors
-    assert any("WI本文の由来と一致しない" in warning for warning in warnings), warnings
+    assert not warnings, warnings
 
 
-def test_origin_mismatch_is_error_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
-    """新規作成では同じ不一致をエラーとして報告する。"""
+def test_source_does_not_imply_origin_mismatch_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
+    """新規作成もsourceから由来の意味を判定しない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     main_path = _origin_plan(work_dir, private_notes, source=True)
-    errors, _warnings = check_plan_file.check(
+    errors, warnings = check_plan_file.check(
         main_path,
         work_dir,
         private_notes=private_notes,
         reject_migration_warnings=True,
     )
-    assert any("WI本文の由来と一致しない" in error for error in errors), errors
+    assert not errors, errors
+    assert not warnings, warnings
 
 
 def _assert_creation_check_passes_silently(
@@ -2172,7 +2172,7 @@ def test_bug_plan_without_bug_file_reference_rejected_without_related_wi(
 
 
 def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
-    """WI本文との比較を省略した事実は助言に留め、新規作成を遮断しない。"""
+    """根拠が記入済みなら由来の構文確認はWI本文を参照しない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "absent"
     main_content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
@@ -2185,7 +2185,7 @@ def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], 
         reject_migration_warnings=True,
     )
     assert not errors, errors
-    assert any("由来をWI本文と比べられなかった" in warning for warning in warnings), warnings
+    assert not warnings, warnings
 
 
 @pytest.mark.parametrize("missing_queue", [True, False], ids=["missing-queue", "missing-wi"])
@@ -2196,14 +2196,15 @@ def test_cli_origin_skip_reports_one_next_action(
     *,
     missing_queue: bool,
 ) -> None:
-    """由来をWI本文と比べられなかった警告から原因の解消と解消不能時の報告へ進める。"""
+    """根拠を省略した行の適用範囲を取得できない場合は回復手順を示す。"""
     work_dir, _base = repo
     queue = work_dir / "queue"
     if not missing_queue:
         queue.mkdir()
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
     path = work_dir / "origin.md"
-    path.write_text(_plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES), encoding="utf-8")
+    content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
+    path.write_text(content.replace(_plan_fixture.WI_ACTION_ROW, _AGENT_WI_ADOPTED_ROW, 1), encoding="utf-8")
     assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == 0
     lines = capsys.readouterr().err.splitlines()
     assert any(line.startswith("[warn]") and "由来をWI本文と比べられなかった" in line for line in lines)
@@ -2264,7 +2265,7 @@ def test_cli_origin_read_failure_reports_recovery(
     """WI本文の取得に失敗しても省略を助言に保ち、取得エラーの解消を案内する。"""
     work_dir, _base = repo
     queue = work_dir / "queue"
-    path = _bug_plan_without_bug_file(work_dir, queue, related_wi=True)
+    path = _agent_wi_plan(work_dir, queue, "## 反映内容と反映先\n\n対象。\n")
     source = queue / "inbox" / _plan_fixture.WI_FILES[0][0]
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
     original = pathlib.Path.read_text

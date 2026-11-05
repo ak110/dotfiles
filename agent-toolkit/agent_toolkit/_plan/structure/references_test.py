@@ -366,13 +366,13 @@ def test_main_structure_rejects_empty_verification_command() -> None:
     assert all("検証コマンドの欄には実行するコマンドを書く" in error for error in matched)
 
 
-def test_origin_check_reports_notice_for_agent_sourced_wi(tmp_path: pathlib.Path) -> None:
-    """`source`を持ち機械判定できる明示由来が無いWI本文を移行の指摘として報告する。"""
+def test_origin_check_does_not_infer_origin_from_source(tmp_path: pathlib.Path) -> None:
+    """`source`を持つWIでも要求単位の由来は構文確認だけで受理する。"""
     _write_wi(tmp_path, _wi_source(source=True))
     errors, notices, skips = _origin_check(tmp_path)
     assert not errors, errors
     assert not skips, skips
-    assert any(_plan_fixture.WI_FILES[0][0] in notice for notice in notices), notices
+    assert not notices, notices
 
 
 def test_origin_check_is_inactive_without_collectors(tmp_path: pathlib.Path) -> None:

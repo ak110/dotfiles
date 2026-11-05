@@ -8,8 +8,6 @@ import re
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan.structure.constants import (
-    _FRONTMATTER_DELIMITER,
-    _FRONTMATTER_SOURCE_PATTERN,
     _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS,
     PLAN_ACCEPTANCE_H3,
     PLAN_ACCEPTANCE_TABLE_HEADER,
@@ -31,6 +29,7 @@ from agent_toolkit._plan.structure.constants import (
     PLAN_H2_CURRENT_PERMANENCE,
     PLAN_H2_CURRENT_PROGRESS,
     PLAN_H2_CURRENT_VERIFICATION,
+    PLAN_H2_DESIGN,
     PLAN_H2_HISTORY,
     PLAN_H2_IMPLEMENTATION,
     PLAN_H2_LEGACY_AGENT_JUDGMENT,
@@ -83,11 +82,9 @@ from agent_toolkit._plan.structure.constants import (
     PLAN_USER_INSTRUCTION_ORIGIN,
     PLAN_VERIFICATION_TABLE_HEADER,
     PLAN_VERIFICATION_TABLE_ROWS,
-    PLAN_WI_MACHINE_DETECTABLE_ORIGIN_HEADINGS,
     PLAN_WI_ORIGIN_ALIASES,
     PLAN_WI_ORIGIN_PATTERN,
     PLAN_WI_SCOPE_HEADING,
-    PLAN_WI_SOURCE_KEY,
     PLAN_WORK_TYPES,
     canonical_h2_name,
     plan_human_review_path_is_absolute,
@@ -728,8 +725,7 @@ def _check_action_section(
 ) -> list[str]:
     """`## 実施内容`の固定表と新旧の除外・保持表が基準を満たすか確かめる。
 
-    `origin_notices`と`origin_skips`を渡した場合だけ、WI由来行をWI本文と比べて確かめる。
-    WI本文との比較結果は呼び出し元の警告として扱うため、戻り値の違反一覧へ混ぜない。
+    根拠の記入に関する移行案内とWI参照の取得省略は、呼び出し元へ別々に渡す。
     """
     if action_index is None:
         return []
@@ -792,69 +788,6 @@ def _check_action_section(
     return errors
 
 
-def _has_frontmatter_source(content: str) -> bool:
-    """WIファイルのfrontmatterが値を伴う第1階層の`source`を持つかを返す。
-
-    キーの有無だけを判定するため、YAMLパーサーへ依存せず行頭一致で確定する。
-    本モジュールはhookとPEP 723スクリプトから読み込まれるため、依存を広げない選択とする。
-    """
-    lines = content.removeprefix("\ufeff").splitlines()
-    if not lines or lines[0].strip() != _FRONTMATTER_DELIMITER:
-        return False
-    for line in lines[1:]:
-        if line.strip() == _FRONTMATTER_DELIMITER:
-            return False
-        if _FRONTMATTER_SOURCE_PATTERN.match(line):
-            return True
-    return False
-
-
-def _has_machine_detectable_human_origin(content: str) -> bool:
-    """機械判定できる明示由来を持つかを返す。
-
-    `PLAN_WI_MACHINE_DETECTABLE_ORIGIN_HEADINGS`の各見出しを、末尾のH2に限るものは末尾の厳密なH2として、
-    それ以外は本文のいずれかのH2として探す。
-    """
-    h2_texts = [heading.text for heading in extract_headings(content) if heading.level == 2]
-    for text, trailing_only in PLAN_WI_MACHINE_DETECTABLE_ORIGIN_HEADINGS.items():
-        if (h2_texts[-1:] == [text]) if trailing_only else (text in h2_texts):
-            return True
-    return False
-
-
-def _collect_origin_notices(
-    name: str,
-    origin_notices: list[str],
-    origin_skips: list[str],
-    private_notes: pathlib.Path | str | None,
-    home: pathlib.Path | str | None,
-) -> None:
-    """`人間由来のWI`行をWI本文と比べて確かめ、移行の指摘と省略の事実を積む。
-
-    WIファイルを特定できない場合とprivate-notesのルートが実在しない場合はその行とWI本文との比較だけを省略し、
-    他の判定結果を変えない。
-    """
-    root = _plan_file.private_notes_root(private_notes, home=home)
-    try:
-        if not root.is_dir():
-            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。private-notesが実在しない: {root}")
-            return
-        source = _plan_file.find_wi_source(name, root)
-        if source is None:
-            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。WIファイルを特定できない: {name}")
-            return
-        content = source.read_text(encoding="utf-8")
-    except OSError as error:
-        origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来をWI本文と比べられなかった。WI本文を取得できない: {name}: {error}")
-        return
-    if _has_frontmatter_source(content) and not _has_machine_detectable_human_origin(content):
-        origin_notices.append(
-            f"`## {PLAN_H2_ACTION}`の`{PLAN_HUMAN_WI_ORIGIN}`がWI本文の由来と一致しない: {name}。"
-            f"WI本文は`{PLAN_WI_SOURCE_KEY}`を持ち機械判定できる明示由来が無いため、"
-            f"`{PLAN_AGENT_WI_ORIGIN}`とするか、機械判定できない明示由来を根拠とする場合は`[対話由来]`注記を付ける"
-        )
-
-
 def _wi_has_scope(
     name: str,
     origin_skips: list[str],
@@ -901,9 +834,8 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
 ) -> list[str]:
     """新規書式の実施内容4列表が基準を満たすか確かめる。
 
-    `人間由来のWI`と記載した行は、`origin_notices`と`origin_skips`を渡した場合だけ
-    WIファイルのfrontmatterと本文に一致するか確かめる。`[対話由来]`注記のある行は機械判定できない明示由来を
-    根拠とするためWI本文とは比較しない。`エージェント由来のWI`は採否にかかわらず根拠を必要とし、
+    由来の区分とWI参照の構文を確かめる。内容の由来と承認範囲はレビューで検収する。
+    `[対話由来]`注記は既存書式として受理する。`エージェント由来のWI`は採否にかかわらず根拠を必要とし、
     採用行の根拠が`-`の場合は`origin_notices`を渡した場合だけ移行の指摘を積む。
     `origin_skips`も渡した場合はWI本文を読み、非空の`## 反映内容と反映先`または`## 適用範囲`を持てば指摘を積まない。
     改名前の由来は読み取り互換で受理する。
@@ -956,13 +888,6 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
                     f"`## {PLAN_H2_ACTION}`のWI由来が`関連WI`に無い: {wi_origin_match.group('name')}。"
                     "計画メタ情報の`関連WI`へ加えるか、由来のファイル名を直す"
                 )
-            elif (
-                origin_notices is not None
-                and origin_skips is not None
-                and wi_origin_kind == PLAN_HUMAN_WI_ORIGIN
-                and wi_origin_match.group("note") is None
-            ):
-                _collect_origin_notices(wi_origin_match.group("name"), origin_notices, origin_skips, private_notes, home)
         elif review_origin is None:
             errors.append(
                 f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}、計画レビュー第nラウンド、または"
@@ -1448,8 +1373,8 @@ def check_plan_main_structure(
 
     固定H2順は`PLAN_MAIN_H2_ORDER`とし、計画メタ情報は`関連WI`を含む5項目とする。
     改訂前の二ファイル形式は提示素材と計画ファイル（詳細）参照を読み取り互換で受理する。
-    `origin_notices`と`origin_skips`を渡した場合だけ、実施内容表のWI由来行をWI本文と比べて確かめ、
-    移行を促す指摘とWI本文との比較を省略した事実をそれぞれへ積む。WI本文との比較結果は違反一覧へ含めない。
+    `origin_notices`は根拠の記入に関する移行案内を受け取り、`origin_skips`は参照取得の省略を受け取る。
+    WI本文を参照するのは、採用行で根拠を省略できる適用範囲の記載を確かめる場合である。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
@@ -1555,7 +1480,7 @@ def _check_nonempty_section(body: list[tuple[int, str]], headings: list[PlanHead
     if index is None:
         return []
     start, end = heading_subtree_range(headings, index)
-    if any(line.strip() for _lineno, line in lines_within(body, start, end)):
+    if any(line.strip() and re.fullmatch(r"\s*<!--.*-->\s*", line) is None for _lineno, line in lines_within(body, start, end)):
         return []
     return [f"`## {heading_name}`を空にしない"]
 
@@ -1587,7 +1512,10 @@ def check_plan_single_file_structure(
         expected_metadata = (*expected_metadata, PLAN_METADATA_BUG_FIELD)
     work_type, metadata_errors = _check_metadata_block(content, expected_fields=expected_metadata)
     errors.extend(metadata_errors)
-    errors.extend(_check_fixed_h2_layout(headings, list(PLAN_SINGLE_FILE_H2_ORDER)))
+    expected_h2 = list(PLAN_SINGLE_FILE_H2_ORDER)
+    if find_heading_index(headings, 2, PLAN_H2_DESIGN) is not None:
+        expected_h2.insert(expected_h2.index(PLAN_H2_REQUIREMENTS) + 1, PLAN_H2_DESIGN)
+    errors.extend(_check_fixed_h2_layout(headings, expected_h2))
 
     overview_index = find_heading_index(headings, 2, PLAN_H2_OVERVIEW)
     if overview_index is not None:
@@ -1614,6 +1542,7 @@ def check_plan_single_file_structure(
         errors.append(f"`## {PLAN_H2_ACTION}`には{list(PLAN_HUMAN_ACTION_TABLE_HEADER)}の4列表が必要")
 
     errors.extend(_check_nonempty_section(body, headings, PLAN_H2_REQUIREMENTS))
+    errors.extend(_check_nonempty_section(body, headings, PLAN_H2_DESIGN))
 
     verification_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_VERIFICATION)
     verification_tables = []
@@ -1735,6 +1664,7 @@ def check_plan_single_file_structure(
     allowed_h3_parents = {
         PLAN_H2_OVERVIEW,
         PLAN_H2_REQUIREMENTS,
+        PLAN_H2_DESIGN,
         PLAN_H2_CURRENT_PERMANENCE,
         PLAN_H2_CURRENT_HISTORY,
         PLAN_H2_HISTORY,

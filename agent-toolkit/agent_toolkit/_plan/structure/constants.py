@@ -34,6 +34,7 @@ PLAN_H2_COMPLETION: str = "完了条件"
 PLAN_H2_PROGRESS: str = "進捗ログ（実行時）"
 
 PLAN_H2_REQUIREMENTS: str = "要件・外部仕様"
+PLAN_H2_DESIGN: str = "設計・実装方針"
 PLAN_H2_CURRENT_PERMANENCE: str = "恒久化・リファクタリング"
 PLAN_H2_CURRENT_HISTORY: str = "変更履歴"
 PLAN_H2_CURRENT_VERIFICATION: str = "検証"
@@ -232,10 +233,10 @@ PLAN_LEGACY_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザ�
 PLAN_HUMAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "由来", "採否", "根拠")
 PLAN_HUMAN_JUDGMENT_TABLE_HEADER: tuple[str, ...] = ("実施内容", "観測事象", "ユーザー要求との関係", "具体化した内容", "根拠")
 PLAN_HUMAN_WI_ORIGIN: str = "人間由来のWI"
-"""WI本文の`source`と機械判定できる明示由来から確定する由来の区分。"""
+"""実施内容の要求単位が人間に由来すると記録する区分。内容の妥当性はレビューで検収する。"""
 
 PLAN_AGENT_WI_ORIGIN: str = "エージェント由来のWI"
-"""WI本文が機械判定できる明示由来を持たない場合の由来の区分。"""
+"""実施内容の要求単位がエージェントに由来すると記録する区分。"""
 
 PLAN_LEGACY_HUMAN_FEEDBACK_ORIGIN: str = "人間由来のフィードバック"
 """読み取り互換で受理する改名前の人間由来の区分。"""
@@ -267,7 +268,7 @@ PLAN_WI_ORIGIN_PATTERN = re.compile(
     "(?P<kind>" + "|".join(re.escape(alias) for alias in _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS) + ") "
     r"\((?P<name>[^/\\()\s]+\.md)\)(?P<note> \[対話由来\])?"
 )
-"""WI由来の`由来`欄。機械判定できない明示由来には`[対話由来]`注記を付ける。"""
+"""WI由来の`由来`欄。既存の`[対話由来]`注記も読み取る。"""
 
 PLAN_WI_SOURCE_KEY: str = "source"
 """WIファイルのfrontmatterで投入元スキルを表すキー。"""
@@ -278,20 +279,9 @@ PLAN_WI_USER_COMMENT_HEADING: str = "ユーザーコメント"
 PLAN_WI_ANSWER_HEADING: str = "回答"
 """UWIファイルでユーザーの回答を記録する見出し。"""
 
-PLAN_WI_MACHINE_DETECTABLE_ORIGIN_HEADINGS: dict[str, bool] = {
-    PLAN_WI_USER_COMMENT_HEADING: True,
-    PLAN_WI_ANSWER_HEADING: False,
-}
-"""計画構造の判定が`source`を持つWIの本文から人間由来を読み取るH2見出しと、本文末尾のH2に限るかの対応。
-
-計画書式の`[対話由来]`注記の条文はこの集合を列挙し、`structure_contract_invariant_test.py`が条文と集合の一致を確かめる。
-"""
-
 PLAN_WI_SCOPE_HEADING: str = "適用範囲"
 """通常AWIファイルで誤りの機構が成立する条件を記録する見出し。"""
 
-_FRONTMATTER_DELIMITER: str = "---"
-_FRONTMATTER_SOURCE_PATTERN = re.compile(rf"^{PLAN_WI_SOURCE_KEY}:[ \t]*\S")
 PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>\S.*?\.tsv)のround (?P<round>[1-9][0-9]*)(?:。(?P<reason>.+))?$")
 
 

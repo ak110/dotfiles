@@ -358,11 +358,11 @@ def test_detail_structure_permanence_rejects_free_h3() -> None:
     assert any("固定見出し以外のH3" in error for error in errors), errors
 
 
-def test_origin_check_skips_when_queue_repository_is_absent(tmp_path: pathlib.Path) -> None:
-    """private-notesのルートが実在しない環境ではWI本文との比較だけを省略する。"""
+def test_origin_check_needs_no_queue_repository(tmp_path: pathlib.Path) -> None:
+    """由来の構文確認はprivate-notesの実在に依存しない。"""
     absent = tmp_path / "absent"
     errors, notices, skips = _origin_check(absent)
     assert not errors, errors
     assert not notices, notices
-    assert any(str(absent) in skip for skip in skips), skips
+    assert not skips, skips
     assert errors == plan_sections.check_plan_main_structure(_HUMAN_MAIN_CONTENT)[1]
