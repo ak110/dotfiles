@@ -30,7 +30,8 @@ runs:
         $target = Join-Path $env:USERPROFILE '.vimrc'
         [IO.File]::WriteAllText($target, $existing, [Text.UTF8Encoding]::new($false))
         & "$env:DOTFILES_DIR\install.ps1" -Mode full
-        $config = Get-Content (Join-Path $env:USERPROFILE '.config/agent-toolkit/config.json') -Raw | ConvertFrom-Json
+        # 導入モードはplatformdirsのuser_config_dirと同じ領域（Windowsでは%LOCALAPPDATA%）へ保存される。
+        $config = Get-Content (Join-Path $env:LOCALAPPDATA 'agent-toolkit\config.json') -Raw | ConvertFrom-Json
         if ($config.dotfiles_mode -ne 'full') { throw '導入モードが保存されていません。install.ps1のログを確認してください。' }
         $backups = @(Get-ChildItem (Join-Path $env:USERPROFILE '.dotfiles-backup') -Filter '.vimrc' -Recurse -File |
           Where-Object { [IO.File]::ReadAllText($_.FullName) -ceq $existing })

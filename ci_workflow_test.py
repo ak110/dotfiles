@@ -937,6 +937,10 @@ def test_windows_install_checks_public_script_and_preserved_configuration(workfl
     script = str(installation["run"])
     assert '& "$env:DOTFILES_DIR\\install.ps1" -Mode full' in script
     assert script.index("WriteAllText") < script.index("install.ps1") < script.index("$config =")
+    # setup-uvのシム配置を通常のユーザー配置へ戻してから導入し、後処理まで到達させる。
+    assert script.index("$env:UV_TOOL_BIN_DIR = Join-Path $env:USERPROFILE '.local\\bin'") < script.index("install.ps1")
+    # 導入モードはWindowsのuser_config_dir（%LOCALAPPDATA%）から読む。
+    assert "Join-Path $env:LOCALAPPDATA 'agent-toolkit\\config.json'" in script
     assert ".dotfiles-backup" in script and "-ceq $existing" in script
     assert "Get-FileHash $target" in script and "Get-FileHash $expected" in script
     assert not any(step.get("name") in {"chezmoi 適用", "dotfiles-post-apply の動作確認"} for step in steps)
