@@ -147,6 +147,11 @@ session scopeを全テストへ適用する案は、先行テストの遅延処�
 
 laneの統合検証と全てのpytest起動は、pyfltrのホスト共有実行APIへ接続する。
 pytestのbasetempは実行単位で分離し、controllerとworkerの終了後に正常・失敗・中断のどの場合も回収する。
+xdist 3.8の失敗上限では、controllerの停止理由を`_testing/xdist_stop.py`がworkerの`session.shouldstop`へ渡す。
+通常完了のキュー排出と早期停止を区別し、lookahead待機中の停止でも未開始の試験を実行しない。
+上流[pytest-xdist #1395](https://github.com/pytest-dev/pytest-xdist/pull/1395)と同じ境界へ限定し、強制終了や実行中の試験の中断は行わない。
+共通pytest pluginから登録するため、両プロジェクトの直接pytestとpyfltrで同じ適応が働き、worker回収後の既存の実行枠解放へ接続する。
+修正を含む安定版へ更新し、`xdist_stop_test.py`の早期停止・正常完了と実行枠の回収を確認した時点で局所適応を撤去する。
 終了時に回収する子孫からは、同じプロセスのmultiprocessingのresource_trackerを除く。trackerはpytestの終了で自ら終わり、先に停止すると終了時の資源解放がtrackerを再起動し、未解放の資源を報告する警告を出力するためである。
 明示basetempとJUnit・traceなどの保存証拠、serveとwatcherはそれぞれの所有主体が必要な寿命まで保持する。
 資源所有クラスは文脈マネージャーで獲得直後から解放を保証し、再入可能なcloseと起動途中の所有移譲を扱う。

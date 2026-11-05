@@ -31,7 +31,7 @@ from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import git_repository as _git_repository
-from agent_toolkit._testing import isolation, resource_diagnostics, session_evidence_support
+from agent_toolkit._testing import isolation, resource_diagnostics, session_evidence_support, xdist_stop
 from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.wi_mutations_support import _AGENT_ENVIRONMENT_VARIABLES
@@ -154,6 +154,8 @@ def pytest_configure(config: pytest.Config) -> None:
     保存先そのものを検証するテストは、明示した環境の辞書か`delenv`で上書きする。
     """
     _validate_import_root(config)
+    if not config.pluginmanager.is_registered(xdist_stop):
+        config.pluginmanager.register(xdist_stop, "dotfiles-xdist-stop")
     # 不正な分割指定は、xdistのworkerが収集を始める前に1回だけ報告する。
     if (shard := config.getoption("test_shard")) is not None:
         _parse_test_shard(shard)

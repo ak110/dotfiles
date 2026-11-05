@@ -117,6 +117,7 @@ def test_pytest_cleanup_preserves_failure_and_reports_cause_path(
     callbacks: list[Callable[[], None]] = []
     config = types.SimpleNamespace(
         rootpath=tmp_path,
+        pluginmanager=pytest.PytestPluginManager(),
         option=types.SimpleNamespace(basetemp=None),
         getoption=lambda *_args, **_kwargs: None,
         add_cleanup=callbacks.append,
