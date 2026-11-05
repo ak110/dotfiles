@@ -126,6 +126,12 @@ Python 3.15のpytestは直下の`pytest (3.15)`と、toolkitを3分割した`pyt
 - `plugin-version`ジョブ: `develop`へのpushで、push前の公開済みcommitとagent-toolkit・agent-basicsの配布物の差分と版数を比べる検証
 - `browser-e2e`ジョブ: 実際のブラウザーを用いたE2Eテスト（ローカル環境では`make test-browser`で実行可能）
 
+Linux上のOS判定値の模擬は、`agent-basics:writing-standards/references/testing.md`「プラットフォーム分岐の検証」に従って実Windowsの保証と分ける。
+共有モジュールを変更するfixtureの影響、ランチャーの引数・待機・終了状態の受け渡し、パスAPIの戻り値と実体同一性、起動時の依存解決・環境作成は、ローカルでも先に前提を反証できる。
+実WindowsのAPIによる変換や権限・ファイル共有の副作用は実OSの観測と対応付け、準備済み開発環境の成功で配布環境の初回起動を保証しない。
+現行CIでは候補branchへのpushによるWindows検証も選べる。必要性、公開操作の認可、既存結果との重複費用を確認し、追加CIの要否を変更ごとに判定する。
+未観測の境界は検証記録へ残し、タイムアウトの内部段階が未確定なら特定原因へ帰属させない。
+
 通常branchのpushではdevelop、PRではPRのbaseとの共通祖先から変更領域を判定する。
 `common-ci-owner`の選択結果と理由を基に、Rust・fixtureは`rust-lint`、Python・serveは`browser-e2e`を実行する。
 文書だけの変更では両検査を省略できる。

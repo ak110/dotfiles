@@ -20,6 +20,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `judgment-details.md#「検収手段の到達可能性」` | 判断 | `section:agent-basics:*/skills/review-standards/references/judgment-details.md#「検収手段の到達可能性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 調査の停滞や修正による症状・回避処理の増加に対処する前 | `../../bugfix/references/root-cause-scenarios.md`の「同一症状の修正反復」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「同一症状の修正反復」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」`、`../../bugfix/references/root-cause-remediation.md#「類似見直し」`、`../../bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/review-only-criteria.md#「指摘と採否」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「指摘と採否」` |
@@ -101,6 +102,8 @@
 同じ論点で修正が繰り返されている場合は、指摘内容と現物を突き合わせて、ユーザーの意図と要件への影響を確認する。ユーザー自身の判断によって意図や変更範囲が分かれる場合は、その判断が確定してから変更する。
 
 違反した規定と発生条件の組み合わせが同一である指摘（文言、対象ファイル、個別箇所の違いは問わない）を再度受け取ったときは、その場しのぎの局所修正を止め、`agent-basics:bugfix`を起動する。同スキルの初動手順と`references/root-cause-scenarios.md`「反復した指摘の原因判定」へ引き渡す。
+調査が停滞した場合や、修正によって別の症状・回避処理が増えた場合も、同資料「同一症状の修正反復」に従って調べ方を見直す。
+取得済みの診断・失敗記録と棄却した前提を再利用し、難航時の報告後も認可内の技術調査を続ける。
 共通判定には`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」も適用する。
 `agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」を併用する。
 比較の根拠と処置の採否を応答に記録する。一般的な設計案の比較は`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」に従い、現在の設計を維持する場合はその理由を明記する。欠陥を解消し、かつ新たな問題を引き起こさない案を立証できないときは、検討した案と理由を委譲元へ報告する。
@@ -117,6 +120,7 @@
 ## 方式見直しと再レビュー
 
 第3ラウンド以降も未解決の指摘が残る場合は、全ラウンドの指摘と応答を読み直す。局所的な修正に走る前に、`agent-basics:bugfix`の「反復した指摘の原因判定」と`agent-basics:writing-standards`の「問題と手段の比例性」に基づいて、現在の方式の維持、縮小、置換を比較検討する。維持を選ぶ場合は方式そのものに起因しない独立した欠陥である根拠を、縮小や置換を選ぶ場合は認可の範囲内である根拠を残す。方式を置き換えた直後の再レビューでは、作業開始時点からの全差分を対象とする。
+停滞や症状の転化を認めた場合は、第3ラウンドを待たず`agent-basics:bugfix/references/root-cause-scenarios.md`「同一症状の修正反復」を適用する。
 次のいずれかに該当する修正は、再レビューを実施する。
 
 - 根拠の取得を待っている状態

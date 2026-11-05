@@ -25,9 +25,11 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、`
 
 調査の深度や重大度にかかわらず、原因分析の記録と確定には`references/analysis-records.md`の確認完了基準を適用する。
 
-期待結果、実際の症状、発生条件を自分の言葉で短く整理し、修正コードを書く前に対象の公開操作で再現する。
+期待結果、実際の症状、発生条件と取得済み証拠を整理し、原因を絞る不足情報を最小の負担で得る調査を選ぶ。
+診断の精読、コード・差分・正常系との比較、公式仕様の確認、再現、追加計測を症状に応じて使い分ける。
+明確なlint診断、保存済みのテスト失敗、実行を伴わないレビュー指摘は既存証拠を先に使い、挙動や発生条件が不明なら再現・計測を優先する。
 対策の前提となる入力や外部挙動は、生成・変換・観測・消費の対応を先に確かめる。コードや合成入力で説明できた範囲と、実入力から確認できた範囲を分けてから結論を確定する。
-再現と修正後の同操作による確認、未再現・解消済み・文書の誤りの扱いは`references/root-cause-analysis.md`「直接的原因と事象時点の確定」に従う。
+原因仮説の検証と修正後の解消確認、未再現・解消済み・文書の誤りの扱いは`references/root-cause-analysis.md`「直接的原因と事象時点の確定」に従う。
 修正や他担当への引き継ぎを行う前に、次の順序で判断する。詳細な定義は、読込表の判断段階ごとの資料に従う。
 
 | 判断 | 確定すること | 必要な結果 |
@@ -59,7 +61,7 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、`
 | 類似見直しの範囲・観点を定め、是正対象と予防対象を調べる前 | `references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` | |
 | 対策と直接影響範囲、処置の階層を確定する前 | `references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` | |
 | 再発防止策の候補・採否・有効性と、類似見直しを含む処置の完了を判断する前 | `references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` | |
-| 同じ指摘や症状が反復した時 | `references/root-cause-scenarios.md`の「反復した指摘の原因判定」「同一症状の修正反復」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」「同一症状の修正反復」` | |
+| 同じ指摘や症状が反復した時、調査が停滞した時、修正で別の症状や回避処理が増えた時 | `references/root-cause-scenarios.md`の「反復した指摘の原因判定」「同一症状の修正反復」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」「同一症状の修正反復」` | |
 | テストの失敗を調べる時 | `references/root-cause-scenarios.md`の「テストの原因調査」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「テストの原因調査」` | |
 | テストの失敗を調べる時 | `references/root-cause-prevention.md`の「再発防止としてのテスト」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止としてのテスト」` | |
 | 所要の増大や不要仕事を調べる時 | `references/root-cause-scenarios.md`の「所要の原因調査」「反復する加工の問題」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「所要の原因調査」「反復する加工の問題」` | |
