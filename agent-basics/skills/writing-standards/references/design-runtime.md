@@ -6,6 +6,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 状態や業務ルールに関わる排他・トランザクションの単位を導く前 | `design-time.md`の「状態と業務ルールの条件」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-time.md#「状態と業務ルールの条件」` |
 | 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-prevention.md`の「再発防止策」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策」` |
 | 本文の参照基準を適用する前 | `implementation-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time.md` |
 | 本文の参照基準を適用する前 | `testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md` |
@@ -14,6 +15,9 @@
 ## 並行処理・排他制御の設計観点
 
 ロック、排他制御、並行処理を伴う機能を設計する場合は、実装に着手する前に以下の事項を確定する。
+
+状態や業務ルールを持つ変更では、`design-time.md`「状態と業務ルールの条件」で対応付けた、必ず成り立たせる条件に関わる状態と確認・変更操作から、排他・トランザクションの適用単位を導く。
+結果整合でよい状態は別単位へ分けて後続処理で整合させる案も比較し、データ量や変更の競合で1単位にまとめにくい場合は複数単位の変更を調整する方式も比較する。
 
 - 排他制御の適用単位（プロセス単位かスレッド単位か）を明確にし、ロックを保持したまま人間の入力待ちや長時間の処理を行わないこと
 - 並行性能: ロック待ちの寄与、保護する関係とキー、排他粒度、接続プールの容量と保持時間、fsync・保存・通信・計算の配置を比較する。順序や排他単位の変更では整合性・耐久性と、部分失敗・孤立データ・再試行・同時更新を保つ
