@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import os
 import pathlib
+import shlex
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -22,14 +24,15 @@ import asyncio
 import os
 import pathlib
 import sys
-sys.path.insert(0, os.environ['CODEX_PEER_LIBEXEC'])
-import codex_launcher
+import types
+from pytools import codex_launcher
 
 peer = os.environ['CODEX_PEER_HELPER']
 binary = os.environ['CODEX_PEER_BINARY']
 real_create = asyncio.create_subprocess_exec
 real_run = codex_launcher.common.run_subprocess
 real_exec = os.execv
+real_native_run = codex_launcher.process_tree.run_with_timeout
 
 async def create(program, *arguments, **kwargs):
     if str(program) == binary:
@@ -42,14 +45,22 @@ def run(command, **kwargs):
     return real_run(command, **kwargs)
 
 def execute(program, arguments):
+    if os.environ.get('CODEX_PEER_WINDOWS') == '1':
+        raise AssertionError('Windowsの非対話呼出にexecvを使用した')
     if str(program) == binary:
         return real_exec(sys.executable, [sys.executable, peer, *arguments[1:]])
     return real_exec(program, arguments)
+
+def native_run(command, **kwargs):
+    if str(command[0]) == binary:
+        return real_native_run([sys.executable, peer, *command[1:]], **kwargs)
+    return real_native_run(command, **kwargs)
 
 asyncio.create_subprocess_exec = create
 codex_launcher.common.run_subprocess = run
 codex_launcher.setup_codex_cli.find_runtime_launcher = lambda **_kwargs: pathlib.Path(binary)
 os.execv = execute
+codex_launcher.process_tree.run_with_timeout = native_run
 class Terminal:
     def isatty(self): return True
 sys.stdin = Terminal()
@@ -65,8 +76,46 @@ if os.environ['CODEX_PEER_MODE'] == 'partial':
                 (self.home / 'metadata-observed').touch()
     codex_launcher.RecoveryBridge._generation = observed_generation
 
+if os.environ.get('CODEX_PEER_WINDOWS') == '1':
+    codex_launcher.sys = types.SimpleNamespace(**(vars(sys) | {'platform': 'win32'}))
 sys.exit(codex_launcher.main())
 """
+
+
+def test_public_wrapper_uses_installed_runtime_without_environment_setup(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """設定取得の標準入出力と終了状態を保ち、起動時のuv依存導入を行わない。"""
+    runtime = tmp_path / "runtime.py"
+    runtime.write_text(
+        "import json,sys; print(json.dumps({'args':sys.argv[1:],'stdin':sys.stdin.read()})); sys.exit(7)",
+        encoding="utf-8",
+    )
+    command = tmp_path / ("dotfiles-codex.cmd" if sys.platform == "win32" else "dotfiles-codex")
+    if sys.platform == "win32":
+        command.write_bytes(f'@"{sys.executable}" "{runtime}" %*\r\n'.encode("cp932"))
+    else:
+        command.write_text(
+            f'#!/bin/sh\nexec {shlex.quote(sys.executable)} {shlex.quote(str(runtime))} "$@"\n', encoding="utf-8"
+        )
+        command.chmod(0o755)
+    root = pathlib.Path(__file__).resolve().parent.parent
+    wrapper = root / "bin" / ("codex.cmd" if sys.platform == "win32" else "codex")
+    environment = host_environ()
+    environment.update(
+        PATH=str(tmp_path) + os.pathsep + environment.get("PATH", ""),
+        UV_OFFLINE="1",
+        UV_PROJECT_ENVIRONMENT=str(tmp_path / "unused-environment"),
+        UV_CACHE_DIR=str(tmp_path / "unused-cache"),
+    )
+    arguments = ["mcp", "get", "claude", "--json"]
+    result = process_tree.run_with_timeout(
+        [str(wrapper), *arguments], input="input\n", capture_output=True, encoding="utf-8", env=environment, timeout=20
+    )
+    assert result.returncode == 7, result.stderr
+    assert json.loads(result.stdout) == {"args": arguments, "stdin": "input\n"}
+    assert not (tmp_path / "unused-environment").exists()
+    assert not (tmp_path / "unused-cache").exists()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -76,8 +125,9 @@ class _Peer:
     runner: pathlib.Path
     environment: dict[str, str]
 
-    async def run(self, arguments: list[str], *, mode: str, actors: int = 1) -> tuple[int, str, str]:
+    async def run(self, arguments: list[str], *, mode: str, actors: int = 1, windows: bool = False) -> tuple[int, str, str]:
         environment = dict(self.environment, CODEX_PEER_MODE=mode, CODEX_PEER_ACTORS=str(actors))
+        environment["CODEX_PEER_WINDOWS"] = "1" if windows else "0"
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             str(self.runner),
@@ -115,8 +165,7 @@ def _peer(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) ->
         CODEX_PEER_ROOT=str(root),
         CODEX_HOME=str(root),
         CODEX_PEER_BINARY=str(tmp_path / "codex-peer"),
-        CODEX_PEER_HELPER=str(pathlib.Path(__file__).with_name("_codex_test_peer.py")),
-        CODEX_PEER_LIBEXEC=str(pathlib.Path(__file__).parent),
+        CODEX_PEER_HELPER=str(pathlib.Path(__file__).with_name("codex_test_helpers.py")),
         DOTFILES_CODEX_RECOVERY_TIMEOUT_SECONDS="3",
         HOME=str(tmp_path / "home"),
         USERPROFILE=str(tmp_path / "home"),
@@ -216,11 +265,12 @@ async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> N
     assert all(record["starts"] == 2 for record in peer.records())
 
 
+@pytest.mark.parametrize("windows", [False, True])
 @pytest.mark.asyncio
-async def test_noninteractive_arguments_and_exit_status_pass_through(peer: _Peer) -> None:
+async def test_noninteractive_arguments_and_exit_status_pass_through(peer: _Peer, windows: bool) -> None:
     """専用App Serverを使う既存CLIの引数・標準出力・終了状態を保持する。"""
     arguments = ["exec", "--json", "literal spaces ; $(not-executed) & %NAME%"]
-    code, stdout, stderr = await peer.run(arguments, mode="active")
+    code, stdout, stderr = await peer.run(arguments, mode="active", windows=windows)
     assert code == 7, stderr
     assert json.loads(stdout)["passthrough"] == arguments
     assert not (peer.root / "app-server-daemon" / "daemon.pid").exists()

@@ -196,6 +196,9 @@ def main(argv: list[str] | None = None) -> int:
         print("管理対象のCodexが見つからない。update-dotfilesでCodexを導入して再実行する", file=sys.stderr)
         return 1
     if not _interactive(arguments) or not sys.stdin.isatty():
+        if sys.platform == "win32":
+            # WindowsのCRT execvは空白を含むargvと子の終了状態を保持しない。
+            return process_tree.run_with_timeout([str(binary), *arguments]).returncode
         os.execv(str(binary), [str(binary), *arguments])
     try:
         timeout = float(os.environ.get("DOTFILES_CODEX_RECOVERY_TIMEOUT_SECONDS", "60"))

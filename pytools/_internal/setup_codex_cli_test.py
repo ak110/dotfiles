@@ -4,6 +4,7 @@ import contextlib
 import logging
 import os
 import subprocess
+import types
 import typing
 from collections.abc import Callable
 from pathlib import Path
@@ -24,9 +25,8 @@ def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     """ホーム・PATH・Codex用環境変数をtmp_path配下へ隔離する。"""
     original_which = setup_codex_cli.shutil.which
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(setup_codex_cli.sys, "platform", platform)
-    if platform == "win32" and os.name != "nt":
-        monkeypatch.setattr(prune_codex_packages, "_install_lock", lambda *args, **kwargs: contextlib.nullcontext())
+    # 配置の模擬OSだけを差し替え、実際の排他APIにはホストOSを使う。
+    monkeypatch.setattr(setup_codex_cli, "sys", types.SimpleNamespace(platform=platform))
     monkeypatch.setenv("PATH", str(tmp_path / "path"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))

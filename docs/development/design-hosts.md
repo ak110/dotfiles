@@ -47,7 +47,8 @@ Codexの検証器を無条件の合格条件にしないのは、同梱資料が
 
 ### Codexの起動管理とdaemon復旧
 
-通常TUIの起動管理は`libexec/codex_launcher.py`が所有し、`bin/codex`とWindowsのペアから起動する。
+通常TUIの起動管理は`pytools/codex_launcher.py`が所有し、`bin/codex`とWindowsのペアから導入済みの`dotfiles-codex`を起動する。
+Codexの起動中は依存関係を導入せず、post-applyと同じpytools環境を使う。
 公式standaloneの実行体は改変せず、Linuxの可視リンクとWindowsのPATH順を導入処理で調整する。
 Windows公式インストーラーの可視binはpackageのbinへのjunctionであるため、その中へwrapperを書き込まず既存dotfiles/binを優先する。
 実行時の`CODEX_HOME`は設定・認証・会話の保存先として保持し、導入した実行体の選択から分離する。
