@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# NOTE: 対応する Windows 版 → bin/codex.cmd
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+ROOT="$(cd "$(dirname "${SELF}")/.." && pwd)"
+exec uv run --frozen --project "${ROOT}" python "${ROOT}/libexec/codex_launcher.py" "$@"

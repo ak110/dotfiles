@@ -22,6 +22,19 @@ process-loopはCodexの承認方針とsandbox設定を引き継ぐ。
 Windowsでは親の監視ループをCtrl+Cで終了できる。
 自動で終了できない環境では、完了報告の後に`/exit`を入力して監視ループへ戻る。
 
+## daemon再起動後の作業継続
+
+dotfilesで導入した通常の`codex`、`codex-medium`、`codex-xhigh`は、管理daemonが再起動しても同じ端末・会話・作業ディレクトリで進行中の仕事を自動で続ける。
+特別な起動コマンドは不要で、通常終了・Ctrl+C・完了済みの仕事は自動で再実行しない。
+権限と承認の方針を保持し、再起動前の承認要求への応答を新しい要求へ転用しない。
+新しい承認や認証が必要な場合は、Codexの表示に従って操作する。
+
+`atk run-skill`とprocess-loopの非対話Codex、および`agents_server`の専用App Serverは、共有daemonとは独立した実行を継続する。
+再開した親の子孫は保存済みの委譲関係から復旧し、元の親へ結果を届ける。
+自動復旧が失敗した場合は表示された診断を確認し、`codex doctor`で状態を調べてから`codex resume`で元の会話を選ぶ。
+明示した`--remote`や`--no-daemon`の接続管理は、その指定に従う。
+Windowsで初めて起動管理を導入した後は、新しい端末を開いて更新されたPATHを使用する。
+
 ## プラグイン更新の反映
 
 Codex向けプラグインは`update-dotfiles`または`chezmoi apply`で更新する。
@@ -116,6 +129,7 @@ WindowsではPowerShell 7の利用を推奨する。
 Windows PowerShellでは、環境によって公式インストーラーが使う`Get-FileHash`を解決できず、導入に失敗する。
 
 `CODEX_HOME`を設定する場合は、インストーラーの実行前にそのディレクトリを作成しておく。
+実行時に`CODEX_HOME`で設定・認証・会話の保存先を切り替えても、導入済みのCodex本体を使用する。
 `CODEX_INSTALL_DIR`を設定すると、`codex`コマンドをそのディレクトリへ配置する。
 
 ### 完成済みパッケージの整理
