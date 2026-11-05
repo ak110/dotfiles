@@ -410,13 +410,15 @@ def _run_locked(
     )
     while True:
         output = _SessionOutput()
+
+        def completed(current: _SessionOutput = output) -> bool:
+            return current.exit_code == 0 and current.usage_limit is None and not getattr(args, "batch_manifest", None)
+
         with (
             writer.running(
                 remaining,
                 connection,
-                completed=lambda current=output: (
-                    current.exit_code == 0 and current.usage_limit is None and not getattr(args, "batch_manifest", None)
-                ),
+                completed=completed,
             ),
             contextlib.ExitStack() as resources,
         ):

@@ -219,9 +219,7 @@ def isolate_development_state(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     apply_development_state_isolation(tmp_path, monkeypatch, _isolated_path_value)
 
 
-def apply_development_state_isolation(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, isolated_path_value: str
-) -> None:
+def apply_development_state_isolation(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, path_value: str) -> None:
     """6つの次元の隔離を適用する。
 
     差し替えた環境変数はテストが起動する子プロセスへも継承される。実行環境のホーム・設定ディレクトリや
@@ -265,7 +263,7 @@ def apply_development_state_isolation(
         if name.startswith(CONFIG_OVERRIDE_ENVIRONMENT_PREFIX):
             monkeypatch.delenv(name)
     # CIにはエージェントCLIが無い。開発機でも同じ条件にし、偽の実装へ差し替えていないテストを開発機で失敗させる。
-    monkeypatch.setenv("PATH", isolated_path_value)
+    monkeypatch.setenv("PATH", path_value)
 
 
 def build_host_environ() -> dict[str, str]:

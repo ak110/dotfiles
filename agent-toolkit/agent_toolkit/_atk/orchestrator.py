@@ -218,7 +218,11 @@ def select_available_with_provider(
             if claude_limits:
                 # 同じClaude会話を保つ。接続候補をすべて評価した後だけ解除を待つ。
                 now = time.time()
-                candidate, usage_limit = min(claude_limits, key=lambda item: item[1].delay_seconds(now))
+
+                def delay_seconds(item: tuple[str, UsageLimitState], observed_at: float = now) -> float:
+                    return item[1].delay_seconds(observed_at)
+
+                candidate, usage_limit = min(claude_limits, key=delay_seconds)
                 _wait_for_usage_limit(candidate, usage_limit, context)
                 retry_claude = True
                 break

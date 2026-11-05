@@ -940,8 +940,6 @@ def test_usage_limit_outside_wait_policy_returns_failure(
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, monkeypatch, capsys, engine) -> None:
     """2会話の実prepareから偽ホスト・同期済み報告・範囲確定まで公開CLIで検証する。"""
-    from agent_toolkit._common import session_review  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     for name in ("one", "two"):
         transcript = tmp_path / f"{name}.jsonl"

@@ -23,8 +23,10 @@ def test_sweep_stale_shared_state_removes_expired_and_keeps_current(tmp_path: pa
     current = tmp_path / "agents-server" / "current"
     stale = tmp_path / "agents-server" / "stale"
     fresh = tmp_path / "agents-server" / "fresh"
+    uncollected = tmp_path / "agents-server" / "uncollected"
     _aged_file(current / "root.json", old)
-    _aged_file(stale / "results" / "child.json", old)
+    _aged_file(stale / "root.json", old)
+    _aged_file(uncollected / "results" / "child.json", old)
     _aged_file(fresh / "root.json", now)
     _aged_file(tmp_path / "agents-server" / "sessions" / "old.json", old)
     _aged_file(tmp_path / "agents-server" / "sessions" / "new.json", now)
@@ -42,6 +44,7 @@ def test_sweep_stale_shared_state_removes_expired_and_keeps_current(tmp_path: pa
 
     assert current.is_dir()
     assert not stale.exists()
+    assert (uncollected / "results" / "child.json").is_file()
     assert fresh.is_dir()
     assert not (tmp_path / "agents-server" / "sessions" / "old.json").exists()
     assert (tmp_path / "agents-server" / "sessions" / "new.json").is_file()
