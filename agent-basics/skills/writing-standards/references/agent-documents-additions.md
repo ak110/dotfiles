@@ -17,14 +17,15 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「規定の区分と標示」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「規定の区分と標示」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics.md#「置き場所と配送」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「置き場所と配送」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「再発防止策」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity.md`の「QとC・Dの区別」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-prevention.md`の「再発防止策」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md`の「類似見直し」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics.md#「条件と範囲の記述」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「条件と範囲の記述」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `investigation.md#「エージェント向け文書の技術的条文」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「エージェント向け文書の技術的条文」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-heuristics.md#「設計品質の劣化確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sub-agents.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%81%A8%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.subagent.md%60%E3%81%AE%E6%A7%8B%E6%88%90%E3%80%8D` | 判断 | `section:agent-basics:*/skills/writing-standards/references/sub-agents.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%81%A8%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.subagent.md%60%E3%81%AE%E6%A7%8B%E6%88%90%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「日本語の書き方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「日本語の書き方」` |
+| 類似見直しと再発防止の完了を判定する前 | `../../bugfix/references/root-cause-prevention.md`の「類似見直しと再発防止の完了」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` |
 
 ## 規範追記時の判定
 
@@ -41,8 +42,10 @@
 必要な対応を見逃す不利益と誤適用の継続費用を同じ比較に含め、必要な品質を保つ適用境界を採用前に確定する。
 この比較は同節の採否判断の中で行う。
 評価自体の負担を抑えるため、独立した審査工程や専用の計測を増やすことは避ける。
-品質（Q）に影響する問題への対処として規定を追加する場合は、`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」に従い、調査の深さや終了条件も同資料の重大度別の基準に合わせる。
-記述の詳しさは、`writing.md`「読み手別の追加注意点」のエージェント向け文書の項に従う。
+品質（Q）に影響する問題への対処として規定を追加する場合は、`agent-basics:bugfix/references/root-cause-severity.md`「QとC・Dの区別」に従い、調査の深さや終了条件も同資料の重大度別の基準に合わせる。
+規範案の起草と採否では、一般知識と固有の事実・硬い制約を区別する。
+一般知識は価値・観点・代表語や短いチェックリストで想起できるようにし、固有のパス・公開契約・認可条件は具体的に残す。
+詳しさの基準は、`writing.md`「読み手別の追加注意点」のエージェント向け文書の項に従う。
 
 成果物への記載を義務付ける条文を起草・改訂する場合は、その記載を読む主体と利用目的を同じ条文内に明記する。読み手と用途を示せない場合は、成果物を作成する主体が対象事項を確認する記述にとどめる。
 成果物の分量、識別子、構成に関する共通基準は`writing.md`「文章の共通規定」に集約し、成果物ごとの文書には固有の取り決めのみを記載する。
@@ -63,7 +66,7 @@
 
 ### 工程と検証の追記
 
-- 規範が適用されなかった問題への対策を検討する前に`agent-basics:bugfix`を起動し、`references/root-cause-remediation.md`の「再発防止策」を利用する。
+- 規範が適用されなかった問題への対策を検討する前に`agent-basics:bugfix`を起動し、`references/root-cause-prevention.md`「再発防止策」を利用する。
 - 検証、レビュー、待機、再確認などの工程を追加・改訂する場合は、その工程が担保する成果と、先行工程やすでに存在する基準で達成済みの条件を確認し、追加が必要な条件のみを記載する（努力目標。利用されない記録や重複する工程を増やさないため）。
 - 不具合対策として作業を制限する規定を設ける際は、原因への直接対策と、症状を抑えるための制約が守る価値とを比較する。原因への対策によって必要な成果を確保できる場合は制約の要否を再検討し、制約を残す場合は見直しの契機を記載する。
 - 将来の観測結果を削除条件とする暫定的な規範は、追記の時点でその条件がまだ満たされていないことを実際の値で確認し、条件成立後に目指すべき状態も同じ粒度で記録する。
@@ -73,7 +76,7 @@
 - 完了条件は、その工程が達成すべき具体的な成果として記述する。
 
 生成側と検出側への追加に関して、再発防止のセルフチェック観点のみは検出側に限定して配置する例外とする。
-この例外を適用するのは、`agent-basics:bugfix`の`references/root-cause-remediation.md`「再発防止策」の条件をすべて満たす場合に限る。
+この例外を適用するのは、`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止策」の条件をすべて満たす場合に限る。
 一般的な品質要件の追加については、原則どおり双方へ同時に追加する。
 
 計画やレビュー契約に実装順序、作業単位の分割、個別コマンドなどの詳細を記載するのは、既存の規範や確定済みの外部仕様から一意に導けない場合、または手順を誤ると安全性、データ保全、公開契約、権限境界を損なう恐れがある場合に限定する。
@@ -87,7 +90,9 @@
 
 ### 既存対象への波及
 
-- 改訂対象の判断ルールと同様の処理を行う既存の規定・生成側・消費側を見直す前に、`agent-basics:bugfix`を起動し、`references/root-cause-remediation.md`「類似見直し」の母集団導出と判定手順を適用する。判断の根拠は既存の改訂記録に残す。新しい場面別の条文が一般則の対象範囲を狭めたり、相反する指示を含んだりしていないかの確認にも同じ判定を用いる。品質（Q）に影響する問題への対処として規定を追加した場合は、努力目標の表記にかかわらず、同資料の「類似見直し」および「類似見直しと再発防止の完了」に基づいて既存対象の修正範囲と完了基準を決定する。
+- 改訂対象の判断ルールと同様の処理を行う既存の規定・生成側・消費側を見直す前に、`agent-basics:bugfix`を起動し、`references/root-cause-remediation.md`「類似見直し」の母集団導出と判定手順を適用する。判断の根拠は既存の改訂記録に残す。新しい場面別の条文が一般則の対象範囲を狭めたり、相反する指示を含んだりしていないかの確認にも同じ判定を用いる。品質（Q）に影響する問題への対処として規定を追加した場合は、努力目標の表記にかかわらず、次の2節に基づいて既存対象の修正範囲と完了基準を決定する。
+  `agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」を適用する。
+  `agent-basics:bugfix/references/root-cause-prevention.md`「類似見直しと再発防止の完了」も併用する。
 - 同一の事象に対して相反する判断を下す条文を共存させない。矛盾する既存条文がある場合は、同じ変更で書き換えるか優先順位を明確にし、別リポジトリの所管であれば該当リポジトリの担当へ変更を引き継ぐ。
 - 努力目標ではない規定を新設・強化した場合は、その規定が適用される既存の成果物も確認し、作業権限の範囲内にある違反はそのセッション内で修正する。権限外の箇所は担当者へ必要な変更を引き継ぐ。これには規定追加前に作成され、追加後も継続して利用される成果物も含まれる。重大度に応じた未知の問題の探索終了と、修正対象の範囲は区別して扱う。努力目標の規定は、新しく作成する記述から適用する。
 - 記録先を新設・改名・移設する改訂では、同様の内容の記録を求めている既存条文を、新しい記録先への参照へ書き換える。

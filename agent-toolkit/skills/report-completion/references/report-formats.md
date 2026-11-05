@@ -13,6 +13,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` |
+| 振り返りの時間目標と改善見込みを報告する前 | `../../review-session/references/duration-analysis.md#「所要時間の分析と改善」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/duration-analysis.md#「所要時間の分析と改善」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/report-completion/SKILL.md#「工程」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
@@ -20,8 +21,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「再発防止策の必須性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/analysis.md#「入力と照会」「一次選別」「原因と対策」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/analysis.md#「入力と照会」「一次選別」「原因と対策」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/analysis.md#「コストの無駄の確認」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/analysis.md#「コストの無駄の確認」` |
@@ -130,7 +131,7 @@
 
 `### 確定した問題と対策`には、原因と対策を確定した問題ごとに1行ずつ記載する。区分には、`AWI登録予定`（WI投入担当を起動する前の予告）、`AWI登録`（新しく投入したAWI）、`AWI登録済み`（対策を網羅している既存の未完了項目）、`実装済み`（同一セッション内で実装した対策）のいずれかを用いる。H1タイトルだけでは問題と対策の内容を読み取れない場合に限り、タイトルの後ろに`; 要旨: <補足内容>`を書き添える。複数の問題を1件のAWIで対応する場合は、各行に同じAWIを記載するか、候補IDの括弧内に複数のIDを並べて記載する。
 
-`### 対策を見送った問題`には、候補一覧や会話の経緯の中で見つかった問題のうち、対策を見送ったものを記載する。`判定済み`の根拠には確認済みの観測結果を簡潔に記載し、「欠陥ではないとの判定」「原因が未確定」「処置を採用しない判断」のいずれであるかが読み取れるようにする。原因や対策が未確定の場合は`未確定`の行に記載し、原因を分析したうえで再発防止策を採用しないと判断した問題は`再発防止策なし`の行に記載する。`再発防止策なし`で処理を終了するかどうかは、`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」に基づいて判定し、品質（Q）への影響、重大度、探索範囲・限界、および許容する残存リスクを客観的に記録する。`判定済み`や`再発防止策なし`の根拠として利用できない理由には、「規範や案内がすでに存在していたが適用が漏れたこと」「後段の確認工程や再実行によって回復したこと」「別の論点で下された判断でありユーザーの判断が必要であること」「問題への寄与が未確定であること」の4点がある。これらの定義は`agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」に定められている。重大な問題に対して有効な手段が見出せない場合は、未達事項として`未確定`の行に記載する。対策を見送ることができる条件は、`agent-toolkit:review-session`の`references/analysis.md`「入力と照会」「一次選別」「原因と対策」に従う。実施方法の見送り根拠は、同資料「コストの無駄の確認」に示された比較結果に対応付け、欠陥の有無に関する結論と、費用対効果の観点による採否とを明確に区別して記載する。
+`### 対策を見送った問題`には、候補一覧や会話の経緯の中で見つかった問題のうち、対策を見送ったものを記載する。`判定済み`の根拠には確認済みの観測結果を簡潔に記載し、「欠陥ではないとの判定」「原因が未確定」「処置を採用しない判断」のいずれであるかが読み取れるようにする。原因や対策が未確定の場合は`未確定`の行に記載し、原因を分析したうえで再発防止策を採用しないと判断した問題は`再発防止策なし`の行に記載する。`再発防止策なし`で処理を終了するかどうかは、`agent-basics:bugfix/references/root-cause-severity.md`「QとC・Dの区別」に基づいて判定し、品質（Q）への影響、重大度、探索範囲・限界、および許容する残存リスクを客観的に記録する。`判定済み`や`再発防止策なし`の根拠として利用できない理由には、「規範や案内がすでに存在していたが適用が漏れたこと」「後段の確認工程や再実行によって回復したこと」「別の論点で下された判断でありユーザーの判断が必要であること」「問題への寄与が未確定であること」の4点がある。これらの定義は`agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」に定められている。重大な問題に対して有効な手段が見出せない場合は、未達事項として`未確定`の行に記載する。対策を見送ることができる条件は、`agent-toolkit:review-session`の`references/analysis.md`「入力と照会」「一次選別」「原因と対策」に従う。実施方法の見送り根拠は、同資料「コストの無駄の確認」に示された比較結果に対応付け、欠陥の有無に関する結論と、費用対効果の観点による採否とを明確に区別して記載する。
 
 候補一覧に含まれる候補に対応する行には、行末の括弧内に候補ID（`c0006`の形式。複数の場合は読点で区切る）を記載する。
 
@@ -180,6 +181,8 @@ Codexの`functions.exec`の記録を扱う場合は、記載する区分にか�
 - `所要時間`: `elapsed_seconds`の値（セッションの最初の記録から準備処理時点までの経過秒数）
 - `費用確認`: `agent-toolkit:review-session`の`references/analysis.md`「コストの無駄の確認」に示された比較結果を毎回1行で記載する。現状維持を選択した場合でも、達成すべき成果・実際の作業量・品質を維持する対案と比較した結論を記載し、詳細については該当する対策行や見送り行に対応付ける
 - `改善見込み`: 同一の比較結果から、時間改善案の最終値における合計短縮見込み、改善後の所要時間、目標値との差、および目標超過時のボトルネック（律速区間）をこの1箇所にまとめて記載する。各AWIにはその案固有の値のみを記載する
+
+振り返りの目標値・計測区間・用途は`agent-toolkit:review-session`の`references/duration-analysis.md`「所要時間の分析と改善」に従う。目標との差は改善案の必須性の判断にだけ使う。未達・持ち越しは実在する未完了の記録であり、時間目標を未確認の理由にしない。
 
 ## AWI投入結果報告のフォーマット
 

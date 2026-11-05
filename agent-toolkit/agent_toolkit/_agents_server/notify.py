@@ -8,6 +8,7 @@ import os
 import pathlib
 import uuid
 from collections.abc import Mapping
+from typing import Literal
 
 from agent_toolkit._agents_server import shared_layout, shared_roots
 from agent_toolkit._atk import outcome
@@ -43,6 +44,19 @@ def send_notification(
         )
         return 4
 
+    save_notification(body, identity, state_root=state_root)
+    outcome.report_success("委譲元へ通知を1件保存した")
+    return 0
+
+
+def save_notification(
+    body: str,
+    identity: shared_roots.StatusFileIdentity,
+    *,
+    state_root: pathlib.Path | None = None,
+    actor: Literal["delegate", "server"] = "delegate",
+) -> None:
+    """CLIと自動復旧が作成した通知を、作成主体を区別して同じ受信形式へ保存する。"""
     directory = shared_layout.notices_directory(identity.root_session_id, state_root)
     directory.mkdir(parents=True, exist_ok=True)
     # 本文は委譲元の会話文脈へ入るため、配送元と作成主体を示す境界で囲む。
@@ -50,7 +64,7 @@ def send_notification(
         body,
         source="agents-notify",
         kind="delivery",
-        attributes={"from": f"delegate:{identity.host_session_id}"},
+        attributes={"from": f"{actor}:{identity.host_session_id}"},
     )
     payload = (
         json.dumps(
@@ -67,5 +81,3 @@ def send_notification(
     sent_at = datetime.datetime.now(datetime.UTC)
     path = directory / f"{identity.host_session_id}.{sent_at.strftime('%Y%m%dT%H%M%S%f')}.{uuid.uuid4().hex[:16]}.json"
     atomic_write(path, payload)
-    outcome.report_success("委譲元へ通知を1件保存した")
-    return 0

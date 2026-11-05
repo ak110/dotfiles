@@ -26,7 +26,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#「状態と依存」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「状態と依存」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-recording.md#「失効の根拠」` | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「失効の根拠」` |
 
 ## ラウンドの遷移
@@ -107,7 +107,7 @@
 - 変更または除外する部分がユーザー自身の指定ではなく、エージェントによる具体化であること。対応する要求が明示由来でも、その目的、対象範囲、期待結果、明示された検証水準を維持すること。
 - 条件の変更または除外が、`agent-toolkit/rules/01-agent.md`「協調と自律」に定められた「ユーザーが確定した判断の変更」に該当しないこと。
 - `agent-toolkit:user-confirmation-and-report`「確認要否の判定」の3に規定された、ユーザーのみが保持する判断情報を必要としないこと（資料の不足については、同節の2において技術判断の対象外と整理されたものに限る）。
-- 重大度に応じた類似見直しおよび再発防止に不可欠な結果と品質を維持すること。基準は`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直しと再発防止の完了」に従う。確認手段は同じ必要水準を満たす別の手段へ変更できる。
+- 重大度に応じた類似見直しおよび再発防止に不可欠な結果と品質を維持すること。基準は`agent-basics:bugfix`の`references/root-cause-severity.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-prevention.md`「類似見直しと再発防止の完了」に従う。確認手段は同じ必要水準を満たす別の手段へ変更できる。
 
 この判定は完成条件の意味に対する実質的な評価である。`source`を持つAWIで目的達成に不要なエージェント起草条件は、レーン担当が上記の境界を確認して除外し、その判断を記録して報告する。それ以外の変更・除外の判断要請はメインエージェントが判定する。統合時にはメインエージェントが記録と境界を確認する。変更・除外の根拠として、エージェントによる具体化であることに加え、上記すべての条件を満たすことを示す。
 

@@ -34,6 +34,20 @@ def test_explore_final_line_is_accepted(tmp_path: pathlib.Path, ending: str) -> 
     assert not result_contract.hold_invalid_result(session, result)
 
 
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_explore_common_result_contract_is_published_without_recovery(tmp_path: pathlib.Path) -> None:
+    """共通契約の先頭状態行を持つ返却を、本文と終了状態を保って公開する。"""
+    session = state.SessionState("explore", str(tmp_path), launch_kind="explore")
+    message = "状態: completed\n結果: 割当範囲の調査を完了\n根拠: 確認した本文と観測結果"
+
+    cli_turn.finalize_turn(session, {"status": "completed", "agent_message": message, "error": None})
+
+    assert session.result_available
+    assert session.status == "completed" and session.agent_message == message
+    assert not session.result_contract_recovery_pending and not session.awaiting_auto_resume
+
+
 def test_explore_missing_final_line_fails_after_one_recovery(tmp_path: pathlib.Path) -> None:
     """固定行のない返却は1回保留し、再発時に本文を保った失敗にする。"""
     session = state.SessionState("explore", str(tmp_path), launch_kind="explore")

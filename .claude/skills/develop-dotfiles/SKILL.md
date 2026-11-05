@@ -41,6 +41,7 @@ description: >
 | --- | --- | --- | --- | --- |
 | `make update`を実行の候補にする前 | 現行`Makefile`の`update` targetと、それが呼び出す子target | 判断 | `section:*/Makefile#make:update` | |
 | 公開前に実行する検証を選定する前 | `agent-toolkit:commit`の`references/publish.md`「検証とCI」 | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「検証とCI」` | |
+| 公開前の統合差分に`rust/claude-statusline/`の変更がある時 | `../release-dotfiles/SKILL.md`の「developとmasterのリリース運用」内のstatusline採番規定 | 判断 | `section:*/skills/release-dotfiles/SKILL.md#「developとmasterのリリース運用」` | |
 | 変更範囲の検証の対象を選ぶ前、push前の全体検証を行う前、ローカルの`make test`が実行しないチェックを確かめる時、または`agent-doc-tone`の報告へ対処する前 | [references/verification-values.md](references/verification-values.md) | 判断 | `read:*/skills/develop-dotfiles/references/verification-values.md` | |
 | テストを追加・変更・レビューする前と、テストやCIの結果を成功時も含めて判定する前 | `references/verification-values.md`の「テストとCIの所要基準」 | 判断 | `section:*/skills/develop-dotfiles/references/verification-values.md#「テストとCIの所要基準」` | |
 | コミットメッセージのtypeを判定する時 | [commit-types.md](../../../docs/development/commit-types.md)（判定例） | 判断 | `read:*/docs/development/commit-types.md` | |
@@ -67,6 +68,7 @@ description: >
 
 - `make update`は、読込表にあるターゲットの実際の処理対象に変更対象が含まれている場合のみ実行候補とする。現在の主な更新対象は`uv.lock`と`agent-toolkit/uv.lock`の依存関係更新である。lockファイルの更新後はコンテナーでの依存関係インストールを検証し（`ci-deps-check`）、さらに`prek autoupdate`、`mise lock`、`pinact`によるアクション更新、および全テストを実行する。なお`rust/claude-statusline/Cargo.lock`は対象外である。GitHub Actionsのハッシュピンのみを更新する場合は`make update-actions`を実行する。
 - 公開前に実行する検証は、`agent-toolkit:commit`の`references/publish.md`「検証とCI」で選定する。ローカル全体検証が必要と判定された場合は`make test`（`uv run --frozen pyfltr run --no-fix`）を用いる。`agent-basics:check-execution`を起動し、標準出力と標準エラー出力を保存して結果を確認できる手段（例: `agents_server`の`start`ツールで`shell`を指定）で実行する。
+  - 公開担当は統合差分の配布対象ごとに採番要否を確定し、レーンからの引渡しと比較する。`rust/claude-statusline/`に変更があれば、`release-dotfiles`の採番規定をpush前に適用し、最終検証のpyfltrへ`--enable=statusline-version`を指定する。同チェックの既定無効は維持し、他の全体検証の成功と同チェックの成功を区別する。
   - pyfltrのフォーマッター段（`ruff-format`、`uv-sort`、`shfmt`、`prek`、`sync-generated-files`）は、`--no-fix`を指定した場合でもファイルを整形して終了コード0を返す。そのため、コミット対象を確定する前に`git status`を実行して意図しない差分が生じていないか確認する。コードの自動修正を明示的に行う場合は`make format`（`uv run --frozen pyfltr fast`）を使用する。
 
 pyfltrを調査や計測の目的で実行する場合は、`--no-fix`を付けて自動修正を抑止する。ただしフォーマッター段は`--no-fix`でもファイルを書き換えるため、読み取り専用で実行したい場合はファイルを変更する段を除外して実行する。

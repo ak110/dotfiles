@@ -13,7 +13,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | 説明の追加の要否を判定する前 | `agent-toolkit:delegation/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「文章の共通規定」` |
@@ -30,7 +30,7 @@
 直接確認でも、以下の対象集合・比較資料・読者別の判断基準を適用し、ファイルと読者ごとに判定・根拠・証拠を記録する。
 以下の起動・待機・識別子に関する手順は、別担当へ渡す対象に適用する。
 
-初回レビューでは、レビュー開始時点からレビューHEADまでに追加・変更されたすべての`.md`および`.md.tmpl`を対象とする（削除されたファイルは除外し、改名されたファイルは変更後のパスで扱う）。誤字修正や整形のみの差分であっても、内容による選別は行わずにすべて対象に含める。文章の品質に影響する対象の除外や縮小と、検出された問題の対処要否は、`agent-basics:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に基づいて判定し、作業費用や所要時間のみを理由とした除外は行わない。
+初回レビューでは、レビュー開始時点からレビューHEADまでに追加・変更されたすべての`.md`および`.md.tmpl`を対象とする（削除されたファイルは除外し、改名されたファイルは変更後のパスで扱う）。誤字修正や整形のみの差分であっても、内容による選別は行わずにすべて対象に含める。文章の品質に影響する対象の除外や縮小と、検出された問題の対処要否は、`agent-basics:bugfix`の`references/root-cause-severity.md`「QとC・Dの区別」に基づいて判定し、作業費用や所要時間のみを理由とした除外は行わない。
 コードコメントの確認は通常のコードレビューで扱う。Git管理外の文章成果物や回答下書きは、新規作成または修正された範囲を入力として起動する。
 同一レーンに複数の計画が存在する場合は、当該レビューの`review_contract`内の「別計画の認可」条項に記載された他計画のコミットを除外し、判定対象コミットによって変更された範囲を対象とする。いずれの計画にも属さないコミットも対象に含める。他計画のコミットのみで変更された文書は対象から外し、双方の計画で変更された文書の「修正範囲」には自計画の差分のみを渡す。同一の行を複数の計画が変更した場合は、最終変更コミットの計画に帰属させる。他計画の記述の前提を自計画が変更した場合は、自計画の差分の直接影響範囲として扱う。
 

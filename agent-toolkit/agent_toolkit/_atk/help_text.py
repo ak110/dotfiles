@@ -70,7 +70,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk run-skill": {
         "summary": "定期実行から任意のスキルを自律モードで1回実行する",
-        "description": "定期実行から任意のスキルを自律モードで1回実行する。\n\n目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_model`の候補列から可用な候補を選び（利用上限の待機はengine別設定に従う）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。--work-dirで実行cwdを指定した場合は--target-repoに報告先repo URLも受理する。review-session batch（--args batch agent-toolkit:review-session）はアカウント共通排他・非活動対象の固定・対象別準備・報告同期後の範囲確定を行い、対象0件ではモデルを起動しない。報告先は対象最多のrepo、全対象不明なら実行pluginの配布元とする。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名とモードの組（通常起動はスキル名）となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキル・モードの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と、`orchestrate_model`の設定の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 30日を超えたログは各実行の開始時に削除する。ロックは実行の終了時に解放する。",
+        "description": "定期実行から任意のスキルを自律モードで1回実行する。\n\n目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_model`の候補列から可用な候補を選び（Claudeは利用可能な統括接続への切替を先に試し、代替がない場合の利用上限の待機はengine別設定に従う）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。--work-dirで実行cwdを指定した場合は--target-repoに報告先repo URLも受理する。review-session batch（--args batch agent-toolkit:review-session）はアカウント共通排他・非活動対象の固定・対象別準備・報告同期後の範囲確定を行い、対象0件ではモデルを起動しない。報告先は対象最多のrepo、全対象不明なら実行pluginの配布元とする。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名とモードの組（通常起動はスキル名）となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n再開: `atk run-skill --resume <RUN_ID>`で、ログの「実行識別子」を指定する。元の会話・実行ID・報告先・batchの準備範囲・残時間を引き継ぎ、同じログへ追記する。再開時はスキル・対象・cwd・引数・timeoutを変更しない。完了済み実行は再起動しない。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキル・モードの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と、`orchestrate_model`の設定の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 未完了の実行入力とログは保持する。完了済みの再開記録とログは、最終更新から30日経過後の実行開始時に回収する。ロックは実行の終了時に解放する。",
         "epilog": "実行例:\n\n  atk run-skill --target-repo /absolute/path/to/repo my-skill\n  atk run-skill --args '対象: web' --timeout 7200 agent-toolkit:process-wi\n\ncronへ登録する例（標準出力を破棄し、失敗行だけをcronのメール通知へ渡す）:\n\n  PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin\n  0 3 */3 * * atk run-skill --target-repo /home/user/repo my-skill >/dev/null",
     },
     "atk wi": {
@@ -139,8 +139,24 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/home/aki/.cache/agent-toolkit/tmp/awi-body.md",
     },
     "atk wi effect-check": {
-        "summary": "採用済みAWIのファイル別効果を記録する",
-        "description": "採用済みAWIのファイル別効果を記録する。\n\n目的: 過去の対策を適用した結果と根拠を、そのAWIへ保存する。\n利用場面: 振り返りで変更ファイルの効果を確認したとき。\n対象と出力: 採用済みAWIの処理結果へファイル、判定、判定日、振り返りの記録位置を追記し、commitとpushを行う。状態と既存本文を保持する。全変更ファイルがconfirmedならeffect_check: confirmed、一つでもinsufficientで是正AWIが保存済みならinsufficientを記録する。部分確認ではキーを追加しない。適用機会が無い場合は記録せず次回の候補へ残す。\n前提: --worktreeは対応commitを持つ対象リポジトリを指定する。--fileはリポジトリ相対パス、--checked-onはYYYY-MM-DD、--review-recordは記録位置を指定する。insufficientでは--corrective-awiが必須。\n復元・後始末: 変更前の内容はprivate-notesのGit履歴に残る。",
+        "summary": "採用済みAWIの効果と確認待ち・確認不要の理由を記録する",
+        "description": (
+            "採用済みAWIの効果と確認待ち・確認不要の理由を記録する。\n\n"
+            "目的: 実装済みの対策を実利用で確認し、結果を元のAWIへ保存する。\n"
+            "利用場面: 振り返りで適用機会と効果を調べるとき。\n"
+            "対象と出力: FILENAMEを1件以上指定し、全対象へ同じ判定と理由を適用する。全件を検証してから書き込み、"
+            "通常のrepo lockの下でcommitとpushを一回にまとめる。採用状態、要求本文、コメント、既存処理結果と"
+            "ファイル別判定を保持する。部分確認はpending、全変更ファイルがconfirmedならconfirmed、"
+            "一つでもinsufficientならinsufficientを記録する。規範以外の変更も集約対象とする。"
+            "pending・not_requiredは--fileを省略して全体判定と理由を保存する。処理結果節のない旧項目には"
+            "既存本文を保持して節と全体効果行を末尾へ追記する。pendingは14日を過ぎても候補として保持する。"
+            "一覧は`atk wi list --state=adopted --effect-check=pending`で絞り込める。\n"
+            "前提: --worktreeは対象リポジトリを指定する。ファイル別判定では対応commitの解決を要する。"
+            "--fileはリポジトリ相対パス、--checked-onはYYYY-MM-DD、--review-recordは判定の記録位置を指定する。"
+            "pending・not_requiredには--reason、insufficientには保存済み是正先の--corrective-awiが必須。"
+            "機会なしや日時・commit不明は全体のpendingと理由を保存できる。同じ引数での再実行は判定行を重複させない。\n"
+            "復元・後始末: 変更前の内容はprivate-notesのGit履歴に残る。途中保存やcommit・pushの失敗を解消して同じ引数で再実行する。"
+        ),
         "epilog": "実行例:\n\n  atk wi effect-check 20260901-072734-001.md --worktree /home/user/repo --file agent-toolkit/rules/01-agent.md --verdict confirmed --checked-on 2026-10-31 --review-record session:42",
     },
     "atk wi set-dependencies": {
@@ -447,6 +463,9 @@ HELP["atk agents"]["description"] += (
     "listで一覧、showで詳細、logsで記録の表示を行う。"
 )
 HELP["atk lane integrate"]["description"] += (
+    "\n検証の再利用: manifestの任意のverification_recordsへ保存済み実行記録JSONの絶対パス配列を渡す。"
+    "同じcleanなHEAD・argv・cwd・Pythonと環境の実行条件で終了0となり、両出力が保存されている成功だけ再利用する。"
+    "条件差・欠損・未完了・失敗した検証は実行する。--restart-reviewは最新統合先へ追随し検収待ちへ戻る。"
     "\n担当集合: 初回と再開の両方で、メインが保持する現在の合意済み書込担当一覧の実session ID全要素を"
     "--writer-sessionへ1件ずつ反復指定する。--session-idは資源の所有sessionとして別に保持する。"
     "担当の追加・交代後は合意済み一覧を更新し、再開にも更新後の全要素を渡す。"

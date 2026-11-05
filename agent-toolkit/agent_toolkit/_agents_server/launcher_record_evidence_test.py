@@ -283,14 +283,9 @@ async def test_task_record_reaches_public_observation_evidence(
             # Claudeのtool_result本文は公開照会で外側の空白を除いた形になる。
             assert details[1]["text"] == "a.py\nb.py"
         else:
-            input_payload = json.loads(details[0]["text"])["payload"]
-            assert json.loads(input_payload["arguments"]) == {"cmd": "rg --files /isolated/repo"}
-            result_payload = json.loads(details[1]["text"])["payload"]
-            assert result_payload == {
-                "type": "function_call_output",
-                "call_id": "observation-call",
-                "output": "a.py\nb.py\n",
-            }
+            assert details[0]["input"] == {"cmd": "rg --files /isolated/repo"}
+            assert details[0]["call_id"] == details[1]["call_id"] == "observation-call"
+            assert details[1]["text"] == "a.py\nb.py"
         assert not any(event["kind"] == "user" for event in events)
         (tmp_path / "observation-extraction.json").write_text(
             json.dumps(

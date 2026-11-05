@@ -16,10 +16,6 @@ const MUTABLE_STATES = new Set(['inbox', 'processing', 'hold']);
 const EDITABLE_STATES = new Set(['inbox', 'processing', 'hold', 'adopted', 'rejected']);
 const TERMINAL_STATES = new Set(['adopted', 'rejected']);
 const DELETABLE_STATES = new Set(['inbox', 'processing', 'hold', 'adopted', 'rejected']);
-const SEARCH_FALLBACK_MAX_RESULTS = 5;
-const SEARCH_FALLBACK_NOTICE =
-  '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
-  'フィルターの選択値は変更していません。';
 const ENTRY_PAGE_SIZE = 100;
 const TARGET_REPO_DISPLAY_LENGTH = 20;
 const FRONTMATTER_EXCLUDED_KEYS = new Set(['type', 'origin_session', 'origin_locator']);
@@ -50,6 +46,8 @@ let detailMutationPending = false;
 let detailReloadDeferred = false;
 let deleteDialogEntrySnapshot = '';
 let searchTimer = null;
+let searchComposing = false;
+let displayMode = 'normal';
 let cooldownTimer = null;
 const entryStateDisplays = new Map();
 let currentPage = 1;
@@ -262,7 +260,6 @@ async function runPending(key, {container, button, busyLabel}, operation) {
     return await Promise.resolve().then(operation);
   } finally {
     restorePendingState();
-    syncFilterDependencies();
     syncDetailMutationAvailability();
     restoreRefreshFocus();
   }
@@ -460,18 +457,14 @@ function renderEntry(entry) {
   return item;
 }
 
-// 期間の初期値と「条件をクリア」後の値。古いWIを確認する場面は少ないため直近2週間とする。
-// 期間は状態と同じく常に選ばれている条件であり、空の一覧の文言で範囲を示す。
+// 日常確認の期間だけを制限し、条件検索の入力値はモード往復の間もDOMへ保持する。
 const DEFAULT_PERIOD = '2w';
 const PERIOD_LABELS = {'2w': '直近2週間', '4w': '直近4週間', '8w': '直近8週間'};
 
 function hasNonStateFilters() {
-  return byId('search-input').value !== '' ||
-    byId('kind-filter').value !== 'all' ||
-    byId('answer-filter').value !== 'all' ||
-    byId('important-filter').value !== 'all' ||
-    byId('target-filter').value !== '' ||
-    byId('source-filter').value !== '';
+  const query = buildQuery();
+  return query.has('q') || query.get('type') !== 'all' || query.get('answered') !== 'all' ||
+    query.has('important') || query.has('target_repo') || query.has('source_kind');
 }
 
 function renderEmptyState() {
@@ -487,12 +480,13 @@ function renderEmptyState() {
   allPeriods.hidden = true;
   create.hidden = true;
   if (entries.length) return;
-  const periodLabel = PERIOD_LABELS[byId('period-filter').value];
+  const query = buildQuery();
+  const periodLabel = PERIOD_LABELS[query.get('period')];
   allPeriods.hidden = !periodLabel;
-  if (hasNonStateFilters() || !['active', 'all'].includes(byId('state-filter').value)) {
+  if (hasNonStateFilters() || !['active', 'all'].includes(query.get('status'))) {
     message.textContent = '条件に一致する項目はありません。';
     clear.hidden = false;
-  } else if (byId('state-filter').value === 'active') {
+  } else if (query.get('status') === 'active') {
     message.textContent = periodLabel ? `${periodLabel}に作成された対応中の項目はありません。` : '対応中の項目はありません。';
     allStates.hidden = false;
   } else if (periodLabel) {
@@ -504,7 +498,7 @@ function renderEmptyState() {
 }
 
 // 行は項目のクロージャーを持つため、再利用せずに毎回作り直す。
-function renderEntries(warnings = [], announce = false, searchFallback = false) {
+function renderEntries(warnings = [], announce = false) {
   const list = byId('entry-list');
   const focusedKey = document.activeElement?.classList?.contains('entry-select')
     ? document.activeElement.dataset.key : null;
@@ -517,11 +511,11 @@ function renderEntries(warnings = [], announce = false, searchFallback = false) 
   const unanswered = entries.filter(entry => entry.kind === 'uwi' && entry.answered === false).length;
   byId('entry-count').textContent = `${entries.length}件（未回答UWI ${unanswered}件）`;
   // フィルター欄を折りたたむ狭い幅でも、一覧が期間で限られていることを見出しの近くで示す。
-  const periodLabel = PERIOD_LABELS[byId('period-filter').value];
+  const periodLabel = PERIOD_LABELS[buildQuery().get('period')];
   byId('entry-period').textContent = periodLabel ? `${periodLabel}に作成` : '';
   byId('entry-period').hidden = !periodLabel;
   renderPagination();
-  setTextMessage('list-fallback-notice', searchFallback ? SEARCH_FALLBACK_NOTICE : '');
+  renderEffectiveConditions();
   renderWarnings(byId('list-warning'), warnings.length
     ? warnings.map(item => diagnostic('WI', SERVE_HOST, `${WI_ROOT} / ${item.state}/${item.filename}`, `一覧から除外したファイル: ${item.reason}`))
     : []);
@@ -533,6 +527,9 @@ function renderEntries(warnings = [], announce = false, searchFallback = false) 
 
 function buildQuery(page = currentPage) {
   const parameters = new URLSearchParams();
+  if (displayMode === 'normal') {
+    return new URLSearchParams({type: 'all', status: 'active', answered: 'all', period: DEFAULT_PERIOD, page: String(page)});
+  }
   parameters.set('type', byId('kind-filter').value);
   parameters.set('status', byId('state-filter').value);
   parameters.set('answered', byId('answer-filter').value);
@@ -572,10 +569,22 @@ async function copyAllEntries() {
   }
 }
 
-function hasSearchFallbackFilters(query) {
-  return query.get('type') !== 'all' || query.get('status') !== 'all' ||
-    query.get('answered') !== 'all' || query.get('period') !== 'all' ||
-    query.has('target_repo') || query.has('source_kind') || query.has('important');
+function renderEffectiveConditions() {
+  const query = buildQuery();
+  const labels = [`state=${query.get('status')}`, PERIOD_LABELS[query.get('period')] || '全期間'];
+  for (const [key, label] of [['q', '検索'], ['type', 'type'], ['answered', 'answered'],
+    ['important', '重要'], ['target_repo', 'target-repo'], ['source_kind', 'source kind']]) {
+    const value = query.get(key);
+    if (value && !(value === 'all' && ['type', 'answered'].includes(key))) labels.push(`${label}=${value}`);
+  }
+  byId('wi-effective-conditions').textContent = `${displayMode === 'normal' ? '通常表示' : '条件検索'}: ${labels.join('、')}`;
+}
+
+function setDisplayMode(mode) {
+  displayMode = mode;
+  byId('wi-mode-normal').checked = mode === 'normal';
+  byId('wi-mode-search').checked = mode === 'search';
+  renderEffectiveConditions();
 }
 
 function captureListLoadingView() {
@@ -596,7 +605,7 @@ function renderListLoading(view = captureListLoadingView()) {
 
 function beginUserListOperation() {
   // 一覧条件を変える操作が始まった時点で、それより前に始めた一覧取得の応答を無効にする。
-  // 検索欄のデバウンス中に旧取得が最新の世代のまま残ると、旧条件の補助検索と一覧反映が起きるため。
+  // 検索欄のデバウンス中も旧取得の一覧反映を防ぐため。
   // 無効にした取得のendListRequestは世代不一致で何もしないので、その処理中表示もここで解く。
   listRequestGeneration += 1;
   listRequestPending = false;
@@ -687,8 +696,6 @@ function applyPagination(payload) {
 async function loadEntries({announce = false, showLoading = true} = {}) {
   pendingListAnnouncement = pendingListAnnouncement || announce;
   const query = buildQuery(currentPage);
-  const searchTerm = query.get('q') || '';
-  const canSearchFallback = searchTerm !== '' && hasSearchFallbackFilters(query);
   const generation = ++listRequestGeneration;
   const loadingView = captureListLoadingView();
   beginListRequest(loadingView, showLoading);
@@ -696,37 +703,16 @@ async function loadEntries({announce = false, showLoading = true} = {}) {
     try {
       const payload = await api(`/api/entries?${query.toString()}`);
       if (generation !== listRequestGeneration) return entries;
-      const initialEntries = Array.isArray(payload.entries) ? payload.entries : [];
-      let selectedPayload = payload;
-      let searchFallback = false;
-      let fallbackError = null;
-      if (canSearchFallback && initialEntries.length === 0) {
-        try {
-          const fallbackQuery = new URLSearchParams({q: searchTerm, page: String(currentPage)});
-          const fallbackPayload = await api(`/api/entries?${fallbackQuery.toString()}`);
-          if (generation !== listRequestGeneration) return entries;
-          const fallbackEntries = Array.isArray(fallbackPayload.entries) ? fallbackPayload.entries : [];
-          if (fallbackEntries.length > 0 && fallbackEntries.length <= SEARCH_FALLBACK_MAX_RESULTS) {
-            selectedPayload = fallbackPayload;
-            searchFallback = true;
-          }
-        } catch (error) {
-          fallbackError = error;
-        }
-      }
-      if (generation !== listRequestGeneration) return entries;
-      entries = Array.isArray(selectedPayload.entries) ? selectedPayload.entries : [];
-      applyPagination(selectedPayload);
+      entries = Array.isArray(payload.entries) ? payload.entries : [];
+      applyPagination(payload);
       const selected = entries.find(item => entryKey(item) === entryKey(currentEntry));
       if (selected) currentEntry = {...currentEntry, ...selected};
       const shouldAnnounce = pendingListAnnouncement;
       pendingListAnnouncement = false;
       renderEntries(
-        Array.isArray(selectedPayload.warnings) ? selectedPayload.warnings : [],
-        shouldAnnounce,
-        searchFallback
+        Array.isArray(payload.warnings) ? payload.warnings : [],
+        shouldAnnounce
       );
-      if (fallbackError) setGlobalError(fallbackError.message);
       return entries;
     } catch (error) {
       if (generation === listRequestGeneration) {
@@ -784,6 +770,7 @@ async function enableNotifications() {
 
 function replaceOptions(select, values, firstLabel) {
   const selected = select.value;
+  if (selected && !values.includes(selected)) values = [...values, selected];
   select.replaceChildren();
   const first = document.createElement('option');
   first.value = '';
@@ -823,26 +810,20 @@ async function loadTargetRepos() {
   }
 }
 
-function syncFilterDependencies() {
-  const awiOnly = byId('kind-filter').value === 'awi';
-  if (awiOnly) byId('answer-filter').value = 'all';
-  byId('answer-filter').disabled = awiOnly;
-}
-
 async function clearFilters() {
   cancelSearchTimer();
   const operation = beginUserListOperation();
   byId('search-input').value = '';
   byId('kind-filter').value = 'all';
-  byId('state-filter').value = 'active';
-  byId('period-filter').value = DEFAULT_PERIOD;
+  byId('state-filter').value = 'all';
+  byId('period-filter').value = 'all';
   byId('answer-filter').value = 'all';
   byId('important-filter').value = 'all';
   byId('target-filter').value = '';
   byId('source-filter').value = '';
+  setDisplayMode('normal');
   currentPage = 1;
   pagination.page = 1;
-  syncFilterDependencies();
   try {
     await (loadTargetRepos());
     if (!isCurrentUserListOperation(operation)) return;
@@ -1676,24 +1657,15 @@ async function synchronizeAndLoad() {
   }
 }
 
-async function handleFilterChange({reloadRepos = false} = {}) {
+async function handleFilterChange({reloadRepos = false, mode = 'search'} = {}) {
   cancelSearchTimer();
   const operation = beginUserListOperation();
+  setDisplayMode(mode);
   currentPage = 1;
   pagination.page = 1;
-  syncFilterDependencies();
-  const requestedState = byId('state-filter').value;
   try {
     if (reloadRepos) {
-      const requestedTarget = byId('target-filter').value;
-      const entriesRequest = loadEntries({announce: true});
-      const loaded = await (loadTargetRepos());
-      await entriesRequest;
-      if (!isCurrentUserListOperation(operation)) return;
-      if ((!loaded && byId('state-filter').value !== requestedState)) return;
-      if (loaded && requestedTarget && byId('target-filter').value !== requestedTarget) {
-        await (loadEntries({announce: true}));
-      }
+      await Promise.all([loadEntries({announce: true}), loadTargetRepos()]);
       return;
     }
     await (loadEntries({announce: true}));
@@ -1734,6 +1706,19 @@ function handleFocusIn(event) {
   refreshFocusRequested = false;
 }
 
+function handleSearchInput(event) {
+  cancelSearchTimer();
+  const operation = beginUserListOperation();
+  if (searchComposing || event?.isComposing) return;
+  setDisplayMode('search');
+  currentPage = 1;
+  pagination.page = 1;
+  searchTimer = setTimeout(() => {
+    searchTimer = null;
+    void loadEntries({announce: true}).finally(() => endUserListOperation(operation));
+  }, 250);
+}
+
 function bindEvents() {
   document.addEventListener('focusin', handleFocusIn);
   globalThis.addEventListener?.('popstate', () => { void restoreEntryFromUrl(); });
@@ -1747,6 +1732,10 @@ function bindEvents() {
   byId('empty-create-button').addEventListener('click', event => openCreateDialog(event.currentTarget));
   byId('clear-filters-button').addEventListener('click', () => clearFilters());
   byId('empty-clear-button').addEventListener('click', () => clearFilters());
+  byId('wi-mode-normal').addEventListener('change', () => {
+    void handleFilterChange({mode: 'normal'});
+  });
+  byId('wi-mode-search').addEventListener('change', () => { void handleFilterChange(); });
   byId('empty-all-states-button').addEventListener('click', () => {
     byId('state-filter').value = 'all';
     handleFilterChange({reloadRepos: true});
@@ -1762,16 +1751,16 @@ function bindEvents() {
   byId('important-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('target-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('source-filter').addEventListener('change', () => { void handleFilterChange(); });
-  byId('search-input').addEventListener('input', () => {
+  byId('search-input').addEventListener('compositionstart', () => {
+    searchComposing = true;
     cancelSearchTimer();
-    const operation = beginUserListOperation();
-    currentPage = 1;
-    pagination.page = 1;
-    searchTimer = setTimeout(() => {
-      searchTimer = null;
-      void loadEntries({announce: true}).finally(() => endUserListOperation(operation));
-    }, 250);
+    beginUserListOperation();
   });
+  byId('search-input').addEventListener('compositionend', () => {
+    searchComposing = false;
+    handleSearchInput();
+  });
+  byId('search-input').addEventListener('input', handleSearchInput);
   byId('edit-button').addEventListener('click', enterEdit);
   byId('important-button').addEventListener('click', () => { void toggleImportant(); });
   byId('answer-button').addEventListener('click', enterAnswer);
@@ -1839,7 +1828,6 @@ function subscribeEvents() {
 
 function initializeApp() {
   subscribeEvents();
-  syncFilterDependencies();
   syncNotificationButton();
   initialization = Promise.all([loadEntries(), loadTargetRepos()])
     .then(() => refreshKnownEntries({notify: false}))

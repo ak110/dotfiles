@@ -31,6 +31,8 @@ from session_evidence_tool_calls import (
     _conversation_tool_calls,
 )
 
+from agent_toolkit._common import message_format
+
 
 def _saved_user_events_at(path: Path, position: str) -> list[dict[str, Any]]:
     """保存済みイベントを元記録の欄の組で選ぶ。一意性と由来の判断は消費側に残す。"""
@@ -245,6 +247,21 @@ def _record_conversation_events(main_record: _CollectedRecord) -> list[dict[str,
             continue
         if kind == "user":
             if _generated_user_event(event):
+                task = _delegation_request(text)
+                if task and not any(item[2].get("kind") == "delegation-request" for item in ordered):
+                    ordered.append(
+                        (
+                            line,
+                            0,
+                            {
+                                "kind": "delegation-request",
+                                "record": main_record.record_id,
+                                "line": event.get("line"),
+                                "timestamp": event.get("timestamp"),
+                                "text": task,
+                            },
+                        )
+                    )
                 continue
             role = "user"
         elif kind in {"assistant", "final-result"}:
@@ -271,3 +288,31 @@ def _record_conversation_events(main_record: _CollectedRecord) -> list[dict[str,
     )
     ordered.sort(key=lambda item: (item[0], item[1]))
     return [item for _, _, item in ordered]
+
+
+def _delegation_request(text: str) -> str | None:
+    """最外周の配送境界を外し、入れ子の機械生成要素を除いた依頼を返す。
+
+    配送本文はXMLエスケープされない自由記述なので、本文全体をXMLとして解釈しない。
+    message_formatの生成契約に従い、先頭の開始タグと最後の終了タグを配送境界とする。
+    """
+    element = message_format.AUTO_INSERTED_ELEMENT
+    stripped = text.strip()
+    opening = re.match(rf"<{element}\b[^>]*>", stripped)
+    if opening is None or not stripped.endswith(f"</{element}>"):
+        return None
+    attributes = dict(re.findall(r'([\w-]+)="([^"]*)"', opening[0]))
+    if attributes.get("source") != "agents-server" or attributes.get("kind") != "delivery":
+        return None
+    body = stripped[opening.end() : -len(f"</{element}>")]
+    parts: list[str] = []
+    depth = 0
+    start = 0
+    for tag in re.finditer(rf"</?(?:{message_format.AUTO_ELEMENT_NAME_PATTERN})\b[^>]*>", body):
+        if depth == 0:
+            parts.append(body[start : tag.start()])
+        depth += -1 if tag[0].startswith("</") else 0 if tag[0].endswith("/>") else 1
+        start = tag.end()
+    if depth == 0:
+        parts.append(body[start:])
+    return "".join(parts).strip() or None

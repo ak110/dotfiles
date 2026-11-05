@@ -47,7 +47,9 @@ def _targets(
             )
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(path) for path in paths]))
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
-    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "model", "medium", None))
+    monkeypatch.setattr(
+        session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "model", "medium", None, None)
+    )
     monkeypatch.setattr(session, "resolve_orchestrator_specs", lambda: [("claude", "model", "medium")])
     return notes, listing.configured_repo_snapshot(notes)
 
@@ -95,8 +97,10 @@ def test_one_coordinator_receives_every_repository(
     assert all(json.loads(path.read_text())["released"] for path in ownership.ownership_directory().glob("*.json"))
 
 
-def test_continue_only_unfinished_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """部分完了後は同一統括会話へ未完了対象だけを渡す。"""
+def test_next_round_starts_new_coordinator_for_unfinished_repository(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """部分完了後の残件は次の巡回の新統括へ渡し、元の準備と再開情報を保つ。"""
     notes, snapshots = _targets(tmp_path, monkeypatch)
     rounds: list[tuple[str | None, list[str]]] = []
 
@@ -104,8 +108,12 @@ def test_continue_only_unfinished_repository(tmp_path: pathlib.Path, monkeypatch
         data = json.loads(_manifest(prompt, child_env).read_text())
         targets = data["repositories"]
         rounds.append((args.resume, [target["target_repo"] for target in targets]))
-        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = "same-coordinator"
-        kwargs["on_session_started"]("same-coordinator")
+        identifier = f"coordinator-{len(rounds)}"
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = identifier
+        kwargs["on_session_started"](identifier)
+        if len(rounds) == 2:
+            assert targets[0]["previous"]["session_id"] == "coordinator-1"
+            assert targets[0]["previous"]["prepared_worktree"] == targets[0]["worktree"]
         selected = targets[0]
         for path in notes.glob(f"2026/10/{selected['target_repo'].rsplit('/', 1)[1]}-*.md"):
             path.unlink()
@@ -115,16 +123,21 @@ def test_continue_only_unfinished_repository(tmp_path: pathlib.Path, monkeypatch
 
     monkeypatch.setattr(session, "run_process_session", execute)
     loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+    assert len(rounds) == 1
+    loop.run_coordinator(
+        argparse.Namespace(resume=None, auto_resume=False, worktree=None),
+        tuple(item for item in listing.configured_repo_snapshot(notes) if item.has_work),
+    )
     assert rounds == [
         (None, [item.repository.repo_id for item in snapshots]),
-        ("same-coordinator", [snapshots[1].repository.repo_id]),
+        (None, [snapshots[1].repository.repo_id]),
     ]
 
 
-def test_continued_round_ignores_previous_round_repository(
+def test_explicitly_resumed_round_ignores_previous_round_repository(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """継続ラウンドの結果に前ラウンドの対象が残っても常駐は続き、今回の対象を結果どおり検収する。
+    """明示再開の結果に前巡回の対象が残っても、今回の対象を結果どおり検収する。
 
     2026年11月1日の異常終了（結果に前ラウンドの対象が残り、常駐全体が拒否で終了した）の再現である。
     """
@@ -150,6 +163,12 @@ def test_continued_round_ignores_previous_round_repository(
 
     monkeypatch.setattr(session, "run_process_session", execute)
     results = loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+    results.update(
+        loop.run_coordinator(
+            argparse.Namespace(resume="same-coordinator", auto_resume=False, worktree=None),
+            tuple(item for item in listing.configured_repo_snapshot(notes) if item.has_work),
+        )
+    )
     assert {repo_id: result["status"] for repo_id, result in results.items()} == {
         snapshot.repository.repo_id: "completed" for snapshot in snapshots
     }
@@ -177,9 +196,9 @@ def test_no_progress_and_blocking_are_repository_scoped(
 
     monkeypatch.setattr(session, "run_process_session", execute)
     loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
-    assert calls == (1 if status == "blocked" else 3)
+    assert calls == 1
     for snapshot in snapshots:
-        assert gate.decide(snapshot.repository.repo_id, gate.repository_input(snapshot, None)).skipped
+        assert gate.decide(snapshot.repository.repo_id, gate.repository_input(snapshot, None)).skipped is (status == "blocked")
 
 
 def test_owner_wait_keeps_other_repository_running(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -229,6 +248,33 @@ def test_removed_public_forms_are_rejected(argv: list[str]) -> None:
     with pytest.raises(SystemExit) as raised:
         atk.main(["wi", "process-loop", *argv])
     assert raised.value.code == 2
+
+
+def test_explicit_resume_without_coordinator_registration(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """所有台帳に無い会話IDも公開CLIから再開へ渡し、対象の処理結果を検収する。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
+    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    observed = []
+
+    def execute(args, _cwd, prompt, child_env, **kwargs):
+        observed.append(args.resume)
+        assert kwargs["resume_pending"]
+        data = json.loads(_manifest(prompt, child_env).read_text(encoding="utf-8"))
+        kwargs["on_session_started"](args.resume)
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
+        (notes / "2026/10/repo-0-0.md").unlink()
+        pathlib.Path(data["result_file"]).write_text(
+            json.dumps({"repositories": {snapshots[0].repository.repo_id: {"status": "completed"}}}), encoding="utf-8"
+        )
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    with pytest.raises(SystemExit) as exited:
+        atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update", "--resume", "ordinary-session"], home=tmp_path)
+    assert exited.value.code == 0
+    assert observed == ["ordinary-session"]
 
 
 def test_explicit_resume_uses_frozen_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -493,7 +539,7 @@ def test_public_once_finishes_one_collection(tmp_path: pathlib.Path, monkeypatch
         with pytest.raises(SystemExit) as exited:
             atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update"], home=tmp_path)
         assert exited.value.code == (0 if status == "completed" else 1)
-        assert calls == (0 if status in {"owner_wait", "prepare_failed"} else 3 if status == "incomplete" else 1)
+        assert calls == (0 if status in {"owner_wait", "prepare_failed"} else 1)
     finally:
         if owner is not None:
             ownership.release(owner)
@@ -531,7 +577,9 @@ def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, en
     monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
     monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
     monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
-    monkeypatch.setattr(session, "select_available_orchestrator", lambda *_args, **_kwargs: (engine, "model", "medium", None))
+    monkeypatch.setattr(
+        session, "select_available_orchestrator", lambda *_args, **_kwargs: (engine, "model", "medium", None, None)
+    )
     manifests: list[dict[str, Any]] = []
 
     def execute(
@@ -812,6 +860,82 @@ def test_completed_result_preserves_actionable_work_and_unintegrated_lanes(
     result = loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)[
         repository.repo_id
     ]
-    assert calls == 3 and result["status"] == "incomplete"
+    assert calls == 1 and result["status"] == "incomplete"
     assert result["observed_remaining"]["lanes" if remaining_kind == "lane" else "wi"]
     assert not json.loads(next(ownership.ownership_directory().glob("*.json")).read_text(encoding="utf-8"))["completed"]
+
+
+def test_public_next_round_restores_processing_and_unintegrated_lane(tmp_path, monkeypatch, capsys):
+    """新統括がprocessingと公開作成した未統合laneを再利用し、保存成果から作業を進める。"""
+    notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
+    repository = snapshots[0].repository.worktree
+    git.commit_all(repository, "検証元のHEAD")
+    branch = git.run_git(repository, "branch", "--show-current").stdout.strip()
+    monkeypatch.setattr(loop._watch, "pull_private_notes", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)  # pylint: disable=protected-access
+    monkeypatch.setattr(loop._update, "resolve_dotfiles_root", lambda: None)  # pylint: disable=protected-access
+    selected = tmp_path / "pick-wi.yaml"
+    selected.write_text("レーンの所要時間:\n- レーン: lane-01\n  統合状態: 未統合\n", encoding="utf-8")
+    item = notes / "2026/10/repo-0-0.md"
+    artifact = tmp_path / "lane" / "result.txt"
+    targets = []
+
+    def execute(args, _cwd, prompt, child_env, **kwargs):
+        assert args.resume is None
+        data = json.loads(_manifest(prompt, child_env).read_text(encoding="utf-8"))
+        target = data["repositories"][0]
+        targets.append(target)
+        identifier = f"fresh-coordinator-{len(targets)}"
+        kwargs["on_session_started"](identifier)
+        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = identifier
+        if len(targets) == 1:
+            capsys.readouterr()
+            with pytest.raises(SystemExit) as created:
+                atk.main(
+                    [
+                        "lane",
+                        "create",
+                        "--repo",
+                        str(repository),
+                        "--base-branch",
+                        branch,
+                        "--lane",
+                        "lane-01",
+                        "--selection-file",
+                        str(selected),
+                        "--session-id",
+                        target["lane_session_id"],
+                        "--worktree",
+                        str(artifact.parent),
+                    ],
+                    home=tmp_path,
+                )
+            assert created.value.code == 0
+            capsys.readouterr()
+            artifact.write_text("保存済み成果", encoding="utf-8")
+            item.write_text(item.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
+        else:
+            assert target["previous"]["session_id"] == "fresh-coordinator-1"
+            assert target["lane_session_id"] == targets[0]["lane_session_id"]
+            assert target["worktree"] == targets[0]["worktree"]
+            candidates = json.loads(pathlib.Path(target["candidate_file"]).read_text(encoding="utf-8"))
+            assert item.name in {candidate["filename"] for candidate in candidates}
+            assert "state: processing" in item.read_text(encoding="utf-8")
+            resources = lane.list_resources(target["lane_session_id"])
+            assert not resources["errors"]
+            assert [entry["record"]["lane"] for entry in resources["records"]] == ["lane-01"]
+            assert artifact.read_text(encoding="utf-8") == "保存済み成果"
+            artifact.write_text("再開後の成果", encoding="utf-8")
+            item.unlink()
+        pathlib.Path(data["result_file"]).write_text(
+            json.dumps({"repositories": {target["target_repo"]: {"status": "incomplete"}}}), encoding="utf-8"
+        )
+        return True
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    for count in (1, 2):
+        with pytest.raises(SystemExit) as ended:
+            atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update"], home=tmp_path)
+        assert ended.value.code == 1
+        assert len(targets) == count
+    assert artifact.read_text(encoding="utf-8") == "再開後の成果"

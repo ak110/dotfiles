@@ -17,10 +17,10 @@ import secrets
 import stat
 import typing
 
-from agent_toolkit._atk.managed_temp import paths, permissions
+from agent_toolkit._atk.managed_temp import creation, paths, permissions
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
-from agent_toolkit._common import file_lock, plugin_root_leases
+from agent_toolkit._common import file_lock, plugin_root_leases, session_registry
 
 _SCHEDULE_NAME = ".sweep/schedule"
 _SCHEDULE_VERSION = 4
@@ -293,7 +293,13 @@ def _sweep_legacy_state(state_root: pathlib.Path) -> None:
 
 
 def _examine(
-    state_root: pathlib.Path, child: pathlib.Path, metadata: os.stat_result, cutoff_ns: int, now_ns: int, max_age_ns: int
+    state_root: pathlib.Path,
+    child: pathlib.Path,
+    metadata: os.stat_result,
+    cutoff_ns: int,
+    now_ns: int,
+    max_age_ns: int,
+    protected_sessions: set[pathlib.Path],
 ) -> int | None:
     """1件を調べ、保持する場合は次に調べる時刻を返す。削除した場合はNoneを返す。"""
     if stat.S_ISDIR(metadata.st_mode):
@@ -302,6 +308,8 @@ def _examine(
         latest, has_git = _update_time(metadata, now_ns), False
     if latest >= cutoff_ns:
         return latest + max_age_ns
+    if child in protected_sessions:
+        return now_ns + _RETRY_NS
     if has_git:
         return now_ns + _GIT_RECHECK_NS
     if plugin_root_in_use(child):
@@ -337,6 +345,11 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
     next_due = min((due for _top, due in schedule.entries.values()), default=None)
     if schedule.root_mtime_ns == root_mtime_ns and (next_due is None or now_ns < next_due) and not legacy_due:
         return SweepResult([], ())
+    protected_sessions = {
+        area
+        for identifier in session_registry.pending_session_ids()
+        if (area := creation.find_session_temp(identifier)) is not None
+    }
     deleted: list[pathlib.Path] = []
     failed: list[tuple[pathlib.Path, str]] = []
     entries: dict[str, tuple[int, int]] = {}
@@ -355,7 +368,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
             entries[entry.name] = known
             continue
         try:
-            due = _examine(state_root, child, metadata, cutoff_ns, now_ns, max_age_ns)
+            due = _examine(state_root, child, metadata, cutoff_ns, now_ns, max_age_ns, protected_sessions)
         except (OSError, ManagedTempError) as error:
             if not os.path.lexists(child):
                 continue

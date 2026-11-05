@@ -2433,7 +2433,7 @@ def _assert_bundle_original_commands(
         for event in saved["events"]:
             if runtime == "codex":
                 original = cases[lines.index(event["line"])][0]
-                assert json.loads(event["text"])["payload"]["item"]["command"][-1] == original
+                assert event["command"][-1] == original
             elif event["kind"] == "tool-use":
                 original = cases[lines.index(event["line"] + 1)][0]
                 assert event["input"]["command"] == original

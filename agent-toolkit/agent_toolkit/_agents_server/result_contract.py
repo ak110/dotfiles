@@ -1,4 +1,4 @@
-"""exploreの最終行とtaskの続行不能返却を公開前に検査する。"""
+"""exploreの完了状態行とtaskの続行不能返却を公開前に検査する。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ _VALID_CLASSIFICATIONS = frozenset(
 
 
 def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str | None:
-    """exploreの最終行欠落とtaskの未分類な続行不能返却の回復理由を返す。"""
+    """exploreの完了状態行欠落とtaskの未分類な続行不能返却の回復理由を返す。"""
     if result.get("status") != "completed":
         return None
     document = task_documents.launched_task_document(session.prompt)
@@ -38,10 +38,14 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
         message = result.get("agent_message")
         lines = message.rstrip().splitlines() if isinstance(message, str) else []
         if not lines or not (
-            lines[-1] == "状態: completed"
+            lines[0] == "状態: completed"
+            or lines[-1] == "状態: completed"
             or (lines[-1].startswith(_REASON_PREFIX) and lines[-1].removeprefix(_REASON_PREFIX).strip())
         ):
-            return "exploreの返却が完了を示しません。最終行に状態: completedまたは値のある続行できない理由:が必要です"
+            return (
+                "exploreの返却が完了を示しません。先頭または最終行に状態: completed、"
+                "または最終行に値のある続行できない理由:が必要です"
+            )
     if document is None or not task_documents.is_agent_toolkit_task_document(document):
         return None
     message = result.get("agent_message")

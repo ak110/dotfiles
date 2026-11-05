@@ -45,6 +45,35 @@ Codexの検証器を無条件の合格条件にしないのは、同梱資料が
 知識境界として、期待する逸脱の集合と許容根拠はテスト側が持ち、マニフェストの生成規則は`pytools/_internal/codex_plugin_manifests.py`が持つ。
 却下した代替案は、`hooks`を除去し`mcpServers`を`.mcp.json`へ解決させて検証器を無条件に合格させる案である。Codexのプラグインフック機能を失い、`agent-toolkit/.mcp.json`との名前衝突を解消する追加設計を要する一方、得られるのは資料上の保証が無い体裁上の適合だけであるため採用しない。
 
+### Codexの起動管理とdaemon復旧
+
+通常TUIの起動管理は`pytools/codex_launcher.py`が所有し、`bin/codex`とWindowsのペアから導入済みの`dotfiles-codex`を起動する。
+Codexの起動中は依存関係を導入せず、post-applyと同じpytools環境を使う。
+公式standaloneの実行体は改変せず、Linuxの可視リンクとWindowsのPATH順を導入処理で調整する。
+Windows公式インストーラーの可視binはpackageのbinへのjunctionであるため、その中へwrapperを書き込まず既存dotfiles/binを優先する。
+実行時の`CODEX_HOME`は設定・認証・会話の保存先として保持し、導入した実行体の選択から分離する。
+Linuxは可視コマンドの接続先をwrapperへ変更する前に、公式のcurrentへの参照を同じbinの`.dotfiles-codex-native`へ1個保持する。
+更新時はこの参照を原子的に交換し、Windowsは可視binに残した公式実行体を直接使用する。
+元の標準入出力とTTYはnativeへ継承し、公開`--remote`のloopback WebSocketと`app-server proxy`の間だけを中継する。
+待受は起動ごとの認証トークンを必須とし、RPC本文は中継の寿命内のメモリーにだけ保持する。
+別の常駐サービスとTTY代理は設けない。
+
+会話は実際の`thread/start`・`thread/resume`応答の正確なIDで選び、一時的なタイトル生成threadや同じcwdの別会話と区別する。
+接続断またはdaemon世代の交代を観測すると、公開`initialize`・`thread/resume`・`thread/turns/list`で保存済み状態を確認する。
+元turnが未完了で現在のwriterが無く、明示中止と新しいユーザーturnも無い場合だけ`turn/start`で未完了工程の継続を求める。
+通常の会話開始・resumeとdaemon復旧の双方で、会話に属するagents_serverの`list`を公開MCP RPCから呼び、モデルの最初のツール要求へ依存せず共通の子孫復旧へ接続する。
+要求の応答を失っただけで副作用のある操作を再送せず、会話へ保存済みの状態を照合してから続ける。
+応答を失ったRPC名と、元の依頼・実行履歴・操作対象の状態を同じ会話で確認する入力方法をTUIへ返す。
+
+daemon 0.166.0は世代ファイルを空の予約ファイルとして直接作成し、その後別inodeの完全なJSONへ交換する。
+ファイルの存在を完成済みJSONの保証にせず、空本文だけを有限の未準備状態として扱う。
+非空の不正JSONと期限を越えた予約状態は復旧失敗にする。
+旧daemonの承認要求IDを中継側で分離し、再起動後に同じ数値IDが再利用されても旧応答で承認しない。
+復旧用RPCがMCPの対話要求を待つ間も、TUIからの応答は現在の接続へ中継する。
+旧要求は接続を閉じる前に無効化し、ユーザーの明示終了では対話待ちの復旧を中断して所有資源を回収する。
+通常終了・明示中止・完了済みturnを復活させず、所有TUIがdaemon交代で終了した場合だけ同じIDと保存した条件で再起動する。
+非対話の`codex exec`とagents_serverの専用App Serverは共有daemonに依存せず、その経路を置き換えない。
+
 ### Codexのlocal plugin導入
 
 dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLIを準備した後に`agent-toolkit-codex/`を生成し、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。

@@ -579,8 +579,12 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert "初期要求" in conversation
     assert "I will run the linter now." in conversation
     assert "agent-toolkit-auto-inserted" not in conversation
-    assert "Bash×1" in conversation and "失敗1件" in conversation
-    assert "make lint" not in conversation and "Error: 検査に失敗した" not in conversation
+    calls = [line for line in conversation.splitlines() if line.startswith("- 呼出 ")]
+    assert len(calls) == 1
+    assert calls[0].startswith(f"- 呼出 Bash claude:{transcript.stem}:2（失敗1件）:")
+    assert '"command": "make lint"' in calls[0]
+    assert "Error: 検査に失敗した" not in conversation
+    assert len(conversation.encode("utf-8")) <= 100_000
     assert "hook_additional_context" not in conversation
     assert _LONG_INTERVENTION in conversation
     assert f"claude:{transcript.stem}:5" in conversation
@@ -884,11 +888,7 @@ def test_prepare_keeps_first_human_intervention_after_process_loop_start(
 
 
 def test_prepare_keeps_improvement_lines_in_omitted_middle(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """1000字を超える発話の省略区間にある`気付いた改善点:`の行を、会話の流れへ全て残す。
-
-    振り返りは会話の流れからこの行を全件抽出するため、省略区間で行が消えると、作業中に伝えた改善の機会を振り返りが分析できない。
-    行を持たない長い発話は従来どおり先頭と末尾だけを載せ、中間の本文を残さない。
-    """
+    """予算内の長い発話を1行で通読し、改善点は全件の保存結果から取得できる。"""
     first_note = "気付いた改善点: atk agents waitの出力をjqで加工するスクリプトを3回作った（ツールの出力形式）"
     second_note = "  気付いた改善点: 全件そろうまで戻らない回収ループで先に届いた結果を待たせた（待ち方の手順）"
     filler = "作業の経過を説明する。" * 60
@@ -913,8 +913,9 @@ def test_prepare_keeps_improvement_lines_in_omitted_middle(tmp_path: pathlib.Pat
     conversation = pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
     assert report not in conversation
     assert result["improvement_lines"] == [first_note, second_note.strip()]
-    assert filler not in conversation
+    assert " ".join(report.split()) in conversation
     assert _LONG_INTERVENTION in conversation
+    assert len(conversation.encode("utf-8")) <= 100_000
 
 
 def test_prepare_reads_codex_thread(
@@ -984,8 +985,16 @@ def test_prepare_reads_codex_thread(
     assert record["utterance_counts"] == {"user": 1, "assistant": 0}
     conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
     assert f"--codex-thread-id {thread_id} --detail <記録位置>" in conversation
-    assert "exec_command×1" in conversation and "CommandExecution×1" in conversation
-    assert "apply_patch×1" in conversation
+    calls = [line for line in conversation.splitlines() if line.startswith("- 呼出 ")]
+    assert len(calls) == 3
+    for row, tool, line, body in zip(
+        calls,
+        ("exec_command", "apply_patch", "CommandExecution"),
+        (2, 4, 5),
+        ("ls docs", "docs/a.md", "rg x"),
+        strict=True,
+    ):
+        assert row.startswith(f"- 呼出 {tool} ") and f":{line}" in row and body in row
     assert "rg: 失敗" not in conversation and "成功した出力の本文" not in conversation
     assert "失敗1件" in conversation
     assert "候補として残す問題は無かった。" in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
@@ -1485,7 +1494,10 @@ def test_prepare_conversation_only_preserves_failure_ledger(
 
     record = json.loads(capsys.readouterr().out)
     conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
-    assert "初期要求" in conversation and "Bash×1" in conversation
+    assert "初期要求" in conversation
+    calls = [line for line in conversation.splitlines() if line.startswith("- 呼出 ")]
+    assert len(calls) == 1 and "make lint" in calls[0]
+    assert f"claude:{transcript.stem}:2（失敗1件）:" in calls[0]
     assert record["conversation_utf8_bytes"] == len(conversation.encode("utf-8"))
     assert record["conversation_limit_bytes"] == 100_000
     assert not (work / "candidates.md").exists()
@@ -1504,7 +1516,7 @@ def _file_body(name: str) -> str:
 def test_prepare_omits_tool_result_bodies_in_claude_conversation(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """ツール結果と長い入力は本文を載せず、種類・量・失敗と記録位置を示す。
+    """全呼出の入力・失敗・記録位置を個別行へ載せ、ツール結果本文を除く。
 
     会話の流れは作業の流れを振り返る入力であり、結果の本文は記録位置から照会する。
     ファイル表示、パイプを含む加工、失敗、ホストの長文保存の通知のいずれの結果も本文を載せない。
@@ -1529,14 +1541,18 @@ def test_prepare_omits_tool_result_bodies_in_claude_conversation(
 
     conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
     assert "依頼" in conversation
-    assert "呼出4件" in conversation
-    assert "Read×2" in conversation and "Bash×2" in conversation
+    call_rows = [line for line in conversation.splitlines() if line.startswith("- 呼出 ")]
+    assert len(call_rows) == 4
+    for row, (_, tool, tool_input, _, _), line in zip(call_rows, calls, (2, 4, 6, 8), strict=True):
+        assert row.startswith(f"- 呼出 {tool} claude:{transcript.stem}:{line}")
+        assert json.dumps(tool_input, ensure_ascii=False) in row
     assert "失敗1件" in conversation
     for name in ("read", "pipe", "failed", "saved"):
         assert f"{name}-line-" not in conversation
     assert "Output too large" not in conversation
     locator = f"claude:{transcript.stem}:3"
-    assert locator in conversation
+    assert f"claude:{transcript.stem}:2:" in conversation
+    assert len(conversation.encode("utf-8")) <= 100_000
     assert evidence.main([str(transcript), "--detail", locator]) == 0
     assert "read-line-19" in capsys.readouterr().out
 
@@ -1544,7 +1560,7 @@ def test_prepare_omits_tool_result_bodies_in_claude_conversation(
 def test_prepare_summarizes_codex_tool_activity(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CodexのCommandExecutionと`exec_command`も種類・量・非0終了へ縮約する。
+    """CodexのCommandExecutionと`exec_command`も入力順・位置・非0終了を個別行へ示す。
 
     CommandExecutionの`item_completed`の形と、`exec_command`の結果の先頭の`Chunk ID:`から`Output:`までの行の形は、
     2026年10月19日のCodex CLI 0.163.0の記録を写す。
@@ -1597,9 +1613,19 @@ def test_prepare_summarizes_codex_tool_activity(
     assert prepare.main(["--codex-thread-id", thread_id, "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
 
     conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
-    assert "呼出4件" in conversation
-    assert "CommandExecution×2" in conversation and "exec_command×2" in conversation
-    assert "失敗2件" in conversation
+    calls = [line for line in conversation.splitlines() if line.startswith("- 呼出 ")]
+    assert len(calls) == 4
+    for row, tool, line, command in zip(
+        calls,
+        ("CommandExecution", "CommandExecution", "exec_command", "exec_command"),
+        (2, 3, 4, 6),
+        ("/repo/sed.md", "make check", "rg -n needle /repo", "make lint"),
+        strict=True,
+    ):
+        assert row.startswith(f"- 呼出 {tool} ") and f":{line}" in row and command in row
+    assert "失敗1件" in calls[1] and "失敗1件" in calls[3]
+    assert "失敗" not in calls[0] and "失敗" not in calls[2]
+    assert len(conversation.encode("utf-8")) <= 100_000
     for name in ("sed", "checked", "found", "linted"):
         assert f"{name}-line-" not in conversation
     assert "Chunk ID: abc" not in conversation

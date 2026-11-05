@@ -13,7 +13,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/history-rewrite.md#「履歴確認の起動形」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「履歴確認の起動形」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md#「レビュー修正の履歴統合」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「レビュー修正の履歴統合」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」「類似見直しと再発防止の完了」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」`、`agent-basics:bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` |
 
 ## rebaseの競合
 
@@ -27,5 +27,6 @@
 ## 統合後の変更範囲の検証の失敗
 
 - レビュー済みHEADでは再現せず、統合先との組み合わせによってのみ発生した失敗: 失敗した検証が確認対象とする契約の送信側、受信側、実装、テストを整理し、専用worktreeに是正コミットを記録する。変更範囲の検証を再実行して、成功することおよび処理を妨げる警告が存在しないことを確認した上で、コミットと検証の証拠（警告の判定根拠を含む）を「続行できない理由」としてメインエージェントへ返す。メインエージェントから再指示を受けた後は、同書「マージありの統合」における「統合後にのみ成立する検証の有無を確認する手順」へ進む。
-- 是正対象の失敗がレーンの変更内容と同一の根本原因を持つ場合: 是正の範囲および完了判定は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」「類似見直しと再発防止の完了」に従って行う。認可範囲外の対象が含まれる場合は次項の手順に従って報告する。
+- 是正対象の失敗がレーンの変更内容と同一の根本原因を持つ場合: 是正の範囲および完了判定には、`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」を適用する。
+  `agent-basics:bugfix/references/root-cause-prevention.md`「類似見直しと再発防止の完了」も併用する。認可範囲外の対象が含まれる場合は次項の手順に従って報告する。
 - レビュー済みHEADでも再現する失敗、および認可範囲外の変更が必要な失敗: 実行したコマンド、出力結果、作業を続行できない理由を`続行できない理由:`に明記して返す。

@@ -8,12 +8,13 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| ベースイメージの版を選ぶ・変える前 | `dependency-management.md#「最新版への追従」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/dependency-management.md#「最新版への追従」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `dependency-management.md#「公開待機設定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/dependency-management.md#「公開待機設定」` |
 
 ## 基本
 
 - 先頭の`# syntax`ディレクティブでBuildKitの安定版フロントエンドを明示的に指定する。
-- ベースイメージは`image:tag@sha256:...`の形式でダイジェスト値を固定（digest pin）し、RenovateやDependabotなどの依存更新ツールが自動更新できるように`tag`も併記する。
+- ベースイメージのtagには最新の安定版を示すものを選ぶ。`image:tag@sha256:...`でdigestを固定する場合は、依存更新ツールでdigestとtagの両方をメジャー版も含めて更新する。更新ツールを使えない場合は、`dependency-management.md`「最新版への追従」の浮動参照の規定に従う。
 - マルチステージビルドを活用し、ビルド環境の基盤と最終成果物の責務や変更頻度を適切に分離する。
 - コンテナー実行時のセキュリティを確保するため、非rootユーザーで実行するように構成する。
 

@@ -95,7 +95,11 @@ test("解除時刻後に始まったメインturnへ重複投入しない", asyn
   expect(statuses.at(-1)).toBe(undefined);
 });
 
-const DELEGATED_ENVS: Record<string, string>[] = [{ AGENT_TOOLKIT_DELEGATED_SESSION: "1" }, { AGENT_TOOLKIT_OWNER_SESSION: "owner" }];
+const MANAGED_ENVS: Record<string, string>[] = [
+  { AGENT_TOOLKIT_DELEGATED_SESSION: "1" }, { AGENT_TOOLKIT_OWNER_SESSION: "owner" },
+  { AGENT_TOOLKIT_PROCESS_LOOP_SESSION: "1", AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID: "usage-test" },
+  { AGENT_TOOLKIT_RUN_SKILL_ID: "run-test" },
+];
 
 test("StopFailureコマンドhookの要求は使用率未反映でも予約し一度消費する", async ($, on) => {
   const request = { value: "requested" };
@@ -108,14 +112,16 @@ test("StopFailureコマンドhookの要求は使用率未反映でも予約し�
   await clock.advance(300_000);
   expect(prompts.length).toBe(1);
 });
-for (const env of DELEGATED_ENVS) {
-  test(`委譲先${JSON.stringify(env)}は予約しない`, async ($, on) => {
-    const { clock, prompts, statuses } = await engine($, on, [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T00:00:01Z" }], env);
+for (const env of MANAGED_ENVS) {
+  test(`管理起動${JSON.stringify(env)}は所有者へ再開を委ねる`, async ($, on) => {
+    const request = { value: "requested" };
+    const { clock, prompts, statuses } = await engine($, on, [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T00:00:01Z" }], { ...env, HOME: "/home/tester" }, undefined, request);
     await $.turn.complete(TURN);
     await $.turn.complete(TURN);
     await clock.advance(400_000);
     expect(prompts).toEqual([]);
     expect(statuses).toEqual([]);
+    expect(request.value).toBe("requested");
   });
 }
 

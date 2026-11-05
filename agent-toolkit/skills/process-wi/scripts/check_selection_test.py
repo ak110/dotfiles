@@ -1,4 +1,4 @@
-"""選定結果の被覆・構造と、チェック専用操作の互換性を確かめる。"""
+"""選定結果の書込予定・構造と、チェック専用操作の互換性を確かめる。"""
 
 import argparse
 import json
@@ -58,7 +58,7 @@ def _awi(
 def _write_selection(
     path: pathlib.Path, decisions: list[dict[str, typing.Any]], costs: list[dict[str, typing.Any]] | None = None
 ) -> pathlib.Path:
-    """被覆の判定に関係しない必須の欄を補って選定結果を保存し、そのパスを返す。
+    """書込予定の判定に関係しない必須の欄を補って選定結果を保存し、そのパスを返す。
 
     旧欄名（`awi`）で書いた項目は旧形式の最上位の欄名と`staleness`で補い、旧形式の読み取りも同じ判定へ通す。
     `costs`を省くと、`なし`でない各レーンの行を補う。
@@ -93,9 +93,9 @@ def _write_selection(
 
 
 def _initial_allocation(decisions: list[dict[str, typing.Any]]) -> dict[str, object]:
-    """被覆のテスト入力には、独立したWIを通常上限内へ割り当てた初回情報を添える。"""
+    """書込予定のテスト入力には、独立したWIを通常上限内へ割り当てた初回情報を添える。"""
     assignments = {str(item.get("WI", item.get("awi"))): str(item.get("レーン", item.get("lane"))) for item in decisions}
-    # 被覆などを検証する入力は、選定外候補も含む通常上限内の初回配分を使う。
+    # 書込予定などを検証する入力は、選定外候補も含む通常上限内の初回配分を使う。
     lanes = set(assignments.values()) - {"なし"}
     candidates = [
         *assignments,
@@ -269,7 +269,7 @@ def test_public_check_stage_continuity_preserves_completed_prefix(
 
 
 @pytest.mark.parametrize("state", ["未統合", "統合済み"])
-@pytest.mark.parametrize("violation", ["coverage", "broad", "classification", "norm-spec"])
+@pytest.mark.parametrize("violation", ["unclassified", "broad", "classification", "norm-spec"])
 def test_public_check_body_validation_follows_integration_state(
     env: tuple[pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
@@ -277,13 +277,13 @@ def test_public_check_body_validation_follows_integration_state(
     state: str,
     violation: str,
 ) -> None:
-    """被覆・範囲・区分・規範指定の本文検査は未統合の項目にだけ適用し、統合済みの項目は履歴として拒否しない。"""
+    """書込予定・範囲・区分・規範指定の本文検査は未統合の項目にだけ適用し、統合済みの項目は履歴として拒否しない。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変更する。", state="adopt" if state == "統合済み" else "processing")
     item: dict[str, typing.Any] = {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}
-    if violation == "coverage":
+    if violation == "unclassified":
         item["書込対象"] = []
-        diagnostic = "未被覆"
+        diagnostic = ""
     elif violation == "broad":
         item["書込対象"] = ["src/"]
         diagnostic = "広すぎる範囲"
@@ -297,9 +297,9 @@ def test_public_check_body_validation_follows_integration_state(
         )
         diagnostic = "プロジェクト規範の指定の不足"
     path = _write_selection(tmp_path / "body.yaml", [item], [{"レーン": "lane-01", "統合状態": state}])
-    if state == "統合済み":
+    if state == "統合済み" or violation == "unclassified":
         assert _dispatch(str(path), "--work-dir", str(repo)) == 0
-        assert diagnostic not in capsys.readouterr().err
+        assert not capsys.readouterr().err
         return
     assert _dispatch(str(path), "--work-dir", str(repo)) == 1
     assert f"a.md: {diagnostic}" in capsys.readouterr().err
@@ -732,7 +732,7 @@ def test_public_extend_failure_preserves_selection(
         tmp_path / "selection.yaml",
         [
             {"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]},
-            {"WI": "b.md", "レーン": "lane-01", "書込対象": [] if problem == "other-wi" else ["src/model.py"]},
+            {"WI": "b.md", "レーン": "lane-01", "書込対象": ["src/"] if problem == "other-wi" else ["src/model.py"]},
         ],
     )
     addition = tmp_path / "extend.yaml"
@@ -763,7 +763,7 @@ def test_public_extend_failure_preserves_selection(
     diagnostic = capsys.readouterr().err
     assert "次の操作:" in diagnostic and "Traceback" not in diagnostic
     if problem == "other-wi":
-        assert "b.md: 未被覆: src/model.py" in diagnostic
+        assert "b.md: 広すぎる範囲: src/" in diagnostic
 
 
 @pytest.mark.parametrize(
@@ -987,10 +987,8 @@ def _next_action_case(case: str, tmp_path: pathlib.Path, notes: pathlib.Path) ->
 @pytest.mark.parametrize(
     "case,expected",
     [
-        ("uncovered", ["_NEXT_UNCOVERED"]),
-        ("uncovered-multiple", ["_NEXT_UNCOVERED"]),
         ("broad", ["_NEXT_BROAD"]),
-        ("uncovered-broad", ["_NEXT_UNCOVERED", "_NEXT_BROAD"]),
+        ("uncovered-broad", ["_NEXT_BROAD"]),
         ("missing-body", ["_NEXT_MISSING_BODY"]),
         ("model-conflict", ["_NEXT_LANE_MODEL"]),
         ("stage-gap", ["_NEXT_STAGE_SEQUENCE"]),
@@ -1078,7 +1076,7 @@ def test_public_command_records_integrated_lane(env: tuple[pathlib.Path, pathlib
     assert path.read_bytes() == before
 
 
-@pytest.mark.parametrize("problem", ["unknown-state", "state-type", "unknown-prior", "uncovered", "invalid-path", "conflict"])
+@pytest.mark.parametrize("problem", ["unknown-state", "state-type", "unknown-prior", "broad", "invalid-path", "conflict"])
 def test_state_update_preserves_output_on_failure(
     env: tuple[pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
@@ -1094,12 +1092,12 @@ def test_state_update_preserves_output_on_failure(
         name = f"{number}.md"
         _awi(notes, name, "`README.md`を変える。")
         decisions.append({"WI": name, "レーン": f"lane-0{number}", "書込対象": ["README.md"]})
-    if problem in ("uncovered", "invalid-path"):
+    if problem in ("broad", "invalid-path"):
         _awi(notes, "other.md", "`src/model.py`を変える。")
         decisions = [decisions[0], {"WI": "other.md", "レーン": "lane-02", "書込対象": ["src/model.py"]}]
     path = _write_selection(tmp_path / "state.yaml", decisions)
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if problem not in ("conflict", "uncovered", "invalid-path"):
+    if problem not in ("conflict", "broad", "invalid-path"):
         data["選定"] = data["選定"][:1]
         data["レーンの所要時間"] = data["レーンの所要時間"][:1]
         data["初回配分"] = _initial_allocation(data["選定"])
@@ -1109,8 +1107,8 @@ def test_state_update_preserves_output_on_failure(
     elif problem == "unknown-prior":
         row["統合状態"] = "統合済み"
         row["先行レーン"] = ["lane-99"]
-    elif problem in ("uncovered", "invalid-path"):
-        data["選定"][1]["書込対象"] = [] if problem == "uncovered" else ["docs/../src/model.py"]
+    elif problem in ("broad", "invalid-path"):
+        data["選定"][1]["書込対象"] = ["src/"] if problem == "broad" else ["docs/../src/model.py"]
     else:
         data["レーン間の重なり"] = [
             {
@@ -1366,14 +1364,14 @@ def test_public_command_accepts_spaced_paths(
     assert _dispatch(str(path), "--work-dir", str(repo)) == 0
 
 
-@pytest.mark.parametrize("case,expected", [("directory", 0), ("new", 0), ("uncovered", 1), ("broad", 1), ("duplicate", 1)])
+@pytest.mark.parametrize("case,expected", [("directory", 0), ("new", 0), ("uncovered", 0), ("broad", 1), ("duplicate", 1)])
 def test_public_command_checks_spaced_path_coverage_and_overlap(
     env: tuple[pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
     case: str,
     expected: int,
 ) -> None:
-    """空白入りの新設・範囲・分類にも同じ実在・被覆・過大範囲・重複条件を使う。"""
+    """空白入りの新設・範囲・分類にも同じ実在・書込予定・過大範囲・重複条件を使う。"""
     repo, notes = env
     directory = "docs dir/"
     (repo / directory).mkdir()
@@ -1611,14 +1609,14 @@ def test_public_check_derived_paths_from_answered_uwi(
         ("excluded-only", 1),
         ("duplicate", 1),
         ("directory", 1),
-        ("missing-individual", 1),
-        ("remaining", 1),
+        ("missing-individual", 0),
+        ("remaining", 0),
     ],
 )
 def test_public_check_rejects_invalid_derived_new_paths(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], case: str, code: int, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """根拠・パス・要求範囲・書込への対応の不成立と、他の反映先の被覆不足を区別する。"""
+    """導出記録の不正を拒否し、他の本文パスの未列挙は受理する。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/`へ保存用入口を新設する。")
     record = _derived("src/save.py")
@@ -1656,7 +1654,11 @@ def test_public_check_rejects_invalid_derived_new_paths(
     path = _write_selection(tmp_path / "selection.yaml", [item])
     assert _dispatch(str(path), "--work-dir", str(repo)) == code
     diagnostic = capsys.readouterr().err
-    assert "次の操作:" in diagnostic
+    if code:
+        assert "次の操作:" in diagnostic
+    else:
+        assert not diagnostic
+        return
     before = path.read_bytes()
     if code == 1:
         # 記録するレーンの項目は統合済みとして作業ツリーの状態を前提とする判定から外れ、統合状態を保存する。
@@ -1668,11 +1670,6 @@ def test_public_check_rejects_invalid_derived_new_paths(
         assert _dispatch(str(path), "--work-dir", str(repo), "--mark-integrated", "lane-01", "--output", str(path)) == code
         assert path.read_bytes() == before
         assert "次の操作:" in capsys.readouterr().err
-    if case in {"missing-individual", "remaining"}:
-        assert "未被覆" in diagnostic
-        item["書込対象"].append("README.md" if case == "missing-individual" else "docs/")
-        _write_selection(path, [item])
-        assert _dispatch(str(path), "--work-dir", str(repo)) == 0
 
 
 def _overlap_record(path: str, judgment: str = "交わらない") -> dict[str, typing.Any]:
@@ -1717,7 +1714,7 @@ def test_public_selection_rejects_non_paths(
         ("extra-path", 1),
         ("duplicate", 1),
         ("reversed-duplicate", 1),
-        ("serial-separate", 1),
+        ("serial-separate", 0),
         ("serial-intersect", 0),
         ("parallel-intersect", 1),
         ("serial-unshared", 1),
@@ -1769,7 +1766,7 @@ def test_public_selection_contract_cases(
     assert _dispatch(str(path), "--work-dir", str(repo)) == expected
     diagnostic = capsys.readouterr().err
     assert ("次の操作:" in diagnostic) == bool(expected)
-    if case in {"serial-unshared", "serial-separate"}:
+    if case == "serial-unshared":
         assert "根拠の無い直列化" in diagnostic
 
 
@@ -1808,14 +1805,12 @@ def test_public_selection_preserves_path_context(
 @pytest.mark.parametrize("code", [False, True])
 @pytest.mark.parametrize("suffix", ["", ":42", ":42-58", "#節", "#API.method"])
 def test_public_check_distinguishes_file_references(
-    tmp_path: pathlib.Path,
     env: tuple[pathlib.Path, pathlib.Path],
-    capsys: pytest.CaptureFixture[str],
     wi_type: str,
     code: bool,
     suffix: str,
 ) -> None:
-    """参照位置と定義名をファイルへ混入せず、元ファイルの被覆不足だけを公開された検査コマンドから返す。"""
+    """参照位置と定義名を分離し、AWIとUWIから元ファイルだけを抽出する。"""
     repo, notes = env
     reference = "src/model.py" + suffix
     if code:
@@ -1823,13 +1818,8 @@ def test_public_check_distinguishes_file_references(
     body = f"{reference}の`Worker.run`と`Service.start`を修正する。"
     heading = "## 反映内容と反映先" if wi_type == "awi" else "## 回答"
     (notes / "processing" / "a.md").write_text(f"---\ntype: {wi_type}\n---\n\n{heading}\n\n{body}\n", encoding="utf-8")
-    path = tmp_path / "selection.yaml"
-    for covered in (False, True):
-        _write_selection(path, [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"] if covered else []}])
-        assert _dispatch(str(path), "--work-dir", str(repo)) == (0 if covered else 1)
-        result = capsys.readouterr()
-        errors = [line for line in result.err.splitlines() if line.startswith("a.md:")]
-        assert errors == ([] if covered else ["a.md: 未被覆: src/model.py"])
+    source = (notes / "processing/a.md").read_text(encoding="utf-8")
+    assert check_selection.reflected_paths(source, repo) == {"src/model.py"}
 
 
 def test_public_check_limits_body_scope(
@@ -1842,7 +1832,7 @@ def test_public_check_limits_body_scope(
     decisions: list[dict[str, typing.Any]] = [
         {"WI": "old.md", "レーン": "lane-01", "書込対象": []},
         {"WI": "new.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
-        {"WI": "second.md", "レーン": "lane-01", "書込対象": []},
+        {"WI": "second.md", "レーン": "lane-01", "書込対象": ["../README.md"]},
         {"WI": "none.md", "レーン": "なし", "書込対象": []},
     ]
     path = _write_selection(tmp_path / "selection.yaml", decisions)
@@ -1850,9 +1840,9 @@ def test_public_check_limits_body_scope(
     scope = ("--body-wi", "new.md", "--body-wi", "second.md", "--body-wi", "new.md", "--body-wi", "none.md")
     assert _dispatch(*args, *scope) == 1
     result = capsys.readouterr()
-    assert "second.md: 未被覆: README.md" in result.err
+    assert "second.md: `書込対象`のパスの不正: ../README.md" in result.err
     assert "old.md:" not in result.err
-    assert "該当WIの元本文の変更要求" in result.err
+    assert "不正な要素" in result.err
     decisions[2]["書込対象"] = ["README.md"]
     _write_selection(path, decisions)
     assert _dispatch(*args, *scope) == 0
@@ -1917,22 +1907,19 @@ def test_public_check_keeps_global_checks(
     assert result.out == ""
 
 
-@pytest.mark.parametrize("violation", ["coverage", "classification", "norm-spec"])
+@pytest.mark.parametrize("violation", ["classification", "norm-spec"])
 def test_public_check_applies_body_rules_only_to_selected_wis(
     tmp_path: pathlib.Path,
     env: tuple[pathlib.Path, pathlib.Path],
     capsys: pytest.CaptureFixture[str],
     violation: str,
 ) -> None:
-    """本文由来の被覆・区分・規範指定の違反を持つ同じ項目を、指定ありと指定なしで比較する。"""
+    """本文由来の書込予定・区分・規範指定の違反を持つ同じ項目を、指定ありと指定なしで比較する。"""
     repo, notes = env
     _awi(notes, "old.md", "`src/model.py`を変更する。")
     _awi(notes, "new.md", "`README.md`を変更する。")
     old: dict[str, typing.Any] = {"WI": "old.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}
-    if violation == "coverage":
-        old["書込対象"] = []
-        expected = "未被覆"
-    elif violation == "classification":
+    if violation == "classification":
         old["書き込まない反映先"] = ["src/model.py"]
         expected = "区分間の重複"
     else:
@@ -1969,7 +1956,7 @@ def test_public_check_rejects_unknown_body_wi(
 def test_reports_uncovered_broad_and_invalid_exclusion(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """未被覆、広すぎる範囲、反映先に無い除外の3区分を、AWIのファイル名とパスを示して非0で返す。"""
+    """過大な範囲と記載済み除外の不正を診断し、非書込の未列挙は拒否しない。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`と`docs/development/design.md`を変える。")
     _awi(notes, "b.md", "`src/model.py`を変える。")
@@ -1983,7 +1970,6 @@ def test_reports_uncovered_broad_and_invalid_exclusion(
     assert _run(tmp_path, repo, decisions) == 1
 
     err = capsys.readouterr().err
-    assert "a.md: 未被覆: docs/development/design.md" in err
     assert "b.md: 広すぎる範囲: src/" in err
     assert "c.md: 書き込まない反映先の不正: LICENSE" in err
     assert "c.md: 書き込まない反映先の不正: README.md" not in err
@@ -2007,8 +1993,6 @@ def test_reads_current_field_names_like_legacy_ones(
     assert _run(tmp_path, repo, decisions) == 1
 
     err = capsys.readouterr().err
-    assert "a.md: 未被覆: docs/development/design.md" in err
-    assert "c.md: 未被覆: README.md" in err
     assert "c.md: 書き込まない反映先の不正: LICENSE" in err
     assert "d.md" not in err
 
@@ -2221,11 +2205,7 @@ def test_accepts_resume_plan_boundaries(
 def test_uwi_paths_in_answer_and_materials_require_classification(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """UWIの判断材料と回答に明示されたパスは、書込対象か書き込まない反映先のどちらかへ分類しないと違反になる。
-
-    UWIは`## 反映内容と反映先`を持たないため、同節だけからパスを抽出すると回答で求められた変更が空集合として合格し、
-    レーン分けへ書込対象の欠けた選定が渡る。
-    """
+    """UWIの判断材料と回答から抽出し、参照先の非書込列挙を求めない。"""
     repo, notes = env
     body = (
         "---\ntype: uwi\nsource: process-wi\n---\n\n## 質問\n\nこの対応で問題無いか？\n\n"
@@ -2234,93 +2214,9 @@ def test_uwi_paths_in_answer_and_materials_require_classification(
     )
     (notes / "processing" / "u.md").write_text(body, encoding="utf-8")
 
-    assert _run(tmp_path, repo, [{"WI": "u.md", "レーン": "lane-01", "書込対象": []}]) == 1
-    err = capsys.readouterr().err
-    assert "u.md: 未被覆: src/model.py" in err
-    assert "u.md: 未被覆: docs/development/design.md" in err
-
-    classified = [
-        {"WI": "u.md", "レーン": "lane-01", "書込対象": ["src/model.py"], "書き込まない反映先": ["docs/development/design.md"]}
-    ]
-    assert _run(tmp_path, repo, classified) == 0
-    assert capsys.readouterr().err == ""
-
-
-def test_directory_range_matches_by_path_element(
-    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
-) -> None:
-    """ディレクトリの範囲`src/`は、名前の先頭だけが一致する`src-old/`配下のファイルを覆わない。"""
-    repo, notes = env
-    _awi(notes, "a.md", "`src-old/model.py`を変える。")
-
-    assert _run(tmp_path, repo, [{"awi": "a.md", "lane": "lane-01", "write_files": ["src/"]}]) == 1
-    assert "a.md: 未被覆: src-old/model.py" in capsys.readouterr().err
-
-
-_RANGE_DESCRIPTION_FILES = (
-    "agent-toolkit/skills/process-wi/references/selection-format.md",
-    "agent-basics/skills/search/SKILL.md",
-)
-
-
-def test_range_description_needs_no_coverage_but_inner_paths_do(
-    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
-) -> None:
-    """配下の個別パスも同じ節に挙げたディレクトリ範囲（範囲説明）は被覆を求めず、個別パスだけに被覆を求める。
-
-    範囲説明へ被覆を求めると、覆える区分が`書込対象`だけになり、メインが広い範囲を`書込対象`へ入れて
-    全レーンが包含関係になる。最上位（インラインコードと文章中）、入れ子の範囲、UWIの本文の範囲を入力に使う。
-    """
-    repo, notes = env
-    for relative in _RANGE_DESCRIPTION_FILES:
-        (repo / relative).parent.mkdir(parents=True, exist_ok=True)
-        (repo / relative).write_text("x\n", encoding="utf-8")
-    _awi(
-        notes,
-        "range.md",
-        "対象リポジトリは`agent-toolkit/`配下とdocs/配下とする。`agent-toolkit/skills/process-wi/references/selection-format.md`を変える。"
-        "`agent-toolkit/skills/`配下に限り、`agent-basics/skills/search/SKILL.md`の節を直す。"
-        "`docs/development/design.md`も変える。",
-    )
-    body = (
-        "---\ntype: uwi\nsource: process-wi\n---\n\n## 質問\n\nこの対応で問題無いか？\n\n"
-        "## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n`src/`配下の`src/model.py`も直して。\n"
-    )
-    (notes / "processing" / "u.md").write_text(body, encoding="utf-8")
-    inner = [*_RANGE_DESCRIPTION_FILES, "docs/development/design.md"]
-    selection = _write_selection(
-        tmp_path / "selection.yaml",
-        [
-            {"WI": "range.md", "レーン": "lane-01", "書込対象": list(inner)},
-            {"WI": "u.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
-        ],
-    )
-
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
-    assert capsys.readouterr().err == ""
-
-    _write_selection(
-        selection,
-        [
-            {"WI": "range.md", "レーン": "lane-01", "書込対象": [path for path in inner if "search" not in path]},
-            {"WI": "u.md", "レーン": "lane-01", "書込対象": []},
-        ],
-    )
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
-    errors = sorted(line for line in capsys.readouterr().err.splitlines() if ": 未被覆: " in line)
-    assert errors == ["range.md: 未被覆: agent-basics/skills/search/SKILL.md", "u.md: 未被覆: src/model.py"]
-
-
-def test_directory_range_without_inner_path_still_needs_coverage(
-    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
-) -> None:
-    """配下に抽出結果を持たないディレクトリ範囲は範囲説明に当たらず、通常の反映先と同じく被覆を求める。"""
-    repo, notes = env
-    _awi(notes, "only-range.md", "`pytools/`配下のテストを変える。")
-    selection = _write_selection(tmp_path / "selection.yaml", [{"WI": "only-range.md", "レーン": "lane-01", "書込対象": []}])
-
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
-    assert "only-range.md: 未被覆: pytools/" in capsys.readouterr().err
+    assert check_selection.reflected_paths(body, repo) == {"src/model.py", "docs/development/design.md"}
+    assert _run(tmp_path, repo, [{"WI": "u.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}]) == 0
+    assert not capsys.readouterr().err
 
 
 def test_detects_observed_selection_defects(
@@ -2343,11 +2239,7 @@ def test_detects_observed_selection_defects(
     assert _run(tmp_path, repo, decisions) == 1
 
     err = capsys.readouterr().err
-    assert "statusline.md: 未被覆: agent-toolkit/agent_toolkit/_agents_server/status_file.py" in err
-    assert "statusline.md: 未被覆: docs/development/design.md" in err
     assert "statusline.md: 広すぎる範囲: rust/claude-statusline/" in err
-    assert "update.md: 未被覆: bin/update-dotfiles.cmd" in err
-    assert "update.md: 未被覆: scripts/update_dotfiles.py" in err
 
 
 def test_reports_missing_body_as_violation(
@@ -2553,10 +2445,10 @@ def test_public_name_runs_selection_check(
     """`atk run-script pick-wi-check`の公開名から同じ検証へ到達する。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変える。")
-    selection = _write_selection(tmp_path / "selection.yaml", [{"awi": "a.md", "lane": "lane-01", "write_files": []}])
+    selection = _write_selection(tmp_path / "selection.yaml", [{"awi": "a.md", "lane": "lane-01", "write_files": ["src/"]}])
 
     assert _dispatch("--work-dir", str(repo), str(selection)) == 1
-    assert "a.md: 未被覆: src/model.py" in capsys.readouterr().err
+    assert "a.md: 広すぎる範囲: src/" in capsys.readouterr().err
 
 
 def test_public_check_rejects_missing_stage(
@@ -2580,9 +2472,9 @@ def test_public_check_rejects_missing_stage(
 
 
 def test_public_check_resolves_abbreviated_paths_and_classification(
-    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+    env: tuple[pathlib.Path, pathlib.Path],
 ) -> None:
-    """文章・インラインコードのディレクトリ省略表記を公開コマンドの被覆判定へ渡す。"""
+    """文章とインラインコードの省略表記を反映先の期待集合へ解決する。"""
     repo, notes = env
     fresh_path = "agent-toolkit/agent_toolkit/_agents_server/" + "fresh.py"
     _awi(
@@ -2591,38 +2483,16 @@ def test_public_check_resolves_abbreviated_paths_and_classification(
         "src/のmodel.py・new_module.pyと、`docs/development/design.md`・`new.md`を変更する。"
         "次に`agent-toolkit/agent_toolkit/_agents_server/status_file.py`と`fresh.py`を変更する。",
     )
-    selection = _write_selection(tmp_path / "selection.yaml", [{"WI": "short.md", "レーン": "lane-01", "書込対象": []}])
-
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
-    err = capsys.readouterr().err
-    for path in (
+    body = (notes / "processing/short.md").read_text(encoding="utf-8")
+    assert check_selection.reflected_paths(body, repo) == {
+        "src/",
         "src/model.py",
         "src/new_module.py",
         "docs/development/design.md",
         "docs/development/new.md",
         "agent-toolkit/agent_toolkit/_agents_server/status_file.py",
         fresh_path,
-    ):
-        assert f"short.md: 未被覆: {path}" in err
-
-    _write_selection(
-        selection,
-        [
-            {
-                "WI": "short.md",
-                "レーン": "lane-01",
-                "書込対象": [
-                    "src/",
-                    "docs/development/design.md",
-                    "docs/development/new.md",
-                    "agent-toolkit/agent_toolkit/_agents_server/status_file.py",
-                    fresh_path,
-                ],
-            }
-        ],
-    )
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
-    assert capsys.readouterr().err == ""
+    }
 
 
 def test_abbreviated_paths_require_directory_context_and_existing_parent(
@@ -2652,14 +2522,12 @@ _PLUGIN_SHARE_FILES = ("agent-toolkit/share/exec.parent.md", "agent-toolkit/shar
 @pytest.mark.parametrize("inline_code", [False, True])
 @pytest.mark.parametrize("following", ["test_model.py", "report.md"])
 def test_public_check_resolves_cross_directory_abbreviations(
-    tmp_path: pathlib.Path,
     env: tuple[pathlib.Path, pathlib.Path],
-    capsys: pytest.CaptureFixture[str],
     wi_type: str,
     inline_code: bool,
     following: str,
 ) -> None:
-    """別親の一意実体を被覆し、分類されていない場合はその実体を診断する。"""
+    """別親の追跡ファイルの一意実体へ略記を解決する。"""
     repo, notes = env
     actual = f"tests/{following}"
     _track(repo, actual)
@@ -2670,17 +2538,7 @@ def test_public_check_resolves_cross_directory_abbreviations(
     section = "反映内容と反映先" if wi_type == "awi" else "回答"
     body = f"---\ntype: {wi_type}\nsource: test\n---\n\n# 題\n\n## {section}\n\n{names[0]}と{names[1]}を変更する。\n"
     (notes / "processing" / "short.md").write_text(body, encoding="utf-8")
-    selection = _write_selection(
-        tmp_path / "selection.yaml", [{"WI": "short.md", "レーン": "lane-01", "書込対象": [first, actual]}]
-    )
-
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
-    assert capsys.readouterr().err == ""
-    _write_selection(selection, [{"WI": "short.md", "レーン": "lane-01", "書込対象": [first]}])
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
-    errors = capsys.readouterr().err
-    assert f"short.md: 未被覆: {actual}" in errors
-    assert f"src/{following}" not in errors
+    assert check_selection.reflected_paths(body, repo) == {first, actual}
 
 
 @pytest.mark.parametrize("wi_type", ["awi", "uwi"])
@@ -2690,7 +2548,7 @@ def test_public_check_reports_ambiguous_abbreviation_and_accepts_explicit_path(
     capsys: pytest.CaptureFixture[str],
     wi_type: str,
 ) -> None:
-    """複数実体を任意選択せず候補を示し、本文を相対パスへ直すと正しい被覆へ戻る。"""
+    """略記の複数候補を診断し、明示した相対パスを受理する。"""
     repo, notes = env
     _track(repo, "tests/report.md", "archive/report.md")
     section = "反映内容と反映先" if wi_type == "awi" else "回答"
@@ -2724,9 +2582,7 @@ def test_public_check_reports_ambiguous_abbreviation_and_accepts_explicit_path(
     ],
 )
 def test_public_check_excludes_definitions_after_directory_file_names(
-    tmp_path: pathlib.Path,
     env: tuple[pathlib.Path, pathlib.Path],
-    capsys: pytest.CaptureFixture[str],
     wi_type: str,
     text: str,
 ) -> None:
@@ -2736,21 +2592,11 @@ def test_public_check_excludes_definitions_after_directory_file_names(
     section = "反映内容と反映先" if wi_type == "awi" else "回答"
     body = f"---\ntype: {wi_type}\nsource: test\n---\n\n# 題\n\n## {section}\n\n{text}\n"
     (notes / "processing" / "definitions.md").write_text(body, encoding="utf-8")
-    selection = _write_selection(
-        tmp_path / "selection.yaml",
-        [{"WI": "definitions.md", "レーン": "lane-01", "書込対象": []}],
-    )
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
-    errors = capsys.readouterr().err
-    assert "src/Worker.run" not in errors
-    assert "docs/foo.bar" not in errors
     expected_file = "docs/guide.md" if "guide.md" in text else "src/model.py"
-    assert f"definitions.md: 未被覆: {expected_file}" in errors
+    expected = {"docs/" if "guide.md" in text else "src/", expected_file}
     if "new_module.py" in text:
-        assert "definitions.md: 未被覆: src/new_module.py" in errors
-    _write_selection(selection, [{"WI": "definitions.md", "レーン": "lane-01", "書込対象": ["src/", "docs/"]}])
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
-    assert capsys.readouterr().err == ""
+        expected.add("src/new_module.py")
+    assert check_selection.reflected_paths(body, repo) == expected
 
 
 def test_public_check_preserves_explicit_directory_and_excludes_identifiers(
@@ -2774,14 +2620,9 @@ def test_public_check_preserves_explicit_directory_and_excludes_identifiers(
 
 
 def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short_path(
-    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+    env: tuple[pathlib.Path, pathlib.Path],
 ) -> None:
-    """グロブの途中で途切れた語と不在のディレクトリ範囲を違反にせず、略記を追跡ファイルとして被覆判定する。
-
-    作業ツリー直下にも`share/`があるため、途切れた語や略記を親ディレクトリの実在だけで採ると、
-    `書込対象`の`agent-toolkit/`では覆えない未被覆の違反になる。グロブの手前の実在ディレクトリ
-    （`docs/development/`）を範囲として採っても、同じく未被覆の違反になる。
-    """
+    """グロブの断片と不在範囲を除き、略記の一意実体と個別パスを抽出する。"""
     repo, notes = env
     _track(repo, *_PLUGIN_SHARE_FILES)
     _awi(
@@ -2790,20 +2631,13 @@ def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short
         "`agent-toolkit/`配下のうち`share/rules-*.md`と`share/exec-review.{parent,subagent}.md`、"
         "略記の`rules/`と`share/exec.parent.md`を改める。`docs/development/*.md`の記述は変えない。あわせて`src/model.py`と`src/new_module.py`も変える。",
     )
-    selection = _write_selection(
-        tmp_path / "selection.yaml", [{"WI": "glob.md", "レーン": "lane-01", "書込対象": ["agent-toolkit/", "src/model.py"]}]
-    )
-
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 1
-    errors = [line for line in capsys.readouterr().err.splitlines() if line.startswith("glob.md: ")]
-    assert errors == ["glob.md: 未被覆: src/new_module.py"]
-
-    _write_selection(
-        selection,
-        [{"WI": "glob.md", "レーン": "lane-01", "書込対象": ["agent-toolkit/", "src/model.py", "src/new_module.py"]}],
-    )
-    assert _dispatch("--work-dir", str(repo), str(selection)) == 0
-    assert capsys.readouterr().err == ""
+    body = (notes / "processing/glob.md").read_text(encoding="utf-8")
+    assert check_selection.reflected_paths(body, repo) == {
+        "agent-toolkit/",
+        "agent-toolkit/share/exec.parent.md",
+        "src/model.py",
+        "src/new_module.py",
+    }
 
 
 def test_reflected_paths_from_mixed_notations(env: tuple[pathlib.Path, pathlib.Path]) -> None:
@@ -2811,7 +2645,7 @@ def test_reflected_paths_from_mixed_notations(env: tuple[pathlib.Path, pathlib.P
 
     グロブの断片、不在の範囲、拡張子の欠けた名前、ファイルの「の」に続く定義名（`Worker.run`など）を
     抽出すると、期待する集合に無い架空のパスが加わって失敗する。架空のパスがメインへ渡ると、
-    メインは本文が書き込まないパスを`書込対象`か`書き込まない反映先`へ分類させられる。
+    本文の新設先や過大範囲の判定へ誤った候補が渡る。
     """
     repo, _notes = env
     _track(repo, *_PLUGIN_SHARE_FILES)
@@ -3040,7 +2874,7 @@ def test_public_command_extracts_non_ascii_paths_whole(
         "src/model.py",
         "src/new_module.py",
     }
-    # `src/`は配下の列挙を導く範囲説明として抽出され、被覆を求めない。
+    # 範囲の説明も抽出結果には保持し、書込予定とは区別する。
     text = (notes / "processing" / "a.md").read_text(encoding="utf-8")
     assert check_selection.reflected_paths(text, repo) == expected | {"src/"}
     selection = _write_selection(
@@ -3053,11 +2887,7 @@ def test_public_command_extracts_non_ascii_paths_whole(
 def test_excluded_range_may_contain_write_paths(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`書き込まない反映先`の範囲が書込区分のパスを含む組を受理し、残る重複と範囲の配下の未分類は報告する。
-
-    受理しないと、AWI本文が変更しないと述べる上位ディレクトリを`書込対象`へ置かせ、別レーンとの重なりを生む。
-    同じパスの2区分と、書込区分の範囲が非書込のパスを含む組まで受理すると、所有の区分が決まらない。
-    """
+    """非書込範囲配下の個別書込を受理し、区分が矛盾する重複は報告する。"""
     repo, notes = env
     _write_files(repo, "docs/design/性能.md", "docs/design/別.md", "docs/design/旧.md")
     excluded_range = "`docs/design/性能.md`を変える。他の`docs/`配下は変更しない。"
@@ -3091,7 +2921,6 @@ def test_excluded_range_may_contain_write_paths(
     assert _dispatch("--work-dir", str(repo), str(selection)) == 1
     errors = sorted(line for line in capsys.readouterr().err.splitlines() if re.match(r"\w+\.md: ", line))
     assert errors == [
-        "inner.md: 未被覆: docs/design/別.md",
         "range.md: 区分間の重複: docs/design/旧.md（`書込対象`と`書き込まない反映先`）",
         "same.md: 区分間の重複: docs/design/性能.md（`書込対象`と`書き込まない反映先`）",
     ]
@@ -3470,7 +3299,7 @@ def test_public_command_prints_no_summary_on_failure(
     _write_files(repo, "AGENTS.md")
     decisions: list[dict[str, typing.Any]] = [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py", "AGENTS.md"]}]
     if failure == "content":
-        decisions[0]["書込対象"] = ["src/model.py"]
+        decisions[0]["書込対象"] = ["src/"]
     if failure == "norm-spec":
         (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
     path = _write_selection(tmp_path / "selection.yaml", decisions)

@@ -15,6 +15,33 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/publish-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks.md#「hookスクリプトの基本プロトコル」` | 判断 | `section:*/.claude/skills/agent-toolkit-edit/references/claude-hooks.md#「hookスクリプトの基本プロトコル」` |
+| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state.md`の「run-skillの再開入力」 | 判断 | `section:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「run-skillの再開入力」` |
+
+## 資料の選択
+
+読み書きする状態、更新主体、消費側との利用関係から必要な共通節と主題節を選ぶ。
+複数の状態を扱う変更では、その和と必要な前提・例外を読む。
+ファイル名だけで範囲を限定せず、選択した節の前提・例外が別の主題にある場合も、その節を加える。
+
+## セッション状態資料の選択
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| セッション状態や内部フラグを変更・調査する前 | `session-state-and-flags.md`の「状態ファイルの設計」「状態の継承」。設計節配下の「並行書き込みの排他制御」も含む | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「状態ファイルの設計」「状態の継承」` |
+| 活動・WI投入作業の記録を変更・調査する前 | `session-state-and-flags.md`の「セッションの活動記録」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「セッションの活動記録」` |
+| managed-tempの状態を変更・調査する前 | `session-state-and-flags.md`の「managed-tempの状態」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「managed-tempの状態」` |
+| 完了報告からの状態解析を変更・調査する前 | `session-state-and-flags.md`の「完了報告からの状態読み取り」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「完了報告からの状態読み取り」` |
+| Function hooksの終了要求、定期再確認や利用上限の再開予約を変更・調査する前 | `session-state-and-flags.md`の「Function hooksの終了要求」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「Function hooksの終了要求」` |
+| 作業契約の状態を変更・調査する前 | `session-state-and-flags.md`の「作業契約系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「作業契約系」` |
+| plan・セッション名の状態を変更・調査する前 | `session-state-and-flags.md`の「plan系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「plan系」` |
+| 振り返り・モード・無進捗停止の状態を変更・調査する前 | `session-state-and-flags.md`の「振り返りとモードの状態」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「振り返りとモードの状態」` |
+| 進捗点検の状態を変更・調査する前 | `session-state-and-flags.md`の「進捗の点検系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「進捗の点検系」` |
+| 確認・操作スキルの起動、資料取得証拠、読込の選択・案内や終了工程の証拠を変更・調査する前 | `session-state-and-flags.md`の「確認・操作スキル系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「確認・操作スキル系」` |
+| 通知の反復抑止・配送状態を変更・調査する前 | `session-state-and-flags.md`の「通知反復系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「通知反復系」` |
+| agents_serverの呼出・所有・待機の観測状態を変更・調査する前 | `session-state-and-flags.md`の「agents_server連携系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「agents_server連携系」` |
+| バックグラウンドタスクの所有・通知・停止の状態を変更・調査する前 | `session-state-and-flags.md`の「バックグラウンドタスク系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「バックグラウンドタスク系」` |
+| UWI回答の検出状態を変更・調査する前 | `session-state-and-flags.md`の「UWI系」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「UWI系」` |
+| Antigravityのイベント間状態を変更・調査する前 | `session-state-and-flags.md`の「Antigravityのイベント間状態」 | 判断 | `section:*/skills/agent-toolkit-edit/references/session-state-and-flags.md#「Antigravityのイベント間状態」` |
 
 ## 状態ファイルの設計
 
@@ -100,7 +127,7 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 この処理はメインエージェントのClaude Codeのみを対象とし、委譲先、`agent_id`が付与された入力、およびCodexは除外する。
 
 - 書き込み元: StopFailureコマンドhookが、`error`として`rate_limit`を受け取った際に`requested`を書き込む
-- 消費元: `hooks/usage_limit_resume.ts`の`turn.complete`が、`requested`を`consumed`に変えて既存の再開予約処理へ接続する
+- 消費元: 通常のClaude会話は`hooks/usage_limit_resume.ts`の`turn.complete`が`requested`を`consumed`に変え、既存の再開予約処理へ接続する。process-loopの同じ会話IDに対応する管理印、およびrun-skillの実行IDがある会話では起動側が再開を担当するため、modによる予約を省く。process-loopは`requested`を読んで旧CLIの終了を確認し、要求ファイルを削除して同じIDの接続を選び直す。run-skillはCLIのstream-jsonから上限を観測する
 - 初期化と生存期間: 初期状態ではファイルを作成せず、`requested`の記録だけを予約実行の根拠とする。通常のSessionEndではファイルを保持し、`clear`や期限切れ回収時の扱いは前述のFunction hooks用ファイルと同様とする
 
 ## 状態の継承
@@ -108,6 +135,9 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 - `inherited_from_session_id`: 現行の`session_id`に対応する状態が存在しない場合に、一意に特定された前身の`session_id`を記録する。共通hookの起動処理が、前身の全状態キーの引き継ぎと同時に1回だけ書き込みを行う
 
 ## 作業契約系
+
+run-skillが保持する元の実行入力・会話・時間予算は、[共有状態資料のrun-skillの再開入力](agents-server-shared-state.md#run-skillの再開入力)に従う。
+通常のhook状態JSONへ複製しない。
 
 - `whole_contract_notified`: 委譲先の主体ごとに、全体作業契約の再読案内を最終出力へ採用した内容ハッシュの一覧を保持する。PreToolUseと圧縮後のSessionStartが、起動時の正式な作業契約入力と既存の資料読了記録から未読版を判定する。本文は配送せず、同じ版は1回だけ非遮断で案内する。実際の全文読取後は案内を抑止し、compact時はこの通知記録を削除して所在を再案内する。セッション状態と同じ寿命で保持する。
 - `work_contract_input_sequence`: UserPromptSubmitが実ユーザー入力ごとに進める整数。初期値は0で、機械注入の間は値を保つ。PreToolUseが未作成通知の入力区切りとして参照する。セッション状態と同じ寿命で保持する。

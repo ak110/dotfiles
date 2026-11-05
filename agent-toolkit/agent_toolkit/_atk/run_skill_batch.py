@@ -41,6 +41,7 @@ from agent_toolkit._common import (
     session_registry,
     session_review,
 )
+lazy from agent_toolkit._atk import run_skill_state
 
 _LOG = logging.getLogger(__name__)
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -341,7 +342,7 @@ def record_executor(args: argparse.Namespace, pid: int) -> None:
 
 def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int]) -> int:
     """全repo共通排他の下で、既存run-skillによる各回の実行と結果確定を行う。"""
-    if args.timeout <= 0:
+    if args.timeout <= 0 and getattr(args, "resume_record", None) is None:
         outcome.report_failure("--timeoutは正の秒数で指定する", next_action="--timeoutを省略するか正の秒数で再実行する")
         return 2
     # hookが発行する起動識別子で区別し、着眼点のauto/manualを制御情報として消費しない。
@@ -354,6 +355,8 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
     try:
         with filelock.FileLock(str(root / "batch.lock"), timeout=0):
             session_review.sweep(now=time.time())
+            if getattr(args, "resume_record", None) is not None:
+                return _resume_batch(args, execute)
             return _run_batches(args, execute, manual=manual)
     except filelock.Timeout:
         session_review.launch_result()
@@ -362,6 +365,45 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
             file=sys.stderr,
         )
         return 1
+
+
+def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> None:
+    """保存済み範囲の分析と報告の同期を確認して、同じbatchだけを確定する。"""
+    if not add.has_synced_run_report(
+        private_notes.default_private_notes(), run_id=manifest["run_id"], skill=session_review.BATCH_SCOPE
+    ):
+        raise ValueError("report-unsynced: 報告の同期を確認できない")
+    if not manifest.get("analysis_succeeded"):
+        raise ValueError("analysis-incomplete: session-review-state finishの実行が必要")
+    for prepared in manifest["prepared"]:
+        session_review.complete(prepared)
+    manifest["status"] = "completed"
+    session_review.write(path, manifest)
+    run_skill_state.mark_completed(manifest["run_id"])
+
+
+def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int]) -> int:
+    path = session_review.directory() / "runs" / f"{args.run_id}.json"
+    manifest = session_review.read(path)
+    if str(path) != args.batch_manifest or manifest.get("run_id") != args.run_id:
+        outcome.report_failure("再開するbatchの実行識別子と保存先が一致しない", next_action="元のbatch実行記録を確認する")
+        return 2
+    if manifest["status"] in {"completed", "resolved"}:
+        run_skill_state.mark_completed(args.run_id)
+        outcome.report_success(f"既に完了したbatch: {path}")
+        return 0
+    try:
+        code = execute(args)
+        manifest = session_review.read(path)
+        if code:
+            _failure(manifest, path, f"run-skill-exit-{code}: 元のbatchの再開が完了しなかった")
+            return code
+        _finish_batch(manifest, path)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        _failure(manifest, path, f"prepare-or-state: {error}")
+        return 1
+    session_review.launch_result(manifest=path)
+    return 0
 
 
 def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int], *, manual: bool) -> int:
@@ -383,6 +425,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
                 session_review.complete(prepared)
             old["status"] = "completed"
             session_review.write(path, old)
+            run_skill_state.mark_completed(old["run_id"])
         elif old["status"] == "running" or any(
             item.get("failure_unreported") and item.get("failure_key") == old.get("failure_key")
             for item in session_review.pending()
@@ -460,16 +503,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
                     or f"run-skill-exit-{code}: 振り返りを完了できなかった。run-skillのログで原因を確認する",
                 )
                 return code
-            if not add.has_synced_run_report(
-                private_notes.default_private_notes(), run_id=run_id, skill=session_review.BATCH_SCOPE
-            ):
-                raise ValueError("report-unsynced: 報告の同期を確認できない")
-            if not manifest.get("analysis_succeeded"):
-                raise ValueError("analysis-incomplete: session-review-state finishの実行が必要")
-            for prepared in manifest["prepared"]:
-                session_review.complete(prepared)
-            manifest["status"] = "completed"
-            session_review.write(path, manifest)
+            _finish_batch(manifest, path)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             _failure(manifest, path, f"prepare-or-state: {error}")
             return 1

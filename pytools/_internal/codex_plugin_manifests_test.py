@@ -445,6 +445,20 @@ def test_sync_ignores_tracked_file_deleted_from_worktree(manifest_root: Path) ->
     assert not (manifest_root / subject.CODEX_PLUGIN_ROOT_TARGET / "deleted.md").exists()
 
 
+def test_sync_includes_readme_and_license(manifest_root: Path) -> None:
+    """既存の原本列挙で導入文書・ライセンスをCodex配布物へ同梱し、更新にも追随する。"""
+    originals = {"README.md": "# toolkit\n\n[ライセンス](LICENSE)\n", "LICENSE": "MIT toolkit\n"}
+    for name, body in originals.items():
+        (manifest_root / "agent-toolkit" / name).write_text(body, encoding="utf-8")
+    subject.sync(manifest_root)
+    for name, body in originals.items():
+        assert (manifest_root / subject.CODEX_PLUGIN_ROOT_TARGET / name).read_text(encoding="utf-8") == body
+        (manifest_root / "agent-toolkit" / name).write_text(body + "更新\n", encoding="utf-8")
+    assert subject.sync(manifest_root)
+    for name, body in originals.items():
+        assert (manifest_root / subject.CODEX_PLUGIN_ROOT_TARGET / name).read_text(encoding="utf-8") == body + "更新\n"
+
+
 def test_codex_interface_descriptions_and_prompts(manifest_root: Path) -> None:
     """Codex向けinterfaceが`longDescription`と`defaultPrompt`の契約を満たす。"""
     subject.sync(manifest_root)

@@ -12,8 +12,9 @@ push先のリモート、更新対象のref、runの監視、ならびに証拠�
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「初動と拡張原因分析の判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「初動と拡張原因分析の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md`の「初動と拡張原因分析の判定」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「初動と拡張原因分析の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/push-and-ci.md#「pushと監視」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「pushと監視」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
@@ -43,7 +44,7 @@ push先のリモート、更新対象のref、runの監視、ならびに証拠�
 1. 失敗ジョブを検出した際は、計画モードの開始前に取得可能な証拠を暫定保存し、全体の完了を待たずにローカルでの再現確認、帰属の判定、および原因仮説の検討に着手する（待機時間を有効に分析へ充てるための努力目標）。`wait_ci.py`を再開する場合は同一のbaselineを用い、SHA待機の場合は同一の`--failure-record`を使用する。全体完了後に、失敗したすべてのジョブのログやartifactを先行分析の結果へ統合する
 2. 初回ログの内容と、同一SHAを用いたローカル再現の結果から、再現性を暫定的に分類する
 3. 失敗したジョブの全容を確認したうえで修正範囲を確定し、計画モードにおいて新しい計画ファイル（バグ）の調査工程として3つの観点（VRTの場合は差分の分類も含む）を記録する。`agent-toolkit:process-wi`の公開工程では、公開工程が管理する原因分析結果へ記録する
-4. 自セッションに起因する失敗、または起因を否定できない失敗である場合は、自明な単純失敗を除き、初回ログの見え方にかかわらず競合仮説の支持・反証および判別実験を記録する。`agent-basics:bugfix/references/root-cause-analysis.md`「初動と拡張原因分析の判定」で分析の深さを選ぶ。同資料に従い、原因、類似箇所の見直し、および処置の階層を確定する
+4. 自セッションに起因する失敗、または起因を否定できない失敗である場合は、自明な単純失敗を除き、初回ログの見え方にかかわらず競合仮説の支持・反証および判別実験を記録する。`agent-basics:bugfix/references/root-cause-analysis.md`「初動と拡張原因分析の判定」で分析の深さを選ぶ。同資料に従い原因を確定し、類似箇所の見直しは`agent-basics:bugfix/references/root-cause-remediation.md`、処置の階層は`agent-basics:bugfix/references/root-cause-actions.md`に従って確定する
 5. 環境要因、または自セッションの変更と無関係であると分類した場合は、`atk wi list --type=awi --status=active`で同一事象を扱うAWIを検索する。該当するAWIが存在する場合は、`atk wi show <filename> --skip-pull`で本文に記載された緩和策を確認し、前述の対処選択肢と同じ階層で比較検討する
 6. 選択した対処、基準情報、CIの生の観測事実、および分析結果を引き継ぎ、計画ファイル（バグ）の初版を起草する。公開工程においては、公開担当がこれらの情報をCI記録として保持し、CI修正担当へ引き渡してメインの作業ツリーで修正させる
 

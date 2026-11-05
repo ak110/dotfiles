@@ -3,13 +3,15 @@
 import datetime
 import json
 import pathlib
+import subprocess
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import effect_check, frontmatter, readiness, sync
+from agent_toolkit._atk.wi.mutations import targets
 from agent_toolkit._testing import git_repository
-from agent_toolkit._testing.wi_entry_files import write_awi
+from agent_toolkit._testing.wi_entry_files import entry_path, write_awi, write_uwi
 
 
 def test_legacy_confirmation_does_not_defer_processing(tmp_path: pathlib.Path) -> None:
@@ -50,17 +52,18 @@ def _effect_repository(
     return notes, worktree, path
 
 
-def _invoke(notes: pathlib.Path, worktree: pathlib.Path, filename: str, file: str, verdict: str, *extra: str) -> int:
+def _invoke(
+    notes: pathlib.Path, worktree: pathlib.Path, filename: str | list[str], file: str | None, verdict: str, *extra: str
+) -> int:
     with pytest.raises(SystemExit) as finished:
         atk.main(
             [
                 "wi",
                 "effect-check",
-                filename,
+                *([filename] if isinstance(filename, str) else filename),
                 "--worktree",
                 str(worktree),
-                "--file",
-                file,
+                *(["--file", file] if file is not None else []),
                 "--verdict",
                 verdict,
                 "--checked-on",
@@ -84,9 +87,11 @@ def test_public_effect_check_partial_then_complete_preserves_original(
     original = path.read_text(encoding="utf-8")
     assert _invoke(notes, worktree, path.name, "agent-toolkit/rules/a.md", "confirmed") == 0
     partial = path.read_text(encoding="utf-8")
-    assert "effect_check:" not in partial
+    assert "effect_check: pending" in partial
     assert list(effect_check.checked_files(partial)) == ["agent-toolkit/rules/a.md"]
     assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/b/SKILL.md", "confirmed") == 0
+    assert "effect_check: pending" in path.read_text(encoding="utf-8")
+    assert _invoke(notes, worktree, path.name, "app.py", "confirmed") == 0
     saved = path.read_text(encoding="utf-8")
     parsed = frontmatter.parse_frontmatter(saved)
     assert parsed is not None
@@ -173,12 +178,6 @@ def test_public_effect_rejects_duplicate_file(effect_repository: tuple[pathlib.P
     assert path.read_bytes() == original
 
 
-def test_norm_files_include_distributed_templates() -> None:
-    """配布される規範テンプレートも全体確認で数える。"""
-    assert effect_check.is_norm_file(".chezmoi-source/dot_claude/rules/example.md.tmpl")
-    assert not effect_check.is_norm_file("app.py")
-
-
 def test_result_values_ignore_fenced_examples() -> None:
     """処理結果のコード例を実際の対応commitとして読み取らない。"""
     text = "## 処理結果\n\n```text\n- 対応commit: example\n```\n\n- 対応commit: abcdef0\n"
@@ -198,3 +197,180 @@ def test_public_effect_rejects_unadopted_and_ordinary_edit(
         atk.main(["wi", "edit", path.name, "--body-file", str(body)], home=notes.parent)
     assert edited.value.code != 0
     assert path.read_bytes() == original
+
+
+def test_public_effect_overall_reason_and_listing_without_commit(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """日時・commit不明でも理由を保存でき、一覧の各出力形式で確認待ちを限定できる。"""
+    notes, worktree, path = effect_repository
+    text = path.read_text(encoding="utf-8")
+    original = "\n".join(line for line in text.split("\n") if not line.startswith(("- 処理日時:", "- 対応commit:")))
+    path.write_text(original, encoding="utf-8")
+    git_repository.commit_all(notes, "日時とcommitのない保存済み項目")
+    git_repository.run_git(notes, "push")
+    for verdict in ("pending", "not_required"):
+        before = path.read_bytes()
+        assert _invoke(notes, worktree, path.name, None, verdict) != 0
+        assert path.read_bytes() == before
+        assert _invoke(notes, worktree, path.name, None, verdict, "--reason", "記録を確認した理由") == 0
+        assert effect_check.pending_reason(path.read_text(encoding="utf-8")) == "記録を確認した理由"
+        capsys.readouterr()
+        for output in ("--jsonl", "--no-jsonl", "--summary-only", "--count"):
+            with pytest.raises(SystemExit) as listed:
+                atk.main(
+                    [
+                        "wi",
+                        "list",
+                        "--state=adopted",
+                        f"--effect-check={verdict}",
+                        "--target-repo",
+                        str(worktree),
+                        "--skip-pull",
+                        output,
+                    ],
+                    home=notes.parent,
+                )
+            assert listed.value.code == 0
+            result = capsys.readouterr().out
+            if output == "--count":
+                assert result.strip() == "1"
+            elif output == "--no-jsonl":
+                assert f"effect_check={verdict}" in result
+                assert "記録を確認した理由" in result
+            else:
+                record = json.loads(result)
+                assert record["filename"] == path.name
+                if output == "--jsonl":
+                    assert record["effect_check"] == verdict
+                    assert record["effect_check_reason"] == "記録を確認した理由"
+    restored = "\n".join(
+        line
+        for line in path.read_text(encoding="utf-8").split("\n")
+        if not line.startswith(("effect_check:", effect_check.OVERALL_RECORD_PREFIX))
+    )
+    assert restored == original
+
+
+def test_public_effect_retry_after_commit_failure_is_idempotent(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """部分記録後のGit失敗でもpendingを保持し、同じ公開操作でcommitから再開する。"""
+    notes, worktree, path = effect_repository
+
+    def fail_commit(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, ["git", "commit"])
+
+    with monkeypatch.context() as failing:
+        failing.setattr(sync, "commit_and_push", fail_commit)
+        assert _invoke(notes, worktree, path.name, "app.py", "confirmed") != 0
+    partial = path.read_text(encoding="utf-8")
+    assert "effect_check: pending" in partial
+    assert _invoke(notes, worktree, path.name, "app.py", "confirmed") == 0
+    assert path.read_text(encoding="utf-8") == partial
+    assert len(effect_check.result_values(partial, "効果確認")) == 1
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "origin/main")
+
+
+def test_public_transition_only_implemented_awi_adoption_starts_pending(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+) -> None:
+    """差分なしAWI・回答UWI・却下項目は自動の効果確認待ちへ入れない。"""
+    notes, worktree, _path = effect_repository
+    write_awi(notes, "nochange.md", state="processing")
+    write_awi(notes, "rejected.md", state="processing")
+    write_uwi(notes, "answer.md", state="processing", answer="回答済み")
+    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    for action, filename, commits in (
+        ("adopt", "nochange.md", []),
+        ("adopt", "answer.md", ["--commit", oid]),
+        ("reject", "rejected.md", ["--commit", oid]),
+    ):
+        with pytest.raises(SystemExit) as finished:
+            atk.main(["wi", action, filename, "--target-repo", str(worktree), *commits], home=notes.parent)
+        assert finished.value.code == 0
+        assert "effect_check:" not in entry_path(notes, filename).read_text(encoding="utf-8")
+
+
+def test_public_effect_batch_validates_all_and_resumes_partial_save(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """公開複数指定で全件を検証し、旧本文を保持して部分保存・commit失敗から再開する。"""
+    notes, worktree, path = effect_repository
+    legacy = write_awi(notes, "legacy.md", state="adopted")
+    legacy.write_text(
+        legacy.read_text(encoding="utf-8") + "\n## ユーザーコメント\n\n旧本文と末尾空白を保持する  ", encoding="utf-8"
+    )
+    git_repository.commit_all(notes, "旧形式の採用済み項目")
+    git_repository.run_git(notes, "push")
+    originals = {item: item.read_bytes() for item in (path, legacy)}
+    base = git_repository.git_output(notes, "rev-parse", "HEAD")
+    names = [path.name, legacy.name]
+    reason = ("--reason", "実利用の適用機会を待つ")
+
+    for invalid in ("missing.md", "corrective.md"):
+        assert _invoke(notes, worktree, [*names, invalid], None, "pending", *reason) != 0
+        assert all(item.read_bytes() == before for item, before in originals.items())
+        assert git_repository.git_output(notes, "rev-parse", "HEAD") == base
+
+    original_write = targets.atomic_write_text
+
+    def fail_second_write(target: pathlib.Path, text: str, **_kwargs: object) -> None:
+        if target == legacy:
+            raise OSError("試験用の2件目の保存失敗")
+        original_write(target, text)
+
+    with monkeypatch.context() as failing:
+        failing.setattr(targets, "atomic_write_text", fail_second_write)
+        assert _invoke(notes, worktree, names, None, "pending", *reason) != 0
+    assert len(effect_check.result_values(path.read_text(encoding="utf-8"), "効果確認全体")) == 1
+    assert legacy.read_bytes() == originals[legacy]
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == base
+
+    calls: list[list[str]] = []
+    original_git = sync.run_git
+
+    def observe_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True, **_kwargs: object) -> None:
+        calls.append(args)
+        original_git(args, cwd, forward_error_output=forward_error_output)
+
+    with monkeypatch.context() as recording:
+        recording.setattr(sync, "run_git", observe_git)
+        assert _invoke(notes, worktree, names, None, "pending", *reason) == 0
+    assert sum(args[0] == "commit" for args in calls) == 1
+    assert sum(args[0] == "push" for args in calls) == 1
+    assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "1"
+    saved = {item: item.read_bytes() for item in (path, legacy)}
+    for item, before in originals.items():
+        text = item.read_text(encoding="utf-8")
+        assert len(effect_check.result_values(text, "効果確認全体")) == 1
+        assert "effect_check: pending" in text
+        parsed = frontmatter.parse_frontmatter(text)
+        previous = frontmatter.parse_frontmatter(before.decode("utf-8"))
+        assert parsed is not None and previous is not None
+        assert parsed[0]["state"] == "adopted"
+        if item == legacy:
+            assert parsed[1].startswith(previous[1])
+            assert parsed[1][len(previous[1]) :].startswith("\n\n## 処理結果\n")
+        else:
+            restored = "\n".join(
+                line for line in parsed[1].split("\n") if not line.startswith(effect_check.OVERALL_RECORD_PREFIX)
+            )
+            assert restored == previous[1]
+    assert _invoke(notes, worktree, names, None, "pending", *reason) == 0
+    assert all(item.read_bytes() == saved[item] for item in saved)
+    assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "1"
+
+    def fail_commit(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, ["git", "commit"])
+
+    with monkeypatch.context() as failing:
+        failing.setattr(sync, "commit_and_push", fail_commit)
+        assert _invoke(notes, worktree, names, None, "not_required", "--reason", "後日の観測を要しない") != 0
+    assert _invoke(notes, worktree, names, None, "not_required", "--reason", "後日の観測を要しない") == 0
+    for item in (path, legacy):
+        text = item.read_text(encoding="utf-8")
+        assert "effect_check: not_required" in text
+        assert len(effect_check.result_values(text, "効果確認全体")) == 2
+    assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "2"
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "origin/main")

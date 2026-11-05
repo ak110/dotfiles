@@ -84,6 +84,10 @@ class ManagerBase:
         )
         self.stopped_sessions: dict[str, SessionResumeState] = {}
         self._pending_resumes: dict[str, PendingResume] = {}
+        self._recovery_initialized = False
+        self._recovery_targets: set[str] = set()
+        self._recovery_attempts: dict[str, asyncio.Task[SessionState]] = {}
+        self._recovery_errors: dict[str, Exception] = {}
         self._condition = asyncio.Condition()
         self._resume_lock = asyncio.Lock()
         self._backends: dict[str, backends.Backend] = {}

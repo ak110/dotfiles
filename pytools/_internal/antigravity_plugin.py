@@ -154,7 +154,10 @@ def outputs(root: Path, plugin_name: str = "agent-toolkit") -> dict[Path, tuple[
             if path.suffix == ".md":
                 data = data.decode("utf-8").replace("\r\n", "\n").replace("${CLAUDE_PLUGIN_ROOT}", str(target)).encode("utf-8")
             result[relative] = (data, stat.S_IMODE(path.stat().st_mode))
-    for name in ("pyproject.toml", "uv.lock") if plugin_name == "agent-toolkit" else ():
+    root_files = (
+        ("README.md", "LICENSE", "pyproject.toml", "uv.lock") if plugin_name == "agent-toolkit" else ("README.md", "LICENSE")
+    )
+    for name in root_files:
         result[Path(name)] = ((source / name).read_bytes(), 0o644)
     _split_skills(result, target, manifest["name"])
     result[Path("plugin.json")] = (_json({key: manifest[key] for key in ("name", "version", "description")}), 0o644)

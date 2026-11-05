@@ -15,6 +15,7 @@ from agent_toolkit._agents_server.result_projection import (
 )
 from agent_toolkit._agents_server.shared_layout import results_directory, valid_session_id
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES
+from agent_toolkit._common import session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
@@ -43,6 +44,7 @@ def take_result(
     collector: str,
     state_root: pathlib.Path | None = None,
     stash_path: pathlib.Path | None = None,
+    expected_turn_seq: int | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """所有者が一致するか確かめ、CLI用の退避先があれば保存後に原本を回収する。
 
@@ -69,6 +71,16 @@ def take_result(
                 return None, str(exc)
             if not isinstance(payload, dict):
                 return None, "最上位が辞書ではありません"
+            if expected_turn_seq is not None and payload.get("turn_seq") != expected_turn_seq:
+                return None, None
+            if expected_turn_seq is None:
+                resolution = session_registry.resolve(session_id, state_root=state_root)
+                if (
+                    resolution.resume_pending
+                    and resolution.resume_info is not None
+                    and payload.get("turn_seq") != resolution.resume_info.turn_seq
+                ):
+                    return None, None
             recorded_owner = payload.get("owner_status_file")
             if recorded_owner != owner_status_file and not (recorded_owner is None and owner_status_file == "root.json"):
                 return None, None

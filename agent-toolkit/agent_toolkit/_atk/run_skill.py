@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import dataclasses
 import datetime
+import functools
 import hashlib
 import json
 import pathlib
@@ -30,6 +31,7 @@ import uuid
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import filelock
 
+from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import usage_limit_policy
@@ -38,15 +40,19 @@ from agent_toolkit._atk.wi import add as _wi_add
 from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id_or_raise
 from agent_toolkit._common import antigravity_cli as _antigravity
 from agent_toolkit._common import automated_prompt as _automated_prompt
+from agent_toolkit._common import claude_connection as _claude_settings
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import mcp_environment, session_review, skill_modes
+from agent_toolkit._common import mcp_environment, recorded_process, session_review, skill_modes
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import process_tree as _process_tree
+from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as _git_command
+lazy from agent_toolkit._atk import run_skill_state as _run_state
 
 DEFAULT_TIMEOUT_SECONDS = 21600
 """セッションの時間上限の省略時の値（6時間）。数日に1回の定期実行で1回のスキル実行が収まる長さとする。"""
@@ -74,7 +80,7 @@ OUTPUT_DRAIN_SECONDS = 5.0
 
 _TITLE = "atk run-skill"
 _USAGE_LIMIT_RESUME_PROMPT = _automated_prompt.wrap(
-    "利用上限で中断したため解除まで待ちました。最初の未完了工程から作業を続けてください。"
+    "中断前の要求・作業契約と成果を確認し、同じ実行の最初の未完了工程から作業を続けてください。"
     "完了済みの操作はその結果を引き継いでください。",
     source=_automated_prompt.SOURCE_RUN_SKILL,
     kind="usage-limit-resume",
@@ -100,7 +106,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         "--timeout",
         metavar="SECONDS",
         type=int,
-        default=DEFAULT_TIMEOUT_SECONDS,
+        default=None,
         help=(
             f"セッションの起動からの時間上限の秒数。省略時は{DEFAULT_TIMEOUT_SECONDS}秒。"
             "可用性判定と利用上限の解除待ちの時間は含めない。"
@@ -112,8 +118,10 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="スキルへ渡す任意の文字列。process-wiは先頭語single-lane/all-repos、review-sessionはbatchの完全一致でモードを選び、残りを自由記述として保持する。",
     )
+    parser.add_argument("--resume", metavar="RUN_ID", help="保存した実行識別子の会話を、元の入力・報告先と残時間で再開する。")
     parser.add_argument(
         "skill",
+        nargs="?",
         metavar="SKILL",
         help="実行するスキル名（`agent-toolkit:process-wi`のような修飾名、またはプロジェクトのスキル名）。",
     )
@@ -121,6 +129,36 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 
 def dispatch(args: argparse.Namespace) -> int:
     """スキルを1回実行し、終了コードを返す。"""
+    if identifier := getattr(args, "resume", None):
+        try:
+            record = _run_state.load(identifier)
+            if any(getattr(args, name, None) is not None for name in ("target_repo", "work_dir", "timeout", "args")):
+                raise ValueError("--resumeでは元の対象・cwd・時間予算・スキル引数を変更できない")
+            if args.skill is not None and args.skill != record.input.skill:
+                raise ValueError("--resumeのスキルが元の実行と一致しない")
+        except (OSError, ValueError) as error:
+            _outcome.report_failure(
+                str(error), next_action="ログの実行識別子と保存した入力を確認し、--resume <RUN_ID>で再実行する"
+            )
+            return 2
+        if record.status == "completed" and record.input.batch_manifest is None:
+            _outcome.report_success(f"既に完了した実行: {record.input.run_id}（ログ: {record.log_path}）")
+            return 0
+        args.skill, args.args = record.input.skill, record.input.arguments
+        args.target_repo = record.input.target_repo or str(record.work_dir)
+        args.work_dir = str(record.work_dir) if record.input.target_repo is not None else None
+        args.timeout, args.run_id = record.remaining, record.input.run_id
+        args.batch_manifest, args.resume_record = record.input.batch_manifest, record
+        if args.batch_manifest is not None:
+            from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+            return run_skill_batch.dispatch(args, _dispatch_once)
+        return _dispatch_once(args)
+    if args.skill is None:
+        _outcome.report_failure("スキル名が必要", next_action="スキル名または--resume <RUN_ID>を指定する")
+        return 2
+    if getattr(args, "timeout", None) is None:
+        args.timeout = DEFAULT_TIMEOUT_SECONDS
     if skill_modes.invocation_scope(args.skill, args.args) == session_review.BATCH_SCOPE:
         from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
@@ -130,15 +168,27 @@ def dispatch(args: argparse.Namespace) -> int:
 
 def _dispatch_once(args: argparse.Namespace) -> int:
     """batchと通常起動で共有する既存の1回分を実行する。"""
-    if args.timeout <= 0:
+    record = getattr(args, "resume_record", None)
+    if args.timeout <= 0 and record is None:
         _outcome.report_failure(
             f"--timeoutは正の秒数で指定する（指定値: {args.timeout}）",
             next_action=f"--timeoutを省略して{DEFAULT_TIMEOUT_SECONDS}秒とするか、正の秒数を指定する",
         )
         return 2
-    candidates = _orchestrator.resolve_specs(rerun_action="`atk run-skill`を再実行する")
+    candidates = (
+        [(record.engine, record.model, record.effort)]
+        if record is not None
+        else _orchestrator.resolve_specs(rerun_action="`atk run-skill`を再実行する")
+    )
     work_dir = getattr(args, "work_dir", None)
-    if work_dir is not None:
+    if record is not None:
+        repo_root = record.work_dir
+        if not repo_root.is_dir():
+            _outcome.report_failure(
+                f"再開するcwdが存在しない: {repo_root}", next_action="元の作業ツリーを復元して同じ実行を再開する"
+            )
+            return 2
+    elif work_dir is not None:
         repo_root = pathlib.Path(work_dir).expanduser()
         if not repo_root.is_absolute() or not repo_root.is_dir() or not args.target_repo:
             _outcome.report_failure(
@@ -152,13 +202,19 @@ def _dispatch_once(args: argparse.Namespace) -> int:
         repo_root = _resolve_repo_root(resolve_local_worktree(args.target_repo))
     log_dir = _state_paths.state_dir() / _LOG_DIRNAME
     log_dir.mkdir(parents=True, exist_ok=True)
-    _remove_expired_logs(log_dir, now=time.time())
-    log_path = _new_log_path(log_dir, skill_modes.invocation_scope(args.skill, args.args))
+    try:
+        _remove_expired_logs(log_dir, now=time.time())
+    except (OSError, ValueError) as error:
+        _outcome.report_failure(str(error), next_action="run-skill/runsの実行記録とログの保存先を確認して再実行する")
+        return 2
+    log_path = (
+        record.log_path if record is not None else _new_log_path(log_dir, skill_modes.invocation_scope(args.skill, args.args))
+    )
     if manifest_path := getattr(args, "batch_manifest", None):
         manifest = session_review.read(pathlib.Path(manifest_path))
         manifest["log_path"] = str(log_path)
         session_review.write(pathlib.Path(manifest_path), manifest)
-    with log_path.open("w", encoding="utf-8") as log:
+    with log_path.open("a" if record is not None else "w", encoding="utf-8") as log:
         progress = Progress(log, sys.stderr)
         progress.message(f"ログ: {log_path.resolve()}")
         _write_header(log, repo_root=repo_root, args=args)
@@ -198,6 +254,29 @@ def _run_locked(
     progress: Progress,
 ) -> int:
     """ロックを取得した状態で候補を選び、子セッションを実行する。"""
+    record = _run_state.load(args.run_id) if getattr(args, "resume_record", None) is not None else None
+    remaining = float(args.timeout)
+    if record is not None:
+        if record.status == "completed":
+            _outcome.report_success(f"既に完了した実行: {record.input.run_id}（ログ: {record.log_path}）")
+            return 0
+        if record.session_id is None:
+            _outcome.report_failure("元の会話IDが未記録", next_action=f"ログ{record.log_path}で起動の成否を確認する")
+            return 2
+        if record.executor is not None:
+            failure = recorded_process.stop_recorded_executor(record.executor)
+            if failure is not None:
+                _outcome.report_failure(failure, next_action="記録した旧CLIの終了を確認して同じ実行を再開する")
+                return 1
+        remaining = (
+            min(record.remaining, max(0.0, record.deadline - time.time())) if record.deadline is not None else record.remaining
+        )
+        _run_state.RecordWriter(record).finish(remaining, completed=False)
+        if remaining <= 0:
+            _outcome.report_failure(
+                "元の実行の時間予算が残っていない", next_action=f"ログ{record.log_path}で未完了作業を確認する"
+            )
+            return TIMEOUT_EXIT_CODE
     env = _orchestrator.child_env(
         drop=(
             _orchestrator.RESTART_SPEC_ENV,
@@ -229,9 +308,12 @@ def _run_locked(
         ),
         record_wait=record_wait,
         notify=notify,
+        claude_connection=record.connection if record is not None else None,
     )
     try:
-        orchestrator, model, effort = _orchestrator.select_available(candidates, env, repo_root, context)
+        orchestrator, model, effort, _, connection = _orchestrator.select_available_with_provider(
+            candidates, env, repo_root, context
+        )
     except _orchestrator.NoAvailableCandidateError as error:
         args.batch_failure = f"availability-{error.orchestrator}-{error.returncode}: {error.detail}"
         _log_line(log, f"終了状態: 全てのモデル候補の可用性判定に失敗した（{error.orchestrator}: {error.detail}）")
@@ -262,17 +344,19 @@ def _run_locked(
         },
         ensure_ascii=False,
     )
-    session_id: str | None = None
+    if record is not None:
+        env[mcp_environment.SESSION_START_INPUT_ENV] = record.input.model_dump_json()
+    session_id: str | None = record.session_id if record is not None else None
     if orchestrator == "claude":
         # 非対話CLIは最終応答で終了するため、子の結果を同じターンで回収させる。
         # このenvは利用上限解除後の同一会話の再開でも使う。
         env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"
-        session_id = str(uuid.uuid4())
+        session_id = session_id or str(uuid.uuid4())
         progress.message(f"Claudeのセッション識別子: {session_id}")
         argv = [
             "claude",
             "-p",
-            "--session-id",
+            "--resume" if record is not None else "--session-id",
             session_id,
             "--permission-mode",
             "auto",
@@ -282,28 +366,84 @@ def _run_locked(
             model,
             "--effort",
             effort,
-            f"/goal {goal}",
+            _USAGE_LIMIT_RESUME_PROMPT if record is not None else f"/goal {goal}",
         ]
         argv[-1:-1] = ["--output-format", "stream-json", "--verbose"]
     elif orchestrator == "agy":
-        argv = _antigravity.build_command(goal, model, effort, None, timeout=args.timeout)
+        argv = _antigravity.build_command(
+            _USAGE_LIMIT_RESUME_PROMPT if record is not None else goal,
+            model,
+            effort,
+            session_id,
+            timeout=max(1, int(remaining)),
+        )
     else:
         # Codexの非対話起動は`/goal`を目標として扱わず通常の入力として残すため、目的文だけを渡す。
-        argv = ["codex", "exec", "--model", model, "-c", f"model_reasoning_effort={effort}", goal]
-        argv.insert(-1, "--json")
+        argv = [
+            "codex",
+            "exec",
+            *(["resume"] if record is not None else []),
+            "--model",
+            model,
+            "-c",
+            f"model_reasoning_effort={effort}",
+            "--json",
+            *([session_id] if session_id is not None else []),
+            _USAGE_LIMIT_RESUME_PROMPT if record is not None else goal,
+        ]
     log.flush()
     codex_home = _host_homes.codex_home(env)
-    remaining = float(args.timeout)
+    writer = _run_state.RecordWriter(
+        _run_state.RunRecord.model_validate(
+            {
+                "input": _run_state.StartupInput.model_validate_json(env[mcp_environment.SESSION_START_INPUT_ENV]),
+                "work_dir": repo_root,
+                "log_path": log_path,
+                "engine": orchestrator,
+                "model": model,
+                "effort": effort,
+                "session_id": session_id,
+                "connection": connection,
+                "remaining": remaining,
+            }
+        )
+    )
     while True:
         output = _SessionOutput()
-        started_at = time.monotonic()
-        with contextlib.ExitStack() as resources:
+
+        def completed(current: _SessionOutput = output) -> bool:
+            return current.exit_code == 0 and current.usage_limit is None and not getattr(args, "batch_manifest", None)
+
+        with (
+            writer.running(
+                remaining,
+                connection,
+                completed=completed,
+            ),
+            contextlib.ExitStack() as resources,
+        ):
+            launch_env = _orchestrator.session_env(env, orchestrator)
+            launch_argv = argv
+            if orchestrator == "claude" and connection is not None:
+                launch_env = _connection.connection_environment(launch_env, connection)
+                settings = _claude_settings.merge_settings(
+                    None,
+                    _connection.connection_overrides(connection),
+                    None,
+                    force_file=bool(launch_env.get("ANTHROPIC_API_KEY") or launch_env.get("ANTHROPIC_AUTH_TOKEN")),
+                    isolate_auth=connection.kind != "inherit",
+                    isolation_keys=_connection.isolation_keys(connection),
+                    cwd=repo_root,
+                )
+                if isinstance(settings, _claude_settings.SettingsFile):
+                    resources.enter_context(settings)
+                launch_argv = [*argv[:-1], "--settings", settings, argv[-1]]
             try:
                 process = resources.enter_context(
                     _process_tree.process_scope(
-                        argv,
+                        launch_argv,
                         cwd=repo_root,
-                        env=_orchestrator.session_env(env, orchestrator),
+                        env=launch_env,
                         stdin=subprocess.DEVNULL,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
@@ -317,11 +457,18 @@ def _run_locked(
                     f"{orchestrator}を起動できなかった: {error}（ログ: {log_path}）", next_action=_PATH_ACTION
                 )
                 return 1
+            executor = _registry.ProcessIdentity.of(process.pid)
+            if executor is None and process.poll() is None:
+                raise ActionableError(
+                    "起動したCLIのPID世代を保存できない", next_action="プロセス情報の参照権限を確認して同じ実行を再開する"
+                )
+            writer.attach(executor)
+            output.on_thread_id = functools.partial(writer.set_session_id, executor=executor)
             if getattr(args, "batch_manifest", None):
                 from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
                 run_skill_batch.record_executor(args, process.pid)
-            code = _wait_session(
+            output.exit_code = _wait_session(
                 process,
                 orchestrator=orchestrator,
                 timeout=remaining,
@@ -332,14 +479,42 @@ def _run_locked(
                 codex_home=codex_home,
                 run_id=run_id,
                 skill=skill_modes.invocation_scope(args.skill, args.args),
+                allow_connection_switch=orchestrator == "claude"
+                and len(_connection.candidates("orchestrator", env=env, cli=True).connections) > 1,
             )
-        remaining = max(0.0, remaining - (time.monotonic() - started_at))
+        remaining = writer.record.remaining
+        code = output.exit_code
+        assert code is not None
         if code == TIMEOUT_EXIT_CODE or output.usage_limit is None:
             return code
+        if remaining <= 0:
+            _outcome.report_failure("元の実行の時間予算が残っていない", next_action=f"ログ{log_path}で未完了作業を確認する")
+            return TIMEOUT_EXIT_CODE
         usage_limit = output.usage_limit
-        delay = usage_limit.delay_seconds(time.time())
-        record_wait(candidate, usage_limit, delay)
-        time.sleep(delay)
+        alternatives = (
+            tuple(
+                item
+                for item in _connection.candidates("orchestrator", env=env, cli=True).connections
+                if connection is None or item.kind != connection.kind
+            )
+            if orchestrator == "claude"
+            else ()
+        )
+        if alternatives:
+            try:
+                _, _, _, _, connection = _orchestrator.select_available_with_provider(
+                    [(orchestrator, model, effort)],
+                    env,
+                    repo_root,
+                    dataclasses.replace(context, claude_connection=connection),
+                )
+            except _orchestrator.NoAvailableCandidateError as error:
+                _outcome.report_failure(error.detail, next_action=f"接続設定を確認して--resume {run_id}で再開する")
+                return error.returncode or 1
+        else:
+            delay = usage_limit.delay_seconds(time.time())
+            record_wait(candidate, usage_limit, delay)
+            time.sleep(delay)
         if orchestrator == "claude":
             # 初回の明示IDを再開にも使い、同じ会話の履歴を引き継ぐ。
             assert session_id is not None
@@ -388,12 +563,16 @@ class _SessionOutput:
 
     thread_id: str | None = None
     usage_limit: _orchestrator.UsageLimitState | None = None
+    on_thread_id: typing.Callable[[str], None] | None = None
+    exit_code: int | None = None
 
     def receive(self, line: str) -> None:
         """stdoutのイベントを取り込む。"""
         thread_id = _codex_usage_limit.thread_id_from_stream_lines((line,))
-        if thread_id is not None:
+        if thread_id is not None and thread_id != self.thread_id:
             self.thread_id = thread_id
+            if self.on_thread_id is not None:
+                self.on_thread_id(thread_id)
         try:
             event = json.loads(line)
         except ValueError:
@@ -401,11 +580,13 @@ class _SessionOutput:
         if not isinstance(event, dict):
             return
         conversation = _antigravity.event_session_id(event)
-        if conversation is not None:
+        if conversation is not None and conversation != self.thread_id:
             self.thread_id = conversation
+            if self.on_thread_id is not None:
+                self.on_thread_id(conversation)
         state = _claude_usage_limit.from_event(event)
         if state is not None:
-            self.usage_limit = state if state.is_wait_target else None
+            self.usage_limit = state if state.status == "rejected" else None
 
 
 @contextlib.contextmanager
@@ -459,11 +640,36 @@ def _wait_session(
     codex_home: pathlib.Path,
     run_id: str,
     skill: str,
+    allow_connection_switch: bool = False,
 ) -> int:
     """子セッションの終了か時間上限を待ち、結果行を出力して終了コードを返す。"""
     with _session_readers(process, orchestrator=orchestrator, log=log, progress=progress, output=output) as (lock, readers):
+        deadline = time.monotonic() + timeout
         try:
-            returncode = process.wait(timeout=timeout)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(process.args, timeout)
+                try:
+                    returncode = process.wait(timeout=min(1.0, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    with lock:
+                        limit = output.usage_limit
+                        limited = (
+                            isinstance(limit, _claude_usage_limit.UsageLimitState)
+                            and limit.status == "rejected"
+                            and (allow_connection_switch or usage_limit_policy.should_wait(orchestrator, limit.limit_type))
+                        )
+                    if limited:
+                        residual = _process_tree.stop_process_tree(process)
+                        if residual:
+                            raise ActionableError(
+                                f"接続切替前に旧CLIの終了を確認できない: {residual}",
+                                next_action="記録したPID世代の旧CLIの終了を確認して同じ実行を再開する",
+                            ) from None
+                        returncode = process.returncode or 1
+                        break
         except subprocess.TimeoutExpired:
             residual = _process_tree.stop_process_tree(process)
             _drain_output(readers, log, lock)
@@ -481,8 +687,10 @@ def _wait_session(
             _log_line(log, f"終了状態: exit code {returncode}")
             if orchestrator == "codex" and returncode != 0:
                 output.usage_limit = _codex_usage_limit.from_thread(output.thread_id, codex_home=codex_home)
-            if output.usage_limit is not None and not usage_limit_policy.should_wait(
-                orchestrator, output.usage_limit.limit_type
+            if (
+                output.usage_limit is not None
+                and not allow_connection_switch
+                and not usage_limit_policy.should_wait(orchestrator, output.usage_limit.limit_type)
             ):
                 output.usage_limit = None
             if output.usage_limit is not None:
@@ -587,7 +795,7 @@ def _new_log_path(log_dir: pathlib.Path, skill: str) -> pathlib.Path:
 
 def _remove_expired_logs(log_dir: pathlib.Path, *, now: float) -> None:
     """保持期間を超えたログを削除する。削除できないログは次回の実行で再び試す。"""
-    protected = session_review.protected_logs()
+    protected = session_review.protected_logs() | _run_state.sweep_records(cutoff=now - LOG_RETENTION_SECONDS)
     for path in log_dir.glob("*.log"):
         if path in protected:
             continue

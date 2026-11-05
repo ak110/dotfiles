@@ -54,4 +54,10 @@ description: >
 
 上記の公開範囲に該当しない作業では、リリースPRを手動で作成し、マージ完了後に`merge-pr`の手順に沿ってブランチ同期、CI、および必要なリリースを検収する。
 
-statusline（`rust/claude-statusline/`配下）に変更を加えた場合は、どの手順でリリースする場合であっても、必ず`rust/claude-statusline/Cargo.toml`の`version`を更新する。レーン担当者がバージョン更新の根拠を計画書や引き継ぎ記録に明記し、公開担当者が`develop`へpushする前までに更新を完了させておく。バージョン更新の対象となるのは同ディレクトリ配下の全ファイルの差分であり、`src/*.rs`内の`mod tests`におけるテストコードやテスト入力のみの変更、あるいは`Cargo.lock`のみの変更であっても更新が必要である。GitHub Actionsの`release-statusline.yaml`は、差分が存在するマージごとに`statusline-v<version>`タグを自動生成するため、バージョン番号を据え置いたままだと既存のタグと衝突してしまう。更新漏れがある場合は、公開前のローカル検証時に明示的に有効化するpyfltrの`statusline-version`チェックや、CIの`statusline-version`ジョブがそれを検出する。
+statusline（`rust/claude-statusline/`配下）に変更を加えた場合は、どの手順でリリースする場合であっても、必ず`rust/claude-statusline/Cargo.toml`の`version`を更新する。
+レーン担当者は更新の根拠を計画や引き継ぎ記録へ残す。
+公開担当者はその根拠が統合差分にも当てはまるか確認し、`develop`へpushする前に版数と`Cargo.lock`の整合を確かめる。
+対象は配下の全ファイルの差分であり、テストコード・テスト入力のみや`Cargo.lock`のみの変更も含む。
+GitHub Actionsの`release-statusline.yaml`は差分があるマージごとに`statusline-v<version>`タグを生成するため、据え置くと既存タグと衝突する。
+公開前の最終検証は`develop-dotfiles`「自動チェックと依存更新」に従い、pyfltrへ`--enable=statusline-version`を指定し、既存チェックの結果を確認する。
+レーンの途中commitでは既定無効を維持し、採番の完了は公開担当が検収する。

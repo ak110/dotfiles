@@ -1,6 +1,6 @@
 # 因果関係の特定と原因分析の進め方
 
-本書は、拡張原因分析を実施する場合や、根本原因の特定に履歴やログの調査、2系統の分析を用いる場合について、資料の確認順序、因果関係の特定方法、2系統4段階での分析手順、および直接的な原因と根本原因の記録方法を定める。特定した根本原因から導く類似箇所の見直し、処置の階層、再発防止策については`root-cause-analysis.md`を参照する。
+本書は、拡張原因分析を実施する場合や、根本原因の特定に履歴やログの調査、2系統の分析を用いる場合について、資料の確認順序、因果関係の特定方法、2系統4段階での分析手順、および直接的な原因と根本原因の記録方法を定める。特定した根本原因から類似箇所を見直す時は`root-cause-remediation.md`、処置の階層を判断する時は`root-cause-actions.md`、再発防止策を選ぶ時は`root-cause-prevention.md`に従う。
 
 ## 名指し参照の読込方法
 
@@ -8,8 +8,11 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `root-cause-analysis.md#「原因分析の品質確認」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「原因分析の品質確認」` |
+| 対策の前提となる入力を確定する前 | `root-cause-analysis.md`の「直接的原因と事象時点の確定」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `root-cause-severity.md#「原因分析の品質確認」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「原因分析の品質確認」` |
+| 根本原因から類似箇所を見直す前 | `root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 処置の階層を判断する前 | `root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
+| 再発防止策を選ぶ前 | `root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
 
 ## 拡張原因分析の資料確認と因果関係の特定
 
@@ -70,4 +73,4 @@ L1〜L4の各段と類似見直し観点における「該当なし」は、そ�
 前の段で説明がついたことや処置が決まったこと、処置で原因を除去できることは、該当なしの根拠にしない。
 L4では、L3の構造がプロジェクトの管理外にある上流製品や外部環境だけで生じた場合など、問いに当たる事実の不在を確認した範囲を示す。
 各段階に確定した具体的な内容、仮説、あるいは共通規則に沿った「該当なし」を記録する。仮説や未確認は調査途中の状態として区別し、必要な資料・実装・履歴の確認をすべて終えた場合に限り分析を確定する。上位段の候補は未確定だけを理由に該当なしへ変換せず、仮説に支持する事実と不確実性を残して改善の採否へ接続する。
-規範、仕様、設計文書が存在しないことをL3やL4の要因として挙げる前に、`root-cause-analysis.md`「原因分析の品質確認」に沿って確認する。
+規範、仕様、設計文書が存在しないことをL3やL4の要因として挙げる前に、`root-cause-severity.md`「原因分析の品質確認」に沿って確認する。

@@ -392,14 +392,6 @@ main > .toolbar {
   background: #fffaeb;
   border-color: #fedf89;
 }
-#screen-wi .list-fallback-notice {
-  margin-top: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid #b2ddff;
-  border-radius: var(--radius-small);
-  color: #175cd3;
-  background: #eff8ff;
-}
 #screen-wi .success-message {
   color: var(--color-success);
   background: #ecfdf3;
@@ -438,8 +430,30 @@ main > .toolbar {
 #screen-wi .filters-body {
   margin-top: var(--space-3);
 }
-#screen-wi .filters-body > .pane-heading {
-  justify-content: flex-end;
+#screen-wi .wi-display-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#screen-wi .wi-display-mode label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+#screen-wi .wi-display-mode input {
+  width: auto;
+  accent-color: var(--color-primary);
+}
+#screen-wi #clear-filters-button {
+  margin-block: var(--space-2);
+}
+#screen-wi #wi-effective-conditions {
+  overflow-wrap: anywhere;
 }
 #screen-wi .filter-grid {
   display: grid;
@@ -962,6 +976,12 @@ main > .toolbar {
   }
   #screen-wi .entry-pane {
     min-height: 0;
+  }
+  #screen-wi .filters {
+    padding: var(--space-3);
+  }
+  #screen-wi #clear-filters-button {
+    margin-block: var(--space-1);
   }
   #screen-wi .filter-grid {
     grid-template-columns: 1fr;

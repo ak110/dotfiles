@@ -376,7 +376,12 @@ def _target_origins(
     for session_id in set(registered_ids) - listed_ids - result_ids:
         resolution = session_registry.resolve(session_id, state_root=state_root)
         # 委譲元のサーバーが替わると、終了時の結果は旧ルートに残る。回収するまで待機対象を解放しない。
-        if resolution.state in releasable and not owner_lost.has_stranded_result(session_id, root_session_id, state_root):
+        if (
+            resolution.state in releasable
+            and not owner_lost.has_stranded_result(session_id, root_session_id, state_root)
+            and not any(shared_layout.notices_directory(root_session_id, state_root).glob(f"{session_id}.*.json"))
+            and not owner_lost.count_stranded_notices(session_id, root_session_id, state_root)
+        ):
             wait_targets.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
             registered_ids.remove(session_id)
             interrupted = _interrupted_session(session_id, resolution, state_root)

@@ -302,6 +302,8 @@ def _apply_transition(
         assert parsed is not None
         data, body = parsed
         data["state"] = destination_name
+        if action == "adopt" and data.get("type") == "awi" and commit_values[path]:
+            data["effect_check"] = "pending"
         atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
 
 

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import pathlib
@@ -124,15 +125,63 @@ def execute(
     verification: bool = False,
 ) -> tuple[dict[str, Any], int, str | None]:
     """検証用途では共有実行枠を取得し、子の終了と記録保存まで所有する。"""
+    conditions = execution_conditions()
     ownership = execution_slot.hold(label=shlex.join(argv)) if verification else contextlib.nullcontext()
     with ownership:
-        return _execute(argv, cwd, timeout)
+        return _execute(argv, cwd, timeout, conditions)
+
+
+def execution_conditions() -> str:
+    """実行条件を値を漏らさず比較する。実行枠の取得前に呼ぶ。"""
+    environment = dict(os.environ)
+    strip_inherited_venv(environment)
+    return hashlib.sha256(
+        json.dumps(["stable-git-state", sys.executable, sys.version, sys.platform, environment], sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def reusable_success(path: pathlib.Path, argv: list[str], cwd: pathlib.Path) -> dict[str, Any] | None:
+    """同じcleanな版と実行条件の完了記録だけを返す。"""
+    try:
+        observed = json.loads(path.read_text(encoding="utf-8"))
+        head, status = _git_state(cwd)
+        if not isinstance(observed, dict) or head is None or status is None or status:
+            return None
+        expected = {
+            "argv": argv,
+            "cwd": str(cwd),
+            "git_head": head,
+            "git_status": [],
+            "execution_conditions": execution_conditions(),
+            "child_exit_code": 0,
+            "wrapper_exit_code": 0,
+            "timed_out": False,
+            "signal": None,
+            "failure": None,
+        }
+        if not expected.keys() <= observed.keys() or any(observed[key] != value for key, value in expected.items()):
+            return None
+        if observed["timed_out"] is not False or any(
+            not isinstance(observed[key], int) or isinstance(observed[key], bool)
+            for key in ("child_exit_code", "wrapper_exit_code")
+        ):
+            return None
+        for name in ("stdout", "stderr"):
+            output = observed.get(name + "_path")
+            if not isinstance(output, str) or not pathlib.Path(output).is_absolute():
+                return None
+            if _file_metrics(pathlib.Path(output)) != (observed.get(name + "_lines"), observed.get(name + "_bytes")):
+                return None
+    except OSError, ValueError, UnicodeDecodeError:
+        return None
+    return observed
 
 
 def _execute(
     argv: list[str],
     cwd: pathlib.Path,
     timeout: float | None,
+    conditions: str,
 ) -> tuple[dict[str, Any], int, str | None]:
     """終了する子プロセスを実行して記録を保存し、表示とは別に結果・終了コード・保存の失敗を返す。"""
     child_env = dict(os.environ)
@@ -200,6 +249,10 @@ def _execute(
         wrapper_exit_code = _EXIT_WRAPPER_FAILURE
         failure = "\n".join([*([failure] if failure else []), *metric_errors])
     metadata["record_path"] = None
+    # 実行中に版や本文が変わった観測を、開始時のHEADの成功として再利用しない。
+    metadata["execution_conditions"] = (
+        conditions if git_head is not None and git_status == [] and _git_state(cwd) == (git_head, []) else None
+    )
     metadata["wrapper_exit_code"] = wrapper_exit_code
     metadata["failure"] = failure
     if directory is not None:

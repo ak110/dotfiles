@@ -46,7 +46,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/SKILL.md#「継続と新規起動」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「継続と新規起動」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/receiving.md#「受領後の扱い」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/receiving.md#「受領後の扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md#「レーン担当が確定した質問への回答」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「レーン担当が確定した質問への回答」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/receiving.md#「返却形式の適合確認」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/receiving.md#「返却形式の適合確認」` |

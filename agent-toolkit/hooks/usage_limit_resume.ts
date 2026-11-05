@@ -31,6 +31,11 @@ export function register(on: On, session: { delegated: boolean }): void {
   on("turn.complete", { turnId: /^/ }, async ($, e, next) => {
     const result = await next(e);
     if (session.delegated || e.agentId !== undefined) return result;
+    // process-loopとrun-skillが旧プロセスの終了後に接続を選ぶため、ホスト内の予約を重ねない。
+    const processLoop = await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION");
+    const processLoopId = await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID");
+    if ((processLoop === "1" && (!processLoopId || processLoopId === await $.session.id())) ||
+      await $.env.get("AGENT_TOOLKIT_RUN_SKILL_ID")) return result;
     const configured = await $.env.get("CLAUDE_CONFIG_DIR");
     const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
     const path = exitStatePath(await $.session.id(), configured, home, "rate-limit");

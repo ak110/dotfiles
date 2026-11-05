@@ -181,25 +181,56 @@ def prepare_effect_candidates(
     notes = uwi_scan.private_notes_root()
     if start is None:
         unconfirmed.append({"reason": "元セッションの開始日時がない"})
-    elif notes is not None:
+    if notes is not None:
+        target_repo = None
         for path, _repo_id, text, _state, _kind in entries.iter_entries(notes, ("adopted",), None, entry_type="awi"):
-            parsed = frontmatter.parse_frontmatter(text)
-            if parsed is None or "effect_check" in parsed[0]:
+            if target_repo is None and worktree is not None:
+                try:
+                    target_repo = repo.resolve_repo_id_or_raise(str(worktree))
+                except (ValueError, OSError, subprocess.SubprocessError) as error:
+                    unconfirmed.append({"awi": path.name, "awi_path": str(path), "reason": str(error)})
+                    continue
+            if target_repo is not None and target_repo != _repo_id:
                 continue
+            parsed = frontmatter.parse_frontmatter(text)
+            if parsed is None or parsed[0].get("effect_check") in ("confirmed", "insufficient", "not_required"):
+                continue
+            pending = parsed[0].get("effect_check") == "pending"
             times = effect_check.result_values(text, "処理日時")
-            adopted = _timestamp(times[-1]) if times else None
-            if adopted is None or not start - datetime.timedelta(days=14) <= adopted <= start:
+            adopted_at = times[-1] if times else None
+            try:
+                local_time = datetime.datetime.fromisoformat(adopted_at) if adopted_at else None
+                # 過去の採用CLIが保存したnaive値は、その日時のローカルtimezoneで解釈する。
+                assumed_timezone = (
+                    local_time.astimezone().strftime("%Z %z") if local_time and local_time.tzinfo is None else None
+                )
+                adopted = local_time.astimezone(datetime.UTC) if local_time is not None else None
+            except ValueError, OverflowError, OSError:
+                adopted, assumed_timezone = None, None
+            context = {
+                "awi": path.name,
+                "awi_path": str(path),
+                "effect_check": parsed[0].get("effect_check"),
+                "adopted_at": adopted_at,
+                "assumed_timezone": assumed_timezone,
+            }
+            if adopted is None:
+                unconfirmed.append({**context, "reason": "採用日時がない、または解釈できない。atk wi showで処理結果を確認する"})
+                continue
+            if start is None or adopted > start:
+                if pending:
+                    unconfirmed.append({**context, "reason": "採用後の適用を観測できる元セッションの日時がない"})
+                continue
+            if not pending and adopted < start - datetime.timedelta(days=14):
                 continue
             if worktree is None:
-                unconfirmed.append({"awi": path.name, "reason": "対応commitの変更ファイルを確かめる対象worktreeがない"})
+                unconfirmed.append({**context, "reason": "対応commitの変更ファイルを確かめる対象worktreeがない"})
                 continue
             try:
-                if repo.resolve_repo_id(str(worktree)) != _repo_id:
-                    continue
                 changed = effect_check.changed_files(text, worktree)
                 checked = effect_check.checked_files(text)
             except (ValueError, OSError, subprocess.SubprocessError) as error:
-                unconfirmed.append({"awi": path.name, "reason": str(error)})
+                unconfirmed.append({**context, "reason": str(error)})
                 continue
             for file in sorted(changed - checked.keys()):
                 uses = normalized.get(file, [])
@@ -207,14 +238,14 @@ def prepare_effect_candidates(
                 if uses or rules:
                     candidates.append(
                         {
-                            "awi": path.name,
-                            "awi_path": str(path),
+                            **context,
                             "file": file,
-                            "adopted_at": times[-1],
                             "uses": uses,
                             "always_rules": rules,
                         }
                     )
+                elif pending:
+                    unconfirmed.append({**context, "file": file, "reason": "元記録に適用機会の手掛かりがない"})
     paths: dict[str, object] = {}
     for label, items in (("candidates", candidates), ("unconfirmed", unconfirmed)):
         path = output_dir / f"effect-{label}.jsonl"

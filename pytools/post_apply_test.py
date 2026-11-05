@@ -611,13 +611,11 @@ def test_legacy_reference_directory_is_cleanup_target() -> None:
 
 
 def test_removes_legacy_plans_viewer_config_and_shim() -> None:
-    """旧計画ビューアーの設定・CLI・Windowsスタートアップ用shimを配布先から除去する。"""
+    """旧計画ビューアーの設定・CLIを配布先から除去する。"""
     assert Path("pytools/claude-plans-viewer.toml") in _registered_paths(Path(".config"))
     local_bin = _registered_paths(Path(".local") / "bin")
     assert Path("claude-plans-viewer") in local_bin
     assert Path("claude-plans-viewer.exe") in local_bin
-    startup = _IMPORT_HOME / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-    assert Path("claude-plans-viewer.cmd") in [entry.path for entry in post_apply._REMOVED_PATHS_IF_CONTENT[startup]]  # noqa: SLF001
     # 旧systemd unitは停止と無効化を経てから削除するため、この一括削除の対象へ含めない。
     for entries in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
         assert not [entry for entry in entries if "claude-plans-viewer.service" in entry.path.name]

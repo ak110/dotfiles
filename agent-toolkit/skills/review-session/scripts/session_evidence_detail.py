@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from pathlib import Path
@@ -111,6 +112,8 @@ def _entry_detail_events(
                     }
                 )
     if not events:
+        events = _codex_detail_events(line, entry, budget)
+    if not events:
         events = [
             {
                 "kind": "detail",
@@ -127,6 +130,72 @@ def _entry_detail_events(
         for event in events:
             event["omitted"] = True
     return events
+
+
+def _codex_detail_events(line: int, entry: dict[str, Any], budget: _DetailBudget) -> list[dict[str, Any]]:
+    """既知のCodex入力・結果・実行項目を、detailの役割別フィールドへ変換する。"""
+    payload = entry.get("payload")
+    if not isinstance(payload, dict):
+        return []
+    kind = payload.get("type")
+    common = {"kind": "detail", "line": line, "timestamp": _entry_timestamp(entry)}
+    if entry.get("type") == "response_item":
+        if kind == "message":
+            return [{**common, "role": role, "text": budget.clip(text)} for role, text in _message_texts(entry)]
+        if kind in {"function_call", "custom_tool_call"}:
+            raw = payload.get("arguments") if kind == "function_call" else payload.get("input")
+            if kind == "function_call" and isinstance(raw, str):
+                with contextlib.suppress(json.JSONDecodeError):
+                    raw = json.loads(raw)
+            return [
+                {
+                    **common,
+                    "name": payload.get("name"),
+                    "call_id": payload.get("call_id"),
+                    "input": _clip_structure(raw, budget),
+                }
+            ]
+        if kind in {"function_call_output", "custom_tool_call_output"}:
+            output = payload.get("output", "")
+            text = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False)
+            return [{**common, "tool": payload.get("call_id"), "call_id": payload.get("call_id"), "text": budget.clip(text)}]
+    item = payload.get("item")
+    if kind != "item_completed" or not isinstance(item, dict):
+        return []
+    if item.get("type") == "CommandExecution":
+        output = next(
+            (item[key] for key in ("aggregated_output", "output", "stdout") if isinstance(item.get(key), str) and item[key]),
+            "",
+        )
+        return [
+            {
+                **common,
+                "name": "CommandExecution",
+                "call_id": item.get("id"),
+                "command": _clip_structure(item.get("command"), budget),
+                "status": item.get("status"),
+                "exit_code": item.get("exit_code"),
+                "text": budget.clip(output),
+                **({"stderr": budget.clip(item["stderr"])} if isinstance(item.get("stderr"), str) else {}),
+                **({"error": _clip_structure(item["error"], budget)} if "error" in item else {}),
+            }
+        ]
+    if item.get("type") == "McpToolCall":
+        result = item.get("result")
+        texts = _text_blocks(result.get("content")) if isinstance(result, dict) else []
+        text = "\n".join(texts) if texts else result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+        return [
+            {
+                **common,
+                "name": f"mcp__{item.get('server')}__{item.get('tool')}",
+                "call_id": item.get("id"),
+                "input": _clip_structure(item.get("arguments"), budget),
+                "status": item.get("status"),
+                "text": budget.clip(text),
+                **({"error": _clip_structure(item["error"], budget)} if "error" in item else {}),
+            }
+        ]
+    return []
 
 
 def _message_texts(entry: dict[str, Any]) -> list[tuple[str, str]]:

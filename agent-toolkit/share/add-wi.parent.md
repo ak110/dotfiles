@@ -19,7 +19,7 @@ AWIやUWIの作成・更新にあたって成立性調査や起草をWI投入担
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
@@ -40,7 +40,7 @@ AWIやUWIの作成・更新にあたって成立性調査や起草をWI投入担
 
 ## 起動前の前提
 
-類似見直しの探索終了と保持する是正範囲は、`agent-basics:bugfix/references/root-cause-analysis.md`の「QとC・Dの区別」に従う。後述するユーザー明示集合の保護は、同節が保持する既知の欠陥や、追加・強化された規定の既存対象にも適用する。
+類似見直しの探索終了と保持する是正範囲は、`agent-basics:bugfix/references/root-cause-severity.md`「QとC・Dの区別」に従う。後述するユーザー明示集合の保護は、同節が保持する既知の欠陥や、追加・強化された規定の既存対象にも適用する。
 未完了の既存WIを更新・修復する必要が生じた時点や、具体的な懸念が寄せられた時点では、認識合わせや調査を始める前に対象を保留する。保留手順と、保留後に修正・検収・解除を他の作業より先に進める優先順位は、`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`「保留と本文修正」に従う。付随型では委譲元が、担当者への割当、原稿の検収、保存の指示、保存結果の検収、解除をこの順位で進め、専念型では作成主体が解除まで進める。状態が`processing`の項目は、同書の「保留と本文修正」にある処理中の項目の扱いに従い、変更したい内容を新規投入の要求として渡す。
 
 要求ごとに投入先となる対象リポジトリと種別を確定してから渡し、複数の投入先がある要求は、要求と投入先の組へとあらかじめ展開する。

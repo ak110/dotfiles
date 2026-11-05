@@ -10,6 +10,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 所要時間の基準を適用する前 | `duration-analysis.md#「所要時間の分析と改善」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/duration-analysis.md#「所要時間の分析と改善」` |
 | 対象の分析を始める前 | `session-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-analysis.md` |
 | AWIを投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
 | 結果報告の作成・保存に入る前に、メインが起動する | `../../report-completion/SKILL.md` | 判断 | `skill:report-completion` |
@@ -47,7 +48,7 @@ batch自身のセッションも振り返り対象に含める。
    未確認の対象を成功とせず、既存の失敗対応に沿って原因と未完了範囲を報告する。
 3. 原因と対策を確定したAWIを `agent-toolkit:wi-standards` と `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` の契約で登録する。
    sourceは `session-review` とし、エージェント由来の提案として処理担当が根拠と採否を懐疑的に評価する。
-   所要時間目標と超過分析は対象1件あたり300秒として適用する。
+   所要時間目標と超過分析は`duration-analysis.md`「所要時間の分析と改善」のbatchの定義に従う。目標は改善案の必須性だけに使い、対象ごとの必要な調査を完遂する。
 4. batchを実行するメインが`agent-toolkit:report-completion`を起動し、その工程で振り返り結果報告書式を使って今回の結果を事後承認型UWIへ1件保存する。
    Claude Codeでは`Skill`で起動し、Codexでは同スキルの`SKILL.md`を絶対パスで取得する。
    対象一覧、登録AWI・見送り・費用確認を対象IDと対応付ける。

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# NOTE: 対応する Windows 版 → bin/codex.cmd
+exec dotfiles-codex "$@"

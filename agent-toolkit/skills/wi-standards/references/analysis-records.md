@@ -16,8 +16,10 @@
 | 原因分析の各段と該当なしを記録する前 | `agent-basics:bugfix/references/causal-analysis.md#「原因分析の段階」` | 判断 | `section:agent-basics:*/skills/bugfix/references/causal-analysis.md#「原因分析の段階」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-standards.md#「バグ調査」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「バグ調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直しと再発防止の完了」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions.md`の「処置の階層」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「処置の階層」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
 
 ## 原因分析の記録先
@@ -36,7 +38,7 @@ L3で処置を決めた後も各段の記録を残す。
 判断の具体的な検討過程は根拠資料やログへ残す。
 
 調査表は`項目`と`内容`の2列で構成し、計画ファイル（バグ）では以下の11行をこの順序で記載する。
-処置の6区分（対策から再発防止策（見逃し）まで）の定義は`agent-basics:bugfix/references/root-cause-remediation.md`「処置の階層」に従う。
+処置の6区分（対策から再発防止策（見逃し）まで）の定義は`agent-basics:bugfix/references/root-cause-actions.md`「処置の階層」に従う。
 
 | 行名 | 記載内容 |
 | --- | --- |
@@ -50,12 +52,14 @@ L3で処置を決めた後も各段の記録を残す。
 | 類似見直し結果 | 調査した母集団、是正対象と予防対象、必要となる横展開の処置、調査完了の結論、および再取得先を記載する。後続の担当者の判断に影響する探索の限界や残存リスクは本文に明記し、検索手順、非該当と判断した理由、独立走査や再検討の経過などの詳細情報は証拠ログに残す。 |
 | 再発防止策（作り込み） | 同じ要因の不良を今後作り込まないための候補を1件以上記載する。 |
 | 再発防止策（見逃し） | 同じ要因の見逃しを今後発生させないための候補を1件以上記載する。 |
-| 再発防止策の採否 | 候補ごとの採否、作用する要因、防げる損失と導入・継続費用、選定理由、実装と有効性確認の状態を記載する。採用する策は、作用を確かめた異なる形態の想定不具合と、維持すべき契約の記録先も示す。採用しない場合は`agent-basics:bugfix/references/root-cause-analysis.md`「QとC・Dの区別」に基づく終了の結論を書き、`agent-basics:bugfix/references/root-cause-remediation.md`「再発防止策の必須性」で禁止されている根拠を終了の理由にしない。 |
+| 再発防止策の採否 | 候補ごとの採否、作用する要因、防げる損失と導入・継続費用、選定理由、実装と有効性確認の状態を記載する。採用する策は、作用を確かめた異なる形態の想定不具合と、維持すべき契約の記録先も示す。採用しない場合は`agent-basics:bugfix/references/root-cause-severity.md`「QとC・Dの区別」に基づく終了の結論を書き、`agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」で禁止されている根拠を終了の理由にしない。 |
 
 直接的原因と原因分析の根拠は独立した行に書かず、原因分析表の該当セル（主にL1とL2）へ、確定に使った観測・再現・混入commit・資料の所在を添えて書く。
 件数やログの数値を挙げる場合は、主張対象を正しく表す生成元と、原因の条件を満たさない比較対象群の数値を併記し、実測で確認できていない数値は推定値と明記する。
 
-計画ファイル（バグ）では、バグ単位ごとの見出しの下に原因分析表と調査表をこの順序で配置する。拡張原因分析の対象外となる不具合であっても、類似箇所の見直しと再発防止策は`agent-basics:bugfix`の`references/root-cause-remediation.md`に定める共通基準に従って判定し、根本原因から導かれた見直し観点、結果、および再発防止策を記録する。表の行名、列名、配置順序は変更しない。
+計画ファイル（バグ）では、バグ単位ごとの見出しの下に原因分析表と調査表をこの順序で配置する。拡張原因分析の対象外となる不具合にも、類似箇所の見直しと再発防止策の共通基準を適用する。
+`agent-basics:bugfix/references/root-cause-remediation.md`と`agent-basics:bugfix/references/root-cause-prevention.md`に従って判定する。
+根本原因から導かれた見直し観点、結果、および再発防止策を記録する。表の行名、列名、配置順序は変更しない。
 類似見直し観点と再発防止策の作り込み・見逃しの4行には、それぞれ1件以上の候補を書き、採否は採否の2行へ分けて書く。候補の件数は採用件数の下限ではなく、採否はbugfixの影響度と費用対効果の基準で決める。
 混入防止で見逃し側の処置が不要となる場合も、見逃し側の候補と不採用理由を残す。
 候補を作らない段1〜6や案の種類は、それぞれの理由を1行で示せばよい。
@@ -70,7 +74,7 @@ H1直下は短い目的・変更・結果を保ち、各バグの具体的な現
 各H3の冒頭に現象と期待する契約を1〜2文で記す形を標準とする。
 別の箇所を参照する場合は、各バグから該当する節・項目を一意に特定でき、実際の事象、期待との差、原因を比較できるようにする。
 
-複数の観測事象を1つのバグ単位にまとめるのは、直接的な原因と対策の変更対象単位がともに同一である場合に限る。根本原因が共通していることのみを理由に統合しない（たとえば同一の根本原因であっても、入力解析処理と状態更新処理のように直接的原因が異なる場合は個別のバグ単位に分け、逆に同一の原因と対策によって保存失敗と再試行停止の双方が解消される場合は1つに統合できる）。バグ単位を分けた場合であっても、同一の根本原因を持つ一連の不具合に対する類似見直しと再発防止の完了判定は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直しと再発防止の完了」に従い、全件を対象として総合的に行う。
+複数の観測事象を1つのバグ単位にまとめるのは、直接的な原因と対策の変更対象単位がともに同一である場合に限る。根本原因が共通していることのみを理由に統合しない（たとえば同一の根本原因であっても、入力解析処理と状態更新処理のように直接的原因が異なる場合は個別のバグ単位に分け、逆に同一の原因と対策によって保存失敗と再試行停止の双方が解消される場合は1つに統合できる）。バグ単位を分けた場合であっても、同一の根本原因を持つ一連の不具合に対する類似見直しと再発防止の完了判定は、`agent-basics:bugfix`の`references/root-cause-prevention.md`「類似見直しと再発防止の完了」に従い、全件を対象として総合的に行う。
 対応の網羅性を確認する際は、計画メタ情報に記載された関連WIの各バグが、WIの`## 原因分析`節、または計画ファイル（バグ）の確定済みバグ単位に正しく対応していることを確認する。
 計画ファイルの`### 恒久化`節には原因分析を記録した資料への参照を記載し、類似箇所の見直しに関する記述はその参照先資料にのみ集約して記載する。
 処置と完成条件の網羅に関する結論は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」の比較元と対応付け、既存の類似見直し結果および再発防止策の記録欄へ残す。

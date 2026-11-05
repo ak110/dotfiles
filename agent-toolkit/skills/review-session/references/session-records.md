@@ -96,11 +96,16 @@ WIの処理件数を数える場合は、成功結果まで正常に記録され
 
 - 検索キーワードから該当箇所を検索する: `--grep`
 - 位置が特定できている記録の本文を読み取る: `--detail`
+- 記録済みの改善点を出所付きで全行取得する: `--reported-improvements`。同文の別出所や1発話の複数行も保持する
 - 複数の固定文字列について一致したエントリ数と全ロケーターのみを取得する: 文字列ごとに`--fixed-string`を個別に実行する（複数の文字列を1つの正規表現にまとめて結合しない）
 - 位置が特定できているレコードの構造のみを調べる: `--record-schema`
 - ツール呼び出しを呼び出し単位で一覧列挙する: `--tool-calls`（1つのセッションにおける発話とツール呼び出しの時系列推移は、`--bundle`が生成する`conversation.jsonl`に記録される）
 
-件数、判定結果、保存先パスのみを確認したい場合は、照会コマンドに`--summary-only`を追加する。
+既知のCodex形式の`--detail`は入力構造、結果本文、コマンドと終了状態を役割別に返す。元レコード全体の構造は`--record-schema`で調べる。
+候補の証拠は索引の`candidate_id`と`evidence_path`から取得する。`bundle/timeline.jsonl`の`reported_improvements`はイベント直下の文字列配列であり、各要素の出所は同じイベントが持つ。
+
+`--reported-improvements`は件数を末尾の`reported-improvement-summary`へ返し、本文は`reported-improvement`の`record`・`line`・`timestamp`・`text`から読む。`--summary-only`、カタログ、`--bundle`とは併用しない。
+対応する他の照会で件数、判定結果、保存先パスのみを確認したい場合は、照会コマンドに`--summary-only`を追加する。
 必要な詳細情報を取得する場合は、同じ検索条件から`--summary-only`を外して再実行する。
 
 | 照会 | 要約で返す値 |

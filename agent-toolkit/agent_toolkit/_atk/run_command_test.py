@@ -16,6 +16,7 @@ import pytest
 
 from agent_toolkit._atk import run_command
 from agent_toolkit._common import process_tree
+from agent_toolkit._testing import git_repository
 
 
 def _holds_resources(process: psutil.Process) -> bool:
@@ -30,6 +31,27 @@ def _holds_resources(process: psutil.Process) -> bool:
 def _agent_output(monkeypatch: pytest.MonkeyPatch) -> None:
     """既存の結果検証はエージェント向けの出力を使う。"""
     monkeypatch.setattr(run_command, "is_human_terminal", lambda: False)
+
+
+@pytest.mark.parametrize("changed", [None, "worktree", "head"])
+def test_reuse_requires_unchanged_execution_state(monkeypatch, tmp_path, changed):
+    """実行後に元の版へ戻しても、実行中に版を変更した記録は再利用しない。"""
+    repo = git_repository.init_repository(tmp_path / "repo", files={"value.txt": "original"}, commit_message="初期状態")
+    original = git_repository.git_output(repo, "rev-parse", "HEAD")
+    output = tmp_path / "output"
+    output.mkdir()
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: output)
+    if changed == "worktree":
+        argv = [sys.executable, "-c", "import pathlib; pathlib.Path('value.txt').write_text('changed', encoding='utf-8')"]
+    elif changed == "head":
+        argv = ["git", "commit", "--quiet", "--allow-empty", "-m", "実行中の版変更"]
+    else:
+        argv = [sys.executable, "-c", "pass"]
+    observed, code, failure = run_command.execute(argv, repo, 30)
+    assert code == 0 and failure is None
+    git_repository.run_git(repo, "reset", "--hard", original)
+    reused = run_command.reusable_success(pathlib.Path(observed["record_path"]), argv, repo)
+    assert (reused is not None) == (changed is None)
 
 
 @pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])

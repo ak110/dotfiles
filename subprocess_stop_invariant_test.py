@@ -23,6 +23,7 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "stop_process_tree",
     ): "zombie表示の所有Popenも強制終了して回収する共通実装",
     ("pytools/_internal/common.py", "stop_process_tree"): "pytoolsの子孫回収の共通実装",
+    ("agent-toolkit/agent_toolkit/_agents_server/mcp_tools.py", "kill"): "要求の会話を所有するManagerの公開停止APIへの委譲",
     (
         "agent-toolkit/agent_toolkit/_agents_server/cli_turn.py",
         "_terminate_process",

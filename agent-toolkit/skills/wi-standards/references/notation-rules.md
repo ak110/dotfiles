@@ -1,6 +1,7 @@
 # 表記とMarkdownの規則と確認手段
 
-品質基準の正式な提供元は`agent-basics:writing-standards/references/notation-rules.md`である。呼び出し元の条件と節指定を引き継ぎ、本書の運用条件と正式な資料の必要節・前提・例外を読む。両方に同名の見出しがあれば、その範囲を両方で確認する。範囲の選択と取得済み本文の再利用は`../SKILL.md`「名指し参照の読込方法」に従う。
+執筆規則の正式な提供元は`agent-basics:writing-standards/references/notation-rules.md`である。
+チェック対象・実行の正式な提供元は`agent-basics:writing-standards/references/notation-checks.md`である。呼び出し元の条件と節指定を引き継ぎ、本書の運用条件と正式な資料の必要節・前提・例外を読む。両方に同名の見出しがあれば、その範囲を両方で確認する。範囲の選択と取得済み本文の再利用は`../SKILL.md`「名指し参照の読込方法」に従う。
 
 以下はagent-toolkit固有の運用条件である。
 
@@ -10,7 +11,8 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/notation-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-rules.md` |
+| 文章を執筆・修正する前 | `agent-basics:writing-standards/references/notation-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-rules.md` |
+| チェックの対象・実行と診断を判断する前 | `agent-basics:writing-standards/references/notation-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-checks.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/check-execution-operations.md#「pyfltrの起動形」` | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「pyfltrの起動形」` |
 
 ## チェックの対象範囲

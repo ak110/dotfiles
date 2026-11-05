@@ -166,7 +166,18 @@ def test_prepare_opencode_sqlite_family_and_queries(
     assert "初期要求の全文" in conversation and "全体の確認を終えた" in conversation
     assert "子セッションの返却" in conversation
     assert "SQLite合成パート固有本文_除外確認" not in conversation and "別の会話" not in conversation
-    assert "呼出3件" in conversation and "失敗1件" in conversation
+    conversation_calls = [line for line in conversation.splitlines() if line.startswith("- 呼出 ")]
+    assert len(conversation_calls) == 3
+    for call_line, tool, locator, body in zip(
+        conversation_calls,
+        ("read", "skill", "bash"),
+        (3, 5, 7),
+        ("/repo/rules.md", "agent-toolkit-wi-standards", "missing-program"),
+        strict=True,
+    ):
+        assert call_line.startswith(f"- 呼出 {tool} opencode:ses_main:{locator}") and body in call_line
+    assert "失敗1件" in conversation_calls[-1]
+    assert len(conversation.encode("utf-8")) <= 100_000
     assert prepared["utterance_counts"]["user"] == 3
     assert prepared["candidate_counts"]["user-intervention"] == 1
     assert prepared["unconfirmed_scope"] == [{"kind": "unresolved-record", "record": "opencode:ses_empty", "line": 0}]

@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from agent_toolkit._agents_server import (
-    manager_resume,
+    manager_recovery,
 )
 from agent_toolkit._agents_server.responses import (
     turn_elapsed_seconds,
@@ -20,7 +20,7 @@ from agent_toolkit._common import wait_schedule as _wait_schedule
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
-class ManagerWait(manager_resume.ManagerResume):
+class ManagerWait(manager_recovery.ManagerRecovery):
     """保持するsessionの終了と保持期限内の結果を待ち、到着した結果と通知を返す。"""
 
     async def _resolve_wait_timeout(self, request_bucket: str) -> float:
@@ -41,7 +41,7 @@ class ManagerWait(manager_resume.ManagerResume):
         未回収の終了時の結果を持つ破棄済みまたは期限切れsessionも対象へ含め、
         委譲元が回収する前に結果本文を失わないようにする。
         """
-        targets = set(self.sessions) | set(self._pending_resumes)
+        targets = set(self.sessions) | set(self._pending_resumes) | self._recovery_targets
         for session_id, resume_state in (*self.expired_sessions.items(), *self.stopped_sessions.items()):
             if self._stopped_result_response(resume_state) is not None:
                 targets.add(session_id)
@@ -54,7 +54,7 @@ class ManagerWait(manager_resume.ManagerResume):
             response = await self._take_stopped_result(session_id, stopped_state, collector=collector)
             if response is None:
                 return None
-            return self._response_with_notices(response, (await self._take_notices_async(session_id)))
+            return self._response_with_notices(response, (await self._take_registry_notices(session_id)))
         if (await self._resolve_expired_session(session_id)) is None:
             return None
         response = await self._expired_result_response(session_id, collector=collector)
@@ -96,6 +96,11 @@ class ManagerWait(manager_resume.ManagerResume):
         advance_pending = True
 
         while True:
+            if self._recovery_errors:
+                identifier, error = self._recovery_errors.popitem()
+                raise RuntimeError(
+                    f"子の自動復旧に失敗しました: {identifier}: {error}。次の操作: {self._recovery_next_action(identifier)}"
+                ) from error
             await self._drain_candidate_records()
             for session_id in ordered_ids:
                 (await self._resolve_expired_session(session_id))
@@ -153,6 +158,13 @@ class ManagerWait(manager_resume.ManagerResume):
                 for session_id in ordered_ids:
                     session = self.sessions.get(session_id)
                     if session is None:
+                        if session_id in self._recovery_targets:
+                            notices = await self._take_registry_notices(session_id)
+                            if notices:
+                                return {
+                                    "session_id": session_id,
+                                    **self._response_with_notices({"status": "running", "progress": ""}, notices),
+                                }
                         continue
                     notices = await self._take_notices_async(session_id)
                     if notices:
@@ -161,7 +173,15 @@ class ManagerWait(manager_resume.ManagerResume):
 
                 retained = [self.sessions[session_id] for session_id in ordered_ids if session_id in self.sessions]
                 pending_ids = [session_id for session_id in ordered_ids if session_id in self._pending_resumes]
-                if not retained and not pending_ids:
+                observed_ids = [identifier for identifier in ordered_ids if identifier in self._recovery_targets]
+                if not retained and not pending_ids and not observed_ids:
+                    # 旧rootの結果の復元は上のI/O待機中にも完了する。復元済み本文を回収してから終了を判定する。
+                    if any(
+                        self._stopped_result_response(previous) is not None
+                        for identifier in ordered_ids
+                        if (previous := self.stopped_sessions.get(identifier)) is not None
+                    ):
+                        continue
                     if not ordered_ids:
                         return {"status": "expired"}
                     session_id = ordered_ids[0]
@@ -170,6 +190,8 @@ class ManagerWait(manager_resume.ManagerResume):
                 remaining = deadline - loop.time()
                 if remaining <= 0:
                     if not retained:
+                        if observed_ids:
+                            return {"session_id": observed_ids[0], "status": "running", "progress": ""}
                         session_id = pending_ids[0]
                         response = await self._pending_resume_status(self._pending_resumes[session_id])
                         return {"session_id": session_id, **response}

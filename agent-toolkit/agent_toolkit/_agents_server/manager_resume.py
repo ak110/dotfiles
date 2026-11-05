@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 from agent_toolkit._agents_server import (
@@ -33,8 +35,13 @@ from agent_toolkit._agents_server.resume_waits import (
 from agent_toolkit._agents_server.state import ResumePrompt, SessionResumeState, SessionState
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs_async
 from agent_toolkit._common import session_registry, task_documents
+from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
+
+
+class ResumeClaimedElsewhere(ActionableError):
+    """別所有者が同じ会話の再開を予約し、起動結果の観測を要する。"""
 
 
 class ManagerResume(manager_registry.ManagerRegistry):
@@ -332,11 +339,25 @@ class ManagerResume(manager_registry.ManagerRegistry):
             response["elapsed_seconds"] = elapsed_seconds
         return response
 
-    async def _run_resume(self, resume_state: SessionResumeState, prompt: ResumePrompt) -> SessionState:
+    async def _run_resume(
+        self,
+        resume_state: SessionResumeState,
+        prompt: ResumePrompt,
+        on_failure: Callable[[str, Exception], Awaitable[None]] | None = None,
+    ) -> SessionState:
         """backendの再開を完了し、失敗時だけ再試行用状態を復元する。"""
         session_id = resume_state.session_id
-        backend = self._backend(resume_state.engine)
+        claimed = False
         try:
+            claimed = await run_file_operation(
+                session_registry.claim_resume, session_id, resume_state.turn_seq, state_root=self._state_root()
+            )
+            if not claimed:
+                raise ResumeClaimedElsewhere(
+                    f"同じsessionの再開が別の処理で進行しています: {session_id}",
+                    next_action="同じ`session_id`を`show`で確認し、`atk agents wait`で終了を観測する",
+                )
+            backend = self._backend(resume_state.engine)
             await launch_requests.check_plugin_commands(resume_state.cwd)
             provider_args: dict[str, Any] = {}
             if resume_state.engine == "claude" and resume_state.claude_api_env_file is not None:
@@ -352,6 +373,13 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 provider_args["state_provider"] = resume_state.codex_state_provider
             if resume_state.engine in {"claude", "codex"}:
                 provider_args["handoff_prompt"] = resume_state.prompt
+            if self._is_registry_resume_state(resume_state):
+                # 再開後の即時結果を旧turnの回収で消さないよう、接続開始より前に旧結果を回収する。
+                await self._take_stopped_result(session_id, resume_state, collector="resume")
+                self.stopped_sessions.pop(session_id, None)
+                resume_state = dataclasses.replace(resume_state, result_delivered=True)
+            if self._status_writer is not None:
+                await self._status_writer.delete_result_async(session_id, collector="send-message")
             session = await backend.resume(
                 session_id,
                 prompt,
@@ -367,8 +395,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
             )
             session_registry.LaunchInfo.of(resume_state).apply_to(session)
             session.result_contract_recovery_consumed = resume_state.result_contract_recovery_consumed
-            if self._status_writer is not None:
-                await self._status_writer.delete_result_async(session_id, collector="send-message")
             if session.status == "starting":
                 session.status = "running"
             session.announced = True
@@ -381,15 +407,24 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session.turn_seq,
             )
             return session
-        except BaseException:
+        except BaseException as error:
             if session_id not in self.sessions:
                 self.expired_sessions[session_id] = resume_state
+            if on_failure is not None and isinstance(error, Exception) and not isinstance(error, ResumeClaimedElsewhere):
+                # 待機側が旧turnを回収済みとして対象から外す前に、失敗通知を確定する。
+                await on_failure(session_id, error)
             raise
         finally:
-            prompt.close()
-            pending = self._pending_resumes.get(session_id)
-            if pending is not None and pending.task is asyncio.current_task():
-                self._pending_resumes.pop(session_id, None)
+            try:
+                if claimed:
+                    await run_file_operation(
+                        session_registry.release_resume_claim, session_id, resume_state.turn_seq, state_root=self._state_root()
+                    )
+            finally:
+                prompt.close()
+                pending = self._pending_resumes.get(session_id)
+                if pending is not None and pending.task is asyncio.current_task():
+                    self._pending_resumes.pop(session_id, None)
 
     @staticmethod
     def _consume_resume_exception(task: asyncio.Task[SessionState]) -> None:
@@ -402,13 +437,15 @@ class ManagerResume(manager_registry.ManagerRegistry):
         resume_state: SessionResumeState,
         prompt: str,
         previous_result: dict[str, Any] | None,
+        *,
+        on_failure: Callable[[str, Exception], Awaitable[None]] | None = None,
     ) -> tuple[PendingResume, int]:
         """期限切れ状態を一意な進行中再開操作へ原子的に移す。"""
         session_id = resume_state.session_id
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions.pop(session_id, None)
         resume_prompt = ResumePrompt(prompt)
-        task = asyncio.create_task(self._run_resume(resume_state, resume_prompt))
+        task = asyncio.create_task(self._run_resume(resume_state, resume_prompt, on_failure))
         pending = PendingResume(
             state=resume_state,
             task=task,

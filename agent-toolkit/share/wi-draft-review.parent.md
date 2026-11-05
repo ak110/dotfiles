@@ -50,8 +50,10 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | add-awi-by-userで受けた指摘の分類・処置を確定する前 | `../skills/add-awi-by-user/SKILL.md`の「指摘の分類と処置」 | 判断 | `section:agent-toolkit:*/skills/add-awi-by-user/SKILL.md#「指摘の分類と処置」` |
+| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `../skills/user-confirmation-and-report/references/analysis-operations.md#「ユーザー介入と確認の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md#「ユーザー介入と確認の判定」` |
 
 方針段階と本文段階のどちらでも、指摘の受領後、採否・修正を確定する前に、呼出元が定める分類と処置を適用する。`agent-toolkit:add-awi-by-user`の分類は同スキルの「指摘の分類と処置」に従う。他の呼出元には、その呼出元の分類と処置を用いる。分類・処置の結果を次の確認へ引き継いでから、該当段階の修正・再判定へ進む。
+実ユーザー発話やWI記入欄の介入評価は、分類元にかかわらず`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」へ接続する。
 
 返却の確認段階と対象資料を入力と突き合わせる。方針段階では要求・調査根拠と方針の対応および未解決指摘を検収し、合格後は呼出元が定める承認条件に従って本文を起草する。
 本文は同じsessionへ`send_message`の`instruction: 本文確認`と、`extra_params`の`原稿`、`要求と出所`、`成立性の証拠`（すべて実在ファイルの絶対パス）を渡す。方針合格を本文合格として扱わず、以下の本文検収を経てから保存する。

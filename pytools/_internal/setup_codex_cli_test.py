@@ -4,6 +4,7 @@ import contextlib
 import logging
 import os
 import subprocess
+import types
 import typing
 from collections.abc import Callable
 from pathlib import Path
@@ -12,6 +13,7 @@ import httpx
 import pytest
 
 from pytools._internal import post_apply_outcome, prune_codex_packages, setup_codex_cli
+from pytools._internal._test_helpers import FakeEnvironmentRegistry
 from pytools.prune_codex_packages_test import _release
 
 _Call = tuple[list[str], dict[str, object]]
@@ -23,9 +25,8 @@ def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     """ホーム・PATH・Codex用環境変数をtmp_path配下へ隔離する。"""
     original_which = setup_codex_cli.shutil.which
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(setup_codex_cli.sys, "platform", platform)
-    if platform == "win32" and os.name != "nt":
-        monkeypatch.setattr(prune_codex_packages, "_install_lock", lambda *args, **kwargs: contextlib.nullcontext())
+    # 配置の模擬OSだけを差し替え、実際の排他APIにはホストOSを使う。
+    monkeypatch.setattr(setup_codex_cli, "sys", types.SimpleNamespace(platform=platform))
     monkeypatch.setenv("PATH", str(tmp_path / "path"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -34,6 +35,13 @@ def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     monkeypatch.delenv("NVM_DIR", raising=False)
     monkeypatch.delenv("MISE_DATA_DIR", raising=False)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
+    root = tmp_path / "dotfiles"
+    (root / "bin").mkdir(parents=True)
+    for name in ("codex", "codex.cmd"):
+        (root / "bin" / name).write_text("wrapper\n", encoding="utf-8")
+    monkeypatch.setattr(setup_codex_cli.common, "find_dotfiles_root", lambda: root)
+    if platform == "win32":
+        FakeEnvironmentRegistry().install(monkeypatch)
 
     def fake_which(name: str, *, path: str | None = None) -> str | None:
         if name == "codex":
@@ -825,3 +833,131 @@ def test_install_propagates_package_removal_failure(monkeypatch, tmp_path: Path)
     monkeypatch.setattr(prune_codex_packages.shutil, "rmtree", fail_remove)
     with _make_client() as client:
         assert setup_codex_cli.run(client).failure is not None
+
+
+@pytest.mark.parametrize("windows", [False, True])
+@pytest.mark.parametrize("custom_install", [False, True])
+@pytest.mark.windows
+def test_public_install_keeps_native_package_and_selects_recovery_launcher(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, windows: bool, custom_install: bool
+) -> None:
+    """公式の可視リンクを生成し、native実体を保ったまま通常呼出を起動管理へ接続する。"""
+    _isolate(monkeypatch, tmp_path, "win32" if windows else "linux")
+    root = tmp_path / "dotfiles"
+    home = tmp_path / ("custom-home" if custom_install else ".codex")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    selected = _release(home, "standalone", "0.166.0")
+    (selected.parent.parent / "current").symlink_to(selected, target_is_directory=True)
+    native = home / "packages" / "standalone" / "current" / "bin" / ("codex.exe" if windows else "codex")
+    visible = tmp_path / "localappdata" / "Programs" / "OpenAI" / "Codex" / "bin" if windows else tmp_path / ".local" / "bin"
+    if custom_install:
+        visible = tmp_path / "custom-bin"
+        monkeypatch.setenv("CODEX_INSTALL_DIR", str(visible))
+    before, between, after = (str(tmp_path / name) for name in ("before", "between", "after"))
+    registry = FakeEnvironmentRegistry(user_path=";".join([before, str(visible), between, str(root / "bin"), after]))
+    if windows:
+        registry.install(monkeypatch)
+        monkeypatch.setenv("PATH", registry.user_path())
+    base_run = _make_fake_run([], launcher=native)
+
+    def installer(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        result = base_run(command, **kwargs)
+        if Path(command[0]).stem in {"sh", "pwsh", "powershell"}:
+            native.write_bytes(b"native-package-content")
+            if not visible.exists():
+                visible.parent.mkdir(parents=True, exist_ok=True)
+                if windows:
+                    # install.ps1のEnsure-Junctionが公開する、package binと同じ実体を再現する。
+                    visible.symlink_to(native.parent, target_is_directory=True)
+                else:
+                    visible.mkdir()
+                    (visible / "codex").symlink_to(native)
+        return result
+
+    monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", installer)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda *_args, **_kwargs: None)
+    with _make_client() as client:
+        outcome = setup_codex_cli.run(client)
+    assert outcome.failure is None
+    assert native.read_bytes() == b"native-package-content"
+    if windows:
+        assert visible.samefile(native.parent)
+        assert (visible / "codex.exe").samefile(native)
+        assert not (native.parent / "codex.cmd").exists()
+        entries = registry.user_path().split(";")
+        assert entries.index(str(root / "bin")) < entries.index(str(visible))
+        assert [entry for entry in entries if entry in {before, between, after}] == [before, between, after]
+    else:
+        assert (visible / "codex").samefile(root / "bin" / "codex")
+        # Windowsのreadlinkは同じ参照先へ\\?\接頭辞を付けるため、ファイルの同一性を検証する。
+        assert (visible / ".dotfiles-codex-native").readlink().samefile(native)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty-runtime-home"))
+    assert setup_codex_cli.find_standalone_launcher() is None
+    runtime = setup_codex_cli.find_runtime_launcher(windows=windows)
+    assert runtime is not None and runtime.samefile(native)
+    assert os.environ["CODEX_HOME"] == str(tmp_path / "empty-runtime-home")
+    if windows:
+        assert not (visible / ".dotfiles-codex-native").exists()
+
+
+@pytest.mark.windows
+def test_native_reference_is_replaced_and_tracks_current(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """参照は1個だけを交換し、currentの世代更新に追随して旧版へ固定しない。"""
+    _isolate(monkeypatch, tmp_path, "linux")
+    visible = tmp_path / ".local/bin"
+    reference = visible / ".dotfiles-codex-native"
+    for name in ("first-home", "second-home"):
+        home = tmp_path / name
+        selected = _release(home, "standalone", "0.166.0")
+        current = selected.parent.parent / "current"
+        current.symlink_to(selected, target_is_directory=True)
+        native = current / "bin/codex"
+        setup_codex_cli.install_recovery_launcher(native, windows=False)
+        assert reference.readlink().samefile(native)
+        runtime = setup_codex_cli.find_runtime_launcher(windows=False)
+        assert runtime is not None
+        assert runtime == reference
+        assert runtime.samefile(native)
+        newer = _release(home, "standalone", "0.167.0")
+        (newer / "bin/codex").write_text("new-generation", encoding="utf-8")
+        current.unlink()
+        current.symlink_to(newer, target_is_directory=True)
+        assert reference.samefile(newer / "bin/codex")
+        assert runtime.read_text(encoding="utf-8") == "new-generation"
+        assert list(visible.glob(".dotfiles-codex-native*")) == [reference]
+
+
+@pytest.mark.parametrize("name", ["codex", ".dotfiles-codex-native"])
+def test_public_install_preserves_unmanaged_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str) -> None:
+    """管理外の通常ファイルを保持し、導入の失敗を呼出側へ返す。"""
+    _isolate(monkeypatch, tmp_path, "linux")
+    protected = tmp_path / ".local/bin" / name
+    protected.parent.mkdir(parents=True)
+    protected.write_text("unmanaged", encoding="utf-8")
+    native = tmp_path / ".codex/packages/standalone/current/bin/codex"
+    monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run([], launcher=native))
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    with _make_client() as client:
+        outcome = setup_codex_cli.run(client)
+    assert outcome.failure is not None and str(protected) in outcome.failure
+    assert protected.read_text(encoding="utf-8") == "unmanaged"
+    assert not protected.is_symlink()
+
+
+@pytest.mark.parametrize("windows", [False, True])
+def test_runtime_uses_path_native_and_excludes_wrapper(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, windows: bool) -> None:
+    """PATH上の自己参照を除外し、設定ホーム外の既存nativeを実行せず選ぶ。"""
+    _isolate(monkeypatch, tmp_path, "win32" if windows else "linux")
+    root = tmp_path / "dotfiles"
+    alias = tmp_path / "alias"
+    alias.mkdir()
+    name = "codex.cmd" if windows else "codex"
+    (alias / name).symlink_to(root / "bin" / name)
+    native = tmp_path / "native-bin" / ("codex.exe" if windows else "codex")
+    native.parent.mkdir()
+    native.write_bytes(b"native")
+    monkeypatch.setenv("PATH", (";" if windows else os.pathsep).join(map(str, (root / "bin", alias, native.parent))))
+    assert setup_codex_cli.find_runtime_launcher(windows=windows) == native
+    native.unlink()
+    assert setup_codex_cli.find_runtime_launcher(windows=windows) is None

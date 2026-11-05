@@ -196,7 +196,7 @@ def test_full_read_options_and_delivery(tmp_path: pathlib.Path, command: str) ->
     notice = _codex_read(value, tmp_path)
     assert notice is not None
     assert "合計: 51200バイト" in notice
-    assert "sed -n '<開始行>,<終了行>p' -- " in notice
+    assert notice.count("const result = await tools.exec_command(") == 2
 
 
 @pytest.mark.parametrize(
@@ -255,16 +255,27 @@ def _codex_read(command: str, cwd: pathlib.Path) -> str | None:
     return check_large_bash_read(command, str(cwd), is_codex=True)
 
 
-def _sed_chunks(path: pathlib.Path, chunk: int, cwd: pathlib.Path) -> bytes:
-    """通知の行数単位で`sed -n`を末尾の行まで進め、取得した出力を連結する。"""
-    total = len(path.read_bytes().splitlines(keepends=True))
-    parts: list[bytes] = []
-    for start in range(1, total + 1, chunk):
-        command = shlex.join(["sed", "-n", f"{start},{start + chunk - 1}p", "--", str(path)])
-        assert _codex_read(command, cwd) is None
-        parts.append(subprocess.run(shlex.split(command), check=True, capture_output=True).stdout)
-    assert len(parts) == -(-total // chunk)
-    return b"".join(parts)
+def _execute_guidance(notice: str) -> dict[str, bytes]:
+    """生成されたセルの全引数・予算を検査し、案内されたコマンドの本文を結合する。"""
+    blocks = re.findall(
+        r"```javascript\n// @exec: ([^\n]+)\nconst result = await tools.exec_command\(([^\n]+)\);\ntext\(result\);\n```",
+        notice,
+    )
+    assert blocks
+    received: dict[str, bytes] = {}
+    for pragma, arguments in blocks:
+        outer = json.loads(pragma)["max_output_tokens"]
+        request = json.loads(arguments)
+        assert 0 < request["max_output_tokens"] <= outer <= 20_000
+        argv = shlex.split(request["cmd"])
+        result = subprocess.run(argv, capture_output=True, timeout=10, check=False)
+        assert result.returncode == 0 and not result.stderr
+        displayed = json.dumps(
+            {"output": result.stdout.decode("utf-8"), "exit_code": result.returncode}, ensure_ascii=False
+        ).encode("utf-8")
+        assert outer >= (len(displayed) + 2) // 3
+        received[argv[-1]] = received.get(argv[-1], b"") + result.stdout
+    return received
 
 
 def test_codex_byte_threshold_boundary(tmp_path: pathlib.Path) -> None:
@@ -278,38 +289,28 @@ def test_codex_byte_threshold_boundary(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("single_line", [False, True])
 def test_block_notice_leads_to_sed_ranges(tmp_path: pathlib.Path, single_line: bool) -> None:
-    """通知が示した行範囲の取得だけで、長い単一行を含む全文を復元する。"""
-    path = _sized_file(tmp_path / "with space", _THRESHOLD + 300, line_bytes=100000 if single_line else 100)
+    """全量が枠を超える通常行を分割し、1行だけの超過は制約として案内する。"""
+    path = _sized_file(tmp_path / "with space", 85_000, line_bytes=100000 if single_line else 100)
     notice = _codex_read(f"cat {shlex.quote(str(path))}", tmp_path)
     assert notice is not None
-    first = re.search(r"`(sed -n '1,(\d+)p' -- [^`]+)`", notice)
-    assert first is not None
-    assert shlex.split(first.group(1))[-1] == str(path)
-    chunk = int(first.group(2))
-    assert f"`sed -n '{chunk + 1},{2 * chunk}p' -- {shlex.quote(str(path))}`" in notice
-    assert _sed_chunks(path, chunk, tmp_path) == path.read_bytes()
+    if single_line:
+        assert "行範囲では収まらない" in notice and "必要な項目を抽出" in notice
+        assert "tools.exec_command(" not in notice
+    else:
+        assert ",$p' --" in notice
+        assert _execute_guidance(notice) == {str(path): path.read_bytes()}
 
 
 @pytest.mark.parametrize("multiple", [False, True])
 def test_notice_range_commands_roundtrip_utf8(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, multiple: bool) -> None:
-    """引用した実パスとテンプレートの行範囲取得で、日本語とCRLFを末尾の行まで復元する。"""
+    """引用した実パスの計算済み取得例で、日本語とCRLFを末尾の行まで復元する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
     paths = [tmp_path / "file's name.txt", *([tmp_path / "second file.txt"] if multiple else [])]
     for index, path in enumerate(paths):
         path.write_bytes((f"本文{index}\r\n" * 3000).encode("utf-8"))
     notice = _codex_read(shlex.join(["cat", *map(str, paths)]), tmp_path)
     assert notice is not None
-    if multiple:
-        template = re.findall(r"`(sed -n '<開始行>,<終了行>p' -- <必要なファイルの絶対パス>)`", notice)
-        assert len(template) == 1
-        chunk = 1000
-    else:
-        first = re.search(r"`sed -n '1,(\d+)p' -- ([^`]+)`", notice)
-        assert first is not None
-        assert shlex.split(first.group(2)) == [str(paths[0])]
-        chunk = int(first.group(1))
-    for path in paths:
-        assert _sed_chunks(path, chunk, tmp_path) == path.read_bytes()
+    assert _execute_guidance(notice) == {str(path): path.read_bytes() for path in paths}
 
 
 @pytest.mark.parametrize("change", ["cd", "pushd"])
@@ -412,7 +413,7 @@ def test_dispatch_codex_warns_and_allows_bash_full_read(tmp_path: pathlib.Path, 
     message = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
     assert not captured.err
     assert str(target) in message
-    assert "sed -n '1," in message
+    assert "tools.exec_command(" in message and "text(result)" in message
     assert 'kind="warn"' in message
     assert "内側コマンドと外側セル" in message
 
@@ -465,30 +466,19 @@ def test_large_read_notice_keeps_recovery_without_generic_fallback(tmp_path, mon
         assert "`agent-toolkit:review-session`" in notice
         assert "--transcript" in notice
     else:
-        assert "sed -n '" in notice and "末尾の" in notice
+        assert "tools.exec_command(" in notice and "text(result)" in notice
 
 
 @pytest.mark.parametrize("multiple", [False, True])
 def test_large_read_budget_guidance(tmp_path, multiple):
-    """全量の見積りと1回の取得単位を分け、出力枠に収まる場合・超える場合・不明な場合の手順を矛盾なく案内する。
-
-    見積りを無条件の最低予算として要求すると、出力枠が見積りより小さい環境では案内どおりに取得できない。
-    """
+    """日本語85KB程度の資料を、両層の予算と全範囲が対応する取得例で復元する。"""
     paths = [tmp_path / "first.md", *([tmp_path / "second.md"] if multiple else [])]
     for path in paths:
-        path.write_text("本文\n" * 8000, encoding="utf-8")
-    budget = (sum(path.stat().st_size for path in paths) + 2) // 3
+        path.write_text("本文\n" * 12000, encoding="utf-8")
     notice = _codex_read(shlex.join(["cat", "--", *map(str, paths)]), tmp_path)
     assert notice is not None
-    assert f"全量の見積りは文章主体で約{budget}トークン" in notice
-    assert "少なくとも" not in notice
-    # 枠に収まる場合だけ1回で取得し、超える場合と不明な場合は最初から分割する。
-    assert "どちらも見積り以上と分かっている場合だけ" in notice
-    assert "外側セルを内側の合計以上" in notice
-    assert "枠が見積りより小さい場合と枠が不明な場合は、最初から" in notice
-    # 省略後の再取得も、枠に収まるときだけ同じ取得単位で行う。
-    assert "original token count" in notice and "枠に収まるときだけその数以上で1回再取得" in notice
-    assert "sed -n '" in notice
+    assert "original token count" in notice and "write_stdin" in notice
+    assert _execute_guidance(notice) == {str(path): path.read_bytes() for path in paths}
 
 
 def test_known_read_operand_is_kept_as_a_candidate_with_unknown_arguments(tmp_path):

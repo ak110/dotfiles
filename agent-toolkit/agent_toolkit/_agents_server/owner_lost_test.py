@@ -39,7 +39,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session
-from agent_toolkit._common import process_tree, session_registry, state_paths
+from agent_toolkit._common import process_tree, recorded_process, session_registry, state_paths
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
@@ -297,10 +297,10 @@ async def test_kill_does_not_stop_process_whose_start_time_differs(
             _backend(monkeypatch, manager, "codex", [("turn-1", "inProgress")])
             with pytest.raises(ValueError, match="turn_unobserved"):
                 await mcp_tools.kill(_SESSION_ID)
-        assert owner_lost.stop_recorded_executor(stale) is None
+        assert recorded_process.stop_recorded_executor(stale) is None
         assert reused_process.poll() is None
         assert owner_process.poll() is None
-        assert owner_lost.stop_recorded_executor(session_registry.ProcessIdentity(os.getpid(), 0.0)) is not None
+        assert recorded_process.stop_recorded_executor(session_registry.ProcessIdentity(os.getpid(), 0.0)) is not None
 
 
 @pytest.mark.asyncio
@@ -488,8 +488,10 @@ async def test_activation_keeps_same_named_status_file_of_live_writer(
         assert json.loads(path.read_text(encoding="utf-8"))["writer_process"]["pid"] == os.getpid()
 
 
-def test_registry_sweep_keeps_running_record_with_live_process(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """7日を超えて更新されていない記録も、終了しておらず記録プロセスが実在すれば掃引しない（完成条件7）。"""
+def test_registry_sweep_keeps_unfinished_records_until_completion(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """未完了の記録はプロセスの有無によらず保持し、完了・回収後は通常の期限で掃引する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     with _live_process() as (_process, executor):
         live = "019a2c41-5b6e-7d10-8f21-000000000001"
@@ -510,8 +512,15 @@ def test_registry_sweep_keeps_running_record_with_live_process(monkeypatch: pyte
         shared_sweep.sweep_stale_shared_state(keep_root_session_id=None, state_root=tmp_path)
 
         remaining = {path.stem for path in session_registry.registry_directory(tmp_path).glob("*.json")}
-        assert remaining == {live}
+        assert remaining == {live, exited, legacy}
         assert session_registry.resolve(live, state_root=tmp_path).state is session_registry.Resolution.RUNNING
+        assert session_registry.resolve(exited, state_root=tmp_path).inferred_terminal
+        for session_id in (live, exited, legacy):
+            session_registry.publish(session_id, terminal=True, status="completed", cwd=str(tmp_path), state_root=tmp_path)
+            path = session_registry.registry_directory(tmp_path) / f"{session_id}.json"
+            os.utime(path, (old, old))
+        shared_sweep.sweep_stale_shared_state(keep_root_session_id=None, state_root=tmp_path)
+        assert not list(session_registry.registry_directory(tmp_path).glob("*.json"))
 
 
 def test_process_loop_record_stays_running_while_claude_child_survives(
@@ -563,5 +572,5 @@ def test_stop_recorded_executor_reclaims_descendant_started_after_first_listing(
         executor = psutil.Process(process.pid)
         identity = session_registry.ProcessIdentity(executor.pid, executor.create_time())
         late_descendant.arm(tmp_path, monkeypatch.setattr)
-        assert owner_lost.stop_recorded_executor(identity) is None
+        assert recorded_process.stop_recorded_executor(identity) is None
     late_descendant.assert_released(tmp_path)

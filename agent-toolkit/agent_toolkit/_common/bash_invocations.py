@@ -81,6 +81,7 @@ class _BashToken:
     assignment: bool = False
     static_value: str = ""
     reserved: bool = False
+    unquoted: str = ""
 
 
 _BASH_REDIRECTION = re.compile(r"[0-9]*(?:&>>|&>|<<-|<<<|>>|<<|<>|<&|>&|>\||>|<)")
@@ -200,6 +201,7 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
     pieces: list[str] = []
     static_pieces: list[str] = []
     nested: list[str] = []
+    unquoted: list[str] = []
     quote: str | None = None
     known = True
     index = start
@@ -259,6 +261,8 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
             and (char in "*?[" or (char == "~" and index == start))
         ):
             known = False
+        if quote is None:
+            unquoted.append(char)
         pieces.append(char)
         static_pieces.append(STATIC_UNKNOWN if quote is None and (char in "*?[" or (char == "~" and index == start)) else char)
         index += 1
@@ -281,6 +285,7 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
         assignment=ENV_ASSIGN_PATTERN.match("".join(pieces)) is not None,
         static_value=shlex.split("".join(static_pieces), posix=True)[0],
         reserved="".join(pieces) == value,
+        unquoted="".join(unquoted),
     ), index
 
 
@@ -533,7 +538,10 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
     # リダイレクトは字句解析で語から分けてあるため、語はリダイレクトを持たない`ShellWord`として渡す。
     # 消費側が`strip_redirections`を通しても、引用済みの`'>'`などのデータを演算子として除かない。
     # 元の語は`join_words`で同じ値へ戻るよう引用した表記を保ち、再解析で引用内の`;`などを区切りにしない。
-    values: list[str] = [ShellWord(word.value, expansion=not word.known, raw=shlex.quote(word.value)) for word in words]
+    # 引用除去後の値だけでは、リテラルの角括弧とファイル名展開を区別できない。
+    values: list[str] = [
+        ShellWord(word.value, expansion=not word.known, raw=shlex.quote(word.value), unquoted=word.unquoted) for word in words
+    ]
     prefix = 0
     while prefix < len(words) and words[prefix].assignment:
         prefix += 1

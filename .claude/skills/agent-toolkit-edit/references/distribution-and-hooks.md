@@ -14,6 +14,15 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-messages.md#「エージェント宛てメッセージの標識」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md#「エージェント宛てメッセージの標識」` |
 
+## hook開発資料の選択
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| hookの実装や登録を新設・変更する前 | `claude-hooks.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks.md` |
+| hookの遮断・警告の判定を新設・変更する前 | `claude-hooks-block-warn.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-block-warn.md` |
+| hookの出力フィールドを選択・変更する前 | `claude-hooks-output.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-output.md` |
+| hook通知のformatterを実装・変更する前 | `claude-hooks-messages.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-messages.md` |
+
 ## agent_toolkitパッケージの配置と層
 
 - `agent-toolkit/agent_toolkit/`の直下には、配布物の外部から絶対パスで解決される公開スクリプトのみを配置し、先頭にアンダースコア（`_`）を付けない命名にする。対象は`hook.py`、`atk.py`、`agents_server_mcp.py`、`wait_ci.py`である。

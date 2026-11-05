@@ -829,7 +829,7 @@ def _merge_into_existing(
 def test_public_merge_preserves_derived_new_paths(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """新設先の要求・配置根拠を保持し、再取得した出力でも同じ被覆判定を受ける。"""
+    """新設先の要求・配置根拠を保持し、再取得した出力でも同じ書込予定の妥当性を確かめる。"""
     repo, existing, added = inputs
     data = yaml.safe_load(added.read_text(encoding="utf-8"))
     (repo / "src").mkdir()

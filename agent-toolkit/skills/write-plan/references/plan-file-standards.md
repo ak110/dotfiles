@@ -28,29 +28,32 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本文で基準を使う資料を選択・取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文で基準を使う資料を選択・取得する時 | `plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
-| 本文で基準を使う資料を選択・取得する時 | `plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` |
-| 本文で基準を使う資料を選択・取得する時 | `plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-structure-check.md` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-basics:writing-standards/references/writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
-| 本文で基準を使う資料を選択・取得する時 | `../../wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:/share/exec-review-responses.md#「安全な修正」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「安全な修正」` |
-| 本文で基準を使う資料を選択・取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-basics:writing-standards/references/notation-rules.md#「表記の一括置換」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「表記の一括置換」` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/testing.md` |
-| 本文で基準を使う資料を選択・取得する時 | `../../user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:commit/references/design-time.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/design-time.md` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:/share/exec-review-recording.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:delegation/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` |
-| 本文で基準を使う資料を選択・取得する時 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-basics:writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-basics:writing-standards/references/agent-documents-additions.md#「文書記述量の管理」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「文書記述量の管理」` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文で基準を使う資料を選択・取得する時 | `../../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
-| 本文で基準を使う資料を選択・取得する時 | `../../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
+| 参照基準の適用前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
+| 参照基準の適用前 | `plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
+| 参照基準の適用前 | `plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` |
+| 参照基準の適用前 | `plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-structure-check.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
+| 参照基準の適用前 | `../../wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-severity.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
+| 参照基準の適用前 | `agent-toolkit:/share/exec-review-responses.md#「安全な修正」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「安全な修正」` |
+| 参照基準の適用前 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/notation-rules.md#「表記の一括置換」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「表記の一括置換」` |
+| 参照基準の適用前 | `agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/testing.md` |
+| 参照基準の適用前 | `../../user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
+| 参照基準の適用前 | `agent-toolkit:commit/references/design-time.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/design-time.md` |
+| 参照基準の適用前 | `agent-toolkit:/share/exec-review-recording.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md` |
+| 参照基準の適用前 | `agent-toolkit:delegation/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md#「常駐サービスの公開前の観測」` |
+| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計品質の劣化確認」` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/agent-documents-additions.md#「文書記述量の管理」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「文書記述量の管理」` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
+| 参照基準の適用前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 参照基準の適用前 | `../../user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
+| 参照基準の適用前 | `../../wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
 | 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
 | 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
 | 本文で基準を使う資料を選択・取得する時 | `../../commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
@@ -77,7 +80,9 @@ H1の主題に続けて、次のH2見出しを順に置く。
 共通参照は読込表に従い指定箇所・ユーザー記入欄を読み、固有本文と採否・計画を確定する。
 完成状態は目的・反映内容・原因分析・補足条件から導く。任意節・引用位置の省略だけで再起草・再調査しない。
 計画で変更対象の分解・外部仕様・受入シナリオ・テスト・検証コマンド・恒久化・リファクタリング・公開工程を具体化する。
-WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認時に限り、影響項目だけに行う。乖離の事実・結論を`## 変更履歴`へ記録する。人間由来の要求範囲変更は`agent-toolkit:wi-standards`「由来と承認」、原因分析の乖離は「バグ調査」で扱う。母集団・QとC・D・適用レイヤー・完了判定の`agent-basics:bugfix`の`references/root-cause-analysis.md`への不適合も後者に含む。
+WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認時に限り、影響項目だけに行う。乖離の事実・結論を`## 変更履歴`へ記録する。人間由来の要求範囲変更は`agent-toolkit:wi-standards`「由来と承認」、原因分析の乖離は「バグ調査」で扱う。次の基準への不適合も、原因分析の乖離に含む。
+母集団は`agent-basics:bugfix/references/root-cause-remediation.md`、QとC・Dは`agent-basics:bugfix/references/root-cause-severity.md`を適用する。
+適用レイヤーは`agent-basics:bugfix/references/root-cause-actions.md`、完了判定は`agent-basics:bugfix/references/root-cause-prevention.md`に従う。
 
 キューにない素材の原文とユーザーの回答全文は計画外入力の原本として保持し、調査、起草、初回レビュー、再レビューの各工程へ原文の参照を渡す。計画本文へは全文を転記しない。変更履歴に記録するユーザー発言は同節の書式に従う。
 
@@ -202,7 +207,8 @@ AWIは原則1ファイル1行とし、実装手順やテスト項目は`## 要�
 - WIを入力とする計画でも、WI本文の調査結果と判断根拠に設計品質劣化の評価がなければ、WIで確定した実現方式を同節の基準で評価する。旧形式の対応節は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従う。劣化があればその是正を`## 実施内容`に計上する
 - エージェント向け文書を新設・改訂する計画では、`agent-basics:writing-standards/references/agent-documents-additions.md`「文書記述量の管理」を確認する。同じ文書への変更全体についてファイルサイズの上限、責務の範囲、読込の時点、既存記述との重複などを比べ、整理の結論を書く
 - 本計画で行うリファクタリングは`## 実施内容`の表に行として計上する。テストの更新、直接影響範囲の同期、生成物の再生成など実装に付随する作業は`## 要件・外部仕様`に書き、`## 実施内容`の行にしない
-- 同じ根本原因を持つ類似箇所の見直しは、作業種別を問わず`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」の母集団と「類似見直しと再発防止の完了」の判定基準に従う。通常変更の計画では結果を`### リファクタリング`に記録し、専用の見出しは設けない
+- 同じ根本原因を持つ類似箇所の見直しは、作業種別を問わず`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」の母集団に従う。
+  `agent-basics:bugfix/references/root-cause-prevention.md`「類似見直しと再発防止の完了」の判定基準も適用する。通常変更の計画では結果を`### リファクタリング`に記録し、専用の見出しは設けない
 - 本計画の変更範囲外で是正の必要も生じない既存の不備を見つけた場合は、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/SKILL.md`「問題を見つけたときの対処」に従う
 
 ## 変更履歴

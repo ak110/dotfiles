@@ -389,7 +389,10 @@ def test_lifetime_reports_unresolved_generation_stop(
         stderr=subprocess.PIPE,
     ) as process:
         try:
-            _, stderr = process.communicate(timeout=60)
+            # communicateの早期EOFで、spawner準備前に期限回収を始めない。
+            process.wait(timeout=60)
+            assert process.stderr is not None
+            stderr = process.stderr.read()
             assert process.returncode == 0
         finally:
             # 終了を拒否させたspawnerを試験の後始末として終了させる。

@@ -14,13 +14,16 @@ WIの作成主体には、専念型メイン（WI作成専用セッションの�
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 原因分析の書式を使う前 | `analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
-| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-remediation.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「処置の階層」` |
+| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「処置の階層」` |
 | 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md#「起動方法」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「起動方法」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「対象集合の仕分け」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「対象集合の仕分け」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md#「方針と判断の記録との比較」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` |
@@ -78,7 +81,7 @@ atk run-script session-review-evidence -- --user-events-file <元の保存ファ
 構造化された確認質問については、質問、全選択肢、選択された回答、および自由記述の対応関係を正確に保持し、ユーザーの回答として採用する範囲は`agent-toolkit:wi-standards`「由来と承認」に従う。この出所情報は、引用の一致確認、ならびに対象、除外事項、認可の由来確認に用いる。複数の候補が一致している照会結果は、証拠の一意性の確認やユーザー由来の判定の根拠としては使用できない。
 
 委譲先エージェントに必須となる入力の欠落は、`agents_server`の`start`コマンドが起動時に検証するため、受け取った入力のまま作業に着手する。委譲先が入力の欠落を観測した場合は、`rules-subagent.md`「委譲時の厳守事項」に従う。
-投入先リポジトリは、ユーザーの指定または委譲入力で指定された値に固定する。調査の過程で投入先リポジトリの外部にも原因機構を共有する対象が見つかった場合は、`agent-basics:bugfix`の`references/root-cause-analysis.md`に定める基準に従って処置の要否を判定する。
+投入先リポジトリは、ユーザーの指定または委譲入力で指定された値に固定する。調査の過程で投入先リポジトリの外部にも原因機構を共有する対象が見つかった場合は、`agent-basics:bugfix/references/root-cause-severity.md`「QとC・Dの区別」に従って処置の要否を判定する。
 委譲先は、該当対象の所在、所有リポジトリ、根拠、処置の要否を委譲元へ即座に通知し、AWIの`## 反映内容と反映先`に「投入先リポジトリの外部であること」および「委譲元へ通知済みであり投入先の確定は委譲元が行うこと」を記録する。
 投入先リポジトリ内の原稿や、回答を待たずに確定できる成果物は、`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従って完成させる。付随型は委譲元へ返却し、専念型は検収と保存まで完了させる。
 専念型メインは、共通の確認要否判定に従って投入先を確定する。処置不要と判断した対象については、根拠となる現物ファイルの所在とリビジョン（版）を、AWIの`## 反映内容と反映先`の除外事項、もしくはUWIの成立性の証拠に残す。
@@ -100,7 +103,10 @@ atk run-script session-review-evidence -- --user-events-file <元の保存ファ
 投入前に完了すべき調査とは、分類軸、到達手段、判定時点、完成条件を確定させることであり、後続の処理側へ委ねた個別の採否判断は実際の処理実行時点で行う。
 委譲先が受け取った`他の要求単位の割当`の単位が、調査の結果確定した根本原因と同一のものを共有していると判明した場合は、その単位と根拠を`続行できない理由`に記載して返す。要求を統合するかどうかは委譲元が判断する。
 「投入前に確定すべき事項」および`agent-toolkit:wi-standards`の`references/drafting-completion.md`が投入前の確定を求めている事項は、投入先リポジトリに対する読み取り専用の調査を通じて、計画工程へ先送りせずにエージェント自身で確定させる。分割読み込みによって確認可能な未読ファイルや未調査の原因・対象は、安易に作業中断の理由とせず調査を継続する。物理的なアクセス不能、権限の不足、調査を尽くしてもなお残るユーザー固有の判断事項、固定要件の誤った帰属など、自力で解消できない条件に限り、明確な根拠を添えて報告する。
-観測された欠陥を起点とする要求の原因、類似見直しの母集団、ならびに再発防止策は、`agent-basics:bugfix`の`references/root-cause-analysis.md`の基準に基づいて確定する。この基準にはQualityとCost/Deliveryの区別、重大度に応じた探索と終了条件、根本原因から導く母集団、処置の階層構造、完了判定が含まれる。母集団が指定された投入先リポジトリの外部（他のリポジトリを含む）に及ぶ場合であっても、前述した投入先固定時の処置要否判定と除外記録の手順に従う。
+観測された欠陥を起点とする要求の原因、類似見直しの母集団、ならびに再発防止策は、次の該当基準で確定する。
+`agent-basics:bugfix/references/root-cause-severity.md`と`agent-basics:bugfix/references/root-cause-remediation.md`を適用する。
+`agent-basics:bugfix/references/root-cause-actions.md`と`agent-basics:bugfix/references/root-cause-prevention.md`も併用する。
+この基準にはQualityとCost/Deliveryの区別、重大度に応じた探索と終了条件、根本原因から導く母集団、処置の階層構造、完了判定が含まれる。母集団が指定された投入先リポジトリの外部（他のリポジトリを含む）に及ぶ場合であっても、前述した投入先固定時の処置要否判定と除外記録の手順に従う。
 `委譲元の判断`に含まれる理由についても、その事実上の前提を技術的主張として裏付けを取り、実際の観測結果と異なる場合は観測結果に合わせて修正する。ユーザーの方針については記録の所在と該当箇所を確認し、`drafting-completion.md`「方針と判断の記録との比較」に定める優先順位を、現在の逐語要求と`確定した要件`へ適用する。既存のWIを前提、制約、代替案の不採用理由、完成条件の根拠として用いる場合は、`origin-and-approval.md`「ユーザー専用の記入欄と是正要求」に定める参照規則に従い、ユーザー専用記入欄を含む有効な要求内容を確定した上で、その要求と原稿の判断との比較を成立性の証拠に残す。
 `確定済みの観測`は、すでに取得済みの記録位置と保存出力を再利用する。位置が未取得の委譲先は、`atk run-script session-review-evidence -- --delegation-record parent --tool-calls`を実行して直接の委譲元を照会し、コマンドや入力の特徴、実行時点を手がかりに候補を特定する。専念型メインや明示的に指定された別会話の観測結果については、その記録を明示的に指定する。取得した`record`・`line`と必要な`result_line`を、同一の記録指定を伴う`--detail <record>:<line>`へ渡して入力と実行結果を確認する。解決に失敗した場合は「出所と観測の取得」の再指定手順に従う。単なるツール名とタイムスタンプの一致だけでは同一とみなさず、具体的な値と観測条件（実行コマンド、入力、環境変数など）を元の記録や受領内容と突き合わせる。同一操作の繰り返しを区別できない場合は、その情報不足を未確定事項として扱う。
 突き合わせが一致した観測結果は、`drafting-completion.md`「採否と実現方式の確定」における実行結果による裏付けとして利用し、コマンドの再実行を省略する。値や条件が一致しない場合、起草中に確認した現物や別の観測結果と食い違いがある場合、または観測後に値を変更する修正が行われていた場合は、再実行して確認する。
@@ -129,7 +135,7 @@ atk run-script session-review-evidence -- --user-events-file <元の保存ファ
 
 ### 本文の起草
 
-原因分析の処置は`agent-basics:bugfix/references/root-cause-remediation.md`「処置の階層」で区別し、`analysis-records.md`「原因分析の記録先」の対策・回帰防止策・類似見直し観点・再発防止策の各行と採否の行へ対応付ける。
+原因分析の処置は`agent-basics:bugfix/references/root-cause-actions.md`「処置の階層」で区別し、`analysis-records.md`「原因分析の記録先」の対策・回帰防止策・類似見直し観点・再発防止策の各行と採否の行へ対応付ける。
 変更の詳細は反映内容節へ置き、各行の要旨から対応項目を参照する。
 
 受け取った制約事項は、適用されるべき工程を原文から特定する。WI作成工程にのみ適用される書き込み範囲や操作の許可・禁止は作成主体自身の行動に適用し、後続の計画・実装・公開工程を拘束する要件とするのは、原文がその工程への適用を明示しているものに限る。原稿の反映内容、適用範囲、完成条件を確定する段階で、各制約と適用工程との対応関係を確認する。

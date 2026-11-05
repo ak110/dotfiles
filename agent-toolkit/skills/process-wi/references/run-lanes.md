@@ -17,10 +17,10 @@
 | 本文で基準を使う資料の選択・取得時 | `../../delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` |
 | 本文で基準を使う資料の選択・取得時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../wi-standards/references/origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
+| 参照基準の適用前 | `selection-procedure.md#「処理対象WIの追加」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/selection-procedure.md#「処理対象WIの追加」` |
 | 追加WIと即時修正を区別する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
+| 参照基準の適用前 | `../../../share/exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
+| 参照基準の適用前 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md#「延期adoptと反映後の観測」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「延期adoptと反映後の観測」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` |
@@ -72,6 +72,7 @@ atk lane create --repo <対象リポジトリの絶対パス> --base-branch <統
 メインは、後段レーンのworktreeを作成する前に、先行成果を要しない読み取り専用調査を既存の委譲手段で開始してよい。
 対象は要求・規範の確認、実装・テスト・参照先の所在、先行成果に依存しない設計材料、正式化前の計画下書きとする。
 書込競合だけで後段となる場合と、調査や判断自体が先行成果を要する場合を区別し、後者の未確定部分は成果の到着まで保留する。
+共有検証や直列統合の処理能力を踏まえ、独立した準備の先行と準備・検証の集約を比較し、先行変更後に前提と所要見込みを更新する。
 
 調査担当は取得したリポジトリの版、対象パス、確認した事実と仮定、残る問いを自身のmanaged-tempへ保存する。
 先行調査では、正式計画の作成、WI状態の変更、レーン資源の登録、および対象worktreeへの書き込みを行わない。
@@ -112,7 +113,8 @@ Claude Code環境では、各段階（複数段階の場合は中間の段階も
 
 処理中に追加された対象WIは、`selection-procedure.md`「処理対象WIの追加」に従って分類と処理開始手続きを完了した後に、本節の基準に沿ってレーンへ割り当てる。
 目標の明示がある実行では`lanes.md`「明示された目標からの実行」で具体化した必要作業も含める。
-通常のキュー処理では未回答UWI、未確定の要求、明示追加のない新規到着項目は追加の対象外とし、即時対応の正式対応AWIは後続のセッションへ引き継ぐ。
+通常のキュー処理では、`immediate-fix.md`「即時対応」で今回追加と判定した正式改善AWIも受け入れる。
+未回答UWI、未確定の要求、同判定にも明示追加にも該当しない新規到着項目は追加せず、最小修正後に残る正式対応AWIは次回へ引き継ぐ。
 
 追加された項目は必ず既存のレーンへ割り当て、処理中の一環として新たな最終レーン名を新設することは避ける（上限値および算定集合は`selection-format.md`「初回配分の算定根拠」が定める。所在参照）。既存レーンが0件の場合は、上限および割り当て先リソースの不足を「続行できない理由」として報告する。
 
@@ -126,8 +128,11 @@ Claude Code環境では、各段階（複数段階の場合は中間の段階も
 割り当て先のレーンがすでに統合済みであってもリソースは保持されているため、同一の`atk lane create`を実行して所有登録とGit登録の一致を確認し、返却された同一のworktreeおよびbranchへ追加する。指示は、すでに準備された環境を維持している同一の担当スレッドと引き継ぎ記録へ送信する。登録情報と実態が一致しない場合は途中成果を保持し、回復に必要な事実を報告する。合流先レーンは未統合状態に戻るため、セッション終了時であっても再統合が完了するまでリソースを保持する。
 
 選定YAMLへの追加が完了した時点で、現在実行中の工程の完了を待たずに、同一スレッドへ一度だけ指示を送信する。指示には、追加するWI名、専用worktreeおよびbranch、引き継ぎ記録、選定YAMLから本文と`プロジェクト規範の指定`を取得すべき旨、ならびに現在の工程を中断・破棄せずに完了させ、ターンを終えずに追加計画の起草へ進むべき旨を含める。割り当ての再検討のみを目的として稼働中の担当エージェントを中断させない。
-工程境界における通知方法は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`に従い（所在参照）、一律の返答を要求しない（非待機の`計画検査完了`は`atk agents notify`による一方的な通知であり、返信を義務付けると実装作業が停止してしまうためである）。レーン担当は、現在工程の実行結果を、追加指示の受領後に最初に送信する工程境界メッセージの先頭に含める。
-メインエージェントはその工程境界メッセージの受領をもって追加工程の開始を認識し、先行する計画を凍結した状態を維持しながら、追加計画の絶対パス、対象AWI集合、保存状態、および進捗状況をレーンの引き継ぎ記録へ順次蓄積し、実行レビューと統合の段階へすべての計画を引き渡す。
+工程境界の通知は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`に従う（所在参照）。
+非待機の`計画検査完了`は`atk agents notify`による一方通知であり、一律の返答を求めると実装が停止する。
+レーン担当は追加指示後の最初の工程境界メッセージの先頭に、現在工程の実行結果を含める。
+メインはその受領で追加工程の開始を認識し、先行計画の凍結を維持する。
+追加計画の絶対パス、対象AWI集合、保存状態、進捗をレーンの引き継ぎ記録へ蓄積し、全計画を実行レビューと統合へ渡す。
 
 同一スレッドの再開が成立しない場合は、公開応答の事実、対象、および不足している条件を「続行できない理由」として報告し、同一レーンの回復に関する判断を仰ぐ。再開が不可能な場合や全レーンが統合済みである場合であっても、新規レーンを作成することは避ける。追加分に対しても、計画起草、レビュー、統合、終了という既存の手順をそのまま適用する。
 

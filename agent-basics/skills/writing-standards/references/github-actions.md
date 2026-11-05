@@ -8,12 +8,13 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 外部actionの版を選ぶ・変える前 | `dependency-management.md#「最新版への追従」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/dependency-management.md#「最新版への追従」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `dependency-management.md#「公開待機設定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/dependency-management.md#「公開待機設定」` |
 
 ## 基本
 
 - ワークフロー定義ファイルは、`actionlint`および`yamllint`を用いて静的に検証する。
-- 外部のActionを参照するときは、タグの書き換えを防ぐために`uses: owner/repo@<commit-sha> # vX.Y.Z`形式でコミットSHAを固定（ピン留め）し、Renovateやpinactなどのツールを使ってバージョンを更新する。
+- 外部のActionを参照するときは、タグの書き換えを防ぐために`uses: owner/repo@<commit-sha> # vX.Y.Z`形式でコミットSHAを固定（ピン留め）し、Renovateやpinactなどのツールでメジャー版も含めて最新版へ更新する。
 
 ## 権限と秘密情報
 

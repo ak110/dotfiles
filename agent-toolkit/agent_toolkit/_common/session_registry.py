@@ -27,7 +27,7 @@ from typing import Any, Literal
 
 import psutil
 
-from agent_toolkit._common import file_lock
+from agent_toolkit._common import file_lock, session_layout
 from agent_toolkit._common import session_launchers as _session_launchers
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
@@ -263,6 +263,7 @@ class SessionResolution:
     live_executors: tuple[ProcessIdentity, ...] = ()
     # 記録を書いた所有サーバーの状態ディレクトリのルート。項目を持たない旧記録では`None`とする。
     owner_root_session_id: str | None = None
+    resume_pending: bool = False
 
 
 def running_ownership(resolution: SessionResolution, *, writer_alive: bool) -> RunningOwnership | None:
@@ -411,9 +412,23 @@ def publish(
     path = registry_directory(state_root) / f"{session_id}.json"
     with registry_lock(session_id, state_root=state_root):
         prior = _read_payload(path)
+        claim = prior.get("resume_claim")
+        if (
+            isinstance(claim, dict)
+            and (claimed_turn := _recorded_turn(claim)) is not None
+            and turn_seq <= claimed_turn
+            and any(process.exists() for process in _recorded_processes(claim))
+        ):
+            return
         previous_turn = _recorded_turn(prior)
         if previous_turn is not None and (previous_turn > turn_seq or prior.get("version") == 3 and previous_turn == turn_seq):
             return
+        if launch_info is not None:
+            source = prior.get("handoff_info", prior.get("codex_resume_info", prior.get("claude_resume_info", prior)))
+            if isinstance(source, dict):
+                # backendはManagerが起動情報を写す前にも新turnを公開する。途中で終了しても原要求を失わない。
+                merged = _preserve_launch_info(launch_info, LaunchInfo.from_record(source))
+                payload.update((name, value) for name, value in merged.as_kwargs().items() if value is not None)
         # session単位の回復上限は、別所有者の状態更新でも未消費へ戻さない。
         if result_contract_recovery_consumed or prior.get("result_contract_recovery_consumed") is True:
             payload["result_contract_recovery_consumed"] = True
@@ -435,7 +450,115 @@ def publish(
         atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
 
 
+def _preserve_launch_info(current: LaunchInfo, previous: LaunchInfo) -> LaunchInfo:
+    """初回の入力と既に配送した履歴を、再生成直後の空・短い状態で上書きしない。"""
+    followups = current.followup_prompts
+    saved = previous.followup_prompts
+    if saved[: len(followups)] == followups:
+        followups = saved
+    elif followups[: len(saved)] != saved:
+        followups = saved + followups
+    responses = dict(previous.final_responses)
+    responses.update(current.final_responses)
+    return dataclasses.replace(
+        current,
+        label=previous.label or current.label,
+        prompt=previous.prompt or current.prompt,
+        created_at=previous.created_at or current.created_at,
+        followup_prompts=followups,
+        final_responses=tuple(responses.items()),
+    )
+
+
 _recorded_launcher = _session_launchers.read_launcher
+
+
+def child_session_ids(launcher_session_id: str, *, state_root: pathlib.Path | None = None) -> tuple[str, ...]:
+    """保存済みの直接の親子関係から、同じ親が起動した子の識別子を返す。"""
+    _validate_session_id(launcher_session_id)
+    return tuple(
+        sorted(
+            path.stem
+            for path in registry_directory(state_root).glob("*.json")
+            if _SESSION_ID_PATTERN.fullmatch(path.stem) and _recorded_launcher(path) == launcher_session_id
+        )
+    )
+
+
+def pending_session_ids(state_root: pathlib.Path | None = None) -> set[str]:
+    """復旧を要する会話と未回収結果、およびそれらの依頼を保持する親の識別子を返す。"""
+    records = {
+        path.stem: path for path in registry_directory(state_root).glob("*.json") if _SESSION_ID_PATTERN.fullmatch(path.stem)
+    }
+    pending: set[str] = set()
+    for identifier in records:
+        resolution = resolve(identifier, state_root=state_root)
+        if resolution.state is Resolution.RUNNING or resolution.interruption in (OWNER_PROCESSES_EXITED, OWNER_SERVER_STOPPED):
+            pending.add(identifier)
+    for root in session_layout.list_root_session_ids(state_root, strict=True):
+        pending.update(
+            path.stem
+            for path in session_layout.results_directory(root, state_root).glob("*.json")
+            if _SESSION_ID_PATTERN.fullmatch(path.stem)
+        )
+        for path in (session_layout.status_directory(root, state_root) / "wait-results").glob("*/*.json"):
+            run = _read_payload(path)
+            targets = run.get("targets")
+            if run.get("status") in {"running", "published"} and isinstance(targets, list):
+                pending.update(
+                    identifier
+                    for identifier in targets
+                    if isinstance(identifier, str) and _SESSION_ID_PATTERN.fullmatch(identifier)
+                )
+    ancestors = list(pending)
+    while ancestors:
+        identifier = ancestors.pop()
+        path = records.get(identifier)
+        parent = _recorded_launcher(path) if path is not None else None
+        if parent is not None and parent not in pending:
+            pending.add(parent)
+            ancestors.append(parent)
+    return pending
+
+
+def claim_resume(session_id: str, turn_seq: int, *, state_root: pathlib.Path | None = None) -> bool:
+    """同じ終了turnの再開を1プロセスだけに予約し、ロックは起動前に解放する。
+
+    元の終了状態は予約中も保持する。予約したプロセスが消失した場合は次の再開が予約を取得できる。
+    登録を持たないローカル保持状態は、既存のManager内の再開排他を使う。
+    """
+    _validate_session_id(session_id)
+    with registry_lock(session_id, state_root=state_root):
+        resolution = resolve(session_id, state_root=state_root)
+        if resolution.state in {Resolution.RUNNING, Resolution.UNREADABLE}:
+            return False
+        if resolution.recorded_turn_seq is not None and resolution.recorded_turn_seq != turn_seq:
+            return False
+        path = registry_directory(state_root) / f"{session_id}.json"
+        payload = _read_payload(path)
+        if not payload:
+            return True
+        claim = payload.get("resume_claim")
+        if isinstance(claim, dict) and any(process.exists() for process in _recorded_processes(claim)):
+            return False
+        process = owner_process()
+        if process is None:
+            raise RuntimeError("再開を所有するプロセスの識別を取得できない")
+        payload["resume_claim"] = {"turn_seq": turn_seq, "processes": [process_payload(process)]}
+        atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n", fsync=True)
+        return True
+
+
+def release_resume_claim(session_id: str, turn_seq: int, *, state_root: pathlib.Path | None = None) -> None:
+    """次turnの公開前に開始が終わった場合、同じプロセスと元turnの予約だけを解放する。"""
+    _validate_session_id(session_id)
+    with registry_lock(session_id, state_root=state_root):
+        path = registry_directory(state_root) / f"{session_id}.json"
+        payload = _read_payload(path)
+        claim = payload.get("resume_claim")
+        if isinstance(claim, dict) and claim.get("turn_seq") == turn_seq and _recorded_processes(claim) == (owner_process(),):
+            payload.pop("resume_claim")
+            atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n", fsync=True)
 
 
 def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> SessionResolution:
@@ -469,15 +592,20 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
             resume = payload.get("claude_resume_info")
             info = _resume_info(resume) if isinstance(resume, dict) and resume.get("engine") == "claude" else None
         handoff = payload.get("handoff_info")
-        return SessionResolution(
-            Resolution.RELEASED,
-            info,
-            released_reason=reason,
-            released_at=payload["updated_at"],
-            handoff_info=_resume_info(handoff) if isinstance(handoff, dict) else None,
-            server_instance=_recorded_server_instance(payload),
-            recorded_turn_seq=_recorded_turn(payload),
-            interrupted_turns=_recorded_interrupted_turns(payload),
+        nested = handoff if isinstance(handoff, dict) else resume if isinstance(resume, dict) else {}
+        return _with_resume_claim(
+            payload,
+            SessionResolution(
+                Resolution.RELEASED,
+                info,
+                released_reason=reason,
+                released_at=payload["updated_at"],
+                handoff_info=_resume_info(handoff) if isinstance(handoff, dict) else None,
+                server_instance=_recorded_server_instance(payload),
+                recorded_turn_seq=_recorded_turn(payload),
+                interrupted_turns=_recorded_interrupted_turns(payload),
+                owner_root_session_id=_recorded_owner_root(payload) or _recorded_owner_root(nested),
+            ),
         )
     if payload.get("version") == 1:
         if not isinstance(payload.get("terminal"), bool):
@@ -494,18 +622,35 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
     owner = processes[0] if processes else None
     executors = processes[1:]
     owner_root = _recorded_owner_root(payload)
+    if isinstance(payload.get("resume_claim"), dict):
+        pending = _with_resume_claim(
+            payload,
+            SessionResolution(
+                Resolution.TERMINAL if payload["terminal"] else Resolution.RUNNING,
+                info,
+                server_instance=instance,
+                recorded_turn_seq=_recorded_turn(payload),
+                interrupted_turns=turns,
+                owner_root_session_id=owner_root,
+            ),
+        )
+        if pending.resume_pending:
+            return pending
     if payload["terminal"]:
         interruption = payload.get("interruption")
-        return SessionResolution(
-            Resolution.TERMINAL,
-            info,
-            interruption=interruption if interruption in _INTERRUPTION_MESSAGES else None,
-            server_instance=instance,
-            recorded_turn_seq=_recorded_turn(payload),
-            interrupted_turns=turns,
-            owner_process=owner,
-            executor_processes=executors,
-            owner_root_session_id=owner_root,
+        return _with_resume_claim(
+            payload,
+            SessionResolution(
+                Resolution.TERMINAL,
+                info,
+                interruption=interruption if interruption in _INTERRUPTION_MESSAGES else None,
+                server_instance=instance,
+                recorded_turn_seq=_recorded_turn(payload),
+                interrupted_turns=turns,
+                owner_process=owner,
+                executor_processes=executors,
+                owner_root_session_id=owner_root,
+            ),
         )
     alive = [process for process in processes if process.exists()]
     if processes and not alive:
@@ -531,6 +676,26 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
         executor_processes=executors,
         live_executors=tuple(process for process in executors if process in alive),
         owner_root_session_id=owner_root,
+    )
+
+
+def _with_resume_claim(payload: dict[str, Any], resolution: SessionResolution) -> SessionResolution:
+    """生存する再開予約は次turnの開始待ちとして解決し、元の終了結果と区別する。"""
+    claim = payload.get("resume_claim")
+    info = resolution.resume_info or resolution.handoff_info
+    if not isinstance(claim, dict) or info is None or _recorded_turn(claim) != info.turn_seq:
+        return resolution
+    claimed = _recorded_processes(claim)
+    if not claimed or not any(process.exists() for process in claimed):
+        return resolution
+    return dataclasses.replace(
+        resolution,
+        state=Resolution.RUNNING,
+        resume_info=dataclasses.replace(info, status="starting", turn_seq=info.turn_seq + 1),
+        owner_process=claimed[0],
+        inferred_terminal=False,
+        interruption=None,
+        resume_pending=True,
     )
 
 
@@ -572,6 +737,8 @@ def release(
     with registry_lock(session_id, state_root=state_root):
         path = registry_directory(state_root) / f"{session_id}.json"
         prior_payload = _read_payload(path)
+        if resolve(session_id, state_root=state_root).resume_pending:
+            return False
         if expected_owner is not None and expected_owner != (
             _recorded_server_instance(prior_payload),
             _recorded_turn(prior_payload),

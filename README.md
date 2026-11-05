@@ -18,7 +18,8 @@
 agent-toolkitは、Agent Plugins、Claude Code、Codexで共有できるコーディングエージェント向けツールキットである。
 単体導入にはClaude Code CLI、Codex CLI、uvを使用する。
 dotfiles配布では、`chezmoi apply`後の処理がこれらの導入と更新を担う。
-統合導入は[agent-toolkit導入ガイド](docs/guide/claude-code-guide.md)、
+概要と導入は[agent-toolkitのREADME](agent-toolkit/README.md)と[agent-basicsのREADME](agent-basics/README.md)、
+詳細な設定・操作は[agent-toolkit利用ガイド](docs/guide/claude-code-guide.md)、
 Codex固有の詳細は[Codex利用ガイド](docs/guide/codex-guide.md)を参照する。
 
 ## 前提条件

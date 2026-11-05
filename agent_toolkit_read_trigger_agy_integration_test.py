@@ -19,6 +19,8 @@ def _generated(tmp_path):
     path = source / ".claude-plugin/plugin.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(manifest), encoding="utf-8")
+    (source / "README.md").write_text("# 品質基準\n", encoding="utf-8")
+    (source / "LICENSE").write_text("MIT\n", encoding="utf-8")
     skill = source / "skills/long/SKILL.md"
     skill.parent.mkdir(parents=True)
     body = (
