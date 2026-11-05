@@ -6,7 +6,8 @@
 
 投入前レビューは、親エージェントが意味を検収しない専念型の作成主体が、原稿の保存前に独立した中位レビュー担当へ渡して受けるレビューである。付随型では`add-wi.parent.md`に定める親エージェントの検収を用いる（所在参照）。
 起動が必要かどうかは、`agent-toolkit:wi-standards`の`references/drafting-workflow.md`「直接起草と独立した検収の選択」に従って判断する。
-同節で直接起草を選択できる原稿については、メインエージェントによる意味検収と機械チェックを適用する。
+add-awi-by-userでは4条件によらず毎回実施し、考慮漏れの5類型も既存の投入前レビューで検収する。
+それ以外で同節が直接起草を選択できるとする原稿については、メインエージェントによる意味検収と機械チェックを適用する。
 
 ## 名指し参照の読込方法
 
@@ -14,6 +15,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| add-awi-by-userの投入前レビュー結果を検収する前 | `../skills/add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md#「直接起草と独立した検収の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
@@ -61,6 +63,7 @@
 同版の共通資料は再利用し、新規・変更資料と圧縮後の必要資料は担当が取得する。到達不能時はdelegationの共通引き継ぎ契約に従う。
 
 以下は本文段階の検収に適用する。
+add-awi-by-userでは点検資料の全類型の判定と処置が原文・原稿・調査根拠へ対応するか確認し、ユーザー判断を要する指摘はメインがその場で確認して本文へ記録する。
 
 元の要求の解釈についてレビュー担当と作成主体で見解が分かれ、結果や作業範囲が変わる場合は、`agent-basics:review-standards`の共通規定に立ち返る。
 原文、実際の回答、および現物を確認しても解決せず、ユーザー自身の判断に委ねる事項が残る場合は、その判断を要する修正を保留し、双方の解釈と結果をユーザー確認できるメインエージェントへ報告する。

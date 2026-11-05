@@ -10,6 +10,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 状態や業務ルールを持つ要求の曖昧さを洗い出す前 | `agent-basics:writing-standards/references/design-time.md`の「状態と業務ルールの条件」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-time.md#「状態と業務ルールの条件」` |
+| WI作成工程で質問ラウンドを終える前と原稿を確定する前 | `../../add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `publish-scope.md#「公開範囲の確認」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md#「公開範囲の確認」` |
@@ -28,6 +29,7 @@
 
 WI作成工程（`agent-toolkit:add-awi-by-user`などでAWIを登録する時点）で本書を使用する場合は、登録する要求を後続工程で処理する際に判断を要する曖昧さ（完了条件の境界、外部から観測可能な動作、対象範囲の境界、除外条件など）も洗い出す。前提条件が成立しないケースや環境・状態が異なるケースにも同じ目的を適用し、対応する結果、対象範囲、例外のうち、技術やQCDの評価で確定できない判断事項を同じ質問ラウンドですべて確認する。後続工程に残すのは、登録時点の調査では判明せず、実際の処理時に初めて明らかになる曖昧さに限る。登録時点で確認できる曖昧さを後続工程に残すと、自律モードで対象項目が保留となり、ユーザーの回答を待つ間作業が停止してしまうためである。
 
+WI作成工程では、質問ラウンドを終える前と原稿確定前に`../../add-awi-by-user/references/omission-check.md`で考慮漏れを点検し、同資料に従って処置を確定し、終了時に報告する。
 状態や業務ルールを持つ要求では、`agent-basics:writing-standards/references/design-time.md`「状態と業務ルールの条件」の時機の区別も、登録前に洗い出す曖昧さへ含める。
 
 ユーザーが判定基準を示した集合に属する対象や、その集合から派生するペアの対象（その対象を前提とする規範条文、テストコード、設定など）に同じ基準を適用する判断は起草者が確定する。基準の適否が一意に定まらない対象についてのみ、判定を分ける条件を質問する。
