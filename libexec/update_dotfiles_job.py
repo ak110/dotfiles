@@ -87,6 +87,25 @@ def _cleanup() -> None:
             shutil.rmtree(owned)
 
 
+def _procfs_parents() -> list[tuple[int, int]]:
+    """Linuxの全プロセスの`(pid, ppid)`をprocfsから返す。
+
+    最小構成のコンテナーなどprocpsの無い環境でも子孫を停止できるよう、`ps`を使わない。
+    """
+    pairs: list[tuple[int, int]] = []
+    for entry in pathlib.Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat = (entry / "stat").read_text(encoding="utf-8", errors="replace")
+        except FileNotFoundError, ProcessLookupError:
+            # 列挙中に終了したプロセスは停止対象から外れてよい。
+            continue
+        # commは空白や括弧を含み得るため、最後の`)`より後ろの`state ppid ...`を読む。
+        pairs.append((int(entry.name), int(stat.rpartition(")")[2].split()[1])))
+    return pairs
+
+
 def _stop_tree(process: subprocess.Popen[Any]) -> None:
     try:
         if sys.platform == "win32":
@@ -102,15 +121,18 @@ def _stop_tree(process: subprocess.Popen[Any]) -> None:
                 raise RuntimeError(f"更新の子孫を停止できません: {result.stdout}\n{result.stderr}")
         else:
             # 更新本体もstart_new_sessionを使う子を持ち得るため、group停止前に子孫を列挙する。
-            result = subprocess.run(
-                ["ps", "-e", "-o", "pid=,ppid="],
-                check=True,
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=10,
-            )
-            parents = [tuple(map(int, line.split())) for line in result.stdout.splitlines()]
+            if sys.platform == "linux":
+                parents = _procfs_parents()
+            else:
+                result = subprocess.run(
+                    ["ps", "-e", "-o", "pid=,ppid="],
+                    check=True,
+                    capture_output=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=10,
+                )
+                parents = [tuple(map(int, line.split())) for line in result.stdout.splitlines()]
             descendants = {os.getpid()}
             while children := {pid for pid, parent in parents if parent in descendants} - descendants:
                 descendants.update(children)

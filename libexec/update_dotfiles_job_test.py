@@ -267,16 +267,28 @@ def test_tree_listing_failure_still_reaps_direct_child(monkeypatch: pytest.Monke
     kill_group = Mock()
     monkeypatch.setattr(update_dotfiles_job.os, "killpg", kill_group)
 
-    def fail_listing(*_args: object, **_kwargs: object) -> None:
-        raise subprocess.CalledProcessError(1, ["ps"])
+    def fail_listing() -> None:
+        raise PermissionError("/proc")
 
-    monkeypatch.setattr(update_dotfiles_job.subprocess, "run", fail_listing)
-    with pytest.raises(subprocess.CalledProcessError):
+    monkeypatch.setattr(update_dotfiles_job, "_procfs_parents", fail_listing)
+    with pytest.raises(PermissionError):
         # 停止所有関数の失敗分岐へ故障を注入する。
         update_dotfiles_job._stop_tree(process)  # pylint: disable=protected-access
     kill_group.assert_called_once_with(42, signal.SIGKILL)
     process.kill.assert_called_once_with()
     process.wait.assert_called_once_with(timeout=30)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="procfsはLinuxのプロセス一覧である")
+def test_linux_process_listing_does_not_require_ps(monkeypatch: pytest.MonkeyPatch) -> None:
+    """procpsの無い環境でも、procfsから自身と親の関係を列挙する。"""
+
+    def missing_ps(*_args: object, **_kwargs: object) -> None:
+        raise FileNotFoundError("ps")
+
+    monkeypatch.setattr(update_dotfiles_job.subprocess, "run", missing_ps)
+    parents = update_dotfiles_job._procfs_parents()  # pylint: disable=protected-access
+    assert (os.getpid(), os.getppid()) in parents
 
 
 @pytest.mark.parametrize("identifier", ["../other", "not-a-uuid", "x; echo injected"])
