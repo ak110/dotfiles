@@ -89,12 +89,26 @@ jobs:
           sarif_file: ${{ runner.temp }}/audit.sarif
           category: uv-audit
 
+  rust-audit:
+    # cargo-auditの導入はソースからのビルドでCリンカーを要し、pyfltrイメージには含まれない。
+    # ci-rust-lintと同じく、コンテナーを使わずホストのrunnerでmiseのRustを使う。
+    runs-on: ubuntu-latest
+    # Rustの検出はCode Scanningへ送らず、ジョブの失敗とログに残すため書き込み権限は要らない。
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      # mise等がGitHub APIを呼び出す際のレート制限（403）回避
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+
       - name: Rust監査ツールの導入
-        run: |
-          set -euo pipefail
-          mise trust
-          mise install rust
-          mise exec -- cargo install --locked --no-default-features cargo-audit
+        run: mise exec -- cargo install --locked --no-default-features cargo-audit
 
       - name: Rust依存の監査
         run: |
