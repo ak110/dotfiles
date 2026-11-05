@@ -178,7 +178,10 @@ App Serverはthreadごとのstdio MCPサーバーを子孫プロセスとして�
 プロンプト送信前の事前確認処理や委譲プロンプト生成CLIも、既存の`prompt`や`followup_prompts`を参照して、今回の入力がエージェントの役割宣言に沿っているかを検証する。
 CLIは登録済みのセッション情報や既存の起動・ログ記録への参照を利用し、既存の保存先へ情報を集約する。参照先のパスの内容が更新された場合でも、その時点で必要な入力を保持する。
 `handoff_from`を指定して起動した場合は、前任エージェントの作業ディレクトリ（cwd）とモデル種別（model_type）を復元してレスポンスに含める。PostToolUseフックはこの引き継ぎ起動時に限りレスポンスから両方の値を取得し、後任エージェントの待機対象とタスク種別を記録する。通常の起動時には、指定された入力のcwdとmodel_typeを検証して受け付ける。
-引き継ぎに必要な会話ログの抽出には、`atk run-script session-review-prepare`の`--conversation-only`オプションを使用する。既存バンドルからの会話抽出のみを行い、候補文書、比較資料、統計データの生成やfailure ledgerの更新はスキップする。生成されたログデータの保存期間は、managed-tempの保持期限に従う。
+引き継ぎに必要な会話ログの抽出には、`atk run-script session-review-prepare`の`--conversation-only`オプションを使用する。
+指定した記録から会話のbundleを生成し、候補文書、比較資料、統計データの生成とfailure ledgerの更新を省く。
+少量表示と保存済みbundleからの継続取得は、`agent-toolkit/skills/review-session/references/session-records.md`「会話の少量取得」に従う。
+生成されたログデータの保存期間は、managed-tempの保持期限に従う。
 
 - 外部所有の復元状態は`ManagerRegistry`の`_RegistryResumeState`として管理し、各利用側は共通の`_refresh_resume_state`を呼び出して共有登録情報の最新ターンと状態を再確認する。
 - 外部の復元状態を読み取る`show`や`list`、停止済み・期限切れの判定、ならびに停止実行や結果取得の処理は、再確認した最新の状態に基づいて行う。新しいターンが進行中である場合は、過去ターンの終了状態を現在の完了状態として流用してはならず、過去の未回収結果は結果ファイルのルールに従って保持する。

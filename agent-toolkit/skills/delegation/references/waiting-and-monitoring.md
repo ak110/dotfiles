@@ -8,6 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `agent-toolkit:review-session/references/session-records.md`の「会話の少量取得」 | 判断 | `section:agent-toolkit:*/skills/review-session/references/session-records.md#「会話の少量取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-code-runtime.md#「完了通知と中継の実行順」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md#「完了通知と中継の実行順」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies.md#「終了コードと呼び出しの失敗」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/wait-anomalies.md#「終了コードと呼び出しの失敗」` |
@@ -160,6 +161,7 @@ Claude CodeのStop時に未配信の完了通知が存在し、通知後の同�
 
 進捗点検では、生存・活動の確認に加え、目標への進展と試行から得た情報、工程の所要と反復が妥当かを確かめる。
 起動入力、受領済みの引き継ぎ記録、計画の進捗ログ、対象のCI実行記録など、工程と実行回数を直接示す既存情報を使う。
+会話の発話・操作は`../../review-session/references/session-records.md`「会話の少量取得」で担当・期間・前回位置を選び、必要な入力と結果を詳細取得する。
 現在の工程と開始時点、経過時間、目標や同種処理の実績、前回以降の工程の変化と再試行を比較する。
 HEADや最終活動時刻の変化だけでは、この比較を満たさない。
 工程開始時点や比較基準が不足する場合は、担当者への照会や対象処理の記録から不足情報を取得してから改善の要否を判断する。

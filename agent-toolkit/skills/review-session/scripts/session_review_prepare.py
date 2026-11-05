@@ -27,6 +27,7 @@ import sys
 import unicodedata
 from typing import Any
 
+import session_conversation  # pylint: disable=import-error
 import session_effect_candidates  # pylint: disable=import-error
 import session_evidence_candidates  # pylint: disable=import-error
 import session_review_evidence  # pylint: disable=import-error
@@ -149,6 +150,34 @@ def _build_parser() -> argparse.ArgumentParser:
         help="引き継ぎ用の会話の流れと証拠bundleを生成して終了する。候補文書・統計・failure ledgerは更新しない。",
     )
     parser.add_argument("--after", metavar="PATH", help="前回のscope JSON。処理済み位置より後だけをbatchの分析対象にする。")
+    parser.add_argument("--conversation-window", action="store_true", help="会話を少量表示する。候補・統計は更新しない。")
+    parser.add_argument("--conversation-record", action="append", default=None, help="対象の正規記録ID。複数指定可。")
+    parser.add_argument(
+        "--conversation-since",
+        type=session_conversation.timestamp,
+        help="開始日時（timezone付きISO8601、境界を含む）。",
+    )
+    parser.add_argument(
+        "--conversation-until",
+        type=session_conversation.timestamp,
+        help="終了日時（timezone付きISO8601、境界を含む）。",
+    )
+    parser.add_argument(
+        "--conversation-recent",
+        type=session_conversation.positive_integer,
+        help="全担当の既知時刻から直近の正整数件。同時刻は元の抽出順。未知時刻は件数を示して除外する。",
+    )
+    parser.add_argument(
+        "--conversation-after",
+        type=session_conversation.nonnegative_integer,
+        help="同じwork-dirの保存bundleから定まる時系列順のイベント位置より後。未知時刻は末尾の別区分。0は先頭。",
+    )
+    parser.add_argument(
+        "--conversation-max-bytes",
+        type=session_conversation.positive_integer,
+        default=16000,
+        help="少量表示文書全体のUTF-8上限（省略時16000）。",
+    )
     return parser
 
 
@@ -204,7 +233,23 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
 
 
 def _read_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return _parse_jsonl(path.read_text(encoding="utf-8"), str(path))
+
+
+def _parse_jsonl(text: str, source: str) -> list[dict[str, Any]]:
+    """ensure_ascii=FalseとLFで生成したJSONLを、物理行の位置を保って読む。"""
+    events = []
+    for number, line in enumerate(text.split("\n"), 1):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+            if not isinstance(event, dict):
+                raise ValueError("JSON objectではない")
+        except ValueError as error:
+            raise ValueError(f"{source}:{number}（物理行）: {error}") from error
+        events.append(event)
+    return events
 
 
 # 未解決の対象と回復した記録行は、どのbundleファイルにも保存されず標準出力だけで届く。
@@ -219,7 +264,7 @@ def _extract_bundle(session_arguments: list[str], bundle_dir: pathlib.Path) -> t
     if exit_code != 0:
         return captured.getvalue() or f"atk run-script session-review-evidenceの終了コード: {exit_code}", []
     try:
-        events = [json.loads(line) for line in captured.getvalue().splitlines() if line.strip()]
+        events = _parse_jsonl(captured.getvalue(), f"抽出標準出力（入力={shlex.join(session_arguments)}, bundle={bundle_dir}）")
     except ValueError as error:
         return str(error), []
     return None, [event for event in events if event.get("kind") in _SCOPE_EVENT_KINDS]
@@ -390,13 +435,13 @@ def _delegate_summary(record: str, events: list[dict[str, Any]], limit: int) -> 
     first = events[0].get("timestamp") or "時刻なし"
     last = events[-1].get("timestamp") or "時刻なし"
     summary = (
-        f"- {record}（{first}〜{last}）: 依頼={task}; 返却={result}; "
+        f"- {record}（{first}〜{last}）: 依頼={task}; 最終観測発話={result}; "
         f"アシスタント{len(assistants)}発話; {_activity_summary(events)}"
     )
     return _clip_utf8(summary, limit)
 
 
-def _conversation_document(events: list[dict[str, Any]], detail_command: str, main_record: str | None) -> str:
+def _conversation_document(events: list[dict[str, Any]], detail_command: str, main_record: str | None) -> str | None:
     """セッション全体の目的・判断・操作と手戻りを、1エージェントが通読できる量で示す。"""
     by_record: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     for event in events:
@@ -424,7 +469,7 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str, ma
             rows = [row for turn in turns for row in _main_turn_rows(turn, compact_calls=True)]
             minimum = sum(len(prefix.encode("utf-8")) + 1 for prefix, _ in rows)
         if minimum > _CONVERSATION_MAIN_BYTES:
-            raise ValueError("会話の流れの最小行がメインの表示予算を超えた。全文はbundle/conversation.jsonlへ保持した。")
+            return None
         excerpt_bytes = (_CONVERSATION_MAIN_BYTES - minimum) // max(1, len(rows))
         lines.extend(
             prefix + (_conversation_excerpt(text, excerpt_bytes) if excerpt_bytes >= 3 else "") for prefix, text in rows
@@ -438,7 +483,7 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str, ma
         lines.extend(_delegate_summary(record, record_events, per_delegate) for record, record_events in delegates)
     document = "\n".join(lines) + "\n"
     if len(document.encode("utf-8")) > _CONVERSATION_MAX_BYTES:
-        raise ValueError("会話の流れを原則上限の100000バイト以下へ縮約できなかった")
+        return None
     return document
 
 
@@ -1156,6 +1201,19 @@ def _thread_breakdown_lines(
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """振り返りの入力を作業ディレクトリへ書き、所在と件数を1行のJSONで出力する。"""
     args = _build_parser().parse_args(argv)
+    if not args.conversation_window and (
+        args.conversation_record
+        or args.conversation_since
+        or args.conversation_until
+        or args.conversation_recent is not None
+        or args.conversation_after is not None
+        or args.conversation_max_bytes != 16000
+    ):
+        return _missing("bundle", "会話の選択条件は--conversation-windowと併用する")
+    if args.conversation_since and args.conversation_until and args.conversation_since > args.conversation_until:
+        return _missing("bundle", "開始日時が終了日時より後。--conversation-sinceと--conversation-untilを確認する")
+    if args.conversation_after is not None and args.work_dir is None:
+        return _missing("bundle", "--conversation-afterには同じbundleを持つ--work-dirを指定する")
     if args.opencode_db is not None and args.opencode_session_id is None:
         return _missing("bundle", "--opencode-dbは--opencode-session-idと併用する")
     local_evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
@@ -1200,7 +1258,23 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         session_arguments.extend(["--after", args.after])
     bundle_dir = work_dir / "bundle"
     bundle_dir.mkdir(exist_ok=True)
-    failure, scope_events = _extract_bundle(session_arguments, bundle_dir)
+    source_path = bundle_dir / "conversation-source.json"
+    current = now if now is not None else datetime.datetime.now(datetime.UTC)
+    observed_at = current.astimezone(datetime.UTC).isoformat()
+    if args.conversation_after is not None:
+        try:
+            source = json.loads(source_path.read_text(encoding="utf-8"))
+            if not isinstance(source, dict) or not isinstance(source.get("observed_at"), str):
+                raise ValueError("保存bundleの会話入力情報が不正")
+            if source["session_arguments"] != session_arguments:
+                raise ValueError("保存bundleの入力指定が異なる。同じ入力と--work-dirを指定する")
+            observed_at = source["observed_at"]
+            scope_events = [*_read_jsonl(bundle_dir / "unconfirmed.jsonl"), *_read_jsonl(bundle_dir / "recovered.jsonl")]
+        except (OSError, ValueError, KeyError) as error:
+            return _missing("bundle", f"継続用bundleを読めない: {error}。--conversation-afterを外して初回取得する")
+        failure = None
+    else:
+        failure, scope_events = _extract_bundle(session_arguments, bundle_dir)
     unresolved = [event for event in scope_events if event["kind"] != "recovered-record-line"]
     recovered = [event for event in scope_events if event["kind"] == "recovered-record-line"]
     if failure is not None:
@@ -1223,6 +1297,9 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     (bundle_dir / "recovered.jsonl").write_text(
         "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in recovered), encoding="utf-8"
     )
+    source_path.write_text(
+        json.dumps({"session_arguments": session_arguments, "observed_at": observed_at}, ensure_ascii=False), encoding="utf-8"
+    )
 
     # 準備と証拠照会で同じ入力指定を使い、
     # 全文を照会するコマンドとして示す。
@@ -1235,20 +1312,41 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         (item.get("record") for item in timeline if item.get("kind") == "record-provenance" and item.get("role") == "main"),
         None,
     )
+    conversation_text = (
+        None
+        if args.conversation_window
+        else _conversation_document(conversation, detail_command, str(main_record) if main_record else None)
+    )
+    conversation_limit = args.conversation_max_bytes if args.conversation_window else _CONVERSATION_MAX_BYTES
+    conversation_window: dict[str, Any] | None = None
     try:
-        conversation_text = _conversation_document(conversation, detail_command, str(main_record) if main_record else None)
+        if conversation_text is None:
+            continue_arguments = ["--transcript", *session_arguments] if transcript_path else list(session_arguments)
+            continue_arguments.extend(["--work-dir", str(work_dir)])
+            conversation_text, conversation_window = session_conversation.window_document(
+                conversation,
+                args=args,
+                observed_at=observed_at,
+                main_record=str(main_record) if main_record else None,
+                unresolved_count=len(unresolved),
+                recovered_count=len(recovered),
+                detail_command=detail_command,
+                continue_command="atk run-script session-review-prepare -- " + shlex.join(continue_arguments),
+                max_bytes=conversation_limit,
+            )
     except ValueError as error:
         return _missing("bundle", str(error))
-    conversation_path.write_text(conversation_text, encoding="utf-8")
+    conversation_path.write_text(conversation_text, encoding="utf-8", newline="\n")
     conversation_bytes = len(conversation_text.encode("utf-8"))
-    if args.conversation_only:
+    if args.conversation_only or args.conversation_window:
         print(
             json.dumps(
                 {
                     "work_dir": str(work_dir),
                     "conversation_path": str(conversation_path),
                     "conversation_utf8_bytes": conversation_bytes,
-                    "conversation_limit_bytes": _CONVERSATION_MAX_BYTES,
+                    "conversation_limit_bytes": conversation_limit,
+                    "conversation_window": conversation_window,
                     "unconfirmed_scope": unresolved,
                     "recovered_record_lines": recovered,
                 },
@@ -1345,7 +1443,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "work_dir": str(work_dir),
         "conversation_path": str(conversation_path),
         "conversation_utf8_bytes": conversation_bytes,
-        "conversation_limit_bytes": _CONVERSATION_MAX_BYTES,
+        "conversation_limit_bytes": conversation_limit,
+        "conversation_window": conversation_window,
         "comparison_materials_path": str(comparison_path),
         "candidates_path": str(candidates_path),
         "stats_path": str(stats_path),

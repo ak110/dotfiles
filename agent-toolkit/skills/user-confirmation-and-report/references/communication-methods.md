@@ -8,6 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `agent-toolkit:review-session/references/session-records.md`の「会話の少量取得」 | 判断 | `section:agent-toolkit:*/skills/review-session/references/session-records.md#「会話の少量取得」` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-severity.md`の「QとC・Dの区別」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-prevention.md`の「再発防止策の必須性」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
 | 本文の参照基準を適用する前 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
@@ -88,6 +89,7 @@
 通知を受けた主体は、活動の有無と、目標への進展・試行から得た情報・工程の所要を分けて点検する。新しい情報を得ない同じ試行が続く場合は、前提と優先順位を見直し、有効なら既存の独立文脈レビューを利用する。APIの再試行待ちやツールの長時間実行は、戦略の停滞やプロセス停止と区別する。
 作業契約と、それが参照する要求原本・計画・進捗記録の必要範囲を比べる。
 委譲先は自身の作業記録と受領した全体作業契約から、担当範囲と全体目的の対応を確認する。
+各担当の発話・操作を確認する場合は`../../review-session/references/session-records.md`「会話の少量取得」で前回以降を優先し、記録の観測時刻と公開の実行状態を併記する。
 当初目的、追加・変更後も有効な全要求、保持対象、完成条件を比較し、割り込み対応後も元の未完了工程を保持する。
 完成条件別の成果と証拠、未達・未確認、残工程を比べ、全工程を100%とする概算と根拠を見直す。
 現在の作業がどの完成条件に必要か、未着手の要求、優先順位、反復の収束、経過時間に対する進み具合、品質を保てる低負担な方式を確かめ、必要なら進め方を修正する。
