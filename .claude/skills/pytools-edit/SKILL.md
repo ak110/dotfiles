@@ -17,16 +17,16 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/SKILL.md` | 判断 | `read:*/skills/develop-dotfiles/SKILL.md` |
+| テストの配置・検証・環境準備の手順を選ぶ前 | `../develop-dotfiles/SKILL.md` | 判断 | `read:*/skills/develop-dotfiles/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../release-dotfiles/SKILL.md` | 判断 | `read:*/skills/release-dotfiles/SKILL.md` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| `bin/`配下の`*.cmd`を書込ツールで扱う前 | `agent-basics:writing-standards`の`references/encoding.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/encoding.md` | |
-| `rust/`配下のクレートを編集する前 | `agent-basics:writing-standards`の`references/rust.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/rust.md` | |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| `bin/`配下の`*.cmd`を書込ツールで扱う前 | `agent-basics:writing-standards`の`references/encoding.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/encoding.md` |
+| `rust/`配下のクレートを編集する前 | `agent-basics:writing-standards`の`references/rust.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/rust.md` |
 
 ## 配置規約
 
