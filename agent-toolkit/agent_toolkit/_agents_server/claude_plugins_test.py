@@ -131,6 +131,17 @@ async def test_invalid_inventory_never_enables_toolkit(tmp_path: Path, inventory
 
 
 @pytest.mark.asyncio
+async def test_unloaded_scope_without_install_path_is_ignored(tmp_path: Path, inventory: SimpleNamespace) -> None:
+    """CLIが読み込まないsynced項目の空installPathで、有効な導入一覧の解決を止めない。"""
+    root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
+    # Claude Codeは同名の手元導入に隠されたsynced項目をinstallPath空文字で返す。
+    inventory.items = [_installed(root), _installed(root, id="agent-toolkit@synced", scope="synced", installPath="")]
+    options = _options(tmp_path, root)
+    async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
+        assert reloader._source == root.resolve()
+
+
+@pytest.mark.asyncio
 async def test_copy_failure_preserves_previous_input(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace
 ) -> None:

@@ -24,6 +24,10 @@ from agent_toolkit._common import host_homes, process_tree
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 
 
+_LOADABLE_SCOPES = frozenset({"user", "project", "local"})
+"""子Claudeが導入先から読み込むscope。これ以外の項目は導入先を持たない場合がある。"""
+
+
 class PluginReloadError(RuntimeError):
     """プラグインの解決、入力更新、またはCLIへの反映に失敗した。"""
 
@@ -223,7 +227,9 @@ class ClaudePluginReloader:
                 f"Claudeの導入一覧を取得できない（終了コード{result.returncode}）。"
                 "同じcwdと設定でclaude plugin list --jsonを確認する"
             )
-        items = TypeAdapter(list[_InstalledPlugin]).validate_json(result.stdout)
+        # synced scopeなどCLIが読み込まない項目は空のinstallPathを返すため、読込対象のscopeだけを検証する。
+        entries = TypeAdapter(list[dict[str, Any]]).validate_json(result.stdout)
+        items = [_InstalledPlugin.model_validate(entry) for entry in entries if entry.get("scope") in _LOADABLE_SCOPES]
         cwd = Path(self.options["cwd"]).resolve()
         sources = self.options.get("setting_sources")
         return [
