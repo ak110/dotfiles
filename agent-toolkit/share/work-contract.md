@@ -2,6 +2,7 @@
 
 現行の作業契約は、割り込みや部分修正が発生した後でも、当初の目的と現在有効な要求に立ち戻るための簡潔な記録である。
 会話、WI、計画、およびレビュー指摘管理表を原本とし、目的や要求に関する現在の結論を保持する。
+会話から復元する際は`skills/review-session/references/session-records.md`「会話の少量取得」で全体要求と前回以降の変更を読み、必要な原文・実行結果を取得する。
 
 ## 名指し参照の読込方法
 
@@ -9,6 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `agent-toolkit:review-session/references/session-records.md`の「会話の少量取得」 | 判断 | `section:agent-toolkit:*/skills/review-session/references/session-records.md#「会話の少量取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 
 ## 作成と所有

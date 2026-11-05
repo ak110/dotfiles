@@ -407,7 +407,7 @@ def test_role_finding_save_keeps_current_acquisition_evidence(tmp_path, monkeypa
 @pytest.mark.parametrize("role_name", [None, "exec.subagent.md", "lane-integration.subagent.md"])
 @pytest.mark.parametrize("history", ["new", "existing", "compact"])
 def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch, state, role_name, history):
-    """判断行のRead一致は候補に留め、役割・工程の成立と実受領・起動の証拠を分ける。"""
+    """取得時の候補通知を保留し、役割・工程の成立と実受領・起動の証拠を分ける。"""
     root = tmp_path / "agent-toolkit"
     share = root / "share"
     share.mkdir(parents=True)
@@ -451,8 +451,7 @@ def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch
         before = _run_hook_in_process("pretooluse", {**payload, "tool_name": tool, "tool_input": inputs})
         assert before.returncode == 0 and not before.stderr
         if tool == "Read" and inputs.get("file_path") == str(skill):
-            assert "読込条件の候補" in before.stdout
-            assert ("工程資料の選択" in before.stdout) is (role_name is not None)
+            assert "読込条件の候補" not in before.stdout
         after = _run_hook_in_process(
             "posttooluse",
             {**payload, "hook_event_name": "PostToolUse", "tool_name": tool, "tool_input": inputs, "tool_response": response},

@@ -64,8 +64,16 @@ def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
     # 既存のtoolkit固有シナリオは単一対象へ限定し、2件の導入契約は結合シナリオで検証する。
     monkeypatch.setattr(install_codex_plugins, "_MANAGED_PLUGINS", ("agent-toolkit",))
     monkeypatch.setattr(host_roles, "is_linux_server", lambda: False)
-    # 既存の更新ケースは利用中セッションへの手動案内を検査し、daemonだけのケースは個別に指定する。
+    # 実daemonへの作用を防ぎ、更新後のrestartだけを成功する外部境界へ差し替える。
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: (_SESSION,))
+    real_run = common.run_subprocess
+
+    def safe_run(args: list[str], **kwargs: Any) -> Any:
+        if args[1:] == ["app-server", "daemon", "restart"]:
+            return _FakeResult(returncode=0)
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(common, "run_subprocess", safe_run)
     monkeypatch.setattr(
         install_codex_plugins,
         "_hooks_list",
@@ -243,7 +251,7 @@ def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch:
     outcome = install_codex_plugins.run()
 
     assert outcome.changed is True
-    assert [notice.command for notice in outcome.notices] == ["/hooks", "codex app-server daemon restart"]
+    assert [notice.command for notice in outcome.notices] == ["/hooks"]
     assert ["plugin", "marketplace", "add", str(plugin_env)] in calls
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert not destination.exists()
@@ -323,6 +331,8 @@ def test_running_codex_updates_and_preserves_previous_caches(
         return True
 
     def run_subprocess(args: list[str], **_kwargs: object) -> _FakeResult:
+        if args[1:] == ["app-server", "daemon", "restart"]:
+            return _FakeResult(stdout="")
         assert args[1:] == ["plugin", "list", "--json", "--marketplace", "ak110-dotfiles"]
         if current["version"] == "1.2.3":
             shutil.rmtree(older, ignore_errors=True)
@@ -778,7 +788,7 @@ def test_reinstalls_when_state_requires_it(
     assert outcome.changed is True
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert calls.count(["plugin", "add", "agent-toolkit@ak110-dotfiles"]) == 1
-    assert [notice.command for notice in outcome.notices] == ["/hooks", "codex app-server daemon restart"]
+    assert [notice.command for notice in outcome.notices] == ["/hooks"]
 
 
 @pytest.mark.parametrize("version", ["1.2.2", "1.2.3"])
@@ -890,9 +900,10 @@ def test_plugin_update_keeps_hook_notice_when_daemon_is_stopped(plugin_env: Path
 def test_plugin_update_rechecks_sessions_before_auto_restart(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, session_starts: bool
 ) -> None:
-    """更新開始時はdaemonだけでも、再起動直前にセッションがあれば接続を維持する。"""
+    """稼働daemonは利用セッションの有無によらずpluginを反映する。"""
     calls: list[list[str]] = []
     restart_calls: list[list[str]] = []
+    restart_timeouts: list[float] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
     daemon = codex_processes.CodexProcess(4321, "codex app-server --managed-daemon", "managed-daemon")
     processes = [daemon]
@@ -906,8 +917,9 @@ def test_plugin_update_rechecks_sessions_before_auto_restart(
 
     monkeypatch.setattr(install_codex_plugins, "_command", command)
 
-    def run_subprocess(args: list[str], **_kwargs: object) -> _FakeResult:
+    def run_subprocess(args: list[str], *, timeout: float, **_kwargs: object) -> _FakeResult:
         restart_calls.append(args)
+        restart_timeouts.append(timeout)
         return _FakeResult(returncode=0)
 
     monkeypatch.setattr(install_codex_plugins.common, "run_subprocess", run_subprocess)
@@ -915,10 +927,9 @@ def test_plugin_update_rechecks_sessions_before_auto_restart(
     outcome = install_codex_plugins.run()
 
     assert outcome.changed is True
-    assert [notice.command for notice in outcome.notices] == (
-        ["/hooks", "codex app-server daemon restart"] if session_starts else ["/hooks"]
-    )
-    assert restart_calls == ([] if session_starts else [["codex", "app-server", "daemon", "restart"]])
+    assert [notice.command for notice in outcome.notices] == ["/hooks"]
+    assert restart_calls == [["codex", "app-server", "daemon", "restart"]]
+    assert restart_timeouts == [750.0]
     assert calls[-1] == ["app-server", "daemon", "version"]
 
 
@@ -927,7 +938,7 @@ def test_plugin_update_auto_restart_failure_keeps_notice_and_logs_exit_code(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """自動再起動の失敗は終了コードを記録して手動案内へ戻す。"""
+    """自動再起動の失敗は診断と次の操作を持つ工程失敗へ伝播する。"""
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
@@ -944,6 +955,13 @@ def test_plugin_update_auto_restart_failure_keeps_notice_and_logs_exit_code(
     assert [notice.command for notice in outcome.notices] == ["/hooks", "codex app-server daemon restart"]
     assert "自動再起動に失敗 (exit 9" in caplog.text
     assert "daemon restart detail" in caplog.text
+    assert outcome.failure is not None and "daemon restart detail" in outcome.failure
+    assert outcome.next_action is not None and "codex app-server daemon restart" in outcome.next_action
+    monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", plugin_env.parent / "update-dotfiles.log")
+    monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", plugin_env.parent / "sync-report.json")
+    with pytest.raises(SystemExit) as failure:
+        post_apply.main(runner=lambda: post_apply.run([("Codex plugins", lambda: outcome)]))
+    assert failure.value.code == 1
 
 
 def test_plugin_update_does_not_restart_stopped_daemon(

@@ -31,6 +31,26 @@ pytestmark = pytest.mark.windows
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 
 
+@pytest.mark.parametrize(
+    ("section", "target", "expected"),
+    [
+        ("## 設計・実装方針\n\n", "恒久化・リファクタリング", "`## 設計・実装方針`を空にしない"),
+        ("## 設計・実装方針\n\n<!-- 未記入 -->\n\n", "恒久化・リファクタリング", "を空にしない"),
+        ("## 設計・実装方針\n\n方式を記載する。\n\n", "要件・外部仕様", "この順序で置く"),
+        (
+            "## 設計・実装方針\n\n方式を記載する。\n\n## 設計・実装方針\n\n別の方式。\n\n",
+            "恒久化・リファクタリング",
+            "重複",
+        ),
+    ],
+)
+def test_optional_design_section_rejects_invalid_structure(section: str, target: str, expected: str) -> None:
+    """任意の設計節も空欄・配置違い・重複を拒否する。"""
+    content = _plan_fixture.current_plan().replace(f"## {target}\n", f"{section}## {target}\n", 1)
+    errors = plan_sections.check_plan_single_file_structure(content)[1]
+    assert any(expected in error for error in errors), errors
+
+
 def test_human_readable_wi_and_units_do_not_expose_internal_ids() -> None:
     """人間向け形式はWIファイル名と説明的な実装単位だけを解析する。"""
     metadata, metadata_errors = _plan_format.parse_plan_metadata(_HUMAN_MAIN_CONTENT)
@@ -536,13 +556,13 @@ def test_detail_structure_rejects_bug_section_for_normal_work_type() -> None:
     assert any(f"`## {_plan_format.PLAN_H2_BUG}`は置かない" in error for error in errors), errors
 
 
-def test_origin_check_skips_when_source_is_unresolvable(tmp_path: pathlib.Path) -> None:
-    """WIファイルを特定できない場合はWI本文との比較だけを省略し、他の判定結果を変えない。"""
+def test_origin_check_needs_no_wi_body(tmp_path: pathlib.Path) -> None:
+    """由来の構文確認はWI本文の取得に依存しない。"""
     (tmp_path / "inbox").mkdir(parents=True)
     errors, notices, skips = _origin_check(tmp_path)
     assert not errors, errors
     assert not notices, notices
-    assert any(_plan_fixture.WI_FILES[0][0] in skip for skip in skips), skips
+    assert not skips, skips
 
 
 def test_progress_log_rows_returns_rows_in_document_order() -> None:

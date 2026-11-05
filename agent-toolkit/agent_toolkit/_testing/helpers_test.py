@@ -50,3 +50,17 @@ def test_delivery_payload_rejects_invalid_boundary(opening: str, closing: str) -
     """要素名、必要属性と外側の終了タグが違う配送を拒否する。"""
     with pytest.raises(AssertionError):
         delivery_payload(f"{opening}\n本文\n{closing}")
+
+
+@pytest.mark.parametrize(
+    "source,kind", [("agent-toolkit", "plugin-resources"), ("wrong", "plugin-resources"), ("agent-toolkit", "wrong")]
+)
+def test_delivery_payload_separates_only_known_resource_notice(source: str, kind: str) -> None:
+    """正式な資源案内だけを配送本文と区別し、他の前置きは受理しない。"""
+    notice = f'<atk-auto source="{source}" kind="{kind}">\nroot案内\n</atk-auto>'
+    delivered = notice + '\n\n<atk-auto source="agents-server" kind="delivery">\n続行\n</atk-auto>'
+    if (source, kind) == ("agent-toolkit", "plugin-resources"):
+        assert delivery_payload(delivered) == "続行"
+    else:
+        with pytest.raises(AssertionError):
+            delivery_payload(delivered)

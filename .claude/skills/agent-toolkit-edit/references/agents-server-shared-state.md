@@ -178,7 +178,10 @@ App Serverはthreadごとのstdio MCPサーバーを子孫プロセスとして�
 プロンプト送信前の事前確認処理や委譲プロンプト生成CLIも、既存の`prompt`や`followup_prompts`を参照して、今回の入力がエージェントの役割宣言に沿っているかを検証する。
 CLIは登録済みのセッション情報や既存の起動・ログ記録への参照を利用し、既存の保存先へ情報を集約する。参照先のパスの内容が更新された場合でも、その時点で必要な入力を保持する。
 `handoff_from`を指定して起動した場合は、前任エージェントの作業ディレクトリ（cwd）とモデル種別（model_type）を復元してレスポンスに含める。PostToolUseフックはこの引き継ぎ起動時に限りレスポンスから両方の値を取得し、後任エージェントの待機対象とタスク種別を記録する。通常の起動時には、指定された入力のcwdとmodel_typeを検証して受け付ける。
-引き継ぎに必要な会話ログの抽出には、`atk run-script session-review-prepare`の`--conversation-only`オプションを使用する。既存バンドルからの会話抽出のみを行い、候補文書、比較資料、統計データの生成やfailure ledgerの更新はスキップする。生成されたログデータの保存期間は、managed-tempの保持期限に従う。
+引き継ぎに必要な会話ログの抽出には、`atk run-script session-review-prepare`の`--conversation-only`オプションを使用する。
+指定した記録から会話のbundleを生成し、候補文書、比較資料、統計データの生成とfailure ledgerの更新を省く。
+少量表示と保存済みbundleからの継続取得は、`agent-toolkit/skills/review-session/references/session-records.md`「会話の少量取得」に従う。
+生成されたログデータの保存期間は、managed-tempの保持期限に従う。
 
 - 外部所有の復元状態は`ManagerRegistry`の`_RegistryResumeState`として管理し、各利用側は共通の`_refresh_resume_state`を呼び出して共有登録情報の最新ターンと状態を再確認する。
 - 外部の復元状態を読み取る`show`や`list`、停止済み・期限切れの判定、ならびに停止実行や結果取得の処理は、再確認した最新の状態に基づいて行う。新しいターンが進行中である場合は、過去ターンの終了状態を現在の完了状態として流用してはならず、過去の未回収結果は結果ファイルのルールに従って保持する。
@@ -261,8 +264,14 @@ MCPが要求から会話を識別した場合は会話IDのroot、識別でき�
 
 ### バックエンド固有の接続とAPI状態
 
+保存済みCodex会話の再開では、`codex.py`が`thread/resume`の送信前に`hosts`索引を公開する。
+子MCPの起動時に直接親を確定し、その親が起動した孫を復旧候補へ戻すためである。
+
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
+| Codexの獲得resetの論理消費と消費済みweekly窓 | `<状態ディレクトリ>/agents-server/codex-auto-reset/<account emailのSHA-256>.json`と同領域の`transaction.lock` | `codex_auto_reset.py` | 同じ状態ディレクトリを使うバックエンドが非ブロッキングのファイルロックで排他する。通信結果不明のUUIDは次の照会でも再利用し、成功済み窓への再消費を抑止する。資格情報やemail本文は保存しない |
+| Codexのreset照会中フラグ`codex_auto_reset_pending` | `SessionState`のメモリーのみ | Managerの起動時可用性判定と自動再開監視 | Codexバックエンドが保留・照会開始時に設定し、照会終了・取消・接続解放時に解除する。照会中は旧結果の確定と自動継続を抑止し、成功後は既存の`usage_limit_resume_at`へ同一会話の再開を渡す。登録簿には保存しない |
+| Claudeのplugin更新世代・未反映通知・監視thread | 所有タスクの`ClaudePluginReloader` | Claudeのセッション所有タスクのみ | `claude_plugins.py`がファイル変更をloopへ通知し、所有タスクがidle後にSDK制御要求を直列送信する。応答の集合・版・エラー数を検証した世代だけ反映済みにし、接続終了時に監視を停止・回収する |
 | Codex会話の選択済みprovider ID、通常サブスクのprovider IDと検証済みの会話状態生成元`codex_state_provider`（provider IDの種別`credits`・`payg`は現在の`codex_credits_provider`・`codex_payg_provider`との一致で判定し、同じIDを両方へ設定することは拒否する。process-loopのCodex統括担当も選んだprovider IDを登録簿へ保存する） | `SessionState`、リソース解放時の`SessionResumeState`、および既存セッション登録簿内の内部再開情報 | Codexバックエンド、およびManagerの復元処理（公開用の状態、レスポンス、通知、結果の射影データからは読み取らない） | Codexバックエンドが接続先を確定し、新規開始時および互換性を確認した再開時のみ生成元を確定する。所有MCPサーバーはリソース解放済みの記録にもこれを保存し、既存の7日間掃引処理に委ねる。認証情報は保存しない |
 | Claude会話の役割（`orchestrator`・`delegate`）、選択済みの接続（`credits`・`payg`・`subscription`・`inherit`。種別を区別する前の版の`api`は再開時にクレジットのenvファイルとの一致で`credits`か`payg`へ読み替える）とAPI接続のenvファイルの絶対パス | `SessionState`の`claude_role`・`claude_connection`・`claude_api_env_file`、`SessionResumeState`、およびセッション登録簿の内部再開情報 | Claudeバックエンド、Managerの復元処理、およびprocess-loop再開時の可用性判定 | 接続方式はClaudeバックエンドが起動時および切り替え時に確定し、所有MCPサーバーが保存する。process-loopのオーケストレーターも自身の役割と接続方式を登録する。新規セッションは`claude_orchestrator_connections`・`claude_worker_connections`の使用順に従って選択され、再開時には保存済みの接続方式を使用する（その種別を使用順から外した場合だけ使用順の先頭の利用可能な候補へ移す）。利用上限到達によってサブスクリプションからAPI接続へ切り替えた委譲先は、`claude_subscription_retry_at`をメモリー上でのみ保持し、指定時刻を過ぎた最初のプロンプト追送や自動再開のタイミングで、使用順でサブスクリプションが現在の種別より前にあればサブスクリプション接続へと戻す。接続設定を持たない環境で起動した`inherit`会話は、接続を管理しない間は親環境の設定と通常の認証情報を維持する。envファイルの値は各起動時に直接読み取るものとし、登録簿や公開状態へ値を複製・保存することはない |
 | Claude起動別の合成settings | `<状態ディレクトリ>/<ルートsession識別子>/claude-settings/settings-<一意な値>.json`（ルート識別子を受け取らない直接構築時は`settings-<一意な値>`をルート名として使用） | 該当の起動におけるClaude CLI | Claudeバックエンドの`claude_settings.py`。親設定がファイルで与えられている場合や、API環境変数を合成する場合に、実行ユーザーのみ読み取り可能な起動別設定ファイルを生成する。各起動プロセスは、接続終了時・起動失敗時・依存確認の終了時に自身のファイルを削除・回収する |
@@ -352,6 +361,7 @@ batchでは`_atk/run_skill_batch.py`が保存済みの準備範囲を確定し�
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
+| 子Claudeがreloadする固定plugin入力 | セッションのmanaged-tempの`claude-plugin-input-<一意な値>/agent-toolkit` | 当該SDK接続のClaude CLI | `claude_plugins.py`が版付きcache由来の明示toolkitだけを複製し、idle時に完成版を固定pathへ切り替える。失敗時は旧完成版へ復旧する。agents_serverのMCP起動定義は所有serverの保持版へ固定し、Python実行基盤とskill/mods入力の寿命を分ける。開発checkoutは元pathを使う。CLIの終了確認後に専用複製を回収し、終了未確認なら監視だけを止めて入力を保持する |
 | 保持した配布物を使用するプロセス | `plugin-root-leases/<保持領域の識別子>-<pid>.json`および領域ごとの`.lock` | 配布物の起動側、ならびにmanaged-tempの回収・掃引処理 | `_common/plugin_root_leases.py`。起動側プロセスが領域パス、PID、プロセス作成時刻を登録し、読み取り側は同一領域のファイルロック下でプロセスの生存を確認する。終了済みプロセスの使用記録を除外し、情報取得不能な記録や使用中の実体ディレクトリを保護する。使用登録と回収処理でロックを共有するのは、生存確認と新規登録の合間に実体ディレクトリが削除されるのを防ぐためである。なお、`atk`の自動掃引処理だけはロック取得を待たず、競合した領域の処理をスキップして次回に回す |
 | 同じ配布元・版から共有する完成済み配布物 | managed-tempの保持領域直下の`.agent-toolkit-plugin-root.json` | `_agents_server/plugin_root.py`による起動・再利用処理 | 配布物をコピーして配置する起動側プロセスが、配布元・バージョン・ルートディレクトリ名を保存する。内部MCPもこの完成済みの実体を共有し、回収側は前述の使用中リース記録を確認して安全に回収する |
 | MCPのlease対応能力 | `plugin-root-leases/capability-<pid>.json` | 配布物ルートディレクトリの解決処理、および旧形式領域の回収可否判定 | 保持領域を使用しない起動プロセスも含め、自身のPIDとプロセス作成時刻を公開する。既存の領域別リース記録が存在する場合も、対応能力を持つ証拠として扱う |

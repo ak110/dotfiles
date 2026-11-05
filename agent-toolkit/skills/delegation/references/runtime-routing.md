@@ -8,6 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `agent-toolkit:review-session/references/session-records.md`の「会話の少量取得」 | 判断 | `section:agent-toolkit:*/skills/review-session/references/session-records.md#「会話の少量取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「会話を引き継ぐ委譲」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「会話を引き継ぐ委譲」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
@@ -116,6 +117,7 @@ process-wiの実行中は`../../process-wi/references/immediate-fix.md`「即時
 - レビュー担当者のセッションが継続できない場合は、同一の`model_type`で新たなレビュー担当者を起動する。その際、`レビュー種別: 引き継ぎ再レビュー`、レビュー指摘管理表の絶対パスと`track`、`round: <ラウンド番号>`の行、直前の修正作業による直接影響範囲、読み取り専用の対象範囲を引き渡す。実行レビューの場合は、レビュー対象となるHEADの7文字以上の短縮OID（一意なもの）も併せて渡し、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の生成規則に従って`review_contract`を再生成する。ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の保持先`に従い、管理表に記載された最大値から継続する。新たな担当者は、すでに解消済みの指摘を再調査せず、未解消の行およびそのラウンドで指定された確認範囲のみを対象とする
 
 同一計画の起草から実装、および変更範囲の検証までは、同一のレーン担当者が同一のworktreeにおいて一貫して実施する。継続が不可能な場合に限って新たな担当者を起動し、検収済みの状態と残りの工程を1つの担当者へまとめて引き渡す。
+交代時の会話確認は`../../review-session/references/session-records.md`「会話の少量取得」で全体要求と最新の変更を読み、引き継ぎ記録の判断・残工程と比較する。
 
 ### Agentツールの継続
 

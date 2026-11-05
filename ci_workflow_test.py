@@ -928,3 +928,83 @@ def test_ci_scope_failure_is_not_an_intentional_skip(
     assert result.returncode == expected_exit, result.stdout + result.stderr
     if owns == "true" and expected_exit == 0:
         assert f"実行={selected}" in result.stdout and "文書だけの変更" in result.stdout
+
+
+def test_windows_install_checks_public_script_and_preserved_configuration(workflow_data: dict[str, object]) -> None:
+    """候補版の公開導入を実行し、モード・復元用コピー・実適用結果を同じCIで確認する。"""
+    steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
+    installation = next(step for step in steps if step.get("name") == "install.ps1から初回導入とバックアップを検証")
+    script = str(installation["run"])
+    assert '& "$env:DOTFILES_DIR\\install.ps1" -Mode full' in script
+    assert script.index("WriteAllText") < script.index("install.ps1") < script.index("$config =")
+    # setup-uvのシム配置を通常のユーザー配置へ戻してから導入し、後処理まで到達させる。
+    assert script.index("$env:UV_TOOL_BIN_DIR = Join-Path $env:USERPROFILE '.local\\bin'") < script.index("install.ps1")
+    # 導入モードはWindowsのuser_config_dir（%LOCALAPPDATA%）から読む。
+    assert "Join-Path $env:LOCALAPPDATA 'agent-toolkit\\config.json'" in script
+    assert ".dotfiles-backup" in script and "-ceq $existing" in script
+    assert "Get-FileHash $target" in script and "Get-FileHash $expected" in script
+    assert not any(step.get("name") in {"chezmoi 適用", "dotfiles-post-apply の動作確認"} for step in steps)
+    assert any(step.get("name") == "主要ファイルの存在確認" for step in steps)
+
+
+def test_update_includes_locked_rust_validation() -> None:
+    """一括更新でCargo制約内の更新を行い、同じcrateを検証する。"""
+    text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    update = re.search(r"^update:\n((?:\t.*\n)+)", text, flags=re.MULTILINE)
+    assert update is not None
+    commands = update.group(1)
+    manifest = "--manifest-path rust/claude-statusline/Cargo.toml"
+    assert f"cargo update {manifest}" in commands
+    assert f"cargo fmt {manifest} --check" in commands
+    assert f"cargo clippy {manifest} --locked --all-targets --all-features -- -D warnings" in commands
+    assert f"cargo test {manifest} --locked" in commands
+    assert commands.index("cargo update") < commands.index("cargo test") < commands.index("$(MAKE) test")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Linux Audit jobのbashで検証する")
+@pytest.mark.parametrize(
+    ("report", "audit_rc", "expected_rc", "message"),
+    [
+        ('{"vulnerabilities":{"found":false,"count":0,"list":[]}}', 0, 0, "Rust監査完了"),
+        ('{"vulnerabilities":{"found":true,"count":1,"list":[]}}', 1, 1, "既知の脆弱性があります"),
+        ('{"vulnerabilities":{"found":false,"count":0,"list":[]}}', 2, 2, "異常終了"),
+        ("", 2, 1, "結果を取得できません"),
+    ],
+)
+def test_rust_audit_distinguishes_findings_and_tool_failure(
+    tmp_path: Path, host_environ: Callable[[], dict[str, str]], report: str, audit_rc: int, expected_rc: int, message: str
+) -> None:
+    """実workflowのシェルでRustSec結果とツール異常を区別し、検出を正常へ変換しない。"""
+    audit = yaml.safe_load((REPO_ROOT / ".github/workflows/audit.yaml").read_text(encoding="utf-8"))
+    # cargo-auditの導入はCリンカーを要するため、Python監査のpyfltrコンテナーとは別のホストrunnerで実行する。
+    rust_job = audit["jobs"]["rust-audit"]
+    assert "container" not in rust_job
+    steps = rust_job["steps"]
+    names = [step.get("name") or step.get("uses", "") for step in steps]
+    install_index = names.index("Rust監査ツールの導入")
+    assert any(name.startswith("jdx/mise-action@") for name in names[:install_index])
+    assert "mise exec -- cargo install --locked --no-default-features cargo-audit" in steps[install_index]["run"]
+    script = next(step["run"] for step in steps if step.get("name") == "Rust依存の監査")
+    assert "cargo audit --file rust/claude-statusline/Cargo.lock --json" in script
+    assert any(step.get("name") == "Run dependency audit" for step in audit["jobs"]["audit"]["steps"])
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    mise = binary / "mise"
+    mise.write_text('#!/bin/sh\nprintf "%s" "$AUDIT_REPORT"\nexit "$AUDIT_RC"\n', encoding="utf-8")
+    mise.chmod(0o755)
+    source = tmp_path / "audit.sh"
+    source.write_text(script, encoding="utf-8")
+    environment = host_environ()
+    environment.update(
+        PATH=str(binary) + os.pathsep + environment["PATH"],
+        RUNNER_TEMP=str(tmp_path),
+        AUDIT_REPORT=report,
+        AUDIT_RC=str(audit_rc),
+    )
+    result = subprocess.run(
+        ["bash", str(source)], env=environment, capture_output=True, text=True, encoding="utf-8", check=False, timeout=10
+    )
+    assert result.returncode == expected_rc, result.stdout + result.stderr
+    assert message in result.stdout
+    if report:
+        assert report in result.stdout

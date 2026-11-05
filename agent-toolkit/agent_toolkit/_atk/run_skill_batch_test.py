@@ -530,7 +530,11 @@ def test_prepare_failure_diagnostic_reaches_run_record_and_awi(tmp_path) -> None
     assert len(errors) == 1 and "不足:" in errors[0]
     failures = _failure_awis(notes)
     assert len(failures) == 1
-    assert "不足:" in failures[0].read_text(encoding="utf-8")
+    failure = failures[0].read_text(encoding="utf-8")
+    assert "不足:" in failure
+    assert all(not record.get("log_path") for record in records)
+    assert "error・targets・prepared" in failure
+    assert "実行ログの終了状態" not in failure
 
 
 def test_prepare_success_keeps_json_and_forwards_stderr(tmp_path, monkeypatch, capsys) -> None:
@@ -589,18 +593,32 @@ def test_failure_awi_requires_success_through_failed_phase(tmp_path, reason) -> 
     assert "子の結果回収、振り返り、報告の同期とsession-review-state finishまで完了する" in message
 
 
-def test_child_failure_keeps_scope_unprocessed(tmp_path) -> None:
+@pytest.mark.parametrize("resume", [False, True])
+def test_child_failure_keeps_scope_unprocessed(tmp_path, resume) -> None:
     """準備後の子回収失敗は具体理由を保存し、対象範囲を未処理のまま保持する。"""
     notes = _notes()
     _target(tmp_path, "one")
     reason = "run-skill-exit-1: 子の結果回収に失敗した"
+    log_path = tmp_path / "run-skill.log"
+    log_path.write_text("標準エラー: 子の回収失敗\n終了状態: exit code 1\n", encoding="utf-8")
 
     def execute(args, **kwargs):
         del kwargs
+        path = pathlib.Path(args.batch_manifest)
+        manifest = session_review.read(path)
+        manifest["log_path"] = str(log_path)
+        session_review.write(path, manifest)
         args.batch_failure = reason
         return 1
 
     assert run_skill_batch.dispatch(_args(), execute) == 1
+    if resume:
+        manifest_path = next((session_review.directory() / "runs").glob("*.json"))
+        args = _args("manual")
+        args.resume_record = True
+        args.run_id = manifest_path.stem
+        args.batch_manifest = str(manifest_path)
+        assert run_skill_batch.dispatch(args, execute) == 1
     pending = session_review.pending()
     assert len(pending) == 1 and pending[0]["session_id"] == "one"
     assert session_review.previous_scope(pending[0]) is None
@@ -608,7 +626,12 @@ def test_child_failure_keeps_scope_unprocessed(tmp_path) -> None:
     assert len(records) == 1 and records[0]["status"] == "failed"
     assert len(records[0]["prepared"]) == 1 and not records[0].get("analysis_succeeded")
     assert records[0]["error"] == reason
-    assert reason in _failure_awis(notes)[0].read_text(encoding="utf-8")
+    body = _failure_awis(notes)[0].read_text(encoding="utf-8")
+    assert reason in body
+    assert f"実行ログ: {log_path}" in body
+    assert "実行ログの終了状態・標準出力・標準エラーを比較する" in body
+    assert "error・targets・prepared" not in body
+    assert pathlib.Path(records[0]["log_path"]).read_text(encoding="utf-8") == log_path.read_text(encoding="utf-8")
 
 
 def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path, monkeypatch) -> None:

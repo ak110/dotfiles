@@ -25,6 +25,11 @@ _DELIVERY_TAG_PATTERN = re.compile(
 )
 _AUTO_OPENING_PATTERN = re.compile(rf'<{_AUTO}(?P<attributes>(?:\s+[a-z][a-z-]*="[^"]*")*)>')
 _AUTO_ATTRIBUTE_PATTERN = re.compile(r'\s+([a-z][a-z-]*)="([^"]*)"')
+_RESOURCE_PREFIX_PATTERN = re.compile(
+    rf'\A<{_AUTO}(?=[^>]*\ssource="agent-toolkit")(?=[^>]*\skind="plugin-resources")[^>]*>\n'
+    rf".*?\n</{_AUTO}>\n\n(?P<delivery>.*)\Z",
+    re.DOTALL,
+)
 
 
 def auto_message_opening_attributes(text: str) -> dict[str, str]:
@@ -39,6 +44,8 @@ def auto_message_opening_attributes(text: str) -> dict[str, str]:
 
 def delivery_payload(delivered: str) -> str:
     """agents_serverが配送した本文の出所標識を検証し、囲まれた逐語の本文を返す。"""
+    if resources := _RESOURCE_PREFIX_PATTERN.fullmatch(delivered):
+        delivered = resources["delivery"]
     matched = _DELIVERY_TAG_PATTERN.fullmatch(delivered)
     assert matched is not None, delivered
     return matched["body"]

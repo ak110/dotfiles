@@ -1,10 +1,10 @@
 name: Audit
 
-# 依存の脆弱性監査（uv audit）を定期実行する。監査は外部脆弱性データベースへ
+# Python・Rust依存の脆弱性監査を定期実行する。監査は外部脆弱性データベースへ
 # 問い合わせるため結果がコード変更と無関係に変動する。push/PR毎のCIには載せず、
 # スケジュール実行と手動実行に限定する。
-# 検出結果はSARIF形式でGitHub Code Scanningへアップロードする。
-# 同一の脆弱性は1件のアラートに集約され、解消後の定期実行で自動クローズされる。
+# Pythonの検出はSARIF形式でCode Scanningへ送り、同一脆弱性を集約・解消時にクローズする。
+# Rustの検出とツール異常はジョブの失敗とログに残す。
 on:
   schedule:
     # 毎日 06:00 UTC（JST 15:00）に実行する。
@@ -47,7 +47,7 @@ jobs:
         # この定期ジョブだけで有効化するため、一時グローバル設定をPYFLTR_GLOBAL_CONFIGで読ませる。
         # load_configはproject未指定キーにglobal値を残すため、uv-auditがtrueになる。
         # severity未指定（error）で、脆弱性検出時はexit 1を返す。
-        # 本リポはPython専用でpackage.jsonを持たないため、auditグループのうちuv-audit単独を指定する。
+        # Python依存はuv-audit、Rust依存は後続のcargo-auditで監査する。
         # SARIF出力をファイルへ保存し、後続ステップでCode Scanningへアップロードする。
         run: |
           set -euo pipefail
@@ -88,3 +88,45 @@ jobs:
         with:
           sarif_file: ${{ runner.temp }}/audit.sarif
           category: uv-audit
+
+  rust-audit:
+    # cargo-auditの導入はソースからのビルドでCリンカーを要し、pyfltrイメージには含まれない。
+    # ci-rust-lintと同じく、コンテナーを使わずホストのrunnerでmiseのRustを使う。
+    runs-on: ubuntu-latest
+    # Rustの検出はCode Scanningへ送らず、ジョブの失敗とログに残すため書き込み権限は要らない。
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      # mise等がGitHub APIを呼び出す際のレート制限（403）回避
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+
+      - name: Rust監査ツールの導入
+        run: mise exec -- cargo install --locked --no-default-features cargo-audit
+
+      - name: Rust依存の監査
+        run: |
+          set -euo pipefail
+          report="${RUNNER_TEMP}/rust-audit.json"
+          audit_rc=0
+          mise exec -- cargo audit --file rust/claude-statusline/Cargo.lock --json > "${report}" || audit_rc=$?
+          if ! jq -e -s 'length == 1 and (.[0].vulnerabilities.found | type == "boolean")' "${report}" > /dev/null; then
+            echo "::error::Rust監査の結果を取得できません。導入・接続・cargo-auditの診断を確認し、Auditを再実行してください。"
+            exit 1
+          fi
+          cat "${report}"
+          if jq -e '.vulnerabilities.found == true' "${report}" > /dev/null; then
+            echo "::error::rust/claude-statusline/Cargo.lockに既知の脆弱性があります。上記のRustSec情報を確認して依存を更新してください。"
+            exit 1
+          fi
+          if [ "${audit_rc}" -ne 0 ]; then
+            echo "::error::cargo-auditが異常終了しました。診断と接続を確認し、Auditを再実行してください。"
+            exit "${audit_rc}"
+          fi
+          echo "Rust監査完了: rust/claude-statusline/Cargo.lockに既知の脆弱性はありません。"

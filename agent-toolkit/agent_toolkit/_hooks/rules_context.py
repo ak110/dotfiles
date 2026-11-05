@@ -495,7 +495,11 @@ def _compaction_notice(
             "--conversation-only",
         ]
     )
-    lines = [f"会話全体の流れが必要な場合は`{conversation}`でconversation.mdとconversation_rangesを取得せよ。"]
+    lines = [
+        f"会話全体の流れは`{conversation}`でconversation.mdを取得せよ。"
+        "前回以降の点検には同じコマンドへ`--conversation-window --conversation-recent 30`を追加する。"
+        "原文・結果と継続取得はskills/review-session/references/session-records.md「会話の少量取得」に従え。"
+    ]
     if delegated:
         return "\n".join(lines)
     output = session_temp / "compaction-user-events.jsonl" if session_temp is not None else None

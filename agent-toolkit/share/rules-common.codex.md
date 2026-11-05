@@ -51,18 +51,30 @@ agent-toolkitのルートパスとagent-basicsのルートパスは個別に保�
 
 ## Claude Code向けに配置された規範の読込
 
-Claude Codeが自動的に読み込む規範のうち本文書へ埋め込まれていないものについては、Codexのエージェントも読み込みを行い、各ファイルが定める適用範囲に合致する条文に従う。これはClaude Codeと同一の作業を同一の規範の下で遂行するためである。以下の読み込み対象は任意（オプショナル）であり、実在が確認されたファイル、およびglobパターンを展開した後の集合のみを読み込みや検索の対象として渡し、未読の本文を読み込む。単一の対象ファイルが存在しないこと、パターンに一致するファイルが0件であること、またはディレクトリが存在しないことは正常な空集合として扱い、ファイルの読み取りや一覧取得における権限エラーなどは不在と区別して診断する。
+Codexも次の任意規範の未読本文を読み、各条文の適用範囲に従う。Claude Codeと同じ規範で作業するためである。
+読込・検索には実在確認済みのファイルとglob展開後の集合だけを渡す。ファイル・ディレクトリの不在と一致0件は正常な空集合とし、読取・一覧取得の権限エラーなどは区別して診断する。
 
-任意の読み込み対象は、対象が存在しない場合でも終了コード0を返し、実在する対象のみを一覧表示する1回の確認コマンドで検証する。ユーザー単位の確認には以下のコマンドを使用できる。起点のディレクトリや対象ファイルが存在しない場合は空出力となり、一覧取得時の権限エラーが発生した場合は診断メッセージとともに対象外の終了コードが返る。プロジェクト直下の確認についても、起点と対象を揃えて同様の考え方で実施する。
+確認は、不在なら空出力・終了0、取得失敗なら診断・非0を保つ1回のコマンドで行う。シンボリックリンクは起点・配下とも実在する参照先をたどる。ユーザー単位の例:
 
 ```sh
-if test -d "$HOME/.claude"; then find "$HOME/.claude" -maxdepth 2 \( -path "$HOME/.claude/CLAUDE.md" -o -path "$HOME/.claude/rules/*.local.md" \) -type f; fi
+if test -d "$HOME/.claude"; then find -L "$HOME/.claude" -maxdepth 2 \( -path "$HOME/.claude/CLAUDE.md" -o -path "$HOME/.claude/rules/*.local.md" \) -type f; fi
+```
+
+プロジェクト単位の例（`project`に対象worktreeの絶対パスを指定）:
+
+```sh
+project=/absolute/path/to/worktree
+if test -d "$project"; then
+  find -L "$project" -maxdepth 1 -type f \( -name CLAUDE.local.md -o \( -name CLAUDE.md ! -exec test -e "$project/AGENTS.md" \; \) \) -print &&
+  if test -d "$project/.agents/skills"; then find -L "$project/.agents/skills" -type f; fi &&
+  if test -d "$project/.claude/rules"; then find -L "$project/.claude/rules" -type f; fi
+fi
 ```
 
 - プロジェクト直下に配置された`.agents/skills/`、`AGENTS.md`が存在しない場合における`CLAUDE.md`、`CLAUDE.local.md`、および作業内容に該当する`.claude/rules/`を読み込む。
-- ユーザー単位で配置された`~/.claude/CLAUDE.md`、および`~/.claude/rules/`直下の`*.local.md`（実行ホストごとにユーザーが配置した固有規範）は、作業開始時に読み込む。
-- 起動時の指示に同一ファイルの内容が`atk-auto`などの境界タグ付きで含まれている場合は、その本文を読了済みとして扱う。
-- `~/.claude/rules/agent-toolkit/`配下および`~/.claude/rules/myprojects-common.md`は、本文書内に`atk-auto`要素として埋め込み済みであるため、読み込み対象から除外する。`~/.claude/rules/myprojects.md`はClaude Code向けのホスト別プロジェクト一覧と同期方針を定めたものであり、Codex環境には`myprojects-common.md`が同一主題の共通部分を届けるため、同様に読み込み対象から除外する。
+- ユーザー単位の`~/.claude/CLAUDE.md`と`~/.claude/rules/*.local.md`（ホスト固有規範）は作業開始時に読む。
+- 起動指示に同じ本文が`atk-auto`などの境界タグ付きで含まれていれば読了済みとする。
+- 埋込済みの`~/.claude/rules/agent-toolkit/`と`~/.claude/rules/myprojects-common.md`は除外する。同主題をホスト共通本文で受け取るため、Claude Code向けの一覧・同期方針を持つ`~/.claude/rules/myprojects.md`も除外する。
 - `~/.codex/agent-toolkit/rules/`は配布元から同期された本文として扱い、dotfiles固有のスキルはClaude Code側の原本へのシンボリックリンクとして扱う。
 
 ## 第三者への作用と認可
@@ -97,6 +109,7 @@ context windowを切り替える前は、枯渇通知を受けた場合も含め
 切替後や依頼が見当たらない場合は、依頼を確認できないと返す前に、自身の作業記録と保存した原本の所在を読み、現在の依頼と残工程を復元する。`引き継ぎ記録先`を受け取った委譲先は、同じ記録先と起動入力も確認する。許可された取得手段で復元できない場合に限り、参照した所在と失敗した操作を明記して返す。
 会話圧縮後の復元でも、一時的な作業対象、処理対象のWI、保留事項、承認状態、当初の作業目的、確定済みの要件、残存する完成条件を、対象リポジトリ、private-notes、またはホストの記録原本から再解決し、出所情報の提示には記録原本の記述を使用する。
 要約は原本の取得の手掛かりとし、`share/work-contract.md`「工程境界での要求と成果の確認」に従って要求・訂正・認可・未完了の操作を原本から復元する。
+セッション記録の取得は`skills/review-session/references/session-records.md`「会話の少量取得」に従い、全体要求と前回以降の変更を原文・結果へ対応付ける。
 起動入力・追加入力と作業記録の要求を比較し、追送による要求変更と保持した実行識別子も復元する。履歴を参照できない場合も保存済みの原本と記録から復元を進め、取得できない範囲だけを委譲元へ返す。記録からの復元とホストbackendの故障原因の確定は区別する。
 
 Codexの`list_agents`が対象エージェントを`running`と返している間の待機、および`interrupt_agent`による中断を許可する条件は、`agent-toolkit:delegation`の`references/codex-runtime.md`「後続操作の共通先行条件」に従う。

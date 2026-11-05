@@ -15,6 +15,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `agent-toolkit:review-session/references/session-records.md`の「会話の少量取得」 | 判断 | `section:agent-toolkit:*/skills/review-session/references/session-records.md#「会話の少量取得」` |
 | 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
@@ -74,7 +75,7 @@ OpenCodeを対象とする場合、スクリプトは環境変数`XDG_DATA_HOME`
 
 指定した作業ディレクトリ内には、会話の流れ（`conversation.md`）、比較材料（`comparison-materials.md`）、問題候補（`candidates.md`）、セッション統計（`stats.md`）の4つの文書が出力される。
 
-- `conversation.md`: 実際のユーザー発話ごとの時系列に沿って、メインエージェントの動きや各委譲先の目的、返却内容、操作量を記録位置とともに原則100,000バイト以下でまとめた文書である。本文には実際の作業概要を記載し、全体の詳細テキストは記録位置を`--detail`オプションに渡すことで取得できる。
+- `conversation.md`: 実際のユーザー発話ごとの時系列に沿って、メインエージェントの動きや各委譲先の目的、最終観測発話、操作量を記録位置とともに100,000バイト以下でまとめた文書である。全体を表示しきれない場合は省略と継続取得の案内を読み、全体の通読を完了する。詳細本文は記録位置を`--detail`へ渡して取得する。復元・日常の点検に使う少量表示は`session-records.md`「会話の少量取得」に従う。
 - `comparison-materials.md`: 委譲時の入力内容や規範の読み込み状況を記録ごとに整理した参照資料である。対象、発生時点、記録位置を手がかりにして、詳細照会で全文を取得すべき位置を特定するために用いる。全体の時系列は会話の流れから把握する。
 - `candidates.md`: 70,000バイト以下にまとめられた問題候補の索引であり、問題の種別、発生件数、評価の必須性、代表的な発生位置、概要を示す。全候補のID、詳細との対応関係、過去の類似事例は`bundle/review-index.jsonl`に整理されている。質問内容、全選択肢、実際の回答、全発生位置は`bundle/candidates.jsonl`に、個別の証拠原文は`bundle/candidate-evidence.jsonl`にそれぞれ整理されている。一覧に表示しきれなかった候補も含めて全件を突き合わせ、必須とされた候補は漏れなくすべて評価する。
 - `stats.md`: 30,000バイト以下にまとめられたセッションの統計情報である。全担当者を母集団とした処理総量や集計の定義、担当者別のトークン消費上位、処理の律速区間、コンテキスト圧縮や未計測の状況、ドキュメント読込・Skill起動・反復実行・出力データ量の上位項目を提示する。担当別や対象別の詳細データは`bundle/stats.jsonl`および`bundle/resource-usage.jsonl`に保持されているため、一覧に載っていない担当者や律速以外の担当者についても照会できる。常に目を通す索引情報と保存用の詳細データを明確に分離し、判断に必要な詳細のみを追加で取得する。
@@ -85,7 +86,10 @@ OpenCodeを対象とする場合、スクリプトは環境変数`XDG_DATA_HOME`
 標準出力に出力される1行のJSONには、各生成文書のパス（`conversation_path`、`comparison_materials_path`、`candidates_path`、`stats_path`）および参照文書のパス`reference_document`（存在しない場合はnull）が含まれる。
 このほか、`prepared_at`、`utterance_counts`、`candidate_total`、`candidate_counts`、`excluded_counts`、`failure_ledger_skipped`が格納される。
 さらに、`mandatory_candidates`、`similar_records`、`elapsed_seconds`、`compaction_count`と、実際に抽出した記録の範囲を示す`scope_path`も含まれる。これらの候補を振り返り結果報告のどの項目に記載するかは、`agent-toolkit:report-completion`の`references/report-formats.md`に従う。
-`conversation_utf8_bytes`、`candidates_utf8_bytes`、`stats_utf8_bytes`は生成された各文書のUTF-8バイト数を示し、`conversation_limit_bytes`は会話の流れの原則上限である100,000バイトを示す。候補文書と統計文書のサイズは、合計で100,000バイト以下に収める。
+`conversation_utf8_bytes`、`candidates_utf8_bytes`、`stats_utf8_bytes`は生成された各文書のUTF-8バイト数を示す。
+`conversation_limit_bytes`は通常表示では100,000バイト、少量表示では指定した上限（省略時16,000バイト）を示す。
+少量表示に付く`conversation_window`の条件、件数、継続位置は、`session-records.md`「会話の少量取得」に従って読む。
+候補文書と統計文書のサイズは、合計で100,000バイト以下に収める。
 `improvement_lines`にはセッション記録の全文から抽出された実際の改善提案行が格納される。候補文書には先頭10件の概要と総件数が表示され、全行は同じ記録指定の`session-review-evidence --reported-improvements`で出所付きで取得する。元データは`bundle/timeline.jsonl`の`reported_improvements`に保持される。未解決の記録全件は`bundle/unconfirmed.jsonl`に保存される。
 2〜5. `session-analysis.md`の工程2〜5を実施する。
 

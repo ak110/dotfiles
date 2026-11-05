@@ -217,6 +217,103 @@ def test_evidence_saves_only_output_passed_as_file(
     assert "検索語" in output
 
 
+@pytest.mark.parametrize("mode", ["--grep", "--tool-calls"])
+def test_evidence_saved_matches_list_positions_and_heads(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: str
+) -> None:
+    """公開照会の長い結果だけに位置と冒頭を付け、全量JSONLと元の順序を保つ。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    trace = tmp_path / "trace.jsonl"
+    # 既存のClaude Code記録fixtureと同じmessage/tool_use形式で入力境界を通す。
+    command = "echo 検索語" + ("\n" if mode == "--tool-calls" else "") + "長" * 1000
+    entries = [
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": f"call-{index}", "name": "Bash", "input": {"command": command + "\n末尾"}}
+                ],
+            },
+        }
+        for index in range(6)
+    ]
+    trace.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    query = [mode, "検索語"] if mode == "--grep" else [mode]
+    code, output, error = run_atk(["run-script", "session-review-evidence", "--", str(trace), *query], capsys)
+    assert code == 0, error
+    lines = output.splitlines()
+    assert lines[0].startswith("保存先: ")
+    saved = pathlib.Path(lines[0].removeprefix("保存先: "))
+    events = [json.loads(line) for line in saved.read_text(encoding="utf-8").splitlines()]
+    kind = "match" if mode == "--grep" else "tool-call"
+    matches = [event for event in events if event["kind"] == kind]
+    assert len(matches) == 6
+    expected = []
+    for event in matches:
+        fields = "".join(f" {key}={event[key]}" for key in ("role", "tool") if key in event)
+        head = "echo 検索語" + (" " if mode == "--tool-calls" else "") + "長" * (151 if mode == "--tool-calls" else 152) + "…"
+        expected.append(f"一致: record={event['record']} line={event['line']} kind={kind}{fields} {head}")
+    assert lines[2:] == expected
+    assert [event["text"] for event in matches] == [command + ("\n末尾" if mode == "--tool-calls" else "")] * 6
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (["--grep", "存在しない"], ["一致: 0件"]),
+        (["--tool-calls"], ["一致: 0件"]),
+        (["--grep", "検索語", "--summary-only"], []),
+        (["--tool-calls", "--summary-only"], []),
+        (["--fixed-string", "検索語"], []),
+    ],
+)
+def test_evidence_saved_empty_and_summary_modes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    query: list[str],
+    expected: list[str],
+) -> None:
+    """保存量の境界だけを下げて、空結果と詳細を持たない照会の表示を区別する。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(output_file, "AUTO_SAVE_THRESHOLD_BYTES", 1)
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": "検索語"}}), encoding="utf-8")
+    code, output, error = run_atk(["run-script", "session-review-evidence", "--", str(trace), *query], capsys)
+    assert code == 0, error
+    assert output.startswith("保存先: ")
+    assert output.splitlines()[2:] == expected
+
+
+def test_evidence_failure_preserves_output_and_exit_when_saved(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """失敗した照会の両ストリームと終了コードは保存前後で同じにする。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    argv = ["run-script", "session-review-evidence", "--", str(tmp_path / "missing.jsonl"), "--grep", "検索語"]
+    code, output, error = run_atk(argv, capsys)
+    assert code != 0
+    assert output or error
+    monkeypatch.setattr(output_file, "AUTO_SAVE_THRESHOLD_BYTES", 1)
+    saved_code, saved_output, saved_error = run_atk(argv, capsys)
+    assert saved_code == code
+    for actual, expected, prefix in (
+        (saved_output, output, ""),
+        (saved_error, error, "標準エラー"),
+    ):
+        if not expected:
+            assert not actual
+            continue
+        lines = actual.splitlines()
+        assert len(lines) == 2
+        path = pathlib.Path(lines[0].removeprefix(f"{prefix}保存先: "))
+        assert path.read_text(encoding="utf-8") == expected
+
+
 def test_forced_save_without_result_discards_only_failed_call(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -112,6 +112,7 @@ class ResumePrompt:
         self._changed = asyncio.Event()
         self._closed = False
         self._delivery: ResumeDelivery | None = None
+        self.context = ""
 
     @property
     def delivery(self) -> ResumeDelivery:
@@ -171,7 +172,7 @@ class ResumePrompt:
                 await changed.wait()
                 continue
             ticket, prompt, cancelled = current
-            delivery_task = asyncio.create_task(sender(prompt))
+            delivery_task = asyncio.create_task(sender(self.context + "\n\n" + prompt if self.context else prompt))
             cancellation_task = asyncio.create_task(cancelled.wait())
             try:
                 done, _ = await asyncio.wait(
@@ -240,6 +241,7 @@ class SessionState:
     codex_state_provider: str | None = None
     codex_attempted_provider_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
     codex_provider_resume_pending: bool = False
+    codex_auto_reset_pending: bool = False
     claude_api_env_file: str | None = None
     claude_connection: str | None = None
     claude_role: str | None = None

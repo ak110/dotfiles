@@ -981,7 +981,7 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
             if guidance:
                 specific = json.loads(guidance)["hookSpecificOutput"]
                 assert specific.get("permissionDecision") != "deny"
-                assert "読込条件の候補" in specific["additionalContext"]
+                assert "読込条件の候補" not in specific["additionalContext"]
                 assert "未取得資料" not in specific["additionalContext"]
             if codex:
                 event = codex_execution_payload(event, tmp_path, exit_code=0)

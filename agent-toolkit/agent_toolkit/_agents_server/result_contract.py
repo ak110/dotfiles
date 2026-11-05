@@ -12,8 +12,8 @@ _REASON_PREFIX = "続行できない理由:"
 _CLASSIFICATION_PREFIX = "続行できない区分:"
 RECOVERY_NEXT_ACTION = (
     "agents_server.send_messageのsession_idにこの結果のsession_idを指定し、promptで同じsessionへ、"
-    "続行できない理由の直前に同じインデントで有効な続行できない区分を付け、"
-    "連続する2行の返却として再提出するよう指示する。"
+    "診断に従い、正常返却は所定の成功行、続行不能は同じインデントの有効な区分と非空の理由の"
+    "連続する2行を用い、成果と追加報告を保持して再提出するよう指示する。"
     "送信できない場合は、session_id・返却本文・診断を委譲元へ報告する。"
 )
 _VALID_CLASSIFICATIONS = frozenset(
@@ -30,32 +30,27 @@ _VALID_CLASSIFICATIONS = frozenset(
 
 
 def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str | None:
-    """exploreの完了状態行欠落とtaskの未分類な続行不能返却の回復理由を返す。"""
+    """自由本文exploreの成功行と、explore・taskの続行不能2行を検査する。"""
     if result.get("status") != "completed":
         return None
     document = task_documents.launched_task_document(session.prompt)
-    if session.launch_kind == "explore" and document is None:
-        message = result.get("agent_message")
-        lines = message.rstrip().splitlines() if isinstance(message, str) else []
-        if not lines or not (
-            lines[0] == "状態: completed"
-            or lines[-1] == "状態: completed"
-            or (lines[-1].startswith(_REASON_PREFIX) and lines[-1].removeprefix(_REASON_PREFIX).strip())
-        ):
-            return (
-                "exploreの返却が完了を示しません。先頭または最終行に状態: completed、"
-                "または最終行に値のある続行できない理由:が必要です"
-            )
-    if document is None or not task_documents.is_agent_toolkit_task_document(document):
+    freeform_explore = session.launch_kind == "explore" and document is None
+    if not freeform_explore and (document is None or not task_documents.is_agent_toolkit_task_document(document)):
         return None
     message = result.get("agent_message")
-    if not isinstance(message, str) or re.fullmatch(r"待機中: [^\r\n]+", message.strip()):
+    if not isinstance(message, str):
+        return "exploreの返却が完了を示しません。返却本文が必要です" if freeform_explore else None
+    if re.fullmatch(r"待機中: [^\r\n]+", message.strip()):
         return None
     lines = message.splitlines()
+    has_reason = False
     for index, line in enumerate(lines):
         match = re.fullmatch(r"(?P<indent>\s*)" + re.escape(_REASON_PREFIX) + r".*", line)
         if match is None:
             continue
+        has_reason = True
+        if not line.removeprefix(match.group("indent") + _REASON_PREFIX).strip():
+            return f"{index + 1}行目の続行できない理由が空です"
         if index == 0:
             return f"{index + 1}行目の続行できない理由の直前に同じインデントの続行できない区分がありません"
         expected = match.group("indent") + _CLASSIFICATION_PREFIX
@@ -65,6 +60,10 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
         classification = previous.removeprefix(expected).strip()
         if classification not in _VALID_CLASSIFICATIONS:
             return f"{index}行目の続行できない区分が閉集合外です: {classification}"
+    if freeform_explore and not has_reason:
+        lines = message.rstrip().splitlines()
+        if not lines or not (lines[0] == "状態: completed" or lines[-1] == "状態: completed"):
+            return "exploreの返却が完了を示しません。先頭または最終行に状態: completedが必要です"
     return None
 
 
@@ -81,7 +80,6 @@ def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
         result["error"] = details
         if session.launch_kind == "explore":
             result["status"] = "failed"
-            details["nextAction"] = "未読範囲を小さく分けて渡し直す"
         return False
     session.pending_result = result
     session.awaiting_auto_resume = True

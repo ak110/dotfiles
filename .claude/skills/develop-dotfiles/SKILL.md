@@ -66,7 +66,7 @@ description: >
 
 ### 自動チェックと依存更新
 
-- `make update`は、読込表にあるターゲットの実際の処理対象に変更対象が含まれている場合のみ実行候補とする。現在の主な更新対象は`uv.lock`と`agent-toolkit/uv.lock`の依存関係更新である。lockファイルの更新後はコンテナーでの依存関係インストールを検証し（`ci-deps-check`）、さらに`prek autoupdate`、`mise lock`、`pinact`によるアクション更新、および全テストを実行する。なお`rust/claude-statusline/Cargo.lock`は対象外である。GitHub Actionsのハッシュピンのみを更新する場合は`make update-actions`を実行する。
+- `make update`は、読込表にあるターゲットの実際の処理対象に変更対象が含まれている場合のみ実行候補とする。現在の主な更新対象は`uv.lock`と`agent-toolkit/uv.lock`の依存関係更新である。lockファイルの更新後はコンテナーでの依存関係インストールを検証し（`ci-deps-check`）、さらに`prek autoupdate`、`mise lock`、`pinact`によるアクション更新、および全テストを実行する。`rust/claude-statusline/Cargo.lock`もCargo.tomlの制約内で更新し、fmt・clippy・testを実行する。GitHub Actionsのハッシュピンのみを更新する場合は`make update-actions`を実行する。
 - 公開前に実行する検証は、`agent-toolkit:commit`の`references/publish.md`「検証とCI」で選定する。ローカル全体検証が必要と判定された場合は`make test`（`uv run --frozen pyfltr run --no-fix`）を用いる。`agent-basics:check-execution`を起動し、標準出力と標準エラー出力を保存して結果を確認できる手段（例: `agents_server`の`start`ツールで`shell`を指定）で実行する。
   - 公開担当は統合差分の配布対象ごとに採番要否を確定し、レーンからの引渡しと比較する。`rust/claude-statusline/`に変更があれば、`release-dotfiles`の採番規定をpush前に適用し、最終検証のpyfltrへ`--enable=statusline-version`を指定する。同チェックの既定無効は維持し、他の全体検証の成功と同チェックの成功を区別する。
   - pyfltrのフォーマッター段（`ruff-format`、`uv-sort`、`shfmt`、`prek`、`sync-generated-files`）は、`--no-fix`を指定した場合でもファイルを整形して終了コード0を返す。そのため、コミット対象を確定する前に`git status`を実行して意図しない差分が生じていないか確認する。コードの自動修正を明示的に行う場合は`make format`（`uv run --frozen pyfltr fast`）を使用する。

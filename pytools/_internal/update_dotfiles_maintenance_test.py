@@ -271,4 +271,4 @@ def test_untrusted_codex_hook_explains_user_operations(tmp_path: Path, monkeypat
     assert "Codexの入力欄" in notice.message
     assert "新しいセッション" in notice.message
     assert "エージェント" in notice.message
-    assert "利用セッションが無ければ更新時に自動で再起動" in notice.message
+    assert "稼働中のdaemonはplugin更新時に自動で再起動" in notice.message

@@ -9,6 +9,7 @@ import re
 import markdown_it
 import yaml
 
+from agent_toolkit._atk import outcome
 from agent_toolkit._atk.wi import entries, frontmatter, headings, repo, sync
 from agent_toolkit._atk.wi.entry_text import parse_frontmatter
 from agent_toolkit._git import command
@@ -292,5 +293,6 @@ def cmd_effect_check(args: argparse.Namespace, private_notes: pathlib.Path) -> N
         corrective_awi=args.corrective_awi,
         reason=args.reason,
     )
+    outcome.report_success("効果確認を保存した")
     for path in paths:
         print(path)

@@ -88,7 +88,7 @@ lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
 )
-lazy from agent_toolkit._hooks import rules_context, work_contract
+lazy from agent_toolkit._hooks import command_timing, rules_context, work_contract
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
@@ -232,6 +232,8 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                     escalate_on_repeat=False,
                 )
             )
+        if decision.block is None:
+            command_timing.start(payload)
         return _emit(decision, pending_notices, is_codex=is_codex)
 
 

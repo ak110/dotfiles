@@ -712,7 +712,7 @@ class TestWorkflowSkillInvocation:
         assert "/skills/delegation/SKILL.md" not in _additional_context(result)
 
     def test_no_notice_for_other_skill(self, tmp_path: pathlib.Path) -> None:
-        """品質基準の配送を保ち、委譲に関する追加出力を返さない。"""
+        """Skill取得時に条件候補・委譲に関する追加出力を返さない。"""
         result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
@@ -723,8 +723,7 @@ class TestWorkflowSkillInvocation:
         )
         assert result.returncode == 0
         context = _additional_context(result)
-        assert "条件の成立は未確定" in context
-        assert "コード・テストコードを書く時" in context
+        assert not context
         assert "/skills/delegation/SKILL.md" not in _additional_context(result)
 
     def test_no_notice_in_sidechain(self, tmp_path: pathlib.Path) -> None:

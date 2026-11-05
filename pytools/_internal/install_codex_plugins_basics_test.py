@@ -119,7 +119,8 @@ def test_run_registers_before_install_and_preserves_both_caches(
         assert (codex_fixture / "codex/plugins/cache/ak110-dotfiles" / name / "0.9.0/marker").read_text() == "利用中の旧版"
     if basics_only:
         assert not (codex_fixture / "bin").exists()
-        assert all(args[0] != "app-server" for args in calls)
+        # plugin更新後のdaemon反映はplugin種別を問わず稼働確認から始まる。fixtureではdaemonが稼働していないため再起動しない。
+        assert [args for args in calls if args[0] == "app-server"] == [["app-server", "daemon", "version"]]
 
 
 def test_plugin_list_queries_are_limited_to_marketplace(codex_fixture: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

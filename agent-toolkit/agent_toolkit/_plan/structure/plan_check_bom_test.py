@@ -15,11 +15,13 @@ pytestmark = pytest.mark.windows
 
 @pytest.mark.parametrize("kind", ["awi", "uwi"])
 @pytest.mark.parametrize("reject_migration", [False, True])
+@pytest.mark.parametrize("design", [False, True])
 def test_public_plan_check_origin_notices_are_equal_with_bom(
     tmp_path: pathlib.Path,
     host_environ: collections.abc.Callable[[], dict[str, str]],
     kind: str,
     reject_migration: bool,
+    design: bool,
 ) -> None:
     """実際のrun-scriptの引数解決から通知・終了コードまでをBOM有無で比較する。"""
     repo = tmp_path / "repo"
@@ -27,10 +29,21 @@ def test_public_plan_check_origin_notices_are_equal_with_bom(
     (repo / "README.md").write_text("test\n", encoding="utf-8")
     git_repository.commit_all(repo, "base")
     plan = repo / "plan.md"
-    plan.write_text(
-        plan_fixture.current_plan(repo=repo, related_wi=plan_fixture.WI_FILES),
-        encoding="utf-8",
+    content = plan_fixture.current_plan(repo=repo, related_wi=plan_fixture.WI_FILES)
+    name = plan_fixture.WI_FILES[0][0]
+    rows = (
+        f"| 要求された結果を維持する | 人間由来のWI ({name}) | 採用 | 原文の結果要求を採用する。 |\n"
+        f"| 内部方式を具体化する | エージェント由来のWI ({name}) | 部分採用 | 必要な方式だけを採用する。 |\n"
+        f"| 既存の注記を読み取る | 人間由来のWI ({name}) [対話由来] | 対象外 | 既存契約が充足している。 |"
     )
+    content = content.replace(plan_fixture.WI_ACTION_ROW, rows, 1)
+    if design:
+        content = content.replace(
+            "\n## 恒久化・リファクタリング\n",
+            "\n## 設計・実装方針\n\n### 内部方式\n\n既存の構造解析を利用する。\n\n## 恒久化・リファクタリング\n",
+            1,
+        )
+    plan.write_text(content, encoding="utf-8")
     notes = tmp_path / "notes"
     inbox = notes / "inbox"
     inbox.mkdir(parents=True)
@@ -53,6 +66,5 @@ def test_public_plan_check_origin_notices_are_equal_with_bom(
         results.append((result.returncode, result.stdout, result.stderr))
     assert results[0] == results[1]
     code, stdout, stderr = results[0]
-    assert code == int(reject_migration), (stdout, stderr)
-    assert "WI本文の由来と一致しない" in stdout + stderr
-    assert plan_fixture.WI_FILES[0][0] in stdout + stderr
+    assert code == 0, (stdout, stderr)
+    assert not stdout + stderr

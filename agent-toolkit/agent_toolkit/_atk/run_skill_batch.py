@@ -232,6 +232,14 @@ def _plugin_repository() -> str:
 def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest: dict[str, Any]) -> str:
     """配布元で是正するための失敗報告AWIを組み立てる。ユーザー判断が要る点は処理担当がUWIで確認する。"""
     targets = ", ".join(item["session_id"] for item in manifest["targets"])
+    log = f"実行ログ: {manifest['log_path']}\n" if manifest.get("log_path") else ""
+    # 準備失敗はモデルの実行ログを持たず、manifestに入力と診断を保持する。
+    action = (
+        "実行記録のerrorと、実行ログの終了状態・標準出力・標準エラーを比較する。"
+        if log
+        else "実行記録のerror・targets・preparedから失敗した工程と入力を確認し、"
+        "errorにある不足項目と次の操作に従って入力や読取条件を修正する。"
+    )
     body = (
         "# 非同期振り返り（review-session batch）の失敗の是正\n\n"
         "非同期振り返りが下記の対象セッションを処理できなかった。"
@@ -251,6 +259,9 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
         "## 詳細\n\n"
         f"失敗理由: {reason}\n"
         f"実行記録: {path}\n"
+        f"{log}"
+        f"次の操作: {action}"
+        "別ホストの場合は、記録を保持するホストで実行記録と対象セッション記録を取得する。\n"
         f"対象: {targets}\n"
     )
     metadata = f"session_review_failure_key: {json.dumps(failure_key)}\n"
@@ -396,7 +407,11 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
         code = execute(args)
         manifest = session_review.read(path)
         if code:
-            _failure(manifest, path, f"run-skill-exit-{code}: 元のbatchの再開が完了しなかった")
+            _failure(
+                manifest,
+                path,
+                getattr(args, "batch_failure", None) or f"run-skill-exit-{code}: 元のbatchの再開が完了しなかった",
+            )
             return code
         _finish_batch(manifest, path)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:

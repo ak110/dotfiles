@@ -13,6 +13,7 @@ WIの作成主体には、専念型メイン（WI作成専用セッションの�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `agent-toolkit:review-session/references/session-records.md`の「会話の少量取得」 | 判断 | `section:agent-toolkit:*/skills/review-session/references/session-records.md#「会話の少量取得」` |
 | 原因分析の書式を使う前 | `analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
 | 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions.md#「処置の階層」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「処置の階層」` |
 | 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
@@ -62,6 +63,9 @@ WI作成専用セッションでは、メインエージェント自身が調査
 方針段階から本文段階へ進む場合は、`share/wi-draft-review.parent.md`の`本文確認`を使う。
 
 ## 出所と観測の取得
+
+前後の発話と操作の位置を探す場合は、`../../review-session/references/session-records.md`「会話の少量取得」を使う。
+要求・判断・認可の確定は、下記の`--user-events`と必要な`--detail`で原文と直前の提案を比較して行う。
 
 認可や解釈の判断に出所の再取得が必要な場合は、以下の公開操作コマンドを利用できる。通常の原文転記のために会話ログを探索し直す必要はない。すでに取得済みの証拠は再抽出しない。専念型メインは、ユーザーから直接受け取った発話と自身の記録を用い、ホスト環境が公開している自身のセッション識別子を指定する。`agents_server`の要求別担当エージェントおよび付随型担当エージェントは、`--delegation-record root`を指定してユーザー発話を保持する最上位の会話を解決する。
 
@@ -156,6 +160,10 @@ AWIは`agent-toolkit:wi-standards`「通常AWIの本文」、UWIは`references/u
 他の要求の調査と起草は、中断せずに継続する。
 
 ## 保存前の確認
+
+根拠は原稿自身、既存の作業記録、CLIの保存出力を直接参照する。
+出所、採否理由、チェック結果、入力原稿と冒頭抽出の対応が既存資料に揃っていれば、その所在だけを渡す。
+不足する情報だけを既存記録へ補い、原稿の要約や調査過程を別の証拠ファイルへ書き直す作業は加えない。
 
 受領済み抽出との一致は、新規・編集のdry-runへ`--compare-opening-file <抽出の絶対パス>`を指定して確認する。複数原稿では`--body-file`と同じ順に比較ファイルを反復指定する。比較の境界と不一致時の更新は`draft-semantic-review.md`「ユーザーが読む部分」に従う。
 各要求の本文を他の要求から独立させ、`drafting-completion.md`「投入前の読み直し」に沿って読み直し、併せて以下の項目を確認する。不備が見つかった本文は修正した上で再チェックする。

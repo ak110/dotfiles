@@ -23,6 +23,7 @@ import pytest
 import agent_toolkit.agents_server_mcp as entry_script
 from agent_toolkit import _agents_server as server_package
 from agent_toolkit._agents_server import (
+    cli_turn,
     launch_requests,
     mcp_tools,
     resume_waits,
@@ -604,6 +605,65 @@ async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPat
     manager.start.assert_not_awaited()
 
 
+@pytest.mark.parametrize("role", ["exec", "repository-process"])
+@pytest.mark.parametrize("defect", ["missing", "undeclared"])
+@pytest.mark.parametrize("placement", ["current", "alternate", "unresolved"])
+@pytest.mark.asyncio
+async def test_start_input_rejection_points_to_owning_contract(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, role: str, defect: str, placement: str
+) -> None:
+    """公開startの入力拒否から同じ版の説明節へ到達でき、解決失敗でも元の不備を保つ。"""
+    source = launch_requests._SHARE_DIRECTORY.parent
+    root = source
+    contract_relative = (
+        pathlib.Path("share/exec.parent.md") if role == "exec" else pathlib.Path("skills/process-wi/references/all-repos.md")
+    )
+    if placement != "current":
+        root = tmp_path / "other-plugin"
+        for relative in (pathlib.Path(".claude-plugin/plugin.json"), pathlib.Path(f"share/{role}.subagent.md")):
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / relative, target)
+        if placement == "alternate":
+            target = root / contract_relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / contract_relative, target)
+    document = root / "share" / f"{role}.subagent.md"
+    params = _observed_input_params(document.name, tmp_path)
+    missing_name = "担当種別" if role == "exec" else "引き継ぎ記録先"
+    if defect == "missing":
+        params.pop(missing_name)
+        if role == "repository-process":
+            # この役割の必須項目は記録先だけなので、自動補完も失敗した拒否を観測する。
+            def unavailable_handoff(*_args: object, **_kwargs: object) -> None:
+                return None
+
+            monkeypatch.setattr(launch_requests, "_default_handoff_path", unavailable_handoff)
+    else:
+        params["宣言外の項目"] = "補足"
+    backend = TaskManager(start=AsyncMock())
+    monkeypatch.setattr(mcp_tools, "_MANAGER", backend)
+
+    with pytest.raises(ActionableError) as raised:
+        await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=params)
+
+    message = _actionable_message(raised.value)
+    assert (
+        "必須入力が欠けています: " + missing_name if defect == "missing" else "宣言していない入力です: 宣言外の項目"
+    ) in message
+    assert "`start`を再発行" in message
+    if placement == "unresolved":
+        assert "入力説明の起動・受領契約を解決できません" in message
+        assert "parent-read-source宣言・参照先を修復" in message
+        assert "入力の意味・制約は" not in message
+    else:
+        contract = root / contract_relative
+        heading = "入力" if role == "exec" else "リポジトリ担当の起動と受領"
+        assert f"`{contract}`「{heading}」" in message
+        assert missing_name in contract.read_text(encoding="utf-8")
+    backend.start.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("document", "extra_params", "operation"),
@@ -770,6 +830,37 @@ async def test_start_rejects_removed_last_pushed_commit_input(monkeypatch: pytes
         await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
     manager.start.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("role", "message"),
+    [
+        (False, "状態: completed\n結果: 調査済み\n根拠: 対象本文\n気付いた改善点: 改善案"),
+        (False, "結果: 読了部分\n続行できない区分: owner_input\n続行できない理由: 未提供資料が必要\n気付いた改善点: 改善案"),
+        (True, "状態: completed\n未解決の指摘数: 0\n読んだ変更箇所数: 1\n全件で問題が無い"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_start_explore_result_matches_delivered_role(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, role: bool, message: str
+) -> None:
+    """公開startで渡した役割の有無を結果確定まで保ち、共通形式と専用形式を公開する。"""
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        if role:
+            document = launch_requests._SHARE_DIRECTORY / "bulk-replace-review.subagent.md"
+            response = await mcp_tools.start(
+                str(tmp_path), subagent_md_path=str(document), extra_params=_observed_input_params(document.name, tmp_path)
+            )
+        else:
+            response = await mcp_tools.start(str(tmp_path), mode="explore", prompt="対象の調査", model_type="chores")
+        session = manager.sessions[response["session_id"]]
+        assert backend.start_calls[0][2] == "explore" and backend.prompts
+        cli_turn.finalize_turn(session, {"status": "completed", "agent_message": message, "error": None})
+        shown = await mcp_tools.show_session(session.session_id)
+        assert shown["status"] == "completed" and shown["result_available"]
+        assert session.agent_message == message and not session.result_contract_recovery_pending
 
 
 @pytest.mark.asyncio
@@ -1156,7 +1247,7 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
         delivered = backend.prompts[0]
         assert delivery_payload(delivered) == body
         assert delivered.count("<agent-toolkit-auto-inserted ") == 1
-        assert delivered.count("<atk-auto ") == 1
+        assert delivered.count("<atk-auto ") == 2
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,7 @@ import { expect, mock, test } from "claude-code/testing";
 
 const PLUGIN = "agent-toolkit";
 const TOOL = `mcp__${PLUGIN}__send_to_user`;
+const DISPLAYED = "ユーザーの画面へ表示した。同じ本文の再掲は省き、残工程があれば続行せよ。伝える内容と残工程がない通常終了は、rules-main.claude-code.md「ターンの終え方」に従い省略記号で閉じよ。";
 const MESSAGE = "## 作業完了報告\n\n- 変更: `a.py`\n- 検証: 成功\n\n次の工程へ進む。\n\n".repeat(30);
 
 function row(tool: string, input: unknown) {
@@ -17,7 +18,7 @@ function row(tool: string, input: unknown) {
     isRunning: false,
     isErrored: false,
     isInterrupted: false,
-    output: "ユーザーの画面へ表示した。",
+    output: DISPLAYED,
   };
 }
 
@@ -84,7 +85,7 @@ test("send_to_userの呼び出しは許可され、確認応答を返す", async
   const called = await $.tool.call({ tool: TOOL, message: MESSAGE });
   expect(called.deny).toBeUndefined();
   expect(called.isError).toBeUndefined();
-  expect(called.result).toBe("ユーザーの画面へ表示した。");
+  expect(called.result).toBe(DISPLAYED);
 });
 
 test("サブエージェントのsend_to_userは拒否し、結果本文を最終応答で委譲元へ返すよう案内する", async ($, on) => {
@@ -114,12 +115,12 @@ test("send_to_userは空文字のmessageも描画と同じ条件で受け取る"
   const called = await $.tool.call({ tool: TOOL, message: "" });
   expect(called.deny).toBeUndefined();
   expect(called.isError).toBeUndefined();
-  expect(called.result).toBe("ユーザーの画面へ表示した。");
+  expect(called.result).toBe(DISPLAYED);
 });
 
 test("send_to_userの成功結果は応答文言によらず空のBoxで描く", async ($) => {
   for (const surface of ["terminal", "desktop"] as const) {
-    for (const output of ["ユーザーの画面へ表示した。", "別の成功結果"]) {
+    for (const output of [DISPLAYED, "別の成功結果"]) {
       const ui = await $.ui.mount({
         plugin: PLUGIN,
         surface,
@@ -192,7 +193,7 @@ test("日本語の呼び出しが成功した後のToolUseに本文を描く", a
   on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
   const message = "確認と検証が完了しました。";
   const accepted = await $.tool.call({ tool: TOOL, message });
-  expect(accepted.result).toBe("ユーザーの画面へ表示した。");
+  expect(accepted.result).toBe(DISPLAYED);
   for (const surface of ["terminal", "desktop"] as const) {
     const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: "ToolUse", requestId: "toolu_1", props: { ...row(TOOL, { message }), output: accepted.result } });
     expect((await ui.find({ type: "Markdown" }))?.props.text).toBe(message);
@@ -225,7 +226,7 @@ for (const [name, response, expected] of [
     });
     const called = await $.tool.call({ tool: TOOL, message: JAPANESE_MESSAGE });
     expect(called.deny).toBeUndefined();
-    expect(called.result).toBe("ユーザーの画面へ表示した。");
+    expect(called.result).toBe(DISPLAYED);
     expect(called.context?.length).toBe(1);
     const notice = called.context?.[0] ?? "";
     expect(notice).toMatch(/^<atk-auto source="response-language" kind="warn">\n[\s\S]*\n<\/atk-auto>$/);
@@ -240,11 +241,11 @@ for (const [name, response, expected] of [
       await ui.unmount();
     }
     const repeated = await $.tool.call({ tool: TOOL, message: JAPANESE_MESSAGE });
-    expect(repeated.result).toBe("ユーザーの画面へ表示した。");
+    expect(repeated.result).toBe(DISPLAYED);
     expect(repeated.context ?? []).toEqual([]);
     failing = false;
     const recovered = await $.tool.call({ tool: TOOL, message: JAPANESE_MESSAGE });
-    expect(recovered.result).toBe("ユーザーの画面へ表示した。");
+    expect(recovered.result).toBe(DISPLAYED);
     expect(recovered.context ?? []).toEqual([]);
   });
 }
@@ -258,14 +259,14 @@ test("判定不能の後の英語のmessageは書き直しを求め、書き直�
     const english = e.argv.at(-1) === "--text=The work is complete.";
     return { value: { ...PASS_RESPONSE, stdout: JSON.stringify({ outcome: english ? "warn" : "pass", body: "英語主体の本文。", fix: "日本語で書き直す。" }) } };
   });
-  expect((await $.tool.call({ tool: TOOL, message: JAPANESE_MESSAGE })).result).toBe("ユーザーの画面へ表示した。");
+  expect((await $.tool.call({ tool: TOOL, message: JAPANESE_MESSAGE })).result).toBe(DISPLAYED);
   failing = false;
   const denied = await $.tool.call({ tool: TOOL, message: "The work is complete." });
   expect(denied.result).toBeUndefined();
   expect(denied.deny).toMatch(/^<atk-auto source="response-language" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
   expect(denied.deny).toContain("日本語で書き直す");
   const rewritten = await $.tool.call({ tool: TOOL, message: "作業が完了した。" });
-  expect(rewritten.result).toBe("ユーザーの画面へ表示した。");
+  expect(rewritten.result).toBe(DISPLAYED);
   expect(rewritten.context ?? []).toEqual([]);
 });
 
@@ -278,7 +279,7 @@ for (const caller of [undefined, "", "/caller/project-environment"] as const) {
       return { value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
     });
     const result = await $.tool.call({ tool: TOOL, message: "確認しました。" });
-    expect(result.result).toBe("ユーザーの画面へ表示した。");
+    expect(result.result).toBe(DISPLAYED);
     expect(seen.length).toBe(1);
     const argv = seen[0]!;
     expect(argv.slice(0, 7)).toEqual(["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]);
@@ -296,7 +297,7 @@ for (const message of ["--help", "--text", "", "--Next verify", "-x\n日本語�
       return { value: { exitCode: 0, stdout: JSON.stringify({ outcome: "skip", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
     });
     const result = await $.tool.call({ tool: TOOL, message });
-    expect(result.result).toBe("ユーザーの画面へ表示した。");
+    expect(result.result).toBe(DISPLAYED);
     expect(seen.length).toBe(1);
     expect(seen[0]![7]!.endsWith("/scripts/launch.py")).toBe(true);
     expect(seen[0]!.slice(8)).toEqual([seen[0]![7]!.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/_common/response_language_check.py"), `--text=${message}`]);

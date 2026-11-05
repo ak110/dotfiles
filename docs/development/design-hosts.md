@@ -62,6 +62,8 @@ Linuxは可視コマンドの接続先をwrapperへ変更する前に、公式�
 接続断またはdaemon世代の交代を観測すると、公開`initialize`・`thread/resume`・`thread/turns/list`で保存済み状態を確認する。
 元turnが未完了で現在のwriterが無く、明示中止と新しいユーザーturnも無い場合だけ`turn/start`で未完了工程の継続を求める。
 通常の会話開始・resumeとdaemon復旧の双方で、会話に属するagents_serverの`list`を公開MCP RPCから呼び、モデルの最初のツール要求へ依存せず共通の子孫復旧へ接続する。
+保存済みIDの再開では、子MCPが起動時に直接親を確定できるよう、`thread/resume`の送信前にhost索引を公開する。
+応答後に公開すると、子MCPが所有rootを直接親として孫の復旧候補を確定してしまう。
 要求の応答を失っただけで副作用のある操作を再送せず、会話へ保存済みの状態を照合してから続ける。
 応答を失ったRPC名と、元の依頼・実行履歴・操作対象の状態を同じ会話で確認する入力方法をTUIへ返す。
 
@@ -74,6 +76,23 @@ daemon 0.166.0は世代ファイルを空の予約ファイルとして直接作
 通常終了・明示中止・完了済みturnを復活させず、所有TUIがdaemon交代で終了した場合だけ同じIDと保存した条件で再起動する。
 非対話の`codex exec`とagents_serverの専用App Serverは共有daemonに依存せず、その経路を置き換えない。
 
+### Codexからの更新jobと結果の保持
+
+`CODEX_THREAD_ID`を持つ起動では、`bin/update-dotfiles`とWindows版ランチャーが、uvの外側のnative Pythonで`libexec/update_dotfiles_job.py`へ処理を渡す。
+通常端末の更新は既存のTTYとSSH入力を保持する。
+独立workerがuv自己更新、更新本体、成功後の必要なpruneを順に所有し、起動元のdaemon再起動でcontrollerが終了しても処理と終了結果の保存を継続する。
+POSIXは新しいsession、Windowsは独立したprocess groupとjobからの分離を使い、分離失敗を成功扱いにしない。
+
+jobはUUIDで識別し、既存の状態領域の`update-jobs/<UUID>/`へ入力引数・開始終了・終了コードと分離した標準出力・標準エラーを保存する。
+環境変数全量は保存しない。
+公開`update-dotfiles job`は同じ`CODEX_THREAD_ID`の最新job、`update-dotfiles job <UUID>`は明示jobの保存結果を取得する。
+再取得では更新を再実行せず、未完了を完了と区別する。
+workerは有限の実行上限と子孫の回収を持ち、通常のCtrl+Cは所有workerへの停止要求と終了回収へ接続する。
+完了済みjobは7日で回収し、未完了jobと出力は保持する。
+
+uv内で更新jobを待つ構成は、起動元の停止に更新処理が巻き込まれるため採用しない。
+daemon再起動後の会話復旧は既存の起動管理へ接続し、更新jobに別の常駐serverや会話復旧機構を追加しない。
+
 ### Codexのlocal plugin導入
 
 dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLIを準備した後に`agent-toolkit-codex/`を生成し、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
@@ -82,10 +101,14 @@ dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLI�
 明示的に無効なpluginは導入状態とcacheを保持し、版更新も保留する。明示的な再有効化後に通常の更新を再開する（[Codexガイド](../guide/codex-guide.md#プラグイン更新の反映)）。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
 実際のaddまたはupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
-再起動直前に`codex_processes.py`の役割分類を確認し、利用セッションが無ければ`codex app-server daemon restart`を自動実行する。
-利用セッションがあれば接続を維持し、セッション終了後の手動再起動を案内する。
-Linuxの`update-dotfiles`はセッション不在の管理daemonをapply前に一時停止し、apply後にもセッション不在を確認して起動状態を戻す。
-自動再起動の成功と失敗は終了コードとともにupdate-dotfilesログへ記録し、失敗時はplugin導入を巻き戻さず手動案内へ戻す。
+利用セッションがあっても`codex app-server daemon restart`を自動実行し、同じ会話と子孫の継続は[Codexの起動管理とdaemon復旧](#codexの起動管理とdaemon復旧)へ委ねる。
+Linuxの`update-dotfiles`は適用差分があり利用セッションが無い場合だけ管理daemonをapply前に一時停止し、apply後にもセッション不在を確認して起動状態を戻す。
+自動再起動の成功と失敗は終了コードとともにupdate-dotfilesログへ記録する。
+再起動失敗はplugin導入を巻き戻さず、`PostApplyOutcome`から更新全体の非0終了と次の操作へ伝播する。
+daemon再起動の終了コード0と、会話・子孫の復旧成功は別の観測として扱う。
+restartの外側上限は、nativeの停止猶予を途中で打ち切らないようにする。
+Codex 0.166.0の操作lock待機375秒、停止猶予最大300秒、強制終了確認10秒、起動30秒と応答の余裕を含め、restart専用に750秒を確保する。
+根拠は[対象版のdaemon実装](https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/app-server-daemon)であり、通常のplugin照会は従来の上限を使う。
 無変更、marketplace登録だけの変更、daemon停止中および不要pluginの除去は自動再起動の対象に含めない。
 `atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
 公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)はローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、導入先の実体をCodexが読み込むと定める。
@@ -133,7 +156,7 @@ agent-toolkitの更新では旧versionを自動復旧し、Codexの稼働状態�
 | Codexの不要pluginの除去（`install_codex_plugins.py`の`_remove_unused_plugins`） | `codex_processes.py`の役割分類。`session`だけを数え、管理daemonとその補助実行体・更新ループは数えない | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではCodexの終了後に`update-dotfiles`を再実行する |
 
 Claude Code 2.1.303の`claude plugin uninstall`とmarketplaceの削除は、plugin cacheの実体を孤立の標識（`.orphaned_at`）付きで残す。他のscopeが残らないpluginでは永続データ領域（`plugins/data/<id>/`）を削除する（いずれも隔離した設定ディレクトリでの観測）。`install_claude_plugins.py`のdeprecated pluginの除去は、実体を削除せず、データ領域も`--keep-data`で残すため、稼働中のセッションが使う実体を削除する処理に当たらず、延期を設けない。`claude_marketplace.py`の登録修復は、marketplaceの削除で収録pluginを除去してデータ領域を削除し、同じ実行で再導入する。収録するagent-toolkitの`plugin_environment.py`の`runtime_data`はユーザーデータ領域（Linuxでは`XDG_DATA_HOME`配下の`agent-toolkit`）を先に選び、そこへ書き込めない場合だけデータ領域（`CLAUDE_PLUGIN_DATA`）を使う。`plugin.json`は設定項目を持たない。このため通常の環境では稼働中のセッションのhook・MCPはデータ領域を参照せず、削除しても動作は変わらないので、この修復は参照の終了を待つ延期の対象にしない。
-セッション不在時のdaemon自動再起動と、旧versionの保持は独立している。
+daemon自動再起動と旧versionの保持は独立している。
 旧cacheを移動して退避する案は、移動中に元のパスから実体へ到達できないため採らない。
 更新前の実体を残したまま複製し、CLIの完了後に削除された旧versionを復旧する。
 最新版へhookを付け替える案は、旧版のskill・MCP・遅延importを守れないため採らない。

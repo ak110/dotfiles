@@ -217,6 +217,43 @@ Claude Codeでの計測値は`~/.claude/projects`配下のセッション記録�
 親の`--settings`がJSONなら他キーとenvの他キーを保ち、起動元の全envキーを上書きする。ファイルの場合は内容をargvへ展開せず、所有者だけが読める起動別の合成ファイルを渡す。不読・不正JSON・非objectの親は継承せずenvだけを使う。合成処理と回収は`_agents_server/claude_settings.py`が担当する。成功・失敗の接続終了と依存確認の終了で自身のファイルを回収し、異常終了後の残存物は既存のrootの7日掃引が回収する。
 CLIのstdoutのNDJSONの1行には、モデルへ渡らないtool_use_resultも含まれる。EditのoriginalFileがファイル全体を持つため、SDKの既定1MiBでは通常の編集だけで受信に失敗する。共通optionsは全起動区分・resumeへ4GiBのmax_buffer_sizeを渡す。CLIの最大編集可能サイズ1GiBと差分を収めるための上限値である。この指定で4GiBを事前に確保することはない。モデルへの出力量の指示ではこの受信失敗を防げない。
 
+### Claude委譲先のプラグイン再読込
+
+`_agents_server/claude_plugins.py`は有効なプラグインの実体と、子Claudeが読む設定・導入一覧のファイル変更を監視する。
+変更検知にモデルを使わず、連続する変更をまとめて所有タスクへ通知する。
+Claude backendの所有タスクは進行中のturnを中断せず、idleになってから同じSDK接続へ`reload_plugins`制御要求を送り、保留された次の入力より先に反映する。
+応答のプラグイン集合・版・エラーを確認して再読込を確定し、失敗は診断可能な例外として返す。
+SDKの専用公開methodが無いため、制御要求のprivate APIへの依存は局所adapterに限定する。
+
+サーバー自身が実行する`SERVER_PLUGIN_ROOT`の保持版と、子Claudeへ渡す更新可能なプラグイン実体を分離する。
+版付きcacheから子へ明示するtoolkitはsession寿命の固定mirrorへ内容をコピーし、同じ版の内容変更と導入先の版変更をその固定パスへ反映する。
+開発checkoutは元のrootを監視して再読み込みする。
+兄弟ディレクトリで準備して固定読込先を切り替え、失敗時は前の有効な実体を保持する。
+固定mirror自体は通常ディレクトリとして切り替える。
+現行導入先は子と同じCLI・cwd・設定読込条件の`claude plugin list --json`から解決し、無効なプラグインを有効化しない。
+mirror内のagents_serverのMCP起動定義はserverの保持版へ固定し、Python実行基盤をskill・modsの更新から分離する。
+監視threadを停止し、CLIの終了を確認してからmirrorを回収する。
+CLIを回収できない場合は入力を保持する。
+サーバー保持版の書換え、`add_plugins`の反復、サーバーや子Claudeの自動再起動は、実行中コードと読込先を不安定にするため採用しない。
+
+### Codex委譲先の週次利用枠の自動reset
+
+`codex_auto_reset`は既存の設定保存へ接続する真偽値設定で、既定値を`false`とする。
+公開操作は`atk config get codex_auto_reset`と`atk config set codex_auto_reset true`で、無効化には値`false`を指定する。
+有効なsessionだけが、backend所有のApp Server接続からモデルを使わず利用枠とreset creditの在庫を定期確認する。
+`_agents_server/codex_auto_reset.py`はChatGPT接続、10080分の週次窓の使用率99%以上、在庫ありを確認して消費する。
+安定したアカウント識別用emailを取得できない場合は消費せず診断し、APIキー接続も対象外とする。
+
+複数server間の消費は同じOSアカウントのファイルロックで直列化し、ロック下で最新の利用枠を取得する。
+emailのhashと週次窓に対応する論理試行を状態領域へ保存し、応答を失った消費は同じ`idempotencyKey`で確認する。
+reset・既消費の確認後は利用枠を再取得し、同じ窓への重複消費を防ぐ。
+`nothingToReset`・`noCredit`をreset成功に数えず、在庫なしや通信失敗は既存の利用上限待機方針へ戻す。
+
+通知readerのcallbackから同じ接続へのRPCを待つと応答の読取が停止するため、上限通知後の確認はbackend所有の別taskで行う。
+`codex_auto_reset_pending`で確認中の結果公開を保留し、turn番号と既存の制御lockで追送・中断との競合を判定する。
+再取得した枠で継続可能な場合は既存の監視へ同じsessionの再開を委ね、独自の再開RPCを重ねない。
+終了済みsessionのために新しいcreditを消費せず、接続解放時は監視taskを取消して終了を回収する。
+
 ## 公開ツールの契約
 
 ### `start`

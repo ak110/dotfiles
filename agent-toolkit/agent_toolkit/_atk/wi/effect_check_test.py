@@ -86,6 +86,9 @@ def test_public_effect_check_partial_then_complete_preserves_original(
     notes, worktree, path = effect_repository
     original = path.read_text(encoding="utf-8")
     assert _invoke(notes, worktree, path.name, "agent-toolkit/rules/a.md", "confirmed") == 0
+    result = capsys.readouterr().out.splitlines()
+    assert result[0].startswith("成功: ")
+    assert result[1:] == [str(path)]
     partial = path.read_text(encoding="utf-8")
     assert "effect_check: pending" in partial
     assert list(effect_check.checked_files(partial)) == ["agent-toolkit/rules/a.md"]
@@ -293,7 +296,9 @@ def test_public_transition_only_implemented_awi_adoption_starts_pending(
 
 
 def test_public_effect_batch_validates_all_and_resumes_partial_save(
-    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], monkeypatch: pytest.MonkeyPatch
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """公開複数指定で全件を検証し、旧本文を保持して部分保存・commit失敗から再開する。"""
     notes, worktree, path = effect_repository
@@ -310,6 +315,9 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
 
     for invalid in ("missing.md", "corrective.md"):
         assert _invoke(notes, worktree, [*names, invalid], None, "pending", *reason) != 0
+        captured = capsys.readouterr()
+        assert "成功: " not in captured.out
+        assert captured.err
         assert all(item.read_bytes() == before for item, before in originals.items())
         assert git_repository.git_output(notes, "rev-parse", "HEAD") == base
 
@@ -337,6 +345,9 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
     with monkeypatch.context() as recording:
         recording.setattr(sync, "run_git", observe_git)
         assert _invoke(notes, worktree, names, None, "pending", *reason) == 0
+    result = capsys.readouterr().out.splitlines()
+    assert result[0].startswith("成功: ")
+    assert result[1:] == [str(path), str(legacy)]
     assert sum(args[0] == "commit" for args in calls) == 1
     assert sum(args[0] == "push" for args in calls) == 1
     assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "1"
@@ -358,6 +369,7 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
             )
             assert restored == previous[1]
     assert _invoke(notes, worktree, names, None, "pending", *reason) == 0
+    assert capsys.readouterr().out.splitlines() == result
     assert all(item.read_bytes() == saved[item] for item in saved)
     assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "1"
 

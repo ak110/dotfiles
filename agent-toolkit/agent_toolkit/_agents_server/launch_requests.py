@@ -324,7 +324,9 @@ def _check_declared_inputs(
     if missing:
         raise ActionableError(
             f"必須入力が欠けています: {', '.join(missing)}; `subagent_md_path`: {task_document}; {_REQUIRED_INPUT_LINE_FORMAT}",
-            next_action="欠けた入力名をキーとして`extra_params`へ加え、`start`を再発行する",
+            next_action=(
+                _input_contract_guidance(task_document) + "欠けた入力名をキーとして`extra_params`へ加え、`start`を再発行する"
+            ),
         )
     undeclared = [name for name in extra_params if name not in declaration.accepted]
     if undeclared:
@@ -332,10 +334,29 @@ def _check_declared_inputs(
             f"`<役割名>.subagent.md`が宣言していない入力です: {', '.join(undeclared)}; "
             f"受理する入力名: {', '.join(sorted(declaration.accepted))}; `subagent_md_path`: {task_document}。",
             next_action=(
-                "今回限りの補足を渡す欄は無いため、値を`<役割名>.subagent.md`が宣言した入力へ収めるか、宣言外の値を渡さずに起動する"
+                _input_contract_guidance(task_document)
+                + "今回限りの補足を渡す欄は無いため、値を`<役割名>.subagent.md`が宣言した入力へ収めるか、"
+                "宣言外の値を渡さずに起動する"
+                "。入力を直して`start`を再発行する"
             ),
         )
     _check_explore_materials(task_document, extra_params)
+
+
+def _input_contract_guidance(task_document: pathlib.Path) -> str:
+    """拒否した役割と同じ版の、入力説明を所有する契約と節を案内する。"""
+    try:
+        targets = read_triggers.parent_contract_targets(task_document.name, task_document.parent.parent)
+        inputs = tuple(read_triggers.ReadTarget(target.path, target.heading or "入力") for target in targets)
+        for target in inputs:
+            target.body()
+    except (OSError, UnicodeError, ValueError) as error:
+        return (
+            f"入力説明の起動・受領契約を解決できません: {error}。"
+            "指定した役割文書と同じplugin rootの共有parentまたはparent-read-source宣言・参照先を修復し、"
+            "入力説明を確認する。"
+        )
+    return "入力の意味・制約は" + "、".join(f"`{target.path}`「{target.heading}」" for target in inputs) + "で確認する。"
 
 
 def named_input_lines(params: Mapping[str, str]) -> list[str]:

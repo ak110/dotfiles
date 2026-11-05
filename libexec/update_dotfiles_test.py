@@ -2425,11 +2425,21 @@ class TestCodexDaemonPause:
     def _commands(calls: list[list[str]]) -> list[str]:
         return [f"daemon {call[-1]}" if call[0] == _FAKE_CODEX else call[1] for call in calls]
 
+    def test_unchanged_apply_keeps_running_daemon(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        codex_env: list[list[str]],
+    ) -> None:
+        """適用差分が無ければ、applyを継続し管理daemonの停止・起動を増やさない。"""
+        monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env))
+        assert update_dotfiles.main() == 0
+        assert self._commands(codex_env) == ["git", "init", "status", "diff", "apply"]
+
     def test_daemon_only_is_stopped_before_apply_and_restarted(
         self, monkeypatch: pytest.MonkeyPatch, codex_env: list[list[str]], capsys: pytest.CaptureFixture[str]
     ) -> None:
         """利用セッションが無ければ、apply前に停止しapply後に起動する。"""
-        monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env))
+        monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env, stdout_by_command={"diff": "apply change"}))
 
         assert update_dotfiles.main() == 0
         assert self._commands(codex_env) == ["git", "init", "status", "diff", "daemon stop", "apply", "daemon start"]
@@ -2446,7 +2456,7 @@ class TestCodexDaemonPause:
     ) -> None:
         """管理daemonが停止済みで更新ループだけが残る場合は、daemonを起動せずに更新する。"""
         monkeypatch.setattr(update_dotfiles.codex_processes, "codex_processes", lambda: (_UPDATE_LOOP,))
-        monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env))
+        monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env, stdout_by_command={"diff": "apply change"}))
 
         assert update_dotfiles.main() == 0
         assert self._commands(codex_env) == ["git", "init", "status", "diff", "apply"]
@@ -2468,7 +2478,7 @@ class TestCodexDaemonPause:
     ) -> None:
         """利用セッションがあれば、停止と事前案内を省いてapplyを続行する。"""
         monkeypatch.setattr(update_dotfiles.codex_processes, "codex_processes", lambda: processes)
-        monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env))
+        monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env, stdout_by_command={"diff": "apply change"}))
 
         assert update_dotfiles.main() == 0
         assert self._commands(codex_env) == ["git", "init", "status", "diff", "apply"]
@@ -2484,7 +2494,7 @@ class TestCodexDaemonPause:
         self, monkeypatch: pytest.MonkeyPatch, codex_env: list[list[str]]
     ) -> None:
         """停止後にセッションが開始した場合は、apply後のdaemon操作を見送る。"""
-        run = _fake_run({}, codex_env)
+        run = _fake_run({}, codex_env, stdout_by_command={"diff": "apply change"})
 
         def apply_starts_session(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
             if argv[:2] == ["chezmoi", "apply"]:
@@ -2503,7 +2513,7 @@ class TestCodexDaemonPause:
             "codex_processes",
             lambda: (_ for _ in ()).throw(AssertionError("Linux以外でCodexを走査してはならない")),
         )
-        monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env))
+        monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env, stdout_by_command={"diff": "apply change"}))
 
         assert update_dotfiles.main() == 0
         assert self._commands(codex_env) == ["git", "init", "status", "diff", "apply"]
@@ -2512,7 +2522,7 @@ class TestCodexDaemonPause:
         self, monkeypatch: pytest.MonkeyPatch, codex_env: list[list[str]], sync_report_path: pathlib.Path
     ) -> None:
         """applyが失敗しても停止したdaemonを起動し、applyの終了コードと失敗段を保つ。"""
-        monkeypatch.setattr(subprocess, "run", _fake_run({"apply": 5}, codex_env))
+        monkeypatch.setattr(subprocess, "run", _fake_run({"apply": 5}, codex_env, stdout_by_command={"diff": "apply change"}))
 
         assert update_dotfiles.main() == 5
         assert self._commands(codex_env)[-2:] == ["apply", "daemon start"]
@@ -2520,7 +2530,7 @@ class TestCodexDaemonPause:
 
     def test_apply_exception_still_restarts_daemon(self, monkeypatch: pytest.MonkeyPatch, codex_env: list[list[str]]) -> None:
         """apply段が例外で中断しても、停止したdaemonの起動を試みる。"""
-        fake_run = _fake_run({}, codex_env)
+        fake_run = _fake_run({}, codex_env, stdout_by_command={"diff": "apply change"})
 
         def run(argv: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             if argv[:2] == ["chezmoi", "apply"]:
@@ -2544,7 +2554,12 @@ class TestCodexDaemonPause:
         monkeypatch.setattr(
             subprocess,
             "run",
-            _fake_run({"daemon stop": 3}, codex_env, stderr_by_command={"daemon stop": "stop failed\n"}),
+            _fake_run(
+                {"daemon stop": 3},
+                codex_env,
+                stdout_by_command={"diff": "apply change"},
+                stderr_by_command={"daemon stop": "stop failed\n"},
+            ),
         )
 
         assert update_dotfiles.main() == 1
@@ -2562,7 +2577,9 @@ class TestCodexDaemonPause:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """起動に失敗した場合は、手動の復帰操作を標準エラー、ログ、同期結果から確認できる。"""
-        monkeypatch.setattr(subprocess, "run", _fake_run({"daemon start": 4}, codex_env))
+        monkeypatch.setattr(
+            subprocess, "run", _fake_run({"daemon start": 4}, codex_env, stdout_by_command={"diff": "apply change"})
+        )
 
         assert update_dotfiles.main() == 1
         err = capsys.readouterr().err

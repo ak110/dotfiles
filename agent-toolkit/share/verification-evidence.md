@@ -11,6 +11,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| OSを模擬した試験の保証と環境条件を記録する前 | `agent-basics:writing-standards/references/testing.md`の「プラットフォーム分岐の検証」と「検証単位の選定」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「プラットフォーム分岐の検証」「検証単位の選定」` |
 | 受入シナリオを起動する前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
 | 訂正済み検証表を使う前 | `../skills/write-plan/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「検証と公開工程」` |
 | 保存出力を取得する前 | `agent-toolkit:/share/check-execution-operations.md#「保存した実行出力の取得」` | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「保存した実行出力の取得」` |
@@ -28,6 +29,8 @@
 ## 完成条件証拠の検証記録
 
 初回レビューを起動する前に、各検証記録で取得した版、実行時の入力・環境条件、要求または受入シナリオごとの観測箇所を対応付ける。試験用の入力と実際に動作した実行環境の版は別の値として記録する。レビュー担当はこの対応を入力として保存済み結果を独立に適用判定し、適用できない条件と影響差分だけを追加観測する。
+OSを模擬した試験では、`agent-basics:writing-standards/references/testing.md`「プラットフォーム分岐の検証」に従い、模擬した判定値・境界、実ホストOS、実行した外部実行体・OS APIと副作用を、同じ入力・環境条件へ対応付ける。
+起動の保証には開発環境と配布環境の初期状態、起動時の依存解決・環境作成の有無を対応付け、模擬成功から実OSや初回起動の未観測部分へ保証を広げない。
 
 実行レビューが完成条件証拠を判定する対象作業では、実装担当者およびメインエージェントが、実装完了時やレビュー修正時の返却値に`検証結果`を記載し、同一の内容を進捗ログ（計画を作成しない場合は引き継ぎ記録）へ記録する。実行レビュー担当者はこの記録を判断材料として判定し、判定結果そのものは実行レビュー担当者のみが記入する（`agent-toolkit:/share/exec-review-recording.md`）。
 

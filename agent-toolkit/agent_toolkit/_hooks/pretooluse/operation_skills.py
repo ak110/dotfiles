@@ -790,7 +790,7 @@ def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str) -> set[bool]:
         return set()
     kinds = set()
     for invocation, current in shell_cwd.bash_invocation_cwds(tool_input["command"], cwd):
-        tokens = invocation.segment.tokens
+        tokens = invocation.static_tokens
         if not is_atk_command(tokens) or tokens[1:3] not in {("wi", "add"), ("wi", "edit")}:
             continue
         if "--help" in tokens or "-h" in tokens:
@@ -803,6 +803,10 @@ def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str) -> set[bool]:
         if not bodies:
             kinds.add(False)
         for value in bodies:
+            if STATIC_UNKNOWN in value:
+                # 実行位置の確定だけでは、展開される各引数の値は確定しない。
+                kinds.add(False)
+                continue
             path = pathlib.Path(value).expanduser()
             if not path.is_absolute():
                 if not current.resolved:

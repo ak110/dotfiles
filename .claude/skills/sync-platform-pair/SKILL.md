@@ -42,5 +42,9 @@ description: >
 
 ## ローカルで実行するチェックとCIジョブの対応関係
 
-Linux側とWindows側で処理を分岐させているコードのうち、Windows側の分岐処理はローカル環境の`make test`では検証されず、CI上の`test-windows`ジョブによって検証される。そのため、`agent-basics:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OSの判定に利用する値を引数として受け取るヘルパー関数等に処理を集約し、パラメーター化テストを用いて両方の分岐をテストで網羅できるように実装する。
+Windows実OS固有の動作は、CI上の`test-windows`などによる観測と、Linuxの`make test`での分岐値の模擬を区別する。
+`agent-basics:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、判定値をパラメーター化して両方の分岐を検証し、fixtureが共有モジュールと実ホストAPIへ及ぼす影響も確認する。
+引数・終了状態・パス表現・権限・ファイル共有の実OSでの成功は、模擬した分岐選択の成功と分けて検証記録へ残す。
+配布時の初期状態や起動時の依存解決はローカルでも前提を比較し、実Windowsでしか確かめられない条件を未確認のまま保証へ含めない。
+候補branchへのpushによるWindows検証は、必要性・認可・重複費用を確認して選べる。
 ローカルの`make test`では実行されないCIジョブの一覧については、`develop-dotfiles`の`references/verification-values.md`「push前のチェックとCIだけが実行するチェック」を参照する。

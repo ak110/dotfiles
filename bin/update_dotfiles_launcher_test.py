@@ -131,6 +131,7 @@ def _run_launcher(
         (path_dir / "cat").symlink_to(cat)
     call_log = tmp_path / "uv-calls"
     environment = os.environ.copy()
+    environment.pop("CODEX_THREAD_ID", None)
     environment.update(
         {
             "HOME": str(home),
@@ -329,6 +330,7 @@ def test_launcher_replacement_preserves_update_exit(
 ) -> None:
     """更新中の自身の書換え後も、新旧ランチャーが更新処理の終了コードを返す。"""
     environment = host_environ()
+    environment.pop("CODEX_THREAD_ID", None)
     home = tmp_path / "home"
     native_uv = home / ".local" / "bin" / ("uv.exe" if os.name == "nt" else "uv")
     native_uv.parent.mkdir(parents=True)
@@ -406,7 +408,7 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     native = 'set "UV=%USERPROFILE%\\.local\\bin\\uv.exe"'
     missing = 'if not exist "%UV%" goto missing_uv'
     update_state = 'set "UV_SELF_UPDATE_FAILED=0"'
-    process_loop_guard = 'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" call :update_uv'
+    process_loop_guard = 'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" call :update_uv %*'
     update = 'powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\\libexec\\update_uv.ps1" "%UV%"'
     update_failure = 'if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"'
     run = '"%UV%" run --no-project --script "%SCRIPT_DIR%\\libexec\\update_dotfiles.py" %*'
@@ -436,14 +438,14 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     assert (
         content.index(native)
         < content.index(missing)
-        < content.index(update_state)
-        < content.index(process_loop_guard)
         < content.index(run)
         < content.index(capture_run_exit)
         < content.index(warning_state)
         < content.index(warning)
         < content.index(return_run_exit)
     )
+    assert content.index("\r\n:start\r\n") < content.index(update_state) < content.index(process_loop_guard)
+    assert "goto start\r\n:run\r\n" in content
     assert content.index("\r\n:update_uv\r\n") < content.index(update) < content.index(update_failure)
 
 
@@ -497,6 +499,7 @@ def test_prune_invokes_post_apply_after_successful_update(tmp_path: pathlib.Path
         "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
         "UV_RUN_EXIT": str(run_exit),
     }
+    environment.pop("CODEX_THREAD_ID", None)
     bash = shutil.which("bash")
     assert bash is not None
 
@@ -525,7 +528,7 @@ def test_windows_prune_checks_runtime_exit_status_with_delayed_expansion() -> No
     assert delayed < source.index('"!USERPROFILE!\\.local\\bin\\dotfiles-post-apply.exe" --prune-only')
     assert 'set "DOTFILES_PRUNE_OUTSIDE_UV=1"' in source
     lines = source.splitlines()
-    assert lines.count("(") == 1
+    assert lines.count("(") == 2
     assert lines.index("(") < next(index for index, line in enumerate(lines) if line.startswith('"%UV%" run'))
 
 
@@ -599,6 +602,7 @@ def test_public_launcher_prune_boundary_with_real_uv(
         endpoint_script.chmod(0o755)
         command = [str(launcher)]
     environment = host_environ()
+    environment.pop("CODEX_THREAD_ID", None)
     environment.update(
         {
             "HOME": str(home),
@@ -619,3 +623,65 @@ def test_public_launcher_prune_boundary_with_real_uv(
     assert result.returncode == (run_exit or (prune_exit if prune else 0)), result.stdout + result.stderr
     observed = calls.read_text(encoding="utf-8").splitlines() if calls.exists() else []
     assert observed == ([] if help_requested else ["update", "prune"] if prune and not run_exit else ["update"])
+
+
+@pytest.mark.parametrize("run_exit", [0, 23])
+def test_public_codex_launcher_uses_native_worker_and_saved_job(
+    tmp_path: pathlib.Path,
+    real_uv: str,
+    host_environ: Callable[[], dict[str, str]],
+    run_exit: int,
+) -> None:
+    """両OSの公開ランチャーからnative workerへ接続し、同一jobの結果だけを再取得する。"""
+    environment = host_environ()
+    home = tmp_path / "home with spaces"
+    native = home / ".local/bin" / ("uv.exe" if os.name == "nt" else "uv")
+    native.parent.mkdir(parents=True)
+    shutil.copy2(real_uv, native)
+    libexec = tmp_path / "libexec"
+    libexec.mkdir()
+    shutil.copy2(_ROOT / "libexec/update_dotfiles_job.py", libexec / "update_dotfiles_job.py")
+    counter = tmp_path / "updates"
+    (libexec / "update_dotfiles.py").write_text(
+        "import pathlib\n"
+        f"with pathlib.Path({str(counter)!r}).open('a', encoding='utf-8') as output:\n"
+        "    output.write('update\\n')\n"
+        "print('worker update', flush=True)\n"
+        f"raise SystemExit({run_exit})\n",
+        encoding="utf-8",
+    )
+    launcher = tmp_path / "bin" / ("update-dotfiles.cmd" if os.name == "nt" else "update-dotfiles")
+    launcher.parent.mkdir()
+    shutil.copy2(_WINDOWS_LAUNCHER if os.name == "nt" else _LAUNCHER, launcher)
+    environment.update(
+        {
+            "HOME": str(home),
+            "USERPROFILE": str(home),
+            "CODEX_THREAD_ID": "public-job-thread",
+            "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
+            "UV_PYTHON": sys.executable,
+        }
+    )
+    for name in (
+        "XDG_STATE_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CONFIG_HOME",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "PROGRAMDATA",
+    ):
+        environment[name] = str(tmp_path / name)
+    environment["WIN_PD_OVERRIDE_LOCAL_APPDATA"] = environment["LOCALAPPDATA"]
+    command = ["cmd.exe", "/d", "/c", str(launcher)] if os.name == "nt" else [str(launcher)]
+    result = subprocess.run(command, env=environment, capture_output=True, encoding="utf-8", check=False, timeout=90)
+    assert result.returncode == run_exit, result.stdout + result.stderr
+    assert "worker update" in result.stdout
+    job_id = next(line.partition(": ")[2] for line in result.stdout.splitlines() if line.startswith("更新job: "))
+    for arguments in (["job", job_id], ["job"]):
+        retrieved = subprocess.run(
+            [*command, *arguments], env=environment, capture_output=True, encoding="utf-8", check=False, timeout=45
+        )
+        assert retrieved.returncode == run_exit, retrieved.stdout + retrieved.stderr
+        assert f"job {job_id}: 終了 exit={run_exit}" in retrieved.stdout
+    assert counter.read_text(encoding="utf-8").splitlines() == ["update"]

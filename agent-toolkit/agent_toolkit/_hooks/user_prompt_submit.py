@@ -74,7 +74,7 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
     read_state,
     update_state,
 )
-lazy from agent_toolkit._hooks import message_format, session_title, termination_evidence, work_contract
+lazy from agent_toolkit._hooks import command_timing, message_format, session_title, termination_evidence, work_contract
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -245,11 +245,15 @@ def main(payload_text: str) -> int:
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。
     if _is_harness_message(prompt):
         harness_notices: list[str] = list(initial_notices)
+        harness_notices.extend(command_timing.observe_notifications(payload))
         if not is_codex_payload(payload):
             harness_notices.append(
                 _llm_notice(
                     "このターンは`Claude Code`のバックグラウンドタスク完了の自動通知で始まった。"
-                    "ユーザーの発話ではない。応答と成果物は日本語で書け。",
+                    "ユーザーの発話ではない。応答と成果物は日本語で書け。"
+                    "通知配送のための前ターンの`Stop`終了は、現在ターンのツール操作禁止を意味しない。"
+                    "通知の保存出力と終了状態を回収し、未終了の担当には有効な待機または同じセッションの自動再開を維持せよ。"
+                    "ホストが実際に操作を拒否した場合は、その拒否に従え。",
                     tag="notice",
                 )
             )

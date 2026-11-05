@@ -65,6 +65,11 @@ uv sync --frozen
 
 ## サプライチェーン攻撃対策
 
+`make update`はPython・mise・Actionsの更新に加え、`rust/claude-statusline/Cargo.lock`をCargo.tomlの制約内で更新し、fmt・clippy・testを実行する。
+定期・手動のAudit workflowはRustSecの`cargo-audit`でも同じlockを監査する。
+Rustの検出内容はActionsの「Rust依存の監査」ログで確認し、脆弱性検出とツール異常はそれぞれの診断で失敗する。
+Pythonの検出結果は従来どおりCode Scanningで管理する。
+
 ロックファイル尊重・公開待機・ピン留め運用・脆弱性検知の4点を貫徹する。
 
 - ロックファイル尊重: Python依存は`Makefile`とCIが常時有効化する`UV_FROZEN=1`により、`uv.lock`を再resolveせず使用する。mise管理ツールはルートと配布用設定に対応する2つの`mise.lock`を優先する

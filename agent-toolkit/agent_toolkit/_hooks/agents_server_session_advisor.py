@@ -3,9 +3,11 @@
 `start`（全mode）と新しいturnを起こす`send_message`は、委譲先に
 新しい作業を発生させる。実行中turnへの`steered`配送は新しい作業の発生に含めない。
 PostToolUseがその応答と呼出主体を`agents_server_sessions`へ記録し、
-本フックは`pending_observation`が真で、呼出主体が一致する記録だけを警告対象にする。
+本フックは`pending_observation`が真で、呼出主体が一致する記録を警告対象にする。
+観測を試みた後にも同じ主体の待機対象登録へ残る実行中sessionは、既存の登録簿から別に解決する。
+有効なCLI待機も同sessionの自動再開もなければ、現在の待機を継続する非遮断の案内を返す。
 
-判定対象は観測を試みていない作業の有無である。
+観測の試みと現在の継続主体は別に判定する。
 `pending_observation`を解消するのは、実際に観測・破棄した証拠だけとする。
 `atk agents wait`の終了と`kill`の受理（実行環境が呼び出しをバックグラウンドタスクへ移し、
 構造化応答を伴わない移行通知だけを返した場合を含む）をPostToolUseが記録する。
@@ -94,6 +96,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     owner_agent_id = resolve_hook_agent_id(payload)
     state = read_state(session_id)
     pending_session_ids = _observations.pending_session_ids(state, owner_agent_id)
+    continued = _observations.retained_running_session_ids(state, owner_agent_id)
+    pending_session_ids = sorted(set(pending_session_ids) | set(continued))
     if not pending_session_ids:
         sessions = state.get("agents_server_sessions")
         if isinstance(sessions, dict) and any(
@@ -112,5 +116,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if not pending_session_ids:
         return "approve", ""
 
-    body = f"{_WARNING_BODY}\n対象session: {', '.join(pending_session_ids)}"
+    description = (
+        "登録済みの未終了sessionについて、現在有効な待機・自動再開の保証を確認できない。"
+        if set(pending_session_ids) & set(continued)
+        else _WARNING_BODY
+    )
+    body = f"{description}\n対象session: {', '.join(pending_session_ids)}"
     return "notify", _notice(body, fix=_WARNING_FIX, removable_cause=True, summary=body)

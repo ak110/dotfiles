@@ -43,7 +43,7 @@ def system_prompt(launch_kind: LaunchKind) -> str:
     if user_rules.is_dir():
         files.extend(sorted(path for path in user_rules.rglob("*.md") if path.is_file()))
     sections = [role_prompt, launch_prompts.cli_runtime_instructions(root)]
-    sections.append(f"agent-toolkit plugin root: {root}\n必要なskillと内部資源はこのrootから読む。")
+    sections.append(f"agent-toolkit plugin root: {root}\nagent-toolkitのskillと内部資源はこのrootから読む。")
     for path in files:
         sections.append(
             message_format.auto_message(

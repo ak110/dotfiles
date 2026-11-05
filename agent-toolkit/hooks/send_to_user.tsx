@@ -14,6 +14,7 @@ const DESCRIPTION = [
   "ユーザーへ届ける本文を、途中・末尾ともにユーザーの画面へそのまま表示する。",
   "質問への回答、確認結果、判明した事実や原因、成果物、進捗、作業完了報告と次の工程の予告に使う。",
   "ユーザーの判断を求める確認には既存の質問手段を使う。推論は送らない。",
+  "表示成功後は同じ本文を地の文へ再掲せず、残工程または通常のターン終了へ進む。",
 ].join("");
 
 const INPUT_SCHEMA = {
@@ -45,7 +46,7 @@ export const SEND_TO_USER_DELEGATED_DENY =
   "委譲先・サブエージェントからの呼び出しではユーザーの画面へ表示していない。結果本文は委譲元へ返す必要があるため、" +
   "このツールを使わず、報告する本文を全て最終応答（終了の返却）へ書け。";
 
-const DISPLAYED = "ユーザーの画面へ表示した。";
+const DISPLAYED = "ユーザーの画面へ表示した。同じ本文の再掲は省き、残工程があれば続行せよ。伝える内容と残工程がない通常終了は、rules-main.claude-code.md「ターンの終え方」に従い省略記号で閉じよ。";
 const INVALID_MESSAGE = automatedMessage("send-to-user", "block", "文字列のmessageが無いため、画面へ本文を表示していない。本文をmessageへ入れて呼び直せ。");
 
 export function register(on: On): void {
