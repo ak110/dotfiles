@@ -228,10 +228,36 @@ def test_controller_lifetime_and_cancel_are_distinct(
                 _wait_file(_job(project) / "result.json")
 
 
+@pytest.mark.parametrize(
+    "ps_missing",
+    [
+        False,
+        pytest.param(
+            True,
+            marks=pytest.mark.skipif(sys.platform != "linux", reason="procfsで子孫を列挙するのはLinuxだけである"),
+        ),
+    ],
+    ids=["default", "ps-missing"],
+)
 @_POSIX
-def test_job_timeout_records_failure_and_reaps_child(project: tuple[pathlib.Path, dict[str, str]]) -> None:
-    """短縮した全体上限で、停止した更新子の回収と終了記録を検証する。"""
+def test_job_timeout_records_failure_and_reaps_child(
+    project: tuple[pathlib.Path, dict[str, str]],
+    tmp_path: pathlib.Path,
+    ps_missing: bool,
+) -> None:
+    """短縮した全体上限で、停止した更新子の回収と終了記録を検証する。
+
+    ps-missingでは、使われたら記録して失敗する`ps`をPATHの先頭に置き、
+    procpsの無いLinuxでも停止経路が子孫を回収できることを確かめる。
+    """
     root, environment = project
+    ps_used = tmp_path / "ps-used"
+    if ps_missing:
+        fake_bin = tmp_path / "no-procps-bin"
+        fake_bin.mkdir()
+        (fake_bin / "ps").write_text(f'#!/bin/sh\ntouch "{ps_used}"\nexit 127\n', encoding="utf-8")
+        (fake_bin / "ps").chmod(0o755)
+        environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
     script = root / "libexec/update_dotfiles_job.py"
     source = script.read_text(encoding="utf-8")
     assert source.count("_TIMEOUT = 7200") == 1
@@ -250,6 +276,7 @@ def test_job_timeout_records_failure_and_reaps_child(project: tuple[pathlib.Path
             pid = int(pathlib.Path(environment[marker]).read_text(encoding="utf-8"))
             with pytest.raises(ProcessLookupError):
                 os.kill(pid, 0)
+        assert not ps_used.exists()
     finally:
         pathlib.Path(environment["RELEASE"]).touch()
         child_marker = pathlib.Path(environment["CHILD_READY"])
@@ -277,18 +304,6 @@ def test_tree_listing_failure_still_reaps_direct_child(monkeypatch: pytest.Monke
     kill_group.assert_called_once_with(42, signal.SIGKILL)
     process.kill.assert_called_once_with()
     process.wait.assert_called_once_with(timeout=30)
-
-
-@pytest.mark.skipif(sys.platform != "linux", reason="procfsはLinuxのプロセス一覧である")
-def test_linux_process_listing_does_not_require_ps(monkeypatch: pytest.MonkeyPatch) -> None:
-    """procpsの無い環境でも、procfsから自身と親の関係を列挙する。"""
-
-    def missing_ps(*_args: object, **_kwargs: object) -> None:
-        raise FileNotFoundError("ps")
-
-    monkeypatch.setattr(update_dotfiles_job.subprocess, "run", missing_ps)
-    parents = update_dotfiles_job._procfs_parents()  # pylint: disable=protected-access
-    assert (os.getpid(), os.getppid()) in parents
 
 
 @pytest.mark.parametrize("identifier", ["../other", "not-a-uuid", "x; echo injected"])
