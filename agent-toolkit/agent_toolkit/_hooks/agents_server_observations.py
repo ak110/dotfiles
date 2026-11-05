@@ -21,6 +21,7 @@ from agent_toolkit._common import session_launchers, state_paths, task_documents
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 lazy from agent_toolkit._common import delegated_session as _delegated_session
+lazy from agent_toolkit._common import session_registry
 lazy from agent_toolkit._common.file_lock import acquire_lock, release_lock
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
@@ -636,6 +637,22 @@ def pending_session_ids(state: dict, owner_agent_id: str) -> list[str]:
         and isinstance(record, dict)
         and record.get("pending_observation") is True
         and record.get("owner_agent_id") == owner_agent_id
+    )
+
+
+def retained_running_session_ids(state: dict, owner_agent_id: str) -> list[str]:
+    """観測を試みた後にも登録されている実行中の待機対象だけを返す。"""
+    identity = shared_roots.resolve_wait_identity(os.environ, None)
+    if identity is None:
+        return []
+    registered = _registered_wait_targets(identity.root_session_id, identity.file_name)
+    return sorted(
+        identifier
+        for identifier in registered
+        if (record := session_record(state, identifier)) is not None
+        and record.get("owner_agent_id") == owner_agent_id
+        and not record.get("kill_requested")
+        and session_registry.resolve(identifier).state is session_registry.Resolution.RUNNING
     )
 
 

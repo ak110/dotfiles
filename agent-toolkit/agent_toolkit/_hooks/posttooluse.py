@@ -24,7 +24,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
    （UserPromptSubmitの命名が計画名の解決に使用）
 7. Bashの背景実行、MCP呼び出しの移行通知およびAgent・Taskの背景起動が返した識別子を、
    バックグラウンドタスクの所有記録へ記録 (Bash / MCP / Agent / Task)
-   PostToolUseFailure: Bashのバックグラウンドタスク識別子を同じ所有記録へ保存し、その他は変更せず終了
+   PostToolUseFailure: Bash・PowerShellのバックグラウンドタスク識別子を同じ所有記録へ保存し、その他は変更せず終了
 8. PermissionDenied: 状態を変更せず終了
 9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
 10. このセッションで作成または編集した計画ファイル（メイン）の絶対パス蓄積
@@ -53,10 +53,10 @@ lazy from agent_toolkit._common.task_stop_state import consume_completion, targe
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
 lazy from agent_toolkit._hooks import codex_read_observation as _codex_read_observation
+lazy from agent_toolkit._hooks import command_timing, session_title, termination_evidence
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
-lazy from agent_toolkit._hooks import session_title, termination_evidence
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
@@ -289,7 +289,7 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
     if not isinstance(tool_input, dict):
         return None
     event_name = payload.get("hook_event_name", "")
-    if event_name == "PermissionDenied" or (event_name == "PostToolUseFailure" and tool_name != "Bash"):
+    if event_name == "PermissionDenied" or (event_name == "PostToolUseFailure" and tool_name not in ATK_SHELL_TOOLS):
         return None
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
@@ -612,6 +612,12 @@ def main(payload_text: str) -> int:
     if parsed is not None:
         payload, session_id, tool_name, tool_input, cwd, event_name = parsed
         set_warning_session_id(session_id)
+        background_task_id = (
+            _background_task_id_from_response(payload.get("tool_response"))
+            if tool_input.get("run_in_background")
+            else _structured_background_task_id(payload.get("tool_response"))
+        )
+        notices.extend(command_timing.observe(payload, background_task_id=background_task_id))
         observation = _codex_read_observation.collect(payload)
         if observation is not None:
             notices.append(observation.context)

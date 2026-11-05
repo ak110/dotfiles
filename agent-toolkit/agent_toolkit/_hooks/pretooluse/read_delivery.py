@@ -223,6 +223,13 @@ def _pure_bash_read(command: str, cwd: str) -> bool:
     return _static_read_paths(command, cwd) is not None
 
 
+def _acquiring(tool_name: str, tool_input: dict, cwd: str) -> bool:
+    command = tool_input.get("command")
+    return tool_name in {"Read", "Skill"} or (
+        tool_name == "Bash" and isinstance(command, str) and _pure_bash_read(command, cwd)
+    )
+
+
 def skill_name(path: pathlib.Path) -> str | None:
     """実体のmanifestを使い、配布スキルとローカルスキルを区別する。"""
     return document_reads.skill_name(path, owner=_document_owner)
@@ -1091,6 +1098,10 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         return Decision()
     _refresh_receipts(payload, tool_name, tool_input, session_id)
     decision = _deliver_documents(payload, tool_name, tool_input, session_id)
+    if _acquiring(tool_name, tool_input, str(payload.get("cwd", ""))):
+        # 取得操作の依存案内は次の関連操作へ保留する。所有する役割の読取保護は維持する。
+        notice = _foreign_task_document_notice(payload, tool_name, tool_input, session_id)
+        return dataclasses.replace(decision, notices=(*decision.notices, notice)) if notice else decision
     agent = agent_id.resolve_hook_agent_id(payload)
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     updates = []
@@ -1149,6 +1160,7 @@ def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict,
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     records = records if isinstance(records, dict) else {}
     roles = active_roles(payload, session_id, records, agent) | _subagent_task_documents(payload)
+    selected_sources = {target.path for target in selected_targets(records, agent)} | roles
     try:
         rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude", session_id=session_id)
         candidates = [
@@ -1157,6 +1169,11 @@ def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict,
             if (not row.source.name.endswith(".subagent.md") or row.source in roles)
             and row_matches(row, tool_name, tool_input, cwd)
             and not condition_confirmed(row, tool_name, tool_input, cwd)
+            and (
+                row.source in selected_sources
+                or row.source.is_file()
+                and target_ready(records, read_triggers.ReadTarget(row.source), agent)
+            )
             and any(not target_ready(records, target, agent) for target in row.targets)
         ]
     except OSError, UnicodeError, ValueError:
@@ -1164,6 +1181,9 @@ def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict,
         return ""
     if not candidates:
         return ""
+    candidates = list(
+        {(row.condition, tuple(sorted(str(target) for target in row.targets))): row for row in candidates}.values()
+    )
     shown = "\n".join(
         f"- 条件: {row.condition}。資料: {'、'.join(str(target) for target in row.targets)}（宣言: {row.source}:{row.line}）"
         for row in candidates
@@ -1531,8 +1551,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             update_state(session_id, _unmark(carried_key, agent))
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     records = records if isinstance(records, dict) else {}
-    command = tool_input.get("command")
-    if tool_name in {"Read", "Skill"} or (tool_name == "Bash" and isinstance(command, str) and _pure_bash_read(command, cwd)):
+    if _acquiring(tool_name, tool_input, cwd):
         _select_targets(session_id, pending, agent, rows=selection_rows)
         return Decision()
     acquisition_paths = _read_paths(tool_name, tool_input, cwd)

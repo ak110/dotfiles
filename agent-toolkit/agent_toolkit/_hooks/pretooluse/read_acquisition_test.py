@@ -224,6 +224,10 @@ def test_public_hook_continuation_records_reason_and_preserves_independent_prote
     rows = [read_triggers.ReadTrigger(rule, 1, "判断", ("tool:Write",), (rule,), ("",), condition="Pythonコードを編集する前")]
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     payload = {"session_id": "reasoned-continuation", "cwd": str(tmp_path)}
+    # 現在選択した宣言元について、未確定条件をエージェントが評価する場面を作る。
+    read_delivery._select_targets(  # pylint: disable=protected-access
+        payload["session_id"], [read_triggers.ReadTarget(rule)], "main"
+    )
     target = tmp_path / "note.txt"
     inputs = {"file_path": str(target), "content": "保存する本文\n"}
     guided = run_hook("pretooluse", {**payload, "tool_name": "Write", "tool_input": inputs})

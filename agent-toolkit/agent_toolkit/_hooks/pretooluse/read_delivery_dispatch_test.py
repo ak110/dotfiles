@@ -46,7 +46,8 @@ def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_p
     payload = _payload(tmp_path, False)
     assert dispatch.main(json.dumps(payload)) == 0
     context = _context(capsys.readouterr())
-    assert "root-cause-analysis.md" in context
+    assert "agent-basics:bugfix" in context
+    assert "root-cause-analysis.md" not in context
     assert "記録の粒度は" not in context
     status = dispatch.main(json.dumps(payload))
     assert status == 0 and not _context(capsys.readouterr())
@@ -60,8 +61,9 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     assert dispatch.main(json.dumps(payload)) == 0
     context = _context(capsys.readouterr())
     root_cause = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/references/root-cause-analysis.md"
-    assert str(root_cause) in context
-    assert root_cause.read_text(encoding="utf-8").strip() not in context
+    assert "agent-basics:bugfix" in context
+    skill = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/SKILL.md"
+    assert skill.read_text(encoding="utf-8").strip() not in context
     status = dispatch.main(json.dumps(payload))
     assert status == 0 and not _context(capsys.readouterr())
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
@@ -105,7 +107,7 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
     payload = _payload(tmp_path, True)
     payload["transcript_path"] = str(tmp_path / "outer.jsonl")
     assert dispatch.main(json.dumps(payload)) == 0
-    assert "root-cause-analysis.md" in _context(capsys.readouterr())
+    assert "/agent-basics/skills/bugfix/SKILL.md" in _context(capsys.readouterr())
     status = dispatch.main(json.dumps(payload))
     assert status == 0 and not _context(capsys.readouterr())
     seen = set()

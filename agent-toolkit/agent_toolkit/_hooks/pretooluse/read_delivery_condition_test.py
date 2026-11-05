@@ -63,7 +63,7 @@ def test_public_read_does_not_confirm_another_role_condition(tmp_path, _setup):
     }
     candidate = _run_hook_in_process("pretooluse", read)
     assert candidate.returncode == 0
-    assert "候補" in candidate.stdout and str(unrelated) in candidate.stdout
+    assert "候補" not in candidate.stdout and str(unrelated) not in candidate.stdout
     assert "未取得資料がある" not in candidate.stdout
     result = _run_hook_in_process("pretooluse", _progress(tmp_path))
     assert result.returncode == 0 and str(unrelated) not in result.stdout
@@ -108,3 +108,55 @@ def test_real_main_launch_declaration_stays_conditional_after_review_contract_re
     assert result.returncode == 0
     progress = _run_hook_in_process("pretooluse", _progress(tmp_path))
     assert progress.returncode == 0 and "main-launch.md" not in progress.stdout
+
+
+def test_selected_source_candidates_are_deferred_and_deduplicated(tmp_path, monkeypatch, _setup):
+    """取得の次の関連編集に限り、選択済み資料の同じ条件を1件案内する。"""
+    selected, unrelated, _row, state = _setup
+    source = tmp_path / "selected.md"
+    source.write_text("# 選択資料\n", encoding="utf-8")
+    rows = [
+        ReadTrigger(source, number, "判断", ("body-writing",), (unrelated,), condition="設計を確定する前") for number in (1, 2)
+    ]
+    foreign = tmp_path / "other.md"
+    foreign.write_text("# 別工程\n", encoding="utf-8")
+    rows.append(ReadTrigger(foreign, 1, "判断", ("body-writing",), (selected,), condition="別工程の条件"))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
+    read_delivery._select_targets("test", [ReadTarget(source)], "main")  # pylint: disable=protected-access
+    for tool, inputs in (
+        ("Read", {"file_path": str(source)}),
+        ("Bash", {"command": f"cat -- {source}"}),
+        ("Bash", {"command": f"sed -n '1,$p' -- {source}"}),
+    ):
+        result = _run_hook_in_process(
+            "pretooluse", {"session_id": "test", "cwd": str(tmp_path), "tool_name": tool, "tool_input": inputs}
+        )
+        assert "候補" not in result.stdout
+    result = _run_hook_in_process("pretooluse", _progress(tmp_path))
+    assert result.returncode == 0
+    assert result.stdout.count("条件: 設計を確定する前") == 1
+    assert "別工程の条件" not in result.stdout
+    assert not read_delivery.target_ready(state.get("operation_skill_delivered_agents", {}), ReadTarget(source), "main")
+
+
+@pytest.mark.parametrize("matches,confirmed,expected", [(False, False, 0), (True, True, 0), (True, False, 1)])
+def test_candidate_checks_source_acquisition_only_after_light_conditions(
+    tmp_path, monkeypatch, _setup, matches, confirmed, expected
+):
+    """非該当・確定済みの宣言で、宣言元の本文取得判定を繰り返さない。"""
+    selected, _unrelated, _row, _state = _setup
+    row = ReadTrigger(selected, 1, "判断", ("tool:Read",), (selected,), condition="資料を選ぶ前")
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    monkeypatch.setattr(read_delivery, "row_matches", lambda *_args, **_kwargs: matches)
+    monkeypatch.setattr(read_delivery, "condition_confirmed", lambda *_args, **_kwargs: confirmed)
+    calls = []
+
+    def ready(_records, target, _actor, **_kwargs):
+        calls.append(target)
+        return False
+
+    monkeypatch.setattr(read_delivery, "target_ready", ready)
+    assert not read_delivery._condition_candidate_notice(  # pylint: disable=protected-access
+        {"cwd": str(tmp_path)}, "Grep", {"pattern": "x"}, "test"
+    )
+    assert len(calls) == expected

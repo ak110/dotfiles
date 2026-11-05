@@ -94,7 +94,7 @@ def test_public_post_hook_never_delivers_document_body(tmp_path, capsys, kind, t
     if truncated:
         assert observation.TRUNCATED_NOTICE in output
     else:
-        assert output == ""
+        assert "コマンド時間: 未計測" in output
 
 
 def test_successful_read_is_observed_and_truncation_gets_recovery(tmp_path):
@@ -137,7 +137,12 @@ def test_public_post_hook_does_not_redeliver_produced_host_response(tmp_path, ca
     path.write_text(body, encoding="utf-8")
     assert posttooluse.main(json.dumps(payload)) == 0
     output = _additional_context(capsys)
-    assert not output
+    expected = (
+        '<atk-auto source="command-timing" kind="notice">\nコマンド時間: 未計測（開始時刻を対応付けられない）\n</atk-auto>'
+        if name == "codex_two_layer_cut"
+        else ""
+    )
+    assert output == expected
     if name == "codex_two_layer_cut":
         recorded = session_state.read_state("session").get(rules_context.OPERATION_SKILL_READY_KEY, {})
         assert not read_delivery.target_ready(recorded, read_delivery.read_triggers.ReadTarget(path), "main")

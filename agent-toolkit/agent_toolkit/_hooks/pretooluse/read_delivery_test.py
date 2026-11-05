@@ -2165,8 +2165,7 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
             for row in rows
         )
         assert (target in read_delivery.selected_targets(records, "main")) is confirmed, phase
-        if phase == "計画":
-            assert "読込条件の候補" in _notice_body(decision) and "計画の要否を判定する前" in _notice_body(decision)
+        assert not decision.notices, phase
         assert not read_delivery.target_ready(records, target, "main"), phase
         body = path.read_text(encoding="utf-8")
         for expected in {
