@@ -40,49 +40,49 @@ url = "https://github.com/junegunn/fzf/releases/download/v0.74.5/fzf-0.74.5-wind
 url_api = "https://api.github.com/repos/junegunn/fzf/releases/assets/629581724"
 
 [[tools.gcloud]]
-version = "590.0.1"
+version = "591.0.0"
 backend = "vfox:jdx/vfox-gcloud"
 specifiers = ["latest"]
 
 [tools.gcloud."platforms.linux-x64"]
-checksum = "sha256:f1f479b82db2350daf0b4db861da2c6931ac9741585db1c8abbf67f4a56e0b98"
-url = "https://storage.googleapis.com/cloud-sdk-release/google-cloud-sdk-590.0.1-linux-x86_64.tar.gz"
+checksum = "sha256:35266507b68a69ff22032af73797e57ba008230cae12b908619ad3f2bc81b925"
+url = "https://storage.googleapis.com/cloud-sdk-release/google-cloud-sdk-591.0.0-linux-x86_64.tar.gz"
 
 [tools.gcloud."platforms.windows-x64"]
-checksum = "sha256:38dad2c60c8507a2042e419ac9293e66b9f96156226c6cda92dcb1c4e8c65cf2"
-url = "https://storage.googleapis.com/cloud-sdk-release/google-cloud-sdk-590.0.1-windows-x86_64-bundled-python.zip"
+checksum = "sha256:f011188d735a63ee5278ce41e6f1a9388dbd17232238be31a1c2cfc39933bada"
+url = "https://storage.googleapis.com/cloud-sdk-release/google-cloud-sdk-591.0.0-windows-x86_64-bundled-python.zip"
 
 [[tools.gh]]
-version = "2.103.2"
+version = "2.103.3"
 backend = "aqua:cli/cli"
 specifiers = ["latest"]
 
 [tools.gh."platforms.linux-x64"]
-checksum = "sha256:62ccf747115ddc61237efffdde66a3c8f70ba249433dc64f70801089b59c59c8"
-url = "https://github.com/cli/cli/releases/download/v2.103.2/gh_2.103.2_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/670305062"
+checksum = "sha256:4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
+url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195621"
 provenance = "github-attestations"
 
 [tools.gh."platforms.windows-x64"]
-checksum = "sha256:fef9fcdd8fdabd0501ab8b3d99eac976f504ab55d01bef9e8ef428a5d900ddda"
-url = "https://github.com/cli/cli/releases/download/v2.103.2/gh_2.103.2_windows_amd64.zip"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/670305204"
+checksum = "sha256:98d0cfa794721665d7973dd728c78aff7bd836d58f10f6d7a03568eccb0a22e0"
+url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_windows_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195750"
 provenance = "github-attestations"
 
 [[tools.glab]]
-version = "1.124.0"
+version = "1.125.0"
 backend = "gitlab:gitlab-org/cli"
 specifiers = ["latest"]
 
 [tools.glab."platforms.linux-x64"]
-checksum = "sha256:63df684842b0697e418649dd64374d37ac1da0fbcdcb422d6a5557222f8bb40f"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.124.0/downloads/glab_1.124.0_linux_amd64.tar.gz"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E124%2E0/glab_1%2E124%2E0_linux_amd64%2Etar%2Egz"
+checksum = "sha256:c7325f14e408be26fcc1ba5f7a7f71f02c1a20aa3ac6018a57fb04901ea5549a"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.125.0/downloads/glab_1.125.0_linux_amd64.tar.gz"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E125%2E0/glab_1%2E125%2E0_linux_amd64%2Etar%2Egz"
 
 [tools.glab."platforms.windows-x64"]
-checksum = "sha256:9b58b54cf841b43215ef01ba90793d8a845e81ddb7b3dfa2b5a238cde4b77b34"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.124.0/downloads/glab_1.124.0_windows_amd64.zip"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E124%2E0/glab_1%2E124%2E0_windows_amd64%2Ezip"
+checksum = "sha256:7bad237bfcb15168b796830e3e01314481d915f7150db1dfa2c18cd89d9ee840"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.125.0/downloads/glab_1.125.0_windows_amd64.zip"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E125%2E0/glab_1%2E125%2E0_windows_amd64%2Ezip"
 
 [[tools.glow]]
 version = "3.0.0"
@@ -119,21 +119,21 @@ url_api = "https://api.github.com/repos/jqlang/jq/releases/assets/453012788"
 provenance = "github-attestations"
 
 [[tools.node]]
-version = "24.22.1"
+version = "24.22.2"
 backend = "core:node"
 specifiers = ["lts"]
 
 [tools.node."platforms.linux-x64"]
-checksum = "sha256:eb6728e77c576a35162c122c45ccadf224d89ff00abc8dae46cc2897c6002d7c"
-url = "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.gz"
+checksum = "sha256:361718c444e49af2ca5a110c83ba6a8901143f23ab285ebbef0341f391f482a9"
+url = "https://nodejs.org/dist/v24.22.2/node-v24.22.2-linux-x64.tar.gz"
 
 [tools.node."platforms.windows-x64"]
-checksum = "sha256:d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5"
-url = "https://nodejs.org/dist/v24.22.1/node-v24.22.1-win-x64.zip"
+checksum = "sha256:ca1bff5d8ead13c9f2ea404a176db46bd430704d5b5113734049fa365e7799e2"
+url = "https://nodejs.org/dist/v24.22.2/node-v24.22.2-win-x64.zip"
 
 [[tools."npm:@google/gemini-cli"]]
-version = "0.65.0"
-aube = { path = ".mise/locks/npm-google-gemini-cli/0.65.0", digest = "sha256:2f1670e4819508ac1c19e9d89f55288a6d9f61fb38f356708d9a34de21a06fbc" }
+version = "0.66.0"
+aube = { path = ".mise/locks/npm-google-gemini-cli/0.66.0", digest = "sha256:10da29c69594cb57e135ff6d7d0f5b40220dc17a3f649282663b4a09c2dad697" }
 backend = "npm:@google/gemini-cli"
 specifiers = ["latest"]
 
