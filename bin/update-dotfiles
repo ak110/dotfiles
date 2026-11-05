@@ -9,8 +9,27 @@ if [[ ! -x "$UV" ]]; then
     echo "uvが見つかりません。次の操作: https://docs.astral.sh/uv/getting-started/installation/ の公式手順でuvを導入し、update-dotfilesを再実行してください。" >&2
     exit 127
 fi
+if [[ "${1:-}" == "job" || -n "${CODEX_THREAD_ID:-}" ]]; then
+    case " ${*} " in
+    *" --help "* | *" -h "* | " logs ") ;;
+    *)
+        if ! native_python="$("$UV" python find 3.15)"; then
+            "$UV" python install 3.15
+            native_python="$("$UV" python find 3.15)"
+        fi
+        # このblockは更新中のランチャー置換前に解析される。
+        {
+            "$native_python" "${SCRIPT_DIR}/libexec/update_dotfiles_job.py" "$@" && exit 0 || exit $?
+        }
+        ;;
+    esac
+fi
 self_update_failed=0
-if [[ "${1:-}" != "logs" && "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != "1" ]]; then
+help_requested=0
+for argument in "$@"; do
+    case "$argument" in -h | --help) help_requested=1 ;; esac
+done
+if [[ "${1:-}" != "logs" && "$help_requested" == 0 && "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != "1" ]]; then
     bash "${SCRIPT_DIR}/libexec/update_uv.sh" "$UV" || self_update_failed=1
 fi
 run_exit=0

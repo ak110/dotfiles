@@ -135,6 +135,7 @@ _CONNECTION_ORDER_KEYS = frozenset(key for key in _CONNECTION_DEFAULTS if key.en
 _MUTABLE_KEY_DEFAULTS = {
     **_MODEL_DEFAULTS,
     "codex_fast_mode": "false",
+    "codex_auto_reset": "false",
     **_CONNECTION_DEFAULTS,
     "claude_usage_limit_wait": "five-hour",
     "codex_usage_limit_wait": "five-hour",
@@ -345,7 +346,7 @@ def _validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("受理可能値: never, five-hour, always")
     elif key == "process_loop_repositories":
         parse_process_loop_repositories(value)
-    elif key in {"codex_fast_mode", "session_review_auto_start"}:
+    elif key in {"codex_fast_mode", "codex_auto_reset", "session_review_auto_start"}:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
     elif key in _MODEL_DEFAULTS:

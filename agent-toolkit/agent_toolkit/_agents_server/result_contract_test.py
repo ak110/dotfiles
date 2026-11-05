@@ -26,7 +26,9 @@ def _task_session(tmp_path: pathlib.Path) -> state.SessionState:
     return state.SessionState("task", str(tmp_path), prompt=task_documents.task_prompt_header(document))
 
 
-@pytest.mark.parametrize("ending", ["状態: completed", "続行できない理由: 対象に到達できない"])
+@pytest.mark.parametrize(
+    "ending", ["状態: completed", "続行できない区分: inaccessible_input\n続行できない理由: 対象に到達できない"]
+)
 def test_explore_final_line_is_accepted(tmp_path: pathlib.Path, ending: str) -> None:
     """自由本文のexploreは正当な最終行をそのまま公開する。"""
     session = state.SessionState("explore", str(tmp_path), launch_kind="explore")
@@ -61,7 +63,7 @@ def test_explore_missing_final_line_fails_after_one_recovery(tmp_path: pathlib.P
     assert isinstance(error, dict)
     details = dict(error)
     assert "返却が完了を示しません" in details["resultContract"]
-    assert "小さく分け" in details["nextAction"]
+    assert details["nextAction"] == result_contract.RECOVERY_NEXT_ACTION
 
 
 @pytest.mark.parametrize("message", ["続行できない理由:", "続行できない理由:   "])
@@ -69,6 +71,43 @@ def test_explore_empty_reason_is_held(tmp_path: pathlib.Path, message: str) -> N
     """未読範囲・理由・再開入力を示す行には非空の値を求め、意味は判定しない。"""
     session = state.SessionState("explore", str(tmp_path), launch_kind="explore")
     assert result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
+
+
+@pytest.mark.parametrize(
+    ("message", "valid"),
+    [
+        ("状態: completed\n結果: 調査済み\n気付いた改善点: 対象の改善案", True),
+        ("結果: 調査済み\n状態: completed", True),
+        ("結果: 読了部分\n続行できない区分: owner_input\n続行できない理由: 入力が必要\n気付いた改善点: 改善案", True),
+        ("結果: 読了部分\n  続行できない区分: external_wait\n  続行できない理由: 外部完了待ち\n根拠: 観測済み", True),
+        ("続行できない理由: 入力が必要", False),
+        ("続行できない区分: unknown\n続行できない理由: 入力が必要\n気付いた改善点: 改善案", False),
+        ("続行できない区分: owner_input\n 続行できない理由: 入力が必要", False),
+        ("続行できない区分: owner_input\n続行できない理由:   ", False),
+        ("続行できない区分: owner_input\n続行できない理由: 入力が必要\n続行できない理由: 別入力も必要", False),
+        ("状態: completed\n続行できない区分: unknown\n続行できない理由: 入力が必要", False),
+        ("待機中: session-1", True),
+        ("結果: 調査済み", False),
+    ],
+)
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_freeform_explore_publishes_common_contract(tmp_path: pathlib.Path, message: str, valid: bool) -> None:
+    """自由本文の調査結果を公開する境界で、全理由と追加報告を含む共通契約を検査する。"""
+    session = state.SessionState("explore", str(tmp_path), launch_kind="explore")
+    cli_turn.finalize_turn(session, {"status": "completed", "agent_message": message, "error": None})
+    assert session.result_available is valid
+    assert session.result_contract_recovery_pending is not valid
+    if valid:
+        assert session.agent_message == message and session.status == "completed"
+    else:
+        assert session.pending_result is not None and session.pending_result["agent_message"] == message
+        session.result_contract_recovery_consumed = True
+        state.begin_reply(session)
+        cli_turn.finalize_turn(session, {"status": "completed", "agent_message": message, "error": None})
+        assert session.result_available and session.status == "failed"
+        assert session.agent_message == message
+        assert session.error is not None and "resultContract" in session.error
 
 
 @pytest.mark.parametrize(
@@ -93,6 +132,7 @@ def test_valid_result_is_not_held(tmp_path: pathlib.Path, message: str) -> None:
         "続行できない理由: 入力が必要",
         "続行できない区分: unknown\n続行できない理由: 入力が必要",
         " 続行できない区分: owner_input\n続行できない理由: 入力が必要",
+        "続行できない区分: owner_input\n続行できない理由:   ",
         "待機中: session-1\n続行できない理由: 入力が必要",
     ],
 )
@@ -131,13 +171,13 @@ def test_multiple_reasons_report_the_first_contract_violation(tmp_path: pathlib.
     assert session.result_contract_recovery_reason is not None
 
 
-def test_non_task_result_is_not_held(tmp_path: pathlib.Path) -> None:
-    """自由本文とagent-toolkit外の文書は検査対象にしない。"""
-    session = state.SessionState("delegate", str(tmp_path), prompt="自由本文")
+@pytest.mark.parametrize("launch_kind", ["delegate", "shell", "write"])
+@pytest.mark.parametrize("message", ["正常な自由本文", "続行できない理由: 入力が必要"])
+def test_non_task_result_is_not_held(tmp_path: pathlib.Path, launch_kind: state.LaunchKind, message: str) -> None:
+    """調査以外の自由本文には成功行や続行不能2行の検査を新設しない。"""
+    session = state.SessionState("delegate", str(tmp_path), prompt="自由本文", launch_kind=launch_kind)
 
-    assert not result_contract.hold_invalid_result(
-        session, {"status": "completed", "agent_message": "続行できない理由: 入力が必要", "error": None}
-    )
+    assert not result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
 
 
 @pytest.mark.parametrize("status", ["failed", "interrupted"])
@@ -237,6 +277,8 @@ async def test_manager_recovers_once_and_preserves_delivery_failure(
         assert current is session and "診断:" in prompt
         if explore and not role:
             assert "未読・未走査" in prompt and "状態: completed" in prompt
+            assert "続行できない区分:" in prompt and "同じインデント" in prompt
+            assert "成果と追加報告" in prompt and "全体成功行を付けない" in prompt
         else:
             assert "未読・未走査" not in prompt
         state.begin_reply(current)

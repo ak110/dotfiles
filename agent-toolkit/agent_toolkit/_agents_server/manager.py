@@ -14,6 +14,7 @@ from typing import Any, Self
 from agent_toolkit._agents_server import (
     backends,
     codex_resume_state,
+    launch_prompts,
     launch_requests,
     lifetime,
     logging_config,
@@ -39,6 +40,7 @@ from agent_toolkit._agents_server.launch_requests import (
     shell_default_label,
     wrap_delivery_body,
 )
+from agent_toolkit._agents_server.plugin_root import SERVER_PLUGIN_ROOT
 from agent_toolkit._agents_server.responses import (
     KILL_NOT_DELIVERED_NEXT_ACTION,
     excluded_candidate_payload,
@@ -211,6 +213,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
             validate_model_effort(model, effort)
             # 候補ごとに子のhost/cwdで資料を解決する。前候補の資料を別engineへ再利用しない。
             try:
+                resource_instructions = await run_file_operation(
+                    launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, engine, cwd
+                )
                 initial_documents = (
                     await run_file_operation(
                         read_triggers.startup_context,
@@ -223,7 +228,11 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     if startup_document is not None and launch_kind == "delegate"
                     else ""
                 )
-                delivery_body = wrap_delivery_body(launch_requests.with_startup_documents(prompt, initial_documents))
+                delivery_body = (
+                    resource_instructions
+                    + "\n\n"
+                    + wrap_delivery_body(launch_requests.with_startup_documents(prompt, initial_documents))
+                )
             except PluginRootError as exc:
                 reason = str(exc)
                 excluded.update({item: reason for item in candidates if item[0] == engine})
@@ -543,6 +552,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
 
         利用上限の解除待ちへ入ったsessionは、別の候補へ切り替えず同じsessionで待つため、`running`として確定する。
         """
+        if session.codex_auto_reset_pending:
+            return False
         return session.result_available or session.model_output_observed or session.usage_limit_resume_at is not None
 
     async def start_explore(
@@ -706,7 +717,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
                                 previous_result,
                             )
                         session = await self._get_session(session_id)
-                    backend = self._backend(session.engine)
                     async with session.turn_control_lock:
                         if session.interrupt_requested and not session.terminal:
                             raise ActionableError(
@@ -714,7 +724,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
                                 next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION,
                             )
                     try:
-                        result = await backend.send_message(session, prompt)
+                        result = await self._send_with_resources(session, prompt)
                     except SessionOwnerGoneError:
                         async with self._resume_lock:
                             if self.sessions.get(session_id) is not session:

@@ -22,7 +22,7 @@ from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
 import agent_toolkit
-from agent_toolkit._agents_server import api_credits, launch_requests, state
+from agent_toolkit._agents_server import api_credits, claude, launch_requests, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import codex_models, plugin_environment, process_tree
@@ -42,6 +42,38 @@ _PACKAGE_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _ORIGINAL_WAIT_FOR_END_TURN = _transcript_scan.wait_for_end_turn
 
 _FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
+
+
+class _StubPluginReloader:
+    """backend単体試験から外部CLI照会とファイル監視を分離する。"""
+
+    updated = False
+
+    def __init__(self, options: dict[str, Any], _loop: asyncio.AbstractEventLoop) -> None:
+        options.setdefault("plugins", [{"type": "local", "path": str(claude.plugin_roots.SERVER_PLUGIN_ROOT)}])
+
+    async def prepare(self) -> None:
+        """外部CLIと監視threadを起動しない。"""
+
+    async def wait_for_change(self) -> None:
+        """更新の試験は実クラスのIO境界だけを差し替える。"""
+        await asyncio.Event().wait()
+
+    async def reload_if_idle(self, _client: Any, _session: Any) -> None:
+        """通常試験では再読込を要求しない。"""
+
+    def request_reload(self) -> None:
+        """通常試験では変更を通知しない。"""
+
+    async def close(self, *, retain_input: bool = False) -> None:
+        """外部資源を保持しない。"""
+        del retain_input
+
+
+@pytest.fixture(autouse=True)
+def _isolate_claude_plugin_watch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """実監視の試験はclaude_pluginsの実クラスを明示的に使う。"""
+    monkeypatch.setattr(claude, "ClaudePluginReloader", _StubPluginReloader)
 
 
 def _target_plugin_root(config: pytest.Config) -> pathlib.Path | None:
@@ -454,8 +486,6 @@ def _forbid_backend_process(monkeypatch: pytest.MonkeyPatch) -> None:
     起動そのものを失敗させて両環境の結果をそろえる。起動引数を確かめるテストはテスト内で改めて差し替える。
     """
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _forbidden_backend_process)
-    from agent_toolkit._agents_server import claude  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
     monkeypatch.setattr(claude.ClaudeServerManager, "_default_client_factory", _forbidden_claude_client)
 
 

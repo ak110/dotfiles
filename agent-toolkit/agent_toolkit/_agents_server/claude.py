@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import datetime
+import functools
 import json
 import logging
 import os
@@ -20,7 +21,7 @@ import re
 import shutil
 import time
 import typing
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal, cast
 
 lazy import psutil
@@ -44,6 +45,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server import state as shared_state
+from agent_toolkit._agents_server.claude_plugins import ClaudePluginReloader
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.launch_prompts import (
     AUTO_RESUME_NOTICE,
@@ -53,6 +55,7 @@ from agent_toolkit._agents_server.launch_prompts import (
     LIGHTWEIGHT_LAUNCH_KINDS,
     SUBAGENT_BASE_INSTRUCTIONS,
     cli_runtime_instructions,
+    plugin_resource_instructions,
     python_runtime_instructions,
 )
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError, SessionOwnerGoneError
@@ -85,7 +88,7 @@ _LAUNCH_TOOLS: dict[str, list[str]] = {
 _LAUNCH_ALLOWED_TOOLS = {kind: list(tools) for kind, tools in _LAUNCH_TOOLS.items()}
 _LAUNCH_ALLOWED_TOOLS["explore"].append("mcp__pyfltr__*")
 _DeliveryResult = tuple[str, dict[str, Any] | None]
-_Command = tuple[Literal["prompt", "interrupt", "compact"], str, asyncio.Future[_DeliveryResult]]
+_Command = tuple[Literal["prompt", "interrupt", "compact", "plugin_reload"], str, asyncio.Future[_DeliveryResult]]
 _INITIALIZATION_STDERR_LIMIT_CHARS = 4000
 # 初期化の停止位置を特定するため、受信したメッセージを識別できる要約を件数と長さの上限内で保持する。
 _INITIALIZATION_MESSAGE_LIMIT = 20
@@ -273,7 +276,9 @@ class _CommandChannel:
         self._queue: asyncio.Queue[_Command] = asyncio.Queue()
         self._closed = False
 
-    def send(self, kind: Literal["prompt", "interrupt", "compact"], prompt: str) -> asyncio.Future[_DeliveryResult]:
+    def send(
+        self, kind: Literal["prompt", "interrupt", "compact", "plugin_reload"], prompt: str
+    ) -> asyncio.Future[_DeliveryResult]:
         """要求を受理して応答futureを返す。閉鎖後は受理せず例外を送出する。"""
         if self._closed:
             raise SessionOwnerGoneError("the Claude session owner task has ended")
@@ -1092,6 +1097,8 @@ class ClaudeServerManager:
         iterator: Any = None
         message_task: asyncio.Task[Any] | None = None
         command_task: asyncio.Task[Any] | None = None
+        plugin_change_task: asyncio.Task[None] | None = None
+        reloader = ClaudePluginReloader(vars(options), asyncio.get_running_loop())
         retrieved: _Command | None = None
         active_future: asyncio.Future[_DeliveryResult] | None = None
         # `SystemMessage(init)`より前に届いた利用枠の報告。sessionの作成時に引き継ぐ。
@@ -1161,6 +1168,8 @@ class ClaudeServerManager:
                 initialized.set_result(session)
 
         try:
+            await reloader.prepare()
+            plugin_change_task = asyncio.create_task(self._watch_plugin_changes(reloader, channel))
             diagnostic.stage = "creating_client"
             client = self._client_factory(options)
             usage_observer = _ContextUsageObserver(client)
@@ -1173,14 +1182,16 @@ class ClaudeServerManager:
             await client.connect()
             diagnostic.capture_client(client)
             diagnostic.stage = "connected"
+            query_with_resources = functools.partial(self._query_with_resources, client, options, reloader, cwd)
             if isinstance(prompt, ResumePrompt):
-                await prompt.deliver(client.query)
+                await prompt.deliver(query_with_resources)
             else:
-                await client.query(prompt)
+                await query_with_resources(prompt)
             diagnostic.stage = "query_sent"
             iterator = aiter(client.receive_messages())
             diagnostic.stage = "receiving_messages"
             while True:
+                await reloader.reload_if_idle(client, session)
                 if session is not None:
                     wait_compactor.observe(session)
                 loop = asyncio.get_running_loop()
@@ -1221,10 +1232,12 @@ class ClaudeServerManager:
                             message_task.cancel()
                             await asyncio.gather(message_task, return_exceptions=True)
                             message_task = None
-                        iterator = await self._handle_command(client, session, command, iterator)
+                        iterator = await self._handle_command(
+                            client, session, command, iterator, query=query_with_resources, reloader=reloader
+                        )
                         active_future = None
                         continue
-                pending = {task for task in (message_task, command_task) if task is not None}
+                pending = {task for task in (message_task, command_task, plugin_change_task) if task is not None}
                 if not pending:
                     raise RuntimeError("Claude session has no message stream or command queue")
                 done, _ = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
@@ -1240,6 +1253,9 @@ class ClaudeServerManager:
                 if command_task is not None and command_task in done:
                     retrieved = command_task.result()
                     command_task = None
+
+                if plugin_change_task is not None and plugin_change_task in done:
+                    await plugin_change_task
 
                 if message_task is not None and message_task in done:
                     completed_message_task = message_task
@@ -1422,11 +1438,12 @@ class ClaudeServerManager:
                     if not diagnostic.mcp_recovery_task.done():
                         diagnostic.mcp_recovery_task.cancel()
                     await asyncio.gather(diagnostic.mcp_recovery_task, return_exceptions=True)
-                for task in (message_task, command_task):
+                for task in (message_task, command_task, plugin_change_task):
                     if task is not None and not task.done():
                         task.cancel()
                 await asyncio.gather(
-                    *(task for task in (message_task, command_task) if task is not None), return_exceptions=True
+                    *(task for task in (message_task, command_task, plugin_change_task) if task is not None),
+                    return_exceptions=True,
                 )
                 if command_task is not None and not command_task.cancelled() and command_task.exception() is None:
                     retrieved = command_task.result()
@@ -1436,8 +1453,16 @@ class ClaudeServerManager:
                     active_future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
                 if client is not None:
                     try:
-                        if usage_observer is not None:
-                            await usage_observer.close()
+                        try:
+                            # 最後のyieldで停止した受信列も、所有タスクの終了時に閉じる。
+                            close_iterator = getattr(iterator, "aclose", None)
+                            if callable(close_iterator):
+                                # Pylintは動的取得したacloseのCallableへのcastを呼出不能と誤推論する。
+                                # pylint: disable-next=not-callable
+                                await cast(Callable[[], Awaitable[None]], close_iterator)()
+                        finally:
+                            if usage_observer is not None:
+                                await usage_observer.close()
                     finally:
                         if diagnostic.child_process is None:
                             diagnostic.capture_client(client)
@@ -1476,7 +1501,12 @@ class ClaudeServerManager:
                                     await self._reclaim_runtime(runtime_key, pins=pins)
 
             async def cleanup() -> None:
+                async def close_plugin_input() -> None:
+                    runtime_key = session.session_id if session is not None else f"initialization:{diagnostic.debug_file}"
+                    await reloader.close(retain_input=runtime_key in self._residual_processes)
+
                 async with contextlib.AsyncExitStack() as resources:
+                    resources.push_async_callback(close_plugin_input)
                     resources.push_async_callback(run_file_operation, claude_settings.cleanup_settings, options)
                     resources.callback(channel.close)
                     if session is not None:
@@ -1485,6 +1515,31 @@ class ClaudeServerManager:
                     await cleanup_runtime(resources.enter_context(process_tree.ProcessIdentityPins()))
 
             await finish_task(asyncio.create_task(cleanup()))
+
+    @staticmethod
+    async def _watch_plugin_changes(reloader: ClaudePluginReloader, channel: _CommandChannel) -> None:
+        while True:
+            await reloader.wait_for_change()
+            reloader.request_reload()
+            await channel.send("plugin_reload", "")
+
+    @staticmethod
+    async def _query_with_resources(client: Any, options: Any, reloader: ClaudePluginReloader, cwd: str, body: str) -> None:
+        # serverの保持版とreloadする子の入力版は寿命が異なるため、最新の参照先を次の入力へ添える。
+        root = pathlib.Path(options.plugins[0]["path"])
+        if root != plugin_roots.SERVER_PLUGIN_ROOT or reloader.updated:
+            resources = await run_file_operation(plugin_resource_instructions, root, "claude", cwd)
+            body, replaced = re.subn(
+                r'\A(?P<delivery><atk-auto source="agents-server" kind="delivery">\n)?'
+                r'<atk-auto source="agent-toolkit" kind="plugin-resources">\n.*?\n</atk-auto>',
+                lambda match: (match["delivery"] or "") + resources,
+                body,
+                count=1,
+                flags=re.DOTALL,
+            )
+            if not replaced:
+                body += "\n\n" + resources
+        await client.query(body)
 
     @staticmethod
     async def _recover_mcp_connections(client: Any, initialization: dict[str, Any], session: SessionState) -> None:
@@ -1547,8 +1602,15 @@ class ClaudeServerManager:
         session: SessionState | None,
         command: _Command,
         iterator: Any,
+        *,
+        query: Callable[[str], Awaitable[None]] | None = None,
+        reloader: ClaudePluginReloader | None = None,
     ) -> Any:
         command_kind, prompt, future = command
+        if command_kind == "plugin_reload":
+            if not future.done():
+                future.set_result(("plugins_pending", None))
+            return iterator
         if session is None:
             if not future.done():
                 future.set_exception(ValueError("Claude session initialization is incomplete"))
@@ -1577,6 +1639,8 @@ class ClaudeServerManager:
             return iterator
         if future.cancelled():
             return iterator
+        if reloader is not None:
+            await reloader.reload_if_idle(client, session)
         if command_kind == "compact":
             # SDKではターン間の$.session.compact()を使えない。公開/compact入力を所有キューで直列化する。
             # 予約後の完了通知や追送を先に消費し、待機が変わった場合は新しいturnを起こさない。
@@ -1592,7 +1656,7 @@ class ClaudeServerManager:
         try:
             if kind == "reply":
                 begin_reply(session, preserve_waits=held is not None)
-            await client.query(prompt)
+            await (query or client.query)(prompt)
         except Exception as exc:
             if held is not None:
                 held.restore(session)

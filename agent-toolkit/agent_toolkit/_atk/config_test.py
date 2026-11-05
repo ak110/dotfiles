@@ -853,6 +853,44 @@ class TestCodexFastMode:
         assert capsys.readouterr().out == "false\n"
 
 
+@pytest.mark.parametrize("value", ["true", "false"])
+def test_codex_auto_reset_public_round_trip(tmp_path, monkeypatch, capsys, value):
+    """自動resetは未設定時に無効となり、保存・表示・環境変数の優先順位を公開CLIで保つ。"""
+    assert _main(tmp_path, "config", "get", "codex_auto_reset") == 0
+    assert capsys.readouterr().out == "false\n"
+    assert not _config_file(tmp_path).exists()
+    assert _main(tmp_path, "config", "set", "codex_auto_reset", value) == 0
+    capsys.readouterr()
+    assert _saved(tmp_path)["codex_auto_reset"] == value
+    assert _main(tmp_path, "config", "apply-preset", "codex-primary") == 0
+    capsys.readouterr()
+    assert _main(tmp_path, "config", "get", "codex_auto_reset") == 0
+    assert capsys.readouterr().out == value + "\n"
+    override = "false" if value == "true" else "true"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", override)
+    assert _main(tmp_path, "config", "get", "codex_auto_reset") == 0
+    assert capsys.readouterr().out == override + "\n"
+    assert _main(tmp_path, "config", "set", "codex_auto_reset", value) == 0
+    assert "AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET" in capsys.readouterr().err
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET")
+    assert _main(tmp_path, "config", "show") == 0
+    assert f"codex_auto_reset {value}\n" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("value", ["TRUE", "False", "1", "0", "yes", "", "[]", "null"])
+def test_codex_auto_reset_rejects_invalid_public_input(tmp_path, monkeypatch, capsys, value):
+    path = _write_config(tmp_path, {"codex_auto_reset": "true"})
+    before = path.read_bytes()
+    assert _main(tmp_path, "config", "set", "codex_auto_reset", value) == 2
+    assert "true, false" in capsys.readouterr().err
+    assert path.read_bytes() == before
+    if value:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", value)
+        assert _main(tmp_path, "config", "get", "codex_auto_reset") == 2
+        assert "AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET" in capsys.readouterr().err
+        assert path.read_bytes() == before
+
+
 class TestConfigGet:
     def test_get_known_key(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """既知キーの値のみを1行で出力する。"""

@@ -12,6 +12,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../develop-dotfiles/SKILL.md#「テスト配置」` | 判断 | `section:*/skills/develop-dotfiles/SKILL.md#「テスト配置」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「バージョン更新」` | 判断 | `section:*/skills/agent-toolkit-edit/SKILL.md#「バージョン更新」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| Claudeの子入力の寿命とserver保持版を判断する前 | `agents-server-shared-state.md`の「配布物保持と掃引」 | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「配布物保持と掃引」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-messages.md#「エージェント宛てメッセージの標識」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md#「エージェント宛てメッセージの標識」` |
 
 ## hook開発資料の選択
@@ -58,6 +59,8 @@
 
 エンドユーザー環境で実行するパス（`hooks.json`の`command`や、エージェントやスキルの本文に記載する実行コマンド例など）は、`${CLAUDE_PLUGIN_ROOT}/<相対パス>`の形式で記述する。プラグインのルートディレクトリはインストール先によって動的に決定されるため、リポジトリ相対パスをそのまま記述するとエンドユーザー環境で実行できなくなる。なお、各ファイルの役割を説明するための参照であれば、リポジトリ相対パスの表記を用いてよい。
 別プラグイン（agent-toolkitからagent-basicsなど）の資料は、配布時に版ごとの別ディレクトリへ置かれて相対パスでは届かないため、読込表の行でも本文の参照でも`agent-basics:`や`agent-toolkit:`で始まる論理名表記で指す。`agent-toolkit/read_triggers_invariant_test.py`が所有プラグインのrootの外を指す相対パスを拒否する。
+agents_serverは候補のengineとcwdごとに両pluginの実在rootを解決し、新規起動と追送へ論理名との対応を渡す。
+Claudeの子入力を更新する固定mirrorとserverの保持版は、`agents-server-shared-state.md`「配布物保持と掃引」に従って寿命を分離する。
 Agent PluginsのMCP定義をCodex環境向けに変換（射影）する際は、`args`、`cwd`、`env`に含まれる`${CLAUDE_PLUGIN_ROOT}`を`${PLUGIN_ROOT}`へ置き換える。
 
 ## 権限設定の配置

@@ -50,7 +50,7 @@ git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定
 `chezmoi init`と`chezmoi apply`の段は、子が標準出力と標準エラーを継承する。
 この2段の同期結果には終了コードを残し、post-applyの詳細はpost-apply自身の記録と永続ログで確認する。
 
-Linuxでは`chezmoi apply`の直前に、Codexの管理daemonだけが稼働し、利用セッションが無い場合に限り、
+Linuxでは適用差分があり、Codexの管理daemonだけが稼働し、利用セッションが無い場合に限り、`chezmoi apply`の直前に
 公開CLI`codex app-server daemon stop`で管理daemonを一時停止する。
 post-applyの診断ログ復元と不要pluginの除去が、利用セッションの無い管理daemonを理由に延期されないためである。
 停止を試みた場合は`chezmoi apply`の成否にかかわらず`codex app-server daemon start`で起動状態を戻し、
@@ -1184,7 +1184,11 @@ def main(argv: list[str] | None = None) -> int:
                             _last_stderr_tail,
                         )
 
-                    daemon_pause = None if dotfiles_mode.is_minimal() and args.prune else _pause_codex_daemon()
+                    daemon_pause = (
+                        _pause_codex_daemon()
+                        if diff_output.strip() and not (dotfiles_mode.is_minimal() and args.prune)
+                        else None
+                    )
                     try:
                         returncode, _ = _run_step(
                             total,

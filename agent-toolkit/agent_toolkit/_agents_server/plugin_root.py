@@ -19,6 +19,22 @@ _stable_plugin_roots: dict[Path, Path] = {}
 _SHARED_MARKER = ".agent-toolkit-plugin-root.json"
 
 
+def plugin_source_root(root: Path) -> Path:
+    """保持複製の導入元を返し、通常のrootはそのまま返す。"""
+    marker = root.parent / _SHARED_MARKER
+    if not marker.is_file():
+        return root
+    record = json.loads(marker.read_text(encoding="utf-8"))
+    if (
+        not isinstance(record, dict)
+        or record.get("root_name") != root.name
+        or not isinstance(record.get("source"), str)
+        or not Path(record["source"]).is_absolute()
+    ):
+        raise ValueError(f"保持配布物の導入元が不正: {marker}")
+    return Path(record["source"])
+
+
 def _plugin_root_is_versioned(plugin_root: Path) -> bool:
     """配布物rootが更新で消える版別ディレクトリ配下にあるかを返す。
 

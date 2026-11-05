@@ -27,6 +27,7 @@ from typing import Any
 from agent_toolkit._agents_server import (
     api_credits,
     child_environment,
+    codex_auto_reset,
     codex_providers,
     codex_resume_state,
     compaction_metrics,  # pylint: disable=wrong-import-position
@@ -79,6 +80,7 @@ from agent_toolkit._common import (
     mcp_environment,
     plugin_environment,
     process_tree,  # pylint: disable=wrong-import-position
+    state_paths,
 )
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import host_homes as _host_homes
@@ -97,6 +99,7 @@ APP_SERVER_COMMAND = ("codex", "app-server", "--stdio", "-c", "thread_unload_del
 # plugin更新で消失すると生存中のApp Serverが設定を読み込めないため継承しない。
 APP_SERVER_WORKING_DIRECTORY = str(Path.home())
 DEFAULT_WAIT_TIMEOUT = 300.0
+AUTO_RESET_CHECK_INTERVAL = 30.0
 # App Serverのstdio用StreamReaderのbuffer上限と、stdoutを1回に読み取るchunk長を兼ねる値（バイト）。
 # JSON-RPC recordの最大値には使わず、この長さを超える行もchunkを結合して復元する。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
@@ -760,6 +763,8 @@ class AppServerManager:
         self._resume_close_events: dict[str, asyncio.Event] = {}
         self._wait_compactors: dict[str, wait_compaction.WaitCompaction] = {}
         self._wait_compaction_turns: dict[str, _WaitCompactionTurn] = {}
+        self._auto_reset_monitors: dict[str, asyncio.Task[None]] = {}
+        self._auto_reset_checks: dict[str, asyncio.Task[None]] = {}
 
     @staticmethod
     def _agents_server_config(owner_session_id: str, writer_session_id: str, client: Any = None) -> dict[str, Any]:
@@ -943,6 +948,7 @@ class AppServerManager:
 
     async def _release_owned_client(self, session_id: str) -> None:
         """sessionが所有するApp Serverと子孫を終了させ、全ての終了を確認してから所有を外す。"""
+        await self._stop_auto_reset(session_id)
         compactor = self._wait_compactors.pop(session_id, None)
         if compactor is not None:
             await compactor.close()
@@ -1145,6 +1151,7 @@ class AppServerManager:
         """保存済みthreadを再開して新しいturnを開始する。"""
         validate_cwd(cwd)
         validate_model_effort(model, effort)
+        await self._stop_auto_reset(session_id)
         client = await self._acquire_owned_client(session_id, launch_kind, handoff_prompt)
         session = SessionState(
             session_id=session_id,
@@ -1295,6 +1302,7 @@ class AppServerManager:
                     break
                 session.turn_control_lock.release()
         try:
+            await self._cancel_auto_reset_check(session.session_id)
             yield
         finally:
             session.turn_control_lock.release()
@@ -1315,6 +1323,7 @@ class AppServerManager:
 
         結果を保留している間はモデルのturnが終わっているため、中断要求を送らずに保留した結果を確定する。
         """
+        await self._cancel_auto_reset_check(session.session_id)
         if session.awaiting_auto_resume and session.pending_result is not None:
             resume_waits.finalize_pending_result(session)
             await self._notify_waiters()
@@ -1346,7 +1355,8 @@ class AppServerManager:
     ) -> tuple[str, dict[str, Any], BaseException | None]:
         """lock取得済みのsessionへreplyを開始し、公開状態と失敗分類を返す。"""
         held = resume_waits.HeldTurn.capture(session)
-        switch_needed = self._provider_failure(session)
+        # 解除待ちの連鎖では、獲得resetによるweekly解除も同じ接続へ継続する。
+        switch_needed = self._provider_failure(session) and session.usage_limit_wait_count == 0
         previous_error = session.pending_result["error"] if session.pending_result is not None else session.error
         if (
             switch_needed
@@ -1556,6 +1566,9 @@ class AppServerManager:
             config = await run_file_operation(self._explore_config, config, client)
         resume_params["config"] = config
         resume_params["developerInstructions"] = await run_file_operation(_developer_instructions, session.launch_kind)
+        if owner_session_id is not None and writer_session_id is not None:
+            # thread/resume中に子MCPが初期化されるため、直接親を復旧候補の選定より先に公開する。
+            await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session.session_id)
         resume_response = await self._request_thread_resume(client, resume_params)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
@@ -1565,8 +1578,6 @@ class AppServerManager:
         ) != target:
             raise AppServerError("thread/resume did not confirm the requested connection")
         session.codex_state_provider = target
-        if owner_session_id is not None and writer_session_id is not None:
-            await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session.session_id)
         return writer_session_id
 
     @staticmethod
@@ -1796,6 +1807,7 @@ class AppServerManager:
     async def _start_turn(self, session: SessionState, prompt: str, client: JsonRpcProcess | None = None) -> None:
         if client is None:
             client = await self._acquire_owned_client(session.session_id, session.launch_kind)
+        self._start_auto_reset_monitor(session, client)
         # 再起動したApp Serverでturnを始める場合も、実行するプロセスの識別を登録簿へ反映する。
         await session.attach_executor_async(_client_pid(client))
         params: dict[str, Any] = {
@@ -1903,7 +1915,11 @@ class AppServerManager:
             "usageLimit": {"type": limit.limit_type, "resetsAt": limit.resets_at_iso()},
         }
         session.error = error
-        if session.interrupt_requested or not should_wait("codex", limit.limit_type):
+        auto_reset = (
+            self._auto_reset_eligible(session, before_hold=True)
+            and _atk_config.resolve_mutable_setting("codex_auto_reset") == "true"
+        )
+        if session.interrupt_requested or (not auto_reset and not should_wait("codex", limit.limit_type)):
             return False
         resume_waits.begin_auto_resume_wait(
             session, {"status": session.status, "agent_message": session.agent_message, "error": error}
@@ -1922,7 +1938,160 @@ class AppServerManager:
             "count": session.usage_limit_wait_count,
         }
         session.status = "running"
+        if auto_reset:
+            self._start_auto_reset_check(session)
         return True
+
+    def _auto_reset_eligible(self, session: SessionState, *, before_hold: bool = False) -> bool:
+        return (
+            self.sessions.get(session.session_id) is session
+            and not session.interrupt_requested
+            and (before_hold or not session.result_available)
+            and self._owned_client(session) is not None
+            and (session.codex_model_provider or session.codex_state_provider)
+            in {None, session.codex_subscription_provider or "openai"}
+        )
+
+    def _start_auto_reset_monitor(self, session: SessionState, client: JsonRpcProcess) -> None:
+        task = self._auto_reset_monitors.get(session.session_id)
+        if task is None or task.done():
+            task = asyncio.create_task(self._monitor_auto_reset(session, client))
+            self._auto_reset_monitors[session.session_id] = task
+            task.add_done_callback(self._auto_reset_check_done)
+
+    async def _monitor_auto_reset(self, session: SessionState, client: JsonRpcProcess) -> None:
+        while self.sessions.get(session.session_id) is session and self._owned_client(session) is client:
+            await asyncio.sleep(AUTO_RESET_CHECK_INTERVAL)
+            if session.result_available or session.interrupt_requested:
+                return
+            try:
+                enabled = await run_file_operation(_atk_config.resolve_mutable_setting, "codex_auto_reset")
+            except ValueError:
+                _LOG.exception(
+                    "Codex自動reset設定を解決できません: session_id=%s。"
+                    "atk config get codex_auto_resetとAGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESETを確認してください",
+                    session.session_id,
+                )
+                continue
+            if enabled == "true" and not session.turn_control_lock.locked() and self._auto_reset_eligible(session):
+                self._start_auto_reset_check(session)
+
+    def _start_auto_reset_check(self, session: SessionState) -> None:
+        task = self._auto_reset_checks.get(session.session_id)
+        if task is not None and not task.done():
+            return
+        client = self._owned_client(session)
+        if client is None:
+            return
+        # 通知readerへ戻る前に保留を標示し、結果公開と起動可用性の確定を防ぐ。
+        session.codex_auto_reset_pending = True
+        task = asyncio.create_task(self._check_auto_reset(session, client, session.turn_seq))
+        self._auto_reset_checks[session.session_id] = task
+        task.add_done_callback(self._auto_reset_check_done)
+
+    @staticmethod
+    def _auto_reset_check_done(task: asyncio.Task[None]) -> None:
+        if not task.cancelled() and (error := task.exception()) is not None:
+            _LOG.error(
+                "Codex自動resetの監視・確認taskが失敗しました。"
+                "この例外ログとatk config get codex_auto_resetを確認し、"
+                "停止した会話は利用枠回復後にsend_messageで継続してください",
+                exc_info=error,
+            )
+
+    async def _check_auto_reset(self, session: SessionState, client: JsonRpcProcess, turn_seq: int) -> None:
+        result = None
+
+        async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
+            enabled = await run_file_operation(_atk_config.resolve_mutable_setting, "codex_auto_reset")
+            if enabled != "true":
+                raise AppServerError("確認中にcodex_auto_resetが無効になった")
+            if (
+                session.turn_seq != turn_seq
+                or self._owned_client(session) is not client
+                or not self._auto_reset_eligible(session)
+            ):
+                raise asyncio.CancelledError
+            return await client.request(method, params)
+
+        try:
+            try:
+                root = await run_file_operation(state_paths.state_dir)
+                result = await codex_auto_reset.check_auto_reset(request, state_dir=root)
+                if result.diagnostic:
+                    _LOG.info("Codex自動reset: session_id=%s diagnostic=%s", session.session_id, result.diagnostic)
+            except AppServerError, OSError, TimeoutError, ValueError:
+                _LOG.exception(
+                    "Codex自動resetを確認できません: session_id=%s。"
+                    "この例外ログの接続・応答・保存状態を確認し、"
+                    "停止した会話は利用枠回復後にsend_messageで継続してください",
+                    session.session_id,
+                )
+            async with session.turn_control_lock:
+                if (
+                    session.turn_seq == turn_seq
+                    and self._owned_client(session) is client
+                    and self._auto_reset_eligible(session)
+                ):
+                    self._apply_auto_reset_result(session, result)
+        finally:
+            session.codex_auto_reset_pending = False
+            await self._notify_waiters()
+
+    @staticmethod
+    def _apply_auto_reset_result(session: SessionState, result: codex_auto_reset.AutoResetResult | None) -> None:
+        pending = session.pending_result
+        if not session.awaiting_auto_resume or pending is None or session.usage_limit_resume_at is None:
+            return
+        raw = result.rate_limits if result is not None else None
+        by_id = raw.get("rateLimitsByLimitId") if raw is not None else None
+        bucket = by_id.get("codex") if isinstance(by_id, dict) else raw.get("rateLimits") if raw is not None else None
+        windows = [bucket.get(name) for name in ("primary", "secondary")] if isinstance(bucket, dict) else []
+        windows = [window for window in windows if isinstance(window, dict)]
+        if windows and all(window["usedPercent"] < 100 for window in windows):
+            session.usage_limit_resume_at = asyncio.get_running_loop().time()
+            session.touch()
+            return
+        if result is not None and result.reset_confirmed and raw is None:
+            session.touch()
+            return
+        reset_credits = raw.get("rateLimitResetCredits") if raw is not None else None
+        limit = codex_usage_limit.from_rate_limits(bucket)
+        if (
+            result is not None
+            and result.outcome == "nothingToReset"
+            and isinstance(reset_credits, dict)
+            and reset_credits.get("availableCount", 0) > 0
+            and limit.limit_type == "seven_day"
+        ):
+            return
+        error = pending.get("error")
+        previous_limit = error.get("usageLimit") if isinstance(error, dict) else None
+        kind = limit.limit_type or (previous_limit.get("type") if isinstance(previous_limit, dict) else None)
+        if should_wait("codex", kind):
+            if limit.resets_at is not None:
+                session.usage_limit_resume_at = asyncio.get_running_loop().time() + limit.delay_seconds(time.time())
+            session.touch()
+            return
+        resume_waits.finalize_pending_result(session)
+
+    async def _cancel_auto_reset_check(self, session_id: str) -> None:
+        task = self._auto_reset_checks.get(session_id)
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            if self._auto_reset_checks.get(session_id) is task:
+                del self._auto_reset_checks[session_id]
+        session = self.sessions.get(session_id)
+        if session is not None:
+            session.codex_auto_reset_pending = False
+
+    async def _stop_auto_reset(self, session_id: str) -> None:
+        monitor = self._auto_reset_monitors.pop(session_id, None)
+        if monitor is not None:
+            monitor.cancel()
+            await asyncio.gather(monitor, return_exceptions=True)
+        await self._cancel_auto_reset_check(session_id)
 
     def _hold_provider_failure(self, session: SessionState, error: Any = None) -> bool:
         """候補切替の間は失敗を公開せず、既存の監視から継続を一度だけ配送する。"""

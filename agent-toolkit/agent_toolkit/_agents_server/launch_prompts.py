@@ -10,7 +10,7 @@ import sys
 
 from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._agents_server.tool_descriptions import EXPLORE_BACKEND_CAPABILITIES, EXPLORE_COMMON_CAPABILITIES
-from agent_toolkit._common import message_format, plugin_environment
+from agent_toolkit._common import message_format, plugin_environment, plugin_roots
 
 # ベース指示の公開入力契約と再検証はdocs/development/audit-records.mdの
 # 「agent-toolkit/agent_toolkit/_agents_server/launch_prompts.py：委譲先のベース指示：2026年10月23日」にある。
@@ -175,6 +175,22 @@ def cli_runtime_instructions(plugin_root: pathlib.Path) -> str:
     return _normative(
         plugin_environment.cli_instructions(plugin_root),
         kind="cli-runtime",
+    )
+
+
+def plugin_resource_instructions(toolkit_root: pathlib.Path, host: str, project: str) -> str:
+    """候補の実行系とcwdで品質資料を解決し、既存のtoolkit案内へ所有者の対応を補う。"""
+    if not toolkit_root.is_dir() or not (toolkit_root / "skills").is_dir():
+        raise plugin_roots.PluginRootError(f"agent-toolkitの実在するskillsを確認できません: {toolkit_root}")
+    basics_root = plugin_roots.resolve_plugin_root("agent-basics", toolkit_root, host, project)
+    # Claude以外はbackendが保持済みtoolkit rootを既に案内する。
+    toolkit_notice = f"agent-toolkit plugin root: {toolkit_root}\n" if host == "claude" else ""
+    return _normative(
+        toolkit_notice + f"agent-basics plugin root: {basics_root}\n"
+        "`agent-basics:`で始まる品質資料はagent-basicsのroot、"
+        "`agent-toolkit:`のスキルと実行基盤の内部資源はagent-toolkitのrootから読む。"
+        "それぞれの実在する絶対パスを使い、他方の版数からcacheパスを組み立てない。",
+        kind="plugin-resources",
     )
 
 

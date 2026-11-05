@@ -137,6 +137,7 @@ atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonn
 | キー | 内容 |
 | --- | --- |
 | `codex_fast_mode` | `true`でCodexのfast modeを使う。初期値は`false` |
+| `codex_auto_reset` | `true`でChatGPT接続の週次利用枠を自動resetする。初期値は`false`。条件と設定例は[Codex利用ガイド](codex-guide.md#利用上限後の再開)を参照 |
 | `claude_usage_limit_wait`・`codex_usage_limit_wait` | 利用上限に達した時に解除を待つ範囲。`five-hour`（初期値）は5時間枠だけ、`always`は週次枠なども待ち、`never`は待たずに次の候補へ進む |
 | `claude_*_connections`・`codex_*_connections`ほか | Claude・Codexのサブスクリプション・APIクレジット・従量課金APIの使い分け。設定は[接続の使い分け](#接続の使い分け)を参照 |
 
@@ -554,6 +555,14 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 一般の更新・削除は[READMEの更新と削除](../../agent-toolkit/README.md#更新と削除)を参照。
 dotfiles管理下のマシンでは`chezmoi apply`でも更新できる。
 ここでは既存環境の移行時に必要な補足を扱う。
+
+`agents_server`のClaude委譲先は、有効なプラグインと設定ファイルの変更を監視する。
+更新を検知すると進行中のturnの終了を待ち、同じ接続でプラグインを再読込してから次の入力を処理する。
+再読込に失敗した場合は診断ログを確認し、表示されたプラグインや設定の問題を解消する。
+この自動反映は`agents_server`のClaude委譲先が対象で、ユーザーが直接起動したClaude Codeの会話は含まない。
+
+Codexの会話から実行する`update-dotfiles`は更新処理を独立したjobとして実行する。
+更新後の結果取得とdaemonの反映条件は[Codex利用ガイド](codex-guide.md#プラグイン更新の反映)を参照。
 
 過去の手順で登録したUser scopeのMCP定義`codex`（`codex mcp-server`）は、インストーラーと`chezmoi apply`が自動で除去する。
 自動で除去できなかった場合は、次のコマンドで定義を確認し、旧`codex mcp-server`定義だけを削除する。

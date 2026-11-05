@@ -39,9 +39,21 @@ Windowsで初めて起動管理を導入した後は、新しい端末を開い�
 
 Codex向けプラグインは`update-dotfiles`または`chezmoi apply`で更新する。
 実行中のセッションは更新前の版を使い続けるため、更新後は新しいセッションで新版を使う。
-`chezmoi apply`によるagent-toolkitの追加・更新後は、利用セッションが無ければ稼働中のapp-server daemonを自動で再起動する。
-Linuxの`update-dotfiles`では、プラグインの変更有無によらず、適用前に管理daemonを一時停止し、適用後に起動状態を戻す。
-利用セッションがある場合は接続を保ち、daemonを停止・再起動しない。
+agent-toolkitの追加・更新後は、利用セッションの有無にかかわらず稼働中のapp-server daemonを自動で再起動し、[既存の復旧処理](#daemon再起動後の作業継続)へ接続する。
+変更が無い場合とdaemonが停止している場合、自動再起動は実行しない。
+Linuxの`update-dotfiles`による適用前の一時停止も、適用差分があり利用セッションが無い場合に限る。
+
+Codexのコマンド実行から`update-dotfiles`を起動すると、`CODEX_THREAD_ID`を使って更新を独立したjobへ分離する。
+起動元がdaemon再起動で終了しても、jobは更新処理を継続して出力と終了コードを保存する。
+再開した同じ会話では次のコマンドで最新の自己jobの結果を確認できる。
+
+```bash
+update-dotfiles job
+```
+
+別の端末や会話からは、開始時に表示されたUUIDを指定して`update-dotfiles job <UUID>`を実行する。
+これらのコマンドは保存済みの出力と終了状態を取得し、更新を再実行しない。
+未完了の場合は表示された同じUUIDで後から再取得する。
 
 更新が延期または失敗した場合は、`update-dotfiles logs`で原因と次の操作を確認し、表示されたCodexを終了してから`update-dotfiles`を再実行する。
 
@@ -114,6 +126,20 @@ ChatGPTのtokenをAPIキーとして使わない。
 
 `atk run-skill`、`atk wi process-loop`、`agents_server`の委譲先は、Codexの利用上限の解除後に自動で作業を続ける。
 待つ範囲は`codex_usage_limit_wait`で選ぶ（[工程別モデル設定](claude-code-guide.md#工程別モデル設定)を参照）。
+
+`agents_server`のCodex委譲先では、`codex_auto_reset`を明示的に有効にすると、ChatGPTの週次枠の使用率が99%以上でreset creditの在庫がある場合に1個を消費する。
+初期値は`false`である。
+設定の確認、有効化、無効化は次のコマンドで行う。
+
+```bash
+atk config get codex_auto_reset
+atk config set codex_auto_reset true
+atk config set codex_auto_reset false
+```
+
+有効な間はモデルを呼ばずに利用枠を確認し、reset後に利用枠を再取得して同じsessionの再開を判定する。
+APIキー接続は対象外で、アカウントのemailを取得できない場合もcreditを消費せず診断を記録する。
+在庫が無い場合やresetが成立しない場合は、既存の利用上限待機設定に従う。
 
 ユーザーが端末で`codex`を実行して開いた対話画面は、利用上限の解除後に自動では再開しない。
 解除後に`/goal resume`か新しい発話を送って続ける。

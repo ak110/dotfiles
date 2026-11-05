@@ -11,7 +11,7 @@ import sys
 import pytest
 
 from agent_toolkit._agents_server import launch_prompts, state, tool_descriptions
-from agent_toolkit._common import automated_prompt
+from agent_toolkit._common import automated_prompt, plugin_roots
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shellによる実行の受入例")
@@ -177,13 +177,26 @@ def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> N
         assert "完成条件" in prompt
         assert "担当内で完了" in prompt
         assert "自身で解消できない" in prompt
-        assert "返却の最終行" in prompt
+        assert "正常結果は、先頭" in prompt
+        assert "既存の末尾状態行も受理" in prompt
+        assert "すべての理由行" in prompt
+        assert "追加報告" in prompt
         assert "状態: completed" in prompt
         assert "続行できない理由:" in prompt
         assert "1回だけ自動継続" in prompt
         assert "保存先の無い出力" in prompt
     assert "atk read-file" not in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
     assert "pyfltr grep" in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_plugin_resource_instructions_reject_invalid_toolkit_root(tmp_path: pathlib.Path, existing: bool) -> None:
+    """所在案内は、実在するskillsを持たないtoolkitを配送しない。"""
+    root = tmp_path / "toolkit"
+    if existing:
+        root.mkdir()
+    with pytest.raises(plugin_roots.PluginRootError, match="agent-toolkitの実在するskills"):
+        launch_prompts.plugin_resource_instructions(root, "codex", str(tmp_path))
 
 
 def test_all_launch_system_prompts_include_language_condition() -> None:

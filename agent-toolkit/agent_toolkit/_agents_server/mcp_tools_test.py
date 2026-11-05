@@ -50,6 +50,7 @@ from agent_toolkit._testing.agents_server_support import (
     _start_tool,
     _without_root,
 )
+from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -99,7 +100,7 @@ async def test_new_request_and_handoff_preserve_required_context(
         assert "レビュー基準: 計画" in received
         assert "追加要求: 新しい文書の差分も確認する" in received
         await mcp_tools.send_message(successor["session_id"], instruction="再レビューせよ", extra_params={"round": "2"})
-        assert backend.prompts[-1] == launch_requests.wrap_delivery_body("再レビューせよ\nround: 2")
+        assert delivery_payload(backend.prompts[-1]) == "再レビューせよ\nround: 2"
 
 
 def test_main_strips_conversation_context_before_backend_start(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1103,9 +1104,9 @@ async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytes
             extra_params={"round": "6", "review_contract": direct_contract},
         )
         expected = "再レビューせよ\nround: 6\nreview_contract:\n  目的: 必要な入力を保持する\n  \n  対象: 現在の差分"
-        assert backend.prompts[-1] == launch_requests.wrap_delivery_body(expected)
+        assert delivery_payload(backend.prompts[-1]) == expected
         await mcp_tools.send_message(started["session_id"], expected.replace("round: 6", "round: 7"))
-        assert backend.prompts[-1] == launch_requests.wrap_delivery_body(expected.replace("round: 6", "round: 7"))
+        assert delivery_payload(backend.prompts[-1]) == expected.replace("round: 6", "round: 7")
         before = backend.send_calls
         for params in (
             {},
@@ -1279,10 +1280,10 @@ async def test_declared_role_continuations_keep_required_inputs(
             },
         )
         expected = "\n".join([instruction, *(f"{name}: {value}" for name, value in params.items())])
-        assert backend.prompts[-1] == launch_requests.wrap_delivery_body(expected)
+        assert delivery_payload(backend.prompts[-1]) == expected
         if role == "exec" and instruction == "レビュー指摘の対応をせよ":
             await mcp_tools.mcp.call_tool("send_message", {"session_id": started["session_id"], "prompt": expected})
-            assert backend.prompts[-1] == launch_requests.wrap_delivery_body(expected)
+            assert delivery_payload(backend.prompts[-1]) == expected
             session = manager.sessions[started["session_id"]]
             received = len(backend.prompts)
             history = session.followup_prompts

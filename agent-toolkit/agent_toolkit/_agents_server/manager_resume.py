@@ -12,6 +12,7 @@ from typing import Any, cast
 from agent_toolkit._agents_server import (
     claude,
     codex_providers,
+    launch_prompts,
     launch_requests,
     manager_registry,
     result_contract,
@@ -22,6 +23,7 @@ from agent_toolkit._agents_server.launch_requests import (
     wrap_delivery_body,
 )
 from agent_toolkit._agents_server.manager_base import PendingResume
+from agent_toolkit._agents_server.plugin_root import SERVER_PLUGIN_ROOT
 from agent_toolkit._agents_server.responses import (
     turn_elapsed_seconds,
 )
@@ -47,6 +49,12 @@ class ResumeClaimedElsewhere(ActionableError):
 class ManagerResume(manager_registry.ManagerRegistry):
     """孫sessionの終了と待機の解除を観測して自動で継続し、保存済みsessionを再開する。"""
 
+    async def _send_with_resources(self, session: SessionState, prompt: str) -> dict[str, Any]:
+        resources = await run_file_operation(
+            launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, session.engine, session.cwd
+        )
+        return await self._backend(session.engine).send_message(session, resources + "\n\n" + prompt)
+
     async def _child_result_is_terminal(self, session_id: str) -> bool:
         """孫sessionの共有された終了時の結果ファイルが終了を示すかを返す。
 
@@ -63,6 +71,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
         if session.interrupt_requested:
             return
+        if session.codex_auto_reset_pending:
+            return
         if session.result_contract_recovery_pending:
             pending = session.pending_result
             assert pending is not None
@@ -73,15 +83,17 @@ class ManagerResume(manager_registry.ManagerRegistry):
             auto_resume_consumed = session.auto_resume_consumed
             finalize_pending_result(session, touch=False)
             try:
-                await self._backend(session.engine).send_message(
+                await self._send_with_resources(
                     session,
                     wrap_delivery_body(
                         "直前の返却は返却形式の契約に適合しない。"
                         f"診断: {reason}\n"
                         "成果と残作業を確認し、担当内で補える作業を完遂した上で所定の返却形式を返せ。"
                         + (
-                            "未読・未走査の範囲を読み終え、最終行を状態: completedまたは"
-                            "続行できない理由: <未読の範囲、理由、再開に必要な入力>として返せ。"
+                            "未読・未走査の範囲を担当内で完了させ、正常返却は先頭を状態: completedとする"
+                            "（既存の末尾状態行も受理する）。前提不足が残る単位は、同じインデントで"
+                            "続行できない区分: <有効な区分>と続行できない理由: <不足と再開条件>を連続させる。"
+                            "読了範囲の成果と追加報告を保持し、続行不能を含む返却には全体成功行を付けない。"
                             if session.launch_kind == "explore"
                             and task_documents.launched_task_document(session.prompt) is None
                             else ""
@@ -121,7 +133,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             pending = session.pending_result
             finalize_pending_result(session, touch=False)
             try:
-                await self._backend(session.engine).send_message(session, wrap_delivery_body(codex_providers.CONTINUE_PROMPT))
+                await self._send_with_resources(session, wrap_delivery_body(codex_providers.CONTINUE_PROMPT))
             except Exception:
                 session.status = pending["status"]
                 session.agent_message = pending["agent_message"]
@@ -201,7 +213,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             pending_result = session.pending_result
             assert pending_result is not None
             try:
-                delivery = await self._backend(session.engine).send_message(session, prompt)
+                delivery = await self._send_with_resources(session, prompt)
                 if delivery.get("delivery") == "reply_failed":
                     session.auto_resume_consumed = False
                     if repair_message:
@@ -245,6 +257,9 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.usage_limit_resume_at = None
             prompt = ResumePrompt(body)
             try:
+                prompt.context = await run_file_operation(
+                    launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, session.engine, session.cwd
+                )
                 await cast(claude.ClaudeServerManager, self._backend(session.engine)).resume(
                     session.session_id,
                     prompt,
@@ -282,7 +297,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
         )
         finalize_pending_result(session, touch=False, keep_resume_chain=True)
         try:
-            await self._backend(session.engine).send_message(session, prompt)
+            await self._send_with_resources(session, prompt)
         except Exception as exc:
             clear_overload_resume(session)
             session.status = pending_result["status"]
@@ -315,7 +330,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
         finalize_pending_result(session, touch=False, keep_resume_chain=True)
         try:
-            await self._backend(session.engine).send_message(session, prompt)
+            await self._send_with_resources(session, prompt)
         except Exception as exc:
             clear_usage_limit_wait(session)
             session.status = pending_result["status"]
@@ -358,6 +373,9 @@ class ManagerResume(manager_registry.ManagerRegistry):
                     next_action="同じ`session_id`を`show`で確認し、`atk agents wait`で終了を観測する",
                 )
             backend = self._backend(resume_state.engine)
+            prompt.context = await run_file_operation(
+                launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, resume_state.engine, resume_state.cwd
+            )
             await launch_requests.check_plugin_commands(resume_state.cwd)
             provider_args: dict[str, Any] = {}
             if resume_state.engine == "claude" and resume_state.claude_api_env_file is not None:

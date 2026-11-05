@@ -56,6 +56,10 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ): "固定の採点スクリプトで、提出コードが起動する子の残存は許容する",
     ("libexec/update_dotfiles.py", "_kill_process_tree"): "停止前に列挙して子孫も回収する既存実装",
     (
+        "libexec/update_dotfiles_job.py",
+        "_stop_tree",
+    ): "uv外のstdlib専用workerで、taskkillまたはpsで子孫を列挙・停止し、subreaperの終了状態も回収する",
+    (
         "libexec/update_dotfiles.py",
         "_run_codex_daemon_command",
     ): "管理daemonの起動・停止要求。daemonは呼出元と独立した寿命を持つ",
@@ -125,3 +129,11 @@ def test_bootstrap_stop_exception_is_limited_to_its_owned_helper():
     assert not _violations(pathlib.Path("agent-toolkit/scripts/launch.py"), source)
     assert _violations(pathlib.Path("agent-toolkit/agent_toolkit/atk.py"), source)
     assert _violations(pathlib.Path("agent-toolkit/scripts/launch.py"), source.replace("_stop_server_process", "main"))
+
+
+def test_native_update_stop_exception_is_limited_to_tree_owner():
+    """依存環境から独立した回収の許可を、workerの停止所有関数に限定する。"""
+    source = "def _stop_tree(process):\n    process.kill()\n"
+    assert not _violations(pathlib.Path("libexec/update_dotfiles_job.py"), source)
+    assert _violations(pathlib.Path("libexec/update_dotfiles.py"), source)
+    assert _violations(pathlib.Path("libexec/update_dotfiles_job.py"), source.replace("_stop_tree", "_run_command"))

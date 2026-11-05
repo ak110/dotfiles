@@ -30,6 +30,9 @@ from pytools._internal import (
 logger = logging.getLogger(__name__)
 CODEX_HOME = Path.home() / ".codex"
 _TIMEOUT = 60.0
+# nativeのoperation lock最大375秒、停止猶予最大300秒、強制終了確認10秒、起動30秒と応答の余裕。
+# https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/app-server-daemon
+_DAEMON_RESTART_TIMEOUT = 750.0
 _VERSION_PATTERN = re.compile(r"[A-Za-z0-9._+-]+\Z")
 # 自動更新タイマーを持たないホストで、延期した更新を反映する操作。
 _MANUAL_RETRY = "Codexのセッションを全て終了してから`update-dotfiles`を再実行してください。"
@@ -46,7 +49,7 @@ _CODEX_HOOK_TRUST_NOTICE = post_apply_outcome.PostApplyNotice(
         "その後、そのセッションを終了して新しいセッションを開始してください。"
         "セッションの開始時（SessionStart）に規範を読み込みます。"
         "新しいセッションでエージェントに「起動時にagent-toolkitの規範を受け取ったか確認して」と尋ねてください。"
-        "フックの永続的な信頼登録は手動です。daemonは利用セッションが無ければ更新時に自動で再起動します。"
+        "フックの永続的な信頼登録は手動です。稼働中のdaemonはplugin更新時に自動で再起動します。"
     ),
     command="/hooks",
 )
@@ -345,22 +348,19 @@ def _append_restart_notice_if_daemon_running(notices: list[post_apply_outcome.Po
         notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
 
 
-def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApplyNotice]) -> None:
-    """利用セッションが無い稼働中daemonを再起動し、失敗時は手動操作を案内する。"""
+def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApplyNotice]) -> str | None:
+    """稼働中daemonへplugin更新を反映し、失敗理由を呼び出し元へ返す。"""
     if not _command(["app-server", "daemon", "version"]):
-        return
-    if _codex_processes_using_plugin():
-        notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
-        return
+        return None
     result = common.run_subprocess(
         [str(_CODEX_EXECUTABLE.get()), "app-server", "daemon", "restart"],
-        timeout=_TIMEOUT,
+        timeout=_DAEMON_RESTART_TIMEOUT,
         tag="codex",
     )
     exit_code = None if result is None else result.returncode
     if exit_code == 0:
         logger.info(log_format.format_status("codex plugins", "app-server daemonを自動再起動 (exit 0)"))
-        return
+        return None
     logger.warning(
         log_format.format_status(
             "codex plugins",
@@ -370,6 +370,7 @@ def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApp
         )
     )
     notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
+    return f"Codex daemonのplugin反映に失敗: {common.format_cli_error(result)}"
 
 
 def _codex_home() -> Path:
@@ -521,8 +522,6 @@ def _sync_local_plugin(
                 raise RuntimeError("Codex plugin更新後のhook実体を確認できない")
             if toolkit_plugin and _hook_trust_notice_required(_hooks_list(), plugin_id):
                 notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
-            if toolkit_plugin:
-                _restart_daemon_after_plugin_update(notices)
         finally:
             try:
                 # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
@@ -725,12 +724,24 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             )
             return _outcome(changed, notices, deferred=unused_deferred)
         local_changed = False
+        plugin_updated = False
         deferred = False
         for _name, plugin_name, version in resolved_targets:
             _known, current = _installed(before, f"{plugin_name}@{marketplace_name}")
             plugin_changed, plugin_deferred = _sync_local_plugin(root, marketplace_name, plugin_name, version, current, notices)
+            plugin_updated = plugin_updated or (plugin_changed and (current is None or current.get("version") != version))
             local_changed = local_changed or plugin_changed
             deferred = deferred or plugin_deferred
+        # 全pluginの更新と旧cacheの復元を終えてから、新daemonが参照する集合を一度だけ反映する。
+        restart_error = _restart_daemon_after_plugin_update(notices) if plugin_updated else None
+        if restart_error is not None:
+            return post_apply_outcome.PostApplyOutcome(
+                changed=changed or local_changed,
+                notices=tuple(dict.fromkeys(notices)),
+                failure=restart_error,
+                next_action="codex app-server daemon restartを実行し、update-dotfilesを再実行してください。",
+                deferred=deferred or unused_deferred,
+            )
         return _outcome(changed or local_changed, notices, deferred=deferred or unused_deferred)
     except RuntimeError as error:
         # 導入・更新とその後の状態確認の失敗。設定ファイルとランチャーの書き込みの失敗（OSError）は失敗として送出する。
