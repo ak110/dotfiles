@@ -890,7 +890,8 @@ def test_public_install_keeps_native_package_and_selects_recovery_launcher(
         assert [entry for entry in entries if entry in {before, between, after}] == [before, between, after]
     else:
         assert (visible / "codex").samefile(root / "bin" / "codex")
-        assert (visible / ".dotfiles-codex-native").readlink() == native
+        # Windowsのreadlinkは同じ参照先へ\\?\接頭辞を付けるため、ファイルの同一性を検証する。
+        assert (visible / ".dotfiles-codex-native").readlink().samefile(native)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty-runtime-home"))
     assert setup_codex_cli.find_standalone_launcher() is None
     runtime = setup_codex_cli.find_runtime_launcher(windows=windows)
@@ -900,6 +901,7 @@ def test_public_install_keeps_native_package_and_selects_recovery_launcher(
         assert not (visible / ".dotfiles-codex-native").exists()
 
 
+@pytest.mark.windows
 def test_native_reference_is_replaced_and_tracks_current(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """参照は1個だけを交換し、currentの世代更新に追随して旧版へ固定しない。"""
     _isolate(monkeypatch, tmp_path, "linux")
@@ -912,11 +914,17 @@ def test_native_reference_is_replaced_and_tracks_current(monkeypatch: pytest.Mon
         current.symlink_to(selected, target_is_directory=True)
         native = current / "bin/codex"
         setup_codex_cli.install_recovery_launcher(native, windows=False)
-        assert reference.readlink() == native
+        assert reference.readlink().samefile(native)
+        runtime = setup_codex_cli.find_runtime_launcher(windows=False)
+        assert runtime is not None
+        assert runtime == reference
+        assert runtime.samefile(native)
         newer = _release(home, "standalone", "0.167.0")
+        (newer / "bin/codex").write_text("new-generation", encoding="utf-8")
         current.unlink()
         current.symlink_to(newer, target_is_directory=True)
         assert reference.samefile(newer / "bin/codex")
+        assert runtime.read_text(encoding="utf-8") == "new-generation"
         assert list(visible.glob(".dotfiles-codex-native*")) == [reference]
 
 
