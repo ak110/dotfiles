@@ -972,12 +972,17 @@ def test_rust_audit_distinguishes_findings_and_tool_failure(
 ) -> None:
     """実workflowのシェルでRustSec結果とツール異常を区別し、検出を正常へ変換しない。"""
     audit = yaml.safe_load((REPO_ROOT / ".github/workflows/audit.yaml").read_text(encoding="utf-8"))
-    steps = audit["jobs"]["audit"]["steps"]
-    install = next(step["run"] for step in steps if step.get("name") == "Rust監査ツールの導入")
-    assert install.index("mise install rust") < install.index("cargo install --locked --no-default-features cargo-audit")
+    # cargo-auditの導入はCリンカーを要するため、Python監査のpyfltrコンテナーとは別のホストrunnerで実行する。
+    rust_job = audit["jobs"]["rust-audit"]
+    assert "container" not in rust_job
+    steps = rust_job["steps"]
+    names = [step.get("name") or step.get("uses", "") for step in steps]
+    install_index = names.index("Rust監査ツールの導入")
+    assert any(name.startswith("jdx/mise-action@") for name in names[:install_index])
+    assert "mise exec -- cargo install --locked --no-default-features cargo-audit" in steps[install_index]["run"]
     script = next(step["run"] for step in steps if step.get("name") == "Rust依存の監査")
     assert "cargo audit --file rust/claude-statusline/Cargo.lock --json" in script
-    assert any(step.get("name") == "Run dependency audit" for step in steps)
+    assert any(step.get("name") == "Run dependency audit" for step in audit["jobs"]["audit"]["steps"])
     binary = tmp_path / "bin"
     binary.mkdir()
     mise = binary / "mise"
