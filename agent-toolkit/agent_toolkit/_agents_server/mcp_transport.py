@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import inspect
 import logging
@@ -205,11 +206,13 @@ class AgentsServerMCP(MCPServer[None]):
         *,
         instructions: str,
         lifespan: Callable[[MCPServer[None]], AbstractAsyncContextManager[None]],
+        request_scope: Callable[[CallToolRequestParams], AbstractAsyncContextManager[None]] | None = None,
     ) -> None:
         super().__init__(name, instructions=instructions)
         self._agents_lifespan = lifespan
         self._agents_name = name
         self._agents_instructions = instructions
+        self._request_scope = request_scope
         self.server_lifetime: lifetime.ServerLifetime | None = None
 
     @typing.override
@@ -250,7 +253,10 @@ class AgentsServerMCP(MCPServer[None]):
         self, _context: ServerRequestContext[None], params: CallToolRequestParams
     ) -> CallToolResult | InputRequiredResult:
         try:
-            return await self.call_tool(params.name, params.arguments or {})
+            async with self._request_scope(params) if self._request_scope is not None else contextlib.nullcontext():
+                return await self.call_tool(params.name, params.arguments or {})
+        except ActionableError as error:
+            return CallToolResult(content=[TextContent(type="text", text=error.message)], is_error=True)
         except ToolError as error:
             text = str(error)
             if "次の操作:" not in text:

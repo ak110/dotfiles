@@ -47,16 +47,7 @@ class ManagerRecovery(manager_resume.ManagerResume):
         """生存する所有者は観測し、失われた実行だけを復旧する。"""
         while self._recovery_targets:
             for identifier in tuple(self._recovery_targets):
-                try:
-                    await self._recover_delegation(identifier)
-                except Exception as error:  # pylint: disable=broad-exception-caught
-                    # 一つの子の復旧失敗で、独立した他の子の復旧を中断しない。waitへ原因を返す。
-                    self._recovery_errors[identifier] = error
-                    self._recovery_targets.discard(identifier)
-                    attempt = self._recovery_attempts.pop(identifier, None)
-                    _LOG.exception("delegation_recovery_failed session_id=%s", identifier)
-                    if attempt is None:
-                        await self._notify_recovery_failure(identifier, error)
+                await self._recover_one(identifier)
             await self._notify_waiters()
             if self._recovery_targets:
                 pending = {task for task in self._recovery_attempts.values() if not task.done()}
@@ -65,6 +56,32 @@ class ManagerRecovery(manager_resume.ManagerResume):
                 else:
                     await asyncio.sleep(1)
 
+    async def initialize_delegation_recovery(self) -> None:
+        """最初の要求を返す前に復旧の起動を確定し、CLIが読める状態まで公開する。"""
+        for identifier in tuple(self._recovery_targets):
+            await self._recover_one(identifier)
+        if self._recovery_attempts:
+            # 待つのはbackendへの接続とturn開始だけであり、モデルの仕事の完了ではない。
+            await asyncio.gather(*self._recovery_attempts.values(), return_exceptions=True)
+        for identifier in tuple(self._recovery_targets):
+            await self._recover_one(identifier)
+        if self._status_writer is not None:
+            await self._status_writer.flush_async()
+
+    async def _recover_one(self, identifier: str) -> None:
+        try:
+            await self._recover_delegation(identifier)
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            # 一つの子の復旧失敗で、独立した他の子の復旧を中断しない。waitへ原因を返す。
+            self._recovery_errors[identifier] = error
+            self._recovery_targets.discard(identifier)
+            attempt = self._recovery_attempts.pop(identifier, None)
+            _LOG.exception(
+                "delegation_recovery_failed session_id=%s。次の操作: %s", identifier, self._recovery_next_action(identifier)
+            )
+            if attempt is None:
+                await self._notify_recovery_failure(identifier, error)
+
     async def _notify_recovery_failure(self, identifier: str, error: Exception) -> None:
         if self._status_writer is None:
             return
@@ -72,14 +89,20 @@ class ManagerRecovery(manager_resume.ManagerResume):
             await run_file_operation(
                 notify.save_notification,
                 f"agents_serverによる子の自動復旧に失敗した: {identifier}: {error}。"
-                f"次の操作: `atk agents show {identifier}`で診断を確認し、"
-                "原因を解消して同じsessionへsend_messageで続行する。",
+                f"次の操作: {self._recovery_next_action(identifier)}",
                 shared_roots.StatusFileIdentity(self._status_writer.root_session_id, f"{identifier}.json", identifier),
                 state_root=self._state_root(),
                 actor="server",
             )
         except OSError as notice_error:
             error.add_note(f"自動復旧の失敗通知も保存できない: {notice_error}")
+
+    @staticmethod
+    def _recovery_next_action(identifier: str) -> str:
+        return (
+            f"`atk agents show {identifier}`で診断を確認し、原因を解消して"
+            f"agents_serverのsend_messageへsession_id={identifier}と続行するpromptを渡す。"
+        )
 
     async def _recover_delegation(self, identifier: str) -> None:
         attempt = self._recovery_attempts.get(identifier)

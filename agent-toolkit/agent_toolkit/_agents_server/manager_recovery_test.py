@@ -6,11 +6,12 @@ import asyncio
 import contextlib
 import datetime
 import json
+import logging
 import os
 import pathlib
 import subprocess
 import sys
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
 from typing import Any
 
 import pytest
@@ -36,6 +37,16 @@ from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, _complete, install_backend
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.fixture(name="recovery_log")
+def _recovery_log(caplog: pytest.LogCaptureFixture) -> Iterator[pytest.LogCaptureFixture]:
+    logger = logging.getLogger("agent-toolkit.agents-server.mcp")
+    logger.addHandler(caplog.handler)
+    try:
+        yield caplog
+    finally:
+        logger.removeHandler(caplog.handler)
 
 
 class _RecoveryBackend(FakeBackend):
@@ -396,6 +407,7 @@ async def test_reinterrupted_recovery_retains_original_launch_inputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    recovery_log: pytest.LogCaptureFixture,
 ) -> None:
     """再開の初期公開後に故障しても元の依頼・追送を保ち、次の親復帰で同一IDを続行する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -429,11 +441,20 @@ async def test_reinterrupted_recovery_retains_original_launch_inputs(
                 state_root=tmp_path,
                 root_session_id="failed-resume-root",
             )
-        assert "制御した再開途中の失敗" in capsys.readouterr().out
+        output = capsys.readouterr().out
+        assert "制御した再開途中の失敗" in output
+        assert f"atk agents show {identifier}" in output and "send_message" in output
         async with asyncio.timeout(5):
-            with pytest.raises(RuntimeError, match="制御した再開途中の失敗"):
+            with pytest.raises(RuntimeError, match="制御した再開途中の失敗") as failure:
                 while True:
                     await owner.wait()
+        assert f"atk agents show {identifier}" in str(failure.value) and "send_message" in str(failure.value)
+        errors = [
+            record.getMessage()
+            for record in recovery_log.records
+            if record.getMessage().startswith("delegation_recovery_failed")
+        ]
+        assert errors and all(f"atk agents show {identifier}" in error and "send_message" in error for error in errors)
     async with _mcp_owner(monkeypatch, tmp_path, "retried-root", "parent", "codex") as (owner, backend):
         async with asyncio.timeout(5):
             result = await owner.wait()
@@ -456,6 +477,7 @@ async def test_recovery_failure_before_session_creation_reaches_public_wait(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    recovery_log: pytest.LogCaptureFixture,
 ) -> None:
     """新しい状態がまだ無い接続失敗でも、親の公開CLIへ原因を配送する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -484,11 +506,21 @@ async def test_recovery_failure_before_session_creation_reaches_public_wait(
                 root_session_id="early-failure-root",
             )
         assert code == 0
-        assert "制御した接続初期化前の失敗" in capsys.readouterr().out
+        output = capsys.readouterr().out
+        identifier = started["session_id"]
+        assert "制御した接続初期化前の失敗" in output
+        assert f"atk agents show {identifier}" in output and "send_message" in output
         assert not backend.start_calls
         assert started["session_id"] not in owner.sessions
-        with pytest.raises(RuntimeError, match="制御した接続初期化前の失敗"):
+        with pytest.raises(RuntimeError, match="制御した接続初期化前の失敗") as failure:
             await owner.wait()
+        assert f"atk agents show {identifier}" in str(failure.value) and "send_message" in str(failure.value)
+        errors = [
+            record.getMessage()
+            for record in recovery_log.records
+            if record.getMessage().startswith("delegation_recovery_failed")
+        ]
+        assert errors and all(f"atk agents show {identifier}" in error and "send_message" in error for error in errors)
 
 
 _COLD_RECOVERY_SOURCE = """\

@@ -98,7 +98,9 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         while True:
             if self._recovery_errors:
                 identifier, error = self._recovery_errors.popitem()
-                raise RuntimeError(f"子の自動復旧に失敗しました: {identifier}: {error}") from error
+                raise RuntimeError(
+                    f"子の自動復旧に失敗しました: {identifier}: {error}。次の操作: {self._recovery_next_action(identifier)}"
+                ) from error
             await self._drain_candidate_records()
             for session_id in ordered_ids:
                 (await self._resolve_expired_session(session_id))

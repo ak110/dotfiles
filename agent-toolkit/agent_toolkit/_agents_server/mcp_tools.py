@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import logging
 import os
 import pathlib
@@ -11,7 +12,7 @@ from collections.abc import AsyncGenerator
 from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolRequestParams, ToolAnnotations
 from pydantic import Field
 
 from agent_toolkit._agents_server import (
@@ -19,6 +20,9 @@ from agent_toolkit._agents_server import (
     launch_requests,
     lifetime,
     logging_config,
+    shared_roots,
+    state,
+    status_file,
 )
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -49,28 +53,42 @@ from agent_toolkit._agents_server.tool_descriptions import (
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import mcp_environment, session_registry
+from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
 _MANAGER = AgentsServerManager()
+_SELECTED_MANAGER: contextvars.ContextVar[AgentsServerManager | None] = contextvars.ContextVar(
+    "agents_server_request_manager", default=None
+)
+
+
+def _manager() -> AgentsServerManager:
+    return _SELECTED_MANAGER.get() or _MANAGER
 
 
 @contextlib.asynccontextmanager
-async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
+async def _manager_lifespan(manager: AgentsServerManager, *, ready_for_requests: bool = False) -> AsyncGenerator[None]:
     _LOG.info("manager activateを開始します")
     try:
-        await _MANAGER.activate_async()
-        await _MANAGER.prepare_delegation_recovery()
+        await manager.activate_async()
+        await manager.prepare_delegation_recovery()
+        if ready_for_requests:
+            await manager.initialize_delegation_recovery()
+            identifier = manager.launcher_session_id()
+            root, _ = manager.status_owner()
+            assert identifier is not None and root is not None
+            await run_file_operation(shared_roots.write_root_alias, identifier, root)
     except BaseException:
         _LOG.exception("manager activateに失敗しました: stage=manager_activate")
-        await _MANAGER.close()
+        await manager.close()
         await run_file_operation(logging_config.flush_logging)
         raise
     _LOG.info("manager activateが完了しました")
-    root_session_id, owner_status_file = _MANAGER.status_owner()
+    root_session_id, owner_status_file = manager.status_owner()
     logging_config.record_instance_event("bound", root_session_id=root_session_id, owner_status_file=owner_status_file)
-    recovery = asyncio.create_task(_MANAGER.monitor_delegation_recovery())
+    recovery = asyncio.create_task(manager.monitor_delegation_recovery())
     try:
         yield
     finally:
@@ -80,13 +98,72 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
                 recovery.cancel()
                 await lifetime.wait_for_shutdown((recovery,))
             finally:
-                await _MANAGER.close()
+                await manager.close()
         except BaseException:
             _LOG.exception("manager closeに失敗しました: stage=manager_close")
             await run_file_operation(logging_config.flush_logging)
             raise
         _LOG.info("manager closeが完了しました")
         await run_file_operation(logging_config.flush_logging)
+
+
+class _RequestManagers:
+    """同じMCP接続から受けたCodexの会話を、所有者と終了処理ごとに分離する。"""
+
+    def __init__(self, stack: contextlib.AsyncExitStack) -> None:
+        self._stack = stack
+        self._managers: dict[str, AgentsServerManager] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    async def get(self, identifier: str) -> AgentsServerManager:
+        async with self._locks.setdefault(identifier, asyncio.Lock()):
+            if identifier not in self._managers:
+                # Codexの通常MCP起動には会話IDの環境値が無い。要求のthreadIdを元に既存のrootを確定する。
+                sessions: dict[str, state.SessionState] = {}
+                writer = status_file.StatusFileWriter(sessions, shared_roots.StatusFileIdentity(identifier, "root.json", None))
+                manager = AgentsServerManager(writer, launcher_environment={"CODEX_THREAD_ID": identifier})
+                await self._stack.enter_async_context(_manager_lifespan(manager, ready_for_requests=True))
+                self._managers[identifier] = manager
+            return self._managers[identifier]
+
+
+_REQUEST_MANAGERS: contextvars.ContextVar[_RequestManagers | None] = contextvars.ContextVar(
+    "agents_server_request_managers", default=None
+)
+
+
+@contextlib.asynccontextmanager
+async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
+    async with contextlib.AsyncExitStack() as stack:
+        await stack.enter_async_context(_manager_lifespan(_MANAGER))
+        token = _REQUEST_MANAGERS.set(_RequestManagers(stack))
+        try:
+            yield
+        finally:
+            _REQUEST_MANAGERS.reset(token)
+
+
+@contextlib.asynccontextmanager
+async def _request_scope(params: CallToolRequestParams) -> AsyncGenerator[None]:
+    metadata = params.meta
+    identifier = metadata.get("threadId") if metadata else None
+    if identifier is None:
+        yield
+        return
+    if not isinstance(identifier, str) or not shared_roots.valid_session_id(identifier):
+        raise ActionableError("MCP要求のthreadIdが不正", next_action="CodexのバージョンとMCP要求の会話IDを確認して再接続する")
+    if identifier == _MANAGER.launcher_session_id():
+        yield
+        return
+    pool = _REQUEST_MANAGERS.get()
+    if pool is None:
+        raise ActionableError("MCP接続が未初期化", next_action="CodexからMCPサーバーへ再接続する")
+    manager = await pool.get(identifier)
+    token = _SELECTED_MANAGER.set(manager)
+    try:
+        yield
+    finally:
+        _SELECTED_MANAGER.reset(token)
 
 
 mcp = AgentsServerMCP(
@@ -113,6 +190,7 @@ mcp = AgentsServerMCP(
         kind=KIND_MCP_INSTRUCTIONS,
     ),
     lifespan=_mcp_lifespan,
+    request_scope=_request_scope,
 )
 
 
@@ -152,7 +230,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             model_type=model_type,
             whole_contract_path=whole_contract_path,
         )
-        response = await _MANAGER.start_handoff(handoff_from)
+        response = await _manager().start_handoff(handoff_from)
         public = public_start_response(response)
         public["cwd"] = response["cwd"]
         public["model_type"] = response["model_type"]
@@ -174,7 +252,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     if mode == "task":
         assert subagent_md_path is not None
         params = extra_params or {}
-        launcher = await run_file_operation(_MANAGER.launcher_session_id)
+        launcher = await run_file_operation(_manager().launcher_session_id)
         task_model_type, task_prompt, launch_kind, handoff_path = await run_file_operation(
             task_document_request,
             subagent_md_path,
@@ -183,9 +261,9 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             launcher_session_id=launcher,
             include_startup=False,
         )
-        context = await run_file_operation(_MANAGER.launcher_record_context)
+        context = await run_file_operation(_manager().launcher_record_context)
         task_prompt = launch_requests.with_launcher_record(task_prompt, context)
-        response = await _MANAGER.start(
+        response = await _manager().start(
             model_type or task_model_type,
             task_prompt,
             cwd,
@@ -200,26 +278,26 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             return public
     elif mode == "delegate":
         assert prompt is not None and model_type is not None
-        launcher = await run_file_operation(_MANAGER.launcher_session_id)
+        launcher = await run_file_operation(_manager().launcher_session_id)
         delegate_prompt, handoff_path = await run_file_operation(
             launch_requests.delegate_request,
             prompt,
             whole_contract_path=whole_contract_path,
             launcher_session_id=launcher,
         )
-        response = await _MANAGER.start(model_type, delegate_prompt, cwd, label=label)
+        response = await _manager().start(model_type, delegate_prompt, cwd, label=label)
         public = public_start_response(response)
         public["handoff_record_path"] = str(handoff_path)
         return public
     elif mode == "explore":
         assert prompt is not None
-        response = await _MANAGER.start_explore(prompt, cwd, label=label, model_type=model_type)
+        response = await _manager().start_explore(prompt, cwd, label=label, model_type=model_type)
     elif mode == "write":
         assert prompt is not None
-        response = await _MANAGER.start_write(prompt, cwd, label=label, model_type=model_type)
+        response = await _manager().start_write(prompt, cwd, label=label, model_type=model_type)
     else:
         assert command is not None and summary_policy is not None
-        response = await _MANAGER.start_shell(command, cwd, summary_policy, label=label, model_type=model_type)
+        response = await _manager().start_shell(command, cwd, summary_policy, label=label, model_type=model_type)
     return public_start_response(response)
 
 
@@ -302,9 +380,11 @@ async def send_message(
     保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
     """
     if instruction is None and extra_params is None:
-        response = await _MANAGER.send_message(session_id, prompt, timeout)
+        response = await _manager().send_message(session_id, prompt, timeout)
     else:
-        response = await _MANAGER.send_message(session_id, prompt, timeout, instruction=instruction, extra_params=extra_params)
+        response = await _manager().send_message(
+            session_id, prompt, timeout, instruction=instruction, extra_params=extra_params
+        )
     return public_send_message_response(response)
 
 
@@ -346,7 +426,7 @@ async def kill(
     `show`の`ownership`が`owner_lost`のsessionでは、登録簿のpidと起動時刻が一致する委譲先CLIだけを停止し、
     停止を確かめてから`interrupted`を返す。所有していたagents_serverのプロセスは止めない。以後の`send_message`は同じ会話を再開する。
     """
-    return await _MANAGER.kill(session_id, timeout, stop)
+    return await _manager().kill(session_id, timeout, stop)
 
 
 @mcp.tool(
@@ -363,7 +443,7 @@ async def stop_session(session_id: Annotated[str, Field(description=SESSION_ID_D
     破棄後も同じ`session_id`への`send_message`で会話を暗黙再開できる。
     成功時は空のオブジェクトを返し、失敗は例外で示す。
     """
-    return await _MANAGER.stop(session_id)
+    return await _manager().stop(session_id)
 
 
 @mcp.tool(
@@ -401,7 +481,7 @@ async def list_sessions(
     全件が必要な場合は`include_terminated`へ真を渡す。除いた件数が0なら`omitted`は省く。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
     """
-    return await _MANAGER.list_sessions(include_terminated=include_terminated)
+    return await _manager().list_sessions(include_terminated=include_terminated)
 
 
 @mcp.tool(
@@ -465,8 +545,8 @@ async def show_session(
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
     終了時の結果本文は返さないため、受領には`atk agents wait`を使う。
     """
-    await _MANAGER.take_over_orphaned_session(session_id)
-    return await _MANAGER.show_session(session_id, verbose=verbose)
+    await _manager().take_over_orphaned_session(session_id)
+    return await _manager().show_session(session_id, verbose=verbose)
 
 
 def _prepare_child_environment() -> None:

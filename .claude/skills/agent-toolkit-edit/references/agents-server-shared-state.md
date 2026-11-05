@@ -50,7 +50,7 @@ process-loop、レーン操作、配布物保持が共有する状態は、前�
 
 | 実行主体 | 実体 | 寿命 |
 | --- | --- | --- |
-| MCPサーバー | 起動スクリプトは`agent-toolkit/agent_toolkit/agents_server_mcp.py`。MCPツールの実装は`_agents_server/mcp_tools.py`、セッション管理は`_agents_server/manager.py`および`manager_*.py`が担当する | ホストがMCPサーバーを起動する単位ごとに1プロセスが存在する。起動時の会話コンテキストから自身の識別情報を確定して保持する。プロセスごとに管理するセッションの集合は独立している |
+| MCPサーバー | 起動スクリプトは`agent-toolkit/agent_toolkit/agents_server_mcp.py`。MCPツールの実装は`_agents_server/mcp_tools.py`、セッション管理は`_agents_server/manager.py`および`manager_*.py`が担当する | ホストのMCP起動単位ごとに1プロセスが存在する。環境の会話コンテキスト、または要求の`_meta.threadId`から管理対象を確定する。同じ接続の異なる会話は、Manager・root・待機と終了処理を分離する |
 | `atk`のCLI | `atk agents wait`、`atk agents notify`、`atk agents list`、`atk agents show`、`atk agents logs`、`atk lane create/integrate/delete`など | コマンド呼び出しごとに起動する短命なプロセス。現在のセッション識別子を取得して動作する。レーン操作では既存のセッション登録情報の参照のみを行う |
 | フック | `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`。観測記録の読み書きは`_hooks/agents_server_observations.py`が担当する | ツール実行イベントごとに起動する短命なプロセス。入力JSONから現在のセッション識別子を取得する |
 | statusline | `rust/claude-statusline` | 描画更新ごとに起動する短命なプロセス。入力JSONから現在のセッション識別子を取得する |
@@ -61,6 +61,12 @@ Claude Codeが同一プロセス内でセッション識別子を切り替えた
 `session-review-evidence`の`--delegation-record parent`および`--delegation-record root`は、委譲先自身を起点として直接の委譲元や最上位の会話を解決する。
 親子関係の判定ロジックは`_common/session_parents.py`に共通化されており、ログ等の記録に残っている起動結果を、登録簿作成時の委譲元情報よりも優先して扱う。
 なお、MCPサーバープロセスには`CLAUDE_PID`が渡されないため、Claude Codeのプロセス識別子を環境変数から直接解決できない。
+
+`_meta.threadId`を持つ要求は、`mcp_tools.py`の要求単位のContextVarが該当会話のManagerを選ぶ。
+環境から解決した親と一致する場合は既存Managerを使い、それ以外は同じ会話IDのrootと`root.json`を所有するManagerをMCPの寿命内で保持する。
+最初の要求を返す前に子の復旧起動と状態の公開を終え、既存aliasesの形式でCLIへの対応を保存する。
+同じ会話の初期化だけを排他し、異なる会話の接続は並行して初期化できる。
+会話IDの無い要求は従来の起動環境とプロセスごとのrootの解決を維持する。
 
 ## 共有状態ごとの保持先と読み書きの担当
 
@@ -217,7 +223,7 @@ CLI自身が生成した要求ファイルや応答ファイルは、CLI処理�
 | 書込主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイル内の`host_session_id`を委譲元のセッション識別子へ解決する処理、PostToolUseフック、`atk agents wait` | そのセッションを起動したMCPサーバー |
 | 状態ファイルの`host_session_id`（そのファイルが載せるsessionの委譲元） | 状態ファイル | statuslineおよび`atk agents list`のツリー表示（親子の関連付けにおける親IDとして利用。`status_reader.load_root`が各セッションに付与する）、同一ルートに属する他のMCPサーバー（稼働中の子孫プロセスの判定） | その状態ファイルを書き込むMCPサーバー。なお、状態ファイルのファイル名（`owner_status_file`）は書込主体の識別子であり、結果の所有権判定にのみ用い、親IDとして転用することはない |
 | 状態ファイルの生存の印`heartbeat_at` | 状態ファイル内 | statusline、同一ルートに属する他のMCPサーバー | その状態ファイルを書き込むMCPサーバー |
-| ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`、`send_message`、`list`など、レスポンス内に`root_session_id`が明示されている場合は、ツール名に関わらずその値を索引に書き込む） |
+| ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（レスポンスの`root_session_id`を保存）、MCPの要求単位の初期化（`_meta.threadId`に対応するrootを公開後に保存） |
 
 | 対象 | モジュール |
 | --- | --- |
@@ -243,7 +249,10 @@ statuslineと`atk agents list`では、`subagent.rs`の`format_tokens`と`contex
 索引ファイルを参照するのは、現在のセッション識別子からルートセッション識別子を特定する必要があるコンポーネントのみである。
 MCPサーバーは、`start`、`send_message`、`list`のレスポンスにおいて、自身の状態ファイルの書き込み先となる`root_session_id`を明示して返す。`list`はセッション一覧が空であっても同様にこの項目を含める。PostToolUseフックは、レスポンス内に`root_session_id`が含まれていれば操作名に関わらずその値を索引へ直接書き込み、子セッション識別子から状態ディレクトリを逆引きすることはしない。これは、`claude --resume`で起動した会話ではMCPサーバーと会話側の識別子が異なり、最初のMCP操作が`send_message`になる可能性があるためである。
 `atk agents list`および`atk agents wait`は、索引または現在のセッション識別子自身の状態ディレクトリを参照して、ルートセッションとの対応関係を確認する。対応が確認できず対象セッションが0件の場合は、CLIが特定したルート識別子を提示し、MCPの`list`を1回実行してから同じCLIを再実行するよう復旧手順を案内する。対応関係の確認が完了している状態での0件は、通常の空状態として処理する。
-索引のキーとなる現在のセッション識別子は、所有者セッションがあればその値、無ければ`_common/delegated_session.py`の`current_conversation_session_id`（`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順）とする。ownerを持たないCodex最上位の会話は書込主体を環境から解決できないため、索引が確認済みのルートを指す場合に限り、そのルートの`root.json`（MCPのプロセス専用ルートの状態ファイル）を待機対象として読む。索引が無い場合の`atk agents wait`は、MCPの`list`応答の`root_session_id`を`--root-session-id`へ渡す回復操作を案内する。
+索引のキーとなる現在のセッション識別子は、所有者セッションがあればその値、無ければ`_common/delegated_session.py`の`current_conversation_session_id`（`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順）とする。
+ownerを持たないCodex最上位の会話は、索引が確認済みのrootを指す場合に、その`root.json`を待機対象として読む。
+MCPが要求から会話を識別した場合は会話IDのroot、識別できない場合はプロセスごとのrootを使う。
+索引が無い場合の`atk agents wait`は、MCPの`list`応答の`root_session_id`を`--root-session-id`へ渡す回復操作を案内する。
 
 各MCPサーバーは、自身が所有する状態ファイルおよび関連する一時ファイルに加えて、ハートビート（生存シグナル）が失効した他の状態ファイルを削除できる。
 ハートビート情報を持たない状態ファイルについては、勝手に削除せず保持する。
