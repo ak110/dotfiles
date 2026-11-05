@@ -669,18 +669,22 @@ def _write_current_wait_run(
     """指定したrunをcurrentとして保存し、runディレクトリと記録ファイルのパスを返す。"""
     run_directory = shared_layout.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
     run_path = run_directory / "run-1.json"
+    value: dict[str, Any] = {
+        "run_id": "run-1",
+        "status": status,
+        "targets": [target],
+        "started_at": "2026-09-21T00:00:00+00:00",
+    }
+    if status != "running":
+        value.update(
+            continuable=continuable,
+            output=f'{{"session_id":"{target}","status":"completed"}}',
+            exit_code=0,
+            stream="stdout",
+        )
     agents_wait._write_json(  # pylint: disable=protected-access
         run_path,
-        {
-            "run_id": "run-1",
-            "status": status,
-            "targets": [target],
-            "started_at": "2026-09-21T00:00:00+00:00",
-            "continuable": continuable,
-            "output": f'{{"session_id":"{target}","status":"completed"}}',
-            "exit_code": 0,
-            "stream": "stdout",
-        },
+        value,
     )
     agents_wait._write_json(run_directory / "current.json", {"run_id": "run-1"})  # pylint: disable=protected-access
     return run_directory, run_path

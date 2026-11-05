@@ -12,7 +12,7 @@ import sys
 import time
 import uuid
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 from agent_toolkit._agents_server import (
     logging_config,
@@ -25,6 +25,7 @@ from agent_toolkit._agents_server import (
     shared_roots,
     state,
     status_reader,
+    wait_run,
     wait_summary,
     wait_targets,
 )
@@ -122,11 +123,18 @@ def _write_json(path: pathlib.Path, value: Mapping[str, Any]) -> None:
     atomic_write(path, json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n", fsync=True)
 
 
-def _read_json(path: pathlib.Path) -> dict[str, Any] | None:
-    value, error = _read_result(path)
-    if error is not None:
-        raise _WaitStateReadError(f"待機の回復用記録を読めません: {path}: {error}")
-    return value
+def _read_run(path: pathlib.Path) -> wait_run.WaitRun | None:
+    try:
+        return wait_run.read_run(path)
+    except (OSError, UnicodeError, ValueError) as error:
+        raise _WaitStateReadError(f"待機の回復用記録を読めません: {path}: {error}") from error
+
+
+def _read_current(path: pathlib.Path) -> wait_run.CurrentRun | None:
+    try:
+        return wait_run.read_current(path)
+    except (OSError, UnicodeError, ValueError) as error:
+        raise _WaitStateReadError(f"待機の回復用記録を読めません: {path}: {error}") from error
 
 
 class _WaitStateReadError(ValueError):
@@ -137,16 +145,17 @@ def _saved_wait_recovery(run_path: pathlib.Path | None) -> dict[str, Any]:
     """同じ所有者の配送済みrunから、再配送せずに本文へ戻る情報を得る。"""
     if run_path is None:
         return {"status": "missing"}
-    value, error = _read_result(run_path)
     base: dict[str, Any] = {"run_path": str(run_path.resolve())}
-    if error is not None:
-        return {**base, "status": "unreadable", "reason": error}
+    try:
+        value = _read_run(run_path)
+    except _WaitStateReadError as error:
+        return {**base, "status": "unreadable", "reason": str(error)}
     if value is None:
         return {**base, "status": "missing"}
-    if value.get("status") not in {"foreground-delivered", "consumed"}:
+    if not isinstance(value, (wait_run.ForegroundDeliveredRun, wait_run.ConsumedRun)):
         return {**base, "status": "not-delivered"}
-    output = value.get("output")
-    if not isinstance(output, str) or value.get("stream", "stdout") != "stdout":
+    output = value.output
+    if value.stream != "stdout":
         return {**base, "status": "no-results"}
     try:
         rows = [json.loads(line) for line in output.splitlines() if line.strip()]
@@ -187,26 +196,20 @@ def _absent_wait_result(
         message += "; " + _interrupted_sessions_text(interrupted_sessions)
     next_action = _SAVED_RESULT_NEXT_ACTION if recovery["status"] == "available" else _ABSENT_TARGETS_NEXT_ACTION
     if recovery["status"] == "unreadable":
-        next_action = "保存runの読取失敗の原因を解消し、同じ`run_path`を読む。必要な結果を不在と扱わない"
+        next_action = (
+            "表示したrun_pathとreasonを添えてagents_serverの開発担当へ調査を依頼する。"
+            "必要な結果を不在と扱わず、既存runを保持する"
+        )
     return _fail(message, 10, next_action=next_action)
 
 
 def _matching_current_wait_run(run_directory: pathlib.Path, targets: list[str]) -> pathlib.Path | None:
-    current = _read_json(run_directory / "current.json")
-    run_id = current.get("run_id") if current is not None else None
-    if not isinstance(run_id, str):
+    current = _read_current(run_directory / "current.json")
+    if current is None:
         return None
-    run_path = run_directory / f"{run_id}.json"
-    run = _read_json(run_path)
-    if run is not None and run.get("status") in {"running", "published"} and not isinstance(run.get("targets"), list):
-        return None
-    if run is None or run.get("targets") != targets:
-        return None
-    if run.get("status") in {"foreground-delivered", "consumed"} or (
-        run.get("status") == "published" and run.get("continuable") is True
-    ):
-        return None
-    return run_path if run.get("status") in {"running", "published"} else None
+    run_path = run_directory / f"{current.run_id}.json"
+    run = _read_run(run_path)
+    return run_path if run is not None and wait_run.reusable(run, targets) else None
 
 
 def _stashed_wait_targets(run_path: pathlib.Path) -> set[str]:
@@ -222,25 +225,17 @@ def _publish_wait_result(
     output: str,
     code: int,
     *,
-    stream: str = "stdout",
+    stream: Literal["stdout", "stderr"] = "stdout",
     continuable: bool = False,
 ) -> int:
     output = _public_wait_output(output, stream)
-    value = _read_json(run_path) or {}
-    value.update(
-        {
-            "status": "published",
-            "output": _without_bodies(output, stream),
-            "exit_code": code,
-            "stream": stream,
-            "continuable": False,
-        }
-    )
-    _write_json(run_path, value)
+    value = _read_run(run_path)
+    if not isinstance(value, wait_run.RunningRun):
+        raise _WaitStateReadError(f"公開する待機runがrunningではありません: {run_path}")
+    published = value.publish(_without_bodies(output, stream), code, stream)
+    _write_json(run_path, published.model_dump(exclude_unset=True))
     _print_public(output, stream)
-    value["status"] = "foreground-delivered"
-    value["continuable"] = continuable
-    _write_json(run_path, value)
+    _write_json(run_path, published.deliver(continuable=continuable).model_dump(exclude_unset=True))
     _remove_wait_stash(run_path)
     return code
 
@@ -256,30 +251,26 @@ def _remove_wait_stash(run_path: pathlib.Path) -> None:
 
 
 def _consume_wait_result(run_path: pathlib.Path) -> int:
-    value = _read_json(run_path)
+    value = _read_run(run_path)
     if value is None:
         return _fail(f"先行する待機の結果記録を読めません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
-    if value.get("status") in {"foreground-delivered", "consumed"}:
-        consumed = {"status": "consumed", "run_id": value.get("run_id"), "next_action": _CONSUMED_NEXT_ACTION}
+    if isinstance(value, (wait_run.ForegroundDeliveredRun, wait_run.ConsumedRun)):
+        consumed: dict[str, Any] = {"status": "consumed", "run_id": value.run_id, "next_action": _CONSUMED_NEXT_ACTION}
         recovery = _saved_wait_recovery(run_path)
         if recovery["status"] == "available":
             consumed["recovery"] = recovery
             consumed["next_action"] = _SAVED_RESULT_NEXT_ACTION
-        elif value.get("status") == "foreground-delivered":
+        elif isinstance(value, wait_run.ForegroundDeliveredRun):
             consumed["recovery"] = recovery
             consumed["next_action"] = _PRECEDING_WAIT_NEXT_ACTION
         print(json.dumps(consumed, ensure_ascii=False, separators=(",", ":")))
         return 8
-    output = value.get("output")
-    code = value.get("exit_code")
-    stream = value.get("stream")
-    if value.get("status") != "published" or not isinstance(output, str) or not isinstance(code, int):
+    if not isinstance(value, wait_run.PublishedRun):
         return _fail(f"先行する待機の終了時の結果が公開されていません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
-    _print_public(_public_wait_output(output, stream), stream)
-    value["status"] = "consumed"
-    _write_json(run_path, value)
+    _print_public(_public_wait_output(value.output, value.stream), value.stream)
+    _write_json(run_path, value.consume().model_dump(exclude_unset=True))
     _remove_wait_stash(run_path)
-    return code
+    return value.exit_code
 
 
 def _absent_targets_message(owner_status_file: str) -> str:
@@ -411,7 +402,7 @@ def wait_for_result(
         return _fail(
             str(error),
             6,
-            next_action="回復用記録の読取失敗を解消してから`atk agents wait`を再実行する。既存runを削除しない",
+            next_action=("表示した記録のパスとエラーを添えてagents_serverの開発担当へ調査を依頼する。既存runを削除しない"),
         )
 
 
@@ -474,33 +465,20 @@ def _wait_for_result(
     if target_error is not None:
         message, code, next_action = target_error
         return _fail(message, code, next_action=next_action)
-    current = _read_json(run_directory / "current.json")
-    current_id = current.get("run_id") if current is not None else None
-    current_run_path = (
-        run_directory / f"{current_id}.json"
-        if isinstance(current_id, str) and shared_layout.valid_session_id(current_id)
-        else None
-    )
+    current = _read_current(run_directory / "current.json")
+    current_run_path = run_directory / f"{current.run_id}.json" if current is not None else None
     current_run_error: _WaitStateReadError | None = None
     try:
-        current_run = _read_json(current_run_path) if current_run_path is not None else None
+        current_run = _read_run(current_run_path) if current_run_path is not None else None
     except _WaitStateReadError as error:
         # 対象0件の診断は保存runのunreadableを添えて終了するため、対象集合の確定まで異常を保持する。
         current_run = None
         current_run_error = error
-    if current_run is not None and current_run.get("status") in {"running", "published"}:
-        recorded_targets = current_run.get("targets")
-        if (
-            isinstance(recorded_targets, list)
-            and current_run_path is not None
-            and all(
-                isinstance(session_id, str) and shared_layout.valid_session_id(session_id) for session_id in recorded_targets
-            )
-        ):
-            stashed = _stashed_wait_targets(current_run_path)
-            if set(origins) | stashed == set(recorded_targets):
-                for session_id in stashed:
-                    origins.setdefault(session_id, set()).add("run")
+    if isinstance(current_run, (wait_run.RunningRun, wait_run.PublishedRun)) and current_run_path is not None:
+        stashed = _stashed_wait_targets(current_run_path)
+        if set(origins) | stashed == set(current_run.targets):
+            for session_id in stashed:
+                origins.setdefault(session_id, set()).add("run")
     ordered_ids = sorted(origins)
     own_sessions = _read_sessions(own_status_path)
     if not ordered_ids and (not own_status_path.exists() or own_sessions is not None):
@@ -538,15 +516,15 @@ def _wait_for_result(
                         flush=True,
                     )
                 run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
-                current = _read_json(run_directory / "current.json")
-                run_id = current.get("run_id") if current is not None else None
-                if not isinstance(run_id, str):
+                current = _read_current(run_directory / "current.json")
+                if current is None:
                     return _fail(
                         "同じ書込主体の旧形式の待機がlockを保持しています: "
                         f"owner={identity.file_name}, targets={','.join(ordered_ids) or 'none'}",
                         8,
                         next_action=_PRECEDING_WAIT_NEXT_ACTION,
                     )
+                run_id = current.run_id
                 run_path = run_directory / f"{run_id}.json"
                 while not owns_lock:
                     remaining = deadline - time.monotonic()
@@ -566,32 +544,26 @@ def _wait_for_result(
                         pass
             current_run_path = run_path if run_path is not None else _matching_current_wait_run(run_directory, ordered_ids)
             if current_run_path is not None:
-                recorded = _read_json(current_run_path)
-                if recorded is not None and recorded.get("status") == "running":
+                recorded = _read_run(current_run_path)
+                if isinstance(recorded, wait_run.RunningRun):
                     if run_path is not None:
-                        recorded_targets = recorded.get("targets")
-                        if not isinstance(recorded_targets, list) or any(
-                            not isinstance(session_id, str) or not shared_layout.valid_session_id(session_id)
-                            for session_id in recorded_targets
-                        ):
-                            return _consume_wait_result(current_run_path)
-                        ordered_ids = sorted(set(ordered_ids) | set(recorded_targets) | _stashed_wait_targets(current_run_path))
+                        recorded = recorded.add_targets([*ordered_ids, *_stashed_wait_targets(current_run_path)])
+                        ordered_ids = recorded.targets
+                        _write_json(current_run_path, recorded.model_dump(exclude_unset=True))
                     run_path = current_run_path
                 else:
                     return _consume_wait_result(current_run_path)
             else:
                 run_id = uuid.uuid4().hex
                 run_path = run_directory / f"{run_id}.json"
-                _write_json(
-                    run_path,
-                    {
-                        "run_id": run_id,
-                        "status": "running",
-                        "targets": ordered_ids,
-                        "started_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                    },
+                created = wait_run.RunningRun(
+                    run_id=run_id,
+                    status="running",
+                    targets=ordered_ids,
+                    started_at=datetime.datetime.now(datetime.UTC).isoformat(),
                 )
-                _write_json(run_directory / "current.json", {"run_id": run_id})
+                _write_json(run_path, created.model_dump(exclude_unset=True))
+                _write_json(run_directory / "current.json", wait_run.CurrentRun(run_id=run_id).model_dump())
             wait_targets.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
             # 上限はMCPの`wait`と同じ保持期間とホストの判定から導出する。CLIはMCPのツール呼び出しを経由しないため、
@@ -653,9 +625,10 @@ def _wait_for_result(
                     if is_human_terminal():
                         print(f"終了時の結果・通知の待機対象を追加: {session_id}", file=sys.stderr, flush=True)
                     wait_targets.retain_wait_targets(root_session_id, identity.file_name, [session_id], state_root)
-                    recorded = _read_json(run_path) or {}
-                    recorded["targets"] = ordered_ids
-                    _write_json(run_path, recorded)
+                    recorded = _read_run(run_path)
+                    if not isinstance(recorded, wait_run.RunningRun):
+                        raise _WaitStateReadError(f"対象を追加する待機runがrunningではありません: {run_path}")
+                    _write_json(run_path, recorded.add_targets(ordered_ids).model_dump(exclude_unset=True))
                     _LOG.info(
                         "wait_target_added session_id=%s origins=%s",
                         session_id,

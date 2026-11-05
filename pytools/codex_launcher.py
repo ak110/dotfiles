@@ -16,6 +16,7 @@ from agent_toolkit._common import process_tree
 
 from pytools._internal import common, prune_codex_packages, setup_codex_cli
 from pytools._internal.codex_bridge import RecoveryBridge
+from pytools._internal.codex_recovery import RunningTurn
 
 _VALUE_OPTIONS = frozenset(
     {
@@ -172,17 +173,15 @@ async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float) ->
                     result = await asyncio.to_thread(process_tree.stop_tree, identity)
                     process_tree.log_residual(result.descriptions(), context="Codex TUI")
                     await asyncio.wait_for(process.wait(), process_tree.RECLAIM_TIMEOUT_SECONDS)
-            if code == 0 or code in _INTERRUPTED or not bridge.state.active or bridge.state.interrupted:
+            conversation = bridge.state.conversation
+            if code == 0 or code in _INTERRUPTED or not isinstance(conversation, RunningTurn):
                 return code if code >= 0 else 128 - code
             current = bridge.daemon_generation()
             generation = bridge.connected_generation
             if current is None or generation is None or current == generation:
                 return code if code >= 0 else 128 - code
-            identifier, cwd = bridge.state.thread_id, bridge.state.cwd
-            if identifier is None or cwd is None:
-                return code if code >= 0 else 128 - code
             bridge.prepare_tui_resume()
-            command = _resume_arguments(arguments, identifier, cwd)
+            command = _resume_arguments(arguments, conversation.thread_id, conversation.cwd)
 
 
 def main(argv: list[str] | None = None) -> int:

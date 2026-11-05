@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import copy
+import enum
 import json
 import pathlib
 import secrets
@@ -13,8 +14,21 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, Self
 
-from pytools._internal.codex_recovery import ConversationRecovery
+from pytools._internal.codex_recovery import ConversationRecovery, RunningTurn
 from pytools._internal.codex_transport import RpcChannel, accept_tui, native_proxy
+
+
+class RecoveryPhase(enum.Enum):
+    """会話のturn状態と独立した、接続復旧の進行段階。"""
+
+    RELAYING = enum.auto()
+    DAEMON_CHANGED = enum.auto()
+    RECONNECTING = enum.auto()
+    INITIALIZING = enum.auto()
+    RESUMING = enum.auto()
+    RESTORING_DELEGATIONS = enum.auto()
+    CHECKING_CONTINUATION = enum.auto()
+    FAILED = enum.auto()
 
 
 class RecoveryBridge:
@@ -24,6 +38,7 @@ class RecoveryBridge:
         self.binary, self.environment, self.home = binary, dict(environment), home
         self.timeout = timeout
         self.state = ConversationRecovery()
+        self.phase = RecoveryPhase.RELAYING
         self.token = secrets.token_hex(32)
         self.endpoint = ""
         self.failure: asyncio.Future[Exception] | None = None
@@ -116,6 +131,7 @@ class RecoveryBridge:
             # サーバーcallbackの失敗を起動所有者へ返し、正常終了と区別する。
             assert self.failure is not None
             if not self.failure.done():
+                self.phase = RecoveryPhase.FAILED
                 self.failure.set_result(error)
         finally:
             self._authenticated.discard(task)
@@ -191,17 +207,21 @@ class RecoveryBridge:
         initialize = self.state.initialize
         if initialize is None:
             raise RuntimeError("Codexの初期化が完了する前にIPCが終了した。codexを再実行する")
-        eligible, old_turn, revision = self.state.active, self.state.turn_id, self._user_turn_revision
+        original, revision = self.state.conversation, self._user_turn_revision
         await self._invalidate_server_requests(front)
+        self.phase = RecoveryPhase.INITIALIZING
         await self._request(front, back, "initialize", initialize)
         await back.send({"method": "initialized", "params": {}})
         if self.state.thread_id is None:
             return
+        self.phase = RecoveryPhase.RESUMING
         resumed = await self._request(front, back, "thread/resume", dict(self.state.resume_parameters(), excludeTurns=True))
-        await self._restore_work(front, back, resumed, eligible=eligible, old_turn=old_turn, revision=revision)
+        await self._restore_work(
+            front, back, resumed, original=original if isinstance(original, RunningTurn) else None, revision=revision
+        )
 
     async def _restore_work(
-        self, front: RpcChannel, back: RpcChannel, resumed: Any, *, eligible: bool, old_turn: str | None, revision: int
+        self, front: RpcChannel, back: RpcChannel, resumed: Any, *, original: RunningTurn | None, revision: int
     ) -> None:
         if not isinstance(resumed, dict) or not isinstance(resumed.get("thread"), dict):
             raise RuntimeError("Codexの再開応答に会話が無い。同じ会話をresumeする")
@@ -209,14 +229,15 @@ class RecoveryBridge:
         if not isinstance(turns, dict) or not isinstance(turns.get("data"), list):
             raise RuntimeError("Codexの再開前のturnを確認できない。同じ会話をresumeする")
         await self._restore_delegations(front, back)
-        if eligible and not self.state.interrupted and revision == self._user_turn_revision:
-            self.state.active, self.state.turn_id = True, old_turn
+        self.phase = RecoveryPhase.CHECKING_CONTINUATION
+        if original is not None and revision == self._user_turn_revision and self.state.restore_running_turn(original):
             continuation = self.state.continuation_parameters(resumed["thread"], turns["data"])
             if continuation is not None:
                 await self._request(front, back, "turn/start", continuation)
         self.recovery_count += 1
 
     async def _restore_delegations(self, front: RpcChannel, back: RpcChannel) -> None:
+        self.phase = RecoveryPhase.RESTORING_DELEGATIONS
         cursor = None
         while True:
             statuses = await self._request(
@@ -309,16 +330,19 @@ class RecoveryBridge:
                                         front,
                                         back,
                                         resumed,
-                                        eligible=self.state.active,
-                                        old_turn=self.state.turn_id,
+                                        original=self.state.conversation
+                                        if isinstance(self.state.conversation, RunningTurn)
+                                        else None,
                                         revision=self._user_turn_revision,
                                     )
                                 self._bootstrap_thread = None
+                                self.phase = RecoveryPhase.RELAYING
                             elif self._bootstrap_thread is not None:
                                 # 通常resumeも最初のモデル要求に依存せず、保存済みの子孫へ接続する。
                                 async with asyncio.timeout(self.timeout):
                                     await self._restore_delegations(front, back)
                                 self._bootstrap_thread = None
+                                self.phase = RecoveryPhase.RELAYING
                             from_back = asyncio.create_task(back.receive())
                     if tick in done:
                         current = self._generation()
@@ -327,6 +351,7 @@ class RecoveryBridge:
                         tick = asyncio.create_task(asyncio.sleep(1))
                     if not restart:
                         continue
+                    self.phase = RecoveryPhase.DAEMON_CHANGED
                     await self._invalidate_server_requests(front)
                     from_back.cancel()
                     await asyncio.gather(from_back, return_exceptions=True)
@@ -349,6 +374,7 @@ class RecoveryBridge:
                             }
                         )
                     pending.clear()
+                    self.phase = RecoveryPhase.RECONNECTING
                     async with asyncio.timeout(self.timeout):
                         delay = 0.05
                         while True:
@@ -361,6 +387,7 @@ class RecoveryBridge:
                                 await asyncio.sleep(delay + secrets.randbelow(50) / 1000)
                                 delay = min(1, delay * 2)
                         await self._recover(front, back)
+                    self.phase = RecoveryPhase.RELAYING
                     generation = self._generation()
                     self.connected_generation = generation
                     from_back = asyncio.create_task(back.receive())

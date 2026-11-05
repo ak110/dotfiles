@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import agents_wait, shared_layout
+from agent_toolkit._agents_server import agents_wait, shared_layout, wait_run
 
 
 def _saved_run(tmp_path: pathlib.Path, status: str, *, owner: str = "root.json") -> tuple[pathlib.Path, pathlib.Path]:
@@ -135,3 +135,93 @@ def test_saved_wait_recovery_boundaries(tmp_path: pathlib.Path, capsys: pytest.C
         expected = {"missing": "missing", "broken": "unreadable", "empty": "no-results"}[problem]
         assert expected in captured.err
         assert str(path) in captured.err
+
+
+@pytest.mark.parametrize("status", ("published", "foreground-delivered", "consumed"))
+@pytest.mark.parametrize("field", ("output", "exit_code"))
+def test_incomplete_run_is_not_overwritten(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], status: str, field: str
+) -> None:
+    """公開以後の必須項目欠落を読取異常とし、元runとcurrent参照を保持する。"""
+    path, _body_path = _saved_run(tmp_path, status)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload.pop(field)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    before = path.read_bytes()
+    current = path.with_name("current.json")
+    before_current = current.read_bytes()
+    root = shared_layout.status_directory("root-session", tmp_path)
+    (root / "root.json").write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "session-a", "status": "running"}]}), encoding="utf-8"
+    )
+    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
+
+    assert (
+        agents_wait.wait_for_result(
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path, root_session_id="root-session"
+        )
+        == 6
+    )
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert field in captured.err and str(path) in captured.err
+    assert path.read_bytes() == before
+    assert current.read_bytes() == before_current
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("status", "unknown"),
+        ("run_id", "../outside"),
+        ("targets", "session-a"),
+        ("targets", ["../outside"]),
+        ("output", None),
+        ("exit_code", True),
+        ("exit_code", "0"),
+        ("stream", "other"),
+        ("continuable", "false"),
+    ),
+)
+def test_run_boundary_rejects_invalid_saved_fields(tmp_path: pathlib.Path, field: str, value: Any) -> None:
+    """保存境界で状態と各項目の型を検証し、型変換やパスの逸脱を許さない。"""
+    path, _body_path = _saved_run(tmp_path, "published")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload[field] = value
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError):
+        wait_run.read_run(path)
+
+
+def test_run_transitions_preserve_saved_fields(tmp_path: pathlib.Path) -> None:
+    """対象追加と公開・配送の遷移で同じrunのデータとJSONの実生成項目を保つ。"""
+    run = wait_run.RunningRun(run_id="run-1", status="running", targets=["session-b"], started_at="2026-09-21T00:00:00+00:00")
+    updated = run.add_targets(["session-a", "session-b"])
+    assert run.targets == ["session-b"]
+    assert updated.targets == ["session-a", "session-b"]
+    running = updated.model_dump(exclude_unset=True)
+    assert set(running) == {"run_id", "status", "targets", "started_at"}
+    published = updated.publish("保存した出力", 3, "stderr")
+    for result in (published.deliver(continuable=True), published.consume()):
+        path = tmp_path / "run-1.json"
+        path.write_text(json.dumps(result.model_dump(exclude_unset=True)), encoding="utf-8")
+        restored = wait_run.read_run(path)
+        assert restored == result
+        assert isinstance(restored, (wait_run.ForegroundDeliveredRun, wait_run.ConsumedRun))
+        assert restored.run_id == updated.run_id and restored.targets == updated.targets
+        assert restored.output == "保存した出力" and restored.exit_code == 3 and restored.stream == "stderr"
+        assert set(restored.model_dump(exclude_unset=True)) == set(running) | {"output", "exit_code", "stream", "continuable"}
+    assert published.status == "published" and not published.continuable
+    assert published.deliver(continuable=True).status == "foreground-delivered"
+    assert published.consume().status == "consumed"
+
+
+@pytest.mark.parametrize("value", ({}, {"run_id": "../outside"}, {"run_id": 2}, {"run_id": "run-1", "status": "running"}))
+def test_current_reference_is_validated_separately(tmp_path: pathlib.Path, value: dict[str, Any]) -> None:
+    """current参照にはrun本体や不正な識別子を受理しない。"""
+    path = tmp_path / "current.json"
+    assert wait_run.read_current(path) is None
+    path.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(ValueError):
+        wait_run.read_current(path)
