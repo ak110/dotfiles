@@ -665,3 +665,80 @@ def test_windows_selection_skips_unmarked_test_modules(
             return markexpr
 
     assert pytest_plugin.pytest_ignore_collect(path, cast(pytest.Config, Config())) is expected
+
+
+_SLOT_PROBE = """\
+import json, os, pathlib, time
+import pytest
+
+@pytest.mark.parametrize("index", range(6))
+def test_slow(index):
+    started = time.time()
+    time.sleep(0.4)
+    pathlib.Path(os.environ["SLOT_EVIDENCE"], f"test-{index}.json").write_text(
+        json.dumps({"started": started, "ended": time.time()}), encoding="utf-8"
+    )
+"""
+
+_SLOT_WAITER = """\
+import json, pathlib, sys, time
+from pyfltr.command import execution_slot
+
+with execution_slot.hold(label="waiter-probe"):
+    started = time.time()
+    time.sleep(0.3)
+    pathlib.Path(sys.argv[1]).write_text(json.dumps({"started": started, "ended": time.time()}), encoding="utf-8")
+"""
+
+_SLOT_OUTER = """\
+import subprocess, sys
+from pyfltr.command import execution_slot
+
+with execution_slot.hold(label="outer-probe"):
+    raise SystemExit(subprocess.run(sys.argv[1:], check=False).returncode)
+"""
+
+
+@pytest.mark.parametrize(("workers", "outer"), [(2, False), (0, False), (2, True)])
+def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathlib.Path, workers: int, outer: bool) -> None:
+    """最外側の所有では試験の区切りで待機者へ譲って残りを再開し、継承時は外側の解放まで譲らない。
+
+    待機者の保持区間がどの試験の実行区間とも重ならないこと（workerの稼働中の排他）と、全試験の結果を確かめる。
+    """
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    (tmp_path / "probe_test.py").write_text(_SLOT_PROBE, encoding="utf-8")
+    (tmp_path / "waiter.py").write_text(_SLOT_WAITER, encoding="utf-8")
+    (tmp_path / "outer.py").write_text(_SLOT_OUTER, encoding="utf-8")
+    environment = dict(os.environ)
+    environment.pop("PYTEST_ADDOPTS", None)
+    environment.update(
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYFLTR_CACHE_DIR=str(tmp_path / "pyfltr"), SLOT_EVIDENCE=str(evidence)
+    )
+    argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
+    argv += ["-p", "xdist.plugin", "-n", str(workers), str(tmp_path / "probe_test.py")]
+    if outer:
+        argv = [sys.executable, str(tmp_path / "outer.py"), *argv]
+    waited = tmp_path / "waiter.json"
+    with subprocess.Popen(
+        argv, cwd=tmp_path, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8"
+    ) as child:
+        deadline = time.monotonic() + 60
+        # 最初の試験の完了後に待機を始め、残りの試験の途中で待機者が並ぶようにする。
+        while not list(evidence.glob("test-*.json")):
+            assert child.poll() is None and time.monotonic() < deadline
+            time.sleep(0.05)
+        waiter = subprocess.run(
+            [sys.executable, str(tmp_path / "waiter.py"), str(waited)], env=environment, timeout=60, check=False
+        )
+        output, _ = child.communicate(timeout=60)
+    assert waiter.returncode == 0
+    assert child.returncode == 0, output
+    assert "6 passed" in output
+    tests = [json.loads(path.read_text(encoding="utf-8")) for path in sorted(evidence.glob("test-*.json"))]
+    assert len(tests) == 6
+    window = json.loads(waited.read_text(encoding="utf-8"))
+    assert all(test["ended"] <= window["started"] or window["ended"] <= test["started"] for test in tests), (window, tests)
+    last = max(test["ended"] for test in tests)
+    # 最外側の所有では残りの試験より先に待機者が実行され、継承時はpytestの終了後まで待つ。
+    assert (window["ended"] < last) is not outer, (window, tests)
