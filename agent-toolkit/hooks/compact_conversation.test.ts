@@ -83,7 +83,7 @@ test("他機能への保護door・無条件・広域イベント登録の持込�
 
 const TOOL = "mcp__agent-toolkit__compact_conversation";
 
-async function waitingEngine($: Engine, on: On, options: { percent?: number; window?: number; eligible?: boolean; delegated?: boolean; compact?: "skip" | "failure"; writeFails?: boolean } = {}) {
+async function waitingEngine($: Engine, on: On, options: { percent?: number; window?: number; eligible?: boolean; delegated?: boolean; compact?: "skip" | "failure"; writeFails?: boolean; bashResult?: unknown } = {}) {
   mock.env(on, { HOME: "/home/tester", ...(options.delegated ? { AGENT_TOOLKIT_DELEGATED_SESSION: "1" } : {}) });
   mock.session(on);
   const clock = mock.clock(on, { now: 10_000 });
@@ -104,7 +104,7 @@ async function waitingEngine($: Engine, on: On, options: { percent?: number; win
   on("tool.register", (_$, e) => ({ value: { tool: e.name } }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("turn.complete", () => ({ text: "" }));
-  on("tool.call", { tool: "Bash" }, () => ({ result: { backgroundTaskId: task.id } }));
+  on("tool.call", { tool: "Bash" }, () => ({ result: "bashResult" in options ? options.bashResult : { backgroundTaskId: task.id } }));
   on("process.run", (_$, e) => {
     calls.queries.push(e.argv);
     return { value: { exitCode: 0, stdout: JSON.stringify({ eligible: options.eligible ?? true }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
@@ -417,6 +417,24 @@ for (const scenario of [
       expect(last?.window).toBe(scenario.window);
     }
     if (scenario.mode === "pending") expect(last?.pending).toBe(true);
+  });
+}
+
+for (const scenario of [
+  { mode: "missing", background: true, bashResult: { stdout: "" }, reason: "background_id_missing" },
+  { mode: "invalid", background: true, bashResult: { backgroundTaskId: 42 }, reason: "background_id_invalid" },
+  { mode: "empty", background: true, bashResult: { backgroundTaskId: "" }, reason: "background_id_invalid" },
+  { mode: "foreground", background: false, bashResult: { stdout: "" }, reason: undefined },
+] as const) {
+  test(`背景待機IDを検出できない戻り値を記録する: ${scenario.mode}`, async ($, on) => {
+    const { clock, calls } = await waitingEngine($, on, { percent: 61, bashResult: scenario.bashResult });
+    await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: scenario.background });
+    await clock.advance(0);
+    expect(calls.compactions).toBe(0);
+    expect(calls.queries.length).toBe(0);
+    const recorded = decisions(calls.records);
+    expect(recorded.at(-1)?.reason).toBe(scenario.reason);
+    if (scenario.reason !== undefined) expect(recorded.at(-1)?.task).toBe("unknown");
   });
 }
 

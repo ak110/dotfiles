@@ -173,7 +173,13 @@ export function register(on: On, session: { delegated: boolean }): void {
     const result = await next(e);
     const raw: unknown = result.result;
     const id = typeof raw === "object" && raw !== null ? (raw as { backgroundTaskId?: unknown }).backgroundTaskId : undefined;
-    if (typeof id !== "string" || !id || state.waits.has(id)) return result;
+    if (typeof id !== "string" || !id) {
+      // 背景実行を要求したのに待機IDを得られない場合は、hook未実行と区別できるよう理由を残す。
+      // 前景のBashは待機ではないため記録しない。
+      if (e.run_in_background === true) await diagnose($, state, "unknown", id === undefined ? "background_id_missing" : "background_id_invalid");
+      return result;
+    }
+    if (state.waits.has(id)) return result;
     // 背景待機を登録しない理由も残し、待機を検出しなかった場合と検出後の見送りを区別できるようにする。
     if (session.delegated) { await diagnose($, state, id, "delegated_session"); return result; }
     if (e.agentId !== undefined) { await diagnose($, state, id, "subagent"); return result; }
