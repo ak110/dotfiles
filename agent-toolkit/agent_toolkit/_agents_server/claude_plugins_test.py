@@ -15,6 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from agent_toolkit._agents_server import claude_plugins, plugin_root
+from agent_toolkit._testing.agents_server_support import ManualObserver
 
 
 def _plugin(root: Path, version: str = "1.0.0") -> Path:
@@ -44,6 +45,12 @@ def _inventory(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
     monkeypatch.setattr(claude_plugins.process_tree, "run_with_timeout", run)
     return state
+
+
+@pytest.fixture(name="manual_observer")
+def _manual_observer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """OSの通知を確かめない試験で、変更を`mark_changed`だけから与える。"""
+    monkeypatch.setattr(claude_plugins, "Observer", ManualObserver)
 
 
 def _options(tmp_path: Path, root: Path) -> dict[str, Any]:
@@ -142,6 +149,7 @@ async def test_unloaded_scope_without_install_path_is_ignored(tmp_path: Path, in
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
 async def test_copy_failure_preserves_previous_input(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace
 ) -> None:
@@ -200,6 +208,7 @@ def test_source_root_keeps_development_path(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("new_version", ["1.0.0", "2.0.0"])
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
 async def test_reload_switches_complete_input_before_control_request(
     tmp_path: Path, inventory: SimpleNamespace, new_version: str
 ) -> None:
@@ -267,6 +276,7 @@ async def test_settings_and_enabled_plugins_are_watched(tmp_path: Path, inventor
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
 async def test_changes_are_coalesced_until_reload(tmp_path: Path, inventory: SimpleNamespace) -> None:
     """連続通知は1回の待機で集約し、未反映状態はSDK成功まで保持する。"""
     root = _plugin(tmp_path / "checkout")
@@ -300,6 +310,7 @@ def _response(root: Path, version: str = "1.0.0") -> dict[str, Any]:
 
 @pytest.mark.parametrize("new_version", ["1.0.0", "2.0.0"])
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
 async def test_successful_reload_confirms_updated_input(tmp_path: Path, inventory: SimpleNamespace, new_version: str) -> None:
     """同版の内容変更と導入先の版変更を固定dirへ反映し、成功時にdirtyを解除する。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
@@ -331,6 +342,7 @@ async def test_successful_reload_confirms_updated_input(tmp_path: Path, inventor
 
 @pytest.mark.parametrize("failure", ["error-count", "version", "missing", "unexpected", "shape"])
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
 async def test_invalid_reload_response_preserves_old_input(tmp_path: Path, inventory: SimpleNamespace, failure: str) -> None:
     """SDKの応答形式・plugin集合・版・エラー数が不正なら入力を復旧する。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
@@ -360,6 +372,7 @@ async def test_invalid_reload_response_preserves_old_input(tmp_path: Path, inven
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
 async def test_change_during_reload_is_kept_pending(tmp_path: Path, inventory: SimpleNamespace) -> None:
     """制御要求の応答待ちに発生した更新通知を次のreloadまで保持する。"""
     root = _plugin(tmp_path / "checkout")
@@ -378,6 +391,7 @@ async def test_change_during_reload_is_kept_pending(tmp_path: Path, inventory: S
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
 async def test_updated_input_keeps_mcp_on_server_runtime(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace
 ) -> None:
@@ -431,6 +445,7 @@ async def test_unreclaimed_cli_keeps_input_but_stops_watch(tmp_path: Path, inven
 
 @pytest.mark.parametrize("ignored", ["synced", "unknown-scope", "disabled", "other-project", "excluded-source"])
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
 async def test_unused_installation_fields_do_not_block_prepare_or_reload(
     tmp_path: Path, inventory: SimpleNamespace, ignored: str
 ) -> None:
@@ -525,6 +540,7 @@ async def test_monitor_start_failure_preserves_prepared_input_and_reclaims_monit
 
 @pytest.mark.parametrize("source", [None, {"shape": "new"}])
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
 async def test_reload_ignores_unused_source_and_builtin_fields(tmp_path: Path, inventory: SimpleNamespace, source: Any) -> None:
     """利用するname/path/versionを確認し、未利用のSDK欄の形を強制しない。"""
     root = _plugin(tmp_path / "checkout")

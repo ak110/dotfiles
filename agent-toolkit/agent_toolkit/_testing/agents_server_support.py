@@ -127,6 +127,29 @@ def _write_notice(directory: pathlib.Path, session_id: str, sequence: int, sent_
     (directory / f"{session_id}.{sequence}.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
+class ManualObserver:
+    """変更を試験から`mark_changed`で通知するための、OSの監視資源を使わないObserverの代用。
+
+    実Observerはホストのinotifyインスタンスを消費し、上限に達した環境では監視が無効になる。
+    無効になると`mark_changed`が変更を記録しないため、OSの通知を確かめない試験の合否がホストの資源量で変わる。
+    OSの通知そのものや監視threadの終了を確かめる試験は、実Observerを使う。
+    """
+
+    ident = None
+
+    def schedule(self, *_args: Any, **_kwargs: Any) -> None:
+        pass
+
+    def unschedule_all(self) -> None:
+        pass
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+
 class FakeBackend:
     """共有MCP層の契約だけを検証するバックエンド。"""
 
