@@ -226,10 +226,13 @@ class ServeState(watchdog.events.FileSystemEventHandler):
 
         heartbeatは名前付きイベントで送る。ブラウザーの`EventSource`はコメント行を
         スクリプトへ渡さないため、名前付きイベントにしないとクライアントが無通信を判定できない。
+        購読の登録直後に`event: subscribed`を1回送る。`EventSource`の`open`は応答ヘッダーの受信時点で
+        登録より先に届き得るため、画面はこの合図の後に初期取得して、最初の接続での全件の読み直しを省く。
         """
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=2)
         self._queues.add(queue)
         try:
+            yield "event: subscribed\ndata: {}\n\n"
             while True:
                 received = await next_subscription_item(queue, self.shutdown_requested, heartbeat)
                 if received is SHUTDOWN:

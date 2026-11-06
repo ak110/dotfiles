@@ -476,6 +476,7 @@ process.stdout.write(JSON.stringify({
 async def test_sse_heartbeat(tmp_path: pathlib.Path) -> None:
     """変更が無い期間はheartbeatを送信する。"""
     events = state.ServeState(tmp_path).events(heartbeat=0.001)
+    assert await anext(events) == "event: subscribed\ndata: {}\n\n"
     assert await anext(events) == "event: heartbeat\ndata: {}\n\n"
     await events.aclose()
 

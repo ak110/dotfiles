@@ -3686,3 +3686,27 @@ async def test_wi_screen_sends_operation_timings_with_request_ids(browser_harnes
     assert all(isinstance(record.get("request_id"), str) and record["request_id"] for record in listed)
     assert all(record["fetch_ms"] >= 0 and record["render_ms"] >= 0 for record in listed)
     assert all("?" not in record.get("route", "") for record in records)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_initial_load_fetches_list_once_after_subscription(browser_harness: _BrowserHarness) -> None:
+    """購読の登録後に初期取得するため、最初の接続では一覧を読み直さず、登録後の変更は通知で反映する。"""
+    harness = browser_harness
+    page = harness.page
+    await _observe_screen_requests(page)
+    await page.goto(harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    await _wait_screen_requests_consumed(page, ("/api/events",))
+    # 新着通知の基準を取る`refreshKnownEntries`の取得（page指定なし）は数えず、一覧の取得だけを数える。
+    list_fetches = await page.evaluate(
+        "Object.entries(window.__screenRequests.completedByUrl)"
+        ".filter(([url]) => new URL(url).pathname === '/api/entries' && new URL(url).searchParams.has('page'))"
+        ".reduce((total, [, count]) => total + count, 0)"
+    )
+    assert list_fetches == 1
+    _entry_path(harness.root, "after-subscription.md").write_text(
+        "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\nsource: browser\n---\n\n購読後に追加した項目\n",
+        encoding="utf-8",
+    )
+    harness.current_state.publish()
+    await page.locator("#entry-list .entry-select").filter(has_text="after-subscription.md").wait_for(state="visible")

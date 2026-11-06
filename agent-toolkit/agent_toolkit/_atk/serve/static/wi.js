@@ -1854,6 +1854,13 @@ function bindEvents() {
 }
 
 let initialization = Promise.resolve();
+// 初期取得はサーバーが購読を登録した合図（`subscribed`）の後に始める。登録後の変更は通知で届くため、
+// 最初の接続では全件を読み直さない。初期取得を始めた後に登録された接続と再接続では、その間の変更を
+// 取りこぼさないよう読み直す。
+const INITIAL_SUBSCRIBE_WAIT_MS = 300;
+let initialLoadStarted = false;
+let resolveFirstSubscription = () => {};
+const firstSubscription = new Promise(resolve => { resolveFirstSubscription = resolve; });
 
 // 無通信の検知、再接続とbfcacheの前後の接続の開閉は共通モジュールが担う。
 function subscribeEvents() {
@@ -1862,6 +1869,15 @@ function subscribeEvents() {
       if (byId('connection-status').dataset.syncFailed !== 'true') {
         byId('connection-status').hidden = true;
         byId('connection-status').textContent = '';
+      }
+    },
+    subscribed: () => {
+      if (!initialLoadStarted) {
+        resolveFirstSubscription();
+        void firstSubscription.then(() => initialization).then(() => {
+          byId('connection-status').dataset.connected = 'true';
+        });
+        return;
       }
       void initialization.then(async () => {
         await reloadFromExternalChange('reconnect');
@@ -1895,7 +1911,13 @@ function subscribeEvents() {
 function initializeApp() {
   subscribeEvents();
   syncNotificationButton();
-  initialization = Promise.all([loadEntries(), loadTargetRepos()])
+  // 購読を確立できない場合も初期表示を遅らせすぎないよう、待つのは短い上限までとする。
+  const subscribed = Promise.race([firstSubscription, new Promise(resolve => setTimeout(resolve, INITIAL_SUBSCRIBE_WAIT_MS))]);
+  initialization = subscribed
+    .then(() => {
+      initialLoadStarted = true;
+      return Promise.all([loadEntries(), loadTargetRepos()]);
+    })
     .then(() => refreshKnownEntries({notify: false}))
     .catch((error) => {
       setGlobalError(error.message);
