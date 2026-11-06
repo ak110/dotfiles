@@ -21,7 +21,7 @@ import shlex
 import tempfile
 import tomllib
 import uuid
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from typing import cast
 
 from agent_toolkit._atk import managed_temp
@@ -52,6 +52,7 @@ from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.large_reads import (
     bash_read_paths,
     display_read_paths,
+    has_dynamic_display_operand,
     is_dynamic_read_operand,
     sed_read_range,
 )
@@ -65,14 +66,26 @@ _INPUT_CACHE: contextvars.ContextVar[dict[tuple, object] | None] = contextvars.C
 )
 
 
-@contextlib.contextmanager
-def _input_scope() -> Generator[None]:
-    """同じhook内の不変入力だけを共有し、次の操作では資料・cwd・主体を再評価する。"""
-    token = _INPUT_CACHE.set({})
-    try:
-        yield
-    finally:
-        _INPUT_CACHE.reset(token)
+type _HookEntry[Result] = Callable[[dict, str, dict, str], Result]
+
+
+def _input_scope[R](function: _HookEntry[R]) -> _HookEntry[R]:
+    """同じhook内の不変入力だけを共有し、次の操作では資料・cwd・主体を再評価する。
+
+    宣言一覧・取得済み資料の宣言の再解決・plugin導入情報の照会も、同じ要求内では結果を共有する。
+    共有は1回のhook呼出しで閉じ、セッション間のcacheや常駐サービスは持たない。
+    """
+
+    @functools.wraps(function)
+    def scoped(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> R:
+        token = _INPUT_CACHE.set({})
+        try:
+            with plugin_resolution_scope(session_id=session_id), read_triggers.resolution_scope():
+                return function(payload, tool_name, tool_input, session_id)
+        finally:
+            _INPUT_CACHE.reset(token)
+
+    return scoped
 
 
 def _input_cached[**P, R](function: Callable[P, R]) -> Callable[P, R]:
@@ -744,6 +757,16 @@ def document_key(path: pathlib.Path, fingerprint: str = "") -> str:
     return document_reads.read_trigger_key(path, fingerprint or document_reads.content_fingerprint(path))
 
 
+def read_guidance_key(target: read_triggers.ReadTarget, *, invocation: bool) -> str:
+    """取得案内を送った記録のキー。保存・重複判定・未解消判定の全てがこの関数を使う。"""
+    key = (
+        document_reads.skill_invocation_key(target.path, document_reads.content_fingerprint(target.path))
+        if invocation
+        else document_key(target.path)
+    )
+    return "read-guidance:" + key + "#heading:" + target.heading
+
+
 def dynamic_targets(
     row: read_triggers.ReadTrigger,
     payload: dict,
@@ -873,10 +896,13 @@ def _mark(session_id: str, path: pathlib.Path, agent: str, fingerprint: str = ""
         for metadata in document_reads.receipt_candidates([read_triggers.ReadTarget(path)]):
             update_state(session_id, operation_skills.mark_ready(document_reads.receipt_key(metadata), agent))
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    # 案内済みの記録は保存時と同じ関数で照会し、案内した形（資料取得・スキル起動）ごとの取得状態で判定する。
     outstanding = [
         target
         for target in selected_targets(records, agent)
-        if agent in records.get("read-guidance:" + document_key(target.path), []) and not target_ready(records, target, agent)
+        for invocation in (False, True)
+        if agent in records.get(read_guidance_key(target, invocation=invocation), [])
+        and not target_ready(records, target, agent, invocation=invocation)
     ]
     if not outstanding:
         notice_module.resolve_notice(session_id, "pretooluse", "_deliver_documents", subject=agent)
@@ -1089,7 +1115,7 @@ def _declaration_recovery_operation(tool_name: str, tool_input: dict, error: Exc
     return False
 
 
-@_input_scope()
+@_input_scope
 def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
     """現在の操作に関係する宣言資料を配送または案内し、他の担当の手順書の取得へ警告を加え、通常操作の進行を保つ。"""
     handoff = delegated_session.handoff_path(os.environ)
@@ -1222,6 +1248,19 @@ def _subagent_task_documents(payload: dict) -> set[pathlib.Path]:
     return set()
 
 
+_TASK_DOCUMENT_LITERALS = (
+    re.compile(r"(?<![\w-])([a-z][a-z0-9-]*)\.subagent\b"),
+    re.compile(r"(?<![\w-])share/([a-z][a-z0-9-]*)(?=[.*?\[\s'\"]|$)"),
+)
+
+
+def _literal_task_documents(command: str, share: pathlib.Path) -> list[pathlib.Path]:
+    """コマンド文字列中のリテラルが指す、実在する手順書を返す。"""
+    names = dict.fromkeys(match[1] for pattern in _TASK_DOCUMENT_LITERALS for match in pattern.finditer(command))
+    documents = (share / (name + task_documents.TASK_DOCUMENT_SUFFIX) for name in names)
+    return [path for path in documents if path.is_file()]
+
+
 def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str | None:
     """Plugin root配下の他の担当の手順書（`share/<役割名>.subagent.md`）を取得する操作に、非遮断の警告を返す。
 
@@ -1250,6 +1289,12 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
         for path in dict.fromkeys(candidates)
         if path.parent == share and path.name.endswith(task_documents.TASK_DOCUMENT_SUFFIX) and path.is_file()
     ]
+    dynamic = False
+    if not paths and tool_name == "Bash" and isinstance(command, str) and has_dynamic_display_operand(command, cwd):
+        # 変数展開などで表示対象を確定できない操作は、シェルを再実行して解決しない。
+        # 同じコマンドが手順書を指すリテラルを含む場合だけ、読む可能性として案内する。
+        paths = _literal_task_documents(command, share)
+        dynamic = bool(paths)
     if not paths:
         return None
     agent = agent_id.resolve_hook_agent_id(payload)
@@ -1263,7 +1308,7 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
     contracts: list[str] = []
     for path in foreign:
         try:
-            targets = read_triggers.parent_contract_targets(path.name, root)
+            targets = read_triggers.parent_contract_targets(path, root)
         except OSError, ValueError:
             targets = ()
         contracts.extend(
@@ -1273,8 +1318,13 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
         )
     shown = "、".join(f"`{path}`" for path in foreign)
     guidance = f"起動契約: {'、'.join(contracts)}。" if contracts else ""
+    subject = (
+        f"表示対象が変数などで確定できないが、同じ操作が他の担当の手順書{shown}を指しており、その本文を読む可能性がある。"
+        if dynamic
+        else f"他の担当の手順書{shown}を取得しようとしている。"
+    )
     return _llm_notice(
-        f"他の担当の手順書{shown}を取得しようとしている。`agent-toolkit:delegation`の`SKILL.md`「送信」は、"
+        subject + "`agent-toolkit:delegation`の`SKILL.md`「送信」は、"
         "委譲元が起動準備のために`<役割名>.subagent.md`の本文を読むことを禁じている。",
         tag=_WARN_TAG,
         fix=(
@@ -1432,12 +1482,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             return target_ready(records, target, agent, invocation=target.path in invocation_paths)
 
         def guidance_key(target: read_triggers.ReadTarget) -> str:
-            key = (
-                document_reads.skill_invocation_key(target.path, document_reads.content_fingerprint(target.path))
-                if target.path in invocation_paths
-                else document_key(target.path)
-            )
-            return "read-guidance:" + key + "#heading:" + target.heading
+            return read_guidance_key(target, invocation=target.path in invocation_paths)
 
         pending = list(dict.fromkeys(target for row in active_rows for target in active_targets[row] if not ready(target)))
         # 取得操作で保留した初回案内だけを次の依存操作へ渡す。実配送後は未取得でも再掲しない。
@@ -1617,6 +1662,11 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 reference=target.path not in invocation_paths,
                 cwd=cwd,
             )
+            if not target.path.is_file():
+                # 欠けているのが宣言元と同じ版の資料か、別版を解決した結果かを区別できるよう宣言元を示す。
+                origins = sorted({str(row.source) for row in rows if target in row.targets})
+                if origins:
+                    failures[target] += f"。宣言元: {'、'.join(f'`{origin}`' for origin in origins)}"
     acquisition = "。\n".join(_merged_steps(pending, failures, subject, invocation_paths=invocation_paths, cwd=cwd)) + "。"
     if subject == operation_skills.SUBJECT_CODEX:
         acquisition += "内外の出力枠を確保し、収まらない範囲は分割して取得せよ。"
@@ -2166,7 +2216,7 @@ def host_truncated(response: object) -> bool:
     return stripped.startswith(_PERSISTED_OUTPUT_OPEN) and stripped.endswith(_PERSISTED_OUTPUT_CLOSE)
 
 
-@_input_scope()
+@_input_scope
 def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> None:
     """本文受信と操作全体の成否を分け、成功時の副作用だけを後続へ渡す。"""
     _observe_content(payload, tool_name, tool_input, session_id)

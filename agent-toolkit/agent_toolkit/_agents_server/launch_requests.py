@@ -347,7 +347,9 @@ def _input_contract_guidance(task_document: pathlib.Path) -> str:
     """拒否した役割と同じ版の、入力説明を所有する契約と節を案内する。"""
     try:
         targets = read_triggers.parent_contract_targets(task_document.name, task_document.parent.parent)
-        inputs = tuple(read_triggers.ReadTarget(target.path, target.heading or "入力") for target in targets)
+        inputs = tuple(
+            read_triggers.ReadTarget(target.path, target.heading or _input_section(target.path)) for target in targets
+        )
         for target in inputs:
             target.body()
     except (OSError, UnicodeError, ValueError) as error:
@@ -357,6 +359,26 @@ def _input_contract_guidance(task_document: pathlib.Path) -> str:
             "入力説明を確認する。"
         )
     return "入力の意味・制約は" + "、".join(f"`{target.path}`「{target.heading}」" for target in inputs) + "で確認する。"
+
+
+_INPUT_SECTIONS = ("入力", "渡す入力")
+
+
+def _input_section(contract: pathlib.Path) -> str:
+    """見出しを指定しない親契約から、入力を説明するH2節を1つ選ぶ。
+
+    親契約の入力節名は役割ごとに`入力`と`渡す入力`がある。固定名を補うと他方の役割で
+    見出し解決エラーになり、拒否の修正に必要な説明へ到達できない。
+    """
+    names = [
+        line.removeprefix("## ").strip()
+        for _number, line, visible in read_triggers.document_lines(contract.read_text(encoding="utf-8"))
+        if visible and line.startswith("## ")
+    ]
+    found = [name for name in names if name in _INPUT_SECTIONS]
+    if len(found) != 1:
+        raise ValueError(f"{contract}: 入力を説明するH2節（{'・'.join(_INPUT_SECTIONS)}）が{len(found)}件ある")
+    return found[0]
 
 
 def named_input_lines(params: Mapping[str, str]) -> list[str]:

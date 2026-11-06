@@ -1,5 +1,6 @@
 """自然文の節指定と、起動時の判断前配送を確かめる。"""
 
+import json
 import pathlib
 
 import pytest
@@ -643,3 +644,74 @@ def test_single_lane_declarations_cover_phases_without_overlapping_full_reads():
             and condition in row.source.read_text(encoding="utf-8").splitlines()[row.line - 1]
             for row in rows
         ), suffix
+
+
+def _plugin_checkout(base: pathlib.Path, *, with_new: bool, broken: bool = False) -> pathlib.Path:
+    """agent-toolkitとagent-basicsを同居させたcheckoutを作り、そのrootを返す。"""
+    for name in ("agent-toolkit", "agent-basics"):
+        root = base / name
+        (root / ".claude-plugin").mkdir(parents=True)
+        manifest_name = "other" if broken and name == "agent-basics" else name
+        (root / ".claude-plugin/plugin.json").write_text(f'{{"name":"{manifest_name}"}}', encoding="utf-8")
+        (root / "skills/bugfix/references").mkdir(parents=True)
+        (root / "share").mkdir()
+    (base / "agent-toolkit/share/exec.parent.md").write_text("# 起動\n\n## 入力\n説明\n", encoding="utf-8")
+    (base / "agent-toolkit/share/exec.subagent.md").write_text("# 役割\n", encoding="utf-8")
+    if with_new:
+        (base / "agent-basics/skills/bugfix/references/new-reference.md").write_text("# 新設\n", encoding="utf-8")
+        (base / "agent-toolkit/share/new-review.subagent.md").write_text("# 新設役割\n", encoding="utf-8")
+        (base / "agent-toolkit/share/new-review.parent.md").write_text("# 新設契約\n\n## 入力\n説明\n", encoding="utf-8")
+    (base / ".claude-plugin").mkdir(exist_ok=True)
+    (base / ".claude-plugin/marketplace.json").write_text(
+        json.dumps(
+            {
+                "plugins": [
+                    {"name": "agent-basics", "source": "./agent-basics"},
+                    {"name": "agent-toolkit", "source": "./agent-toolkit"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    skill = base / ".claude/skills/local/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# プロジェクトスキル\n", encoding="utf-8")
+    return base
+
+
+@pytest.mark.parametrize("case", ["worktree", "running-only", "same-root", "missing", "broken-manifest"])
+def test_project_skill_reference_resolves_the_same_checkout_version(tmp_path, case):
+    """プロジェクトスキルのplugin修飾参照は、所属checkoutの版を使い、稼働版の欠落へ戻さない。"""
+    running = _plugin_checkout(tmp_path / "running", with_new=False)
+    target = running if case in {"running-only", "same-root"} else tmp_path / "worktree"
+    if target != running:
+        _plugin_checkout(target, with_new=case != "missing", broken=case == "broken-manifest")
+    elif case == "same-root":
+        (running / "agent-basics/skills/bugfix/references/new-reference.md").write_text("# 新設\n", encoding="utf-8")
+    source = target / ".claude/skills/local/SKILL.md"
+    with read_triggers.resolution_scope():
+        resolved = read_triggers.resolve_document(
+            "agent-basics:bugfix/references/new-reference.md", source, running / "agent-toolkit"
+        )
+    expected_root = running if case in {"running-only", "same-root", "broken-manifest"} else target
+    assert resolved is not None
+    assert resolved == (expected_root / "agent-basics/skills/bugfix/references/new-reference.md").resolve()
+    # 実際の欠落は存在しないパスとして返し、別版の同名資料へ置き換えない。
+    assert resolved.is_file() is (case in {"worktree", "same-root"})
+
+
+def test_share_variable_and_absolute_role_keep_their_own_version(tmp_path):
+    """share文書の`${CLAUDE_PLUGIN_ROOT}`と絶対パスの役割指定は、文書が属するrootで解決する。"""
+    running = _plugin_checkout(tmp_path / "running", with_new=False)
+    worktree = _plugin_checkout(tmp_path / "worktree", with_new=True)
+    share = worktree / "agent-toolkit/share/exec.subagent.md"
+    resolved = read_triggers.resolve_document(
+        "${CLAUDE_PLUGIN_ROOT}/share/new-review.parent.md", share, running / "agent-toolkit"
+    )
+    assert resolved == (worktree / "agent-toolkit/share/new-review.parent.md").resolve()
+    role = worktree / "agent-toolkit/share/new-review.subagent.md"
+    targets = read_triggers.parent_contract_targets(str(role), running / "agent-toolkit")
+    assert [target.path for target in targets] == [worktree / "agent-toolkit/share/new-review.parent.md"]
+    # 役割名だけの指定は従来どおり渡されたrootで解決し、稼働版に無い役割は欠落として報告する。
+    with pytest.raises(ValueError, match="役割文書が存在しない"):
+        read_triggers.parent_contract_targets("new-review", running / "agent-toolkit")

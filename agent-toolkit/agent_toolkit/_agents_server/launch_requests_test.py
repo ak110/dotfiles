@@ -605,9 +605,9 @@ async def test_start_rejects_undeclared_input_name(monkeypatch: pytest.MonkeyPat
     manager.start.assert_not_awaited()
 
 
-@pytest.mark.parametrize("role", ["exec", "repository-process"])
+@pytest.mark.parametrize("role", ["exec", "repository-process", "add-wi"])
 @pytest.mark.parametrize("defect", ["missing", "undeclared"])
-@pytest.mark.parametrize("placement", ["current", "alternate", "unresolved"])
+@pytest.mark.parametrize("placement", ["current", "alternate", "unresolved", "sectionless"])
 @pytest.mark.asyncio
 async def test_start_input_rejection_points_to_owning_contract(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, role: str, defect: str, placement: str
@@ -615,22 +615,34 @@ async def test_start_input_rejection_points_to_owning_contract(
     """公開startの入力拒否から同じ版の説明節へ到達でき、解決失敗でも元の不備を保つ。"""
     source = launch_requests._SHARE_DIRECTORY.parent
     root = source
-    contract_relative = (
-        pathlib.Path("share/exec.parent.md") if role == "exec" else pathlib.Path("skills/process-wi/references/all-repos.md")
-    )
+    contract_relative = {
+        "exec": pathlib.Path("share/exec.parent.md"),
+        "repository-process": pathlib.Path("skills/process-wi/references/all-repos.md"),
+        "add-wi": pathlib.Path("share/add-wi.parent.md"),
+    }[role]
+    if placement == "sectionless" and role == "repository-process":
+        pytest.skip("parent-read-sourceが節を明示する役割は入力節の選択を使わない")
     if placement != "current":
         root = tmp_path / "other-plugin"
         for relative in (pathlib.Path(".claude-plugin/plugin.json"), pathlib.Path(f"share/{role}.subagent.md")):
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source / relative, target)
-        if placement == "alternate":
+        if placement in {"alternate", "sectionless"}:
             target = root / contract_relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source / contract_relative, target)
+            if placement == "sectionless":
+                # 入力説明の節が実際に欠けた親契約。元の拒否と説明解決失敗を区別して返す。
+                text = (
+                    target.read_text(encoding="utf-8")
+                    .replace("\n## 渡す入力\n", "\n## 引数\n")
+                    .replace("\n## 入力\n", "\n## 引数\n")
+                )
+                target.write_text(text, encoding="utf-8")
     document = root / "share" / f"{role}.subagent.md"
     params = _observed_input_params(document.name, tmp_path)
-    missing_name = "担当種別" if role == "exec" else "引き継ぎ記録先"
+    missing_name = {"exec": "担当種別", "repository-process": "引き継ぎ記録先", "add-wi": "投入する要求"}[role]
     if defect == "missing":
         params.pop(missing_name)
         if role == "repository-process":
@@ -652,13 +664,15 @@ async def test_start_input_rejection_points_to_owning_contract(
         "必須入力が欠けています: " + missing_name if defect == "missing" else "宣言していない入力です: 宣言外の項目"
     ) in message
     assert "`start`を再発行" in message
-    if placement == "unresolved":
+    if placement in {"unresolved", "sectionless"}:
         assert "入力説明の起動・受領契約を解決できません" in message
         assert "parent-read-source宣言・参照先を修復" in message
         assert "入力の意味・制約は" not in message
+        if placement == "sectionless":
+            assert "入力を説明するH2節" in message
     else:
         contract = root / contract_relative
-        heading = "入力" if role == "exec" else "リポジトリ担当の起動と受領"
+        heading = {"exec": "入力", "repository-process": "リポジトリ担当の起動と受領", "add-wi": "渡す入力"}[role]
         assert f"`{contract}`「{heading}」" in message
         assert missing_name in contract.read_text(encoding="utf-8")
     backend.start.assert_not_awaited()
@@ -1953,3 +1967,11 @@ async def test_start_checks_all_external_evidence_files(
     second.write_text("成功したCIの保存結果\n", encoding="utf-8")
     await mcp_tools.start(str(tmp_path), subagent_md_path="external-write-review", extra_params=params)
     manager.start.assert_awaited_once()
+
+
+def test_every_parent_contract_has_one_input_section() -> None:
+    """全ての共有親契約が、拒否時に案内できる入力節を1つだけ持つ。"""
+    contracts = sorted(launch_requests._SHARE_DIRECTORY.glob("*.parent.md"))
+    assert contracts
+    for contract in contracts:
+        assert launch_requests._input_section(contract) in {"入力", "渡す入力"}, contract

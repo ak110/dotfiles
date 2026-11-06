@@ -424,13 +424,8 @@ def _display_read_operands(tokens: Sequence[str]) -> tuple[str, ...]:
     return _read_operands(tokens, include_partial=True)
 
 
-def display_read_paths(command: str, cwd: str) -> list[pathlib.Path]:
-    """内容を表示する静的なファイル引数を返す。パイプによる部分表示も案内の対象にする。
-
-    `bash_read_paths`が証明する全文受領とは用途が異なる。編集、ファイルへの出力と
-    ディレクトリ検索を除き、この結果を資料の取得証拠に使わない。
-    """
-    paths = []
+def _terminal_display_operands(command: str, cwd: str) -> Iterator[tuple[str, shell_cwd.CwdResolution]]:
+    """内容を端末へ表示する呼出しの被演算子と、その実行位置を返す。捕捉・出力先変更は除く。"""
     invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
     for index, (invocation, current) in enumerate(invocations):
         if invocation.captured or invocation.output_redirected and not invocation.output_pipe:
@@ -442,14 +437,34 @@ def display_read_paths(command: str, cwd: str) -> list[pathlib.Path]:
             if downstream < len(invocations) and invocations[downstream][0].output_redirected:
                 continue
         for operand in _display_read_operands(invocation.segment.tokens):
-            if is_unknown_word(operand):
-                continue
-            if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
-                continue
-            path = _resolve_path(operand, current.path if current.resolved else cwd)
-            if path.is_file():
-                paths.append(path.resolve())
+            yield operand, current
+
+
+def display_read_paths(command: str, cwd: str) -> list[pathlib.Path]:
+    """内容を表示する静的なファイル引数を返す。パイプによる部分表示も案内の対象にする。
+
+    `bash_read_paths`が証明する全文受領とは用途が異なる。編集、ファイルへの出力と
+    ディレクトリ検索を除き、この結果を資料の取得証拠に使わない。
+    """
+    paths = []
+    for operand, current in _terminal_display_operands(command, cwd):
+        if is_unknown_word(operand):
+            continue
+        if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
+            continue
+        path = _resolve_path(operand, current.path if current.resolved else cwd)
+        if path.is_file():
+            paths.append(path.resolve())
     return list(dict.fromkeys(paths))
+
+
+def has_dynamic_display_operand(command: str, cwd: str) -> bool:
+    """内容を表示する呼出しに、変数展開などで静的に確定できない被演算子があるかを返す。
+
+    `display_read_paths`の候補なしと区別するために使う。確定できない対象を推測して解決せず、
+    資料の取得証拠にも使わない。
+    """
+    return any(is_unknown_word(operand) for operand, _current in _terminal_display_operands(command, cwd))
 
 
 def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:

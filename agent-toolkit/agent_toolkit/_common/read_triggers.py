@@ -60,7 +60,14 @@ _RESOLUTION_CACHE: contextvars.ContextVar[dict[tuple, object] | None] = contextv
 
 @contextlib.contextmanager
 def resolution_scope() -> Generator[None]:
-    """1回の宣言解析内でだけ解決を共有し、次の要求ではファイルの変更を読み直す。"""
+    """1回の要求内でだけ解決を共有し、次の要求ではファイルの変更を読み直す。
+
+    入れ子のscopeは外側の共有を引き継ぐ。hookの1回の呼出しが宣言一覧と取得済み資料の宣言を
+    続けて解決しても、同じ不変の参照を解決し直さない。
+    """
+    if _RESOLUTION_CACHE.get() is not None:
+        yield
+        return
     token = _RESOLUTION_CACHE.set({})
     try:
         yield
@@ -264,6 +271,36 @@ def _plugin_manifest(root: pathlib.Path) -> dict:
 
 
 @_scope_cached
+def _checkout_plugin_root(source: pathlib.Path, plugin: str) -> pathlib.Path | None:
+    """pluginを所有しない文書（プロジェクトスキル）が属するcheckoutの、同じ版のplugin rootを返す。
+
+    作業ツリーで規範を変更する担当は、その作業ツリーの文書と資料を同じ版として適用する。
+    祖先で最初に見つかった`.claude-plugin/marketplace.json`が`./`相対のsourceで宣言し、
+    宣言先の`.claude-plugin/plugin.json`の名前が一致するrootだけを採用する。該当が無ければ通常の導入版解決へ任せる。
+    """
+    for parent in source.parents:
+        marketplace = parent / ".claude-plugin/marketplace.json"
+        if not marketplace.is_file():
+            continue
+        try:
+            entries = json.loads(marketplace.read_text(encoding="utf-8")).get("plugins", [])
+        except OSError, UnicodeError, ValueError, AttributeError:
+            return None
+        for entry in entries if isinstance(entries, list) else []:
+            value = entry.get("source") if isinstance(entry, dict) else None
+            if entry.get("name") != plugin or not isinstance(value, str) or not value.startswith("./"):
+                continue
+            candidate = (parent / value).resolve()
+            try:
+                manifest = _plugin_manifest(candidate) if (candidate / ".claude-plugin/plugin.json").is_file() else {}
+            except OSError, UnicodeError, ValueError:
+                return None
+            return candidate if manifest.get("name") == plugin else None
+        return None
+    return None
+
+
+@_scope_cached
 def _resolved_plugin_root(name: str, root: pathlib.Path, host: str, project: pathlib.Path | str | None) -> pathlib.Path:
     """資料の参照名によらないroot解決を共有し、要求終了時に破棄する。"""
     return resolve_plugin_root(name, root, host, project)
@@ -297,9 +334,12 @@ def _direct_document(
             return None
         owner = next((parent for parent in source.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
         owner_name = _plugin_manifest(owner).get("name") if owner else None
+        checkout = _checkout_plugin_root(source, plugin) if owner is None else None
         root = (
             owner
             if owner is not None and owner_name == plugin
+            else checkout
+            if checkout is not None
             else _resolved_plugin_root(
                 plugin, owner if owner is not None and owner_name == "agent-toolkit" else plugin_root, host, project
             )
@@ -310,12 +350,9 @@ def _direct_document(
             return ((root / skill.lstrip("/")) if skill.startswith("/") else (root / "skills" / skill)).resolve()
         target = pathlib.Path("references", f"{mode}.md") if mode else pathlib.Path("SKILL.md")
         return (root / "skills" / name / target).resolve()
+    # share・skillsなど配置によらず、文書を所有するpluginのrootで変数を解決する。
     owner_root = next(
-        (
-            parent.parent
-            for parent in source.parents
-            if parent.name == "skills" and (parent.parent / ".claude-plugin/plugin.json").is_file()
-        ),
+        (parent for parent in source.parents if (parent / ".claude-plugin/plugin.json").is_file()),
         plugin_root,
     )
     value = value.replace("${CLAUDE_PLUGIN_ROOT}", str(owner_root)).replace("<plugin root>", str(plugin_root))
@@ -391,10 +428,17 @@ def resolve_document(
 
 
 def parent_contract_targets(
-    role: str, plugin_root: pathlib.Path, *, host: str = "claude", project: pathlib.Path | str | None = None
+    role: str | pathlib.Path, plugin_root: pathlib.Path, *, host: str = "claude", project: pathlib.Path | str | None = None
 ) -> tuple[ReadTarget, ...]:
-    """役割が名指しした起動・受領契約を解決する。自由本文から所有者を推測しない。"""
-    role = pathlib.Path(role).name.removesuffix(".subagent.md").removesuffix(".md")
+    """役割が名指しした起動・受領契約を解決する。自由本文から所有者を推測しない。
+
+    `role`は役割名か役割文書のパスを受け取る。share配下の実在する絶対パスはその文書の所属rootで解決する。
+    """
+    given = pathlib.Path(role)
+    # 絶対パスの役割文書は、その文書が属する版の契約と組にする（起動側と同じrootを使う）。
+    if given.is_absolute() and given.parent.name == "share" and given.is_file():
+        plugin_root = given.parent.parent
+    role = given.name.removesuffix(".subagent.md").removesuffix(".md")
     if not re.fullmatch(r"[a-z][a-z0-9-]*", role):
         raise ValueError(f"不正な役割名: {role}")
     source = plugin_root / "share" / (role + ".subagent.md")
@@ -562,8 +606,22 @@ def parse_tables(
     host: str = "claude",
     project: pathlib.Path | str | None = None,
 ) -> list[ReadTrigger]:
-    """資料列を持つ表から宣言を読む。strictでは未分類の表も拒否する。"""
-    source = source.resolve()
+    """資料列を持つ表から宣言を読む。strictでは未分類の表も拒否する。
+
+    要求内（`resolution_scope`）では同じ資料の解析結果を共有する。呼出側が結果を変更しても共有へ及ばないよう複製を返す。
+    """
+    return list(_parse_tables(source.resolve(), plugin_root, strict=strict, host=host, project=project))
+
+
+@_scope_cached
+def _parse_tables(
+    source: pathlib.Path,
+    plugin_root: pathlib.Path,
+    *,
+    strict: bool,
+    host: str,
+    project: pathlib.Path | str | None,
+) -> tuple[ReadTrigger, ...]:
     text = source.read_text(encoding="utf-8")
     result: list[ReadTrigger] = []
     headers: list[str] = []
@@ -659,7 +717,7 @@ def parse_tables(
                 row.get("時点または条件", row.get("条件", "")),
             )
         )
-    return list(dict.fromkeys(result))
+    return tuple(dict.fromkeys(result))
 
 
 @plugin_resolution_scope()

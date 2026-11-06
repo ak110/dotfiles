@@ -3564,3 +3564,52 @@ def test_public_short_circuit_hidden_by_later_success_keeps_document_unacquired(
     final = _run_hook_in_process("pretooluse", operation)
     assert final.returncode == 0 and not final.stdout and not final.stderr
     _assert_acquired(payload, path, False)
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    ("case", "template"),
+    [
+        ("dynamic", "f=$(git ls-files 'share/reviewer.*' | head -1); grep -n 返却 \"$f\" | head -20"),
+        ("dynamic", "doc=$(rg --files share | grep reviewer.subagent); sed -n '1,20p' \"$doc\""),
+        ("static", "grep -n 返却 share/reviewer.subagent.md | head -20"),
+        ("own-role", "f=$(git ls-files 'share/reviewer.*' | head -1); grep -n 返却 \"$f\" | head -20"),
+        ("unrelated", "f=$(git ls-files 'share/notes.*' | head -1); grep -n 返却 \"$f\" | head -20"),
+        ("data-only", "printf '%s\\n' share/reviewer.subagent.md"),
+    ],
+)
+@pytest.mark.usefixtures("memory")
+def test_dynamic_foreign_role_display_warns_without_claiming_acquisition(tmp_path, monkeypatch, codex, case, template):
+    """変数で表示対象を確定できない操作も、手順書を指すリテラルがあれば非遮断で起動契約へ案内する。"""
+    root, other, contract, _lane, _integration = _role_plugin(tmp_path, monkeypatch)
+    log = tmp_path / "transcript.jsonl"
+    text = read_delivery.task_documents.task_prompt_header(other) if case == "own-role" else "読者別探索の継続指示を探す"
+    _write_transcript(log, text, codex=codex)
+    payload = {"session_id": "test", "cwd": str(root), "transcript_path": str(log), **({"turn_id": "turn"} if codex else {})}
+    inputs = {"command": template}
+    result = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Bash", "tool_input": inputs})
+    assert result.returncode == 0 and not result.stderr
+    output = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert output.get("permissionDecision") != "deny"
+    body = output.get("additionalContext", "")
+    if case in {"own-role", "unrelated", "data-only"}:
+        assert "他の担当の手順書" not in body
+        return
+    assert str(contract) in body
+    assert "返却を受け取った後の固有手順の検収であれば、このまま続行してよい" in body
+    if case == "dynamic":
+        assert "確定できない" in body and f"`{other}`" in body
+    else:
+        assert f"他の担当の手順書`{other}`を取得しようとしている" in body
+    observed = _run_hook_in_process(
+        "posttooluse",
+        {
+            **payload,
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": inputs,
+            "tool_response": {"stdout": "3:返却形式\n", "exit_code": 0},
+        },
+    )
+    assert observed.returncode == 0 and not observed.stderr
+    _assert_acquired(payload, other, False)
