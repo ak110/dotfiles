@@ -15,7 +15,7 @@ import sys
 
 import psutil
 
-from pytools._internal import codex_processes, post_apply_outcome
+from pytools._internal import codex_processes, codex_runtime, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 _PACKAGES = ("standalone", "app-server-daemon")
@@ -42,8 +42,7 @@ class _DeferredError(RuntimeError):
 
 def codex_home() -> pathlib.Path:
     """公式インストーラーと同じ実効CODEX_HOMEを返す。"""
-    value = os.environ.get("CODEX_HOME")
-    return pathlib.Path(value) if value else pathlib.Path.home() / ".codex"
+    return codex_runtime.codex_home()
 
 
 def prune(*, home: pathlib.Path | None = None, windows: bool | None = None, dry_run: bool = False) -> PruneResult:

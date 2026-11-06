@@ -13,7 +13,7 @@ import types
 import check_update_dotfiles_upgrade as upgrade
 import pytest
 
-from pytools._internal import antigravity_plugin, install_codex_plugins, setup_codex_cli, setup_herdr_cli
+from pytools._internal import antigravity_plugin, codex_runtime, install_codex_plugins, setup_herdr_cli
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
@@ -416,8 +416,8 @@ def _resolve_consumer_paths(
     with monkeypatch.context() as context:
         context.setattr(os, "environ", env)
         context.setattr(setup_herdr_cli, "sys", platform)
-        context.setattr(setup_codex_cli, "sys", platform)
-        return setup_herdr_cli._launcher_path(), setup_codex_cli._visible_bin_dir()  # pylint: disable=protected-access
+        context.setattr(codex_runtime, "sys", platform)
+        return setup_herdr_cli._launcher_path(), codex_runtime.visible_bin_dir()  # pylint: disable=protected-access
 
 
 def test_initial_apply_failure_preserves_child_output_and_stops_update(

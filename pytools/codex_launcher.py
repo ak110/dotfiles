@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import io
 import math
@@ -11,12 +10,17 @@ import pathlib
 import sys
 from collections.abc import Sequence
 
-import psutil
-from agent_toolkit._common import process_tree
+# 非対話の公開コマンドはhookから繰り返し起動される。対話端末の復旧だけが使う依存は、
+# 実行体へ引き渡すまで読み込まない（docs/development/design-hosts.md「Codexの起動管理とdaemon復旧」）。
+lazy import asyncio
 
-from pytools._internal import common, prune_codex_packages, setup_codex_cli
-from pytools._internal.codex_bridge import RecoveryBridge
-from pytools._internal.codex_recovery import RunningTurn
+lazy import psutil
+lazy from agent_toolkit._common import process_tree
+
+from pytools._internal import codex_runtime
+lazy from pytools._internal import common
+lazy from pytools._internal.codex_bridge import RecoveryBridge
+lazy from pytools._internal.codex_recovery import RunningTurn
 
 _VALUE_OPTIONS = frozenset(
     {
@@ -136,7 +140,7 @@ async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float) ->
     if started is None or started.returncode != 0:
         print(f"Codexの管理daemonを起動できない: {common.format_cli_error(started)}。codex doctorで確認する", file=sys.stderr)
         return 1
-    async with RecoveryBridge(str(binary), environment, prune_codex_packages.codex_home(), timeout=timeout) as bridge:
+    async with RecoveryBridge(str(binary), environment, codex_runtime.codex_home(), timeout=timeout) as bridge:
         environment[_TOKEN_ENV] = bridge.token
         command = arguments
         while True:
@@ -190,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")
     arguments = list(sys.argv[1:] if argv is None else argv)
-    binary = setup_codex_cli.find_runtime_launcher(windows=sys.platform == "win32")
+    binary = codex_runtime.find_runtime_launcher(windows=sys.platform == "win32")
     if binary is None:
         print("管理対象のCodexが見つからない。update-dotfilesでCodexを導入して再実行する", file=sys.stderr)
         return 1

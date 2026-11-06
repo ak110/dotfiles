@@ -377,6 +377,34 @@ def test_migrate_keeps_launcher_without_adjacent_npm(monkeypatch, tmp_path: Path
     )
 
 
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_migrate_excludes_callers_own_wrappers_from_retention_warning(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, platform: str
+) -> None:
+    """PATH上のdotfiles自身の起動管理は保持警告を出さず、帰属不明の旧版だけを警告する。"""
+    monkeypatch.setattr(setup_cli_common.sys, "platform", platform)
+    wrappers = tmp_path / "dotfiles" / "bin"
+    wrappers.mkdir(parents=True)
+    for name in ("codex", "codex.cmd"):
+        (wrappers / name).write_text("wrapper\n", encoding="utf-8")
+    legacy = tmp_path / "legacy" / "codex"
+    legacy.parent.mkdir()
+    legacy.write_text("", encoding="utf-8")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(wrappers), str(legacy.parent)]))
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        assert not setup_cli_common.migrate_npm_launchers(
+            "codex",
+            "@openai/codex",
+            tmp_path / "canonical/bin/codex",
+            tmp_path / "canonical",
+            excluded_launchers={wrappers / "codex", wrappers / "codex.cmd"},
+        )
+
+    assert not any(str(wrappers) in message for message in caplog.messages)
+    assert any(str(legacy) in message for message in caplog.messages)
+
+
 @pytest.mark.parametrize("launcher_kind", ["cmd", "mise"])
 def test_migrate_windows_owned_launchers(monkeypatch, tmp_path: Path, launcher_kind: str) -> None:
     monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")

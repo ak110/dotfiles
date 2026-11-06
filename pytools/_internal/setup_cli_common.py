@@ -118,14 +118,19 @@ def migrate_npm_launchers(
     canonical_prefix: Path,
     *,
     extra_search_directories: Iterable[Path] = (),
+    excluded_launchers: Iterable[Path] = (),
 ) -> bool:
-    """PATHと追加の配置先にある帰属確認済み非正規npmパッケージを削除する。"""
+    """PATHと追加の配置先にある帰属確認済み非正規npmパッケージを削除する。
+
+    `excluded_launchers`には呼出側自身が配置した起動管理を渡し、移行の候補と保持警告から除く。
+    """
     changed = False
     for launcher in _iter_noncanonical_launchers(
         cli_name,
         canonical_launcher,
         canonical_prefix,
         extra_search_directories=extra_search_directories,
+        excluded_launchers=excluded_launchers,
     ):
         npm = _adjacent_npm(launcher.parent)
         if npm is None:
@@ -221,6 +226,7 @@ def _iter_noncanonical_launchers(
     canonical_prefix: Path,
     *,
     extra_search_directories: Iterable[Path] = (),
+    excluded_launchers: Iterable[Path] = (),
 ) -> Iterable[Path]:
     """PATHと追加の配置先にある、npmが導入しうる非正規ランチャーを列挙する。
 
@@ -231,6 +237,7 @@ def _iter_noncanonical_launchers(
     seen: set[str] = set()
     names = (cli_name, f"{cli_name}.cmd", f"{cli_name}.exe") if sys.platform == "win32" else (cli_name,)
     canonical_real = common.safe_resolve(canonical_launcher)
+    excluded = {common.safe_resolve(path) for path in excluded_launchers}
     prefix_real = common.safe_resolve(canonical_prefix)
     shim_directories = common.mise_shim_directories()
     path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
@@ -252,7 +259,7 @@ def _iter_noncanonical_launchers(
                 continue
             seen.add(key)
             resolved = common.safe_resolve(launcher)
-            if resolved == canonical_real or _is_relative_to(resolved, prefix_real):
+            if resolved == canonical_real or resolved in excluded or _is_relative_to(resolved, prefix_real):
                 continue
             yield launcher
 

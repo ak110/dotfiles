@@ -62,7 +62,11 @@ def _control(action: str) -> None:
                 _PID_FILE.write_text("{invalid-json", encoding="utf-8")
                 return
         # processIdentityの中身は代用値とし、読取側が解釈しない世代の標識だけを検証する。
-        _write(_PID_FILE, {"pid": os.getpid(), "processIdentity": {"fixtureGeneration": str(uuid.uuid4())}})
+        # Windowsのnativeは任意項目のprocessIdentityを書かず、processStartTimeだけを持つ。
+        if os.environ.get("CODEX_PEER_PID_FORMAT") == "windows":
+            _write(_PID_FILE, {"pid": os.getpid(), "processStartTime": str(uuid.uuid4())})
+        else:
+            _write(_PID_FILE, {"pid": os.getpid(), "processIdentity": {"fixtureGeneration": str(uuid.uuid4())}})
 
 
 class _Wire:

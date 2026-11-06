@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import shlex
+import subprocess
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -58,7 +59,7 @@ def native_run(command, **kwargs):
 
 asyncio.create_subprocess_exec = create
 codex_launcher.common.run_subprocess = run
-codex_launcher.setup_codex_cli.find_runtime_launcher = lambda **_kwargs: pathlib.Path(binary)
+codex_launcher.codex_runtime.find_runtime_launcher = lambda **_kwargs: pathlib.Path(binary)
 os.execv = execute
 codex_launcher.process_tree.run_with_timeout = native_run
 class Terminal:
@@ -135,8 +136,11 @@ class _Peer:
     runner: pathlib.Path
     environment: dict[str, str]
 
-    async def run(self, arguments: list[str], *, mode: str, actors: int = 1, windows: bool = False) -> tuple[int, str, str]:
+    async def run(
+        self, arguments: list[str], *, mode: str, actors: int = 1, windows: bool = False, pid_format: str = "linux"
+    ) -> tuple[int, str, str]:
         environment = dict(self.environment, CODEX_PEER_MODE=mode, CODEX_PEER_ACTORS=str(actors))
+        environment["CODEX_PEER_PID_FORMAT"] = pid_format
         environment["CODEX_PEER_WINDOWS"] = "1" if windows else "0"
         process = await asyncio.create_subprocess_exec(
             sys.executable,
@@ -256,6 +260,19 @@ async def test_public_launcher_preserves_work_and_stop_contract(peer: _Peer, mod
 
 
 @pytest.mark.asyncio
+async def test_windows_daemon_record_without_process_identity_keeps_recovery(peer: _Peer) -> None:
+    """processIdentityを書かないWindowsの世代記録でも終了せず、世代交代後に同じ仕事を再開する。"""
+    code, stdout, stderr = await peer.run(
+        ["--cd", str(peer.work), "--config", 'model_reasoning_effort="medium"', "owned work"],
+        mode="active",
+        pid_format="windows",
+    )
+    assert code == 0, (stdout, stderr)
+    assert "ValueError" not in stderr
+    assert peer.records()[0]["starts"] == 2
+
+
+@pytest.mark.asyncio
 async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> None:
     """同じcwdの2会話を同時に再開しても、IDと起動条件を互いへ転用しない。"""
     results = await asyncio.gather(
@@ -273,6 +290,79 @@ async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> N
     assert len({value["id"] for value in outputs}) == 2
     assert [value["effort"] for value in outputs] == ["medium", "xhigh"]
     assert all(record["starts"] == 2 for record in peer.records())
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["plugin", "marketplace", "list", "--json"],
+        ["--version"],
+        ["completion", "bash"],
+        ["exec", "--json", "literal spaces ; $(not-executed) & %NAME%"],
+    ],
+)
+@pytest.mark.parametrize("windows", [False, True])
+def test_noninteractive_commands_skip_recovery_dependencies(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], arguments: list[str], windows: bool
+) -> None:
+    """反復利用される非対話コマンドは、復旧用の依存を読み込まずに同じ実行体へ引き渡す。"""
+    probe = tmp_path / "probe.py"
+    probe.write_text(_NONINTERACTIVE_PROBE, encoding="utf-8")
+    environment = host_environ()
+    environment["CODEX_PROBE_WINDOWS"] = "1" if windows else "0"
+    result = process_tree.run_with_timeout(
+        [sys.executable, str(probe), *arguments],
+        capture_output=True,
+        encoding="utf-8",
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    observed = json.loads(result.stdout)
+    assert observed["arguments"] == arguments
+    assert observed["loaded"] == []
+
+
+_NONINTERACTIVE_PROBE = r"""
+import json
+import os
+import pathlib
+import sys
+import types
+from pytools import codex_launcher
+
+_HEAVY = ("psutil", "pydantic", "pytools._internal.codex_bridge", "pytools._internal.codex_recovery", "asyncio")
+binary = pathlib.Path(sys.executable)
+codex_launcher.codex_runtime.find_runtime_launcher = lambda **_kwargs: binary
+
+
+def record(arguments):
+    loaded = sorted(name for name in sys.modules if name.startswith(_HEAVY))
+    print(json.dumps({"arguments": list(arguments), "loaded": loaded}))
+    sys.stdout.flush()
+    os._exit(0)
+
+
+def execute(program, arguments):
+    record(arguments[1:])
+
+
+class _Result:
+    returncode = 0
+
+
+def native_run(command, **_kwargs):
+    record(command[1:])
+    return _Result()
+
+
+os.execv = execute
+if os.environ["CODEX_PROBE_WINDOWS"] == "1":
+    codex_launcher.sys = types.SimpleNamespace(**(vars(sys) | {"platform": "win32"}))
+    codex_launcher.process_tree = types.SimpleNamespace(run_with_timeout=native_run)
+sys.exit(codex_launcher.main(sys.argv[1:]))
+"""
 
 
 @pytest.mark.parametrize("windows", [False, True])

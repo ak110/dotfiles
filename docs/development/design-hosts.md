@@ -58,6 +58,11 @@ Linuxは可視コマンドの接続先をwrapperへ変更する前に、公式�
 待受は起動ごとの認証トークンを必須とし、RPC本文は中継の寿命内のメモリーにだけ保持する。
 別の常駐サービスとTTY代理は設けない。
 
+`plugin`・`mcp`・`exec`・`--version`・`completion`などの非対話コマンドは、hookからも繰り返し起動される。
+起動管理はこれらを、復旧用の依存（psutil・pydantic・asyncio・中継モジュール）を読み込む前に同じ公式実行体へ引き渡す。
+実行体の選択は標準ライブラリだけの`pytools/_internal/codex_runtime.py`が持ち、導入処理と起動管理が共用する。
+非対話コマンドが復旧用の依存を読み込まないことは`pytools/codex_launcher_test.py`で試験する。
+
 会話は実際の`thread/start`・`thread/resume`応答の正確なIDで選び、一時的なタイトル生成threadや同じcwdの別会話と区別する。
 接続断またはdaemon世代の交代を観測すると、公開`initialize`・`thread/resume`・`thread/turns/list`で保存済み状態を確認する。
 元turnが未完了で現在のwriterが無く、明示中止と新しいユーザーturnも無い場合だけ`turn/start`で未完了工程の継続を求める。
@@ -67,6 +72,8 @@ Linuxは可視コマンドの接続先をwrapperへ変更する前に、公式�
 要求の応答を失っただけで副作用のある操作を再送せず、会話へ保存済みの状態を照合してから続ける。
 応答を失ったRPC名と、元の依頼・実行履歴・操作対象の状態を同じ会話で確認する入力方法をTUIへ返す。
 
+nativeの世代記録は`processIdentity`を省略可能な項目とし、Linux・macOS以外（Windows）では書かない。
+世代は`pid`と`processIdentity`で識別し、`processIdentity`が無い記録は全OSで書かれる`processStartTime`で識別する。
 daemon 0.166.0は世代ファイルを空の予約ファイルとして直接作成し、その後別inodeの完全なJSONへ交換する。
 ファイルの存在を完成済みJSONの保証にせず、空本文だけを有限の未準備状態として扱う。
 非空の不正JSONと期限を越えた予約状態は復旧失敗にする。
