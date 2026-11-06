@@ -40,11 +40,13 @@ CHECK_MODULE_NAMES = (
     "agents_server_session_advisor",
     "user_response_advisor",
     "termination_order_advisor",
+    "submission_report_advisor",
     "queued_notification_advisor",
 )
 
-# Codexでは説明言語を判定する。非遮断通知を配送できないため、終了工程の支援は文書で扱う。
-CODEX_CHECK_MODULE_NAMES = ("response_language_advisor",)
+# Codexでは説明言語と、遮断で再報告を求める投入作業の報告用要約を判定する。
+# 非遮断通知を配送できないため、それ以外の終了工程の支援は文書で扱う。
+CODEX_CHECK_MODULE_NAMES = ("response_language_advisor", "submission_report_advisor")
 
 # 終了要求が成立し、同じStopで継続を求めてはならない`halt`の状態。
 _TERMINATION_ISSUED = frozenset({"exit_requested", "terminating"})

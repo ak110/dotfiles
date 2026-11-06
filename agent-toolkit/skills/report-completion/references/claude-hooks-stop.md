@@ -28,7 +28,7 @@ Claude Codeでは、assistantの`text`要素および`mcp__agent-toolkit__send_t
 
 ## Codexの差分
 
-CodexのStopフックでは、最上位メインがユーザーへ直接届ける共通入力`last_assistant_message`の説明言語を`response_language_advisor`で判定する。委譲先の内部返却は言語判定の対象から除外する。終了工程の起動要否、ならびにメッセージ送達や残工程の点検は`agent-toolkit:report-completion`の文書で扱う。Claude Code固有のtranscript形式や非遮断通知を前提とする他のStop判定は、Codexの対象から除外する。
+CodexのStopフックでは、最上位メインがユーザーへ直接届ける共通入力`last_assistant_message`の説明言語を`response_language_advisor`で判定する。委譲先の内部返却は言語判定の対象から除外する。add-awi-by-userの最終応答に`atk wi submission end`の報告用要約が無い場合は、`submission_report_advisor`が遮断して再報告を求める。終了工程の起動要否、ならびにメッセージ送達や残工程の点検は`agent-toolkit:report-completion`の文書で扱う。Claude Code固有のtranscript形式や非遮断通知を前提とする他のStop判定は、Codexの対象から除外する。
 
 ## 終了工程の証拠
 

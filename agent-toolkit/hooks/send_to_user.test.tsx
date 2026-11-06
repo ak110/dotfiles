@@ -22,7 +22,8 @@ function row(tool: string, input: unknown) {
   };
 }
 
-test("send_to_userの行はmessageの全文をMarkdownで描く", async ($) => {
+test("send_to_userの行はmessageの全文を前に空行1行分の余白を置いたMarkdownで描く", async ($) => {
+  // 余白が無いと直前の表示と本文が続いて読みにくい。本文の欠落と余白の欠落の両方を検出する。
   for (const surface of ["terminal", "desktop"] as const) {
     const ui = await $.ui.mount({
       plugin: PLUGIN,
@@ -33,6 +34,7 @@ test("send_to_userの行はmessageの全文をMarkdownで描く", async ($) => {
     });
     const markdown = await ui.find({ type: "Markdown" });
     expect(markdown?.props.text).toBe(MESSAGE);
+    expect(await ui.drawn()).toMatchObject({ type: "Box", props: { marginTop: 1 } });
     await ui.unmount();
   }
 });
@@ -301,5 +303,31 @@ for (const message of ["--help", "--text", "", "--Next verify", "-x\n日本語�
     expect(seen.length).toBe(1);
     expect(seen[0]![7]!.endsWith("/scripts/launch.py")).toBe(true);
     expect(seen[0]!.slice(8)).toEqual([seen[0]![7]!.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/_common/response_language_check.py"), `--text=${message}`]);
+  });
+}
+
+// `AWI化ステータス: 不要`の理由が区分名で始まらない本文だけに警告を付け、どの本文も送達することを検証する。
+// 区分外の理由（規範の存在など）で再発防止を省いた報告を送達時に本人へ気付かせるための判定である。
+for (const [name, message, warned] of [
+  ["区分名で始まらない不要", "改善案:\n- 規範の取り違え（AWI化ステータス: 不要 上位規範から導けたため条文は追加しない）", true],
+  ["区分名の無い不要が区分名付きの不要と混在", "- A（AWI化ステータス: 不要 非欠陥）\n- B（AWI化ステータス: 不要 当座に直した）", true],
+  ["区分名で始まる不要", "- A（AWI化ステータス: 不要 被覆 20261106-000000-001.md）\n- B（AWI化ステータス: 不要 見送り 損失より継続費用が大きい）", false],
+  ["処置済みと非欠陥", "- A（AWI化ステータス: 不要 処置済み abc1234）\n- B（AWI化ステータス: 不要 非欠陥）", false],
+  ["不要を含まない本文", "- A（AWI化ステータス: 済 20261106-000000-001.md）", false],
+] as const) {
+  test(`send_to_userは${name}の本文を送達し、警告は${warned ? "付ける" : "付けない"}`, async ($, on) => {
+    mock.env(on, {});
+    on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
+    const called = await $.tool.call({ tool: TOOL, message });
+    expect(called.deny).toBeUndefined();
+    expect(called.result).toBe(DISPLAYED);
+    const warnings = (called.context ?? []).filter((note) => note.includes("AWI化ステータス"));
+    if (warned) {
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toMatch(/^<atk-auto source="send-to-user" kind="warn">\n/);
+      expect(warnings[0]).toMatch("再発防止策の必須性");
+    } else {
+      expect(warnings).toEqual([]);
+    }
   });
 }

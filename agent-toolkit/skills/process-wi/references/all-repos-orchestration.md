@@ -18,7 +18,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
-| 不良・是正要求・改善点を観測または受領した時 | `immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
+| 不良・是正要求・改善点を観測または受領した時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
 | 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring.md#「成果物側の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「成果物側の観測」` |
 
 ## 担当の役割

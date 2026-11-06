@@ -49,6 +49,7 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/waiting-and-monitoring.md#「外部サービスの状態変化を待つ場合」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「外部サービスの状態変化を待つ場合」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 規範・基準・手順による既存の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics.md`の「既存規範による被覆の判定」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「既存規範による被覆の判定」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
@@ -97,7 +98,7 @@ AWIの粒度は要求の同一性に基づいて判断する。同じユーザ�
 
 | 起票の目的 | 登録前に満たす条件 | 後続工程へ渡す内容 |
 | --- | --- | --- |
-| 全起点に共通 | 要求または観測事実、期待との差、対象と期待結果、対応が必要な根拠を確かめ、既存実装・文書との被覆を比較する。未終了WIとの比較は`references/drafting-completion.md`「重複判定」の起点別条件に従う | 確認した結論と再取得できる根拠 |
+| 全起点に共通 | 要求または観測事実、期待との差、対象と期待結果、対応が必要な根拠を確かめ、既存実装・文書との被覆を比較する。規範・基準・手順の被覆は`agent-basics:writing-standards/references/agent-documents-basics.md`「既存規範による被覆の判定」の読込経路で判定する。未終了WIとの比較は`references/drafting-completion.md`「重複判定」の起点別条件に従う | 確認した結論と再取得できる根拠 |
 | ユーザーが手動作成で具体化を求めた要求 | 今回の対象ごとの採否、外部可視の仕様、必要なユーザー判断を投入元で確定する | 確定した変更の内部設計、実装単位、実装後の検証 |
 | 作業途中で発見した、現在の要求から独立した別件 | 共通条件を満たし、確定事実・原因仮説・未確定事項を区別する | 原因の解明や解法選定の残り、次に確定する問いと期待結果 |
 

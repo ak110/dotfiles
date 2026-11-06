@@ -13,6 +13,7 @@
 | add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前 | `../../add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
 | 資料起点の採否を検収する前 | `../../add-awi-by-user/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/add-awi-by-user/SKILL.md#冒頭` |
 | 参考資料に基づく候補の十分性を検収する前 | `agent-basics:writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
+| 規範・手順による既存充足を検収する前 | `agent-basics:writing-standards/references/agent-documents-basics.md`の「既存規範による被覆の判定」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「既存規範による被覆の判定」` |
 | 再発の経過を問う要求を検収する前 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
 | 複数バグの現象・期待する契約・原因の対応を検収する前 | `analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
 | 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
@@ -61,7 +62,7 @@ add-awi-by-userまたはgrillingによるWI作成では、原文・原稿・調�
 完成条件の網羅性・観測可能性を確認する前に、`drafting-completion.md`「投入前の読み直し」の必要性判定を適用し、起草者が加えた条件も独立して判定する。
 原因と被覆の判定では、同節に従い、探索範囲の各限定を根本原因の成立条件から導けるか確認する。
 資料起点の採用案は、`agent-toolkit:add-awi-by-user`冒頭の資料比較に従い、資料の具体的な手法と対象の利用結果を結ぶ根拠を確かめる。
-規定の存在や対象外のテスト例だけで既存充足や必要性を確定していないかも比較する。
+規定の存在や対象外のテスト例だけで既存充足や必要性を確定していないかも比較する。規範・手順による既存充足は、`agent-basics:writing-standards/references/agent-documents-basics.md`「既存規範による被覆の判定」の読込経路で確かめたかを確認する。
 元の問いの分析単位を原文から独立に確定し、原因候補を選んだ前提と対応するか判定する。
 起草者が選んだ個別事象だけで検収範囲を決めず、再発の経過を問う要求には`agent-basics:bugfix/references/root-cause-scenarios.md`「反復した指摘の原因判定」を適用する。
 複数バグでは、`analysis-records.md`「原因分析の記録先」に従い、各バグの現象・期待する契約・原因の対応が一意かを確認する。

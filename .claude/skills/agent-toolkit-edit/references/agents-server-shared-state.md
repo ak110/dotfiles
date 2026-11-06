@@ -345,7 +345,8 @@ Codexバックエンドは、接続切り替え時および過去ログからの
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
 | ホストsessionのターンと子エージェントの活動 | `session-activity/<session_id>.json` | `_common/session_activity.py`。実プロセス、セッションログ、共通の親子判定結果と突き合わせて、開始猶予（待機時間）の要否を判定する。人が実行する`atk agents list`（`_agents_server/commands.py`）は、PIDとプロセス起動時刻が生存を示す親の無い会話を、委譲先の無いrootとして見出し表示するためだけに読む（記録は変更しない） | `hook.py`による活動記録処理。ファイルロック下で最新状態に上書き更新し、SessionEndイベント発生時に自身のセッションファイルを削除する。残存した古い記録については、PIDとプロセス起動時刻からプロセスの生存を確認して失効を判定する |
-| WI投入作業の投入先と作業期間 | `session-activity/submissions/<session_id>.json` | `_common/session_activity.py`。投入先がprocess-loopの処理対象と重複する会話およびその子孫会話に限り、開始猶予の対象とする | `atk wi submission begin`が作成・更新し、`atk wi submission end`が削除する。SessionEndイベントでは削除しない |
+| WI投入作業の投入先と作業期間 | `session-activity/submissions/<session_id>.json` | `_common/session_activity.py`。投入先がprocess-loopの処理対象と重複する会話およびその子孫会話に限り、開始猶予の対象とする | `atk wi submission begin`が作成・更新し、`atk wi submission end`が照合の成立後か`--abort`で削除する。SessionEndイベントでは削除しない |
+| WI投入作業の報告用要約 | `session-activity/submission-reports/<session_id>.json` | `_common/session_activity.py`。`_hooks/submission_report_advisor.py`が最終応答と照合する | 正常な`atk wi submission end`が作成し、Stop hookが照合の成立時か要約作成後のユーザー発話の観測時に削除する |
 | 独立したWI投入の受付・移管票・実行結果 | `wi-submit/requests/<request_id>.json`と`wi-submit/runs/<run_id>/` | `atk wi submit --show`、既存SessionStart/SessionEndの再観測、process-loopの対象別結果の受付票検証 | `_atk/wi/submit.py`。自己完結した要求を原子的に保存し、独立監督のPID世代と所有移管、finishの要求別処置、run-skillの報告同期を対応付ける。未完了・未報告を保持し、完了・同期済みだけを30日後に回収する。製品worktree・process-loopの所有を引き継がない |
 | origin単位の処理所有と未完了の再開情報 | `process-loop-ownership/<originのSHA-256>.json`および同名の`.lock` | 専用process-loopおよびall-repos | `_atk/wi/process_loop_ownership.py`。短時間のファイルロックを取得して所有権トークンと生存状態を確認し、worktree、Git共通ディレクトリ、担当セッション、レーン所有セッションの情報を更新する |
 | 対象別の担当返却 | `process-loop-ownership/<originのSHA-256>.result.json` | all-reposの中継処理および再開処理 | `_atk/wi/process_loop_all_repos.py`。担当エージェントの終了を確認した後、完了済み工程と残存工程の情報を保存する |

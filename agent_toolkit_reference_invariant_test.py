@@ -2,7 +2,8 @@
 
 `git ls-files`を入力にすることで、通常の検索が省く隠しディレクトリも対象に含める。
 検査対象は`.json`・`.md`・`.py`であり、`install-claude.sh`と`install-claude.ps1`は含まない。
-規範Markdownが`` `<パス>.md` ``の直後に「<名前>」で節を指す参照は、参照先に同じ名前が残ることも検査する。
+規範Markdownが`` `<パス>.md` ``の直後に「<名前>」で節を指す参照は、参照先に同じ名前が残ること、参照先が一意に決まること、
+段落番号で位置を指さないこと、同じ文で名指しした識別子が参照先の節にあることも検査する。
 このファイル自身も走査対象となるため、欠損参照のテスト入力は接頭辞から組み立てる。
 """
 
@@ -659,12 +660,16 @@ def _resolve_heading_reference_target(
     reference: str,
     markdown_paths: list[pathlib.Path],
     plugin: str | None = None,
-) -> pathlib.Path | None:
-    """参照が一意に指すMarkdownを返す。一意に決まらない参照は検査の対象外としてNoneを返す。"""
+) -> tuple[pathlib.Path | None, bool]:
+    """参照が一意に指すMarkdownと、候補が複数あって一意に決まらないかを返す。
+
+    候補が0件の参照（生成物の名前や`<役割名>`のような置換用の名前）は検査の対象外として`(None, False)`を返す。
+    スキル名で修飾した参照がそのスキルの配下に無い場合と、末尾一致の候補が複数ある場合は`(None, True)`を返す。
+    """
     for variable in _PLUGIN_ROOT_VARIABLES:
         reference = reference.replace(variable, f"{_PLUGIN_PREFIX}/")
     if reference.startswith(("agent-toolkit:", "agent-basics:")):
-        return read_triggers.resolve_document(reference, root / source, root / _PLUGIN_PREFIX)
+        return read_triggers.resolve_document(reference, root / source, root / _PLUGIN_PREFIX), False
     if skill:
         bases = [pathlib.Path(plugin or _PLUGIN_PREFIX, "skills", skill), pathlib.Path(plugin or _PLUGIN_PREFIX, "skills")]
     else:
@@ -672,13 +677,41 @@ def _resolve_heading_reference_target(
     for base in bases:
         candidate = root / base / reference
         if candidate.is_file():
-            return read_triggers.resolve_read_source(candidate, root / _PLUGIN_PREFIX)
+            return read_triggers.resolve_read_source(candidate, root / _PLUGIN_PREFIX), False
     if skill:
-        return None
+        return None, True
     suffix_matches = [path for path in markdown_paths if path.as_posix().endswith(f"/{reference}")]
-    return (
-        read_triggers.resolve_read_source(root / suffix_matches[0], root / _PLUGIN_PREFIX) if len(suffix_matches) == 1 else None
-    )
+    if len(suffix_matches) == 1:
+        return read_triggers.resolve_read_source(root / suffix_matches[0], root / _PLUGIN_PREFIX), False
+    return None, len(suffix_matches) > 1
+
+
+# 「<節名>」の直後で段落番号により位置を指す記法。節の改訂で番号がずれても検査を通るため失敗にする。
+_PARAGRAPH_NUMBER_PATTERN = re.compile(r"の?(?:第?\d+段落|段落\d+)")
+# 参照より前の同じ文でバッククォートにより名指しする識別子。参照先の節がその識別子を定めると読める記法を対象にする。
+_NAMED_IDENTIFIER_PATTERN = re.compile(r"`([a-z][a-z0-9]*_[a-z0-9_]+)`")
+_SENTENCE_BOUNDARY_PATTERN = re.compile(r"。|\n|：|: ")
+
+
+def _missing_named_identifiers(content: str, match: re.Match[str], target: pathlib.Path) -> list[str]:
+    """参照より前の同じ文で名指しした識別子のうち、参照先の節の本文に無いものを返す。
+
+    表の行は列ごとに別の対象を並べるため除く。行全体を対象にすると、参照と無関係な識別子を数えて誤検出が増える
+    （2026-11-06の試作で行全体は76件、同じ文で参照より前に限ると3件で、3件とも実際の不足だった）。
+    """
+    line_start = content.rfind("\n", 0, match.start()) + 1
+    if content[line_start:].lstrip().startswith("|"):
+        return []
+    boundaries = [found.end() for found in _SENTENCE_BOUNDARY_PATTERN.finditer(content, 0, match.start())]
+    sentence = content[boundaries[-1] if boundaries else 0 : match.start()]
+    names = [found.group(1) for found in _NAMED_IDENTIFIER_PATTERN.finditer(sentence)]
+    if not names:
+        return []
+    try:
+        body = read_triggers.ReadTarget(target, match.group("name")).body()
+    except ValueError:
+        return []
+    return [name for name in names if name not in body]
 
 
 def _unresolved_heading_references(
@@ -686,13 +719,17 @@ def _unresolved_heading_references(
     sources: list[pathlib.Path],
     markdown_paths: list[pathlib.Path],
 ) -> list[tuple[str, pathlib.Path]]:
-    """参照先に同名の見出しも本文の文字列も無い見出し名参照を、参照と参照元の対で返す。"""
+    """見出し名参照の不備を、参照と参照元の対で返す。
+
+    不備は、参照先に同名の見出しも本文の文字列も無いこと、参照先を一意に解決できないこと、
+    節名の後に段落番号で位置を指すこと、参照より前の同じ文で名指しした識別子が参照先の節に無いことである。
+    """
     unresolved: list[tuple[str, pathlib.Path]] = []
     for source in sources:
         content = (root / source).read_text(encoding="utf-8")
         matches = [*_HEADING_REFERENCE_PATTERN.finditer(content), *_HEADING_SYMBOL_REFERENCE_PATTERN.finditer(content)]
         for match in matches:
-            target = _resolve_heading_reference_target(
+            target, ambiguous = _resolve_heading_reference_target(
                 root, source, match.group("skill"), match.group("path"), markdown_paths, match.group("plugin")
             )
             line = content[
@@ -715,10 +752,20 @@ def _unresolved_heading_references(
             ]
             if len({item.path for item in contextual}) == 1:
                 target = contextual[0].path
+            reference = f"{match.group('path')}「{match.group('name')}」"
             if target is None:
+                if ambiguous:
+                    unresolved.append((f"{reference}（参照先を一意に解決できない）", source))
                 continue
             if match.group("name") not in target.read_text(encoding="utf-8"):
-                unresolved.append((f"{match.group('path')}「{match.group('name')}」", source))
+                unresolved.append((reference, source))
+                continue
+            if _PARAGRAPH_NUMBER_PATTERN.match(content, match.end()):
+                unresolved.append((f"{reference}（段落番号で位置を指す）", source))
+            unresolved.extend(
+                (f"{reference}（`{name}`が参照先の節に無い）", source)
+                for name in _missing_named_identifiers(content, match, target)
+            )
     return unresolved
 
 
@@ -1046,6 +1093,72 @@ def test_heading_reference_resolves_skill_qualified_path(tmp_path: pathlib.Path)
 
     assert _unresolved_heading_references(tmp_path, [source], markdown_paths) == [
         ("references/push-and-ci.md「存在しない節」", source)
+    ]
+
+
+def test_ambiguous_heading_reference_is_reported(tmp_path: pathlib.Path) -> None:
+    """候補が複数ある参照を未解決として報告し、候補0件の生成物名と一意な参照は報告しない。
+
+    `share/`配下から「本スキルの`SKILL.md`「<節名>」」と書くと、どのSKILL.mdも参照先として一意に決まらない。
+    """
+    for skill in ("first", "second"):
+        document = tmp_path / _PLUGIN_PREFIX / "skills" / skill / "SKILL.md"
+        document.parent.mkdir(parents=True)
+        document.write_text("# スキル\n\n## 共通操作\n", encoding="utf-8")
+    operations = tmp_path / _PLUGIN_PREFIX / "share" / "operations.md"
+    operations.parent.mkdir(parents=True)
+    operations.write_text("## 共通操作\n", encoding="utf-8")
+    source = pathlib.Path(_PLUGIN_PREFIX, "share", "criteria.md")
+    (tmp_path / source).write_text(
+        "本スキルの`SKILL.md`「共通操作」に従う。\n`operations.md`「共通操作」に従う。\n`stats.md`「集計」を読む。\n",
+        encoding="utf-8",
+    )
+    markdown_paths = [path.relative_to(tmp_path) for path in tmp_path.rglob("*.md")]
+
+    assert _unresolved_heading_references(tmp_path, [source], markdown_paths) == [
+        ("SKILL.md「共通操作」（参照先を一意に解決できない）", source)
+    ]
+
+
+def test_paragraph_number_reference_is_reported(tmp_path: pathlib.Path) -> None:
+    """節名の後に段落番号で位置を指す参照を報告する。節の改訂で番号がずれても見出しの実在だけでは検出できない。"""
+    target = tmp_path / "docs" / "prevention.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("# 再発防止\n\n## 再発防止策\n\n本文\n\n## 自動検出の選定\n\n基準\n", encoding="utf-8")
+    source = pathlib.Path("rule.md")
+    (tmp_path / source).write_text(
+        "`docs/prevention.md`「再発防止策」の段落4に従う。\n`docs/prevention.md`「自動検出の選定」に従う。\n", encoding="utf-8"
+    )
+
+    assert _unresolved_heading_references(tmp_path, [source], [target.relative_to(tmp_path), source]) == [
+        ("docs/prevention.md「再発防止策」（段落番号で位置を指す）", source)
+    ]
+
+
+def test_named_identifier_must_exist_in_referenced_section(tmp_path: pathlib.Path) -> None:
+    """参照より前の同じ文で名指しした識別子が参照先の節に無ければ報告し、表の行と別の文の識別子は判定しない。"""
+    target = tmp_path / "docs" / "integration.md"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        "# 統合\n\n## 履歴統合\n\n`history_compare`で照合する。\n\n## 別の節\n\n`guard_value`を記録する。\n",
+        encoding="utf-8",
+    )
+    source = pathlib.Path("rule.md")
+    (tmp_path / source).write_text(
+        "\n".join(
+            [
+                "`guard_value`の規約は、`docs/integration.md`「履歴統合」にのみ定義されている。",
+                "`history_compare`の手順は`docs/integration.md`「履歴統合」に従う。",
+                "`guard_value`を残す。次に`docs/integration.md`「履歴統合」へ進む。",
+                "| `guard_value` | `docs/integration.md`「履歴統合」 |",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert _unresolved_heading_references(tmp_path, [source], [target.relative_to(tmp_path), source]) == [
+        ("docs/integration.md「履歴統合」（`guard_value`が参照先の節に無い）", source)
     ]
 
 

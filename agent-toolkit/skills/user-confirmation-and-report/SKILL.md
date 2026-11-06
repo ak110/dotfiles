@@ -35,7 +35,7 @@ UWIの本文、キューへの投入、状態管理、依存関係の形式は`a
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/review-feedback.md#「ユーザー指摘の受領」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/review-feedback.md#「ユーザー指摘の受領」` |
+| ユーザーから成果物の欠陥の指摘・割り込み・是正要求を受け取り、採否と修正範囲を確定する前 | `agent-toolkit:user-confirmation-and-report/references/review-feedback.md#「ユーザー指摘の受領」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/review-feedback.md#「ユーザー指摘の受領」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
 | 状況照会で再検証の要否を判定する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |

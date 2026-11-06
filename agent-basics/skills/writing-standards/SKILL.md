@@ -112,7 +112,7 @@ description: >
 | 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む）。正しい例と説明から、元の意味と条件を保つ書き方を選ぶ | `references/tone-examples-llm-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples-llm-tone.md` | |
 | 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/document-types.md` | |
 | 設計の記録（ADRを含む）を作成・変更・レビューする時 | `references/document-types.md`の「設計の記録」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/document-types.md#「設計の記録」` | |
-| 新しい概念名または識別子を導入する時 | `references/referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` | |
+| 新しい概念名または識別子を導入する時と、既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する時 | `references/referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` | |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/defined-names.md` | |
 | 文章を書く時と表記を修正する時（他の行より先に読む） | `references/notation-rules.md` | 操作 | `body-writing` | |
 | 表記チェックの対象・実行方法を選ぶ前、実行する前と診断へ対応する前 | `references/notation-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-checks.md` | |
@@ -163,6 +163,7 @@ description: >
 | スキル編集 | `references/agent-skills.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills.md` | |
 | スキル編集 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
 | エージェント向け文書の置き場所を選ぶ時 | `references/agent-documents-basics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md` | |
+| 既存の規範・基準・手順で対応済み（被覆済み）かを判定する時（作業項目の起草・計画・レビュー・再発防止策の採否を含む） | `references/agent-documents-basics.md`の「既存規範による被覆の判定」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「既存規範による被覆の判定」` | |
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents.md` | |
 | hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` | |
 | hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |

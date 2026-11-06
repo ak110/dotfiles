@@ -94,17 +94,18 @@ _CROSS_PLUGIN_DOCUMENTS = (
 
 
 @pytest.mark.parametrize(
-    "skill,documents",
+    "skill,documents,shared",
     [
-        ("process-wi", {"lanes.md", "single-lane.md", "all-repos.md"}),
-        ("review-session", {"current-session.md", "batch.md"}),
+        # 即時対応の詳細手順は全モードで同じ条件から読むため、モード資料の排他とは別に許す。
+        ("process-wi", {"lanes.md", "single-lane.md", "all-repos.md"}, {"immediate-fix.md"}),
+        ("review-session", {"current-session.md", "batch.md"}, set()),
     ],
 )
-def test_mode_entries_keep_exclusive_judgment_routes(skill, documents):
+def test_mode_entries_keep_exclusive_judgment_routes(skill, documents, shared):
     """入力に合う資料だけを選ぶ条件付きの取得契約を保持する。"""
     source = _PLUGIN_ROOT / "skills" / skill / "SKILL.md"
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
-    assert {path.name for row in rows for path in row.documents} == documents
+    assert {path.name for row in rows for path in row.documents} == documents | shared
     assert all(row.kind == "判断" and len(row.documents) == 1 for row in rows)
     normal = "current-session.md" if skill == "review-session" else "lanes.md"
     text = (source.parent / "references" / normal).read_text(encoding="utf-8")
@@ -112,6 +113,25 @@ def test_mode_entries_keep_exclusive_judgment_routes(skill, documents):
         assert "references/batch.md" not in text
         assert "session-review-state -- finish" not in text
         assert "session-review-state -- complete" in text
+
+
+def test_process_wi_body_defines_immediate_fix_for_all_modes():
+    """即時対応の定義と対象の判定基準を、全モードで起動時に届くprocess-wiの本文に保持する。
+
+    定義が条件付きの参照資料にしか無いと、ユーザーが時機の指示として「即時対応」を使った場面で
+    資料の必要性に気付けず、語感で範囲を選ぶ誤りが起きる。
+    """
+    source = _PLUGIN_ROOT / "skills" / "process-wi" / "SKILL.md"
+    body = read_triggers.ReadTarget(source, "即時対応").body()
+    for required in (
+        "最小限の直接修正",
+        "次のセッション用AWI",
+        "直さないと、残る工程か次のセッションで停止・遮断、誤った判断や成果物、手戻りが生じるか",
+        "references/immediate-fix.md",
+    ):
+        assert required in body
+    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
+    assert any("即時対応" in row.condition and {path.name for path in row.documents} == {"immediate-fix.md"} for row in rows)
 
 
 def test_cross_plugin_references_resolve_in_codex_cache_layout(tmp_path, monkeypatch):

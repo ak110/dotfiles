@@ -14,7 +14,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/references/claude-hooks-stop.md#「終了工程の証拠」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/claude-hooks-stop.md#「終了工程の証拠」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/publish-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks.md#「hookスクリプトの基本プロトコル」` | 判断 | `section:*/.claude/skills/agent-toolkit-edit/references/claude-hooks.md#「hookスクリプトの基本プロトコル」` |
+| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md#「hookスクリプトの基本プロトコル」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks.md#「hookスクリプトの基本プロトコル」` |
 | run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state.md`の「run-skillの再開入力」 | 判断 | `section:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「run-skillの再開入力」` |
 
 ## 資料の選択
@@ -84,7 +84,7 @@ Claude Codeはツールの並列呼び出しでhookを同時に発火させる�
 - SessionEndの発火時に活動JSONを削除する。記録されたPIDと起動時刻が生存プロセスと一致しなければ、取得側で失効として扱う
 - 更新および削除処理は固定の`activity.lock`による排他制御下で実行し、会話ごとの過去履歴や終了済みの子エージェントの項目は保持せずに削除する
 - 読み取れない活動記録は安全側に倒して活動候補として返す。関連する会話を特定できない生存プロセスは、どの作業にも属さないものとして集計から除く
-- WI投入作業の属性情報は、`session-activity/submissions/{session_id}.json`へ会話ごとに保存する。保存項目は、バージョン番号、会話ID、作業種別（`add-awi-by-user`）、正規化された投入先URLの一覧、更新時刻である。このファイルは`atk wi submission begin`が作成・更新し、`atk wi submission end`が削除する。hookのSessionEndでは削除せず、セッション再開時にその属性を再び有効化できるようにする
+- WI投入作業の属性情報は、`session-activity/submissions/{session_id}.json`へ会話ごとに保存する。保存項目は、バージョン番号、会話ID、作業種別（`add-awi-by-user`）、正規化された投入先URLの一覧、作業開始時刻（`started_at`。最初の`begin`で付け、投入先の置換では保つ）、更新時刻である。このファイルは`atk wi submission begin`が作成・更新し、`atk wi submission end`が照合の成立後か`--abort`で削除する。正常な`end`は報告用要約を`session-activity/submission-reports/{session_id}.json`へ保存し、Stop hookが最終応答との照合後に削除する。hookのSessionEndでは削除せず、セッション再開時にその属性を再び有効化できるようにする
 - 開始前判定では、投入先がprocess-loopの対象リポジトリ群と重複している属性を持つ会話、およびその子孫の活動のみを待機理由とし、属性を読み取れない会話や属性を持たない会話は除外する
 - 対象外とする会話とその子孫の判定には`_common/session_parents.py`による親子関係の解決結果を用い、process-loopの共通環境変数などの識別印だけで別ループの会話まで誤って除外しないようにする
 
@@ -243,7 +243,7 @@ Codex PreToolUseの長い追加通知は、既存のsession managed-tempへ全�
   - `model_type`の決定ロジック: 起動入力で指定された`model_type`を優先し、指定が省略された場合は、`start`の`task`では共通パーサーが読み取る役割文書のfrontmatterから取得し、その他の`mode`では各modeごとのデフォルト種別を適用する。ファイル名対応表は過去の旧文書を読み取る互換性維持のためだけに使用する。統合前の古い名称で記録されている開始履歴は、対応する`mode`として扱う
   - レコードの生成と更新: `start`の成功レスポンスを受信した時点でレコードを生成し、`send_message`、`kill`、`wait`の各レスポンス受信時、ならびにBash経由で`atk agents wait`が実行された際に更新する
   - 失敗の除外: `observe_tool`の共通境界で、全観測操作の`PostToolUseFailure`、MCPの`isError`・`is_error`、JSON包装内の失敗、`ToolError:`本文を除外する。委譲先状態、cwd、root alias、待機登録、終了ログは更新しない。正常なshowやkillが返す終了session自身の`error`はツール実行失敗と区別する
-  - `pending_observation`を真にする契機: 各開始操作の成功レスポンスを受信した時点、および`delivery`が`reply_started`または`reply_ambiguous`である`send_message`のレスポンスを受信した時点とする。なお、`steered`は実行中のターンへ追加指示を届けるだけで`turn_seq`を変えないため、対象外とする。呼び出し主体はhookペイロードの`agent_id`（これを持たないメイン会話では`main`）から`owner_agent_id`へ記録する。呼び出し主体の判別に`transcript_path`を用いない（`claude-hooks.md`「hookスクリプトの基本プロトコル」を参照）
+  - `pending_observation`を真にする契機: 各開始操作の成功レスポンスを受信した時点、および`delivery`が`reply_started`または`reply_ambiguous`である`send_message`のレスポンスを受信した時点とする。なお、`steered`は実行中のターンへ追加指示を届けるだけで`turn_seq`を変えないため、対象外とする。呼び出し主体はhookペイロードの`agent_id`（これを持たないメイン会話では`main`）から`owner_agent_id`へ記録する。呼び出し主体の判別に`transcript_path`を用いない（`agent-basics:writing-standards`の`references/claude-hooks.md`「hookスクリプトの基本プロトコル」を参照）
   - `pending_observation`を偽にする契機: `kill`の成功レスポンス（バックグラウンドタスクへの移行通知を含む）を受信した時点と、Bash経由の`atk agents wait`が完了した時点とする。`待機中:`表明と`send_message`の受理は観測ではないため、真のまま保持する。CLIの`atk agents wait`は引数として特定のセッションを受け取らず、呼び出し主体が所有している既存記録の全セッションを一括して観測済みに更新する。偽という値は「現時点で未観測のタスクが存在しない」ことを意味するため、新しいタスクを配送した場合は再び真に戻る。`owner_agent_id`は次のタスクが発生するまで保持される
   - 利用用途: Stop判定において、`pending_observation`が真であり、かつ`owner_agent_id`がStopを呼び出した主体と一致している記録を未観測警告の対象とする。観測を試みた後の継続は後掲「待機の継続」で別に判定する。CLI待機中については、ルートセッションが所有する待機権限が有効であることをStop hookが確認し、警告から除外する。現在のセッションがagents_serverのClaude・Codex委譲先である場合に限り、直前の応答の`待機中:`表明が指すセッションもそのStopの判定だけで除外し、保存した観測履歴は変更しない。終了工程における委譲先へのwait判定でもこれと同じ読み取り処理を使用し、観測義務と有効な待機状態を区別する。なお、`status`が`running`であるレコードの件数自体を、待機をブロックするための判定入力としない
   - レコードの削除: `stop`ツールの成功レスポンスを受信した時点で、その`session_id`のエントリを削除する。`stop`は実行中のターンを持つセッションや未終了のセッションにはエラーを返すため、未完了のセッションの記録は失われない

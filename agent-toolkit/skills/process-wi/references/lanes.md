@@ -40,7 +40,7 @@ AWIとUWIの共通契約は`../../wi-standards/SKILL.md`に、確認の要否と
 | 選定YAMLを生成または消費する前 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` | |
 | 専用worktreeとレーンを作成する前（実行順3） | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
 | レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` | |
-| 不良またはユーザーの是正要求を受け取った時 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
+| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
 | 公開工程を開始する前（実行順7） | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` | |
 | 公開担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.parent.md` | |
 

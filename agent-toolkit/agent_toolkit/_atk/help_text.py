@@ -191,18 +191,18 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi submission": {
         "summary": "add-awi-by-userの投入先と作業期間を記録する",
-        "description": "add-awi-by-userの投入先と作業期間を記録する。\n\n目的: 実行中のagent-toolkit:add-awi-by-userの会話と、確定した投入先の対応を記録し、process-loopの開始前の活動猶予へ渡す。\n利用場面: add-awi-by-userが投入先を確定・変更した時点と、投入作業を完了・中止した時点。\n対象と出力: OSアカウントの状態ディレクトリにある会話別の投入作業の属性を作成・置換・削除する。private-notesと対象リポジトリは変更しない。\n前提: 会話IDを`--session-id`か、Claude Codeの`CLAUDE_CODE_SESSION_ID`・Codexの`CODEX_THREAD_ID`から決められること。\n復元・後始末: 記録は`atk wi submission end`で削除する。会話を再開した場合は残る記録が再び有効になる。",
-        "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo\n  atk wi submission end",
+        "description": "add-awi-by-userの投入先と作業期間を記録する。\n\n目的: 実行中のagent-toolkit:add-awi-by-userの会話と、確定した投入先の対応を記録し、process-loopの開始前の活動猶予へ渡す。投入を終える時は、作業期間に受けた指摘が指摘対応記録に対応付いているかを検査する。\n利用場面: add-awi-by-userが投入先を確定・変更した時点と、投入作業を完了・中止した時点。\n対象と出力: OSアカウントの状態ディレクトリにある会話別の投入作業の属性を作成・置換・削除する。private-notesと対象リポジトリは変更しない。\n前提: 会話IDを`--session-id`か、Claude Codeの`CLAUDE_CODE_SESSION_ID`・Codexの`CODEX_THREAD_ID`から決められること。\n復元・後始末: 記録は`atk wi submission end`で削除する。会話を再開した場合は残る記録が再び有効になる。",
+        "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo\n  atk wi submission end --findings-file /absolute/path/findings.json\n  atk wi submission end --abort",
     },
     "atk wi submission begin": {
         "summary": "add-awi-by-userの投入先を記録する",
-        "description": "add-awi-by-userの投入先を記録する。\n\n目的: 現在の会話を、指定した投入先へWIを投入するadd-awi-by-userの作業として記録する。\n利用場面: add-awi-by-userが要求ごとの投入先を確定した時点と、投入先を変更した時点。\n対象と出力: --target-repoの値をoriginの正規化URLへ解決し、会話別の投入作業の属性を作成するか投入先を置き換える。成功行へ会話IDと投入先を書く。解決できない投入先や会話IDがあれば何も変更せず終了コード1で終わる。\n前提: --target-repoはローカル作業ツリーのパスか正規化リモートURLとする。同じoriginの別worktreeと別表記のURLは同じ投入先になる。\n復元・後始末: 投入作業の完了・中止時に`atk wi submission end`を実行する。",
+        "description": "add-awi-by-userの投入先を記録する。\n\n目的: 現在の会話を、指定した投入先へWIを投入するadd-awi-by-userの作業として記録する。\n利用場面: add-awi-by-userが要求ごとの投入先を確定した時点と、投入先を変更した時点。\n対象と出力: --target-repoの値をoriginの正規化URLへ解決し、会話別の投入作業の属性を作成するか投入先を置き換える。最初の作成時に作業開始時刻を記録し、置き換えでは保つ。成功行へ会話IDと投入先を書く。解決できない投入先や会話IDがあれば何も変更せず終了コード1で終わる。\n前提: --target-repoはローカル作業ツリーのパスか正規化リモートURLとする。同じoriginの別worktreeと別表記のURLは同じ投入先になる。\n復元・後始末: 投入作業の完了時は`atk wi submission end --findings-file`、中止時は`atk wi submission end --abort`を実行する。",
         "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo --target-repo github.com/example/other",
     },
     "atk wi submission end": {
-        "summary": "add-awi-by-userの投入作業の記録を削除する",
-        "description": "add-awi-by-userの投入作業の記録を削除する。\n\n目的: 現在の会話のWI投入作業の属性を削除し、後続の別作業がprocess-loopの開始前の活動猶予を生じないようにする。\n利用場面: add-awi-by-userの投入を完了した時点と、投入作業を中止した時点。\n対象と出力: 会話別の投入作業の属性を削除し、成功行へ結果を書く。記録が無い場合も成功する。\n前提: `atk wi submission begin`と同じ会話IDを使う。\n復元・後始末: 投入作業を再び始める場合は`atk wi submission begin`を実行する。",
-        "epilog": "実行例:\n\n  atk wi submission end",
+        "summary": "add-awi-by-userの投入作業を終えて記録を削除する",
+        "description": "add-awi-by-userの投入作業を終えて記録を削除する。\n\n目的: 投入作業中に受けた実ユーザー発話と投入前レビューの指摘が、分類・処置とともに指摘対応記録へ対応付いていることを確かめてから、会話のWI投入作業の属性を削除する。後続の別作業がprocess-loopの開始前の活動猶予を生じないようにもする。\n利用場面: add-awi-by-userの投入を完了した時点（--findings-file）と、ユーザーが投入作業を中止した時点（--abort）。\n対象と出力: --findings-fileでは、`begin`の作業開始時刻より後の実ユーザー発話（機械注入・子会話・提示した選択肢をそのまま選んだ確認回答を除く）と、--review-resultの返却の`指摘:`の箇条（`なし`を除く）ごとに、対応する指摘対応記録の項目と必須欄があるかを検査する。成立すれば報告用要約を標準出力へ書いて記録を削除し、最終応答に要約があるかをStop hookが検査できるよう要約を保存する。不足があれば不足ごとの行を標準エラーへ書き、記録を保持して終了コード1で終わる。--abortは検査せずに記録を削除する。検査は対応と必須欄の欠落だけを判定し、分類の意味と処置の十分性は判定しない。\n前提: `atk wi submission begin`と同じ会話IDを使い、その会話の記録をホストの保存先から解決できること。\n復元・後始末: 検査が不足を示したら指摘対応記録を補って同じコマンドを再実行する。投入作業を再び始める場合は`atk wi submission begin`を実行する。",
+        "epilog": "指摘対応記録の形式: UTF-8のJSONで、`confirmation_rounds`（確認の往復回数、0以上の整数）と`entries`（配列）を持つ。各項目は`source`（`user`か`review`）、`user`なら`position`（`<record>:<line>`。`session-review-evidence --user-events`の`record`と`line`）、`review`なら`text`（返却の`指摘:`の箇条の本文）、`finding`（真偽）を持つ。指摘でなければ`reason`、指摘なら`classification`（考慮漏れ・ユーザーだけが持つ新しい情報・前提の誤り・採用しない提案）、`summary`（報告の要旨）、`basis`、`adoption`、`result`を持つ。考慮漏れは`cause_analysis`と`prevention`（`decision`と`handoff`）も持つ。\n\n実行例:\n\n  atk wi submission end --findings-file /absolute/path/findings.json --review-result /absolute/path/review.txt\n  atk wi submission end --abort",
     },
     "atk wi process-loop": {
         "summary": "登録リポジトリ全体のAWI処理を常駐実行する",

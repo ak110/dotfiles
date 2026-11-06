@@ -835,8 +835,8 @@ def _check_bash_unquoted_heredoc_substitution(command: str) -> str | None:
     コマンドを実行する。Markdownのコード表記とシェルの置換は同じ記号であり、書き手が置換に気付かないまま
     外部への保存、プロセスの終了、ファイルの上書きなど復元できない結果が残るため、実行前に遮断する。
     判定はコマンド文字列だけから確定し、遮断された主体は区切り語の引用、事前の変数代入またはエスケープへ
-    書き直して同じターンで再実行できる。遮断とする根拠は`agent-basics:writing-standards`の
-    `references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
+    書き直して同じターンで再実行できる。遮断とする根拠は
+    `agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
     本文の範囲と展開の有無は`agent_toolkit._common.heredocs.heredoc_bodies`の1つの定義から得る。
     """
     found = heredoc_command_substitutions(command)

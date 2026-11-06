@@ -440,7 +440,7 @@ def _begin(*arguments: str) -> None:
 
 def _end(session_id: str) -> None:
     with pytest.raises(SystemExit) as exc:
-        atk.main(["wi", "submission", "end", "--session-id", session_id])
+        atk.main(["wi", "submission", "end", "--session-id", session_id, "--abort"])
     assert exc.value.code == 0
 
 

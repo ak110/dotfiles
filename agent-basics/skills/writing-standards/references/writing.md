@@ -13,7 +13,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `tone-examples-llm-tone.md#「唐突な否定と不変の表明」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/tone-examples-llm-tone.md#「唐突な否定と不変の表明」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「規定の区分と標示」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「規定の区分と標示」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/textlint-violations.md#「文の書き直しの委譲と検収」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` |
+| 新しい概念名や内部識別子を導入する時と、既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する時 | `referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md#「限定の反証」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「限定の反証」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md#「名前の到達性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「名前の到達性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md#「見出しと本文の対応」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「見出しと本文の対応」` |
@@ -172,7 +172,7 @@
 
 <!-- portable-quality:end -->
 
-新しい概念名や内部識別子を導入する際は、`referent-table.md`の候補語選定基準に従い、単語を決める前に対象が指す実体と果たすべき役割を明確にする。特定の1つのドキュメントの中でのみ使用する固有の技術用語は、その文書内で最初に出現した箇所で定義を明記する。
+既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する場合も、`referent-table.md`「適用場面」に従って各対象の所属を対応付ける。新しい概念名や内部識別子を導入する際は、`referent-table.md`の候補語選定基準に従い、単語を決める前に対象が指す実体と果たすべき役割を明確にする。特定の1つのドキュメントの中でのみ使用する固有の技術用語は、その文書内で最初に出現した箇所で定義を明記する。
 
 外国語の専門用語を日本語に翻訳する際は、文脈において対象が指す具体的な実体や動作を正確に確認した上で適切な訳語を選定する（例えば`step`は、手順の流れであれば「工程」、物理的な段差であれば「段」と訳す。また`field`は、データ構造であれば「項目」、UI画面であれば「入力欄」と訳す）。
 

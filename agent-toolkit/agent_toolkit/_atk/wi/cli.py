@@ -1034,6 +1034,20 @@ def _add_mq_submission_parser(sub: Any) -> None:
         help="投入先のリポジトリ（ローカル作業ツリーのパスまたは正規化リモートURL）。複数の投入先は繰り返し指定する。",
     )
     end = _atk_help.add_command(submission_sub, "end", **_atk_help.HELP["atk wi submission end"])
+    end.add_argument(
+        "--findings-file",
+        metavar="PATH",
+        default=None,
+        help="投入を終えた場合の指摘対応記録（JSON）の絶対パス。形式は本helpの末尾に示す。",
+    )
+    end.add_argument(
+        "--review-result",
+        metavar="PATH",
+        action="append",
+        default=None,
+        help="指摘の対応を検査する投入前レビューの返却ファイルの絶対パス。複数の返却は繰り返し指定する。",
+    )
+    end.add_argument("--abort", action="store_true", help="ユーザーが投入作業を中止した場合に、検査せずに記録を削除する。")
     for parser in (begin, end):
         parser.add_argument(
             "--session-id",

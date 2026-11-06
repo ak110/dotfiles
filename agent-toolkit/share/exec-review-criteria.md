@@ -77,7 +77,7 @@
 
 ## 完了報告
 
-専用レビュータスク契約では、`atk review-table add`を用いて指摘を記録する。コマンド形式は`atk review-table add <表の絶対パス> --round <ラウンド番号> --track <区分> --level <指摘レベル> --location-file <指摘箇所PATH> --issue-file <指摘内容PATH>`とする。引数の渡し方や保存本文の検証ルールは、本スキルの`SKILL.md`「レビュー指摘管理表の共通操作」に従う。
+専用レビュータスク契約では、`atk review-table add`を用いて指摘を記録する。コマンド形式は`atk review-table add <表の絶対パス> --round <ラウンド番号> --track <区分> --level <指摘レベル> --location-file <指摘箇所PATH> --issue-file <指摘内容PATH>`とする。引数の渡し方や保存本文の検証ルールは、`review-table-operations.md`「レビュー指摘管理表の共通操作」に従う。
 
 返却メッセージは以下の形式で記述する。
 
