@@ -1,6 +1,8 @@
 """推定費用の親子の表示範囲、料金表の基準日と単価不明を実ブラウザーで検証する。"""
 
+import asyncio
 import json
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -171,3 +173,55 @@ async def test_unknown_price_is_not_shown_as_zero(screen_harness: _ScreenHarness
     await page.locator('#sessions .session-item[data-engine="claude"]').first.click()
     await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("単価不明 1件")
     assert "$0" not in await page.locator("#detail-usage").inner_text()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_cost_survives_detail_refreshes_while_estimating(screen_harness: _ScreenHarness) -> None:
+    """算出より短い間隔で追記される記録でも、算出の要求を重ねずに金額を表示する。"""
+    harness = screen_harness
+    await serve_sessions.stop_local_watch_async(harness.sessions_context)
+    _priced_records(harness.root.parent)
+    parent = next((harness.root.parent / "claude" / "projects").glob("*/*.jsonl"))
+    page = harness.page
+    cost_requests: list[str] = []
+    release = asyncio.Event()
+    second_request = asyncio.Event()
+
+    async def hold_cost(route: playwright.async_api.Route) -> None:
+        # 子孫の多い記録の算出が長引く状況を、応答の保留で再現する。
+        # 初期表示で自動的に開く別の記録（子や委譲先）の要求は数えず、そのまま通す。
+        if urllib.parse.parse_qs(urllib.parse.urlsplit(route.request.url).query).get("path") != [str(parent)]:
+            await route.continue_()
+            return
+        cost_requests.append(route.request.url)
+        if len(cost_requests) >= 2:
+            second_request.set()
+        await release.wait()
+        await route.continue_()
+
+    await page.route("**/api/sessions/cost?*", hold_cost)
+    await page.goto(harness.base_url + "/sessions")
+    await page.locator('#sessions .session-item[data-engine="claude"]').first.click()
+    await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("算出中")
+    for second in range(6, 9):
+        with parent.open("a", encoding="utf-8") as stream:
+            stream.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "timestamp": f"2026-09-01T00:00:0{second}Z",
+                        "message": {"role": "user", "content": f"追記{second}"},
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        await serve_sessions.deliver_record(harness.sessions_context.state, "browser-test", "claude", str(parent))
+        await playwright.async_api.expect(page.locator("#detail")).to_contain_text(f"追記{second}")
+    assert len(cost_requests) == 1
+    release.set()
+    await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("$3.0007 USD")
+    # 算出中に届いた追記は、最初の結果を表示した後の1回の取り直しで反映する。
+    await asyncio.wait_for(second_request.wait(), timeout=30)
+    await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("$3.0007 USD")
+    assert len(cost_requests) == 2

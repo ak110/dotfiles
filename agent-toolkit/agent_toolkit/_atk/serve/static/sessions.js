@@ -473,9 +473,24 @@ function renderCost(detail) {
 }
 
 // 推定費用は子孫の全記録を読むため、本文の表示を待たせないよう別の要求で取得する。
-// 取得中に別の記録を開いた場合や詳細を取り直した場合は、古い結果を表示しない。
-async function loadDeferredCost(detail, generation) {
+// 子孫の多い記録では算出に十数秒かかり、追記のたびに詳細を取り直す記録では、取り直しごとに結果を捨てると
+// 金額が表示されないまま算出だけが重なる。そのため算出中の要求は記録ごとに1件へまとめ、届いた結果は
+// その時点で表示している同じ記録の詳細へ反映する。算出中に記録が追記された場合は、届いた後にもう1回だけ取り直す。
+let costRequest = null;
+
+function costKey(detail) {
+  return `${detail.host}\n${detail.engine}\n${detail.path}`;
+}
+
+async function loadDeferredCost(detail) {
   if (!detail.cost_pending) return;
+  const key = costKey(detail);
+  if (costRequest?.key === key) {
+    costRequest.stale = true;
+    return;
+  }
+  const request = {key, stale: false};
+  costRequest = request;
   const {host, engine, path} = detail;
   let cost = null;
   try {
@@ -484,12 +499,16 @@ async function loadDeferredCost(detail, generation) {
     );
     if (response.ok) cost = (await response.json()).cost;
   } catch (_) {
-    // 取得できない場合は「取得不能」を表示し、次の詳細の取り直しで再び取得する。
+    // 取得できない場合は前回の値か「取得不能」を表示し、次の詳細の取り直しで再び取得する。
   }
-  if (generation !== detailGeneration || currentDetail !== detail) return;
-  detail.cost = cost;
-  detail.cost_pending = false;
-  renderCost(detail);
+  if (costRequest !== request) return;
+  costRequest = null;
+  const shown = currentDetail;
+  if (!shown || costKey(shown) !== key) return;
+  if (cost) shown.cost = cost;
+  shown.cost_pending = request.stale;
+  renderCost(shown);
+  if (request.stale) void loadDeferredCost(shown);
 }
 
 function renderDetail(detail, preserved = null) {
@@ -591,7 +610,7 @@ async function refreshSelectedDetail(timing = {}) {
       detail.cost = currentDetail.cost;
     }
     renderDetail(detail, {...captureDetailState(), renderedCount: readingTail ? detail.events.length : renderedCount});
-    void loadDeferredCost(detail, generation);
+    void loadDeferredCost(detail);
     if (readingTail && detail.events.length > previousCount) {
       const scroller = detailScroller();
       scroller.scrollTop = scroller.scrollHeight;
@@ -629,7 +648,7 @@ async function openSession(host, engine, path, trail = [], updateUrl = true, clo
       return;
     }
     renderDetail(detail);
-    void loadDeferredCost(detail, generation);
+    void loadDeferredCost(detail);
   } catch (error) {
     outcome = "error";
     if (generation !== detailGeneration) {
