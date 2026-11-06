@@ -1212,3 +1212,56 @@ def test_project_skill_guidance_uses_the_checkout_version(tmp_path, monkeypatch,
         "test",
     )
     _assert_continues_without_guidance(_run_hook_in_process("pretooluse", hook_payload))
+
+
+@pytest.mark.parametrize("entry", ["share-variable", "absolute-role"])
+def test_share_and_role_guidance_use_the_declaring_version(tmp_path, monkeypatch, state, entry):
+    """share文書の変数参照と絶対パスの役割指定は、公開hookの案内も宣言側の版を指し、別版の同名資料では解消しない。"""
+    running = _checkout(tmp_path / "running", with_new=False)
+    worktree = _checkout(tmp_path / "worktree", with_new=True)
+    for base in (running, worktree):
+        share = base / "agent-toolkit/share"
+        share.mkdir()
+        (share / "new-review.subagent.md").write_text("# 新設役割\n", encoding="utf-8")
+        (share / "new-review.parent.md").write_text(f"# 新設契約（{base.name}）\n\n## 入力\n説明\n", encoding="utf-8")
+    # 役割文書の宣言はその担当だけに適用されるため、担当を問わないshare文書を宣言元にする。
+    source = worktree / "agent-toolkit/share/guide.md"
+    if entry == "share-variable":
+        cell, selector, tool_input = "`${CLAUDE_PLUGIN_ROOT}/share/new-review.parent.md`", "", {}
+    else:
+        role = worktree / "agent-toolkit/share/new-review.subagent.md"
+        cell, selector, tool_input = "呼び出し元の起動・受領契約", "`role-contract`", {"subagent_md_path": str(role)}
+    source.write_text(
+        "# 役割\n\n| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |\n| --- | --- | --- | --- | --- |\n"
+        f"| 操作の前 | {cell} | 操作 | `tool:Do` | {selector} |\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", running / "agent-toolkit")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    # 作業ツリーのshare文書を取得済み資料として宣言一覧へ加えた状態を、宣言の解析から再現する。
+    monkeypatch.setattr(
+        read_delivery,
+        "declarations",
+        lambda *_args, **_kwargs: read_triggers.parse_tables(source, running / "agent-toolkit", project=str(worktree)),
+    )
+    hook_payload = {"session_id": "test", "cwd": str(worktree), "tool_name": "Do", "tool_input": tool_input}
+    expected = worktree / "agent-toolkit/share/new-review.parent.md"
+    other = running / "agent-toolkit/share/new-review.parent.md"
+    guided = _run_hook_in_process("pretooluse", hook_payload)
+    assert guided.returncode == 0 and not guided.stderr
+    assert str(expected) in guided.stdout
+    assert str(other) not in guided.stdout
+    assert "存在しない" not in guided.stdout
+    assert _deliver_notice_open(state)
+    # 稼働版の同名資料を読んでも、宣言側の版の案内は解消しない。
+    observe_received(
+        {"cwd": str(worktree), "tool_response": other.read_text(encoding="utf-8")}, "Read", {"file_path": str(other)}, "test"
+    )
+    assert _deliver_notice_open(state)
+    observe_received(
+        {"cwd": str(worktree), "tool_response": expected.read_text(encoding="utf-8")},
+        "Read",
+        {"file_path": str(expected)},
+        "test",
+    )
+    _assert_continues_without_guidance(_run_hook_in_process("pretooluse", hook_payload))
