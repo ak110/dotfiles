@@ -45,7 +45,10 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 既存ファイルを編集・上書きする時、スクリプトで複数ファイルを機械変換する時 | `references/file-editing.md` | 操作 | `existing-file-edit` | |
-| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` | |
+| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md`の冒頭と「情報源と裏付けの手段」から「根拠と主張の一致」まで | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#冒頭`、`section:agent-basics:*/skills/writing-standards/references/investigation.md#「情報源と裏付けの手段」から「根拠と主張の一致」まで` | |
+| 観測で前提が崩れ、次の確認や方針を選ぶ時 | `references/investigation.md`の「仮説から次の確認を選ぶ」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「仮説から次の確認を選ぶ」` | |
+| 現物の観測に基づいてエージェント向け文書の技術的な条文を新設・改訂する時 | `references/investigation.md`の「エージェント向け文書の技術的条文」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「エージェント向け文書の技術的条文」` | |
+| 実行・測定・検証の結果を報告または判定する時（エージェントCLIや共有状態を扱うツールを検証のために実行する時を含む） | `references/investigation.md`の「実行結果の検証」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「実行結果の検証」` | |
 | X投稿などの外部資料の本文・日時・添付画像を取得・確認する前 | `../fetch-sources/SKILL.md` | 判断 | `read:agent-basics:*/skills/fetch-sources/SKILL.md` | |
 | ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
 | 計画の起草、実現方式の確定、実装の完了前と実行レビューで、変更後の設計品質や累積したファイル構成を評価する時（エージェント向け文書だけの変更を含む）と、外部資料（論文、ベンチマーク、他プロジェクトの事例など）に基づく改善案を提案・評価する時 | `references/design-heuristics.md`の「設計案の予備選別」から「設計品質の劣化確認」まで（各節の適用条件を保つ） | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」から「設計品質の劣化確認」まで` | |

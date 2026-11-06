@@ -76,7 +76,8 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 | WIの状態、状態遷移、依存、冷却時間、保留と終了を扱う前。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念を受けた時点（調査や認識合わせより先） | `references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
 | 複数リポジトリへ投入する場合、および同じ成果の整合を要求する複数のAWIを登録する場合 | `references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
 | 同じ対象リポジトリの複数項目を一括取得する場合 | `references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
-| 通常AWIの投入、または投入済みAWIの内容の更新をWI投入担当へ委譲する前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
+| 通常AWIの投入、または投入済みAWIの内容の更新を、WI投入担当へ委譲するか自分で起草するかを決める前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の「起動方法」 | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「起動方法」` | |
+| WI投入担当を起動する前（委譲すると決めた後） | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`。起動・受領の契約として全文を読む | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
 
 本文は`agent-basics:writing-standards`に従い、引き継いだエージェントが対象と期待する結果を正確に理解して完了まで作業を進められる粒度で書く。
 AWIの粒度は要求の同一性に基づいて判断する。同じユーザー目的・成果に向けた小規模変更は極力1件へまとめる。技術上の話題、手段、編集箇所の違いだけで分けると、AWIごとに調査・計画・検証・レビューとレーン起動の費用が繰り返されるためである。既存・起草中のAWIの目的、対象、完成条件の具体化や変更は、該当AWIの更新として扱う。元の不具合を解消するために必要な追随修正は元AWIへ含め、類似見直しで発見した独立した別件は根本原因を共有していても別AWIへ引き渡す。元の事象への寄与が判明した対象は元の修正範囲へ戻す。是正対象を所有するリポジトリが異なる場合は、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動前の前提」に従って投入先との組み合わせへ展開する。1件のAWI内でのバグの扱い単位は、`agent-toolkit:wi-standards/references/analysis-records.md`「原因分析の記録先」に従う。

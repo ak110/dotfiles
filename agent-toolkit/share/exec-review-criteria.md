@@ -8,7 +8,12 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewer.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer.md` |
+| レビュー担当として判定する前 | `agent-basics:review-standards/references/reviewer.md`の「適用契約」「基本方針」「指摘内容」 | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「適用契約」「基本方針」「指摘内容」` |
+| 初回レビューを判定する前 | `agent-basics:review-standards/references/reviewer.md`の「初回レビュー」 | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「初回レビュー」` |
+| 再レビューを判定する前 | `agent-basics:review-standards/references/reviewer.md`の「再レビューの場合」 | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「再レビューの場合」` |
+| 要求単位・完成条件と観測の達成を判定する前 | `agent-basics:review-standards/references/reviewer.md`の「要求単位と観測の判定」 | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「要求単位と観測の判定」` |
+| 実行レビューを判定する前 | `agent-basics:review-standards/references/reviewer.md`の「実行レビューの判定」 | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「実行レビューの判定」` |
+| 画面のユーザビリティを判定する前 | `agent-basics:review-standards/references/reviewer.md`の「ユーザビリティレビューの判定」 | 判断 | `section:agent-basics:*/skills/review-standards/references/reviewer.md#「ユーザビリティレビューの判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「日本語の書き方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「日本語の書き方」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |

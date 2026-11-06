@@ -64,6 +64,7 @@
   - `uv run --frozen pyfltr fast --commands=pytest`
   - `ty`
   - `uv run --frozen pyfltr run --commands=arid`
+  - 統合後・公開前に追加した是正（統合時の検証失敗の是正、CI失敗の修正、案内文や構成の追随など）では、変更した文言・ジョブ名・設定キーの変更前の値を固定文字列で探す。それを期待する試験（構成を読む`ci_workflow_test.py`、hookの期待値を持つ`<hook名>_test.py`など）を是正後のHEADで実行してから公開する。実Windowsの導入・API変換などCIだけで観測する条件はLinuxの成功で代替せず、公開CIで確かめる
 
 ## テストとCIの所要基準
 
@@ -170,5 +171,6 @@ pyfltrを調査や計測の目的で実行する場合は、`--no-fix`を付け�
 - 分岐条件の効果を確かめるために差分を保存して戻す場合は、`git diff --no-ext-diff --src-prefix=a/ --dst-prefix=b/`で保存し、通常の`git apply`（戻すときは`git apply -R`）で適用する。配布するGit設定の`diff.noprefix=true`の下では接頭辞の無い差分になり、既定の`git apply`がパスを解決できないためである。既存の差分とindexは退避先を分けて保護する。
 - pyfltrの実行枠として扱われるのは、`make test`、`uv run --frozen pyfltr run`、`git commit`（コミットフック内の`pyfltr fast`）、および`agent_toolkit._testing.pytest_plugin`を読み込むpytestの実行である。ルートと`agent-toolkit/`の`addopts`には、このプラグインを読み込む`-p`オプションが設定されている。`-o addopts=''`でプラグインを解除する`make test-browser`などは実行枠の対象外となる。
   - 実行枠に含まれる検証をシェルから実行する際は、`agent-basics:check-execution`「統合実行ツール経由の起動」に記載の起動形式と3分類に従う。
+  - 直接起動したpytest（`uv run --frozen pytest`）は、試験の区切りで待機中の別の検証へ実行枠を譲り、取り直してから残りの試験を続ける。長い全体pytestの実行中でも、別worktreeの限定検証やcommit hookは区切りで実行される。`make test`・`uv run --frozen pyfltr run`経由のpytestと`atk lane integrate`の検証は外側が枠を所有するため、内側のpytestは譲らない（多段の協調はpyfltrの拡張待ち）。
 - `.venv`を再作成する可能性がある自動チェック（`uv run --python`によるPythonバージョンの切り替えや依存関係の更新など）は、同一の仮想環境パスに対して直列で実行する。並行して進める場合は、チェックごとに異なる仮想環境パスを明示的に割り当てる。
 - pyfltrの実行時間を比較・確認する際は、`uv run --frozen pyfltr list-runs`で取得した実行ID（run_id）を使い、`uv run --frozen pyfltr show-run <run_id>`を実行する。
