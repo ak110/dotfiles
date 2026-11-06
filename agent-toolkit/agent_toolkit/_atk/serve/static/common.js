@@ -261,7 +261,9 @@ export async function timedFetch(screen, url, options = {}, timing = {}) {
   try {
     response = await fetch(url, {...options, headers});
   } catch (error) {
-    recordTiming({...base, outcome: "network-error", total_ms: performance.now() - started});
+    // 画面が不要になった要求を中止した場合は、通信の失敗と区別して記録する。
+    const outcome = error?.name === "AbortError" ? "aborted" : "network-error";
+    recordTiming({...base, outcome, total_ms: performance.now() - started});
     throw error;
   }
   let recorded = false;

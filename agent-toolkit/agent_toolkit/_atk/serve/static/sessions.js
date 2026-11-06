@@ -476,10 +476,19 @@ function renderCost(detail) {
 // 子孫の多い記録では算出に十数秒かかり、追記のたびに詳細を取り直す記録では、取り直しごとに結果を捨てると
 // 金額が表示されないまま算出だけが重なる。そのため算出中の要求は記録ごとに1件へまとめ、届いた結果は
 // その時点で表示している同じ記録の詳細へ反映する。算出中に記録が追記された場合は、届いた後にもう1回だけ取り直す。
+// 別の記録を開いた時点で前の記録の要求は中止する。ブラウザーの同じホストへの同時接続数は限られ（HTTP/1.1で6本、
+// うち3本はSSEが使う）、算出の長い要求が残ると次の詳細の取得が接続の空きを待つためである。
 let costRequest = null;
 
 function costKey(detail) {
   return `${detail.host}\n${detail.engine}\n${detail.path}`;
+}
+
+// 開こうとする記録と異なる記録の推定費用の要求を中止し、詳細の取得に接続を空ける。
+function cancelOtherCost(host, engine, path) {
+  if (!costRequest || costRequest.key === costKey({host, engine, path})) return;
+  costRequest.controller.abort();
+  costRequest = null;
 }
 
 async function loadDeferredCost(detail) {
@@ -489,13 +498,15 @@ async function loadDeferredCost(detail) {
     costRequest.stale = true;
     return;
   }
-  const request = {key, stale: false};
+  costRequest?.controller.abort();
+  const request = {key, stale: false, controller: new AbortController()};
   costRequest = request;
   const {host, engine, path} = detail;
   let cost = null;
   try {
     const response = await timedFetch(
-      "sessions", `${BASE_PATH}/api/sessions/cost?${new URLSearchParams({host, engine, path}).toString()}`
+      "sessions", `${BASE_PATH}/api/sessions/cost?${new URLSearchParams({host, engine, path}).toString()}`,
+      {signal: request.controller.signal}
     );
     if (response.ok) cost = (await response.json()).cost;
   } catch (_) {
@@ -623,6 +634,7 @@ async function refreshSelectedDetail(timing = {}) {
 // `trail`は開こうとする記録の委譲元を古い順に並べる。左ペインから選んだ記録には委譲元が無いため、省略した場合は空とする。
 async function openSession(host, engine, path, trail = [], updateUrl = true, closeDrawer = true) {
   if (closeDrawer) setDrawerOpen("sessions", false);
+  cancelOtherCost(host, engine, path);
   selected = { host, engine, path };
   if (updateUrl && location.pathname.endsWith("/sessions")) {
     const url = new URL(location.href);

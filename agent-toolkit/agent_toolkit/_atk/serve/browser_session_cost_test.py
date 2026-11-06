@@ -1,6 +1,7 @@
 """推定費用の親子の表示範囲、料金表の基準日と単価不明を実ブラウザーで検証する。"""
 
 import asyncio
+import contextlib
 import json
 import urllib.parse
 from pathlib import Path
@@ -225,3 +226,41 @@ async def test_cost_survives_detail_refreshes_while_estimating(screen_harness: _
     await asyncio.wait_for(second_request.wait(), timeout=30)
     await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("$3.0007 USD")
     assert len(cost_requests) == 2
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_opening_another_record_aborts_pending_cost(screen_harness: _ScreenHarness) -> None:
+    """推定費用の算出中に別の記録を開くと前の要求を中止し、次の詳細の取得に接続を空ける。"""
+    harness = screen_harness
+    await serve_sessions.stop_local_watch_async(harness.sessions_context)
+    _priced_records(harness.root.parent)
+    parent = next((harness.root.parent / "claude" / "projects").glob("*/*.jsonl"))
+    page = harness.page
+    held = asyncio.Event()
+    release = asyncio.Event()
+
+    async def hold_parent_cost(route: playwright.async_api.Route) -> None:
+        if urllib.parse.parse_qs(urllib.parse.urlsplit(route.request.url).query).get("path") != [str(parent)]:
+            await route.continue_()
+            return
+        held.set()
+        await release.wait()
+        # 中止済みの要求は継続できないため、継続の失敗は無視する。
+        with contextlib.suppress(playwright.async_api.Error):
+            await route.continue_()
+
+    await page.route("**/api/sessions/cost?*", hold_parent_cost)
+    try:
+        await page.goto(harness.base_url + "/sessions")
+        await page.locator('#sessions .session-item[data-engine="claude"]').first.click()
+        await asyncio.wait_for(held.wait(), timeout=30)
+        await page.locator("#sessions .session-tree-toggle").first.click()
+        parent_query = urllib.parse.urlencode({"path": str(parent)})
+        async with page.expect_event(
+            "requestfailed", predicate=lambda request: "/api/sessions/cost?" in request.url and parent_query in request.url
+        ):
+            await page.locator('#sessions .session-item[data-engine="codex"]').click()
+        await playwright.async_api.expect(page.locator("#detail")).to_contain_text("費用の委譲先")
+        await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("$0.0007 USD")
+    finally:
+        release.set()
