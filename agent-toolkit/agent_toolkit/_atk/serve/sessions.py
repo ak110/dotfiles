@@ -212,6 +212,10 @@ class SessionsState:
     record_index: session_watch.RecordSummaryIndex = dataclasses.field(default_factory=session_watch.RecordSummaryIndex)
     # 前回のローカル一覧。変更監視が一覧を変え得る変更を観測していない間だけ再利用する。
     local_list: _LocalListCache | None = None
+    # ローカル一覧の全件の走査を1つずつ実行する。要求の中の走査と背景の再走査が記録単位の索引を同時に更新しないためである。
+    local_scan_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
+    # 再利用の上限時間を過ぎた後の背景の再走査が動いているか。同時に1つだけ動かす。
+    local_rescan_running: bool = False
     # 進行中の一覧の取得（ローカルの走査とリモートの取得）。同時に届いた一覧の要求はこの1回の結果を共有する。
     list_task: asyncio.Future[tuple[list[SessionSummary], list[dict[str, str]]]] | None = None
 
@@ -300,9 +304,15 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     """
     tracker = context.state.record_watch.tracker if context.state.record_watch is not None else None
     if tracker is not None:
-        reused = _reuse_local_list(context.state, tracker)
+        reused = _reuse_local_list(context, tracker)
         if reused is not None:
             return reused
+    with context.state.local_scan_lock:
+        return _scan_local_sessions(context, tracker)
+
+
+def _scan_local_sessions(context: SessionsContext, tracker: session_watch.RecordChangeTracker | None) -> list[SessionSummary]:
+    """ローカルの記録を全件走査して一覧を作り、再利用する一覧として保持する。"""
     scanned_at = time.monotonic()
     stop = context.state.stop_requested
     index = context.state.record_index
@@ -352,13 +362,21 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     return list(result)
 
 
-def _reuse_local_list(state: SessionsState, tracker: session_watch.RecordChangeTracker) -> list[SessionSummary] | None:
-    """前回のローカル一覧を再利用できれば、追記を反映した一覧を返す。再利用できなければ`None`を返す。"""
+def _reuse_local_list(context: SessionsContext, tracker: session_watch.RecordChangeTracker) -> list[SessionSummary] | None:
+    """前回のローカル一覧を再利用できれば、追記を反映した一覧を返す。再利用できなければ`None`を返す。
+
+    再利用の上限時間を過ぎても、一覧を変え得る変更が無ければ前回の一覧を返し、全件の走査は背景で1回だけ行う。
+    上限時間は監視の取りこぼしに備える見直しの間隔であり、記録数千件の走査（負荷時は2秒超）を要求の中で待たせないためである。
+    背景の走査の結果は次の要求から使う。
+    """
+    state = context.state
     # 変更は再利用しない場合も消費する。続く全件の走査がそれまでの変更を全て反映するためである。
     invalid, appended = tracker.take_list_changes()
     cache = state.local_list
-    if invalid or cache is None or cache.tracker is not tracker or time.monotonic() - cache.scanned_at >= LOCAL_LIST_REUSE_SEC:
+    if invalid or cache is None or cache.tracker is not tracker:
         return None
+    if time.monotonic() - cache.scanned_at >= LOCAL_LIST_REUSE_SEC:
+        _start_background_rescan(context, tracker)
     entries = list(cache.entries)
     for position, entry in enumerate(entries):
         if entry.path not in appended:
@@ -373,6 +391,29 @@ def _reuse_local_list(state: SessionsState, tracker: session_watch.RecordChangeT
         entries[position] = dataclasses.replace(entry, updated_at=_isoformat(st.st_mtime), size=st.st_size)
     cache.entries = entries
     return list(entries)
+
+
+def _start_background_rescan(context: SessionsContext, tracker: session_watch.RecordChangeTracker) -> None:
+    """再利用の上限時間を過ぎた一覧の全件の走査を背景のスレッドで1つだけ始める。"""
+    state = context.state
+    with state.local_scan_lock:
+        if state.local_rescan_running:
+            return
+        state.local_rescan_running = True
+
+    def run() -> None:
+        try:
+            with state.local_scan_lock:
+                _scan_local_sessions(context, tracker)
+        except _atk_serve_remote.ServeStopping:
+            pass
+        except Exception:  # pylint: disable=broad-exception-caught
+            # 背景の見直しの失敗では前回の一覧を使い続け、次に上限時間を過ぎた要求で再び走査する。
+            logger.warning("セッション一覧の背景の再走査に失敗しました。前回の一覧を表示し続けます", exc_info=True)
+        finally:
+            state.local_rescan_running = False
+
+    threading.Thread(target=run, name="atk-serve-session-rescan", daemon=True).start()
 
 
 def is_local_record_path(context: SessionsContext, raw: str) -> bool:

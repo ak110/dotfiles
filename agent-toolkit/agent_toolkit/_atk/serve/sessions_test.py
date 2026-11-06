@@ -2029,7 +2029,7 @@ def test_local_listing_reuses_previous_result_until_the_listed_set_may_change(
     """変更監視が一覧の集合の変化を観測するまで前回の一覧を再利用し、追記した記録の大きさだけを取り直す。
 
     全件の走査は記録数千件で1秒前後かかり、一覧の要求ごとに走査すると表示が遅れる。
-    監視の取りこぼしに備え、再利用の上限時間を過ぎると全件を走査し直す。
+    監視の取りこぼしに備え、再利用の上限時間を過ぎると全件を背景で走査し直し、要求には前回の一覧を返す。
     """
     context = _context(tmp_path)
     record = _claude_record(tmp_path)
@@ -2065,7 +2065,27 @@ def test_local_listing_reuses_previous_result_until_the_listed_set_may_change(
         assert len(scans) == 2
 
         monkeypatch.setattr(sessions, "LOCAL_LIST_REUSE_SEC", 0.0)
+        rescan_started = threading.Event()
+        rescan_release = threading.Event()
+
+        def held(claude_home: pathlib.Path) -> typing.Any:
+            # 背景の走査を止めたまま、要求が走査を待たずに前回の一覧を返すことを確かめる。
+            rescan_started.set()
+            assert rescan_release.wait(10)
+            return counting(claude_home)
+
+        monkeypatch.setattr(sessions.session_record_format, "claude_session_records", held)
+        expired = sessions.list_local_sessions(context)
+        assert [entry.path for entry in expired] == [str(record)]
+        assert rescan_started.wait(10)
+        assert len(scans) == 2
+        # 背景の走査中に届いた要求は、2つ目の走査を始めずに前回の一覧を返す。
         sessions.list_local_sessions(context)
+        rescan_release.set()
+        for thread in threading.enumerate():
+            if thread.name == "atk-serve-session-rescan":
+                thread.join(10)
         assert len(scans) == 3
+        assert not context.state.local_rescan_running
     finally:
         tracker.stop()
