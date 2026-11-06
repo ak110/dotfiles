@@ -202,10 +202,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("rules/agent-toolkit/06-monitoring.md"), datetime.date(2026, 7, 26)),
     ],
     Path.home() / ".codex": [
-        # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、
-        # Claude Code向けMarkdownルールとは互換性がない。
-        # 共有ルールは .codex/agent-toolkit/rules 配下に置く。
-        cleanup_paths.RemovedPath(Path("rules/agent-toolkit"), datetime.date(2026, 5, 6)),
         # agent定義（feedbacks-planner・plan-executor・plan-review-executor）を廃止し、
         # agent-toolkit/agents ディレクトリごと除去したため、旧配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("agent-toolkit/agents"), datetime.date(2026, 9, 3)),
