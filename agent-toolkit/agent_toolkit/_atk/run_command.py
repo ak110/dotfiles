@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime
 import hashlib
 import json
 import os
@@ -13,6 +14,7 @@ import pathlib
 import shlex
 import subprocess
 import sys
+import time
 from typing import Any
 
 from pyfltr.command import execution_slot
@@ -20,6 +22,7 @@ from pyfltr.command import execution_slot
 from agent_toolkit._atk import managed_temp, outcome
 from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import process_tree
+from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.inherited_venv import strip_inherited_venv
 from agent_toolkit._git import command as _git_command
 
@@ -125,19 +128,111 @@ def execute(
     verification: bool = False,
 ) -> tuple[dict[str, Any], int, str | None]:
     """検証用途では共有実行枠を取得し、子の終了と記録保存まで所有する。"""
-    conditions = execution_conditions()
-    ownership = execution_slot.hold(label=shlex.join(argv)) if verification else contextlib.nullcontext()
-    with ownership:
-        return _execute(argv, cwd, timeout, conditions)
+    started = time.monotonic()
+    timing: dict[str, Any] = {
+        "started_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        "finished_at": None,
+        "elapsed": None,
+        "command_started_at": None,
+        "command_finished_at": None,
+        "command_elapsed": None,
+        "slot_waits": [] if verification else None,
+    }
+    try:
+        directory = managed_temp.create_output_temp("atk-command")
+    except (OSError, managed_temp.ManagedTempError) as error:
+        failed = _metadata(
+            argv=argv,
+            cwd=cwd,
+            git_head=None,
+            git_status=None,
+            child_exit_code=None,
+            timed_out=False,
+            signal_number=None,
+            stdout_path=None,
+            stderr_path=None,
+        )
+        failed.pop("_metric_errors")
+        failure = f"保存の準備または完了に失敗した: {error}"
+        failed.update(record_path=None, execution_conditions=None, wrapper_exit_code=_EXIT_WRAPPER_FAILURE, failure=failure)
+        return failed, _EXIT_WRAPPER_FAILURE, failure
+    journal = directory / "timing.json"
+    waits: dict[tuple[str, int], dict[str, Any]] = {}
+
+    def record_wait(wait: execution_slot.SlotWait) -> None:
+        waits[wait.kind, wait.sequence] = wait.to_dict()
+        timing["slot_waits"] = list(waits.values())
+        atomic_write(journal, json.dumps(timing, ensure_ascii=False) + "\n")
+
+    ownership = (
+        execution_slot.hold(label=shlex.join(argv), on_wait_interval=record_wait) if verification else contextlib.nullcontext()
+    )
+    observed: dict[str, Any] | None = None
+    try:
+        atomic_write(journal, json.dumps(timing, ensure_ascii=False) + "\n")
+        try:
+            with ownership:
+                command_started = time.monotonic()
+                timing["command_started_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+                observed, code, failure = _execute(argv, cwd, timeout, directory)
+                timing["command_finished_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+                timing["command_elapsed"] = time.monotonic() - command_started
+        finally:
+            # 取得前の中断でも、完了した待機区間と未到達のコマンドを区別して保持する。
+            timing["finished_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+            timing["elapsed"] = time.monotonic() - started
+            atomic_write(journal, json.dumps(timing, ensure_ascii=False) + "\n")
+        observed["timing"] = timing
+        observed["timing_path"] = str(journal)
+        if observed.get("record_path") is not None:
+            atomic_write(pathlib.Path(observed["record_path"]), json.dumps(observed, ensure_ascii=False, sort_keys=True) + "\n")
+    except KeyboardInterrupt:
+        outcome.report_warning(
+            f"コマンドが中断された。待機・到達状態の記録: {journal}",
+            next_action="記録と保存出力から未実行・未完了の範囲を確認する",
+        )
+        raise
+    except OSError as error:
+        failed = (
+            observed
+            if observed is not None
+            else _metadata(
+                argv=argv,
+                cwd=cwd,
+                git_head=None,
+                git_status=None,
+                child_exit_code=None,
+                timed_out=False,
+                signal_number=None,
+                stdout_path=None,
+                stderr_path=None,
+            )
+        )
+        failed.pop("_metric_errors", None)
+        failed.setdefault("execution_conditions", None)
+        failure = f"計測または実行記録を保存できない: {directory}: {error}"
+        failed.update(record_path=None, wrapper_exit_code=_EXIT_WRAPPER_FAILURE, failure=failure, timing=timing)
+        return failed, _EXIT_WRAPPER_FAILURE, failure
+    return observed, code, failure
 
 
-def execution_conditions() -> str:
-    """実行条件を値を漏らさず比較する。実行枠の取得前に呼ぶ。"""
-    environment = dict(os.environ)
+def execution_conditions(environment: dict[str, str] | None = None) -> dict[str, Any]:
+    """子へ渡す正規化後の条件を、値を記録せず項目別に比較する。"""
+    environment = dict(os.environ if environment is None else environment)
     strip_inherited_venv(environment)
-    return hashlib.sha256(
-        json.dumps(["stable-git-state", sys.executable, sys.version, sys.platform, environment], sort_keys=True).encode("utf-8")
-    ).hexdigest()
+    # 起動層の復元情報とvenvは子にも渡らない。未知のキーを名前だけで除外しない。
+    return {
+        "version": 1,
+        "python": {
+            key: hashlib.sha256(value.encode("utf-8")).hexdigest()
+            for key, value in {
+                "executable": str(pathlib.Path(sys.executable).resolve()),
+                "version": sys.version,
+                "platform": sys.platform,
+            }.items()
+        },
+        "environment": {key: hashlib.sha256(value.encode("utf-8")).hexdigest() for key, value in sorted(environment.items())},
+    }
 
 
 def reusable_success(path: pathlib.Path, argv: list[str], cwd: pathlib.Path) -> dict[str, Any] | None:
@@ -147,19 +242,50 @@ def reusable_success(path: pathlib.Path, argv: list[str], cwd: pathlib.Path) -> 
         head, status = _git_state(cwd)
         if not isinstance(observed, dict) or head is None or status is None or status:
             return None
+        conditions = execution_conditions()
+        previous = observed.get("execution_conditions")
+        if previous != conditions or not isinstance(previous, dict) or isinstance(previous.get("version"), bool):
+            reasons = []
+            if not isinstance(previous, dict) or previous.get("version") != conditions["version"]:
+                reasons.append("実行条件の項目別内訳がない、または形式が異なる")
+            else:
+                for section in ("python", "environment"):
+                    old, current = previous.get(section), conditions[section]
+                    if not isinstance(old, dict):
+                        reasons.append(f"{section}: 内訳がない")
+                        continue
+                    for key in sorted(old.keys() | current.keys()):
+                        if key not in old:
+                            reasons.append(f"{section}: 追加 {key}")
+                        elif key not in current:
+                            reasons.append(f"{section}: 削除 {key}")
+                        elif old[key] != current[key]:
+                            reasons.append(f"{section}: 変更 {key}")
+            if not reasons:
+                reasons.append("実行条件の項目構成が異なる")
+            outcome.report_warning(
+                f"保存済み検証を再利用しない: {path}: {'; '.join(reasons)}",
+                next_action="変更した条件で必要な検証を実行する（環境値は記録・表示しない）",
+            )
+            return None
         expected = {
             "argv": argv,
             "cwd": str(cwd),
             "git_head": head,
             "git_status": [],
-            "execution_conditions": execution_conditions(),
+            "execution_conditions": conditions,
             "child_exit_code": 0,
             "wrapper_exit_code": 0,
             "timed_out": False,
             "signal": None,
             "failure": None,
         }
-        if not expected.keys() <= observed.keys() or any(observed[key] != value for key, value in expected.items()):
+        different = [key for key, value in expected.items() if key not in observed or observed[key] != value]
+        if different:
+            outcome.report_warning(
+                f"保存済み検証を再利用しない: {path}: 条件が異なる {', '.join(different)}",
+                next_action="異なる条件に対応する検証を実行する",
+            )
             return None
         if observed["timed_out"] is not False or any(
             not isinstance(observed[key], int) or isinstance(observed[key], bool)
@@ -181,11 +307,12 @@ def _execute(
     argv: list[str],
     cwd: pathlib.Path,
     timeout: float | None,
-    conditions: str,
+    directory: pathlib.Path,
 ) -> tuple[dict[str, Any], int, str | None]:
     """終了する子プロセスを実行して記録を保存し、表示とは別に結果・終了コード・保存の失敗を返す。"""
     child_env = dict(os.environ)
     strip_inherited_venv(child_env)
+    conditions = execution_conditions(child_env)
     git_head, git_status = _git_state(cwd)
     stdout_path: pathlib.Path | None = None
     stderr_path: pathlib.Path | None = None
@@ -194,9 +321,7 @@ def _execute(
     signal_number: int | None = None
     wrapper_exit_code = _EXIT_WRAPPER_FAILURE
     failure: str | None = None
-    directory: pathlib.Path | None = None
     try:
-        directory = managed_temp.create_output_temp("atk-command")
         stdout_path = (directory / "stdout.bin").resolve()
         stderr_path = (directory / "stderr.bin").resolve()
         with stdout_path.open("xb") as stdout_stream, stderr_path.open("xb") as stderr_stream:

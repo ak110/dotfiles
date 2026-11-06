@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -24,23 +25,32 @@ from agent_toolkit._common import host_homes, process_tree
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 
 
+_LOADABLE_SCOPES = frozenset({"user", "project", "local"})
+"""子Claudeが導入先から読み込むscope。これ以外の項目は導入先を持たない場合がある。"""
+
+
 class PluginReloadError(RuntimeError):
     """プラグインの解決、入力更新、またはCLIへの反映に失敗した。"""
+
+
+class _InventoryUnavailable(PluginReloadError):
+    """外部一覧を取得・解釈できず、導入対象の判定へ進めない。"""
+
+
+class _PluginCleanupError(PluginReloadError):
+    """入力・監視の所有資源の停止を確認できず、所有タスクの回収が必要。"""
 
 
 class _InstalledPlugin(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
     id: str = Field(min_length=1)
-    enabled: bool
-    scope: str
     install_path: str = Field(alias="installPath", min_length=1)
-    project_path: str | None = Field(default=None, alias="projectPath")
 
-    @field_validator("install_path", "project_path")
+    @field_validator("install_path")
     @classmethod
-    def _absolute_path(cls, value: str | None) -> str | None:
-        if value is not None and not Path(value).is_absolute():
+    def _absolute_path(cls, value: str) -> str:
+        if not Path(value).is_absolute():
             raise ValueError("Claudeの導入情報には絶対パスが必要")
         return value
 
@@ -67,14 +77,13 @@ class _LoadedPlugin(BaseModel):
 
     name: str = Field(min_length=1)
     path: str = Field(min_length=1)
-    source: str = Field(min_length=1)
     version: str | None = None
 
 
 class _ReloadResponse(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
-    plugins: list[_LoadedPlugin]
+    plugins: list[dict[str, Any]]
     error_count: int = Field(ge=0)
 
 
@@ -120,6 +129,8 @@ class ClaudePluginReloader:
     async def prepare(self) -> None:
         """初期入力と監視を用意し、必要なtoolkit pathだけを置換する。"""
         await run_file_operation(self._prepare)
+        if self._observer is None:
+            self._changed.clear()
 
     def _prepare(self) -> None:
         for index, item in enumerate(self.options.get("plugins", [])):
@@ -133,7 +144,7 @@ class ClaudePluginReloader:
                 # 元の版が既に消えていても、保持複製のmanifestで版付き配置を判定する。
                 version = manifest.get("version")
                 self._versioned = isinstance(version, str) and self._source.name == version
-        installed = self._inventory()
+        installed = self._inventory() if self._versioned else []
         source = self._select_source(installed)
         if self._versioned:
             self._area = managed_temp.create_output_temp("claude-plugin-input")
@@ -143,10 +154,16 @@ class ClaudePluginReloader:
             plugins = [dict(item) for item in self.options["plugins"]]
             plugins[self._toolkit_index]["path"] = str(self._mirror)
             self.options["plugins"] = plugins
-        self._set_watch_paths(installed, source)
-        self._observer = Observer()
-        self._schedule()
-        self._observer.start()
+        try:
+            # 静的な明示入力では一覧は監視用。版付き入力の選択失敗とは分ける。
+            if not self._versioned:
+                installed = self._inventory()
+            self._set_watch_paths(installed, source)
+            self._observer = Observer()
+            self._schedule()
+            self._observer.start()
+        except (OSError, _InventoryUnavailable) as error:
+            self._disable_watch(error)
 
     async def wait_for_change(self) -> None:
         """連続した書換えを短い時間窓で集約し、所有タスクを起こす。"""
@@ -160,7 +177,7 @@ class ClaudePluginReloader:
 
     def mark_changed(self) -> None:
         """Observer threadから配送された変更をloop上で記録する。"""
-        if not self._closed:
+        if not self._closed and self._observer is not None:
             self._generation += 1
             self._changed.set()
 
@@ -179,6 +196,9 @@ class ClaudePluginReloader:
         self._reload_pending = False
         try:
             await self.reload(client)
+        except _PluginCleanupError:
+            # 所有資源の停止未確認は任意更新の失敗と分け、次queryを止める。
+            raise
         # 更新元・ファイル操作・SDKの失敗は、この任意の更新境界で会話の失敗と分離する。
         # CancelledErrorは所有タスクの終了要求なので伝播させる。
         except Exception:  # pylint: disable=broad-exception-caught
@@ -208,36 +228,55 @@ class ClaudePluginReloader:
         if (settings := self.options.get("settings")) is not None:
             command.extend(["--settings", str(settings)])
         command.extend(["plugin", "list", "--json"])
-        result = process_tree.run_with_timeout(
-            command,
-            cwd=self.options["cwd"],
-            env={**os.environ, **self.options.get("env", {})},
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=30,
-        )
+        try:
+            result = process_tree.run_with_timeout(
+                command,
+                cwd=self.options["cwd"],
+                env={**os.environ, **self.options.get("env", {})},
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            # helperは停止未確認も同じtimeoutで返すため、補助監視の縮退には使えない。
+            raise _PluginCleanupError(
+                "Claudeの導入一覧が時間上限に達し、子プロセスの停止を確認できない。"
+                "残存プロセスの診断と同じcwd・設定のclaude plugin list --jsonを確認する"
+            ) from None
+        except OSError as error:
+            raise _InventoryUnavailable(
+                f"Claudeの導入一覧を取得できない（{type(error).__name__}）。同じcwdと設定でclaude plugin list --jsonを確認する"
+            ) from error
         if result.returncode:
-            raise PluginReloadError(
+            raise _InventoryUnavailable(
                 f"Claudeの導入一覧を取得できない（終了コード{result.returncode}）。"
                 "同じcwdと設定でclaude plugin list --jsonを確認する"
             )
-        items = TypeAdapter(list[_InstalledPlugin]).validate_json(result.stdout)
+        try:
+            entries = TypeAdapter(list[dict[str, Any]]).validate_json(result.stdout)
+        except ValidationError as error:
+            raise _InventoryUnavailable(
+                "Claudeの導入一覧の構造が不正。同じcwdと設定でclaude plugin list --jsonを確認する"
+            ) from error
         cwd = Path(self.options["cwd"]).resolve()
         sources = self.options.get("setting_sources")
-        return [
-            item
-            for item in items
-            if item.enabled
-            and (sources is None or item.scope in sources)
-            and (
-                item.scope == "user"
-                or item.scope in {"project", "local"}
-                and item.project_path is not None
-                and Path(item.project_path).resolve() == cwd
-            )
-        ]
+        items: list[_InstalledPlugin] = []
+        for entry in entries:
+            scope = TypeAdapter(str).validate_python(entry.get("scope"), strict=True)
+            if scope not in _LOADABLE_SCOPES or sources is not None and scope not in sources:
+                continue
+            if not TypeAdapter(bool).validate_python(entry.get("enabled"), strict=True):
+                continue
+            if scope != "user":
+                project = TypeAdapter(str | None).validate_python(entry.get("projectPath"), strict=True)
+                if project is None or (cwd / project).resolve() != cwd:
+                    continue
+                if not Path(project).is_absolute():
+                    raise PluginReloadError("利用対象のprojectPathには絶対パスが必要。Claudeの導入状態を確認する")
+            items.append(_InstalledPlugin.model_validate(entry))
+        return items
 
     def _select_source(self, installed: list[_InstalledPlugin]) -> Path | None:
         if not self._versioned:
@@ -352,10 +391,14 @@ class ClaudePluginReloader:
         if self._area is not None:
             await run_file_operation(shutil.rmtree, self._area / "previous")
         self._set_watch_paths(installed, source)
-        await run_file_operation(self._reschedule)
+        try:
+            await run_file_operation(self._reschedule)
+        except OSError as error:
+            # SDKへの反映は確定済みなので、監視の再開失敗だけを分離する。
+            await run_file_operation(self._disable_watch, error)
         self._applied_generation = generation
         self.updated = True
-        if self.dirty:
+        if self.dirty and self._observer is not None:
             self._changed.set()
         else:
             self._changed.clear()
@@ -393,9 +436,13 @@ class ClaudePluginReloader:
                 f"reload_pluginsが{result.error_count}件のエラーを返した。プラグインとCLIの診断ログを確認する"
             )
         loaded: set[Path] = set()
-        for item in result.plugins:
-            if item.path == "builtin":
+        for entry in result.plugins:
+            if entry.get("path") == "builtin":
                 continue
+            try:
+                item = _LoadedPlugin.model_validate(entry)
+            except ValidationError as error:
+                raise PluginReloadError("reload_pluginsの利用対象が不正。CLIの診断ログを確認する") from error
             path = Path(item.path)
             if not path.is_absolute():
                 raise PluginReloadError("reload_pluginsが相対pathを返した。CLIの診断ログを確認する")
@@ -413,6 +460,22 @@ class ClaudePluginReloader:
     def _reschedule(self) -> None:
         self._observer.unschedule_all()
         self._schedule()
+
+    def _disable_watch(self, error: Exception) -> None:
+        if self._observer is not None:
+            try:
+                self._stop_observer()
+            except Exception as cleanup_error:
+                raise _PluginCleanupError(
+                    "プラグイン変更監視の停止を確認できない。接続所有タスクの回収結果と例外ログを確認する"
+                ) from cleanup_error
+            self._observer = None
+        _LOG.warning(
+            "プラグイン変更監視を無効にし、確定済み入力で委譲を継続する: %s。"
+            "同じcwd・設定のclaude plugin list --jsonとこの診断を確認し、"
+            "原因の解消後に新しい委譲を開始すると監視を再開する",
+            error,
+        )
 
     async def close(self, *, retain_input: bool = False) -> None:
         """監視threadの終了を待ち、所有している入力複製を回収する。"""

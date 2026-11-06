@@ -115,9 +115,6 @@ def consume_agents_server_tool_result(
             return
         session_id = arguments.get("session_id") if operation == "resume" else result.get("session_id")
         if isinstance(session_id, str) and session_id:
-            if session_id not in session.live_child_session_ids:
-                # 新しい委譲は前の完了通知と別の待機単位であり、その終了でも一度だけ再開できる。
-                session.auto_resume_consumed = False
             session.live_child_session_ids.add(session_id)
             session.terminal_child_session_ids.discard(session_id)
         return
@@ -126,7 +123,7 @@ def consume_agents_server_tool_result(
     session_id = arguments.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return
-    if result.get("status") in TERMINAL_STATUSES | {"expired"}:
+    if result.get("status") in TERMINAL_STATUSES | {"expired"} and session_id in session.live_child_session_ids:
         # このレコードは孫sessionを所有する別プロセスが持つため、観測側は削除しない。
         session.live_child_session_ids.discard(session_id)
         session.terminal_child_session_ids.add(session_id)

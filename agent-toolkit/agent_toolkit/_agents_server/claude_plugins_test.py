@@ -131,6 +131,17 @@ async def test_invalid_inventory_never_enables_toolkit(tmp_path: Path, inventory
 
 
 @pytest.mark.asyncio
+async def test_unloaded_scope_without_install_path_is_ignored(tmp_path: Path, inventory: SimpleNamespace) -> None:
+    """CLIが読み込まないsynced項目の空installPathで、有効な導入一覧の解決を止めない。"""
+    root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
+    # Claude Codeは同名の手元導入に隠されたsynced項目をinstallPath空文字で返す。
+    inventory.items = [_installed(root), _installed(root, id="agent-toolkit@synced", scope="synced", installPath="")]
+    options = _options(tmp_path, root)
+    async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
+        assert reloader._source == root.resolve()
+
+
+@pytest.mark.asyncio
 async def test_copy_failure_preserves_previous_input(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace
 ) -> None:
@@ -416,3 +427,194 @@ async def test_unreclaimed_cli_keeps_input_but_stops_watch(tmp_path: Path, inven
     finally:
         await reloader.close()
     assert not mirror.parent.exists()
+
+
+@pytest.mark.parametrize("ignored", ["synced", "unknown-scope", "disabled", "other-project", "excluded-source"])
+@pytest.mark.asyncio
+async def test_unused_installation_fields_do_not_block_prepare_or_reload(
+    tmp_path: Path, inventory: SimpleNamespace, ignored: str
+) -> None:
+    """対象外の空・変形pathは初回と同じ接続のreloadの期待集合へ入れない。"""
+    root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
+    extra: dict[str, Any] = {"id": "other@mine", "enabled": True, "scope": "synced", "installPath": ""}
+    if ignored == "unknown-scope":
+        extra.update(scope="future", installPath={"shape": "external"})
+    elif ignored == "disabled":
+        extra.update(scope="user", enabled=False, installPath=None)
+    elif ignored == "other-project":
+        extra.update(scope="project", projectPath=str(tmp_path / "other"), installPath="relative")
+    elif ignored == "excluded-source":
+        extra.update(scope="local", projectPath=str(tmp_path), installPath="")
+    inventory.items = [_installed(root, projectPath={"unused": "user-scope"}, futureField={"format": 2}), extra]
+    options = _options(tmp_path, root)
+    options["setting_sources"] = ["user", "project"]
+    async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
+        mirror = Path(options["plugins"][0]["path"])
+        assert reloader._roots == {root.resolve()}
+        client = SimpleNamespace(_query=SimpleNamespace(_send_control_request=AsyncMock(return_value=_response(mirror))))
+        await reloader.reload(client)
+        assert reloader.updated and not reloader.dirty
+        assert reloader._roots == {root.resolve()}
+        client._query._send_control_request.assert_awaited_once()
+
+
+@pytest.mark.parametrize("path", ["", "relative", None, {"shape": "changed"}])
+@pytest.mark.asyncio
+async def test_selected_installation_path_remains_required(tmp_path: Path, inventory: SimpleNamespace, path: Any) -> None:
+    """利用対象の不正を任意監視の縮退で隠さない。"""
+    root = _plugin(tmp_path / "checkout")
+    inventory.items = [_installed(root, installPath=path)]
+    with pytest.raises(ValidationError):
+        async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()):
+            pytest.fail("不正な利用対象が受理された")
+
+
+@pytest.mark.parametrize("body", ["{", "{}", "[1]"])
+@pytest.mark.asyncio
+async def test_inventory_structure_failure_requires_dynamic_input_but_preserves_static_input(
+    tmp_path: Path, inventory: SimpleNamespace, body: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """一覧なしでは版を選ばず、確定済み静的入力では補助監視だけを無効にする。"""
+    dynamic = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
+    static = _plugin(tmp_path / "checkout")
+    inventory.stdout = body
+    with pytest.raises(claude_plugins.PluginReloadError, match="一覧の構造"):
+        async with claude_plugins.ClaudePluginReloader(_options(tmp_path, dynamic), asyncio.get_running_loop()):
+            pytest.fail("入力を選択できない状態で準備が成功した")
+    options = _options(tmp_path, static)
+    async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
+        assert options["plugins"][0]["path"] == str(static)
+        assert reloader._observer is None
+        reloader.mark_changed()
+        assert not reloader.dirty
+        assert "変更監視を無効" in caplog.text and "新しい委譲" in caplog.text
+
+
+@pytest.mark.parametrize("versioned", [False, True])
+@pytest.mark.parametrize("failure", ["schedule", "start"])
+@pytest.mark.asyncio
+async def test_monitor_start_failure_preserves_prepared_input_and_reclaims_monitor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace, versioned: bool, failure: str
+) -> None:
+    """必須入力を保ち、補助監視の外部失敗時も停止を確認して縮退する。"""
+    root = _plugin(tmp_path / ("cache/mine/agent-toolkit/1.0.0" if versioned else "checkout"))
+    inventory.items = [_installed(root)]
+    stopped: list[bool] = []
+
+    class Observer:
+        ident = None
+
+        def schedule(self, *_args: Any, **_kwargs: Any) -> None:
+            if failure == "schedule":
+                raise OSError("監視先を確保できない")
+
+        def start(self) -> None:
+            raise OSError("監視threadを開始できない")
+
+        def stop(self) -> None:
+            stopped.append(True)
+
+    monkeypatch.setattr(claude_plugins, "Observer", Observer)
+    options = _options(tmp_path, root)
+    async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
+        input_root = Path(options["plugins"][0]["path"])
+        assert (input_root / "skills/content.md").read_text(encoding="utf-8") == "初期内容"
+        assert reloader._observer is None and stopped == [True]
+    assert input_root.exists() is not versioned
+
+
+@pytest.mark.parametrize("source", [None, {"shape": "new"}])
+@pytest.mark.asyncio
+async def test_reload_ignores_unused_source_and_builtin_fields(tmp_path: Path, inventory: SimpleNamespace, source: Any) -> None:
+    """利用するname/path/versionを確認し、未利用のSDK欄の形を強制しない。"""
+    root = _plugin(tmp_path / "checkout")
+    inventory.items = [_installed(root)]
+    async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()) as reloader:
+        response = _response(root)
+        response["plugins"][0].pop("source")
+        if source is not None:
+            response["plugins"][0]["source"] = source
+        response["plugins"][1] = {"path": "builtin", "future": {"format": 2}}
+        client = SimpleNamespace(_query=SimpleNamespace(_send_control_request=AsyncMock(return_value=response)))
+        await reloader.reload(client)
+        assert reloader.updated and not reloader.dirty
+
+
+@pytest.mark.asyncio
+async def test_reschedule_failure_keeps_confirmed_reload_and_stops_monitor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace
+) -> None:
+    """SDK成功後の補助監視の失敗を、入力反映の失敗へ戻さない。"""
+    root = _plugin(tmp_path / "checkout")
+    inventory.items = [_installed(root)]
+    async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()) as reloader:
+        observer = reloader._observer
+
+        def fail(**_kwargs: Any) -> None:
+            raise OSError("監視を再開できない")
+
+        monkeypatch.setattr(reloader, "_reschedule", fail)
+        client = SimpleNamespace(_query=SimpleNamespace(_send_control_request=AsyncMock(return_value=_response(root))))
+        await reloader.reload(client)
+        assert reloader.updated and reloader._observer is None
+        assert not observer.is_alive()
+
+
+@pytest.mark.parametrize("failure", ["nonzero", "timeout", "oserror"])
+@pytest.mark.asyncio
+async def test_inventory_transport_failure_only_disables_optional_watch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace, failure: str
+) -> None:
+    """実際の呼出helperの例外型で、必須選択と静的入力の補助取得を分ける。"""
+    dynamic = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
+    static = _plugin(tmp_path / "checkout")
+    inventory.returncode = 1
+    if failure != "nonzero":
+
+        def fail(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired(command, 30)
+            raise OSError("実行ファイルを開始できない")
+
+        monkeypatch.setattr(claude_plugins.process_tree, "run_with_timeout", fail)
+    with pytest.raises(claude_plugins.PluginReloadError):
+        async with claude_plugins.ClaudePluginReloader(_options(tmp_path, dynamic), asyncio.get_running_loop()):
+            pytest.fail("必須の入力選択が成功した")
+    options = _options(tmp_path, static)
+    if failure == "timeout":
+        # helperは停止未確認も同じtimeoutで返すため、静的入力でも縮退できない。
+        with pytest.raises(claude_plugins.PluginReloadError, match="停止"):
+            async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()):
+                pytest.fail("停止保証のないtimeoutを縮退した")
+        return
+    async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
+        assert options["plugins"][0]["path"] == str(static)
+        assert reloader._observer is None
+
+
+@pytest.mark.parametrize("failure", ["cleanup", "programming"])
+@pytest.mark.asyncio
+async def test_monitor_cleanup_and_programming_failures_are_not_hidden(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace, failure: str
+) -> None:
+    """停止不能や実装不良を、補助機能の正常な縮退へ変換しない。"""
+    root = _plugin(tmp_path / "checkout")
+    inventory.items = [_installed(root)]
+
+    class Observer:
+        ident = None
+
+        def schedule(self, *_args: Any, **_kwargs: Any) -> None:
+            if failure == "programming":
+                raise ValueError("実装不良")
+            raise OSError("監視の開始失敗")
+
+        def stop(self) -> None:
+            if failure == "cleanup":
+                raise OSError("監視を停止できない")
+
+    monkeypatch.setattr(claude_plugins, "Observer", Observer)
+    expected = OSError if failure == "cleanup" else ValueError
+    with pytest.raises(expected, match="監視を停止できない|実装不良"):
+        async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()):
+            pytest.fail("未解決の不良を縮退成功として扱った")

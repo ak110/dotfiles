@@ -1,6 +1,6 @@
 # agent-toolkitの実装と配布の規約
 
-本書は、`.claude/skills/agent-toolkit-edit/SKILL.md`の読込表から参照する資料である。`agent-toolkit/`の実装モジュールの配置、`atk`コマンドの出力、MCPサーバーやフックの実装・登録、権限設定、配布と反映に関する規約をまとめている。バージョンの更新手順や同期先の文書については、`SKILL.md`を参照する。
+本書は、`.claude/skills/agent-toolkit-edit/SKILL.md`の読込表から参照する資料である。`agent-toolkit/`の実装モジュールの配置、`atk`コマンドの出力、MCPサーバーやフックの実装・登録、権限設定、配布と反映に関する規約をまとめている。バージョン更新は`version-bump.md`、同期先の文書は`agent-documents.md`を参照する。
 
 ## 名指し参照の読込方法
 
@@ -8,9 +8,10 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 機構や外部インターフェースの変更に伴う文書の追随先を確定する前 | `agent-documents.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agent-documents.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:*/skills/agent-toolkit-edit/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../develop-dotfiles/SKILL.md#「テスト配置」` | 判断 | `section:*/skills/develop-dotfiles/SKILL.md#「テスト配置」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「バージョン更新」` | 判断 | `section:*/skills/agent-toolkit-edit/SKILL.md#「バージョン更新」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../develop-dotfiles/references/testing.md#「テスト配置」` | 判断 | `section:*/skills/develop-dotfiles/references/testing.md#「テスト配置」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `version-bump.md#「バージョン更新」` | 判断 | `section:*/skills/agent-toolkit-edit/references/version-bump.md#「バージョン更新」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | Claudeの子入力の寿命とserver保持版を判断する前 | `agents-server-shared-state.md`の「配布物保持と掃引」 | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「配布物保持と掃引」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-messages.md#「エージェント宛てメッセージの標識」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md#「エージェント宛てメッセージの標識」` |
@@ -33,7 +34,7 @@
 - テスト専用の共有ヘルパーは、依存階層の外側にある`_testing`に配置する。このモジュールをインポートできるのは、`*_test.py`、`conftest.py`、および`_testing`配下のコードのみとする。
 - サブパッケージ内では絶対インポートを用いる。`scripts/check_script_imports.py`は相対インポートを解析対象外としているため、相対インポートを使うと階層チェックの対象から漏れてしまう。このスクリプトにより、階層違反や`hook.py`以外からの`_hooks`のインポート、許可されていない箇所からの`_testing`のインポートを検出して報告する。
 - モジュール名には、所属を表す接頭辞を除いて、組み込みの名前や標準ライブラリのトップレベル名と重複しない名前を付ける。
-- テストコードの配置は、`develop-dotfiles`の「テスト配置」の定めに従う。
+- テストコードの配置は、`develop-dotfiles`の`references/testing.md`「テスト配置」の定めに従う。
 
 ## atkの実行結果出力
 
@@ -83,7 +84,7 @@ Agent PluginsのMCP定義をCodex環境向けに変換（射影）する際は�
 PreToolUseをはじめとするフックは、配布先の構成や個人の命名規則などdotfiles固有の運用を前提とする場合は個人フックに配置し、そうした前提を持たない汎用的な機能であればプラグイン側に配置する。類似のチェックがすでに存在する側に統合することを優先する（努力目標）。
 
 - `pytools/claude_hook/pretooluse.py`（個人フック）: chezmoiを通じて自身のアカウントの`~/.claude/settings.json`にのみマージされる。新規のツール名を対象に含める場合は、`share/claude_settings_json_managed.posix.json`および`.win32.json`の`matcher`設定を確認する。
-- `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`を通じて他のユーザーにも広く配布されるため、変更を加える際は`SKILL.md`の「バージョン更新」の規定に従う。
+- `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`を通じて他のユーザーにも広く配布されるため、変更を加える際は`version-bump.md`の「バージョン更新」の規定に従う。
 - agent-toolkitのCLI、フック、MCPサーバーは、`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py <対象>`というコマンドで起動する。`launch.py`は標準ライブラリのみを用いてプラグインルートとデータ領域を解決し、準備済みの共有環境のPythonで対象を起動する。依存の準備には`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py --prepare agent_toolkit/atk.py`を実行する。
 
   `--prepare`の後ろのtargetは配布root内に存在する起動対象を確認する必須引数であり、共有環境の選択には影響しない。依存に作用するpyproject設定、`uv.lock`、選択したPythonの実行ファイルパス、OS・アーキテクチャの組み合わせが未準備の場合に実行する。同じ組み合わせなら別の配布rootやworktreeでも準備済み環境を共有する。別worktreeを指定する場合の`<plugin root>`は、そのworktree内の`agent-toolkit`の絶対パスに置き換える。rootは`launch.py`の配置または`--project`から解決され、cwdの変更だけでは切り替わらない。

@@ -44,18 +44,17 @@ process-wiの追加AWIは読込表の`immediate-fix.md`で時機と対象追加�
 
 ## 作業中の改善点の報告
 
-品質・結果・ユーザー判断への影響や、観測した無視できない費用のある改善点は、発見時に対処時機を判定してからAWI化の要否を決め、次の形式で発話して作業を続ける。
+改善点は`01-agent.md`「事実と推論」で選び、発見時に処置・AWI化を決め、次の書式で報告する。
 `気付いた改善点: <事象と対象のツール・手順・条文>（AWI化ステータス: 済 <WI名> | 予定 <時点> | 即時対応 | 不要 <理由>）`
-process-wi中は読込表の`immediate-fix.md`で今回追加と次回を判定し、同じセッションで是正する事象は`即時対応`とする。
-登録済みと修正済みを区別し、AWI化しない場合は理由付きの`不要`とする。委譲先からの転記も同形式を使う。
-観測した欠陥の処置は`agent-basics:bugfix`で判定し、当座の訂正や規範の存在だけで再発防止を不要としない。
-規範の読込で不要な範囲・過大な取得単位・重複取得を認めたら、その費用も同行へ記す。
-正常回収は問題化せず、未回収・未達と判断を変える診断、形式自体に意味がある分析表・点検記録は保持する。
-
-`agent-basics:bugfix`「初動の判断」で、担当・処置を決める最小調査をその場で行い、確認済み・未確認を分ける。本題外はagents_serverへ分け、Q影響・続行の問題と規範の欠陥は`01-agent.md`「完遂と先送り」で処置する。担当外は根拠とともに引き継ぎ、非同期の振り返りで再利用する。既調査事項の再調査・同期振り返りは終了条件から除く。
-
-規範読込の報告項目・集約と、委譲通知・完了返却の受領は、`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」に従う。
-受領時に扱い、全モードで次のユーザー向け発話へ転記する。
+process-wi中の今回追加・次回は読込表の`immediate-fix.md`で決め、今回是正は`即時対応`とする。
+登録と修正を区別し、不要は理由を添える。転記も同書式を使う。
+all-repos統括を含む全メインは、待機中に判定できる改善を発見時に既存項目と比較してAWIを保存する。
+登録時機と`予定`は読込表の「待機中の先行実施」で判断し、残る前提・再開条件・時点を作業記録へ残す。
+最小調査をその場で行い、当座の訂正・再発防止は`agent-basics:bugfix`、Q影響・続行/規範不良は`01-agent.md`「完遂と先送り」で判断する。
+本題外はagents_serverへ渡し、担当外は根拠と未確認事項を引き継ぐ。
+証拠は非同期振り返りで再利用し、既調査の再調査・同期振り返りは終了条件から除く。
+規範読込と委譲結果は`agent-toolkit:delegation/references/receiving.md`「受領後の扱い」で報告・集約する。
+全モードで受領時に処置し、次の発話でユーザーへ転記する。
 
 ## ユーザー向け発話ルール
 
@@ -93,6 +92,7 @@ process-wi中は読込表の`immediate-fix.md`で今回追加と次回を判定�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 待機中の改善点報告前 | `../skills/delegation/references/waiting-and-monitoring.md#待機中の先行実施` | 判断 | `section:*/skills/delegation/references/waiting-and-monitoring.md#「待機中の先行実施」` |
 | 会話で継続的な方針を受け取った時 | `../skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` |
 | process-wi中に方針の反映を追加AWIへ渡す時 | `../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
 | 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |

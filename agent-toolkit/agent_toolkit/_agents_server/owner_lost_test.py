@@ -82,11 +82,10 @@ def _publish_running(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         _SESSION_ID,
-        terminal=False,
+        state=session_registry.PublicationState.PENDING_RUNNING,
         engine=engine,
         cwd=str(tmp_path),
         turn_seq=1,
-        status="running",
         turn_id="turn-1" if engine == "codex" else None,
         launch_info=session_registry.LaunchInfo(label="公開担当", prompt="公開工程を実施せよ"),
         processes=processes,
@@ -334,11 +333,10 @@ async def test_registry_resolved_send_message_collects_stranded_notices(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         _SESSION_ID,
-        terminal=True,
+        state=session_registry.PublicationState.RESULT_COMPLETED,
         engine="claude",
         cwd=str(tmp_path),
         turn_seq=1,
-        status="completed",
         launcher_session_id=_LAUNCHER,
     )
     _write_old_root(tmp_path, "終了前の通知")
@@ -357,7 +355,9 @@ async def test_atk_agents_wait_collects_result_left_in_old_root(
 ) -> None:
     """待機対象の終了時の結果が旧ルートに残る場合も、新しいルートの`atk agents wait`が回収する（反映内容5）。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    session_registry.publish(_SESSION_ID, terminal=True, engine="claude", cwd=str(tmp_path), turn_seq=1, status="completed")
+    session_registry.publish(
+        _SESSION_ID, state=session_registry.PublicationState.RESULT_COMPLETED, engine="claude", cwd=str(tmp_path), turn_seq=1
+    )
     old_writer = status_file.StatusFileWriter(
         {}, shared_roots.StatusFileIdentity(_OLD_ROOT, "root.json", None), state_root=tmp_path
     )
@@ -418,11 +418,10 @@ async def test_stop_of_record_owned_by_live_process_keeps_record_and_result(
     with _live_process() as (_owner_process, owner), _live_process() as (_executor_process, executor):
         session_registry.publish(
             _SESSION_ID,
-            terminal=True,
+            state=session_registry.PublicationState.RESULT_COMPLETED,
             engine="claude",
             cwd=str(tmp_path),
             turn_seq=1,
-            status="completed",
             processes=(owner, executor),
         )
         record = session_registry.registry_directory() / f"{_SESSION_ID}.json"
@@ -503,7 +502,11 @@ def test_registry_sweep_keeps_unfinished_records_until_completion(
             (legacy, ()),
         ):
             session_registry.publish(
-                session_id, terminal=False, cwd=str(tmp_path), status="running", processes=processes, state_root=tmp_path
+                session_id,
+                state=session_registry.PublicationState.PENDING_RUNNING,
+                cwd=str(tmp_path),
+                processes=processes,
+                state_root=tmp_path,
             )
         old = time.time() - shared_sweep.STALE_SHARED_STATE_SECONDS - 60
         for path in session_registry.registry_directory(tmp_path).glob("*.json"):
@@ -516,7 +519,9 @@ def test_registry_sweep_keeps_unfinished_records_until_completion(
         assert session_registry.resolve(live, state_root=tmp_path).state is session_registry.Resolution.RUNNING
         assert session_registry.resolve(exited, state_root=tmp_path).inferred_terminal
         for session_id in (live, exited, legacy):
-            session_registry.publish(session_id, terminal=True, status="completed", cwd=str(tmp_path), state_root=tmp_path)
+            session_registry.publish(
+                session_id, state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path), state_root=tmp_path
+            )
             path = session_registry.registry_directory(tmp_path) / f"{session_id}.json"
             os.utime(path, (old, old))
         shared_sweep.sweep_stale_shared_state(keep_root_session_id=None, state_root=tmp_path)
@@ -534,7 +539,7 @@ def test_process_loop_record_stays_running_while_claude_child_survives(
     # `_build_session_argv`と同じく、起動前のprocess-loop自身だけを記録プロセスとして公開する。
     session_registry.publish(
         identifier,
-        terminal=False,
+        state=session_registry.PublicationState.PENDING_RUNNING,
         engine="claude",
         cwd=str(tmp_path),
         model_type="orchestrate",

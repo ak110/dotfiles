@@ -242,7 +242,7 @@ async def test_turn_history_survives_collection_release_and_registry_restart(tmp
         turn_seq=1,
     )
     predecessor.status = "completed"
-    predecessor.turn_completed = True
+    predecessor.record_turn_completed()
     predecessor.agent_message = "第1turnの応答全文"
     resume_waits.begin_auto_resume_wait(
         predecessor,
@@ -255,20 +255,19 @@ async def test_turn_history_survives_collection_release_and_registry_restart(tmp
     predecessor.touch()
     state.begin_reply(predecessor)
     predecessor.status = "failed"
-    predecessor.turn_completed = True
+    predecessor.record_turn_completed()
     predecessor.agent_message = "第2turnの応答全文"
     predecessor.error = {"codexErrorInfo": "usageLimitExceeded"}
     predecessor.touch()
     session_registry.publish(
         predecessor.session_id,
-        terminal=True,
+        state=session_registry.PublicationState.RESULT_FAILED,
         engine=predecessor.engine,
         cwd=predecessor.cwd,
         model=predecessor.model,
         effort=predecessor.effort,
         model_type=predecessor.model_type,
         turn_seq=predecessor.turn_seq,
-        status="failed",
         launch_info=session_registry.LaunchInfo.of(predecessor),
         state_root=tmp_path,
     )

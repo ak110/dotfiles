@@ -192,14 +192,16 @@ def test_loop_descendants_and_other_loop(tmp_path: pathlib.Path, monkeypatch: py
 
 def test_registry_active_child_and_terminal(tmp_path: pathlib.Path) -> None:
     """hookがない委譲先も登録簿の親子と終了を使って判定する。"""
-    session_registry.publish("child", terminal=False, launcher_session_id="loop", state_root=tmp_path)
+    session_registry.publish(
+        "child", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="loop", state_root=tmp_path
+    )
     assert session_activity.scan_activity(state_root=tmp_path, processes=()).active_session_ids == {"child"}
     assert not session_activity.scan_activity(
         state_root=tmp_path,
         processes=(),
         excluded_session_ids={"loop"},
     ).has_activity
-    session_registry.publish("child", terminal=True, state_root=tmp_path)
+    session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED, state_root=tmp_path)
     assert not session_activity.scan_activity(state_root=tmp_path, processes=()).has_activity
 
 
@@ -324,7 +326,7 @@ def test_registered_host_of_excluded_session_is_not_unknown(tmp_path: pathlib.Pa
     host = _host("codex")
     session_registry.publish(
         "own",
-        terminal=False,
+        state=session_registry.PublicationState.PENDING_RUNNING,
         processes=[host.identity],
         launcher_session_id="loop",
         state_root=tmp_path,
@@ -506,12 +508,16 @@ def test_submission_target_follows_actual_destination(tmp_path: pathlib.Path, mo
     _emit("delegating", "UserPromptSubmit", transcript_path=str(transcript))
     _begin("--session-id", "delegating", "--target-repo", "https://github.com/example/target")
     _emit("delegating", "Stop", transcript_path=str(transcript))
-    session_registry.publish("add-wi-worker", terminal=False, launcher_session_id="delegating")
-    session_registry.publish("unrelated-worker", terminal=False, launcher_session_id="someone-else")
+    session_registry.publish(
+        "add-wi-worker", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="delegating"
+    )
+    session_registry.publish(
+        "unrelated-worker", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="someone-else"
+    )
     _end("manual")
     assert _submitting(_TARGET) == {"add-wi-worker"}
     assert not _submitting("github.com/example/elsewhere")
-    session_registry.publish("add-wi-worker", terminal=True)
+    session_registry.publish("add-wi-worker", state=session_registry.PublicationState.RESULT_COMPLETED)
     assert not _submitting(_TARGET)
 
 

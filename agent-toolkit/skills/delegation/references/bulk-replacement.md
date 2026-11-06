@@ -10,11 +10,16 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 指摘の原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 一括置換後の指摘を処置する前 | `../../../share/similar-review.parent.md` | 判断 | `read:agent-toolkit:*/share/similar-review.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/bulk-replacement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/bulk-replacement.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/textlint-violations.md#「文の書き直しの委譲と検収」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 
 ## 運用条件
+
+指摘の受領時は`agent-basics:bugfix`による原因分析と類似見直しを行い、検索と個別判定は`share/similar-review.parent.md`の専用担当へ渡す。
+初回検出時の再発防止例外と短い記録はbugfixに従い、結果の採否は委譲元が確定する。
 
 - `git diff --word-diff=plain --word-diff-regex=.`による文字単位の差分をmanaged-tempへ保存し、後述の「一括置換後レビュー担当の起動と受領」に従って変更箇所を全件レビューさせる。意図しない誤置換が多発する場合は、置換候補を絞り込んで再試行する。
 

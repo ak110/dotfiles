@@ -40,6 +40,7 @@ from agent_toolkit._agents_server import (
     resume_waits,
     session_errors,
     session_identity,
+    turn_state,
     wait_compaction,
     wait_output_tracking,
 )
@@ -520,8 +521,6 @@ def recover_api_retry(session: SessionState, data: dict[str, Any], *, record_not
         )
     if data.get("error_status") != 429 and session.usage_limit_resume_at is not None:
         resume_waits.clear_usage_limit_wait(session)
-        session.awaiting_auto_resume = False
-        session.pending_result = None
     if session.interrupt_requested or session.claude_api_resume_pending or session.usage_limit_resume_at is not None:
         return
     if session.usage_limit is None or not session.usage_limit.is_wait_target or data.get("error_status") != 429:
@@ -559,10 +558,9 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
         session.record_api_error(error_type, status)
         return
     session.api_error = None
+    session.record_turn_started()
     if session.usage_limit_resume_at is not None:
         resume_waits.clear_usage_limit_wait(session)
-        session.awaiting_auto_resume = False
-        session.pending_result = None
     session.model_output_observed = True
     # 正常なモデル出力は利用上限で拒否されていない証拠であり、以前の拒否の報告を待機の根拠から外す。
     if session.usage_limit is not None and session.usage_limit.is_wait_target:
@@ -597,7 +595,7 @@ class ClaudeServerManager:
     """Claudeセッションの所有タスクと結果メタデータを管理する。"""
 
     START_FAILURE_EXCLUDES_CANDIDATE: typing.ClassVar[bool] = False
-    """起動の例外は候補を変えても結果が変わらないため、次の候補へ進まずに委譲元へ返す。"""
+    """起動状態や帰属が未確定の一般例外は返す。確認済みの起動前不成立だけを専用型で次候補へ渡す。"""
     INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool] = False
     """中断の要求にturnの識別子を使わない。"""
     ORPHAN_TAKEOVER: typing.ClassVar[bool] = False
@@ -676,6 +674,8 @@ class ClaudeServerManager:
         model_type: str | None = None,
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
     ) -> SessionState:
         role = "orchestrator" if model_type == "orchestrate" else "delegate"
         choices = claude_connection.candidates(role, env=child_environment.inherited())
@@ -699,6 +699,8 @@ class ClaudeServerManager:
                     launch_kind=launch_kind,
                     excluded_candidates=excluded_candidates,
                     turn_seq=1,
+                    request_prompt=request_prompt,
+                    result_contract_recovery_consumed=result_contract_recovery_consumed,
                     api_env_file=connection.api_env_file,
                     connection_kind=connection.kind,
                     isolation_env_file=connection.isolation_env_file,
@@ -739,6 +741,8 @@ class ClaudeServerManager:
         fast_mode: bool | None = None,
         api_env_file: str | None = None,
         connection_kind: str = "inherit",
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
         existing_session: SessionState | None = None,
         isolation_env_file: str | None = None,
         handoff_prompt: str = "",
@@ -778,6 +782,8 @@ class ClaudeServerManager:
                 launch_kind=launch_kind,
                 excluded_candidates=excluded_candidates,
                 turn_seq=turn_seq + 1,
+                request_prompt=request_prompt,
+                result_contract_recovery_consumed=result_contract_recovery_consumed,
                 api_env_file=api_env_file,
                 connection_kind=selected,
                 existing_session=existing_session,
@@ -840,6 +846,8 @@ class ClaudeServerManager:
         turn_seq: int,
         api_env_file: str | None = None,
         connection_kind: str = "inherit",
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
         existing_session: SessionState | None = None,
         isolation_env_file: str | None = None,
         handoff_prompt: str = "",
@@ -892,6 +900,12 @@ class ClaudeServerManager:
                 api_env_file=api_env_file,
                 connection_kind=connection_kind,
                 existing_session=existing_session,
+                request_prompt=request_prompt
+                if request_prompt is not None
+                else prompt
+                if isinstance(prompt, str)
+                else handoff_prompt,
+                result_contract_recovery_consumed=result_contract_recovery_consumed,
             )
         )
         self._tasks.add(task)
@@ -1059,7 +1073,6 @@ class ClaudeServerManager:
         if session.pending_result is not None:
             resume_waits.finalize_pending_result(session, touch=False)
         resume_waits.clear_usage_limit_wait(session)
-        session.claude_api_resume_pending = False
         session.api_error = None
         self._finalize_turn(session, {"status": "interrupted", "agent_message": session.agent_message, "error": session.error})
         await self._notify_waiters()
@@ -1085,6 +1098,8 @@ class ClaudeServerManager:
         diagnostic: _InitializationDiagnostic,
         api_env_file: str | None = None,
         connection_kind: str = "inherit",
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
         existing_session: SessionState | None = None,
     ) -> None:
         from claude_agent_sdk import TERMINAL_TASK_STATUSES
@@ -1104,9 +1119,6 @@ class ClaudeServerManager:
         # `SystemMessage(init)`より前に届いた利用枠の報告。sessionの作成時に引き継ぐ。
         early_usage_limit: claude_usage_limit.UsageLimitState | None = None
         early_api_retry: dict[str, Any] | None = None
-        # 保留中の結果が完了通知による再開turnのものか。`idle`で確定するときに、`ResultMessage`の分岐で
-        # 直接確定した場合と同じく`auto_resume_consumed`へ反映する。
-        held_from_task_notification = False
         # `SystemMessage(init)`より前に届いたturn状態の報告。CLIはコマンドループの先頭で最初のturnの`running`を
         # 発行するため、initより先に届き得る。捨てると最初のturnの判定が追跡集合だけの方法へ戻るため、
         # sessionの作成時に引き継ぐ。
@@ -1141,6 +1153,8 @@ class ClaudeServerManager:
                 engine="claude",
                 turn_seq=turn_seq,
                 publish_registry=self._publish_registry,
+                prompt=request_prompt or "",
+                result_contract_recovery_consumed=result_contract_recovery_consumed,
                 claude_api_env_file=api_env_file or None,
                 claude_connection=connection_kind,
                 claude_role="orchestrator" if model_type == "orchestrate" else "delegate",
@@ -1265,9 +1279,7 @@ class ClaudeServerManager:
                     except StopAsyncIteration:
                         if (
                             session is not None
-                            and session.awaiting_auto_resume
-                            and session.usage_limit_resume_at is None
-                            and not session.claude_api_resume_pending
+                            and resume_waits.is_background_completion_wait(session)
                             and not resume_waits.has_pending_auto_resume_targets(session)
                         ):
                             (await self._finalize_pending_result(session))
@@ -1342,13 +1354,9 @@ class ClaudeServerManager:
                             if (
                                 session is not None
                                 and reported == "idle"
-                                and session.awaiting_auto_resume
-                                and session.usage_limit_resume_at is None
-                                and not session.claude_api_resume_pending
+                                and resume_waits.is_background_completion_wait(session)
                                 and not resume_waits.has_pending_auto_resume_targets(session)
                             ):
-                                if held_from_task_notification:
-                                    session.auto_resume_consumed = True
                                 (await self._finalize_pending_result(session))
                                 await self._notify_waiters()
                         elif name == "SystemMessage" and getattr(message, "subtype", None) == "api_retry":
@@ -1388,9 +1396,8 @@ class ClaudeServerManager:
                                 session.usage_limit = None
                                 if session.usage_limit_resume_at is not None:
                                     resume_waits.clear_usage_limit_wait(session)
-                                    session.awaiting_auto_resume = False
-                                    session.pending_result = None
                                 session.model_output_observed = True
+                                session.record_turn_started()
                                 await self._notify_waiters()
                             elif isinstance(event, dict) and event.get("type") == "message_stop":
                                 usage_observer.request(session)
@@ -1413,9 +1420,7 @@ class ClaudeServerManager:
                                 await self._notify_waiters()
                         elif name == "ResultMessage" and session is not None:
                             usage_observer.request(session)
-                            held_from_task_notification = await self._consume_result_message(
-                                session, message, held_from_task_notification
-                            )
+                            await self._consume_result_message(session, message)
                             await self._notify_waiters()
 
         except asyncio.CancelledError:
@@ -1550,31 +1555,29 @@ class ClaudeServerManager:
             client, initialization, session.session_id, report_pending=report_pending
         )
 
-    async def _consume_result_message(self, session: SessionState, message: Any, held_from_task_notification: bool) -> bool:
-        """turnの結果を保留または確定し、保留結果がtask完了通知のturnから届いたかを引き継ぐ。"""
+    async def _consume_result_message(self, session: SessionState, message: Any) -> None:
+        """未回収対象の寿命に従ってturnの結果を保留または確定する。"""
         await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
         result = self._result_values(session, message)
         if session.interrupt_requested:
             # killの所有者がCLIの終了を確認してから公開する。後着の失敗結果を回復の契機へ戻さない。
-            session.pending_result = {**result, "status": "interrupted"}
-            session.awaiting_auto_resume = True
-            session.auto_resume_deadline = None
-            return held_from_task_notification
+            session.hold_result(turn_state.InterruptedWait({**result, "status": "interrupted"}))
+            return
         if session.claude_api_resume_pending:
             if result["status"] == "completed":
                 session.api_error = None
-            return held_from_task_notification
+            return
         if session.usage_limit_resume_at is not None:
             if result["status"] != "completed":
-                return held_from_task_notification
+                return
             resume_waits.clear_usage_limit_wait(session)
             session.api_error = None
             session.usage_limit = None
         # 対象の利用上限では結果を保留し、MCP層の常駐監視がAPI移行または解除後の継続を進める。
         if result_contract.hold_invalid_result(session, result):
-            return held_from_task_notification
+            return
         if resume_waits.begin_usage_limit_wait(session, result):
-            return held_from_task_notification
+            return
         # 自動再開したturnもバックグラウンドタスクを残して待機を表明し得るため、`origin`によらず保留を判定する。
         # 完了通知は`ResultMessage`より前にも届く。Stop hookの実行中にバックグラウンドタスクが終わると、
         # その通知で追跡集合は空になるが、CLIは`ResultMessage`の後に通知の再開turnを開始する。
@@ -1582,19 +1585,13 @@ class ClaudeServerManager:
         # `session_state_changed`の分岐で確定する。この判定はMCP層の再開済みsessionにも適用する。
         # 根拠とした版と順序は`docs/development/audit-records.md`の次の節にある。
         # 「agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：2026年10月4日」
-        if resume_waits.has_pending_auto_resume_targets(session) and (
-            not session.auto_resume_consumed or resume_waits.cli_turn_may_continue(session)
-        ):
+        if resume_waits.has_pending_auto_resume_targets(session):
             self._log_turn_state_fallback(session)
-            held_from_task_notification = getattr(message, "origin", None) == {"kind": "task-notification"}
             resume_waits.begin_auto_resume_wait(session, result)
             session.touch()
         else:
             self._log_turn_state_fallback(session)
-            if getattr(message, "origin", None) == {"kind": "task-notification"}:
-                session.auto_resume_consumed = True
             self._finalize_turn(session, result)
-        return held_from_task_notification
 
     async def _handle_command(
         self,
@@ -1616,7 +1613,6 @@ class ClaudeServerManager:
                 future.set_exception(ValueError("Claude session initialization is incomplete"))
             return iterator
         if command_kind == "interrupt":
-            session.auto_resume_consumed = True
             if session.terminal:
                 if not future.done():
                     future.set_result(("interrupt_accepted", None))
@@ -1648,7 +1644,7 @@ class ClaudeServerManager:
                 future.set_result(("compact_skipped", None))
                 return iterator
             prompt = "/compact"
-        if session.awaiting_auto_resume and not resume_waits.is_background_completion_wait(session):
+        if session.awaiting_auto_resume and not resume_waits.is_observation_preserving_reply(session):
             (await self._finalize_pending_result(session))
         held = resume_waits.HeldTurn.capture(session)
         kind = "reply" if session.terminal or held is not None else "steer"
@@ -1657,6 +1653,7 @@ class ClaudeServerManager:
             if kind == "reply":
                 begin_reply(session, preserve_waits=held is not None)
             await (query or client.query)(prompt)
+            session.record_turn_sent()
         except Exception as exc:
             if held is not None:
                 held.restore(session)
@@ -1715,14 +1712,11 @@ class ClaudeServerManager:
 
     @staticmethod
     def _finalize_turn(session: SessionState, result: dict[str, Any]) -> None:
-        session.awaiting_auto_resume = False
-        session.auto_resume_deadline = None
-        session.pending_result = None
+        session.clear_hold()
         session.status = result["status"]
         session.agent_message = result["agent_message"]
         session.error = result["error"]
-        session.turn_completed = True
-        session.turn_start_ambiguous = False
+        session.record_turn_completed()
         session.touch()
 
     @staticmethod

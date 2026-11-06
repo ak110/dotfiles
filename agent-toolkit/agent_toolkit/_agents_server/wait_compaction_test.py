@@ -7,7 +7,7 @@ import logging
 
 import pytest
 
-from agent_toolkit._agents_server import state, wait_compaction
+from agent_toolkit._agents_server import state, turn_state, wait_compaction
 
 
 @pytest.fixture(
@@ -17,10 +17,9 @@ from agent_toolkit._agents_server import state, wait_compaction
 def _waiting(request: pytest.FixtureRequest) -> state.SessionState:
     engine, kind = request.param
     session = state.SessionState("parent", "/work", engine=engine, launch_kind=kind)
-    session.awaiting_auto_resume = True
-    session.pending_result = {"status": "completed", "agent_message": "待機中", "error": None}
+    session.hold_result(turn_state.BackgroundWait({"status": "completed", "agent_message": "待機中", "error": None}, None))
     session.cli_turn_state = "idle"
-    session.turn_completed = True
+    session.record_turn_completed()
     if session.engine == "claude":
         session.live_tasks["task"] = state.LiveTask("local_bash", "wait", state.utc_now())
     session.live_child_session_ids.add("child")
@@ -106,9 +105,9 @@ async def test_changed_wait_does_not_deliver_a_compaction_turn(waiting: state.Se
             waiting.live_child_session_ids.clear()
         elif change == "running":
             waiting.cli_turn_state = "running"
-            waiting.turn_completed = False
+            waiting.record_turn_running()
         elif change == "no_wait":
-            waiting.pending_result = None
+            waiting.clear_hold()
         elif change == "interrupt":
             waiting.interrupt_requested = True
         release.set()

@@ -21,6 +21,7 @@ from agent_toolkit._agents_server import (
     resume_waits,
     session_handoff,
     state,
+    turn_state,
 )
 from agent_toolkit._atk import codex_connection, config
 from agent_toolkit._common import session_registry, state_paths
@@ -181,12 +182,11 @@ def publish_api_session(tmp_path):
     """永続再開を検証するため、確定したAPI会話を登録する。"""
     session_registry.publish(
         "provider-thread",
-        terminal=True,
+        state=session_registry.PublicationState.RESULT_COMPLETED,
         engine="codex",
         cwd=str(tmp_path),
         codex_model_provider="paid-b",
         codex_subscription_provider="openai",
-        status="completed",
     )
 
 
@@ -450,9 +450,7 @@ async def test_provider_failover_result_collection(monkeypatch, tmp_path, provid
                 if client.connection == "openai":
                     error = {"codexErrorInfo": "usageLimitExceeded"}
                     if failure_source == "request":
-                        await backend._mark_failed(
-                            session, codex.JsonRpcResponseError("turn/start", -32600, "上限拒否", error), retryable=False
-                        )
+                        await backend._mark_failed(session, codex.JsonRpcResponseError("turn/start", -32600, "上限拒否", error))
                     else:
                         await complete(backend, session, error)
                 else:
@@ -695,7 +693,11 @@ async def test_api_primary_registry_restores_after_release(monkeypatch, tmp_path
     """サブスクリプションの利用履歴が無い主APIの接続先も、解放後の公開の追送で同じ接続先を維持する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
-        "provider-thread", terminal=True, engine="codex", cwd=str(tmp_path), codex_model_provider="paid-b", status="completed"
+        "provider-thread",
+        state=session_registry.PublicationState.RESULT_COMPLETED,
+        engine="codex",
+        cwd=str(tmp_path),
+        codex_model_provider="paid-b",
     )
     session_registry.release("provider-thread", reason=reason)
     async with manager.AgentsServerManager() as root:
@@ -811,7 +813,7 @@ async def test_opaque_state_resume_uses_origin_in_every_lifecycle(monkeypatch, t
     )
     session_registry.publish(
         "provider-thread",
-        terminal=True,
+        state=session_registry.PublicationState.RESULT_COMPLETED,
         engine="codex",
         cwd=str(tmp_path),
         model="gpt-6-sol",
@@ -820,7 +822,6 @@ async def test_opaque_state_resume_uses_origin_in_every_lifecycle(monkeypatch, t
         turn_seq=1,
         codex_model_provider=None if lifecycle == "settings" else "paid-b",
         codex_state_provider=None if lifecycle == "legacy_migration" else "openai",
-        status="completed",
         launch_info=session_registry.LaunchInfo(
             prompt="元の進捗を保つ", followup_prompts=("最後に検証する",), final_responses=((1, "編集済み"),)
         ),
@@ -911,11 +912,10 @@ async def test_verified_state_provider_survives_registry_release_and_restart(mon
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         "verified-thread",
-        terminal=True,
+        state=session_registry.PublicationState.RESULT_COMPLETED,
         engine="codex",
         cwd=str(tmp_path),
         codex_state_provider="paid-b",
-        status="completed",
     )
     session_registry.release("verified-thread", reason="stopped")
     async with manager.AgentsServerManager() as root:
@@ -1123,3 +1123,22 @@ async def test_orchestrator_role_uses_its_order_and_does_not_switch_on_failure(m
         await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
         assert not session.codex_provider_resume_pending
         assert session.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_provider_recovery_delivery_failure_publishes_original_result(monkeypatch, tmp_path):
+    """接続切替前の配送失敗は、理由を保留し続けず元の失敗結果を回収可能にする。"""
+
+    async def unavailable(_session, _prompt, **_kwargs):
+        raise OSError("資源案内を読み取れない")
+
+    async with manager.AgentsServerManager(None) as owner:
+        session = state.SessionState("provider-delivery", str(tmp_path), engine="codex", announced=True)
+        original = {"status": "failed", "agent_message": "元の失敗", "error": {"message": "connection rejected"}}
+        session.hold_result(turn_state.CodexProviderWait(original))
+        owner.sessions[session.session_id] = session
+        monkeypatch.setattr(owner, "_send_with_resources", unavailable)
+        await owner._advance_child_session_wait(session)
+        assert session.result_available and not session.codex_provider_resume_pending
+        result = await owner.wait()
+        assert result["status"] == "failed" and result["agent_message"] == original["agent_message"]

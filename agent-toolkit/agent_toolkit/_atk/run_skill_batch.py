@@ -94,14 +94,16 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     log_path = launch_path.with_suffix(".log")
     with session_review.locked():
         owner = session_registry.ProcessIdentity.of(os.getpid())
-        value: dict[str, Any] = {
-            "host": host,
-            "event": event,
-            "status": "starting",
-            "log_path": str(log_path),
-            "owner": {"pid": owner.pid, "create_time": owner.create_time} if owner else None,
-        }
-        session_review.write(launch_path, value)
+        value = session_review.LaunchAttempt.model_validate(
+            {
+                "host": host,
+                "event": event,
+                "status": "starting",
+                "log_path": str(log_path),
+                "owner": {"pid": owner.pid, "create_time": owner.create_time} if owner else None,
+            }
+        )
+        value.save(launch_path)
         with log_path.open("ab") as log:
             # hook終了後も生存確認できるようPIDを保存し、親が存続する間はスレッドで回収する。
             try:
@@ -123,13 +125,10 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
                 )
             except OSError as error:
                 log.write(str(error).encode("utf-8"))
-                value["exited"] = True
-                session_review.write(launch_path, value)
+                value.attach(None).save(launch_path)
                 return notice
         identity = session_registry.ProcessIdentity.of(process.pid)
-        value["process"] = {"pid": identity.pid, "create_time": identity.create_time} if identity else None
-        value["exited"] = identity is None
-        session_review.write(launch_path, value)
+        value.attach(identity).save(launch_path)
     threading.Thread(target=process.wait, daemon=True).start()
     return notice
 
@@ -279,8 +278,8 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
         signature.append(normalized)
     failure_key = hashlib.sha256(json.dumps(signature, ensure_ascii=False).encode()).hexdigest()
     existing = _active_failure(failure_key)
-    manifest.update(status="failed", failure_key=failure_key, error=reason)
-    session_review.write(path, manifest)
+    writer = session_review.BatchWriter(path)
+    manifest = writer.fail(failure_key, reason)
     saved = False
     if existing is not None:
         report_path, _data = existing
@@ -305,15 +304,7 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
         except OSError, ValueError, subprocess.SubprocessError:
             _LOG.exception("振り返りの失敗報告を保存できない。次回起動時に同じ報告から再開する: %s", path)
             saved = False
-    manifest["report_synced"] = saved
-    session_review.write(path, manifest)
-    with session_review.locked():
-        for target in manifest["targets"]:
-            pending_path = session_review.directory() / "pending" / f"{target['key']}.json"
-            if pending_path.exists():
-                current = session_review.read(pending_path)
-                current.update(failure_key=failure_key, failure_unreported=not bool(saved))
-                session_review.write(pending_path, current)
+    writer.report_failure(synced=saved)
 
 
 def _live(manifest: dict[str, Any]) -> bool:
@@ -344,11 +335,9 @@ def record_executor(args: argparse.Namespace, pid: int) -> None:
     if value is None:
         return
     path = pathlib.Path(value)
-    manifest = session_review.read(path)
     identity = session_registry.ProcessIdentity.of(pid)
     if identity is not None:
-        manifest["processes"] = [{"pid": identity.pid, "create_time": identity.create_time}]
-        session_review.write(path, manifest)
+        session_review.BatchWriter(path).attach(identity)
 
 
 def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int]) -> int:
@@ -380,22 +369,16 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
 
 def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> None:
     """保存済み範囲の分析と報告の同期を確認して、同じbatchだけを確定する。"""
-    if not add.has_synced_run_report(
+    report_synced = add.has_synced_run_report(
         private_notes.default_private_notes(), run_id=manifest["run_id"], skill=session_review.BATCH_SCOPE
-    ):
-        raise ValueError("report-unsynced: 報告の同期を確認できない")
-    if not manifest.get("analysis_succeeded"):
-        raise ValueError("analysis-incomplete: session-review-state finishの実行が必要")
-    for prepared in manifest["prepared"]:
-        session_review.complete(prepared)
-    manifest["status"] = "completed"
-    session_review.write(path, manifest)
+    )
+    session_review.BatchWriter(path).complete(report_synced=report_synced)
     run_skill_state.mark_completed(manifest["run_id"])
 
 
 def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int]) -> int:
     path = session_review.directory() / "runs" / f"{args.run_id}.json"
-    manifest = session_review.read(path)
+    manifest = session_review.BatchWriter(path).load().model_dump(mode="json", exclude_unset=True)
     if str(path) != args.batch_manifest or manifest.get("run_id") != args.run_id:
         outcome.report_failure("再開するbatchの実行識別子と保存先が一致しない", next_action="元のbatch実行記録を確認する")
         return 2
@@ -425,7 +408,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
     runs = session_review.directory() / "runs"
     runs.mkdir(parents=True, exist_ok=True)
     for path in sorted(runs.glob("*.json")):
-        old = session_review.read(path)
+        old = session_review.BatchWriter(path).load().model_dump(mode="json", exclude_unset=True)
         if old["status"] in {"completed", "resolved"}:
             continue
         if old["status"] == "running" and _live(old):
@@ -436,10 +419,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             run_id=old["run_id"],
             skill=old.get("report_scope", session_review.LEGACY_BATCH_SCOPE),
         ):
-            for prepared in old["prepared"]:
-                session_review.complete(prepared)
-            old["status"] = "completed"
-            session_review.write(path, old)
+            session_review.BatchWriter(path).complete(report_synced=True)
             run_skill_state.mark_completed(old["run_id"])
         elif old["status"] == "running" or any(
             item.get("failure_unreported") and item.get("failure_key") == old.get("failure_key")
@@ -468,7 +448,8 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             "target_repo": target_repo,
             "prepared": [],
         }
-        session_review.write(path, manifest)
+        writer = session_review.BatchWriter(path)
+        manifest = writer.create(manifest)
         session_review.launch_result(manifest=path)
         try:
             failed: list[tuple[dict[str, Any], str]] = []
@@ -488,23 +469,20 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
                 scope_path = runs / f"{run_id}-{target['key']}.scope"
                 session_review.write(scope_path, session_review.read(pathlib.Path(prepared["scope_path"])))
                 prepared["scope_path"] = str(scope_path)
-                manifest["prepared"].append(prepared)
-                session_review.write(path, manifest)
+                manifest = writer.prepare(prepared)
             if failed:
                 prepare_failed = True
                 _prepare_failure(runs, target_repo, failed)
             if failed or deferred:
                 omitted = deferred | {target["key"] for target, _ in failed}
-                manifest["targets"] = [target for target in targets if target["key"] not in omitted]
+                manifest = writer.select([target for target in targets if target["key"] not in omitted], target_repo)
                 if not any(not target.get("review_batch") for target in manifest["targets"]):
                     # 通常対象を準備できない回も、batch自身だけの分析を起動しない。
-                    manifest["status"] = "resolved"
-                    session_review.write(path, manifest)
+                    writer.resolve()
                     continue
                 # 報告先は実際にモデルへ渡す対象から決め直す。
                 target_repo, cwd = _report_target(manifest["targets"])
-                manifest["target_repo"] = target_repo
-                session_review.write(path, manifest)
+                manifest = writer.select(manifest["targets"], target_repo)
             run_args = argparse.Namespace(**vars(args))
             run_args.target_repo, run_args.work_dir = target_repo, str(cwd)
             run_args.batch_manifest, run_args.run_id = str(path), run_id
@@ -539,5 +517,5 @@ def _prepare_failure(runs: pathlib.Path, target_repo: str, failed: list[tuple[di
         "target_repo": target_repo,
         "prepared": [],
     }
-    session_review.write(path, manifest)
+    session_review.BatchWriter(path).create(manifest)
     _failure(manifest, path, "prepare-or-state: " + "; ".join(reason for _, reason in failed))

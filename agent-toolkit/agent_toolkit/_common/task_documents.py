@@ -17,6 +17,7 @@ import typing
 import yaml
 
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
+from agent_toolkit._common.next_action import ActionableError
 
 REQUIRED_INPUT_PREFIX = "必須入力名: "
 OPTIONAL_INPUT_PREFIX = "任意入力名: "
@@ -259,6 +260,30 @@ def launched_task_document(launch_prompt: str) -> pathlib.Path | None:
         return None
     path = pathlib.Path(first.removeprefix(_TASK_PROMPT_HEADER_PREFIX).removesuffix(_TASK_PROMPT_HEADER_SUFFIX))
     return path if path.is_absolute() and path.name.endswith(TASK_DOCUMENT_SUFFIX) else None
+
+
+def parse_named_inputs(lines: list[str]) -> dict[str, str]:
+    """起動本文の名前付き入力を復元し、説明行・重複項目を拒否する。"""
+    params: dict[str, str] = {}
+    current: str | None = None
+    first_continuation = False
+    for number, line in enumerate(lines, 2):
+        if current is not None and line.startswith("  "):
+            params[current] = line[2:] if first_continuation else params[current] + "\n" + line[2:]
+            first_continuation = False
+            continue
+        if not line.strip():
+            continue
+        name, separator, value = line.partition(":")
+        if not separator or (value and not value.startswith(" ")) or not INPUT_NAME_PATTERN.fullmatch(name) or name in params:
+            raise ActionableError(
+                f"入力本文の{number}行目を受理できません: {line}",
+                next_action="指示と宣言済みの名前付き入力だけで再実行する。本文生成にはdelegation-promptを使う",
+            )
+        current = name
+        params[name] = value.removeprefix(" ")
+        first_continuation = not params[name]
+    return params
 
 
 def find_task_documents(text: str) -> list[pathlib.Path]:

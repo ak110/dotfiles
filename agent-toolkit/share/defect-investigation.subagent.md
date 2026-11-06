@@ -22,6 +22,7 @@ writes_worktree: false
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 類似見直しの検索と個別判定を依頼する前 | `similar-review.parent.md` | 判断 | `read:agent-toolkit:*/share/similar-review.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」`、`agent-basics:bugfix/references/root-cause-actions.md#「処置の階層」`、`agent-basics:bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」`、`section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「処置の階層」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
@@ -32,6 +33,10 @@ writes_worktree: false
 - `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと、新規作成か継続かの区分。記録する内容は`${CLAUDE_PLUGIN_ROOT}/share/rules-subagent.md`「多段工程の引き継ぎ記録」に従う
 
 ## 調査
+
+ユーザー介入、セルフレビューと他者の指摘、lint・自動テスト・CI等のエラーは`agent-basics:bugfix`による原因分析と類似見直しの対象とする。
+類似見直しの検索と個別判定は`similar-review.parent.md`の専用担当を起動して受け取り、原因分析と採否は自身が所有する。
+初回の仕組みによる検出だけ再発防止策を省略できる条件と、反復・ユーザー介入時の検討はbugfixに従う。
 
 `agent-basics:bugfix`に従い、初動対応から対策・回帰防止策・横展開処置・再発防止策の確定までを一貫して実施する。対象リポジトリやキューの操作は読み取り専用に限定し、作業用の一時ファイルはmanaged-temp（`agent-toolkit:managed-temp`）に配置する。対策は、委譲元がそのまま修正作業へ適用できる粒度（変更対象のファイル、変更内容、修正後に確認すべき観測項目）で確定させる。
 詳細な分析内容（探索の経緯、母集団に含まれる各対象の判定、対照実験の結果、独立走査の記録など）は、自身のセッションのmanaged-tempへ`分析記録`ファイルとして保存する。返却フォーマットの各欄には結論を記載し、その根拠が書かれている分析記録内の該当箇所を示す。委譲元が同じ探索や分析をゼロからやり直すことなく、根拠と適用条件をスムーズに検収できるようにするためである。

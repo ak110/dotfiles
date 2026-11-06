@@ -11,7 +11,7 @@ description: >
 # dotfilesのリリース運用
 
 このスキルは、本リポジトリにおける`develop`と`master`のリリース運用手順、および日次リリースの判定手順をまとめたものである。
-テストやコード整形の詳細な手順については`develop-dotfiles`を参照する。
+公開前の検証手順は`develop-dotfiles`の`references/publishing.md`を参照する。
 
 ## 名指し参照の読込方法
 
@@ -20,7 +20,7 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/SKILL.md` | 判断 | `read:*/skills/develop-dotfiles/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/references/publishing.md` | 判断 | `read:*/skills/develop-dotfiles/references/publishing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-external-writes/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-external-writes/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
@@ -29,10 +29,10 @@ description: >
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| branch初期化、GitHubの保護設定またはマージ後の詳細手順が要る時 | [developとmasterのリリース運用](../../../docs/development/concepts-workflows.md#developとmasterのリリース運用)、[branchとリリースの設計](../../../docs/development/design-release.md#developとmasterのbranchリリース設計) | 判断 | `section:*/docs/development/concepts-workflows.md#developとmasterのリリース運用`、`section:*/docs/development/design-release.md#developとmasterのbranchリリース設計` | |
-| 主checkoutのfast-forward後に常時稼働サーバーへ反映する時 | [atk serveへの反映](../../../docs/development/operations.md#fast-forward後のatk-serveへの反映) | 判断 | `section:*/docs/development/operations.md#fast-forward後のatk-serveへの反映` | |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| branch初期化、GitHubの保護設定またはマージ後の詳細手順が要る時 | [developとmasterのリリース運用](../../../docs/development/concepts-workflows.md#developとmasterのリリース運用)、[branchとリリースの設計](../../../docs/development/design-release.md#developとmasterのbranchリリース設計) | 判断 | `section:*/docs/development/concepts-workflows.md#developとmasterのリリース運用`、`section:*/docs/development/design-release.md#developとmasterのbranchリリース設計` |
+| 主checkoutのfast-forward後に常時稼働サーバーへ反映する時 | [atk serveへの反映](../../../docs/development/operations.md#fast-forward後のatk-serveへの反映) | 判断 | `section:*/docs/development/operations.md#fast-forward後のatk-serveへの反映` |
 
 ## 常時稼働サーバーへの反映
 
@@ -59,5 +59,5 @@ statusline（`rust/claude-statusline/`配下）に変更を加えた場合は、
 公開担当者はその根拠が統合差分にも当てはまるか確認し、`develop`へpushする前に版数と`Cargo.lock`の整合を確かめる。
 対象は配下の全ファイルの差分であり、テストコード・テスト入力のみや`Cargo.lock`のみの変更も含む。
 GitHub Actionsの`release-statusline.yaml`は差分があるマージごとに`statusline-v<version>`タグを生成するため、据え置くと既存タグと衝突する。
-公開前の最終検証は`develop-dotfiles`「自動チェックと依存更新」に従い、pyfltrへ`--enable=statusline-version`を指定し、既存チェックの結果を確認する。
+公開前の最終検証は`develop-dotfiles`の`references/publishing.md`「公開前の検証」に従い、pyfltrへ`--enable=statusline-version`を指定し、既存チェックの結果を確認する。
 レーンの途中commitでは既定無効を維持し、採番の完了は公開担当が検収する。

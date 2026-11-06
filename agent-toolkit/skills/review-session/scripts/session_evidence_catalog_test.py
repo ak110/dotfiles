@@ -542,7 +542,7 @@ def test_tool_calls_with_catalog_include_delegates_outside_root_within_window(
 
 
 def test_catalog_still_rejects_other_query_modes(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """カタログと本文検索の併用を拒否し、利用できる照会を案内する。"""
+    """カタログと単一entryの詳細指定の併用を拒否し、利用できる照会を案内する。"""
     root = tmp_path / "project"
     write_jsonl(root / "session.jsonl", [timestamped_entry("2026-10-06T00:00:00Z", "記録")])
 
@@ -555,8 +555,8 @@ def test_catalog_still_rejects_other_query_modes(tmp_path: pathlib.Path, capsys:
                 "2026-10-05T00:00:00Z",
                 "--observation-boundary",
                 "2026-10-07T00:00:00Z",
-                "--grep",
-                "記録",
+                "--detail",
+                "claude:session:1",
             ]
         )
         == 2

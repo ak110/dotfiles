@@ -289,6 +289,7 @@ def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
     entrypoint.write_text(
         _SCRIPT.read_text(encoding="utf-8")
         .replace("agent_toolkit._hooks", "_hooks")
+        .replace("from _hooks.pretooluse.warning_context", "from agent_toolkit._hooks.pretooluse.warning_context")
         .replace("agent_toolkit._common.session_activity", "_hooks.session_activity"),
         encoding="utf-8",
     )
@@ -296,7 +297,7 @@ def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
     hooks.mkdir()
     (hooks / "__init__.py").write_text("", encoding="utf-8")
     source_hooks = _SCRIPT.parent / "_hooks"
-    for name in ("notice.py", "message_format.py", "agent_id.py", "timing.py"):
+    for name in ("notice.py", "message_format.py", "agent_id.py", "timing.py", "host.py"):
         (hooks / name).write_text((source_hooks / name).read_text(encoding="utf-8"), encoding="utf-8")
     return entrypoint
 

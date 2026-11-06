@@ -30,6 +30,7 @@ lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_con
 lazy from agent_toolkit._atk.wi import repo as _wi_repo
 lazy from agent_toolkit._atk.wi import show as _show
 lazy from agent_toolkit._atk.wi import submission as _submission
+lazy from agent_toolkit._atk.wi import submit as _submit
 lazy from agent_toolkit._atk.wi import sync as _wi_sync
 lazy from agent_toolkit._atk.wi import uwi as _uwi
 lazy from agent_toolkit._atk.wi.mutations import content as _mutation_content
@@ -898,6 +899,12 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         help="UWIの回答状況で限定する。省略時は全ての回答状況を含める。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(grep, multiple=True)
+    grep.add_argument(
+        "--since",
+        type=datetime.date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="ファイル名の投入日が指定日以後のWIだけを検索する。投入日を持たない旧名は含めない。",
+    )
     _add_important_filter_arg(grep)
     _add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
@@ -1034,6 +1041,12 @@ def _add_mq_submission_parser(sub: Any) -> None:
             default=None,
             help="記録する会話のID。省略時は`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順に使う。",
         )
+    submit = _atk_help.add_command(sub, "submit", **_atk_help.HELP["atk wi submit"])
+    operation = submit.add_mutually_exclusive_group(required=True)
+    operation.add_argument("--request-file", type=pathlib.Path, help="自己完結した受付JSONのUTF-8ファイル")
+    operation.add_argument("--show", metavar="REQUEST_ID", help="受付と同じ実行の処置・未報告を照会する")
+    operation.add_argument("--finish", type=pathlib.Path, help="投入専用セッションの要求ごとの結果JSON")
+    operation.add_argument("--resume", metavar="REQUEST_ID", help="同じ受付とrun_idの未完了工程を独立監督へ再移管する")
 
 
 def build_parser(mq: argparse.ArgumentParser) -> None:
@@ -1267,6 +1280,8 @@ def dispatch(
     if sub == "submission":
         # 会話別の状態ディレクトリだけを扱い、private-notesを必要としない。
         return _submission.cmd_submission(args)
+    if sub == "submit":
+        return _submit.dispatch(args)
     private_notes = (
         _private_notes.default_private_notes(home)
         if sub in ("add", "edit") and args.dry_run

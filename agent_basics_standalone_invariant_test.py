@@ -1,7 +1,7 @@
 """agent-basicsをagent-toolkitなしで導入したエージェントが、配布物の中だけで指示を理解・実行できることを検査する。
 
 機械的に判定できる依存（agent-toolkitの名前空間・ファイル・コマンド・MCP、参照先の不在、読込表の別ファイル化）だけを扱う。
-新しく持ち込まれた未定義の用語は検出できないため、`.claude/skills/agent-toolkit-edit/SKILL.md`「agent-basicsとの責務境界」の
+新しく持ち込まれた未定義の用語は検出できないため、`.claude/skills/agent-toolkit-edit/references/agent-documents.md`「agent-basicsとの責務境界」の
 単体利用の確認で補う。
 """
 

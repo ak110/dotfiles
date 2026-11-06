@@ -263,7 +263,7 @@ async def _auto_resume_after_child_termination(
     wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
     await _await_state(lambda: session.awaiting_auto_resume)
     assert wait_task.done() is False
-    session_registry.publish(child_session_id, terminal=True)
+    session_registry.publish(child_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
     await _await_state(lambda: len(client.queries) == 2)
     client.emit(ResultMessage("孫session確認後の結果"))
     return await wait_task
@@ -338,7 +338,7 @@ async def test_wait_defers_result_until_child_session_terminates(
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = "child-wait"
         session = await _start(manager, tmp_path, monkeypatch)
-        session_registry.publish(child_session_id, terminal=False)
+        session_registry.publish(child_session_id, state=session_registry.PublicationState.PENDING_RUNNING)
         _emit_child_start(client, child_session_id)
         client.emit(ResultMessage("孫session待機中"))
 
@@ -396,7 +396,7 @@ async def test_wait_preserves_unobserved_child_sessions_until_all_terminate(
         terminal_session_id = f"child-terminal-{unobserved_state}"
         unobserved_session_id = f"child-{unobserved_state}"
         session = await _start(manager, tmp_path, monkeypatch)
-        session_registry.publish(terminal_session_id, terminal=True)
+        session_registry.publish(terminal_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         if unobserved_state == "unreadable":
             registry_path = session_registry.registry_directory() / f"{unobserved_session_id}.json"
             registry_path.parent.mkdir(parents=True, exist_ok=True)
@@ -410,7 +410,7 @@ async def test_wait_preserves_unobserved_child_sessions_until_all_terminate(
         await manager._advance_child_session_wait(session)
         assert not wait_task.done() and len(client.queries) == 1
         assert session.live_child_session_ids == {unobserved_session_id}
-        session_registry.publish(unobserved_session_id, terminal=True)
+        session_registry.publish(unobserved_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         await _await_state(lambda: len(client.queries) == 2)
         client.emit(ResultMessage("孫session混在時の再開結果"))
         result = await wait_task
@@ -435,7 +435,7 @@ async def test_wait_tracks_new_unobserved_children_across_auto_resumes(
         second_terminal_session_id = "child-terminal-second"
         unreadable_session_id = "child-unreadable-second"
         session = await _start(manager, tmp_path, monkeypatch)
-        session_registry.publish(first_terminal_session_id, terminal=True)
+        session_registry.publish(first_terminal_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         _emit_child_start(client, first_terminal_session_id)
         _emit_child_start(client, missing_session_id)
         client.emit(ResultMessage("1回目の孫session混在結果"))
@@ -444,10 +444,10 @@ async def test_wait_tracks_new_unobserved_children_across_auto_resumes(
         await _await_state(lambda: session.awaiting_auto_resume)
         await manager._advance_child_session_wait(session)
         assert len(client.queries) == 1 and not wait_task.done()
-        session_registry.publish(missing_session_id, terminal=True)
+        session_registry.publish(missing_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         await _await_state(lambda: len(client.queries) == 2)
 
-        session_registry.publish(second_terminal_session_id, terminal=True)
+        session_registry.publish(second_terminal_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         registry_path = session_registry.registry_directory() / f"{unreadable_session_id}.json"
         registry_path.parent.mkdir(parents=True, exist_ok=True)
         registry_path.write_text("{", encoding="utf-8")
@@ -457,7 +457,7 @@ async def test_wait_tracks_new_unobserved_children_across_auto_resumes(
         await _await_state(lambda: session.awaiting_auto_resume)
         await manager._advance_child_session_wait(session)
         assert len(client.queries) == 2 and not wait_task.done()
-        session_registry.publish(unreadable_session_id, terminal=True)
+        session_registry.publish(unreadable_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         await _await_state(lambda: len(client.queries) == 3)
 
         client.emit(ResultMessage("連続自動再開後の結果"))
@@ -513,7 +513,6 @@ async def test_wait_returns_last_result_after_chained_auto_resumes(
 
         assert result["status"] == "completed"
         assert result["agent_message"] == "最終結果"
-        assert session.auto_resume_consumed is True
 
 
 @pytest.mark.asyncio
@@ -526,7 +525,7 @@ async def test_wait_response_keys_are_unchanged_with_child_sessions(
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = "child-keys"
         session = await _start(manager, tmp_path, monkeypatch)
-        session_registry.publish(child_session_id, terminal=False)
+        session_registry.publish(child_session_id, state=session_registry.PublicationState.PENDING_RUNNING)
         _emit_child_start(client, child_session_id)
         client.emit(ResultMessage("孫session待機中"))
 
@@ -556,12 +555,12 @@ async def test_live_claude_child_survives_notification_deadline(
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = "child-deadline"
         session = await _start(manager, tmp_path, monkeypatch)
-        session_registry.publish(child_session_id, terminal=False)
+        session_registry.publish(child_session_id, state=session_registry.PublicationState.PENDING_RUNNING)
         _emit_child_start(client, child_session_id)
         client.emit(ResultMessage("孫session待機中"))
 
         await _await_state(lambda: session.awaiting_auto_resume)
-        session.auto_resume_deadline = 0.0
+        session.set_background_deadline(0.0)
         assert (await _wait_with_timeout(manager, 0))["status"] == "running"
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
         assert result["agent_message"] == "孫session確認後の結果"
@@ -697,7 +696,7 @@ async def test_codex_child_session_holds_result_until_single_auto_resume(
     """
     async with _codex_parent_with_child(tmp_path) as (manager, backend, session, _writer):
         child_session_id = "codex-child"
-        session_registry.publish(child_session_id, terminal=False)
+        session_registry.publish(child_session_id, state=session_registry.PublicationState.PENDING_RUNNING)
         await _complete_codex_turn_with_child(backend, session, child_session_id)
 
         assert session.awaiting_auto_resume is True
@@ -714,12 +713,12 @@ async def test_codex_child_session_holds_result_until_single_auto_resume(
             state.begin_reply(target)
             target.status = "completed"
             target.agent_message = "AUTO_RESUME_COMPLETED"
-            target.turn_completed = True
+            target.record_turn_completed()
             target.touch()
             return {"delivery": "reply_started", "previous_result": {}}
 
         monkeypatch.setattr(backend, "send_message", resume)
-        session_registry.publish(child_session_id, terminal=True)
+        session_registry.publish(child_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         result = await _wait_with_timeout(manager, 5)
         assert result["status"] == "completed"
         assert result["agent_message"] == "AUTO_RESUME_COMPLETED"
@@ -749,7 +748,7 @@ async def test_agents_wait_cli_keeps_target_until_child_termination_and_same_ses
             resumed.append((target.session_id, target.turn_seq))
             target.status = "completed"
             target.agent_message = "CLI_RESUMED_WORK_COMPLETED"
-            target.turn_completed = True
+            target.record_turn_completed()
             target.touch()
             return {"delivery": "reply_started", "previous_result": {}}
 
@@ -775,7 +774,7 @@ async def test_agents_wait_cli_keeps_target_until_child_termination_and_same_ses
         cli = pathlib.Path(__file__).with_name("atk.py")
         wait_directory = shared_layout.status_directory("root", isolated_state) / "wait-results" / "root.json"
         try:
-            session_registry.publish(child, terminal=False)
+            session_registry.publish(child, state=session_registry.PublicationState.PENDING_RUNNING)
             await _complete_codex_turn_with_child(backend, session, child)
             await manager.activate_async()
             process = await asyncio.create_subprocess_exec(
@@ -801,7 +800,7 @@ async def test_agents_wait_cli_keeps_target_until_child_termination_and_same_ses
             assert process.returncode is None, "子の未終了中はCLIが待機を続ける"
             assert not resumed
 
-            session_registry.publish(child, terminal=True)
+            session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=_STATE_TIMEOUT)
             assert process.returncode == 0, stderr.decode()
             rows = [json.loads(line) for line in stdout.decode().splitlines()]
@@ -826,7 +825,7 @@ async def test_codex_kill_during_hold_returns_pending_result_with_unobserved_chi
     """保留中のCodex sessionへの中断は要求を送らず、保留した結果を未観測の孫の識別子とともに確定する。"""
     async with _codex_parent_with_child(tmp_path) as (_manager, backend, session, _writer):
         child_session_id = "codex-child"
-        session_registry.publish(child_session_id, terminal=False)
+        session_registry.publish(child_session_id, state=session_registry.PublicationState.PENDING_RUNNING)
         await _complete_codex_turn_with_child(backend, session, child_session_id)
         await backend.interrupt(session)
         assert session.result_available is True
@@ -842,10 +841,10 @@ async def test_codex_auto_resume_failure_reports_unobserved_child(
     """再開の配送に失敗した場合は、待機表明を成功として扱わず、失敗と孫の識別子を返す。"""
     async with _codex_parent_with_child(tmp_path) as (manager, backend, session, _writer):
         child_session_id = "codex-child"
-        session_registry.publish(child_session_id, terminal=False)
+        session_registry.publish(child_session_id, state=session_registry.PublicationState.PENDING_RUNNING)
         await _complete_codex_turn_with_child(backend, session, child_session_id)
         monkeypatch.setattr(backend, "send_message", AsyncMock(side_effect=RuntimeError("resume unavailable")))
-        session_registry.publish(child_session_id, terminal=True)
+        session_registry.publish(child_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         result = await _wait_with_timeout(manager, 5)
         assert result["status"] == "failed"
         assert result["error"]["unobservedSessions"] == [child_session_id]
@@ -857,15 +856,15 @@ async def test_codex_live_child_survives_notification_deadline(monkeypatch: pyte
     """子の生存中は期限を過ぎても保留し、終了後に同じ親を再開して最終結果を返す。"""
     async with _codex_parent_with_child(tmp_path) as (manager, backend, session, _writer):
         child_session_id = "codex-child"
-        session_registry.publish(child_session_id, terminal=False)
+        session_registry.publish(child_session_id, state=session_registry.PublicationState.PENDING_RUNNING)
         await _complete_codex_turn_with_child(backend, session, child_session_id)
-        session.auto_resume_deadline = 0.0
+        session.set_background_deadline(0.0)
 
         async def resume_and_complete(current: state.SessionState, _prompt: str, **_kwargs: Any) -> dict[str, Any]:
             state.begin_reply(current)
             current.agent_message = "子の成果を反映した最終結果"
             current.status = "completed"
-            current.turn_completed = True
+            current.record_turn_completed()
             current.touch()
             return {"delivery": "reply_started"}
 
@@ -874,7 +873,7 @@ async def test_codex_live_child_survives_notification_deadline(monkeypatch: pyte
         assert (await _wait_with_timeout(manager, 0))["status"] == "running"
         assert session.awaiting_auto_resume
         send_message.assert_not_awaited()
-        session_registry.publish(child_session_id, terminal=True)
+        session_registry.publish(child_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         result = await _wait_with_timeout(manager, 5)
         assert result["status"] == "completed"
         assert result["agent_message"] == "子の成果を反映した最終結果"
@@ -908,7 +907,6 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
 
         assert result["status"] == "completed"
         assert result["agent_message"] == "再開結果"
-        assert session.auto_resume_consumed is True
         assert not session.live_tasks
         await _await_state(lambda: session.session_id not in manager.sessions)
         assert await _wait_with_timeout(manager, 0) == {"status": "expired"}
@@ -932,7 +930,7 @@ async def test_claude_collects_background_wait_before_holding_result(
         session = await _start(manager, tmp_path, monkeypatch)
         _emit_child_start(client, child)
         if remaining == "child":
-            session_registry.publish("remaining-child", terminal=False)
+            session_registry.publish("remaining-child", state=session_registry.PublicationState.PENDING_RUNNING)
             _emit_child_start(client, "remaining-child")
         elif remaining == "task":
             client.emit(TaskStartedMessage("remaining-task"))
@@ -966,7 +964,7 @@ async def test_claude_collects_background_wait_before_holding_result(
             client.emit(TaskNotificationMessage("remaining-task", "completed"))
             client.emit(ResultMessage("残作業後の結果", origin={"kind": "task-notification"}))
         elif remaining == "child":
-            session_registry.publish("remaining-child", terminal=True)
+            session_registry.publish("remaining-child", state=session_registry.PublicationState.RESULT_COMPLETED)
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         if remaining == "child":
             await _await_state(lambda: len(client.queries) == 2)
@@ -988,12 +986,11 @@ async def test_result_without_background_task_is_immediately_available(
     """バックグラウンドタスクが無いturnは従来どおり最初の結果で終了する。"""
     client = ControlledClaudeClient()
     async with _manager(client, monkeypatch) as (manager, _backend):
-        session = await _start(manager, tmp_path, monkeypatch)
+        await _start(manager, tmp_path, monkeypatch)
         client.emit(ResultMessage("通常結果"))
         result = await _wait_with_timeout(manager, 1)
 
         assert result["agent_message"] == "通常結果"
-        assert session.auto_resume_consumed is False
 
 
 @pytest.mark.asyncio
@@ -1036,7 +1033,7 @@ async def test_background_agent_survives_bash_notification_deadline(
         client.emit(TaskStartedMessage("agent", task_type=task_type))
         client.finish_turn(ResultMessage("背景エージェントを待機中"))
         await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
-        session.auto_resume_deadline = 0.0
+        session.set_background_deadline(0.0)
         # メッセージ受信を進め、backendとmanager双方の期限判定を通す。
         client.emit(TaskUpdatedMessage("agent", "running"))
         assert (await _wait_with_timeout(manager, 0))["status"] == "running"
@@ -1104,7 +1101,6 @@ async def test_kill_interrupts_while_initial_result_is_pending(
         assert result["error"] == {"unfinishedBackgroundTasks": ["task-1"], "heldResultFinalized": True}
         assert result["kill_requested"] is True
         assert client.interrupts == 1
-        assert session.auto_resume_consumed is True
 
         assert client.disconnected
         client.emit(SystemMessage(session.session_id))
@@ -1159,7 +1155,7 @@ async def test_send_message_preserves_background_and_mixed_waits(
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
         if mixed:
-            session_registry.publish("mixed-child", terminal=False)
+            session_registry.publish("mixed-child", state=session_registry.PublicationState.PENDING_RUNNING)
             _emit_child_start(client, "mixed-child")
         client.emit(TaskStartedMessage("task-1"))
         client.emit(ResultMessage("初回結果"))
@@ -1170,7 +1166,6 @@ async def test_send_message_preserves_background_and_mixed_waits(
         assert response["delivery"] == "reply_started"
         assert "previous_result" not in response
         assert session.status == "running"
-        assert session.auto_resume_consumed is False
         assert set(session.live_tasks) == {"task-1"}
         assert [delivery_payload(value) for value in client.queries] == ["調査", "続行"]
 
@@ -1178,7 +1173,7 @@ async def test_send_message_preserves_background_and_mixed_waits(
         await _await_state(lambda: session.awaiting_auto_resume)
         client.emit(TaskUpdatedMessage("task-1", "completed"))
         if mixed:
-            session_registry.publish("mixed-child", terminal=True)
+            session_registry.publish("mixed-child", state=session_registry.PublicationState.RESULT_COMPLETED)
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         if mixed:
             await _await_state(lambda: len(client.queries) == 3)
@@ -1202,7 +1197,7 @@ async def test_send_message_wait_survives_failure_and_completion_order(
         output = tmp_path / "wait-output.txt"
         output.write_text("", encoding="utf-8")
         session = await _start(manager, tmp_path, monkeypatch)
-        session_registry.publish(child, terminal=False)
+        session_registry.publish(child, state=session_registry.PublicationState.PENDING_RUNNING)
         _emit_child_start(client, child)
         client.emit(AssistantMessage([SimpleNamespace(id="wait", name="Bash", input={"command": "atk agents wait"})]))
         client.emit(
@@ -1228,12 +1223,12 @@ async def test_send_message_wait_survives_failure_and_completion_order(
 
         async def query(prompt: str) -> None:
             if completion_order == "during":
-                session_registry.publish(child, terminal=True)
+                session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)
             await original_query(prompt)
 
         monkeypatch.setattr(client, "query", query)
         if completion_order == "before":
-            session_registry.publish(child, terminal=True)
+            session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)
         for _ in range(2):
             response = await manager.send_message(session.session_id, "追加指示", timeout=1)
             assert "previous_result" not in response
@@ -1242,7 +1237,7 @@ async def test_send_message_wait_survives_failure_and_completion_order(
             client.emit(ResultMessage("追送後の待機"))
             await _await_state(lambda: session.awaiting_auto_resume)
         if completion_order == "after":
-            session_registry.publish(child, terminal=True)
+            session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         await _await_state(lambda: len(client.queries) == 4)
         client.emit(ResultMessage("子の結果を確認した"))
@@ -1281,7 +1276,7 @@ async def test_send_message_preserves_child_wait_until_completion(
                 if self.fail:
                     raise codex_backend.JsonRpcResponseError(method, -32602, "配送拒否")
                 if completion_order == "during":
-                    session_registry.publish(child, terminal=True)
+                    session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)
                 self.turns += 1
                 if on_sent is not None:
                     on_sent()
@@ -1293,7 +1288,7 @@ async def test_send_message_preserves_child_wait_until_completion(
 
         client = Client()
         backend._clients[session.session_id] = cast(codex_backend.JsonRpcProcess, client)
-        session_registry.publish(child, terminal=False)
+        session_registry.publish(child, state=session_registry.PublicationState.PENDING_RUNNING)
         await _complete_codex_turn_with_child(backend, session, child)
         failed = await manager.send_message(session.session_id, "追加指示", timeout=1)
         assert failed["delivery"] == "reply_failed"
@@ -1302,7 +1297,7 @@ async def test_send_message_preserves_child_wait_until_completion(
         assert session.live_child_session_ids == {child}
         client.fail = False
         if completion_order == "before":
-            session_registry.publish(child, terminal=True)
+            session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)
         for _ in range(2):
             response = await manager.send_message(session.session_id, "追加指示", timeout=1)
             assert response["delivery"] == "reply_started"
@@ -1316,7 +1311,7 @@ async def test_send_message_preserves_child_wait_until_completion(
             )
             assert session.awaiting_auto_resume
         if completion_order == "after":
-            session_registry.publish(child, terminal=True)
+            session_registry.publish(child, state=session_registry.PublicationState.RESULT_COMPLETED)
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         await _await_state(lambda: client.turns == 3)
         await backend._handle_notification(
@@ -1362,7 +1357,6 @@ async def test_new_reply_can_auto_resume_after_prior_auto_resume(
 
         response = await manager.send_message(session.session_id, "次の作業", timeout=1)
         assert response["delivery"] == "reply_started"
-        assert session.auto_resume_consumed is False
 
         client.emit(TaskStartedMessage("task-2"))
         client.emit(ResultMessage("次の初回結果"))
@@ -1416,7 +1410,6 @@ async def test_wait_returns_resumed_result_regardless_of_notification_order(
 
         assert result["status"] == "completed"
         assert result["agent_message"] == "RESUMED"
-        assert session.auto_resume_consumed is True
         assert not [record for record in caplog.records if "claude_turn_state_unreported" in record.getMessage()]
 
 
@@ -1434,7 +1427,6 @@ async def test_result_without_background_task_is_published_on_idle(
 
         assert result["agent_message"] == "通常結果"
         assert session.cli_turn_state == "idle"
-        assert session.auto_resume_consumed is False
 
 
 @pytest.mark.asyncio
@@ -1561,4 +1553,3 @@ async def test_previous_held_result_is_released_on_resumed_turn_start(
         result = await wait_task
 
         assert (result["status"], result["agent_message"]) == ("completed", "RESUMED")
-        assert session.auto_resume_consumed is True

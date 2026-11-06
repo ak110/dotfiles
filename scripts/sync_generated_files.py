@@ -33,6 +33,7 @@ GENERATORS = (
     "scripts/sync_antigravity_plugin.py",
 )
 RETURN_TARGETS = (
+    ("similar-review", "share/similar-review.parent.md", "類似見直し担当の返却契約", 2),
     ("exec", "share/exec.parent.md", "レーン担当の返却契約", 2),
     ("exec-review", "share/exec-review.parent.md", "実行レビューの返却契約", 2),
     ("reader-fit-review", "share/reader-fit-review.parent.md", "読者別探索の返却契約", 2),

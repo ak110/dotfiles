@@ -18,7 +18,7 @@ Python依存の同期では、Makefileから継承する`UV_FROZEN=1`を解除�
 適用内容だけを確認する場合は`mise bootstrap --dry-run`を使う。
 宣言済み状態との差分は`mise bootstrap status`で確認する。
 
-専用worktreeや回収予定の検証用複製の準備では、[develop-dotfiles](../../.claude/skills/develop-dotfiles/SKILL.md)の「開発手順」で、mise trustとローカル依存の同期を行う。
+専用worktreeや回収予定の検証用複製の準備では、[develop-dotfilesの作業ツリーの準備](../../.claude/skills/develop-dotfiles/references/worktree.md#作業ツリーの準備)で、mise trustとローカル依存の同期を行う。
 初期セットアップは共有CLI、Git hookとcommit templateも登録するため、一時作業場所の準備には使わない。
 共有CLIの導入元は、回収後も存続する恒久作業ツリーに保つ。
 

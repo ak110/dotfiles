@@ -78,7 +78,7 @@ async def test_native_children_hold_and_resume_once(tmp_path: pathlib.Path, monk
             await _item(backend, session, _activity("child-2", terminal, "end-2"))
         await owner._advance_child_session_wait(session)
         await owner._advance_child_session_wait(session)
-        assert session.turn_seq == 2 and session.auto_resume_consumed
+        assert session.turn_seq == 2
         prompts = [r[1]["input"] for r in client.requests if r[0] == "turn/start"]
         assert len(prompts) == 2 and "child-1" in str(prompts[-1]) and "child-2" in str(prompts[-1])
         # 終了後に元turnの項目が再掲されても子を再稼働へ戻さない。

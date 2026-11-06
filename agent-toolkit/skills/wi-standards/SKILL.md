@@ -10,6 +10,7 @@ description: >
 
 # AWIとUWIの共通規範
 
+`atk wi submit`の独立受付を受け取った実行は、読込表の投入セッション契約から開始する。
 ユーザーがWIを読む場面は、UWIへの回答、AWIの内容確認、処理後の結果確認の3つである。本文の先頭には、それぞれの場面で知りたいことに答える人間向けの説明を置き、その後にエージェント向けの詳細を続ける。
 AWIの冒頭に書く内容は`references/awi-body.md`「節の構成と分担」で定める。目的、変更の要点、変更後の結果を短く示す。
 UWIは`references/uwi-format.md`「構成」に従い、処理後は実際に何をどう変えたかを先に示す。
@@ -54,6 +55,7 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
+| run-skillの起動入力に独立WI受付があるとき | `../../share/wi-submission.md` | 判断 | `read:agent-toolkit:*/share/wi-submission.md` | |
 | 対象リポジトリとprivate-notesを扱う前 | `references/repository-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/repository-scope.md` | |
 | 委譲先が`atk wi`でキュー項目の状態を変更する場合 | `references/subagent-queue-ops.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/subagent-queue-ops.md` | |
 | 通常AWIを起草する前 | `references/awi-body.md`の冒頭の本文形式、「要求固有性と記載量」「節の構成と分担」「調査結果と判断根拠の記述」「完成条件」「配置規約と導入目的の調査」 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭「要求固有性と記載量」「節の構成と分担」「調査結果と判断根拠の記述」「完成条件」「配置規約と導入目的の調査」` | |

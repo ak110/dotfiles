@@ -55,6 +55,9 @@ if role == "spawner":
     while not (directory / "holder.pid").exists():
         time.sleep(0.01)
     if os.name == "nt":
+        # snapshotと親の終了を別の同期点にする試験だけが、このgateを作る。
+        while (directory / "retain-spawner").exists() and not (directory / "exit-spawner").exists():
+            time.sleep(0.01)
         sys.exit(0)
     time.sleep(120)
     sys.exit(0)

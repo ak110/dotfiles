@@ -149,6 +149,18 @@ def plugin_root_in_use(area: Path) -> bool:
     """同じPIDと作成時刻の生存を調べ、取得不能な記録も保持する。ロック下で呼ぶ。"""
     _usage_details.set("")
     _usage_basis.set(None)
+    for run_path in (state_paths.state_dir() / "wi-submit" / "runs").glob("*/run.json"):
+        run = json.loads(run_path.read_text(encoding="utf-8"))
+        if not isinstance(run, dict):
+            raise ValueError(f"独立WI受付の実行記録がobjectではない: {run_path}")
+        root = run.get("runtime_root")
+        if (
+            isinstance(root, str)
+            and Path(root).parent == area
+            and (run.get("status") != "completed" or not run.get("report_synced"))
+        ):
+            _usage_details.set(f"未完了または未報告の独立WI受付: {run_path}")
+            return True
     for path in _directory().glob(f"{_key(area)}-*.json"):
         try:
             record = json.loads(path.read_text(encoding="utf-8"))

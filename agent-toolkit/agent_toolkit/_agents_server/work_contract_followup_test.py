@@ -303,8 +303,7 @@ async def test_registered_launcher_reference_is_inherited(
     )
     session_registry.publish(
         "lane-session",
-        terminal=True,
-        status="completed",
+        state=session_registry.PublicationState.RESULT_COMPLETED,
         engine="claude",
         cwd=str(tmp_path),
         launch_info=session_registry.LaunchInfo(prompt=delivered),
@@ -314,8 +313,7 @@ async def test_registered_launcher_reference_is_inherited(
     legacy = "全体作業契約: 未解決。担当の成果が全体の要求を満たすことを確認する工程では、委譲元へ記録の所在を求める。"
     session_registry.publish(
         "legacy-session",
-        terminal=True,
-        status="completed",
+        state=session_registry.PublicationState.RESULT_COMPLETED,
         engine="claude",
         cwd=str(tmp_path),
         launch_info=session_registry.LaunchInfo(

@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from session_evidence_detail import _grep_collection_events
 from session_evidence_extract import (
     _CATALOG_ROOT_NEXT_ACTION,
     _ENV_ASSIGNMENT,
@@ -442,6 +443,69 @@ def _catalog_events(
         if selection.fields is not None:
             events = [{"kind": event["kind"], **{field: event[field] for field in selection.fields}} for event in events]
     return [*events, *_unresolved_events(scan.unresolved), summary], 0
+
+
+def _catalog_grep_events(
+    root: Path,
+    runtime: _Runtime,
+    since: datetime.datetime,
+    boundary: datetime.datetime,
+    pattern: re.Pattern[str],
+    selection: _CatalogSelection | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """期間内の本文・ツール入力を既存のgrepで検索し、記録別の件数と由来位置を返す。"""
+    scan = _catalog_scan(root, runtime, since, boundary)
+    if isinstance(scan, dict):
+        return [scan], 2
+    events: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    counts: dict[str, int] = {}
+    unresolved = list(scan.unresolved)
+    undated = 0
+    for parent in scan.parents:
+        try:
+            if selection is not None and not selection.matches(_catalog_parent_event(parent, runtime)):
+                continue
+            main = _catalog_read_item(parent.item)
+            collected, missing = _collect_records(str(main.path), main.records, None, boundary)
+        except ValueError as error:
+            return [_error_event(str(error), next_action=_CATALOG_ROOT_NEXT_ACTION)], 2
+        unresolved.extend(missing)
+        for item in collected:
+            if item.record_id in seen:
+                continue
+            seen.add(item.record_id)
+            matches: list[dict[str, Any]] = []
+            for event in _grep_collection_events([item], [], pattern):
+                if event["kind"] != "match":
+                    continue
+                try:
+                    stamp = _parse_timestamp(event["timestamp"]) if isinstance(event.get("timestamp"), str) else None
+                except ValueError:
+                    stamp = None
+                if stamp is None:
+                    undated += 1
+                elif since < stamp <= boundary:
+                    matches.append(event)
+            # grepは1つのentryから複数の一致行を返す。件数は既存の単一記録照会と同じentry単位にする。
+            counts[item.record_id] = len({event["line"] for event in matches})
+            events.extend(_referenced_provenance_events([item], matches))
+            events.extend(matches)
+            events.append({"kind": "summary", "record": item.record_id, "count": counts[item.record_id]})
+    events.extend(_unresolved_events(list(dict.fromkeys(unresolved))))
+    events.append(
+        {
+            "kind": "summary",
+            "count": sum(counts.values()),
+            "by_record": counts,
+            "scan_root": str(scan.root),
+            "since": since.isoformat(),
+            "observation_boundary": boundary.isoformat(),
+            "undated_match_count": undated,
+            "unresolved_record_count": len(set(unresolved)),
+        }
+    )
+    return events, 0
 
 
 def _catalog_tool_call_events(

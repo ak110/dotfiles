@@ -1,6 +1,7 @@
 """`atk wi grep`による本文全体の正規表現・固定文字列検索。"""
 
 import argparse
+import datetime
 import json
 import pathlib
 import re
@@ -64,6 +65,17 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         source=args.source,
         important=getattr(args, "important", "all"),
     ):
+        since = getattr(args, "since", None)
+        if since is not None:
+            match = re.fullmatch(r"(\d{8})-\d{6}-\d{3}\.md", path.name)
+            if match is None:
+                continue
+            try:
+                submitted = datetime.date.fromisoformat(match[1])
+            except ValueError:
+                continue
+            if submitted < since:
+                continue
         match_count = 0
         for line_no, line in enumerate(text.splitlines(), start=1):
             if any(pattern.search(line) for pattern in compiled):

@@ -608,7 +608,7 @@ async def test_public_show_preserves_latest_speed_in_live_and_retained_results(
         else:
             assert "fast_mode" not in visible
         session.status = "completed"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.agent_message = "完了"
         session.touch()
         writer.flush()

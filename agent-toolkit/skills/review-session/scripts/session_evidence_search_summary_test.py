@@ -253,6 +253,30 @@ def _history(tmp_path: pathlib.Path, runtime: str) -> tuple[pathlib.Path, list[s
 
 
 @pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_catalog_grep_counts_records_and_preserves_locations(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str
+) -> None:
+    """カタログで期間内の本文を検索し、詳細と件数だけの照会が同じ記録を数える。"""
+    _path, catalog = _history(tmp_path, runtime)
+    normal = _query(capsys, [*catalog, "--grep", "needle"])
+    summary = _query(capsys, [*catalog, "--grep", "needle", "--summary-only"])
+    matches = [event for event in normal if event["kind"] == "match"]
+    assert len(matches) == 4
+    assert all(event["record"] and event["line"] for event in matches)
+    assert not any("観測後" in event["text"] or "時刻なし" in event["text"] for event in matches)
+    assert normal[-1] == summary[-1]
+    assert normal[-1]["count"] == 4
+    assert sorted(normal[-1]["by_record"].values()) == [2, 2]
+    assert normal[-1]["undated_match_count"] == 2
+    assert not any(event["kind"] == "match" for event in summary)
+    empty = _query(capsys, [*catalog, "--grep", "not-present", "--summary-only"])
+    assert empty[-1]["count"] == 0
+    assert sorted(empty[-1]["by_record"].values()) == [0, 0]
+    invalid = _query(capsys, [*catalog, "--grep", "["], 2)
+    assert invalid[0]["kind"] == "error"
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
 @pytest.mark.parametrize("search", [["--user-match-fixed", "needle"], ["--user-match-regex", "n.e+dl[e]"]])
 def test_catalog_user_events_search(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str, search: list[str]

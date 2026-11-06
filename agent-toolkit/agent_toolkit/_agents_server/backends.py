@@ -66,8 +66,14 @@ class Backend(typing.Protocol):
         model_type: str | None = None,
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
     ) -> SessionState:
-        """新しいsessionの最初のturnを開始する。"""
+        """新しいsessionの最初のturnを開始する。
+
+        request_promptは資源案内で装飾する前の起動本文。最初の結果が応答より早く到着しても、
+        元の役割契約を検査できるよう、状態の生成時に設定する。
+        """
         ...
 
     async def resume(
@@ -81,6 +87,8 @@ class Backend(typing.Protocol):
         model_type: str | None = None,
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
         turn_seq: int = 0,
         fast_mode: bool | None = None,
     ) -> SessionState:
@@ -89,6 +97,7 @@ class Backend(typing.Protocol):
         成功した`prompt.deliver`が開始済みを保持する。backendが開始不能または開始不確定を
         捕捉して状態を返す場合は`prompt.record_delivery`でその結果を保持する。
         戻り値のsessionは応答前に終了へ進み得るため、配送の判定には使用しない。
+        元の起動本文と形式回復の消費履歴も、最初の結果を処理する前に状態へ復元する。
         """
         ...
 

@@ -89,7 +89,9 @@ async def test_show_does_not_report_stale_terminal_after_resume_elsewhere(
             # 共有登録の生成側だけを進め、照会側の復元済みメモリーはそのまま残す。
             current = state.SessionState(session_id, str(tmp_path), engine="codex", turn_seq=3)
             owner.sessions[session_id] = current
-            session_registry.publish(session_id, terminal=False, cwd=str(tmp_path), turn_seq=3, status="running")
+            session_registry.publish(
+                session_id, state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), turn_seq=3
+            )
             assert session_registry.resolve(session_id).state is session_registry.Resolution.RUNNING
             with pytest.raises(ValueError, match="turn_unobserved"):
                 (await observer.show_session(session_id))
@@ -105,7 +107,10 @@ async def test_show_does_not_report_stale_terminal_after_resume_elsewhere(
             assert result_path.read_bytes() == previous_bytes
 
             session_registry.publish(
-                session_id, terminal=True, cwd=str(tmp_path), turn_seq=3, status=cast(Any, terminal_status)
+                session_id,
+                state=session_registry.PublicationState.from_status(cast(Any, terminal_status), result_available=True),
+                cwd=str(tmp_path),
+                turn_seq=3,
             )
             shown = await observer.show_session(session_id, verbose=True)
             assert shown["turn_seq"] == 3
@@ -1045,7 +1050,9 @@ async def test_unrecoverable_registry_record_reports_next_action(
     """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
-    session_registry.publish(session_id, terminal=False, engine="codex", cwd=str(tmp_path))
+    session_registry.publish(
+        session_id, state=session_registry.PublicationState.PENDING_RUNNING, engine="codex", cwd=str(tmp_path)
+    )
     if registry_content is not None:
         (session_registry.registry_directory() / f"{session_id}.json").write_text(registry_content, encoding="utf-8")
     async with _manager_with_fake("codex") as (manager, backend):
@@ -1113,7 +1120,9 @@ async def test_show_reports_another_writer_for_running_registry_record(
     async with _manager_with_fake("codex") as (manager, _):
         session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
         monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-        session_registry.publish(session_id, terminal=False, engine="codex", cwd=str(tmp_path))
+        session_registry.publish(
+            session_id, state=session_registry.PublicationState.PENDING_RUNNING, engine="codex", cwd=str(tmp_path)
+        )
 
         with pytest.raises(ValueError) as excinfo:
             (await manager.show_session(session_id))
@@ -1169,11 +1178,11 @@ async def test_other_manager_shows_saved_activity_and_lists_unknown_legacy_time(
         session = state.SessionState("saved-activity", str(tmp_path), engine="codex", publish_registry=True)
         session.started_at = "2026-09-27T14:38:32+00:00"
         session.status = "completed"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.touch()
         owner.sessions[session.session_id] = session
         await owner.close()
-        session_registry.publish("legacy-activity", terminal=True, cwd=str(tmp_path))
+        session_registry.publish("legacy-activity", state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path))
         async with _manager_with_fake("codex") as (observer, _):
             saved = await observer.show_session(session.session_id, verbose=True)
             legacy = await observer.show_session("legacy-activity", verbose=True)
@@ -1422,11 +1431,10 @@ def _publish_record_with_processes(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         _ORPHANED_SESSION_ID,
-        terminal=False,
+        state=session_registry.PublicationState.PENDING_RUNNING,
         engine=engine,
         cwd=str(tmp_path),
         turn_seq=2,
-        status="running",
         processes=processes,
     )
 
@@ -1541,11 +1549,10 @@ def _publish_dead_owner_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathli
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", _DEAD_SERVER)
     session_registry.publish(
         _ORPHANED_SESSION_ID,
-        terminal=False,
+        state=session_registry.PublicationState.PENDING_RUNNING,
         engine=engine,
         cwd=str(tmp_path),
         turn_seq=2,
-        status="running",
         processes=(exited_process_identity(), exited_process_identity()),
         launch_info=session_registry.LaunchInfo(label="worker", prompt="作業する"),
     )

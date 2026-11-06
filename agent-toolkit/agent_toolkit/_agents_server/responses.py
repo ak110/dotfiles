@@ -315,10 +315,23 @@ class ManagerResponses(manager_base.ManagerBase):
             return []
         return await self._status_writer.take_notices_async(session_id)
 
-    async def _result_response_async(self, session: SessionState, *, include_progress: bool = True) -> dict[str, Any]:
-        """記録の読取をworkerで待ち、回収の状態をloop上で確定する。"""
-        identity = await run_file_operation(observed_session_identity, session.session_id) if session.terminal else None
-        return self._result_response(session, include_progress=include_progress, observed_identity=identity, identity_read=True)
+    async def _result_response_async(
+        self, session: SessionState, *, include_progress: bool = True, include_result: bool = True, consume: bool = True
+    ) -> dict[str, Any]:
+        """記録の読取をworkerで待ち、消費を指定した応答だけを回収済みにする。"""
+        identity = (
+            await run_file_operation(observed_session_identity, session.session_id)
+            if include_result and session.terminal
+            else None
+        )
+        return self._result_response(
+            session,
+            include_progress=include_progress,
+            include_result=include_result,
+            consume=consume,
+            observed_identity=identity,
+            identity_read=True,
+        )
 
     @staticmethod
     def _response_with_notices(response: dict[str, Any], notices: list[dict[str, str]]) -> dict[str, Any]:
@@ -332,6 +345,8 @@ class ManagerResponses(manager_base.ManagerBase):
         session: SessionState,
         *,
         include_progress: bool = True,
+        include_result: bool = True,
+        consume: bool = True,
         observed_identity: dict[str, str] | None = None,
         identity_read: bool = False,
     ) -> dict[str, Any]:
@@ -340,7 +355,9 @@ class ManagerResponses(manager_base.ManagerBase):
         `elapsed_seconds`はturnの`started_at`起点である。
         最終活動時刻と停滞の印は`list`が返すため、本応答へは載せない。
         """
-        response = session.public_status(include_result=session.result_available)
+        response: dict[str, Any] = session.public_status(include_result=include_result and session.result_available)
+        if not include_result and session.result_available:
+            response = {"status": "expired"} if session.result_delivered else {"status": "running", "progress": ""}
         if response.get("status") in TERMINAL_STATUSES:
             response["launch_identity"] = {
                 "engine": session.engine,
@@ -363,7 +380,7 @@ class ManagerResponses(manager_base.ManagerBase):
         )
         if next_action is not None:
             response = result_projection.append_result_next_action(response, next_action)
-        if "agent_message" in response:
+        if consume and "agent_message" in response:
             session.result_delivered = True
             session.touch()
         return response

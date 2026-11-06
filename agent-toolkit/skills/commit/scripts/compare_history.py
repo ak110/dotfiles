@@ -199,7 +199,11 @@ def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str], conflicts: s
     old_ids = [_content_id(work_dir, oid) for oid in old]
     new_ids = [_content_id(work_dir, oid) for oid in new]
     if len(set(old_ids)) != len(old) or len(set(new_ids)) != len(new):
-        raise ValueError("変更内容が重複し、commitの対応が一意ではありません")
+        # 同一変更の繰り返し（導入・復元・再導入など）は、競合解消が無く旧新の変更内容の並びが
+        # 完全に一致する場合だけ、位置で一意に対応付ける。並びが変わる場合は対応を決められない。
+        if conflicts or old_ids != new_ids:
+            raise ValueError("変更内容が重複し、commitの対応が一意ではありません")
+        return dict(zip(old, new, strict=True))
     if len(old) != len(new) or not conflicts <= set(old):
         raise ValueError(f"旧新の件数または--resolved-conflictの旧commitが不正です: old={old}, new={new}")
     destinations = dict(zip(new_ids, new, strict=True))

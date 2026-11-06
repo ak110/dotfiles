@@ -77,7 +77,13 @@ async def test_resource_snapshot_follows_public_session_lifecycle(
             _complete(resumed)
             await manager.wait()
             session_registry.publish(
-                "restored", terminal=True, engine=engine, cwd=str(tmp_path), model="model", effort="high", turn_seq=7
+                "restored",
+                state=session_registry.PublicationState.RESULT_COMPLETED,
+                engine=engine,
+                cwd=str(tmp_path),
+                model="model",
+                effort="high",
+                turn_seq=7,
             )
             await manager.send_message("restored", "登録簿から再開")
             _complete(manager.sessions["restored"])

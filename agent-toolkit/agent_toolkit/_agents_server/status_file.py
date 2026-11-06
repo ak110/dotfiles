@@ -392,7 +392,9 @@ class StatusFileWriter:
         exists = await run_file_operation(self.result_exists, session_id)
         return "published" if exists else "consumed"
 
-    async def take_result_async(self, session_id: str, *, collector: str) -> tuple[dict[str, Any] | None, str | None]:
+    async def take_result_async(
+        self, session_id: str, *, collector: str, expected_turn_seq: int | None = None
+    ) -> tuple[dict[str, Any] | None, str | None]:
         """結果の排他回収を待ち、公開台帳をloop上で更新する。"""
         async with self._write_lock:
             result = await run_file_operation(
@@ -402,6 +404,7 @@ class StatusFileWriter:
                 self._identity.file_name,
                 collector=collector,
                 state_root=self._state_root,
+                expected_turn_seq=expected_turn_seq,
             )
             if result[0] is not None:
                 self._published_results.discard(session_id)

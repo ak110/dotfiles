@@ -33,6 +33,7 @@ ready一覧は選定時点の情報を使用する。
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「採否の確定と終了区分」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「採否の確定と終了区分」` |
 | 統合後の即時修正の担当と時機を決める前 | `immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` |
+| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` | 判断 | `read:agent-toolkit:*/share/wi-submission.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/uwi-format.md#「ユーザーへ操作を依頼する場合」` |
@@ -50,6 +51,13 @@ ready一覧は選定時点の情報を使用する。
 外部操作として扱う対象は、選定結果の`選定`において`レーン`が`なし`、`上流投入`が`なし`以外、あるいは`プロジェクト固有の公開後の操作の順序`が`既定`以外となっている項目である。また、このセッション中に回答を受け取ったUWI、選定工程で記録されたプロジェクト固有の公開後操作、レーン工程から引き継いだ延期`adopt`の対象もこれに含まれる。これらが一切存在しない場合は、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」を主作業ツリーから読み取り専用で取得する。レーンの統合に伴う未公開コミットの有無は、この4項目を通じて検出する。4項目すべての成立が確認できた場合は、「公開状態の検収と再起動」において検収済みとして扱う。
 
 ## 公開担当の起動と並行工程
+
+発見済みの独立改善は、発見時に`immediate-fix.md`で処置を決め、必要な証拠が揃った時点から調査・起草・意味確認を進める。
+公開結果に依存しない原稿・報告の構成・公開前の実績・結果JSONは先に準備し、未確定のCI・修正後の結果は確定後に補う。
+同じSHAの公開CI、必要な修正と再検証、リリースの順序、最終結果の確定、使用中資源の回収条件は維持する。
+公開後にも独立して成立するWI投入は、`share/wi-submission.md`の公開受付へ自己完結した要求を渡してよい。
+永続受付と独立監督への所有移管を確認した後は、その投入自体を本回のwriter待機へ残さず、受付票と未完了の投入を報告へ区別して記載する。
+受付が成立しない場合は既存の投入担当の起動・検収・保存を同じセッションで完遂する。
 
 公開はメインまたは対象リポジトリ担当の直接実行を通常とし、`session-termination.parent.md`「直接実行」に従う。
 本書の公開担当には、直接実行する担当と委譲された担当の両方が含まれる。「起動」「返却」「差し戻し」は委譲時の操作とし、直接実行では自身の進捗記録と観測結果から同じ条件で検収し、失敗から回復する。

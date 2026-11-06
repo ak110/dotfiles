@@ -1,6 +1,6 @@
 # バージョン更新の詳細手順
 
-本書は、`.claude/skills/agent-toolkit-edit/SKILL.md`の「バージョン更新」節で扱う詳細手順をまとめた資料である。
+本書は配布プラグインのバージョン更新と生成物の同期手順をまとめた資料である。
 対象は`.claude-plugin/marketplace.json`の`plugins[]`に載る各プラグイン（`agent-toolkit/`と`agent-basics/`）で、判定と更新はプラグインごとに行う。
 本書の「定義元の2ファイル」は、対象プラグインの`<プラグインのディレクトリ>/.claude-plugin/plugin.json`と、`.claude-plugin/marketplace.json`の同名エントリを指す。
 `.chezmoi-source/`配下のchezmoi配布物、`bin/`配下のCLIラッパー、`scripts/`配下のヘルパースクリプトのみを変更する場合は対象外とし、バージョン番号を据え置く。
@@ -11,11 +11,13 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 動作検証を実行する前 | `../../develop-dotfiles/references/verification-values.md`の「検証コマンドの実行」 | 判断 | `section:*/skills/develop-dotfiles/references/verification-values.md#「検証コマンドの実行」` |
+| 全レーンの完了後にバージョンを更新する時点、および本書の更新手順へ入る前 | `agent-toolkit:process-wi/references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
 | Codex導入版変更後にrootを再解決する前 | `agent-toolkit:/share/rules-common.codex.md#「Codexのplugin root解決」` | 判断 | `section:agent-toolkit:*/share/rules-common.codex.md#「Codexのplugin root解決」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md#「版数と生成物」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「版数と生成物」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 公開前の統合差分に`rust/claude-statusline/`の変更がある時 | `../../release-dotfiles/SKILL.md`の「developとmasterのリリース運用」内のstatusline採番規定 | 判断 | `section:*/skills/release-dotfiles/SKILL.md#「developとmasterのリリース運用」` |
-| 公開前の統合差分に`rust/claude-statusline/`の変更があり、最終検証を選ぶ時 | `../../develop-dotfiles/SKILL.md`の「自動チェックと依存更新」 | 判断 | `section:*/skills/develop-dotfiles/SKILL.md#「自動チェックと依存更新」` |
+| 公開前の統合差分に`rust/claude-statusline/`の変更があり、最終検証を選ぶ時 | `../../develop-dotfiles/references/publishing.md`の「公開前の検証」 | 判断 | `section:*/skills/develop-dotfiles/references/publishing.md#「公開前の検証」` |
 
 ## 判定基準
 
@@ -31,7 +33,7 @@
 ## 競合解決と統合後の確認
 
 公開担当は統合差分の配布対象ごとに採番要否を確定し、レーンの引渡しと比較する。
-`rust/claude-statusline/`の変更には`release-dotfiles`の採番規定を適用し、`develop-dotfiles`「自動チェックと依存更新」の`--enable=statusline-version`による最終検証へ接続する。
+`rust/claude-statusline/`の変更には`release-dotfiles`の採番規定を適用し、`develop-dotfiles`の`references/publishing.md`「公開前の検証」の`--enable=statusline-version`による最終検証へ接続する。
 プラグインとstatuslineの採番は各定義元で判定する。
 
 rebaseやmergeの際に`version`の競合が発生した場合は、`(major, minor, patch)`の数値タプルを比較して値が大きい方を採用する。採用した値は、競合したプラグインの定義元の2ファイルへ反映する。続けて`scripts/sync_codex_plugin_manifests.py`を実行し、派生マニフェストを同期する。バージョンの整合性は`scripts/sync_codex_plugin_manifests.py --check`（最新なら終了コード0、不整合なら1、引数の誤用なら2）を実行して確認し、同スクリプトによる判定結果を採用する。
@@ -70,3 +72,13 @@ plugin cache directory配下にある新バージョンのrootパスを解決し
 
 配布用プラグインにおいて新しいCLI、コマンド、またはラッパースクリプトを公開する計画を立てる際は、エンドユーザー環境で正常に起動できるようになるまでの導入手順を`## 要件・外部仕様`に明記する。対象はインストールスクリプト、post-apply処理、PATHの通し方、bash補完の登録、Windows用ペアファイルの作成である。プラグイン単体を利用するエンドユーザーが、PATHの追加や環境変数の設定以外の特別な設定なしにコマンドを実行できる状態を目標基準とする。
 プラグインの`bin/`ディレクトリの実配置先は、バージョン番号付きのキャッシュディレクトリとなる。dotfilesを利用するエンドユーザーは`.bashrc`でのPATH追加によって、またプラグイン単体を利用するエンドユーザーは`install-claude.sh`や`install-claude.ps1`が配置する動的解決ラッパーによって、このパス構造を意識せずにコマンドを実行できるようにする。
+
+## バージョン更新
+
+本節は`.claude-plugin/marketplace.json`の`plugins[]`に載る配布プラグイン（`agent-toolkit/`と`agent-basics/`）を対象とし、各プラグインの版数を同じ判定基準と同じスクリプトで更新する。詳細は本書の各節を参照する。
+バージョン番号を更新しないままでは、`claude plugin update`を実行しても「最新です」と応答されて更新が配信されない。そのため、エンドユーザーに届く変更はプッシュ前に、変更のあるプラグインごとに必ずバージョンを更新する。
+
+- バージョン番号は`scripts/agent_toolkit_bump.py --plugin <プラグイン名> {patch|minor|major}`で更新する。`--plugin`を省略するとagent-toolkitを対象とする。更新区分の判断は本書「判定基準」を、実行主体とタイミングは同文書「plan modeでの取り扱い」に従う。`agent-toolkit:process-wi`の各レーンでは計画にプラグインごとの区分を記録するのみとし、公開担当が全レーンのマージ後に変更のあるプラグインごとに1回ずつ実行する。rebaseやmergeの競合は同文書「競合解決と統合後の確認」に従って解決する。
+- `version`と`description`は、プラグインごとに2箇所の定義元で常に一致させる（`description`は手動で同期する）。定義元は、`<プラグインのディレクトリ>/.claude-plugin/plugin.json`と、`.claude-plugin/marketplace.json`の`plugins[]`内にある同名のエントリである。agent-toolkitなら`agent-toolkit/.claude-plugin/plugin.json`と`name == "agent-toolkit"`のエントリを指す。この整合性は`manifest_ssot_invariant_test.py`によって検証される。
+- Agent Plugins向けの`plugin.json`・`mcp.json`やCodex向けマニフェストは、上記2ファイルと`agent-toolkit/.mcp.json`をもとに`scripts/sync_codex_plugin_manifests.py`が生成する。Antigravity向けの`agent-toolkit-agy/`および`agent-basics-agy/`は`scripts/sync_antigravity_plugin.py`が生成し、`post_apply`が`~/.gemini/config/plugins.json`へ登録する。`--plugin agent-basics`を指定すると品質プラグインのみを生成できる。元の名前空間と品質本文を保持したまま、両配布物の長文スキルを同一の短いSKILL.md・全文資料生成処理へ渡す。これらの生成ファイルは手動で編集せず、生成元ファイルを編集した上で再生成する。
+- 動作検証は、`develop-dotfiles`の`references/verification-values.md`「検証コマンドの実行」に示された特定ファイル限定の実行形式を用い、SSOTテストを含めて実施する。

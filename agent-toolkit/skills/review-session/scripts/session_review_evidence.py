@@ -35,6 +35,7 @@ from session_evidence_bundle import (
 from session_evidence_catalog import (
     CATALOG_PARENT_FIELDS,
     _catalog_events,
+    _catalog_grep_events,
     _catalog_tool_call_events,
     _catalog_user_event_events,
     _CatalogSelection,
@@ -132,7 +133,7 @@ def _summary_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # 照会の公開指定と、併用できる表示・入力形式を同じ表で管理する。
 _QUERY_OPTIONS = {
     "warn": (True, False),
-    "grep": (True, False),
+    "grep": (True, True),
     "fixed_string": (True, False),
     "context_at": (True, False),
     "tool_calls": (True, True),
@@ -296,6 +297,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "本スクリプト自身の実行記録は除く）を正規表現で検索し、"
         "キー名とtypeなどの管理用フィールドの値は検索しない。会話圧縮は--statsのstats-compactionから得る。"
         "委譲先の一致も含み、record-provenanceの記録由来から区別できる。"
+        "カタログと併用すると、sinceより後でobservation-boundary以前の一致を記録別に返す。"
+        "summary-onlyは記録別件数と合計を残し、時刻不明の一致はundated_match_countへ分ける。"
         "一致行と一致エントリ数を照会する。各一致行は元記録行の時刻`timestamp`（無ければnull）を持つ。" + _HOOK_RECORD_NOTE,
     )
     parser.add_argument(
@@ -561,7 +564,12 @@ def main(argv: list[str] | None = None) -> int:
             "`--catalog-fields`は親一覧だけで使い、`--user-events`との組では外す。"
             "表示項目は重複なしで指定して再実行する: " + ",".join(CATALOG_PARENT_FIELDS)
         )
-        if catalog_root is None or args.tool_calls or args.user_events and args.catalog_fields is not None:
+        if (
+            catalog_root is None
+            or args.tool_calls
+            or (args.user_events or args.grep is not None)
+            and args.catalog_fields is not None
+        ):
             return _print_error(
                 "--catalog-fieldsはカタログの親セッション一覧だけで使える"
                 if args.user_events and args.catalog_fields is not None
@@ -580,7 +588,7 @@ def main(argv: list[str] | None = None) -> int:
         supported = _query_option_names([name for name, (_summary, catalog) in _QUERY_OPTIONS.items() if catalog])
         return _print_error(
             "カタログ走査と照会の指定の組が不正",
-            next_action=f"カタログ走査は{supported}の一方と併用する。他の照会は単一記録で実行する",
+            next_action=f"カタログ走査は{supported}のいずれか1つと併用する。他の照会は単一記録で実行する",
         )
     if (args.tool is not None or args.input_regex is not None) and not args.tool_calls:
         return _print_error(
@@ -659,7 +667,18 @@ def main(argv: list[str] | None = None) -> int:
             return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
         if catalog_boundary < since:
             return _print_error("観測境界は開始境界以後を指定する", next_action=_BOUNDARY_NEXT_ACTION)
-        if args.tool_calls:
+        if args.grep is not None:
+            try:
+                grep_pattern = re.compile(args.grep)
+            except re.error as error:
+                return _print_error(
+                    f"正規表現が不正: {error}",
+                    next_action="`--grep`の正規表現の構文を直して再実行する",
+                )
+            events, exit_code = _catalog_grep_events(
+                Path(catalog_root), catalog_runtime, since, catalog_boundary, grep_pattern, catalog_selection
+            )
+        elif args.tool_calls:
             events, exit_code = _catalog_tool_call_events(
                 Path(catalog_root), catalog_runtime, since, catalog_boundary, args.tool, input_pattern
             )

@@ -635,7 +635,9 @@ def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolv
         owner = session_registry.owner_process()
         assert owner is not None
         processes = (owner,) if condition == "active-session" else ()
-        session_registry.publish("child", terminal=False, cwd=str(worktree), processes=processes)
+        session_registry.publish(
+            "child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(worktree), processes=processes
+        )
     code, held, _stderr = _invoke(capsys, "delete")
     assert code == 1 and held["retained"] and worktree.is_dir()
     assert pathlib.Path(record["record_path"]).is_file()
@@ -652,7 +654,7 @@ def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolv
     elif condition == "unmerged":
         git_repository.run_git(repo, "merge", "--ff-only", record["branch"])
     else:
-        session_registry.publish("child", terminal=True, cwd=str(worktree))
+        session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(worktree))
     code, deleted, stderr = _invoke(capsys, "delete")
     assert code == 0, stderr
     assert deleted["removed"] == ["lane-01"]
@@ -668,7 +670,9 @@ def test_delete_treats_session_whose_recorded_processes_exited_as_finished(
         identity = session_registry.ProcessIdentity.of(exited.pid)
         exited.wait()
     assert identity is not None
-    session_registry.publish("child", terminal=False, cwd=str(worktree), processes=(identity,))
+    session_registry.publish(
+        "child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(worktree), processes=(identity,)
+    )
     assert lane._session_activity(worktree.resolve()) is None  # pylint: disable=protected-access
     code, deleted, stderr = _invoke(capsys, "delete")
     assert code == 0, stderr
@@ -803,7 +807,14 @@ def test_lane_preserves_session_when_running_or_owner_unresponsive(
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     owner = session_registry.owner_process()
     assert owner is not None
-    session_registry.publish("held-session", terminal=terminal, cwd=record["worktree"], processes=(owner,))
+    session_registry.publish(
+        "held-session",
+        state=session_registry.PublicationState.RESULT_COMPLETED
+        if terminal
+        else session_registry.PublicationState.PENDING_RUNNING,
+        cwd=record["worktree"],
+        processes=(owner,),
+    )
     monkeypatch.setattr(lane, "get_wait_timeout", lambda _bucket: 0.02)
     code, held, _stderr = _invoke(capsys, "delete")
     assert code == 1
@@ -849,7 +860,7 @@ async def test_lane_returns_independent_activity_after_owner_release_without_rep
         checks += 1
         assert checks == 1, "所有側の解放完了後も独立した使用を反復照会した"
         if activity == "new-session":
-            session_registry.publish("new-user", terminal=False, cwd=str(path))
+            session_registry.publish("new-user", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(path))
         return original_activity(path)
 
     async with retained_executor(worktree, host_environ(), monkeypatch) as retained:
@@ -876,7 +887,9 @@ async def test_lane_returns_independent_activity_after_owner_release_without_rep
                 monkeypatch.setattr(lane, "_session_activity", original_activity)
                 external.communicate(input="", timeout=30)
                 if activity == "new-session":
-                    session_registry.publish("new-user", terminal=True, cwd=str(worktree))
+                    session_registry.publish(
+                        "new-user", state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(worktree)
+                    )
         code, result, stderr = await asyncio.to_thread(_invoke, capsys, *argv)
         assert code == 0, stderr
         if operation in {"fixed", "reuse"}:
@@ -902,7 +915,12 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
     owner = session_registry.owner_process()
     assert owner is not None
     for index, record in enumerate((first, second)):
-        session_registry.publish(f"unresponsive-{index}", terminal=True, cwd=record["worktree"], processes=(owner,))
+        session_registry.publish(
+            f"unresponsive-{index}",
+            state=session_registry.PublicationState.RESULT_COMPLETED,
+            cwd=record["worktree"],
+            processes=(owner,),
+        )
 
     def unexpected_wait(_bucket: str) -> float:
         pytest.fail("自動終了が終了資源の解放待機へ進んだ")
@@ -1080,7 +1098,9 @@ def test_fixed_placement_keeps_previous_unfinished_resource_and_returns_recovery
     else:
         owner = session_registry.owner_process()
         assert owner is not None
-        session_registry.publish("child", terminal=False, cwd=str(worktree), processes=(owner,))
+        session_registry.publish(
+            "child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(worktree), processes=(owner,)
+        )
     code, _result, stderr = _create_in(capsys, monkeypatch, "next-session", repo, selected)
     assert code == 2
     assert f"--reuse-record {original['record_path']}" in stderr
@@ -1473,7 +1493,7 @@ def test_integrate_rejects_unreviewed_or_unowned_work(
     elif condition == "foreign-owner":
         monkeypatch.setenv(lane.SESSION_ENV, "foreign")
     else:
-        session_registry.publish("child", terminal=False, cwd=str(worktree))
+        session_registry.publish("child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(worktree))
     code, _result, _stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
     assert code == 2
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == old_head
@@ -1638,7 +1658,9 @@ def test_hook_cannot_adopt_preexisting_worktree(
         (tree / "untracked.txt").write_text("未追跡のユーザー成果", encoding="utf-8")
     process = session_registry.owner_process()
     assert process is not None
-    session_registry.publish("other-writer", terminal=False, cwd=str(other), processes=(process,))
+    session_registry.publish(
+        "other-writer", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(other), processes=(process,)
+    )
 
     def snapshot() -> list[tuple[str, str, str, bytes, bytes]]:
         return [
@@ -1833,7 +1855,7 @@ def test_integrate_ignores_session_in_nested_lane_worktree(
     _integration_selection(selected, monkeypatch, repo)
     nested = repo / ".claude/worktrees/other"
     git_repository.run_git(repo, "worktree", "add", "-b", "other", str(nested))
-    session_registry.publish("other-writer", terminal=False, cwd=str(nested))
+    session_registry.publish("other-writer", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(nested))
     handoff = tmp_path / "handoff.md"
     handoff.touch()
     manifest = tmp_path / "integration.json"
@@ -1851,7 +1873,7 @@ def test_integrate_rejects_session_in_target_outside_nested_worktree(
 ) -> None:
     """統合先の直下と通常の子ディレクトリを使う合意外の担当を検出する。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
-    session_registry.publish("target-writer", terminal=False, cwd=str(repo / relative))
+    session_registry.publish("target-writer", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(repo / relative))
     code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, tmp_path / "unused", record["initial_head"]))
     assert code == 2 and "現在の書込所有に含まれない担当が稼働中" in stderr
 
@@ -1864,9 +1886,9 @@ def test_worktree_activity_ignores_nested_worktree(
     worktree = pathlib.Path(record["worktree"])
     nested = worktree / ".claude/worktrees/nested"
     git_repository.run_git(worktree, "worktree", "add", "-b", "nested", str(nested))
-    session_registry.publish("nested-writer", terminal=False, cwd=str(nested))
+    session_registry.publish("nested-writer", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(nested))
     assert lane._worktree_activity(worktree) is None  # pylint: disable=protected-access
-    session_registry.publish("direct-writer", terminal=False, cwd=str(worktree))
+    session_registry.publish("direct-writer", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(worktree))
     assert "direct-writer" in (lane._worktree_activity(worktree) or "")  # pylint: disable=protected-access
 
 
@@ -2336,7 +2358,9 @@ def test_recover_protects_unfinished_work_and_resumes_after_failure(
     elif condition == "active-session":
         owner = session_registry.owner_process()
         assert owner is not None
-        session_registry.publish("child", terminal=False, cwd=str(worktree), processes=(owner,))
+        session_registry.publish(
+            "child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(worktree), processes=(owner,)
+        )
     elif condition == "foreign-owner":
         stored = json.loads(record_path.read_text(encoding="utf-8"))
         stored["session_id"] = "another-session"
@@ -2461,7 +2485,9 @@ def _running(
         prompt = task_documents.task_prompt_header(_SHARE / f"{role}.subagent.md") + "\n本文"
     session_registry.publish(
         session_id,
-        terminal=terminal,
+        state=session_registry.PublicationState.RESULT_COMPLETED
+        if terminal
+        else session_registry.PublicationState.PENDING_RUNNING,
         cwd=str(cwd),
         launch_kind=kind,
         launch_info=session_registry.LaunchInfo(label=f"{session_id}-label", prompt=prompt),

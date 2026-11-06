@@ -343,7 +343,7 @@ class TerminalBeforeResponseBackend(ObservedBackend):
         session = await super().start(*args, **kwargs)
         session.status = "completed"
         session.agent_message = "応答前に終えた報告"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.touch()
         return session
 

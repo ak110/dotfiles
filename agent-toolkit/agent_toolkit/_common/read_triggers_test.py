@@ -633,7 +633,7 @@ def test_single_lane_declarations_cover_phases_without_overlapping_full_reads():
         ("selection-procedure.md", "対象WIの選定"),
         ("write-plan/SKILL.md", "計画の要否"),
         ("exec-review.parent.md", "実装に着手する前"),
-        ("verification-evidence.md", "検証結果を記録する前"),
+        ("verification-evidence.md", "検証結果の記録前"),
         ("review-loop-coordination.md", "レビュー指摘への対応"),
         ("commit/references/publish.md", "公開する前"),
         ("report-completion/SKILL.md", "終了処理の前"),

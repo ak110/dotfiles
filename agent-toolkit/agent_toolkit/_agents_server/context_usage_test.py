@@ -75,7 +75,7 @@ async def test_public_cli_connects_shared_fixture_parent_ids_and_formats_usage(
         sessions[1].api_error = None
         # 同じ公開一覧が終了と再描画後の新観測値を扱う。
         sessions[0].status = "completed"
-        sessions[0].turn_completed = True
+        sessions[0].record_turn_completed()
         sessions[0].touch()
         context_usage.record_context_usage(sessions[1], 0, None)
         for writer in writers:
@@ -234,7 +234,7 @@ async def test_context_usage_reaches_public_cli_without_activity(
             assert row["context_window"] == 1000000
         context_usage.record_context_usage(session, 1000, None)
         session.status = "completed"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.touch()
         retained = state.SessionResumeState.from_session(session)
         assert retained.context_tokens == 1000

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -95,20 +94,12 @@ class AntigravityManager(CliTurnManager):
         held = resume_waits.HeldTurn.capture(session)
         if held is not None:
             resume_waits.finalize_pending_result(session, touch=False)
-        else:
-            session.auto_resume_consumed = False
         try:
             return await super().send_message(session, prompt)
         except BaseException:
             if held is not None:
                 held.restore(session)
             raise
-
-    async def _attach_session(self, session: SessionState, process: asyncio.subprocess.Process, turn_seq: int) -> None:
-        """CLIの新turn初期化を越えて、自動再開の一度だけという消費状態を保つ。"""
-        consumed = session.auto_resume_consumed
-        await super()._attach_session(session, process, turn_seq)
-        session.auto_resume_consumed = consumed
 
     @staticmethod
     def event_session_id(payload: dict[str, Any]) -> str | None:
@@ -143,16 +134,12 @@ class AntigravityManager(CliTurnManager):
                 # 形式回復が保持した今回の本文を、孫待機用の旧状態で上書きしない。
                 await self._notify_waiters()
                 return True
-            if resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
+            if resume_waits.has_pending_auto_resume_targets(session):
                 resume_waits.begin_auto_resume_wait(
                     session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
                 )
                 session.status = "running"
                 session.touch()
-            elif session.live_child_session_ids:
-                unobserved = set(session.live_child_session_ids)
-                session.live_child_session_ids.clear()
-                resume_waits.record_unobserved_sessions(session, unobserved)
             await self._notify_waiters()
             return True
         return False

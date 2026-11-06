@@ -208,7 +208,7 @@ How many characters of a successful Bash or PowerShell command's output Claude r
 
 同じ形で上限の前後の大きさのファイルを`cat`させ、ストリームの`tool_use_result`の`persistedOutputPath`の有無で再検証する。
 上限値の解釈が変わった疑いがある場合は、本体のバイナリから`bashOutputMaxChars`の説明を確かめる。
-BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。検索の手順は`.claude/skills/develop-dotfiles/SKILL.md`「ホスト本体のバイナリの検索」に従う。
+BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。検索の手順は`.claude/skills/develop-dotfiles/references/host-binaries.md`「ホスト本体のバイナリの検索」に従う。
 
 ## `update-dotfiles`のuv自己更新と実行環境
 

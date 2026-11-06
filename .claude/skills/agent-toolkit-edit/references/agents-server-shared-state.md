@@ -93,10 +93,12 @@ Claude Codeが同一プロセス内でセッション識別子を切り替えた
 | 対象 | モジュール |
 | --- | --- |
 | 終了結果の保持と回収 | `retained_results.py` |
+| CLI待機runの型・読込検証・対象追加と配送状態の遷移 | `wait_run.py` |
 | CLI待機対象の登録管理 | `wait_targets.py` |
 | 上り通知の回収 | `notice_inbox.py` |
 
 子の追跡は、登録簿の不在・解放済み・読取不能でも維持する。共有された終了時の結果も得られなければ、同じ識別子を保持して終了の観測まで再解決する。回収済みの終了は既存のwait出力追跡で集合から除き、未回収の子の終了を継続の判定に用いる。
+過去の継続を消費した後やCLIのidle時も、未回収の子の観測を保持する。Managerは配送成功した完了IDだけを終了待ち集合から除き、回収済み・未追跡の子の終了応答を集合外として扱う。
 
 Codexバックエンドは、子セッションを起動した委譲先から`atk agents wait`の実行に成功した`commandExecution`を受け取る。
 回収済みの終了セッション識別子は、`_agents_server/wait_output_tracking.py`の`consume_agents_wait_output`によって追跡対象の集合から除外される。
@@ -115,6 +117,12 @@ Codexバックエンドは、子セッションを起動した委譲先から`at
 - MCP側の待機処理とCLI側の待機処理は、いずれも`_agents_server/retained_results.py`の`take_result`を用いて、所有者確認、排他ロックの取得、本文の読み取り、およびファイルの削除を一連のアトミックな区間として実行する。CLI待機では同一の排他区間内でrun別退避ディレクトリへの保存を確定させてから原本ファイルを削除する。MCP待機では退避先を指定せず、従来の結果回収フローを使用する。
 - 待機処理の所有権と待機対象セッションの登録は、いずれも書込主体を単位とする名前空間で管理する。読み取り側も同じ書込主体単位で探索し、対象のロックファイルや登録情報を特定する。
 - `atk agents wait`の実行（フォアグラウンド実行およびバックグラウンド実行）は、書込主体ごとに同時に最大1つとする。ロック競合を検知した後発プロセスは、`current.json`に記録されたrun IDを固定し、ロック取得後にその固定したrunの状態を再読み込みする。その状態が`published`であれば保存済みの本文と終了コードを返し、返却完了後に`consumed`へ遷移させる。`foreground-delivered`または`consumed`なら本文を再出力せず、終了コード8と保存runの回復情報を返す。状態が`running`の場合は、保存対象およびrun別退避ディレクトリの対象を引き継ぎ、ロック待機中に追加された対象セッションも含めて同一runの待機処理を再開する。競合せずにロックを取得できた後続のwaitプロセスも、現在の対象セッション集合が残存する`running`状態のrunと一致していれば、退避データを引き継いで待機を再開する。この対象集合の一致確認には、原本の回収後にrun別退避ディレクトリにのみ残っているセッションも含める。対象集合が一致し、かつ`continuable`がfalseの`published` runについては、結果を1回のみ返却する。対象集合が変化したrunや、継続可能な公開状態（`continuable`がtrue）のrunについては新規待機を開始する。`consumed`に遷移済みのrunは再利用せず、常に新規runを開始する。待機時間の上限に達した場合や通知のみを返却したrunは`continuable`をtrueとし、次回実行時には新規runを開始する。なお、run情報の記録がない旧形式のロックファイルのみが存在する場合は、旧形式との競合を示すエラー診断を出力して終了する。ロックの取得単位は書込主体ごととし、対象セッション個別のロックは使用しない。
+
+`wait_run.py`は、`status`で判別する`running`、`published`、`foreground-delivered`、`consumed`の型でrun本体を読み、`current.json`はrun参照として別に検証する。
+run本体の`run_id`と`targets`を検証し、`published`以後では文字列の`output`と整数の`exit_code`を必須とする。
+対象追加と公開・配送の遷移は同モジュールの操作へ集約し、`agents_wait.py`が書込主体のロック内で保存する。
+不在は`None`、不正記録は既存の読取異常として扱い、上書きしない。
+`shared_sweep.py`も同じ型で未回収runを判定し、読取不能・不正なrun本体や参照があればルートを保持する。
 
 CLI待機における結果配信は、結果や通知の取りこぼしを防ぐことを最優先とする。具体的には、runディレクトリへ本文を保存してから標準出力（stdout）または標準エラー出力（stderr）へフラッシュ（flush）し、その後に配信完了状態を保存する。後続のwaitプロセスが保存済みの本文を再配信する場合も、フラッシュ完了後に`consumed`状態を保存する。いずれのケースでも、フラッシュ後かつ状態保存前にプロセスが異常停止した場合は、次回のwait実行時に保存済み本文が1回再出力されることを許容する。プロセスの強制終了を伴わない通常の合流処理では同一runを1回のみ回収し、1回の再開処理の中で同一セッションの結果が重複して出力されるのを防ぐ。フラッシュと状態ファイルの更新は受信確認（ACK）の仕組みなしに完全アトミック化できないため、この停止点における安全側の再出力を許容する設計としている。
 
@@ -155,6 +163,10 @@ runファイルが存在しない、読み取れない、または結果デー�
 | 前任エージェントのログ抽出と後任へ渡す引き継ぎプロンプトの作成 | `session_handoff.py`（既存の`review-session`の会話抽出機能を利用する） |
 
 task返却の形式回復を消費した状態は`SessionState.result_contract_recovery_consumed`が保持し、`state.py`の登録処理から`session_registry.py`の共有登録簿へ保存する。同一sessionで真になった値は後続の公開でも保持する。`manager_registry.py`が別所有者へ復元し、`SessionResumeState`と`manager_resume.py`を通して新しいturnへ引き継ぐ。回復待ちと診断はturn単位で初期化し、消費状態は初期化しない。
+
+メモリー上の保留は`SessionState.hold`の理由別データ、開始受理は`turn_start`、終了は`turn_end`で保持する。型は`_agents_server/turn_state.py`、開始・解除・記録の操作は`state.py`が所有し、backend・resume_waits・result_contract・Managerが消費する。保留述語と予定時刻は、この状態から得るreadonlyの射影とする。連鎖履歴と形式回復の消費は別の寿命を保つ。
+登録簿の書込入力は`PublicationState`とし、terminal/statusの許容組から保存値を導出する。読取の解決とv1〜v3の保存・復元契約は維持する。
+reader-fitの入力成果物と対象別完了の形式検査はresult_contractが既存の回復を用いて行う。本文・比較資料・判定範囲の確認が済んだかの意味判断と証拠は、レビュー担当が所有する。
 
 session登録簿の公開・解放・中断履歴更新・掃引と再開予約は、`sessions/.locks/<session_id>.lock`の共有ファイルロック内で読み取りと更新を実行する。
 ロックファイルは保持する。
@@ -334,6 +346,7 @@ Codexバックエンドは、接続切り替え時および過去ログからの
 | --- | --- | --- | --- |
 | ホストsessionのターンと子エージェントの活動 | `session-activity/<session_id>.json` | `_common/session_activity.py`。実プロセス、セッションログ、共通の親子判定結果と突き合わせて、開始猶予（待機時間）の要否を判定する。人が実行する`atk agents list`（`_agents_server/commands.py`）は、PIDとプロセス起動時刻が生存を示す親の無い会話を、委譲先の無いrootとして見出し表示するためだけに読む（記録は変更しない） | `hook.py`による活動記録処理。ファイルロック下で最新状態に上書き更新し、SessionEndイベント発生時に自身のセッションファイルを削除する。残存した古い記録については、PIDとプロセス起動時刻からプロセスの生存を確認して失効を判定する |
 | WI投入作業の投入先と作業期間 | `session-activity/submissions/<session_id>.json` | `_common/session_activity.py`。投入先がprocess-loopの処理対象と重複する会話およびその子孫会話に限り、開始猶予の対象とする | `atk wi submission begin`が作成・更新し、`atk wi submission end`が削除する。SessionEndイベントでは削除しない |
+| 独立したWI投入の受付・移管票・実行結果 | `wi-submit/requests/<request_id>.json`と`wi-submit/runs/<run_id>/` | `atk wi submit --show`、既存SessionStart/SessionEndの再観測、process-loopの対象別結果の受付票検証 | `_atk/wi/submit.py`。自己完結した要求を原子的に保存し、独立監督のPID世代と所有移管、finishの要求別処置、run-skillの報告同期を対応付ける。未完了・未報告を保持し、完了・同期済みだけを30日後に回収する。製品worktree・process-loopの所有を引き継がない |
 | origin単位の処理所有と未完了の再開情報 | `process-loop-ownership/<originのSHA-256>.json`および同名の`.lock` | 専用process-loopおよびall-repos | `_atk/wi/process_loop_ownership.py`。短時間のファイルロックを取得して所有権トークンと生存状態を確認し、worktree、Git共通ディレクトリ、担当セッション、レーン所有セッションの情報を更新する |
 | 対象別の担当返却 | `process-loop-ownership/<originのSHA-256>.result.json` | all-reposの中継処理および再開処理 | `_atk/wi/process_loop_all_repos.py`。担当エージェントの終了を確認した後、完了済み工程と残存工程の情報を保存する |
 | 担当が進捗なしで終えた起動入力（無進捗記録） | `process-loop-no-progress/<originのSHA-256>.json` | 専用process-loopおよびall-reposの起動判定処理 | `_atk/wi/process_loop_launch_gate.py`。担当エージェントが進捗なしで終了した時点の起動入力を対象リポジトリごとに保存する。スキップせずに担当エージェントを起動した時点、または起動入力が空になった時点で削除する。この記録はホストごとの一時的な制御用であり、WI自体のステータスには影響を与えない |
@@ -364,6 +377,7 @@ batchでは`_atk/run_skill_batch.py`が保存済みの準備範囲を確定し�
 | 子Claudeがreloadする固定plugin入力 | セッションのmanaged-tempの`claude-plugin-input-<一意な値>/agent-toolkit` | 当該SDK接続のClaude CLI | `claude_plugins.py`が版付きcache由来の明示toolkitだけを複製し、idle時に完成版を固定pathへ切り替える。失敗時は旧完成版へ復旧する。agents_serverのMCP起動定義は所有serverの保持版へ固定し、Python実行基盤とskill/mods入力の寿命を分ける。開発checkoutは元pathを使う。CLIの終了確認後に専用複製を回収し、終了未確認なら監視だけを止めて入力を保持する |
 | 保持した配布物を使用するプロセス | `plugin-root-leases/<保持領域の識別子>-<pid>.json`および領域ごとの`.lock` | 配布物の起動側、ならびにmanaged-tempの回収・掃引処理 | `_common/plugin_root_leases.py`。起動側プロセスが領域パス、PID、プロセス作成時刻を登録し、読み取り側は同一領域のファイルロック下でプロセスの生存を確認する。終了済みプロセスの使用記録を除外し、情報取得不能な記録や使用中の実体ディレクトリを保護する。使用登録と回収処理でロックを共有するのは、生存確認と新規登録の合間に実体ディレクトリが削除されるのを防ぐためである。なお、`atk`の自動掃引処理だけはロック取得を待たず、競合した領域の処理をスキップして次回に回す |
 | 同じ配布元・版から共有する完成済み配布物 | managed-tempの保持領域直下の`.agent-toolkit-plugin-root.json` | `_agents_server/plugin_root.py`による起動・再利用処理 | 配布物をコピーして配置する起動側プロセスが、配布元・バージョン・ルートディレクトリ名を保存する。内部MCPもこの完成済みの実体を共有し、回収側は前述の使用中リース記録を確認して安全に回収する |
+| 独立WI投入が保持する配布物 | 上記の完成マーカーと`wi-submit/runs/<run_id>/run.json`の`runtime_root` | 独立投入のbootstrap・監督・execute、`plugin_root_leases.py`による掃引判定 | 独立投入では開発checkoutも新規に保持し、同じ保持rootの子は完成マーカーと自身のleaseを使う。元rootへの復帰はせず、保持失敗は受付未成立にする。プロセスが終了していても、未完了・未報告のrunから参照される実体を保護する |
 | MCPのlease対応能力 | `plugin-root-leases/capability-<pid>.json` | 配布物ルートディレクトリの解決処理、および旧形式領域の回収可否判定 | 保持領域を使用しない起動プロセスも含め、自身のPIDとプロセス作成時刻を公開する。既存の領域別リース記録が存在する場合も、対応能力を持つ証拠として扱う |
 | 旧版が会話へ割り当てた保存領域の参照 | `managed-temp/.sessions/<session_idのSHA-256>`および会話別の`.lock` | `_atk/managed_temp/creation.py`によるセッションのmanaged-temp解決処理。参照先が一時ルート直下に実在する（シンボリックリンクではない）ディレクトリである場合のみ、その旧パスを再利用する | 新しいバージョンでは作成や更新を行わない。`_atk/managed_temp/sweep.py`が、参照先ディレクトリが存在せず、かつ会話別ロックを非ブロッキングで取得できた参照ファイルのみを個別に回収・削除する |
 | 旧版の登録簿とcleanupロック | `managed-temp/`直下の登録簿JSON、`.consuming-`が付いた消費中の一時ファイル、および`.json.cleanup.lock` | 旧バージョンのプロセス、および掃引処理 | 新しいバージョンでは作成しない。掃引処理において、対象データおよび消費中ファイルが存在せず対応ロックを取得できた登録簿と、登録簿および消費中ファイルが存在せずロックを取得できたcleanupロックのみを個別に回収・削除する |

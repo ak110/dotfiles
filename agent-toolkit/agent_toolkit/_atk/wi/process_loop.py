@@ -2,6 +2,7 @@
 
 import argparse
 import concurrent.futures
+import enum
 import json
 import os
 import pathlib
@@ -10,6 +11,8 @@ import sys
 import time
 import uuid
 from typing import Any
+
+import pydantic
 
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import lane as _lane
@@ -25,11 +28,54 @@ from agent_toolkit._atk.wi import process_loop_session as _session
 from agent_toolkit._atk.wi import process_loop_update as _update
 from agent_toolkit._atk.wi import process_loop_watch as _watch
 from agent_toolkit._atk.wi import process_loop_worktree as _worktree
+from agent_toolkit._atk.wi import submit as _submit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import mcp_environment
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common.atomic_file import atomic_write
+
+
+class RepositoryStatus(enum.StrEnum):
+    """対象別結果の公開値を内部の判別にも使う。"""
+
+    OWNER_WAIT = "owner_wait"
+    PREPARE_FAILED = "prepare_failed"
+    COMPLETED = "completed"
+    BLOCKED = "blocked"
+    INCOMPLETE = "incomplete"
+    PENDING = "pending"
+    ABORTED = "aborted"
+
+
+class RepositoryResult(pydantic.BaseModel):
+    """対象別の申告と検収結果。追加の報告内容はそのまま公開JSONへ渡す。"""
+
+    model_config = pydantic.ConfigDict(extra="allow")
+
+    status: RepositoryStatus
+    writer_sessions: list[str] = pydantic.Field(default_factory=list)
+    independent_submissions: list[_submit.Ticket] = pydantic.Field(default_factory=list)
+
+    @pydantic.field_validator("independent_submissions", mode="before")
+    @classmethod
+    def validate_submissions(cls, value: Any) -> list[_submit.Ticket]:
+        """永続入力と所有移管に一致する票だけを製品writerとは別に受け渡す。"""
+        if not isinstance(value, list):
+            raise ValueError("統括結果のindependent_submissionsが不正")
+        return [_submit.validate_ticket(item) for item in value]
+
+    @pydantic.field_validator("writer_sessions", mode="before")
+    @classmethod
+    def validate_writers(cls, value: Any) -> Any:
+        """停止確認に使うsessionは空文字を含む入力を拒否する。"""
+        if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
+            raise ValueError("統括結果のwriter_sessionsが不正")
+        return value
+
+    def payload(self) -> dict[str, Any]:
+        """未申告の付随項目を増やさず既存のJSON形式へ射影する。"""
+        return self.model_dump(mode="json", exclude_unset=True)
 
 
 def _remaining_work(
@@ -103,7 +149,7 @@ def _record_no_progress(snapshot: _listing.RepositorySnapshot, start: _gate.Laun
         _next_action.report(f"{repo_id}: 無進捗記録を保存できなかった: {error}", next_action=next_action, stream=sys.stdout)
 
 
-def _read_results(path: pathlib.Path, owners: dict[str, _ownership.Ownership]) -> dict[str, dict[str, Any]]:
+def _read_results(path: pathlib.Path, owners: dict[str, _ownership.Ownership]) -> dict[str, RepositoryResult]:
     """担当が保存した対象別の返却を検証し、欠落を成功として扱わない。
 
     今回の対象外の記載（明示resumeで再利用した会話に残る前巡回の対象など）は記録して除き、
@@ -123,13 +169,16 @@ def _read_results(path: pathlib.Path, owners: dict[str, _ownership.Ownership]) -
             next_action="対応不要（今回の対象の結果だけを検収した）。繰り返す場合は統括の結果保存の手順を確認する",
             stream=sys.stdout,
         )
-    records = {repo_id: record for repo_id, record in data["repositories"].items() if repo_id in owners}
-    for repo_id, record in records.items():
+    records: dict[str, RepositoryResult] = {}
+    for repo_id, record in data["repositories"].items():
+        if repo_id not in owners:
+            continue
         if not isinstance(record, dict) or record.get("status") not in ("completed", "incomplete", "blocked", "pending"):
             raise ValueError(f"統括結果の対象別状態が不正: {repo_id}")
-        writers = record.get("writer_sessions", [])
-        if not isinstance(writers, list) or any(not isinstance(value, str) or not value for value in writers):
-            raise ValueError(f"統括結果のwriter_sessionsが不正: {repo_id}")
+        result = RepositoryResult.model_validate(record)
+        if any(ticket.target_repo != repo_id for ticket in result.independent_submissions):
+            raise ValueError(f"統括結果のindependent_submissionsの対象が不一致: {repo_id}")
+        records[repo_id] = result
     return records
 
 
@@ -159,7 +208,7 @@ def _writers_stopped(
 
 def _recover_completed(
     target: dict[str, Any], snapshot: _listing.RepositorySnapshot, owner: _ownership.Ownership
-) -> dict[str, Any] | None:
+) -> RepositoryResult | None:
     """親の終了処理が中断した対象について、保存済み申告と実体から完了を確定する。"""
     previous_manifest = (owner.previous or {}).get("manifest")
     if not isinstance(previous_manifest, str):
@@ -167,15 +216,15 @@ def _recover_completed(
     data = json.loads(pathlib.Path(previous_manifest).read_text(encoding="utf-8"))
     result_path = pathlib.Path(data["result_file"])
     returned = _read_results(result_path, {item["target_repo"]: owner for item in data["repositories"]})
-    record = returned.get(owner.repo_id, {})
-    if record.get("status") != "completed":
+    record = returned.get(owner.repo_id)
+    if record is None or record.status is not RepositoryStatus.COMPLETED:
         return None
     candidates = json.loads(pathlib.Path(target["candidate_file"]).read_text(encoding="utf-8"))
     if any(_remaining_work(snapshot, owner, {item["filename"] for item in candidates}).values()):
         return None
-    if not _writers_stopped(owner, writers=record.get("writer_sessions", [])):
+    if not _writers_stopped(owner, writers=record.writer_sessions):
         return None
-    return {**record, "result_path": str(result_path), "session_id": owner.session_id, "recovered": True}
+    return record.model_copy(update={"result_path": str(result_path), "session_id": owner.session_id, "recovered": True})
 
 
 def run_coordinator(
@@ -185,9 +234,20 @@ def run_coordinator(
     launch_inputs: dict[str, _gate.LaunchInput] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """常駐cwdで1つの統括会話を実行し、対象別の成果を検収して巡回を終える。"""
+    return {
+        repo_id: result.payload() for repo_id, result in _run_coordinator(args, snapshots, launch_inputs=launch_inputs).items()
+    }
+
+
+def _run_coordinator(
+    args: argparse.Namespace,
+    snapshots: tuple[_listing.RepositorySnapshot, ...],
+    *,
+    launch_inputs: dict[str, _gate.LaunchInput] | None = None,
+) -> dict[str, RepositoryResult]:
     owners: dict[str, _ownership.Ownership] = {}
     targets: dict[str, dict[str, Any]] = {}
-    results: dict[str, dict[str, Any]] = {}
+    results: dict[str, RepositoryResult] = {}
     by_repo = {snapshot.repository.repo_id: snapshot for snapshot in snapshots}
     cwd = pathlib.Path.cwd().resolve()
     env = _env.child_env()
@@ -209,7 +269,7 @@ def run_coordinator(
             repository = snapshot.repository
             owner = _ownership.try_acquire(repository.repo_id, worktree=repository.worktree, mode="coordinator")
             if owner is None:
-                results[repository.repo_id] = {"status": "owner_wait"}
+                results[repository.repo_id] = RepositoryResult(status=RepositoryStatus.OWNER_WAIT)
                 print(f"{repository.repo_id}: 別のprocess-loopが処理中です。所有の解放を待ちます。", flush=True)
                 continue
             owners[repository.repo_id] = owner
@@ -225,7 +285,7 @@ def run_coordinator(
             if prepared is None:
                 _ownership.release(owner, completed=False)
                 owners.pop(repository.repo_id)
-                results[repository.repo_id] = {"status": "prepare_failed"}
+                results[repository.repo_id] = RepositoryResult(status=RepositoryStatus.PREPARE_FAILED)
                 continue
             target = _session.repository_input(
                 snapshot,
@@ -238,10 +298,11 @@ def run_coordinator(
                 owners[repository.repo_id] = owner
                 recovered = _recover_completed(target, snapshot, owner)
                 if recovered is not None:
-                    recovered["previous_result_path"] = recovered["result_path"]
                     saved_result = manifest.with_name(f"{manifest.stem}.{owner.token}.result.json")
-                    recovered["result_path"] = str(saved_result)
-                    atomic_write(saved_result, json.dumps(recovered, ensure_ascii=False) + "\n")
+                    recovered = recovered.model_copy(
+                        update={"previous_result_path": recovered.payload()["result_path"], "result_path": str(saved_result)}
+                    )
+                    atomic_write(saved_result, json.dumps(recovered.payload(), ensure_ascii=False) + "\n")
                     results[repository.repo_id] = recovered
                     _gate.clear(repository.repo_id)
                     _finish_repository(owner, completed=True)
@@ -312,30 +373,37 @@ def run_coordinator(
             resume = identifier
         returned = _read_results(result_path, owners)
         for repo_id, owner in tuple(owners.items()):
-            record = returned.get(repo_id, {})
-            writers = record.get("writer_sessions", [])
+            record = returned.get(repo_id, RepositoryResult(status=RepositoryStatus.INCOMPLETE))
+            writers = record.writer_sessions
             other_writers = {
-                writer for other, result in returned.items() if other != repo_id for writer in result.get("writer_sessions", [])
+                writer for other, result in returned.items() if other != repo_id for writer in result.writer_sessions
             }
             candidate_records = json.loads(pathlib.Path(targets[repo_id]["candidate_file"]).read_text(encoding="utf-8"))
             candidate_names = {record["filename"] for record in candidate_records}
             remaining = _remaining_work(by_repo[repo_id], owner, candidate_names)
-            completed = execution and record.get("status") == "completed" and not any(remaining.values())
-            blocked = record.get("status") == "blocked"
+            completed = execution and record.status is RepositoryStatus.COMPLETED and not any(remaining.values())
+            blocked = record.status is RepositoryStatus.BLOCKED
             saved_result = manifest.with_name(f"{manifest.stem}.{owner.token}.result.json")
-            results[repo_id] = {
-                **record,
-                "status": "completed" if completed else "blocked" if blocked else "incomplete",
-                "observed_remaining": remaining,
-                "result_path": str(saved_result),
-                "session_id": resume,
-            }
+            results[repo_id] = record.model_copy(
+                update={
+                    "status": (
+                        RepositoryStatus.COMPLETED
+                        if completed
+                        else RepositoryStatus.BLOCKED
+                        if blocked
+                        else RepositoryStatus.INCOMPLETE
+                    ),
+                    "observed_remaining": remaining,
+                    "result_path": str(saved_result),
+                    "session_id": resume,
+                }
+            )
             stopped = _writers_stopped(owner, writers=writers, other_writers=other_writers)
             if stopped:
                 _finish_repository(owner, completed=bool(completed))
             else:
                 _ownership.hold(owner)
-                results[repo_id]["status"] = "owner_wait"
+                results[repo_id].status = RepositoryStatus.OWNER_WAIT
             if blocked:
                 target = targets[repo_id]
                 initial = _gate.LaunchInput(
@@ -345,9 +413,9 @@ def run_coordinator(
                 _record_no_progress(by_repo[repo_id], initial)
             owners.pop(repo_id)
             targets.pop(repo_id)
-            atomic_write(saved_result, json.dumps(results[repo_id], ensure_ascii=False) + "\n")
+            atomic_write(saved_result, json.dumps(results[repo_id].payload(), ensure_ascii=False) + "\n")
         if _control.consume_process_loop_abort():
-            results["abort"] = {"status": "aborted"}
+            results["abort"] = RepositoryResult(status=RepositoryStatus.ABORTED)
         return results
     finally:
         for owner in owners.values():

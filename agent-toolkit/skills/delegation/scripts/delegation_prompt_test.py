@@ -10,6 +10,7 @@ import pytest
 
 from agent_toolkit._agents_server import launch_requests
 from agent_toolkit._atk import run_script
+from agent_toolkit._common import task_documents
 
 
 def test_help_explains_initial_and_history_continuation_inputs(capsys: pytest.CaptureFixture[str]) -> None:
@@ -54,13 +55,13 @@ def test_start_and_builtin_prompt_share_input_contract(tmp_path: pathlib.Path, c
     assert generated["kind"] == "initial"
     document = pathlib.Path(__file__).resolve().parents[3] / "share" / "exec.subagent.md"
     assert generated["prompt"].splitlines()[0] == f"{document}の手順を実行せよ。"
-    assert launch_requests.parse_named_inputs(generated["prompt"].splitlines()[1:]) == params
+    assert task_documents.parse_named_inputs(generated["prompt"].splitlines()[1:]) == params
     assert "固有指示:\n  最初の要求\n  \n  追加の条件" in generated["prompt"]
     # サーバー側の生成は全体作業契約の解決を前提とするため、実行環境の会話を探索せずに解決できるよう明示する。
     whole = tmp_path / "work-contract.md"
     whole.write_text("目的: 入力契約の共有を確かめる\n", encoding="utf-8")
     _, server_prompt, _, _ = launch_requests.task_document_request("exec", params, whole_contract_path=str(whole))
-    assert launch_requests.parse_named_inputs(server_prompt.rsplit("\n入力:\n", 1)[1].splitlines()) == params
+    assert task_documents.parse_named_inputs(server_prompt.rsplit("\n入力:\n", 1)[1].splitlines()) == params
     for invalid in ({"引き継ぎ記録先": params["引き継ぎ記録先"]}, {**params, "余分な説明": "説明"}):
         result, failure = _generate(tmp_path, capsys, {"kind": "initial", "subagent_md_path": "exec", "extra_params": invalid})
         assert result == 1

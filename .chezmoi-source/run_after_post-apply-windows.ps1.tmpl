@@ -140,7 +140,8 @@ if ($needsReinstall -and -not $reinstallDeferred) {
         # uv コマンド直後で $LASTEXITCODE を明示判定して throw する。
         # ハッシュ書き込みは uv tool install と期待シム実在再確認の両方が成功した場合のみ実行する。
         # ユーザーPATHへの`~\.local\bin`の登録は post-apply の「bin PATH 登録 (Windows)」工程が行う。
-        & uv tool install --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}"
+        # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
+        & uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}"
         if ($LASTEXITCODE -ne 0) { throw "uv tool install が失敗しました (exit=$LASTEXITCODE)" }
         if (-not (Test-ExpectedShims)) {
             throw '期待シムが生成されていません'
@@ -174,7 +175,7 @@ if (Test-Path $postApplyBin) {
     & $postApplyBin
     exit $LASTEXITCODE
 } else {
-    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ。次の操作: uv tool install --editable `"{{ .chezmoi.workingTree }}`" --with-editable `"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}`"を実行し、update-dotfilesを再実行してください。"
+    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ。次の操作: uv tool install --exclude-newer-package pyfltr=false --editable `"{{ .chezmoi.workingTree }}`" --with-editable `"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}`"を実行し、update-dotfilesを再実行してください。"
 }
 } finally {
     [Console]::OutputEncoding = $originalOutputEncoding

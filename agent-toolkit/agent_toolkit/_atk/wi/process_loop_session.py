@@ -247,7 +247,7 @@ def _build_session_argv(
             if identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
                 _registry.publish(
                     identifier,
-                    terminal=False,
+                    state=_registry.PublicationState.PENDING_RUNNING,
                     engine="claude",
                     cwd=str(cwd),
                     model=model,
@@ -484,7 +484,9 @@ def _run_started_process_session(
         if info is not None:
             _registry.publish(
                 identifier,
-                terminal=True,
+                state=_registry.PublicationState.RESULT_COMPLETED
+                if result.returncode == 0
+                else _registry.PublicationState.RESULT_INTERRUPTED,
                 engine=orchestrator,
                 cwd=str(session_path),
                 model=model,
@@ -496,7 +498,6 @@ def _run_started_process_session(
                 claude_role="orchestrator",
                 codex_model_provider=info.codex_model_provider,
                 codex_subscription_provider=info.codex_subscription_provider,
-                status="completed" if result.returncode == 0 else "interrupted",
             )
     _pl_env.reset_console()
     _console_title.set_console_title("atk wi process-loop")
@@ -521,7 +522,7 @@ def _attach_orchestrator_child(identifier: str, child: _registry.ProcessIdentity
         return
     _registry.publish(
         identifier,
-        terminal=False,
+        state=_registry.PublicationState.PENDING_RUNNING,
         engine="claude",
         cwd=info.cwd,
         model=info.model,
@@ -602,7 +603,7 @@ def _run_cli_session(
                     else:
                         _registry.publish(
                             identifier,
-                            terminal=False,
+                            state=_registry.PublicationState.PENDING_RUNNING,
                             engine=orchestrator,
                             model=model,
                             effort=effort,

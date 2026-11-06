@@ -33,6 +33,31 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 class TestGrepBasic:
     """grepサブコマンド: 複数エントリ・複数行にまたがるマッチを検索する。"""
 
+    @pytest.mark.parametrize("output", [[], ["-c"], ["-l"], ["--summary-only"]])
+    def test_since_filters_submission_date_in_every_output(
+        self, output: list[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """投入日の下限を含み、直前の日・日時不明の旧名を全出力で除く。"""
+        notes = _setup_notes(tmp_path)
+        for name in ("20261101-235959-001.md", "20261102-000000-001.md", "20261106-120000-001.md", "legacy.md"):
+            _write_awi_file(notes, name, body="needle")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", "grep", "needle", "--since", "2026-11-02", "--skip-pull", *output], home=tmp_path)
+        assert result.value.code == 0
+        text = capsys.readouterr().out
+        assert "20261102-000000-001.md" in text
+        assert "20261106-120000-001.md" in text
+        assert "20261101-235959-001.md" not in text
+        assert "legacy.md" not in text
+
+    def test_since_rejects_invalid_date(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """不正な日付は検索と同期の前に引数エラーで返す。"""
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", "grep", "needle", "--since", "2026-02-30", "--skip-pull"], home=tmp_path)
+        assert result.value.code == 2
+        assert "--since" in capsys.readouterr().err
+
     def test_rejected_extended_option_recovers_to_regex_and_fixed_search(
         self,
         monkeypatch: pytest.MonkeyPatch,

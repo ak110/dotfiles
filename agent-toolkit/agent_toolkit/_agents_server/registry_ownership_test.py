@@ -66,7 +66,7 @@ async def test_retention_callback_keeps_new_owner_running_turn(tmp_path: pathlib
         try:
             await asyncio.wait_for(started.wait(), timeout=1)
             session_registry.set_owner_server_instance("new-owner")
-            session_registry.publish(previous.session_id, terminal=False, turn_seq=2)
+            session_registry.publish(previous.session_id, state=session_registry.PublicationState.PENDING_RUNNING, turn_seq=2)
         finally:
             session_registry.set_owner_server_instance("old-owner")
             finish.set()
@@ -87,7 +87,7 @@ async def test_child_collected_during_registry_lookup_is_not_reintroduced(
     if registry_state == "released":
         session_registry.release("child", reason="stopped")
     elif registry_state == "terminal":
-        session_registry.publish("child", terminal=True)
+        session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED)
     elif registry_state == "unreadable":
         path = session_registry.registry_directory() / "child.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,7 +131,7 @@ async def test_stop_keeps_new_owner_and_discards_stale_local_state(
         async def transfer_owner(previous: state.SessionState, **_kwargs: Any) -> None:
             await release_resources(previous)
             session_registry.set_owner_server_instance("new-owner")
-            session_registry.publish(previous.session_id, terminal=False, turn_seq=2)
+            session_registry.publish(previous.session_id, state=session_registry.PublicationState.PENDING_RUNNING, turn_seq=2)
 
         monkeypatch.setattr(backend, "release_session", transfer_owner)
         with pytest.raises(ActionableError) as changed:
@@ -151,14 +151,20 @@ def test_old_owner_cannot_release_or_republish_new_turn(
 ) -> None:
     """旧所有者の遅延解放と公開が、新所有者の実行中turnを書き換えない。"""
     session_registry.set_owner_server_instance("old-owner")
-    session_registry.publish("child", terminal=True, engine=engine, turn_seq=1, state_root=tmp_path)
+    session_registry.publish(
+        "child", state=session_registry.PublicationState.RESULT_COMPLETED, engine=engine, turn_seq=1, state_root=tmp_path
+    )
     session_registry.set_owner_server_instance("new-owner")
-    session_registry.publish("child", terminal=False, engine=engine, turn_seq=2, state_root=tmp_path)
+    session_registry.publish(
+        "child", state=session_registry.PublicationState.PENDING_RUNNING, engine=engine, turn_seq=2, state_root=tmp_path
+    )
     path = session_registry.registry_directory(tmp_path) / "child.json"
     running = path.read_bytes()
     assert not session_registry.release("child", reason=reason, expected_owner=("old-owner", 1), state_root=tmp_path)
     session_registry.set_owner_server_instance("old-owner")
-    session_registry.publish("child", terminal=True, engine=engine, turn_seq=1, state_root=tmp_path)
+    session_registry.publish(
+        "child", state=session_registry.PublicationState.RESULT_COMPLETED, engine=engine, turn_seq=1, state_root=tmp_path
+    )
     assert path.read_bytes() == running
     resolution = session_registry.resolve("child", state_root=tmp_path)
     assert resolution.state is session_registry.Resolution.RUNNING
@@ -194,10 +200,10 @@ async def test_unobserved_child_stays_pending_until_terminal(
             assert parent.live_child_session_ids == {"child"}
             assert not parent.result_available
             assert backend.send_calls == 0
-        session_registry.publish("child", terminal=False, turn_seq=2)
+        session_registry.publish("child", state=session_registry.PublicationState.PENDING_RUNNING, turn_seq=2)
         await manager._advance_child_session_wait(parent)
         assert backend.send_calls == 0
-        session_registry.publish("child", terminal=True, turn_seq=2)
+        session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED, turn_seq=2)
         await manager._advance_child_session_wait(parent)
         assert backend.send_calls == 1
         assert "child" in backend.prompts[0]
@@ -291,7 +297,9 @@ def test_registry_updates_hold_process_shared_lock(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
     """公開・解放・中断追記・掃引の更新時点が別OSプロセスとの排他区間にある。"""
-    session_registry.publish("child", terminal=True, status="interrupted", turn_seq=1, state_root=tmp_path)
+    session_registry.publish(
+        "child", state=session_registry.PublicationState.RESULT_INTERRUPTED, turn_seq=1, state_root=tmp_path
+    )
     path = session_registry.registry_directory(tmp_path) / "child.json"
     lock = path.parent / ".locks/child.lock"
     observed: list[bool] = []
@@ -310,7 +318,9 @@ def test_registry_updates_hold_process_shared_lock(
     monkeypatch.setattr(session_registry, "atomic_write", write)
     monkeypatch.setattr(pathlib.Path, "unlink", unlink)
     if operation == "publish":
-        session_registry.publish("child", terminal=False, turn_seq=2, state_root=tmp_path)
+        session_registry.publish(
+            "child", state=session_registry.PublicationState.PENDING_RUNNING, turn_seq=2, state_root=tmp_path
+        )
     elif operation == "release":
         session_registry.release("child", reason="stopped", state_root=tmp_path)
     elif operation == "interrupted":
@@ -329,7 +339,9 @@ def test_registry_sweep_failure_preserves_record_and_guides_operator(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """登録簿の排他取得に失敗しても原本を保持し、確認操作と報告先を通知する。"""
-    session_registry.publish("child", terminal=True, status="interrupted", turn_seq=1, state_root=tmp_path)
+    session_registry.publish(
+        "child", state=session_registry.PublicationState.RESULT_INTERRUPTED, turn_seq=1, state_root=tmp_path
+    )
     path = session_registry.registry_directory(tmp_path) / "child.json"
 
     def denied(*_args: Any, **_kwargs: Any) -> Any:
@@ -395,7 +407,7 @@ async def test_public_wait_holds_unknown_child_then_collects_resumed_result_once
             atk.main(["agents", "wait", "--root-session-id", "root-session"])
         assert waiting.value.code == 3
         assert "待機表明" not in capsys.readouterr().out
-        session_registry.publish("child", terminal=True, turn_seq=2)
+        session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED, turn_seq=2)
         await manager._advance_child_session_wait(parent)
         assert sum(method == "turn/start" for method, _params in client.requests) == 2
         await complete("残作業を完了した結果")

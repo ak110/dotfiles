@@ -1,6 +1,7 @@
 """専用起動・all-reposの共通所有と未統合成果の受渡しを検証する。"""
 
 import concurrent.futures
+import itertools
 import json
 import pathlib
 import threading
@@ -81,13 +82,15 @@ def test_live_descendant_blocks_takeover_after_parent_loss(tmp_path: pathlib.Pat
     assert first is not None
     process = session_registry.owner_process()
     assert process is not None
-    session_registry.publish("root", terminal=True)
-    session_registry.publish("writer", terminal=False, processes=(process,), launcher_session_id="root")
+    session_registry.publish("root", state=session_registry.PublicationState.RESULT_COMPLETED)
+    session_registry.publish(
+        "writer", state=session_registry.PublicationState.PENDING_RUNNING, processes=(process,), launcher_session_id="root"
+    )
     record = json.loads(first.path.read_text(encoding="utf-8"))
     record["create_time"] = 0
     first.path.write_text(json.dumps(record), encoding="utf-8")
     assert ownership.try_acquire(first.repo_id, worktree=repository, mode="coordinator") is None
-    session_registry.publish("writer", terminal=True, launcher_session_id="root")
+    session_registry.publish("writer", state=session_registry.PublicationState.RESULT_COMPLETED, launcher_session_id="root")
     recovered = ownership.try_acquire(first.repo_id, worktree=repository, mode="coordinator")
     assert recovered is not None
     ownership.release(recovered)
@@ -133,3 +136,64 @@ def test_held_ownership_live_uses_session_only(
         assert replacement.previous["session_id"] == "held-session"
         assert replacement.previous["released"]
         ownership.release(replacement)
+
+
+@pytest.mark.parametrize("flags", list(itertools.product((False, True), repeat=3)))
+def test_saved_stage_combinations(tmp_path: pathlib.Path, flags: tuple[bool, bool, bool]) -> None:
+    """保存された8組を境界で読み、4段階だけを受理する。"""
+    repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    owner = ownership.try_acquire("example.test/team/repo", worktree=repo, mode="coordinator")
+    assert owner is not None
+    record = json.loads(owner.path.read_text(encoding="utf-8"))
+    record.update(zip(("completed", "released", "held"), flags, strict=True))
+    owner.path.write_text(json.dumps(record), encoding="utf-8")
+    valid = {(False, False, False), (False, False, True), (False, True, False), (True, True, False)}
+    if flags in valid:
+        assert ownership.unfinished_repository_ids((owner.repo_id,)) == (set() if flags[0] else {owner.repo_id})
+    else:
+        with pytest.raises(ValueError, match="段階の組合せ"):
+            ownership.unfinished_repository_ids((owner.repo_id,))
+
+
+@pytest.mark.parametrize("key", ["completed", "released", "held"])
+@pytest.mark.parametrize("value", [0, 1, "false", None])
+def test_saved_stage_requires_bool(tmp_path: pathlib.Path, key: str, value: object) -> None:
+    """JSONの数値・文字列・nullをboolとして受け入れない。"""
+    repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    owner = ownership.try_acquire("example.test/team/repo", worktree=repo)
+    assert owner is not None
+    record = json.loads(owner.path.read_text(encoding="utf-8"))
+    record[key] = value
+    owner.path.write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ValueError, match="bool"):
+        ownership.try_acquire(owner.repo_id, worktree=repo)
+
+
+@pytest.mark.parametrize("completed", [False, True])
+def test_transitions_preserve_data_and_reject_late_updates(tmp_path: pathlib.Path, completed: bool) -> None:
+    """更新・保留・解放の全段階で準備情報を保ち、解放後の更新を拒否する。"""
+    repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    owner = ownership.try_acquire("example.test/team/repo", worktree=repo, mode="coordinator")
+    assert owner is not None
+    owner = ownership.update_session(owner, "session")
+    manifest = tmp_path / "manifest.json"
+    ownership.update_prepared(owner, repo, manifest)
+    candidates = ownership.save_candidates(owner, [{"filename": "work.md"}])
+    process = session_registry.owner_process()
+    assert process is not None
+    ownership.update_process(owner, process)
+    ownership.hold(owner, writers=["writer"])
+    held = json.loads(owner.path.read_text(encoding="utf-8"))
+    assert (held["completed"], held["released"], held["held"]) == (False, False, True)
+    assert held["writer_sessions"] == ["writer"]
+    ownership.release(owner, completed=completed)
+    released = json.loads(owner.path.read_text(encoding="utf-8"))
+    assert (released["completed"], released["released"], released["held"]) == (completed, True, False)
+    assert released["manifest"] == str(manifest)
+    assert released["executor_process"] == session_registry.process_payload(process)
+    assert candidates.exists() is not completed
+    with pytest.raises(ValueError, match="解放済み"):
+        ownership.update_session(owner, "late-session")
+    with pytest.raises(ValueError, match="解放済み"):
+        ownership.hold(owner)
+    assert json.loads(owner.path.read_text(encoding="utf-8")) == released

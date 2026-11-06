@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import pathlib
 import re
 import shlex
 import subprocess
@@ -66,7 +67,8 @@ def _generated_requests(context, host_environ):
     assert len(requests) == len(blocks)
     for block, request in zip(blocks, requests, strict=True):
         outer = json.loads(block.splitlines()[0].removeprefix("// @exec: "))["max_output_tokens"]
-        assert 0 < request["max_output_tokens"] <= outer <= 20_000
+        # rules-common.codexの初回取得契約は両層20,000を明示する。
+        assert request["max_output_tokens"] == outer == 20_000
     return requests
 
 
@@ -111,6 +113,11 @@ def test_public_hook_guidance_preserves_selected_body_and_budgets(tmp_path, monk
     specific = json.loads(guided.stdout)["hookSpecificOutput"]
     assert specific.get("permissionDecision") != "deny"
     context = specific["additionalContext"]
+    # 最終hookは長い取得案内を全文ファイルへ保存する。案内の公開読取コマンドで取り出す。
+    reference = re.search(r"cat -- (.+?) を実行", context)
+    if reference is not None:
+        command = shlex.split("cat -- " + reference[1])
+        context = pathlib.Path(command[-1]).read_text(encoding="utf-8")
     if scenario == "one-line":
         assert "行範囲では収まらない" in context and f"{document}:2" in context
     received: dict[str, bytes] = {}

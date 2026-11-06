@@ -146,3 +146,32 @@ def test_run_hands_text_input_to_subprocess_as_bytes(monkeypatch: pytest.MonkeyP
     assert captured["input"] == b"a\nb\n"
     assert not captured.get("text")
     assert result.stdout == "out\nline\n"
+
+
+def test_scoped_deadline_preserves_defaults_explicit_limits_and_restores_context(monkeypatch):
+    clock = [100.0]
+    limits = []
+
+    def execute(command, **kwargs):
+        limits.append(kwargs["timeout"])
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    monkeypatch.setattr(subject.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(subject.subprocess, "run", execute)
+    monkeypatch.setattr(subject.process_tree, "run_with_timeout", execute)
+    subject.run(["status"])
+    subject.run(["status"], timeout=7)
+    with subject.timeout_scope(10):
+        subject.run(["status"])
+        subject.run(["status"], timeout=2)
+        clock[0] = 106
+        with subject.timeout_scope(20):
+            subject.run(["status"], timeout=30)
+        clock[0] = 111
+        with pytest.raises(subprocess.TimeoutExpired):
+            subject.run(["status"])
+    subject.run(["status"])
+    with pytest.raises(RuntimeError), subject.timeout_scope(10):
+        raise RuntimeError("文脈を中断した")
+    subject.run(["status"], timeout=7)
+    assert limits == [None, 7, 10, 2, 4, None, 7]

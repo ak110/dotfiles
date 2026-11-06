@@ -455,7 +455,11 @@ def _evaluated_reference(result: dict[str, Any], path: pathlib.Path) -> dict[str
             "next_action": "診断ファイルが削除されている。終了の経過は共通ログ`agents-server.log`の同じ時刻の記録で確かめる",
         }
     except (OSError, UnicodeError) as exc:
-        return {**result, "status": "unreadable", "next_action": f"診断ファイルを読めない原因（{exc}）を解消して再照会する"}
+        return {
+            **result,
+            "status": "unreadable",
+            "next_action": f"表示したpathと読取エラー（{exc}）を添えてagents_serverの開発担当へ調査を依頼する",
+        }
     events = set()
     for line in lines:
         with contextlib.suppress(json.JSONDecodeError):

@@ -179,6 +179,33 @@ def test_rebase_accepts_changed_context_and_hunk_position(repo: pathlib.Path, tm
     assert json.loads(output.read_text(encoding="utf-8")) == {old_head: new_head}
 
 
+@pytest.mark.parametrize("order", ["same", "swapped"])
+def test_rebase_maps_repeated_patch_only_in_same_order(repo: pathlib.Path, tmp_path: pathlib.Path, order: str) -> None:
+    """導入・復元・再導入で同一変更が繰り返す系列は、並びが同じときだけ位置で対応付ける。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    first = _commit(repo, "content.txt", "導入\n", "導入")
+    restored = _commit(repo, "content.txt", "基準\n", "対照へ復元")
+    old_head = _commit(repo, "content.txt", "導入\n", "再導入")
+    _git(repo, "checkout", "-b", "rebased", base)
+    new_base = _commit(repo, "upstream.txt", "上流", "上流")
+    if order == "same":
+        _git(repo, "cherry-pick", first, restored, old_head)
+    else:
+        _commit(repo, "content.txt", "導入\n", "導入")
+        _commit(repo, "other.txt", "別\n", "別の変更")
+        _commit(repo, "content.txt", "基準\n", "対照へ復元")
+    new_head = _git(repo, "rev-parse", "HEAD")
+    output = tmp_path / "repeated.json"
+    result = _compare(repo, output, "rebase", (base, old_head, new_base, new_head))
+    if order == "same":
+        assert result == 0
+        new = _git(repo, "rev-list", "--reverse", f"{new_base}..{new_head}").splitlines()
+        assert json.loads(output.read_text(encoding="utf-8")) == dict(zip((first, restored, old_head), new, strict=True))
+    else:
+        assert result != 0
+        assert not output.exists()
+
+
 @pytest.mark.parametrize("violation", ["whitespace", "path", "mode", "type", "binary", "ambiguous"])
 def test_rebase_rejects_content_and_ambiguous_correspondence(
     repo: pathlib.Path, tmp_path: pathlib.Path, violation: str

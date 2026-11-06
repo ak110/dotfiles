@@ -130,8 +130,9 @@ _NEXT_PUBLIC_RATIONALE = (
 )
 _NEXT_STAGED = "比較した段階案の秒数か`成立する段階案なし`を最上位の`段階案の完了見込み秒数`へ書く"
 _NEXT_CORRECTION = (
-    "最上位の`見込みの補正`へ係数・参照した記録・除外した記録を、各行へ`補正前の実装秒数`・`補正前の統合秒数`を書き、"
-    "実装秒数・統合秒数を補正前の値×係数の1秒以内へそろえる。係数が1以外なら参照した記録を1件以上挙げる"
+    "最上位の`見込みの補正`へ実装係数・統合係数・共有待ち秒数・参照した記録・除外した記録を、"
+    "各行へ`補正前の実装秒数`・`補正前の統合秒数`を書き、実装秒数・統合秒数を"
+    "補正前の値×対応する工程の係数の1秒以内へそろえる。係数が1以外なら参照した記録を1件以上挙げる"
 )
 _NEXT_MISSING_BODY = "`atk wi list`の出力で対象のWIファイル名を確かめ、選定の`WI`をprivate-notesにあるファイル名へ直す"
 _NEXT_SINGLE_STAGE = (
@@ -712,13 +713,17 @@ def _check_estimate_records(selection: dict[str, object], costs: list[dict[str, 
     correction = selection.get(_selection.ESTIMATE_CORRECTION_KEY)
     if not isinstance(correction, dict):
         return [*errors, Violation(f"`{_selection.ESTIMATE_CORRECTION_KEY}`がない", next_action=_NEXT_CORRECTION)]
-    coefficient = correction["係数"]
-    if coefficient != 1 and not correction["参照した記録"]:
+    coefficients = _selection.correction_coefficients(correction)
+    if any(value != 1 for value in coefficients) and not correction["参照した記録"]:
         errors.append(Violation("係数が1以外の`見込みの補正`に参照した記録がない", next_action=_NEXT_CORRECTION))
     for row in costs:
-        for corrected, raw in (
-            (_IMPLEMENTATION_SECONDS_KEY, _selection.UNCORRECTED_IMPLEMENTATION_KEY),
-            (_INTEGRATION_SECONDS_KEY, _selection.UNCORRECTED_INTEGRATION_KEY),
+        for (corrected, raw), coefficient in zip(
+            (
+                (_IMPLEMENTATION_SECONDS_KEY, _selection.UNCORRECTED_IMPLEMENTATION_KEY),
+                (_INTEGRATION_SECONDS_KEY, _selection.UNCORRECTED_INTEGRATION_KEY),
+            ),
+            coefficients,
+            strict=True,
         ):
             if raw not in row or abs(typing.cast(float, row[corrected]) - typing.cast(float, row[raw]) * coefficient) > 1:
                 errors.append(
@@ -728,7 +733,22 @@ def _check_estimate_records(selection: dict[str, object], costs: list[dict[str, 
                         next_action=_NEXT_CORRECTION,
                     )
                 )
+    if _selection.SHARED_WAIT_SECONDS_KEY in correction and not selection_contract.is_non_negative_number(
+        _completion_estimate(costs, typing.cast(float, correction[_selection.SHARED_WAIT_SECONDS_KEY]))
+    ):
+        errors.append(Violation("全体の完了見込み秒数が有限数ではない", next_action=_NEXT_CORRECTION))
     return errors
+
+
+def _completion_estimate(costs: list[dict[str, object]], shared_wait: float) -> float:
+    """段階ごとの最長実装と直列統合の和へ、全体の共有待ちを一度加える。"""
+    stages: dict[int, tuple[float, float]] = {}
+    for row in costs:
+        stage = typing.cast(int, row.get(_selection.STAGE_KEY, 1))
+        longest, integration = stages.get(stage, (0, 0))
+        seconds = [typing.cast(float, row.get(key, row.get(legacy))) for legacy, key in _LEGACY_SECONDS_KEYS.items()]
+        stages[stage] = max(longest, seconds[0]), integration + seconds[1]
+    return sum(longest + integration for longest, integration in stages.values()) + shared_wait
 
 
 def check(
@@ -1256,6 +1276,12 @@ def summary_lines(selection: dict[str, object], body_wis: set[str] | None = None
         else:
             lanes.setdefault(lane, []).append(awi)
     lines = [f"WI総数: {len(items)}", f"通常レーン数: {len(lanes)}"]
+    correction = selection.get(_selection.ESTIMATE_CORRECTION_KEY)
+    if isinstance(correction, dict) and _selection.SHARED_WAIT_SECONDS_KEY in correction:
+        wait = typing.cast(float, correction[_selection.SHARED_WAIT_SECONDS_KEY])
+        lines.append(
+            f"全体の完了見込み秒数: {_completion_estimate(list(costs.values()), wait)}（共有待ち秒数 {wait}を1回含む）"
+        )
     if _selection.SINGLE_STAGE_ESTIMATE_KEY in selection:
         lines.append(f"{_selection.SINGLE_STAGE_ESTIMATE_KEY}: {selection[_selection.SINGLE_STAGE_ESTIMATE_KEY]}")
     if _selection.STAGED_ESTIMATE_KEY in selection:
@@ -1386,6 +1412,12 @@ def main(argv: list[str] | None = None) -> int:
                     if not isinstance(updates, dict):
                         raise ValueError("費用更新JSONは最終レーンから補正前後の実装秒数・統合秒数と根拠の5欄への写像とする")
                 addition = load_selection(args.merge, additional=True, candidate_file=args.candidate_file)
+                for data in (selection, addition):
+                    estimate_errors = _check_estimate_records(
+                        data, typing.cast(list[dict[str, object]], _selection.lane_costs(data))
+                    )
+                    if estimate_errors:
+                        raise ValueError("\n".join(error.reason for error in estimate_errors))
                 selection = merge_selection(selection, addition, mapping, updates)
             except (OSError, ValueError) as error:
                 raise InputError(

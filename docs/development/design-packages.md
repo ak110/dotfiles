@@ -46,7 +46,7 @@ Gitリポジトリの作成とGitコマンドの実行は`_testing/git_repositor
 ただしPythonの組込み名と標準ライブラリのトップレベル名に一致する名前は使わない。
 `help`・`format`・`list`のように組込み名と重なる名前は、担う責務を表す語へ置き換える。
 
-対象モジュールの動作テストは、`develop-dotfiles`「テスト配置」に従い、同じディレクトリへ`<モジュール名>_test.py`として置く。
+対象モジュールの動作テストは、`develop-dotfiles/references/testing.md`「テスト配置」に従い、同じディレクトリへ`<モジュール名>_test.py`として置く。
 `--import-mode`を指定せずにpytestを実行すると（`prepend`）、パッケージに属するテストはパッケージ名を含む一意なモジュール名で読み込まれる。
 そのため、直下へ平坦に並べていたときに必要だったファイル名の一意性の制約が外れる。
 既存のファイル名は維持し、この緩和を理由とする改名はしない。
@@ -147,6 +147,11 @@ session scopeを全テストへ適用する案は、先行テストの遅延処�
 
 laneの統合検証と全てのpytest起動は、pyfltrのホスト共有実行APIへ接続する。
 pytestのbasetempは実行単位で分離し、controllerとworkerの終了後に正常・失敗・中断のどの場合も回収する。
+xdist 3.8の失敗上限では、controllerの停止理由を`_testing/xdist_stop.py`がworkerの`session.shouldstop`へ渡す。
+通常完了のキュー排出と早期停止を区別し、lookahead待機中の停止でも未開始の試験を実行しない。
+上流[pytest-xdist #1395](https://github.com/pytest-dev/pytest-xdist/pull/1395)と同じ境界へ限定し、強制終了や実行中の試験の中断は行わない。
+共通pytest pluginから登録するため、両プロジェクトの直接pytestとpyfltrで同じ適応が働き、worker回収後の既存の実行枠解放へ接続する。
+修正を含む安定版へ更新し、`xdist_stop_test.py`の早期停止・正常完了と実行枠の回収を確認した時点で局所適応を撤去する。
 終了時に回収する子孫からは、同じプロセスのmultiprocessingのresource_trackerを除く。trackerはpytestの終了で自ら終わり、先に停止すると終了時の資源解放がtrackerを再起動し、未解放の資源を報告する警告を出力するためである。
 明示basetempとJUnit・traceなどの保存証拠、serveとwatcherはそれぞれの所有主体が必要な寿命まで保持する。
 資源所有クラスは文脈マネージャーで獲得直後から解放を保証し、再入可能なcloseと起動途中の所有移譲を扱う。
@@ -189,7 +194,7 @@ HOME、設定、一時出力、private-notes、managed-tempの状態と仮想環
 
 文書・設定の実物を読むテストがPython実装のディレクトリにあると、文書や設定の変更からテストをたどれない。
 個々の編集対象とテストの対応表を規範へ追加する案は、新しいテストのたびに対応表を更新する費用を生むため採らない。
-配置の定義元を`develop-dotfiles`「テスト配置」へまとめ、実物を読むテストはその実物か対象群を包含する最も近いディレクトリへ置く。
+配置の定義元を`develop-dotfiles/references/testing.md`「テスト配置」へまとめ、実物を読むテストはその実物か対象群を包含する最も近いディレクトリへ置く。
 fixtureの文書を入力にして実装を呼ぶテストは実装の動作テストであり、実装と同居させる。
 混在するファイルから実物を読むテストだけを分離し、assert・パラメーター・対象集合を維持する。
 

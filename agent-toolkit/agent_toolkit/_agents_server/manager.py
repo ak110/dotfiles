@@ -248,6 +248,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     model_type=model_type,
                     launch_kind=launch_kind,
                     excluded_candidates=frozenset(excluded),
+                    request_prompt=prompt,
                 )
             except backends.StartCandidateUnavailable as exc:
                 if exc.scope == "launch_engine":
@@ -457,6 +458,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         model_type: str,
         launch_kind: LaunchKind,
         excluded_candidates: frozenset[ModelCandidate],
+        request_prompt: str,
     ) -> SessionState:
         """初期化の上限超過だけを同じ候補で再試行し、全試行の超過を例外で確定する。
 
@@ -483,6 +485,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     model_type=model_type,
                     launch_kind=launch_kind,
                     excluded_candidates=excluded_candidates,
+                    request_prompt=request_prompt,
                 )
                 _LOG.info(
                     "session初期化が完了しました: engine=%s attempt=%d/%d session_id=%s",

@@ -9,7 +9,7 @@ import pathlib
 import shutil
 from collections.abc import Callable
 
-from agent_toolkit._agents_server import compaction_metrics, logging_config
+from agent_toolkit._agents_server import compaction_metrics, logging_config, wait_run
 from agent_toolkit._agents_server.shared_layout import RESERVED_DIRECTORY_NAMES, valid_session_id
 from agent_toolkit._common import session_registry
 from agent_toolkit._common import state_paths as _state_paths
@@ -62,7 +62,7 @@ def sweep_stale_shared_state(
                 ):
                     continue
                 if any(
-                    path.suffix == ".json" and "wait-results" in path.relative_to(directory).parts and _uncollected_run(path)
+                    path.suffix == ".json" and path.parent.parent == directory / "wait-results" and _uncollected_run(path)
                     for path in files
                 ):
                     continue
@@ -106,12 +106,21 @@ def sweep_stale_shared_state(
 
 
 def _uncollected_run(path: pathlib.Path) -> bool:
-    """CLIの回収途中・未配送runを通常の期限掃引から保護する。"""
+    """CLIの回収途中・未配送runと、解釈不能な回復記録を期限掃引から保護する。"""
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except OSError, UnicodeError, json.JSONDecodeError:
-        return False
-    return isinstance(payload, dict) and payload.get("status") in {"running", "published"}
+        if path.name == "current.json":
+            wait_run.read_current(path)
+            return False
+        run = wait_run.read_run(path)
+    except (OSError, UnicodeError, ValueError) as error:
+        _LOG.warning(
+            "待機の回復用記録を読めないため保持します: path=%s error=%s。"
+            "次の操作: 表示したpathとerrorを添えてagents_serverの開発担当へ調査を依頼する。既存runを削除しない。",
+            path,
+            error,
+        )
+        return True
+    return run is not None and wait_run.uncollected(run)
 
 
 def _result_server_instances(base: pathlib.Path) -> set[str]:

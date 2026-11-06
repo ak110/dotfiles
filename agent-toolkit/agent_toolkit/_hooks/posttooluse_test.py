@@ -1631,7 +1631,7 @@ class TestAgentsServerSessionState:
     def _publish_owned_child(sid: str, tmp_path: pathlib.Path) -> dict[str, object]:
         session_registry.publish(
             "thread-child",
-            terminal=False,
+            state=session_registry.PublicationState.PENDING_RUNNING,
             engine="claude",
             cwd=str(tmp_path),
             launcher_session_id=sid,
@@ -2102,7 +2102,7 @@ class TestAgentsServerSessionState:
         async with server_manager.AgentsServerManager() as manager:
             session = SessionState(remote_session_id, str(tmp_path), engine="codex")
             session.status = "completed"
-            session.turn_completed = True
+            session.record_turn_completed()
             session.touch()
             session.retention_deadline = asyncio.get_running_loop().time() - 1
             manager.sessions[remote_session_id] = session

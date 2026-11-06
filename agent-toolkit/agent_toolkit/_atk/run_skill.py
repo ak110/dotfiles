@@ -210,6 +210,7 @@ def _dispatch_once(args: argparse.Namespace) -> int:
     log_path = (
         record.log_path if record is not None else _new_log_path(log_dir, skill_modes.invocation_scope(args.skill, args.args))
     )
+    args.log_path = log_path
     if manifest_path := getattr(args, "batch_manifest", None):
         manifest = session_review.read(pathlib.Path(manifest_path))
         manifest["log_path"] = str(log_path)
@@ -218,11 +219,20 @@ def _dispatch_once(args: argparse.Namespace) -> int:
         progress = Progress(log, sys.stderr)
         progress.message(f"ログ: {log_path.resolve()}")
         _write_header(log, repo_root=repo_root, args=args)
-        lock = filelock.FileLock(str(_lock_path(repo_root, skill_modes.invocation_scope(args.skill, args.args))))
+        lock = filelock.FileLock(
+            str(
+                _lock_path(
+                    repo_root,
+                    skill_modes.invocation_scope(args.skill, args.args),
+                    target_repo=args.target_repo if getattr(args, "work_dir", None) is not None else None,
+                )
+            )
+        )
         with contextlib.ExitStack() as resources:
             try:
-                resources.enter_context(lock.acquire(timeout=0))
+                resources.enter_context(lock.acquire(timeout=getattr(args, "lock_timeout", 0)))
             except filelock.Timeout:
+                args.run_skill_concurrent = True
                 _log_line(log, "終了状態: 同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった")
                 _outcome.report_failure(
                     f"同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった（ログ: {log_path}）",
@@ -778,9 +788,12 @@ def _resolve_repo_root(path: pathlib.Path) -> pathlib.Path:
     return pathlib.Path(result.stdout.strip()).resolve()
 
 
-def _lock_path(repo_root: pathlib.Path, skill: str) -> pathlib.Path:
+def _lock_path(repo_root: pathlib.Path, skill: str, *, target_repo: str | None = None) -> pathlib.Path:
     """対象リポジトリとスキルの組ごとのロックファイルのパスを、ロックファイルのディレクトリ配下に返す。"""
-    digest = hashlib.sha256(f"{repo_root}\0{skill}".encode()).hexdigest()[:16]
+    from agent_toolkit._git import remote  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    target = target_repo or remote.resolve_repo_identifier(str(repo_root)) or str(repo_root)
+    digest = hashlib.sha256(f"{target}\0{skill}".encode()).hexdigest()[:16]
     lock_dir = _state_paths.lock_dir() / _LOG_DIRNAME
     lock_dir.mkdir(parents=True, exist_ok=True)
     return lock_dir / f"{digest}.lock"
@@ -796,6 +809,14 @@ def _new_log_path(log_dir: pathlib.Path, skill: str) -> pathlib.Path:
 def _remove_expired_logs(log_dir: pathlib.Path, *, now: float) -> None:
     """保持期間を超えたログを削除する。削除できないログは次回の実行で再び試す。"""
     protected = session_review.protected_logs() | _run_state.sweep_records(cutoff=now - LOG_RETENTION_SECONDS)
+    for manifest_path in (_state_paths.state_dir() / "wi-submit" / "runs").glob("*/run.json"):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (
+            manifest.get("status") != "completed"
+            or not manifest.get("report_synced")
+            or manifest["updated_at"] >= now - LOG_RETENTION_SECONDS
+        ):
+            protected.update(pathlib.Path(path) for path in manifest.get("run_skill_logs", []))
     for path in log_dir.glob("*.log"):
         if path in protected:
             continue

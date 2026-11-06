@@ -76,6 +76,16 @@ if os.environ['CODEX_PEER_MODE'] == 'partial':
                 (self.home / 'metadata-observed').touch()
     codex_launcher.RecoveryBridge._generation = observed_generation
 
+if os.environ['CODEX_PEER_MODE'] == 'dead':
+    original_generation = codex_launcher.RecoveryBridge._generation
+    def generation_after_tui_exit(self):
+        current = original_generation(self)
+        # このケースはTUI終了後の再開を検証する。接続中のbridge復旧は他ケースが担当する。
+        if self._authenticated and self.connected_generation is not None:
+            return self.connected_generation
+        return current
+    codex_launcher.RecoveryBridge._generation = generation_after_tui_exit
+
 if os.environ.get('CODEX_PEER_WINDOWS') == '1':
     codex_launcher.sys = types.SimpleNamespace(**(vars(sys) | {'platform': 'win32'}))
 sys.exit(codex_launcher.main())
@@ -208,7 +218,7 @@ async def test_public_launcher_preserves_work_and_stop_contract(peer: _Peer, mod
         arguments.append("--worktree")
     arguments.append("original owned work")
     code, stdout, stderr = await peer.run(arguments, mode=mode)
-    assert code == expected, (stdout, stderr)
+    assert code == expected, (stdout, stderr, peer.records())
     records = peer.records()
     assert len(records) == 1
     record = records[0]

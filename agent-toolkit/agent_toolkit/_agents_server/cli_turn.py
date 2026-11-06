@@ -133,6 +133,8 @@ class CliTurnManager:
         model_type: str | None = None,
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
     ) -> SessionState:
         """新しい会話を開始し、`init`イベントで会話識別子を確定したsessionを返す。"""
         return await self._start_turn(
@@ -146,6 +148,8 @@ class CliTurnManager:
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
             turn_seq=1,
+            request_prompt=request_prompt if request_prompt is not None else prompt,
+            result_contract_recovery_consumed=result_contract_recovery_consumed,
         )
 
     async def resume(
@@ -159,6 +163,8 @@ class CliTurnManager:
         model_type: str | None = None,
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
         turn_seq: int = 0,
         fast_mode: bool | None = None,
     ) -> SessionState:
@@ -180,6 +186,8 @@ class CliTurnManager:
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
             turn_seq=turn_seq + 1,
+            request_prompt=request_prompt,
+            result_contract_recovery_consumed=result_contract_recovery_consumed,
         )
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
@@ -286,6 +294,8 @@ class CliTurnManager:
         launch_kind: LaunchKind,
         excluded_candidates: frozenset[ModelCandidate],
         turn_seq: int,
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
     ) -> SessionState:
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
@@ -302,6 +312,8 @@ class CliTurnManager:
                 launch_kind=launch_kind,
                 excluded_candidates=excluded_candidates,
                 turn_seq=turn_seq,
+                request_prompt=request_prompt,
+                result_contract_recovery_consumed=result_contract_recovery_consumed,
             )
         )
         self._tasks.add(task)
@@ -340,6 +352,8 @@ class CliTurnManager:
         launch_kind: LaunchKind,
         excluded_candidates: frozenset[ModelCandidate],
         turn_seq: int,
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
     ) -> None:
         process: asyncio.subprocess.Process | None = None
         stderr_text = ""
@@ -381,6 +395,8 @@ class CliTurnManager:
                             turn_seq=turn_seq,
                             conversation_id=conversation_id,
                         )
+                        session.prompt = request_prompt or ""
+                        session.result_contract_recovery_consumed = result_contract_recovery_consumed
                         await self._attach_session(session, process, turn_seq)
                         session.status = "starting"
                         session.touch()
@@ -522,12 +538,11 @@ def finalize_turn(session: SessionState, result: dict[str, Any]) -> None:
     """最新turnの終了時の結果を確定する。"""
     if result_contract.hold_invalid_result(session, result):
         return
-    session.pending_result = None
+    session.clear_hold()
     session.status = result["status"]
     session.agent_message = result["agent_message"]
     session.error = result["error"]
-    session.turn_completed = True
-    session.turn_start_ambiguous = False
+    session.record_turn_completed()
     session.touch()
 
 

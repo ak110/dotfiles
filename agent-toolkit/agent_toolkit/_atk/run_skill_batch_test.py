@@ -91,6 +91,8 @@ def test_recovers_finished_analysis_with_saved_report_scope(tmp_path, monkeypatc
         "targets": [target],
         "prepared": [prepared],
         "analysis_succeeded": True,
+        "failure_key": "interrupted",
+        "error": "中断",
     }
     if not legacy:
         value["report_scope"] = scope

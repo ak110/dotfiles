@@ -14,7 +14,7 @@ import pytest
 from agent_toolkit._common import read_triggers, session_state
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+from agent_toolkit._testing.pretooluse_support import run_hook_with_notice_details as _run_hook_in_process
 
 _SAMPLES = pathlib.Path(__file__).with_name("fixtures") / "read_delivery_host_samples.json.gz"
 

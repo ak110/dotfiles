@@ -11,6 +11,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 import sys
@@ -85,7 +86,30 @@ def _run_hook_in_process(
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    return _run_hook_in_process("pretooluse", payload, env_overrides)
+    return run_hook_with_notice_details("pretooluse", payload, env_overrides)
+
+
+def run_hook_with_notice_details(
+    subcommand: str, payload: object, env_overrides: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """通知本文の意味を検証する消費側として、短い参照が指す実ファイルを読む。
+
+    生JSON・容量・配送記録の検証には_run_hook_in_processを使う。
+    この読取では元の資料本文の取得記録を追加しない。
+    """
+    result = _run_hook_in_process(subcommand, payload, env_overrides)
+    if not result.stdout:
+        return result
+    response = json.loads(result.stdout)
+    specific = response.get("hookSpecificOutput", {})
+    context = specific.get("additionalContext", "")
+    match = re.search(r"(?m)^PreToolUse通知の詳細を保存した。保存先: (.+)$", context)
+    if match is None:
+        return result
+    specific["additionalContext"] = pathlib.Path(match[1]).read_text(encoding="utf-8")
+    return subprocess.CompletedProcess(
+        result.args, result.returncode, json.dumps(response, ensure_ascii=False) + "\n", result.stderr
+    )
 
 
 def _run_posttooluse(payload: object, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:

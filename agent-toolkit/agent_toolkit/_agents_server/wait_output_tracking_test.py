@@ -7,7 +7,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._agents_server import responses, resume_waits, state, wait_output_tracking
+from agent_toolkit._agents_server import responses, resume_waits, state, turn_state, wait_output_tracking
 
 
 @pytest.mark.parametrize("namespace", ["mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__", ""])
@@ -79,7 +79,6 @@ def test_send_message_reactivates_terminal_child_until_observed(namespace: str, 
     """追送の配送結果で終了済みの子を再追跡し、曖昧な開始も終了観測まで保持する。"""
     session = state.SessionState("parent-1", "/work")
     session.terminal_child_session_ids.add("child-1")
-    session.auto_resume_consumed = True
     wait_output_tracking.consume_claude_agents_server_message(
         session,
         {"content": [{"id": "reply", "name": f"{namespace}send_message", "input": {"session_id": "child-1"}}]},
@@ -101,21 +100,31 @@ def test_send_message_reactivates_terminal_child_until_observed(namespace: str, 
     if delivery == "reply_failed":
         assert not session.live_child_session_ids
         assert session.terminal_child_session_ids == {"child-1"}
-        assert session.auto_resume_consumed
         return
     assert session.live_child_session_ids == {"child-1"}
     assert not session.terminal_child_session_ids
-    assert not session.auto_resume_consumed
-    # 同じ結果をturn/completedが再掲しても、既に消費した自動再開を再予約しない。
-    session.auto_resume_consumed = True
+    # 同じ配送結果の再掲は同じ観測対象を保つ。
     wait_output_tracking.consume_agents_server_tool_result(session, "send_message", {"session_id": "child-1"}, result)
-    assert session.auto_resume_consumed
-    wait_output_tracking.consume_agents_server_tool_result(
-        session, "kill", {"session_id": "child-1"}, state.SessionState("child-1", "/work", status="interrupted").public_status()
-    )
+    assert session.live_child_session_ids == {"child-1"}
+    assert not session.terminal_child_session_ids
+    terminal = state.SessionState("child-1", "/work", status="interrupted").public_status()
+    wait_output_tracking.consume_agents_server_tool_result(session, "kill", {"session_id": "child-1"}, terminal)
+    assert not session.live_child_session_ids
+    assert session.terminal_child_session_ids == {"child-1"}
+    wait_output_tracking.consume_agents_server_tool_result(session, "kill", {"session_id": "child-1"}, terminal)
     assert not session.live_child_session_ids
     assert session.terminal_child_session_ids == {"child-1"}
     wait_output_tracking.consume_agents_wait_output(session, '{"session_id":"child-1","status":"interrupted"}')
+    assert not session.live_child_session_ids
+    assert not session.terminal_child_session_ids
+    wait_output_tracking.consume_agents_server_tool_result(session, "kill", {"session_id": "child-1"}, terminal)
+    wait_output_tracking.consume_agents_server_tool_result(session, "kill", {"session_id": "untracked"}, terminal)
+    assert not session.live_child_session_ids
+    assert not session.terminal_child_session_ids
+    _start_child(session, "next-child", "child-2")
+    assert session.live_child_session_ids == {"child-2"}
+    wait_output_tracking.consume_agents_server_tool_result(session, "kill", {"session_id": "child-1"}, terminal)
+    assert session.live_child_session_ids == {"child-2"}
     assert not session.terminal_child_session_ids
 
 
@@ -273,8 +282,7 @@ async def test_background_agents_wait_output_releases_collected_child_before_uno
     if output_text is not None:
         output.parent.mkdir(parents=True)
         output.write_text(output_text, encoding="utf-8")
-    session.pending_result = {"status": "completed", "agent_message": "待機表明", "error": None}
-    session.awaiting_auto_resume = True
+    session.hold_result(turn_state.BackgroundWait({"status": "completed", "agent_message": "待機表明", "error": None}, None))
 
     (await claude.ClaudeServerManager._finalize_pending_result(session))  # pylint: disable=protected-access
 

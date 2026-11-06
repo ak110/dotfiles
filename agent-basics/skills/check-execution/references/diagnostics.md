@@ -9,6 +9,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 欠陥を示す診断の処置を確定する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「所要の原因調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/testing.md#「速度」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「速度」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` |
@@ -63,7 +64,7 @@ pytestの`skip`・`skipif`・`xfail(run=False)`、Playwrightの`test.skip`など
 
 - 必要なテストの未実行は、実行全体が終了コード0でも合格に数えず、追加検証へ戻すか未実施の範囲として報告する。
 - 処理の未到達、未適用、または未完了を示す出力は、既存か新規かを問わず検証を阻害する要因として扱う。基準版との比較ができない状態や、警告の意味・影響・帰属先が未確定である状態も同様に作業を続けられない原因とし、「残す理由」を形式的に記録するだけでは合格とせず、理由と不足している条件を報告先に返却する。
-- 欠陥を示す診断が検出された場合は原因を是正する。権限不足や必要な入力情報の欠落により自力で是正できない場合は、報告先へ状況を伝える。警告メッセージの意味の判定は、`agent-basics:bugfix/references/root-cause-analysis.md`の「問題を見つけたときの対処」に従う。
+- lint・型検査・自動テスト・CIなどで欠陥を示す診断が検出された場合は、`agent-basics:bugfix`を起動し、原因分析と絞り込み型の類似見直しを行って原因を是正する。再発防止策の要否、初回検出の例外、既存の作業記録への短い記載は同スキルに従う。権限不足や必要な入力情報の欠落により自力で是正できない場合は、報告先へ状況を伝える。警告メッセージの意味の判定は、`agent-basics:bugfix/references/root-cause-analysis.md`の「問題を見つけたときの対処」に従う。
 - 処理が正常に完了し、欠陥を示しておらず、警告の意味、影響、帰属先、比較対象バージョン、および残す妥当な理由をすべて特定できた警告については、それらの情報と診断本文を検証結果と、プロジェクトが定める作業の記録に残した上で作業を続行する。
 - 是正が必要な既存の不具合を発見した場合は、観測された出力、直接的な原因、ならびに修正対象と修正の方向性を依頼元へ報告し、作業の割り当てと認可に従って是正を進める。
 - ブランチ統合の際は、実装段階で警告を残す根拠とした理由が、統合後の入力や実行条件においても依然として成立しているかを確認する。条件が成立しなくなった警告や、統合によって新たに生じた欠陥は、実装時と同様の厳格な基準で判定する。

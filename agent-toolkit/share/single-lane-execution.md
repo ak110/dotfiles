@@ -13,7 +13,7 @@
 | 計画または実装の品質基準を適用する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing.md#「検証単位の選定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` |
 | 実装に着手する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 検証結果を記録する前 | `verification-evidence.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence.md` |
+| 未コミット検証の実行前と検証結果の記録前 | `verification-evidence.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence.md` |
 | 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
 | 受入確認と通常検証を比較する前 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
 | レビュー指摘への対応を開始する前 | `review-loop-coordination.md`の冒頭と「ラウンドの遷移」から「応答済みの判定」まで | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#冒頭`、`section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンドの遷移」から「応答済みの判定」まで` |
@@ -42,6 +42,27 @@
 5. レーン専用の資源を使用している場合は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に定める検収を自ら実施する。読込表に記載されたレーン担当の契約に従い、検収済みHEAD、全計画、WI、採否、および受理した返却ファイルと`レビューHEAD`の組み合わせに基づいて統合入力を確定する。初期選定が複数レーンである場合は、統合入力を確定した後に`exec.subagent.md`「出力」の`統合準備完了`を返し、メインエージェントから`統合許可`を受け取ってから統合を進める（主作業ツリーへ統合するレーンを常に1つに制限するため）。`atk lane integrate`を実行して統合、計画保存、WIの終了処理を最終化し、`phase: finalized`を確認した上で通常の`統合完了`形式のみをメインエージェントへ返す。対象worktreeへ直接実装している場合は、既存の受領確認を完了した後に呼出側の計画保存、WI終了、公開工程へ戻る。実装を伴う対象は実行レビューを受理した後に、実装やマージを伴わない対象は採否を確定した後に、それぞれ本手順を実施する。
 
 本契約の対象となる作業では、exec.parent.md、exec.subagent.md、lane-planning.mdに定める定型的な準備通知、実装開始、実装完了、レビュー修正、統合開始の往復処理や、応答を待つ指示を省く。本節に定める同一担当者による継続実行を優先する。ただし、計画の自己監査、計画構造の自動チェック、採否や認可の検収、計画の凍結、実行レビューの実施、統合時の検収条件は維持する。エージェント向け文書を含む書き込み認可の境界はWIの要求とし、その境界の内側で計画に含まれていないファイルを作成・編集する場合や、WIの要求を超える変更が生じる場合の扱いは、exec.subagent.md「実装」に従う。ユーザー判断の即時通知、必要な回答の待機、最終結果の検収は維持する。実装やマージを行わない場合であっても、採否の確定、計画の保存、WIの終了処理は完了させる。
+
+## 工程の計測と統合準備
+
+計画・実装を担当するレーンは、計画、実装、検証、レビューと修正の開始・終了を、その時点の計画の進捗ログへ記録する。
+秒以下を持つ時差付きISO 8601の開始・終了と観測元を、既存の`結果・特記事項`欄へ保存する。
+日時セルの分精度から秒単位の区間を推定しない。
+統合準備完了、統合許可の受領、統合の開始・終了も同じ記録へ対応付ける。
+メインは統合許可を送った時刻を保持し、レーンへ渡す。
+計画前の開始は受領済みのレーン開始時刻を使い、記録のない過去の区間は未分離とする。
+検証はコマンドの保存記録とpyfltrの実行ID・公開timingを関連付け、初回取得待ち、譲渡後の取り直し、本体、コマンド全体を区別する。
+コマンド全体から本体を引いた差だけで実行枠待ちを算出しない。
+並行区間は開始・終了時刻から重なりを除いて比較し、全体の最長経路、直列統合の処理と許可待ちを確認する。
+工程別の実測と予測、未計測、レーン単位とセッション全体を分け、独立した点検台帳は作らない。
+
+統合許可を待つ間に、受理したレビューHEAD、全計画・WI、検証argv、適格な成功record、最終化argvを既存manifestへ準備する。
+共有hookなど複数レーンの進行を妨げる不良は、解除に必要な最小範囲の修正を呼出側の即時対応契約へ渡し、同じレーンに属する無関係な全作業の終了と束ねて待たせない。
+独立文脈レビュー、所有権、必須検証と統合の直列化を維持する。
+
+後続へ渡す未コミット検証は、`verification-evidence.md`「検証時本文の保存」に従い、実行前に本文を保存する。
+返却前に保存物から実行時本文を再取得でき、返却対象への適用理由が記録されていることを確かめる。
+欠落や実行中の変更も同節に従って扱う。
 
 ## 追加と再開
 

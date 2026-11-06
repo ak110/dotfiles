@@ -51,7 +51,7 @@ async def test_writer_logs_result_write_and_delete_without_body(
     session = state.SessionState("session-1", str(tmp_path))
     session.status = "completed"
     session.agent_message = "秘密の結果本文"
-    session.turn_completed = True
+    session.record_turn_completed()
     session.touch()
     writer = subject.StatusFileWriter(
         {session.session_id: session},
@@ -231,7 +231,7 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
 
     visible.status = "completed"
     visible.agent_message = "完了"
-    visible.turn_completed = True
+    visible.record_turn_completed()
     visible.touch()
     writer.flush()
     result_path = shared_layout.results_directory("root", tmp_path) / "visible.json"
@@ -250,7 +250,7 @@ def _completed_with_retention_deadline(session_id: str, tmp_path: pathlib.Path, 
     session = state.SessionState(session_id, str(tmp_path), announced=True, turn_seq=turn_seq)
     session.status = "completed"
     session.agent_message = "完了"
-    session.turn_completed = True
+    session.record_turn_completed()
     session.touch()
     session.retention_deadline = asyncio.get_running_loop().time() + 0.03
     return session
@@ -369,7 +369,7 @@ def _terminal_parent(tmp_path: pathlib.Path, status: str) -> state.SessionState:
     session = state.SessionState("parent", str(tmp_path), announced=True, turn_seq=1, label="lane-01-exec")
     session.status = status
     session.agent_message = "待機中: grandchild"
-    session.turn_completed = True
+    session.record_turn_completed()
     session.touch()
     return session
 
@@ -719,7 +719,7 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
         session = manager.sessions[started["session_id"]]
         session.status = "completed"
         session.agent_message = "完了"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.touch()
         await _wait_now(manager)
         writer.flush()
@@ -749,7 +749,7 @@ async def test_manager_removes_previous_result_when_new_turn_starts(
         session = manager.sessions[started["session_id"]]
         session.status = "completed"
         session.agent_message = "前の結果"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.touch()
         writer.flush()
         result_path = shared_layout.results_directory("root", tmp_path) / f"{session.session_id}.json"
@@ -837,7 +837,7 @@ async def test_manager_removes_kill_result_but_keeps_uncollected_result(
             session = manager.sessions[session_id]
             session.status = "completed"
             session.agent_message = "完了"
-            session.turn_completed = True
+            session.record_turn_completed()
             session.touch()
 
         response = await manager.kill(killed["session_id"], timeout=0)
@@ -901,6 +901,7 @@ class _FakeStatusBackend:
         model_type: str,
         launch_kind: state.LaunchKind,
         excluded_candidates: frozenset[state.ModelCandidate],
+        **kwargs: typing.Any,
     ) -> state.SessionState:
         self.count += 1
         session = state.SessionState(
@@ -912,6 +913,7 @@ class _FakeStatusBackend:
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
             turn_seq=1,
+            prompt=kwargs.get("request_prompt", _prompt),
         )
         self.sessions[session.session_id] = session
         state.initialize_turn(session)
@@ -938,30 +940,12 @@ class _UnavailableStatusBackend(_FakeStatusBackend):
         super().__init__(sessions)
         self._unavailable_models = unavailable_models
 
-    async def start(
-        self,
-        _prompt: str,
-        cwd: str,
-        model: str,
-        effort: str,
-        *,
-        model_type: str,
-        launch_kind: state.LaunchKind,
-        excluded_candidates: frozenset[state.ModelCandidate],
-    ) -> state.SessionState:
-        session = await super().start(
-            _prompt,
-            cwd,
-            model,
-            effort,
-            model_type=model_type,
-            launch_kind=launch_kind,
-            excluded_candidates=excluded_candidates,
-        )
+    async def start(self, *args: typing.Any, **kwargs: typing.Any) -> state.SessionState:
+        session = await super().start(*args, **kwargs)
         if session.model in self._unavailable_models:
             session.status = "failed"
             session.error = {"message": "usage limit", "codexErrorInfo": "usageLimitExceeded"}
-            session.turn_completed = True
+            session.record_turn_completed()
             session.touch()
         return session
 
@@ -981,26 +965,8 @@ class _DelayedUnavailableStatusBackend(_FakeStatusBackend):
         self._unavailable_models = unavailable_models
         self._pending: list[asyncio.Task[None]] = []
 
-    async def start(
-        self,
-        _prompt: str,
-        cwd: str,
-        model: str,
-        effort: str,
-        *,
-        model_type: str,
-        launch_kind: state.LaunchKind,
-        excluded_candidates: frozenset[state.ModelCandidate],
-    ) -> state.SessionState:
-        session = await super().start(
-            _prompt,
-            cwd,
-            model,
-            effort,
-            model_type=model_type,
-            launch_kind=launch_kind,
-            excluded_candidates=excluded_candidates,
-        )
+    async def start(self, *args: typing.Any, **kwargs: typing.Any) -> state.SessionState:
+        session = await super().start(*args, **kwargs)
         if session.model in self._unavailable_models:
             self._pending.append(asyncio.create_task(self._fail_after_response(session)))
         return session
@@ -1009,7 +975,7 @@ class _DelayedUnavailableStatusBackend(_FakeStatusBackend):
         await asyncio.sleep(0)
         session.status = "failed"
         session.error = {"message": "usage limit", "codexErrorInfo": "usageLimitExceeded"}
-        session.turn_completed = True
+        session.record_turn_completed()
         session.touch()
         async with self._condition:
             self._condition.notify_all()
@@ -1107,7 +1073,7 @@ class _TerminalBeforeResponseBackend(FakeBackend):
         session.publish_registry = True
         session.status = "completed"
         session.agent_message = "応答前の報告"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.touch()
         return session
 

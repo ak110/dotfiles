@@ -669,18 +669,22 @@ def _write_current_wait_run(
     """指定したrunをcurrentとして保存し、runディレクトリと記録ファイルのパスを返す。"""
     run_directory = shared_layout.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
     run_path = run_directory / "run-1.json"
+    value: dict[str, Any] = {
+        "run_id": "run-1",
+        "status": status,
+        "targets": [target],
+        "started_at": "2026-09-21T00:00:00+00:00",
+    }
+    if status != "running":
+        value.update(
+            continuable=continuable,
+            output=f'{{"session_id":"{target}","status":"completed"}}',
+            exit_code=0,
+            stream="stdout",
+        )
     agents_wait._write_json(  # pylint: disable=protected-access
         run_path,
-        {
-            "run_id": "run-1",
-            "status": status,
-            "targets": [target],
-            "started_at": "2026-09-21T00:00:00+00:00",
-            "continuable": continuable,
-            "output": f'{{"session_id":"{target}","status":"completed"}}',
-            "exit_code": 0,
-            "stream": "stdout",
-        },
+        value,
     )
     agents_wait._write_json(run_directory / "current.json", {"run_id": "run-1"})  # pylint: disable=protected-access
     return run_directory, run_path
@@ -1984,7 +1988,9 @@ def test_agents_wait_reissues_for_registered_session_after_notice(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """通知後に状態投影が消えても、再発行した待機が同じsessionの終了時の結果を回収する。"""
-    session_registry.publish("session-1", terminal=False, state_root=wait_environment.parents[2])
+    session_registry.publish(
+        "session-1", state=session_registry.PublicationState.PENDING_RUNNING, state_root=wait_environment.parents[2]
+    )
     status_path = _write_own_status(wait_environment, [{"session_id": "session-1"}])
     notices = wait_environment.parent / "notices"
     notices.mkdir(parents=True)
@@ -2054,10 +2060,12 @@ def test_agents_wait_releases_registered_session_terminal_in_registry(
     state_root = wait_environment.parents[2]
     wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
     if record == "terminal":
-        session_registry.publish("session-1", terminal=True, status="interrupted", state_root=state_root)
+        session_registry.publish("session-1", state=session_registry.PublicationState.RESULT_INTERRUPTED, state_root=state_root)
     else:
         processes = (exited_process_identity(), exited_process_identity())
-        session_registry.publish("session-1", terminal=False, processes=processes, state_root=state_root)
+        session_registry.publish(
+            "session-1", state=session_registry.PublicationState.PENDING_RUNNING, processes=processes, state_root=state_root
+        )
 
     with pytest.raises(SystemExit, match="10"):
         atk.main(["agents", "wait"])
@@ -2083,7 +2091,7 @@ def test_agents_wait_ends_when_only_target_becomes_terminal_without_result(
     """
     state_root = wait_environment.parents[2]
     wait_targets.retain_wait_targets("root-session", "root.json", ["session-1"], state_root)
-    session_registry.publish("session-1", terminal=False, state_root=state_root)
+    session_registry.publish("session-1", state=session_registry.PublicationState.PENDING_RUNNING, state_root=state_root)
     # 上限到達による終了と区別するため、待機上限をテストの実行時間より十分大きくする。
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 3600.0)
     sleeps: list[float] = []
@@ -2091,10 +2099,14 @@ def test_agents_wait_ends_when_only_target_becomes_terminal_without_result(
     def terminate_on_sleep(seconds: float) -> None:
         sleeps.append(seconds)
         if record == "terminal":
-            session_registry.publish("session-1", terminal=True, status="interrupted", state_root=state_root)
+            session_registry.publish(
+                "session-1", state=session_registry.PublicationState.RESULT_INTERRUPTED, state_root=state_root
+            )
         else:
             processes = (exited_process_identity(),)
-            session_registry.publish("session-1", terminal=False, processes=processes, state_root=state_root)
+            session_registry.publish(
+                "session-1", state=session_registry.PublicationState.PENDING_RUNNING, processes=processes, state_root=state_root
+            )
 
     monkeypatch.setattr(agents_wait.time, "sleep", terminate_on_sleep)
 
@@ -2479,7 +2491,7 @@ def test_wait_absent_reports_interrupted_diagnostics(
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", _STOPPED_SERVER)
     session_registry.publish(
         "session-1",
-        terminal=False,
+        state=session_registry.PublicationState.PENDING_RUNNING,
         turn_seq=4,
         processes=(exited_process_identity(), exited_process_identity()),
         state_root=state_root,

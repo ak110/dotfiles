@@ -230,7 +230,7 @@ def test_running_descendant_keeps_ownership(tmp_path: pathlib.Path, monkeypatch:
         assert identity is not None
         session_registry.publish(
             "worker",
-            terminal=False,
+            state=session_registry.PublicationState.PENDING_RUNNING,
             cwd=str(snapshots[0].repository.worktree),
             launcher_session_id="coordinator",
             processes=(identity,),
@@ -330,8 +330,15 @@ def test_declared_writer_holds_only_its_repository(tmp_path: pathlib.Path, monke
         kwargs["on_session_started"]("coordinator")
         identity = session_registry.ProcessIdentity.of(os.getpid())
         assert identity is not None
-        session_registry.publish("writer-0", terminal=False, processes=(identity,), launcher_session_id="coordinator")
-        session_registry.publish("writer-1", terminal=True, launcher_session_id="coordinator")
+        session_registry.publish(
+            "writer-0",
+            state=session_registry.PublicationState.PENDING_RUNNING,
+            processes=(identity,),
+            launcher_session_id="coordinator",
+        )
+        session_registry.publish(
+            "writer-1", state=session_registry.PublicationState.RESULT_COMPLETED, launcher_session_id="coordinator"
+        )
         for path in notes.glob("2026/10/*.md"):
             path.unlink()
         records = {

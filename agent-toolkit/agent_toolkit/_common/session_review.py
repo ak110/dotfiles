@@ -7,15 +7,17 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import enum
 import hashlib
 import json
 import os
 import pathlib
 import uuid
 from collections.abc import Generator, Mapping
-from typing import Any
+from typing import Any, Literal, Self
 
 import filelock
+import pydantic
 
 from agent_toolkit._common import (
     atomic_file,
@@ -31,6 +33,279 @@ LEGACY_BATCH_SCOPE = "agent-toolkit:session-review-batch"
 BATCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_BATCH"
 TARGET_ENV = "AGENT_TOOLKIT_RUN_SKILL_TARGET_REPO"
 LAUNCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH"
+
+
+class LaunchStatus(enum.StrEnum):
+    """受付前の起動責任と、受付後への移管を区別する。"""
+
+    STARTING = "starting"
+    ACCEPTED = "accepted"
+    SETTLED = "settled"
+    NOTIFIED = "notified"
+
+
+class LaunchAttempt(pydantic.BaseModel):
+    """起動試行の保存境界。OSの生存はProcessIdentityから都度取得する。"""
+
+    model_config = pydantic.ConfigDict(extra="allow", frozen=True)
+    status: LaunchStatus
+    manifest_path: str | None = None
+    exited: pydantic.StrictBool = False
+    owner: session_registry.ProcessIdentity | None = None
+    process: session_registry.ProcessIdentity | None = None
+
+    @pydantic.model_validator(mode="after")
+    def check_receipt(self) -> Self:
+        """受付済みの試行は移管先を必須とする。"""
+        if (self.status == LaunchStatus.ACCEPTED) != bool(self.manifest_path):
+            raise ValueError("起動試行の受付状態とmanifestが一致しない")
+        return self
+
+    def save(self, path: pathlib.Path) -> None:
+        """検証済みの試行を保存キーの追加なしで交換する。"""
+        write(path, self.model_dump(mode="json", exclude_unset=True))
+
+    def receipt(self, manifest: pathlib.Path | None) -> LaunchAttempt:
+        """受付済み試行への遅れた見送りで所有移管を取り消さない。"""
+        if self.status != LaunchStatus.STARTING:
+            return self
+        return LaunchAttempt.model_validate(
+            {
+                **self.model_dump(exclude_unset=True),
+                "status": LaunchStatus.ACCEPTED if manifest is not None else LaunchStatus.SETTLED,
+                "manifest_path": str(manifest) if manifest else None,
+            }
+        )
+
+    def attach(self, identity: session_registry.ProcessIdentity | None) -> LaunchAttempt:
+        """起動プロセスの発行結果を保存する。"""
+        if self.status != LaunchStatus.STARTING:
+            raise ValueError("受付終了した試行へプロセスを追加できない")
+        return LaunchAttempt.model_validate(
+            {
+                **self.model_dump(exclude_unset=True),
+                "process": identity,
+                "exited": identity is None,
+            }
+        )
+
+    def notify(self) -> LaunchAttempt:
+        """受付前に終了した試行だけを通知済みへ移す。"""
+        if self.status != LaunchStatus.STARTING:
+            raise ValueError("受付終了した試行は失敗通知できない")
+        return LaunchAttempt.model_validate({**self.model_dump(exclude_unset=True), "status": LaunchStatus.NOTIFIED})
+
+
+class BatchStatus(enum.StrEnum):
+    """分析・報告の独立した結果をまとめて確定するbatchの段階。"""
+
+    RUNNING = "running"
+    FAILED = "failed"
+    COMPLETED = "completed"
+    RESOLVED = "resolved"
+
+
+class ReviewBatch(pydantic.BaseModel):
+    """既存の保存キーを保持して、状態値と更新条件を検証する。"""
+
+    model_config = pydantic.ConfigDict(extra="allow", frozen=True, strict=True)
+    status: BatchStatus
+    run_id: str
+    targets: list[PendingGeneration]
+    prepared: list[dict[str, Any]] = pydantic.Field(default_factory=list)
+    analysis_succeeded: bool = False
+    report_synced: bool = False
+    failure_key: str | None = None
+    error: str | None = None
+
+    @pydantic.model_validator(mode="after")
+    def check_failure(self) -> Self:
+        """失敗状態は診断と報告識別子を必須とする。"""
+        if self.status == BatchStatus.FAILED and (not self.failure_key or not self.error):
+            raise ValueError("失敗batchにfailure_keyまたはerrorが無い")
+        return self
+
+
+class ScopeEntry(pydantic.BaseModel):
+    """元記録の処理済み接頭辞を識別する。"""
+
+    model_config = pydantic.ConfigDict(extra="allow", frozen=True, strict=True)
+    path: str
+    through_line: int = pydantic.Field(ge=0)
+    digest: str
+
+
+class ReviewedScope(pydantic.BaseModel):
+    """pending世代とは独立に残る処理済み範囲。"""
+
+    model_config = pydantic.ConfigDict(extra="allow", frozen=True, strict=True)
+    version: Literal[1]
+    records: dict[str, ScopeEntry]
+
+
+class TargetStatus(enum.StrEnum):
+    """会話の待ち世代と処理済み範囲の存在を区別する。"""
+
+    ABSENT = "absent"
+    PENDING = "pending"
+    REVIEWED = "reviewed"
+    PENDING_REVIEWED = "pending-reviewed"
+
+
+class PendingGeneration(pydantic.BaseModel):
+    """待ちの入力世代。失敗報告の状態は同じ世代にだけ適用する。"""
+
+    model_config = pydantic.ConfigDict(extra="allow", frozen=True, strict=True)
+    generation: str
+    key: str
+    host: Literal["claude", "codex", "opencode"]
+    session_id: str
+    failure_key: str | None = None
+    failure_unreported: bool = False
+
+    @pydantic.model_validator(mode="after")
+    def check_failure(self) -> Self:
+        """未報告の失敗には再開対象を識別するキーを伴わせる。"""
+        if self.failure_unreported and not self.failure_key:
+            raise ValueError("未報告の失敗にfailure_keyが無い")
+        if self.key != key(self.host, self.session_id):
+            raise ValueError("待ち世代の会話識別子が一致しない")
+        return self
+
+
+class TargetGeneration:
+    """pendingとreviewedの世代交換を、呼出側と共通の短時間ロック内で所有する。"""
+
+    def __init__(self, host: str, session_id: str) -> None:
+        name = key(host, session_id)
+        self.pending_path = directory() / "pending" / f"{name}.json"
+        self.reviewed_path = directory() / "reviewed" / f"{name}.json"
+        self.pending = PendingGeneration.model_validate(read(self.pending_path)) if self.pending_path.exists() else None
+        self.reviewed = ReviewedScope.model_validate(read(self.reviewed_path)) if self.reviewed_path.exists() else None
+
+    @property
+    def status(self) -> TargetStatus:
+        """保存状態から導出し、別の永続フラグは持たない。"""
+        if self.pending is not None:
+            return TargetStatus.PENDING_REVIEWED if self.reviewed is not None else TargetStatus.PENDING
+        return TargetStatus.REVIEWED if self.reviewed is not None else TargetStatus.ABSENT
+
+    def register(self, value: dict[str, Any]) -> None:
+        """新しい入力世代を登録する。"""
+        self.pending = PendingGeneration.model_validate(value)
+        write(self.pending_path, self.pending.model_dump(mode="json", exclude_unset=True))
+
+    def fail(self, generation: str, failure_key: str, *, reported: bool) -> None:
+        """遅れた失敗結果で後続の入力世代を変更しない。"""
+        if self.pending is not None and self.pending.generation == generation:
+            self.register(
+                {**self.pending.model_dump(exclude_unset=True), "failure_key": failure_key, "failure_unreported": not reported}
+            )
+
+    def complete(self, scope: dict[str, Any], generation: str | None, *, appended: bool) -> None:
+        """処理範囲を保存し、準備時と一致した待ちだけを除去する。"""
+        reviewed = ReviewedScope.model_validate(scope)
+        write(self.reviewed_path, scope)
+        if self.pending is not None and self.pending.generation == generation and not appended:
+            self.pending_path.unlink()
+            self.pending = None
+        self.reviewed = reviewed
+
+
+class BatchWriter:
+    """別プロセスのfinishと起動側の更新を同じロックで交換する。"""
+
+    def __init__(self, path: pathlib.Path) -> None:
+        self.path = path
+
+    def load(self) -> ReviewBatch:
+        """保存境界で状態値と各軸の型を検証する。"""
+        return ReviewBatch.model_validate_json(self.path.read_text(encoding="utf-8"))
+
+    def create(self, value: dict[str, Any]) -> dict[str, Any]:
+        """固定した対象集合の実行を開始する。"""
+        with locked():
+            if self.path.exists():
+                raise ValueError("既存batchは作成し直せない")
+            return self._save({**value, "status": BatchStatus.RUNNING})
+
+    def _save(self, value: dict[str, Any]) -> dict[str, Any]:
+        batch = ReviewBatch.model_validate_json(json.dumps(value))
+        result = batch.model_dump(mode="json", exclude_unset=True)
+        write(self.path, result)
+        return result
+
+    def _active(self) -> dict[str, Any]:
+        batch = self.load()
+        if batch.status in {BatchStatus.COMPLETED, BatchStatus.RESOLVED}:
+            raise ValueError("確定済みbatchは更新できない")
+        return batch.model_dump(exclude_unset=True)
+
+    def fail(self, failure_key: str, reason: str) -> dict[str, Any]:
+        """失敗報告を所有する未確定のbatchへ移す。"""
+        with locked():
+            return self._save({**self._active(), "status": BatchStatus.FAILED, "failure_key": failure_key, "error": reason})
+
+    def report_failure(self, *, synced: bool) -> dict[str, Any]:
+        """失敗報告の同期結果を対象の入力世代へ反映する。"""
+        with locked():
+            value = self._active()
+            if value["status"] != BatchStatus.FAILED:
+                raise ValueError("失敗していないbatchの失敗報告は確定できない")
+            value = self._save({**value, "report_synced": synced})
+            for target in value["targets"]:
+                TargetGeneration(target["host"], target["session_id"]).fail(
+                    target["generation"], value["failure_key"], reported=synced
+                )
+            return value
+
+    def analyze(self) -> dict[str, Any]:
+        """finishは分析成功だけを記録し、範囲の確定は起動側へ残す。"""
+        with locked():
+            value = self._active()
+            if not value.get("prepared") or any(item.get("unconfirmed_scope") for item in value["prepared"]):
+                raise ValueError("未準備または未確認範囲のあるbatchは完了できない")
+            return self._save({**value, "analysis_succeeded": True})
+
+    def prepare(self, prepared: dict[str, Any]) -> dict[str, Any]:
+        """準備済み範囲を同じbatchへ追加する。"""
+        with locked():
+            value = self._active()
+            return self._save({**value, "prepared": [*value.get("prepared", []), prepared]})
+
+    def select(self, targets: list[dict[str, Any]], target_repo: str) -> dict[str, Any]:
+        """活動再開や準備失敗を除いた実行対象へ更新する。"""
+        with locked():
+            value = self._active()
+            return self._save({**value, "targets": targets, "target_repo": target_repo})
+
+    def attach(self, identity: session_registry.ProcessIdentity) -> None:
+        """生存判定の一次情報を照会できるPID世代を保存する。"""
+        with locked():
+            self._save({**self._active(), "processes": [{"pid": identity.pid, "create_time": identity.create_time}]})
+
+    def complete(self, *, report_synced: bool) -> dict[str, Any]:
+        """分析と報告同期が揃った保存済み範囲だけを成功確定する。"""
+        with locked():
+            value = self._active()
+            if not report_synced:
+                raise ValueError("report-unsynced: 報告の同期を確認できない")
+            if not value.get("analysis_succeeded"):
+                raise ValueError("analysis-incomplete: session-review-state finishの実行が必要")
+            for prepared in value["prepared"]:
+                complete(prepared)
+            return self._save({**value, "status": BatchStatus.COMPLETED})
+
+    def resolve(self, *, waiting: set[str] | None = None) -> dict[str, Any]:
+        """通常対象が無い回、または失敗対象が解消した回を終了する。"""
+        with locked():
+            value = self._active()
+            if value["status"] == BatchStatus.FAILED:
+                if not value.get("report_synced") or waiting is None or any(t["key"] in waiting for t in value["targets"]):
+                    raise ValueError("未報告または未解消の失敗batchは解決できない")
+            elif any(not target.get("review_batch") for target in value["targets"]):
+                raise ValueError("通常対象の残るbatchは解決できない")
+            return self._save({**value, "status": BatchStatus.RESOLVED})
 
 
 def directory() -> pathlib.Path:
@@ -68,13 +343,16 @@ def locked() -> Generator[None]:
     """記録と完了を同じ短時間ロックで直列化する。"""
     root = directory()
     root.mkdir(parents=True, exist_ok=True)
-    with filelock.FileLock(str(root / "state.lock"), timeout=10):
+    with filelock.FileLock(str(root / "state.lock"), timeout=10, is_singleton=True):
         yield
 
 
 def pending() -> list[dict[str, Any]]:
     """待ち記録を全件返す。読取不能を不在と扱わない。"""
-    return [read(path) for path in sorted((directory() / "pending").glob("*.json"))]
+    return [
+        PendingGeneration.model_validate(read(path)).model_dump(mode="json", exclude_unset=True)
+        for path in sorted((directory() / "pending").glob("*.json"))
+    ]
 
 
 def auto_start_due(*, now: float) -> bool:
@@ -99,11 +377,7 @@ def launch_result(*, manifest: pathlib.Path | None = None) -> None:
         raise ValueError("振り返りの起動試行IDが不正")
     with locked():
         path = directory() / "launches" / f"{launch_id}.json"
-        value = read(path)
-        value.update(
-            status="accepted" if manifest is not None else "settled", manifest_path=str(manifest) if manifest else None
-        )
-        write(path, value)
+        LaunchAttempt.model_validate(read(path)).receipt(manifest).save(path)
 
 
 def launch_notice() -> str | None:
@@ -112,19 +386,16 @@ def launch_notice() -> str | None:
     with locked():
         for path in sorted((directory() / "launches").glob("*.json")):
             value = read(path)
-            if value["status"] != "starting":
+            attempt = LaunchAttempt.model_validate(value)
+            if attempt.status != LaunchStatus.STARTING:
                 continue
-            process = value.get("process")
-            if process is not None and session_registry.ProcessIdentity(**process).exists():
+            if attempt.process is not None and attempt.process.exists():
                 continue
-            if process is None and not value.get("exited"):
-                owner = value.get("owner")
-                if owner is None or session_registry.ProcessIdentity(**owner).exists():
-                    continue
-                # PID保存前に親も終了した試行は、受付記録の無い起動中断である。
+            if attempt.process is None and not attempt.exited and (attempt.owner is None or attempt.owner.exists()):
+                continue
+            # PID保存前に親も終了した試行は、受付記録の無い起動中断である。
             failures.append(f"{value['host']} {value['event']}: {value['log_path']}")
-            value["status"] = "notified"
-            write(path, value)
+            attempt.notify().save(path)
     if not failures:
         return None
     return (
@@ -148,12 +419,13 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
     event = payload.get("hook_event_name")
     name = key(host, session_id)
     with locked():
-        reviewed = directory() / "reviewed" / f"{name}.json"
-        path = directory() / "pending" / f"{name}.json"
-        if event != "SessionStart" and not (event == "UserPromptSubmit" and reviewed.exists()):
+        state = TargetGeneration(host, session_id)
+        if event != "SessionStart" and not (
+            event == "UserPromptSubmit" and state.status in {TargetStatus.REVIEWED, TargetStatus.PENDING_REVIEWED}
+        ):
             return False
-        prior = read(path) if path.exists() else {}
-        previous = read(reviewed) if reviewed.exists() else {}
+        prior = state.pending.model_dump(exclude_unset=True) if state.pending is not None else {}
+        previous = state.reviewed.model_dump(exclude_unset=True) if state.reviewed is not None else {}
         transcript = payload.get("transcript_path") or prior.get("transcript_path")
         # Claudeの準備はtranscript指定で始める。記録先の無いhook再生入力を実対象へ登録しない。
         if host == "claude" and (not isinstance(transcript, str) or not transcript.strip()):
@@ -171,7 +443,7 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
             "updated_at": timestamp(),
             "generation": uuid.uuid4().hex,
         }
-        write(path, value)
+        state.register(value)
     return True
 
 
@@ -229,37 +501,34 @@ def complete(prepared: Mapping[str, Any]) -> dict[str, Any]:
         if hashlib.sha256("\n".join(row.text for row in prefix).encode()).hexdigest() != entry["digest"]:
             raise ValueError(f"準備後に元記録の接頭辞が変化した: {entry['path']}")
     host, session_id = str(prepared["host"]), str(prepared["session_id"])
-    name = key(host, session_id)
     with locked():
-        path = directory() / "pending" / f"{name}.json"
-        target = read(path) if path.exists() else None
-        reviewed_path = directory() / "reviewed" / f"{name}.json"
-        old = read(reviewed_path) if reviewed_path.exists() else {"records": {}}
+        state = TargetGeneration(host, session_id)
+        target = state.pending.model_dump(exclude_unset=True) if state.pending is not None else None
+        old = state.reviewed.model_dump(exclude_unset=True) if state.reviewed is not None else {"records": {}}
         for record_id, entry in scope["records"].items():
             previous = old["records"].get(record_id)
             if previous is not None and previous["through_line"] > entry["through_line"]:
                 scope["records"][record_id] = previous
         scope["records"] = {**old["records"], **scope["records"]}
         scope.update(host=host, session_id=session_id, review_batch=bool((target or old).get("review_batch")))
-        write(reviewed_path, scope)
         # 新しいSessionStart/UserPromptSubmitがあれば、同じ会話でも後続世代を消さない。
         appended = any(
             any(line.strip() for line in pathlib.Path(entry["path"]).read_bytes().splitlines()[entry["through_line"] :])
             for entry in scope["records"].values()
         )
-        if target is not None and target.get("generation") == prepared.get("generation") and not appended:
-            path.unlink()
-        elif target is not None and prepared.get("generation") is None:
-            # 手動単独分析はprepare開始時に取得した世代を使う。欠落した申告で待ちを削除しない。
-            pass
+        state.complete(scope, prepared.get("generation"), appended=appended)
     return {"session_id": session_id, "pending_count": len(pending())}
 
 
 def prepare_identity(host: str, session_id: str) -> dict[str, Any]:
     """prepare開始時点の待ち世代を取得する。"""
     with locked():
-        path = directory() / "pending" / f"{key(host, session_id)}.json"
-        return {"host": host, "session_id": session_id, "generation": read(path).get("generation") if path.exists() else None}
+        state = TargetGeneration(host, session_id)
+        return {
+            "host": host,
+            "session_id": session_id,
+            "generation": state.pending.generation if state.pending is not None else None,
+        }
 
 
 def protected_logs() -> set[pathlib.Path]:
@@ -284,8 +553,8 @@ def sweep(*, now: float) -> None:
     """完了済み実行だけを30日で回収し、参照を失った処理済み範囲を回収する。"""
     with locked():
         for path in (directory() / "launches").glob("*.json"):
-            value = read(path)
-            if value["status"] != "starting" and now - path.stat().st_mtime > 30 * 24 * 60 * 60:
+            attempt = LaunchAttempt.model_validate(read(path))
+            if attempt.status != LaunchStatus.STARTING and now - path.stat().st_mtime > 30 * 24 * 60 * 60:
                 path.with_suffix(".log").unlink(missing_ok=True)
                 path.unlink()
         runs = list((directory() / "runs").glob("*.json"))
@@ -298,8 +567,7 @@ def sweep(*, now: float) -> None:
                 and value.get("report_synced")
                 and all(target["key"] not in waiting for target in value["targets"])
             ):
-                value["status"] = "resolved"
-                write(path, value)
+                value = BatchWriter(path).resolve(waiting=waiting)
             if value.get("status") not in {"completed", "resolved"}:
                 referenced.update(target["key"] for target in value["targets"])
             elif now - path.stat().st_mtime > 30 * 24 * 60 * 60:

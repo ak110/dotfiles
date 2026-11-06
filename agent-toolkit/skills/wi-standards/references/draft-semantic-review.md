@@ -10,6 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前 | `../../add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
 | 資料起点の採否を検収する前 | `../../add-awi-by-user/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/add-awi-by-user/SKILL.md#冒頭` |
 | 参考資料に基づく候補の十分性を検収する前 | `agent-basics:writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
 | 再発の経過を問う要求を検収する前 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
@@ -44,6 +45,10 @@
 再判定は、変更が加えられた抽出内容とその直接的な影響範囲を対象として行い、本文と契約境界に変更がない抽出内容については、親契約に定められた再点検省略条件を適用してそのまま再利用する。資料不足や処理の失敗は要求と読者ごとに記録し、親契約が定める補完、回復、終了観測の手順によって回収する。
 
 ## 原稿全体と返却の検収
+
+add-awi-by-userまたはgrillingによるWI作成では、原文・原稿・調査根拠から`../../add-awi-by-user/references/omission-check.md`の全類型を独立して点検する。
+範囲の限定には調査母集団も含め、起草者の点検結果だけで充足としない。
+ユーザー固有の未確定判断があれば指摘へ含め、add-awi-by-userのメインが同じセッションで確認し、回答・認可・未達時の扱いを本文へ記録してから合格とする。
 
 効率改善案では、採用案との比較前に、検収者が変更前の現物から通常入力と集約・共有・再利用の便益を独立に確かめ、ユーザー目的から導く保持条件へ対応付ける。
 主経路の削減に加えて、変更が及ぶ経路で失う便益と増える処理を比較し、構造の成立と全体の費用の妥当性を分けて検収する。

@@ -40,6 +40,7 @@ from agent_toolkit._agents_server import (
     session_errors,
     session_identity,
     shared_roots,  # pylint: disable=wrong-import-position
+    turn_state,
     wait_compaction,
     wait_output_tracking,
 )
@@ -81,6 +82,7 @@ from agent_toolkit._common import (
     plugin_environment,
     process_tree,  # pylint: disable=wrong-import-position
     state_paths,
+    windows_job,
 )
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import host_homes as _host_homes
@@ -321,6 +323,7 @@ class JsonRpcProcess:
         # 生成の停止を確認できなかった前回の停止の理由と、その停止が所有した対象。再closeで同じ対象から回収を再試行する。
         self._unresolved: list[str] = []
         self._owned: list[psutil.Process] = []
+        self._job: windows_job.WindowsJob | None = None
 
     def initialization_diagnostic(self) -> dict[str, Any]:
         """初期化の到達段階と、長さに上限を設けた子プロセスの診断値を返す。"""
@@ -352,6 +355,10 @@ class JsonRpcProcess:
             if owner_session_id is not None:
                 environment[_delegated_session.OWNER_SESSION_ENV] = owner_session_id
             self.parent_environment = environment
+            creation_options: dict[str, Any] = {}
+            if sys.platform == "win32":
+                self._job = windows_job.WindowsJob()
+                creation_options["creationflags"] = windows_job.CREATE_SUSPENDED
             self.process = await asyncio.create_subprocess_exec(
                 *APP_SERVER_COMMAND,
                 stdin=asyncio.subprocess.PIPE,
@@ -360,10 +367,22 @@ class JsonRpcProcess:
                 limit=APP_SERVER_STREAM_LIMIT_BYTES,
                 cwd=APP_SERVER_WORKING_DIRECTORY,
                 env=environment,
+                **creation_options,
             )
+            if self._job is not None:
+                # asyncioの公開ProcessはOS handleを公開しない。CPython transportが保持する
+                # 元世代のPopen handleを使い、PIDの再解決を経ずJob所属を確定する。
+                transport = typing.cast(Any, self.process)._transport  # noqa: SLF001  # pylint: disable=protected-access
+                owned_process = transport.get_extra_info("subprocess")
+                handle = int(owned_process._handle)  # noqa: SLF001  # pylint: disable=protected-access
+                await run_file_operation(self._job.assign_suspended, handle, self.process.pid)
         except OSError as exc:
+            await self.close()
             _LOG.exception("Codex App Serverを起動できません: command=%s", " ".join(APP_SERVER_COMMAND))
             raise AppServerError(f"failed to start {' '.join(APP_SERVER_COMMAND)}: {exc}") from exc
+        except BaseException:
+            await self.close()
+            raise
         _LOG.info(
             "Codex App Serverを起動しました: command=%s cwd=%s pid=%s",
             " ".join(APP_SERVER_COMMAND),
@@ -594,10 +613,11 @@ class JsonRpcProcess:
         return await finish_task(task)
 
     async def _close(self) -> list[str]:
-        if self._closed and self.process is None and not self._residual and not self._unresolved:
+        if self._closed and self.process is None and self._job is None and not self._residual and not self._unresolved:
             return []
         process = self.process
         reclaimed = False
+        job_reclamation = self._job is not None
         diagnostic_targets = [] if process is None else [process.pid]
         if sys.platform == "win32":
             _LOG.info(
@@ -620,7 +640,7 @@ class JsonRpcProcess:
                     task.cancel()
             # App Serverと子孫の生成を止めてから終了させる。終了要求前の1回の列挙だけを回収すると、
             # その直後に起動した孫が漏れ、Windowsではcodex-homeを保持したまま残った。
-            if process is not None and process.returncode is None:
+            if self._job is None and process is not None and process.returncode is None:
                 result = await asyncio.to_thread(process_tree.stop_tree_by_pid, process.pid)
                 if result is not None:
                     reclaimed = True
@@ -630,6 +650,17 @@ class JsonRpcProcess:
                     diagnostic_targets += [item.pid for item in result.targets if item.pid != process.pid]
         else:
             tasks = ()
+        if self._job is not None:
+            try:
+                await run_file_operation(self._job.terminate)
+                await run_file_operation(self._job.close)
+            except OSError as error:
+                # Jobの所有を保ち、失敗とActiveProcesses未確認を成功へ変換しない。
+                self._unresolved = [f"Windows Jobの終了を確認できない: {error}"]
+            else:
+                self._job = None
+                self._unresolved = []
+            reclaimed = True
         if process is not None:
             # 停止処理が終了させた後も、asyncioが終了状態を回収するまでreturncodeは未確定のまま残る。
             with contextlib.suppress(OSError, ProcessLookupError):
@@ -647,7 +678,7 @@ class JsonRpcProcess:
             await lifetime.wait_for_shutdown(tasks)
         if process is not None:
             _LOG.info("Codex App Serverを終了しました: returncode=%s", process.returncode)
-        if not reclaimed and self._unresolved:
+        if not job_reclamation and not reclaimed and self._unresolved:
             # 前回の停止で生成の停止を確認できなかった。所有した対象を起点に、残る子孫を改めて回収する。
             retry = await asyncio.to_thread(process_tree.stop_tree, None, known=[*self._owned, *self._residual])
             self._residual = retry.residual
@@ -1004,6 +1035,8 @@ class AppServerManager:
         model_type: str | None = None,
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
     ) -> SessionState:
         """新しいthreadとturnを開始し、直ちにsession状態を返す。"""
         validate_prompt(prompt)
@@ -1035,6 +1068,8 @@ class AppServerManager:
             engine="codex",
             turn_seq=1,
             publish_registry=self._publish_registry,
+            prompt=request_prompt if request_prompt is not None else prompt,
+            result_contract_recovery_consumed=result_contract_recovery_consumed,
             codex_model_provider=(thread_response.get("modelProvider") or selection.primary) if selection else None,
             codex_subscription_provider=selection.primary if selection is not None and selection.subscription else None,
             codex_state_provider=thread_response.get("modelProvider") or (selection.primary if selection else None),
@@ -1051,7 +1086,7 @@ class AppServerManager:
             if self._turn_start_response_is_ambiguous(client, exc):
                 await self._mark_turn_start_ambiguous(session, exc)
             else:
-                await self._mark_failed(session, exc, retryable=False)
+                await self._mark_failed(session, exc)
             await session.drain_registration()
             return session
         await session.drain_registration()
@@ -1141,6 +1176,8 @@ class AppServerManager:
         model_type: str | None = None,
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
         turn_seq: int = 0,
         fast_mode: bool | None = None,
         model_provider: str | None = None,
@@ -1165,6 +1202,8 @@ class AppServerManager:
             turn_seq=turn_seq + 1,
             fast_mode=fast_mode,
             publish_registry=self._publish_registry,
+            prompt=request_prompt if request_prompt is not None else prompt if isinstance(prompt, str) else handoff_prompt,
+            result_contract_recovery_consumed=result_contract_recovery_consumed,
             codex_model_provider=model_provider,
             codex_subscription_provider=subscription_provider,
             codex_state_provider=state_provider,
@@ -1192,7 +1231,7 @@ class AppServerManager:
                 await self._mark_turn_start_ambiguous(session, exc)
             else:
                 prompt.record_delivery("reply_failed")
-                await self._mark_failed(session, exc, retryable=False)
+                await self._mark_failed(session, exc)
         await session.drain_registration()
         return session
 
@@ -1200,8 +1239,7 @@ class AppServerManager:
         """再開取消時に配送済みturnを中断し、実作業の終了まで待つ。"""
         if not session.turn_start_sent:
             session.status = "interrupted"
-            session.turn_completed = True
-            session.turn_start_ambiguous = False
+            session.record_turn_completed()
             session.interrupt_requested = False
             session.touch()
             await self._notify_waiters()
@@ -1226,7 +1264,8 @@ class AppServerManager:
         async with self._input_turn_control(session):
             if (
                 session.awaiting_auto_resume
-                and not resume_waits.is_background_completion_wait(session)
+                and not resume_waits.is_observation_preserving_reply(session)
+                and not session.codex_provider_resume_pending
                 and session.pending_result is not None
             ):
                 resume_waits.finalize_pending_result(session, touch=False)
@@ -1367,7 +1406,9 @@ class AppServerManager:
             # 子session待ちが上限の通知より先に結果を保留した場合も、同じ解除待ち方針を使う。
             limit = await run_file_operation(codex_usage_limit.from_thread, session.session_id)
             switch_needed = not should_wait("codex", limit.limit_type if limit else None)
-        session.codex_provider_resume_pending = False
+        if session.codex_provider_resume_pending:
+            # 選定には保留理由が必要。選定条件を確定してから今回の切替待ちを消費する。
+            resume_waits.finalize_pending_result(session, touch=False)
         previous_status = session.status
         switched = False
         try:
@@ -1407,14 +1448,14 @@ class AppServerManager:
             if session.pending_result is not None:
                 resume_waits.finalize_pending_result(session, touch=False)
             begin_reply(session, preserve_waits=held is not None)
-            await self._mark_failed(session, exc, retryable=True)
+            await self._mark_failed(session, exc)
             return "reply_failed", {**session.public_status(), "error": session.error}, exc
         except Exception as exc:
             if held is not None:
                 held.restore(session)
                 await self._notify_waiters()
                 return "reply_failed", session.public_status(), exc
-            await self._mark_failed(session, exc, retryable=True)
+            await self._mark_failed(session, exc)
             return "reply_failed", session.public_status(), exc
         try:
             await self._start_turn(session, prompt, client)
@@ -1422,7 +1463,7 @@ class AppServerManager:
             if held is not None and not session.turn_start_sent:
                 held.restore(session)
             elif held is not None:
-                session.turn_start_ambiguous = True
+                session.record_turn_ambiguous()
                 session.touch()
             raise
         except Exception as exc:
@@ -1433,7 +1474,7 @@ class AppServerManager:
                 held.restore(session)
                 await self._notify_waiters()
                 return "reply_failed", session.public_status(), exc
-            await self._mark_failed(session, exc, retryable=False)
+            await self._mark_failed(session, exc)
             return "reply_failed", session.public_status(), exc
         return "reply_started", session.public_status(), None
 
@@ -1637,12 +1678,9 @@ class AppServerManager:
             # 拒否したreplyにも独立した終了を割り当て、回収済みの前turnと同一視させない。
             begin_reply(session, preserve_waits=True)
             session.agent_message, session.plan, session.commentary, session.diff_changed, session.last_action = progress
-        session.codex_provider_resume_pending = False
         session.status = "failed"
         session.error = {"message": str(error), "codexErrorInfo": codex_resume_state.INCOMPATIBLE_STATE}
-        session.turn_completed = True
-        session.turn_start_ambiguous = False
-        session.reply_retryable = False
+        session.record_turn_completed()
         session.touch()
         await self._notify_waiters()
 
@@ -1728,13 +1766,8 @@ class AppServerManager:
         self,
         session: SessionState,
         error: BaseException,
-        *,
-        retryable: bool,
     ) -> None:
-        """要求開始の失敗を終了状態へ反映し、待機者を起こす。
-
-        `retryable`が真の場合だけ、同じreplyを再試行できる内部状態にする。
-        """
+        """要求開始の失敗を終了状態へ反映し、待機者を起こす。"""
         public_error = {"message": str(error) or error.__class__.__name__}
         writer_conflict = isinstance(error, codex_resume_state.ThreadWriterConflictError)
         if writer_conflict:
@@ -1766,11 +1799,8 @@ class AppServerManager:
             session.error = {"message": "Codex connection rejected the request"}
         session.agent_message = ""
         session.protocol_warnings = []
-        session.reply_turn_started = False
-        session.reply_retryable = retryable
-        session.turn_start_ambiguous = False
-        session.turn_completed = True
-        session.failure_pending_completion = False
+        session.record_turn_rejected()
+        session.record_turn_completed()
         if (
             not isinstance(error, StartCandidateUnavailable)
             and not writer_conflict
@@ -1786,11 +1816,9 @@ class AppServerManager:
             return
         session.status = "running"
         session.error = {"message": str(error) or error.__class__.__name__}
-        session.reply_retryable = False
-        session.turn_start_ambiguous = True
+        session.record_turn_ambiguous()
         session.interrupt_requested = False
-        session.turn_completed = False
-        session.failure_pending_completion = False
+        session.record_turn_running()
         session.touch()
         await self._notify_waiters()
 
@@ -1831,16 +1859,14 @@ class AppServerManager:
         turn_id = turn.get("id") if isinstance(turn, dict) else None
         if not isinstance(turn_id, str) or not turn_id:
             raise TurnStartResponseError("turn/start returned no turn.id")
-        session.turn_id = turn_id
-        if session.reply_attempted:
-            session.reply_turn_started = True
+        session.record_turn_started(turn_id)
         session.touch()
         await self._notify_waiters()
 
     @staticmethod
     def _mark_turn_start_sent(session: SessionState, *, fast_mode: bool) -> None:
         """turn/startの送信完了を応答待ちより先に記録する。"""
-        session.turn_start_sent = True
+        session.record_turn_sent()
         session.fast_mode = fast_mode
         session.touch()
 
@@ -1921,11 +1947,12 @@ class AppServerManager:
         )
         if session.interrupt_requested or (not auto_reset and not should_wait("codex", limit.limit_type)):
             return False
-        resume_waits.begin_auto_resume_wait(
-            session, {"status": session.status, "agent_message": session.agent_message, "error": error}
+        session.hold_result(
+            turn_state.UsageLimitWait(
+                {"status": session.status, "agent_message": session.agent_message, "error": error},
+                asyncio.get_running_loop().time() + limit.delay_seconds(time.time()),
+            )
         )
-        session.auto_resume_deadline = None
-        session.usage_limit_resume_at = asyncio.get_running_loop().time() + limit.delay_seconds(time.time())
         session.usage_limit_wait_count += 1
         if session.usage_limit_first_at is None:
             session.usage_limit_first_at = utc_now()
@@ -2049,7 +2076,7 @@ class AppServerManager:
         windows = [bucket.get(name) for name in ("primary", "secondary")] if isinstance(bucket, dict) else []
         windows = [window for window in windows if isinstance(window, dict)]
         if windows and all(window["usedPercent"] < 100 for window in windows):
-            session.usage_limit_resume_at = asyncio.get_running_loop().time()
+            session.hold_result(turn_state.UsageLimitWait(pending, asyncio.get_running_loop().time()))
             session.touch()
             return
         if result is not None and result.reset_confirmed and raw is None:
@@ -2070,7 +2097,9 @@ class AppServerManager:
         kind = limit.limit_type or (previous_limit.get("type") if isinstance(previous_limit, dict) else None)
         if should_wait("codex", kind):
             if limit.resets_at is not None:
-                session.usage_limit_resume_at = asyncio.get_running_loop().time() + limit.delay_seconds(time.time())
+                session.hold_result(
+                    turn_state.UsageLimitWait(pending, asyncio.get_running_loop().time() + limit.delay_seconds(time.time()))
+                )
             session.touch()
             return
         resume_waits.finalize_pending_result(session)
@@ -2101,8 +2130,10 @@ class AppServerManager:
             or not codex_providers.has_provider_configuration()
         ):
             return False
-        resume_waits.begin_auto_resume_wait(
-            session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
+        session.hold_result(
+            turn_state.CodexProviderWait(
+                {"status": session.status, "agent_message": session.agent_message, "error": session.error}
+            )
         )
         # App Serverは残高不足を区別した値を返さないため、クレジットの候補の不受理を残高不足として扱う。
         kind = codex_connection.provider_kind(
@@ -2110,8 +2141,6 @@ class AppServerManager:
         )
         if kind == "credits":
             api_credits.record_shortage("codex")
-        session.auto_resume_deadline = None
-        session.codex_provider_resume_pending = True
         session.status = "running"
         return True
 
@@ -2233,14 +2262,11 @@ class AppServerManager:
             session.api_error = None
         turn = params.get("turn")
         if method == "turn/started":
-            session.turn_start_sent = True
+            session.record_turn_sent()
             if isinstance(turn, dict):
                 turn_id = turn.get("id")
                 if isinstance(turn_id, str):
-                    session.turn_id = turn_id
-                    if session.reply_attempted:
-                        session.reply_turn_started = True
-                    session.turn_start_ambiguous = False
+                    session.record_turn_started(turn_id)
             if not session.failure_pending_completion:
                 session.status = "running"
         elif method == "turn/completed":
@@ -2269,9 +2295,7 @@ class AppServerManager:
             limit = await self._read_usage_limit_failure(session, error) if status == "failed" else None
             session.status = status
             session.error = error
-            session.turn_start_ambiguous = False
-            session.turn_completed = True
-            session.failure_pending_completion = False
+            session.record_turn_completed()
             if session.status == "completed":
                 session.codex_attempted_provider_ids = {session.codex_model_provider} if session.codex_model_provider else set()
             result = {"status": session.status, "agent_message": session.agent_message, "error": session.error}
@@ -2281,7 +2305,7 @@ class AppServerManager:
                 session.error = result["error"]
             if held_by_result_contract:
                 pass
-            elif (resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed) or (
+            elif resume_waits.has_pending_auto_resume_targets(session) or (
                 session.codex_self_message_observed and not session.codex_self_message_repair_consumed
             ):
                 # 未観測の孫sessionが残るturnは、待機表明を完了報告として公開せずに結果を保留する。
@@ -2293,10 +2317,6 @@ class AppServerManager:
                     session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
                 )
                 session.status = "running"
-            elif session.live_child_session_ids:
-                unobserved_session_ids = set(session.live_child_session_ids)
-                session.live_child_session_ids.clear()
-                resume_waits.record_unobserved_sessions(session, unobserved_session_ids)
             elif self._hold_usage_limit_failure(session, limit) or self._hold_provider_failure(session):
                 pass
             elif not resume_waits.is_overload_failure(session):
@@ -2399,9 +2419,11 @@ class AppServerManager:
             active.status = "failed"
             active.error = {"message": f"Codex requested interactive server input: {method}"}
             active.protocol_warnings.append(f"unsupported server request: {method}")
-            active.turn_completed = not has_active_turn
-            active.turn_start_ambiguous = False
-            active.failure_pending_completion = has_active_turn
+            if has_active_turn:
+                active.record_turn_started()
+                active.record_failure_pending_completion()
+            else:
+                active.record_turn_completed()
             if has_active_turn and not active.interrupt_requested:
                 interrupt_targets.append((active.session_id, active.turn_id))
             active.interrupt_requested = has_active_turn
@@ -2452,9 +2474,7 @@ class AppServerManager:
                     }
                 session.api_error = None
                 session.interrupt_requested = False
-                session.turn_start_ambiguous = False
-                session.turn_completed = True
-                session.failure_pending_completion = False
+                session.record_turn_completed()
                 session.touch()
                 changed = True
         if changed or self._resume_close_events:
@@ -2515,7 +2535,6 @@ class AppServerManager:
         if kind == "started":
             session.codex_live_subagent_thread_ids.add(thread_id)
             session.codex_terminal_subagent_thread_ids.discard(thread_id)
-            session.auto_resume_consumed = False
         elif kind in {"completed", "interrupted"}:
             session.codex_live_subagent_thread_ids.discard(thread_id)
             session.codex_terminal_subagent_thread_ids.add(thread_id)
