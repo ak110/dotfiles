@@ -60,6 +60,14 @@ def _records(path: pathlib.Path) -> Iterator[dict[str, Any]]:
                 yield record
 
 
+def used_percent(window: dict[str, Any]) -> float | None:
+    """rolloutとApp Serverの窓から使用率を返す。有限の数値でなければ確認できない値としてNoneを返す。"""
+    used = window.get("used_percent", window.get("usedPercent"))
+    if isinstance(used, bool) or not isinstance(used, int | float) or not math.isfinite(used):
+        return None
+    return float(used)
+
+
 def from_rate_limits(rate_limits: Any) -> UsageLimitState:
     """rolloutとApp Serverの利用枠から、枯渇した窓の種類と解除予定を返す。"""
     windows: list[tuple[float, str | None, int | None]] = []
@@ -68,8 +76,8 @@ def from_rate_limits(rate_limits: Any) -> UsageLimitState:
             window = rate_limits.get(name)
             if not isinstance(window, dict):
                 continue
-            used = window.get("used_percent", window.get("usedPercent"))
-            if isinstance(used, bool) or not isinstance(used, int | float) or not math.isfinite(used) or used < 100:
+            used = used_percent(window)
+            if used is None or used < 100:
                 continue
             reset = window.get("resets_at", window.get("resetsAt"))
             reset = reset if isinstance(reset, int) and not isinstance(reset, bool) else None
