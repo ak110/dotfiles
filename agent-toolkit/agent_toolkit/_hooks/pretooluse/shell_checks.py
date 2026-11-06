@@ -13,7 +13,7 @@ lazy from collections.abc import (
     Sequence,
 )
 
-lazy from agent_toolkit._common import shell_cwd
+lazy from agent_toolkit._common import shell_cwd, wait_schedule
 lazy from agent_toolkit._common.bash_invocations import (
     BashInvocation,
     extract_bash_invocations,
@@ -802,7 +802,7 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
         label = "atk agents wait" if is_wait else "atk"
         waiting = (
             "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領せよ。"
-            if "CLAUDECODE" in os.environ and os.environ.get("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS") != "1"
+            if "CLAUDECODE" in os.environ and not wait_schedule.background_tasks_disabled()
             else "待機は単独の前景実行とし、CLI自身の期限で返る結果と終了コードを同じターン内に回収せよ。"
             "`Claude Code`の`Bash`では`timeout=600000`を指定し、未終了なら同じコマンドを再発行せよ。"
         )

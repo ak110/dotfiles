@@ -32,7 +32,7 @@ from agent_toolkit._common import mcp_environment, message_format, plugin_enviro
 from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-lazy from agent_toolkit._common import host_homes, process_tree
+lazy from agent_toolkit._common import host_homes, process_tree, wait_schedule
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import document_reads, timing, work_contract
@@ -49,6 +49,15 @@ RESPONSE_LANGUAGE_NOTICE = (
     "詳細は`01-agent.md`「使用言語」に従え。"
 )
 QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。会話限定の指示を成果物へ混入させるな。"
+BACKGROUND_TASKS_DISABLED_NOTICE = (
+    "この`Claude Code`では`Bash`の背景実行が無効（`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`）で、`run_in_background`は使えない。"
+    "`atk agents wait`は単独の前景実行とし、`Bash`へ`timeout=600000`を指定して、"
+    "待機コマンド自身の期限で返る結果と終了コードを回収せよ。未終了なら同じコマンドを再発行せよ。"
+)
+"""背景実行を無効にした起動で、使える待機方法をメインと委譲先へ伝える本文。
+
+委譲先は親の環境変数を継承するため、同じ条件でメインに限らず通知する。
+"""
 
 SHARE_DIR = plugin_resources.plugin_root() / "share"
 MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
@@ -127,6 +136,8 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
         parts.append(_llm_notice(RESPONSE_LANGUAGE_NOTICE))
     if source == "compact":
         parts.append(_llm_notice(QUALITY_CHECKPOINT_NOTICE))
+    if host == "claude" and wait_schedule.background_tasks_disabled():
+        parts.append(_llm_notice(BACKGROUND_TASKS_DISABLED_NOTICE))
     if not delegated:
         normative_parts.append(MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip("\n"))
         if host == "claude":
