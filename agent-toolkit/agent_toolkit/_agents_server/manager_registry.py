@@ -175,17 +175,13 @@ class ManagerRegistry(responses.ManagerResponses):
         resume_state = await self._resolve_expired_session(session_id)
         if resume_state is None:
             return None
-        if self._status_writer is not None and (await self._status_writer.result_state_async(session_id)) == "consumed":
-            resume_state = dataclasses.replace(resume_state, result_delivered=True)
-            self.expired_sessions[session_id] = resume_state
         response = self._stopped_result_response(resume_state)
         if response is None:
             return {"status": "expired"}
-        self.expired_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
-        if self._status_writer is not None:
-            (await self._status_writer.delete_result_async(session_id, collector=collector))
-            self._status_writer.schedule()
-        return response
+        claimed = await self._claim_resume_result(resume_state, response, collector=collector)
+        if self.expired_sessions.get(session_id) is resume_state:
+            self.expired_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
+        return claimed or {"status": "expired"}
 
     async def _resolve_stopped_session(self, session_id: str) -> SessionResumeState | None:
         """破棄済みsessionを返し、別プロセスによる結果回収を反映する。"""
@@ -543,6 +539,16 @@ class ManagerRegistry(responses.ManagerResponses):
         response = self._stopped_result_response(resume_state)
         if response is None:
             return None
+        claimed = await self._claim_resume_result(resume_state, response, collector=collector)
+        if self.stopped_sessions.get(session_id) is resume_state:
+            self.stopped_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
+        return claimed
+
+    async def _claim_resume_result(
+        self, resume_state: SessionResumeState, response: dict[str, Any], *, collector: str
+    ) -> dict[str, Any] | None:
+        """退避元の違いによらず、同じturnの排他回収に成功した本文だけを返す。"""
+        session_id = resume_state.session_id
         if isinstance(resume_state, _RegistryResumeState) and resume_state.result_root_session_id is not None:
             claimed, error = await run_file_operation(
                 retained_results.take_result,
@@ -558,12 +564,18 @@ class ManagerRegistry(responses.ManagerResponses):
                     f"保存済みの子の結果を回収できない: {session_id}: {error}",
                     next_action="結果ファイルの読み取り権限を確認して同じwaitを再実行する",
                 )
-            self.stopped_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
             return None if claimed is None else {**response, **claimed}
-        self.stopped_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
         if self._status_writer is not None:
-            (await self._status_writer.delete_result_async(session_id, collector=collector))
-            self._status_writer.schedule()
+            await self._status_writer.retain_result_async(resume_state)
+            claimed, error = await self._status_writer.take_result_async(
+                session_id, collector=collector, expected_turn_seq=resume_state.turn_seq
+            )
+            if error is not None:
+                raise ActionableError(
+                    f"保存済みの子の結果を回収できない: {session_id}: {error}",
+                    next_action="結果ファイルの読み取り権限を確認して同じwaitを再実行する",
+                )
+            return None if claimed is None else response
         return response
 
     async def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:

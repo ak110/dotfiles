@@ -368,6 +368,38 @@ async def test_mcp_wait_skips_result_already_collected_by_cli(tmp_path: pathlib.
         await manager.close()
 
 
+@pytest.mark.parametrize("retained_state", ["expired", "stopped"])
+@pytest.mark.asyncio
+async def test_retained_wait_claims_result_after_another_collector_wins(tmp_path, monkeypatch, retained_state):
+    """退避結果の存在確認後に別の親が回収した場合も、本文を一度だけ配送する。"""
+    async with _writer_backed_manager(tmp_path) as (manager, writer):
+        session = state.SessionState("retained-race", str(tmp_path), engine="codex", turn_seq=1)
+        _complete(session, message="一度だけの退避本文")
+        manager.sessions[session.session_id] = session
+        writer.flush()
+        manager.sessions.pop(session.session_id)
+        retained = manager.expired_sessions if retained_state == "expired" else manager.stopped_sessions
+        retained[session.session_id] = state.SessionResumeState.from_session(session)
+        result_state = writer.result_state_async
+        claims: list[dict[str, Any]] = []
+
+        async def collect_after_observation(identifier, **kwargs):
+            observed = await result_state(identifier, **kwargs)
+            if observed == "published" and not claims:
+                claimed, error = retained_results.take_result(
+                    "root-session", identifier, "root.json", collector="observer", state_root=tmp_path
+                )
+                assert error is None and claimed is not None
+                claims.append(claimed)
+            return observed
+
+        monkeypatch.setattr(writer, "result_state_async", collect_after_observation)
+        response = await manager.wait()
+        assert len(claims) == 1 and claims[0]["agent_message"] == "一度だけの退避本文"
+        assert "agent_message" not in response
+        assert response["status"] == "expired"
+
+
 @pytest.mark.asyncio
 @pytest.mark.timeout(5)
 async def test_mcp_wait_drains_finished_flush_before_its_done_callback(tmp_path: pathlib.Path) -> None:
