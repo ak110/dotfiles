@@ -44,6 +44,10 @@ for _tag in (
     _LiteralScalarLoader.add_constructor(_tag, _construct_literal_scalar)
 
 
+_TYPED_KEYS = frozenset({"queue_schedule", "important"})
+"""字面ではなく型付きの値を保持するキー。"""
+
+
 def normalize_newlines(text: str) -> str:
     """CRLFとCRをLFへ正規化して返す。"""
     return text.replace("\r\n", "\n").replace("\r", "\n")
@@ -78,7 +82,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
     `queue_schedule`と`important`以外の値は`_LiteralScalarLoader`で解析し、暗黙の型推論を経ない
     字面のままの`str`として保持する（マッピング・シーケンスの構造自体はそのまま保つ）。
     `queue_schedule`と`important`は選択した安全な基底ローダーで別途解析し、
-    `carry_count`等の整数と重要フラグのbool型を保つ。frontmatter全文を2種のローダーでそれぞれ1回ずつ解析する。
+    `carry_count`等の整数と重要フラグのbool型を保つ。型付きのローダーによる2回目の解析は、両キーのいずれかを持つ場合だけ行う。
     本文は区切り直後から末尾までを一切加工せず（先頭改行の除去も末尾改行の追加もせず）返す
     （本文が変化しないことは、`serialize_frontmatter`との往復後の本文文字列を直接比較して確認する）。
     """
@@ -95,7 +99,13 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
     frontmatter_source = text[4:end]
     try:
         literal = yaml.load(frontmatter_source, Loader=_LiteralScalarLoader)
-        typed = yaml.load(frontmatter_source, Loader=_SafeLoaderBase)
+        # 型付きの値を使うキーが無い項目では2回目の解析を省く。純Python実装のPyYAMLでは1件の解析が
+        # 1ミリ秒前後かかり、数千件を走査する一覧や同期で所要が倍になるためである。
+        typed = (
+            yaml.load(frontmatter_source, Loader=_SafeLoaderBase)
+            if isinstance(literal, dict) and _TYPED_KEYS & literal.keys()
+            else literal
+        )
     except yaml.YAMLError:
         return None
     # `frontmatter_source`が空文字列（または空白のみ）の場合だけ空dictへ正規化する。
@@ -107,7 +117,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
         literal, typed = {}, {}
     if not isinstance(literal, dict) or not isinstance(typed, dict):
         return None
-    data = {key: (typed.get(key) if key in {"queue_schedule", "important"} else value) for key, value in literal.items()}
+    data = {key: (typed.get(key) if key in _TYPED_KEYS else value) for key, value in literal.items()}
     body = text[end + len("\n---\n") :]
     return data, body
 

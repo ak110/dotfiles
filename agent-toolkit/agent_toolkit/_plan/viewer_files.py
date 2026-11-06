@@ -139,7 +139,9 @@ def default_root_specs() -> tuple[RootSpec, ...]:
     return normalize_root_specs(specs)
 
 
-def is_target_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") -> bool:
+def is_target_path(
+    path: pathlib.Path, root: pathlib.Path, source_id: str = "", *, resolved_root: pathlib.Path | None = None
+) -> bool:
     """`path`が表示する種別・`root`配下・非dotdirの全条件を満たすか判定する。
 
     読取・検索・変更監視の3つの処理が同一の対象集合を返すよう、この判定を1箇所へ集約する。
@@ -147,23 +149,27 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") 
     旧形式の付属ファイルも対象に含める。
     `root`自身がドット配下（`~/.claude/plans`など）でも対象に含めるよう、判定は`root`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`root`外を指すリンクは対象外となる。
+    走査のように同じ`root`で繰り返し判定する呼び出し元は、解決済みの`root`を`resolved_root`へ渡して
+    ファイルごとの`root`の解決を省く。
     """
     if not _bundle_kinds.is_viewable_name(path.name, current_only=source_id == LEGACY_SOURCE_ID):
         return False
     try:
-        rel = path.resolve().relative_to(root.resolve())
+        rel = path.resolve().relative_to(resolved_root if resolved_root is not None else root.resolve())
     except ValueError:
         return False
     return not any(part.startswith(".") for part in rel.parts)
 
 
-def is_listed_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") -> bool:
+def is_listed_path(
+    path: pathlib.Path, root: pathlib.Path, source_id: str = "", *, resolved_root: pathlib.Path | None = None
+) -> bool:
     """`path`が計画一覧で独立項目として表示する対象かを判定する。
 
     一覧に載せる種別は`bundle_kinds.is_listed_name`が定め、レビュー指摘管理表だけは同じstemの
     メイン計画の実在を確かめて判定する。
     """
-    if not is_target_path(path, root, source_id):
+    if not is_target_path(path, root, source_id, resolved_root=resolved_root):
         return False
     main_exists = False
     if _bundle_kinds.is_review_table_name(path.name):
@@ -241,12 +247,13 @@ def scan_root(
 
     scanned: list[dict[str, typing.Any]] = []
     observed: dict[str, float] = {}
+    resolved_root = root.resolve()
     try:
         for path in root.rglob("*"):
             if check_stop is not None:
                 check_stop()
             try:
-                if not path.is_file() or not is_listed_path(path, root, source_id):
+                if not path.is_file() or not is_listed_path(path, root, source_id, resolved_root=resolved_root):
                     continue
                 st = path.stat()
             except OSError as error:
@@ -283,11 +290,12 @@ def search_root(
     if not root.is_dir():
         return set()
     matched: set[str] = set()
+    resolved_root = root.resolve()
     try:
         for path in root.rglob("*"):
             if check_stop is not None:
                 check_stop()
-            if not path.is_file() or not is_target_path(path, root, source_id):
+            if not path.is_file() or not is_target_path(path, root, source_id, resolved_root=resolved_root):
                 continue
             if not needle:
                 matched.add(path.relative_to(root).as_posix())

@@ -4,6 +4,7 @@ import asyncio
 import dataclasses
 import datetime
 import functools
+import json
 import pathlib
 import re
 import socket
@@ -162,7 +163,7 @@ _DETAIL_MUTATION_CASES = {
     "answer-auto-adopt": _DetailMutationCase(
         "inbox",
         _POST_APPROVAL_UWI,
-        "#answer-button",
+        None,
         ("#answer-input", "その対応で問題無い"),
         "#save-answer-button",
         "**/api/entries/answer",
@@ -173,7 +174,7 @@ _DETAIL_MUTATION_CASES = {
     "answer": _DetailMutationCase(
         "inbox",
         _FREE_FORM_UWI,
-        "#answer-button",
+        None,
         ("#answer-input", "自由記述の回答"),
         "#save-answer-button",
         "**/api/entries/answer",
@@ -840,7 +841,6 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     harness.operations.enable_file_mutations()
     row = await _open_question(page)
     dialog = page.get_by_role("dialog", name="詳細")
-    await dialog.get_by_role("button", name="回答", exact=True).click()
     assert await dialog.locator("#detail-content").is_visible()
     await dialog.get_by_role("button", name="A", exact=True).click()
     answer = dialog.locator("#answer-input")
@@ -967,7 +967,6 @@ async def test_post_approval_fixed_choices_show_saved_state(
     await playwright.async_api.expect(detail.locator("#detail-content")).not_to_contain_text(
         "ユーザーはこの行以降に回答を追記する"
     )
-    await detail.get_by_role("button", name="回答", exact=True).click()
     await playwright.async_api.expect(detail.get_by_role("button", name="問題がある", exact=True)).to_be_visible()
     await detail.get_by_role("button", name=choice, exact=True).click()
     await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value(choice)
@@ -1007,7 +1006,6 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
     await page.goto(harness.base_url + "/")
     await page.locator(f'.entry-select[data-key="{filename}"]').click()
     detail = page.get_by_role("dialog", name="詳細")
-    await detail.get_by_role("button", name="回答", exact=True).click()
     await detail.get_by_role("button", name="問題がある（是正内容をこの欄へ書いてください）").click()
     await detail.locator("#answer-input").fill("問題がある。是正内容を確認しました。")
     await detail.get_by_role("button", name="回答を保存").click()
@@ -1230,7 +1228,6 @@ async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harne
     detail = page.get_by_role("dialog", name="詳細")
     # 回答済みのinboxのuwiは、保存状態をinboxのまま表示ラベルだけをansweredにする。
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / answered")
-    await detail.get_by_role("button", name="回答を変更", exact=True).click()
     await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value("既存回答")
     await page.keyboard.press("Escape")
 
@@ -1247,7 +1244,7 @@ async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harne
     await page.locator('.entry-select[data-key="adopted.md"]').click()
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / adopted")
     assert "終了後の追記" in _entry_path(harness.root, "adopted.md").read_text(encoding="utf-8")
-    await playwright.async_api.expect(detail.locator("#answer-button")).to_be_hidden()
+    await playwright.async_api.expect(detail.locator("#answer-panel")).to_be_hidden()
     await playwright.async_api.expect(detail.locator("#delete-button")).to_be_visible()
     await playwright.async_api.expect(detail.locator("#hold-button")).to_be_visible()
     await playwright.async_api.expect(detail.locator("#return-to-inbox-button")).to_be_visible()
@@ -1280,7 +1277,7 @@ async def test_hold_and_rejected_details_offer_recovery_operations(browser_harne
     await page.keyboard.press("Escape")
 
     await page.locator('.entry-select[data-key="held-question.md"]').click()
-    await playwright.async_api.expect(detail.get_by_role("button", name="回答", exact=True)).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#answer-panel")).to_be_visible()
     await playwright.async_api.expect(detail.get_by_role("button", name="採用", exact=True)).to_be_visible()
     await playwright.async_api.expect(detail.locator("#reject-button")).to_be_hidden()
     await page.keyboard.press("Escape")
@@ -1351,7 +1348,7 @@ class TestNotification {
 Object.defineProperty(window, 'Notification', {configurable: true, value: TestNotification});
 """
     )
-    async with page.expect_response(lambda response: response.url.endswith("/api/entries?type=all&status=all&answered=all")):
+    async with page.expect_response(lambda response: response.url.endswith("/api/entries?type=all&status=active&answered=all")):
         await page.goto(harness.base_url + "/")
     assert await page.evaluate("window.__notificationCalls.length") == 0
     notification_button = page.get_by_role("button", name="通知を有効化")
@@ -1360,7 +1357,7 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
 
     async def publish_and_wait() -> None:
         async with page.expect_response(
-            lambda response: response.url.endswith("/api/entries?type=all&status=all&answered=all")
+            lambda response: response.url.endswith("/api/entries?type=all&status=active&answered=all")
         ):
             harness.current_state.publish()
 
@@ -1567,7 +1564,6 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     question_row = page.locator('#entry-list .entry-select[data-kind="uwi"]')
     await question_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await detail.get_by_role("button", name="回答", exact=True).click()
     await detail.locator("#answer-input").fill("回答済みにする")
     await detail.get_by_role("button", name="回答を保存").click()
     await page.get_by_role("status").filter(has_text="回答しました").wait_for(state="visible")
@@ -1714,13 +1710,13 @@ async def test_detail_mutation_self_write_does_not_warn(browser_harness: _Browse
 @pytest.mark.parametrize(
     ("mode_button", "field", "submit", "failure"),
     [
-        ("#answer-button", "#answer-input", "#save-answer-button", "へ回答できませんでした。"),
+        (None, "#answer-input", "#save-answer-button", "へ回答できませんでした。"),
         ("#edit-button", "#edit-content", "#save-entry-button", "を保存できませんでした。"),
     ],
     ids=["answer", "save"],
 )
 async def test_detail_mutation_conflict_keeps_input(
-    browser_harness: _BrowserHarness, mode_button: str, field: str, submit: str, failure: str
+    browser_harness: _BrowserHarness, mode_button: str | None, field: str, submit: str, failure: str
 ) -> None:
     """送信中に他プロセスが本文を変えてサーバーが409を返した場合は、入力を残して失敗と回復の手順を示す。
 
@@ -1735,7 +1731,8 @@ async def test_detail_mutation_conflict_keeps_input(
     detail = page.get_by_role("dialog", name="詳細")
     await detail.wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
-    await page.locator(mode_button).click()
+    if mode_button is not None:
+        await page.locator(mode_button).click()
     user_input = _FREE_FORM_UWI + "\n入力の追記\n" if field == "#edit-content" else "保持する回答"
     await page.locator(field).fill(user_input)
 
@@ -2113,7 +2110,6 @@ async def test_answer_and_delete_target_the_visible_state(browser_harness: _Brow
     answer_row = page.locator('.entry-select[data-key="answer-same.md"]')
     await answer_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await detail.get_by_role("button", name="回答", exact=True).click()
     await detail.locator("#answer-input").fill("未処理側だけへの回答")
     async with page.expect_request("**/api/entries/answer") as answer_request_info:
         await detail.get_by_role("button", name="回答を保存").click()
@@ -2167,8 +2163,8 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         updated_content: str,
     ) -> None:
         await page.locator(f'.entry-select[data-key="{filename}"]').click()
-        mode_name = "回答" if input_selector == "#answer-input" else "編集"
-        await detail.get_by_role("button", name=mode_name, exact=True).click()
+        if input_selector != "#answer-input":
+            await detail.get_by_role("button", name="編集", exact=True).click()
         field = detail.locator(input_selector)
         user_input = "保持する回答" if input_selector == "#answer-input" else "保持する編集本文"
         await field.fill(user_input)
@@ -2249,7 +2245,6 @@ async def test_answer_rebase_in_progress_shows_recovery(
     await page.goto(harness.base_url + "/")
     detail = page.get_by_role("dialog", name="詳細")
     await page.locator('.entry-select[data-key="question.md"]').click()
-    await detail.get_by_role("button", name="回答", exact=True).click()
     field = detail.locator("#answer-input")
     await field.fill("解消後に保存する回答")
 
@@ -2518,7 +2513,10 @@ async def test_create_dialog_show_text_after_preface_stays_single_entry(browser_
 async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(
     browser_harness: _BrowserHarness, width: int, height: int, input_height: int | None
 ) -> None:
-    """不正な入力欄へフォーカスが戻った直後に対応するエラーの全文が見え、本文をスクロールしてもヘッダーとフッターの位置は変わらない。"""
+    """不正な入力欄へフォーカスが戻った直後に対応するエラーの全文が見え、本文をスクロールしてもヘッダーとフッターの位置は変わらない。
+
+    回答欄の入力エラーはフッター内に表示されるため、フッターの可視範囲で判定する。
+    """
     harness = browser_harness
     page = harness.page
     (_entry_path(harness.root, "long-entry.md")).write_text(
@@ -2544,7 +2542,8 @@ async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(
             key = "long-entry.md" if case == "edit" else "question.md"
             await page.locator(f'.entry-select[data-key="{key}"]').click()
             dialog = page.get_by_role("dialog", name="詳細")
-            await dialog.get_by_role("button", name="編集" if case == "edit" else "回答", exact=True).click()
+            if case == "edit":
+                await dialog.get_by_role("button", name="編集", exact=True).click()
             input_id = "edit-content" if case == "edit" else "answer-input"
             await dialog.locator(f"#{input_id}").fill("")
             submit = "保存" if case == "edit" else "回答を保存"
@@ -2558,8 +2557,9 @@ async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(
         await playwright.async_api.expect(field).to_be_focused()
         error = dialog.locator(f"#{input_id}-error")
         await playwright.async_api.expect(error).to_be_visible()
+        # 回答欄はフッターに常設され、その入力エラーもフッター内へ表示する。所属する領域の可視範囲で判定する。
         metrics = await error.evaluate("""error => {
-          const body = error.closest('.dialog-body');
+          const body = error.closest('.dialog-body') || error.closest('.dialog-footer');
           const bounds = body.getBoundingClientRect();
           const message = error.getBoundingClientRect();
           return {
@@ -3283,7 +3283,8 @@ async def test_changed_detail_inputs_confirm_discard_and_unchanged_input_closes(
         ("awi.md", "ユーザーコメント", "user-comment-input"),
     ):
         await page.locator(f'.entry-select[data-key="{key}"]').click()
-        await detail.get_by_role("button", name=mode, exact=True).click()
+        if mode != "回答":
+            await detail.get_by_role("button", name=mode, exact=True).click()
         field = detail.locator(f"#{field_id}")
         await field.fill((await field.input_value()) + "変更")
         async with page.expect_event("dialog") as confirmation:
@@ -3561,3 +3562,80 @@ async def test_work_item_url_and_selection_survive_state_change(
     await playwright.async_api.expect(detail.locator("#detail-filename")).to_have_text("awi.md")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / hold")
     assert page.url == stable_url
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_uwi_detail_offers_answer_and_other_operations_at_once(browser_harness: _BrowserHarness) -> None:
+    """回答できるUWIの詳細を開いた時点で、選択肢・1行の回答欄・保存と他の操作を同時に表示し、2操作で回答を保存する。
+
+    回答の前にモードを切り替える操作が要ると、回答のたびに余計なクリックが増える。
+    """
+    harness = browser_harness
+    page = harness.page
+    harness.operations.enable_file_mutations()
+    await page.set_viewport_size({"width": 1600, "height": 900})
+    path = _entry_path(harness.root, "target.md")
+    path.write_text(_POST_APPROVAL_UWI, encoding="utf-8")
+    await page.goto(f"{harness.base_url}/?filename=target.md")
+    detail = page.get_by_role("dialog", name="詳細")
+    await detail.wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+
+    footer = detail.locator("#detail-footer")
+    for selector in ("#answer-input", "#save-answer-button", "#adopt-button", "#edit-button", "#delete-button"):
+        await playwright.async_api.expect(footer.locator(selector)).to_be_visible()
+    choices = footer.locator("#answer-choices button")
+    assert await choices.count() >= 1
+    input_box = await footer.locator("#answer-input").bounding_box()
+    line_height = await page.locator("#answer-input").evaluate("element => parseFloat(getComputedStyle(element).lineHeight)")
+    assert input_box is not None
+    assert input_box["height"] < line_height * 2.5
+
+    choice = (await choices.first.text_content() or "").strip()
+    await choices.first.click()
+    await footer.locator("#save-answer-button").click()
+    await detail.wait_for(state="hidden")
+    assert choice in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_create_dialog_is_wider_but_narrower_than_detail(browser_harness: _BrowserHarness) -> None:
+    """横幅が許す画面では、新規追加ダイアログを従来（42rem）より広く、詳細ダイアログ（72rem）より狭くする。"""
+    page = browser_harness.page
+    await page.set_viewport_size({"width": 1600, "height": 900})
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#create-button").click()
+    dialog = page.get_by_role("dialog", name="新規追加")
+    await dialog.wait_for(state="visible")
+    widths = await page.evaluate(
+        """() => {
+          const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+          return {create: document.getElementById('create-dialog').getBoundingClientRect().width, rem};
+        }"""
+    )
+    await page.keyboard.press("Escape")
+    assert 42 * widths["rem"] < widths["create"] < 72 * widths["rem"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_wi_screen_sends_operation_timings_with_request_ids(browser_harness: _BrowserHarness) -> None:
+    """一覧の取得と描画の所要を、サーバーの記録と同じ要求IDで送る。URLのqueryは送らない。"""
+    page = browser_harness.page
+    # `sendBeacon`のBlob本文はPlaywrightの要求から読めないため、同じ本文を`fetch`で送らせて検査する。
+    await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
+    await page.goto(browser_harness.base_url + "/")
+    # 一覧の記録は描画完了の次のフレームで積まれ、`pagehide`の送信に間に合わない場合は定期送信で届く。
+    # 一覧の記録を含む送信を待ち、どちらの経路で届いても同じ内容を検査する。
+    async with page.expect_request(
+        lambda request: request.url.endswith("/api/timings") and '"/api/entries"' in (request.post_data or ""),
+        timeout=30000,
+    ) as request_info:
+        await page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
+    request = await request_info.value
+    body = request.post_data or ""
+    records = json.loads(body)["records"]
+    listed = [record for record in records if record.get("route") == "/api/entries"]
+    assert listed
+    assert all(isinstance(record.get("request_id"), str) and record["request_id"] for record in listed)
+    assert all(record["fetch_ms"] >= 0 and record["render_ms"] >= 0 for record in listed)
+    assert all("?" not in record.get("route", "") for record in records)

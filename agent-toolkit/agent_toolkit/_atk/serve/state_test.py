@@ -212,7 +212,12 @@ const editing = {
   saveDisabled: elements['save-entry-button'].disabled,
   open: elements['detail-dialog'].open
 };
-setDetailMode('answer');
+// 回答欄は回答できるUWIの閲覧中に常設されるため、UWIを開き直した状態で入力途中の回答を外部更新から守る。
+listed.kind = 'uwi';
+detailRefreshRequired = false;
+setTextMessage('detail-alert', '');
+currentEntry = {...currentEntry, kind: 'uwi', answer: null, content: detailContent};
+setDetailMode('view');
 elements['answer-input'].value = 'ユーザーの未保存回答';
 detailContent = '回答中の外部更新';
 await reloadFromExternalChange();
@@ -986,8 +991,8 @@ process.stdout.write(JSON.stringify({
         "repoCountDuringUser": 1,
         "listUrls": [
             "/atk/api/entries?type=awi&status=all&answered=all&period=all&page=1",
-            "/atk/api/entries?type=all&status=all&answered=all",
-            "/atk/api/entries?type=all&status=all&answered=all",
+            "/atk/api/entries?type=all&status=active&answered=all",
+            "/atk/api/entries?type=all&status=active&answered=all",
             "/atk/api/entries?type=awi&status=all&answered=all&period=all&page=1",
         ],
         "status": "1件を表示",
@@ -1117,3 +1122,19 @@ async def test_remove_api_accepts_terminal_states_and_preserves_protected_states
         )
         assert response.status_code == 400
         assert wi_files.entry_path(tmp_path, f"{state_name}.md").is_file()
+
+
+def test_markdown_change_marks_index_before_debounced_publish(tmp_path: pathlib.Path) -> None:
+    """Markdownの変更は通知の間引きを待たずに索引の変更記録へ渡し、Markdown以外とディレクトリは渡さない。
+
+    間引き後の通知で画面が再取得したときに、索引が古い一覧を返さないようにするためである。
+    """
+    current = state.ServeState(tmp_path, debounce_seconds=60, timer_factory=_FakeTimer)
+    calls: list[str] = []
+    current.change_listener = lambda: calls.append("changed")
+
+    current.on_created(watchdog.events.FileCreatedEvent(str(tmp_path / "2026" / "10" / "a.md")))
+    current.on_modified(watchdog.events.FileModifiedEvent(str(tmp_path / "note.txt")))
+    current.on_created(watchdog.events.DirCreatedEvent(str(tmp_path / "2026" / "11")))
+
+    assert calls == ["changed"]

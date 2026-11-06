@@ -254,7 +254,6 @@ async function exercise(kind, status, code, withExternalUpdate) {
   detailOriginKey = entryKey(serverEntry);
   openDialog(elements['detail-dialog'], new Element(`${kind}-origin`, 'BUTTON'), elements['detail-dialog-body']);
   if (answering) {
-    enterAnswer();
     elements['answer-input'].value = 'ユーザーの回答';
   } else {
     enterEdit();
@@ -312,7 +311,7 @@ process.stdout.write(JSON.stringify({
     for name in ("saveGeneral", "answerGeneral", "saveConflict", "answerConflict"):
         assert "詳細を閉じて開き直してから保存してください" in result[name]["alert"]
         assert result[name]["disabled"] is True
-        assert result[name]["mode"] == ("answer" if name.startswith("answer") else "edit")
+        assert result[name]["mode"] == ("view" if name.startswith("answer") else "edit")
     assert "保存できませんでした。 ［WI / node-test / /notes / entry.md］一般失敗" in result["saveGeneral"]["alert"]
     assert "回答できませんでした。 ［WI / node-test / /notes / 回答保存］一般失敗" in result["answerGeneral"]["alert"]
     assert result["saveGeneral"]["input"] == "ユーザーの保存本文"
@@ -327,7 +326,7 @@ process.stdout.write(JSON.stringify({
         "alert": "question.mdへ回答できませんでした。 ［WI / node-test / /notes / 回答保存］権限がありません",
         "disabled": False,
         "input": "ユーザーの回答",
-        "mode": "answer",
+        "mode": "view",
     }
 
 

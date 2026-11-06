@@ -1,7 +1,7 @@
 // 計画ファイル画面。左ペインで計画ファイルを選び、右ペインへMarkdownを表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons
+  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -298,7 +298,7 @@ function setupSentinelObserver() {
 async function refreshFiles() {
   const errorBox = document.getElementById("plans-list-error");
   try {
-    const res = await fetch(BASE_PATH + "/api/plans/files");
+    const res = await timedFetch("plans", BASE_PATH + "/api/plans/files");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     files = await res.json();
     errorBox.hidden = true;
@@ -322,7 +322,7 @@ async function searchFullText(query, generation) {
   try {
     let res = null;
     for (let attempt = 0; ; attempt++) {
-      res = await (fetch(BASE_PATH + "/api/plans/search?q=" + encodeURIComponent(query)));
+      res = await (timedFetch("plans", BASE_PATH + "/api/plans/search?q=" + encodeURIComponent(query)));
       if (generation !== searchGeneration) return;
       if (res.status !== 409 || attempt >= SEARCH_SUPERSEDED_RETRIES) break;
       await (new Promise((resolve) => setTimeout(resolve, SEARCH_SUPERSEDED_RETRY_MS)));
@@ -359,7 +359,7 @@ function scheduleFullTextSearch() {
 
 async function refreshHostStatus() {
   // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
-  const res = await (fetch(BASE_PATH + "/api/plans/host-status"));
+  const res = await (timedFetch("plans", BASE_PATH + "/api/plans/host-status"));
   if (res.ok) {
     hostStatus = await (res.json());
   }
@@ -377,8 +377,8 @@ async function refreshHostInfo() {
   // 適用を見送る。ROOT_DIRSはSSE側の処理で既に正しく更新済みであり、次回呼び出し時に整合を取る。
   for (let attempt = 0; attempt < HOST_INFO_REFRESH_MAX_ATTEMPTS; attempt++) {
     const counterBefore = hostInfoEventCounter;
-    let res = await (fetch(BASE_PATH + "/api/plans/root-info"));
-    if (!res.ok) res = await (fetch(BASE_PATH + "/api/plans/host-info"));
+    let res = await (timedFetch("plans", BASE_PATH + "/api/plans/root-info"));
+    if (!res.ok) res = await (timedFetch("plans", BASE_PATH + "/api/plans/host-info"));
     if (!res.ok) return;
     const info = await (res.json());
     if (hostInfoEventCounter !== counterBefore) continue;
@@ -392,7 +392,7 @@ async function refreshHostInfo() {
 }
 
 async function refreshRootStatus() {
-  const res = await (fetch(BASE_PATH + "/api/plans/root-status"));
+  const res = await (timedFetch("plans", BASE_PATH + "/api/plans/root-status"));
   if (res.ok) {
     rootStatus = await (res.json());
     renderRootWarnings();
@@ -585,7 +585,7 @@ async function updatePreview() {
   const generation = ++previewGeneration;
   beginPreviewLoading(generation);
   try {
-    const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
+    const res = await timedFetch("plans", BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
     if (generation !== previewGeneration) return;
     if (!res.ok) {
       showPreviewError(`HTTP ${res.status}`, () => { void updatePreview(); });
@@ -628,7 +628,7 @@ async function openFile(host, path, source, closeDrawer = true) {
   const generation = ++previewGeneration;
   beginPreviewLoading(generation);
   try {
-    const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
+    const res = await timedFetch("plans", BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
     if (generation !== previewGeneration) return;
     if (res.status === 404) {
       showMissingSelection();
@@ -671,7 +671,7 @@ async function copySelectedRaw() {
   btn.dataset.wideLabel = originalWide;
   btn.dataset.shortLabel = originalShort;
   try {
-    const res = await fetch(BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
+    const res = await timedFetch("plans", BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
     if (!res.ok) throw new Error("status " + res.status);
     const text = await (res.text());
     copying = true;

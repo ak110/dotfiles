@@ -12,6 +12,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import typing
 import unicodedata
 from unittest import mock
 
@@ -388,6 +389,35 @@ class TestLegacyReservationMigration:
             if "commit" in call["cmd"] and any("legacy queue reservations" in value for value in call["cmd"])
         ]
         assert len(migration_commits) == 1
+
+    def test_migration_skips_yaml_parsing_without_reservation_keys(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """予約・付随項目のキーを持つ項目が無ければYAMLを解析せずに終え、値や本文の同じ語では解析へ進まない。
+
+        同期のたびに全件を解析すると、`repo_lock`を保持する時間が件数に比例して伸びるためである。
+        """
+        notes = _setup_notes(tmp_path)
+        for filename, text in (
+            (
+                "20261001-000000-001.md",
+                "---\nstate: inbox\ntype: uwi\nscope: feedback-reservation-public-contract\n---\n\n本文\n",
+            ),
+            ("20261001-000000-002.md", "---\nstate: processing\ntype: awi\n---\n\nreservation: 本文中の記述\n"),
+        ):
+            path = entry_path(notes, filename)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+
+        def fail_parse(_text: str) -> None:
+            raise AssertionError("予約キーの無い項目を解析した")
+
+        def fail_commit(_root: pathlib.Path, _message: str, _paths: typing.Iterable[str], /) -> None:
+            raise AssertionError("移行対象の無い状態でcommitした")
+
+        monkeypatch.setattr(legacy_module, "parse_frontmatter", fail_parse)
+
+        assert legacy_module.migrate_legacy_reservations(notes, assert_lock_fn=lambda _path: None, commit_fn=fail_commit) == 0
 
     def test_conflicting_inbox_entry_stops_migration_with_manual_steps(self, tmp_path: pathlib.Path) -> None:
         """移行先inboxに同名項目がある場合は何も変えず、比較と削除の手順を次の操作として返す。"""

@@ -4,13 +4,16 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 import typing
 
 import quart
 
+from agent_toolkit._atk import git_sync as _git_sync
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
+from agent_toolkit._atk.serve import timings as _timings
 from agent_toolkit._atk.serve import wi_operations as _wi_operations
 from agent_toolkit._common.async_operations import finish_task
 
@@ -57,9 +60,19 @@ class BoundedWorkers:
                     "user serviceで起動した場合は`atk serve logs`を実行する"
                 ) from error
 
+        timing = _timings.CURRENT.get()
+        queued_at = time.perf_counter()
+
         async def managed() -> R:
             async with self._semaphore:
-                return await asyncio.to_thread(invoke)
+                started = time.perf_counter()
+                if timing is not None:
+                    timing.queue_ms += (started - queued_at) * 1000
+                try:
+                    return await asyncio.to_thread(invoke)
+                finally:
+                    if timing is not None:
+                        timing.work_ms += (time.perf_counter() - started) * 1000
 
         return await asyncio.shield(asyncio.create_task(managed()))
 
@@ -128,16 +141,42 @@ class ShutdownAwareAsgi:
 
 
 class ServeRuntime:
-    """Webハンドラ間で共有する操作・ワーカー・同期タスクを保持する。"""
+    """Webハンドラ間で共有する操作・ワーカー・同期タスクを保持する。
 
-    def __init__(self, operations: _wi_operations.Operations, workers: BoundedWorkers, state: serve_state.ServeState) -> None:
+    `workers`はWIの変更とGit同期、`read_workers`は一覧・詳細・候補の参照に使う。
+    変更と同期は`repo_lock`を最大30秒待つため、同じ枠を共有すると参照が更新の完了を待つ。
+    参照はローカルの保存済み内容だけを読み、古い表示を許容する要件のため枠を分ける。
+    """
+
+    def __init__(
+        self,
+        operations: _wi_operations.Operations,
+        workers: BoundedWorkers,
+        state: serve_state.ServeState,
+        *,
+        read_workers: BoundedWorkers | None = None,
+        timing_log: _timings.TimingLog | None = None,
+    ) -> None:
         self.operations = operations
         self.workers = workers
+        self.read_workers = read_workers if read_workers is not None else workers
         self.state = state
+        self.timing_log = timing_log if timing_log is not None else _timings.TimingLog(None)
+        self.warmup_task: asyncio.Task[None] | None = None
         self.sync_task: asyncio.Task[bool] | None = None
         self.background_task: asyncio.Task[None] | None = None
         self.remote_stop_task: asyncio.Task[None] | None = None
         self.sync_requested = asyncio.Event()
+
+    async def warm_index(self) -> None:
+        """一覧の索引を先に読み込む。失敗しても最初の一覧要求が同じ走査をやり直すため、警告だけを残す。"""
+        started = time.perf_counter()
+        try:
+            await self.read_workers.run(self.operations.warm_index, self.state.stop_requested)
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            logger.warning("WI一覧の索引の先行読込に失敗しました: %s", error)
+            return
+        _timings.record_event(self.timing_log, "index-warmup", total_ms=round((time.perf_counter() - started) * 1000, 1))
 
     async def synchronize(self) -> bool:
         """同時に届いた同期要求へ同じ実行結果を返す。"""
@@ -164,17 +203,40 @@ class ServeRuntime:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self.sync_requested.wait(), timeout=interval)
             self.sync_requested.clear()
+            started = time.perf_counter()
+            timing = _timings.RequestTiming("background-sync", started)
+            token = _timings.CURRENT.set(timing)
+            lock_token = _git_sync.LOCK_OBSERVER.set(timing)
             try:
-                if await self.workers.run(self.operations.background_sync) is not None:
+                pulled = await self.workers.run(self.operations.background_sync)
+                _timings.record_event(
+                    self.timing_log,
+                    "background-sync",
+                    outcome="skipped" if pulled is None else "pulled" if pulled else "fresh",
+                    total_ms=round((time.perf_counter() - started) * 1000, 1),
+                    queue_ms=round(timing.queue_ms, 1),
+                    lock_wait_ms=round(timing.lock_wait_ms, 1),
+                    lock_hold_ms=round(timing.lock_hold_ms, 1),
+                )
+                if pulled is not None:
                     self.state.publish("sync-ok")
                 interval = _BACKGROUND_SYNC_INTERVAL_SECONDS
                 retry_interval = _SYNC_RETRY_INTERVAL_SECONDS
             except Exception as error:  # pylint: disable=broad-exception-caught
+                _timings.record_event(
+                    self.timing_log,
+                    "background-sync",
+                    outcome="error",
+                    total_ms=round((time.perf_counter() - started) * 1000, 1),
+                )
                 logger.warning("WIの定期Git同期に失敗しました: %s", error)
                 self.state.publish("sync-error")
                 # 一時的な通信失敗から早く復旧し、継続する障害では通常周期まで間隔を戻す。
                 interval = retry_interval
                 retry_interval = min(retry_interval * 2, _BACKGROUND_SYNC_INTERVAL_SECONDS)
+            finally:
+                _git_sync.LOCK_OBSERVER.reset(lock_token)
+                _timings.CURRENT.reset(token)
 
 
 def register_lifecycle(
@@ -193,6 +255,8 @@ def register_lifecycle(
             await serve_sessions.start_local_watch_async(sessions)
             serve_sessions.start_remote_clients(sessions)
             runtime.background_task = asyncio.create_task(runtime.background_sync_loop())
+            # 起動直後の最初の一覧が全件の解析を待たないよう、索引の初回走査を参照の枠で先に始める。
+            runtime.warmup_task = asyncio.create_task(runtime.warm_index())
             runtime.remote_stop_task = asyncio.create_task(stop_remote_connections_on_shutdown())
         except BaseException:
             await finish_task(asyncio.create_task(stop_background_tasks()))
@@ -220,6 +284,10 @@ def register_lifecycle(
             runtime.background_task.cancel()
             background.append(runtime.background_task)
             runtime.background_task = None
+        if runtime.warmup_task is not None:
+            runtime.warmup_task.cancel()
+            background.append(runtime.warmup_task)
+            runtime.warmup_task = None
         previous = await asyncio.gather(*background, return_exceptions=True)
         outcomes = await asyncio.gather(
             serve_sessions.stop_remote_clients(sessions),

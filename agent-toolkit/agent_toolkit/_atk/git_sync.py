@@ -17,11 +17,13 @@ pullとpushの失敗も呼び出し元の実行主体が次の操作を決めら
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import pathlib
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Callable, Iterable
 from typing import Protocol
 
@@ -162,12 +164,26 @@ def repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
     return lock_dir / f"{digest}.lock"
 
 
+class LockObserver(Protocol):
+    """`repo_lock`の待機と保持の秒数を受け取る観測先。"""
+
+    def add_lock_wait(self, seconds: float) -> None: ...
+
+    def add_lock_hold(self, seconds: float) -> None: ...
+
+
+LOCK_OBSERVER: contextvars.ContextVar[LockObserver | None] = contextvars.ContextVar("atk_repo_lock_observer", default=None)
+"""`repo_lock`の待機・保持を記録する観測先。`atk serve`が要求ごとに設定し、設定の無い呼出しでは計測しない。"""
+
+
 class _RepoLock(filelock.FileLock):
     """Git common directory単位で保持記録を管理するFileLock。"""
 
     def __init__(self, repo_path: pathlib.Path, *, timeout: float = -1) -> None:
         self._repo_path = repo_path
         self._target = _lock_key(repo_path)
+        self._observer: LockObserver | None = None
+        self._acquired_at: float | None = None
         super().__init__(str(repo_lock_path(repo_path)), timeout=timeout)
 
     def acquire(
@@ -180,6 +196,8 @@ class _RepoLock(filelock.FileLock):
         cancel_check: Callable[[], bool] | None = None,
     ) -> filelock.AcquireReturnProxy:
         result: filelock.AcquireReturnProxy | None = None
+        observer = LOCK_OBSERVER.get()
+        wait_started = time.perf_counter()
         if blocking is not False and is_human_terminal():
             # 他の主体が保持していて待つ場合だけ、待機中であることを人の端末へ届ける。
             try:
@@ -197,12 +215,21 @@ class _RepoLock(filelock.FileLock):
                 cancel_check=cancel_check,
             )
         _LOCK_HELD_PATHS.paths[self._target] = _LOCK_HELD_PATHS.paths.get(self._target, 0) + 1
+        if observer is not None and self._acquired_at is None:
+            acquired_at = time.perf_counter()
+            observer.add_lock_wait(acquired_at - wait_started)
+            self._observer = observer
+            self._acquired_at = acquired_at
         return result
 
     def release(self, force: bool = False) -> None:
         super().release(force)
         if not self.is_locked:
             _LOCK_HELD_PATHS.paths.pop(self._target, None)
+            if self._observer is not None and self._acquired_at is not None:
+                self._observer.add_lock_hold(time.perf_counter() - self._acquired_at)
+            self._observer = None
+            self._acquired_at = None
 
 
 def repo_lock(repo_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:

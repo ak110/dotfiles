@@ -230,7 +230,7 @@ def test_index_trusts_parsed_result_after_mtime_precision_window(
     def time_ns() -> int:
         return now_ns
 
-    monkeypatch.setattr(entry_index, "time", types.SimpleNamespace(time_ns=time_ns))
+    monkeypatch.setattr(entry_index, "time", types.SimpleNamespace(time_ns=time_ns, monotonic=time.monotonic))
     original_read_text = pathlib.Path.read_text
     read_calls = 0
 
@@ -356,3 +356,89 @@ def test_warnings_report_unknown_state_for_unreadable_fixed_entry(tmp_path: path
     result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox", "adopted"))
     assert not result
     assert warnings == [{"state": "unknown", "filename": "broken.md", "reason": "UTF-8として読み取れません"}]
+
+
+def test_tracked_index_skips_walk_until_change_or_rescan_interval(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """変更追跡を有効にした索引は、変更通知が無い間は全件の列挙を省き、通知か一定時間の経過で列挙し直す。
+
+    一覧・検索のたびに全件のファイル情報を取り直すと、高負荷の環境で1要求が数秒かかるためである。
+    """
+    _age(_write_entry(tmp_path, "inbox", "one.md", "本文1"))
+    _age(_write_entry(tmp_path, "adopted", "done.md", "本文2"))
+    index = entry_index.EntryIndex(tmp_path)
+    index.enable_change_tracking()
+    walks = 0
+    original_iter = entry_index.iter_entry_paths
+
+    def counting_iter(root: pathlib.Path) -> typing.Iterator[pathlib.Path]:
+        nonlocal walks
+        walks += 1
+        return original_iter(root)
+
+    monkeypatch.setattr(entry_index, "iter_entry_paths", counting_iter)
+    clock = [1000.0]
+    monkeypatch.setattr(entry_index.time, "monotonic", lambda: clock[0])
+
+    inbox, _ = index.scan(("inbox",))
+    adopted, _ = index.scan(("adopted",))
+    assert ([item.path.name for item in inbox], [item.path.name for item in adopted], walks) == (["one.md"], ["done.md"], 1)
+
+    _age(_write_entry(tmp_path, "inbox", "two.md", "本文3"))
+    stale, _ = index.scan(("inbox",))
+    index.mark_changed()
+    fresh, _ = index.scan(("inbox",))
+    assert ([item.path.name for item in stale], sorted(item.path.name for item in fresh), walks) == (
+        ["one.md"],
+        ["one.md", "two.md"],
+        2,
+    )
+
+    clock[0] += entry_index._RESCAN_SECONDS + 1  # pylint: disable=protected-access
+    index.scan(("inbox",))
+    assert walks == 3
+
+
+def test_untracked_index_walks_every_scan(tmp_path: pathlib.Path) -> None:
+    """変更追跡を有効にしない索引（ファイル監視の無い構成）は、毎回全件を確かめて外部の追加を返す。"""
+    _age(_write_entry(tmp_path, "inbox", "one.md", "本文1"))
+    index = entry_index.EntryIndex(tmp_path)
+    index.scan(("inbox",))
+    _age(_write_entry(tmp_path, "inbox", "two.md", "本文2"))
+    entries, _ = index.scan(("inbox",))
+    assert sorted(item.path.name for item in entries) == ["one.md", "two.md"]
+
+
+def test_tracked_index_rereads_only_pending_entries_after_write(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """書込直後で解析結果を信用できない項目が残る間は、全件を列挙せずにその項目だけを読み直す。
+
+    外部の追加や保存の直後は画面の再読込が続けて届き、要求ごとに全件を走査すると1回ごとに秒単位かかるためである。
+    """
+    _age(_write_entry(tmp_path, "inbox", "old.md", "本文1"))
+    fresh = _write_entry(tmp_path, "inbox", "new.md", "書込直後")
+    index = entry_index.EntryIndex(tmp_path)
+    index.enable_change_tracking()
+    walks = 0
+    original_iter = entry_index.iter_entry_paths
+
+    def counting_iter(root: pathlib.Path) -> typing.Iterator[pathlib.Path]:
+        nonlocal walks
+        walks += 1
+        return original_iter(root)
+
+    monkeypatch.setattr(entry_index, "iter_entry_paths", counting_iter)
+    index.scan(("inbox",))
+    # 更新時刻と大きさを変えずに書き換えても、信用待ちの項目は読み直して新しい本文を返す。
+    fresh.write_text(fresh.read_text(encoding="utf-8").replace("書込直後", "書換え後"), encoding="utf-8")
+    entries, _ = index.scan(("inbox",))
+    assert (sorted(item.path.name for item in entries), walks) == (["new.md", "old.md"], 1)
+    assert "書換え後" in next(item.text for item in entries if item.path.name == "new.md")
+
+    fresh.unlink()
+    entries, _ = index.scan(("inbox",))
+    assert ([item.path.name for item in entries], walks) == (["old.md"], 1)

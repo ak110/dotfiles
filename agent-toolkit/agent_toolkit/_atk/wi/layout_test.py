@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from agent_toolkit._atk.serve.wi_operations import Operations
-from agent_toolkit._atk.wi import add, entries, frontmatter, mutations, sync
+from agent_toolkit._atk.wi import add, entries, frontmatter, layout, mutations, sync
 from agent_toolkit._testing import git_repository
 
 
@@ -135,3 +135,27 @@ def test_concurrent_terminal_commits_compare_fixed_path_state_and_result(tmp_pat
         with pytest.raises(subprocess.CalledProcessError):
             sync.synchronize(second)
         assert "別の成果" in entries.entry_path(second, names[0]).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("files", "expected"),
+    [
+        pytest.param(("2026/10/20261020-120000-001.md",), "2026/10/20261020-120000-001.md", id="年月配置だけ"),
+        pytest.param((), None, id="実在しない"),
+        pytest.param(("2026/10/20261020-120000-001.md", "inbox/20261020-120000-001.md"), None, id="移行前の状態配置にも同名"),
+    ],
+)
+def test_unique_dated_entry_path(tmp_path: pathlib.Path, files: tuple[str, ...], expected: str | None) -> None:
+    """年月保存先が一意に決まる場合だけパスを返し、それ以外は呼出側の列挙へ委ねる。"""
+    for relative in files:
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relative).write_text("---\nstate: inbox\n---\n", encoding="utf-8")
+    actual = layout.unique_dated_entry_path(tmp_path, "20261020-120000-001.md")
+    assert actual == (tmp_path / expected if expected is not None else None)
+
+
+def test_unique_dated_entry_path_ignores_undated_name(tmp_path: pathlib.Path) -> None:
+    """日付形式でない名前は保存先を名前から決められないため列挙へ委ねる。"""
+    (tmp_path / "2026" / "10").mkdir(parents=True)
+    (tmp_path / "2026" / "10" / "note.md").write_text("", encoding="utf-8")
+    assert layout.unique_dated_entry_path(tmp_path, "note.md") is None

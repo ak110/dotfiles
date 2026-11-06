@@ -7,10 +7,13 @@ from collections.abc import Iterator
 
 from agent_toolkit._common.next_action import ActionableError
 
+DATED_NAME = re.compile(r"\d{8}-\d{6}-\d{3,}\.md")
+"""年月の固定保存先を名前から決められるWIファイル名。"""
+
 
 def entry_path(private_notes: pathlib.Path, filename: str, *, fallback_date: datetime.date | None = None) -> pathlib.Path:
     """名前の日付、既存の保存先、指定された投入日の順で固定保存先を解決する。"""
-    if re.fullmatch(r"\d{8}-\d{6}-\d{3,}\.md", filename) is None:
+    if DATED_NAME.fullmatch(filename) is None:
         if pathlib.Path(filename).name == filename and "/" not in filename and "\\" not in filename:
             existing = [path for path in iter_entry_paths(private_notes) if path.name == filename]
             if len(existing) == 1:
@@ -34,13 +37,18 @@ def iter_entry_paths(private_notes: pathlib.Path, *, legacy_states: tuple[str, .
     """年月配置と、指定された移行前の状態配置の項目を列挙する。"""
     names: set[str] = set()
     for path in sorted(private_notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")):
-        dated = re.fullmatch(r"\d{8}-\d{6}-\d{3,}\.md", path.name)
-        if path.name in names or (dated is not None and path != private_notes / path.name[:4] / path.name[4:6] / path.name):
+        name = path.name
+        # globの形から保存先はprivate_notes直下の年・月の2階層に限られるため、年月の一致はディレクトリ名だけで判定する。
+        # `Path`同士の比較は1件ごとに正規化を伴い、数千件の列挙で所要の大半を占める。
+        month_dir = path.parent
+        if name in names or (
+            DATED_NAME.fullmatch(name) is not None and (month_dir.name != name[4:6] or month_dir.parent.name != name[:4])
+        ):
             raise ActionableError(
                 f"WIの固定配置が重複しているか、ファイル名の年月と一致しない: {path}",
                 next_action="同名の項目を比較し、各ファイルを一意な名前とその年月の保存先へ修正する",
             )
-        names.add(path.name)
+        names.add(name)
         yield path
     for state in legacy_states:
         yield from sorted((private_notes / state).glob("*.md"))

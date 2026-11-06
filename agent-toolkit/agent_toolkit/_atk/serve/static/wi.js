@@ -1,6 +1,7 @@
 // ワークアイテム画面。キューの一覧・詳細・登録・編集・状態遷移を扱う。
 import {
-  BASE_PATH, SERVE_HOST, WI_ROOT, diagnostic, connectEvents, renderList, renderWarnings, resyncWhenVisible
+  BASE_PATH, SERVE_HOST, WI_ROOT, diagnostic, connectEvents, renderList, renderWarnings, resyncWhenVisible,
+  timedFetch, recordTiming, notifyDelayMs
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -70,7 +71,7 @@ const deleteEntrySnapshot = entry => entry ? JSON.stringify([
   entryKey(entry), entry.state, entry.content, entry.target_repo || '', entry.summary || ''
 ]) : '';
 
-async function api(path, options = {}) {
+async function api(path, {timing = {}, ...options} = {}) {
   const route = path.split('?')[0];
   const entryMatch = route.match(/^\/api\/entries\/([^/]+\.md)$/);
   const operation = {
@@ -94,7 +95,7 @@ async function api(path, options = {}) {
     headers: {'Content-Type': 'application/json', ...(options.headers || {})}
   };
   try {
-    const response = await fetch(BASE_PATH + path, request);
+    const response = await timedFetch('wi', BASE_PATH + path, request, timing);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const error = new Error(payload.error || response.statusText || '通信に失敗しました。');
@@ -737,7 +738,9 @@ async function refreshKnownEntries({notify = false} = {}) {
   const generation = ++knownEntryRequestGeneration;
   let payload;
   try {
-    payload = await (api('/api/entries?type=all&status=all&answered=all'));
+    // 通知の対象は新規の処理待ち項目だけのため、未終了の項目に限って取得する。全状態の一覧は数MBに及び、
+    // 変更通知のたびに取得すると参照の実行枠を占めて画面の操作を待たせる。
+    payload = await (api('/api/entries?type=all&status=active&answered=all'));
   } catch (error) {
     if (generation !== knownEntryRequestGeneration) return;
     throw error;
@@ -914,10 +917,9 @@ function renderMetadata(entry) {
 
 function setDetailMode(mode) {
   const editing = mode === 'edit';
-  const answering = mode === 'answer';
   const commenting = mode === 'user-comment';
   const decisionAction = mode === 'decide-adopt' ? 'adopt' : mode === 'decide-reject' ? 'reject' : '';
-  const mutating = editing || answering || commenting || decisionAction !== '';
+  const mutating = editing || commenting || decisionAction !== '';
   const unansweredUwi = currentEntry?.kind === 'uwi' && currentEntry.answered === false;
   const processable = currentEntry && PROCESSABLE_STATES.has(currentEntry.state);
   const mutable = currentEntry && MUTABLE_STATES.has(currentEntry.state);
@@ -925,6 +927,8 @@ function setDetailMode(mode) {
   const held = currentEntry?.state === 'hold';
   const terminal = currentEntry && TERMINAL_STATES.has(currentEntry.state);
   byId('edit-panel').hidden = !editing;
+  // 回答できるUWIは閲覧中から回答欄を表示し、回答と他の操作を切り替えなしで行えるようにする。
+  const answering = !mutating && currentEntry?.kind === 'uwi' && Boolean(mutable);
   byId('answer-panel').hidden = !answering;
   byId('user-comment-panel').hidden = !commenting;
   // 採否のメモは採用・却下の操作モードでだけ表示し、閲覧中の本文とユーザーコメントの欄から分ける。
@@ -935,10 +939,7 @@ function setDetailMode(mode) {
   byId('important-button').hidden = mutating || !currentEntry;
   // 確認状態は確認状態を持つ未終了のAWIだけが切り替えられ、ボタンの文言で次の操作を示す。
   byId('important-button').textContent = currentEntry?.important === true ? '重要解除' : '重要設定';
-  byId('answer-button').hidden = mutating || !currentEntry ||
-    currentEntry.kind !== 'uwi' || !mutable;
   byId('user-comment-button').hidden = mutating || currentEntry?.user_comment_editable !== true;
-  byId('answer-button').textContent = currentEntry?.answered === true ? '回答を変更' : '回答';
   byId('adopt-button').hidden = mutating || !mutable;
   byId('reject-button').hidden = mutating || !mutable || currentEntry.kind !== 'awi';
   byId('hold-button').hidden = mutating || !(processable || terminal);
@@ -946,7 +947,6 @@ function setDetailMode(mode) {
   byId('return-to-inbox-button').hidden = mutating || !terminal;
   byId('delete-button').hidden = mutating || !deletable;
   byId('save-entry-button').hidden = !editing;
-  byId('save-answer-button').hidden = !answering;
   byId('save-user-comment-button').hidden = !commenting;
   byId('confirm-adopt-button').hidden = decisionAction !== 'adopt';
   byId('confirm-reject-button').hidden = decisionAction !== 'reject';
@@ -960,7 +960,7 @@ function setDetailMode(mode) {
 
 function syncDetailMutationAvailability() {
   for (const id of [
-    'edit-button', 'answer-button', 'user-comment-button', 'delete-button', 'important-button',
+    'edit-button', 'user-comment-button', 'delete-button', 'important-button',
     'save-entry-button', 'save-answer-button', 'save-user-comment-button',
     'adopt-button', 'reject-button', 'hold-button', 'unhold-button', 'return-to-inbox-button',
     'confirm-adopt-button', 'confirm-reject-button'
@@ -990,7 +990,10 @@ function renderAnswerChoices(entry) {
 }
 
 function displayEntry(entry) {
+  // 同じ項目の再表示（外部変更の反映など）では、入力途中の回答を保持する。
+  const keepTypedAnswer = entryKey(currentEntry) === entryKey(entry) && answerInputChanged();
   currentEntry = entry;
+  if (!keepTypedAnswer) byId('answer-input').value = entry.answer || '';
   refreshCooldownDisplays();
   detailRefreshRequired = false;
   byId('decision-note').value = '';
@@ -1084,7 +1087,7 @@ function closeDetailDialog({updateUrl = true, force = false} = {}) {
   if (!force) {
     const mode = currentDetailMode();
     const changed = mode === 'edit' && byId('edit-content').value !== currentEntry?.content ||
-      mode === 'answer' && byId('answer-input').value !== (currentEntry?.answer || '') ||
+      answerInputChanged() ||
       mode === 'user-comment' && byId('user-comment-input').value !== (currentEntry?.user_comment || '') ||
       mode.startsWith('decide-') && byId('decision-note').value !== '';
     if (changed && !window.confirm('変更した入力を破棄しますか？')) return;
@@ -1120,7 +1123,6 @@ async function restoreEntryFromUrl() {
 
 function currentDetailMode() {
   if (!byId('edit-panel').hidden) return 'edit';
-  if (!byId('answer-panel').hidden) return 'answer';
   if (!byId('user-comment-panel').hidden) return 'user-comment';
   if (!byId('decision-panel').hidden) return `decide-${byId('decision-panel').dataset.action}`;
   return 'view';
@@ -1194,7 +1196,10 @@ async function reloadOpenDetailFromExternalChange() {
     updateCurrentRowSelection();
     return;
   }
-  if (mode !== 'view') {
+  // 編集・採否のモードと、閲覧中に入力途中の回答がある場合は、入力を保持して保存を止める。
+  // 入力が最新内容の回答と同じなら保存済みである（commitだけ失敗した保存の再表示など）ため、保護せずに表示を更新する。
+  const unsavedAnswer = answerInputChanged() && byId('answer-input').value !== (resolvedEntry.answer || '');
+  if (mode !== 'view' || unsavedAnswer) {
     currentEntry = {...currentEntry, state: resolvedEntry.state};
     detailOriginKey = entryKey(currentEntry);
     if (detailChanged) {
@@ -1224,12 +1229,10 @@ function enterEdit() {
   byId('edit-content').focus();
 }
 
-function enterAnswer() {
-  if (!currentEntry) return;
-  byId('answer-input').value = currentEntry.answer || '';
-  setDetailMode('answer');
-  byId('answer-input').focus();
+function answerInputChanged() {
+  return !byId('answer-panel').hidden && byId('answer-input').value !== (currentEntry?.answer || '');
 }
+
 
 function enterUserComment() {
   if (!currentEntry || currentEntry.user_comment_editable !== true) return;
@@ -1674,7 +1677,41 @@ async function handleFilterChange({reloadRepos = false, mode = 'search'} = {}) {
   }
 }
 
-async function reloadFromExternalChange() {
+let externalReloadRunning = null;
+let externalReloadQueued = null;
+
+// 変更通知・再接続・表示復帰による再読込を1件ずつ実行し、実行中に届いた要求は1回にまとめて後で実行する。
+// 通知が続く間に同じ再取得を重ねて参照の実行枠を占め、ユーザーの操作を待たせないためである。
+function reloadFromExternalChange(trigger = 'resync', event = null) {
+  const request = {trigger, notify_delay_ms: event ? notifyDelayMs(event) : undefined};
+  if (externalReloadRunning) {
+    externalReloadQueued = request;
+    return externalReloadRunning;
+  }
+  externalReloadRunning = (async () => {
+    let next = request;
+    while (next) {
+      externalReloadQueued = null;
+      const started = performance.now();
+      try {
+        await reloadFromExternalChangeOnce();
+      } finally {
+        // 個々の取得は要求IDごとに記録され、ここでは契機から再読込の完了までを1件で残す。
+        recordTiming({
+          screen: 'wi', operation: 'external-reload', trigger: next.trigger,
+          ...(Number.isFinite(next.notify_delay_ms) ? {notify_delay_ms: next.notify_delay_ms} : {}),
+          total_ms: performance.now() - started
+        });
+      }
+      next = externalReloadQueued;
+    }
+  })().finally(() => {
+    externalReloadRunning = null;
+  });
+  return externalReloadRunning;
+}
+
+async function reloadFromExternalChangeOnce() {
   void refreshKnownEntries({notify: true}).catch((error) => {
     setGlobalError(error.message);
   });
@@ -1763,7 +1800,6 @@ function bindEvents() {
   byId('search-input').addEventListener('input', handleSearchInput);
   byId('edit-button').addEventListener('click', enterEdit);
   byId('important-button').addEventListener('click', () => { void toggleImportant(); });
-  byId('answer-button').addEventListener('click', enterAnswer);
   byId('user-comment-button').addEventListener('click', enterUserComment);
   byId('save-entry-button').addEventListener('click', saveEntry);
   byId('save-answer-button').addEventListener('click', saveAnswer);
@@ -1798,7 +1834,7 @@ function subscribeEvents() {
         byId('connection-status').textContent = '';
       }
       void initialization.then(async () => {
-        await reloadFromExternalChange();
+        await reloadFromExternalChange('reconnect');
         byId('connection-status').dataset.connected = 'true';
       });
     },
@@ -1808,8 +1844,8 @@ function subscribeEvents() {
       byId('connection-status').textContent = diagnostic('WI', SERVE_HOST, `${WI_ROOT} / 自動更新`, '自動更新を再接続中');
       byId('connection-status').hidden = false;
     },
-    changed: () => {
-      void initialization.then(() => reloadFromExternalChange());
+    changed: (event) => {
+      void initialization.then(() => reloadFromExternalChange('sse', event));
     },
     'sync-error': () => {
       const status = byId('connection-status');

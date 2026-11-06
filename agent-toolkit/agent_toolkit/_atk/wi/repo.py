@@ -7,7 +7,7 @@ import typing
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.constants import WI_STATES, unrepairable_entry_next_action
-from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
+from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths, unique_dated_entry_path
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 
@@ -30,6 +30,9 @@ def _entry_in_directory(private_notes: pathlib.Path, directory: pathlib.Path, fi
     """状態の指定を実パスへ解決する。"""
     normalized = _wi_filenames.validate_filename(filename, directory).name
     if directory.name in WI_STATES:
+        dated = unique_dated_entry_path(private_notes, normalized)
+        if dated is not None:
+            return dated if entry_state_of(dated) == directory.name else directory / normalized
         return next(
             (
                 path

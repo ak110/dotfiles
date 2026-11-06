@@ -1,7 +1,7 @@
 // セッション画面。左ペインで保存済み記録を選び、右ペインへ発話を時系列に表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons
+  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -233,7 +233,7 @@ const loadList = coalesced(fetchList);
 
 async function fetchList() {
   try {
-    const response = await (fetch(BASE_PATH + "/api/sessions/list"));
+    const response = await (timedFetch("sessions", BASE_PATH + "/api/sessions/list"));
     if (!response.ok) throw new Error(`一覧を取得できません (${response.status})`);
     const payload = await (response.json());
     const previousKeys = new Set(sessions.map(sessionKey));
@@ -531,7 +531,7 @@ async function refreshSelectedDetail() {
   const {host, engine, path} = selected;
   const generation = ++detailGeneration;
   try {
-    const response = await fetch(`${BASE_PATH}/api/sessions/detail?${new URLSearchParams({host, engine, path}).toString()}`);
+    const response = await timedFetch("sessions", `${BASE_PATH}/api/sessions/detail?${new URLSearchParams({host, engine, path}).toString()}`);
     if (!response.ok) return;
     const detail = await response.json();
     if (generation !== detailGeneration || !isSelected(selected, {host, engine, path})) return;
@@ -564,7 +564,7 @@ async function openSession(host, engine, path, trail = [], updateUrl = true, clo
   const query = new URLSearchParams({ host, engine, path });
   const generation = ++detailGeneration;
   try {
-    const response = await (fetch(`${BASE_PATH}/api/sessions/detail?${query.toString()}`));
+    const response = await (timedFetch("sessions", `${BASE_PATH}/api/sessions/detail?${query.toString()}`));
     if (!response.ok) throw new Error(`記録を取得できません (${response.status})`);
     const detail = await (response.json());
     if (generation !== detailGeneration) return;
