@@ -245,6 +245,100 @@ def test_public_dry_run_rejects_changed_or_unreadable_opening(tmp_path, monkeypa
         assert stored.read_bytes() == original
 
 
+@pytest.mark.parametrize("comparison", ["matching", "changed", "none"])
+@pytest.mark.parametrize("operation", ["add", "edit"])
+def test_public_save_compares_opening_before_writing(tmp_path, monkeypatch, capsys, operation, comparison):
+    """本保存でも冒頭を比較し、一致と比較なしは保存し、不一致は対象WIの書込とcommitを行わない。"""
+    notes = _setup_notes(tmp_path)
+    pushed: list[object] = []
+    if operation == "add":
+        _patch_cmd_add_operations(monkeypatch)
+        monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *args, **_kwargs: pushed.append(args))
+    opening = "# 表題\n\n説明\n\n"
+    body = tmp_path / "draft.md"
+    body.write_text(opening + "## 反映内容と反映先\n対象\n", encoding="utf-8")
+    expected = tmp_path / "opening.md"
+    expected.write_text(opening if comparison == "matching" else opening.replace("説明", "変更"), encoding="utf-8")
+    argv = ["wi", operation, "--target-repo", "github.com/example/repo", "--body-file", str(body)]
+    stored = None
+    original = b""
+    if operation == "edit":
+        stored = _write_awi_file(notes, "draft.md", target_repo="github.com/example/repo")
+        original = stored.read_bytes()
+        argv.insert(2, "draft.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    if comparison != "none":
+        argv.extend(["--compare-opening-file", str(expected)])
+    with pytest.raises(SystemExit) as result:
+        atk.main(argv, home=tmp_path)
+    output = capsys.readouterr()
+    saved = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    if comparison == "changed":
+        assert result.value.code == 1
+        assert "原稿の冒頭と比較ファイルが一致しない" in output.err and "次の操作:" in output.err
+        assert not pushed
+        if stored is None:
+            assert not saved
+        else:
+            assert stored.read_bytes() == original
+    else:
+        assert result.value.code == 0, output.err
+        if stored is None:
+            assert len(saved) == 1 and "説明" in saved[0].read_text(encoding="utf-8")
+        else:
+            assert stored.read_bytes() != original and "説明" in stored.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("comparison", ["matching", "changed", "missing"])
+def test_public_edit_compares_opening_even_without_changes(tmp_path, monkeypatch, capsys, comparison):
+    """保存済みと同じ本文での本保存でも冒頭を比較し、不一致・読取不能を差分なしの成功にしない。"""
+    notes = _setup_notes(tmp_path)
+    stored = _write_awi_file(notes, "draft.md", target_repo="github.com/example/repo")
+    original = stored.read_bytes()
+    body = tmp_path / "draft.md"
+    body.write_bytes(original)
+    openings = add_module.compare_draft_openings([original.decode("utf-8")], [str(body)])
+    assert len(openings) == 1
+    opening = openings[0][1]
+    expected = tmp_path / "opening.md"
+    if comparison != "missing":
+        expected.write_text(opening if comparison == "matching" else opening + "変更\n", encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    argv = ["wi", "edit", "draft.md", "--body-file", str(body), "--compare-opening-file", str(expected)]
+    with pytest.raises(SystemExit) as result:
+        atk.main(argv, home=tmp_path)
+    output = capsys.readouterr()
+    assert stored.read_bytes() == original
+    if comparison == "matching":
+        assert result.value.code in (0, None), output.err
+        assert "差分なし" in output.out + output.err
+    else:
+        assert result.value.code == 1
+        assert str(expected) in output.err and "次の操作:" in output.err
+        assert "差分なし" not in output.out + output.err
+
+
+@pytest.mark.parametrize("mode", ["no-body", "append"])
+def test_public_edit_rejects_comparison_without_replacing_body(tmp_path, monkeypatch, capsys, mode):
+    """本文を置き換えない編集で比較入力だけを指定すると、必要な入力を示して拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    stored = _write_awi_file(notes, "draft.md", target_repo="github.com/example/repo")
+    original = stored.read_bytes()
+    comparison = tmp_path / "opening.md"
+    comparison.write_text("# 表題\n\n", encoding="utf-8")
+    argv = ["wi", "edit", "draft.md", "--compare-opening-file", str(comparison)]
+    if mode == "append":
+        body = tmp_path / "append.md"
+        body.write_text("追記\n", encoding="utf-8")
+        argv.extend(["--append", "--body-file", str(body)])
+    with pytest.raises(SystemExit) as result:
+        atk.main(argv, home=tmp_path)
+    assert result.value.code == 2
+    assert "--body-file" in capsys.readouterr().err
+    assert stored.read_bytes() == original
+
+
 @pytest.mark.parametrize("comparisons", ["matching", "swapped", "short", "long"])
 def test_public_dry_run_matches_each_opening_to_its_source(tmp_path, monkeypatch, capsys, comparisons):
     """複数原稿の対応順と件数を検査し、全件一致した場合だけ成功する。"""

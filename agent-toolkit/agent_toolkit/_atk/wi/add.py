@@ -483,52 +483,65 @@ def require_cause_analysis_format(body: str, *, original: str | None = None, ent
         )
 
 
-def print_draft_openings(messages: list[str], sources: list[str], *, compare_paths: list[str] | None = None) -> None:
-    """検証済み原稿の冒頭を比較・保存し、入力との対応と原文を表示する。"""
+def compare_draft_openings(
+    messages: list[str], sources: list[str], *, compare_paths: list[str] | None = None
+) -> list[tuple[str, str]]:
+    """原稿ごとの冒頭を抽出し、比較入力があれば全件の一致を確かめて`(原稿, 冒頭)`を返す。
+
+    dry-runと本保存が同じ比較を使う。不一致・読取不能・件数違いは`WebInputError`で拒否し、呼出側は保存を始めない。
+    """
     if compare_paths is not None and len(compare_paths) != len(messages):
         raise WebInputError(
             f"原稿と冒頭比較ファイルの件数が一致しない: 原稿={len(messages)}、比較={len(compare_paths)}",
-            next_action="--body-fileと--compare-opening-fileを同じ件数、同じ対応順で指定してdry-runを再実行する",
+            next_action="--body-fileと--compare-opening-fileを同じ件数、同じ対応順で指定して再実行する",
         )
+    openings: list[tuple[str, str]] = []
+    for index, (message, source) in enumerate(zip(messages, sources, strict=True)):
+        raw = message.removeprefix("\ufeff")
+        normalized = _frontmatter.normalize_newlines(raw)
+        parsed = _frontmatter.parse_frontmatter(normalized)
+        lines = re.findall(r"[^\r\n]*(?:\r\n|\r|\n|$)", raw)
+        if parsed is not None:
+            prefix = normalized[: len(normalized) - len(parsed[1])]
+            lines = lines[prefix.count("\n") :]
+        body = "".join(lines)
+        headings = [(token, name) for token, name in _markdown_headings.parse_headings(body, 1) if token.level == 0]
+        start = headings[0][0].map[0] if headings and headings[0][0].map is not None else 0
+        end = next(
+            (
+                token.map[0]
+                for token, _name in _markdown_headings.parse_headings(body, 2)
+                if token.level == 0 and token.map is not None and token.map[0] > start
+            ),
+            len(lines),
+        )
+        opening = "".join(lines[start:end])
+        if compare_paths is not None:
+            comparison = pathlib.Path(compare_paths[index]).expanduser()
+            try:
+                expected = comparison.read_bytes().decode("utf-8")
+            except (OSError, UnicodeDecodeError) as error:
+                raise WebInputError(
+                    f"冒頭比較ファイルをUTF-8として読めない: {comparison}（{error}）",
+                    next_action="--compare-opening-fileのパス・読取権限・UTF-8の文字コードを確認して再実行する",
+                ) from error
+            if opening != expected:
+                raise WebInputError(
+                    f"原稿の冒頭と比較ファイルが一致しない: 原稿={source}、比較={comparison}",
+                    next_action=(
+                        "--compare-opening-fileを外して現行原稿でdry-runを実行し、"
+                        "返された冒頭保存先を比較ファイルとして指定し直す"
+                    ),
+                )
+        openings.append((source, opening))
+    return openings
+
+
+def print_draft_openings(messages: list[str], sources: list[str], *, compare_paths: list[str] | None = None) -> None:
+    """検証済み原稿の冒頭を比較・保存し、入力との対応と原文を表示する。"""
     saved: list[tuple[str, pathlib.Path, str]] = []
     try:
-        for index, (message, source) in enumerate(zip(messages, sources, strict=True)):
-            raw = message.removeprefix("\ufeff")
-            normalized = _frontmatter.normalize_newlines(raw)
-            parsed = _frontmatter.parse_frontmatter(normalized)
-            lines = re.findall(r"[^\r\n]*(?:\r\n|\r|\n|$)", raw)
-            if parsed is not None:
-                prefix = normalized[: len(normalized) - len(parsed[1])]
-                lines = lines[prefix.count("\n") :]
-            body = "".join(lines)
-            headings = [(token, name) for token, name in _markdown_headings.parse_headings(body, 1) if token.level == 0]
-            start = headings[0][0].map[0] if headings and headings[0][0].map is not None else 0
-            end = next(
-                (
-                    token.map[0]
-                    for token, _name in _markdown_headings.parse_headings(body, 2)
-                    if token.level == 0 and token.map is not None and token.map[0] > start
-                ),
-                len(lines),
-            )
-            opening = "".join(lines[start:end])
-            if compare_paths is not None:
-                comparison = pathlib.Path(compare_paths[index]).expanduser()
-                try:
-                    expected = comparison.read_bytes().decode("utf-8")
-                except (OSError, UnicodeDecodeError) as error:
-                    raise WebInputError(
-                        f"冒頭比較ファイルをUTF-8として読めない: {comparison}（{error}）",
-                        next_action="--compare-opening-fileのパス・読取権限・UTF-8の文字コードを確認して再実行する",
-                    ) from error
-                if opening != expected:
-                    raise WebInputError(
-                        f"原稿の冒頭と比較ファイルが一致しない: 原稿={source}、比較={comparison}",
-                        next_action=(
-                            "--compare-opening-fileを外して現行原稿でdry-runを実行し、"
-                            "返された冒頭保存先を比較ファイルとして指定し直す"
-                        ),
-                    )
+        for source, opening in compare_draft_openings(messages, sources, compare_paths=compare_paths):
             path = _output_file.save_text(opening, lambda: create_output_temp("wi-draft"), filename="draft-opening.md")
             saved.append((source, path, opening))
     except (OSError, ManagedTempError) as error:
@@ -1038,6 +1051,7 @@ def cmd_add(
     canonical_dependencies = _normalize_dependencies(args.depends_on, dependency_dir)
     choices = ",".join(args.choices) if args.choices is not None else None
     saved_details: dict[str, dict[str, object | None]] = {}
+    sources = [str(pathlib.Path(path).expanduser().resolve()) for path in body_files] if body_files else ["エディター入力"]
     try:
         if args.dry_run:
             _validate_add_entries(
@@ -1050,12 +1064,12 @@ def cmd_add(
                 source=args.source,
                 cooldown_until=getattr(args, "cooldown_until", None),
             )
-            sources = (
-                [str(pathlib.Path(path).expanduser().resolve()) for path in body_files] if body_files else ["エディター入力"]
-            )
             print_draft_openings(messages, sources, compare_paths=args.compare_opening_file)
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             return
+        if args.compare_opening_file is not None:
+            # 保存より前に全原稿の冒頭を比較し、不一致なら1件も保存しない。
+            compare_draft_openings(messages, sources, compare_paths=args.compare_opening_file)
         generated = add_entries(
             private_notes,
             messages=messages,

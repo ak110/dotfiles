@@ -487,6 +487,20 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
+    if args.compare_opening_file is not None and not args.dry_run:
+        # 保存より前に冒頭を比較し、不一致なら対象WIを書き換えない。
+        # 本文が保存済みと同じでも比較の失敗を成功扱いしないよう、差分なしの判定より先に比較する。
+        assert message is not None
+        assert args.body_file is not None
+        try:
+            _add.compare_draft_openings(
+                [message],
+                [str(pathlib.Path(args.body_file).expanduser().resolve())],
+                compare_paths=args.compare_opening_file,
+            )
+        except WebInputError as error:
+            _outcome.report_failure(f"編集を拒否した: {error.reason}", next_action=error.next_action)
+            sys.exit(1)
     if edited == original and not args.dry_run:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
