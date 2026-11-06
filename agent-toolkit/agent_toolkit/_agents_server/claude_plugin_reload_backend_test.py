@@ -18,6 +18,28 @@ from agent_toolkit._testing.agents_server_support import AssistantMessage, Queue
 # pylint: disable=protected-access
 
 
+class _ManualObserver:
+    """変更を試験から`mark_changed`で通知するための、OSの監視資源を使わないObserverの代用。
+
+    実Observerはホストのinotifyインスタンスを消費し、上限に達した環境では監視が無効になる。
+    無効になると`mark_changed`が変更を記録しないため、試験の合否がホストの資源量で変わる。
+    """
+
+    ident = None
+
+    def schedule(self, *_args: Any, **_kwargs: Any) -> None:
+        pass
+
+    def unschedule_all(self) -> None:
+        pass
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+
 @pytest.mark.parametrize("versioned_input", [False, True])
 @pytest.mark.asyncio
 async def test_plugin_reload_waits_for_idle_and_precedes_reply(
@@ -150,6 +172,7 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
         ]
     )
     monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
+    monkeypatch.setattr(claude_plugins, "Observer", _ManualObserver)
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
         session = await backend.start("初回", str(tmp_path))
         async with backend._condition:
@@ -248,8 +271,7 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
         ]
     )
     monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
-    if monitor_failure:
-        monkeypatch.setattr(claude_plugins, "Observer", UnavailableObserver)
+    monkeypatch.setattr(claude_plugins, "Observer", UnavailableObserver if monitor_failure else _ManualObserver)
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
         session = await backend.start("初回", str(tmp_path))
         async with backend._condition:
@@ -273,7 +295,7 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
     assert not mirror.exists()
 
 
-@pytest.mark.parametrize("failure", ["monitor-stop", "inventory-timeout"])
+@pytest.mark.parametrize("failure", ["monitor-stop", "inventory-unreclaimed"])
 @pytest.mark.asyncio
 async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, failure: str
@@ -316,8 +338,9 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
 
         def _inventory(self) -> list[claude_plugins._InstalledPlugin]:
             def inventory(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
-                if failure == "inventory-timeout" and reloaders:
-                    raise subprocess.TimeoutExpired(command, 30)
+                if failure == "inventory-unreclaimed" and reloaders:
+                    # 時間上限後に子孫を回収できない結果だけが所有タスクの回収へ渡る。回収済みの時間上限は縮退する。
+                    raise claude_plugins.process_tree.ReclaimError(["4321: claude"], [], context="run_with_timeout")
                 entries = [{"id": "agent-toolkit@mine", "scope": "user", "enabled": True, "installPath": str(source)}]
                 return subprocess.CompletedProcess(command, 0, json.dumps(entries), "")
 
