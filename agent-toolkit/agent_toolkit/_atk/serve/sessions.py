@@ -434,7 +434,14 @@ def _start_background_rescan(context: SessionsContext, tracker: session_watch.Re
             pass
         except Exception:  # pylint: disable=broad-exception-caught
             # 背景の走査の失敗では前回の一覧を使い続け、次の変更か上限時間を過ぎた要求で再び走査する。
-            logger.warning("セッション一覧の背景の再走査に失敗しました。前回の一覧を表示し続けます", exc_info=True)
+            logger.warning(
+                "セッション一覧の背景の再走査に失敗しました。前回の一覧を表示し続け、"
+                "次に記録が変わった時か、%.0f秒を過ぎた後の一覧の取得で再走査します。"
+                "失敗が続く場合は、この警告に続く例外から原因（記録の保存先の権限やディスクの状態など）を取り除き、"
+                "セッション画面を再読み込みしてください",
+                LOCAL_LIST_REUSE_SEC,
+                exc_info=True,
+            )
         with state.local_rescan_flag_lock:
             state.local_rescan_running = False
 
