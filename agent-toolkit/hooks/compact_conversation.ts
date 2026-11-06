@@ -1,6 +1,7 @@
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import type { EngineInterface, On } from "claude-code";
 import { automatedMessage } from "./automated_message.ts";
+import { exitStatePath } from "./session_exit.ts";
 
 const TOOL_NAME = "compact_conversation";
 
@@ -24,7 +25,35 @@ export const COMPACT_CONVERSATION_TOOL = {
 export const COMPACT_CONVERSATION_DELEGATED_DENY = "メインの会話で使うツール。";
 
 type BackgroundWait = { id: string; command: string; used: boolean };
-type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean; automaticPaused: boolean; waits: Map<string, BackgroundWait> };
+type Decision = { at: string; task: string; reason: string; tokens?: number; window?: number; pending: boolean; paused: boolean; turnRunning: boolean };
+type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean; automaticPaused: boolean; waits: Map<string, BackgroundWait>; decisions: Decision[] };
+
+// 判定の記録は直近だけを保持する。調査で見送り理由を後から確かめる用途に足り、会話中に増え続けない。
+const DECISION_LIMIT = 20;
+
+// 待機時圧縮の判定理由を会話別の状態ファイルへ残す。debugログはprocess-loopの`--debug=hooks`の分類に
+// modの診断が含まれず、見送り理由を後から判別できなかったため（docs/development/design-hooks.md）。
+// 記録の失敗は圧縮の判定と通常の結果回収を変えない。
+async function diagnose($: EngineInterface, state: CompactState, task: string, reason: string, context?: { tokens?: number; window: number }): Promise<void> {
+  $.ui.log(`wait_compaction task=${task} reason=${reason}`, { to: "debug" });
+  state.decisions.push({
+    at: new Date().toISOString(),
+    task,
+    reason,
+    ...(context ? { tokens: context.tokens, window: context.window } : {}),
+    pending: state.pending,
+    paused: state.automaticPaused,
+    turnRunning: state.turnRunning,
+  });
+  state.decisions.splice(0, Math.max(0, state.decisions.length - DECISION_LIMIT));
+  try {
+    const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
+    const path = exitStatePath(await $.session.id(), await $.env.get("CLAUDE_CONFIG_DIR"), home, "compaction");
+    if (path) await $.fs.write(path, JSON.stringify({ decisions: state.decisions }));
+  } catch {
+    // 状態ファイルを書けない環境でもui.logの診断は残り、圧縮の判定は続ける。
+  }
+}
 
 function usageThreshold(context: { tokens?: number; window: number }): boolean | undefined {
   if (typeof context.tokens !== "number" || !Number.isFinite(context.tokens) || context.tokens < 0 || !Number.isFinite(context.window) || context.window <= 0) return undefined;
@@ -32,28 +61,29 @@ function usageThreshold(context: { tokens?: number; window: number }): boolean |
 }
 
 async function automatic($: EngineInterface, state: CompactState, wait: BackgroundWait): Promise<void> {
-  if (wait.used || !state.waits.has(wait.id)) return;
-  const diagnose = (reason: string) => $.ui.log(`wait_compaction task=${wait.id} reason=${reason}`, { to: "debug" });
-  if (state.pending) { diagnose("pending"); return; }
+  // 評価済みの待機は前回の判定理由が記録済みで、turn完了ごとの再評価で記録を埋めない。
+  if (wait.used) return;
+  if (!state.waits.has(wait.id)) { await diagnose($, state, wait.id, "wait_finished"); return; }
+  if (state.pending) { await diagnose($, state, wait.id, "pending"); return; }
   try {
     const contextUsage = (await $.session.usage()).context;
     const high = usageThreshold(contextUsage);
-    if (high === undefined) { diagnose("usage_unknown"); return; }
-    if (!high) { state.automaticPaused = false; diagnose("below_threshold"); return; }
-    if (state.automaticPaused) { diagnose("paused"); return; }
+    if (high === undefined) { await diagnose($, state, wait.id, "usage_unknown", contextUsage); return; }
+    if (!high) { state.automaticPaused = false; await diagnose($, state, wait.id, "below_threshold", contextUsage); return; }
+    if (state.automaticPaused) { await diagnose($, state, wait.id, "paused", contextUsage); return; }
     wait.used = true;
     const root = $.plugin.root;
     const checked = await $.process.run(pluginLaunchCommand(root, "agent_toolkit/atk.py", [
       "run-script", "wait-compaction-context", "--", "--session-id", await $.session.id(),
       `--command=${wait.command}`,
     ]), { timeoutMs: 30_000 });
-    if (checked.exitCode !== 0 || checked.isStdoutTruncated) { diagnose("ownership_check_failed"); return; }
-    if (state.pending || !state.waits.has(wait.id)) { diagnose("wait_changed"); return; }
+    if (checked.exitCode !== 0 || checked.isStdoutTruncated) { await diagnose($, state, wait.id, "ownership_check_failed", contextUsage); return; }
+    if (state.pending || !state.waits.has(wait.id)) { await diagnose($, state, wait.id, "wait_changed", contextUsage); return; }
     const context: unknown = JSON.parse(checked.stdout);
-    if (typeof context !== "object" || context === null || (context as { eligible?: unknown }).eligible !== true) { diagnose("ownership_unconfirmed"); return; }
+    if (typeof context !== "object" || context === null || (context as { eligible?: unknown }).eligible !== true) { await diagnose($, state, wait.id, "ownership_unconfirmed", contextUsage); return; }
     state.pending = true;
     state.automaticPaused = true;
-    diagnose("scheduled");
+    await diagnose($, state, wait.id, "scheduled", contextUsage);
     schedule($, state);
   } catch (error) {
     // 同じ背景待機を自動再試行せず、通常の結果回収を続ける。
@@ -92,7 +122,7 @@ function schedule($: EngineInterface, state: CompactState): void {
 
 export function register(on: On, session: { delegated: boolean }): void {
   // modはセッションごとに読み込まれる。予約中だけ状態を保持する。
-  const state: CompactState = { pending: false, turnRunning: false, scheduled: false, automaticPaused: false, waits: new Map() };
+  const state: CompactState = { pending: false, turnRunning: false, scheduled: false, automaticPaused: false, waits: new Map(), decisions: [] };
   on("session.compact", { trigger: /^(manual|auto|plugin|precompute)$/ }, async ($, e, next) => {
     if (e.agentId !== undefined) return next(e);
     const sessionId = await $.session.id();
@@ -141,10 +171,13 @@ export function register(on: On, session: { delegated: boolean }): void {
   });
   on("tool.call", { tool: "Bash" }, async ($, e, next) => {
     const result = await next(e);
-    if (session.delegated || e.agentId !== undefined || typeof e.command !== "string") return result;
     const raw: unknown = result.result;
     const id = typeof raw === "object" && raw !== null ? (raw as { backgroundTaskId?: unknown }).backgroundTaskId : undefined;
     if (typeof id !== "string" || !id || state.waits.has(id)) return result;
+    // 背景待機を登録しない理由も残し、待機を検出しなかった場合と検出後の見送りを区別できるようにする。
+    if (session.delegated) { await diagnose($, state, id, "delegated_session"); return result; }
+    if (e.agentId !== undefined) { await diagnose($, state, id, "subagent"); return result; }
+    if (typeof e.command !== "string") { await diagnose($, state, id, "command_unknown"); return result; }
     const wait: BackgroundWait = { id, command: e.command, used: false };
     state.waits.set(id, wait);
     $.clock.after(0, async () => {

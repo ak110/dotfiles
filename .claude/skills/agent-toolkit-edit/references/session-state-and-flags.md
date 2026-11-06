@@ -130,6 +130,15 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 - 消費元: 通常のClaude会話は`hooks/usage_limit_resume.ts`の`turn.complete`が`requested`を`consumed`に変え、既存の再開予約処理へ接続する。process-loopの同じ会話IDに対応する管理印、およびrun-skillの実行IDがある会話では起動側が再開を担当するため、modによる予約を省く。process-loopは`requested`を読んで旧CLIの終了を確認し、要求ファイルを削除して同じIDの接続を選び直す。run-skillはCLIのstream-jsonから上限を観測する
 - 初期化と生存期間: 初期状態ではファイルを作成せず、`requested`の記録だけを予約実行の根拠とする。通常のSessionEndではファイルを保持し、`clear`や期限切れ回収時の扱いは前述のFunction hooks用ファイルと同様とする
 
+### 待機時圧縮の判定記録
+
+`compaction-{session_id}.txt`は同一のFunction hooks用ディレクトリに配置し、`hooks/compact_conversation.ts`が背景待機の登録と自動圧縮の判定理由を残すために使用する。
+process-loopは`--debug=hooks`で起動し、modの`$.ui.log`はそのdebugログに現れないため、見送り理由を後から確かめる読み先として置く。
+
+- 書き込み元: `hooks/compact_conversation.ts`が判定ごとに、直近20件の判定（待機ID、理由、使用トークン数と上限、予約中・抑止中・turn実行中の状態）をJSONで上書きする。書込みに失敗しても判定はそのまま続ける
+- 消費元: 圧縮の判定には使わず、調査する担当が読む
+- 初期化と生存期間: 最初の判定時にファイルを作成する。寿命は前述のFunction hooks用ファイルと同じく、通常のSessionEndで保持し、`clear`と期限切れ回収で削除する
+
 ## 状態の継承
 
 - `inherited_from_session_id`: 現行の`session_id`に対応する状態が存在しない場合に、一意に特定された前身の`session_id`を記録する。共通hookの起動処理が、前身の全状態キーの引き継ぎと同時に1回だけ書き込みを行う
