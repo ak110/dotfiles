@@ -2040,6 +2040,38 @@ def test_integrate_resumes_failed_history_compare_without_rebasing_again(
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == pending["new_head"]
 
 
+def test_integrate_resumes_conflict_resolution_following_new_upstream_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """競合解消で統合先の新規ファイルへ追随したcommitを、--resolved-conflict付きの同じ統合の再開で受理する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "shared.txt").write_text("レーン\n", encoding="utf-8")
+    reviewed = git_repository.commit_all(worktree, "成果")
+    (repo / "shared.txt").write_text("上流\n", encoding="utf-8")
+    (repo / "added_test.py").write_text("旧名称\n", encoding="utf-8")
+    before = git_repository.commit_all(repo, "先行統合")
+    manifest = _write_empty_finalization_manifest(tmp_path)
+    args = _integration_args(record, repo, manifest, reviewed)
+    code, _result, stderr = _invoke(capsys, *args)
+    assert code == 2, stderr
+    (worktree / "shared.txt").write_text("レーンと上流\n", encoding="utf-8")
+    (worktree / "added_test.py").write_text("新名称\n", encoding="utf-8")
+    git_repository.run_git(worktree, "add", "--", "shared.txt", "added_test.py")
+    git_repository.run_git(worktree, "-c", "core.editor=true", "-c", "submodule.recurse=false", "rebase", "--continue")
+    code, _result, stderr = _invoke(capsys, *args)
+    assert code == 2 and "history-compare" in stderr
+    code, pending, stderr = _invoke(capsys, *args, "--resolved-conflict", reviewed)
+    assert code == 1 and pending["phase"] == "awaiting-validation", stderr
+    assert pending["resolved_conflicts"] == [reviewed]
+    assert json.loads(pathlib.Path(pending["rewrite_map"]).read_text(encoding="utf-8")) == {reviewed: pending["new_head"]}
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
+    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
+    assert code == 0 and final["phase"] == "finalized", stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == pending["new_head"]
+
+
 @pytest.mark.parametrize("difference", [None, "git_head", "argv", "cwd", "environment", "failed", "incomplete", "output"])
 def test_integrate_imports_only_matching_success(
     tmp_path: pathlib.Path,

@@ -182,7 +182,8 @@ def test_rebase_accepts_changed_context_and_hunk_position(repo: pathlib.Path, tm
 @pytest.mark.parametrize("order", ["same", "swapped"])
 def test_rebase_maps_repeated_patch_only_in_same_order(repo: pathlib.Path, tmp_path: pathlib.Path, order: str) -> None:
     """導入・復元・再導入で同一変更が繰り返す系列は、並びが同じときだけ位置で対応付ける。"""
-    base = _git(repo, "rev-parse", "HEAD")
+    # 基準にファイルを置き、導入と再導入を同じ変更内容（内容IDの重複）にする。
+    base = _commit(repo, "content.txt", "基準\n", "基準の内容")
     first = _commit(repo, "content.txt", "導入\n", "導入")
     restored = _commit(repo, "content.txt", "基準\n", "対照へ復元")
     old_head = _commit(repo, "content.txt", "導入\n", "再導入")
@@ -204,6 +205,97 @@ def test_rebase_maps_repeated_patch_only_in_same_order(repo: pathlib.Path, tmp_p
     else:
         assert result != 0
         assert not output.exists()
+
+
+def test_resolved_conflict_accepts_follow_up_of_new_upstream_file(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """統合先で新しく入ったファイルへの追随を含む競合解消を受理し、増えたパスを成功出力へ示す。"""
+    base = _commit(repo, "shared.txt", "共通\n", "準備")
+    resolved = _commit(repo, "shared.txt", "レーン変更\n", "名称を改める")
+    _git(repo, "checkout", "-b", "upstream", base)
+    _commit(repo, "shared.txt", "上流変更\n", "上流の改訂")
+    new_base = _commit(repo, "added_test.py", "旧名称\n", "上流の新規試験")
+    (repo / "shared.txt").write_text("レーン変更と上流変更\n", encoding="utf-8")
+    (repo / "added_test.py").write_text("新名称\n", encoding="utf-8")
+    _git(repo, "add", "--", "shared.txt", "added_test.py")
+    _git(repo, "commit", "--no-verify", "-m", "名称を改める")
+    target = _git(repo, "rev-parse", "HEAD")
+    output = tmp_path / "followed.json"
+    capsys.readouterr()
+    assert _compare(repo, output, "rebase", (base, resolved, new_base, target), "--resolved-conflict", resolved) == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == {resolved: target}
+    reported = capsys.readouterr()
+    assert f"{resolved} -> {target}: added_test.py" in reported.out + reported.err
+
+
+@pytest.mark.parametrize("old_path_remains", [False, True])
+def test_resolved_conflict_accepts_follow_up_of_upstream_rename(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], old_path_remains: bool
+) -> None:
+    """統合先の改名へ追随した競合解消を受理して旧パスと新パスを示し、旧パスが統合先に残る場合は拒否する。"""
+    base = _commit(repo, "shared.txt", "共通\n", "準備")
+    resolved = _commit(repo, "shared.txt", "レーン変更\n", "名称を改める")
+    _git(repo, "checkout", "-b", "upstream", base)
+    _git(repo, "mv", "--", "shared.txt", "renamed.txt")
+    if old_path_remains:
+        (repo / "shared.txt").write_text("同名の別ファイル\n", encoding="utf-8")
+        _git(repo, "add", "--", "shared.txt")
+    _git(repo, "commit", "--no-verify", "-m", "上流の改名")
+    new_base = _git(repo, "rev-parse", "HEAD")
+    target = _commit(repo, "renamed.txt", "レーン変更\n", "名称を改める")
+    output = tmp_path / "renamed.json"
+    capsys.readouterr()
+    result = _compare(repo, output, "rebase", (base, resolved, new_base, target), "--resolved-conflict", resolved)
+    reported = capsys.readouterr()
+    if old_path_remains:
+        assert result != 0
+        assert not output.exists()
+        assert "次の操作:" in reported.err
+    else:
+        assert result == 0, reported.err
+        assert json.loads(output.read_text(encoding="utf-8")) == {resolved: target}
+        assert f"{resolved} -> {target}: renamed.txt" in reported.out + reported.err
+        assert f"統合先に無い旧パスを外した対応: {resolved} -> {target}: shared.txt" in reported.out + reported.err
+
+
+@pytest.mark.parametrize("variant", ["conflict", "reordered", "omitted"])
+def test_rebase_repeated_patch_boundaries_and_rejection_keeps_output(
+    repo: pathlib.Path, tmp_path: pathlib.Path, variant: str
+) -> None:
+    """繰り返し系列は競合解消を含めて位置で検収し、並びの崩れと曖昧な省略は既存の出力を変えずに拒否する。"""
+    # 基準にファイルを置き、導入と再導入を同じ変更内容（内容IDの重複）にする。
+    base = _commit(repo, "content.txt", "基準\n", "基準の内容")
+    first = _commit(repo, "content.txt", "導入\n", "導入")
+    restored = _commit(repo, "content.txt", "基準\n", "対照へ復元")
+    again = _commit(repo, "content.txt", "導入\n", "再導入")
+    old_head = _commit(repo, "other.txt", "別\n", "別の変更")
+    _git(repo, "checkout", "-b", "rebased", base)
+    new_base = _commit(repo, "upstream.txt", "上流", "上流")
+    if variant == "conflict":
+        _git(repo, "cherry-pick", first, restored)
+        _commit(repo, "content.txt", "導入（解消）\n", "再導入")
+        _git(repo, "cherry-pick", old_head)
+    elif variant == "reordered":
+        # 内容の集合は同じで、別の変更と再導入の順序だけを入れ替えた系列。
+        _git(repo, "cherry-pick", first, restored, old_head, again)
+    else:
+        # 再導入が統合先へ省略された系列。どちらの導入が省略されたかを決められない。
+        _git(repo, "cherry-pick", first, restored, old_head)
+    new_head = _git(repo, "rev-parse", "HEAD")
+    output = tmp_path / "repeated.json"
+    output.write_text("保存済みの対応表\n", encoding="utf-8")
+    extra = ("--resolved-conflict", again) if variant == "conflict" else ()
+    result = _compare(repo, output, "rebase", (base, old_head, new_base, new_head), *extra)
+    if variant == "conflict":
+        assert result == 0
+        new = _git(repo, "rev-list", "--reverse", f"{new_base}..{new_head}").splitlines()
+        assert json.loads(output.read_text(encoding="utf-8")) == dict(
+            zip((first, restored, again, old_head), new, strict=True)
+        )
+    else:
+        assert result == 1
+        assert output.read_text(encoding="utf-8") == "保存済みの対応表\n"
 
 
 @pytest.mark.parametrize("violation", ["whitespace", "path", "mode", "type", "binary", "ambiguous"])

@@ -17,8 +17,9 @@
 
 ## rebaseの競合
 
-競合解消の指示を伝達する際は、rebase開始前に記録した旧系列および統合先のbaseとheadの各OIDを引き継ぐ。競合を解消してrebaseを完了した後は、それらのOIDを指定して`history-compare --operation rebase`を実行し、内容を変更した旧コミットに対して`--resolved-conflict`を繰り返し指定する。
-検収済みの対応表を生成した上で、後述の返却値とともに委譲元へ渡す。対応表の生成と引き継ぎは、`agent-toolkit:commit`の`references/history-rewrite.md`「WI実装commitの対応の継承」に従う。
+競合解消の指示を伝達する際は、rebase開始前に記録した旧系列および統合先のbaseとheadの各OIDを引き継ぐ。競合を解消してrebaseを完了した後は、同じ入力の`atk lane integrate`に、内容を変更した旧コミットを`--resolved-conflict <旧OID>`で繰り返し指定して再開する。CLIはその指定をrebase後の`history-compare`へ渡し、所有登録の旧新の端点で対応表を生成する。
+競合解消で統合先の新しいファイルへ追随した場合など、旧コミットに無い変更パスが新コミットに増えた対応は、所有登録の`integration.results`に保存された`history-compare`の出力に列挙されるため、その追随が解消方針の範囲内かを対応表とともに検収する。
+対応表の検収と引き継ぎは、`agent-toolkit:commit`の`references/history-rewrite.md`「WI実装commitの対応の継承」に従う。
 
 - 停止時の対応: `git -c submodule.recurse=false rebase --abort`や`--continue`は実行せず、rebaseが進行中の状態を保ったまま、続行できない理由を委譲元へ返す。`続行できない理由:`には、競合が発生したファイルのリポジトリ相対パス、専用worktreeの絶対パス、および該当worktreeでrebaseが進行中であることを記載する。
 - メインから解消指示を受領した場合: 競合を解消し、解消したパスのみをステージングする。`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」に記載された`git log`を単独で実行する。続いて`git -c submodule.recurse=false rebase --continue`を実行してrebaseを完了させる。競合箇所、解消方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表に1行追加し、同じ行に対して`atk review-table respond`で解消内容を記録する。その上で、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」に定められた返却値を返す。
