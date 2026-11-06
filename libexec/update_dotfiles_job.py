@@ -45,8 +45,10 @@ def state_root(platform: str = sys.platform) -> pathlib.Path:
 def separation_options(platform: str = sys.platform) -> dict[str, Any]:
     """起動元のセッションまたはWindows Job Objectからworkerを分離する。"""
     if platform == "win32":
-        # Win32 CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB。
-        return {"creationflags": 0x00000200 | 0x00000008 | 0x01000000}
+        # Win32 CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB。
+        # DETACHED_PROCESSはコンソールを持たせず、workerが起動するコンソールアプリへ可視ウィンドウを割り当てさせる。
+        # CREATE_NO_WINDOWの非表示コンソールは起動元の端末と独立し、子孫も同じ非表示コンソールを継承する。
+        return {"creationflags": 0x00000200 | 0x08000000 | 0x01000000}
     return {"start_new_session": True}
 
 

@@ -32,6 +32,7 @@ from agent_toolkit._common import (
     session_registry,
     session_review,
     state_paths,
+    windows_job,
 )
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as git_command
@@ -219,7 +220,7 @@ def _launch_worker(target: str) -> subprocess.Popen[bytes]:
     env["PYTHONPATH"] = str(source)
     creationflags = 0
     if sys.platform == "win32":
-        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        creationflags = windows_job.HIDDEN_DETACHED_CREATIONFLAGS
     with (cwd / "supervisor.stdout.log").open("ab") as stdout, (cwd / "supervisor.stderr.log").open("ab") as stderr:
         return subprocess.Popen(  # noqa: SIM115 -- 所有権は永続受付と独立監督へ移す
             [str(executable), "-m", "agent_toolkit._agents_server.plugin_root", "--wi-submit-worker", target],

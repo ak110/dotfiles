@@ -314,10 +314,13 @@ def test_job_rejects_non_uuid_without_running_update(identifier: str, capsys: py
 
 
 @pytest.mark.parametrize(
-    "platform,expected", [("linux", {"start_new_session": True}), ("win32", {"creationflags": 0x01000208})]
+    "platform,expected", [("linux", {"start_new_session": True}), ("win32", {"creationflags": 0x09000200})]
 )
 def test_worker_separation_is_platform_specific(platform: str, expected: dict[str, object]) -> None:
-    """WindowsのJob分離とPOSIXのSID分離を各OS値から選ぶ。"""
+    """WindowsのJob分離とPOSIXのSID分離を各OS値から選ぶ。
+
+    WindowsはDETACHED_PROCESS（0x8）を使わず、CREATE_NO_WINDOW（0x08000000）で子孫の可視ウィンドウを防ぐ。
+    """
     assert update_dotfiles_job.separation_options(platform) == expected
 
 

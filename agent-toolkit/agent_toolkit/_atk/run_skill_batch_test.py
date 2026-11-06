@@ -141,6 +141,40 @@ def test_hook_requests_existing_cli_without_wait(tmp_path, monkeypatch) -> None:
     assert calls[0][1]["stdin"] == run_skill_batch.subprocess.DEVNULL
 
 
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_hook_launch_does_not_open_console_window_on_windows(tmp_path, monkeypatch, platform) -> None:
+    """Windowsの切り離し起動は非表示コンソールを使い、子孫のコンソールアプリに可視ウィンドウを作らせない。"""
+    calls = []
+
+    def spawn(argv, **kwargs):
+        del argv
+        calls.append(kwargs)
+        return types.SimpleNamespace(pid=None, wait=lambda: 0)
+
+    monkeypatch.setattr(run_skill_batch, "sys", types.SimpleNamespace(**(vars(sys) | {"platform": platform})))
+    monkeypatch.setattr(run_skill_batch.repo, "resolve_repo_id_or_raise", lambda *args, **kwargs: "example.com/team/repo")
+    monkeypatch.setattr(session_activity, "host_process", object)
+    monkeypatch.setattr(run_skill_batch.subprocess, "Popen", spawn)
+    run_skill_batch.hook_request(
+        {
+            "hook_event_name": "SessionStart",
+            "session_id": "main",
+            "cwd": str(tmp_path),
+            "transcript_path": str(tmp_path / "x.jsonl"),
+        },
+        host="claude",
+    )
+    assert len(calls) == 1
+    if platform == "win32":
+        # Win32のDETACHED_PROCESS=0x8、CREATE_NO_WINDOW=0x08000000、CREATE_NEW_PROCESS_GROUP=0x200。
+        assert calls[0]["creationflags"] & 0x00000008 == 0
+        assert calls[0]["creationflags"] & 0x08000000
+        assert calls[0]["creationflags"] & 0x00000200
+        assert "start_new_session" not in calls[0]
+    else:
+        assert calls[0]["start_new_session"] is True
+
+
 @pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])
 @pytest.mark.parametrize("host", ["claude", "codex"])
 def test_hook_cli_resolves_package_without_editable_install(tmp_path, monkeypatch, event, host) -> None:

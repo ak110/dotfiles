@@ -42,6 +42,7 @@ from agent_toolkit._common import (
     session_review,
 )
 lazy from agent_toolkit._atk import run_skill_state
+lazy from agent_toolkit._common import windows_job
 
 _LOG = logging.getLogger(__name__)
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -85,7 +86,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     # セッションのstdin/stdoutを保持せず、受付前の試行と受付後の実行記録で責任を分ける。
     flags: dict[str, Any]
     if sys.platform == "win32":
-        flags = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+        flags = {"creationflags": windows_job.HIDDEN_DETACHED_CREATIONFLAGS}
     else:
         flags = {"start_new_session": True}
     launch_id = uuid.uuid4().hex
