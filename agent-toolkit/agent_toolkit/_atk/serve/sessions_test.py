@@ -2089,3 +2089,33 @@ def test_local_listing_reuses_previous_result_until_the_listed_set_may_change(
         assert not context.state.local_rescan_running
     finally:
         tracker.stop()
+
+
+@pytest.mark.asyncio
+async def test_listed_set_change_returns_previous_list_and_refreshes_after_background_scan(
+    tmp_path: pathlib.Path,
+) -> None:
+    """他プロセスが新しい記録を作っても要求の中で全件を走査せず、背景の走査の後に`refresh`で取り直させる。"""
+    context = _context(tmp_path)
+    record = _claude_record(tmp_path)
+    tracker = sessions.session_watch.RecordChangeTracker(
+        [(tmp_path / "claude" / "projects", "claude"), (tmp_path / "codex" / "sessions", "codex")],
+        lambda _refresh, _records: None,
+        debounce_sec=60.0,
+    )
+    context.state.record_watch = sessions.session_watch.RecordWatch(tracker)
+    context.state.watch_loop = asyncio.get_running_loop()
+    queue = await sessions.subscribe(context.state)
+    try:
+        first = await asyncio.to_thread(sessions.list_local_sessions, context)
+        assert [entry.path for entry in first] == [str(record)]
+        added = _claude_record(tmp_path, project="-home-aki-other")
+        tracker.structure_changed()
+        previous = await asyncio.to_thread(sessions.list_local_sessions, context)
+        assert [entry.path for entry in previous] == [str(record)]
+        assert json.loads(await asyncio.wait_for(queue.get(), timeout=10)) == {"type": "refresh"}
+        refreshed = await asyncio.to_thread(sessions.list_local_sessions, context)
+        assert sorted(entry.path for entry in refreshed) == sorted([str(record), str(added)])
+    finally:
+        await sessions.unsubscribe(context.state, queue)
+        tracker.stop()

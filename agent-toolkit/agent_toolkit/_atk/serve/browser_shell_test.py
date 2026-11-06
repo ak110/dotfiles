@@ -259,9 +259,10 @@ async def test_revisiting_screens_does_not_repeat_initial_requests(screen_harnes
     harness = screen_harness
     page = harness.page
     await _open_all_screens(harness)
-    # 計画一覧は初期取得後、初回SSEの確立でも再取得する。その前段のhost/root取得は
-    # 一覧要求のpendingに数えないため、2回目の本文消費まで待って再訪前の基準を確定する。
-    await page.wait_for_function("window.__screenRequests.completed['/api/plans/files'] >= 2")
+    # 計画一覧は購読の登録の合図の後に1回だけ取得する。その前段のhost/root取得は一覧要求のpendingに数えないため、
+    # 一覧の本文消費と全画面の購読の確立を待って再訪前の基準を確定する。
+    await page.wait_for_function("window.__screenRequests.completed['/api/plans/files'] >= 1")
+    await _wait_screen_requests_consumed(page, tuple(events for events, _ in _SCREEN_STREAMS.values()))
     tracked_suffixes = ("/api/sync", "/api/plans/files", "/api/sessions/list")
     before = {suffix: sum(url.endswith(suffix) for url in harness.requests) for suffix in tracked_suffixes}
 

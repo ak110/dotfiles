@@ -329,6 +329,8 @@ def _subscription_stream(
 
     通知はクライアントの`onmessage`が受け取るよう、event名を付けずdataのみで配信する。
     heartbeatは`event: heartbeat`とし、`onmessage`へ届かないため再取得を起こさない。
+    購読の登録直後に`event: subscribed`を1回送る。`EventSource`の`open`は応答ヘッダーの受信時点で登録より先に
+    届き得るため、画面はこの合図の後に初期取得して、最初の接続での一覧の取り直しを省ける。
     `pytilpack.sse.generator`のコメント行のkeep-aliveは、内側の生成処理が間隔内にheartbeatを送るため発生しない。
     """
     # 停止要求は生成処理の外で取得する。生成処理はリクエストの文脈の外で実行されるため`current_app`を参照できない。
@@ -339,6 +341,7 @@ def _subscription_stream(
     async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
         queue = await subscribe()
         try:
+            yield pytilpack.sse.SSE(event="subscribed", data="{}")
             while True:
                 received = await serve_state.next_subscription_item(queue, shutdown, _runtime.SSE_HEARTBEAT_SEC)
                 if received is serve_state.SHUTDOWN:

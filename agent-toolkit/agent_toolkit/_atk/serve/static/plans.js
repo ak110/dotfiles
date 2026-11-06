@@ -777,11 +777,24 @@ const SSE_MESSAGE_HANDLERS = {
   },
 };
 
+// 初期取得はサーバーが購読を登録した合図（`subscribed`）の後に始める。登録後の変更は通知で届くため、
+// 最初の接続では一覧を取り直さない。合図が届かない場合も初期表示を遅らせすぎないよう、待つのは短い上限までとする。
+const INITIAL_SUBSCRIBE_WAIT_MS = 300;
+let initialLoadStarted = false;
+let resolveFirstSubscription = () => {};
+const firstSubscription = new Promise(resolve => { resolveFirstSubscription = resolve; });
+
 function subscribeEvents() {
   // 接続断後の自動再接続と無通信時の再接続の間に発生したSSEイベントは取り逃される。
-  // 初回・自動再接続・無通信後の再接続のいずれでも確立時にホスト状態とファイル一覧を強制再同期する。
+  // 初期取得を始めた後の購読の登録（自動再接続・無通信後の再接続を含む）では、ホスト状態とファイル一覧を強制再同期する。
   connectEvents("/api/plans/events", {
-    open: forceResync,
+    subscribed: () => {
+      if (!initialLoadStarted) {
+        resolveFirstSubscription();
+        return;
+      }
+      void forceResync();
+    },
     message: (event) => {
       const receivedAt = performance.now();
       void handleSseMessage(event, SSE_MESSAGE_HANDLERS, () => resyncFromServer({trigger: "sse", event, receivedAt}));
@@ -855,11 +868,13 @@ async function init() {
   globalThis.addEventListener?.("popstate", () => { void restoreFileFromUrl(); });
   setDrawerOpen("plans", false);
 
+  subscribeEvents();
+  await Promise.race([firstSubscription, new Promise(resolve => setTimeout(resolve, INITIAL_SUBSCRIBE_WAIT_MS))]);
+  initialLoadStarted = true;
   await (refreshHostStatus());
   await (refreshHostInfo());
   await (refreshRootStatus());
   await (refreshFiles());
-  subscribeEvents();
   if (location.pathname === `${BASE_PATH}/plans`) {
     await restoreFileFromUrl(false);
   } else if (files.length > 0 && !isMobileViewport()) {
