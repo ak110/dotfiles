@@ -996,6 +996,12 @@ Antigravityの`explore`と`delegate`はどちらも作業ディレクトリの`A
 再検証はpnpm 11.25.0とnpm 11.19.0に同じ環境変数を与える。両ツールから実効のレジストリー設定を取得し、環境変数が反映されるか比べる。
 再検証の契機はpnpmまたはnpmの更改とする。
 
+## agent-basics/skills/writing-standards/references/dependency-management.md：pnpm：2026年11月6日
+
+- 観測日: 2026年11月6日。
+- 観測した版数: pnpm 12.16.1、切替先12.15.0・12.18.0、Node.js 24.22.2、Linux x64。HOME・XDG設定とキャッシュ・npm prefix・PNPM_HOMEを隔離し、Corepackを経由せずnpmで初回導入した。
+- 再検証手段: [導入](https://pnpm.io/installation)、[lockfile](https://pnpm.io/lockfile)、[self-update](https://pnpm.io/cli/self-update)の公式仕様を対象版と照合する。隔離環境で`npm install -g pnpm@12.16.1`を実行し、`packageManager`を固定したプロジェクトでinstallと`pnpm self-update <版>`によるpin・boot文書の同時更新を確認する。取得済みの切替先キャッシュを除き、boot文書の対象pnpmパッケージの`integrity`を改ざんして`pnpm install --frozen-lockfile`を実行すると、`ERR_PNPM_PNPM_ENGINE_IDENTITY_MISMATCH`で終了コード1になる。通常の`pnpm --version`は検証できない版を実行せず導入済みの版へ戻るため、改ざんの拒否はfrozen installで確認する。正しいlockfileを戻して同じ初期状態で成功する対照も確認する。公開から4000分未満の版に`pnpm --config.minimum-release-age=4000 self-update <版>`を非対話で実行すると、`ERR_PNPM_NO_MATURE_MATCHING_VERSION`で終了コード1になる。再検証時は待機条件内の公開版を選ぶ。`packageManager`の`+sha512.<hash>`を除去する挙動は[pnpm 12.18.0のパーサー](https://github.com/pnpm/pnpm/blob/v12.18.0/pnpm/crates/cli/src/cli_args/package_manager.rs)と[pin処理](https://github.com/pnpm/pnpm/blob/v12.18.0/pnpm/crates/cli/src/engine_pm/pin.rs)を照合する。pnpmの版管理・署名検証・公開待機の仕様が変わったときに再検証する。
+
 ## agent-basics/skills/writing-standards/references/drizzle.md：Drizzle ORM／Drizzle Kit記述スタイル：2026年9月16日
 
 2026年9月16日、参考実利用バージョンの取得元を確認した。`~/glatasks/package.json`は`drizzle-orm`を`^0.45.2`、`drizzle-kit`を`^0.31.10`で指定する。再検証は同ファイルから、この2つの依存の版指定を取得する。いずれかの依存が更新されたときに再検証する。

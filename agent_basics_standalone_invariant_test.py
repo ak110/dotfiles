@@ -69,8 +69,10 @@ def _unresolved_references(path: pathlib.Path, skills: pathlib.Path) -> list[str
                 candidates = [path.parent / value, owner / value, skills / value]
                 candidates += [directory / value for directory in skill_dirs]
                 candidates += [directory / "references" / value for directory in skill_dirs]
+            # Claude Code・Codexともプラグインのルート（skillsの親）全体を配布するため、
+            # ルート直下の第三者表示なども配布物に含める。
             if not any(
-                candidate.resolve().is_file() and candidate.resolve().is_relative_to(skills.resolve())
+                candidate.resolve().is_file() and candidate.resolve().is_relative_to(skills.parent.resolve())
                 for candidate in candidates
             ):
                 unresolved.append(f"{path}:{number}: {value}")

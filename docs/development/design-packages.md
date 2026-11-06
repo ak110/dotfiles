@@ -183,6 +183,14 @@ conftest.pyを置けるのはリポジトリ直下と`agent-toolkit/`直下だ�
 PATHの隔離は、エージェントCLIを含むディレクトリを、CLI以外の項目へのシンボリックリンクだけを持つ一時ディレクトリへ置き換える。ディレクトリごと外すと同じ場所の`uv`などテストが使うツールまで失われる。置き換えたPATHはセッションで1回だけ組み立てる。
 実際のCLIやホームを意図して使うテストは、`host_environ`で子プロセスへ渡す環境変数を組み立てるか、`restore_host_environment`で同じプロセスの値を戻す。
 
+pnpm 12以降の導入・版管理は`agent-basics/skills/writing-standards/references/dependency-management.md`「pnpm」に従う。
+初回導入はnpmまたはstandaloneで行い、版固定と検証にはlockfile先頭のboot文書のintegrityとレジストリ署名、公開待機には`minimumReleaseAge`を使う。
+更新には`pnpm self-update <版>`を使い、pnpm自身が検証しない`packageManager`のCorepack用ハッシュへ依存しない。
+Node.js TSCの[投票](https://github.com/nodejs/TSC/pull/1697)は25系以降のCorepack同梱終了を決めたもので、非推奨化の決定ではない。
+[議論](https://github.com/nodejs/TSC/pull/1527)ではNode.jsのリリースを要する保守負担と修正の配布遅延が指摘された。
+Corepackを別途導入して残す案は、pnpm 12自身で版固定・検証・公開待機を満たせるため採らない。
+pnpm 10以前のCorepack手順と、Corepackを実行し得る試験の環境変数・キャッシュの隔離は維持する。
+
 実際のuv、pnpm、corepackを使い、取得物の冷えた状態自体はチェックしない試験は、`share_package_caches`を明示して取得物だけを再利用する。
 uvの保存先は隔離前の環境から`uv cache dir`で解決し、`UV_CACHE_DIR`で子プロセスへ渡す。解決は利用時にプロセスで1回だけ行う。
 HOME、設定、一時出力、private-notes、managed-tempの状態と仮想環境は試験ごとに隔離し、複数worktreeの仮想環境を共有しない。
