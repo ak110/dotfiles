@@ -291,7 +291,7 @@ async def test_kill_keeps_running_until_descendant_of_exited_executor_is_reclaim
     with _live_process() as (owner_process, owner), _live_process() as (descendant_process, descendant):
         executor = exited_process_identity()
         record = _publish_running(monkeypatch, tmp_path, "codex", (owner, executor))
-        reclaim_records.save(executor.pid, executor.create_time, [psutil.Process(descendant.pid)], [])
+        reclaim_records.save(executor.pid, executor.create_time, [psutil.Process(descendant.pid)], [], [])
         assert session_registry.resolve(_SESSION_ID).state is session_registry.Resolution.RUNNING
         real_stop_tree = process_tree.stop_tree
 

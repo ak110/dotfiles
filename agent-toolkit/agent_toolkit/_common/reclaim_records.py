@@ -24,10 +24,16 @@ _DIRECTORY = "recorded-process-reclaim"
 
 @dataclasses.dataclass(frozen=True)
 class ReclaimRecord:
-    """起点の停止で回収できなかった所有対象と、生成停止を確認できなかった理由。"""
+    """起点の停止で回収できなかった所有対象と、生成停止を確認できなかった理由。
+
+    `unreaped`は回収（親による待機）を確認できなかった直接の子である。スレッドグループのリーダーだけが
+    終了した多スレッドの子はzombieと表示されたまま他のスレッドが動くため、`targets`と同じzombie除外で
+    終了済みと扱わず、同じPID世代が残る間は回収待ちとする。
+    """
 
     targets: tuple[tuple[int, float], ...]
     unresolved: tuple[str, ...]
+    unreaped: tuple[tuple[int, float], ...]
 
     def live_targets(self) -> list[psutil.Process]:
         """記録した起動時刻と一致し、資源を保持するプロセスを返す。PIDの再利用先は含めない。"""
@@ -36,6 +42,16 @@ class ReclaimRecord:
             with contextlib.suppress(psutil.NoSuchProcess, psutil.ZombieProcess):
                 process = psutil.Process(pid)
                 if process.create_time() == created and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    processes.append(process)
+        return processes
+
+    def held_unreaped(self) -> list[psutil.Process]:
+        """記録した起動時刻と一致する直接の子を、zombie表示でも返す。PIDの再利用先は含めない。"""
+        processes: list[psutil.Process] = []
+        for pid, created in self.unreaped:
+            with contextlib.suppress(psutil.NoSuchProcess):
+                process = psutil.Process(pid)
+                if process.create_time() == created:
                     processes.append(process)
         return processes
 
@@ -53,6 +69,7 @@ def load(pid: int, create_time: float) -> ReclaimRecord | None:
         return ReclaimRecord(
             tuple((int(item["pid"]), float(item["create_time"])) for item in raw["targets"]),
             tuple(str(reason) for reason in raw["unresolved"]),
+            tuple((int(item["pid"]), float(item["create_time"])) for item in raw["unreaped"]),
         )
     except FileNotFoundError:
         return None
@@ -60,15 +77,31 @@ def load(pid: int, create_time: float) -> ReclaimRecord | None:
         raise ValueError(f"回収待ちの記録を読めない: {target}: {error}") from error
 
 
-def save(pid: int, create_time: float, processes: list[psutil.Process], unresolved: list[str]) -> None:
-    """所有対象の識別と未確認の理由を保存する。起動時刻を取得できない対象は既に終了しているため除く。"""
-    targets = []
-    for process in processes:
-        with contextlib.suppress(psutil.Error):
-            targets.append({"pid": process.pid, "create_time": process.create_time()})
+def save(
+    pid: int,
+    create_time: float,
+    processes: list[psutil.Process],
+    unresolved: list[str],
+    unreaped: list[psutil.Process],
+) -> None:
+    """所有対象・回収待ちの直接の子の識別と未確認の理由を保存する。起動時刻を取得できない対象は既に終了しているため除く。"""
     target = path(pid, create_time)
     target.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(target, json.dumps({"targets": targets, "unresolved": unresolved}, ensure_ascii=False), fsync=True)
+    atomic_write(
+        target,
+        json.dumps(
+            {"targets": _identities(processes), "unresolved": unresolved, "unreaped": _identities(unreaped)}, ensure_ascii=False
+        ),
+        fsync=True,
+    )
+
+
+def _identities(processes: list[psutil.Process]) -> list[dict[str, float]]:
+    identities = []
+    for process in processes:
+        with contextlib.suppress(psutil.Error):
+            identities.append({"pid": process.pid, "create_time": process.create_time()})
+    return identities
 
 
 def delete(pid: int, create_time: float) -> None:
@@ -77,9 +110,13 @@ def delete(pid: int, create_time: float) -> None:
 
 
 def pending(pid: int, create_time: float) -> bool:
-    """回収待ちの対象が残るかを返す。読めない記録は回収を確認できないため残るとみなす。"""
+    """回収待ちの対象が残るかを返す。
+
+    読めない記録と、生成の停止を確認できなかった理由を持つ記録は、回収を確認できないため残るとみなす。
+    回収待ちの直接の子は、zombie表示でも同じPID世代が残る間は残るとみなす。
+    """
     try:
         record = load(pid, create_time)
     except ValueError:
         return True
-    return record is not None and bool(record.live_targets())
+    return record is not None and (bool(record.unresolved) or bool(record.live_targets()) or bool(record.held_unreaped()))

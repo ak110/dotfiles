@@ -97,10 +97,19 @@ def refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
 
 def _report_unreclaimed(error: process_tree.ReclaimError, dotfiles_root: pathlib.Path) -> None:
     """回収できない導入の子プロセスと、次の導入を止めていることを伝える。"""
+    if error.unresolved:
+        # 生成の停止を確認できない回収不能は再試行で解消しないため、保持した所有対象を破棄する再起動で解除する。
+        resume = (
+            "「生成の停止を確認できない」は一覧に無い子孫が残り得ることを示し、再試行では解消しない。"
+            "`ps -o pid,ppid,lstart,args -e`などで導入が起動した不要なプロセスも探して終了させ、"
+            "`atk wi process-loop`を再起動すると導入を再開する。"
+        )
+    else:
+        resume = "回収後は次の更新周期で導入を再開する。"
     _next_action.report(
         f"mise install --quietの子プロセスを回収できないため、次の導入を止めています: {error.residual}。",
         next_action=(
-            "表示されたPIDと起動コマンドを確認し、不要なら終了させる（POSIXは`kill -KILL <PID>`）。"
-            f"回収後は次の更新周期で導入を再開する。原因は`mise install`を{dotfiles_root}で手作業で実行して確認する"
+            f"表示されたPIDと起動コマンドを確認し、不要なら終了させる（POSIXは`kill -KILL <PID>`）。{resume}"
+            f"原因は`mise install`を{dotfiles_root}で手作業で実行して確認する"
         ),
     )

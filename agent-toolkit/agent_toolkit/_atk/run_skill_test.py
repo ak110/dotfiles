@@ -31,7 +31,7 @@ from agent_toolkit import atk, hook
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._atk.wi import frontmatter
-from agent_toolkit._common import claude_usage_limit, process_tree, session_review
+from agent_toolkit._common import claude_usage_limit, process_tree, reclaim_records, session_review
 from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 
@@ -805,6 +805,51 @@ def test_timeout_terminates_session_and_descendants(
         assert time.monotonic() < deadline, "子孫プロセスが終了しなかった"
         time.sleep(0.05)
     assert "時間上限（3秒）を超えたため終了させた" in _log_files(engine_env)[0].read_text(encoding="utf-8")
+
+
+def test_unreclaimed_timeout_is_failure_and_resume_reclaims_same_descendant(
+    engine_env: _Env, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """時間上限で子孫を回収できなければ通常の時間上限と分けて伝え、同じ実行の再開前に同じ子孫を回収し直す。
+
+    子が終了すると残った子孫は子から辿れないため、所有対象を引き継がないと再開時の停止は回収済みと判定する。
+    """
+    pid_file = tmp_path / "grandchild.pid"
+    monkeypatch.setenv("FAKE_SESSION_SPAWN_PID_FILE", str(pid_file))
+    real_stop = process_tree.stop_tree_by_pid
+
+    def leave_grandchild(pid: int, **kwargs: typing.Any) -> process_tree.TreeStopResult | None:
+        # 子だけを終了させ、停止できない孫が残った停止結果を返す（停止の失敗の注入）。
+        del kwargs
+        root = psutil.Process(pid)
+        grandchild = psutil.Process(int(pid_file.read_text(encoding="utf-8")))
+        root.kill()
+        return process_tree.TreeStopResult([root, grandchild], [grandchild], [])
+
+    monkeypatch.setattr(process_tree, "stop_tree_by_pid", leave_grandchild)
+    code, _out, err = _run(["--target-repo", str(engine_env.repo), "--timeout", "3", "my-skill"], capsys)
+    monkeypatch.setattr(process_tree, "stop_tree_by_pid", real_stop)
+    grandchild = psutil.Process(int(pid_file.read_text(encoding="utf-8")))
+    reclaim_dir = reclaim_records.path(0, 0.0).parent
+    try:
+        assert code == 1
+        assert "子プロセスの停止を確認できない" in err and "--resume" in err
+        assert grandchild.is_running()
+        assert len(list(reclaim_dir.glob("*.json"))) == 1
+        run_id = _records(engine_env, "session")[0]["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"]
+
+        _resumed_code, _resumed_out, resumed_err = _run(["--resume", run_id], capsys)
+
+        # 孫の親は終了済みで、回収はinitなどが行う。停止処理と同じ解放判定で、zombieは資源を保持しないとみなす。
+        deadline = time.monotonic() + 10
+        # pylint: disable-next=protected-access
+        while process_tree._holds_resources(grandchild):  # noqa: SLF001
+            assert time.monotonic() < deadline, f"再開前の停止が残った孫を回収しなかった: {resumed_err}"
+            time.sleep(0.05)
+        assert not list(reclaim_dir.glob("*.json"))
+    finally:
+        with contextlib.suppress(psutil.Error):
+            grandchild.kill()
 
 
 def test_usage_limit_retries_same_claude_candidate(

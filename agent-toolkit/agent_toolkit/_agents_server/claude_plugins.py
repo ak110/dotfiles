@@ -107,6 +107,9 @@ class ClaudePluginReloader:
         self._versioned = False
         self._reload_pending = False
         self.updated = False
+        # 導入一覧の取得で回収を確認できなかった停止結果。接続の所有タスクが後始末で引き取り、`retry`で再試行する。
+        # 子孫・生成停止の未確認理由・直接の子の回収待ちを個別に写さず、停止結果ごと渡して所有状態の欠落を防ぐ。
+        self.unreclaimed: list[process_tree.ReclaimError] = []
 
     @property
     def dirty(self) -> bool:
@@ -241,6 +244,7 @@ class ClaudePluginReloader:
             )
         except process_tree.ReclaimError as error:
             # 所有資源の停止未確認は任意更新の失敗と分け、所有タスクの回収へ渡す。
+            self.unreclaimed.append(error)
             raise _PluginCleanupError(
                 "Claudeの導入一覧の子プロセスの停止を確認できない。"
                 f"{error}。残存プロセスを終了してから同じcwd・設定のclaude plugin list --jsonを確認する"

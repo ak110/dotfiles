@@ -178,7 +178,7 @@ def _query_hooks(process: subprocess.Popen[str]) -> dict[str, Any] | None:
             residual, owned = common.stop_owned_process(process, stdin_grace_seconds=2)
             if residual:
                 # 案内取得の不能（None）と区別し、cache復旧や旧リンク除去などの後続工程を始めさせない。
-                raise common.ProcessReclaimError(residual, owned)
+                raise common.ProcessReclaimError(residual, owned, child=process)
 
 
 def _hook_trust_notice_required(result: dict[str, Any] | None, plugin_id: str) -> bool:

@@ -183,6 +183,6 @@ async def test_stop_resident_helper_reports_unconfirmed_stop(monkeypatch: pytest
         return False
 
     monkeypatch.setattr(serve_remote, "_wait_with_timeout", never)
-    stuck = typing.cast(asyncio.subprocess.Process, Stuck())
+    stuck = typing.cast("asyncio.subprocess.Process", Stuck())
     assert await serve_remote.stop_resident_helper(stuck, None, grace_timeout=0) is False
     assert await serve_remote.stop_resident_helper(None, None) is True

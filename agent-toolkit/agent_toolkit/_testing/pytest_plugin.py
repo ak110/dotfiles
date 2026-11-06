@@ -51,6 +51,8 @@ class _StubPluginReloader:
 
     def __init__(self, options: dict[str, Any], _loop: asyncio.AbstractEventLoop) -> None:
         options.setdefault("plugins", [{"type": "local", "path": str(claude.plugin_roots.SERVER_PLUGIN_ROOT)}])
+        # 外部CLIを起動しないため、所有タスクへ引き渡す未回収の子孫は無い。
+        self.unreclaimed: list[Any] = []
 
     async def prepare(self) -> None:
         """外部CLIと監視threadを起動しない。"""

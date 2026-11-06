@@ -94,20 +94,57 @@ class ReclaimError(RuntimeError):
 
     任意機能の失敗を吸収する既存の`except`節（`OSError`、`subprocess.SubprocessError`）に捕まらないよう、
     `RuntimeError`の派生にする。受け取った呼出元は後続の更新・再接続を始めず、`retry`で同じ対象を回収し直す。
+
+    `unresolved`は生成の停止を確認できなかった理由であり、`retry`で解消しない。
+    一時停止や列挙をすり抜けた子孫は親の終了後に起点から辿れないため、所有対象の再停止だけでは回収を確かめられない。
+    `child`は回収を確認できなかった所有する直接の子で、zombie表示のまま回収を待つ場合も`retry`が回収を待ち直す。
     """
 
-    def __init__(self, residual: list[str], processes: list[psutil.Process], *, context: str) -> None:
+    def __init__(
+        self,
+        residual: list[str],
+        processes: list[psutil.Process],
+        *,
+        context: str,
+        unresolved: Iterable[str] = (),
+        child: subprocess.Popen[Any] | None = None,
+    ) -> None:
         super().__init__(residual_message(residual, context=context))
         self.residual = residual
         self.processes = processes
         self.context = context
+        self.unresolved = list(unresolved)
+        self.child = child
+
+    def absorb(self, other: ReclaimError) -> None:
+        """同じ所有境界で後から確定した回収不能を合流させ、先に送出した例外の原因を保つ。"""
+        self.residual.extend(entry for entry in other.residual if entry not in self.residual)
+        self.processes.extend(item for item in other.processes if item not in self.processes)
+        self.unresolved.extend(reason for reason in other.unresolved if reason not in self.unresolved)
+        if self.child is None:
+            self.child = other.child
 
     def retry(self, *, timeout: float = RECLAIM_TIMEOUT_SECONDS) -> list[str]:
-        """保持した所有対象とその子孫を回収し直し、なお残る対象の記述を返す（空なら回収済み）。"""
+        """保持した所有対象とその子孫を回収し直し、なお残る対象の記述を返す（空なら回収済み）。
+
+        生成の停止を一度でも確認できなかった場合は、その理由を返し続ける。
+        """
         result = stop_tree(None, known=self.processes, timeout=timeout)
-        self.processes = list(result.residual)
-        self.residual = result.descriptions()
+        self.unresolved.extend(reason for reason in result.unresolved if reason not in self.unresolved)
+        # 生成停止を確認できない間は、残存一覧に無い子孫も次の再試行で辿れるよう所有対象全体を保持する。
+        self.processes = list(result.targets if self.unresolved else result.residual)
+        residual = [result.describe_residual(process) for process in result.residual if process.pid != self._child_pid()]
+        # zombie表示の直接の子は`stop_tree`の生存判定から外れるため、回収の完了を直接の待機で確かめる。
+        if self.child is not None:
+            if _reap_owned_child(self.child):
+                self.child = None
+            else:
+                residual.append(f"{self.child.pid}: {self.child.args!r}")
+        self.residual = residual + [f"生成の停止を確認できない: {reason}" for reason in self.unresolved]
         return self.residual
+
+    def _child_pid(self) -> int | None:
+        return None if self.child is None else self.child.pid
 
 
 def stop_tree_by_pid(pid: int, **kwargs: Any) -> TreeStopResult | None:
@@ -473,22 +510,15 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
 
 def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
     """所有する子を子孫ごと停止し、回収できなかったPIDと起動コマンドを返す。"""
-    return _stop_owned_process(process)[0]
+    failure = stop_owned_process(process, context="stop_process_tree")
+    return [] if failure is None else failure.residual
 
 
-def _stop_owned_process(process: subprocess.Popen[Any]) -> tuple[list[str], list[psutil.Process]]:
-    """所有する子を子孫ごと停止し、回収できなかった記述と、再試行に使う所有対象を返す。"""
+def stop_owned_process(process: subprocess.Popen[Any], *, context: str) -> ReclaimError | None:
+    """所有する子を子孫ごと停止し、回収を確認できなければ再試行に使う所有対象を持つ`ReclaimError`を返す（送出しない）。"""
     result = stop_tree_by_pid(process.pid)
-    # 所有する子はzombie表示でも回収済みとは限らない。スレッドグループのリーダーだけが先に終了し、
-    # 他のスレッドが生存する多スレッドの子はzombieと表示され、`reclaim_processes`の強制終了の対象から外れる。
-    # そのためzombie判定に頼らず回収を上限付きで待ち、終わらなければ強制終了を重ねる。
-    try:
-        process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        with contextlib.suppress(OSError):
-            process.kill()
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
+    # 所有する子はzombie表示でも回収済みとは限らないため、`stop_tree`の判定とは別に直接の待機で回収を確かめる。
+    _reap_owned_child(process)
     residual = [] if result is None else result.descriptions(exclude_pid=process.pid)
     owned = [] if result is None else [target for target in result.residual if target.pid != process.pid]
     if result is not None and result.unresolved:
@@ -498,7 +528,32 @@ def _stop_owned_process(process: subprocess.Popen[Any]) -> tuple[list[str], list
         residual.append(f"{process.pid}: {process.args!r}")
         with contextlib.suppress(psutil.Error):
             owned.append(psutil.Process(process.pid))
-    return residual, owned
+    if not residual:
+        return None
+    return ReclaimError(
+        residual,
+        owned,
+        context=context,
+        unresolved=[] if result is None else result.unresolved,
+        child=process if process.poll() is None else None,
+    )
+
+
+def _reap_owned_child(process: subprocess.Popen[Any]) -> bool:
+    """所有する直接の子の回収を上限付きで待ち、終わらなければ強制終了を重ねて、回収できたかを返す。
+
+    スレッドグループのリーダーだけが先に終了し他のスレッドが生存する多スレッドの子はzombieと表示され、
+    `reclaim_processes`の強制終了の対象から外れるため、zombie判定に頼らない。
+    """
+    # 待機の失敗（時間切れ・OSError）は回収を確認できない結果として返し、通常の例外へ置き換えない。
+    try:
+        process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired, OSError:
+        with contextlib.suppress(OSError):
+            process.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+            process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
+    return process.poll() is not None
 
 
 @contextlib.contextmanager
@@ -516,18 +571,22 @@ def process_scope(
         in_flight = sys.exception()
         try:
             if process.poll() is None:
+                failure = None
                 try:
-                    residual, owned = _stop_owned_process(process)
+                    failure = stop_owned_process(process, context="process_scope")
                 finally:
+                    # 停止処理自体が失敗しても子を残さない。最終待機の時間切れ・終了要求の失敗はここで送出せず、
+                    # 停止を確認できない子は停止処理の結果（回収不能）として伝え、通常の時間上限へ置き換えない。
                     if process.poll() is None:
-                        process.kill()
-                    process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
-                if residual and isinstance(in_flight, ReclaimError):
+                        with contextlib.suppress(OSError):
+                            process.kill()
+                        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+                            process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
+                if failure is not None and isinstance(in_flight, ReclaimError):
                     # 本体が既に回収不能を送出している場合は、同じ例外へ対象を合流させて元の原因を保つ。
-                    in_flight.residual.extend(entry for entry in residual if entry not in in_flight.residual)
-                    in_flight.processes.extend(item for item in owned if item not in in_flight.processes)
-                elif residual:
-                    raise ReclaimError(residual, owned, context="process_scope")
+                    in_flight.absorb(failure)
+                elif failure is not None:
+                    raise failure
         finally:
             if close_streams:
                 with contextlib.ExitStack() as cleanup:
@@ -557,10 +616,10 @@ def run_with_timeout(
         try:
             stdout, stderr = process.communicate(input, timeout=timeout)
         except subprocess.TimeoutExpired as error:
-            residual, owned = _stop_owned_process(process)
-            if residual:
+            failure = stop_owned_process(process, context="run_with_timeout")
+            if failure is not None:
                 # 残存がパイプを保持していても待たずに戻り、通常の時間上限と区別して回収不能を伝える。
-                raise ReclaimError(residual, owned, context="run_with_timeout") from error
+                raise failure from error
             stdout, stderr = process.communicate()
             encoding = kwargs.get("encoding") or "utf-8"
             error.output = stdout.encode(encoding) if isinstance(stdout, str) else stdout
@@ -623,6 +682,26 @@ def reclaim_processes(targets: list[psutil.Process], *, timeout: float = RECLAIM
         with contextlib.suppress(psutil.Error, OSError):
             process.kill()
     return _wait_until_released(alive, timeout=timeout)
+
+
+def reclaim_unreaped(targets: list[psutil.Process], *, timeout: float = RECLAIM_TIMEOUT_SECONDS) -> list[psutil.Process]:
+    """回収を確認できなかった直接の子へ強制終了を送り、同じPID世代が消えるまで上限付きで待って、残る対象を返す。
+
+    スレッドグループのリーダーだけが終了した多スレッドの子はzombieと表示されたまま他のスレッドが動くため、
+    `reclaim_processes`の資源保持判定（zombie除外）を使わない。親でない側からは回収（待機）できないため、
+    PID世代の消滅で回収を確かめる。`psutil.Process`は起動時刻を保持し、PIDの再利用先へシグナルを送らない。
+    """
+    for process in targets:
+        with contextlib.suppress(psutil.Error, OSError):
+            process.kill()
+    remaining = list(targets)
+    deadline = time.monotonic() + timeout
+    while remaining:
+        remaining = [process for process in remaining if process.is_running()]
+        if not remaining or time.monotonic() >= deadline:
+            break
+        time.sleep(_POLL_INTERVAL_SECONDS)
+    return remaining
 
 
 def _wait_until_released(targets: list[psutil.Process], *, timeout: float) -> list[psutil.Process]:

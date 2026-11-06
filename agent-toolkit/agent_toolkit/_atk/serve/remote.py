@@ -11,7 +11,7 @@ import logging
 import subprocess
 import threading
 
-logger = logging.getLogger(__name__)
+_LOG = logging.getLogger(__name__)
 
 # 警告本文へ引き継ぐリモートヘルパーの標準エラー出力の最大文字数。
 # 原因の判別に足りる長さを残しつつ、画面の警告欄と記録を占有させない。
@@ -295,7 +295,7 @@ async def stop_resident_helper(
         proc.kill()
     if await _wait_with_timeout(proc, grace_timeout):
         return True
-    logger.warning(
+    _LOG.warning(
         "常駐ヘルパーの終了を確認できないため再接続を止める pid=%s。次の再接続の前に同じプロセスの停止を再試行する。"
         "残り続ける場合はPIDのプロセスを確認して終了させる",
         proc.pid,

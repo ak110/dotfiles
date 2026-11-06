@@ -436,8 +436,6 @@ class TestWriteSettingsHybrid:
 
 def test_process_scope_reclaim_failure_is_not_absorbed_by_run_subprocess(monkeypatch):
     """子を回収できない結果は、run_subprocessの任意失敗（None）へ変換されず呼出元へ届く。"""
-    import psutil  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
     with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as survivor:
         try:
             owned = psutil.Process(survivor.pid)
@@ -456,3 +454,35 @@ def test_process_scope_reclaim_failure_is_not_absorbed_by_run_subprocess(monkeyp
         finally:
             if survivor.poll() is None:
                 survivor.kill()
+
+
+def test_reclaim_retry_keeps_unreaped_direct_child(monkeypatch: pytest.MonkeyPatch) -> None:
+    """zombie表示で生存判定から外れた直接の子は、回収を待てるまで再試行の残存に残る。"""
+
+    class _StuckChild:
+        """回収の待機が時間切れになり続ける直接の子。``reaped``を立てると回収できる。"""
+
+        pid = 4321
+        args = ["fixture-child"]
+
+        def __init__(self) -> None:
+            self.reaped = False
+
+        def wait(self, timeout: float | None = None) -> int:
+            if not self.reaped:
+                raise subprocess.TimeoutExpired(self.args, timeout or 0)
+            return 0
+
+        def kill(self) -> None:
+            pass
+
+        def poll(self) -> int | None:
+            return 0 if self.reaped else None
+
+    child = _StuckChild()
+    monkeypatch.setattr(common, "_REAP_TIMEOUT_SECONDS", 0)
+    error = common.ProcessReclaimError(["4321: fixture-child"], [], child=typing.cast(subprocess.Popen[typing.Any], child))
+    assert error.retry() == ["4321: fixture-child"]
+    child.reaped = True
+    assert error.retry() == []
+    assert error.child is None
