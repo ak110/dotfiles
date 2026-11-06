@@ -290,9 +290,7 @@ def test_rebase_repeated_patch_boundaries_and_rejection_keeps_output(
     if variant == "conflict":
         assert result == 0
         new = _git(repo, "rev-list", "--reverse", f"{new_base}..{new_head}").splitlines()
-        assert json.loads(output.read_text(encoding="utf-8")) == dict(
-            zip((first, restored, again, old_head), new, strict=True)
-        )
+        assert json.loads(output.read_text(encoding="utf-8")) == dict(zip((first, restored, again, old_head), new, strict=True))
     else:
         assert result == 1
         assert output.read_text(encoding="utf-8") == "保存済みの対応表\n"

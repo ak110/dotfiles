@@ -5,6 +5,7 @@ from __future__ import annotations
 import pathlib
 import re
 
+from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan.structure.constants import (
     PLAN_ACTION_DECISIONS,
@@ -278,12 +279,53 @@ def _check_transfer_root(
             if origin_skips is not None:
                 origin_skips.append(f"`## 実施内容`の移管先をWI本文と比べられなかった。private-notesが実在しない: {root}")
             return []
-        return [
-            f"`## 実施内容`の移管先WIが実在しない: {name}。移管先を登録し、登録済みWIファイル名へ直す"
-            for name in dict.fromkeys(names)
-            if _plan_file.find_wi_source(name, root) is None
-        ]
+        errors = []
+        for name in dict.fromkeys(names):
+            if _plan_file.find_wi_source(name, root) is not None:
+                continue
+            # 移管先はユーザーが別環境へ移すために削除することがある。登録の記録が履歴にあれば引受済みとして受理する。
+            deleted = _deleted_registration(root, name)
+            if deleted is None:
+                errors.append(f"`## 実施内容`の移管先WIが実在しない: {name}。移管先を登録し、登録済みWIファイル名へ直す")
+            elif origin_skips is not None:
+                origin_skips.append(
+                    f"`## 実施内容`の移管先WIは現在の配置に無いが、private-notesの履歴で登録済み: {name}"
+                    f"（削除commit {deleted[0]}、削除前のパス {deleted[1]}）"
+                )
+        return errors
     except OSError as error:
         if origin_skips is not None:
             origin_skips.append(f"`## 実施内容`の移管先をWI本文と比べられなかった。WI本文を取得できない: {error}")
         return []
+
+
+def _deleted_registration(root: pathlib.Path, name: str) -> tuple[str, str] | None:
+    """private-notesの履歴で`name`を削除した最新のcommitの短縮OIDと削除前のパスを返す。
+
+    削除の記録は登録（追加）の後にしか存在しないため、登録済みだったことの根拠になる。
+    Git作業ツリーでない、または照会に失敗した場合は`None`を返し、呼出側は現在の配置だけで判定する。
+    """
+    result = _git_command.run(
+        [
+            "--no-pager",
+            "-C",
+            str(root),
+            "log",
+            "--diff-filter=D",
+            "--no-renames",
+            "-n",
+            "1",
+            "--format=%h",
+            "--name-only",
+            "--",
+            f":(glob)**/{name}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    lines = [line for line in result.stdout.splitlines() if line.strip()] if result.returncode == 0 else []
+    if len(lines) < 2:
+        return None
+    return lines[0], lines[1]
