@@ -282,6 +282,7 @@ class JsonRpcProcess:
     """stdio App Serverとの要求・応答を多重化するクライアント。"""
 
     _close_task: asyncio.Task[list[str]] | None = None
+    _job: windows_job.WindowsJob | None = None
 
     async def __aenter__(self) -> typing.Self:
         return self
@@ -323,7 +324,6 @@ class JsonRpcProcess:
         # 生成の停止を確認できなかった前回の停止の理由と、その停止が所有した対象。再closeで同じ対象から回収を再試行する。
         self._unresolved: list[str] = []
         self._owned: list[psutil.Process] = []
-        self._job: windows_job.WindowsJob | None = None
 
     def initialization_diagnostic(self) -> dict[str, Any]:
         """初期化の到達段階と、長さに上限を設けた子プロセスの診断値を返す。"""
@@ -355,10 +355,6 @@ class JsonRpcProcess:
             if owner_session_id is not None:
                 environment[_delegated_session.OWNER_SESSION_ENV] = owner_session_id
             self.parent_environment = environment
-            creation_options: dict[str, Any] = {}
-            if sys.platform == "win32":
-                self._job = windows_job.WindowsJob()
-                creation_options["creationflags"] = windows_job.CREATE_SUSPENDED
             self.process = await asyncio.create_subprocess_exec(
                 *APP_SERVER_COMMAND,
                 stdin=asyncio.subprocess.PIPE,
@@ -367,22 +363,10 @@ class JsonRpcProcess:
                 limit=APP_SERVER_STREAM_LIMIT_BYTES,
                 cwd=APP_SERVER_WORKING_DIRECTORY,
                 env=environment,
-                **creation_options,
             )
-            if self._job is not None:
-                # asyncioの公開ProcessはOS handleを公開しない。CPython transportが保持する
-                # 元世代のPopen handleを使い、PIDの再解決を経ずJob所属を確定する。
-                transport = typing.cast(Any, self.process)._transport  # noqa: SLF001  # pylint: disable=protected-access
-                owned_process = transport.get_extra_info("subprocess")
-                handle = int(owned_process._handle)  # noqa: SLF001  # pylint: disable=protected-access
-                await run_file_operation(self._job.assign_suspended, handle, self.process.pid)
         except OSError as exc:
-            await self.close()
             _LOG.exception("Codex App Serverを起動できません: command=%s", " ".join(APP_SERVER_COMMAND))
             raise AppServerError(f"failed to start {' '.join(APP_SERVER_COMMAND)}: {exc}") from exc
-        except BaseException:
-            await self.close()
-            raise
         _LOG.info(
             "Codex App Serverを起動しました: command=%s cwd=%s pid=%s",
             " ".join(APP_SERVER_COMMAND),
@@ -613,11 +597,10 @@ class JsonRpcProcess:
         return await finish_task(task)
 
     async def _close(self) -> list[str]:
-        if self._closed and self.process is None and self._job is None and not self._residual and not self._unresolved:
+        if self._closed and self.process is None and not self._residual and not self._unresolved:
             return []
         process = self.process
         reclaimed = False
-        job_reclamation = self._job is not None
         diagnostic_targets = [] if process is None else [process.pid]
         if sys.platform == "win32":
             _LOG.info(
@@ -640,7 +623,7 @@ class JsonRpcProcess:
                     task.cancel()
             # App Serverと子孫の生成を止めてから終了させる。終了要求前の1回の列挙だけを回収すると、
             # その直後に起動した孫が漏れ、Windowsではcodex-homeを保持したまま残った。
-            if self._job is None and process is not None and process.returncode is None:
+            if process is not None and process.returncode is None:
                 result = await asyncio.to_thread(process_tree.stop_tree_by_pid, process.pid)
                 if result is not None:
                     reclaimed = True
@@ -650,17 +633,6 @@ class JsonRpcProcess:
                     diagnostic_targets += [item.pid for item in result.targets if item.pid != process.pid]
         else:
             tasks = ()
-        if self._job is not None:
-            try:
-                await run_file_operation(self._job.terminate)
-                await run_file_operation(self._job.close)
-            except OSError as error:
-                # Jobの所有を保ち、失敗とActiveProcesses未確認を成功へ変換しない。
-                self._unresolved = [f"Windows Jobの終了を確認できない: {error}"]
-            else:
-                self._job = None
-                self._unresolved = []
-            reclaimed = True
         if process is not None:
             # 停止処理が終了させた後も、asyncioが終了状態を回収するまでreturncodeは未確定のまま残る。
             with contextlib.suppress(OSError, ProcessLookupError):
@@ -678,7 +650,7 @@ class JsonRpcProcess:
             await lifetime.wait_for_shutdown(tasks)
         if process is not None:
             _LOG.info("Codex App Serverを終了しました: returncode=%s", process.returncode)
-        if not job_reclamation and not reclaimed and self._unresolved:
+        if not reclaimed and self._unresolved:
             # 前回の停止で生成の停止を確認できなかった。所有した対象を起点に、残る子孫を改めて回収する。
             retry = await asyncio.to_thread(process_tree.stop_tree, None, known=[*self._owned, *self._residual])
             self._residual = retry.residual

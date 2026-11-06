@@ -2727,12 +2727,12 @@ async def test_close_reclaims_app_server_and_mcp_when_reader_and_term_stall(
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_stop_reclaims_late_descendant_with_short_lived_parent(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, snapshot_has_child: bool
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, snapshot_has_child: bool
 ) -> None:
     """短命な親から生まれた子を、親の終了と列挙時機によらず回収する。"""
     work = tmp_path / "late"
     work.mkdir()
-    async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
+    async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, backend, fake):
         monkeypatch.setattr(
             subject,
             "APP_SERVER_COMMAND",
@@ -2745,6 +2745,15 @@ async def test_stop_reclaims_late_descendant_with_short_lived_parent(
             # 実snapshotへ親子を含めた後、handle保持より先に親を終了させる。
             # 対照版の列挙だけへ同じsnapshotを渡し、Job版では列挙なしの所属回収を検収する。
             spawner = psutil.Process(int((work / "spawner.pid").read_text(encoding="utf-8")))
+            client_process = backend._clients[session_id].process
+            assert client_process is not None
+            ancestors = spawner.parents()
+            root_index = next(index for index, process in enumerate(ancestors) if process.pid == client_process.pid)
+            pins = subject.process_tree.ProcessIdentityPins()
+            request.addfinalizer(pins.close)
+            # venvの中継親で先に保持失敗しないよう、制御対象以外の既存世代だけを固定する。
+            for process in ancestors[:root_index]:
+                assert pins.retain(process)
             (work / "retain-spawner").touch()
             if snapshot_has_child:
                 await asyncio.to_thread(late_descendant.trigger, work)
